@@ -1,0 +1,25 @@
+[package]
+name = "alice-analytics"
+version = "0.1.0"
+edition = "2021"
+authors = ["Moroya Sakamoto <ext-sakamoro@github.com>"]
+description = "High-Performance Telemetry & Statistical Estimation with Probabilistic Data Structures"
+license = "AGPL-3.0"
+repository = "https://github.com/ext-sakamoro/ALICE-Analytics"
+keywords = ["analytics", "sketch", "hyperloglog", "differential-privacy", "streaming"]
+categories = ["algorithms", "data-structures", "science"]
+
+[lib]
+name = "alice_analytics"
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = []
+simd = []  # SIMD-accelerated hash and register updates
+
+[dependencies]
+# No external dependencies - pure Rust implementation
+
+[dev-dependencies]
+# criterion = "0.5"
