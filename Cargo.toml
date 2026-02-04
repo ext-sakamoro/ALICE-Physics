@@ -1,0 +1,30 @@
+[package]
+name = "alice-physics"
+version = "0.2.0"
+edition = "2021"
+authors = ["Moroya Sakamoto <ext-sakamoro@github.com>"]
+description = "Deterministic 128-bit Fixed-Point Physics Engine"
+license = "AGPL-3.0"
+repository = "https://github.com/ext-sakamoro/ALICE-Physics"
+keywords = ["physics", "deterministic", "fixed-point", "xpbd", "simulation"]
+categories = ["game-development", "simulation", "science"]
+
+[lib]
+name = "alice_physics"
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = []
+simd = []           # SIMD-accelerated Fix128/Vec3Fix operations
+parallel = ["rayon"] # Parallel constraint solving via graph coloring
+
+[dependencies]
+rayon = { version = "1.8", optional = true }
+
+# [dev-dependencies]
+# criterion = "0.5"
+
+# [[bench]]
+# name = "physics"
+# harness = false
