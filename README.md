@@ -2,6 +2,8 @@
 
 **Deterministic 128-bit Fixed-Point Physics Engine** - v0.3.0
 
+English | [日本語](README_JP.md)
+
 A high-precision physics engine designed for deterministic simulation across different platforms and hardware. Uses 128-bit fixed-point arithmetic to ensure bit-exact results regardless of CPU, compiler, or operating system.
 
 ## Features
