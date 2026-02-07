@@ -18,10 +18,15 @@ use alloc::vec::Vec;
 /// Joint type enumeration
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum JointType {
+    /// Ball-and-socket (3 rotational DOF)
     Ball,
+    /// Hinge (1 rotational DOF)
     Hinge,
+    /// Fixed / weld (0 DOF)
     Fixed,
+    /// Slider / prismatic (1 translational DOF)
     Slider,
+    /// Spring with damping
     Spring,
 }
 
@@ -30,7 +35,9 @@ pub enum JointType {
 /// Constrains two anchor points to coincide while allowing free rotation.
 #[derive(Clone, Copy, Debug)]
 pub struct BallJoint {
+    /// Index of the first body
     pub body_a: usize,
+    /// Index of the second body
     pub body_b: usize,
     /// Anchor point in body A's local space
     pub local_anchor_a: Vec3Fix,
@@ -41,6 +48,7 @@ pub struct BallJoint {
 }
 
 impl BallJoint {
+    /// Create a new ball joint
     #[inline]
     pub fn new(body_a: usize, body_b: usize, anchor_a: Vec3Fix, anchor_b: Vec3Fix) -> Self {
         Self {
@@ -52,6 +60,7 @@ impl BallJoint {
         }
     }
 
+    /// Set compliance (inverse stiffness)
     pub fn with_compliance(mut self, compliance: Fix128) -> Self {
         self.compliance = compliance;
         self
@@ -61,9 +70,13 @@ impl BallJoint {
 /// Hinge joint (1 rotational DOF around an axis, with optional angle limits)
 #[derive(Clone, Copy, Debug)]
 pub struct HingeJoint {
+    /// Index of the first body
     pub body_a: usize,
+    /// Index of the second body
     pub body_b: usize,
+    /// Anchor point in body A's local space
     pub local_anchor_a: Vec3Fix,
+    /// Anchor point in body B's local space
     pub local_anchor_b: Vec3Fix,
     /// Hinge axis in body A's local space
     pub local_axis_a: Vec3Fix,
@@ -80,6 +93,7 @@ pub struct HingeJoint {
 }
 
 impl HingeJoint {
+    /// Create a new hinge joint
     #[inline]
     pub fn new(
         body_a: usize,
@@ -103,12 +117,14 @@ impl HingeJoint {
         }
     }
 
+    /// Set angular limits (radians)
     pub fn with_limits(mut self, min: Fix128, max: Fix128) -> Self {
         self.angle_min = Some(min);
         self.angle_max = Some(max);
         self
     }
 
+    /// Set positional compliance (inverse stiffness)
     pub fn with_compliance(mut self, compliance: Fix128) -> Self {
         self.compliance = compliance;
         self
@@ -118,17 +134,24 @@ impl HingeJoint {
 /// Fixed joint (0 DOF, weld two bodies)
 #[derive(Clone, Copy, Debug)]
 pub struct FixedJoint {
+    /// Index of the first body
     pub body_a: usize,
+    /// Index of the second body
     pub body_b: usize,
+    /// Anchor point in body A's local space
     pub local_anchor_a: Vec3Fix,
+    /// Anchor point in body B's local space
     pub local_anchor_b: Vec3Fix,
     /// Relative rotation at the time of creation (to maintain)
     pub relative_rotation: QuatFix,
+    /// Positional compliance (inverse stiffness)
     pub compliance: Fix128,
+    /// Angular compliance (inverse stiffness)
     pub angular_compliance: Fix128,
 }
 
 impl FixedJoint {
+    /// Create a new fixed joint (weld)
     #[inline]
     pub fn new(
         body_a: usize,
@@ -152,20 +175,26 @@ impl FixedJoint {
 /// Slider (prismatic) joint: translation along a single axis
 #[derive(Clone, Copy, Debug)]
 pub struct SliderJoint {
+    /// Index of the first body
     pub body_a: usize,
+    /// Index of the second body
     pub body_b: usize,
     /// Slide axis in body A's local space
     pub local_axis: Vec3Fix,
+    /// Anchor point in body A's local space
     pub local_anchor_a: Vec3Fix,
+    /// Anchor point in body B's local space
     pub local_anchor_b: Vec3Fix,
     /// Minimum translation distance (None = no limit)
     pub limit_min: Option<Fix128>,
     /// Maximum translation distance (None = no limit)
     pub limit_max: Option<Fix128>,
+    /// Positional compliance (inverse stiffness)
     pub compliance: Fix128,
 }
 
 impl SliderJoint {
+    /// Create a new slider joint along an axis
     #[inline]
     pub fn new(
         body_a: usize,
@@ -186,6 +215,7 @@ impl SliderJoint {
         }
     }
 
+    /// Set translation limits
     pub fn with_limits(mut self, min: Fix128, max: Fix128) -> Self {
         self.limit_min = Some(min);
         self.limit_max = Some(max);
@@ -196,9 +226,13 @@ impl SliderJoint {
 /// Spring joint: distance spring with damping
 #[derive(Clone, Copy, Debug)]
 pub struct SpringJoint {
+    /// Index of the first body
     pub body_a: usize,
+    /// Index of the second body
     pub body_b: usize,
+    /// Anchor point in body A's local space
     pub local_anchor_a: Vec3Fix,
+    /// Anchor point in body B's local space
     pub local_anchor_b: Vec3Fix,
     /// Rest length of the spring
     pub rest_length: Fix128,
@@ -209,6 +243,7 @@ pub struct SpringJoint {
 }
 
 impl SpringJoint {
+    /// Create a new spring joint
     #[inline]
     pub fn new(
         body_a: usize,
@@ -234,10 +269,15 @@ impl SpringJoint {
 /// Unified joint enum for storage in PhysicsWorld
 #[derive(Clone, Copy, Debug)]
 pub enum Joint {
+    /// Ball-and-socket joint
     Ball(BallJoint),
+    /// Hinge joint
     Hinge(HingeJoint),
+    /// Fixed / weld joint
     Fixed(FixedJoint),
+    /// Slider / prismatic joint
     Slider(SliderJoint),
+    /// Spring joint
     Spring(SpringJoint),
 }
 

@@ -14,13 +14,17 @@ use alloc::vec::Vec;
 pub enum ForceField {
     /// Constant directional force (e.g., wind)
     Directional {
+        /// Force direction (normalized)
         direction: Vec3Fix,
+        /// Force magnitude
         strength: Fix128,
     },
 
     /// Point attractor/repulsor (gravity well)
     Point {
+        /// Attractor center position
         center: Vec3Fix,
+        /// Attraction strength
         strength: Fix128,
         /// If true, force pushes away from center (explosion)
         repulsive: bool,
@@ -30,21 +34,29 @@ pub enum ForceField {
 
     /// Linear drag (velocity-proportional resistance)
     Drag {
+        /// Drag coefficient
         coefficient: Fix128,
     },
 
     /// Buoyancy (upward force below a surface level)
     Buoyancy {
+        /// Water surface Y coordinate
         surface_y: Fix128,
+        /// Fluid density
         density: Fix128,
+        /// Fluid drag coefficient
         drag: Fix128,
     },
 
     /// Vortex (rotational force around an axis)
     Vortex {
+        /// Vortex center position
         center: Vec3Fix,
+        /// Vortex rotation axis
         axis: Vec3Fix,
+        /// Rotational strength
         strength: Fix128,
+        /// Radius beyond which force falls off
         falloff_radius: Fix128,
     },
 }
@@ -52,6 +64,7 @@ pub enum ForceField {
 /// A force field with optional body filter
 #[derive(Clone, Debug)]
 pub struct ForceFieldInstance {
+    /// The force field definition
     pub field: ForceField,
     /// If Some, only affects bodies in this list. If None, affects all bodies.
     pub affected_bodies: Option<Vec<usize>>,
@@ -60,6 +73,7 @@ pub struct ForceFieldInstance {
 }
 
 impl ForceFieldInstance {
+    /// Create a new force field instance affecting all bodies
     #[inline]
     pub fn new(field: ForceField) -> Self {
         Self {
@@ -69,6 +83,7 @@ impl ForceFieldInstance {
         }
     }
 
+    /// Restrict this field to only affect specific bodies
     pub fn with_affected_bodies(mut self, bodies: Vec<usize>) -> Self {
         self.affected_bodies = Some(bodies);
         self

@@ -14,12 +14,16 @@ use alloc::vec::Vec;
 /// A single triangle
 #[derive(Clone, Copy, Debug)]
 pub struct Triangle {
+    /// First vertex
     pub v0: Vec3Fix,
+    /// Second vertex
     pub v1: Vec3Fix,
+    /// Third vertex
     pub v2: Vec3Fix,
 }
 
 impl Triangle {
+    /// Create a new triangle from three vertices
     #[inline]
     pub fn new(v0: Vec3Fix, v1: Vec3Fix, v2: Vec3Fix) -> Self {
         Self { v0, v1, v2 }

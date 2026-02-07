@@ -110,6 +110,7 @@ pub struct JointMotor {
 }
 
 impl JointMotor {
+    /// Create a new motor for the given joint
     pub fn new(joint_index: usize, controller: PdController) -> Self {
         Self { joint_index, controller }
     }
@@ -133,6 +134,7 @@ pub struct PdController3D {
 }
 
 impl PdController3D {
+    /// Create a new 3-axis PD controller
     #[inline]
     pub fn new(kp: Vec3Fix, kd: Vec3Fix, max_torque: Fix128) -> Self {
         Self {

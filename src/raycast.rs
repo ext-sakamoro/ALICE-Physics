@@ -18,7 +18,9 @@ use alloc::vec::Vec;
 /// A ray defined by origin and direction
 #[derive(Clone, Copy, Debug)]
 pub struct Ray {
+    /// Ray origin point
     pub origin: Vec3Fix,
+    /// Ray direction (normalized internally)
     pub direction: Vec3Fix,
 }
 

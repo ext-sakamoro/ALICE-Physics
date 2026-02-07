@@ -491,10 +491,15 @@ impl LinearBvh {
 /// BVH statistics
 #[derive(Clone, Copy, Debug, Default)]
 pub struct BvhStats {
+    /// Total number of BVH nodes
     pub node_count: usize,
+    /// Number of leaf nodes
     pub leaf_count: usize,
+    /// Number of internal nodes
     pub internal_count: usize,
+    /// Total number of primitives stored
     pub primitive_count: usize,
+    /// Maximum primitives in any leaf
     pub max_leaf_prims: usize,
 }
 

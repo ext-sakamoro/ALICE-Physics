@@ -66,11 +66,14 @@ pub trait Support {
 /// Sphere collider
 #[derive(Clone, Copy, Debug)]
 pub struct Sphere {
+    /// Center position
     pub center: Vec3Fix,
+    /// Sphere radius
     pub radius: Fix128,
 }
 
 impl Sphere {
+    /// Create a new sphere from center and radius
     pub fn new(center: Vec3Fix, radius: Fix128) -> Self {
         Self { center, radius }
     }
@@ -86,11 +89,14 @@ impl Support for Sphere {
 /// Axis-Aligned Bounding Box
 #[derive(Clone, Copy, Debug)]
 pub struct AABB {
+    /// Minimum corner
     pub min: Vec3Fix,
+    /// Maximum corner
     pub max: Vec3Fix,
 }
 
 impl AABB {
+    /// Create a new AABB from min and max corners
     pub fn new(min: Vec3Fix, max: Vec3Fix) -> Self {
         Self { min, max }
     }
@@ -148,10 +154,12 @@ impl Support for AABB {
 /// Convex hull (array of vertices)
 #[derive(Clone, Debug)]
 pub struct ConvexHull {
+    /// Hull vertices
     pub vertices: Vec<Vec3Fix>,
 }
 
 impl ConvexHull {
+    /// Create a new convex hull from vertices
     pub fn new(vertices: Vec<Vec3Fix>) -> Self {
         Self { vertices }
     }
@@ -177,12 +185,16 @@ impl Support for ConvexHull {
 /// Capsule (line segment with radius)
 #[derive(Clone, Copy, Debug)]
 pub struct Capsule {
-    pub a: Vec3Fix,  // Start point
-    pub b: Vec3Fix,  // End point
+    /// Start point of the capsule segment
+    pub a: Vec3Fix,
+    /// End point of the capsule segment
+    pub b: Vec3Fix,
+    /// Capsule radius
     pub radius: Fix128,
 }
 
 impl Capsule {
+    /// Create a new capsule from two endpoints and a radius
     pub fn new(a: Vec3Fix, b: Vec3Fix, radius: Fix128) -> Self {
         Self { a, b, radius }
     }
@@ -241,7 +253,9 @@ impl Simplex {
 /// GJK collision result
 #[derive(Clone, Copy, Debug)]
 pub struct GjkResult {
+    /// Whether the two shapes are colliding
     pub colliding: bool,
+    /// Closest point on the Minkowski difference boundary
     pub closest_point: Vec3Fix,
 }
 

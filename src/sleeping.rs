@@ -37,6 +37,7 @@ pub struct SleepData {
 }
 
 impl SleepData {
+    /// Create new awake sleep data
     pub const fn new() -> Self {
         Self {
             state: SleepState::Awake,
@@ -44,6 +45,7 @@ impl SleepData {
         }
     }
 
+    /// Check if this body is currently sleeping
     #[inline]
     pub fn is_sleeping(&self) -> bool {
         self.state == SleepState::Sleeping

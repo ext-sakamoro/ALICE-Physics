@@ -95,6 +95,7 @@ println!("Batches: {}", world.num_batches());
 ```
 
 **Benefits:**
+- Zero heap allocation in constraint loop (index-based iteration)
 - Rayon-ready parallel solving
 - Reduced lock contention
 - Better cache utilization

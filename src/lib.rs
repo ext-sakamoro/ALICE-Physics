@@ -68,6 +68,7 @@
 //! - Replay systems
 //! - Distributed physics simulation
 
+#![warn(missing_docs)]
 #![cfg_attr(not(feature = "std"), no_std)]
 
 #[cfg(not(feature = "std"))]

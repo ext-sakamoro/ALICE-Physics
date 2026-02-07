@@ -79,6 +79,7 @@ pub struct ClosureSdf {
 }
 
 impl ClosureSdf {
+    /// Create from evaluation and normal closures
     pub fn new(
         eval_fn: impl Fn(f32, f32, f32) -> f32 + Send + Sync + 'static,
         normal_fn: impl Fn(f32, f32, f32) -> (f32, f32, f32) + Send + Sync + 'static,

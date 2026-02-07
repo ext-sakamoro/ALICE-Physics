@@ -196,7 +196,7 @@ impl ArticulatedBody {
 /// - L/R Upper Arm -> Lower Arm
 /// - L/R Upper Leg -> Lower Leg
 ///
-/// Returns (ArticulatedBody, Vec<RigidBody>) ready to add to PhysicsWorld.
+/// Returns `(ArticulatedBody, Vec<RigidBody>)` ready to add to PhysicsWorld.
 pub fn build_ragdoll(
     pelvis_pos: Vec3Fix,
     body_start_index: usize,

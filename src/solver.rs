@@ -148,15 +148,22 @@ impl RigidBody {
 /// Distance constraint between two bodies
 #[derive(Clone, Copy, Debug)]
 pub struct DistanceConstraint {
+    /// Index of the first body
     pub body_a: usize,
+    /// Index of the second body
     pub body_b: usize,
+    /// Anchor point in body A's local space
     pub local_anchor_a: Vec3Fix,
+    /// Anchor point in body B's local space
     pub local_anchor_b: Vec3Fix,
+    /// Target distance between anchors
     pub target_distance: Fix128,
-    pub compliance: Fix128,  // Inverse stiffness (0 = infinitely stiff)
+    /// Inverse stiffness (0 = infinitely stiff)
+    pub compliance: Fix128,
 }
 
 impl DistanceConstraint {
+    /// Create a new distance constraint
     pub fn new(
         body_a: usize,
         body_b: usize,
@@ -174,6 +181,7 @@ impl DistanceConstraint {
         }
     }
 
+    /// Set compliance (inverse stiffness)
     pub fn with_compliance(mut self, compliance: Fix128) -> Self {
         self.compliance = compliance;
         self
@@ -183,14 +191,20 @@ impl DistanceConstraint {
 /// Contact constraint (from collision detection)
 #[derive(Clone, Copy, Debug)]
 pub struct ContactConstraint {
+    /// Index of the first body
     pub body_a: usize,
+    /// Index of the second body
     pub body_b: usize,
+    /// Contact information from collision detection
     pub contact: Contact,
+    /// Friction coefficient
     pub friction: Fix128,
+    /// Restitution (bounciness) coefficient
     pub restitution: Fix128,
 }
 
 impl ContactConstraint {
+    /// Create a new contact constraint with default friction and restitution
     pub fn new(body_a: usize, body_b: usize, contact: Contact) -> Self {
         Self {
             body_a,
@@ -255,9 +269,13 @@ pub struct ConstraintBatch {
 
 /// XPBD physics world with batched constraint solving
 pub struct PhysicsWorld {
+    /// Solver configuration
     pub config: SolverConfig,
+    /// All rigid bodies in the world
     pub bodies: Vec<RigidBody>,
+    /// Distance constraints between bodies
     pub distance_constraints: Vec<DistanceConstraint>,
+    /// Contact constraints from collision detection
     pub contact_constraints: Vec<ContactConstraint>,
     /// SDF colliders for implicit collision detection
     pub sdf_colliders: Vec<SdfCollider>,
@@ -501,28 +519,24 @@ impl PhysicsWorld {
     }
 
     /// Solve constraints in batched parallel mode
+    ///
+    /// Uses index-based iteration to avoid Vec::clone() heap allocation.
     #[cfg(feature = "parallel")]
     fn solve_constraints_batched(&mut self, dt: Fix128) {
-        // Process each batch sequentially (batches are independent)
-        // Clone indices to avoid borrow issues
         let num_batches = self.constraint_batches.len();
 
         for batch_idx in 0..num_batches {
-            // Clone the indices for this batch
-            let distance_indices: Vec<usize> = self.constraint_batches[batch_idx]
-                .distance_indices
-                .clone();
-            let contact_indices: Vec<usize> = self.constraint_batches[batch_idx]
-                .contact_indices
-                .clone();
-
-            // Solve distance constraints in this batch
-            for idx in distance_indices {
+            // Distance constraints — index-based to avoid borrow conflict
+            let num_dist = self.constraint_batches[batch_idx].distance_indices.len();
+            for i in 0..num_dist {
+                let idx = self.constraint_batches[batch_idx].distance_indices[i];
                 self.solve_single_distance_constraint(idx, dt);
             }
 
-            // Solve contact constraints in this batch
-            for idx in contact_indices {
+            // Contact constraints
+            let num_contact = self.constraint_batches[batch_idx].contact_indices.len();
+            for i in 0..num_contact {
+                let idx = self.constraint_batches[batch_idx].contact_indices[i];
                 self.solve_single_contact_constraint(idx, dt);
             }
         }

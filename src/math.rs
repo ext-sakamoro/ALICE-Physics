@@ -55,6 +55,7 @@ pub struct Fix128 {
     /// Interpretation: (hi << 64) | lo as a signed 128-bit integer
     /// The decimal point is between hi and lo
     pub hi: i64,  // Integer part (signed)
+    /// Fractional part (64-bit unsigned)
     pub lo: u64,  // Fractional part
 }
 
@@ -601,8 +602,11 @@ fn cordic_atan2(y: Fix128, x: Fix128) -> Fix128 {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[repr(C)]
 pub struct Vec3Fix {
+    /// X component
     pub x: Fix128,
+    /// Y component
     pub y: Fix128,
+    /// Z component
     pub z: Fix128,
 }
 
@@ -850,9 +854,13 @@ impl Neg for Vec3Fix {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[repr(C)]
 pub struct QuatFix {
+    /// X component (imaginary i)
     pub x: Fix128,
+    /// Y component (imaginary j)
     pub y: Fix128,
+    /// Z component (imaginary k)
     pub z: Fix128,
+    /// W component (scalar/real part)
     pub w: Fix128,
 }
 
