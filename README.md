@@ -15,6 +15,7 @@ A high-precision physics engine designed for deterministic simulation across dif
 | **Stackless BVH** | Morton code-based spatial acceleration with escape pointers |
 | **Constraint Batching** | Graph-colored parallel constraint solving |
 | **Rollback Support** | Complete state serialization for netcode |
+| **Neural Controller** | Deterministic AI via ALICE-ML ternary weights + Fix128 inference |
 | **no_std Compatible** | Works on embedded systems and WebAssembly |
 
 ## Optimizations ("黒焦げ" Edition)
@@ -107,20 +108,26 @@ ALICE-Physics guarantees **bit-exact results** everywhere, enabling:
 ┌─────────────────────────────────────────────────────────────────┐
 │                    ALICE-Physics v0.2.0                         │
 ├─────────────────────────────────────────────────────────────────┤
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐             │
-│  │    math     │  │  collider   │  │   solver    │             │
-│  ├─────────────┤  ├─────────────┤  ├─────────────┤             │
-│  │ Fix128      │  │ AABB        │  │ RigidBody   │             │
-│  │ Vec3Fix     │  │ Sphere      │  │ Distance    │             │
-│  │ QuatFix     │  │ Capsule     │  │ Contact     │             │
-│  │ Mat3Fix     │  │ ConvexHull  │  │ Batching    │             │
-│  │ CORDIC      │  │ GJK/EPA     │  │ XPBD        │             │
-│  └─────────────┘  └─────────────┘  └─────────────┘             │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌──────────┐│
+│  │    math     │  │  collider   │  │   solver    │  │sdf_collidr││
+│  ├─────────────┤  ├─────────────┤  ├─────────────┤  ├──────────┤│
+│  │ Fix128      │  │ AABB        │  │ RigidBody   │  │ SdfField ││
+│  │ Vec3Fix     │  │ Sphere      │  │ Distance    │  │ SdfColdr ││
+│  │ QuatFix     │  │ Capsule     │  │ Contact     │  │ Early-out││
+│  │ Mat3Fix     │  │ ConvexHull  │  │ Batching    │  │ Fix↔f32  ││
+│  │ CORDIC      │  │ GJK/EPA     │  │ XPBD        │  │          ││
+│  └─────────────┘  └─────────────┘  └─────────────┘  └──────────┘│
 │                                                                 │
 │  ┌─────────────────────────────────────────────────────────────┐│
 │  │                    bvh (Stackless)                          ││
 │  ├─────────────────────────────────────────────────────────────┤│
 │  │  Morton Codes → Linear BVH → Escape Pointers → Zero-alloc  ││
+│  └─────────────────────────────────────────────────────────────┘│
+│                                                                 │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │              neural (ALICE-ML × Physics)                    ││
+│  ├─────────────────────────────────────────────────────────────┤│
+│  │  Ternary {-1,0,+1} → Fix128 Add/Sub → Deterministic AI     ││
 │  └─────────────────────────────────────────────────────────────┘│
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -337,6 +344,174 @@ println!("Nodes: {}, Leaves: {}", stats.node_count, stats.leaf_count);
 - **Escape Pointers**: Stackless traversal (zero allocation)
 - **i32 AABB**: Fast integer comparison without Fix128 reconstruction
 
+## SDF Collider (ALICE-SDF Integration)
+
+ALICE-Physics can use [ALICE-SDF](../ALICE-SDF) distance fields as collision shapes. Instead of approximating complex shapes with convex hulls (GJK/EPA), the solver samples the SDF directly — giving mathematically exact surfaces at O(1) cost per query.
+
+### How It Works
+
+```
+Body (sphere)                    SdfCollider
+  ┌───┐                         ┌──────────────────────┐
+  │ ● │──world_to_local(pos)──▶│ SdfField::distance() │─── >0 → no hit (early-out)
+  └───┘                         │ SdfField::normal()   │─── ≤0 → contact + resolve
+                                │ cached inv_rotation   │
+                                │ cached scale_f32      │
+                                └──────────────────────┘
+```
+
+### Key Optimizations
+
+| Optimization | Description | Benefit |
+|-------------|-------------|---------|
+| **Early-out** | Call `distance()` (1 eval) first, only compute `normal()` (4 evals) on collision | 80% fewer evals for non-colliding bodies |
+| **Cached invariants** | Pre-computed `inv_rotation`, `scale_f32`, `inv_scale_f32` | No per-query recomputation |
+| **Rayon parallel** | `par_iter_mut` over bodies with `--features parallel` | Linear speedup with cores |
+| **4-eval combined** | Tetrahedral gradient gives distance + normal from 4 evals | 1 eval saved vs naive 1+4 |
+
+### Usage
+
+```rust
+use alice_physics::prelude::*;
+use alice_physics::sdf_collider::SdfCollider;
+use alice_sdf::physics_bridge::CompiledSdfField;
+use alice_sdf::prelude::*;
+
+// 1. Create SDF shape in ALICE-SDF
+let terrain = SdfNode::plane(0.0, 1.0, 0.0, 0.0)  // ground plane
+    .union(SdfNode::sphere(2.0).translate(0.0, -1.5, 0.0));  // hill
+
+let field = CompiledSdfField::new(terrain);
+
+// 2. Create physics world
+let mut world = PhysicsWorld::new(PhysicsConfig::default());
+
+// 3. Register SDF as static collider
+let collider = SdfCollider::new_static(
+    Box::new(field),
+    Vec3Fix::ZERO,                    // position
+    QuatFix::IDENTITY,                // rotation
+);
+world.add_sdf_collider(collider);
+
+// 4. Add dynamic bodies — they will collide with the SDF surface
+let ball = RigidBody::new_dynamic(
+    Vec3Fix::from_int(0, 10, 0),     // start above terrain
+    Fix128::ONE,                      // mass
+);
+world.add_body(ball);
+
+// 5. Simulate — SDF collisions resolved automatically in step()
+let dt = Fix128::from_ratio(1, 60);
+for _ in 0..300 {
+    world.step(dt);
+}
+```
+
+### SdfCollider API
+
+| Method | Description |
+|--------|-------------|
+| `SdfCollider::new_static(field, position, rotation)` | Static SDF collider |
+| `SdfCollider::new_dynamic(field, position, rotation, body_index)` | Attached to a body |
+| `.with_scale(scale)` | Set uniform scale (updates cached invariants) |
+| `.update_cache()` | Recompute cached `inv_rotation`, `scale_f32` after manual changes |
+| `collide_point_sdf(point, sdf)` | Point vs SDF contact test |
+| `collide_sphere_sdf(center, radius, sdf)` | Sphere vs SDF contact test |
+
+### Requirements
+
+Enable the `physics` feature in ALICE-SDF:
+
+```toml
+[dependencies]
+alice-sdf = { path = "../ALICE-SDF", features = ["physics"] }
+```
+
+See the [ALICE-SDF README](../ALICE-SDF/README.md#physics-bridge-alice-physics-integration) for `CompiledSdfField` details.
+
+## Deterministic Neural Controller (ALICE-ML Integration)
+
+ALICE-Physics integrates with [ALICE-ML](../ALICE-ML) to provide **bit-exact deterministic AI** for game characters. By combining 1.58-bit ternary weights {-1, 0, +1} with 128-bit fixed-point arithmetic, neural inference reduces to pure addition/subtraction — no floating-point, no rounding, no platform-dependent behavior.
+
+This is the "holy grail" for networked fighting games and action games: all clients compute identical AI behavior without synchronization.
+
+### How It Works
+
+```
+Ternary Weight {-1, 0, +1}:
+  +1 → Fix128 addition
+  -1 → Fix128 subtraction
+   0 → skip (free sparsity)
+
+Result: Zero floating-point multiplication in the entire inference pipeline.
+```
+
+### Ragdoll Controller Example
+
+```rust
+use alice_physics::prelude::*;
+use alice_ml::{TernaryWeight, quantize_to_ternary};
+
+// 1. Quantize pre-trained weights to ternary
+let (w1, _) = quantize_to_ternary(&trained_weights_l1, hidden_size, input_size);
+let (w2, _) = quantize_to_ternary(&trained_weights_l2, output_size, hidden_size);
+
+// 2. Convert to fixed-point (one-time)
+let ftw1 = FixedTernaryWeight::from_ternary_weight(w1);
+let ftw2 = FixedTernaryWeight::from_ternary_weight(w2);
+
+// 3. Build deterministic network
+let network = DeterministicNetwork::new(
+    vec![ftw1, ftw2],
+    vec![Activation::ReLU, Activation::HardTanh],
+);
+
+// 4. Create ragdoll controller
+let config = ControllerConfig {
+    max_torque: Fix128::from_int(100),
+    num_joints: 8,    // 8 joints × 3 axes = 24 outputs
+    num_bodies: 9,    // 9 body parts × 13 features = 117 inputs
+    features_per_body: 13,  // pos(3) + vel(3) + rot(4) + angvel(3)
+};
+let mut controller = RagdollController::new(network, config);
+
+// 5. In physics loop — deterministic across ALL clients
+for frame in 0..3600 {
+    let output = controller.compute(&world.bodies);
+    for (joint_idx, torque) in output.torques.iter().enumerate() {
+        world.bodies[joint_idx].apply_impulse(*torque);
+    }
+    world.step(dt);
+}
+```
+
+### Neural Controller API
+
+| Type | Description |
+|------|-------------|
+| `FixedTernaryWeight` | TernaryWeight wrapper with Fix128 scale |
+| `DeterministicNetwork` | Multi-layer network (zero-allocation forward pass) |
+| `RagdollController` | Body states → joint torques |
+| `ControllerConfig` | max_torque, num_joints, num_bodies |
+| `ControllerOutput` | Vec3Fix torque per joint |
+| `Activation` | ReLU, HardTanh, TanhApprox, None |
+
+| Function | Description |
+|----------|-------------|
+| `fix128_ternary_matvec()` | Core kernel — pure add/sub, zero multiplication |
+| `fix128_relu()` | max(0, x) via sign-bit comparison |
+| `fix128_hard_tanh()` | clamp(x, -1, 1) for bounded output |
+| `fix128_tanh_approx()` | Padé rational x(27+x²)/(27+9x²) |
+| `fix128_leaky_relu()` | Leaky ReLU with Fix128 alpha |
+
+### Requirements
+
+```toml
+[dependencies]
+alice-physics = { path = "../ALICE-Physics", features = ["neural"] }
+```
+
 ## Configuration
 
 ```rust
@@ -384,6 +559,7 @@ cargo test
 # Run all feature combinations
 cargo test --features simd
 cargo test --features parallel
+cargo test --features neural
 cargo test --features "simd,parallel"
 ```
 
@@ -394,6 +570,7 @@ cargo test --features "simd,parallel"
 | `std` | Yes | Standard library support |
 | `simd` | No | SIMD-accelerated Fix128/Vec3Fix operations (x86_64) |
 | `parallel` | No | Constraint batching with Rayon (graph-colored parallel solving) |
+| `neural` | No | Deterministic neural controller via ALICE-ML ternary inference |
 
 ```bash
 # Enable SIMD optimizations
@@ -404,6 +581,9 @@ cargo build --release --features parallel
 
 # Enable both
 cargo build --release --features "simd,parallel"
+
+# Enable neural controller (requires ALICE-ML)
+cargo build --release --features neural
 ```
 
 ## Comparison with Floating-Point Engines
@@ -421,7 +601,7 @@ cargo build --release --features "simd,parallel"
 
 ```
 v0.2.0 Test Summary:
-  - 29 unit tests
+  - 52 unit tests (including SDF collider + neural controller tests)
   - 1 doc test
   - All feature combinations pass
   - Zero warnings
