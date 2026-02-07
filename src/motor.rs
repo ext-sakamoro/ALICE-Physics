@@ -40,6 +40,7 @@ pub struct PdController {
 
 impl PdController {
     /// Create a new PD controller
+    #[inline]
     pub fn new(kp: Fix128, kd: Fix128, max_force: Fix128) -> Self {
         Self {
             kp,
@@ -132,6 +133,7 @@ pub struct PdController3D {
 }
 
 impl PdController3D {
+    #[inline]
     pub fn new(kp: Vec3Fix, kd: Vec3Fix, max_torque: Fix128) -> Self {
         Self {
             kp,

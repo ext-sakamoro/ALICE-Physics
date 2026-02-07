@@ -38,6 +38,7 @@ pub struct Link {
 pub const LINK_ROOT: usize = usize::MAX;
 
 /// An articulated body (connected chain of rigid bodies)
+#[derive(Clone, Debug)]
 pub struct ArticulatedBody {
     /// Links in this articulation
     pub links: Vec<Link>,
@@ -137,9 +138,9 @@ impl ArticulatedBody {
             bodies[link.body_index].position = parent_body.position + world_offset;
         }
 
-        // Recurse to children
-        let children = link.children.clone();
-        for &child_idx in &children {
+        // Recurse to children (index-based to avoid Vec clone)
+        for i in 0..self.links[link_idx].children.len() {
+            let child_idx = self.links[link_idx].children[i];
             self.fk_recursive(child_idx, bodies);
         }
     }
@@ -210,7 +211,6 @@ pub fn build_ragdoll(
     };
 
     let one = Fix128::ONE;
-    let half = Fix128::from_ratio(1, 2);
 
     // Create bodies (positions relative to pelvis)
     let pelvis_idx = make_body(pelvis_pos, Fix128::from_int(5));
@@ -298,8 +298,6 @@ pub fn build_ragdoll(
         ).with_limits(-Fix128::PI, Fix128::ZERO)),
         Vec3Fix::from_int(0, -2, 0),
     );
-
-    let _ = (half, _head_link, _l_forearm_link, _r_forearm_link, _l_shin_link, _r_shin_link);
 
     (artic, bodies)
 }

@@ -60,6 +60,7 @@ pub struct ForceFieldInstance {
 }
 
 impl ForceFieldInstance {
+    #[inline]
     pub fn new(field: ForceField) -> Self {
         Self {
             field,
@@ -87,7 +88,7 @@ impl ForceFieldInstance {
 }
 
 /// Compute force from a force field on a body at a given position
-pub fn compute_force(field: &ForceField, body: &RigidBody, _body_index: usize) -> Vec3Fix {
+pub fn compute_force(field: &ForceField, body: &RigidBody) -> Vec3Fix {
     match field {
         ForceField::Directional { direction, strength } => {
             *direction * *strength
@@ -189,7 +190,7 @@ pub fn apply_force_fields(
             if !field_inst.affects(body_idx) {
                 continue;
             }
-            total_force = total_force + compute_force(&field_inst.field, body, body_idx);
+            total_force = total_force + compute_force(&field_inst.field, body);
         }
 
         // F = ma, a = F * inv_mass, v += a * dt
@@ -209,7 +210,7 @@ mod tests {
             strength: Fix128::from_int(10),
         };
         let body = RigidBody::new(Vec3Fix::ZERO, Fix128::ONE);
-        let force = compute_force(&field, &body, 0);
+        let force = compute_force(&field, &body);
         assert_eq!(force.y.hi, 10);
     }
 
@@ -221,7 +222,7 @@ mod tests {
         let mut body = RigidBody::new(Vec3Fix::ZERO, Fix128::ONE);
         body.velocity = Vec3Fix::from_int(10, 0, 0);
 
-        let force = compute_force(&field, &body, 0);
+        let force = compute_force(&field, &body);
         // Drag opposes velocity
         assert!(force.x < Fix128::ZERO, "Drag should oppose motion");
     }
@@ -235,7 +236,7 @@ mod tests {
             max_force: Fix128::from_int(1000),
         };
         let body = RigidBody::new(Vec3Fix::from_int(10, 0, 0), Fix128::ONE);
-        let force = compute_force(&field, &body, 0);
+        let force = compute_force(&field, &body);
 
         // Should pull toward center
         assert!(force.x < Fix128::ZERO, "Point gravity should pull toward center");
@@ -251,12 +252,12 @@ mod tests {
 
         // Body below surface
         let body = RigidBody::new(Vec3Fix::from_int(0, 2, 0), Fix128::ONE);
-        let force = compute_force(&field, &body, 0);
+        let force = compute_force(&field, &body);
         assert!(force.y > Fix128::ZERO, "Buoyancy should push up");
 
         // Body above surface
         let body_above = RigidBody::new(Vec3Fix::from_int(0, 10, 0), Fix128::ONE);
-        let force_above = compute_force(&field, &body_above, 0);
+        let force_above = compute_force(&field, &body_above);
         assert!(force_above.y.is_zero() && force_above.x.is_zero(), "No buoyancy above surface");
     }
 
@@ -301,7 +302,7 @@ mod tests {
         };
 
         let body = RigidBody::new(Vec3Fix::from_int(5, 0, 0), Fix128::ONE);
-        let force = compute_force(&field, &body, 0);
+        let force = compute_force(&field, &body);
 
         // Vortex should produce tangential force (Z direction for body at +X)
         assert!(force.z.abs() > Fix128::ZERO, "Vortex should produce tangential force");

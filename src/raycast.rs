@@ -22,8 +22,12 @@ pub struct Ray {
     pub direction: Vec3Fix,
 }
 
+/// Ray-parallel epsilon threshold
+const RAY_PARALLEL_EPSILON: Fix128 = Fix128 { hi: 0, lo: 0x0000000100000000 };
+
 impl Ray {
     /// Create a new ray (direction is normalized internally)
+    #[inline]
     pub fn new(origin: Vec3Fix, direction: Vec3Fix) -> Self {
         Self {
             origin,
@@ -279,7 +283,7 @@ fn closer_hit(a: Option<RayHit>, b: Option<RayHit>) -> Option<RayHit> {
 pub fn ray_plane(ray: &Ray, plane_normal: Vec3Fix, plane_offset: Fix128, max_t: Fix128) -> Option<RayHit> {
     let denom = ray.direction.dot(plane_normal);
 
-    if denom.abs() < Fix128::from_raw(0, 0x0000000100000000) {
+    if denom.abs() < RAY_PARALLEL_EPSILON {
         return None; // Ray parallel to plane
     }
 

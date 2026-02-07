@@ -270,16 +270,16 @@ impl TriMesh {
     }
 }
 
+/// Moller-Trumbore parallel-check epsilon (~2^-24)
+const MT_EPSILON: Fix128 = Fix128 { hi: 0, lo: 0x0000010000000000 };
+
 /// Ray-Triangle intersection (Moller-Trumbore algorithm)
 pub fn ray_triangle(ray: &Ray, tri: &Triangle, max_t: Fix128) -> Option<RayHit> {
     let e1 = tri.v1 - tri.v0;
     let e2 = tri.v2 - tri.v0;
     let h = ray.direction.cross(e2);
     let det = e1.dot(h);
-
-    // Parallel check
-    let epsilon = Fix128::from_raw(0, 0x0000010000000000);
-    if det.abs() < epsilon {
+    if det.abs() < MT_EPSILON {
         return None;
     }
 

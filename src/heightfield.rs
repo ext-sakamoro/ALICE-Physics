@@ -29,7 +29,7 @@ pub struct HeightField {
 impl HeightField {
     /// Create a height field from a grid of heights
     pub fn new(heights: Vec<Fix128>, width: u32, depth: u32, spacing: Fix128, origin: Vec3Fix) -> Self {
-        assert_eq!(heights.len(), (width * depth) as usize);
+        debug_assert_eq!(heights.len(), (width * depth) as usize);
         Self { heights, width, depth, spacing, origin }
     }
 

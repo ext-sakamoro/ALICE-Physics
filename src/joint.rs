@@ -41,6 +41,7 @@ pub struct BallJoint {
 }
 
 impl BallJoint {
+    #[inline]
     pub fn new(body_a: usize, body_b: usize, anchor_a: Vec3Fix, anchor_b: Vec3Fix) -> Self {
         Self {
             body_a,
@@ -79,6 +80,7 @@ pub struct HingeJoint {
 }
 
 impl HingeJoint {
+    #[inline]
     pub fn new(
         body_a: usize,
         body_b: usize,
@@ -127,6 +129,7 @@ pub struct FixedJoint {
 }
 
 impl FixedJoint {
+    #[inline]
     pub fn new(
         body_a: usize,
         body_b: usize,
@@ -163,6 +166,7 @@ pub struct SliderJoint {
 }
 
 impl SliderJoint {
+    #[inline]
     pub fn new(
         body_a: usize,
         body_b: usize,
@@ -205,6 +209,7 @@ pub struct SpringJoint {
 }
 
 impl SpringJoint {
+    #[inline]
     pub fn new(
         body_a: usize,
         body_b: usize,
