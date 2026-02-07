@@ -383,8 +383,8 @@ println!("Nodes: {}, Leaves: {}", stats.node_count, stats.leaf_count);
 
 ```rust
 use alice_physics::joint::*;
-let hinge = HingeJoint::new(body_a, body_b, anchor, axis)
-    .with_angle_limits(Fix128::from_ratio(-90, 1), Fix128::from_ratio(90, 1));
+let hinge = HingeJoint::new(body_a, body_b, anchor_a, anchor_b, axis_a, axis_b)
+    .with_limits(-Fix128::HALF_PI, Fix128::HALF_PI);  // radians
 ```
 
 ### `raycast` - Ray & Shape Casting
@@ -395,7 +395,7 @@ let hinge = HingeJoint::new(body_a, body_b, anchor, axis)
 | `ray_aabb` | Ray vs AABB (slab method) |
 | `ray_capsule` | Ray vs capsule |
 | `ray_plane` | Ray vs infinite plane |
-| `sweep_sphere_aabb` | Moving sphere vs AABB |
+| `sweep_sphere` | Moving sphere vs sphere (Minkowski expansion) |
 
 ### `ccd` - Continuous Collision Detection
 
@@ -432,10 +432,10 @@ let hinge = HingeJoint::new(body_a, body_b, anchor, axis)
 | `HeightField` | Grid-based terrain with bilinear interpolation |
 
 **Features:**
-- `height_at(x, z)` with bilinear interpolation
-- `normal_at(x, z)` from finite differences
+- `sample_height(world_x, world_z)` with bilinear interpolation
+- `sample_normal(world_x, world_z)` from central differences
 - `collide_sphere()` for sphere-terrain collision
-- Signed distance function `distance_to_surface()`
+- `signed_distance(point)` for point-terrain distance
 
 ### `filter` - Collision Filtering
 
@@ -471,7 +471,6 @@ let hinge = HingeJoint::new(body_a, body_b, anchor, axis)
 
 **Presets:**
 - `build_ragdoll()` — 12-body humanoid (head, torso, arms, legs)
-- `build_chain()` — N-link chain with ball joints
 
 ### `rng` - Deterministic Random
 
