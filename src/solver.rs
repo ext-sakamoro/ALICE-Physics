@@ -19,6 +19,7 @@
 
 use crate::math::{Fix128, Vec3Fix, QuatFix};
 use crate::collider::Contact;
+use crate::sdf_collider::SdfCollider;
 
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
@@ -258,6 +259,10 @@ pub struct PhysicsWorld {
     pub bodies: Vec<RigidBody>,
     pub distance_constraints: Vec<DistanceConstraint>,
     pub contact_constraints: Vec<ContactConstraint>,
+    /// SDF colliders for implicit collision detection
+    pub sdf_colliders: Vec<SdfCollider>,
+    /// Default collision radius for body-vs-SDF queries
+    pub sdf_collision_radius: Fix128,
     /// Pre-colored constraint batches (computed on demand)
     constraint_batches: Vec<ConstraintBatch>,
     /// Whether batches need recomputation
@@ -272,6 +277,8 @@ impl PhysicsWorld {
             bodies: Vec::new(),
             distance_constraints: Vec::new(),
             contact_constraints: Vec::new(),
+            sdf_colliders: Vec::new(),
+            sdf_collision_radius: Fix128::from_ratio(1, 2), // 0.5 default
             constraint_batches: Vec::new(),
             batches_dirty: true,
         }
@@ -413,6 +420,12 @@ impl PhysicsWorld {
     fn substep(&mut self, dt: Fix128) {
         self.integrate_positions(dt);
 
+        // 1.5. Resolve SDF collisions (implicit surface contacts)
+        #[cfg(feature = "std")]
+        if !self.sdf_colliders.is_empty() {
+            self.resolve_sdf_collisions();
+        }
+
         // 2. Solve constraints (sequential)
         for _ in 0..self.config.iterations {
             self.solve_distance_constraints(dt);
@@ -426,6 +439,12 @@ impl PhysicsWorld {
     #[cfg(feature = "parallel")]
     fn substep_batched(&mut self, dt: Fix128) {
         self.integrate_positions(dt);
+
+        // 1.5. Resolve SDF collisions
+        #[cfg(feature = "std")]
+        if !self.sdf_colliders.is_empty() {
+            self.resolve_sdf_collisions();
+        }
 
         // 2. Solve constraints (batched)
         for _ in 0..self.config.iterations {
@@ -663,6 +682,71 @@ impl PhysicsWorld {
         }
     }
 
+    /// Add an SDF collider to the world
+    pub fn add_sdf_collider(&mut self, collider: SdfCollider) -> usize {
+        let idx = self.sdf_colliders.len();
+        self.sdf_colliders.push(collider);
+        idx
+    }
+
+    /// Remove an SDF collider by index
+    pub fn remove_sdf_collider(&mut self, idx: usize) -> Option<SdfCollider> {
+        if idx < self.sdf_colliders.len() {
+            Some(self.sdf_colliders.remove(idx))
+        } else {
+            None
+        }
+    }
+
+    /// Set the collision radius for body-vs-SDF queries
+    pub fn set_sdf_collision_radius(&mut self, radius: Fix128) {
+        self.sdf_collision_radius = radius;
+    }
+
+    /// Resolve SDF collisions by directly correcting body positions.
+    ///
+    /// SDF colliders are treated as immovable surfaces (infinite mass).
+    /// Each penetrating body is pushed out along the SDF gradient.
+    ///
+    /// When `parallel` feature is enabled, bodies are processed in parallel via Rayon.
+    #[cfg(feature = "std")]
+    fn resolve_sdf_collisions(&mut self) {
+        let sdf_colliders = &self.sdf_colliders;
+        let collision_radius = self.sdf_collision_radius;
+
+        #[cfg(feature = "parallel")]
+        {
+            self.bodies.par_iter_mut().for_each(|body| {
+                if body.is_static() {
+                    return;
+                }
+                for sdf in sdf_colliders {
+                    if let Some(contact) = crate::sdf_collider::collide_sphere_sdf(
+                        body.position, collision_radius, sdf,
+                    ) {
+                        body.position = body.position + contact.normal * contact.depth;
+                    }
+                }
+            });
+        }
+
+        #[cfg(not(feature = "parallel"))]
+        {
+            for body in &mut self.bodies {
+                if body.is_static() {
+                    continue;
+                }
+                for sdf in sdf_colliders {
+                    if let Some(contact) = crate::sdf_collider::collide_sphere_sdf(
+                        body.position, collision_radius, sdf,
+                    ) {
+                        body.position = body.position + contact.normal * contact.depth;
+                    }
+                }
+            }
+        }
+    }
+
     /// Get body by index
     #[inline]
     pub fn get_body(&self, idx: usize) -> Option<&RigidBody> {
@@ -874,5 +958,44 @@ mod tests {
         let state2 = run_simulation();
 
         assert_eq!(state1, state2, "Simulation must be deterministic");
+    }
+
+    #[test]
+    fn test_sdf_ground_collision() {
+        use crate::sdf_collider::{SdfCollider, ClosureSdf};
+        use crate::math::QuatFix;
+
+        let config = SolverConfig::default();
+        let mut world = PhysicsWorld::new(config);
+        world.set_sdf_collision_radius(Fix128::from_ratio(1, 2)); // 0.5
+
+        // Add falling body at y=5
+        let body = RigidBody::new(Vec3Fix::from_int(0, 5, 0), Fix128::ONE);
+        let body_id = world.add_body(body);
+
+        // Add ground plane SDF at y=0
+        let ground = ClosureSdf::new(
+            |_x, y, _z| y,
+            |_x, _y, _z| (0.0, 1.0, 0.0),
+        );
+        world.add_sdf_collider(SdfCollider::new_static(
+            Box::new(ground),
+            Vec3Fix::ZERO,
+            QuatFix::IDENTITY,
+        ));
+
+        // Simulate 2 seconds (120 frames at 60fps)
+        let dt = Fix128::from_ratio(1, 60);
+        for _ in 0..120 {
+            world.step(dt);
+        }
+
+        // Body should have fallen but been stopped by SDF ground
+        let pos = world.bodies[body_id].position;
+        let y = pos.y.to_f32();
+
+        // Body should be near the ground (y ≈ collision_radius = 0.5)
+        assert!(y < 5.0, "Body should have fallen from y=5");
+        assert!(y > -1.0, "Body should not have fallen through SDF ground, y={}", y);
     }
 }

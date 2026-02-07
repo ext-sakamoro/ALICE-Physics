@@ -1,6 +1,6 @@
 [package]
 name = "alice-physics"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 authors = ["Moroya Sakamoto <ext-sakamoro@github.com>"]
 description = "Deterministic 128-bit Fixed-Point Physics Engine"

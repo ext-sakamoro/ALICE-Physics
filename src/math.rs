@@ -118,6 +118,18 @@ impl Fix128 {
         self.hi as f64 + (self.lo as f64 / (1u128 << 64) as f64)
     }
 
+    /// Create from f32 (for SDF bridge, not deterministic!)
+    #[cfg(feature = "std")]
+    pub fn from_f32(f: f32) -> Self {
+        Self::from_f64(f as f64)
+    }
+
+    /// Convert to f32 (for SDF bridge, not deterministic!)
+    #[cfg(feature = "std")]
+    pub fn to_f32(self) -> f32 {
+        self.to_f64() as f32
+    }
+
     /// Create from fraction (numerator / denominator)
     pub fn from_ratio(num: i64, denom: i64) -> Self {
         if denom == 0 {
@@ -368,18 +380,14 @@ impl Div for Fix128 {
 
     fn div(self, rhs: Self) -> Self {
         if rhs.is_zero() {
-            return Self::ZERO; // Handle division by zero
+            return Self::ZERO;
         }
-
-        // Convert to 128-bit representation and divide
-        // Result = (self << 64) / rhs
 
         let neg = self.is_negative() != rhs.is_negative();
 
         let a = if self.is_negative() { self.neg() } else { self };
         let b = if rhs.is_negative() { rhs.neg() } else { rhs };
 
-        // Convert to u128 for division
         let a_full = ((a.hi as u128) << 64) | (a.lo as u128);
         let b_full = ((b.hi as u128) << 64) | (b.lo as u128);
 
@@ -387,13 +395,26 @@ impl Div for Fix128 {
             return Self::ZERO;
         }
 
-        // We need (a_full << 64) / b_full, but that's 192-bit
-        // Use long division approximation
+        // I64F64 division: result = (a_full << 64) / b_full
+        // Since (a_full << 64) overflows u128, split into two parts:
+        //   result_hi = a_full / b_full  (integer part)
+        //   result_lo = fractional part via 64-step long division
 
-        // Simplified: (a / b) where both are already shifted
         let quot_hi = a_full / b_full;
         let rem = a_full % b_full;
-        let quot_lo = ((rem << 64) / b_full) as u64;
+
+        // Compute fractional 64 bits via bit-by-bit long division
+        // This avoids the (rem << 64) overflow that broke the old implementation
+        let mut r = rem;
+        let mut quot_lo: u64 = 0;
+        for i in (0..64).rev() {
+            let overflow_bit = r >> 127;
+            r <<= 1;
+            if overflow_bit != 0 || r >= b_full {
+                r = r.wrapping_sub(b_full);
+                quot_lo |= 1u64 << i;
+            }
+        }
 
         let result = Self {
             hi: quot_hi as i64,
@@ -628,6 +649,24 @@ impl Vec3Fix {
             y: Fix128::from_int(y),
             z: Fix128::from_int(z),
         }
+    }
+
+    /// Create from f32 components (for SDF bridge)
+    #[cfg(feature = "std")]
+    #[inline]
+    pub fn from_f32(x: f32, y: f32, z: f32) -> Self {
+        Self {
+            x: Fix128::from_f32(x),
+            y: Fix128::from_f32(y),
+            z: Fix128::from_f32(z),
+        }
+    }
+
+    /// Convert to f32 tuple (for SDF bridge)
+    #[cfg(feature = "std")]
+    #[inline]
+    pub fn to_f32(self) -> (f32, f32, f32) {
+        (self.x.to_f32(), self.y.to_f32(), self.z.to_f32())
     }
 
     /// Dot product
@@ -1079,5 +1118,25 @@ mod tests {
 
         assert_eq!(result1.hi, result2.hi);
         assert_eq!(result1.lo, result2.lo);
+    }
+
+    #[test]
+    fn test_fix128_f32_roundtrip() {
+        let a = Fix128::from_f32(3.14);
+        let back = a.to_f32();
+        assert!((back - 3.14).abs() < 0.001);
+
+        let b = Fix128::from_f32(-7.5);
+        let back_b = b.to_f32();
+        assert!((back_b - (-7.5)).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_vec3fix_f32_roundtrip() {
+        let v = Vec3Fix::from_f32(1.0, -2.5, 3.75);
+        let (x, y, z) = v.to_f32();
+        assert!((x - 1.0).abs() < 0.001);
+        assert!((y - (-2.5)).abs() < 0.001);
+        assert!((z - 3.75).abs() < 0.001);
     }
 }

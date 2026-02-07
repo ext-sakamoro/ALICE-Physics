@@ -40,6 +40,18 @@
 //! - [`collider`]: Collision shapes and GJK/EPA detection
 //! - [`solver`]: XPBD physics solver and rigid body dynamics
 //! - [`bvh`]: Linear BVH for broad-phase collision detection
+//! - [`filter`]: Collision filtering with layer/mask bitmasks
+//! - [`rng`]: Deterministic pseudo-random number generator (PCG-XSH-RR)
+//! - [`event`]: Contact and trigger event tracking
+//! - [`joint`]: Joint constraints (Ball, Hinge, Fixed, Slider, Spring)
+//! - [`raycast`]: Ray and shape casting queries
+//! - [`ccd`]: Continuous collision detection (TOI, conservative advancement)
+//! - [`sleeping`]: Sleep/wake and island management
+//! - [`trimesh`]: Triangle mesh collision with BVH acceleration
+//! - [`heightfield`]: Height field terrain collision
+//! - [`motor`]: PD controllers and joint motors
+//! - [`articulation`]: Articulated bodies (ragdolls, robotic arms)
+//! - [`force`]: Custom force fields (wind, gravity wells, buoyancy, vortex)
 //!
 //! # Determinism
 //!
@@ -66,6 +78,18 @@ pub mod collider;
 pub mod solver;
 pub mod bvh;
 pub mod sdf_collider;
+pub mod filter;
+pub mod rng;
+pub mod event;
+pub mod joint;
+pub mod raycast;
+pub mod ccd;
+pub mod sleeping;
+pub mod trimesh;
+pub mod heightfield;
+pub mod motor;
+pub mod articulation;
+pub mod force;
 #[cfg(feature = "neural")]
 pub mod neural;
 
@@ -75,6 +99,18 @@ pub use collider::{AABB, Sphere, Capsule, ConvexHull, CollisionResult};
 pub use solver::{PhysicsWorld, PhysicsConfig, RigidBody, DistanceConstraint, ContactConstraint};
 pub use bvh::{LinearBvh, BvhNode, BvhPrimitive};
 pub use sdf_collider::{SdfField, SdfCollider, ClosureSdf};
+pub use filter::CollisionFilter;
+pub use rng::DeterministicRng;
+pub use event::{EventCollector, ContactEvent, ContactEventType};
+pub use joint::{Joint, BallJoint, HingeJoint, FixedJoint, SliderJoint, SpringJoint};
+pub use raycast::{Ray, RayHit};
+pub use ccd::CcdConfig;
+pub use sleeping::{SleepState, SleepData, SleepConfig, IslandManager};
+pub use trimesh::{Triangle, TriMesh};
+pub use heightfield::HeightField;
+pub use motor::{PdController, JointMotor, MotorMode};
+pub use articulation::ArticulatedBody;
+pub use force::{ForceField, ForceFieldInstance};
 
 /// Prelude module for convenient imports
 pub mod prelude {
@@ -83,6 +119,18 @@ pub mod prelude {
     pub use crate::solver::{PhysicsWorld, PhysicsConfig, RigidBody, DistanceConstraint, ContactConstraint};
     pub use crate::bvh::{LinearBvh, BvhNode, BvhPrimitive};
     pub use crate::sdf_collider::{SdfField, SdfCollider, ClosureSdf};
+    pub use crate::filter::CollisionFilter;
+    pub use crate::rng::DeterministicRng;
+    pub use crate::event::{EventCollector, ContactEvent, ContactEventType};
+    pub use crate::joint::{Joint, BallJoint, HingeJoint, FixedJoint, SliderJoint, SpringJoint};
+    pub use crate::raycast::{Ray, RayHit};
+    pub use crate::ccd::CcdConfig;
+    pub use crate::sleeping::{SleepState, SleepData, SleepConfig, IslandManager};
+    pub use crate::trimesh::{Triangle, TriMesh};
+    pub use crate::heightfield::HeightField;
+    pub use crate::motor::{PdController, JointMotor, MotorMode};
+    pub use crate::articulation::ArticulatedBody;
+    pub use crate::force::{ForceField, ForceFieldInstance};
     #[cfg(feature = "neural")]
     pub use crate::neural::{
         DeterministicNetwork, RagdollController, ControllerConfig,

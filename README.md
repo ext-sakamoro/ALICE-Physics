@@ -1,6 +1,6 @@
 # ALICE-Physics
 
-**Deterministic 128-bit Fixed-Point Physics Engine** - Optimized Edition v0.2.0
+**Deterministic 128-bit Fixed-Point Physics Engine** - v0.3.0
 
 A high-precision physics engine designed for deterministic simulation across different platforms and hardware. Uses 128-bit fixed-point arithmetic to ensure bit-exact results regardless of CPU, compiler, or operating system.
 
@@ -16,11 +16,23 @@ A high-precision physics engine designed for deterministic simulation across dif
 | **Constraint Batching** | Graph-colored parallel constraint solving |
 | **Rollback Support** | Complete state serialization for netcode |
 | **Neural Controller** | Deterministic AI via ALICE-ML ternary weights + Fix128 inference |
+| **5 Joint Types** | Ball, Hinge, Fixed, Slider, Spring with angle limits and motors |
+| **Raycasting** | Ray and shape casting against spheres, AABBs, capsules, planes |
+| **CCD** | Continuous collision detection (TOI, conservative advancement) |
+| **Sleep/Islands** | Automatic sleep with Union-Find island management |
+| **Triangle Mesh** | BVH-accelerated triangle mesh collision (Moller-Trumbore) |
+| **Height Field** | Grid terrain with bilinear interpolation |
+| **Articulated Bodies** | Multi-joint chains, ragdolls, robotic arms with FK propagation |
+| **Force Fields** | Wind, gravity wells, drag, buoyancy, vortex |
+| **PD Controllers** | 1D/3D proportional-derivative joint motors |
+| **Collision Filtering** | Layer/mask bitmask system with collision groups |
+| **Deterministic RNG** | PCG-XSH-RR pseudo-random number generator |
+| **Contact Events** | Begin/Persist/End contact and trigger event tracking |
 | **no_std Compatible** | Works on embedded systems and WebAssembly |
 
 ## Optimizations ("黒焦げ" Edition)
 
-ALICE-Physics v0.2.0 includes several performance optimizations:
+ALICE-Physics includes several performance optimizations:
 
 ### 1. Stackless BVH Traversal
 
@@ -105,31 +117,46 @@ ALICE-Physics guarantees **bit-exact results** everywhere, enabling:
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    ALICE-Physics v0.2.0                         │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌──────────┐│
-│  │    math     │  │  collider   │  │   solver    │  │sdf_collidr││
-│  ├─────────────┤  ├─────────────┤  ├─────────────┤  ├──────────┤│
-│  │ Fix128      │  │ AABB        │  │ RigidBody   │  │ SdfField ││
-│  │ Vec3Fix     │  │ Sphere      │  │ Distance    │  │ SdfColdr ││
-│  │ QuatFix     │  │ Capsule     │  │ Contact     │  │ Early-out││
-│  │ Mat3Fix     │  │ ConvexHull  │  │ Batching    │  │ Fix↔f32  ││
-│  │ CORDIC      │  │ GJK/EPA     │  │ XPBD        │  │          ││
-│  └─────────────┘  └─────────────┘  └─────────────┘  └──────────┘│
-│                                                                 │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │                    bvh (Stackless)                          ││
-│  ├─────────────────────────────────────────────────────────────┤│
-│  │  Morton Codes → Linear BVH → Escape Pointers → Zero-alloc  ││
-│  └─────────────────────────────────────────────────────────────┘│
-│                                                                 │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │              neural (ALICE-ML × Physics)                    ││
-│  ├─────────────────────────────────────────────────────────────┤│
-│  │  Ternary {-1,0,+1} → Fix128 Add/Sub → Deterministic AI     ││
-│  └─────────────────────────────────────────────────────────────┘│
-└─────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                       ALICE-Physics v0.3.0                           │
+├──────────────────────────────────────────────────────────────────────┤
+│  Core Layer                                                          │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐  │
+│  │  math    │ │ collider │ │  solver  │ │   bvh    │ │sdf_colldr│  │
+│  │ Fix128   │ │ AABB     │ │ RigidBody│ │ Morton   │ │ SdfField │  │
+│  │ Vec3Fix  │ │ Sphere   │ │ XPBD     │ │ Stackless│ │ Gradient │  │
+│  │ QuatFix  │ │ Capsule  │ │ Batching │ │ Zero-    │ │ Early-out│  │
+│  │ CORDIC   │ │ GJK/EPA  │ │ Rollback │ │  alloc   │ │          │  │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘  │
+│                                                                      │
+│  Constraint & Dynamics Layer                                         │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐  │
+│  │  joint   │ │  motor   │ │articulatn│ │  force   │ │ sleeping │  │
+│  │ Ball     │ │ PD 1D/3D │ │ Ragdoll  │ │ Wind     │ │ Islands  │  │
+│  │ Hinge    │ │ Position │ │ FK Chain │ │ Gravity  │ │ Union-   │  │
+│  │ Fixed    │ │ Velocity │ │ Robotic  │ │ Buoyancy │ │  Find    │  │
+│  │ Slider   │ │ Max Torq │ │ 12-body  │ │ Drag     │ │ Auto     │  │
+│  │ Spring   │ │          │ │          │ │ Vortex   │ │  Sleep   │  │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘  │
+│                                                                      │
+│  Query & Collision Layer                                             │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐  │
+│  │ raycast  │ │   ccd    │ │ trimesh  │ │heightfld │ │  filter  │  │
+│  │ Sphere   │ │ TOI      │ │ Triangle │ │ Bilinear │ │ Layer    │  │
+│  │ AABB     │ │ Conserv. │ │ BVH-accel│ │ Normal   │ │ Mask     │  │
+│  │ Capsule  │ │ Advance  │ │ Moller-  │ │ Sphere   │ │ Group    │  │
+│  │ Plane    │ │ Swept    │ │ Trumbore │ │ Collide  │ │ Bidirect │  │
+│  │ Sweep    │ │ AABB     │ │ Closest  │ │ Signed   │ │          │  │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘  │
+│                                                                      │
+│  Utility Layer                                                       │
+│  ┌──────────┐ ┌──────────┐ ┌─────────────────────────────────────┐  │
+│  │   rng    │ │  event   │ │      neural (ALICE-ML × Physics)    │  │
+│  │ PCG-XSH  │ │ Begin    │ │ Ternary {-1,0,+1} → Fix128 Add/Sub │  │
+│  │ Fix128   │ │ Persist  │ │ Deterministic AI                    │  │
+│  │ Direction│ │ End      │ │                                     │  │
+│  └──────────┘ └──────────┘ └─────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Usage
@@ -343,6 +370,127 @@ println!("Nodes: {}, Leaves: {}", stats.node_count, stats.leaf_count);
 - **Morton Codes**: Z-order curve for spatial locality
 - **Escape Pointers**: Stackless traversal (zero allocation)
 - **i32 AABB**: Fast integer comparison without Fix128 reconstruction
+
+### `joint` - 5 Joint Types
+
+| Type | Description |
+|------|-------------|
+| `BallJoint` | Spherical joint (3 rotational DOF) |
+| `HingeJoint` | Revolute joint (1 rotational DOF) with angle limits |
+| `FixedJoint` | Weld joint (0 DOF) |
+| `SliderJoint` | Prismatic joint (1 translational DOF) with limits |
+| `SpringJoint` | Damped spring constraint |
+
+```rust
+use alice_physics::joint::*;
+let hinge = HingeJoint::new(body_a, body_b, anchor, axis)
+    .with_angle_limits(Fix128::from_ratio(-90, 1), Fix128::from_ratio(90, 1));
+```
+
+### `raycast` - Ray & Shape Casting
+
+| Function | Description |
+|----------|-------------|
+| `ray_sphere` | Ray vs sphere intersection |
+| `ray_aabb` | Ray vs AABB (slab method) |
+| `ray_capsule` | Ray vs capsule |
+| `ray_plane` | Ray vs infinite plane |
+| `sweep_sphere_aabb` | Moving sphere vs AABB |
+
+### `ccd` - Continuous Collision Detection
+
+| Function | Description |
+|----------|-------------|
+| `time_of_impact_spheres` | Sphere-sphere TOI via quadratic |
+| `conservative_advancement` | TOI via iterative safe stepping |
+| `swept_aabb` | Swept AABB bounding volume |
+
+### `sleeping` - Sleep & Island System
+
+| Type | Description |
+|------|-------------|
+| `IslandManager` | Union-Find island management |
+| `SleepData` | Per-body sleep tracking |
+| `SleepConfig` | Velocity thresholds, idle frame count |
+
+### `trimesh` - Triangle Mesh Collision
+
+| Type | Description |
+|------|-------------|
+| `Triangle` | Single triangle with Moller-Trumbore intersection |
+| `TriMesh` | BVH-accelerated triangle mesh |
+
+**Features:**
+- Ray-triangle intersection (Moller-Trumbore)
+- Closest point on triangle
+- Sphere-mesh collision detection
+
+### `heightfield` - Height Field Terrain
+
+| Type | Description |
+|------|-------------|
+| `HeightField` | Grid-based terrain with bilinear interpolation |
+
+**Features:**
+- `height_at(x, z)` with bilinear interpolation
+- `normal_at(x, z)` from finite differences
+- `collide_sphere()` for sphere-terrain collision
+- Signed distance function `distance_to_surface()`
+
+### `filter` - Collision Filtering
+
+| Type | Description |
+|------|-------------|
+| `CollisionFilter` | Layer/mask bitmask with collision groups |
+| `layers` module | Predefined layers (DEFAULT, STATIC, PLAYER, ENEMY, etc.) |
+
+### `force` - Force Fields
+
+| Variant | Description |
+|---------|-------------|
+| `Directional` | Uniform wind/gravity (direction + strength) |
+| `Point` | Radial gravity well with inverse-square falloff |
+| `Drag` | Velocity-proportional drag |
+| `Buoyancy` | Plane-based buoyancy with density |
+| `Vortex` | Spinning vortex field (center + axis + strength) |
+
+### `motor` - PD Controllers
+
+| Type | Description |
+|------|-------------|
+| `PdController` | 1D proportional-derivative controller |
+| `PdController3D` | 3D PD controller |
+| `JointMotor` | Joint motor with position/velocity/torque modes |
+
+### `articulation` - Articulated Bodies
+
+| Type | Description |
+|------|-------------|
+| `ArticulatedBody` | Multi-joint chain with FK propagation |
+| `Link` | Joint + body pair in a chain |
+
+**Presets:**
+- `build_ragdoll()` — 12-body humanoid (head, torso, arms, legs)
+- `build_chain()` — N-link chain with ball joints
+
+### `rng` - Deterministic Random
+
+| Type | Description |
+|------|-------------|
+| `DeterministicRng` | PCG-XSH-RR 32-bit generator |
+
+**Methods:**
+- `next_fix128()` — Random Fix128 in [0, 1)
+- `range_fix128(min, max)` — Random in [min, max)
+- `next_direction()` — Random unit Vec3Fix
+
+### `event` - Contact Events
+
+| Type | Description |
+|------|-------------|
+| `EventCollector` | Tracks contact begin/persist/end per pair |
+| `ContactEvent` | Body pair + event type + contact point |
+| `ContactEventType` | Begin, Persist, End |
 
 ## SDF Collider (ALICE-SDF Integration)
 
@@ -600,8 +748,8 @@ cargo build --release --features neural
 ## Test Results
 
 ```
-v0.2.0 Test Summary:
-  - 52 unit tests (including SDF collider + neural controller tests)
+v0.3.0 Test Summary:
+  - 112 unit tests across 17 modules
   - 1 doc test
   - All feature combinations pass
   - Zero warnings
