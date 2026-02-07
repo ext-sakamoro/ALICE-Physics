@@ -65,12 +65,16 @@ pub mod math;
 pub mod collider;
 pub mod solver;
 pub mod bvh;
+pub mod sdf_collider;
+#[cfg(feature = "neural")]
+pub mod neural;
 
 // Re-export commonly used types
 pub use math::{Fix128, Vec3Fix, QuatFix, Mat3Fix};
 pub use collider::{AABB, Sphere, Capsule, ConvexHull, CollisionResult};
 pub use solver::{PhysicsWorld, PhysicsConfig, RigidBody, DistanceConstraint, ContactConstraint};
 pub use bvh::{LinearBvh, BvhNode, BvhPrimitive};
+pub use sdf_collider::{SdfField, SdfCollider, ClosureSdf};
 
 /// Prelude module for convenient imports
 pub mod prelude {
@@ -78,6 +82,14 @@ pub mod prelude {
     pub use crate::collider::{AABB, Sphere, Capsule, ConvexHull, CollisionResult, Support};
     pub use crate::solver::{PhysicsWorld, PhysicsConfig, RigidBody, DistanceConstraint, ContactConstraint};
     pub use crate::bvh::{LinearBvh, BvhNode, BvhPrimitive};
+    pub use crate::sdf_collider::{SdfField, SdfCollider, ClosureSdf};
+    #[cfg(feature = "neural")]
+    pub use crate::neural::{
+        DeterministicNetwork, RagdollController, ControllerConfig,
+        ControllerOutput, FixedTernaryWeight, Activation,
+        fix128_ternary_matvec, fix128_relu, fix128_hard_tanh,
+        fix128_tanh_approx, fix128_leaky_relu,
+    };
 }
 
 #[cfg(test)]

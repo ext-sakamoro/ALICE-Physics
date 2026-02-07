@@ -18,9 +18,11 @@ default = ["std"]
 std = []
 simd = []           # SIMD-accelerated Fix128/Vec3Fix operations
 parallel = ["rayon"] # Parallel constraint solving via graph coloring
+neural = ["alice-ml"] # Deterministic neural controller (ALICE-ML × Physics)
 
 [dependencies]
 rayon = { version = "1.8", optional = true }
+alice-ml = { path = "../ALICE-ML", optional = true }
 
 [profile.release]
 opt-level = 3
