@@ -1020,6 +1020,7 @@ cargo test --features "simd,parallel"
 | `neural` | No | Deterministic neural controller via ALICE-ML ternary inference |
 | `python` | No | Python bindings (PyO3 + NumPy zero-copy) |
 | `replay` | No | Replay recording/playback via ALICE-DB |
+| `ffi` | No | C FFI for Unity, Unreal Engine, and other game engines |
 
 ```bash
 # Enable SIMD optimizations
@@ -1033,7 +1034,114 @@ cargo build --release --features "simd,parallel"
 
 # Enable neural controller (requires ALICE-ML)
 cargo build --release --features neural
+
+# Build C shared library for game engines
+cargo build --release --features ffi
 ```
+
+## Game Engine Integration (C FFI / Unity / UE5)
+
+ALICE-Physics provides a C FFI layer for integration with Unity, Unreal Engine, and any language that can call C functions.
+
+### Building the Shared Library
+
+```bash
+# macOS (.dylib)
+cargo build --release --features ffi
+
+# Linux (.so)
+cargo build --release --features ffi
+
+# Windows (.dll)
+cargo build --release --features ffi
+```
+
+The output library is in `target/release/` (`libalice_physics.dylib`, `libalice_physics.so`, or `alice_physics.dll`).
+
+### C API
+
+The C header is at `include/alice_physics.h`. All types use `f64` at the FFI boundary and convert to `Fix128` internally.
+
+```c
+#include "alice_physics.h"
+
+// Create world
+AlicePhysicsWorld* world = alice_physics_world_create();
+
+// Add bodies
+AliceVec3 pos = {0.0, 10.0, 0.0};
+uint32_t body = alice_physics_body_add_dynamic(world, pos, 1.0);
+
+// Step simulation
+alice_physics_world_step(world, 1.0 / 60.0);
+
+// Read back position
+AliceVec3 out_pos;
+alice_physics_body_get_position(world, body, &out_pos);
+
+// State serialization (rollback netcode)
+uint32_t len;
+uint8_t* state = alice_physics_state_serialize(world, &len);
+alice_physics_state_deserialize(world, state, len);
+alice_physics_state_free(state, len);
+
+// Cleanup
+alice_physics_world_destroy(world);
+```
+
+### Unity C# Bindings
+
+Copy `bindings/AlicePhysics.cs` and the native library to your Unity project:
+
+```
+Assets/
+  Plugins/
+    macOS/    libalice_physics.dylib
+    Win64/    alice_physics.dll
+    Linux/    libalice_physics.so
+  Scripts/
+    AlicePhysics.cs
+```
+
+```csharp
+using AlicePhysics;
+
+var world = new AlicePhysicsWorld();
+uint body = world.AddDynamicBody(new Vector3(0, 10, 0), 1.0);
+world.Step(1.0 / 60.0);
+Vector3 pos = world.GetBodyPosition(body);
+
+// Rollback netcode
+byte[] state = world.SerializeState();
+world.DeserializeState(state);
+
+world.Dispose();
+```
+
+### Unreal Engine 5 Plugin
+
+Copy the `unreal-plugin/` contents to `Plugins/AlicePhysics/` in your UE5 project and place the native library in `ThirdParty/AlicePhysics/lib/<Platform>/`.
+
+The plugin provides `UAlicePhysicsWorldComponent` with full Blueprint support:
+
+- `AddDynamicBody`, `AddStaticBody` — body creation
+- `GetBodyPosition`, `GetBodyRotation`, `GetBodyVelocity` — state queries
+- `ApplyImpulse`, `ApplyImpulseAt` — force application
+- `SerializeState`, `DeserializeState` — rollback netcode
+- Automatic coordinate system conversion (UE5 Z-up cm → ALICE Y-up m)
+
+### Release Workflow
+
+Tag a version to trigger automatic cross-platform builds:
+
+```bash
+git tag v0.3.0
+git push origin v0.3.0
+```
+
+GitHub Actions builds for macOS (ARM + Intel), Windows, and Linux, then packages:
+- **UE5 Plugin ZIP** — includes native library + plugin source + header
+- **Unity Package ZIP** — includes native library + C# bindings + header
 
 ## Comparison with Floating-Point Engines
 

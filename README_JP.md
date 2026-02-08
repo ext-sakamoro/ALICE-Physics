@@ -474,6 +474,90 @@ cargo test --features "simd,parallel"
 | `simd` | No | SIMD高速化 Fix128/Vec3Fix 演算（x86_64） |
 | `parallel` | No | Rayonによる拘束バッチング（グラフ彩色並列解決） |
 | `neural` | No | ALICE-ML三値推論による決定論的ニューラルコントローラ |
+| `python` | No | Pythonバインディング（PyO3 + NumPyゼロコピー） |
+| `replay` | No | ALICE-DB経由のリプレイ録画/再生 |
+| `ffi` | No | C FFI（Unity、UE5等のゲームエンジン向け） |
+
+```bash
+# SIMD最適化
+cargo build --release --features simd
+
+# 並列拘束解決
+cargo build --release --features parallel
+
+# ゲームエンジン向け共有ライブラリのビルド
+cargo build --release --features ffi
+```
+
+## ゲームエンジン統合（C FFI / Unity / UE5）
+
+ALICE-Physicsは、Unity、Unreal Engine、およびC関数を呼べる全ての言語向けにC FFIレイヤーを提供します。
+
+### 共有ライブラリのビルド
+
+```bash
+cargo build --release --features ffi
+# 出力: target/release/ 内に .dylib / .so / .dll
+```
+
+### C API
+
+Cヘッダーは `include/alice_physics.h` にあります。FFI境界では全て `f64` を使用し、内部で `Fix128` に変換します。
+
+```c
+#include "alice_physics.h"
+
+AlicePhysicsWorld* world = alice_physics_world_create();
+AliceVec3 pos = {0.0, 10.0, 0.0};
+uint32_t body = alice_physics_body_add_dynamic(world, pos, 1.0);
+alice_physics_world_step(world, 1.0 / 60.0);
+
+// ステートシリアライズ（ロールバックネットコード用）
+uint32_t len;
+uint8_t* state = alice_physics_state_serialize(world, &len);
+alice_physics_state_deserialize(world, state, len);
+alice_physics_state_free(state, len);
+
+alice_physics_world_destroy(world);
+```
+
+### Unity C# バインディング
+
+`bindings/AlicePhysics.cs` とネイティブライブラリをUnityプロジェクトにコピー：
+
+```csharp
+using AlicePhysics;
+
+var world = new AlicePhysicsWorld();
+uint body = world.AddDynamicBody(new Vector3(0, 10, 0), 1.0);
+world.Step(1.0 / 60.0);
+Vector3 pos = world.GetBodyPosition(body);
+
+// ロールバックネットコード
+byte[] state = world.SerializeState();
+world.DeserializeState(state);
+
+world.Dispose();
+```
+
+### Unreal Engine 5 プラグイン
+
+`unreal-plugin/` をUE5プロジェクトの `Plugins/AlicePhysics/` にコピーし、ネイティブライブラリを `ThirdParty/AlicePhysics/lib/<Platform>/` に配置します。
+
+Blueprint対応の `UAlicePhysicsWorldComponent` を提供:
+- ボディ作成・状態取得・力の適用
+- ロールバックネットコード用のステートシリアライズ
+- 座標系の自動変換（UE5 Z-up cm → ALICE Y-up m）
+
+### リリースワークフロー
+
+タグをプッシュすると自動的にクロスプラットフォームビルドが実行されます：
+
+```bash
+git tag v0.3.0 && git push origin v0.3.0
+```
+
+GitHub Actionsが macOS (ARM + Intel)、Windows、Linux 向けにビルドし、UE5プラグインZIPとUnityパッケージZIPをリリースに添付します。
 
 ## 浮動小数点エンジンとの比較
 
@@ -490,17 +574,16 @@ cargo test --features "simd,parallel"
 
 ```
 v0.3.0 テストサマリ:
-  - 17モジュール全体で112ユニットテスト
-  - 1ドキュメントテスト
+  - 42モジュール全体で230ユニットテスト
+  - 8ドキュメントテスト
   - 全フィーチャー組み合わせパス
-  - 警告ゼロ
 ```
 
 ## ライセンス
 
 AGPL-3.0 - 詳細は [LICENSE](LICENSE) を参照。
 
-Copyright (C) 2024 Moroya Sakamoto
+Copyright (C) 2024-2026 Moroya Sakamoto
 
 ## 謝辞
 
