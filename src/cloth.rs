@@ -1,0 +1,557 @@
+//! Cloth / Shell Simulation (XPBD Triangle Mesh)
+//!
+//! Position-based cloth using distance + bending constraints
+//! on a triangle mesh. Supports SDF collision.
+//!
+//! # Features
+//!
+//! - Distance constraints on mesh edges (stretch resistance)
+//! - Bending constraints on adjacent triangles
+//! - SDF collision for cloth-body interaction
+//! - Pin constraints for attaching cloth to bodies
+//! - Wind force and gravity
+//!
+//! Author: Moroya Sakamoto
+
+use crate::math::{Fix128, Vec3Fix};
+use crate::sdf_collider::SdfCollider;
+
+#[cfg(not(feature = "std"))]
+use alloc::vec::Vec;
+
+// ============================================================================
+// Cloth Configuration
+// ============================================================================
+
+/// Cloth simulation configuration
+#[derive(Clone, Copy, Debug)]
+pub struct ClothConfig {
+    /// Solver iterations per substep
+    pub iterations: usize,
+    /// Number of substeps per step
+    pub substeps: usize,
+    /// Gravity vector
+    pub gravity: Vec3Fix,
+    /// Velocity damping (0..1)
+    pub damping: Fix128,
+    /// Stretch constraint compliance (0 = rigid edges)
+    pub stretch_compliance: Fix128,
+    /// Bending constraint compliance (higher = more flexible)
+    pub bend_compliance: Fix128,
+    /// SDF collision friction
+    pub sdf_friction: Fix128,
+    /// Cloth thickness for collision
+    pub thickness: Fix128,
+}
+
+impl Default for ClothConfig {
+    fn default() -> Self {
+        Self {
+            iterations: 8,
+            substeps: 4,
+            gravity: Vec3Fix::new(Fix128::ZERO, Fix128::from_int(-10), Fix128::ZERO),
+            damping: Fix128::from_ratio(99, 100),
+            stretch_compliance: Fix128::ZERO,
+            bend_compliance: Fix128::from_ratio(1, 100),
+            sdf_friction: Fix128::from_ratio(2, 10),
+            thickness: Fix128::from_ratio(1, 100),
+        }
+    }
+}
+
+// ============================================================================
+// Cloth Constraints
+// ============================================================================
+
+/// Edge (stretch) constraint
+#[derive(Clone, Copy, Debug)]
+struct EdgeConstraint {
+    i0: usize,
+    i1: usize,
+    rest_length: Fix128,
+}
+
+/// Bending constraint between two triangles sharing an edge
+#[derive(Clone, Copy, Debug)]
+struct BendConstraint {
+    /// The four vertices: shared edge (i0, i1) and opposite vertices (i2, i3)
+    i0: usize,
+    i1: usize,
+    i2: usize,
+    i3: usize,
+    /// Rest dihedral angle
+    rest_angle: Fix128,
+}
+
+// ============================================================================
+// Cloth
+// ============================================================================
+
+/// Cloth simulation
+pub struct Cloth {
+    /// Particle positions
+    pub positions: Vec<Vec3Fix>,
+    /// Previous positions
+    pub prev_positions: Vec<Vec3Fix>,
+    /// Velocities
+    pub velocities: Vec<Vec3Fix>,
+    /// Inverse mass per particle
+    pub inv_masses: Vec<Fix128>,
+    /// Triangle indices (i0, i1, i2)
+    pub triangles: Vec<[usize; 3]>,
+    /// Edge constraints
+    edge_constraints: Vec<EdgeConstraint>,
+    /// Bending constraints
+    bend_constraints: Vec<BendConstraint>,
+    /// Pinned particles
+    pub pinned: Vec<usize>,
+    /// Wind force
+    pub wind: Vec3Fix,
+    /// Configuration
+    pub config: ClothConfig,
+}
+
+impl Cloth {
+    /// Create a rectangular cloth grid
+    ///
+    /// `width` x `height` in world units, `res_x` x `res_y` particles
+    pub fn new_grid(
+        origin: Vec3Fix,
+        width: Fix128,
+        height: Fix128,
+        res_x: usize,
+        res_y: usize,
+        mass_per_particle: Fix128,
+    ) -> Self {
+        let n = res_x * res_y;
+        let inv_mass = if mass_per_particle.is_zero() {
+            Fix128::ZERO
+        } else {
+            Fix128::ONE / mass_per_particle
+        };
+
+        // Generate particles
+        let mut positions = Vec::with_capacity(n);
+        for j in 0..res_y {
+            for i in 0..res_x {
+                let u = Fix128::from_ratio(i as i64, (res_x - 1).max(1) as i64);
+                let v = Fix128::from_ratio(j as i64, (res_y - 1).max(1) as i64);
+                positions.push(Vec3Fix::new(
+                    origin.x + width * u,
+                    origin.y,
+                    origin.z + height * v,
+                ));
+            }
+        }
+
+        // Generate triangles
+        let mut triangles = Vec::new();
+        for j in 0..(res_y - 1) {
+            for i in 0..(res_x - 1) {
+                let i00 = j * res_x + i;
+                let i10 = i00 + 1;
+                let i01 = i00 + res_x;
+                let i11 = i01 + 1;
+
+                triangles.push([i00, i10, i01]);
+                triangles.push([i10, i11, i01]);
+            }
+        }
+
+        let mut cloth = Self {
+            prev_positions: positions.clone(),
+            velocities: vec![Vec3Fix::ZERO; n],
+            positions,
+            inv_masses: vec![inv_mass; n],
+            triangles,
+            edge_constraints: Vec::new(),
+            bend_constraints: Vec::new(),
+            pinned: Vec::new(),
+            wind: Vec3Fix::ZERO,
+            config: ClothConfig::default(),
+        };
+
+        cloth.build_constraints();
+        cloth
+    }
+
+    /// Build edge and bending constraints from triangle mesh
+    fn build_constraints(&mut self) {
+        // Edge constraints: collect unique edges from triangles
+        let mut edge_set: Vec<(usize, usize)> = Vec::new();
+
+        for tri in &self.triangles {
+            let edges = [(tri[0], tri[1]), (tri[1], tri[2]), (tri[2], tri[0])];
+            for (a, b) in edges {
+                let (lo, hi) = if a < b { (a, b) } else { (b, a) };
+                if !edge_set.contains(&(lo, hi)) {
+                    edge_set.push((lo, hi));
+                    let rest = (self.positions[a] - self.positions[b]).length();
+                    self.edge_constraints.push(EdgeConstraint {
+                        i0: a,
+                        i1: b,
+                        rest_length: rest,
+                    });
+                }
+            }
+        }
+
+        // Bending constraints: find triangles sharing edges
+        for i in 0..self.triangles.len() {
+            for j in (i + 1)..self.triangles.len() {
+                if let Some(bend) = find_shared_edge(
+                    &self.triangles[i],
+                    &self.triangles[j],
+                    &self.positions,
+                ) {
+                    self.bend_constraints.push(bend);
+                }
+            }
+        }
+    }
+
+    /// Number of particles
+    #[inline]
+    pub fn particle_count(&self) -> usize {
+        self.positions.len()
+    }
+
+    /// Pin a particle in place
+    pub fn pin(&mut self, idx: usize) {
+        self.inv_masses[idx] = Fix128::ZERO;
+        if !self.pinned.contains(&idx) {
+            self.pinned.push(idx);
+        }
+    }
+
+    /// Pin the top row (for curtain-like behavior)
+    pub fn pin_top_row(&mut self, res_x: usize) {
+        for i in 0..res_x {
+            self.pin(i);
+        }
+    }
+
+    /// Step cloth simulation
+    pub fn step(&mut self, dt: Fix128) {
+        let substep_dt = dt / Fix128::from_int(self.config.substeps as i64);
+        for _ in 0..self.config.substeps {
+            self.substep(substep_dt);
+        }
+    }
+
+    /// Step with SDF collision
+    #[cfg(feature = "std")]
+    pub fn step_with_sdf(&mut self, dt: Fix128, sdf_colliders: &[SdfCollider]) {
+        let substep_dt = dt / Fix128::from_int(self.config.substeps as i64);
+        for _ in 0..self.config.substeps {
+            self.substep(substep_dt);
+            self.resolve_sdf_collisions(sdf_colliders);
+        }
+    }
+
+    /// Single substep
+    fn substep(&mut self, dt: Fix128) {
+        let n = self.particle_count();
+
+        // 1. Predict positions
+        for i in 0..n {
+            if self.inv_masses[i].is_zero() {
+                continue;
+            }
+            self.prev_positions[i] = self.positions[i];
+
+            // Gravity + wind
+            let wind_force = self.compute_wind_force(i);
+            self.velocities[i] = self.velocities[i] + (self.config.gravity + wind_force * self.inv_masses[i]) * dt;
+            self.velocities[i] = self.velocities[i] * self.config.damping;
+            self.positions[i] = self.positions[i] + self.velocities[i] * dt;
+        }
+
+        // 2. Solve constraints
+        for _ in 0..self.config.iterations {
+            self.solve_edge_constraints(dt);
+            self.solve_bend_constraints(dt);
+        }
+
+        // 3. Update velocities
+        let inv_dt = Fix128::ONE / dt;
+        for i in 0..n {
+            if self.inv_masses[i].is_zero() {
+                continue;
+            }
+            self.velocities[i] = (self.positions[i] - self.prev_positions[i]) * inv_dt;
+        }
+    }
+
+    /// Compute approximate wind force on a particle
+    fn compute_wind_force(&self, _particle_idx: usize) -> Vec3Fix {
+        // Simplified: uniform wind force
+        self.wind
+    }
+
+    /// Solve edge (stretch) constraints
+    fn solve_edge_constraints(&mut self, dt: Fix128) {
+        let compliance = self.config.stretch_compliance / (dt * dt);
+
+        for c_idx in 0..self.edge_constraints.len() {
+            let c = self.edge_constraints[c_idx];
+            let p0 = self.positions[c.i0];
+            let p1 = self.positions[c.i1];
+            let w0 = self.inv_masses[c.i0];
+            let w1 = self.inv_masses[c.i1];
+
+            let w_sum = w0 + w1 + compliance;
+            if w_sum.is_zero() {
+                continue;
+            }
+
+            let delta = p1 - p0;
+            let dist = delta.length();
+            if dist.is_zero() {
+                continue;
+            }
+
+            let error = dist - c.rest_length;
+            let lambda = error / w_sum;
+            let correction = delta / dist * lambda;
+
+            if !w0.is_zero() {
+                self.positions[c.i0] = self.positions[c.i0] + correction * w0;
+            }
+            if !w1.is_zero() {
+                self.positions[c.i1] = self.positions[c.i1] - correction * w1;
+            }
+        }
+    }
+
+    /// Solve bending constraints (dihedral angle)
+    fn solve_bend_constraints(&mut self, dt: Fix128) {
+        let compliance = self.config.bend_compliance / (dt * dt);
+
+        for c_idx in 0..self.bend_constraints.len() {
+            let c = self.bend_constraints[c_idx];
+            let p0 = self.positions[c.i0];
+            let p1 = self.positions[c.i1];
+            let p2 = self.positions[c.i2];
+            let p3 = self.positions[c.i3];
+
+            // Compute dihedral angle between triangles (p0,p1,p2) and (p0,p1,p3)
+            let edge = p1 - p0;
+            let n1 = edge.cross(p2 - p0);
+            let n2 = edge.cross(p3 - p0);
+
+            let n1_len = n1.length();
+            let n2_len = n2.length();
+            if n1_len.is_zero() || n2_len.is_zero() {
+                continue;
+            }
+
+            let n1_norm = n1 / n1_len;
+            let n2_norm = n2 / n2_len;
+
+            let cos_angle = n1_norm.dot(n2_norm);
+            let cos_rest = c.rest_angle.cos();
+            let error = cos_angle - cos_rest;
+
+            // Simplified bending: push opposite vertices toward rest angle
+            let w2 = self.inv_masses[c.i2];
+            let w3 = self.inv_masses[c.i3];
+            let w_sum = w2 + w3 + compliance;
+            if w_sum.is_zero() {
+                continue;
+            }
+
+            let lambda = error / w_sum;
+            let grad2 = n1_norm * lambda;
+            let grad3 = n2_norm * (-lambda);
+
+            if !w2.is_zero() {
+                self.positions[c.i2] = self.positions[c.i2] - grad2 * w2;
+            }
+            if !w3.is_zero() {
+                self.positions[c.i3] = self.positions[c.i3] - grad3 * w3;
+            }
+        }
+    }
+
+    /// Resolve SDF collisions for all particles
+    #[cfg(feature = "std")]
+    fn resolve_sdf_collisions(&mut self, sdf_colliders: &[SdfCollider]) {
+        let thickness = self.config.thickness.to_f32();
+
+        for i in 0..self.particle_count() {
+            if self.inv_masses[i].is_zero() {
+                continue;
+            }
+
+            for sdf in sdf_colliders {
+                let (lx, ly, lz) = sdf.world_to_local(self.positions[i]);
+                let dist = sdf.field.distance(lx, ly, lz) * sdf.scale_f32;
+
+                if dist < thickness {
+                    let (nx, ny, nz) = sdf.field.normal(lx, ly, lz);
+                    let normal = sdf.local_normal_to_world(nx, ny, nz);
+                    let push = Fix128::from_f32(thickness - dist);
+
+                    self.positions[i] = self.positions[i] + normal * push;
+
+                    // Friction
+                    let vel = self.velocities[i];
+                    let vn = normal * vel.dot(normal);
+                    let vt = vel - vn;
+                    self.velocities[i] = vt * (Fix128::ONE - self.config.sdf_friction);
+                }
+            }
+        }
+    }
+
+    /// Compute per-triangle normals (for rendering)
+    pub fn compute_normals(&self) -> Vec<Vec3Fix> {
+        let mut normals = vec![Vec3Fix::ZERO; self.particle_count()];
+
+        for tri in &self.triangles {
+            let e1 = self.positions[tri[1]] - self.positions[tri[0]];
+            let e2 = self.positions[tri[2]] - self.positions[tri[0]];
+            let face_normal = e1.cross(e2);
+
+            normals[tri[0]] = normals[tri[0]] + face_normal;
+            normals[tri[1]] = normals[tri[1]] + face_normal;
+            normals[tri[2]] = normals[tri[2]] + face_normal;
+        }
+
+        for n in &mut normals {
+            *n = n.normalize();
+        }
+
+        normals
+    }
+}
+
+/// Find shared edge between two triangles and create a bending constraint
+fn find_shared_edge(
+    tri_a: &[usize; 3],
+    tri_b: &[usize; 3],
+    positions: &[Vec3Fix],
+) -> Option<BendConstraint> {
+    for ia in 0..3 {
+        for ib in 0..3 {
+            let a0 = tri_a[ia];
+            let a1 = tri_a[(ia + 1) % 3];
+            let b0 = tri_b[ib];
+            let b1 = tri_b[(ib + 1) % 3];
+
+            if (a0 == b0 && a1 == b1) || (a0 == b1 && a1 == b0) {
+                // Shared edge found
+                let opposite_a = tri_a[(ia + 2) % 3];
+                let opposite_b = tri_b[(ib + 2) % 3];
+
+                // Compute rest dihedral angle
+                let edge = positions[a1] - positions[a0];
+                let n1 = edge.cross(positions[opposite_a] - positions[a0]);
+                let n2 = edge.cross(positions[opposite_b] - positions[a0]);
+
+                let n1_len = n1.length();
+                let n2_len = n2.length();
+                let rest_angle = if n1_len.is_zero() || n2_len.is_zero() {
+                    Fix128::ZERO
+                } else {
+                    let cos = (n1 / n1_len).dot(n2 / n2_len);
+                    cos // Store cos(angle) directly
+                };
+
+                return Some(BendConstraint {
+                    i0: a0,
+                    i1: a1,
+                    i2: opposite_a,
+                    i3: opposite_b,
+                    rest_angle,
+                });
+            }
+        }
+    }
+    None
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cloth_creation() {
+        let cloth = Cloth::new_grid(
+            Vec3Fix::ZERO,
+            Fix128::from_int(2),
+            Fix128::from_int(2),
+            5, 5,
+            Fix128::from_ratio(1, 100),
+        );
+
+        assert_eq!(cloth.particle_count(), 25);
+        assert!(!cloth.edge_constraints.is_empty(), "Should have edge constraints");
+    }
+
+    #[test]
+    fn test_cloth_pinning() {
+        let mut cloth = Cloth::new_grid(
+            Vec3Fix::ZERO,
+            Fix128::from_int(2),
+            Fix128::from_int(2),
+            5, 5,
+            Fix128::from_ratio(1, 100),
+        );
+
+        cloth.pin_top_row(5);
+        assert_eq!(cloth.pinned.len(), 5);
+
+        for i in 0..5 {
+            assert!(cloth.inv_masses[i].is_zero(), "Top row should be pinned");
+        }
+    }
+
+    #[test]
+    fn test_cloth_drape() {
+        let mut cloth = Cloth::new_grid(
+            Vec3Fix::ZERO,
+            Fix128::from_int(2),
+            Fix128::from_int(2),
+            5, 5,
+            Fix128::from_ratio(1, 100),
+        );
+        cloth.pin_top_row(5);
+
+        let dt = Fix128::from_ratio(1, 60);
+        for _ in 0..120 {
+            cloth.step(dt);
+        }
+
+        // Bottom row should drape below starting position
+        // With constraints, the cloth stretches slowly; verify it moved downward
+        let initial_y = cloth.positions[0].y.to_f32(); // top row (pinned)
+        let bottom_y = cloth.positions[20].y.to_f32(); // bottom row
+        assert!(bottom_y < initial_y, "Bottom should be below top, top={}, bottom={}", initial_y, bottom_y);
+    }
+
+    #[test]
+    fn test_cloth_normals() {
+        let cloth = Cloth::new_grid(
+            Vec3Fix::ZERO,
+            Fix128::from_int(2),
+            Fix128::from_int(2),
+            3, 3,
+            Fix128::from_ratio(1, 100),
+        );
+
+        let normals = cloth.compute_normals();
+        assert_eq!(normals.len(), 9);
+
+        // For a flat grid in XZ plane, normals should point in Y
+        for n in &normals {
+            let (_, ny, _) = n.to_f32();
+            assert!(ny.abs() > 0.5, "Normals should point mostly in Y for flat grid");
+        }
+    }
+}

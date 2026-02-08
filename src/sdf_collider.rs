@@ -195,7 +195,7 @@ impl SdfCollider {
     /// Uses cached `inv_rotation` and `inv_scale_f32` to avoid recomputation.
     #[cfg(feature = "std")]
     #[inline]
-    fn world_to_local(&self, world_point: Vec3Fix) -> (f32, f32, f32) {
+    pub(crate) fn world_to_local(&self, world_point: Vec3Fix) -> (f32, f32, f32) {
         let relative = world_point - self.position;
         let local = self.inv_rotation.rotate_vec(relative);
         let (lx, ly, lz) = local.to_f32();
@@ -206,7 +206,7 @@ impl SdfCollider {
     /// Transform local-space normal to world space (Fix128).
     #[cfg(feature = "std")]
     #[inline]
-    fn local_normal_to_world(&self, nx: f32, ny: f32, nz: f32) -> Vec3Fix {
+    pub(crate) fn local_normal_to_world(&self, nx: f32, ny: f32, nz: f32) -> Vec3Fix {
         let local_n = Vec3Fix::from_f32(nx, ny, nz);
         self.rotation.rotate_vec(local_n).normalize()
     }

@@ -52,6 +52,21 @@
 //! - [`motor`]: PD controllers and joint motors
 //! - [`articulation`]: Articulated bodies (ragdolls, robotic arms)
 //! - [`force`]: Custom force fields (wind, gravity wells, buoyancy, vortex)
+//! - [`sdf_manifold`]: Multi-point contact manifold from SDF surfaces
+//! - [`sdf_ccd`]: Sphere tracing continuous collision detection for SDF
+//! - [`sdf_force`]: SDF-driven force fields (attract, repel, contain, flow)
+//! - [`sdf_destruction`]: Real-time CSG boolean destruction
+//! - [`rope`]: XPBD distance chain rope and cable simulation
+//! - [`cloth`]: XPBD triangle mesh cloth simulation
+//! - [`fluid`]: Position-Based Fluids (PBF) with spatial hash grid
+//! - [`deformable`]: FEM-XPBD deformable body simulation
+//! - [`sdf_adaptive`]: Adaptive SDF evaluation with distance-based LOD
+//! - [`convex_decompose`]: Convex decomposition from SDF voxel grid
+//! - [`gpu_sdf`]: GPU compute shader interface for batch SDF evaluation
+//! - [`fluid_netcode`]: Deterministic fluid netcode with delta compression
+//! - [`vehicle`]: Vehicle physics (wheel, suspension, engine, steering)
+//! - [`animation_blend`]: Ragdoll animation blending with SLERP
+//! - [`audio_physics`]: Physics-based audio parameter generation
 //!
 //! # Determinism
 //!
@@ -91,6 +106,23 @@ pub mod heightfield;
 pub mod motor;
 pub mod articulation;
 pub mod force;
+pub mod sdf_manifold;
+pub mod sdf_ccd;
+pub mod sdf_force;
+pub mod sdf_destruction;
+pub mod rope;
+pub mod cloth;
+pub mod fluid;
+pub mod deformable;
+pub mod sdf_adaptive;
+pub mod convex_decompose;
+#[cfg(feature = "std")]
+pub mod gpu_sdf;
+#[cfg(feature = "std")]
+pub mod fluid_netcode;
+pub mod vehicle;
+pub mod animation_blend;
+pub mod audio_physics;
 #[cfg(feature = "neural")]
 pub mod neural;
 pub mod netcode;
@@ -118,6 +150,23 @@ pub use motor::{PdController, JointMotor, MotorMode};
 pub use articulation::ArticulatedBody;
 pub use force::{ForceField, ForceFieldInstance};
 pub use netcode::{DeterministicSimulation, FrameInput, SimulationChecksum, SimulationSnapshot, NetcodeConfig, InputApplicator};
+pub use sdf_manifold::{SdfManifold, ManifoldConfig};
+pub use sdf_ccd::{SdfCcdConfig};
+pub use sdf_force::{SdfForceField, SdfForceType};
+pub use sdf_destruction::{DestructibleSdf, DestructionShape};
+pub use rope::{Rope, RopeConfig};
+pub use cloth::{Cloth, ClothConfig};
+pub use fluid::{Fluid, FluidConfig};
+pub use deformable::{DeformableBody, DeformableConfig};
+pub use sdf_adaptive::{AdaptiveSdfEvaluator, AdaptiveConfig};
+pub use convex_decompose::{DecomposeConfig, DecompositionResult};
+#[cfg(feature = "std")]
+pub use gpu_sdf::{GpuSdfBatch, GpuSdfQuery, GpuSdfResult, GpuDispatchConfig};
+#[cfg(feature = "std")]
+pub use fluid_netcode::{FluidSnapshot, FluidDelta};
+pub use vehicle::{Vehicle, VehicleConfig};
+pub use animation_blend::{AnimationBlender, BlendMode, SkeletonPose, AnimationClip};
+pub use audio_physics::{AudioGenerator, AudioConfig, AudioEvent, AudioMaterial};
 
 /// Prelude module for convenient imports
 pub mod prelude {
@@ -139,6 +188,23 @@ pub mod prelude {
     pub use crate::articulation::ArticulatedBody;
     pub use crate::force::{ForceField, ForceFieldInstance};
     pub use crate::netcode::{DeterministicSimulation, FrameInput, SimulationChecksum, SimulationSnapshot, NetcodeConfig, InputApplicator};
+    pub use crate::sdf_manifold::{SdfManifold, ManifoldConfig};
+    pub use crate::sdf_ccd::SdfCcdConfig;
+    pub use crate::sdf_force::{SdfForceField, SdfForceType};
+    pub use crate::sdf_destruction::{DestructibleSdf, DestructionShape};
+    pub use crate::rope::{Rope, RopeConfig};
+    pub use crate::cloth::{Cloth, ClothConfig};
+    pub use crate::fluid::{Fluid, FluidConfig};
+    pub use crate::deformable::{DeformableBody, DeformableConfig};
+    pub use crate::sdf_adaptive::{AdaptiveSdfEvaluator, AdaptiveConfig};
+    pub use crate::convex_decompose::{DecomposeConfig, DecompositionResult};
+    #[cfg(feature = "std")]
+    pub use crate::gpu_sdf::{GpuSdfBatch, GpuSdfQuery, GpuSdfResult, GpuDispatchConfig};
+    #[cfg(feature = "std")]
+    pub use crate::fluid_netcode::{FluidSnapshot, FluidDelta};
+    pub use crate::vehicle::{Vehicle, VehicleConfig};
+    pub use crate::animation_blend::{AnimationBlender, BlendMode, SkeletonPose, AnimationClip};
+    pub use crate::audio_physics::{AudioGenerator, AudioConfig, AudioEvent, AudioMaterial};
     #[cfg(feature = "neural")]
     pub use crate::neural::{
         DeterministicNetwork, RagdollController, ControllerConfig,
