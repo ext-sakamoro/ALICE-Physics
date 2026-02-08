@@ -747,11 +747,120 @@ cargo build --release --features neural
 | Embedded | no_std | Requires FPU |
 | Range | ±9.2×10^18 | ±3.4×10^38 (f32) |
 
+## Deterministic Netcode
+
+ALICE-Physics includes a frame-based deterministic netcode foundation. Because the engine guarantees bit-exact results, **only player inputs need to be synchronized** — state sync is unnecessary.
+
+### Bandwidth Savings
+
+| Approach | Per-Frame (10 bodies, 2 players) |
+|----------|-------------------------------|
+| State sync (traditional) | ~1,600 bytes |
+| **Input sync (ALICE)** | **~40 bytes** |
+| Savings | **97.5%** |
+
+### Core Types
+
+| Type | Description |
+|------|-------------|
+| `FrameInput` | 20-byte serializable player input (movement, actions, aim) |
+| `SimulationChecksum` | XOR rolling hash of physics state (WyHash-style avalanche) |
+| `SimulationSnapshot` | Full state capture for rollback |
+| `DeterministicSimulation` | PhysicsWorld wrapper with frame counter, checksum history, snapshot ring buffer |
+| `InputApplicator` | Trait for game-specific input → physics force mapping |
+
+### Usage
+
+```rust
+use alice_physics::prelude::*;
+
+// Both clients create identical simulation
+let mut sim = DeterministicSimulation::new(NetcodeConfig::default());
+
+// Add bodies and assign to players
+let body0 = sim.add_body(RigidBody::new_dynamic(
+    Vec3Fix::from_int(0, 10, 0), Fix128::ONE,
+));
+sim.assign_player_body(0, body0);
+
+// Each frame: collect inputs, advance, compare checksums
+let inputs = vec![
+    FrameInput::new(0).with_movement(Vec3Fix::from_int(1, 0, 0)),
+    FrameInput::new(1).with_movement(Vec3Fix::from_int(0, 0, -1)),
+];
+let checksum = sim.advance_frame(&inputs);
+
+// Save snapshot for rollback
+sim.save_snapshot();
+
+// Verify remote client's checksum
+assert_eq!(sim.verify_checksum(1, checksum), Some(true));
+```
+
+## Python Bindings (PyO3 + NumPy Zero-Copy)
+
+Install with:
+
+```bash
+pip install maturin
+maturin develop --release --features python
+```
+
+### Optimization Layers (カリカリ)
+
+| Layer | Technique | Effect |
+|-------|-----------|--------|
+| L1 | GIL Release (`py.allow_threads`) | Parallel physics stepping |
+| L2 | Zero-Copy NumPy (`into_pyarray`) | No memcpy for bulk positions/velocities |
+| L3 | Batch API (`step_n`, `positions`) | FFI amortization |
+| L4 | Rust backend (Fix128, XPBD, BVH) | Hardware-speed simulation |
+
+### Python API
+
+```python
+import alice_physics
+
+# Basic physics world
+world = alice_physics.PhysicsWorld()
+body0 = world.add_dynamic_body(0.0, 10.0, 0.0, mass=1.0)
+ground = world.add_static_body(0.0, 0.0, 0.0)
+
+# Step with GIL release (other Python threads can run)
+world.step(1.0 / 60.0)
+
+# Batch step for training loops
+world.step_n(1.0 / 60.0, steps=300)
+
+# Get all positions as NumPy (N, 3) float64 array (zero-copy)
+positions = world.positions()  # shape: (N, 3)
+velocities = world.velocities()  # shape: (N, 3)
+
+# Deterministic netcode simulation
+sim = alice_physics.DeterministicSimulation(player_count=2, fps=60)
+body = sim.add_body(0.0, 10.0, 0.0, mass=1.0)
+sim.assign_player(0, body)
+
+# Advance with player inputs: (player_id, move_x, move_y, move_z, actions)
+checksum = sim.advance_frame([(0, 1.0, 0.0, 0.0, 0), (1, 0.0, 0.0, -1.0, 0)])
+
+# Snapshot for rollback
+frame = sim.save_snapshot()
+sim.load_snapshot(frame)
+
+# Serialization
+state = world.serialize_state()  # NumPy uint8 array
+world.deserialize_state(state.tolist())
+
+# Frame input encoding (20 bytes, network-ready)
+data = alice_physics.encode_frame_input(player_id=0, move_x=1.0, actions=0x3)
+player_id, mx, my, mz, actions, ax, ay, az = alice_physics.decode_frame_input(data)
+```
+
 ## Test Results
 
 ```
 v0.3.0 Test Summary:
-  - 112 unit tests across 17 modules
+  - 119 unit tests across 18 modules (including netcode)
   - 1 doc test
   - All feature combinations pass
   - Zero warnings

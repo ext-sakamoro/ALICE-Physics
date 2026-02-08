@@ -93,6 +93,9 @@ pub mod articulation;
 pub mod force;
 #[cfg(feature = "neural")]
 pub mod neural;
+pub mod netcode;
+#[cfg(feature = "python")]
+mod python;
 
 // Re-export commonly used types
 pub use math::{Fix128, Vec3Fix, QuatFix, Mat3Fix};
@@ -112,6 +115,7 @@ pub use heightfield::HeightField;
 pub use motor::{PdController, JointMotor, MotorMode};
 pub use articulation::ArticulatedBody;
 pub use force::{ForceField, ForceFieldInstance};
+pub use netcode::{DeterministicSimulation, FrameInput, SimulationChecksum, SimulationSnapshot, NetcodeConfig, InputApplicator};
 
 /// Prelude module for convenient imports
 pub mod prelude {
@@ -132,6 +136,7 @@ pub mod prelude {
     pub use crate::motor::{PdController, JointMotor, MotorMode};
     pub use crate::articulation::ArticulatedBody;
     pub use crate::force::{ForceField, ForceFieldInstance};
+    pub use crate::netcode::{DeterministicSimulation, FrameInput, SimulationChecksum, SimulationSnapshot, NetcodeConfig, InputApplicator};
     #[cfg(feature = "neural")]
     pub use crate::neural::{
         DeterministicNetwork, RagdollController, ControllerConfig,

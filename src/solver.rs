@@ -338,9 +338,9 @@ impl PhysicsWorld {
 
         self.constraint_batches.clear();
 
-        // Track which bodies are "used" in each color
+        // Track which colors each body participates in
         let num_bodies = self.bodies.len();
-        let body_colors: Vec<Option<usize>> = vec![None; num_bodies];
+        let mut body_colors: Vec<Vec<usize>> = vec![Vec::new(); num_bodies];
 
         // Color distance constraints
         for (constraint_idx, constraint) in self.distance_constraints.iter().enumerate() {
@@ -348,7 +348,7 @@ impl PhysicsWorld {
             let body_b = constraint.body_b;
 
             // Find first color where both bodies are free
-            let color = self.find_free_color(&body_colors, body_a, body_b);
+            let color = Self::find_free_color(&body_colors, body_a, body_b);
 
             // Ensure we have enough batches
             while self.constraint_batches.len() <= color {
@@ -359,7 +359,12 @@ impl PhysicsWorld {
             self.constraint_batches[color].distance_indices.push(constraint_idx);
 
             // Mark bodies as used in this color
-            // (Reset colors for next frame - greedy per-constraint)
+            if body_a < num_bodies {
+                body_colors[body_a].push(color);
+            }
+            if body_b < num_bodies {
+                body_colors[body_b].push(color);
+            }
         }
 
         // Color contact constraints
@@ -367,29 +372,31 @@ impl PhysicsWorld {
             let body_a = constraint.body_a;
             let body_b = constraint.body_b;
 
-            let color = self.find_free_color(&body_colors, body_a, body_b);
+            let color = Self::find_free_color(&body_colors, body_a, body_b);
 
             while self.constraint_batches.len() <= color {
                 self.constraint_batches.push(ConstraintBatch::default());
             }
 
             self.constraint_batches[color].contact_indices.push(constraint_idx);
+
+            if body_a < num_bodies {
+                body_colors[body_a].push(color);
+            }
+            if body_b < num_bodies {
+                body_colors[body_b].push(color);
+            }
         }
 
         self.batches_dirty = false;
     }
 
     /// Find first color where both bodies are free (greedy coloring)
-    fn find_free_color(&self, body_colors: &[Option<usize>], body_a: usize, body_b: usize) -> usize {
-        // Simple greedy: find lowest color not used by either body
-        let color_a = body_colors.get(body_a).copied().flatten();
-        let color_b = body_colors.get(body_b).copied().flatten();
-
-        // Find first available color
+    fn find_free_color(body_colors: &[Vec<usize>], body_a: usize, body_b: usize) -> usize {
         let mut color = 0;
         loop {
-            let a_ok = color_a.map_or(true, |c| c != color);
-            let b_ok = color_b.map_or(true, |c| c != color);
+            let a_ok = body_colors.get(body_a).map_or(true, |colors| !colors.contains(&color));
+            let b_ok = body_colors.get(body_b).map_or(true, |colors| !colors.contains(&color));
 
             if a_ok && b_ok {
                 return color;
