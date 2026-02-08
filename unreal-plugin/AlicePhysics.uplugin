@@ -1,0 +1,23 @@
+{
+    "FileVersion": 3,
+    "Version": 1,
+    "VersionName": "0.3.0",
+    "FriendlyName": "ALICE Physics",
+    "Description": "Deterministic 128-bit fixed-point physics engine for multiplayer games with rollback netcode support.",
+    "Category": "Physics",
+    "CreatedBy": "Moroya Sakamoto",
+    "CreatedByURL": "https://github.com/ext-sakamoro/ALICE-Physics",
+    "DocsURL": "https://github.com/ext-sakamoro/ALICE-Physics",
+    "MarketplaceURL": "",
+    "CanContainContent": false,
+    "IsBetaVersion": true,
+    "IsExperimentalVersion": false,
+    "Installed": false,
+    "Modules": [
+        {
+            "Name": "AlicePhysics",
+            "Type": "Runtime",
+            "LoadingPhase": "Default"
+        }
+    ]
+}

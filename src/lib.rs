@@ -139,6 +139,8 @@ pub mod netcode;
 pub mod replay;
 #[cfg(feature = "python")]
 mod python;
+#[cfg(feature = "ffi")]
+pub mod ffi;
 
 // Re-export commonly used types
 pub use math::{Fix128, Vec3Fix, QuatFix, Mat3Fix};

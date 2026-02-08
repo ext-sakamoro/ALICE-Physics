@@ -1,0 +1,120 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Create ALICE-ML stub (path dependency)
+        shell: bash
+        run: |
+          mkdir -p ../ALICE-ML/src
+          cat > ../ALICE-ML/Cargo.toml << 'TOML'
+          [package]
+          name = "alice-ml"
+          version = "0.1.0"
+          edition = "2021"
+          [lib]
+          path = "src/lib.rs"
+          TOML
+          echo "" > ../ALICE-ML/src/lib.rs
+
+      - name: Create ALICE-DB stub (path dependency)
+        shell: bash
+        run: |
+          mkdir -p ../ALICE-DB/src
+          cat > ../ALICE-DB/Cargo.toml << 'TOML'
+          [package]
+          name = "alice-db"
+          version = "0.1.0"
+          edition = "2021"
+          [lib]
+          path = "src/lib.rs"
+          TOML
+          echo "" > ../ALICE-DB/src/lib.rs
+
+      - name: Build (core)
+        run: cargo build --lib
+
+      - name: Test (core)
+        run: cargo test --lib
+
+      - name: Build (FFI)
+        run: cargo build --features "ffi"
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Create ALICE-ML stub
+        run: |
+          mkdir -p ../ALICE-ML/src
+          cat > ../ALICE-ML/Cargo.toml << 'TOML'
+          [package]
+          name = "alice-ml"
+          version = "0.1.0"
+          edition = "2021"
+          [lib]
+          path = "src/lib.rs"
+          TOML
+          echo "" > ../ALICE-ML/src/lib.rs
+
+      - name: Create ALICE-DB stub
+        run: |
+          mkdir -p ../ALICE-DB/src
+          cat > ../ALICE-DB/Cargo.toml << 'TOML'
+          [package]
+          name = "alice-db"
+          version = "0.1.0"
+          edition = "2021"
+          [lib]
+          path = "src/lib.rs"
+          TOML
+          echo "" > ../ALICE-DB/src/lib.rs
+
+      - name: Clippy
+        run: cargo clippy --lib -- --cap-lints warn
+        continue-on-error: true
+
+  fmt:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Check formatting
+        run: cargo fmt -- --check

@@ -1,0 +1,144 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build (${{ matrix.lib_dir }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            lib_name: libalice_physics.dylib
+            lib_dir: macOS
+          - os: macos-15
+            target: x86_64-apple-darwin
+            lib_name: libalice_physics.dylib
+            lib_dir: macOS-Intel
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            lib_name: alice_physics.dll
+            lib_dir: Win64
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            lib_name: libalice_physics.so
+            lib_dir: Linux
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Create ALICE-ML stub
+        shell: bash
+        run: |
+          mkdir -p ../ALICE-ML/src
+          cat > ../ALICE-ML/Cargo.toml << 'TOML'
+          [package]
+          name = "alice-ml"
+          version = "0.1.0"
+          edition = "2021"
+          [lib]
+          path = "src/lib.rs"
+          TOML
+          echo "" > ../ALICE-ML/src/lib.rs
+
+      - name: Create ALICE-DB stub
+        shell: bash
+        run: |
+          mkdir -p ../ALICE-DB/src
+          cat > ../ALICE-DB/Cargo.toml << 'TOML'
+          [package]
+          name = "alice-db"
+          version = "0.1.0"
+          edition = "2021"
+          [lib]
+          path = "src/lib.rs"
+          TOML
+          echo "" > ../ALICE-DB/src/lib.rs
+
+      - name: Build release
+        run: cargo build --release --features "ffi" --target ${{ matrix.target }}
+
+      - name: Package UE5 Plugin
+        shell: bash
+        run: |
+          PLUGIN_DIR="AlicePhysics"
+          mkdir -p "$PLUGIN_DIR/ThirdParty/AlicePhysics/lib/${{ matrix.lib_dir }}"
+          mkdir -p "$PLUGIN_DIR/ThirdParty/AlicePhysics/include"
+          cp unreal-plugin/AlicePhysics.uplugin "$PLUGIN_DIR/"
+          cp -r unreal-plugin/Source "$PLUGIN_DIR/"
+          cp -r unreal-plugin/Resources "$PLUGIN_DIR/" 2>/dev/null || true
+          cp unreal-plugin/README.md "$PLUGIN_DIR/"
+          cp include/alice_physics.h "$PLUGIN_DIR/ThirdParty/AlicePhysics/include/"
+          cp "target/${{ matrix.target }}/release/${{ matrix.lib_name }}" \
+             "$PLUGIN_DIR/ThirdParty/AlicePhysics/lib/${{ matrix.lib_dir }}/"
+
+      - name: Create UE5 ZIP (Unix)
+        if: runner.os != 'Windows'
+        run: zip -r "AlicePhysics-UE5-${{ matrix.lib_dir }}.zip" AlicePhysics/
+
+      - name: Create UE5 ZIP (Windows)
+        if: runner.os == 'Windows'
+        run: 7z a "AlicePhysics-UE5-${{ matrix.lib_dir }}.zip" AlicePhysics/
+
+      - name: Package Unity Plugin
+        shell: bash
+        run: |
+          UNITY_DIR="AlicePhysics-Unity"
+          mkdir -p "$UNITY_DIR/Plugins/${{ matrix.lib_dir }}"
+          cp bindings/AlicePhysics.cs "$UNITY_DIR/"
+          cp include/alice_physics.h "$UNITY_DIR/"
+          cp "target/${{ matrix.target }}/release/${{ matrix.lib_name }}" \
+             "$UNITY_DIR/Plugins/${{ matrix.lib_dir }}/"
+
+      - name: Create Unity ZIP (Unix)
+        if: runner.os != 'Windows'
+        run: zip -r "AlicePhysics-Unity-${{ matrix.lib_dir }}.zip" AlicePhysics-Unity/
+
+      - name: Create Unity ZIP (Windows)
+        if: runner.os == 'Windows'
+        run: 7z a "AlicePhysics-Unity-${{ matrix.lib_dir }}.zip" AlicePhysics-Unity/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.lib_dir }}
+          path: |
+            AlicePhysics-UE5-${{ matrix.lib_dir }}.zip
+            AlicePhysics-Unity-${{ matrix.lib_dir }}.zip
+
+  release:
+    name: Create Release
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*.zip
+          generate_release_notes: true
