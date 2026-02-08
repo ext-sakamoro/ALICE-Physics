@@ -20,12 +20,17 @@ simd = []           # SIMD-accelerated Fix128/Vec3Fix operations
 parallel = ["rayon"] # Parallel constraint solving via graph coloring
 neural = ["alice-ml"] # Deterministic neural controller (ALICE-ML × Physics)
 python = ["pyo3", "numpy"] # Python bindings (PyO3 + NumPy zero-copy)
+replay = ["alice-db"]      # Replay recording/playback via ALICE-DB
 
 [dependencies]
 rayon = { version = "1.8", optional = true }
 alice-ml = { path = "../ALICE-ML", optional = true }
 pyo3 = { version = "0.22", features = ["extension-module"], optional = true }
 numpy = { version = "0.22", optional = true }
+alice-db = { path = "../ALICE-DB", optional = true }
+
+[dev-dependencies]
+tempfile = "3.10"
 
 [profile.release]
 opt-level = 3

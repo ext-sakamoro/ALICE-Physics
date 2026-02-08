@@ -722,6 +722,7 @@ cargo test --features "simd,parallel"
 | `parallel` | No | Constraint batching with Rayon (graph-colored parallel solving) |
 | `neural` | No | Deterministic neural controller via ALICE-ML ternary inference |
 | `python` | No | Python bindings (PyO3 + NumPy zero-copy) |
+| `replay` | No | Replay recording/playback via ALICE-DB |
 
 ```bash
 # Enable SIMD optimizations
@@ -843,7 +844,7 @@ pip install maturin
 maturin develop --release --features python
 ```
 
-### Optimization Layers (カリカリ)
+### Optimization Layers
 
 | Layer | Technique | Effect |
 |-------|-----------|--------|
@@ -893,11 +894,63 @@ data = alice_physics.encode_frame_input(player_id=0, move_x=1.0, actions=0x3)
 player_id, mx, my, mz, actions, ax, ay, az = alice_physics.decode_frame_input(data)
 ```
 
+## Replay Recording (ALICE-DB Integration)
+
+ALICE-Physics can record and replay simulation trajectories via [ALICE-DB](../ALICE-DB). Enable with `--features replay`.
+
+```toml
+[dependencies]
+alice-physics = { path = "../ALICE-Physics", features = ["replay"] }
+```
+
+### Recording
+
+```rust
+use alice_physics::replay::ReplayRecorder;
+
+// Create recorder (path, body_count)
+let mut recorder = ReplayRecorder::new("./replay_data", 3)?;
+
+// In game loop: record every frame
+for _ in 0..300 {
+    world.step(dt);
+    recorder.record_frame(&world)?;
+}
+
+recorder.flush()?;
+recorder.close()?;
+```
+
+### Playback
+
+```rust
+use alice_physics::replay::ReplayPlayer;
+
+let player = ReplayPlayer::open("./replay_data", 3)?;
+
+// Random access: get position at any frame
+let pos = player.get_position(frame, body_id)?;
+// Returns Option<(f32, f32, f32)>
+
+// Range query: scan positions over frame range
+let trajectory = player.scan_positions(0, 299, body_id)?;
+// Returns Vec<(u64, f32, f32, f32)>
+
+player.close()?;
+```
+
+### Storage Format
+
+Each body stores 6 channels (pos_x/y/z, vel_x/y/z) in ALICE-DB. ALICE-DB's model-based compression automatically fits trajectories:
+- Constant velocity → linear model (2 coefficients)
+- Projectile motion → quadratic model (3 coefficients)
+- Complex motion → Fourier model
+
 ## Test Results
 
 ```
 v0.3.0 Test Summary:
-  - 119 unit tests across 18 modules (including netcode)
+  - 121 unit tests across 19 modules (including netcode, replay)
   - 1 doc test
   - All feature combinations pass
   - Zero warnings

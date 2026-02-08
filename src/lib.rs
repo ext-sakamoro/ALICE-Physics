@@ -94,6 +94,8 @@ pub mod force;
 #[cfg(feature = "neural")]
 pub mod neural;
 pub mod netcode;
+#[cfg(feature = "replay")]
+pub mod replay;
 #[cfg(feature = "python")]
 mod python;
 
