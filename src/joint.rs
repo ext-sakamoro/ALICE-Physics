@@ -28,6 +28,10 @@ pub enum JointType {
     Slider,
     /// Spring with damping
     Spring,
+    /// 6-DOF configurable joint
+    D6,
+    /// Cone-twist (ragdoll)
+    ConeTwist,
 }
 
 /// Ball-and-socket joint (3 rotational DOF)
@@ -311,6 +315,206 @@ impl SpringJoint {
     }
 }
 
+/// Axis freedom mode for D6 joints
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum D6Motion {
+    /// Axis is locked (no motion allowed)
+    Locked,
+    /// Axis is free (unlimited motion)
+    Free,
+    /// Axis is limited (within min/max bounds)
+    Limited,
+}
+
+impl Default for D6Motion {
+    fn default() -> Self {
+        D6Motion::Free
+    }
+}
+
+/// D6 Joint (6-DOF configurable joint)
+///
+/// Each of the 6 axes (3 linear + 3 angular) can be independently
+/// set to Free, Locked, or Limited.
+#[derive(Clone, Copy, Debug)]
+pub struct D6Joint {
+    /// Index of the first body
+    pub body_a: usize,
+    /// Index of the second body
+    pub body_b: usize,
+    /// Anchor point in body A's local space
+    pub local_anchor_a: Vec3Fix,
+    /// Anchor point in body B's local space
+    pub local_anchor_b: Vec3Fix,
+    /// Reference frame for body A
+    pub local_frame_a: QuatFix,
+    /// Reference frame for body B
+    pub local_frame_b: QuatFix,
+    /// Linear X axis motion
+    pub linear_x: D6Motion,
+    /// Linear Y axis motion
+    pub linear_y: D6Motion,
+    /// Linear Z axis motion
+    pub linear_z: D6Motion,
+    /// Angular X (twist) motion
+    pub angular_x: D6Motion,
+    /// Angular Y (swing1) motion
+    pub angular_y: D6Motion,
+    /// Angular Z (swing2) motion
+    pub angular_z: D6Motion,
+    /// Linear limits (min/max for limited axes)
+    pub linear_limit_min: Vec3Fix,
+    /// Linear limit max
+    pub linear_limit_max: Vec3Fix,
+    /// Angular limits (min for limited axes, radians)
+    pub angular_limit_min: Vec3Fix,
+    /// Angular limit max
+    pub angular_limit_max: Vec3Fix,
+    /// Positional compliance
+    pub compliance: Fix128,
+    /// Angular compliance
+    pub angular_compliance: Fix128,
+    /// Maximum force before the joint breaks (None = unbreakable)
+    pub break_force: Option<Fix128>,
+}
+
+impl D6Joint {
+    /// Create a new D6 joint with all axes free
+    pub fn new(
+        body_a: usize,
+        body_b: usize,
+        anchor_a: Vec3Fix,
+        anchor_b: Vec3Fix,
+    ) -> Self {
+        Self {
+            body_a,
+            body_b,
+            local_anchor_a: anchor_a,
+            local_anchor_b: anchor_b,
+            local_frame_a: QuatFix::IDENTITY,
+            local_frame_b: QuatFix::IDENTITY,
+            linear_x: D6Motion::Free,
+            linear_y: D6Motion::Free,
+            linear_z: D6Motion::Free,
+            angular_x: D6Motion::Free,
+            angular_y: D6Motion::Free,
+            angular_z: D6Motion::Free,
+            linear_limit_min: Vec3Fix::new(-Fix128::ONE, -Fix128::ONE, -Fix128::ONE),
+            linear_limit_max: Vec3Fix::new(Fix128::ONE, Fix128::ONE, Fix128::ONE),
+            angular_limit_min: Vec3Fix::new(-Fix128::PI, -Fix128::PI, -Fix128::PI),
+            angular_limit_max: Vec3Fix::new(Fix128::PI, Fix128::PI, Fix128::PI),
+            compliance: Fix128::ZERO,
+            angular_compliance: Fix128::ZERO,
+            break_force: None,
+        }
+    }
+
+    /// Set linear motion on all axes
+    pub fn with_linear_motion(mut self, x: D6Motion, y: D6Motion, z: D6Motion) -> Self {
+        self.linear_x = x;
+        self.linear_y = y;
+        self.linear_z = z;
+        self
+    }
+
+    /// Set angular motion on all axes
+    pub fn with_angular_motion(mut self, x: D6Motion, y: D6Motion, z: D6Motion) -> Self {
+        self.angular_x = x;
+        self.angular_y = y;
+        self.angular_z = z;
+        self
+    }
+
+    /// Set linear limits
+    pub fn with_linear_limits(mut self, min: Vec3Fix, max: Vec3Fix) -> Self {
+        self.linear_limit_min = min;
+        self.linear_limit_max = max;
+        self
+    }
+
+    /// Set angular limits
+    pub fn with_angular_limits(mut self, min: Vec3Fix, max: Vec3Fix) -> Self {
+        self.angular_limit_min = min;
+        self.angular_limit_max = max;
+        self
+    }
+
+    /// Set break force threshold
+    pub fn with_break_force(mut self, force: Fix128) -> Self {
+        self.break_force = Some(force);
+        self
+    }
+}
+
+/// Cone-Twist joint (ball joint with cone angle limit + twist limit)
+///
+/// Used for ragdoll shoulders and hips where rotation is constrained
+/// to a cone around the twist axis, with an additional twist limit.
+#[derive(Clone, Copy, Debug)]
+pub struct ConeTwistJoint {
+    /// Index of the first body
+    pub body_a: usize,
+    /// Index of the second body
+    pub body_b: usize,
+    /// Anchor point in body A's local space
+    pub local_anchor_a: Vec3Fix,
+    /// Anchor point in body B's local space
+    pub local_anchor_b: Vec3Fix,
+    /// Twist axis in body A's local space
+    pub twist_axis_a: Vec3Fix,
+    /// Twist axis in body B's local space
+    pub twist_axis_b: Vec3Fix,
+    /// Maximum cone angle (radians, half-angle)
+    pub cone_limit: Fix128,
+    /// Maximum twist angle (radians)
+    pub twist_limit: Fix128,
+    /// Positional compliance
+    pub compliance: Fix128,
+    /// Angular compliance
+    pub angular_compliance: Fix128,
+    /// Maximum force before the joint breaks (None = unbreakable)
+    pub break_force: Option<Fix128>,
+}
+
+impl ConeTwistJoint {
+    /// Create a new cone-twist joint
+    pub fn new(
+        body_a: usize,
+        body_b: usize,
+        anchor_a: Vec3Fix,
+        anchor_b: Vec3Fix,
+        twist_axis_a: Vec3Fix,
+        twist_axis_b: Vec3Fix,
+    ) -> Self {
+        Self {
+            body_a,
+            body_b,
+            local_anchor_a: anchor_a,
+            local_anchor_b: anchor_b,
+            twist_axis_a,
+            twist_axis_b,
+            cone_limit: Fix128::HALF_PI,
+            twist_limit: Fix128::PI,
+            compliance: Fix128::ZERO,
+            angular_compliance: Fix128::ZERO,
+            break_force: None,
+        }
+    }
+
+    /// Set cone and twist limits
+    pub fn with_limits(mut self, cone: Fix128, twist: Fix128) -> Self {
+        self.cone_limit = cone;
+        self.twist_limit = twist;
+        self
+    }
+
+    /// Set break force threshold
+    pub fn with_break_force(mut self, force: Fix128) -> Self {
+        self.break_force = Some(force);
+        self
+    }
+}
+
 /// Unified joint enum for storage in PhysicsWorld
 #[derive(Clone, Copy, Debug)]
 pub enum Joint {
@@ -324,6 +528,10 @@ pub enum Joint {
     Slider(SliderJoint),
     /// Spring joint
     Spring(SpringJoint),
+    /// 6-DOF configurable joint
+    D6(D6Joint),
+    /// Cone-twist joint (ragdoll)
+    ConeTwist(ConeTwistJoint),
 }
 
 impl Joint {
@@ -336,6 +544,8 @@ impl Joint {
             Joint::Fixed(j) => (j.body_a, j.body_b),
             Joint::Slider(j) => (j.body_a, j.body_b),
             Joint::Spring(j) => (j.body_a, j.body_b),
+            Joint::D6(j) => (j.body_a, j.body_b),
+            Joint::ConeTwist(j) => (j.body_a, j.body_b),
         }
     }
 
@@ -348,6 +558,8 @@ impl Joint {
             Joint::Fixed(_) => JointType::Fixed,
             Joint::Slider(_) => JointType::Slider,
             Joint::Spring(_) => JointType::Spring,
+            Joint::D6(_) => JointType::D6,
+            Joint::ConeTwist(_) => JointType::ConeTwist,
         }
     }
 
@@ -360,6 +572,8 @@ impl Joint {
             Joint::Fixed(j) => j.break_force,
             Joint::Slider(j) => j.break_force,
             Joint::Spring(j) => j.break_force,
+            Joint::D6(j) => j.break_force,
+            Joint::ConeTwist(j) => j.break_force,
         }
     }
 
@@ -403,6 +617,16 @@ impl Joint {
                 let displacement = dist - j.rest_length;
                 (j.stiffness * displacement).abs()
             }
+            Joint::D6(j) => {
+                let anchor_a = body_a.position + body_a.rotation.rotate_vec(j.local_anchor_a);
+                let anchor_b = body_b.position + body_b.rotation.rotate_vec(j.local_anchor_b);
+                (anchor_b - anchor_a).length()
+            }
+            Joint::ConeTwist(j) => {
+                let anchor_a = body_a.position + body_a.rotation.rotate_vec(j.local_anchor_a);
+                let anchor_b = body_b.position + body_b.rotation.rotate_vec(j.local_anchor_b);
+                (anchor_b - anchor_a).length()
+            }
         }
     }
 }
@@ -422,6 +646,8 @@ pub fn solve_joints(
             Joint::Fixed(j) => solve_fixed_joint(j, bodies, dt),
             Joint::Slider(j) => solve_slider_joint(j, bodies, dt),
             Joint::Spring(j) => solve_spring_joint(j, bodies, dt),
+            Joint::D6(j) => solve_d6_joint(j, bodies, dt),
+            Joint::ConeTwist(j) => solve_cone_twist_joint(j, bodies, dt),
         }
     }
 }
@@ -459,6 +685,8 @@ pub fn solve_joints_breakable(
             Joint::Fixed(j) => solve_fixed_joint(j, bodies, dt),
             Joint::Slider(j) => solve_slider_joint(j, bodies, dt),
             Joint::Spring(j) => solve_spring_joint(j, bodies, dt),
+            Joint::D6(j) => solve_d6_joint(j, bodies, dt),
+            Joint::ConeTwist(j) => solve_cone_twist_joint(j, bodies, dt),
         }
     }
 
@@ -773,6 +1001,184 @@ fn solve_spring_joint(joint: &SpringJoint, bodies: &mut [crate::solver::RigidBod
     if !body_b.inv_mass.is_zero() {
         bodies[joint.body_b].position =
             bodies[joint.body_b].position - impulse * body_b.inv_mass;
+    }
+}
+
+/// Solve D6 joint: per-axis locking/limiting for all 6 DOF
+fn solve_d6_joint(joint: &D6Joint, bodies: &mut [crate::solver::RigidBody], dt: Fix128) {
+    let body_a = bodies[joint.body_a];
+    let body_b = bodies[joint.body_b];
+
+    // World-space anchors
+    let anchor_a = body_a.position + body_a.rotation.rotate_vec(joint.local_anchor_a);
+    let anchor_b = body_b.position + body_b.rotation.rotate_vec(joint.local_anchor_b);
+    let delta = anchor_b - anchor_a;
+
+    // Get local frame axes in world space
+    let frame_a = body_a.rotation.mul(joint.local_frame_a);
+    let axis_x = frame_a.rotate_vec(Vec3Fix::UNIT_X);
+    let axis_y = frame_a.rotate_vec(Vec3Fix::UNIT_Y);
+    let axis_z = frame_a.rotate_vec(Vec3Fix::UNIT_Z);
+
+    let compliance_term = joint.compliance / (dt * dt);
+    let w_sum = body_a.inv_mass + body_b.inv_mass + compliance_term;
+
+    if !w_sum.is_zero() {
+        // Linear constraints per axis
+        let axes = [(joint.linear_x, axis_x, joint.linear_limit_min.x, joint.linear_limit_max.x),
+                     (joint.linear_y, axis_y, joint.linear_limit_min.y, joint.linear_limit_max.y),
+                     (joint.linear_z, axis_z, joint.linear_limit_min.z, joint.linear_limit_max.z)];
+
+        for &(motion, axis, limit_min, limit_max) in &axes {
+            let proj = delta.dot(axis);
+            let error = match motion {
+                D6Motion::Locked => proj,
+                D6Motion::Limited => {
+                    if proj < limit_min { proj - limit_min }
+                    else if proj > limit_max { proj - limit_max }
+                    else { Fix128::ZERO }
+                }
+                D6Motion::Free => Fix128::ZERO,
+            };
+
+            if !error.is_zero() {
+                let lambda = error / w_sum;
+                let correction = axis * lambda;
+
+                if !body_a.inv_mass.is_zero() {
+                    bodies[joint.body_a].position =
+                        bodies[joint.body_a].position + correction * body_a.inv_mass;
+                }
+                if !body_b.inv_mass.is_zero() {
+                    bodies[joint.body_b].position =
+                        bodies[joint.body_b].position - correction * body_b.inv_mass;
+                }
+            }
+        }
+    }
+
+    // Angular constraints per axis
+    let angular_compliance = joint.angular_compliance / (dt * dt);
+    let w_ang = body_a.inv_inertia.length() + body_b.inv_inertia.length() + angular_compliance;
+
+    if !w_ang.is_zero() {
+        let rel_quat = body_b.rotation.mul(body_a.rotation.conjugate());
+
+        let ang_axes = [(joint.angular_x, axis_x, joint.angular_limit_min.x, joint.angular_limit_max.x),
+                        (joint.angular_y, axis_y, joint.angular_limit_min.y, joint.angular_limit_max.y),
+                        (joint.angular_z, axis_z, joint.angular_limit_min.z, joint.angular_limit_max.z)];
+
+        for &(motion, axis, limit_min, limit_max) in &ang_axes {
+            let angle = compute_twist_angle(rel_quat, axis);
+
+            let error = match motion {
+                D6Motion::Locked => angle,
+                D6Motion::Limited => {
+                    if angle < limit_min { angle - limit_min }
+                    else if angle > limit_max { angle - limit_max }
+                    else { Fix128::ZERO }
+                }
+                D6Motion::Free => Fix128::ZERO,
+            };
+
+            if !error.is_zero() {
+                apply_angular_correction(
+                    bodies,
+                    joint.body_a,
+                    joint.body_b,
+                    axis,
+                    error / w_ang,
+                );
+            }
+        }
+    }
+}
+
+/// Solve cone-twist joint: positional + cone + twist constraints
+fn solve_cone_twist_joint(joint: &ConeTwistJoint, bodies: &mut [crate::solver::RigidBody], dt: Fix128) {
+    let body_a = bodies[joint.body_a];
+    let body_b = bodies[joint.body_b];
+
+    // 1. Positional constraint (same as ball joint)
+    let anchor_a = body_a.position + body_a.rotation.rotate_vec(joint.local_anchor_a);
+    let anchor_b = body_b.position + body_b.rotation.rotate_vec(joint.local_anchor_b);
+    let delta = anchor_b - anchor_a;
+    let distance = delta.length();
+
+    if !distance.is_zero() {
+        let normal = delta / distance;
+        let compliance_term = joint.compliance / (dt * dt);
+        let w_sum = body_a.inv_mass + body_b.inv_mass + compliance_term;
+
+        if !w_sum.is_zero() {
+            let lambda = distance / w_sum;
+            let correction = normal * lambda;
+
+            if !body_a.inv_mass.is_zero() {
+                bodies[joint.body_a].position =
+                    bodies[joint.body_a].position + correction * body_a.inv_mass;
+            }
+            if !body_b.inv_mass.is_zero() {
+                bodies[joint.body_b].position =
+                    bodies[joint.body_b].position - correction * body_b.inv_mass;
+            }
+        }
+    }
+
+    // 2. Cone constraint
+    let world_axis_a = body_a.rotation.rotate_vec(joint.twist_axis_a).normalize();
+    let world_axis_b = body_b.rotation.rotate_vec(joint.twist_axis_b).normalize();
+
+    let dot = world_axis_a.dot(world_axis_b);
+    let cross = world_axis_a.cross(world_axis_b);
+    let cross_len = cross.length();
+    // Use atan2(sin, cos) instead of acos for deterministic fixed-point
+    let cone_angle = Fix128::atan2(cross_len, dot);
+    let cone_angle = if cone_angle < Fix128::ZERO { -cone_angle } else { cone_angle };
+
+    if cone_angle > joint.cone_limit {
+        let error = cone_angle - joint.cone_limit;
+
+        if !cross_len.is_zero() {
+            let angular_compliance = joint.angular_compliance / (dt * dt);
+            let w_ang = body_a.inv_inertia.length() + body_b.inv_inertia.length() + angular_compliance;
+
+            if !w_ang.is_zero() {
+                let correction_axis = cross / cross_len;
+                apply_angular_correction(
+                    bodies,
+                    joint.body_a,
+                    joint.body_b,
+                    correction_axis,
+                    error / w_ang,
+                );
+            }
+        }
+    }
+
+    // 3. Twist constraint
+    let rel_quat = bodies[joint.body_b].rotation.mul(bodies[joint.body_a].rotation.conjugate());
+    let twist_angle = compute_twist_angle(rel_quat, world_axis_a);
+
+    if twist_angle.abs() > joint.twist_limit {
+        let error = if twist_angle > Fix128::ZERO {
+            twist_angle - joint.twist_limit
+        } else {
+            twist_angle + joint.twist_limit
+        };
+
+        let angular_compliance = joint.angular_compliance / (dt * dt);
+        let w_ang = body_a.inv_inertia.length() + body_b.inv_inertia.length() + angular_compliance;
+
+        if !w_ang.is_zero() {
+            apply_angular_correction(
+                bodies,
+                joint.body_a,
+                joint.body_b,
+                world_axis_a,
+                error / w_ang,
+            );
+        }
     }
 }
 

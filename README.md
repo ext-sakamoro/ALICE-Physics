@@ -1,6 +1,6 @@
 # ALICE-Physics
 
-**Deterministic 128-bit Fixed-Point Physics Engine** - v0.3.0
+**Deterministic 128-bit Fixed-Point Physics Engine** - v0.4.0
 
 English | [日本語](README_JP.md)
 
@@ -18,7 +18,7 @@ A high-precision physics engine designed for deterministic simulation across dif
 | **Constraint Batching** | Graph-colored parallel constraint solving |
 | **Rollback Support** | Complete state serialization for netcode |
 | **Neural Controller** | Deterministic AI via ALICE-ML ternary weights + Fix128 inference |
-| **5 Joint Types** | Ball, Hinge, Fixed, Slider, Spring with angle limits, motors, and breakable constraints |
+| **7 Joint Types** | Ball, Hinge, Fixed, Slider, Spring, D6, Cone-Twist with angle limits, motors, and breakable constraints |
 | **Raycasting** | Ray and shape casting against spheres, AABBs, capsules, planes |
 | **Shape Cast / Overlap** | Sphere cast, capsule cast, overlap sphere, overlap AABB queries |
 | **CCD** | Continuous collision detection (TOI, conservative advancement) |
@@ -54,6 +54,20 @@ A high-precision physics engine designed for deterministic simulation across dif
 | **Phase Change** | Solid/liquid/gas transitions driven by temperature |
 | **Deterministic RNG** | PCG-XSH-RR pseudo-random number generator |
 | **Contact Events** | Begin/Persist/End contact and trigger event tracking |
+| **Box/OBB Collider** | Oriented Bounding Box with GJK support and fast AABB |
+| **Compound Shape** | Multi-shape compound collider with local transforms |
+| **Contact Cache** | Persistent manifold cache with HashMap O(1) lookup and warm starting |
+| **Dynamic AABB Tree** | Incremental BVH with O(log n) insert/remove/update, AVL balancing |
+| **D6 Joint** | 6-DOF configurable joint with per-axis lock/free/limit |
+| **Cone-Twist Joint** | Ball joint with cone swing limit and twist limit |
+| **Material Table** | Per-pair friction/restitution with combine rules (Avg, Min, Max, Mul) |
+| **Scaled Shape** | Uniform scale wrapper for any Support-implementing shape |
+| **Speculative CCD** | Speculative contacts for fast-moving bodies without time rewinding |
+| **Featherstone** | O(n) forward dynamics for articulated bodies |
+| **Debug Render** | Wireframe visualization API (bodies, contacts, joints, BVH, forces) |
+| **Profiling** | Per-stage timer and per-frame statistics API |
+| **Substep Interpolation** | WorldSnapshot with NLERP quaternion blending for smooth rendering |
+| **Pipeline** | Pre-solve hooks and contact filtering callbacks |
 | **no_std Compatible** | Works on embedded systems and WebAssembly |
 
 ## Optimizations ("黒焦げ" Edition)
@@ -126,6 +140,50 @@ println!("Batches: {}", world.num_batches());
 - Reduced lock contention
 - Better cache utilization
 
+### 4. HashMap Contact Cache
+
+Contact manifold lookup via `BodyPairKey → usize` HashMap for O(1) access:
+
+```rust
+// O(1) manifold lookup (was O(n) linear scan)
+pub fn find(&self, a: usize, b: usize) -> Option<&ContactManifold> {
+    let key = BodyPairKey::new(a, b);
+    self.pair_index.get(&key).map(|&i| &self.manifolds[i])
+}
+```
+
+Falls back to linear scan for `no_std` environments.
+
+### 5. Rayon Parallel Integration
+
+Enable with `--features parallel`:
+
+Position integration and velocity updates run in parallel via `par_iter_mut()`:
+
+```rust
+// Parallel position integration (gravity + damping + Euler)
+bodies.par_iter_mut().for_each(|body| {
+    body.velocity = body.velocity + gravity * dt;
+    body.velocity = body.velocity * damping;
+    body.position = body.position + body.velocity * dt;
+});
+```
+
+### 6. Python Batch APIs
+
+Zero-copy NumPy batch operations with GIL release:
+
+```python
+# Batch body creation from (N,4) array [x, y, z, mass]
+world.add_bodies_batch(np.array([[0,10,0,1.0], [5,10,0,2.0]]))
+
+# Batch velocity update with GIL release
+world.set_velocities_batch(velocities_array)  # (N,3)
+
+# Combined state output as (N,10) array [px,py,pz,vx,vy,vz,qx,qy,qz,qw]
+states = world.states()
+```
+
 ## Why Deterministic Physics?
 
 Traditional physics engines using IEEE 754 floating-point can produce different results across:
@@ -145,8 +203,8 @@ ALICE-Physics guarantees **bit-exact results** everywhere, enabling:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                          ALICE-Physics v0.3.0                                │
-│                    45 modules, 230 unit tests, 8 doc tests                   │
+│                          ALICE-Physics v0.4.0                                │
+│                    58 modules, 288 unit tests, 10 doc tests                  │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │  Core Layer                                                                  │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐          │
@@ -157,14 +215,32 @@ ALICE-Physics guarantees **bit-exact results** everywhere, enabling:
 │  │ CORDIC   │ │ GJK/EPA  │ │ Rollback │ │  alloc   │ │          │          │
 │  └──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘          │
 │                                                                              │
+│  AAA Engine Layer (v0.4.0)                                                   │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐          │
+│  │box_colldr│ │ compound │ │cont_cache│ │dynamic_bv│ │ material │          │
+│  │ OBB      │ │ Multi-   │ │ HashMap  │ │ Incr BVH │ │ Pair Tbl │          │
+│  │ GJK Supp │ │ Shape    │ │ O(1) Get │ │ AVL Bal  │ │ Combine  │          │
+│  │ Inertia  │ │ Local Tx │ │ Warm Str │ │ O(log n) │ │ Friction │          │
+│  │ Corners  │ │ AABB Mrg │ │ 4-point  │ │ Fat AABB │ │ Restit   │          │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘          │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐                       │
+│  │dbg_rendr │ │profiling │ │ interp   │ │ pipeline │                       │
+│  │ Wireframe│ │ Timers   │ │ Snapshot │ │ PreSolve │                       │
+│  │ Contacts │ │ Per-Stage│ │ NLERP    │ │ Hooks    │                       │
+│  │ Joints   │ │ Stats    │ │ Blend    │ │ Filter   │                       │
+│  │ BVH/AABB │ │ History  │ │ Alpha    │ │ Callback │                       │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────┘                       │
+│                                                                              │
 │  Constraint & Dynamics Layer                                                 │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐          │
 │  │  joint   │ │  motor   │ │articulatn│ │  force   │ │ sleeping │          │
 │  │ Ball     │ │ PD 1D/3D │ │ Ragdoll  │ │ Wind     │ │ Islands  │          │
 │  │ Hinge    │ │ Position │ │ FK Chain │ │ Gravity  │ │ Union-   │          │
 │  │ Fixed    │ │ Velocity │ │ Robotic  │ │ Buoyancy │ │  Find    │          │
-│  │ Slider   │ │ Max Torq │ │ 12-body  │ │ Drag     │ │ Auto     │          │
-│  │ Spring   │ │          │ │          │ │ Vortex   │ │  Sleep   │          │
+│  │ Slider   │ │ Max Torq │ │ Feather- │ │ Drag     │ │ Auto     │          │
+│  │ Spring   │ │          │ │  stone   │ │ Vortex   │ │  Sleep   │          │
+│  │ D6       │ │          │ │ 12-body  │ │          │ │          │          │
+│  │ ConeTwst │ │          │ │          │ │          │ │          │          │
 │  │ Breakable│ │          │ │          │ │          │ │          │          │
 │  └──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘          │
 │                                                                              │
@@ -175,7 +251,7 @@ ALICE-Physics guarantees **bit-exact results** everywhere, enabling:
 │  │ AABB     │ │ Conserv. │ │ BVH-accel│ │ Normal   │ │ Mask     │          │
 │  │ Capsule  │ │ Advance  │ │ Moller-  │ │ Sphere   │ │ Group    │          │
 │  │ Plane    │ │ Swept    │ │ Trumbore │ │ Collide  │ │ Bidirect │          │
-│  │ Sweep    │ │ AABB     │ │ Closest  │ │ Signed   │ │          │          │
+│  │ Sweep    │ │ Specultv │ │ Closest  │ │ Signed   │ │          │          │
 │  └──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘          │
 │  ┌──────────┐ ┌──────────┐                                                  │
 │  │  query   │ │character │                                                  │
@@ -457,7 +533,7 @@ println!("Nodes: {}, Leaves: {}", stats.node_count, stats.leaf_count);
 - **Escape Pointers**: Stackless traversal (zero allocation)
 - **i32 AABB**: Fast integer comparison without Fix128 reconstruction
 
-### `joint` - 5 Joint Types + Breakable Constraints
+### `joint` - 7 Joint Types + Breakable Constraints
 
 | Type | Description |
 |------|-------------|
@@ -466,6 +542,8 @@ println!("Nodes: {}, Leaves: {}", stats.node_count, stats.leaf_count);
 | `FixedJoint` | Weld joint (0 DOF) |
 | `SliderJoint` | Prismatic joint (1 translational DOF) with limits |
 | `SpringJoint` | Damped spring constraint |
+| `D6Joint` | 6-DOF configurable joint with per-axis lock/free/limit |
+| `ConeTwistJoint` | Ball joint with cone swing limit and twist limit |
 
 All joint types support **breakable constraints** via `with_break_force(max_force)`. When the constraint force exceeds the threshold, the joint breaks and is removed from simulation.
 
@@ -474,6 +552,17 @@ use alice_physics::joint::*;
 // Hinge with angle limits
 let hinge = HingeJoint::new(body_a, body_b, anchor_a, anchor_b, axis_a, axis_b)
     .with_limits(-Fix128::HALF_PI, Fix128::HALF_PI);
+
+// D6 joint (lock X translation, free Y rotation, limit Z rotation)
+let d6 = D6Joint::new(body_a, body_b, anchor_a, anchor_b)
+    .with_axis(Axis::LinearX, D6Mode::Locked)
+    .with_axis(Axis::AngularY, D6Mode::Free)
+    .with_axis(Axis::AngularZ, D6Mode::Limited(-Fix128::HALF_PI, Fix128::HALF_PI));
+
+// Cone-twist joint (shoulder-like with cone + twist limits)
+let cone = ConeTwistJoint::new(body_a, body_b, anchor_a, anchor_b, twist_axis)
+    .with_cone_limit(Fix128::from_ratio(45, 1))  // 45° cone
+    .with_twist_limit(Fix128::from_ratio(30, 1)); // 30° twist
 
 // Breakable ball joint (breaks at force > 100)
 let ball = BallJoint::new(body_a, body_b, anchor_a, anchor_b)
@@ -497,9 +586,12 @@ let broken = solve_joints_breakable(&joints, &mut bodies, dt);
 
 | Function | Description |
 |----------|-------------|
-| `time_of_impact_spheres` | Sphere-sphere TOI via quadratic |
+| `sphere_sphere_toi` | Sphere-sphere TOI via quadratic |
+| `sphere_plane_toi` | Sphere-plane TOI |
 | `conservative_advancement` | TOI via iterative safe stepping |
 | `swept_aabb` | Swept AABB bounding volume |
+| `speculative_contact` | Speculative contact for CCD integration with solver |
+| `needs_ccd` | Velocity threshold check for CCD activation |
 
 ### `sleeping` - Sleep & Island System
 
@@ -790,6 +882,96 @@ Deterministic fluid simulation with delta-compressed snapshots for network sync.
 | `Phase` | Solid, Liquid, Gas |
 
 **Effects:** Melting (solid→liquid, flows downward), vaporization (liquid→gas, expands), solidification, condensation
+
+### `box_collider` - Oriented Bounding Box
+
+| Type | Description |
+|------|-------------|
+| `OrientedBox` | OBB with center, half-extents, and rotation quaternion |
+
+**Features:**
+- GJK `Support` trait implementation for collision detection
+- Fast world-space AABB computation from OBB
+- Corner vertices, volume, surface area, inertia tensor
+
+### `compound` - Compound Shape
+
+| Type | Description |
+|------|-------------|
+| `CompoundShape` | Multi-shape collider with local transforms |
+| `ChildShape` | Individual shape + local offset/rotation |
+
+**Features:**
+- Merges child AABBs for broadphase
+- Per-child GJK support (transforms direction to child local space)
+- Mass properties from children
+
+### `contact_cache` - Persistent Contact Cache
+
+| Type | Description |
+|------|-------------|
+| `ContactCache` | Frame-persistent contact manifold storage |
+| `ContactManifold` | Up to 4 contact points with warm-started lambdas |
+
+**Features:**
+- HashMap O(1) manifold lookup by body pair
+- Warm starting (carry lambda across frames for stable stacking)
+- Automatic manifold pruning at end of frame
+
+### `dynamic_bvh` - Dynamic AABB Tree
+
+| Type | Description |
+|------|-------------|
+| `DynamicBvh` | Incremental BVH with insert/remove/update |
+
+**Features:**
+- O(log n) insert, remove, and update operations
+- AVL-style tree balancing (rotation on height imbalance)
+- Fat AABBs with margin to reduce update frequency
+- AABB query and ray query
+
+### `material` - Material Pair Table
+
+| Type | Description |
+|------|-------------|
+| `MaterialTable` | Per-pair friction/restitution override table |
+| `MaterialProperties` | Friction, restitution, combine rule |
+| `CombineRule` | Average, Min, Max, Multiply |
+
+### `debug_render` - Debug Visualization
+
+| Type | Description |
+|------|-------------|
+| `DebugRenderer` | Wireframe rendering of physics state |
+| `DebugLine` | Line segment with color |
+| `DebugDrawFlags` | Bitmask for bodies, contacts, joints, BVH, forces |
+
+### `profiling` - Performance Profiling
+
+| Type | Description |
+|------|-------------|
+| `PhysicsProfiler` | Per-stage timing and statistics |
+| `StageTimer` | Individual stage measurement |
+| `FrameStats` | Broadphase/narrowphase/solver/total times |
+
+### `interpolation` - Substep Interpolation
+
+| Type | Description |
+|------|-------------|
+| `WorldSnapshot` | Captured physics state for interpolation |
+| `interpolate_snapshots` | NLERP blending between two snapshots |
+
+**Features:**
+- Capture position + rotation snapshots
+- NLERP quaternion interpolation (faster than SLERP, visually smooth)
+- Alpha-based blending for fixed-timestep rendering
+
+### `pipeline` - Physics Pipeline
+
+| Type | Description |
+|------|-------------|
+| `PreSolveHook` | Callback invoked before constraint solving |
+| `ContactFilter` | Callback to accept/reject contact pairs |
 
 ## SDF Collider (ALICE-SDF Integration)
 
@@ -1254,9 +1436,10 @@ maturin develop --release --features python
 | Layer | Technique | Effect |
 |-------|-----------|--------|
 | L1 | GIL Release (`py.allow_threads`) | Parallel physics stepping |
-| L2 | Zero-Copy NumPy (`into_pyarray`) | No memcpy for bulk positions/velocities |
-| L3 | Batch API (`step_n`, `positions`) | FFI amortization |
-| L4 | Rust backend (Fix128, XPBD, BVH) | Hardware-speed simulation |
+| L2 | Zero-Copy NumPy (`into_pyarray_bound`) | No memcpy for bulk positions/velocities |
+| L3 | Batch API (`step_n`, `positions`, `states`) | FFI amortization |
+| L4 | Batch Mutation (`add_bodies_batch`, `set_velocities_batch`, `apply_impulses_batch`) | Bulk operations with GIL release |
+| L5 | Rust backend (Fix128, XPBD, BVH) | Hardware-speed simulation |
 
 ### Python API
 
@@ -1297,6 +1480,33 @@ world.deserialize_state(state.tolist())
 # Frame input encoding (20 bytes, network-ready)
 data = alice_physics.encode_frame_input(player_id=0, move_x=1.0, actions=0x3)
 player_id, mx, my, mz, actions, ax, ay, az = alice_physics.decode_frame_input(data)
+
+# === Batch APIs (v0.4.0) ===
+
+import numpy as np
+
+# Batch body creation from (N,4) array [x, y, z, mass]
+ids = world.add_bodies_batch(np.array([
+    [0.0, 10.0, 0.0, 1.0],
+    [5.0, 10.0, 0.0, 2.0],
+    [10.0, 10.0, 0.0, 0.5],
+]))
+
+# Batch velocity update (N,3) with GIL release
+world.set_velocities_batch(np.array([
+    [1.0, 0.0, 0.0],
+    [0.0, 0.0, -1.0],
+    [0.0, 5.0, 0.0],
+]))
+
+# Batch impulse (M,4) [body_id, ix, iy, iz] with GIL release
+world.apply_impulses_batch(np.array([
+    [0.0, 100.0, 0.0, 0.0],
+    [2.0, 0.0, 50.0, 0.0],
+]))
+
+# Combined state output (N,10) [px,py,pz, vx,vy,vz, qx,qy,qz,qw]
+states = world.states()  # shape: (N, 10), zero-copy NumPy
 ```
 
 ## Replay Recording (ALICE-DB Integration)
@@ -1354,10 +1564,10 @@ Each body stores 6 channels (pos_x/y/z, vel_x/y/z) in ALICE-DB. ALICE-DB's model
 ## Test Results
 
 ```
-v0.3.0 Test Summary:
-  - 230 unit tests across 42 modules
-  - 8 doc tests
-  - All feature combinations pass
+v0.4.0 Test Summary:
+  - 288 unit tests across 58 modules
+  - 10 doc tests
+  - All feature combinations pass (default, parallel, simd)
 ```
 
 ## License

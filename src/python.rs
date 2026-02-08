@@ -10,7 +10,7 @@
 //! | L4 | `#[repr(C)]` FrameInput (20 bytes) | Direct buffer cast |
 
 use pyo3::prelude::*;
-use numpy::{PyArray1, PyArray2, IntoPyArray};
+use numpy::{PyArray1, PyArray2, PyReadonlyArray2, IntoPyArray, PyArrayMethods};
 
 use crate::math::{Fix128, Vec3Fix};
 use crate::solver::{PhysicsWorld, PhysicsConfig, RigidBody};
@@ -96,7 +96,7 @@ impl PyPhysicsWorld {
             data.push(y as f64);
             data.push(z as f64);
         }
-        data.into_pyarray(py).reshape([n, 3]).unwrap()
+        data.into_pyarray_bound(py).reshape([n, 3]).unwrap()
     }
 
     /// Get all body velocities as a NumPy (N, 3) float64 array.
@@ -109,7 +109,7 @@ impl PyPhysicsWorld {
             data.push(y as f64);
             data.push(z as f64);
         }
-        data.into_pyarray(py).reshape([n, 3]).unwrap()
+        data.into_pyarray_bound(py).reshape([n, 3]).unwrap()
     }
 
     /// Get a single body's position as (x, y, z) tuple.
@@ -133,7 +133,7 @@ impl PyPhysicsWorld {
     /// Serialize the entire world state to bytes (for rollback/save).
     fn serialize_state<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<u8>> {
         let data = py.allow_threads(|| self.inner.serialize_state());
-        data.into_pyarray(py)
+        data.into_pyarray_bound(py)
     }
 
     /// Restore world state from bytes.
@@ -144,6 +144,154 @@ impl PyPhysicsWorld {
     /// Number of bodies in the world.
     fn body_count(&self) -> usize {
         self.inner.bodies.len()
+    }
+
+    /// Add multiple dynamic bodies from a NumPy (N, 4) array.
+    ///
+    /// Columns: x, y, z, mass. Returns list of body indices.
+    fn add_bodies_batch(&mut self, data: PyReadonlyArray2<f64>) -> PyResult<Vec<usize>> {
+        let array = data.as_array();
+        let shape = array.shape();
+
+        if shape.len() != 2 || shape[1] != 4 {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "Expected (N, 4) array with columns [x, y, z, mass]"
+            ));
+        }
+
+        let n = shape[0];
+        let mut indices = Vec::with_capacity(n);
+
+        for i in 0..n {
+            let x = array[[i, 0]];
+            let y = array[[i, 1]];
+            let z = array[[i, 2]];
+            let mass = array[[i, 3]];
+
+            let body = RigidBody::new_dynamic(
+                Vec3Fix::from_f32(x as f32, y as f32, z as f32),
+                Fix128::from_f64(mass),
+            );
+            let idx = self.inner.add_body(body);
+            indices.push(idx);
+        }
+
+        Ok(indices)
+    }
+
+    /// Set velocities for all bodies from a NumPy (N, 3) array.
+    ///
+    /// GIL released during the update.
+    fn set_velocities_batch(&mut self, py: Python<'_>, data: PyReadonlyArray2<f64>) -> PyResult<()> {
+        let array = data.as_array();
+        let shape = array.shape();
+
+        if shape.len() != 2 || shape[1] != 3 {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "Expected (N, 3) array with columns [vx, vy, vz]"
+            ));
+        }
+
+        let n = shape[0];
+        if n != self.inner.bodies.len() {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                format!("Array size {} does not match body count {}", n, self.inner.bodies.len())
+            ));
+        }
+
+        // Collect velocities before GIL release
+        let velocities: Vec<Vec3Fix> = (0..n)
+            .map(|i| {
+                let vx = array[[i, 0]];
+                let vy = array[[i, 1]];
+                let vz = array[[i, 2]];
+                Vec3Fix::from_f32(vx as f32, vy as f32, vz as f32)
+            })
+            .collect();
+
+        py.allow_threads(|| {
+            for (i, vel) in velocities.into_iter().enumerate() {
+                self.inner.bodies[i].velocity = vel;
+            }
+        });
+
+        Ok(())
+    }
+
+    /// Apply impulses to specified bodies. data is (M, 4) where columns are: body_id, ix, iy, iz
+    fn apply_impulses_batch(&mut self, py: Python<'_>, data: PyReadonlyArray2<f64>) -> PyResult<()> {
+        let array = data.as_array();
+        let shape = array.shape();
+
+        if shape.len() != 2 || shape[1] != 4 {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "Expected (M, 4) array with columns [body_id, ix, iy, iz]"
+            ));
+        }
+
+        let m = shape[0];
+
+        // Collect impulses before GIL release
+        let impulses: Vec<(usize, Vec3Fix)> = (0..m)
+            .map(|i| {
+                let body_id = array[[i, 0]] as usize;
+                let ix = array[[i, 1]];
+                let iy = array[[i, 2]];
+                let iz = array[[i, 3]];
+                (body_id, Vec3Fix::from_f32(ix as f32, iy as f32, iz as f32))
+            })
+            .collect();
+
+        // Validate body IDs
+        let body_count = self.inner.bodies.len();
+        for (body_id, _) in &impulses {
+            if *body_id >= body_count {
+                return Err(pyo3::exceptions::PyIndexError::new_err(
+                    format!("body_id {} out of range (max: {})", body_id, body_count - 1)
+                ));
+            }
+        }
+
+        py.allow_threads(|| {
+            for (body_id, impulse) in impulses {
+                // Apply impulse: v += impulse / mass
+                let inv_mass = self.inner.bodies[body_id].inv_mass;
+                if !inv_mass.is_zero() {
+                    self.inner.bodies[body_id].velocity =
+                        self.inner.bodies[body_id].velocity + impulse * inv_mass;
+                }
+            }
+        });
+
+        Ok(())
+    }
+
+    /// Get all body states as NumPy (N, 10) array: [px,py,pz, vx,vy,vz, qx,qy,qz,qw]
+    fn states<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray2<f64>> {
+        let n = self.inner.bodies.len();
+        let mut data = Vec::with_capacity(n * 10);
+
+        for body in &self.inner.bodies {
+            let (px, py, pz) = body.position.to_f32();
+            let (vx, vy, vz) = body.velocity.to_f32();
+            let qx = body.rotation.x.to_f32();
+            let qy = body.rotation.y.to_f32();
+            let qz = body.rotation.z.to_f32();
+            let qw = body.rotation.w.to_f32();
+
+            data.push(px as f64);
+            data.push(py as f64);
+            data.push(pz as f64);
+            data.push(vx as f64);
+            data.push(vy as f64);
+            data.push(vz as f64);
+            data.push(qx as f64);
+            data.push(qy as f64);
+            data.push(qz as f64);
+            data.push(qw as f64);
+        }
+
+        data.into_pyarray_bound(py).reshape([n, 10]).unwrap()
     }
 
     fn __repr__(&self) -> String {
@@ -267,7 +415,7 @@ impl PyDeterministicSimulation {
             data.push(y as f64);
             data.push(z as f64);
         }
-        data.into_pyarray(py).reshape([n, 3]).unwrap()
+        data.into_pyarray_bound(py).reshape([n, 3]).unwrap()
     }
 
     fn __repr__(&self) -> String {

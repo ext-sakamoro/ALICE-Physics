@@ -284,6 +284,64 @@ fn slab_test(
     Some((t0, t1))
 }
 
+/// Speculative contact for CCD integration with the solver
+///
+/// Instead of rewinding time to TOI, creates a contact constraint
+/// at the predicted collision point with a negative depth (gap).
+/// The solver then prevents penetration by maintaining the gap.
+pub fn speculative_contact(
+    pos_a: Vec3Fix,
+    vel_a: Vec3Fix,
+    radius_a: Fix128,
+    pos_b: Vec3Fix,
+    vel_b: Vec3Fix,
+    radius_b: Fix128,
+    dt: Fix128,
+) -> Option<crate::collider::Contact> {
+    let rel_pos = pos_b - pos_a;
+    let dist = rel_pos.length();
+    let combined_r = radius_a + radius_b;
+
+    if dist.is_zero() {
+        return None;
+    }
+
+    let normal = rel_pos / dist;
+    let gap = dist - combined_r;
+
+    // Already overlapping — regular contact
+    if gap <= Fix128::ZERO {
+        return Some(crate::collider::Contact {
+            depth: -gap,
+            normal,
+            point_a: pos_a + normal * radius_a,
+            point_b: pos_b - normal * radius_b,
+        });
+    }
+
+    // Check if closing velocity will breach the gap within dt
+    let rel_vel = vel_b - vel_a;
+    let closing_speed = -rel_vel.dot(normal);
+
+    if closing_speed <= Fix128::ZERO {
+        return None; // Moving apart
+    }
+
+    let predicted_gap = gap - closing_speed * dt;
+
+    if predicted_gap < Fix128::ZERO {
+        // Speculative contact: depth = predicted penetration
+        Some(crate::collider::Contact {
+            depth: -predicted_gap,
+            normal,
+            point_a: pos_a + normal * radius_a,
+            point_b: pos_b - normal * radius_b,
+        })
+    } else {
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -388,5 +446,36 @@ mod tests {
         );
 
         assert!(toi.is_some(), "Should find collision via conservative advancement");
+    }
+
+    #[test]
+    fn test_speculative_contact_closing() {
+        let dt = Fix128::from_ratio(1, 60);
+        // gap=4, closing_speed=300, predicted_gap = 4 - 300/60 = -1 < 0
+        let contact = speculative_contact(
+            Vec3Fix::from_int(-3, 0, 0),
+            Vec3Fix::from_int(300, 0, 0),
+            Fix128::ONE,
+            Vec3Fix::from_int(3, 0, 0),
+            Vec3Fix::ZERO,
+            Fix128::ONE,
+            dt,
+        );
+        assert!(contact.is_some(), "Fast-closing spheres should generate speculative contact");
+    }
+
+    #[test]
+    fn test_speculative_contact_separating() {
+        let dt = Fix128::from_ratio(1, 60);
+        let contact = speculative_contact(
+            Vec3Fix::from_int(-3, 0, 0),
+            Vec3Fix::from_int(-10, 0, 0), // moving away
+            Fix128::ONE,
+            Vec3Fix::from_int(3, 0, 0),
+            Vec3Fix::ZERO,
+            Fix128::ONE,
+            dt,
+        );
+        assert!(contact.is_none(), "Separating spheres should not generate contact");
     }
 }

@@ -267,6 +267,106 @@ impl TriMesh {
         deepest
     }
 
+    /// Capsule vs TriMesh collision: find deepest contact
+    pub fn collide_capsule(&self, a: Vec3Fix, b: Vec3Fix, radius: Fix128) -> Option<Contact> {
+        let cap_min = Vec3Fix::new(
+            if a.x < b.x { a.x } else { b.x } - radius,
+            if a.y < b.y { a.y } else { b.y } - radius,
+            if a.z < b.z { a.z } else { b.z } - radius,
+        );
+        let cap_max = Vec3Fix::new(
+            if a.x > b.x { a.x } else { b.x } + radius,
+            if a.y > b.y { a.y } else { b.y } + radius,
+            if a.z > b.z { a.z } else { b.z } + radius,
+        );
+        let query = AABB::new(cap_min, cap_max);
+        let candidates = self.bvh.query(&query);
+
+        let mut deepest: Option<Contact> = None;
+        let mut max_depth = Fix128::ZERO;
+
+        for tri_idx in candidates {
+            let tri = &self.triangles[tri_idx as usize];
+            // Find closest point on capsule segment to closest point on triangle
+            let tri_cp = closest_point_segment_triangle(a, b, tri);
+            let seg_cp = closest_point_on_segment(a, b, tri_cp);
+            let delta = seg_cp - tri_cp;
+            let dist_sq = delta.length_squared();
+            let r_sq = radius * radius;
+
+            if dist_sq < r_sq {
+                let dist = dist_sq.sqrt();
+                let depth = radius - dist;
+                if depth > max_depth {
+                    max_depth = depth;
+                    let normal = if dist.is_zero() {
+                        tri.unit_normal()
+                    } else {
+                        delta / dist
+                    };
+                    deepest = Some(Contact {
+                        depth,
+                        normal,
+                        point_a: seg_cp - normal * radius,
+                        point_b: tri_cp,
+                    });
+                }
+            }
+        }
+        deepest
+    }
+
+    /// AABB (box) vs TriMesh collision: find deepest contact
+    ///
+    /// Treats the AABB as a sphere at its center with radius = half-diagonal
+    /// for broad candidate selection, then does closest-point per triangle.
+    pub fn collide_aabb(&self, aabb: &AABB) -> Option<Contact> {
+        let candidates = self.bvh.query(aabb);
+        let center = (aabb.min + aabb.max) * Fix128::from_ratio(1, 2);
+        let half = (aabb.max - aabb.min) * Fix128::from_ratio(1, 2);
+
+        let mut deepest: Option<Contact> = None;
+        let mut max_depth = Fix128::ZERO;
+
+        for tri_idx in candidates {
+            let tri = &self.triangles[tri_idx as usize];
+            let cp = tri.closest_point(center);
+            let delta = center - cp;
+
+            // Check if closest point is within the AABB extents
+            let dx = delta.x.abs();
+            let dy = delta.y.abs();
+            let dz = delta.z.abs();
+
+            if dx <= half.x && dy <= half.y && dz <= half.z {
+                // Inside AABB - compute penetration along triangle normal
+                let normal = tri.unit_normal();
+                let proj = delta.dot(normal).abs();
+                let depth = if proj.is_zero() {
+                    // Fallback: use half extent along normal
+                    let n_abs = Vec3Fix::new(normal.x.abs(), normal.y.abs(), normal.z.abs());
+                    half.x * n_abs.x + half.y * n_abs.y + half.z * n_abs.z
+                } else {
+                    let n_abs = Vec3Fix::new(normal.x.abs(), normal.y.abs(), normal.z.abs());
+                    let half_proj = half.x * n_abs.x + half.y * n_abs.y + half.z * n_abs.z;
+                    half_proj - delta.dot(normal).abs()
+                };
+
+                if depth > max_depth && depth > Fix128::ZERO {
+                    max_depth = depth;
+                    let sign = if delta.dot(normal) >= Fix128::ZERO { normal } else { -normal };
+                    deepest = Some(Contact {
+                        depth,
+                        normal: sign,
+                        point_a: center - sign * depth,
+                        point_b: cp,
+                    });
+                }
+            }
+        }
+        deepest
+    }
+
     /// Number of triangles
     #[inline]
     pub fn triangle_count(&self) -> usize {
@@ -331,6 +431,29 @@ fn ray_to_aabb(ray: &Ray, max_t: Fix128) -> AABB {
             if ray.origin.z > end.z { ray.origin.z + one } else { end.z + one },
         ),
     )
+}
+
+/// Closest point on a line segment to a target point
+fn closest_point_on_segment(a: Vec3Fix, b: Vec3Fix, p: Vec3Fix) -> Vec3Fix {
+    let ab = b - a;
+    let len_sq = ab.length_squared();
+    if len_sq.is_zero() {
+        return a;
+    }
+    let t = (p - a).dot(ab) / len_sq;
+    let t = if t < Fix128::ZERO { Fix128::ZERO } else if t > Fix128::ONE { Fix128::ONE } else { t };
+    a + ab * t
+}
+
+/// Closest point on triangle to a segment — finds the closest point on the triangle
+/// to the closest point on the segment, iterating once for convergence.
+fn closest_point_segment_triangle(seg_a: Vec3Fix, seg_b: Vec3Fix, tri: &Triangle) -> Vec3Fix {
+    // First: closest point on triangle to segment midpoint
+    let mid = (seg_a + seg_b) * Fix128::from_ratio(1, 2);
+    let cp1 = tri.closest_point(mid);
+    // Then: closest point on segment to that, then back to triangle
+    let seg_cp = closest_point_on_segment(seg_a, seg_b, cp1);
+    tri.closest_point(seg_cp)
 }
 
 #[inline]
@@ -435,5 +558,29 @@ mod tests {
         // Point above triangle center
         let cp = tri.closest_point(Vec3Fix::from_int(3, 5, 3));
         assert_eq!(cp.y.hi, 0, "Closest point should be on triangle plane (y=0)");
+    }
+
+    #[test]
+    fn test_capsule_trimesh_collision() {
+        let mesh = make_ground_mesh();
+        // Capsule straddling the ground plane
+        let contact = mesh.collide_capsule(
+            Vec3Fix::from_int(0, -1, 0),
+            Vec3Fix::from_int(0, 1, 0),
+            Fix128::from_ratio(5, 10), // radius 0.5
+        );
+        assert!(contact.is_some(), "Capsule should collide with ground mesh");
+    }
+
+    #[test]
+    fn test_aabb_trimesh_collision() {
+        let mesh = make_ground_mesh();
+        // AABB overlapping with ground plane
+        let aabb = AABB::new(
+            Vec3Fix::from_int(-1, -1, -1),
+            Vec3Fix::from_int(1, 1, 1),
+        );
+        let contact = mesh.collide_aabb(&aabb);
+        assert!(contact.is_some(), "AABB should collide with ground mesh");
     }
 }

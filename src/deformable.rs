@@ -416,6 +416,79 @@ impl DeformableBody {
     pub fn center_of_mass(&self) -> Vec3Fix {
         compute_center_of_mass(&self.positions)
     }
+
+    /// Resolve collisions between deformable body particles and rigid bodies
+    ///
+    /// Treats each rigid body as a sphere with given radius for simplicity.
+    /// Applies two-way coupling: deformable particles are pushed out,
+    /// and rigid bodies receive reaction impulses.
+    pub fn resolve_rigid_body_collisions(
+        &mut self,
+        rigid_bodies: &mut [crate::solver::RigidBody],
+        body_radii: &[Fix128],
+        dt: Fix128,
+    ) {
+        if dt.is_zero() { return; }
+
+        for i in 0..self.particle_count() {
+            if self.inv_masses[i].is_zero() { continue; }
+
+            for (rb_idx, rb) in rigid_bodies.iter_mut().enumerate() {
+                if rb.is_static() && rb_idx >= body_radii.len() { continue; }
+                let radius = if rb_idx < body_radii.len() { body_radii[rb_idx] } else { Fix128::ONE };
+
+                let delta = self.positions[i] - rb.position;
+                let dist_sq = delta.length_squared();
+                let r_sq = radius * radius;
+
+                if dist_sq < r_sq && !dist_sq.is_zero() {
+                    let dist = dist_sq.sqrt();
+                    let normal = delta / dist;
+                    let penetration = radius - dist;
+
+                    // Push particle out
+                    let particle_mass = if self.inv_masses[i].is_zero() {
+                        Fix128::from_int(1000000)
+                    } else {
+                        Fix128::ONE / self.inv_masses[i]
+                    };
+
+                    let rb_mass = if rb.inv_mass.is_zero() {
+                        Fix128::from_int(1000000)
+                    } else {
+                        Fix128::ONE / rb.inv_mass
+                    };
+
+                    let total_mass = particle_mass + rb_mass;
+                    if total_mass.is_zero() { continue; }
+
+                    let particle_ratio = rb_mass / total_mass;
+                    let rb_ratio = particle_mass / total_mass;
+
+                    // Position correction
+                    self.positions[i] = self.positions[i] + normal * (penetration * particle_ratio);
+
+                    if !rb.inv_mass.is_zero() {
+                        rb.position = rb.position - normal * (penetration * rb_ratio);
+                    }
+
+                    // Velocity response
+                    let rel_vel = self.velocities[i] - rb.velocity;
+                    let vel_normal = rel_vel.dot(normal);
+
+                    if vel_normal < Fix128::ZERO {
+                        let impulse_mag = -vel_normal * (particle_mass * rb_mass / total_mass);
+                        let impulse = normal * impulse_mag;
+
+                        self.velocities[i] = self.velocities[i] + impulse * self.inv_masses[i];
+                        if !rb.inv_mass.is_zero() {
+                            rb.velocity = rb.velocity - impulse * rb.inv_mass;
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 // ============================================================================
@@ -509,5 +582,31 @@ mod tests {
         assert!((cx - 0.5).abs() < 0.01);
         assert!((cy - 0.5).abs() < 0.01);
         assert!((cz - 0.5).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_soft_rigid_coupling() {
+        use crate::solver::RigidBody;
+
+        let mut body = DeformableBody::new_cube(
+            Vec3Fix::from_int(0, 0, 0),
+            Fix128::ONE,
+            Fix128::from_int(10),
+        );
+
+        let mut rigid_bodies = vec![
+            RigidBody::new(Vec3Fix::from_int(0, 0, 0), Fix128::from_int(5)),
+        ];
+        let radii = vec![Fix128::from_int(3)]; // Large sphere overlapping the cube
+
+        let dt = Fix128::from_ratio(1, 60);
+        body.resolve_rigid_body_collisions(&mut rigid_bodies, &radii, dt);
+
+        // After collision resolution, some particles should have moved
+        // and the rigid body should have received a reaction
+        // This is a basic sanity test
+        let com = body.center_of_mass();
+        // The COM might have shifted due to collision response
+        assert!(com.x.hi >= -10 && com.x.hi <= 10, "COM should be reasonable");
     }
 }

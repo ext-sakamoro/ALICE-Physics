@@ -288,6 +288,14 @@ pub struct ConstraintBatch {
     pub contact_indices: Vec<usize>,
 }
 
+/// Pre-solve contact hook callback type
+///
+/// Called before each contact is solved. Return `false` to skip this contact.
+/// This allows game logic to filter contacts (e.g., one-way platforms,
+/// character controllers that ignore certain collisions).
+#[cfg(feature = "std")]
+pub type PreSolveHook = Box<dyn Fn(usize, usize, &Contact) -> bool + Send + Sync>;
+
 /// XPBD physics world with batched constraint solving
 pub struct PhysicsWorld {
     /// Solver configuration
@@ -306,6 +314,15 @@ pub struct PhysicsWorld {
     constraint_batches: Vec<ConstraintBatch>,
     /// Whether batches need recomputation
     batches_dirty: bool,
+    /// Contact manifold cache for warm starting
+    pub contact_cache: crate::contact_cache::ContactCache,
+    /// Material pair lookup table
+    pub material_table: crate::material::MaterialTable,
+    /// Per-body material IDs
+    pub body_materials: Vec<crate::material::MaterialId>,
+    /// Pre-solve contact hooks (called before contact resolution)
+    #[cfg(feature = "std")]
+    pre_solve_hooks: Vec<PreSolveHook>,
 }
 
 impl PhysicsWorld {
@@ -320,6 +337,11 @@ impl PhysicsWorld {
             sdf_collision_radius: Fix128::from_ratio(1, 2), // 0.5 default
             constraint_batches: Vec::new(),
             batches_dirty: true,
+            contact_cache: crate::contact_cache::ContactCache::new(),
+            material_table: crate::material::MaterialTable::new(),
+            body_materials: Vec::new(),
+            #[cfg(feature = "std")]
+            pre_solve_hooks: Vec::new(),
         }
     }
 
@@ -327,7 +349,55 @@ impl PhysicsWorld {
     pub fn add_body(&mut self, body: RigidBody) -> usize {
         let idx = self.bodies.len();
         self.bodies.push(body);
+        self.body_materials.push(crate::material::DEFAULT_MATERIAL);
         idx
+    }
+
+    /// Set a body's material ID
+    pub fn set_body_material(&mut self, body_idx: usize, material_id: crate::material::MaterialId) {
+        if body_idx < self.body_materials.len() {
+            self.body_materials[body_idx] = material_id;
+        }
+    }
+
+    /// Add a pre-solve contact hook
+    ///
+    /// The hook is called with (body_a_index, body_b_index, &contact).
+    /// Return `false` to skip the contact (e.g., for one-way platforms).
+    #[cfg(feature = "std")]
+    pub fn add_pre_solve_hook(&mut self, hook: PreSolveHook) {
+        self.pre_solve_hooks.push(hook);
+    }
+
+    /// Clear all pre-solve hooks
+    #[cfg(feature = "std")]
+    pub fn clear_pre_solve_hooks(&mut self) {
+        self.pre_solve_hooks.clear();
+    }
+
+    /// Begin a new simulation frame (updates contact cache lifecycle)
+    pub fn begin_frame(&mut self) {
+        self.contact_cache.begin_frame();
+    }
+
+    /// End a simulation frame (prune old contacts from cache)
+    pub fn end_frame(&mut self) {
+        self.contact_cache.end_frame();
+    }
+
+    /// Get combined material properties for a body pair
+    pub fn combined_material(&self, body_a: usize, body_b: usize) -> crate::material::CombinedMaterial {
+        let mat_a = if body_a < self.body_materials.len() {
+            self.body_materials[body_a]
+        } else {
+            crate::material::DEFAULT_MATERIAL
+        };
+        let mat_b = if body_b < self.body_materials.len() {
+            self.body_materials[body_b]
+        } else {
+            crate::material::DEFAULT_MATERIAL
+        };
+        self.material_table.combine(mat_a, mat_b)
     }
 
     /// Add distance constraint
@@ -338,8 +408,36 @@ impl PhysicsWorld {
 
     /// Add contact constraint
     pub fn add_contact(&mut self, contact: ContactConstraint) {
+        // Update contact cache for warm starting
+        let key = crate::contact_cache::BodyPairKey::new(contact.body_a, contact.body_b);
+        let manifold = self.contact_cache.get_or_create(
+            key,
+            contact.friction,
+            contact.restitution,
+        );
+        manifold.add_or_update(
+            &contact.contact,
+            contact.contact.point_a,
+            contact.contact.point_b,
+        );
+
         self.contact_constraints.push(contact);
         self.batches_dirty = true;
+    }
+
+    /// Add contact constraint with material lookup
+    ///
+    /// Automatically looks up friction/restitution from the material table.
+    pub fn add_contact_with_material(&mut self, body_a: usize, body_b: usize, contact: Contact) {
+        let combined = self.combined_material(body_a, body_b);
+        let constraint = ContactConstraint {
+            body_a,
+            body_b,
+            contact,
+            friction: combined.friction,
+            restitution: combined.restitution,
+        };
+        self.add_contact(constraint);
     }
 
     /// Clear all contact constraints (call before collision detection)
@@ -503,31 +601,67 @@ impl PhysicsWorld {
     /// Integrate positions (shared between sequential and batched)
     #[inline]
     fn integrate_positions(&mut self, dt: Fix128) {
-        for body in &mut self.bodies {
-            if body.is_static() {
-                continue;
-            }
+        #[cfg(feature = "parallel")]
+        {
+            let gravity = self.config.gravity;
+            let damping = self.config.damping;
+            self.bodies.par_iter_mut().for_each(|body| {
+                if body.is_static() {
+                    return;
+                }
 
-            // Store previous state
-            body.prev_position = body.position;
-            body.prev_rotation = body.rotation;
+                // Store previous state
+                body.prev_position = body.position;
+                body.prev_rotation = body.rotation;
 
-            // Apply gravity
-            body.velocity = body.velocity + self.config.gravity * dt;
+                // Apply gravity
+                body.velocity = body.velocity + gravity * dt;
 
-            // Apply damping
-            body.velocity = body.velocity * self.config.damping;
-            body.angular_velocity = body.angular_velocity * self.config.damping;
+                // Apply damping
+                body.velocity = body.velocity * damping;
+                body.angular_velocity = body.angular_velocity * damping;
 
-            // Predict position
-            body.position = body.position + body.velocity * dt;
+                // Predict position
+                body.position = body.position + body.velocity * dt;
 
-            // Predict rotation (simplified: small angle approximation)
-            let angle = body.angular_velocity.length() * dt;
-            if !angle.is_zero() {
-                let axis = body.angular_velocity.normalize();
-                let delta_rot = QuatFix::from_axis_angle(axis, angle);
-                body.rotation = delta_rot.mul(body.rotation).normalize();
+                // Predict rotation (simplified: small angle approximation)
+                let angle = body.angular_velocity.length() * dt;
+                if !angle.is_zero() {
+                    let axis = body.angular_velocity.normalize();
+                    let delta_rot = QuatFix::from_axis_angle(axis, angle);
+                    body.rotation = delta_rot.mul(body.rotation).normalize();
+                }
+            });
+        }
+
+        #[cfg(not(feature = "parallel"))]
+        {
+            for body in &mut self.bodies {
+                if body.is_static() {
+                    continue;
+                }
+
+                // Store previous state
+                body.prev_position = body.position;
+                body.prev_rotation = body.rotation;
+
+                // Apply gravity
+                body.velocity = body.velocity + self.config.gravity * dt;
+
+                // Apply damping
+                body.velocity = body.velocity * self.config.damping;
+                body.angular_velocity = body.angular_velocity * self.config.damping;
+
+                // Predict position
+                body.position = body.position + body.velocity * dt;
+
+                // Predict rotation (simplified: small angle approximation)
+                let angle = body.angular_velocity.length() * dt;
+                if !angle.is_zero() {
+                    let axis = body.angular_velocity.normalize();
+                    let delta_rot = QuatFix::from_axis_angle(axis, angle);
+                    body.rotation = delta_rot.mul(body.rotation).normalize();
+                }
             }
         }
     }
@@ -536,13 +670,29 @@ impl PhysicsWorld {
     #[inline]
     fn update_velocities(&mut self, dt: Fix128) {
         let inv_dt = Fix128::ONE / dt;
-        for body in &mut self.bodies {
-            if body.is_static() {
-                continue;
-            }
 
-            body.velocity = (body.position - body.prev_position) * inv_dt;
-            // Angular velocity update (simplified)
+        #[cfg(feature = "parallel")]
+        {
+            self.bodies.par_iter_mut().for_each(|body| {
+                if body.is_static() {
+                    return;
+                }
+
+                body.velocity = (body.position - body.prev_position) * inv_dt;
+                // Angular velocity update (simplified)
+            });
+        }
+
+        #[cfg(not(feature = "parallel"))]
+        {
+            for body in &mut self.bodies {
+                if body.is_static() {
+                    continue;
+                }
+
+                body.velocity = (body.position - body.prev_position) * inv_dt;
+                // Angular velocity update (simplified)
+            }
         }
     }
 
@@ -694,7 +844,7 @@ impl PhysicsWorld {
         }
     }
 
-    /// Solve contact constraints
+    /// Solve contact constraints with pre-solve hook support
     fn solve_contact_constraints(&mut self, _dt: Fix128) {
         let num_constraints = self.contact_constraints.len();
         for i in 0..num_constraints {
@@ -708,6 +858,19 @@ impl PhysicsWorld {
             }
 
             let contact = constraint.contact;
+
+            // Pre-solve hook: allow game logic to filter contacts
+            #[cfg(feature = "std")]
+            {
+                let mut skip = false;
+                for hook in &self.pre_solve_hooks {
+                    if !hook(constraint.body_a, constraint.body_b, &contact) {
+                        skip = true;
+                        break;
+                    }
+                }
+                if skip { continue; }
+            }
 
             // Only resolve if penetrating
             if contact.depth <= Fix128::ZERO {
@@ -1011,6 +1174,50 @@ mod tests {
         let state2 = run_simulation();
 
         assert_eq!(state1, state2, "Simulation must be deterministic");
+    }
+
+    #[test]
+    fn test_body_material_assignment() {
+        let config = SolverConfig::default();
+        let mut world = PhysicsWorld::new(config);
+
+        let metal_id = world.material_table.register_metal();
+        let rubber_id = world.material_table.register_rubber();
+
+        let a = world.add_body(RigidBody::new(Vec3Fix::ZERO, Fix128::ONE));
+        let b = world.add_body(RigidBody::new(Vec3Fix::from_int(2, 0, 0), Fix128::ONE));
+
+        world.set_body_material(a, metal_id);
+        world.set_body_material(b, rubber_id);
+
+        let combined = world.combined_material(a, b);
+        assert!(combined.friction > Fix128::ZERO, "Combined friction should be positive");
+    }
+
+    #[test]
+    fn test_contact_cache_integration() {
+        let config = SolverConfig::default();
+        let mut world = PhysicsWorld::new(config);
+
+        let a = world.add_body(RigidBody::new(Vec3Fix::ZERO, Fix128::ONE));
+        let b = world.add_body(RigidBody::new(Vec3Fix::from_int(1, 0, 0), Fix128::ONE));
+
+        world.begin_frame();
+
+        let contact = Contact {
+            depth: Fix128::from_ratio(1, 10),
+            normal: Vec3Fix::UNIT_X,
+            point_a: Vec3Fix::from_int(1, 0, 0),
+            point_b: Vec3Fix::from_int(1, 0, 0),
+        };
+        world.add_contact_with_material(a, b, contact);
+
+        world.end_frame();
+
+        // Contact cache should have the manifold
+        let key = crate::contact_cache::BodyPairKey::new(a, b);
+        let manifold = world.contact_cache.find(&key);
+        assert!(manifold.is_some(), "Contact cache should contain the manifold");
     }
 
     #[test]

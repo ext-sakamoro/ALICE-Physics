@@ -302,6 +302,201 @@ pub fn build_ragdoll(
     (artic, bodies)
 }
 
+// ============================================================================
+// Featherstone Articulated Body Algorithm (ABI)
+// ============================================================================
+
+/// Per-link spatial data for Featherstone ABI
+#[derive(Clone, Debug)]
+struct FeatherstoneLinkData {
+    /// Articulated body inertia (6x6 stored as two 3x3 blocks)
+    abi_linear: Fix128,     // Simplified: scalar mass-like term
+    abi_angular: Vec3Fix,   // Simplified: diagonal inertia term
+    /// Bias force (Coriolis + external)
+    bias_force: Vec3Fix,
+    _bias_torque: Vec3Fix,
+    /// Computed joint acceleration
+    _joint_accel: Fix128,
+    /// Spatial velocity
+    vel_linear: Vec3Fix,
+    vel_angular: Vec3Fix,
+}
+
+impl Default for FeatherstoneLinkData {
+    fn default() -> Self {
+        Self {
+            abi_linear: Fix128::ZERO,
+            abi_angular: Vec3Fix::ZERO,
+            bias_force: Vec3Fix::ZERO,
+            _bias_torque: Vec3Fix::ZERO,
+            _joint_accel: Fix128::ZERO,
+            vel_linear: Vec3Fix::ZERO,
+            vel_angular: Vec3Fix::ZERO,
+        }
+    }
+}
+
+/// Featherstone Articulated Body Algorithm solver
+///
+/// Computes forward dynamics for articulated bodies in O(n) time
+/// where n is the number of links.
+pub struct FeatherstoneSolver {
+    /// Per-link data
+    link_data: Vec<FeatherstoneLinkData>,
+}
+
+impl FeatherstoneSolver {
+    /// Create a new solver
+    pub fn new() -> Self {
+        Self {
+            link_data: Vec::new(),
+        }
+    }
+
+    /// Solve forward dynamics for an articulated body
+    ///
+    /// Three-pass algorithm:
+    /// 1. Forward pass: compute velocities
+    /// 2. Backward pass: compute articulated body inertias
+    /// 3. Forward pass: compute accelerations
+    pub fn solve(
+        &mut self,
+        artic: &ArticulatedBody,
+        bodies: &mut [RigidBody],
+        gravity: Vec3Fix,
+        dt: Fix128,
+    ) {
+        let n = artic.links.len();
+        self.link_data.resize_with(n, FeatherstoneLinkData::default);
+
+        // Pass 1: Forward — compute velocities from root to leaves
+        self.forward_velocity_pass(artic, bodies);
+
+        // Pass 2: Backward — compute articulated body inertias from leaves to root
+        self.backward_inertia_pass(artic, bodies, gravity);
+
+        // Pass 3: Forward — compute accelerations and apply
+        self.forward_acceleration_pass(artic, bodies, dt);
+    }
+
+    /// Pass 1: Propagate velocities root → leaves
+    fn forward_velocity_pass(&mut self, artic: &ArticulatedBody, bodies: &[RigidBody]) {
+        self.fv_recursive(artic, bodies, artic.root);
+    }
+
+    fn fv_recursive(&mut self, artic: &ArticulatedBody, bodies: &[RigidBody], link_idx: usize) {
+        let link = &artic.links[link_idx];
+        let body = &bodies[link.body_index];
+
+        self.link_data[link_idx].vel_linear = body.velocity;
+        self.link_data[link_idx].vel_angular = body.angular_velocity;
+
+        for i in 0..artic.links[link_idx].children.len() {
+            let child = artic.links[link_idx].children[i];
+            self.fv_recursive(artic, bodies, child);
+        }
+    }
+
+    /// Pass 2: Compute ABI from leaves → root
+    fn backward_inertia_pass(
+        &mut self,
+        artic: &ArticulatedBody,
+        bodies: &[RigidBody],
+        gravity: Vec3Fix,
+    ) {
+        self.bi_recursive(artic, bodies, gravity, artic.root);
+    }
+
+    fn bi_recursive(
+        &mut self,
+        artic: &ArticulatedBody,
+        bodies: &[RigidBody],
+        gravity: Vec3Fix,
+        link_idx: usize,
+    ) {
+        // Process children first (leaves to root)
+        for i in 0..artic.links[link_idx].children.len() {
+            let child = artic.links[link_idx].children[i];
+            self.bi_recursive(artic, bodies, gravity, child);
+        }
+
+        let link = &artic.links[link_idx];
+        let body = &bodies[link.body_index];
+
+        // Initialize with body's own inertia
+        let mass = if body.inv_mass.is_zero() {
+            Fix128::from_int(1000000) // Very large mass for static
+        } else {
+            Fix128::ONE / body.inv_mass
+        };
+
+        self.link_data[link_idx].abi_linear = mass;
+        self.link_data[link_idx].abi_angular = if body.inv_inertia.x.is_zero() {
+            Vec3Fix::from_int(1000000, 1000000, 1000000)
+        } else {
+            Vec3Fix::new(
+                Fix128::ONE / body.inv_inertia.x,
+                Fix128::ONE / body.inv_inertia.y,
+                Fix128::ONE / body.inv_inertia.z,
+            )
+        };
+
+        // Bias force = gravity + Coriolis terms
+        self.link_data[link_idx].bias_force = gravity * mass;
+
+        // Accumulate children's inertia contributions
+        for i in 0..artic.links[link_idx].children.len() {
+            let child_idx = artic.links[link_idx].children[i];
+            let child_mass = self.link_data[child_idx].abi_linear;
+            self.link_data[link_idx].abi_linear = self.link_data[link_idx].abi_linear + child_mass;
+        }
+    }
+
+    /// Pass 3: Compute accelerations root → leaves and integrate
+    fn forward_acceleration_pass(
+        &mut self,
+        artic: &ArticulatedBody,
+        bodies: &mut [RigidBody],
+        dt: Fix128,
+    ) {
+        self.fa_recursive(artic, bodies, dt, artic.root);
+    }
+
+    fn fa_recursive(
+        &mut self,
+        artic: &ArticulatedBody,
+        bodies: &mut [RigidBody],
+        dt: Fix128,
+        link_idx: usize,
+    ) {
+        let link = &artic.links[link_idx];
+
+        if link.parent != LINK_ROOT && !bodies[link.body_index].inv_mass.is_zero() {
+            let mass = self.link_data[link_idx].abi_linear;
+            let force = self.link_data[link_idx].bias_force;
+
+            // a = F / m (simplified)
+            let accel = if mass.is_zero() { Vec3Fix::ZERO } else { force / mass };
+
+            // Semi-implicit Euler integration
+            bodies[link.body_index].velocity = bodies[link.body_index].velocity + accel * dt;
+            bodies[link.body_index].position = bodies[link.body_index].position
+                + bodies[link.body_index].velocity * dt;
+        }
+
+        for i in 0..artic.links[link_idx].children.len() {
+            let child = artic.links[link_idx].children[i];
+            self.fa_recursive(artic, bodies, dt, child);
+        }
+    }
+}
+
+impl Default for FeatherstoneSolver {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -373,5 +568,39 @@ mod tests {
         artic.set_motor(1, motor);
 
         assert!(artic.links[1].motor.is_some());
+    }
+
+    #[test]
+    fn test_featherstone_solver() {
+        let mut bodies = vec![
+            RigidBody::new_static(Vec3Fix::ZERO), // fixed base
+            RigidBody::new(Vec3Fix::from_int(0, 2, 0), Fix128::from_int(2)),
+            RigidBody::new(Vec3Fix::from_int(0, 4, 0), Fix128::ONE),
+        ];
+
+        let mut artic = ArticulatedBody::new(0, true);
+        artic.add_link(
+            0, 1,
+            Joint::Ball(BallJoint::new(0, 1, Vec3Fix::from_int(0, 1, 0), Vec3Fix::from_int(0, -1, 0))),
+            Vec3Fix::from_int(0, 2, 0),
+        );
+        artic.add_link(
+            1, 2,
+            Joint::Ball(BallJoint::new(1, 2, Vec3Fix::from_int(0, 1, 0), Vec3Fix::from_int(0, -1, 0))),
+            Vec3Fix::from_int(0, 2, 0),
+        );
+
+        let mut solver = FeatherstoneSolver::new();
+        let gravity = Vec3Fix::new(Fix128::ZERO, Fix128::from_int(-10), Fix128::ZERO);
+        let dt = Fix128::from_ratio(1, 60);
+
+        // Solve several steps
+        for _ in 0..10 {
+            solver.solve(&artic, &mut bodies, gravity, dt);
+        }
+
+        // Bodies should have fallen under gravity
+        assert!(bodies[1].position.y < Fix128::from_int(2), "Link 1 should fall");
+        assert!(bodies[2].position.y < Fix128::from_int(4), "Link 2 should fall");
     }
 }

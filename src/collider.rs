@@ -209,6 +209,31 @@ impl Support for Capsule {
     }
 }
 
+/// Uniformly scaled shape wrapper
+///
+/// Wraps any `Support`-implementing shape with a uniform scale factor.
+/// The support function scales the inner shape's support point.
+#[derive(Clone, Copy, Debug)]
+pub struct ScaledShape<S> {
+    /// Inner shape
+    pub shape: S,
+    /// Uniform scale factor
+    pub scale: Fix128,
+}
+
+impl<S> ScaledShape<S> {
+    /// Create a new scaled shape
+    pub fn new(shape: S, scale: Fix128) -> Self {
+        Self { shape, scale }
+    }
+}
+
+impl<S: Support> Support for ScaledShape<S> {
+    fn support(&self, direction: Vec3Fix) -> Vec3Fix {
+        self.shape.support(direction) * self.scale
+    }
+}
+
 // ============================================================================
 // GJK Algorithm
 // ============================================================================
@@ -614,5 +639,29 @@ mod tests {
 
         let support = aabb.support(Vec3Fix::UNIT_X);
         assert_eq!(support.x.hi, 1);
+    }
+
+    #[test]
+    fn test_scaled_shape() {
+        let sphere = Sphere::new(Vec3Fix::ZERO, Fix128::ONE);
+        let scaled = ScaledShape::new(sphere, Fix128::from_int(3));
+
+        let support = scaled.support(Vec3Fix::UNIT_X);
+        assert_eq!(support.x.hi, 3, "Scaled sphere support should be at 3");
+    }
+
+    #[test]
+    fn test_scaled_collision() {
+        let a = Sphere::new(Vec3Fix::ZERO, Fix128::ONE);
+        let b = Sphere::new(Vec3Fix::from_int(4, 0, 0), Fix128::ONE);
+
+        // Unscaled: distance=4, combined radius=2 → no collision
+        let result = gjk(&a, &b);
+        assert!(!result.colliding, "Unscaled spheres should not collide");
+
+        // Scaled: scale=3, effective radius=3, combined=3+1=4 → overlap at boundary
+        let scaled_a = ScaledShape::new(a, Fix128::from_int(3));
+        let result = gjk(&scaled_a, &b);
+        assert!(result.colliding, "Scaled sphere should collide");
     }
 }
