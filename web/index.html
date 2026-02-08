@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ALICE-Physics — WebAssembly 3D Viewer</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #0a0a0f; color: #e0e0e0; font-family: 'SF Mono', 'Fira Code', monospace; overflow: hidden; }
+    canvas { display: block; }
+
+    #hud {
+      position: fixed; top: 16px; left: 16px;
+      background: rgba(10, 10, 20, 0.85);
+      border: 1px solid rgba(100, 140, 255, 0.3);
+      border-radius: 8px;
+      padding: 12px 16px;
+      font-size: 13px;
+      line-height: 1.6;
+      backdrop-filter: blur(8px);
+      z-index: 100;
+      min-width: 240px;
+    }
+    #hud h1 {
+      font-size: 15px;
+      color: #7ab4ff;
+      margin-bottom: 8px;
+      letter-spacing: 1px;
+    }
+    #hud .label { color: #888; }
+    #hud .value { color: #7aff7a; font-weight: bold; }
+    #hud .divider { border-top: 1px solid rgba(100, 140, 255, 0.15); margin: 6px 0; }
+
+    #controls {
+      position: fixed; bottom: 16px; left: 16px;
+      background: rgba(10, 10, 20, 0.85);
+      border: 1px solid rgba(100, 140, 255, 0.3);
+      border-radius: 8px;
+      padding: 12px 16px;
+      font-size: 12px;
+      backdrop-filter: blur(8px);
+      z-index: 100;
+    }
+    #controls button {
+      background: rgba(100, 140, 255, 0.2);
+      border: 1px solid rgba(100, 140, 255, 0.4);
+      color: #7ab4ff;
+      padding: 6px 14px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 12px;
+      margin-right: 6px;
+      transition: all 0.15s;
+    }
+    #controls button:hover {
+      background: rgba(100, 140, 255, 0.35);
+      border-color: rgba(100, 140, 255, 0.7);
+    }
+  </style>
+</head>
+<body>
+  <div id="hud">
+    <h1>ALICE-Physics</h1>
+    <div><span class="label">Bodies: </span><span class="value" id="body-count">0</span></div>
+    <div><span class="label">FPS: </span><span class="value" id="fps">0</span></div>
+    <div><span class="label">Step: </span><span class="value" id="step-time">0.00</span><span class="label"> ms</span></div>
+    <div class="divider"></div>
+    <div><span class="label">Engine: </span><span class="value">Fix128 XPBD</span></div>
+    <div><span class="label">Target: </span><span class="value">wasm32</span></div>
+    <div><span class="label">Version: </span><span class="value" id="version">-</span></div>
+  </div>
+
+  <div id="controls">
+    <button id="btn-add">Add Body</button>
+    <button id="btn-rain">Rain (50)</button>
+    <button id="btn-impulse">Impulse All</button>
+    <button id="btn-reset">Reset</button>
+    <button id="btn-pause">Pause</button>
+  </div>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

@@ -150,6 +150,8 @@ pub mod replay;
 mod python;
 #[cfg(feature = "ffi")]
 pub mod ffi;
+#[cfg(feature = "wasm")]
+mod wasm;
 
 // Re-export commonly used types
 pub use math::{Fix128, Vec3Fix, QuatFix, Mat3Fix};
