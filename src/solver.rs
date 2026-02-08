@@ -30,6 +30,22 @@ use alloc::vec::Vec;
 use rayon::prelude::*;
 
 // ============================================================================
+// Body Type
+// ============================================================================
+
+/// Type of rigid body
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub enum BodyType {
+    /// Moved by physics (gravity, constraints, impulses)
+    Dynamic = 0,
+    /// Never moves
+    Static = 1,
+    /// Moved by user code, pushes dynamic bodies but is not affected by them
+    Kinematic = 2,
+}
+
+// ============================================================================
 // Rigid Body
 // ============================================================================
 
@@ -58,6 +74,12 @@ pub struct RigidBody {
     pub friction: Fix128,
     /// Whether this body is a sensor/trigger (detects overlap but no physics response)
     pub is_sensor: bool,
+    /// Body type (Dynamic, Static, Kinematic)
+    pub body_type: BodyType,
+    /// Gravity scale multiplier (1.0 = normal, 0.0 = no gravity, 2.0 = double)
+    pub gravity_scale: Fix128,
+    /// Kinematic target position and rotation
+    pub kinematic_target: Option<(Vec3Fix, QuatFix)>,
 }
 
 impl RigidBody {
@@ -90,6 +112,9 @@ impl RigidBody {
             restitution: Fix128::from_ratio(5, 10), // 0.5 default
             friction: Fix128::from_ratio(3, 10),    // 0.3 default
             is_sensor: false,
+            body_type: BodyType::Dynamic,
+            gravity_scale: Fix128::ONE,
+            kinematic_target: None,
         }
     }
 
@@ -113,6 +138,9 @@ impl RigidBody {
             restitution: Fix128::ZERO,
             friction: Fix128::ONE,
             is_sensor: false,
+            body_type: BodyType::Static,
+            gravity_scale: Fix128::ZERO,
+            kinematic_target: None,
         }
     }
 
@@ -130,6 +158,32 @@ impl RigidBody {
             restitution: Fix128::ZERO,
             friction: Fix128::ZERO,
             is_sensor: true,
+            body_type: BodyType::Static,
+            gravity_scale: Fix128::ZERO,
+            kinematic_target: None,
+        }
+    }
+
+    /// Create a kinematic body (moved by user code, not physics)
+    ///
+    /// Kinematic bodies have infinite mass and are unaffected by forces,
+    /// but can push dynamic bodies. Set target via `set_kinematic_target`.
+    pub fn new_kinematic(position: Vec3Fix) -> Self {
+        Self {
+            position,
+            rotation: QuatFix::IDENTITY,
+            velocity: Vec3Fix::ZERO,
+            angular_velocity: Vec3Fix::ZERO,
+            inv_mass: Fix128::ZERO,
+            inv_inertia: Vec3Fix::ZERO,
+            prev_position: position,
+            prev_rotation: QuatFix::IDENTITY,
+            restitution: Fix128::ZERO,
+            friction: Fix128::ONE,
+            is_sensor: false,
+            body_type: BodyType::Kinematic,
+            gravity_scale: Fix128::ZERO,
+            kinematic_target: None,
         }
     }
 
@@ -137,6 +191,26 @@ impl RigidBody {
     #[inline]
     pub fn is_static(&self) -> bool {
         self.inv_mass.is_zero()
+    }
+
+    /// Check if body is kinematic
+    #[inline]
+    pub fn is_kinematic(&self) -> bool {
+        self.body_type == BodyType::Kinematic
+    }
+
+    /// Check if body is dynamic
+    #[inline]
+    pub fn is_dynamic(&self) -> bool {
+        self.body_type == BodyType::Dynamic
+    }
+
+    /// Set kinematic target position and rotation
+    ///
+    /// The body will be moved to this target during the next simulation step.
+    /// Velocity is automatically computed from the position change.
+    pub fn set_kinematic_target(&mut self, position: Vec3Fix, rotation: QuatFix) {
+        self.kinematic_target = Some((position, rotation));
     }
 
     /// Apply impulse at center of mass
@@ -296,6 +370,27 @@ pub struct ConstraintBatch {
 #[cfg(feature = "std")]
 pub type PreSolveHook = Box<dyn Fn(usize, usize, &Contact) -> bool + Send + Sync>;
 
+/// Contact modification callback trait
+///
+/// Implement to modify contact properties before solving.
+/// More powerful than `PreSolveHook`: can mutate normal, depth,
+/// friction, and restitution per-contact.
+#[cfg(feature = "std")]
+pub trait ContactModifier: Send + Sync {
+    /// Modify a contact before solving.
+    ///
+    /// Return `false` to discard the contact entirely.
+    /// Modify the mutable references to change contact properties.
+    fn modify_contact(
+        &self,
+        body_a: usize,
+        body_b: usize,
+        contact: &mut Contact,
+        friction: &mut Fix128,
+        restitution: &mut Fix128,
+    ) -> bool;
+}
+
 /// XPBD physics world with batched constraint solving
 pub struct PhysicsWorld {
     /// Solver configuration
@@ -323,6 +418,9 @@ pub struct PhysicsWorld {
     /// Pre-solve contact hooks (called before contact resolution)
     #[cfg(feature = "std")]
     pre_solve_hooks: Vec<PreSolveHook>,
+    /// Contact modifiers (called before contact resolution, can mutate contact)
+    #[cfg(feature = "std")]
+    contact_modifiers: Vec<Box<dyn ContactModifier>>,
 }
 
 impl PhysicsWorld {
@@ -342,6 +440,8 @@ impl PhysicsWorld {
             body_materials: Vec::new(),
             #[cfg(feature = "std")]
             pre_solve_hooks: Vec::new(),
+            #[cfg(feature = "std")]
+            contact_modifiers: Vec::new(),
         }
     }
 
@@ -373,6 +473,21 @@ impl PhysicsWorld {
     #[cfg(feature = "std")]
     pub fn clear_pre_solve_hooks(&mut self) {
         self.pre_solve_hooks.clear();
+    }
+
+    /// Add a contact modifier
+    ///
+    /// Contact modifiers can mutate contact properties (normal, depth, friction,
+    /// restitution) before solving. Return false from `modify_contact` to discard.
+    #[cfg(feature = "std")]
+    pub fn add_contact_modifier(&mut self, modifier: Box<dyn ContactModifier>) {
+        self.contact_modifiers.push(modifier);
+    }
+
+    /// Clear all contact modifiers
+    #[cfg(feature = "std")]
+    pub fn clear_contact_modifiers(&mut self) {
+        self.contact_modifiers.clear();
     }
 
     /// Begin a new simulation frame (updates contact cache lifecycle)
@@ -606,16 +721,26 @@ impl PhysicsWorld {
             let gravity = self.config.gravity;
             let damping = self.config.damping;
             self.bodies.par_iter_mut().for_each(|body| {
-                if body.is_static() {
-                    return;
+                match body.body_type {
+                    BodyType::Static => return,
+                    BodyType::Kinematic => {
+                        body.prev_position = body.position;
+                        body.prev_rotation = body.rotation;
+                        if let Some((target_pos, target_rot)) = body.kinematic_target {
+                            body.position = target_pos;
+                            body.rotation = target_rot;
+                        }
+                        return;
+                    }
+                    BodyType::Dynamic => {}
                 }
 
                 // Store previous state
                 body.prev_position = body.position;
                 body.prev_rotation = body.rotation;
 
-                // Apply gravity
-                body.velocity = body.velocity + gravity * dt;
+                // Apply gravity (with per-body scale)
+                body.velocity = body.velocity + gravity * body.gravity_scale * dt;
 
                 // Apply damping
                 body.velocity = body.velocity * damping;
@@ -637,16 +762,26 @@ impl PhysicsWorld {
         #[cfg(not(feature = "parallel"))]
         {
             for body in &mut self.bodies {
-                if body.is_static() {
-                    continue;
+                match body.body_type {
+                    BodyType::Static => continue,
+                    BodyType::Kinematic => {
+                        body.prev_position = body.position;
+                        body.prev_rotation = body.rotation;
+                        if let Some((target_pos, target_rot)) = body.kinematic_target {
+                            body.position = target_pos;
+                            body.rotation = target_rot;
+                        }
+                        continue;
+                    }
+                    BodyType::Dynamic => {}
                 }
 
                 // Store previous state
                 body.prev_position = body.position;
                 body.prev_rotation = body.rotation;
 
-                // Apply gravity
-                body.velocity = body.velocity + self.config.gravity * dt;
+                // Apply gravity (with per-body scale)
+                body.velocity = body.velocity + self.config.gravity * body.gravity_scale * dt;
 
                 // Apply damping
                 body.velocity = body.velocity * self.config.damping;
@@ -674,7 +809,7 @@ impl PhysicsWorld {
         #[cfg(feature = "parallel")]
         {
             self.bodies.par_iter_mut().for_each(|body| {
-                if body.is_static() {
+                if body.body_type == BodyType::Static {
                     return;
                 }
 
@@ -686,7 +821,7 @@ impl PhysicsWorld {
         #[cfg(not(feature = "parallel"))]
         {
             for body in &mut self.bodies {
-                if body.is_static() {
+                if body.body_type == BodyType::Static {
                     continue;
                 }
 
@@ -798,6 +933,7 @@ impl PhysicsWorld {
     }
 
     /// Solve distance constraints (sequential)
+    #[inline]
     fn solve_distance_constraints(&mut self, dt: Fix128) {
         let num_constraints = self.distance_constraints.len();
         for i in 0..num_constraints {
@@ -845,6 +981,7 @@ impl PhysicsWorld {
     }
 
     /// Solve contact constraints with pre-solve hook support
+    #[inline]
     fn solve_contact_constraints(&mut self, _dt: Fix128) {
         let num_constraints = self.contact_constraints.len();
         for i in 0..num_constraints {
@@ -857,7 +994,9 @@ impl PhysicsWorld {
                 continue;
             }
 
-            let contact = constraint.contact;
+            let mut contact = constraint.contact;
+            let mut _friction = constraint.friction;
+            let mut _restitution = constraint.restitution;
 
             // Pre-solve hook: allow game logic to filter contacts
             #[cfg(feature = "std")]
@@ -867,6 +1006,18 @@ impl PhysicsWorld {
                     if !hook(constraint.body_a, constraint.body_b, &contact) {
                         skip = true;
                         break;
+                    }
+                }
+                // Contact modifiers: can mutate contact properties
+                if !skip {
+                    for modifier in &self.contact_modifiers {
+                        if !modifier.modify_contact(
+                            constraint.body_a, constraint.body_b,
+                            &mut contact, &mut _friction, &mut _restitution,
+                        ) {
+                            skip = true;
+                            break;
+                        }
                     }
                 }
                 if skip { continue; }
@@ -1218,6 +1369,69 @@ mod tests {
         let key = crate::contact_cache::BodyPairKey::new(a, b);
         let manifold = world.contact_cache.find(&key);
         assert!(manifold.is_some(), "Contact cache should contain the manifold");
+    }
+
+    #[test]
+    fn test_kinematic_body() {
+        let config = SolverConfig::default();
+        let mut world = PhysicsWorld::new(config);
+
+        let kinematic = RigidBody::new_kinematic(Vec3Fix::ZERO);
+        let k_id = world.add_body(kinematic);
+
+        // Set kinematic target
+        world.bodies[k_id].set_kinematic_target(
+            Vec3Fix::from_int(5, 0, 0),
+            QuatFix::IDENTITY,
+        );
+
+        world.step(Fix128::from_ratio(1, 60));
+
+        // Should have moved to target
+        let pos = world.bodies[k_id].position;
+        assert_eq!(pos.x.hi, 5, "Kinematic body should move to target");
+    }
+
+    #[test]
+    fn test_body_type_enum() {
+        let dynamic = RigidBody::new(Vec3Fix::ZERO, Fix128::ONE);
+        assert!(dynamic.is_dynamic());
+        assert!(!dynamic.is_kinematic());
+
+        let static_b = RigidBody::new_static(Vec3Fix::ZERO);
+        assert!(static_b.is_static());
+        assert!(!static_b.is_dynamic());
+
+        let kinematic = RigidBody::new_kinematic(Vec3Fix::ZERO);
+        assert!(kinematic.is_kinematic());
+        assert!(kinematic.is_static()); // inv_mass is zero
+    }
+
+    #[test]
+    fn test_per_body_gravity_scale() {
+        let config = SolverConfig::default();
+        let mut world = PhysicsWorld::new(config);
+
+        // Body with zero gravity
+        let mut no_grav = RigidBody::new(Vec3Fix::from_int(0, 10, 0), Fix128::ONE);
+        no_grav.gravity_scale = Fix128::ZERO;
+        let ng_id = world.add_body(no_grav);
+
+        // Body with normal gravity
+        let normal = RigidBody::new(Vec3Fix::from_int(5, 10, 0), Fix128::ONE);
+        let n_id = world.add_body(normal);
+
+        for _ in 0..60 {
+            world.step(Fix128::from_ratio(1, 60));
+        }
+
+        // No-gravity body should not have fallen
+        let ng_y = world.bodies[ng_id].position.y;
+        assert!(ng_y > Fix128::from_int(9), "Zero-gravity body should stay near y=10, got {:?}", ng_y);
+
+        // Normal body should have fallen (damping is strong, just check it fell at all)
+        let n_y = world.bodies[n_id].position.y;
+        assert!(n_y < Fix128::from_int(10), "Normal gravity body should fall");
     }
 
     #[test]

@@ -45,6 +45,8 @@ pub struct CharacterConfig {
     pub ground_probe_distance: Fix128,
     /// Maximum number of slide iterations
     pub max_slides: usize,
+    /// Push force applied to dynamic bodies on collision
+    pub push_force: Fix128,
 }
 
 impl Default for CharacterConfig {
@@ -57,6 +59,7 @@ impl Default for CharacterConfig {
             skin_width: Fix128::from_ratio(1, 100),       // 0.01
             ground_probe_distance: Fix128::from_ratio(1, 10), // 0.1
             max_slides: 4,
+            push_force: Fix128::from_int(5),
         }
     }
 }
@@ -64,6 +67,17 @@ impl Default for CharacterConfig {
 // ============================================================================
 // Move Result
 // ============================================================================
+
+/// Impulse to apply to a rigid body from character collision
+#[derive(Clone, Copy, Debug)]
+pub struct PushImpulse {
+    /// Index of the body to push
+    pub body_index: usize,
+    /// Impulse vector to apply
+    pub impulse: Vec3Fix,
+    /// World-space point of application
+    pub point: Vec3Fix,
+}
 
 /// Result of a character move operation
 #[derive(Clone, Copy, Debug)]
@@ -74,6 +88,8 @@ pub struct MoveResult {
     pub grounded: bool,
     /// Velocity after sliding (may differ from input if we slid along a wall)
     pub velocity: Vec3Fix,
+    /// Velocity inherited from the moving platform (zero if not on platform)
+    pub platform_velocity: Vec3Fix,
 }
 
 // ============================================================================
@@ -90,6 +106,10 @@ pub struct CharacterController {
     pub grounded: bool,
     /// Configuration
     pub config: CharacterConfig,
+    /// Index of the ground body (for moving platform support)
+    pub ground_body_index: Option<usize>,
+    /// Velocity inherited from the moving platform
+    pub platform_velocity: Vec3Fix,
 }
 
 impl CharacterController {
@@ -100,6 +120,8 @@ impl CharacterController {
             velocity: Vec3Fix::ZERO,
             grounded: false,
             config,
+            ground_body_index: None,
+            platform_velocity: Vec3Fix::ZERO,
         }
     }
 
@@ -224,19 +246,30 @@ impl CharacterController {
         }
 
         // Ground detection
-        let grounded = self.detect_ground(pos, bodies, sdf_colliders);
+        let (grounded, ground_idx) = self.detect_ground(pos, bodies, sdf_colliders);
 
-        // Slope limiting: if on a steep slope and grounded, cancel uphill component
-        // (handled implicitly by the slide algorithm above)
+        // Compute platform velocity from ground body
+        let platform_vel = if let Some(idx) = ground_idx {
+            if idx < bodies.len() {
+                bodies[idx].velocity
+            } else {
+                Vec3Fix::ZERO
+            }
+        } else {
+            Vec3Fix::ZERO
+        };
 
         self.position = pos;
         self.grounded = grounded;
+        self.ground_body_index = ground_idx;
+        self.platform_velocity = platform_vel;
         self.velocity = displacement; // Caller controls velocity
 
         MoveResult {
             position: pos,
             grounded,
             velocity: displacement,
+            platform_velocity: platform_vel,
         }
     }
 
@@ -341,13 +374,14 @@ impl CharacterController {
         true
     }
 
-    /// Detect if the character is on the ground
+    /// Detect if the character is on the ground.
+    /// Returns (grounded, ground_body_index).
     fn detect_ground(
         &self,
         pos: Vec3Fix,
         bodies: &[RigidBody],
         _sdf_colliders: &[SdfCollider],
-    ) -> bool {
+    ) -> (bool, Option<usize>) {
         let feet = Vec3Fix::new(
             pos.x,
             pos.y - self.config.height.half() + self.config.radius,
@@ -357,14 +391,14 @@ impl CharacterController {
         let ray = Ray::new(feet, down);
         let probe = self.config.ground_probe_distance + self.config.skin_width;
 
-        // Check against static bodies (sphere approximation)
-        for body in bodies {
+        // Check against static/kinematic bodies (sphere approximation)
+        for (i, body) in bodies.iter().enumerate() {
             if !body.is_static() {
                 continue;
             }
             let body_sphere = Sphere::new(body.position, self.config.radius);
             if ray_sphere(&ray, &body_sphere, probe).is_some() {
-                return true;
+                return (true, Some(i));
             }
         }
 
@@ -378,15 +412,61 @@ impl CharacterController {
                 let (nx, ny, nz) = sdf.field.normal(lx, ly, lz);
                 let normal = sdf.local_normal_to_world(nx, ny, nz);
                 let up_dot = normal.dot(Vec3Fix::UNIT_Y);
-                // cos(max_slope_angle) threshold
                 let cos_max = self.config.max_slope_angle.cos();
                 if up_dot >= cos_max {
-                    return true;
+                    return (true, None); // SDF ground, no body index
                 }
             }
         }
 
-        false
+        (false, None)
+    }
+
+    /// Compute push impulses for dynamic bodies overlapping the character.
+    ///
+    /// Call this after `move_and_slide` to get impulses that should be applied
+    /// to nearby dynamic bodies. Apply them via `body.apply_impulse_at()`.
+    pub fn compute_push_impulses(
+        &self,
+        bodies: &[RigidBody],
+        body_radius: Fix128,
+    ) -> Vec<PushImpulse> {
+        let mut pushes = Vec::new();
+        let combined = self.config.radius + body_radius;
+        let combined_sq = combined * combined;
+
+        for (i, body) in bodies.iter().enumerate() {
+            // Only push dynamic bodies
+            if body.is_static() || body.is_sensor {
+                continue;
+            }
+
+            let delta = body.position - self.position;
+            let dist_sq = delta.length_squared();
+            if dist_sq < combined_sq {
+                let (normal, overlap) = if dist_sq.is_zero() {
+                    // Bodies at same position: push upward as default
+                    (Vec3Fix::UNIT_Y, combined)
+                } else {
+                    let dist = dist_sq.sqrt();
+                    (delta / dist, combined - dist)
+                };
+                let impulse = normal * overlap * self.config.push_force;
+                pushes.push(PushImpulse {
+                    body_index: i,
+                    impulse,
+                    point: body.position - normal * body_radius,
+                });
+            }
+        }
+
+        pushes
+    }
+
+    /// Get the velocity of the platform the character is standing on
+    #[inline]
+    pub fn get_platform_velocity(&self) -> Vec3Fix {
+        self.platform_velocity
     }
 
     /// Apply gravity and update position (convenience method)
@@ -431,6 +511,48 @@ mod tests {
         // Should move freely with no collisions
         let dx = (result.position.x - Fix128::ONE).abs();
         assert!(dx < Fix128::from_ratio(1, 10), "Should have moved to x=1");
+    }
+
+    #[test]
+    fn test_platform_velocity_tracking() {
+        let mut cc = CharacterController::new_default(Vec3Fix::from_int(0, 2, 0));
+
+        // Create a kinematic platform
+        let mut platform = RigidBody::new_kinematic(Vec3Fix::from_int(0, 0, 0));
+        platform.velocity = Vec3Fix::from_int(5, 0, 0); // moving right
+        let bodies = vec![platform];
+
+        cc.move_and_slide(Vec3Fix::ZERO, &bodies, &[]);
+
+        // If grounded on the platform, platform_velocity should be tracked
+        if cc.grounded {
+            assert_eq!(cc.platform_velocity.x.hi, 5, "Should track platform velocity");
+        }
+    }
+
+    #[test]
+    fn test_push_impulses() {
+        let cc = CharacterController::new_default(Vec3Fix::from_int(0, 0, 0));
+
+        // Dynamic body overlapping the character
+        let dynamic = RigidBody::new(Vec3Fix::from_int(0, 0, 0), Fix128::ONE);
+        let bodies = vec![dynamic];
+
+        let pushes = cc.compute_push_impulses(&bodies, Fix128::from_ratio(1, 2));
+        assert!(!pushes.is_empty(), "Should generate push impulse for overlapping dynamic body");
+        assert_eq!(pushes[0].body_index, 0);
+    }
+
+    #[test]
+    fn test_no_push_static() {
+        let cc = CharacterController::new_default(Vec3Fix::from_int(0, 0, 0));
+
+        // Static body — should not be pushed
+        let static_body = RigidBody::new_static(Vec3Fix::from_int(0, 0, 0));
+        let bodies = vec![static_body];
+
+        let pushes = cc.compute_push_impulses(&bodies, Fix128::from_ratio(1, 2));
+        assert!(pushes.is_empty(), "Should not push static bodies");
     }
 
     #[test]

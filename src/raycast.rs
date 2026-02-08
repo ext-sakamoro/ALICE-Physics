@@ -60,6 +60,7 @@ pub struct RayHit {
 /// Ray-Sphere intersection
 ///
 /// Returns parameter t along the ray, or None if no hit.
+#[inline]
 pub fn ray_sphere(ray: &Ray, sphere: &Sphere, max_t: Fix128) -> Option<RayHit> {
     let oc = ray.origin - sphere.center;
     let b = oc.dot(ray.direction);
@@ -94,6 +95,7 @@ pub fn ray_sphere(ray: &Ray, sphere: &Sphere, max_t: Fix128) -> Option<RayHit> {
 /// Ray-AABB intersection (slab method)
 ///
 /// Returns (t_min, t_max) interval or None if no hit.
+#[inline]
 pub fn ray_aabb(ray: &Ray, aabb: &AABB, max_t: Fix128) -> Option<RayHit> {
     let (t_min, t_max) = ray_aabb_interval(ray, aabb)?;
 
@@ -115,6 +117,7 @@ pub fn ray_aabb(ray: &Ray, aabb: &AABB, max_t: Fix128) -> Option<RayHit> {
 }
 
 /// Ray-AABB interval computation (returns (t_min, t_max))
+#[inline]
 fn ray_aabb_interval(ray: &Ray, aabb: &AABB) -> Option<(Fix128, Fix128)> {
     let mut t_min = Fix128::from_int(-1000000);
     let mut t_max = Fix128::from_int(1000000);
@@ -269,6 +272,7 @@ pub fn ray_capsule(ray: &Ray, capsule: &Capsule, max_t: Fix128) -> Option<RayHit
 }
 
 /// Return the closer of two optional hits
+#[inline]
 fn closer_hit(a: Option<RayHit>, b: Option<RayHit>) -> Option<RayHit> {
     match (a, b) {
         (Some(ha), Some(hb)) => {
@@ -330,6 +334,59 @@ pub fn raycast_spheres(ray: &Ray, spheres: &[(Sphere, usize)], max_t: Fix128) ->
     }
 
     closest
+}
+
+/// Cast a ray against multiple Spheres and return ALL hits (sorted by t, closest first)
+pub fn raycast_all_spheres(ray: &Ray, spheres: &[(Sphere, usize)], max_t: Fix128) -> Vec<RayHit> {
+    let mut hits = Vec::new();
+
+    for &(ref sphere, body_idx) in spheres {
+        if let Some(mut hit) = ray_sphere(ray, sphere, max_t) {
+            hit.body_index = body_idx;
+            hits.push(hit);
+        }
+    }
+
+    // Deterministic stable sort by t
+    hits.sort_by(|a, b| a.t.cmp(&b.t));
+    hits
+}
+
+/// Cast a ray against multiple AABBs and return ALL hits (sorted by t, closest first)
+pub fn raycast_all_aabbs(ray: &Ray, aabbs: &[(AABB, usize)], max_t: Fix128) -> Vec<RayHit> {
+    let mut hits = Vec::new();
+
+    for &(ref aabb, body_idx) in aabbs {
+        if let Some(mut hit) = ray_aabb(ray, aabb, max_t) {
+            hit.body_index = body_idx;
+            hits.push(hit);
+        }
+    }
+
+    hits.sort_by(|a, b| a.t.cmp(&b.t));
+    hits
+}
+
+/// Test if ANY sphere is hit by the ray (early-out on first hit)
+#[inline]
+pub fn raycast_any_spheres(ray: &Ray, spheres: &[(Sphere, usize)], max_t: Fix128) -> bool {
+    for &(ref sphere, _) in spheres {
+        if ray_sphere(ray, sphere, max_t).is_some() {
+            return true;
+        }
+    }
+    false
+}
+
+/// Test if ANY AABB is hit by the ray (early-out on first hit)
+#[inline]
+pub fn raycast_any_aabbs(ray: &Ray, aabbs: &[(AABB, usize)], max_t: Fix128) -> bool {
+    for &(ref aabb, _) in aabbs {
+        if ray_aabb(ray, aabb, max_t).is_some() {
+            return true;
+        }
+    }
+    false
 }
 
 /// Swept sphere (shape cast): move a sphere along a ray direction
@@ -438,6 +495,47 @@ mod tests {
         // Should hit at distance 5 - 2 = 3 (center distance minus combined radii)
         let error = (t - Fix128::from_int(3)).abs();
         assert!(error < Fix128::ONE, "Should hit at approximately t=3");
+    }
+
+    #[test]
+    fn test_raycast_all_spheres() {
+        let spheres = vec![
+            (Sphere::new(Vec3Fix::from_int(3, 0, 0), Fix128::ONE), 0),
+            (Sphere::new(Vec3Fix::from_int(6, 0, 0), Fix128::ONE), 1),
+            (Sphere::new(Vec3Fix::from_int(9, 0, 0), Fix128::ONE), 2),
+        ];
+        let ray = Ray::new(Vec3Fix::from_int(-5, 0, 0), Vec3Fix::UNIT_X);
+        let hits = raycast_all_spheres(&ray, &spheres, Fix128::from_int(100));
+        assert_eq!(hits.len(), 3, "Should hit all 3 spheres");
+        // Sorted by t — closest first
+        assert_eq!(hits[0].body_index, 0);
+        assert_eq!(hits[1].body_index, 1);
+        assert_eq!(hits[2].body_index, 2);
+    }
+
+    #[test]
+    fn test_raycast_any_spheres() {
+        let spheres = vec![
+            (Sphere::new(Vec3Fix::from_int(3, 0, 0), Fix128::ONE), 0),
+        ];
+        let ray = Ray::new(Vec3Fix::from_int(-5, 0, 0), Vec3Fix::UNIT_X);
+        assert!(raycast_any_spheres(&ray, &spheres, Fix128::from_int(100)));
+
+        let miss_ray = Ray::new(Vec3Fix::from_int(-5, 10, 0), Vec3Fix::UNIT_X);
+        assert!(!raycast_any_spheres(&miss_ray, &spheres, Fix128::from_int(100)));
+    }
+
+    #[test]
+    fn test_raycast_all_aabbs() {
+        let aabbs = vec![
+            (AABB::new(Vec3Fix::from_int(2, -1, -1), Vec3Fix::from_int(4, 1, 1)), 0),
+            (AABB::new(Vec3Fix::from_int(6, -1, -1), Vec3Fix::from_int(8, 1, 1)), 1),
+        ];
+        let ray = Ray::new(Vec3Fix::from_int(-5, 0, 0), Vec3Fix::UNIT_X);
+        let hits = raycast_all_aabbs(&ray, &aabbs, Fix128::from_int(100));
+        assert_eq!(hits.len(), 2, "Should hit both AABBs");
+        assert_eq!(hits[0].body_index, 0);
+        assert_eq!(hits[1].body_index, 1);
     }
 
     #[test]

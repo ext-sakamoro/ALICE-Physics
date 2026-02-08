@@ -78,6 +78,9 @@ void alice_physics_world_destroy(AlicePhysicsWorld* world);
 /** Step the simulation by dt seconds. */
 void alice_physics_world_step(AlicePhysicsWorld* world, double dt);
 
+/** Step the simulation N times with fixed dt (batch stepping, amortizes FFI overhead). */
+void alice_physics_world_step_n(AlicePhysicsWorld* world, double dt, uint32_t steps);
+
 /** Get the number of bodies in the world. */
 uint32_t alice_physics_world_body_count(const AlicePhysicsWorld* world);
 
@@ -123,6 +126,22 @@ uint8_t alice_physics_body_apply_impulse(AlicePhysicsWorld* world, uint32_t body
 
 /** Apply impulse at a world-space point. Returns 1 on success. */
 uint8_t alice_physics_body_apply_impulse_at(AlicePhysicsWorld* world, uint32_t body_id, AliceVec3 impulse, AliceVec3 point);
+
+/* ========================================================================== */
+/* Batch Operations (Zero-Copy, FFI amortization)                              */
+/* ========================================================================== */
+
+/** Get all body positions as flat [x,y,z,...] f64 array. out must hold body_count*3 doubles. */
+uint8_t alice_physics_world_get_positions_batch(const AlicePhysicsWorld* world, double* out, uint32_t out_capacity);
+
+/** Get all body velocities as flat [vx,vy,vz,...] f64 array. out must hold body_count*3 doubles. */
+uint8_t alice_physics_world_get_velocities_batch(const AlicePhysicsWorld* world, double* out, uint32_t out_capacity);
+
+/** Set all body velocities from flat [vx,vy,vz,...] f64 array. count must be body_count*3. */
+uint8_t alice_physics_world_set_velocities_batch(AlicePhysicsWorld* world, const double* data, uint32_t count);
+
+/** Apply impulses in batch. data is flat [body_id, ix, iy, iz, ...]. count must be divisible by 4. */
+uint8_t alice_physics_body_apply_impulses_batch(AlicePhysicsWorld* world, const double* data, uint32_t count);
 
 /* ========================================================================== */
 /* Configuration                                                               */

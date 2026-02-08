@@ -20,6 +20,9 @@ use crate::solver::RigidBody;
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
+
 // ============================================================================
 // Query Results
 // ============================================================================
@@ -56,6 +59,7 @@ pub struct OverlapResult {
 ///
 /// This is equivalent to a "thick raycast" — useful for character collision,
 /// projectile sweeps, and visibility checks.
+#[inline]
 pub fn sphere_cast(
     origin: Vec3Fix,
     radius: Fix128,
@@ -137,6 +141,7 @@ pub fn capsule_cast(
 /// Find all bodies whose bounding sphere overlaps with the given sphere.
 ///
 /// `body_radius` is the assumed radius for each body.
+#[inline]
 pub fn overlap_sphere(
     center: Vec3Fix,
     radius: Fix128,
@@ -168,6 +173,7 @@ pub fn overlap_sphere(
 ///
 /// Uses the body position as a point test (no body extent considered).
 /// For volume overlap, expand the AABB by the body radius first.
+#[inline]
 pub fn overlap_aabb(
     aabb: &AABB,
     bodies: &[RigidBody],
@@ -213,6 +219,104 @@ pub fn overlap_aabb_expanded(
     );
 
     overlap_aabb(&expanded, bodies)
+}
+
+// ============================================================================
+// Batch Queries
+// ============================================================================
+
+/// A single raycast query for batch execution
+#[derive(Clone, Copy, Debug)]
+pub struct BatchRayQuery {
+    /// Ray origin
+    pub origin: Vec3Fix,
+    /// Ray direction (will be normalized)
+    pub direction: Vec3Fix,
+    /// Maximum cast distance
+    pub max_distance: Fix128,
+}
+
+/// Execute multiple raycasts in batch against rigid bodies.
+///
+/// Returns one result per query (closest hit or None).
+/// Each ray is treated as a zero-radius sphere cast.
+/// When `parallel` feature is enabled, queries execute in parallel via Rayon.
+pub fn batch_raycast(
+    queries: &[BatchRayQuery],
+    bodies: &[RigidBody],
+    body_radius: Fix128,
+) -> Vec<Option<ShapeCastHit>> {
+    #[cfg(feature = "parallel")]
+    {
+        queries.par_iter().map(|q| {
+            sphere_cast(
+                q.origin,
+                Fix128::ZERO,
+                q.direction,
+                q.max_distance,
+                bodies,
+                body_radius,
+            )
+        }).collect()
+    }
+
+    #[cfg(not(feature = "parallel"))]
+    {
+        queries.iter().map(|q| {
+            sphere_cast(
+                q.origin,
+                Fix128::ZERO,
+                q.direction,
+                q.max_distance,
+                bodies,
+                body_radius,
+            )
+        }).collect()
+    }
+}
+
+/// Execute multiple sphere casts in batch against rigid bodies.
+///
+/// `origins` and `directions` must have the same length.
+/// Returns one result per query (closest hit or None).
+/// When `parallel` feature is enabled, queries execute in parallel via Rayon.
+pub fn batch_sphere_cast(
+    origins: &[Vec3Fix],
+    radius: Fix128,
+    directions: &[Vec3Fix],
+    max_distance: Fix128,
+    bodies: &[RigidBody],
+    body_radius: Fix128,
+) -> Vec<Option<ShapeCastHit>> {
+    assert_eq!(origins.len(), directions.len());
+
+    #[cfg(feature = "parallel")]
+    {
+        origins.par_iter().zip(directions.par_iter()).map(|(origin, direction)| {
+            sphere_cast(
+                *origin,
+                radius,
+                *direction,
+                max_distance,
+                bodies,
+                body_radius,
+            )
+        }).collect()
+    }
+
+    #[cfg(not(feature = "parallel"))]
+    {
+        origins.iter().zip(directions.iter()).map(|(origin, direction)| {
+            sphere_cast(
+                *origin,
+                radius,
+                *direction,
+                max_distance,
+                bodies,
+                body_radius,
+            )
+        }).collect()
+    }
 }
 
 // ============================================================================
@@ -324,6 +428,50 @@ mod tests {
         // Body 2 at (10,0,0) → outside
         // Body 3 at (0,5,0) → outside
         assert_eq!(results.len(), 2);
+    }
+
+    #[test]
+    fn test_batch_raycast() {
+        let bodies = make_bodies();
+        let queries = vec![
+            BatchRayQuery {
+                origin: Vec3Fix::from_int(-10, 0, 0),
+                direction: Vec3Fix::UNIT_X,
+                max_distance: Fix128::from_int(100),
+            },
+            BatchRayQuery {
+                origin: Vec3Fix::from_int(-10, 10, 0), // misses all
+                direction: Vec3Fix::UNIT_X,
+                max_distance: Fix128::from_int(100),
+            },
+        ];
+        let results = batch_raycast(&queries, &bodies, Fix128::ONE);
+        assert_eq!(results.len(), 2);
+        assert!(results[0].is_some(), "First ray should hit");
+        assert!(results[1].is_none(), "Second ray should miss");
+    }
+
+    #[test]
+    fn test_batch_sphere_cast() {
+        let bodies = make_bodies();
+        let origins = vec![
+            Vec3Fix::from_int(-10, 0, 0),
+            Vec3Fix::from_int(-10, 0, 0),
+        ];
+        let directions = vec![
+            Vec3Fix::UNIT_X,
+            Vec3Fix::UNIT_Y, // up — misses bodies at y=0
+        ];
+        let results = batch_sphere_cast(
+            &origins,
+            Fix128::from_ratio(1, 2),
+            &directions,
+            Fix128::from_int(100),
+            &bodies,
+            Fix128::ONE,
+        );
+        assert_eq!(results.len(), 2);
+        assert!(results[0].is_some(), "X-direction should hit");
     }
 
     #[test]

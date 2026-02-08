@@ -141,6 +141,22 @@ pub unsafe extern "C" fn alice_physics_world_step(world: *mut PhysicsWorld, dt: 
     }
 }
 
+/// Step the simulation N times with fixed dt (batch stepping).
+///
+/// Amortizes FFI overhead — ideal for training loops and rollback re-simulation.
+///
+/// # Safety
+/// `world` must be a valid pointer.
+#[no_mangle]
+pub unsafe extern "C" fn alice_physics_world_step_n(world: *mut PhysicsWorld, dt: f64, steps: u32) {
+    if let Some(w) = world.as_mut() {
+        let dt_fix = Fix128::from_f64(dt);
+        for _ in 0..steps {
+            w.step(dt_fix);
+        }
+    }
+}
+
 /// Get the number of bodies.
 #[no_mangle]
 pub unsafe extern "C" fn alice_physics_world_body_count(world: *const PhysicsWorld) -> u32 {
@@ -148,6 +164,138 @@ pub unsafe extern "C" fn alice_physics_world_body_count(world: *const PhysicsWor
         Some(w) => w.bodies.len() as u32,
         None => 0,
     }
+}
+
+/// Get all body positions as a flat [x,y,z, x,y,z, ...] f64 array (zero-copy write).
+///
+/// Caller provides a buffer of `body_count * 3` f64 values.
+/// Returns 1 on success, 0 on failure.
+///
+/// # Safety
+/// `out` must point to at least `body_count * 3` f64 values.
+#[no_mangle]
+pub unsafe extern "C" fn alice_physics_world_get_positions_batch(
+    world: *const PhysicsWorld,
+    out: *mut f64,
+    out_capacity: u32,
+) -> u8 {
+    let w = match world.as_ref() {
+        Some(w) => w,
+        None => return 0,
+    };
+    if out.is_null() {
+        return 0;
+    }
+    let n = w.bodies.len();
+    if (out_capacity as usize) < n * 3 {
+        return 0;
+    }
+    let buf = std::slice::from_raw_parts_mut(out, n * 3);
+    for (i, body) in w.bodies.iter().enumerate() {
+        buf[i * 3] = body.position.x.to_f64();
+        buf[i * 3 + 1] = body.position.y.to_f64();
+        buf[i * 3 + 2] = body.position.z.to_f64();
+    }
+    1
+}
+
+/// Get all body velocities as a flat [vx,vy,vz, ...] f64 array (zero-copy write).
+///
+/// # Safety
+/// `out` must point to at least `body_count * 3` f64 values.
+#[no_mangle]
+pub unsafe extern "C" fn alice_physics_world_get_velocities_batch(
+    world: *const PhysicsWorld,
+    out: *mut f64,
+    out_capacity: u32,
+) -> u8 {
+    let w = match world.as_ref() {
+        Some(w) => w,
+        None => return 0,
+    };
+    if out.is_null() {
+        return 0;
+    }
+    let n = w.bodies.len();
+    if (out_capacity as usize) < n * 3 {
+        return 0;
+    }
+    let buf = std::slice::from_raw_parts_mut(out, n * 3);
+    for (i, body) in w.bodies.iter().enumerate() {
+        buf[i * 3] = body.velocity.x.to_f64();
+        buf[i * 3 + 1] = body.velocity.y.to_f64();
+        buf[i * 3 + 2] = body.velocity.z.to_f64();
+    }
+    1
+}
+
+/// Set all body velocities from a flat [vx,vy,vz, ...] f64 array (batch update).
+///
+/// # Safety
+/// `data` must point to at least `body_count * 3` f64 values.
+#[no_mangle]
+pub unsafe extern "C" fn alice_physics_world_set_velocities_batch(
+    world: *mut PhysicsWorld,
+    data: *const f64,
+    count: u32,
+) -> u8 {
+    let w = match world.as_mut() {
+        Some(w) => w,
+        None => return 0,
+    };
+    if data.is_null() {
+        return 0;
+    }
+    let n = w.bodies.len();
+    if (count as usize) < n * 3 {
+        return 0;
+    }
+    let buf = std::slice::from_raw_parts(data, n * 3);
+    for (i, body) in w.bodies.iter_mut().enumerate() {
+        body.velocity = Vec3Fix::new(
+            Fix128::from_f64(buf[i * 3]),
+            Fix128::from_f64(buf[i * 3 + 1]),
+            Fix128::from_f64(buf[i * 3 + 2]),
+        );
+    }
+    1
+}
+
+/// Apply impulses to multiple bodies in batch.
+///
+/// `data` is a flat array of [body_id_as_f64, ix, iy, iz, ...] with `count/4` impulses.
+///
+/// # Safety
+/// `data` must point to at least `count` f64 values, with `count` divisible by 4.
+#[no_mangle]
+pub unsafe extern "C" fn alice_physics_body_apply_impulses_batch(
+    world: *mut PhysicsWorld,
+    data: *const f64,
+    count: u32,
+) -> u8 {
+    let w = match world.as_mut() {
+        Some(w) => w,
+        None => return 0,
+    };
+    if data.is_null() || count % 4 != 0 {
+        return 0;
+    }
+    let buf = std::slice::from_raw_parts(data, count as usize);
+    let n_bodies = w.bodies.len();
+
+    for chunk in buf.chunks_exact(4) {
+        let body_id = chunk[0] as usize;
+        if body_id >= n_bodies {
+            continue;
+        }
+        let impulse = Vec3Fix::new(
+            Fix128::from_f64(chunk[1]),
+            Fix128::from_f64(chunk[2]),
+            Fix128::from_f64(chunk[3]),
+        );
+        w.bodies[body_id].apply_impulse(impulse);
+    }
+    1
 }
 
 // ============================================================================
