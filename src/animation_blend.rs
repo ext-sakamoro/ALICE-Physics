@@ -307,10 +307,10 @@ impl AnimationBlender {
         // Compute output pose
         match self.mode {
             BlendMode::Animated => {
-                self.output_pose = self.animation_pose.clone();
+                self.output_pose.clone_from(&self.animation_pose);
             }
             BlendMode::Ragdoll | BlendMode::Powered => {
-                self.output_pose = self.physics_pose.clone();
+                self.output_pose.clone_from(&self.physics_pose);
             }
             BlendMode::Blend => {
                 self.output_pose = SkeletonPose::lerp(

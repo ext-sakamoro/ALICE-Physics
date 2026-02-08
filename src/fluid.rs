@@ -78,6 +78,7 @@ struct SpatialGrid {
     inv_cell_size: Fix128,
     cells: Vec<Vec<usize>>,
     grid_dim: usize,
+    neighbor_buffer: Vec<usize>,
 }
 
 impl SpatialGrid {
@@ -92,6 +93,7 @@ impl SpatialGrid {
             inv_cell_size: inv_cell,
             cells: vec![Vec::new(); grid_dim * grid_dim * grid_dim],
             grid_dim,
+            neighbor_buffer: Vec::new(),
         }
     }
 
@@ -117,14 +119,14 @@ impl SpatialGrid {
         }
     }
 
-    fn query_neighbors(&self, pos: Vec3Fix, _radius_sq: Fix128) -> Vec<usize> {
+    fn query_neighbors_into(&mut self, pos: Vec3Fix, _radius_sq: Fix128, neighbors: &mut Vec<usize>) {
         let gd = self.grid_dim as i64;
         let half = gd / 2;
         let cx = ((pos.x * self.inv_cell_size).hi + half).clamp(0, gd - 1) as i32;
         let cy = ((pos.y * self.inv_cell_size).hi + half).clamp(0, gd - 1) as i32;
         let cz = ((pos.z * self.inv_cell_size).hi + half).clamp(0, gd - 1) as i32;
 
-        let mut neighbors = Vec::new();
+        neighbors.clear();
 
         for dz in -1..=1 {
             for dy in -1..=1 {
@@ -149,8 +151,6 @@ impl SpatialGrid {
                 }
             }
         }
-
-        neighbors
     }
 }
 
@@ -295,15 +295,16 @@ impl Fluid {
         }
 
         // 3. Density constraint iterations
+        let mut neighbors_buf = Vec::new();
         for _ in 0..self.config.iterations {
             // Compute densities and lambdas
             for i in 0..n {
-                let neighbors = self.grid.query_neighbors(self.predicted[i], h_sq);
+                self.grid.query_neighbors_into(self.predicted[i], h_sq, &mut neighbors_buf);
                 let mut density = Fix128::ZERO;
                 let mut sum_grad_sq = Fix128::ZERO;
                 let mut grad_i = Vec3Fix::ZERO;
 
-                for &j in &neighbors {
+                for &j in &neighbors_buf {
                     let delta = self.predicted[i] - self.predicted[j];
                     let r_sq = delta.length_squared();
 
@@ -336,10 +337,10 @@ impl Fluid {
 
             // Apply position corrections
             for i in 0..n {
-                let neighbors = self.grid.query_neighbors(self.predicted[i], h_sq);
+                self.grid.query_neighbors_into(self.predicted[i], h_sq, &mut neighbors_buf);
                 let mut correction = Vec3Fix::ZERO;
 
-                for &j in &neighbors {
+                for &j in &neighbors_buf {
                     if i == j {
                         continue;
                     }
@@ -381,13 +382,14 @@ impl Fluid {
         let c = self.config.viscosity;
 
         let velocities_copy: Vec<Vec3Fix> = self.velocities.clone();
+        let mut neighbors_buf = Vec::new();
 
         for i in 0..n {
-            let neighbors = self.grid.query_neighbors(self.positions[i], h_sq);
+            self.grid.query_neighbors_into(self.positions[i], h_sq, &mut neighbors_buf);
             let mut avg_vel = Vec3Fix::ZERO;
             let mut weight_sum = Fix128::ZERO;
 
-            for &j in &neighbors {
+            for &j in &neighbors_buf {
                 if i == j {
                     continue;
                 }
@@ -489,7 +491,8 @@ mod tests {
         grid.insert(2, Vec3Fix::from_f32(10.0, 0.0, 0.0));
 
         let h_sq = Fix128::from_ratio(1, 5) * Fix128::from_ratio(1, 5);
-        let neighbors = grid.query_neighbors(Vec3Fix::ZERO, h_sq);
+        let mut neighbors = Vec::new();
+        grid.query_neighbors_into(Vec3Fix::ZERO, h_sq, &mut neighbors);
         assert!(neighbors.contains(&0), "Should find self");
         assert!(neighbors.contains(&1), "Should find nearby particle");
     }

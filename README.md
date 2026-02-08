@@ -1570,6 +1570,27 @@ v0.4.0 Test Summary:
   - All feature combinations pass (default, parallel, simd)
 ```
 
+## Cross-Crate Bridges
+
+ALICE-Physics connects to other ALICE ecosystem crates via feature-gated bridge modules:
+
+| Bridge | Feature | Target Crate | Description |
+|--------|---------|--------------|-------------|
+| Physics Visualization | `view` | [ALICE-View](../ALICE-View) | Real-time physics debug overlay rendering |
+| GPU Physics Controller | `trt` | [ALICE-TRT](../ALICE-TRT) | GPU ternary inference for physics control policies |
+| Physics State Streaming | `asp` | [ALICE-Streaming-Protocol](../ALICE-Streaming-Protocol) | Physics body state delta encoding as ASP D-packets |
+
+### Recent Performance Improvements
+
+| Module | Change | Impact |
+|--------|--------|--------|
+| `fluid.rs` | Buffer reuse in neighbor queries | ~99% allocation reduction in SPH simulation |
+| `animation_blend.rs` | `clone_from()` replaces `clone()` | Eliminates 60 allocs/sec during blend |
+
+### Cargo Profile
+
+Standardized `[profile.bench]` added for consistent benchmarking across ALICE crates.
+
 ## License
 
 AGPL-3.0 - See [LICENSE](LICENSE) for details.
