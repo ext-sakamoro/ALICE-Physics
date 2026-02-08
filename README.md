@@ -721,6 +721,7 @@ cargo test --features "simd,parallel"
 | `simd` | No | SIMD-accelerated Fix128/Vec3Fix operations (x86_64) |
 | `parallel` | No | Constraint batching with Rayon (graph-colored parallel solving) |
 | `neural` | No | Deterministic neural controller via ALICE-ML ternary inference |
+| `python` | No | Python bindings (PyO3 + NumPy zero-copy) |
 
 ```bash
 # Enable SIMD optimizations
@@ -796,6 +797,42 @@ sim.save_snapshot();
 // Verify remote client's checksum
 assert_eq!(sim.verify_checksum(1, checksum), Some(true));
 ```
+
+## ALICE-Sync Integration (Game Engine Pipeline)
+
+ALICE-Physics integrates with [ALICE-Sync](../ALICE-Sync) for complete multiplayer game networking. Enable `physics` feature in ALICE-Sync:
+
+```toml
+[dependencies]
+alice-sync = { path = "../ALICE-Sync", features = ["physics"] }
+```
+
+### How It Works
+
+```
+Player Input ──► InputFrame (i16, 24B) ──► FrameInput (Fix128) ──► PhysicsWorld
+                     ALICE-Sync                 bridge                 step()
+                                                  │
+PhysicsWorld ──► SimulationChecksum ──► WorldHash ──► Desync Verify
+                   from_world()           bridge        ALICE-Sync
+```
+
+ALICE-Sync's `PhysicsRollbackSession` wraps both `RollbackSession` (input sync) and `DeterministicSimulation` (physics) into a single game loop driver:
+
+1. Submit local input → predict remote inputs
+2. Convert InputFrame (i16) → FrameInput (Fix128)
+3. Save snapshot → step physics → record checksum
+4. On mismatch: auto rollback + re-simulate
+
+### Bandwidth
+
+| Approach | Per-Frame (4 players, 60fps) |
+|----------|----------------------------|
+| State sync | ~960 KB/s |
+| **Input sync (ALICE)** | **5.6 KB/s** |
+| Savings | **99.4%** |
+
+See [ALICE-Sync README](../ALICE-Sync/README.md#game-engine-pipeline-alice-physics-bridge) for full API.
 
 ## Python Bindings (PyO3 + NumPy Zero-Copy)
 
