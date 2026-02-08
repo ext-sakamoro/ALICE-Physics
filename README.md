@@ -18,8 +18,9 @@ A high-precision physics engine designed for deterministic simulation across dif
 | **Constraint Batching** | Graph-colored parallel constraint solving |
 | **Rollback Support** | Complete state serialization for netcode |
 | **Neural Controller** | Deterministic AI via ALICE-ML ternary weights + Fix128 inference |
-| **5 Joint Types** | Ball, Hinge, Fixed, Slider, Spring with angle limits and motors |
+| **5 Joint Types** | Ball, Hinge, Fixed, Slider, Spring with angle limits, motors, and breakable constraints |
 | **Raycasting** | Ray and shape casting against spheres, AABBs, capsules, planes |
+| **Shape Cast / Overlap** | Sphere cast, capsule cast, overlap sphere, overlap AABB queries |
 | **CCD** | Continuous collision detection (TOI, conservative advancement) |
 | **Sleep/Islands** | Automatic sleep with Union-Find island management |
 | **Triangle Mesh** | BVH-accelerated triangle mesh collision (Moller-Trumbore) |
@@ -28,6 +29,29 @@ A high-precision physics engine designed for deterministic simulation across dif
 | **Force Fields** | Wind, gravity wells, drag, buoyancy, vortex |
 | **PD Controllers** | 1D/3D proportional-derivative joint motors |
 | **Collision Filtering** | Layer/mask bitmask system with collision groups |
+| **Trigger/Sensor** | Sensor bodies that detect overlap without physics response |
+| **Character Controller** | Kinematic capsule-based move-and-slide with stair stepping and SDF terrain |
+| **Rope** | XPBD distance chain rope and cable simulation |
+| **Cloth** | XPBD triangle mesh cloth with self-collision (spatial hash grid) |
+| **Fluid** | Position-Based Fluids (PBF) with spatial hash grid |
+| **Deformable** | FEM-XPBD deformable body (tetrahedral mesh) |
+| **Vehicle** | Wheel, suspension, engine, steering, gear shifting |
+| **Animation Blend** | Ragdoll-to-animation blending with SLERP |
+| **Audio Physics** | Physics-based audio parameter generation (impact, friction, rolling) |
+| **SDF Manifold** | Multi-point contact manifold from SDF surfaces |
+| **SDF CCD** | Sphere tracing continuous collision detection for SDF |
+| **SDF Force Fields** | SDF-driven force fields (attract, repel, contain, flow) |
+| **SDF Destruction** | Real-time CSG boolean destruction |
+| **SDF Adaptive** | Adaptive SDF evaluation with distance-based LOD |
+| **Convex Decompose** | Convex decomposition from SDF voxel grid |
+| **GPU SDF** | GPU compute shader interface for batch SDF evaluation |
+| **Fluid Netcode** | Deterministic fluid netcode with delta compression |
+| **Simulation Fields** | 3D scalar/vector fields with trilinear interpolation and diffusion |
+| **Thermal** | Heat diffusion, melt, thermal expansion, freeze |
+| **Pressure** | Contact force accumulation, crush, bulge, dent deformation |
+| **Erosion** | Wind, water, chemical corrosion, ablation |
+| **Fracture** | Stress-driven crack propagation with CSG subtraction |
+| **Phase Change** | Solid/liquid/gas transitions driven by temperature |
 | **Deterministic RNG** | PCG-XSH-RR pseudo-random number generator |
 | **Contact Events** | Begin/Persist/End contact and trigger event tracking |
 | **no_std Compatible** | Works on embedded systems and WebAssembly |
@@ -120,46 +144,103 @@ ALICE-Physics guarantees **bit-exact results** everywhere, enabling:
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────────────────────┐
-│                       ALICE-Physics v0.3.0                           │
-├──────────────────────────────────────────────────────────────────────┤
-│  Core Layer                                                          │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐  │
-│  │  math    │ │ collider │ │  solver  │ │   bvh    │ │sdf_colldr│  │
-│  │ Fix128   │ │ AABB     │ │ RigidBody│ │ Morton   │ │ SdfField │  │
-│  │ Vec3Fix  │ │ Sphere   │ │ XPBD     │ │ Stackless│ │ Gradient │  │
-│  │ QuatFix  │ │ Capsule  │ │ Batching │ │ Zero-    │ │ Early-out│  │
-│  │ CORDIC   │ │ GJK/EPA  │ │ Rollback │ │  alloc   │ │          │  │
-│  └──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘  │
-│                                                                      │
-│  Constraint & Dynamics Layer                                         │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐  │
-│  │  joint   │ │  motor   │ │articulatn│ │  force   │ │ sleeping │  │
-│  │ Ball     │ │ PD 1D/3D │ │ Ragdoll  │ │ Wind     │ │ Islands  │  │
-│  │ Hinge    │ │ Position │ │ FK Chain │ │ Gravity  │ │ Union-   │  │
-│  │ Fixed    │ │ Velocity │ │ Robotic  │ │ Buoyancy │ │  Find    │  │
-│  │ Slider   │ │ Max Torq │ │ 12-body  │ │ Drag     │ │ Auto     │  │
-│  │ Spring   │ │          │ │          │ │ Vortex   │ │  Sleep   │  │
-│  └──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘  │
-│                                                                      │
-│  Query & Collision Layer                                             │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐  │
-│  │ raycast  │ │   ccd    │ │ trimesh  │ │heightfld │ │  filter  │  │
-│  │ Sphere   │ │ TOI      │ │ Triangle │ │ Bilinear │ │ Layer    │  │
-│  │ AABB     │ │ Conserv. │ │ BVH-accel│ │ Normal   │ │ Mask     │  │
-│  │ Capsule  │ │ Advance  │ │ Moller-  │ │ Sphere   │ │ Group    │  │
-│  │ Plane    │ │ Swept    │ │ Trumbore │ │ Collide  │ │ Bidirect │  │
-│  │ Sweep    │ │ AABB     │ │ Closest  │ │ Signed   │ │          │  │
-│  └──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘  │
-│                                                                      │
-│  Utility Layer                                                       │
-│  ┌──────────┐ ┌──────────┐ ┌─────────────────────────────────────┐  │
-│  │   rng    │ │  event   │ │      neural (ALICE-ML × Physics)    │  │
-│  │ PCG-XSH  │ │ Begin    │ │ Ternary {-1,0,+1} → Fix128 Add/Sub │  │
-│  │ Fix128   │ │ Persist  │ │ Deterministic AI                    │  │
-│  │ Direction│ │ End      │ │                                     │  │
-│  └──────────┘ └──────────┘ └─────────────────────────────────────┘  │
-└──────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          ALICE-Physics v0.3.0                                │
+│                    45 modules, 230 unit tests, 8 doc tests                   │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  Core Layer                                                                  │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐          │
+│  │  math    │ │ collider │ │  solver  │ │   bvh    │ │sdf_colldr│          │
+│  │ Fix128   │ │ AABB     │ │ RigidBody│ │ Morton   │ │ SdfField │          │
+│  │ Vec3Fix  │ │ Sphere   │ │ XPBD     │ │ Stackless│ │ Gradient │          │
+│  │ QuatFix  │ │ Capsule  │ │ Sensor   │ │ Zero-    │ │ Early-out│          │
+│  │ CORDIC   │ │ GJK/EPA  │ │ Rollback │ │  alloc   │ │          │          │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘          │
+│                                                                              │
+│  Constraint & Dynamics Layer                                                 │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐          │
+│  │  joint   │ │  motor   │ │articulatn│ │  force   │ │ sleeping │          │
+│  │ Ball     │ │ PD 1D/3D │ │ Ragdoll  │ │ Wind     │ │ Islands  │          │
+│  │ Hinge    │ │ Position │ │ FK Chain │ │ Gravity  │ │ Union-   │          │
+│  │ Fixed    │ │ Velocity │ │ Robotic  │ │ Buoyancy │ │  Find    │          │
+│  │ Slider   │ │ Max Torq │ │ 12-body  │ │ Drag     │ │ Auto     │          │
+│  │ Spring   │ │          │ │          │ │ Vortex   │ │  Sleep   │          │
+│  │ Breakable│ │          │ │          │ │          │ │          │          │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘          │
+│                                                                              │
+│  Query & Collision Layer                                                     │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐          │
+│  │ raycast  │ │   ccd    │ │ trimesh  │ │heightfld │ │  filter  │          │
+│  │ Sphere   │ │ TOI      │ │ Triangle │ │ Bilinear │ │ Layer    │          │
+│  │ AABB     │ │ Conserv. │ │ BVH-accel│ │ Normal   │ │ Mask     │          │
+│  │ Capsule  │ │ Advance  │ │ Moller-  │ │ Sphere   │ │ Group    │          │
+│  │ Plane    │ │ Swept    │ │ Trumbore │ │ Collide  │ │ Bidirect │          │
+│  │ Sweep    │ │ AABB     │ │ Closest  │ │ Signed   │ │          │          │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘          │
+│  ┌──────────┐ ┌──────────┐                                                  │
+│  │  query   │ │character │                                                  │
+│  │ SphCast  │ │ Move&Sld │                                                  │
+│  │ CapCast  │ │ Stair    │                                                  │
+│  │ Overlap  │ │ Ground   │                                                  │
+│  │ AABB Ovr │ │ SDF Terr │                                                  │
+│  └──────────┘ └──────────┘                                                  │
+│                                                                              │
+│  Soft Body & Simulation Layer                                                │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐          │
+│  │  rope    │ │  cloth   │ │  fluid   │ │deformable│ │ vehicle  │          │
+│  │ XPBD     │ │ XPBD     │ │ PBF      │ │ FEM-XPBD │ │ Wheel    │          │
+│  │ Distance │ │ Triangle │ │ SPH Hash │ │ Tetrahedr│ │ Suspensn │          │
+│  │ Chain    │ │ Self-Col │ │ Density  │ │ Volume   │ │ Engine   │          │
+│  │ Cable    │ │ SpatHash │ │ Viscosty │ │ Neo-Hook │ │ Steering │          │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘          │
+│                                                                              │
+│  SDF Advanced Layer                                                          │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐          │
+│  │sdf_mnfld │ │ sdf_ccd  │ │sdf_force │ │sdf_destr │ │sdf_adapt │          │
+│  │ Manifold │ │ SphTrace │ │ Attract  │ │ CSG Bool │ │ LOD      │          │
+│  │ N-point  │ │ March    │ │ Repel    │ │ Subtract │ │ Distance │          │
+│  │ Contact  │ │ TOI      │ │ Contain  │ │ Real-time│ │ Adaptive │          │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘          │
+│  ┌──────────┐ ┌──────────┐                                                  │
+│  │cvx_decomp│ │ gpu_sdf  │                                                  │
+│  │ Voxel    │ │ Compute  │                                                  │
+│  │ Flood    │ │ Batch    │                                                  │
+│  │ Convex   │ │ Shader   │                                                  │
+│  └──────────┘ └──────────┘                                                  │
+│                                                                              │
+│  SDF Simulation Modifiers Layer                                              │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐          │
+│  │sim_field │ │sim_modif │ │ thermal  │ │ pressure │ │ erosion  │          │
+│  │ Scalar3D │ │ Modifier │ │ Heat Eq  │ │ Crush    │ │ Wind     │          │
+│  │ Vector3D │ │ Chain    │ │ Melt     │ │ Bulge    │ │ Water    │          │
+│  │ Trilin   │ │ Modified │ │ Freeze   │ │ Dent     │ │ Chemical │          │
+│  │ Diffuse  │ │ SDF      │ │ Expand   │ │ Yield    │ │ Ablation │          │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘          │
+│  ┌──────────┐ ┌──────────┐                                                  │
+│  │ fracture │ │phase_chg │                                                  │
+│  │ Stress   │ │ Solid    │                                                  │
+│  │ Crack    │ │ Liquid   │                                                  │
+│  │ CSG Sub  │ │ Gas      │                                                  │
+│  │ Voronoi  │ │ Latent H │                                                  │
+│  └──────────┘ └──────────┘                                                  │
+│                                                                              │
+│  Game Systems Layer                                                          │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐                                    │
+│  │anim_blnd │ │audio_phys│ │ netcode  │                                    │
+│  │ SLERP    │ │ Impact   │ │ FrameInp │                                    │
+│  │ Ragdoll  │ │ Friction │ │ Checksum │                                    │
+│  │ Blend    │ │ Rolling  │ │ Snapshot │                                    │
+│  │ IK Mix   │ │ Material │ │ Rollback │                                    │
+│  └──────────┘ └──────────┘ └──────────┘                                    │
+│                                                                              │
+│  Utility Layer                                                               │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌─────────────────────────────────┐│
+│  │   rng    │ │  event   │ │fluid_net │ │      neural (ALICE-ML × Phys)   ││
+│  │ PCG-XSH  │ │ Begin    │ │ Delta    │ │ Ternary {-1,0,+1} → Fix128     ││
+│  │ Fix128   │ │ Persist  │ │ Compress │ │ Deterministic AI                ││
+│  │ Direction│ │ End      │ │ Snapshot │ │ Ragdoll Controller              ││
+│  └──────────┘ └──────────┘ └──────────┘ └─────────────────────────────────┘│
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Usage
@@ -350,6 +431,7 @@ println!("Nodes: {}, Leaves: {}", stats.node_count, stats.leaf_count);
 | `inv_inertia` | `Vec3Fix` | Inverse inertia tensor (diagonal) |
 | `restitution` | `Fix128` | Bounciness (0-1) |
 | `friction` | `Fix128` | Friction coefficient |
+| `is_sensor` | `bool` | Sensor mode: detects overlap but no physics response |
 
 **Constraints:**
 - `DistanceConstraint`: Fixed distance between anchor points
@@ -359,6 +441,7 @@ println!("Nodes: {}, Leaves: {}", stats.node_count, stats.leaf_count);
 - `RigidBody::new(position, mass)` - Create dynamic body
 - `RigidBody::new_dynamic(position, mass)` - Alias for new
 - `RigidBody::new_static(position)` - Create immovable body
+- `RigidBody::new_sensor(position)` - Create sensor/trigger body (no physics response)
 
 ### `bvh` - Spatial Acceleration
 
@@ -374,7 +457,7 @@ println!("Nodes: {}, Leaves: {}", stats.node_count, stats.leaf_count);
 - **Escape Pointers**: Stackless traversal (zero allocation)
 - **i32 AABB**: Fast integer comparison without Fix128 reconstruction
 
-### `joint` - 5 Joint Types
+### `joint` - 5 Joint Types + Breakable Constraints
 
 | Type | Description |
 |------|-------------|
@@ -384,10 +467,20 @@ println!("Nodes: {}, Leaves: {}", stats.node_count, stats.leaf_count);
 | `SliderJoint` | Prismatic joint (1 translational DOF) with limits |
 | `SpringJoint` | Damped spring constraint |
 
+All joint types support **breakable constraints** via `with_break_force(max_force)`. When the constraint force exceeds the threshold, the joint breaks and is removed from simulation.
+
 ```rust
 use alice_physics::joint::*;
+// Hinge with angle limits
 let hinge = HingeJoint::new(body_a, body_b, anchor_a, anchor_b, axis_a, axis_b)
-    .with_limits(-Fix128::HALF_PI, Fix128::HALF_PI);  // radians
+    .with_limits(-Fix128::HALF_PI, Fix128::HALF_PI);
+
+// Breakable ball joint (breaks at force > 100)
+let ball = BallJoint::new(body_a, body_b, anchor_a, anchor_b)
+    .with_break_force(Fix128::from_int(100));
+
+// Solve with breakable support — returns indices of broken joints
+let broken = solve_joints_breakable(&joints, &mut bodies, dt);
 ```
 
 ### `raycast` - Ray & Shape Casting
@@ -493,6 +586,210 @@ let hinge = HingeJoint::new(body_a, body_b, anchor_a, anchor_b, axis_a, axis_b)
 | `EventCollector` | Tracks contact begin/persist/end per pair |
 | `ContactEvent` | Body pair + event type + contact point |
 | `ContactEventType` | Begin, Persist, End |
+
+### `query` - Shape Cast & Overlap Queries
+
+| Function | Description |
+|----------|-------------|
+| `sphere_cast` | Sweep a sphere along a direction (Minkowski sum approach) |
+| `capsule_cast` | Sweep a capsule along a direction (3-point sphere cast) |
+| `overlap_sphere` | Find all bodies overlapping a sphere |
+| `overlap_aabb` | Find all bodies within an AABB (point test) |
+| `overlap_aabb_expanded` | Find all bodies within an AABB expanded by body radius |
+
+### `character` - Character Controller
+
+| Type | Description |
+|------|-------------|
+| `CharacterController` | Kinematic capsule-based character with move-and-slide |
+| `CharacterConfig` | Radius, height, max slope, step height, skin width |
+| `MoveResult` | Movement result with ground state |
+
+**Features:**
+- Collide-and-slide algorithm with configurable max slides
+- Ground detection via downward raycast + SDF
+- Stair stepping (automatic step-up for small obstacles)
+- SDF terrain integration (push out of SDF surfaces)
+
+### `rope` - XPBD Rope & Cable
+
+| Type | Description |
+|------|-------------|
+| `Rope` | XPBD distance-chain rope simulation |
+| `RopeConfig` | Segment count, length, stiffness, damping |
+
+### `cloth` - XPBD Cloth Simulation
+
+| Type | Description |
+|------|-------------|
+| `Cloth` | XPBD triangle mesh cloth with stretch/shear/bend constraints |
+| `ClothConfig` | Stiffness, damping, self-collision, gravity |
+
+**Features:**
+- Distance constraints (stretch resistance)
+- Bending constraints
+- Self-collision via spatial hash grid
+
+### `fluid` - Position-Based Fluids
+
+| Type | Description |
+|------|-------------|
+| `Fluid` | Position-Based Fluids (PBF) simulation |
+| `FluidConfig` | Particle count, rest density, viscosity, kernel radius |
+
+**Features:**
+- SPH density estimation with spatial hash grid
+- Incompressibility constraint solving
+- Viscosity (XSPH)
+- Surface tension
+
+### `deformable` - FEM-XPBD Deformable Bodies
+
+| Type | Description |
+|------|-------------|
+| `DeformableBody` | FEM tetrahedral mesh deformable body |
+| `DeformableConfig` | Young's modulus, Poisson's ratio, damping |
+
+### `vehicle` - Vehicle Physics
+
+| Type | Description |
+|------|-------------|
+| `Vehicle` | Complete vehicle simulation |
+| `VehicleConfig` | Wheel count, suspension, engine, steering parameters |
+
+**Features:**
+- Wheel contact with ground/terrain
+- Spring-damper suspension
+- Engine torque with gear shifting
+- Ackermann steering geometry
+
+### `animation_blend` - Animation Blending
+
+| Type | Description |
+|------|-------------|
+| `AnimationBlender` | Ragdoll-to-animation pose blending |
+| `BlendMode` | Lerp, Slerp, Additive |
+| `SkeletonPose` | Joint transforms for a skeleton |
+| `AnimationClip` | Keyframed animation data |
+
+### `audio_physics` - Physics-Based Audio
+
+| Type | Description |
+|------|-------------|
+| `AudioGenerator` | Generates audio parameters from physics contacts |
+| `AudioConfig` | Material properties for audio synthesis |
+| `AudioEvent` | Impact, friction, rolling audio events |
+| `AudioMaterial` | Surface material with audio properties |
+
+### `sdf_manifold` - SDF Contact Manifold
+
+Multi-point contact generation from SDF surfaces for more stable collision response.
+
+### `sdf_ccd` - SDF Continuous Collision Detection
+
+Sphere tracing-based CCD for bodies moving against SDF surfaces.
+
+### `sdf_force` - SDF Force Fields
+
+| Variant | Description |
+|---------|-------------|
+| `Attract` | Pull bodies toward SDF surface |
+| `Repel` | Push bodies away from SDF surface |
+| `Contain` | Keep bodies inside SDF boundary |
+| `Flow` | Flow field following SDF gradient |
+
+### `sdf_destruction` - SDF Boolean Destruction
+
+Real-time CSG boolean operations for destructible environments.
+
+| Type | Description |
+|------|-------------|
+| `DestructibleSdf` | SDF that accumulates destruction shapes |
+| `DestructionShape` | Sphere, box, or custom SDF subtraction |
+
+### `sdf_adaptive` - Adaptive SDF Evaluation
+
+Distance-based LOD for SDF evaluation — faraway queries use coarser sampling.
+
+### `convex_decompose` - Convex Decomposition
+
+Generate convex hull decomposition from an SDF voxel grid for use with GJK/EPA.
+
+### `gpu_sdf` - GPU Compute Shader
+
+Batch SDF evaluation on GPU via compute shaders. Requires `--features std`.
+
+### `fluid_netcode` - Fluid Netcode
+
+Deterministic fluid simulation with delta-compressed snapshots for network sync. Requires `--features std`.
+
+### `sim_field` - 3D Simulation Fields
+
+| Type | Description |
+|------|-------------|
+| `ScalarField3D` | Uniform grid scalar field with trilinear interpolation |
+| `VectorField3D` | Uniform grid vector field with trilinear interpolation |
+
+**Features:**
+- Trilinear interpolation for smooth sampling
+- Diffusion (heat equation solver)
+- Decay over time
+- Point splatting for localized effects
+
+### `sim_modifier` - SDF Simulation Modifiers
+
+| Type | Description |
+|------|-------------|
+| `PhysicsModifier` | Trait for physics-driven SDF modification |
+| `ModifiedSdf` | Chain of modifiers that alter SDF distance |
+| `SingleModifiedSdf` | Single-modifier convenience wrapper |
+
+### `thermal` - Thermal Simulation
+
+| Type | Description |
+|------|-------------|
+| `ThermalModifier` | Heat diffusion SDF modifier |
+| `ThermalConfig` | Conductivity, melt/freeze thresholds |
+| `HeatSource` | Point/area heat source |
+
+**Effects:** Melt (surface recedes), thermal expansion, freeze (crystalline growth)
+
+### `pressure` - Pressure Simulation
+
+| Type | Description |
+|------|-------------|
+| `PressureModifier` | Contact-force-driven deformation |
+| `PressureConfig` | Yield threshold, elastic spring-back |
+
+**Effects:** Crush (high pressure), bulge (internal pressure), permanent dents
+
+### `erosion` - Erosion Simulation
+
+| Type | Description |
+|------|-------------|
+| `ErosionModifier` | Surface material removal from forces |
+| `ErosionConfig` | Hardness, erosion rate |
+| `ErosionType` | Wind, Water, Chemical, Ablation |
+
+### `fracture` - Fracture Simulation
+
+| Type | Description |
+|------|-------------|
+| `FractureModifier` | Stress-driven crack propagation |
+| `FractureConfig` | Fracture toughness, crack speed |
+| `Crack` | Individual crack with position and direction |
+
+**Effects:** Stress accumulation, crack seeds, Voronoi-like fragmentation via CSG subtraction
+
+### `phase_change` - Phase Change Simulation
+
+| Type | Description |
+|------|-------------|
+| `PhaseChangeModifier` | Temperature-driven state transitions |
+| `PhaseChangeConfig` | Melt/boil temperatures, latent heat |
+| `Phase` | Solid, Liquid, Gas |
+
+**Effects:** Melting (solid→liquid, flows downward), vaporization (liquid→gas, expands), solidification, condensation
 
 ## SDF Collider (ALICE-SDF Integration)
 
@@ -950,17 +1247,16 @@ Each body stores 6 channels (pos_x/y/z, vel_x/y/z) in ALICE-DB. ALICE-DB's model
 
 ```
 v0.3.0 Test Summary:
-  - 121 unit tests across 19 modules (including netcode, replay)
-  - 1 doc test
+  - 230 unit tests across 42 modules
+  - 8 doc tests
   - All feature combinations pass
-  - Zero warnings
 ```
 
 ## License
 
 AGPL-3.0 - See [LICENSE](LICENSE) for details.
 
-Copyright (C) 2024 Moroya Sakamoto
+Copyright (C) 2024-2026 Moroya Sakamoto
 
 ## Acknowledgments
 
