@@ -123,6 +123,15 @@ pub mod fluid_netcode;
 pub mod vehicle;
 pub mod animation_blend;
 pub mod audio_physics;
+pub mod character;
+pub mod query;
+pub mod sim_field;
+pub mod sim_modifier;
+pub mod thermal;
+pub mod pressure;
+pub mod erosion;
+pub mod fracture;
+pub mod phase_change;
 #[cfg(feature = "neural")]
 pub mod neural;
 pub mod netcode;
@@ -167,6 +176,16 @@ pub use fluid_netcode::{FluidSnapshot, FluidDelta};
 pub use vehicle::{Vehicle, VehicleConfig};
 pub use animation_blend::{AnimationBlender, BlendMode, SkeletonPose, AnimationClip};
 pub use audio_physics::{AudioGenerator, AudioConfig, AudioEvent, AudioMaterial};
+pub use character::{CharacterController, CharacterConfig, MoveResult};
+pub use query::{ShapeCastHit, OverlapResult, sphere_cast, capsule_cast, overlap_sphere, overlap_aabb};
+pub use joint::solve_joints_breakable;
+pub use sim_field::{ScalarField3D, VectorField3D};
+pub use sim_modifier::{PhysicsModifier, ModifiedSdf, SingleModifiedSdf};
+pub use thermal::{ThermalModifier, ThermalConfig, HeatSource};
+pub use pressure::{PressureModifier, PressureConfig};
+pub use erosion::{ErosionModifier, ErosionConfig, ErosionType};
+pub use fracture::{FractureModifier, FractureConfig, Crack};
+pub use phase_change::{PhaseChangeModifier, PhaseChangeConfig, Phase};
 
 /// Prelude module for convenient imports
 pub mod prelude {
@@ -205,6 +224,16 @@ pub mod prelude {
     pub use crate::vehicle::{Vehicle, VehicleConfig};
     pub use crate::animation_blend::{AnimationBlender, BlendMode, SkeletonPose, AnimationClip};
     pub use crate::audio_physics::{AudioGenerator, AudioConfig, AudioEvent, AudioMaterial};
+    pub use crate::character::{CharacterController, CharacterConfig, MoveResult};
+    pub use crate::query::{ShapeCastHit, OverlapResult, sphere_cast, capsule_cast, overlap_sphere, overlap_aabb};
+    pub use crate::joint::solve_joints_breakable;
+    pub use crate::sim_field::{ScalarField3D, VectorField3D};
+    pub use crate::sim_modifier::{PhysicsModifier, ModifiedSdf, SingleModifiedSdf};
+    pub use crate::thermal::{ThermalModifier, ThermalConfig, HeatSource};
+    pub use crate::pressure::{PressureModifier, PressureConfig};
+    pub use crate::erosion::{ErosionModifier, ErosionConfig, ErosionType};
+    pub use crate::fracture::{FractureModifier, FractureConfig, Crack};
+    pub use crate::phase_change::{PhaseChangeModifier, PhaseChangeConfig, Phase};
     #[cfg(feature = "neural")]
     pub use crate::neural::{
         DeterministicNetwork, RagdollController, ControllerConfig,

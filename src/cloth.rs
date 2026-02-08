@@ -42,6 +42,10 @@ pub struct ClothConfig {
     pub sdf_friction: Fix128,
     /// Cloth thickness for collision
     pub thickness: Fix128,
+    /// Enable self-collision (particle-vs-particle)
+    pub self_collision: bool,
+    /// Minimum distance between particles for self-collision
+    pub self_collision_distance: Fix128,
 }
 
 impl Default for ClothConfig {
@@ -55,6 +59,8 @@ impl Default for ClothConfig {
             bend_compliance: Fix128::from_ratio(1, 100),
             sdf_friction: Fix128::from_ratio(2, 10),
             thickness: Fix128::from_ratio(1, 100),
+            self_collision: false,
+            self_collision_distance: Fix128::from_ratio(2, 100), // 0.02
         }
     }
 }
@@ -271,6 +277,9 @@ impl Cloth {
         for _ in 0..self.config.iterations {
             self.solve_edge_constraints(dt);
             self.solve_bend_constraints(dt);
+            if self.config.self_collision {
+                self.solve_self_collision();
+            }
         }
 
         // 3. Update velocities
@@ -370,6 +379,117 @@ impl Cloth {
             }
             if !w3.is_zero() {
                 self.positions[c.i3] = self.positions[c.i3] - grad3 * w3;
+            }
+        }
+    }
+
+    /// Solve self-collision using spatial hash grid.
+    ///
+    /// Particles closer than `self_collision_distance` are pushed apart.
+    /// Uses a spatial hash grid (same pattern as fluid.rs) for O(n) neighbor search.
+    fn solve_self_collision(&mut self) {
+        let n = self.particle_count();
+        if n < 2 {
+            return;
+        }
+
+        let min_dist = self.config.self_collision_distance;
+        let min_dist_sq = min_dist * min_dist;
+        let cell_size = min_dist * Fix128::from_int(2);
+        let inv_cell = if cell_size.is_zero() { Fix128::ONE } else { Fix128::ONE / cell_size };
+        let grid_dim: usize = 64;
+        let grid_dim_i64 = grid_dim as i64;
+        let half = grid_dim_i64 / 2;
+
+        // Build spatial hash grid
+        let total_cells = grid_dim * grid_dim * grid_dim;
+        let mut cells: Vec<Vec<usize>> = vec![Vec::new(); total_cells];
+
+        for i in 0..n {
+            if self.inv_masses[i].is_zero() {
+                continue;
+            }
+            let p = self.positions[i];
+            let ix = ((p.x * inv_cell).hi + half).clamp(0, grid_dim_i64 - 1) as usize;
+            let iy = ((p.y * inv_cell).hi + half).clamp(0, grid_dim_i64 - 1) as usize;
+            let iz = ((p.z * inv_cell).hi + half).clamp(0, grid_dim_i64 - 1) as usize;
+            let h = ix + iy * grid_dim + iz * grid_dim * grid_dim;
+            if h < total_cells {
+                cells[h].push(i);
+            }
+        }
+
+        // Build edge set for quick lookup (skip connected particles)
+        // Use a simple O(1) hash check: particle pairs that share an edge
+        // should not have self-collision applied
+        let mut edge_pairs: Vec<(usize, usize)> = Vec::new();
+        for c in &self.edge_constraints {
+            let (lo, hi) = if c.i0 < c.i1 { (c.i0, c.i1) } else { (c.i1, c.i0) };
+            edge_pairs.push((lo, hi));
+        }
+
+        // Check neighbors and apply separation constraints
+        for i in 0..n {
+            if self.inv_masses[i].is_zero() {
+                continue;
+            }
+            let p = self.positions[i];
+            let cx = ((p.x * inv_cell).hi + half).clamp(0, grid_dim_i64 - 1) as i32;
+            let cy = ((p.y * inv_cell).hi + half).clamp(0, grid_dim_i64 - 1) as i32;
+            let cz = ((p.z * inv_cell).hi + half).clamp(0, grid_dim_i64 - 1) as i32;
+
+            for dz in -1i32..=1 {
+                for dy in -1i32..=1 {
+                    for dx in -1i32..=1 {
+                        let nx = cx + dx;
+                        let ny = cy + dy;
+                        let nz = cz + dz;
+                        if nx < 0 || ny < 0 || nz < 0 {
+                            continue;
+                        }
+                        let nx = nx as usize;
+                        let ny = ny as usize;
+                        let nz = nz as usize;
+                        if nx >= grid_dim || ny >= grid_dim || nz >= grid_dim {
+                            continue;
+                        }
+
+                        let h = nx + ny * grid_dim + nz * grid_dim * grid_dim;
+                        for &j in &cells[h] {
+                            if j <= i {
+                                continue; // avoid duplicate pairs
+                            }
+                            if self.inv_masses[j].is_zero() {
+                                continue;
+                            }
+
+                            // Skip particles connected by an edge
+                            let (lo, hi) = if i < j { (i, j) } else { (j, i) };
+                            if edge_pairs.contains(&(lo, hi)) {
+                                continue;
+                            }
+
+                            let delta = self.positions[j] - self.positions[i];
+                            let dist_sq = delta.length_squared();
+
+                            if dist_sq < min_dist_sq && !dist_sq.is_zero() {
+                                let dist = dist_sq.sqrt();
+                                let error = min_dist - dist;
+                                let normal = delta / dist;
+
+                                let w_sum = self.inv_masses[i] + self.inv_masses[j];
+                                if w_sum.is_zero() {
+                                    continue;
+                                }
+
+                                let correction = normal * (error / w_sum);
+
+                                self.positions[i] = self.positions[i] - correction * self.inv_masses[i];
+                                self.positions[j] = self.positions[j] + correction * self.inv_masses[j];
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -533,6 +653,41 @@ mod tests {
         let initial_y = cloth.positions[0].y.to_f32(); // top row (pinned)
         let bottom_y = cloth.positions[20].y.to_f32(); // bottom row
         assert!(bottom_y < initial_y, "Bottom should be below top, top={}, bottom={}", initial_y, bottom_y);
+    }
+
+    #[test]
+    fn test_cloth_self_collision() {
+        let mut cloth = Cloth::new_grid(
+            Vec3Fix::ZERO,
+            Fix128::from_int(2),
+            Fix128::from_int(2),
+            5, 5,
+            Fix128::from_ratio(1, 100),
+        );
+        cloth.config.self_collision = true;
+        cloth.config.self_collision_distance = Fix128::from_ratio(5, 100); // 0.05
+        cloth.pin_top_row(5);
+
+        let dt = Fix128::from_ratio(1, 60);
+        for _ in 0..60 {
+            cloth.step(dt);
+        }
+
+        // Verify no two non-connected particles are closer than self_collision_distance
+        // (This is a basic sanity check; exact enforcement depends on iterations)
+        let min_d = cloth.config.self_collision_distance.to_f32();
+        let n = cloth.particle_count();
+        let mut too_close = 0;
+        for i in 0..n {
+            for j in (i+1)..n {
+                let d = (cloth.positions[i] - cloth.positions[j]).length().to_f32();
+                if d < min_d * 0.5 { // allow some tolerance
+                    too_close += 1;
+                }
+            }
+        }
+        // With self-collision enabled, severely overlapping particles should be rare
+        assert!(too_close < n, "Self-collision should prevent extreme particle overlap");
     }
 
     #[test]

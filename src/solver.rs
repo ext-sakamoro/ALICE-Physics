@@ -56,6 +56,8 @@ pub struct RigidBody {
     pub restitution: Fix128,
     /// Friction coefficient
     pub friction: Fix128,
+    /// Whether this body is a sensor/trigger (detects overlap but no physics response)
+    pub is_sensor: bool,
 }
 
 impl RigidBody {
@@ -87,6 +89,7 @@ impl RigidBody {
             prev_rotation: QuatFix::IDENTITY,
             restitution: Fix128::from_ratio(5, 10), // 0.5 default
             friction: Fix128::from_ratio(3, 10),    // 0.3 default
+            is_sensor: false,
         }
     }
 
@@ -109,6 +112,24 @@ impl RigidBody {
             prev_rotation: QuatFix::IDENTITY,
             restitution: Fix128::ZERO,
             friction: Fix128::ONE,
+            is_sensor: false,
+        }
+    }
+
+    /// Create a sensor (trigger) body — detects overlap but no physics response
+    pub fn new_sensor(position: Vec3Fix) -> Self {
+        Self {
+            position,
+            rotation: QuatFix::IDENTITY,
+            velocity: Vec3Fix::ZERO,
+            angular_velocity: Vec3Fix::ZERO,
+            inv_mass: Fix128::ZERO,
+            inv_inertia: Vec3Fix::ZERO,
+            prev_position: position,
+            prev_rotation: QuatFix::IDENTITY,
+            restitution: Fix128::ZERO,
+            friction: Fix128::ZERO,
+            is_sensor: true,
         }
     }
 
@@ -595,6 +616,12 @@ impl PhysicsWorld {
         let constraint = self.contact_constraints[idx];
         let body_a = self.bodies[constraint.body_a];
         let body_b = self.bodies[constraint.body_b];
+
+        // Skip physics response for sensor/trigger bodies
+        if body_a.is_sensor || body_b.is_sensor {
+            return;
+        }
+
         let contact = constraint.contact;
 
         if contact.depth <= Fix128::ZERO {
@@ -675,6 +702,11 @@ impl PhysicsWorld {
             let body_a = self.bodies[constraint.body_a];
             let body_b = self.bodies[constraint.body_b];
 
+            // Skip physics response for sensor/trigger bodies
+            if body_a.is_sensor || body_b.is_sensor {
+                continue;
+            }
+
             let contact = constraint.contact;
 
             // Only resolve if penetrating
@@ -738,7 +770,7 @@ impl PhysicsWorld {
         #[cfg(feature = "parallel")]
         {
             self.bodies.par_iter_mut().for_each(|body| {
-                if body.is_static() {
+                if body.is_static() || body.is_sensor {
                     return;
                 }
                 for sdf in sdf_colliders {
@@ -754,7 +786,7 @@ impl PhysicsWorld {
         #[cfg(not(feature = "parallel"))]
         {
             for body in &mut self.bodies {
-                if body.is_static() {
+                if body.is_static() || body.is_sensor {
                     continue;
                 }
                 for sdf in sdf_colliders {

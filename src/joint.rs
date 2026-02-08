@@ -45,6 +45,8 @@ pub struct BallJoint {
     pub local_anchor_b: Vec3Fix,
     /// Compliance (inverse stiffness, 0 = rigid)
     pub compliance: Fix128,
+    /// Maximum force before the joint breaks (None = unbreakable)
+    pub break_force: Option<Fix128>,
 }
 
 impl BallJoint {
@@ -57,12 +59,19 @@ impl BallJoint {
             local_anchor_a: anchor_a,
             local_anchor_b: anchor_b,
             compliance: Fix128::ZERO,
+            break_force: None,
         }
     }
 
     /// Set compliance (inverse stiffness)
     pub fn with_compliance(mut self, compliance: Fix128) -> Self {
         self.compliance = compliance;
+        self
+    }
+
+    /// Set break force threshold
+    pub fn with_break_force(mut self, force: Fix128) -> Self {
+        self.break_force = Some(force);
         self
     }
 }
@@ -90,6 +99,8 @@ pub struct HingeJoint {
     pub compliance: Fix128,
     /// Angular compliance
     pub angular_compliance: Fix128,
+    /// Maximum force before the joint breaks (None = unbreakable)
+    pub break_force: Option<Fix128>,
 }
 
 impl HingeJoint {
@@ -114,6 +125,7 @@ impl HingeJoint {
             angle_max: None,
             compliance: Fix128::ZERO,
             angular_compliance: Fix128::ZERO,
+            break_force: None,
         }
     }
 
@@ -127,6 +139,12 @@ impl HingeJoint {
     /// Set positional compliance (inverse stiffness)
     pub fn with_compliance(mut self, compliance: Fix128) -> Self {
         self.compliance = compliance;
+        self
+    }
+
+    /// Set break force threshold
+    pub fn with_break_force(mut self, force: Fix128) -> Self {
+        self.break_force = Some(force);
         self
     }
 }
@@ -148,6 +166,8 @@ pub struct FixedJoint {
     pub compliance: Fix128,
     /// Angular compliance (inverse stiffness)
     pub angular_compliance: Fix128,
+    /// Maximum force before the joint breaks (None = unbreakable)
+    pub break_force: Option<Fix128>,
 }
 
 impl FixedJoint {
@@ -168,7 +188,14 @@ impl FixedJoint {
             relative_rotation,
             compliance: Fix128::ZERO,
             angular_compliance: Fix128::ZERO,
+            break_force: None,
         }
+    }
+
+    /// Set break force threshold
+    pub fn with_break_force(mut self, force: Fix128) -> Self {
+        self.break_force = Some(force);
+        self
     }
 }
 
@@ -191,6 +218,8 @@ pub struct SliderJoint {
     pub limit_max: Option<Fix128>,
     /// Positional compliance (inverse stiffness)
     pub compliance: Fix128,
+    /// Maximum force before the joint breaks (None = unbreakable)
+    pub break_force: Option<Fix128>,
 }
 
 impl SliderJoint {
@@ -212,6 +241,7 @@ impl SliderJoint {
             limit_min: None,
             limit_max: None,
             compliance: Fix128::ZERO,
+            break_force: None,
         }
     }
 
@@ -219,6 +249,12 @@ impl SliderJoint {
     pub fn with_limits(mut self, min: Fix128, max: Fix128) -> Self {
         self.limit_min = Some(min);
         self.limit_max = Some(max);
+        self
+    }
+
+    /// Set break force threshold
+    pub fn with_break_force(mut self, force: Fix128) -> Self {
+        self.break_force = Some(force);
         self
     }
 }
@@ -240,6 +276,8 @@ pub struct SpringJoint {
     pub stiffness: Fix128,
     /// Damping coefficient
     pub damping: Fix128,
+    /// Maximum force before the joint breaks (None = unbreakable)
+    pub break_force: Option<Fix128>,
 }
 
 impl SpringJoint {
@@ -262,7 +300,14 @@ impl SpringJoint {
             rest_length,
             stiffness,
             damping,
+            break_force: None,
         }
+    }
+
+    /// Set break force threshold
+    pub fn with_break_force(mut self, force: Fix128) -> Self {
+        self.break_force = Some(force);
+        self
     }
 }
 
@@ -305,6 +350,61 @@ impl Joint {
             Joint::Spring(_) => JointType::Spring,
         }
     }
+
+    /// Get the break force threshold (None = unbreakable)
+    #[inline]
+    pub fn break_force(&self) -> Option<Fix128> {
+        match self {
+            Joint::Ball(j) => j.break_force,
+            Joint::Hinge(j) => j.break_force,
+            Joint::Fixed(j) => j.break_force,
+            Joint::Slider(j) => j.break_force,
+            Joint::Spring(j) => j.break_force,
+        }
+    }
+
+    /// Compute current constraint force (distance between anchor points).
+    ///
+    /// Returns the force magnitude used to determine if the joint should break.
+    pub fn compute_force(&self, bodies: &[crate::solver::RigidBody]) -> Fix128 {
+        let (a_idx, b_idx) = self.bodies();
+        let body_a = &bodies[a_idx];
+        let body_b = &bodies[b_idx];
+
+        match self {
+            Joint::Ball(j) => {
+                let anchor_a = body_a.position + body_a.rotation.rotate_vec(j.local_anchor_a);
+                let anchor_b = body_b.position + body_b.rotation.rotate_vec(j.local_anchor_b);
+                (anchor_b - anchor_a).length()
+            }
+            Joint::Hinge(j) => {
+                let anchor_a = body_a.position + body_a.rotation.rotate_vec(j.local_anchor_a);
+                let anchor_b = body_b.position + body_b.rotation.rotate_vec(j.local_anchor_b);
+                (anchor_b - anchor_a).length()
+            }
+            Joint::Fixed(j) => {
+                let anchor_a = body_a.position + body_a.rotation.rotate_vec(j.local_anchor_a);
+                let anchor_b = body_b.position + body_b.rotation.rotate_vec(j.local_anchor_b);
+                (anchor_b - anchor_a).length()
+            }
+            Joint::Slider(j) => {
+                let anchor_a = body_a.position + body_a.rotation.rotate_vec(j.local_anchor_a);
+                let anchor_b = body_b.position + body_b.rotation.rotate_vec(j.local_anchor_b);
+                let delta = anchor_b - anchor_a;
+                let world_axis = body_a.rotation.rotate_vec(j.local_axis).normalize();
+                let along = delta.dot(world_axis);
+                let perp = delta - world_axis * along;
+                perp.length()
+            }
+            Joint::Spring(j) => {
+                let anchor_a = body_a.position + body_a.rotation.rotate_vec(j.local_anchor_a);
+                let anchor_b = body_b.position + body_b.rotation.rotate_vec(j.local_anchor_b);
+                let dist = (anchor_b - anchor_a).length();
+                let displacement = dist - j.rest_length;
+                (j.stiffness * displacement).abs()
+            }
+        }
+    }
 }
 
 /// Solve all joints for one XPBD iteration
@@ -324,6 +424,47 @@ pub fn solve_joints(
             Joint::Spring(j) => solve_spring_joint(j, bodies, dt),
         }
     }
+}
+
+/// Solve joints and return indices of joints that should be removed (broken).
+///
+/// Checks each breakable joint's constraint force BEFORE solving.
+/// If the force exceeds the threshold, the joint is marked as broken
+/// and skipped during solving. Returns indices of broken joints in
+/// descending order (safe for sequential removal).
+pub fn solve_joints_breakable(
+    joints: &[Joint],
+    bodies: &mut [crate::solver::RigidBody],
+    dt: Fix128,
+) -> Vec<usize> {
+    // Check which joints exceeded their break force BEFORE solving
+    let mut broken = Vec::new();
+    for (i, joint) in joints.iter().enumerate() {
+        if let Some(max_force) = joint.break_force() {
+            let force = joint.compute_force(bodies);
+            if force > max_force {
+                broken.push(i);
+            }
+        }
+    }
+
+    // Solve only non-broken joints
+    for (i, joint) in joints.iter().enumerate() {
+        if broken.contains(&i) {
+            continue;
+        }
+        match joint {
+            Joint::Ball(j) => solve_ball_joint(j, bodies, dt),
+            Joint::Hinge(j) => solve_hinge_joint(j, bodies, dt),
+            Joint::Fixed(j) => solve_fixed_joint(j, bodies, dt),
+            Joint::Slider(j) => solve_slider_joint(j, bodies, dt),
+            Joint::Spring(j) => solve_spring_joint(j, bodies, dt),
+        }
+    }
+
+    // Sort descending for safe removal
+    broken.sort_unstable_by(|a, b| b.cmp(a));
+    broken
 }
 
 /// Solve ball joint: constrain anchor points to coincide
@@ -782,5 +923,58 @@ mod tests {
         let ball = Joint::Ball(BallJoint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO));
         assert_eq!(ball.bodies(), (0, 1));
         assert_eq!(ball.joint_type(), JointType::Ball);
+    }
+
+    #[test]
+    fn test_breakable_joint() {
+        let mut bodies = vec![
+            RigidBody::new_static(Vec3Fix::ZERO),
+            RigidBody::new(Vec3Fix::from_int(20, 0, 0), Fix128::ONE), // far away
+        ];
+
+        // Ball joint with low break force (should break immediately)
+        let joint = Joint::Ball(
+            BallJoint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO)
+                .with_break_force(Fix128::from_int(5))
+        );
+        let dt = Fix128::from_ratio(1, 60);
+
+        let broken = solve_joints_breakable(&[joint], &mut bodies, dt);
+        // Distance is ~20, break force is 5 → should break
+        assert_eq!(broken.len(), 1, "Joint should break under high force");
+        assert_eq!(broken[0], 0);
+    }
+
+    #[test]
+    fn test_unbreakable_joint() {
+        let mut bodies = vec![
+            RigidBody::new_static(Vec3Fix::ZERO),
+            RigidBody::new(Vec3Fix::from_int(1, 0, 0), Fix128::ONE),
+        ];
+
+        // Ball joint with high break force (should NOT break)
+        let joint = Joint::Ball(
+            BallJoint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO)
+                .with_break_force(Fix128::from_int(100))
+        );
+        let dt = Fix128::from_ratio(1, 60);
+
+        let broken = solve_joints_breakable(&[joint], &mut bodies, dt);
+        assert!(broken.is_empty(), "Joint should not break under low force");
+    }
+
+    #[test]
+    fn test_no_break_force() {
+        let mut bodies = vec![
+            RigidBody::new_static(Vec3Fix::ZERO),
+            RigidBody::new(Vec3Fix::from_int(100, 0, 0), Fix128::ONE),
+        ];
+
+        // No break force → never breaks
+        let joint = Joint::Ball(BallJoint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO));
+        let dt = Fix128::from_ratio(1, 60);
+
+        let broken = solve_joints_breakable(&[joint], &mut bodies, dt);
+        assert!(broken.is_empty(), "Joint without break_force should never break");
     }
 }
