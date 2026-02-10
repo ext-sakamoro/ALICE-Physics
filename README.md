@@ -1579,6 +1579,8 @@ ALICE-Physics connects to other ALICE ecosystem crates via feature-gated bridge 
 | Physics Visualization | `view` | [ALICE-View](../ALICE-View) | Real-time physics debug overlay rendering |
 | GPU Physics Controller | `trt` | [ALICE-TRT](../ALICE-TRT) | GPU ternary inference for physics control policies |
 | Physics State Streaming | `asp` | [ALICE-Streaming-Protocol](../ALICE-Streaming-Protocol) | Physics body state delta encoding as ASP D-packets |
+| `db_bridge` | `replay` | [ALICE-DB](../ALICE-DB) | Physics state snapshot persistence (energy, bodies, contacts) |
+| `analytics_bridge` | `analytics` | [ALICE-Analytics](../ALICE-Analytics) | Simulation profiling (step time, collision pairs, energy drift) |
 
 ### Recent Performance Improvements
 
