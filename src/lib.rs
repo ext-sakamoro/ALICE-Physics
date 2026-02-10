@@ -146,6 +146,10 @@ pub mod neural;
 pub mod netcode;
 #[cfg(feature = "replay")]
 pub mod replay;
+#[cfg(feature = "replay")]
+pub mod db_bridge;
+#[cfg(feature = "analytics")]
+pub mod analytics_bridge;
 #[cfg(feature = "python")]
 mod python;
 #[cfg(feature = "ffi")]

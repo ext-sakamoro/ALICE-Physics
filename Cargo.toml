@@ -23,6 +23,7 @@ python = ["pyo3", "numpy"] # Python bindings (PyO3 + NumPy zero-copy)
 replay = ["alice-db"]      # Replay recording/playback via ALICE-DB
 ffi = ["std"]              # C FFI for Unity/UE5/game engines
 wasm = ["wasm-bindgen", "js-sys"] # WebAssembly bindings for browsers
+analytics = ["dep:alice-analytics", "std"]  # ALICE-Analytics simulation profiling
 
 [dependencies]
 rayon = { version = "1.8", optional = true }
@@ -32,6 +33,7 @@ numpy = { version = "0.22", optional = true }
 alice-db = { path = "../ALICE-DB", optional = true }
 wasm-bindgen = { version = "0.2", optional = true }
 js-sys = { version = "0.3", optional = true }
+alice-analytics = { path = "../ALICE-Analytics", optional = true, default-features = false, features = ["std"] }
 
 [dev-dependencies]
 tempfile = "3.10"
