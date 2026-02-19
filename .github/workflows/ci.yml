@@ -53,6 +53,26 @@ jobs:
           TOML
           echo "" > ../ALICE-DB/src/lib.rs
 
+      - name: Create ALICE-Analytics stub (path dependency)
+        shell: bash
+        run: |
+          mkdir -p ../ALICE-Analytics/src
+          cat > ../ALICE-Analytics/Cargo.toml << 'TOML'
+          [package]
+          name = "alice-analytics"
+          version = "0.1.0"
+          edition = "2021"
+          [features]
+          default = ["std"]
+          std = []
+          [lib]
+          path = "src/lib.rs"
+          TOML
+          echo "" > ../ALICE-Analytics/src/lib.rs
+
+      - name: Build (no default features)
+        run: cargo build --lib --no-default-features
+
       - name: Build (core)
         run: cargo build --lib
 
@@ -61,6 +81,18 @@ jobs:
 
       - name: Build (FFI)
         run: cargo build --features "ffi"
+
+      - name: Build (parallel)
+        run: cargo build --lib --features "parallel"
+
+      - name: Build (neural + parallel)
+        run: cargo build --lib --features "neural,parallel"
+
+      - name: Build (analytics)
+        run: cargo build --lib --features "analytics"
+
+      - name: Test (all safe features)
+        run: cargo test --lib --features "parallel,neural,ffi,replay,analytics"
 
   clippy:
     name: Clippy
