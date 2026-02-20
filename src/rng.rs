@@ -104,11 +104,7 @@ impl DeterministicRng {
             }
             let factor = (Fix128::ONE - s).sqrt();
             let two = Fix128::from_int(2);
-            return Vec3Fix::new(
-                two * u * factor,
-                two * v * factor,
-                Fix128::ONE - two * s,
-            );
+            return Vec3Fix::new(two * u * factor, two * v * factor, Fix128::ONE - two * s);
         }
     }
 
@@ -154,7 +150,10 @@ mod tests {
                 same_count += 1;
             }
         }
-        assert!(same_count < 5, "Different seeds should produce different sequences");
+        assert!(
+            same_count < 5,
+            "Different seeds should produce different sequences"
+        );
     }
 
     #[test]
@@ -193,8 +192,15 @@ mod tests {
             let dir = rng.next_direction();
             let len_sq = dir.length_squared();
             // Should be approximately unit length
-            let diff = if len_sq > Fix128::ONE { len_sq - Fix128::ONE } else { Fix128::ONE - len_sq };
-            assert!(diff < Fix128::from_ratio(1, 10), "Direction should be roughly unit length");
+            let diff = if len_sq > Fix128::ONE {
+                len_sq - Fix128::ONE
+            } else {
+                Fix128::ONE - len_sq
+            };
+            assert!(
+                diff < Fix128::from_ratio(1, 10),
+                "Direction should be roughly unit length"
+            );
         }
     }
 }

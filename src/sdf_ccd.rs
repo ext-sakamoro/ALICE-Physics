@@ -16,9 +16,9 @@
 //!
 //! Author: Moroya Sakamoto
 
+use crate::ccd::TOI;
 use crate::math::{Fix128, Vec3Fix};
 use crate::sdf_collider::SdfCollider;
-use crate::ccd::TOI;
 
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
@@ -199,33 +199,31 @@ pub fn batch_sphere_trace_sdf(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sdf_collider::{SdfCollider, ClosureSdf};
     use crate::math::QuatFix;
+    use crate::sdf_collider::{ClosureSdf, SdfCollider};
 
     fn unit_sphere() -> ClosureSdf {
         ClosureSdf::new(
             |x, y, z| (x * x + y * y + z * z).sqrt() - 1.0,
             |x, y, z| {
                 let len = (x * x + y * y + z * z).sqrt();
-                if len < 1e-10 { (0.0, 1.0, 0.0) } else { (x / len, y / len, z / len) }
+                if len < 1e-10 {
+                    (0.0, 1.0, 0.0)
+                } else {
+                    (x / len, y / len, z / len)
+                }
             },
         )
     }
 
     fn ground_plane() -> ClosureSdf {
-        ClosureSdf::new(
-            |_x, y, _z| y,
-            |_x, _y, _z| (0.0, 1.0, 0.0),
-        )
+        ClosureSdf::new(|_x, y, _z| y, |_x, _y, _z| (0.0, 1.0, 0.0))
     }
 
     #[test]
     fn test_sphere_trace_hit() {
-        let sdf = SdfCollider::new_static(
-            Box::new(unit_sphere()),
-            Vec3Fix::ZERO,
-            QuatFix::IDENTITY,
-        );
+        let sdf =
+            SdfCollider::new_static(Box::new(unit_sphere()), Vec3Fix::ZERO, QuatFix::IDENTITY);
 
         let start = Vec3Fix::from_f32(-5.0, 0.0, 0.0);
         let displacement = Vec3Fix::from_f32(10.0, 0.0, 0.0);
@@ -244,11 +242,8 @@ mod tests {
 
     #[test]
     fn test_sphere_trace_miss() {
-        let sdf = SdfCollider::new_static(
-            Box::new(unit_sphere()),
-            Vec3Fix::ZERO,
-            QuatFix::IDENTITY,
-        );
+        let sdf =
+            SdfCollider::new_static(Box::new(unit_sphere()), Vec3Fix::ZERO, QuatFix::IDENTITY);
 
         // Moving parallel to sphere, missing it
         let start = Vec3Fix::from_f32(-5.0, 5.0, 0.0);
@@ -262,11 +257,8 @@ mod tests {
 
     #[test]
     fn test_sphere_trace_ground() {
-        let sdf = SdfCollider::new_static(
-            Box::new(ground_plane()),
-            Vec3Fix::ZERO,
-            QuatFix::IDENTITY,
-        );
+        let sdf =
+            SdfCollider::new_static(Box::new(ground_plane()), Vec3Fix::ZERO, QuatFix::IDENTITY);
 
         // Falling sphere toward ground
         let start = Vec3Fix::from_f32(0.0, 5.0, 0.0);
@@ -286,11 +278,8 @@ mod tests {
 
     #[test]
     fn test_ray_march() {
-        let sdf = SdfCollider::new_static(
-            Box::new(unit_sphere()),
-            Vec3Fix::ZERO,
-            QuatFix::IDENTITY,
-        );
+        let sdf =
+            SdfCollider::new_static(Box::new(unit_sphere()), Vec3Fix::ZERO, QuatFix::IDENTITY);
 
         let origin = Vec3Fix::from_f32(-5.0, 0.0, 0.0);
         let direction = Vec3Fix::UNIT_X;

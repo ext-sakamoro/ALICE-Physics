@@ -284,7 +284,8 @@ impl Rope {
                     let vel = self.velocities[i];
                     let vn = normal * vel.dot(normal);
                     let vt = vel - vn;
-                    self.velocities[i] = vn * Fix128::from_f32(-0.1) + vt * (Fix128::ONE - self.config.sdf_friction);
+                    self.velocities[i] =
+                        vn * Fix128::from_f32(-0.1) + vt * (Fix128::ONE - self.config.sdf_friction);
                 }
             }
         }
@@ -385,7 +386,8 @@ mod tests {
         assert!(
             error < tolerance,
             "Rope length should be approximately preserved: initial={:?}, current={:?}",
-            initial_length.to_f32(), current_length.to_f32()
+            initial_length.to_f32(),
+            current_length.to_f32()
         );
     }
 }

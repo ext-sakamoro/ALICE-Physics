@@ -126,10 +126,7 @@ impl DeformableBody {
 
         // Compute rest shape
         let rest_center = compute_center_of_mass(&positions);
-        let rest_relative: Vec<Vec3Fix> = positions
-            .iter()
-            .map(|p| *p - rest_center)
-            .collect();
+        let rest_relative: Vec<Vec3Fix> = positions.iter().map(|p| *p - rest_center).collect();
 
         let mut body = Self {
             prev_positions: positions.clone(),
@@ -173,12 +170,18 @@ impl DeformableBody {
         ];
 
         let surface_triangles = vec![
-            [0, 1, 2], [0, 2, 3], // front
-            [4, 6, 5], [4, 7, 6], // back
-            [0, 4, 5], [0, 5, 1], // bottom
-            [2, 6, 7], [2, 7, 3], // top
-            [0, 3, 7], [0, 7, 4], // left
-            [1, 5, 6], [1, 6, 2], // right
+            [0, 1, 2],
+            [0, 2, 3], // front
+            [4, 6, 5],
+            [4, 7, 6], // back
+            [0, 4, 5],
+            [0, 5, 1], // bottom
+            [2, 6, 7],
+            [2, 7, 3], // top
+            [0, 3, 7],
+            [0, 7, 4], // left
+            [1, 5, 6],
+            [1, 6, 2], // right
         ];
 
         let mass_per_particle = mass / Fix128::from_int(8);
@@ -205,8 +208,12 @@ impl DeformableBody {
         let mut edge_set: Vec<(usize, usize)> = Vec::new();
         for tet in &self.tetrahedra {
             let edges = [
-                (tet[0], tet[1]), (tet[0], tet[2]), (tet[0], tet[3]),
-                (tet[1], tet[2]), (tet[1], tet[3]), (tet[2], tet[3]),
+                (tet[0], tet[1]),
+                (tet[0], tet[2]),
+                (tet[0], tet[3]),
+                (tet[1], tet[2]),
+                (tet[1], tet[3]),
+                (tet[2], tet[3]),
             ];
             for (a, b) in edges {
                 let (lo, hi) = if a < b { (a, b) } else { (b, a) };
@@ -214,7 +221,9 @@ impl DeformableBody {
                     edge_set.push((lo, hi));
                     let rest = (self.positions[a] - self.positions[b]).length();
                     self.edge_constraints.push(EdgeConstraint {
-                        i0: a, i1: b, rest_length: rest,
+                        i0: a,
+                        i1: b,
+                        rest_length: rest,
                     });
                 }
             }
@@ -289,11 +298,15 @@ impl DeformableBody {
             let w1 = self.inv_masses[c.i1];
 
             let w_sum = w0 + w1 + compliance;
-            if w_sum.is_zero() { continue; }
+            if w_sum.is_zero() {
+                continue;
+            }
 
             let delta = p1 - p0;
             let dist = delta.length();
-            if dist.is_zero() { continue; }
+            if dist.is_zero() {
+                continue;
+            }
 
             let error = dist - c.rest_length;
             let lambda = error / w_sum;
@@ -345,7 +358,9 @@ impl DeformableBody {
                 + w3 * g3.length_squared()
                 + compliance;
 
-            if denom.is_zero() { continue; }
+            if denom.is_zero() {
+                continue;
+            }
 
             let lambda = error / denom;
             let six = Fix128::from_int(6);
@@ -391,7 +406,9 @@ impl DeformableBody {
     #[cfg(feature = "std")]
     fn resolve_sdf_collisions(&mut self, sdf_colliders: &[SdfCollider]) {
         for i in 0..self.particle_count() {
-            if self.inv_masses[i].is_zero() { continue; }
+            if self.inv_masses[i].is_zero() {
+                continue;
+            }
 
             for sdf in sdf_colliders {
                 let (lx, ly, lz) = sdf.world_to_local(self.positions[i]);
@@ -428,14 +445,24 @@ impl DeformableBody {
         body_radii: &[Fix128],
         dt: Fix128,
     ) {
-        if dt.is_zero() { return; }
+        if dt.is_zero() {
+            return;
+        }
 
         for i in 0..self.particle_count() {
-            if self.inv_masses[i].is_zero() { continue; }
+            if self.inv_masses[i].is_zero() {
+                continue;
+            }
 
             for (rb_idx, rb) in rigid_bodies.iter_mut().enumerate() {
-                if rb.is_static() && rb_idx >= body_radii.len() { continue; }
-                let radius = if rb_idx < body_radii.len() { body_radii[rb_idx] } else { Fix128::ONE };
+                if rb.is_static() && rb_idx >= body_radii.len() {
+                    continue;
+                }
+                let radius = if rb_idx < body_radii.len() {
+                    body_radii[rb_idx]
+                } else {
+                    Fix128::ONE
+                };
 
                 let delta = self.positions[i] - rb.position;
                 let dist_sq = delta.length_squared();
@@ -460,7 +487,9 @@ impl DeformableBody {
                     };
 
                     let total_mass = particle_mass + rb_mass;
-                    if total_mass.is_zero() { continue; }
+                    if total_mass.is_zero() {
+                        continue;
+                    }
 
                     let particle_ratio = rb_mass / total_mass;
                     let rb_ratio = particle_mass / total_mass;
@@ -525,11 +554,7 @@ mod tests {
 
     #[test]
     fn test_deformable_cube() {
-        let body = DeformableBody::new_cube(
-            Vec3Fix::ZERO,
-            Fix128::ONE,
-            Fix128::from_int(10),
-        );
+        let body = DeformableBody::new_cube(Vec3Fix::ZERO, Fix128::ONE, Fix128::from_int(10));
 
         assert_eq!(body.particle_count(), 8);
         assert_eq!(body.tetrahedra.len(), 5);
@@ -551,7 +576,10 @@ mod tests {
         }
 
         let com = body.center_of_mass();
-        assert!(com.y < Fix128::from_int(5), "Deformable should fall under gravity");
+        assert!(
+            com.y < Fix128::from_int(5),
+            "Deformable should fall under gravity"
+        );
     }
 
     #[test]
@@ -565,7 +593,10 @@ mod tests {
         // Volume of standard simplex = 1/6
         let expected = Fix128::from_ratio(1, 6);
         let error = (vol - expected).abs();
-        assert!(error < Fix128::from_ratio(1, 100), "Tet volume should be 1/6");
+        assert!(
+            error < Fix128::from_ratio(1, 100),
+            "Tet volume should be 1/6"
+        );
     }
 
     #[test]
@@ -594,9 +625,10 @@ mod tests {
             Fix128::from_int(10),
         );
 
-        let mut rigid_bodies = vec![
-            RigidBody::new(Vec3Fix::from_int(0, 0, 0), Fix128::from_int(5)),
-        ];
+        let mut rigid_bodies = vec![RigidBody::new(
+            Vec3Fix::from_int(0, 0, 0),
+            Fix128::from_int(5),
+        )];
         let radii = vec![Fix128::from_int(3)]; // Large sphere overlapping the cube
 
         let dt = Fix128::from_ratio(1, 60);
@@ -607,6 +639,9 @@ mod tests {
         // This is a basic sanity test
         let com = body.center_of_mass();
         // The COM might have shifted due to collision response
-        assert!(com.x.hi >= -10 && com.x.hi <= 10, "COM should be reasonable");
+        assert!(
+            com.x.hi >= -10 && com.x.hi <= 10,
+            "COM should be reasonable"
+        );
     }
 }

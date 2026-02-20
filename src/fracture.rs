@@ -94,7 +94,9 @@ impl Crack {
 
         let ba_len_sq = bax * bax + bay * bay + baz * baz;
         let h = if ba_len_sq > 1e-10 {
-            ((pax * bax + pay * bay + paz * baz) / ba_len_sq).max(0.0).min(1.0)
+            ((pax * bax + pay * bay + paz * baz) / ba_len_sq)
+                .max(0.0)
+                .min(1.0)
         } else {
             0.0
         };
@@ -174,9 +176,15 @@ impl FractureModifier {
 
                     let s = self.stress.get(ix, iy, iz);
                     if s > threshold {
-                        let wx = self.stress.min.0 + ix as f32 * (self.stress.max.0 - self.stress.min.0) / (nx - 1).max(1) as f32;
-                        let wy = self.stress.min.1 + iy as f32 * (self.stress.max.1 - self.stress.min.1) / (ny - 1).max(1) as f32;
-                        let wz = self.stress.min.2 + iz as f32 * (self.stress.max.2 - self.stress.min.2) / (nz - 1).max(1) as f32;
+                        let wx = self.stress.min.0
+                            + ix as f32 * (self.stress.max.0 - self.stress.min.0)
+                                / (nx - 1).max(1) as f32;
+                        let wy = self.stress.min.1
+                            + iy as f32 * (self.stress.max.1 - self.stress.min.1)
+                                / (ny - 1).max(1) as f32;
+                        let wz = self.stress.min.2
+                            + iz as f32 * (self.stress.max.2 - self.stress.min.2)
+                                / (nz - 1).max(1) as f32;
 
                         // Don't seed near existing cracks
                         let too_close = self.cracks.iter().any(|c| {
@@ -205,7 +213,8 @@ impl FractureModifier {
                                 }
                             } else {
                                 // Random-ish direction based on position
-                                let hash = ((ix * 73856093) ^ (iy * 19349663) ^ (iz * 83492791)) as f32;
+                                let hash =
+                                    ((ix * 73856093) ^ (iy * 19349663) ^ (iz * 83492791)) as f32;
                                 let angle = hash * 0.0001;
                                 (angle.cos(), 0.0, angle.sin())
                             };
@@ -339,7 +348,10 @@ mod tests {
         // Step to trigger crack
         modifier.update(0.016);
 
-        assert!(modifier.cracks.len() > 0, "High stress should create cracks");
+        assert!(
+            modifier.cracks.len() > 0,
+            "High stress should create cracks"
+        );
     }
 
     #[test]
@@ -363,7 +375,12 @@ mod tests {
         }
 
         let final_len = modifier.cracks.get(0).map(|c| c.length).unwrap_or(0.0);
-        assert!(final_len > initial_len, "Crack should grow: initial={}, final={}", initial_len, final_len);
+        assert!(
+            final_len > initial_len,
+            "Crack should grow: initial={}, final={}",
+            initial_len,
+            final_len
+        );
     }
 
     #[test]

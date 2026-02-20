@@ -11,8 +11,8 @@
 //!
 //! Author: Moroya Sakamoto
 
-use crate::math::{Fix128, Vec3Fix};
 use crate::collider::Contact;
+use crate::math::{Fix128, Vec3Fix};
 
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
@@ -62,36 +62,72 @@ impl AudioMaterial {
     pub const METAL: Self = Self {
         material_type: MaterialType::Metal,
         density: Fix128 { hi: 7800, lo: 0 },
-        hardness: Fix128 { hi: 0, lo: 0xCCCCCCCCCCCCCCCC }, // 0.8
-        resonance: Fix128 { hi: 0, lo: 0xCCCCCCCCCCCCCCCC }, // 0.8
-        damping: Fix128 { hi: 0, lo: 0x3333333333333333 }, // 0.2
+        hardness: Fix128 {
+            hi: 0,
+            lo: 0xCCCCCCCCCCCCCCCC,
+        }, // 0.8
+        resonance: Fix128 {
+            hi: 0,
+            lo: 0xCCCCCCCCCCCCCCCC,
+        }, // 0.8
+        damping: Fix128 {
+            hi: 0,
+            lo: 0x3333333333333333,
+        }, // 0.2
     };
 
     /// Wood preset
     pub const WOOD: Self = Self {
         material_type: MaterialType::Wood,
         density: Fix128 { hi: 600, lo: 0 },
-        hardness: Fix128 { hi: 0, lo: 0x999999999999999A }, // 0.6
-        resonance: Fix128 { hi: 0, lo: 0x6666666666666666 }, // 0.4
-        damping: Fix128 { hi: 0, lo: 0x999999999999999A }, // 0.6
+        hardness: Fix128 {
+            hi: 0,
+            lo: 0x999999999999999A,
+        }, // 0.6
+        resonance: Fix128 {
+            hi: 0,
+            lo: 0x6666666666666666,
+        }, // 0.4
+        damping: Fix128 {
+            hi: 0,
+            lo: 0x999999999999999A,
+        }, // 0.6
     };
 
     /// Stone preset
     pub const STONE: Self = Self {
         material_type: MaterialType::Stone,
         density: Fix128 { hi: 2500, lo: 0 },
-        hardness: Fix128 { hi: 0, lo: 0xE666666666666666 }, // 0.9
-        resonance: Fix128 { hi: 0, lo: 0x3333333333333333 }, // 0.2
-        damping: Fix128 { hi: 0, lo: 0xB333333333333333 }, // 0.7
+        hardness: Fix128 {
+            hi: 0,
+            lo: 0xE666666666666666,
+        }, // 0.9
+        resonance: Fix128 {
+            hi: 0,
+            lo: 0x3333333333333333,
+        }, // 0.2
+        damping: Fix128 {
+            hi: 0,
+            lo: 0xB333333333333333,
+        }, // 0.7
     };
 
     /// Rubber preset
     pub const RUBBER: Self = Self {
         material_type: MaterialType::Rubber,
         density: Fix128 { hi: 1100, lo: 0 },
-        hardness: Fix128 { hi: 0, lo: 0x3333333333333333 }, // 0.2
-        resonance: Fix128 { hi: 0, lo: 0x1999999999999999 }, // 0.1
-        damping: Fix128 { hi: 0, lo: 0xE666666666666666 }, // 0.9
+        hardness: Fix128 {
+            hi: 0,
+            lo: 0x3333333333333333,
+        }, // 0.2
+        resonance: Fix128 {
+            hi: 0,
+            lo: 0x1999999999999999,
+        }, // 0.1
+        damping: Fix128 {
+            hi: 0,
+            lo: 0xE666666666666666,
+        }, // 0.9
     };
 }
 
@@ -272,9 +308,18 @@ impl AudioGenerator {
     }
 
     /// Volume: impact velocity mapped to 0..1 with sqrt curve
-    fn compute_volume(&self, speed: Fix128, _mat_a: &AudioMaterial, _mat_b: &AudioMaterial) -> Fix128 {
+    fn compute_volume(
+        &self,
+        speed: Fix128,
+        _mat_a: &AudioMaterial,
+        _mat_b: &AudioMaterial,
+    ) -> Fix128 {
         let normalized = speed / self.config.max_velocity;
-        let clamped = if normalized > Fix128::ONE { Fix128::ONE } else { normalized };
+        let clamped = if normalized > Fix128::ONE {
+            Fix128::ONE
+        } else {
+            normalized
+        };
         clamped.sqrt()
     }
 
@@ -310,19 +355,37 @@ impl AudioGenerator {
     }
 
     /// Brightness: hardness and impact speed
-    fn compute_brightness(&self, speed: Fix128, mat_a: &AudioMaterial, mat_b: &AudioMaterial) -> Fix128 {
+    fn compute_brightness(
+        &self,
+        speed: Fix128,
+        mat_a: &AudioMaterial,
+        mat_b: &AudioMaterial,
+    ) -> Fix128 {
         let avg_hardness = (mat_a.hardness + mat_b.hardness).half();
         let speed_factor = speed / self.config.max_velocity;
-        let speed_factor = if speed_factor > Fix128::ONE { Fix128::ONE } else { speed_factor };
+        let speed_factor = if speed_factor > Fix128::ONE {
+            Fix128::ONE
+        } else {
+            speed_factor
+        };
 
         avg_hardness * (Fix128::from_ratio(1, 2) + speed_factor.half())
     }
 
     /// Roughness: tangential velocity and surface hardness
-    fn compute_roughness(&self, tangential_speed: Fix128, mat_a: &AudioMaterial, mat_b: &AudioMaterial) -> Fix128 {
+    fn compute_roughness(
+        &self,
+        tangential_speed: Fix128,
+        mat_a: &AudioMaterial,
+        mat_b: &AudioMaterial,
+    ) -> Fix128 {
         let avg_hardness = (mat_a.hardness + mat_b.hardness).half();
         let speed_factor = tangential_speed / self.config.max_velocity;
-        let speed_factor = if speed_factor > Fix128::ONE { Fix128::ONE } else { speed_factor };
+        let speed_factor = if speed_factor > Fix128::ONE {
+            Fix128::ONE
+        } else {
+            speed_factor
+        };
 
         speed_factor * avg_hardness
     }
@@ -356,12 +419,7 @@ mod tests {
             point_b: Vec3Fix::ZERO,
         };
 
-        gen.process_contact(
-            0, 1,
-            &contact,
-            Vec3Fix::from_f32(0.0, -5.0, 0.0),
-            true,
-        );
+        gen.process_contact(0, 1, &contact, Vec3Fix::from_f32(0.0, -5.0, 0.0), true);
 
         assert_eq!(gen.events.len(), 1);
         let event = &gen.events[0];
@@ -403,14 +461,12 @@ mod tests {
         };
 
         // Very slow impact (below threshold)
-        gen.process_contact(
-            0, 1,
-            &contact,
-            Vec3Fix::from_f32(0.0, -0.01, 0.0),
-            true,
-        );
+        gen.process_contact(0, 1, &contact, Vec3Fix::from_f32(0.0, -0.01, 0.0), true);
 
-        assert!(gen.events.is_empty(), "Below-threshold impacts should be silent");
+        assert!(
+            gen.events.is_empty(),
+            "Below-threshold impacts should be silent"
+        );
     }
 
     #[test]
@@ -427,10 +483,11 @@ mod tests {
 
         // Tangential velocity (sliding)
         gen.process_contact(
-            0, 1,
+            0,
+            1,
             &contact,
             Vec3Fix::from_f32(5.0, 0.0, 0.0), // X velocity, Y normal = sliding
-            false, // not new contact
+            false,                            // not new contact
         );
 
         assert_eq!(gen.events.len(), 1);

@@ -129,9 +129,15 @@ impl ErosionModifier {
         for iz in 0..nz {
             for iy in 0..ny {
                 for ix in 0..nx {
-                    let wx = self.exposure.min.0 + ix as f32 * (self.exposure.max.0 - self.exposure.min.0) / (nx - 1).max(1) as f32;
-                    let wy = self.exposure.min.1 + iy as f32 * (self.exposure.max.1 - self.exposure.min.1) / (ny - 1).max(1) as f32;
-                    let wz = self.exposure.min.2 + iz as f32 * (self.exposure.max.2 - self.exposure.min.2) / (nz - 1).max(1) as f32;
+                    let wx = self.exposure.min.0
+                        + ix as f32 * (self.exposure.max.0 - self.exposure.min.0)
+                            / (nx - 1).max(1) as f32;
+                    let wy = self.exposure.min.1
+                        + iy as f32 * (self.exposure.max.1 - self.exposure.min.1)
+                            / (ny - 1).max(1) as f32;
+                    let wz = self.exposure.min.2
+                        + iz as f32 * (self.exposure.max.2 - self.exposure.min.2)
+                            / (nz - 1).max(1) as f32;
 
                     let dist = sdf.distance(wx, wy, wz).abs();
 
@@ -161,7 +167,7 @@ impl ErosionModifier {
         match self.config.erosion_type {
             ErosionType::Wind => base * speed * exposure,
             ErosionType::Water => base * speed * exposure * 1.5, // Water is more effective
-            ErosionType::Chemical => base * exposure, // Speed-independent
+            ErosionType::Chemical => base * exposure,            // Speed-independent
             ErosionType::Ablation => base * speed * speed * exposure, // v^2 dependent
         }
     }
@@ -190,7 +196,8 @@ impl PhysicsModifier for ErosionModifier {
             let exp = self.exposure.data[i];
             if exp > 0.0 {
                 let rate = self.compute_rate(exp);
-                self.erosion_depth.data[i] = (self.erosion_depth.data[i] + rate * dt).min(max_depth);
+                self.erosion_depth.data[i] =
+                    (self.erosion_depth.data[i] + rate * dt).min(max_depth);
             }
         }
 
@@ -271,7 +278,11 @@ mod tests {
         }
 
         let erosion = modifier.erosion_at(0.0, 0.0, 0.0);
-        assert!(erosion <= 0.5 + 0.01, "Erosion should be capped at max_depth, got {}", erosion);
+        assert!(
+            erosion <= 0.5 + 0.01,
+            "Erosion should be capped at max_depth, got {}",
+            erosion
+        );
     }
 
     #[test]
@@ -280,7 +291,11 @@ mod tests {
             |x, y, z| (x * x + y * y + z * z).sqrt() - 1.0,
             |x, y, z| {
                 let len = (x * x + y * y + z * z).sqrt();
-                if len < 1e-10 { (0.0, 1.0, 0.0) } else { (x / len, y / len, z / len) }
+                if len < 1e-10 {
+                    (0.0, 1.0, 0.0)
+                } else {
+                    (x / len, y / len, z / len)
+                }
             },
         );
 
@@ -296,7 +311,11 @@ mod tests {
         // -X face should be sheltered
         let exp_leeward = modifier.exposure.sample(-1.0, 0.0, 0.0);
 
-        assert!(exp_windward > exp_leeward,
-            "Windward face should be more exposed: windward={}, leeward={}", exp_windward, exp_leeward);
+        assert!(
+            exp_windward > exp_leeward,
+            "Windward face should be more exposed: windward={}, leeward={}",
+            exp_windward,
+            exp_leeward
+        );
     }
 }

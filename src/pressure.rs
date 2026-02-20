@@ -194,7 +194,11 @@ mod tests {
             |x, y, z| (x * x + y * y + z * z).sqrt() - 1.0,
             |x, y, z| {
                 let len = (x * x + y * y + z * z).sqrt();
-                if len < 1e-10 { (0.0, 1.0, 0.0) } else { (x / len, y / len, z / len) }
+                if len < 1e-10 {
+                    (0.0, 1.0, 0.0)
+                } else {
+                    (x / len, y / len, z / len)
+                }
             },
         )
     }
@@ -206,7 +210,11 @@ mod tests {
         let modified = SingleModifiedSdf::new(Box::new(unit_sphere()), modifier);
 
         let d = modified.distance(2.0, 0.0, 0.0);
-        assert!((d - 1.0).abs() < 0.01, "No pressure should not change SDF, got {}", d);
+        assert!(
+            (d - 1.0).abs() < 0.01,
+            "No pressure should not change SDF, got {}",
+            d
+        );
     }
 
     #[test]
@@ -222,7 +230,11 @@ mod tests {
         modifier.apply_impact(1.0, 0.0, 0.0, 5.0, 0.5);
 
         let deform = modifier.deformation_at(1.0, 0.0, 0.0);
-        assert!(deform > 0.0, "Impact should create deformation, got {}", deform);
+        assert!(
+            deform > 0.0,
+            "Impact should create deformation, got {}",
+            deform
+        );
 
         // Distance should increase (surface pushed inward)
         let d = modifier.modify_distance(1.0, 0.0, 0.0, 0.0);
@@ -249,13 +261,17 @@ mod tests {
 
         // Deformation should have accumulated
         let deform = modifier.deformation_at(0.0, 0.0, 0.0);
-        assert!(deform > 0.0, "High pressure should cause permanent deformation, got {}", deform);
+        assert!(
+            deform > 0.0,
+            "High pressure should cause permanent deformation, got {}",
+            deform
+        );
     }
 
     #[test]
     fn test_pressure_decay() {
         let config = PressureConfig {
-            decay_rate: 5.0, // Fast decay
+            decay_rate: 5.0,          // Fast decay
             yield_threshold: 10000.0, // Won't yield
             ..Default::default()
         };
@@ -269,6 +285,11 @@ mod tests {
         }
 
         let after = modifier.pressure_at(0.0, 0.0, 0.0);
-        assert!(after < before * 0.5, "Pressure should decay, before={}, after={}", before, after);
+        assert!(
+            after < before * 0.5,
+            "Pressure should decay, before={}, after={}",
+            before,
+            after
+        );
     }
 }

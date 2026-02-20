@@ -79,9 +79,9 @@ pub struct SleepConfig {
 impl Default for SleepConfig {
     fn default() -> Self {
         Self {
-            linear_threshold: Fix128::from_ratio(1, 100),   // 0.01 m/s
-            angular_threshold: Fix128::from_ratio(1, 100),   // 0.01 rad/s
-            frames_to_sleep: 60,                             // 1 second at 60fps
+            linear_threshold: Fix128::from_ratio(1, 100), // 0.01 m/s
+            angular_threshold: Fix128::from_ratio(1, 100), // 0.01 rad/s
+            frames_to_sleep: 60,                          // 1 second at 60fps
         }
     }
 }
@@ -116,7 +116,12 @@ impl IslandManager {
         for i in 0..num_bodies {
             parent.push(i);
         }
-        Self { parent, rank, sleep_data, config }
+        Self {
+            parent,
+            rank,
+            sleep_data,
+            config,
+        }
     }
 
     /// Resize to accommodate more bodies
@@ -244,7 +249,8 @@ impl IslandManager {
     /// Check if a body is sleeping
     #[inline]
     pub fn is_sleeping(&self, body_index: usize) -> bool {
-        self.sleep_data.get(body_index)
+        self.sleep_data
+            .get(body_index)
             .map_or(false, |d| d.is_sleeping())
     }
 

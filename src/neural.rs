@@ -70,12 +70,18 @@ impl FixedTernaryWeight {
     /// Converts the f32 scale to Fix128 (one-time, deterministic).
     pub fn from_ternary_weight(w: TernaryWeight) -> Self {
         let scale_fix = Fix128::from_f64(w.scale() as f64);
-        Self { weight: w, scale_fix }
+        Self {
+            weight: w,
+            scale_fix,
+        }
     }
 
     /// Create with an explicit Fix128 scale (fully deterministic construction).
     pub fn from_ternary_weight_with_scale(w: TernaryWeight, scale: Fix128) -> Self {
-        Self { weight: w, scale_fix: scale }
+        Self {
+            weight: w,
+            scale_fix: scale,
+        }
     }
 
     /// Number of output features (rows).
@@ -127,9 +133,9 @@ pub fn fix128_ternary_matvec(
         let mut acc = Fix128::ZERO;
         for col in 0..in_n {
             match w.get(row, col) {
-                Ternary::Plus  => acc = acc + input[col],
+                Ternary::Plus => acc = acc + input[col],
                 Ternary::Minus => acc = acc - input[col],
-                Ternary::Zero  => {},
+                Ternary::Zero => {}
             }
         }
         output[row] = acc * weights.scale_fix;
@@ -255,7 +261,11 @@ impl DeterministicNetwork {
             .map(|l| vec![Fix128::ZERO; l.out_features()])
             .collect();
 
-        Self { layers, activations, buffers }
+        Self {
+            layers,
+            activations,
+            buffers,
+        }
     }
 
     /// Run forward pass (deterministic, zero allocation).
@@ -282,10 +292,10 @@ impl DeterministicNetwork {
     #[inline]
     fn apply_activation(act: Activation, buf: &mut [Fix128]) {
         match act {
-            Activation::ReLU       => fix128_relu(buf),
-            Activation::HardTanh   => fix128_hard_tanh(buf),
+            Activation::ReLU => fix128_relu(buf),
+            Activation::HardTanh => fix128_hard_tanh(buf),
             Activation::TanhApprox => fix128_tanh_approx(buf),
-            Activation::None       => {},
+            Activation::None => {}
         }
     }
 
@@ -394,7 +404,11 @@ impl RagdollController {
 
         let input_buffer = vec![Fix128::ZERO; input_size];
 
-        Self { network, config, input_buffer }
+        Self {
+            network,
+            config,
+            input_buffer,
+        }
     }
 
     /// Extract features from rigid bodies into the input buffer.
@@ -404,7 +418,7 @@ impl RagdollController {
 
         for body in bodies.iter().take(n) {
             // Position (3)
-            self.input_buffer[idx]     = body.position.x;
+            self.input_buffer[idx] = body.position.x;
             self.input_buffer[idx + 1] = body.position.y;
             self.input_buffer[idx + 2] = body.position.z;
             // Velocity (3)
@@ -445,10 +459,22 @@ impl RagdollController {
         for i in 0..self.config.num_joints {
             let base = i * 3;
             let tx = clamp_fix128(raw.get(base).copied().unwrap_or(Fix128::ZERO), neg_max, max);
-            let ty = clamp_fix128(raw.get(base + 1).copied().unwrap_or(Fix128::ZERO), neg_max, max);
-            let tz = clamp_fix128(raw.get(base + 2).copied().unwrap_or(Fix128::ZERO), neg_max, max);
+            let ty = clamp_fix128(
+                raw.get(base + 1).copied().unwrap_or(Fix128::ZERO),
+                neg_max,
+                max,
+            );
+            let tz = clamp_fix128(
+                raw.get(base + 2).copied().unwrap_or(Fix128::ZERO),
+                neg_max,
+                max,
+            );
 
-            torques.push(Vec3Fix { x: tx, y: ty, z: tz });
+            torques.push(Vec3Fix {
+                x: tx,
+                y: ty,
+                z: tz,
+            });
         }
 
         ControllerOutput { torques }
@@ -507,7 +533,11 @@ mod tests {
         let tw = make_test_weight(3, 3, &values);
         let ftw = FixedTernaryWeight::from_ternary_weight(tw);
 
-        let input = [Fix128::from_int(10), Fix128::from_int(20), Fix128::from_int(30)];
+        let input = [
+            Fix128::from_int(10),
+            Fix128::from_int(20),
+            Fix128::from_int(30),
+        ];
         let mut output = [Fix128::ZERO; 3];
 
         fix128_ternary_matvec(&input, &ftw, &mut output);
@@ -583,7 +613,7 @@ mod tests {
         assert_eq!(values[0].hi, 1); // Clamped to 1
         assert_eq!(values[0].lo, 0);
         assert_eq!(values[1].hi, Fix128::NEG_ONE.hi); // Clamped to -1
-        // 0.5 stays 0.5
+                                                      // 0.5 stays 0.5
         assert_eq!(values[2].hi, 0);
         assert!(values[2].lo > 0);
         // -0.5 stays -0.5
@@ -618,14 +648,9 @@ mod tests {
     fn test_deterministic_network_forward() {
         // 4-input → 3-hidden (ReLU) → 2-output (HardTanh)
         let f32_w1: Vec<f32> = vec![
-            1.0, -1.0, 0.0, 1.0,
-           -1.0,  1.0, 1.0, 0.0,
-            0.0,  1.0,-1.0, 1.0,
+            1.0, -1.0, 0.0, 1.0, -1.0, 1.0, 1.0, 0.0, 0.0, 1.0, -1.0, 1.0,
         ];
-        let f32_w2: Vec<f32> = vec![
-            1.0, -1.0, 1.0,
-           -1.0,  0.0, 1.0,
-        ];
+        let f32_w2: Vec<f32> = vec![1.0, -1.0, 1.0, -1.0, 0.0, 1.0];
 
         let (tw1, _) = quantize_to_ternary(&f32_w1, 3, 4);
         let (tw2, _) = quantize_to_ternary(&f32_w2, 2, 3);
@@ -668,19 +693,13 @@ mod tests {
 
         // Run 1
         let ftw1 = FixedTernaryWeight::from_ternary_weight(tw.clone());
-        let mut net1 = DeterministicNetwork::new(
-            vec![ftw1],
-            vec![Activation::ReLU],
-        );
+        let mut net1 = DeterministicNetwork::new(vec![ftw1], vec![Activation::ReLU]);
         let out1: Vec<Fix128> = net1.forward(&input).to_vec();
 
         // Run 2 (fresh network, same weights)
         let (tw2, _) = quantize_to_ternary(&f32_w, 3, 3);
         let ftw2 = FixedTernaryWeight::from_ternary_weight(tw2);
-        let mut net2 = DeterministicNetwork::new(
-            vec![ftw2],
-            vec![Activation::ReLU],
-        );
+        let mut net2 = DeterministicNetwork::new(vec![ftw2], vec![Activation::ReLU]);
         let out2: Vec<Fix128> = net2.forward(&input).to_vec();
 
         // Bit-exact comparison
@@ -701,7 +720,15 @@ mod tests {
 
         // Create random-ish weights
         let f32_w1: Vec<f32> = (0..hidden_size * input_size)
-            .map(|i| if i % 3 == 0 { 1.0 } else if i % 3 == 1 { -1.0 } else { 0.0 })
+            .map(|i| {
+                if i % 3 == 0 {
+                    1.0
+                } else if i % 3 == 1 {
+                    -1.0
+                } else {
+                    0.0
+                }
+            })
             .collect();
         let f32_w2: Vec<f32> = (0..output_size * hidden_size)
             .map(|i| if i % 2 == 0 { 1.0 } else { -1.0 })
@@ -727,14 +754,8 @@ mod tests {
         let mut controller = RagdollController::new(network, config);
 
         // Create test bodies
-        let body_a = RigidBody::new_dynamic(
-            Vec3Fix::from_int(0, 5, 0),
-            Fix128::ONE,
-        );
-        let body_b = RigidBody::new_dynamic(
-            Vec3Fix::from_int(0, 3, 0),
-            Fix128::ONE,
-        );
+        let body_a = RigidBody::new_dynamic(Vec3Fix::from_int(0, 5, 0), Fix128::ONE);
+        let body_b = RigidBody::new_dynamic(Vec3Fix::from_int(0, 3, 0), Fix128::ONE);
         let bodies = [body_a, body_b];
 
         let output = controller.compute(&bodies);
@@ -807,11 +828,7 @@ mod tests {
     #[test]
     fn test_leaky_relu() {
         let alpha = Fix128::from_ratio(1, 100); // 0.01
-        let mut values = [
-            Fix128::from_int(5),
-            Fix128::from_int(-10),
-            Fix128::ZERO,
-        ];
+        let mut values = [Fix128::from_int(5), Fix128::from_int(-10), Fix128::ZERO];
 
         fix128_leaky_relu(&mut values, alpha);
 

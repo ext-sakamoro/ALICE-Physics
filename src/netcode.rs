@@ -44,10 +44,10 @@
 //! | Savings | **97.5%** |
 
 use crate::math::{Fix128, Vec3Fix};
-use crate::solver::{PhysicsWorld, PhysicsConfig, RigidBody};
+use crate::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
 
 #[cfg(not(feature = "std"))]
-use alloc::{vec, vec::Vec, collections::VecDeque};
+use alloc::{collections::VecDeque, vec, vec::Vec};
 #[cfg(feature = "std")]
 use std::collections::VecDeque;
 
@@ -468,7 +468,12 @@ impl DeterministicSimulation {
             if self.world.deserialize_state(&state) {
                 self.frame = snap_frame;
                 // Trim checksum history to rollback point
-                while self.checksum_history.back().map(|c| c.0 > frame).unwrap_or(false) {
+                while self
+                    .checksum_history
+                    .back()
+                    .map(|c| c.0 > frame)
+                    .unwrap_or(false)
+                {
                     self.checksum_history.pop_back();
                 }
                 return true;
@@ -495,7 +500,8 @@ impl DeterministicSimulation {
 
     /// Get checksum for a specific frame from history.
     pub fn checksum_at(&self, frame: u64) -> Option<SimulationChecksum> {
-        self.checksum_history.iter()
+        self.checksum_history
+            .iter()
             .find(|&&(f, _)| f == frame)
             .map(|&(_, c)| c)
     }
@@ -540,10 +546,7 @@ mod tests {
 
         // Add player bodies
         for i in 0..player_count {
-            let body = RigidBody::new_dynamic(
-                Vec3Fix::from_int(i as i64 * 5, 10, 0),
-                Fix128::ONE,
-            );
+            let body = RigidBody::new_dynamic(Vec3Fix::from_int(i as i64 * 5, 10, 0), Fix128::ONE);
             let idx = sim.add_body(body);
             sim.assign_player_body(i, idx);
         }

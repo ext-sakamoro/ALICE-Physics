@@ -54,7 +54,11 @@ impl CollisionFilter {
     /// Create a new collision filter
     #[inline]
     pub const fn new(layer: u32, mask: u32) -> Self {
-        Self { layer, mask, group: 0 }
+        Self {
+            layer,
+            mask,
+            group: 0,
+        }
     }
 
     /// Create filter with a collision group
@@ -86,27 +90,27 @@ impl Default for CollisionFilter {
 /// Predefined collision layers for common game setups
 pub mod layers {
     /// Default collision layer
-    pub const DEFAULT: u32     = 1 << 0;
+    pub const DEFAULT: u32 = 1 << 0;
     /// Static geometry layer
-    pub const STATIC: u32      = 1 << 1;
+    pub const STATIC: u32 = 1 << 1;
     /// Kinematic body layer
-    pub const KINEMATIC: u32   = 1 << 2;
+    pub const KINEMATIC: u32 = 1 << 2;
     /// Player layer
-    pub const PLAYER: u32      = 1 << 3;
+    pub const PLAYER: u32 = 1 << 3;
     /// Enemy layer
-    pub const ENEMY: u32       = 1 << 4;
+    pub const ENEMY: u32 = 1 << 4;
     /// Projectile layer
-    pub const PROJECTILE: u32  = 1 << 5;
+    pub const PROJECTILE: u32 = 1 << 5;
     /// Trigger volume layer
-    pub const TRIGGER: u32     = 1 << 6;
+    pub const TRIGGER: u32 = 1 << 6;
     /// Debris layer
-    pub const DEBRIS: u32      = 1 << 7;
+    pub const DEBRIS: u32 = 1 << 7;
     /// Sensor layer
-    pub const SENSOR: u32      = 1 << 8;
+    pub const SENSOR: u32 = 1 << 8;
     /// Vehicle layer
-    pub const VEHICLE: u32     = 1 << 9;
+    pub const VEHICLE: u32 = 1 << 9;
     /// All layers combined
-    pub const ALL: u32         = u32::MAX;
+    pub const ALL: u32 = u32::MAX;
 }
 
 #[cfg(test)]
@@ -129,8 +133,14 @@ mod tests {
 
     #[test]
     fn test_layer_mask() {
-        let player = CollisionFilter::new(layers::PLAYER, layers::ENEMY | layers::PROJECTILE | layers::STATIC);
-        let enemy = CollisionFilter::new(layers::ENEMY, layers::PLAYER | layers::PROJECTILE | layers::STATIC);
+        let player = CollisionFilter::new(
+            layers::PLAYER,
+            layers::ENEMY | layers::PROJECTILE | layers::STATIC,
+        );
+        let enemy = CollisionFilter::new(
+            layers::ENEMY,
+            layers::PLAYER | layers::PROJECTILE | layers::STATIC,
+        );
         let wall = CollisionFilter::new(layers::STATIC, layers::ALL);
 
         assert!(CollisionFilter::can_collide(&player, &enemy));

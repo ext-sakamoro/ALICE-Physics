@@ -40,8 +40,20 @@ impl CombineRule {
     pub fn apply(&self, a: Fix128, b: Fix128) -> Fix128 {
         match self {
             CombineRule::Average => (a + b).half(),
-            CombineRule::Min => if a < b { a } else { b },
-            CombineRule::Max => if a > b { a } else { b },
+            CombineRule::Min => {
+                if a < b {
+                    a
+                } else {
+                    b
+                }
+            }
+            CombineRule::Max => {
+                if a > b {
+                    a
+                } else {
+                    b
+                }
+            }
             CombineRule::Multiply => a * b,
         }
     }
@@ -99,7 +111,11 @@ impl PhysicsMaterial {
 
 impl Default for PhysicsMaterial {
     fn default() -> Self {
-        Self::new(DEFAULT_MATERIAL, Fix128::from_ratio(5, 10), Fix128::from_ratio(3, 10))
+        Self::new(
+            DEFAULT_MATERIAL,
+            Fix128::from_ratio(5, 10),
+            Fix128::from_ratio(3, 10),
+        )
     }
 }
 
@@ -158,15 +174,31 @@ impl MaterialTable {
 
     /// Get material by ID
     pub fn get(&self, id: MaterialId) -> &PhysicsMaterial {
-        self.materials.get(id as usize).unwrap_or(&self.materials[0])
+        self.materials
+            .get(id as usize)
+            .unwrap_or(&self.materials[0])
     }
 
     /// Set a pair-specific override
-    pub fn set_pair_override(&mut self, mat_a: MaterialId, mat_b: MaterialId, friction: Fix128, restitution: Fix128) {
-        let (a, b) = if mat_a <= mat_b { (mat_a, mat_b) } else { (mat_b, mat_a) };
+    pub fn set_pair_override(
+        &mut self,
+        mat_a: MaterialId,
+        mat_b: MaterialId,
+        friction: Fix128,
+        restitution: Fix128,
+    ) {
+        let (a, b) = if mat_a <= mat_b {
+            (mat_a, mat_b)
+        } else {
+            (mat_b, mat_a)
+        };
 
         // Update existing or add new
-        if let Some(p) = self.pair_overrides.iter_mut().find(|p| p.mat_a == a && p.mat_b == b) {
+        if let Some(p) = self
+            .pair_overrides
+            .iter_mut()
+            .find(|p| p.mat_a == a && p.mat_b == b)
+        {
             p.friction = friction;
             p.restitution = restitution;
         } else {
@@ -181,10 +213,18 @@ impl MaterialTable {
 
     /// Combine materials for a contact pair
     pub fn combine(&self, mat_a: MaterialId, mat_b: MaterialId) -> CombinedMaterial {
-        let (a, b) = if mat_a <= mat_b { (mat_a, mat_b) } else { (mat_b, mat_a) };
+        let (a, b) = if mat_a <= mat_b {
+            (mat_a, mat_b)
+        } else {
+            (mat_b, mat_a)
+        };
 
         // Check pair overrides first
-        if let Some(p) = self.pair_overrides.iter().find(|p| p.mat_a == a && p.mat_b == b) {
+        if let Some(p) = self
+            .pair_overrides
+            .iter()
+            .find(|p| p.mat_a == a && p.mat_b == b)
+        {
             return CombinedMaterial {
                 friction: p.friction,
                 restitution: p.restitution,
@@ -197,7 +237,8 @@ impl MaterialTable {
 
         // Use the higher-priority combine rule
         let friction_rule = combine_rule_priority(mat_a.friction_combine, mat_b.friction_combine);
-        let restitution_rule = combine_rule_priority(mat_a.restitution_combine, mat_b.restitution_combine);
+        let restitution_rule =
+            combine_rule_priority(mat_a.restitution_combine, mat_b.restitution_combine);
 
         CombinedMaterial {
             friction: friction_rule.apply(mat_a.dynamic_friction, mat_b.dynamic_friction),
@@ -222,35 +263,43 @@ impl MaterialTable {
     /// Register a "Metal" material
     pub fn register_metal(&mut self) -> MaterialId {
         self.register(PhysicsMaterial::new(
-            0, Fix128::from_ratio(4, 10), Fix128::from_ratio(1, 10),
+            0,
+            Fix128::from_ratio(4, 10),
+            Fix128::from_ratio(1, 10),
         ))
     }
 
     /// Register a "Wood" material
     pub fn register_wood(&mut self) -> MaterialId {
         self.register(PhysicsMaterial::new(
-            0, Fix128::from_ratio(5, 10), Fix128::from_ratio(3, 10),
+            0,
+            Fix128::from_ratio(5, 10),
+            Fix128::from_ratio(3, 10),
         ))
     }
 
     /// Register a "Rubber" material
     pub fn register_rubber(&mut self) -> MaterialId {
-        self.register(PhysicsMaterial::new(
-            0, Fix128::from_ratio(8, 10), Fix128::from_ratio(8, 10),
-        ).with_combine_rules(CombineRule::Max, CombineRule::Max))
+        self.register(
+            PhysicsMaterial::new(0, Fix128::from_ratio(8, 10), Fix128::from_ratio(8, 10))
+                .with_combine_rules(CombineRule::Max, CombineRule::Max),
+        )
     }
 
     /// Register an "Ice" material
     pub fn register_ice(&mut self) -> MaterialId {
-        self.register(PhysicsMaterial::new(
-            0, Fix128::from_ratio(5, 100), Fix128::from_ratio(1, 10),
-        ).with_combine_rules(CombineRule::Min, CombineRule::Min))
+        self.register(
+            PhysicsMaterial::new(0, Fix128::from_ratio(5, 100), Fix128::from_ratio(1, 10))
+                .with_combine_rules(CombineRule::Min, CombineRule::Min),
+        )
     }
 
     /// Register a "Concrete" material
     pub fn register_concrete(&mut self) -> MaterialId {
         self.register(PhysicsMaterial::new(
-            0, Fix128::from_ratio(6, 10), Fix128::from_ratio(2, 10),
+            0,
+            Fix128::from_ratio(6, 10),
+            Fix128::from_ratio(2, 10),
         ))
     }
 }
@@ -272,7 +321,11 @@ fn combine_rule_priority(a: CombineRule, b: CombineRule) -> CombineRule {
         }
     }
 
-    if priority(a) >= priority(b) { a } else { b }
+    if priority(a) >= priority(b) {
+        a
+    } else {
+        b
+    }
 }
 
 #[cfg(test)]
@@ -309,8 +362,16 @@ mod tests {
     #[test]
     fn test_pair_override() {
         let mut table = MaterialTable::new();
-        let a = table.register(PhysicsMaterial::new(0, Fix128::from_ratio(5, 10), Fix128::from_ratio(5, 10)));
-        let b = table.register(PhysicsMaterial::new(0, Fix128::from_ratio(5, 10), Fix128::from_ratio(5, 10)));
+        let a = table.register(PhysicsMaterial::new(
+            0,
+            Fix128::from_ratio(5, 10),
+            Fix128::from_ratio(5, 10),
+        ));
+        let b = table.register(PhysicsMaterial::new(
+            0,
+            Fix128::from_ratio(5, 10),
+            Fix128::from_ratio(5, 10),
+        ));
 
         // Override: ice-on-ice → near-zero friction
         table.set_pair_override(a, b, Fix128::from_ratio(1, 100), Fix128::ZERO);

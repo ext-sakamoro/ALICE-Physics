@@ -209,7 +209,11 @@ impl Default for EventCollector {
 /// Normalize a body pair so that the smaller index is first (deterministic ordering)
 #[inline]
 fn normalize_pair(a: usize, b: usize) -> (usize, usize) {
-    if a <= b { (a, b) } else { (b, a) }
+    if a <= b {
+        (a, b)
+    } else {
+        (b, a)
+    }
 }
 
 #[cfg(test)]
@@ -220,11 +224,21 @@ mod tests {
     fn test_contact_begin() {
         let mut events = EventCollector::new();
         events.begin_frame();
-        events.report_contact(0, 1, Vec3Fix::UNIT_Y, Vec3Fix::ZERO, Fix128::ONE, Fix128::ZERO);
+        events.report_contact(
+            0,
+            1,
+            Vec3Fix::UNIT_Y,
+            Vec3Fix::ZERO,
+            Fix128::ONE,
+            Fix128::ZERO,
+        );
         events.end_frame();
 
         assert_eq!(events.contact_events().len(), 1);
-        assert_eq!(events.contact_events()[0].event_type, ContactEventType::Begin);
+        assert_eq!(
+            events.contact_events()[0].event_type,
+            ContactEventType::Begin
+        );
     }
 
     #[test]
@@ -233,15 +247,32 @@ mod tests {
 
         // Frame 1: begin
         events.begin_frame();
-        events.report_contact(0, 1, Vec3Fix::UNIT_Y, Vec3Fix::ZERO, Fix128::ONE, Fix128::ZERO);
+        events.report_contact(
+            0,
+            1,
+            Vec3Fix::UNIT_Y,
+            Vec3Fix::ZERO,
+            Fix128::ONE,
+            Fix128::ZERO,
+        );
         events.end_frame();
 
         // Frame 2: persist
         events.begin_frame();
-        events.report_contact(0, 1, Vec3Fix::UNIT_Y, Vec3Fix::ZERO, Fix128::ONE, Fix128::ZERO);
+        events.report_contact(
+            0,
+            1,
+            Vec3Fix::UNIT_Y,
+            Vec3Fix::ZERO,
+            Fix128::ONE,
+            Fix128::ZERO,
+        );
         events.end_frame();
 
-        assert_eq!(events.contact_events()[0].event_type, ContactEventType::Persist);
+        assert_eq!(
+            events.contact_events()[0].event_type,
+            ContactEventType::Persist
+        );
     }
 
     #[test]
@@ -250,14 +281,23 @@ mod tests {
 
         // Frame 1: begin
         events.begin_frame();
-        events.report_contact(0, 1, Vec3Fix::UNIT_Y, Vec3Fix::ZERO, Fix128::ONE, Fix128::ZERO);
+        events.report_contact(
+            0,
+            1,
+            Vec3Fix::UNIT_Y,
+            Vec3Fix::ZERO,
+            Fix128::ONE,
+            Fix128::ZERO,
+        );
         events.end_frame();
 
         // Frame 2: no contact => end event
         events.begin_frame();
         events.end_frame();
 
-        let end_events: Vec<_> = events.contact_events().iter()
+        let end_events: Vec<_> = events
+            .contact_events()
+            .iter()
             .filter(|e| e.event_type == ContactEventType::End)
             .collect();
         assert_eq!(end_events.len(), 1);
@@ -283,14 +323,22 @@ mod tests {
         events.end_frame();
 
         // Only trigger exit events would be new; no enter since it persists
-        let enters: Vec<_> = events.trigger_events().iter().filter(|e| e.entered).collect();
+        let enters: Vec<_> = events
+            .trigger_events()
+            .iter()
+            .filter(|e| e.entered)
+            .collect();
         assert_eq!(enters.len(), 0);
 
         // Frame 3: trigger exit
         events.begin_frame();
         events.end_frame();
 
-        let exits: Vec<_> = events.trigger_events().iter().filter(|e| !e.entered).collect();
+        let exits: Vec<_> = events
+            .trigger_events()
+            .iter()
+            .filter(|e| !e.entered)
+            .collect();
         assert_eq!(exits.len(), 1);
     }
 
@@ -299,7 +347,14 @@ mod tests {
         let mut events = EventCollector::new();
         events.begin_frame();
         // Report in both orders
-        events.report_contact(3, 1, Vec3Fix::UNIT_Y, Vec3Fix::ZERO, Fix128::ONE, Fix128::ZERO);
+        events.report_contact(
+            3,
+            1,
+            Vec3Fix::UNIT_Y,
+            Vec3Fix::ZERO,
+            Fix128::ONE,
+            Fix128::ZERO,
+        );
         events.end_frame();
 
         // Should be normalized to (1, 3)

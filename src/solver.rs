@@ -17,8 +17,8 @@
 //! - Sequential processing within each color (data dependency)
 //! - Parallel processing across colors (no conflicts)
 
-use crate::math::{Fix128, Vec3Fix, QuatFix};
 use crate::collider::Contact;
+use crate::math::{Fix128, QuatFix, Vec3Fix};
 use crate::sdf_collider::SdfCollider;
 
 #[cfg(not(feature = "std"))]
@@ -227,11 +227,12 @@ impl RigidBody {
 
             let r = point - self.position;
             let torque = r.cross(impulse);
-            self.angular_velocity = self.angular_velocity + Vec3Fix::new(
-                torque.x * self.inv_inertia.x,
-                torque.y * self.inv_inertia.y,
-                torque.z * self.inv_inertia.z,
-            );
+            self.angular_velocity = self.angular_velocity
+                + Vec3Fix::new(
+                    torque.x * self.inv_inertia.x,
+                    torque.y * self.inv_inertia.y,
+                    torque.z * self.inv_inertia.z,
+                );
         }
     }
 }
@@ -305,8 +306,8 @@ impl ContactConstraint {
             body_a,
             body_b,
             contact,
-            friction: Fix128::from_ratio(3, 10),  // 0.3 friction
-            restitution: Fix128::from_ratio(2, 10),  // 0.2 restitution
+            friction: Fix128::from_ratio(3, 10), // 0.3 friction
+            restitution: Fix128::from_ratio(2, 10), // 0.2 restitution
         }
     }
 }
@@ -338,10 +339,10 @@ impl Default for SolverConfig {
             iterations: 4,
             gravity: Vec3Fix::new(
                 Fix128::ZERO,
-                Fix128::from_int(-10),  // -10 m/s²
+                Fix128::from_int(-10), // -10 m/s²
                 Fix128::ZERO,
             ),
-            damping: Fix128::from_ratio(99, 100),  // 0.99 velocity retention
+            damping: Fix128::from_ratio(99, 100), // 0.99 velocity retention
         }
     }
 }
@@ -501,7 +502,11 @@ impl PhysicsWorld {
     }
 
     /// Get combined material properties for a body pair
-    pub fn combined_material(&self, body_a: usize, body_b: usize) -> crate::material::CombinedMaterial {
+    pub fn combined_material(
+        &self,
+        body_a: usize,
+        body_b: usize,
+    ) -> crate::material::CombinedMaterial {
         let mat_a = if body_a < self.body_materials.len() {
             self.body_materials[body_a]
         } else {
@@ -525,11 +530,9 @@ impl PhysicsWorld {
     pub fn add_contact(&mut self, contact: ContactConstraint) {
         // Update contact cache for warm starting
         let key = crate::contact_cache::BodyPairKey::new(contact.body_a, contact.body_b);
-        let manifold = self.contact_cache.get_or_create(
-            key,
-            contact.friction,
-            contact.restitution,
-        );
+        let manifold = self
+            .contact_cache
+            .get_or_create(key, contact.friction, contact.restitution);
         manifold.add_or_update(
             &contact.contact,
             contact.contact.point_a,
@@ -590,7 +593,9 @@ impl PhysicsWorld {
             }
 
             // Add constraint to batch
-            self.constraint_batches[color].distance_indices.push(constraint_idx);
+            self.constraint_batches[color]
+                .distance_indices
+                .push(constraint_idx);
 
             // Mark bodies as used in this color
             if body_a < num_bodies {
@@ -612,7 +617,9 @@ impl PhysicsWorld {
                 self.constraint_batches.push(ConstraintBatch::default());
             }
 
-            self.constraint_batches[color].contact_indices.push(constraint_idx);
+            self.constraint_batches[color]
+                .contact_indices
+                .push(constraint_idx);
 
             if body_a < num_bodies {
                 body_colors[body_a].push(color);
@@ -629,8 +636,12 @@ impl PhysicsWorld {
     fn find_free_color(body_colors: &[Vec<usize>], body_a: usize, body_b: usize) -> usize {
         let mut color = 0;
         loop {
-            let a_ok = body_colors.get(body_a).map_or(true, |colors| !colors.contains(&color));
-            let b_ok = body_colors.get(body_b).map_or(true, |colors| !colors.contains(&color));
+            let a_ok = body_colors
+                .get(body_a)
+                .map_or(true, |colors| !colors.contains(&color));
+            let b_ok = body_colors
+                .get(body_b)
+                .map_or(true, |colors| !colors.contains(&color));
 
             if a_ok && b_ok {
                 return color;
@@ -1012,15 +1023,20 @@ impl PhysicsWorld {
                 if !skip {
                     for modifier in &self.contact_modifiers {
                         if !modifier.modify_contact(
-                            constraint.body_a, constraint.body_b,
-                            &mut contact, &mut _friction, &mut _restitution,
+                            constraint.body_a,
+                            constraint.body_b,
+                            &mut contact,
+                            &mut _friction,
+                            &mut _restitution,
                         ) {
                             skip = true;
                             break;
                         }
                     }
                 }
-                if skip { continue; }
+                if skip {
+                    continue;
+                }
             }
 
             // Only resolve if penetrating
@@ -1089,7 +1105,9 @@ impl PhysicsWorld {
                 }
                 for sdf in sdf_colliders {
                     if let Some(contact) = crate::sdf_collider::collide_sphere_sdf(
-                        body.position, collision_radius, sdf,
+                        body.position,
+                        collision_radius,
+                        sdf,
                     ) {
                         body.position = body.position + contact.normal * contact.depth;
                     }
@@ -1105,7 +1123,9 @@ impl PhysicsWorld {
                 }
                 for sdf in sdf_colliders {
                     if let Some(contact) = crate::sdf_collider::collide_sphere_sdf(
-                        body.position, collision_radius, sdf,
+                        body.position,
+                        collision_radius,
+                        sdf,
                     ) {
                         body.position = body.position + contact.normal * contact.depth;
                     }
@@ -1187,13 +1207,25 @@ impl PhysicsWorld {
             // Helper to read Fix128
             let read_fix128 = |o: &mut usize| -> Fix128 {
                 let hi = i64::from_le_bytes([
-                    data[*o], data[*o + 1], data[*o + 2], data[*o + 3],
-                    data[*o + 4], data[*o + 5], data[*o + 6], data[*o + 7],
+                    data[*o],
+                    data[*o + 1],
+                    data[*o + 2],
+                    data[*o + 3],
+                    data[*o + 4],
+                    data[*o + 5],
+                    data[*o + 6],
+                    data[*o + 7],
                 ]);
                 *o += 8;
                 let lo = u64::from_le_bytes([
-                    data[*o], data[*o + 1], data[*o + 2], data[*o + 3],
-                    data[*o + 4], data[*o + 5], data[*o + 6], data[*o + 7],
+                    data[*o],
+                    data[*o + 1],
+                    data[*o + 2],
+                    data[*o + 3],
+                    data[*o + 4],
+                    data[*o + 5],
+                    data[*o + 6],
+                    data[*o + 7],
                 ]);
                 *o += 8;
                 Fix128 { hi, lo }
@@ -1245,7 +1277,10 @@ mod tests {
 
         // Body should have fallen
         let body = world.get_body(0).unwrap();
-        assert!(body.position.y < Fix128::from_int(10), "Body should have fallen");
+        assert!(
+            body.position.y < Fix128::from_int(10),
+            "Body should have fallen"
+        );
     }
 
     #[test]
@@ -1253,7 +1288,7 @@ mod tests {
         let config = SolverConfig {
             substeps: 4,
             iterations: 8,
-            gravity: Vec3Fix::ZERO,  // No gravity for constraint test
+            gravity: Vec3Fix::ZERO, // No gravity for constraint test
             ..Default::default()
         };
         let mut world = PhysicsWorld::new(config);
@@ -1263,10 +1298,11 @@ mod tests {
         let b = world.add_body(RigidBody::new(Vec3Fix::from_int(5, 0, 0), Fix128::ONE));
 
         world.add_distance_constraint(DistanceConstraint::new(
-            a, b,
+            a,
+            b,
             Vec3Fix::ZERO,
             Vec3Fix::ZERO,
-            Fix128::from_int(3),  // Target distance: 3
+            Fix128::from_int(3), // Target distance: 3
         ));
 
         // Step simulation
@@ -1279,7 +1315,10 @@ mod tests {
         let distance = body_b.position.length();
 
         // Allow some tolerance due to gravity
-        assert!(distance < Fix128::from_int(5), "Constraint should pull body closer");
+        assert!(
+            distance < Fix128::from_int(5),
+            "Constraint should pull body closer"
+        );
     }
 
     #[test]
@@ -1288,7 +1327,10 @@ mod tests {
         let mut world = PhysicsWorld::new(config);
 
         world.add_body(RigidBody::new(Vec3Fix::from_int(1, 2, 3), Fix128::ONE));
-        world.add_body(RigidBody::new(Vec3Fix::from_int(4, 5, 6), Fix128::from_int(2)));
+        world.add_body(RigidBody::new(
+            Vec3Fix::from_int(4, 5, 6),
+            Fix128::from_int(2),
+        ));
 
         let state = world.serialize_state();
 
@@ -1312,7 +1354,10 @@ mod tests {
         let run_simulation = || {
             let mut world = PhysicsWorld::new(config);
             world.add_body(RigidBody::new(Vec3Fix::from_int(0, 10, 0), Fix128::ONE));
-            world.add_body(RigidBody::new(Vec3Fix::from_int(5, 10, 0), Fix128::from_int(2)));
+            world.add_body(RigidBody::new(
+                Vec3Fix::from_int(5, 10, 0),
+                Fix128::from_int(2),
+            ));
 
             for _ in 0..100 {
                 world.step(Fix128::from_ratio(1, 60));
@@ -1342,7 +1387,10 @@ mod tests {
         world.set_body_material(b, rubber_id);
 
         let combined = world.combined_material(a, b);
-        assert!(combined.friction > Fix128::ZERO, "Combined friction should be positive");
+        assert!(
+            combined.friction > Fix128::ZERO,
+            "Combined friction should be positive"
+        );
     }
 
     #[test]
@@ -1368,7 +1416,10 @@ mod tests {
         // Contact cache should have the manifold
         let key = crate::contact_cache::BodyPairKey::new(a, b);
         let manifold = world.contact_cache.find(&key);
-        assert!(manifold.is_some(), "Contact cache should contain the manifold");
+        assert!(
+            manifold.is_some(),
+            "Contact cache should contain the manifold"
+        );
     }
 
     #[test]
@@ -1380,10 +1431,7 @@ mod tests {
         let k_id = world.add_body(kinematic);
 
         // Set kinematic target
-        world.bodies[k_id].set_kinematic_target(
-            Vec3Fix::from_int(5, 0, 0),
-            QuatFix::IDENTITY,
-        );
+        world.bodies[k_id].set_kinematic_target(Vec3Fix::from_int(5, 0, 0), QuatFix::IDENTITY);
 
         world.step(Fix128::from_ratio(1, 60));
 
@@ -1427,17 +1475,24 @@ mod tests {
 
         // No-gravity body should not have fallen
         let ng_y = world.bodies[ng_id].position.y;
-        assert!(ng_y > Fix128::from_int(9), "Zero-gravity body should stay near y=10, got {:?}", ng_y);
+        assert!(
+            ng_y > Fix128::from_int(9),
+            "Zero-gravity body should stay near y=10, got {:?}",
+            ng_y
+        );
 
         // Normal body should have fallen (damping is strong, just check it fell at all)
         let n_y = world.bodies[n_id].position.y;
-        assert!(n_y < Fix128::from_int(10), "Normal gravity body should fall");
+        assert!(
+            n_y < Fix128::from_int(10),
+            "Normal gravity body should fall"
+        );
     }
 
     #[test]
     fn test_sdf_ground_collision() {
-        use crate::sdf_collider::{SdfCollider, ClosureSdf};
         use crate::math::QuatFix;
+        use crate::sdf_collider::{ClosureSdf, SdfCollider};
 
         let config = SolverConfig::default();
         let mut world = PhysicsWorld::new(config);
@@ -1448,10 +1503,7 @@ mod tests {
         let body_id = world.add_body(body);
 
         // Add ground plane SDF at y=0
-        let ground = ClosureSdf::new(
-            |_x, y, _z| y,
-            |_x, _y, _z| (0.0, 1.0, 0.0),
-        );
+        let ground = ClosureSdf::new(|_x, y, _z| y, |_x, _y, _z| (0.0, 1.0, 0.0));
         world.add_sdf_collider(SdfCollider::new_static(
             Box::new(ground),
             Vec3Fix::ZERO,
@@ -1470,6 +1522,10 @@ mod tests {
 
         // Body should be near the ground (y ≈ collision_radius = 0.5)
         assert!(y < 5.0, "Body should have fallen from y=5");
-        assert!(y > -1.0, "Body should not have fallen through SDF ground, y={}", y);
+        assert!(
+            y > -1.0,
+            "Body should not have fallen through SDF ground, y={}",
+            y
+        );
     }
 }

@@ -11,8 +11,8 @@
 //! - **Tree rotations**: AVL-style balancing for O(log n) query performance
 //! - **Deterministic**: Fixed-point AABB comparisons, stable sort
 
-use crate::math::{Fix128, Vec3Fix};
 use crate::collider::AABB;
+use crate::math::{Fix128, Vec3Fix};
 
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
@@ -21,7 +21,10 @@ use alloc::vec::Vec;
 pub const NULL_NODE: u32 = u32::MAX;
 
 /// Default AABB fat margin (extends AABB by this amount in each direction)
-const FAT_MARGIN: Fix128 = Fix128 { hi: 0, lo: 0x8000000000000000 }; // 0.5
+const FAT_MARGIN: Fix128 = Fix128 {
+    hi: 0,
+    lo: 0x8000000000000000,
+}; // 0.5
 
 /// A node in the dynamic AABB tree
 #[derive(Clone, Debug)]
@@ -121,8 +124,12 @@ impl DynamicAabbTree {
 
         let fat = &self.nodes[proxy_id as usize].aabb;
         // Check if new AABB is still within fat AABB
-        if fat.min.x <= new_aabb.min.x && fat.min.y <= new_aabb.min.y && fat.min.z <= new_aabb.min.z
-            && fat.max.x >= new_aabb.max.x && fat.max.y >= new_aabb.max.y && fat.max.z >= new_aabb.max.z
+        if fat.min.x <= new_aabb.min.x
+            && fat.min.y <= new_aabb.min.y
+            && fat.min.z <= new_aabb.min.z
+            && fat.max.x >= new_aabb.max.x
+            && fat.max.y >= new_aabb.max.y
+            && fat.max.z >= new_aabb.max.z
         {
             return false; // Still within fat bounds
         }
@@ -235,7 +242,8 @@ impl DynamicAabbTree {
 
     /// Number of active proxies (leaf nodes)
     pub fn proxy_count(&self) -> usize {
-        self.nodes.iter()
+        self.nodes
+            .iter()
             .filter(|n| n.is_leaf && n.user_data != NULL_NODE)
             .count()
     }
@@ -396,8 +404,9 @@ impl DynamicAabbTree {
                 let lh = self.nodes[left as usize].height;
                 let rh = self.nodes[right as usize].height;
                 self.nodes[node_id as usize].height = 1 + if lh > rh { lh } else { rh };
-                self.nodes[node_id as usize].aabb =
-                    self.nodes[left as usize].aabb.union(&self.nodes[right as usize].aabb);
+                self.nodes[node_id as usize].aabb = self.nodes[left as usize]
+                    .aabb
+                    .union(&self.nodes[right as usize].aabb);
             }
 
             node_id = self.nodes[node_id as usize].parent;
@@ -446,8 +455,16 @@ impl DynamicAabbTree {
         }
 
         // Rotate based on children heights
-        let rl_h = if right_left != NULL_NODE { self.nodes[right_left as usize].height } else { -1 };
-        let rr_h = if right_right != NULL_NODE { self.nodes[right_right as usize].height } else { -1 };
+        let rl_h = if right_left != NULL_NODE {
+            self.nodes[right_left as usize].height
+        } else {
+            -1
+        };
+        let rr_h = if right_right != NULL_NODE {
+            self.nodes[right_right as usize].height
+        } else {
+            -1
+        };
 
         if rl_h > rr_h {
             self.nodes[right as usize].right = right_left;
@@ -469,8 +486,9 @@ impl DynamicAabbTree {
         let left = self.nodes[node_id as usize].left;
         let nr = self.nodes[node_id as usize].right;
         if left != NULL_NODE && nr != NULL_NODE {
-            self.nodes[node_id as usize].aabb =
-                self.nodes[left as usize].aabb.union(&self.nodes[nr as usize].aabb);
+            self.nodes[node_id as usize].aabb = self.nodes[left as usize]
+                .aabb
+                .union(&self.nodes[nr as usize].aabb);
             let lh = self.nodes[left as usize].height;
             let rh = self.nodes[nr as usize].height;
             self.nodes[node_id as usize].height = 1 + if lh > rh { lh } else { rh };
@@ -479,8 +497,9 @@ impl DynamicAabbTree {
         let rl = self.nodes[right as usize].left;
         let rr = self.nodes[right as usize].right;
         if rl != NULL_NODE && rr != NULL_NODE {
-            self.nodes[right as usize].aabb =
-                self.nodes[rl as usize].aabb.union(&self.nodes[rr as usize].aabb);
+            self.nodes[right as usize].aabb = self.nodes[rl as usize]
+                .aabb
+                .union(&self.nodes[rr as usize].aabb);
             let lh = self.nodes[rl as usize].height;
             let rh = self.nodes[rr as usize].height;
             self.nodes[right as usize].height = 1 + if lh > rh { lh } else { rh };
@@ -509,8 +528,16 @@ impl DynamicAabbTree {
             self.root = left;
         }
 
-        let ll_h = if left_left != NULL_NODE { self.nodes[left_left as usize].height } else { -1 };
-        let lr_h = if left_right != NULL_NODE { self.nodes[left_right as usize].height } else { -1 };
+        let ll_h = if left_left != NULL_NODE {
+            self.nodes[left_left as usize].height
+        } else {
+            -1
+        };
+        let lr_h = if left_right != NULL_NODE {
+            self.nodes[left_right as usize].height
+        } else {
+            -1
+        };
 
         if lr_h > ll_h {
             self.nodes[left as usize].left = left_right;
@@ -532,8 +559,9 @@ impl DynamicAabbTree {
         let nl = self.nodes[node_id as usize].left;
         let right = self.nodes[node_id as usize].right;
         if nl != NULL_NODE && right != NULL_NODE {
-            self.nodes[node_id as usize].aabb =
-                self.nodes[nl as usize].aabb.union(&self.nodes[right as usize].aabb);
+            self.nodes[node_id as usize].aabb = self.nodes[nl as usize]
+                .aabb
+                .union(&self.nodes[right as usize].aabb);
             let lh = self.nodes[nl as usize].height;
             let rh = self.nodes[right as usize].height;
             self.nodes[node_id as usize].height = 1 + if lh > rh { lh } else { rh };
@@ -542,8 +570,9 @@ impl DynamicAabbTree {
         let ll = self.nodes[left as usize].left;
         let lr = self.nodes[left as usize].right;
         if ll != NULL_NODE && lr != NULL_NODE {
-            self.nodes[left as usize].aabb =
-                self.nodes[ll as usize].aabb.union(&self.nodes[lr as usize].aabb);
+            self.nodes[left as usize].aabb = self.nodes[ll as usize]
+                .aabb
+                .union(&self.nodes[lr as usize].aabb);
             let lh = self.nodes[ll as usize].height;
             let rh = self.nodes[lr as usize].height;
             self.nodes[left as usize].height = 1 + if lh > rh { lh } else { rh };
@@ -635,7 +664,11 @@ mod tests {
         // Small movement within fat AABB margin — should NOT reinsert
         let tiny_move = AABB::new(
             Vec3Fix::new(Fix128::from_ratio(1, 10), Fix128::ZERO, Fix128::ZERO),
-            Vec3Fix::new(Fix128::ONE + Fix128::from_ratio(1, 10), Fix128::ONE, Fix128::ONE),
+            Vec3Fix::new(
+                Fix128::ONE + Fix128::from_ratio(1, 10),
+                Fix128::ONE,
+                Fix128::ONE,
+            ),
         );
         let reinserted = tree.update(p0, tiny_move);
         assert!(!reinserted, "Small move should not trigger reinsert");
@@ -662,14 +695,26 @@ mod tests {
         let mut tree = DynamicAabbTree::new();
 
         // Two overlapping bodies
-        tree.insert(AABB::new(Vec3Fix::from_int(0, 0, 0), Vec3Fix::from_int(2, 2, 2)), 0);
-        tree.insert(AABB::new(Vec3Fix::from_int(1, 1, 1), Vec3Fix::from_int(3, 3, 3)), 1);
+        tree.insert(
+            AABB::new(Vec3Fix::from_int(0, 0, 0), Vec3Fix::from_int(2, 2, 2)),
+            0,
+        );
+        tree.insert(
+            AABB::new(Vec3Fix::from_int(1, 1, 1), Vec3Fix::from_int(3, 3, 3)),
+            1,
+        );
         // One far away
         tree.insert(make_aabb(100, 100, 100), 2);
 
         let pairs = tree.find_pairs();
-        assert!(pairs.contains(&(0, 1)), "Overlapping bodies should form a pair");
-        assert!(!pairs.contains(&(0, 2)), "Far body should not pair with body 0");
+        assert!(
+            pairs.contains(&(0, 1)),
+            "Overlapping bodies should form a pair"
+        );
+        assert!(
+            !pairs.contains(&(0, 2)),
+            "Far body should not pair with body 0"
+        );
     }
 
     #[test]
@@ -683,7 +728,11 @@ mod tests {
 
         assert_eq!(tree.proxy_count(), 100);
         // Height should be O(log n) — for 100 nodes, ~7-10
-        assert!(tree.height() < 20, "Tree should be balanced, height={}", tree.height());
+        assert!(
+            tree.height() < 20,
+            "Tree should be balanced, height={}",
+            tree.height()
+        );
     }
 
     #[test]

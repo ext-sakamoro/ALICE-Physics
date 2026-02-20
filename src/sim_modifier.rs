@@ -31,9 +31,9 @@
 use crate::sdf_collider::SdfField;
 
 #[cfg(not(feature = "std"))]
-use alloc::vec::Vec;
-#[cfg(not(feature = "std"))]
 use alloc::boxed::Box;
+#[cfg(not(feature = "std"))]
+use alloc::vec::Vec;
 
 // ============================================================================
 // PhysicsModifier Trait
@@ -245,7 +245,9 @@ mod tests {
             d - self.amount
         }
         fn update(&mut self, _dt: f32) {}
-        fn name(&self) -> &str { "expand" }
+        fn name(&self) -> &str {
+            "expand"
+        }
     }
 
     #[test]
@@ -254,13 +256,21 @@ mod tests {
             |x, y, z| (x * x + y * y + z * z).sqrt() - 1.0,
             |x, y, z| {
                 let len = (x * x + y * y + z * z).sqrt();
-                if len < 1e-10 { (0.0, 1.0, 0.0) } else { (x / len, y / len, z / len) }
+                if len < 1e-10 {
+                    (0.0, 1.0, 0.0)
+                } else {
+                    (x / len, y / len, z / len)
+                }
             },
         );
 
         let modified = ModifiedSdf::new(Box::new(sphere));
         let d = modified.distance(2.0, 0.0, 0.0);
-        assert!((d - 1.0).abs() < 0.01, "No modifiers should pass through, got {}", d);
+        assert!(
+            (d - 1.0).abs() < 0.01,
+            "No modifiers should pass through, got {}",
+            d
+        );
     }
 
     #[test]
@@ -269,7 +279,11 @@ mod tests {
             |x, y, z| (x * x + y * y + z * z).sqrt() - 1.0,
             |x, y, z| {
                 let len = (x * x + y * y + z * z).sqrt();
-                if len < 1e-10 { (0.0, 1.0, 0.0) } else { (x / len, y / len, z / len) }
+                if len < 1e-10 {
+                    (0.0, 1.0, 0.0)
+                } else {
+                    (x / len, y / len, z / len)
+                }
             },
         );
 
@@ -279,7 +293,11 @@ mod tests {
         // Original: distance at (2,0,0) = 1.0
         // After expand by 0.5: distance = 0.5
         let d = modified.distance(2.0, 0.0, 0.0);
-        assert!((d - 0.5).abs() < 0.01, "Expand should reduce distance, got {}", d);
+        assert!(
+            (d - 0.5).abs() < 0.01,
+            "Expand should reduce distance, got {}",
+            d
+        );
     }
 
     #[test]
@@ -288,7 +306,11 @@ mod tests {
             |x, y, z| (x * x + y * y + z * z).sqrt() - 1.0,
             |x, y, z| {
                 let len = (x * x + y * y + z * z).sqrt();
-                if len < 1e-10 { (0.0, 1.0, 0.0) } else { (x / len, y / len, z / len) }
+                if len < 1e-10 {
+                    (0.0, 1.0, 0.0)
+                } else {
+                    (x / len, y / len, z / len)
+                }
             },
         );
 
@@ -298,7 +320,11 @@ mod tests {
 
         // Total expand = 0.5
         let d = modified.distance(2.0, 0.0, 0.0);
-        assert!((d - 0.5).abs() < 0.01, "Chain should sum expansions, got {}", d);
+        assert!(
+            (d - 0.5).abs() < 0.01,
+            "Chain should sum expansions, got {}",
+            d
+        );
     }
 
     #[test]
@@ -307,14 +333,15 @@ mod tests {
             |x, y, z| (x * x + y * y + z * z).sqrt() - 1.0,
             |x, y, z| {
                 let len = (x * x + y * y + z * z).sqrt();
-                if len < 1e-10 { (0.0, 1.0, 0.0) } else { (x / len, y / len, z / len) }
+                if len < 1e-10 {
+                    (0.0, 1.0, 0.0)
+                } else {
+                    (x / len, y / len, z / len)
+                }
             },
         );
 
-        let modified = SingleModifiedSdf::new(
-            Box::new(sphere),
-            ExpandModifier { amount: 0.5 },
-        );
+        let modified = SingleModifiedSdf::new(Box::new(sphere), ExpandModifier { amount: 0.5 });
 
         let d = modified.distance(2.0, 0.0, 0.0);
         assert!((d - 0.5).abs() < 0.01, "Single modifier expand, got {}", d);

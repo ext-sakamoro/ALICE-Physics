@@ -107,7 +107,9 @@ impl GpuSdfBatch {
     pub fn add_query(&mut self, body_idx: usize, position: Vec3Fix, radius: Fix128) {
         let (x, y, z) = position.to_f32();
         self.queries.push(GpuSdfQuery {
-            x, y, z,
+            x,
+            y,
+            z,
             radius: radius.to_f32(),
         });
         self.body_indices.push(body_idx);
@@ -127,7 +129,8 @@ impl GpuSdfBatch {
 
     /// Prepare output buffer (allocate space for results)
     pub fn prepare_output(&mut self) {
-        self.results.resize(self.queries.len(), GpuSdfResult::default());
+        self.results
+            .resize(self.queries.len(), GpuSdfResult::default());
     }
 
     /// Clear batch for reuse
@@ -203,10 +206,7 @@ pub struct GpuSdfContact {
 
 /// Execute batch on CPU (fallback when GPU is unavailable)
 #[cfg(feature = "std")]
-pub fn execute_batch_cpu(
-    batch: &mut GpuSdfBatch,
-    sdf: &dyn crate::sdf_collider::SdfField,
-) {
+pub fn execute_batch_cpu(batch: &mut GpuSdfBatch, sdf: &dyn crate::sdf_collider::SdfField) {
     batch.prepare_output();
 
     for (i, query) in batch.queries.iter().enumerate() {
@@ -306,7 +306,11 @@ mod tests {
             |x, y, z| (x * x + y * y + z * z).sqrt() - 1.0,
             |x, y, z| {
                 let len = (x * x + y * y + z * z).sqrt();
-                if len < 1e-10 { (0.0, 1.0, 0.0) } else { (x / len, y / len, z / len) }
+                if len < 1e-10 {
+                    (0.0, 1.0, 0.0)
+                } else {
+                    (x / len, y / len, z / len)
+                }
             },
         );
 
@@ -328,7 +332,11 @@ mod tests {
             |x, y, z| (x * x + y * y + z * z).sqrt() - 1.0,
             |x, y, z| {
                 let len = (x * x + y * y + z * z).sqrt();
-                if len < 1e-10 { (0.0, 1.0, 0.0) } else { (x / len, y / len, z / len) }
+                if len < 1e-10 {
+                    (0.0, 1.0, 0.0)
+                } else {
+                    (x / len, y / len, z / len)
+                }
             },
         );
 
@@ -338,7 +346,10 @@ mod tests {
         execute_batch_cpu(&mut batch, &sphere);
 
         let contacts = batch.extract_contacts(0.5);
-        assert!(!contacts.is_empty(), "Should detect contact for body inside sphere");
+        assert!(
+            !contacts.is_empty(),
+            "Should detect contact for body inside sphere"
+        );
     }
 
     #[test]

@@ -117,8 +117,11 @@ impl PhaseChangeModifier {
         Self {
             config,
             temperature: ScalarField3D::new_filled(
-                resolution, resolution, resolution,
-                min, max,
+                resolution,
+                resolution,
+                resolution,
+                min,
+                max,
                 config.ambient_temperature,
             ),
             phase: ScalarField3D::new(resolution, resolution, resolution, min, max),
@@ -322,7 +325,11 @@ mod tests {
 
         // No heat: everything is solid, no offset
         let d = modifier.modify_distance(0.0, 0.0, 0.0, -1.0);
-        assert!((d - (-1.0)).abs() < 0.01, "No heat should not change SDF, got {}", d);
+        assert!(
+            (d - (-1.0)).abs() < 0.01,
+            "No heat should not change SDF, got {}",
+            d
+        );
         assert_eq!(modifier.phase_at(0.0, 0.0, 0.0), Phase::Solid);
     }
 
@@ -332,7 +339,7 @@ mod tests {
             melt_temperature: 100.0,
             latent_heat_fusion: 10.0,
             ambient_temperature: 20.0,
-            cooling_rate: 0.0, // No cooling
+            cooling_rate: 0.0,   // No cooling
             diffusion_rate: 0.0, // No diffusion (prevent re-solidification)
             ..Default::default()
         };
@@ -349,7 +356,8 @@ mod tests {
         let phase = modifier.phase_at(0.0, 0.0, 0.0);
         assert!(
             phase == Phase::Liquid || phase == Phase::Gas,
-            "High heat should melt material, got {:?}", phase
+            "High heat should melt material, got {:?}",
+            phase
         );
     }
 
@@ -375,7 +383,12 @@ mod tests {
         }
 
         let phase = modifier.phase_at(0.0, 0.0, 0.0);
-        assert_eq!(phase, Phase::Gas, "Extreme heat should vaporize, got {:?}", phase);
+        assert_eq!(
+            phase,
+            Phase::Gas,
+            "Extreme heat should vaporize, got {:?}",
+            phase
+        );
 
         // Gas should have increased SDF offset
         let offset = modifier.sdf_offset.sample(0.0, 0.0, 0.0);
@@ -404,7 +417,8 @@ mod tests {
         let phase_hot = modifier.phase_at(0.0, 0.0, 0.0);
         assert!(
             phase_hot == Phase::Liquid || phase_hot == Phase::Gas,
-            "Should be liquid/gas after heating, got {:?}", phase_hot
+            "Should be liquid/gas after heating, got {:?}",
+            phase_hot
         );
 
         // Enable fast cooling and cool down
@@ -414,6 +428,11 @@ mod tests {
         }
 
         let phase_cold = modifier.phase_at(0.0, 0.0, 0.0);
-        assert_eq!(phase_cold, Phase::Solid, "Should solidify after cooling, got {:?}", phase_cold);
+        assert_eq!(
+            phase_cold,
+            Phase::Solid,
+            "Should solidify after cooling, got {:?}",
+            phase_cold
+        );
     }
 }

@@ -10,8 +10,8 @@
 //!
 //! Author: Moroya Sakamoto
 
-use crate::math::{Fix128, Vec3Fix, QuatFix};
-use crate::solver::{PhysicsWorld, SolverConfig, RigidBody};
+use crate::math::{Fix128, QuatFix, Vec3Fix};
+use crate::solver::{PhysicsWorld, RigidBody, SolverConfig};
 
 // ============================================================================
 // C-compatible types
@@ -104,7 +104,9 @@ pub extern "C" fn alice_physics_world_create() -> *mut PhysicsWorld {
 
 /// Create a physics world with custom config.
 #[no_mangle]
-pub extern "C" fn alice_physics_world_create_with_config(config: AlicePhysicsConfig) -> *mut PhysicsWorld {
+pub extern "C" fn alice_physics_world_create_with_config(
+    config: AlicePhysicsConfig,
+) -> *mut PhysicsWorld {
     let solver_config = SolverConfig {
         substeps: config.substeps as usize,
         iterations: config.iterations as usize,
@@ -571,7 +573,9 @@ pub extern "C" fn alice_physics_config_default() -> AlicePhysicsConfig {
 #[no_mangle]
 pub unsafe extern "C" fn alice_physics_world_set_gravity(
     world: *mut PhysicsWorld,
-    x: f64, y: f64, z: f64,
+    x: f64,
+    y: f64,
+    z: f64,
 ) {
     if let Some(w) = world.as_mut() {
         w.config.gravity = Vec3Fix::new(
@@ -584,10 +588,7 @@ pub unsafe extern "C" fn alice_physics_world_set_gravity(
 
 /// Set substeps on an existing world.
 #[no_mangle]
-pub unsafe extern "C" fn alice_physics_world_set_substeps(
-    world: *mut PhysicsWorld,
-    substeps: u32,
-) {
+pub unsafe extern "C" fn alice_physics_world_set_substeps(world: *mut PhysicsWorld, substeps: u32) {
     if let Some(w) = world.as_mut() {
         w.config.substeps = substeps as usize;
     }
@@ -607,7 +608,9 @@ pub unsafe extern "C" fn alice_physics_state_serialize(
     let w = match world.as_ref() {
         Some(w) => w,
         None => {
-            if let Some(len) = out_len.as_mut() { *len = 0; }
+            if let Some(len) = out_len.as_mut() {
+                *len = 0;
+            }
             return std::ptr::null_mut();
         }
     };

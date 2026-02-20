@@ -24,8 +24,8 @@
 //!
 //! Author: Moroya Sakamoto
 
-use crate::math::{Fix128, Vec3Fix, QuatFix};
 use crate::collider::Contact;
+use crate::math::{Fix128, QuatFix, Vec3Fix};
 
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
@@ -139,11 +139,7 @@ pub const SDF_STATIC: usize = usize::MAX;
 
 impl SdfCollider {
     /// Create a new SDF collider attached to the world (static).
-    pub fn new_static(
-        field: Box<dyn SdfField>,
-        position: Vec3Fix,
-        rotation: QuatFix,
-    ) -> Self {
+    pub fn new_static(field: Box<dyn SdfField>, position: Vec3Fix, rotation: QuatFix) -> Self {
         Self {
             field,
             position,
@@ -157,10 +153,7 @@ impl SdfCollider {
     }
 
     /// Create a new SDF collider attached to a rigid body.
-    pub fn new_dynamic(
-        field: Box<dyn SdfField>,
-        body_index: usize,
-    ) -> Self {
+    pub fn new_dynamic(field: Box<dyn SdfField>, body_index: usize) -> Self {
         Self {
             field,
             position: Vec3Fix::ZERO,
@@ -226,10 +219,7 @@ impl SdfCollider {
 ///
 /// Optimization: evaluates distance first (1 eval), then normal only on hit (4 evals).
 #[cfg(feature = "std")]
-pub fn collide_point_sdf(
-    point: Vec3Fix,
-    sdf: &SdfCollider,
-) -> Option<Contact> {
+pub fn collide_point_sdf(point: Vec3Fix, sdf: &SdfCollider) -> Option<Contact> {
     let (lx, ly, lz) = sdf.world_to_local(point);
 
     // Early-out: distance only (1 eval instead of 5)
@@ -263,11 +253,7 @@ pub fn collide_point_sdf(
 /// Optimization: evaluates distance first (1 eval), then normal only on hit (4 evals).
 /// Most bodies are NOT colliding, so this saves 4 evals per non-colliding body.
 #[cfg(feature = "std")]
-pub fn collide_sphere_sdf(
-    center: Vec3Fix,
-    radius: Fix128,
-    sdf: &SdfCollider,
-) -> Option<Contact> {
+pub fn collide_sphere_sdf(center: Vec3Fix, radius: Fix128, sdf: &SdfCollider) -> Option<Contact> {
     let (lx, ly, lz) = sdf.world_to_local(center);
 
     // Early-out: distance only (1 eval)
@@ -313,11 +299,7 @@ pub fn collide_capsule_sdf(
     radius: Fix128,
     sdf: &SdfCollider,
 ) -> Option<Contact> {
-    let mid = Vec3Fix::new(
-        (a.x + b.x).half(),
-        (a.y + b.y).half(),
-        (a.z + b.z).half(),
-    );
+    let mid = Vec3Fix::new((a.x + b.x).half(), (a.y + b.y).half(), (a.z + b.z).half());
 
     let samples = [a, mid, b];
     let mut best: Option<Contact> = None;
@@ -339,11 +321,7 @@ pub fn collide_capsule_sdf(
 /// Samples 8 corner vertices + center (9 points total),
 /// returns the deepest penetrating contact.
 #[cfg(feature = "std")]
-pub fn collide_aabb_sdf(
-    min: Vec3Fix,
-    max: Vec3Fix,
-    sdf: &SdfCollider,
-) -> Option<Contact> {
+pub fn collide_aabb_sdf(min: Vec3Fix, max: Vec3Fix, sdf: &SdfCollider) -> Option<Contact> {
     let center = Vec3Fix::new(
         (min.x + max.x).half(),
         (min.y + max.y).half(),
@@ -435,19 +413,13 @@ mod tests {
 
     /// Infinite ground plane at y=0 (negative below)
     fn ground_plane() -> ClosureSdf {
-        ClosureSdf::new(
-            |_x, y, _z| y,
-            |_x, _y, _z| (0.0, 1.0, 0.0),
-        )
+        ClosureSdf::new(|_x, y, _z| y, |_x, _y, _z| (0.0, 1.0, 0.0))
     }
 
     #[test]
     fn test_point_outside_sphere() {
-        let sdf = SdfCollider::new_static(
-            Box::new(unit_sphere()),
-            Vec3Fix::ZERO,
-            QuatFix::IDENTITY,
-        );
+        let sdf =
+            SdfCollider::new_static(Box::new(unit_sphere()), Vec3Fix::ZERO, QuatFix::IDENTITY);
 
         // Point at (2, 0, 0) — outside sphere of radius 1
         let point = Vec3Fix::from_f32(2.0, 0.0, 0.0);
@@ -457,11 +429,8 @@ mod tests {
 
     #[test]
     fn test_point_inside_sphere() {
-        let sdf = SdfCollider::new_static(
-            Box::new(unit_sphere()),
-            Vec3Fix::ZERO,
-            QuatFix::IDENTITY,
-        );
+        let sdf =
+            SdfCollider::new_static(Box::new(unit_sphere()), Vec3Fix::ZERO, QuatFix::IDENTITY);
 
         // Point at (0.5, 0, 0) — inside sphere of radius 1
         let point = Vec3Fix::from_f32(0.5, 0.0, 0.0);
@@ -471,7 +440,11 @@ mod tests {
         let contact = result.unwrap();
         // Penetration depth should be ~0.5
         let depth = contact.depth.to_f32();
-        assert!((depth - 0.5).abs() < 0.05, "Depth should be ~0.5, got {}", depth);
+        assert!(
+            (depth - 0.5).abs() < 0.05,
+            "Depth should be ~0.5, got {}",
+            depth
+        );
 
         // Normal should point in +X
         let (nx, _, _) = contact.normal.to_f32();
@@ -480,11 +453,8 @@ mod tests {
 
     #[test]
     fn test_sphere_vs_ground() {
-        let sdf = SdfCollider::new_static(
-            Box::new(ground_plane()),
-            Vec3Fix::ZERO,
-            QuatFix::IDENTITY,
-        );
+        let sdf =
+            SdfCollider::new_static(Box::new(ground_plane()), Vec3Fix::ZERO, QuatFix::IDENTITY);
 
         // Sphere at y=0.5 with radius 1.0 — penetrates ground by 0.5
         let center = Vec3Fix::from_f32(0.0, 0.5, 0.0);
@@ -494,16 +464,17 @@ mod tests {
 
         let contact = result.unwrap();
         let depth = contact.depth.to_f32();
-        assert!((depth - 0.5).abs() < 0.05, "Penetration should be ~0.5, got {}", depth);
+        assert!(
+            (depth - 0.5).abs() < 0.05,
+            "Penetration should be ~0.5, got {}",
+            depth
+        );
     }
 
     #[test]
     fn test_sphere_above_ground() {
-        let sdf = SdfCollider::new_static(
-            Box::new(ground_plane()),
-            Vec3Fix::ZERO,
-            QuatFix::IDENTITY,
-        );
+        let sdf =
+            SdfCollider::new_static(Box::new(ground_plane()), Vec3Fix::ZERO, QuatFix::IDENTITY);
 
         // Sphere at y=2.0 with radius 1.0 — floating above ground
         let center = Vec3Fix::from_f32(0.0, 2.0, 0.0);
@@ -514,11 +485,8 @@ mod tests {
 
     #[test]
     fn test_capsule_vs_ground() {
-        let sdf = SdfCollider::new_static(
-            Box::new(ground_plane()),
-            Vec3Fix::ZERO,
-            QuatFix::IDENTITY,
-        );
+        let sdf =
+            SdfCollider::new_static(Box::new(ground_plane()), Vec3Fix::ZERO, QuatFix::IDENTITY);
 
         // Horizontal capsule at y=0.3, radius=0.5 — penetrates
         let a = Vec3Fix::from_f32(-1.0, 0.3, 0.0);
@@ -529,7 +497,11 @@ mod tests {
 
         let contact = result.unwrap();
         let depth = contact.depth.to_f32();
-        assert!((depth - 0.2).abs() < 0.05, "Penetration should be ~0.2, got {}", depth);
+        assert!(
+            (depth - 0.2).abs() < 0.05,
+            "Penetration should be ~0.2, got {}",
+            depth
+        );
     }
 
     #[test]
@@ -544,41 +516,48 @@ mod tests {
         // Point at (5.5, 0, 0) — inside the translated sphere
         let point = Vec3Fix::from_f32(5.5, 0.0, 0.0);
         let result = collide_point_sdf(point, &sdf);
-        assert!(result.is_some(), "Point inside translated sphere should collide");
+        assert!(
+            result.is_some(),
+            "Point inside translated sphere should collide"
+        );
 
         // Point at (0, 0, 0) — far outside
         let origin = Vec3Fix::ZERO;
         let result2 = collide_point_sdf(origin, &sdf);
-        assert!(result2.is_none(), "Origin should be outside translated sphere");
+        assert!(
+            result2.is_none(),
+            "Origin should be outside translated sphere"
+        );
     }
 
     #[test]
     fn test_scaled_sdf() {
         // Sphere scaled by 3x — effective radius 3
-        let sdf = SdfCollider::new_static(
-            Box::new(unit_sphere()),
-            Vec3Fix::ZERO,
-            QuatFix::IDENTITY,
-        ).with_scale(Fix128::from_int(3));
+        let sdf =
+            SdfCollider::new_static(Box::new(unit_sphere()), Vec3Fix::ZERO, QuatFix::IDENTITY)
+                .with_scale(Fix128::from_int(3));
 
         // Point at (2, 0, 0) — inside scaled sphere (radius 3)
         let point = Vec3Fix::from_f32(2.0, 0.0, 0.0);
         let result = collide_point_sdf(point, &sdf);
-        assert!(result.is_some(), "Point inside scaled sphere should collide");
+        assert!(
+            result.is_some(),
+            "Point inside scaled sphere should collide"
+        );
 
         // Point at (4, 0, 0) — outside scaled sphere
         let point_outside = Vec3Fix::from_f32(4.0, 0.0, 0.0);
         let result2 = collide_point_sdf(point_outside, &sdf);
-        assert!(result2.is_none(), "Point outside scaled sphere should not collide");
+        assert!(
+            result2.is_none(),
+            "Point outside scaled sphere should not collide"
+        );
     }
 
     #[test]
     fn test_aabb_vs_ground() {
-        let sdf = SdfCollider::new_static(
-            Box::new(ground_plane()),
-            Vec3Fix::ZERO,
-            QuatFix::IDENTITY,
-        );
+        let sdf =
+            SdfCollider::new_static(Box::new(ground_plane()), Vec3Fix::ZERO, QuatFix::IDENTITY);
 
         // AABB with bottom at y=-0.5 — penetrates ground
         let min = Vec3Fix::from_f32(-1.0, -0.5, -1.0);
@@ -588,6 +567,10 @@ mod tests {
 
         let contact = result.unwrap();
         let depth = contact.depth.to_f32();
-        assert!((depth - 0.5).abs() < 0.05, "Penetration should be ~0.5, got {}", depth);
+        assert!(
+            (depth - 0.5).abs() < 0.05,
+            "Penetration should be ~0.5, got {}",
+            depth
+        );
     }
 }

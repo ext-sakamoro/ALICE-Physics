@@ -9,8 +9,8 @@
 //! - **Stackless traversal** using escape pointers (zero heap allocation during query)
 //! - SIMD-friendly AABB intersection tests
 
-use crate::math::{Fix128, Vec3Fix};
 use crate::collider::AABB;
+use crate::math::{Fix128, Vec3Fix};
 
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
@@ -162,9 +162,12 @@ impl BvhNode {
     /// Fast AABB intersection test (integer-only, no Fix128 reconstruction)
     #[inline]
     pub fn intersects_i32(&self, query_min: &[i32; 3], query_max: &[i32; 3]) -> bool {
-        self.aabb_min[0] <= query_max[0] && self.aabb_max[0] >= query_min[0] &&
-        self.aabb_min[1] <= query_max[1] && self.aabb_max[1] >= query_min[1] &&
-        self.aabb_min[2] <= query_max[2] && self.aabb_max[2] >= query_min[2]
+        self.aabb_min[0] <= query_max[0]
+            && self.aabb_max[0] >= query_min[0]
+            && self.aabb_min[1] <= query_max[1]
+            && self.aabb_max[1] >= query_min[1]
+            && self.aabb_min[2] <= query_max[2]
+            && self.aabb_max[2] >= query_min[2]
     }
 }
 
@@ -180,7 +183,7 @@ fn aabb_to_i32_min(aabb: &AABB) -> [i32; 3] {
 #[inline]
 fn aabb_to_i32_max(aabb: &AABB) -> [i32; 3] {
     [
-        (aabb.max.x.hi + 1) as i32,  // Round up
+        (aabb.max.x.hi + 1) as i32, // Round up
         (aabb.max.y.hi + 1) as i32,
         (aabb.max.z.hi + 1) as i32,
     ]

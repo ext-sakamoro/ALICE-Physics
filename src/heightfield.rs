@@ -3,8 +3,8 @@
 //! Grid-based terrain collider with bilinear interpolation.
 //! Efficient for large flat terrain with vertical displacement.
 
-use crate::math::{Fix128, Vec3Fix};
 use crate::collider::Contact;
+use crate::math::{Fix128, Vec3Fix};
 
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
@@ -28,9 +28,21 @@ pub struct HeightField {
 
 impl HeightField {
     /// Create a height field from a grid of heights
-    pub fn new(heights: Vec<Fix128>, width: u32, depth: u32, spacing: Fix128, origin: Vec3Fix) -> Self {
+    pub fn new(
+        heights: Vec<Fix128>,
+        width: u32,
+        depth: u32,
+        spacing: Fix128,
+        origin: Vec3Fix,
+    ) -> Self {
         debug_assert_eq!(heights.len(), (width * depth) as usize);
-        Self { heights, width, depth, spacing, origin }
+        Self {
+            heights,
+            width,
+            depth,
+            spacing,
+            origin,
+        }
     }
 
     /// Create a flat height field at a given Y level
@@ -80,8 +92,16 @@ impl HeightField {
         let gz_f = local_z / self.spacing;
 
         // Integer grid coords
-        let gx0 = if gx_f.is_negative() { 0i64 } else { gx_f.hi.min((self.width as i64) - 2) };
-        let gz0 = if gz_f.is_negative() { 0i64 } else { gz_f.hi.min((self.depth as i64) - 2) };
+        let gx0 = if gx_f.is_negative() {
+            0i64
+        } else {
+            gx_f.hi.min((self.width as i64) - 2)
+        };
+        let gz0 = if gz_f.is_negative() {
+            0i64
+        } else {
+            gz_f.hi.min((self.depth as i64) - 2)
+        };
 
         let gx1 = gx0 + 1;
         let gz1 = gz0 + 1;
@@ -121,11 +141,7 @@ impl HeightField {
         // Normal = (-dh/dx, 1, -dh/dz) normalized
         // But we need to account for the spacing
         let inv_eps2 = Fix128::ONE / eps.double();
-        Vec3Fix::new(
-            -(dx * inv_eps2),
-            Fix128::ONE,
-            -(dz * inv_eps2),
-        ).normalize()
+        Vec3Fix::new(-(dx * inv_eps2), Fix128::ONE, -(dz * inv_eps2)).normalize()
     }
 
     /// Sphere vs HeightField collision
@@ -172,8 +188,12 @@ impl HeightField {
         let mut min_h = self.heights[0];
         let mut max_h = self.heights[0];
         for &h in &self.heights[1..] {
-            if h < min_h { min_h = h; }
-            if h > max_h { max_h = h; }
+            if h < min_h {
+                min_h = h;
+            }
+            if h > max_h {
+                max_h = h;
+            }
         }
 
         let max_x = self.origin.x + self.spacing * Fix128::from_int((self.width - 1) as i64);
@@ -205,7 +225,10 @@ mod tests {
     fn test_flat_heightfield() {
         let hf = HeightField::flat(10, 10, Fix128::ONE, Vec3Fix::ZERO, Fix128::ZERO);
         let h = hf.sample_height(Fix128::from_int(5), Fix128::from_int(5));
-        assert!(h.abs() < Fix128::from_ratio(1, 10), "Flat field should have height ~0");
+        assert!(
+            h.abs() < Fix128::from_ratio(1, 10),
+            "Flat field should have height ~0"
+        );
     }
 
     #[test]
@@ -236,11 +259,18 @@ mod tests {
 
         // Sphere penetrating ground
         let contact = hf.collide_sphere(
-            Vec3Fix::new(Fix128::from_int(5), Fix128::from_ratio(1, 2), Fix128::from_int(5)),
+            Vec3Fix::new(
+                Fix128::from_int(5),
+                Fix128::from_ratio(1, 2),
+                Fix128::from_int(5),
+            ),
             Fix128::ONE,
         );
 
-        assert!(contact.is_some(), "Sphere at y=0.5 with r=1 should penetrate ground at y=0");
+        assert!(
+            contact.is_some(),
+            "Sphere at y=0.5 with r=1 should penetrate ground at y=0"
+        );
         let c = contact.unwrap();
         assert!(c.depth > Fix128::ZERO);
     }
@@ -250,11 +280,18 @@ mod tests {
         let hf = HeightField::flat(10, 10, Fix128::ONE, Vec3Fix::ZERO, Fix128::ZERO);
 
         let contact = hf.collide_sphere(
-            Vec3Fix::new(Fix128::from_int(5), Fix128::from_int(5), Fix128::from_int(5)),
+            Vec3Fix::new(
+                Fix128::from_int(5),
+                Fix128::from_int(5),
+                Fix128::from_int(5),
+            ),
             Fix128::ONE,
         );
 
-        assert!(contact.is_none(), "Sphere at y=5 should not collide with ground");
+        assert!(
+            contact.is_none(),
+            "Sphere at y=5 should not collide with ground"
+        );
     }
 
     #[test]
@@ -263,7 +300,10 @@ mod tests {
         let normal = hf.sample_normal(Fix128::from_int(5), Fix128::from_int(5));
 
         // On flat terrain, normal should point up (0, 1, 0)
-        assert!(normal.y > Fix128::from_ratio(9, 10), "Normal should point up on flat terrain");
+        assert!(
+            normal.y > Fix128::from_ratio(9, 10),
+            "Normal should point up on flat terrain"
+        );
     }
 
     #[test]
@@ -271,10 +311,16 @@ mod tests {
         let hf = HeightField::flat(10, 10, Fix128::ONE, Vec3Fix::ZERO, Fix128::ZERO);
 
         let above = hf.signed_distance(Vec3Fix::from_int(5, 3, 5));
-        assert!(above > Fix128::ZERO, "Point above should have positive distance");
+        assert!(
+            above > Fix128::ZERO,
+            "Point above should have positive distance"
+        );
 
         let below = hf.signed_distance(Vec3Fix::from_int(5, -2, 5));
-        assert!(below < Fix128::ZERO, "Point below should have negative distance");
+        assert!(
+            below < Fix128::ZERO,
+            "Point below should have negative distance"
+        );
     }
 
     #[test]

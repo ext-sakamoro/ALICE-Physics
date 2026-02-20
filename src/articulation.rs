@@ -9,9 +9,9 @@
 //! The root link is typically the pelvis/base. Each child link
 //! references its parent and connecting joint.
 
+use crate::joint::{BallJoint, HingeJoint, Joint};
 use crate::math::{Fix128, Vec3Fix};
-use crate::joint::{Joint, BallJoint, HingeJoint};
-use crate::motor::{PdController, MotorMode};
+use crate::motor::{MotorMode, PdController};
 use crate::solver::RigidBody;
 
 #[cfg(not(feature = "std"))]
@@ -218,84 +218,180 @@ pub fn build_ragdoll(
     let chest_idx = make_body(pelvis_pos + Vec3Fix::from_int(0, 4, 0), Fix128::from_int(4));
     let head_idx = make_body(pelvis_pos + Vec3Fix::from_int(0, 6, 0), Fix128::from_int(2));
 
-    let l_upper_arm_idx = make_body(pelvis_pos + Vec3Fix::from_int(-2, 4, 0), Fix128::from_int(2));
+    let l_upper_arm_idx = make_body(
+        pelvis_pos + Vec3Fix::from_int(-2, 4, 0),
+        Fix128::from_int(2),
+    );
     let l_lower_arm_idx = make_body(pelvis_pos + Vec3Fix::from_int(-4, 4, 0), one);
     let r_upper_arm_idx = make_body(pelvis_pos + Vec3Fix::from_int(2, 4, 0), Fix128::from_int(2));
     let r_lower_arm_idx = make_body(pelvis_pos + Vec3Fix::from_int(4, 4, 0), one);
 
-    let l_upper_leg_idx = make_body(pelvis_pos + Vec3Fix::from_int(-1, -2, 0), Fix128::from_int(3));
-    let l_lower_leg_idx = make_body(pelvis_pos + Vec3Fix::from_int(-1, -4, 0), Fix128::from_int(2));
-    let r_upper_leg_idx = make_body(pelvis_pos + Vec3Fix::from_int(1, -2, 0), Fix128::from_int(3));
-    let r_lower_leg_idx = make_body(pelvis_pos + Vec3Fix::from_int(1, -4, 0), Fix128::from_int(2));
+    let l_upper_leg_idx = make_body(
+        pelvis_pos + Vec3Fix::from_int(-1, -2, 0),
+        Fix128::from_int(3),
+    );
+    let l_lower_leg_idx = make_body(
+        pelvis_pos + Vec3Fix::from_int(-1, -4, 0),
+        Fix128::from_int(2),
+    );
+    let r_upper_leg_idx = make_body(
+        pelvis_pos + Vec3Fix::from_int(1, -2, 0),
+        Fix128::from_int(3),
+    );
+    let r_lower_leg_idx = make_body(
+        pelvis_pos + Vec3Fix::from_int(1, -4, 0),
+        Fix128::from_int(2),
+    );
 
     // Build articulation
     let mut artic = ArticulatedBody::new(pelvis_idx, false);
 
     // Spine chain
-    let spine_link = artic.add_link(0, spine_idx,
-        Joint::Ball(BallJoint::new(pelvis_idx, spine_idx, Vec3Fix::from_int(0, 1, 0), Vec3Fix::ZERO)),
+    let spine_link = artic.add_link(
+        0,
+        spine_idx,
+        Joint::Ball(BallJoint::new(
+            pelvis_idx,
+            spine_idx,
+            Vec3Fix::from_int(0, 1, 0),
+            Vec3Fix::ZERO,
+        )),
         Vec3Fix::from_int(0, 2, 0),
     );
-    let chest_link = artic.add_link(spine_link, chest_idx,
-        Joint::Ball(BallJoint::new(spine_idx, chest_idx, Vec3Fix::from_int(0, 1, 0), Vec3Fix::ZERO)),
+    let chest_link = artic.add_link(
+        spine_link,
+        chest_idx,
+        Joint::Ball(BallJoint::new(
+            spine_idx,
+            chest_idx,
+            Vec3Fix::from_int(0, 1, 0),
+            Vec3Fix::ZERO,
+        )),
         Vec3Fix::from_int(0, 2, 0),
     );
-    let _head_link = artic.add_link(chest_link, head_idx,
-        Joint::Ball(BallJoint::new(chest_idx, head_idx, Vec3Fix::from_int(0, 1, 0), Vec3Fix::ZERO)),
+    let _head_link = artic.add_link(
+        chest_link,
+        head_idx,
+        Joint::Ball(BallJoint::new(
+            chest_idx,
+            head_idx,
+            Vec3Fix::from_int(0, 1, 0),
+            Vec3Fix::ZERO,
+        )),
         Vec3Fix::from_int(0, 2, 0),
     );
 
     // Arms
-    let l_arm_link = artic.add_link(chest_link, l_upper_arm_idx,
-        Joint::Ball(BallJoint::new(chest_idx, l_upper_arm_idx, Vec3Fix::from_int(-1, 0, 0), Vec3Fix::from_int(1, 0, 0))),
+    let l_arm_link = artic.add_link(
+        chest_link,
+        l_upper_arm_idx,
+        Joint::Ball(BallJoint::new(
+            chest_idx,
+            l_upper_arm_idx,
+            Vec3Fix::from_int(-1, 0, 0),
+            Vec3Fix::from_int(1, 0, 0),
+        )),
         Vec3Fix::from_int(-2, 0, 0),
     );
-    let _l_forearm_link = artic.add_link(l_arm_link, l_lower_arm_idx,
-        Joint::Hinge(HingeJoint::new(
-            l_upper_arm_idx, l_lower_arm_idx,
-            Vec3Fix::from_int(-1, 0, 0), Vec3Fix::from_int(1, 0, 0),
-            Vec3Fix::UNIT_Z, Vec3Fix::UNIT_Z,
-        ).with_limits(Fix128::ZERO, Fix128::PI)),
+    let _l_forearm_link = artic.add_link(
+        l_arm_link,
+        l_lower_arm_idx,
+        Joint::Hinge(
+            HingeJoint::new(
+                l_upper_arm_idx,
+                l_lower_arm_idx,
+                Vec3Fix::from_int(-1, 0, 0),
+                Vec3Fix::from_int(1, 0, 0),
+                Vec3Fix::UNIT_Z,
+                Vec3Fix::UNIT_Z,
+            )
+            .with_limits(Fix128::ZERO, Fix128::PI),
+        ),
         Vec3Fix::from_int(-2, 0, 0),
     );
 
-    let r_arm_link = artic.add_link(chest_link, r_upper_arm_idx,
-        Joint::Ball(BallJoint::new(chest_idx, r_upper_arm_idx, Vec3Fix::from_int(1, 0, 0), Vec3Fix::from_int(-1, 0, 0))),
+    let r_arm_link = artic.add_link(
+        chest_link,
+        r_upper_arm_idx,
+        Joint::Ball(BallJoint::new(
+            chest_idx,
+            r_upper_arm_idx,
+            Vec3Fix::from_int(1, 0, 0),
+            Vec3Fix::from_int(-1, 0, 0),
+        )),
         Vec3Fix::from_int(2, 0, 0),
     );
-    let _r_forearm_link = artic.add_link(r_arm_link, r_lower_arm_idx,
-        Joint::Hinge(HingeJoint::new(
-            r_upper_arm_idx, r_lower_arm_idx,
-            Vec3Fix::from_int(1, 0, 0), Vec3Fix::from_int(-1, 0, 0),
-            Vec3Fix::UNIT_Z, Vec3Fix::UNIT_Z,
-        ).with_limits(Fix128::ZERO, Fix128::PI)),
+    let _r_forearm_link = artic.add_link(
+        r_arm_link,
+        r_lower_arm_idx,
+        Joint::Hinge(
+            HingeJoint::new(
+                r_upper_arm_idx,
+                r_lower_arm_idx,
+                Vec3Fix::from_int(1, 0, 0),
+                Vec3Fix::from_int(-1, 0, 0),
+                Vec3Fix::UNIT_Z,
+                Vec3Fix::UNIT_Z,
+            )
+            .with_limits(Fix128::ZERO, Fix128::PI),
+        ),
         Vec3Fix::from_int(2, 0, 0),
     );
 
     // Legs
-    let l_leg_link = artic.add_link(0, l_upper_leg_idx,
-        Joint::Ball(BallJoint::new(pelvis_idx, l_upper_leg_idx, Vec3Fix::from_int(-1, -1, 0), Vec3Fix::from_int(0, 1, 0))),
+    let l_leg_link = artic.add_link(
+        0,
+        l_upper_leg_idx,
+        Joint::Ball(BallJoint::new(
+            pelvis_idx,
+            l_upper_leg_idx,
+            Vec3Fix::from_int(-1, -1, 0),
+            Vec3Fix::from_int(0, 1, 0),
+        )),
         Vec3Fix::from_int(-1, -2, 0),
     );
-    let _l_shin_link = artic.add_link(l_leg_link, l_lower_leg_idx,
-        Joint::Hinge(HingeJoint::new(
-            l_upper_leg_idx, l_lower_leg_idx,
-            Vec3Fix::from_int(0, -1, 0), Vec3Fix::from_int(0, 1, 0),
-            Vec3Fix::UNIT_X, Vec3Fix::UNIT_X,
-        ).with_limits(-Fix128::PI, Fix128::ZERO)),
+    let _l_shin_link = artic.add_link(
+        l_leg_link,
+        l_lower_leg_idx,
+        Joint::Hinge(
+            HingeJoint::new(
+                l_upper_leg_idx,
+                l_lower_leg_idx,
+                Vec3Fix::from_int(0, -1, 0),
+                Vec3Fix::from_int(0, 1, 0),
+                Vec3Fix::UNIT_X,
+                Vec3Fix::UNIT_X,
+            )
+            .with_limits(-Fix128::PI, Fix128::ZERO),
+        ),
         Vec3Fix::from_int(0, -2, 0),
     );
 
-    let r_leg_link = artic.add_link(0, r_upper_leg_idx,
-        Joint::Ball(BallJoint::new(pelvis_idx, r_upper_leg_idx, Vec3Fix::from_int(1, -1, 0), Vec3Fix::from_int(0, 1, 0))),
+    let r_leg_link = artic.add_link(
+        0,
+        r_upper_leg_idx,
+        Joint::Ball(BallJoint::new(
+            pelvis_idx,
+            r_upper_leg_idx,
+            Vec3Fix::from_int(1, -1, 0),
+            Vec3Fix::from_int(0, 1, 0),
+        )),
         Vec3Fix::from_int(1, -2, 0),
     );
-    let _r_shin_link = artic.add_link(r_leg_link, r_lower_leg_idx,
-        Joint::Hinge(HingeJoint::new(
-            r_upper_leg_idx, r_lower_leg_idx,
-            Vec3Fix::from_int(0, -1, 0), Vec3Fix::from_int(0, 1, 0),
-            Vec3Fix::UNIT_X, Vec3Fix::UNIT_X,
-        ).with_limits(-Fix128::PI, Fix128::ZERO)),
+    let _r_shin_link = artic.add_link(
+        r_leg_link,
+        r_lower_leg_idx,
+        Joint::Hinge(
+            HingeJoint::new(
+                r_upper_leg_idx,
+                r_lower_leg_idx,
+                Vec3Fix::from_int(0, -1, 0),
+                Vec3Fix::from_int(0, 1, 0),
+                Vec3Fix::UNIT_X,
+                Vec3Fix::UNIT_X,
+            )
+            .with_limits(-Fix128::PI, Fix128::ZERO),
+        ),
         Vec3Fix::from_int(0, -2, 0),
     );
 
@@ -310,8 +406,8 @@ pub fn build_ragdoll(
 #[derive(Clone, Debug)]
 struct FeatherstoneLinkData {
     /// Articulated body inertia (6x6 stored as two 3x3 blocks)
-    abi_linear: Fix128,     // Simplified: scalar mass-like term
-    abi_angular: Vec3Fix,   // Simplified: diagonal inertia term
+    abi_linear: Fix128, // Simplified: scalar mass-like term
+    abi_angular: Vec3Fix, // Simplified: diagonal inertia term
     /// Bias force (Coriolis + external)
     bias_force: Vec3Fix,
     _bias_torque: Vec3Fix,
@@ -476,12 +572,16 @@ impl FeatherstoneSolver {
             let force = self.link_data[link_idx].bias_force;
 
             // a = F / m (simplified)
-            let accel = if mass.is_zero() { Vec3Fix::ZERO } else { force / mass };
+            let accel = if mass.is_zero() {
+                Vec3Fix::ZERO
+            } else {
+                force / mass
+            };
 
             // Semi-implicit Euler integration
             bodies[link.body_index].velocity = bodies[link.body_index].velocity + accel * dt;
-            bodies[link.body_index].position = bodies[link.body_index].position
-                + bodies[link.body_index].velocity * dt;
+            bodies[link.body_index].position =
+                bodies[link.body_index].position + bodies[link.body_index].velocity * dt;
         }
 
         for i in 0..artic.links[link_idx].children.len() {
@@ -512,12 +612,14 @@ mod tests {
     fn test_add_links() {
         let mut artic = ArticulatedBody::new(0, false);
         let link1 = artic.add_link(
-            0, 1,
+            0,
+            1,
             Joint::Ball(BallJoint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO)),
             Vec3Fix::from_int(0, 2, 0),
         );
         let _link2 = artic.add_link(
-            link1, 2,
+            link1,
+            2,
             Joint::Ball(BallJoint::new(1, 2, Vec3Fix::ZERO, Vec3Fix::ZERO)),
             Vec3Fix::from_int(0, 2, 0),
         );
@@ -536,7 +638,8 @@ mod tests {
 
         let mut artic = ArticulatedBody::new(0, true);
         artic.add_link(
-            0, 1,
+            0,
+            1,
             Joint::Ball(BallJoint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO)),
             Vec3Fix::from_int(0, 3, 0),
         );
@@ -558,7 +661,8 @@ mod tests {
     fn test_set_motor() {
         let mut artic = ArticulatedBody::new(0, false);
         artic.add_link(
-            0, 1,
+            0,
+            1,
             Joint::Ball(BallJoint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO)),
             Vec3Fix::ZERO,
         );
@@ -580,13 +684,25 @@ mod tests {
 
         let mut artic = ArticulatedBody::new(0, true);
         artic.add_link(
-            0, 1,
-            Joint::Ball(BallJoint::new(0, 1, Vec3Fix::from_int(0, 1, 0), Vec3Fix::from_int(0, -1, 0))),
+            0,
+            1,
+            Joint::Ball(BallJoint::new(
+                0,
+                1,
+                Vec3Fix::from_int(0, 1, 0),
+                Vec3Fix::from_int(0, -1, 0),
+            )),
             Vec3Fix::from_int(0, 2, 0),
         );
         artic.add_link(
-            1, 2,
-            Joint::Ball(BallJoint::new(1, 2, Vec3Fix::from_int(0, 1, 0), Vec3Fix::from_int(0, -1, 0))),
+            1,
+            2,
+            Joint::Ball(BallJoint::new(
+                1,
+                2,
+                Vec3Fix::from_int(0, 1, 0),
+                Vec3Fix::from_int(0, -1, 0),
+            )),
             Vec3Fix::from_int(0, 2, 0),
         );
 
@@ -600,7 +716,13 @@ mod tests {
         }
 
         // Bodies should have fallen under gravity
-        assert!(bodies[1].position.y < Fix128::from_int(2), "Link 1 should fall");
-        assert!(bodies[2].position.y < Fix128::from_int(4), "Link 2 should fall");
+        assert!(
+            bodies[1].position.y < Fix128::from_int(2),
+            "Link 1 should fall"
+        );
+        assert!(
+            bodies[2].position.y < Fix128::from_int(4),
+            "Link 2 should fall"
+        );
     }
 }

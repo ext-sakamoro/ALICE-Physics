@@ -13,8 +13,8 @@
 //!
 //! Author: Moroya Sakamoto
 
-use crate::math::{Fix128, Vec3Fix};
 use crate::collider::Contact;
+use crate::math::{Fix128, Vec3Fix};
 use crate::sdf_collider::SdfCollider;
 
 #[cfg(not(feature = "std"))]
@@ -304,14 +304,11 @@ fn reduce_manifold(candidates: &[(Contact, f32)], max_contacts: usize) -> Vec<Co
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sdf_collider::ClosureSdf;
     use crate::math::QuatFix;
+    use crate::sdf_collider::ClosureSdf;
 
     fn ground_plane() -> ClosureSdf {
-        ClosureSdf::new(
-            |_x, y, _z| y,
-            |_x, _y, _z| (0.0, 1.0, 0.0),
-        )
+        ClosureSdf::new(|_x, y, _z| y, |_x, _y, _z| (0.0, 1.0, 0.0))
     }
 
     fn unit_sphere() -> ClosureSdf {
@@ -319,18 +316,19 @@ mod tests {
             |x, y, z| (x * x + y * y + z * z).sqrt() - 1.0,
             |x, y, z| {
                 let len = (x * x + y * y + z * z).sqrt();
-                if len < 1e-10 { (0.0, 1.0, 0.0) } else { (x / len, y / len, z / len) }
+                if len < 1e-10 {
+                    (0.0, 1.0, 0.0)
+                } else {
+                    (x / len, y / len, z / len)
+                }
             },
         )
     }
 
     #[test]
     fn test_manifold_ground_plane() {
-        let sdf = SdfCollider::new_static(
-            Box::new(ground_plane()),
-            Vec3Fix::ZERO,
-            QuatFix::IDENTITY,
-        );
+        let sdf =
+            SdfCollider::new_static(Box::new(ground_plane()), Vec3Fix::ZERO, QuatFix::IDENTITY);
 
         // Sphere penetrating ground
         let center = Vec3Fix::from_f32(0.0, 0.3, 0.0);
@@ -339,16 +337,16 @@ mod tests {
 
         let manifold = generate_sdf_manifold(center, radius, &sdf, &config);
         assert!(!manifold.is_empty(), "Should generate contacts");
-        assert!(manifold.len() <= config.max_contacts, "Should not exceed max contacts");
+        assert!(
+            manifold.len() <= config.max_contacts,
+            "Should not exceed max contacts"
+        );
     }
 
     #[test]
     fn test_manifold_no_contact() {
-        let sdf = SdfCollider::new_static(
-            Box::new(ground_plane()),
-            Vec3Fix::ZERO,
-            QuatFix::IDENTITY,
-        );
+        let sdf =
+            SdfCollider::new_static(Box::new(ground_plane()), Vec3Fix::ZERO, QuatFix::IDENTITY);
 
         // Sphere above ground
         let center = Vec3Fix::from_f32(0.0, 5.0, 0.0);
@@ -361,11 +359,8 @@ mod tests {
 
     #[test]
     fn test_manifold_sphere_sdf() {
-        let sdf = SdfCollider::new_static(
-            Box::new(unit_sphere()),
-            Vec3Fix::ZERO,
-            QuatFix::IDENTITY,
-        );
+        let sdf =
+            SdfCollider::new_static(Box::new(unit_sphere()), Vec3Fix::ZERO, QuatFix::IDENTITY);
 
         // Small sphere inside SDF sphere
         let center = Vec3Fix::from_f32(0.5, 0.0, 0.0);
@@ -377,7 +372,10 @@ mod tests {
         };
 
         let manifold = generate_sdf_manifold(center, radius, &sdf, &config);
-        assert!(!manifold.is_empty(), "Should generate contacts inside sphere");
+        assert!(
+            !manifold.is_empty(),
+            "Should generate contacts inside sphere"
+        );
     }
 
     #[test]

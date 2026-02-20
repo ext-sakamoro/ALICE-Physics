@@ -105,11 +105,17 @@ impl ForceFieldInstance {
 /// Compute force from a force field on a body at a given position
 pub fn compute_force(field: &ForceField, body: &RigidBody) -> Vec3Fix {
     match field {
-        ForceField::Directional { direction, strength } => {
-            *direction * *strength
-        }
+        ForceField::Directional {
+            direction,
+            strength,
+        } => *direction * *strength,
 
-        ForceField::Point { center, strength, repulsive, max_force } => {
+        ForceField::Point {
+            center,
+            strength,
+            repulsive,
+            max_force,
+        } => {
             let delta = *center - body.position;
             let dist_sq = delta.length_squared();
 
@@ -122,7 +128,11 @@ pub fn compute_force(field: &ForceField, body: &RigidBody) -> Vec3Fix {
 
             // Inverse-square law: F = strength / r^2
             let force_mag = *strength / dist_sq;
-            let clamped = if force_mag > *max_force { *max_force } else { force_mag };
+            let clamped = if force_mag > *max_force {
+                *max_force
+            } else {
+                force_mag
+            };
 
             if *repulsive {
                 -direction * clamped
@@ -141,7 +151,11 @@ pub fn compute_force(field: &ForceField, body: &RigidBody) -> Vec3Fix {
             -drag_dir * (*coefficient * speed)
         }
 
-        ForceField::Buoyancy { surface_y, density, drag } => {
+        ForceField::Buoyancy {
+            surface_y,
+            density,
+            drag,
+        } => {
             let depth = *surface_y - body.position.y;
             if depth <= Fix128::ZERO {
                 return Vec3Fix::ZERO;
@@ -160,7 +174,12 @@ pub fn compute_force(field: &ForceField, body: &RigidBody) -> Vec3Fix {
             buoyancy + water_drag
         }
 
-        ForceField::Vortex { center, axis, strength, falloff_radius } => {
+        ForceField::Vortex {
+            center,
+            axis,
+            strength,
+            falloff_radius,
+        } => {
             let delta = body.position - *center;
 
             // Project delta onto plane perpendicular to axis
@@ -189,11 +208,7 @@ pub fn compute_force(field: &ForceField, body: &RigidBody) -> Vec3Fix {
 }
 
 /// Apply all force fields to all bodies for one timestep
-pub fn apply_force_fields(
-    fields: &[ForceFieldInstance],
-    bodies: &mut [RigidBody],
-    dt: Fix128,
-) {
+pub fn apply_force_fields(fields: &[ForceFieldInstance], bodies: &mut [RigidBody], dt: Fix128) {
     for (body_idx, body) in bodies.iter_mut().enumerate() {
         if body.is_static() {
             continue;
@@ -254,7 +269,10 @@ mod tests {
         let force = compute_force(&field, &body);
 
         // Should pull toward center
-        assert!(force.x < Fix128::ZERO, "Point gravity should pull toward center");
+        assert!(
+            force.x < Fix128::ZERO,
+            "Point gravity should pull toward center"
+        );
     }
 
     #[test]
@@ -273,27 +291,29 @@ mod tests {
         // Body above surface
         let body_above = RigidBody::new(Vec3Fix::from_int(0, 10, 0), Fix128::ONE);
         let force_above = compute_force(&field, &body_above);
-        assert!(force_above.y.is_zero() && force_above.x.is_zero(), "No buoyancy above surface");
+        assert!(
+            force_above.y.is_zero() && force_above.x.is_zero(),
+            "No buoyancy above surface"
+        );
     }
 
     #[test]
     fn test_apply_force_fields() {
-        let fields = vec![
-            ForceFieldInstance::new(ForceField::Directional {
-                direction: Vec3Fix::UNIT_X,
-                strength: Fix128::from_int(10),
-            }),
-        ];
+        let fields = vec![ForceFieldInstance::new(ForceField::Directional {
+            direction: Vec3Fix::UNIT_X,
+            strength: Fix128::from_int(10),
+        })];
 
-        let mut bodies = vec![
-            RigidBody::new(Vec3Fix::ZERO, Fix128::ONE),
-        ];
+        let mut bodies = vec![RigidBody::new(Vec3Fix::ZERO, Fix128::ONE)];
 
         let dt = Fix128::from_ratio(1, 60);
         apply_force_fields(&fields, &mut bodies, dt);
 
         // Velocity should have increased in X
-        assert!(bodies[0].velocity.x > Fix128::ZERO, "Force should accelerate body");
+        assert!(
+            bodies[0].velocity.x > Fix128::ZERO,
+            "Force should accelerate body"
+        );
     }
 
     #[test]
@@ -301,7 +321,8 @@ mod tests {
         let field = ForceFieldInstance::new(ForceField::Directional {
             direction: Vec3Fix::UNIT_X,
             strength: Fix128::from_int(100),
-        }).with_affected_bodies(vec![0]); // Only affects body 0
+        })
+        .with_affected_bodies(vec![0]); // Only affects body 0
 
         assert!(field.affects(0));
         assert!(!field.affects(1));
@@ -320,6 +341,9 @@ mod tests {
         let force = compute_force(&field, &body);
 
         // Vortex should produce tangential force (Z direction for body at +X)
-        assert!(force.z.abs() > Fix128::ZERO, "Vortex should produce tangential force");
+        assert!(
+            force.z.abs() > Fix128::ZERO,
+            "Vortex should produce tangential force"
+        );
     }
 }

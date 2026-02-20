@@ -12,9 +12,9 @@
 //! - Integration (velocity/position updates)
 
 #[cfg(not(feature = "std"))]
-use alloc::vec::Vec;
-#[cfg(not(feature = "std"))]
 use alloc::string::String;
+#[cfg(not(feature = "std"))]
+use alloc::vec::Vec;
 
 /// A single profiling timer entry
 #[derive(Clone, Debug)]
@@ -46,7 +46,11 @@ impl ProfileEntry {
     /// Average ticks per call
     #[inline]
     pub fn average_ticks(&self) -> u64 {
-        if self.call_count == 0 { 0 } else { self.total_ticks / self.call_count }
+        if self.call_count == 0 {
+            0
+        } else {
+            self.total_ticks / self.call_count
+        }
     }
 
     /// Record a measurement
@@ -179,9 +183,10 @@ impl PhysicsProfiler {
 
     /// Get a summary of all stages
     pub fn summary(&self) -> Vec<(&'static str, u64, u64, u64)> {
-        self.entries.iter().map(|e| {
-            (e.name, e.last_ticks, e.average_ticks(), e.peak_ticks)
-        }).collect()
+        self.entries
+            .iter()
+            .map(|e| (e.name, e.last_ticks, e.average_ticks(), e.peak_ticks))
+            .collect()
     }
 }
 

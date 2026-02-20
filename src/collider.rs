@@ -112,23 +112,50 @@ impl AABB {
     /// Check if two AABBs intersect (broad phase)
     #[inline]
     pub fn intersects(&self, other: &AABB) -> bool {
-        self.min.x <= other.max.x && self.max.x >= other.min.x &&
-        self.min.y <= other.max.y && self.max.y >= other.min.y &&
-        self.min.z <= other.max.z && self.max.z >= other.min.z
+        self.min.x <= other.max.x
+            && self.max.x >= other.min.x
+            && self.min.y <= other.max.y
+            && self.max.y >= other.min.y
+            && self.min.z <= other.max.z
+            && self.max.z >= other.min.z
     }
 
     /// Compute union of two AABBs
     pub fn union(&self, other: &AABB) -> AABB {
         AABB {
             min: Vec3Fix::new(
-                if self.min.x < other.min.x { self.min.x } else { other.min.x },
-                if self.min.y < other.min.y { self.min.y } else { other.min.y },
-                if self.min.z < other.min.z { self.min.z } else { other.min.z },
+                if self.min.x < other.min.x {
+                    self.min.x
+                } else {
+                    other.min.x
+                },
+                if self.min.y < other.min.y {
+                    self.min.y
+                } else {
+                    other.min.y
+                },
+                if self.min.z < other.min.z {
+                    self.min.z
+                } else {
+                    other.min.z
+                },
             ),
             max: Vec3Fix::new(
-                if self.max.x > other.max.x { self.max.x } else { other.max.x },
-                if self.max.y > other.max.y { self.max.y } else { other.max.y },
-                if self.max.z > other.max.z { self.max.z } else { other.max.z },
+                if self.max.x > other.max.x {
+                    self.max.x
+                } else {
+                    other.max.x
+                },
+                if self.max.y > other.max.y {
+                    self.max.y
+                } else {
+                    other.max.y
+                },
+                if self.max.z > other.max.z {
+                    self.max.z
+                } else {
+                    other.max.z
+                },
             ),
         }
     }
@@ -144,9 +171,21 @@ impl AABB {
 impl Support for AABB {
     fn support(&self, direction: Vec3Fix) -> Vec3Fix {
         Vec3Fix::new(
-            if direction.x >= Fix128::ZERO { self.max.x } else { self.min.x },
-            if direction.y >= Fix128::ZERO { self.max.y } else { self.min.y },
-            if direction.z >= Fix128::ZERO { self.max.z } else { self.min.z },
+            if direction.x >= Fix128::ZERO {
+                self.max.x
+            } else {
+                self.min.x
+            },
+            if direction.y >= Fix128::ZERO {
+                self.max.y
+            } else {
+                self.min.y
+            },
+            if direction.z >= Fix128::ZERO {
+                self.max.z
+            } else {
+                self.min.z
+            },
         )
     }
 }
@@ -467,7 +506,10 @@ struct EpaFace {
 /// Deterministic: fixed iteration count.
 pub fn epa<A: Support, B: Support>(a: &A, b: &B, initial_simplex: &[Vec3Fix]) -> Option<Contact> {
     const MAX_ITERATIONS: usize = 64;
-    const EPSILON: Fix128 = Fix128 { hi: 0, lo: 0x0001000000000000 }; // Small threshold
+    const EPSILON: Fix128 = Fix128 {
+        hi: 0,
+        lo: 0x0001000000000000,
+    }; // Small threshold
 
     if initial_simplex.len() < 4 {
         return None;
@@ -579,18 +621,9 @@ mod tests {
 
     #[test]
     fn test_aabb_intersection() {
-        let a = AABB::new(
-            Vec3Fix::from_int(0, 0, 0),
-            Vec3Fix::from_int(2, 2, 2),
-        );
-        let b = AABB::new(
-            Vec3Fix::from_int(1, 1, 1),
-            Vec3Fix::from_int(3, 3, 3),
-        );
-        let c = AABB::new(
-            Vec3Fix::from_int(5, 5, 5),
-            Vec3Fix::from_int(6, 6, 6),
-        );
+        let a = AABB::new(Vec3Fix::from_int(0, 0, 0), Vec3Fix::from_int(2, 2, 2));
+        let b = AABB::new(Vec3Fix::from_int(1, 1, 1), Vec3Fix::from_int(3, 3, 3));
+        let c = AABB::new(Vec3Fix::from_int(5, 5, 5), Vec3Fix::from_int(6, 6, 6));
 
         assert!(a.intersects(&b), "a and b should intersect");
         assert!(!a.intersects(&c), "a and c should not intersect");
@@ -632,10 +665,7 @@ mod tests {
 
     #[test]
     fn test_aabb_support() {
-        let aabb = AABB::new(
-            Vec3Fix::from_int(-1, -1, -1),
-            Vec3Fix::from_int(1, 1, 1),
-        );
+        let aabb = AABB::new(Vec3Fix::from_int(-1, -1, -1), Vec3Fix::from_int(1, 1, 1));
 
         let support = aabb.support(Vec3Fix::UNIT_X);
         assert_eq!(support.x.hi, 1);

@@ -11,7 +11,7 @@
 //! let render_pos = interpolation::lerp_state(&prev_state, &current_state, alpha);
 //! ```
 
-use crate::math::{Fix128, Vec3Fix, QuatFix};
+use crate::math::{Fix128, QuatFix, Vec3Fix};
 use crate::solver::RigidBody;
 
 #[cfg(not(feature = "std"))]
@@ -195,7 +195,8 @@ fn nlerp(a: QuatFix, b: QuatFix, t: Fix128) -> QuatFix {
         a.y * one_minus_t + b.y * t,
         a.z * one_minus_t + b.z * t,
         a.w * one_minus_t + b.w * t,
-    ).normalize()
+    )
+    .normalize()
 }
 
 #[cfg(test)]
@@ -242,7 +243,8 @@ mod tests {
 
         let result = nlerp(a, b, Fix128::from_ratio(5, 10));
         // Result should be between a and b
-        let len_sq = result.x * result.x + result.y * result.y + result.z * result.z + result.w * result.w;
+        let len_sq =
+            result.x * result.x + result.y * result.y + result.z * result.z + result.w * result.w;
         // Should be normalized (length ~= 1)
         let error = (len_sq - Fix128::ONE).abs();
         assert!(error < Fix128::from_ratio(1, 100));
@@ -250,11 +252,14 @@ mod tests {
 
     #[test]
     fn test_interpolation_state() {
-        use crate::solver::{PhysicsWorld, PhysicsConfig};
+        use crate::solver::{PhysicsConfig, PhysicsWorld};
 
         let config = PhysicsConfig::default();
         let mut world = PhysicsWorld::new(config);
-        world.add_body(RigidBody::new_dynamic(Vec3Fix::from_int(0, 10, 0), Fix128::ONE));
+        world.add_body(RigidBody::new_dynamic(
+            Vec3Fix::from_int(0, 10, 0),
+            Fix128::ONE,
+        ));
 
         let snap1 = WorldSnapshot::capture(&world);
 
@@ -273,11 +278,14 @@ mod tests {
 
     #[test]
     fn test_world_snapshot() {
-        use crate::solver::{PhysicsWorld, PhysicsConfig};
+        use crate::solver::{PhysicsConfig, PhysicsWorld};
 
         let config = PhysicsConfig::default();
         let mut world = PhysicsWorld::new(config);
-        world.add_body(RigidBody::new_dynamic(Vec3Fix::from_int(1, 2, 3), Fix128::ONE));
+        world.add_body(RigidBody::new_dynamic(
+            Vec3Fix::from_int(1, 2, 3),
+            Fix128::ONE,
+        ));
         world.add_body(RigidBody::new_static(Vec3Fix::ZERO));
 
         let snap = WorldSnapshot::capture(&world);

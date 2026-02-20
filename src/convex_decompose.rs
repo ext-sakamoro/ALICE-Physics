@@ -12,8 +12,8 @@
 //!
 //! Author: Moroya Sakamoto
 
-use crate::math::{Fix128, Vec3Fix};
 use crate::collider::ConvexHull;
+use crate::math::{Fix128, Vec3Fix};
 use crate::sdf_collider::SdfField;
 
 #[cfg(not(feature = "std"))]
@@ -95,7 +95,12 @@ impl VoxelGrid {
             }
         }
 
-        Self { values, res, min, cell_size }
+        Self {
+            values,
+            res,
+            min,
+            cell_size,
+        }
     }
 
     #[inline]
@@ -121,12 +126,24 @@ impl VoxelGrid {
 
         // Check 6-connected neighbors for sign change
         let r = self.res;
-        if x > 0 && self.get(x - 1, y, z) > 0.0 { return true; }
-        if x + 1 < r && self.get(x + 1, y, z) > 0.0 { return true; }
-        if y > 0 && self.get(x, y - 1, z) > 0.0 { return true; }
-        if y + 1 < r && self.get(x, y + 1, z) > 0.0 { return true; }
-        if z > 0 && self.get(x, y, z - 1) > 0.0 { return true; }
-        if z + 1 < r && self.get(x, y, z + 1) > 0.0 { return true; }
+        if x > 0 && self.get(x - 1, y, z) > 0.0 {
+            return true;
+        }
+        if x + 1 < r && self.get(x + 1, y, z) > 0.0 {
+            return true;
+        }
+        if y > 0 && self.get(x, y - 1, z) > 0.0 {
+            return true;
+        }
+        if y + 1 < r && self.get(x, y + 1, z) > 0.0 {
+            return true;
+        }
+        if z > 0 && self.get(x, y, z - 1) > 0.0 {
+            return true;
+        }
+        if z + 1 < r && self.get(x, y, z + 1) > 0.0 {
+            return true;
+        }
 
         false
     }
@@ -209,7 +226,11 @@ pub fn decompose_sdf(
         volumes.push(vol);
     }
 
-    DecompositionResult { hulls, centers, volumes }
+    DecompositionResult {
+        hulls,
+        centers,
+        volumes,
+    }
 }
 
 /// Simple spatial clustering using axis-aligned splitting
@@ -265,12 +286,24 @@ fn compute_bounds(points: &[Vec3Fix]) -> (Vec3Fix, Vec3Fix) {
     let mut max = points[0];
 
     for &p in &points[1..] {
-        if p.x < min.x { min.x = p.x; }
-        if p.y < min.y { min.y = p.y; }
-        if p.z < min.z { min.z = p.z; }
-        if p.x > max.x { max.x = p.x; }
-        if p.y > max.y { max.y = p.y; }
-        if p.z > max.z { max.z = p.z; }
+        if p.x < min.x {
+            min.x = p.x;
+        }
+        if p.y < min.y {
+            min.y = p.y;
+        }
+        if p.z < min.z {
+            min.z = p.z;
+        }
+        if p.x > max.x {
+            max.x = p.x;
+        }
+        if p.y > max.y {
+            max.y = p.y;
+        }
+        if p.z > max.z {
+            max.z = p.z;
+        }
     }
 
     (min, max)
@@ -291,7 +324,11 @@ mod tests {
             |x, y, z| (x * x + y * y + z * z).sqrt() - 1.0,
             |x, y, z| {
                 let len = (x * x + y * y + z * z).sqrt();
-                if len < 1e-10 { (0.0, 1.0, 0.0) } else { (x / len, y / len, z / len) }
+                if len < 1e-10 {
+                    (0.0, 1.0, 0.0)
+                } else {
+                    (x / len, y / len, z / len)
+                }
             },
         );
 
@@ -308,16 +345,16 @@ mod tests {
             &config,
         );
 
-        assert!(!result.hulls.is_empty(), "Should generate at least one hull");
+        assert!(
+            !result.hulls.is_empty(),
+            "Should generate at least one hull"
+        );
     }
 
     #[test]
     fn test_decompose_empty() {
         // SDF that has no interior (everything positive)
-        let empty = ClosureSdf::new(
-            |_, _, _| 10.0,
-            |_, _, _| (0.0, 1.0, 0.0),
-        );
+        let empty = ClosureSdf::new(|_, _, _| 10.0, |_, _, _| (0.0, 1.0, 0.0));
 
         let config = DecomposeConfig {
             resolution: 8,

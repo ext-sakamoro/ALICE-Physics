@@ -3,9 +3,9 @@
 //! Static triangle mesh collider with BVH acceleration.
 //! Supports ray queries and closest-point queries against arbitrary meshes.
 
+use crate::bvh::{BvhPrimitive, LinearBvh};
+use crate::collider::{Contact, AABB};
 use crate::math::{Fix128, Vec3Fix};
-use crate::collider::{AABB, Contact};
-use crate::bvh::{LinearBvh, BvhPrimitive};
 use crate::raycast::{Ray, RayHit};
 
 #[cfg(not(feature = "std"))]
@@ -156,7 +156,11 @@ impl TriMesh {
         let bvh = LinearBvh::build(bvh_prims);
         let bounds = bvh.bounds;
 
-        Self { triangles, bvh, bounds }
+        Self {
+            triangles,
+            bvh,
+            bounds,
+        }
     }
 
     /// Build from raw triangles
@@ -174,7 +178,11 @@ impl TriMesh {
         let bvh = LinearBvh::build(bvh_prims);
         let bounds = bvh.bounds;
 
-        Self { triangles, bvh, bounds }
+        Self {
+            triangles,
+            bvh,
+            bounds,
+        }
     }
 
     /// Ray query: find closest triangle intersection
@@ -354,7 +362,11 @@ impl TriMesh {
 
                 if depth > max_depth && depth > Fix128::ZERO {
                     max_depth = depth;
-                    let sign = if delta.dot(normal) >= Fix128::ZERO { normal } else { -normal };
+                    let sign = if delta.dot(normal) >= Fix128::ZERO {
+                        normal
+                    } else {
+                        -normal
+                    };
                     deepest = Some(Contact {
                         depth,
                         normal: sign,
@@ -375,7 +387,10 @@ impl TriMesh {
 }
 
 /// Moller-Trumbore parallel-check epsilon (~2^-24)
-const MT_EPSILON: Fix128 = Fix128 { hi: 0, lo: 0x0000010000000000 };
+const MT_EPSILON: Fix128 = Fix128 {
+    hi: 0,
+    lo: 0x0000010000000000,
+};
 
 /// Ray-Triangle intersection (Moller-Trumbore algorithm)
 pub fn ray_triangle(ray: &Ray, tri: &Triangle, max_t: Fix128) -> Option<RayHit> {
@@ -408,8 +423,17 @@ pub fn ray_triangle(ray: &Ray, tri: &Triangle, max_t: Fix128) -> Option<RayHit> 
         let point = ray.at(t);
         let normal = tri.unit_normal();
         // Ensure normal faces the ray
-        let normal = if normal.dot(ray.direction) > Fix128::ZERO { -normal } else { normal };
-        Some(RayHit { t, point, normal, body_index: 0 })
+        let normal = if normal.dot(ray.direction) > Fix128::ZERO {
+            -normal
+        } else {
+            normal
+        };
+        Some(RayHit {
+            t,
+            point,
+            normal,
+            body_index: 0,
+        })
     } else {
         None
     }
@@ -421,14 +445,38 @@ fn ray_to_aabb(ray: &Ray, max_t: Fix128) -> AABB {
     let one = Fix128::ONE;
     AABB::new(
         Vec3Fix::new(
-            if ray.origin.x < end.x { ray.origin.x - one } else { end.x - one },
-            if ray.origin.y < end.y { ray.origin.y - one } else { end.y - one },
-            if ray.origin.z < end.z { ray.origin.z - one } else { end.z - one },
+            if ray.origin.x < end.x {
+                ray.origin.x - one
+            } else {
+                end.x - one
+            },
+            if ray.origin.y < end.y {
+                ray.origin.y - one
+            } else {
+                end.y - one
+            },
+            if ray.origin.z < end.z {
+                ray.origin.z - one
+            } else {
+                end.z - one
+            },
         ),
         Vec3Fix::new(
-            if ray.origin.x > end.x { ray.origin.x + one } else { end.x + one },
-            if ray.origin.y > end.y { ray.origin.y + one } else { end.y + one },
-            if ray.origin.z > end.z { ray.origin.z + one } else { end.z + one },
+            if ray.origin.x > end.x {
+                ray.origin.x + one
+            } else {
+                end.x + one
+            },
+            if ray.origin.y > end.y {
+                ray.origin.y + one
+            } else {
+                end.y + one
+            },
+            if ray.origin.z > end.z {
+                ray.origin.z + one
+            } else {
+                end.z + one
+            },
         ),
     )
 }
@@ -441,7 +489,13 @@ fn closest_point_on_segment(a: Vec3Fix, b: Vec3Fix, p: Vec3Fix) -> Vec3Fix {
         return a;
     }
     let t = (p - a).dot(ab) / len_sq;
-    let t = if t < Fix128::ZERO { Fix128::ZERO } else if t > Fix128::ONE { Fix128::ONE } else { t };
+    let t = if t < Fix128::ZERO {
+        Fix128::ZERO
+    } else if t > Fix128::ONE {
+        Fix128::ONE
+    } else {
+        t
+    };
     a + ab * t
 }
 
@@ -459,13 +513,21 @@ fn closest_point_segment_triangle(seg_a: Vec3Fix, seg_b: Vec3Fix, tri: &Triangle
 #[inline]
 fn min3(a: Fix128, b: Fix128, c: Fix128) -> Fix128 {
     let ab = if a < b { a } else { b };
-    if ab < c { ab } else { c }
+    if ab < c {
+        ab
+    } else {
+        c
+    }
 }
 
 #[inline]
 fn max3(a: Fix128, b: Fix128, c: Fix128) -> Fix128 {
     let ab = if a > b { a } else { b };
-    if ab > c { ab } else { c }
+    if ab > c {
+        ab
+    } else {
+        c
+    }
 }
 
 #[cfg(test)]
@@ -542,7 +604,7 @@ mod tests {
         // Sphere overlapping with ground plane
         let contact = mesh.collide_sphere(
             Vec3Fix::from_int(0, 0, 0), // Center at ground level
-            Fix128::ONE,                  // Radius 1 => penetrating
+            Fix128::ONE,                // Radius 1 => penetrating
         );
         assert!(contact.is_some(), "Sphere should collide with ground mesh");
     }
@@ -557,7 +619,10 @@ mod tests {
 
         // Point above triangle center
         let cp = tri.closest_point(Vec3Fix::from_int(3, 5, 3));
-        assert_eq!(cp.y.hi, 0, "Closest point should be on triangle plane (y=0)");
+        assert_eq!(
+            cp.y.hi, 0,
+            "Closest point should be on triangle plane (y=0)"
+        );
     }
 
     #[test]
@@ -576,10 +641,7 @@ mod tests {
     fn test_aabb_trimesh_collision() {
         let mesh = make_ground_mesh();
         // AABB overlapping with ground plane
-        let aabb = AABB::new(
-            Vec3Fix::from_int(-1, -1, -1),
-            Vec3Fix::from_int(1, 1, 1),
-        );
+        let aabb = AABB::new(Vec3Fix::from_int(-1, -1, -1), Vec3Fix::from_int(1, 1, 1));
         let contact = mesh.collide_aabb(&aabb);
         assert!(contact.is_some(), "AABB should collide with ground mesh");
     }

@@ -68,7 +68,9 @@ pub enum HeatSource {
     /// Point heat source
     Point {
         /// Position (world space)
-        x: f32, y: f32, z: f32,
+        x: f32,
+        y: f32,
+        z: f32,
         /// Heat power (degrees/second at center)
         power: f32,
         /// Influence radius
@@ -117,8 +119,11 @@ impl ThermalModifier {
         Self {
             config,
             temperature: ScalarField3D::new_filled(
-                resolution, resolution, resolution,
-                min, max,
+                resolution,
+                resolution,
+                resolution,
+                min,
+                max,
                 config.ambient_temperature,
             ),
             melt_accumulator: ScalarField3D::new(resolution, resolution, resolution, min, max),
@@ -129,7 +134,13 @@ impl ThermalModifier {
 
     /// Add a point heat source
     pub fn add_heat_point(&mut self, x: f32, y: f32, z: f32, power: f32, radius: f32) {
-        self.heat_sources.push(HeatSource::Point { x, y, z, power, radius });
+        self.heat_sources.push(HeatSource::Point {
+            x,
+            y,
+            z,
+            power,
+            radius,
+        });
     }
 
     /// Apply heat at a position (e.g., from friction, laser, etc.)
@@ -146,7 +157,13 @@ impl ThermalModifier {
     fn apply_heat_sources(&mut self, dt: f32) {
         for source in &self.heat_sources {
             match *source {
-                HeatSource::Point { x, y, z, power, radius } => {
+                HeatSource::Point {
+                    x,
+                    y,
+                    z,
+                    power,
+                    radius,
+                } => {
                     self.temperature.splat(x, y, z, power * dt, radius);
                 }
                 HeatSource::Volume { min, max, power } => {
@@ -157,13 +174,22 @@ impl ThermalModifier {
                     for iz in 0..nz {
                         for iy in 0..ny {
                             for ix in 0..nx {
-                                let wx = self.temperature.min.0 + ix as f32 * (self.temperature.max.0 - self.temperature.min.0) / (nx - 1).max(1) as f32;
-                                let wy = self.temperature.min.1 + iy as f32 * (self.temperature.max.1 - self.temperature.min.1) / (ny - 1).max(1) as f32;
-                                let wz = self.temperature.min.2 + iz as f32 * (self.temperature.max.2 - self.temperature.min.2) / (nz - 1).max(1) as f32;
+                                let wx = self.temperature.min.0
+                                    + ix as f32 * (self.temperature.max.0 - self.temperature.min.0)
+                                        / (nx - 1).max(1) as f32;
+                                let wy = self.temperature.min.1
+                                    + iy as f32 * (self.temperature.max.1 - self.temperature.min.1)
+                                        / (ny - 1).max(1) as f32;
+                                let wz = self.temperature.min.2
+                                    + iz as f32 * (self.temperature.max.2 - self.temperature.min.2)
+                                        / (nz - 1).max(1) as f32;
 
-                                if wx >= min.0 && wx <= max.0
-                                    && wy >= min.1 && wy <= max.1
-                                    && wz >= min.2 && wz <= max.2
+                                if wx >= min.0
+                                    && wx <= max.0
+                                    && wy >= min.1
+                                    && wy <= max.1
+                                    && wz >= min.2
+                                    && wz <= max.2
                                 {
                                     self.temperature.add(ix, iy, iz, power * dt);
                                 }
@@ -257,7 +283,11 @@ impl PhysicsModifier for ThermalModifier {
         self.temperature.diffuse(dt, self.config.diffusion_rate);
 
         // 3. Cool toward ambient
-        self.temperature.decay_toward(self.config.ambient_temperature, self.config.cooling_rate, dt);
+        self.temperature.decay_toward(
+            self.config.ambient_temperature,
+            self.config.cooling_rate,
+            dt,
+        );
 
         // 4. Accumulate melt
         self.accumulate_melt(dt);
@@ -287,7 +317,11 @@ mod tests {
             |x, y, z| (x * x + y * y + z * z).sqrt() - 1.0,
             |x, y, z| {
                 let len = (x * x + y * y + z * z).sqrt();
-                if len < 1e-10 { (0.0, 1.0, 0.0) } else { (x / len, y / len, z / len) }
+                if len < 1e-10 {
+                    (0.0, 1.0, 0.0)
+                } else {
+                    (x / len, y / len, z / len)
+                }
             },
         )
     }
@@ -300,7 +334,11 @@ mod tests {
 
         // No heat applied: distance should be unchanged
         let d = modified.distance(2.0, 0.0, 0.0);
-        assert!((d - 1.0).abs() < 0.1, "No heat should not change SDF, got {}", d);
+        assert!(
+            (d - 1.0).abs() < 0.1,
+            "No heat should not change SDF, got {}",
+            d
+        );
     }
 
     #[test]
@@ -345,7 +383,12 @@ mod tests {
         let d_after = modifier.modify_distance(2.0, 0.0, 0.0, d_before);
 
         // Expansion: distance should decrease (object grows)
-        assert!(d_after < d_before, "Expansion should decrease distance, before={}, after={}", d_before, d_after);
+        assert!(
+            d_after < d_before,
+            "Expansion should decrease distance, before={}, after={}",
+            d_before,
+            d_after
+        );
     }
 
     #[test]
@@ -374,6 +417,11 @@ mod tests {
         }
 
         let center_after = modifier.temperature_at(0.0, 0.0, 0.0);
-        assert!(center_after < center_before, "Heat should spread, before={}, after={}", center_before, center_after);
+        assert!(
+            center_after < center_before,
+            "Heat should spread, before={}, after={}",
+            center_before,
+            center_after
+        );
     }
 }

@@ -8,8 +8,8 @@
 //! - **GJK Support**: Implements `Support` trait for GJK/EPA pipeline
 //! - **Fast AABB**: Compute world-space AABB from OBB for broadphase
 
-use crate::math::{Fix128, Vec3Fix, QuatFix};
-use crate::collider::{AABB, Support};
+use crate::collider::{Support, AABB};
+use crate::math::{Fix128, QuatFix, Vec3Fix};
 
 /// Oriented Bounding Box (OBB) collider
 ///
@@ -29,13 +29,21 @@ impl OrientedBox {
     /// Create a new oriented box
     #[inline]
     pub fn new(center: Vec3Fix, half_extents: Vec3Fix, rotation: QuatFix) -> Self {
-        Self { center, half_extents, rotation }
+        Self {
+            center,
+            half_extents,
+            rotation,
+        }
     }
 
     /// Create an axis-aligned box (no rotation)
     #[inline]
     pub fn axis_aligned(center: Vec3Fix, half_extents: Vec3Fix) -> Self {
-        Self { center, half_extents, rotation: QuatFix::IDENTITY }
+        Self {
+            center,
+            half_extents,
+            rotation: QuatFix::IDENTITY,
+        }
     }
 
     /// Compute world-space AABB enclosing this OBB
@@ -61,9 +69,21 @@ impl OrientedBox {
 
     /// Get a corner vertex by index (0..8)
     pub fn corner(&self, index: usize) -> Vec3Fix {
-        let sx = if index & 1 == 0 { self.half_extents.x } else { -self.half_extents.x };
-        let sy = if index & 2 == 0 { self.half_extents.y } else { -self.half_extents.y };
-        let sz = if index & 4 == 0 { self.half_extents.z } else { -self.half_extents.z };
+        let sx = if index & 1 == 0 {
+            self.half_extents.x
+        } else {
+            -self.half_extents.x
+        };
+        let sy = if index & 2 == 0 {
+            self.half_extents.y
+        } else {
+            -self.half_extents.y
+        };
+        let sz = if index & 4 == 0 {
+            self.half_extents.z
+        } else {
+            -self.half_extents.z
+        };
         let local = Vec3Fix::new(sx, sy, sz);
         self.center + self.rotation.rotate_vec(local)
     }
@@ -115,9 +135,21 @@ impl Support for OrientedBox {
 
         // In local space, support is simply sign(dir) * half_extents
         let local_support = Vec3Fix::new(
-            if local_dir.x >= Fix128::ZERO { self.half_extents.x } else { -self.half_extents.x },
-            if local_dir.y >= Fix128::ZERO { self.half_extents.y } else { -self.half_extents.y },
-            if local_dir.z >= Fix128::ZERO { self.half_extents.z } else { -self.half_extents.z },
+            if local_dir.x >= Fix128::ZERO {
+                self.half_extents.x
+            } else {
+                -self.half_extents.x
+            },
+            if local_dir.y >= Fix128::ZERO {
+                self.half_extents.y
+            } else {
+                -self.half_extents.y
+            },
+            if local_dir.z >= Fix128::ZERO {
+                self.half_extents.z
+            } else {
+                -self.half_extents.z
+            },
         );
 
         // Transform back to world space
@@ -131,10 +163,7 @@ mod tests {
 
     #[test]
     fn test_axis_aligned_box_support() {
-        let b = OrientedBox::axis_aligned(
-            Vec3Fix::ZERO,
-            Vec3Fix::from_int(2, 3, 4),
-        );
+        let b = OrientedBox::axis_aligned(Vec3Fix::ZERO, Vec3Fix::from_int(2, 3, 4));
 
         let s = b.support(Vec3Fix::UNIT_X);
         assert_eq!(s.x.hi, 2);
@@ -147,10 +176,7 @@ mod tests {
 
     #[test]
     fn test_box_aabb() {
-        let b = OrientedBox::axis_aligned(
-            Vec3Fix::from_int(5, 0, 0),
-            Vec3Fix::from_int(1, 1, 1),
-        );
+        let b = OrientedBox::axis_aligned(Vec3Fix::from_int(5, 0, 0), Vec3Fix::from_int(1, 1, 1));
         let aabb = b.aabb();
         assert_eq!(aabb.min.x.hi, 4);
         assert_eq!(aabb.max.x.hi, 6);
@@ -158,10 +184,7 @@ mod tests {
 
     #[test]
     fn test_box_corners() {
-        let b = OrientedBox::axis_aligned(
-            Vec3Fix::ZERO,
-            Vec3Fix::from_int(1, 1, 1),
-        );
+        let b = OrientedBox::axis_aligned(Vec3Fix::ZERO, Vec3Fix::from_int(1, 1, 1));
         let corners = b.corners();
         assert_eq!(corners.len(), 8);
 
@@ -187,25 +210,22 @@ mod tests {
         // So support in +Z direction should give -half_extents.x on local X
         let s = b.support(Vec3Fix::UNIT_Z);
         // The z-support should be roughly 2 (the long axis rotated)
-        assert!(s.z > Fix128::ONE, "Rotated box support should reflect orientation");
+        assert!(
+            s.z > Fix128::ONE,
+            "Rotated box support should reflect orientation"
+        );
     }
 
     #[test]
     fn test_box_volume() {
-        let b = OrientedBox::axis_aligned(
-            Vec3Fix::ZERO,
-            Vec3Fix::from_int(1, 2, 3),
-        );
+        let b = OrientedBox::axis_aligned(Vec3Fix::ZERO, Vec3Fix::from_int(1, 2, 3));
         // Volume = 2*1 * 2*2 * 2*3 = 48
         assert_eq!(b.volume().hi, 48);
     }
 
     #[test]
     fn test_box_inertia() {
-        let b = OrientedBox::axis_aligned(
-            Vec3Fix::ZERO,
-            Vec3Fix::from_int(1, 1, 1),
-        );
+        let b = OrientedBox::axis_aligned(Vec3Fix::ZERO, Vec3Fix::from_int(1, 1, 1));
         let inertia = b.inertia_diagonal(Fix128::from_int(6));
         // I_x = m/3 * (hy^2 + hz^2) = 6/3 * (1+1) = 4
         assert_eq!(inertia.x.hi, 4);

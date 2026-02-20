@@ -12,7 +12,7 @@
 //!
 //! Author: Moroya Sakamoto
 
-use crate::math::{Fix128, Vec3Fix, QuatFix};
+use crate::math::{Fix128, QuatFix, Vec3Fix};
 
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
@@ -83,15 +83,13 @@ impl SkeletonPose {
         let one_minus_t = Fix128::ONE - t;
 
         let bones: Vec<BonePose> = (0..n)
-            .map(|i| {
-                BonePose {
-                    position: Vec3Fix::new(
-                        a.bones[i].position.x * one_minus_t + b.bones[i].position.x * t,
-                        a.bones[i].position.y * one_minus_t + b.bones[i].position.y * t,
-                        a.bones[i].position.z * one_minus_t + b.bones[i].position.z * t,
-                    ),
-                    rotation: quat_slerp(a.bones[i].rotation, b.bones[i].rotation, t),
-                }
+            .map(|i| BonePose {
+                position: Vec3Fix::new(
+                    a.bones[i].position.x * one_minus_t + b.bones[i].position.x * t,
+                    a.bones[i].position.y * one_minus_t + b.bones[i].position.y * t,
+                    a.bones[i].position.z * one_minus_t + b.bones[i].position.z * t,
+                ),
+                rotation: quat_slerp(a.bones[i].rotation, b.bones[i].rotation, t),
             })
             .collect();
 
@@ -151,7 +149,11 @@ impl AnimationClip {
             let cycles = time / self.duration;
             time - self.duration * Fix128::from_int(cycles.hi)
         } else {
-            if time > self.duration { self.duration } else { time }
+            if time > self.duration {
+                self.duration
+            } else {
+                time
+            }
         };
 
         let mut pose = SkeletonPose::new(self.keyframes.len());
@@ -190,9 +192,12 @@ impl AnimationClip {
 
                 pose.bones[bone_idx] = BonePose {
                     position: Vec3Fix::new(
-                        prev.pose.position.x + (next.pose.position.x - prev.pose.position.x) * local_t,
-                        prev.pose.position.y + (next.pose.position.y - prev.pose.position.y) * local_t,
-                        prev.pose.position.z + (next.pose.position.z - prev.pose.position.z) * local_t,
+                        prev.pose.position.x
+                            + (next.pose.position.x - prev.pose.position.x) * local_t,
+                        prev.pose.position.y
+                            + (next.pose.position.y - prev.pose.position.y) * local_t,
+                        prev.pose.position.z
+                            + (next.pose.position.z - prev.pose.position.z) * local_t,
                     ),
                     rotation: quat_slerp(prev.pose.rotation, next.pose.rotation, local_t),
                 };
@@ -313,11 +318,8 @@ impl AnimationBlender {
                 self.output_pose.clone_from(&self.physics_pose);
             }
             BlendMode::Blend => {
-                self.output_pose = SkeletonPose::lerp(
-                    &self.animation_pose,
-                    &self.physics_pose,
-                    self.blend_weight,
-                );
+                self.output_pose =
+                    SkeletonPose::lerp(&self.animation_pose, &self.physics_pose, self.blend_weight);
             }
         }
     }
@@ -357,7 +359,8 @@ fn quat_slerp(a: QuatFix, b: QuatFix, t: Fix128) -> QuatFix {
             a.y * one_minus_t + b.y * t,
             a.z * one_minus_t + b.z * t,
             a.w * one_minus_t + b.w * t,
-        ).normalize();
+        )
+        .normalize();
     }
 
     // Full SLERP
@@ -377,7 +380,8 @@ fn quat_slerp(a: QuatFix, b: QuatFix, t: Fix128) -> QuatFix {
         a.y * s0 + b.y * s1,
         a.z * s0 + b.z * s1,
         a.w * s0 + b.w * s1,
-    ).normalize()
+    )
+    .normalize()
 }
 
 // ============================================================================
@@ -404,7 +408,8 @@ mod tests {
         blender.go_ragdoll();
 
         let dt = Fix128::from_ratio(1, 60);
-        for _ in 0..120 { // 2 seconds at 60fps
+        for _ in 0..120 {
+            // 2 seconds at 60fps
             blender.update(dt);
         }
 
@@ -430,20 +435,36 @@ mod tests {
 
         let mid = SkeletonPose::lerp(&a, &b, Fix128::from_ratio(1, 2));
         let x = mid.bones[0].position.x.to_f32();
-        assert!((x - 5.0).abs() < 0.1, "Midpoint should be at x=5, got {}", x);
+        assert!(
+            (x - 5.0).abs() < 0.1,
+            "Midpoint should be at x=5, got {}",
+            x
+        );
     }
 
     #[test]
     fn test_animation_clip() {
         let mut clip = AnimationClip::new(1, Fix128::from_int(2));
-        clip.add_keyframe(0, Keyframe {
-            time: Fix128::ZERO,
-            pose: BonePose { position: Vec3Fix::ZERO, rotation: QuatFix::IDENTITY },
-        });
-        clip.add_keyframe(0, Keyframe {
-            time: Fix128::from_int(2),
-            pose: BonePose { position: Vec3Fix::from_int(10, 0, 0), rotation: QuatFix::IDENTITY },
-        });
+        clip.add_keyframe(
+            0,
+            Keyframe {
+                time: Fix128::ZERO,
+                pose: BonePose {
+                    position: Vec3Fix::ZERO,
+                    rotation: QuatFix::IDENTITY,
+                },
+            },
+        );
+        clip.add_keyframe(
+            0,
+            Keyframe {
+                time: Fix128::from_int(2),
+                pose: BonePose {
+                    position: Vec3Fix::from_int(10, 0, 0),
+                    rotation: QuatFix::IDENTITY,
+                },
+            },
+        );
 
         let pose = clip.sample(Fix128::ONE); // t=1s, midpoint
         let x = pose.bones[0].position.x.to_f32();

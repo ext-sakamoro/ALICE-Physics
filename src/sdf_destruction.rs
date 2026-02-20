@@ -15,17 +15,17 @@
 //!
 //! Author: Moroya Sakamoto
 
-use core::fmt;
-use crate::math::{Fix128, Vec3Fix, QuatFix};
-use crate::sdf_collider::SdfField;
 use crate::collider::Contact;
+use crate::math::{Fix128, QuatFix, Vec3Fix};
+use crate::sdf_collider::SdfField;
+use core::fmt;
 
-#[cfg(not(feature = "std"))]
-use alloc::vec::Vec;
 #[cfg(not(feature = "std"))]
 use alloc::boxed::Box;
 #[cfg(not(feature = "std"))]
 use alloc::sync::Arc;
+#[cfg(not(feature = "std"))]
+use alloc::vec::Vec;
 #[cfg(feature = "std")]
 use std::sync::Arc;
 
@@ -76,9 +76,19 @@ impl Clone for DestructionType {
     fn clone(&self) -> Self {
         match self {
             Self::Sphere { radius } => Self::Sphere { radius: *radius },
-            Self::Box { half_extents } => Self::Box { half_extents: *half_extents },
-            Self::Cylinder { radius, half_height } => Self::Cylinder { radius: *radius, half_height: *half_height },
-            Self::Custom { sdf } => Self::Custom { sdf: Arc::clone(sdf) },
+            Self::Box { half_extents } => Self::Box {
+                half_extents: *half_extents,
+            },
+            Self::Cylinder {
+                radius,
+                half_height,
+            } => Self::Cylinder {
+                radius: *radius,
+                half_height: *half_height,
+            },
+            Self::Custom { sdf } => Self::Custom {
+                sdf: Arc::clone(sdf),
+            },
         }
     }
 }
@@ -87,8 +97,18 @@ impl fmt::Debug for DestructionType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Sphere { radius } => f.debug_struct("Sphere").field("radius", radius).finish(),
-            Self::Box { half_extents } => f.debug_struct("Box").field("half_extents", half_extents).finish(),
-            Self::Cylinder { radius, half_height } => f.debug_struct("Cylinder").field("radius", radius).field("half_height", half_height).finish(),
+            Self::Box { half_extents } => f
+                .debug_struct("Box")
+                .field("half_extents", half_extents)
+                .finish(),
+            Self::Cylinder {
+                radius,
+                half_height,
+            } => f
+                .debug_struct("Cylinder")
+                .field("radius", radius)
+                .field("half_height", half_height)
+                .finish(),
             Self::Custom { .. } => f.debug_struct("Custom").field("sdf", &"<fn>").finish(),
         }
     }
@@ -120,7 +140,10 @@ impl DestructionShape {
         Self {
             center,
             rotation: QuatFix::IDENTITY,
-            shape: DestructionType::Cylinder { radius, half_height },
+            shape: DestructionType::Cylinder {
+                radius,
+                half_height,
+            },
             smooth_factor: 0.0,
         }
     }
@@ -144,15 +167,14 @@ impl DestructionShape {
         let dy = wy - self.center.y.to_f32();
         let dz = wz - self.center.z.to_f32();
 
-        let local = self.rotation.conjugate().rotate_vec(
-            Vec3Fix::from_f32(dx, dy, dz)
-        );
+        let local = self
+            .rotation
+            .conjugate()
+            .rotate_vec(Vec3Fix::from_f32(dx, dy, dz));
         let (lx, ly, lz) = local.to_f32();
 
         match &self.shape {
-            DestructionType::Sphere { radius } => {
-                (lx * lx + ly * ly + lz * lz).sqrt() - radius
-            }
+            DestructionType::Sphere { radius } => (lx * lx + ly * ly + lz * lz).sqrt() - radius,
             DestructionType::Box { half_extents } => {
                 let (hx, hy, hz) = *half_extents;
                 let qx = lx.abs() - hx;
@@ -165,7 +187,10 @@ impl DestructionShape {
                 let inside = qx.max(qy).max(qz).min(0.0);
                 outside + inside
             }
-            DestructionType::Cylinder { radius, half_height } => {
+            DestructionType::Cylinder {
+                radius,
+                half_height,
+            } => {
                 let d_radial = (lx * lx + lz * lz).sqrt() - radius;
                 let d_axial = ly.abs() - half_height;
                 let outside = (d_radial.max(0.0) * d_radial.max(0.0)
@@ -174,9 +199,7 @@ impl DestructionShape {
                 let inside = d_radial.max(d_axial).min(0.0);
                 outside + inside
             }
-            DestructionType::Custom { sdf } => {
-                sdf(lx, ly, lz)
-            }
+            DestructionType::Custom { sdf } => sdf(lx, ly, lz),
         }
     }
 }
@@ -317,11 +340,7 @@ pub fn destruction_from_impact(
 /// Create an explosion destruction event.
 ///
 /// Generates a spherical destruction centered at the explosion point.
-pub fn destruction_from_explosion(
-    center: Vec3Fix,
-    radius: f32,
-    smooth: f32,
-) -> DestructionShape {
+pub fn destruction_from_explosion(center: Vec3Fix, radius: f32, smooth: f32) -> DestructionShape {
     DestructionShape::sphere(center, radius).with_smoothing(smooth)
 }
 
@@ -338,8 +357,7 @@ pub fn destruction_from_projectile(
     // Compute rotation to align cylinder Y-axis with direction
     let rotation = rotation_from_direction(direction);
 
-    DestructionShape::cylinder(center, bore_radius, bore_depth * 0.5)
-        .with_rotation(rotation)
+    DestructionShape::cylinder(center, bore_radius, bore_depth * 0.5).with_rotation(rotation)
 }
 
 /// Compute quaternion rotation that aligns Y-axis with the given direction
@@ -367,7 +385,8 @@ fn rotation_from_direction(dir: Vec3Fix) -> QuatFix {
         axis.y * half_sin,
         axis.z * half_sin,
         half_cos,
-    ).normalize()
+    )
+    .normalize()
 }
 
 // ============================================================================
@@ -384,7 +403,11 @@ mod tests {
             |x, y, z| (x * x + y * y + z * z).sqrt() - 1.0,
             |x, y, z| {
                 let len = (x * x + y * y + z * z).sqrt();
-                if len < 1e-10 { (0.0, 1.0, 0.0) } else { (x / len, y / len, z / len) }
+                if len < 1e-10 {
+                    (0.0, 1.0, 0.0)
+                } else {
+                    (x / len, y / len, z / len)
+                }
             },
         )
     }
@@ -413,11 +436,18 @@ mod tests {
 
         // Point inside the carved region should now be "outside"
         let d = dsdf.distance(1.0, 0.0, 0.0);
-        assert!(d > -0.1, "Point at carved region should be near surface or outside, got {}", d);
+        assert!(
+            d > -0.1,
+            "Point at carved region should be near surface or outside, got {}",
+            d
+        );
 
         // Point far from destruction should be unaffected
         let d_far = dsdf.distance(-0.5, 0.0, 0.0);
-        assert!(d_far < 0.0, "Point far from destruction should still be inside");
+        assert!(
+            d_far < 0.0,
+            "Point far from destruction should still be inside"
+        );
     }
 
     #[test]
@@ -425,8 +455,7 @@ mod tests {
         let mut dsdf = DestructibleSdf::new(Box::new(unit_sphere()));
 
         dsdf.apply_destruction(
-            DestructionShape::sphere(Vec3Fix::from_f32(1.0, 0.0, 0.0), 0.5)
-                .with_smoothing(0.1),
+            DestructionShape::sphere(Vec3Fix::from_f32(1.0, 0.0, 0.0), 0.5).with_smoothing(0.1),
         );
 
         // The smoothed destruction should produce valid SDF values
@@ -479,12 +508,11 @@ mod tests {
 
     #[test]
     fn test_explosion_helper() {
-        let shape = destruction_from_explosion(
-            Vec3Fix::from_f32(1.0, 0.0, 0.0),
-            2.0,
-            0.1,
+        let shape = destruction_from_explosion(Vec3Fix::from_f32(1.0, 0.0, 0.0), 2.0, 0.1);
+        assert!(
+            shape.smooth_factor > 0.0,
+            "Explosion should use smooth subtraction"
         );
-        assert!(shape.smooth_factor > 0.0, "Explosion should use smooth subtraction");
     }
 
     #[test]
@@ -497,6 +525,9 @@ mod tests {
 
         let (nx, ny, nz) = dsdf.normal(1.0, 0.0, 0.0);
         let len = (nx * nx + ny * ny + nz * nz).sqrt();
-        assert!((len - 1.0).abs() < 0.1, "Normal should be approximately unit length");
+        assert!(
+            (len - 1.0).abs() < 0.1,
+            "Normal should be approximately unit length"
+        );
     }
 }

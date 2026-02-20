@@ -8,8 +8,8 @@
 //! - **Sphere-Sphere TOI**: Exact time of impact for two moving spheres
 //! - **Sphere-Plane TOI**: Exact time of impact for sphere vs infinite plane
 
-use crate::math::{Fix128, Vec3Fix};
 use crate::collider::AABB;
+use crate::math::{Fix128, Vec3Fix};
 
 /// Time of Impact result
 #[derive(Clone, Copy, Debug)]
@@ -203,49 +203,57 @@ where
 /// Swept AABB test (moving AABB vs static AABB)
 ///
 /// Returns t in [0, 1] for first overlap, or None.
-pub fn swept_aabb(
-    moving: &AABB,
-    velocity: Vec3Fix,
-    target: &AABB,
-) -> Option<Fix128> {
+pub fn swept_aabb(moving: &AABB, velocity: Vec3Fix, target: &AABB) -> Option<Fix128> {
     let mut t_enter = Fix128::from_int(-1000000);
     let mut t_exit = Fix128::from_int(1000000);
 
     // X axis
     if let Some((te, tx)) = slab_test(
-        moving.min.x, moving.max.x,
-        target.min.x, target.max.x,
+        moving.min.x,
+        moving.max.x,
+        target.min.x,
+        target.max.x,
         velocity.x,
     ) {
         t_enter = if te > t_enter { te } else { t_enter };
         t_exit = if tx < t_exit { tx } else { t_exit };
-        if t_enter > t_exit { return None; }
+        if t_enter > t_exit {
+            return None;
+        }
     } else {
         return None;
     }
 
     // Y axis
     if let Some((te, tx)) = slab_test(
-        moving.min.y, moving.max.y,
-        target.min.y, target.max.y,
+        moving.min.y,
+        moving.max.y,
+        target.min.y,
+        target.max.y,
         velocity.y,
     ) {
         t_enter = if te > t_enter { te } else { t_enter };
         t_exit = if tx < t_exit { tx } else { t_exit };
-        if t_enter > t_exit { return None; }
+        if t_enter > t_exit {
+            return None;
+        }
     } else {
         return None;
     }
 
     // Z axis
     if let Some((te, tx)) = slab_test(
-        moving.min.z, moving.max.z,
-        target.min.z, target.max.z,
+        moving.min.z,
+        moving.max.z,
+        target.min.z,
+        target.max.z,
         velocity.z,
     ) {
         t_enter = if te > t_enter { te } else { t_enter };
         t_exit = if tx < t_exit { tx } else { t_exit };
-        if t_enter > t_exit { return None; }
+        if t_enter > t_exit {
+            return None;
+        }
     } else {
         return None;
     }
@@ -261,8 +269,10 @@ pub fn swept_aabb(
 
 /// Slab test for one axis of swept AABB
 fn slab_test(
-    a_min: Fix128, a_max: Fix128,
-    b_min: Fix128, b_max: Fix128,
+    a_min: Fix128,
+    a_max: Fix128,
+    b_min: Fix128,
+    b_max: Fix128,
     vel: Fix128,
 ) -> Option<(Fix128, Fix128)> {
     if vel.is_zero() {
@@ -350,8 +360,12 @@ mod tests {
     fn test_sphere_sphere_toi() {
         // Two spheres moving toward each other
         let toi = sphere_sphere_toi(
-            Vec3Fix::from_int(-5, 0, 0), Fix128::ONE, Vec3Fix::from_int(10, 0, 0),
-            Vec3Fix::from_int(5, 0, 0), Fix128::ONE, Vec3Fix::from_int(-10, 0, 0),
+            Vec3Fix::from_int(-5, 0, 0),
+            Fix128::ONE,
+            Vec3Fix::from_int(10, 0, 0),
+            Vec3Fix::from_int(5, 0, 0),
+            Fix128::ONE,
+            Vec3Fix::from_int(-10, 0, 0),
         );
 
         let toi = toi.expect("Should find collision");
@@ -359,15 +373,23 @@ mod tests {
         // t = (10 - 2) / 20 = 0.4
         let expected = Fix128::from_ratio(4, 10);
         let error = (toi.t - expected).abs();
-        assert!(error < Fix128::from_ratio(1, 10), "TOI should be ~0.4, got {:?}", toi.t);
+        assert!(
+            error < Fix128::from_ratio(1, 10),
+            "TOI should be ~0.4, got {:?}",
+            toi.t
+        );
     }
 
     #[test]
     fn test_sphere_sphere_miss() {
         // Spheres moving apart
         let toi = sphere_sphere_toi(
-            Vec3Fix::from_int(-5, 0, 0), Fix128::ONE, Vec3Fix::from_int(-10, 0, 0),
-            Vec3Fix::from_int(5, 0, 0), Fix128::ONE, Vec3Fix::from_int(10, 0, 0),
+            Vec3Fix::from_int(-5, 0, 0),
+            Fix128::ONE,
+            Vec3Fix::from_int(-10, 0, 0),
+            Vec3Fix::from_int(5, 0, 0),
+            Fix128::ONE,
+            Vec3Fix::from_int(10, 0, 0),
         );
         assert!(toi.is_none());
     }
@@ -400,19 +422,16 @@ mod tests {
         let radius = Fix128::ONE;
 
         assert!(needs_ccd(fast, radius, dt, &config), "Fast body needs CCD");
-        assert!(!needs_ccd(slow, radius, dt, &config), "Slow body doesn't need CCD");
+        assert!(
+            !needs_ccd(slow, radius, dt, &config),
+            "Slow body doesn't need CCD"
+        );
     }
 
     #[test]
     fn test_swept_aabb() {
-        let moving = AABB::new(
-            Vec3Fix::from_int(-1, -1, -1),
-            Vec3Fix::from_int(1, 1, 1),
-        );
-        let target = AABB::new(
-            Vec3Fix::from_int(5, -1, -1),
-            Vec3Fix::from_int(7, 1, 1),
-        );
+        let moving = AABB::new(Vec3Fix::from_int(-1, -1, -1), Vec3Fix::from_int(1, 1, 1));
+        let target = AABB::new(Vec3Fix::from_int(5, -1, -1), Vec3Fix::from_int(7, 1, 1));
         let velocity = Vec3Fix::from_int(10, 0, 0);
 
         let t = swept_aabb(&moving, velocity, &target);
@@ -445,7 +464,10 @@ mod tests {
             &config,
         );
 
-        assert!(toi.is_some(), "Should find collision via conservative advancement");
+        assert!(
+            toi.is_some(),
+            "Should find collision via conservative advancement"
+        );
     }
 
     #[test]
@@ -461,7 +483,10 @@ mod tests {
             Fix128::ONE,
             dt,
         );
-        assert!(contact.is_some(), "Fast-closing spheres should generate speculative contact");
+        assert!(
+            contact.is_some(),
+            "Fast-closing spheres should generate speculative contact"
+        );
     }
 
     #[test]
@@ -476,6 +501,9 @@ mod tests {
             Fix128::ONE,
             dt,
         );
-        assert!(contact.is_none(), "Separating spheres should not generate contact");
+        assert!(
+            contact.is_none(),
+            "Separating spheres should not generate contact"
+        );
     }
 }

@@ -106,10 +106,28 @@ impl Default for VehicleConfig {
     fn default() -> Self {
         Self {
             wheels: vec![
-                WheelConfig { local_position: Vec3Fix::from_f32(-0.8, -0.2, 1.2), driven: false, max_steer_angle: Fix128::from_ratio(5, 10), ..Default::default() },
-                WheelConfig { local_position: Vec3Fix::from_f32(0.8, -0.2, 1.2), driven: false, max_steer_angle: Fix128::from_ratio(5, 10), ..Default::default() },
-                WheelConfig { local_position: Vec3Fix::from_f32(-0.8, -0.2, -1.2), driven: true, ..Default::default() },
-                WheelConfig { local_position: Vec3Fix::from_f32(0.8, -0.2, -1.2), driven: true, ..Default::default() },
+                WheelConfig {
+                    local_position: Vec3Fix::from_f32(-0.8, -0.2, 1.2),
+                    driven: false,
+                    max_steer_angle: Fix128::from_ratio(5, 10),
+                    ..Default::default()
+                },
+                WheelConfig {
+                    local_position: Vec3Fix::from_f32(0.8, -0.2, 1.2),
+                    driven: false,
+                    max_steer_angle: Fix128::from_ratio(5, 10),
+                    ..Default::default()
+                },
+                WheelConfig {
+                    local_position: Vec3Fix::from_f32(-0.8, -0.2, -1.2),
+                    driven: true,
+                    ..Default::default()
+                },
+                WheelConfig {
+                    local_position: Vec3Fix::from_f32(0.8, -0.2, -1.2),
+                    driven: true,
+                    ..Default::default()
+                },
             ],
             engine: EngineConfig::default(),
             gear_ratios: vec![
@@ -250,7 +268,8 @@ impl Vehicle {
             let wheel_cfg = self.config.wheels[i];
 
             // World-space wheel position
-            let wheel_world = chassis.position + chassis.rotation.rotate_vec(wheel_cfg.local_position);
+            let wheel_world =
+                chassis.position + chassis.rotation.rotate_vec(wheel_cfg.local_position);
 
             // Raycast down for ground contact
             let ray_start = wheel_world;
@@ -264,17 +283,19 @@ impl Vehicle {
             if dist_to_ground < max_dist && dist_to_ground > Fix128::ZERO {
                 self.wheel_states[i].grounded = true;
                 self.wheel_states[i].ground_normal = Vec3Fix::UNIT_Y;
-                self.wheel_states[i].contact_point = Vec3Fix::new(
-                    wheel_world.x,
-                    ground_y,
-                    wheel_world.z,
-                );
+                self.wheel_states[i].contact_point =
+                    Vec3Fix::new(wheel_world.x, ground_y, wheel_world.z);
 
                 // Suspension
-                let compression = Fix128::ONE - (dist_to_ground - wheel_cfg.radius) / wheel_cfg.suspension_rest;
-                let compression = if compression < Fix128::ZERO { Fix128::ZERO }
-                    else if compression > Fix128::ONE { Fix128::ONE }
-                    else { compression };
+                let compression =
+                    Fix128::ONE - (dist_to_ground - wheel_cfg.radius) / wheel_cfg.suspension_rest;
+                let compression = if compression < Fix128::ZERO {
+                    Fix128::ZERO
+                } else if compression > Fix128::ONE {
+                    Fix128::ONE
+                } else {
+                    compression
+                };
 
                 let spring_force = wheel_cfg.spring_stiffness * compression;
                 let vel_y = chassis.velocity.dot(up);
@@ -296,7 +317,11 @@ impl Vehicle {
                 if wheel_cfg.has_brake && self.brake > Fix128::ZERO {
                     let speed = chassis.velocity.dot(forward);
                     if speed.abs() > Fix128::from_ratio(1, 10) {
-                        let brake_dir = if speed > Fix128::ZERO { -forward } else { forward };
+                        let brake_dir = if speed > Fix128::ZERO {
+                            -forward
+                        } else {
+                            forward
+                        };
                         let brake_mag = self.config.brake_force * self.brake;
                         total_force = total_force + brake_dir * brake_mag;
                     }
@@ -313,7 +338,8 @@ impl Vehicle {
                     let (sin_a, cos_a) = steer_angle.sin_cos();
                     let steer_force = (right * sin_a + forward * cos_a) - forward;
                     let speed_factor = chassis.velocity.dot(forward).abs();
-                    total_force = total_force + steer_force * (speed_factor * Fix128::from_int(1000));
+                    total_force =
+                        total_force + steer_force * (speed_factor * Fix128::from_int(1000));
                 }
             } else {
                 self.wheel_states[i].grounded = false;
@@ -325,8 +351,8 @@ impl Vehicle {
                 let ground_speed = chassis.velocity.dot(forward);
                 self.wheel_states[i].spin_speed = ground_speed / wheel_cfg.radius;
             }
-            self.wheel_states[i].spin_angle = self.wheel_states[i].spin_angle
-                + self.wheel_states[i].spin_speed * dt;
+            self.wheel_states[i].spin_angle =
+                self.wheel_states[i].spin_angle + self.wheel_states[i].spin_speed * dt;
         }
 
         // Aerodynamic drag
@@ -388,10 +414,7 @@ mod tests {
     #[test]
     fn test_vehicle_suspension() {
         let mut vehicle = Vehicle::new_default();
-        let mut chassis = RigidBody::new(
-            Vec3Fix::from_f32(0.0, 0.5, 0.0),
-            Fix128::from_int(1500),
-        );
+        let mut chassis = RigidBody::new(Vec3Fix::from_f32(0.0, 0.5, 0.0), Fix128::from_int(1500));
 
         let dt = Fix128::from_ratio(1, 60);
         vehicle.update(&mut chassis, dt);
@@ -403,10 +426,7 @@ mod tests {
     #[test]
     fn test_vehicle_acceleration() {
         let mut vehicle = Vehicle::new_default();
-        let mut chassis = RigidBody::new(
-            Vec3Fix::from_f32(0.0, 0.5, 0.0),
-            Fix128::from_int(1500),
-        );
+        let mut chassis = RigidBody::new(Vec3Fix::from_f32(0.0, 0.5, 0.0), Fix128::from_int(1500));
 
         vehicle.throttle = Fix128::ONE; // Full throttle
 
@@ -417,7 +437,11 @@ mod tests {
 
         // Vehicle should have gained forward velocity
         let speed = vehicle.speed_kmh.to_f32();
-        assert!(speed.abs() > 0.01, "Vehicle should accelerate, speed={}", speed);
+        assert!(
+            speed.abs() > 0.01,
+            "Vehicle should accelerate, speed={}",
+            speed
+        );
     }
 
     #[test]

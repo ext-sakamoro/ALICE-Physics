@@ -82,7 +82,13 @@ impl ReplayRecorder {
             .map(|i| i as i64 * COMPONENTS_PER_BODY * MAX_FRAMES)
             .collect();
         let batch_buf = Vec::with_capacity(body_count * COMPONENTS_PER_BODY as usize);
-        Ok(Self { db, frame: 0, body_count, channel_bases, batch_buf })
+        Ok(Self {
+            db,
+            frame: 0,
+            body_count,
+            channel_bases,
+            batch_buf,
+        })
     }
 
     /// Record all body positions and velocities for the current frame.
@@ -100,12 +106,12 @@ impl ReplayRecorder {
             let (vx, vy, vz) = body.velocity.to_f32();
             let base = self.channel_bases[i];
 
-            self.batch_buf.push((base                        + frame, px));
-            self.batch_buf.push((base +     MAX_FRAMES       + frame, py));
-            self.batch_buf.push((base + 2 * MAX_FRAMES       + frame, pz));
-            self.batch_buf.push((base + 3 * MAX_FRAMES       + frame, vx));
-            self.batch_buf.push((base + 4 * MAX_FRAMES       + frame, vy));
-            self.batch_buf.push((base + 5 * MAX_FRAMES       + frame, vz));
+            self.batch_buf.push((base + frame, px));
+            self.batch_buf.push((base + MAX_FRAMES + frame, py));
+            self.batch_buf.push((base + 2 * MAX_FRAMES + frame, pz));
+            self.batch_buf.push((base + 3 * MAX_FRAMES + frame, vx));
+            self.batch_buf.push((base + 4 * MAX_FRAMES + frame, vy));
+            self.batch_buf.push((base + 5 * MAX_FRAMES + frame, vz));
         }
 
         self.db.put_batch(&self.batch_buf)?;
@@ -127,9 +133,9 @@ impl ReplayRecorder {
             let (px, py, pz) = body.position.to_f32();
             let base = self.channel_bases[i];
 
-            self.batch_buf.push((base                        + frame, px));
-            self.batch_buf.push((base +     MAX_FRAMES       + frame, py));
-            self.batch_buf.push((base + 2 * MAX_FRAMES       + frame, pz));
+            self.batch_buf.push((base + frame, px));
+            self.batch_buf.push((base + MAX_FRAMES + frame, py));
+            self.batch_buf.push((base + 2 * MAX_FRAMES + frame, pz));
         }
 
         self.db.put_batch(&self.batch_buf)?;
@@ -178,8 +184,8 @@ impl ReplayPlayer {
         let f = frame as i64;
         let base = body_id as i64 * COMPONENTS_PER_BODY * MAX_FRAMES;
 
-        let x = self.db.get(base                  + f)?;
-        let y = self.db.get(base +     MAX_FRAMES + f)?;
+        let x = self.db.get(base + f)?;
+        let y = self.db.get(base + MAX_FRAMES + f)?;
         let z = self.db.get(base + 2 * MAX_FRAMES + f)?;
 
         match (x, y, z) {
@@ -215,12 +221,15 @@ impl ReplayPlayer {
         let s = start_frame as i64;
         let e = end_frame as i64;
 
-        let xs = self.db.scan(base                  + s, base                  + e)?;
-        let ys = self.db.scan(base +     MAX_FRAMES + s, base +     MAX_FRAMES + e)?;
-        let zs = self.db.scan(base + 2 * MAX_FRAMES + s, base + 2 * MAX_FRAMES + e)?;
+        let xs = self.db.scan(base + s, base + e)?;
+        let ys = self.db.scan(base + MAX_FRAMES + s, base + MAX_FRAMES + e)?;
+        let zs = self
+            .db
+            .scan(base + 2 * MAX_FRAMES + s, base + 2 * MAX_FRAMES + e)?;
 
         let mut result = Vec::with_capacity(xs.len());
-        for ((xt, xv), ((_, yv), (_, zv))) in xs.into_iter().zip(ys.into_iter().zip(zs.into_iter())) {
+        for ((xt, xv), ((_, yv), (_, zv))) in xs.into_iter().zip(ys.into_iter().zip(zs.into_iter()))
+        {
             let frame = (xt - base) as u64;
             result.push((frame, xv, yv, zv));
         }
@@ -242,7 +251,7 @@ impl ReplayPlayer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix, Fix128};
+    use crate::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix};
 
     #[test]
     fn test_replay_record_and_playback() {

@@ -14,8 +14,8 @@
 //! Author: Moroya Sakamoto
 
 use crate::math::{Fix128, Vec3Fix};
-use crate::solver::RigidBody;
 use crate::sdf_collider::SdfCollider;
+use crate::solver::RigidBody;
 
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
@@ -140,7 +140,10 @@ pub fn compute_sdf_force(
     let dist_fix = Fix128::from_f32(dist);
 
     match force_type {
-        SdfForceType::Attract { strength, max_force } => {
+        SdfForceType::Attract {
+            strength,
+            max_force,
+        } => {
             // Force toward surface, proportional to distance
             let force_mag = (*strength * dist_fix.abs()).min(*max_force);
             if dist > 0.0 {
@@ -179,7 +182,11 @@ pub fn compute_sdf_force(
             }
         }
 
-        SdfForceType::SurfaceFlow { flow_direction, strength, influence_distance } => {
+        SdfForceType::SurfaceFlow {
+            flow_direction,
+            strength,
+            influence_distance,
+        } => {
             let dist_abs = dist_fix.abs();
             if dist_abs > *influence_distance {
                 return Vec3Fix::ZERO;
@@ -199,7 +206,11 @@ pub fn compute_sdf_force(
             tangent_norm * (*strength * falloff)
         }
 
-        SdfForceType::SdfVortex { axis, strength, influence_distance } => {
+        SdfForceType::SdfVortex {
+            axis,
+            strength,
+            influence_distance,
+        } => {
             let dist_abs = dist_fix.abs();
             if dist_abs > *influence_distance {
                 return Vec3Fix::ZERO;
@@ -254,10 +265,13 @@ pub fn apply_sdf_force_fields(
 impl SdfForceField {
     /// Create attraction toward SDF surface
     pub fn attract(sdf_index: usize, strength: Fix128) -> Self {
-        Self::new(sdf_index, SdfForceType::Attract {
-            strength,
-            max_force: strength * Fix128::from_int(10),
-        })
+        Self::new(
+            sdf_index,
+            SdfForceType::Attract {
+                strength,
+                max_force: strength * Fix128::from_int(10),
+            },
+        )
     }
 
     /// Create repulsion from SDF surface
@@ -267,19 +281,25 @@ impl SdfForceField {
 
     /// Create containment field
     pub fn contain(sdf_index: usize, strength: Fix128) -> Self {
-        Self::new(sdf_index, SdfForceType::Contain {
-            strength,
-            damping: Fix128::from_ratio(1, 10),
-        })
+        Self::new(
+            sdf_index,
+            SdfForceType::Contain {
+                strength,
+                damping: Fix128::from_ratio(1, 10),
+            },
+        )
     }
 
     /// Create surface flow
     pub fn surface_flow(sdf_index: usize, direction: Vec3Fix, strength: Fix128) -> Self {
-        Self::new(sdf_index, SdfForceType::SurfaceFlow {
-            flow_direction: direction,
-            strength,
-            influence_distance: Fix128::from_int(2),
-        })
+        Self::new(
+            sdf_index,
+            SdfForceType::SurfaceFlow {
+                flow_direction: direction,
+                strength,
+                influence_distance: Fix128::from_int(2),
+            },
+        )
     }
 }
 
@@ -290,26 +310,27 @@ impl SdfForceField {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sdf_collider::{SdfCollider, ClosureSdf};
     use crate::math::QuatFix;
+    use crate::sdf_collider::{ClosureSdf, SdfCollider};
 
     fn unit_sphere() -> ClosureSdf {
         ClosureSdf::new(
             |x, y, z| (x * x + y * y + z * z).sqrt() - 1.0,
             |x, y, z| {
                 let len = (x * x + y * y + z * z).sqrt();
-                if len < 1e-10 { (0.0, 1.0, 0.0) } else { (x / len, y / len, z / len) }
+                if len < 1e-10 {
+                    (0.0, 1.0, 0.0)
+                } else {
+                    (x / len, y / len, z / len)
+                }
             },
         )
     }
 
     #[test]
     fn test_attract_outside() {
-        let sdf = SdfCollider::new_static(
-            Box::new(unit_sphere()),
-            Vec3Fix::ZERO,
-            QuatFix::IDENTITY,
-        );
+        let sdf =
+            SdfCollider::new_static(Box::new(unit_sphere()), Vec3Fix::ZERO, QuatFix::IDENTITY);
 
         let body = RigidBody::new(Vec3Fix::from_f32(3.0, 0.0, 0.0), Fix128::ONE);
         let force_type = SdfForceType::Attract {
@@ -324,11 +345,8 @@ mod tests {
 
     #[test]
     fn test_contain_inside() {
-        let sdf = SdfCollider::new_static(
-            Box::new(unit_sphere()),
-            Vec3Fix::ZERO,
-            QuatFix::IDENTITY,
-        );
+        let sdf =
+            SdfCollider::new_static(Box::new(unit_sphere()), Vec3Fix::ZERO, QuatFix::IDENTITY);
 
         let body = RigidBody::new(Vec3Fix::from_f32(0.5, 0.0, 0.0), Fix128::ONE);
         let force_type = SdfForceType::Contain {
@@ -340,16 +358,16 @@ mod tests {
         // Body inside containment: only damping, no push
         // Velocity is zero, so force should be near zero
         let mag = force.length().to_f32();
-        assert!(mag < 0.01, "Inside containment with zero velocity should have minimal force");
+        assert!(
+            mag < 0.01,
+            "Inside containment with zero velocity should have minimal force"
+        );
     }
 
     #[test]
     fn test_contain_outside() {
-        let sdf = SdfCollider::new_static(
-            Box::new(unit_sphere()),
-            Vec3Fix::ZERO,
-            QuatFix::IDENTITY,
-        );
+        let sdf =
+            SdfCollider::new_static(Box::new(unit_sphere()), Vec3Fix::ZERO, QuatFix::IDENTITY);
 
         let body = RigidBody::new(Vec3Fix::from_f32(3.0, 0.0, 0.0), Fix128::ONE);
         let force_type = SdfForceType::Contain {
@@ -364,11 +382,8 @@ mod tests {
 
     #[test]
     fn test_surface_flow() {
-        let sdf = SdfCollider::new_static(
-            Box::new(unit_sphere()),
-            Vec3Fix::ZERO,
-            QuatFix::IDENTITY,
-        );
+        let sdf =
+            SdfCollider::new_static(Box::new(unit_sphere()), Vec3Fix::ZERO, QuatFix::IDENTITY);
 
         // Body near surface, flow in +Z direction
         let body = RigidBody::new(Vec3Fix::from_f32(1.1, 0.0, 0.0), Fix128::ONE);
@@ -380,16 +395,16 @@ mod tests {
 
         let force = compute_sdf_force(&body, &sdf, &force_type);
         // At (1.1, 0, 0), normal is +X. Flow in Z projected onto tangent plane should give Z force
-        assert!(force.z.to_f32().abs() > 0.01, "Surface flow should produce tangential force");
+        assert!(
+            force.z.to_f32().abs() > 0.01,
+            "Surface flow should produce tangential force"
+        );
     }
 
     #[test]
     fn test_repel() {
-        let sdf = SdfCollider::new_static(
-            Box::new(unit_sphere()),
-            Vec3Fix::ZERO,
-            QuatFix::IDENTITY,
-        );
+        let sdf =
+            SdfCollider::new_static(Box::new(unit_sphere()), Vec3Fix::ZERO, QuatFix::IDENTITY);
 
         let body = RigidBody::new(Vec3Fix::from_f32(1.5, 0.0, 0.0), Fix128::ONE);
         let force_type = SdfForceType::Repel {
@@ -399,6 +414,9 @@ mod tests {
 
         let force = compute_sdf_force(&body, &sdf, &force_type);
         // Body outside, should push further away
-        assert!(force.x > Fix128::ZERO, "Repel should push away from surface");
+        assert!(
+            force.x > Fix128::ZERO,
+            "Repel should push away from surface"
+        );
     }
 }

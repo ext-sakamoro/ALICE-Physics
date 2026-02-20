@@ -10,8 +10,8 @@
 //!
 //! Author: Moroya Sakamoto
 
-use crate::math::{Fix128, Vec3Fix, QuatFix};
-use crate::collider::{AABB, Support};
+use crate::collider::{Support, AABB};
+use crate::math::{Fix128, QuatFix, Vec3Fix};
 
 /// Cylinder collider
 ///
@@ -49,7 +49,12 @@ impl Cylinder {
         radius: Fix128,
         rotation: QuatFix,
     ) -> Self {
-        Self { center, half_height, radius, rotation }
+        Self {
+            center,
+            half_height,
+            radius,
+            rotation,
+        }
     }
 
     /// Compute world-space AABB enclosing this cylinder
@@ -172,17 +177,13 @@ mod tests {
 
     #[test]
     fn test_cylinder_aabb() {
-        let cyl = Cylinder::new(
-            Vec3Fix::from_int(5, 0, 0),
-            Fix128::from_int(2),
-            Fix128::ONE,
-        );
+        let cyl = Cylinder::new(Vec3Fix::from_int(5, 0, 0), Fix128::from_int(2), Fix128::ONE);
         let aabb = cyl.aabb();
         // Y-up: axis_extent=(0,2,0), radial=(1,1,1), total=(1,3,1)
-        assert_eq!(aabb.min.x.hi, 4);  // 5 - 1
-        assert_eq!(aabb.max.x.hi, 6);  // 5 + 1
+        assert_eq!(aabb.min.x.hi, 4); // 5 - 1
+        assert_eq!(aabb.max.x.hi, 6); // 5 + 1
         assert_eq!(aabb.min.y.hi, -3); // 0 - 3
-        assert_eq!(aabb.max.y.hi, 3);  // 0 + 3
+        assert_eq!(aabb.max.y.hi, 3); // 0 + 3
     }
 
     #[test]
@@ -190,7 +191,11 @@ mod tests {
         let cyl = Cylinder::new(Vec3Fix::ZERO, Fix128::ONE, Fix128::ONE);
         // V = pi * 1^2 * 2 * 1 = 2*pi ≈ 6.28
         let v = cyl.volume();
-        assert!(v.hi >= 6 && v.hi <= 7, "Volume should be ~6.28, got {}", v.hi);
+        assert!(
+            v.hi >= 6 && v.hi <= 7,
+            "Volume should be ~6.28, got {}",
+            v.hi
+        );
     }
 
     #[test]
@@ -209,39 +214,47 @@ mod tests {
         let cyl = Cylinder::new(Vec3Fix::ZERO, Fix128::ONE, Fix128::ONE);
         // SA = 2*pi*1*(1 + 2*1) = 6*pi ≈ 18.85
         let sa = cyl.surface_area();
-        assert!(sa.hi >= 18 && sa.hi <= 19, "Surface area should be ~18.85, got {}", sa.hi);
+        assert!(
+            sa.hi >= 18 && sa.hi <= 19,
+            "Surface area should be ~18.85, got {}",
+            sa.hi
+        );
     }
 
     #[test]
     fn test_rotated_cylinder_support() {
         let rot = QuatFix::from_axis_angle(Vec3Fix::UNIT_Z, Fix128::HALF_PI);
-        let cyl = Cylinder::with_rotation(
-            Vec3Fix::ZERO,
-            Fix128::from_int(3),
-            Fix128::ONE,
-            rot,
-        );
+        let cyl = Cylinder::with_rotation(Vec3Fix::ZERO, Fix128::from_int(3), Fix128::ONE, rot);
         // After 90° rotation around Z, local Y maps to world -X
         let s = cyl.support(Vec3Fix::UNIT_X);
         // Support in +X should pick up the half_height (3) projected onto X
-        assert!(s.x > Fix128::ONE, "Rotated cylinder support should extend along X");
+        assert!(
+            s.x > Fix128::ONE,
+            "Rotated cylinder support should extend along X"
+        );
     }
 
     #[test]
     fn test_cylinder_gjk_collision() {
-        use crate::collider::{Sphere, gjk};
+        use crate::collider::{gjk, Sphere};
         let cyl = Cylinder::new(Vec3Fix::ZERO, Fix128::from_int(2), Fix128::ONE);
         let sphere = Sphere::new(Vec3Fix::from_int(0, 0, 0), Fix128::ONE);
         let result = gjk(&cyl, &sphere);
-        assert!(result.colliding, "Overlapping cylinder and sphere should collide");
+        assert!(
+            result.colliding,
+            "Overlapping cylinder and sphere should collide"
+        );
     }
 
     #[test]
     fn test_cylinder_gjk_no_collision() {
-        use crate::collider::{Sphere, gjk};
+        use crate::collider::{gjk, Sphere};
         let cyl = Cylinder::new(Vec3Fix::ZERO, Fix128::ONE, Fix128::ONE);
         let sphere = Sphere::new(Vec3Fix::from_int(10, 0, 0), Fix128::ONE);
         let result = gjk(&cyl, &sphere);
-        assert!(!result.colliding, "Separated cylinder and sphere should not collide");
+        assert!(
+            !result.colliding,
+            "Separated cylinder and sphere should not collide"
+        );
     }
 }

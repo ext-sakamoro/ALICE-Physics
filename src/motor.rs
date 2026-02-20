@@ -3,8 +3,8 @@
 //! Drive joints to target positions/velocities using proportional-derivative control.
 //! Deterministic: all computations use Fix128.
 
-use crate::math::{Fix128, Vec3Fix, QuatFix};
 use crate::joint::Joint;
+use crate::math::{Fix128, QuatFix, Vec3Fix};
 use crate::solver::RigidBody;
 
 #[cfg(not(feature = "std"))]
@@ -93,9 +93,9 @@ impl PdController {
 impl Default for PdController {
     fn default() -> Self {
         Self::new(
-            Fix128::from_int(100),   // kp = 100
-            Fix128::from_int(10),    // kd = 10
-            Fix128::from_int(1000),  // max_force = 1000
+            Fix128::from_int(100),  // kp = 100
+            Fix128::from_int(10),   // kd = 10
+            Fix128::from_int(1000), // max_force = 1000
         )
     }
 }
@@ -112,7 +112,10 @@ pub struct JointMotor {
 impl JointMotor {
     /// Create a new motor for the given joint
     pub fn new(joint_index: usize, controller: PdController) -> Self {
-        Self { joint_index, controller }
+        Self {
+            joint_index,
+            controller,
+        }
     }
 }
 
@@ -166,11 +169,8 @@ impl PdController3D {
                 let error_quat = self.target_rotation.mul(current_rotation.conjugate());
                 let error_axis = Vec3Fix::new(error_quat.x, error_quat.y, error_quat.z);
                 let two = Fix128::from_int(2);
-                let error_scaled = Vec3Fix::new(
-                    error_axis.x * two,
-                    error_axis.y * two,
-                    error_axis.z * two,
-                );
+                let error_scaled =
+                    Vec3Fix::new(error_axis.x * two, error_axis.y * two, error_axis.z * two);
 
                 // PD control per axis
                 let vel_error = self.target_angular_velocity - current_angular_velocity;
@@ -208,12 +208,7 @@ impl PdController3D {
 }
 
 /// Apply all joint motors for one timestep
-pub fn apply_motors(
-    motors: &[JointMotor],
-    joints: &[Joint],
-    bodies: &mut [RigidBody],
-    dt: Fix128,
-) {
+pub fn apply_motors(motors: &[JointMotor], joints: &[Joint], bodies: &mut [RigidBody], dt: Fix128) {
     for motor in motors {
         if motor.controller.mode == MotorMode::Off {
             continue;
@@ -258,9 +253,13 @@ pub fn apply_motors(
 
 #[inline]
 fn clamp(v: Fix128, min: Fix128, max: Fix128) -> Fix128 {
-    if v < min { min }
-    else if v > max { max }
-    else { v }
+    if v < min {
+        min
+    } else if v > max {
+        max
+    } else {
+        v
+    }
 }
 
 #[cfg(test)]
@@ -308,11 +307,7 @@ mod tests {
 
     #[test]
     fn test_velocity_mode() {
-        let mut pd = PdController::new(
-            Fix128::from_int(10),
-            Fix128::ZERO,
-            Fix128::from_int(1000),
-        );
+        let mut pd = PdController::new(Fix128::from_int(10), Fix128::ZERO, Fix128::from_int(1000));
         pd.set_velocity_target(Fix128::from_int(5));
 
         let output = pd.compute(Fix128::ZERO, Fix128::ZERO);
@@ -333,6 +328,9 @@ mod tests {
         let torque = pd.compute_torque(QuatFix::IDENTITY, Vec3Fix::ZERO);
         // No error => zero torque
         let mag = torque.length();
-        assert!(mag < Fix128::from_ratio(1, 10), "Zero error should give zero torque");
+        assert!(
+            mag < Fix128::from_ratio(1, 10),
+            "Zero error should give zero torque"
+        );
     }
 }

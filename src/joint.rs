@@ -10,7 +10,7 @@
 //! - **SliderJoint**: 1-DOF translation along an axis (piston)
 //! - **SpringJoint**: Distance spring with damping
 
-use crate::math::{Fix128, Vec3Fix, QuatFix};
+use crate::math::{Fix128, QuatFix, Vec3Fix};
 
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
@@ -380,12 +380,7 @@ pub struct D6Joint {
 
 impl D6Joint {
     /// Create a new D6 joint with all axes free
-    pub fn new(
-        body_a: usize,
-        body_b: usize,
-        anchor_a: Vec3Fix,
-        anchor_b: Vec3Fix,
-    ) -> Self {
+    pub fn new(body_a: usize, body_b: usize, anchor_a: Vec3Fix, anchor_b: Vec3Fix) -> Self {
         Self {
             body_a,
             body_b,
@@ -634,11 +629,7 @@ impl Joint {
 /// Solve all joints for one XPBD iteration
 ///
 /// Modifies body positions/rotations in-place to satisfy constraints.
-pub fn solve_joints(
-    joints: &[Joint],
-    bodies: &mut [crate::solver::RigidBody],
-    dt: Fix128,
-) {
+pub fn solve_joints(joints: &[Joint], bodies: &mut [crate::solver::RigidBody], dt: Fix128) {
     for joint in joints {
         match joint {
             Joint::Ball(j) => solve_ball_joint(j, bodies, dt),
@@ -723,10 +714,12 @@ fn solve_ball_joint(joint: &BallJoint, bodies: &mut [crate::solver::RigidBody], 
     let correction = normal * lambda;
 
     if !body_a.inv_mass.is_zero() {
-        bodies[joint.body_a].position = bodies[joint.body_a].position + correction * body_a.inv_mass;
+        bodies[joint.body_a].position =
+            bodies[joint.body_a].position + correction * body_a.inv_mass;
     }
     if !body_b.inv_mass.is_zero() {
-        bodies[joint.body_b].position = bodies[joint.body_b].position - correction * body_b.inv_mass;
+        bodies[joint.body_b].position =
+            bodies[joint.body_b].position - correction * body_b.inv_mass;
     }
 }
 
@@ -995,12 +988,10 @@ fn solve_spring_joint(joint: &SpringJoint, bodies: &mut [crate::solver::RigidBod
     }
 
     if !body_a.inv_mass.is_zero() {
-        bodies[joint.body_a].position =
-            bodies[joint.body_a].position + impulse * body_a.inv_mass;
+        bodies[joint.body_a].position = bodies[joint.body_a].position + impulse * body_a.inv_mass;
     }
     if !body_b.inv_mass.is_zero() {
-        bodies[joint.body_b].position =
-            bodies[joint.body_b].position - impulse * body_b.inv_mass;
+        bodies[joint.body_b].position = bodies[joint.body_b].position - impulse * body_b.inv_mass;
     }
 }
 
@@ -1025,18 +1016,39 @@ fn solve_d6_joint(joint: &D6Joint, bodies: &mut [crate::solver::RigidBody], dt: 
 
     if !w_sum.is_zero() {
         // Linear constraints per axis
-        let axes = [(joint.linear_x, axis_x, joint.linear_limit_min.x, joint.linear_limit_max.x),
-                     (joint.linear_y, axis_y, joint.linear_limit_min.y, joint.linear_limit_max.y),
-                     (joint.linear_z, axis_z, joint.linear_limit_min.z, joint.linear_limit_max.z)];
+        let axes = [
+            (
+                joint.linear_x,
+                axis_x,
+                joint.linear_limit_min.x,
+                joint.linear_limit_max.x,
+            ),
+            (
+                joint.linear_y,
+                axis_y,
+                joint.linear_limit_min.y,
+                joint.linear_limit_max.y,
+            ),
+            (
+                joint.linear_z,
+                axis_z,
+                joint.linear_limit_min.z,
+                joint.linear_limit_max.z,
+            ),
+        ];
 
         for &(motion, axis, limit_min, limit_max) in &axes {
             let proj = delta.dot(axis);
             let error = match motion {
                 D6Motion::Locked => proj,
                 D6Motion::Limited => {
-                    if proj < limit_min { proj - limit_min }
-                    else if proj > limit_max { proj - limit_max }
-                    else { Fix128::ZERO }
+                    if proj < limit_min {
+                        proj - limit_min
+                    } else if proj > limit_max {
+                        proj - limit_max
+                    } else {
+                        Fix128::ZERO
+                    }
                 }
                 D6Motion::Free => Fix128::ZERO,
             };
@@ -1064,9 +1076,26 @@ fn solve_d6_joint(joint: &D6Joint, bodies: &mut [crate::solver::RigidBody], dt: 
     if !w_ang.is_zero() {
         let rel_quat = body_b.rotation.mul(body_a.rotation.conjugate());
 
-        let ang_axes = [(joint.angular_x, axis_x, joint.angular_limit_min.x, joint.angular_limit_max.x),
-                        (joint.angular_y, axis_y, joint.angular_limit_min.y, joint.angular_limit_max.y),
-                        (joint.angular_z, axis_z, joint.angular_limit_min.z, joint.angular_limit_max.z)];
+        let ang_axes = [
+            (
+                joint.angular_x,
+                axis_x,
+                joint.angular_limit_min.x,
+                joint.angular_limit_max.x,
+            ),
+            (
+                joint.angular_y,
+                axis_y,
+                joint.angular_limit_min.y,
+                joint.angular_limit_max.y,
+            ),
+            (
+                joint.angular_z,
+                axis_z,
+                joint.angular_limit_min.z,
+                joint.angular_limit_max.z,
+            ),
+        ];
 
         for &(motion, axis, limit_min, limit_max) in &ang_axes {
             let angle = compute_twist_angle(rel_quat, axis);
@@ -1074,28 +1103,30 @@ fn solve_d6_joint(joint: &D6Joint, bodies: &mut [crate::solver::RigidBody], dt: 
             let error = match motion {
                 D6Motion::Locked => angle,
                 D6Motion::Limited => {
-                    if angle < limit_min { angle - limit_min }
-                    else if angle > limit_max { angle - limit_max }
-                    else { Fix128::ZERO }
+                    if angle < limit_min {
+                        angle - limit_min
+                    } else if angle > limit_max {
+                        angle - limit_max
+                    } else {
+                        Fix128::ZERO
+                    }
                 }
                 D6Motion::Free => Fix128::ZERO,
             };
 
             if !error.is_zero() {
-                apply_angular_correction(
-                    bodies,
-                    joint.body_a,
-                    joint.body_b,
-                    axis,
-                    error / w_ang,
-                );
+                apply_angular_correction(bodies, joint.body_a, joint.body_b, axis, error / w_ang);
             }
         }
     }
 }
 
 /// Solve cone-twist joint: positional + cone + twist constraints
-fn solve_cone_twist_joint(joint: &ConeTwistJoint, bodies: &mut [crate::solver::RigidBody], dt: Fix128) {
+fn solve_cone_twist_joint(
+    joint: &ConeTwistJoint,
+    bodies: &mut [crate::solver::RigidBody],
+    dt: Fix128,
+) {
     let body_a = bodies[joint.body_a];
     let body_b = bodies[joint.body_b];
 
@@ -1134,14 +1165,19 @@ fn solve_cone_twist_joint(joint: &ConeTwistJoint, bodies: &mut [crate::solver::R
     let cross_len = cross.length();
     // Use atan2(sin, cos) instead of acos for deterministic fixed-point
     let cone_angle = Fix128::atan2(cross_len, dot);
-    let cone_angle = if cone_angle < Fix128::ZERO { -cone_angle } else { cone_angle };
+    let cone_angle = if cone_angle < Fix128::ZERO {
+        -cone_angle
+    } else {
+        cone_angle
+    };
 
     if cone_angle > joint.cone_limit {
         let error = cone_angle - joint.cone_limit;
 
         if !cross_len.is_zero() {
             let angular_compliance = joint.angular_compliance / (dt * dt);
-            let w_ang = body_a.inv_inertia.length() + body_b.inv_inertia.length() + angular_compliance;
+            let w_ang =
+                body_a.inv_inertia.length() + body_b.inv_inertia.length() + angular_compliance;
 
             if !w_ang.is_zero() {
                 let correction_axis = cross / cross_len;
@@ -1157,7 +1193,9 @@ fn solve_cone_twist_joint(joint: &ConeTwistJoint, bodies: &mut [crate::solver::R
     }
 
     // 3. Twist constraint
-    let rel_quat = bodies[joint.body_b].rotation.mul(bodies[joint.body_a].rotation.conjugate());
+    let rel_quat = bodies[joint.body_b]
+        .rotation
+        .mul(bodies[joint.body_a].rotation.conjugate());
     let twist_angle = compute_twist_angle(rel_quat, world_axis_a);
 
     if twist_angle.abs() > joint.twist_limit {
@@ -1248,7 +1286,10 @@ mod tests {
 
         // Body 1 should be pulled toward body 0
         let dist = (bodies[1].position - bodies[0].position).length();
-        assert!(dist < Fix128::from_int(5), "Ball joint should pull bodies together");
+        assert!(
+            dist < Fix128::from_int(5),
+            "Ball joint should pull bodies together"
+        );
     }
 
     #[test]
@@ -1259,7 +1300,8 @@ mod tests {
         ];
 
         let joint = Joint::Fixed(FixedJoint::new(
-            0, 1,
+            0,
+            1,
             Vec3Fix::from_int(1, 0, 0),
             Vec3Fix::ZERO,
             QuatFix::IDENTITY,
@@ -1272,7 +1314,10 @@ mod tests {
 
         // Body 1 should be near anchor_a (1,0,0)
         let dist = (bodies[1].position - Vec3Fix::from_int(1, 0, 0)).length();
-        assert!(dist < Fix128::from_int(3), "Fixed joint should hold position");
+        assert!(
+            dist < Fix128::from_int(3),
+            "Fixed joint should hold position"
+        );
     }
 
     #[test]
@@ -1283,11 +1328,13 @@ mod tests {
         ];
 
         let joint = Joint::Spring(SpringJoint::new(
-            0, 1,
-            Vec3Fix::ZERO, Vec3Fix::ZERO,
-            Fix128::from_int(3),   // rest length = 3
-            Fix128::from_int(10),  // stiffness = 10
-            Fix128::from_int(1),   // damping = 1
+            0,
+            1,
+            Vec3Fix::ZERO,
+            Vec3Fix::ZERO,
+            Fix128::from_int(3),  // rest length = 3
+            Fix128::from_int(10), // stiffness = 10
+            Fix128::from_int(1),  // damping = 1
         ));
         let dt = Fix128::from_ratio(1, 60);
 
@@ -1297,7 +1344,10 @@ mod tests {
 
         // Should oscillate toward rest length = 3
         let dist = bodies[1].position.length();
-        assert!(dist < Fix128::from_int(10), "Spring should pull body closer");
+        assert!(
+            dist < Fix128::from_int(10),
+            "Spring should pull body closer"
+        );
     }
 
     #[test]
@@ -1308,7 +1358,8 @@ mod tests {
         ];
 
         let joint = Joint::Slider(SliderJoint::new(
-            0, 1,
+            0,
+            1,
             Vec3Fix::UNIT_X,
             Vec3Fix::ZERO,
             Vec3Fix::ZERO,
@@ -1321,7 +1372,10 @@ mod tests {
 
         // Y component should be constrained toward 0 (perpendicular to axis)
         let y_abs = bodies[1].position.y.abs();
-        assert!(y_abs < Fix128::from_int(5), "Slider should constrain perpendicular motion");
+        assert!(
+            y_abs < Fix128::from_int(5),
+            "Slider should constrain perpendicular motion"
+        );
     }
 
     #[test]
@@ -1341,7 +1395,7 @@ mod tests {
         // Ball joint with low break force (should break immediately)
         let joint = Joint::Ball(
             BallJoint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO)
-                .with_break_force(Fix128::from_int(5))
+                .with_break_force(Fix128::from_int(5)),
         );
         let dt = Fix128::from_ratio(1, 60);
 
@@ -1361,7 +1415,7 @@ mod tests {
         // Ball joint with high break force (should NOT break)
         let joint = Joint::Ball(
             BallJoint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO)
-                .with_break_force(Fix128::from_int(100))
+                .with_break_force(Fix128::from_int(100)),
         );
         let dt = Fix128::from_ratio(1, 60);
 
@@ -1381,6 +1435,9 @@ mod tests {
         let dt = Fix128::from_ratio(1, 60);
 
         let broken = solve_joints_breakable(&[joint], &mut bodies, dt);
-        assert!(broken.is_empty(), "Joint without break_force should never break");
+        assert!(
+            broken.is_empty(),
+            "Joint without break_force should never break"
+        );
     }
 }

@@ -119,7 +119,12 @@ impl SpatialGrid {
         }
     }
 
-    fn query_neighbors_into(&mut self, pos: Vec3Fix, _radius_sq: Fix128, neighbors: &mut Vec<usize>) {
+    fn query_neighbors_into(
+        &mut self,
+        pos: Vec3Fix,
+        _radius_sq: Fix128,
+        neighbors: &mut Vec<usize>,
+    ) {
         let gd = self.grid_dim as i64;
         let half = gd / 2;
         let cx = ((pos.x * self.inv_cell_size).hi + half).clamp(0, gd - 1) as i32;
@@ -226,12 +231,7 @@ impl Fluid {
     }
 
     /// Create a block of fluid particles
-    pub fn new_block(
-        min: Vec3Fix,
-        max: Vec3Fix,
-        spacing: Fix128,
-        config: FluidConfig,
-    ) -> Self {
+    pub fn new_block(min: Vec3Fix, max: Vec3Fix, spacing: Fix128, config: FluidConfig) -> Self {
         let mut positions = Vec::new();
 
         let mut x = min.x;
@@ -299,7 +299,8 @@ impl Fluid {
         for _ in 0..self.config.iterations {
             // Compute densities and lambdas
             for i in 0..n {
-                self.grid.query_neighbors_into(self.predicted[i], h_sq, &mut neighbors_buf);
+                self.grid
+                    .query_neighbors_into(self.predicted[i], h_sq, &mut neighbors_buf);
                 let mut density = Fix128::ZERO;
                 let mut sum_grad_sq = Fix128::ZERO;
                 let mut grad_i = Vec3Fix::ZERO;
@@ -337,7 +338,8 @@ impl Fluid {
 
             // Apply position corrections
             for i in 0..n {
-                self.grid.query_neighbors_into(self.predicted[i], h_sq, &mut neighbors_buf);
+                self.grid
+                    .query_neighbors_into(self.predicted[i], h_sq, &mut neighbors_buf);
                 let mut correction = Vec3Fix::ZERO;
 
                 for &j in &neighbors_buf {
@@ -359,7 +361,8 @@ impl Fluid {
                 }
 
                 let inv_rho = Fix128::ONE / self.config.rest_density;
-                self.predicted[i] = self.predicted[i] + correction * inv_rho * self.config.relaxation;
+                self.predicted[i] =
+                    self.predicted[i] + correction * inv_rho * self.config.relaxation;
             }
         }
 
@@ -385,7 +388,8 @@ impl Fluid {
         let mut neighbors_buf = Vec::new();
 
         for i in 0..n {
-            self.grid.query_neighbors_into(self.positions[i], h_sq, &mut neighbors_buf);
+            self.grid
+                .query_neighbors_into(self.positions[i], h_sq, &mut neighbors_buf);
             let mut avg_vel = Vec3Fix::ZERO;
             let mut weight_sum = Fix128::ZERO;
 
@@ -459,10 +463,7 @@ mod tests {
             substeps: 1,
             ..Default::default()
         };
-        let mut fluid = Fluid::new(
-            vec![Vec3Fix::from_f32(0.0, 5.0, 0.0)],
-            config,
-        );
+        let mut fluid = Fluid::new(vec![Vec3Fix::from_f32(0.0, 5.0, 0.0)], config);
 
         let dt = Fix128::from_ratio(1, 60);
         for _ in 0..60 {
@@ -480,7 +481,10 @@ mod tests {
         assert!(zero > Fix128::ZERO, "Poly6 at r=0 should be positive");
 
         let far = poly6(h * h, h);
-        assert!(far.is_zero() || far <= Fix128::ZERO, "Poly6 at r=h should be zero");
+        assert!(
+            far.is_zero() || far <= Fix128::ZERO,
+            "Poly6 at r=h should be zero"
+        );
     }
 
     #[test]

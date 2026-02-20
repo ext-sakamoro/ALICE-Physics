@@ -12,9 +12,9 @@
 //!
 //! Author: Moroya Sakamoto
 
+use crate::collider::{Sphere, AABB};
 use crate::math::{Fix128, Vec3Fix};
-use crate::collider::{AABB, Sphere};
-use crate::raycast::{Ray, ray_sphere};
+use crate::raycast::{ray_sphere, Ray};
 use crate::solver::RigidBody;
 
 #[cfg(not(feature = "std"))]
@@ -110,8 +110,22 @@ pub fn capsule_cast(
     body_radius: Fix128,
 ) -> Option<ShapeCastHit> {
     // Cast from both endpoints of the capsule and take closest
-    let hit_a = sphere_cast(capsule_a, capsule_radius, direction, max_distance, bodies, body_radius);
-    let hit_b = sphere_cast(capsule_b, capsule_radius, direction, max_distance, bodies, body_radius);
+    let hit_a = sphere_cast(
+        capsule_a,
+        capsule_radius,
+        direction,
+        max_distance,
+        bodies,
+        body_radius,
+    );
+    let hit_b = sphere_cast(
+        capsule_b,
+        capsule_radius,
+        direction,
+        max_distance,
+        bodies,
+        body_radius,
+    );
 
     // Also cast from the midpoint for better coverage
     let mid = Vec3Fix::new(
@@ -119,7 +133,14 @@ pub fn capsule_cast(
         (capsule_a.y + capsule_b.y).half(),
         (capsule_a.z + capsule_b.z).half(),
     );
-    let hit_mid = sphere_cast(mid, capsule_radius, direction, max_distance, bodies, body_radius);
+    let hit_mid = sphere_cast(
+        mid,
+        capsule_radius,
+        direction,
+        max_distance,
+        bodies,
+        body_radius,
+    );
 
     // Return closest of the three
     let mut best: Option<ShapeCastHit> = None;
@@ -174,17 +195,17 @@ pub fn overlap_sphere(
 /// Uses the body position as a point test (no body extent considered).
 /// For volume overlap, expand the AABB by the body radius first.
 #[inline]
-pub fn overlap_aabb(
-    aabb: &AABB,
-    bodies: &[RigidBody],
-) -> Vec<OverlapResult> {
+pub fn overlap_aabb(aabb: &AABB, bodies: &[RigidBody]) -> Vec<OverlapResult> {
     let mut results = Vec::new();
 
     for (i, body) in bodies.iter().enumerate() {
         let p = body.position;
-        if p.x >= aabb.min.x && p.x <= aabb.max.x
-            && p.y >= aabb.min.y && p.y <= aabb.max.y
-            && p.z >= aabb.min.z && p.z <= aabb.max.z
+        if p.x >= aabb.min.x
+            && p.x <= aabb.max.x
+            && p.y >= aabb.min.y
+            && p.y <= aabb.max.y
+            && p.z >= aabb.min.z
+            && p.z <= aabb.max.z
         {
             results.push(OverlapResult {
                 body_index: i,
@@ -248,30 +269,36 @@ pub fn batch_raycast(
 ) -> Vec<Option<ShapeCastHit>> {
     #[cfg(feature = "parallel")]
     {
-        queries.par_iter().map(|q| {
-            sphere_cast(
-                q.origin,
-                Fix128::ZERO,
-                q.direction,
-                q.max_distance,
-                bodies,
-                body_radius,
-            )
-        }).collect()
+        queries
+            .par_iter()
+            .map(|q| {
+                sphere_cast(
+                    q.origin,
+                    Fix128::ZERO,
+                    q.direction,
+                    q.max_distance,
+                    bodies,
+                    body_radius,
+                )
+            })
+            .collect()
     }
 
     #[cfg(not(feature = "parallel"))]
     {
-        queries.iter().map(|q| {
-            sphere_cast(
-                q.origin,
-                Fix128::ZERO,
-                q.direction,
-                q.max_distance,
-                bodies,
-                body_radius,
-            )
-        }).collect()
+        queries
+            .iter()
+            .map(|q| {
+                sphere_cast(
+                    q.origin,
+                    Fix128::ZERO,
+                    q.direction,
+                    q.max_distance,
+                    bodies,
+                    body_radius,
+                )
+            })
+            .collect()
     }
 }
 
@@ -292,30 +319,38 @@ pub fn batch_sphere_cast(
 
     #[cfg(feature = "parallel")]
     {
-        origins.par_iter().zip(directions.par_iter()).map(|(origin, direction)| {
-            sphere_cast(
-                *origin,
-                radius,
-                *direction,
-                max_distance,
-                bodies,
-                body_radius,
-            )
-        }).collect()
+        origins
+            .par_iter()
+            .zip(directions.par_iter())
+            .map(|(origin, direction)| {
+                sphere_cast(
+                    *origin,
+                    radius,
+                    *direction,
+                    max_distance,
+                    bodies,
+                    body_radius,
+                )
+            })
+            .collect()
     }
 
     #[cfg(not(feature = "parallel"))]
     {
-        origins.iter().zip(directions.iter()).map(|(origin, direction)| {
-            sphere_cast(
-                *origin,
-                radius,
-                *direction,
-                max_distance,
-                bodies,
-                body_radius,
-            )
-        }).collect()
+        origins
+            .iter()
+            .zip(directions.iter())
+            .map(|(origin, direction)| {
+                sphere_cast(
+                    *origin,
+                    radius,
+                    *direction,
+                    max_distance,
+                    bodies,
+                    body_radius,
+                )
+            })
+            .collect()
     }
 }
 
@@ -341,7 +376,7 @@ mod tests {
         let bodies = make_bodies();
         let hit = sphere_cast(
             Vec3Fix::from_int(-10, 0, 0),
-            Fix128::from_ratio(1, 2),  // radius 0.5
+            Fix128::from_ratio(1, 2), // radius 0.5
             Vec3Fix::UNIT_X,
             Fix128::from_int(100),
             &bodies,
@@ -412,16 +447,17 @@ mod tests {
         // Body 1 at (5,0,0): dist=3, combined=6 → overlap
         // Body 2 at (10,0,0): dist=8, combined=6 → no
         // Body 3 at (0,5,0): dist=sqrt(4+25)≈5.4, combined=6 → overlap
-        assert!(results.len() >= 2, "Should find at least 2 overlaps, got {}", results.len());
+        assert!(
+            results.len() >= 2,
+            "Should find at least 2 overlaps, got {}",
+            results.len()
+        );
     }
 
     #[test]
     fn test_overlap_aabb() {
         let bodies = make_bodies();
-        let aabb = AABB::new(
-            Vec3Fix::from_int(-1, -1, -1),
-            Vec3Fix::from_int(6, 1, 1),
-        );
+        let aabb = AABB::new(Vec3Fix::from_int(-1, -1, -1), Vec3Fix::from_int(6, 1, 1));
         let results = overlap_aabb(&aabb, &bodies);
         // Body 0 at (0,0,0) → inside
         // Body 1 at (5,0,0) → inside
@@ -454,10 +490,7 @@ mod tests {
     #[test]
     fn test_batch_sphere_cast() {
         let bodies = make_bodies();
-        let origins = vec![
-            Vec3Fix::from_int(-10, 0, 0),
-            Vec3Fix::from_int(-10, 0, 0),
-        ];
+        let origins = vec![Vec3Fix::from_int(-10, 0, 0), Vec3Fix::from_int(-10, 0, 0)];
         let directions = vec![
             Vec3Fix::UNIT_X,
             Vec3Fix::UNIT_Y, // up — misses bodies at y=0
@@ -477,10 +510,7 @@ mod tests {
     #[test]
     fn test_overlap_aabb_expanded() {
         let bodies = make_bodies();
-        let aabb = AABB::new(
-            Vec3Fix::from_int(4, -1, -1),
-            Vec3Fix::from_int(6, 1, 1),
-        );
+        let aabb = AABB::new(Vec3Fix::from_int(4, -1, -1), Vec3Fix::from_int(6, 1, 1));
         let results = overlap_aabb_expanded(&aabb, &bodies, Fix128::from_int(2));
         // Expanded by 2: (2,-3,-3) to (8,3,3)
         // Body 0 at (0,0,0) → outside (x=0 < 2)

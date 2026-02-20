@@ -23,10 +23,10 @@
 
 use wasm_bindgen::prelude::*;
 
-use crate::math::{Fix128, Vec3Fix, QuatFix};
-use crate::solver::{PhysicsWorld, PhysicsConfig, RigidBody, BodyType};
-use crate::raycast::{Ray, ray_sphere};
 use crate::collider::Sphere;
+use crate::math::{Fix128, QuatFix, Vec3Fix};
+use crate::raycast::{ray_sphere, Ray};
+use crate::solver::{BodyType, PhysicsConfig, PhysicsWorld, RigidBody};
 
 // ============================================================================
 // WasmPhysicsWorld
@@ -53,7 +53,13 @@ impl WasmPhysicsWorld {
 
     /// Create with custom gravity and substeps.
     #[wasm_bindgen(js_name = "withConfig")]
-    pub fn with_config(gravity_x: f64, gravity_y: f64, gravity_z: f64, substeps: u32, iterations: u32) -> Self {
+    pub fn with_config(
+        gravity_x: f64,
+        gravity_y: f64,
+        gravity_z: f64,
+        substeps: u32,
+        iterations: u32,
+    ) -> Self {
         let config = PhysicsConfig {
             substeps: substeps as usize,
             iterations: iterations as usize,
@@ -77,7 +83,11 @@ impl WasmPhysicsWorld {
     #[wasm_bindgen(js_name = "addDynamicBody")]
     pub fn add_dynamic_body(&mut self, x: f64, y: f64, z: f64, mass: f64) -> usize {
         let body = RigidBody::new_dynamic(
-            Vec3Fix::new(Fix128::from_f64(x), Fix128::from_f64(y), Fix128::from_f64(z)),
+            Vec3Fix::new(
+                Fix128::from_f64(x),
+                Fix128::from_f64(y),
+                Fix128::from_f64(z),
+            ),
             Fix128::from_f64(mass),
         );
         self.inner.add_body(body)
@@ -86,18 +96,22 @@ impl WasmPhysicsWorld {
     /// Add a static (immovable) body at (x, y, z). Returns body index.
     #[wasm_bindgen(js_name = "addStaticBody")]
     pub fn add_static_body(&mut self, x: f64, y: f64, z: f64) -> usize {
-        let body = RigidBody::new_static(
-            Vec3Fix::new(Fix128::from_f64(x), Fix128::from_f64(y), Fix128::from_f64(z)),
-        );
+        let body = RigidBody::new_static(Vec3Fix::new(
+            Fix128::from_f64(x),
+            Fix128::from_f64(y),
+            Fix128::from_f64(z),
+        ));
         self.inner.add_body(body)
     }
 
     /// Add a kinematic body at (x, y, z). Returns body index.
     #[wasm_bindgen(js_name = "addKinematicBody")]
     pub fn add_kinematic_body(&mut self, x: f64, y: f64, z: f64) -> usize {
-        let body = RigidBody::new_kinematic(
-            Vec3Fix::new(Fix128::from_f64(x), Fix128::from_f64(y), Fix128::from_f64(z)),
-        );
+        let body = RigidBody::new_kinematic(Vec3Fix::new(
+            Fix128::from_f64(x),
+            Fix128::from_f64(y),
+            Fix128::from_f64(z),
+        ));
         self.inner.add_body(body)
     }
 
@@ -196,7 +210,10 @@ impl WasmPhysicsWorld {
     /// Get body type for a body (0=Dynamic, 1=Static, 2=Kinematic).
     #[wasm_bindgen(js_name = "getBodyType")]
     pub fn get_body_type(&self, body_id: usize) -> u8 {
-        self.inner.bodies.get(body_id).map_or(255, |b| b.body_type as u8)
+        self.inner
+            .bodies
+            .get(body_id)
+            .map_or(255, |b| b.body_type as u8)
     }
 
     // ========================================================================
@@ -207,7 +224,11 @@ impl WasmPhysicsWorld {
     #[wasm_bindgen(js_name = "setPosition")]
     pub fn set_position(&mut self, body_id: usize, x: f64, y: f64, z: f64) {
         if let Some(body) = self.inner.bodies.get_mut(body_id) {
-            body.position = Vec3Fix::new(Fix128::from_f64(x), Fix128::from_f64(y), Fix128::from_f64(z));
+            body.position = Vec3Fix::new(
+                Fix128::from_f64(x),
+                Fix128::from_f64(y),
+                Fix128::from_f64(z),
+            );
         }
     }
 
@@ -215,7 +236,11 @@ impl WasmPhysicsWorld {
     #[wasm_bindgen(js_name = "setVelocity")]
     pub fn set_velocity(&mut self, body_id: usize, vx: f64, vy: f64, vz: f64) {
         if let Some(body) = self.inner.bodies.get_mut(body_id) {
-            body.velocity = Vec3Fix::new(Fix128::from_f64(vx), Fix128::from_f64(vy), Fix128::from_f64(vz));
+            body.velocity = Vec3Fix::new(
+                Fix128::from_f64(vx),
+                Fix128::from_f64(vy),
+                Fix128::from_f64(vz),
+            );
         }
     }
 
@@ -223,7 +248,11 @@ impl WasmPhysicsWorld {
     #[wasm_bindgen(js_name = "applyImpulse")]
     pub fn apply_impulse(&mut self, body_id: usize, ix: f64, iy: f64, iz: f64) {
         if let Some(body) = self.inner.bodies.get_mut(body_id) {
-            body.apply_impulse(Vec3Fix::new(Fix128::from_f64(ix), Fix128::from_f64(iy), Fix128::from_f64(iz)));
+            body.apply_impulse(Vec3Fix::new(
+                Fix128::from_f64(ix),
+                Fix128::from_f64(iy),
+                Fix128::from_f64(iz),
+            ));
         }
     }
 
@@ -253,10 +282,24 @@ impl WasmPhysicsWorld {
 
     /// Set kinematic target position and rotation.
     #[wasm_bindgen(js_name = "setKinematicTarget")]
-    pub fn set_kinematic_target(&mut self, body_id: usize, x: f64, y: f64, z: f64, qx: f64, qy: f64, qz: f64, qw: f64) {
+    pub fn set_kinematic_target(
+        &mut self,
+        body_id: usize,
+        x: f64,
+        y: f64,
+        z: f64,
+        qx: f64,
+        qy: f64,
+        qz: f64,
+        qw: f64,
+    ) {
         if let Some(body) = self.inner.bodies.get_mut(body_id) {
             body.set_kinematic_target(
-                Vec3Fix::new(Fix128::from_f64(x), Fix128::from_f64(y), Fix128::from_f64(z)),
+                Vec3Fix::new(
+                    Fix128::from_f64(x),
+                    Fix128::from_f64(y),
+                    Fix128::from_f64(z),
+                ),
                 QuatFix {
                     x: Fix128::from_f64(qx),
                     y: Fix128::from_f64(qy),
@@ -313,7 +356,9 @@ impl WasmPhysicsWorld {
     #[wasm_bindgen(js_name = "setGravity")]
     pub fn set_gravity(&mut self, x: f64, y: f64, z: f64) {
         self.inner.config.gravity = Vec3Fix::new(
-            Fix128::from_f64(x), Fix128::from_f64(y), Fix128::from_f64(z),
+            Fix128::from_f64(x),
+            Fix128::from_f64(y),
+            Fix128::from_f64(z),
         );
     }
 
@@ -351,13 +396,25 @@ impl WasmPhysicsWorld {
     #[wasm_bindgen(js_name = "raycast")]
     pub fn raycast(
         &self,
-        ox: f64, oy: f64, oz: f64,
-        dx: f64, dy: f64, dz: f64,
+        ox: f64,
+        oy: f64,
+        oz: f64,
+        dx: f64,
+        dy: f64,
+        dz: f64,
         max_distance: f64,
         body_radius: f64,
     ) -> Vec<f64> {
-        let origin = Vec3Fix::new(Fix128::from_f64(ox), Fix128::from_f64(oy), Fix128::from_f64(oz));
-        let direction = Vec3Fix::new(Fix128::from_f64(dx), Fix128::from_f64(dy), Fix128::from_f64(dz));
+        let origin = Vec3Fix::new(
+            Fix128::from_f64(ox),
+            Fix128::from_f64(oy),
+            Fix128::from_f64(oz),
+        );
+        let direction = Vec3Fix::new(
+            Fix128::from_f64(dx),
+            Fix128::from_f64(dy),
+            Fix128::from_f64(dz),
+        );
         let dir_len = direction.length();
         if dir_len.is_zero() {
             return Vec::new();
@@ -376,8 +433,12 @@ impl WasmPhysicsWorld {
                 best_t = hit.t;
                 result = vec![
                     hit.t.to_f64(),
-                    hit.point.x.to_f64(), hit.point.y.to_f64(), hit.point.z.to_f64(),
-                    hit.normal.x.to_f64(), hit.normal.y.to_f64(), hit.normal.z.to_f64(),
+                    hit.point.x.to_f64(),
+                    hit.point.y.to_f64(),
+                    hit.point.z.to_f64(),
+                    hit.normal.x.to_f64(),
+                    hit.normal.y.to_f64(),
+                    hit.normal.z.to_f64(),
                     i as f64,
                 ];
             }

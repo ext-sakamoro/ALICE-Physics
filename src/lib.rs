@@ -89,197 +89,226 @@
 #[cfg(not(feature = "std"))]
 extern crate alloc;
 
-pub mod math;
-pub mod collider;
-pub mod solver;
-pub mod bvh;
-pub mod sdf_collider;
-pub mod filter;
-pub mod rng;
-pub mod event;
-pub mod joint;
-pub mod raycast;
-pub mod ccd;
-pub mod sleeping;
-pub mod trimesh;
-pub mod heightfield;
-pub mod motor;
-pub mod articulation;
-pub mod force;
-pub mod sdf_manifold;
-pub mod sdf_ccd;
-pub mod sdf_force;
-pub mod sdf_destruction;
-pub mod rope;
-pub mod cloth;
-pub mod fluid;
-pub mod deformable;
-pub mod sdf_adaptive;
-pub mod convex_decompose;
-#[cfg(feature = "std")]
-pub mod gpu_sdf;
-#[cfg(feature = "std")]
-pub mod fluid_netcode;
-pub mod vehicle;
-pub mod animation_blend;
-pub mod audio_physics;
-pub mod character;
-pub mod query;
-pub mod box_collider;
-pub mod cylinder;
-pub mod compound;
-pub mod contact_cache;
-pub mod dynamic_bvh;
-pub mod material;
-pub mod debug_render;
-pub mod profiling;
-pub mod interpolation;
-pub mod sim_field;
-pub mod sim_modifier;
-pub mod thermal;
-pub mod pressure;
-pub mod erosion;
-pub mod fracture;
-pub mod phase_change;
-#[cfg(feature = "neural")]
-pub mod neural;
-pub mod netcode;
-#[cfg(feature = "replay")]
-pub mod replay;
-#[cfg(feature = "replay")]
-pub mod db_bridge;
 #[cfg(feature = "analytics")]
 pub mod analytics_bridge;
-#[cfg(feature = "python")]
-mod python;
+pub mod animation_blend;
+pub mod articulation;
+pub mod audio_physics;
+pub mod box_collider;
+pub mod bvh;
+pub mod ccd;
+pub mod character;
+pub mod cloth;
+pub mod collider;
+pub mod compound;
+pub mod contact_cache;
+pub mod convex_decompose;
+pub mod cylinder;
+#[cfg(feature = "replay")]
+pub mod db_bridge;
+pub mod debug_render;
+pub mod deformable;
+pub mod dynamic_bvh;
+pub mod erosion;
+pub mod event;
 #[cfg(feature = "ffi")]
 pub mod ffi;
+pub mod filter;
+pub mod fluid;
+#[cfg(feature = "std")]
+pub mod fluid_netcode;
+pub mod force;
+pub mod fracture;
+#[cfg(feature = "std")]
+pub mod gpu_sdf;
+pub mod heightfield;
+pub mod interpolation;
+pub mod joint;
+pub mod material;
+pub mod math;
+pub mod motor;
+pub mod netcode;
+#[cfg(feature = "neural")]
+pub mod neural;
+pub mod phase_change;
+pub mod pressure;
+pub mod profiling;
+#[cfg(feature = "python")]
+mod python;
+pub mod query;
+pub mod raycast;
+#[cfg(feature = "replay")]
+pub mod replay;
+pub mod rng;
+pub mod rope;
+pub mod sdf_adaptive;
+pub mod sdf_ccd;
+pub mod sdf_collider;
+pub mod sdf_destruction;
+pub mod sdf_force;
+pub mod sdf_manifold;
+pub mod sim_field;
+pub mod sim_modifier;
+pub mod sleeping;
+pub mod solver;
+pub mod thermal;
+pub mod trimesh;
+pub mod vehicle;
 #[cfg(feature = "wasm")]
 mod wasm;
 
 // Re-export commonly used types
-pub use math::{Fix128, Vec3Fix, QuatFix, Mat3Fix};
-pub use collider::{AABB, Sphere, Capsule, ConvexHull, CollisionResult, ScaledShape};
-pub use solver::{PhysicsWorld, PhysicsConfig, RigidBody, DistanceConstraint, ContactConstraint, BodyType};
-pub use bvh::{LinearBvh, BvhNode, BvhPrimitive};
-pub use sdf_collider::{SdfField, SdfCollider, ClosureSdf};
-pub use filter::CollisionFilter;
-pub use rng::DeterministicRng;
-pub use event::{EventCollector, ContactEvent, ContactEventType};
-pub use joint::{Joint, BallJoint, HingeJoint, FixedJoint, SliderJoint, SpringJoint, D6Joint, D6Motion, ConeTwistJoint};
-pub use raycast::{Ray, RayHit, raycast_all_spheres, raycast_all_aabbs, raycast_any_spheres, raycast_any_aabbs};
-pub use ccd::{CcdConfig, speculative_contact};
-pub use sleeping::{SleepState, SleepData, SleepConfig, IslandManager};
-pub use trimesh::{Triangle, TriMesh};
-pub use heightfield::HeightField;
-pub use motor::{PdController, JointMotor, MotorMode};
+pub use animation_blend::{AnimationBlender, AnimationClip, BlendMode, SkeletonPose};
 pub use articulation::{ArticulatedBody, FeatherstoneSolver};
-pub use force::{ForceField, ForceFieldInstance};
-pub use netcode::{DeterministicSimulation, FrameInput, SimulationChecksum, SimulationSnapshot, NetcodeConfig, InputApplicator};
-pub use sdf_manifold::{SdfManifold, ManifoldConfig};
-pub use sdf_ccd::{SdfCcdConfig};
-pub use sdf_force::{SdfForceField, SdfForceType};
-pub use sdf_destruction::{DestructibleSdf, DestructionShape};
-pub use rope::{Rope, RopeConfig};
-pub use cloth::{Cloth, ClothConfig};
-pub use fluid::{Fluid, FluidConfig};
-pub use deformable::{DeformableBody, DeformableConfig};
-pub use sdf_adaptive::{AdaptiveSdfEvaluator, AdaptiveConfig};
-pub use convex_decompose::{DecomposeConfig, DecompositionResult};
-#[cfg(feature = "std")]
-pub use gpu_sdf::{GpuSdfBatch, GpuSdfQuery, GpuSdfResult, GpuDispatchConfig};
-#[cfg(feature = "std")]
-pub use fluid_netcode::{FluidSnapshot, FluidDelta};
-pub use vehicle::{Vehicle, VehicleConfig};
-pub use animation_blend::{AnimationBlender, BlendMode, SkeletonPose, AnimationClip};
-pub use audio_physics::{AudioGenerator, AudioConfig, AudioEvent, AudioMaterial};
-pub use character::{CharacterController, CharacterConfig, MoveResult, PushImpulse};
-pub use cylinder::Cylinder;
-pub use query::{ShapeCastHit, OverlapResult, sphere_cast, capsule_cast, overlap_sphere, overlap_aabb, BatchRayQuery, batch_raycast, batch_sphere_cast};
-pub use joint::solve_joints_breakable;
+pub use audio_physics::{AudioConfig, AudioEvent, AudioGenerator, AudioMaterial};
 pub use box_collider::OrientedBox;
+pub use bvh::{BvhNode, BvhPrimitive, LinearBvh};
+pub use ccd::{speculative_contact, CcdConfig};
+pub use character::{CharacterConfig, CharacterController, MoveResult, PushImpulse};
+pub use cloth::{Cloth, ClothConfig};
+pub use collider::{Capsule, CollisionResult, ConvexHull, ScaledShape, Sphere, AABB};
+pub use compound::{CompoundShape, ShapeRef};
+pub use contact_cache::{BodyPairKey, ContactCache, ContactManifold};
+pub use convex_decompose::{DecomposeConfig, DecompositionResult};
+pub use cylinder::Cylinder;
+pub use debug_render::{debug_draw_world, DebugColor, DebugDrawData, DebugDrawFlags};
+pub use deformable::{DeformableBody, DeformableConfig};
+pub use dynamic_bvh::DynamicAabbTree;
+pub use erosion::{ErosionConfig, ErosionModifier, ErosionType};
+pub use event::{ContactEvent, ContactEventType, EventCollector};
+pub use filter::CollisionFilter;
+pub use fluid::{Fluid, FluidConfig};
+#[cfg(feature = "std")]
+pub use fluid_netcode::{FluidDelta, FluidSnapshot};
+pub use force::{ForceField, ForceFieldInstance};
+pub use fracture::{Crack, FractureConfig, FractureModifier};
+#[cfg(feature = "std")]
+pub use gpu_sdf::{GpuDispatchConfig, GpuSdfBatch, GpuSdfQuery, GpuSdfResult};
+pub use heightfield::HeightField;
+pub use interpolation::{BodySnapshot, InterpolationState, WorldSnapshot};
+pub use joint::solve_joints_breakable;
+pub use joint::{
+    BallJoint, ConeTwistJoint, D6Joint, D6Motion, FixedJoint, HingeJoint, Joint, SliderJoint,
+    SpringJoint,
+};
+pub use material::{CombineRule, CombinedMaterial, MaterialId, MaterialTable, PhysicsMaterial};
+pub use math::{Fix128, Mat3Fix, QuatFix, Vec3Fix};
+pub use motor::{JointMotor, MotorMode, PdController};
+pub use netcode::{
+    DeterministicSimulation, FrameInput, InputApplicator, NetcodeConfig, SimulationChecksum,
+    SimulationSnapshot,
+};
+pub use phase_change::{Phase, PhaseChangeConfig, PhaseChangeModifier};
+pub use pressure::{PressureConfig, PressureModifier};
+pub use profiling::{PhysicsProfiler, ProfileEntry, StepStats};
+pub use query::{
+    batch_raycast, batch_sphere_cast, capsule_cast, overlap_aabb, overlap_sphere, sphere_cast,
+    BatchRayQuery, OverlapResult, ShapeCastHit,
+};
+pub use raycast::{
+    raycast_all_aabbs, raycast_all_spheres, raycast_any_aabbs, raycast_any_spheres, Ray, RayHit,
+};
+pub use rng::DeterministicRng;
+pub use rope::{Rope, RopeConfig};
+pub use sdf_adaptive::{AdaptiveConfig, AdaptiveSdfEvaluator};
+pub use sdf_ccd::SdfCcdConfig;
+pub use sdf_collider::{ClosureSdf, SdfCollider, SdfField};
+pub use sdf_destruction::{DestructibleSdf, DestructionShape};
+pub use sdf_force::{SdfForceField, SdfForceType};
+pub use sdf_manifold::{ManifoldConfig, SdfManifold};
+pub use sim_field::{ScalarField3D, VectorField3D};
+pub use sim_modifier::{ModifiedSdf, PhysicsModifier, SingleModifiedSdf};
+pub use sleeping::{IslandManager, SleepConfig, SleepData, SleepState};
 #[cfg(feature = "std")]
 pub use solver::ContactModifier;
-pub use compound::{CompoundShape, ShapeRef};
-pub use contact_cache::{ContactCache, ContactManifold, BodyPairKey};
-pub use dynamic_bvh::DynamicAabbTree;
-pub use material::{MaterialTable, PhysicsMaterial, CombineRule, MaterialId, CombinedMaterial};
-pub use debug_render::{DebugDrawData, DebugDrawFlags, DebugColor, debug_draw_world};
-pub use profiling::{PhysicsProfiler, StepStats, ProfileEntry};
-pub use interpolation::{InterpolationState, WorldSnapshot, BodySnapshot};
-pub use sim_field::{ScalarField3D, VectorField3D};
-pub use sim_modifier::{PhysicsModifier, ModifiedSdf, SingleModifiedSdf};
-pub use thermal::{ThermalModifier, ThermalConfig, HeatSource};
-pub use pressure::{PressureModifier, PressureConfig};
-pub use erosion::{ErosionModifier, ErosionConfig, ErosionType};
-pub use fracture::{FractureModifier, FractureConfig, Crack};
-pub use phase_change::{PhaseChangeModifier, PhaseChangeConfig, Phase};
+pub use solver::{
+    BodyType, ContactConstraint, DistanceConstraint, PhysicsConfig, PhysicsWorld, RigidBody,
+};
+pub use thermal::{HeatSource, ThermalConfig, ThermalModifier};
+pub use trimesh::{TriMesh, Triangle};
+pub use vehicle::{Vehicle, VehicleConfig};
 
 /// Prelude module for convenient imports
 pub mod prelude {
-    pub use crate::math::{Fix128, Vec3Fix, QuatFix, Mat3Fix};
-    pub use crate::collider::{AABB, Sphere, Capsule, ConvexHull, CollisionResult, Support, ScaledShape};
-    pub use crate::solver::{PhysicsWorld, PhysicsConfig, RigidBody, DistanceConstraint, ContactConstraint, BodyType};
-    pub use crate::bvh::{LinearBvh, BvhNode, BvhPrimitive};
-    pub use crate::sdf_collider::{SdfField, SdfCollider, ClosureSdf};
-    pub use crate::filter::CollisionFilter;
-    pub use crate::rng::DeterministicRng;
-    pub use crate::event::{EventCollector, ContactEvent, ContactEventType};
-    pub use crate::joint::{Joint, BallJoint, HingeJoint, FixedJoint, SliderJoint, SpringJoint, D6Joint, D6Motion, ConeTwistJoint};
-    pub use crate::raycast::{Ray, RayHit, raycast_all_spheres, raycast_all_aabbs, raycast_any_spheres, raycast_any_aabbs};
-    pub use crate::ccd::{CcdConfig, speculative_contact};
-    pub use crate::sleeping::{SleepState, SleepData, SleepConfig, IslandManager};
-    pub use crate::trimesh::{Triangle, TriMesh};
-    pub use crate::heightfield::HeightField;
-    pub use crate::motor::{PdController, JointMotor, MotorMode};
+    pub use crate::animation_blend::{AnimationBlender, AnimationClip, BlendMode, SkeletonPose};
     pub use crate::articulation::{ArticulatedBody, FeatherstoneSolver};
-    pub use crate::force::{ForceField, ForceFieldInstance};
-    pub use crate::netcode::{DeterministicSimulation, FrameInput, SimulationChecksum, SimulationSnapshot, NetcodeConfig, InputApplicator};
-    pub use crate::sdf_manifold::{SdfManifold, ManifoldConfig};
-    pub use crate::sdf_ccd::SdfCcdConfig;
-    pub use crate::sdf_force::{SdfForceField, SdfForceType};
-    pub use crate::sdf_destruction::{DestructibleSdf, DestructionShape};
-    pub use crate::rope::{Rope, RopeConfig};
-    pub use crate::cloth::{Cloth, ClothConfig};
-    pub use crate::fluid::{Fluid, FluidConfig};
-    pub use crate::deformable::{DeformableBody, DeformableConfig};
-    pub use crate::sdf_adaptive::{AdaptiveSdfEvaluator, AdaptiveConfig};
-    pub use crate::convex_decompose::{DecomposeConfig, DecompositionResult};
-    #[cfg(feature = "std")]
-    pub use crate::gpu_sdf::{GpuSdfBatch, GpuSdfQuery, GpuSdfResult, GpuDispatchConfig};
-    #[cfg(feature = "std")]
-    pub use crate::fluid_netcode::{FluidSnapshot, FluidDelta};
-    pub use crate::vehicle::{Vehicle, VehicleConfig};
-    pub use crate::animation_blend::{AnimationBlender, BlendMode, SkeletonPose, AnimationClip};
-    pub use crate::audio_physics::{AudioGenerator, AudioConfig, AudioEvent, AudioMaterial};
-    pub use crate::character::{CharacterController, CharacterConfig, MoveResult, PushImpulse};
-    pub use crate::cylinder::Cylinder;
-    pub use crate::query::{ShapeCastHit, OverlapResult, sphere_cast, capsule_cast, overlap_sphere, overlap_aabb, BatchRayQuery, batch_raycast, batch_sphere_cast};
-    pub use crate::joint::solve_joints_breakable;
+    pub use crate::audio_physics::{AudioConfig, AudioEvent, AudioGenerator, AudioMaterial};
     pub use crate::box_collider::OrientedBox;
-    #[cfg(feature = "std")]
-    pub use crate::solver::ContactModifier;
+    pub use crate::bvh::{BvhNode, BvhPrimitive, LinearBvh};
+    pub use crate::ccd::{speculative_contact, CcdConfig};
+    pub use crate::character::{CharacterConfig, CharacterController, MoveResult, PushImpulse};
+    pub use crate::cloth::{Cloth, ClothConfig};
+    pub use crate::collider::{
+        Capsule, CollisionResult, ConvexHull, ScaledShape, Sphere, Support, AABB,
+    };
     pub use crate::compound::{CompoundShape, ShapeRef};
-    pub use crate::contact_cache::{ContactCache, ContactManifold, BodyPairKey};
+    pub use crate::contact_cache::{BodyPairKey, ContactCache, ContactManifold};
+    pub use crate::convex_decompose::{DecomposeConfig, DecompositionResult};
+    pub use crate::cylinder::Cylinder;
+    pub use crate::debug_render::{debug_draw_world, DebugColor, DebugDrawData, DebugDrawFlags};
+    pub use crate::deformable::{DeformableBody, DeformableConfig};
     pub use crate::dynamic_bvh::DynamicAabbTree;
-    pub use crate::material::{MaterialTable, PhysicsMaterial, CombineRule, MaterialId, CombinedMaterial};
-    pub use crate::debug_render::{DebugDrawData, DebugDrawFlags, DebugColor, debug_draw_world};
-    pub use crate::profiling::{PhysicsProfiler, StepStats, ProfileEntry};
-    pub use crate::interpolation::{InterpolationState, WorldSnapshot, BodySnapshot};
-    pub use crate::sim_field::{ScalarField3D, VectorField3D};
-    pub use crate::sim_modifier::{PhysicsModifier, ModifiedSdf, SingleModifiedSdf};
-    pub use crate::thermal::{ThermalModifier, ThermalConfig, HeatSource};
-    pub use crate::pressure::{PressureModifier, PressureConfig};
-    pub use crate::erosion::{ErosionModifier, ErosionConfig, ErosionType};
-    pub use crate::fracture::{FractureModifier, FractureConfig, Crack};
-    pub use crate::phase_change::{PhaseChangeModifier, PhaseChangeConfig, Phase};
+    pub use crate::erosion::{ErosionConfig, ErosionModifier, ErosionType};
+    pub use crate::event::{ContactEvent, ContactEventType, EventCollector};
+    pub use crate::filter::CollisionFilter;
+    pub use crate::fluid::{Fluid, FluidConfig};
+    #[cfg(feature = "std")]
+    pub use crate::fluid_netcode::{FluidDelta, FluidSnapshot};
+    pub use crate::force::{ForceField, ForceFieldInstance};
+    pub use crate::fracture::{Crack, FractureConfig, FractureModifier};
+    #[cfg(feature = "std")]
+    pub use crate::gpu_sdf::{GpuDispatchConfig, GpuSdfBatch, GpuSdfQuery, GpuSdfResult};
+    pub use crate::heightfield::HeightField;
+    pub use crate::interpolation::{BodySnapshot, InterpolationState, WorldSnapshot};
+    pub use crate::joint::solve_joints_breakable;
+    pub use crate::joint::{
+        BallJoint, ConeTwistJoint, D6Joint, D6Motion, FixedJoint, HingeJoint, Joint, SliderJoint,
+        SpringJoint,
+    };
+    pub use crate::material::{
+        CombineRule, CombinedMaterial, MaterialId, MaterialTable, PhysicsMaterial,
+    };
+    pub use crate::math::{Fix128, Mat3Fix, QuatFix, Vec3Fix};
+    pub use crate::motor::{JointMotor, MotorMode, PdController};
+    pub use crate::netcode::{
+        DeterministicSimulation, FrameInput, InputApplicator, NetcodeConfig, SimulationChecksum,
+        SimulationSnapshot,
+    };
     #[cfg(feature = "neural")]
     pub use crate::neural::{
-        DeterministicNetwork, RagdollController, ControllerConfig,
-        ControllerOutput, FixedTernaryWeight, Activation,
-        fix128_ternary_matvec, fix128_relu, fix128_hard_tanh,
-        fix128_tanh_approx, fix128_leaky_relu,
+        fix128_hard_tanh, fix128_leaky_relu, fix128_relu, fix128_tanh_approx,
+        fix128_ternary_matvec, Activation, ControllerConfig, ControllerOutput,
+        DeterministicNetwork, FixedTernaryWeight, RagdollController,
     };
+    pub use crate::phase_change::{Phase, PhaseChangeConfig, PhaseChangeModifier};
+    pub use crate::pressure::{PressureConfig, PressureModifier};
+    pub use crate::profiling::{PhysicsProfiler, ProfileEntry, StepStats};
+    pub use crate::query::{
+        batch_raycast, batch_sphere_cast, capsule_cast, overlap_aabb, overlap_sphere, sphere_cast,
+        BatchRayQuery, OverlapResult, ShapeCastHit,
+    };
+    pub use crate::raycast::{
+        raycast_all_aabbs, raycast_all_spheres, raycast_any_aabbs, raycast_any_spheres, Ray, RayHit,
+    };
+    pub use crate::rng::DeterministicRng;
+    pub use crate::rope::{Rope, RopeConfig};
+    pub use crate::sdf_adaptive::{AdaptiveConfig, AdaptiveSdfEvaluator};
+    pub use crate::sdf_ccd::SdfCcdConfig;
+    pub use crate::sdf_collider::{ClosureSdf, SdfCollider, SdfField};
+    pub use crate::sdf_destruction::{DestructibleSdf, DestructionShape};
+    pub use crate::sdf_force::{SdfForceField, SdfForceType};
+    pub use crate::sdf_manifold::{ManifoldConfig, SdfManifold};
+    pub use crate::sim_field::{ScalarField3D, VectorField3D};
+    pub use crate::sim_modifier::{ModifiedSdf, PhysicsModifier, SingleModifiedSdf};
+    pub use crate::sleeping::{IslandManager, SleepConfig, SleepData, SleepState};
+    #[cfg(feature = "std")]
+    pub use crate::solver::ContactModifier;
+    pub use crate::solver::{
+        BodyType, ContactConstraint, DistanceConstraint, PhysicsConfig, PhysicsWorld, RigidBody,
+    };
+    pub use crate::thermal::{HeatSource, ThermalConfig, ThermalModifier};
+    pub use crate::trimesh::{TriMesh, Triangle};
+    pub use crate::vehicle::{Vehicle, VehicleConfig};
 }
 
 #[cfg(test)]
@@ -293,10 +322,7 @@ mod tests {
         let mut world = PhysicsWorld::new(config);
 
         // Add a falling body
-        let mut body = RigidBody::new_dynamic(
-            Vec3Fix::from_int(0, 100, 0),
-            Fix128::ONE,
-        );
+        let mut body = RigidBody::new_dynamic(Vec3Fix::from_int(0, 100, 0), Fix128::ONE);
         body.restitution = Fix128::from_ratio(5, 10); // 0.5 bounce
 
         let body_id = world.add_body(body);
@@ -355,10 +381,7 @@ mod tests {
         let mut world = PhysicsWorld::new(config);
 
         // Add body and simulate
-        let body = RigidBody::new_dynamic(
-            Vec3Fix::from_int(10, 20, 30),
-            Fix128::ONE,
-        );
+        let body = RigidBody::new_dynamic(Vec3Fix::from_int(10, 20, 30), Fix128::ONE);
         world.add_body(body);
 
         let dt = Fix128::from_ratio(1, 60);
@@ -396,14 +419,8 @@ mod tests {
         let mut world = PhysicsWorld::new(config);
 
         // Two bodies connected by distance constraint
-        let body_a = RigidBody::new_dynamic(
-            Vec3Fix::from_int(0, 10, 0),
-            Fix128::ONE,
-        );
-        let body_b = RigidBody::new_dynamic(
-            Vec3Fix::from_int(5, 10, 0),
-            Fix128::ONE,
-        );
+        let body_a = RigidBody::new_dynamic(Vec3Fix::from_int(0, 10, 0), Fix128::ONE);
+        let body_b = RigidBody::new_dynamic(Vec3Fix::from_int(5, 10, 0), Fix128::ONE);
         let id_a = world.add_body(body_a);
         let id_b = world.add_body(body_b);
 
@@ -437,6 +454,10 @@ mod tests {
         };
 
         // Allow 10% error due to gravity
-        assert!(error < Fix128::ONE, "Distance constraint violated: error = {:?}", error);
+        assert!(
+            error < Fix128::ONE,
+            "Distance constraint violated: error = {:?}",
+            error
+        );
     }
 }

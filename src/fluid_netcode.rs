@@ -39,11 +39,7 @@ pub struct FluidSnapshot {
 
 impl FluidSnapshot {
     /// Create snapshot from fluid particle data
-    pub fn capture(
-        positions: &[Vec3Fix],
-        velocities: &[Vec3Fix],
-        frame: u64,
-    ) -> Self {
+    pub fn capture(positions: &[Vec3Fix], velocities: &[Vec3Fix], frame: u64) -> Self {
         let n = positions.len();
         let pos_data = serialize_vec3_array(positions);
         let vel_data = serialize_vec3_array(velocities);
@@ -148,11 +144,7 @@ impl FluidDelta {
     }
 
     /// Apply delta to base state
-    pub fn apply(
-        &self,
-        base_positions: &mut Vec<Vec3Fix>,
-        base_velocities: &mut Vec<Vec3Fix>,
-    ) {
+    pub fn apply(&self, base_positions: &mut Vec<Vec3Fix>, base_velocities: &mut Vec<Vec3Fix>) {
         for (idx, &particle_idx) in self.changed_indices.iter().enumerate() {
             let i = particle_idx as usize;
             if i < base_positions.len() {
@@ -209,13 +201,25 @@ fn deserialize_vec3_array(data: &[u8], count: usize) -> Option<Vec<Vec3Fix>> {
                 return None;
             }
             let hi = i64::from_le_bytes([
-                data[offset], data[offset + 1], data[offset + 2], data[offset + 3],
-                data[offset + 4], data[offset + 5], data[offset + 6], data[offset + 7],
+                data[offset],
+                data[offset + 1],
+                data[offset + 2],
+                data[offset + 3],
+                data[offset + 4],
+                data[offset + 5],
+                data[offset + 6],
+                data[offset + 7],
             ]);
             offset += 8;
             let lo = u64::from_le_bytes([
-                data[offset], data[offset + 1], data[offset + 2], data[offset + 3],
-                data[offset + 4], data[offset + 5], data[offset + 6], data[offset + 7],
+                data[offset],
+                data[offset + 1],
+                data[offset + 2],
+                data[offset + 3],
+                data[offset + 4],
+                data[offset + 5],
+                data[offset + 6],
+                data[offset + 7],
             ]);
             offset += 8;
             *c = Fix128 { hi, lo };
@@ -246,10 +250,7 @@ mod tests {
 
     #[test]
     fn test_snapshot_roundtrip() {
-        let positions = vec![
-            Vec3Fix::from_int(1, 2, 3),
-            Vec3Fix::from_int(4, 5, 6),
-        ];
+        let positions = vec![Vec3Fix::from_int(1, 2, 3), Vec3Fix::from_int(4, 5, 6)];
         let velocities = vec![
             Vec3Fix::from_f32(0.1, 0.2, 0.3),
             Vec3Fix::from_f32(0.4, 0.5, 0.6),
@@ -292,14 +293,20 @@ mod tests {
         let new_vel = old_vel.clone();
 
         let delta = FluidDelta::compute(
-            &old_pos, &old_vel,
-            &new_pos, &new_vel,
+            &old_pos,
+            &old_vel,
+            &new_pos,
+            &new_vel,
             Fix128::from_ratio(1, 10),
-            0, 1,
+            0,
+            1,
         );
 
         assert_eq!(delta.changed_count(), 1, "Only one particle changed");
-        assert!(delta.compression_ratio(3) < 0.5, "Should be well compressed");
+        assert!(
+            delta.compression_ratio(3) < 0.5,
+            "Should be well compressed"
+        );
     }
 
     #[test]
@@ -307,18 +314,17 @@ mod tests {
         let old_pos = vec![Vec3Fix::ZERO; 3];
         let old_vel = vec![Vec3Fix::ZERO; 3];
 
-        let new_pos = vec![
-            Vec3Fix::ZERO,
-            Vec3Fix::from_int(5, 5, 5),
-            Vec3Fix::ZERO,
-        ];
+        let new_pos = vec![Vec3Fix::ZERO, Vec3Fix::from_int(5, 5, 5), Vec3Fix::ZERO];
         let new_vel = old_vel.clone();
 
         let delta = FluidDelta::compute(
-            &old_pos, &old_vel,
-            &new_pos, &new_vel,
+            &old_pos,
+            &old_vel,
+            &new_pos,
+            &new_vel,
             Fix128::from_ratio(1, 10),
-            0, 1,
+            0,
+            1,
         );
 
         let mut base_pos = old_pos;

@@ -205,11 +205,9 @@ impl Cloth {
         // Bending constraints: find triangles sharing edges
         for i in 0..self.triangles.len() {
             for j in (i + 1)..self.triangles.len() {
-                if let Some(bend) = find_shared_edge(
-                    &self.triangles[i],
-                    &self.triangles[j],
-                    &self.positions,
-                ) {
+                if let Some(bend) =
+                    find_shared_edge(&self.triangles[i], &self.triangles[j], &self.positions)
+                {
                     self.bend_constraints.push(bend);
                 }
             }
@@ -268,7 +266,8 @@ impl Cloth {
 
             // Gravity + wind
             let wind_force = self.compute_wind_force(i);
-            self.velocities[i] = self.velocities[i] + (self.config.gravity + wind_force * self.inv_masses[i]) * dt;
+            self.velocities[i] =
+                self.velocities[i] + (self.config.gravity + wind_force * self.inv_masses[i]) * dt;
             self.velocities[i] = self.velocities[i] * self.config.damping;
             self.positions[i] = self.positions[i] + self.velocities[i] * dt;
         }
@@ -396,7 +395,11 @@ impl Cloth {
         let min_dist = self.config.self_collision_distance;
         let min_dist_sq = min_dist * min_dist;
         let cell_size = min_dist * Fix128::from_int(2);
-        let inv_cell = if cell_size.is_zero() { Fix128::ONE } else { Fix128::ONE / cell_size };
+        let inv_cell = if cell_size.is_zero() {
+            Fix128::ONE
+        } else {
+            Fix128::ONE / cell_size
+        };
         let grid_dim: usize = 64;
         let grid_dim_i64 = grid_dim as i64;
         let half = grid_dim_i64 / 2;
@@ -424,7 +427,11 @@ impl Cloth {
         // should not have self-collision applied
         let mut edge_pairs: Vec<(usize, usize)> = Vec::new();
         for c in &self.edge_constraints {
-            let (lo, hi) = if c.i0 < c.i1 { (c.i0, c.i1) } else { (c.i1, c.i0) };
+            let (lo, hi) = if c.i0 < c.i1 {
+                (c.i0, c.i1)
+            } else {
+                (c.i1, c.i0)
+            };
             edge_pairs.push((lo, hi));
         }
 
@@ -484,8 +491,10 @@ impl Cloth {
 
                                 let correction = normal * (error / w_sum);
 
-                                self.positions[i] = self.positions[i] - correction * self.inv_masses[i];
-                                self.positions[j] = self.positions[j] + correction * self.inv_masses[j];
+                                self.positions[i] =
+                                    self.positions[i] - correction * self.inv_masses[i];
+                                self.positions[j] =
+                                    self.positions[j] + correction * self.inv_masses[j];
                             }
                         }
                     }
@@ -606,12 +615,16 @@ mod tests {
             Vec3Fix::ZERO,
             Fix128::from_int(2),
             Fix128::from_int(2),
-            5, 5,
+            5,
+            5,
             Fix128::from_ratio(1, 100),
         );
 
         assert_eq!(cloth.particle_count(), 25);
-        assert!(!cloth.edge_constraints.is_empty(), "Should have edge constraints");
+        assert!(
+            !cloth.edge_constraints.is_empty(),
+            "Should have edge constraints"
+        );
     }
 
     #[test]
@@ -620,7 +633,8 @@ mod tests {
             Vec3Fix::ZERO,
             Fix128::from_int(2),
             Fix128::from_int(2),
-            5, 5,
+            5,
+            5,
             Fix128::from_ratio(1, 100),
         );
 
@@ -638,7 +652,8 @@ mod tests {
             Vec3Fix::ZERO,
             Fix128::from_int(2),
             Fix128::from_int(2),
-            5, 5,
+            5,
+            5,
             Fix128::from_ratio(1, 100),
         );
         cloth.pin_top_row(5);
@@ -652,7 +667,12 @@ mod tests {
         // With constraints, the cloth stretches slowly; verify it moved downward
         let initial_y = cloth.positions[0].y.to_f32(); // top row (pinned)
         let bottom_y = cloth.positions[20].y.to_f32(); // bottom row
-        assert!(bottom_y < initial_y, "Bottom should be below top, top={}, bottom={}", initial_y, bottom_y);
+        assert!(
+            bottom_y < initial_y,
+            "Bottom should be below top, top={}, bottom={}",
+            initial_y,
+            bottom_y
+        );
     }
 
     #[test]
@@ -661,7 +681,8 @@ mod tests {
             Vec3Fix::ZERO,
             Fix128::from_int(2),
             Fix128::from_int(2),
-            5, 5,
+            5,
+            5,
             Fix128::from_ratio(1, 100),
         );
         cloth.config.self_collision = true;
@@ -679,15 +700,19 @@ mod tests {
         let n = cloth.particle_count();
         let mut too_close = 0;
         for i in 0..n {
-            for j in (i+1)..n {
+            for j in (i + 1)..n {
                 let d = (cloth.positions[i] - cloth.positions[j]).length().to_f32();
-                if d < min_d * 0.5 { // allow some tolerance
+                if d < min_d * 0.5 {
+                    // allow some tolerance
                     too_close += 1;
                 }
             }
         }
         // With self-collision enabled, severely overlapping particles should be rare
-        assert!(too_close < n, "Self-collision should prevent extreme particle overlap");
+        assert!(
+            too_close < n,
+            "Self-collision should prevent extreme particle overlap"
+        );
     }
 
     #[test]
@@ -696,7 +721,8 @@ mod tests {
             Vec3Fix::ZERO,
             Fix128::from_int(2),
             Fix128::from_int(2),
-            3, 3,
+            3,
+            3,
             Fix128::from_ratio(1, 100),
         );
 
@@ -706,7 +732,10 @@ mod tests {
         // For a flat grid in XZ plane, normals should point in Y
         for n in &normals {
             let (_, ny, _) = n.to_f32();
-            assert!(ny.abs() > 0.5, "Normals should point mostly in Y for flat grid");
+            assert!(
+                ny.abs() > 0.5,
+                "Normals should point mostly in Y for flat grid"
+            );
         }
     }
 }

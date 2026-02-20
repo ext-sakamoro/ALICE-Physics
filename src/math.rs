@@ -29,8 +29,8 @@
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
-use core::ops::{Add, Sub, Mul, Div, Neg};
 use core::cmp::Ordering;
+use core::ops::{Add, Div, Mul, Neg, Sub};
 
 // SIMD imports for x86_64
 #[cfg(all(feature = "simd", target_arch = "x86_64"))]
@@ -54,9 +54,9 @@ pub struct Fix128 {
     /// Raw 128-bit value (stored as two i64s for portability)
     /// Interpretation: (hi << 64) | lo as a signed 128-bit integer
     /// The decimal point is between hi and lo
-    pub hi: i64,  // Integer part (signed)
+    pub hi: i64, // Integer part (signed)
     /// Fractional part (64-bit unsigned)
-    pub lo: u64,  // Fractional part
+    pub lo: u64, // Fractional part
 }
 
 impl Fix128 {
@@ -73,19 +73,19 @@ impl Fix128 {
     /// π ≈ 3.14159265358979323846...
     pub const PI: Self = Self {
         hi: 3,
-        lo: 0x243F6A8885A308D3  // Fractional part of π
+        lo: 0x243F6A8885A308D3, // Fractional part of π
     };
 
     /// Half Pi (π/2)
     pub const HALF_PI: Self = Self {
         hi: 1,
-        lo: 0x921FB54442D18469  // Fractional part of π/2
+        lo: 0x921FB54442D18469, // Fractional part of π/2
     };
 
     /// Two Pi (2π)
     pub const TWO_PI: Self = Self {
         hi: 6,
-        lo: 0x487ED5110B4611A6  // Fractional part of 2π
+        lo: 0x487ED5110B4611A6, // Fractional part of 2π
     };
 
     /// Create from integer
@@ -107,7 +107,10 @@ impl Fix128 {
         let frac = (f - f.trunc()).abs();
         let lo = (frac * (1u128 << 64) as f64) as u64;
         if f < 0.0 && lo != 0 {
-            Self { hi: hi - 1, lo: (!lo).wrapping_add(1) }
+            Self {
+                hi: hi - 1,
+                lo: (!lo).wrapping_add(1),
+            }
         } else {
             Self { hi, lo }
         }
@@ -191,9 +194,15 @@ impl Fix128 {
         if self.lo == 0 {
             self
         } else if self.hi >= 0 {
-            Self { hi: self.hi + 1, lo: 0 }
+            Self {
+                hi: self.hi + 1,
+                lo: 0,
+            }
         } else {
-            Self { hi: self.hi + 1, lo: 0 }
+            Self {
+                hi: self.hi + 1,
+                lo: 0,
+            }
         }
     }
 
@@ -422,7 +431,11 @@ impl Div for Fix128 {
             lo: quot_lo,
         };
 
-        if neg { result.neg() } else { result }
+        if neg {
+            result.neg()
+        } else {
+            result
+        }
     }
 }
 
@@ -472,14 +485,20 @@ const fn compute_cordic_angles() -> [Fix128; 64] {
     let mut angles = [Fix128::ZERO; 64];
 
     // arctan(2^0) = π/4 ≈ 0.7853981633974483
-    angles[0] = Fix128 { hi: 0, lo: 0xC90FDAA22168C234 };
+    angles[0] = Fix128 {
+        hi: 0,
+        lo: 0xC90FDAA22168C234,
+    };
 
     // Subsequent angles: arctan(2^-i) ≈ 2^-i for small i
     // These are approximations; in production, use exact precomputed values
     let mut i = 1;
     while i < 64 {
         // arctan(2^-i) ≈ 2^-i for i > 0 (good approximation)
-        angles[i] = Fix128 { hi: 0, lo: 1u64 << (63 - i) };
+        angles[i] = Fix128 {
+            hi: 0,
+            lo: 1u64 << (63 - i),
+        };
         i += 1;
     }
 
@@ -510,11 +529,19 @@ fn cordic_sin_cos(angle: Fix128) -> (Fix128, Fix128) {
 
         let x_shift = Fix128 {
             hi: x.hi >> i.min(63),
-            lo: if i < 64 { (x.lo >> i) | ((x.hi as u64) << (64 - i.max(1))) } else { 0 },
+            lo: if i < 64 {
+                (x.lo >> i) | ((x.hi as u64) << (64 - i.max(1)))
+            } else {
+                0
+            },
         };
         let y_shift = Fix128 {
             hi: y.hi >> i.min(63),
-            lo: if i < 64 { (y.lo >> i) | ((y.hi as u64) << (64 - i.max(1))) } else { 0 },
+            lo: if i < 64 {
+                (y.lo >> i) | ((y.hi as u64) << (64 - i.max(1)))
+            } else {
+                0
+            },
         };
 
         let new_x;
@@ -577,7 +604,11 @@ fn cordic_atan2(y: Fix128, x: Fix128) -> Fix128 {
     }
 
     if x.is_zero() {
-        return if y.is_negative() { Fix128::HALF_PI.neg() } else { Fix128::HALF_PI };
+        return if y.is_negative() {
+            Fix128::HALF_PI.neg()
+        } else {
+            Fix128::HALF_PI
+        };
     }
 
     let ratio = y / x;
@@ -769,10 +800,7 @@ impl Vec3Fix {
     ///
     /// Computes dot products for 4 vector pairs simultaneously (when available)
     #[cfg(all(feature = "simd", target_arch = "x86_64"))]
-    pub fn dot_batch_4(
-        a: [Self; 4],
-        b: [Self; 4],
-    ) -> [Fix128; 4] {
+    pub fn dot_batch_4(a: [Self; 4], b: [Self; 4]) -> [Fix128; 4] {
         // Process all 4 pairs
         [
             a[0].dot(b[0]),

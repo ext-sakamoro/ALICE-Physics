@@ -155,7 +155,8 @@ impl AdaptiveSdfEvaluator {
         // Check how far the body has moved since last evaluation
         let movement = (position - entry.position).length().to_f32();
 
-        if entry.distance > self.config.cache_threshold && movement < self.config.high_res_threshold {
+        if entry.distance > self.config.cache_threshold && movement < self.config.high_res_threshold
+        {
             return EvalLevel::Skip;
         }
 
@@ -203,13 +204,9 @@ impl AdaptiveSdfEvaluator {
                 }
             }
 
-            EvalLevel::Standard => {
-                self.evaluate_and_cache(body_idx, position, sdf, false)
-            }
+            EvalLevel::Standard => self.evaluate_and_cache(body_idx, position, sdf, false),
 
-            EvalLevel::HighRes => {
-                self.evaluate_and_cache(body_idx, position, sdf, true)
-            }
+            EvalLevel::HighRes => self.evaluate_and_cache(body_idx, position, sdf, true),
         }
     }
 
@@ -283,26 +280,27 @@ impl AdaptiveSdfEvaluator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sdf_collider::{SdfCollider, ClosureSdf};
     use crate::math::QuatFix;
+    use crate::sdf_collider::{ClosureSdf, SdfCollider};
 
     fn unit_sphere() -> ClosureSdf {
         ClosureSdf::new(
             |x, y, z| (x * x + y * y + z * z).sqrt() - 1.0,
             |x, y, z| {
                 let len = (x * x + y * y + z * z).sqrt();
-                if len < 1e-10 { (0.0, 1.0, 0.0) } else { (x / len, y / len, z / len) }
+                if len < 1e-10 {
+                    (0.0, 1.0, 0.0)
+                } else {
+                    (x / len, y / len, z / len)
+                }
             },
         )
     }
 
     #[test]
     fn test_adaptive_evaluator() {
-        let sdf = SdfCollider::new_static(
-            Box::new(unit_sphere()),
-            Vec3Fix::ZERO,
-            QuatFix::IDENTITY,
-        );
+        let sdf =
+            SdfCollider::new_static(Box::new(unit_sphere()), Vec3Fix::ZERO, QuatFix::IDENTITY);
 
         let mut evaluator = AdaptiveSdfEvaluator::new(2, AdaptiveConfig::default());
 
@@ -326,11 +324,8 @@ mod tests {
 
     #[test]
     fn test_invalidation() {
-        let sdf = SdfCollider::new_static(
-            Box::new(unit_sphere()),
-            Vec3Fix::ZERO,
-            QuatFix::IDENTITY,
-        );
+        let sdf =
+            SdfCollider::new_static(Box::new(unit_sphere()), Vec3Fix::ZERO, QuatFix::IDENTITY);
 
         let mut evaluator = AdaptiveSdfEvaluator::new(1, AdaptiveConfig::default());
         evaluator.begin_frame();
@@ -338,6 +333,10 @@ mod tests {
 
         evaluator.invalidate(0);
         let level = evaluator.determine_level(0, Vec3Fix::from_f32(5.0, 0.0, 0.0));
-        assert_eq!(level, EvalLevel::Standard, "After invalidation should use Standard");
+        assert_eq!(
+            level,
+            EvalLevel::Standard,
+            "After invalidation should use Standard"
+        );
     }
 }

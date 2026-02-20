@@ -16,9 +16,9 @@
 //! compound.add_sphere(Sphere::new(Vec3Fix::ZERO, Fix128::ONE), Vec3Fix::from_int(3, 0, 0), QuatFix::IDENTITY);
 //! ```
 
-use crate::math::{Fix128, Vec3Fix, QuatFix};
-use crate::collider::{AABB, Sphere, Capsule, Support};
 use crate::box_collider::OrientedBox;
+use crate::collider::{Capsule, Sphere, Support, AABB};
+use crate::math::{Fix128, QuatFix, Vec3Fix};
 
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
@@ -209,7 +209,12 @@ impl CompoundShape {
     }
 
     /// Support function for the compound shape (selects the child with maximum support)
-    pub fn support_world(&self, direction: Vec3Fix, body_pos: Vec3Fix, body_rot: QuatFix) -> Vec3Fix {
+    pub fn support_world(
+        &self,
+        direction: Vec3Fix,
+        body_pos: Vec3Fix,
+        body_rot: QuatFix,
+    ) -> Vec3Fix {
         let mut best = Vec3Fix::ZERO;
         let mut best_dot = Fix128::from_int(-1000000);
 
@@ -219,7 +224,10 @@ impl CompoundShape {
 
             let s = match &child.shape {
                 ShapeRef::Sphere(sphere) => {
-                    let shifted = Sphere::new(child_pos + child_rot.rotate_vec(sphere.center), sphere.radius);
+                    let shifted = Sphere::new(
+                        child_pos + child_rot.rotate_vec(sphere.center),
+                        sphere.radius,
+                    );
                     shifted.support(direction)
                 }
                 ShapeRef::Capsule(cap) => {
@@ -267,7 +275,8 @@ pub struct TransformedCompound<'a> {
 
 impl<'a> Support for TransformedCompound<'a> {
     fn support(&self, direction: Vec3Fix) -> Vec3Fix {
-        self.compound.support_world(direction, self.position, self.rotation)
+        self.compound
+            .support_world(direction, self.position, self.rotation)
     }
 }
 
@@ -330,7 +339,10 @@ mod tests {
 
         // Support in +X should come from the far sphere (center=10, radius=1 → 11)
         let s = compound.support_world(Vec3Fix::UNIT_X, Vec3Fix::ZERO, QuatFix::IDENTITY);
-        assert!(s.x >= Fix128::from_int(10), "Support should be from far sphere");
+        assert!(
+            s.x >= Fix128::from_int(10),
+            "Support should be from far sphere"
+        );
     }
 
     #[test]

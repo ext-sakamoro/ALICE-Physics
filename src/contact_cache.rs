@@ -11,8 +11,8 @@
 //! - **Warm starting**: Pre-apply previous frame's impulses for faster convergence
 //! - **Contact aging**: Auto-remove stale contacts
 
-use crate::math::{Fix128, Vec3Fix};
 use crate::collider::Contact;
+use crate::math::{Fix128, Vec3Fix};
 
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
@@ -74,9 +74,15 @@ impl BodyPairKey {
     #[inline]
     pub fn new(a: usize, b: usize) -> Self {
         if a < b {
-            Self { body_a: a as u32, body_b: b as u32 }
+            Self {
+                body_a: a as u32,
+                body_b: b as u32,
+            }
         } else {
-            Self { body_a: b as u32, body_b: a as u32 }
+            Self {
+                body_a: b as u32,
+                body_b: a as u32,
+            }
         }
     }
 }
@@ -137,9 +143,8 @@ impl ContactManifold {
             let lambda_t2 = self.points[idx].lambda_t2;
             let age = self.points[idx].age;
 
-            self.points[idx] = CachedContactPoint::new(
-                local_a, local_b, contact.normal, contact.depth,
-            );
+            self.points[idx] =
+                CachedContactPoint::new(local_a, local_b, contact.normal, contact.depth);
             self.points[idx].lambda_n = lambda_n;
             self.points[idx].lambda_t1 = lambda_t1;
             self.points[idx].lambda_t2 = lambda_t2;
@@ -147,7 +152,10 @@ impl ContactManifold {
         } else if self.points.len() < MAX_MANIFOLD_POINTS {
             // Add new point
             self.points.push(CachedContactPoint::new(
-                local_a, local_b, contact.normal, contact.depth,
+                local_a,
+                local_b,
+                contact.normal,
+                contact.depth,
             ));
         } else {
             // Replace shallowest point
@@ -160,9 +168,8 @@ impl ContactManifold {
                 }
             }
             if contact.depth > shallowest_depth {
-                self.points[shallowest_idx] = CachedContactPoint::new(
-                    local_a, local_b, contact.normal, contact.depth,
-                );
+                self.points[shallowest_idx] =
+                    CachedContactPoint::new(local_a, local_b, contact.normal, contact.depth);
             }
         }
 
@@ -217,7 +224,13 @@ impl ContactManifold {
     }
 
     /// Store solver impulses back into the cache
-    pub fn store_impulses(&mut self, point_idx: usize, lambda_n: Fix128, lambda_t1: Fix128, lambda_t2: Fix128) {
+    pub fn store_impulses(
+        &mut self,
+        point_idx: usize,
+        lambda_n: Fix128,
+        lambda_t1: Fix128,
+        lambda_t2: Fix128,
+    ) {
         if point_idx < self.points.len() {
             self.points[point_idx].lambda_n = lambda_n;
             self.points[point_idx].lambda_t1 = lambda_t1;
@@ -252,7 +265,12 @@ impl ContactCache {
     }
 
     /// Find or create manifold for a body pair
-    pub fn get_or_create(&mut self, pair: BodyPairKey, friction: Fix128, restitution: Fix128) -> &mut ContactManifold {
+    pub fn get_or_create(
+        &mut self,
+        pair: BodyPairKey,
+        friction: Fix128,
+        restitution: Fix128,
+    ) -> &mut ContactManifold {
         // Find existing using HashMap (O(1)) with std feature, or linear scan (O(n)) without
         #[cfg(feature = "std")]
         let pos = self.pair_index.get(&pair).copied();
@@ -266,13 +284,15 @@ impl ContactCache {
             #[cfg(feature = "std")]
             {
                 let idx = self.manifolds.len();
-                self.manifolds.push(ContactManifold::new(pair, friction, restitution));
+                self.manifolds
+                    .push(ContactManifold::new(pair, friction, restitution));
                 self.pair_index.insert(pair, idx);
                 self.manifolds.last_mut().unwrap()
             }
             #[cfg(not(feature = "std"))]
             {
-                self.manifolds.push(ContactManifold::new(pair, friction, restitution));
+                self.manifolds
+                    .push(ContactManifold::new(pair, friction, restitution));
                 self.manifolds.last_mut().unwrap()
             }
         }
@@ -336,10 +356,7 @@ impl ContactCache {
     ///
     /// Pre-applies accumulated impulses from the previous frame's solution,
     /// scaled by `warm_start_factor`. This dramatically improves convergence.
-    pub fn apply_warm_start(
-        &self,
-        bodies: &mut [crate::solver::RigidBody],
-    ) {
+    pub fn apply_warm_start(&self, bodies: &mut [crate::solver::RigidBody]) {
         let factor = self.warm_start_factor;
 
         for manifold in &self.manifolds {
@@ -360,10 +377,12 @@ impl ContactCache {
                 let total_impulse = impulse_n + impulse_t;
 
                 if !bodies[a_idx].inv_mass.is_zero() {
-                    bodies[a_idx].velocity = bodies[a_idx].velocity + total_impulse * bodies[a_idx].inv_mass;
+                    bodies[a_idx].velocity =
+                        bodies[a_idx].velocity + total_impulse * bodies[a_idx].inv_mass;
                 }
                 if !bodies[b_idx].inv_mass.is_zero() {
-                    bodies[b_idx].velocity = bodies[b_idx].velocity - total_impulse * bodies[b_idx].inv_mass;
+                    bodies[b_idx].velocity =
+                        bodies[b_idx].velocity - total_impulse * bodies[b_idx].inv_mass;
                 }
             }
         }
@@ -413,7 +432,8 @@ mod tests {
     #[test]
     fn test_manifold_add_point() {
         let pair = BodyPairKey::new(0, 1);
-        let mut manifold = ContactManifold::new(pair, Fix128::from_ratio(3, 10), Fix128::from_ratio(2, 10));
+        let mut manifold =
+            ContactManifold::new(pair, Fix128::from_ratio(3, 10), Fix128::from_ratio(2, 10));
 
         let contact = Contact {
             depth: Fix128::from_ratio(1, 10),
@@ -429,7 +449,8 @@ mod tests {
     #[test]
     fn test_manifold_max_points() {
         let pair = BodyPairKey::new(0, 1);
-        let mut manifold = ContactManifold::new(pair, Fix128::from_ratio(3, 10), Fix128::from_ratio(2, 10));
+        let mut manifold =
+            ContactManifold::new(pair, Fix128::from_ratio(3, 10), Fix128::from_ratio(2, 10));
 
         // Add 5 distinct points — should cap at 4
         for i in 0..5 {
@@ -452,7 +473,8 @@ mod tests {
     #[test]
     fn test_manifold_warm_start_preserved() {
         let pair = BodyPairKey::new(0, 1);
-        let mut manifold = ContactManifold::new(pair, Fix128::from_ratio(3, 10), Fix128::from_ratio(2, 10));
+        let mut manifold =
+            ContactManifold::new(pair, Fix128::from_ratio(3, 10), Fix128::from_ratio(2, 10));
 
         let contact = Contact {
             depth: Fix128::from_ratio(1, 10),
@@ -479,7 +501,8 @@ mod tests {
 
         let pair = BodyPairKey::new(0, 1);
         {
-            let manifold = cache.get_or_create(pair, Fix128::from_ratio(3, 10), Fix128::from_ratio(2, 10));
+            let manifold =
+                cache.get_or_create(pair, Fix128::from_ratio(3, 10), Fix128::from_ratio(2, 10));
             let contact = Contact {
                 depth: Fix128::from_ratio(1, 10),
                 normal: Vec3Fix::UNIT_Y,
@@ -521,7 +544,8 @@ mod tests {
         let pair = BodyPairKey::new(0, 1);
 
         {
-            let manifold = cache.get_or_create(pair, Fix128::from_ratio(3, 10), Fix128::from_ratio(2, 10));
+            let manifold =
+                cache.get_or_create(pair, Fix128::from_ratio(3, 10), Fix128::from_ratio(2, 10));
             let contact = Contact {
                 depth: Fix128::from_ratio(1, 10),
                 normal: Vec3Fix::UNIT_Y,

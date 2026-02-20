@@ -9,15 +9,14 @@
 //! | L3 | Batch API (positions/velocities) | FFI amortization |
 //! | L4 | `#[repr(C)]` FrameInput (20 bytes) | Direct buffer cast |
 
+use numpy::{IntoPyArray, PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray2};
 use pyo3::prelude::*;
-use numpy::{PyArray1, PyArray2, PyReadonlyArray2, IntoPyArray, PyArrayMethods};
 
 use crate::math::{Fix128, Vec3Fix};
-use crate::solver::{PhysicsWorld, PhysicsConfig, RigidBody};
 use crate::netcode::{
-    DeterministicSimulation, FrameInput, SimulationChecksum,
-    NetcodeConfig, DefaultInputApplicator,
+    DefaultInputApplicator, DeterministicSimulation, FrameInput, NetcodeConfig, SimulationChecksum,
 };
+use crate::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
 
 // ============================================================================
 // PyPhysicsWorld — Core physics world
@@ -56,9 +55,7 @@ impl PyPhysicsWorld {
     ///
     /// Returns the body index.
     fn add_static_body(&mut self, x: f64, y: f64, z: f64) -> usize {
-        let body = RigidBody::new_static(
-            Vec3Fix::from_f32(x as f32, y as f32, z as f32),
-        );
+        let body = RigidBody::new_static(Vec3Fix::from_f32(x as f32, y as f32, z as f32));
         self.inner.add_body(body)
     }
 
@@ -115,7 +112,9 @@ impl PyPhysicsWorld {
     /// Get a single body's position as (x, y, z) tuple.
     fn get_position(&self, body_id: usize) -> PyResult<(f64, f64, f64)> {
         if body_id >= self.inner.bodies.len() {
-            return Err(pyo3::exceptions::PyIndexError::new_err("body_id out of range"));
+            return Err(pyo3::exceptions::PyIndexError::new_err(
+                "body_id out of range",
+            ));
         }
         let (x, y, z) = self.inner.bodies[body_id].position.to_f32();
         Ok((x as f64, y as f64, z as f64))
@@ -124,7 +123,9 @@ impl PyPhysicsWorld {
     /// Set a body's velocity.
     fn set_velocity(&mut self, body_id: usize, vx: f64, vy: f64, vz: f64) -> PyResult<()> {
         if body_id >= self.inner.bodies.len() {
-            return Err(pyo3::exceptions::PyIndexError::new_err("body_id out of range"));
+            return Err(pyo3::exceptions::PyIndexError::new_err(
+                "body_id out of range",
+            ));
         }
         self.inner.bodies[body_id].velocity = Vec3Fix::from_f32(vx as f32, vy as f32, vz as f32);
         Ok(())
@@ -155,7 +156,7 @@ impl PyPhysicsWorld {
 
         if shape.len() != 2 || shape[1] != 4 {
             return Err(pyo3::exceptions::PyValueError::new_err(
-                "Expected (N, 4) array with columns [x, y, z, mass]"
+                "Expected (N, 4) array with columns [x, y, z, mass]",
             ));
         }
 
@@ -182,21 +183,27 @@ impl PyPhysicsWorld {
     /// Set velocities for all bodies from a NumPy (N, 3) array.
     ///
     /// GIL released during the update.
-    fn set_velocities_batch(&mut self, py: Python<'_>, data: PyReadonlyArray2<f64>) -> PyResult<()> {
+    fn set_velocities_batch(
+        &mut self,
+        py: Python<'_>,
+        data: PyReadonlyArray2<f64>,
+    ) -> PyResult<()> {
         let array = data.as_array();
         let shape = array.shape();
 
         if shape.len() != 2 || shape[1] != 3 {
             return Err(pyo3::exceptions::PyValueError::new_err(
-                "Expected (N, 3) array with columns [vx, vy, vz]"
+                "Expected (N, 3) array with columns [vx, vy, vz]",
             ));
         }
 
         let n = shape[0];
         if n != self.inner.bodies.len() {
-            return Err(pyo3::exceptions::PyValueError::new_err(
-                format!("Array size {} does not match body count {}", n, self.inner.bodies.len())
-            ));
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "Array size {} does not match body count {}",
+                n,
+                self.inner.bodies.len()
+            )));
         }
 
         // Collect velocities before GIL release
@@ -219,13 +226,17 @@ impl PyPhysicsWorld {
     }
 
     /// Apply impulses to specified bodies. data is (M, 4) where columns are: body_id, ix, iy, iz
-    fn apply_impulses_batch(&mut self, py: Python<'_>, data: PyReadonlyArray2<f64>) -> PyResult<()> {
+    fn apply_impulses_batch(
+        &mut self,
+        py: Python<'_>,
+        data: PyReadonlyArray2<f64>,
+    ) -> PyResult<()> {
         let array = data.as_array();
         let shape = array.shape();
 
         if shape.len() != 2 || shape[1] != 4 {
             return Err(pyo3::exceptions::PyValueError::new_err(
-                "Expected (M, 4) array with columns [body_id, ix, iy, iz]"
+                "Expected (M, 4) array with columns [body_id, ix, iy, iz]",
             ));
         }
 
@@ -246,9 +257,11 @@ impl PyPhysicsWorld {
         let body_count = self.inner.bodies.len();
         for (body_id, _) in &impulses {
             if *body_id >= body_count {
-                return Err(pyo3::exceptions::PyIndexError::new_err(
-                    format!("body_id {} out of range (max: {})", body_id, body_count - 1)
-                ));
+                return Err(pyo3::exceptions::PyIndexError::new_err(format!(
+                    "body_id {} out of range (max: {})",
+                    body_id,
+                    body_count - 1
+                )));
             }
         }
 
@@ -359,22 +372,19 @@ impl PyDeterministicSimulation {
     ///
     /// Returns:
     ///     Checksum (u64) for desync detection
-    fn advance_frame(
-        &mut self,
-        py: Python<'_>,
-        inputs: Vec<(u8, f64, f64, f64, u32)>,
-    ) -> u64 {
-        let frame_inputs: Vec<FrameInput> = inputs.iter().map(|&(pid, mx, my, mz, act)| {
-            FrameInput::new(pid)
-                .with_movement(Vec3Fix::from_f32(mx as f32, my as f32, mz as f32))
-                .with_actions(act)
-        }).collect();
+    fn advance_frame(&mut self, py: Python<'_>, inputs: Vec<(u8, f64, f64, f64, u32)>) -> u64 {
+        let frame_inputs: Vec<FrameInput> = inputs
+            .iter()
+            .map(|&(pid, mx, my, mz, act)| {
+                FrameInput::new(pid)
+                    .with_movement(Vec3Fix::from_f32(mx as f32, my as f32, mz as f32))
+                    .with_actions(act)
+            })
+            .collect();
 
         let checksum = py.allow_threads(|| {
-            self.inner.advance_frame_with_applicator(
-                &frame_inputs,
-                &DefaultInputApplicator::default(),
-            )
+            self.inner
+                .advance_frame_with_applicator(&frame_inputs, &DefaultInputApplicator::default())
         });
         checksum.0
     }
@@ -392,7 +402,8 @@ impl PyDeterministicSimulation {
 
     /// Verify a remote checksum. Returns None (frame not found), True (match), False (desync).
     fn verify_checksum(&self, frame: u64, remote_checksum: u64) -> Option<bool> {
-        self.inner.verify_checksum(frame, SimulationChecksum(remote_checksum))
+        self.inner
+            .verify_checksum(frame, SimulationChecksum(remote_checksum))
     }
 
     /// Get current frame number.
@@ -458,12 +469,20 @@ fn compute_checksum(py: Python<'_>, state_bytes: Vec<u8>) -> u64 {
 #[pyo3(signature = (player_id, move_x=0.0, move_y=0.0, move_z=0.0, actions=0, aim_x=0.0, aim_y=0.0, aim_z=0.0))]
 fn encode_frame_input(
     player_id: u8,
-    move_x: f64, move_y: f64, move_z: f64,
+    move_x: f64,
+    move_y: f64,
+    move_z: f64,
     actions: u32,
-    aim_x: f64, aim_y: f64, aim_z: f64,
+    aim_x: f64,
+    aim_y: f64,
+    aim_z: f64,
 ) -> Vec<u8> {
     let input = FrameInput::new(player_id)
-        .with_movement(Vec3Fix::from_f32(move_x as f32, move_y as f32, move_z as f32))
+        .with_movement(Vec3Fix::from_f32(
+            move_x as f32,
+            move_y as f32,
+            move_z as f32,
+        ))
         .with_actions(actions)
         .with_aim(Vec3Fix::from_f32(aim_x as f32, aim_y as f32, aim_z as f32));
     input.to_bytes().to_vec()
@@ -484,9 +503,13 @@ fn decode_frame_input(data: Vec<u8>) -> PyResult<(u8, f64, f64, f64, u32, f64, f
     let (ax, ay, az) = input.aim_direction.to_f32();
     Ok((
         input.player_id,
-        mx as f64, my as f64, mz as f64,
+        mx as f64,
+        my as f64,
+        mz as f64,
         input.actions,
-        ax as f64, ay as f64, az as f64,
+        ax as f64,
+        ay as f64,
+        az as f64,
     ))
 }
 

@@ -9,8 +9,8 @@
 //! Implement `DebugRenderer` trait for your graphics backend, then call
 //! `debug_draw_world()` each frame.
 
-use crate::math::{Fix128, Vec3Fix, QuatFix};
 use crate::collider::AABB;
+use crate::math::{Fix128, QuatFix, Vec3Fix};
 
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
@@ -145,7 +145,11 @@ impl DebugDrawData {
     /// Add a point
     #[inline]
     pub fn point(&mut self, position: Vec3Fix, color: DebugColor, size: Fix128) {
-        self.points.push(DebugPoint { position, color, size });
+        self.points.push(DebugPoint {
+            position,
+            color,
+            size,
+        });
     }
 
     /// Draw an AABB wireframe (12 edges)
@@ -184,9 +188,30 @@ impl DebugDrawData {
     /// Draw a sphere wireframe (3 rings: XY, XZ, YZ)
     pub fn sphere(&mut self, center: Vec3Fix, radius: Fix128, color: DebugColor) {
         let segments = 16;
-        self.draw_circle(center, Vec3Fix::UNIT_X, Vec3Fix::UNIT_Y, radius, segments, color);
-        self.draw_circle(center, Vec3Fix::UNIT_X, Vec3Fix::UNIT_Z, radius, segments, color);
-        self.draw_circle(center, Vec3Fix::UNIT_Y, Vec3Fix::UNIT_Z, radius, segments, color);
+        self.draw_circle(
+            center,
+            Vec3Fix::UNIT_X,
+            Vec3Fix::UNIT_Y,
+            radius,
+            segments,
+            color,
+        );
+        self.draw_circle(
+            center,
+            Vec3Fix::UNIT_X,
+            Vec3Fix::UNIT_Z,
+            radius,
+            segments,
+            color,
+        );
+        self.draw_circle(
+            center,
+            Vec3Fix::UNIT_Y,
+            Vec3Fix::UNIT_Z,
+            radius,
+            segments,
+            color,
+        );
     }
 
     /// Draw a circle (ring)
@@ -253,7 +278,11 @@ pub fn debug_draw_world(
 
     for (_i, body) in world.bodies.iter().enumerate() {
         let is_static = body.is_static();
-        let body_color = if is_static { DebugColor::GRAY } else { DebugColor::GREEN };
+        let body_color = if is_static {
+            DebugColor::GRAY
+        } else {
+            DebugColor::GREEN
+        };
 
         if flags.draw_centers {
             data.point(body.position, body_color, Fix128::from_ratio(1, 10));

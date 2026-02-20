@@ -15,9 +15,9 @@
 //!
 //! Author: Moroya Sakamoto
 
-use crate::math::{Fix128, Vec3Fix};
 use crate::collider::Sphere;
-use crate::raycast::{Ray, RayHit, ray_sphere, ray_plane};
+use crate::math::{Fix128, Vec3Fix};
+use crate::raycast::{ray_plane, ray_sphere, Ray, RayHit};
 use crate::sdf_collider::SdfCollider;
 use crate::solver::RigidBody;
 
@@ -52,11 +52,11 @@ pub struct CharacterConfig {
 impl Default for CharacterConfig {
     fn default() -> Self {
         Self {
-            radius: Fix128::from_ratio(3, 10),            // 0.3
-            height: Fix128::from_ratio(18, 10),           // 1.8
-            max_slope_angle: Fix128::from_ratio(785, 1000), // ~0.785 rad (45 degrees)
-            step_height: Fix128::from_ratio(3, 10),       // 0.3
-            skin_width: Fix128::from_ratio(1, 100),       // 0.01
+            radius: Fix128::from_ratio(3, 10),                // 0.3
+            height: Fix128::from_ratio(18, 10),               // 1.8
+            max_slope_angle: Fix128::from_ratio(785, 1000),   // ~0.785 rad (45 degrees)
+            step_height: Fix128::from_ratio(3, 10),           // 0.3
+            skin_width: Fix128::from_ratio(1, 100),           // 0.01
             ground_probe_distance: Fix128::from_ratio(1, 10), // 0.1
             max_slides: 4,
             push_force: Fix128::from_int(5),
@@ -300,10 +300,7 @@ impl CharacterController {
 
             // Treat body as a sphere with the character's collision radius expanded
             let body_sphere = Sphere::new(body.position, self.config.radius);
-            let expanded = Sphere::new(
-                body_sphere.center,
-                body_sphere.radius + char_sphere.radius,
-            );
+            let expanded = Sphere::new(body_sphere.center, body_sphere.radius + char_sphere.radius);
 
             if let Some(mut hit) = ray_sphere(&ray, &expanded, best_t) {
                 hit.body_index = i;
@@ -500,7 +497,11 @@ mod tests {
         let feet = cc.feet_position();
         // height=1.8, so half_height=0.9, feet = 5 - 0.9 + 0.3 = 4.4
         let feet_y = feet.y.to_f32();
-        assert!(feet_y > 4.0 && feet_y < 5.0, "Feet should be below center, got {}", feet_y);
+        assert!(
+            feet_y > 4.0 && feet_y < 5.0,
+            "Feet should be below center, got {}",
+            feet_y
+        );
     }
 
     #[test]
@@ -526,7 +527,10 @@ mod tests {
 
         // If grounded on the platform, platform_velocity should be tracked
         if cc.grounded {
-            assert_eq!(cc.platform_velocity.x.hi, 5, "Should track platform velocity");
+            assert_eq!(
+                cc.platform_velocity.x.hi, 5,
+                "Should track platform velocity"
+            );
         }
     }
 
@@ -539,7 +543,10 @@ mod tests {
         let bodies = vec![dynamic];
 
         let pushes = cc.compute_push_impulses(&bodies, Fix128::from_ratio(1, 2));
-        assert!(!pushes.is_empty(), "Should generate push impulse for overlapping dynamic body");
+        assert!(
+            !pushes.is_empty(),
+            "Should generate push impulse for overlapping dynamic body"
+        );
         assert_eq!(pushes[0].body_index, 0);
     }
 

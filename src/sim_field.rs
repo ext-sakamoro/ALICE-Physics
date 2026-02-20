@@ -43,19 +43,36 @@ pub struct ScalarField3D {
 impl ScalarField3D {
     /// Create a zero-filled field with given resolution and bounds
     pub fn new(
-        nx: usize, ny: usize, nz: usize,
+        nx: usize,
+        ny: usize,
+        nz: usize,
         min: (f32, f32, f32),
         max: (f32, f32, f32),
     ) -> Self {
-        let cx = if nx > 1 { (max.0 - min.0) / (nx - 1) as f32 } else { 1.0 };
-        let cy = if ny > 1 { (max.1 - min.1) / (ny - 1) as f32 } else { 1.0 };
-        let cz = if nz > 1 { (max.2 - min.2) / (nz - 1) as f32 } else { 1.0 };
+        let cx = if nx > 1 {
+            (max.0 - min.0) / (nx - 1) as f32
+        } else {
+            1.0
+        };
+        let cy = if ny > 1 {
+            (max.1 - min.1) / (ny - 1) as f32
+        } else {
+            1.0
+        };
+        let cz = if nz > 1 {
+            (max.2 - min.2) / (nz - 1) as f32
+        } else {
+            1.0
+        };
 
         let n = nx * ny * nz;
         Self {
             data: vec![0.0; n],
-            nx, ny, nz,
-            min, max,
+            nx,
+            ny,
+            nz,
+            min,
+            max,
             cell_size: (cx, cy, cz),
             inv_cell_size: (1.0 / cx, 1.0 / cy, 1.0 / cz),
             scratch: vec![0.0; n],
@@ -64,7 +81,9 @@ impl ScalarField3D {
 
     /// Create a field filled with a constant value
     pub fn new_filled(
-        nx: usize, ny: usize, nz: usize,
+        nx: usize,
+        ny: usize,
+        nz: usize,
         min: (f32, f32, f32),
         max: (f32, f32, f32),
         value: f32,
@@ -260,7 +279,11 @@ impl ScalarField3D {
                     let ym = if iy > 0 { self.data[idx - nx] } else { c };
                     let yp = if iy + 1 < ny { self.data[idx + nx] } else { c };
                     let zm = if iz > 0 { self.data[idx - ny_nx] } else { c };
-                    let zp = if iz + 1 < nz { self.data[idx + ny_nx] } else { c };
+                    let zp = if iz + 1 < nz {
+                        self.data[idx + ny_nx]
+                    } else {
+                        c
+                    };
 
                     let laplacian = (xm + xp - 2.0 * c) * inv_dx2
                         + (ym + yp - 2.0 * c) * inv_dy2
@@ -293,8 +316,12 @@ impl ScalarField3D {
     /// Clamp all values to range
     pub fn clamp(&mut self, lo: f32, hi: f32) {
         for v in &mut self.data {
-            if *v < lo { *v = lo; }
-            if *v > hi { *v = hi; }
+            if *v < lo {
+                *v = lo;
+            }
+            if *v > hi {
+                *v = hi;
+            }
         }
     }
 
@@ -313,9 +340,12 @@ impl ScalarField3D {
     /// Check if a world-space point is inside the field bounds
     #[inline]
     pub fn contains(&self, x: f32, y: f32, z: f32) -> bool {
-        x >= self.min.0 && x <= self.max.0
-            && y >= self.min.1 && y <= self.max.1
-            && z >= self.min.2 && z <= self.max.2
+        x >= self.min.0
+            && x <= self.max.0
+            && y >= self.min.1
+            && y <= self.max.1
+            && z >= self.min.2
+            && z <= self.max.2
     }
 }
 
@@ -337,7 +367,9 @@ pub struct VectorField3D {
 impl VectorField3D {
     /// Create a zero vector field
     pub fn new(
-        nx: usize, ny: usize, nz: usize,
+        nx: usize,
+        ny: usize,
+        nz: usize,
         min: (f32, f32, f32),
         max: (f32, f32, f32),
     ) -> Self {
@@ -414,7 +446,11 @@ mod tests {
 
         // Corner should be exact
         let corner = field.sample(1.0, 0.0, 0.0);
-        assert!((corner - 10.0).abs() < 0.01, "Expected ~10.0, got {}", corner);
+        assert!(
+            (corner - 10.0).abs() < 0.01,
+            "Expected ~10.0, got {}",
+            corner
+        );
     }
 
     #[test]
@@ -424,7 +460,11 @@ mod tests {
 
         // Center should have high value
         let center = field.sample(0.0, 0.0, 0.0);
-        assert!(center > 0.5, "Center should be high after splat, got {}", center);
+        assert!(
+            center > 0.5,
+            "Center should be high after splat, got {}",
+            center
+        );
 
         // Far corner should be zero
         let far = field.sample(1.0, 1.0, 1.0);
@@ -467,7 +507,11 @@ mod tests {
         }
 
         let (gx, gy, gz) = field.gradient(0.0, 0.0, 0.0);
-        assert!((gx - 1.0).abs() < 0.2, "X gradient should be ~1.0, got {}", gx);
+        assert!(
+            (gx - 1.0).abs() < 0.2,
+            "X gradient should be ~1.0, got {}",
+            gx
+        );
         assert!(gy.abs() < 0.1, "Y gradient should be ~0, got {}", gy);
         assert!(gz.abs() < 0.1, "Z gradient should be ~0, got {}", gz);
     }
@@ -479,6 +523,10 @@ mod tests {
 
         field.decay(1.0, 1.0); // e^(-1) ≈ 0.368
         let v = field.get(1, 1, 1);
-        assert!((v - 36.8).abs() < 1.0, "After decay, expected ~36.8, got {}", v);
+        assert!(
+            (v - 36.8).abs() < 1.0,
+            "After decay, expected ~36.8, got {}",
+            v
+        );
     }
 }

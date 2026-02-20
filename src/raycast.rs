@@ -9,8 +9,8 @@
 //! - Closest hit and any-hit modes
 //! - Shape casting (swept sphere)
 
+use crate::collider::{Capsule, Sphere, AABB};
 use crate::math::{Fix128, Vec3Fix};
-use crate::collider::{AABB, Sphere, Capsule};
 
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
@@ -25,7 +25,10 @@ pub struct Ray {
 }
 
 /// Ray-parallel epsilon threshold
-const RAY_PARALLEL_EPSILON: Fix128 = Fix128 { hi: 0, lo: 0x0000000100000000 };
+const RAY_PARALLEL_EPSILON: Fix128 = Fix128 {
+    hi: 0,
+    lo: 0x0000000100000000,
+};
 
 impl Ray {
     /// Create a new ray (direction is normalized internally)
@@ -78,7 +81,12 @@ pub fn ray_sphere(ray: &Ray, sphere: &Sphere, max_t: Fix128) -> Option<RayHit> {
     if t >= Fix128::ZERO && t <= max_t {
         let point = ray.at(t);
         let normal = (point - sphere.center).normalize();
-        return Some(RayHit { t, point, normal, body_index: 0 });
+        return Some(RayHit {
+            t,
+            point,
+            normal,
+            body_index: 0,
+        });
     }
 
     // Try far intersection
@@ -86,7 +94,12 @@ pub fn ray_sphere(ray: &Ray, sphere: &Sphere, max_t: Fix128) -> Option<RayHit> {
     if t >= Fix128::ZERO && t <= max_t {
         let point = ray.at(t);
         let normal = (point - sphere.center).normalize();
-        return Some(RayHit { t, point, normal, body_index: 0 });
+        return Some(RayHit {
+            t,
+            point,
+            normal,
+            body_index: 0,
+        });
     }
 
     None
@@ -113,7 +126,12 @@ pub fn ray_aabb(ray: &Ray, aabb: &AABB, max_t: Fix128) -> Option<RayHit> {
     // Compute normal from closest face
     let normal = aabb_hit_normal(point, aabb);
 
-    Some(RayHit { t, point, normal, body_index: 0 })
+    Some(RayHit {
+        t,
+        point,
+        normal,
+        body_index: 0,
+    })
 }
 
 /// Ray-AABB interval computation (returns (t_min, t_max))
@@ -127,10 +145,14 @@ fn ray_aabb_interval(ray: &Ray, aabb: &AABB) -> Option<(Fix128, Fix128)> {
         let inv_d = Fix128::ONE / ray.direction.x;
         let mut t0 = (aabb.min.x - ray.origin.x) * inv_d;
         let mut t1 = (aabb.max.x - ray.origin.x) * inv_d;
-        if t0 > t1 { core::mem::swap(&mut t0, &mut t1); }
+        if t0 > t1 {
+            core::mem::swap(&mut t0, &mut t1);
+        }
         t_min = if t0 > t_min { t0 } else { t_min };
         t_max = if t1 < t_max { t1 } else { t_max };
-        if t_min > t_max { return None; }
+        if t_min > t_max {
+            return None;
+        }
     } else {
         if ray.origin.x < aabb.min.x || ray.origin.x > aabb.max.x {
             return None;
@@ -142,10 +164,14 @@ fn ray_aabb_interval(ray: &Ray, aabb: &AABB) -> Option<(Fix128, Fix128)> {
         let inv_d = Fix128::ONE / ray.direction.y;
         let mut t0 = (aabb.min.y - ray.origin.y) * inv_d;
         let mut t1 = (aabb.max.y - ray.origin.y) * inv_d;
-        if t0 > t1 { core::mem::swap(&mut t0, &mut t1); }
+        if t0 > t1 {
+            core::mem::swap(&mut t0, &mut t1);
+        }
         t_min = if t0 > t_min { t0 } else { t_min };
         t_max = if t1 < t_max { t1 } else { t_max };
-        if t_min > t_max { return None; }
+        if t_min > t_max {
+            return None;
+        }
     } else {
         if ray.origin.y < aabb.min.y || ray.origin.y > aabb.max.y {
             return None;
@@ -157,10 +183,14 @@ fn ray_aabb_interval(ray: &Ray, aabb: &AABB) -> Option<(Fix128, Fix128)> {
         let inv_d = Fix128::ONE / ray.direction.z;
         let mut t0 = (aabb.min.z - ray.origin.z) * inv_d;
         let mut t1 = (aabb.max.z - ray.origin.z) * inv_d;
-        if t0 > t1 { core::mem::swap(&mut t0, &mut t1); }
+        if t0 > t1 {
+            core::mem::swap(&mut t0, &mut t1);
+        }
         t_min = if t0 > t_min { t0 } else { t_min };
         t_max = if t1 < t_max { t1 } else { t_max };
-        if t_min > t_max { return None; }
+        if t_min > t_max {
+            return None;
+        }
     } else {
         if ray.origin.z < aabb.min.z || ray.origin.z > aabb.max.z {
             return None;
@@ -191,21 +221,33 @@ fn aabb_hit_normal(point: Vec3Fix, aabb: &AABB) -> Vec3Fix {
 
     if dx < dy && dx < dz {
         Vec3Fix::new(
-            if local.x >= Fix128::ZERO { Fix128::ONE } else { Fix128::NEG_ONE },
+            if local.x >= Fix128::ZERO {
+                Fix128::ONE
+            } else {
+                Fix128::NEG_ONE
+            },
             Fix128::ZERO,
             Fix128::ZERO,
         )
     } else if dy < dz {
         Vec3Fix::new(
             Fix128::ZERO,
-            if local.y >= Fix128::ZERO { Fix128::ONE } else { Fix128::NEG_ONE },
+            if local.y >= Fix128::ZERO {
+                Fix128::ONE
+            } else {
+                Fix128::NEG_ONE
+            },
             Fix128::ZERO,
         )
     } else {
         Vec3Fix::new(
             Fix128::ZERO,
             Fix128::ZERO,
-            if local.z >= Fix128::ZERO { Fix128::ONE } else { Fix128::NEG_ONE },
+            if local.z >= Fix128::ZERO {
+                Fix128::ONE
+            } else {
+                Fix128::NEG_ONE
+            },
         )
     }
 }
@@ -259,7 +301,12 @@ pub fn ray_capsule(ray: &Ray, capsule: &Capsule, max_t: Fix128) -> Option<RayHit
         if proj >= Fix128::ZERO && proj <= Fix128::ONE {
             let center_on_axis = capsule.a + ab * proj;
             let normal = (point - center_on_axis).normalize();
-            return Some(RayHit { t, point, normal, body_index: 0 });
+            return Some(RayHit {
+                t,
+                point,
+                normal,
+                body_index: 0,
+            });
         }
     }
 
@@ -276,7 +323,11 @@ pub fn ray_capsule(ray: &Ray, capsule: &Capsule, max_t: Fix128) -> Option<RayHit
 fn closer_hit(a: Option<RayHit>, b: Option<RayHit>) -> Option<RayHit> {
     match (a, b) {
         (Some(ha), Some(hb)) => {
-            if ha.t < hb.t { Some(ha) } else { Some(hb) }
+            if ha.t < hb.t {
+                Some(ha)
+            } else {
+                Some(hb)
+            }
         }
         (Some(h), None) | (None, Some(h)) => Some(h),
         (None, None) => None,
@@ -286,7 +337,12 @@ fn closer_hit(a: Option<RayHit>, b: Option<RayHit>) -> Option<RayHit> {
 /// Ray-Plane intersection
 ///
 /// Plane defined by normal and offset: dot(normal, point) = offset
-pub fn ray_plane(ray: &Ray, plane_normal: Vec3Fix, plane_offset: Fix128, max_t: Fix128) -> Option<RayHit> {
+pub fn ray_plane(
+    ray: &Ray,
+    plane_normal: Vec3Fix,
+    plane_offset: Fix128,
+    max_t: Fix128,
+) -> Option<RayHit> {
     let denom = ray.direction.dot(plane_normal);
 
     if denom.abs() < RAY_PARALLEL_EPSILON {
@@ -297,8 +353,17 @@ pub fn ray_plane(ray: &Ray, plane_normal: Vec3Fix, plane_offset: Fix128, max_t: 
 
     if t >= Fix128::ZERO && t <= max_t {
         let point = ray.at(t);
-        let normal = if denom < Fix128::ZERO { plane_normal } else { -plane_normal };
-        Some(RayHit { t, point, normal, body_index: 0 })
+        let normal = if denom < Fix128::ZERO {
+            plane_normal
+        } else {
+            -plane_normal
+        };
+        Some(RayHit {
+            t,
+            point,
+            normal,
+            body_index: 0,
+        })
     } else {
         None
     }
@@ -397,10 +462,7 @@ pub fn sweep_sphere(
     max_t: Fix128,
 ) -> Option<RayHit> {
     // Equivalent to ray vs expanded sphere
-    let expanded = Sphere::new(
-        target_sphere.center,
-        target_sphere.radius + sphere.radius,
-    );
+    let expanded = Sphere::new(target_sphere.center, target_sphere.radius + sphere.radius);
     let ray = Ray::new(sphere.center, direction);
     ray_sphere(&ray, &expanded, max_t)
 }
@@ -411,10 +473,7 @@ mod tests {
 
     #[test]
     fn test_ray_sphere_hit() {
-        let ray = Ray::new(
-            Vec3Fix::from_int(-5, 0, 0),
-            Vec3Fix::UNIT_X,
-        );
+        let ray = Ray::new(Vec3Fix::from_int(-5, 0, 0), Vec3Fix::UNIT_X);
         let sphere = Sphere::new(Vec3Fix::ZERO, Fix128::ONE);
 
         let hit = ray_sphere(&ray, &sphere, Fix128::from_int(100)).unwrap();
@@ -426,10 +485,7 @@ mod tests {
 
     #[test]
     fn test_ray_sphere_miss() {
-        let ray = Ray::new(
-            Vec3Fix::from_int(-5, 5, 0),
-            Vec3Fix::UNIT_X,
-        );
+        let ray = Ray::new(Vec3Fix::from_int(-5, 5, 0), Vec3Fix::UNIT_X);
         let sphere = Sphere::new(Vec3Fix::ZERO, Fix128::ONE);
 
         assert!(ray_sphere(&ray, &sphere, Fix128::from_int(100)).is_none());
@@ -437,14 +493,8 @@ mod tests {
 
     #[test]
     fn test_ray_aabb_hit() {
-        let ray = Ray::new(
-            Vec3Fix::from_int(-5, 0, 0),
-            Vec3Fix::UNIT_X,
-        );
-        let aabb = AABB::new(
-            Vec3Fix::from_int(-1, -1, -1),
-            Vec3Fix::from_int(1, 1, 1),
-        );
+        let ray = Ray::new(Vec3Fix::from_int(-5, 0, 0), Vec3Fix::UNIT_X);
+        let aabb = AABB::new(Vec3Fix::from_int(-1, -1, -1), Vec3Fix::from_int(1, 1, 1));
 
         let hit = ray_aabb(&ray, &aabb, Fix128::from_int(100)).unwrap();
         let expected_t = Fix128::from_int(4); // -5 + 4 = -1
@@ -454,14 +504,8 @@ mod tests {
 
     #[test]
     fn test_ray_aabb_miss() {
-        let ray = Ray::new(
-            Vec3Fix::from_int(-5, 5, 0),
-            Vec3Fix::UNIT_X,
-        );
-        let aabb = AABB::new(
-            Vec3Fix::from_int(-1, -1, -1),
-            Vec3Fix::from_int(1, 1, 1),
-        );
+        let ray = Ray::new(Vec3Fix::from_int(-5, 5, 0), Vec3Fix::UNIT_X);
+        let aabb = AABB::new(Vec3Fix::from_int(-1, -1, -1), Vec3Fix::from_int(1, 1, 1));
 
         assert!(ray_aabb(&ray, &aabb, Fix128::from_int(100)).is_none());
     }
@@ -484,12 +528,7 @@ mod tests {
         let moving = Sphere::new(Vec3Fix::from_int(-5, 0, 0), Fix128::ONE);
         let target = Sphere::new(Vec3Fix::ZERO, Fix128::ONE);
 
-        let hit = sweep_sphere(
-            &moving,
-            Vec3Fix::UNIT_X,
-            &target,
-            Fix128::from_int(100),
-        );
+        let hit = sweep_sphere(&moving, Vec3Fix::UNIT_X, &target, Fix128::from_int(100));
         assert!(hit.is_some(), "Swept sphere should hit target");
         let t = hit.unwrap().t;
         // Should hit at distance 5 - 2 = 3 (center distance minus combined radii)
@@ -515,21 +554,29 @@ mod tests {
 
     #[test]
     fn test_raycast_any_spheres() {
-        let spheres = vec![
-            (Sphere::new(Vec3Fix::from_int(3, 0, 0), Fix128::ONE), 0),
-        ];
+        let spheres = vec![(Sphere::new(Vec3Fix::from_int(3, 0, 0), Fix128::ONE), 0)];
         let ray = Ray::new(Vec3Fix::from_int(-5, 0, 0), Vec3Fix::UNIT_X);
         assert!(raycast_any_spheres(&ray, &spheres, Fix128::from_int(100)));
 
         let miss_ray = Ray::new(Vec3Fix::from_int(-5, 10, 0), Vec3Fix::UNIT_X);
-        assert!(!raycast_any_spheres(&miss_ray, &spheres, Fix128::from_int(100)));
+        assert!(!raycast_any_spheres(
+            &miss_ray,
+            &spheres,
+            Fix128::from_int(100)
+        ));
     }
 
     #[test]
     fn test_raycast_all_aabbs() {
         let aabbs = vec![
-            (AABB::new(Vec3Fix::from_int(2, -1, -1), Vec3Fix::from_int(4, 1, 1)), 0),
-            (AABB::new(Vec3Fix::from_int(6, -1, -1), Vec3Fix::from_int(8, 1, 1)), 1),
+            (
+                AABB::new(Vec3Fix::from_int(2, -1, -1), Vec3Fix::from_int(4, 1, 1)),
+                0,
+            ),
+            (
+                AABB::new(Vec3Fix::from_int(6, -1, -1), Vec3Fix::from_int(8, 1, 1)),
+                1,
+            ),
         ];
         let ray = Ray::new(Vec3Fix::from_int(-5, 0, 0), Vec3Fix::UNIT_X);
         let hits = raycast_all_aabbs(&ray, &aabbs, Fix128::from_int(100));
@@ -540,10 +587,7 @@ mod tests {
 
     #[test]
     fn test_ray_capsule() {
-        let ray = Ray::new(
-            Vec3Fix::from_int(-5, 0, 0),
-            Vec3Fix::UNIT_X,
-        );
+        let ray = Ray::new(Vec3Fix::from_int(-5, 0, 0), Vec3Fix::UNIT_X);
         let capsule = Capsule::new(
             Vec3Fix::from_int(0, -2, 0),
             Vec3Fix::from_int(0, 2, 0),
