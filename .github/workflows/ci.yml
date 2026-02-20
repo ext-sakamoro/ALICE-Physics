@@ -70,8 +70,8 @@ jobs:
           TOML
           echo "" > ../ALICE-Analytics/src/lib.rs
 
-      - name: Build (no default features)
-        run: cargo build --lib --no-default-features
+      - name: Build (minimal — std only)
+        run: cargo build --lib --no-default-features --features "std"
 
       - name: Build (core)
         run: cargo build --lib
