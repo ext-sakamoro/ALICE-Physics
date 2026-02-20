@@ -705,13 +705,13 @@ impl Vec3Fix {
     }
 
     /// Dot product
-    #[inline]
+    #[inline(always)]
     pub fn dot(self, rhs: Self) -> Fix128 {
         self.x * rhs.x + self.y * rhs.y + self.z * rhs.z
     }
 
     /// Cross product
-    #[inline]
+    #[inline(always)]
     pub fn cross(self, rhs: Self) -> Self {
         Self {
             x: self.y * rhs.z - self.z * rhs.y,
@@ -721,24 +721,40 @@ impl Vec3Fix {
     }
 
     /// Squared length (no sqrt)
-    #[inline]
+    #[inline(always)]
     pub fn length_squared(self) -> Fix128 {
         self.dot(self)
     }
 
     /// Length (magnitude)
-    #[inline]
+    #[inline(always)]
     pub fn length(self) -> Fix128 {
         self.length_squared().sqrt()
     }
 
     /// Normalize to unit length
+    #[inline(always)]
     pub fn normalize(self) -> Self {
         let len = self.length();
         if len.is_zero() {
             Self::ZERO
         } else {
             self / len
+        }
+    }
+
+    /// Normalize and return both the unit vector and the original length.
+    ///
+    /// Avoids double sqrt when both normalized direction and distance are needed.
+    /// Returns `(Self::ZERO, Fix128::ZERO)` if the vector is zero-length.
+    #[inline(always)]
+    pub fn normalize_with_length(self) -> (Self, Fix128) {
+        let len = self.length();
+        if len.is_zero() {
+            (Self::ZERO, Fix128::ZERO)
+        } else {
+            let inv_len = Fix128::ONE / len;
+            (self * inv_len, len)
         }
     }
 
@@ -949,22 +965,24 @@ impl QuatFix {
     }
 
     /// Magnitude
-    #[inline]
+    #[inline(always)]
     pub fn length(self) -> Fix128 {
         self.length_squared().sqrt()
     }
 
-    /// Normalize to unit quaternion
+    /// Normalize to unit quaternion (reciprocal: 1 division + 4 multiplications)
+    #[inline(always)]
     pub fn normalize(self) -> Self {
         let len = self.length();
         if len.is_zero() {
             Self::IDENTITY
         } else {
+            let inv_len = Fix128::ONE / len;
             Self {
-                x: self.x / len,
-                y: self.y / len,
-                z: self.z / len,
-                w: self.w / len,
+                x: self.x * inv_len,
+                y: self.y * inv_len,
+                z: self.z * inv_len,
+                w: self.w * inv_len,
             }
         }
     }

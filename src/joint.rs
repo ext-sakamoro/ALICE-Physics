@@ -696,13 +696,12 @@ fn solve_ball_joint(joint: &BallJoint, bodies: &mut [crate::solver::RigidBody], 
     let anchor_b = body_b.position + body_b.rotation.rotate_vec(joint.local_anchor_b);
 
     let delta = anchor_b - anchor_a;
-    let distance = delta.length();
+    let (normal, distance) = delta.normalize_with_length();
 
     if distance.is_zero() {
         return;
     }
 
-    let normal = delta / distance;
     let compliance_term = joint.compliance / (dt * dt);
     let w_sum = body_a.inv_mass + body_b.inv_mass + compliance_term;
 
@@ -710,7 +709,8 @@ fn solve_ball_joint(joint: &BallJoint, bodies: &mut [crate::solver::RigidBody], 
         return;
     }
 
-    let lambda = distance / w_sum;
+    let inv_w_sum = Fix128::ONE / w_sum;
+    let lambda = distance * inv_w_sum;
     let correction = normal * lambda;
 
     if !body_a.inv_mass.is_zero() {
@@ -733,15 +733,15 @@ fn solve_hinge_joint(joint: &HingeJoint, bodies: &mut [crate::solver::RigidBody]
     let anchor_b = body_b.position + body_b.rotation.rotate_vec(joint.local_anchor_b);
 
     let delta = anchor_b - anchor_a;
-    let distance = delta.length();
+    let (normal, distance) = delta.normalize_with_length();
 
     if !distance.is_zero() {
-        let normal = delta / distance;
         let compliance_term = joint.compliance / (dt * dt);
         let w_sum = body_a.inv_mass + body_b.inv_mass + compliance_term;
 
         if !w_sum.is_zero() {
-            let lambda = distance / w_sum;
+            let inv_w_sum = Fix128::ONE / w_sum;
+            let lambda = distance * inv_w_sum;
             let correction = normal * lambda;
 
             if !body_a.inv_mass.is_zero() {
@@ -760,15 +760,15 @@ fn solve_hinge_joint(joint: &HingeJoint, bodies: &mut [crate::solver::RigidBody]
     let world_axis_b = body_b.rotation.rotate_vec(joint.local_axis_b);
 
     let axis_error = world_axis_a.cross(world_axis_b);
-    let error_mag = axis_error.length();
+    let (correction_axis, error_mag) = axis_error.normalize_with_length();
 
     if !error_mag.is_zero() {
         let angular_compliance = joint.angular_compliance / (dt * dt);
         let w_ang = body_a.inv_inertia.length() + body_b.inv_inertia.length() + angular_compliance;
 
         if !w_ang.is_zero() {
-            let correction_axis = axis_error / error_mag;
-            let angular_lambda = error_mag / w_ang;
+            let inv_w_ang = Fix128::ONE / w_ang;
+            let angular_lambda = error_mag * inv_w_ang;
 
             apply_angular_correction(
                 bodies,
@@ -794,24 +794,26 @@ fn solve_hinge_joint(joint: &HingeJoint, bodies: &mut [crate::solver::RigidBody]
             let error = min_angle - angle;
             let w_ang = body_a.inv_inertia.length() + body_b.inv_inertia.length();
             if !w_ang.is_zero() {
+                let inv_w_ang = Fix128::ONE / w_ang;
                 apply_angular_correction(
                     bodies,
                     joint.body_a,
                     joint.body_b,
                     world_axis_a,
-                    -(error / w_ang),
+                    -(error * inv_w_ang),
                 );
             }
         } else if angle > max_angle {
             let error = angle - max_angle;
             let w_ang = body_a.inv_inertia.length() + body_b.inv_inertia.length();
             if !w_ang.is_zero() {
+                let inv_w_ang = Fix128::ONE / w_ang;
                 apply_angular_correction(
                     bodies,
                     joint.body_a,
                     joint.body_b,
                     world_axis_a,
-                    error / w_ang,
+                    error * inv_w_ang,
                 );
             }
         }
@@ -828,15 +830,15 @@ fn solve_fixed_joint(joint: &FixedJoint, bodies: &mut [crate::solver::RigidBody]
     let anchor_b = body_b.position + body_b.rotation.rotate_vec(joint.local_anchor_b);
 
     let delta = anchor_b - anchor_a;
-    let distance = delta.length();
+    let (normal, distance) = delta.normalize_with_length();
 
     if !distance.is_zero() {
-        let normal = delta / distance;
         let compliance_term = joint.compliance / (dt * dt);
         let w_sum = body_a.inv_mass + body_b.inv_mass + compliance_term;
 
         if !w_sum.is_zero() {
-            let lambda = distance / w_sum;
+            let inv_w_sum = Fix128::ONE / w_sum;
+            let lambda = distance * inv_w_sum;
             let correction = normal * lambda;
 
             if !body_a.inv_mass.is_zero() {
@@ -856,16 +858,16 @@ fn solve_fixed_joint(joint: &FixedJoint, bodies: &mut [crate::solver::RigidBody]
 
     // Extract error as rotation vector (axis * angle)
     let error_vec = Vec3Fix::new(rot_error.x, rot_error.y, rot_error.z);
-    let error_mag = error_vec.length();
+    let (correction_axis, error_mag) = error_vec.normalize_with_length();
 
     if !error_mag.is_zero() {
         let angular_compliance = joint.angular_compliance / (dt * dt);
         let w_ang = body_a.inv_inertia.length() + body_b.inv_inertia.length() + angular_compliance;
 
         if !w_ang.is_zero() {
-            let correction_axis = error_vec / error_mag;
+            let inv_w_ang = Fix128::ONE / w_ang;
             let two = Fix128::from_int(2);
-            let angular_lambda = (error_mag * two) / w_ang;
+            let angular_lambda = (error_mag * two) * inv_w_ang;
 
             apply_angular_correction(
                 bodies,
@@ -895,15 +897,15 @@ fn solve_slider_joint(joint: &SliderJoint, bodies: &mut [crate::solver::RigidBod
 
     // Perpendicular error (must be zero)
     let perp = delta - world_axis * along_axis;
-    let perp_dist = perp.length();
+    let (perp_normal, perp_dist) = perp.normalize_with_length();
 
     if !perp_dist.is_zero() {
         let compliance_term = joint.compliance / (dt * dt);
         let w_sum = body_a.inv_mass + body_b.inv_mass + compliance_term;
 
         if !w_sum.is_zero() {
-            let perp_normal = perp / perp_dist;
-            let lambda = perp_dist / w_sum;
+            let inv_w_sum = Fix128::ONE / w_sum;
+            let lambda = perp_dist * inv_w_sum;
             let correction = perp_normal * lambda;
 
             if !body_a.inv_mass.is_zero() {
@@ -923,7 +925,8 @@ fn solve_slider_joint(joint: &SliderJoint, bodies: &mut [crate::solver::RigidBod
             let error = min_d - along_axis;
             let w_sum = body_a.inv_mass + body_b.inv_mass;
             if !w_sum.is_zero() {
-                let correction = world_axis * (error / w_sum);
+                let inv_w_sum = Fix128::ONE / w_sum;
+                let correction = world_axis * (error * inv_w_sum);
                 if !body_a.inv_mass.is_zero() {
                     bodies[joint.body_a].position =
                         bodies[joint.body_a].position - correction * body_a.inv_mass;
@@ -937,7 +940,8 @@ fn solve_slider_joint(joint: &SliderJoint, bodies: &mut [crate::solver::RigidBod
             let error = along_axis - max_d;
             let w_sum = body_a.inv_mass + body_b.inv_mass;
             if !w_sum.is_zero() {
-                let correction = world_axis * (error / w_sum);
+                let inv_w_sum = Fix128::ONE / w_sum;
+                let correction = world_axis * (error * inv_w_sum);
                 if !body_a.inv_mass.is_zero() {
                     bodies[joint.body_a].position =
                         bodies[joint.body_a].position + correction * body_a.inv_mass;
@@ -960,13 +964,11 @@ fn solve_spring_joint(joint: &SpringJoint, bodies: &mut [crate::solver::RigidBod
     let anchor_b = body_b.position + body_b.rotation.rotate_vec(joint.local_anchor_b);
 
     let delta = anchor_b - anchor_a;
-    let distance = delta.length();
+    let (normal, distance) = delta.normalize_with_length();
 
     if distance.is_zero() {
         return;
     }
-
-    let normal = delta / distance;
 
     // Spring force: F = -k * (x - rest_length)
     let displacement = distance - joint.rest_length;
@@ -1015,6 +1017,8 @@ fn solve_d6_joint(joint: &D6Joint, bodies: &mut [crate::solver::RigidBody], dt: 
     let w_sum = body_a.inv_mass + body_b.inv_mass + compliance_term;
 
     if !w_sum.is_zero() {
+        let inv_w_sum = Fix128::ONE / w_sum;
+
         // Linear constraints per axis
         let axes = [
             (
@@ -1054,7 +1058,7 @@ fn solve_d6_joint(joint: &D6Joint, bodies: &mut [crate::solver::RigidBody], dt: 
             };
 
             if !error.is_zero() {
-                let lambda = error / w_sum;
+                let lambda = error * inv_w_sum;
                 let correction = axis * lambda;
 
                 if !body_a.inv_mass.is_zero() {
@@ -1074,6 +1078,7 @@ fn solve_d6_joint(joint: &D6Joint, bodies: &mut [crate::solver::RigidBody], dt: 
     let w_ang = body_a.inv_inertia.length() + body_b.inv_inertia.length() + angular_compliance;
 
     if !w_ang.is_zero() {
+        let inv_w_ang = Fix128::ONE / w_ang;
         let rel_quat = body_b.rotation.mul(body_a.rotation.conjugate());
 
         let ang_axes = [
@@ -1115,7 +1120,7 @@ fn solve_d6_joint(joint: &D6Joint, bodies: &mut [crate::solver::RigidBody], dt: 
             };
 
             if !error.is_zero() {
-                apply_angular_correction(bodies, joint.body_a, joint.body_b, axis, error / w_ang);
+                apply_angular_correction(bodies, joint.body_a, joint.body_b, axis, error * inv_w_ang);
             }
         }
     }
@@ -1134,15 +1139,15 @@ fn solve_cone_twist_joint(
     let anchor_a = body_a.position + body_a.rotation.rotate_vec(joint.local_anchor_a);
     let anchor_b = body_b.position + body_b.rotation.rotate_vec(joint.local_anchor_b);
     let delta = anchor_b - anchor_a;
-    let distance = delta.length();
+    let (normal, distance) = delta.normalize_with_length();
 
     if !distance.is_zero() {
-        let normal = delta / distance;
         let compliance_term = joint.compliance / (dt * dt);
         let w_sum = body_a.inv_mass + body_b.inv_mass + compliance_term;
 
         if !w_sum.is_zero() {
-            let lambda = distance / w_sum;
+            let inv_w_sum = Fix128::ONE / w_sum;
+            let lambda = distance * inv_w_sum;
             let correction = normal * lambda;
 
             if !body_a.inv_mass.is_zero() {
@@ -1162,7 +1167,7 @@ fn solve_cone_twist_joint(
 
     let dot = world_axis_a.dot(world_axis_b);
     let cross = world_axis_a.cross(world_axis_b);
-    let cross_len = cross.length();
+    let (correction_axis, cross_len) = cross.normalize_with_length();
     // Use atan2(sin, cos) instead of acos for deterministic fixed-point
     let cone_angle = Fix128::atan2(cross_len, dot);
     let cone_angle = if cone_angle < Fix128::ZERO {
@@ -1180,13 +1185,13 @@ fn solve_cone_twist_joint(
                 body_a.inv_inertia.length() + body_b.inv_inertia.length() + angular_compliance;
 
             if !w_ang.is_zero() {
-                let correction_axis = cross / cross_len;
+                let inv_w_ang = Fix128::ONE / w_ang;
                 apply_angular_correction(
                     bodies,
                     joint.body_a,
                     joint.body_b,
                     correction_axis,
-                    error / w_ang,
+                    error * inv_w_ang,
                 );
             }
         }
@@ -1209,12 +1214,13 @@ fn solve_cone_twist_joint(
         let w_ang = body_a.inv_inertia.length() + body_b.inv_inertia.length() + angular_compliance;
 
         if !w_ang.is_zero() {
+            let inv_w_ang = Fix128::ONE / w_ang;
             apply_angular_correction(
                 bodies,
                 joint.body_a,
                 joint.body_b,
                 world_axis_a,
-                error / w_ang,
+                error * inv_w_ang,
             );
         }
     }

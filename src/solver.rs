@@ -760,10 +760,10 @@ impl PhysicsWorld {
                 // Predict position
                 body.position = body.position + body.velocity * dt;
 
-                // Predict rotation (simplified: small angle approximation)
-                let angle = body.angular_velocity.length() * dt;
-                if !angle.is_zero() {
-                    let axis = body.angular_velocity.normalize();
+                // Predict rotation (single sqrt via normalize_with_length)
+                let (axis, ang_speed) = body.angular_velocity.normalize_with_length();
+                if !ang_speed.is_zero() {
+                    let angle = ang_speed * dt;
                     let delta_rot = QuatFix::from_axis_angle(axis, angle);
                     body.rotation = delta_rot.mul(body.rotation).normalize();
                 }
@@ -801,10 +801,10 @@ impl PhysicsWorld {
                 // Predict position
                 body.position = body.position + body.velocity * dt;
 
-                // Predict rotation (simplified: small angle approximation)
-                let angle = body.angular_velocity.length() * dt;
-                if !angle.is_zero() {
-                    let axis = body.angular_velocity.normalize();
+                // Predict rotation (single sqrt via normalize_with_length)
+                let (axis, ang_speed) = body.angular_velocity.normalize_with_length();
+                if !ang_speed.is_zero() {
+                    let angle = ang_speed * dt;
                     let delta_rot = QuatFix::from_axis_angle(axis, angle);
                     body.rotation = delta_rot.mul(body.rotation).normalize();
                 }
@@ -877,14 +877,13 @@ impl PhysicsWorld {
         let anchor_b = body_b.position + body_b.rotation.rotate_vec(constraint.local_anchor_b);
 
         let delta = anchor_b - anchor_a;
-        let distance = delta.length();
+        let (normal, distance) = delta.normalize_with_length();
 
         if distance.is_zero() {
             return;
         }
 
         let error = distance - constraint.target_distance;
-        let normal = delta / distance;
 
         let compliance_term = constraint.compliance / (dt * dt);
         let w_sum = body_a.inv_mass + body_b.inv_mass + compliance_term;
@@ -893,7 +892,8 @@ impl PhysicsWorld {
             return;
         }
 
-        let lambda = error / w_sum;
+        let inv_w_sum = Fix128::ONE / w_sum;
+        let lambda = error * inv_w_sum;
         let correction = normal * lambda;
 
         if !body_a.inv_mass.is_zero() {
@@ -929,9 +929,10 @@ impl PhysicsWorld {
             return;
         }
 
+        let inv_w_sum = Fix128::ONE / w_sum;
         let correction = contact.normal * contact.depth;
-        let correction_a = correction * body_a.inv_mass / w_sum;
-        let correction_b = correction * body_b.inv_mass / w_sum;
+        let correction_a = correction * (body_a.inv_mass * inv_w_sum);
+        let correction_b = correction * (body_b.inv_mass * inv_w_sum);
 
         if !body_a.inv_mass.is_zero() {
             self.bodies[constraint.body_a].position =
@@ -956,16 +957,15 @@ impl PhysicsWorld {
             let anchor_a = body_a.position + body_a.rotation.rotate_vec(constraint.local_anchor_a);
             let anchor_b = body_b.position + body_b.rotation.rotate_vec(constraint.local_anchor_b);
 
-            // Compute constraint error
+            // Compute constraint error (single sqrt via normalize_with_length)
             let delta = anchor_b - anchor_a;
-            let distance = delta.length();
+            let (normal, distance) = delta.normalize_with_length();
 
             if distance.is_zero() {
                 continue;
             }
 
             let error = distance - constraint.target_distance;
-            let normal = delta / distance;
 
             // Compute compliance term (XPBD)
             let compliance_term = constraint.compliance / (dt * dt);
@@ -975,8 +975,9 @@ impl PhysicsWorld {
                 continue;
             }
 
-            // Compute correction
-            let lambda = error / w_sum;
+            // Compute correction (reciprocal pre-computation eliminates division)
+            let inv_w_sum = Fix128::ONE / w_sum;
+            let lambda = error * inv_w_sum;
             let correction = normal * lambda;
 
             // Apply corrections
@@ -1049,10 +1050,11 @@ impl PhysicsWorld {
                 continue;
             }
 
-            // Position correction (push bodies apart)
+            // Position correction (reciprocal pre-computation: 1 division instead of 6)
+            let inv_w_sum = Fix128::ONE / w_sum;
             let correction = contact.normal * contact.depth;
-            let correction_a = correction * body_a.inv_mass / w_sum;
-            let correction_b = correction * body_b.inv_mass / w_sum;
+            let correction_a = correction * (body_a.inv_mass * inv_w_sum);
+            let correction_b = correction * (body_b.inv_mass * inv_w_sum);
 
             if !body_a.inv_mass.is_zero() {
                 self.bodies[constraint.body_a].position =

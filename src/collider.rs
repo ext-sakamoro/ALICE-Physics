@@ -80,6 +80,7 @@ impl Sphere {
 }
 
 impl Support for Sphere {
+    #[inline(always)]
     fn support(&self, direction: Vec3Fix) -> Vec3Fix {
         let dir_norm = direction.normalize();
         self.center + dir_norm * self.radius
@@ -169,6 +170,7 @@ impl AABB {
 }
 
 impl Support for AABB {
+    #[inline(always)]
     fn support(&self, direction: Vec3Fix) -> Vec3Fix {
         Vec3Fix::new(
             if direction.x >= Fix128::ZERO {
@@ -205,6 +207,7 @@ impl ConvexHull {
 }
 
 impl Support for ConvexHull {
+    #[inline(always)]
     fn support(&self, direction: Vec3Fix) -> Vec3Fix {
         let mut best = self.vertices[0];
         let mut best_dot = best.dot(direction);
@@ -240,6 +243,7 @@ impl Capsule {
 }
 
 impl Support for Capsule {
+    #[inline(always)]
     fn support(&self, direction: Vec3Fix) -> Vec3Fix {
         let da = self.a.dot(direction);
         let db = self.b.dot(direction);
@@ -268,6 +272,7 @@ impl<S> ScaledShape<S> {
 }
 
 impl<S: Support> Support for ScaledShape<S> {
+    #[inline(always)]
     fn support(&self, direction: Vec3Fix) -> Vec3Fix {
         self.shape.support(direction) * self.scale
     }
@@ -278,6 +283,7 @@ impl<S: Support> Support for ScaledShape<S> {
 // ============================================================================
 
 /// Minkowski difference support function
+#[inline(always)]
 fn minkowski_support<A: Support, B: Support>(a: &A, b: &B, direction: Vec3Fix) -> Vec3Fix {
     a.support(direction) - b.support(-direction)
 }
