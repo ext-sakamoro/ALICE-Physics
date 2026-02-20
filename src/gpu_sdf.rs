@@ -139,6 +139,9 @@ impl GpuSdfBatch {
 
     /// Get raw query buffer as bytes (for GPU upload)
     pub fn query_bytes(&self) -> &[u8] {
+        // SAFETY: GpuSdfQuery is repr(C, align(16)) with no padding or uninitialized bytes.
+        // The pointer is derived from a valid Vec<GpuSdfQuery>, and the byte length equals
+        // queries.len() * size_of::<GpuSdfQuery>(). The returned slice lifetime is tied to &self.
         unsafe {
             core::slice::from_raw_parts(
                 self.queries.as_ptr() as *const u8,
@@ -149,6 +152,10 @@ impl GpuSdfBatch {
 
     /// Get mutable raw result buffer as bytes (for GPU readback)
     pub fn result_bytes_mut(&mut self) -> &mut [u8] {
+        // SAFETY: GpuSdfResult is repr(C, align(16)) with no padding or uninitialized bytes
+        // (all fields are f32, default-initialized). The pointer is derived from a valid
+        // Vec<GpuSdfResult>, and the byte length equals results.len() * size_of::<GpuSdfResult>().
+        // The returned slice lifetime is tied to &mut self, preventing aliased access.
         unsafe {
             core::slice::from_raw_parts_mut(
                 self.results.as_mut_ptr() as *mut u8,
