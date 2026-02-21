@@ -17,6 +17,7 @@ path = "src/lib.rs"
 [features]
 default = ["std"]
 std = []
+simd = []            # Enable SIMD (AVX2) optimizations for x86_64
 parallel = ["rayon"] # Parallel constraint solving via graph coloring
 neural = ["alice-ml"] # Deterministic neural controller (ALICE-ML × Physics)
 python = ["pyo3", "numpy"] # Python bindings (PyO3 + NumPy zero-copy)
