@@ -895,39 +895,22 @@ impl Vec3Fix {
     #[target_feature(enable = "sse2")]
     unsafe fn dot_simd_sse2(self, rhs: Self) -> Fix128 {
         // --- Step 1: scalar Fix128 multiplications (128-bit, bit-exact) ------
+        // SSE2 has no 128-bit multiply, so the multiply stays scalar.
         let px = self.x * rhs.x;
         let py = self.y * rhs.y;
         let pz = self.z * rhs.z;
 
-        // --- Step 2: SSE2-assisted Fix128 addition (px + py) -----------------
+        // --- Step 2: Scalar Fix128 addition chain (px + py + pz) -------------
         //
-        // Load lo-halves of px and py into one XMM register and hi-halves into
-        // another.  _mm_add_epi64 performs two independent 64-bit integer adds
-        // in a single instruction; carry between lanes must be extracted manually
-        // to stay bit-exact with the scalar path.
+        // SSE2's _mm_add_epi64 performs lane-independent 64-bit adds but cannot
+        // propagate the carry from lo to hi that Fix128 addition requires.
+        // A correct SIMD path would need to detect per-lane overflow, extract it,
+        // and feed it into the hi lane — more instructions than the scalar path.
         //
-        // Lane layout (Intel convention: lane 1 = upper 64 bits of __m128i):
-        //   reg_lo = [ py.lo (lane 1) | px.lo (lane 0) ]
-        //   reg_hi = [ py.hi (lane 1) | px.hi (lane 0) ]
-        let reg_lo_ab = _mm_set_epi64x(py.lo as i64, px.lo as i64);
-        let reg_hi_ab = _mm_set_epi64x(py.hi,        px.hi);
-        // Perform the 64-bit lane-wise adds (both lo-halves computed together).
-        let _sum_lo_ab = _mm_add_epi64(reg_lo_ab, _mm_setzero_si128()); // identity load
-        let _sum_hi_ab = _mm_add_epi64(reg_hi_ab, _mm_setzero_si128()); // identity load
-        // Extract carry with scalar overflowing_add (matches Fix128::add exactly).
-        let (lo_ab, carry_ab) = px.lo.overflowing_add(py.lo);
-        let hi_ab = px.hi.wrapping_add(py.hi).wrapping_add(carry_ab as i64);
-        let ab = Fix128 { hi: hi_ab, lo: lo_ab };
-
-        // --- Step 3: SSE2-assisted Fix128 addition (ab + pz) -----------------
-        let reg_lo_c = _mm_set_epi64x(pz.lo as i64, ab.lo as i64);
-        let reg_hi_c = _mm_set_epi64x(pz.hi,        ab.hi);
-        let _sum_lo_c = _mm_add_epi64(reg_lo_c, _mm_setzero_si128());
-        let _sum_hi_c = _mm_add_epi64(reg_hi_c, _mm_setzero_si128());
-        let (lo_final, carry_final) = ab.lo.overflowing_add(pz.lo);
-        let hi_final = ab.hi.wrapping_add(pz.hi).wrapping_add(carry_final as i64);
-
-        Fix128 { hi: hi_final, lo: lo_final }
+        // Therefore we use the direct scalar carry chain which is already well
+        // optimized by LLVM into ADC (add-with-carry) on x86_64.
+        let ab = px + py;
+        ab + pz
     }
 
     /// SIMD-accelerated dot product — safe public entry point.

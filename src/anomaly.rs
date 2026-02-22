@@ -155,7 +155,7 @@ impl StreamingMedian {
         }
 
         let mid = self.count / 2;
-        if self.count.is_multiple_of(2) {
+        if self.count % 2 == 0 {
             (self.sorted[mid - 1] + self.sorted[mid]) / 2.0
         } else {
             self.sorted[mid]

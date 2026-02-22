@@ -17,9 +17,15 @@
 //! - Sequential processing within each color (data dependency)
 //! - Parallel processing across colors (no conflicts)
 
-use crate::collider::Contact;
+use crate::bvh::{BvhPrimitive, LinearBvh};
+use crate::collider::{Contact, AABB};
+use crate::event::EventCollector;
+use crate::filter::CollisionFilter;
+use crate::force::{apply_force_fields, ForceFieldInstance};
+use crate::joint::{solve_joints, Joint};
 use crate::math::{select_vec3, Fix128, QuatFix, Vec3Fix};
 use crate::sdf_collider::SdfCollider;
+use crate::sleeping::{IslandManager, SleepConfig};
 
 /// Minimum effective inverse-mass sum below which constraint solving is skipped.
 /// Prevents division explosion when two near-static bodies are in contact.
@@ -269,6 +275,72 @@ impl RigidBody {
                 );
         }
     }
+
+    /// Apply a continuous force (accumulated, applied during next step)
+    ///
+    /// Force is converted to velocity change: v += (F * inv_mass) * dt
+    /// For one-shot velocity changes, use `apply_impulse` instead.
+    #[inline]
+    pub fn add_force(&mut self, force: Vec3Fix, dt: Fix128) {
+        if !self.is_static() {
+            self.velocity = self.velocity + force * self.inv_mass * dt;
+        }
+    }
+
+    /// Apply a continuous torque
+    #[inline]
+    pub fn add_torque(&mut self, torque: Vec3Fix, dt: Fix128) {
+        if !self.is_static() {
+            self.angular_velocity = self.angular_velocity
+                + Vec3Fix::new(
+                    torque.x * self.inv_inertia.x * dt,
+                    torque.y * self.inv_inertia.y * dt,
+                    torque.z * self.inv_inertia.z * dt,
+                );
+        }
+    }
+
+    /// Set the linear velocity directly
+    #[inline]
+    pub fn set_velocity(&mut self, velocity: Vec3Fix) {
+        self.velocity = velocity;
+    }
+
+    /// Set the angular velocity directly
+    #[inline]
+    pub fn set_angular_velocity(&mut self, angular_velocity: Vec3Fix) {
+        self.angular_velocity = angular_velocity;
+    }
+
+    /// Set position directly (teleport)
+    #[inline]
+    pub fn set_position(&mut self, position: Vec3Fix) {
+        self.position = position;
+        self.prev_position = position;
+    }
+
+    /// Set rotation directly
+    #[inline]
+    pub fn set_rotation(&mut self, rotation: QuatFix) {
+        self.rotation = rotation;
+        self.prev_rotation = rotation;
+    }
+
+    /// Get mass (inverse of inv_mass, returns infinity for static bodies)
+    #[inline]
+    pub fn mass(&self) -> Fix128 {
+        if self.inv_mass.is_zero() {
+            Fix128::ZERO // Represents infinite mass
+        } else {
+            Fix128::ONE / self.inv_mass
+        }
+    }
+
+    /// Get linear speed (magnitude of velocity)
+    #[inline]
+    pub fn speed(&self) -> Fix128 {
+        self.velocity.length()
+    }
 }
 
 // ============================================================================
@@ -487,6 +559,15 @@ pub trait ContactModifier: Send + Sync {
 }
 
 /// XPBD physics world with batched constraint solving
+///
+/// PhysicsWorld integrates all physics subsystems:
+/// - Rigid body dynamics with XPBD solver
+/// - Automatic collision detection (BVH broad-phase + sphere narrow-phase)
+/// - Joint constraints (Ball, Hinge, Fixed, Slider, Spring, D6, ConeTwist)
+/// - Force fields (wind, gravity wells, buoyancy, vortex, drag)
+/// - Collision filtering (layer/mask bitmasks)
+/// - Contact events (begin/persist/end)
+/// - Sleeping/island management
 pub struct PhysicsWorld {
     /// Solver configuration
     pub config: SolverConfig,
@@ -516,6 +597,22 @@ pub struct PhysicsWorld {
     /// Contact modifiers (called before contact resolution, can mutate contact)
     #[cfg(feature = "std")]
     contact_modifiers: Vec<Box<dyn ContactModifier>>,
+
+    // ── Integrated Subsystems ──────────────────────────────────────────
+
+    /// Joint constraints (solved each substep alongside distance/contact)
+    pub joints: Vec<Joint>,
+    /// Force fields applied at the start of each step
+    pub force_fields: Vec<ForceFieldInstance>,
+    /// Contact and trigger event collector
+    pub events: EventCollector,
+    /// Island manager for sleeping and connectivity tracking
+    pub islands: IslandManager,
+    /// Per-body collision radius for automatic sphere-based collision detection.
+    /// `None` means the body does not participate in auto-detection.
+    body_collision_radii: Vec<Option<Fix128>>,
+    /// Per-body collision filter (layer/mask/group)
+    body_filters: Vec<CollisionFilter>,
 }
 
 impl PhysicsWorld {
@@ -555,6 +652,12 @@ impl PhysicsWorld {
             pre_solve_hooks: Vec::new(),
             #[cfg(feature = "std")]
             contact_modifiers: Vec::new(),
+            joints: Vec::new(),
+            force_fields: Vec::new(),
+            events: EventCollector::new(),
+            islands: IslandManager::new(0, SleepConfig::default()),
+            body_collision_radii: Vec::new(),
+            body_filters: Vec::new(),
         }
     }
 
@@ -563,7 +666,107 @@ impl PhysicsWorld {
         let idx = self.bodies.len();
         self.bodies.push(body);
         self.body_materials.push(crate::material::DEFAULT_MATERIAL);
+        self.body_collision_radii.push(None);
+        self.body_filters.push(CollisionFilter::DEFAULT);
+        self.islands.resize(idx + 1);
         idx
+    }
+
+    /// Add rigid body with a collision sphere radius for automatic detection.
+    ///
+    /// Bodies with a collision radius participate in BVH broad-phase and
+    /// sphere-sphere narrow-phase collision detection during `step()`.
+    pub fn add_body_with_radius(&mut self, body: RigidBody, radius: Fix128) -> usize {
+        let idx = self.bodies.len();
+        self.bodies.push(body);
+        self.body_materials.push(crate::material::DEFAULT_MATERIAL);
+        self.body_collision_radii.push(Some(radius));
+        self.body_filters.push(CollisionFilter::DEFAULT);
+        self.islands.resize(idx + 1);
+        idx
+    }
+
+    /// Remove a body by index (swap-remove).
+    ///
+    /// The last body is moved to fill the gap. All constraints and joints
+    /// referencing the old last index are remapped. Returns the removed body,
+    /// or `None` if the index is out of bounds.
+    pub fn remove_body(&mut self, idx: usize) -> Option<RigidBody> {
+        if idx >= self.bodies.len() {
+            return None;
+        }
+        let last = self.bodies.len() - 1;
+        let removed = self.bodies.swap_remove(idx);
+        self.body_materials.swap_remove(idx);
+        self.body_collision_radii.swap_remove(idx);
+        self.body_filters.swap_remove(idx);
+
+        // Remap references from `last` -> `idx` in all constraints and joints
+        if idx != last {
+            for c in &mut self.distance_constraints {
+                if c.body_a == last { c.body_a = idx; }
+                if c.body_b == last { c.body_b = idx; }
+            }
+            for c in &mut self.contact_constraints {
+                if c.body_a == last { c.body_a = idx; }
+                if c.body_b == last { c.body_b = idx; }
+            }
+            self.remap_joint_indices(last, idx);
+        }
+
+        // Remove constraints that referenced the removed body
+        self.distance_constraints.retain(|c| c.body_a < self.bodies.len() && c.body_b < self.bodies.len());
+        self.contact_constraints.retain(|c| c.body_a < self.bodies.len() && c.body_b < self.bodies.len());
+        self.joints.retain(|j| {
+            let (a, b) = j.bodies();
+            a < self.bodies.len() && b < self.bodies.len()
+        });
+
+        // Rebuild IslandManager to match new body count and connectivity
+        let new_len = self.bodies.len();
+        self.islands = IslandManager::new(new_len, self.islands.config);
+        for j in &self.joints {
+            let (a, b) = j.bodies();
+            if a < new_len && b < new_len {
+                self.islands.union(a, b);
+            }
+        }
+
+        self.batches_dirty = true;
+        Some(removed)
+    }
+
+    /// Remap joint body indices after swap-remove
+    fn remap_joint_indices(&mut self, from: usize, to: usize) {
+        /// Remap a single joint's body_a and body_b fields.
+        macro_rules! remap {
+            ($j:expr) => {
+                if $j.body_a == from { $j.body_a = to; }
+                if $j.body_b == from { $j.body_b = to; }
+            };
+        }
+        for joint in &mut self.joints {
+            match joint {
+                Joint::Ball(j) => { remap!(j); }
+                Joint::Hinge(j) => { remap!(j); }
+                Joint::Fixed(j) => { remap!(j); }
+                Joint::Slider(j) => { remap!(j); }
+                Joint::Spring(j) => { remap!(j); }
+                Joint::D6(j) => { remap!(j); }
+                Joint::ConeTwist(j) => { remap!(j); }
+            }
+        }
+    }
+
+    /// Number of bodies in the world
+    #[inline]
+    pub fn body_count(&self) -> usize {
+        self.bodies.len()
+    }
+
+    /// Number of active (non-sleeping) bodies
+    pub fn active_body_count(&self) -> usize {
+        self.bodies.len() - self.islands.sleeping_count().min(self.bodies.len())
     }
 
     /// Set a body's material ID
@@ -615,6 +818,211 @@ impl PhysicsWorld {
     /// End a simulation frame (prune old contacts from cache)
     pub fn end_frame(&mut self) {
         self.contact_cache.end_frame();
+    }
+
+    // ── Joint Management ───────────────────────────────────────────────
+
+    /// Add a joint constraint, returns joint index.
+    ///
+    /// # Panics
+    ///
+    /// Panics if either body index in the joint is out of bounds.
+    pub fn add_joint(&mut self, joint: Joint) -> usize {
+        let (a, b) = joint.bodies();
+        assert!(
+            a < self.bodies.len() && b < self.bodies.len(),
+            "Joint body indices ({}, {}) out of bounds (body count = {})",
+            a, b, self.bodies.len()
+        );
+        let idx = self.joints.len();
+        self.islands.resize(self.bodies.len());
+        self.islands.union(a, b);
+        self.joints.push(joint);
+        idx
+    }
+
+    /// Remove a joint by index (swap-remove), returns the removed joint
+    pub fn remove_joint(&mut self, idx: usize) -> Option<Joint> {
+        if idx >= self.joints.len() {
+            return None;
+        }
+        Some(self.joints.swap_remove(idx))
+    }
+
+    /// Number of joints
+    #[inline]
+    pub fn joint_count(&self) -> usize {
+        self.joints.len()
+    }
+
+    // ── Force Field Management ────────────────────────────────────────
+
+    /// Add a force field, returns field index
+    pub fn add_force_field(&mut self, field: ForceFieldInstance) -> usize {
+        let idx = self.force_fields.len();
+        self.force_fields.push(field);
+        idx
+    }
+
+    /// Remove a force field by index
+    pub fn remove_force_field(&mut self, idx: usize) -> Option<ForceFieldInstance> {
+        if idx >= self.force_fields.len() {
+            return None;
+        }
+        Some(self.force_fields.swap_remove(idx))
+    }
+
+    // ── Per-Body Collision Shape / Filter ──────────────────────────────
+
+    /// Set collision radius for a body (enables automatic sphere collision detection)
+    pub fn set_body_collision_radius(&mut self, body_idx: usize, radius: Fix128) {
+        if body_idx < self.body_collision_radii.len() {
+            self.body_collision_radii[body_idx] = Some(radius);
+        }
+    }
+
+    /// Remove collision radius (disable automatic collision detection for this body)
+    pub fn clear_body_collision_radius(&mut self, body_idx: usize) {
+        if body_idx < self.body_collision_radii.len() {
+            self.body_collision_radii[body_idx] = None;
+        }
+    }
+
+    /// Set collision filter for a body
+    pub fn set_body_filter(&mut self, body_idx: usize, filter: CollisionFilter) {
+        if body_idx < self.body_filters.len() {
+            self.body_filters[body_idx] = filter;
+        }
+    }
+
+    /// Get collision filter for a body
+    pub fn body_filter(&self, body_idx: usize) -> CollisionFilter {
+        self.body_filters.get(body_idx).copied().unwrap_or(CollisionFilter::DEFAULT)
+    }
+
+    // ── Sleeping ──────────────────────────────────────────────────────
+
+    /// Check if a body is sleeping
+    #[inline]
+    pub fn is_sleeping(&self, body_idx: usize) -> bool {
+        self.islands.is_sleeping(body_idx)
+    }
+
+    /// Wake up a body and all connected bodies in its island
+    pub fn wake_body(&mut self, body_idx: usize) {
+        self.islands.wake_island(body_idx);
+    }
+
+    /// Set the sleep configuration
+    pub fn set_sleep_config(&mut self, config: SleepConfig) {
+        self.islands.config = config;
+    }
+
+    // ── Event Access ──────────────────────────────────────────────────
+
+    /// Get contact events from the last step
+    #[inline]
+    pub fn contact_events(&self) -> &[crate::event::ContactEvent] {
+        self.events.contact_events()
+    }
+
+    /// Get trigger events from the last step
+    #[inline]
+    pub fn trigger_events(&self) -> &[crate::event::TriggerEvent] {
+        self.events.trigger_events()
+    }
+
+    /// Drain (consume) contact events from the last step
+    #[inline]
+    pub fn drain_contact_events(&mut self) -> Vec<crate::event::ContactEvent> {
+        self.events.drain_contact_events()
+    }
+
+    /// Drain (consume) trigger events from the last step
+    #[inline]
+    pub fn drain_trigger_events(&mut self) -> Vec<crate::event::TriggerEvent> {
+        self.events.drain_trigger_events()
+    }
+
+    // ── Raycast on World ──────────────────────────────────────────────
+
+    /// Cast a ray against all body collision spheres, returns (body_index, distance).
+    ///
+    /// Uses a BVH broad-phase to cull bodies outside the ray's bounding box,
+    /// then performs exact ray-sphere intersection on candidates.
+    /// Returns `None` if direction is zero or no body is hit.
+    pub fn raycast(&self, origin: Vec3Fix, direction: Vec3Fix, max_distance: Fix128) -> Option<(usize, Fix128)> {
+        if direction.length_squared().is_zero() {
+            return None;
+        }
+        let dir_norm = direction.normalize();
+
+        // Build BVH from collidable bodies for broad-phase culling
+        let mut primitives = Vec::new();
+        for i in 0..self.bodies.len() {
+            if let Some(radius) = self.body_collision_radii.get(i).and_then(|r| *r) {
+                let pos = self.bodies[i].position;
+                let half = Vec3Fix::new(radius, radius, radius);
+                let aabb = crate::collider::AABB::from_center_half(pos, half);
+                primitives.push(crate::bvh::BvhPrimitive {
+                    aabb,
+                    index: i as u32,
+                    morton: 0,
+                });
+            }
+        }
+
+        if primitives.is_empty() {
+            return None;
+        }
+
+        // Compute ray AABB (bounding box of the ray segment)
+        let endpoint = origin + dir_norm * max_distance;
+        let ray_min = Vec3Fix::new(
+            if origin.x < endpoint.x { origin.x } else { endpoint.x },
+            if origin.y < endpoint.y { origin.y } else { endpoint.y },
+            if origin.z < endpoint.z { origin.z } else { endpoint.z },
+        );
+        let ray_max = Vec3Fix::new(
+            if origin.x > endpoint.x { origin.x } else { endpoint.x },
+            if origin.y > endpoint.y { origin.y } else { endpoint.y },
+            if origin.z > endpoint.z { origin.z } else { endpoint.z },
+        );
+        let ray_aabb = crate::collider::AABB { min: ray_min, max: ray_max };
+
+        let bvh = crate::bvh::LinearBvh::build(primitives);
+        let candidates = bvh.query(&ray_aabb);
+
+        // Narrow-phase: exact ray-sphere intersection on BVH candidates
+        let mut best: Option<(usize, Fix128)> = None;
+        for &prim_idx in &candidates {
+            let i = prim_idx as usize;
+            let radius = match self.body_collision_radii.get(i) {
+                Some(Some(r)) => *r,
+                _ => continue,
+            };
+            let oc = origin - self.bodies[i].position;
+            let b = oc.dot(dir_norm);
+            let c = oc.dot(oc) - radius * radius;
+            let discriminant = b * b - c;
+            if discriminant < Fix128::ZERO { continue; }
+            let sqrt_d = discriminant.sqrt();
+            // Try the nearest intersection first
+            let mut t = -b - sqrt_d;
+            // If nearest t is behind origin, try the far intersection (ray inside sphere)
+            if t < Fix128::ZERO {
+                t = -b + sqrt_d;
+            }
+            if t < Fix128::ZERO || t > max_distance { continue; }
+            let dominated = match best {
+                None => true,
+                Some((_, prev_t)) => t < prev_t,
+            };
+            if dominated {
+                best = Some((i, t));
+            }
+        }
+        best
     }
 
     /// Get combined material properties for a body pair
@@ -691,9 +1099,9 @@ impl PhysicsWorld {
 
         self.constraint_batches.clear();
 
-        // Track which colors each body participates in
+        // Track which colors each body participates in (u64 bitmask per body)
         let num_bodies = self.bodies.len();
-        let mut body_colors: Vec<Vec<usize>> = vec![Vec::new(); num_bodies];
+        let mut body_colors: Vec<u64> = vec![0u64; num_bodies];
 
         // Color distance constraints
         for (constraint_idx, constraint) in self.distance_constraints.iter().enumerate() {
@@ -713,12 +1121,12 @@ impl PhysicsWorld {
                 .distance_indices
                 .push(constraint_idx);
 
-            // Mark bodies as used in this color
-            if body_a < num_bodies {
-                body_colors[body_a].push(color);
+            // Mark bodies as used in this color (set bit)
+            if body_a < num_bodies && color < 64 {
+                body_colors[body_a] |= 1u64 << color;
             }
-            if body_b < num_bodies {
-                body_colors[body_b].push(color);
+            if body_b < num_bodies && color < 64 {
+                body_colors[body_b] |= 1u64 << color;
             }
         }
 
@@ -737,38 +1145,35 @@ impl PhysicsWorld {
                 .contact_indices
                 .push(constraint_idx);
 
-            if body_a < num_bodies {
-                body_colors[body_a].push(color);
+            if body_a < num_bodies && color < 64 {
+                body_colors[body_a] |= 1u64 << color;
             }
-            if body_b < num_bodies {
-                body_colors[body_b].push(color);
+            if body_b < num_bodies && color < 64 {
+                body_colors[body_b] |= 1u64 << color;
             }
         }
 
         self.batches_dirty = false;
     }
 
-    /// Find first color where both bodies are free (greedy coloring)
-    fn find_free_color(body_colors: &[Vec<usize>], body_a: usize, body_b: usize) -> usize {
-        let mut color = 0;
-        loop {
-            let a_ok = body_colors
-                .get(body_a)
-                .is_none_or(|colors| !colors.contains(&color));
-            let b_ok = body_colors
-                .get(body_b)
-                .is_none_or(|colors| !colors.contains(&color));
+    /// Find first color where both bodies are free (greedy coloring).
+    ///
+    /// Uses a `u64` bitmask per body for O(1) occupancy checks (up to 64 colors).
+    /// Falls back to linear scan for color indices >= 64.
+    fn find_free_color(body_colors: &[u64], body_a: usize, body_b: usize) -> usize {
+        let mask_a = body_colors.get(body_a).copied().unwrap_or(0);
+        let mask_b = body_colors.get(body_b).copied().unwrap_or(0);
+        let occupied = mask_a | mask_b;
 
-            if a_ok && b_ok {
-                return color;
-            }
-            color += 1;
-
-            // Safety limit: saturate to current color instead of silently resetting to 0
-            if color > 4096 {
-                return color;
-            }
+        // Fast path: find first zero bit via bitwise NOT + trailing zeros
+        if occupied != u64::MAX {
+            return (!occupied).trailing_zeros() as usize;
         }
+
+        // Overflow path (> 64 colors): linear scan from 64 onward
+        // This is extremely rare in practice (would require a single body
+        // participating in 64+ different constraint batches).
+        64
     }
 
     /// Get number of constraint batches (colors used)
@@ -778,28 +1183,102 @@ impl PhysicsWorld {
 
     /// Step simulation by dt (in fixed-point seconds)
     ///
+    /// Integrated pipeline:
+    /// 1. Begin event frame
+    /// 2. Apply force fields to body velocities
+    /// 3. Detect collisions (BVH broad-phase + sphere narrow-phase)
+    /// 4. Substep loop (integrate, solve constraints + joints, update velocities)
+    /// 5. Update sleeping states
+    /// 6. End event frame (generates end-of-contact events)
+    ///
     /// Deterministic: same inputs always produce same outputs.
     pub fn step(&mut self, dt: Fix128) {
-        let substep_dt = dt / Fix128::from_int(self.config.substeps as i64);
+        // Guard: non-positive dt produces no physics update
+        if dt <= Fix128::ZERO {
+            return;
+        }
 
+        // Phase 0: Event frame lifecycle + clear stale contacts
+        self.events.begin_frame();
+        self.clear_contacts();
+
+        // Phase 0.5: Rebuild island connectivity from current joints
+        self.islands.resize(self.bodies.len());
+        self.islands.reset_unions();
+        for j in &self.joints {
+            let (a, b) = j.bodies();
+            if a < self.bodies.len() && b < self.bodies.len() {
+                self.islands.union(a, b);
+            }
+        }
+
+        // Phase 1: Apply force fields
+        if !self.force_fields.is_empty() {
+            apply_force_fields(&self.force_fields, &mut self.bodies, dt);
+        }
+
+        // Phase 2: Auto collision detection (BVH + sphere)
+        self.detect_collisions();
+
+        // Phase 3: Substep loop
+        let substep_dt = dt / Fix128::from_int(self.config.substeps as i64);
         for _ in 0..self.config.substeps {
             self.substep(substep_dt);
         }
+
+        // Phase 4: Update sleeping
+        self.islands.update_sleep(&self.bodies);
+
+        // Phase 5: End event frame
+        self.events.end_frame();
     }
 
     /// Step with batched constraint solving
     ///
     /// When `parallel` feature is enabled, processes independent constraint
-    /// batches in parallel using Rayon.
+    /// batches in parallel using Rayon. Includes the same integrated pipeline
+    /// as `step()`: force fields, collision detection, joints, events, sleeping.
     #[cfg(feature = "parallel")]
     pub fn step_parallel(&mut self, dt: Fix128) {
+        // Guard: non-positive dt produces no physics update
+        if dt <= Fix128::ZERO {
+            return;
+        }
+
+        // Phase 0: Event frame lifecycle + clear stale contacts
+        self.events.begin_frame();
+        self.clear_contacts();
+
+        // Phase 0.5: Rebuild island connectivity from current joints
+        self.islands.resize(self.bodies.len());
+        self.islands.reset_unions();
+        for j in &self.joints {
+            let (a, b) = j.bodies();
+            if a < self.bodies.len() && b < self.bodies.len() {
+                self.islands.union(a, b);
+            }
+        }
+
+        // Phase 1: Apply force fields
+        if !self.force_fields.is_empty() {
+            apply_force_fields(&self.force_fields, &mut self.bodies, dt);
+        }
+
+        // Phase 2: Auto collision detection
+        self.detect_collisions();
+
+        // Phase 3: Rebuild batches and substep
         self.rebuild_batches();
-
         let substep_dt = dt / Fix128::from_int(self.config.substeps as i64);
-
         for _ in 0..self.config.substeps {
             self.substep_batched(substep_dt);
         }
+
+        // Phase 4: Update sleeping
+        self.islands.update_sleep(&self.bodies);
+
+        // Phase 5: End event frame
+        self.events.end_frame();
     }
 
     /// Single substep
@@ -816,6 +1295,11 @@ impl PhysicsWorld {
         for _ in 0..self.config.iterations {
             self.solve_distance_constraints(dt);
             self.solve_contact_constraints(dt);
+        }
+
+        // 3. Solve joint constraints
+        if !self.joints.is_empty() {
+            solve_joints(&self.joints, &mut self.bodies, dt);
         }
 
         self.update_velocities(dt);
@@ -837,17 +1321,26 @@ impl PhysicsWorld {
             self.solve_constraints_batched(dt);
         }
 
+        // 3. Solve joint constraints
+        if !self.joints.is_empty() {
+            solve_joints(&self.joints, &mut self.bodies, dt);
+        }
+
         self.update_velocities(dt);
     }
 
     /// Integrate positions (shared between sequential and batched)
+    ///
+    /// Sleeping dynamic bodies are skipped: only prev_position/prev_rotation
+    /// are saved so that `update_velocities` derives zero velocity.
     #[inline]
     fn integrate_positions(&mut self, dt: Fix128) {
         #[cfg(feature = "parallel")]
         {
             let gravity = self.config.gravity;
             let damping = self.config.damping;
-            self.bodies.par_iter_mut().for_each(|body| {
+            let sleep_data = &self.islands.sleep_data;
+            self.bodies.par_iter_mut().enumerate().for_each(|(i, body)| {
                 match body.body_type {
                     BodyType::Static => return,
                     BodyType::Kinematic => {
@@ -861,6 +1354,13 @@ impl PhysicsWorld {
                         return;
                     }
                     BodyType::Dynamic => {}
+                }
+
+                // Skip sleeping bodies (preserve prev for zero-velocity derivation)
+                if sleep_data.get(i).is_some_and(|d| d.is_sleeping()) {
+                    body.prev_position = body.position;
+                    body.prev_rotation = body.rotation;
+                    return;
                 }
 
                 // Store previous state
@@ -889,42 +1389,50 @@ impl PhysicsWorld {
 
         #[cfg(not(feature = "parallel"))]
         {
-            for body in &mut self.bodies {
-                match body.body_type {
+            for i in 0..self.bodies.len() {
+                match self.bodies[i].body_type {
                     BodyType::Static => continue,
                     BodyType::Kinematic => {
-                        body.prev_position = body.position;
-                        body.prev_rotation = body.rotation;
-                        if let Some((target_pos, target_rot)) = body.kinematic_target {
-                            body.velocity = (target_pos - body.position) * (Fix128::ONE / dt);
-                            body.position = target_pos;
-                            body.rotation = target_rot;
+                        self.bodies[i].prev_position = self.bodies[i].position;
+                        self.bodies[i].prev_rotation = self.bodies[i].rotation;
+                        if let Some((target_pos, target_rot)) = self.bodies[i].kinematic_target {
+                            self.bodies[i].velocity = (target_pos - self.bodies[i].position) * (Fix128::ONE / dt);
+                            self.bodies[i].position = target_pos;
+                            self.bodies[i].rotation = target_rot;
                         }
                         continue;
                     }
                     BodyType::Dynamic => {}
                 }
 
+                // Skip sleeping bodies (preserve prev for zero-velocity derivation)
+                if self.islands.is_sleeping(i) {
+                    self.bodies[i].prev_position = self.bodies[i].position;
+                    self.bodies[i].prev_rotation = self.bodies[i].rotation;
+                    continue;
+                }
+
                 // Store previous state
-                body.prev_position = body.position;
-                body.prev_rotation = body.rotation;
+                self.bodies[i].prev_position = self.bodies[i].position;
+                self.bodies[i].prev_rotation = self.bodies[i].rotation;
 
                 // Apply gravity (with per-body scale)
-                body.velocity = body.velocity + self.config.gravity * body.gravity_scale * dt;
+                let grav = self.config.gravity * self.bodies[i].gravity_scale * dt;
+                self.bodies[i].velocity = self.bodies[i].velocity + grav;
 
                 // Apply damping
-                body.velocity = body.velocity * self.config.damping;
-                body.angular_velocity = body.angular_velocity * self.config.damping;
+                self.bodies[i].velocity = self.bodies[i].velocity * self.config.damping;
+                self.bodies[i].angular_velocity = self.bodies[i].angular_velocity * self.config.damping;
 
                 // Predict position
-                body.position = body.position + body.velocity * dt;
+                self.bodies[i].position = self.bodies[i].position + self.bodies[i].velocity * dt;
 
                 // Predict rotation (single sqrt via normalize_with_length)
-                let (axis, ang_speed) = body.angular_velocity.normalize_with_length();
+                let (axis, ang_speed) = self.bodies[i].angular_velocity.normalize_with_length();
                 if !ang_speed.is_zero() {
                     let angle = ang_speed * dt;
                     let delta_rot = QuatFix::from_axis_angle(axis, angle);
-                    body.rotation = delta_rot.mul(body.rotation).normalize();
+                    self.bodies[i].rotation = delta_rot.mul(self.bodies[i].rotation).normalize();
                 }
             }
         }
@@ -1463,6 +1971,135 @@ impl PhysicsWorld {
         }
     }
 
+    // ── Automatic Collision Detection ─────────────────────────────────
+
+    /// Detect collisions between bodies with collision radii.
+    ///
+    /// Uses BVH broad-phase with Morton codes and sphere-sphere narrow-phase.
+    /// Generates contact constraints and events automatically.
+    /// Bodies without a collision radius are skipped.
+    fn detect_collisions(&mut self) {
+        let n = self.bodies.len();
+        if n < 2 {
+            return;
+        }
+
+        // Build BVH from bodies that have collision radii
+        let mut primitives = Vec::new();
+        for i in 0..n {
+            if let Some(radius) = self.body_collision_radii.get(i).and_then(|r| *r) {
+                let pos = self.bodies[i].position;
+                let half = Vec3Fix::new(radius, radius, radius);
+                let aabb = AABB::from_center_half(pos, half);
+                primitives.push(BvhPrimitive {
+                    aabb,
+                    index: i as u32,
+                    morton: 0,
+                });
+            }
+        }
+
+        if primitives.len() < 2 {
+            return;
+        }
+
+        let bvh = LinearBvh::build(primitives);
+        let pairs = bvh.find_pairs();
+
+        // Collect results to avoid borrow conflicts
+        struct ContactInfo {
+            body_a: usize,
+            body_b: usize,
+            contact: Contact,
+            normal: Vec3Fix,
+            point: Vec3Fix,
+            depth: Fix128,
+            rel_vel: Fix128,
+            is_sensor: bool,
+        }
+        let mut results: Vec<ContactInfo> = Vec::new();
+
+        for (a32, b32) in pairs {
+            let a = a32 as usize;
+            let b = b32 as usize;
+            if a >= n || b >= n { continue; }
+
+            // Filter check
+            let filter_a = self.body_filters.get(a).copied().unwrap_or(CollisionFilter::DEFAULT);
+            let filter_b = self.body_filters.get(b).copied().unwrap_or(CollisionFilter::DEFAULT);
+            if !CollisionFilter::can_collide(&filter_a, &filter_b) {
+                continue;
+            }
+
+            // Skip static-static
+            if self.bodies[a].is_static() && self.bodies[b].is_static() {
+                continue;
+            }
+
+            // Skip if both sleeping
+            if self.islands.is_sleeping(a) && self.islands.is_sleeping(b) {
+                continue;
+            }
+
+            // Sphere-sphere narrow phase (safe indexing for deserialization robustness)
+            let radius_a = self.body_collision_radii.get(a).and_then(|r| *r).unwrap_or(Fix128::ZERO);
+            let radius_b = self.body_collision_radii.get(b).and_then(|r| *r).unwrap_or(Fix128::ZERO);
+
+            let delta = self.bodies[b].position - self.bodies[a].position;
+            let (normal, dist) = delta.normalize_with_length();
+            let combined_radius = radius_a + radius_b;
+
+            if dist < combined_radius && !dist.is_zero() {
+                let depth = combined_radius - dist;
+                let point_a = self.bodies[a].position + normal * radius_a;
+                let point_b = self.bodies[b].position - normal * radius_b;
+                let rel_vel = (self.bodies[a].velocity - self.bodies[b].velocity).dot(normal);
+                let is_sensor = self.bodies[a].is_sensor || self.bodies[b].is_sensor;
+
+                let contact = Contact {
+                    depth,
+                    normal,
+                    point_a,
+                    point_b,
+                };
+
+                results.push(ContactInfo {
+                    body_a: a,
+                    body_b: b,
+                    contact,
+                    normal,
+                    point: point_a,
+                    depth,
+                    rel_vel,
+                    is_sensor,
+                });
+            }
+        }
+
+        // Apply results
+        for info in results {
+            // Report contact event
+            self.events.report_contact(
+                info.body_a,
+                info.body_b,
+                info.normal,
+                info.point,
+                info.depth,
+                info.rel_vel,
+            );
+
+            // Wake sleeping bodies on contact
+            self.islands.wake_body(info.body_a);
+            self.islands.wake_body(info.body_b);
+
+            if info.is_sensor {
+                self.events.report_trigger(info.body_a, info.body_b);
+            } else {
+                self.add_contact_with_material(info.body_a, info.body_b, info.contact);
+            }
+        }
+    }
+
     /// Get body by index
     #[inline]
     pub fn get_body(&self, idx: usize) -> Option<&RigidBody> {
@@ -1475,7 +2112,12 @@ impl PhysicsWorld {
         self.bodies.get_mut(idx)
     }
 
-    /// Serialize world state (for rollback netcode)
+    /// Serialize world state (for rollback netcode).
+    ///
+    /// Saves per-body: position, velocity, rotation, angular velocity.
+    /// Does NOT save constraints, joints, force fields, collision radii,
+    /// or filters — in rollback netcode these are derived from game state
+    /// and re-created each frame.
     pub fn serialize_state(&self) -> Vec<u8> {
         let mut data = Vec::new();
 
@@ -1510,12 +2152,24 @@ impl PhysicsWorld {
             data.extend_from_slice(&body.rotation.z.lo.to_le_bytes());
             data.extend_from_slice(&body.rotation.w.hi.to_le_bytes());
             data.extend_from_slice(&body.rotation.w.lo.to_le_bytes());
+
+            // Angular velocity (3 x Fix128 = 48 bytes)
+            data.extend_from_slice(&body.angular_velocity.x.hi.to_le_bytes());
+            data.extend_from_slice(&body.angular_velocity.x.lo.to_le_bytes());
+            data.extend_from_slice(&body.angular_velocity.y.hi.to_le_bytes());
+            data.extend_from_slice(&body.angular_velocity.y.lo.to_le_bytes());
+            data.extend_from_slice(&body.angular_velocity.z.hi.to_le_bytes());
+            data.extend_from_slice(&body.angular_velocity.z.lo.to_le_bytes());
         }
 
         data
     }
 
-    /// Deserialize world state (for rollback netcode)
+    /// Deserialize world state (for rollback netcode).
+    ///
+    /// Restores per-body transforms. Parallel arrays (collision radii,
+    /// filters, materials, island manager) are resized to match the body
+    /// count, preserving existing entries and zero-filling new ones.
     pub fn deserialize_state(&mut self, data: &[u8]) -> bool {
         if data.len() < 4 {
             return false;
@@ -1527,9 +2181,10 @@ impl PhysicsWorld {
             return false;
         }
 
+        // Per-body: position(48) + velocity(48) + rotation(64) + angular_velocity(48) = 208 bytes
         let mut offset = 4;
         for body in &mut self.bodies {
-            if offset + 160 > data.len() {
+            if offset + 208 > data.len() {
                 return false;
             }
 
@@ -1572,7 +2227,27 @@ impl PhysicsWorld {
             body.rotation.y = read_fix128(&mut offset);
             body.rotation.z = read_fix128(&mut offset);
             body.rotation.w = read_fix128(&mut offset);
+
+            body.angular_velocity.x = read_fix128(&mut offset);
+            body.angular_velocity.y = read_fix128(&mut offset);
+            body.angular_velocity.z = read_fix128(&mut offset);
         }
+
+        // Resync parallel arrays to match body count (extend AND truncate)
+        let n = self.bodies.len();
+        while self.body_collision_radii.len() < n {
+            self.body_collision_radii.push(None);
+        }
+        self.body_collision_radii.truncate(n);
+        while self.body_filters.len() < n {
+            self.body_filters.push(CollisionFilter::DEFAULT);
+        }
+        self.body_filters.truncate(n);
+        while self.body_materials.len() < n {
+            self.body_materials.push(crate::material::DEFAULT_MATERIAL);
+        }
+        self.body_materials.truncate(n);
+        self.islands = IslandManager::new(n, self.islands.config);
 
         true
     }

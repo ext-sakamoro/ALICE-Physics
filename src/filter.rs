@@ -87,7 +87,19 @@ impl Default for CollisionFilter {
     }
 }
 
-/// Predefined collision layers for common game setups
+/// Predefined collision layers for common game setups.
+///
+/// Each constant is a single-bit `u32` bitmask. Combine them with bitwise OR
+/// to build [`CollisionFilter`] layer and mask fields:
+///
+/// ```
+/// use alice_physics::filter::{CollisionFilter, layers};
+///
+/// let player_filter = CollisionFilter::new(
+///     layers::PLAYER,
+///     layers::ENEMY | layers::PROJECTILE | layers::STATIC,
+/// );
+/// ```
 pub mod layers {
     /// Default collision layer
     pub const DEFAULT: u32 = 1 << 0;

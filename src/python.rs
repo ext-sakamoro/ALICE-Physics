@@ -98,7 +98,7 @@ impl PyPhysicsWorld {
             data[base + 1] = y as f64;
             data[base + 2] = z as f64;
         }
-        data.into_pyarray_bound(py).reshape([n, 3]).unwrap()
+        data.into_pyarray_bound(py).reshape([n, 3]).expect("buffer length is n*3")
     }
 
     /// Get all body velocities as a NumPy (N, 3) float64 array.
@@ -112,7 +112,7 @@ impl PyPhysicsWorld {
             data[base + 1] = y as f64;
             data[base + 2] = z as f64;
         }
-        data.into_pyarray_bound(py).reshape([n, 3]).unwrap()
+        data.into_pyarray_bound(py).reshape([n, 3]).expect("buffer length is n*3")
     }
 
     /// Get a single body's position as (x, y, z) tuple.
@@ -367,7 +367,7 @@ impl PyPhysicsWorld {
             data[base + 9] = body.rotation.w.to_f32() as f64;
         }
 
-        data.into_pyarray_bound(py).reshape([n, 10]).unwrap()
+        data.into_pyarray_bound(py).reshape([n, 10]).expect("buffer length is n*10")
     }
 
     fn __repr__(&self) -> String {
@@ -491,7 +491,7 @@ impl PyDeterministicSimulation {
             data[base + 1] = y as f64;
             data[base + 2] = z as f64;
         }
-        data.into_pyarray_bound(py).reshape([n, 3]).unwrap()
+        data.into_pyarray_bound(py).reshape([n, 3]).expect("buffer length is n*3")
     }
 
     fn __repr__(&self) -> String {

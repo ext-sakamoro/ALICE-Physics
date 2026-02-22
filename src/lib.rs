@@ -10,8 +10,22 @@
 //! - **128-bit Fixed-Point**: I64F64 format with CORDIC trigonometry
 //! - **XPBD Solver**: Extended Position Based Dynamics for stable constraints
 //! - **GJK/EPA**: Robust collision detection for convex shapes
-//! - **Linear BVH**: Morton code-based spatial acceleration
+//! - **Linear BVH**: Morton code-based spatial acceleration (used for broad-phase and raycast)
 //! - **Rollback Support**: State serialization for netcode
+//!
+//! # Feature Flags
+//!
+//! | Feature | Description |
+//! |---------|-------------|
+//! | `std` (default) | Standard library support. Disable for `no_std` (requires `alloc`). |
+//! | `simd` | SSE2 acceleration for `Vec3Fix` math ops (`dot`, `add`, `sub`). Results remain bit-exact. Solver hot paths use scalar arithmetic to guarantee cross-platform determinism. |
+//! | `parallel` | Parallel constraint solving via Rayon with graph-colored batches. |
+//! | `neural` | Deterministic neural controller integration (ALICE-ML). |
+//! | `python` | PyO3 + NumPy zero-copy Python bindings. |
+//! | `replay` | Replay recording/playback via ALICE-DB. |
+//! | `ffi` | C FFI for Unity/UE5/game engine integration. |
+//! | `wasm` | WebAssembly bindings via wasm-bindgen. |
+//! | `analytics` | ALICE-Analytics simulation profiling (DDSketch, HyperLogLog). |
 //!
 //! # Example
 //!
@@ -29,9 +43,15 @@
 //! );
 //! let body_id = world.add_body(body);
 //!
-//! // Step simulation
-//! let dt = Fix128::from_ratio(1, 60);  // 1/60 second
-//! world.step(dt);
+//! // Step simulation (60 frames at 1/60 second)
+//! let dt = Fix128::from_ratio(1, 60);
+//! for _ in 0..60 {
+//!     world.step(dt);
+//! }
+//!
+//! // Body should have fallen under gravity
+//! let pos = world.bodies[body_id].position;
+//! assert!(pos.y < Fix128::from_int(10), "Body fell under gravity");
 //! ```
 //!
 //! # Modules
@@ -39,8 +59,8 @@
 //! - [`math`]: Fixed-point math primitives (Fix128, Vec3Fix, QuatFix, CORDIC)
 //! - [`collider`]: Collision shapes and GJK/EPA detection
 //! - [`solver`]: XPBD physics solver and rigid body dynamics
-//! - [`bvh`]: Linear BVH for broad-phase collision detection
-//! - [`filter`]: Collision filtering with layer/mask bitmasks
+//! - [`bvh`]: Linear BVH for broad-phase collision detection (rebuilt each frame for correctness)
+//! - [`filter`]: Collision filtering with layer/mask bitmasks (see [`filter::layers`] for predefined layer constants)
 //! - [`rng`]: Deterministic pseudo-random number generator (PCG-XSH-RR)
 //! - [`event`]: Contact and trigger event tracking
 //! - [`joint`]: Joint constraints (Ball, Hinge, Fixed, Slider, Spring)
@@ -199,7 +219,7 @@ pub use bvh::{BvhNode, BvhPrimitive, LinearBvh};
 pub use ccd::{speculative_contact, CcdConfig};
 pub use character::{CharacterConfig, CharacterController, MoveResult, PushImpulse};
 pub use cloth::{Cloth, ClothConfig};
-pub use collider::{Capsule, CollisionResult, ConvexHull, ScaledShape, Sphere, AABB};
+pub use collider::{Capsule, CollisionResult, ConvexHull, ScaledShape, Sphere, Support, AABB};
 pub use compound::{CompoundShape, ShapeRef};
 pub use contact_cache::{BodyPairKey, ContactCache, ContactManifold};
 #[cfg(feature = "std")]
@@ -211,12 +231,14 @@ pub use dynamic_bvh::DynamicAabbTree;
 pub use error::PhysicsError;
 #[cfg(feature = "std")]
 pub use erosion::{ErosionConfig, ErosionModifier, ErosionType};
-pub use event::{ContactEvent, ContactEventType, EventCollector};
+pub use event::{ContactEvent, ContactEventType, EventCollector, TriggerEvent};
 pub use filter::CollisionFilter;
+/// Re-export predefined collision layer constants for convenience.
+pub use filter::layers;
 pub use fluid::{Fluid, FluidConfig};
 #[cfg(feature = "std")]
 pub use fluid_netcode::{FluidDelta, FluidSnapshot};
-pub use force::{ForceField, ForceFieldInstance};
+pub use force::{apply_force_fields, ForceField, ForceFieldInstance};
 #[cfg(feature = "std")]
 pub use fracture::{Crack, FractureConfig, FractureModifier};
 #[cfg(feature = "std")]
@@ -226,10 +248,10 @@ pub use gpu_sdf::{
 };
 pub use heightfield::HeightField;
 pub use interpolation::{BodySnapshot, InterpolationState, WorldSnapshot};
-pub use joint::solve_joints_breakable;
+pub use joint::{solve_joints, solve_joints_breakable};
 pub use joint::{
-    BallJoint, ConeTwistJoint, D6Joint, D6Motion, FixedJoint, HingeJoint, Joint, SliderJoint,
-    SpringJoint,
+    BallJoint, ConeTwistJoint, D6Joint, D6Motion, FixedJoint, HingeJoint, Joint, JointType,
+    SliderJoint, SpringJoint,
 };
 pub use material::{CombineRule, CombinedMaterial, MaterialId, MaterialTable, PhysicsMaterial};
 pub use math::{simd_width, Fix128, Mat3Fix, QuatFix, Vec3Fix, SIMD_WIDTH};
@@ -270,7 +292,7 @@ pub use sim_field::{ScalarField3D, VectorField3D};
 pub use sim_modifier::{ModifiedSdf, PhysicsModifier, SingleModifiedSdf};
 #[cfg(feature = "std")]
 pub use sketch::{CountMinSketch, DDSketch, FnvHasher, HeavyHitters, HyperLogLog, Mergeable};
-pub use sleeping::{IslandManager, SleepConfig, SleepData, SleepState};
+pub use sleeping::{Island, IslandManager, SleepConfig, SleepData, SleepState};
 pub use spatial::SpatialGrid;
 #[cfg(feature = "std")]
 pub use solver::ContactModifier;
@@ -308,12 +330,13 @@ pub mod prelude {
     pub use crate::error::PhysicsError;
     #[cfg(feature = "std")]
     pub use crate::erosion::{ErosionConfig, ErosionModifier, ErosionType};
-    pub use crate::event::{ContactEvent, ContactEventType, EventCollector};
+    pub use crate::event::{ContactEvent, ContactEventType, EventCollector, TriggerEvent};
     pub use crate::filter::CollisionFilter;
+    pub use crate::filter::layers;
     pub use crate::fluid::{Fluid, FluidConfig};
     #[cfg(feature = "std")]
     pub use crate::fluid_netcode::{FluidDelta, FluidSnapshot};
-    pub use crate::force::{ForceField, ForceFieldInstance};
+    pub use crate::force::{apply_force_fields, ForceField, ForceFieldInstance};
     #[cfg(feature = "std")]
     pub use crate::fracture::{Crack, FractureConfig, FractureModifier};
     #[cfg(feature = "std")]
@@ -323,10 +346,10 @@ pub mod prelude {
     };
     pub use crate::heightfield::HeightField;
     pub use crate::interpolation::{BodySnapshot, InterpolationState, WorldSnapshot};
-    pub use crate::joint::solve_joints_breakable;
+    pub use crate::joint::{solve_joints, solve_joints_breakable};
     pub use crate::joint::{
-        BallJoint, ConeTwistJoint, D6Joint, D6Motion, FixedJoint, HingeJoint, Joint, SliderJoint,
-        SpringJoint,
+        BallJoint, ConeTwistJoint, D6Joint, D6Motion, FixedJoint, HingeJoint, Joint, JointType,
+        SliderJoint, SpringJoint,
     };
     pub use crate::material::{
         CombineRule, CombinedMaterial, MaterialId, MaterialTable, PhysicsMaterial,
@@ -376,7 +399,7 @@ pub mod prelude {
     pub use crate::sim_modifier::{ModifiedSdf, PhysicsModifier, SingleModifiedSdf};
     #[cfg(feature = "std")]
     pub use crate::sketch::{CountMinSketch, DDSketch, FnvHasher, HeavyHitters, HyperLogLog, Mergeable};
-    pub use crate::sleeping::{IslandManager, SleepConfig, SleepData, SleepState};
+    pub use crate::sleeping::{Island, IslandManager, SleepConfig, SleepData, SleepState};
     pub use crate::spatial::SpatialGrid;
     #[cfg(feature = "std")]
     pub use crate::solver::ContactModifier;

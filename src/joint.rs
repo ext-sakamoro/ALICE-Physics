@@ -9,6 +9,8 @@
 //! - **FixedJoint**: 0-DOF (weld)
 //! - **SliderJoint**: 1-DOF translation along an axis (piston)
 //! - **SpringJoint**: Distance spring with damping
+//! - **D6Joint**: 6-DOF configurable joint with per-axis locking
+//! - **ConeTwistJoint**: Cone-twist constraint for ragdoll shoulders/hips
 
 use crate::math::{Fix128, QuatFix, Vec3Fix};
 
