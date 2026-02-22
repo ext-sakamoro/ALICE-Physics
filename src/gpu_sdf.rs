@@ -217,13 +217,17 @@ pub struct GpuSdfInstancedBatch {
 ///
 /// # Usage
 ///
-/// ```rust,ignore
+/// ```
+/// use alice_physics::gpu_sdf::{GpuSdfMultiDispatch, GpuSdfQuery};
+///
 /// let mut dispatch = GpuSdfMultiDispatch::new();
+/// let sphere_queries = vec![GpuSdfQuery { x: 0.0, y: 0.0, z: 0.0, radius: 0.5 }];
+/// let box_queries = vec![GpuSdfQuery { x: 1.0, y: 1.0, z: 1.0, radius: 0.0 }];
 /// dispatch.add_batch(0, sphere_queries);
 /// dispatch.add_batch(1, box_queries);
 ///
-/// println!("total queries:    {}", dispatch.total_queries());
-/// println!("total dispatches: {}", dispatch.total_dispatches());
+/// assert_eq!(dispatch.total_queries(), 2);
+/// assert_eq!(dispatch.total_dispatches(), 2);
 /// ```
 pub struct GpuSdfMultiDispatch {
     /// One entry per unique SDF — ordered by insertion.
@@ -281,9 +285,12 @@ impl Default for GpuSdfMultiDispatch {
 ///
 /// Use this when chunking queries before uploading to the GPU:
 ///
-/// ```rust,ignore
+/// ```
+/// use alice_physics::gpu_sdf::batch_size;
+///
+/// let queries = vec![1.0f32; 64];
 /// for chunk in queries.chunks(batch_size()) {
-///     // SIMD-width-aligned pre-processing …
+///     assert!(chunk.len() <= batch_size());
 /// }
 /// ```
 #[inline(always)]

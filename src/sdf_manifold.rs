@@ -15,12 +15,10 @@
 
 #[cfg(feature = "std")]
 use crate::collider::Contact;
+#[cfg(feature = "std")]
 use crate::math::{Fix128, Vec3Fix};
 #[cfg(feature = "std")]
 use crate::sdf_collider::SdfCollider;
-
-#[cfg(not(feature = "std"))]
-use alloc::vec::Vec;
 
 // ============================================================================
 // Manifold Configuration
@@ -55,6 +53,7 @@ impl Default for ManifoldConfig {
 // ============================================================================
 
 /// Multi-point contact manifold from SDF surface
+#[cfg(feature = "std")]
 #[derive(Clone, Debug)]
 pub struct SdfManifold {
     /// Contact points (up to max_contacts)
@@ -65,6 +64,7 @@ pub struct SdfManifold {
     pub avg_depth: Fix128,
 }
 
+#[cfg(feature = "std")]
 impl SdfManifold {
     /// Empty manifold
     pub fn empty() -> Self {

@@ -779,6 +779,7 @@ mod tests {
 
     #[test]
     fn test_world_create_destroy() {
+        // SAFETY: All pointers are created/destroyed within this test scope.
         unsafe {
             let world = alice_physics_world_create();
             assert!(!world.is_null());
@@ -789,6 +790,7 @@ mod tests {
 
     #[test]
     fn test_world_destroy_null() {
+        // SAFETY: Null pointer is explicitly handled by the C API.
         unsafe {
             alice_physics_world_destroy(std::ptr::null_mut());
         }
@@ -796,6 +798,7 @@ mod tests {
 
     #[test]
     fn test_world_create_with_config() {
+        // SAFETY: All pointers are created/destroyed within this test scope.
         unsafe {
             let config = alice_physics_config_default();
             let world = alice_physics_world_create_with_config(config);
@@ -806,6 +809,7 @@ mod tests {
 
     #[test]
     fn test_body_add_and_get() {
+        // SAFETY: All pointers are created/destroyed within this test scope.
         unsafe {
             let world = alice_physics_world_create();
             let pos = AliceVec3 {
@@ -834,6 +838,7 @@ mod tests {
 
     #[test]
     fn test_body_get_invalid_id() {
+        // SAFETY: All pointers are created/destroyed within this test scope.
         unsafe {
             let world = alice_physics_world_create();
             let mut out = AliceVec3 {
@@ -849,6 +854,7 @@ mod tests {
 
     #[test]
     fn test_null_world_safety() {
+        // SAFETY: Null pointers are explicitly handled by the C API.
         unsafe {
             let null: *mut PhysicsWorld = std::ptr::null_mut();
             assert_eq!(alice_physics_world_body_count(null), 0);
@@ -866,6 +872,7 @@ mod tests {
 
     #[test]
     fn test_step_and_gravity() {
+        // SAFETY: All pointers are created/destroyed within this test scope.
         unsafe {
             let world = alice_physics_world_create();
             let pos = AliceVec3 {
@@ -893,6 +900,7 @@ mod tests {
 
     #[test]
     fn test_batch_positions() {
+        // SAFETY: All pointers are created/destroyed within this test scope.
         unsafe {
             let world = alice_physics_world_create();
             let p1 = AliceVec3 {
@@ -928,6 +936,7 @@ mod tests {
 
     #[test]
     fn test_state_serialization_ffi() {
+        // SAFETY: All pointers are created/destroyed within this test scope.
         unsafe {
             let world = alice_physics_world_create();
             let pos = AliceVec3 {
@@ -955,6 +964,7 @@ mod tests {
 
     #[test]
     fn test_impulse_application() {
+        // SAFETY: All pointers are created/destroyed within this test scope.
         unsafe {
             let world = alice_physics_world_create();
             alice_physics_world_set_gravity(world, 0.0, 0.0, 0.0);
@@ -987,6 +997,7 @@ mod tests {
 
     #[test]
     fn test_body_info() {
+        // SAFETY: All pointers are created/destroyed within this test scope.
         unsafe {
             let world = alice_physics_world_create();
             let pos = AliceVec3 {

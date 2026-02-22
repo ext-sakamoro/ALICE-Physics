@@ -370,7 +370,9 @@ pub use sdf_collider::{ClosureSdf, SdfCollider, SdfField};
 #[cfg(feature = "std")]
 pub use sdf_destruction::{DestructibleSdf, DestructionShape};
 pub use sdf_force::{SdfForceField, SdfForceType};
-pub use sdf_manifold::{ManifoldConfig, SdfManifold};
+pub use sdf_manifold::ManifoldConfig;
+#[cfg(feature = "std")]
+pub use sdf_manifold::SdfManifold;
 #[cfg(feature = "std")]
 pub use sim_field::{ScalarField3D, VectorField3D};
 #[cfg(feature = "std")]
@@ -484,7 +486,9 @@ pub mod prelude {
     #[cfg(feature = "std")]
     pub use crate::sdf_destruction::{DestructibleSdf, DestructionShape};
     pub use crate::sdf_force::{SdfForceField, SdfForceType};
-    pub use crate::sdf_manifold::{ManifoldConfig, SdfManifold};
+    pub use crate::sdf_manifold::ManifoldConfig;
+    #[cfg(feature = "std")]
+    pub use crate::sdf_manifold::SdfManifold;
     #[cfg(feature = "std")]
     pub use crate::sim_field::{ScalarField3D, VectorField3D};
     #[cfg(feature = "std")]
