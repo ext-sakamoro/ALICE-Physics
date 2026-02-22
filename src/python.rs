@@ -98,7 +98,9 @@ impl PyPhysicsWorld {
             data[base + 1] = y as f64;
             data[base + 2] = z as f64;
         }
-        data.into_pyarray_bound(py).reshape([n, 3]).expect("buffer length is n*3")
+        data.into_pyarray_bound(py)
+            .reshape([n, 3])
+            .expect("buffer length is n*3")
     }
 
     /// Get all body velocities as a NumPy (N, 3) float64 array.
@@ -112,7 +114,9 @@ impl PyPhysicsWorld {
             data[base + 1] = y as f64;
             data[base + 2] = z as f64;
         }
-        data.into_pyarray_bound(py).reshape([n, 3]).expect("buffer length is n*3")
+        data.into_pyarray_bound(py)
+            .reshape([n, 3])
+            .expect("buffer length is n*3")
     }
 
     /// Get a single body's position as (x, y, z) tuple.
@@ -140,11 +144,7 @@ impl PyPhysicsWorld {
     /// Set positions for all bodies from a NumPy (N, 3) array.
     ///
     /// GIL released during the update.
-    fn set_positions_batch(
-        &mut self,
-        py: Python<'_>,
-        data: PyReadonlyArray2<f64>,
-    ) -> PyResult<()> {
+    fn set_positions_batch(&mut self, py: Python<'_>, data: PyReadonlyArray2<f64>) -> PyResult<()> {
         let array = data.as_array();
         let shape = array.shape();
 
@@ -235,10 +235,8 @@ impl PyPhysicsWorld {
         let indices = py.allow_threads(|| {
             let mut out = Vec::with_capacity(n);
             for &(x, y, z, mass) in &params {
-                let body = RigidBody::new_dynamic(
-                    Vec3Fix::from_f32(x, y, z),
-                    Fix128::from_f64(mass),
-                );
+                let body =
+                    RigidBody::new_dynamic(Vec3Fix::from_f32(x, y, z), Fix128::from_f64(mass));
                 out.push(self.inner.add_body(body));
             }
             out
@@ -367,7 +365,9 @@ impl PyPhysicsWorld {
             data[base + 9] = body.rotation.w.to_f32() as f64;
         }
 
-        data.into_pyarray_bound(py).reshape([n, 10]).expect("buffer length is n*10")
+        data.into_pyarray_bound(py)
+            .reshape([n, 10])
+            .expect("buffer length is n*10")
     }
 
     fn __repr__(&self) -> String {
@@ -491,7 +491,9 @@ impl PyDeterministicSimulation {
             data[base + 1] = y as f64;
             data[base + 2] = z as f64;
         }
-        data.into_pyarray_bound(py).reshape([n, 3]).expect("buffer length is n*3")
+        data.into_pyarray_bound(py)
+            .reshape([n, 3])
+            .expect("buffer length is n*3")
     }
 
     fn __repr__(&self) -> String {

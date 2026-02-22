@@ -121,9 +121,9 @@ extern crate alloc;
 
 #[cfg(feature = "analytics")]
 pub mod analytics_bridge;
+pub mod animation_blend;
 #[cfg(feature = "std")]
 pub mod anomaly;
-pub mod animation_blend;
 pub mod articulation;
 pub mod audio_physics;
 pub mod box_collider;
@@ -142,9 +142,9 @@ pub mod db_bridge;
 pub mod debug_render;
 pub mod deformable;
 pub mod dynamic_bvh;
-pub mod error;
 #[cfg(feature = "std")]
 pub mod erosion;
+pub mod error;
 pub mod event;
 #[cfg(feature = "ffi")]
 pub mod ffi;
@@ -209,9 +209,12 @@ pub mod vehicle;
 mod wasm;
 
 // Re-export commonly used types
-#[cfg(feature = "std")]
-pub use anomaly::{AnomalyCallback, AnomalyEvent, CompositeDetector, EwmaDetector, MadDetector, StreamingMedian, ZScoreDetector};
 pub use animation_blend::{AnimationBlender, AnimationClip, BlendMode, SkeletonPose};
+#[cfg(feature = "std")]
+pub use anomaly::{
+    AnomalyCallback, AnomalyEvent, CompositeDetector, EwmaDetector, MadDetector, StreamingMedian,
+    ZScoreDetector,
+};
 pub use articulation::{ArticulatedBody, FeatherstoneSolver};
 pub use audio_physics::{AudioConfig, AudioEvent, AudioGenerator, AudioMaterial};
 pub use box_collider::OrientedBox;
@@ -228,13 +231,13 @@ pub use cylinder::Cylinder;
 pub use debug_render::{debug_draw_world, DebugColor, DebugDrawData, DebugDrawFlags};
 pub use deformable::{DeformableBody, DeformableConfig};
 pub use dynamic_bvh::DynamicAabbTree;
-pub use error::PhysicsError;
 #[cfg(feature = "std")]
 pub use erosion::{ErosionConfig, ErosionModifier, ErosionType};
+pub use error::PhysicsError;
 pub use event::{ContactEvent, ContactEventType, EventCollector, TriggerEvent};
-pub use filter::CollisionFilter;
 /// Re-export predefined collision layer constants for convenience.
 pub use filter::layers;
+pub use filter::CollisionFilter;
 pub use fluid::{Fluid, FluidConfig};
 #[cfg(feature = "std")]
 pub use fluid_netcode::{FluidDelta, FluidSnapshot};
@@ -263,15 +266,19 @@ pub use netcode::{
 #[cfg(feature = "std")]
 pub use phase_change::{Phase, PhaseChangeConfig, PhaseChangeModifier};
 #[cfg(feature = "std")]
-pub use pipeline::{MetricEvent, MetricPipeline, MetricRegistry, MetricSnapshot, MetricType, RingBuffer};
+pub use pipeline::{
+    MetricEvent, MetricPipeline, MetricRegistry, MetricSnapshot, MetricType, RingBuffer,
+};
 #[cfg(feature = "std")]
 pub use pressure::{PressureConfig, PressureModifier};
 #[cfg(feature = "std")]
-pub use privacy::{LaplaceNoise, PrivacyBudget, PrivateAggregator, RandomizedResponse, Rappor, XorShift64};
+pub use privacy::{
+    LaplaceNoise, PrivacyBudget, PrivateAggregator, RandomizedResponse, Rappor, XorShift64,
+};
 pub use profiling::{PhysicsProfiler, ProfileEntry, StepStats};
 pub use query::{
-    batch_raycast, batch_sphere_cast, capsule_cast, overlap_aabb, overlap_aabb_bvh,
-    overlap_sphere, overlap_sphere_bvh, sphere_cast, BatchRayQuery, OverlapResult, ShapeCastHit,
+    batch_raycast, batch_sphere_cast, capsule_cast, overlap_aabb, overlap_aabb_bvh, overlap_sphere,
+    overlap_sphere_bvh, sphere_cast, BatchRayQuery, OverlapResult, ShapeCastHit,
 };
 pub use raycast::{
     raycast_all_aabbs, raycast_all_spheres, raycast_any_aabbs, raycast_any_spheres, Ray, RayHit,
@@ -293,12 +300,12 @@ pub use sim_modifier::{ModifiedSdf, PhysicsModifier, SingleModifiedSdf};
 #[cfg(feature = "std")]
 pub use sketch::{CountMinSketch, DDSketch, FnvHasher, HeavyHitters, HyperLogLog, Mergeable};
 pub use sleeping::{Island, IslandManager, SleepConfig, SleepData, SleepState};
-pub use spatial::SpatialGrid;
 #[cfg(feature = "std")]
 pub use solver::ContactModifier;
 pub use solver::{
     BodyType, ContactConstraint, DistanceConstraint, PhysicsConfig, PhysicsWorld, RigidBody,
 };
+pub use spatial::SpatialGrid;
 #[cfg(feature = "std")]
 pub use thermal::{HeatSource, ThermalConfig, ThermalModifier};
 pub use trimesh::{TriMesh, Triangle};
@@ -306,9 +313,12 @@ pub use vehicle::{Vehicle, VehicleConfig};
 
 /// Prelude module for convenient imports
 pub mod prelude {
-    #[cfg(feature = "std")]
-    pub use crate::anomaly::{AnomalyCallback, AnomalyEvent, CompositeDetector, EwmaDetector, MadDetector, StreamingMedian, ZScoreDetector};
     pub use crate::animation_blend::{AnimationBlender, AnimationClip, BlendMode, SkeletonPose};
+    #[cfg(feature = "std")]
+    pub use crate::anomaly::{
+        AnomalyCallback, AnomalyEvent, CompositeDetector, EwmaDetector, MadDetector,
+        StreamingMedian, ZScoreDetector,
+    };
     pub use crate::articulation::{ArticulatedBody, FeatherstoneSolver};
     pub use crate::audio_physics::{AudioConfig, AudioEvent, AudioGenerator, AudioMaterial};
     pub use crate::box_collider::OrientedBox;
@@ -327,12 +337,12 @@ pub mod prelude {
     pub use crate::debug_render::{debug_draw_world, DebugColor, DebugDrawData, DebugDrawFlags};
     pub use crate::deformable::{DeformableBody, DeformableConfig};
     pub use crate::dynamic_bvh::DynamicAabbTree;
-    pub use crate::error::PhysicsError;
     #[cfg(feature = "std")]
     pub use crate::erosion::{ErosionConfig, ErosionModifier, ErosionType};
+    pub use crate::error::PhysicsError;
     pub use crate::event::{ContactEvent, ContactEventType, EventCollector, TriggerEvent};
-    pub use crate::filter::CollisionFilter;
     pub use crate::filter::layers;
+    pub use crate::filter::CollisionFilter;
     pub use crate::fluid::{Fluid, FluidConfig};
     #[cfg(feature = "std")]
     pub use crate::fluid_netcode::{FluidDelta, FluidSnapshot};
@@ -369,11 +379,15 @@ pub mod prelude {
     #[cfg(feature = "std")]
     pub use crate::phase_change::{Phase, PhaseChangeConfig, PhaseChangeModifier};
     #[cfg(feature = "std")]
-    pub use crate::pipeline::{MetricEvent, MetricPipeline, MetricRegistry, MetricSnapshot, MetricType, RingBuffer};
+    pub use crate::pipeline::{
+        MetricEvent, MetricPipeline, MetricRegistry, MetricSnapshot, MetricType, RingBuffer,
+    };
     #[cfg(feature = "std")]
     pub use crate::pressure::{PressureConfig, PressureModifier};
     #[cfg(feature = "std")]
-    pub use crate::privacy::{LaplaceNoise, PrivacyBudget, PrivateAggregator, RandomizedResponse, Rappor, XorShift64};
+    pub use crate::privacy::{
+        LaplaceNoise, PrivacyBudget, PrivateAggregator, RandomizedResponse, Rappor, XorShift64,
+    };
     pub use crate::profiling::{PhysicsProfiler, ProfileEntry, StepStats};
     pub use crate::query::{
         batch_raycast, batch_sphere_cast, capsule_cast, overlap_aabb, overlap_aabb_bvh,
@@ -398,14 +412,16 @@ pub mod prelude {
     #[cfg(feature = "std")]
     pub use crate::sim_modifier::{ModifiedSdf, PhysicsModifier, SingleModifiedSdf};
     #[cfg(feature = "std")]
-    pub use crate::sketch::{CountMinSketch, DDSketch, FnvHasher, HeavyHitters, HyperLogLog, Mergeable};
+    pub use crate::sketch::{
+        CountMinSketch, DDSketch, FnvHasher, HeavyHitters, HyperLogLog, Mergeable,
+    };
     pub use crate::sleeping::{Island, IslandManager, SleepConfig, SleepData, SleepState};
-    pub use crate::spatial::SpatialGrid;
     #[cfg(feature = "std")]
     pub use crate::solver::ContactModifier;
     pub use crate::solver::{
         BodyType, ContactConstraint, DistanceConstraint, PhysicsConfig, PhysicsWorld, RigidBody,
     };
+    pub use crate::spatial::SpatialGrid;
     #[cfg(feature = "std")]
     pub use crate::thermal::{HeatSource, ThermalConfig, ThermalModifier};
     pub use crate::trimesh::{TriMesh, Triangle};

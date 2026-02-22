@@ -30,7 +30,10 @@ use crate::sleeping::{IslandManager, SleepConfig};
 /// Minimum effective inverse-mass sum below which constraint solving is skipped.
 /// Prevents division explosion when two near-static bodies are in contact.
 /// Value: ~2^-40 ≈ 9.1e-13 in Fix128.
-const W_SUM_EPSILON: Fix128 = Fix128 { hi: 0, lo: 0x0000010000000000 };
+const W_SUM_EPSILON: Fix128 = Fix128 {
+    hi: 0,
+    lo: 0x0000010000000000,
+};
 
 #[cfg(not(feature = "std"))]
 use alloc::vec;
@@ -419,7 +422,7 @@ impl ContactConstraint {
             body_a,
             body_b,
             contact,
-            friction: Fix128::from_ratio(3, 10),  // 0.3 friction
+            friction: Fix128::from_ratio(3, 10), // 0.3 friction
             restitution: Fix128::from_ratio(2, 10), // 0.2 restitution
         }
     }
@@ -599,7 +602,6 @@ pub struct PhysicsWorld {
     contact_modifiers: Vec<Box<dyn ContactModifier>>,
 
     // ── Integrated Subsystems ──────────────────────────────────────────
-
     /// Joint constraints (solved each substep alongside distance/contact)
     pub joints: Vec<Joint>,
     /// Force fields applied at the start of each step
@@ -704,19 +706,29 @@ impl PhysicsWorld {
         // Remap references from `last` -> `idx` in all constraints and joints
         if idx != last {
             for c in &mut self.distance_constraints {
-                if c.body_a == last { c.body_a = idx; }
-                if c.body_b == last { c.body_b = idx; }
+                if c.body_a == last {
+                    c.body_a = idx;
+                }
+                if c.body_b == last {
+                    c.body_b = idx;
+                }
             }
             for c in &mut self.contact_constraints {
-                if c.body_a == last { c.body_a = idx; }
-                if c.body_b == last { c.body_b = idx; }
+                if c.body_a == last {
+                    c.body_a = idx;
+                }
+                if c.body_b == last {
+                    c.body_b = idx;
+                }
             }
             self.remap_joint_indices(last, idx);
         }
 
         // Remove constraints that referenced the removed body
-        self.distance_constraints.retain(|c| c.body_a < self.bodies.len() && c.body_b < self.bodies.len());
-        self.contact_constraints.retain(|c| c.body_a < self.bodies.len() && c.body_b < self.bodies.len());
+        self.distance_constraints
+            .retain(|c| c.body_a < self.bodies.len() && c.body_b < self.bodies.len());
+        self.contact_constraints
+            .retain(|c| c.body_a < self.bodies.len() && c.body_b < self.bodies.len());
         self.joints.retain(|j| {
             let (a, b) = j.bodies();
             a < self.bodies.len() && b < self.bodies.len()
@@ -741,19 +753,37 @@ impl PhysicsWorld {
         /// Remap a single joint's body_a and body_b fields.
         macro_rules! remap {
             ($j:expr) => {
-                if $j.body_a == from { $j.body_a = to; }
-                if $j.body_b == from { $j.body_b = to; }
+                if $j.body_a == from {
+                    $j.body_a = to;
+                }
+                if $j.body_b == from {
+                    $j.body_b = to;
+                }
             };
         }
         for joint in &mut self.joints {
             match joint {
-                Joint::Ball(j) => { remap!(j); }
-                Joint::Hinge(j) => { remap!(j); }
-                Joint::Fixed(j) => { remap!(j); }
-                Joint::Slider(j) => { remap!(j); }
-                Joint::Spring(j) => { remap!(j); }
-                Joint::D6(j) => { remap!(j); }
-                Joint::ConeTwist(j) => { remap!(j); }
+                Joint::Ball(j) => {
+                    remap!(j);
+                }
+                Joint::Hinge(j) => {
+                    remap!(j);
+                }
+                Joint::Fixed(j) => {
+                    remap!(j);
+                }
+                Joint::Slider(j) => {
+                    remap!(j);
+                }
+                Joint::Spring(j) => {
+                    remap!(j);
+                }
+                Joint::D6(j) => {
+                    remap!(j);
+                }
+                Joint::ConeTwist(j) => {
+                    remap!(j);
+                }
             }
         }
     }
@@ -770,11 +800,7 @@ impl PhysicsWorld {
     }
 
     /// Set a body's material ID
-    pub fn set_body_material(
-        &mut self,
-        body_idx: usize,
-        material_id: crate::material::MaterialId,
-    ) {
+    pub fn set_body_material(&mut self, body_idx: usize, material_id: crate::material::MaterialId) {
         if body_idx < self.body_materials.len() {
             self.body_materials[body_idx] = material_id;
         }
@@ -832,7 +858,9 @@ impl PhysicsWorld {
         assert!(
             a < self.bodies.len() && b < self.bodies.len(),
             "Joint body indices ({}, {}) out of bounds (body count = {})",
-            a, b, self.bodies.len()
+            a,
+            b,
+            self.bodies.len()
         );
         let idx = self.joints.len();
         self.islands.resize(self.bodies.len());
@@ -897,7 +925,10 @@ impl PhysicsWorld {
 
     /// Get collision filter for a body
     pub fn body_filter(&self, body_idx: usize) -> CollisionFilter {
-        self.body_filters.get(body_idx).copied().unwrap_or(CollisionFilter::DEFAULT)
+        self.body_filters
+            .get(body_idx)
+            .copied()
+            .unwrap_or(CollisionFilter::DEFAULT)
     }
 
     // ── Sleeping ──────────────────────────────────────────────────────
@@ -951,7 +982,12 @@ impl PhysicsWorld {
     /// Uses a BVH broad-phase to cull bodies outside the ray's bounding box,
     /// then performs exact ray-sphere intersection on candidates.
     /// Returns `None` if direction is zero or no body is hit.
-    pub fn raycast(&self, origin: Vec3Fix, direction: Vec3Fix, max_distance: Fix128) -> Option<(usize, Fix128)> {
+    pub fn raycast(
+        &self,
+        origin: Vec3Fix,
+        direction: Vec3Fix,
+        max_distance: Fix128,
+    ) -> Option<(usize, Fix128)> {
         if direction.length_squared().is_zero() {
             return None;
         }
@@ -979,16 +1015,43 @@ impl PhysicsWorld {
         // Compute ray AABB (bounding box of the ray segment)
         let endpoint = origin + dir_norm * max_distance;
         let ray_min = Vec3Fix::new(
-            if origin.x < endpoint.x { origin.x } else { endpoint.x },
-            if origin.y < endpoint.y { origin.y } else { endpoint.y },
-            if origin.z < endpoint.z { origin.z } else { endpoint.z },
+            if origin.x < endpoint.x {
+                origin.x
+            } else {
+                endpoint.x
+            },
+            if origin.y < endpoint.y {
+                origin.y
+            } else {
+                endpoint.y
+            },
+            if origin.z < endpoint.z {
+                origin.z
+            } else {
+                endpoint.z
+            },
         );
         let ray_max = Vec3Fix::new(
-            if origin.x > endpoint.x { origin.x } else { endpoint.x },
-            if origin.y > endpoint.y { origin.y } else { endpoint.y },
-            if origin.z > endpoint.z { origin.z } else { endpoint.z },
+            if origin.x > endpoint.x {
+                origin.x
+            } else {
+                endpoint.x
+            },
+            if origin.y > endpoint.y {
+                origin.y
+            } else {
+                endpoint.y
+            },
+            if origin.z > endpoint.z {
+                origin.z
+            } else {
+                endpoint.z
+            },
         );
-        let ray_aabb = crate::collider::AABB { min: ray_min, max: ray_max };
+        let ray_aabb = crate::collider::AABB {
+            min: ray_min,
+            max: ray_max,
+        };
 
         let bvh = crate::bvh::LinearBvh::build(primitives);
         let candidates = bvh.query(&ray_aabb);
@@ -1005,7 +1068,9 @@ impl PhysicsWorld {
             let b = oc.dot(dir_norm);
             let c = oc.dot(oc) - radius * radius;
             let discriminant = b * b - c;
-            if discriminant < Fix128::ZERO { continue; }
+            if discriminant < Fix128::ZERO {
+                continue;
+            }
             let sqrt_d = discriminant.sqrt();
             // Try the nearest intersection first
             let mut t = -b - sqrt_d;
@@ -1013,7 +1078,9 @@ impl PhysicsWorld {
             if t < Fix128::ZERO {
                 t = -b + sqrt_d;
             }
-            if t < Fix128::ZERO || t > max_distance { continue; }
+            if t < Fix128::ZERO || t > max_distance {
+                continue;
+            }
             let dominated = match best {
                 None => true,
                 Some((_, prev_t)) => t < prev_t,
@@ -1340,51 +1407,54 @@ impl PhysicsWorld {
             let gravity = self.config.gravity;
             let damping = self.config.damping;
             let sleep_data = &self.islands.sleep_data;
-            self.bodies.par_iter_mut().enumerate().for_each(|(i, body)| {
-                match body.body_type {
-                    BodyType::Static => return,
-                    BodyType::Kinematic => {
+            self.bodies
+                .par_iter_mut()
+                .enumerate()
+                .for_each(|(i, body)| {
+                    match body.body_type {
+                        BodyType::Static => return,
+                        BodyType::Kinematic => {
+                            body.prev_position = body.position;
+                            body.prev_rotation = body.rotation;
+                            if let Some((target_pos, target_rot)) = body.kinematic_target {
+                                body.velocity = (target_pos - body.position) * (Fix128::ONE / dt);
+                                body.position = target_pos;
+                                body.rotation = target_rot;
+                            }
+                            return;
+                        }
+                        BodyType::Dynamic => {}
+                    }
+
+                    // Skip sleeping bodies (preserve prev for zero-velocity derivation)
+                    if sleep_data.get(i).is_some_and(|d| d.is_sleeping()) {
                         body.prev_position = body.position;
                         body.prev_rotation = body.rotation;
-                        if let Some((target_pos, target_rot)) = body.kinematic_target {
-                            body.velocity = (target_pos - body.position) * (Fix128::ONE / dt);
-                            body.position = target_pos;
-                            body.rotation = target_rot;
-                        }
                         return;
                     }
-                    BodyType::Dynamic => {}
-                }
 
-                // Skip sleeping bodies (preserve prev for zero-velocity derivation)
-                if sleep_data.get(i).is_some_and(|d| d.is_sleeping()) {
+                    // Store previous state
                     body.prev_position = body.position;
                     body.prev_rotation = body.rotation;
-                    return;
-                }
 
-                // Store previous state
-                body.prev_position = body.position;
-                body.prev_rotation = body.rotation;
+                    // Apply gravity (with per-body scale)
+                    body.velocity = body.velocity + gravity * body.gravity_scale * dt;
 
-                // Apply gravity (with per-body scale)
-                body.velocity = body.velocity + gravity * body.gravity_scale * dt;
+                    // Apply damping
+                    body.velocity = body.velocity * damping;
+                    body.angular_velocity = body.angular_velocity * damping;
 
-                // Apply damping
-                body.velocity = body.velocity * damping;
-                body.angular_velocity = body.angular_velocity * damping;
+                    // Predict position
+                    body.position = body.position + body.velocity * dt;
 
-                // Predict position
-                body.position = body.position + body.velocity * dt;
-
-                // Predict rotation (single sqrt via normalize_with_length)
-                let (axis, ang_speed) = body.angular_velocity.normalize_with_length();
-                if !ang_speed.is_zero() {
-                    let angle = ang_speed * dt;
-                    let delta_rot = QuatFix::from_axis_angle(axis, angle);
-                    body.rotation = delta_rot.mul(body.rotation).normalize();
-                }
-            });
+                    // Predict rotation (single sqrt via normalize_with_length)
+                    let (axis, ang_speed) = body.angular_velocity.normalize_with_length();
+                    if !ang_speed.is_zero() {
+                        let angle = ang_speed * dt;
+                        let delta_rot = QuatFix::from_axis_angle(axis, angle);
+                        body.rotation = delta_rot.mul(body.rotation).normalize();
+                    }
+                });
         }
 
         #[cfg(not(feature = "parallel"))]
@@ -1396,7 +1466,8 @@ impl PhysicsWorld {
                         self.bodies[i].prev_position = self.bodies[i].position;
                         self.bodies[i].prev_rotation = self.bodies[i].rotation;
                         if let Some((target_pos, target_rot)) = self.bodies[i].kinematic_target {
-                            self.bodies[i].velocity = (target_pos - self.bodies[i].position) * (Fix128::ONE / dt);
+                            self.bodies[i].velocity =
+                                (target_pos - self.bodies[i].position) * (Fix128::ONE / dt);
                             self.bodies[i].position = target_pos;
                             self.bodies[i].rotation = target_rot;
                         }
@@ -1422,7 +1493,8 @@ impl PhysicsWorld {
 
                 // Apply damping
                 self.bodies[i].velocity = self.bodies[i].velocity * self.config.damping;
-                self.bodies[i].angular_velocity = self.bodies[i].angular_velocity * self.config.damping;
+                self.bodies[i].angular_velocity =
+                    self.bodies[i].angular_velocity * self.config.damping;
 
                 // Predict position
                 self.bodies[i].position = self.bodies[i].position + self.bodies[i].velocity * dt;
@@ -1458,17 +1530,11 @@ impl PhysicsWorld {
                 let dq = body.rotation.mul(body.prev_rotation.conjugate());
                 let two_inv_dt = inv_dt + inv_dt;
                 if dq.w < Fix128::ZERO {
-                    body.angular_velocity = Vec3Fix::new(
-                        -dq.x * two_inv_dt,
-                        -dq.y * two_inv_dt,
-                        -dq.z * two_inv_dt,
-                    );
+                    body.angular_velocity =
+                        Vec3Fix::new(-dq.x * two_inv_dt, -dq.y * two_inv_dt, -dq.z * two_inv_dt);
                 } else {
-                    body.angular_velocity = Vec3Fix::new(
-                        dq.x * two_inv_dt,
-                        dq.y * two_inv_dt,
-                        dq.z * two_inv_dt,
-                    );
+                    body.angular_velocity =
+                        Vec3Fix::new(dq.x * two_inv_dt, dq.y * two_inv_dt, dq.z * two_inv_dt);
                 }
             });
         }
@@ -1484,17 +1550,11 @@ impl PhysicsWorld {
                 let dq = body.rotation.mul(body.prev_rotation.conjugate());
                 let two_inv_dt = inv_dt + inv_dt;
                 if dq.w < Fix128::ZERO {
-                    body.angular_velocity = Vec3Fix::new(
-                        -dq.x * two_inv_dt,
-                        -dq.y * two_inv_dt,
-                        -dq.z * two_inv_dt,
-                    );
+                    body.angular_velocity =
+                        Vec3Fix::new(-dq.x * two_inv_dt, -dq.y * two_inv_dt, -dq.z * two_inv_dt);
                 } else {
-                    body.angular_velocity = Vec3Fix::new(
-                        dq.x * two_inv_dt,
-                        dq.y * two_inv_dt,
-                        dq.z * two_inv_dt,
-                    );
+                    body.angular_velocity =
+                        Vec3Fix::new(dq.x * two_inv_dt, dq.y * two_inv_dt, dq.z * two_inv_dt);
                 }
             }
         }
@@ -1526,15 +1586,15 @@ impl PhysicsWorld {
                 let delta_vn = -(Fix128::ONE + restitution) * vn;
                 let impulse_n = n * delta_vn;
                 let inv_w = Fix128::ONE / w_sum;
-                self.bodies[constraint.body_a].velocity = self.bodies[constraint.body_a].velocity
-                    + impulse_n * (body_a.inv_mass * inv_w);
-                self.bodies[constraint.body_b].velocity = self.bodies[constraint.body_b].velocity
-                    - impulse_n * (body_b.inv_mass * inv_w);
+                self.bodies[constraint.body_a].velocity =
+                    self.bodies[constraint.body_a].velocity + impulse_n * (body_a.inv_mass * inv_w);
+                self.bodies[constraint.body_b].velocity =
+                    self.bodies[constraint.body_b].velocity - impulse_n * (body_b.inv_mass * inv_w);
             }
 
             // Friction: reduce tangential velocity
-            let relative_vel2 = self.bodies[constraint.body_a].velocity
-                - self.bodies[constraint.body_b].velocity;
+            let relative_vel2 =
+                self.bodies[constraint.body_a].velocity - self.bodies[constraint.body_b].velocity;
             let vn2 = relative_vel2.dot(n);
             let tangent_vel = relative_vel2 - n * vn2;
             let tangent_speed_sq = tangent_vel.length_squared();
@@ -2022,11 +2082,21 @@ impl PhysicsWorld {
         for (a32, b32) in pairs {
             let a = a32 as usize;
             let b = b32 as usize;
-            if a >= n || b >= n { continue; }
+            if a >= n || b >= n {
+                continue;
+            }
 
             // Filter check
-            let filter_a = self.body_filters.get(a).copied().unwrap_or(CollisionFilter::DEFAULT);
-            let filter_b = self.body_filters.get(b).copied().unwrap_or(CollisionFilter::DEFAULT);
+            let filter_a = self
+                .body_filters
+                .get(a)
+                .copied()
+                .unwrap_or(CollisionFilter::DEFAULT);
+            let filter_b = self
+                .body_filters
+                .get(b)
+                .copied()
+                .unwrap_or(CollisionFilter::DEFAULT);
             if !CollisionFilter::can_collide(&filter_a, &filter_b) {
                 continue;
             }
@@ -2042,8 +2112,16 @@ impl PhysicsWorld {
             }
 
             // Sphere-sphere narrow phase (safe indexing for deserialization robustness)
-            let radius_a = self.body_collision_radii.get(a).and_then(|r| *r).unwrap_or(Fix128::ZERO);
-            let radius_b = self.body_collision_radii.get(b).and_then(|r| *r).unwrap_or(Fix128::ZERO);
+            let radius_a = self
+                .body_collision_radii
+                .get(a)
+                .and_then(|r| *r)
+                .unwrap_or(Fix128::ZERO);
+            let radius_b = self
+                .body_collision_radii
+                .get(b)
+                .and_then(|r| *r)
+                .unwrap_or(Fix128::ZERO);
 
             let delta = self.bodies[b].position - self.bodies[a].position;
             let (normal, dist) = delta.normalize_with_length();

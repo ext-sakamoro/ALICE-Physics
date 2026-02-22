@@ -4,13 +4,13 @@
 //! public API re-exported from the crate root. All tests run deterministically
 //! — no floating-point, no randomness.
 
-use alice_physics::{
-    bvh::BvhPrimitive, Cloth, CollisionFilter, ContactEventType, DistanceConstraint, Fix128,
-    ForceField, ForceFieldInstance, Joint, LinearBvh, PhysicsConfig, PhysicsWorld,
-    QuatFix, RigidBody, Rope, SleepConfig, Vec3Fix, Vehicle, VehicleConfig,
-};
 use alice_physics::collider::AABB;
 use alice_physics::joint::BallJoint;
+use alice_physics::{
+    bvh::BvhPrimitive, Cloth, CollisionFilter, ContactEventType, DistanceConstraint, Fix128,
+    ForceField, ForceFieldInstance, Joint, LinearBvh, PhysicsConfig, PhysicsWorld, QuatFix,
+    RigidBody, Rope, SleepConfig, Vec3Fix, Vehicle, VehicleConfig,
+};
 
 // ============================================================================
 // Helper
@@ -228,18 +228,16 @@ fn test_bvh_query_correctness() {
     let bvh = LinearBvh::build(prims);
 
     // Query covering only the first primitive (x ∈ [0, 1])
-    let q = AABB::new(
-        Vec3Fix::from_int(0, 0, 0),
-        Vec3Fix::from_int(1, 1, 1),
-    );
+    let q = AABB::new(Vec3Fix::from_int(0, 0, 0), Vec3Fix::from_int(1, 1, 1));
     let hits = bvh.query(&q);
-    assert!(hits.contains(&0), "Expected primitive 0 in hit set, got {:?}", hits);
+    assert!(
+        hits.contains(&0),
+        "Expected primitive 0 in hit set, got {:?}",
+        hits
+    );
 
     // Query in a gap between primitives — should have no hits
-    let gap = AABB::new(
-        Vec3Fix::from_int(1, 0, 0),
-        Vec3Fix::from_int(2, 1, 1),
-    );
+    let gap = AABB::new(Vec3Fix::from_int(1, 0, 0), Vec3Fix::from_int(2, 1, 1));
     let gap_hits = bvh.query(&gap);
     // Primitive 0 ends at x=1 and primitive 1 starts at x=3; the gap [1,2] might
     // touch primitive 0 depending on the integer rounding in the node.  We only
@@ -382,10 +380,7 @@ fn test_rope_sag_under_gravity() {
         rope.positions[0].y.hi, 10,
         "Start pin should remain at y=10"
     );
-    assert_eq!(
-        rope.positions[10].y.hi, 10,
-        "End pin should remain at y=10"
-    );
+    assert_eq!(rope.positions[10].y.hi, 10, "End pin should remain at y=10");
 
     // Middle particle should sag below endpoints
     let mid_y = rope.positions[5].y;
@@ -456,8 +451,7 @@ fn test_determinism_golden_hash() {
 
     // Hash should be non-trivial (different from FNV basis)
     assert_ne!(
-        hash1,
-        0xcbf29ce484222325u64,
+        hash1, 0xcbf29ce484222325u64,
         "Hash should differ from FNV basis"
     );
 }
@@ -530,8 +524,22 @@ fn test_collision_filtering() {
     let id_b = world.add_body_with_radius(body_b, Fix128::from_int(2));
 
     // Put them on different layers that don't collide
-    world.set_body_filter(id_a, CollisionFilter { layer: 1, mask: 1, group: 0 });
-    world.set_body_filter(id_b, CollisionFilter { layer: 2, mask: 2, group: 0 });
+    world.set_body_filter(
+        id_a,
+        CollisionFilter {
+            layer: 1,
+            mask: 1,
+            group: 0,
+        },
+    );
+    world.set_body_filter(
+        id_b,
+        CollisionFilter {
+            layer: 2,
+            mask: 2,
+            group: 0,
+        },
+    );
 
     let dt = Fix128::from_ratio(1, 60);
     world.step(dt);
@@ -564,12 +572,7 @@ fn test_joint_in_step() {
         Fix128::ONE,
     ));
 
-    let joint = Joint::Ball(BallJoint::new(
-        id_a,
-        id_b,
-        Vec3Fix::ZERO,
-        Vec3Fix::ZERO,
-    ));
+    let joint = Joint::Ball(BallJoint::new(id_a, id_b, Vec3Fix::ZERO, Vec3Fix::ZERO));
     world.add_joint(joint);
     assert_eq!(world.joint_count(), 1);
 
@@ -686,7 +689,9 @@ fn test_event_lifecycle() {
     // Frame 1: Begin
     world.step(dt);
     let events = world.contact_events();
-    assert!(events.iter().any(|e| e.event_type == ContactEventType::Begin));
+    assert!(events
+        .iter()
+        .any(|e| e.event_type == ContactEventType::Begin));
 
     // Frame 2: Persist (bodies still overlapping after push)
     world.step(dt);
@@ -712,8 +717,14 @@ fn test_remove_body() {
     let mut world = PhysicsWorld::new(config);
 
     let id_a = world.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
-    let id_b = world.add_body(RigidBody::new_dynamic(Vec3Fix::from_int(5, 0, 0), Fix128::ONE));
-    let id_c = world.add_body(RigidBody::new_dynamic(Vec3Fix::from_int(10, 0, 0), Fix128::ONE));
+    let id_b = world.add_body(RigidBody::new_dynamic(
+        Vec3Fix::from_int(5, 0, 0),
+        Fix128::ONE,
+    ));
+    let id_c = world.add_body(RigidBody::new_dynamic(
+        Vec3Fix::from_int(10, 0, 0),
+        Fix128::ONE,
+    ));
 
     // Add constraint between B and C
     world.add_distance_constraint(DistanceConstraint {
@@ -774,7 +785,10 @@ fn test_sensor_trigger_events() {
     // Sensor body should NOT have been pushed away (no physics response)
     let sensor_pos = world.bodies[id_sensor].position;
     // With zero gravity and no physics response, sensor stays at origin
-    assert_eq!(sensor_pos.x.hi, 0, "Sensor should not move from physics response");
+    assert_eq!(
+        sensor_pos.x.hi, 0,
+        "Sensor should not move from physics response"
+    );
 }
 
 // ============================================================================
@@ -871,7 +885,11 @@ fn test_body_count_and_active() {
 
     // All should be sleeping
     assert_eq!(world.body_count(), 3);
-    assert_eq!(world.active_body_count(), 0, "All still bodies should sleep");
+    assert_eq!(
+        world.active_body_count(),
+        0,
+        "All still bodies should sleep"
+    );
 }
 
 // ============================================================================
@@ -893,7 +911,10 @@ fn test_rigid_body_convenience_methods() {
 
     // speed = |velocity|
     let spd = body.speed();
-    assert!(spd > Fix128::from_int(4), "speed should be 5 (3-4-5 triangle)");
+    assert!(
+        spd > Fix128::from_int(4),
+        "speed should be 5 (3-4-5 triangle)"
+    );
     assert!(spd < Fix128::from_int(6));
 
     // add_force: dv = F * dt * inv_mass
@@ -1045,9 +1066,18 @@ fn test_remove_body_with_active_joint() {
     let config = PhysicsConfig::default();
     let mut world = PhysicsWorld::new(config);
 
-    let id_a = world.add_body(RigidBody::new_dynamic(Vec3Fix::from_int(0, 0, 0), Fix128::ONE));
-    let id_b = world.add_body(RigidBody::new_dynamic(Vec3Fix::from_int(5, 0, 0), Fix128::ONE));
-    let id_c = world.add_body(RigidBody::new_dynamic(Vec3Fix::from_int(10, 0, 0), Fix128::ONE));
+    let id_a = world.add_body(RigidBody::new_dynamic(
+        Vec3Fix::from_int(0, 0, 0),
+        Fix128::ONE,
+    ));
+    let id_b = world.add_body(RigidBody::new_dynamic(
+        Vec3Fix::from_int(5, 0, 0),
+        Fix128::ONE,
+    ));
+    let id_c = world.add_body(RigidBody::new_dynamic(
+        Vec3Fix::from_int(10, 0, 0),
+        Fix128::ONE,
+    ));
 
     // Joint between A-B and B-C
     let ball_ab = BallJoint::new(id_a, id_b, Vec3Fix::ZERO, Vec3Fix::ZERO);
@@ -1096,7 +1126,10 @@ fn test_empty_world_after_remove_all() {
     let mut world = PhysicsWorld::new(config);
 
     world.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
-    world.add_body(RigidBody::new_dynamic(Vec3Fix::from_int(5, 0, 0), Fix128::ONE));
+    world.add_body(RigidBody::new_dynamic(
+        Vec3Fix::from_int(5, 0, 0),
+        Fix128::ONE,
+    ));
 
     // Remove both (careful: swap-remove changes last index)
     world.remove_body(0);
@@ -1127,9 +1160,18 @@ fn test_sleep_island_propagation() {
     });
 
     // Chain: A --joint-- B --joint-- C
-    let id_a = world.add_body(RigidBody::new_dynamic(Vec3Fix::from_int(0, 0, 0), Fix128::ONE));
-    let id_b = world.add_body(RigidBody::new_dynamic(Vec3Fix::from_int(5, 0, 0), Fix128::ONE));
-    let id_c = world.add_body(RigidBody::new_dynamic(Vec3Fix::from_int(10, 0, 0), Fix128::ONE));
+    let id_a = world.add_body(RigidBody::new_dynamic(
+        Vec3Fix::from_int(0, 0, 0),
+        Fix128::ONE,
+    ));
+    let id_b = world.add_body(RigidBody::new_dynamic(
+        Vec3Fix::from_int(5, 0, 0),
+        Fix128::ONE,
+    ));
+    let id_c = world.add_body(RigidBody::new_dynamic(
+        Vec3Fix::from_int(10, 0, 0),
+        Fix128::ONE,
+    ));
 
     let ball_ab = BallJoint::new(id_a, id_b, Vec3Fix::ZERO, Vec3Fix::ZERO);
     let ball_bc = BallJoint::new(id_b, id_c, Vec3Fix::ZERO, Vec3Fix::ZERO);
@@ -1137,14 +1179,21 @@ fn test_sleep_island_propagation() {
     world.add_joint(Joint::Ball(ball_bc));
 
     // D is separate — not connected
-    let id_d = world.add_body(RigidBody::new_dynamic(Vec3Fix::from_int(20, 0, 0), Fix128::ONE));
+    let id_d = world.add_body(RigidBody::new_dynamic(
+        Vec3Fix::from_int(20, 0, 0),
+        Fix128::ONE,
+    ));
 
     let dt = Fix128::from_ratio(1, 64);
 
     // Step enough for all bodies to sleep
     run_world(&mut world, 5, dt);
 
-    assert_eq!(world.active_body_count(), 0, "All still bodies should sleep");
+    assert_eq!(
+        world.active_body_count(),
+        0,
+        "All still bodies should sleep"
+    );
 
     // Wake body C — should wake A and B through island, but NOT D
     world.wake_body(id_c);
@@ -1155,7 +1204,10 @@ fn test_sleep_island_propagation() {
     // After a step, if C is awake, the island system should propagate.
     // Actually wake_body wakes single body; but the key test is
     // that D (separate island) stays asleep.
-    assert!(world.is_sleeping(id_d), "D should still be sleeping (different island)");
+    assert!(
+        world.is_sleeping(id_d),
+        "D should still be sleeping (different island)"
+    );
 }
 
 // ============================================================================
@@ -1185,14 +1237,23 @@ fn test_event_persist_explicit() {
 
     // Frame 1: should get Begin
     world.step(dt);
-    let has_begin = world.contact_events().iter().any(|e| e.event_type == ContactEventType::Begin);
+    let has_begin = world
+        .contact_events()
+        .iter()
+        .any(|e| e.event_type == ContactEventType::Begin);
 
     // Frame 2+: if still overlapping, should get Persist
     world.step(dt);
-    let has_persist = world.contact_events().iter().any(|e| e.event_type == ContactEventType::Persist);
+    let has_persist = world
+        .contact_events()
+        .iter()
+        .any(|e| e.event_type == ContactEventType::Persist);
 
     // At least one of these should be true (bodies are overlapping for >=2 frames)
-    assert!(has_begin || has_persist, "Should have Begin or Persist events from sustained contact");
+    assert!(
+        has_begin || has_persist,
+        "Should have Begin or Persist events from sustained contact"
+    );
 }
 
 // ============================================================================
@@ -1212,11 +1273,17 @@ fn test_step_zero_and_negative_dt() {
 
     // dt = 0 should be no-op
     world.step(Fix128::ZERO);
-    assert_eq!(world.bodies[0].position.y.hi, pos_before.y.hi, "dt=0 should not move body");
+    assert_eq!(
+        world.bodies[0].position.y.hi, pos_before.y.hi,
+        "dt=0 should not move body"
+    );
 
     // dt < 0 should be no-op
     world.step(Fix128::from_int(-1));
-    assert_eq!(world.bodies[0].position.y.hi, pos_before.y.hi, "dt<0 should not move body");
+    assert_eq!(
+        world.bodies[0].position.y.hi, pos_before.y.hi,
+        "dt<0 should not move body"
+    );
 }
 
 // ============================================================================
@@ -1256,7 +1323,10 @@ fn test_kinematic_pushes_dynamic() {
     }
 
     // Kinematic should have moved right from -5
-    assert!(world.bodies[id_kin].position.x > Fix128::from_int(-5), "Kinematic should move");
+    assert!(
+        world.bodies[id_kin].position.x > Fix128::from_int(-5),
+        "Kinematic should move"
+    );
 }
 
 // ============================================================================
@@ -1292,7 +1362,10 @@ fn test_collision_detection_mixed_radii() {
         }
     }
 
-    assert!(!had_contacts, "Body without radius should not generate auto-collisions");
+    assert!(
+        !had_contacts,
+        "Body without radius should not generate auto-collisions"
+    );
 }
 
 // ============================================================================
@@ -1305,7 +1378,10 @@ fn test_get_body_accessors() {
     let config = PhysicsConfig::default();
     let mut world = PhysicsWorld::new(config);
 
-    let id = world.add_body(RigidBody::new_dynamic(Vec3Fix::from_int(7, 0, 0), Fix128::ONE));
+    let id = world.add_body(RigidBody::new_dynamic(
+        Vec3Fix::from_int(7, 0, 0),
+        Fix128::ONE,
+    ));
 
     // Valid index → Some
     assert!(world.get_body(id).is_some());
@@ -1361,7 +1437,10 @@ fn test_rebuild_batches_constraint_chain() {
 
     // Create a chain: 0 - 1 - 2 - 3 - 4 with unit distance
     for i in 0..5 {
-        world.add_body(RigidBody::new_dynamic(Vec3Fix::from_int(i as i64, 0, 0), Fix128::ONE));
+        world.add_body(RigidBody::new_dynamic(
+            Vec3Fix::from_int(i as i64, 0, 0),
+            Fix128::ONE,
+        ));
     }
     for i in 0..4 {
         world.add_distance_constraint(DistanceConstraint {
@@ -1387,11 +1466,17 @@ fn test_rebuild_batches_constraint_chain() {
         let a = world.bodies[i].position;
         let b = world.bodies[i + 1].position;
         let dist = (b - a).length();
-        let error = if dist > Fix128::ONE { dist - Fix128::ONE } else { Fix128::ONE - dist };
+        let error = if dist > Fix128::ONE {
+            dist - Fix128::ONE
+        } else {
+            Fix128::ONE - dist
+        };
         assert!(
             error < Fix128::from_int(2),
             "Chain link {}-{} distance error too large: {:?}",
-            i, i + 1, error,
+            i,
+            i + 1,
+            error,
         );
     }
 }
@@ -1465,8 +1550,14 @@ fn test_step_parallel_with_constraints() {
     };
     let mut world = PhysicsWorld::new(config);
 
-    let id_a = world.add_body(RigidBody::new_dynamic(Vec3Fix::from_int(0, 10, 0), Fix128::ONE));
-    let id_b = world.add_body(RigidBody::new_dynamic(Vec3Fix::from_int(5, 10, 0), Fix128::ONE));
+    let id_a = world.add_body(RigidBody::new_dynamic(
+        Vec3Fix::from_int(0, 10, 0),
+        Fix128::ONE,
+    ));
+    let id_b = world.add_body(RigidBody::new_dynamic(
+        Vec3Fix::from_int(5, 10, 0),
+        Fix128::ONE,
+    ));
 
     world.add_distance_constraint(DistanceConstraint {
         body_a: id_a,
@@ -1488,8 +1579,16 @@ fn test_step_parallel_with_constraints() {
     let pos_b = world.bodies[id_b].position;
     let dist = (pos_b - pos_a).length();
     let target = Fix128::from_int(5);
-    let error = if dist > target { dist - target } else { target - dist };
-    assert!(error < Fix128::from_int(2), "Parallel constraint stability failed: error={:?}", error);
+    let error = if dist > target {
+        dist - target
+    } else {
+        target - dist
+    };
+    assert!(
+        error < Fix128::from_int(2),
+        "Parallel constraint stability failed: error={:?}",
+        error
+    );
 }
 
 /// Verify step_parallel() self-consistent determinism (run twice → same result).
@@ -1550,7 +1649,10 @@ fn test_batch_raycast_results() {
     let results = batch_raycast(&queries, &bodies, Fix128::ONE);
     assert_eq!(results.len(), 2);
     assert!(results[0].is_some(), "First ray should hit body at x=5");
-    assert!(results[1].is_none(), "Second ray should miss (no body along Y)");
+    assert!(
+        results[1].is_none(),
+        "Second ray should miss (no body along Y)"
+    );
 }
 
 /// Verify batch_sphere_cast returns correct hit count.
@@ -1558,9 +1660,7 @@ fn test_batch_raycast_results() {
 fn test_batch_sphere_cast_results() {
     use alice_physics::query::batch_sphere_cast;
 
-    let bodies = [
-        RigidBody::new_static(Vec3Fix::from_int(5, 0, 0)),
-    ];
+    let bodies = [RigidBody::new_static(Vec3Fix::from_int(5, 0, 0))];
 
     let origins = vec![Vec3Fix::ZERO, Vec3Fix::from_int(0, 100, 0)];
     let directions = vec![Vec3Fix::UNIT_X, Vec3Fix::UNIT_X];
@@ -1627,7 +1727,10 @@ fn test_serialization_rejects_mismatch() {
     for _ in 0..3 {
         world_3.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
     }
-    assert!(!world_3.deserialize_state(&state_2), "Mismatched body count should return false");
+    assert!(
+        !world_3.deserialize_state(&state_2),
+        "Mismatched body count should return false"
+    );
 }
 
 // ============================================================================
@@ -1672,8 +1775,10 @@ fn test_apply_impulse_at() {
     // Linear velocity changed
     assert_eq!(world.bodies[id].velocity.y, Fix128::from_int(10));
     // Angular velocity should be non-zero (torque = r × F = (1,0,0) × (0,10,0) = (0,0,10))
-    assert!(world.bodies[id].angular_velocity.z != Fix128::ZERO,
-        "apply_impulse_at should generate angular velocity");
+    assert!(
+        world.bodies[id].angular_velocity.z != Fix128::ZERO,
+        "apply_impulse_at should generate angular velocity"
+    );
 }
 
 // ============================================================================
@@ -1691,8 +1796,10 @@ fn test_add_torque() {
     world.bodies[id].add_torque(torque, dt);
 
     // angular_velocity.y = torque.y * inv_inertia.y * dt
-    assert!(world.bodies[id].angular_velocity.y != Fix128::ZERO,
-        "add_torque should modify angular velocity");
+    assert!(
+        world.bodies[id].angular_velocity.y != Fix128::ZERO,
+        "add_torque should modify angular velocity"
+    );
 
     // Static body ignores torque
     let static_id = world.add_body(RigidBody::new_static(Vec3Fix::ZERO));
@@ -1713,15 +1820,20 @@ fn test_set_position_resets_prev() {
     // Step once so prev_position diverges from position
     let dt = Fix128::from_ratio(1, 60);
     world.step(dt);
-    assert!(world.bodies[id].position != world.bodies[id].prev_position
-        || world.bodies[id].position == Vec3Fix::ZERO,
-        "After step, position or prev should differ (gravity)");
+    assert!(
+        world.bodies[id].position != world.bodies[id].prev_position
+            || world.bodies[id].position == Vec3Fix::ZERO,
+        "After step, position or prev should differ (gravity)"
+    );
 
     // Teleport
     let new_pos = Vec3Fix::from_int(100, 200, 300);
     world.bodies[id].set_position(new_pos);
     assert_eq!(world.bodies[id].position, new_pos);
-    assert_eq!(world.bodies[id].prev_position, new_pos, "set_position must reset prev_position");
+    assert_eq!(
+        world.bodies[id].prev_position, new_pos,
+        "set_position must reset prev_position"
+    );
 }
 
 // ============================================================================
@@ -1742,7 +1854,10 @@ fn test_set_rotation_resets_prev() {
     };
     world.bodies[id].set_rotation(new_rot);
     assert_eq!(world.bodies[id].rotation.z, new_rot.z);
-    assert_eq!(world.bodies[id].prev_rotation.z, new_rot.z, "set_rotation must reset prev_rotation");
+    assert_eq!(
+        world.bodies[id].prev_rotation.z, new_rot.z,
+        "set_rotation must reset prev_rotation"
+    );
 }
 
 // ============================================================================
@@ -1830,7 +1945,10 @@ fn test_set_clear_body_collision_radius() {
     // Clear radius
     world.clear_body_collision_radius(id);
     let hit2 = world.raycast(origin, direction, Fix128::from_int(100));
-    assert!(hit2.is_none(), "Should not hit after clear_body_collision_radius");
+    assert!(
+        hit2.is_none(),
+        "Should not hit after clear_body_collision_radius"
+    );
 }
 
 // ============================================================================
@@ -1884,7 +2002,10 @@ fn test_drain_events() {
     // drain should consume events
     let contacts = world.drain_contact_events();
     // After drain, the contact_events() should be empty
-    assert!(world.contact_events().is_empty(), "Events should be empty after drain");
+    assert!(
+        world.contact_events().is_empty(),
+        "Events should be empty after drain"
+    );
 
     // drain_trigger_events on non-sensor world should return empty
     let triggers = world.drain_trigger_events();
@@ -1957,10 +2078,25 @@ fn test_num_batches() {
     ));
 
     // A-B and B-C share body B → need at least 2 batches
-    world.add_distance_constraint(DistanceConstraint::new(a, b, Vec3Fix::ZERO, Vec3Fix::ZERO, Fix128::ONE));
-    world.add_distance_constraint(DistanceConstraint::new(b, c, Vec3Fix::ZERO, Vec3Fix::ZERO, Fix128::ONE));
+    world.add_distance_constraint(DistanceConstraint::new(
+        a,
+        b,
+        Vec3Fix::ZERO,
+        Vec3Fix::ZERO,
+        Fix128::ONE,
+    ));
+    world.add_distance_constraint(DistanceConstraint::new(
+        b,
+        c,
+        Vec3Fix::ZERO,
+        Vec3Fix::ZERO,
+        Fix128::ONE,
+    ));
     world.rebuild_batches();
-    assert!(world.num_batches() >= 2, "Chain sharing a body needs >= 2 batches");
+    assert!(
+        world.num_batches() >= 2,
+        "Chain sharing a body needs >= 2 batches"
+    );
 }
 
 // ============================================================================
@@ -1977,17 +2113,27 @@ fn test_zero_mass_body() {
 
     // Impulse should have no effect (is_static guard)
     let mut body2 = body;
-    body2.apply_impulse(Vec3Fix::new(Fix128::from_int(100), Fix128::ZERO, Fix128::ZERO));
-    assert_eq!(body2.velocity.x, Fix128::ZERO,
-        "mass=0 body ignores impulse");
+    body2.apply_impulse(Vec3Fix::new(
+        Fix128::from_int(100),
+        Fix128::ZERO,
+        Fix128::ZERO,
+    ));
+    assert_eq!(
+        body2.velocity.x,
+        Fix128::ZERO,
+        "mass=0 body ignores impulse"
+    );
 
     // add_torque should also have no effect
     body2.add_torque(
         Vec3Fix::new(Fix128::ZERO, Fix128::from_int(100), Fix128::ZERO),
         Fix128::from_ratio(1, 60),
     );
-    assert_eq!(body2.angular_velocity.y, Fix128::ZERO,
-        "mass=0 body ignores torque");
+    assert_eq!(
+        body2.angular_velocity.y,
+        Fix128::ZERO,
+        "mass=0 body ignores torque"
+    );
 }
 
 // ============================================================================
@@ -2009,7 +2155,10 @@ fn test_deserialize_empty_and_truncated() {
     // Header says 1 body but data is truncated (only 4 header bytes, no body data)
     let mut truncated = vec![0u8; 4];
     truncated[0] = 1; // count=1 in LE
-    assert!(!world.deserialize_state(&truncated), "Truncated body data should fail");
+    assert!(
+        !world.deserialize_state(&truncated),
+        "Truncated body data should fail"
+    );
 }
 
 // ============================================================================
@@ -2020,7 +2169,10 @@ fn test_deserialize_empty_and_truncated() {
 fn test_self_referential_joint() {
     let config = PhysicsConfig::default();
     let mut world = PhysicsWorld::new(config);
-    let a = world.add_body(RigidBody::new_dynamic(Vec3Fix::from_int(0, 5, 0), Fix128::ONE));
+    let a = world.add_body(RigidBody::new_dynamic(
+        Vec3Fix::from_int(0, 5, 0),
+        Fix128::ONE,
+    ));
 
     // Self-referential joint should not crash the solver
     let joint = Joint::Ball(BallJoint::new(a, a, Vec3Fix::ZERO, Vec3Fix::ZERO));
@@ -2039,15 +2191,20 @@ fn test_self_referential_joint() {
 fn test_large_dt() {
     let config = PhysicsConfig::default();
     let mut world = PhysicsWorld::new(config);
-    world.add_body(RigidBody::new_dynamic(Vec3Fix::from_int(0, 10, 0), Fix128::ONE));
+    world.add_body(RigidBody::new_dynamic(
+        Vec3Fix::from_int(0, 10, 0),
+        Fix128::ONE,
+    ));
 
     // Very large dt — should not panic, overflow, or infinite loop
     let large_dt = Fix128::from_int(100);
     world.step(large_dt);
 
     // Body should have moved significantly downward
-    assert!(world.bodies[0].position.y < Fix128::from_int(10),
-        "Large dt should still produce downward motion");
+    assert!(
+        world.bodies[0].position.y < Fix128::from_int(10),
+        "Large dt should still produce downward motion"
+    );
 }
 
 // ============================================================================
@@ -2060,10 +2217,7 @@ fn test_raycast_inside_sphere() {
     let mut world = PhysicsWorld::new(config);
 
     // Large sphere at origin
-    world.add_body_with_radius(
-        RigidBody::new_static(Vec3Fix::ZERO),
-        Fix128::from_int(10),
-    );
+    world.add_body_with_radius(RigidBody::new_static(Vec3Fix::ZERO), Fix128::from_int(10));
 
     // Ray origin inside the sphere, pointing outward
     let origin = Vec3Fix::new(Fix128::ONE, Fix128::ZERO, Fix128::ZERO);
@@ -2071,10 +2225,16 @@ fn test_raycast_inside_sphere() {
     let hit = world.raycast(origin, direction, Fix128::from_int(100));
 
     // Should hit the far side of the sphere
-    assert!(hit.is_some(), "Ray inside sphere should hit far intersection");
+    assert!(
+        hit.is_some(),
+        "Ray inside sphere should hit far intersection"
+    );
     let (idx, t) = hit.unwrap();
     assert_eq!(idx, 0);
-    assert!(t > Fix128::ZERO, "Hit distance should be positive (far side)");
+    assert!(
+        t > Fix128::ZERO,
+        "Hit distance should be positive (far side)"
+    );
 }
 
 // ============================================================================

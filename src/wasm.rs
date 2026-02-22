@@ -578,7 +578,10 @@ mod tests {
         }
         let pos_restored = world.get_positions();
 
-        assert!((pos_after[1] - pos_restored[1]).abs() < 1e-10, "State restore should be deterministic");
+        assert!(
+            (pos_after[1] - pos_restored[1]).abs() < 1e-10,
+            "State restore should be deterministic"
+        );
     }
 
     #[test]

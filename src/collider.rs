@@ -206,7 +206,10 @@ impl ConvexHull {
     ///
     /// Panics if `vertices` is empty, since `support()` requires at least one vertex.
     pub fn new(vertices: Vec<Vec3Fix>) -> Self {
-        assert!(!vertices.is_empty(), "ConvexHull requires at least one vertex");
+        assert!(
+            !vertices.is_empty(),
+            "ConvexHull requires at least one vertex"
+        );
         Self { vertices }
     }
 }

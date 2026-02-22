@@ -113,7 +113,8 @@ impl StreamingMedian {
 
             // Shift elements right to make room (memmove)
             if insert_pos < self.count {
-                self.sorted.copy_within(insert_pos..self.count, insert_pos + 1);
+                self.sorted
+                    .copy_within(insert_pos..self.count, insert_pos + 1);
             }
             self.sorted[insert_pos] = value;
 
@@ -128,7 +129,8 @@ impl StreamingMedian {
             if let Some(remove_pos) = self.binary_search_remove(old_value, self.count) {
                 // Shift elements left (memmove)
                 if remove_pos < self.count - 1 {
-                    self.sorted.copy_within(remove_pos + 1..self.count, remove_pos);
+                    self.sorted
+                        .copy_within(remove_pos + 1..self.count, remove_pos);
                 }
             }
 
@@ -137,7 +139,8 @@ impl StreamingMedian {
 
             // Shift elements right to make room (memmove)
             if insert_pos < self.count - 1 {
-                self.sorted.copy_within(insert_pos..self.count - 1, insert_pos + 1);
+                self.sorted
+                    .copy_within(insert_pos..self.count - 1, insert_pos + 1);
             }
             self.sorted[insert_pos] = value;
 

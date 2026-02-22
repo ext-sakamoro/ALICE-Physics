@@ -52,27 +52,39 @@ pub fn point_to_morton(point: Vec3Fix, bounds: &AABB) -> u64 {
         0u64
     } else {
         let t = (point.x - bounds.min.x) / size.x;
-        if t.is_negative() { 0 }
-        else if t.hi >= 1 { 0x1FFFFF }
-        else { (t.lo >> 43) & 0x1FFFFF }
+        if t.is_negative() {
+            0
+        } else if t.hi >= 1 {
+            0x1FFFFF
+        } else {
+            (t.lo >> 43) & 0x1FFFFF
+        }
     };
 
     let ny = if size.y.is_zero() {
         0u64
     } else {
         let t = (point.y - bounds.min.y) / size.y;
-        if t.is_negative() { 0 }
-        else if t.hi >= 1 { 0x1FFFFF }
-        else { (t.lo >> 43) & 0x1FFFFF }
+        if t.is_negative() {
+            0
+        } else if t.hi >= 1 {
+            0x1FFFFF
+        } else {
+            (t.lo >> 43) & 0x1FFFFF
+        }
     };
 
     let nz = if size.z.is_zero() {
         0u64
     } else {
         let t = (point.z - bounds.min.z) / size.z;
-        if t.is_negative() { 0 }
-        else if t.hi >= 1 { 0x1FFFFF }
-        else { (t.lo >> 43) & 0x1FFFFF }
+        if t.is_negative() {
+            0
+        } else if t.hi >= 1 {
+            0x1FFFFF
+        } else {
+            (t.lo >> 43) & 0x1FFFFF
+        }
     };
 
     morton_code(nx, ny, nz)

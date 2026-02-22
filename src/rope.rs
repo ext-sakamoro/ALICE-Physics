@@ -179,11 +179,16 @@ impl Rope {
     /// Update pin targets that track dynamic bodies.
     ///
     /// Call this before `step()` when pins are attached to moving bodies.
-    pub fn update_pin_targets(&mut self, body_positions: &[Vec3Fix], body_rotations: &[crate::math::QuatFix]) {
+    pub fn update_pin_targets(
+        &mut self,
+        body_positions: &[Vec3Fix],
+        body_rotations: &[crate::math::QuatFix],
+    ) {
         for pin in &mut self.pins {
             if let Some(idx) = pin.body_index {
                 if idx < body_positions.len() && idx < body_rotations.len() {
-                    pin.target = body_positions[idx] + body_rotations[idx].rotate_vec(pin.local_offset);
+                    pin.target =
+                        body_positions[idx] + body_rotations[idx].rotate_vec(pin.local_offset);
                 }
             }
         }

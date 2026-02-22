@@ -196,7 +196,8 @@ fn nlerp(a: QuatFix, b: QuatFix, t: Fix128) -> QuatFix {
         a.z * one_minus_t + b.z * t,
         a.w * one_minus_t + b.w * t,
     );
-    let len_sq = result.x * result.x + result.y * result.y + result.z * result.z + result.w * result.w;
+    let len_sq =
+        result.x * result.x + result.y * result.y + result.z * result.z + result.w * result.w;
     if len_sq.is_zero() {
         return QuatFix::IDENTITY;
     }

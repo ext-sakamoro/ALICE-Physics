@@ -225,7 +225,11 @@ impl RandomizedResponse {
     /// Privatize a bit (0 or 1)
     #[inline]
     pub fn privatize_bit(&mut self, bit: u8) -> u8 {
-        if self.privatize(bit != 0) { 1 } else { 0 }
+        if self.privatize(bit != 0) {
+            1
+        } else {
+            0
+        }
     }
 
     /// Get the probability of truthful response

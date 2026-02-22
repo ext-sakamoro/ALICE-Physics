@@ -80,8 +80,12 @@ mod tests {
     fn test_error_variants() {
         let e1 = PhysicsError::InvalidBodyIndex { index: 0, count: 0 };
         let e2 = PhysicsError::DeserializationFailed;
-        let e3 = PhysicsError::InvalidConstraint { reason: "body A == body B" };
-        let e4 = PhysicsError::ZeroLengthVector { context: "ray direction" };
+        let e3 = PhysicsError::InvalidConstraint {
+            reason: "body A == body B",
+        };
+        let e4 = PhysicsError::ZeroLengthVector {
+            context: "ray direction",
+        };
         assert_ne!(e1, e2);
         assert_ne!(e3, e4);
     }

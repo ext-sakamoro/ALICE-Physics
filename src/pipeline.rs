@@ -398,13 +398,17 @@ impl<const SLOTS: usize, const QUEUE_SIZE: usize> MetricPipeline<SLOTS, QUEUE_SI
     /// Get a metric slot by name hash
     pub fn get_slot(&self, name_hash: u64) -> Option<&MetricSlot> {
         let slot_idx = (name_hash as usize) % SLOTS;
-        self.slots[slot_idx].as_ref().filter(|s| s.name_hash == name_hash)
+        self.slots[slot_idx]
+            .as_ref()
+            .filter(|s| s.name_hash == name_hash)
     }
 
     /// Get mutable reference to a metric slot
     pub fn get_slot_mut(&mut self, name_hash: u64) -> Option<&mut MetricSlot> {
         let slot_idx = (name_hash as usize) % SLOTS;
-        self.slots[slot_idx].as_mut().filter(|s| s.name_hash == name_hash)
+        self.slots[slot_idx]
+            .as_mut()
+            .filter(|s| s.name_hash == name_hash)
     }
 
     /// Iterate over all active slots
@@ -709,8 +713,12 @@ mod tests {
     fn test_metric_registry() {
         let mut registry = MetricRegistry::<16>::new();
 
-        let h1 = registry.register("http.requests", MetricType::Counter).unwrap();
-        let h2 = registry.register("http.latency", MetricType::Histogram).unwrap();
+        let h1 = registry
+            .register("http.requests", MetricType::Counter)
+            .unwrap();
+        let h2 = registry
+            .register("http.latency", MetricType::Histogram)
+            .unwrap();
 
         assert_ne!(h1, h2);
         assert_eq!(registry.count(), 2);

@@ -178,7 +178,11 @@ pub unsafe extern "C" fn alice_physics_world_step(world: *mut PhysicsWorld, dt: 
 /// # Safety
 /// `world` must be a valid pointer.
 #[no_mangle]
-pub unsafe extern "C" fn alice_physics_world_step_n(world: *mut PhysicsWorld, dt: f64, steps: u32) -> u8 {
+pub unsafe extern "C" fn alice_physics_world_step_n(
+    world: *mut PhysicsWorld,
+    dt: f64,
+    steps: u32,
+) -> u8 {
     let w = match world.as_mut() {
         Some(w) => w as *mut PhysicsWorld,
         None => return 0,
@@ -804,12 +808,20 @@ mod tests {
     fn test_body_add_and_get() {
         unsafe {
             let world = alice_physics_world_create();
-            let pos = AliceVec3 { x: 1.0, y: 2.0, z: 3.0 };
+            let pos = AliceVec3 {
+                x: 1.0,
+                y: 2.0,
+                z: 3.0,
+            };
             let id = alice_physics_body_add_dynamic(world, pos, 1.0);
             assert_eq!(id, 0);
             assert_eq!(alice_physics_world_body_count(world), 1);
 
-            let mut out = AliceVec3 { x: 0.0, y: 0.0, z: 0.0 };
+            let mut out = AliceVec3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            };
             let ok = alice_physics_body_get_position(world, id, &mut out);
             assert_eq!(ok, 1);
             assert!((out.x - 1.0).abs() < 1e-10);
@@ -824,7 +836,11 @@ mod tests {
     fn test_body_get_invalid_id() {
         unsafe {
             let world = alice_physics_world_create();
-            let mut out = AliceVec3 { x: 0.0, y: 0.0, z: 0.0 };
+            let mut out = AliceVec3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            };
             let ok = alice_physics_body_get_position(world, 999, &mut out);
             assert_eq!(ok, 0);
             alice_physics_world_destroy(world);
@@ -839,7 +855,11 @@ mod tests {
             assert_eq!(alice_physics_world_step(null, 0.016), 0);
             assert_eq!(alice_physics_world_step_n(null, 0.016, 10), 0);
 
-            let pos = AliceVec3 { x: 0.0, y: 0.0, z: 0.0 };
+            let pos = AliceVec3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            };
             assert_eq!(alice_physics_body_add_dynamic(null, pos, 1.0), u32::MAX);
         }
     }
@@ -848,14 +868,22 @@ mod tests {
     fn test_step_and_gravity() {
         unsafe {
             let world = alice_physics_world_create();
-            let pos = AliceVec3 { x: 0.0, y: 10.0, z: 0.0 };
+            let pos = AliceVec3 {
+                x: 0.0,
+                y: 10.0,
+                z: 0.0,
+            };
             let id = alice_physics_body_add_dynamic(world, pos, 1.0);
 
             for _ in 0..60 {
                 alice_physics_world_step(world, 1.0 / 60.0);
             }
 
-            let mut out = AliceVec3 { x: 0.0, y: 0.0, z: 0.0 };
+            let mut out = AliceVec3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            };
             alice_physics_body_get_position(world, id, &mut out);
             assert!(out.y < 10.0, "Body should fall under gravity, y={}", out.y);
 
@@ -867,8 +895,16 @@ mod tests {
     fn test_batch_positions() {
         unsafe {
             let world = alice_physics_world_create();
-            let p1 = AliceVec3 { x: 1.0, y: 2.0, z: 3.0 };
-            let p2 = AliceVec3 { x: 4.0, y: 5.0, z: 6.0 };
+            let p1 = AliceVec3 {
+                x: 1.0,
+                y: 2.0,
+                z: 3.0,
+            };
+            let p2 = AliceVec3 {
+                x: 4.0,
+                y: 5.0,
+                z: 6.0,
+            };
             alice_physics_body_add_static(world, p1);
             alice_physics_body_add_static(world, p2);
 
@@ -894,7 +930,11 @@ mod tests {
     fn test_state_serialization_ffi() {
         unsafe {
             let world = alice_physics_world_create();
-            let pos = AliceVec3 { x: 0.0, y: 10.0, z: 0.0 };
+            let pos = AliceVec3 {
+                x: 0.0,
+                y: 10.0,
+                z: 0.0,
+            };
             alice_physics_body_add_dynamic(world, pos, 1.0);
 
             // Serialize
@@ -918,14 +958,26 @@ mod tests {
         unsafe {
             let world = alice_physics_world_create();
             alice_physics_world_set_gravity(world, 0.0, 0.0, 0.0);
-            let pos = AliceVec3 { x: 0.0, y: 0.0, z: 0.0 };
+            let pos = AliceVec3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            };
             let id = alice_physics_body_add_dynamic(world, pos, 1.0);
 
-            let impulse = AliceVec3 { x: 10.0, y: 0.0, z: 0.0 };
+            let impulse = AliceVec3 {
+                x: 10.0,
+                y: 0.0,
+                z: 0.0,
+            };
             alice_physics_body_apply_impulse(world, id, impulse);
             alice_physics_world_step(world, 1.0 / 60.0);
 
-            let mut out = AliceVec3 { x: 0.0, y: 0.0, z: 0.0 };
+            let mut out = AliceVec3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            };
             alice_physics_body_get_position(world, id, &mut out);
             assert!(out.x > 0.0, "Impulse should move body right, x={}", out.x);
 
@@ -937,7 +989,11 @@ mod tests {
     fn test_body_info() {
         unsafe {
             let world = alice_physics_world_create();
-            let pos = AliceVec3 { x: 1.0, y: 2.0, z: 3.0 };
+            let pos = AliceVec3 {
+                x: 1.0,
+                y: 2.0,
+                z: 3.0,
+            };
             let id = alice_physics_body_add_sensor(world, pos);
 
             let mut info = std::mem::zeroed::<AliceBodyInfo>();

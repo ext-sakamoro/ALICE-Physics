@@ -216,9 +216,15 @@ impl Fix128 {
         // Shift accounts for the 64 fractional bits: result bit = (sig_bits + 63) / 2
         let result_bit = ((sig_bits + 63) / 2) as u32;
         let mut x = if result_bit >= 64 {
-            Self { hi: 1i64 << (result_bit - 64).min(62), lo: 0 }
+            Self {
+                hi: 1i64 << (result_bit - 64).min(62),
+                lo: 0,
+            }
         } else {
-            Self { hi: 0, lo: 1u64 << result_bit }
+            Self {
+                hi: 0,
+                lo: 1u64 << result_bit,
+            }
         };
 
         // Newton-Raphson: x = (x + n/x) / 2
@@ -1147,7 +1153,6 @@ impl QuatFix {
     }
 }
 
-
 // ============================================================================
 // 3x3 Matrix (Inertia Tensor)
 // ============================================================================
@@ -1288,13 +1293,21 @@ impl Mat3Fix {
 #[inline(always)]
 pub const fn simd_width() -> usize {
     #[cfg(all(feature = "simd", target_arch = "x86_64", target_feature = "avx2"))]
-    { 8 }
+    {
+        8
+    }
     #[cfg(all(feature = "simd", target_arch = "x86_64", not(target_feature = "avx2")))]
-    { 4 }
+    {
+        4
+    }
     #[cfg(all(feature = "simd", target_arch = "aarch64"))]
-    { 4 }
+    {
+        4
+    }
     #[cfg(not(feature = "simd"))]
-    { 1 }
+    {
+        1
+    }
 }
 
 /// Compile-time SIMD lane width for the current build target.
@@ -1474,10 +1487,10 @@ mod tests {
         let a = Vec3Fix::from_int(1, 2, 3);
         let b = Vec3Fix::from_int(4, 5, 6);
         let scalar = a.dot(b);
-        let simd   = a.dot_simd(b);
+        let simd = a.dot_simd(b);
         // 1*4 + 2*5 + 3*6 = 32
         assert_eq!(scalar.hi, 32, "scalar dot hi mismatch");
-        assert_eq!(scalar.lo, 0,  "scalar dot lo mismatch");
+        assert_eq!(scalar.lo, 0, "scalar dot lo mismatch");
         assert_eq!(simd.hi, scalar.hi, "dot_simd hi != scalar hi");
         assert_eq!(simd.lo, scalar.lo, "dot_simd lo != scalar lo");
     }
@@ -1485,19 +1498,19 @@ mod tests {
     /// Verify dot_simd with arbitrary fractional Fix128 values.
     #[test]
     fn test_dot_simd_fractional_bit_exact() {
-        let ax = Fix128::from_raw(3,  0xABCD_EF01_2345_6789);
+        let ax = Fix128::from_raw(3, 0xABCD_EF01_2345_6789);
         let ay = Fix128::from_raw(-1, 0x1111_2222_3333_4444);
-        let az = Fix128::from_raw(7,  0xFEDC_BA98_7654_3210);
+        let az = Fix128::from_raw(7, 0xFEDC_BA98_7654_3210);
 
-        let bx = Fix128::from_raw(2,  0x9876_5432_10FE_DCBA);
-        let by = Fix128::from_raw(5,  0xAAAA_BBBB_CCCC_DDDD);
+        let bx = Fix128::from_raw(2, 0x9876_5432_10FE_DCBA);
+        let by = Fix128::from_raw(5, 0xAAAA_BBBB_CCCC_DDDD);
         let bz = Fix128::from_raw(-3, 0x0F0F_0F0F_0F0F_0F0F);
 
         let a = Vec3Fix::new(ax, ay, az);
         let b = Vec3Fix::new(bx, by, bz);
 
         let scalar = a.dot(b);
-        let simd   = a.dot_simd(b);
+        let simd = a.dot_simd(b);
 
         assert_eq!(
             simd.hi, scalar.hi,
@@ -1518,7 +1531,7 @@ mod tests {
         let b = Vec3Fix::from_int(6, -7, 8);
         // -3*6 + 4*(-7) + (-5)*8 = -18 - 28 - 40 = -86
         let scalar = a.dot(b);
-        let simd   = a.dot_simd(b);
+        let simd = a.dot_simd(b);
         assert_eq!(scalar.hi, -86, "scalar dot should be -86");
         assert_eq!(simd.hi, scalar.hi, "dot_simd hi mismatch on negatives");
         assert_eq!(simd.lo, scalar.lo, "dot_simd lo mismatch on negatives");
@@ -1530,7 +1543,7 @@ mod tests {
         let a = Vec3Fix::ZERO;
         let b = Vec3Fix::from_int(100, 200, 300);
         let scalar = a.dot(b);
-        let simd   = a.dot_simd(b);
+        let simd = a.dot_simd(b);
         assert!(scalar.is_zero(), "scalar dot with zero should be zero");
         assert_eq!(simd.hi, scalar.hi, "dot_simd hi mismatch (zero vector)");
         assert_eq!(simd.lo, scalar.lo, "dot_simd lo mismatch (zero vector)");
@@ -1541,7 +1554,7 @@ mod tests {
     fn test_dot_simd_unit_vectors_self_dot() {
         for unit in [Vec3Fix::UNIT_X, Vec3Fix::UNIT_Y, Vec3Fix::UNIT_Z] {
             let scalar = unit.dot(unit);
-            let simd   = unit.dot_simd(unit);
+            let simd = unit.dot_simd(unit);
             assert_eq!(scalar.hi, 1, "unit self-dot should be 1");
             assert_eq!(scalar.lo, 0, "unit self-dot lo should be 0");
             assert_eq!(simd.hi, scalar.hi, "dot_simd hi mismatch on unit self-dot");
@@ -1555,7 +1568,7 @@ mod tests {
         let v = Vec3Fix::from_int(3, 4, 0);
         // 3^2 + 4^2 + 0^2 = 25
         let scalar = v.length_squared();
-        let simd   = v.length_squared_simd();
+        let simd = v.length_squared_simd();
         assert_eq!(scalar.hi, 25, "length_squared should be 25");
         assert_eq!(simd.hi, scalar.hi, "length_squared_simd hi mismatch");
         assert_eq!(simd.lo, scalar.lo, "length_squared_simd lo mismatch");
@@ -1570,10 +1583,16 @@ mod tests {
             Fix128::from_raw(0, 0x8000_0000_0000_0000), // 0.5
         );
         let scalar = v.length_squared();
-        let simd   = v.length_squared_simd();
+        let simd = v.length_squared_simd();
         // 1.5^2 + 2.0^2 + 0.5^2 = 2.25 + 4.0 + 0.25 = 6.5
-        assert_eq!(simd.hi, scalar.hi, "length_squared_simd hi mismatch (fractional)");
-        assert_eq!(simd.lo, scalar.lo, "length_squared_simd lo mismatch (fractional)");
+        assert_eq!(
+            simd.hi, scalar.hi,
+            "length_squared_simd hi mismatch (fractional)"
+        );
+        assert_eq!(
+            simd.lo, scalar.lo,
+            "length_squared_simd lo mismatch (fractional)"
+        );
     }
 
     /// Exhaustive bit-exactness sweep: 16 pseudo-random raw Fix128 vectors.
@@ -1581,8 +1600,8 @@ mod tests {
     fn test_dot_simd_exhaustive_raw_sweep() {
         // Deterministic pseudo-random values (no RNG dependency).
         let raws: [(i64, u64); 8] = [
-            (0,  0x0000_0000_0000_0001),
-            (1,  0xFFFF_FFFF_FFFF_FFFF),
+            (0, 0x0000_0000_0000_0001),
+            (1, 0xFFFF_FFFF_FFFF_FFFF),
             (-1, 0x0000_0000_0000_0000),
             (42, 0x1234_5678_9ABC_DEF0),
             (-7, 0xDEAD_BEEF_CAFE_BABE),
@@ -1604,7 +1623,7 @@ mod tests {
                     Fix128::from_raw(ah.wrapping_sub(bh), al.wrapping_add(bl)),
                 );
                 let scalar = a.dot(b);
-                let simd   = a.dot_simd(b);
+                let simd = a.dot_simd(b);
                 assert_eq!(
                     simd.hi, scalar.hi,
                     "sweep: dot_simd hi mismatch for a=({ah},{al:#x}) b=({bh},{bl:#x})"

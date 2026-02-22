@@ -318,8 +318,7 @@ impl SpringJoint {
 }
 
 /// Axis freedom mode for D6 joints
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[derive(Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum D6Motion {
     /// Axis is locked (no motion allowed)
     Locked,
@@ -329,7 +328,6 @@ pub enum D6Motion {
     /// Axis is limited (within min/max bounds)
     Limited,
 }
-
 
 /// D6 Joint (6-DOF configurable joint)
 ///
@@ -1122,7 +1120,13 @@ fn solve_d6_joint(joint: &D6Joint, bodies: &mut [crate::solver::RigidBody], dt: 
             };
 
             if !error.is_zero() {
-                apply_angular_correction(bodies, joint.body_a, joint.body_b, axis, error * inv_w_ang);
+                apply_angular_correction(
+                    bodies,
+                    joint.body_a,
+                    joint.body_b,
+                    axis,
+                    error * inv_w_ang,
+                );
             }
         }
     }

@@ -22,8 +22,7 @@ pub type MaterialId = u16;
 pub const DEFAULT_MATERIAL: MaterialId = 0;
 
 /// Combine rule for friction/restitution when two materials interact
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[derive(Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum CombineRule {
     /// Average of two values
     #[default]
@@ -60,7 +59,6 @@ impl CombineRule {
         }
     }
 }
-
 
 /// Physics material definition
 #[derive(Clone, Copy, Debug)]

@@ -37,7 +37,11 @@ impl Ray {
         let len = direction.length();
         Self {
             origin,
-            direction: if len.is_zero() { Vec3Fix::UNIT_X } else { direction / len },
+            direction: if len.is_zero() {
+                Vec3Fix::UNIT_X
+            } else {
+                direction / len
+            },
         }
     }
 
