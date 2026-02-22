@@ -190,13 +190,17 @@ pub fn slerp(a: QuatFix, b: QuatFix, t: Fix128) -> QuatFix {
 /// Normalized linear interpolation (NLERP) — faster approximate SLERP
 fn nlerp(a: QuatFix, b: QuatFix, t: Fix128) -> QuatFix {
     let one_minus_t = Fix128::ONE - t;
-    QuatFix::new(
+    let result = QuatFix::new(
         a.x * one_minus_t + b.x * t,
         a.y * one_minus_t + b.y * t,
         a.z * one_minus_t + b.z * t,
         a.w * one_minus_t + b.w * t,
-    )
-    .normalize()
+    );
+    let len_sq = result.x * result.x + result.y * result.y + result.z * result.z + result.w * result.w;
+    if len_sq.is_zero() {
+        return QuatFix::IDENTITY;
+    }
+    result.normalize()
 }
 
 #[cfg(test)]

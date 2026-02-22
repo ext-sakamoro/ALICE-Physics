@@ -86,6 +86,9 @@ impl EventCollector {
         self.curr_pairs.clear();
         core::mem::swap(&mut self.prev_triggers, &mut self.curr_triggers);
         self.curr_triggers.clear();
+        // Sort prev lists for binary_search lookups
+        self.prev_pairs.sort_unstable();
+        self.prev_triggers.sort_unstable();
     }
 
     /// Report a contact between two bodies
@@ -99,7 +102,7 @@ impl EventCollector {
         relative_velocity: Fix128,
     ) {
         let pair = normalize_pair(body_a, body_b);
-        let was_active = self.prev_pairs.contains(&pair);
+        let was_active = self.prev_pairs.binary_search(&pair).is_ok();
         let already_reported = self.curr_pairs.contains(&pair);
 
         if !already_reported {
@@ -130,7 +133,7 @@ impl EventCollector {
             self.curr_triggers.push(pair);
         }
 
-        let was_active = self.prev_triggers.contains(&pair);
+        let was_active = self.prev_triggers.binary_search(&pair).is_ok();
         if !was_active {
             self.trigger_events.push(TriggerEvent {
                 trigger_body,

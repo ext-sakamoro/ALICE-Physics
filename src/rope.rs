@@ -16,6 +16,8 @@ use crate::math::{Fix128, Vec3Fix};
 use crate::sdf_collider::SdfCollider;
 
 #[cfg(not(feature = "std"))]
+use alloc::vec;
+#[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
 // ============================================================================
@@ -90,8 +92,13 @@ pub struct Rope {
 }
 
 impl Rope {
-    /// Create a straight rope between two endpoints
+    /// Create a straight rope between two endpoints.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `num_segments` is zero.
     pub fn new(start: Vec3Fix, end: Vec3Fix, num_segments: usize, mass_per_unit: Fix128) -> Self {
+        assert!(num_segments > 0, "Rope requires at least one segment");
         let n = num_segments + 1; // number of particles
         let total_length = (end - start).length();
         let segment_length = total_length / Fix128::from_int(num_segments as i64);
@@ -169,6 +176,19 @@ impl Rope {
         });
     }
 
+    /// Update pin targets that track dynamic bodies.
+    ///
+    /// Call this before `step()` when pins are attached to moving bodies.
+    pub fn update_pin_targets(&mut self, body_positions: &[Vec3Fix], body_rotations: &[crate::math::QuatFix]) {
+        for pin in &mut self.pins {
+            if let Some(idx) = pin.body_index {
+                if idx < body_positions.len() && idx < body_rotations.len() {
+                    pin.target = body_positions[idx] + body_rotations[idx].rotate_vec(pin.local_offset);
+                }
+            }
+        }
+    }
+
     /// Step rope simulation
     pub fn step(&mut self, dt: Fix128) {
         let substep_dt = dt / Fix128::from_int(self.config.substeps as i64);
@@ -205,7 +225,7 @@ impl Rope {
             self.positions[i] = self.positions[i] + self.velocities[i] * dt;
         }
 
-        // 2. Apply pin constraints
+        // 2. Apply pin constraints (static targets; body-following is handled by update_pin_targets)
         for pin in &self.pins {
             self.positions[pin.particle_index] = pin.target;
         }

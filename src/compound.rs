@@ -215,6 +215,9 @@ impl CompoundShape {
         body_pos: Vec3Fix,
         body_rot: QuatFix,
     ) -> Vec3Fix {
+        if self.children.is_empty() {
+            return body_pos;
+        }
         let mut best = Vec3Fix::ZERO;
         let mut best_dot = Fix128::from_int(-1000000);
 

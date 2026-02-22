@@ -122,7 +122,9 @@ impl ContactManifold {
     /// If a matching point exists (within threshold), update it and preserve lambdas.
     /// Otherwise, add as new. If full (4 points), replace the shallowest.
     pub fn add_or_update(&mut self, contact: &Contact, local_a: Vec3Fix, local_b: Vec3Fix) {
-        let threshold_sq = Fix128::from_ratio(1, 100); // 0.01 matching threshold
+        // Squared distance threshold for contact matching.
+        // 0.0001 = (0.01m)^2, matches contacts within 1cm.
+        let threshold_sq = Fix128::from_ratio(1, 10000);
 
         // Try to find matching existing point
         let mut best_match: Option<usize> = None;

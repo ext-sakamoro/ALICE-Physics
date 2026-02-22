@@ -220,6 +220,10 @@ pub fn apply_motors(motors: &[JointMotor], joints: &[Joint], bodies: &mut [Rigid
 
         let (body_a_idx, body_b_idx) = joints[motor.joint_index].bodies();
 
+        if body_a_idx >= bodies.len() || body_b_idx >= bodies.len() {
+            continue;
+        }
+
         // Compute current state along joint axis
         let body_a = bodies[body_a_idx];
         let body_b = bodies[body_b_idx];

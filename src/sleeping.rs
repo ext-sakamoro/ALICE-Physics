@@ -16,6 +16,8 @@ use crate::math::Fix128;
 use crate::solver::RigidBody;
 
 #[cfg(not(feature = "std"))]
+use alloc::vec;
+#[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
 /// Sleep state for a body

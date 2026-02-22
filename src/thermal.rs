@@ -264,10 +264,11 @@ impl PhysicsModifier for ThermalModifier {
             d -= temp_delta * self.config.expansion_coefficient;
         }
 
-        // Freeze growth: cold areas grow (distance decreases)
+        // Freeze growth: cold areas grow (distance decreases), capped to prevent unbounded expansion
         if temp < self.config.freeze_temperature && self.config.freeze_rate > 0.0 {
             let cold = self.config.freeze_temperature - temp;
-            d -= cold * self.config.freeze_rate;
+            let freeze_offset = (cold * self.config.freeze_rate).min(1.0);
+            d -= freeze_offset;
         }
 
         d

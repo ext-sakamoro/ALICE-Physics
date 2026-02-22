@@ -200,8 +200,13 @@ pub struct ConvexHull {
 }
 
 impl ConvexHull {
-    /// Create a new convex hull from vertices
+    /// Create a new convex hull from vertices.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `vertices` is empty, since `support()` requires at least one vertex.
     pub fn new(vertices: Vec<Vec3Fix>) -> Self {
+        assert!(!vertices.is_empty(), "ConvexHull requires at least one vertex");
         Self { vertices }
     }
 }
@@ -401,7 +406,24 @@ fn do_simplex_line(simplex: &mut Simplex, direction: &mut Vec3Fix) -> bool {
 
     if ab.dot(ao) > Fix128::ZERO {
         // Origin is between A and B
-        *direction = ab.cross(ao).cross(ab);
+        let mut new_dir = ab.cross(ao).cross(ab);
+        // If ab and ao are parallel, the triple cross product is zero.
+        // Pick a perpendicular fallback direction.
+        if new_dir.length_squared().is_zero() {
+            // Choose an axis least aligned with ab for the perpendicular
+            let abs_x = ab.x.abs();
+            let abs_y = ab.y.abs();
+            let abs_z = ab.z.abs();
+            let perp = if abs_x <= abs_y && abs_x <= abs_z {
+                Vec3Fix::UNIT_X
+            } else if abs_y <= abs_z {
+                Vec3Fix::UNIT_Y
+            } else {
+                Vec3Fix::UNIT_Z
+            };
+            new_dir = ab.cross(perp);
+        }
+        *direction = new_dir;
     } else {
         // Origin is beyond A
         simplex.set(&[a]);
@@ -600,7 +622,14 @@ fn add_face(faces: &mut Vec<EpaFace>, vertices: &[Vec3Fix], i: usize, j: usize, 
 
     let ab = b - a;
     let ac = c - a;
-    let normal = ab.cross(ac).normalize();
+    let cross = ab.cross(ac);
+
+    // Skip degenerate faces where vertices are collinear or coincident
+    if cross.length_squared().is_zero() {
+        return;
+    }
+
+    let normal = cross.normalize();
 
     // Ensure normal points away from origin
     let distance = a.dot(normal);

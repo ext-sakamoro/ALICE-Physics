@@ -662,9 +662,12 @@ pub fn solve_joints_breakable(
         }
     }
 
+    // Sort for binary search lookup
+    broken.sort_unstable();
+
     // Solve only non-broken joints
     for (i, joint) in joints.iter().enumerate() {
-        if broken.contains(&i) {
+        if broken.binary_search(&i).is_ok() {
             continue;
         }
         match joint {

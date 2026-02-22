@@ -168,8 +168,6 @@ impl PhaseChangeModifier {
 
             // Current phase
             let is_solid = phase_val < 0.5;
-            let _is_liquid = (0.5..1.5).contains(&phase_val);
-            let _is_gas = phase_val >= 1.5;
 
             // Solid → Liquid transition
             if is_solid && temp >= melt_t {

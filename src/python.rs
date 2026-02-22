@@ -1,3 +1,5 @@
+// PyO3 macro expansion generates identity conversions for PyResult wrappers
+#![allow(clippy::useless_conversion)]
 //! Python Bindings for ALICE-Physics (PyO3 + NumPy Zero-Copy)
 //!
 //! # Optimization Layers
@@ -30,6 +32,7 @@ pub struct PyPhysicsWorld {
     inner: PhysicsWorld,
 }
 
+#[allow(clippy::useless_conversion)]
 #[pymethods]
 impl PyPhysicsWorld {
     /// Create a new physics world with default configuration.
@@ -83,15 +86,17 @@ impl PyPhysicsWorld {
 
     /// Get all body positions as a NumPy (N, 3) float64 array.
     ///
-    /// Zero-copy via direct PyArray allocation.
+    /// Pre-allocated flat buffer with direct indexing, then zero-copy
+    /// ownership transfer via `into_pyarray_bound`.
     fn positions<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray2<f64>> {
         let n = self.inner.bodies.len();
-        let mut data = Vec::with_capacity(n * 3);
-        for body in &self.inner.bodies {
+        let mut data = vec![0.0f64; n * 3];
+        for (i, body) in self.inner.bodies.iter().enumerate() {
             let (x, y, z) = body.position.to_f32();
-            data.push(x as f64);
-            data.push(y as f64);
-            data.push(z as f64);
+            let base = i * 3;
+            data[base] = x as f64;
+            data[base + 1] = y as f64;
+            data[base + 2] = z as f64;
         }
         data.into_pyarray_bound(py).reshape([n, 3]).unwrap()
     }
@@ -99,12 +104,13 @@ impl PyPhysicsWorld {
     /// Get all body velocities as a NumPy (N, 3) float64 array.
     fn velocities<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray2<f64>> {
         let n = self.inner.bodies.len();
-        let mut data = Vec::with_capacity(n * 3);
-        for body in &self.inner.bodies {
+        let mut data = vec![0.0f64; n * 3];
+        for (i, body) in self.inner.bodies.iter().enumerate() {
             let (x, y, z) = body.velocity.to_f32();
-            data.push(x as f64);
-            data.push(y as f64);
-            data.push(z as f64);
+            let base = i * 3;
+            data[base] = x as f64;
+            data[base + 1] = y as f64;
+            data[base + 2] = z as f64;
         }
         data.into_pyarray_bound(py).reshape([n, 3]).unwrap()
     }
@@ -131,6 +137,52 @@ impl PyPhysicsWorld {
         Ok(())
     }
 
+    /// Set positions for all bodies from a NumPy (N, 3) array.
+    ///
+    /// GIL released during the update.
+    fn set_positions_batch(
+        &mut self,
+        py: Python<'_>,
+        data: PyReadonlyArray2<f64>,
+    ) -> PyResult<()> {
+        let array = data.as_array();
+        let shape = array.shape();
+
+        if shape.len() != 2 || shape[1] != 3 {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "Expected (N, 3) array with columns [x, y, z]",
+            ));
+        }
+
+        let n = shape[0];
+        if n != self.inner.bodies.len() {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "Array size {} does not match body count {}",
+                n,
+                self.inner.bodies.len()
+            )));
+        }
+
+        // Collect positions before GIL release
+        let positions: Vec<Vec3Fix> = (0..n)
+            .map(|i| {
+                Vec3Fix::from_f32(
+                    array[[i, 0]] as f32,
+                    array[[i, 1]] as f32,
+                    array[[i, 2]] as f32,
+                )
+            })
+            .collect();
+
+        py.allow_threads(|| {
+            for (i, pos) in positions.into_iter().enumerate() {
+                self.inner.bodies[i].position = pos;
+            }
+        });
+
+        Ok(())
+    }
+
     /// Serialize the entire world state to bytes (for rollback/save).
     fn serialize_state<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<u8>> {
         let data = py.allow_threads(|| self.inner.serialize_state());
@@ -150,7 +202,12 @@ impl PyPhysicsWorld {
     /// Add multiple dynamic bodies from a NumPy (N, 4) array.
     ///
     /// Columns: x, y, z, mass. Returns list of body indices.
-    fn add_bodies_batch(&mut self, data: PyReadonlyArray2<f64>) -> PyResult<Vec<usize>> {
+    /// GIL released during body creation and world insertion.
+    fn add_bodies_batch(
+        &mut self,
+        py: Python<'_>,
+        data: PyReadonlyArray2<f64>,
+    ) -> PyResult<Vec<usize>> {
         let array = data.as_array();
         let shape = array.shape();
 
@@ -161,21 +218,31 @@ impl PyPhysicsWorld {
         }
 
         let n = shape[0];
-        let mut indices = Vec::with_capacity(n);
 
-        for i in 0..n {
-            let x = array[[i, 0]];
-            let y = array[[i, 1]];
-            let z = array[[i, 2]];
-            let mass = array[[i, 3]];
+        // Gather parameters from NumPy while GIL is held
+        let params: Vec<(f32, f32, f32, f64)> = (0..n)
+            .map(|i| {
+                (
+                    array[[i, 0]] as f32,
+                    array[[i, 1]] as f32,
+                    array[[i, 2]] as f32,
+                    array[[i, 3]],
+                )
+            })
+            .collect();
 
-            let body = RigidBody::new_dynamic(
-                Vec3Fix::from_f32(x as f32, y as f32, z as f32),
-                Fix128::from_f64(mass),
-            );
-            let idx = self.inner.add_body(body);
-            indices.push(idx);
-        }
+        // Release GIL for body creation and world insertion
+        let indices = py.allow_threads(|| {
+            let mut out = Vec::with_capacity(n);
+            for &(x, y, z, mass) in &params {
+                let body = RigidBody::new_dynamic(
+                    Vec3Fix::from_f32(x, y, z),
+                    Fix128::from_f64(mass),
+                );
+                out.push(self.inner.add_body(body));
+            }
+            out
+        });
 
         Ok(indices)
     }
@@ -282,26 +349,22 @@ impl PyPhysicsWorld {
     /// Get all body states as NumPy (N, 10) array: [px,py,pz, vx,vy,vz, qx,qy,qz,qw]
     fn states<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray2<f64>> {
         let n = self.inner.bodies.len();
-        let mut data = Vec::with_capacity(n * 10);
+        let mut data = vec![0.0f64; n * 10];
 
-        for body in &self.inner.bodies {
-            let (px, py, pz) = body.position.to_f32();
+        for (i, body) in self.inner.bodies.iter().enumerate() {
+            let (px, py_val, pz) = body.position.to_f32();
             let (vx, vy, vz) = body.velocity.to_f32();
-            let qx = body.rotation.x.to_f32();
-            let qy = body.rotation.y.to_f32();
-            let qz = body.rotation.z.to_f32();
-            let qw = body.rotation.w.to_f32();
-
-            data.push(px as f64);
-            data.push(py as f64);
-            data.push(pz as f64);
-            data.push(vx as f64);
-            data.push(vy as f64);
-            data.push(vz as f64);
-            data.push(qx as f64);
-            data.push(qy as f64);
-            data.push(qz as f64);
-            data.push(qw as f64);
+            let base = i * 10;
+            data[base] = px as f64;
+            data[base + 1] = py_val as f64;
+            data[base + 2] = pz as f64;
+            data[base + 3] = vx as f64;
+            data[base + 4] = vy as f64;
+            data[base + 5] = vz as f64;
+            data[base + 6] = body.rotation.x.to_f32() as f64;
+            data[base + 7] = body.rotation.y.to_f32() as f64;
+            data[base + 8] = body.rotation.z.to_f32() as f64;
+            data[base + 9] = body.rotation.w.to_f32() as f64;
         }
 
         data.into_pyarray_bound(py).reshape([n, 10]).unwrap()
@@ -328,6 +391,7 @@ pub struct PyDeterministicSimulation {
     inner: DeterministicSimulation,
 }
 
+#[allow(clippy::useless_conversion)]
 #[pymethods]
 impl PyDeterministicSimulation {
     /// Create a new deterministic simulation.
@@ -419,12 +483,13 @@ impl PyDeterministicSimulation {
     /// Get all body positions as NumPy (N, 3) float64 array.
     fn positions<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray2<f64>> {
         let n = self.inner.world.bodies.len();
-        let mut data = Vec::with_capacity(n * 3);
-        for body in &self.inner.world.bodies {
+        let mut data = vec![0.0f64; n * 3];
+        for (i, body) in self.inner.world.bodies.iter().enumerate() {
             let (x, y, z) = body.position.to_f32();
-            data.push(x as f64);
-            data.push(y as f64);
-            data.push(z as f64);
+            let base = i * 3;
+            data[base] = x as f64;
+            data[base + 1] = y as f64;
+            data[base + 2] = z as f64;
         }
         data.into_pyarray_bound(py).reshape([n, 3]).unwrap()
     }
@@ -467,6 +532,7 @@ fn compute_checksum(py: Python<'_>, state_bytes: Vec<u8>) -> u64 {
 ///     bytes (20 bytes)
 #[pyfunction]
 #[pyo3(signature = (player_id, move_x=0.0, move_y=0.0, move_z=0.0, actions=0, aim_x=0.0, aim_y=0.0, aim_z=0.0))]
+#[allow(clippy::too_many_arguments)]
 fn encode_frame_input(
     player_id: u8,
     move_x: f64,
@@ -492,6 +558,7 @@ fn encode_frame_input(
 ///
 /// Returns: (player_id, move_x, move_y, move_z, actions, aim_x, aim_y, aim_z)
 #[pyfunction]
+#[allow(clippy::type_complexity)]
 fn decode_frame_input(data: Vec<u8>) -> PyResult<(u8, f64, f64, f64, u32, f64, f64, f64)> {
     if data.len() < 20 {
         return Err(pyo3::exceptions::PyValueError::new_err("Need 20 bytes"));

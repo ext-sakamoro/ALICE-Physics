@@ -15,6 +15,8 @@
 use crate::math::{Fix128, QuatFix, Vec3Fix};
 
 #[cfg(not(feature = "std"))]
+use alloc::vec;
+#[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
 // ============================================================================
@@ -117,7 +119,7 @@ pub struct AnimationClip {
     pub name: Vec<u8>,
     /// Duration in seconds
     pub duration: Fix128,
-    /// Keyframes per bone: keyframes[bone_idx] = sorted list
+    /// Keyframes per bone: `keyframes[bone_idx]` = sorted list
     pub keyframes: Vec<Vec<Keyframe>>,
     /// Whether clip loops
     pub looping: bool,
@@ -361,9 +363,16 @@ fn quat_slerp(a: QuatFix, b: QuatFix, t: Fix128) -> QuatFix {
         .normalize();
     }
 
-    // Full SLERP
-    let theta = dot.atan(); // acos approximation: atan(sqrt(1-d^2)/d)
-    let sin_theta = theta.sin();
+    // Full SLERP: theta = acos(dot) via atan2(sqrt(1 - dot^2), dot)
+    let one_minus_dot_sq = Fix128::ONE - dot * dot;
+    // Clamp to avoid negative values from numerical error
+    let sin_half = if one_minus_dot_sq.is_negative() {
+        Fix128::ZERO
+    } else {
+        one_minus_dot_sq.sqrt()
+    };
+    let theta = Fix128::atan2(sin_half, dot);
+    let sin_theta = sin_half;
 
     if sin_theta.is_zero() {
         return a;

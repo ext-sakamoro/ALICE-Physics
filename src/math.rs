@@ -101,11 +101,11 @@ impl Fix128 {
     }
 
     /// Create from f64 (for initialization only, not deterministic!)
-    #[cfg(feature = "std")]
     pub fn from_f64(f: f64) -> Self {
-        let hi = f.trunc() as i64;
-        let frac = (f - f.trunc()).abs();
-        let lo = (frac * (1u128 << 64) as f64) as u64;
+        let hi = f as i64; // truncation toward zero
+        let frac = f - (hi as f64);
+        let abs_frac = if frac < 0.0 { -frac } else { frac };
+        let lo = (abs_frac * (1u128 << 64) as f64) as u64;
         if f < 0.0 && lo != 0 {
             Self {
                 hi: hi - 1,
@@ -117,19 +117,16 @@ impl Fix128 {
     }
 
     /// Convert to f64 (for debugging only, not deterministic!)
-    #[cfg(feature = "std")]
     pub fn to_f64(self) -> f64 {
         self.hi as f64 + (self.lo as f64 / (1u128 << 64) as f64)
     }
 
     /// Create from f32 (for SDF bridge, not deterministic!)
-    #[cfg(feature = "std")]
     pub fn from_f32(f: f32) -> Self {
         Self::from_f64(f as f64)
     }
 
     /// Convert to f32 (for SDF bridge, not deterministic!)
-    #[cfg(feature = "std")]
     pub fn to_f32(self) -> f32 {
         self.to_f64() as f32
     }
@@ -205,8 +202,24 @@ impl Fix128 {
             return Self::ZERO;
         }
 
-        // Initial guess: integer sqrt of hi part
-        let mut x = Self::from_int((self.hi as f64).sqrt() as i64 + 1);
+        // Initial guess: deterministic bit-width estimation (no f64)
+        // For Fix128 (I64F64), value = (hi << 64 | lo) / 2^64
+        // Estimate sqrt via bit position: if highest set bit is at position b,
+        // sqrt is approximately at bit position b/2.
+        let sig_bits = if self.hi > 0 {
+            128 - (self.hi as u64).leading_zeros() as i64
+        } else if self.hi == 0 && self.lo > 0 {
+            64 - self.lo.leading_zeros() as i64
+        } else {
+            1
+        };
+        // Shift accounts for the 64 fractional bits: result bit = (sig_bits + 63) / 2
+        let result_bit = ((sig_bits + 63) / 2) as u32;
+        let mut x = if result_bit >= 64 {
+            Self { hi: 1i64 << (result_bit - 64).min(62), lo: 0 }
+        } else {
+            Self { hi: 0, lo: 1u64 << result_bit }
+        };
 
         // Newton-Raphson: x = (x + n/x) / 2
         // Fixed 64 iterations for determinism
@@ -465,49 +478,126 @@ impl Ord for Fix128 {
 /// Precomputed for 64 iterations
 const CORDIC_ANGLES: [Fix128; 64] = compute_cordic_angles();
 
-/// CORDIC gain constant K = prod(cos(arctan(2^-i))) ≈ 0.6072529350088812561694
+/// CORDIC gain constant K = prod(cos(arctan(2^-i)), i=0..47) ≈ 0.60725293500888133
 const CORDIC_K: Fix128 = Fix128 {
     hi: 0,
-    lo: 0x9B74EDA8435E4A51, // 0.6072529350088812561694 * 2^64
+    lo: 0x9B74EDA8435E5DD7, // 0.60725293500888133 * 2^64
 };
 
 /// Compute CORDIC angle table at compile time
+///
+/// Each entry is arctan(2^-i) in Fix128 format (hi=0, lo=fractional).
+/// Values precomputed to full 64-bit fractional precision.
 const fn compute_cordic_angles() -> [Fix128; 64] {
+    // arctan(2^-i) * 2^64 for i = 0..63, precomputed with arbitrary-precision math.
+    // arctan(2^0)  = pi/4        = 0.7853981633974483...
+    // arctan(2^-1) = 0.4636476090008061...
+    // arctan(2^-2) = 0.2449786631268641...
+    // For large i (>= ~15), arctan(2^-i) ≈ 2^-i to full precision.
+    const LO: [u64; 64] = [
+        0xC90FDAA22168C000, // i=0:  arctan(1)     = pi/4
+        0x76B19C1586ED4000, // i=1:  arctan(1/2)   = 0.46364760900...
+        0x3EB6EBF25901BA00, // i=2:  arctan(1/4)   = 0.24497866312...
+        0x1FD5BA9AAC2F6E00, // i=3:  arctan(1/8)   = 0.12435499454...
+        0x0FFAADDB967EF500, // i=4:  arctan(1/16)  = 0.06241880999...
+        0x07FF556EEA5D8940, // i=5:  arctan(1/32)  = 0.03123983343...
+        0x03FFEAAB776E5360, // i=6:  arctan(1/64)  = 0.01562372862...
+        0x01FFFD555BBBA970, // i=7:  arctan(1/128) = 0.00781234106...
+        0x00FFFFAAAADDDDB8, // i=8:  arctan(1/256)
+        0x007FFFF55556EEF0, // i=9:  arctan(1/512)
+        0x003FFFFEAAAAB778, // i=10: arctan(1/1024)
+        0x001FFFFFD55555BC, // i=11: arctan(1/2048)
+        0x000FFFFFFAAAAAAE, // i=12: arctan(1/4096)
+        0x0007FFFFFF555555, // i=13: arctan(1/8192)
+        0x0003FFFFFFEAAAAA, // i=14: arctan(1/16384)
+        0x0001FFFFFFFD5555, // i=15: arctan(1/32768)
+        0x0000FFFFFFFFAAAA, // i=16
+        0x00007FFFFFFFF555, // i=17
+        0x00003FFFFFFFFEAA, // i=18
+        0x00001FFFFFFFFFD5, // i=19
+        0x00000FFFFFFFFFFA, // i=20
+        0x000007FFFFFFFFFF, // i=21
+        0x000003FFFFFFFFFF, // i=22
+        0x000001FFFFFFFFFF, // i=23
+        0x000000FFFFFFFFFF, // i=24
+        0x0000007FFFFFFFFF, // i=25
+        0x0000003FFFFFFFFF, // i=26
+        0x0000002000000000, // i=27
+        0x0000001000000000, // i=28
+        0x0000000800000000, // i=29
+        0x0000000400000000, // i=30
+        0x0000000200000000, // i=31
+        0x0000000100000000, // i=32
+        0x0000000080000000, // i=33
+        0x0000000040000000, // i=34
+        0x0000000020000000, // i=35
+        0x0000000010000000, // i=36
+        0x0000000008000000, // i=37
+        0x0000000004000000, // i=38
+        0x0000000002000000, // i=39
+        0x0000000001000000, // i=40
+        0x0000000000800000, // i=41
+        0x0000000000400000, // i=42
+        0x0000000000200000, // i=43
+        0x0000000000100000, // i=44
+        0x0000000000080000, // i=45
+        0x0000000000040000, // i=46
+        0x0000000000020000, // i=47
+        0x0000000000010000, // i=48
+        0x0000000000008000, // i=49
+        0x0000000000004000, // i=50
+        0x0000000000002000, // i=51
+        0x0000000000001000, // i=52
+        0x0000000000000800, // i=53
+        0x0000000000000400, // i=54
+        0x0000000000000200, // i=55
+        0x0000000000000100, // i=56
+        0x0000000000000080, // i=57
+        0x0000000000000040, // i=58
+        0x0000000000000020, // i=59
+        0x0000000000000010, // i=60
+        0x0000000000000008, // i=61
+        0x0000000000000004, // i=62
+        0x0000000000000002, // i=63
+    ];
     let mut angles = [Fix128::ZERO; 64];
-
-    // arctan(2^0) = π/4 ≈ 0.7853981633974483
-    angles[0] = Fix128 {
-        hi: 0,
-        lo: 0xC90FDAA22168C234,
-    };
-
-    // Subsequent angles: arctan(2^-i) ≈ 2^-i for small i
-    // These are approximations; in production, use exact precomputed values
-    let mut i = 1;
+    let mut i = 0;
     while i < 64 {
-        // arctan(2^-i) ≈ 2^-i for i > 0 (good approximation)
-        angles[i] = Fix128 {
-            hi: 0,
-            lo: 1u64 << (63 - i),
-        };
+        angles[i] = Fix128 { hi: 0, lo: LO[i] };
         i += 1;
     }
-
     angles
 }
 
-/// CORDIC sine and cosine (deterministic, 64 iterations)
+/// CORDIC sine and cosine (deterministic, 48 iterations)
 fn cordic_sin_cos(angle: Fix128) -> (Fix128, Fix128) {
-    // Reduce angle to [-π, π]
+    // Step 1: O(1) modular reduction to [-π, π]
     let mut theta = angle;
+    if theta > Fix128::PI || theta < Fix128::PI.neg() {
+        // k = floor((theta + π) / 2π)
+        let shifted = theta + Fix128::PI;
+        let k = shifted / Fix128::TWO_PI;
+        let k_int = Fix128::from_int(k.hi);
+        theta = theta - Fix128::TWO_PI * k_int;
+        // Clamp to handle edge cases
+        if theta > Fix128::PI {
+            theta = theta - Fix128::TWO_PI;
+        } else if theta < Fix128::PI.neg() {
+            theta = theta + Fix128::TWO_PI;
+        }
+    }
 
-    // Simple modular reduction (can be improved)
-    while theta > Fix128::PI {
-        theta = theta - Fix128::TWO_PI;
-    }
-    while theta < Fix128::PI.neg() {
-        theta = theta + Fix128::TWO_PI;
-    }
+    // Step 2: Quadrant reduction to [-π/2, π/2] (CORDIC convergence range)
+    // For |θ| > π/2, use: sin(θ) = sin(π-θ), cos(θ) = -cos(π-θ)
+    let negate_cos = if theta > Fix128::HALF_PI {
+        theta = Fix128::PI - theta;
+        true
+    } else if theta < Fix128::HALF_PI.neg() {
+        theta = Fix128::PI.neg() - theta;
+        true
+    } else {
+        false
+    };
 
     // Initialize: start at (K, 0) and rotate by theta
     let mut x = CORDIC_K;
@@ -552,7 +642,12 @@ fn cordic_sin_cos(angle: Fix128) -> (Fix128, Fix128) {
         y = new_y;
     }
 
-    (y, x) // sin, cos
+    // Apply quadrant correction
+    if negate_cos {
+        (y, x.neg()) // sin preserved, cos negated
+    } else {
+        (y, x) // sin, cos
+    }
 }
 
 /// CORDIC arctangent (deterministic)
@@ -678,7 +773,7 @@ impl Vec3Fix {
     }
 
     /// Create from f32 components (for SDF bridge)
-    #[cfg(feature = "std")]
+    /// Create from f32 components (for SDF bridge, not deterministic!)
     #[inline]
     pub fn from_f32(x: f32, y: f32, z: f32) -> Self {
         Self {
@@ -689,7 +784,6 @@ impl Vec3Fix {
     }
 
     /// Convert to f32 tuple (for SDF bridge)
-    #[cfg(feature = "std")]
     #[inline]
     pub fn to_f32(self) -> (f32, f32, f32) {
         (self.x.to_f32(), self.y.to_f32(), self.z.to_f32())
@@ -723,7 +817,10 @@ impl Vec3Fix {
         self.length_squared().sqrt()
     }
 
-    /// Normalize to unit length
+    /// Normalize to unit length.
+    ///
+    /// Returns `Self::ZERO` for zero-length vectors. Use [`Self::try_normalize`]
+    /// when you need to distinguish a zero-length input from a valid unit vector.
     #[inline(always)]
     pub fn normalize(self) -> Self {
         let len = self.length();
@@ -731,6 +828,17 @@ impl Vec3Fix {
             Self::ZERO
         } else {
             self / len
+        }
+    }
+
+    /// Try to normalize, returning `None` for zero-length vectors.
+    #[inline(always)]
+    pub fn try_normalize(self) -> Option<Self> {
+        let len = self.length();
+        if len.is_zero() {
+            None
+        } else {
+            Some(self / len)
         }
     }
 
@@ -1132,6 +1240,52 @@ impl Mat3Fix {
             col1: self.col1.scale(s),
             col2: self.col2.scale(s),
         }
+    }
+
+    /// Matrix-matrix multiplication (self * rhs)
+    #[inline]
+    pub fn mul_mat(self, rhs: Self) -> Self {
+        Self {
+            col0: self.mul_vec(rhs.col0),
+            col1: self.mul_vec(rhs.col1),
+            col2: self.mul_vec(rhs.col2),
+        }
+    }
+
+    /// Determinant
+    #[inline]
+    pub fn determinant(self) -> Fix128 {
+        self.col0.x * (self.col1.y * self.col2.z - self.col1.z * self.col2.y)
+            - self.col1.x * (self.col0.y * self.col2.z - self.col0.z * self.col2.y)
+            + self.col2.x * (self.col0.y * self.col1.z - self.col0.z * self.col1.y)
+    }
+
+    /// Inverse matrix. Returns `None` if the matrix is singular.
+    pub fn inverse(self) -> Option<Self> {
+        let det = self.determinant();
+        if det.is_zero() {
+            return None;
+        }
+        let inv_det = Fix128::ONE / det;
+
+        // Cofactor matrix transposed (adjugate), scaled by 1/det
+        let c00 = self.col1.y * self.col2.z - self.col1.z * self.col2.y;
+        let c01 = self.col0.z * self.col2.y - self.col0.y * self.col2.z;
+        let c02 = self.col0.y * self.col1.z - self.col0.z * self.col1.y;
+
+        let c10 = self.col1.z * self.col2.x - self.col1.x * self.col2.z;
+        let c11 = self.col0.x * self.col2.z - self.col0.z * self.col2.x;
+        let c12 = self.col0.z * self.col1.x - self.col0.x * self.col1.z;
+
+        let c20 = self.col1.x * self.col2.y - self.col1.y * self.col2.x;
+        let c21 = self.col0.y * self.col2.x - self.col0.x * self.col2.y;
+        let c22 = self.col0.x * self.col1.y - self.col0.y * self.col1.x;
+
+        Some(Self {
+            col0: Vec3Fix::new(c00 * inv_det, c01 * inv_det, c02 * inv_det),
+            col1: Vec3Fix::new(c10 * inv_det, c11 * inv_det, c12 * inv_det),
+            col2: Vec3Fix::new(c20 * inv_det, c21 * inv_det, c22 * inv_det),
+        })
     }
 }
 

@@ -15,6 +15,8 @@ use crate::collider::Contact;
 use crate::math::{Fix128, Vec3Fix};
 
 #[cfg(not(feature = "std"))]
+use alloc::vec;
+#[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
 // ============================================================================
@@ -265,7 +267,12 @@ impl AudioGenerator {
 
         // Determine event type
         let normal_speed = relative_velocity.dot(contact.normal).abs();
-        let tangential_speed = (speed * speed - normal_speed * normal_speed).sqrt();
+        let tangential_sq = speed * speed - normal_speed * normal_speed;
+        let tangential_speed = if tangential_sq > Fix128::ZERO {
+            tangential_sq.sqrt()
+        } else {
+            Fix128::ZERO
+        };
 
         let event_type = if is_new_contact {
             AudioEventType::Impact
@@ -329,6 +336,9 @@ impl AudioGenerator {
 
         // Denser materials = lower pitch
         let avg_density = (mat_a.density + mat_b.density).half();
+        if avg_density.is_zero() {
+            return base;
+        }
         let density_factor = Fix128::from_int(1000) / avg_density;
         let density_factor = if density_factor > Fix128::from_int(2) {
             Fix128::from_int(2)

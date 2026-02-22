@@ -21,12 +21,18 @@ use crate::collider::Contact;
 use crate::math::{select_vec3, Fix128, QuatFix, Vec3Fix};
 use crate::sdf_collider::SdfCollider;
 
+/// Minimum effective inverse-mass sum below which constraint solving is skipped.
+/// Prevents division explosion when two near-static bodies are in contact.
+/// Value: ~2^-40 ≈ 9.1e-13 in Fix128.
+const W_SUM_EPSILON: Fix128 = Fix128 { hi: 0, lo: 0x0000010000000000 };
+
+#[cfg(not(feature = "std"))]
+use alloc::vec;
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
-// Rayon parallel iterator support (reserved for future use)
+// Rayon parallel iterator support
 #[cfg(feature = "parallel")]
-#[allow(unused_imports)]
 use rayon::prelude::*;
 
 // ============================================================================
@@ -398,6 +404,59 @@ pub struct ConstraintBatch {
     pub contact_indices: Vec<usize>,
 }
 
+/// Pointer wrapper enabling parallel access to disjoint body slots.
+///
+/// # Safety
+///
+/// The graph coloring invariant (`rebuild_batches`) guarantees that within
+/// a single constraint batch, no two constraints share a body index.
+/// This makes concurrent mutation of distinct body slots sound.
+#[cfg(feature = "parallel")]
+struct BodySlicePtr {
+    ptr: *mut RigidBody,
+    len: usize,
+}
+
+#[cfg(feature = "parallel")]
+unsafe impl Send for BodySlicePtr {}
+#[cfg(feature = "parallel")]
+unsafe impl Sync for BodySlicePtr {}
+
+#[cfg(feature = "parallel")]
+impl BodySlicePtr {
+    #[allow(clippy::mut_from_ref)]
+    #[inline(always)]
+    unsafe fn get_mut(&self, idx: usize) -> &mut RigidBody {
+        debug_assert!(idx < self.len);
+        &mut *self.ptr.add(idx)
+    }
+}
+
+/// Pointer wrapper enabling parallel write-back of cached lambda.
+///
+/// Each constraint index appears in exactly one batch, so concurrent
+/// mutation of distinct constraint slots is safe.
+#[cfg(feature = "parallel")]
+struct DistConstraintSlicePtr {
+    ptr: *mut DistanceConstraint,
+    len: usize,
+}
+
+#[cfg(feature = "parallel")]
+unsafe impl Send for DistConstraintSlicePtr {}
+#[cfg(feature = "parallel")]
+unsafe impl Sync for DistConstraintSlicePtr {}
+
+#[cfg(feature = "parallel")]
+impl DistConstraintSlicePtr {
+    #[allow(clippy::mut_from_ref)]
+    #[inline(always)]
+    unsafe fn get_mut(&self, idx: usize) -> &mut DistanceConstraint {
+        debug_assert!(idx < self.len);
+        &mut *self.ptr.add(idx)
+    }
+}
+
 /// Pre-solve contact hook callback type
 ///
 /// Called before each contact is solved. Return `false` to skip this contact.
@@ -705,9 +764,9 @@ impl PhysicsWorld {
             }
             color += 1;
 
-            // Safety limit
-            if color > 256 {
-                return 0;
+            // Safety limit: saturate to current color instead of silently resetting to 0
+            if color > 4096 {
+                return color;
             }
         }
     }
@@ -795,6 +854,7 @@ impl PhysicsWorld {
                         body.prev_position = body.position;
                         body.prev_rotation = body.rotation;
                         if let Some((target_pos, target_rot)) = body.kinematic_target {
+                            body.velocity = (target_pos - body.position) * (Fix128::ONE / dt);
                             body.position = target_pos;
                             body.rotation = target_rot;
                         }
@@ -836,6 +896,7 @@ impl PhysicsWorld {
                         body.prev_position = body.position;
                         body.prev_rotation = body.rotation;
                         if let Some((target_pos, target_rot)) = body.kinematic_target {
+                            body.velocity = (target_pos - body.position) * (Fix128::ONE / dt);
                             body.position = target_pos;
                             body.rotation = target_rot;
                         }
@@ -869,20 +930,38 @@ impl PhysicsWorld {
         }
     }
 
-    /// Update velocities from position changes
+    /// Update velocities from position changes, then apply restitution and friction
+    /// for active contact constraints.
     #[inline]
     fn update_velocities(&mut self, dt: Fix128) {
         let inv_dt = Fix128::ONE / dt;
 
+        // --- Phase 1: Derive velocities from position/rotation changes ---
         #[cfg(feature = "parallel")]
         {
             self.bodies.par_iter_mut().for_each(|body| {
                 if body.body_type == BodyType::Static {
                     return;
                 }
-
                 body.velocity = (body.position - body.prev_position) * inv_dt;
-                // Angular velocity update (simplified)
+                // Angular velocity from rotation change:
+                // delta_q = rotation * prev_rotation^-1
+                // angular_velocity = 2 * delta_q.xyz / dt  (when delta_q.w > 0)
+                let dq = body.rotation.mul(body.prev_rotation.conjugate());
+                let two_inv_dt = inv_dt + inv_dt;
+                if dq.w < Fix128::ZERO {
+                    body.angular_velocity = Vec3Fix::new(
+                        -dq.x * two_inv_dt,
+                        -dq.y * two_inv_dt,
+                        -dq.z * two_inv_dt,
+                    );
+                } else {
+                    body.angular_velocity = Vec3Fix::new(
+                        dq.x * two_inv_dt,
+                        dq.y * two_inv_dt,
+                        dq.z * two_inv_dt,
+                    );
+                }
             });
         }
 
@@ -892,45 +971,204 @@ impl PhysicsWorld {
                 if body.body_type == BodyType::Static {
                     continue;
                 }
-
                 body.velocity = (body.position - body.prev_position) * inv_dt;
-                // Angular velocity update (simplified)
+                // Angular velocity from rotation change
+                let dq = body.rotation.mul(body.prev_rotation.conjugate());
+                let two_inv_dt = inv_dt + inv_dt;
+                if dq.w < Fix128::ZERO {
+                    body.angular_velocity = Vec3Fix::new(
+                        -dq.x * two_inv_dt,
+                        -dq.y * two_inv_dt,
+                        -dq.z * two_inv_dt,
+                    );
+                } else {
+                    body.angular_velocity = Vec3Fix::new(
+                        dq.x * two_inv_dt,
+                        dq.y * two_inv_dt,
+                        dq.z * two_inv_dt,
+                    );
+                }
+            }
+        }
+
+        // --- Phase 2: Apply restitution and friction at contacts ---
+        let num_contacts = self.contact_constraints.len();
+        for i in 0..num_contacts {
+            let constraint = self.contact_constraints[i];
+            let body_a = self.bodies[constraint.body_a];
+            let body_b = self.bodies[constraint.body_b];
+
+            if body_a.is_sensor || body_b.is_sensor {
+                continue;
+            }
+
+            let w_sum = body_a.inv_mass + body_b.inv_mass;
+            if w_sum < W_SUM_EPSILON {
+                continue;
+            }
+
+            let n = constraint.contact.normal;
+            let relative_vel = body_a.velocity - body_b.velocity;
+            let vn = relative_vel.dot(n);
+
+            // Restitution: apply bounce on separating velocity
+            if vn < Fix128::ZERO {
+                let restitution = constraint.restitution;
+                // delta_vn = -(1 + e) * vn
+                let delta_vn = -(Fix128::ONE + restitution) * vn;
+                let impulse_n = n * delta_vn;
+                let inv_w = Fix128::ONE / w_sum;
+                self.bodies[constraint.body_a].velocity = self.bodies[constraint.body_a].velocity
+                    + impulse_n * (body_a.inv_mass * inv_w);
+                self.bodies[constraint.body_b].velocity = self.bodies[constraint.body_b].velocity
+                    - impulse_n * (body_b.inv_mass * inv_w);
+            }
+
+            // Friction: reduce tangential velocity
+            let relative_vel2 = self.bodies[constraint.body_a].velocity
+                - self.bodies[constraint.body_b].velocity;
+            let vn2 = relative_vel2.dot(n);
+            let tangent_vel = relative_vel2 - n * vn2;
+            let tangent_speed_sq = tangent_vel.length_squared();
+            if tangent_speed_sq > Fix128::ZERO {
+                let tangent_speed = tangent_speed_sq.sqrt();
+                let friction = constraint.friction;
+                // Coulomb friction: clamp tangential impulse to friction * normal impulse
+                let max_friction_impulse = friction * vn2.abs();
+                let applied = if tangent_speed < max_friction_impulse {
+                    tangent_speed
+                } else {
+                    max_friction_impulse
+                };
+                let friction_dir = tangent_vel / tangent_speed;
+                let friction_impulse = friction_dir * applied;
+                let inv_w = Fix128::ONE / w_sum;
+                self.bodies[constraint.body_a].velocity = self.bodies[constraint.body_a].velocity
+                    - friction_impulse * (body_a.inv_mass * inv_w);
+                self.bodies[constraint.body_b].velocity = self.bodies[constraint.body_b].velocity
+                    + friction_impulse * (body_b.inv_mass * inv_w);
             }
         }
     }
 
-    /// Solve constraints in batched parallel mode
+    /// Apply pre-solve hooks and contact modifiers to contact constraints.
     ///
-    /// Uses index-based iteration to avoid Vec::clone() heap allocation.
+    /// Runs sequentially before parallel dispatch. Contacts that are
+    /// filtered out have their depth set to zero, causing the parallel
+    /// solver to skip them via its existing early-return check.
+    #[cfg(all(feature = "parallel", feature = "std"))]
+    fn pre_process_contacts(&mut self) {
+        let num = self.contact_constraints.len();
+        for i in 0..num {
+            let constraint = &mut self.contact_constraints[i];
+            let body_a_idx = constraint.body_a;
+            let body_b_idx = constraint.body_b;
+
+            let mut skip = false;
+            for hook in &self.pre_solve_hooks {
+                if !hook(body_a_idx, body_b_idx, &constraint.contact) {
+                    skip = true;
+                    break;
+                }
+            }
+            if !skip {
+                for modifier in &self.contact_modifiers {
+                    if !modifier.modify_contact(
+                        body_a_idx,
+                        body_b_idx,
+                        &mut constraint.contact,
+                        &mut constraint.friction,
+                        &mut constraint.restitution,
+                    ) {
+                        skip = true;
+                        break;
+                    }
+                }
+            }
+            if skip {
+                // Mark as non-penetrating so the solver skips it
+                constraint.contact.depth = Fix128::ZERO;
+            }
+        }
+    }
+
+    /// Solve constraints in batched parallel mode via Rayon.
+    ///
+    /// Within each colored batch, constraints share no body indices
+    /// (guaranteed by `rebuild_batches` graph coloring), so they are
+    /// dispatched to Rayon's thread pool for parallel execution.
+    /// Between batches, a synchronization barrier ensures that
+    /// earlier batch results are visible to later batches.
+    ///
+    /// Pre-solve hooks and contact modifiers are applied in a sequential
+    /// pre-pass before parallel dispatch begins.
     #[cfg(feature = "parallel")]
     fn solve_constraints_batched(&mut self, dt: Fix128) {
+        // Apply contact modifiers before parallel dispatch
+        #[cfg(feature = "std")]
+        if !self.pre_solve_hooks.is_empty() || !self.contact_modifiers.is_empty() {
+            self.pre_process_contacts();
+        }
+
         let num_batches = self.constraint_batches.len();
 
+        let bodies = BodySlicePtr {
+            ptr: self.bodies.as_mut_ptr(),
+            len: self.bodies.len(),
+        };
+        let dists = DistConstraintSlicePtr {
+            ptr: self.distance_constraints.as_mut_ptr(),
+            len: self.distance_constraints.len(),
+        };
+
         for batch_idx in 0..num_batches {
-            // Distance constraints - index-based to avoid borrow conflict
-            let num_dist = self.constraint_batches[batch_idx].distance_indices.len();
-            for i in 0..num_dist {
-                let idx = self.constraint_batches[batch_idx].distance_indices[i];
-                self.solve_single_distance_constraint(idx, dt);
+            // Phase 1: Distance constraints — parallel within batch
+            {
+                let indices = &self.constraint_batches[batch_idx].distance_indices;
+                indices.par_iter().for_each(|&idx| {
+                    // SAFETY: Graph coloring guarantees no two constraints in
+                    // this batch share a body index. Each constraint index
+                    // appears in exactly one batch, so cached_lambda writes
+                    // are also disjoint.
+                    unsafe {
+                        let constraint = dists.get_mut(idx);
+                        let body_a = bodies.get_mut(constraint.body_a);
+                        let body_b = bodies.get_mut(constraint.body_b);
+                        Self::solve_distance_pair(body_a, body_b, constraint, dt);
+                    }
+                });
             }
 
-            // Contact constraints
-            let num_contact = self.constraint_batches[batch_idx].contact_indices.len();
-            for i in 0..num_contact {
-                let idx = self.constraint_batches[batch_idx].contact_indices[i];
-                self.solve_single_contact_constraint(idx, dt);
+            // Phase 2: Contact constraints — parallel within batch
+            {
+                let contact_constraints = &self.contact_constraints;
+                let indices = &self.constraint_batches[batch_idx].contact_indices;
+                indices.par_iter().for_each(|&idx| {
+                    let constraint = &contact_constraints[idx];
+                    // SAFETY: Graph coloring guarantees disjoint body access.
+                    unsafe {
+                        let body_a = bodies.get_mut(constraint.body_a);
+                        let body_b = bodies.get_mut(constraint.body_b);
+                        Self::solve_contact_pair(body_a, body_b, constraint);
+                    }
+                });
             }
         }
     }
 
-    /// Solve a single distance constraint by index (with warm-starting, Gap 3.1)
+    /// Solve a single distance constraint given mutable body references.
+    ///
+    /// Extracted as a static method (no `&self`) for parallel dispatch.
+    /// Warm-starting seeds the solver with the cached lambda from the
+    /// previous substep, reducing iterations needed for convergence.
     #[cfg(feature = "parallel")]
     #[inline(always)]
-    fn solve_single_distance_constraint(&mut self, idx: usize, dt: Fix128) {
-        let constraint = self.distance_constraints[idx];
-        let body_a = self.bodies[constraint.body_a];
-        let body_b = self.bodies[constraint.body_b];
-
+    fn solve_distance_pair(
+        body_a: &mut RigidBody,
+        body_b: &mut RigidBody,
+        constraint: &mut DistanceConstraint,
+        dt: Fix128,
+    ) {
         let anchor_a = body_a.position + body_a.rotation.rotate_vec(constraint.local_anchor_a);
         let anchor_b = body_b.position + body_b.rotation.rotate_vec(constraint.local_anchor_b);
 
@@ -946,7 +1184,7 @@ impl PhysicsWorld {
         let compliance_term = constraint.compliance / (dt * dt);
         let w_sum = body_a.inv_mass + body_b.inv_mass + compliance_term;
 
-        if w_sum.is_zero() {
+        if w_sum < W_SUM_EPSILON {
             return;
         }
 
@@ -957,32 +1195,33 @@ impl PhysicsWorld {
         let correction = normal * lambda;
 
         // Store lambda for warm-starting on the next substep.
-        self.distance_constraints[idx].cached_lambda = lambda;
+        constraint.cached_lambda = lambda;
 
         // Branchless: static bodies have inv_mass == ZERO, correction * ZERO == ZERO.
-        // select_vec3 avoids the branch while producing bit-exact identical results.
         let delta_a = correction * body_a.inv_mass;
         let delta_b = correction * body_b.inv_mass;
-        self.bodies[constraint.body_a].position = select_vec3(
+        body_a.position = select_vec3(
             !body_a.inv_mass.is_zero(),
-            self.bodies[constraint.body_a].position + delta_a,
-            self.bodies[constraint.body_a].position,
+            body_a.position + delta_a,
+            body_a.position,
         );
-        self.bodies[constraint.body_b].position = select_vec3(
+        body_b.position = select_vec3(
             !body_b.inv_mass.is_zero(),
-            self.bodies[constraint.body_b].position - delta_b,
-            self.bodies[constraint.body_b].position,
+            body_b.position - delta_b,
+            body_b.position,
         );
     }
 
-    /// Solve a single contact constraint by index (Gap 2.3)
+    /// Solve a single contact constraint given mutable body references.
+    ///
+    /// Extracted as a static method (no `&self`) for parallel dispatch.
     #[cfg(feature = "parallel")]
     #[inline(always)]
-    fn solve_single_contact_constraint(&mut self, idx: usize, _dt: Fix128) {
-        let constraint = self.contact_constraints[idx];
-        let body_a = self.bodies[constraint.body_a];
-        let body_b = self.bodies[constraint.body_b];
-
+    fn solve_contact_pair(
+        body_a: &mut RigidBody,
+        body_b: &mut RigidBody,
+        constraint: &ContactConstraint,
+    ) {
         // Skip physics response for sensor/trigger bodies
         if body_a.is_sensor || body_b.is_sensor {
             return;
@@ -995,7 +1234,7 @@ impl PhysicsWorld {
         }
 
         let w_sum = body_a.inv_mass + body_b.inv_mass;
-        if w_sum.is_zero() {
+        if w_sum < W_SUM_EPSILON {
             return;
         }
 
@@ -1005,15 +1244,15 @@ impl PhysicsWorld {
         let correction_b = correction * (body_b.inv_mass * inv_w_sum);
 
         // Branchless: inv_mass == ZERO for static bodies, correction_x will be ZERO.
-        self.bodies[constraint.body_a].position = select_vec3(
+        body_a.position = select_vec3(
             !body_a.inv_mass.is_zero(),
-            self.bodies[constraint.body_a].position + correction_a,
-            self.bodies[constraint.body_a].position,
+            body_a.position + correction_a,
+            body_a.position,
         );
-        self.bodies[constraint.body_b].position = select_vec3(
+        body_b.position = select_vec3(
             !body_b.inv_mass.is_zero(),
-            self.bodies[constraint.body_b].position - correction_b,
-            self.bodies[constraint.body_b].position,
+            body_b.position - correction_b,
+            body_b.position,
         );
     }
 
@@ -1047,7 +1286,7 @@ impl PhysicsWorld {
             let compliance_term = constraint.compliance / (dt * dt);
             let w_sum = body_a.inv_mass + body_b.inv_mass + compliance_term;
 
-            if w_sum.is_zero() {
+            if w_sum < W_SUM_EPSILON {
                 continue;
             }
 
@@ -1131,7 +1370,7 @@ impl PhysicsWorld {
             }
 
             let w_sum = body_a.inv_mass + body_b.inv_mass;
-            if w_sum.is_zero() {
+            if w_sum < W_SUM_EPSILON {
                 continue;
             }
 

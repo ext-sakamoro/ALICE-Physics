@@ -125,6 +125,9 @@ pub fn ray_march_sdf(
     sdf: &SdfCollider,
     config: &SdfCcdConfig,
 ) -> Option<TOI> {
+    if direction.length_squared().is_zero() {
+        return None;
+    }
     let scale = sdf.scale_f32;
     let mut t = Fix128::ZERO;
 

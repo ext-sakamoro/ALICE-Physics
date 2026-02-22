@@ -115,6 +115,9 @@ impl FrameInput {
         let mut buf = [0u8; 20];
         buf[0] = self.player_id;
         // movement as i16 x 3 (6 bytes) — truncated from Fix128 for network
+        debug_assert!(self.movement.x.hi >= i16::MIN as i64 && self.movement.x.hi <= i16::MAX as i64);
+        debug_assert!(self.movement.y.hi >= i16::MIN as i64 && self.movement.y.hi <= i16::MAX as i64);
+        debug_assert!(self.movement.z.hi >= i16::MIN as i64 && self.movement.z.hi <= i16::MAX as i64);
         let mx = self.movement.x.hi as i16;
         let my = self.movement.y.hi as i16;
         let mz = self.movement.z.hi as i16;

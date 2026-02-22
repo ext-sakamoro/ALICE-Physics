@@ -55,6 +55,11 @@ pub struct GpuSdfResult {
     pub normal_z: f32,
 }
 
+const _: () = {
+    assert!(core::mem::size_of::<GpuSdfQuery>() == 16);
+    assert!(core::mem::size_of::<GpuSdfResult>() == 16);
+};
+
 /// GPU dispatch configuration
 #[derive(Clone, Copy, Debug)]
 pub struct GpuDispatchConfig {

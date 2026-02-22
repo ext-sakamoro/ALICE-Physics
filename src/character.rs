@@ -153,7 +153,8 @@ impl CharacterController {
         bodies: &[RigidBody],
         sdf_colliders: &[SdfCollider],
     ) -> MoveResult {
-        let mut remaining = displacement;
+        // Add platform velocity from previous frame
+        let mut remaining = displacement + self.platform_velocity;
         let mut pos = self.position;
 
         for _ in 0..self.config.max_slides {

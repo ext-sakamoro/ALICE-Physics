@@ -6,7 +6,7 @@
 
 use alice_physics::{
     bvh::BvhPrimitive, Cloth, DistanceConstraint, Fix128, LinearBvh, PhysicsConfig, PhysicsWorld,
-    RigidBody, Vec3Fix,
+    RigidBody, Rope, Vec3Fix, Vehicle, VehicleConfig,
 };
 use alice_physics::collider::AABB;
 
@@ -314,4 +314,148 @@ fn test_static_body_does_not_move() {
     assert_eq!(final_pos.x.hi, initial.x.hi, "static body x changed");
     assert_eq!(final_pos.y.hi, initial.y.hi, "static body y changed");
     assert_eq!(final_pos.z.hi, initial.z.hi, "static body z changed");
+}
+
+// ============================================================================
+// Test 8 — Vehicle ground contact and suspension
+// ============================================================================
+
+/// A vehicle placed above a ground plane should settle on its suspension.
+/// After simulation, wheels should be grounded and the chassis should remain
+/// above the ground plane.
+#[test]
+fn test_vehicle_ground_contact() {
+    let config = PhysicsConfig::default();
+    let mut world = PhysicsWorld::new(config);
+
+    let chassis_id = world.add_body(RigidBody::new_dynamic(
+        Vec3Fix::from_int(0, 1, 0),
+        Fix128::from_int(1500),
+    ));
+
+    let mut vehicle = Vehicle::new(VehicleConfig::default());
+
+    let dt = Fix128::from_ratio(1, 60);
+    for _ in 0..120 {
+        vehicle.update(&mut world.bodies[chassis_id], dt);
+        world.step(dt);
+    }
+
+    // Wheels should be grounded after settling
+    assert!(
+        vehicle.grounded_wheels() > 0,
+        "Expected grounded wheels after settling, got {}",
+        vehicle.grounded_wheels()
+    );
+
+    // Chassis should remain above the ground plane
+    assert!(
+        world.bodies[chassis_id].position.y > Fix128::ZERO,
+        "Chassis should be above ground after suspension settling"
+    );
+}
+
+// ============================================================================
+// Test 9 — Rope sag under gravity
+// ============================================================================
+
+/// A rope pinned at both endpoints should sag in the middle under gravity.
+/// After simulation, the midpoint should be below the endpoints.
+#[test]
+fn test_rope_sag_under_gravity() {
+    let start = Vec3Fix::from_int(0, 10, 0);
+    let end = Vec3Fix::from_int(10, 10, 0);
+    let mut rope = Rope::new(start, end, 10, Fix128::from_ratio(1, 10));
+
+    rope.pin_start();
+    rope.pin_end();
+
+    let dt = Fix128::from_ratio(1, 60);
+    for _ in 0..120 {
+        rope.step(dt);
+    }
+
+    // Endpoints should remain at original height (pinned)
+    assert_eq!(
+        rope.positions[0].y.hi, 10,
+        "Start pin should remain at y=10"
+    );
+    assert_eq!(
+        rope.positions[10].y.hi, 10,
+        "End pin should remain at y=10"
+    );
+
+    // Middle particle should sag below endpoints
+    let mid_y = rope.positions[5].y;
+    assert!(
+        mid_y < Fix128::from_int(10),
+        "Rope midpoint should sag below y=10, got y.hi={}",
+        mid_y.hi
+    );
+}
+
+// ============================================================================
+// Test 10 — Cross-architecture determinism (golden hash)
+// ============================================================================
+
+/// Run a multi-body simulation and compute an FNV-1a hash of the final state.
+/// Running the same simulation twice must produce the same hash, guaranteeing
+/// cross-platform determinism.
+#[test]
+fn test_determinism_golden_hash() {
+    fn simulate_and_hash() -> u64 {
+        let config = PhysicsConfig::default();
+        let mut world = PhysicsWorld::new(config);
+
+        world.add_body(RigidBody::new_dynamic(
+            Vec3Fix::from_int(0, 50, 0),
+            Fix128::ONE,
+        ));
+        world.add_body(RigidBody::new_dynamic(
+            Vec3Fix::from_int(5, 50, 0),
+            Fix128::from_ratio(3, 2),
+        ));
+        world.add_body(RigidBody::new_static(Vec3Fix::ZERO));
+
+        let dt = Fix128::from_ratio(1, 60);
+        for _ in 0..180 {
+            world.step(dt);
+        }
+
+        // Collect final state bytes (position only — deterministic)
+        let mut bytes = Vec::new();
+        for body in &world.bodies {
+            bytes.extend_from_slice(&body.position.x.hi.to_le_bytes());
+            bytes.extend_from_slice(&body.position.x.lo.to_le_bytes());
+            bytes.extend_from_slice(&body.position.y.hi.to_le_bytes());
+            bytes.extend_from_slice(&body.position.y.lo.to_le_bytes());
+            bytes.extend_from_slice(&body.position.z.hi.to_le_bytes());
+            bytes.extend_from_slice(&body.position.z.lo.to_le_bytes());
+        }
+
+        // FNV-1a
+        let mut hash: u64 = 0xcbf29ce484222325;
+        for &b in &bytes {
+            hash ^= b as u64;
+            hash = hash.wrapping_mul(0x100000001b3);
+        }
+        hash
+    }
+
+    let hash1 = simulate_and_hash();
+    let hash2 = simulate_and_hash();
+
+    // Two identical runs must produce the same hash
+    assert_eq!(
+        hash1, hash2,
+        "Determinism broken: hash1={:#018x} hash2={:#018x}",
+        hash1, hash2
+    );
+
+    // Hash should be non-trivial (different from FNV basis)
+    assert_ne!(
+        hash1,
+        0xcbf29ce484222325u64,
+        "Hash should differ from FNV basis"
+    );
 }

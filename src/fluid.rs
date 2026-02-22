@@ -15,7 +15,10 @@
 
 use crate::math::{Fix128, Vec3Fix};
 use crate::sdf_collider::SdfCollider;
+use crate::spatial::SpatialGrid;
 
+#[cfg(not(feature = "std"))]
+use alloc::vec;
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
@@ -64,98 +67,6 @@ impl Default for FluidConfig {
             surface_tension: Fix128::from_ratio(1, 100),
             particle_mass: Fix128::from_ratio(1, 100),
             relaxation: Fix128::ONE,
-        }
-    }
-}
-
-// ============================================================================
-// Spatial Hash Grid (for neighbor search)
-// ============================================================================
-
-/// Simple spatial hash grid for neighbor queries
-struct SpatialGrid {
-    inv_cell_size: Fix128,
-    cells: Vec<Vec<usize>>,
-    grid_dim: usize,
-    /// Precomputed half of grid_dim to avoid repeated division in hot paths
-    grid_half: i64,
-}
-
-impl SpatialGrid {
-    fn new(cell_size: Fix128, grid_dim: usize) -> Self {
-        let inv_cell = if cell_size.is_zero() {
-            Fix128::ONE
-        } else {
-            Fix128::ONE / cell_size
-        };
-        let grid_half = (grid_dim as i64) / 2;
-        Self {
-            inv_cell_size: inv_cell,
-            cells: vec![Vec::new(); grid_dim * grid_dim * grid_dim],
-            grid_dim,
-            grid_half,
-        }
-    }
-
-    fn clear(&mut self) {
-        for cell in &mut self.cells {
-            cell.clear();
-        }
-    }
-
-    #[inline(always)]
-    fn hash(&self, pos: Vec3Fix) -> usize {
-        let gd = self.grid_dim as i64;
-        let half = self.grid_half;
-        let ix = ((pos.x * self.inv_cell_size).hi + half).clamp(0, gd - 1) as usize;
-        let iy = ((pos.y * self.inv_cell_size).hi + half).clamp(0, gd - 1) as usize;
-        let iz = ((pos.z * self.inv_cell_size).hi + half).clamp(0, gd - 1) as usize;
-        ix + iy * self.grid_dim + iz * self.grid_dim * self.grid_dim
-    }
-
-    fn insert(&mut self, idx: usize, pos: Vec3Fix) {
-        let h = self.hash(pos);
-        if h < self.cells.len() {
-            self.cells[h].push(idx);
-        }
-    }
-
-    fn query_neighbors_into(
-        &mut self,
-        pos: Vec3Fix,
-        _radius_sq: Fix128,
-        neighbors: &mut Vec<usize>,
-    ) {
-        let gd = self.grid_dim as i64;
-        let half = self.grid_half;
-        let cx = ((pos.x * self.inv_cell_size).hi + half).clamp(0, gd - 1) as i32;
-        let cy = ((pos.y * self.inv_cell_size).hi + half).clamp(0, gd - 1) as i32;
-        let cz = ((pos.z * self.inv_cell_size).hi + half).clamp(0, gd - 1) as i32;
-
-        neighbors.clear();
-
-        for dz in -1..=1 {
-            for dy in -1..=1 {
-                for dx in -1..=1 {
-                    let nx = cx + dx;
-                    let ny = cy + dy;
-                    let nz = cz + dz;
-                    if nx < 0 || ny < 0 || nz < 0 {
-                        continue;
-                    }
-                    let nx = nx as usize;
-                    let ny = ny as usize;
-                    let nz = nz as usize;
-                    if nx >= self.grid_dim || ny >= self.grid_dim || nz >= self.grid_dim {
-                        continue;
-                    }
-
-                    let h = nx + ny * self.grid_dim + nz * self.grid_dim * self.grid_dim;
-                    for &idx in &self.cells[h] {
-                        neighbors.push(idx);
-                    }
-                }
-            }
         }
     }
 }
@@ -386,6 +297,16 @@ impl Fluid {
 
         // 5. Apply viscosity (XSPH)
         self.apply_viscosity();
+
+        // 6. Surface tension (cohesion force toward neighbors)
+        if !self.config.surface_tension.is_zero() {
+            self.apply_surface_tension();
+        }
+
+        // 7. Vorticity confinement (re-inject rotational energy lost to damping)
+        if !self.config.vorticity_strength.is_zero() {
+            self.apply_vorticity_confinement();
+        }
     }
 
     /// XSPH viscosity smoothing
@@ -418,6 +339,96 @@ impl Fluid {
             if !weight_sum.is_zero() {
                 self.velocities[i] = self.velocities[i] + avg_vel * (c / weight_sum);
             }
+        }
+    }
+
+    /// Surface tension via pairwise cohesion forces.
+    /// Particles attract neighbors, creating surface-minimizing behavior.
+    fn apply_surface_tension(&mut self) {
+        let n = self.particle_count();
+        let h = self.config.kernel_radius;
+        let h_sq = h * h;
+        let coeff = self.config.surface_tension;
+        let mut neighbors_buf = Vec::new();
+
+        for i in 0..n {
+            self.grid
+                .query_neighbors_into(self.positions[i], h_sq, &mut neighbors_buf);
+            let mut force = Vec3Fix::ZERO;
+
+            for &j in &neighbors_buf {
+                if i == j {
+                    continue;
+                }
+                let delta = self.positions[j] - self.positions[i];
+                let r_sq = delta.length_squared();
+                if r_sq.is_zero() || r_sq >= h_sq {
+                    continue;
+                }
+                let r = r_sq.sqrt();
+                let w = poly6(r_sq, h);
+                force = force + delta / r * w;
+            }
+
+            self.velocities[i] = self.velocities[i] + force * coeff;
+        }
+    }
+
+    /// Vorticity confinement: re-inject rotational energy lost to damping.
+    fn apply_vorticity_confinement(&mut self) {
+        let n = self.particle_count();
+        let h = self.config.kernel_radius;
+        let h_sq = h * h;
+        let epsilon = self.config.vorticity_strength;
+        let mut neighbors_buf = Vec::new();
+
+        // Compute per-particle curl of velocity
+        let mut curls: Vec<Vec3Fix> = vec![Vec3Fix::ZERO; n];
+        for (i, curl_out) in curls.iter_mut().enumerate() {
+            self.grid
+                .query_neighbors_into(self.positions[i], h_sq, &mut neighbors_buf);
+            let mut curl = Vec3Fix::ZERO;
+            for &j in &neighbors_buf {
+                if i == j {
+                    continue;
+                }
+                let delta = self.positions[j] - self.positions[i];
+                let r_sq = delta.length_squared();
+                if r_sq.is_zero() || r_sq >= h_sq {
+                    continue;
+                }
+                let r = r_sq.sqrt();
+                let grad_mag = spiky_grad(r, h);
+                let grad = delta / r * grad_mag;
+                let vel_diff = self.velocities[j] - self.velocities[i];
+                curl = curl + vel_diff.cross(grad);
+            }
+            *curl_out = curl;
+        }
+
+        // Apply confinement force: f = epsilon * (N x omega)
+        // where N = normalize(gradient of |omega|)
+        for i in 0..n {
+            self.grid
+                .query_neighbors_into(self.positions[i], h_sq, &mut neighbors_buf);
+            let mut grad_mag_curl = Vec3Fix::ZERO;
+            for &j in &neighbors_buf {
+                if i == j {
+                    continue;
+                }
+                let delta = self.positions[j] - self.positions[i];
+                let r_sq = delta.length_squared();
+                if r_sq.is_zero() || r_sq >= h_sq {
+                    continue;
+                }
+                let r = r_sq.sqrt();
+                let grad_w = spiky_grad(r, h);
+                let curl_mag_diff = curls[j].length() - curls[i].length();
+                grad_mag_curl = grad_mag_curl + delta / r * (grad_w * curl_mag_diff);
+            }
+            let n_vec = grad_mag_curl.normalize();
+            let force = n_vec.cross(curls[i]) * epsilon;
+            self.velocities[i] = self.velocities[i] + force;
         }
     }
 

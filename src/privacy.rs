@@ -2,6 +2,28 @@
 //!
 //! Privacy-preserving data collection where noise is added at the source.
 //! Individual data points are deniable, but aggregate statistics emerge.
+//!
+//! # Examples
+//!
+//! ```
+//! use alice_physics::privacy::{LaplaceNoise, Rappor, RandomizedResponse, PrivacyBudget};
+//!
+//! // Laplace noise for numeric values
+//! let mut noise = LaplaceNoise::with_seed(1.0, 1.0, 42);
+//! let noisy_value = noise.privatize(100.0);
+//! // Value is perturbed but within a reasonable range
+//! assert!((noisy_value - 100.0).abs() < 100.0);
+//!
+//! // RAPPOR for categorical data
+//! let mut rappor = Rappor::new(0.5, 0.75, 0.25);
+//! let report = rappor.privatize(12345);
+//! assert_eq!(report.len(), 64);
+//!
+//! // Privacy budget tracking
+//! let mut budget = PrivacyBudget::new(10.0);
+//! assert!(budget.try_spend(1.0));
+//! assert_eq!(budget.remaining(), 9.0);
+//! ```
 
 // ============================================================================
 // Random Number Generation (ChaCha20-based for determinism)

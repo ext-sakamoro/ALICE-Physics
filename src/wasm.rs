@@ -26,7 +26,10 @@ use wasm_bindgen::prelude::*;
 use crate::collider::Sphere;
 use crate::math::{Fix128, QuatFix, Vec3Fix};
 use crate::raycast::{ray_sphere, Ray};
-use crate::solver::{BodyType, PhysicsConfig, PhysicsWorld, RigidBody};
+use crate::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
+
+#[cfg(test)]
+use crate::solver::BodyType;
 
 // ============================================================================
 // WasmPhysicsWorld
@@ -456,4 +459,148 @@ impl WasmPhysicsWorld {
 #[wasm_bindgen(js_name = "alicePhysicsVersion")]
 pub fn alice_physics_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_world_creation() {
+        let world = WasmPhysicsWorld::new();
+        assert_eq!(world.body_count(), 0);
+    }
+
+    #[test]
+    fn test_world_with_config() {
+        let world = WasmPhysicsWorld::with_config(0.0, -9.81, 0.0, 4, 8);
+        assert_eq!(world.body_count(), 0);
+    }
+
+    #[test]
+    fn test_add_bodies() {
+        let mut world = WasmPhysicsWorld::new();
+        let d = world.add_dynamic_body(0.0, 10.0, 0.0, 1.0);
+        let s = world.add_static_body(0.0, 0.0, 0.0);
+        let k = world.add_kinematic_body(5.0, 0.0, 0.0);
+        assert_eq!(d, 0);
+        assert_eq!(s, 1);
+        assert_eq!(k, 2);
+        assert_eq!(world.body_count(), 3);
+    }
+
+    #[test]
+    fn test_body_type() {
+        let mut world = WasmPhysicsWorld::new();
+        world.add_dynamic_body(0.0, 0.0, 0.0, 1.0);
+        world.add_static_body(0.0, 0.0, 0.0);
+        world.add_kinematic_body(0.0, 0.0, 0.0);
+        assert_eq!(world.get_body_type(0), BodyType::Dynamic as u8);
+        assert_eq!(world.get_body_type(1), BodyType::Static as u8);
+        assert_eq!(world.get_body_type(2), BodyType::Kinematic as u8);
+        assert_eq!(world.get_body_type(999), 255);
+    }
+
+    #[test]
+    fn test_step_gravity() {
+        let mut world = WasmPhysicsWorld::new();
+        world.add_dynamic_body(0.0, 10.0, 0.0, 1.0);
+
+        for _ in 0..60 {
+            world.step(1.0 / 60.0);
+        }
+
+        let positions = world.get_positions();
+        assert!(positions[1] < 10.0, "Body should fall, y={}", positions[1]);
+    }
+
+    #[test]
+    fn test_batch_getters() {
+        let mut world = WasmPhysicsWorld::new();
+        world.add_static_body(1.0, 2.0, 3.0);
+        world.add_static_body(4.0, 5.0, 6.0);
+
+        let pos = world.get_positions();
+        assert_eq!(pos.len(), 6);
+        assert!((pos[0] - 1.0).abs() < 1e-10);
+        assert!((pos[4] - 5.0).abs() < 1e-10);
+
+        let vel = world.get_velocities();
+        assert_eq!(vel.len(), 6);
+
+        let rot = world.get_rotations();
+        assert_eq!(rot.len(), 8); // 2 bodies * 4 quat components
+
+        let states = world.get_states();
+        assert_eq!(states.len(), 20); // 2 bodies * 10 values
+    }
+
+    #[test]
+    fn test_set_position_velocity() {
+        let mut world = WasmPhysicsWorld::new();
+        world.set_gravity(0.0, 0.0, 0.0);
+        world.add_dynamic_body(0.0, 0.0, 0.0, 1.0);
+
+        world.set_position(0, 5.0, 6.0, 7.0);
+        let pos = world.get_positions();
+        assert!((pos[0] - 5.0).abs() < 1e-10);
+        assert!((pos[1] - 6.0).abs() < 1e-10);
+
+        world.set_velocity(0, 1.0, 0.0, 0.0);
+        let vel = world.get_velocities();
+        assert!((vel[0] - 1.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_state_serialization() {
+        let mut world = WasmPhysicsWorld::new();
+        world.add_dynamic_body(0.0, 10.0, 0.0, 1.0);
+
+        for _ in 0..30 {
+            world.step(1.0 / 60.0);
+        }
+
+        let state = world.serialize_state();
+        assert!(!state.is_empty());
+
+        for _ in 0..30 {
+            world.step(1.0 / 60.0);
+        }
+        let pos_after = world.get_positions();
+
+        world.deserialize_state(&state);
+        for _ in 0..30 {
+            world.step(1.0 / 60.0);
+        }
+        let pos_restored = world.get_positions();
+
+        assert!((pos_after[1] - pos_restored[1]).abs() < 1e-10, "State restore should be deterministic");
+    }
+
+    #[test]
+    fn test_impulse_batch() {
+        let mut world = WasmPhysicsWorld::new();
+        world.set_gravity(0.0, 0.0, 0.0);
+        world.add_dynamic_body(0.0, 0.0, 0.0, 1.0);
+
+        world.apply_impulses_batch(&[0.0, 10.0, 0.0, 0.0]);
+        world.step(1.0 / 60.0);
+
+        let pos = world.get_positions();
+        assert!(pos[0] > 0.0, "Impulse should move body, x={}", pos[0]);
+    }
+
+    #[test]
+    fn test_raycast_miss() {
+        let mut world = WasmPhysicsWorld::new();
+        world.add_static_body(100.0, 0.0, 0.0);
+
+        // Ray pointing away from body
+        let result = world.raycast(0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 50.0, 1.0);
+        assert!(result.is_empty(), "Should miss body at x=100");
+    }
 }

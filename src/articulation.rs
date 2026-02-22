@@ -15,6 +15,8 @@ use crate::motor::{MotorMode, PdController};
 use crate::solver::RigidBody;
 
 #[cfg(not(feature = "std"))]
+use alloc::vec;
+#[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
 /// A link in an articulated body

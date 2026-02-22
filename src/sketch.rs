@@ -3,6 +3,34 @@
 //! - HyperLogLog++: Cardinality estimation with ~1.04/√m standard error
 //! - DDSketch: Relative-error quantile estimation
 //! - Count-Min Sketch: Frequency estimation for heavy hitters
+//!
+//! # Examples
+//!
+//! ```
+//! use alice_physics::sketch::{HyperLogLog, DDSketch, CountMinSketch, Mergeable};
+//!
+//! // Cardinality estimation (default: 14-bit precision)
+//! let mut hll = HyperLogLog::new();
+//! for i in 0..1000u64 {
+//!     hll.insert(&i);
+//! }
+//! let estimate = hll.cardinality();
+//! assert!(estimate > 900.0 && estimate < 1100.0);
+//!
+//! // Quantile estimation (default: 2048 bins)
+//! let mut sketch = DDSketch::new(0.01);
+//! for i in 1..=100 {
+//!     sketch.insert(i as f64);
+//! }
+//! let p50 = sketch.quantile(0.5);
+//! assert!(p50 > 45.0 && p50 < 55.0);
+//!
+//! // Frequency estimation (default: 1024x5)
+//! let mut cms = CountMinSketch::new();
+//! cms.insert(&42u64);
+//! cms.insert(&42u64);
+//! assert!(cms.estimate(&42u64) >= 2);
+//! ```
 
 use core::hash::{Hash, Hasher};
 
@@ -122,13 +150,14 @@ impl FnvHasher {
     const FNV_OFFSET: u64 = 0xcbf29ce484222325;
     const FNV_PRIME: u64 = 0x100000001b3;
 
+    /// Create a new hasher with default FNV offset basis.
     #[inline]
     pub const fn new() -> Self {
         Self { state: Self::FNV_OFFSET }
     }
 
-    /// Avalanche bit mixer (from MurmurHash3 finalizer)
-    /// Ensures all bits are well-distributed for HyperLogLog
+    /// Avalanche bit mixer (from MurmurHash3 finalizer).
+    /// Ensures all bits are well-distributed for HyperLogLog.
     #[inline]
     fn mix(mut h: u64) -> u64 {
         h ^= h >> 33;
@@ -139,6 +168,7 @@ impl FnvHasher {
         h
     }
 
+    /// Hash a byte slice and return a mixed 64-bit digest.
     #[inline]
     pub fn hash_bytes(data: &[u8]) -> u64 {
         let mut hasher = Self::new();
@@ -146,11 +176,13 @@ impl FnvHasher {
         Self::mix(hasher.state)
     }
 
+    /// Hash a `u64` value.
     #[inline]
     pub fn hash_u64(value: u64) -> u64 {
         Self::hash_bytes(&value.to_le_bytes())
     }
 
+    /// Hash a `u128` value.
     #[inline]
     pub fn hash_u128(value: u128) -> u64 {
         Self::hash_bytes(&value.to_le_bytes())
@@ -353,7 +385,7 @@ pub type HyperLogLog = HyperLogLog14;
 ///
 /// # Example
 /// ```
-/// use alice_analytics::sketch::DDSketch256;
+/// use alice_physics::sketch::DDSketch256;
 ///
 /// let mut sketch = DDSketch256::new(0.01); // 1% relative error
 ///
@@ -364,10 +396,10 @@ pub type HyperLogLog = HyperLogLog14;
 /// let p99 = sketch.quantile(0.99);
 /// // p99 ≈ 500.0 (within 1% relative error)
 /// ```
-
 /// Macro to generate DDSketch implementations for specific bin counts
 macro_rules! impl_ddsketch {
     ($name:ident, $bins:expr) => {
+        /// DDSketch with relative-error quantile guarantee.
         #[derive(Clone, Debug)]
         pub struct $name {
             positive_bins: [u64; $bins],
@@ -384,8 +416,10 @@ macro_rules! impl_ddsketch {
         }
 
         impl $name {
+            /// Number of bins per side (positive / negative).
             pub const BINS: usize = $bins;
 
+            /// Create a new sketch with given relative accuracy `alpha`.
             pub fn new(alpha: f64) -> Self {
                 let gamma = (1.0 + alpha) / (1.0 - alpha);
                 let ln_gamma = gamma.ln();
@@ -409,6 +443,7 @@ macro_rules! impl_ddsketch {
                 }
             }
 
+            /// Insert a value into the sketch.
             #[inline]
             pub fn insert(&mut self, value: f64) {
                 self.count += 1;
@@ -449,7 +484,7 @@ macro_rules! impl_ddsketch {
             #[inline]
             #[allow(dead_code)]
             fn bucket_index_fast(&self, value: f64) -> usize {
-                const LN2: f64 = 0.6931471805599453;
+                const LN2: f64 = core::f64::consts::LN_2;
                 let log2_gamma = self.ln_gamma / LN2;
                 let log2_value = fast_log2_approx(value);
                 let idx = (log2_value / log2_gamma).ceil() as i32 + self.offset;
@@ -462,6 +497,7 @@ macro_rules! impl_ddsketch {
                 self.gamma.powf(exp - 1.0)
             }
 
+            /// Estimate the value at quantile `q` (0.0–1.0).
             pub fn quantile(&self, q: f64) -> f64 {
                 if self.count == 0 {
                     return 0.0;
@@ -492,36 +528,43 @@ macro_rules! impl_ddsketch {
                 self.max
             }
 
+            /// Total number of inserted values.
             #[inline]
             pub fn count(&self) -> u64 {
                 self.count
             }
 
+            /// Sum of all inserted values.
             #[inline]
             pub fn sum(&self) -> f64 {
                 self.sum
             }
 
+            /// Arithmetic mean of inserted values.
             #[inline]
             pub fn mean(&self) -> f64 {
                 if self.count == 0 { 0.0 } else { self.sum / self.count as f64 }
             }
 
+            /// Minimum inserted value.
             #[inline]
             pub fn min(&self) -> f64 {
                 self.min
             }
 
+            /// Maximum inserted value.
             #[inline]
             pub fn max(&self) -> f64 {
                 self.max
             }
 
+            /// Relative accuracy parameter.
             #[inline]
             pub fn alpha(&self) -> f64 {
                 self.alpha
             }
 
+            /// Reset the sketch to empty state.
             pub fn clear(&mut self) {
                 self.positive_bins = [0u64; $bins];
                 self.negative_bins = [0u64; $bins];
@@ -581,9 +624,12 @@ macro_rules! impl_countmin {
         }
 
         impl $name {
+            /// Number of columns (width).
             pub const WIDTH: usize = $w;
+            /// Number of hash rows (depth).
             pub const DEPTH: usize = $d;
 
+            /// Create an empty sketch.
             #[inline]
             pub fn new() -> Self {
                 Self {
@@ -601,6 +647,7 @@ macro_rules! impl_countmin {
                 (mixed as usize) % $w
             }
 
+            /// Insert a pre-hashed item with the given count.
             #[inline]
             pub fn insert_hash(&mut self, hash: u64, count: u64) {
                 self.total += count;
@@ -610,6 +657,7 @@ macro_rules! impl_countmin {
                 }
             }
 
+            /// Insert a hashable item with count 1.
             #[inline]
             pub fn insert<T: Hash>(&mut self, item: &T) {
                 let mut hasher = FnvHasher::new();
@@ -617,11 +665,13 @@ macro_rules! impl_countmin {
                 self.insert_hash(hasher.finish(), 1);
             }
 
+            /// Insert raw bytes with count 1.
             #[inline]
             pub fn insert_bytes(&mut self, bytes: &[u8]) {
                 self.insert_hash(FnvHasher::hash_bytes(bytes), 1);
             }
 
+            /// Estimate frequency of a pre-hashed item.
             #[inline]
             pub fn estimate_hash(&self, hash: u64) -> u64 {
                 let mut min_count = u64::MAX;
@@ -632,6 +682,7 @@ macro_rules! impl_countmin {
                 min_count
             }
 
+            /// Estimate frequency of a hashable item.
             #[inline]
             pub fn estimate<T: Hash>(&self, item: &T) -> u64 {
                 let mut hasher = FnvHasher::new();
@@ -639,30 +690,35 @@ macro_rules! impl_countmin {
                 self.estimate_hash(hasher.finish())
             }
 
+            /// Estimate frequency of raw bytes.
             #[inline]
             pub fn estimate_bytes(&self, bytes: &[u8]) -> u64 {
                 self.estimate_hash(FnvHasher::hash_bytes(bytes))
             }
 
+            /// Total count of all insertions.
             #[inline]
             pub fn total(&self) -> u64 {
                 self.total
             }
 
+            /// Reset all counters to zero.
             #[inline]
             pub fn clear(&mut self) {
                 self.counters = [[0u64; $w]; $d];
                 self.total = 0;
             }
 
+            /// Theoretical error bound (ε = e / width).
             #[inline]
             pub fn error_bound(&self) -> f64 {
                 core::f64::consts::E / ($w as f64)
             }
 
+            /// Confidence level (1 − e^{−depth}).
             #[inline]
             pub fn confidence(&self) -> f64 {
-                1.0 - (-1.0 * $d as f64).exp()
+                1.0 - (-($d as f64)).exp()
             }
         }
 
@@ -719,8 +775,10 @@ macro_rules! impl_heavy_hitters {
         }
 
         impl $name {
+            /// Maximum tracked heavy hitters.
             pub const K: usize = $k;
 
+            /// Create a new empty tracker.
             #[inline]
             pub fn new() -> Self {
                 Self {
@@ -730,6 +788,7 @@ macro_rules! impl_heavy_hitters {
                 }
             }
 
+            /// Insert a pre-hashed item and update top-K.
             pub fn insert_hash(&mut self, hash: u64) {
                 self.cms.insert_hash(hash, 1);
                 let estimated = self.cms.estimate_hash(hash);
@@ -767,15 +826,18 @@ macro_rules! impl_heavy_hitters {
                 }
             }
 
+            /// Iterate top-K entries in descending frequency order.
             pub fn top(&self) -> impl Iterator<Item = &HeavyHitterEntry> {
                 self.top_k[..self.count].iter().rev()
             }
 
+            /// Access the underlying Count-Min Sketch.
             #[inline]
             pub fn cms(&self) -> &$cms_name {
                 &self.cms
             }
 
+            /// Reset the tracker and its underlying sketch.
             pub fn clear(&mut self) {
                 self.cms.clear();
                 self.top_k = [HeavyHitterEntry { hash: 0, count: 0 }; $k];

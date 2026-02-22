@@ -17,6 +17,8 @@ use crate::math::{Fix128, Vec3Fix};
 use crate::sdf_collider::SdfCollider;
 
 #[cfg(not(feature = "std"))]
+use alloc::vec;
+#[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
 // ============================================================================
@@ -75,9 +77,6 @@ struct EdgeConstraint {
     i0: usize,
     i1: usize,
     rest_length: Fix128,
-    /// Precomputed reciprocal of rest_length — avoids per-iteration division.
-    #[allow(dead_code)]
-    inv_rest_length: Fix128,
 }
 
 /// Bending constraint between two triangles sharing an edge
@@ -209,17 +208,10 @@ impl Cloth {
                 if !edge_set.contains(&(lo, hi)) {
                     edge_set.push((lo, hi));
                     let rest = (self.positions[a] - self.positions[b]).length();
-                    // Precompute inv_rest_length once at construction time.
-                    let inv_rest = if rest.is_zero() {
-                        Fix128::ZERO
-                    } else {
-                        Fix128::ONE / rest
-                    };
                     self.edge_constraints.push(EdgeConstraint {
                         i0: a,
                         i1: b,
                         rest_length: rest,
-                        inv_rest_length: inv_rest,
                     });
                 }
             }
@@ -349,7 +341,6 @@ impl Cloth {
 
             let error = dist - c.rest_length;
             let lambda = error / w_sum;
-            // Use precomputed reciprocal to replace per-iteration division by dist.
             let inv_dist = Fix128::ONE / dist;
             let correction = delta * inv_dist * lambda;
 
@@ -457,10 +448,8 @@ impl Cloth {
             }
         }
 
-        // Build edge set for quick lookup (skip connected particles)
-        // Use a simple O(1) hash check: particle pairs that share an edge
-        // should not have self-collision applied
-        let mut edge_pairs: Vec<(usize, usize)> = Vec::new();
+        // Build sorted edge set for O(log n) lookup (skip connected particles)
+        let mut edge_pairs: Vec<(usize, usize)> = Vec::with_capacity(self.edge_constraints.len());
         for c in &self.edge_constraints {
             let (lo, hi) = if c.i0 < c.i1 {
                 (c.i0, c.i1)
@@ -469,6 +458,7 @@ impl Cloth {
             };
             edge_pairs.push((lo, hi));
         }
+        edge_pairs.sort_unstable();
 
         // Check neighbors and apply separation constraints
         for i in 0..n {
@@ -505,9 +495,9 @@ impl Cloth {
                                 continue;
                             }
 
-                            // Skip particles connected by an edge
+                            // Skip particles connected by an edge (binary search)
                             let (lo, hi) = if i < j { (i, j) } else { (j, i) };
-                            if edge_pairs.contains(&(lo, hi)) {
+                            if edge_pairs.binary_search(&(lo, hi)).is_ok() {
                                 continue;
                             }
 
@@ -623,8 +613,12 @@ fn find_shared_edge(
                 let rest_angle = if n1_len.is_zero() || n2_len.is_zero() {
                     Fix128::ZERO
                 } else {
-                    
-                    (n1 / n1_len).dot(n2 / n2_len) // Store cos(angle) directly
+                    // Compute actual dihedral angle via atan2(sin, cos)
+                    let n1u = n1 / n1_len;
+                    let n2u = n2 / n2_len;
+                    let cos_val = n1u.dot(n2u);
+                    let sin_val = n1u.cross(n2u).length();
+                    Fix128::atan2(sin_val, cos_val)
                 };
 
                 return Some(BendConstraint {

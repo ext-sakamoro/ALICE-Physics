@@ -2,6 +2,26 @@
 //!
 //! Zero-allocation metric collection into pre-allocated sketches.
 //! Designed for high-throughput telemetry without GC pauses.
+//!
+//! # Examples
+//!
+//! ```
+//! use alice_physics::pipeline::{MetricPipeline, MetricEvent};
+//! use alice_physics::sketch::FnvHasher;
+//!
+//! // Create pipeline with 64 slots, 1024-event queue
+//! let mut pipeline = MetricPipeline::<64, 1024>::new(0.05);
+//!
+//! // Submit metrics using name hashes
+//! let latency_hash = FnvHasher::hash_bytes(b"latency");
+//! pipeline.submit(MetricEvent::histogram(latency_hash, 42.5));
+//! pipeline.submit(MetricEvent::histogram(latency_hash, 38.1));
+//! pipeline.submit(MetricEvent::counter(latency_hash, 1.0));
+//!
+//! // Process pending events
+//! pipeline.flush();
+//! assert!(pipeline.total_events() >= 3);
+//! ```
 
 use crate::sketch::{DDSketch256, HyperLogLog10, Mergeable};
 
@@ -292,7 +312,7 @@ impl Mergeable for MetricSlot {
 ///
 /// # Example
 /// ```
-/// use alice_analytics::pipeline::{MetricPipeline, MetricEvent};
+/// use alice_physics::pipeline::{MetricPipeline, MetricEvent};
 ///
 /// // Create pipeline with 64 metric slots
 /// let mut pipeline = MetricPipeline::<64, 1024>::new(0.05);
@@ -305,7 +325,7 @@ impl Mergeable for MetricSlot {
 /// pipeline.flush();
 ///
 /// fn hash(s: &str) -> u64 {
-///     use alice_analytics::sketch::FnvHasher;
+///     use alice_physics::sketch::FnvHasher;
 ///     FnvHasher::hash_bytes(s.as_bytes())
 /// }
 /// ```
@@ -412,10 +432,8 @@ impl<const SLOTS: usize, const QUEUE_SIZE: usize> MetricPipeline<SLOTS, QUEUE_SI
 
     /// Reset all slots
     pub fn reset(&mut self) {
-        for slot in self.slots.iter_mut() {
-            if let Some(ref mut s) = slot {
-                s.reset();
-            }
+        for slot in self.slots.iter_mut().flatten() {
+            slot.reset();
         }
         self.queue.clear();
         self.total_events = 0;

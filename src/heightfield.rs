@@ -7,6 +7,8 @@ use crate::collider::Contact;
 use crate::math::{Fix128, Vec3Fix};
 
 #[cfg(not(feature = "std"))]
+use alloc::vec;
+#[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
 /// Height field terrain collider
@@ -91,34 +93,36 @@ impl HeightField {
         let gx_f = local_x / self.spacing;
         let gz_f = local_z / self.spacing;
 
-        // Integer grid coords
+        // Integer grid coords (clamped to valid range for u32 conversion)
+        let max_gx = (self.width as i64).saturating_sub(2).max(0);
+        let max_gz = (self.depth as i64).saturating_sub(2).max(0);
         let gx0 = if gx_f.is_negative() {
-            0i64
+            0u32
         } else {
-            gx_f.hi.min((self.width as i64) - 2)
+            (gx_f.hi.min(max_gx).max(0)) as u32
         };
         let gz0 = if gz_f.is_negative() {
-            0i64
+            0u32
         } else {
-            gz_f.hi.min((self.depth as i64) - 2)
+            (gz_f.hi.min(max_gz).max(0)) as u32
         };
 
         let gx1 = gx0 + 1;
         let gz1 = gz0 + 1;
 
         // Fractional part for interpolation
-        let fx = gx_f - Fix128::from_int(gx0);
-        let fz = gz_f - Fix128::from_int(gz0);
+        let fx = gx_f - Fix128::from_int(gx0 as i64);
+        let fz = gz_f - Fix128::from_int(gz0 as i64);
 
         // Clamp fractions to [0, 1]
         let fx = clamp01(fx);
         let fz = clamp01(fz);
 
         // Sample 4 corners
-        let h00 = self.get_height(gx0 as u32, gz0 as u32);
-        let h10 = self.get_height(gx1 as u32, gz0 as u32);
-        let h01 = self.get_height(gx0 as u32, gz1 as u32);
-        let h11 = self.get_height(gx1 as u32, gz1 as u32);
+        let h00 = self.get_height(gx0, gz0);
+        let h10 = self.get_height(gx1, gz0);
+        let h01 = self.get_height(gx0, gz1);
+        let h11 = self.get_height(gx1, gz1);
 
         // Bilinear interpolation
         let one = Fix128::ONE;

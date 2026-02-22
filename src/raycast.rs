@@ -34,9 +34,10 @@ impl Ray {
     /// Create a new ray (direction is normalized internally)
     #[inline]
     pub fn new(origin: Vec3Fix, direction: Vec3Fix) -> Self {
+        let len = direction.length();
         Self {
             origin,
-            direction: direction.normalize(),
+            direction: if len.is_zero() { Vec3Fix::UNIT_X } else { direction / len },
         }
     }
 

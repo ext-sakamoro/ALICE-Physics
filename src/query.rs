@@ -353,6 +353,95 @@ pub fn batch_sphere_cast(
 }
 
 // ============================================================================
+// BVH-Accelerated Queries
+// ============================================================================
+
+/// Find all bodies overlapping a sphere, using a BVH for broad-phase pruning.
+///
+/// The BVH must be built from per-body AABBs (expanded by `body_radius`).
+/// Only candidates whose BVH leaf overlaps the query sphere AABB are tested
+/// in the narrow phase, reducing cost from O(n) to O(log n + k).
+pub fn overlap_sphere_bvh(
+    center: Vec3Fix,
+    radius: Fix128,
+    bodies: &[RigidBody],
+    body_radius: Fix128,
+    bvh: &crate::bvh::LinearBvh,
+) -> Vec<OverlapResult> {
+    let combined_radius = radius + body_radius;
+    let query_aabb = AABB::new(
+        Vec3Fix::new(
+            center.x - combined_radius,
+            center.y - combined_radius,
+            center.z - combined_radius,
+        ),
+        Vec3Fix::new(
+            center.x + combined_radius,
+            center.y + combined_radius,
+            center.z + combined_radius,
+        ),
+    );
+
+    let candidates = bvh.query(&query_aabb);
+    let combined_sq = combined_radius * combined_radius;
+    let mut results = Vec::new();
+
+    for &idx in &candidates {
+        let i = idx as usize;
+        if i >= bodies.len() {
+            continue;
+        }
+        let delta = bodies[i].position - center;
+        let dist_sq = delta.length_squared();
+        if dist_sq < combined_sq {
+            let dist = dist_sq.sqrt();
+            let depth = combined_radius - dist;
+            results.push(OverlapResult {
+                body_index: i,
+                depth,
+            });
+        }
+    }
+
+    results
+}
+
+/// Find all bodies overlapping an AABB, using a BVH for broad-phase pruning.
+///
+/// Only candidates whose BVH leaf overlaps the query AABB are tested,
+/// reducing cost from O(n) to O(log n + k).
+pub fn overlap_aabb_bvh(
+    aabb: &AABB,
+    bodies: &[RigidBody],
+    bvh: &crate::bvh::LinearBvh,
+) -> Vec<OverlapResult> {
+    let candidates = bvh.query(aabb);
+    let mut results = Vec::new();
+
+    for &idx in &candidates {
+        let i = idx as usize;
+        if i >= bodies.len() {
+            continue;
+        }
+        let p = bodies[i].position;
+        if p.x >= aabb.min.x
+            && p.x <= aabb.max.x
+            && p.y >= aabb.min.y
+            && p.y <= aabb.max.y
+            && p.z >= aabb.min.z
+            && p.z <= aabb.max.z
+        {
+            results.push(OverlapResult {
+                body_index: i,
+                depth: Fix128::ZERO,
+            });
+        }
+    }
+
+    results
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
 
@@ -516,5 +605,82 @@ mod tests {
         // Body 2 at (10,0,0) → outside (x=10 > 8)
         // Body 3 at (0,5,0) → outside
         assert!(results.len() >= 1, "Should find body at (5,0,0)");
+    }
+
+    #[test]
+    fn test_overlap_sphere_bvh() {
+        use crate::bvh::{BvhPrimitive, LinearBvh};
+
+        let bodies = make_bodies();
+        let body_radius = Fix128::ONE;
+
+        // Build BVH from body AABBs
+        let prims: Vec<BvhPrimitive> = bodies
+            .iter()
+            .enumerate()
+            .map(|(i, b)| BvhPrimitive {
+                aabb: AABB::new(
+                    Vec3Fix::new(
+                        b.position.x - body_radius,
+                        b.position.y - body_radius,
+                        b.position.z - body_radius,
+                    ),
+                    Vec3Fix::new(
+                        b.position.x + body_radius,
+                        b.position.y + body_radius,
+                        b.position.z + body_radius,
+                    ),
+                ),
+                index: i as u32,
+                morton: 0,
+            })
+            .collect();
+        let bvh = LinearBvh::build(prims);
+
+        let results = overlap_sphere_bvh(
+            Vec3Fix::from_int(0, 0, 0),
+            Fix128::from_int(3),
+            &bodies,
+            body_radius,
+            &bvh,
+        );
+        // Same as the linear test: only body 0 overlaps
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].body_index, 0);
+    }
+
+    #[test]
+    fn test_overlap_aabb_bvh() {
+        use crate::bvh::{BvhPrimitive, LinearBvh};
+
+        let bodies = make_bodies();
+        let body_radius = Fix128::ONE;
+
+        let prims: Vec<BvhPrimitive> = bodies
+            .iter()
+            .enumerate()
+            .map(|(i, b)| BvhPrimitive {
+                aabb: AABB::new(
+                    Vec3Fix::new(
+                        b.position.x - body_radius,
+                        b.position.y - body_radius,
+                        b.position.z - body_radius,
+                    ),
+                    Vec3Fix::new(
+                        b.position.x + body_radius,
+                        b.position.y + body_radius,
+                        b.position.z + body_radius,
+                    ),
+                ),
+                index: i as u32,
+                morton: 0,
+            })
+            .collect();
+        let bvh = LinearBvh::build(prims);
+
+        let aabb = AABB::new(Vec3Fix::from_int(-1, -1, -1), Vec3Fix::from_int(6, 1, 1));
+        let results = overlap_aabb_bvh(&aabb, &bodies, &bvh);
+        // Bodies at (0,0,0) and (5,0,0) are inside
+        assert_eq!(results.len(), 2);
     }
 }

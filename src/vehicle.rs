@@ -16,6 +16,8 @@ use crate::math::{Fix128, Vec3Fix};
 use crate::solver::RigidBody;
 
 #[cfg(not(feature = "std"))]
+use alloc::vec;
+#[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
 // ============================================================================
@@ -100,6 +102,8 @@ pub struct VehicleConfig {
     pub aero_drag: Fix128,
     /// Downforce coefficient
     pub downforce: Fix128,
+    /// Ground plane height (Y coordinate)
+    pub ground_height: Fix128,
 }
 
 impl Default for VehicleConfig {
@@ -140,6 +144,7 @@ impl Default for VehicleConfig {
             brake_force: Fix128::from_int(10000),
             aero_drag: Fix128::from_ratio(4, 10),
             downforce: Fix128::from_ratio(1, 10),
+            ground_height: Fix128::ZERO,
         }
     }
 }
@@ -276,8 +281,8 @@ impl Vehicle {
             let _ray_dir = -up;
             let max_dist = wheel_cfg.suspension_rest + wheel_cfg.radius;
 
-            // Simple ground plane check (y = 0)
-            let ground_y = Fix128::ZERO;
+            // Ground plane check (configurable height)
+            let ground_y = self.config.ground_height;
             let dist_to_ground = ray_start.y - ground_y;
 
             if dist_to_ground < max_dist && dist_to_ground > Fix128::ZERO {

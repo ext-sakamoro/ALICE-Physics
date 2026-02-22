@@ -22,6 +22,9 @@ use core::fmt;
 
 #[cfg(not(feature = "std"))]
 use alloc::boxed::Box;
+
+/// Epsilon for SDF normal computation via central differences
+const NORMAL_EPS: f32 = 0.001;
 #[cfg(not(feature = "std"))]
 use alloc::sync::Arc;
 #[cfg(not(feature = "std"))]
@@ -291,7 +294,7 @@ impl SdfField for DestructibleSdf {
 
     fn normal(&self, x: f32, y: f32, z: f32) -> (f32, f32, f32) {
         // Central difference gradient on the destructed SDF
-        let eps = 0.001;
+        let eps = NORMAL_EPS;
         let dx = self.distance(x + eps, y, z) - self.distance(x - eps, y, z);
         let dy = self.distance(x, y + eps, z) - self.distance(x, y - eps, z);
         let dz = self.distance(x, y, z + eps) - self.distance(x, y, z - eps);
@@ -362,6 +365,9 @@ pub fn destruction_from_projectile(
 
 /// Compute quaternion rotation that aligns Y-axis with the given direction
 fn rotation_from_direction(dir: Vec3Fix) -> QuatFix {
+    if dir.length_squared().is_zero() {
+        return QuatFix::IDENTITY;
+    }
     let up = Vec3Fix::UNIT_Y;
     let d = dir.normalize();
 

@@ -20,40 +20,60 @@ use crate::solver::{PhysicsWorld, RigidBody, SolverConfig};
 /// C-compatible 3D vector (f64 for FFI boundary, converted to Fix128 internally)
 #[repr(C)]
 pub struct AliceVec3 {
+    /// X component
     pub x: f64,
+    /// Y component
     pub y: f64,
+    /// Z component
     pub z: f64,
 }
 
 /// C-compatible quaternion
 #[repr(C)]
 pub struct AliceQuat {
+    /// X component (imaginary i)
     pub x: f64,
+    /// Y component (imaginary j)
     pub y: f64,
+    /// Z component (imaginary k)
     pub z: f64,
+    /// W component (scalar/real part)
     pub w: f64,
 }
 
 /// C-compatible physics config
 #[repr(C)]
 pub struct AlicePhysicsConfig {
+    /// Number of substeps per step
     pub substeps: u32,
+    /// Number of solver iterations per substep
     pub iterations: u32,
+    /// Gravity X component (m/s^2)
     pub gravity_x: f64,
+    /// Gravity Y component (m/s^2)
     pub gravity_y: f64,
+    /// Gravity Z component (m/s^2)
     pub gravity_z: f64,
+    /// Velocity damping factor (0..1)
     pub damping: f64,
 }
 
 /// C-compatible body info (read-only snapshot)
 #[repr(C)]
 pub struct AliceBodyInfo {
+    /// Body position in world space
     pub position: AliceVec3,
+    /// Linear velocity (m/s)
     pub velocity: AliceVec3,
+    /// Angular velocity (rad/s)
     pub angular_velocity: AliceVec3,
+    /// Orientation quaternion
     pub rotation: AliceQuat,
+    /// Inverse mass (0 for static bodies)
     pub inv_mass: f64,
+    /// 1 if static body, 0 otherwise
     pub is_static: u8,
+    /// 1 if sensor/trigger body, 0 otherwise
     pub is_sensor: u8,
 }
 
@@ -134,32 +154,48 @@ pub unsafe extern "C" fn alice_physics_world_destroy(world: *mut PhysicsWorld) {
 
 /// Step the simulation by dt seconds (as f64, converted to Fix128).
 ///
+/// Returns 1 on success, 0 on failure (null pointer or internal panic).
+///
 /// # Safety
 /// `world` must be a valid pointer.
 #[no_mangle]
-pub unsafe extern "C" fn alice_physics_world_step(world: *mut PhysicsWorld, dt: f64) {
-    if let Some(w) = world.as_mut() {
-        w.step(Fix128::from_f64(dt));
-    }
+pub unsafe extern "C" fn alice_physics_world_step(world: *mut PhysicsWorld, dt: f64) -> u8 {
+    let w = match world.as_mut() {
+        Some(w) => w as *mut PhysicsWorld,
+        None => return 0,
+    };
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        (*w).step(Fix128::from_f64(dt));
+    }));
+    result.is_ok() as u8
 }
 
 /// Step the simulation N times with fixed dt (batch stepping).
 ///
 /// Amortizes FFI overhead — ideal for training loops and rollback re-simulation.
+/// Returns 1 on success, 0 on failure.
 ///
 /// # Safety
 /// `world` must be a valid pointer.
 #[no_mangle]
-pub unsafe extern "C" fn alice_physics_world_step_n(world: *mut PhysicsWorld, dt: f64, steps: u32) {
-    if let Some(w) = world.as_mut() {
+pub unsafe extern "C" fn alice_physics_world_step_n(world: *mut PhysicsWorld, dt: f64, steps: u32) -> u8 {
+    let w = match world.as_mut() {
+        Some(w) => w as *mut PhysicsWorld,
+        None => return 0,
+    };
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let dt_fix = Fix128::from_f64(dt);
         for _ in 0..steps {
-            w.step(dt_fix);
+            (*w).step(dt_fix);
         }
-    }
+    }));
+    result.is_ok() as u8
 }
 
 /// Get the number of bodies.
+///
+/// # Safety
+/// `world` must be a valid pointer from `alice_physics_world_create*`, or null.
 #[no_mangle]
 pub unsafe extern "C" fn alice_physics_world_body_count(world: *const PhysicsWorld) -> u32 {
     match world.as_ref() {
@@ -279,7 +315,7 @@ pub unsafe extern "C" fn alice_physics_body_apply_impulses_batch(
         Some(w) => w,
         None => return 0,
     };
-    if data.is_null() || count % 4 != 0 {
+    if data.is_null() || !count.is_multiple_of(4) {
         return 0;
     }
     let buf = std::slice::from_raw_parts(data, count as usize);
@@ -305,6 +341,9 @@ pub unsafe extern "C" fn alice_physics_body_apply_impulses_batch(
 // ============================================================================
 
 /// Add a dynamic body. Returns body index.
+///
+/// # Safety
+/// `world` must be a valid pointer from `alice_physics_world_create*`.
 #[no_mangle]
 pub unsafe extern "C" fn alice_physics_body_add_dynamic(
     world: *mut PhysicsWorld,
@@ -321,6 +360,9 @@ pub unsafe extern "C" fn alice_physics_body_add_dynamic(
 }
 
 /// Add a static body. Returns body index.
+///
+/// # Safety
+/// `world` must be a valid pointer from `alice_physics_world_create*`.
 #[no_mangle]
 pub unsafe extern "C" fn alice_physics_body_add_static(
     world: *mut PhysicsWorld,
@@ -336,6 +378,9 @@ pub unsafe extern "C" fn alice_physics_body_add_static(
 }
 
 /// Add a sensor (trigger) body. Returns body index.
+///
+/// # Safety
+/// `world` must be a valid pointer from `alice_physics_world_create*`.
 #[no_mangle]
 pub unsafe extern "C" fn alice_physics_body_add_sensor(
     world: *mut PhysicsWorld,
@@ -351,6 +396,9 @@ pub unsafe extern "C" fn alice_physics_body_add_sensor(
 }
 
 /// Get body info (read-only snapshot).
+///
+/// # Safety
+/// `world` must be a valid pointer. `out` must point to a valid `AliceBodyInfo`.
 #[no_mangle]
 pub unsafe extern "C" fn alice_physics_body_get_info(
     world: *const PhysicsWorld,
@@ -377,6 +425,9 @@ pub unsafe extern "C" fn alice_physics_body_get_info(
 }
 
 /// Get body position.
+///
+/// # Safety
+/// `world` must be a valid pointer. `out` must point to a valid `AliceVec3`.
 #[no_mangle]
 pub unsafe extern "C" fn alice_physics_body_get_position(
     world: *const PhysicsWorld,
@@ -397,6 +448,9 @@ pub unsafe extern "C" fn alice_physics_body_get_position(
 }
 
 /// Set body position.
+///
+/// # Safety
+/// `world` must be a valid pointer from `alice_physics_world_create*`.
 #[no_mangle]
 pub unsafe extern "C" fn alice_physics_body_set_position(
     world: *mut PhysicsWorld,
@@ -416,6 +470,9 @@ pub unsafe extern "C" fn alice_physics_body_set_position(
 }
 
 /// Get body velocity.
+///
+/// # Safety
+/// `world` must be a valid pointer. `out` must point to a valid `AliceVec3`.
 #[no_mangle]
 pub unsafe extern "C" fn alice_physics_body_get_velocity(
     world: *const PhysicsWorld,
@@ -436,6 +493,9 @@ pub unsafe extern "C" fn alice_physics_body_get_velocity(
 }
 
 /// Set body velocity.
+///
+/// # Safety
+/// `world` must be a valid pointer from `alice_physics_world_create*`.
 #[no_mangle]
 pub unsafe extern "C" fn alice_physics_body_set_velocity(
     world: *mut PhysicsWorld,
@@ -455,6 +515,9 @@ pub unsafe extern "C" fn alice_physics_body_set_velocity(
 }
 
 /// Get body rotation as quaternion.
+///
+/// # Safety
+/// `world` must be a valid pointer. `out` must point to a valid `AliceQuat`.
 #[no_mangle]
 pub unsafe extern "C" fn alice_physics_body_get_rotation(
     world: *const PhysicsWorld,
@@ -475,6 +538,9 @@ pub unsafe extern "C" fn alice_physics_body_get_rotation(
 }
 
 /// Set body restitution (bounciness, 0.0-1.0).
+///
+/// # Safety
+/// `world` must be a valid pointer from `alice_physics_world_create*`.
 #[no_mangle]
 pub unsafe extern "C" fn alice_physics_body_set_restitution(
     world: *mut PhysicsWorld,
@@ -494,6 +560,9 @@ pub unsafe extern "C" fn alice_physics_body_set_restitution(
 }
 
 /// Set body friction coefficient.
+///
+/// # Safety
+/// `world` must be a valid pointer from `alice_physics_world_create*`.
 #[no_mangle]
 pub unsafe extern "C" fn alice_physics_body_set_friction(
     world: *mut PhysicsWorld,
@@ -513,6 +582,9 @@ pub unsafe extern "C" fn alice_physics_body_set_friction(
 }
 
 /// Apply impulse at center of mass.
+///
+/// # Safety
+/// `world` must be a valid pointer from `alice_physics_world_create*`.
 #[no_mangle]
 pub unsafe extern "C" fn alice_physics_body_apply_impulse(
     world: *mut PhysicsWorld,
@@ -532,6 +604,9 @@ pub unsafe extern "C" fn alice_physics_body_apply_impulse(
 }
 
 /// Apply impulse at a world-space point.
+///
+/// # Safety
+/// `world` must be a valid pointer from `alice_physics_world_create*`.
 #[no_mangle]
 pub unsafe extern "C" fn alice_physics_body_apply_impulse_at(
     world: *mut PhysicsWorld,
@@ -570,6 +645,9 @@ pub extern "C" fn alice_physics_config_default() -> AlicePhysicsConfig {
 }
 
 /// Set gravity on an existing world.
+///
+/// # Safety
+/// `world` must be a valid pointer from `alice_physics_world_create*`.
 #[no_mangle]
 pub unsafe extern "C" fn alice_physics_world_set_gravity(
     world: *mut PhysicsWorld,
@@ -587,6 +665,9 @@ pub unsafe extern "C" fn alice_physics_world_set_gravity(
 }
 
 /// Set substeps on an existing world.
+///
+/// # Safety
+/// `world` must be a valid pointer from `alice_physics_world_create*`.
 #[no_mangle]
 pub unsafe extern "C" fn alice_physics_world_set_substeps(world: *mut PhysicsWorld, substeps: u32) {
     if let Some(w) = world.as_mut() {
@@ -600,6 +681,9 @@ pub unsafe extern "C" fn alice_physics_world_set_substeps(world: *mut PhysicsWor
 
 /// Serialize world state. Caller must free with `alice_physics_state_free`.
 /// Returns data pointer and writes length to `out_len`.
+///
+/// # Safety
+/// `world` must be a valid pointer. `out_len` must point to a valid `u32`.
 #[no_mangle]
 pub unsafe extern "C" fn alice_physics_state_serialize(
     world: *const PhysicsWorld,
@@ -625,6 +709,9 @@ pub unsafe extern "C" fn alice_physics_state_serialize(
 
 /// Deserialize world state (restores from serialized snapshot).
 /// Returns 1 on success, 0 on failure.
+///
+/// # Safety
+/// `world` must be a valid pointer. `data` must point to `len` valid bytes.
 #[no_mangle]
 pub unsafe extern "C" fn alice_physics_state_deserialize(
     world: *mut PhysicsWorld,
@@ -643,6 +730,9 @@ pub unsafe extern "C" fn alice_physics_state_deserialize(
 }
 
 /// Free a serialized state buffer.
+///
+/// # Safety
+/// `data` must be a pointer returned by `alice_physics_state_serialize` with matching `len`.
 #[no_mangle]
 pub unsafe extern "C" fn alice_physics_state_free(data: *mut u8, len: u32) {
     if !data.is_null() && len > 0 {
@@ -658,5 +748,205 @@ pub unsafe extern "C" fn alice_physics_state_free(data: *mut u8, len: u32) {
 /// Get library version string. Returns a static null-terminated string.
 #[no_mangle]
 pub extern "C" fn alice_physics_version() -> *const std::os::raw::c_char {
-    b"0.3.0\0".as_ptr() as *const std::os::raw::c_char
+    c"0.3.0".as_ptr()
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_vec3_conversion_roundtrip() {
+        let original = Vec3Fix::new(
+            Fix128::from_f64(1.5),
+            Fix128::from_f64(-2.25),
+            Fix128::from_f64(3.75),
+        );
+        let c = AliceVec3::from_vec3fix(original);
+        let back = c.to_vec3fix();
+        assert_eq!(original.x.hi, back.x.hi);
+        assert_eq!(original.y.hi, back.y.hi);
+        assert_eq!(original.z.hi, back.z.hi);
+    }
+
+    #[test]
+    fn test_world_create_destroy() {
+        unsafe {
+            let world = alice_physics_world_create();
+            assert!(!world.is_null());
+            assert_eq!(alice_physics_world_body_count(world), 0);
+            alice_physics_world_destroy(world);
+        }
+    }
+
+    #[test]
+    fn test_world_destroy_null() {
+        unsafe {
+            alice_physics_world_destroy(std::ptr::null_mut());
+        }
+    }
+
+    #[test]
+    fn test_world_create_with_config() {
+        unsafe {
+            let config = alice_physics_config_default();
+            let world = alice_physics_world_create_with_config(config);
+            assert!(!world.is_null());
+            alice_physics_world_destroy(world);
+        }
+    }
+
+    #[test]
+    fn test_body_add_and_get() {
+        unsafe {
+            let world = alice_physics_world_create();
+            let pos = AliceVec3 { x: 1.0, y: 2.0, z: 3.0 };
+            let id = alice_physics_body_add_dynamic(world, pos, 1.0);
+            assert_eq!(id, 0);
+            assert_eq!(alice_physics_world_body_count(world), 1);
+
+            let mut out = AliceVec3 { x: 0.0, y: 0.0, z: 0.0 };
+            let ok = alice_physics_body_get_position(world, id, &mut out);
+            assert_eq!(ok, 1);
+            assert!((out.x - 1.0).abs() < 1e-10);
+            assert!((out.y - 2.0).abs() < 1e-10);
+            assert!((out.z - 3.0).abs() < 1e-10);
+
+            alice_physics_world_destroy(world);
+        }
+    }
+
+    #[test]
+    fn test_body_get_invalid_id() {
+        unsafe {
+            let world = alice_physics_world_create();
+            let mut out = AliceVec3 { x: 0.0, y: 0.0, z: 0.0 };
+            let ok = alice_physics_body_get_position(world, 999, &mut out);
+            assert_eq!(ok, 0);
+            alice_physics_world_destroy(world);
+        }
+    }
+
+    #[test]
+    fn test_null_world_safety() {
+        unsafe {
+            let null: *mut PhysicsWorld = std::ptr::null_mut();
+            assert_eq!(alice_physics_world_body_count(null), 0);
+            assert_eq!(alice_physics_world_step(null, 0.016), 0);
+            assert_eq!(alice_physics_world_step_n(null, 0.016, 10), 0);
+
+            let pos = AliceVec3 { x: 0.0, y: 0.0, z: 0.0 };
+            assert_eq!(alice_physics_body_add_dynamic(null, pos, 1.0), u32::MAX);
+        }
+    }
+
+    #[test]
+    fn test_step_and_gravity() {
+        unsafe {
+            let world = alice_physics_world_create();
+            let pos = AliceVec3 { x: 0.0, y: 10.0, z: 0.0 };
+            let id = alice_physics_body_add_dynamic(world, pos, 1.0);
+
+            for _ in 0..60 {
+                alice_physics_world_step(world, 1.0 / 60.0);
+            }
+
+            let mut out = AliceVec3 { x: 0.0, y: 0.0, z: 0.0 };
+            alice_physics_body_get_position(world, id, &mut out);
+            assert!(out.y < 10.0, "Body should fall under gravity, y={}", out.y);
+
+            alice_physics_world_destroy(world);
+        }
+    }
+
+    #[test]
+    fn test_batch_positions() {
+        unsafe {
+            let world = alice_physics_world_create();
+            let p1 = AliceVec3 { x: 1.0, y: 2.0, z: 3.0 };
+            let p2 = AliceVec3 { x: 4.0, y: 5.0, z: 6.0 };
+            alice_physics_body_add_static(world, p1);
+            alice_physics_body_add_static(world, p2);
+
+            let mut buf = [0.0f64; 6];
+            let ok = alice_physics_world_get_positions_batch(world, buf.as_mut_ptr(), 6);
+            assert_eq!(ok, 1);
+            assert!((buf[0] - 1.0).abs() < 1e-10);
+            assert!((buf[1] - 2.0).abs() < 1e-10);
+            assert!((buf[2] - 3.0).abs() < 1e-10);
+            assert!((buf[3] - 4.0).abs() < 1e-10);
+            assert!((buf[4] - 5.0).abs() < 1e-10);
+            assert!((buf[5] - 6.0).abs() < 1e-10);
+
+            // Insufficient capacity
+            let fail = alice_physics_world_get_positions_batch(world, buf.as_mut_ptr(), 3);
+            assert_eq!(fail, 0);
+
+            alice_physics_world_destroy(world);
+        }
+    }
+
+    #[test]
+    fn test_state_serialization_ffi() {
+        unsafe {
+            let world = alice_physics_world_create();
+            let pos = AliceVec3 { x: 0.0, y: 10.0, z: 0.0 };
+            alice_physics_body_add_dynamic(world, pos, 1.0);
+
+            // Serialize
+            let mut len: u32 = 0;
+            let data = alice_physics_state_serialize(world, &mut len);
+            assert!(!data.is_null());
+            assert!(len > 0);
+
+            // Deserialize into same world
+            let ok = alice_physics_state_deserialize(world, data, len);
+            assert_eq!(ok, 1);
+
+            // Free
+            alice_physics_state_free(data, len);
+            alice_physics_world_destroy(world);
+        }
+    }
+
+    #[test]
+    fn test_impulse_application() {
+        unsafe {
+            let world = alice_physics_world_create();
+            alice_physics_world_set_gravity(world, 0.0, 0.0, 0.0);
+            let pos = AliceVec3 { x: 0.0, y: 0.0, z: 0.0 };
+            let id = alice_physics_body_add_dynamic(world, pos, 1.0);
+
+            let impulse = AliceVec3 { x: 10.0, y: 0.0, z: 0.0 };
+            alice_physics_body_apply_impulse(world, id, impulse);
+            alice_physics_world_step(world, 1.0 / 60.0);
+
+            let mut out = AliceVec3 { x: 0.0, y: 0.0, z: 0.0 };
+            alice_physics_body_get_position(world, id, &mut out);
+            assert!(out.x > 0.0, "Impulse should move body right, x={}", out.x);
+
+            alice_physics_world_destroy(world);
+        }
+    }
+
+    #[test]
+    fn test_body_info() {
+        unsafe {
+            let world = alice_physics_world_create();
+            let pos = AliceVec3 { x: 1.0, y: 2.0, z: 3.0 };
+            let id = alice_physics_body_add_sensor(world, pos);
+
+            let mut info = std::mem::zeroed::<AliceBodyInfo>();
+            let ok = alice_physics_body_get_info(world, id, &mut info);
+            assert_eq!(ok, 1);
+            assert_eq!(info.is_sensor, 1);
+            assert!((info.position.x - 1.0).abs() < 1e-10);
+
+            alice_physics_world_destroy(world);
+        }
+    }
 }

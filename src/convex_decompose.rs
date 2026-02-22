@@ -281,7 +281,12 @@ fn cluster_points(points: &[Vec3Fix], max_clusters: usize) -> Vec<Vec<Vec3Fix>> 
 }
 
 /// Compute AABB bounds of a point set
+///
+/// # Panics
+///
+/// Panics if `points` is empty.
 fn compute_bounds(points: &[Vec3Fix]) -> (Vec3Fix, Vec3Fix) {
+    assert!(!points.is_empty(), "compute_bounds requires non-empty points");
     let mut min = points[0];
     let mut max = points[0];
 

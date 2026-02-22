@@ -2,6 +2,26 @@
 //!
 //! Real-time outlier detection using robust statistics.
 //! Designed for telemetry streams where batch processing is not feasible.
+//!
+//! # Examples
+//!
+//! ```
+//! use alice_physics::anomaly::{MadDetector, EwmaDetector};
+//!
+//! // MAD-based outlier detection
+//! let mut mad = MadDetector::new(3.0);
+//! for &v in &[1.0, 2.0, 1.5, 1.8, 2.1, 1.9] {
+//!     mad.observe(v);
+//! }
+//! assert!(mad.is_anomaly(100.0)); // 100.0 is an outlier
+//!
+//! // EWMA-based detector
+//! let mut ewma = EwmaDetector::new(0.1, 3.0);
+//! for _ in 0..50 {
+//!     ewma.observe(10.0); // establish baseline
+//! }
+//! assert!(ewma.is_anomaly(1000.0)); // spike detected
+//! ```
 
 // ============================================================================
 // Streaming Median (for MAD calculation)
@@ -135,7 +155,7 @@ impl StreamingMedian {
         }
 
         let mid = self.count / 2;
-        if self.count % 2 == 0 {
+        if self.count.is_multiple_of(2) {
             (self.sorted[mid - 1] + self.sorted[mid]) / 2.0
         } else {
             self.sorted[mid]
@@ -186,7 +206,7 @@ impl Default for StreamingMedian {
 ///
 /// # Example
 /// ```
-/// use alice_analytics::anomaly::MadDetector;
+/// use alice_physics::anomaly::MadDetector;
 ///
 /// let mut detector = MadDetector::new(3.0);
 ///
@@ -373,7 +393,7 @@ impl MadDetector {
 ///
 /// # Example
 /// ```
-/// use alice_analytics::anomaly::EwmaDetector;
+/// use alice_physics::anomaly::EwmaDetector;
 ///
 /// let mut detector = EwmaDetector::new(0.1, 3.0);
 ///

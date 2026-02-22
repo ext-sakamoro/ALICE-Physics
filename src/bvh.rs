@@ -47,28 +47,35 @@ pub fn morton_code(x: u64, y: u64, z: u64) -> u64 {
 pub fn point_to_morton(point: Vec3Fix, bounds: &AABB) -> u64 {
     let size = bounds.max - bounds.min;
 
+    // Compute normalized coordinates [0, 1] and clamp for negative/out-of-range
     let nx = if size.x.is_zero() {
-        0
+        0u64
     } else {
         let t = (point.x - bounds.min.x) / size.x;
-        ((t.hi as u64) << 21) | (t.lo >> 43)
+        if t.is_negative() { 0 }
+        else if t.hi >= 1 { 0x1FFFFF }
+        else { (t.lo >> 43) & 0x1FFFFF }
     };
 
     let ny = if size.y.is_zero() {
-        0
+        0u64
     } else {
         let t = (point.y - bounds.min.y) / size.y;
-        ((t.hi as u64) << 21) | (t.lo >> 43)
+        if t.is_negative() { 0 }
+        else if t.hi >= 1 { 0x1FFFFF }
+        else { (t.lo >> 43) & 0x1FFFFF }
     };
 
     let nz = if size.z.is_zero() {
-        0
+        0u64
     } else {
         let t = (point.z - bounds.min.z) / size.z;
-        ((t.hi as u64) << 21) | (t.lo >> 43)
+        if t.is_negative() { 0 }
+        else if t.hi >= 1 { 0x1FFFFF }
+        else { (t.lo >> 43) & 0x1FFFFF }
     };
 
-    morton_code(nx & 0x1FFFFF, ny & 0x1FFFFF, nz & 0x1FFFFF)
+    morton_code(nx, ny, nz)
 }
 
 // ============================================================================
@@ -112,15 +119,19 @@ impl BvhNode {
         }
     }
 
-    /// Create leaf node
+    /// Create leaf node.
+    ///
+    /// `count` is saturated to [`Self::MAX_PRIMS_PER_LEAF`] (255) to prevent
+    /// 8-bit overflow that would make the leaf appear as an internal node.
     #[inline]
     pub fn leaf(aabb: &AABB, first_prim: u32, count: u32, escape_idx: u32) -> Self {
+        let clamped = count.min(Self::MAX_PRIMS_PER_LEAF);
         debug_assert!(count <= Self::MAX_PRIMS_PER_LEAF);
         Self {
             aabb_min: aabb_to_i32_min(aabb),
             first_child_or_prim: first_prim,
             aabb_max: aabb_to_i32_max(aabb),
-            prim_count_escape: ((count & 0xFF) << 24) | (escape_idx & 0x00FFFFFF),
+            prim_count_escape: ((clamped & 0xFF) << 24) | (escape_idx & 0x00FFFFFF),
         }
     }
 
@@ -171,21 +182,37 @@ impl BvhNode {
     }
 }
 
+/// Floor a Fix128 to i32, clamped to i32 range.
+/// For min bounds: floor ensures the AABB fully contains the original.
+#[inline]
+fn fix128_floor_i32(v: Fix128) -> i32 {
+    // For negative values with fractional part, hi is already floor (two's complement)
+    v.hi.max(i32::MIN as i64).min(i32::MAX as i64) as i32
+}
+
+/// Ceil a Fix128 to i32, clamped to i32 range.
+/// For max bounds: ceil ensures the AABB fully contains the original.
+#[inline]
+fn fix128_ceil_i32(v: Fix128) -> i32 {
+    let ceil = if v.lo > 0 { v.hi + 1 } else { v.hi };
+    ceil.max(i32::MIN as i64).min(i32::MAX as i64) as i32
+}
+
 #[inline]
 fn aabb_to_i32_min(aabb: &AABB) -> [i32; 3] {
     [
-        aabb.min.x.hi as i32,
-        aabb.min.y.hi as i32,
-        aabb.min.z.hi as i32,
+        fix128_floor_i32(aabb.min.x),
+        fix128_floor_i32(aabb.min.y),
+        fix128_floor_i32(aabb.min.z),
     ]
 }
 
 #[inline]
 fn aabb_to_i32_max(aabb: &AABB) -> [i32; 3] {
     [
-        (aabb.max.x.hi + 1) as i32, // Round up
-        (aabb.max.y.hi + 1) as i32,
-        (aabb.max.z.hi + 1) as i32,
+        fix128_ceil_i32(aabb.max.x),
+        fix128_ceil_i32(aabb.max.y),
+        fix128_ceil_i32(aabb.max.z),
     ]
 }
 

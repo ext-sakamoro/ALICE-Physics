@@ -95,7 +95,7 @@ impl DeterministicRng {
     /// Generate random unit direction vector (deterministic)
     pub fn next_direction(&mut self) -> Vec3Fix {
         // Marsaglia method: generate in [-1,1]^2, reject if outside unit disk
-        loop {
+        for _ in 0..64 {
             let u = self.next_fix128_range(Fix128::NEG_ONE, Fix128::ONE);
             let v = self.next_fix128_range(Fix128::NEG_ONE, Fix128::ONE);
             let s = u * u + v * v;
@@ -106,6 +106,7 @@ impl DeterministicRng {
             let two = Fix128::from_int(2);
             return Vec3Fix::new(two * u * factor, two * v * factor, Fix128::ONE - two * s);
         }
+        Vec3Fix::UNIT_Y
     }
 
     /// Generate random value in [0, max) as u32

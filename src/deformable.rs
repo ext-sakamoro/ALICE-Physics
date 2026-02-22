@@ -16,6 +16,8 @@ use crate::math::{Fix128, Vec3Fix};
 use crate::sdf_collider::SdfCollider;
 
 #[cfg(not(feature = "std"))]
+use alloc::vec;
+#[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
 // ============================================================================
@@ -187,7 +189,8 @@ impl DeformableBody {
 
     /// Build constraints from geometry
     fn build_constraints(&mut self) {
-        // Tetrahedral volume constraints
+        // Tetrahedral volume constraints (skip degenerate tetrahedra)
+        let min_volume = Fix128::from_ratio(1, 1000000); // 1e-6
         for tet in &self.tetrahedra {
             let rest_vol = compute_tet_volume(
                 self.positions[tet[0]],
@@ -195,6 +198,9 @@ impl DeformableBody {
                 self.positions[tet[2]],
                 self.positions[tet[3]],
             );
+            if rest_vol.abs() < min_volume {
+                continue; // Skip degenerate (near-zero volume) tetrahedra
+            }
             self.tet_constraints.push(TetConstraint {
                 indices: *tet,
                 rest_volume: rest_vol,

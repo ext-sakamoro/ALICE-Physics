@@ -236,7 +236,10 @@ fn reduce_manifold(candidates: &[(Contact, f32)], max_contacts: usize) -> Vec<Co
     if max_contacts >= 2 {
         let p0 = candidates[deepest_idx].0.point_b;
         let mut best_dist = Fix128::ZERO;
-        let mut best_idx = 0;
+        let mut best_idx = candidates.iter().enumerate()
+            .find(|(i, _)| !selected.contains(i))
+            .map(|(i, _)| i)
+            .unwrap_or(0);
         for (i, (c, _)) in candidates.iter().enumerate() {
             if selected.contains(&i) {
                 continue;
@@ -256,7 +259,10 @@ fn reduce_manifold(candidates: &[(Contact, f32)], max_contacts: usize) -> Vec<Co
         let p1 = candidates[selected[1]].0.point_b;
         let edge = p1 - p0;
         let mut best_area = Fix128::ZERO;
-        let mut best_idx = 0;
+        let mut best_idx = candidates.iter().enumerate()
+            .find(|(i, _)| !selected.contains(i))
+            .map(|(i, _)| i)
+            .unwrap_or(0);
         for (i, (c, _)) in candidates.iter().enumerate() {
             if selected.contains(&i) {
                 continue;
@@ -279,7 +285,10 @@ fn reduce_manifold(candidates: &[(Contact, f32)], max_contacts: usize) -> Vec<Co
         let p2 = candidates[selected[2]].0.point_b;
         let tri_normal = (p1 - p0).cross(p2 - p0);
         let mut best_dist = Fix128::ZERO;
-        let mut best_idx = 0;
+        let mut best_idx = candidates.iter().enumerate()
+            .find(|(i, _)| !selected.contains(i))
+            .map(|(i, _)| i)
+            .unwrap_or(0);
         for (i, (c, _)) in candidates.iter().enumerate() {
             if selected.contains(&i) {
                 continue;

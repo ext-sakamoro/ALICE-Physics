@@ -499,15 +499,20 @@ fn closest_point_on_segment(a: Vec3Fix, b: Vec3Fix, p: Vec3Fix) -> Vec3Fix {
     a + ab * t
 }
 
-/// Closest point on triangle to a segment — finds the closest point on the triangle
-/// to the closest point on the segment, iterating once for convergence.
+/// Closest point on triangle to a segment — iteratively refines the closest pair
+/// between the segment and triangle for better convergence.
 fn closest_point_segment_triangle(seg_a: Vec3Fix, seg_b: Vec3Fix, tri: &Triangle) -> Vec3Fix {
-    // First: closest point on triangle to segment midpoint
+    // Start from segment midpoint
     let mid = (seg_a + seg_b) * Fix128::from_ratio(1, 2);
-    let cp1 = tri.closest_point(mid);
-    // Then: closest point on segment to that, then back to triangle
-    let seg_cp = closest_point_on_segment(seg_a, seg_b, cp1);
-    tri.closest_point(seg_cp)
+    let mut tri_cp = tri.closest_point(mid);
+
+    // Iterate: segment→triangle→segment→triangle (2 refinement passes)
+    for _ in 0..2 {
+        let seg_cp = closest_point_on_segment(seg_a, seg_b, tri_cp);
+        tri_cp = tri.closest_point(seg_cp);
+    }
+
+    tri_cp
 }
 
 #[inline]
