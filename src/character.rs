@@ -378,7 +378,7 @@ impl CharacterController {
         &self,
         pos: Vec3Fix,
         bodies: &[RigidBody],
-        _sdf_colliders: &[SdfCollider],
+        #[cfg_attr(not(feature = "std"), allow(unused_variables))] sdf_colliders: &[SdfCollider],
     ) -> (bool, Option<usize>) {
         let feet = Vec3Fix::new(
             pos.x,
@@ -402,7 +402,7 @@ impl CharacterController {
 
         // Check SDF ground
         #[cfg(feature = "std")]
-        for sdf in _sdf_colliders {
+        for sdf in sdf_colliders {
             let (lx, ly, lz) = sdf.world_to_local(feet);
             let dist = sdf.field.distance(lx, ly, lz) * sdf.scale_f32;
             if dist < (probe.to_f32() + self.config.radius.to_f32()) {

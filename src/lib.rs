@@ -158,6 +158,34 @@
 //! - Distributed physics simulation
 
 #![warn(missing_docs)]
+// Pedantic: suppress lints inherent to physics/math code.
+// - Cast lints: Fixed-point ↔ float conversions and index casts are pervasive.
+// - Naming: coordinate variables (px, py, pz), vertex indices (v0, v1, v2).
+// - must_use: pure functions returning computed values are the norm; annotating
+//   every constructor and accessor adds noise without improving safety.
+// - doc_markdown: technical identifiers in docs are context-obvious.
+// - unreadable_literal: hash constants and bit patterns are more readable without separators.
+// - large_stack_arrays: physics lookup tables and inline data are intentional.
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    clippy::cast_lossless,
+    clippy::cast_possible_wrap,
+    clippy::similar_names,
+    clippy::many_single_char_names,
+    clippy::module_name_repetitions,
+    clippy::must_use_candidate,
+    clippy::return_self_not_must_use,
+    clippy::doc_markdown,
+    clippy::unreadable_literal,
+    clippy::large_stack_arrays,
+    clippy::missing_panics_doc,
+    clippy::missing_errors_doc,
+    clippy::needless_pass_by_value,
+    clippy::unnecessary_wraps,
+    clippy::inline_always
+)]
 #![cfg_attr(not(feature = "std"), no_std)]
 
 #[cfg(all(feature = "wasm", feature = "ffi"))]

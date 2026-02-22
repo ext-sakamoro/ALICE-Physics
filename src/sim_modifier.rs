@@ -14,16 +14,27 @@
 //!
 //! # Example
 //!
-//! ```ignore
-//! let thermal = ThermalModifier::new(config, bounds);
-//! let pressure = PressureModifier::new(config, bounds);
+//! ```
+//! use alice_physics::sdf_collider::ClosureSdf;
+//! use alice_physics::sim_modifier::ModifiedSdf;
+//! use alice_physics::thermal::{ThermalModifier, ThermalConfig};
+//! use alice_physics::pressure::{PressureModifier, PressureConfig};
+//! use alice_physics::sdf_collider::SdfField;
 //!
-//! let modified = ModifiedSdf::new(original_sdf)
+//! let sphere_sdf = ClosureSdf::new(
+//!     |x, y, z| (x*x + y*y + z*z).sqrt() - 1.0,
+//!     |x, y, z| { let l = (x*x + y*y + z*z).sqrt().max(1e-6); (x/l, y/l, z/l) },
+//! );
+//! let bounds = (-2.0, -2.0, -2.0);
+//! let bounds_max = (2.0, 2.0, 2.0);
+//! let thermal = ThermalModifier::new(ThermalConfig::default(), 4, bounds, bounds_max);
+//! let pressure = PressureModifier::new(PressureConfig::default(), 4, bounds, bounds_max);
+//!
+//! let modified = ModifiedSdf::new(Box::new(sphere_sdf))
 //!     .with_modifier(Box::new(thermal))
 //!     .with_modifier(Box::new(pressure));
 //!
-//! // modified implements SdfField
-//! let dist = modified.distance(x, y, z);
+//! let dist = modified.distance(0.0, 0.0, 0.0);
 //! ```
 //!
 //! Author: Moroya Sakamoto

@@ -5,8 +5,8 @@
 //!
 //! # Usage
 //!
-//! ```rust,ignore
-//! use alice_physics::compound::{CompoundShape, ShapeRef};
+//! ```
+//! use alice_physics::compound::CompoundShape;
 //! use alice_physics::{Vec3Fix, Fix128};
 //! use alice_physics::collider::Sphere;
 //! use alice_physics::math::QuatFix;
@@ -276,7 +276,7 @@ pub struct TransformedCompound<'a> {
     pub rotation: QuatFix,
 }
 
-impl<'a> Support for TransformedCompound<'a> {
+impl Support for TransformedCompound<'_> {
     fn support(&self, direction: Vec3Fix) -> Vec3Fix {
         self.compound
             .support_world(direction, self.position, self.rotation)

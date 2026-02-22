@@ -78,6 +78,7 @@ pub struct DebugPoint {
 
 /// What to draw in debug mode
 #[derive(Clone, Copy, Debug)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct DebugDrawFlags {
     /// Draw body AABBs
     pub draw_aabbs: bool,
@@ -276,7 +277,7 @@ pub fn debug_draw_world(
 ) {
     data.clear();
 
-    for body in world.bodies.iter() {
+    for body in &world.bodies {
         let is_static = body.is_static();
         let body_color = if is_static {
             DebugColor::GRAY

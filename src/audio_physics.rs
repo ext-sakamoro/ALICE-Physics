@@ -352,6 +352,7 @@ impl AudioGenerator {
     }
 
     /// Decay: based on material resonance and damping
+    #[allow(clippy::unused_self)]
     fn compute_decay(&self, mat_a: &AudioMaterial, mat_b: &AudioMaterial) -> Fix128 {
         let avg_resonance = (mat_a.resonance + mat_b.resonance).half();
         let avg_damping = (mat_a.damping + mat_b.damping).half();

@@ -36,14 +36,14 @@ impl fmt::Display for PhysicsError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InvalidBodyIndex { index, count } => {
-                write!(f, "body index {} out of range (count={})", index, count)
+                write!(f, "body index {index} out of range (count={count})")
             }
             Self::DeserializationFailed => write!(f, "state deserialization failed"),
             Self::InvalidConstraint { reason } => {
-                write!(f, "invalid constraint: {}", reason)
+                write!(f, "invalid constraint: {reason}")
             }
             Self::ZeroLengthVector { context } => {
-                write!(f, "zero-length vector in {}", context)
+                write!(f, "zero-length vector in {context}")
             }
         }
     }

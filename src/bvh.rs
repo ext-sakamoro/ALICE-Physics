@@ -325,7 +325,6 @@ impl LinearBvh {
 
             // Build left child (escape to right child)
             let left_idx = nodes.len();
-            let _right_escape = node_idx + 1; // Temporary, will point to right child
             Self::build_recursive(nodes, primitives, start, mid, left_idx as u32 + 1);
 
             // Build right child (escape to parent's escape)

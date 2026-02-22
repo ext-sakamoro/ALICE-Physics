@@ -18,9 +18,9 @@
 //!
 //! # Usage
 //!
-//! ```rust,ignore
+//! ```
 //! use alice_physics::netcode::{DeterministicSimulation, FrameInput, NetcodeConfig};
-//! use alice_physics::{PhysicsConfig, Vec3Fix, Fix128};
+//! use alice_physics::Vec3Fix;
 //!
 //! // Both clients create identical simulation
 //! let mut sim = DeterministicSimulation::new(NetcodeConfig::default());
@@ -115,15 +115,9 @@ impl FrameInput {
         let mut buf = [0u8; 20];
         buf[0] = self.player_id;
         // movement as i16 x 3 (6 bytes) — truncated from Fix128 for network
-        debug_assert!(
-            self.movement.x.hi >= i16::MIN as i64 && self.movement.x.hi <= i16::MAX as i64
-        );
-        debug_assert!(
-            self.movement.y.hi >= i16::MIN as i64 && self.movement.y.hi <= i16::MAX as i64
-        );
-        debug_assert!(
-            self.movement.z.hi >= i16::MIN as i64 && self.movement.z.hi <= i16::MAX as i64
-        );
+        debug_assert!(i16::try_from(self.movement.x.hi).is_ok());
+        debug_assert!(i16::try_from(self.movement.y.hi).is_ok());
+        debug_assert!(i16::try_from(self.movement.z.hi).is_ok());
         let mx = self.movement.x.hi as i16;
         let my = self.movement.y.hi as i16;
         let mz = self.movement.z.hi as i16;
@@ -477,12 +471,7 @@ impl DeterministicSimulation {
             if self.world.deserialize_state(&state) {
                 self.frame = snap_frame;
                 // Trim checksum history to rollback point
-                while self
-                    .checksum_history
-                    .back()
-                    .map(|c| c.0 > frame)
-                    .unwrap_or(false)
-                {
+                while self.checksum_history.back().is_some_and(|c| c.0 > frame) {
                     self.checksum_history.pop_back();
                 }
                 return true;

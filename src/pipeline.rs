@@ -515,7 +515,7 @@ impl<const N: usize> MetricRegistry<N> {
         let hash = entry.hash;
 
         // Find empty slot
-        for slot in self.entries.iter_mut() {
+        for slot in &mut self.entries {
             if slot.is_none() {
                 *slot = Some(entry);
                 self.count += 1;

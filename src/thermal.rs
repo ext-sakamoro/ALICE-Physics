@@ -296,7 +296,7 @@ impl PhysicsModifier for ThermalModifier {
         self.accumulate_melt(dt);
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "thermal"
     }
 

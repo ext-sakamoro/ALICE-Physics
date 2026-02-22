@@ -152,7 +152,7 @@ impl GpuSdfBatch {
         // queries.len() * size_of::<GpuSdfQuery>(). The returned slice lifetime is tied to &self.
         unsafe {
             core::slice::from_raw_parts(
-                self.queries.as_ptr() as *const u8,
+                self.queries.as_ptr().cast::<u8>(),
                 self.queries.len() * core::mem::size_of::<GpuSdfQuery>(),
             )
         }
@@ -166,7 +166,7 @@ impl GpuSdfBatch {
         // The returned slice lifetime is tied to &mut self, preventing aliased access.
         unsafe {
             core::slice::from_raw_parts_mut(
-                self.results.as_mut_ptr() as *mut u8,
+                self.results.as_mut_ptr().cast::<u8>(),
                 self.results.len() * core::mem::size_of::<GpuSdfResult>(),
             )
         }
@@ -339,7 +339,7 @@ pub fn execute_batch_cpu(batch: &mut GpuSdfBatch, sdf: &dyn crate::sdf_collider:
 ///
 /// This is provided as a reference; actual GPU dispatch uses ALICE-SDF's
 /// GPU backend which compiles SDF nodes to WGSL/SPIR-V.
-pub const SDF_EVAL_WGSL: &str = r#"
+pub const SDF_EVAL_WGSL: &str = r"
 struct Query {
     x: f32,
     y: f32,
@@ -382,7 +382,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let n = sdf_normal(q.x, q.y, q.z);
     results[idx] = Result(d, n.x, n.y, n.z);
 }
-"#;
+";
 
 // ============================================================================
 // Tests

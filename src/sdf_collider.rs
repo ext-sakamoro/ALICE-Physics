@@ -69,7 +69,9 @@ type NormalFn = Box<dyn Fn(f32, f32, f32) -> (f32, f32, f32) + Send + Sync>;
 ///
 /// Allows connecting any SDF evaluation function without trait implementation.
 ///
-/// ```ignore
+/// ```
+/// use alice_physics::sdf_collider::ClosureSdf;
+///
 /// let sdf = ClosureSdf::new(
 ///     |x, y, z| ((x*x + y*y + z*z).sqrt() - 1.0), // sphere r=1
 ///     |x, y, z| {

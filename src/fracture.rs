@@ -305,7 +305,7 @@ impl PhysicsModifier for FractureModifier {
         self.propagate_cracks(dt);
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "fracture"
     }
 

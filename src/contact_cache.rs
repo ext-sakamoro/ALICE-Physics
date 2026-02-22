@@ -344,7 +344,10 @@ impl ContactCache {
 
     /// Total number of active contact points across all manifolds
     pub fn total_contact_points(&self) -> usize {
-        self.manifolds.iter().map(|m| m.point_count()).sum()
+        self.manifolds
+            .iter()
+            .map(ContactManifold::point_count)
+            .sum()
     }
 
     /// Clear all manifolds

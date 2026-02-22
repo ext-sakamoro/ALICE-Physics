@@ -330,14 +330,12 @@ impl DynamicAabbTree {
         self.nodes[new_parent as usize].aabb = leaf_aabb.union(&self.nodes[sibling as usize].aabb);
         self.nodes[new_parent as usize].height = self.nodes[sibling as usize].height + 1;
 
-        if old_parent != NULL_NODE {
-            if self.nodes[old_parent as usize].left == sibling {
-                self.nodes[old_parent as usize].left = new_parent;
-            } else {
-                self.nodes[old_parent as usize].right = new_parent;
-            }
-        } else {
+        if old_parent == NULL_NODE {
             self.root = new_parent;
+        } else if self.nodes[old_parent as usize].left == sibling {
+            self.nodes[old_parent as usize].left = new_parent;
+        } else {
+            self.nodes[old_parent as usize].right = new_parent;
         }
 
         self.nodes[new_parent as usize].left = sibling;
@@ -374,7 +372,11 @@ impl DynamicAabbTree {
             self.nodes[parent as usize].left
         };
 
-        if grand_parent != NULL_NODE {
+        if grand_parent == NULL_NODE {
+            self.root = sibling;
+            self.nodes[sibling as usize].parent = NULL_NODE;
+            self.free_node(parent);
+        } else {
             // Reconnect sibling to grandparent
             if self.nodes[grand_parent as usize].left == parent {
                 self.nodes[grand_parent as usize].left = sibling;
@@ -385,10 +387,6 @@ impl DynamicAabbTree {
             self.free_node(parent);
 
             self.fix_upwards(grand_parent);
-        } else {
-            self.root = sibling;
-            self.nodes[sibling as usize].parent = NULL_NODE;
-            self.free_node(parent);
         }
     }
 
@@ -444,26 +442,24 @@ impl DynamicAabbTree {
         self.nodes[right as usize].parent = parent;
         self.nodes[node_id as usize].parent = right;
 
-        if parent != NULL_NODE {
-            if self.nodes[parent as usize].left == node_id {
-                self.nodes[parent as usize].left = right;
-            } else {
-                self.nodes[parent as usize].right = right;
-            }
-        } else {
+        if parent == NULL_NODE {
             self.root = right;
+        } else if self.nodes[parent as usize].left == node_id {
+            self.nodes[parent as usize].left = right;
+        } else {
+            self.nodes[parent as usize].right = right;
         }
 
         // Rotate based on children heights
-        let rl_h = if right_left != NULL_NODE {
+        let rl_h = if right_left == NULL_NODE {
+            -1
+        } else {
             self.nodes[right_left as usize].height
-        } else {
-            -1
         };
-        let rr_h = if right_right != NULL_NODE {
-            self.nodes[right_right as usize].height
-        } else {
+        let rr_h = if right_right == NULL_NODE {
             -1
+        } else {
+            self.nodes[right_right as usize].height
         };
 
         if rl_h > rr_h {
@@ -518,25 +514,23 @@ impl DynamicAabbTree {
         self.nodes[left as usize].parent = parent;
         self.nodes[node_id as usize].parent = left;
 
-        if parent != NULL_NODE {
-            if self.nodes[parent as usize].left == node_id {
-                self.nodes[parent as usize].left = left;
-            } else {
-                self.nodes[parent as usize].right = left;
-            }
-        } else {
+        if parent == NULL_NODE {
             self.root = left;
+        } else if self.nodes[parent as usize].left == node_id {
+            self.nodes[parent as usize].left = left;
+        } else {
+            self.nodes[parent as usize].right = left;
         }
 
-        let ll_h = if left_left != NULL_NODE {
+        let ll_h = if left_left == NULL_NODE {
+            -1
+        } else {
             self.nodes[left_left as usize].height
-        } else {
-            -1
         };
-        let lr_h = if left_right != NULL_NODE {
-            self.nodes[left_right as usize].height
-        } else {
+        let lr_h = if left_right == NULL_NODE {
             -1
+        } else {
+            self.nodes[left_right as usize].height
         };
 
         if lr_h > ll_h {

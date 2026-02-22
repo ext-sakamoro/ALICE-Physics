@@ -210,7 +210,7 @@ impl PhysicsModifier for ErosionModifier {
         self.exposure.decay(5.0, dt);
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "erosion"
     }
 

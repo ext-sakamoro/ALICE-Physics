@@ -225,11 +225,7 @@ impl RandomizedResponse {
     /// Privatize a bit (0 or 1)
     #[inline]
     pub fn privatize_bit(&mut self, bit: u8) -> u8 {
-        if self.privatize(bit != 0) {
-            1
-        } else {
-            0
-        }
+        u8::from(self.privatize(bit != 0))
     }
 
     /// Get the probability of truthful response
@@ -309,6 +305,7 @@ impl Rappor {
     }
 
     /// Encode a value into a Bloom filter (simple hash-based)
+    #[allow(clippy::unused_self)]
     fn encode_bloom(&self, value: u64) -> [u8; RAPPOR_BITS] {
         use crate::sketch::FnvHasher;
 
@@ -328,7 +325,7 @@ impl Rappor {
         for i in 0..RAPPOR_BITS {
             if self.rng.next_bool(self.f) {
                 // Flip with probability f
-                result[i] = if self.rng.next_bool(0.5) { 1 } else { 0 };
+                result[i] = u8::from(self.rng.next_bool(0.5));
             } else {
                 // Keep original
                 result[i] = bloom[i];
@@ -342,9 +339,9 @@ impl Rappor {
         let mut result = [0u8; RAPPOR_BITS];
         for i in 0..RAPPOR_BITS {
             if permanent[i] == 1 {
-                result[i] = if self.rng.next_bool(self.p) { 1 } else { 0 };
+                result[i] = u8::from(self.rng.next_bool(self.p));
             } else {
-                result[i] = if self.rng.next_bool(self.q) { 1 } else { 0 };
+                result[i] = u8::from(self.rng.next_bool(self.q));
             }
         }
         result

@@ -299,7 +299,7 @@ impl PhysicsModifier for PhaseChangeModifier {
         self.accumulate_offsets(dt);
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "phase_change"
     }
 

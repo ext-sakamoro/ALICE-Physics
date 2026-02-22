@@ -171,7 +171,9 @@ impl PhysicsProfiler {
 
     /// Get average ticks for a stage
     pub fn average_ticks(&self, stage: usize) -> u64 {
-        self.entries.get(stage).map_or(0, |e| e.average_ticks())
+        self.entries
+            .get(stage)
+            .map_or(0, ProfileEntry::average_ticks)
     }
 
     /// Reset all profiling data

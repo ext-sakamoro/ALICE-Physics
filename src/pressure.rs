@@ -170,7 +170,7 @@ impl PhysicsModifier for PressureModifier {
         self.deformation.clamp(0.0, self.config.max_deformation);
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "pressure"
     }
 

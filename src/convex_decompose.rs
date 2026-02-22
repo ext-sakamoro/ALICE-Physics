@@ -203,7 +203,7 @@ pub fn decompose_sdf(
         let verts: Vec<Vec3Fix> = if cluster.len() > config.max_vertices_per_hull {
             // Subsample
             let step = cluster.len() / config.max_vertices_per_hull;
-            cluster.iter().step_by(step.max(1)).cloned().collect()
+            cluster.iter().step_by(step.max(1)).copied().collect()
         } else {
             cluster.clone()
         };

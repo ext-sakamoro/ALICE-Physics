@@ -161,13 +161,13 @@ impl IslandManager {
             return;
         }
         // Union by rank
-        if self.rank[ra] < self.rank[rb] {
-            self.parent[ra] = rb;
-        } else if self.rank[ra] > self.rank[rb] {
-            self.parent[rb] = ra;
-        } else {
-            self.parent[rb] = ra;
-            self.rank[ra] += 1;
+        match self.rank[ra].cmp(&self.rank[rb]) {
+            core::cmp::Ordering::Less => self.parent[ra] = rb,
+            core::cmp::Ordering::Greater => self.parent[rb] = ra,
+            core::cmp::Ordering::Equal => {
+                self.parent[rb] = ra;
+                self.rank[ra] += 1;
+            }
         }
     }
 
@@ -253,7 +253,7 @@ impl IslandManager {
     pub fn is_sleeping(&self, body_index: usize) -> bool {
         self.sleep_data
             .get(body_index)
-            .is_some_and(|d| d.is_sleeping())
+            .is_some_and(SleepData::is_sleeping)
     }
 
     /// Get the number of sleeping bodies

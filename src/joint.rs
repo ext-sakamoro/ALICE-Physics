@@ -998,6 +998,7 @@ fn solve_spring_joint(joint: &SpringJoint, bodies: &mut [crate::solver::RigidBod
 }
 
 /// Solve D6 joint: per-axis locking/limiting for all 6 DOF
+#[allow(clippy::too_many_lines)]
 fn solve_d6_joint(joint: &D6Joint, bodies: &mut [crate::solver::RigidBody], dt: Fix128) {
     let body_a = bodies[joint.body_a];
     let body_b = bodies[joint.body_b];

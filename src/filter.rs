@@ -4,7 +4,7 @@
 //!
 //! # Usage
 //!
-//! ```ignore
+//! ```
 //! use alice_physics::filter::CollisionFilter;
 //!
 //! // Layer 0 = player, Layer 1 = enemy, Layer 2 = projectile

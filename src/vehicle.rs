@@ -238,6 +238,7 @@ impl Vehicle {
     }
 
     /// Update vehicle physics
+    #[allow(clippy::too_many_lines)]
     pub fn update(&mut self, chassis: &mut RigidBody, dt: Fix128) {
         if chassis.is_static() {
             return;
@@ -278,7 +279,6 @@ impl Vehicle {
 
             // Raycast down for ground contact
             let ray_start = wheel_world;
-            let _ray_dir = -up;
             let max_dist = wheel_cfg.suspension_rest + wheel_cfg.radius;
 
             // Ground plane check (configurable height)

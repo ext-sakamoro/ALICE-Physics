@@ -228,8 +228,7 @@ fn reduce_manifold(candidates: &[(Contact, f32)], max_contacts: usize) -> Vec<Co
         .iter()
         .enumerate()
         .max_by(|(_, a), (_, b)| a.1.partial_cmp(&b.1).unwrap_or(core::cmp::Ordering::Equal))
-        .map(|(i, _)| i)
-        .unwrap_or(0);
+        .map_or(0, |(i, _)| i);
     selected.push(deepest_idx);
 
     // 2. Furthest from deepest
@@ -240,8 +239,7 @@ fn reduce_manifold(candidates: &[(Contact, f32)], max_contacts: usize) -> Vec<Co
             .iter()
             .enumerate()
             .find(|(i, _)| !selected.contains(i))
-            .map(|(i, _)| i)
-            .unwrap_or(0);
+            .map_or(0, |(i, _)| i);
         for (i, (c, _)) in candidates.iter().enumerate() {
             if selected.contains(&i) {
                 continue;
@@ -265,8 +263,7 @@ fn reduce_manifold(candidates: &[(Contact, f32)], max_contacts: usize) -> Vec<Co
             .iter()
             .enumerate()
             .find(|(i, _)| !selected.contains(i))
-            .map(|(i, _)| i)
-            .unwrap_or(0);
+            .map_or(0, |(i, _)| i);
         for (i, (c, _)) in candidates.iter().enumerate() {
             if selected.contains(&i) {
                 continue;
@@ -293,8 +290,7 @@ fn reduce_manifold(candidates: &[(Contact, f32)], max_contacts: usize) -> Vec<Co
             .iter()
             .enumerate()
             .find(|(i, _)| !selected.contains(i))
-            .map(|(i, _)| i)
-            .unwrap_or(0);
+            .map_or(0, |(i, _)| i);
         for (i, (c, _)) in candidates.iter().enumerate() {
             if selected.contains(&i) {
                 continue;

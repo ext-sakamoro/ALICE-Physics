@@ -492,6 +492,10 @@ struct BodySlicePtr {
     len: usize,
 }
 
+// SAFETY: `BodySlicePtr` is only used inside the parallel constraint solver
+// where graph-coloring guarantees that no two threads access the same index.
+// Each constraint batch touches disjoint body indices, so concurrent
+// `get_mut` calls on distinct indices are data-race-free.
 #[cfg(feature = "parallel")]
 unsafe impl Send for BodySlicePtr {}
 #[cfg(feature = "parallel")]
@@ -501,6 +505,10 @@ unsafe impl Sync for BodySlicePtr {}
 impl BodySlicePtr {
     #[allow(clippy::mut_from_ref)]
     #[inline(always)]
+    /// # Safety
+    ///
+    /// Caller must ensure `idx < self.len` and that no other thread
+    /// concurrently accesses the same index.
     unsafe fn get_mut(&self, idx: usize) -> &mut RigidBody {
         debug_assert!(idx < self.len);
         &mut *self.ptr.add(idx)
@@ -517,6 +525,10 @@ struct DistConstraintSlicePtr {
     len: usize,
 }
 
+// SAFETY: `DistConstraintSlicePtr` is only used inside the parallel
+// constraint solver where each constraint index appears in exactly one
+// graph-colored batch. Concurrent `get_mut` calls target disjoint indices,
+// preventing data races.
 #[cfg(feature = "parallel")]
 unsafe impl Send for DistConstraintSlicePtr {}
 #[cfg(feature = "parallel")]
@@ -526,6 +538,10 @@ unsafe impl Sync for DistConstraintSlicePtr {}
 impl DistConstraintSlicePtr {
     #[allow(clippy::mut_from_ref)]
     #[inline(always)]
+    /// # Safety
+    ///
+    /// Caller must ensure `idx < self.len` and that no other thread
+    /// concurrently accesses the same index.
     unsafe fn get_mut(&self, idx: usize) -> &mut DistanceConstraint {
         debug_assert!(idx < self.len);
         &mut *self.ptr.add(idx)
@@ -1899,8 +1915,10 @@ impl PhysicsWorld {
             }
 
             let mut contact = constraint.contact;
-            let mut _friction = constraint.friction;
-            let mut _restitution = constraint.restitution;
+            #[cfg_attr(not(feature = "std"), allow(unused_variables, unused_mut))]
+            let mut friction = constraint.friction;
+            #[cfg_attr(not(feature = "std"), allow(unused_variables, unused_mut))]
+            let mut restitution = constraint.restitution;
 
             // Pre-solve hook: allow game logic to filter contacts
             #[cfg(feature = "std")]
@@ -1919,8 +1937,8 @@ impl PhysicsWorld {
                             constraint.body_a,
                             constraint.body_b,
                             &mut contact,
-                            &mut _friction,
-                            &mut _restitution,
+                            &mut friction,
+                            &mut restitution,
                         ) {
                             skip = true;
                             break;
@@ -2038,6 +2056,7 @@ impl PhysicsWorld {
     /// Uses BVH broad-phase with Morton codes and sphere-sphere narrow-phase.
     /// Generates contact constraints and events automatically.
     /// Bodies without a collision radius are skipped.
+    #[allow(clippy::too_many_lines, clippy::items_after_statements)]
     fn detect_collisions(&mut self) {
         let n = self.bodies.len();
         if n < 2 {
