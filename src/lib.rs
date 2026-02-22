@@ -183,7 +183,10 @@ pub use fluid_netcode::{FluidDelta, FluidSnapshot};
 pub use force::{ForceField, ForceFieldInstance};
 pub use fracture::{Crack, FractureConfig, FractureModifier};
 #[cfg(feature = "std")]
-pub use gpu_sdf::{GpuDispatchConfig, GpuSdfBatch, GpuSdfQuery, GpuSdfResult};
+pub use gpu_sdf::{
+    batch_size, GpuDispatchConfig, GpuSdfBatch, GpuSdfInstancedBatch, GpuSdfMultiDispatch,
+    GpuSdfQuery, GpuSdfResult,
+};
 pub use heightfield::HeightField;
 pub use interpolation::{BodySnapshot, InterpolationState, WorldSnapshot};
 pub use joint::solve_joints_breakable;
@@ -192,7 +195,7 @@ pub use joint::{
     SpringJoint,
 };
 pub use material::{CombineRule, CombinedMaterial, MaterialId, MaterialTable, PhysicsMaterial};
-pub use math::{Fix128, Mat3Fix, QuatFix, Vec3Fix};
+pub use math::{simd_width, Fix128, Mat3Fix, QuatFix, Vec3Fix, SIMD_WIDTH};
 pub use motor::{JointMotor, MotorMode, PdController};
 pub use netcode::{
     DeterministicSimulation, FrameInput, InputApplicator, NetcodeConfig, SimulationChecksum,
@@ -257,7 +260,10 @@ pub mod prelude {
     pub use crate::force::{ForceField, ForceFieldInstance};
     pub use crate::fracture::{Crack, FractureConfig, FractureModifier};
     #[cfg(feature = "std")]
-    pub use crate::gpu_sdf::{GpuDispatchConfig, GpuSdfBatch, GpuSdfQuery, GpuSdfResult};
+    pub use crate::gpu_sdf::{
+        batch_size, GpuDispatchConfig, GpuSdfBatch, GpuSdfInstancedBatch, GpuSdfMultiDispatch,
+        GpuSdfQuery, GpuSdfResult,
+    };
     pub use crate::heightfield::HeightField;
     pub use crate::interpolation::{BodySnapshot, InterpolationState, WorldSnapshot};
     pub use crate::joint::solve_joints_breakable;
@@ -268,7 +274,7 @@ pub mod prelude {
     pub use crate::material::{
         CombineRule, CombinedMaterial, MaterialId, MaterialTable, PhysicsMaterial,
     };
-    pub use crate::math::{Fix128, Mat3Fix, QuatFix, Vec3Fix};
+    pub use crate::math::{simd_width, Fix128, Mat3Fix, QuatFix, Vec3Fix, SIMD_WIDTH};
     pub use crate::motor::{JointMotor, MotorMode, PdController};
     pub use crate::netcode::{
         DeterministicSimulation, FrameInput, InputApplicator, NetcodeConfig, SimulationChecksum,
@@ -432,6 +438,7 @@ mod tests {
             local_anchor_b: Vec3Fix::ZERO,
             target_distance: Fix128::from_int(5),
             compliance: Fix128::ZERO,
+            cached_lambda: Fix128::ZERO,
         };
         world.add_distance_constraint(constraint);
 

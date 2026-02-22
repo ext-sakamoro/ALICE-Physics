@@ -77,6 +77,8 @@ struct SpatialGrid {
     inv_cell_size: Fix128,
     cells: Vec<Vec<usize>>,
     grid_dim: usize,
+    /// Precomputed half of grid_dim to avoid repeated division in hot paths
+    grid_half: i64,
 }
 
 impl SpatialGrid {
@@ -86,10 +88,12 @@ impl SpatialGrid {
         } else {
             Fix128::ONE / cell_size
         };
+        let grid_half = (grid_dim as i64) / 2;
         Self {
             inv_cell_size: inv_cell,
             cells: vec![Vec::new(); grid_dim * grid_dim * grid_dim],
             grid_dim,
+            grid_half,
         }
     }
 
@@ -99,9 +103,10 @@ impl SpatialGrid {
         }
     }
 
+    #[inline(always)]
     fn hash(&self, pos: Vec3Fix) -> usize {
         let gd = self.grid_dim as i64;
-        let half = gd / 2;
+        let half = self.grid_half;
         let ix = ((pos.x * self.inv_cell_size).hi + half).clamp(0, gd - 1) as usize;
         let iy = ((pos.y * self.inv_cell_size).hi + half).clamp(0, gd - 1) as usize;
         let iz = ((pos.z * self.inv_cell_size).hi + half).clamp(0, gd - 1) as usize;
@@ -122,7 +127,7 @@ impl SpatialGrid {
         neighbors: &mut Vec<usize>,
     ) {
         let gd = self.grid_dim as i64;
-        let half = gd / 2;
+        let half = self.grid_half;
         let cx = ((pos.x * self.inv_cell_size).hi + half).clamp(0, gd - 1) as i32;
         let cy = ((pos.y * self.inv_cell_size).hi + half).clamp(0, gd - 1) as i32;
         let cz = ((pos.z * self.inv_cell_size).hi + half).clamp(0, gd - 1) as i32;
@@ -160,7 +165,7 @@ impl SpatialGrid {
 // ============================================================================
 
 /// Poly6 kernel (density estimation)
-#[inline]
+#[inline(always)]
 fn poly6(r_sq: Fix128, h: Fix128) -> Fix128 {
     let h_sq = h * h;
     if r_sq >= h_sq {
@@ -175,7 +180,7 @@ fn poly6(r_sq: Fix128, h: Fix128) -> Fix128 {
 }
 
 /// Spiky kernel gradient magnitude (pressure)
-#[inline]
+#[inline(always)]
 fn spiky_grad(r: Fix128, h: Fix128) -> Fix128 {
     if r >= h || r.is_zero() {
         return Fix128::ZERO;
@@ -192,6 +197,7 @@ fn spiky_grad(r: Fix128, h: Fix128) -> Fix128 {
 // ============================================================================
 
 /// Position-Based Fluid simulation
+#[repr(C, align(64))]
 pub struct Fluid {
     /// Particle positions
     pub positions: Vec<Vec3Fix>,
@@ -207,6 +213,8 @@ pub struct Fluid {
     grid: SpatialGrid,
     /// Configuration
     pub config: FluidConfig,
+    /// Cached reciprocal of rest_density to avoid repeated division in hot loops
+    inv_rest_density: Fix128,
 }
 
 impl Fluid {
@@ -214,6 +222,11 @@ impl Fluid {
     pub fn new(positions: Vec<Vec3Fix>, config: FluidConfig) -> Self {
         let n = positions.len();
         let grid_dim = 32;
+        let inv_rest_density = if config.rest_density.is_zero() {
+            Fix128::ONE
+        } else {
+            Fix128::ONE / config.rest_density
+        };
 
         Self {
             predicted: positions.clone(),
@@ -223,6 +236,7 @@ impl Fluid {
             grid: SpatialGrid::new(config.kernel_radius, grid_dim),
             positions,
             config,
+            inv_rest_density,
         }
     }
 
@@ -248,7 +262,7 @@ impl Fluid {
     }
 
     /// Number of particles
-    #[inline]
+    #[inline(always)]
     pub fn particle_count(&self) -> usize {
         self.positions.len()
     }
@@ -321,7 +335,8 @@ impl Fluid {
                 self.densities[i] = density;
 
                 // Constraint: C = density / rest_density - 1
-                let constraint = density / self.config.rest_density - Fix128::ONE;
+                // Use precomputed reciprocal to avoid repeated division
+                let constraint = density * self.inv_rest_density - Fix128::ONE;
                 sum_grad_sq = sum_grad_sq + grad_i.length_squared();
 
                 let epsilon = Fix128::from_ratio(1, 10000);
@@ -356,9 +371,9 @@ impl Fluid {
                     correction = correction + grad * lambda_sum;
                 }
 
-                let inv_rho = Fix128::ONE / self.config.rest_density;
+                // Reuse precomputed reciprocal of rest_density
                 self.predicted[i] =
-                    self.predicted[i] + correction * inv_rho * self.config.relaxation;
+                    self.predicted[i] + correction * self.inv_rest_density * self.config.relaxation;
             }
         }
 

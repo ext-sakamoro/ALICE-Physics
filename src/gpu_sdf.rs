@@ -187,6 +187,105 @@ impl GpuSdfBatch {
     }
 }
 
+// ============================================================================
+// GPU Instancing — Instanced SDF Batch & Multi-Dispatch
+// ============================================================================
+
+/// Instanced SDF query batch — evaluates many queries against one SDF in a
+/// single GPU kernel dispatch.
+///
+/// Grouping queries by `sdf_id` minimises the number of kernel launches and
+/// avoids redundant SDF binding changes on the GPU. Pass a collection of these
+/// to [`GpuSdfMultiDispatch`] to assemble a full frame's worth of queries.
+#[repr(C, align(16))]
+pub struct GpuSdfInstancedBatch {
+    /// Identifier of the SDF to evaluate (maps to a GPU buffer / binding slot).
+    pub sdf_id: u32,
+    /// Number of queries in `queries` (mirrors `queries.len()` for C FFI).
+    pub query_count: u32,
+    /// Query inputs for this SDF instance.
+    pub queries: Vec<GpuSdfQuery>,
+}
+
+/// Multi-SDF dispatch — groups queries by SDF for the minimum number of GPU
+/// kernel calls per frame (one dispatch per unique `sdf_id`).
+///
+/// # Usage
+///
+/// ```rust,ignore
+/// let mut dispatch = GpuSdfMultiDispatch::new();
+/// dispatch.add_batch(0, sphere_queries);
+/// dispatch.add_batch(1, box_queries);
+///
+/// println!("total queries:    {}", dispatch.total_queries());
+/// println!("total dispatches: {}", dispatch.total_dispatches());
+/// ```
+pub struct GpuSdfMultiDispatch {
+    /// One entry per unique SDF — ordered by insertion.
+    pub batches: Vec<GpuSdfInstancedBatch>,
+}
+
+impl GpuSdfMultiDispatch {
+    /// Create an empty multi-dispatch container.
+    pub fn new() -> Self {
+        Self {
+            batches: Vec::new(),
+        }
+    }
+
+    /// Append a batch of queries for a single SDF.
+    ///
+    /// `sdf_id` identifies which GPU-side SDF buffer to bind during this
+    /// dispatch. Multiple calls with the same `sdf_id` produce separate
+    /// batches (they are *not* merged); callers should consolidate beforehand
+    /// if a single large dispatch is preferred.
+    pub fn add_batch(&mut self, sdf_id: u32, queries: Vec<GpuSdfQuery>) {
+        self.batches.push(GpuSdfInstancedBatch {
+            sdf_id,
+            query_count: queries.len() as u32,
+            queries,
+        });
+    }
+
+    /// Total number of individual SDF point queries across all batches.
+    pub fn total_queries(&self) -> usize {
+        self.batches.iter().map(|b| b.queries.len()).sum()
+    }
+
+    /// Number of GPU kernel dispatches that will be issued (one per batch).
+    pub fn total_dispatches(&self) -> usize {
+        self.batches.len()
+    }
+}
+
+impl Default for GpuSdfMultiDispatch {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// ============================================================================
+// Kernel Auto-Dispatch — SIMD-width aligned batch size
+// ============================================================================
+
+/// Returns the optimal CPU-side pre-processing batch size.
+///
+/// Equals [`crate::math::SIMD_WIDTH`] so inner loops that feed data to SIMD
+/// registers process exactly one register's worth of items per iteration —
+/// no padding, no partial loads.
+///
+/// Use this when chunking queries before uploading to the GPU:
+///
+/// ```rust,ignore
+/// for chunk in queries.chunks(batch_size()) {
+///     // SIMD-width-aligned pre-processing …
+/// }
+/// ```
+#[inline(always)]
+pub fn batch_size() -> usize {
+    crate::math::SIMD_WIDTH
+}
+
 /// Contact from GPU SDF evaluation
 #[derive(Clone, Copy, Debug)]
 pub struct GpuSdfContact {

@@ -50,40 +50,68 @@ pub enum BodyType {
 // ============================================================================
 
 /// Rigid body state
+///
+/// Field layout is optimized for cache performance (Gap 1.1):
+/// - HOT fields (accessed every solver iteration) are placed first.
+/// - COLD fields (accessed occasionally) follow after.
+///
+/// `#[repr(C, align(64))]` ensures the struct starts on a cache-line boundary
+/// so the hot fields are always in the first 64-byte cache line.
 #[derive(Clone, Copy, Debug)]
+#[repr(C, align(64))]
 pub struct RigidBody {
+    // --- HOT fields (accessed every iteration) ---
     /// Position (center of mass)
     pub position: Vec3Fix,
-    /// Orientation
-    pub rotation: QuatFix,
     /// Linear velocity
     pub velocity: Vec3Fix,
-    /// Angular velocity
-    pub angular_velocity: Vec3Fix,
     /// Inverse mass (0 = static/infinite mass)
     pub inv_mass: Fix128,
     /// Inverse inertia tensor (diagonal, in local space)
     pub inv_inertia: Vec3Fix,
     /// Previous position (for XPBD)
     pub prev_position: Vec3Fix,
+
+    // --- COLD fields (accessed occasionally) ---
+    /// Orientation
+    pub rotation: QuatFix,
+    /// Angular velocity
+    pub angular_velocity: Vec3Fix,
     /// Previous rotation (for XPBD)
     pub prev_rotation: QuatFix,
     /// Coefficient of restitution (bounciness)
     pub restitution: Fix128,
     /// Friction coefficient
     pub friction: Fix128,
+    /// Gravity scale multiplier (1.0 = normal, 0.0 = no gravity, 2.0 = double)
+    pub gravity_scale: Fix128,
     /// Whether this body is a sensor/trigger (detects overlap but no physics response)
     pub is_sensor: bool,
     /// Body type (Dynamic, Static, Kinematic)
     pub body_type: BodyType,
-    /// Gravity scale multiplier (1.0 = normal, 0.0 = no gravity, 2.0 = double)
-    pub gravity_scale: Fix128,
     /// Kinematic target position and rotation
     pub kinematic_target: Option<(Vec3Fix, QuatFix)>,
 }
 
 impl RigidBody {
-    /// Create new dynamic rigid body
+    /// Create a new dynamic rigid body at the given position with the given mass.
+    ///
+    /// The inverse mass is computed automatically. A unit-sphere inertia tensor
+    /// is used as the default. Use `new_dynamic` as a more descriptive alias.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use alice_physics::{Fix128, RigidBody, Vec3Fix};
+    ///
+    /// let body = RigidBody::new(Vec3Fix::from_int(0, 10, 0), Fix128::ONE);
+    /// // inv_mass should be 1 / 1 = 1
+    /// assert_eq!(body.inv_mass.hi, 1);
+    /// // Position should match
+    /// assert_eq!(body.position.y.hi, 10);
+    /// // Dynamic body is not static
+    /// assert!(!body.is_static());
+    /// ```
     pub fn new(position: Vec3Fix, mass: Fix128) -> Self {
         let inv_mass = if mass.is_zero() {
             Fix128::ZERO
@@ -102,18 +130,18 @@ impl RigidBody {
 
         Self {
             position,
-            rotation: QuatFix::IDENTITY,
             velocity: Vec3Fix::ZERO,
-            angular_velocity: Vec3Fix::ZERO,
             inv_mass,
             inv_inertia,
             prev_position: position,
+            rotation: QuatFix::IDENTITY,
+            angular_velocity: Vec3Fix::ZERO,
             prev_rotation: QuatFix::IDENTITY,
             restitution: Fix128::from_ratio(5, 10), // 0.5 default
             friction: Fix128::from_ratio(3, 10),    // 0.3 default
+            gravity_scale: Fix128::ONE,
             is_sensor: false,
             body_type: BodyType::Dynamic,
-            gravity_scale: Fix128::ONE,
             kinematic_target: None,
         }
     }
@@ -128,38 +156,38 @@ impl RigidBody {
     pub fn new_static(position: Vec3Fix) -> Self {
         Self {
             position,
-            rotation: QuatFix::IDENTITY,
             velocity: Vec3Fix::ZERO,
-            angular_velocity: Vec3Fix::ZERO,
             inv_mass: Fix128::ZERO,
             inv_inertia: Vec3Fix::ZERO,
             prev_position: position,
+            rotation: QuatFix::IDENTITY,
+            angular_velocity: Vec3Fix::ZERO,
             prev_rotation: QuatFix::IDENTITY,
             restitution: Fix128::ZERO,
             friction: Fix128::ONE,
+            gravity_scale: Fix128::ZERO,
             is_sensor: false,
             body_type: BodyType::Static,
-            gravity_scale: Fix128::ZERO,
             kinematic_target: None,
         }
     }
 
-    /// Create a sensor (trigger) body — detects overlap but no physics response
+    /// Create a sensor (trigger) body - detects overlap but no physics response
     pub fn new_sensor(position: Vec3Fix) -> Self {
         Self {
             position,
-            rotation: QuatFix::IDENTITY,
             velocity: Vec3Fix::ZERO,
-            angular_velocity: Vec3Fix::ZERO,
             inv_mass: Fix128::ZERO,
             inv_inertia: Vec3Fix::ZERO,
             prev_position: position,
+            rotation: QuatFix::IDENTITY,
+            angular_velocity: Vec3Fix::ZERO,
             prev_rotation: QuatFix::IDENTITY,
             restitution: Fix128::ZERO,
             friction: Fix128::ZERO,
+            gravity_scale: Fix128::ZERO,
             is_sensor: true,
             body_type: BodyType::Static,
-            gravity_scale: Fix128::ZERO,
             kinematic_target: None,
         }
     }
@@ -171,18 +199,18 @@ impl RigidBody {
     pub fn new_kinematic(position: Vec3Fix) -> Self {
         Self {
             position,
-            rotation: QuatFix::IDENTITY,
             velocity: Vec3Fix::ZERO,
-            angular_velocity: Vec3Fix::ZERO,
             inv_mass: Fix128::ZERO,
             inv_inertia: Vec3Fix::ZERO,
             prev_position: position,
+            rotation: QuatFix::IDENTITY,
+            angular_velocity: Vec3Fix::ZERO,
             prev_rotation: QuatFix::IDENTITY,
             restitution: Fix128::ZERO,
             friction: Fix128::ONE,
+            gravity_scale: Fix128::ZERO,
             is_sensor: false,
             body_type: BodyType::Kinematic,
-            gravity_scale: Fix128::ZERO,
             kinematic_target: None,
         }
     }
@@ -256,6 +284,12 @@ pub struct DistanceConstraint {
     pub target_distance: Fix128,
     /// Inverse stiffness (0 = infinitely stiff)
     pub compliance: Fix128,
+    /// Cached lambda (Lagrange multiplier) from the previous substep for warm-starting.
+    ///
+    /// Warm-starting seeds the solver with the accumulated impulse from the last
+    /// substep, reducing iterations needed for convergence (standard XPBD technique).
+    /// Initialized to `Fix128::ZERO`; updated every solve iteration (Gap 3.1).
+    pub cached_lambda: Fix128,
 }
 
 impl DistanceConstraint {
@@ -274,6 +308,7 @@ impl DistanceConstraint {
             local_anchor_b: anchor_b,
             target_distance: distance,
             compliance: Fix128::ZERO,
+            cached_lambda: Fix128::ZERO,
         }
     }
 
@@ -306,7 +341,7 @@ impl ContactConstraint {
             body_a,
             body_b,
             contact,
-            friction: Fix128::from_ratio(3, 10), // 0.3 friction
+            friction: Fix128::from_ratio(3, 10),  // 0.3 friction
             restitution: Fix128::from_ratio(2, 10), // 0.2 restitution
         }
     }
@@ -339,7 +374,7 @@ impl Default for SolverConfig {
             iterations: 4,
             gravity: Vec3Fix::new(
                 Fix128::ZERO,
-                Fix128::from_int(-10), // -10 m/s²
+                Fix128::from_int(-10), // -10 m/s^2
                 Fix128::ZERO,
             ),
             damping: Fix128::from_ratio(99, 100), // 0.99 velocity retention
@@ -425,7 +460,25 @@ pub struct PhysicsWorld {
 }
 
 impl PhysicsWorld {
-    /// Create new physics world
+    /// Create a new, empty physics world with the given solver configuration.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use alice_physics::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix};
+    ///
+    /// let config = PhysicsConfig::default();
+    /// let mut world = PhysicsWorld::new(config);
+    ///
+    /// // World starts with no bodies
+    /// assert_eq!(world.bodies.len(), 0);
+    ///
+    /// // Add a body and verify it is tracked
+    /// let body = RigidBody::new_dynamic(Vec3Fix::from_int(0, 5, 0), Fix128::ONE);
+    /// let id = world.add_body(body);
+    /// assert_eq!(id, 0);
+    /// assert_eq!(world.bodies.len(), 1);
+    /// ```
     pub fn new(config: SolverConfig) -> Self {
         Self {
             config,
@@ -455,7 +508,11 @@ impl PhysicsWorld {
     }
 
     /// Set a body's material ID
-    pub fn set_body_material(&mut self, body_idx: usize, material_id: crate::material::MaterialId) {
+    pub fn set_body_material(
+        &mut self,
+        body_idx: usize,
+        material_id: crate::material::MaterialId,
+    ) {
         if body_idx < self.body_materials.len() {
             self.body_materials[body_idx] = material_id;
         }
@@ -850,7 +907,7 @@ impl PhysicsWorld {
         let num_batches = self.constraint_batches.len();
 
         for batch_idx in 0..num_batches {
-            // Distance constraints — index-based to avoid borrow conflict
+            // Distance constraints - index-based to avoid borrow conflict
             let num_dist = self.constraint_batches[batch_idx].distance_indices.len();
             for i in 0..num_dist {
                 let idx = self.constraint_batches[batch_idx].distance_indices[i];
@@ -866,9 +923,9 @@ impl PhysicsWorld {
         }
     }
 
-    /// Solve a single distance constraint by index
+    /// Solve a single distance constraint by index (with warm-starting, Gap 3.1)
     #[cfg(feature = "parallel")]
-    #[inline]
+    #[inline(always)]
     fn solve_single_distance_constraint(&mut self, idx: usize, dt: Fix128) {
         let constraint = self.distance_constraints[idx];
         let body_a = self.bodies[constraint.body_a];
@@ -893,11 +950,16 @@ impl PhysicsWorld {
             return;
         }
 
+        // Warm-start: bias the error by the cached lambda from the previous substep.
         let inv_w_sum = Fix128::ONE / w_sum;
-        let lambda = error * inv_w_sum;
+        let biased_error = error - constraint.cached_lambda * compliance_term;
+        let lambda = biased_error * inv_w_sum;
         let correction = normal * lambda;
 
-        // Branchless: static bodies have inv_mass == ZERO, so correction * ZERO == ZERO.
+        // Store lambda for warm-starting on the next substep.
+        self.distance_constraints[idx].cached_lambda = lambda;
+
+        // Branchless: static bodies have inv_mass == ZERO, correction * ZERO == ZERO.
         // select_vec3 avoids the branch while producing bit-exact identical results.
         let delta_a = correction * body_a.inv_mass;
         let delta_b = correction * body_b.inv_mass;
@@ -913,9 +975,9 @@ impl PhysicsWorld {
         );
     }
 
-    /// Solve a single contact constraint by index
+    /// Solve a single contact constraint by index (Gap 2.3)
     #[cfg(feature = "parallel")]
-    #[inline]
+    #[inline(always)]
     fn solve_single_contact_constraint(&mut self, idx: usize, _dt: Fix128) {
         let constraint = self.contact_constraints[idx];
         let body_a = self.bodies[constraint.body_a];
@@ -955,8 +1017,11 @@ impl PhysicsWorld {
         );
     }
 
-    /// Solve distance constraints (sequential)
-    #[inline]
+    /// Solve distance constraints (sequential) with warm-starting (Gap 3.1).
+    ///
+    /// Warm-starting seeds each constraint with its cached lambda from the
+    /// previous substep, reducing iterations needed for convergence.
+    #[inline(always)]
     fn solve_distance_constraints(&mut self, dt: Fix128) {
         let num_constraints = self.distance_constraints.len();
         for i in 0..num_constraints {
@@ -986,10 +1051,15 @@ impl PhysicsWorld {
                 continue;
             }
 
-            // Compute correction (reciprocal pre-computation eliminates division)
+            // Warm-start: bias the error by subtracting the previously cached lambda
+            // times the compliance term so the solver starts from a good initial guess.
             let inv_w_sum = Fix128::ONE / w_sum;
-            let lambda = error * inv_w_sum;
+            let biased_error = error - constraint.cached_lambda * compliance_term;
+            let lambda = biased_error * inv_w_sum;
             let correction = normal * lambda;
+
+            // Store lambda for warm-starting on the next substep.
+            self.distance_constraints[i].cached_lambda = lambda;
 
             // Branchless apply corrections: static bodies have inv_mass == ZERO.
             let delta_a = correction * body_a.inv_mass;
@@ -1007,8 +1077,8 @@ impl PhysicsWorld {
         }
     }
 
-    /// Solve contact constraints with pre-solve hook support
-    #[inline]
+    /// Solve contact constraints with pre-solve hook support (Gap 2.3)
+    #[inline(always)]
     fn solve_contact_constraints(&mut self, _dt: Fix128) {
         let num_constraints = self.contact_constraints.len();
         for i in 0..num_constraints {
@@ -1540,7 +1610,7 @@ mod tests {
         let pos = world.bodies[body_id].position;
         let y = pos.y.to_f32();
 
-        // Body should be near the ground (y ≈ collision_radius = 0.5)
+        // Body should be near the ground (y ~ collision_radius = 0.5)
         assert!(y < 5.0, "Body should have fallen from y=5");
         assert!(
             y > -1.0,

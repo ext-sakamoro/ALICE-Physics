@@ -1136,6 +1136,36 @@ impl Mat3Fix {
 }
 
 // ============================================================================
+// Runtime SIMD Width Detection
+// ============================================================================
+
+/// Returns the SIMD width for the current build target.
+///
+/// Dispatches at compile time based on enabled features and target architecture:
+/// - AVX2 (x86_64): 8 lanes (256-bit / 32-bit float)
+/// - SSE2 / no-AVX2 (x86_64 without avx2): 4 lanes (128-bit)
+/// - NEON (aarch64): 4 lanes (128-bit)
+/// - Scalar fallback (no `simd` feature): 1
+///
+/// Use the [`SIMD_WIDTH`] constant for a zero-cost compile-time value.
+#[inline(always)]
+pub const fn simd_width() -> usize {
+    #[cfg(all(feature = "simd", target_arch = "x86_64", target_feature = "avx2"))]
+    { 8 }
+    #[cfg(all(feature = "simd", target_arch = "x86_64", not(target_feature = "avx2")))]
+    { 4 }
+    #[cfg(all(feature = "simd", target_arch = "aarch64"))]
+    { 4 }
+    #[cfg(not(feature = "simd"))]
+    { 1 }
+}
+
+/// Compile-time SIMD lane width for the current build target.
+///
+/// Equals `simd_width()`. Use this for array sizes and loop-unroll factors.
+pub const SIMD_WIDTH: usize = simd_width();
+
+// ============================================================================
 // Branchless Helpers
 // ============================================================================
 

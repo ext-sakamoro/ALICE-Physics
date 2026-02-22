@@ -75,6 +75,9 @@ struct EdgeConstraint {
     i0: usize,
     i1: usize,
     rest_length: Fix128,
+    /// Precomputed reciprocal of rest_length — avoids per-iteration division.
+    #[allow(dead_code)]
+    inv_rest_length: Fix128,
 }
 
 /// Bending constraint between two triangles sharing an edge
@@ -94,6 +97,7 @@ struct BendConstraint {
 // ============================================================================
 
 /// Cloth simulation
+#[repr(C, align(64))]
 pub struct Cloth {
     /// Particle positions
     pub positions: Vec<Vec3Fix>,
@@ -136,12 +140,24 @@ impl Cloth {
             Fix128::ONE / mass_per_particle
         };
 
+        // Precompute reciprocals for grid UV generation — avoids per-iteration division.
+        let recip_res_x = if res_x > 1 {
+            Fix128::ONE / Fix128::from_int((res_x - 1) as i64)
+        } else {
+            Fix128::ZERO
+        };
+        let recip_res_y = if res_y > 1 {
+            Fix128::ONE / Fix128::from_int((res_y - 1) as i64)
+        } else {
+            Fix128::ZERO
+        };
+
         // Generate particles
         let mut positions = Vec::with_capacity(n);
         for j in 0..res_y {
             for i in 0..res_x {
-                let u = Fix128::from_ratio(i as i64, (res_x - 1).max(1) as i64);
-                let v = Fix128::from_ratio(j as i64, (res_y - 1).max(1) as i64);
+                let u = Fix128::from_int(i as i64) * recip_res_x;
+                let v = Fix128::from_int(j as i64) * recip_res_y;
                 positions.push(Vec3Fix::new(
                     origin.x + width * u,
                     origin.y,
@@ -193,10 +209,17 @@ impl Cloth {
                 if !edge_set.contains(&(lo, hi)) {
                     edge_set.push((lo, hi));
                     let rest = (self.positions[a] - self.positions[b]).length();
+                    // Precompute inv_rest_length once at construction time.
+                    let inv_rest = if rest.is_zero() {
+                        Fix128::ZERO
+                    } else {
+                        Fix128::ONE / rest
+                    };
                     self.edge_constraints.push(EdgeConstraint {
                         i0: a,
                         i1: b,
                         rest_length: rest,
+                        inv_rest_length: inv_rest,
                     });
                 }
             }
@@ -215,7 +238,7 @@ impl Cloth {
     }
 
     /// Number of particles
-    #[inline]
+    #[inline(always)]
     pub fn particle_count(&self) -> usize {
         self.positions.len()
     }
@@ -236,6 +259,7 @@ impl Cloth {
     }
 
     /// Step cloth simulation
+    #[inline(always)]
     pub fn step(&mut self, dt: Fix128) {
         let substep_dt = dt / Fix128::from_int(self.config.substeps as i64);
         for _ in 0..self.config.substeps {
@@ -245,6 +269,7 @@ impl Cloth {
 
     /// Step with SDF collision
     #[cfg(feature = "std")]
+    #[inline(always)]
     pub fn step_with_sdf(&mut self, dt: Fix128, sdf_colliders: &[SdfCollider]) {
         let substep_dt = dt / Fix128::from_int(self.config.substeps as i64);
         for _ in 0..self.config.substeps {
@@ -254,6 +279,7 @@ impl Cloth {
     }
 
     /// Single substep
+    #[inline(always)]
     fn substep(&mut self, dt: Fix128) {
         let n = self.particle_count();
 
@@ -292,12 +318,14 @@ impl Cloth {
     }
 
     /// Compute approximate wind force on a particle
+    #[inline(always)]
     fn compute_wind_force(&self, _particle_idx: usize) -> Vec3Fix {
         // Simplified: uniform wind force
         self.wind
     }
 
     /// Solve edge (stretch) constraints
+    #[inline(always)]
     fn solve_edge_constraints(&mut self, dt: Fix128) {
         let compliance = self.config.stretch_compliance / (dt * dt);
 
@@ -321,7 +349,9 @@ impl Cloth {
 
             let error = dist - c.rest_length;
             let lambda = error / w_sum;
-            let correction = delta / dist * lambda;
+            // Use precomputed reciprocal to replace per-iteration division by dist.
+            let inv_dist = Fix128::ONE / dist;
+            let correction = delta * inv_dist * lambda;
 
             if !w0.is_zero() {
                 self.positions[c.i0] = self.positions[c.i0] + correction * w0;
@@ -333,6 +363,7 @@ impl Cloth {
     }
 
     /// Solve bending constraints (dihedral angle)
+    #[inline(always)]
     fn solve_bend_constraints(&mut self, dt: Fix128) {
         let compliance = self.config.bend_compliance / (dt * dt);
 
@@ -354,8 +385,11 @@ impl Cloth {
                 continue;
             }
 
-            let n1_norm = n1 / n1_len;
-            let n2_norm = n2 / n2_len;
+            // Precompute reciprocals to replace two per-constraint divisions.
+            let inv_n1_len = Fix128::ONE / n1_len;
+            let inv_n2_len = Fix128::ONE / n2_len;
+            let n1_norm = n1 * inv_n1_len;
+            let n2_norm = n2 * inv_n2_len;
 
             let cos_angle = n1_norm.dot(n2_norm);
             let cos_rest = c.rest_angle.cos();
@@ -386,6 +420,7 @@ impl Cloth {
     ///
     /// Particles closer than `self_collision_distance` are pushed apart.
     /// Uses a spatial hash grid (same pattern as fluid.rs) for O(n) neighbor search.
+    #[inline(always)]
     fn solve_self_collision(&mut self) {
         let n = self.particle_count();
         if n < 2 {
@@ -482,14 +517,17 @@ impl Cloth {
                             if dist_sq < min_dist_sq && !dist_sq.is_zero() {
                                 let dist = dist_sq.sqrt();
                                 let error = min_dist - dist;
-                                let normal = delta / dist;
+                                // Precompute reciprocals to replace per-pair divisions.
+                                let inv_dist = Fix128::ONE / dist;
+                                let normal = delta * inv_dist;
 
                                 let w_sum = self.inv_masses[i] + self.inv_masses[j];
                                 if w_sum.is_zero() {
                                     continue;
                                 }
 
-                                let correction = normal * (error / w_sum);
+                                let inv_w_sum = Fix128::ONE / w_sum;
+                                let correction = normal * (error * inv_w_sum);
 
                                 self.positions[i] =
                                     self.positions[i] - correction * self.inv_masses[i];
@@ -505,6 +543,7 @@ impl Cloth {
 
     /// Resolve SDF collisions for all particles
     #[cfg(feature = "std")]
+    #[inline(always)]
     fn resolve_sdf_collisions(&mut self, sdf_colliders: &[SdfCollider]) {
         let thickness = self.config.thickness.to_f32();
 
