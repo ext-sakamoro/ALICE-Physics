@@ -86,7 +86,7 @@ ALICE-Physics achieves a **perfect 100/100 optimization score** across 6 layers:
 | **L3: Compute** | 20/20 | Warm-start `cached_lambda`, reciprocal precomputation (`inv_rest_length`, `inv_rest_density`) |
 | **L4: GPU & Throughput** | 15/15 | `SIMD_WIDTH` const + `simd_width()`, `GpuSdfInstancedBatch`/`GpuSdfMultiDispatch`, `batch_size()` |
 | **L5: Build Profile** | 10/10 | `opt-level=3`, `lto="fat"`, `codegen-units=1`, `panic="abort"`, `strip=true` |
-| **L6: Code Quality** | 20/20 | 379 tests (358 unit + 10 integration + 11 doc), clippy 0 warnings |
+| **L6: Code Quality** | 20/20 | 432 tests (358 unit + 62 integration + 12 doc), clippy 0 warnings |
 | **Total** | **100/100** | |
 
 ### L1: Memory Layout (15/15)
@@ -165,10 +165,10 @@ strip = true           # Strip symbols
 
 ### L6: Code Quality (20/20)
 
-- **358 unit tests** across 67 modules
-- **10 integration tests** (end-to-end physics scenarios)
-- **11 doc tests** with runnable examples (sketch, anomaly, privacy, pipeline)
-- **Total: 379 passing tests**, clippy: 0 warnings
+- **358 unit tests** across 63 modules
+- **62 integration tests** (end-to-end physics scenarios)
+- **12 doc tests** with runnable examples (sketch, anomaly, privacy, pipeline, solver)
+- **Total: 432 passing tests**, clippy: 0 warnings
 
 ---
 
@@ -304,7 +304,7 @@ ALICE-Physics guarantees **bit-exact results** everywhere, enabling:
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                          ALICE-Physics v0.4.0                                │
-│              67 modules, 358 unit tests, 10 integration, 11 doc tests         │
+│              63 modules, 358 unit tests, 62 integration, 12 doc tests         │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │  Core Layer                                                                  │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐          │
@@ -1343,6 +1343,8 @@ let config = PhysicsConfig::default();
 
 ## Building
 
+**MSRV:** 1.70.0 (Minimum Supported Rust Version)
+
 ```bash
 # Standard build
 cargo build --release
@@ -1358,6 +1360,9 @@ cargo test --features simd
 cargo test --features parallel
 cargo test --features neural
 cargo test --features "simd,parallel"
+
+# Run benchmarks (requires nightly or criterion)
+cargo bench
 ```
 
 ## Cargo Features
@@ -1373,6 +1378,8 @@ cargo test --features "simd,parallel"
 | `ffi` | No | C FFI for Unity, Unreal Engine, and other game engines |
 | `wasm` | No | WebAssembly bindings via wasm-bindgen |
 | `analytics` | No | Simulation profiling via ALICE-Analytics |
+
+> **Note:** `wasm` and `ffi` are mutually exclusive — enabling both causes a compile error.
 
 ```bash
 # Enable SIMD optimizations
@@ -1735,12 +1742,13 @@ Each body stores 6 channels (pos_x/y/z, vel_x/y/z) in ALICE-DB. ALICE-DB's model
 
 ```
 v0.4.0 Test Summary:
-  - 358 unit tests across 67 modules
-  - 10 integration tests (end-to-end physics scenarios)
-  - 11 doc tests (runnable examples)
-  - Total: 379 passing tests
+  - 358 unit tests across 63 modules
+  - 62 integration tests (end-to-end physics scenarios)
+  - 12 doc tests (runnable examples)
+  - Total: 432 passing tests (435 with --features parallel)
   - Clippy: 0 warnings
-  - All feature combinations pass (default, parallel, simd)
+  - CI: Format + Clippy + Test (macOS/Ubuntu/Windows)
+  - All feature combinations pass (default, parallel, simd, no_std)
 ```
 
 ## Cross-Crate Bridges

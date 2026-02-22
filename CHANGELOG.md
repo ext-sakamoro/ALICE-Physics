@@ -2,6 +2,50 @@
 
 All notable changes to ALICE-Physics will be documented in this file.
 
+## [0.4.0] - 2026-02-22
+
+### Added
+
+- Analytics & Privacy layer: `sketch`, `anomaly`, `privacy`, `pipeline` modules
+- `sketch`: HyperLogLog, DDSketch, Count-Min Sketch, Heavy Hitters, FnvHasher
+- `anomaly`: MAD, EWMA, Z-score composite detector with streaming median
+- `privacy`: Laplace noise, RAPPOR, randomized response, privacy budget tracking
+- `pipeline`: Lock-free ring buffer metric aggregation with registry
+- `analytics_bridge` module for ALICE-Analytics integration (`--features analytics`)
+- SDF simulation modifiers: `sim_field`, `sim_modifier`, `thermal`, `pressure`, `erosion`, `fracture`, `phase_change`
+- `netcode` module: `DeterministicSimulation`, `FrameInput`, `SimulationChecksum`, `InputApplicator`
+- `fluid_netcode` module: delta-compressed deterministic fluid snapshots
+- `character` module: kinematic capsule-based character controller with stair stepping
+- `interpolation` module: substep interpolation with NLERP quaternion blending
+- `debug_render` module: wireframe visualization API (bodies, contacts, joints, BVH, forces)
+- `profiling` module: per-stage timer and per-frame statistics
+- `material` module: per-pair friction/restitution table with combine rules
+- `dynamic_bvh` module: incremental AABB tree with AVL balancing
+- `contact_cache` module: HashMap O(1) manifold lookup with warm starting
+- `box_collider` module: OBB with GJK support
+- `compound` module: multi-shape compound collider
+- `cylinder` module: cylinder collider with GJK support
+- `error` module: unified `PhysicsError` type
+- Python batch APIs: `add_bodies_batch`, `set_velocities_batch`, `apply_impulses_batch`, `states()`
+- Feature flags documentation table in crate-level docs
+- 52 new integration tests (10 → 62 total)
+- CI: integration tests, no_std build verification, parallel tests, SIMD build check
+
+### Changed
+
+- `PhysicsWorld::raycast()` now uses BVH broad-phase for O(log n) candidate pruning
+- `raycast()` handles ray-inside-sphere case (far-side intersection fallback)
+- Constraint graph coloring uses `u64` bitmask instead of `Vec<usize>` (O(1) free-color lookup)
+- `dot_simd_sse2` cleaned up: removed dead SIMD register loads, simplified to scalar carry chain
+- `python.rs`: 4 `unwrap()` replaced with descriptive `expect()` messages
+- CI workflow: `cargo test` now runs integration + doc tests (was `--lib` only)
+- Clippy: strict `-W clippy::all` enforced in CI
+- MSRV: 1.70.0 (replaced `is_multiple_of`, `div_ceil`, `is_none_or` with compatible alternatives)
+
+### Fixed
+
+- MSRV compatibility: removed usage of `is_multiple_of` (1.87), `div_ceil` (1.73), `is_none_or` (1.82)
+
 ## [0.3.0] - 2026-02-22
 
 ### Added

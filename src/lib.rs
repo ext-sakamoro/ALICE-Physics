@@ -56,41 +56,91 @@
 //!
 //! # Modules
 //!
-//! - [`math`]: Fixed-point math primitives (Fix128, Vec3Fix, QuatFix, CORDIC)
-//! - [`collider`]: Collision shapes and GJK/EPA detection
-//! - [`solver`]: XPBD physics solver and rigid body dynamics
-//! - [`bvh`]: Linear BVH for broad-phase collision detection (rebuilt each frame for correctness)
-//! - [`filter`]: Collision filtering with layer/mask bitmasks (see [`filter::layers`] for predefined layer constants)
-//! - [`rng`]: Deterministic pseudo-random number generator (PCG-XSH-RR)
-//! - [`event`]: Contact and trigger event tracking
-//! - [`joint`]: Joint constraints (Ball, Hinge, Fixed, Slider, Spring)
-//! - [`raycast`]: Ray and shape casting queries
-//! - [`ccd`]: Continuous collision detection (TOI, conservative advancement)
-//! - [`sleeping`]: Sleep/wake and island management
-//! - [`trimesh`]: Triangle mesh collision with BVH acceleration
-//! - [`heightfield`]: Height field terrain collision
+//! ## Core
+//! - [`math`]: Fixed-point math primitives (Fix128, Vec3Fix, QuatFix, Mat3Fix, CORDIC)
+//! - [`collider`]: Collision shapes (Sphere, Capsule, ConvexHull, AABB) and GJK/EPA detection
+//! - [`solver`]: XPBD physics solver, rigid body dynamics, constraint batching
+//! - [`bvh`]: Linear BVH for broad-phase collision detection (Morton codes, stackless traversal)
+//! - [`error`]: Unified physics error type (`PhysicsError`)
+//!
+//! ## Collision Shapes
+//! - [`box_collider`]: Oriented Bounding Box (OBB) with GJK support
+//! - [`compound`]: Multi-shape compound collider with local transforms
+//! - [`cylinder`]: Cylinder collider with GJK support
+//! - [`sdf_collider`]: SDF-based collision shapes (distance field surfaces)
+//!
+//! ## Spatial Acceleration
+//! - [`dynamic_bvh`]: Incremental AABB tree with O(log n) insert/remove/update
+//! - [`spatial`]: Hash grid for neighbor queries (shared across fluid, cloth)
+//! - [`contact_cache`]: Persistent contact manifold cache with HashMap O(1) lookup
+//!
+//! ## Constraints & Dynamics
+//! - [`joint`]: Joint constraints (Ball, Hinge, Fixed, Slider, Spring, D6, ConeTwist)
 //! - [`motor`]: PD controllers and joint motors
-//! - [`articulation`]: Articulated bodies (ragdolls, robotic arms)
+//! - [`articulation`]: Articulated bodies (ragdolls, robotic arms, Featherstone)
 //! - [`force`]: Custom force fields (wind, gravity wells, buoyancy, vortex)
+//! - [`sleeping`]: Sleep/wake and island management (Union-Find)
+//! - [`filter`]: Collision filtering with layer/mask bitmasks (see [`filter::layers`])
+//! - [`material`]: Material pair table (friction, restitution, combine rules)
+//!
+//! ## Queries
+//! - [`raycast`]: Ray casting against spheres, AABBs, capsules, planes
+//! - [`query`]: Shape cast (sphere, capsule) and overlap queries (sphere, AABB)
+//! - [`ccd`]: Continuous collision detection (TOI, conservative advancement, speculative)
+//!
+//! ## Soft Body & Simulation
+//! - [`rope`]: XPBD distance chain rope and cable simulation
+//! - [`cloth`]: XPBD triangle mesh cloth with self-collision
+//! - [`fluid`]: Position-Based Fluids (PBF) with spatial hash grid
+//! - [`deformable`]: FEM-XPBD deformable body simulation
+//! - [`vehicle`]: Vehicle physics (wheel, suspension, engine, steering)
+//! - [`character`]: Kinematic capsule-based character controller (move-and-slide)
+//! - [`trimesh`]: Triangle mesh collision with BVH acceleration (Moller-Trumbore)
+//! - [`heightfield`]: Height field terrain collision (bilinear interpolation)
+//!
+//! ## SDF Integration
 //! - [`sdf_manifold`]: Multi-point contact manifold from SDF surfaces
 //! - [`sdf_ccd`]: Sphere tracing continuous collision detection for SDF
 //! - [`sdf_force`]: SDF-driven force fields (attract, repel, contain, flow)
-//! - [`sdf_destruction`]: Real-time CSG boolean destruction
-//! - [`rope`]: XPBD distance chain rope and cable simulation
-//! - [`cloth`]: XPBD triangle mesh cloth simulation
-//! - [`fluid`]: Position-Based Fluids (PBF) with spatial hash grid
-//! - [`deformable`]: FEM-XPBD deformable body simulation
-//! - [`sdf_adaptive`]: Adaptive SDF evaluation with distance-based LOD
-//! - [`convex_decompose`]: Convex decomposition from SDF voxel grid
-//! - [`gpu_sdf`]: GPU compute shader interface for batch SDF evaluation
-//! - [`fluid_netcode`]: Deterministic fluid netcode with delta compression
-//! - [`vehicle`]: Vehicle physics (wheel, suspension, engine, steering)
+//! - [`sdf_destruction`]: Real-time CSG boolean destruction (`std`)
+//! - [`sdf_adaptive`]: Adaptive SDF evaluation with distance-based LOD (`std`)
+//! - [`convex_decompose`]: Convex decomposition from SDF voxel grid (`std`)
+//! - [`gpu_sdf`]: GPU compute shader interface for batch SDF evaluation (`std`)
+//!
+//! ## SDF Simulation Modifiers (`std`)
+//! - [`sim_field`]: 3D scalar/vector fields with trilinear interpolation and diffusion
+//! - [`sim_modifier`]: Physics modifier chain for SDF surfaces
+//! - [`thermal`]: Heat diffusion, melt, thermal expansion, freeze
+//! - [`pressure`]: Contact-force deformation (crush, bulge, dent)
+//! - [`erosion`]: Wind, water, chemical, ablation erosion
+//! - [`fracture`]: Stress-driven crack propagation with CSG subtraction
+//! - [`phase_change`]: Solid/liquid/gas transitions driven by temperature
+//!
+//! ## Game Systems
 //! - [`animation_blend`]: Ragdoll animation blending with SLERP
 //! - [`audio_physics`]: Physics-based audio parameter generation
+//! - [`netcode`]: Deterministic simulation with frame input, checksum, rollback
+//! - [`fluid_netcode`]: Deterministic fluid netcode with delta compression (`std`)
+//! - [`interpolation`]: Substep interpolation with NLERP quaternion blending
+//! - [`debug_render`]: Wireframe visualization API (bodies, contacts, joints, BVH)
+//! - [`profiling`]: Per-stage timer and per-frame statistics
+//!
+//! ## Analytics & Privacy (`std`)
 //! - [`sketch`]: Probabilistic sketches (HyperLogLog, DDSketch, Count-Min)
 //! - [`anomaly`]: Streaming anomaly detection (MAD, EWMA, Z-score)
 //! - [`privacy`]: Local differential privacy (Laplace, RAPPOR)
 //! - [`pipeline`]: Lock-free metric aggregation pipeline
+//!
+//! ## Utility
+//! - [`rng`]: Deterministic pseudo-random number generator (PCG-XSH-RR)
+//! - [`event`]: Contact and trigger event tracking
+//!
+//! ## Feature-Gated
+//! - `neural`: Deterministic neural controller (ALICE-ML, `--features neural`)
+//! - `ffi`: C FFI for Unity/UE5 game engines (`--features ffi`)
+//! - `replay`: Replay recording/playback (`--features replay`)
+//! - `db_bridge`: Physics state persistence bridge (`--features replay`)
+//! - `analytics_bridge`: Simulation profiling bridge (`--features analytics`)
 //!
 //! # Determinism
 //!
