@@ -168,7 +168,7 @@ impl PhaseChangeModifier {
 
             // Current phase
             let is_solid = phase_val < 0.5;
-            let is_liquid = phase_val >= 0.5 && phase_val < 1.5;
+            let _is_liquid = (0.5..1.5).contains(&phase_val);
             let _is_gas = phase_val >= 1.5;
 
             // Solid → Liquid transition
@@ -185,7 +185,7 @@ impl PhaseChangeModifier {
 
             // Re-check phase after possible solid→liquid transition
             let phase_val = self.phase.data[i];
-            let is_liquid = phase_val >= 0.5 && phase_val < 1.5;
+            let is_liquid = (0.5..1.5).contains(&phase_val);
 
             // Liquid → Gas transition
             if is_liquid && temp >= boil_t {
@@ -201,7 +201,7 @@ impl PhaseChangeModifier {
 
             // Re-check phase for cooling transitions
             let phase_val = self.phase.data[i];
-            let is_liquid = phase_val >= 0.5 && phase_val < 1.5;
+            let is_liquid = (0.5..1.5).contains(&phase_val);
             let is_gas = phase_val >= 1.5;
 
             // Gas → Liquid transition (cooling)
@@ -253,7 +253,7 @@ impl PhaseChangeModifier {
                         let below_idx = self.phase.index(ix, iy - 1, iz);
                         let phase_above = self.phase.data[idx];
                         // Transfer liquid offset downward
-                        if phase_above >= 0.5 && phase_above < 1.5 {
+                        if (0.5..1.5).contains(&phase_above) {
                             let transfer = self.sdf_offset.data[idx] * liquid_flow * dt * 0.5;
                             if transfer > 0.0 {
                                 self.sdf_offset.data[below_idx] =

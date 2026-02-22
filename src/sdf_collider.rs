@@ -60,6 +60,9 @@ pub trait SdfField: Send + Sync {
     }
 }
 
+/// Type alias for a normal-returning closure used in [`ClosureSdf`]
+type NormalFn = Box<dyn Fn(f32, f32, f32) -> (f32, f32, f32) + Send + Sync>;
+
 /// Closure-based SDF field implementation.
 ///
 /// Allows connecting any SDF evaluation function without trait implementation.
@@ -75,7 +78,7 @@ pub trait SdfField: Send + Sync {
 /// ```
 pub struct ClosureSdf {
     eval_fn: Box<dyn Fn(f32, f32, f32) -> f32 + Send + Sync>,
-    normal_fn: Box<dyn Fn(f32, f32, f32) -> (f32, f32, f32) + Send + Sync>,
+    normal_fn: NormalFn,
 }
 
 impl ClosureSdf {

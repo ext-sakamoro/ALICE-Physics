@@ -144,7 +144,7 @@ impl FluidDelta {
     }
 
     /// Apply delta to base state
-    pub fn apply(&self, base_positions: &mut Vec<Vec3Fix>, base_velocities: &mut Vec<Vec3Fix>) {
+    pub fn apply(&self, base_positions: &mut [Vec3Fix], base_velocities: &mut [Vec3Fix]) {
         for (idx, &particle_idx) in self.changed_indices.iter().enumerate() {
             let i = particle_idx as usize;
             if i < base_positions.len() {

@@ -317,20 +317,17 @@ impl SpringJoint {
 
 /// Axis freedom mode for D6 joints
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Default)]
 pub enum D6Motion {
     /// Axis is locked (no motion allowed)
     Locked,
     /// Axis is free (unlimited motion)
+    #[default]
     Free,
     /// Axis is limited (within min/max bounds)
     Limited,
 }
 
-impl Default for D6Motion {
-    fn default() -> Self {
-        D6Motion::Free
-    }
-}
 
 /// D6 Joint (6-DOF configurable joint)
 ///

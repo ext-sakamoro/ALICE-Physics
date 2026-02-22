@@ -24,9 +24,11 @@ use alloc::vec::Vec;
 pub struct ScalarField3D {
     /// Grid data in row-major order: data[iz * ny * nx + iy * nx + ix]
     pub data: Vec<f32>,
-    /// Grid resolution
+    /// Grid resolution along X axis
     pub nx: usize,
+    /// Grid resolution along Y axis
     pub ny: usize,
+    /// Grid resolution along Z axis
     pub nz: usize,
     /// World-space bounds (min corner)
     pub min: (f32, f32, f32),
@@ -390,6 +392,7 @@ impl VectorField3D {
     }
 
     /// Splat a vector at world-space position
+    #[allow(clippy::too_many_arguments)]
     pub fn splat(&mut self, wx: f32, wy: f32, wz: f32, vx: f32, vy: f32, vz: f32, radius: f32) {
         self.x.splat(wx, wy, wz, vx, radius);
         self.y.splat(wx, wy, wz, vy, radius);

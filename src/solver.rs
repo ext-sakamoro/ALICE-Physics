@@ -18,7 +18,7 @@
 //! - Parallel processing across colors (no conflicts)
 
 use crate::collider::Contact;
-use crate::math::{Fix128, QuatFix, Vec3Fix};
+use crate::math::{select_vec3, Fix128, QuatFix, Vec3Fix};
 use crate::sdf_collider::SdfCollider;
 
 #[cfg(not(feature = "std"))]
@@ -638,10 +638,10 @@ impl PhysicsWorld {
         loop {
             let a_ok = body_colors
                 .get(body_a)
-                .map_or(true, |colors| !colors.contains(&color));
+                .is_none_or(|colors| !colors.contains(&color));
             let b_ok = body_colors
                 .get(body_b)
-                .map_or(true, |colors| !colors.contains(&color));
+                .is_none_or(|colors| !colors.contains(&color));
 
             if a_ok && b_ok {
                 return color;
@@ -868,6 +868,7 @@ impl PhysicsWorld {
 
     /// Solve a single distance constraint by index
     #[cfg(feature = "parallel")]
+    #[inline]
     fn solve_single_distance_constraint(&mut self, idx: usize, dt: Fix128) {
         let constraint = self.distance_constraints[idx];
         let body_a = self.bodies[constraint.body_a];
@@ -896,18 +897,25 @@ impl PhysicsWorld {
         let lambda = error * inv_w_sum;
         let correction = normal * lambda;
 
-        if !body_a.inv_mass.is_zero() {
-            self.bodies[constraint.body_a].position =
-                self.bodies[constraint.body_a].position + correction * body_a.inv_mass;
-        }
-        if !body_b.inv_mass.is_zero() {
-            self.bodies[constraint.body_b].position =
-                self.bodies[constraint.body_b].position - correction * body_b.inv_mass;
-        }
+        // Branchless: static bodies have inv_mass == ZERO, so correction * ZERO == ZERO.
+        // select_vec3 avoids the branch while producing bit-exact identical results.
+        let delta_a = correction * body_a.inv_mass;
+        let delta_b = correction * body_b.inv_mass;
+        self.bodies[constraint.body_a].position = select_vec3(
+            !body_a.inv_mass.is_zero(),
+            self.bodies[constraint.body_a].position + delta_a,
+            self.bodies[constraint.body_a].position,
+        );
+        self.bodies[constraint.body_b].position = select_vec3(
+            !body_b.inv_mass.is_zero(),
+            self.bodies[constraint.body_b].position - delta_b,
+            self.bodies[constraint.body_b].position,
+        );
     }
 
     /// Solve a single contact constraint by index
     #[cfg(feature = "parallel")]
+    #[inline]
     fn solve_single_contact_constraint(&mut self, idx: usize, _dt: Fix128) {
         let constraint = self.contact_constraints[idx];
         let body_a = self.bodies[constraint.body_a];
@@ -934,14 +942,17 @@ impl PhysicsWorld {
         let correction_a = correction * (body_a.inv_mass * inv_w_sum);
         let correction_b = correction * (body_b.inv_mass * inv_w_sum);
 
-        if !body_a.inv_mass.is_zero() {
-            self.bodies[constraint.body_a].position =
-                self.bodies[constraint.body_a].position + correction_a;
-        }
-        if !body_b.inv_mass.is_zero() {
-            self.bodies[constraint.body_b].position =
-                self.bodies[constraint.body_b].position - correction_b;
-        }
+        // Branchless: inv_mass == ZERO for static bodies, correction_x will be ZERO.
+        self.bodies[constraint.body_a].position = select_vec3(
+            !body_a.inv_mass.is_zero(),
+            self.bodies[constraint.body_a].position + correction_a,
+            self.bodies[constraint.body_a].position,
+        );
+        self.bodies[constraint.body_b].position = select_vec3(
+            !body_b.inv_mass.is_zero(),
+            self.bodies[constraint.body_b].position - correction_b,
+            self.bodies[constraint.body_b].position,
+        );
     }
 
     /// Solve distance constraints (sequential)
@@ -980,15 +991,19 @@ impl PhysicsWorld {
             let lambda = error * inv_w_sum;
             let correction = normal * lambda;
 
-            // Apply corrections
-            if !body_a.inv_mass.is_zero() {
-                self.bodies[constraint.body_a].position =
-                    self.bodies[constraint.body_a].position + correction * body_a.inv_mass;
-            }
-            if !body_b.inv_mass.is_zero() {
-                self.bodies[constraint.body_b].position =
-                    self.bodies[constraint.body_b].position - correction * body_b.inv_mass;
-            }
+            // Branchless apply corrections: static bodies have inv_mass == ZERO.
+            let delta_a = correction * body_a.inv_mass;
+            let delta_b = correction * body_b.inv_mass;
+            self.bodies[constraint.body_a].position = select_vec3(
+                !body_a.inv_mass.is_zero(),
+                self.bodies[constraint.body_a].position + delta_a,
+                self.bodies[constraint.body_a].position,
+            );
+            self.bodies[constraint.body_b].position = select_vec3(
+                !body_b.inv_mass.is_zero(),
+                self.bodies[constraint.body_b].position - delta_b,
+                self.bodies[constraint.body_b].position,
+            );
         }
     }
 
@@ -1056,14 +1071,17 @@ impl PhysicsWorld {
             let correction_a = correction * (body_a.inv_mass * inv_w_sum);
             let correction_b = correction * (body_b.inv_mass * inv_w_sum);
 
-            if !body_a.inv_mass.is_zero() {
-                self.bodies[constraint.body_a].position =
-                    self.bodies[constraint.body_a].position + correction_a;
-            }
-            if !body_b.inv_mass.is_zero() {
-                self.bodies[constraint.body_b].position =
-                    self.bodies[constraint.body_b].position - correction_b;
-            }
+            // Branchless: inv_mass == ZERO for static bodies, correction_x will be ZERO.
+            self.bodies[constraint.body_a].position = select_vec3(
+                !body_a.inv_mass.is_zero(),
+                self.bodies[constraint.body_a].position + correction_a,
+                self.bodies[constraint.body_a].position,
+            );
+            self.bodies[constraint.body_b].position = select_vec3(
+                !body_b.inv_mass.is_zero(),
+                self.bodies[constraint.body_b].position - correction_b,
+                self.bodies[constraint.body_b].position,
+            );
         }
     }
 

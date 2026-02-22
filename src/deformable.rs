@@ -101,8 +101,6 @@ pub struct DeformableBody {
     tet_constraints: Vec<TetConstraint>,
     /// Edge constraints
     edge_constraints: Vec<EdgeConstraint>,
-    /// Rest shape center of mass
-    rest_center: Vec3Fix,
     /// Rest positions relative to center
     rest_relative: Vec<Vec3Fix>,
     /// Configuration
@@ -136,7 +134,6 @@ impl DeformableBody {
             surface_triangles,
             tet_constraints: Vec::new(),
             edge_constraints: Vec::new(),
-            rest_center,
             rest_relative,
             positions,
             config: DeformableConfig::default(),

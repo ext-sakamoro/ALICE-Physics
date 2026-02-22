@@ -124,7 +124,7 @@ impl GpuSdfBatch {
     /// Calculate number of workgroups needed
     pub fn num_workgroups(&self) -> u32 {
         let n = self.queries.len() as u32;
-        (n + self.config.workgroup_size - 1) / self.config.workgroup_size
+        n.div_ceil(self.config.workgroup_size)
     }
 
     /// Prepare output buffer (allocate space for results)

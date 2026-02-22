@@ -23,8 +23,10 @@ pub const DEFAULT_MATERIAL: MaterialId = 0;
 
 /// Combine rule for friction/restitution when two materials interact
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Default)]
 pub enum CombineRule {
     /// Average of two values
+    #[default]
     Average,
     /// Minimum of two values
     Min,
@@ -59,11 +61,6 @@ impl CombineRule {
     }
 }
 
-impl Default for CombineRule {
-    fn default() -> Self {
-        CombineRule::Average
-    }
-}
 
 /// Physics material definition
 #[derive(Clone, Copy, Debug)]

@@ -88,22 +88,20 @@ impl Crack {
         let pax = x - ax;
         let pay = y - ay;
         let paz = z - az;
-        let bax = bx - ax;
-        let bay = by - ay;
-        let baz = bz - az;
+        let b_ax = bx - ax;
+        let b_ay = by - ay;
+        let b_az = bz - az;
 
-        let ba_len_sq = bax * bax + bay * bay + baz * baz;
+        let ba_len_sq = b_ax * b_ax + b_ay * b_ay + b_az * b_az;
         let h = if ba_len_sq > 1e-10 {
-            ((pax * bax + pay * bay + paz * baz) / ba_len_sq)
-                .max(0.0)
-                .min(1.0)
+            ((pax * b_ax + pay * b_ay + paz * b_az) / ba_len_sq).clamp(0.0, 1.0)
         } else {
             0.0
         };
 
-        let dx = pax - bax * h;
-        let dy = pay - bay * h;
-        let dz = paz - baz * h;
+        let dx = pax - b_ax * h;
+        let dy = pay - b_ay * h;
+        let dz = paz - b_az * h;
 
         (dx * dx + dy * dy + dz * dz).sqrt() - width
     }

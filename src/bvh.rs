@@ -474,9 +474,11 @@ impl LinearBvh {
 
     /// Get statistics about the BVH
     pub fn stats(&self) -> BvhStats {
-        let mut stats = BvhStats::default();
-        stats.node_count = self.nodes.len();
-        stats.primitive_count = self.primitives.len();
+        let mut stats = BvhStats {
+            node_count: self.nodes.len(),
+            primitive_count: self.primitives.len(),
+            ..BvhStats::default()
+        };
 
         for node in &self.nodes {
             if node.is_leaf() {

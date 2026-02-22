@@ -430,18 +430,14 @@ fn do_simplex_triangle(simplex: &mut Simplex, direction: &mut Vec3Fix) -> bool {
             simplex.set(&[a, b]);
             return do_simplex_line(simplex, direction);
         }
+    } else if ab.cross(abc).dot(ao) > Fix128::ZERO {
+        simplex.set(&[a, b]);
+        return do_simplex_line(simplex, direction);
+    } else if abc.dot(ao) > Fix128::ZERO {
+        *direction = abc;
     } else {
-        if ab.cross(abc).dot(ao) > Fix128::ZERO {
-            simplex.set(&[a, b]);
-            return do_simplex_line(simplex, direction);
-        } else {
-            if abc.dot(ao) > Fix128::ZERO {
-                *direction = abc;
-            } else {
-                simplex.set(&[a, c, b]);
-                *direction = -abc;
-            }
-        }
+        simplex.set(&[a, c, b]);
+        *direction = -abc;
     }
 
     false

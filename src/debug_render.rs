@@ -276,7 +276,7 @@ pub fn debug_draw_world(
 ) {
     data.clear();
 
-    for (_i, body) in world.bodies.iter().enumerate() {
+    for body in world.bodies.iter() {
         let is_static = body.is_static();
         let body_color = if is_static {
             DebugColor::GRAY

@@ -584,8 +584,8 @@ fn find_shared_edge(
                 let rest_angle = if n1_len.is_zero() || n2_len.is_zero() {
                     Fix128::ZERO
                 } else {
-                    let cos = (n1 / n1_len).dot(n2 / n2_len);
-                    cos // Store cos(angle) directly
+                    
+                    (n1 / n1_len).dot(n2 / n2_len) // Store cos(angle) directly
                 };
 
                 return Some(BendConstraint {

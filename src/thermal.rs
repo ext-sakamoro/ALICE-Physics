@@ -67,9 +67,11 @@ impl Default for ThermalConfig {
 pub enum HeatSource {
     /// Point heat source
     Point {
-        /// Position (world space)
+        /// Position X (world space)
         x: f32,
+        /// Position Y (world space)
         y: f32,
+        /// Position Z (world space)
         z: f32,
         /// Heat power (degrees/second at center)
         power: f32,

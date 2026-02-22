@@ -148,12 +148,10 @@ impl AnimationClip {
             // Modular time
             let cycles = time / self.duration;
             time - self.duration * Fix128::from_int(cycles.hi)
+        } else if time > self.duration {
+            self.duration
         } else {
-            if time > self.duration {
-                self.duration
-            } else {
-                time
-            }
+            time
         };
 
         let mut pose = SkeletonPose::new(self.keyframes.len());

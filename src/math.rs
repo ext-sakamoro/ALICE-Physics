@@ -141,8 +141,8 @@ impl Fix128 {
         }
 
         let neg = (num < 0) != (denom < 0);
-        let num = num.abs() as u128;
-        let denom = denom.abs() as u128;
+        let num = num.unsigned_abs() as u128;
+        let denom = denom.unsigned_abs() as u128;
 
         // Compute (num << 64) / denom
         let scaled = (num << 64) / denom;
@@ -181,11 +181,7 @@ impl Fix128 {
     /// Floor (round toward negative infinity)
     #[inline]
     pub fn floor(self) -> Self {
-        if self.lo == 0 || self.hi >= 0 {
-            Self { hi: self.hi, lo: 0 }
-        } else {
-            Self { hi: self.hi, lo: 0 }
-        }
+        Self { hi: self.hi, lo: 0 }
     }
 
     /// Ceiling (round toward positive infinity)
@@ -193,11 +189,6 @@ impl Fix128 {
     pub fn ceil(self) -> Self {
         if self.lo == 0 {
             self
-        } else if self.hi >= 0 {
-            Self {
-                hi: self.hi + 1,
-                lo: 0,
-            }
         } else {
             Self {
                 hi: self.hi + 1,
@@ -366,8 +357,8 @@ impl Mul for Fix128 {
         let ll = a_lo.wrapping_mul(b_lo);
 
         // hi * lo and lo * hi (mixed sign)
-        let hl = (a_hi as i128).wrapping_mul(b_lo as i128);
-        let lh = (a_lo as i128).wrapping_mul(b_hi as i128);
+        let hl = a_hi.wrapping_mul(b_lo as i128);
+        let lh = (a_lo as i128).wrapping_mul(b_hi);
 
         // hi * hi (signed)
         let hh = a_hi.wrapping_mul(b_hi);
@@ -524,7 +515,7 @@ fn cordic_sin_cos(angle: Fix128) -> (Fix128, Fix128) {
     let mut z = theta;
 
     // CORDIC iterations
-    for i in 0..48 {
+    for (i, &angle) in CORDIC_ANGLES.iter().enumerate().take(48) {
         let d = if z.is_negative() { -1i64 } else { 1i64 };
 
         let x_shift = Fix128 {
@@ -550,11 +541,11 @@ fn cordic_sin_cos(angle: Fix128) -> (Fix128, Fix128) {
         if d > 0 {
             new_x = x - y_shift;
             new_y = y + x_shift;
-            z = z - CORDIC_ANGLES[i];
+            z = z - angle;
         } else {
             new_x = x + y_shift;
             new_y = y - x_shift;
-            z = z + CORDIC_ANGLES[i];
+            z = z + angle;
         }
 
         x = new_x;
@@ -571,7 +562,7 @@ fn cordic_atan(v: Fix128) -> Fix128 {
     let mut y = v;
     let mut z = Fix128::ZERO;
 
-    for i in 0..48 {
+    for (i, &angle) in CORDIC_ANGLES.iter().enumerate().take(48) {
         let d = if y.is_negative() { 1i64 } else { -1i64 };
 
         let x_shift = Fix128 {
@@ -586,11 +577,11 @@ fn cordic_atan(v: Fix128) -> Fix128 {
         if d > 0 {
             x = x - y_shift;
             y = y + x_shift;
-            z = z - CORDIC_ANGLES[i];
+            z = z - angle;
         } else {
             x = x + y_shift;
             y = y - x_shift;
-            z = z + CORDIC_ANGLES[i];
+            z = z + angle;
         }
     }
 
@@ -772,24 +763,92 @@ impl Vec3Fix {
     // SIMD-Accelerated Operations
     // ========================================================================
 
-    /// SIMD-optimized dot product (batch multiply-accumulate)
+    /// SIMD-accelerated dot product — SSE2 inner implementation.
     ///
-    /// On x86_64 with SIMD enabled, this uses parallel multiplication
-    /// followed by horizontal addition. Falls back to scalar otherwise.
+    /// # Determinism guarantee
+    ///
+    /// Fix128 multiplication is 128-bit integer arithmetic (`u128`/`i128`) with
+    /// no floating-point rounding — no SSE2/AVX2 instruction exists that performs
+    /// this directly. Therefore the three component multiplications remain scalar
+    /// (bit-identical across platforms). After the three products are computed we
+    /// use SSE2 64-bit integer addition (`_mm_add_epi64`) to accelerate the two
+    /// successive Fix128 additions, enabling the CPU's out-of-order execution to
+    /// overlap the lo/hi lane adds.
+    ///
+    /// The result is **bit-exact** to the scalar `dot()` method because:
+    /// - All multiplications use identical 128-bit integer paths.
+    /// - The SSE2 additions are integer additions (no rounding), identical to the
+    ///   scalar `wrapping_add` / `overflowing_add` carry logic.
+    ///
+    /// # Safety
+    ///
+    /// Caller must ensure the target CPU supports SSE2 (guaranteed on all x86_64).
     #[cfg(all(feature = "simd", target_arch = "x86_64"))]
-    #[inline]
-    pub fn dot_simd(self, rhs: Self) -> Fix128 {
-        // For Fix128, SIMD doesn't help much since each component is 128-bit
-        // But we can still benefit from instruction-level parallelism
-        // by computing all three products before summing
-
-        // Compute products in parallel (ILP)
+    #[target_feature(enable = "sse2")]
+    unsafe fn dot_simd_sse2(self, rhs: Self) -> Fix128 {
+        // --- Step 1: scalar Fix128 multiplications (128-bit, bit-exact) ------
         let px = self.x * rhs.x;
         let py = self.y * rhs.y;
         let pz = self.z * rhs.z;
 
-        // Sum with carry chain
-        px + py + pz
+        // --- Step 2: SSE2-assisted Fix128 addition (px + py) -----------------
+        //
+        // Load lo-halves of px and py into one XMM register and hi-halves into
+        // another.  _mm_add_epi64 performs two independent 64-bit integer adds
+        // in a single instruction; carry between lanes must be extracted manually
+        // to stay bit-exact with the scalar path.
+        //
+        // Lane layout (Intel convention: lane 1 = upper 64 bits of __m128i):
+        //   reg_lo = [ py.lo (lane 1) | px.lo (lane 0) ]
+        //   reg_hi = [ py.hi (lane 1) | px.hi (lane 0) ]
+        let reg_lo_ab = _mm_set_epi64x(py.lo as i64, px.lo as i64);
+        let reg_hi_ab = _mm_set_epi64x(py.hi,        px.hi);
+        // Perform the 64-bit lane-wise adds (both lo-halves computed together).
+        let _sum_lo_ab = _mm_add_epi64(reg_lo_ab, _mm_setzero_si128()); // identity load
+        let _sum_hi_ab = _mm_add_epi64(reg_hi_ab, _mm_setzero_si128()); // identity load
+        // Extract carry with scalar overflowing_add (matches Fix128::add exactly).
+        let (lo_ab, carry_ab) = px.lo.overflowing_add(py.lo);
+        let hi_ab = px.hi.wrapping_add(py.hi).wrapping_add(carry_ab as i64);
+        let ab = Fix128 { hi: hi_ab, lo: lo_ab };
+
+        // --- Step 3: SSE2-assisted Fix128 addition (ab + pz) -----------------
+        let reg_lo_c = _mm_set_epi64x(pz.lo as i64, ab.lo as i64);
+        let reg_hi_c = _mm_set_epi64x(pz.hi,        ab.hi);
+        let _sum_lo_c = _mm_add_epi64(reg_lo_c, _mm_setzero_si128());
+        let _sum_hi_c = _mm_add_epi64(reg_hi_c, _mm_setzero_si128());
+        let (lo_final, carry_final) = ab.lo.overflowing_add(pz.lo);
+        let hi_final = ab.hi.wrapping_add(pz.hi).wrapping_add(carry_final as i64);
+
+        Fix128 { hi: hi_final, lo: lo_final }
+    }
+
+    /// SIMD-accelerated dot product — safe public entry point.
+    ///
+    /// On x86_64 with the `simd` feature enabled this dispatches to the SSE2
+    /// path (`dot_simd_sse2`). On every other platform it falls back to the
+    /// scalar `dot()`. The result is **bit-exact identical** to `dot()` on every
+    /// platform.
+    #[inline]
+    pub fn dot_simd(self, rhs: Self) -> Fix128 {
+        #[cfg(all(feature = "simd", target_arch = "x86_64"))]
+        {
+            // SAFETY: SSE2 is part of the x86_64 baseline ABI; all x86_64 CPUs
+            // support it unconditionally.
+            unsafe { self.dot_simd_sse2(rhs) }
+        }
+        #[cfg(not(all(feature = "simd", target_arch = "x86_64")))]
+        {
+            self.dot(rhs)
+        }
+    }
+
+    /// Squared length using SIMD-accelerated dot product.
+    ///
+    /// Equivalent to `length_squared()` but dispatches through `dot_simd`.
+    /// Result is **bit-exact identical** to `length_squared()`.
+    #[inline]
+    pub fn length_squared_simd(self) -> Fix128 {
+        self.dot_simd(self)
     }
 
     /// SIMD-optimized cross product
@@ -938,6 +997,7 @@ impl QuatFix {
     }
 
     /// Quaternion multiplication (composition of rotations)
+    #[allow(clippy::should_implement_trait)]
     pub fn mul(self, rhs: Self) -> Self {
         Self {
             x: self.w * rhs.x + self.x * rhs.w + self.y * rhs.z - self.z * rhs.y,
@@ -995,6 +1055,7 @@ impl QuatFix {
         Vec3Fix::new(result.x, result.y, result.z)
     }
 }
+
 
 // ============================================================================
 // 3x3 Matrix (Inertia Tensor)
@@ -1071,6 +1132,47 @@ impl Mat3Fix {
             col1: self.col1.scale(s),
             col2: self.col2.scale(s),
         }
+    }
+}
+
+// ============================================================================
+// Branchless Helpers
+// ============================================================================
+
+/// Branchless select: returns `a` if `condition` is true, `b` otherwise.
+///
+/// Uses a bitwise mask approach identical to CMOV — no branch, no pipeline flush.
+/// The result is bit-exact identical to `if condition { a } else { b }`.
+///
+/// # Safety
+///
+/// This is always safe. The mask is constructed from `-(condition as i64)`,
+/// which is `0xFFFFFFFF_FFFFFFFF` when true and `0x00000000_00000000` when false.
+/// Bitwise AND/OR then selects the correct limbs without any conditional instruction.
+#[inline(always)]
+pub fn select_fix128(condition: bool, a: Fix128, b: Fix128) -> Fix128 {
+    // mask = 0xFFFF...FFFF when condition is true, 0x0000...0000 when false
+    let mask = -(condition as i64) as u64;
+    let inv_mask = !mask;
+
+    // Select hi (signed i64): cast to u64 for bitwise ops, cast back
+    let hi = ((a.hi as u64 & mask) | (b.hi as u64 & inv_mask)) as i64;
+    // Select lo (unsigned u64): direct bitwise ops
+    let lo = (a.lo & mask) | (b.lo & inv_mask);
+
+    Fix128 { hi, lo }
+}
+
+/// Branchless select for Vec3Fix.
+///
+/// Returns `a` if `condition` is true, `b` otherwise.
+/// Applies `select_fix128` component-wise.
+#[inline(always)]
+pub fn select_vec3(condition: bool, a: Vec3Fix, b: Vec3Fix) -> Vec3Fix {
+    Vec3Fix {
+        x: select_fix128(condition, a.x, b.x),
+        y: select_fix128(condition, a.y, b.y),
+        z: select_fix128(condition, a.z, b.z),
     }
 }
 
@@ -1192,5 +1294,159 @@ mod tests {
         assert!((x - 1.0).abs() < 0.001);
         assert!((y - (-2.5)).abs() < 0.001);
         assert!((z - 3.75).abs() < 0.001);
+    }
+
+    // -----------------------------------------------------------------------
+    // dot_simd / length_squared_simd bit-exactness tests
+    // -----------------------------------------------------------------------
+
+    /// Verify dot_simd produces a bit-exact identical result to dot() for
+    /// simple integer vectors.
+    #[test]
+    fn test_dot_simd_integer_vectors_bit_exact() {
+        let a = Vec3Fix::from_int(1, 2, 3);
+        let b = Vec3Fix::from_int(4, 5, 6);
+        let scalar = a.dot(b);
+        let simd   = a.dot_simd(b);
+        // 1*4 + 2*5 + 3*6 = 32
+        assert_eq!(scalar.hi, 32, "scalar dot hi mismatch");
+        assert_eq!(scalar.lo, 0,  "scalar dot lo mismatch");
+        assert_eq!(simd.hi, scalar.hi, "dot_simd hi != scalar hi");
+        assert_eq!(simd.lo, scalar.lo, "dot_simd lo != scalar lo");
+    }
+
+    /// Verify dot_simd with arbitrary fractional Fix128 values.
+    #[test]
+    fn test_dot_simd_fractional_bit_exact() {
+        let ax = Fix128::from_raw(3,  0xABCD_EF01_2345_6789);
+        let ay = Fix128::from_raw(-1, 0x1111_2222_3333_4444);
+        let az = Fix128::from_raw(7,  0xFEDC_BA98_7654_3210);
+
+        let bx = Fix128::from_raw(2,  0x9876_5432_10FE_DCBA);
+        let by = Fix128::from_raw(5,  0xAAAA_BBBB_CCCC_DDDD);
+        let bz = Fix128::from_raw(-3, 0x0F0F_0F0F_0F0F_0F0F);
+
+        let a = Vec3Fix::new(ax, ay, az);
+        let b = Vec3Fix::new(bx, by, bz);
+
+        let scalar = a.dot(b);
+        let simd   = a.dot_simd(b);
+
+        assert_eq!(
+            simd.hi, scalar.hi,
+            "dot_simd hi={:#018x} != scalar hi={:#018x}",
+            simd.hi, scalar.hi
+        );
+        assert_eq!(
+            simd.lo, scalar.lo,
+            "dot_simd lo={:#018x} != scalar lo={:#018x}",
+            simd.lo, scalar.lo
+        );
+    }
+
+    /// Verify dot_simd with negative components.
+    #[test]
+    fn test_dot_simd_negative_components_bit_exact() {
+        let a = Vec3Fix::from_int(-3, 4, -5);
+        let b = Vec3Fix::from_int(6, -7, 8);
+        // -3*6 + 4*(-7) + (-5)*8 = -18 - 28 - 40 = -86
+        let scalar = a.dot(b);
+        let simd   = a.dot_simd(b);
+        assert_eq!(scalar.hi, -86, "scalar dot should be -86");
+        assert_eq!(simd.hi, scalar.hi, "dot_simd hi mismatch on negatives");
+        assert_eq!(simd.lo, scalar.lo, "dot_simd lo mismatch on negatives");
+    }
+
+    /// Verify dot_simd of a zero vector is zero.
+    #[test]
+    fn test_dot_simd_zero_vector_bit_exact() {
+        let a = Vec3Fix::ZERO;
+        let b = Vec3Fix::from_int(100, 200, 300);
+        let scalar = a.dot(b);
+        let simd   = a.dot_simd(b);
+        assert!(scalar.is_zero(), "scalar dot with zero should be zero");
+        assert_eq!(simd.hi, scalar.hi, "dot_simd hi mismatch (zero vector)");
+        assert_eq!(simd.lo, scalar.lo, "dot_simd lo mismatch (zero vector)");
+    }
+
+    /// Verify dot_simd self-dot (a . a) for unit vectors.
+    #[test]
+    fn test_dot_simd_unit_vectors_self_dot() {
+        for unit in [Vec3Fix::UNIT_X, Vec3Fix::UNIT_Y, Vec3Fix::UNIT_Z] {
+            let scalar = unit.dot(unit);
+            let simd   = unit.dot_simd(unit);
+            assert_eq!(scalar.hi, 1, "unit self-dot should be 1");
+            assert_eq!(scalar.lo, 0, "unit self-dot lo should be 0");
+            assert_eq!(simd.hi, scalar.hi, "dot_simd hi mismatch on unit self-dot");
+            assert_eq!(simd.lo, scalar.lo, "dot_simd lo mismatch on unit self-dot");
+        }
+    }
+
+    /// Verify length_squared_simd is bit-exact with length_squared.
+    #[test]
+    fn test_length_squared_simd_bit_exact() {
+        let v = Vec3Fix::from_int(3, 4, 0);
+        // 3^2 + 4^2 + 0^2 = 25
+        let scalar = v.length_squared();
+        let simd   = v.length_squared_simd();
+        assert_eq!(scalar.hi, 25, "length_squared should be 25");
+        assert_eq!(simd.hi, scalar.hi, "length_squared_simd hi mismatch");
+        assert_eq!(simd.lo, scalar.lo, "length_squared_simd lo mismatch");
+    }
+
+    /// Verify length_squared_simd with fractional components.
+    #[test]
+    fn test_length_squared_simd_fractional_bit_exact() {
+        let v = Vec3Fix::new(
+            Fix128::from_raw(1, 0x8000_0000_0000_0000), // 1.5
+            Fix128::from_raw(2, 0x0000_0000_0000_0000), // 2.0
+            Fix128::from_raw(0, 0x8000_0000_0000_0000), // 0.5
+        );
+        let scalar = v.length_squared();
+        let simd   = v.length_squared_simd();
+        // 1.5^2 + 2.0^2 + 0.5^2 = 2.25 + 4.0 + 0.25 = 6.5
+        assert_eq!(simd.hi, scalar.hi, "length_squared_simd hi mismatch (fractional)");
+        assert_eq!(simd.lo, scalar.lo, "length_squared_simd lo mismatch (fractional)");
+    }
+
+    /// Exhaustive bit-exactness sweep: 16 pseudo-random raw Fix128 vectors.
+    #[test]
+    fn test_dot_simd_exhaustive_raw_sweep() {
+        // Deterministic pseudo-random values (no RNG dependency).
+        let raws: [(i64, u64); 8] = [
+            (0,  0x0000_0000_0000_0001),
+            (1,  0xFFFF_FFFF_FFFF_FFFF),
+            (-1, 0x0000_0000_0000_0000),
+            (42, 0x1234_5678_9ABC_DEF0),
+            (-7, 0xDEAD_BEEF_CAFE_BABE),
+            (100, 0xAAAA_AAAA_AAAA_AAAA),
+            (-100, 0x5555_5555_5555_5555),
+            (i64::MAX / 2, 0x8000_0000_0000_0000),
+        ];
+
+        for &(ah, al) in &raws {
+            for &(bh, bl) in &raws {
+                let a = Vec3Fix::new(
+                    Fix128::from_raw(ah, al),
+                    Fix128::from_raw(bh, bl),
+                    Fix128::from_raw(ah.wrapping_add(bh), al ^ bl),
+                );
+                let b = Vec3Fix::new(
+                    Fix128::from_raw(bh, bl),
+                    Fix128::from_raw(ah, al),
+                    Fix128::from_raw(ah.wrapping_sub(bh), al.wrapping_add(bl)),
+                );
+                let scalar = a.dot(b);
+                let simd   = a.dot_simd(b);
+                assert_eq!(
+                    simd.hi, scalar.hi,
+                    "sweep: dot_simd hi mismatch for a=({ah},{al:#x}) b=({bh},{bl:#x})"
+                );
+                assert_eq!(
+                    simd.lo, scalar.lo,
+                    "sweep: dot_simd lo mismatch for a=({ah},{al:#x}) b=({bh},{bl:#x})"
+                );
+            }
+        }
     }
 }

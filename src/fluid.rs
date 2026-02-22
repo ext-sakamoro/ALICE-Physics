@@ -74,11 +74,9 @@ impl Default for FluidConfig {
 
 /// Simple spatial hash grid for neighbor queries
 struct SpatialGrid {
-    cell_size: Fix128,
     inv_cell_size: Fix128,
     cells: Vec<Vec<usize>>,
     grid_dim: usize,
-    neighbor_buffer: Vec<usize>,
 }
 
 impl SpatialGrid {
@@ -89,11 +87,9 @@ impl SpatialGrid {
             Fix128::ONE / cell_size
         };
         Self {
-            cell_size,
             inv_cell_size: inv_cell,
             cells: vec![Vec::new(); grid_dim * grid_dim * grid_dim],
             grid_dim,
-            neighbor_buffer: Vec::new(),
         }
     }
 

@@ -91,8 +91,8 @@ impl OrientedBox {
     /// Get all 8 corner vertices
     pub fn corners(&self) -> [Vec3Fix; 8] {
         let mut result = [Vec3Fix::ZERO; 8];
-        for i in 0..8 {
-            result[i] = self.corner(i);
+        for (i, item) in result.iter_mut().enumerate() {
+            *item = self.corner(i);
         }
         result
     }

@@ -153,10 +153,8 @@ fn ray_aabb_interval(ray: &Ray, aabb: &AABB) -> Option<(Fix128, Fix128)> {
         if t_min > t_max {
             return None;
         }
-    } else {
-        if ray.origin.x < aabb.min.x || ray.origin.x > aabb.max.x {
-            return None;
-        }
+    } else if ray.origin.x < aabb.min.x || ray.origin.x > aabb.max.x {
+        return None;
     }
 
     // Y slab
@@ -172,10 +170,8 @@ fn ray_aabb_interval(ray: &Ray, aabb: &AABB) -> Option<(Fix128, Fix128)> {
         if t_min > t_max {
             return None;
         }
-    } else {
-        if ray.origin.y < aabb.min.y || ray.origin.y > aabb.max.y {
-            return None;
-        }
+    } else if ray.origin.y < aabb.min.y || ray.origin.y > aabb.max.y {
+        return None;
     }
 
     // Z slab
@@ -191,10 +187,8 @@ fn ray_aabb_interval(ray: &Ray, aabb: &AABB) -> Option<(Fix128, Fix128)> {
         if t_min > t_max {
             return None;
         }
-    } else {
-        if ray.origin.z < aabb.min.z || ray.origin.z > aabb.max.z {
-            return None;
-        }
+    } else if ray.origin.z < aabb.min.z || ray.origin.z > aabb.max.z {
+        return None;
     }
 
     Some((t_min, t_max))
@@ -435,7 +429,7 @@ pub fn raycast_all_aabbs(ray: &Ray, aabbs: &[(AABB, usize)], max_t: Fix128) -> V
 /// Test if ANY sphere is hit by the ray (early-out on first hit)
 #[inline]
 pub fn raycast_any_spheres(ray: &Ray, spheres: &[(Sphere, usize)], max_t: Fix128) -> bool {
-    for &(ref sphere, _) in spheres {
+    for (sphere, _) in spheres {
         if ray_sphere(ray, sphere, max_t).is_some() {
             return true;
         }
@@ -446,7 +440,7 @@ pub fn raycast_any_spheres(ray: &Ray, spheres: &[(Sphere, usize)], max_t: Fix128
 /// Test if ANY AABB is hit by the ray (early-out on first hit)
 #[inline]
 pub fn raycast_any_aabbs(ray: &Ray, aabbs: &[(AABB, usize)], max_t: Fix128) -> bool {
-    for &(ref aabb, _) in aabbs {
+    for (aabb, _) in aabbs {
         if ray_aabb(ray, aabb, max_t).is_some() {
             return true;
         }

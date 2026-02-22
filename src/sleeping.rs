@@ -251,7 +251,7 @@ impl IslandManager {
     pub fn is_sleeping(&self, body_index: usize) -> bool {
         self.sleep_data
             .get(body_index)
-            .map_or(false, |d| d.is_sleeping())
+            .is_some_and(|d| d.is_sleeping())
     }
 
     /// Get the number of sleeping bodies
