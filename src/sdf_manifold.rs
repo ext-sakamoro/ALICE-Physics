@@ -13,8 +13,10 @@
 //!
 //! Author: Moroya Sakamoto
 
+#[cfg(feature = "std")]
 use crate::collider::Contact;
 use crate::math::{Fix128, Vec3Fix};
+#[cfg(feature = "std")]
 use crate::sdf_collider::SdfCollider;
 
 #[cfg(not(feature = "std"))]
@@ -98,6 +100,7 @@ impl SdfManifold {
 /// Build a tangent frame from a normal vector.
 ///
 /// Returns (tangent1, tangent2) orthogonal to the normal.
+#[cfg(feature = "std")]
 #[inline]
 fn build_tangent_frame(normal: Vec3Fix) -> (Vec3Fix, Vec3Fix) {
     let (nx, _ny, _nz) = normal.to_f32();
@@ -216,6 +219,7 @@ pub fn generate_sdf_manifold(
 /// 2. Keep the point furthest from it
 /// 3. Keep the point maximizing triangle area
 /// 4. Keep the point maximizing quadrilateral area
+#[cfg(feature = "std")]
 fn reduce_manifold(candidates: &[(Contact, f32)], max_contacts: usize) -> Vec<Contact> {
     if candidates.len() <= max_contacts {
         return candidates.iter().map(|(c, _)| *c).collect();

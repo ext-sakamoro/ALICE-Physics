@@ -24,13 +24,12 @@
 //!
 //! Author: Moroya Sakamoto
 
+#[cfg(feature = "std")]
 use crate::collider::Contact;
 use crate::math::{Fix128, QuatFix, Vec3Fix};
 
 #[cfg(not(feature = "std"))]
 use alloc::boxed::Box;
-#[cfg(not(feature = "std"))]
-use alloc::vec::Vec;
 
 // ============================================================================
 // SDF Field Trait

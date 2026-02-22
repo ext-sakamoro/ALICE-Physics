@@ -13,6 +13,7 @@
 //! Author: Moroya Sakamoto
 
 use crate::math::{Fix128, Vec3Fix};
+#[cfg(feature = "std")]
 use crate::sdf_collider::SdfCollider;
 
 #[cfg(not(feature = "std"))]

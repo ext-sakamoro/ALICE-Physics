@@ -752,7 +752,7 @@ pub unsafe extern "C" fn alice_physics_state_free(data: *mut u8, len: u32) {
 /// Get library version string. Returns a static null-terminated string.
 #[no_mangle]
 pub extern "C" fn alice_physics_version() -> *const std::os::raw::c_char {
-    c"0.3.0".as_ptr()
+    c"0.4.0".as_ptr()
 }
 
 // ============================================================================

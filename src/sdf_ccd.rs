@@ -16,12 +16,13 @@
 //!
 //! Author: Moroya Sakamoto
 
+#[cfg(feature = "std")]
 use crate::ccd::TOI;
-use crate::math::{Fix128, Vec3Fix};
+use crate::math::Fix128;
+#[cfg(feature = "std")]
+use crate::math::Vec3Fix;
+#[cfg(feature = "std")]
 use crate::sdf_collider::SdfCollider;
-
-#[cfg(not(feature = "std"))]
-use alloc::vec::Vec;
 
 // ============================================================================
 // SDF CCD Configuration

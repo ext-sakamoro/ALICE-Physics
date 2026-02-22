@@ -14,7 +14,9 @@
 //! Author: Moroya Sakamoto
 
 use crate::math::{Fix128, Vec3Fix};
+#[cfg(feature = "std")]
 use crate::sdf_collider::SdfCollider;
+#[cfg(feature = "std")]
 use crate::solver::RigidBody;
 
 #[cfg(not(feature = "std"))]
@@ -106,6 +108,7 @@ impl SdfForceField {
     }
 
     /// Check if this field affects a given body
+    #[cfg(feature = "std")]
     #[inline]
     fn affects(&self, body_index: usize) -> bool {
         if !self.enabled {

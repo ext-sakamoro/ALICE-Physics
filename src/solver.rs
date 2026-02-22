@@ -1914,6 +1914,7 @@ impl PhysicsWorld {
                 continue;
             }
 
+            #[cfg_attr(not(feature = "std"), allow(unused_mut))]
             let mut contact = constraint.contact;
             #[cfg_attr(not(feature = "std"), allow(unused_variables, unused_mut))]
             let mut friction = constraint.friction;

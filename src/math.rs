@@ -26,9 +26,6 @@
 //! - Precision: ~5.4 × 10^-20 (meters)
 //! - From subatomic particles to galactic scales with uniform precision
 
-#[cfg(not(feature = "std"))]
-use alloc::vec::Vec;
-
 use core::cmp::Ordering;
 use core::ops::{Add, Div, Mul, Neg, Sub};
 
@@ -290,6 +287,10 @@ impl Fix128 {
     ///
     /// Uses 128-bit integer operations when available.
     /// Falls back to scalar on other platforms.
+    /// # Safety
+    ///
+    /// Caller must ensure the CPU supports SSE2. Guaranteed by
+    /// `#[target_feature]` when called from the safe `Add` impl.
     #[cfg(all(feature = "simd", target_arch = "x86_64"))]
     #[inline]
     #[target_feature(enable = "sse2")]
@@ -314,7 +315,12 @@ impl Fix128 {
         Self { hi, lo }
     }
 
-    /// SIMD-accelerated subtraction (x86_64 AVX2)
+    /// SIMD-accelerated subtraction (x86_64 SSE2)
+    ///
+    /// # Safety
+    ///
+    /// Caller must ensure the CPU supports SSE2. Guaranteed by
+    /// `#[target_feature]` when called from the safe `Sub` impl.
     #[cfg(all(feature = "simd", target_arch = "x86_64"))]
     #[inline]
     #[target_feature(enable = "sse2")]

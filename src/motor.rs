@@ -7,9 +7,6 @@ use crate::joint::Joint;
 use crate::math::{Fix128, QuatFix, Vec3Fix};
 use crate::solver::RigidBody;
 
-#[cfg(not(feature = "std"))]
-use alloc::vec::Vec;
-
 /// Motor mode
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MotorMode {

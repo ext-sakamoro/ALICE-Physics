@@ -314,6 +314,9 @@ macro_rules! impl_hyperloglog {
                     let chunks = self.registers.chunks_exact(32);
                     let remainder = chunks.remainder();
 
+                    // SAFETY: chunks_exact(32) guarantees each chunk is exactly 32 bytes,
+                    // matching the __m256i width. _mm256_loadu_si256 handles unaligned loads.
+                    // AVX2 availability is checked at runtime by the cfg gate above.
                     unsafe {
                         let zero_vec = _mm256_setzero_si256();
                         for chunk in chunks {
