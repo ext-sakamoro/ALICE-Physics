@@ -96,7 +96,10 @@ jobs:
           echo "" > ../ALICE-Analytics/src/lib.rs
 
       - name: Build release (dynamic library)
-        run: cargo build --release --features "ffi" --target ${{ matrix.target }}
+        shell: bash
+        run: |
+          cargo rustc --release --features "ffi" --target ${{ matrix.target }} \
+            --crate-type cdylib
 
       - name: Build release (static library)
         shell: bash
