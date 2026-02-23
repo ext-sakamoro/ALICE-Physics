@@ -13,7 +13,11 @@ use alice_physics::math::{Fix128, Vec3Fix};
 fn main() {
     // Create a 2m x 2m cloth grid with 10x10 particles
     let mut cloth = Cloth::new_grid(
-        Vec3Fix::new(Fix128::from_int(-1), Fix128::from_int(5), Fix128::from_int(-1)),
+        Vec3Fix::new(
+            Fix128::from_int(-1),
+            Fix128::from_int(5),
+            Fix128::from_int(-1),
+        ),
         Fix128::from_int(2),        // width
         Fix128::from_int(2),        // height
         10,                         // res_x

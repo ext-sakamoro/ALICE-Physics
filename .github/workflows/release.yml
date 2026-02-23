@@ -78,6 +78,23 @@ jobs:
           TOML
           echo "" > ../ALICE-DB/src/lib.rs
 
+      - name: Create ALICE-Analytics stub
+        shell: bash
+        run: |
+          mkdir -p ../ALICE-Analytics/src
+          cat > ../ALICE-Analytics/Cargo.toml << 'TOML'
+          [package]
+          name = "alice-analytics"
+          version = "0.1.0"
+          edition = "2021"
+          [features]
+          default = ["std"]
+          std = []
+          [lib]
+          path = "src/lib.rs"
+          TOML
+          echo "" > ../ALICE-Analytics/src/lib.rs
+
       - name: Build release (dynamic library)
         run: cargo build --release --features "ffi" --target ${{ matrix.target }}
 
@@ -204,6 +221,23 @@ jobs:
           path = "src/lib.rs"
           TOML
           echo "" > ../ALICE-DB/src/lib.rs
+
+      - name: Create ALICE-Analytics stub
+        shell: bash
+        run: |
+          mkdir -p ../ALICE-Analytics/src
+          cat > ../ALICE-Analytics/Cargo.toml << 'TOML'
+          [package]
+          name = "alice-analytics"
+          version = "0.1.0"
+          edition = "2021"
+          [features]
+          default = ["std"]
+          std = []
+          [lib]
+          path = "src/lib.rs"
+          TOML
+          echo "" > ../ALICE-Analytics/src/lib.rs
 
       - name: Install maturin
         run: pip install maturin
