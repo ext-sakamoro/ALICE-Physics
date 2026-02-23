@@ -25,7 +25,7 @@ use alloc::vec::Vec;
 // ============================================================================
 
 /// Wheel configuration
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct WheelConfig {
     /// Suspension attachment point (local to chassis)
     pub local_position: Vec3Fix,
@@ -61,7 +61,7 @@ impl Default for WheelConfig {
 }
 
 /// Engine configuration
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct EngineConfig {
     /// Maximum engine torque (Nm)
     pub max_torque: Fix128,
@@ -154,7 +154,7 @@ impl Default for VehicleConfig {
 // ============================================================================
 
 /// Runtime wheel state
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct WheelState {
     /// Current suspension compression (0 = fully extended, 1 = bottomed out)
     pub compression: Fix128,
@@ -218,6 +218,7 @@ pub struct Vehicle {
 
 impl Vehicle {
     /// Create a new vehicle
+    #[must_use]
     pub fn new(config: VehicleConfig) -> Self {
         let n = config.wheels.len();
         Self {
@@ -233,6 +234,7 @@ impl Vehicle {
     }
 
     /// Create default 4-wheel vehicle
+    #[must_use]
     pub fn new_default() -> Self {
         Self::new(VehicleConfig::default())
     }
@@ -396,8 +398,20 @@ impl Vehicle {
     }
 
     /// Number of grounded wheels
+    #[must_use]
     pub fn grounded_wheels(&self) -> usize {
         self.wheel_states.iter().filter(|w| w.grounded).count()
+    }
+}
+
+impl core::fmt::Debug for Vehicle {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Vehicle")
+            .field("wheels", &self.wheel_states.len())
+            .field("current_gear", &self.current_gear)
+            .field("engine_rpm", &self.engine_rpm)
+            .field("speed_kmh", &self.speed_kmh)
+            .finish()
     }
 }
 

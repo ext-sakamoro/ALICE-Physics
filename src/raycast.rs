@@ -16,7 +16,7 @@ use crate::math::{Fix128, Vec3Fix};
 use alloc::vec::Vec;
 
 /// A ray defined by origin and direction
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Ray {
     /// Ray origin point
     pub origin: Vec3Fix,
@@ -33,6 +33,7 @@ const RAY_PARALLEL_EPSILON: Fix128 = Fix128 {
 impl Ray {
     /// Create a new ray (direction is normalized internally)
     #[inline]
+    #[must_use]
     pub fn new(origin: Vec3Fix, direction: Vec3Fix) -> Self {
         let len = direction.length();
         Self {
@@ -47,13 +48,14 @@ impl Ray {
 
     /// Get point along the ray at parameter t
     #[inline]
+    #[must_use]
     pub fn at(&self, t: Fix128) -> Vec3Fix {
         self.origin + self.direction * t
     }
 }
 
 /// Result of a ray intersection test
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RayHit {
     /// Parameter along the ray (distance from origin)
     pub t: Fix128,
@@ -69,6 +71,7 @@ pub struct RayHit {
 ///
 /// Returns parameter t along the ray, or None if no hit.
 #[inline]
+#[must_use]
 pub fn ray_sphere(ray: &Ray, sphere: &Sphere, max_t: Fix128) -> Option<RayHit> {
     let oc = ray.origin - sphere.center;
     let b = oc.dot(ray.direction);
@@ -112,8 +115,9 @@ pub fn ray_sphere(ray: &Ray, sphere: &Sphere, max_t: Fix128) -> Option<RayHit> {
 
 /// Ray-AABB intersection (slab method)
 ///
-/// Returns (t_min, t_max) interval or None if no hit.
+/// Returns (`t_min`, `t_max`) interval or None if no hit.
 #[inline]
+#[must_use]
 pub fn ray_aabb(ray: &Ray, aabb: &AABB, max_t: Fix128) -> Option<RayHit> {
     let (t_min, t_max) = ray_aabb_interval(ray, aabb)?;
 
@@ -139,7 +143,7 @@ pub fn ray_aabb(ray: &Ray, aabb: &AABB, max_t: Fix128) -> Option<RayHit> {
     })
 }
 
-/// Ray-AABB interval computation (returns (t_min, t_max))
+/// Ray-AABB interval computation (returns (`t_min`, `t_max`))
 #[inline]
 fn ray_aabb_interval(ray: &Ray, aabb: &AABB) -> Option<(Fix128, Fix128)> {
     let mut t_min = Fix128::from_int(-1000000);
@@ -252,6 +256,7 @@ fn aabb_hit_normal(point: Vec3Fix, aabb: &AABB) -> Vec3Fix {
 }
 
 /// Ray-Capsule intersection
+#[must_use]
 pub fn ray_capsule(ray: &Ray, capsule: &Capsule, max_t: Fix128) -> Option<RayHit> {
     // Test against the infinite cylinder first, then cap with hemispheres
     let ab = capsule.b - capsule.a;
@@ -336,6 +341,7 @@ fn closer_hit(a: Option<RayHit>, b: Option<RayHit>) -> Option<RayHit> {
 /// Ray-Plane intersection
 ///
 /// Plane defined by normal and offset: dot(normal, point) = offset
+#[must_use]
 pub fn ray_plane(
     ray: &Ray,
     plane_normal: Vec3Fix,
@@ -369,6 +375,7 @@ pub fn ray_plane(
 }
 
 /// Cast a ray against multiple AABBs and return the closest hit
+#[must_use]
 pub fn raycast_aabbs(ray: &Ray, aabbs: &[(AABB, usize)], max_t: Fix128) -> Option<RayHit> {
     let mut closest: Option<RayHit> = None;
     let mut best_t = max_t;
@@ -385,6 +392,7 @@ pub fn raycast_aabbs(ray: &Ray, aabbs: &[(AABB, usize)], max_t: Fix128) -> Optio
 }
 
 /// Cast a ray against multiple Spheres and return the closest hit
+#[must_use]
 pub fn raycast_spheres(ray: &Ray, spheres: &[(Sphere, usize)], max_t: Fix128) -> Option<RayHit> {
     let mut closest: Option<RayHit> = None;
     let mut best_t = max_t;
@@ -401,6 +409,7 @@ pub fn raycast_spheres(ray: &Ray, spheres: &[(Sphere, usize)], max_t: Fix128) ->
 }
 
 /// Cast a ray against multiple Spheres and return ALL hits (sorted by t, closest first)
+#[must_use]
 pub fn raycast_all_spheres(ray: &Ray, spheres: &[(Sphere, usize)], max_t: Fix128) -> Vec<RayHit> {
     let mut hits = Vec::new();
 
@@ -417,6 +426,7 @@ pub fn raycast_all_spheres(ray: &Ray, spheres: &[(Sphere, usize)], max_t: Fix128
 }
 
 /// Cast a ray against multiple AABBs and return ALL hits (sorted by t, closest first)
+#[must_use]
 pub fn raycast_all_aabbs(ray: &Ray, aabbs: &[(AABB, usize)], max_t: Fix128) -> Vec<RayHit> {
     let mut hits = Vec::new();
 
@@ -433,6 +443,7 @@ pub fn raycast_all_aabbs(ray: &Ray, aabbs: &[(AABB, usize)], max_t: Fix128) -> V
 
 /// Test if ANY sphere is hit by the ray (early-out on first hit)
 #[inline]
+#[must_use]
 pub fn raycast_any_spheres(ray: &Ray, spheres: &[(Sphere, usize)], max_t: Fix128) -> bool {
     for (sphere, _) in spheres {
         if ray_sphere(ray, sphere, max_t).is_some() {
@@ -444,6 +455,7 @@ pub fn raycast_any_spheres(ray: &Ray, spheres: &[(Sphere, usize)], max_t: Fix128
 
 /// Test if ANY AABB is hit by the ray (early-out on first hit)
 #[inline]
+#[must_use]
 pub fn raycast_any_aabbs(ray: &Ray, aabbs: &[(AABB, usize)], max_t: Fix128) -> bool {
     for (aabb, _) in aabbs {
         if ray_aabb(ray, aabb, max_t).is_some() {
@@ -454,6 +466,7 @@ pub fn raycast_any_aabbs(ray: &Ray, aabbs: &[(AABB, usize)], max_t: Fix128) -> b
 }
 
 /// Swept sphere (shape cast): move a sphere along a ray direction
+#[must_use]
 pub fn sweep_sphere(
     sphere: &Sphere,
     direction: Vec3Fix,
@@ -466,7 +479,7 @@ pub fn sweep_sphere(
     ray_sphere(&ray, &expanded, max_t)
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use super::*;
 

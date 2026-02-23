@@ -27,6 +27,7 @@
 
 use crate::math::{Fix128, Vec3Fix};
 
+use std::fmt::Write as FmtWrite;
 use std::io::{Read, Write};
 
 // ============================================================================
@@ -34,7 +35,7 @@ use std::io::{Read, Write};
 // ============================================================================
 
 /// A complete physics scene for serialization.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct PhysicsScene {
     /// Serialized rigid bodies
     pub bodies: Vec<SerializedBody>,
@@ -50,7 +51,7 @@ pub struct PhysicsScene {
 ///
 /// Position and velocity are stored as 6 i64 values:
 /// `[x.hi, x.lo_as_i64, y.hi, y.lo_as_i64, z.hi, z.lo_as_i64]`
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct SerializedBody {
     /// Position: x.hi, x.lo, y.hi, y.lo, z.hi, z.lo
     pub position: [i64; 6],
@@ -65,7 +66,7 @@ pub struct SerializedBody {
 }
 
 /// Serialized joint (raw fixed-point data).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct SerializedJoint {
     /// Index of body A
     pub body_a: u32,
@@ -80,7 +81,7 @@ pub struct SerializedJoint {
 }
 
 /// Serialized physics configuration.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct PhysicsConfig {
     /// Number of substeps
     pub substeps: u32,
@@ -216,12 +217,20 @@ fn read_i64_array<const N: usize>(r: &mut dyn Read) -> std::io::Result<[i64; N]>
 /// Save a physics scene to a binary file.
 ///
 /// Format: magic, version, counts, config, bodies, joints.
+///
+/// # Errors
+///
+/// Returns an error if the file cannot be created or written.
 pub fn save_scene(scene: &PhysicsScene, path: &std::path::Path) -> std::io::Result<()> {
     let mut file = std::fs::File::create(path)?;
     write_scene_binary(&mut file, scene)
 }
 
 /// Load a physics scene from a binary file.
+///
+/// # Errors
+///
+/// Returns an error if the file cannot be opened, read, or contains invalid data.
 pub fn load_scene(path: &std::path::Path) -> std::io::Result<PhysicsScene> {
     let mut file = std::fs::File::open(path)?;
     read_scene_binary(&mut file)
@@ -343,97 +352,112 @@ fn read_scene_binary(r: &mut dyn Read) -> std::io::Result<PhysicsScene> {
 // ============================================================================
 
 /// Save a physics scene to a JSON file (human-readable).
+///
+/// # Errors
+///
+/// Returns an error if the file cannot be written.
 pub fn save_scene_json(scene: &PhysicsScene, path: &std::path::Path) -> std::io::Result<()> {
     let json = scene_to_json(scene);
     std::fs::write(path, json)
 }
 
 /// Load a physics scene from a JSON file.
+///
+/// # Errors
+///
+/// Returns an error if the file cannot be read or contains invalid JSON data.
 pub fn load_scene_json(path: &std::path::Path) -> std::io::Result<PhysicsScene> {
     let json = std::fs::read_to_string(path)?;
     parse_scene_json(&json).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
 }
 
 fn i64_array_to_json(arr: &[i64]) -> String {
-    let items: Vec<String> = arr.iter().map(|v| format!("{}", v)).collect();
+    let items: Vec<String> = arr.iter().map(|v| format!("{v}")).collect();
     format!("[{}]", items.join(", "))
 }
 
 fn scene_to_json(scene: &PhysicsScene) -> String {
+    fn write_json(s: &mut String, scene: &PhysicsScene) -> core::fmt::Result {
+        s.push_str("{\n");
+        writeln!(s, "  \"version\": {},", scene.version)?;
+
+        // Config
+        s.push_str("  \"config\": {\n");
+        writeln!(s, "    \"substeps\": {},", scene.config.substeps)?;
+        writeln!(s, "    \"iterations\": {},", scene.config.iterations)?;
+        writeln!(
+            s,
+            "    \"gravity\": {},",
+            i64_array_to_json(&scene.config.gravity)
+        )?;
+        writeln!(
+            s,
+            "    \"damping\": {}",
+            i64_array_to_json(&scene.config.damping)
+        )?;
+        s.push_str("  },\n");
+
+        // Bodies
+        s.push_str("  \"bodies\": [\n");
+        for (i, body) in scene.bodies.iter().enumerate() {
+            s.push_str("    {\n");
+            writeln!(
+                s,
+                "      \"position\": {},",
+                i64_array_to_json(&body.position)
+            )?;
+            writeln!(
+                s,
+                "      \"velocity\": {},",
+                i64_array_to_json(&body.velocity)
+            )?;
+            writeln!(
+                s,
+                "      \"rotation\": {},",
+                i64_array_to_json(&body.rotation)
+            )?;
+            writeln!(s, "      \"mass\": {},", i64_array_to_json(&body.mass))?;
+            writeln!(s, "      \"body_type\": {}", body.body_type)?;
+            if i < scene.bodies.len() - 1 {
+                s.push_str("    },\n");
+            } else {
+                s.push_str("    }\n");
+            }
+        }
+        s.push_str("  ],\n");
+
+        // Joints
+        s.push_str("  \"joints\": [\n");
+        for (i, joint) in scene.joints.iter().enumerate() {
+            s.push_str("    {\n");
+            writeln!(s, "      \"body_a\": {},", joint.body_a)?;
+            writeln!(s, "      \"body_b\": {},", joint.body_b)?;
+            writeln!(s, "      \"joint_type\": {},", joint.joint_type)?;
+            writeln!(
+                s,
+                "      \"anchor_a\": {},",
+                i64_array_to_json(&joint.anchor_a)
+            )?;
+            writeln!(
+                s,
+                "      \"anchor_b\": {}",
+                i64_array_to_json(&joint.anchor_b)
+            )?;
+            if i < scene.joints.len() - 1 {
+                s.push_str("    },\n");
+            } else {
+                s.push_str("    }\n");
+            }
+        }
+        s.push_str("  ]\n");
+
+        s.push_str("}\n");
+        Ok(())
+    }
+
     let mut s = String::new();
-    s.push_str("{\n");
-    s.push_str(&format!("  \"version\": {},\n", scene.version));
-
-    // Config
-    s.push_str("  \"config\": {\n");
-    s.push_str(&format!("    \"substeps\": {},\n", scene.config.substeps));
-    s.push_str(&format!(
-        "    \"iterations\": {},\n",
-        scene.config.iterations
-    ));
-    s.push_str(&format!(
-        "    \"gravity\": {},\n",
-        i64_array_to_json(&scene.config.gravity)
-    ));
-    s.push_str(&format!(
-        "    \"damping\": {}\n",
-        i64_array_to_json(&scene.config.damping)
-    ));
-    s.push_str("  },\n");
-
-    // Bodies
-    s.push_str("  \"bodies\": [\n");
-    for (i, body) in scene.bodies.iter().enumerate() {
-        s.push_str("    {\n");
-        s.push_str(&format!(
-            "      \"position\": {},\n",
-            i64_array_to_json(&body.position)
-        ));
-        s.push_str(&format!(
-            "      \"velocity\": {},\n",
-            i64_array_to_json(&body.velocity)
-        ));
-        s.push_str(&format!(
-            "      \"rotation\": {},\n",
-            i64_array_to_json(&body.rotation)
-        ));
-        s.push_str(&format!(
-            "      \"mass\": {},\n",
-            i64_array_to_json(&body.mass)
-        ));
-        s.push_str(&format!("      \"body_type\": {}\n", body.body_type));
-        if i < scene.bodies.len() - 1 {
-            s.push_str("    },\n");
-        } else {
-            s.push_str("    }\n");
-        }
-    }
-    s.push_str("  ],\n");
-
-    // Joints
-    s.push_str("  \"joints\": [\n");
-    for (i, joint) in scene.joints.iter().enumerate() {
-        s.push_str("    {\n");
-        s.push_str(&format!("      \"body_a\": {},\n", joint.body_a));
-        s.push_str(&format!("      \"body_b\": {},\n", joint.body_b));
-        s.push_str(&format!("      \"joint_type\": {},\n", joint.joint_type));
-        s.push_str(&format!(
-            "      \"anchor_a\": {},\n",
-            i64_array_to_json(&joint.anchor_a)
-        ));
-        s.push_str(&format!(
-            "      \"anchor_b\": {}\n",
-            i64_array_to_json(&joint.anchor_b)
-        ));
-        if i < scene.joints.len() - 1 {
-            s.push_str("    },\n");
-        } else {
-            s.push_str("    }\n");
-        }
-    }
-    s.push_str("  ]\n");
-
-    s.push_str("}\n");
+    // fmt::Write for String is infallible, but we use ? for clean control flow
+    let _ = write_json(&mut s, scene);
     s
 }
 
@@ -532,7 +556,7 @@ fn parse_scene_json(json: &str) -> Result<PhysicsScene, String> {
 // ============================================================================
 
 fn extract_u32(json: &str, key: &str) -> Option<u32> {
-    let pattern = format!("\"{}\"", key);
+    let pattern = format!("\"{key}\"");
     let idx = json.find(&pattern)?;
     let rest = &json[idx + pattern.len()..];
     let colon = rest.find(':')?;
@@ -545,7 +569,7 @@ fn extract_u32(json: &str, key: &str) -> Option<u32> {
 }
 
 fn extract_object(json: &str, key: &str) -> Option<String> {
-    let pattern = format!("\"{}\"", key);
+    let pattern = format!("\"{key}\"");
     let idx = json.find(&pattern)?;
     let rest = &json[idx + pattern.len()..];
     let brace = rest.find('{')?;
@@ -560,14 +584,14 @@ fn extract_object(json: &str, key: &str) -> Option<String> {
             depth -= 1;
         }
         if depth == 0 {
-            return Some(rest[start..start + i + 1].to_string());
+            return Some(rest[start..=(start + i)].to_string());
         }
     }
     None
 }
 
 fn extract_array(json: &str, key: &str) -> Option<String> {
-    let pattern = format!("\"{}\"", key);
+    let pattern = format!("\"{key}\"");
     let idx = json.find(&pattern)?;
     let rest = &json[idx + pattern.len()..];
     // Find the opening [ that follows the colon
@@ -585,18 +609,18 @@ fn extract_array(json: &str, key: &str) -> Option<String> {
             depth -= 1;
         }
         if depth == 0 {
-            return Some(after_colon[start..start + i + 1].to_string());
+            return Some(after_colon[start..=(start + i)].to_string());
         }
     }
     None
 }
 
 fn extract_i64_array(json: &str, key: &str, expected_len: usize) -> Result<Vec<i64>, String> {
-    let arr_str = extract_array(json, key).ok_or_else(|| format!("Missing key: {}", key))?;
+    let arr_str = extract_array(json, key).ok_or_else(|| format!("Missing key: {key}"))?;
     // Parse [n1, n2, ...]
     let inner = arr_str.trim_start_matches('[').trim_end_matches(']');
     let values: Result<Vec<i64>, _> = inner.split(',').map(|s| s.trim().parse::<i64>()).collect();
-    let values = values.map_err(|e| format!("Parse error for {}: {}", key, e))?;
+    let values = values.map_err(|e| format!("Parse error for {key}: {e}"))?;
     if values.len() != expected_len {
         return Err(format!(
             "Expected {} values for {}, got {}",

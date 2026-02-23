@@ -24,7 +24,7 @@ use alloc::vec::Vec;
 // ============================================================================
 
 /// Physical material properties for audio synthesis
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct AudioMaterial {
     /// Material type identifier
     pub material_type: MaterialType,
@@ -138,7 +138,7 @@ impl AudioMaterial {
 // ============================================================================
 
 /// Audio parameters generated from a physics event
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct AudioEvent {
     /// World-space position for 3D spatialization
     pub position: Vec3Fix,
@@ -182,7 +182,7 @@ pub enum AudioEventType {
 // ============================================================================
 
 /// Audio event generator configuration
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct AudioConfig {
     /// Minimum impact velocity to generate sound
     pub min_velocity: Fix128,
@@ -223,6 +223,7 @@ pub struct AudioGenerator {
 
 impl AudioGenerator {
     /// Create a new audio generator for N bodies
+    #[must_use]
     pub fn new(num_bodies: usize, config: AudioConfig) -> Self {
         Self {
             config,
@@ -402,6 +403,7 @@ impl AudioGenerator {
     }
 
     /// Get all audio events for this frame
+    #[must_use]
     pub fn get_events(&self) -> &[AudioEvent] {
         &self.events
     }

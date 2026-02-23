@@ -28,7 +28,7 @@ use alloc::vec::Vec;
 // ============================================================================
 
 /// Fluid simulation configuration
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct FluidConfig {
     /// Rest density (kg/m^3)
     pub rest_density: Fix128,
@@ -125,12 +125,13 @@ pub struct Fluid {
     grid: SpatialGrid,
     /// Configuration
     pub config: FluidConfig,
-    /// Cached reciprocal of rest_density to avoid repeated division in hot loops
+    /// Cached reciprocal of `rest_density` to avoid repeated division in hot loops
     inv_rest_density: Fix128,
 }
 
 impl Fluid {
     /// Create fluid with initial particle positions
+    #[must_use]
     pub fn new(positions: Vec<Vec3Fix>, config: FluidConfig) -> Self {
         let n = positions.len();
         let grid_dim = 32;
@@ -153,6 +154,7 @@ impl Fluid {
     }
 
     /// Create a block of fluid particles
+    #[must_use]
     pub fn new_block(min: Vec3Fix, max: Vec3Fix, spacing: Fix128, config: FluidConfig) -> Self {
         let mut positions = Vec::new();
 
@@ -175,6 +177,7 @@ impl Fluid {
 
     /// Number of particles
     #[inline(always)]
+    #[must_use]
     pub fn particle_count(&self) -> usize {
         self.positions.len()
     }
@@ -455,6 +458,15 @@ impl Fluid {
                 }
             }
         }
+    }
+}
+
+impl core::fmt::Debug for Fluid {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Fluid")
+            .field("particles", &self.positions.len())
+            .field("config", &self.config)
+            .finish()
     }
 }
 

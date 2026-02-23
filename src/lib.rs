@@ -202,7 +202,9 @@
     clippy::module_name_repetitions,
     clippy::unreadable_literal,
     clippy::large_stack_arrays,
-    clippy::inline_always
+    clippy::inline_always,
+    clippy::too_many_lines,
+    clippy::doc_markdown
 )]
 #![cfg_attr(not(feature = "std"), no_std)]
 
@@ -336,7 +338,9 @@ pub use articulation::{ArticulatedBody, FeatherstoneSolver};
 pub use audio_physics::{AudioConfig, AudioEvent, AudioGenerator, AudioMaterial};
 pub use box_collider::OrientedBox;
 pub use bvh::{BvhNode, BvhPrimitive, LinearBvh};
-pub use ccd::{speculative_contact, CcdConfig};
+pub use ccd::{
+    aabb_plane_toi, capsule_plane_toi, speculative_contact, sphere_capsule_toi, CcdConfig,
+};
 pub use character::{CharacterConfig, CharacterController, MoveResult, PushImpulse};
 pub use cloth::{Cloth, ClothConfig};
 pub use cloth_fluid::{
@@ -630,7 +634,7 @@ pub mod prelude {
     pub use crate::wedge::Wedge;
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod compile_smoke_tests {
     //! Verify that core types from the prelude and key modules are accessible.
     //! These tests catch accidental breakage of public re-exports.
@@ -672,7 +676,7 @@ mod compile_smoke_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use super::*;
 

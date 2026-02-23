@@ -35,6 +35,7 @@ fn expand_bits(mut v: u64) -> u64 {
 ///
 /// Coordinates should be normalized to [0, 2^21) range
 #[inline]
+#[must_use]
 pub fn morton_code(x: u64, y: u64, z: u64) -> u64 {
     let x = x.min((1 << 21) - 1);
     let y = y.min((1 << 21) - 1);
@@ -44,6 +45,7 @@ pub fn morton_code(x: u64, y: u64, z: u64) -> u64 {
 }
 
 /// Compute Morton code from a point within a bounding box
+#[must_use]
 pub fn point_to_morton(point: Vec3Fix, bounds: &AABB) -> u64 {
     let size = bounds.max - bounds.min;
 
@@ -101,9 +103,9 @@ pub const ESCAPE_NONE: u32 = u32::MAX;
 ///
 /// Layout optimized for stackless traversal:
 /// - `escape_idx`: Next node to visit if AABB test fails (skip entire subtree)
-/// - For leaves: escape_idx points to next sibling or parent's escape
-/// - For internal nodes: escape_idx points to next subtree after both children
-#[derive(Clone, Copy, Debug)]
+/// - For leaves: `escape_idx` points to next sibling or parent's escape
+/// - For internal nodes: `escape_idx` points to next subtree after both children
+#[derive(Clone, Copy, Debug, PartialEq)]
 #[repr(C, align(32))]
 pub struct BvhNode {
     /// Bounding box minimum (compressed to i32)
@@ -122,6 +124,7 @@ impl BvhNode {
 
     /// Create internal node
     #[inline]
+    #[must_use]
     pub fn internal(aabb: &AABB, first_child: u32, escape_idx: u32) -> Self {
         Self {
             aabb_min: aabb_to_i32_min(aabb),
@@ -136,6 +139,7 @@ impl BvhNode {
     /// `count` is saturated to [`Self::MAX_PRIMS_PER_LEAF`] (255) to prevent
     /// 8-bit overflow that would make the leaf appear as an internal node.
     #[inline]
+    #[must_use]
     pub fn leaf(aabb: &AABB, first_prim: u32, count: u32, escape_idx: u32) -> Self {
         let clamped = count.min(Self::MAX_PRIMS_PER_LEAF);
         debug_assert!(count <= Self::MAX_PRIMS_PER_LEAF);
@@ -149,24 +153,28 @@ impl BvhNode {
 
     /// Check if this is a leaf node
     #[inline]
+    #[must_use]
     pub fn is_leaf(&self) -> bool {
         (self.prim_count_escape >> 24) > 0
     }
 
     /// Get primitive count (0 for internal nodes)
     #[inline]
+    #[must_use]
     pub fn prim_count(&self) -> u32 {
         self.prim_count_escape >> 24
     }
 
     /// Get escape index (next node to visit on AABB miss)
     #[inline]
+    #[must_use]
     pub fn escape_idx(&self) -> u32 {
         self.prim_count_escape & 0x00FFFFFF
     }
 
     /// Get AABB (reconstructed from compressed i32)
     #[inline]
+    #[must_use]
     pub fn get_aabb(&self) -> AABB {
         AABB {
             min: Vec3Fix::new(
@@ -184,6 +192,7 @@ impl BvhNode {
 
     /// Fast AABB intersection test (integer-only, no Fix128 reconstruction)
     #[inline]
+    #[must_use]
     pub fn intersects_i32(&self, query_min: &[i32; 3], query_max: &[i32; 3]) -> bool {
         self.aabb_min[0] <= query_max[0]
             && self.aabb_max[0] >= query_min[0]
@@ -233,7 +242,7 @@ fn aabb_to_i32_max(aabb: &AABB) -> [i32; 3] {
 // ============================================================================
 
 /// Primitive entry for BVH construction
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct BvhPrimitive {
     /// AABB of the primitive
     pub aabb: AABB,
@@ -255,6 +264,7 @@ pub struct LinearBvh {
 
 impl LinearBvh {
     /// Build BVH from primitives
+    #[must_use]
     pub fn build(mut primitives: Vec<BvhPrimitive>) -> Self {
         if primitives.is_empty() {
             return Self {
@@ -401,6 +411,7 @@ impl LinearBvh {
     /// **Zero heap allocation** during traversal - uses only a single index variable.
     /// This is the "黒焦げ" (crispy) optimization.
     #[inline]
+    #[must_use]
     pub fn query(&self, aabb: &AABB) -> Vec<u32> {
         let mut result = Vec::new();
 
@@ -487,6 +498,7 @@ impl LinearBvh {
 
     /// Find all potentially colliding pairs (broad phase)
     /// Uses stackless traversal internally.
+    #[must_use]
     pub fn find_pairs(&self) -> Vec<(u32, u32)> {
         let mut pairs = Vec::new();
 
@@ -511,6 +523,7 @@ impl LinearBvh {
     }
 
     /// Get statistics about the BVH
+    #[must_use]
     pub fn stats(&self) -> BvhStats {
         let mut stats = BvhStats {
             node_count: self.nodes.len(),
@@ -546,7 +559,7 @@ pub struct BvhStats {
     pub max_leaf_prims: usize,
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use super::*;
 

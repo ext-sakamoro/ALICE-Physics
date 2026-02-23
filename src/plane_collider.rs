@@ -24,7 +24,7 @@ use crate::math::{Fix128, Vec3Fix};
 ///
 /// Defined in Hessian normal form: `dot(normal, p) = offset`.
 /// The normal should be unit length.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PlaneCollider {
     /// Plane normal (unit length)
     pub normal: Vec3Fix,

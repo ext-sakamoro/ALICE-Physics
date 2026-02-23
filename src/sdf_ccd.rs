@@ -29,7 +29,7 @@ use crate::sdf_collider::SdfCollider;
 // ============================================================================
 
 /// Configuration for SDF sphere tracing CCD
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SdfCcdConfig {
     /// Maximum sphere tracing iterations
     pub max_iterations: usize,
@@ -64,6 +64,7 @@ impl Default for SdfCcdConfig {
 ///
 /// The sphere moves from `start` to `start + displacement` over [0, 1].
 #[cfg(feature = "std")]
+#[must_use]
 pub fn sphere_trace_sdf(
     start: Vec3Fix,
     displacement: Vec3Fix,
@@ -119,6 +120,7 @@ pub fn sphere_trace_sdf(
 ///
 /// Simpler variant for raycasting against SDF geometry.
 #[cfg(feature = "std")]
+#[must_use]
 pub fn ray_march_sdf(
     origin: Vec3Fix,
     direction: Vec3Fix,
@@ -158,8 +160,9 @@ pub fn ray_march_sdf(
 
 /// Batch sphere trace: test multiple bodies against multiple SDF colliders.
 ///
-/// Returns (body_index, sdf_index, TOI) tuples for all detected impacts.
+/// Returns (`body_index`, `sdf_index`, TOI) tuples for all detected impacts.
 #[cfg(feature = "std")]
+#[must_use]
 pub fn batch_sphere_trace_sdf(
     bodies: &[crate::solver::RigidBody],
     displacements: &[Vec3Fix],
@@ -200,7 +203,7 @@ pub fn batch_sphere_trace_sdf(
 // Tests
 // ============================================================================
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use super::*;
     use crate::math::QuatFix;

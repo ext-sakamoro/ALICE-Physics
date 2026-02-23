@@ -24,7 +24,7 @@ use crate::math::{Fix128, QuatFix, Vec3Fix};
 /// A torus defined by center position, major radius (distance from center to
 /// tube center line), minor radius (tube cross-section radius), and an
 /// orientation quaternion. The ring lies in the local XZ plane.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Torus {
     /// Center position in world space
     pub center: Vec3Fix,

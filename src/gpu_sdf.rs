@@ -26,7 +26,7 @@ use alloc::vec::Vec;
 /// Per-query input data (CPU → GPU)
 ///
 /// Packed for GPU transfer: 16 bytes per query
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 #[repr(C, align(16))]
 pub struct GpuSdfQuery {
     /// Query position (x, y, z)
@@ -61,7 +61,7 @@ const _: () = {
 };
 
 /// GPU dispatch configuration
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct GpuDispatchConfig {
     /// Workgroup size (typically 64 or 256)
     pub workgroup_size: u32,
@@ -99,6 +99,7 @@ pub struct GpuSdfBatch {
 
 impl GpuSdfBatch {
     /// Create a new empty batch
+    #[must_use]
     pub fn new(config: GpuDispatchConfig) -> Self {
         Self {
             queries: Vec::new(),
@@ -122,11 +123,13 @@ impl GpuSdfBatch {
 
     /// Number of queries in the batch
     #[inline]
+    #[must_use]
     pub fn query_count(&self) -> usize {
         self.queries.len()
     }
 
     /// Calculate number of workgroups needed
+    #[must_use]
     pub fn num_workgroups(&self) -> u32 {
         let n = self.queries.len() as u32;
         (n + self.config.workgroup_size - 1) / self.config.workgroup_size
@@ -146,6 +149,7 @@ impl GpuSdfBatch {
     }
 
     /// Get raw query buffer as bytes (for GPU upload)
+    #[must_use]
     pub fn query_bytes(&self) -> &[u8] {
         // SAFETY: GpuSdfQuery is repr(C, align(16)) with no padding or uninitialized bytes.
         // The pointer is derived from a valid Vec<GpuSdfQuery>, and the byte length equals
@@ -173,6 +177,7 @@ impl GpuSdfBatch {
     }
 
     /// Check results for collisions and return contacts
+    #[must_use]
     pub fn extract_contacts(&self, collision_radius: f32) -> Vec<GpuSdfContact> {
         let mut contacts = Vec::new();
 
@@ -236,6 +241,7 @@ pub struct GpuSdfMultiDispatch {
 
 impl GpuSdfMultiDispatch {
     /// Create an empty multi-dispatch container.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             batches: Vec::new(),
@@ -257,11 +263,13 @@ impl GpuSdfMultiDispatch {
     }
 
     /// Total number of individual SDF point queries across all batches.
+    #[must_use]
     pub fn total_queries(&self) -> usize {
         self.batches.iter().map(|b| b.queries.len()).sum()
     }
 
     /// Number of GPU kernel dispatches that will be issued (one per batch).
+    #[must_use]
     pub fn total_dispatches(&self) -> usize {
         self.batches.len()
     }
@@ -294,12 +302,13 @@ impl Default for GpuSdfMultiDispatch {
 /// }
 /// ```
 #[inline(always)]
+#[must_use]
 pub fn batch_size() -> usize {
     crate::math::SIMD_WIDTH
 }
 
 /// Contact from GPU SDF evaluation
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct GpuSdfContact {
     /// Body index
     pub body_index: usize,

@@ -24,7 +24,7 @@ use std::collections::HashMap;
 pub const MAX_MANIFOLD_POINTS: usize = 4;
 
 /// A single cached contact point within a manifold
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct CachedContactPoint {
     /// Contact point on body A (local space)
     pub local_point_a: Vec3Fix,
@@ -46,6 +46,7 @@ pub struct CachedContactPoint {
 
 impl CachedContactPoint {
     /// Create a new cached contact point
+    #[must_use]
     pub fn new(local_a: Vec3Fix, local_b: Vec3Fix, normal: Vec3Fix, depth: Fix128) -> Self {
         Self {
             local_point_a: local_a,
@@ -72,6 +73,7 @@ pub struct BodyPairKey {
 impl BodyPairKey {
     /// Create a canonical body pair key (ensures a < b)
     #[inline]
+    #[must_use]
     pub fn new(a: usize, b: usize) -> Self {
         if a < b {
             Self {
@@ -92,7 +94,7 @@ impl BodyPairKey {
 pub struct ContactManifold {
     /// Body pair this manifold belongs to
     pub pair: BodyPairKey,
-    /// Active contact points (up to MAX_MANIFOLD_POINTS)
+    /// Active contact points (up to `MAX_MANIFOLD_POINTS`)
     pub points: Vec<CachedContactPoint>,
     /// Shared normal direction (average of point normals)
     pub normal: Vec3Fix,
@@ -106,6 +108,7 @@ pub struct ContactManifold {
 
 impl ContactManifold {
     /// Create a new empty manifold
+    #[must_use]
     pub fn new(pair: BodyPairKey, friction: Fix128, restitution: Fix128) -> Self {
         Self {
             pair,
@@ -199,12 +202,14 @@ impl ContactManifold {
 
     /// Number of active contact points
     #[inline]
+    #[must_use]
     pub fn point_count(&self) -> usize {
         self.points.len()
     }
 
     /// Check if this manifold is empty
     #[inline]
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.points.is_empty()
     }
@@ -216,6 +221,7 @@ impl ContactManifold {
     }
 
     /// Get warm-start impulse for a contact point
+    #[must_use]
     pub fn warm_start_impulse(&self, point_idx: usize) -> (Fix128, Fix128, Fix128) {
         if point_idx < self.points.len() {
             let p = &self.points[point_idx];
@@ -245,7 +251,7 @@ impl ContactManifold {
 pub struct ContactCache {
     /// All active manifolds
     pub manifolds: Vec<ContactManifold>,
-    /// HashMap index for O(1) manifold lookup (std feature only)
+    /// `HashMap` index for O(1) manifold lookup (std feature only)
     #[cfg(feature = "std")]
     pair_index: HashMap<BodyPairKey, usize>,
     /// Maximum stale frames before manifold is removed
@@ -256,6 +262,7 @@ pub struct ContactCache {
 
 impl ContactCache {
     /// Create a new contact cache
+    #[must_use]
     pub fn new() -> Self {
         Self {
             manifolds: Vec::new(),
@@ -267,6 +274,10 @@ impl ContactCache {
     }
 
     /// Find or create manifold for a body pair
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal manifold `Vec` is empty after a push (should never happen).
     pub fn get_or_create(
         &mut self,
         pair: BodyPairKey,
@@ -289,18 +300,23 @@ impl ContactCache {
                 self.manifolds
                     .push(ContactManifold::new(pair, friction, restitution));
                 self.pair_index.insert(pair, idx);
-                self.manifolds.last_mut().unwrap()
+                self.manifolds
+                    .last_mut()
+                    .expect("just pushed, cannot be empty")
             }
             #[cfg(not(feature = "std"))]
             {
                 self.manifolds
                     .push(ContactManifold::new(pair, friction, restitution));
-                self.manifolds.last_mut().unwrap()
+                self.manifolds
+                    .last_mut()
+                    .expect("just pushed, cannot be empty")
             }
         }
     }
 
     /// Find manifold for a body pair (read-only)
+    #[must_use]
     pub fn find(&self, pair: &BodyPairKey) -> Option<&ContactManifold> {
         // Use HashMap (O(1)) with std feature, or linear scan (O(n)) without
         #[cfg(feature = "std")]
@@ -338,6 +354,7 @@ impl ContactCache {
 
     /// Total number of active manifolds
     #[inline]
+    #[must_use]
     pub fn manifold_count(&self) -> usize {
         self.manifolds.len()
     }
@@ -400,7 +417,17 @@ impl Default for ContactCache {
     }
 }
 
+impl core::fmt::Debug for ContactCache {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("ContactCache")
+            .field("manifolds", &self.manifolds.len())
+            .field("max_stale_frames", &self.max_stale_frames)
+            .finish()
+    }
+}
+
 /// Build orthonormal tangent frame from a normal vector
+#[must_use]
 pub fn tangent_frame(normal: Vec3Fix) -> (Vec3Fix, Vec3Fix) {
     // Pick axis least parallel to normal
     let abs_x = normal.x.abs();
@@ -420,7 +447,7 @@ pub fn tangent_frame(normal: Vec3Fix) -> (Vec3Fix, Vec3Fix) {
     (t1, t2)
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use super::*;
     use crate::solver::RigidBody;

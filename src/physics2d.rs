@@ -19,8 +19,6 @@
 //! are fixed. No `HashMap` or non-deterministic data structures.
 
 #[cfg(not(feature = "std"))]
-use alloc::vec;
-#[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
 use core::ops::{Add, Div, Mul, Neg, Sub};
@@ -481,7 +479,7 @@ fn compute_inertia(shape: &Shape2D, mass: Fix128) -> Fix128 {
 // ============================================================================
 
 /// Contact point between two 2D bodies.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Contact2D {
     /// World-space contact point.
     pub point: Vec2Fix,
@@ -1490,11 +1488,21 @@ fn solve_mouse(
     bodies[body_idx].position = bodies[body_idx].position + correction * stiffness;
 }
 
+impl core::fmt::Debug for PhysicsWorld2D {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("PhysicsWorld2D")
+            .field("bodies", &self.bodies.len())
+            .field("joints", &self.joints.len())
+            .field("config", &self.config)
+            .finish()
+    }
+}
+
 // ============================================================================
 // Tests
 // ============================================================================
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use super::*;
 

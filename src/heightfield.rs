@@ -15,6 +15,7 @@ use alloc::vec::Vec;
 ///
 /// Heights stored as a 2D grid in row-major order (Z-major):
 /// `index = x + z * width`
+#[derive(Clone, Debug, PartialEq)]
 pub struct HeightField {
     /// Height values (Fix128)
     pub heights: Vec<Fix128>,
@@ -30,6 +31,7 @@ pub struct HeightField {
 
 impl HeightField {
     /// Create a height field from a grid of heights
+    #[must_use]
     pub fn new(
         heights: Vec<Fix128>,
         width: u32,
@@ -48,6 +50,7 @@ impl HeightField {
     }
 
     /// Create a flat height field at a given Y level
+    #[must_use]
     pub fn flat(width: u32, depth: u32, spacing: Fix128, origin: Vec3Fix, height: Fix128) -> Self {
         let heights = vec![height; (width * depth) as usize];
         Self::new(heights, width, depth, spacing, origin)
@@ -55,6 +58,7 @@ impl HeightField {
 
     /// Get height at grid coordinates (clamped to bounds)
     #[inline]
+    #[must_use]
     pub fn get_height(&self, gx: u32, gz: u32) -> Fix128 {
         let gx = gx.min(self.width - 1);
         let gz = gz.min(self.depth - 1);
@@ -82,6 +86,7 @@ impl HeightField {
     }
 
     /// Sample height at world-space XZ with bilinear interpolation
+    #[must_use]
     pub fn sample_height(&self, world_x: Fix128, world_z: Fix128) -> Fix128 {
         let local_x = world_x - self.origin.x;
         let local_z = world_z - self.origin.z;
@@ -132,6 +137,7 @@ impl HeightField {
     }
 
     /// Compute surface normal at world-space XZ via central difference
+    #[must_use]
     pub fn sample_normal(&self, world_x: Fix128, world_z: Fix128) -> Vec3Fix {
         let eps = self.spacing.half();
         let hx_neg = self.sample_height(world_x - eps, world_z);
@@ -148,7 +154,8 @@ impl HeightField {
         Vec3Fix::new(-(dx * inv_eps2), Fix128::ONE, -(dz * inv_eps2)).normalize()
     }
 
-    /// Sphere vs HeightField collision
+    /// Sphere vs `HeightField` collision
+    #[must_use]
     pub fn collide_sphere(&self, center: Vec3Fix, radius: Fix128) -> Option<Contact> {
         let (gx_f, gz_f) = self.world_to_grid(center);
 
@@ -180,14 +187,16 @@ impl HeightField {
         }
     }
 
-    /// Point vs HeightField: get signed distance (positive = above)
+    /// Point vs `HeightField`: get signed distance (positive = above)
     #[inline]
+    #[must_use]
     pub fn signed_distance(&self, point: Vec3Fix) -> Fix128 {
         let ground_height = self.sample_height(point.x, point.z);
         point.y - ground_height
     }
 
     /// Get world-space AABB of the height field
+    #[must_use]
     pub fn aabb(&self) -> crate::collider::AABB {
         let mut min_h = self.heights[0];
         let mut max_h = self.heights[0];

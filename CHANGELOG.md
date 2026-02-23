@@ -2,6 +2,32 @@
 
 All notable changes to ALICE-Physics will be documented in this file.
 
+## [0.6.0] - 2026-02-23
+
+### Added
+
+- **Per-body damping**: `linear_damping` and `angular_damping` fields on `RigidBody` with builder methods
+- **CCD extensions**: `capsule_plane_toi`, `sphere_capsule_toi`, `aabb_plane_toi` functions
+- **PhysicsWorld Debug**: manual `Debug` impl showing body/constraint/joint counts
+- **RigidBody builder pattern**: `with_restitution`, `with_friction`, `with_gravity_scale`, `with_sensor`, `with_velocity`, `with_rotation`
+- **RigidBody Default**: creates 1kg dynamic body at origin
+- **Display impls**: `Fix128`, `Vec3Fix`, `QuatFix` now implement `Display`
+- **From/Into conversions**: `Fix128` from `i64`/`i32`, `Vec3Fix` ↔ `[Fix128; 3]`, `QuatFix` ↔ `[Fix128; 4]`
+- **Error variants**: `PhysicsError::IoError` (std), `CapacityExceeded`, `InvalidConfiguration`
+- **HeightField derives**: `Clone`, `Debug`, `PartialEq`
+- **PartialEq**: added to 90+ public types across all modules
+- **Debug impls**: manual `Debug` for 10 container structs (Cloth, Fluid, Rope, Vehicle, DeformableBody, ParticleSystem, PhysicsWorld2D, MultiWorld, CharacterController, ContactCache)
+- **scene_io PartialEq**: `PhysicsScene`, `SerializedBody`, `SerializedJoint`, `PhysicsConfig`
+- **SECURITY.md**: security policy and vulnerability reporting guidelines
+- 10 new integration tests (stress test, damping, builder, Display, From/Into, CCD, errors, HeightField)
+
+### Changed
+
+- `unwrap()` replaced with `expect()` in `query.rs`, `netcode.rs`, and `contact_cache.rs` for better error messages
+- `query.rs`: branchless `map_or` replaces `is_none() || .unwrap()` pattern
+- `scene_io.rs`: `scene_to_json` refactored to use inner function with `?` operator (removes 15 `unwrap()` calls)
+- `no_std` compatibility: 24 test modules gated with `#[cfg(all(test, feature = "std"))]`
+
 ## [0.5.0] - 2026-02-23
 
 ### Added

@@ -53,6 +53,7 @@ impl CollisionFilter {
 
     /// Create a new collision filter
     #[inline]
+    #[must_use]
     pub const fn new(layer: u32, mask: u32) -> Self {
         Self {
             layer,
@@ -63,6 +64,7 @@ impl CollisionFilter {
 
     /// Create filter with a collision group
     #[inline]
+    #[must_use]
     pub const fn with_group(mut self, group: u32) -> Self {
         self.group = group;
         self
@@ -70,6 +72,7 @@ impl CollisionFilter {
 
     /// Check if two filters allow collision
     #[inline]
+    #[must_use]
     pub fn can_collide(a: &Self, b: &Self) -> bool {
         // Same non-zero group => never collide
         if a.group != 0 && a.group == b.group {

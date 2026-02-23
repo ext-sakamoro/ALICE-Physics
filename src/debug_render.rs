@@ -30,6 +30,7 @@ pub struct DebugColor {
 
 impl DebugColor {
     /// Create a new color
+    #[must_use]
     pub const fn new(r: u8, g: u8, b: u8, a: u8) -> Self {
         Self { r, g, b, a }
     }
@@ -55,7 +56,7 @@ impl DebugColor {
 }
 
 /// A debug line segment
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DebugLine {
     /// Start point
     pub start: Vec3Fix,
@@ -66,7 +67,7 @@ pub struct DebugLine {
 }
 
 /// A debug point
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DebugPoint {
     /// Position
     pub position: Vec3Fix,
@@ -77,7 +78,7 @@ pub struct DebugPoint {
 }
 
 /// What to draw in debug mode
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 #[allow(clippy::struct_excessive_bools)]
 pub struct DebugDrawFlags {
     /// Draw body AABBs
@@ -124,6 +125,7 @@ pub struct DebugDrawData {
 
 impl DebugDrawData {
     /// Create empty draw data
+    #[must_use]
     pub fn new() -> Self {
         Self {
             lines: Vec::new(),
@@ -264,6 +266,7 @@ impl DebugDrawData {
     }
 
     /// Total primitive count
+    #[must_use]
     pub fn primitive_count(&self) -> usize {
         self.lines.len() + self.points.len()
     }

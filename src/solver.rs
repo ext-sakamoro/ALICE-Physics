@@ -72,7 +72,7 @@ pub enum BodyType {
 ///
 /// `#[repr(C, align(64))]` ensures the struct starts on a cache-line boundary
 /// so the hot fields are always in the first 64-byte cache line.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 #[repr(C, align(64))]
 pub struct RigidBody {
     // --- HOT fields (accessed every iteration) ---
@@ -100,6 +100,12 @@ pub struct RigidBody {
     pub friction: Fix128,
     /// Gravity scale multiplier (1.0 = normal, 0.0 = no gravity, 2.0 = double)
     pub gravity_scale: Fix128,
+    /// Per-body linear damping factor (1.0 = no damping, 0.0 = full damping)
+    /// Overrides global damping when set. Applied per substep.
+    pub linear_damping: Fix128,
+    /// Per-body angular damping factor (1.0 = no damping, 0.0 = full damping)
+    /// Overrides global damping when set. Applied per substep.
+    pub angular_damping: Fix128,
     /// Whether this body is a sensor/trigger (detects overlap but no physics response)
     pub is_sensor: bool,
     /// Body type (Dynamic, Static, Kinematic)
@@ -127,6 +133,7 @@ impl RigidBody {
     /// // Dynamic body is not static
     /// assert!(!body.is_static());
     /// ```
+    #[must_use]
     pub fn new(position: Vec3Fix, mass: Fix128) -> Self {
         let inv_mass = if mass.is_zero() {
             Fix128::ZERO
@@ -155,6 +162,8 @@ impl RigidBody {
             restitution: Fix128::from_ratio(5, 10), // 0.5 default
             friction: Fix128::from_ratio(3, 10),    // 0.3 default
             gravity_scale: Fix128::ONE,
+            linear_damping: Fix128::ONE,
+            angular_damping: Fix128::ONE,
             is_sensor: false,
             body_type: BodyType::Dynamic,
             kinematic_target: None,
@@ -163,11 +172,13 @@ impl RigidBody {
 
     /// Create new dynamic rigid body (alias for new)
     #[inline]
+    #[must_use]
     pub fn new_dynamic(position: Vec3Fix, mass: Fix128) -> Self {
         Self::new(position, mass)
     }
 
     /// Create static (immovable) rigid body
+    #[must_use]
     pub fn new_static(position: Vec3Fix) -> Self {
         Self {
             position,
@@ -181,6 +192,8 @@ impl RigidBody {
             restitution: Fix128::ZERO,
             friction: Fix128::ONE,
             gravity_scale: Fix128::ZERO,
+            linear_damping: Fix128::ONE,
+            angular_damping: Fix128::ONE,
             is_sensor: false,
             body_type: BodyType::Static,
             kinematic_target: None,
@@ -188,6 +201,7 @@ impl RigidBody {
     }
 
     /// Create a sensor (trigger) body - detects overlap but no physics response
+    #[must_use]
     pub fn new_sensor(position: Vec3Fix) -> Self {
         Self {
             position,
@@ -201,6 +215,8 @@ impl RigidBody {
             restitution: Fix128::ZERO,
             friction: Fix128::ZERO,
             gravity_scale: Fix128::ZERO,
+            linear_damping: Fix128::ONE,
+            angular_damping: Fix128::ONE,
             is_sensor: true,
             body_type: BodyType::Static,
             kinematic_target: None,
@@ -211,6 +227,7 @@ impl RigidBody {
     ///
     /// Kinematic bodies have infinite mass and are unaffected by forces,
     /// but can push dynamic bodies. Set target via `set_kinematic_target`.
+    #[must_use]
     pub fn new_kinematic(position: Vec3Fix) -> Self {
         Self {
             position,
@@ -224,6 +241,8 @@ impl RigidBody {
             restitution: Fix128::ZERO,
             friction: Fix128::ONE,
             gravity_scale: Fix128::ZERO,
+            linear_damping: Fix128::ONE,
+            angular_damping: Fix128::ONE,
             is_sensor: false,
             body_type: BodyType::Kinematic,
             kinematic_target: None,
@@ -232,18 +251,21 @@ impl RigidBody {
 
     /// Check if body is static
     #[inline]
+    #[must_use]
     pub fn is_static(&self) -> bool {
         self.inv_mass.is_zero()
     }
 
     /// Check if body is kinematic
     #[inline]
+    #[must_use]
     pub fn is_kinematic(&self) -> bool {
         self.body_type == BodyType::Kinematic
     }
 
     /// Check if body is dynamic
     #[inline]
+    #[must_use]
     pub fn is_dynamic(&self) -> bool {
         self.body_type == BodyType::Dynamic
     }
@@ -281,7 +303,7 @@ impl RigidBody {
 
     /// Apply a continuous force (accumulated, applied during next step)
     ///
-    /// Force is converted to velocity change: v += (F * inv_mass) * dt
+    /// Force is converted to velocity change: v += (F * `inv_mass`) * dt
     /// For one-shot velocity changes, use `apply_impulse` instead.
     #[inline]
     pub fn add_force(&mut self, force: Vec3Fix, dt: Fix128) {
@@ -329,8 +351,9 @@ impl RigidBody {
         self.prev_rotation = rotation;
     }
 
-    /// Get mass (inverse of inv_mass, returns infinity for static bodies)
+    /// Get mass (inverse of `inv_mass`, returns infinity for static bodies)
     #[inline]
+    #[must_use]
     pub fn mass(&self) -> Fix128 {
         if self.inv_mass.is_zero() {
             Fix128::ZERO // Represents infinite mass
@@ -341,8 +364,81 @@ impl RigidBody {
 
     /// Get linear speed (magnitude of velocity)
     #[inline]
+    #[must_use]
     pub fn speed(&self) -> Fix128 {
         self.velocity.length()
+    }
+
+    /// Set per-body linear damping (1.0 = no extra damping)
+    #[inline]
+    #[must_use]
+    pub fn with_linear_damping(mut self, damping: Fix128) -> Self {
+        self.linear_damping = damping;
+        self
+    }
+
+    /// Set per-body angular damping (1.0 = no extra damping)
+    #[inline]
+    #[must_use]
+    pub fn with_angular_damping(mut self, damping: Fix128) -> Self {
+        self.angular_damping = damping;
+        self
+    }
+
+    /// Builder: set restitution (bounciness)
+    #[inline]
+    #[must_use]
+    pub fn with_restitution(mut self, restitution: Fix128) -> Self {
+        self.restitution = restitution;
+        self
+    }
+
+    /// Builder: set friction coefficient
+    #[inline]
+    #[must_use]
+    pub fn with_friction(mut self, friction: Fix128) -> Self {
+        self.friction = friction;
+        self
+    }
+
+    /// Builder: set gravity scale
+    #[inline]
+    #[must_use]
+    pub fn with_gravity_scale(mut self, scale: Fix128) -> Self {
+        self.gravity_scale = scale;
+        self
+    }
+
+    /// Builder: set as sensor (trigger)
+    #[inline]
+    #[must_use]
+    pub fn with_sensor(mut self, is_sensor: bool) -> Self {
+        self.is_sensor = is_sensor;
+        self
+    }
+
+    /// Builder: set initial velocity
+    #[inline]
+    #[must_use]
+    pub fn with_velocity(mut self, velocity: Vec3Fix) -> Self {
+        self.velocity = velocity;
+        self
+    }
+
+    /// Builder: set initial rotation
+    #[inline]
+    #[must_use]
+    pub fn with_rotation(mut self, rotation: QuatFix) -> Self {
+        self.rotation = rotation;
+        self.prev_rotation = rotation;
+        self
+    }
+}
+
+impl Default for RigidBody {
+    /// Default creates a 1kg dynamic body at the origin.
+    fn default() -> Self {
+        Self::new(Vec3Fix::ZERO, Fix128::ONE)
     }
 }
 
@@ -351,7 +447,7 @@ impl RigidBody {
 // ============================================================================
 
 /// Distance constraint between two bodies
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DistanceConstraint {
     /// Index of the first body
     pub body_a: usize,
@@ -375,6 +471,7 @@ pub struct DistanceConstraint {
 
 impl DistanceConstraint {
     /// Create a new distance constraint
+    #[must_use]
     pub fn new(
         body_a: usize,
         body_b: usize,
@@ -394,6 +491,7 @@ impl DistanceConstraint {
     }
 
     /// Set compliance (inverse stiffness)
+    #[must_use]
     pub fn with_compliance(mut self, compliance: Fix128) -> Self {
         self.compliance = compliance;
         self
@@ -401,7 +499,7 @@ impl DistanceConstraint {
 }
 
 /// Contact constraint (from collision detection)
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ContactConstraint {
     /// Index of the first body
     pub body_a: usize,
@@ -417,6 +515,7 @@ pub struct ContactConstraint {
 
 impl ContactConstraint {
     /// Create a new contact constraint with default friction and restitution
+    #[must_use]
     pub fn new(body_a: usize, body_b: usize, contact: Contact) -> Self {
         Self {
             body_a,
@@ -433,7 +532,7 @@ impl ContactConstraint {
 // ============================================================================
 
 /// XPBD physics solver configuration
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SolverConfig {
     /// Number of substeps per frame
     pub substeps: usize,
@@ -445,7 +544,7 @@ pub struct SolverConfig {
     pub damping: Fix128,
 }
 
-/// Physics configuration (alias for SolverConfig)
+/// Physics configuration (alias for `SolverConfig`)
 pub type PhysicsConfig = SolverConfig;
 
 impl Default for SolverConfig {
@@ -473,9 +572,9 @@ impl Default for SolverConfig {
 /// allowing safe parallel modification.
 #[derive(Clone, Debug, Default)]
 pub struct ConstraintBatch {
-    /// Indices into distance_constraints
+    /// Indices into `distance_constraints`
     pub distance_indices: Vec<usize>,
-    /// Indices into contact_constraints
+    /// Indices into `contact_constraints`
     pub contact_indices: Vec<usize>,
 }
 
@@ -579,10 +678,10 @@ pub trait ContactModifier: Send + Sync {
 
 /// XPBD physics world with batched constraint solving
 ///
-/// PhysicsWorld integrates all physics subsystems:
+/// `PhysicsWorld` integrates all physics subsystems:
 /// - Rigid body dynamics with XPBD solver
 /// - Automatic collision detection (BVH broad-phase + sphere narrow-phase)
-/// - Joint constraints (Ball, Hinge, Fixed, Slider, Spring, D6, ConeTwist)
+/// - Joint constraints (Ball, Hinge, Fixed, Slider, Spring, D6, `ConeTwist`)
 /// - Force fields (wind, gravity wells, buoyancy, vortex, drag)
 /// - Collision filtering (layer/mask bitmasks)
 /// - Contact events (begin/persist/end)
@@ -653,6 +752,7 @@ impl PhysicsWorld {
     /// assert_eq!(id, 0);
     /// assert_eq!(world.bodies.len(), 1);
     /// ```
+    #[must_use]
     pub fn new(config: SolverConfig) -> Self {
         Self {
             config,
@@ -766,7 +866,7 @@ impl PhysicsWorld {
 
     /// Remap joint body indices after swap-remove
     fn remap_joint_indices(&mut self, from: usize, to: usize) {
-        /// Remap a single joint's body_a and body_b fields.
+        /// Remap a single joint's `body_a` and `body_b` fields.
         macro_rules! remap {
             ($j:expr) => {
                 if $j.body_a == from {
@@ -806,11 +906,13 @@ impl PhysicsWorld {
 
     /// Number of bodies in the world
     #[inline]
+    #[must_use]
     pub fn body_count(&self) -> usize {
         self.bodies.len()
     }
 
     /// Number of active (non-sleeping) bodies
+    #[must_use]
     pub fn active_body_count(&self) -> usize {
         self.bodies.len() - self.islands.sleeping_count().min(self.bodies.len())
     }
@@ -824,7 +926,7 @@ impl PhysicsWorld {
 
     /// Add a pre-solve contact hook
     ///
-    /// The hook is called with (body_a_index, body_b_index, &contact).
+    /// The hook is called with (`body_a_index`, `body_b_index`, &contact).
     /// Return `false` to skip the contact (e.g., for one-way platforms).
     #[cfg(feature = "std")]
     pub fn add_pre_solve_hook(&mut self, hook: PreSolveHook) {
@@ -895,6 +997,7 @@ impl PhysicsWorld {
 
     /// Number of joints
     #[inline]
+    #[must_use]
     pub fn joint_count(&self) -> usize {
         self.joints.len()
     }
@@ -940,6 +1043,7 @@ impl PhysicsWorld {
     }
 
     /// Get collision filter for a body
+    #[must_use]
     pub fn body_filter(&self, body_idx: usize) -> CollisionFilter {
         self.body_filters
             .get(body_idx)
@@ -951,6 +1055,7 @@ impl PhysicsWorld {
 
     /// Check if a body is sleeping
     #[inline]
+    #[must_use]
     pub fn is_sleeping(&self, body_idx: usize) -> bool {
         self.islands.is_sleeping(body_idx)
     }
@@ -969,12 +1074,14 @@ impl PhysicsWorld {
 
     /// Get contact events from the last step
     #[inline]
+    #[must_use]
     pub fn contact_events(&self) -> &[crate::event::ContactEvent] {
         self.events.contact_events()
     }
 
     /// Get trigger events from the last step
     #[inline]
+    #[must_use]
     pub fn trigger_events(&self) -> &[crate::event::TriggerEvent] {
         self.events.trigger_events()
     }
@@ -993,11 +1100,12 @@ impl PhysicsWorld {
 
     // ── Raycast on World ──────────────────────────────────────────────
 
-    /// Cast a ray against all body collision spheres, returns (body_index, distance).
+    /// Cast a ray against all body collision spheres, returns (`body_index`, distance).
     ///
     /// Uses a BVH broad-phase to cull bodies outside the ray's bounding box,
     /// then performs exact ray-sphere intersection on candidates.
     /// Returns `None` if direction is zero or no body is hit.
+    #[must_use]
     pub fn raycast(
         &self,
         origin: Vec3Fix,
@@ -1109,6 +1217,7 @@ impl PhysicsWorld {
     }
 
     /// Get combined material properties for a body pair
+    #[must_use]
     pub fn combined_material(
         &self,
         body_a: usize,
@@ -1260,6 +1369,7 @@ impl PhysicsWorld {
     }
 
     /// Get number of constraint batches (colors used)
+    #[must_use]
     pub fn num_batches(&self) -> usize {
         self.constraint_batches.len()
     }
@@ -1414,7 +1524,7 @@ impl PhysicsWorld {
 
     /// Integrate positions (shared between sequential and batched)
     ///
-    /// Sleeping dynamic bodies are skipped: only prev_position/prev_rotation
+    /// Sleeping dynamic bodies are skipped: only `prev_position/prev_rotation`
     /// are saved so that `update_velocities` derives zero velocity.
     #[inline]
     fn integrate_positions(&mut self, dt: Fix128) {
@@ -1457,8 +1567,8 @@ impl PhysicsWorld {
                     body.velocity = body.velocity + gravity * body.gravity_scale * dt;
 
                     // Apply damping
-                    body.velocity = body.velocity * damping;
-                    body.angular_velocity = body.angular_velocity * damping;
+                    body.velocity = body.velocity * damping * body.linear_damping;
+                    body.angular_velocity = body.angular_velocity * damping * body.angular_damping;
 
                     // Predict position
                     body.position = body.position + body.velocity * dt;
@@ -1508,9 +1618,11 @@ impl PhysicsWorld {
                 self.bodies[i].velocity = self.bodies[i].velocity + grav;
 
                 // Apply damping
-                self.bodies[i].velocity = self.bodies[i].velocity * self.config.damping;
-                self.bodies[i].angular_velocity =
-                    self.bodies[i].angular_velocity * self.config.damping;
+                self.bodies[i].velocity =
+                    self.bodies[i].velocity * self.config.damping * self.bodies[i].linear_damping;
+                self.bodies[i].angular_velocity = self.bodies[i].angular_velocity
+                    * self.config.damping
+                    * self.bodies[i].angular_damping;
 
                 // Predict position
                 self.bodies[i].position = self.bodies[i].position + self.bodies[i].velocity * dt;
@@ -2200,6 +2312,7 @@ impl PhysicsWorld {
 
     /// Get body by index
     #[inline]
+    #[must_use]
     pub fn get_body(&self, idx: usize) -> Option<&RigidBody> {
         self.bodies.get(idx)
     }
@@ -2216,6 +2329,7 @@ impl PhysicsWorld {
     /// Does NOT save constraints, joints, force fields, collision radii,
     /// or filters — in rollback netcode these are derived from game state
     /// and re-created each frame.
+    #[must_use]
     pub fn serialize_state(&self) -> Vec<u8> {
         let mut data = Vec::new();
 
@@ -2351,7 +2465,21 @@ impl PhysicsWorld {
     }
 }
 
-#[cfg(test)]
+impl core::fmt::Debug for PhysicsWorld {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("PhysicsWorld")
+            .field("config", &self.config)
+            .field("bodies", &self.bodies.len())
+            .field("distance_constraints", &self.distance_constraints.len())
+            .field("contact_constraints", &self.contact_constraints.len())
+            .field("sdf_colliders", &self.sdf_colliders.len())
+            .field("joints", &self.joints.len())
+            .field("force_fields", &self.force_fields.len())
+            .finish_non_exhaustive()
+    }
+}
+
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use super::*;
 

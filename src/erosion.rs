@@ -8,7 +8,7 @@
 //!
 //! # Physics Model
 //!
-//! Erosion rate = velocity × hardness_factor × contact_area × time
+//! Erosion rate = velocity × `hardness_factor` × `contact_area` × time
 //! Accumulated erosion increases SDF distance (surface recedes).
 //!
 //! Author: Moroya Sakamoto
@@ -34,7 +34,7 @@ pub enum ErosionType {
 }
 
 /// Erosion modifier configuration
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ErosionConfig {
     /// Type of erosion
     pub erosion_type: ErosionType,
@@ -85,6 +85,7 @@ pub struct ErosionModifier {
 
 impl ErosionModifier {
     /// Create a new erosion modifier
+    #[must_use]
     pub fn new(
         config: ErosionConfig,
         resolution: usize,
@@ -155,6 +156,7 @@ impl ErosionModifier {
     }
 
     /// Get current erosion depth at a point
+    #[must_use]
     pub fn erosion_at(&self, x: f32, y: f32, z: f32) -> f32 {
         self.erosion_depth.sample(x, y, z)
     }

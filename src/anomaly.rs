@@ -35,8 +35,8 @@ pub const DEFAULT_WINDOW: usize = 100;
 /// Maintains a sorted array that is incrementally updated with O(N) memmove
 /// operations instead of O(N log N) sorting on each access.
 ///
-/// - push(): O(N) - binary search + memmove
-/// - median(): O(1) - direct array access
+/// - `push()`: O(N) - binary search + memmove
+/// - `median()`: O(1) - direct array access
 #[derive(Clone, Debug)]
 pub struct StreamingMedian {
     /// Circular buffer of recent values (insertion order)
@@ -54,6 +54,7 @@ impl StreamingMedian {
     pub const WINDOW: usize = DEFAULT_WINDOW;
 
     /// Create a new streaming median estimator
+    #[must_use]
     pub fn new() -> Self {
         Self {
             buffer: [0.0; DEFAULT_WINDOW],
@@ -167,12 +168,14 @@ impl StreamingMedian {
 
     /// Get count of values
     #[inline]
+    #[must_use]
     pub fn count(&self) -> usize {
         self.count
     }
 
     /// Check if buffer is full
     #[inline]
+    #[must_use]
     pub fn is_full(&self) -> bool {
         self.count >= DEFAULT_WINDOW
     }
@@ -199,7 +202,7 @@ impl Default for StreamingMedian {
 /// MAD-based anomaly detector
 ///
 /// Uses Median Absolute Deviation for robust outlier detection.
-/// MAD = median(|X_i - median(X)|)
+/// MAD = `median(|X_i` - median(X)|)
 ///
 /// An observation is anomalous if:
 /// |x - median| > k * MAD * 1.4826
@@ -252,6 +255,7 @@ impl MadDetector {
     ///
     /// # Arguments
     /// * `threshold_k` - Number of MAD units for anomaly threshold (typically 3.0)
+    #[must_use]
     pub fn new(threshold_k: f64) -> Self {
         Self {
             values_median: StreamingMedian::new(),
@@ -358,6 +362,7 @@ impl MadDetector {
 
     /// Get the threshold multiplier
     #[inline]
+    #[must_use]
     pub fn threshold_k(&self) -> f64 {
         self.threshold_k
     }
@@ -370,6 +375,7 @@ impl MadDetector {
 
     /// Get count of observations
     #[inline]
+    #[must_use]
     pub fn count(&self) -> usize {
         self.count
     }
@@ -431,6 +437,7 @@ impl EwmaDetector {
     /// # Arguments
     /// * `alpha` - Smoothing factor (0.0-1.0, higher = more reactive)
     /// * `threshold_k` - Number of standard deviations for anomaly threshold
+    #[must_use]
     pub fn new(alpha: f64, threshold_k: f64) -> Self {
         Self {
             alpha: alpha.clamp(0.001, 1.0),
@@ -462,6 +469,7 @@ impl EwmaDetector {
     }
 
     /// Check if a value is an anomaly (without updating)
+    #[must_use]
     pub fn is_anomaly(&self, value: f64) -> bool {
         if !self.initialized || self.count < 3 {
             return false;
@@ -477,6 +485,7 @@ impl EwmaDetector {
     }
 
     /// Get anomaly score (number of standard deviations)
+    #[must_use]
     pub fn anomaly_score(&self, value: f64) -> f64 {
         if !self.initialized {
             return 0.0;
@@ -496,18 +505,21 @@ impl EwmaDetector {
 
     /// Get current EWMA
     #[inline]
+    #[must_use]
     pub fn ewma(&self) -> f64 {
         self.ewma
     }
 
     /// Get current standard deviation estimate
     #[inline]
+    #[must_use]
     pub fn std_dev(&self) -> f64 {
         self.ewma_var.sqrt()
     }
 
     /// Get smoothing factor
     #[inline]
+    #[must_use]
     pub fn alpha(&self) -> f64 {
         self.alpha
     }
@@ -520,6 +532,7 @@ impl EwmaDetector {
 
     /// Get threshold multiplier
     #[inline]
+    #[must_use]
     pub fn threshold_k(&self) -> f64 {
         self.threshold_k
     }
@@ -532,6 +545,7 @@ impl EwmaDetector {
 
     /// Get count of observations
     #[inline]
+    #[must_use]
     pub fn count(&self) -> u64 {
         self.count
     }
@@ -567,6 +581,7 @@ pub struct ZScoreDetector {
 
 impl ZScoreDetector {
     /// Create a new Z-score detector
+    #[must_use]
     pub fn new(threshold_k: f64) -> Self {
         Self {
             mean: 0.0,
@@ -587,6 +602,7 @@ impl ZScoreDetector {
 
     /// Get the variance
     #[inline]
+    #[must_use]
     pub fn variance(&self) -> f64 {
         if self.count < 2 {
             0.0
@@ -597,11 +613,13 @@ impl ZScoreDetector {
 
     /// Get the standard deviation
     #[inline]
+    #[must_use]
     pub fn std_dev(&self) -> f64 {
         self.variance().sqrt()
     }
 
     /// Check if a value is an anomaly
+    #[must_use]
     pub fn is_anomaly(&self, value: f64) -> bool {
         if self.count < 3 {
             return false;
@@ -617,6 +635,7 @@ impl ZScoreDetector {
     }
 
     /// Get the Z-score for a value
+    #[must_use]
     pub fn z_score(&self, value: f64) -> f64 {
         let std_dev = self.std_dev();
         if std_dev < 1e-10 {
@@ -631,12 +650,14 @@ impl ZScoreDetector {
 
     /// Get current mean
     #[inline]
+    #[must_use]
     pub fn mean(&self) -> f64 {
         self.mean
     }
 
     /// Get count
     #[inline]
+    #[must_use]
     pub fn count(&self) -> u64 {
         self.count
     }
@@ -695,6 +716,7 @@ pub struct CompositeDetector {
 
 impl CompositeDetector {
     /// Create a new composite detector with default settings
+    #[must_use]
     pub fn new() -> Self {
         Self {
             mad: MadDetector::new(3.0),
@@ -705,6 +727,7 @@ impl CompositeDetector {
     }
 
     /// Create with custom thresholds
+    #[must_use]
     pub fn with_thresholds(mad_k: f64, ewma_alpha: f64, ewma_k: f64, zscore_k: f64) -> Self {
         Self {
             mad: MadDetector::new(mad_k),
@@ -747,6 +770,7 @@ impl CompositeDetector {
 
     /// Get count of observations
     #[inline]
+    #[must_use]
     pub fn count(&self) -> u64 {
         self.zscore.count()
     }

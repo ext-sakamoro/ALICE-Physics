@@ -46,6 +46,7 @@ pub struct RingBuffer<T: Copy + Default, const N: usize> {
 
 impl<T: Copy + Default, const N: usize> RingBuffer<T, N> {
     /// Create a new empty ring buffer
+    #[must_use]
     pub fn new() -> Self {
         Self {
             buffer: [T::default(); N],
@@ -162,6 +163,7 @@ pub struct MetricEvent {
 impl MetricEvent {
     /// Create a counter increment event
     #[inline]
+    #[must_use]
     pub const fn counter(name_hash: u64, delta: f64) -> Self {
         Self {
             name_hash,
@@ -173,6 +175,7 @@ impl MetricEvent {
 
     /// Create a gauge event
     #[inline]
+    #[must_use]
     pub const fn gauge(name_hash: u64, value: f64) -> Self {
         Self {
             name_hash,
@@ -184,6 +187,7 @@ impl MetricEvent {
 
     /// Create a histogram observation
     #[inline]
+    #[must_use]
     pub const fn histogram(name_hash: u64, value: f64) -> Self {
         Self {
             name_hash,
@@ -195,6 +199,7 @@ impl MetricEvent {
 
     /// Create a unique item event
     #[inline]
+    #[must_use]
     pub const fn unique(name_hash: u64, item_hash: u64) -> Self {
         Self {
             name_hash,
@@ -206,6 +211,7 @@ impl MetricEvent {
 
     /// Set timestamp
     #[inline]
+    #[must_use]
     pub const fn with_timestamp(mut self, ts: u64) -> Self {
         self.timestamp = ts;
         self
@@ -225,9 +231,9 @@ pub struct MetricSlot {
     pub counter: f64,
     /// Gauge value (for Gauge type)
     pub gauge: f64,
-    /// HyperLogLog for unique counting (P=10, 1KB)
+    /// `HyperLogLog` for unique counting (P=10, 1KB)
     pub hll: HyperLogLog10,
-    /// DDSketch for histogram/quantiles (256 bins, use alpha >= 0.05)
+    /// `DDSketch` for histogram/quantiles (256 bins, use alpha >= 0.05)
     pub ddsketch: DDSketch256,
     /// Event count
     pub event_count: u64,
@@ -239,6 +245,7 @@ impl MetricSlot {
     /// Create a new metric slot
     ///
     /// Note: With 256 bins, use alpha >= 0.05 for best results
+    #[must_use]
     pub fn new(name_hash: u64, alpha: f64) -> Self {
         Self {
             name_hash,
@@ -335,7 +342,7 @@ pub struct MetricPipeline<const SLOTS: usize, const QUEUE_SIZE: usize> {
     slots: [Option<MetricSlot>; SLOTS],
     /// Event queue (ring buffer)
     queue: RingBuffer<MetricEvent, QUEUE_SIZE>,
-    /// DDSketch alpha parameter
+    /// `DDSketch` alpha parameter
     alpha: f64,
     /// Total events processed
     total_events: u64,
@@ -345,7 +352,8 @@ impl<const SLOTS: usize, const QUEUE_SIZE: usize> MetricPipeline<SLOTS, QUEUE_SI
     /// Create a new metric pipeline
     ///
     /// # Arguments
-    /// * `alpha` - Relative error for DDSketch (e.g., 0.01 for 1%)
+    /// * `alpha` - Relative error for `DDSketch` (e.g., 0.01 for 1%)
+    #[must_use]
     pub fn new(alpha: f64) -> Self {
         // Use array initialization with Default
         const NONE_SLOT: Option<MetricSlot> = None;
@@ -396,6 +404,7 @@ impl<const SLOTS: usize, const QUEUE_SIZE: usize> MetricPipeline<SLOTS, QUEUE_SI
     }
 
     /// Get a metric slot by name hash
+    #[must_use]
     pub fn get_slot(&self, name_hash: u64) -> Option<&MetricSlot> {
         let slot_idx = (name_hash as usize) % SLOTS;
         self.slots[slot_idx]
@@ -418,18 +427,21 @@ impl<const SLOTS: usize, const QUEUE_SIZE: usize> MetricPipeline<SLOTS, QUEUE_SI
 
     /// Get total events processed
     #[inline]
+    #[must_use]
     pub fn total_events(&self) -> u64 {
         self.total_events
     }
 
     /// Get count of dropped events
     #[inline]
+    #[must_use]
     pub fn dropped_events(&self) -> u64 {
         self.queue.dropped()
     }
 
     /// Get queue length
     #[inline]
+    #[must_use]
     pub fn queue_len(&self) -> usize {
         self.queue.len()
     }
@@ -463,6 +475,7 @@ pub struct MetricEntry {
 
 impl MetricEntry {
     /// Create a new metric entry
+    #[must_use]
     pub fn new(name: &str, metric_type: MetricType) -> Self {
         use crate::sketch::FnvHasher;
 
@@ -479,6 +492,7 @@ impl MetricEntry {
     }
 
     /// Get name as string slice
+    #[must_use]
     pub fn name_str(&self) -> &str {
         core::str::from_utf8(&self.name[..self.name_len]).unwrap_or("")
     }
@@ -495,6 +509,7 @@ pub struct MetricRegistry<const N: usize> {
 
 impl<const N: usize> MetricRegistry<N> {
     /// Create a new empty registry
+    #[must_use]
     pub fn new() -> Self {
         const NONE_ENTRY: Option<MetricEntry> = None;
         Self {
@@ -527,6 +542,7 @@ impl<const N: usize> MetricRegistry<N> {
     }
 
     /// Look up a metric by name
+    #[must_use]
     pub fn lookup(&self, name: &str) -> Option<&MetricEntry> {
         use crate::sketch::FnvHasher;
         let hash = FnvHasher::hash_bytes(name.as_bytes());
@@ -534,6 +550,7 @@ impl<const N: usize> MetricRegistry<N> {
     }
 
     /// Look up a metric by hash
+    #[must_use]
     pub fn lookup_by_hash(&self, hash: u64) -> Option<&MetricEntry> {
         self.entries
             .iter()
@@ -548,6 +565,7 @@ impl<const N: usize> MetricRegistry<N> {
 
     /// Get count of registered metrics
     #[inline]
+    #[must_use]
     pub fn count(&self) -> usize {
         self.count
     }

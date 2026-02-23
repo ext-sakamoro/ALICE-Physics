@@ -1,7 +1,7 @@
 //! Probabilistic Sketch Data Structures
 //!
 //! - HyperLogLog++: Cardinality estimation with ~1.04/√m standard error
-//! - DDSketch: Relative-error quantile estimation
+//! - `DDSketch`: Relative-error quantile estimation
 //! - Count-Min Sketch: Frequency estimation for heavy hitters
 //!
 //! # Examples
@@ -38,8 +38,8 @@ use core::hash::{Hash, Hasher};
 // Lookup Tables for Fast Computation
 // ============================================================================
 
-/// Precomputed 2^{-k} values for k = 0..64 (HyperLogLog optimization)
-/// Eliminates expensive powi() calls in cardinality estimation
+/// Precomputed 2^{-k} values for k = 0..64 (`HyperLogLog` optimization)
+/// Eliminates expensive `powi()` calls in cardinality estimation
 const POW2_NEG_LUT: [f64; 65] = [
     1.0,                    // 2^-0
     0.5,                    // 2^-1
@@ -141,7 +141,7 @@ pub trait Mergeable {
 // ============================================================================
 
 /// FNV-1a hash for deterministic, fast hashing
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct FnvHasher {
     state: u64,
 }
@@ -152,14 +152,15 @@ impl FnvHasher {
 
     /// Create a new hasher with default FNV offset basis.
     #[inline]
+    #[must_use]
     pub const fn new() -> Self {
         Self {
             state: Self::FNV_OFFSET,
         }
     }
 
-    /// Avalanche bit mixer (from MurmurHash3 finalizer).
-    /// Ensures all bits are well-distributed for HyperLogLog.
+    /// Avalanche bit mixer (from `MurmurHash3` finalizer).
+    /// Ensures all bits are well-distributed for `HyperLogLog`.
     #[inline]
     fn mix(mut h: u64) -> u64 {
         h ^= h >> 33;
@@ -172,6 +173,7 @@ impl FnvHasher {
 
     /// Hash a byte slice and return a mixed 64-bit digest.
     #[inline]
+    #[must_use]
     pub fn hash_bytes(data: &[u8]) -> u64 {
         let mut hasher = Self::new();
         hasher.write(data);
@@ -180,12 +182,14 @@ impl FnvHasher {
 
     /// Hash a `u64` value.
     #[inline]
+    #[must_use]
     pub fn hash_u64(value: u64) -> u64 {
         Self::hash_bytes(&value.to_le_bytes())
     }
 
     /// Hash a `u128` value.
     #[inline]
+    #[must_use]
     pub fn hash_u128(value: u128) -> u64 {
         Self::hash_bytes(&value.to_le_bytes())
     }
@@ -217,13 +221,13 @@ impl Hasher for FnvHasher {
 // HyperLogLog++ - Cardinality Estimation
 // ============================================================================
 
-/// Macro to generate HyperLogLog implementations for specific sizes
+/// Macro to generate `HyperLogLog` implementations for specific sizes
 macro_rules! impl_hyperloglog {
     ($name:ident, $p:expr, $m:expr) => {
-        /// HyperLogLog++ for cardinality (unique count) estimation
+        /// `HyperLogLog++` for cardinality (unique count) estimation
         ///
-        /// Memory: $m bytes
-        /// Error: ~1.04 / sqrt($m)
+        /// Memory: `$m` bytes
+        /// Error: ~1.04 / sqrt(`$m`)
         #[derive(Clone, Debug)]
         pub struct $name {
             /// Registers storing maximum leading zeros + 1
@@ -239,7 +243,7 @@ macro_rules! impl_hyperloglog {
             /// Alpha constant for bias correction
             const ALPHA: f64 = 0.7213 / (1.0 + 1.079 / ($m as f64));
 
-            /// Create a new empty HyperLogLog
+            /// Create a new empty `HyperLogLog`
             #[inline]
             pub fn new() -> Self {
                 Self {
@@ -278,7 +282,7 @@ macro_rules! impl_hyperloglog {
                 self.insert_hash(FnvHasher::hash_bytes(bytes));
             }
 
-            /// Estimate cardinality using HyperLogLog++ algorithm
+            /// Estimate cardinality using `HyperLogLog++` algorithm
             /// Optimized with LUT for 2^{-k} values
             pub fn cardinality(&self) -> f64 {
                 let mut sum = 0.0f64;
@@ -374,17 +378,17 @@ impl_hyperloglog!(HyperLogLog12, 12, 4096); // 4KB, ~1.6% error
 impl_hyperloglog!(HyperLogLog14, 14, 16384); // 16KB, ~0.8% error
 impl_hyperloglog!(HyperLogLog16, 16, 65536); // 64KB, ~0.4% error
 
-/// Type alias for the most common HyperLogLog size (16KB, ~0.8% error)
+/// Type alias for the most common `HyperLogLog` size (16KB, ~0.8% error)
 pub type HyperLogLog = HyperLogLog14;
 
 // ============================================================================
 // DDSketch - Relative Error Quantile Estimation
 // ============================================================================
 
-/// DDSketch for quantile estimation with relative error guarantee
+/// `DDSketch` for quantile estimation with relative error guarantee
 ///
 /// Guarantees that for any quantile q, the returned value v satisfies:
-/// |v - true_value| <= α * true_value
+/// |v - `true_value`| <= α * `true_value`
 ///
 /// where α is the relative accuracy (e.g., 0.01 for 1% error)
 ///
@@ -401,10 +405,10 @@ pub type HyperLogLog = HyperLogLog14;
 /// let p99 = sketch.quantile(0.99);
 /// // p99 ≈ 500.0 (within 1% relative error)
 /// ```
-/// Macro to generate DDSketch implementations for specific bin counts
+/// Macro to generate `DDSketch` implementations for specific bin counts
 macro_rules! impl_ddsketch {
     ($name:ident, $bins:expr) => {
-        /// DDSketch with relative-error quantile guarantee.
+        /// `DDSketch` with relative-error quantile guarantee.
         #[derive(Clone, Debug)]
         pub struct $name {
             positive_bins: [u64; $bins],
@@ -477,7 +481,7 @@ macro_rules! impl_ddsketch {
             }
 
             /// Bucket index calculation
-            /// Uses standard ln() for quantile accuracy (DDSketch requires precise buckets)
+            /// Uses standard `ln()` for quantile accuracy (`DDSketch` requires precise buckets)
             #[inline]
             fn bucket_index(&self, value: f64) -> usize {
                 let idx = (value.ln() / self.ln_gamma).ceil() as i32 + self.offset;
@@ -485,7 +489,7 @@ macro_rules! impl_ddsketch {
             }
 
             /// Fast bucket index using IEEE 754 bit extraction (for non-critical paths)
-            /// ~10x faster than ln() but has ~1-2% error
+            /// ~10x faster than `ln()` but has ~1-2% error
             #[inline]
             #[allow(dead_code)]
             fn bucket_index_fast(&self, value: f64) -> usize {
@@ -623,14 +627,14 @@ impl_ddsketch!(DDSketch512, 512); // Good balance
 impl_ddsketch!(DDSketch1024, 1024); // High accuracy, alpha >= 0.02
 impl_ddsketch!(DDSketch2048, 2048); // Very high accuracy, alpha >= 0.01
 
-/// Type alias for the most common DDSketch size (good for alpha=0.01)
+/// Type alias for the most common `DDSketch` size (good for alpha=0.01)
 pub type DDSketch = DDSketch2048;
 
 // ============================================================================
 // Count-Min Sketch - Frequency Estimation
 // ============================================================================
 
-/// Macro to generate CountMinSketch implementations
+/// Macro to generate `CountMinSketch` implementations
 macro_rules! impl_countmin {
     ($name:ident, $w:expr, $d:expr) => {
         /// Count-Min Sketch for frequency estimation
@@ -772,7 +776,7 @@ pub type CountMinSketch = CountMinSketch1024x5;
 // ============================================================================
 
 /// Entry for heavy hitters tracking
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct HeavyHitterEntry {
     /// Hash of the item
     pub hash: u64,
@@ -780,7 +784,7 @@ pub struct HeavyHitterEntry {
     pub count: u64,
 }
 
-/// Macro to generate HeavyHitters implementations
+/// Macro to generate `HeavyHitters` implementations
 macro_rules! impl_heavy_hitters {
     ($name:ident, $cms_name:ident, $k:expr) => {
         /// Heavy Hitters tracker using Count-Min Sketch

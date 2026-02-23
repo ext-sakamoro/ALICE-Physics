@@ -12,7 +12,7 @@ use crate::collider::AABB;
 use crate::math::{Fix128, Vec3Fix};
 
 /// Time of Impact result
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct TOI {
     /// Time of first impact [0, 1], where 0=start, 1=end of timestep
     pub t: Fix128,
@@ -23,7 +23,7 @@ pub struct TOI {
 }
 
 /// CCD configuration
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct CcdConfig {
     /// Maximum iterations for conservative advancement
     pub max_iterations: usize,
@@ -45,6 +45,7 @@ impl Default for CcdConfig {
 
 /// Check if a body needs CCD based on its velocity
 #[inline]
+#[must_use]
 pub fn needs_ccd(velocity: Vec3Fix, radius: Fix128, dt: Fix128, config: &CcdConfig) -> bool {
     let speed = velocity.length();
     // CCD needed if displacement > half the body's radius
@@ -56,6 +57,7 @@ pub fn needs_ccd(velocity: Vec3Fix, radius: Fix128, dt: Fix128, config: &CcdConf
 /// Sphere A moves from `center_a` by `vel_a * t`
 /// Sphere B moves from `center_b` by `vel_b * t`
 /// Returns t in [0, 1] or None if no collision in this timestep.
+#[must_use]
 pub fn sphere_sphere_toi(
     center_a: Vec3Fix,
     radius_a: Fix128,
@@ -111,6 +113,7 @@ pub fn sphere_sphere_toi(
 /// Exact TOI for a moving sphere against a static plane
 ///
 /// Plane: dot(normal, p) = offset
+#[must_use]
 pub fn sphere_plane_toi(
     center: Vec3Fix,
     radius: Fix128,
@@ -203,6 +206,7 @@ where
 /// Swept AABB test (moving AABB vs static AABB)
 ///
 /// Returns t in [0, 1] for first overlap, or None.
+#[must_use]
 pub fn swept_aabb(moving: &AABB, velocity: Vec3Fix, target: &AABB) -> Option<Fix128> {
     let mut t_enter = Fix128::from_int(-1000000);
     let mut t_exit = Fix128::from_int(1000000);
@@ -299,6 +303,7 @@ fn slab_test(
 /// Instead of rewinding time to TOI, creates a contact constraint
 /// at the predicted collision point with a negative depth (gap).
 /// The solver then prevents penetration by maintaining the gap.
+#[must_use]
 pub fn speculative_contact(
     pos_a: Vec3Fix,
     vel_a: Vec3Fix,
@@ -346,6 +351,133 @@ pub fn speculative_contact(
             normal,
             point_a: pos_a + normal * radius_a,
             point_b: pos_b - normal * radius_b,
+        })
+    } else {
+        None
+    }
+}
+
+/// TOI for a moving capsule against a static plane
+///
+/// Capsule defined by two endpoints and radius, moving with given velocity.
+/// Plane in Hessian normal form: dot(normal, p) = offset.
+#[must_use]
+pub fn capsule_plane_toi(
+    cap_a: Vec3Fix,
+    cap_b: Vec3Fix,
+    radius: Fix128,
+    velocity: Vec3Fix,
+    plane_normal: Vec3Fix,
+    plane_offset: Fix128,
+) -> Option<TOI> {
+    // Closest capsule endpoint to the plane determines first contact
+    let dist_a = cap_a.dot(plane_normal) - plane_offset;
+    let dist_b = cap_b.dot(plane_normal) - plane_offset;
+    // Use the endpoint closer to the plane
+    let (center, _dist) = if dist_a < dist_b {
+        (cap_a, dist_a)
+    } else {
+        (cap_b, dist_b)
+    };
+    sphere_plane_toi(center, radius, velocity, plane_normal, plane_offset)
+}
+
+/// TOI for a moving sphere against a static capsule
+///
+/// Reduces to sphere-sphere TOI against the closest point on capsule segment.
+#[must_use]
+pub fn sphere_capsule_toi(
+    sphere_center: Vec3Fix,
+    sphere_radius: Fix128,
+    sphere_vel: Vec3Fix,
+    cap_a: Vec3Fix,
+    cap_b: Vec3Fix,
+    cap_radius: Fix128,
+) -> Option<TOI> {
+    // Find closest point on capsule segment to sphere center
+    let ab = cap_b - cap_a;
+    let ab_len_sq = ab.dot(ab);
+    let closest = if ab_len_sq.is_zero() {
+        cap_a
+    } else {
+        let t = (sphere_center - cap_a).dot(ab) / ab_len_sq;
+        let t_clamped = if t < Fix128::ZERO {
+            Fix128::ZERO
+        } else if t > Fix128::ONE {
+            Fix128::ONE
+        } else {
+            t
+        };
+        cap_a + ab * t_clamped
+    };
+    sphere_sphere_toi(
+        sphere_center,
+        sphere_radius,
+        sphere_vel,
+        closest,
+        cap_radius,
+        Vec3Fix::ZERO, // Static capsule
+    )
+}
+
+/// TOI for a moving AABB against a static plane
+///
+/// Finds the AABB vertex closest to the plane and computes point-plane TOI.
+#[must_use]
+pub fn aabb_plane_toi(
+    aabb: &AABB,
+    velocity: Vec3Fix,
+    plane_normal: Vec3Fix,
+    plane_offset: Fix128,
+) -> Option<TOI> {
+    // Find the AABB vertex most in the direction of -plane_normal (closest to plane)
+    let support_x = if plane_normal.x < Fix128::ZERO {
+        aabb.max.x
+    } else {
+        aabb.min.x
+    };
+    let support_y = if plane_normal.y < Fix128::ZERO {
+        aabb.max.y
+    } else {
+        aabb.min.y
+    };
+    let support_z = if plane_normal.z < Fix128::ZERO {
+        aabb.max.z
+    } else {
+        aabb.min.z
+    };
+    let support = Vec3Fix::new(support_x, support_y, support_z);
+
+    let dist = support.dot(plane_normal) - plane_offset;
+    let vel_toward = velocity.dot(plane_normal);
+
+    // Moving away from plane
+    if vel_toward >= Fix128::ZERO && dist > Fix128::ZERO {
+        return None;
+    }
+
+    // Already penetrating
+    if dist <= Fix128::ZERO {
+        return Some(TOI {
+            t: Fix128::ZERO,
+            point: support,
+            normal: plane_normal,
+        });
+    }
+
+    if vel_toward.is_zero() {
+        return None;
+    }
+
+    // Time when support vertex touches plane
+    let t = -dist / vel_toward;
+
+    if t >= Fix128::ZERO && t <= Fix128::ONE {
+        let point = support + velocity * t;
+        Some(TOI {
+            t,
+            point,
+            normal: plane_normal,
         })
     } else {
         None
@@ -505,5 +637,58 @@ mod tests {
             contact.is_none(),
             "Separating spheres should not generate contact"
         );
+    }
+
+    #[test]
+    fn test_capsule_plane_toi() {
+        let toi = capsule_plane_toi(
+            Vec3Fix::from_int(0, 10, -1),
+            Vec3Fix::from_int(0, 10, 1),
+            Fix128::ONE,
+            Vec3Fix::from_int(0, -20, 0),
+            Vec3Fix::UNIT_Y,
+            Fix128::ZERO,
+        );
+        let toi = toi.expect("Should find capsule-plane collision");
+        assert!(toi.t > Fix128::ZERO && toi.t < Fix128::ONE);
+    }
+
+    #[test]
+    fn test_sphere_capsule_toi() {
+        let toi = sphere_capsule_toi(
+            Vec3Fix::from_int(-10, 0, 0),
+            Fix128::ONE,
+            Vec3Fix::from_int(20, 0, 0),
+            Vec3Fix::from_int(5, -2, 0),
+            Vec3Fix::from_int(5, 2, 0),
+            Fix128::ONE,
+        );
+        let toi = toi.expect("Should find sphere-capsule collision");
+        assert!(toi.t > Fix128::ZERO && toi.t < Fix128::ONE);
+    }
+
+    #[test]
+    fn test_aabb_plane_toi() {
+        let aabb = AABB::new(Vec3Fix::from_int(-1, 8, -1), Vec3Fix::from_int(1, 10, 1));
+        let toi = aabb_plane_toi(
+            &aabb,
+            Vec3Fix::from_int(0, -20, 0),
+            Vec3Fix::UNIT_Y,
+            Fix128::ZERO,
+        );
+        let toi = toi.expect("Should find AABB-plane collision");
+        assert!(toi.t > Fix128::ZERO && toi.t < Fix128::ONE);
+    }
+
+    #[test]
+    fn test_aabb_plane_miss() {
+        let aabb = AABB::new(Vec3Fix::from_int(-1, 8, -1), Vec3Fix::from_int(1, 10, 1));
+        let toi = aabb_plane_toi(
+            &aabb,
+            Vec3Fix::from_int(0, 20, 0), // Moving away
+            Vec3Fix::UNIT_Y,
+            Fix128::ZERO,
+        );
+        assert!(toi.is_none());
     }
 }

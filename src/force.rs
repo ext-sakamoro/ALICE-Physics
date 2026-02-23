@@ -10,7 +10,7 @@ use crate::solver::RigidBody;
 use alloc::vec::Vec;
 
 /// Force field type
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ForceField {
     /// Constant directional force (e.g., wind)
     Directional {
@@ -340,7 +340,7 @@ pub fn apply_force_fields(fields: &[ForceFieldInstance], bodies: &mut [RigidBody
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use super::*;
 

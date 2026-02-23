@@ -12,8 +12,6 @@
 use crate::math::{Fix128, Vec3Fix};
 
 #[cfg(not(feature = "std"))]
-use alloc::vec;
-#[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
 // ============================================================================
@@ -21,7 +19,7 @@ use alloc::vec::Vec;
 // ============================================================================
 
 /// An arrow representing a contact force.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ContactArrow {
     /// Contact point position
     pub position: Vec3Fix,
@@ -37,7 +35,7 @@ pub struct ContactArrow {
 ///
 /// The cone axis is aligned with the contact normal, and the half-angle
 /// is determined by `arctan(friction_coefficient)`.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct FrictionCone {
     /// Contact point position (cone apex)
     pub position: Vec3Fix,
@@ -182,7 +180,7 @@ fn tangent_basis(n: Vec3Fix) -> (Vec3Fix, Vec3Fix) {
 // Tests
 // ============================================================================
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use super::*;
 

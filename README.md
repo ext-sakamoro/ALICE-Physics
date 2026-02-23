@@ -1,6 +1,6 @@
 # ALICE-Physics
 
-**Deterministic 128-bit Fixed-Point Physics Engine** - v0.5.0
+**Deterministic 128-bit Fixed-Point Physics Engine** - v0.6.0
 
 English | [日本語](README_JP.md)
 
@@ -104,7 +104,7 @@ ALICE-Physics achieves a **perfect 100/100 optimization score** across 6 layers:
 | **L3: Compute** | 20/20 | Warm-start `cached_lambda`, reciprocal precomputation (`inv_rest_length`, `inv_rest_density`) |
 | **L4: GPU & Throughput** | 15/15 | `SIMD_WIDTH` const + `simd_width()`, `GpuSdfInstancedBatch`/`GpuSdfMultiDispatch`, `batch_size()` |
 | **L5: Build Profile** | 10/10 | `opt-level=3`, `lto="fat"`, `codegen-units=1`, `panic="abort"`, `strip=true` |
-| **L6: Code Quality** | 20/20 | 720 tests (638 unit + 62 integration + 20 doc), clippy 0 warnings |
+| **L6: Code Quality** | 20/20 | 737 tests (645 unit + 72 integration + 20 doc), clippy 0 warnings |
 | **Total** | **100/100** | |
 
 ### L1: Memory Layout (15/15)
@@ -183,10 +183,10 @@ strip = true           # Strip symbols
 
 ### L6: Code Quality (20/20)
 
-- **638 unit tests** across 84 modules
-- **62 integration tests** (end-to-end physics scenarios)
+- **645 unit tests** across 84 modules
+- **72 integration tests** (end-to-end physics scenarios)
 - **20 doc tests** with runnable examples
-- **Total: 720 passing tests**, clippy: 0 warnings (`-W clippy::all`)
+- **Total: 737 passing tests**, clippy: 0 warnings (`-W clippy::all`)
 
 ---
 
@@ -322,7 +322,7 @@ ALICE-Physics guarantees **bit-exact results** everywhere, enabling:
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                          ALICE-Physics v0.5.0                                │
-│              84 modules, 638 unit tests, 62 integration, 20 doc tests         │
+│              84 modules, 645 unit tests, 72 integration, 20 doc tests         │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │  Core Layer                                                                  │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐          │

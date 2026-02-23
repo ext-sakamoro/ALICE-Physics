@@ -29,7 +29,7 @@ use alloc::vec::Vec;
 // ============================================================================
 
 /// Character controller configuration
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct CharacterConfig {
     /// Capsule radius
     pub radius: Fix128,
@@ -69,7 +69,7 @@ impl Default for CharacterConfig {
 // ============================================================================
 
 /// Impulse to apply to a rigid body from character collision
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PushImpulse {
     /// Index of the body to push
     pub body_index: usize,
@@ -80,7 +80,7 @@ pub struct PushImpulse {
 }
 
 /// Result of a character move operation
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct MoveResult {
     /// Final position after movement
     pub position: Vec3Fix,
@@ -114,6 +114,7 @@ pub struct CharacterController {
 
 impl CharacterController {
     /// Create a new character controller at the given position
+    #[must_use]
     pub fn new(position: Vec3Fix, config: CharacterConfig) -> Self {
         Self {
             position,
@@ -126,12 +127,14 @@ impl CharacterController {
     }
 
     /// Create with default config
+    #[must_use]
     pub fn new_default(position: Vec3Fix) -> Self {
         Self::new(position, CharacterConfig::default())
     }
 
     /// Get the bottom of the capsule (feet position)
     #[inline]
+    #[must_use]
     pub fn feet_position(&self) -> Vec3Fix {
         let half_height = self.config.height.half();
         Vec3Fix::new(
@@ -373,7 +376,7 @@ impl CharacterController {
     }
 
     /// Detect if the character is on the ground.
-    /// Returns (grounded, ground_body_index).
+    /// Returns (grounded, `ground_body_index`).
     fn detect_ground(
         &self,
         pos: Vec3Fix,
@@ -424,6 +427,7 @@ impl CharacterController {
     ///
     /// Call this after `move_and_slide` to get impulses that should be applied
     /// to nearby dynamic bodies. Apply them via `body.apply_impulse_at()`.
+    #[must_use]
     pub fn compute_push_impulses(
         &self,
         bodies: &[RigidBody],
@@ -463,6 +467,7 @@ impl CharacterController {
 
     /// Get the velocity of the platform the character is standing on
     #[inline]
+    #[must_use]
     pub fn get_platform_velocity(&self) -> Vec3Fix {
         self.platform_velocity
     }
@@ -475,11 +480,21 @@ impl CharacterController {
     }
 }
 
+impl core::fmt::Debug for CharacterController {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("CharacterController")
+            .field("position", &self.position)
+            .field("grounded", &self.grounded)
+            .field("config", &self.config)
+            .finish()
+    }
+}
+
 // ============================================================================
 // Tests
 // ============================================================================
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use super::*;
 

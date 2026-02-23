@@ -14,8 +14,6 @@ use crate::math::{Fix128, QuatFix, Vec3Fix};
 use crate::solver::{PhysicsConfig, PhysicsWorld};
 
 #[cfg(not(feature = "std"))]
-use alloc::vec;
-#[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
 #[cfg(feature = "parallel")]
@@ -148,6 +146,14 @@ impl Default for MultiWorld {
     }
 }
 
+impl core::fmt::Debug for MultiWorld {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("MultiWorld")
+            .field("worlds", &self.worlds.len())
+            .finish()
+    }
+}
+
 impl Portal {
     /// Create a new portal between two worlds.
     #[must_use]
@@ -179,7 +185,7 @@ impl Portal {
 // Tests
 // ============================================================================
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use super::*;
     use crate::solver::RigidBody;

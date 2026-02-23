@@ -13,9 +13,6 @@
 use crate::math::{Fix128, QuatFix, Vec3Fix};
 use crate::solver::RigidBody;
 
-#[cfg(not(feature = "std"))]
-use alloc::vec::Vec;
-
 // ============================================================================
 // PulleyJoint
 // ============================================================================
@@ -25,7 +22,7 @@ use alloc::vec::Vec;
 /// The constraint maintains: `len_a + ratio * len_b = total_length`
 /// where `len_a` is the rope length from `ground_anchor_a` to `anchor_a`
 /// and `len_b` is the rope length from `ground_anchor_b` to `anchor_b`.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PulleyJoint {
     /// Index of the first body
     pub body_a: usize,
@@ -102,7 +99,7 @@ impl PulleyJoint {
 ///
 /// The joint references two hinge joints by index and enforces a fixed
 /// ratio between their angular displacements.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct GearJoint {
     /// Index of the first body (connected to hinge A)
     pub body_a: usize,
@@ -156,7 +153,7 @@ impl GearJoint {
 /// Unlike `FixedJoint` from the core module, this variant supports separate
 /// break-force and break-torque thresholds so the weld can snap under
 /// translational stress, rotational stress, or both.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct WeldJoint {
     /// Index of the first body
     pub body_a: usize,
@@ -268,7 +265,7 @@ impl WeldJoint {
 /// The rack body translates along `rack_axis` while the pinion body
 /// rotates around `pinion_axis`. The ratio converts between
 /// linear units and radians.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RackAndPinionJoint {
     /// Index of the rack body (linear motion)
     pub body_rack: usize,
@@ -321,7 +318,7 @@ impl RackAndPinionJoint {
 ///
 /// Used for interactive dragging. The body is pulled toward `target_position`
 /// with configurable stiffness and damping, capped by `max_force`.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct MouseJoint {
     /// Index of the controlled body
     pub body: usize,
@@ -366,7 +363,7 @@ impl MouseJoint {
 // ============================================================================
 
 /// Unified enum for extended joint types.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ExtraJoint {
     /// Pulley constraint
     Pulley(PulleyJoint),
@@ -784,7 +781,7 @@ fn apply_angular_correction(
 // Tests
 // ============================================================================
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use super::*;
 

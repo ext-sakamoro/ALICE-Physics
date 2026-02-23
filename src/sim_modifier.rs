@@ -8,7 +8,7 @@
 //! # Pattern
 //!
 //! Each modifier:
-//! 1. Owns its simulation field data (ScalarField3D)
+//! 1. Owns its simulation field data (`ScalarField3D`)
 //! 2. Has `update(dt)` to advance simulation state
 //! 3. `modify_distance(x, y, z, dist)` alters SDF distance
 //!
@@ -88,6 +88,7 @@ pub struct ModifiedSdf {
 
 impl ModifiedSdf {
     /// Create a new modified SDF wrapping the original field
+    #[must_use]
     pub fn new(original: Box<dyn SdfField>) -> Self {
         Self {
             original,
@@ -97,6 +98,7 @@ impl ModifiedSdf {
     }
 
     /// Add a modifier to the chain
+    #[must_use]
     pub fn with_modifier(mut self, modifier: Box<dyn PhysicsModifier>) -> Self {
         self.modifiers.push(modifier);
         self
@@ -113,6 +115,7 @@ impl ModifiedSdf {
     }
 
     /// Number of active modifiers
+    #[must_use]
     pub fn modifier_count(&self) -> usize {
         self.modifiers.len()
     }

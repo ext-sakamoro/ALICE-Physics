@@ -22,9 +22,9 @@ use alloc::vec::Vec;
 /// A link in an articulated body
 #[derive(Clone, Debug)]
 pub struct Link {
-    /// Index into PhysicsWorld bodies
+    /// Index into `PhysicsWorld` bodies
     pub body_index: usize,
-    /// Parent link index (usize::MAX for root)
+    /// Parent link index (`usize::MAX` for root)
     pub parent: usize,
     /// Joint connecting this link to its parent
     pub joint: Option<Joint>,
@@ -52,6 +52,7 @@ pub struct ArticulatedBody {
 
 impl ArticulatedBody {
     /// Create a new articulated body with a root link
+    #[must_use]
     pub fn new(root_body_index: usize, fixed_base: bool) -> Self {
         let root_link = Link {
             body_index: root_body_index,
@@ -102,21 +103,25 @@ impl ArticulatedBody {
 
     /// Number of links
     #[inline]
+    #[must_use]
     pub fn link_count(&self) -> usize {
         self.links.len()
     }
 
     /// Number of DOFs (approximate: each non-root link's joint)
+    #[must_use]
     pub fn dof_count(&self) -> usize {
         self.links.iter().filter(|l| l.joint.is_some()).count()
     }
 
     /// Get all body indices in this articulation
+    #[must_use]
     pub fn body_indices(&self) -> Vec<usize> {
         self.links.iter().map(|l| l.body_index).collect()
     }
 
     /// Get all joints in this articulation
+    #[must_use]
     pub fn joints(&self) -> Vec<&Joint> {
         self.links.iter().filter_map(|l| l.joint.as_ref()).collect()
     }
@@ -198,8 +203,9 @@ impl ArticulatedBody {
 /// - L/R Upper Arm -> Lower Arm
 /// - L/R Upper Leg -> Lower Leg
 ///
-/// Returns `(ArticulatedBody, Vec<RigidBody>)` ready to add to PhysicsWorld.
+/// Returns `(ArticulatedBody, Vec<RigidBody>)` ready to add to `PhysicsWorld`.
 #[allow(clippy::too_many_lines)]
+#[must_use]
 pub fn build_ragdoll(
     pelvis_pos: Vec3Fix,
     body_start_index: usize,
@@ -446,6 +452,7 @@ pub struct FeatherstoneSolver {
 
 impl FeatherstoneSolver {
     /// Create a new solver
+    #[must_use]
     pub fn new() -> Self {
         Self {
             link_data: Vec::new(),

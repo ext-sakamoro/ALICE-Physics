@@ -38,6 +38,7 @@ pub enum CombineRule {
 impl CombineRule {
     /// Apply the combine rule to two values
     #[inline]
+    #[must_use]
     pub fn apply(&self, a: Fix128, b: Fix128) -> Fix128 {
         match self {
             CombineRule::Average => (a + b).half(),
@@ -61,7 +62,7 @@ impl CombineRule {
 }
 
 /// Physics material definition
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PhysicsMaterial {
     /// Material identifier
     pub id: MaterialId,
@@ -79,6 +80,7 @@ pub struct PhysicsMaterial {
 
 impl PhysicsMaterial {
     /// Create a new material with given properties
+    #[must_use]
     pub fn new(id: MaterialId, friction: Fix128, restitution: Fix128) -> Self {
         Self {
             id,
@@ -91,6 +93,7 @@ impl PhysicsMaterial {
     }
 
     /// Set combine rules
+    #[must_use]
     pub fn with_combine_rules(mut self, friction: CombineRule, restitution: CombineRule) -> Self {
         self.friction_combine = friction;
         self.restitution_combine = restitution;
@@ -98,6 +101,7 @@ impl PhysicsMaterial {
     }
 
     /// Set separate static/dynamic friction
+    #[must_use]
     pub fn with_static_friction(mut self, static_friction: Fix128) -> Self {
         self.static_friction = static_friction;
         self
@@ -115,7 +119,7 @@ impl Default for PhysicsMaterial {
 }
 
 /// Pair override entry
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 struct PairOverride {
     mat_a: MaterialId,
     mat_b: MaterialId,
@@ -124,7 +128,7 @@ struct PairOverride {
 }
 
 /// Combined material result for a contact pair
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct CombinedMaterial {
     /// Combined friction
     pub friction: Fix128,
@@ -134,7 +138,7 @@ pub struct CombinedMaterial {
 
 /// Material pair lookup table
 pub struct MaterialTable {
-    /// Registered materials (indexed by MaterialId)
+    /// Registered materials (indexed by `MaterialId`)
     materials: Vec<PhysicsMaterial>,
     /// Pair-specific overrides
     pair_overrides: Vec<PairOverride>,
@@ -146,6 +150,7 @@ pub struct MaterialTable {
 
 impl MaterialTable {
     /// Create a new material table with a default material
+    #[must_use]
     pub fn new() -> Self {
         let mut table = Self {
             materials: Vec::new(),
@@ -168,6 +173,7 @@ impl MaterialTable {
     }
 
     /// Get material by ID
+    #[must_use]
     pub fn get(&self, id: MaterialId) -> &PhysicsMaterial {
         self.materials
             .get(id as usize)
@@ -207,6 +213,7 @@ impl MaterialTable {
     }
 
     /// Combine materials for a contact pair
+    #[must_use]
     pub fn combine(&self, mat_a: MaterialId, mat_b: MaterialId) -> CombinedMaterial {
         let (a, b) = if mat_a <= mat_b {
             (mat_a, mat_b)
@@ -243,12 +250,14 @@ impl MaterialTable {
 
     /// Number of registered materials
     #[inline]
+    #[must_use]
     pub fn len(&self) -> usize {
         self.materials.len()
     }
 
     /// Check if empty
     #[inline]
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.materials.is_empty()
     }

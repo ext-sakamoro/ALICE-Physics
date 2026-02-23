@@ -16,8 +16,6 @@
 use crate::math::{Fix128, Vec3Fix};
 
 #[cfg(not(feature = "std"))]
-use alloc::vec;
-#[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
 // ============================================================================
@@ -25,7 +23,7 @@ use alloc::vec::Vec;
 // ============================================================================
 
 /// A plane defined by a point and normal for cutting operations.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct CutPlane {
     /// A point on the plane
     pub point: Vec3Fix,
@@ -159,7 +157,7 @@ pub fn cut_cloth(
 // Tests
 // ============================================================================
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use super::*;
 

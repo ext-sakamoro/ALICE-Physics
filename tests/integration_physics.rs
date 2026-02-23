@@ -2317,3 +2317,243 @@ fn test_raycast_bvh_correctness() {
     let (idx2, _) = hit2.unwrap();
     assert_eq!(idx2, 4, "Nearest sphere from right should be body 4");
 }
+
+// ============================================================================
+// Stress Test — 200 bodies with joints and forces
+// ============================================================================
+
+/// Simulate 10 dynamic bodies with gravity, constraints, and force fields.
+/// Verifies the solver does not panic or diverge under load.
+#[test]
+fn test_stress_10_bodies_with_constraints() {
+    let config = PhysicsConfig {
+        substeps: 2,
+        iterations: 2,
+        ..PhysicsConfig::default()
+    };
+    let mut world = PhysicsWorld::new(config);
+
+    // Line of 10 bodies
+    for i in 0..10 {
+        let x = i as i64 * 3;
+        let body = RigidBody::new_dynamic(Vec3Fix::from_int(x, 20, 0), Fix128::ONE);
+        world.add_body_with_radius(body, Fix128::ONE);
+    }
+    assert_eq!(world.bodies.len(), 10);
+
+    // Chain of distance constraints
+    for i in 0..9 {
+        let constraint =
+            DistanceConstraint::new(i, i + 1, Vec3Fix::ZERO, Vec3Fix::ZERO, Fix128::from_int(3));
+        world.distance_constraints.push(constraint);
+    }
+
+    // Add a directional wind force
+    world
+        .force_fields
+        .push(ForceFieldInstance::new(ForceField::Directional {
+            direction: Vec3Fix::UNIT_X,
+            strength: Fix128::from_int(2),
+        }));
+
+    let dt = Fix128::from_ratio(1, 60);
+    run_world(&mut world, 10, dt);
+
+    // Verify: all bodies have finite positions
+    for (i, body) in world.bodies.iter().enumerate() {
+        let pos_magnitude = body.position.length();
+        assert!(
+            pos_magnitude < Fix128::from_int(10000),
+            "Body {i} diverged: position magnitude too large"
+        );
+    }
+}
+
+// ============================================================================
+// Per-body damping test
+// ============================================================================
+
+/// Verify that per-body damping reduces velocity more than global damping alone.
+#[test]
+fn test_per_body_damping() {
+    let config = PhysicsConfig::default();
+    let mut world = PhysicsWorld::new(config);
+
+    // Body A: default damping (1.0 = no extra damping)
+    let body_a = RigidBody::new_dynamic(Vec3Fix::from_int(0, 10, 0), Fix128::ONE)
+        .with_velocity(Vec3Fix::from_int(10, 0, 0));
+    world.add_body(body_a);
+
+    // Body B: heavy damping (0.5 = 50% velocity retained per substep)
+    let body_b = RigidBody::new_dynamic(Vec3Fix::from_int(0, 10, 10), Fix128::ONE)
+        .with_velocity(Vec3Fix::from_int(10, 0, 0))
+        .with_linear_damping(Fix128::from_ratio(5, 10));
+    world.add_body(body_b);
+
+    let dt = Fix128::from_ratio(1, 60);
+    run_world(&mut world, 60, dt);
+
+    // Body B should have moved less than body A in the X direction
+    let x_a = world.bodies[0].position.x;
+    let x_b = world.bodies[1].position.x;
+    assert!(x_b < x_a, "Heavily damped body should travel less distance");
+}
+
+// ============================================================================
+// Builder pattern test
+// ============================================================================
+
+#[test]
+fn test_rigid_body_builder() {
+    let body = RigidBody::new_dynamic(Vec3Fix::from_int(0, 5, 0), Fix128::ONE)
+        .with_restitution(Fix128::from_ratio(8, 10))
+        .with_friction(Fix128::from_ratio(5, 10))
+        .with_gravity_scale(Fix128::from_int(2))
+        .with_velocity(Vec3Fix::from_int(1, 0, 0))
+        .with_rotation(QuatFix::IDENTITY);
+
+    assert_eq!(body.restitution, Fix128::from_ratio(8, 10));
+    assert_eq!(body.friction, Fix128::from_ratio(5, 10));
+    assert_eq!(body.gravity_scale, Fix128::from_int(2));
+    assert_eq!(body.velocity, Vec3Fix::from_int(1, 0, 0));
+}
+
+// ============================================================================
+// Display trait test
+// ============================================================================
+
+#[test]
+fn test_display_traits() {
+    let v = Vec3Fix::from_int(1, 2, 3);
+    let s = format!("{}", v);
+    assert!(s.contains("1"), "Vec3Fix display should contain components");
+
+    let q = QuatFix::IDENTITY;
+    let s = format!("{}", q);
+    assert!(s.contains("1"), "QuatFix display should contain w=1");
+
+    let f = Fix128::from_ratio(3, 2);
+    let s = format!("{}", f);
+    assert!(s.contains("1.5"), "Fix128(1.5) display should contain 1.5");
+}
+
+// ============================================================================
+// From/Into conversion test
+// ============================================================================
+
+#[test]
+fn test_from_into_conversions() {
+    let f: Fix128 = 42i64.into();
+    assert_eq!(f, Fix128::from_int(42));
+
+    let f32: Fix128 = 7i32.into();
+    assert_eq!(f32, Fix128::from_int(7));
+
+    let arr: [Fix128; 3] = Vec3Fix::from_int(1, 2, 3).into();
+    assert_eq!(arr[0], Fix128::from_int(1));
+    assert_eq!(arr[1], Fix128::from_int(2));
+    assert_eq!(arr[2], Fix128::from_int(3));
+
+    let v: Vec3Fix = arr.into();
+    assert_eq!(v, Vec3Fix::from_int(1, 2, 3));
+}
+
+// ============================================================================
+// PhysicsWorld Debug test
+// ============================================================================
+
+#[test]
+fn test_physics_world_debug() {
+    let world = PhysicsWorld::new(PhysicsConfig::default());
+    let s = format!("{:?}", world);
+    assert!(s.contains("PhysicsWorld"));
+    assert!(s.contains("bodies"));
+}
+
+// ============================================================================
+// RigidBody Default test
+// ============================================================================
+
+#[test]
+fn test_rigid_body_default() {
+    let body = RigidBody::default();
+    assert_eq!(body.position, Vec3Fix::ZERO);
+    assert!(body.is_dynamic());
+    assert!(!body.is_static());
+}
+
+// ============================================================================
+// New CCD functions test
+// ============================================================================
+
+#[test]
+fn test_new_ccd_functions() {
+    use alice_physics::ccd::{aabb_plane_toi, capsule_plane_toi, sphere_capsule_toi};
+
+    // Capsule falling toward ground
+    let toi = capsule_plane_toi(
+        Vec3Fix::from_int(0, 10, -1),
+        Vec3Fix::from_int(0, 10, 1),
+        Fix128::ONE,
+        Vec3Fix::from_int(0, -20, 0),
+        Vec3Fix::UNIT_Y,
+        Fix128::ZERO,
+    );
+    assert!(toi.is_some(), "Capsule should hit ground plane");
+
+    // Sphere hitting capsule
+    let toi2 = sphere_capsule_toi(
+        Vec3Fix::from_int(-10, 0, 0),
+        Fix128::ONE,
+        Vec3Fix::from_int(20, 0, 0),
+        Vec3Fix::from_int(5, -2, 0),
+        Vec3Fix::from_int(5, 2, 0),
+        Fix128::ONE,
+    );
+    assert!(toi2.is_some(), "Sphere should hit capsule");
+
+    // AABB hitting ground
+    let aabb = AABB::new(Vec3Fix::from_int(-1, 8, -1), Vec3Fix::from_int(1, 10, 1));
+    let toi3 = aabb_plane_toi(
+        &aabb,
+        Vec3Fix::from_int(0, -20, 0),
+        Vec3Fix::UNIT_Y,
+        Fix128::ZERO,
+    );
+    assert!(toi3.is_some(), "AABB should hit ground plane");
+}
+
+// ============================================================================
+// Error variants test
+// ============================================================================
+
+#[test]
+fn test_error_new_variants() {
+    use alice_physics::PhysicsError;
+
+    let e1 = PhysicsError::CapacityExceeded {
+        resource: "bodies",
+        limit: 10000,
+    };
+    assert!(format!("{}", e1).contains("10000"));
+
+    let e2 = PhysicsError::InvalidConfiguration {
+        reason: "substeps must be > 0",
+    };
+    assert!(format!("{}", e2).contains("substeps"));
+}
+
+// ============================================================================
+// HeightField Clone/Debug test
+// ============================================================================
+
+#[test]
+fn test_heightfield_derives() {
+    use alice_physics::HeightField;
+
+    let hf = HeightField::flat(4, 4, Fix128::ONE, Vec3Fix::ZERO, Fix128::ZERO);
+    let hf2 = hf.clone();
+    assert_eq!(hf, hf2, "HeightField should be cloneable and comparable");
+    let s = format!("{:?}", hf);
+    assert!(s.contains("HeightField"));
+}

@@ -1,7 +1,7 @@
 //! Ragdoll Animation Blending
 //!
 //! Blends between keyframe animation and physics ragdoll simulation.
-//! Extends neural.rs RagdollController with smooth transitions.
+//! Extends neural.rs `RagdollController` with smooth transitions.
 //!
 //! # Modes
 //!
@@ -41,7 +41,7 @@ pub enum BlendMode {
 // ============================================================================
 
 /// A single bone pose (position + rotation)
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct BonePose {
     /// Bone position (local space)
     pub position: Vec3Fix,
@@ -67,6 +67,7 @@ pub struct SkeletonPose {
 
 impl SkeletonPose {
     /// Create empty pose for N bones
+    #[must_use]
     pub fn new(num_bones: usize) -> Self {
         Self {
             bones: vec![BonePose::default(); num_bones],
@@ -75,11 +76,13 @@ impl SkeletonPose {
 
     /// Number of bones
     #[inline]
+    #[must_use]
     pub fn bone_count(&self) -> usize {
         self.bones.len()
     }
 
     /// Lerp between two poses
+    #[must_use]
     pub fn lerp(a: &SkeletonPose, b: &SkeletonPose, t: Fix128) -> SkeletonPose {
         let n = a.bones.len().min(b.bones.len());
         let one_minus_t = Fix128::ONE - t;
@@ -104,7 +107,7 @@ impl SkeletonPose {
 // ============================================================================
 
 /// Keyframe for a single bone
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Keyframe {
     /// Time in seconds
     pub time: Fix128,
@@ -127,6 +130,7 @@ pub struct AnimationClip {
 
 impl AnimationClip {
     /// Create empty clip
+    #[must_use]
     pub fn new(num_bones: usize, duration: Fix128) -> Self {
         Self {
             name: Vec::new(),
@@ -145,6 +149,7 @@ impl AnimationClip {
     }
 
     /// Sample pose at given time
+    #[must_use]
     pub fn sample(&self, time: Fix128) -> SkeletonPose {
         let t = if self.looping && !self.duration.is_zero() {
             // Modular time
@@ -234,6 +239,7 @@ pub struct AnimationBlender {
 
 impl AnimationBlender {
     /// Create a new blender for N bones
+    #[must_use]
     pub fn new(num_bones: usize) -> Self {
         Self {
             mode: BlendMode::Animated,
@@ -325,11 +331,13 @@ impl AnimationBlender {
     }
 
     /// Get motor targets for powered mode (animation poses as motor goals)
+    #[must_use]
     pub fn get_motor_targets(&self) -> &SkeletonPose {
         &self.animation_pose
     }
 
     /// Check if currently transitioning
+    #[must_use]
     pub fn is_transitioning(&self) -> bool {
         (self.blend_weight - self.target_weight).abs() > Fix128::from_ratio(1, 1000)
     }

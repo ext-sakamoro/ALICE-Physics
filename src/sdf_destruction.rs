@@ -11,7 +11,7 @@
 //! 3. Apply CSG subtraction: `new_sdf = max(original, -destruction_shape)`
 //! 4. Physics re-evaluates against modified SDF
 //!
-//! Works with ALICE-SDF's CSG operations (Subtract, SmoothSubtract).
+//! Works with ALICE-SDF's CSG operations (Subtract, `SmoothSubtract`).
 //!
 //! Author: Moroya Sakamoto
 
@@ -119,6 +119,7 @@ impl fmt::Debug for DestructionType {
 
 impl DestructionShape {
     /// Create a spherical crater
+    #[must_use]
     pub fn sphere(center: Vec3Fix, radius: f32) -> Self {
         Self {
             center,
@@ -129,6 +130,7 @@ impl DestructionShape {
     }
 
     /// Create a box cut
+    #[must_use]
     pub fn cube(center: Vec3Fix, half_extents: (f32, f32, f32)) -> Self {
         Self {
             center,
@@ -139,6 +141,7 @@ impl DestructionShape {
     }
 
     /// Create a cylindrical bore
+    #[must_use]
     pub fn cylinder(center: Vec3Fix, radius: f32, half_height: f32) -> Self {
         Self {
             center,
@@ -152,12 +155,14 @@ impl DestructionShape {
     }
 
     /// Set smooth subtraction factor
+    #[must_use]
     pub fn with_smoothing(mut self, factor: f32) -> Self {
         self.smooth_factor = factor;
         self
     }
 
     /// Set orientation
+    #[must_use]
     pub fn with_rotation(mut self, rotation: QuatFix) -> Self {
         self.rotation = rotation;
         self
@@ -226,6 +231,7 @@ pub struct DestructibleSdf {
 
 impl DestructibleSdf {
     /// Create a new destructible SDF wrapping an original field
+    #[must_use]
     pub fn new(original: Box<dyn SdfField>) -> Self {
         Self {
             original,
@@ -241,11 +247,13 @@ impl DestructibleSdf {
     }
 
     /// Number of active destruction volumes
+    #[must_use]
     pub fn destruction_count(&self) -> usize {
         self.destructions.len()
     }
 
     /// Total destructions applied (including merged)
+    #[must_use]
     pub fn total_destruction_count(&self) -> usize {
         self.total_destructions
     }
@@ -327,6 +335,7 @@ fn smooth_subtraction(d_a: f32, d_b: f32, k: f32) -> f32 {
 /// Generates a spherical crater at the contact point with size
 /// proportional to impact velocity.
 #[cfg(feature = "std")]
+#[must_use]
 pub fn destruction_from_impact(
     contact: &Contact,
     impact_velocity: Fix128,
@@ -343,11 +352,13 @@ pub fn destruction_from_impact(
 /// Create an explosion destruction event.
 ///
 /// Generates a spherical destruction centered at the explosion point.
+#[must_use]
 pub fn destruction_from_explosion(center: Vec3Fix, radius: f32, smooth: f32) -> DestructionShape {
     DestructionShape::sphere(center, radius).with_smoothing(smooth)
 }
 
 /// Create a projectile bore (cylindrical destruction along a ray).
+#[must_use]
 pub fn destruction_from_projectile(
     entry_point: Vec3Fix,
     direction: Vec3Fix,

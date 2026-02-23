@@ -15,7 +15,7 @@ use crate::math::{Fix128, QuatFix, Vec3Fix};
 ///
 /// A box defined by center position, half-extents (size/2 on each axis),
 /// and an orientation quaternion.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct OrientedBox {
     /// Center position in world space
     pub center: Vec3Fix,
@@ -28,6 +28,7 @@ pub struct OrientedBox {
 impl OrientedBox {
     /// Create a new oriented box
     #[inline]
+    #[must_use]
     pub fn new(center: Vec3Fix, half_extents: Vec3Fix, rotation: QuatFix) -> Self {
         Self {
             center,
@@ -38,6 +39,7 @@ impl OrientedBox {
 
     /// Create an axis-aligned box (no rotation)
     #[inline]
+    #[must_use]
     pub fn axis_aligned(center: Vec3Fix, half_extents: Vec3Fix) -> Self {
         Self {
             center,
@@ -47,6 +49,7 @@ impl OrientedBox {
     }
 
     /// Compute world-space AABB enclosing this OBB
+    #[must_use]
     pub fn aabb(&self) -> AABB {
         // Transform each local axis to world space and compute extents
         let local_x = Vec3Fix::new(self.half_extents.x, Fix128::ZERO, Fix128::ZERO);
@@ -68,6 +71,7 @@ impl OrientedBox {
     }
 
     /// Get a corner vertex by index (0..8)
+    #[must_use]
     pub fn corner(&self, index: usize) -> Vec3Fix {
         let sx = if index & 1 == 0 {
             self.half_extents.x
@@ -89,6 +93,7 @@ impl OrientedBox {
     }
 
     /// Get all 8 corner vertices
+    #[must_use]
     pub fn corners(&self) -> [Vec3Fix; 8] {
         let mut result = [Vec3Fix::ZERO; 8];
         for (i, item) in result.iter_mut().enumerate() {
@@ -99,6 +104,7 @@ impl OrientedBox {
 
     /// Volume of the box
     #[inline]
+    #[must_use]
     pub fn volume(&self) -> Fix128 {
         let eight = Fix128::from_int(8);
         self.half_extents.x * self.half_extents.y * self.half_extents.z * eight
@@ -106,6 +112,7 @@ impl OrientedBox {
 
     /// Surface area of the box
     #[inline]
+    #[must_use]
     pub fn surface_area(&self) -> Fix128 {
         let two = Fix128::from_int(2);
         let hx = self.half_extents.x * two;
@@ -115,6 +122,7 @@ impl OrientedBox {
     }
 
     /// Compute inertia tensor (diagonal) for given mass
+    #[must_use]
     pub fn inertia_diagonal(&self, mass: Fix128) -> Vec3Fix {
         let three = Fix128::from_int(3);
         let ex2 = self.half_extents.x * self.half_extents.x;

@@ -42,7 +42,7 @@ pub enum Phase {
 // ============================================================================
 
 /// Phase change modifier configuration
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PhaseChangeConfig {
     /// Temperature at which solid melts to liquid
     pub melt_temperature: f32,
@@ -108,6 +108,7 @@ pub struct PhaseChangeModifier {
 
 impl PhaseChangeModifier {
     /// Create a new phase change modifier
+    #[must_use]
     pub fn new(
         config: PhaseChangeConfig,
         resolution: usize,
@@ -137,11 +138,13 @@ impl PhaseChangeModifier {
     }
 
     /// Get temperature at a point
+    #[must_use]
     pub fn temperature_at(&self, x: f32, y: f32, z: f32) -> f32 {
         self.temperature.sample(x, y, z)
     }
 
     /// Get phase at a point
+    #[must_use]
     pub fn phase_at(&self, x: f32, y: f32, z: f32) -> Phase {
         let v = self.phase.sample(x, y, z);
         if v < 0.5 {

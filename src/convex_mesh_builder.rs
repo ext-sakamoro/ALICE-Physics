@@ -29,7 +29,7 @@ use crate::math::{Fix128, Vec3Fix};
 use alloc::vec::Vec;
 
 /// Face of the convex hull (triangle with outward normal)
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 struct HullFace {
     /// Vertex indices
     indices: [usize; 3],

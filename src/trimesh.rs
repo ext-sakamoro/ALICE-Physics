@@ -12,7 +12,7 @@ use crate::raycast::{Ray, RayHit};
 use alloc::vec::Vec;
 
 /// A single triangle
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Triangle {
     /// First vertex
     pub v0: Vec3Fix,
@@ -25,12 +25,14 @@ pub struct Triangle {
 impl Triangle {
     /// Create a new triangle from three vertices
     #[inline]
+    #[must_use]
     pub fn new(v0: Vec3Fix, v1: Vec3Fix, v2: Vec3Fix) -> Self {
         Self { v0, v1, v2 }
     }
 
     /// Compute face normal (not normalized)
     #[inline]
+    #[must_use]
     pub fn normal(&self) -> Vec3Fix {
         let e1 = self.v1 - self.v0;
         let e2 = self.v2 - self.v0;
@@ -39,11 +41,13 @@ impl Triangle {
 
     /// Compute normalized face normal
     #[inline]
+    #[must_use]
     pub fn unit_normal(&self) -> Vec3Fix {
         self.normal().normalize()
     }
 
     /// Compute AABB enclosing this triangle
+    #[must_use]
     pub fn aabb(&self) -> AABB {
         let min = Vec3Fix::new(
             min3(self.v0.x, self.v1.x, self.v2.x),
@@ -59,6 +63,7 @@ impl Triangle {
     }
 
     /// Closest point on triangle to a given point
+    #[must_use]
     pub fn closest_point(&self, p: Vec3Fix) -> Vec3Fix {
         let ab = self.v1 - self.v0;
         let ac = self.v2 - self.v0;
@@ -129,6 +134,7 @@ pub struct TriMesh {
 
 impl TriMesh {
     /// Build from vertices and triangle indices
+    #[must_use]
     pub fn from_indexed(vertices: &[Vec3Fix], indices: &[u32]) -> Self {
         let mut triangles = Vec::with_capacity(indices.len() / 3);
         let mut bvh_prims = Vec::with_capacity(indices.len() / 3);
@@ -164,6 +170,7 @@ impl TriMesh {
     }
 
     /// Build from raw triangles
+    #[must_use]
     pub fn from_triangles(triangles: Vec<Triangle>) -> Self {
         let bvh_prims: Vec<BvhPrimitive> = triangles
             .iter()
@@ -186,6 +193,7 @@ impl TriMesh {
     }
 
     /// Ray query: find closest triangle intersection
+    #[must_use]
     pub fn raycast(&self, ray: &Ray, max_t: Fix128) -> Option<RayHit> {
         let ray_aabb = ray_to_aabb(ray, max_t);
         let candidates = self.bvh.query(&ray_aabb);
@@ -206,6 +214,7 @@ impl TriMesh {
     }
 
     /// Closest point on mesh to a given point
+    #[must_use]
     pub fn closest_point(&self, point: Vec3Fix) -> (Vec3Fix, usize) {
         // Query BVH with a large AABB centered on point
         let half = Fix128::from_int(1000);
@@ -233,7 +242,8 @@ impl TriMesh {
         (best_point, best_idx)
     }
 
-    /// Sphere vs TriMesh collision: find deepest penetrating contact
+    /// Sphere vs `TriMesh` collision: find deepest penetrating contact
+    #[must_use]
     pub fn collide_sphere(&self, center: Vec3Fix, radius: Fix128) -> Option<Contact> {
         let query = AABB::new(
             center - Vec3Fix::new(radius, radius, radius),
@@ -275,7 +285,8 @@ impl TriMesh {
         deepest
     }
 
-    /// Capsule vs TriMesh collision: find deepest contact
+    /// Capsule vs `TriMesh` collision: find deepest contact
+    #[must_use]
     pub fn collide_capsule(&self, a: Vec3Fix, b: Vec3Fix, radius: Fix128) -> Option<Contact> {
         let cap_min = Vec3Fix::new(
             if a.x < b.x { a.x } else { b.x } - radius,
@@ -324,10 +335,11 @@ impl TriMesh {
         deepest
     }
 
-    /// AABB (box) vs TriMesh collision: find deepest contact
+    /// AABB (box) vs `TriMesh` collision: find deepest contact
     ///
     /// Treats the AABB as a sphere at its center with radius = half-diagonal
     /// for broad candidate selection, then does closest-point per triangle.
+    #[must_use]
     pub fn collide_aabb(&self, aabb: &AABB) -> Option<Contact> {
         let candidates = self.bvh.query(aabb);
         let center = (aabb.min + aabb.max) * Fix128::from_ratio(1, 2);
@@ -381,6 +393,7 @@ impl TriMesh {
 
     /// Number of triangles
     #[inline]
+    #[must_use]
     pub fn triangle_count(&self) -> usize {
         self.triangles.len()
     }
@@ -393,6 +406,7 @@ const MT_EPSILON: Fix128 = Fix128 {
 };
 
 /// Ray-Triangle intersection (Moller-Trumbore algorithm)
+#[must_use]
 pub fn ray_triangle(ray: &Ray, tri: &Triangle, max_t: Fix128) -> Option<RayHit> {
     let e1 = tri.v1 - tri.v0;
     let e2 = tri.v2 - tri.v0;
@@ -535,7 +549,7 @@ fn max3(a: Fix128, b: Fix128, c: Fix128) -> Fix128 {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use super::*;
 

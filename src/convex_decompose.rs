@@ -1,6 +1,6 @@
 //! Convex Decomposition from SDF
 //!
-//! Approximate convex decomposition of SDF shapes into ConvexHull groups.
+//! Approximate convex decomposition of SDF shapes into `ConvexHull` groups.
 //! Allows using fast GJK/EPA for SDF-derived geometry.
 //!
 //! # Algorithm
@@ -8,7 +8,7 @@
 //! 1. Sample SDF surface on a voxel grid
 //! 2. Extract surface voxels (sign change)
 //! 3. Flood-fill connected convex regions
-//! 4. Generate ConvexHull per region
+//! 4. Generate `ConvexHull` per region
 //!
 //! Author: Moroya Sakamoto
 
@@ -24,7 +24,7 @@ use alloc::vec::Vec;
 // ============================================================================
 
 /// Convex decomposition configuration
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DecomposeConfig {
     /// Voxel grid resolution per axis
     pub resolution: usize,
@@ -157,7 +157,7 @@ impl VoxelGrid {
 ///
 /// The SDF is sampled on a voxel grid within the given bounds,
 /// surface voxels are grouped into connected convex regions,
-/// and each region produces a ConvexHull.
+/// and each region produces a `ConvexHull`.
 pub fn decompose_sdf(
     sdf: &dyn SdfField,
     min: Vec3Fix,

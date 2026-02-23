@@ -20,7 +20,7 @@ pub enum ContactEventType {
 }
 
 /// A contact event between two bodies
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ContactEvent {
     /// First body index
     pub body_a: usize,
@@ -39,7 +39,7 @@ pub struct ContactEvent {
 }
 
 /// A trigger event (overlap without physics response)
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct TriggerEvent {
     /// Trigger body index
     pub trigger_body: usize,
@@ -67,6 +67,7 @@ pub struct EventCollector {
 
 impl EventCollector {
     /// Create a new event collector
+    #[must_use]
     pub fn new() -> Self {
         Self {
             contact_events: Vec::new(),
@@ -174,12 +175,14 @@ impl EventCollector {
 
     /// Get all contact events for this frame
     #[inline]
+    #[must_use]
     pub fn contact_events(&self) -> &[ContactEvent] {
         &self.contact_events
     }
 
     /// Get all trigger events for this frame
     #[inline]
+    #[must_use]
     pub fn trigger_events(&self) -> &[TriggerEvent] {
         &self.trigger_events
     }
@@ -198,6 +201,7 @@ impl EventCollector {
 
     /// Check if there are any events this frame
     #[inline]
+    #[must_use]
     pub fn has_events(&self) -> bool {
         !self.contact_events.is_empty() || !self.trigger_events.is_empty()
     }

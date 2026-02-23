@@ -17,7 +17,7 @@ use alloc::vec::Vec;
 // ============================================================================
 
 /// Result of a collision detection query
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct CollisionResult {
     /// Whether the shapes are colliding
     pub colliding: bool,
@@ -42,6 +42,7 @@ impl CollisionResult {
     };
 
     /// Create a new collision result
+    #[must_use]
     pub fn new(depth: Fix128, normal: Vec3Fix, point_a: Vec3Fix, point_b: Vec3Fix) -> Self {
         Self {
             colliding: true,
@@ -64,7 +65,7 @@ pub trait Support {
 }
 
 /// Sphere collider
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Sphere {
     /// Center position
     pub center: Vec3Fix,
@@ -74,6 +75,7 @@ pub struct Sphere {
 
 impl Sphere {
     /// Create a new sphere from center and radius
+    #[must_use]
     pub fn new(center: Vec3Fix, radius: Fix128) -> Self {
         Self { center, radius }
     }
@@ -88,7 +90,7 @@ impl Support for Sphere {
 }
 
 /// Axis-Aligned Bounding Box
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct AABB {
     /// Minimum corner
     pub min: Vec3Fix,
@@ -98,11 +100,13 @@ pub struct AABB {
 
 impl AABB {
     /// Create a new AABB from min and max corners
+    #[must_use]
     pub fn new(min: Vec3Fix, max: Vec3Fix) -> Self {
         Self { min, max }
     }
 
     /// Create AABB from center and half-extents
+    #[must_use]
     pub fn from_center_half(center: Vec3Fix, half: Vec3Fix) -> Self {
         Self {
             min: center - half,
@@ -112,6 +116,7 @@ impl AABB {
 
     /// Check if two AABBs intersect (broad phase)
     #[inline]
+    #[must_use]
     pub fn intersects(&self, other: &AABB) -> bool {
         self.min.x <= other.max.x
             && self.max.x >= other.min.x
@@ -122,6 +127,7 @@ impl AABB {
     }
 
     /// Compute union of two AABBs
+    #[must_use]
     pub fn union(&self, other: &AABB) -> AABB {
         AABB {
             min: Vec3Fix::new(
@@ -162,6 +168,7 @@ impl AABB {
     }
 
     /// Surface area (for BVH heuristics)
+    #[must_use]
     pub fn surface_area(&self) -> Fix128 {
         let d = self.max - self.min;
         let two = Fix128::from_int(2);
@@ -205,6 +212,7 @@ impl ConvexHull {
     /// # Panics
     ///
     /// Panics if `vertices` is empty, since `support()` requires at least one vertex.
+    #[must_use]
     pub fn new(vertices: Vec<Vec3Fix>) -> Self {
         assert!(
             !vertices.is_empty(),
@@ -233,7 +241,7 @@ impl Support for ConvexHull {
 }
 
 /// Capsule (line segment with radius)
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Capsule {
     /// Start point of the capsule segment
     pub a: Vec3Fix,
@@ -245,6 +253,7 @@ pub struct Capsule {
 
 impl Capsule {
     /// Create a new capsule from two endpoints and a radius
+    #[must_use]
     pub fn new(a: Vec3Fix, b: Vec3Fix, radius: Fix128) -> Self {
         Self { a, b, radius }
     }
@@ -264,7 +273,7 @@ impl Support for Capsule {
 ///
 /// Wraps any `Support`-implementing shape with a uniform scale factor.
 /// The support function scales the inner shape's support point.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ScaledShape<S> {
     /// Inner shape
     pub shape: S,
@@ -329,7 +338,7 @@ impl Simplex {
 }
 
 /// GJK collision result
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct GjkResult {
     /// Whether the two shapes are colliding
     pub colliding: bool,
@@ -507,7 +516,7 @@ fn do_simplex_tetrahedron(simplex: &mut Simplex, direction: &mut Vec3Fix) -> boo
 // ============================================================================
 
 /// Contact information from EPA
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Contact {
     /// Penetration depth
     pub depth: Fix128,
@@ -520,7 +529,7 @@ pub struct Contact {
 }
 
 /// EPA face (triangle)
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 struct EpaFace {
     indices: [usize; 3],
     normal: Vec3Fix,

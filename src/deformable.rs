@@ -26,7 +26,7 @@ use alloc::vec::Vec;
 // ============================================================================
 
 /// Deformable body configuration
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DeformableConfig {
     /// Solver iterations
     pub iterations: usize,
@@ -66,7 +66,7 @@ impl Default for DeformableConfig {
 // ============================================================================
 
 /// Tetrahedral volume constraint
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 struct TetConstraint {
     /// Four vertex indices
     indices: [usize; 4],
@@ -75,7 +75,7 @@ struct TetConstraint {
 }
 
 /// Edge length constraint
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 struct EdgeConstraint {
     i0: usize,
     i1: usize,
@@ -112,9 +112,10 @@ pub struct DeformableBody {
 
 impl DeformableBody {
     /// Create from particle positions and tetrahedra
+    #[must_use]
     pub fn new(
         positions: Vec<Vec3Fix>,
-        tetrahedra: Vec<[usize; 4]>,
+        tetrahedra: &[[usize; 4]],
         surface_triangles: Vec<[usize; 3]>,
         mass_per_particle: Fix128,
     ) -> Self {
@@ -133,7 +134,7 @@ impl DeformableBody {
             prev_positions: positions.clone(),
             velocities: vec![Vec3Fix::ZERO; n],
             inv_masses: vec![inv_mass; n],
-            tetrahedra: tetrahedra.clone(),
+            tetrahedra: tetrahedra.to_vec(),
             surface_triangles,
             tet_constraints: Vec::new(),
             edge_constraints: Vec::new(),
@@ -147,6 +148,7 @@ impl DeformableBody {
     }
 
     /// Create a simple cube deformable (for testing)
+    #[must_use]
     pub fn new_cube(center: Vec3Fix, half_extent: Fix128, mass: Fix128) -> Self {
         let h = half_extent;
         let positions = vec![
@@ -185,7 +187,7 @@ impl DeformableBody {
         ];
 
         let mass_per_particle = mass / Fix128::from_int(8);
-        Self::new(positions, tetrahedra, surface_triangles, mass_per_particle)
+        Self::new(positions, &tetrahedra, surface_triangles, mass_per_particle)
     }
 
     /// Build constraints from geometry
@@ -236,6 +238,7 @@ impl DeformableBody {
 
     /// Number of particles
     #[inline]
+    #[must_use]
     pub fn particle_count(&self) -> usize {
         self.positions.len()
     }
@@ -434,6 +437,7 @@ impl DeformableBody {
     }
 
     /// Get center of mass
+    #[must_use]
     pub fn center_of_mass(&self) -> Vec3Fix {
         compute_center_of_mass(&self.positions)
     }
@@ -546,6 +550,17 @@ fn compute_tet_volume(p0: Vec3Fix, p1: Vec3Fix, p2: Vec3Fix, p3: Vec3Fix) -> Fix
     let b = p2 - p0;
     let c = p3 - p0;
     a.dot(b.cross(c)) / Fix128::from_int(6)
+}
+
+impl core::fmt::Debug for DeformableBody {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("DeformableBody")
+            .field("particles", &self.positions.len())
+            .field("tetrahedra", &self.tetrahedra.len())
+            .field("surface_triangles", &self.surface_triangles.len())
+            .field("config", &self.config)
+            .finish()
+    }
 }
 
 // ============================================================================

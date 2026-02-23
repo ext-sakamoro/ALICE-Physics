@@ -21,7 +21,7 @@ use crate::sim_modifier::PhysicsModifier;
 // ============================================================================
 
 /// Pressure modifier configuration
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PressureConfig {
     /// Pressure diffusion rate (how fast pressure spreads)
     pub diffusion_rate: f32,
@@ -71,6 +71,7 @@ pub struct PressureModifier {
 
 impl PressureModifier {
     /// Create a new pressure modifier
+    #[must_use]
     pub fn new(
         config: PressureConfig,
         resolution: usize,
@@ -102,11 +103,13 @@ impl PressureModifier {
     }
 
     /// Get pressure at a point
+    #[must_use]
     pub fn pressure_at(&self, x: f32, y: f32, z: f32) -> f32 {
         self.pressure.sample(x, y, z)
     }
 
     /// Get deformation at a point
+    #[must_use]
     pub fn deformation_at(&self, x: f32, y: f32, z: f32) -> f32 {
         self.deformation.sample(x, y, z)
     }

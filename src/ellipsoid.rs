@@ -24,7 +24,7 @@ use crate::math::{Fix128, QuatFix, Vec3Fix};
 /// An ellipsoid defined by center position, three semi-axis radii, and an
 /// orientation quaternion. The radii are stored as `Vec3Fix` where
 /// `radii.x`, `radii.y`, `radii.z` are the semi-axes along local X, Y, Z.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Ellipsoid {
     /// Center position in world space
     pub center: Vec3Fix,

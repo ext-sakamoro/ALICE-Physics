@@ -31,11 +31,11 @@ const FAT_MARGIN: Fix128 = Fix128 {
 pub struct DynamicNode {
     /// Fat AABB (enlarged for movement prediction)
     pub aabb: AABB,
-    /// Parent node index (NULL_NODE if root)
+    /// Parent node index (`NULL_NODE` if root)
     pub parent: u32,
-    /// Left child (NULL_NODE if leaf)
+    /// Left child (`NULL_NODE` if leaf)
     pub left: u32,
-    /// Right child (NULL_NODE if leaf)
+    /// Right child (`NULL_NODE` if leaf)
     pub right: u32,
     /// Height (0 for leaf, max(left.height, right.height) + 1)
     pub height: i32,
@@ -85,6 +85,7 @@ pub struct DynamicAabbTree {
 
 impl DynamicAabbTree {
     /// Create a new empty tree
+    #[must_use]
     pub fn new() -> Self {
         Self {
             nodes: Vec::new(),
@@ -142,17 +143,20 @@ impl DynamicAabbTree {
 
     /// Get user data for a proxy
     #[inline]
+    #[must_use]
     pub fn user_data(&self, proxy_id: u32) -> u32 {
         self.nodes[proxy_id as usize].user_data
     }
 
     /// Get the AABB for a proxy
     #[inline]
+    #[must_use]
     pub fn get_aabb(&self, proxy_id: u32) -> AABB {
         self.nodes[proxy_id as usize].aabb
     }
 
     /// Query all proxies overlapping the given AABB
+    #[must_use]
     pub fn query(&self, aabb: &AABB) -> Vec<u32> {
         let mut result = Vec::new();
         if self.root == NULL_NODE {
@@ -212,6 +216,7 @@ impl DynamicAabbTree {
     }
 
     /// Find all potentially overlapping pairs
+    #[must_use]
     pub fn find_pairs(&self) -> Vec<(u32, u32)> {
         let mut pairs = Vec::new();
 
@@ -241,6 +246,7 @@ impl DynamicAabbTree {
     }
 
     /// Number of active proxies (leaf nodes)
+    #[must_use]
     pub fn proxy_count(&self) -> usize {
         self.nodes
             .iter()
@@ -250,11 +256,13 @@ impl DynamicAabbTree {
 
     /// Total node count (including internal)
     #[inline]
+    #[must_use]
     pub fn node_count(&self) -> usize {
         self.nodes.len() - self.free_list.len()
     }
 
     /// Tree height
+    #[must_use]
     pub fn height(&self) -> i32 {
         if self.root == NULL_NODE {
             0

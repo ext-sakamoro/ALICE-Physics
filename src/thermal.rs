@@ -24,7 +24,7 @@ use alloc::vec::Vec;
 // ============================================================================
 
 /// Thermal simulation configuration
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ThermalConfig {
     /// Thermal diffusion rate (conductivity)
     pub diffusion_rate: f32,
@@ -63,7 +63,7 @@ impl Default for ThermalConfig {
 }
 
 /// Heat source types
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum HeatSource {
     /// Point heat source
     Point {
@@ -112,6 +112,7 @@ pub struct ThermalModifier {
 
 impl ThermalModifier {
     /// Create a new thermal modifier
+    #[must_use]
     pub fn new(
         config: ThermalConfig,
         resolution: usize,
@@ -151,6 +152,7 @@ impl ThermalModifier {
     }
 
     /// Get temperature at a point
+    #[must_use]
     pub fn temperature_at(&self, x: f32, y: f32, z: f32) -> f32 {
         self.temperature.sample(x, y, z)
     }

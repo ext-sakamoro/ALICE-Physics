@@ -19,7 +19,7 @@ pub enum MotorMode {
 }
 
 /// PD controller for a single joint axis
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PdController {
     /// Proportional gain (stiffness)
     pub kp: Fix128,
@@ -38,6 +38,7 @@ pub struct PdController {
 impl PdController {
     /// Create a new PD controller
     #[inline]
+    #[must_use]
     pub fn new(kp: Fix128, kd: Fix128, max_force: Fix128) -> Self {
         Self {
             kp,
@@ -69,6 +70,7 @@ impl PdController {
     /// Compute control output
     ///
     /// Returns clamped force/torque value.
+    #[must_use]
     pub fn compute(&self, current_position: Fix128, current_velocity: Fix128) -> Fix128 {
         match self.mode {
             MotorMode::Off => Fix128::ZERO,
@@ -98,7 +100,7 @@ impl Default for PdController {
 }
 
 /// Motor attached to a joint
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct JointMotor {
     /// Index into joints array
     pub joint_index: usize,
@@ -108,6 +110,7 @@ pub struct JointMotor {
 
 impl JointMotor {
     /// Create a new motor for the given joint
+    #[must_use]
     pub fn new(joint_index: usize, controller: PdController) -> Self {
         Self {
             joint_index,
@@ -117,7 +120,7 @@ impl JointMotor {
 }
 
 /// 3-axis PD controller for ball joints / free rotation
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PdController3D {
     /// Per-axis proportional gains
     pub kp: Vec3Fix,
@@ -136,6 +139,7 @@ pub struct PdController3D {
 impl PdController3D {
     /// Create a new 3-axis PD controller
     #[inline]
+    #[must_use]
     pub fn new(kp: Vec3Fix, kd: Vec3Fix, max_torque: Fix128) -> Self {
         Self {
             kp,
@@ -154,6 +158,7 @@ impl PdController3D {
     }
 
     /// Compute 3D torque output
+    #[must_use]
     pub fn compute_torque(
         &self,
         current_rotation: QuatFix,

@@ -38,12 +38,13 @@ pub struct ScalarField3D {
     cell_size: (f32, f32, f32),
     /// Precomputed inverse cell size
     inv_cell_size: (f32, f32, f32),
-    /// Reusable scratch buffer for diffuse() (avoids per-call allocation)
+    /// Reusable scratch buffer for `diffuse()` (avoids per-call allocation)
     scratch: Vec<f32>,
 }
 
 impl ScalarField3D {
     /// Create a zero-filled field with given resolution and bounds
+    #[must_use]
     pub fn new(
         nx: usize,
         ny: usize,
@@ -82,6 +83,7 @@ impl ScalarField3D {
     }
 
     /// Create a field filled with a constant value
+    #[must_use]
     pub fn new_filled(
         nx: usize,
         ny: usize,
@@ -99,18 +101,21 @@ impl ScalarField3D {
 
     /// Total number of cells
     #[inline]
+    #[must_use]
     pub fn cell_count(&self) -> usize {
         self.nx * self.ny * self.nz
     }
 
     /// Linear index from grid coordinates
     #[inline]
+    #[must_use]
     pub fn index(&self, ix: usize, iy: usize, iz: usize) -> usize {
         iz * self.ny * self.nx + iy * self.nx + ix
     }
 
     /// Get value at grid coordinates (clamped)
     #[inline]
+    #[must_use]
     pub fn get(&self, ix: usize, iy: usize, iz: usize) -> f32 {
         let ix = ix.min(self.nx - 1);
         let iy = iy.min(self.ny - 1);
@@ -147,6 +152,7 @@ impl ScalarField3D {
 
     /// Trilinear interpolation at world-space position
     #[inline]
+    #[must_use]
     pub fn sample(&self, x: f32, y: f32, z: f32) -> f32 {
         let (gx, gy, gz) = self.world_to_grid(x, y, z);
 
@@ -195,6 +201,7 @@ impl ScalarField3D {
 
     /// Central-difference gradient at world-space position
     #[inline]
+    #[must_use]
     pub fn gradient(&self, x: f32, y: f32, z: f32) -> (f32, f32, f32) {
         let eps_x = self.cell_size.0 * 0.5;
         let eps_y = self.cell_size.1 * 0.5;
@@ -341,6 +348,7 @@ impl ScalarField3D {
 
     /// Check if a world-space point is inside the field bounds
     #[inline]
+    #[must_use]
     pub fn contains(&self, x: f32, y: f32, z: f32) -> bool {
         x >= self.min.0
             && x <= self.max.0
@@ -368,6 +376,7 @@ pub struct VectorField3D {
 
 impl VectorField3D {
     /// Create a zero vector field
+    #[must_use]
     pub fn new(
         nx: usize,
         ny: usize,
@@ -383,6 +392,7 @@ impl VectorField3D {
     }
 
     /// Sample vector at world-space position
+    #[must_use]
     pub fn sample(&self, wx: f32, wy: f32, wz: f32) -> (f32, f32, f32) {
         (
             self.x.sample(wx, wy, wz),

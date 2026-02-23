@@ -25,7 +25,7 @@ use crate::sdf_collider::SdfCollider;
 // ============================================================================
 
 /// Configuration for SDF manifold generation
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ManifoldConfig {
     /// Number of sample points in each tangent direction (total = samples^2)
     pub samples_per_axis: usize,
@@ -56,7 +56,7 @@ impl Default for ManifoldConfig {
 #[cfg(feature = "std")]
 #[derive(Clone, Debug)]
 pub struct SdfManifold {
-    /// Contact points (up to max_contacts)
+    /// Contact points (up to `max_contacts`)
     pub contacts: Vec<Contact>,
     /// Average contact normal
     pub normal: Vec3Fix,
@@ -67,6 +67,7 @@ pub struct SdfManifold {
 #[cfg(feature = "std")]
 impl SdfManifold {
     /// Empty manifold
+    #[must_use]
     pub fn empty() -> Self {
         Self {
             contacts: Vec::new(),
@@ -77,17 +78,20 @@ impl SdfManifold {
 
     /// Number of contact points
     #[inline]
+    #[must_use]
     pub fn len(&self) -> usize {
         self.contacts.len()
     }
 
     /// Check if manifold has no contacts
     #[inline]
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.contacts.is_empty()
     }
 
     /// Get the deepest contact
+    #[must_use]
     pub fn deepest(&self) -> Option<&Contact> {
         self.contacts.iter().max_by(|a, b| a.depth.cmp(&b.depth))
     }
@@ -122,6 +126,7 @@ fn build_tangent_frame(normal: Vec3Fix) -> (Vec3Fix, Vec3Fix) {
 /// Samples the SDF surface around an initial contact point to build
 /// a stable manifold for constraint solving.
 #[cfg(feature = "std")]
+#[must_use]
 pub fn generate_sdf_manifold(
     center: Vec3Fix,
     radius: Fix128,
@@ -316,7 +321,7 @@ fn reduce_manifold(candidates: &[(Contact, f32)], max_contacts: usize) -> Vec<Co
 // Tests
 // ============================================================================
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use super::*;
     use crate::math::QuatFix;

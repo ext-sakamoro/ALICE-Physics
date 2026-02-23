@@ -27,7 +27,7 @@ use alloc::vec::Vec;
 // ============================================================================
 
 /// Cloth simulation configuration
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ClothConfig {
     /// Solver iterations per substep
     pub iterations: usize,
@@ -73,7 +73,7 @@ impl Default for ClothConfig {
 // ============================================================================
 
 /// Edge (stretch) constraint
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 struct EdgeConstraint {
     i0: usize,
     i1: usize,
@@ -81,7 +81,7 @@ struct EdgeConstraint {
 }
 
 /// Bending constraint between two triangles sharing an edge
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 struct BendConstraint {
     /// The four vertices: shared edge (i0, i1) and opposite vertices (i2, i3)
     i0: usize,
@@ -125,6 +125,7 @@ impl Cloth {
     /// Create a rectangular cloth grid
     ///
     /// `width` x `height` in world units, `res_x` x `res_y` particles
+    #[must_use]
     pub fn new_grid(
         origin: Vec3Fix,
         width: Fix128,
@@ -232,6 +233,7 @@ impl Cloth {
 
     /// Number of particles
     #[inline(always)]
+    #[must_use]
     pub fn particle_count(&self) -> usize {
         self.positions.len()
     }
@@ -565,6 +567,7 @@ impl Cloth {
     }
 
     /// Compute per-triangle normals (for rendering)
+    #[must_use]
     pub fn compute_normals(&self) -> Vec<Vec3Fix> {
         let mut normals = vec![Vec3Fix::ZERO; self.particle_count()];
 
@@ -583,6 +586,19 @@ impl Cloth {
         }
 
         normals
+    }
+}
+
+impl core::fmt::Debug for Cloth {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Cloth")
+            .field("particles", &self.positions.len())
+            .field("triangles", &self.triangles.len())
+            .field("edge_constraints", &self.edge_constraints.len())
+            .field("bend_constraints", &self.bend_constraints.len())
+            .field("pinned", &self.pinned.len())
+            .field("config", &self.config)
+            .finish()
     }
 }
 

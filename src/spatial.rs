@@ -38,6 +38,7 @@ impl SpatialGrid {
     /// - `cell_size`: Side length of each cubic cell (should match the
     ///   interaction radius for best performance).
     /// - `grid_dim`: Number of cells along each axis. Total cells = `grid_dim^3`.
+    #[must_use]
     pub fn new(cell_size: Fix128, grid_dim: usize) -> Self {
         let inv_cell = if cell_size.is_zero() {
             Fix128::ONE
@@ -62,6 +63,7 @@ impl SpatialGrid {
 
     /// Compute the cell index for a given position.
     #[inline(always)]
+    #[must_use]
     pub fn hash(&self, pos: Vec3Fix) -> usize {
         let gd = self.grid_dim as i64;
         let half = self.grid_half;

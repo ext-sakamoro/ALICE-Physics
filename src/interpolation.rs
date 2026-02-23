@@ -18,7 +18,7 @@ use crate::solver::RigidBody;
 use alloc::vec::Vec;
 
 /// Snapshot of a single body's render-relevant state
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct BodySnapshot {
     /// Position
     pub position: Vec3Fix,
@@ -31,6 +31,7 @@ pub struct BodySnapshot {
 impl BodySnapshot {
     /// Capture snapshot from a rigid body
     #[inline]
+    #[must_use]
     pub fn from_body(body: &RigidBody) -> Self {
         Self {
             position: body.position,
@@ -57,12 +58,14 @@ impl WorldSnapshot {
 
     /// Number of bodies in snapshot
     #[inline]
+    #[must_use]
     pub fn len(&self) -> usize {
         self.bodies.len()
     }
 
     /// Check if empty
     #[inline]
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.bodies.is_empty()
     }
@@ -81,11 +84,13 @@ pub struct InterpolationState {
 
 impl InterpolationState {
     /// Create from two snapshots
+    #[must_use]
     pub fn new(prev: WorldSnapshot, current: WorldSnapshot) -> Self {
         Self { prev, current }
     }
 
     /// Create empty
+    #[must_use]
     pub fn empty() -> Self {
         Self {
             prev: WorldSnapshot { bodies: Vec::new() },
@@ -107,6 +112,7 @@ impl InterpolationState {
     /// Get interpolated position for a body
     ///
     /// `alpha` is in [0, 1]: 0 = previous state, 1 = current state
+    #[must_use]
     pub fn interpolate_position(&self, body_idx: usize, alpha: Fix128) -> Vec3Fix {
         if body_idx >= self.current.bodies.len() || body_idx >= self.prev.bodies.len() {
             return Vec3Fix::ZERO;
@@ -119,6 +125,7 @@ impl InterpolationState {
     }
 
     /// Get interpolated rotation for a body (SLERP)
+    #[must_use]
     pub fn interpolate_rotation(&self, body_idx: usize, alpha: Fix128) -> QuatFix {
         if body_idx >= self.current.bodies.len() || body_idx >= self.prev.bodies.len() {
             return QuatFix::IDENTITY;
@@ -131,6 +138,7 @@ impl InterpolationState {
     }
 
     /// Get both interpolated position and rotation
+    #[must_use]
     pub fn interpolate(&self, body_idx: usize, alpha: Fix128) -> (Vec3Fix, QuatFix) {
         (
             self.interpolate_position(body_idx, alpha),
@@ -139,19 +147,22 @@ impl InterpolationState {
     }
 
     /// Get all interpolated transforms
+    #[must_use]
     pub fn interpolate_all(&self, alpha: Fix128) -> Vec<(Vec3Fix, QuatFix)> {
         let count = self.current.bodies.len().min(self.prev.bodies.len());
         (0..count).map(|i| self.interpolate(i, alpha)).collect()
     }
 
     /// Number of bodies available for interpolation
+    #[must_use]
     pub fn body_count(&self) -> usize {
         self.current.bodies.len().min(self.prev.bodies.len())
     }
 }
 
-/// Linear interpolation for Vec3Fix
+/// Linear interpolation for `Vec3Fix`
 #[inline]
+#[must_use]
 pub fn lerp_vec3(a: Vec3Fix, b: Vec3Fix, t: Fix128) -> Vec3Fix {
     let one_minus_t = Fix128::ONE - t;
     Vec3Fix::new(
@@ -163,6 +174,7 @@ pub fn lerp_vec3(a: Vec3Fix, b: Vec3Fix, t: Fix128) -> Vec3Fix {
 
 /// Linear interpolation for Fix128
 #[inline]
+#[must_use]
 pub fn lerp_fix128(a: Fix128, b: Fix128, t: Fix128) -> Fix128 {
     a * (Fix128::ONE - t) + b * t
 }
@@ -172,6 +184,7 @@ pub fn lerp_fix128(a: Fix128, b: Fix128, t: Fix128) -> Fix128 {
 /// Uses NLERP (normalized linear interpolation) which is deterministic
 /// and provides near-identical results to SLERP for interpolation.
 /// NLERP is preferred for fixed-point as it avoids acos/sin.
+#[must_use]
 pub fn slerp(a: QuatFix, b: QuatFix, t: Fix128) -> QuatFix {
     // Compute dot product
     let dot = a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;

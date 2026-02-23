@@ -129,7 +129,7 @@ pub struct SdfCollider {
     pub rotation: QuatFix,
     /// Uniform scale factor
     pub scale: Fix128,
-    /// Body index this SDF is attached to (usize::MAX = static world geometry)
+    /// Body index this SDF is attached to (`usize::MAX` = static world geometry)
     pub body_index: usize,
     // -- Cached invariants (derived from rotation/scale) --
     /// Inverse rotation (cached)
@@ -145,6 +145,7 @@ pub const SDF_STATIC: usize = usize::MAX;
 
 impl SdfCollider {
     /// Create a new SDF collider attached to the world (static).
+    #[must_use]
     pub fn new_static(field: Box<dyn SdfField>, position: Vec3Fix, rotation: QuatFix) -> Self {
         Self {
             field,
@@ -159,6 +160,7 @@ impl SdfCollider {
     }
 
     /// Create a new SDF collider attached to a rigid body.
+    #[must_use]
     pub fn new_dynamic(field: Box<dyn SdfField>, body_index: usize) -> Self {
         Self {
             field,
@@ -173,6 +175,7 @@ impl SdfCollider {
     }
 
     /// Set uniform scale
+    #[must_use]
     pub fn with_scale(mut self, scale: Fix128) -> Self {
         self.scale = scale;
         let s = scale.to_f32();
@@ -225,6 +228,7 @@ impl SdfCollider {
 ///
 /// Optimization: evaluates distance first (1 eval), then normal only on hit (4 evals).
 #[cfg(feature = "std")]
+#[must_use]
 pub fn collide_point_sdf(point: Vec3Fix, sdf: &SdfCollider) -> Option<Contact> {
     let (lx, ly, lz) = sdf.world_to_local(point);
 
@@ -259,6 +263,7 @@ pub fn collide_point_sdf(point: Vec3Fix, sdf: &SdfCollider) -> Option<Contact> {
 /// Optimization: evaluates distance first (1 eval), then normal only on hit (4 evals).
 /// Most bodies are NOT colliding, so this saves 4 evals per non-colliding body.
 #[cfg(feature = "std")]
+#[must_use]
 pub fn collide_sphere_sdf(center: Vec3Fix, radius: Fix128, sdf: &SdfCollider) -> Option<Contact> {
     let (lx, ly, lz) = sdf.world_to_local(center);
 
@@ -299,6 +304,7 @@ pub fn collide_sphere_sdf(center: Vec3Fix, radius: Fix128, sdf: &SdfCollider) ->
 /// Samples 3 points along the capsule axis (endpoints + midpoint),
 /// returns the deepest penetrating contact.
 #[cfg(feature = "std")]
+#[must_use]
 pub fn collide_capsule_sdf(
     a: Vec3Fix,
     b: Vec3Fix,
@@ -327,6 +333,7 @@ pub fn collide_capsule_sdf(
 /// Samples 8 corner vertices + center (9 points total),
 /// returns the deepest penetrating contact.
 #[cfg(feature = "std")]
+#[must_use]
 pub fn collide_aabb_sdf(min: Vec3Fix, max: Vec3Fix, sdf: &SdfCollider) -> Option<Contact> {
     let center = Vec3Fix::new(
         (min.x + max.x).half(),
@@ -366,6 +373,7 @@ pub fn collide_aabb_sdf(min: Vec3Fix, max: Vec3Fix, sdf: &SdfCollider) -> Option
 /// For each body, tests against all SDF colliders and returns contacts.
 /// Bodies with `inv_mass == 0` (static) are skipped.
 #[cfg(feature = "std")]
+#[must_use]
 pub fn detect_sdf_contacts(
     bodies: &[crate::solver::RigidBody],
     sdf_colliders: &[SdfCollider],
@@ -398,7 +406,7 @@ pub fn detect_sdf_contacts(
 // Tests
 // ============================================================================
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use super::*;
 

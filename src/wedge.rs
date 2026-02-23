@@ -31,7 +31,7 @@ use crate::math::{Fix128, QuatFix, Vec3Fix};
 ///
 /// A triangular prism defined by center, width, height, depth, and rotation.
 /// The triangular cross-section is in the local XY plane, extruded along Z.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Wedge {
     /// Center position in world space
     pub center: Vec3Fix,

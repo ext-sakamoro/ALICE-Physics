@@ -40,6 +40,7 @@ pub struct XorShift64 {
 impl XorShift64 {
     /// Create a new PRNG with given seed
     #[inline]
+    #[must_use]
     pub const fn new(seed: u64) -> Self {
         // Ensure non-zero state
         Self {
@@ -49,6 +50,7 @@ impl XorShift64 {
 
     /// Create from system entropy (uses address as seed if no std)
     #[cfg(feature = "std")]
+    #[must_use]
     pub fn from_entropy() -> Self {
         use std::time::{SystemTime, UNIX_EPOCH};
         let seed = SystemTime::now()
@@ -124,6 +126,7 @@ impl LaplaceNoise {
     /// # Arguments
     /// * `sensitivity` - Maximum change in output for one input change (Δf)
     /// * `epsilon` - Privacy parameter ε (smaller = more privacy)
+    #[must_use]
     pub fn new(sensitivity: f64, epsilon: f64) -> Self {
         let scale = sensitivity / epsilon;
         Self {
@@ -133,6 +136,7 @@ impl LaplaceNoise {
     }
 
     /// Create with explicit seed
+    #[must_use]
     pub fn with_seed(sensitivity: f64, epsilon: f64, seed: u64) -> Self {
         let scale = sensitivity / epsilon;
         Self {
@@ -164,6 +168,7 @@ impl LaplaceNoise {
 
     /// Get the scale parameter
     #[inline]
+    #[must_use]
     pub fn scale(&self) -> f64 {
         self.scale
     }
@@ -192,6 +197,7 @@ impl RandomizedResponse {
     /// Create from privacy parameter epsilon
     ///
     /// Higher epsilon = more accuracy, less privacy
+    #[must_use]
     pub fn new(epsilon: f64) -> Self {
         // p = e^ε / (1 + e^ε)
         let exp_eps = epsilon.exp();
@@ -203,6 +209,7 @@ impl RandomizedResponse {
     }
 
     /// Create with explicit probability and seed
+    #[must_use]
     pub fn with_probability(p_true: f64, seed: u64) -> Self {
         Self {
             p_true: p_true.clamp(0.5, 1.0),
@@ -230,6 +237,7 @@ impl RandomizedResponse {
 
     /// Get the probability of truthful response
     #[inline]
+    #[must_use]
     pub fn p_true(&self) -> f64 {
         self.p_true
     }
@@ -238,6 +246,7 @@ impl RandomizedResponse {
     ///
     /// Given N total responses with K positive responses,
     /// estimate the true proportion of positive values.
+    #[must_use]
     pub fn estimate_proportion(p_true: f64, n: u64, k: u64) -> f64 {
         if n == 0 {
             return 0.0;
@@ -288,6 +297,7 @@ impl Rappor {
     /// * `f` - Probability of flipping a bit in permanent response (0.0 to 0.5)
     /// * `p` - Probability of setting a 1 bit to 1 in instantaneous response
     /// * `q` - Probability of setting a 0 bit to 1 in instantaneous response
+    #[must_use]
     pub fn new(f: f64, p: f64, q: f64) -> Self {
         Self {
             f: f.clamp(0.0, 0.5),
@@ -300,6 +310,7 @@ impl Rappor {
     /// Create with typical parameters for ε-differential privacy
     ///
     /// Uses f=0.5, p=0.75, q=0.25 for approximately ε=2 privacy
+    #[must_use]
     pub fn default_params() -> Self {
         Self::new(0.5, 0.75, 0.25)
     }
@@ -357,6 +368,7 @@ impl Rappor {
     }
 
     /// Get privacy parameters
+    #[must_use]
     pub fn params(&self) -> (f64, f64, f64) {
         (self.f, self.p, self.q)
     }
@@ -382,6 +394,7 @@ pub struct PrivacyBudget {
 
 impl PrivacyBudget {
     /// Create a new privacy budget tracker
+    #[must_use]
     pub fn new(max_epsilon: f64) -> Self {
         Self {
             total_epsilon: 0.0,
@@ -405,24 +418,28 @@ impl PrivacyBudget {
 
     /// Get remaining budget
     #[inline]
+    #[must_use]
     pub fn remaining(&self) -> f64 {
         (self.max_epsilon - self.total_epsilon).max(0.0)
     }
 
     /// Get total spent
     #[inline]
+    #[must_use]
     pub fn spent(&self) -> f64 {
         self.total_epsilon
     }
 
     /// Get query count
     #[inline]
+    #[must_use]
     pub fn query_count(&self) -> u64 {
         self.query_count
     }
 
     /// Check if budget is exhausted
     #[inline]
+    #[must_use]
     pub fn is_exhausted(&self) -> bool {
         self.total_epsilon >= self.max_epsilon
     }
@@ -451,6 +468,7 @@ pub struct PrivateAggregator {
 
 impl PrivateAggregator {
     /// Create a new aggregator
+    #[must_use]
     pub fn new(noise_scale: f64) -> Self {
         Self {
             noisy_sum: 0.0,
@@ -469,6 +487,7 @@ impl PrivateAggregator {
     /// Estimate the true mean
     ///
     /// As count increases, noise averages out to zero.
+    #[must_use]
     pub fn estimate_mean(&self) -> f64 {
         if self.count == 0 {
             0.0
@@ -478,6 +497,7 @@ impl PrivateAggregator {
     }
 
     /// Estimate the true sum
+    #[must_use]
     pub fn estimate_sum(&self) -> f64 {
         self.noisy_sum
     }
@@ -485,6 +505,7 @@ impl PrivateAggregator {
     /// Get the standard error of the mean estimate
     ///
     /// SE = scale * sqrt(2) / sqrt(n)
+    #[must_use]
     pub fn standard_error(&self) -> f64 {
         if self.count == 0 {
             f64::INFINITY
@@ -495,6 +516,7 @@ impl PrivateAggregator {
 
     /// Get the count
     #[inline]
+    #[must_use]
     pub fn count(&self) -> u64 {
         self.count
     }

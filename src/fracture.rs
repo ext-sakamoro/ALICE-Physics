@@ -25,7 +25,7 @@ use alloc::vec::Vec;
 // ============================================================================
 
 /// Fracture modifier configuration
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct FractureConfig {
     /// Stress threshold for crack initiation
     pub fracture_toughness: f32,
@@ -62,7 +62,7 @@ impl Default for FractureConfig {
 // ============================================================================
 
 /// A single crack segment (line from start to end with width)
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Crack {
     /// Crack start point
     pub start: (f32, f32, f32),
@@ -125,6 +125,7 @@ pub struct FractureModifier {
 
 impl FractureModifier {
     /// Create a new fracture modifier
+    #[must_use]
     pub fn new(
         config: FractureConfig,
         resolution: usize,
@@ -145,11 +146,13 @@ impl FractureModifier {
     }
 
     /// Get stress at a point
+    #[must_use]
     pub fn stress_at(&self, x: f32, y: f32, z: f32) -> f32 {
         self.stress.sample(x, y, z)
     }
 
     /// Number of active cracks
+    #[must_use]
     pub fn active_crack_count(&self) -> usize {
         self.cracks.iter().filter(|c| c.active).count()
     }

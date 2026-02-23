@@ -39,6 +39,7 @@ pub struct FluidSnapshot {
 
 impl FluidSnapshot {
     /// Create snapshot from fluid particle data
+    #[must_use]
     pub fn capture(positions: &[Vec3Fix], velocities: &[Vec3Fix], frame: u64) -> Self {
         let n = positions.len();
         let pos_data = serialize_vec3_array(positions);
@@ -56,6 +57,7 @@ impl FluidSnapshot {
     }
 
     /// Restore fluid state from snapshot
+    #[must_use]
     pub fn restore(&self) -> Option<(Vec<Vec3Fix>, Vec<Vec3Fix>)> {
         let n = self.particle_count as usize;
         let positions = deserialize_vec3_array(&self.positions, n)?;
@@ -64,6 +66,7 @@ impl FluidSnapshot {
     }
 
     /// Verify checksum matches current data
+    #[must_use]
     pub fn verify(&self, positions: &[Vec3Fix], velocities: &[Vec3Fix]) -> bool {
         let pos_data = serialize_vec3_array(positions);
         let vel_data = serialize_vec3_array(velocities);
@@ -72,6 +75,7 @@ impl FluidSnapshot {
     }
 
     /// Total serialized size in bytes
+    #[must_use]
     pub fn size_bytes(&self) -> usize {
         4 + self.positions.len() + self.velocities.len() + 8 + 8
     }
@@ -103,6 +107,7 @@ pub struct FluidDelta {
 
 impl FluidDelta {
     /// Compute delta between two states
+    #[must_use]
     pub fn compute(
         old_positions: &[Vec3Fix],
         old_velocities: &[Vec3Fix],
@@ -155,11 +160,13 @@ impl FluidDelta {
     }
 
     /// Number of changed particles
+    #[must_use]
     pub fn changed_count(&self) -> usize {
         self.changed_indices.len()
     }
 
     /// Compression ratio (1.0 = no compression, 0.0 = perfect)
+    #[must_use]
     pub fn compression_ratio(&self, total_particles: usize) -> f32 {
         if total_particles == 0 {
             return 1.0;

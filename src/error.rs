@@ -30,6 +30,24 @@ pub enum PhysicsError {
         /// Context describing where the zero-length vector was encountered
         context: &'static str,
     },
+    /// I/O error (reading/writing scene files).
+    #[cfg(feature = "std")]
+    IoError {
+        /// Description of the I/O error
+        message: &'static str,
+    },
+    /// A capacity limit was exceeded (too many bodies, constraints, etc.).
+    CapacityExceeded {
+        /// What resource was exhausted
+        resource: &'static str,
+        /// The limit that was exceeded
+        limit: usize,
+    },
+    /// Invalid configuration parameter.
+    InvalidConfiguration {
+        /// Description of the invalid configuration
+        reason: &'static str,
+    },
 }
 
 impl fmt::Display for PhysicsError {
@@ -45,6 +63,14 @@ impl fmt::Display for PhysicsError {
             Self::ZeroLengthVector { context } => {
                 write!(f, "zero-length vector in {context}")
             }
+            #[cfg(feature = "std")]
+            Self::IoError { message } => write!(f, "I/O error: {message}"),
+            Self::CapacityExceeded { resource, limit } => {
+                write!(f, "{resource} capacity exceeded (limit={limit})")
+            }
+            Self::InvalidConfiguration { reason } => {
+                write!(f, "invalid configuration: {reason}")
+            }
         }
     }
 }
@@ -56,7 +82,7 @@ impl std::error::Error for PhysicsError {}
 // Tests
 // ============================================================================
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use super::*;
 
@@ -88,5 +114,35 @@ mod tests {
         };
         assert_ne!(e1, e2);
         assert_ne!(e3, e4);
+    }
+
+    #[test]
+    fn test_capacity_exceeded() {
+        let e = PhysicsError::CapacityExceeded {
+            resource: "bodies",
+            limit: 10000,
+        };
+        let s = format!("{}", e);
+        assert!(s.contains("bodies"));
+        assert!(s.contains("10000"));
+    }
+
+    #[test]
+    fn test_invalid_configuration() {
+        let e = PhysicsError::InvalidConfiguration {
+            reason: "substeps must be > 0",
+        };
+        let s = format!("{}", e);
+        assert!(s.contains("substeps"));
+    }
+
+    #[cfg(feature = "std")]
+    #[test]
+    fn test_io_error() {
+        let e = PhysicsError::IoError {
+            message: "file not found",
+        };
+        let s = format!("{}", e);
+        assert!(s.contains("file not found"));
     }
 }

@@ -17,7 +17,7 @@ use crate::math::{Fix128, QuatFix, Vec3Fix};
 ///
 /// A cylinder defined by center position, half-height (along local Y axis),
 /// radius, and an orientation quaternion.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Cylinder {
     /// Center position in world space
     pub center: Vec3Fix,
@@ -32,6 +32,7 @@ pub struct Cylinder {
 impl Cylinder {
     /// Create a new axis-aligned cylinder (Y-up)
     #[inline]
+    #[must_use]
     pub fn new(center: Vec3Fix, half_height: Fix128, radius: Fix128) -> Self {
         Self {
             center,
@@ -43,6 +44,7 @@ impl Cylinder {
 
     /// Create a new oriented cylinder
     #[inline]
+    #[must_use]
     pub fn with_rotation(
         center: Vec3Fix,
         half_height: Fix128,
@@ -58,6 +60,7 @@ impl Cylinder {
     }
 
     /// Compute world-space AABB enclosing this cylinder
+    #[must_use]
     pub fn aabb(&self) -> AABB {
         // Local Y axis in world space
         let local_y = Vec3Fix::new(Fix128::ZERO, Fix128::ONE, Fix128::ZERO);
@@ -82,8 +85,9 @@ impl Cylinder {
         AABB::new(self.center - total, self.center + total)
     }
 
-    /// Volume of the cylinder: pi * r^2 * 2 * half_height
+    /// Volume of the cylinder: pi * r^2 * 2 * `half_height`
     #[inline]
+    #[must_use]
     pub fn volume(&self) -> Fix128 {
         // pi ≈ 355/113 (Milü approximation, accurate to 7 digits)
         let pi = Fix128::from_ratio(355, 113);
@@ -91,8 +95,9 @@ impl Cylinder {
         pi * self.radius * self.radius * two * self.half_height
     }
 
-    /// Surface area: 2 * pi * r * (r + 2 * half_height)
+    /// Surface area: 2 * pi * r * (r + 2 * `half_height`)
     #[inline]
+    #[must_use]
     pub fn surface_area(&self) -> Fix128 {
         let pi = Fix128::from_ratio(355, 113);
         let two = Fix128::from_int(2);
@@ -102,8 +107,9 @@ impl Cylinder {
     /// Compute inertia tensor (diagonal) for given mass
     ///
     /// For a solid cylinder aligned along Y:
-    /// - Ixx = Izz = m/12 * (3*r^2 + h^2) where h = 2*half_height
+    /// - Ixx = Izz = m/12 * (3*r^2 + h^2) where h = 2*`half_height`
     /// - Iyy = m * r^2 / 2
+    #[must_use]
     pub fn inertia_diagonal(&self, mass: Fix128) -> Vec3Fix {
         let r2 = self.radius * self.radius;
         let h = self.half_height * Fix128::from_int(2);

@@ -58,7 +58,7 @@ use std::collections::VecDeque;
 /// Player input for a single simulation frame.
 ///
 /// Compact, deterministic representation of all player actions.
-/// Serialized size: ~20 bytes (player_id + movement + actions + aim_yaw).
+/// Serialized size: ~20 bytes (`player_id` + movement + actions + `aim_yaw`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FrameInput {
     /// Player identifier (0-based)
@@ -74,6 +74,7 @@ pub struct FrameInput {
 impl FrameInput {
     /// Create a new empty input for the given player
     #[inline]
+    #[must_use]
     pub fn new(player_id: u8) -> Self {
         Self {
             player_id,
@@ -85,6 +86,7 @@ impl FrameInput {
 
     /// Set movement direction
     #[inline]
+    #[must_use]
     pub fn with_movement(mut self, movement: Vec3Fix) -> Self {
         self.movement = movement;
         self
@@ -92,6 +94,7 @@ impl FrameInput {
 
     /// Set action bitfield
     #[inline]
+    #[must_use]
     pub fn with_actions(mut self, actions: u32) -> Self {
         self.actions = actions;
         self
@@ -99,6 +102,7 @@ impl FrameInput {
 
     /// Set aim direction
     #[inline]
+    #[must_use]
     pub fn with_aim(mut self, aim: Vec3Fix) -> Self {
         self.aim_direction = aim;
         self
@@ -106,11 +110,13 @@ impl FrameInput {
 
     /// Check if a specific action bit is set
     #[inline]
+    #[must_use]
     pub fn has_action(&self, bit: u32) -> bool {
         self.actions & bit != 0
     }
 
     /// Serialize to bytes (deterministic, little-endian)
+    #[must_use]
     pub fn to_bytes(&self) -> [u8; 20] {
         let mut buf = [0u8; 20];
         buf[0] = self.player_id;
@@ -141,6 +147,7 @@ impl FrameInput {
     }
 
     /// Deserialize from bytes
+    #[must_use]
     pub fn from_bytes(data: &[u8; 20]) -> Self {
         let player_id = data[0];
         let mx = i16::from_le_bytes([data[1], data[2]]);
@@ -176,6 +183,7 @@ impl SimulationChecksum {
     ///
     /// Uses XOR-rotate mixing per body for O(n) computation.
     /// Avalanche mixing ensures single-bit differences propagate.
+    #[must_use]
     pub fn from_world(world: &PhysicsWorld) -> Self {
         let mut hash: u64 = 0;
         for (i, body) in world.bodies.iter().enumerate() {
@@ -358,7 +366,7 @@ pub struct DeterministicSimulation {
     frame: u64,
     /// Fixed timestep
     dt: Fix128,
-    /// Player body index mapping: player_id → body index
+    /// Player body index mapping: `player_id` → body index
     player_bodies: Vec<Option<usize>>,
     /// Snapshot ring buffer for rollback
     snapshots: VecDeque<SimulationSnapshot>,
@@ -372,6 +380,8 @@ pub struct DeterministicSimulation {
 
 impl DeterministicSimulation {
     /// Create a new deterministic simulation
+    #[must_use]
+    #[allow(clippy::needless_pass_by_value)] // config.physics is moved (partial consume)
     pub fn new(config: NetcodeConfig) -> Self {
         let world = PhysicsWorld::new(config.physics);
         let player_count = config.player_count as usize;
@@ -446,6 +456,10 @@ impl DeterministicSimulation {
     }
 
     /// Save a snapshot of the current state for rollback.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the snapshot deque is empty after push (should never happen).
     pub fn save_snapshot(&mut self) -> &SimulationSnapshot {
         let state = self.world.serialize_state();
         let checksum = SimulationChecksum::from_world(&self.world);
@@ -458,7 +472,9 @@ impl DeterministicSimulation {
         if self.snapshots.len() > self.max_snapshots {
             self.snapshots.pop_front();
         }
-        self.snapshots.back().unwrap()
+        self.snapshots
+            .back()
+            .expect("snapshots should not be empty after push")
     }
 
     /// Restore state from a snapshot (for rollback).
@@ -481,22 +497,26 @@ impl DeterministicSimulation {
     }
 
     /// Get a snapshot for a specific frame (if available).
+    #[must_use]
     pub fn get_snapshot(&self, frame: u64) -> Option<&SimulationSnapshot> {
         self.snapshots.iter().find(|s| s.frame == frame)
     }
 
     /// Compute the current state checksum.
+    #[must_use]
     pub fn checksum(&self) -> SimulationChecksum {
         SimulationChecksum::from_world(&self.world)
     }
 
     /// Current frame number.
     #[inline]
+    #[must_use]
     pub fn frame(&self) -> u64 {
         self.frame
     }
 
     /// Get checksum for a specific frame from history.
+    #[must_use]
     pub fn checksum_at(&self, frame: u64) -> Option<SimulationChecksum> {
         self.checksum_history
             .iter()
@@ -510,18 +530,21 @@ impl DeterministicSimulation {
     /// - `None` if the frame is not in local history (too old or future)
     /// - `Some(true)` if checksums match (clients in sync)
     /// - `Some(false)` if checksums differ (DESYNC detected!)
+    #[must_use]
     pub fn verify_checksum(&self, frame: u64, remote: SimulationChecksum) -> Option<bool> {
         self.checksum_at(frame).map(|local| local == remote)
     }
 
     /// Get the fixed timestep.
     #[inline]
+    #[must_use]
     pub fn dt(&self) -> Fix128 {
         self.dt
     }
 
     /// Number of snapshots currently stored.
     #[inline]
+    #[must_use]
     pub fn snapshot_count(&self) -> usize {
         self.snapshots.len()
     }

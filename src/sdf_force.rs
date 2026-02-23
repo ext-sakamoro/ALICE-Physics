@@ -27,7 +27,7 @@ use alloc::vec::Vec;
 // ============================================================================
 
 /// Type of SDF-driven force
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum SdfForceType {
     /// Push toward SDF surface (attraction)
     /// Strength scales with distance from surface
@@ -92,6 +92,7 @@ pub struct SdfForceField {
 
 impl SdfForceField {
     /// Create a new SDF force field
+    #[must_use]
     pub fn new(sdf_index: usize, force_type: SdfForceType) -> Self {
         Self {
             sdf_index,
@@ -102,6 +103,7 @@ impl SdfForceField {
     }
 
     /// Restrict to specific bodies
+    #[must_use]
     pub fn with_affected_bodies(mut self, bodies: Vec<usize>) -> Self {
         self.affected_bodies = Some(bodies);
         self
@@ -130,6 +132,7 @@ impl SdfForceField {
 /// Evaluates the SDF at the body's position and computes force
 /// based on the distance and gradient.
 #[cfg(feature = "std")]
+#[must_use]
 pub fn compute_sdf_force(
     body: &RigidBody,
     sdf: &SdfCollider,
@@ -267,6 +270,7 @@ pub fn apply_sdf_force_fields(
 
 impl SdfForceField {
     /// Create attraction toward SDF surface
+    #[must_use]
     pub fn attract(sdf_index: usize, strength: Fix128) -> Self {
         Self::new(
             sdf_index,
@@ -278,11 +282,13 @@ impl SdfForceField {
     }
 
     /// Create repulsion from SDF surface
+    #[must_use]
     pub fn repel(sdf_index: usize, strength: Fix128, range: Fix128) -> Self {
         Self::new(sdf_index, SdfForceType::Repel { strength, range })
     }
 
     /// Create containment field
+    #[must_use]
     pub fn contain(sdf_index: usize, strength: Fix128) -> Self {
         Self::new(
             sdf_index,
@@ -294,6 +300,7 @@ impl SdfForceField {
     }
 
     /// Create surface flow
+    #[must_use]
     pub fn surface_flow(sdf_index: usize, direction: Vec3Fix, strength: Fix128) -> Self {
         Self::new(
             sdf_index,
@@ -310,7 +317,7 @@ impl SdfForceField {
 // Tests
 // ============================================================================
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use super::*;
     use crate::math::QuatFix;

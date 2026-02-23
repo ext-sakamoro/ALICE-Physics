@@ -17,8 +17,6 @@ use crate::math::{Fix128, Vec3Fix};
 use crate::rng::DeterministicRng;
 
 #[cfg(not(feature = "std"))]
-use alloc::vec;
-#[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
 // ============================================================================
@@ -414,11 +412,22 @@ fn compute_force(field: &ForceField, position: Vec3Fix, velocity: Vec3Fix) -> Ve
     }
 }
 
+impl core::fmt::Debug for ParticleSystem {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("ParticleSystem")
+            .field("particles", &self.particles.len())
+            .field("emitters", &self.emitters.len())
+            .field("max_particles", &self.max_particles)
+            .field("gravity", &self.gravity)
+            .finish()
+    }
+}
+
 // ============================================================================
 // Tests
 // ============================================================================
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use super::*;
 

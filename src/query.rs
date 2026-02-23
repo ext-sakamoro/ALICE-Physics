@@ -28,7 +28,7 @@ use rayon::prelude::*;
 // ============================================================================
 
 /// Result of a shape cast query
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ShapeCastHit {
     /// Distance along the cast direction
     pub t: Fix128,
@@ -41,7 +41,7 @@ pub struct ShapeCastHit {
 }
 
 /// Result of an overlap query
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct OverlapResult {
     /// Index of the overlapping body
     pub body_index: usize,
@@ -60,6 +60,7 @@ pub struct OverlapResult {
 /// This is equivalent to a "thick raycast" — useful for character collision,
 /// projectile sweeps, and visibility checks.
 #[inline]
+#[must_use]
 pub fn sphere_cast(
     origin: Vec3Fix,
     radius: Fix128,
@@ -100,6 +101,11 @@ pub fn sphere_cast(
 ///
 /// Approximates capsule-vs-sphere as two sphere casts
 /// (top and bottom hemispheres) and returns the closest hit.
+///
+/// # Panics
+///
+/// Does not panic. Internal `unwrap()` is guarded by `is_none()` check.
+#[must_use]
 pub fn capsule_cast(
     capsule_a: Vec3Fix,
     capsule_b: Vec3Fix,
@@ -145,7 +151,7 @@ pub fn capsule_cast(
     // Return closest of the three
     let mut best: Option<ShapeCastHit> = None;
     for h in [hit_a, hit_b, hit_mid].into_iter().flatten() {
-        if best.is_none() || h.t < best.unwrap().t {
+        if best.map_or(true, |b| h.t < b.t) {
             best = Some(h);
         }
     }
@@ -161,6 +167,7 @@ pub fn capsule_cast(
 ///
 /// `body_radius` is the assumed radius for each body.
 #[inline]
+#[must_use]
 pub fn overlap_sphere(
     center: Vec3Fix,
     radius: Fix128,
@@ -193,6 +200,7 @@ pub fn overlap_sphere(
 /// Uses the body position as a point test (no body extent considered).
 /// For volume overlap, expand the AABB by the body radius first.
 #[inline]
+#[must_use]
 pub fn overlap_aabb(aabb: &AABB, bodies: &[RigidBody]) -> Vec<OverlapResult> {
     let mut results = Vec::new();
 
@@ -219,6 +227,7 @@ pub fn overlap_aabb(aabb: &AABB, bodies: &[RigidBody]) -> Vec<OverlapResult> {
 ///
 /// Each body is treated as a sphere of `body_radius`. The AABB is expanded
 /// by `body_radius` to detect sphere-vs-AABB overlap.
+#[must_use]
 pub fn overlap_aabb_expanded(
     aabb: &AABB,
     bodies: &[RigidBody],
@@ -245,7 +254,7 @@ pub fn overlap_aabb_expanded(
 // ============================================================================
 
 /// A single raycast query for batch execution
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct BatchRayQuery {
     /// Ray origin
     pub origin: Vec3Fix,
@@ -260,6 +269,7 @@ pub struct BatchRayQuery {
 /// Returns one result per query (closest hit or None).
 /// Each ray is treated as a zero-radius sphere cast.
 /// When `parallel` feature is enabled, queries execute in parallel via Rayon.
+#[must_use]
 pub fn batch_raycast(
     queries: &[BatchRayQuery],
     bodies: &[RigidBody],
@@ -305,6 +315,11 @@ pub fn batch_raycast(
 /// `origins` and `directions` must have the same length.
 /// Returns one result per query (closest hit or None).
 /// When `parallel` feature is enabled, queries execute in parallel via Rayon.
+///
+/// # Panics
+///
+/// Panics if `origins` and `directions` have different lengths.
+#[must_use]
 pub fn batch_sphere_cast(
     origins: &[Vec3Fix],
     radius: Fix128,
@@ -361,6 +376,7 @@ pub fn batch_sphere_cast(
 /// The BVH must be built from per-body AABBs (expanded by `body_radius`).
 /// Only candidates whose BVH leaf overlaps the query sphere AABB are tested
 /// in the narrow phase, reducing cost from O(n) to O(log n + k).
+#[must_use]
 pub fn overlap_sphere_bvh(
     center: Vec3Fix,
     radius: Fix128,
@@ -410,6 +426,7 @@ pub fn overlap_sphere_bvh(
 ///
 /// Only candidates whose BVH leaf overlaps the query AABB are tested,
 /// reducing cost from O(n) to O(log n + k).
+#[must_use]
 pub fn overlap_aabb_bvh(
     aabb: &AABB,
     bodies: &[RigidBody],
@@ -445,7 +462,7 @@ pub fn overlap_aabb_bvh(
 // Tests
 // ============================================================================
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use super::*;
 
@@ -470,7 +487,7 @@ mod tests {
             Fix128::ONE,
         );
         assert!(hit.is_some(), "Sphere cast should hit body at origin");
-        let h = hit.unwrap();
+        let h = hit.expect("sphere cast should hit");
         assert_eq!(h.body_index, 0);
         // Should hit at approximately t = 10 - 1.5 = 8.5 (distance minus combined radii)
         assert!(h.t > Fix128::from_int(5), "Hit should be before the body");

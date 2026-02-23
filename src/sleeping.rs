@@ -30,7 +30,7 @@ pub enum SleepState {
 }
 
 /// Per-body sleep tracking data
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SleepData {
     /// Current sleep state
     pub state: SleepState,
@@ -40,6 +40,7 @@ pub struct SleepData {
 
 impl SleepData {
     /// Create new awake sleep data
+    #[must_use]
     pub const fn new() -> Self {
         Self {
             state: SleepState::Awake,
@@ -49,6 +50,7 @@ impl SleepData {
 
     /// Check if this body is currently sleeping
     #[inline]
+    #[must_use]
     pub fn is_sleeping(&self) -> bool {
         self.state == SleepState::Sleeping
     }
@@ -68,7 +70,7 @@ impl Default for SleepData {
 }
 
 /// Configuration for the sleeping system
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SleepConfig {
     /// Linear velocity threshold below which a body is considered idle
     pub linear_threshold: Fix128,
@@ -111,6 +113,7 @@ pub struct IslandManager {
 
 impl IslandManager {
     /// Create a new island manager for `num_bodies` bodies
+    #[must_use]
     pub fn new(num_bodies: usize, config: SleepConfig) -> Self {
         let mut parent = Vec::with_capacity(num_bodies);
         let rank = vec![0u32; num_bodies];
@@ -257,6 +260,7 @@ impl IslandManager {
     }
 
     /// Get the number of sleeping bodies
+    #[must_use]
     pub fn sleeping_count(&self) -> usize {
         self.sleep_data.iter().filter(|d| d.is_sleeping()).count()
     }

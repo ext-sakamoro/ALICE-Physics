@@ -26,7 +26,7 @@ use alloc::vec::Vec;
 // ============================================================================
 
 /// Rope simulation configuration
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RopeConfig {
     /// Number of solver iterations per step
     pub iterations: usize,
@@ -56,7 +56,7 @@ impl Default for RopeConfig {
 }
 
 /// Pin constraint: attach a particle to a fixed point or body
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PinConstraint {
     /// Particle index
     pub particle_index: usize,
@@ -98,6 +98,7 @@ impl Rope {
     /// # Panics
     ///
     /// Panics if `num_segments` is zero.
+    #[must_use]
     pub fn new(start: Vec3Fix, end: Vec3Fix, num_segments: usize, mass_per_unit: Fix128) -> Self {
         assert!(num_segments > 0, "Rope requires at least one segment");
         let n = num_segments + 1; // number of particles
@@ -138,12 +139,14 @@ impl Rope {
 
     /// Number of particles
     #[inline]
+    #[must_use]
     pub fn particle_count(&self) -> usize {
         self.positions.len()
     }
 
     /// Number of segments
     #[inline]
+    #[must_use]
     pub fn segment_count(&self) -> usize {
         self.rest_lengths.len()
     }
@@ -318,12 +321,25 @@ impl Rope {
     }
 
     /// Get current rope length (sum of segment distances)
+    #[must_use]
     pub fn current_length(&self) -> Fix128 {
         let mut length = Fix128::ZERO;
         for i in 0..self.segment_count() {
             length = length + (self.positions[i + 1] - self.positions[i]).length();
         }
         length
+    }
+}
+
+impl core::fmt::Debug for Rope {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Rope")
+            .field("particles", &self.positions.len())
+            .field("segments", &self.rest_lengths.len())
+            .field("pins", &self.pins.len())
+            .field("total_length", &self.total_length)
+            .field("config", &self.config)
+            .finish()
     }
 }
 

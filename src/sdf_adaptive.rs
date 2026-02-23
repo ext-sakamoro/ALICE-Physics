@@ -23,7 +23,7 @@ use alloc::vec::Vec;
 // ============================================================================
 
 /// Adaptive evaluation configuration
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct AdaptiveConfig {
     /// Distance threshold for high-resolution evaluation
     pub high_res_threshold: f32,
@@ -51,7 +51,7 @@ impl Default for AdaptiveConfig {
 // ============================================================================
 
 /// Cached SDF evaluation result
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 struct CacheEntry {
     /// Cached distance value
     distance: f32,
@@ -114,6 +114,7 @@ pub struct AdaptiveSdfEvaluator {
 
 impl AdaptiveSdfEvaluator {
     /// Create evaluator for N bodies
+    #[must_use]
     pub fn new(num_bodies: usize, config: AdaptiveConfig) -> Self {
         Self {
             cache: vec![CacheEntry::default(); num_bodies],
@@ -254,6 +255,7 @@ impl AdaptiveSdfEvaluator {
     }
 
     /// Get evaluation statistics as (saved, total) counts
+    #[must_use]
     pub fn stats(&self) -> (usize, usize) {
         (self.stats_saved, self.stats_total)
     }

@@ -15,8 +15,6 @@ use crate::math::{Fix128, Vec3Fix};
 use crate::solver::RigidBody;
 
 #[cfg(not(feature = "std"))]
-use alloc::vec;
-#[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
 // ============================================================================
@@ -181,7 +179,7 @@ pub fn solve_rope_attachments(
 // Tests
 // ============================================================================
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use super::*;
     use crate::math::QuatFix;
@@ -200,6 +198,8 @@ mod tests {
             restitution: Fix128::ZERO,
             friction: Fix128::ZERO,
             gravity_scale: Fix128::ONE,
+            linear_damping: Fix128::ONE,
+            angular_damping: Fix128::ONE,
             is_sensor: false,
             body_type: BodyType::Static,
             kinematic_target: None,

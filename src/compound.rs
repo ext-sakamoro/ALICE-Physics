@@ -36,6 +36,7 @@ pub enum ShapeRef {
 
 impl ShapeRef {
     /// Compute AABB of this shape
+    #[must_use]
     pub fn aabb(&self) -> AABB {
         match self {
             ShapeRef::Sphere(s) => {
@@ -85,6 +86,7 @@ pub struct CompoundShape {
 
 impl CompoundShape {
     /// Create an empty compound shape
+    #[must_use]
     pub fn new() -> Self {
         Self {
             children: Vec::new(),
@@ -125,12 +127,14 @@ impl CompoundShape {
 
     /// Number of children
     #[inline]
+    #[must_use]
     pub fn len(&self) -> usize {
         self.children.len()
     }
 
     /// Check if empty
     #[inline]
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.children.is_empty()
     }
@@ -155,6 +159,7 @@ impl CompoundShape {
     }
 
     /// Get world-space AABB for a specific child, given body transform
+    #[must_use]
     pub fn child_world_aabb(&self, child_idx: usize, body_pos: Vec3Fix, body_rot: QuatFix) -> AABB {
         let child = &self.children[child_idx];
         let world_pos = body_pos + body_rot.rotate_vec(child.local_position);
@@ -195,6 +200,7 @@ impl CompoundShape {
     }
 
     /// Get world-space AABB for entire compound given body transform
+    #[must_use]
     pub fn world_aabb(&self, body_pos: Vec3Fix, body_rot: QuatFix) -> AABB {
         if self.children.is_empty() {
             return AABB::new(body_pos, body_pos);
@@ -209,6 +215,7 @@ impl CompoundShape {
     }
 
     /// Support function for the compound shape (selects the child with maximum support)
+    #[must_use]
     pub fn support_world(
         &self,
         direction: Vec3Fix,
@@ -266,7 +273,7 @@ impl Default for CompoundShape {
     }
 }
 
-/// Wrapper for using CompoundShape with GJK (needs body transform context)
+/// Wrapper for using `CompoundShape` with GJK (needs body transform context)
 pub struct TransformedCompound<'a> {
     /// Reference to the compound shape
     pub compound: &'a CompoundShape,

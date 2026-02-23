@@ -11,15 +11,12 @@
 
 use crate::math::{Fix128, Vec3Fix};
 
-#[cfg(not(feature = "std"))]
-use alloc::vec::Vec;
-
 // ============================================================================
 // Cloth-Fluid Coupling Configuration
 // ============================================================================
 
 /// Configuration for cloth-fluid interaction.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ClothFluidCoupling {
     /// Drag coefficient applied to cloth particles submerged in fluid.
     /// Higher values cause stronger velocity damping.
@@ -179,7 +176,7 @@ pub fn apply_cloth_boundary_to_fluid(
 // Tests
 // ============================================================================
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use super::*;
 

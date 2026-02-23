@@ -29,6 +29,7 @@ impl DeterministicRng {
     const MULTIPLIER: u64 = 6364136223846793005;
 
     /// Create RNG with the given seed
+    #[must_use]
     pub fn new(seed: u64) -> Self {
         let mut rng = Self {
             state: 0,
@@ -42,6 +43,7 @@ impl DeterministicRng {
     }
 
     /// Create RNG with seed and stream
+    #[must_use]
     pub fn new_with_stream(seed: u64, stream: u64) -> Self {
         let mut rng = Self {
             state: 0,

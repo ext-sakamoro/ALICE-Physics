@@ -17,15 +17,12 @@
 
 use crate::math::{Fix128, Mat3Fix, Vec3Fix};
 
-#[cfg(not(feature = "std"))]
-use alloc::vec::Vec;
-
 // ============================================================================
 // Mass Properties
 // ============================================================================
 
 /// Mass, center of mass, and inertia tensor for a rigid body.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct MassProperties {
     /// Total mass
     pub mass: Fix128,
@@ -339,7 +336,7 @@ pub fn translate_inertia(props: &MassProperties, offset: Vec3Fix) -> Mat3Fix {
 // Tests
 // ============================================================================
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use super::*;
 

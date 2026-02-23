@@ -87,17 +87,20 @@ impl Fix128 {
 
     /// Create from integer
     #[inline]
+    #[must_use]
     pub const fn from_int(n: i64) -> Self {
         Self { hi: n, lo: 0 }
     }
 
     /// Create from raw parts (hi = integer, lo = fraction)
     #[inline]
+    #[must_use]
     pub const fn from_raw(hi: i64, lo: u64) -> Self {
         Self { hi, lo }
     }
 
     /// Create from f64 (for initialization only, not deterministic!)
+    #[must_use]
     pub fn from_f64(f: f64) -> Self {
         let hi = f as i64; // truncation toward zero
         let frac = f - (hi as f64);
@@ -114,21 +117,25 @@ impl Fix128 {
     }
 
     /// Convert to f64 (for debugging only, not deterministic!)
+    #[must_use]
     pub fn to_f64(self) -> f64 {
         self.hi as f64 + (self.lo as f64 / (1u128 << 64) as f64)
     }
 
     /// Create from f32 (for SDF bridge, not deterministic!)
+    #[must_use]
     pub fn from_f32(f: f32) -> Self {
         Self::from_f64(f as f64)
     }
 
     /// Convert to f32 (for SDF bridge, not deterministic!)
+    #[must_use]
     pub fn to_f32(self) -> f32 {
         self.to_f64() as f32
     }
 
     /// Create from fraction (numerator / denominator)
+    #[must_use]
     pub fn from_ratio(num: i64, denom: i64) -> Self {
         if denom == 0 {
             return Self::ZERO;
@@ -152,6 +159,7 @@ impl Fix128 {
 
     /// Absolute value
     #[inline]
+    #[must_use]
     pub fn abs(self) -> Self {
         if self.hi < 0 || (self.hi == 0 && self.lo == 0) {
             self.neg()
@@ -162,24 +170,28 @@ impl Fix128 {
 
     /// Check if negative
     #[inline]
+    #[must_use]
     pub const fn is_negative(self) -> bool {
         self.hi < 0
     }
 
     /// Check if zero
     #[inline]
+    #[must_use]
     pub const fn is_zero(self) -> bool {
         self.hi == 0 && self.lo == 0
     }
 
     /// Floor (round toward negative infinity)
     #[inline]
+    #[must_use]
     pub fn floor(self) -> Self {
         Self { hi: self.hi, lo: 0 }
     }
 
     /// Ceiling (round toward positive infinity)
     #[inline]
+    #[must_use]
     pub fn ceil(self) -> Self {
         if self.lo == 0 {
             self
@@ -194,6 +206,7 @@ impl Fix128 {
     /// Square root using Newton-Raphson iteration
     ///
     /// Deterministic: Fixed number of iterations
+    #[must_use]
     pub fn sqrt(self) -> Self {
         if self.is_negative() || self.is_zero() {
             return Self::ZERO;
@@ -236,6 +249,7 @@ impl Fix128 {
 
     /// Divide by 2 (bit shift, exact)
     #[inline]
+    #[must_use]
     pub fn half(self) -> Self {
         let hi = self.hi >> 1;
         let lo = (self.lo >> 1) | ((self.hi as u64 & 1) << 63);
@@ -244,6 +258,7 @@ impl Fix128 {
 
     /// Multiply by 2 (bit shift, exact)
     #[inline]
+    #[must_use]
     pub fn double(self) -> Self {
         let hi = (self.hi << 1) | ((self.lo >> 63) as i64);
         let lo = self.lo << 1;
@@ -253,6 +268,7 @@ impl Fix128 {
     /// Sine using CORDIC algorithm (deterministic)
     ///
     /// Input should be in range [-π, π] for best precision
+    #[must_use]
     pub fn sin(self) -> Self {
         cordic_sin_cos(self).0
     }
@@ -260,21 +276,25 @@ impl Fix128 {
     /// Cosine using CORDIC algorithm (deterministic)
     ///
     /// Input should be in range [-π, π] for best precision
+    #[must_use]
     pub fn cos(self) -> Self {
         cordic_sin_cos(self).1
     }
 
     /// Simultaneous sin and cos (more efficient)
+    #[must_use]
     pub fn sin_cos(self) -> (Self, Self) {
         cordic_sin_cos(self)
     }
 
     /// Arctangent using CORDIC (deterministic)
+    #[must_use]
     pub fn atan(self) -> Self {
         cordic_atan(self)
     }
 
     /// Arctangent2 (deterministic)
+    #[must_use]
     pub fn atan2(y: Self, x: Self) -> Self {
         cordic_atan2(y, x)
     }
@@ -479,6 +499,27 @@ impl Ord for Fix128 {
             Ordering::Equal => self.lo.cmp(&other.lo),
             ord => ord,
         }
+    }
+}
+
+impl core::fmt::Display for Fix128 {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let val = self.to_f64();
+        write!(f, "{val:.4}")
+    }
+}
+
+impl From<i64> for Fix128 {
+    #[inline]
+    fn from(n: i64) -> Self {
+        Self::from_int(n)
+    }
+}
+
+impl From<i32> for Fix128 {
+    #[inline]
+    fn from(n: i32) -> Self {
+        Self::from_int(n as i64)
     }
 }
 
@@ -770,12 +811,14 @@ impl Vec3Fix {
 
     /// Create new vector
     #[inline]
+    #[must_use]
     pub const fn new(x: Fix128, y: Fix128, z: Fix128) -> Self {
         Self { x, y, z }
     }
 
     /// Create from integers
     #[inline]
+    #[must_use]
     pub const fn from_int(x: i64, y: i64, z: i64) -> Self {
         Self {
             x: Fix128::from_int(x),
@@ -787,6 +830,7 @@ impl Vec3Fix {
     /// Create from f32 components (for SDF bridge)
     /// Create from f32 components (for SDF bridge, not deterministic!)
     #[inline]
+    #[must_use]
     pub fn from_f32(x: f32, y: f32, z: f32) -> Self {
         Self {
             x: Fix128::from_f32(x),
@@ -797,18 +841,21 @@ impl Vec3Fix {
 
     /// Convert to f32 tuple (for SDF bridge)
     #[inline]
+    #[must_use]
     pub fn to_f32(self) -> (f32, f32, f32) {
         (self.x.to_f32(), self.y.to_f32(), self.z.to_f32())
     }
 
     /// Dot product
     #[inline(always)]
+    #[must_use]
     pub fn dot(self, rhs: Self) -> Fix128 {
         self.x * rhs.x + self.y * rhs.y + self.z * rhs.z
     }
 
     /// Cross product
     #[inline(always)]
+    #[must_use]
     pub fn cross(self, rhs: Self) -> Self {
         Self {
             x: self.y * rhs.z - self.z * rhs.y,
@@ -819,12 +866,14 @@ impl Vec3Fix {
 
     /// Squared length (no sqrt)
     #[inline(always)]
+    #[must_use]
     pub fn length_squared(self) -> Fix128 {
         self.dot(self)
     }
 
     /// Length (magnitude)
     #[inline(always)]
+    #[must_use]
     pub fn length(self) -> Fix128 {
         self.length_squared().sqrt()
     }
@@ -834,6 +883,7 @@ impl Vec3Fix {
     /// Returns `Self::ZERO` for zero-length vectors. Use [`Self::try_normalize`]
     /// when you need to distinguish a zero-length input from a valid unit vector.
     #[inline(always)]
+    #[must_use]
     pub fn normalize(self) -> Self {
         let len = self.length();
         if len.is_zero() {
@@ -845,6 +895,7 @@ impl Vec3Fix {
 
     /// Try to normalize, returning `None` for zero-length vectors.
     #[inline(always)]
+    #[must_use]
     pub fn try_normalize(self) -> Option<Self> {
         let len = self.length();
         if len.is_zero() {
@@ -859,6 +910,7 @@ impl Vec3Fix {
     /// Avoids double sqrt when both normalized direction and distance are needed.
     /// Returns `(Self::ZERO, Fix128::ZERO)` if the vector is zero-length.
     #[inline(always)]
+    #[must_use]
     pub fn normalize_with_length(self) -> (Self, Fix128) {
         let len = self.length();
         if len.is_zero() {
@@ -871,6 +923,7 @@ impl Vec3Fix {
 
     /// Scale by scalar
     #[inline]
+    #[must_use]
     pub fn scale(self, s: Fix128) -> Self {
         Self {
             x: self.x * s,
@@ -927,11 +980,12 @@ impl Vec3Fix {
 
     /// SIMD-accelerated dot product — safe public entry point.
     ///
-    /// On x86_64 with the `simd` feature enabled this dispatches to the SSE2
+    /// On `x86_64` with the `simd` feature enabled this dispatches to the SSE2
     /// path (`dot_simd_sse2`). On every other platform it falls back to the
     /// scalar `dot()`. The result is **bit-exact identical** to `dot()` on every
     /// platform.
     #[inline]
+    #[must_use]
     pub fn dot_simd(self, rhs: Self) -> Fix128 {
         #[cfg(all(feature = "simd", target_arch = "x86_64"))]
         {
@@ -950,6 +1004,7 @@ impl Vec3Fix {
     /// Equivalent to `length_squared()` but dispatches through `dot_simd`.
     /// Result is **bit-exact identical** to `length_squared()`.
     #[inline]
+    #[must_use]
     pub fn length_squared_simd(self) -> Fix128 {
         self.dot_simd(self)
     }
@@ -1050,6 +1105,26 @@ impl Neg for Vec3Fix {
     }
 }
 
+impl core::fmt::Display for Vec3Fix {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "({}, {}, {})", self.x, self.y, self.z)
+    }
+}
+
+impl From<[Fix128; 3]> for Vec3Fix {
+    #[inline]
+    fn from(arr: [Fix128; 3]) -> Self {
+        Self::new(arr[0], arr[1], arr[2])
+    }
+}
+
+impl From<Vec3Fix> for [Fix128; 3] {
+    #[inline]
+    fn from(v: Vec3Fix) -> Self {
+        [v.x, v.y, v.z]
+    }
+}
+
 // ============================================================================
 // QuatFix - Quaternion with Fixed-Point Components
 // ============================================================================
@@ -1081,11 +1156,13 @@ impl QuatFix {
 
     /// Create new quaternion
     #[inline]
+    #[must_use]
     pub const fn new(x: Fix128, y: Fix128, z: Fix128, w: Fix128) -> Self {
         Self { x, y, z, w }
     }
 
     /// Create from axis-angle representation
+    #[must_use]
     pub fn from_axis_angle(axis: Vec3Fix, angle: Fix128) -> Self {
         let half_angle = angle.half();
         let (sin_ha, cos_ha) = half_angle.sin_cos();
@@ -1101,6 +1178,7 @@ impl QuatFix {
 
     /// Quaternion multiplication (composition of rotations)
     #[allow(clippy::should_implement_trait)]
+    #[must_use]
     pub fn mul(self, rhs: Self) -> Self {
         Self {
             x: self.w * rhs.x + self.x * rhs.w + self.y * rhs.z - self.z * rhs.y,
@@ -1112,6 +1190,7 @@ impl QuatFix {
 
     /// Conjugate (inverse for unit quaternions)
     #[inline]
+    #[must_use]
     pub fn conjugate(self) -> Self {
         Self {
             x: -self.x,
@@ -1123,18 +1202,21 @@ impl QuatFix {
 
     /// Squared magnitude
     #[inline]
+    #[must_use]
     pub fn length_squared(self) -> Fix128 {
         self.x * self.x + self.y * self.y + self.z * self.z + self.w * self.w
     }
 
     /// Magnitude
     #[inline(always)]
+    #[must_use]
     pub fn length(self) -> Fix128 {
         self.length_squared().sqrt()
     }
 
     /// Normalize to unit quaternion (reciprocal: 1 division + 4 multiplications)
     #[inline(always)]
+    #[must_use]
     pub fn normalize(self) -> Self {
         let len = self.length();
         if len.is_zero() {
@@ -1151,11 +1233,32 @@ impl QuatFix {
     }
 
     /// Rotate a vector by this quaternion
+    #[must_use]
     pub fn rotate_vec(self, v: Vec3Fix) -> Vec3Fix {
         // q * v * q^-1
         let qv = QuatFix::new(v.x, v.y, v.z, Fix128::ZERO);
         let result = self.mul(qv).mul(self.conjugate());
         Vec3Fix::new(result.x, result.y, result.z)
+    }
+}
+
+impl core::fmt::Display for QuatFix {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "({}, {}, {}, {})", self.x, self.y, self.z, self.w)
+    }
+}
+
+impl From<[Fix128; 4]> for QuatFix {
+    #[inline]
+    fn from(arr: [Fix128; 4]) -> Self {
+        Self::new(arr[0], arr[1], arr[2], arr[3])
+    }
+}
+
+impl From<QuatFix> for [Fix128; 4] {
+    #[inline]
+    fn from(q: QuatFix) -> Self {
+        [q.x, q.y, q.z, q.w]
     }
 }
 
@@ -1192,12 +1295,14 @@ impl Mat3Fix {
 
     /// Create from columns
     #[inline]
+    #[must_use]
     pub const fn from_cols(col0: Vec3Fix, col1: Vec3Fix, col2: Vec3Fix) -> Self {
         Self { col0, col1, col2 }
     }
 
     /// Create diagonal matrix
     #[inline]
+    #[must_use]
     pub fn diagonal(x: Fix128, y: Fix128, z: Fix128) -> Self {
         Self {
             col0: Vec3Fix::new(x, Fix128::ZERO, Fix128::ZERO),
@@ -1208,6 +1313,7 @@ impl Mat3Fix {
 
     /// Matrix-vector multiplication
     #[inline]
+    #[must_use]
     pub fn mul_vec(self, v: Vec3Fix) -> Vec3Fix {
         Vec3Fix::new(
             self.col0.x * v.x + self.col1.x * v.y + self.col2.x * v.z,
@@ -1218,6 +1324,7 @@ impl Mat3Fix {
 
     /// Transpose
     #[inline]
+    #[must_use]
     pub fn transpose(self) -> Self {
         Self {
             col0: Vec3Fix::new(self.col0.x, self.col1.x, self.col2.x),
@@ -1228,6 +1335,7 @@ impl Mat3Fix {
 
     /// Scale all elements
     #[inline]
+    #[must_use]
     pub fn scale(self, s: Fix128) -> Self {
         Self {
             col0: self.col0.scale(s),
@@ -1238,6 +1346,7 @@ impl Mat3Fix {
 
     /// Matrix-matrix multiplication (self * rhs)
     #[inline]
+    #[must_use]
     pub fn mul_mat(self, rhs: Self) -> Self {
         Self {
             col0: self.mul_vec(rhs.col0),
@@ -1248,6 +1357,7 @@ impl Mat3Fix {
 
     /// Determinant
     #[inline]
+    #[must_use]
     pub fn determinant(self) -> Fix128 {
         self.col0.x * (self.col1.y * self.col2.z - self.col1.z * self.col2.y)
             - self.col1.x * (self.col0.y * self.col2.z - self.col0.z * self.col2.y)
@@ -1255,6 +1365,7 @@ impl Mat3Fix {
     }
 
     /// Inverse matrix. Returns `None` if the matrix is singular.
+    #[must_use]
     pub fn inverse(self) -> Option<Self> {
         let det = self.determinant();
         if det.is_zero() {
@@ -1290,13 +1401,14 @@ impl Mat3Fix {
 /// Returns the SIMD width for the current build target.
 ///
 /// Dispatches at compile time based on enabled features and target architecture:
-/// - AVX2 (x86_64): 8 lanes (256-bit / 32-bit float)
-/// - SSE2 / no-AVX2 (x86_64 without avx2): 4 lanes (128-bit)
+/// - AVX2 (`x86_64)`: 8 lanes (256-bit / 32-bit float)
+/// - SSE2 / no-AVX2 (`x86_64` without avx2): 4 lanes (128-bit)
 /// - NEON (aarch64): 4 lanes (128-bit)
 /// - Scalar fallback (no `simd` feature): 1
 ///
 /// Use the [`SIMD_WIDTH`] constant for a zero-cost compile-time value.
 #[inline(always)]
+#[must_use]
 pub const fn simd_width() -> usize {
     #[cfg(all(feature = "simd", target_arch = "x86_64", target_feature = "avx2"))]
     {
@@ -1336,6 +1448,7 @@ pub const SIMD_WIDTH: usize = simd_width();
 /// which is `0xFFFFFFFF_FFFFFFFF` when true and `0x00000000_00000000` when false.
 /// Bitwise AND/OR then selects the correct limbs without any conditional instruction.
 #[inline(always)]
+#[must_use]
 pub fn select_fix128(condition: bool, a: Fix128, b: Fix128) -> Fix128 {
     // mask = 0xFFFF...FFFF when condition is true, 0x0000...0000 when false
     let mask = -(condition as i64) as u64;
@@ -1349,11 +1462,12 @@ pub fn select_fix128(condition: bool, a: Fix128, b: Fix128) -> Fix128 {
     Fix128 { hi, lo }
 }
 
-/// Branchless select for Vec3Fix.
+/// Branchless select for `Vec3Fix`.
 ///
 /// Returns `a` if `condition` is true, `b` otherwise.
 /// Applies `select_fix128` component-wise.
 #[inline(always)]
+#[must_use]
 pub fn select_vec3(condition: bool, a: Vec3Fix, b: Vec3Fix) -> Vec3Fix {
     Vec3Fix {
         x: select_fix128(condition, a.x, b.x),
