@@ -6,7 +6,7 @@
 //!
 //! | Layer | Technique | Effect |
 //! |-------|-----------|--------|
-//! | L1 | GIL Release (`py.allow_threads`) | Parallel physics stepping |
+//! | L1 | GIL Release (`py.detach`) | Parallel physics stepping |
 //! | L2 | Zero-Copy NumPy (`into_pyarray`) | No memcpy for bulk data |
 //! | L3 | Batch API (positions/velocities) | FFI amortization |
 //! | L4 | `#[repr(C)]` FrameInput (20 bytes) | Direct buffer cast |
@@ -67,7 +67,7 @@ impl PyPhysicsWorld {
     /// GIL is released during the physics computation for full parallelism.
     fn step(&mut self, py: Python<'_>, dt: f64) {
         let dt_fix = Fix128::from_f64(dt);
-        py.allow_threads(|| {
+        py.detach(|| {
             self.inner.step(dt_fix);
         });
     }
@@ -77,7 +77,7 @@ impl PyPhysicsWorld {
     /// GIL released for the entire batch — ideal for training loops.
     fn step_n(&mut self, py: Python<'_>, dt: f64, steps: usize) {
         let dt_fix = Fix128::from_f64(dt);
-        py.allow_threads(|| {
+        py.detach(|| {
             for _ in 0..steps {
                 self.inner.step(dt_fix);
             }
@@ -87,7 +87,7 @@ impl PyPhysicsWorld {
     /// Get all body positions as a NumPy (N, 3) float64 array.
     ///
     /// Pre-allocated flat buffer with direct indexing, then zero-copy
-    /// ownership transfer via `into_pyarray_bound`.
+    /// ownership transfer via `into_pyarray`.
     fn positions<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray2<f64>> {
         let n = self.inner.bodies.len();
         let mut data = vec![0.0f64; n * 3];
@@ -98,7 +98,7 @@ impl PyPhysicsWorld {
             data[base + 1] = y as f64;
             data[base + 2] = z as f64;
         }
-        data.into_pyarray_bound(py)
+        data.into_pyarray(py)
             .reshape([n, 3])
             .expect("buffer length is n*3")
     }
@@ -114,7 +114,7 @@ impl PyPhysicsWorld {
             data[base + 1] = y as f64;
             data[base + 2] = z as f64;
         }
-        data.into_pyarray_bound(py)
+        data.into_pyarray(py)
             .reshape([n, 3])
             .expect("buffer length is n*3")
     }
@@ -174,7 +174,7 @@ impl PyPhysicsWorld {
             })
             .collect();
 
-        py.allow_threads(|| {
+        py.detach(|| {
             for (i, pos) in positions.into_iter().enumerate() {
                 self.inner.bodies[i].position = pos;
             }
@@ -185,13 +185,13 @@ impl PyPhysicsWorld {
 
     /// Serialize the entire world state to bytes (for rollback/save).
     fn serialize_state<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<u8>> {
-        let data = py.allow_threads(|| self.inner.serialize_state());
-        data.into_pyarray_bound(py)
+        let data = py.detach(|| self.inner.serialize_state());
+        data.into_pyarray(py)
     }
 
     /// Restore world state from bytes.
     fn deserialize_state(&mut self, py: Python<'_>, data: Vec<u8>) -> bool {
-        py.allow_threads(|| self.inner.deserialize_state(&data))
+        py.detach(|| self.inner.deserialize_state(&data))
     }
 
     /// Number of bodies in the world.
@@ -232,7 +232,7 @@ impl PyPhysicsWorld {
             .collect();
 
         // Release GIL for body creation and world insertion
-        let indices = py.allow_threads(|| {
+        let indices = py.detach(|| {
             let mut out = Vec::with_capacity(n);
             for &(x, y, z, mass) in &params {
                 let body =
@@ -281,7 +281,7 @@ impl PyPhysicsWorld {
             })
             .collect();
 
-        py.allow_threads(|| {
+        py.detach(|| {
             for (i, vel) in velocities.into_iter().enumerate() {
                 self.inner.bodies[i].velocity = vel;
             }
@@ -330,7 +330,7 @@ impl PyPhysicsWorld {
             }
         }
 
-        py.allow_threads(|| {
+        py.detach(|| {
             for (body_id, impulse) in impulses {
                 // Apply impulse: v += impulse / mass
                 let inv_mass = self.inner.bodies[body_id].inv_mass;
@@ -365,7 +365,7 @@ impl PyPhysicsWorld {
             data[base + 9] = body.rotation.w.to_f32() as f64;
         }
 
-        data.into_pyarray_bound(py)
+        data.into_pyarray(py)
             .reshape([n, 10])
             .expect("buffer length is n*10")
     }
@@ -446,7 +446,7 @@ impl PyDeterministicSimulation {
             })
             .collect();
 
-        let checksum = py.allow_threads(|| {
+        let checksum = py.detach(|| {
             self.inner
                 .advance_frame_with_applicator(&frame_inputs, &DefaultInputApplicator::default())
         });
@@ -491,7 +491,7 @@ impl PyDeterministicSimulation {
             data[base + 1] = y as f64;
             data[base + 2] = z as f64;
         }
-        data.into_pyarray_bound(py)
+        data.into_pyarray(py)
             .reshape([n, 3])
             .expect("buffer length is n*3")
     }
@@ -514,7 +514,7 @@ impl PyDeterministicSimulation {
 /// Useful for verifying state consistency without a full PhysicsWorld.
 #[pyfunction]
 fn compute_checksum(py: Python<'_>, state_bytes: Vec<u8>) -> u64 {
-    py.allow_threads(|| {
+    py.detach(|| {
         let config = PhysicsConfig::default();
         let mut world = PhysicsWorld::new(config);
         if world.deserialize_state(&state_bytes) {

@@ -1665,6 +1665,33 @@ cargo build --release --features neural
 cargo build --release --features ffi
 ```
 
+## Tested Feature Combinations
+
+All feature combinations are tested in CI across macOS, Ubuntu, and Windows:
+
+| Combination | Status | Tests |
+|-------------|--------|-------|
+| `--no-default-features` (no_std) | ✅ | 9 |
+| `--features std` (default) | ✅ | 645 unit + 72 integration + 20 doc |
+| `--features simd` | ✅ | 20 |
+| `--features parallel` | ✅ | 20 |
+| `--features "simd,parallel"` | ✅ | 20 |
+| `--features ffi` | ✅ | build only |
+| `--features python` | ✅ | 1 |
+| `--features replay` | ✅ | build only |
+| `--features analytics` | ✅ | build only |
+| `--features neural` | ✅ | build only |
+| `--features wasm` | ✅ | build only |
+
+Feature compatibility matrix:
+
+| | std | simd | parallel | neural | python | ffi | wasm | replay | analytics |
+|---|---|---|---|---|---|---|---|---|---|
+| **std** | - | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **simd** | ✅ | - | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ |
+| **parallel** | ✅ | ✅ | - | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ |
+| **wasm** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | - | ❌ | ❌ |
+
 ## Game Engine Integration (C FFI / Unity / UE5)
 
 ALICE-Physics provides a C FFI layer for integration with Unity, Unreal Engine, and any language that can call C functions.

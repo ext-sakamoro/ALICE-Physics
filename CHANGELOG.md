@@ -21,9 +21,15 @@ All notable changes to ALICE-Physics will be documented in this file.
 - **SECURITY.md**: security policy and vulnerability reporting guidelines
 - **Examples**: `basic_physics` (world setup, builder pattern, simulation loop) and `cloth_simulation` (grid cloth, wind, normals)
 - Explanation comments on ignored doc tests (`sdf_collider.rs`)
+- **Feature Combinations**: documented tested feature matrix in README (11 combinations + compatibility matrix)
 - 10 new integration tests (stress test, damping, builder, Display, From/Into, CCD, errors, HeightField)
 
 ### Changed
+
+- **PyO3 upgrade**: 0.22 → 0.27 (Python 3.14 support), numpy 0.22 → 0.27
+- `python.rs`: `into_pyarray_bound()` → `into_pyarray()`, `py.allow_threads()` → `py.detach()`
+- **Release workflow**: added static library builds (.a/.lib) and Python wheel (maturin) builds
+- **README_JP.md**: full update from v0.4.0 to v0.6.0
 
 - `unwrap()` replaced with `expect()` in `query.rs`, `netcode.rs`, and `contact_cache.rs` for better error messages
 - `query.rs`: branchless `map_or` replaces `is_none() || .unwrap()` pattern

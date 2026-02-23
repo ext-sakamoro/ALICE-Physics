@@ -31,8 +31,8 @@ analytics = ["dep:alice-analytics", "std"]  # ALICE-Analytics simulation profili
 [dependencies]
 rayon = { version = "1.8", optional = true }
 alice-ml = { path = "../ALICE-ML", optional = true }
-pyo3 = { version = "0.22", features = ["extension-module"], optional = true }
-numpy = { version = "0.22", optional = true }
+pyo3 = { version = "0.27", features = ["extension-module"], optional = true }
+numpy = { version = "0.27", optional = true }
 alice-db = { path = "../ALICE-DB", optional = true }
 wasm-bindgen = { version = "0.2", optional = true }
 js-sys = { version = "0.3", optional = true }

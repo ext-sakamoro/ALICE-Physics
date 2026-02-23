@@ -22,18 +22,22 @@ jobs:
           - os: macos-latest
             target: aarch64-apple-darwin
             lib_name: libalice_physics.dylib
+            static_lib_name: libalice_physics.a
             lib_dir: macOS
           - os: macos-15
             target: x86_64-apple-darwin
             lib_name: libalice_physics.dylib
+            static_lib_name: libalice_physics.a
             lib_dir: macOS-Intel
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             lib_name: alice_physics.dll
+            static_lib_name: alice_physics.lib
             lib_dir: Win64
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             lib_name: libalice_physics.so
+            static_lib_name: libalice_physics.a
             lib_dir: Linux
 
     steps:
@@ -74,8 +78,14 @@ jobs:
           TOML
           echo "" > ../ALICE-DB/src/lib.rs
 
-      - name: Build release
+      - name: Build release (dynamic library)
         run: cargo build --release --features "ffi" --target ${{ matrix.target }}
+
+      - name: Build release (static library)
+        shell: bash
+        run: |
+          cargo rustc --release --features "ffi" --target ${{ matrix.target }} \
+            --crate-type staticlib
 
       - name: Package UE5 Plugin
         shell: bash
@@ -117,6 +127,24 @@ jobs:
         if: runner.os == 'Windows'
         run: 7z a "AlicePhysics-Unity-${{ matrix.lib_dir }}.zip" AlicePhysics-Unity/
 
+      - name: Package Static Library
+        shell: bash
+        run: |
+          STATIC_DIR="AlicePhysics-StaticLib-${{ matrix.lib_dir }}"
+          mkdir -p "$STATIC_DIR/lib"
+          mkdir -p "$STATIC_DIR/include"
+          cp include/alice_physics.h "$STATIC_DIR/include/"
+          cp "target/${{ matrix.target }}/release/${{ matrix.static_lib_name }}" \
+             "$STATIC_DIR/lib/"
+
+      - name: Create Static Library ZIP (Unix)
+        if: runner.os != 'Windows'
+        run: zip -r "AlicePhysics-StaticLib-${{ matrix.lib_dir }}.zip" "AlicePhysics-StaticLib-${{ matrix.lib_dir }}/"
+
+      - name: Create Static Library ZIP (Windows)
+        if: runner.os == 'Windows'
+        run: 7z a "AlicePhysics-StaticLib-${{ matrix.lib_dir }}.zip" "AlicePhysics-StaticLib-${{ matrix.lib_dir }}/"
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -124,10 +152,74 @@ jobs:
           path: |
             AlicePhysics-UE5-${{ matrix.lib_dir }}.zip
             AlicePhysics-Unity-${{ matrix.lib_dir }}.zip
+            AlicePhysics-StaticLib-${{ matrix.lib_dir }}.zip
+
+  python-wheel:
+    name: Python Wheel (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Create ALICE-ML stub
+        shell: bash
+        run: |
+          mkdir -p ../ALICE-ML/src
+          cat > ../ALICE-ML/Cargo.toml << 'TOML'
+          [package]
+          name = "alice-ml"
+          version = "0.1.0"
+          edition = "2021"
+          [lib]
+          path = "src/lib.rs"
+          TOML
+          echo "" > ../ALICE-ML/src/lib.rs
+
+      - name: Create ALICE-DB stub
+        shell: bash
+        run: |
+          mkdir -p ../ALICE-DB/src
+          cat > ../ALICE-DB/Cargo.toml << 'TOML'
+          [package]
+          name = "alice-db"
+          version = "0.1.0"
+          edition = "2021"
+          [lib]
+          path = "src/lib.rs"
+          TOML
+          echo "" > ../ALICE-DB/src/lib.rs
+
+      - name: Install maturin
+        run: pip install maturin
+
+      - name: Build wheel
+        run: maturin build --release --features python --out dist/
+
+      - name: Upload wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheel-${{ matrix.os }}
+          path: dist/*.whl
 
   release:
     name: Create Release
-    needs: [build]
+    needs: [build, python-wheel]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -140,5 +232,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/**/*.zip
+          files: |
+            artifacts/**/*.zip
+            artifacts/**/*.whl
           generate_release_notes: true

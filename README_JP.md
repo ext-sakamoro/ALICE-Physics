@@ -1,6 +1,6 @@
 # ALICE-Physics
 
-**決定論的128bit固定小数点物理エンジン** - v0.4.0
+**決定論的128bit固定小数点物理エンジン** - v0.6.0
 
 [English](README.md) | 日本語
 
@@ -18,7 +18,7 @@
 | **拘束バッチング** | グラフ彩色による並列拘束解決 |
 | **ロールバック対応** | ネットコード用の完全なステートシリアライズ |
 | **ニューラルコントローラ** | ALICE-ML三値重み + Fix128推論による決定論的AI |
-| **7種のジョイント** | Ball, Hinge, Fixed, Slider, Spring, D6, Cone-Twist（角度制限・モーター・破壊可能拘束付き） |
+| **12種のジョイント** | Ball, Hinge, Fixed, Slider, Spring, D6, Cone-Twist, Pulley, Gear, Weld（破壊可能）, Rack-and-Pinion, Mouse |
 | **レイキャスティング** | Sphere, AABB, Capsule, Planeに対するレイ・シェイプキャスト |
 | **シェイプキャスト/オーバーラップ** | 球体キャスト、カプセルキャスト、オーバーラップ球体/AABB クエリ |
 | **CCD** | 連続衝突検出（TOI、保守的前進法） |
@@ -26,7 +26,7 @@
 | **三角メッシュ** | BVH加速三角メッシュ衝突（Moller-Trumboreアルゴリズム） |
 | **ハイトフィールド** | バイリニア補間によるグリッド地形 |
 | **多関節体** | 多関節チェーン、ラグドール、ロボットアーム（FK伝播） |
-| **フォースフィールド** | 風、重力井戸、ドラッグ、浮力、ボルテックス |
+| **フォースフィールド** | 風、重力井戸、ドラッグ、浮力、ボルテックス、爆発、磁気双極子 |
 | **PDコントローラ** | 1D/3D 比例-微分関節モーター |
 | **衝突フィルタリング** | レイヤー/マスクビットマスクによる衝突グループ |
 | **トリガー/センサー** | 物理応答なしでオーバーラップを検出するセンサーボディ |
@@ -71,6 +71,24 @@
 | **ストリーミング異常検出** | MAD、EWMA、Zスコア複合検出器 |
 | **ローカル差分プライバシー** | ラプラスノイズ、RAPPOR、ランダム化応答 |
 | **メトリックパイプライン** | ロックフリーリングバッファによるメトリック集約 |
+| **コーンコライダー** | GJK対応コーン形状（頂点+Y、底面-Y） |
+| **楕円体コライダー** | 3軸独立半径の異方性サポート |
+| **トーラスコライダー** | 主半径/副半径のミンコフスキー和分解 |
+| **平面コライダー** | 無限平面（ヘッセ標準形）球体/AABB交差判定 |
+| **くさびコライダー** | 三角柱（6頂点GJKサポート） |
+| **凸包ビルダー** | 任意の点集合からインクリメンタル凸包構築 |
+| **2D物理** | 完全な2Dサブシステム: SAT衝突、XPBDソルバー、Circle/Polygon/Capsule/Edge形状 |
+| **質量特性** | 球体、ボックス、シリンダー、カプセル、凸包の慣性テンソル計算 |
+| **衝突メッシュ生成** | マーチングキューブSDF→メッシュ変換（エッジ崩壊簡略化） |
+| **シーンI/O** | バイナリ (.aphys) + JSONシーンシリアライズ（Fix128ビット精度往復） |
+| **クロス-流体カップリング** | 双方向クロス-流体相互作用（ドラッグ、浮力、境界反発） |
+| **ロープアタッチメント** | 剛体ロープ接続（コンプライアンス、破壊力設定） |
+| **ソフトボディ切断** | 平面ベースの変形体・クロス切断 |
+| **応力ヒートマップ** | 応力/温度/圧力の2Dスライス可視化（viridisカラーマップ） |
+| **フロー可視化** | 流体速度場の矢印と流線生成 |
+| **接触可視化** | 接触力矢印と摩擦コーンレンダリング |
+| **マルチワールド** | 複数の独立した物理ワールドとボディ転送 |
+| **パーティクルシステム** | 汎用エミッター、ライフタイム、フォースフィールド統合 |
 | **no_std対応** | 組み込みシステム・WebAssemblyで動作 |
 
 ## 最適化（"黒焦げ" エディション） — 100/100
@@ -86,7 +104,7 @@ ALICE-Physicsは6層にわたる最適化で **100/100 の完璧なスコア** �
 | **L3: 計算戦略** | 20/20 | ウォームスタート `cached_lambda`、逆数事前計算（`inv_rest_length`、`inv_rest_density`） |
 | **L4: GPU・スループット** | 15/15 | `SIMD_WIDTH`定数 + `simd_width()`、`GpuSdfInstancedBatch`/`GpuSdfMultiDispatch`、`batch_size()` |
 | **L5: ビルドプロファイル** | 10/10 | `opt-level=3`、`lto="fat"`、`codegen-units=1`、`panic="abort"`、`strip=true` |
-| **L6: コード品質** | 20/20 | 379テスト（358ユニット + 10統合 + 11ドキュメント）、clippy 0警告 |
+| **L6: コード品質** | 20/20 | 737テスト（645ユニット + 72統合 + 20ドキュメント）、clippy 0警告 |
 | **合計** | **100/100** | |
 
 ### L1: メモリレイアウト (15/15)
@@ -165,10 +183,10 @@ strip = true           # シンボル除去
 
 ### L6: コード品質 (20/20)
 
-- **358ユニットテスト**（67モジュール）
-- **10統合テスト**（エンドツーエンド物理シナリオ）
-- **11ドキュメントテスト**（実行可能な例: sketch, anomaly, privacy, pipeline）
-- **合計: 379テストパス**、clippy: 0警告
+- **645ユニットテスト**（84モジュール）
+- **72統合テスト**（エンドツーエンド物理シナリオ）
+- **20ドキュメントテスト**（実行可能な例）
+- **合計: 737テストパス**、clippy: 0警告（`-W clippy::all`）
 
 ---
 
@@ -303,8 +321,8 @@ ALICE-Physicsは**どこでもビット精度の結果**を保証し、以下を
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                          ALICE-Physics v0.4.0                                │
-│              67モジュール、358ユニットテスト、10統合、11ドキュメントテスト         │
+│                          ALICE-Physics v0.6.0                                │
+│              84モジュール、645ユニットテスト、72統合、20ドキュメントテスト         │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │  コアレイヤー                                                                │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐          │
@@ -315,7 +333,7 @@ ALICE-Physicsは**どこでもビット精度の結果**を保証し、以下を
 │  │ CORDIC   │ │ GJK/EPA  │ │ Rollback │ │  alloc   │ │          │          │
 │  └──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘          │
 │                                                                              │
-│  AAAエンジンレイヤー (v0.4.0)                                                 │
+│  AAAエンジンレイヤー                                                          │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐          │
 │  │box_colldr│ │ compound │ │cont_cache│ │dynamic_bv│ │ material │          │
 │  │ OBB      │ │ Multi-   │ │ HashMap  │ │ Incr BVH │ │ Pair Tbl │          │
@@ -331,18 +349,38 @@ ALICE-Physicsは**どこでもビット精度の結果**を保証し、以下を
 │  │ BVH/AABB │ │ History  │ │ Alpha    │                                    │
 │  └──────────┘ └──────────┘ └──────────┘                                    │
 │                                                                              │
+│  衝突形状レイヤー (v0.5.0)                                                    │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐          │
+│  │  cone    │ │ellipsoid │ │  torus   │ │plane_col │ │  wedge   │          │
+│  │ Apex/Base│ │ 3-Axis   │ │ Maj/Min  │ │ Hessian  │ │ TriPrism │          │
+│  │ GJK Supp│ │ Aniso    │ │ Minkowsk │ │ Sph/AABB │ │ 6-Vertex │          │
+│  │ Inertia  │ │ Support  │ │ Support  │ │ Intersct │ │ GJK Supp│          │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘          │
+│  ┌──────────┐                                                               │
+│  │cvx_mesh  │                                                               │
+│  │ Incr Hull│                                                               │
+│  │ Tetra    │                                                               │
+│  │ Horizon  │                                                               │
+│  └──────────┘                                                               │
+│                                                                              │
 │  拘束・ダイナミクスレイヤー                                                    │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐          │
-│  │  joint   │ │  motor   │ │articulatn│ │  force   │ │ sleeping │          │
-│  │ Ball     │ │ PD 1D/3D │ │ Ragdoll  │ │ Wind     │ │ Islands  │          │
-│  │ Hinge    │ │ Position │ │ FK Chain │ │ Gravity  │ │ Union-   │          │
-│  │ Fixed    │ │ Velocity │ │ Robotic  │ │ Buoyancy │ │  Find    │          │
-│  │ Slider   │ │ Max Torq │ │ Feather- │ │ Drag     │ │ Auto     │          │
-│  │ Spring   │ │          │ │  stone   │ │ Vortex   │ │  Sleep   │          │
-│  │ D6       │ │          │ │ 12-body  │ │          │ │          │          │
-│  │ ConeTwst │ │          │ │          │ │          │ │          │          │
+│  │  joint   │ │joint_extr│ │  motor   │ │articulatn│ │  force   │          │
+│  │ Ball     │ │ Pulley   │ │ PD 1D/3D │ │ Ragdoll  │ │ Wind     │          │
+│  │ Hinge    │ │ Gear     │ │ Position │ │ FK Chain │ │ Gravity  │          │
+│  │ Fixed    │ │ Weld     │ │ Velocity │ │ Robotic  │ │ Buoyancy │          │
+│  │ Slider   │ │ Rack&Pin │ │ Max Torq │ │ Feather- │ │ Drag     │          │
+│  │ Spring   │ │ Mouse    │ │          │ │  stone   │ │ Vortex   │          │
+│  │ D6       │ │ Breakabl │ │          │ │ 12-body  │ │ Explosion│          │
+│  │ ConeTwst │ │          │ │          │ │          │ │ Magnetic │          │
 │  │ Breakable│ │          │ │          │ │          │ │          │          │
 │  └──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘          │
+│  ┌──────────┐                                                               │
+│  │ sleeping │                                                               │
+│  │ Islands  │                                                               │
+│  │ Union-   │                                                               │
+│  │  Find    │                                                               │
+│  └──────────┘                                                               │
 │                                                                              │
 │  クエリ・衝突レイヤー                                                         │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐          │
@@ -369,6 +407,12 @@ ALICE-Physicsは**どこでもビット精度の結果**を保証し、以下を
 │  │ Chain    │ │ Self-Col │ │ Density  │ │ Volume   │ │ Engine   │          │
 │  │ Cable    │ │ SpatHash │ │ Viscosty │ │ Neo-Hook │ │ Steering │          │
 │  └──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘          │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐                       │
+│  │clth_flud │ │rope_atth │ │soft_cut  │ │ particle │                       │
+│  │ Drag     │ │ RigidBdy │ │ Plane    │ │ Emitters │                       │
+│  │ Buoyancy │ │ Complnce │ │ Deform   │ │ Lifetime │                       │
+│  │ Boundary │ │ Break    │ │ Cloth    │ │ ForceInt │                       │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────┘                       │
 │                                                                              │
 │  SDF拡張レイヤー                                                              │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐          │
@@ -400,6 +444,30 @@ ALICE-Physicsは**どこでもビット精度の結果**を保証し、以下を
 │  │ Voronoi  │ │ Latent H │                                                  │
 │  └──────────┘ └──────────┘                                                  │
 │                                                                              │
+│  2D物理サブシステム (v0.5.0)                                                  │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │ physics2d                                                           │    │
+│  │ Vec2Fix, Shape2D (Circle/Polygon/Capsule/Edge), RigidBody2D         │    │
+│  │ SAT + Voronoi collision, XPBD 2D solver, Joint2D (Rev/Dist/Weld/M) │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
+│                                                                              │
+│  メッシュ & I/O ユーティリティ (v0.5.0)                                       │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐                       │
+│  │mass_prop │ │col_mesh  │ │ scene_io │ │multi_wrld│                       │
+│  │ Sphere   │ │ Marching │ │ Binary   │ │ N worlds │                       │
+│  │ Box      │ │ Cubes    │ │ APHYS    │ │ Transfer │                       │
+│  │ Cylinder │ │ EdgeClps │ │ JSON     │ │ Isolate  │                       │
+│  │ PAxis    │ │ Simplify │ │ Fix128   │ │ Step All │                       │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────┘                       │
+│                                                                              │
+│  可視化レイヤー (v0.5.0)                                                      │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐                                    │
+│  │ heatmap  │ │ flow_viz │ │contct_viz│                                    │
+│  │ Stress   │ │ Arrows   │ │ Force    │                                    │
+│  │ Temp     │ │ Streamln │ │ Friction │                                    │
+│  │ Viridis  │ │ Velocity │ │ Cone     │                                    │
+│  └──────────┘ └──────────┘ └──────────┘                                    │
+│                                                                              │
 │  ゲームシステムレイヤー                                                       │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐                                    │
 │  │anim_blnd │ │audio_phys│ │ netcode  │                                    │
@@ -409,7 +477,7 @@ ALICE-Physicsは**どこでもビット精度の結果**を保証し、以下を
 │  │ IK Mix   │ │ Material │ │ Rollback │                                    │
 │  └──────────┘ └──────────┘ └──────────┘                                    │
 │                                                                              │
-│  アナリティクス & プライバシーレイヤー (v0.4.0)                                  │
+│  アナリティクス & プライバシーレイヤー                                          │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐                       │
 │  │  sketch  │ │ anomaly  │ │ privacy  │ │ pipeline │                       │
 │  │ HyperLog │ │ MAD      │ │ Laplace  │ │ MetricPi │                       │
@@ -630,7 +698,7 @@ println!("ノード数: {}, リーフ数: {}", stats.node_count, stats.leaf_coun
 - `RigidBody::new_static(position)` - 不動ボディ生成
 - `RigidBody::new_sensor(position)` - センサー/トリガーボディ生成
 
-### `joint` - 7種のジョイント + 破壊可能拘束
+### `joint` - 12種のジョイント + 破壊可能拘束
 
 | 型 | 説明 |
 |----|------|
@@ -642,7 +710,17 @@ println!("ノード数: {}, リーフ数: {}", stats.node_count, stats.leaf_coun
 | `D6Joint` | 6自由度設定可能ジョイント（軸ごとにロック/フリー/リミット） |
 | `ConeTwistJoint` | コーンスイング制限+ツイスト制限付きボールジョイント |
 
-全ジョイントは `with_break_force(max_force)` で**破壊可能拘束**をサポート。拘束力が閾値を超えるとジョイントが破壊されます。
+### `joint_extra` - 5種の高度なジョイント (v0.5.0)
+
+| 型 | 説明 |
+|----|------|
+| `PulleyJoint` | 2アンカー+ロープ比率付きプーリー（総距離拘束） |
+| `GearJoint` | ギアカップリング（2ボディ間の角速度比率） |
+| `WeldJoint` | `break_force` / `break_torque` 閾値付き剛体溶接 |
+| `RackAndPinionJoint` | ピッチ半径による回転-並進変換 |
+| `MouseJoint` | マウス/タッチドラッグ操作用ターゲット追従ジョイント |
+
+全ジョイントは `with_break_force(max_force)` で**破壊可能拘束**をサポート。拘束力が閾値を超えるとジョイントが破壊されシミュレーションから除去されます。
 
 ```rust
 use alice_physics::joint::*;
@@ -655,6 +733,11 @@ let d6 = D6Joint::new(body_a, body_b, anchor_a, anchor_b)
     .with_axis(Axis::LinearX, D6Mode::Locked)
     .with_axis(Axis::AngularY, D6Mode::Free)
     .with_axis(Axis::AngularZ, D6Mode::Limited(-Fix128::HALF_PI, Fix128::HALF_PI));
+
+// コーンツイストジョイント（肩のような関節: コーン+ツイスト制限）
+let cone = ConeTwistJoint::new(body_a, body_b, anchor_a, anchor_b, twist_axis)
+    .with_cone_limit(Fix128::from_ratio(45, 1))  // 45度コーン
+    .with_twist_limit(Fix128::from_ratio(30, 1)); // 30度ツイスト
 
 // 破壊可能ボールジョイント（力 > 100で破壊）
 let ball = BallJoint::new(body_a, body_b, anchor_a, anchor_b)
@@ -705,7 +788,7 @@ let broken = solve_joints_breakable(&joints, &mut bodies, dt);
 | `trimesh` | BVH加速三角メッシュ衝突（Moller-Trumbore） |
 | `heightfield` | バイリニア補間地形、球体衝突、符号付き距離 |
 | `filter` | レイヤー/マスクビットマスク衝突フィルタ |
-| `force` | 風、重力井戸、ドラッグ、浮力、ボルテックス |
+| `force` | 風、重力井戸、ドラッグ、浮力、ボルテックス、爆発、磁気双極子 |
 | `motor` | 1D/3D PDコントローラ、ジョイントモーター |
 | `articulation` | 多関節チェーン、FK伝播、Featherstone O(n)順動力学、12体ラグドール |
 | `rng` | PCG-XSH-RR 決定論的乱数 |
@@ -750,6 +833,193 @@ let broken = solve_joints_breakable(&joints, &mut bodies, dt);
 | `erosion` | 風食、水食、化学腐食、アブレーション (std) |
 | `fracture` | 応力駆動亀裂伝播（Voronoi断片化、CSG減算） (std) |
 | `phase_change` | 温度駆動相変化（固体/液体/気体） (std) |
+
+### `cone` - コーンコライダー (v0.5.0)
+
+| 型 | 説明 |
+|----|------|
+| `Cone` | 頂点+Y、底面-Yのコーンコライダー |
+
+**機能:**
+- GJK `Support` トレイト実装（頂点/底面中心切り替え）
+- AABB計算、体積、表面積、慣性テンソル対角
+- 半径と半高さ+回転の設定可能
+
+### `ellipsoid` - 楕円体コライダー (v0.5.0)
+
+| 型 | 説明 |
+|----|------|
+| `Ellipsoid` | 3軸独立半径(rx, ry, rz)の楕円体 |
+
+**機能:**
+- 異方性GJKサポート（方向を半径でスケール、正規化、スケールバック）
+- 体積、AABB、慣性テンソル対角の計算
+
+### `torus` - トーラスコライダー (v0.5.0)
+
+| 型 | 説明 |
+|----|------|
+| `Torus` | 主半径（リング）と副半径（チューブ）のトーラス |
+
+**機能:**
+- ミンコフスキー和分解によるGJKサポート
+- 体積とAABBの計算
+
+### `plane_collider` - 無限平面コライダー (v0.5.0)
+
+| 型 | 説明 |
+|----|------|
+| `PlaneCollider` | ヘッセ標準形（法線+オフセット）の無限平面 |
+
+**機能:**
+- `intersect_sphere()` -- 球体-平面交差判定（接触点付き）
+- `intersect_aabb()` -- AABB-平面オーバーラップテスト
+- `signed_distance()` -- 点-平面符号付き距離
+
+### `wedge` - くさびコライダー (v0.5.0)
+
+| 型 | 説明 |
+|----|------|
+| `Wedge` | 6頂点の三角柱（くさび） |
+
+**機能:**
+- GJKサポート（6頂点の最大ドット積反復）
+- 体積、AABB、重心の計算
+
+### `convex_mesh_builder` - 凸包ビルダー (v0.5.0)
+
+| 関数 | 説明 |
+|------|------|
+| `build_convex_hull(points)` | 任意の点集合から凸包を構築 |
+| `compute_centroid(faces, vertices)` | 凸包の重心を計算 |
+
+**アルゴリズム:** インクリメンタル凸包 -- 初期四面体を見つけ、点を順次挿入、可視面を除去、ホライズンエッジでパッチ。
+
+### `physics2d` - 2D物理エンジン (v0.5.0)
+
+| 型 | 説明 |
+|----|------|
+| `Vec2Fix` | Fix128成分の2Dベクトル |
+| `Shape2D` | Circle, Polygon（最大16頂点）, Capsule, Edge |
+| `RigidBody2D` | 位置、角度、速度、角速度の2D剛体 |
+| `PhysicsWorld2D` | XPBDソルバー付き完全な2D物理ワールド |
+| `PhysicsConfig2D` | 重力、サブステップ、反復、スリープ閾値 |
+| `Contact2D` | 法線、深度、ボディインデックス付き接触点 |
+| `Joint2D` | Revolute, Distance, Weld, Mouse ジョイントバリアント |
+| `BodyType2D` | Dynamic, Static, Kinematic |
+
+**アルゴリズム:**
+- **SAT**（分離軸定理）+ Voronoi領域分類
+- **XPBD** 位置ベースソルバー（設定可能なサブステップ）
+- ブロードフェーズAABBオーバーラップ、ナローフェーズポリゴン射影
+
+### `mass_properties` - 質量 & 慣性 (v0.5.0)
+
+| 関数 | 説明 |
+|------|------|
+| `sphere_mass_properties(radius, density)` | 球体の質量+慣性テンソル |
+| `box_mass_properties(half_extents, density)` | ボックスの質量+慣性テンソル |
+| `cylinder_mass_properties(radius, half_h, density)` | シリンダーの質量+慣性 |
+| `capsule_mass_properties(radius, half_h, density)` | カプセルの質量+慣性 |
+| `convex_hull_mass_properties(vertices, faces, density)` | 凸包の質量+慣性 |
+| `translate_inertia(inertia, mass, offset)` | 平行軸の定理 |
+
+### `collision_mesh_gen` - SDF→メッシュ (v0.5.0)
+
+| 型 / 関数 | 説明 |
+|-----------|------|
+| `CollisionMeshConfig` | グリッド解像度、バウンディングボックス、簡略化ターゲット |
+| `CollisionMesh` | 頂点+三角形インデックス出力 |
+| `generate_collision_mesh(sdf, config)` | マーチングキューブメッシュ生成 |
+| `simplify_mesh(mesh, target)` | エッジ崩壊メッシュ簡略化 |
+
+### `scene_io` - シーンシリアライズ (v0.5.0, std)
+
+| 関数 | 説明 |
+|------|------|
+| `save_binary(path, scene)` | `.aphys` バイナリ形式で保存（ビット精度Fix128） |
+| `load_binary(path)` | `.aphys` バイナリ形式から読み込み |
+| `save_json(path, scene)` | `.aphys.json` 人間可読形式で保存 |
+| `load_json(path)` | `.aphys.json` 形式から読み込み |
+
+**バイナリ形式:** マジック `APHYS\0`、リトルエンディアン、生の Fix128 `{hi: i64, lo: u64}` でビット精度決定論的往復。
+
+### `cloth_fluid` - クロス-流体カップリング (v0.5.0)
+
+| 型 | 説明 |
+|----|------|
+| `ClothFluidCoupling` | 双方向クロス-流体相互作用 |
+
+**効果:** クロス頂点への流体ドラッグ力、水没に基づく浮力、貫通防止の境界反発。
+
+### `rope_attach` - ロープアタッチメント (v0.5.0)
+
+| 型 | 説明 |
+|----|------|
+| `RopeAttachment` | ロープ端点を剛体に接続 |
+
+**機能:** 設定可能なコンプライアンス、破壊力閾値、自動デタッチメント。
+
+### `soft_body_cut` - ソフトボディ切断 (v0.5.0)
+
+| 関数 | 説明 |
+|------|------|
+| `cut_deformable(body, plane)` | 平面に沿って変形体を切断 |
+| `cut_cloth(cloth, plane)` | 平面に沿ってクロスメッシュを切断 |
+
+**アルゴリズム:** 平面ベースのトポロジー分割 -- 頂点を分類、交差点に新頂点を生成、接続性を再構築。
+
+### `heatmap` - 応力/温度ヒートマップ (v0.5.0)
+
+| 型 | 説明 |
+|----|------|
+| `Heatmap` | カラーマップ付き2Dスカラーフィールド可視化 |
+| `HeatmapConfig` | 解像度、値範囲、カラーマップ選択 |
+
+**機能:** Viridisカラーマップ、RGBAピクセル出力、設定可能な最小/最大範囲。
+
+### `flow_viz` - フロー可視化 (v0.5.0)
+
+| 型 | 説明 |
+|----|------|
+| `FlowArrow` | 位置、方向、大きさ付き速度矢印 |
+| `Streamline` | フローパスを辿る順序付き点リスト |
+
+**関数:** 速度場から `generate_flow_arrows()`、`generate_streamlines()`。
+
+### `contact_viz` - 接触可視化 (v0.5.0)
+
+| 型 | 説明 |
+|----|------|
+| `ContactArrow` | 接触点の力矢印 |
+| `FrictionCone` | 摩擦限界を表すコーンジオメトリ |
+
+**関数:** 接触マニフォールドから `visualize_contacts()`、`visualize_friction_cones()`。
+
+### `multi_world` - 複数物理ワールド (v0.5.0)
+
+| 型 | 説明 |
+|----|------|
+| `MultiWorld` | N個の独立した物理ワールドのコンテナ |
+
+**機能:**
+- `add_world()` / `remove_world()` -- 独立ワールドの管理
+- `step_all(dt)` -- 全ワールドを同時に進行
+- `transfer_body(from, to, body_id)` -- ワールド間のボディ移動
+
+### `particle` - パーティクルシステム (v0.5.0)
+
+| 型 | 説明 |
+|----|------|
+| `ParticleSystem` | 汎用パーティクルシミュレーション |
+| `ParticleEmitter` | コーンスプレッド付き方向性エミッター |
+| `Particle` | 位置、速度、年齢、ライフタイム、質量 |
+
+**機能:**
+- 設定可能なエミッションレート、スプレッド角、速度範囲
+- 自動リサイクル付きライフタイム管理
+- 完全な `ForceField` 統合（爆発と磁気を含む）
+- `DeterministicRng` による決定論的動作
 
 ### アナリティクス & プライバシー
 
@@ -1038,6 +1308,33 @@ cargo build --release --features neural
 cargo build --release --features ffi
 ```
 
+## テスト済みフィーチャー組み合わせ
+
+全フィーチャー組み合わせがmacOS、Ubuntu、Windows上のCIでテストされています：
+
+| 組み合わせ | ステータス | テスト数 |
+|-----------|----------|---------|
+| `--no-default-features` (no_std) | ✅ | 9 |
+| `--features std` (default) | ✅ | 645 + 72 + 20 |
+| `--features simd` | ✅ | 20 |
+| `--features parallel` | ✅ | 20 |
+| `--features "simd,parallel"` | ✅ | 20 |
+| `--features ffi` | ✅ | ビルドのみ |
+| `--features python` | ✅ | 1 |
+| `--features replay` | ✅ | ビルドのみ |
+| `--features analytics` | ✅ | ビルドのみ |
+| `--features neural` | ✅ | ビルドのみ |
+| `--features wasm` | ✅ | ビルドのみ |
+
+フィーチャー互換性マトリクス：
+
+| | std | simd | parallel | neural | python | ffi | wasm | replay | analytics |
+|---|---|---|---|---|---|---|---|---|---|
+| **std** | - | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **simd** | ✅ | - | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ |
+| **parallel** | ✅ | ✅ | - | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ |
+| **wasm** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | - | ❌ | ❌ |
+
 ## ゲームエンジン統合（C FFI / Unity / UE5）
 
 ALICE-Physicsは、Unity、Unreal Engine、およびC関数を呼べる全ての言語向けにC FFIレイヤーを提供します。
@@ -1113,8 +1410,8 @@ Blueprint対応の `UAlicePhysicsWorldComponent` を提供:
 タグをプッシュすると自動的にクロスプラットフォームビルドが実行されます：
 
 ```bash
-git tag v0.4.0
-git push origin v0.4.0
+git tag v0.6.0
+git push origin v0.6.0
 ```
 
 GitHub Actionsが macOS (ARM + Intel)、Windows、Linux 向けにビルドし、UE5プラグインZIPとUnityパッケージZIPをリリースに添付します。
@@ -1296,6 +1593,12 @@ ALICE-Physicsはフィーチャーゲート付きブリッジモジュールで�
 | `box_collider` | `OrientedBox` | 中心、半径、回転付きOBB |
 | `compound` | `CompoundShape` | マルチシェイプ複合コライダー |
 | `cylinder` | `Cylinder` | GJK対応シリンダーコライダー |
+| `cone` | `Cone` | コーンコライダー（頂点+Y、底面-Y） |
+| `ellipsoid` | `Ellipsoid` | 3軸独立半径の楕円体 |
+| `torus` | `Torus` | 主半径/副半径のトーラス |
+| `plane_collider` | `PlaneCollider` | ヘッセ標準形の無限平面 |
+| `wedge` | `Wedge` | 6頂点の三角柱（くさび） |
+| `convex_mesh_builder` | `build_convex_hull()` | インクリメンタル凸包構築 |
 | `filter` | `CollisionFilter` | レイヤー/マスク衝突グループ |
 
 ### ソルバー & ダイナミクス
@@ -1305,6 +1608,7 @@ ALICE-Physicsはフィーチャーゲート付きブリッジモジュールで�
 | `solver` | `PhysicsWorld` | メインシミュレーションワールド |
 | `solver` | `PhysicsConfig` | サブステップ、反復、重力、減衰 |
 | `solver` | `RigidBody` | 動的/静的/センサー剛体 |
+| `solver` | `BodyType` | Dynamic, Static, Kinematic |
 | `solver` | `DistanceConstraint` | アンカー点間の固定距離 |
 | `solver` | `ContactConstraint` | 摩擦/反発付き衝突応答 |
 | `solver` | `ContactModifier` trait | カスタム接触修正 (std) |
@@ -1316,10 +1620,17 @@ ALICE-Physicsはフィーチャーゲート付きブリッジモジュールで�
 | `joint` | `D6Joint` | 6自由度設定可能ジョイント |
 | `joint` | `ConeTwistJoint` | コーン+ツイスト制限ジョイント |
 | `joint` | `solve_joints_breakable()` | 破壊力対応ソルブ |
+| `joint_extra` | `PulleyJoint` | プーリージョイント（総距離拘束） |
+| `joint_extra` | `GearJoint` | ギアカップリング（角速度比率） |
+| `joint_extra` | `WeldJoint` | 破壊力閾値付き剛体溶接 |
+| `joint_extra` | `RackAndPinionJoint` | 回転-並進変換ジョイント |
+| `joint_extra` | `MouseJoint` | ターゲット追従ジョイント |
 | `motor` | `PdController` | 1D比例-微分コントローラ |
 | `motor` | `JointMotor` | 位置/速度/トルクモードモーター |
-| `force` | `ForceField` | 風、重力井戸、ドラッグ、浮力、ボルテックス |
+| `force` | `ForceField` | 風、重力井戸、ドラッグ、浮力、ボルテックス、爆発、磁気双極子 |
+| `force` | `ForceFieldInstance` | シミュレーション内のアクティブなフォースフィールド |
 | `material` | `MaterialTable` | ペアごと摩擦/反発テーブル |
+| `material` | `PhysicsMaterial` | マテリアルプロパティ |
 | `material` | `CombineRule` | 平均、最小、最大、乗算 |
 
 ### 空間加速
@@ -1354,18 +1665,54 @@ ALICE-Physicsはフィーチャーゲート付きブリッジモジュールで�
 | `deformable` | `DeformableBody`, `DeformableConfig` | FEM四面体メッシュ |
 | `vehicle` | `Vehicle`, `VehicleConfig` | 車両シミュレーション |
 | `character` | `CharacterController`, `CharacterConfig` | キネマティックmove-and-slide |
+| `cloth_fluid` | `ClothFluidCoupling` | 双方向クロス-流体カップリング |
+| `rope_attach` | `RopeAttachment` | 剛体ロープ接続 |
+| `soft_body_cut` | `cut_deformable()`, `cut_cloth()` | 平面ベース切断 |
+| `particle` | `ParticleSystem`, `ParticleEmitter`, `Particle` | 汎用パーティクルシステム |
+
+### 2D物理
+
+| モジュール | 型 / 関数 | 説明 |
+|-----------|----------|------|
+| `physics2d` | `Vec2Fix` | Fix128成分の2Dベクトル |
+| `physics2d` | `Shape2D` | Circle, Polygon, Capsule, Edge |
+| `physics2d` | `RigidBody2D` | 2D剛体 |
+| `physics2d` | `PhysicsWorld2D` | 2D物理ワールド（SAT + XPBD） |
+| `physics2d` | `Joint2D` | 2Dジョイント（Revolute, Distance, Weld, Mouse） |
+
+### メッシュ & I/O
+
+| モジュール | 型 / 関数 | 説明 |
+|-----------|----------|------|
+| `mass_properties` | `sphere_mass_properties()`, `box_mass_properties()` 等 | 質量・慣性テンソル計算 |
+| `collision_mesh_gen` | `generate_collision_mesh()`, `simplify_mesh()` | SDF→メッシュ生成 |
+| `scene_io` | `save_binary()`, `load_binary()`, `save_json()`, `load_json()` | シーンシリアライズ (std) |
+| `multi_world` | `MultiWorld` | 複数独立物理ワールド |
+
+### 可視化
+
+| モジュール | 型 / 関数 | 説明 |
+|-----------|----------|------|
+| `heatmap` | `Heatmap`, `HeatmapConfig` | 応力/温度ヒートマップ |
+| `flow_viz` | `FlowArrow`, `Streamline` | フロー可視化 |
+| `contact_viz` | `ContactArrow`, `FrictionCone` | 接触可視化 |
 
 ### SDF統合
 
 | モジュール | 型 / 関数 | 説明 |
 |-----------|----------|------|
-| `sdf_collider` | `SdfCollider`, `SdfField` trait | SDF衝突形状 |
-| `sdf_manifold` | `SdfManifold`, `ManifoldConfig` | マルチポイント接触 |
-| `sdf_ccd` | `SdfCcdConfig` | 球体トレーシングCCD |
-| `sdf_force` | `SdfForceField`, `SdfForceType` | SDF駆動力場 |
+| `sdf_collider` | `SdfCollider` | SDFを衝突形状として使用 |
+| `sdf_collider` | `SdfField` trait | 距離+法線評価インターフェース |
+| `sdf_collider` | `ClosureSdf` | クロージャベースSDF実装 |
+| `sdf_manifold` | `SdfManifold`, `ManifoldConfig` | SDF曲面からのマルチポイント接触 |
+| `sdf_ccd` | `SdfCcdConfig` | SDF向け球体トレーシングCCD |
+| `sdf_force` | `SdfForceField`, `SdfForceType` | SDF駆動力場（Attract, Repel, Contain, Flow） |
 | `sdf_destruction` | `DestructibleSdf`, `DestructionShape` | CSGブーリアン破壊 (std) |
-| `sdf_adaptive` | `AdaptiveSdfEvaluator` | 距離ベースLOD (std) |
-| `gpu_sdf` | `GpuSdfBatch`, `GpuSdfInstancedBatch`, `GpuSdfMultiDispatch` | GPUバッチSDF (std) |
+| `sdf_adaptive` | `AdaptiveSdfEvaluator` | 距離ベースLOD評価 (std) |
+| `convex_decompose` | `DecomposeConfig` | ボクセルグリッド分解設定 (std) |
+| `gpu_sdf` | `GpuSdfBatch` | GPUコンピュートSDFバッチ (std) |
+| `gpu_sdf` | `GpuSdfInstancedBatch` | インスタンスGPU SDFバッチ |
+| `gpu_sdf` | `GpuSdfMultiDispatch` | マルチバッチGPUディスパッチ |
 
 ### SDFシミュレーションモディファイア
 
@@ -1466,13 +1813,14 @@ ALICE-Physicsはフィーチャーゲート付きブリッジモジュールで�
 ## テスト結果
 
 ```
-v0.4.0 テストサマリ:
-  - 67モジュール全体で358ユニットテスト
-  - 10統合テスト（エンドツーエンド物理シナリオ）
-  - 11ドキュメントテスト（実行可能な例）
-  - 合計: 379テストパス
+v0.6.0 テストサマリ:
+  - 84モジュール全体で645ユニットテスト
+  - 72統合テスト（エンドツーエンド物理シナリオ）
+  - 20ドキュメントテスト（実行可能な例）
+  - 合計: 737テストパス
   - Clippy: 0警告
-  - 全フィーチャー組み合わせパス（default, parallel, simd）
+  - CI: Format + Clippy + Test (macOS/Ubuntu/Windows)
+  - 全フィーチャー組み合わせパス（default, parallel, simd, no_std）
 ```
 
 ## ライセンス
