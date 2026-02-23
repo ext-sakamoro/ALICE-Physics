@@ -19,6 +19,8 @@ All notable changes to ALICE-Physics will be documented in this file.
 - **Debug impls**: manual `Debug` for 10 container structs (Cloth, Fluid, Rope, Vehicle, DeformableBody, ParticleSystem, PhysicsWorld2D, MultiWorld, CharacterController, ContactCache)
 - **scene_io PartialEq**: `PhysicsScene`, `SerializedBody`, `SerializedJoint`, `PhysicsConfig`
 - **SECURITY.md**: security policy and vulnerability reporting guidelines
+- **Examples**: `basic_physics` (world setup, builder pattern, simulation loop) and `cloth_simulation` (grid cloth, wind, normals)
+- Explanation comments on ignored doc tests (`sdf_collider.rs`)
 - 10 new integration tests (stress test, damping, builder, Display, From/Into, CCD, errors, HeightField)
 
 ### Changed

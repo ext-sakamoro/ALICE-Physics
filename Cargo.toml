@@ -42,6 +42,14 @@ alice-analytics = { path = "../ALICE-Analytics", optional = true, default-featur
 tempfile = "3.10"
 criterion = { version = "0.5", default-features = false }
 
+[[example]]
+name = "basic_physics"
+required-features = ["std"]
+
+[[example]]
+name = "cloth_simulation"
+required-features = ["std"]
+
 [[bench]]
 name = "physics_bench"
 harness = false

@@ -13,6 +13,8 @@
 //! # Integration with ALICE-SDF
 //!
 //! ```ignore
+//! // ignored: requires the external `alice_sdf` crate and the `physics_bridge`
+//! // feature, which are not available in this crate's doc-test environment.
 //! use alice_sdf::CompiledSdf;
 //! use alice_physics::sdf_collider::{SdfCollider, SdfField};
 //!
