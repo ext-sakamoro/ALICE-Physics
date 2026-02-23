@@ -59,6 +59,35 @@ pub enum ForceField {
         /// Radius beyond which force falls off
         falloff_radius: Fix128,
     },
+
+    /// Explosion (radial impulse with distance falloff)
+    ///
+    /// Force: `strength * (1 - dist/radius)^falloff_power` directed away
+    /// from `center`. Zero force beyond `radius`.
+    Explosion {
+        /// Explosion center position
+        center: Vec3Fix,
+        /// Peak force strength at center
+        strength: Fix128,
+        /// Maximum blast radius (zero force beyond this distance)
+        radius: Fix128,
+        /// Falloff exponent (1 = linear, 2 = quadratic, etc.)
+        falloff_power: Fix128,
+    },
+
+    /// Magnetic dipole field approximation
+    ///
+    /// Simplified dipole model: force magnitude proportional to `strength / r^3`
+    /// directed along the dipole axis (`moment`). The `moment` vector encodes
+    /// both the dipole direction and relative magnitude.
+    Magnetic {
+        /// Dipole position in world space
+        position: Vec3Fix,
+        /// Dipole moment direction (normalized direction of the magnetic field)
+        moment: Vec3Fix,
+        /// Overall field strength multiplier
+        strength: Fix128,
+    },
 }
 
 /// A force field with optional body filter
@@ -75,6 +104,7 @@ pub struct ForceFieldInstance {
 impl ForceFieldInstance {
     /// Create a new force field instance affecting all bodies
     #[inline]
+    #[must_use]
     pub fn new(field: ForceField) -> Self {
         Self {
             field,
@@ -84,6 +114,7 @@ impl ForceFieldInstance {
     }
 
     /// Restrict this field to only affect specific bodies
+    #[must_use]
     pub fn with_affected_bodies(mut self, bodies: Vec<usize>) -> Self {
         self.affected_bodies = Some(bodies);
         self
@@ -103,6 +134,7 @@ impl ForceFieldInstance {
 }
 
 /// Compute force from a force field on a body at a given position
+#[must_use]
 pub fn compute_force(field: &ForceField, body: &RigidBody) -> Vec3Fix {
     match field {
         ForceField::Directional {
@@ -203,6 +235,85 @@ pub fn compute_force(field: &ForceField, body: &RigidBody) -> Vec3Fix {
             };
 
             tangent * (*strength * falloff)
+        }
+
+        ForceField::Explosion {
+            center,
+            strength,
+            radius,
+            falloff_power,
+        } => {
+            let delta = body.position - *center;
+            let dist_sq = delta.length_squared();
+
+            if dist_sq.is_zero() {
+                return Vec3Fix::ZERO;
+            }
+
+            let dist = dist_sq.sqrt();
+
+            // Beyond radius: zero force
+            if dist >= *radius {
+                return Vec3Fix::ZERO;
+            }
+
+            let direction = delta / dist;
+
+            // Falloff: (1 - dist/radius)^falloff_power
+            let ratio = Fix128::ONE - dist / *radius;
+
+            // Integer-power approximation for falloff_power via repeated multiplication.
+            // For non-integer powers this is a truncated approximation; sufficient
+            // for game-quality explosion curves.
+            let power_int = falloff_power.hi.max(0) as u32;
+            let mut falloff = Fix128::ONE;
+            let mut i = 0u32;
+            while i < power_int {
+                falloff = falloff * ratio;
+                i += 1;
+            }
+            // If power is 0, falloff stays ONE (constant force within radius).
+
+            direction * (*strength * falloff)
+        }
+
+        ForceField::Magnetic {
+            position,
+            moment,
+            strength,
+        } => {
+            let delta = body.position - *position;
+            let dist_sq = delta.length_squared();
+
+            if dist_sq.is_zero() {
+                return Vec3Fix::ZERO;
+            }
+
+            let dist = dist_sq.sqrt();
+
+            // Force magnitude: strength / r^3
+            let r_cubed = dist_sq * dist;
+
+            if r_cubed.is_zero() {
+                return Vec3Fix::ZERO;
+            }
+
+            let force_mag = *strength / r_cubed;
+
+            // Force direction along dipole moment axis
+            let moment_dir = moment.normalize();
+
+            // Simplified dipole: force along moment direction, magnitude ~ 1/r^3
+            // In a full dipole model the force depends on angle; here we project
+            // the displacement onto the dipole axis for a directional bias.
+            let alignment = delta.dot(moment_dir);
+
+            // If body is along the dipole axis, it is attracted; perpendicular = weaker.
+            // Simplified: force = strength / r^3 * dot(r_hat, m_hat) * m_hat
+            // This gives attraction along the axis and zero force in the equatorial plane.
+            let signed_mag = force_mag * alignment / dist;
+
+            moment_dir * signed_mag
         }
     }
 }
@@ -344,6 +455,200 @@ mod tests {
         assert!(
             force.z.abs() > Fix128::ZERO,
             "Vortex should produce tangential force"
+        );
+    }
+
+    // --- Explosion tests ---
+
+    #[test]
+    fn test_explosion_pushes_outward() {
+        let field = ForceField::Explosion {
+            center: Vec3Fix::ZERO,
+            strength: Fix128::from_int(100),
+            radius: Fix128::from_int(20),
+            falloff_power: Fix128::ONE,
+        };
+        let body = RigidBody::new(Vec3Fix::from_int(5, 0, 0), Fix128::ONE);
+        let force = compute_force(&field, &body);
+
+        // Force should push away from center (positive X)
+        assert!(
+            force.x > Fix128::ZERO,
+            "Explosion should push body away from center"
+        );
+    }
+
+    #[test]
+    fn test_explosion_zero_beyond_radius() {
+        let field = ForceField::Explosion {
+            center: Vec3Fix::ZERO,
+            strength: Fix128::from_int(100),
+            radius: Fix128::from_int(10),
+            falloff_power: Fix128::ONE,
+        };
+        // Body at distance 15, radius is 10 => zero force
+        let body = RigidBody::new(Vec3Fix::from_int(15, 0, 0), Fix128::ONE);
+        let force = compute_force(&field, &body);
+
+        assert!(
+            force.x.is_zero() && force.y.is_zero() && force.z.is_zero(),
+            "No explosion force beyond radius"
+        );
+    }
+
+    #[test]
+    fn test_explosion_at_center() {
+        let field = ForceField::Explosion {
+            center: Vec3Fix::ZERO,
+            strength: Fix128::from_int(100),
+            radius: Fix128::from_int(10),
+            falloff_power: Fix128::ONE,
+        };
+        let body = RigidBody::new(Vec3Fix::ZERO, Fix128::ONE);
+        let force = compute_force(&field, &body);
+        assert!(
+            force.x.is_zero() && force.y.is_zero() && force.z.is_zero(),
+            "No force at explosion center (zero distance)"
+        );
+    }
+
+    #[test]
+    fn test_explosion_falloff() {
+        let field_linear = ForceField::Explosion {
+            center: Vec3Fix::ZERO,
+            strength: Fix128::from_int(100),
+            radius: Fix128::from_int(20),
+            falloff_power: Fix128::ONE,
+        };
+        let field_quadratic = ForceField::Explosion {
+            center: Vec3Fix::ZERO,
+            strength: Fix128::from_int(100),
+            radius: Fix128::from_int(20),
+            falloff_power: Fix128::from_int(2),
+        };
+
+        let body = RigidBody::new(Vec3Fix::from_int(10, 0, 0), Fix128::ONE);
+        let force_linear = compute_force(&field_linear, &body);
+        let force_quadratic = compute_force(&field_quadratic, &body);
+
+        // At dist=10, radius=20: ratio = 0.5
+        // linear: 0.5^1 = 0.5, quadratic: 0.5^2 = 0.25
+        // So quadratic force should be smaller
+        assert!(
+            force_quadratic.x < force_linear.x,
+            "Quadratic falloff should produce weaker force than linear at same distance"
+        );
+    }
+
+    #[test]
+    fn test_explosion_apply_to_body() {
+        let fields = vec![ForceFieldInstance::new(ForceField::Explosion {
+            center: Vec3Fix::ZERO,
+            strength: Fix128::from_int(1000),
+            radius: Fix128::from_int(50),
+            falloff_power: Fix128::ONE,
+        })];
+
+        let mut bodies = vec![RigidBody::new(Vec3Fix::from_int(5, 0, 0), Fix128::ONE)];
+        let dt = Fix128::from_ratio(1, 60);
+        apply_force_fields(&fields, &mut bodies, dt);
+
+        assert!(
+            bodies[0].velocity.x > Fix128::ZERO,
+            "Explosion should accelerate body away"
+        );
+    }
+
+    // --- Magnetic tests ---
+
+    #[test]
+    fn test_magnetic_along_dipole_axis() {
+        let field = ForceField::Magnetic {
+            position: Vec3Fix::ZERO,
+            moment: Vec3Fix::UNIT_X,
+            strength: Fix128::from_int(1000),
+        };
+        // Body along the dipole axis (+X)
+        let body = RigidBody::new(Vec3Fix::from_int(2, 0, 0), Fix128::ONE);
+        let force = compute_force(&field, &body);
+
+        // Should produce force along X axis (dipole moment direction)
+        assert!(
+            force.x.abs() > Fix128::ZERO,
+            "Magnetic force should exist along dipole axis"
+        );
+    }
+
+    #[test]
+    fn test_magnetic_perpendicular_to_dipole() {
+        let field = ForceField::Magnetic {
+            position: Vec3Fix::ZERO,
+            moment: Vec3Fix::UNIT_X,
+            strength: Fix128::from_int(1000),
+        };
+        // Body perpendicular to dipole axis (along Y)
+        let body = RigidBody::new(Vec3Fix::from_int(0, 5, 0), Fix128::ONE);
+        let force = compute_force(&field, &body);
+
+        // dot(delta, moment) = 0, so force should be zero
+        assert!(
+            force.x.is_zero() && force.y.is_zero() && force.z.is_zero(),
+            "No magnetic force perpendicular to dipole axis"
+        );
+    }
+
+    #[test]
+    fn test_magnetic_at_dipole_position() {
+        let field = ForceField::Magnetic {
+            position: Vec3Fix::ZERO,
+            moment: Vec3Fix::UNIT_Z,
+            strength: Fix128::from_int(100),
+        };
+        let body = RigidBody::new(Vec3Fix::ZERO, Fix128::ONE);
+        let force = compute_force(&field, &body);
+        assert!(
+            force.x.is_zero() && force.y.is_zero() && force.z.is_zero(),
+            "No force at the dipole location"
+        );
+    }
+
+    #[test]
+    fn test_magnetic_inverse_cube_falloff() {
+        let field = ForceField::Magnetic {
+            position: Vec3Fix::ZERO,
+            moment: Vec3Fix::UNIT_X,
+            strength: Fix128::from_int(10000),
+        };
+
+        let body_near = RigidBody::new(Vec3Fix::from_int(2, 0, 0), Fix128::ONE);
+        let body_far = RigidBody::new(Vec3Fix::from_int(4, 0, 0), Fix128::ONE);
+
+        let force_near = compute_force(&field, &body_near);
+        let force_far = compute_force(&field, &body_far);
+
+        // 1/r^3: at r=2 vs r=4, force ratio should be (4/2)^3 = 8
+        // force_near should be stronger than force_far
+        assert!(
+            force_near.x.abs() > force_far.x.abs(),
+            "Magnetic force should be stronger at closer distance (1/r^3 falloff)"
+        );
+    }
+
+    #[test]
+    fn test_magnetic_apply_to_body() {
+        let fields = vec![ForceFieldInstance::new(ForceField::Magnetic {
+            position: Vec3Fix::ZERO,
+            moment: Vec3Fix::UNIT_X,
+            strength: Fix128::from_int(10000),
+        })];
+
+        let mut bodies = vec![RigidBody::new(Vec3Fix::from_int(3, 0, 0), Fix128::ONE)];
+        let dt = Fix128::from_ratio(1, 60);
+        apply_force_fields(&fields, &mut bodies, dt);
+
+        assert!(
+            bodies[0].velocity.x.abs() > Fix128::ZERO,
+            "Magnetic field should accelerate body"
         );
     }
 }

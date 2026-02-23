@@ -2,6 +2,37 @@
 
 All notable changes to ALICE-Physics will be documented in this file.
 
+## [0.5.0] - 2026-02-23
+
+### Added
+
+- **Collision shapes** (6 new): `cone`, `ellipsoid`, `torus`, `plane_collider`, `wedge`, `convex_mesh_builder`
+  - Cone with apex/base GJK support, AABB, volume, inertia
+  - Ellipsoid with 3-axis radii and anisotropic support function
+  - Torus with Minkowski sum decomposition support
+  - Infinite plane (Hessian normal form) with sphere/AABB intersection
+  - Wedge (triangular prism) with 6-vertex support
+  - Incremental convex hull builder with full algorithm (tetrahedron init, visible face removal, horizon patching)
+- **Joint types** (5 new in `joint_extra`): `PulleyJoint`, `GearJoint`, `WeldJoint` (breakable), `RackAndPinionJoint`, `MouseJoint`
+- **Force variants** (2 new): `Explosion` (radial impulse with falloff), `Magnetic` (simplified dipole, 1/r^3)
+- **2D physics subsystem** (`physics2d`): complete 2D physics engine
+  - `Vec2Fix`, `Shape2D` (Circle/Polygon/Capsule/Edge), `RigidBody2D`, `PhysicsWorld2D`
+  - SAT collision detection with Voronoi region classification
+  - XPBD 2D solver with substeps
+  - Joint2D: Revolute, Distance, Weld, Mouse
+  - Inertia computation for all 2D shapes
+- **Mass properties** (`mass_properties`): sphere, box, cylinder, capsule, convex hull inertia computation with parallel axis theorem
+- **Collision mesh generation** (`collision_mesh_gen`): marching cubes SDF-to-mesh with edge-collapse simplification
+- **Scene I/O** (`scene_io`, std-only): binary format (APHYS magic, LE encoding) with raw Fix128 serialization + JSON export
+- **Cloth-fluid coupling** (`cloth_fluid`): drag, buoyancy, boundary repulsion
+- **Rope attachment** (`rope_attach`): rigid body rope attachment with compliance and break force
+- **Soft body cutting** (`soft_body_cut`): plane-based cutting of deformable bodies and cloth
+- **Visualization**: `heatmap` (stress/temperature with viridis colormap), `flow_viz` (fluid arrows and streamlines), `contact_viz` (contact force arrows and friction cones)
+- **Multi-world** (`multi_world`): multiple independent physics worlds with body transfer
+- **Particle system** (`particle`): general-purpose emitters, lifetime, force field integration
+- 19 new source files, ~10,800 lines of new code
+- 303 new tests (397 → 700 total)
+
 ## [0.4.0] - 2026-02-22
 
 ### Added

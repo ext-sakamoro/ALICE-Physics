@@ -21,11 +21,11 @@
 //! | `simd` | SSE2 acceleration for `Vec3Fix` math ops (`dot`, `add`, `sub`). Results remain bit-exact. Solver hot paths use scalar arithmetic to guarantee cross-platform determinism. |
 //! | `parallel` | Parallel constraint solving via Rayon with graph-colored batches. |
 //! | `neural` | Deterministic neural controller integration (ALICE-ML). |
-//! | `python` | PyO3 + NumPy zero-copy Python bindings. |
+//! | `python` | `PyO3` + `NumPy` zero-copy Python bindings. |
 //! | `replay` | Replay recording/playback via ALICE-DB. |
 //! | `ffi` | C FFI for Unity/UE5/game engine integration. |
 //! | `wasm` | WebAssembly bindings via wasm-bindgen. |
-//! | `analytics` | ALICE-Analytics simulation profiling (DDSketch, HyperLogLog). |
+//! | `analytics` | ALICE-Analytics simulation profiling (`DDSketch`, `HyperLogLog`). |
 //!
 //! # Example
 //!
@@ -57,8 +57,8 @@
 //! # Modules
 //!
 //! ## Core
-//! - [`math`]: Fixed-point math primitives (Fix128, Vec3Fix, QuatFix, Mat3Fix, CORDIC)
-//! - [`collider`]: Collision shapes (Sphere, Capsule, ConvexHull, AABB) and GJK/EPA detection
+//! - [`math`]: Fixed-point math primitives (Fix128, `Vec3Fix`, `QuatFix`, `Mat3Fix`, CORDIC)
+//! - [`collider`]: Collision shapes (Sphere, Capsule, `ConvexHull`, AABB) and GJK/EPA detection
 //! - [`solver`]: XPBD physics solver, rigid body dynamics, constraint batching
 //! - [`bvh`]: Linear BVH for broad-phase collision detection (Morton codes, stackless traversal)
 //! - [`error`]: Unified physics error type (`PhysicsError`)
@@ -66,16 +66,22 @@
 //! ## Collision Shapes
 //! - [`box_collider`]: Oriented Bounding Box (OBB) with GJK support
 //! - [`compound`]: Multi-shape compound collider with local transforms
+//! - [`cone`]: Cone collider with GJK support (apex +Y, base -Y)
+//! - [`convex_mesh_builder`]: Incremental convex hull builder from point sets
 //! - [`cylinder`]: Cylinder collider with GJK support
+//! - [`ellipsoid`]: Ellipsoid collider with three independent semi-axes
+//! - [`plane_collider`]: Infinite plane collider (sphere/AABB intersection)
 //! - [`sdf_collider`]: SDF-based collision shapes (distance field surfaces)
+//! - [`torus`]: Torus collider with major/minor radii
+//! - [`wedge`]: Wedge (triangular prism) collider with 6 vertices
 //!
 //! ## Spatial Acceleration
 //! - [`dynamic_bvh`]: Incremental AABB tree with O(log n) insert/remove/update
 //! - [`spatial`]: Hash grid for neighbor queries (shared across fluid, cloth)
-//! - [`contact_cache`]: Persistent contact manifold cache with HashMap O(1) lookup
+//! - [`contact_cache`]: Persistent contact manifold cache with `HashMap` O(1) lookup
 //!
 //! ## Constraints & Dynamics
-//! - [`joint`]: Joint constraints (Ball, Hinge, Fixed, Slider, Spring, D6, ConeTwist)
+//! - [`joint`]: Joint constraints (Ball, Hinge, Fixed, Slider, Spring, D6, `ConeTwist`)
 //! - [`motor`]: PD controllers and joint motors
 //! - [`articulation`]: Articulated bodies (ragdolls, robotic arms, Featherstone)
 //! - [`force`]: Custom force fields (wind, gravity wells, buoyancy, vortex)
@@ -126,7 +132,7 @@
 //! - [`profiling`]: Per-stage timer and per-frame statistics
 //!
 //! ## Analytics & Privacy (`std`)
-//! - [`sketch`]: Probabilistic sketches (HyperLogLog, DDSketch, Count-Min)
+//! - [`sketch`]: Probabilistic sketches (`HyperLogLog`, `DDSketch`, Count-Min)
 //! - [`anomaly`]: Streaming anomaly detection (MAD, EWMA, Z-score)
 //! - [`privacy`]: Local differential privacy (Laplace, RAPPOR)
 //! - [`pipeline`]: Lock-free metric aggregation pipeline
@@ -175,15 +181,8 @@
     clippy::similar_names,
     clippy::many_single_char_names,
     clippy::module_name_repetitions,
-    clippy::must_use_candidate,
-    clippy::return_self_not_must_use,
-    clippy::doc_markdown,
     clippy::unreadable_literal,
     clippy::large_stack_arrays,
-    clippy::missing_panics_doc,
-    clippy::missing_errors_doc,
-    clippy::needless_pass_by_value,
-    clippy::unnecessary_wraps,
     clippy::inline_always
 )]
 #![cfg_attr(not(feature = "std"), no_std)]
@@ -209,17 +208,23 @@ pub mod bvh;
 pub mod ccd;
 pub mod character;
 pub mod cloth;
+pub mod cloth_fluid;
 pub mod collider;
+pub mod collision_mesh_gen;
 pub mod compound;
+pub mod cone;
 pub mod contact_cache;
+pub mod contact_viz;
 #[cfg(feature = "std")]
 pub mod convex_decompose;
+pub mod convex_mesh_builder;
 pub mod cylinder;
 #[cfg(feature = "replay")]
 pub mod db_bridge;
 pub mod debug_render;
 pub mod deformable;
 pub mod dynamic_bvh;
+pub mod ellipsoid;
 #[cfg(feature = "std")]
 pub mod erosion;
 pub mod error;
@@ -227,6 +232,7 @@ pub mod event;
 #[cfg(feature = "ffi")]
 pub mod ffi;
 pub mod filter;
+pub mod flow_viz;
 pub mod fluid;
 #[cfg(feature = "std")]
 pub mod fluid_netcode;
@@ -235,19 +241,25 @@ pub mod force;
 pub mod fracture;
 #[cfg(feature = "std")]
 pub mod gpu_sdf;
+pub mod heatmap;
 pub mod heightfield;
 pub mod interpolation;
 pub mod joint;
+pub mod joint_extra;
+pub mod mass_properties;
 pub mod material;
 pub mod math;
 pub mod motor;
+pub mod multi_world;
 pub mod netcode;
 #[cfg(feature = "neural")]
 pub mod neural;
+pub mod particle;
 #[cfg(feature = "std")]
 pub mod phase_change;
 #[cfg(feature = "std")]
 pub mod pipeline;
+pub mod plane_collider;
 #[cfg(feature = "std")]
 pub mod pressure;
 #[cfg(feature = "std")]
@@ -261,6 +273,9 @@ pub mod raycast;
 pub mod replay;
 pub mod rng;
 pub mod rope;
+pub mod rope_attach;
+#[cfg(feature = "std")]
+pub mod scene_io;
 #[cfg(feature = "std")]
 pub mod sdf_adaptive;
 pub mod sdf_ccd;
@@ -274,17 +289,22 @@ pub mod sim_field;
 #[cfg(feature = "std")]
 pub mod sim_modifier;
 
+pub mod physics2d;
+
 #[cfg(feature = "std")]
 pub mod sketch;
 pub mod sleeping;
+pub mod soft_body_cut;
 pub mod solver;
 pub mod spatial;
 #[cfg(feature = "std")]
 pub mod thermal;
+pub mod torus;
 pub mod trimesh;
 pub mod vehicle;
 #[cfg(feature = "wasm")]
 mod wasm;
+pub mod wedge;
 
 // Re-export commonly used types
 pub use animation_blend::{AnimationBlender, AnimationClip, BlendMode, SkeletonPose};
@@ -300,15 +320,28 @@ pub use bvh::{BvhNode, BvhPrimitive, LinearBvh};
 pub use ccd::{speculative_contact, CcdConfig};
 pub use character::{CharacterConfig, CharacterController, MoveResult, PushImpulse};
 pub use cloth::{Cloth, ClothConfig};
+pub use cloth_fluid::{
+    apply_cloth_boundary_to_fluid, apply_fluid_forces_to_cloth, ClothFluidCoupling,
+};
 pub use collider::{Capsule, CollisionResult, ConvexHull, ScaledShape, Sphere, Support, AABB};
+pub use collision_mesh_gen::{
+    compute_mesh_aabb, generate_collision_mesh, simplify_collision_mesh, CollisionMesh,
+    CollisionMeshConfig,
+};
 pub use compound::{CompoundShape, ShapeRef};
+pub use cone::Cone;
 pub use contact_cache::{BodyPairKey, ContactCache, ContactManifold};
+pub use contact_viz::{
+    generate_contact_arrows, generate_friction_cones, ContactArrow, FrictionCone,
+};
 #[cfg(feature = "std")]
 pub use convex_decompose::{DecomposeConfig, DecompositionResult};
+pub use convex_mesh_builder::{build_convex_hull, compute_centroid};
 pub use cylinder::Cylinder;
 pub use debug_render::{debug_draw_world, DebugColor, DebugDrawData, DebugDrawFlags};
 pub use deformable::{DeformableBody, DeformableConfig};
 pub use dynamic_bvh::DynamicAabbTree;
+pub use ellipsoid::Ellipsoid;
 #[cfg(feature = "std")]
 pub use erosion::{ErosionConfig, ErosionModifier, ErosionType};
 pub use error::PhysicsError;
@@ -316,6 +349,7 @@ pub use event::{ContactEvent, ContactEventType, EventCollector, TriggerEvent};
 /// Re-export predefined collision layer constants for convenience.
 pub use filter::layers;
 pub use filter::CollisionFilter;
+pub use flow_viz::{generate_flow_arrows, generate_streamlines, FlowArrow, FlowVizConfig};
 pub use fluid::{Fluid, FluidConfig};
 #[cfg(feature = "std")]
 pub use fluid_netcode::{FluidDelta, FluidSnapshot};
@@ -327,6 +361,10 @@ pub use gpu_sdf::{
     batch_size, GpuDispatchConfig, GpuSdfBatch, GpuSdfInstancedBatch, GpuSdfMultiDispatch,
     GpuSdfQuery, GpuSdfResult,
 };
+pub use heatmap::{
+    generate_stress_heatmap, generate_temperature_heatmap, heatmap_to_rgba, Heatmap, HeatmapConfig,
+    SliceAxis,
+};
 pub use heightfield::HeightField;
 pub use interpolation::{BodySnapshot, InterpolationState, WorldSnapshot};
 pub use joint::{solve_joints, solve_joints_breakable};
@@ -334,19 +372,33 @@ pub use joint::{
     BallJoint, ConeTwistJoint, D6Joint, D6Motion, FixedJoint, HingeJoint, Joint, JointType,
     SliderJoint, SpringJoint,
 };
+pub use joint_extra::{
+    solve_extra_joints, ExtraJoint, GearJoint, MouseJoint, PulleyJoint, RackAndPinionJoint,
+    WeldJoint,
+};
+pub use mass_properties::{
+    box_mass_properties, capsule_mass_properties, convex_hull_mass_properties,
+    cylinder_mass_properties, sphere_mass_properties, translate_inertia, MassProperties,
+};
 pub use material::{CombineRule, CombinedMaterial, MaterialId, MaterialTable, PhysicsMaterial};
 pub use math::{simd_width, Fix128, Mat3Fix, QuatFix, Vec3Fix, SIMD_WIDTH};
 pub use motor::{JointMotor, MotorMode, PdController};
+pub use multi_world::{MultiWorld, Portal};
 pub use netcode::{
     DeterministicSimulation, FrameInput, InputApplicator, NetcodeConfig, SimulationChecksum,
     SimulationSnapshot,
 };
+pub use particle::{Particle, ParticleEmitter, ParticleSystem};
 #[cfg(feature = "std")]
 pub use phase_change::{Phase, PhaseChangeConfig, PhaseChangeModifier};
+pub use physics2d::{
+    BodyType2D, Contact2D, Joint2D, PhysicsConfig2D, PhysicsWorld2D, RigidBody2D, Shape2D, Vec2Fix,
+};
 #[cfg(feature = "std")]
 pub use pipeline::{
     MetricEvent, MetricPipeline, MetricRegistry, MetricSnapshot, MetricType, RingBuffer,
 };
+pub use plane_collider::PlaneCollider;
 #[cfg(feature = "std")]
 pub use pressure::{PressureConfig, PressureModifier};
 #[cfg(feature = "std")]
@@ -363,6 +415,12 @@ pub use raycast::{
 };
 pub use rng::DeterministicRng;
 pub use rope::{Rope, RopeConfig};
+pub use rope_attach::{solve_rope_attachments, RopeAttachment};
+#[cfg(feature = "std")]
+pub use scene_io::{
+    load_scene, load_scene_json, save_scene, save_scene_json, PhysicsScene, SerializedBody,
+    SerializedJoint,
+};
 #[cfg(feature = "std")]
 pub use sdf_adaptive::{AdaptiveConfig, AdaptiveSdfEvaluator};
 pub use sdf_ccd::SdfCcdConfig;
@@ -380,6 +438,7 @@ pub use sim_modifier::{ModifiedSdf, PhysicsModifier, SingleModifiedSdf};
 #[cfg(feature = "std")]
 pub use sketch::{CountMinSketch, DDSketch, FnvHasher, HeavyHitters, HyperLogLog, Mergeable};
 pub use sleeping::{Island, IslandManager, SleepConfig, SleepData, SleepState};
+pub use soft_body_cut::{cut_cloth, cut_deformable, CutPlane, CutResult};
 #[cfg(feature = "std")]
 pub use solver::ContactModifier;
 pub use solver::{
@@ -388,8 +447,10 @@ pub use solver::{
 pub use spatial::SpatialGrid;
 #[cfg(feature = "std")]
 pub use thermal::{HeatSource, ThermalConfig, ThermalModifier};
+pub use torus::Torus;
 pub use trimesh::{TriMesh, Triangle};
 pub use vehicle::{Vehicle, VehicleConfig};
+pub use wedge::Wedge;
 
 /// Prelude module for convenient imports
 pub mod prelude {
@@ -406,23 +467,39 @@ pub mod prelude {
     pub use crate::ccd::{speculative_contact, CcdConfig};
     pub use crate::character::{CharacterConfig, CharacterController, MoveResult, PushImpulse};
     pub use crate::cloth::{Cloth, ClothConfig};
+    pub use crate::cloth_fluid::{
+        apply_cloth_boundary_to_fluid, apply_fluid_forces_to_cloth, ClothFluidCoupling,
+    };
     pub use crate::collider::{
         Capsule, CollisionResult, ConvexHull, ScaledShape, Sphere, Support, AABB,
     };
+    pub use crate::collision_mesh_gen::{
+        compute_mesh_aabb, generate_collision_mesh, simplify_collision_mesh, CollisionMesh,
+        CollisionMeshConfig,
+    };
     pub use crate::compound::{CompoundShape, ShapeRef};
+    pub use crate::cone::Cone;
     pub use crate::contact_cache::{BodyPairKey, ContactCache, ContactManifold};
+    pub use crate::contact_viz::{
+        generate_contact_arrows, generate_friction_cones, ContactArrow, FrictionCone,
+    };
     #[cfg(feature = "std")]
     pub use crate::convex_decompose::{DecomposeConfig, DecompositionResult};
+    pub use crate::convex_mesh_builder::{build_convex_hull, compute_centroid};
     pub use crate::cylinder::Cylinder;
     pub use crate::debug_render::{debug_draw_world, DebugColor, DebugDrawData, DebugDrawFlags};
     pub use crate::deformable::{DeformableBody, DeformableConfig};
     pub use crate::dynamic_bvh::DynamicAabbTree;
+    pub use crate::ellipsoid::Ellipsoid;
     #[cfg(feature = "std")]
     pub use crate::erosion::{ErosionConfig, ErosionModifier, ErosionType};
     pub use crate::error::PhysicsError;
     pub use crate::event::{ContactEvent, ContactEventType, EventCollector, TriggerEvent};
     pub use crate::filter::layers;
     pub use crate::filter::CollisionFilter;
+    pub use crate::flow_viz::{
+        generate_flow_arrows, generate_streamlines, FlowArrow, FlowVizConfig,
+    };
     pub use crate::fluid::{Fluid, FluidConfig};
     #[cfg(feature = "std")]
     pub use crate::fluid_netcode::{FluidDelta, FluidSnapshot};
@@ -434,6 +511,10 @@ pub mod prelude {
         batch_size, GpuDispatchConfig, GpuSdfBatch, GpuSdfInstancedBatch, GpuSdfMultiDispatch,
         GpuSdfQuery, GpuSdfResult,
     };
+    pub use crate::heatmap::{
+        generate_stress_heatmap, generate_temperature_heatmap, heatmap_to_rgba, Heatmap,
+        HeatmapConfig, SliceAxis,
+    };
     pub use crate::heightfield::HeightField;
     pub use crate::interpolation::{BodySnapshot, InterpolationState, WorldSnapshot};
     pub use crate::joint::{solve_joints, solve_joints_breakable};
@@ -441,11 +522,20 @@ pub mod prelude {
         BallJoint, ConeTwistJoint, D6Joint, D6Motion, FixedJoint, HingeJoint, Joint, JointType,
         SliderJoint, SpringJoint,
     };
+    pub use crate::joint_extra::{
+        solve_extra_joints, ExtraJoint, GearJoint, MouseJoint, PulleyJoint, RackAndPinionJoint,
+        WeldJoint,
+    };
+    pub use crate::mass_properties::{
+        box_mass_properties, capsule_mass_properties, convex_hull_mass_properties,
+        cylinder_mass_properties, sphere_mass_properties, translate_inertia, MassProperties,
+    };
     pub use crate::material::{
         CombineRule, CombinedMaterial, MaterialId, MaterialTable, PhysicsMaterial,
     };
     pub use crate::math::{simd_width, Fix128, Mat3Fix, QuatFix, Vec3Fix, SIMD_WIDTH};
     pub use crate::motor::{JointMotor, MotorMode, PdController};
+    pub use crate::multi_world::{MultiWorld, Portal};
     pub use crate::netcode::{
         DeterministicSimulation, FrameInput, InputApplicator, NetcodeConfig, SimulationChecksum,
         SimulationSnapshot,
@@ -456,12 +546,14 @@ pub mod prelude {
         fix128_ternary_matvec, Activation, ControllerConfig, ControllerOutput,
         DeterministicNetwork, FixedTernaryWeight, RagdollController,
     };
+    pub use crate::particle::{Particle, ParticleEmitter, ParticleSystem};
     #[cfg(feature = "std")]
     pub use crate::phase_change::{Phase, PhaseChangeConfig, PhaseChangeModifier};
     #[cfg(feature = "std")]
     pub use crate::pipeline::{
         MetricEvent, MetricPipeline, MetricRegistry, MetricSnapshot, MetricType, RingBuffer,
     };
+    pub use crate::plane_collider::PlaneCollider;
     #[cfg(feature = "std")]
     pub use crate::pressure::{PressureConfig, PressureModifier};
     #[cfg(feature = "std")]
@@ -479,6 +571,12 @@ pub mod prelude {
     };
     pub use crate::rng::DeterministicRng;
     pub use crate::rope::{Rope, RopeConfig};
+    pub use crate::rope_attach::{solve_rope_attachments, RopeAttachment};
+    #[cfg(feature = "std")]
+    pub use crate::scene_io::{
+        load_scene, load_scene_json, save_scene, save_scene_json, PhysicsScene, SerializedBody,
+        SerializedJoint,
+    };
     #[cfg(feature = "std")]
     pub use crate::sdf_adaptive::{AdaptiveConfig, AdaptiveSdfEvaluator};
     pub use crate::sdf_ccd::SdfCcdConfig;
@@ -498,6 +596,7 @@ pub mod prelude {
         CountMinSketch, DDSketch, FnvHasher, HeavyHitters, HyperLogLog, Mergeable,
     };
     pub use crate::sleeping::{Island, IslandManager, SleepConfig, SleepData, SleepState};
+    pub use crate::soft_body_cut::{cut_cloth, cut_deformable, CutPlane, CutResult};
     #[cfg(feature = "std")]
     pub use crate::solver::ContactModifier;
     pub use crate::solver::{
@@ -506,8 +605,10 @@ pub mod prelude {
     pub use crate::spatial::SpatialGrid;
     #[cfg(feature = "std")]
     pub use crate::thermal::{HeatSource, ThermalConfig, ThermalModifier};
+    pub use crate::torus::Torus;
     pub use crate::trimesh::{TriMesh, Triangle};
     pub use crate::vehicle::{Vehicle, VehicleConfig};
+    pub use crate::wedge::Wedge;
 }
 
 #[cfg(test)]
