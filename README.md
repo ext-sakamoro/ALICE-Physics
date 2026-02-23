@@ -1,6 +1,6 @@
 # ALICE-Physics
 
-**Deterministic 128-bit Fixed-Point Physics Engine** - v0.4.0
+**Deterministic 128-bit Fixed-Point Physics Engine** - v0.5.0
 
 English | [日本語](README_JP.md)
 
@@ -18,7 +18,7 @@ A high-precision physics engine designed for deterministic simulation across dif
 | **Constraint Batching** | Graph-colored parallel constraint solving |
 | **Rollback Support** | Complete state serialization for netcode |
 | **Neural Controller** | Deterministic AI via ALICE-ML ternary weights + Fix128 inference |
-| **7 Joint Types** | Ball, Hinge, Fixed, Slider, Spring, D6, Cone-Twist with angle limits, motors, and breakable constraints |
+| **12 Joint Types** | Ball, Hinge, Fixed, Slider, Spring, D6, Cone-Twist, Pulley, Gear, Weld (breakable), Rack-and-Pinion, Mouse |
 | **Raycasting** | Ray and shape casting against spheres, AABBs, capsules, planes |
 | **Shape Cast / Overlap** | Sphere cast, capsule cast, overlap sphere, overlap AABB queries |
 | **CCD** | Continuous collision detection (TOI, conservative advancement) |
@@ -26,7 +26,7 @@ A high-precision physics engine designed for deterministic simulation across dif
 | **Triangle Mesh** | BVH-accelerated triangle mesh collision (Moller-Trumbore) |
 | **Height Field** | Grid terrain with bilinear interpolation |
 | **Articulated Bodies** | Multi-joint chains, ragdolls, robotic arms with FK propagation |
-| **Force Fields** | Wind, gravity wells, drag, buoyancy, vortex |
+| **Force Fields** | Wind, gravity wells, drag, buoyancy, vortex, explosion, magnetic dipole |
 | **PD Controllers** | 1D/3D proportional-derivative joint motors |
 | **Collision Filtering** | Layer/mask bitmask system with collision groups |
 | **Trigger/Sensor** | Sensor bodies that detect overlap without physics response |
@@ -71,6 +71,24 @@ A high-precision physics engine designed for deterministic simulation across dif
 | **Streaming Anomaly Detection** | MAD, EWMA, Z-score composite detector |
 | **Local Differential Privacy** | Laplace noise, RAPPOR, randomized response |
 | **Metric Pipeline** | Lock-free ring buffer metric aggregation with registry |
+| **Cone Collider** | Cone shape with GJK support (apex +Y, base -Y) |
+| **Ellipsoid Collider** | Three independent semi-axes with anisotropic support |
+| **Torus Collider** | Major/minor radii with Minkowski sum decomposition |
+| **Plane Collider** | Infinite plane (Hessian normal form) with sphere/AABB intersection |
+| **Wedge Collider** | Triangular prism with 6-vertex GJK support |
+| **Convex Hull Builder** | Incremental convex hull from arbitrary point sets |
+| **2D Physics** | Complete 2D subsystem: SAT collision, XPBD solver, Circle/Polygon/Capsule/Edge shapes |
+| **Mass Properties** | Inertia tensor computation for sphere, box, cylinder, capsule, convex hull |
+| **Collision Mesh Gen** | Marching cubes SDF-to-mesh with edge-collapse simplification |
+| **Scene I/O** | Binary (.aphys) and JSON scene serialization with bit-exact Fix128 roundtrip |
+| **Cloth-Fluid Coupling** | Bidirectional cloth-fluid interaction (drag, buoyancy, boundary repulsion) |
+| **Rope Attachment** | Rigid body rope attachment with compliance and break force |
+| **Soft Body Cutting** | Plane-based cutting of deformable bodies and cloth |
+| **Stress Heatmap** | Stress/temperature/pressure 2D slice visualization with viridis colormap |
+| **Flow Visualization** | Fluid velocity field arrows and streamline generation |
+| **Contact Visualization** | Contact force arrows and friction cone rendering |
+| **Multi-World** | Multiple independent physics worlds with body transfer |
+| **Particle System** | General-purpose emitters, lifetime, force field integration |
 | **no_std Compatible** | Works on embedded systems and WebAssembly |
 
 ## Optimizations ("黒焦げ" Edition) — 100/100
@@ -86,7 +104,7 @@ ALICE-Physics achieves a **perfect 100/100 optimization score** across 6 layers:
 | **L3: Compute** | 20/20 | Warm-start `cached_lambda`, reciprocal precomputation (`inv_rest_length`, `inv_rest_density`) |
 | **L4: GPU & Throughput** | 15/15 | `SIMD_WIDTH` const + `simd_width()`, `GpuSdfInstancedBatch`/`GpuSdfMultiDispatch`, `batch_size()` |
 | **L5: Build Profile** | 10/10 | `opt-level=3`, `lto="fat"`, `codegen-units=1`, `panic="abort"`, `strip=true` |
-| **L6: Code Quality** | 20/20 | 432 tests (358 unit + 62 integration + 12 doc), clippy 0 warnings |
+| **L6: Code Quality** | 20/20 | 720 tests (638 unit + 62 integration + 20 doc), clippy 0 warnings |
 | **Total** | **100/100** | |
 
 ### L1: Memory Layout (15/15)
@@ -165,10 +183,10 @@ strip = true           # Strip symbols
 
 ### L6: Code Quality (20/20)
 
-- **358 unit tests** across 63 modules
+- **638 unit tests** across 84 modules
 - **62 integration tests** (end-to-end physics scenarios)
-- **12 doc tests** with runnable examples (sketch, anomaly, privacy, pipeline, solver)
-- **Total: 432 passing tests**, clippy: 0 warnings
+- **20 doc tests** with runnable examples
+- **Total: 720 passing tests**, clippy: 0 warnings (`-W clippy::all`)
 
 ---
 
@@ -303,8 +321,8 @@ ALICE-Physics guarantees **bit-exact results** everywhere, enabling:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                          ALICE-Physics v0.4.0                                │
-│              63 modules, 358 unit tests, 62 integration, 12 doc tests         │
+│                          ALICE-Physics v0.5.0                                │
+│              84 modules, 638 unit tests, 62 integration, 20 doc tests         │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │  Core Layer                                                                  │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐          │
@@ -315,7 +333,7 @@ ALICE-Physics guarantees **bit-exact results** everywhere, enabling:
 │  │ CORDIC   │ │ GJK/EPA  │ │ Rollback │ │  alloc   │ │          │          │
 │  └──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘          │
 │                                                                              │
-│  AAA Engine Layer (v0.4.0)                                                   │
+│  AAA Engine Layer                                                            │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐          │
 │  │box_colldr│ │ compound │ │cont_cache│ │dynamic_bv│ │ material │          │
 │  │ OBB      │ │ Multi-   │ │ HashMap  │ │ Incr BVH │ │ Pair Tbl │          │
@@ -331,18 +349,38 @@ ALICE-Physics guarantees **bit-exact results** everywhere, enabling:
 │  │ BVH/AABB │ │ History  │ │ Alpha    │                                    │
 │  └──────────┘ └──────────┘ └──────────┘                                    │
 │                                                                              │
+│  Collision Shapes (v0.5.0)                                                  │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐          │
+│  │  cone    │ │ellipsoid │ │  torus   │ │plane_col │ │  wedge   │          │
+│  │ Apex/Base│ │ 3-Axis   │ │ Maj/Min  │ │ Hessian  │ │ TriPrism │          │
+│  │ GJK Supp│ │ Aniso    │ │ Minkowsk │ │ Sph/AABB │ │ 6-Vertex │          │
+│  │ Inertia  │ │ Support  │ │ Support  │ │ Intersct │ │ GJK Supp│          │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘          │
+│  ┌──────────┐                                                               │
+│  │cvx_mesh  │                                                               │
+│  │ Incr Hull│                                                               │
+│  │ Tetra    │                                                               │
+│  │ Horizon  │                                                               │
+│  └──────────┘                                                               │
+│                                                                              │
 │  Constraint & Dynamics Layer                                                 │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐          │
-│  │  joint   │ │  motor   │ │articulatn│ │  force   │ │ sleeping │          │
-│  │ Ball     │ │ PD 1D/3D │ │ Ragdoll  │ │ Wind     │ │ Islands  │          │
-│  │ Hinge    │ │ Position │ │ FK Chain │ │ Gravity  │ │ Union-   │          │
-│  │ Fixed    │ │ Velocity │ │ Robotic  │ │ Buoyancy │ │  Find    │          │
-│  │ Slider   │ │ Max Torq │ │ Feather- │ │ Drag     │ │ Auto     │          │
-│  │ Spring   │ │          │ │  stone   │ │ Vortex   │ │  Sleep   │          │
-│  │ D6       │ │          │ │ 12-body  │ │          │ │          │          │
-│  │ ConeTwst │ │          │ │          │ │          │ │          │          │
+│  │  joint   │ │joint_extr│ │  motor   │ │articulatn│ │  force   │          │
+│  │ Ball     │ │ Pulley   │ │ PD 1D/3D │ │ Ragdoll  │ │ Wind     │          │
+│  │ Hinge    │ │ Gear     │ │ Position │ │ FK Chain │ │ Gravity  │          │
+│  │ Fixed    │ │ Weld     │ │ Velocity │ │ Robotic  │ │ Buoyancy │          │
+│  │ Slider   │ │ Rack&Pin │ │ Max Torq │ │ Feather- │ │ Drag     │          │
+│  │ Spring   │ │ Mouse    │ │          │ │  stone   │ │ Vortex   │          │
+│  │ D6       │ │ Breakabl │ │          │ │ 12-body  │ │ Explosion│          │
+│  │ ConeTwst │ │          │ │          │ │          │ │ Magnetic │          │
 │  │ Breakable│ │          │ │          │ │          │ │          │          │
 │  └──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘          │
+│  ┌──────────┐                                                               │
+│  │ sleeping │                                                               │
+│  │ Islands  │                                                               │
+│  │ Union-   │                                                               │
+│  │  Find    │                                                               │
+│  └──────────┘                                                               │
 │                                                                              │
 │  Query & Collision Layer                                                     │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐          │
@@ -369,6 +407,12 @@ ALICE-Physics guarantees **bit-exact results** everywhere, enabling:
 │  │ Chain    │ │ Self-Col │ │ Density  │ │ Volume   │ │ Engine   │          │
 │  │ Cable    │ │ SpatHash │ │ Viscosty │ │ Neo-Hook │ │ Steering │          │
 │  └──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘          │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐                       │
+│  │clth_flud │ │rope_atth │ │soft_cut  │ │ particle │                       │
+│  │ Drag     │ │ RigidBdy │ │ Plane    │ │ Emitters │                       │
+│  │ Buoyancy │ │ Complnce │ │ Deform   │ │ Lifetime │                       │
+│  │ Boundary │ │ Break    │ │ Cloth    │ │ ForceInt │                       │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────┘                       │
 │                                                                              │
 │  SDF Advanced Layer                                                          │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐          │
@@ -400,6 +444,30 @@ ALICE-Physics guarantees **bit-exact results** everywhere, enabling:
 │  │ Voronoi  │ │ Latent H │                                                  │
 │  └──────────┘ └──────────┘                                                  │
 │                                                                              │
+│  2D Physics Subsystem (v0.5.0)                                              │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │ physics2d                                                           │    │
+│  │ Vec2Fix, Shape2D (Circle/Polygon/Capsule/Edge), RigidBody2D         │    │
+│  │ SAT + Voronoi collision, XPBD 2D solver, Joint2D (Rev/Dist/Weld/M) │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
+│                                                                              │
+│  Mesh & I/O Utilities (v0.5.0)                                              │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐                       │
+│  │mass_prop │ │col_mesh  │ │ scene_io │ │multi_wrld│                       │
+│  │ Sphere   │ │ Marching │ │ Binary   │ │ N worlds │                       │
+│  │ Box      │ │ Cubes    │ │ APHYS    │ │ Transfer │                       │
+│  │ Cylinder │ │ EdgeClps │ │ JSON     │ │ Isolate  │                       │
+│  │ PAxis    │ │ Simplify │ │ Fix128   │ │ Step All │                       │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────┘                       │
+│                                                                              │
+│  Visualization (v0.5.0)                                                     │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐                                    │
+│  │ heatmap  │ │ flow_viz │ │contct_viz│                                    │
+│  │ Stress   │ │ Arrows   │ │ Force    │                                    │
+│  │ Temp     │ │ Streamln │ │ Friction │                                    │
+│  │ Viridis  │ │ Velocity │ │ Cone     │                                    │
+│  └──────────┘ └──────────┘ └──────────┘                                    │
+│                                                                              │
 │  Game Systems Layer                                                          │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐                                    │
 │  │anim_blnd │ │audio_phys│ │ netcode  │                                    │
@@ -409,7 +477,7 @@ ALICE-Physics guarantees **bit-exact results** everywhere, enabling:
 │  │ IK Mix   │ │ Material │ │ Rollback │                                    │
 │  └──────────┘ └──────────┘ └──────────┘                                    │
 │                                                                              │
-│  Analytics & Privacy Layer (v0.4.0)                                         │
+│  Analytics & Privacy Layer                                                   │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐                       │
 │  │  sketch  │ │ anomaly  │ │ privacy  │ │ pipeline │                       │
 │  │ HyperLog │ │ MAD      │ │ Laplace  │ │ MetricPi │                       │
@@ -642,7 +710,7 @@ println!("Nodes: {}, Leaves: {}", stats.node_count, stats.leaf_count);
 - **Escape Pointers**: Stackless traversal (zero allocation)
 - **i32 AABB**: Fast integer comparison without Fix128 reconstruction
 
-### `joint` - 7 Joint Types + Breakable Constraints
+### `joint` - 12 Joint Types + Breakable Constraints
 
 | Type | Description |
 |------|-------------|
@@ -653,6 +721,16 @@ println!("Nodes: {}, Leaves: {}", stats.node_count, stats.leaf_count);
 | `SpringJoint` | Damped spring constraint |
 | `D6Joint` | 6-DOF configurable joint with per-axis lock/free/limit |
 | `ConeTwistJoint` | Ball joint with cone swing limit and twist limit |
+
+### `joint_extra` - 5 Advanced Joints (v0.5.0)
+
+| Type | Description |
+|------|-------------|
+| `PulleyJoint` | Pulley with 2 anchors and rope ratio (total distance constraint) |
+| `GearJoint` | Gear coupling (angular velocity ratio between two bodies) |
+| `WeldJoint` | Rigid weld with `break_force` / `break_torque` threshold |
+| `RackAndPinionJoint` | Rotation-to-translation conversion with pitch radius |
+| `MouseJoint` | Target-following joint for mouse/touch drag interaction |
 
 All joint types support **breakable constraints** via `with_break_force(max_force)`. When the constraint force exceeds the threshold, the joint breaks and is removed from simulation.
 
@@ -741,7 +819,7 @@ let broken = solve_joints_breakable(&joints, &mut bodies, dt);
 | `CollisionFilter` | Layer/mask bitmask with collision groups |
 | `layers` module | Predefined layers (DEFAULT, STATIC, PLAYER, ENEMY, etc.) |
 
-### `force` - Force Fields
+### `force` - 7 Force Fields
 
 | Variant | Description |
 |---------|-------------|
@@ -750,6 +828,8 @@ let broken = solve_joints_breakable(&joints, &mut bodies, dt);
 | `Drag` | Velocity-proportional drag |
 | `Buoyancy` | Plane-based buoyancy with density |
 | `Vortex` | Spinning vortex field (center + axis + strength) |
+| `Explosion` | Radial impulse with configurable `falloff_power` attenuation |
+| `Magnetic` | Simplified dipole model with 1/r^3 inverse cube law |
 
 ### `motor` - PD Controllers
 
@@ -863,6 +943,193 @@ let broken = solve_joints_breakable(&joints, &mut bodies, dt);
 - Spring-damper suspension
 - Engine torque with gear shifting
 - Ackermann steering geometry
+
+### `cone` - Cone Collider (v0.5.0)
+
+| Type | Description |
+|------|-------------|
+| `Cone` | Cone collider with apex at +Y and base at -Y |
+
+**Features:**
+- GJK `Support` trait implementation (apex/base center switching)
+- AABB computation, volume, surface area, inertia diagonal
+- Configurable radius and half-height with rotation
+
+### `ellipsoid` - Ellipsoid Collider (v0.5.0)
+
+| Type | Description |
+|------|-------------|
+| `Ellipsoid` | Ellipsoid with three independent semi-axes (rx, ry, rz) |
+
+**Features:**
+- Anisotropic GJK support (scale direction by radii, normalize, scale back)
+- Volume, AABB, and inertia diagonal computation
+
+### `torus` - Torus Collider (v0.5.0)
+
+| Type | Description |
+|------|-------------|
+| `Torus` | Torus with major radius (ring) and minor radius (tube) |
+
+**Features:**
+- GJK support via Minkowski sum decomposition
+- Volume and AABB computation
+
+### `plane_collider` - Infinite Plane Collider (v0.5.0)
+
+| Type | Description |
+|------|-------------|
+| `PlaneCollider` | Infinite plane in Hessian normal form (normal + offset) |
+
+**Features:**
+- `intersect_sphere()` — sphere-plane intersection with contact point
+- `intersect_aabb()` — AABB-plane overlap test
+- `signed_distance()` — point-plane signed distance
+
+### `wedge` - Wedge Collider (v0.5.0)
+
+| Type | Description |
+|------|-------------|
+| `Wedge` | Triangular prism (wedge) with 6 vertices |
+
+**Features:**
+- GJK support (iterates 6 vertices for max dot product)
+- Volume, AABB, and centroid computation
+
+### `convex_mesh_builder` - Convex Hull Builder (v0.5.0)
+
+| Function | Description |
+|----------|-------------|
+| `build_convex_hull(points)` | Build convex hull from arbitrary point set |
+| `compute_centroid(faces, vertices)` | Compute centroid of convex hull |
+
+**Algorithm:** Incremental convex hull — find initial tetrahedron, incrementally insert points, remove visible faces, patch with horizon edges.
+
+### `physics2d` - 2D Physics Engine (v0.5.0)
+
+| Type | Description |
+|------|-------------|
+| `Vec2Fix` | 2D vector with Fix128 components |
+| `Shape2D` | Circle, Polygon (max 16 vertices), Capsule, Edge |
+| `RigidBody2D` | 2D rigid body with position, angle, velocity, angular velocity |
+| `PhysicsWorld2D` | Complete 2D physics world with XPBD solver |
+| `PhysicsConfig2D` | Gravity, substeps, iterations, sleep threshold |
+| `Contact2D` | Contact point with normal, depth, body indices |
+| `Joint2D` | Revolute, Distance, Weld, Mouse joint variants |
+| `BodyType2D` | Dynamic, Static, Kinematic |
+
+**Algorithms:**
+- **SAT** (Separating Axis Theorem) with Voronoi region classification
+- **XPBD** position-based solver with configurable substeps
+- Broad-phase AABB overlap, narrow-phase polygon projection
+
+### `mass_properties` - Mass & Inertia (v0.5.0)
+
+| Function | Description |
+|----------|-------------|
+| `sphere_mass_properties(radius, density)` | Sphere mass + inertia tensor |
+| `box_mass_properties(half_extents, density)` | Box mass + inertia tensor |
+| `cylinder_mass_properties(radius, half_h, density)` | Cylinder mass + inertia |
+| `capsule_mass_properties(radius, half_h, density)` | Capsule mass + inertia |
+| `convex_hull_mass_properties(vertices, faces, density)` | Convex hull mass + inertia |
+| `translate_inertia(inertia, mass, offset)` | Parallel axis theorem |
+
+### `collision_mesh_gen` - SDF to Mesh (v0.5.0)
+
+| Type / Function | Description |
+|-----------------|-------------|
+| `CollisionMeshConfig` | Grid resolution, bounding box, simplification target |
+| `CollisionMesh` | Vertices + triangle indices output |
+| `generate_collision_mesh(sdf, config)` | Marching cubes mesh generation |
+| `simplify_mesh(mesh, target)` | Edge-collapse mesh simplification |
+
+### `scene_io` - Scene Serialization (v0.5.0, std)
+
+| Function | Description |
+|----------|-------------|
+| `save_binary(path, scene)` | Save to `.aphys` binary format (bit-exact Fix128) |
+| `load_binary(path)` | Load from `.aphys` binary format |
+| `save_json(path, scene)` | Save to `.aphys.json` human-readable format |
+| `load_json(path)` | Load from `.aphys.json` format |
+
+**Binary format:** Magic `APHYS\0`, little-endian, raw Fix128 `{hi: i64, lo: u64}` for bit-exact deterministic roundtrip.
+
+### `cloth_fluid` - Cloth-Fluid Coupling (v0.5.0)
+
+| Type | Description |
+|------|-------------|
+| `ClothFluidCoupling` | Bidirectional cloth-fluid interaction |
+
+**Effects:** Fluid drag force on cloth vertices, buoyancy based on submersion, boundary repulsion to prevent penetration.
+
+### `rope_attach` - Rope Attachment (v0.5.0)
+
+| Type | Description |
+|------|-------------|
+| `RopeAttachment` | Attach rope endpoints to rigid bodies |
+
+**Features:** Configurable compliance, break force threshold, automatic detachment.
+
+### `soft_body_cut` - Soft Body Cutting (v0.5.0)
+
+| Function | Description |
+|----------|-------------|
+| `cut_deformable(body, plane)` | Cut deformable body along a plane |
+| `cut_cloth(cloth, plane)` | Cut cloth mesh along a plane |
+
+**Algorithm:** Plane-based topology splitting — classifies vertices, creates new vertices at intersection points, rebuilds connectivity.
+
+### `heatmap` - Stress/Temperature Heatmap (v0.5.0)
+
+| Type | Description |
+|------|-------------|
+| `Heatmap` | 2D scalar field visualization with colormap |
+| `HeatmapConfig` | Resolution, value range, colormap selection |
+
+**Features:** Viridis colormap, RGBA pixel output, configurable min/max range.
+
+### `flow_viz` - Flow Visualization (v0.5.0)
+
+| Type | Description |
+|------|-------------|
+| `FlowArrow` | Velocity arrow with position, direction, magnitude |
+| `Streamline` | Ordered list of points tracing a flow path |
+
+**Functions:** `generate_flow_arrows()`, `generate_streamlines()` from velocity fields.
+
+### `contact_viz` - Contact Visualization (v0.5.0)
+
+| Type | Description |
+|------|-------------|
+| `ContactArrow` | Force arrow at contact point |
+| `FrictionCone` | Cone geometry representing friction limit |
+
+**Functions:** `visualize_contacts()`, `visualize_friction_cones()` from contact manifolds.
+
+### `multi_world` - Multiple Physics Worlds (v0.5.0)
+
+| Type | Description |
+|------|-------------|
+| `MultiWorld` | Container for N independent physics worlds |
+
+**Features:**
+- `add_world()` / `remove_world()` — manage independent worlds
+- `step_all(dt)` — advance all worlds simultaneously
+- `transfer_body(from, to, body_id)` — move body between worlds
+
+### `particle` - Particle System (v0.5.0)
+
+| Type | Description |
+|------|-------------|
+| `ParticleSystem` | General-purpose particle simulation |
+| `ParticleEmitter` | Directional emitter with cone spread |
+| `Particle` | Position, velocity, age, lifetime, mass |
+
+**Features:**
+- Configurable emission rate, spread angle, speed range
+- Lifetime management with automatic recycling
+- Full `ForceField` integration (including Explosion and Magnetic)
+- Deterministic via `DeterministicRng`
 
 ### `animation_blend` - Animation Blending
 
@@ -1494,8 +1761,8 @@ The plugin provides `UAlicePhysicsWorldComponent` with full Blueprint support:
 Tag a version to trigger automatic cross-platform builds:
 
 ```bash
-git tag v0.4.0
-git push origin v0.4.0
+git tag v0.5.0
+git push origin v0.5.0
 ```
 
 GitHub Actions builds for macOS (ARM + Intel), Windows, and Linux, then packages:

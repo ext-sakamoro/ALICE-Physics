@@ -82,9 +82,10 @@
 //!
 //! ## Constraints & Dynamics
 //! - [`joint`]: Joint constraints (Ball, Hinge, Fixed, Slider, Spring, D6, `ConeTwist`)
+//! - [`joint_extra`]: Advanced joints (Pulley, Gear, Weld, Rack-and-Pinion, Mouse)
 //! - [`motor`]: PD controllers and joint motors
 //! - [`articulation`]: Articulated bodies (ragdolls, robotic arms, Featherstone)
-//! - [`force`]: Custom force fields (wind, gravity wells, buoyancy, vortex)
+//! - [`force`]: Custom force fields (wind, gravity, buoyancy, vortex, explosion, magnetic)
 //! - [`sleeping`]: Sleep/wake and island management (Union-Find)
 //! - [`filter`]: Collision filtering with layer/mask bitmasks (see [`filter::layers`])
 //! - [`material`]: Material pair table (friction, restitution, combine rules)
@@ -103,6 +104,24 @@
 //! - [`character`]: Kinematic capsule-based character controller (move-and-slide)
 //! - [`trimesh`]: Triangle mesh collision with BVH acceleration (Moller-Trumbore)
 //! - [`heightfield`]: Height field terrain collision (bilinear interpolation)
+//! - [`cloth_fluid`]: Cloth-fluid coupling (drag, buoyancy, boundary repulsion)
+//! - [`rope_attach`]: Rope attachment to rigid bodies with compliance and break force
+//! - [`soft_body_cut`]: Plane-based cutting of deformable bodies and cloth
+//! - [`particle`]: General-purpose particle system with emitters and force fields
+//!
+//! ## 2D Physics
+//! - [`physics2d`]: Complete 2D engine (SAT collision, XPBD solver, joints)
+//!
+//! ## Mesh & I/O Utilities
+//! - [`mass_properties`]: Mass and inertia tensor computation for standard shapes
+//! - [`collision_mesh_gen`]: Marching cubes SDF-to-mesh with simplification
+//! - [`scene_io`]: Binary (.aphys) and JSON scene serialization (`std`)
+//! - [`multi_world`]: Multiple independent physics worlds with body transfer
+//!
+//! ## Visualization
+//! - [`heatmap`]: Stress/temperature heatmap with viridis colormap
+//! - [`flow_viz`]: Fluid flow arrows and streamline generation
+//! - [`contact_viz`]: Contact force arrows and friction cone visualization
 //!
 //! ## SDF Integration
 //! - [`sdf_manifold`]: Multi-point contact manifold from SDF surfaces
