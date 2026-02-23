@@ -1,0 +1,29 @@
+[package]
+name = "alice-physics-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+arbitrary = { version = "1", features = ["derive"] }
+
+[dependencies.alice-physics]
+path = ".."
+features = ["std"]
+
+[[bin]]
+name = "fuzz_step"
+path = "fuzz_targets/fuzz_step.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_collision"
+path = "fuzz_targets/fuzz_collision.rs"
+doc = false
+
+[workspace]
+members = ["."]
