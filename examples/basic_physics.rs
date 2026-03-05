@@ -17,6 +17,7 @@ fn main() {
         iterations: 8,
         gravity: Vec3Fix::new(Fix128::ZERO, Fix128::from_int(-10), Fix128::ZERO),
         damping: Fix128::from_ratio(99, 100),
+        ..Default::default()
     };
     let mut world = PhysicsWorld::new(config);
 

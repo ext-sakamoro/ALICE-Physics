@@ -17,7 +17,7 @@
 //! ```
 
 use crate::box_collider::OrientedBox;
-use crate::collider::{Capsule, Sphere, Support, AABB};
+use crate::collider::{Capsule, ConvexHull, Sphere, Support, AABB};
 use crate::math::{Fix128, QuatFix, Vec3Fix};
 
 #[cfg(not(feature = "std"))]
@@ -32,6 +32,8 @@ pub enum ShapeRef {
     Capsule(Capsule),
     /// Oriented box child
     Box(OrientedBox),
+    /// Convex hull child
+    ConvexHull(ConvexHull),
 }
 
 impl ShapeRef {
@@ -58,6 +60,32 @@ impl ShapeRef {
                 AABB::new(min - r, max + r)
             }
             Self::Box(b) => b.aabb(),
+            Self::ConvexHull(hull) => {
+                let first = hull.vertices[0];
+                let mut min = first;
+                let mut max = first;
+                for &v in &hull.vertices[1..] {
+                    if v.x < min.x {
+                        min.x = v.x;
+                    }
+                    if v.y < min.y {
+                        min.y = v.y;
+                    }
+                    if v.z < min.z {
+                        min.z = v.z;
+                    }
+                    if v.x > max.x {
+                        max.x = v.x;
+                    }
+                    if v.y > max.y {
+                        max.y = v.y;
+                    }
+                    if v.z > max.z {
+                        max.z = v.z;
+                    }
+                }
+                AABB::new(min, max)
+            }
         }
     }
 }
@@ -109,6 +137,16 @@ impl CompoundShape {
     pub fn add_capsule(&mut self, capsule: Capsule, position: Vec3Fix, rotation: QuatFix) {
         self.children.push(CompoundChild {
             shape: ShapeRef::Capsule(capsule),
+            local_position: position,
+            local_rotation: rotation,
+        });
+        self.dirty = true;
+    }
+
+    /// Add a convex hull child
+    pub fn add_convex_hull(&mut self, hull: ConvexHull, position: Vec3Fix, rotation: QuatFix) {
+        self.children.push(CompoundChild {
+            shape: ShapeRef::ConvexHull(hull),
             local_position: position,
             local_rotation: rotation,
         });
@@ -196,6 +234,34 @@ impl CompoundShape {
                 );
                 transformed.aabb()
             }
+            ShapeRef::ConvexHull(hull) => {
+                let child_rot = body_rot.mul(child.local_rotation);
+                let first = world_pos + child_rot.rotate_vec(hull.vertices[0]);
+                let mut min = first;
+                let mut max = first;
+                for &v in &hull.vertices[1..] {
+                    let wv = world_pos + child_rot.rotate_vec(v);
+                    if wv.x < min.x {
+                        min.x = wv.x;
+                    }
+                    if wv.y < min.y {
+                        min.y = wv.y;
+                    }
+                    if wv.z < min.z {
+                        min.z = wv.z;
+                    }
+                    if wv.x > max.x {
+                        max.x = wv.x;
+                    }
+                    if wv.y > max.y {
+                        max.y = wv.y;
+                    }
+                    if wv.z > max.z {
+                        max.z = wv.z;
+                    }
+                }
+                AABB::new(min, max)
+            }
         }
     }
 
@@ -210,6 +276,25 @@ impl CompoundShape {
         for i in 1..self.children.len() {
             let child_aabb = self.child_world_aabb(i, body_pos, body_rot);
             result = result.union(&child_aabb);
+        }
+        result
+    }
+
+    /// AABB-based closest pair pruning: 対象AABBと重なる子のみを返す。
+    /// ブロードフェーズで不要なナローフェーズ判定を除外する。
+    #[must_use]
+    pub fn overlapping_children(
+        &self,
+        target_aabb: &AABB,
+        body_pos: Vec3Fix,
+        body_rot: QuatFix,
+    ) -> Vec<usize> {
+        let mut result = Vec::new();
+        for i in 0..self.children.len() {
+            let child_aabb = self.child_world_aabb(i, body_pos, body_rot);
+            if child_aabb.intersects(target_aabb) {
+                result.push(i);
+            }
         }
         result
     }
@@ -253,6 +338,20 @@ impl CompoundShape {
                         child_rot.mul(ob.rotation),
                     );
                     shifted.support(direction)
+                }
+                ShapeRef::ConvexHull(hull) => {
+                    // Transform each vertex to world space and find support
+                    let mut best_v = child_pos + child_rot.rotate_vec(hull.vertices[0]);
+                    let mut best_d = best_v.dot(direction);
+                    for &v in &hull.vertices[1..] {
+                        let wv = child_pos + child_rot.rotate_vec(v);
+                        let dd = wv.dot(direction);
+                        if dd > best_d {
+                            best_v = wv;
+                            best_d = dd;
+                        }
+                    }
+                    best_v
                 }
             };
 
@@ -397,5 +496,74 @@ mod tests {
         let s = tc.support(Vec3Fix::UNIT_X);
         // Body at 10, child offset 5, sphere radius 1 → 16
         assert!(s.x >= Fix128::from_int(15));
+    }
+
+    #[test]
+    fn test_compound_convex_hull() {
+        let mut compound = CompoundShape::new();
+
+        // 三角形の凸包
+        let hull = ConvexHull::new(vec![
+            Vec3Fix::from_int(0, 0, 0),
+            Vec3Fix::from_int(2, 0, 0),
+            Vec3Fix::from_int(1, 2, 0),
+        ]);
+        compound.add_convex_hull(hull, Vec3Fix::ZERO, QuatFix::IDENTITY);
+
+        assert_eq!(compound.len(), 1);
+
+        let aabb = compound.world_aabb(Vec3Fix::ZERO, QuatFix::IDENTITY);
+        assert!(aabb.min.x <= Fix128::ZERO);
+        assert!(aabb.max.x >= Fix128::from_int(2));
+        assert!(aabb.max.y >= Fix128::from_int(2));
+    }
+
+    #[test]
+    fn test_compound_convex_hull_support() {
+        let mut compound = CompoundShape::new();
+
+        let hull = ConvexHull::new(vec![
+            Vec3Fix::from_int(0, 0, 0),
+            Vec3Fix::from_int(5, 0, 0),
+            Vec3Fix::from_int(0, 5, 0),
+        ]);
+        compound.add_convex_hull(hull, Vec3Fix::from_int(10, 0, 0), QuatFix::IDENTITY);
+
+        // +X方向のサポート点は (10+5, 0, 0) = (15, 0, 0)
+        let s = compound.support_world(Vec3Fix::UNIT_X, Vec3Fix::ZERO, QuatFix::IDENTITY);
+        assert!(
+            s.x >= Fix128::from_int(14),
+            "Support in +X should be at x=15, got {}",
+            s.x.to_f32()
+        );
+    }
+
+    #[test]
+    fn test_overlapping_children() {
+        let mut compound = CompoundShape::new();
+        // 左側の球 (x=-10)
+        compound.add_sphere(
+            Sphere::new(Vec3Fix::ZERO, Fix128::ONE),
+            Vec3Fix::from_int(-10, 0, 0),
+            QuatFix::IDENTITY,
+        );
+        // 右側の球 (x=10)
+        compound.add_sphere(
+            Sphere::new(Vec3Fix::ZERO, Fix128::ONE),
+            Vec3Fix::from_int(10, 0, 0),
+            QuatFix::IDENTITY,
+        );
+
+        // x=9..12のAABBは右側の球のみと重なる
+        let query = AABB::new(Vec3Fix::from_int(9, -1, -1), Vec3Fix::from_int(12, 1, 1));
+        let result = compound.overlapping_children(&query, Vec3Fix::ZERO, QuatFix::IDENTITY);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0], 1); // 右側の球（インデックス1）
+
+        // 両方にまたがるAABB
+        let query_all = AABB::new(Vec3Fix::from_int(-11, -1, -1), Vec3Fix::from_int(11, 1, 1));
+        let result_all =
+            compound.overlapping_children(&query_all, Vec3Fix::ZERO, QuatFix::IDENTITY);
+        assert_eq!(result_all.len(), 2);
     }
 }

@@ -542,6 +542,10 @@ pub struct SolverConfig {
     pub gravity: Vec3Fix,
     /// Global damping factor
     pub damping: Fix128,
+    /// Warm-start relaxation factor (0.0〜1.0)。
+    /// cached_lambda にこの係数を乗じて初期推定とする。
+    /// 0.8〜0.95 が安定的。デフォルト 0.85。
+    pub warm_start_factor: Fix128,
 }
 
 /// Physics configuration (alias for `SolverConfig`)
@@ -558,6 +562,7 @@ impl Default for SolverConfig {
                 Fix128::ZERO,
             ),
             damping: Fix128::from_ratio(99, 100), // 0.99 velocity retention
+            warm_start_factor: Fix128::from_ratio(85, 100), // 0.85
         }
     }
 }
@@ -1553,7 +1558,7 @@ impl PhysicsWorld {
                     }
 
                     // Skip sleeping bodies (preserve prev for zero-velocity derivation)
-                    if sleep_data.get(i).is_some_and(|d| d.is_sleeping()) {
+                    if sleep_data.get(i).is_some_and(super::sleeping::SleepData::is_sleeping) {
                         body.prev_position = body.position;
                         body.prev_rotation = body.rotation;
                         return;
@@ -1817,6 +1822,8 @@ impl PhysicsWorld {
             len: self.distance_constraints.len(),
         };
 
+        let wsf = self.config.warm_start_factor;
+
         for batch_idx in 0..num_batches {
             // Phase 1: Distance constraints — parallel within batch
             {
@@ -1830,7 +1837,7 @@ impl PhysicsWorld {
                         let constraint = dists.get_mut(idx);
                         let body_a = bodies.get_mut(constraint.body_a);
                         let body_b = bodies.get_mut(constraint.body_b);
-                        Self::solve_distance_pair(body_a, body_b, constraint, dt);
+                        Self::solve_distance_pair(body_a, body_b, constraint, dt, wsf);
                     }
                 });
             }
@@ -1864,6 +1871,7 @@ impl PhysicsWorld {
         body_b: &mut RigidBody,
         constraint: &mut DistanceConstraint,
         dt: Fix128,
+        warm_start_factor: Fix128,
     ) {
         let anchor_a = body_a.position + body_a.rotation.rotate_vec(constraint.local_anchor_a);
         let anchor_b = body_b.position + body_b.rotation.rotate_vec(constraint.local_anchor_b);
@@ -1884,9 +1892,10 @@ impl PhysicsWorld {
             return;
         }
 
-        // Warm-start: bias the error by the cached lambda from the previous substep.
+        // Warm-start: bias the error by the cached lambda (scaled by relaxation factor)
+        // from the previous substep, reducing iterations needed for convergence.
         let inv_w_sum = Fix128::ONE / w_sum;
-        let biased_error = error - constraint.cached_lambda * compliance_term;
+        let biased_error = error - constraint.cached_lambda * warm_start_factor * compliance_term;
         let lambda = biased_error * inv_w_sum;
         let correction = normal * lambda;
 
@@ -1987,9 +1996,10 @@ impl PhysicsWorld {
             }
 
             // Warm-start: bias the error by subtracting the previously cached lambda
-            // times the compliance term so the solver starts from a good initial guess.
+            // (scaled by relaxation factor) so the solver starts from a good initial guess.
             let inv_w_sum = Fix128::ONE / w_sum;
-            let biased_error = error - constraint.cached_lambda * compliance_term;
+            let biased_error =
+                error - constraint.cached_lambda * self.config.warm_start_factor * compliance_term;
             let lambda = biased_error * inv_w_sum;
             let correction = normal * lambda;
 
@@ -2754,6 +2764,61 @@ mod tests {
         assert!(
             y > -1.0,
             "Body should not have fallen through SDF ground, y={y}"
+        );
+    }
+
+    #[test]
+    fn test_warm_start_factor_default() {
+        let config = SolverConfig::default();
+        // デフォルト 0.85
+        let expected = Fix128::from_ratio(85, 100);
+        assert_eq!(config.warm_start_factor, expected);
+    }
+
+    #[test]
+    fn test_warm_start_factor_convergence() {
+        // warm_start_factor = 0.85 vs 0.0（無効）で収束速度を比較
+        let make_world = |wsf: Fix128| {
+            let config = SolverConfig {
+                substeps: 4,
+                iterations: 2, // 少ないイテレーションで差が出やすい
+                gravity: Vec3Fix::ZERO,
+                warm_start_factor: wsf,
+                ..Default::default()
+            };
+            let mut world = PhysicsWorld::new(config);
+            let a = world.add_body(RigidBody::new_static(Vec3Fix::ZERO));
+            let b = world.add_body(RigidBody::new(Vec3Fix::from_int(5, 0, 0), Fix128::ONE));
+            let constraint =
+                DistanceConstraint::new(a, b, Vec3Fix::ZERO, Vec3Fix::ZERO, Fix128::from_int(3));
+            world.add_distance_constraint(constraint);
+            world
+        };
+
+        let mut world_warm = make_world(Fix128::from_ratio(85, 100));
+        let mut world_cold = make_world(Fix128::ZERO);
+
+        let dt = Fix128::from_ratio(1, 60);
+        for _ in 0..30 {
+            world_warm.step(dt);
+            world_cold.step(dt);
+        }
+
+        // Both should converge, but warm-started should be closer to target distance
+        let dist_warm = (world_warm.bodies[1].position - world_warm.bodies[0].position)
+            .length()
+            .to_f32();
+        let dist_cold = (world_cold.bodies[1].position - world_cold.bodies[0].position)
+            .length()
+            .to_f32();
+
+        let target = 3.0_f32;
+        let err_warm = (dist_warm - target).abs();
+        let err_cold = (dist_cold - target).abs();
+        // warm-start版の誤差が小さいか、同等であること
+        assert!(
+            err_warm <= err_cold + 0.1,
+            "Warm-start should converge at least as well: err_warm={err_warm}, err_cold={err_cold}"
         );
     }
 }
