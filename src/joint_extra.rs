@@ -22,7 +22,7 @@ use crate::solver::RigidBody;
 /// The constraint maintains: `len_a + ratio * len_b = total_length`
 /// where `len_a` is the rope length from `ground_anchor_a` to `anchor_a`
 /// and `len_b` is the rope length from `ground_anchor_b` to `anchor_b`.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PulleyJoint {
     /// Index of the first body
     pub body_a: usize,
@@ -46,7 +46,7 @@ impl PulleyJoint {
     /// Create a new pulley joint.
     #[inline]
     #[must_use]
-    pub fn new(
+    pub const fn new(
         body_a: usize,
         body_b: usize,
         anchor_a: Vec3Fix,
@@ -83,7 +83,7 @@ impl PulleyJoint {
 
     /// Set compliance (inverse stiffness).
     #[must_use]
-    pub fn with_compliance(mut self, compliance: Fix128) -> Self {
+    pub const fn with_compliance(mut self, compliance: Fix128) -> Self {
         self.compliance = compliance;
         self
     }
@@ -99,7 +99,7 @@ impl PulleyJoint {
 ///
 /// The joint references two hinge joints by index and enforces a fixed
 /// ratio between their angular displacements.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct GearJoint {
     /// Index of the first body (connected to hinge A)
     pub body_a: usize,
@@ -119,7 +119,7 @@ impl GearJoint {
     /// Create a new gear joint coupling two hinge joints.
     #[inline]
     #[must_use]
-    pub fn new(
+    pub const fn new(
         body_a: usize,
         body_b: usize,
         joint_a: usize,
@@ -138,7 +138,7 @@ impl GearJoint {
 
     /// Set compliance (inverse stiffness).
     #[must_use]
-    pub fn with_compliance(mut self, compliance: Fix128) -> Self {
+    pub const fn with_compliance(mut self, compliance: Fix128) -> Self {
         self.compliance = compliance;
         self
     }
@@ -153,7 +153,7 @@ impl GearJoint {
 /// Unlike `FixedJoint` from the core module, this variant supports separate
 /// break-force and break-torque thresholds so the weld can snap under
 /// translational stress, rotational stress, or both.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct WeldJoint {
     /// Index of the first body
     pub body_a: usize,
@@ -177,7 +177,7 @@ impl WeldJoint {
     /// Create a new weld joint.
     #[inline]
     #[must_use]
-    pub fn new(
+    pub const fn new(
         body_a: usize,
         body_b: usize,
         local_anchor_a: Vec3Fix,
@@ -198,21 +198,21 @@ impl WeldJoint {
 
     /// Set break force threshold.
     #[must_use]
-    pub fn with_break_force(mut self, force: Fix128) -> Self {
+    pub const fn with_break_force(mut self, force: Fix128) -> Self {
         self.break_force = Some(force);
         self
     }
 
     /// Set break torque threshold.
     #[must_use]
-    pub fn with_break_torque(mut self, torque: Fix128) -> Self {
+    pub const fn with_break_torque(mut self, torque: Fix128) -> Self {
         self.break_torque = Some(torque);
         self
     }
 
     /// Set compliance (inverse stiffness).
     #[must_use]
-    pub fn with_compliance(mut self, compliance: Fix128) -> Self {
+    pub const fn with_compliance(mut self, compliance: Fix128) -> Self {
         self.compliance = compliance;
         self
     }
@@ -265,7 +265,7 @@ impl WeldJoint {
 /// The rack body translates along `rack_axis` while the pinion body
 /// rotates around `pinion_axis`. The ratio converts between
 /// linear units and radians.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RackAndPinionJoint {
     /// Index of the rack body (linear motion)
     pub body_rack: usize,
@@ -285,7 +285,7 @@ impl RackAndPinionJoint {
     /// Create a new rack-and-pinion joint.
     #[inline]
     #[must_use]
-    pub fn new(
+    pub const fn new(
         body_rack: usize,
         body_pinion: usize,
         rack_axis: Vec3Fix,
@@ -304,7 +304,7 @@ impl RackAndPinionJoint {
 
     /// Set compliance (inverse stiffness).
     #[must_use]
-    pub fn with_compliance(mut self, compliance: Fix128) -> Self {
+    pub const fn with_compliance(mut self, compliance: Fix128) -> Self {
         self.compliance = compliance;
         self
     }
@@ -318,7 +318,7 @@ impl RackAndPinionJoint {
 ///
 /// Used for interactive dragging. The body is pulled toward `target_position`
 /// with configurable stiffness and damping, capped by `max_force`.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct MouseJoint {
     /// Index of the controlled body
     pub body: usize,
@@ -336,7 +336,7 @@ impl MouseJoint {
     /// Create a new mouse joint.
     #[inline]
     #[must_use]
-    pub fn new(
+    pub const fn new(
         body: usize,
         target_position: Vec3Fix,
         max_force: Fix128,
@@ -363,7 +363,7 @@ impl MouseJoint {
 // ============================================================================
 
 /// Unified enum for extended joint types.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ExtraJoint {
     /// Pulley constraint
     Pulley(PulleyJoint),

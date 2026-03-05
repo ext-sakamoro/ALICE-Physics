@@ -86,7 +86,7 @@ impl XorShift64 {
     /// Generate uniform f64 in [low, high)
     #[inline]
     pub fn next_f64_range(&mut self, low: f64, high: f64) -> f64 {
-        low + (high - low) * self.next_f64()
+        (high - low).mul_add(self.next_f64(), low)
     }
 
     /// Generate a random boolean with given probability of true
@@ -151,7 +151,7 @@ impl LaplaceNoise {
         // Inverse transform sampling: X = μ - b * sign(U - 0.5) * ln(1 - 2|U - 0.5|)
         let u = self.rng.next_f64() - 0.5;
         let sign = if u < 0.0 { -1.0 } else { 1.0 };
-        -sign * self.scale * (1.0 - 2.0 * u.abs()).ln()
+        -sign * self.scale * 2.0f64.mul_add(-u.abs(), 1.0).ln()
     }
 
     /// Add noise to a value
@@ -169,7 +169,7 @@ impl LaplaceNoise {
     /// Get the scale parameter
     #[inline]
     #[must_use]
-    pub fn scale(&self) -> f64 {
+    pub const fn scale(&self) -> f64 {
         self.scale
     }
 }
@@ -238,7 +238,7 @@ impl RandomizedResponse {
     /// Get the probability of truthful response
     #[inline]
     #[must_use]
-    pub fn p_true(&self) -> f64 {
+    pub const fn p_true(&self) -> f64 {
         self.p_true
     }
 
@@ -260,7 +260,7 @@ impl RandomizedResponse {
         // P(report=1) = p*true_rate + (1-p)*0.5
         // observed_rate = p*true_rate + 0.5 - 0.5*p
         // true_rate = (observed_rate - 0.5 + 0.5*p) / p
-        let true_rate = (observed_rate - 0.5 + 0.5 * p_true) / p_true;
+        let true_rate = 0.5f64.mul_add(p_true, observed_rate - 0.5) / p_true;
         true_rate.clamp(0.0, 1.0)
     }
 }
@@ -369,7 +369,7 @@ impl Rappor {
 
     /// Get privacy parameters
     #[must_use]
-    pub fn params(&self) -> (f64, f64, f64) {
+    pub const fn params(&self) -> (f64, f64, f64) {
         (self.f, self.p, self.q)
     }
 }
@@ -395,7 +395,7 @@ pub struct PrivacyBudget {
 impl PrivacyBudget {
     /// Create a new privacy budget tracker
     #[must_use]
-    pub fn new(max_epsilon: f64) -> Self {
+    pub const fn new(max_epsilon: f64) -> Self {
         Self {
             total_epsilon: 0.0,
             max_epsilon,
@@ -426,14 +426,14 @@ impl PrivacyBudget {
     /// Get total spent
     #[inline]
     #[must_use]
-    pub fn spent(&self) -> f64 {
+    pub const fn spent(&self) -> f64 {
         self.total_epsilon
     }
 
     /// Get query count
     #[inline]
     #[must_use]
-    pub fn query_count(&self) -> u64 {
+    pub const fn query_count(&self) -> u64 {
         self.query_count
     }
 
@@ -469,7 +469,7 @@ pub struct PrivateAggregator {
 impl PrivateAggregator {
     /// Create a new aggregator
     #[must_use]
-    pub fn new(noise_scale: f64) -> Self {
+    pub const fn new(noise_scale: f64) -> Self {
         Self {
             noisy_sum: 0.0,
             count: 0,
@@ -498,7 +498,7 @@ impl PrivateAggregator {
 
     /// Estimate the true sum
     #[must_use]
-    pub fn estimate_sum(&self) -> f64 {
+    pub const fn estimate_sum(&self) -> f64 {
         self.noisy_sum
     }
 
@@ -517,7 +517,7 @@ impl PrivateAggregator {
     /// Get the count
     #[inline]
     #[must_use]
-    pub fn count(&self) -> u64 {
+    pub const fn count(&self) -> u64 {
         self.count
     }
 
@@ -559,7 +559,7 @@ mod tests {
             sum += noise.sample();
         }
         let mean = sum / n as f64;
-        assert!(mean.abs() < 0.1, "mean = {}", mean);
+        assert!(mean.abs() < 0.1, "mean = {mean}");
     }
 
     #[test]
@@ -578,7 +578,7 @@ mod tests {
         }
 
         // Should be correct more than 50% of the time
-        assert!(correct > n / 2, "correct = {}", correct);
+        assert!(correct > n / 2, "correct = {correct}");
     }
 
     #[test]
@@ -603,9 +603,7 @@ mod tests {
         // Should be within 0.1 of true rate
         assert!(
             (estimated - true_rate).abs() < 0.1,
-            "estimated = {}, true = {}",
-            estimated,
-            true_rate
+            "estimated = {estimated}, true = {true_rate}"
         );
     }
 
@@ -641,8 +639,7 @@ mod tests {
         // Should be close to 100
         assert!(
             (estimated_mean - true_value).abs() < 1.0,
-            "estimated = {}",
-            estimated_mean
+            "estimated = {estimated_mean}"
         );
     }
 

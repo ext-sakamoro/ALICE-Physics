@@ -41,28 +41,28 @@ impl CombineRule {
     #[must_use]
     pub fn apply(&self, a: Fix128, b: Fix128) -> Fix128 {
         match self {
-            CombineRule::Average => (a + b).half(),
-            CombineRule::Min => {
+            Self::Average => (a + b).half(),
+            Self::Min => {
                 if a < b {
                     a
                 } else {
                     b
                 }
             }
-            CombineRule::Max => {
+            Self::Max => {
                 if a > b {
                     a
                 } else {
                     b
                 }
             }
-            CombineRule::Multiply => a * b,
+            Self::Multiply => a * b,
         }
     }
 }
 
 /// Physics material definition
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PhysicsMaterial {
     /// Material identifier
     pub id: MaterialId,
@@ -81,7 +81,7 @@ pub struct PhysicsMaterial {
 impl PhysicsMaterial {
     /// Create a new material with given properties
     #[must_use]
-    pub fn new(id: MaterialId, friction: Fix128, restitution: Fix128) -> Self {
+    pub const fn new(id: MaterialId, friction: Fix128, restitution: Fix128) -> Self {
         Self {
             id,
             static_friction: friction,
@@ -94,7 +94,11 @@ impl PhysicsMaterial {
 
     /// Set combine rules
     #[must_use]
-    pub fn with_combine_rules(mut self, friction: CombineRule, restitution: CombineRule) -> Self {
+    pub const fn with_combine_rules(
+        mut self,
+        friction: CombineRule,
+        restitution: CombineRule,
+    ) -> Self {
         self.friction_combine = friction;
         self.restitution_combine = restitution;
         self
@@ -102,7 +106,7 @@ impl PhysicsMaterial {
 
     /// Set separate static/dynamic friction
     #[must_use]
-    pub fn with_static_friction(mut self, static_friction: Fix128) -> Self {
+    pub const fn with_static_friction(mut self, static_friction: Fix128) -> Self {
         self.static_friction = static_friction;
         self
     }
@@ -128,7 +132,7 @@ struct PairOverride {
 }
 
 /// Combined material result for a contact pair
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CombinedMaterial {
     /// Combined friction
     pub friction: Fix128,
@@ -315,8 +319,8 @@ impl Default for MaterialTable {
 }
 
 /// Priority: Max > Multiply > Average > Min
-fn combine_rule_priority(a: CombineRule, b: CombineRule) -> CombineRule {
-    fn priority(r: CombineRule) -> u8 {
+const fn combine_rule_priority(a: CombineRule, b: CombineRule) -> CombineRule {
+    const fn priority(r: CombineRule) -> u8 {
         match r {
             CombineRule::Min => 0,
             CombineRule::Average => 1,

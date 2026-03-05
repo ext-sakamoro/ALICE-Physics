@@ -46,7 +46,7 @@ pub struct Portal {
 impl MultiWorld {
     /// Create a new empty multi-world container.
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self { worlds: Vec::new() }
     }
 
@@ -157,7 +157,12 @@ impl core::fmt::Debug for MultiWorld {
 impl Portal {
     /// Create a new portal between two worlds.
     #[must_use]
-    pub fn new(world_a: usize, world_b: usize, translation: Vec3Fix, rotation: QuatFix) -> Self {
+    pub const fn new(
+        world_a: usize,
+        world_b: usize,
+        translation: Vec3Fix,
+        rotation: QuatFix,
+    ) -> Self {
         Self {
             world_a,
             world_b,

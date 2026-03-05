@@ -12,7 +12,7 @@ use crate::raycast::{Ray, RayHit};
 use alloc::vec::Vec;
 
 /// A single triangle
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Triangle {
     /// First vertex
     pub v0: Vec3Fix,
@@ -26,7 +26,7 @@ impl Triangle {
     /// Create a new triangle from three vertices
     #[inline]
     #[must_use]
-    pub fn new(v0: Vec3Fix, v1: Vec3Fix, v2: Vec3Fix) -> Self {
+    pub const fn new(v0: Vec3Fix, v1: Vec3Fix, v2: Vec3Fix) -> Self {
         Self { v0, v1, v2 }
     }
 
@@ -362,13 +362,12 @@ impl TriMesh {
                 // Inside AABB - compute penetration along triangle normal
                 let normal = tri.unit_normal();
                 let proj = delta.dot(normal).abs();
+                let n_abs = Vec3Fix::new(normal.x.abs(), normal.y.abs(), normal.z.abs());
+                let half_proj = half.x * n_abs.x + half.y * n_abs.y + half.z * n_abs.z;
                 let depth = if proj.is_zero() {
                     // Fallback: use half extent along normal
-                    let n_abs = Vec3Fix::new(normal.x.abs(), normal.y.abs(), normal.z.abs());
-                    half.x * n_abs.x + half.y * n_abs.y + half.z * n_abs.z
+                    half_proj
                 } else {
-                    let n_abs = Vec3Fix::new(normal.x.abs(), normal.y.abs(), normal.z.abs());
-                    let half_proj = half.x * n_abs.x + half.y * n_abs.y + half.z * n_abs.z;
                     half_proj - delta.dot(normal).abs()
                 };
 

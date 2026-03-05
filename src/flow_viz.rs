@@ -19,7 +19,7 @@ use alloc::vec::Vec;
 // ============================================================================
 
 /// A velocity arrow for flow visualization.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FlowArrow {
     /// Arrow base position
     pub position: Vec3Fix,

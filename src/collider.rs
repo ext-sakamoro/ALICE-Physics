@@ -17,7 +17,7 @@ use alloc::vec::Vec;
 // ============================================================================
 
 /// Result of a collision detection query
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CollisionResult {
     /// Whether the shapes are colliding
     pub colliding: bool,
@@ -43,7 +43,7 @@ impl CollisionResult {
 
     /// Create a new collision result
     #[must_use]
-    pub fn new(depth: Fix128, normal: Vec3Fix, point_a: Vec3Fix, point_b: Vec3Fix) -> Self {
+    pub const fn new(depth: Fix128, normal: Vec3Fix, point_a: Vec3Fix, point_b: Vec3Fix) -> Self {
         Self {
             colliding: true,
             depth,
@@ -65,7 +65,7 @@ pub trait Support {
 }
 
 /// Sphere collider
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Sphere {
     /// Center position
     pub center: Vec3Fix,
@@ -76,7 +76,7 @@ pub struct Sphere {
 impl Sphere {
     /// Create a new sphere from center and radius
     #[must_use]
-    pub fn new(center: Vec3Fix, radius: Fix128) -> Self {
+    pub const fn new(center: Vec3Fix, radius: Fix128) -> Self {
         Self { center, radius }
     }
 }
@@ -90,7 +90,7 @@ impl Support for Sphere {
 }
 
 /// Axis-Aligned Bounding Box
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AABB {
     /// Minimum corner
     pub min: Vec3Fix,
@@ -101,7 +101,7 @@ pub struct AABB {
 impl AABB {
     /// Create a new AABB from min and max corners
     #[must_use]
-    pub fn new(min: Vec3Fix, max: Vec3Fix) -> Self {
+    pub const fn new(min: Vec3Fix, max: Vec3Fix) -> Self {
         Self { min, max }
     }
 
@@ -117,7 +117,7 @@ impl AABB {
     /// Check if two AABBs intersect (broad phase)
     #[inline]
     #[must_use]
-    pub fn intersects(&self, other: &AABB) -> bool {
+    pub fn intersects(&self, other: &Self) -> bool {
         self.min.x <= other.max.x
             && self.max.x >= other.min.x
             && self.min.y <= other.max.y
@@ -128,8 +128,8 @@ impl AABB {
 
     /// Compute union of two AABBs
     #[must_use]
-    pub fn union(&self, other: &AABB) -> AABB {
-        AABB {
+    pub fn union(&self, other: &Self) -> Self {
+        Self {
             min: Vec3Fix::new(
                 if self.min.x < other.min.x {
                     self.min.x
@@ -241,7 +241,7 @@ impl Support for ConvexHull {
 }
 
 /// Capsule (line segment with radius)
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Capsule {
     /// Start point of the capsule segment
     pub a: Vec3Fix,
@@ -254,7 +254,7 @@ pub struct Capsule {
 impl Capsule {
     /// Create a new capsule from two endpoints and a radius
     #[must_use]
-    pub fn new(a: Vec3Fix, b: Vec3Fix, radius: Fix128) -> Self {
+    pub const fn new(a: Vec3Fix, b: Vec3Fix, radius: Fix128) -> Self {
         Self { a, b, radius }
     }
 }
@@ -273,7 +273,7 @@ impl Support for Capsule {
 ///
 /// Wraps any `Support`-implementing shape with a uniform scale factor.
 /// The support function scales the inner shape's support point.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ScaledShape<S> {
     /// Inner shape
     pub shape: S,
@@ -283,7 +283,7 @@ pub struct ScaledShape<S> {
 
 impl<S> ScaledShape<S> {
     /// Create a new scaled shape
-    pub fn new(shape: S, scale: Fix128) -> Self {
+    pub const fn new(shape: S, scale: Fix128) -> Self {
         Self { shape, scale }
     }
 }
@@ -313,7 +313,7 @@ struct Simplex {
 }
 
 impl Simplex {
-    fn new() -> Self {
+    const fn new() -> Self {
         Self {
             points: [Vec3Fix::ZERO; 4],
             size: 0,
@@ -338,7 +338,7 @@ impl Simplex {
 }
 
 /// GJK collision result
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct GjkResult {
     /// Whether the two shapes are colliding
     pub colliding: bool,
@@ -516,7 +516,7 @@ fn do_simplex_tetrahedron(simplex: &mut Simplex, direction: &mut Vec3Fix) -> boo
 // ============================================================================
 
 /// Contact information from EPA
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Contact {
     /// Penetration depth
     pub depth: Fix128,

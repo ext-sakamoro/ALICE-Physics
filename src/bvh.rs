@@ -21,7 +21,7 @@ use alloc::vec::Vec;
 
 /// Expand 21-bit integer to 63 bits for 3D Morton code
 #[inline]
-fn expand_bits(mut v: u64) -> u64 {
+const fn expand_bits(mut v: u64) -> u64 {
     // Spread bits: each bit is followed by two zero bits
     v = (v | (v << 32)) & 0x001F00000000FFFF;
     v = (v | (v << 16)) & 0x001F0000FF0000FF;
@@ -105,7 +105,7 @@ pub const ESCAPE_NONE: u32 = u32::MAX;
 /// - `escape_idx`: Next node to visit if AABB test fails (skip entire subtree)
 /// - For leaves: `escape_idx` points to next sibling or parent's escape
 /// - For internal nodes: `escape_idx` points to next subtree after both children
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(C, align(32))]
 pub struct BvhNode {
     /// Bounding box minimum (compressed to i32)
@@ -154,28 +154,28 @@ impl BvhNode {
     /// Check if this is a leaf node
     #[inline]
     #[must_use]
-    pub fn is_leaf(&self) -> bool {
+    pub const fn is_leaf(&self) -> bool {
         (self.prim_count_escape >> 24) > 0
     }
 
     /// Get primitive count (0 for internal nodes)
     #[inline]
     #[must_use]
-    pub fn prim_count(&self) -> u32 {
+    pub const fn prim_count(&self) -> u32 {
         self.prim_count_escape >> 24
     }
 
     /// Get escape index (next node to visit on AABB miss)
     #[inline]
     #[must_use]
-    pub fn escape_idx(&self) -> u32 {
+    pub const fn escape_idx(&self) -> u32 {
         self.prim_count_escape & 0x00FFFFFF
     }
 
     /// Get AABB (reconstructed from compressed i32)
     #[inline]
     #[must_use]
-    pub fn get_aabb(&self) -> AABB {
+    pub const fn get_aabb(&self) -> AABB {
         AABB {
             min: Vec3Fix::new(
                 Fix128::from_int(self.aabb_min[0] as i64),
@@ -193,7 +193,7 @@ impl BvhNode {
     /// Fast AABB intersection test (integer-only, no Fix128 reconstruction)
     #[inline]
     #[must_use]
-    pub fn intersects_i32(&self, query_min: &[i32; 3], query_max: &[i32; 3]) -> bool {
+    pub const fn intersects_i32(&self, query_min: &[i32; 3], query_max: &[i32; 3]) -> bool {
         self.aabb_min[0] <= query_max[0]
             && self.aabb_max[0] >= query_min[0]
             && self.aabb_min[1] <= query_max[1]
@@ -242,7 +242,7 @@ fn aabb_to_i32_max(aabb: &AABB) -> [i32; 3] {
 // ============================================================================
 
 /// Primitive entry for BVH construction
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct BvhPrimitive {
     /// AABB of the primitive
     pub aabb: AABB,

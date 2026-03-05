@@ -20,7 +20,7 @@ pub enum ContactEventType {
 }
 
 /// A contact event between two bodies
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ContactEvent {
     /// First body index
     pub body_a: usize,
@@ -39,7 +39,7 @@ pub struct ContactEvent {
 }
 
 /// A trigger event (overlap without physics response)
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TriggerEvent {
     /// Trigger body index
     pub trigger_body: usize,
@@ -68,7 +68,7 @@ pub struct EventCollector {
 impl EventCollector {
     /// Create a new event collector
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             contact_events: Vec::new(),
             trigger_events: Vec::new(),
@@ -215,7 +215,7 @@ impl Default for EventCollector {
 
 /// Normalize a body pair so that the smaller index is first (deterministic ordering)
 #[inline]
-fn normalize_pair(a: usize, b: usize) -> (usize, usize) {
+const fn normalize_pair(a: usize, b: usize) -> (usize, usize) {
     if a <= b {
         (a, b)
     } else {
@@ -330,23 +330,19 @@ mod tests {
         events.end_frame();
 
         // Only trigger exit events would be new; no enter since it persists
-        let enters: Vec<_> = events
-            .trigger_events()
-            .iter()
-            .filter(|e| e.entered)
-            .collect();
-        assert_eq!(enters.len(), 0);
+        let enters = events.trigger_events().iter().filter(|e| e.entered).count();
+        assert_eq!(enters, 0);
 
         // Frame 3: trigger exit
         events.begin_frame();
         events.end_frame();
 
-        let exits: Vec<_> = events
+        let exits = events
             .trigger_events()
             .iter()
             .filter(|e| !e.entered)
-            .collect();
-        assert_eq!(exits.len(), 1);
+            .count();
+        assert_eq!(exits, 1);
     }
 
     #[test]

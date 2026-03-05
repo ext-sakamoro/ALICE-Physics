@@ -35,7 +35,7 @@ use std::io::{Read, Write};
 // ============================================================================
 
 /// A complete physics scene for serialization.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PhysicsScene {
     /// Serialized rigid bodies
     pub bodies: Vec<SerializedBody>,
@@ -51,7 +51,7 @@ pub struct PhysicsScene {
 ///
 /// Position and velocity are stored as 6 i64 values:
 /// `[x.hi, x.lo_as_i64, y.hi, y.lo_as_i64, z.hi, z.lo_as_i64]`
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SerializedBody {
     /// Position: x.hi, x.lo, y.hi, y.lo, z.hi, z.lo
     pub position: [i64; 6],
@@ -66,7 +66,7 @@ pub struct SerializedBody {
 }
 
 /// Serialized joint (raw fixed-point data).
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SerializedJoint {
     /// Index of body A
     pub body_a: u32,
@@ -81,7 +81,7 @@ pub struct SerializedJoint {
 }
 
 /// Serialized physics configuration.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PhysicsConfig {
     /// Number of substeps
     pub substeps: u32,
@@ -120,19 +120,19 @@ const CURRENT_VERSION: u32 = 1;
 // Conversion Helpers
 // ============================================================================
 
-fn fix128_to_raw(v: Fix128) -> [i64; 2] {
+const fn fix128_to_raw(v: Fix128) -> [i64; 2] {
     [v.hi, v.lo as i64]
 }
 
 #[cfg(test)]
-fn raw_to_fix128(r: &[i64; 2]) -> Fix128 {
+const fn raw_to_fix128(r: &[i64; 2]) -> Fix128 {
     Fix128 {
         hi: r[0],
         lo: r[1] as u64,
     }
 }
 
-fn vec3fix_to_raw(v: Vec3Fix) -> [i64; 6] {
+const fn vec3fix_to_raw(v: Vec3Fix) -> [i64; 6] {
     [
         v.x.hi,
         v.x.lo as i64,
@@ -144,7 +144,7 @@ fn vec3fix_to_raw(v: Vec3Fix) -> [i64; 6] {
 }
 
 #[cfg(test)]
-fn raw_to_vec3fix(r: &[i64; 6]) -> Vec3Fix {
+const fn raw_to_vec3fix(r: &[i64; 6]) -> Vec3Fix {
     Vec3Fix::new(
         Fix128 {
             hi: r[0],

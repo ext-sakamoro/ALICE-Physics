@@ -87,9 +87,9 @@ impl VoxelGrid {
         for z in 0..res {
             for y in 0..res {
                 for x in 0..res {
-                    let fx = min.x.to_f32() + (x as f32 + 0.5) * cell_size.to_f32();
-                    let fy = min.y.to_f32() + (y as f32 + 0.5) * cell_size.to_f32();
-                    let fz = min.z.to_f32() + (z as f32 + 0.5) * cell_size.to_f32();
+                    let fx = (x as f32 + 0.5).mul_add(cell_size.to_f32(), min.x.to_f32());
+                    let fy = (y as f32 + 0.5).mul_add(cell_size.to_f32(), min.y.to_f32());
+                    let fz = (z as f32 + 0.5).mul_add(cell_size.to_f32(), min.z.to_f32());
                     values[x + y * res + z * res * res] = sdf.distance(fx, fy, fz);
                 }
             }
@@ -329,9 +329,9 @@ mod tests {
     #[test]
     fn test_decompose_sphere() {
         let sphere = ClosureSdf::new(
-            |x, y, z| (x * x + y * y + z * z).sqrt() - 1.0,
+            |x, y, z| z.mul_add(z, x.mul_add(x, y * y)).sqrt() - 1.0,
             |x, y, z| {
-                let len = (x * x + y * y + z * z).sqrt();
+                let len = z.mul_add(z, x.mul_add(x, y * y)).sqrt();
                 if len < 1e-10 {
                     (0.0, 1.0, 0.0)
                 } else {

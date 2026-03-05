@@ -28,7 +28,7 @@ use rayon::prelude::*;
 // ============================================================================
 
 /// Result of a shape cast query
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ShapeCastHit {
     /// Distance along the cast direction
     pub t: Fix128,
@@ -41,7 +41,7 @@ pub struct ShapeCastHit {
 }
 
 /// Result of an overlap query
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct OverlapResult {
     /// Index of the overlapping body
     pub body_index: usize,
@@ -254,7 +254,7 @@ pub fn overlap_aabb_expanded(
 // ============================================================================
 
 /// A single raycast query for batch execution
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct BatchRayQuery {
     /// Ray origin
     pub origin: Vec3Fix,
@@ -621,7 +621,7 @@ mod tests {
         // Body 1 at (5,0,0) → inside
         // Body 2 at (10,0,0) → outside (x=10 > 8)
         // Body 3 at (0,5,0) → outside
-        assert!(results.len() >= 1, "Should find body at (5,0,0)");
+        assert!(!results.is_empty(), "Should find body at (5,0,0)");
     }
 
     #[test]

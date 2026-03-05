@@ -415,9 +415,9 @@ mod tests {
     /// Simple unit sphere SDF for testing
     fn unit_sphere() -> ClosureSdf {
         ClosureSdf::new(
-            |x, y, z| (x * x + y * y + z * z).sqrt() - 1.0,
+            |x, y, z| z.mul_add(z, x.mul_add(x, y * y)).sqrt() - 1.0,
             |x, y, z| {
-                let len = (x * x + y * y + z * z).sqrt();
+                let len = z.mul_add(z, x.mul_add(x, y * y)).sqrt();
                 if len < 1e-10 {
                     (0.0, 1.0, 0.0) // Degenerate: point normal upward
                 } else {
@@ -458,13 +458,12 @@ mod tests {
         let depth = contact.depth.to_f32();
         assert!(
             (depth - 0.5).abs() < 0.05,
-            "Depth should be ~0.5, got {}",
-            depth
+            "Depth should be ~0.5, got {depth}"
         );
 
         // Normal should point in +X
         let (nx, _, _) = contact.normal.to_f32();
-        assert!(nx > 0.9, "Normal should point in +X, got {}", nx);
+        assert!(nx > 0.9, "Normal should point in +X, got {nx}");
     }
 
     #[test]
@@ -482,8 +481,7 @@ mod tests {
         let depth = contact.depth.to_f32();
         assert!(
             (depth - 0.5).abs() < 0.05,
-            "Penetration should be ~0.5, got {}",
-            depth
+            "Penetration should be ~0.5, got {depth}"
         );
     }
 
@@ -515,8 +513,7 @@ mod tests {
         let depth = contact.depth.to_f32();
         assert!(
             (depth - 0.2).abs() < 0.05,
-            "Penetration should be ~0.2, got {}",
-            depth
+            "Penetration should be ~0.2, got {depth}"
         );
     }
 
@@ -585,8 +582,7 @@ mod tests {
         let depth = contact.depth.to_f32();
         assert!(
             (depth - 0.5).abs() < 0.05,
-            "Penetration should be ~0.5, got {}",
-            depth
+            "Penetration should be ~0.5, got {depth}"
         );
     }
 }

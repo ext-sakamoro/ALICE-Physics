@@ -655,7 +655,7 @@ mod compile_smoke_tests {
     #[test]
     fn test_error_type_accessible() {
         let e = PhysicsError::InvalidBodyIndex { index: 0, count: 0 };
-        let _ = format!("{}", e);
+        let _ = format!("{e}");
     }
 
     #[test]
@@ -672,7 +672,8 @@ mod compile_smoke_tests {
         // The compile_error! macros in lib.rs guarantee that `wasm` + `ffi`
         // cannot be enabled together. This test documents the invariant.
         // If this crate compiles at all, the exclusion is enforced.
-        assert!(true);
+        // The compile_error! macros above enforce this at compile time.
+        // If this test runs, the invariant holds.
     }
 }
 
@@ -822,8 +823,7 @@ mod tests {
         // Allow 10% error due to gravity
         assert!(
             error < Fix128::ONE,
-            "Distance constraint violated: error = {:?}",
-            error
+            "Distance constraint violated: error = {error:?}"
         );
     }
 }

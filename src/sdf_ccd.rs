@@ -211,9 +211,9 @@ mod tests {
 
     fn unit_sphere() -> ClosureSdf {
         ClosureSdf::new(
-            |x, y, z| (x * x + y * y + z * z).sqrt() - 1.0,
+            |x, y, z| z.mul_add(z, x.mul_add(x, y * y)).sqrt() - 1.0,
             |x, y, z| {
-                let len = (x * x + y * y + z * z).sqrt();
+                let len = z.mul_add(z, x.mul_add(x, y * y)).sqrt();
                 if len < 1e-10 {
                     (0.0, 1.0, 0.0)
                 } else {
@@ -244,7 +244,7 @@ mod tests {
         let t = toi.t.to_f32();
         // Start at -5, sphere at 0, radius 1 + body radius 0.5 = contact at x = -1.5
         // t = (5 - 1.5) / 10 = 0.35
-        assert!(t > 0.2 && t < 0.5, "TOI should be ~0.35, got {}", t);
+        assert!(t > 0.2 && t < 0.5, "TOI should be ~0.35, got {t}");
     }
 
     #[test]
@@ -280,7 +280,7 @@ mod tests {
         let t = toi.t.to_f32();
         // Start at y=5, ground at y=0, radius=0.5, contact at y=0.5
         // t = (5 - 0.5) / 10 = 0.45
-        assert!(t > 0.3 && t < 0.6, "TOI should be ~0.45, got {}", t);
+        assert!(t > 0.3 && t < 0.6, "TOI should be ~0.45, got {t}");
     }
 
     #[test]

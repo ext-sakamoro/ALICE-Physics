@@ -213,7 +213,7 @@ fn test_bvh_query_correctness() {
     // Place 5 unit cubes at integer positions along the X axis
     let prims: Vec<BvhPrimitive> = (0u32..5)
         .map(|i| {
-            let x = Fix128::from_int(i as i64 * 3); // spaced 3 units apart
+            let x = Fix128::from_int(i64::from(i) * 3); // spaced 3 units apart
             BvhPrimitive {
                 aabb: AABB::new(
                     Vec3Fix::new(x, Fix128::ZERO, Fix128::ZERO),
@@ -232,8 +232,7 @@ fn test_bvh_query_correctness() {
     let hits = bvh.query(&q);
     assert!(
         hits.contains(&0),
-        "Expected primitive 0 in hit set, got {:?}",
-        hits
+        "Expected primitive 0 in hit set, got {hits:?}"
     );
 
     // Query in a gap between primitives — should have no hits
@@ -244,8 +243,7 @@ fn test_bvh_query_correctness() {
     // assert primitives 2-4 are absent.
     assert!(
         !gap_hits.contains(&2) && !gap_hits.contains(&3) && !gap_hits.contains(&4),
-        "Gap query should not return far primitives, got {:?}",
-        gap_hits
+        "Gap query should not return far primitives, got {gap_hits:?}"
     );
 
     // Empty BVH always returns empty
@@ -431,10 +429,10 @@ fn test_determinism_golden_hash() {
         }
 
         // FNV-1a
-        let mut hash: u64 = 0xcbf29ce484222325;
+        let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
         for &b in &bytes {
-            hash ^= b as u64;
-            hash = hash.wrapping_mul(0x100000001b3);
+            hash ^= u64::from(b);
+            hash = hash.wrapping_mul(0x0100_0000_01b3);
         }
         hash
     }
@@ -445,13 +443,12 @@ fn test_determinism_golden_hash() {
     // Two identical runs must produce the same hash
     assert_eq!(
         hash1, hash2,
-        "Determinism broken: hash1={:#018x} hash2={:#018x}",
-        hash1, hash2
+        "Determinism broken: hash1={hash1:#018x} hash2={hash2:#018x}"
     );
 
     // Hash should be non-trivial (different from FNV basis)
     assert_ne!(
-        hash1, 0xcbf29ce484222325u64,
+        hash1, 0xcbf2_9ce4_8422_2325_u64,
         "Hash should differ from FNV basis"
     );
 }
@@ -557,7 +554,7 @@ fn test_collision_filtering() {
 // Test 13 — Joint in step pipeline
 // ============================================================================
 
-/// A ball joint connecting two bodies should keep them together during step().
+/// A ball joint connecting two bodies should keep them together during `step()`.
 #[test]
 fn test_joint_in_step() {
     let config = PhysicsConfig {
@@ -594,7 +591,7 @@ fn test_joint_in_step() {
 // Test 14 — Force field in step pipeline
 // ============================================================================
 
-/// A directional force field should accelerate bodies during step().
+/// A directional force field should accelerate bodies during `step()`.
 #[test]
 fn test_force_field_in_step() {
     let config = PhysicsConfig {
@@ -825,7 +822,7 @@ fn test_world_raycast() {
 // Test 20 — add_body_with_radius convenience
 // ============================================================================
 
-/// Verify add_body_with_radius enables auto collision for that body.
+/// Verify `add_body_with_radius` enables auto collision for that body.
 #[test]
 fn test_add_body_with_radius() {
     let config = PhysicsConfig {
@@ -896,7 +893,7 @@ fn test_body_count_and_active() {
 // Test 22 — RigidBody convenience methods
 // ============================================================================
 
-/// Verify add_force, set_velocity, mass, speed methods.
+/// Verify `add_force`, `set_velocity`, mass, speed methods.
 #[test]
 fn test_rigid_body_convenience_methods() {
     let mut body = RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::from_int(2));
@@ -929,7 +926,7 @@ fn test_rigid_body_convenience_methods() {
 // Test 23 — angular_velocity serialization round-trip
 // ============================================================================
 
-/// Verify angular_velocity is preserved through serialize/deserialize.
+/// Verify `angular_velocity` is preserved through serialize/deserialize.
 #[test]
 fn test_angular_velocity_serialization_roundtrip() {
     let config = PhysicsConfig::default();
@@ -965,7 +962,7 @@ fn test_angular_velocity_serialization_roundtrip() {
 // Test 24 — All subsystems combined in step
 // ============================================================================
 
-/// Run step() with force fields + collisions + joints + sleeping + events all active.
+/// Run `step()` with force fields + collisions + joints + sleeping + events all active.
 #[test]
 fn test_all_subsystems_combined() {
     let config = PhysicsConfig {
@@ -1026,7 +1023,7 @@ fn test_all_subsystems_combined() {
 // Test 25 — raycast with zero direction
 // ============================================================================
 
-/// raycast() with zero-length direction should return None, not panic.
+/// `raycast()` with zero-length direction should return None, not panic.
 #[test]
 fn test_raycast_zero_direction() {
     let config = PhysicsConfig::default();
@@ -1044,7 +1041,7 @@ fn test_raycast_zero_direction() {
 // Test 26 — add_joint out-of-bounds panics
 // ============================================================================
 
-/// add_joint() with invalid body indices should panic.
+/// `add_joint()` with invalid body indices should panic.
 #[test]
 #[should_panic(expected = "out of bounds")]
 fn test_add_joint_out_of_bounds() {
@@ -1101,7 +1098,7 @@ fn test_remove_body_with_active_joint() {
 // Test 28 — Empty world step
 // ============================================================================
 
-/// step() on a world with zero bodies should not panic.
+/// `step()` on a world with zero bodies should not panic.
 #[test]
 fn test_empty_world_step() {
     let config = PhysicsConfig::default();
@@ -1260,7 +1257,7 @@ fn test_event_persist_explicit() {
 // Test 32 — dt=0 and dt<0 guard
 // ============================================================================
 
-/// step() with zero or negative dt should be a no-op.
+/// `step()` with zero or negative dt should be a no-op.
 #[test]
 fn test_step_zero_and_negative_dt() {
     let config = PhysicsConfig::default();
@@ -1290,7 +1287,7 @@ fn test_step_zero_and_negative_dt() {
 // Test 33 — Kinematic body pushes dynamic body
 // ============================================================================
 
-/// A kinematic body set_kinematic_target through a dynamic body should push it.
+/// A kinematic body `set_kinematic_target` through a dynamic body should push it.
 #[test]
 fn test_kinematic_pushes_dynamic() {
     use alice_physics::QuatFix;
@@ -1405,7 +1402,7 @@ fn test_get_body_accessors() {
 // Test 36 — filter::layers re-export
 // ============================================================================
 
-/// Verify that filter::layers constants are accessible from crate root.
+/// Verify that `filter::layers` constants are accessible from crate root.
 #[test]
 fn test_layers_reexport() {
     use alice_physics::layers;
@@ -1424,7 +1421,7 @@ fn test_layers_reexport() {
 // Test 37 — rebuild_batches graph coloring invariant
 // ============================================================================
 
-/// Verify rebuild_batches() + constraint solving produce correct results.
+/// Verify `rebuild_batches()` + constraint solving produce correct results.
 /// A chain of constraints should maintain distance after solving.
 #[test]
 fn test_rebuild_batches_constraint_chain() {
@@ -1438,7 +1435,7 @@ fn test_rebuild_batches_constraint_chain() {
     // Create a chain: 0 - 1 - 2 - 3 - 4 with unit distance
     for i in 0..5 {
         world.add_body(RigidBody::new_dynamic(
-            Vec3Fix::from_int(i as i64, 0, 0),
+            Vec3Fix::from_int(i64::from(i), 0, 0),
             Fix128::ONE,
         ));
     }
@@ -1623,7 +1620,7 @@ fn test_step_parallel_self_determinism() {
 // Test 39 — batch_raycast / batch_sphere_cast
 // ============================================================================
 
-/// Verify batch_raycast returns correct results for multiple rays.
+/// Verify `batch_raycast` returns correct results for multiple rays.
 #[test]
 fn test_batch_raycast_results() {
     use alice_physics::query::{batch_raycast, BatchRayQuery};
@@ -1655,7 +1652,7 @@ fn test_batch_raycast_results() {
     );
 }
 
-/// Verify batch_sphere_cast returns correct hit count.
+/// Verify `batch_sphere_cast` returns correct hit count.
 #[test]
 fn test_batch_sphere_cast_results() {
     use alice_physics::query::batch_sphere_cast;
@@ -2335,7 +2332,7 @@ fn test_stress_10_bodies_with_constraints() {
 
     // Line of 10 bodies
     for i in 0..10 {
-        let x = i as i64 * 3;
+        let x = i64::from(i) * 3;
         let body = RigidBody::new_dynamic(Vec3Fix::from_int(x, 20, 0), Fix128::ONE);
         world.add_body_with_radius(body, Fix128::ONE);
     }
@@ -2425,15 +2422,15 @@ fn test_rigid_body_builder() {
 #[test]
 fn test_display_traits() {
     let v = Vec3Fix::from_int(1, 2, 3);
-    let s = format!("{}", v);
-    assert!(s.contains("1"), "Vec3Fix display should contain components");
+    let s = format!("{v}");
+    assert!(s.contains('1'), "Vec3Fix display should contain components");
 
     let q = QuatFix::IDENTITY;
-    let s = format!("{}", q);
-    assert!(s.contains("1"), "QuatFix display should contain w=1");
+    let s = format!("{q}");
+    assert!(s.contains('1'), "QuatFix display should contain w=1");
 
     let f = Fix128::from_ratio(3, 2);
-    let s = format!("{}", f);
+    let s = format!("{f}");
     assert!(s.contains("1.5"), "Fix128(1.5) display should contain 1.5");
 }
 
@@ -2465,7 +2462,7 @@ fn test_from_into_conversions() {
 #[test]
 fn test_physics_world_debug() {
     let world = PhysicsWorld::new(PhysicsConfig::default());
-    let s = format!("{:?}", world);
+    let s = format!("{world:?}");
     assert!(s.contains("PhysicsWorld"));
     assert!(s.contains("bodies"));
 }
@@ -2535,12 +2532,12 @@ fn test_error_new_variants() {
         resource: "bodies",
         limit: 10000,
     };
-    assert!(format!("{}", e1).contains("10000"));
+    assert!(format!("{e1}").contains("10000"));
 
     let e2 = PhysicsError::InvalidConfiguration {
         reason: "substeps must be > 0",
     };
-    assert!(format!("{}", e2).contains("substeps"));
+    assert!(format!("{e2}").contains("substeps"));
 }
 
 // ============================================================================
@@ -2554,6 +2551,6 @@ fn test_heightfield_derives() {
     let hf = HeightField::flat(4, 4, Fix128::ONE, Vec3Fix::ZERO, Fix128::ZERO);
     let hf2 = hf.clone();
     assert_eq!(hf, hf2, "HeightField should be cloneable and comparable");
-    let s = format!("{:?}", hf);
+    let s = format!("{hf:?}");
     assert!(s.contains("HeightField"));
 }

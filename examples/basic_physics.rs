@@ -68,5 +68,5 @@ fn main() {
 
     println!();
     println!("Simulation complete (120 frames, 2 seconds).");
-    println!("Debug: {:?}", world);
+    println!("Debug: {world:?}");
 }

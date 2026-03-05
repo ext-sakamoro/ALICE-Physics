@@ -66,5 +66,5 @@ fn main() {
     println!();
     println!("Simulation complete (180 frames, 3 seconds).");
     println!("Final normals computed: {} vertices", normals.len());
-    println!("Debug: {:?}", cloth);
+    println!("Debug: {cloth:?}");
 }

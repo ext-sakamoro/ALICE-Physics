@@ -56,7 +56,7 @@ impl DebugColor {
 }
 
 /// A debug line segment
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct DebugLine {
     /// Start point
     pub start: Vec3Fix,
@@ -67,7 +67,7 @@ pub struct DebugLine {
 }
 
 /// A debug point
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct DebugPoint {
     /// Position
     pub position: Vec3Fix,
@@ -78,7 +78,7 @@ pub struct DebugPoint {
 }
 
 /// What to draw in debug mode
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[allow(clippy::struct_excessive_bools)]
 pub struct DebugDrawFlags {
     /// Draw body AABBs
@@ -126,7 +126,7 @@ pub struct DebugDrawData {
 impl DebugDrawData {
     /// Create empty draw data
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             lines: Vec::new(),
             points: Vec::new(),

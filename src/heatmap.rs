@@ -248,9 +248,9 @@ fn viridis_color(t: f64) -> [u8; 4] {
     let (r0, g0, b0) = STOPS[idx];
     let (r1, g1, b1) = STOPS[idx + 1];
 
-    let r = r0 + (r1 - r0) * frac;
-    let g = g0 + (g1 - g0) * frac;
-    let b = b0 + (b1 - b0) * frac;
+    let r = (r1 - r0).mul_add(frac, r0);
+    let g = (g1 - g0).mul_add(frac, g0);
+    let b = (b1 - b0).mul_add(frac, b0);
 
     [(r * 255.0) as u8, (g * 255.0) as u8, (b * 255.0) as u8, 255]
 }

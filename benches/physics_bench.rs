@@ -59,15 +59,15 @@ fn bench_physics_step(c: &mut Criterion) {
 fn bench_math_ops(c: &mut Criterion) {
     let mut group = c.benchmark_group("math_ops");
 
-    let a = Fix128::from_raw(12345, 0xABCDEF0123456789);
-    let b = Fix128::from_raw(67890, 0x9876543210FEDCBA);
+    let a = Fix128::from_raw(12_345, 0xABCD_EF01_2345_6789);
+    let b = Fix128::from_raw(67_890, 0x9876_5432_10FE_DCBA);
 
     group.bench_function("fix128_mul", |bench| {
         bench.iter(|| black_box(black_box(a) * black_box(b)));
     });
 
     group.bench_function("fix128_div", |bench| {
-        let divisor = Fix128::from_raw(67, 0x9876543210FEDCBA);
+        let divisor = Fix128::from_raw(67, 0x9876_5432_10FE_DCBA);
         bench.iter(|| black_box(black_box(a) / black_box(divisor)));
     });
 
@@ -109,7 +109,7 @@ fn bench_bvh_query(c: &mut Criterion) {
     // Build BVH with 100 primitives
     let prims: Vec<BvhPrimitive> = (0u32..100)
         .map(|i| {
-            let x = Fix128::from_int(i as i64 * 2);
+            let x = Fix128::from_int(i64::from(i) * 2);
             BvhPrimitive {
                 aabb: AABB::new(
                     Vec3Fix::new(x, Fix128::ZERO, Fix128::ZERO),
@@ -130,8 +130,8 @@ fn bench_bvh_query(c: &mut Criterion) {
     // Build BVH with 1000 primitives
     let prims_1k: Vec<BvhPrimitive> = (0u32..1000)
         .map(|i| {
-            let x = Fix128::from_int(i as i64 * 2);
-            let z = Fix128::from_int((i / 32) as i64 * 2);
+            let x = Fix128::from_int(i64::from(i) * 2);
+            let z = Fix128::from_int(i64::from(i / 32) * 2);
             BvhPrimitive {
                 aabb: AABB::new(
                     Vec3Fix::new(x, Fix128::ZERO, z),
