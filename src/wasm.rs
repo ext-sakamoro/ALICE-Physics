@@ -72,6 +72,7 @@ impl WasmPhysicsWorld {
                 Fix128::from_f64(gravity_z),
             ),
             damping: Fix128::from_ratio(99, 100),
+            ..Default::default()
         };
         Self {
             inner: PhysicsWorld::new(config),
