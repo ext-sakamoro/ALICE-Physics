@@ -256,7 +256,7 @@ impl AdaptiveSdfEvaluator {
 
     /// Get evaluation statistics as (saved, total) counts
     #[must_use]
-    pub fn stats(&self) -> (usize, usize) {
+    pub const fn stats(&self) -> (usize, usize) {
         (self.stats_saved, self.stats_total)
     }
 
@@ -287,9 +287,9 @@ mod tests {
 
     fn unit_sphere() -> ClosureSdf {
         ClosureSdf::new(
-            |x, y, z| (x * x + y * y + z * z).sqrt() - 1.0,
+            |x, y, z| z.mul_add(z, x.mul_add(x, y * y)).sqrt() - 1.0,
             |x, y, z| {
-                let len = (x * x + y * y + z * z).sqrt();
+                let len = z.mul_add(z, x.mul_add(x, y * y)).sqrt();
                 if len < 1e-10 {
                     (0.0, 1.0, 0.0)
                 } else {

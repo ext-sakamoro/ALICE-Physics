@@ -18,7 +18,7 @@ use crate::solver::RigidBody;
 use alloc::vec::Vec;
 
 /// Snapshot of a single body's render-relevant state
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct BodySnapshot {
     /// Position
     pub position: Vec3Fix,
@@ -32,7 +32,7 @@ impl BodySnapshot {
     /// Capture snapshot from a rigid body
     #[inline]
     #[must_use]
-    pub fn from_body(body: &RigidBody) -> Self {
+    pub const fn from_body(body: &RigidBody) -> Self {
         Self {
             position: body.position,
             rotation: body.rotation,
@@ -85,13 +85,13 @@ pub struct InterpolationState {
 impl InterpolationState {
     /// Create from two snapshots
     #[must_use]
-    pub fn new(prev: WorldSnapshot, current: WorldSnapshot) -> Self {
+    pub const fn new(prev: WorldSnapshot, current: WorldSnapshot) -> Self {
         Self { prev, current }
     }
 
     /// Create empty
     #[must_use]
-    pub fn empty() -> Self {
+    pub const fn empty() -> Self {
         Self {
             prev: WorldSnapshot { bodies: Vec::new() },
             current: WorldSnapshot { bodies: Vec::new() },

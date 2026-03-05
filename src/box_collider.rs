@@ -15,7 +15,7 @@ use crate::math::{Fix128, QuatFix, Vec3Fix};
 ///
 /// A box defined by center position, half-extents (size/2 on each axis),
 /// and an orientation quaternion.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct OrientedBox {
     /// Center position in world space
     pub center: Vec3Fix,
@@ -29,7 +29,7 @@ impl OrientedBox {
     /// Create a new oriented box
     #[inline]
     #[must_use]
-    pub fn new(center: Vec3Fix, half_extents: Vec3Fix, rotation: QuatFix) -> Self {
+    pub const fn new(center: Vec3Fix, half_extents: Vec3Fix, rotation: QuatFix) -> Self {
         Self {
             center,
             half_extents,
@@ -40,7 +40,7 @@ impl OrientedBox {
     /// Create an axis-aligned box (no rotation)
     #[inline]
     #[must_use]
-    pub fn axis_aligned(center: Vec3Fix, half_extents: Vec3Fix) -> Self {
+    pub const fn axis_aligned(center: Vec3Fix, half_extents: Vec3Fix) -> Self {
         Self {
             center,
             half_extents,

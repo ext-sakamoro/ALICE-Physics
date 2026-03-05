@@ -22,7 +22,7 @@ use crate::math::{Fix128, Mat3Fix, Vec3Fix};
 // ============================================================================
 
 /// Mass, center of mass, and inertia tensor for a rigid body.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct MassProperties {
     /// Total mass
     pub mass: Fix128,

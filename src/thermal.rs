@@ -319,9 +319,9 @@ mod tests {
 
     fn unit_sphere() -> ClosureSdf {
         ClosureSdf::new(
-            |x, y, z| (x * x + y * y + z * z).sqrt() - 1.0,
+            |x, y, z| z.mul_add(z, x.mul_add(x, y * y)).sqrt() - 1.0,
             |x, y, z| {
-                let len = (x * x + y * y + z * z).sqrt();
+                let len = z.mul_add(z, x.mul_add(x, y * y)).sqrt();
                 if len < 1e-10 {
                     (0.0, 1.0, 0.0)
                 } else {
@@ -341,8 +341,7 @@ mod tests {
         let d = modified.distance(2.0, 0.0, 0.0);
         assert!(
             (d - 1.0).abs() < 0.1,
-            "No heat should not change SDF, got {}",
-            d
+            "No heat should not change SDF, got {d}"
         );
     }
 
@@ -366,7 +365,7 @@ mod tests {
 
         // Check melt accumulation
         let melt = modifier.melt_accumulator.sample(0.0, 0.0, 0.0);
-        assert!(melt > 0.0, "Melt should accumulate, got {}", melt);
+        assert!(melt > 0.0, "Melt should accumulate, got {melt}");
     }
 
     #[test]
@@ -390,9 +389,7 @@ mod tests {
         // Expansion: distance should decrease (object grows)
         assert!(
             d_after < d_before,
-            "Expansion should decrease distance, before={}, after={}",
-            d_before,
-            d_after
+            "Expansion should decrease distance, before={d_before}, after={d_after}"
         );
     }
 
@@ -424,9 +421,7 @@ mod tests {
         let center_after = modifier.temperature_at(0.0, 0.0, 0.0);
         assert!(
             center_after < center_before,
-            "Heat should spread, before={}, after={}",
-            center_before,
-            center_after
+            "Heat should spread, before={center_before}, after={center_after}"
         );
     }
 }

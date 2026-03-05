@@ -16,7 +16,7 @@ use crate::math::{Fix128, Vec3Fix};
 // ============================================================================
 
 /// Configuration for cloth-fluid interaction.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ClothFluidCoupling {
     /// Drag coefficient applied to cloth particles submerged in fluid.
     /// Higher values cause stronger velocity damping.

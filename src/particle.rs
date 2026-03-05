@@ -89,7 +89,7 @@ pub struct Particle {
 impl Particle {
     /// Create a new active particle.
     #[must_use]
-    pub fn new(position: Vec3Fix, velocity: Vec3Fix, lifetime: Fix128, mass: Fix128) -> Self {
+    pub const fn new(position: Vec3Fix, velocity: Vec3Fix, lifetime: Fix128, mass: Fix128) -> Self {
         Self {
             position,
             velocity,
@@ -415,10 +415,14 @@ fn compute_force(field: &ForceField, position: Vec3Fix, velocity: Vec3Fix) -> Ve
 impl core::fmt::Debug for ParticleSystem {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("ParticleSystem")
-            .field("particles", &self.particles.len())
-            .field("emitters", &self.emitters.len())
-            .field("max_particles", &self.max_particles)
+            .field(
+                "particles",
+                &format_args!("[{} items]", self.particles.len()),
+            )
+            .field("emitters", &format_args!("[{} items]", self.emitters.len()))
             .field("gravity", &self.gravity)
+            .field("damping", &self.damping)
+            .field("max_particles", &self.max_particles)
             .finish()
     }
 }

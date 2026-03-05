@@ -24,7 +24,7 @@ use crate::math::{Fix128, QuatFix, Vec3Fix};
 /// An ellipsoid defined by center position, three semi-axis radii, and an
 /// orientation quaternion. The radii are stored as `Vec3Fix` where
 /// `radii.x`, `radii.y`, `radii.z` are the semi-axes along local X, Y, Z.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Ellipsoid {
     /// Center position in world space
     pub center: Vec3Fix,
@@ -38,7 +38,7 @@ impl Ellipsoid {
     /// Create a new axis-aligned ellipsoid
     #[inline]
     #[must_use]
-    pub fn new(center: Vec3Fix, radii: Vec3Fix) -> Self {
+    pub const fn new(center: Vec3Fix, radii: Vec3Fix) -> Self {
         Self {
             center,
             radii,
@@ -49,7 +49,7 @@ impl Ellipsoid {
     /// Create a new oriented ellipsoid
     #[inline]
     #[must_use]
-    pub fn with_rotation(center: Vec3Fix, radii: Vec3Fix, rotation: QuatFix) -> Self {
+    pub const fn with_rotation(center: Vec3Fix, radii: Vec3Fix, rotation: QuatFix) -> Self {
         Self {
             center,
             radii,

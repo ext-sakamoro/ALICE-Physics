@@ -194,9 +194,9 @@ mod tests {
 
     fn unit_sphere() -> ClosureSdf {
         ClosureSdf::new(
-            |x, y, z| (x * x + y * y + z * z).sqrt() - 1.0,
+            |x, y, z| z.mul_add(z, x.mul_add(x, y * y)).sqrt() - 1.0,
             |x, y, z| {
-                let len = (x * x + y * y + z * z).sqrt();
+                let len = z.mul_add(z, x.mul_add(x, y * y)).sqrt();
                 if len < 1e-10 {
                     (0.0, 1.0, 0.0)
                 } else {
@@ -215,8 +215,7 @@ mod tests {
         let d = modified.distance(2.0, 0.0, 0.0);
         assert!(
             (d - 1.0).abs() < 0.01,
-            "No pressure should not change SDF, got {}",
-            d
+            "No pressure should not change SDF, got {d}"
         );
     }
 
@@ -235,13 +234,12 @@ mod tests {
         let deform = modifier.deformation_at(1.0, 0.0, 0.0);
         assert!(
             deform > 0.0,
-            "Impact should create deformation, got {}",
-            deform
+            "Impact should create deformation, got {deform}"
         );
 
         // Distance should increase (surface pushed inward)
         let d = modifier.modify_distance(1.0, 0.0, 0.0, 0.0);
-        assert!(d > 0.0, "Dent should increase distance, got {}", d);
+        assert!(d > 0.0, "Dent should increase distance, got {d}");
     }
 
     #[test]
@@ -266,8 +264,7 @@ mod tests {
         let deform = modifier.deformation_at(0.0, 0.0, 0.0);
         assert!(
             deform > 0.0,
-            "High pressure should cause permanent deformation, got {}",
-            deform
+            "High pressure should cause permanent deformation, got {deform}"
         );
     }
 
@@ -290,9 +287,7 @@ mod tests {
         let after = modifier.pressure_at(0.0, 0.0, 0.0);
         assert!(
             after < before * 0.5,
-            "Pressure should decay, before={}, after={}",
-            before,
-            after
+            "Pressure should decay, before={before}, after={after}"
         );
     }
 }

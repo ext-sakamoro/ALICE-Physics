@@ -39,7 +39,7 @@ pub enum JointType {
 /// Ball-and-socket joint (3 rotational DOF)
 ///
 /// Constrains two anchor points to coincide while allowing free rotation.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct BallJoint {
     /// Index of the first body
     pub body_a: usize,
@@ -59,7 +59,7 @@ impl BallJoint {
     /// Create a new ball joint
     #[inline]
     #[must_use]
-    pub fn new(body_a: usize, body_b: usize, anchor_a: Vec3Fix, anchor_b: Vec3Fix) -> Self {
+    pub const fn new(body_a: usize, body_b: usize, anchor_a: Vec3Fix, anchor_b: Vec3Fix) -> Self {
         Self {
             body_a,
             body_b,
@@ -72,21 +72,21 @@ impl BallJoint {
 
     /// Set compliance (inverse stiffness)
     #[must_use]
-    pub fn with_compliance(mut self, compliance: Fix128) -> Self {
+    pub const fn with_compliance(mut self, compliance: Fix128) -> Self {
         self.compliance = compliance;
         self
     }
 
     /// Set break force threshold
     #[must_use]
-    pub fn with_break_force(mut self, force: Fix128) -> Self {
+    pub const fn with_break_force(mut self, force: Fix128) -> Self {
         self.break_force = Some(force);
         self
     }
 }
 
 /// Hinge joint (1 rotational DOF around an axis, with optional angle limits)
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HingeJoint {
     /// Index of the first body
     pub body_a: usize,
@@ -116,7 +116,7 @@ impl HingeJoint {
     /// Create a new hinge joint
     #[inline]
     #[must_use]
-    pub fn new(
+    pub const fn new(
         body_a: usize,
         body_b: usize,
         anchor_a: Vec3Fix,
@@ -141,7 +141,7 @@ impl HingeJoint {
 
     /// Set angular limits (radians)
     #[must_use]
-    pub fn with_limits(mut self, min: Fix128, max: Fix128) -> Self {
+    pub const fn with_limits(mut self, min: Fix128, max: Fix128) -> Self {
         self.angle_min = Some(min);
         self.angle_max = Some(max);
         self
@@ -149,21 +149,21 @@ impl HingeJoint {
 
     /// Set positional compliance (inverse stiffness)
     #[must_use]
-    pub fn with_compliance(mut self, compliance: Fix128) -> Self {
+    pub const fn with_compliance(mut self, compliance: Fix128) -> Self {
         self.compliance = compliance;
         self
     }
 
     /// Set break force threshold
     #[must_use]
-    pub fn with_break_force(mut self, force: Fix128) -> Self {
+    pub const fn with_break_force(mut self, force: Fix128) -> Self {
         self.break_force = Some(force);
         self
     }
 }
 
 /// Fixed joint (0 DOF, weld two bodies)
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FixedJoint {
     /// Index of the first body
     pub body_a: usize,
@@ -187,7 +187,7 @@ impl FixedJoint {
     /// Create a new fixed joint (weld)
     #[inline]
     #[must_use]
-    pub fn new(
+    pub const fn new(
         body_a: usize,
         body_b: usize,
         anchor_a: Vec3Fix,
@@ -208,14 +208,14 @@ impl FixedJoint {
 
     /// Set break force threshold
     #[must_use]
-    pub fn with_break_force(mut self, force: Fix128) -> Self {
+    pub const fn with_break_force(mut self, force: Fix128) -> Self {
         self.break_force = Some(force);
         self
     }
 }
 
 /// Slider (prismatic) joint: translation along a single axis
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SliderJoint {
     /// Index of the first body
     pub body_a: usize,
@@ -241,7 +241,7 @@ impl SliderJoint {
     /// Create a new slider joint along an axis
     #[inline]
     #[must_use]
-    pub fn new(
+    pub const fn new(
         body_a: usize,
         body_b: usize,
         axis: Vec3Fix,
@@ -263,7 +263,7 @@ impl SliderJoint {
 
     /// Set translation limits
     #[must_use]
-    pub fn with_limits(mut self, min: Fix128, max: Fix128) -> Self {
+    pub const fn with_limits(mut self, min: Fix128, max: Fix128) -> Self {
         self.limit_min = Some(min);
         self.limit_max = Some(max);
         self
@@ -271,14 +271,14 @@ impl SliderJoint {
 
     /// Set break force threshold
     #[must_use]
-    pub fn with_break_force(mut self, force: Fix128) -> Self {
+    pub const fn with_break_force(mut self, force: Fix128) -> Self {
         self.break_force = Some(force);
         self
     }
 }
 
 /// Spring joint: distance spring with damping
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SpringJoint {
     /// Index of the first body
     pub body_a: usize,
@@ -302,7 +302,7 @@ impl SpringJoint {
     /// Create a new spring joint
     #[inline]
     #[must_use]
-    pub fn new(
+    pub const fn new(
         body_a: usize,
         body_b: usize,
         anchor_a: Vec3Fix,
@@ -325,7 +325,7 @@ impl SpringJoint {
 
     /// Set break force threshold
     #[must_use]
-    pub fn with_break_force(mut self, force: Fix128) -> Self {
+    pub const fn with_break_force(mut self, force: Fix128) -> Self {
         self.break_force = Some(force);
         self
     }
@@ -347,7 +347,7 @@ pub enum D6Motion {
 ///
 /// Each of the 6 axes (3 linear + 3 angular) can be independently
 /// set to Free, Locked, or Limited.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct D6Joint {
     /// Index of the first body
     pub body_a: usize,
@@ -418,7 +418,7 @@ impl D6Joint {
 
     /// Set linear motion on all axes
     #[must_use]
-    pub fn with_linear_motion(mut self, x: D6Motion, y: D6Motion, z: D6Motion) -> Self {
+    pub const fn with_linear_motion(mut self, x: D6Motion, y: D6Motion, z: D6Motion) -> Self {
         self.linear_x = x;
         self.linear_y = y;
         self.linear_z = z;
@@ -427,7 +427,7 @@ impl D6Joint {
 
     /// Set angular motion on all axes
     #[must_use]
-    pub fn with_angular_motion(mut self, x: D6Motion, y: D6Motion, z: D6Motion) -> Self {
+    pub const fn with_angular_motion(mut self, x: D6Motion, y: D6Motion, z: D6Motion) -> Self {
         self.angular_x = x;
         self.angular_y = y;
         self.angular_z = z;
@@ -436,7 +436,7 @@ impl D6Joint {
 
     /// Set linear limits
     #[must_use]
-    pub fn with_linear_limits(mut self, min: Vec3Fix, max: Vec3Fix) -> Self {
+    pub const fn with_linear_limits(mut self, min: Vec3Fix, max: Vec3Fix) -> Self {
         self.linear_limit_min = min;
         self.linear_limit_max = max;
         self
@@ -444,7 +444,7 @@ impl D6Joint {
 
     /// Set angular limits
     #[must_use]
-    pub fn with_angular_limits(mut self, min: Vec3Fix, max: Vec3Fix) -> Self {
+    pub const fn with_angular_limits(mut self, min: Vec3Fix, max: Vec3Fix) -> Self {
         self.angular_limit_min = min;
         self.angular_limit_max = max;
         self
@@ -452,7 +452,7 @@ impl D6Joint {
 
     /// Set break force threshold
     #[must_use]
-    pub fn with_break_force(mut self, force: Fix128) -> Self {
+    pub const fn with_break_force(mut self, force: Fix128) -> Self {
         self.break_force = Some(force);
         self
     }
@@ -462,7 +462,7 @@ impl D6Joint {
 ///
 /// Used for ragdoll shoulders and hips where rotation is constrained
 /// to a cone around the twist axis, with an additional twist limit.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ConeTwistJoint {
     /// Index of the first body
     pub body_a: usize,
@@ -491,7 +491,7 @@ pub struct ConeTwistJoint {
 impl ConeTwistJoint {
     /// Create a new cone-twist joint
     #[must_use]
-    pub fn new(
+    pub const fn new(
         body_a: usize,
         body_b: usize,
         anchor_a: Vec3Fix,
@@ -516,7 +516,7 @@ impl ConeTwistJoint {
 
     /// Set cone and twist limits
     #[must_use]
-    pub fn with_limits(mut self, cone: Fix128, twist: Fix128) -> Self {
+    pub const fn with_limits(mut self, cone: Fix128, twist: Fix128) -> Self {
         self.cone_limit = cone;
         self.twist_limit = twist;
         self
@@ -524,14 +524,14 @@ impl ConeTwistJoint {
 
     /// Set break force threshold
     #[must_use]
-    pub fn with_break_force(mut self, force: Fix128) -> Self {
+    pub const fn with_break_force(mut self, force: Fix128) -> Self {
         self.break_force = Some(force);
         self
     }
 }
 
 /// Unified joint enum for storage in `PhysicsWorld`
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Joint {
     /// Ball-and-socket joint
     Ball(BallJoint),
@@ -553,45 +553,45 @@ impl Joint {
     /// Get body indices for this joint
     #[inline]
     #[must_use]
-    pub fn bodies(&self) -> (usize, usize) {
+    pub const fn bodies(&self) -> (usize, usize) {
         match self {
-            Joint::Ball(j) => (j.body_a, j.body_b),
-            Joint::Hinge(j) => (j.body_a, j.body_b),
-            Joint::Fixed(j) => (j.body_a, j.body_b),
-            Joint::Slider(j) => (j.body_a, j.body_b),
-            Joint::Spring(j) => (j.body_a, j.body_b),
-            Joint::D6(j) => (j.body_a, j.body_b),
-            Joint::ConeTwist(j) => (j.body_a, j.body_b),
+            Self::Ball(j) => (j.body_a, j.body_b),
+            Self::Hinge(j) => (j.body_a, j.body_b),
+            Self::Fixed(j) => (j.body_a, j.body_b),
+            Self::Slider(j) => (j.body_a, j.body_b),
+            Self::Spring(j) => (j.body_a, j.body_b),
+            Self::D6(j) => (j.body_a, j.body_b),
+            Self::ConeTwist(j) => (j.body_a, j.body_b),
         }
     }
 
     /// Get joint type
     #[inline]
     #[must_use]
-    pub fn joint_type(&self) -> JointType {
+    pub const fn joint_type(&self) -> JointType {
         match self {
-            Joint::Ball(_) => JointType::Ball,
-            Joint::Hinge(_) => JointType::Hinge,
-            Joint::Fixed(_) => JointType::Fixed,
-            Joint::Slider(_) => JointType::Slider,
-            Joint::Spring(_) => JointType::Spring,
-            Joint::D6(_) => JointType::D6,
-            Joint::ConeTwist(_) => JointType::ConeTwist,
+            Self::Ball(_) => JointType::Ball,
+            Self::Hinge(_) => JointType::Hinge,
+            Self::Fixed(_) => JointType::Fixed,
+            Self::Slider(_) => JointType::Slider,
+            Self::Spring(_) => JointType::Spring,
+            Self::D6(_) => JointType::D6,
+            Self::ConeTwist(_) => JointType::ConeTwist,
         }
     }
 
     /// Get the break force threshold (None = unbreakable)
     #[inline]
     #[must_use]
-    pub fn break_force(&self) -> Option<Fix128> {
+    pub const fn break_force(&self) -> Option<Fix128> {
         match self {
-            Joint::Ball(j) => j.break_force,
-            Joint::Hinge(j) => j.break_force,
-            Joint::Fixed(j) => j.break_force,
-            Joint::Slider(j) => j.break_force,
-            Joint::Spring(j) => j.break_force,
-            Joint::D6(j) => j.break_force,
-            Joint::ConeTwist(j) => j.break_force,
+            Self::Ball(j) => j.break_force,
+            Self::Hinge(j) => j.break_force,
+            Self::Fixed(j) => j.break_force,
+            Self::Slider(j) => j.break_force,
+            Self::Spring(j) => j.break_force,
+            Self::D6(j) => j.break_force,
+            Self::ConeTwist(j) => j.break_force,
         }
     }
 
@@ -605,22 +605,22 @@ impl Joint {
         let body_b = &bodies[b_idx];
 
         match self {
-            Joint::Ball(j) => {
+            Self::Ball(j) => {
                 let anchor_a = body_a.position + body_a.rotation.rotate_vec(j.local_anchor_a);
                 let anchor_b = body_b.position + body_b.rotation.rotate_vec(j.local_anchor_b);
                 (anchor_b - anchor_a).length()
             }
-            Joint::Hinge(j) => {
+            Self::Hinge(j) => {
                 let anchor_a = body_a.position + body_a.rotation.rotate_vec(j.local_anchor_a);
                 let anchor_b = body_b.position + body_b.rotation.rotate_vec(j.local_anchor_b);
                 (anchor_b - anchor_a).length()
             }
-            Joint::Fixed(j) => {
+            Self::Fixed(j) => {
                 let anchor_a = body_a.position + body_a.rotation.rotate_vec(j.local_anchor_a);
                 let anchor_b = body_b.position + body_b.rotation.rotate_vec(j.local_anchor_b);
                 (anchor_b - anchor_a).length()
             }
-            Joint::Slider(j) => {
+            Self::Slider(j) => {
                 let anchor_a = body_a.position + body_a.rotation.rotate_vec(j.local_anchor_a);
                 let anchor_b = body_b.position + body_b.rotation.rotate_vec(j.local_anchor_b);
                 let delta = anchor_b - anchor_a;
@@ -629,19 +629,19 @@ impl Joint {
                 let perp = delta - world_axis * along;
                 perp.length()
             }
-            Joint::Spring(j) => {
+            Self::Spring(j) => {
                 let anchor_a = body_a.position + body_a.rotation.rotate_vec(j.local_anchor_a);
                 let anchor_b = body_b.position + body_b.rotation.rotate_vec(j.local_anchor_b);
                 let dist = (anchor_b - anchor_a).length();
                 let displacement = dist - j.rest_length;
                 (j.stiffness * displacement).abs()
             }
-            Joint::D6(j) => {
+            Self::D6(j) => {
                 let anchor_a = body_a.position + body_a.rotation.rotate_vec(j.local_anchor_a);
                 let anchor_b = body_b.position + body_b.rotation.rotate_vec(j.local_anchor_b);
                 (anchor_b - anchor_a).length()
             }
-            Joint::ConeTwist(j) => {
+            Self::ConeTwist(j) => {
                 let anchor_a = body_a.position + body_a.rotation.rotate_vec(j.local_anchor_a);
                 let anchor_b = body_b.position + body_b.rotation.rotate_vec(j.local_anchor_b);
                 (anchor_b - anchor_a).length()

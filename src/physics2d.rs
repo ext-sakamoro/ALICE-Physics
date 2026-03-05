@@ -479,7 +479,7 @@ fn compute_inertia(shape: &Shape2D, mass: Fix128) -> Fix128 {
 // ============================================================================
 
 /// Contact point between two 2D bodies.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Contact2D {
     /// World-space contact point.
     pub point: Vec2Fix,
@@ -540,7 +540,7 @@ pub struct PhysicsWorld2D {
 impl PhysicsWorld2D {
     /// Create a new empty 2D physics world.
     #[must_use]
-    pub fn new(config: PhysicsConfig2D) -> Self {
+    pub const fn new(config: PhysicsConfig2D) -> Self {
         let gravity = config.gravity;
         Self {
             bodies: Vec::new(),
@@ -1491,9 +1491,10 @@ fn solve_mouse(
 impl core::fmt::Debug for PhysicsWorld2D {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("PhysicsWorld2D")
-            .field("bodies", &self.bodies.len())
-            .field("joints", &self.joints.len())
+            .field("bodies", &format_args!("[{} items]", self.bodies.len()))
+            .field("gravity", &self.gravity)
             .field("config", &self.config)
+            .field("joints", &format_args!("[{} items]", self.joints.len()))
             .finish()
     }
 }

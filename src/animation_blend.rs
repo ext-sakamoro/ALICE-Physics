@@ -41,7 +41,7 @@ pub enum BlendMode {
 // ============================================================================
 
 /// A single bone pose (position + rotation)
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct BonePose {
     /// Bone position (local space)
     pub position: Vec3Fix,
@@ -83,7 +83,7 @@ impl SkeletonPose {
 
     /// Lerp between two poses
     #[must_use]
-    pub fn lerp(a: &SkeletonPose, b: &SkeletonPose, t: Fix128) -> SkeletonPose {
+    pub fn lerp(a: &Self, b: &Self, t: Fix128) -> Self {
         let n = a.bones.len().min(b.bones.len());
         let one_minus_t = Fix128::ONE - t;
 
@@ -98,7 +98,7 @@ impl SkeletonPose {
             })
             .collect();
 
-        SkeletonPose { bones }
+        Self { bones }
     }
 }
 
@@ -107,7 +107,7 @@ impl SkeletonPose {
 // ============================================================================
 
 /// Keyframe for a single bone
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Keyframe {
     /// Time in seconds
     pub time: Fix128,
@@ -332,7 +332,7 @@ impl AnimationBlender {
 
     /// Get motor targets for powered mode (animation poses as motor goals)
     #[must_use]
-    pub fn get_motor_targets(&self) -> &SkeletonPose {
+    pub const fn get_motor_targets(&self) -> &SkeletonPose {
         &self.animation_pose
     }
 
@@ -450,11 +450,7 @@ mod tests {
 
         let mid = SkeletonPose::lerp(&a, &b, Fix128::from_ratio(1, 2));
         let x = mid.bones[0].position.x.to_f32();
-        assert!(
-            (x - 5.0).abs() < 0.1,
-            "Midpoint should be at x=5, got {}",
-            x
-        );
+        assert!((x - 5.0).abs() < 0.1, "Midpoint should be at x=5, got {x}");
     }
 
     #[test]
@@ -483,7 +479,7 @@ mod tests {
 
         let pose = clip.sample(Fix128::ONE); // t=1s, midpoint
         let x = pose.bones[0].position.x.to_f32();
-        assert!((x - 5.0).abs() < 0.5, "At t=1s, x should be ~5, got {}", x);
+        assert!((x - 5.0).abs() < 0.5, "At t=1s, x should be ~5, got {x}");
     }
 
     #[test]

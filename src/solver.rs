@@ -72,7 +72,7 @@ pub enum BodyType {
 ///
 /// `#[repr(C, align(64))]` ensures the struct starts on a cache-line boundary
 /// so the hot fields are always in the first 64-byte cache line.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(C, align(64))]
 pub struct RigidBody {
     // --- HOT fields (accessed every iteration) ---
@@ -179,7 +179,7 @@ impl RigidBody {
 
     /// Create static (immovable) rigid body
     #[must_use]
-    pub fn new_static(position: Vec3Fix) -> Self {
+    pub const fn new_static(position: Vec3Fix) -> Self {
         Self {
             position,
             velocity: Vec3Fix::ZERO,
@@ -202,7 +202,7 @@ impl RigidBody {
 
     /// Create a sensor (trigger) body - detects overlap but no physics response
     #[must_use]
-    pub fn new_sensor(position: Vec3Fix) -> Self {
+    pub const fn new_sensor(position: Vec3Fix) -> Self {
         Self {
             position,
             velocity: Vec3Fix::ZERO,
@@ -228,7 +228,7 @@ impl RigidBody {
     /// Kinematic bodies have infinite mass and are unaffected by forces,
     /// but can push dynamic bodies. Set target via `set_kinematic_target`.
     #[must_use]
-    pub fn new_kinematic(position: Vec3Fix) -> Self {
+    pub const fn new_kinematic(position: Vec3Fix) -> Self {
         Self {
             position,
             velocity: Vec3Fix::ZERO,
@@ -252,7 +252,7 @@ impl RigidBody {
     /// Check if body is static
     #[inline]
     #[must_use]
-    pub fn is_static(&self) -> bool {
+    pub const fn is_static(&self) -> bool {
         self.inv_mass.is_zero()
     }
 
@@ -372,7 +372,7 @@ impl RigidBody {
     /// Set per-body linear damping (1.0 = no extra damping)
     #[inline]
     #[must_use]
-    pub fn with_linear_damping(mut self, damping: Fix128) -> Self {
+    pub const fn with_linear_damping(mut self, damping: Fix128) -> Self {
         self.linear_damping = damping;
         self
     }
@@ -380,7 +380,7 @@ impl RigidBody {
     /// Set per-body angular damping (1.0 = no extra damping)
     #[inline]
     #[must_use]
-    pub fn with_angular_damping(mut self, damping: Fix128) -> Self {
+    pub const fn with_angular_damping(mut self, damping: Fix128) -> Self {
         self.angular_damping = damping;
         self
     }
@@ -388,7 +388,7 @@ impl RigidBody {
     /// Builder: set restitution (bounciness)
     #[inline]
     #[must_use]
-    pub fn with_restitution(mut self, restitution: Fix128) -> Self {
+    pub const fn with_restitution(mut self, restitution: Fix128) -> Self {
         self.restitution = restitution;
         self
     }
@@ -396,7 +396,7 @@ impl RigidBody {
     /// Builder: set friction coefficient
     #[inline]
     #[must_use]
-    pub fn with_friction(mut self, friction: Fix128) -> Self {
+    pub const fn with_friction(mut self, friction: Fix128) -> Self {
         self.friction = friction;
         self
     }
@@ -404,7 +404,7 @@ impl RigidBody {
     /// Builder: set gravity scale
     #[inline]
     #[must_use]
-    pub fn with_gravity_scale(mut self, scale: Fix128) -> Self {
+    pub const fn with_gravity_scale(mut self, scale: Fix128) -> Self {
         self.gravity_scale = scale;
         self
     }
@@ -412,7 +412,7 @@ impl RigidBody {
     /// Builder: set as sensor (trigger)
     #[inline]
     #[must_use]
-    pub fn with_sensor(mut self, is_sensor: bool) -> Self {
+    pub const fn with_sensor(mut self, is_sensor: bool) -> Self {
         self.is_sensor = is_sensor;
         self
     }
@@ -420,7 +420,7 @@ impl RigidBody {
     /// Builder: set initial velocity
     #[inline]
     #[must_use]
-    pub fn with_velocity(mut self, velocity: Vec3Fix) -> Self {
+    pub const fn with_velocity(mut self, velocity: Vec3Fix) -> Self {
         self.velocity = velocity;
         self
     }
@@ -428,7 +428,7 @@ impl RigidBody {
     /// Builder: set initial rotation
     #[inline]
     #[must_use]
-    pub fn with_rotation(mut self, rotation: QuatFix) -> Self {
+    pub const fn with_rotation(mut self, rotation: QuatFix) -> Self {
         self.rotation = rotation;
         self.prev_rotation = rotation;
         self
@@ -447,7 +447,7 @@ impl Default for RigidBody {
 // ============================================================================
 
 /// Distance constraint between two bodies
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct DistanceConstraint {
     /// Index of the first body
     pub body_a: usize,
@@ -472,7 +472,7 @@ pub struct DistanceConstraint {
 impl DistanceConstraint {
     /// Create a new distance constraint
     #[must_use]
-    pub fn new(
+    pub const fn new(
         body_a: usize,
         body_b: usize,
         anchor_a: Vec3Fix,
@@ -492,14 +492,14 @@ impl DistanceConstraint {
 
     /// Set compliance (inverse stiffness)
     #[must_use]
-    pub fn with_compliance(mut self, compliance: Fix128) -> Self {
+    pub const fn with_compliance(mut self, compliance: Fix128) -> Self {
         self.compliance = compliance;
         self
     }
 }
 
 /// Contact constraint (from collision detection)
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ContactConstraint {
     /// Index of the first body
     pub body_a: usize,
@@ -532,7 +532,7 @@ impl ContactConstraint {
 // ============================================================================
 
 /// XPBD physics solver configuration
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SolverConfig {
     /// Number of substeps per frame
     pub substeps: usize,
@@ -2707,8 +2707,7 @@ mod tests {
         let ng_y = world.bodies[ng_id].position.y;
         assert!(
             ng_y > Fix128::from_int(9),
-            "Zero-gravity body should stay near y=10, got {:?}",
-            ng_y
+            "Zero-gravity body should stay near y=10, got {ng_y:?}"
         );
 
         // Normal body should have fallen (damping is strong, just check it fell at all)
@@ -2754,8 +2753,7 @@ mod tests {
         assert!(y < 5.0, "Body should have fallen from y=5");
         assert!(
             y > -1.0,
-            "Body should not have fallen through SDF ground, y={}",
-            y
+            "Body should not have fallen through SDF ground, y={y}"
         );
     }
 }

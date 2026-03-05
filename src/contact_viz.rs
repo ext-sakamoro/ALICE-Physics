@@ -19,7 +19,7 @@ use alloc::vec::Vec;
 // ============================================================================
 
 /// An arrow representing a contact force.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ContactArrow {
     /// Contact point position
     pub position: Vec3Fix,
@@ -35,7 +35,7 @@ pub struct ContactArrow {
 ///
 /// The cone axis is aligned with the contact normal, and the half-angle
 /// is determined by `arctan(friction_coefficient)`.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FrictionCone {
     /// Contact point position (cone apex)
     pub position: Vec3Fix,

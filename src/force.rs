@@ -10,7 +10,7 @@ use crate::solver::RigidBody;
 use alloc::vec::Vec;
 
 /// Force field type
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ForceField {
     /// Constant directional force (e.g., wind)
     Directional {
@@ -105,7 +105,7 @@ impl ForceFieldInstance {
     /// Create a new force field instance affecting all bodies
     #[inline]
     #[must_use]
-    pub fn new(field: ForceField) -> Self {
+    pub const fn new(field: ForceField) -> Self {
         Self {
             field,
             affected_bodies: None,
@@ -126,10 +126,9 @@ impl ForceFieldInstance {
         if !self.enabled {
             return false;
         }
-        match &self.affected_bodies {
-            None => true,
-            Some(list) => list.contains(&body_index),
-        }
+        self.affected_bodies
+            .as_ref()
+            .map_or(true, |list| list.contains(&body_index))
     }
 }
 

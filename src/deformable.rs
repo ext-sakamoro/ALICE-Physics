@@ -26,7 +26,7 @@ use alloc::vec::Vec;
 // ============================================================================
 
 /// Deformable body configuration
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct DeformableConfig {
     /// Solver iterations
     pub iterations: usize,
@@ -555,9 +555,42 @@ fn compute_tet_volume(p0: Vec3Fix, p1: Vec3Fix, p2: Vec3Fix, p3: Vec3Fix) -> Fix
 impl core::fmt::Debug for DeformableBody {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("DeformableBody")
-            .field("particles", &self.positions.len())
-            .field("tetrahedra", &self.tetrahedra.len())
-            .field("surface_triangles", &self.surface_triangles.len())
+            .field(
+                "positions",
+                &format_args!("[{} items]", self.positions.len()),
+            )
+            .field(
+                "prev_positions",
+                &format_args!("[{} items]", self.prev_positions.len()),
+            )
+            .field(
+                "velocities",
+                &format_args!("[{} items]", self.velocities.len()),
+            )
+            .field(
+                "inv_masses",
+                &format_args!("[{} items]", self.inv_masses.len()),
+            )
+            .field(
+                "tetrahedra",
+                &format_args!("[{} items]", self.tetrahedra.len()),
+            )
+            .field(
+                "surface_triangles",
+                &format_args!("[{} items]", self.surface_triangles.len()),
+            )
+            .field(
+                "tet_constraints",
+                &format_args!("[{} items]", self.tet_constraints.len()),
+            )
+            .field(
+                "edge_constraints",
+                &format_args!("[{} items]", self.edge_constraints.len()),
+            )
+            .field(
+                "rest_relative",
+                &format_args!("[{} items]", self.rest_relative.len()),
+            )
             .field("config", &self.config)
             .finish()
     }

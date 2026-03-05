@@ -26,7 +26,7 @@ use alloc::vec::Vec;
 // ============================================================================
 
 /// Rope simulation configuration
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RopeConfig {
     /// Number of solver iterations per step
     pub iterations: usize,
@@ -56,7 +56,7 @@ impl Default for RopeConfig {
 }
 
 /// Pin constraint: attach a particle to a fixed point or body
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PinConstraint {
     /// Particle index
     pub particle_index: usize,
@@ -334,11 +334,29 @@ impl Rope {
 impl core::fmt::Debug for Rope {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("Rope")
-            .field("particles", &self.positions.len())
-            .field("segments", &self.rest_lengths.len())
-            .field("pins", &self.pins.len())
-            .field("total_length", &self.total_length)
+            .field(
+                "positions",
+                &format_args!("[{} items]", self.positions.len()),
+            )
+            .field(
+                "prev_positions",
+                &format_args!("[{} items]", self.prev_positions.len()),
+            )
+            .field(
+                "velocities",
+                &format_args!("[{} items]", self.velocities.len()),
+            )
+            .field(
+                "inv_masses",
+                &format_args!("[{} items]", self.inv_masses.len()),
+            )
+            .field(
+                "rest_lengths",
+                &format_args!("[{} items]", self.rest_lengths.len()),
+            )
+            .field("pins", &format_args!("[{} items]", self.pins.len()))
             .field("config", &self.config)
+            .field("total_length", &self.total_length)
             .finish()
     }
 }

@@ -92,16 +92,16 @@ impl Crack {
         let b_ay = by - ay;
         let b_az = bz - az;
 
-        let ba_len_sq = b_ax * b_ax + b_ay * b_ay + b_az * b_az;
+        let ba_len_sq = b_az.mul_add(b_az, b_ax.mul_add(b_ax, b_ay * b_ay));
         let h = if ba_len_sq > 1e-10 {
-            ((pax * b_ax + pay * b_ay + paz * b_az) / ba_len_sq).clamp(0.0, 1.0)
+            (paz.mul_add(b_az, pax.mul_add(b_ax, pay * b_ay)) / ba_len_sq).clamp(0.0, 1.0)
         } else {
             0.0
         };
 
-        let dx = pax - b_ax * h;
-        let dy = pay - b_ay * h;
-        let dz = paz - b_az * h;
+        let dx = b_ax.mul_add(-h, pax);
+        let dy = b_ay.mul_add(-h, pay);
+        let dz = b_az.mul_add(-h, paz);
 
         (dx * dx + dy * dy + dz * dz).sqrt() - width
     }
@@ -198,14 +198,14 @@ impl FractureModifier {
                         if !too_close {
                             // Crack direction: along stress gradient (perpendicular to max stress)
                             let (gx, gy, gz) = self.stress.gradient(wx, wy, wz);
-                            let glen = (gx * gx + gy * gy + gz * gz).sqrt();
+                            let glen = gz.mul_add(gz, gx.mul_add(gx, gy * gy)).sqrt();
 
                             // Perpendicular to gradient (crack runs along stress contour)
                             let (dx, dy, dz) = if glen > 1e-5 {
                                 // Cross with up vector for horizontal crack tendency
-                                let cx = gy * 0.0 - gz * 1.0;
-                                let cy = gz * 0.0 - gx * 0.0;
-                                let cz = gx * 1.0 - gy * 0.0;
+                                let cx = gy.mul_add(0.0, -(gz * 1.0));
+                                let cy = gz.mul_add(0.0, -(gx * 0.0));
+                                let cz = gx.mul_add(1.0, -(gy * 0.0));
                                 let clen = (cx * cx + cy * cy + cz * cz).sqrt();
                                 if clen > 1e-5 {
                                     (cx / clen, cy / clen, cz / clen)
@@ -257,9 +257,9 @@ impl FractureModifier {
 
             // Extend tip
             crack.end = (
-                crack.start.0 + crack.direction.0 * crack.length,
-                crack.start.1 + crack.direction.1 * crack.length,
-                crack.start.2 + crack.direction.2 * crack.length,
+                crack.direction.0.mul_add(crack.length, crack.start.0),
+                crack.direction.1.mul_add(crack.length, crack.start.1),
+                crack.direction.2.mul_add(crack.length, crack.start.2),
             );
         }
     }
@@ -350,7 +350,7 @@ mod tests {
         modifier.update(0.016);
 
         assert!(
-            modifier.cracks.len() > 0,
+            !modifier.cracks.is_empty(),
             "High stress should create cracks"
         );
     }
@@ -368,19 +368,17 @@ mod tests {
         modifier.apply_stress_at(0.0, 0.0, 0.0, 500.0, 1.5);
         modifier.update(0.016); // Create crack
 
-        let initial_len = modifier.cracks.get(0).map(|c| c.length).unwrap_or(0.0);
+        let initial_len = modifier.cracks.first().map_or(0.0, |c| c.length);
 
         // Propagate
         for _ in 0..10 {
             modifier.update(0.016);
         }
 
-        let final_len = modifier.cracks.get(0).map(|c| c.length).unwrap_or(0.0);
+        let final_len = modifier.cracks.first().map_or(0.0, |c| c.length);
         assert!(
             final_len > initial_len,
-            "Crack should grow: initial={}, final={}",
-            initial_len,
-            final_len
+            "Crack should grow: initial={initial_len}, final={final_len}"
         );
     }
 
@@ -405,6 +403,6 @@ mod tests {
         let d = modifier.modify_distance(0.0, 0.0, 0.0, -0.05);
         // Original was inside (-0.05), crack distance at (0,0,0) should be near -0.1
         // max(-0.05, -(-0.1)) = max(-0.05, 0.1) = 0.1
-        assert!(d > -0.05, "Crack should cut into the SDF, got {}", d);
+        assert!(d > -0.05, "Crack should cut into the SDF, got {d}");
     }
 }

@@ -25,7 +25,7 @@ use crate::math::{Fix128, QuatFix, Vec3Fix};
 /// A cone defined by center position, half-height (from center to apex along
 /// local Y axis), base radius, and an orientation quaternion. The apex sits
 /// at local `+Y` and the base circle at local `-Y`.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Cone {
     /// Center position in world space (midpoint between apex and base center)
     pub center: Vec3Fix,
@@ -41,7 +41,7 @@ impl Cone {
     /// Create a new axis-aligned cone (Y-up, apex at +Y)
     #[inline]
     #[must_use]
-    pub fn new(center: Vec3Fix, radius: Fix128, half_height: Fix128) -> Self {
+    pub const fn new(center: Vec3Fix, radius: Fix128, half_height: Fix128) -> Self {
         Self {
             center,
             radius,
@@ -53,7 +53,7 @@ impl Cone {
     /// Create a new oriented cone
     #[inline]
     #[must_use]
-    pub fn with_rotation(
+    pub const fn with_rotation(
         center: Vec3Fix,
         radius: Fix128,
         half_height: Fix128,

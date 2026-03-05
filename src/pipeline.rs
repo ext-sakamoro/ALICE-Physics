@@ -84,19 +84,19 @@ impl<T: Copy + Default, const N: usize> RingBuffer<T, N> {
 
     /// Check if buffer is empty
     #[inline]
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.read_pos == self.write_pos
     }
 
     /// Check if buffer is full
     #[inline]
-    pub fn is_full(&self) -> bool {
+    pub const fn is_full(&self) -> bool {
         (self.write_pos + 1) % N == self.read_pos
     }
 
     /// Get current length
     #[inline]
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         if self.write_pos >= self.read_pos {
             self.write_pos - self.read_pos
         } else {
@@ -112,7 +112,7 @@ impl<T: Copy + Default, const N: usize> RingBuffer<T, N> {
 
     /// Get count of dropped items
     #[inline]
-    pub fn dropped(&self) -> u64 {
+    pub const fn dropped(&self) -> u64 {
         self.dropped
     }
 
@@ -428,21 +428,21 @@ impl<const SLOTS: usize, const QUEUE_SIZE: usize> MetricPipeline<SLOTS, QUEUE_SI
     /// Get total events processed
     #[inline]
     #[must_use]
-    pub fn total_events(&self) -> u64 {
+    pub const fn total_events(&self) -> u64 {
         self.total_events
     }
 
     /// Get count of dropped events
     #[inline]
     #[must_use]
-    pub fn dropped_events(&self) -> u64 {
+    pub const fn dropped_events(&self) -> u64 {
         self.queue.dropped()
     }
 
     /// Get queue length
     #[inline]
     #[must_use]
-    pub fn queue_len(&self) -> usize {
+    pub const fn queue_len(&self) -> usize {
         self.queue.len()
     }
 
@@ -510,7 +510,7 @@ pub struct MetricRegistry<const N: usize> {
 impl<const N: usize> MetricRegistry<N> {
     /// Create a new empty registry
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         const NONE_ENTRY: Option<MetricEntry> = None;
         Self {
             entries: [NONE_ENTRY; N],
@@ -566,7 +566,7 @@ impl<const N: usize> MetricRegistry<N> {
     /// Get count of registered metrics
     #[inline]
     #[must_use]
-    pub fn count(&self) -> usize {
+    pub const fn count(&self) -> usize {
         self.count
     }
 }
@@ -631,6 +631,7 @@ impl From<&MetricSlot> for MetricSnapshot {
 // ============================================================================
 
 #[cfg(test)]
+#[allow(clippy::float_cmp)]
 mod tests {
     use super::*;
     use crate::sketch::FnvHasher;

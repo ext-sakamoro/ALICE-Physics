@@ -16,7 +16,7 @@ use crate::math::{Fix128, Vec3Fix};
 use alloc::vec::Vec;
 
 /// A ray defined by origin and direction
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Ray {
     /// Ray origin point
     pub origin: Vec3Fix,
@@ -55,7 +55,7 @@ impl Ray {
 }
 
 /// Result of a ray intersection test
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RayHit {
     /// Parameter along the ray (distance from origin)
     pub t: Fix128,

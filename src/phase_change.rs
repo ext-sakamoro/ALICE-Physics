@@ -175,7 +175,7 @@ impl PhaseChangeModifier {
             // Solid → Liquid transition
             if is_solid && temp >= melt_t {
                 let excess = temp - melt_t;
-                let new_lh = lh + excess * dt;
+                let new_lh = excess.mul_add(dt, lh);
                 if new_lh >= lh_fusion {
                     self.phase.data[i] = 1.0; // Liquid
                     self.latent_heat.data[i] = 0.0;
@@ -191,7 +191,7 @@ impl PhaseChangeModifier {
             // Liquid → Gas transition
             if is_liquid && temp >= boil_t {
                 let excess = temp - boil_t;
-                let new_lh = self.latent_heat.data[i] + excess * dt;
+                let new_lh = excess.mul_add(dt, self.latent_heat.data[i]);
                 if new_lh >= lh_vaporization {
                     self.phase.data[i] = 2.0; // Gas
                     self.latent_heat.data[i] = 0.0;
@@ -232,12 +232,14 @@ impl PhaseChangeModifier {
 
             if phase_val >= 1.5 {
                 // Gas: expand and dissipate (increase SDF = material removed)
-                self.sdf_offset.data[i] =
-                    (self.sdf_offset.data[i] + (gas_expand + gas_dissipate) * dt).min(max_offset);
+                self.sdf_offset.data[i] = (gas_expand + gas_dissipate)
+                    .mul_add(dt, self.sdf_offset.data[i])
+                    .min(max_offset);
             } else if phase_val >= 0.5 {
                 // Liquid: slight material softening
-                self.sdf_offset.data[i] =
-                    (self.sdf_offset.data[i] + liquid_flow * 0.1 * dt).min(max_offset);
+                self.sdf_offset.data[i] = (liquid_flow * 0.1)
+                    .mul_add(dt, self.sdf_offset.data[i])
+                    .min(max_offset);
             }
             // Solid: no offset change
         }
@@ -328,8 +330,7 @@ mod tests {
         let d = modifier.modify_distance(0.0, 0.0, 0.0, -1.0);
         assert!(
             (d - (-1.0)).abs() < 0.01,
-            "No heat should not change SDF, got {}",
-            d
+            "No heat should not change SDF, got {d}"
         );
         assert_eq!(modifier.phase_at(0.0, 0.0, 0.0), Phase::Solid);
     }
@@ -357,8 +358,7 @@ mod tests {
         let phase = modifier.phase_at(0.0, 0.0, 0.0);
         assert!(
             phase == Phase::Liquid || phase == Phase::Gas,
-            "High heat should melt material, got {:?}",
-            phase
+            "High heat should melt material, got {phase:?}"
         );
     }
 
@@ -387,13 +387,12 @@ mod tests {
         assert_eq!(
             phase,
             Phase::Gas,
-            "Extreme heat should vaporize, got {:?}",
-            phase
+            "Extreme heat should vaporize, got {phase:?}"
         );
 
         // Gas should have increased SDF offset
         let offset = modifier.sdf_offset.sample(0.0, 0.0, 0.0);
-        assert!(offset > 0.0, "Gas should add SDF offset, got {}", offset);
+        assert!(offset > 0.0, "Gas should add SDF offset, got {offset}");
     }
 
     #[test]
@@ -418,8 +417,7 @@ mod tests {
         let phase_hot = modifier.phase_at(0.0, 0.0, 0.0);
         assert!(
             phase_hot == Phase::Liquid || phase_hot == Phase::Gas,
-            "Should be liquid/gas after heating, got {:?}",
-            phase_hot
+            "Should be liquid/gas after heating, got {phase_hot:?}"
         );
 
         // Enable fast cooling and cool down
@@ -432,8 +430,7 @@ mod tests {
         assert_eq!(
             phase_cold,
             Phase::Solid,
-            "Should solidify after cooling, got {:?}",
-            phase_cold
+            "Should solidify after cooling, got {phase_cold:?}"
         );
     }
 }

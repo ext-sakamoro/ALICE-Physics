@@ -24,7 +24,7 @@ use std::collections::HashMap;
 pub const MAX_MANIFOLD_POINTS: usize = 4;
 
 /// A single cached contact point within a manifold
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CachedContactPoint {
     /// Contact point on body A (local space)
     pub local_point_a: Vec3Fix,
@@ -47,7 +47,7 @@ pub struct CachedContactPoint {
 impl CachedContactPoint {
     /// Create a new cached contact point
     #[must_use]
-    pub fn new(local_a: Vec3Fix, local_b: Vec3Fix, normal: Vec3Fix, depth: Fix128) -> Self {
+    pub const fn new(local_a: Vec3Fix, local_b: Vec3Fix, normal: Vec3Fix, depth: Fix128) -> Self {
         Self {
             local_point_a: local_a,
             local_point_b: local_b,
@@ -74,7 +74,7 @@ impl BodyPairKey {
     /// Create a canonical body pair key (ensures a < b)
     #[inline]
     #[must_use]
-    pub fn new(a: usize, b: usize) -> Self {
+    pub const fn new(a: usize, b: usize) -> Self {
         if a < b {
             Self {
                 body_a: a as u32,
@@ -419,10 +419,19 @@ impl Default for ContactCache {
 
 impl core::fmt::Debug for ContactCache {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("ContactCache")
-            .field("manifolds", &self.manifolds.len())
-            .field("max_stale_frames", &self.max_stale_frames)
-            .finish()
+        let mut s = f.debug_struct("ContactCache");
+        s.field(
+            "manifolds",
+            &format_args!("[{} items]", self.manifolds.len()),
+        );
+        #[cfg(feature = "std")]
+        s.field(
+            "pair_index",
+            &format_args!("[{} items]", self.pair_index.len()),
+        );
+        s.field("max_stale_frames", &self.max_stale_frames);
+        s.field("warm_start_factor", &self.warm_start_factor);
+        s.finish()
     }
 }
 

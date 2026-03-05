@@ -34,7 +34,7 @@ pub struct ProfileEntry {
 impl ProfileEntry {
     /// Create a new profile entry
     #[must_use]
-    pub fn new(name: &'static str) -> Self {
+    pub const fn new(name: &'static str) -> Self {
         Self {
             name,
             total_ticks: 0,
@@ -47,7 +47,7 @@ impl ProfileEntry {
     /// Average ticks per call
     #[inline]
     #[must_use]
-    pub fn average_ticks(&self) -> u64 {
+    pub const fn average_ticks(&self) -> u64 {
         if self.call_count == 0 {
             0
         } else {
@@ -215,21 +215,21 @@ pub struct TickCounter {
 impl TickCounter {
     /// Create a new tick counter
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self { current: 0 }
     }
 
     /// Start timing
     #[inline]
     #[must_use]
-    pub fn start(&self) -> u64 {
+    pub const fn start(&self) -> u64 {
         self.current
     }
 
     /// Stop timing and return elapsed ticks
     #[inline]
     #[must_use]
-    pub fn elapsed(&self, start: u64) -> u64 {
+    pub const fn elapsed(&self, start: u64) -> u64 {
         self.current.wrapping_sub(start)
     }
 
@@ -242,7 +242,7 @@ impl TickCounter {
     /// Current tick value
     #[inline]
     #[must_use]
-    pub fn now(&self) -> u64 {
+    pub const fn now(&self) -> u64 {
         self.current
     }
 }

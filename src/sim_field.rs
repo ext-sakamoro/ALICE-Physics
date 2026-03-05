@@ -102,14 +102,14 @@ impl ScalarField3D {
     /// Total number of cells
     #[inline]
     #[must_use]
-    pub fn cell_count(&self) -> usize {
+    pub const fn cell_count(&self) -> usize {
         self.nx * self.ny * self.nz
     }
 
     /// Linear index from grid coordinates
     #[inline]
     #[must_use]
-    pub fn index(&self, ix: usize, iy: usize, iz: usize) -> usize {
+    pub const fn index(&self, ix: usize, iy: usize, iz: usize) -> usize {
         iz * self.ny * self.nx + iy * self.nx + ix
     }
 
@@ -188,15 +188,15 @@ impl ScalarField3D {
         let i011 = iz1 * ny_nx + iy1 * nx + ix0;
         let i111 = iz1 * ny_nx + iy1 * nx + ix1;
 
-        let c00 = d[i000] + (d[i100] - d[i000]) * fx;
-        let c10 = d[i010] + (d[i110] - d[i010]) * fx;
-        let c01 = d[i001] + (d[i101] - d[i001]) * fx;
-        let c11 = d[i011] + (d[i111] - d[i011]) * fx;
+        let c00 = (d[i100] - d[i000]).mul_add(fx, d[i000]);
+        let c10 = (d[i110] - d[i010]).mul_add(fx, d[i010]);
+        let c01 = (d[i101] - d[i001]).mul_add(fx, d[i001]);
+        let c11 = (d[i111] - d[i011]).mul_add(fx, d[i011]);
 
-        let c0 = c00 + (c10 - c00) * fy;
-        let c1 = c01 + (c11 - c01) * fy;
+        let c0 = (c10 - c00).mul_add(fy, c00);
+        let c1 = (c11 - c01).mul_add(fy, c01);
 
-        c0 + (c1 - c0) * fz
+        (c1 - c0).mul_add(fz, c0)
     }
 
     /// Central-difference gradient at world-space position
@@ -237,21 +237,21 @@ impl ScalarField3D {
         for iz in iz_min..=iz_max {
             for iy in iy_min..=iy_max {
                 for ix in ix_min..=ix_max {
-                    let wx = self.min.0 + ix as f32 * self.cell_size.0;
-                    let wy = self.min.1 + iy as f32 * self.cell_size.1;
-                    let wz = self.min.2 + iz as f32 * self.cell_size.2;
+                    let wx = (ix as f32).mul_add(self.cell_size.0, self.min.0);
+                    let wy = (iy as f32).mul_add(self.cell_size.1, self.min.1);
+                    let wz = (iz as f32).mul_add(self.cell_size.2, self.min.2);
 
                     let dx = wx - x;
                     let dy = wy - y;
                     let dz = wz - z;
-                    let dist_sq = dx * dx + dy * dy + dz * dz;
+                    let dist_sq = dz.mul_add(dz, dx.mul_add(dx, dy * dy));
 
                     // Early reject with squared distance (no sqrt)
                     if dist_sq < radius_sq {
                         let dist = dist_sq.sqrt();
                         // Smooth falloff (cubic)
-                        let t = 1.0 - dist * inv_r;
-                        let weight = t * t * (3.0 - 2.0 * t); // smoothstep
+                        let t = dist.mul_add(-inv_r, 1.0);
+                        let weight = t * t * 2.0f32.mul_add(-t, 3.0); // smoothstep
                         let idx = self.index(ix, iy, iz);
                         self.data[idx] += value * weight;
                     }
@@ -294,11 +294,14 @@ impl ScalarField3D {
                         c
                     };
 
-                    let laplacian = (xm + xp - 2.0 * c) * inv_dx2
-                        + (ym + yp - 2.0 * c) * inv_dy2
-                        + (zm + zp - 2.0 * c) * inv_dz2;
+                    let laplacian = 2.0f32.mul_add(-c, zm + zp).mul_add(
+                        inv_dz2,
+                        2.0f32
+                            .mul_add(-c, xm + xp)
+                            .mul_add(inv_dx2, 2.0f32.mul_add(-c, ym + yp) * inv_dy2),
+                    );
 
-                    self.scratch[idx] = c + rate_dt * laplacian;
+                    self.scratch[idx] = rate_dt.mul_add(laplacian, c);
                 }
             }
         }
@@ -318,7 +321,7 @@ impl ScalarField3D {
     pub fn decay_toward(&mut self, target: f32, rate: f32, dt: f32) {
         let factor = (-rate * dt).exp();
         for v in &mut self.data {
-            *v = target + (*v - target) * factor;
+            *v = (*v - target).mul_add(factor, target);
         }
     }
 
@@ -429,6 +432,7 @@ impl VectorField3D {
 // ============================================================================
 
 #[cfg(test)]
+#[allow(clippy::float_cmp)]
 mod tests {
     use super::*;
 
@@ -455,15 +459,11 @@ mod tests {
 
         // Midpoint along X should be 5.0
         let mid = field.sample(0.5, 0.0, 0.0);
-        assert!((mid - 5.0).abs() < 0.01, "Expected ~5.0, got {}", mid);
+        assert!((mid - 5.0).abs() < 0.01, "Expected ~5.0, got {mid}");
 
         // Corner should be exact
         let corner = field.sample(1.0, 0.0, 0.0);
-        assert!(
-            (corner - 10.0).abs() < 0.01,
-            "Expected ~10.0, got {}",
-            corner
-        );
+        assert!((corner - 10.0).abs() < 0.01, "Expected ~10.0, got {corner}");
     }
 
     #[test]
@@ -475,13 +475,12 @@ mod tests {
         let center = field.sample(0.0, 0.0, 0.0);
         assert!(
             center > 0.5,
-            "Center should be high after splat, got {}",
-            center
+            "Center should be high after splat, got {center}"
         );
 
         // Far corner should be zero
         let far = field.sample(1.0, 1.0, 1.0);
-        assert!(far < 0.01, "Far corner should be near zero, got {}", far);
+        assert!(far < 0.01, "Far corner should be near zero, got {far}");
     }
 
     #[test]
@@ -513,7 +512,7 @@ mod tests {
         for ix in 0..8 {
             for iy in 0..8 {
                 for iz in 0..8 {
-                    let x = -1.0 + ix as f32 * (2.0 / 7.0);
+                    let x = (ix as f32).mul_add(2.0 / 7.0, -1.0);
                     field.set(ix, iy, iz, x);
                 }
             }
@@ -522,11 +521,10 @@ mod tests {
         let (gx, gy, gz) = field.gradient(0.0, 0.0, 0.0);
         assert!(
             (gx - 1.0).abs() < 0.2,
-            "X gradient should be ~1.0, got {}",
-            gx
+            "X gradient should be ~1.0, got {gx}"
         );
-        assert!(gy.abs() < 0.1, "Y gradient should be ~0, got {}", gy);
-        assert!(gz.abs() < 0.1, "Z gradient should be ~0, got {}", gz);
+        assert!(gy.abs() < 0.1, "Y gradient should be ~0, got {gy}");
+        assert!(gz.abs() < 0.1, "Z gradient should be ~0, got {gz}");
     }
 
     #[test]
@@ -538,8 +536,7 @@ mod tests {
         let v = field.get(1, 1, 1);
         assert!(
             (v - 36.8).abs() < 1.0,
-            "After decay, expected ~36.8, got {}",
-            v
+            "After decay, expected ~36.8, got {v}"
         );
     }
 }

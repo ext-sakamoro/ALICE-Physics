@@ -73,7 +73,7 @@ impl CollisionFilter {
     /// Check if two filters allow collision
     #[inline]
     #[must_use]
-    pub fn can_collide(a: &Self, b: &Self) -> bool {
+    pub const fn can_collide(a: &Self, b: &Self) -> bool {
         // Same non-zero group => never collide
         if a.group != 0 && a.group == b.group {
             return false;

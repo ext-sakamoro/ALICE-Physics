@@ -61,7 +61,7 @@ const _: () = {
 };
 
 /// GPU dispatch configuration
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct GpuDispatchConfig {
     /// Workgroup size (typically 64 or 256)
     pub workgroup_size: u32,
@@ -100,7 +100,7 @@ pub struct GpuSdfBatch {
 impl GpuSdfBatch {
     /// Create a new empty batch
     #[must_use]
-    pub fn new(config: GpuDispatchConfig) -> Self {
+    pub const fn new(config: GpuDispatchConfig) -> Self {
         Self {
             queries: Vec::new(),
             results: Vec::new(),
@@ -242,7 +242,7 @@ pub struct GpuSdfMultiDispatch {
 impl GpuSdfMultiDispatch {
     /// Create an empty multi-dispatch container.
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             batches: Vec::new(),
         }
@@ -303,7 +303,7 @@ impl Default for GpuSdfMultiDispatch {
 /// ```
 #[inline(always)]
 #[must_use]
-pub fn batch_size() -> usize {
+pub const fn batch_size() -> usize {
     crate::math::SIMD_WIDTH
 }
 
@@ -423,9 +423,9 @@ mod tests {
     #[test]
     fn test_cpu_fallback() {
         let sphere = ClosureSdf::new(
-            |x, y, z| (x * x + y * y + z * z).sqrt() - 1.0,
+            |x, y, z| z.mul_add(z, x.mul_add(x, y * y)).sqrt() - 1.0,
             |x, y, z| {
-                let len = (x * x + y * y + z * z).sqrt();
+                let len = z.mul_add(z, x.mul_add(x, y * y)).sqrt();
                 if len < 1e-10 {
                     (0.0, 1.0, 0.0)
                 } else {
@@ -449,9 +449,9 @@ mod tests {
     #[test]
     fn test_extract_contacts() {
         let sphere = ClosureSdf::new(
-            |x, y, z| (x * x + y * y + z * z).sqrt() - 1.0,
+            |x, y, z| z.mul_add(z, x.mul_add(x, y * y)).sqrt() - 1.0,
             |x, y, z| {
-                let len = (x * x + y * y + z * z).sqrt();
+                let len = z.mul_add(z, x.mul_add(x, y * y)).sqrt();
                 if len < 1e-10 {
                     (0.0, 1.0, 0.0)
                 } else {

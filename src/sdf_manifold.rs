@@ -68,7 +68,7 @@ pub struct SdfManifold {
 impl SdfManifold {
     /// Empty manifold
     #[must_use]
-    pub fn empty() -> Self {
+    pub const fn empty() -> Self {
         Self {
             contacts: Vec::new(),
             normal: Vec3Fix::ZERO,
@@ -333,9 +333,9 @@ mod tests {
 
     fn unit_sphere() -> ClosureSdf {
         ClosureSdf::new(
-            |x, y, z| (x * x + y * y + z * z).sqrt() - 1.0,
+            |x, y, z| z.mul_add(z, x.mul_add(x, y * y)).sqrt() - 1.0,
             |x, y, z| {
-                let len = (x * x + y * y + z * z).sqrt();
+                let len = z.mul_add(z, x.mul_add(x, y * y)).sqrt();
                 if len < 1e-10 {
                     (0.0, 1.0, 0.0)
                 } else {
@@ -417,12 +417,12 @@ mod tests {
                 let angle = (i as f32) * 0.628; // ~2pi/10
                 (
                     Contact {
-                        depth: Fix128::from_f32(0.1 + i as f32 * 0.01),
+                        depth: Fix128::from_f32((i as f32).mul_add(0.01, 0.1)),
                         normal: Vec3Fix::UNIT_Y,
                         point_a: Vec3Fix::from_f32(angle.cos(), 0.0, angle.sin()),
                         point_b: Vec3Fix::from_f32(angle.cos(), -0.1, angle.sin()),
                     },
-                    0.1 + i as f32 * 0.01,
+                    (i as f32).mul_add(0.01, 0.1),
                 )
             })
             .collect();

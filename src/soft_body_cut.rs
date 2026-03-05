@@ -23,7 +23,7 @@ use alloc::vec::Vec;
 // ============================================================================
 
 /// A plane defined by a point and normal for cutting operations.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CutPlane {
     /// A point on the plane
     pub point: Vec3Fix,
@@ -161,7 +161,7 @@ pub fn cut_cloth(
 mod tests {
     use super::*;
 
-    fn horizontal_plane(y: Fix128) -> CutPlane {
+    const fn horizontal_plane(y: Fix128) -> CutPlane {
         CutPlane {
             point: Vec3Fix::new(Fix128::ZERO, y, Fix128::ZERO),
             normal: Vec3Fix::UNIT_Y,

@@ -104,7 +104,7 @@ impl Fix128 {
     pub fn from_f64(f: f64) -> Self {
         let hi = f as i64; // truncation toward zero
         let frac = f - (hi as f64);
-        let abs_frac = if frac < 0.0 { -frac } else { frac };
+        let abs_frac = frac.abs();
         let lo = (abs_frac * (1u128 << 64) as f64) as u64;
         if f < 0.0 && lo != 0 {
             Self {
@@ -185,14 +185,14 @@ impl Fix128 {
     /// Floor (round toward negative infinity)
     #[inline]
     #[must_use]
-    pub fn floor(self) -> Self {
+    pub const fn floor(self) -> Self {
         Self { hi: self.hi, lo: 0 }
     }
 
     /// Ceiling (round toward positive infinity)
     #[inline]
     #[must_use]
-    pub fn ceil(self) -> Self {
+    pub const fn ceil(self) -> Self {
         if self.lo == 0 {
             self
         } else {
@@ -250,7 +250,7 @@ impl Fix128 {
     /// Divide by 2 (bit shift, exact)
     #[inline]
     #[must_use]
-    pub fn half(self) -> Self {
+    pub const fn half(self) -> Self {
         let hi = self.hi >> 1;
         let lo = (self.lo >> 1) | ((self.hi as u64 & 1) << 63);
         Self { hi, lo }
@@ -259,7 +259,7 @@ impl Fix128 {
     /// Multiply by 2 (bit shift, exact)
     #[inline]
     #[must_use]
-    pub fn double(self) -> Self {
+    pub const fn double(self) -> Self {
         let hi = (self.hi << 1) | ((self.lo >> 63) as i64);
         let lo = self.lo << 1;
         Self { hi, lo }
@@ -1236,7 +1236,7 @@ impl QuatFix {
     #[must_use]
     pub fn rotate_vec(self, v: Vec3Fix) -> Vec3Fix {
         // q * v * q^-1
-        let qv = QuatFix::new(v.x, v.y, v.z, Fix128::ZERO);
+        let qv = Self::new(v.x, v.y, v.z, Fix128::ZERO);
         let result = self.mul(qv).mul(self.conjugate());
         Vec3Fix::new(result.x, result.y, result.z)
     }
@@ -1303,7 +1303,7 @@ impl Mat3Fix {
     /// Create diagonal matrix
     #[inline]
     #[must_use]
-    pub fn diagonal(x: Fix128, y: Fix128, z: Fix128) -> Self {
+    pub const fn diagonal(x: Fix128, y: Fix128, z: Fix128) -> Self {
         Self {
             col0: Vec3Fix::new(x, Fix128::ZERO, Fix128::ZERO),
             col1: Vec3Fix::new(Fix128::ZERO, y, Fix128::ZERO),
@@ -1325,7 +1325,7 @@ impl Mat3Fix {
     /// Transpose
     #[inline]
     #[must_use]
-    pub fn transpose(self) -> Self {
+    pub const fn transpose(self) -> Self {
         Self {
             col0: Vec3Fix::new(self.col0.x, self.col1.x, self.col2.x),
             col1: Vec3Fix::new(self.col0.y, self.col1.y, self.col2.y),
@@ -1449,7 +1449,7 @@ pub const SIMD_WIDTH: usize = simd_width();
 /// Bitwise AND/OR then selects the correct limbs without any conditional instruction.
 #[inline(always)]
 #[must_use]
-pub fn select_fix128(condition: bool, a: Fix128, b: Fix128) -> Fix128 {
+pub const fn select_fix128(condition: bool, a: Fix128, b: Fix128) -> Fix128 {
     // mask = 0xFFFF...FFFF when condition is true, 0x0000...0000 when false
     let mask = -(condition as i64) as u64;
     let inv_mask = !mask;
@@ -1468,7 +1468,7 @@ pub fn select_fix128(condition: bool, a: Fix128, b: Fix128) -> Fix128 {
 /// Applies `select_fix128` component-wise.
 #[inline(always)]
 #[must_use]
-pub fn select_vec3(condition: bool, a: Vec3Fix, b: Vec3Fix) -> Vec3Fix {
+pub const fn select_vec3(condition: bool, a: Vec3Fix, b: Vec3Fix) -> Vec3Fix {
     Vec3Fix {
         x: select_fix128(condition, a.x, b.x),
         y: select_fix128(condition, a.y, b.y),
@@ -1476,7 +1476,7 @@ pub fn select_vec3(condition: bool, a: Vec3Fix, b: Vec3Fix) -> Vec3Fix {
     }
 }
 
-impl core::ops::Mul<Mat3Fix> for Mat3Fix {
+impl core::ops::Mul<Self> for Mat3Fix {
     type Output = Self;
 
     fn mul(self, rhs: Self) -> Self {
@@ -1578,9 +1578,9 @@ mod tests {
 
     #[test]
     fn test_fix128_f32_roundtrip() {
-        let a = Fix128::from_f32(3.14);
+        let a = Fix128::from_f32(std::f32::consts::PI);
         let back = a.to_f32();
-        assert!((back - 3.14).abs() < 0.001);
+        assert!((back - std::f32::consts::PI).abs() < 0.001);
 
         let b = Fix128::from_f32(-7.5);
         let back_b = b.to_f32();

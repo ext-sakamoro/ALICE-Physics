@@ -39,7 +39,7 @@ pub struct RopeAttachment {
 impl RopeAttachment {
     /// Create a new rigid attachment (zero compliance, unbreakable).
     #[must_use]
-    pub fn new(rope_particle: usize, body_index: usize, local_anchor: Vec3Fix) -> Self {
+    pub const fn new(rope_particle: usize, body_index: usize, local_anchor: Vec3Fix) -> Self {
         Self {
             rope_particle,
             body_index,
@@ -51,7 +51,7 @@ impl RopeAttachment {
 
     /// Create an attachment with a break force threshold.
     #[must_use]
-    pub fn with_break_force(
+    pub const fn with_break_force(
         rope_particle: usize,
         body_index: usize,
         local_anchor: Vec3Fix,
@@ -68,7 +68,7 @@ impl RopeAttachment {
 
     /// Set compliance and return self (builder pattern).
     #[must_use]
-    pub fn compliance(mut self, c: Fix128) -> Self {
+    pub const fn compliance(mut self, c: Fix128) -> Self {
         self.compliance = c;
         self
     }
@@ -185,7 +185,7 @@ mod tests {
     use crate::math::QuatFix;
     use crate::solver::BodyType;
 
-    fn make_static_body(pos: Vec3Fix) -> RigidBody {
+    const fn make_static_body(pos: Vec3Fix) -> RigidBody {
         RigidBody {
             position: pos,
             velocity: Vec3Fix::ZERO,

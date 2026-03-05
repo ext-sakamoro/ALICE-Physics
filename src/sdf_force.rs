@@ -27,7 +27,7 @@ use alloc::vec::Vec;
 // ============================================================================
 
 /// Type of SDF-driven force
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SdfForceType {
     /// Push toward SDF surface (attraction)
     /// Strength scales with distance from surface
@@ -93,7 +93,7 @@ pub struct SdfForceField {
 impl SdfForceField {
     /// Create a new SDF force field
     #[must_use]
-    pub fn new(sdf_index: usize, force_type: SdfForceType) -> Self {
+    pub const fn new(sdf_index: usize, force_type: SdfForceType) -> Self {
         Self {
             sdf_index,
             force_type,
@@ -116,10 +116,9 @@ impl SdfForceField {
         if !self.enabled {
             return false;
         }
-        match &self.affected_bodies {
-            None => true,
-            Some(list) => list.contains(&body_index),
-        }
+        self.affected_bodies
+            .as_ref()
+            .map_or(true, |list| list.contains(&body_index))
     }
 }
 
@@ -283,7 +282,7 @@ impl SdfForceField {
 
     /// Create repulsion from SDF surface
     #[must_use]
-    pub fn repel(sdf_index: usize, strength: Fix128, range: Fix128) -> Self {
+    pub const fn repel(sdf_index: usize, strength: Fix128, range: Fix128) -> Self {
         Self::new(sdf_index, SdfForceType::Repel { strength, range })
     }
 
@@ -301,7 +300,7 @@ impl SdfForceField {
 
     /// Create surface flow
     #[must_use]
-    pub fn surface_flow(sdf_index: usize, direction: Vec3Fix, strength: Fix128) -> Self {
+    pub const fn surface_flow(sdf_index: usize, direction: Vec3Fix, strength: Fix128) -> Self {
         Self::new(
             sdf_index,
             SdfForceType::SurfaceFlow {
@@ -325,9 +324,9 @@ mod tests {
 
     fn unit_sphere() -> ClosureSdf {
         ClosureSdf::new(
-            |x, y, z| (x * x + y * y + z * z).sqrt() - 1.0,
+            |x, y, z| z.mul_add(z, x.mul_add(x, y * y)).sqrt() - 1.0,
             |x, y, z| {
-                let len = (x * x + y * y + z * z).sqrt();
+                let len = z.mul_add(z, x.mul_add(x, y * y)).sqrt();
                 if len < 1e-10 {
                     (0.0, 1.0, 0.0)
                 } else {

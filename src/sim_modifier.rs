@@ -128,6 +128,7 @@ impl ModifiedSdf {
     }
 
     /// Get mutable access to a modifier by index
+    #[allow(clippy::option_if_let_else)]
     pub fn modifier_mut(&mut self, index: usize) -> Option<&mut dyn PhysicsModifier> {
         match self.modifiers.get_mut(index) {
             Some(m) => Some(m.as_mut()),
@@ -161,7 +162,7 @@ impl SdfField for ModifiedSdf {
         let dy = self.eval_distance(x, y + e, z) - self.eval_distance(x, y - e, z);
         let dz = self.eval_distance(x, y, z + e) - self.eval_distance(x, y, z - e);
 
-        let len = (dx * dx + dy * dy + dz * dz).sqrt();
+        let len = dz.mul_add(dz, dx.mul_add(dx, dy * dy)).sqrt();
         if len < 1e-10 {
             (0.0, 1.0, 0.0)
         } else {
@@ -225,7 +226,7 @@ impl<M: PhysicsModifier> SdfField for SingleModifiedSdf<M> {
         let dy = self.eval_distance(x, y + e, z) - self.eval_distance(x, y - e, z);
         let dz = self.eval_distance(x, y, z + e) - self.eval_distance(x, y, z - e);
 
-        let len = (dx * dx + dy * dy + dz * dz).sqrt();
+        let len = dz.mul_add(dz, dx.mul_add(dx, dy * dy)).sqrt();
         if len < 1e-10 {
             (0.0, 1.0, 0.0)
         } else {
@@ -259,7 +260,7 @@ mod tests {
             d - self.amount
         }
         fn update(&mut self, _dt: f32) {}
-        fn name(&self) -> &str {
+        fn name(&self) -> &'static str {
             "expand"
         }
     }
@@ -267,9 +268,9 @@ mod tests {
     #[test]
     fn test_modified_sdf_no_modifiers() {
         let sphere = ClosureSdf::new(
-            |x, y, z| (x * x + y * y + z * z).sqrt() - 1.0,
+            |x, y, z| z.mul_add(z, x.mul_add(x, y * y)).sqrt() - 1.0,
             |x, y, z| {
-                let len = (x * x + y * y + z * z).sqrt();
+                let len = z.mul_add(z, x.mul_add(x, y * y)).sqrt();
                 if len < 1e-10 {
                     (0.0, 1.0, 0.0)
                 } else {
@@ -282,17 +283,16 @@ mod tests {
         let d = modified.distance(2.0, 0.0, 0.0);
         assert!(
             (d - 1.0).abs() < 0.01,
-            "No modifiers should pass through, got {}",
-            d
+            "No modifiers should pass through, got {d}"
         );
     }
 
     #[test]
     fn test_modified_sdf_expand() {
         let sphere = ClosureSdf::new(
-            |x, y, z| (x * x + y * y + z * z).sqrt() - 1.0,
+            |x, y, z| z.mul_add(z, x.mul_add(x, y * y)).sqrt() - 1.0,
             |x, y, z| {
-                let len = (x * x + y * y + z * z).sqrt();
+                let len = z.mul_add(z, x.mul_add(x, y * y)).sqrt();
                 if len < 1e-10 {
                     (0.0, 1.0, 0.0)
                 } else {
@@ -309,17 +309,16 @@ mod tests {
         let d = modified.distance(2.0, 0.0, 0.0);
         assert!(
             (d - 0.5).abs() < 0.01,
-            "Expand should reduce distance, got {}",
-            d
+            "Expand should reduce distance, got {d}"
         );
     }
 
     #[test]
     fn test_modifier_chain() {
         let sphere = ClosureSdf::new(
-            |x, y, z| (x * x + y * y + z * z).sqrt() - 1.0,
+            |x, y, z| z.mul_add(z, x.mul_add(x, y * y)).sqrt() - 1.0,
             |x, y, z| {
-                let len = (x * x + y * y + z * z).sqrt();
+                let len = z.mul_add(z, x.mul_add(x, y * y)).sqrt();
                 if len < 1e-10 {
                     (0.0, 1.0, 0.0)
                 } else {
@@ -336,17 +335,16 @@ mod tests {
         let d = modified.distance(2.0, 0.0, 0.0);
         assert!(
             (d - 0.5).abs() < 0.01,
-            "Chain should sum expansions, got {}",
-            d
+            "Chain should sum expansions, got {d}"
         );
     }
 
     #[test]
     fn test_single_modified_sdf() {
         let sphere = ClosureSdf::new(
-            |x, y, z| (x * x + y * y + z * z).sqrt() - 1.0,
+            |x, y, z| z.mul_add(z, x.mul_add(x, y * y)).sqrt() - 1.0,
             |x, y, z| {
-                let len = (x * x + y * y + z * z).sqrt();
+                let len = z.mul_add(z, x.mul_add(x, y * y)).sqrt();
                 if len < 1e-10 {
                     (0.0, 1.0, 0.0)
                 } else {
@@ -358,6 +356,6 @@ mod tests {
         let modified = SingleModifiedSdf::new(Box::new(sphere), ExpandModifier { amount: 0.5 });
 
         let d = modified.distance(2.0, 0.0, 0.0);
-        assert!((d - 0.5).abs() < 0.01, "Single modifier expand, got {}", d);
+        assert!((d - 0.5).abs() < 0.01, "Single modifier expand, got {d}");
     }
 }

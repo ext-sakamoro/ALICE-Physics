@@ -120,7 +120,7 @@ impl fmt::Debug for DestructionType {
 impl DestructionShape {
     /// Create a spherical crater
     #[must_use]
-    pub fn sphere(center: Vec3Fix, radius: f32) -> Self {
+    pub const fn sphere(center: Vec3Fix, radius: f32) -> Self {
         Self {
             center,
             rotation: QuatFix::IDENTITY,
@@ -131,7 +131,7 @@ impl DestructionShape {
 
     /// Create a box cut
     #[must_use]
-    pub fn cube(center: Vec3Fix, half_extents: (f32, f32, f32)) -> Self {
+    pub const fn cube(center: Vec3Fix, half_extents: (f32, f32, f32)) -> Self {
         Self {
             center,
             rotation: QuatFix::IDENTITY,
@@ -142,7 +142,7 @@ impl DestructionShape {
 
     /// Create a cylindrical bore
     #[must_use]
-    pub fn cylinder(center: Vec3Fix, radius: f32, half_height: f32) -> Self {
+    pub const fn cylinder(center: Vec3Fix, radius: f32, half_height: f32) -> Self {
         Self {
             center,
             rotation: QuatFix::IDENTITY,
@@ -156,14 +156,14 @@ impl DestructionShape {
 
     /// Set smooth subtraction factor
     #[must_use]
-    pub fn with_smoothing(mut self, factor: f32) -> Self {
+    pub const fn with_smoothing(mut self, factor: f32) -> Self {
         self.smooth_factor = factor;
         self
     }
 
     /// Set orientation
     #[must_use]
-    pub fn with_rotation(mut self, rotation: QuatFix) -> Self {
+    pub const fn with_rotation(mut self, rotation: QuatFix) -> Self {
         self.rotation = rotation;
         self
     }
@@ -182,16 +182,21 @@ impl DestructionShape {
         let (lx, ly, lz) = local.to_f32();
 
         match &self.shape {
-            DestructionType::Sphere { radius } => (lx * lx + ly * ly + lz * lz).sqrt() - radius,
+            DestructionType::Sphere { radius } => {
+                lz.mul_add(lz, lx.mul_add(lx, ly * ly)).sqrt() - radius
+            }
             DestructionType::Box { half_extents } => {
                 let (hx, hy, hz) = *half_extents;
                 let qx = lx.abs() - hx;
                 let qy = ly.abs() - hy;
                 let qz = lz.abs() - hz;
-                let outside = (qx.max(0.0) * qx.max(0.0)
-                    + qy.max(0.0) * qy.max(0.0)
-                    + qz.max(0.0) * qz.max(0.0))
-                .sqrt();
+                let outside = qz
+                    .max(0.0)
+                    .mul_add(
+                        qz.max(0.0),
+                        qx.max(0.0).mul_add(qx.max(0.0), qy.max(0.0) * qy.max(0.0)),
+                    )
+                    .sqrt();
                 let inside = qx.max(qy).max(qz).min(0.0);
                 outside + inside
             }
@@ -199,11 +204,12 @@ impl DestructionShape {
                 radius,
                 half_height,
             } => {
-                let d_radial = (lx * lx + lz * lz).sqrt() - radius;
+                let d_radial = lx.hypot(lz) - radius;
                 let d_axial = ly.abs() - half_height;
-                let outside = (d_radial.max(0.0) * d_radial.max(0.0)
-                    + d_axial.max(0.0) * d_axial.max(0.0))
-                .sqrt();
+                let outside = d_radial
+                    .max(0.0)
+                    .mul_add(d_radial.max(0.0), d_axial.max(0.0) * d_axial.max(0.0))
+                    .sqrt();
                 let inside = d_radial.max(d_axial).min(0.0);
                 outside + inside
             }
@@ -254,7 +260,7 @@ impl DestructibleSdf {
 
     /// Total destructions applied (including merged)
     #[must_use]
-    pub fn total_destruction_count(&self) -> usize {
+    pub const fn total_destruction_count(&self) -> usize {
         self.total_destructions
     }
 
@@ -307,7 +313,7 @@ impl SdfField for DestructibleSdf {
         let dy = self.distance(x, y + eps, z) - self.distance(x, y - eps, z);
         let dz = self.distance(x, y, z + eps) - self.distance(x, y, z - eps);
 
-        let len = (dx * dx + dy * dy + dz * dz).sqrt();
+        let len = dz.mul_add(dz, dx.mul_add(dx, dy * dy)).sqrt();
         if len < 1e-10 {
             (0.0, 1.0, 0.0)
         } else {
@@ -323,7 +329,7 @@ impl SdfField for DestructibleSdf {
 fn smooth_subtraction(d_a: f32, d_b: f32, k: f32) -> f32 {
     let h = (0.5 - 0.5 * (d_a + d_b) / k).clamp(0.0, 1.0);
     // mix(d_a, -d_b, h) + k*h*(1-h)
-    d_a * (1.0 - h) + (-d_b) * h + k * h * (1.0 - h)
+    (k * h).mul_add(1.0 - h, d_a.mul_add(1.0 - h, (-d_b) * h))
 }
 
 // ============================================================================
@@ -353,7 +359,11 @@ pub fn destruction_from_impact(
 ///
 /// Generates a spherical destruction centered at the explosion point.
 #[must_use]
-pub fn destruction_from_explosion(center: Vec3Fix, radius: f32, smooth: f32) -> DestructionShape {
+pub const fn destruction_from_explosion(
+    center: Vec3Fix,
+    radius: f32,
+    smooth: f32,
+) -> DestructionShape {
     DestructionShape::sphere(center, radius).with_smoothing(smooth)
 }
 
@@ -417,9 +427,9 @@ mod tests {
 
     fn unit_sphere() -> ClosureSdf {
         ClosureSdf::new(
-            |x, y, z| (x * x + y * y + z * z).sqrt() - 1.0,
+            |x, y, z| z.mul_add(z, x.mul_add(x, y * y)).sqrt() - 1.0,
             |x, y, z| {
-                let len = (x * x + y * y + z * z).sqrt();
+                let len = z.mul_add(z, x.mul_add(x, y * y)).sqrt();
                 if len < 1e-10 {
                     (0.0, 1.0, 0.0)
                 } else {
@@ -455,8 +465,7 @@ mod tests {
         let d = dsdf.distance(1.0, 0.0, 0.0);
         assert!(
             d > -0.1,
-            "Point at carved region should be near surface or outside, got {}",
-            d
+            "Point at carved region should be near surface or outside, got {d}"
         );
 
         // Point far from destruction should be unaffected
@@ -541,7 +550,7 @@ mod tests {
         ));
 
         let (nx, ny, nz) = dsdf.normal(1.0, 0.0, 0.0);
-        let len = (nx * nx + ny * ny + nz * nz).sqrt();
+        let len = nz.mul_add(nz, nx.mul_add(nx, ny * ny)).sqrt();
         assert!(
             (len - 1.0).abs() < 0.1,
             "Normal should be approximately unit length"
