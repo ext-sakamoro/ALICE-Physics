@@ -17,7 +17,7 @@ use crate::math::{Fix128, QuatFix, Vec3Fix};
 ///
 /// A cylinder defined by center position, half-height (along local Y axis),
 /// radius, and an orientation quaternion.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Cylinder {
     /// Center position in world space
     pub center: Vec3Fix,
@@ -33,7 +33,7 @@ impl Cylinder {
     /// Create a new axis-aligned cylinder (Y-up)
     #[inline]
     #[must_use]
-    pub fn new(center: Vec3Fix, half_height: Fix128, radius: Fix128) -> Self {
+    pub const fn new(center: Vec3Fix, half_height: Fix128, radius: Fix128) -> Self {
         Self {
             center,
             half_height,
@@ -45,7 +45,7 @@ impl Cylinder {
     /// Create a new oriented cylinder
     #[inline]
     #[must_use]
-    pub fn with_rotation(
+    pub const fn with_rotation(
         center: Vec3Fix,
         half_height: Fix128,
         radius: Fix128,

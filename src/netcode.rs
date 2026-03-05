@@ -75,7 +75,7 @@ impl FrameInput {
     /// Create a new empty input for the given player
     #[inline]
     #[must_use]
-    pub fn new(player_id: u8) -> Self {
+    pub const fn new(player_id: u8) -> Self {
         Self {
             player_id,
             movement: Vec3Fix::ZERO,
@@ -87,7 +87,7 @@ impl FrameInput {
     /// Set movement direction
     #[inline]
     #[must_use]
-    pub fn with_movement(mut self, movement: Vec3Fix) -> Self {
+    pub const fn with_movement(mut self, movement: Vec3Fix) -> Self {
         self.movement = movement;
         self
     }
@@ -95,7 +95,7 @@ impl FrameInput {
     /// Set action bitfield
     #[inline]
     #[must_use]
-    pub fn with_actions(mut self, actions: u32) -> Self {
+    pub const fn with_actions(mut self, actions: u32) -> Self {
         self.actions = actions;
         self
     }
@@ -103,7 +103,7 @@ impl FrameInput {
     /// Set aim direction
     #[inline]
     #[must_use]
-    pub fn with_aim(mut self, aim: Vec3Fix) -> Self {
+    pub const fn with_aim(mut self, aim: Vec3Fix) -> Self {
         self.aim_direction = aim;
         self
     }
@@ -111,7 +111,7 @@ impl FrameInput {
     /// Check if a specific action bit is set
     #[inline]
     #[must_use]
-    pub fn has_action(&self, bit: u32) -> bool {
+    pub const fn has_action(&self, bit: u32) -> bool {
         self.actions & bit != 0
     }
 
@@ -148,7 +148,7 @@ impl FrameInput {
 
     /// Deserialize from bytes
     #[must_use]
-    pub fn from_bytes(data: &[u8; 20]) -> Self {
+    pub const fn from_bytes(data: &[u8; 20]) -> Self {
         let player_id = data[0];
         let mx = i16::from_le_bytes([data[1], data[2]]);
         let my = i16::from_le_bytes([data[3], data[4]]);
@@ -511,7 +511,7 @@ impl DeterministicSimulation {
     /// Current frame number.
     #[inline]
     #[must_use]
-    pub fn frame(&self) -> u64 {
+    pub const fn frame(&self) -> u64 {
         self.frame
     }
 
@@ -538,7 +538,7 @@ impl DeterministicSimulation {
     /// Get the fixed timestep.
     #[inline]
     #[must_use]
-    pub fn dt(&self) -> Fix128 {
+    pub const fn dt(&self) -> Fix128 {
         self.dt
     }
 

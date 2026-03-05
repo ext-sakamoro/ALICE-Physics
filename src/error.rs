@@ -90,15 +90,15 @@ mod tests {
     #[test]
     fn test_error_display() {
         let e = PhysicsError::InvalidBodyIndex { index: 5, count: 3 };
-        let s = format!("{}", e);
-        assert!(s.contains("5"), "Should contain index");
-        assert!(s.contains("3"), "Should contain count");
+        let s = format!("{e}");
+        assert!(s.contains('5'), "Should contain index");
+        assert!(s.contains('3'), "Should contain count");
     }
 
     #[test]
     fn test_error_debug() {
         let e = PhysicsError::DeserializationFailed;
-        let s = format!("{:?}", e);
+        let s = format!("{e:?}");
         assert!(s.contains("DeserializationFailed"));
     }
 
@@ -122,7 +122,7 @@ mod tests {
             resource: "bodies",
             limit: 10000,
         };
-        let s = format!("{}", e);
+        let s = format!("{e}");
         assert!(s.contains("bodies"));
         assert!(s.contains("10000"));
     }
@@ -132,7 +132,7 @@ mod tests {
         let e = PhysicsError::InvalidConfiguration {
             reason: "substeps must be > 0",
         };
-        let s = format!("{}", e);
+        let s = format!("{e}");
         assert!(s.contains("substeps"));
     }
 
@@ -142,7 +142,7 @@ mod tests {
         let e = PhysicsError::IoError {
             message: "file not found",
         };
-        let s = format!("{}", e);
+        let s = format!("{e}");
         assert!(s.contains("file not found"));
     }
 }

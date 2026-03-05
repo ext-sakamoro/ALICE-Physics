@@ -24,7 +24,7 @@ use alloc::vec::Vec;
 // ============================================================================
 
 /// Physical material properties for audio synthesis
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AudioMaterial {
     /// Material type identifier
     pub material_type: MaterialType,
@@ -138,7 +138,7 @@ impl AudioMaterial {
 // ============================================================================
 
 /// Audio parameters generated from a physics event
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AudioEvent {
     /// World-space position for 3D spatialization
     pub position: Vec3Fix,
@@ -182,7 +182,7 @@ pub enum AudioEventType {
 // ============================================================================
 
 /// Audio event generator configuration
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AudioConfig {
     /// Minimum impact velocity to generate sound
     pub min_velocity: Fix128,

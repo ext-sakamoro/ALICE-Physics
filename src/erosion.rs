@@ -120,7 +120,7 @@ impl ErosionModifier {
         let nz = self.exposure.nz;
 
         let (fx, fy, fz) = self.config.flow_direction;
-        let flow_len = (fx * fx + fy * fy + fz * fz).sqrt();
+        let flow_len = fz.mul_add(fz, fx.mul_add(fx, fy * fy)).sqrt();
         let (fx, fy, fz) = if flow_len > 1e-10 {
             (fx / flow_len, fy / flow_len, fz / flow_len)
         } else {
@@ -145,7 +145,7 @@ impl ErosionModifier {
                     if dist < surface_threshold {
                         let (snx, sny, snz) = sdf.normal(wx, wy, wz);
                         // Dot product: how much the surface faces the flow
-                        let alignment = -(snx * fx + sny * fy + snz * fz);
+                        let alignment = -snz.mul_add(fz, snx.mul_add(fx, sny * fy));
                         let exp = alignment.max(0.0); // Only windward faces
                         let idx = self.exposure.index(ix, iy, iz);
                         self.exposure.data[idx] = exp;
@@ -199,7 +199,7 @@ impl PhysicsModifier for ErosionModifier {
             if exp > 0.0 {
                 let rate = self.compute_rate(exp);
                 self.erosion_depth.data[i] =
-                    (self.erosion_depth.data[i] + rate * dt).min(max_depth);
+                    rate.mul_add(dt, self.erosion_depth.data[i]).min(max_depth);
             }
         }
 
@@ -259,7 +259,7 @@ mod tests {
         }
 
         let erosion = modifier.erosion_at(0.0, 0.0, 0.0);
-        assert!(erosion > 0.0, "Exposed area should erode, got {}", erosion);
+        assert!(erosion > 0.0, "Exposed area should erode, got {erosion}");
     }
 
     #[test]
@@ -282,17 +282,16 @@ mod tests {
         let erosion = modifier.erosion_at(0.0, 0.0, 0.0);
         assert!(
             erosion <= 0.5 + 0.01,
-            "Erosion should be capped at max_depth, got {}",
-            erosion
+            "Erosion should be capped at max_depth, got {erosion}"
         );
     }
 
     #[test]
     fn test_compute_exposure_from_normals() {
         let sphere = ClosureSdf::new(
-            |x, y, z| (x * x + y * y + z * z).sqrt() - 1.0,
+            |x, y, z| z.mul_add(z, x.mul_add(x, y * y)).sqrt() - 1.0,
             |x, y, z| {
-                let len = (x * x + y * y + z * z).sqrt();
+                let len = z.mul_add(z, x.mul_add(x, y * y)).sqrt();
                 if len < 1e-10 {
                     (0.0, 1.0, 0.0)
                 } else {
@@ -315,9 +314,7 @@ mod tests {
 
         assert!(
             exp_windward > exp_leeward,
-            "Windward face should be more exposed: windward={}, leeward={}",
-            exp_windward,
-            exp_leeward
+            "Windward face should be more exposed: windward={exp_windward}, leeward={exp_leeward}"
         );
     }
 }

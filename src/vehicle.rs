@@ -25,7 +25,7 @@ use alloc::vec::Vec;
 // ============================================================================
 
 /// Wheel configuration
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct WheelConfig {
     /// Suspension attachment point (local to chassis)
     pub local_position: Vec3Fix,
@@ -61,7 +61,7 @@ impl Default for WheelConfig {
 }
 
 /// Engine configuration
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct EngineConfig {
     /// Maximum engine torque (Nm)
     pub max_torque: Fix128,
@@ -154,7 +154,7 @@ impl Default for VehicleConfig {
 // ============================================================================
 
 /// Runtime wheel state
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct WheelState {
     /// Current suspension compression (0 = fully extended, 1 = bottomed out)
     pub compression: Fix128,
@@ -407,9 +407,16 @@ impl Vehicle {
 impl core::fmt::Debug for Vehicle {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("Vehicle")
-            .field("wheels", &self.wheel_states.len())
+            .field("config", &self.config)
+            .field(
+                "wheel_states",
+                &format_args!("[{} items]", self.wheel_states.len()),
+            )
             .field("current_gear", &self.current_gear)
             .field("engine_rpm", &self.engine_rpm)
+            .field("throttle", &self.throttle)
+            .field("brake", &self.brake)
+            .field("steering", &self.steering)
             .field("speed_kmh", &self.speed_kmh)
             .finish()
     }
@@ -458,8 +465,7 @@ mod tests {
         let speed = vehicle.speed_kmh.to_f32();
         assert!(
             speed.abs() > 0.01,
-            "Vehicle should accelerate, speed={}",
-            speed
+            "Vehicle should accelerate, speed={speed}"
         );
     }
 

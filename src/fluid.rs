@@ -28,7 +28,7 @@ use alloc::vec::Vec;
 // ============================================================================
 
 /// Fluid simulation configuration
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FluidConfig {
     /// Rest density (kg/m^3)
     pub rest_density: Fix128,
@@ -464,8 +464,26 @@ impl Fluid {
 impl core::fmt::Debug for Fluid {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("Fluid")
-            .field("particles", &self.positions.len())
+            .field(
+                "positions",
+                &format_args!("[{} items]", self.positions.len()),
+            )
+            .field(
+                "predicted",
+                &format_args!("[{} items]", self.predicted.len()),
+            )
+            .field(
+                "velocities",
+                &format_args!("[{} items]", self.velocities.len()),
+            )
+            .field(
+                "densities",
+                &format_args!("[{} items]", self.densities.len()),
+            )
+            .field("lambdas", &format_args!("[{} items]", self.lambdas.len()))
+            .field("grid", &"<SpatialGrid>")
             .field("config", &self.config)
+            .field("inv_rest_density", &self.inv_rest_density)
             .finish()
     }
 }

@@ -39,11 +39,11 @@ impl ShapeRef {
     #[must_use]
     pub fn aabb(&self) -> AABB {
         match self {
-            ShapeRef::Sphere(s) => {
+            Self::Sphere(s) => {
                 let r = Vec3Fix::new(s.radius, s.radius, s.radius);
                 AABB::new(s.center - r, s.center + r)
             }
-            ShapeRef::Capsule(c) => {
+            Self::Capsule(c) => {
                 let r = Vec3Fix::new(c.radius, c.radius, c.radius);
                 let min = Vec3Fix::new(
                     if c.a.x < c.b.x { c.a.x } else { c.b.x },
@@ -57,7 +57,7 @@ impl ShapeRef {
                 );
                 AABB::new(min - r, max + r)
             }
-            ShapeRef::Box(b) => b.aabb(),
+            Self::Box(b) => b.aabb(),
         }
     }
 }
@@ -87,7 +87,7 @@ pub struct CompoundShape {
 impl CompoundShape {
     /// Create an empty compound shape
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             children: Vec::new(),
             cached_aabb: AABB::new(Vec3Fix::ZERO, Vec3Fix::ZERO),

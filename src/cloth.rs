@@ -27,7 +27,7 @@ use alloc::vec::Vec;
 // ============================================================================
 
 /// Cloth simulation configuration
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ClothConfig {
     /// Solver iterations per substep
     pub iterations: usize,
@@ -314,7 +314,7 @@ impl Cloth {
 
     /// Compute approximate wind force on a particle
     #[inline(always)]
-    fn compute_wind_force(&self, _particle_idx: usize) -> Vec3Fix {
+    const fn compute_wind_force(&self, _particle_idx: usize) -> Vec3Fix {
         // Simplified: uniform wind force
         self.wind
     }
@@ -592,11 +592,36 @@ impl Cloth {
 impl core::fmt::Debug for Cloth {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("Cloth")
-            .field("particles", &self.positions.len())
-            .field("triangles", &self.triangles.len())
-            .field("edge_constraints", &self.edge_constraints.len())
-            .field("bend_constraints", &self.bend_constraints.len())
-            .field("pinned", &self.pinned.len())
+            .field(
+                "positions",
+                &format_args!("[{} items]", self.positions.len()),
+            )
+            .field(
+                "prev_positions",
+                &format_args!("[{} items]", self.prev_positions.len()),
+            )
+            .field(
+                "velocities",
+                &format_args!("[{} items]", self.velocities.len()),
+            )
+            .field(
+                "inv_masses",
+                &format_args!("[{} items]", self.inv_masses.len()),
+            )
+            .field(
+                "triangles",
+                &format_args!("[{} items]", self.triangles.len()),
+            )
+            .field(
+                "edge_constraints",
+                &format_args!("[{} items]", self.edge_constraints.len()),
+            )
+            .field(
+                "bend_constraints",
+                &format_args!("[{} items]", self.bend_constraints.len()),
+            )
+            .field("pinned", &format_args!("[{} items]", self.pinned.len()))
+            .field("wind", &self.wind)
             .field("config", &self.config)
             .finish()
     }
@@ -719,9 +744,7 @@ mod tests {
         let bottom_y = cloth.positions[20].y.to_f32(); // bottom row
         assert!(
             bottom_y < initial_y,
-            "Bottom should be below top, top={}, bottom={}",
-            initial_y,
-            bottom_y
+            "Bottom should be below top, top={initial_y}, bottom={bottom_y}"
         );
     }
 

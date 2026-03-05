@@ -30,7 +30,7 @@ pub enum SleepState {
 }
 
 /// Per-body sleep tracking data
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SleepData {
     /// Current sleep state
     pub state: SleepState,
@@ -70,7 +70,7 @@ impl Default for SleepData {
 }
 
 /// Configuration for the sleeping system
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SleepConfig {
     /// Linear velocity threshold below which a body is considered idle
     pub linear_threshold: Fix128,
@@ -182,9 +182,7 @@ impl IslandManager {
 
         for i in 0..n {
             let root = self.find(i);
-            let island_idx = if let Some(idx) = island_map[root] {
-                idx
-            } else {
+            let island_idx = island_map[root].unwrap_or_else(|| {
                 let idx = islands.len();
                 island_map[root] = Some(idx);
                 islands.push(Island {
@@ -192,7 +190,7 @@ impl IslandManager {
                     all_sleeping: true,
                 });
                 idx
-            };
+            });
             islands[island_idx].bodies.push(i);
             if !self.sleep_data[i].is_sleeping() {
                 islands[island_idx].all_sleeping = false;

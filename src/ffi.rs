@@ -319,7 +319,7 @@ pub unsafe extern "C" fn alice_physics_body_apply_impulses_batch(
         Some(w) => w,
         None => return 0,
     };
-    if data.is_null() || !count.is_multiple_of(4) {
+    if data.is_null() || count % 4 != 0 {
         return 0;
     }
     let buf = std::slice::from_raw_parts(data, count as usize);

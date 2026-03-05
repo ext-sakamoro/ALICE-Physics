@@ -31,7 +31,7 @@ use crate::math::{Fix128, QuatFix, Vec3Fix};
 ///
 /// A triangular prism defined by center, width, height, depth, and rotation.
 /// The triangular cross-section is in the local XY plane, extruded along Z.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Wedge {
     /// Center position in world space
     pub center: Vec3Fix,
@@ -49,7 +49,7 @@ impl Wedge {
     /// Create a new axis-aligned wedge
     #[inline]
     #[must_use]
-    pub fn new(center: Vec3Fix, width: Fix128, height: Fix128, depth: Fix128) -> Self {
+    pub const fn new(center: Vec3Fix, width: Fix128, height: Fix128, depth: Fix128) -> Self {
         Self {
             center,
             width,
@@ -62,7 +62,7 @@ impl Wedge {
     /// Create a new oriented wedge
     #[inline]
     #[must_use]
-    pub fn with_rotation(
+    pub const fn with_rotation(
         center: Vec3Fix,
         width: Fix128,
         height: Fix128,

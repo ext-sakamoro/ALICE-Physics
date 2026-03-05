@@ -24,7 +24,7 @@ use crate::math::{Fix128, QuatFix, Vec3Fix};
 /// A torus defined by center position, major radius (distance from center to
 /// tube center line), minor radius (tube cross-section radius), and an
 /// orientation quaternion. The ring lies in the local XZ plane.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Torus {
     /// Center position in world space
     pub center: Vec3Fix,
@@ -40,7 +40,7 @@ impl Torus {
     /// Create a new axis-aligned torus (ring in XZ plane)
     #[inline]
     #[must_use]
-    pub fn new(center: Vec3Fix, major_radius: Fix128, minor_radius: Fix128) -> Self {
+    pub const fn new(center: Vec3Fix, major_radius: Fix128, minor_radius: Fix128) -> Self {
         Self {
             center,
             major_radius,
@@ -52,7 +52,7 @@ impl Torus {
     /// Create a new oriented torus
     #[inline]
     #[must_use]
-    pub fn with_rotation(
+    pub const fn with_rotation(
         center: Vec3Fix,
         major_radius: Fix128,
         minor_radius: Fix128,

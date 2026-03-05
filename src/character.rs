@@ -29,7 +29,7 @@ use alloc::vec::Vec;
 // ============================================================================
 
 /// Character controller configuration
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CharacterConfig {
     /// Capsule radius
     pub radius: Fix128,
@@ -69,7 +69,7 @@ impl Default for CharacterConfig {
 // ============================================================================
 
 /// Impulse to apply to a rigid body from character collision
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PushImpulse {
     /// Index of the body to push
     pub body_index: usize,
@@ -80,7 +80,7 @@ pub struct PushImpulse {
 }
 
 /// Result of a character move operation
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct MoveResult {
     /// Final position after movement
     pub position: Vec3Fix,
@@ -115,7 +115,7 @@ pub struct CharacterController {
 impl CharacterController {
     /// Create a new character controller at the given position
     #[must_use]
-    pub fn new(position: Vec3Fix, config: CharacterConfig) -> Self {
+    pub const fn new(position: Vec3Fix, config: CharacterConfig) -> Self {
         Self {
             position,
             velocity: Vec3Fix::ZERO,
@@ -253,15 +253,13 @@ impl CharacterController {
         let (grounded, ground_idx) = self.detect_ground(pos, bodies, sdf_colliders);
 
         // Compute platform velocity from ground body
-        let platform_vel = if let Some(idx) = ground_idx {
+        let platform_vel = ground_idx.map_or(Vec3Fix::ZERO, |idx| {
             if idx < bodies.len() {
                 bodies[idx].velocity
             } else {
                 Vec3Fix::ZERO
             }
-        } else {
-            Vec3Fix::ZERO
-        };
+        });
 
         self.position = pos;
         self.grounded = grounded;
@@ -468,7 +466,7 @@ impl CharacterController {
     /// Get the velocity of the platform the character is standing on
     #[inline]
     #[must_use]
-    pub fn get_platform_velocity(&self) -> Vec3Fix {
+    pub const fn get_platform_velocity(&self) -> Vec3Fix {
         self.platform_velocity
     }
 
@@ -484,8 +482,11 @@ impl core::fmt::Debug for CharacterController {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("CharacterController")
             .field("position", &self.position)
+            .field("velocity", &self.velocity)
             .field("grounded", &self.grounded)
             .field("config", &self.config)
+            .field("ground_body_index", &self.ground_body_index)
+            .field("platform_velocity", &self.platform_velocity)
             .finish()
     }
 }
@@ -515,8 +516,7 @@ mod tests {
         let feet_y = feet.y.to_f32();
         assert!(
             feet_y > 4.0 && feet_y < 5.0,
-            "Feet should be below center, got {}",
-            feet_y
+            "Feet should be below center, got {feet_y}"
         );
     }
 

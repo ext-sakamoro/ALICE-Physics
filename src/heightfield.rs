@@ -15,7 +15,7 @@ use alloc::vec::Vec;
 ///
 /// Heights stored as a 2D grid in row-major order (Z-major):
 /// `index = x + z * width`
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct HeightField {
     /// Height values (Fix128)
     pub heights: Vec<Fix128>,

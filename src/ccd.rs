@@ -12,7 +12,7 @@ use crate::collider::AABB;
 use crate::math::{Fix128, Vec3Fix};
 
 /// Time of Impact result
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TOI {
     /// Time of first impact [0, 1], where 0=start, 1=end of timestep
     pub t: Fix128,
@@ -23,7 +23,7 @@ pub struct TOI {
 }
 
 /// CCD configuration
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CcdConfig {
     /// Maximum iterations for conservative advancement
     pub max_iterations: usize,

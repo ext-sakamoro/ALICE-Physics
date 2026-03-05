@@ -46,7 +46,7 @@ pub struct DynamicNode {
 }
 
 impl DynamicNode {
-    fn new_leaf(aabb: AABB, user_data: u32) -> Self {
+    const fn new_leaf(aabb: AABB, user_data: u32) -> Self {
         Self {
             aabb,
             parent: NULL_NODE,
@@ -58,7 +58,7 @@ impl DynamicNode {
         }
     }
 
-    fn new_internal() -> Self {
+    const fn new_internal() -> Self {
         Self {
             aabb: AABB::new(Vec3Fix::ZERO, Vec3Fix::ZERO),
             parent: NULL_NODE,
@@ -86,7 +86,7 @@ pub struct DynamicAabbTree {
 impl DynamicAabbTree {
     /// Create a new empty tree
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             nodes: Vec::new(),
             free_list: Vec::new(),
