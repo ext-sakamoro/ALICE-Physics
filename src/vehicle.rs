@@ -43,6 +43,8 @@ pub struct WheelConfig {
     pub driven: bool,
     /// Whether this wheel has brakes
     pub has_brake: bool,
+    /// Progressive spring rate coefficient (0 = linear, >0 = stiffness increases with compression)
+    pub progressive_rate: Fix128,
 }
 
 impl Default for WheelConfig {
@@ -56,6 +58,7 @@ impl Default for WheelConfig {
             max_steer_angle: Fix128::from_ratio(5, 10), // ~28.6 degrees
             driven: false,
             has_brake: true,
+            progressive_rate: Fix128::ZERO,
         }
     }
 }
@@ -104,6 +107,9 @@ pub struct VehicleConfig {
     pub downforce: Fix128,
     /// Ground plane height (Y coordinate)
     pub ground_height: Fix128,
+    /// Anti-roll bar stiffness (N/m)。左右ホイール圧縮差に比例するスタビライザー力。
+    /// 0 = 無効。
+    pub anti_roll_stiffness: Fix128,
 }
 
 impl Default for VehicleConfig {
@@ -145,6 +151,7 @@ impl Default for VehicleConfig {
             aero_drag: Fix128::from_ratio(4, 10),
             downforce: Fix128::from_ratio(1, 10),
             ground_height: Fix128::ZERO,
+            anti_roll_stiffness: Fix128::from_int(5000),
         }
     }
 }
@@ -304,7 +311,10 @@ impl Vehicle {
                     compression
                 };
 
-                let spring_force = wheel_cfg.spring_stiffness * compression;
+                // Progressive spring: stiffness increases with compression
+                let effective_stiffness = wheel_cfg.spring_stiffness
+                    * (Fix128::ONE + wheel_cfg.progressive_rate * compression);
+                let spring_force = effective_stiffness * compression;
                 let vel_y = chassis.velocity.dot(up);
                 let damp_force = wheel_cfg.damping * vel_y;
                 let susp_force = spring_force - damp_force;
@@ -360,6 +370,26 @@ impl Vehicle {
             }
             self.wheel_states[i].spin_angle =
                 self.wheel_states[i].spin_angle + self.wheel_states[i].spin_speed * dt;
+        }
+
+        // Anti-roll bar: 左右ホイール圧縮差に比例する復元力。
+        // ホイールをペアで処理（0-1がフロント、2-3がリア等）。
+        if !self.config.anti_roll_stiffness.is_zero() && self.config.wheels.len() >= 2 {
+            let num_pairs = self.config.wheels.len() / 2;
+            for pair in 0..num_pairs {
+                let left = pair * 2;
+                let right = pair * 2 + 1;
+                let diff =
+                    self.wheel_states[left].compression - self.wheel_states[right].compression;
+                let anti_roll_force = self.config.anti_roll_stiffness * diff;
+                // 左を押し下げ、右を押し上げ（差が正→左が沈んでいる）
+                if self.wheel_states[left].grounded {
+                    total_force = total_force - up * anti_roll_force;
+                }
+                if self.wheel_states[right].grounded {
+                    total_force = total_force + up * anti_roll_force;
+                }
+            }
         }
 
         // Aerodynamic drag
@@ -485,5 +515,48 @@ mod tests {
 
         vehicle.shift_down();
         assert_eq!(vehicle.current_gear, 3);
+    }
+
+    #[test]
+    fn test_progressive_spring() {
+        // progressive_rate > 0 → 圧縮が深いほどばねが硬くなる
+        let mut config = VehicleConfig::default();
+        for w in &mut config.wheels {
+            w.progressive_rate = Fix128::ONE; // stiffness doubles at full compression
+        }
+        let mut vehicle = Vehicle::new(config);
+        let mut chassis = RigidBody::new(Vec3Fix::from_f32(0.0, 0.5, 0.0), Fix128::from_int(1500));
+
+        let dt = Fix128::from_ratio(1, 60);
+        vehicle.update(&mut chassis, dt);
+
+        // 圧縮が0以上のホイールがあれば、プログレッシブで suspension_force が増加しているはず
+        let grounded: Vec<_> = vehicle.wheel_states.iter().filter(|w| w.grounded).collect();
+        assert!(!grounded.is_empty(), "Should have grounded wheels");
+        for ws in &grounded {
+            assert!(
+                ws.suspension_force > Fix128::ZERO,
+                "Suspension force should be positive"
+            );
+        }
+    }
+
+    #[test]
+    fn test_anti_roll_bar() {
+        let config = VehicleConfig::default();
+        assert!(
+            !config.anti_roll_stiffness.is_zero(),
+            "Default anti-roll stiffness should be non-zero"
+        );
+
+        let mut vehicle = Vehicle::new(config);
+        let mut chassis = RigidBody::new(Vec3Fix::from_f32(0.0, 0.5, 0.0), Fix128::from_int(1500));
+
+        let dt = Fix128::from_ratio(1, 60);
+        vehicle.update(&mut chassis, dt);
+
+        // 左右圧縮差が小さければ anti-roll bar は微小な影響のみ
+        // 基本的なシミュレーションが動作していることを確認
+        assert!(vehicle.grounded_wheels() > 0);
     }
 }

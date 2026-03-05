@@ -136,6 +136,7 @@ pub extern "C" fn alice_physics_world_create_with_config(
             Fix128::from_f64(config.gravity_z),
         ),
         damping: Fix128::from_f64(config.damping),
+        ..Default::default()
     };
     let world = PhysicsWorld::new(solver_config);
     Box::into_raw(Box::new(world))
