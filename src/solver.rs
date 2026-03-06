@@ -511,6 +511,11 @@ pub struct ContactConstraint {
     pub friction: Fix128,
     /// Restitution (bounciness) coefficient
     pub restitution: Fix128,
+    /// Cached lambda (Lagrange multiplier) for warm-starting.
+    ///
+    /// Seeds the solver with the accumulated impulse from the previous substep,
+    /// reducing iterations needed for convergence (same technique as distance constraints).
+    pub cached_lambda: Fix128,
 }
 
 impl ContactConstraint {
@@ -523,6 +528,7 @@ impl ContactConstraint {
             contact,
             friction: Fix128::from_ratio(3, 10), // 0.3 friction
             restitution: Fix128::from_ratio(2, 10), // 0.2 restitution
+            cached_lambda: Fix128::ZERO,
         }
     }
 }
@@ -647,6 +653,34 @@ impl DistConstraintSlicePtr {
     /// Caller must ensure `idx < self.len` and that no other thread
     /// concurrently accesses the same index.
     unsafe fn get_mut(&self, idx: usize) -> &mut DistanceConstraint {
+        debug_assert!(idx < self.len);
+        &mut *self.ptr.add(idx)
+    }
+}
+
+/// Pointer wrapper enabling parallel write-back of cached lambda for contact constraints.
+#[cfg(feature = "parallel")]
+struct ContactConstraintSlicePtr {
+    ptr: *mut ContactConstraint,
+    len: usize,
+}
+
+// SAFETY: Same guarantee as `DistConstraintSlicePtr` — each constraint index
+// appears in exactly one graph-colored batch.
+#[cfg(feature = "parallel")]
+unsafe impl Send for ContactConstraintSlicePtr {}
+#[cfg(feature = "parallel")]
+unsafe impl Sync for ContactConstraintSlicePtr {}
+
+#[cfg(feature = "parallel")]
+impl ContactConstraintSlicePtr {
+    #[allow(clippy::mut_from_ref)]
+    #[inline(always)]
+    /// # Safety
+    ///
+    /// Caller must ensure `idx < self.len` and that no other thread
+    /// concurrently accesses the same index.
+    unsafe fn get_mut(&self, idx: usize) -> &mut ContactConstraint {
         debug_assert!(idx < self.len);
         &mut *self.ptr.add(idx)
     }
@@ -1275,6 +1309,7 @@ impl PhysicsWorld {
             contact,
             friction: combined.friction,
             restitution: combined.restitution,
+            cached_lambda: Fix128::ZERO,
         };
         self.add_contact(constraint);
     }
@@ -1558,7 +1593,10 @@ impl PhysicsWorld {
                     }
 
                     // Skip sleeping bodies (preserve prev for zero-velocity derivation)
-                    if sleep_data.get(i).is_some_and(super::sleeping::SleepData::is_sleeping) {
+                    if sleep_data
+                        .get(i)
+                        .is_some_and(super::sleeping::SleepData::is_sleeping)
+                    {
                         body.prev_position = body.position;
                         body.prev_rotation = body.rotation;
                         return;
@@ -1844,15 +1882,18 @@ impl PhysicsWorld {
 
             // Phase 2: Contact constraints — parallel within batch
             {
-                let contact_constraints = &self.contact_constraints;
+                let contacts = ContactConstraintSlicePtr {
+                    ptr: self.contact_constraints.as_mut_ptr(),
+                    len: self.contact_constraints.len(),
+                };
                 let indices = &self.constraint_batches[batch_idx].contact_indices;
                 indices.par_iter().for_each(|&idx| {
-                    let constraint = &contact_constraints[idx];
-                    // SAFETY: Graph coloring guarantees disjoint body access.
+                    // SAFETY: Graph coloring guarantees disjoint body/constraint access.
                     unsafe {
+                        let constraint = contacts.get_mut(idx);
                         let body_a = bodies.get_mut(constraint.body_a);
                         let body_b = bodies.get_mut(constraint.body_b);
-                        Self::solve_contact_pair(body_a, body_b, constraint);
+                        Self::solve_contact_pair(body_a, body_b, constraint, wsf);
                     }
                 });
             }
@@ -1920,12 +1961,15 @@ impl PhysicsWorld {
     /// Solve a single contact constraint given mutable body references.
     ///
     /// Extracted as a static method (no `&self`) for parallel dispatch.
+    /// Warm-starting seeds the solver with the cached lambda from the
+    /// previous substep, reducing iterations needed for convergence.
     #[cfg(feature = "parallel")]
     #[inline(always)]
     fn solve_contact_pair(
         body_a: &mut RigidBody,
         body_b: &mut RigidBody,
-        constraint: &ContactConstraint,
+        constraint: &mut ContactConstraint,
+        warm_start_factor: Fix128,
     ) {
         // Skip physics response for sensor/trigger bodies
         if body_a.is_sensor || body_b.is_sensor {
@@ -1943,8 +1987,17 @@ impl PhysicsWorld {
             return;
         }
 
+        // Warm-start: bias depth by cached lambda from previous substep.
         let inv_w_sum = Fix128::ONE / w_sum;
-        let correction = contact.normal * contact.depth;
+        let biased_depth = contact.depth - constraint.cached_lambda * warm_start_factor;
+        let lambda = if biased_depth > Fix128::ZERO {
+            biased_depth
+        } else {
+            Fix128::ZERO
+        };
+        constraint.cached_lambda = lambda;
+
+        let correction = contact.normal * lambda;
         let correction_a = correction * (body_a.inv_mass * inv_w_sum);
         let correction_b = correction * (body_b.inv_mass * inv_w_sum);
 
@@ -2083,9 +2136,20 @@ impl PhysicsWorld {
                 continue;
             }
 
-            // Position correction (reciprocal pre-computation: 1 division instead of 6)
+            // Warm-start: bias the penetration depth by cached lambda from previous substep.
             let inv_w_sum = Fix128::ONE / w_sum;
-            let correction = contact.normal * contact.depth;
+            let wsf = self.config.warm_start_factor;
+            let biased_depth = contact.depth - constraint.cached_lambda * wsf;
+            let lambda = if biased_depth > Fix128::ZERO {
+                biased_depth
+            } else {
+                Fix128::ZERO
+            };
+
+            // Store lambda for warm-starting on the next substep.
+            self.contact_constraints[i].cached_lambda = lambda;
+
+            let correction = contact.normal * lambda;
             let correction_a = correction * (body_a.inv_mass * inv_w_sum);
             let correction_b = correction * (body_b.inv_mass * inv_w_sum);
 
@@ -2820,5 +2884,57 @@ mod tests {
             err_warm <= err_cold + 0.1,
             "Warm-start should converge at least as well: err_warm={err_warm}, err_cold={err_cold}"
         );
+    }
+
+    #[test]
+    fn test_contact_warm_start_cached_lambda() {
+        // ContactConstraint の cached_lambda がデフォルトでゼロ
+        let contact = Contact {
+            depth: Fix128::from_ratio(1, 10),
+            normal: Vec3Fix::UNIT_Y,
+            point_a: Vec3Fix::ZERO,
+            point_b: Vec3Fix::ZERO,
+        };
+        let cc = ContactConstraint::new(0, 1, contact);
+        assert_eq!(cc.cached_lambda, Fix128::ZERO);
+    }
+
+    #[test]
+    fn test_contact_warm_start_convergence() {
+        // warm_start_factor > 0 で contact constraint の収束を検証。
+        // step() は clear_contacts() を呼ぶので、衝突検出経由ではなく
+        // substep を直接呼び出してテスト。
+        let config = SolverConfig {
+            substeps: 1,
+            iterations: 2,
+            gravity: Vec3Fix::ZERO,
+            warm_start_factor: Fix128::from_ratio(85, 100),
+            ..Default::default()
+        };
+        let mut world = PhysicsWorld::new(config);
+        let _a = world.add_body(RigidBody::new_static(Vec3Fix::ZERO));
+        let _b = world.add_body(RigidBody::new(
+            Vec3Fix::from_f32(0.0, 0.05, 0.0),
+            Fix128::ONE,
+        ));
+
+        // normal は B→A 方向（ドキュメント仕様）。body_a が下にあるので下向き。
+        // correction は normal 方向。body_a += correction, body_b -= correction。
+        // body_a=static, body_b は -(-Y) = +Y に押し出される。
+        let contact = Contact {
+            depth: Fix128::from_ratio(5, 100), // 0.05 m 侵入
+            normal: -Vec3Fix::UNIT_Y,          // B→A = 下向き
+            point_a: Vec3Fix::ZERO,
+            point_b: Vec3Fix::from_f32(0.0, 0.05, 0.0),
+        };
+        world.add_contact(ContactConstraint::new(0, 1, contact));
+
+        // substep を直接呼ぶ（step は clear_contacts してしまうため）
+        let dt = Fix128::from_ratio(1, 60);
+        world.substep(dt);
+
+        // body_b が上方に押し出されていること
+        let y = world.bodies[1].position.y.to_f32();
+        assert!(y > 0.05, "Body should be pushed up: y={y}");
     }
 }
