@@ -45,6 +45,18 @@ pub struct WheelConfig {
     pub has_brake: bool,
     /// Progressive spring rate coefficient (0 = linear, >0 = stiffness increases with compression)
     pub progressive_rate: Fix128,
+    /// Bump damping coefficient (compression direction).
+    /// 0 = use `damping` for both directions (symmetric).
+    pub bump_damping: Fix128,
+    /// Rebound damping coefficient (extension direction).
+    /// 0 = use `damping` for both directions (symmetric).
+    pub rebound_damping: Fix128,
+    /// Bump stop stiffness (N/m). Very stiff spring activated when compression exceeds `bump_stop_threshold`.
+    /// 0 = no bump stop.
+    pub bump_stop_stiffness: Fix128,
+    /// Bump stop activation threshold (0..1, fraction of full compression).
+    /// Default 0.9 = bump stop activates at 90% compression.
+    pub bump_stop_threshold: Fix128,
 }
 
 impl Default for WheelConfig {
@@ -59,6 +71,10 @@ impl Default for WheelConfig {
             driven: false,
             has_brake: true,
             progressive_rate: Fix128::ZERO,
+            bump_damping: Fix128::ZERO,
+            rebound_damping: Fix128::ZERO,
+            bump_stop_stiffness: Fix128::ZERO,
+            bump_stop_threshold: Fix128::from_ratio(9, 10), // 0.9
         }
     }
 }
@@ -314,9 +330,34 @@ impl Vehicle {
                 // Progressive spring: stiffness increases with compression
                 let effective_stiffness = wheel_cfg.spring_stiffness
                     * (Fix128::ONE + wheel_cfg.progressive_rate * compression);
-                let spring_force = effective_stiffness * compression;
+                let mut spring_force = effective_stiffness * compression;
+
+                // Bump stop: very stiff spring at high compression
+                if !wheel_cfg.bump_stop_stiffness.is_zero()
+                    && compression > wheel_cfg.bump_stop_threshold
+                {
+                    let overshoot = compression - wheel_cfg.bump_stop_threshold;
+                    spring_force = spring_force + wheel_cfg.bump_stop_stiffness * overshoot;
+                }
+
+                // Asymmetric damping: bump (compression) vs rebound (extension)
                 let vel_y = chassis.velocity.dot(up);
-                let damp_force = wheel_cfg.damping * vel_y;
+                let damp_coeff = if vel_y < Fix128::ZERO {
+                    // Moving downward = compressing suspension = bump
+                    if wheel_cfg.bump_damping.is_zero() {
+                        wheel_cfg.damping
+                    } else {
+                        wheel_cfg.bump_damping
+                    }
+                } else {
+                    // Moving upward = extending suspension = rebound
+                    if wheel_cfg.rebound_damping.is_zero() {
+                        wheel_cfg.damping
+                    } else {
+                        wheel_cfg.rebound_damping
+                    }
+                };
+                let damp_force = damp_coeff * vel_y;
                 let susp_force = spring_force - damp_force;
 
                 self.wheel_states[i].compression = compression;
@@ -558,5 +599,133 @@ mod tests {
         // 左右圧縮差が小さければ anti-roll bar は微小な影響のみ
         // 基本的なシミュレーションが動作していることを確認
         assert!(vehicle.grounded_wheels() > 0);
+    }
+
+    #[test]
+    fn test_asymmetric_damping_defaults() {
+        let w = WheelConfig::default();
+        // デフォルトではバンプ/リバウンド個別設定はゼロ（対称ダンピング使用）
+        assert!(w.bump_damping.is_zero());
+        assert!(w.rebound_damping.is_zero());
+    }
+
+    #[test]
+    fn test_asymmetric_damping_simulation() {
+        // バンプ減衰 > リバウンド減衰 の Rally 向け設定
+        let mut config = VehicleConfig::default();
+        for w in &mut config.wheels {
+            w.bump_damping = Fix128::from_int(6000); // 強いバンプ減衰
+            w.rebound_damping = Fix128::from_int(3000); // 弱いリバウンド減衰
+        }
+        let mut vehicle = Vehicle::new(config);
+        let mut chassis = RigidBody::new(Vec3Fix::from_f32(0.0, 0.5, 0.0), Fix128::from_int(1500));
+
+        let dt = Fix128::from_ratio(1, 60);
+        for _ in 0..30 {
+            vehicle.update(&mut chassis, dt);
+        }
+
+        assert!(vehicle.grounded_wheels() > 0, "Should have grounded wheels");
+        // サスペンション力が正（支持している）ことを確認
+        for ws in &vehicle.wheel_states {
+            if ws.grounded {
+                assert!(
+                    ws.suspension_force > Fix128::ZERO,
+                    "Suspension force should be positive with asymmetric damping"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_bump_stop_defaults() {
+        let w = WheelConfig::default();
+        assert!(w.bump_stop_stiffness.is_zero()); // デフォルトはバンプストップ無効
+        let expected = Fix128::from_ratio(9, 10);
+        assert_eq!(w.bump_stop_threshold, expected); // 閾値 0.9
+    }
+
+    #[test]
+    fn test_bump_stop_activation() {
+        // バンプストップ有効: 高圧縮時に追加スプリング力
+        let mut config = VehicleConfig::default();
+        for w in &mut config.wheels {
+            w.bump_stop_stiffness = Fix128::from_int(100_000); // 非常に硬い
+            w.bump_stop_threshold = Fix128::from_ratio(5, 10); // 50% 圧縮で発動
+        }
+
+        let mut vehicle_with_stop = Vehicle::new(config.clone());
+        let mut vehicle_without_stop = Vehicle::new(VehicleConfig::default());
+
+        // 低い位置から開始（高い圧縮を生じさせる）
+        let mut chassis_with =
+            RigidBody::new(Vec3Fix::from_f32(0.0, 0.35, 0.0), Fix128::from_int(1500));
+        let mut chassis_without =
+            RigidBody::new(Vec3Fix::from_f32(0.0, 0.35, 0.0), Fix128::from_int(1500));
+
+        let dt = Fix128::from_ratio(1, 60);
+        vehicle_with_stop.update(&mut chassis_with, dt);
+        vehicle_without_stop.update(&mut chassis_without, dt);
+
+        // バンプストップありの方がサスペンション力が大きい
+        let force_with: Fix128 = vehicle_with_stop
+            .wheel_states
+            .iter()
+            .filter(|w| w.grounded)
+            .map(|w| w.suspension_force)
+            .fold(Fix128::ZERO, |a, b| a + b);
+        let force_without: Fix128 = vehicle_without_stop
+            .wheel_states
+            .iter()
+            .filter(|w| w.grounded)
+            .map(|w| w.suspension_force)
+            .fold(Fix128::ZERO, |a, b| a + b);
+
+        assert!(
+            force_with >= force_without,
+            "Bump stop should increase suspension force: with={}, without={}",
+            force_with.to_f32(),
+            force_without.to_f32()
+        );
+    }
+
+    #[test]
+    fn test_bump_stop_no_effect_low_compression() {
+        // 圧縮が閾値以下ならバンプストップは効かない
+        let mut config = VehicleConfig::default();
+        for w in &mut config.wheels {
+            w.bump_stop_stiffness = Fix128::from_int(100_000);
+            w.bump_stop_threshold = Fix128::from_ratio(95, 100); // 95%
+        }
+
+        let mut vehicle_with = Vehicle::new(config);
+        let mut vehicle_without = Vehicle::new(VehicleConfig::default());
+
+        // 高い位置 = 低い圧縮
+        let mut chassis_with =
+            RigidBody::new(Vec3Fix::from_f32(0.0, 0.55, 0.0), Fix128::from_int(1500));
+        let mut chassis_without =
+            RigidBody::new(Vec3Fix::from_f32(0.0, 0.55, 0.0), Fix128::from_int(1500));
+
+        let dt = Fix128::from_ratio(1, 60);
+        vehicle_with.update(&mut chassis_with, dt);
+        vehicle_without.update(&mut chassis_without, dt);
+
+        // 低圧縮では両者の力は同じ
+        for (ws_with, ws_without) in vehicle_with
+            .wheel_states
+            .iter()
+            .zip(vehicle_without.wheel_states.iter())
+        {
+            if ws_with.grounded && ws_without.grounded {
+                let diff = (ws_with.suspension_force - ws_without.suspension_force)
+                    .to_f32()
+                    .abs();
+                assert!(
+                    diff < 0.01,
+                    "Low compression: bump stop should have no effect, diff={diff}"
+                );
+            }
+        }
     }
 }
