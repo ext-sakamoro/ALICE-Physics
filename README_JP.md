@@ -1101,6 +1101,86 @@ for _ in 0..300 {
 }
 ```
 
+## レンダリングパイプライン連携（ALICE-SDF v1.4.0+）
+
+ALICE-Physicsの物理状態データは、ALICE-SDFのレンダリングパイプラインの破壊unifromを駆動します。物理エンジンが熱・破砕・浸食・圧力フィールドをシミュレーションし、アプリケーション層がこれをサンプリングしてシェーダーuniformにアップロードすることで、リアルタイムの視覚フィードバックを実現します。
+
+### アーキテクチャ
+
+```
+ALICE-Physics (CPU)                    ALICE-SDF シェーダー (GPU)
+┌─────────────────────┐                ┌──────────────────────┐
+│ ThermalModifier      │──→ sample ──→│ uniform float uShatter│
+│ FractureModifier     │──→ sample ──→│ uniform float uEntropy│
+│ PressureModifier     │──→ sample ──→│ uniform float uImpact │
+│ ErosionModifier      │──→ sample ──→│ uniform vec2 uShake   │
+│ ForceField::Explosion│──→ sample ──→│ uniform float uMeteorY│
+└─────────────────────┘                └──────────────────────┘
+         ↓ アプリケーション層がフレーム毎にブリッジ
+```
+
+### Uniformマッピング
+
+| 物理ソース | フィールド / メソッド | レンダリングUniform | 説明 |
+|-----------|---------------------|-------------------|------|
+| `ThermalModifier` | `temperature.sample(pos)` | `uShatter` | 融点超過温度 → 破壊強度 |
+| `ThermalModifier` | `melt_accumulator.sample(pos)` | `uEntropy` | 累積材料損失量 (0-1) |
+| `FractureModifier` | `stress_field.sample(pos)` | `uShatter` | 応力駆動のクラック伝播 |
+| `PressureModifier` | `pressure_field.sample(pos)` | `uImpact` | 接触力による変形深度 |
+| `ForceField::Explosion` | `center`, `radius` | `uMeteorImpact`, `uImpactRing` | 爆発中心と爆風半径 |
+| 衝撃イベント | 衝突速度 | `uShake` | 衝撃力によるカメラシェイク |
+| 投射体ボディ | `body.position.y` | `uMeteorY` | 落下物体の高度 |
+
+### 使用例：物理駆動の破壊演出
+
+```rust
+use alice_physics::{PhysicsWorld, ThermalModifier, ThermalConfig, HeatSource};
+use alice_sdf::compiled::glsl::RenderConfig;
+
+// 物理側: 熱シミュレーション
+let mut thermal = ThermalModifier::new(ThermalConfig {
+    melt_temperature: 800.0,
+    melt_rate: 0.01,
+    droop_strength: 0.5,
+    ..Default::default()
+});
+thermal.add_heat_source(HeatSource::point(impact_pos, 2000.0));
+
+// 毎フレーム:
+thermal.step(&mut world, dt);
+
+// アプリケーションブリッジ: 物理をサンプリング → シェーダーにアップロード
+let shatter = thermal.melt_accumulator.sample(surface_pos).min(1.0);
+let entropy = thermal.temperature.sample(surface_pos) / 1000.0;
+gl.uniform1f(u_shatter_loc, shatter);
+gl.uniform1f(u_entropy_loc, entropy.min(1.0));
+```
+
+### 関連モジュール
+
+| モジュール | 説明 | 駆動するUniform |
+|-----------|------|----------------|
+| `thermal.rs` | 熱拡散、融解、熱膨張、凍結 | `uShatter`, `uEntropy` |
+| `fracture.rs` | 応力駆動クラック伝播（CSG減算） | `uShatter` |
+| `pressure.rs` | 接触力 → 圧壊/膨出/凹み変形 | `uImpact` |
+| `erosion.rs` | 風食、水食、化学侵食、削磨 | `uEntropy` |
+| `sdf_destruction.rs` | リアルタイムCSGブーリアン破壊 | `uImpactRing` |
+| `force.rs` | 爆発フォースフィールド（中心、半径、減衰） | `uMeteorImpact`, `uImpactRing` |
+| `sim_field.rs` | トリリニア補間付き3Dスカラー/ベクトルフィールド | 全て（インフラ） |
+
+### RenderConfig互換性
+
+ALICE-SDFの `RenderConfig` で `destruction: true` を有効にすると、シェーダー側の破壊機能がアクティブになります：
+
+```rust
+let config = RenderConfig {
+    destruction: true,       // Voronoiクラック、瓦礫、衝撃波の視覚効果
+    spectral_rendering: true, // 加熱表面の黒体放射
+    vfx_effects: true,       // 融解表面のドメインワープ
+    ..Default::default()
+};
+```
+
 ## 決定論的ニューラルコントローラ（ALICE-ML連携）
 
 [ALICE-ML](../ALICE-ML)と連携し、1.58bit三値重み {-1, 0, +1} と128bit固定小数点演算を組み合わせた**ビット精度決定論的AI**を提供します。ニューラル推論が純粋な加算/減算に集約され、全クライアントで同一のAI動作を保証します。
