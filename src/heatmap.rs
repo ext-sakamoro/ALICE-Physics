@@ -230,6 +230,7 @@ pub fn heatmap_to_rgba(heatmap: &Heatmap) -> Vec<[u8; 4]> {
 ///
 /// Stops: 0.0 -> dark purple, 0.25 -> blue, 0.5 -> teal,
 ///        0.75 -> green-yellow, 1.0 -> bright yellow.
+#[allow(clippy::suboptimal_flops)]
 fn viridis_color(t: f64) -> [u8; 4] {
     // Viridis key colors (simplified 5-stop gradient)
     const STOPS: [(f64, f64, f64); 5] = [
@@ -248,9 +249,9 @@ fn viridis_color(t: f64) -> [u8; 4] {
     let (r0, g0, b0) = STOPS[idx];
     let (r1, g1, b1) = STOPS[idx + 1];
 
-    let r = (r1 - r0).mul_add(frac, r0);
-    let g = (g1 - g0).mul_add(frac, g0);
-    let b = (b1 - b0).mul_add(frac, b0);
+    let r = (r1 - r0) * frac + r0;
+    let g = (g1 - g0) * frac + g0;
+    let b = (b1 - b0) * frac + b0;
 
     [(r * 255.0) as u8, (g * 255.0) as u8, (b * 255.0) as u8, 255]
 }
