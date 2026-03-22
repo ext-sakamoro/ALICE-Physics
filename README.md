@@ -1494,6 +1494,86 @@ alice-sdf = { path = "../ALICE-SDF", features = ["physics"] }
 
 See the [ALICE-SDF README](../ALICE-SDF/README.md#physics-bridge-alice-physics-integration) for `CompiledSdfField` details.
 
+## Rendering Pipeline Integration (ALICE-SDF v1.4.0+)
+
+ALICE-Physics provides physics state data that drives ALICE-SDF's rendering pipeline destruction uniforms. The physics engine simulates thermal, fracture, erosion, and pressure fields — the application layer samples these fields and uploads them as shader uniforms for real-time visual feedback.
+
+### Architecture
+
+```
+ALICE-Physics (CPU)                    ALICE-SDF Shader (GPU)
+┌─────────────────────┐                ┌──────────────────────┐
+│ ThermalModifier      │──→ sample ──→│ uniform float uShatter│
+│ FractureModifier     │──→ sample ──→│ uniform float uEntropy│
+│ PressureModifier     │──→ sample ──→│ uniform float uImpact │
+│ ErosionModifier      │──→ sample ──→│ uniform vec2 uShake   │
+│ ForceField::Explosion│──→ sample ──→│ uniform float uMeteorY│
+└─────────────────────┘                └──────────────────────┘
+         ↓ Application layer bridges the gap (each frame)
+```
+
+### Uniform Mapping
+
+| Physics Source | Field / Method | Rendering Uniform | Description |
+|---------------|---------------|-------------------|-------------|
+| `ThermalModifier` | `temperature.sample(pos)` | `uShatter` | Temperature above melt threshold → destruction intensity |
+| `ThermalModifier` | `melt_accumulator.sample(pos)` | `uEntropy` | Cumulative material loss (0-1) |
+| `FractureModifier` | `stress_field.sample(pos)` | `uShatter` | Stress-driven crack propagation |
+| `PressureModifier` | `pressure_field.sample(pos)` | `uImpact` | Contact force deformation depth |
+| `ForceField::Explosion` | `center`, `radius` | `uMeteorImpact`, `uImpactRing` | Explosion center and blast radius |
+| Impact event | collision velocity | `uShake` | Camera shake from impact force |
+| Projectile body | `body.position.y` | `uMeteorY` | Falling object altitude |
+
+### Example: Physics-Driven Destruction
+
+```rust
+use alice_physics::{PhysicsWorld, ThermalModifier, ThermalConfig, HeatSource};
+use alice_sdf::compiled::glsl::RenderConfig;
+
+// Physics side: thermal simulation
+let mut thermal = ThermalModifier::new(ThermalConfig {
+    melt_temperature: 800.0,
+    melt_rate: 0.01,
+    droop_strength: 0.5,
+    ..Default::default()
+});
+thermal.add_heat_source(HeatSource::point(impact_pos, 2000.0));
+
+// Each frame:
+thermal.step(&mut world, dt);
+
+// Application bridge: sample physics → upload to shader
+let shatter = thermal.melt_accumulator.sample(surface_pos).min(1.0);
+let entropy = thermal.temperature.sample(surface_pos) / 1000.0;
+gl.uniform1f(u_shatter_loc, shatter);
+gl.uniform1f(u_entropy_loc, entropy.min(1.0));
+```
+
+### Relevant Modules
+
+| Module | Description | Drives Uniform |
+|--------|-------------|----------------|
+| `thermal.rs` | Heat diffusion, melt, thermal expansion, freeze | `uShatter`, `uEntropy` |
+| `fracture.rs` | Stress-driven crack propagation (CSG subtraction) | `uShatter` |
+| `pressure.rs` | Contact force → crush/bulge/dent deformation | `uImpact` |
+| `erosion.rs` | Wind, water, chemical, ablation erosion | `uEntropy` |
+| `sdf_destruction.rs` | Real-time CSG boolean destruction | `uImpactRing` |
+| `force.rs` | Explosion force field (center, radius, falloff) | `uMeteorImpact`, `uImpactRing` |
+| `sim_field.rs` | 3D scalar/vector field with trilinear interpolation | All (infrastructure) |
+
+### RenderConfig Compatibility
+
+Enable `destruction: true` in ALICE-SDF's `RenderConfig` to activate the shader-side destruction features:
+
+```rust
+let config = RenderConfig {
+    destruction: true,       // Voronoi cracking, debris, shockwave visuals
+    spectral_rendering: true, // Blackbody radiation for heated surfaces
+    vfx_effects: true,       // Domain warp for melting surfaces
+    ..Default::default()
+};
+```
+
 ## Deterministic Neural Controller (ALICE-ML Integration)
 
 ALICE-Physics integrates with [ALICE-ML](../ALICE-ML) to provide **bit-exact deterministic AI** for game characters. By combining 1.58-bit ternary weights {-1, 0, +1} with 128-bit fixed-point arithmetic, neural inference reduces to pure addition/subtraction — no floating-point, no rounding, no platform-dependent behavior.
