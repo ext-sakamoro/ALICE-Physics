@@ -2,7 +2,7 @@
 name = "alice-physics"
 version = "0.6.0"
 edition = "2021"
-authors = ["Moroya Sakamoto <ext-sakamoro@github.com>"]
+authors = ["Moroya Sakamoto <sakamoro@alicelaw.net>"]
 description = "Deterministic 128-bit Fixed-Point Physics Engine"
 license = "AGPL-3.0"
 repository = "https://github.com/ext-sakamoro/ALICE-Physics"
