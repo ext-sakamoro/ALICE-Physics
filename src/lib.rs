@@ -372,7 +372,7 @@ pub use event::{ContactEvent, ContactEventType, EventCollector, TriggerEvent};
 /// Re-export predefined collision layer constants for convenience.
 pub use filter::layers;
 pub use filter::CollisionFilter;
-pub use flow_viz::{generate_flow_arrows, generate_streamlines, FlowArrow, FlowVizConfig};
+pub use flow_viz::{generate_flow_arrows, generate_streamlines, FlowArrow, FlowVizConfig, Streamlines};
 pub use fluid::{Fluid, FluidConfig};
 #[cfg(feature = "std")]
 pub use fluid_netcode::{FluidDelta, FluidSnapshot};
@@ -521,7 +521,7 @@ pub mod prelude {
     pub use crate::filter::layers;
     pub use crate::filter::CollisionFilter;
     pub use crate::flow_viz::{
-        generate_flow_arrows, generate_streamlines, FlowArrow, FlowVizConfig,
+        generate_flow_arrows, generate_streamlines, FlowArrow, FlowVizConfig, Streamlines,
     };
     pub use crate::fluid::{Fluid, FluidConfig};
     #[cfg(feature = "std")]
@@ -662,6 +662,7 @@ mod compile_smoke_tests {
     fn test_spatial_grid_accessible() {
         let mut grid = SpatialGrid::new(Fix128::ONE, 16);
         grid.insert(0, Vec3Fix::ZERO);
+        grid.build();
         let mut neighbors = Vec::new();
         grid.query_neighbors_into(Vec3Fix::ZERO, Fix128::ONE, &mut neighbors);
         assert!(neighbors.contains(&0));

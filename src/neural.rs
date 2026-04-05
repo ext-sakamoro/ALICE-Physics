@@ -233,11 +233,16 @@ pub enum Activation {
 ///
 /// All computation is in Fix128. All buffers are pre-allocated at construction.
 /// Forward pass performs zero heap allocations.
+///
+/// Layer output buffers are stored in a single flat `buffers` allocation.
+/// `buf_offsets[i]..buf_offsets[i+1]` gives the slice for layer `i`.
 pub struct DeterministicNetwork {
     layers: Vec<FixedTernaryWeight>,
     activations: Vec<Activation>,
-    /// Pre-allocated intermediate buffers (one per layer output)
-    buffers: Vec<Vec<Fix128>>,
+    /// Single flat buffer holding all layer outputs contiguously.
+    buffers: Vec<Fix128>,
+    /// Start offset in `buffers` for each layer; length = num_layers + 1.
+    buf_offsets: Vec<usize>,
 }
 
 impl DeterministicNetwork {
@@ -256,15 +261,20 @@ impl DeterministicNetwork {
             "layers and activations must have the same length"
         );
 
-        let buffers = layers
-            .iter()
-            .map(|l| vec![Fix128::ZERO; l.out_features()])
-            .collect();
+        // Build flat buffer with prefix-sum offsets
+        let mut buf_offsets = Vec::with_capacity(layers.len() + 1);
+        let mut total = 0usize;
+        buf_offsets.push(0);
+        for l in &layers {
+            total += l.out_features();
+            buf_offsets.push(total);
+        }
 
         Self {
             layers,
             activations,
-            buffers,
+            buffers: vec![Fix128::ZERO; total],
+            buf_offsets,
         }
     }
 
@@ -275,17 +285,29 @@ impl DeterministicNetwork {
         let n = self.layers.len();
 
         // First layer: reads from external input
-        fix128_ternary_matvec(input, &self.layers[0], &mut self.buffers[0]);
-        Self::apply_activation(self.activations[0], &mut self.buffers[0]);
-
-        // Subsequent layers: split_at_mut satisfies borrow checker
-        for i in 1..n {
-            let (prev, curr) = self.buffers.split_at_mut(i);
-            fix128_ternary_matvec(&prev[i - 1], &self.layers[i], &mut curr[0]);
-            Self::apply_activation(self.activations[i], &mut curr[0]);
+        {
+            let s = self.buf_offsets[0];
+            let e = self.buf_offsets[1];
+            fix128_ternary_matvec(input, &self.layers[0], &mut self.buffers[s..e]);
+            Self::apply_activation(self.activations[0], &mut self.buffers[s..e]);
         }
 
-        &self.buffers[n - 1]
+        // Subsequent layers: use raw offsets to split the flat buffer
+        for i in 1..n {
+            let prev_s = self.buf_offsets[i - 1];
+            let prev_e = self.buf_offsets[i];
+            let curr_s = self.buf_offsets[i];
+            let curr_e = self.buf_offsets[i + 1];
+
+            // Split at curr_s to get non-overlapping mutable/immutable slices.
+            let (left, right) = self.buffers.split_at_mut(curr_s);
+            fix128_ternary_matvec(&left[prev_s..prev_e], &self.layers[i], &mut right[..curr_e - curr_s]);
+            Self::apply_activation(self.activations[i], &mut right[..curr_e - curr_s]);
+        }
+
+        let last_s = self.buf_offsets[n - 1];
+        let last_e = self.buf_offsets[n];
+        &self.buffers[last_s..last_e]
     }
 
     /// Apply activation function to a buffer.

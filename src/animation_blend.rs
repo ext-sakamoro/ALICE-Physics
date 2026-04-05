@@ -115,44 +115,75 @@ pub struct Keyframe {
     pub pose: BonePose,
 }
 
-/// Animation clip (sequence of keyframes per bone)
+/// Animation clip (sequence of keyframes per bone).
+///
+/// Uses a flat `keyframes` buffer with a `bone_offsets` table so that all
+/// keyframe data is stored contiguously. `bone_offsets[b]..bone_offsets[b+1]`
+/// gives the keyframe slice for bone `b`.
 #[derive(Clone, Debug)]
 pub struct AnimationClip {
     /// Clip name
     pub name: Vec<u8>,
     /// Duration in seconds
     pub duration: Fix128,
-    /// Keyframes per bone: `keyframes[bone_idx]` = sorted list
-    pub keyframes: Vec<Vec<Keyframe>>,
+    /// All keyframes packed flat (sorted per-bone by time)
+    pub keyframes: Vec<Keyframe>,
+    /// Start index in `keyframes` for each bone; length = num_bones + 1
+    pub bone_offsets: Vec<usize>,
     /// Whether clip loops
     pub looping: bool,
 }
 
 impl AnimationClip {
-    /// Create empty clip
+    /// Create empty clip for `num_bones` bones.
     #[must_use]
     pub fn new(num_bones: usize, duration: Fix128) -> Self {
         Self {
             name: Vec::new(),
             duration,
-            keyframes: vec![Vec::new(); num_bones],
+            keyframes: Vec::new(),
+            bone_offsets: vec![0; num_bones + 1],
             looping: true,
         }
     }
 
-    /// Add keyframe for a bone
+    /// Number of bones this clip was created for.
+    #[inline]
+    #[must_use]
+    pub fn num_bones(&self) -> usize {
+        self.bone_offsets.len().saturating_sub(1)
+    }
+
+    /// Add a keyframe for a bone.
+    ///
+    /// Inserts in time-sorted order and shifts subsequent bone offsets.
     pub fn add_keyframe(&mut self, bone_idx: usize, keyframe: Keyframe) {
-        if bone_idx < self.keyframes.len() {
-            self.keyframes[bone_idx].push(keyframe);
-            self.keyframes[bone_idx].sort_by(|a, b| a.time.cmp(&b.time));
+        let num_bones = self.num_bones();
+        if bone_idx >= num_bones {
+            return;
+        }
+        let start = self.bone_offsets[bone_idx];
+        let end = self.bone_offsets[bone_idx + 1];
+
+        // Find insertion position (maintain sorted order by time)
+        let insert_pos = start
+            + self.keyframes[start..end]
+                .iter()
+                .position(|kf| kf.time > keyframe.time)
+                .unwrap_or(end - start);
+
+        self.keyframes.insert(insert_pos, keyframe);
+
+        // Shift offsets for all subsequent bones
+        for off in &mut self.bone_offsets[bone_idx + 1..] {
+            *off += 1;
         }
     }
 
-    /// Sample pose at given time
+    /// Sample pose at given time.
     #[must_use]
     pub fn sample(&self, time: Fix128) -> SkeletonPose {
         let t = if self.looping && !self.duration.is_zero() {
-            // Modular time
             let cycles = time / self.duration;
             time - self.duration * Fix128::from_int(cycles.hi)
         } else if time > self.duration {
@@ -161,9 +192,14 @@ impl AnimationClip {
             time
         };
 
-        let mut pose = SkeletonPose::new(self.keyframes.len());
+        let num_bones = self.num_bones();
+        let mut pose = SkeletonPose::new(num_bones);
 
-        for (bone_idx, bone_keyframes) in self.keyframes.iter().enumerate() {
+        for bone_idx in 0..num_bones {
+            let start = self.bone_offsets[bone_idx];
+            let end = self.bone_offsets[bone_idx + 1];
+            let bone_keyframes = &self.keyframes[start..end];
+
             if bone_keyframes.is_empty() {
                 continue;
             }

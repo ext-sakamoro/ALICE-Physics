@@ -186,26 +186,45 @@ pub fn decompose_sdf(
         };
     }
 
-    // 2. Cluster surface points into groups (simple spatial splitting)
-    let clusters = cluster_points(&surface_points, config.max_hulls);
+    // 2. Cluster surface points into groups (index-based, no point copies)
+    let mut cluster_indices: Vec<usize> = Vec::new();
+    let mut cluster_offsets: Vec<usize> = Vec::new();
+    let point_indices: Vec<usize> = (0..surface_points.len()).collect();
+    cluster_points_indexed(
+        &surface_points,
+        &point_indices,
+        config.max_hulls,
+        &mut cluster_indices,
+        &mut cluster_offsets,
+    );
+    cluster_offsets.push(cluster_indices.len());
 
     // 3. Generate convex hull per cluster
     let mut hulls = Vec::new();
     let mut centers = Vec::new();
     let mut volumes = Vec::new();
 
-    for cluster in &clusters {
-        if cluster.len() < 4 {
+    for w in cluster_offsets.windows(2) {
+        let start = w[0];
+        let end = w[1];
+        let cluster_len = end - start;
+        if cluster_len < 4 {
             continue;
         }
 
         // Limit vertices per hull
-        let verts: Vec<Vec3Fix> = if cluster.len() > config.max_vertices_per_hull {
-            // Subsample
-            let step = cluster.len() / config.max_vertices_per_hull;
-            cluster.iter().step_by(step.max(1)).copied().collect()
+        let verts: Vec<Vec3Fix> = if cluster_len > config.max_vertices_per_hull {
+            let step = (cluster_len / config.max_vertices_per_hull).max(1);
+            cluster_indices[start..end]
+                .iter()
+                .step_by(step)
+                .map(|&i| surface_points[i])
+                .collect()
         } else {
-            cluster.clone()
+            cluster_indices[start..end]
+                .iter()
+                .map(|&i| surface_points[i])
+                .collect()
         };
 
         // Compute center
@@ -233,51 +252,80 @@ pub fn decompose_sdf(
     }
 }
 
-/// Simple spatial clustering using axis-aligned splitting
-fn cluster_points(points: &[Vec3Fix], max_clusters: usize) -> Vec<Vec<Vec3Fix>> {
-    if points.len() <= max_clusters || max_clusters <= 1 {
-        return vec![points.to_vec()];
+/// Spatial clustering using axis-aligned splitting.
+///
+/// Works on indices into `all_points` rather than copying point data.
+/// Results are appended to `out_indices`; `out_offsets` records the start
+/// of each cluster (the caller appends `out_indices.len()` as the final sentinel).
+fn cluster_points_indexed(
+    all_points: &[Vec3Fix],
+    indices: &[usize],
+    max_clusters: usize,
+    out_indices: &mut Vec<usize>,
+    out_offsets: &mut Vec<usize>,
+) {
+    if indices.len() <= max_clusters || max_clusters <= 1 {
+        out_offsets.push(out_indices.len());
+        out_indices.extend_from_slice(indices);
+        return;
     }
 
-    // Split along longest axis
-    let (min, max) = compute_bounds(points);
-    let extent = max - min;
+    // Compute bounds over this subset
+    let first = all_points[indices[0]];
+    let mut bmin = first;
+    let mut bmax = first;
+    for &i in &indices[1..] {
+        let p = all_points[i];
+        if p.x < bmin.x { bmin.x = p.x; }
+        if p.y < bmin.y { bmin.y = p.y; }
+        if p.z < bmin.z { bmin.z = p.z; }
+        if p.x > bmax.x { bmax.x = p.x; }
+        if p.y > bmax.y { bmax.y = p.y; }
+        if p.z > bmax.z { bmax.z = p.z; }
+    }
+    let extent = bmax - bmin;
 
     let (split_axis, split_val) = if extent.x >= extent.y && extent.x >= extent.z {
-        (0, (min.x + max.x).half())
+        (0, (bmin.x + bmax.x).half())
     } else if extent.y >= extent.z {
-        (1, (min.y + max.y).half())
+        (1, (bmin.y + bmax.y).half())
     } else {
-        (2, (min.z + max.z).half())
+        (2, (bmin.z + bmax.z).half())
     };
 
-    let mut left = Vec::new();
-    let mut right = Vec::new();
+    let mut left_idx: Vec<usize> = Vec::new();
+    let mut right_idx: Vec<usize> = Vec::new();
 
-    for &p in points {
+    for &i in indices {
+        let p = all_points[i];
         let val = match split_axis {
             0 => p.x,
             1 => p.y,
             _ => p.z,
         };
-
         if val < split_val {
-            left.push(p);
+            left_idx.push(i);
         } else {
-            right.push(p);
+            right_idx.push(i);
         }
     }
 
     // Guard against degenerate splits
-    if left.is_empty() || right.is_empty() {
-        return vec![points.to_vec()];
+    if left_idx.is_empty() || right_idx.is_empty() {
+        out_offsets.push(out_indices.len());
+        out_indices.extend_from_slice(indices);
+        return;
     }
 
     let half = max_clusters / 2;
-    let mut result = cluster_points(&left, half.max(1));
-    result.extend(cluster_points(&right, (max_clusters - half).max(1)));
-
-    result
+    cluster_points_indexed(all_points, &left_idx, half.max(1), out_indices, out_offsets);
+    cluster_points_indexed(
+        all_points,
+        &right_idx,
+        (max_clusters - half).max(1),
+        out_indices,
+        out_offsets,
+    );
 }
 
 /// Compute AABB bounds of a point set
@@ -388,7 +436,13 @@ mod tests {
             Vec3Fix::from_f32(0.9, 0.0, 0.0),
         ];
 
-        let clusters = cluster_points(&points, 2);
-        assert_eq!(clusters.len(), 2, "Should split into 2 clusters");
+        let point_indices: Vec<usize> = (0..points.len()).collect();
+        let mut out_indices = Vec::new();
+        let mut out_offsets = Vec::new();
+        cluster_points_indexed(&points, &point_indices, 2, &mut out_indices, &mut out_offsets);
+        out_offsets.push(out_indices.len());
+
+        let num_clusters = out_offsets.len() - 1;
+        assert_eq!(num_clusters, 2, "Should split into 2 clusters");
     }
 }
