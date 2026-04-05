@@ -301,7 +301,11 @@ impl DeterministicNetwork {
 
             // Split at curr_s to get non-overlapping mutable/immutable slices.
             let (left, right) = self.buffers.split_at_mut(curr_s);
-            fix128_ternary_matvec(&left[prev_s..prev_e], &self.layers[i], &mut right[..curr_e - curr_s]);
+            fix128_ternary_matvec(
+                &left[prev_s..prev_e],
+                &self.layers[i],
+                &mut right[..curr_e - curr_s],
+            );
             Self::apply_activation(self.activations[i], &mut right[..curr_e - curr_s]);
         }
 
