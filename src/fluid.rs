@@ -218,6 +218,7 @@ impl Fluid {
         for i in 0..n {
             self.grid.insert(i, self.predicted[i]);
         }
+        self.grid.build();
 
         // 3. Density constraint iterations
         let mut neighbors_buf = Vec::new();
@@ -546,6 +547,7 @@ mod tests {
         grid.insert(0, Vec3Fix::ZERO);
         grid.insert(1, Vec3Fix::from_f32(0.1, 0.0, 0.0));
         grid.insert(2, Vec3Fix::from_f32(10.0, 0.0, 0.0));
+        grid.build();
 
         let h_sq = Fix128::from_ratio(1, 5) * Fix128::from_ratio(1, 5);
         let mut neighbors = Vec::new();

@@ -21,15 +21,29 @@ use alloc::vec::Vec;
 
 /// Spatial hash grid for O(n) neighbor queries in particle simulations.
 ///
-/// Divides space into a uniform 3D grid of `grid_dim^3` cells. Particles
-/// are inserted by hashing their position to a cell index. Neighbor queries
-/// return all particles in the 3x3x3 block of cells surrounding the query
-/// point, giving approximate range search in O(1) per query (amortized).
+/// Divides space into a uniform 3D grid of `grid_dim^3` cells. Uses a
+/// CSR (Compressed Sparse Row) flat-buffer layout: `indices` holds all
+/// particle indices packed contiguously, and `cell_offsets[h]..cell_offsets[h+1]`
+/// gives the slice for cell `h`. This eliminates per-cell heap allocations
+/// and improves cache locality for neighbor queries.
+///
+/// # Build flow
+///
+/// 1. Call `clear()` to reset counts.
+/// 2. Call `insert()` for each particle.
+/// 3. Call `build()` to finalize the CSR layout.
+/// 4. Call `query_neighbors_into()` for lookups.
 pub struct SpatialGrid {
     inv_cell_size: Fix128,
-    cells: Vec<Vec<usize>>,
+    /// Flat particle index buffer (CSR values).
+    indices: Vec<usize>,
+    /// Cell start offsets in `indices`; length = total_cells + 1.
+    cell_offsets: Vec<usize>,
+    /// Per-cell counts used during the two-pass build.
+    counts: Vec<usize>,
     grid_dim: usize,
     grid_half: i64,
+    total_cells: usize,
 }
 
 impl SpatialGrid {
@@ -46,19 +60,27 @@ impl SpatialGrid {
             Fix128::ONE / cell_size
         };
         let grid_half = (grid_dim as i64) / 2;
+        let total_cells = grid_dim * grid_dim * grid_dim;
         Self {
             inv_cell_size: inv_cell,
-            cells: vec![Vec::new(); grid_dim * grid_dim * grid_dim],
+            indices: Vec::new(),
+            cell_offsets: vec![0; total_cells + 1],
+            counts: vec![0; total_cells],
             grid_dim,
             grid_half,
+            total_cells,
         }
     }
 
-    /// Clear all cells (retains allocated memory for reuse).
+    /// Reset the grid for a fresh build pass.
     pub fn clear(&mut self) {
-        for cell in &mut self.cells {
-            cell.clear();
+        for c in &mut self.counts {
+            *c = 0;
         }
+        for o in &mut self.cell_offsets {
+            *o = 0;
+        }
+        self.indices.clear();
     }
 
     /// Compute the cell index for a given position.
@@ -73,12 +95,44 @@ impl SpatialGrid {
         ix + iy * self.grid_dim + iz * self.grid_dim * self.grid_dim
     }
 
-    /// Insert a particle index at the given position.
+    /// Record a particle insertion (pass 1: count only).
+    ///
+    /// Call `build()` after all insertions to finalize the CSR layout.
     pub fn insert(&mut self, idx: usize, pos: Vec3Fix) {
         let h = self.hash(pos);
-        if h < self.cells.len() {
-            self.cells[h].push(idx);
+        if h < self.total_cells {
+            self.counts[h] += 1;
+            // Store (h, idx) temporarily in `indices` as interleaved pairs.
+            self.indices.push(h);
+            self.indices.push(idx);
         }
+    }
+
+    /// Finalize the CSR layout after all `insert()` calls.
+    ///
+    /// Converts the temporary (cell, particle) pairs into a proper
+    /// prefix-sum offset table and sorted flat index buffer.
+    pub fn build(&mut self) {
+        // Prefix-sum counts → cell_offsets
+        let mut running = 0usize;
+        for h in 0..self.total_cells {
+            self.cell_offsets[h] = running;
+            running += self.counts[h];
+            self.counts[h] = 0; // reuse as write cursor below
+        }
+        self.cell_offsets[self.total_cells] = running;
+
+        // Scatter particle indices into a final sorted buffer
+        let n_pairs = self.indices.len() / 2;
+        let mut final_buf = vec![0usize; running];
+        for k in 0..n_pairs {
+            let h = self.indices[k * 2];
+            let idx = self.indices[k * 2 + 1];
+            let slot = self.cell_offsets[h] + self.counts[h];
+            final_buf[slot] = idx;
+            self.counts[h] += 1;
+        }
+        self.indices = final_buf;
     }
 
     /// Collect all particle indices in the 3x3x3 neighborhood of `pos`.
@@ -116,7 +170,9 @@ impl SpatialGrid {
                     }
 
                     let h = nx + ny * self.grid_dim + nz * self.grid_dim * self.grid_dim;
-                    for &idx in &self.cells[h] {
+                    let start = self.cell_offsets[h];
+                    let end = self.cell_offsets[h + 1];
+                    for &idx in &self.indices[start..end] {
                         neighbors.push(idx);
                     }
                 }
@@ -139,6 +195,7 @@ mod tests {
         grid.insert(0, Vec3Fix::ZERO);
         grid.insert(1, Vec3Fix::from_f32(0.1, 0.0, 0.0));
         grid.insert(2, Vec3Fix::from_f32(10.0, 0.0, 0.0));
+        grid.build();
 
         let h_sq = Fix128::from_ratio(1, 5) * Fix128::from_ratio(1, 5);
         let mut neighbors = Vec::new();
@@ -151,6 +208,7 @@ mod tests {
     fn test_spatial_grid_clear() {
         let mut grid = SpatialGrid::new(Fix128::ONE, 8);
         grid.insert(0, Vec3Fix::ZERO);
+        grid.build();
         grid.clear();
 
         let mut neighbors = Vec::new();
