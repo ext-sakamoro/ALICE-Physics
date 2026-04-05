@@ -276,12 +276,24 @@ fn cluster_points_indexed(
     let mut bmax = first;
     for &i in &indices[1..] {
         let p = all_points[i];
-        if p.x < bmin.x { bmin.x = p.x; }
-        if p.y < bmin.y { bmin.y = p.y; }
-        if p.z < bmin.z { bmin.z = p.z; }
-        if p.x > bmax.x { bmax.x = p.x; }
-        if p.y > bmax.y { bmax.y = p.y; }
-        if p.z > bmax.z { bmax.z = p.z; }
+        if p.x < bmin.x {
+            bmin.x = p.x;
+        }
+        if p.y < bmin.y {
+            bmin.y = p.y;
+        }
+        if p.z < bmin.z {
+            bmin.z = p.z;
+        }
+        if p.x > bmax.x {
+            bmax.x = p.x;
+        }
+        if p.y > bmax.y {
+            bmax.y = p.y;
+        }
+        if p.z > bmax.z {
+            bmax.z = p.z;
+        }
     }
     let extent = bmax - bmin;
 
@@ -439,7 +451,13 @@ mod tests {
         let point_indices: Vec<usize> = (0..points.len()).collect();
         let mut out_indices = Vec::new();
         let mut out_offsets = Vec::new();
-        cluster_points_indexed(&points, &point_indices, 2, &mut out_indices, &mut out_offsets);
+        cluster_points_indexed(
+            &points,
+            &point_indices,
+            2,
+            &mut out_indices,
+            &mut out_offsets,
+        );
         out_offsets.push(out_indices.len());
 
         let num_clusters = out_offsets.len() - 1;

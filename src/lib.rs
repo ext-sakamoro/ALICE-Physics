@@ -372,7 +372,9 @@ pub use event::{ContactEvent, ContactEventType, EventCollector, TriggerEvent};
 /// Re-export predefined collision layer constants for convenience.
 pub use filter::layers;
 pub use filter::CollisionFilter;
-pub use flow_viz::{generate_flow_arrows, generate_streamlines, FlowArrow, FlowVizConfig, Streamlines};
+pub use flow_viz::{
+    generate_flow_arrows, generate_streamlines, FlowArrow, FlowVizConfig, Streamlines,
+};
 pub use fluid::{Fluid, FluidConfig};
 #[cfg(feature = "std")]
 pub use fluid_netcode::{FluidDelta, FluidSnapshot};
