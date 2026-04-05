@@ -433,10 +433,13 @@ impl Cloth {
         let grid_dim_i64 = grid_dim as i64;
         let half = grid_dim_i64 / 2;
 
-        // Build spatial hash grid
+        // Build spatial hash grid (2-pass CSR)
         let total_cells = grid_dim * grid_dim * grid_dim;
-        let mut cells: Vec<Vec<usize>> = vec![Vec::new(); total_cells];
 
+        // Pass 1: count particles per cell
+        let mut cell_counts = vec![0usize; total_cells];
+        // Temporary (cell, particle) pairs to avoid re-hashing in pass 2
+        let mut cell_particle: Vec<(usize, usize)> = Vec::with_capacity(n);
         for i in 0..n {
             if self.inv_masses[i].is_zero() {
                 continue;
@@ -447,8 +450,23 @@ impl Cloth {
             let iz = ((p.z * inv_cell).hi + half).clamp(0, grid_dim_i64 - 1) as usize;
             let h = ix + iy * grid_dim + iz * grid_dim * grid_dim;
             if h < total_cells {
-                cells[h].push(i);
+                cell_counts[h] += 1;
+                cell_particle.push((h, i));
             }
+        }
+        // Prefix sum → cell_offsets
+        let mut cell_offsets = vec![0usize; total_cells + 1];
+        for h in 0..total_cells {
+            cell_offsets[h + 1] = cell_offsets[h] + cell_counts[h];
+            cell_counts[h] = 0; // reuse as write cursor
+        }
+        // Pass 2: fill flat index buffer
+        let total_particles = cell_offsets[total_cells];
+        let mut indices = vec![0usize; total_particles];
+        for (h, i) in &cell_particle {
+            let slot = cell_offsets[*h] + cell_counts[*h];
+            indices[slot] = *i;
+            cell_counts[*h] += 1;
         }
 
         // Build sorted edge set for O(log n) lookup (skip connected particles)
@@ -490,7 +508,9 @@ impl Cloth {
                         }
 
                         let h = nx + ny * grid_dim + nz * grid_dim * grid_dim;
-                        for &j in &cells[h] {
+                        let start = cell_offsets[h];
+                        let end = cell_offsets[h + 1];
+                        for &j in &indices[start..end] {
                             if j <= i {
                                 continue; // avoid duplicate pairs
                             }

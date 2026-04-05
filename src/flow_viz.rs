@@ -29,6 +29,42 @@ pub struct FlowArrow {
     pub magnitude: Fix128,
 }
 
+/// Collection of streamlines stored as a flat buffer with per-line lengths.
+///
+/// `points[offsets[i]..offsets[i+1]]` gives the polyline for streamline `i`.
+#[derive(Clone, Debug)]
+pub struct Streamlines {
+    /// All polyline points packed contiguously.
+    pub points: Vec<Vec3Fix>,
+    /// Start index in `points` for each line; length = num_lines + 1.
+    pub offsets: Vec<usize>,
+}
+
+impl Streamlines {
+    /// Number of streamlines.
+    #[inline]
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.offsets.len().saturating_sub(1)
+    }
+
+    /// Returns `true` if there are no streamlines.
+    #[inline]
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Get the polyline for streamline `i`.
+    #[inline]
+    #[must_use]
+    pub fn line(&self, i: usize) -> &[Vec3Fix] {
+        let s = self.offsets[i];
+        let e = self.offsets[i + 1];
+        &self.points[s..e]
+    }
+}
+
 /// Configuration for flow visualization.
 #[derive(Clone, Debug)]
 pub struct FlowVizConfig {
@@ -140,7 +176,8 @@ pub fn generate_flow_arrows(
 ///
 /// Starting from each seed point, advances forward through the velocity
 /// field (interpolated from nearby fluid particles) for the given number
-/// of steps. Each streamline is a polyline of traced positions.
+/// of steps. Returns a [`Streamlines`] struct with all polylines in a
+/// single flat buffer.
 ///
 /// # Arguments
 ///
@@ -156,43 +193,48 @@ pub fn generate_streamlines(
     seed_points: &[Vec3Fix],
     steps: usize,
     dt: Fix128,
-) -> Vec<Vec<Vec3Fix>> {
+) -> Streamlines {
+    let num_seeds = seed_points.len();
+    let mut points: Vec<Vec3Fix> = Vec::with_capacity(num_seeds * (steps + 1));
+    let mut offsets: Vec<usize> = Vec::with_capacity(num_seeds + 1);
+
     if fluid_positions.is_empty() || dt.is_zero() {
-        return seed_points.iter().map(|s| vec![*s]).collect();
+        for &s in seed_points {
+            offsets.push(points.len());
+            points.push(s);
+        }
+        offsets.push(points.len());
+        return Streamlines { points, offsets };
     }
 
     let influence_radius = Fix128::ONE;
     let radius_sq = influence_radius * influence_radius;
 
-    seed_points
-        .iter()
-        .map(|&seed| {
-            let mut line = Vec::with_capacity(steps + 1);
-            let mut pos = seed;
-            line.push(pos);
+    for &seed in seed_points {
+        offsets.push(points.len());
+        let mut pos = seed;
+        points.push(pos);
 
-            for _ in 0..steps {
-                // Interpolate velocity at current position
-                let vel = interpolate_velocity(
-                    pos,
-                    fluid_positions,
-                    fluid_velocities,
-                    radius_sq,
-                    influence_radius,
-                );
+        for _ in 0..steps {
+            let vel = interpolate_velocity(
+                pos,
+                fluid_positions,
+                fluid_velocities,
+                radius_sq,
+                influence_radius,
+            );
 
-                if vel.length_squared().is_zero() {
-                    break; // No velocity, stop tracing
-                }
-
-                // Euler step
-                pos = pos + vel * dt;
-                line.push(pos);
+            if vel.length_squared().is_zero() {
+                break;
             }
 
-            line
-        })
-        .collect()
+            pos = pos + vel * dt;
+            points.push(pos);
+        }
+    }
+    offsets.push(points.len());
+
+    Streamlines { points, offsets }
 }
 
 /// Interpolate velocity at a point using inverse-distance weighting.
@@ -309,7 +351,7 @@ mod tests {
         let seeds = vec![Vec3Fix::ZERO];
         let lines = generate_streamlines(&[], &[], &seeds, 10, Fix128::from_ratio(1, 60));
         assert_eq!(lines.len(), 1);
-        assert_eq!(lines[0].len(), 1); // Only seed point
+        assert_eq!(lines.line(0).len(), 1); // Only seed point
     }
 
     #[test]
@@ -327,9 +369,9 @@ mod tests {
         );
         assert_eq!(lines.len(), 1);
         // Should have seed + some trace points
-        assert!(lines[0].len() > 1);
+        assert!(lines.line(0).len() > 1);
         // Should have moved in +X direction
-        let last = lines[0].last().unwrap();
+        let last = lines.line(0).last().unwrap();
         assert!(last.x > Fix128::ZERO);
     }
 
@@ -340,7 +382,7 @@ mod tests {
         let seeds = vec![Vec3Fix::ZERO];
 
         let lines = generate_streamlines(&positions, &velocities, &seeds, 10, Fix128::ZERO);
-        assert_eq!(lines[0].len(), 1); // Only seed
+        assert_eq!(lines.line(0).len(), 1); // Only seed
     }
 
     #[test]
