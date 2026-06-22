@@ -177,3 +177,69 @@ jobs:
 
       - name: Check formatting
         run: cargo fmt -- --check
+
+  doc:
+    name: Doc (RUSTDOCFLAGS=-Dwarnings)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Create ALICE-ML stub
+        run: |
+          mkdir -p ../ALICE-ML/src
+          cat > ../ALICE-ML/Cargo.toml << 'TOML'
+          [package]
+          name = "alice-ml"
+          version = "0.1.0"
+          edition = "2021"
+          [lib]
+          path = "src/lib.rs"
+          TOML
+          echo "" > ../ALICE-ML/src/lib.rs
+
+      - name: Create ALICE-DB stub
+        run: |
+          mkdir -p ../ALICE-DB/src
+          cat > ../ALICE-DB/Cargo.toml << 'TOML'
+          [package]
+          name = "alice-db"
+          version = "0.1.0"
+          edition = "2021"
+          [lib]
+          path = "src/lib.rs"
+          TOML
+          echo "" > ../ALICE-DB/src/lib.rs
+
+      - name: Create ALICE-Analytics stub
+        run: |
+          mkdir -p ../ALICE-Analytics/src
+          cat > ../ALICE-Analytics/Cargo.toml << 'TOML'
+          [package]
+          name = "alice-analytics"
+          version = "0.1.0"
+          edition = "2021"
+          [features]
+          default = ["std"]
+          std = []
+          [lib]
+          path = "src/lib.rs"
+          TOML
+          echo "" > ../ALICE-Analytics/src/lib.rs
+
+      - name: cargo doc (no-deps)
+        run: cargo doc --lib --no-deps
+        env:
+          RUSTDOCFLAGS: "-Dwarnings"
+
+  actionlint:
+    name: actionlint (workflow YAML 検証)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run actionlint
+        uses: reviewdog/action-actionlint@v1
+        with:
+          fail_level: error
+          reporter: github-check
