@@ -830,5 +830,133 @@ mod tests {
         );
     }
 
-    // Mass Splitting-specific tests deferred to a follow-up (real Link schema uses parent: usize / joint: Option<Joint> / local_offset / motor; test_featherstone_solver exercises the inert-branch path).
+    /// Two-link chain fixture matching the `test_featherstone_solver`
+    /// scene shape: a static root (index 0) with two dynamic child
+    /// links (indices 1 and 2) whose masses parametrise the ratio for
+    /// `solve_with_mass_splitting` tests.
+    fn build_mass_splitting_scene(
+        mass_root_child: Fix128,
+        mass_leaf: Fix128,
+    ) -> (Vec<RigidBody>, ArticulatedBody) {
+        let bodies = vec![
+            RigidBody::new_static(Vec3Fix::ZERO), // fixed base
+            RigidBody::new(Vec3Fix::from_int(0, 2, 0), mass_root_child),
+            RigidBody::new(Vec3Fix::from_int(0, 4, 0), mass_leaf),
+        ];
+        let mut artic = ArticulatedBody::new(0, true);
+        artic.add_link(
+            0,
+            1,
+            Joint::Ball(BallJoint::new(
+                0,
+                1,
+                Vec3Fix::from_int(0, 1, 0),
+                Vec3Fix::from_int(0, -1, 0),
+            )),
+            Vec3Fix::from_int(0, 2, 0),
+        );
+        artic.add_link(
+            1,
+            2,
+            Joint::Ball(BallJoint::new(
+                1,
+                2,
+                Vec3Fix::from_int(0, 1, 0),
+                Vec3Fix::from_int(0, -1, 0),
+            )),
+            Vec3Fix::from_int(0, 2, 0),
+        );
+        (bodies, artic)
+    }
+
+    /// When `mass_ratio_split_threshold` is zero, the splitting branch
+    /// must be inert and byte-for-byte identical to a plain `solve`
+    /// (Phase F 11.2 opt-in semantics).
+    #[test]
+    fn mass_splitting_matches_plain_solve_when_threshold_zero() {
+        let (mut bodies1, artic1) = build_mass_splitting_scene(Fix128::ONE, Fix128::ONE);
+        let (mut bodies2, artic2) = build_mass_splitting_scene(Fix128::ONE, Fix128::ONE);
+        let gravity = Vec3Fix::new(Fix128::ZERO, Fix128::from_int(-10), Fix128::ZERO);
+        let dt = Fix128::from_ratio(1, 60);
+
+        let mut plain = FeatherstoneSolver::new();
+        plain.solve(&artic1, &mut bodies1, gravity, dt);
+
+        let mut splitting = FeatherstoneSolver::new();
+        splitting.solve_with_mass_splitting(&artic2, &mut bodies2, gravity, dt, Fix128::ZERO);
+
+        for i in 0..bodies1.len() {
+            assert_eq!(
+                bodies1[i].position.y.hi, bodies2[i].position.y.hi,
+                "body {i} y.hi must match"
+            );
+            assert_eq!(
+                bodies1[i].position.y.lo, bodies2[i].position.y.lo,
+                "body {i} y.lo must match"
+            );
+        }
+    }
+
+    /// When the mass ratio does not exceed the split threshold, the
+    /// splitting branch is inert — behaviour matches the plain
+    /// `solve` byte-for-byte.
+    #[test]
+    fn mass_splitting_matches_plain_solve_when_ratio_below_threshold() {
+        let (mut bodies1, artic1) = build_mass_splitting_scene(Fix128::ONE, Fix128::from_int(2));
+        let (mut bodies2, artic2) = build_mass_splitting_scene(Fix128::ONE, Fix128::from_int(2));
+        let gravity = Vec3Fix::new(Fix128::ZERO, Fix128::from_int(-10), Fix128::ZERO);
+        let dt = Fix128::from_ratio(1, 60);
+
+        let mut plain = FeatherstoneSolver::new();
+        plain.solve(&artic1, &mut bodies1, gravity, dt);
+
+        let mut splitting = FeatherstoneSolver::new();
+        // heavy/light = 2, threshold = 100 → splitting inert.
+        splitting.solve_with_mass_splitting(
+            &artic2,
+            &mut bodies2,
+            gravity,
+            dt,
+            Fix128::from_int(100),
+        );
+
+        for i in 0..bodies1.len() {
+            assert_eq!(bodies1[i].position.y.hi, bodies2[i].position.y.hi);
+        }
+    }
+
+    /// When the mass ratio exceeds the split threshold, the two
+    /// half-step recursion runs; both dynamic links must still fall
+    /// under gravity (positional invariant preserved) and the solver
+    /// must not diverge.
+    #[test]
+    fn mass_splitting_applies_when_ratio_exceeds_threshold() {
+        // heavy child (mass 100) over light middle link (mass 1) → ratio 100.
+        let (mut bodies, artic) = build_mass_splitting_scene(Fix128::ONE, Fix128::from_int(100));
+        let gravity = Vec3Fix::new(Fix128::ZERO, Fix128::from_int(-10), Fix128::ZERO);
+        let dt = Fix128::from_ratio(1, 60);
+        let y0_1 = bodies[1].position.y;
+        let y0_2 = bodies[2].position.y;
+
+        let mut splitting = FeatherstoneSolver::new();
+        splitting.solve_with_mass_splitting(
+            &artic,
+            &mut bodies,
+            gravity,
+            dt,
+            Fix128::from_int(10), // threshold 10 < ratio 100 → active
+        );
+
+        assert!(
+            bodies[1].position.y <= y0_1,
+            "link 1 must fall or stay under gravity"
+        );
+        assert!(
+            bodies[2].position.y <= y0_2,
+            "link 2 must fall or stay under gravity"
+        );
+        // No divergence sanity check.
+        assert!(bodies[1].position.y > Fix128::from_int(-1000));
+        assert!(bodies[2].position.y > Fix128::from_int(-1000));
+    }
 }
