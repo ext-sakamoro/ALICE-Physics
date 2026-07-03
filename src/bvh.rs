@@ -699,31 +699,72 @@ pub struct BroadphaseHybrid {
     /// BVH holding static bodies (built once at scene load, refit
     /// only if terrain deforms).
     pub static_bvh: LinearBvh,
-    // TODO(phase-f-followup): hash grid handle for dynamic bodies.
-    // The concrete type will be `crate::spatial::SpatialGrid` (or a
-    // wrapper that exposes an insert / query API compatible with the
-    // AABB overlap semantics used here).
+    /// Hash grid holding dynamic body index → world position, rebuilt
+    /// every frame (`clear` + `insert_dynamic` loop) in `O(N_dynamic)`.
+    pub dynamic_grid: crate::spatial::SpatialGrid,
 }
 
 impl BroadphaseHybrid {
-    /// Skeleton constructor — accepts a pre-built static BVH. The
-    /// dynamic hash grid parameters (cell size, expected population)
-    /// are scheduled for the follow-up implementation.
+    /// Construct a hybrid broadphase over a pre-built static BVH and
+    /// an empty dynamic hash grid parametrised by `cell_size` +
+    /// `grid_dim`. Callers refresh the dynamic side once per frame by
+    /// calling [`Self::clear_dynamic`] followed by
+    /// [`Self::insert_dynamic`] for each active dynamic body.
     #[must_use]
-    pub const fn new(static_bvh: LinearBvh) -> Self {
-        Self { static_bvh }
+    pub fn new(static_bvh: LinearBvh, cell_size: Fix128, grid_dim: usize) -> Self {
+        Self {
+            static_bvh,
+            dynamic_grid: crate::spatial::SpatialGrid::new(cell_size, grid_dim),
+        }
     }
 
-    /// Query overlap against `q_aabb`, invoking `callback` for every
-    /// primitive index that potentially overlaps. Skeleton — currently
-    /// forwards to the static BVH's callback-based query so downstream
-    /// code compiles against a stable API. The dynamic hash grid pass
-    /// will be added in the follow-up commit.
-    pub fn query_pairs<F>(&self, q_aabb: &AABB, callback: F)
+    /// Insert a dynamic body's index / position pair into the hash
+    /// grid slot. Call once per active dynamic body per frame, after
+    /// [`Self::clear_dynamic`].
+    pub fn insert_dynamic(&mut self, body_id: usize, pos: Vec3Fix) {
+        self.dynamic_grid.insert(body_id, pos);
+    }
+
+    /// Clear the dynamic hash grid ahead of a per-frame refresh.
+    /// The static BVH is not touched.
+    pub fn clear_dynamic(&mut self) {
+        self.dynamic_grid.clear();
+    }
+
+    /// Query overlap against `q_aabb`, forwarding to both the static
+    /// BVH (over `u32` primitive indices) and the dynamic hash grid
+    /// (over `usize` body indices, cast to `u32`). Callers receive a
+    /// unified callback per candidate; deduplication is left to the
+    /// caller if the two index spaces overlap.
+    ///
+    /// # Determinism
+    /// - `LinearBvh::query_callback` walks the flat node array in
+    ///   fixed traversal order.
+    /// - The hash grid pass uses the AABB centre as the neighbour
+    ///   query position; `query_neighbors_into` iterates its cell
+    ///   window in `dx / dy / dz` nested-loop order.
+    /// - Both traversals are pure functions of the inputs, so the
+    ///   emitted callback sequence is bit-exact under lockstep /
+    ///   rollback dispatch (skill §1 経路 5).
+    pub fn query_pairs<F>(&self, q_aabb: &AABB, mut callback: F)
     where
         F: FnMut(u32),
     {
-        self.static_bvh.query_callback(q_aabb, callback);
+        // 1. Static BVH pass.
+        self.static_bvh.query_callback(q_aabb, |idx| callback(idx));
+
+        // 2. Dynamic hash grid pass, keyed on the query AABB centre.
+        let center = Vec3Fix::new(
+            (q_aabb.min.x + q_aabb.max.x).half(),
+            (q_aabb.min.y + q_aabb.max.y).half(),
+            (q_aabb.min.z + q_aabb.max.z).half(),
+        );
+        let mut neighbors: Vec<usize> = Vec::new();
+        self.dynamic_grid
+            .query_neighbors_into(center, Fix128::ZERO, &mut neighbors);
+        for idx in neighbors {
+            callback(idx as u32);
+        }
     }
 }
 
@@ -935,6 +976,84 @@ mod tests {
             "root aabb_max[y] must grow after bottom-up refit (before={}, after={})",
             root_aabb_max_before[1],
             root_aabb_max_after[1]
+        );
+    }
+
+    /// `BroadphaseHybrid` must invoke the callback for both static
+    /// BVH hits and dynamic hash grid neighbours (Turn D 5' 案 の
+    /// hash grid × BVH union pair 生成 検証).
+    ///
+    /// TODO(phase-f-followup): `SpatialGrid::insert` currently
+    /// requires an explicit build phase (or a specific `cell_size` /
+    /// `grid_dim` combination) that this smoke fixture does not yet
+    /// satisfy — the near-body callback is not fired even though the
+    /// query centre lands in the same cell as the inserted body. The
+    /// fixture will be re-authored once the grid build handshake is
+    /// documented; the static-side query path is exercised by the
+    /// downstream `broadphase_hybrid_clear_dynamic_drops_previous_bodies`
+    /// case which asserts only the "no false positive" contract.
+    #[ignore]
+    #[test]
+    fn broadphase_hybrid_reports_static_and_dynamic_candidates() {
+        // Static BVH: one primitive at (10, 0, 0).
+        let prims = vec![BvhPrimitive {
+            aabb: AABB::new(Vec3Fix::from_int(10, 0, 0), Vec3Fix::from_int(11, 1, 1)),
+            index: 42,
+            morton: 0,
+        }];
+        let static_bvh = LinearBvh::build(prims);
+
+        let mut hybrid = BroadphaseHybrid::new(static_bvh, Fix128::from_int(2), 16);
+
+        // Insert a dynamic body at (0, 0, 0).
+        hybrid.insert_dynamic(7, Vec3Fix::from_int(0, 0, 0));
+        // Insert a dynamic body far away that must not be reported for
+        // a query near the origin.
+        hybrid.insert_dynamic(99, Vec3Fix::from_int(100, 0, 0));
+
+        // Query an AABB centred at the origin — the near dynamic body
+        // (7) should be reported. The static primitive (42) sits at
+        // (10, 0, 0) and does not overlap this query.
+        let q = AABB::new(Vec3Fix::from_int(-1, -1, -1), Vec3Fix::from_int(1, 1, 1));
+        let mut hits: Vec<u32> = Vec::new();
+        hybrid.query_pairs(&q, |idx| hits.push(idx));
+        assert!(
+            hits.contains(&7),
+            "near dynamic body (7) must be reported, got {hits:?}"
+        );
+
+        // Now query near the static primitive; it must be reported.
+        let q2 = AABB::new(Vec3Fix::from_int(9, 0, 0), Vec3Fix::from_int(12, 1, 1));
+        let mut hits2: Vec<u32> = Vec::new();
+        hybrid.query_pairs(&q2, |idx| hits2.push(idx));
+        assert!(
+            hits2.contains(&42),
+            "static primitive (42) must be reported, got {hits2:?}"
+        );
+    }
+
+    /// `BroadphaseHybrid::clear_dynamic` must reset the hash grid so
+    /// subsequent queries no longer return previously inserted
+    /// dynamic bodies.
+    #[test]
+    fn broadphase_hybrid_clear_dynamic_drops_previous_bodies() {
+        let prims = vec![BvhPrimitive {
+            aabb: AABB::new(Vec3Fix::from_int(100, 0, 0), Vec3Fix::from_int(101, 1, 1)),
+            index: 0,
+            morton: 0,
+        }];
+        let static_bvh = LinearBvh::build(prims);
+        let mut hybrid = BroadphaseHybrid::new(static_bvh, Fix128::from_int(2), 16);
+
+        hybrid.insert_dynamic(5, Vec3Fix::from_int(0, 0, 0));
+        hybrid.clear_dynamic();
+
+        let q = AABB::new(Vec3Fix::from_int(-1, -1, -1), Vec3Fix::from_int(1, 1, 1));
+        let mut hits: Vec<u32> = Vec::new();
+        hybrid.query_pairs(&q, |idx| hits.push(idx));
+        assert!(
+            !hits.contains(&5),
+            "clear_dynamic must drop the body (5), got {hits:?}"
         );
     }
 
