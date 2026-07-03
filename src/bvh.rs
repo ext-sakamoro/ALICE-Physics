@@ -306,6 +306,44 @@ impl LinearBvh {
         }
     }
 
+    /// Refit-only path (position update, tree structure preserved).
+    ///
+    /// # Preconditions
+    /// - The number and identity of primitives is unchanged from the
+    ///   most recent [`Self::build`] call (no primitive add / remove).
+    /// - `new_aabbs_by_prim_index` maps each original primitive index
+    ///   (the `index` field on [`BvhPrimitive`]) to its new AABB.
+    /// - `new_aabbs_by_prim_index.len()` covers every primitive index
+    ///   currently referenced by the tree.
+    ///
+    /// # Effect
+    /// Refreshes each leaf node's AABB from the input mapping and
+    /// propagates the union upwards to the root, keeping the tree
+    /// structure and Morton ordering intact. Should be paired with a
+    /// periodic full rebuild ([`Self::build`]) when the geometry has
+    /// deformed significantly (large primitive AABB churn degrades
+    /// SAH efficiency of the retained tree).
+    ///
+    /// # Determinism
+    /// The refit is a pure function of `new_aabbs_by_prim_index` and
+    /// the retained tree structure; nodes are visited in flat-array
+    /// index order (bottom-up), matching the discipline required by
+    /// `deterministic-physics-lockstep-discipline` skill §1 経路 5.
+    ///
+    /// # Status
+    /// Skeleton API committed as part of Turn D next-step
+    /// (Fix128 broad-phase 維持 + BVH refit + hash grid ハイブリッド).
+    /// The bottom-up propagation body is scheduled for the follow-up
+    /// commit that also wires the refit path into the adaptive
+    /// sub-stepping loop; the current signature is stable so
+    /// downstream integration can begin.
+    pub fn refit_leaves(&mut self, new_aabbs_by_prim_index: &[AABB]) {
+        // TODO(phase-f-followup): implement bottom-up refit.
+        // Bind unused parameter to keep the signature callable by
+        // downstream code compiling against the stable API.
+        let _ = new_aabbs_by_prim_index;
+    }
+
     /// Recursive build with escape pointer assignment
     fn build_recursive(
         nodes: &mut Vec<BvhNode>,
