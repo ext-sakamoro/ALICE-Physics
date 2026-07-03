@@ -105,6 +105,22 @@ Trait-abstracted temporal Gauss-Seidel solver primitives that layer on top of an
 
 Enable rayon parallel dispatch with `--features parallel`. All variants preserve Fix128 bit-perfect determinism.
 
+### Advanced solver primitives (Turn D / Phase E / Phase F)
+
+Additional building blocks stacked on top of the sub-stepping TGS core:
+
+- **Adaptive sub-stepping** — `AdaptiveSubStepConfig` + `HasVelocity` + `adaptive_substeps_for` compute a deterministic sub-step count from the fastest body's L∞ velocity (Fix128 pure, closed-form, division-free — safe under lockstep and rollback)
+- **CCD-optimised adaptive sub-stepping** — `adaptive_substeps_for_ccd` tightens the per-step translation cap to `smallest_collider_radius × safety_factor`, guaranteeing fast bodies never tunnel through thin walls
+- **Adaptive sub-TOI skeleton** — `adaptive_toi_substeps` bridges Adaptive sub-stepping with the existing `speculative_contact` TOI for pair-wise CCD (Phase F 11.1)
+- **`ImpulseCache` observability** — `hits/misses/stats/hit_rate/reset_stats` expose warm-starting effectiveness so callers can gauge whether contact IDs stay stable across frames (high hit rate) or the scene is churning (low hit rate)
+- **Per-island scoped oriented solve** — `solver_tgs_hooks_6dof_oriented_scoped` extracts an isolated body / contact subset per island for the full 6-DOF oriented hook, prevents gravity double-counting, and preserves bit-perfect parallel-vs-serial equality
+- **`LinearBvh::refit_leaves` (bottom-up)** — retains the flat tree structure while requantising leaf AABBs and propagating unions to internal nodes in the i32 domain (no CORDIC / rounding dependency), enabling `O(N)` refit as an alternative to full rebuild
+- **`BroadphaseHybrid` skeleton** — layers a hash grid over a static BVH (Turn D 5' plan), reducing per-frame broad-phase work from `O(N_total log N_total)` to `O(N_dynamic + log N_static)`
+- **`FeatherstoneSolver::solve_with_mass_splitting` skeleton** — extends the O(n) forward-dynamics solver with a mass-ratio split hint for extreme mass-ratio stacks (Phase F 11.2)
+- **FFI byte-for-byte determinism** — `AliceVec3Fix128Raw` + `alice_physics_body_get_position_fix128_raw` expose Fix128 hi/lo pairs across the C ABI so Unity / UE5 hosts can assert exact bit-pattern equality (Phase F 11.3)
+
+Determinism guardrails for every primitive above are documented in the [`deterministic-physics-lockstep-discipline`](https://github.com/ext-sakamoro/claude-config/blob/main/claude-skills/deterministic-physics-lockstep-discipline/SKILL.md) skill (private reference).
+
 ## Optimizations ("黒焦げ" Edition) — 100/100
 
 ALICE-Physics achieves a **perfect 100/100 optimization score** across 6 layers:
