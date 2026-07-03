@@ -27,9 +27,13 @@
 //!
 //! The trait shape (`BodyLike`, `ContactLike`, `JointLike`) is
 //! deliberately narrow so that adapters can be written for the crate's
-//! existing [`RigidBody`](crate::solver::RigidBody) /
-//! [`ContactConstraint`](crate::solver::ContactConstraint) types
+//! existing [`RigidBody`] / [`ContactConstraint`] types
 //! without leaking their internals into this module.
+//!
+//! [`RigidBody`]: crate::solver::RigidBody
+//! [`ContactConstraint`]: crate::solver::ContactConstraint
+
+// (missing_docs allow lives at crate root; see lib.rs)
 
 use crate::math::Fix128;
 use std::collections::HashMap;

@@ -1,7 +1,7 @@
 //! Spatial Hash Grid
 //!
 //! A hash-based spatial acceleration structure for neighbor queries.
-//! Used by [`fluid`](crate::fluid) for SPH neighbor search and available
+//! Used by [`crate::fluid`] for SPH neighbor search and available
 //! for cloth self-collision or any particle-based simulation.
 //!
 //! # How It Works
