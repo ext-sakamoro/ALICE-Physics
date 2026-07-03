@@ -629,6 +629,66 @@ mod adaptive_substeps_tests {
             "faster body must not require fewer substeps (a={a}, b={b})"
         );
     }
+
+    /// CCD variant: when the smallest collider radius forces a tighter
+    /// per-step cap than the base config, the CCD path returns at
+    /// least as many substeps as the vanilla path.
+    #[test]
+    fn ccd_variant_dominates_vanilla_for_small_radius() {
+        let bodies = [DummyBody(Fix128::from_int(60))];
+        let dt = Fix128::from_ratio(1, 60);
+        let base = cfg();
+        let vanilla = adaptive_substeps_for(&bodies, dt, &base);
+        let ccd = adaptive_substeps_for_ccd(
+            &bodies,
+            dt,
+            Fix128::from_ratio(1, 100), // 0.01 world unit radius
+            Fix128::from_ratio(1, 2),   // safety factor 0.5
+            &base,
+        );
+        assert!(
+            ccd >= vanilla,
+            "CCD variant with tighter cap must not return fewer substeps (vanilla={vanilla}, ccd={ccd})"
+        );
+    }
+
+    /// CCD variant: when the collider is large, the CCD cap does not
+    /// tighten the vanilla path and both return the same substep count.
+    #[test]
+    fn ccd_variant_matches_vanilla_for_large_radius() {
+        let bodies = [DummyBody(Fix128::from_int(60))];
+        let dt = Fix128::from_ratio(1, 60);
+        let base = cfg();
+        let vanilla = adaptive_substeps_for(&bodies, dt, &base);
+        let ccd = adaptive_substeps_for_ccd(
+            &bodies,
+            dt,
+            Fix128::from_int(100),    // 100 world unit radius (huge)
+            Fix128::from_ratio(1, 2), // safety factor 0.5
+            &base,
+        );
+        assert_eq!(
+            vanilla, ccd,
+            "large collider must not tighten the vanilla adaptive cap"
+        );
+    }
+
+    /// CCD variant: zero velocity always returns `min_substeps`,
+    /// regardless of collider radius.
+    #[test]
+    fn ccd_variant_zero_velocity_returns_min() {
+        let bodies = [DummyBody(Fix128::ZERO), DummyBody(Fix128::ZERO)];
+        let dt = Fix128::from_ratio(1, 60);
+        let base = cfg();
+        let n = adaptive_substeps_for_ccd(
+            &bodies,
+            dt,
+            Fix128::from_ratio(1, 1000),
+            Fix128::from_ratio(1, 2),
+            &base,
+        );
+        assert_eq!(n, base.min_substeps.max(1));
+    }
 }
 
 /// Callbacks that drive one velocity or position iteration inside the
