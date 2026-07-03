@@ -317,10 +317,15 @@ pub mod sketch;
 pub mod sleeping;
 pub mod soft_body_cut;
 pub mod solver;
+#[cfg(feature = "std")]
 pub mod solver_tgs;
+#[cfg(feature = "std")]
 pub mod solver_tgs_hooks;
+#[cfg(feature = "std")]
 pub mod solver_tgs_hooks_6dof;
+#[cfg(feature = "std")]
 pub mod solver_tgs_hooks_6dof_oriented;
+#[cfg(feature = "std")]
 pub mod solver_tgs_hooks_6dof_scoped;
 pub mod spatial;
 #[cfg(feature = "std")]
