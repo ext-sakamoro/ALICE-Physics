@@ -810,9 +810,9 @@ mod tests {
         };
         world.add_distance_constraint(constraint);
 
-        // Simulate
-        let dt = Fix128::from_ratio(1, 60);
-        for _ in 0..60 {
+        // Simulate at 120 Hz for stricter convergence
+        let dt = Fix128::from_ratio(1, 120);
+        for _ in 0..120 {
             world.step(dt);
         }
 
@@ -828,10 +828,11 @@ mod tests {
             target - dist
         };
 
-        // Allow 10% error due to gravity
+        // Allow at most 2% error (target=5, tolerance=0.1) under gravity
+        let tolerance = Fix128::from_ratio(1, 10);
         assert!(
-            error < Fix128::ONE,
-            "Distance constraint violated: error = {error:?}"
+            error < tolerance,
+            "Distance constraint violated: error = {error:?}, tolerance = {tolerance:?}"
         );
     }
 }
