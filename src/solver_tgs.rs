@@ -33,9 +33,6 @@
 //! [`RigidBody`]: crate::solver::RigidBody
 //! [`ContactConstraint`]: crate::solver::ContactConstraint
 
-// (missing_docs allow scoped to this module during Turn E follow-up; see lib.rs.)
-#![allow(missing_docs)]
-
 use crate::math::Fix128;
 use std::collections::HashMap;
 
@@ -72,7 +69,9 @@ pub trait ContactLike {
 /// A bilateral joint (distance, revolute, prismatic …) between two
 /// bodies. Only the coupling for island detection is required here.
 pub trait JointLike {
+    /// Index of the first body attached to this joint.
     fn body_a(&self) -> usize;
+    /// Index of the second body attached to this joint.
     fn body_b(&self) -> usize;
 }
 
@@ -114,7 +113,9 @@ pub struct ImpulseCache {
 /// scene is churning (low hit rate).
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ImpulseCacheStats {
+    /// Number of successful warm-start lookups (contact ID was cached).
     pub hits: u64,
+    /// Number of cache misses (new or evicted contact ID).
     pub misses: u64,
 }
 
@@ -300,8 +301,11 @@ impl UnionFind {
 /// on every run, preserving determinism.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Island {
+    /// World-index list of bodies belonging to this island, sorted ascending.
     pub bodies: Vec<usize>,
+    /// World-index list of contacts inside this island, sorted ascending.
     pub contacts: Vec<usize>,
+    /// World-index list of joints inside this island, sorted ascending.
     pub joints: Vec<usize>,
 }
 
@@ -759,7 +763,9 @@ use crate::solver::{BodyType, ContactConstraint, DistanceConstraint, RigidBody};
 /// stable identifier. Frame-to-frame persistence of the ID is the
 /// caller's responsibility.
 pub struct BodyRef<'a> {
+    /// Reference to the underlying rigid body state.
     pub body: &'a RigidBody,
+    /// Stable identifier used for warm-start indexing across frames.
     pub id: u64,
 }
 
@@ -774,7 +780,9 @@ impl BodyLike for BodyRef<'_> {
 
 /// Borrowed view of a [`ContactConstraint`] plus its stable ID.
 pub struct ContactRef<'a> {
+    /// Reference to the underlying contact constraint state.
     pub contact: &'a ContactConstraint,
+    /// Stable identifier used for warm-start indexing across frames.
     pub id: u64,
 }
 
@@ -792,6 +800,7 @@ impl ContactLike for ContactRef<'_> {
 
 /// Borrowed view of a [`DistanceConstraint`] as a bilateral joint.
 pub struct DistanceRef<'a> {
+    /// Reference to the underlying distance constraint state.
     pub joint: &'a DistanceConstraint,
 }
 
