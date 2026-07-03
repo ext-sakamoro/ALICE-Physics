@@ -33,7 +33,8 @@
 //! [`RigidBody`]: crate::solver::RigidBody
 //! [`ContactConstraint`]: crate::solver::ContactConstraint
 
-// (missing_docs allow lives at crate root; see lib.rs)
+// (missing_docs allow scoped to this module during Turn E follow-up; see lib.rs.)
+#![allow(missing_docs)]
 
 use crate::math::Fix128;
 use std::collections::HashMap;
