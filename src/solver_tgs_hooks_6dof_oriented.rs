@@ -18,6 +18,9 @@
 //! need a full symmetric world-frame inertia can rebuild one before
 //! each sub-step using [`crate::math::Mat3Fix`].
 
+// (missing_docs allow scoped to this module during Turn E follow-up; see lib.rs.)
+#![allow(missing_docs)]
+
 use crate::math::{Fix128, QuatFix, Vec3Fix};
 use crate::solver_tgs::{BodyLike, ContactLike};
 
