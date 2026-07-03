@@ -1017,4 +1017,77 @@ mod tests {
             alice_physics_world_destroy(world);
         }
     }
+
+    /// FFI contract test (Phase F 11.3): verifies deterministic
+    /// gravity fall through the C ABI so Unity/UE5 host integrations
+    /// can be checked against a Rust-side reference.
+    ///
+    /// The Rust side runs the reference invocation and asserts on
+    /// bracketing tolerances that describe the current behaviour;
+    /// Unity/UE5 binding tests must reproduce the same
+    /// `(x, y, z)` final position to within these brackets. Once
+    /// the Fix128 output is pinned in a follow-up, the tolerances
+    /// will be replaced with byte-for-byte assertions (see
+    /// `deterministic-physics-lockstep-discipline` skill §11.3 FFI
+    /// contract test).
+    #[test]
+    fn ffi_contract_gravity_fall_deterministic() {
+        // SAFETY: All FFI pointers are created and destroyed within
+        // this test scope; no aliasing occurs because no other test
+        // touches the returned world pointer.
+        unsafe {
+            let world = alice_physics_world_create();
+            let pos = AliceVec3 {
+                x: 0.0,
+                y: 10.0,
+                z: 0.0,
+            };
+            let mass = 1.0_f64;
+            let id = alice_physics_body_add_dynamic(world, pos, mass);
+
+            // 60 steps at 60 Hz = 1 s under default gravity.
+            for _ in 0..60 {
+                let _ = alice_physics_world_step(world, 1.0 / 60.0);
+            }
+
+            let mut info = std::mem::zeroed::<AliceBodyInfo>();
+            let ok = alice_physics_body_get_info(world, id, &mut info);
+            assert_eq!(ok, 1);
+
+            // Reference contract:
+            // - Body must fall (y strictly less than starting height).
+            // - No horizontal drift under vertical gravity.
+            // - Final y is bounded below by a conservative lower limit
+            //   (well within the physically plausible range for 1 s of
+            //   uniform gravity ≈ -9.81 m/s² over one-second flight).
+            assert!(
+                info.position.y < 10.0,
+                "body must fall under gravity, got y={}",
+                info.position.y
+            );
+            assert!(
+                info.position.y > -20.0,
+                "final y out of expected range, got y={}",
+                info.position.y
+            );
+            assert!(
+                info.position.x.abs() < 1e-9,
+                "no horizontal drift expected, got x={}",
+                info.position.x
+            );
+            assert!(
+                info.position.z.abs() < 1e-9,
+                "no horizontal drift expected, got z={}",
+                info.position.z
+            );
+
+            // TODO(phase-f-followup): once the Fix128 reference output
+            // is pinned, replace the bracket assertions above with a
+            // byte-for-byte equality check on the exact Fix128 hi/lo
+            // pair so any solver-side change is caught immediately at
+            // both the Rust and Unity/UE5 integration layers.
+
+            alice_physics_world_destroy(world);
+        }
+    }
 }
