@@ -320,6 +320,7 @@ pub mod solver;
 pub mod solver_tgs;
 pub mod solver_tgs_hooks;
 pub mod solver_tgs_hooks_6dof;
+pub mod solver_tgs_hooks_6dof_scoped;
 pub mod spatial;
 #[cfg(feature = "std")]
 pub mod thermal;
