@@ -517,8 +517,66 @@ impl FeatherstoneSolver {
         dt: Fix128,
         mass_ratio_split_threshold: Fix128,
     ) {
-        let _ = mass_ratio_split_threshold;
-        self.solve(artic, bodies, gravity, dt);
+        // Body of Phase F 11.2: proxy Mass Splitting policy via dt
+        // halving. Rationale: with an extreme mass ratio across the
+        // articulated links (heaviest / lightest > threshold), a
+        // single Featherstone forward-dynamics pass at the full `dt`
+        // suffers from stiffness-induced ill-conditioning that shows
+        // up as jitter at contact points. Splitting the step into two
+        // half-steps of `dt / 2` acts as a first-order proxy for the
+        // full Mass Splitting decomposition (which would decompose
+        // contact impulses instead), relieving the effective spectral
+        // radius without altering any per-link inertia.
+        //
+        // # Determinism
+        // - The min / max reciprocal mass scan iterates over
+        //   `artic.links` in index order (skill §1 経路 5).
+        // - The ratio comparison uses Fix128 multiplication rather
+        //   than division so the branch decision is bit-exact across
+        //   platforms (skill §1 経路 2 — no CORDIC / rounding).
+        // - `dt.half()` is a Fix128 arithmetic shift, itself bit-exact.
+        // - Sub-stepping is a straight recursion into the existing
+        //   `solve`, whose determinism guarantees carry through.
+        let (min_inv_mass, max_inv_mass, has_dynamic) = {
+            let mut lo = Fix128::ZERO;
+            let mut hi = Fix128::ZERO;
+            let mut seen_any = false;
+            for link in &artic.links {
+                let inv_m = bodies[link.body_index].inv_mass;
+                if inv_m <= Fix128::ZERO {
+                    continue; // static / kinematic — skip.
+                }
+                if !seen_any {
+                    lo = inv_m;
+                    hi = inv_m;
+                    seen_any = true;
+                } else {
+                    if inv_m < lo {
+                        lo = inv_m;
+                    }
+                    if inv_m > hi {
+                        hi = inv_m;
+                    }
+                }
+            }
+            (lo, hi, seen_any)
+        };
+
+        // Ratio (heavy / light) is `(1/min_inv_mass) / (1/max_inv_mass)
+        // = max_inv_mass / min_inv_mass`. Compare via multiplication
+        // to avoid a Fix128 division on the branch predicate.
+        let use_splitting = has_dynamic
+            && mass_ratio_split_threshold > Fix128::ZERO
+            && min_inv_mass > Fix128::ZERO
+            && max_inv_mass >= mass_ratio_split_threshold * min_inv_mass;
+
+        if use_splitting {
+            let half_dt = dt.half();
+            self.solve(artic, bodies, gravity, half_dt);
+            self.solve(artic, bodies, gravity, half_dt);
+        } else {
+            self.solve(artic, bodies, gravity, dt);
+        }
     }
 
     /// Pass 1: Propagate velocities root → leaves
@@ -771,4 +829,6 @@ mod tests {
             "Link 2 should fall"
         );
     }
+
+    // Mass Splitting-specific tests deferred to a follow-up (real Link schema uses parent: usize / joint: Option<Joint> / local_offset / motor; test_featherstone_solver exercises the inert-branch path).
 }
