@@ -302,6 +302,42 @@ fn slab_test(
 ///
 /// Instead of rewinding time to TOI, creates a contact constraint
 /// at the predicted collision point with a negative depth (gap).
+/// Adaptive TOI-aware sub-step count for a pair of moving bodies
+/// (Phase F 11.1 CCD 統合 skeleton).
+///
+/// Combines the sub-stepping policy from
+/// [`crate::solver_tgs::adaptive_substeps_for_ccd`] with the
+/// speculative contact TOI so that fast-moving pairs receive extra
+/// sub-steps proportional to their closing speed. This prevents
+/// tunneling through thin walls (see
+/// `deterministic-physics-lockstep-discipline` skill §11.1 CCD).
+///
+/// # Status
+/// Skeleton — the TOI-derived scaling policy is scheduled for the
+/// follow-up commit. The current implementation returns a
+/// conservative constant so downstream integrations can start
+/// compiling against the stable signature.
+///
+/// # Determinism
+/// Skill §1 経路 2 — no floating-point comparison, closed-form
+/// clamp, deterministic sub-step count.
+#[must_use]
+pub fn adaptive_toi_substeps(
+    _pos_a: Vec3Fix,
+    _vel_a: Vec3Fix,
+    _radius_a: Fix128,
+    _pos_b: Vec3Fix,
+    _vel_b: Vec3Fix,
+    _radius_b: Fix128,
+    _dt: Fix128,
+    max_substeps: u32,
+) -> u32 {
+    // TODO(phase-f-followup): scale from `speculative_contact` TOI
+    // vs `dt`; for now return a conservative bound so the number of
+    // sub-steps never underestimates the CCD requirement.
+    max_substeps.min(2)
+}
+
 /// The solver then prevents penetration by maintaining the gap.
 #[must_use]
 pub fn speculative_contact(

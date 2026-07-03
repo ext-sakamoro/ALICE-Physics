@@ -452,6 +452,73 @@ pub unsafe extern "C" fn alice_physics_body_get_position(
     }
 }
 
+/// Raw Fix128 pair (hi:i64, lo:u64) exposed across the C ABI so
+/// Unity/UE5 hosts can pin down determinism to the exact bit-pattern
+/// used by the Rust solver (Phase F 11.3 byte-for-byte contract).
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AliceFix128Raw {
+    /// High 64 bits (integer part).
+    pub hi: i64,
+    /// Low 64 bits (fractional part).
+    pub lo: u64,
+}
+
+/// Raw Fix128 3-tuple exposed for byte-for-byte determinism contracts.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AliceVec3Fix128Raw {
+    /// X component (raw Fix128 hi/lo pair).
+    pub x: AliceFix128Raw,
+    /// Y component (raw Fix128 hi/lo pair).
+    pub y: AliceFix128Raw,
+    /// Z component (raw Fix128 hi/lo pair).
+    pub z: AliceFix128Raw,
+}
+
+/// Get body position as the raw Fix128 hi/lo pair (Phase F 11.3
+/// byte-for-byte determinism contract). Unity/UE5 hosts assert on
+/// the exact `(hi, lo)` pair to guarantee that every solver step
+/// produces identical state on every platform (see
+/// `deterministic-physics-lockstep-discipline` skill §11.3).
+///
+/// Returns 1 on success, 0 on invalid pointer or body index.
+///
+/// # Safety
+/// `world` must be a valid pointer from `alice_physics_world_create*`.
+/// `out` must be a valid pointer to writable `AliceVec3Fix128Raw`.
+#[no_mangle]
+pub unsafe extern "C" fn alice_physics_body_get_position_fix128_raw(
+    world: *const PhysicsWorld,
+    body_id: u32,
+    out: *mut AliceVec3Fix128Raw,
+) -> u8 {
+    let (w, o) = match (world.as_ref(), out.as_mut()) {
+        (Some(w), Some(o)) => (w, o),
+        _ => return 0,
+    };
+    match w.bodies.get(body_id as usize) {
+        Some(b) => {
+            *o = AliceVec3Fix128Raw {
+                x: AliceFix128Raw {
+                    hi: b.position.x.hi,
+                    lo: b.position.x.lo,
+                },
+                y: AliceFix128Raw {
+                    hi: b.position.y.hi,
+                    lo: b.position.y.lo,
+                },
+                z: AliceFix128Raw {
+                    hi: b.position.z.hi,
+                    lo: b.position.z.lo,
+                },
+            };
+            1
+        }
+        None => 0,
+    }
+}
+
 /// Set body position.
 ///
 /// # Safety
