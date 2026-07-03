@@ -31,9 +31,6 @@
 //! by these hooks; consumers that need full orientation tracking can
 //! layer a quaternion integrator on top.
 
-// (missing_docs allow scoped to this module during Turn E follow-up; see lib.rs.)
-#![allow(missing_docs)]
-
 use crate::math::Fix128;
 use crate::solver_tgs::{BodyLike, CachedImpulse, ContactLike, ImpulseCache, TgsHooks};
 
@@ -94,13 +91,20 @@ fn diag_mul(tensor_diag: Vec3, v: Vec3) -> Vec3 {
 /// externally.
 #[derive(Debug, Clone, Copy)]
 pub struct Body6DofState {
+    /// World-space centre-of-mass position.
     pub position: Vec3,
+    /// Linear velocity of the body's centre of mass (world frame).
     pub linear_velocity: Vec3,
+    /// Angular velocity around the body's centre of mass (world frame).
     pub angular_velocity: Vec3,
+    /// Reciprocal of the body mass. `Fix128::ZERO` marks the body as
+    /// static or kinematic (no linear response to impulses).
     pub inv_mass: Fix128,
     /// Reciprocals of the three principal moments of inertia.
     pub inv_inertia: Vec3,
+    /// `true` when the body participates in velocity/position updates.
     pub is_dynamic: bool,
+    /// Stable identity used for warm-start indexing across frames.
     pub stable_id: u64,
 }
 
@@ -140,22 +144,33 @@ impl BodyLike for Body6DofState {
 /// branchless recipe).
 #[derive(Debug, Clone, Copy)]
 pub struct Contact6Dof {
+    /// World-index of the first body participating in the contact.
     pub body_a: usize,
+    /// World-index of the second body participating in the contact.
     pub body_b: usize,
+    /// Stable identity used for warm-start indexing across frames.
     pub stable_id: u64,
+    /// Contact normal, oriented from body A into body B (unit length).
     pub normal: Vec3,
+    /// First tangent axis of the contact frame (unit length).
     pub tangent1: Vec3,
+    /// Second tangent axis of the contact frame (unit length).
     pub tangent2: Vec3,
     /// Offset from body A's centre to the contact point (world frame).
     pub r_a: Vec3,
     /// Offset from body B's centre to the contact point (world frame).
     pub r_b: Vec3,
+    /// Signed penetration depth. Positive values mean the bodies overlap.
     pub penetration: Fix128,
+    /// Coulomb friction coefficient for the pair.
     pub friction: Fix128,
+    /// Newton coefficient of restitution for the pair.
     pub restitution: Fix128,
-    // Solver scratch (accumulated impulses for the current sub-step).
+    /// Accumulated normal impulse magnitude during the current sub-step.
     pub accum_normal: Fix128,
+    /// Accumulated first-tangent impulse magnitude during the current sub-step.
     pub accum_tangent1: Fix128,
+    /// Accumulated second-tangent impulse magnitude during the current sub-step.
     pub accum_tangent2: Fix128,
 }
 
@@ -178,9 +193,13 @@ impl ContactLike for Contact6Dof {
 /// Tunable parameters for [`Pgs6DofHooks`].
 #[derive(Debug, Clone, Copy)]
 pub struct Pgs6DofConfig {
+    /// Gravitational acceleration applied to dynamic bodies per second.
     pub gravity: Vec3,
+    /// Baumgarte positional-correction coefficient in `[0, 1]`.
     pub baumgarte: Fix128,
+    /// Penetration slop below which positional correction is skipped.
     pub slop: Fix128,
+    /// When `true`, warm-start impulses from [`ImpulseCache`] before the first iteration.
     pub warmstart: bool,
 }
 
@@ -201,9 +220,13 @@ impl Default for Pgs6DofConfig {
 
 /// Reference 6-DOF [`TgsHooks`] implementation.
 pub struct Pgs6DofHooks<'a> {
+    /// Mutable slice of body states this hook operates on.
     pub bodies: &'a mut [Body6DofState],
+    /// Mutable slice of contacts this hook operates on.
     pub contacts: &'a mut [Contact6Dof],
+    /// Warm-start impulse cache reused across frames.
     pub cache: &'a mut ImpulseCache,
+    /// Tunable projected Gauss-Seidel parameters.
     pub cfg: Pgs6DofConfig,
     /// Cached initial `-restitution × vₙ` bias per contact, computed
     /// at [`Self::begin_substep`] so that the bias reflects the
@@ -212,6 +235,7 @@ pub struct Pgs6DofHooks<'a> {
 }
 
 impl<'a> Pgs6DofHooks<'a> {
+    /// Construct a new hook binding the provided body / contact / cache slices with `cfg`.
     #[must_use]
     pub fn new(
         bodies: &'a mut [Body6DofState],
