@@ -91,6 +91,20 @@
 | **パーティクルシステム** | 汎用エミッター、ライフタイム、フォースフィールド統合 |
 | **no_std対応** | 組み込みシステム・WebAssemblyで動作 |
 
+### サブステッピング TGS ソルバー（プレビュー）
+
+具体的な剛体表現から独立した、trait 抽象のサブステッピング TGS ソルバー基盤群:
+
+- **`TgsHooks` ドライバ** — `begin_substep` / `velocity_iteration` / `position_iteration` / `end_substep` の 4 コールバック、フレームを `N` サブステップに分割することで、質量比の大きい積み上げ剛体でも安定にシミュレート
+- **インパルスウォームスタート** — `ImpulseCache` によりフレーム間で接触点ごとの適用インパルスを記憶、静止しているパイル向けの PGS 収束を大幅に高速化
+- **連結成分アイランド** — union-find による `build_islands` が接触やジョイントで結合された剛体を disjoint な island に分割
+- **6-DOF リファレンスフック** — Baumgarte による位置補正 + Coulomb 摩擦 (`√(τ₁² + τ₂²) ≤ μ · N_acc` cone clamp) + Newton の反発係数を実装した projected Gauss-Seidel
+- **アイランド単位スコープソルブ** — body slice の分割 + world→local index remap により、per-island 呼び出しで重力が重複積算されない
+- **rayon per-island 並列化** — Fix128 演算と canonical island ordering により、serial 版と byte-identical (`parallel_matches_serial_bit_perfect` test で証明)
+- **クォータニオン姿勢積分** — `q_new = normalize(q + 0.5 · dt · (ω × q))` プリミティブによる、diagonal-inertia リファレンスフック上への完全 6-DOF シミュレーション積層用
+
+rayon 並列版は `--features parallel` で有効化。全バリアントで Fix128 の byte-identical 決定性を維持。
+
 ## 最適化（"黒焦げ" エディション） — 100/100
 
 ALICE-Physicsは6層にわたる最適化で **100/100 の完璧なスコア** を達成しています：

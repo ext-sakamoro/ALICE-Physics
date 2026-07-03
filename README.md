@@ -91,6 +91,20 @@ A high-precision physics engine designed for deterministic simulation across dif
 | **Particle System** | General-purpose emitters, lifetime, force field integration |
 | **no_std Compatible** | Works on embedded systems and WebAssembly |
 
+### Sub-stepping TGS Solver (preview)
+
+Trait-abstracted temporal Gauss-Seidel solver primitives that layer on top of any concrete body/contact representation:
+
+- **`TgsHooks` driver** — `begin_substep` / `velocity_iteration` / `position_iteration` / `end_substep` callbacks, split the frame into `N` sub-steps for stable high-mass-ratio stacks
+- **Impulse warm-starting** — `ImpulseCache` remembers the applied impulse per stable contact ID across frames, collapsing PGS convergence for stationary piles
+- **Connected-component islands** — union-find `build_islands` groups bodies coupled through contacts / joints into disjoint islands
+- **Reference 6-DOF hooks** — projected Gauss-Seidel with Baumgarte positional correction, Coulomb friction (`√(τ₁² + τ₂²) ≤ μ · N_acc` cone clamp) and Newton coefficient of restitution
+- **Per-island scoped solve** — body-slice partitioning + world→local index remap so gravity is not double-counted when islands are dispatched independently
+- **rayon per-island parallelisation** — bit-perfect identical to the serial variant thanks to Fix128 arithmetic and canonical island ordering (proven by `parallel_matches_serial_bit_perfect` test)
+- **Quaternion orientation integration** — `q_new = normalize(q + 0.5 · dt · (ω × q))` primitive for layering full 6-DOF simulation on top of the diagonal-inertia reference hooks
+
+Enable rayon parallel dispatch with `--features parallel`. All variants preserve Fix128 bit-perfect determinism.
+
 ## Optimizations ("黒焦げ" Edition) — 100/100
 
 ALICE-Physics achieves a **perfect 100/100 optimization score** across 6 layers:
