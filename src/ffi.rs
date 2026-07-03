@@ -1148,10 +1148,43 @@ mod tests {
                 info.position.z
             );
 
-            // TODO(phase-f-followup): once the Fix128 reference output
-            // is pinned, replace the bracket assertions above with a
-            // byte-for-byte equality check on the exact Fix128 hi/lo
-            // pair so any solver-side change is caught immediately at
+            // Phase F 11.3 body: byte-for-byte determinism gate.
+            // Read the Fix128 hi/lo raw pair via the dedicated FFI
+            // getter and verify that a second identical simulation
+            // produces the exact same hi/lo pair — this is the runtime
+            // contract that Unity/UE5 host bindings must satisfy.
+            let mut raw = std::mem::zeroed::<AliceVec3Fix128Raw>();
+            let ok_raw = alice_physics_body_get_position_fix128_raw(world, id, &mut raw);
+            assert_eq!(ok_raw, 1, "raw fix128 getter must succeed");
+
+            let world2 = alice_physics_world_create();
+            let pos2 = AliceVec3 {
+                x: 0.0,
+                y: 10.0,
+                z: 0.0,
+            };
+            let id2 = alice_physics_body_add_dynamic(world2, pos2, mass);
+            for _ in 0..60 {
+                let _ = alice_physics_world_step(world2, 1.0 / 60.0);
+            }
+            let mut raw2 = std::mem::zeroed::<AliceVec3Fix128Raw>();
+            let ok_raw2 = alice_physics_body_get_position_fix128_raw(world2, id2, &mut raw2);
+            assert_eq!(
+                ok_raw2, 1,
+                "raw fix128 getter must succeed on the replay world"
+            );
+            alice_physics_world_destroy(world2);
+
+            assert_eq!(raw.x.hi, raw2.x.hi, "byte-for-byte determinism (x.hi)");
+            assert_eq!(raw.x.lo, raw2.x.lo, "byte-for-byte determinism (x.lo)");
+            assert_eq!(raw.y.hi, raw2.y.hi, "byte-for-byte determinism (y.hi)");
+            assert_eq!(raw.y.lo, raw2.y.lo, "byte-for-byte determinism (y.lo)");
+            assert_eq!(raw.z.hi, raw2.z.hi, "byte-for-byte determinism (z.hi)");
+            assert_eq!(raw.z.lo, raw2.z.lo, "byte-for-byte determinism (z.lo)");
+
+            // TODO(phase-f-followup): once Unity/UE5 CI publishes the
+            // reference hi/lo pair, pin the exact `(hi, lo)` values as
+            // constants here so any solver-side change is caught in
             // both the Rust and Unity/UE5 integration layers.
 
             alice_physics_world_destroy(world);
