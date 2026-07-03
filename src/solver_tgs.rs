@@ -524,6 +524,43 @@ pub fn adaptive_substeps_for<B: HasVelocity>(
     n
 }
 
+/// CCD-optimised adaptive sub-stepping: shrinks
+/// `max_translation_per_step` to a fraction of the smallest collider
+/// radius so that fast bodies never advance more than
+/// `radius * safety_factor` per sub-step. Combined with speculative
+/// contacts + TOI, this prevents tunneling through thin walls (see
+/// `deterministic-physics-lockstep-discipline` skill §11.1 CCD).
+///
+/// The effective per-step cap is the minimum of
+/// `cfg.max_translation_per_step` and
+/// `smallest_collider_radius * ccd_safety_factor`, ensuring the CCD
+/// constraint always dominates the vanilla adaptive metric.
+///
+/// Determinism: identical guarantees to [`adaptive_substeps_for`]
+/// (pure function of inputs, index-ordered iteration, no Fix128
+/// division, no floating-point comparison).
+#[must_use]
+pub fn adaptive_substeps_for_ccd<B: HasVelocity>(
+    bodies: &[B],
+    dt: Fix128,
+    smallest_collider_radius: Fix128,
+    ccd_safety_factor: Fix128,
+    cfg: &AdaptiveSubStepConfig,
+) -> u32 {
+    let ccd_step = smallest_collider_radius * ccd_safety_factor;
+    let effective_step = if ccd_step < cfg.max_translation_per_step {
+        ccd_step
+    } else {
+        cfg.max_translation_per_step
+    };
+    let effective_cfg = AdaptiveSubStepConfig {
+        max_translation_per_step: effective_step,
+        max_substeps: cfg.max_substeps,
+        min_substeps: cfg.min_substeps,
+    };
+    adaptive_substeps_for(bodies, dt, &effective_cfg)
+}
+
 #[cfg(test)]
 mod adaptive_substeps_tests {
     use super::*;
