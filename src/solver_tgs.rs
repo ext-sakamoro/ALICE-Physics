@@ -102,6 +102,33 @@ pub struct ImpulseCache {
     entries: HashMap<u64, CachedImpulse>,
     // Bit set of IDs touched during the current tick.
     live: HashMap<u64, ()>,
+    // Warm-starting hit/miss counters (Turn D: observability).
+    hits: u64,
+    misses: u64,
+}
+
+/// Snapshot of [`ImpulseCache`] warm-starting effectiveness. Callers
+/// should read this at the end of each frame to gauge whether
+/// contact IDs are stable across frames (high hit rate) or if the
+/// scene is churning (low hit rate).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ImpulseCacheStats {
+    pub hits: u64,
+    pub misses: u64,
+}
+
+impl ImpulseCacheStats {
+    /// Ratio in `[0.0, 1.0]`. Returns `0.0` when no lookups have been
+    /// performed yet.
+    #[must_use]
+    pub fn hit_rate(&self) -> f64 {
+        let total = self.hits + self.misses;
+        if total == 0 {
+            0.0
+        } else {
+            self.hits as f64 / total as f64
+        }
+    }
 }
 
 impl ImpulseCache {
@@ -117,7 +144,34 @@ impl ImpulseCache {
     #[must_use]
     pub fn take(&mut self, contact_id: u64) -> CachedImpulse {
         self.live.insert(contact_id, ());
-        self.entries.get(&contact_id).copied().unwrap_or_default()
+        match self.entries.get(&contact_id).copied() {
+            Some(v) => {
+                self.hits += 1;
+                v
+            }
+            None => {
+                self.misses += 1;
+                CachedImpulse::default()
+            }
+        }
+    }
+
+    /// Snapshot of warm-starting effectiveness. Combine with
+    /// [`Self::reset_stats`] between measurement windows.
+    #[must_use]
+    pub fn stats(&self) -> ImpulseCacheStats {
+        ImpulseCacheStats {
+            hits: self.hits,
+            misses: self.misses,
+        }
+    }
+
+    /// Clears the hit / miss counters without touching the cached
+    /// impulses. Useful when the caller wants to isolate the hit rate
+    /// over a specific window (e.g. after warm-up frames).
+    pub fn reset_stats(&mut self) {
+        self.hits = 0;
+        self.misses = 0;
     }
 
     /// Retrieves without marking as alive (peek). Useful for
