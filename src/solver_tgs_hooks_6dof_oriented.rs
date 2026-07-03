@@ -72,12 +72,14 @@ pub fn integrate_orientation(q: QuatFix, omega: Vec3, dt: Fix128) -> QuatFix {
 // Body state with orientation
 // ---------------------------------------------------------------------------
 
-/// A [`Body6DofState`](crate::solver_tgs_hooks_6dof::Body6DofState)
-/// augmented with a unit quaternion orientation. Callers that want
-/// full 6-DOF simulation typically build a shim hook that mirrors the
-/// existing [`Pgs6DofHooks`](crate::solver_tgs_hooks_6dof::Pgs6DofHooks)
-/// logic against this type and finishes each sub-step by
-/// [`integrate_orientation`] over `end_substep`'s `sub_dt`.
+/// A [`Body6DofState`] augmented with a unit quaternion orientation.
+/// Callers that want full 6-DOF simulation typically build a shim hook
+/// that mirrors the existing [`Pgs6DofHooks`] logic against this type
+/// and finishes each sub-step by [`integrate_orientation`] over
+/// `end_substep`'s `sub_dt`.
+///
+/// [`Body6DofState`]: crate::solver_tgs_hooks_6dof::Body6DofState
+/// [`Pgs6DofHooks`]: crate::solver_tgs_hooks_6dof::Pgs6DofHooks
 #[derive(Debug, Clone, Copy)]
 pub struct Body6DofOrientedState {
     pub position: Vec3,
