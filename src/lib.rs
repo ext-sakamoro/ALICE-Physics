@@ -318,6 +318,7 @@ pub mod sleeping;
 pub mod soft_body_cut;
 pub mod solver;
 pub mod solver_tgs;
+pub mod solver_tgs_hooks;
 pub mod spatial;
 #[cfg(feature = "std")]
 pub mod thermal;
