@@ -26,9 +26,6 @@
 //! implementation. Callers that need a full 6-DOF hook can copy the
 //! shape shown here and swap in `Vec3Fix` / `Mat3Fix` math.
 
-// (missing_docs allow scoped to this module during Turn E follow-up; see lib.rs.)
-#![allow(missing_docs)]
-
 use crate::math::Fix128;
 use crate::solver_tgs::{BodyLike, CachedImpulse, ContactLike, ImpulseCache, TgsHooks};
 
@@ -112,8 +109,11 @@ impl BodyLike for SimpleBodyState {
 /// sub-step.
 #[derive(Debug, Clone, Copy)]
 pub struct SimpleContact {
+    /// World-index of the first body participating in the contact.
     pub body_a: usize,
+    /// World-index of the second body participating in the contact.
     pub body_b: usize,
+    /// Stable identifier used for warm-start indexing across frames.
     pub stable_id: u64,
     /// Unit-length world-space normal, oriented from body A into body
     /// B (i.e. positive normal impulse pushes B along `normal`).
@@ -181,9 +181,13 @@ impl Default for PgsConfig {
 /// Reference [`TgsHooks`] implementation over slices of
 /// [`SimpleBodyState`] and [`SimpleContact`].
 pub struct PgsHooks<'a> {
+    /// Mutable slice of body states this hook operates on.
     pub bodies: &'a mut [SimpleBodyState],
+    /// Mutable slice of contacts this hook operates on.
     pub contacts: &'a mut [SimpleContact],
+    /// Warm-start impulse cache reused across frames.
     pub cache: &'a mut ImpulseCache,
+    /// Tunable projected Gauss-Seidel parameters.
     pub cfg: PgsConfig,
 }
 
