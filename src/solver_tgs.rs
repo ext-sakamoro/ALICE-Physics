@@ -431,6 +431,168 @@ impl Default for TgsConfig {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Adaptive sub-stepping (Turn D)
+// ---------------------------------------------------------------------------
+
+/// Configuration for closed-form adaptive sub-stepping.
+///
+/// The sub-step count for a physics tick is decided from the fastest
+/// body: `substeps = smallest n such that n * max_translation_per_step
+/// >= v_max * dt`, clamped into `[min_substeps, max_substeps]`.
+/// Callers should assign the return value of
+/// [`adaptive_substeps_for`] to [`TgsConfig::substeps`] before
+/// dispatching `tgs_step`.
+///
+/// Determinism: the computation is a pure function of `bodies + dt +
+/// cfg`, uses only Fix128 arithmetic (no floating-point comparisons),
+/// and iterates in canonical index order — safe under lockstep /
+/// rollback netcode (see the `deterministic-physics-lockstep-discipline`
+/// skill §11.1 CCD control).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AdaptiveSubStepConfig {
+    /// Upper bound on translation per sub-step (world units per
+    /// sub-step). When `v_max * dt <= max_translation_per_step`,
+    /// `substeps = min_substeps`.
+    pub max_translation_per_step: Fix128,
+    /// Hard cap on sub-step count for the current tick.
+    pub max_substeps: u32,
+    /// Minimum sub-step count (typically `1`).
+    pub min_substeps: u32,
+}
+
+impl Default for AdaptiveSubStepConfig {
+    fn default() -> Self {
+        Self {
+            max_translation_per_step: Fix128::from_ratio(1, 10), // 0.1 world units
+            max_substeps: 16,
+            min_substeps: 1,
+        }
+    }
+}
+
+/// Body trait providing the velocity metric required by
+/// [`adaptive_substeps_for`]. The L∞ (max absolute per-axis
+/// component) norm is used instead of L2 to avoid Fix128 square roots
+/// and keep the closed-form deterministic across CORDIC LUT
+/// tolerances (see skill §1 path 2). Return `Fix128::ZERO` for
+/// static / sleeping bodies so they do not contribute to `v_max`.
+pub trait HasVelocity {
+    /// L∞ velocity in world units per second.
+    fn velocity_l_inf(&self) -> Fix128;
+}
+
+/// Returns the number of sub-steps required so that the fastest body
+/// travels at most `cfg.max_translation_per_step` per sub-step during
+/// `dt`.
+///
+/// This is a pure function of `bodies + dt + cfg` (no hidden global
+/// state, no floating-point comparisons). Iteration is index-ordered
+/// so that different scheduling policies never observe a different
+/// `v_max` when the same bodies are present — safe under rayon
+/// dispatch (see skill §1 path 5).
+#[must_use]
+pub fn adaptive_substeps_for<B: HasVelocity>(
+    bodies: &[B],
+    dt: Fix128,
+    cfg: &AdaptiveSubStepConfig,
+) -> u32 {
+    // 1. v_max = max L∞ velocity across bodies.
+    let mut v_max = Fix128::ZERO;
+    for b in bodies {
+        let v = b.velocity_l_inf();
+        if v > v_max {
+            v_max = v;
+        }
+    }
+    // 2. Translation per full tick = v_max * dt.
+    let travel = v_max * dt;
+    // 3. substeps = smallest n such that n * max_translation_per_step
+    //    >= travel, clamped into [min_substeps, max_substeps]. We do
+    //    the search by repeated addition rather than division so the
+    //    result is bit-identical regardless of Fix128 division rounding.
+    let min = cfg.min_substeps.max(1);
+    let max = cfg.max_substeps.max(min);
+    if travel <= cfg.max_translation_per_step {
+        return min;
+    }
+    let mut n: u32 = min;
+    while n < max && Fix128::from_int(i64::from(n)) * cfg.max_translation_per_step < travel {
+        n += 1;
+    }
+    n
+}
+
+#[cfg(test)]
+mod adaptive_substeps_tests {
+    use super::*;
+
+    struct DummyBody(Fix128);
+    impl HasVelocity for DummyBody {
+        fn velocity_l_inf(&self) -> Fix128 {
+            self.0
+        }
+    }
+
+    fn cfg() -> AdaptiveSubStepConfig {
+        AdaptiveSubStepConfig {
+            max_translation_per_step: Fix128::from_ratio(1, 10),
+            max_substeps: 8,
+            min_substeps: 1,
+        }
+    }
+
+    #[test]
+    fn zero_velocity_returns_min_substeps() {
+        let bodies = [DummyBody(Fix128::ZERO), DummyBody(Fix128::ZERO)];
+        let dt = Fix128::from_ratio(1, 60);
+        assert_eq!(adaptive_substeps_for(&bodies, dt, &cfg()), 1);
+    }
+
+    #[test]
+    fn empty_body_slice_returns_min_substeps() {
+        let bodies: [DummyBody; 0] = [];
+        let dt = Fix128::from_ratio(1, 60);
+        assert_eq!(adaptive_substeps_for(&bodies, dt, &cfg()), 1);
+    }
+
+    #[test]
+    fn slow_body_below_threshold_returns_min_substeps() {
+        // v = 1 unit/s, dt = 1/60 s → travel = 1/60 ≈ 0.0167 < 0.1
+        let bodies = [DummyBody(Fix128::from_int(1))];
+        let dt = Fix128::from_ratio(1, 60);
+        assert_eq!(adaptive_substeps_for(&bodies, dt, &cfg()), 1);
+    }
+
+    #[test]
+    fn fast_body_scales_substeps_up() {
+        // v = 60 unit/s, dt = 1/60 s → travel = 1.0
+        //   step size = 0.1 → need 10 substeps, capped at 8.
+        let bodies = [DummyBody(Fix128::from_int(60))];
+        let dt = Fix128::from_ratio(1, 60);
+        let cfg = cfg();
+        let n = adaptive_substeps_for(&bodies, dt, &cfg);
+        assert!(
+            n >= 2 && n <= cfg.max_substeps,
+            "expected non-trivial substep count within cap, got {n}"
+        );
+    }
+
+    #[test]
+    fn monotonic_in_max_velocity() {
+        let slow = [DummyBody(Fix128::from_int(6))];
+        let fast = [DummyBody(Fix128::from_int(60))];
+        let dt = Fix128::from_ratio(1, 60);
+        let c = cfg();
+        let a = adaptive_substeps_for(&slow, dt, &c);
+        let b = adaptive_substeps_for(&fast, dt, &c);
+        assert!(
+            b >= a,
+            "faster body must not require fewer substeps (a={a}, b={b})"
+        );
+    }
+}
+
 /// Callbacks that drive one velocity or position iteration inside the
 /// sub-stepping loop. Consumers wire these up to their concrete solver
 /// so that the traversal (substeps, warm-start, sweep) stays here
