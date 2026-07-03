@@ -668,6 +668,65 @@ pub struct BvhStats {
     pub max_leaf_prims: usize,
 }
 
+// ---------------------------------------------------------------------------
+// Turn D next-step: Hybrid broadphase (hash grid × BVH)
+// ---------------------------------------------------------------------------
+
+/// Hybrid broadphase that layers a hash grid for dynamic bodies over
+/// a BVH for static geometry (Turn D 本命 next-step, skill §11 5' 案).
+///
+/// # Rationale
+/// Dynamic bodies churn AABBs every frame, so paying `O(N log N)` for
+/// a full BVH rebuild wastes cycles. A hash grid rebuild is `O(N)`
+/// per frame, and the static-body BVH only pays its cost once at
+/// scene load. Combined, per-frame broad-phase work drops from
+/// `O(N_total log N_total)` to `O(N_dynamic + log N_static)` per
+/// query.
+///
+/// # Determinism
+/// Both layers must be iterated in canonical index order — hash grid
+/// buckets are drained ordered by `body_id`, BVH walks use the flat
+/// node array in stackless traversal order. See
+/// `deterministic-physics-lockstep-discipline` skill §1 経路 5.
+///
+/// # Status
+/// Skeleton API committed as part of Turn D next-step to freeze the
+/// public surface so downstream integration (island builder, CCD
+/// pair generation) can start compiling against a stable signature.
+/// The hash grid slot and per-frame refit / rebuild policy are
+/// scheduled for the follow-up commit.
+pub struct BroadphaseHybrid {
+    /// BVH holding static bodies (built once at scene load, refit
+    /// only if terrain deforms).
+    pub static_bvh: LinearBvh,
+    // TODO(phase-f-followup): hash grid handle for dynamic bodies.
+    // The concrete type will be `crate::spatial::SpatialGrid` (or a
+    // wrapper that exposes an insert / query API compatible with the
+    // AABB overlap semantics used here).
+}
+
+impl BroadphaseHybrid {
+    /// Skeleton constructor — accepts a pre-built static BVH. The
+    /// dynamic hash grid parameters (cell size, expected population)
+    /// are scheduled for the follow-up implementation.
+    #[must_use]
+    pub const fn new(static_bvh: LinearBvh) -> Self {
+        Self { static_bvh }
+    }
+
+    /// Query overlap against `q_aabb`, invoking `callback` for every
+    /// primitive index that potentially overlaps. Skeleton — currently
+    /// forwards to the static BVH's callback-based query so downstream
+    /// code compiles against a stable API. The dynamic hash grid pass
+    /// will be added in the follow-up commit.
+    pub fn query_pairs<F>(&self, q_aabb: &AABB, callback: F)
+    where
+        F: FnMut(u32),
+    {
+        self.static_bvh.query_callback(q_aabb, callback);
+    }
+}
+
 #[cfg(all(test, feature = "std"))]
 mod tests {
     use super::*;
