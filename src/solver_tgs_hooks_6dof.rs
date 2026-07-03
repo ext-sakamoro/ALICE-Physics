@@ -756,4 +756,116 @@ mod tests {
         assert!(cold_bottom > 0.0, "cold config produced no support");
         assert!(warm_bottom > 0.0, "warm config produced no support");
     }
+
+    // --- rayon per-island × Pgs6DofHooks integration ----------------------
+
+    // Dummy joint type used to instantiate `build_islands` when the
+    // test has no bilateral constraints.
+    struct NoJoint;
+    impl crate::solver_tgs::JointLike for NoJoint {
+        fn body_a(&self) -> usize {
+            0
+        }
+        fn body_b(&self) -> usize {
+            0
+        }
+    }
+
+    #[test]
+    fn islands_separate_two_independent_stacks() {
+        use crate::solver_tgs::build_islands;
+        let bodies = [
+            ground(1),
+            free_body(2, 1.0, 1.0, 0.5),
+            free_body(3, 1.0, 1.0, 0.5),
+        ];
+        let contacts = [
+            floor_contact(0, 1, 900, 0.4, 0.0, 0.005),
+            floor_contact(0, 2, 901, 0.4, 0.0, 0.005),
+        ];
+        let islands = build_islands(&bodies, &contacts, &[] as &[NoJoint]);
+        assert_eq!(
+            islands.len(),
+            2,
+            "two disjoint stacks should form two islands"
+        );
+        for island in &islands {
+            assert!(
+                island.bodies.contains(&0),
+                "static ground must appear in every island as a separator"
+            );
+            assert_eq!(
+                island.contacts.len(),
+                1,
+                "each island holds exactly one contact"
+            );
+        }
+    }
+
+    #[test]
+    fn dispatch_islands_visits_every_dynamic_body_once() {
+        // The `Pgs6DofHooks` shared-slice API means a per-island
+        // sub-step call would re-run `begin_substep` (which applies
+        // gravity to every body) once per island — an all-at-once
+        // reference solve and a per-island split therefore accumulate
+        // gravity a different number of times and cannot be byte-
+        // identical without a body-slice partitioning layer above the
+        // hook (deferred to a follow-up). What we can verify here is
+        // the *dispatch surface* — every island must be visited
+        // exactly once, and the two islands must jointly cover every
+        // dynamic body without overlap.
+        use crate::solver_tgs::{build_islands, dispatch_islands};
+        let bodies = [
+            ground(1),
+            free_body(2, 1.0, 1.0, 0.01),
+            free_body(3, 1.0, 1.0, 0.01),
+        ];
+        let contacts = [
+            floor_contact(0, 1, 900, 0.4, 0.0, 0.01),
+            floor_contact(0, 2, 901, 0.4, 0.0, 0.01),
+        ];
+        let islands = build_islands(&bodies, &contacts, &[] as &[NoJoint]);
+        assert_eq!(islands.len(), 2);
+        let mut owned_dynamic = Vec::new();
+        dispatch_islands(&islands, |island| {
+            for &b in &island.bodies {
+                if b != 0 {
+                    owned_dynamic.push(b);
+                }
+            }
+        });
+        owned_dynamic.sort_unstable();
+        assert_eq!(owned_dynamic, vec![1, 2]);
+    }
+
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn par_dispatch_over_pgs_hooks_setup() {
+        use crate::solver_tgs::{build_islands, par_dispatch_islands};
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        // Three independent stacks, no shared dynamic body, so
+        // `build_islands` should hand back three disjoint islands.
+        let bodies = [
+            ground(1),
+            free_body(2, 1.0, 1.0, 0.01),
+            free_body(3, 1.0, 1.0, 0.01),
+            free_body(4, 1.0, 1.0, 0.01),
+        ];
+        let contacts = [
+            floor_contact(0, 1, 900, 0.4, 0.0, 0.01),
+            floor_contact(0, 2, 901, 0.4, 0.0, 0.01),
+            floor_contact(0, 3, 902, 0.4, 0.0, 0.01),
+        ];
+        let islands = build_islands(&bodies, &contacts, &[] as &[NoJoint]);
+        assert_eq!(islands.len(), 3);
+
+        let visited = AtomicUsize::new(0);
+        par_dispatch_islands(&islands, |island| {
+            assert_eq!(island.contacts.len(), 1);
+            assert_eq!(island.bodies.len(), 2);
+            visited.fetch_add(1, Ordering::Relaxed);
+        });
+        assert_eq!(visited.load(Ordering::Relaxed), 3);
+    }
 }
