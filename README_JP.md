@@ -105,6 +105,22 @@
 
 rayon 並列版は `--features parallel` で有効化。全バリアントで Fix128 の byte-identical 決定性を維持。
 
+### 高度なソルバー基盤（Turn D / Phase E / Phase F）
+
+サブステッピング TGS コアの上に積み上げた追加ビルディングブロック:
+
+- **適応的サブステッピング** — `AdaptiveSubStepConfig` + `HasVelocity` + `adaptive_substeps_for` により、最速 body の L∞ 速度から決定論的なサブステップ数を計算（Fix128 pure、closed-form、除算なし — lockstep / rollback で安全）
+- **CCD 最適化適応的サブステッピング** — `adaptive_substeps_for_ccd` は per-step 変位上限を `最小 collider 半径 × 安全係数` に絞り、高速 body が薄い壁を通り抜けないことを保証
+- **適応的サブ-TOI スケルトン** — `adaptive_toi_substeps` は適応的サブステッピングと既存の `speculative_contact` TOI を連携するペア別 CCD の bridge（Phase F 11.1）
+- **`ImpulseCache` 観測性** — `hits/misses/stats/hit_rate/reset_stats` によりウォームスタートの有効性を可視化、シーンが安定（高 hit rate）か churn 状態（低 hit rate）かを判別
+- **アイランド別スコープ oriented ソルブ** — `solver_tgs_hooks_6dof_oriented_scoped` は完全 6-DOF oriented hook を island 単位で分離、重力の重複積算を防ぎ serial-parallel の bit-perfect 一致を保証
+- **`LinearBvh::refit_leaves`（bottom-up）** — flat tree 構造を保持したまま leaf AABB を requantise、internal node へ i32 domain で union を伝播（CORDIC / rounding 依存なし）、完全 rebuild の代わりに `O(N)` refit を提供
+- **`BroadphaseHybrid` スケルトン** — 動的 body 用 hash grid と静的 body 用 BVH の 2 層構造（Turn D 5' 案）、per-frame broad-phase コストを `O(N_total log N_total)` から `O(N_dynamic + log N_static)` に削減
+- **`FeatherstoneSolver::solve_with_mass_splitting` スケルトン** — O(n) forward-dynamics ソルバーに極端な質量比スタック用の mass-ratio 分割ヒントを追加（Phase F 11.2）
+- **FFI byte-for-byte 決定性** — `AliceVec3Fix128Raw` + `alice_physics_body_get_position_fix128_raw` により Fix128 hi/lo ペアを C ABI 経由で公開、Unity / UE5 host が正確な bit パターン一致を assert 可能（Phase F 11.3）
+
+これらのプリミティブの決定論保証ガードレールは [`deterministic-physics-lockstep-discipline`](https://github.com/ext-sakamoro/claude-config/blob/main/claude-skills/deterministic-physics-lockstep-discipline/SKILL.md) スキル（private reference）に集約されています。
+
 ## 最適化（"黒焦げ" エディション） — 100/100
 
 ALICE-Physicsは6層にわたる最適化で **100/100 の完璧なスコア** を達成しています：
