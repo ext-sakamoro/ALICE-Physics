@@ -206,8 +206,6 @@
     clippy::module_name_repetitions,
     clippy::unreadable_literal,
     clippy::large_stack_arrays,
-    clippy::inline_always,
-    clippy::too_many_lines,
     clippy::doc_markdown
 )]
 #![cfg_attr(not(feature = "std"), no_std)]
