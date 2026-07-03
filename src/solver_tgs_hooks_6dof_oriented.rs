@@ -18,9 +18,6 @@
 //! need a full symmetric world-frame inertia can rebuild one before
 //! each sub-step using [`crate::math::Mat3Fix`].
 
-// (missing_docs allow scoped to this module during Turn E follow-up; see lib.rs.)
-#![allow(missing_docs)]
-
 use crate::math::{Fix128, QuatFix, Vec3Fix};
 use crate::solver_tgs::{BodyLike, ContactLike};
 
@@ -85,15 +82,23 @@ pub fn integrate_orientation(q: QuatFix, omega: Vec3, dt: Fix128) -> QuatFix {
 /// [`Pgs6DofHooks`]: crate::solver_tgs_hooks_6dof::Pgs6DofHooks
 #[derive(Debug, Clone, Copy)]
 pub struct Body6DofOrientedState {
+    /// World-space centre-of-mass position.
     pub position: Vec3,
+    /// Unit quaternion describing the body's world-frame orientation.
     pub orientation: QuatFix,
+    /// Linear velocity of the body's centre of mass (world frame).
     pub linear_velocity: Vec3,
+    /// Angular velocity around the body's centre of mass (world frame).
     pub angular_velocity: Vec3,
+    /// Reciprocal of the body mass. `Fix128::ZERO` marks the body as
+    /// static or kinematic (no linear response to impulses).
     pub inv_mass: Fix128,
     /// Reciprocals of the three principal moments of inertia in the
     /// body's local frame.
     pub inv_inertia_local: Vec3,
+    /// `true` when the body participates in velocity/position updates.
     pub is_dynamic: bool,
+    /// Stable identity used for warm-start indexing across frames.
     pub stable_id: u64,
 }
 
@@ -154,19 +159,33 @@ impl Body6DofOrientedState {
 /// A pairwise contact for oriented bodies.
 #[derive(Debug, Clone, Copy)]
 pub struct ContactOriented {
+    /// World-index of the first body participating in the contact.
     pub body_a: usize,
+    /// World-index of the second body participating in the contact.
     pub body_b: usize,
+    /// Stable identity used for warm-start indexing across frames.
     pub stable_id: u64,
+    /// Contact normal, oriented from body A into body B (unit length).
     pub normal: Vec3,
+    /// First tangent axis of the contact frame (unit length).
     pub tangent1: Vec3,
+    /// Second tangent axis of the contact frame (unit length).
     pub tangent2: Vec3,
+    /// Offset from body A's centre to the contact point (world frame).
     pub r_a: Vec3,
+    /// Offset from body B's centre to the contact point (world frame).
     pub r_b: Vec3,
+    /// Signed penetration depth. Positive values mean the bodies overlap.
     pub penetration: Fix128,
+    /// Coulomb friction coefficient for the pair.
     pub friction: Fix128,
+    /// Newton coefficient of restitution for the pair.
     pub restitution: Fix128,
+    /// Accumulated normal impulse magnitude during the current sub-step.
     pub accum_normal: Fix128,
+    /// Accumulated first-tangent impulse magnitude during the current sub-step.
     pub accum_tangent1: Fix128,
+    /// Accumulated second-tangent impulse magnitude during the current sub-step.
     pub accum_tangent2: Fix128,
 }
 
@@ -248,9 +267,13 @@ use crate::solver_tgs::{CachedImpulse, ImpulseCache, TgsHooks};
 /// Tunable parameters for [`Pgs6DofOrientedHooks`].
 #[derive(Debug, Clone, Copy)]
 pub struct Pgs6DofOrientedConfig {
+    /// Gravitational acceleration applied to dynamic bodies per second.
     pub gravity: Vec3,
+    /// Baumgarte positional-correction coefficient in `[0, 1]`.
     pub baumgarte: Fix128,
+    /// Penetration slop below which positional correction is skipped.
     pub slop: Fix128,
+    /// When `true`, warm-start impulses from [`ImpulseCache`] before the first iteration.
     pub warmstart: bool,
 }
 
@@ -271,14 +294,19 @@ impl Default for Pgs6DofOrientedConfig {
 /// scaled by the diagonal `inv_inertia_local`, and orientations are
 /// integrated at the end of every sub-step.
 pub struct Pgs6DofOrientedHooks<'a> {
+    /// Mutable slice of oriented body states this hook operates on.
     pub bodies: &'a mut [Body6DofOrientedState],
+    /// Mutable slice of oriented contacts this hook operates on.
     pub contacts: &'a mut [ContactOriented],
+    /// Warm-start impulse cache reused across frames.
     pub cache: &'a mut ImpulseCache,
+    /// Tunable projected Gauss-Seidel parameters for the oriented solve.
     pub cfg: Pgs6DofOrientedConfig,
     restitution_bias: Vec<Fix128>,
 }
 
 impl<'a> Pgs6DofOrientedHooks<'a> {
+    /// Construct a new oriented hook binding the provided body / contact / cache slices with `cfg`.
     #[must_use]
     pub fn new(
         bodies: &'a mut [Body6DofOrientedState],
