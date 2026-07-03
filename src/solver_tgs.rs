@@ -426,6 +426,100 @@ pub fn tgs_step<H: TgsHooks>(hooks: &mut H, cfg: &TgsConfig, dt: Fix128) {
 }
 
 // ---------------------------------------------------------------------------
+// Adapter to the existing solver types
+// ---------------------------------------------------------------------------
+//
+// The wrappers below let this module operate on the crate's concrete
+// [`RigidBody`], [`ContactConstraint`] and [`DistanceConstraint`]
+// without a hard coupling to their internal layout. Stable IDs are
+// externally injected so that callers control warm-start persistence
+// (typically a `HashMap<BodyHandle, u64>` maintained by the world).
+
+use crate::solver::{BodyType, ContactConstraint, DistanceConstraint, RigidBody};
+
+/// Borrowed view of a [`RigidBody`] paired with an externally-provided
+/// stable identifier. Frame-to-frame persistence of the ID is the
+/// caller's responsibility.
+pub struct BodyRef<'a> {
+    pub body: &'a RigidBody,
+    pub id: u64,
+}
+
+impl BodyLike for BodyRef<'_> {
+    fn stable_id(&self) -> u64 {
+        self.id
+    }
+    fn is_dynamic(&self) -> bool {
+        matches!(self.body.body_type, BodyType::Dynamic)
+    }
+}
+
+/// Borrowed view of a [`ContactConstraint`] plus its stable ID.
+pub struct ContactRef<'a> {
+    pub contact: &'a ContactConstraint,
+    pub id: u64,
+}
+
+impl ContactLike for ContactRef<'_> {
+    fn body_a(&self) -> usize {
+        self.contact.body_a
+    }
+    fn body_b(&self) -> usize {
+        self.contact.body_b
+    }
+    fn stable_id(&self) -> u64 {
+        self.id
+    }
+}
+
+/// Borrowed view of a [`DistanceConstraint`] as a bilateral joint.
+pub struct DistanceRef<'a> {
+    pub joint: &'a DistanceConstraint,
+}
+
+impl JointLike for DistanceRef<'_> {
+    fn body_a(&self) -> usize {
+        self.joint.body_a
+    }
+    fn body_b(&self) -> usize {
+        self.joint.body_b
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Per-island dispatch (rayon, feature-gated)
+// ---------------------------------------------------------------------------
+
+/// Serially dispatches `f` over each island in canonical order.
+///
+/// Available even without the `parallel` feature so that consumers can
+/// share a single call-site regardless of build configuration.
+pub fn dispatch_islands<F>(islands: &[Island], mut f: F)
+where
+    F: FnMut(&Island),
+{
+    for island in islands {
+        f(island);
+    }
+}
+
+/// Dispatches `f` over each island in parallel via `rayon`. Islands
+/// are independent by construction (see [`build_islands`]), so no
+/// inter-island synchronisation is required. Determinism of the
+/// aggregate result is preserved as long as `f` mutates only state
+/// belonging to bodies inside the island passed to it.
+///
+/// Available only with the `parallel` feature.
+#[cfg(feature = "parallel")]
+pub fn par_dispatch_islands<F>(islands: &[Island], f: F)
+where
+    F: Fn(&Island) + Send + Sync,
+{
+    use rayon::prelude::*;
+    islands.par_iter().for_each(f);
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -735,6 +829,78 @@ mod tests {
         fn end_substep(&mut self, _sub_dt: Fix128) {
             self.end += 1;
         }
+    }
+
+    // --- Adapter --------------------------------------------------------
+
+    #[test]
+    fn body_ref_reports_dynamic_state() {
+        let mut body = RigidBody::default();
+        body.body_type = BodyType::Dynamic;
+        let dyn_ref = BodyRef {
+            body: &body,
+            id: 42,
+        };
+        assert!(dyn_ref.is_dynamic());
+        assert_eq!(dyn_ref.stable_id(), 42);
+
+        let mut sbody = RigidBody::default();
+        sbody.body_type = BodyType::Static;
+        let stat_ref = BodyRef {
+            body: &sbody,
+            id: 7,
+        };
+        assert!(!stat_ref.is_dynamic());
+
+        let mut kbody = RigidBody::default();
+        kbody.body_type = BodyType::Kinematic;
+        let kin_ref = BodyRef {
+            body: &kbody,
+            id: 3,
+        };
+        // kinematic bodies are treated as separators, same as static
+        assert!(!kin_ref.is_dynamic());
+    }
+
+    // --- Dispatch -------------------------------------------------------
+
+    #[test]
+    fn dispatch_islands_visits_every_island_once() {
+        let islands = vec![
+            Island {
+                bodies: vec![0, 1],
+                contacts: vec![0],
+                joints: vec![],
+            },
+            Island {
+                bodies: vec![2, 3],
+                contacts: vec![1],
+                joints: vec![],
+            },
+        ];
+        let mut visited = Vec::new();
+        dispatch_islands(&islands, |isl| {
+            visited.push(isl.bodies[0]);
+        });
+        assert_eq!(visited, vec![0, 2]);
+    }
+
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn par_dispatch_islands_visits_every_island() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let islands: Vec<Island> = (0..16)
+            .map(|i| Island {
+                bodies: vec![i, i + 100],
+                contacts: vec![],
+                joints: vec![],
+            })
+            .collect();
+        let counter = AtomicUsize::new(0);
+        par_dispatch_islands(&islands, |_| {
+            counter.fetch_add(1, Ordering::Relaxed);
+        });
+        assert_eq!(counter.load(Ordering::Relaxed), 16);
     }
 
     #[test]
