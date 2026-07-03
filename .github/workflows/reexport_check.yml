@@ -1,0 +1,50 @@
+name: Re-export consistency check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  reexport_diff:
+    name: Report re-export counts (crate root vs prelude)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compare crate-root pub use with prelude pub use
+        # Emits a warning on mismatch. This is the informational phase of
+        # Turn A (d) re-export macro roll-out; the workflow will be
+        # promoted to a hard failure once the macro consolidates the
+        # duplicated pub use blocks.
+        run: |
+          # Extract crate-root `pub use crate::` lines (indent 0).
+          grep -E "^pub use crate::" src/lib.rs \
+            | sort -u > /tmp/root_reexports.txt || true
+
+          # Extract prelude module pub use crate::* lines (indented
+          # inside `pub mod prelude { ... }`). We strip leading
+          # whitespace so root and prelude entries are directly
+          # comparable.
+          awk '/^pub mod prelude \{/{f=1; next} /^\}/{if(f){f=0}} f && /pub use crate::/{print}' src/lib.rs \
+            | sed -E 's/^[[:space:]]+//' \
+            | sort -u > /tmp/prelude_reexports.txt || true
+
+          root_count=$(wc -l < /tmp/root_reexports.txt | tr -d ' ')
+          prelude_count=$(wc -l < /tmp/prelude_reexports.txt | tr -d ' ')
+          echo "Crate-root re-exports:   $root_count"
+          echo "Prelude re-exports:      $prelude_count"
+
+          if [ "$root_count" != "$prelude_count" ]; then
+            echo ""
+            echo "::warning::Re-export counts differ. Consider consolidating with a re_export! macro or double-check parity."
+            echo ""
+            echo "In crate-root but not prelude:"
+            comm -23 /tmp/root_reexports.txt /tmp/prelude_reexports.txt || true
+            echo ""
+            echo "In prelude but not crate-root:"
+            comm -13 /tmp/root_reexports.txt /tmp/prelude_reexports.txt || true
+          else
+            echo "::notice::Re-export counts match ($root_count entries)."
+          fi
