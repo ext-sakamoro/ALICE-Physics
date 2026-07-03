@@ -245,11 +245,46 @@ fn bench_tgs_oriented_scoped(c: &mut Criterion) {
     group.finish();
 }
 
+// ============================================================================
+// Turn D next-step: LinearBvh refit vs full rebuild
+// ============================================================================
+
+fn bench_bvh_refit(c: &mut Criterion) {
+    let mut group = c.benchmark_group("bvh_refit_vs_build");
+
+    let prims_1k: Vec<BvhPrimitive> = (0..1000_i64)
+        .map(|i| BvhPrimitive {
+            aabb: AABB::new(Vec3Fix::from_int(i, 0, 0), Vec3Fix::from_int(i + 1, 1, 1)),
+            index: i as u32,
+            morton: 0,
+        })
+        .collect();
+    let new_aabbs_1k: Vec<AABB> = (0..1000_i64)
+        .map(|i| AABB::new(Vec3Fix::from_int(i, 10, 0), Vec3Fix::from_int(i + 1, 11, 1)))
+        .collect();
+
+    group.bench_function("refit_1000_prims", |b| {
+        let mut bvh = LinearBvh::build(prims_1k.clone());
+        b.iter(|| {
+            bvh.refit_leaves(black_box(&new_aabbs_1k));
+        });
+    });
+
+    group.bench_function("full_rebuild_1000_prims", |b| {
+        b.iter(|| {
+            let _bvh = LinearBvh::build(black_box(prims_1k.clone()));
+        });
+    });
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_physics_step,
     bench_math_ops,
     bench_bvh_query,
     bench_tgs_oriented_scoped,
+    bench_bvh_refit,
 );
 criterion_main!(benches);
