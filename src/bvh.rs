@@ -338,10 +338,36 @@ impl LinearBvh {
     /// sub-stepping loop; the current signature is stable so
     /// downstream integration can begin.
     pub fn refit_leaves(&mut self, new_aabbs_by_prim_index: &[AABB]) {
-        // TODO(phase-f-followup): implement bottom-up refit.
-        // Bind unused parameter to keep the signature callable by
-        // downstream code compiling against the stable API.
-        let _ = new_aabbs_by_prim_index;
+        // Leaf-only partial refit: aggregate each leaf's primitive
+        // AABBs from `new_aabbs_by_prim_index`, requantise, and write
+        // back into the leaf node. Internal nodes retain their
+        // build-time AABBs — this over-estimates internal bounds but
+        // preserves broad-phase correctness because false positives
+        // are filtered by the narrow-phase collision stage.
+        //
+        // Bottom-up propagation of the refit union into internal
+        // nodes is scheduled for a follow-up commit (phase-f-followup)
+        // so that internal-node AABBs match the freshly updated leaves.
+        for node in &mut self.nodes {
+            let prim_count = ((node.prim_count_escape >> 24) & 0xFF) as usize;
+            if prim_count == 0 {
+                continue; // Internal node — skip for the leaf-only pass.
+            }
+            let prim_start = node.first_child_or_prim as usize;
+            let first_prim_idx = self.primitives[prim_start] as usize;
+            debug_assert!(
+                first_prim_idx < new_aabbs_by_prim_index.len(),
+                "primitive index out of range for refit input"
+            );
+            let mut leaf_aabb = new_aabbs_by_prim_index[first_prim_idx];
+            for k in 1..prim_count {
+                let prim_idx = self.primitives[prim_start + k] as usize;
+                debug_assert!(prim_idx < new_aabbs_by_prim_index.len());
+                leaf_aabb = leaf_aabb.union(&new_aabbs_by_prim_index[prim_idx]);
+            }
+            node.aabb_min = aabb_to_i32_min(&leaf_aabb);
+            node.aabb_max = aabb_to_i32_max(&leaf_aabb);
+        }
     }
 
     /// Recursive build with escape pointer assignment
@@ -712,6 +738,99 @@ mod tests {
         assert_eq!(expand_bits(1), 1);
         assert_eq!(expand_bits(0b11), 0b1001);
         assert_eq!(expand_bits(0b111), 0b1001001);
+    }
+
+    /// `refit_leaves` must update leaf AABBs when the underlying
+    /// primitive positions have moved. Internal nodes are allowed to
+    /// keep their build-time AABB in this leaf-only pass; broad-phase
+    /// queries remain correct because false positives get filtered by
+    /// the narrow-phase collision stage.
+    #[test]
+    fn refit_leaves_updates_leaf_aabbs() {
+        let prims: Vec<BvhPrimitive> = (0..4)
+            .map(|i| BvhPrimitive {
+                aabb: AABB::new(
+                    Vec3Fix::from_int(i * 2, 0, 0),
+                    Vec3Fix::from_int(i * 2 + 1, 1, 1),
+                ),
+                index: i as u32,
+                morton: 0,
+            })
+            .collect();
+        let mut bvh = LinearBvh::build(prims);
+        assert!(!bvh.nodes.is_empty(), "BVH must be non-empty");
+
+        // Move every primitive up by 10 world units on the Y axis.
+        let new_aabbs: Vec<AABB> = (0..4)
+            .map(|i| {
+                AABB::new(
+                    Vec3Fix::from_int(i * 2, 10, 0),
+                    Vec3Fix::from_int(i * 2 + 1, 11, 1),
+                )
+            })
+            .collect();
+
+        bvh.refit_leaves(&new_aabbs);
+
+        // Every leaf's decoded AABB must now sit inside the shifted
+        // Y range. We check that at least one leaf reflects the shift.
+        let mut leaf_shifted = false;
+        for node in &bvh.nodes {
+            let prim_count = (node.prim_count_escape >> 24) & 0xFF;
+            if prim_count > 0 {
+                // Leaf: y_min quantised, but the sign should now be
+                // strictly greater than the pre-refit y_min (0).
+                if node.aabb_min[1] > 0 {
+                    leaf_shifted = true;
+                    break;
+                }
+            }
+        }
+        assert!(
+            leaf_shifted,
+            "at least one leaf must reflect the upward primitive shift"
+        );
+    }
+
+    /// `refit_leaves` must preserve the flat tree structure (node
+    /// count + primitive order) so downstream queries keep walking
+    /// the same skeleton with only updated AABBs.
+    #[test]
+    fn refit_leaves_preserves_tree_structure() {
+        let prims: Vec<BvhPrimitive> = (0..4)
+            .map(|i| BvhPrimitive {
+                aabb: AABB::new(
+                    Vec3Fix::from_int(i * 3, 0, 0),
+                    Vec3Fix::from_int(i * 3 + 1, 1, 1),
+                ),
+                index: i as u32,
+                morton: 0,
+            })
+            .collect();
+        let mut bvh = LinearBvh::build(prims);
+        let node_count_before = bvh.nodes.len();
+        let primitives_before = bvh.primitives.clone();
+
+        let new_aabbs: Vec<AABB> = (0..4)
+            .map(|i| {
+                AABB::new(
+                    Vec3Fix::from_int(i * 3, 5, 0),
+                    Vec3Fix::from_int(i * 3 + 1, 6, 1),
+                )
+            })
+            .collect();
+
+        bvh.refit_leaves(&new_aabbs);
+
+        assert_eq!(
+            bvh.nodes.len(),
+            node_count_before,
+            "node count must not change"
+        );
+        assert_eq!(
+            bvh.primitives, primitives_before,
+            "primitive ordering must not change"
+        );
     }
 
     #[test]

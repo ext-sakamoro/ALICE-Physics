@@ -485,6 +485,42 @@ impl FeatherstoneSolver {
         self.forward_acceleration_pass(artic, bodies, dt);
     }
 
+    /// Featherstone forward dynamics with a Mass Splitting hint for
+    /// large mass ratio stacks (Phase F 11.2 skeleton).
+    ///
+    /// Currently forwards to [`Self::solve`] unchanged. The follow-up
+    /// commit implements the split policy: contact pairs whose mass
+    /// ratio (heavier / lighter) exceeds `mass_ratio_split_threshold`
+    /// are decomposed into two separately solved constraints so that
+    /// PGS iteration count no longer has to fight the ill-conditioning
+    /// of extreme mass ratios (see
+    /// `deterministic-physics-lockstep-discipline` skill §11.2).
+    ///
+    /// # Determinism
+    /// The Mass Splitting policy will canonicalise pivot order via
+    /// `sort_by_key(mass) + index tie-break` and process the split
+    /// pairs in flat-array index order, matching skill §1 経路 5.
+    /// The current forwarding path inherits [`Self::solve`]'s
+    /// determinism guarantee unchanged.
+    ///
+    /// # Status
+    /// Skeleton API committed as part of Phase F 11.2 rollout. The
+    /// signature is stable so downstream integrations (extreme mass
+    /// ratio stacking scenes, ragdoll systems on soft ground) can
+    /// begin experimenting; the actual splitting policy is scheduled
+    /// for a follow-up commit.
+    pub fn solve_with_mass_splitting(
+        &mut self,
+        artic: &ArticulatedBody,
+        bodies: &mut [RigidBody],
+        gravity: Vec3Fix,
+        dt: Fix128,
+        mass_ratio_split_threshold: Fix128,
+    ) {
+        let _ = mass_ratio_split_threshold;
+        self.solve(artic, bodies, gravity, dt);
+    }
+
     /// Pass 1: Propagate velocities root → leaves
     fn forward_velocity_pass(&mut self, artic: &ArticulatedBody, bodies: &[RigidBody]) {
         self.fv_recursive(artic, bodies, artic.root);
