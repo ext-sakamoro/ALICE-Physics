@@ -731,6 +731,20 @@ impl BroadphaseHybrid {
         self.dynamic_grid.clear();
     }
 
+    /// Finalise the dynamic hash grid after all `insert_dynamic`
+    /// calls for the current frame. This runs the CSR prefix-sum
+    /// pass so subsequent [`Self::query_pairs`] invocations see the
+    /// freshly inserted bodies.
+    ///
+    /// The recommended per-frame flow is:
+    /// 1. [`Self::clear_dynamic`]
+    /// 2. `insert_dynamic(body_id, pos)` for each active dynamic body
+    /// 3. [`Self::build_dynamic`]
+    /// 4. `query_pairs(&aabb, |idx| …)` any number of times
+    pub fn build_dynamic(&mut self) {
+        self.dynamic_grid.build();
+    }
+
     /// Query overlap against `q_aabb`, forwarding to both the static
     /// BVH (over `u32` primitive indices) and the dynamic hash grid
     /// (over `usize` body indices, cast to `u32`). Callers receive a
@@ -983,16 +997,11 @@ mod tests {
     /// BVH hits and dynamic hash grid neighbours (Turn D 5' 案 の
     /// hash grid × BVH union pair 生成 検証).
     ///
-    /// TODO(phase-f-followup): `SpatialGrid::insert` currently
-    /// requires an explicit build phase (or a specific `cell_size` /
-    /// `grid_dim` combination) that this smoke fixture does not yet
-    /// satisfy — the near-body callback is not fired even though the
-    /// query centre lands in the same cell as the inserted body. The
-    /// fixture will be re-authored once the grid build handshake is
-    /// documented; the static-side query path is exercised by the
-    /// downstream `broadphase_hybrid_clear_dynamic_drops_previous_bodies`
-    /// case which asserts only the "no false positive" contract.
-    #[ignore]
+    /// The dynamic side needs the `clear → insert → build → query`
+    /// handshake — `SpatialGrid::insert` only records counts, and the
+    /// CSR flat buffer is finalised in `SpatialGrid::build`. Without
+    /// `build_dynamic()` the query returns nothing because
+    /// `cell_offsets` is still zero-initialised.
     #[test]
     fn broadphase_hybrid_reports_static_and_dynamic_candidates() {
         // Static BVH: one primitive at (10, 0, 0).
@@ -1010,6 +1019,8 @@ mod tests {
         // Insert a dynamic body far away that must not be reported for
         // a query near the origin.
         hybrid.insert_dynamic(99, Vec3Fix::from_int(100, 0, 0));
+        // Finalise the CSR layout so `query_pairs` sees the insertions.
+        hybrid.build_dynamic();
 
         // Query an AABB centred at the origin — the near dynamic body
         // (7) should be reported. The static primitive (42) sits at
@@ -1046,7 +1057,10 @@ mod tests {
         let mut hybrid = BroadphaseHybrid::new(static_bvh, Fix128::from_int(2), 16);
 
         hybrid.insert_dynamic(5, Vec3Fix::from_int(0, 0, 0));
+        hybrid.build_dynamic();
         hybrid.clear_dynamic();
+        // Rebuild after clear so the CSR layout reflects the empty grid.
+        hybrid.build_dynamic();
 
         let q = AABB::new(Vec3Fix::from_int(-1, -1, -1), Vec3Fix::from_int(1, 1, 1));
         let mut hits: Vec<u32> = Vec::new();
