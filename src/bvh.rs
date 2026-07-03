@@ -338,20 +338,12 @@ impl LinearBvh {
     /// sub-stepping loop; the current signature is stable so
     /// downstream integration can begin.
     pub fn refit_leaves(&mut self, new_aabbs_by_prim_index: &[AABB]) {
-        // Leaf-only partial refit: aggregate each leaf's primitive
-        // AABBs from `new_aabbs_by_prim_index`, requantise, and write
-        // back into the leaf node. Internal nodes retain their
-        // build-time AABBs — this over-estimates internal bounds but
-        // preserves broad-phase correctness because false positives
-        // are filtered by the narrow-phase collision stage.
-        //
-        // Bottom-up propagation of the refit union into internal
-        // nodes is scheduled for a follow-up commit (phase-f-followup)
-        // so that internal-node AABBs match the freshly updated leaves.
+        // Step 1 — Leaf refit: aggregate each leaf's primitive AABBs
+        // from `new_aabbs_by_prim_index`, requantise, and write back.
         for node in &mut self.nodes {
             let prim_count = ((node.prim_count_escape >> 24) & 0xFF) as usize;
             if prim_count == 0 {
-                continue; // Internal node — skip for the leaf-only pass.
+                continue; // Internal node — handled in Step 2.
             }
             let prim_start = node.first_child_or_prim as usize;
             let first_prim_idx = self.primitives[prim_start] as usize;
@@ -367,6 +359,59 @@ impl LinearBvh {
             }
             node.aabb_min = aabb_to_i32_min(&leaf_aabb);
             node.aabb_max = aabb_to_i32_max(&leaf_aabb);
+        }
+
+        // Step 2 — Bottom-up internal-node union: walk the flat node
+        // array in reverse (DFS pre-order is written left-to-right, so
+        // reverse walk guarantees children are refit before parents).
+        //
+        // Left child index  = `first_child_or_prim` of the internal.
+        // Right child index = `escape_idx` of the left child (points
+        //                     just past the left subtree, i.e. at the
+        //                     next sibling). When the escape jumps out
+        //                     of bounds or back onto the parent, there
+        //                     is no right sibling to fold in.
+        //
+        // The union is computed directly in the i32 quantised domain
+        // so no `i32 → Fix128 → i32` inverse-quantisation is required,
+        // keeping the refit bit-exact and division-free (skill §1
+        // 経路 2 — no CORDIC / rounding involved).
+        let node_count = self.nodes.len();
+        for i in (0..node_count).rev() {
+            let prim_count = (self.nodes[i].prim_count_escape >> 24) & 0xFF;
+            if prim_count > 0 {
+                continue; // Leaf — already refit in Step 1.
+            }
+            let left_idx = self.nodes[i].first_child_or_prim as usize;
+            debug_assert!(left_idx < node_count, "left child index out of range");
+
+            let left_escape = (self.nodes[left_idx].prim_count_escape & 0x00FF_FFFF) as usize;
+            let has_right = left_escape < node_count && left_escape != i;
+
+            let left_min = self.nodes[left_idx].aabb_min;
+            let left_max = self.nodes[left_idx].aabb_max;
+
+            let (new_min, new_max) = if has_right {
+                let right_min = self.nodes[left_escape].aabb_min;
+                let right_max = self.nodes[left_escape].aabb_max;
+                (
+                    [
+                        left_min[0].min(right_min[0]),
+                        left_min[1].min(right_min[1]),
+                        left_min[2].min(right_min[2]),
+                    ],
+                    [
+                        left_max[0].max(right_max[0]),
+                        left_max[1].max(right_max[1]),
+                        left_max[2].max(right_max[2]),
+                    ],
+                )
+            } else {
+                (left_min, left_max)
+            };
+
+            self.nodes[i].aabb_min = new_min;
+            self.nodes[i].aabb_max = new_max;
         }
     }
 
@@ -789,6 +834,48 @@ mod tests {
         assert!(
             leaf_shifted,
             "at least one leaf must reflect the upward primitive shift"
+        );
+    }
+
+    /// `refit_leaves` must propagate the leaf refit into internal
+    /// nodes via bottom-up union. The root AABB is the union of all
+    /// leaf AABBs, so shifting every primitive on a single axis must
+    /// grow the root AABB on that axis.
+    #[test]
+    fn refit_leaves_bottom_up_updates_internal_aabbs() {
+        let prims: Vec<BvhPrimitive> = (0..8)
+            .map(|i| BvhPrimitive {
+                aabb: AABB::new(
+                    Vec3Fix::from_int(i * 2, 0, 0),
+                    Vec3Fix::from_int(i * 2 + 1, 1, 1),
+                ),
+                index: i as u32,
+                morton: 0,
+            })
+            .collect();
+        let mut bvh = LinearBvh::build(prims);
+        assert!(!bvh.nodes.is_empty(), "BVH must be non-empty");
+
+        let root_aabb_max_before = bvh.nodes[0].aabb_max;
+
+        // Shift every primitive upward by 100 world units on Y.
+        let new_aabbs: Vec<AABB> = (0..8)
+            .map(|i| {
+                AABB::new(
+                    Vec3Fix::from_int(i * 2, 100, 0),
+                    Vec3Fix::from_int(i * 2 + 1, 101, 1),
+                )
+            })
+            .collect();
+
+        bvh.refit_leaves(&new_aabbs);
+
+        let root_aabb_max_after = bvh.nodes[0].aabb_max;
+        assert!(
+            root_aabb_max_after[1] > root_aabb_max_before[1],
+            "root aabb_max[y] must grow after bottom-up refit (before={}, after={})",
+            root_aabb_max_before[1],
+            root_aabb_max_after[1]
         );
     }
 
