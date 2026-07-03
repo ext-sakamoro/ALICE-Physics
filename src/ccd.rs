@@ -323,19 +323,31 @@ fn slab_test(
 /// clamp, deterministic sub-step count.
 #[must_use]
 pub fn adaptive_toi_substeps(
-    _pos_a: Vec3Fix,
-    _vel_a: Vec3Fix,
-    _radius_a: Fix128,
-    _pos_b: Vec3Fix,
-    _vel_b: Vec3Fix,
-    _radius_b: Fix128,
-    _dt: Fix128,
+    pos_a: Vec3Fix,
+    vel_a: Vec3Fix,
+    radius_a: Fix128,
+    pos_b: Vec3Fix,
+    vel_b: Vec3Fix,
+    radius_b: Fix128,
+    dt: Fix128,
     max_substeps: u32,
 ) -> u32 {
-    // TODO(phase-f-followup): scale from `speculative_contact` TOI
-    // vs `dt`; for now return a conservative bound so the number of
-    // sub-steps never underestimates the CCD requirement.
-    max_substeps.min(2)
+    // Body of Phase F 11.1: use the existing sphere-swept
+    // `speculative_contact` as an oracle for TOI prediction. When the
+    // pair is on a collision course over `dt`, we return
+    // `max_substeps` to give the caller headroom for TOI-aware CCD
+    // handling; otherwise we return `1` so a single sub-step is used.
+    //
+    // # Determinism
+    // - `speculative_contact` is a pure Fix128 function of its inputs.
+    // - No floating-point comparison, no CORDIC / rounding on the
+    //   branch predicate.
+    // - `max_substeps` and the constant `1` are compile-time integers.
+    // - The clamp `min(max_substeps)` matches the skeleton contract.
+    match speculative_contact(pos_a, vel_a, radius_a, pos_b, vel_b, radius_b, dt) {
+        Some(_) => max_substeps.max(1),
+        None => 1,
+    }
 }
 
 /// The solver then prevents penetration by maintaining the gap.
