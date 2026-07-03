@@ -243,8 +243,168 @@ pub fn solve_oriented_islands_parallel(
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
-// Test coverage is intentionally deferred to a follow-up commit that
-// mirrors the existing `Pgs6DofHooks` scoped tests against the correct
-// `Body6DofOrientedState` / `ContactOriented` field shapes. The
-// production code above is exercised indirectly through the reference
-// suite in `solver_tgs_hooks_6dof_oriented::tests`.
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::math::QuatFix;
+    use crate::solver_tgs::{build_islands, tgs_step, ImpulseCache, JointLike, TgsConfig};
+
+    struct NoJoint;
+    impl JointLike for NoJoint {
+        fn body_a(&self) -> usize {
+            0
+        }
+        fn body_b(&self) -> usize {
+            0
+        }
+    }
+    const NO_JOINTS: [NoJoint; 0] = [];
+
+    fn make_body(px: i64, py: i64, is_dynamic: bool, stable_id: u64) -> Body6DofOrientedState {
+        Body6DofOrientedState {
+            position: [Fix128::from_int(px), Fix128::from_int(py), Fix128::ZERO],
+            orientation: QuatFix::IDENTITY,
+            linear_velocity: [Fix128::ZERO; 3],
+            angular_velocity: [Fix128::ZERO; 3],
+            inv_mass: if is_dynamic {
+                Fix128::from_int(1)
+            } else {
+                Fix128::ZERO
+            },
+            inv_inertia_local: if is_dynamic {
+                [Fix128::from_int(1); 3]
+            } else {
+                [Fix128::ZERO; 3]
+            },
+            is_dynamic,
+            stable_id,
+        }
+    }
+
+    fn make_contact(a: usize, b: usize, stable_id: u64) -> ContactOriented {
+        ContactOriented {
+            body_a: a,
+            body_b: b,
+            stable_id,
+            normal: [Fix128::ZERO, Fix128::from_int(1), Fix128::ZERO],
+            tangent1: [Fix128::from_int(1), Fix128::ZERO, Fix128::ZERO],
+            tangent2: [Fix128::ZERO, Fix128::ZERO, Fix128::from_int(1)],
+            r_a: [Fix128::ZERO; 3],
+            r_b: [Fix128::ZERO; 3],
+            penetration: Fix128::from_ratio(1, 100),
+            friction: Fix128::from_ratio(1, 2),
+            restitution: Fix128::ZERO,
+            accum_normal: Fix128::ZERO,
+            accum_tangent1: Fix128::ZERO,
+            accum_tangent2: Fix128::ZERO,
+        }
+    }
+
+    /// `solve_oriented_island_isolated` on a single-island scene must
+    /// produce byte-identical results to the direct whole-world
+    /// `Pgs6DofOrientedHooks + tgs_step` invocation, since there is no
+    /// cross-island interference in the single-island case.
+    #[test]
+    fn scoped_single_island_bit_perfect_with_direct_hook() {
+        let mut bodies_scoped = vec![make_body(0, 0, true, 1), make_body(0, 1, true, 2)];
+        let mut contacts_scoped = vec![make_contact(0, 1, 100)];
+        let mut bodies_direct = bodies_scoped.clone();
+        let mut contacts_direct = contacts_scoped.clone();
+
+        let cfg = Pgs6DofOrientedConfig::default();
+        let tgs_cfg = TgsConfig::default();
+        let dt = Fix128::from_ratio(1, 60);
+
+        // Direct whole-world solve.
+        {
+            let mut cache = ImpulseCache::default();
+            let mut hooks = Pgs6DofOrientedHooks::new(
+                &mut bodies_direct,
+                &mut contacts_direct,
+                &mut cache,
+                cfg,
+            );
+            tgs_step(&mut hooks, &tgs_cfg, dt);
+        }
+
+        // Scoped single-island solve.
+        {
+            let islands = build_islands(&bodies_scoped, &contacts_scoped, &NO_JOINTS);
+            assert_eq!(islands.len(), 1, "expected exactly one island");
+            let mut cache = ImpulseCache::default();
+            solve_oriented_island_isolated(
+                &mut bodies_scoped,
+                &mut contacts_scoped,
+                &islands[0],
+                &mut cache,
+                cfg,
+                &tgs_cfg,
+                dt,
+            );
+        }
+
+        for (a, b) in bodies_direct.iter().zip(bodies_scoped.iter()) {
+            assert_eq!(a.position[0].hi, b.position[0].hi);
+            assert_eq!(a.position[1].hi, b.position[1].hi);
+            assert_eq!(a.position[2].hi, b.position[2].hi);
+            assert_eq!(a.linear_velocity[1].hi, b.linear_velocity[1].hi);
+        }
+    }
+
+    /// Parallel dispatch (`solve_oriented_islands_parallel`) must
+    /// produce byte-identical results to the serial variant thanks to
+    /// Fix128 arithmetic and canonical island ordering.
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn parallel_matches_serial_bit_perfect() {
+        // Two disjoint dynamic-only islands (no static separator).
+        let mut bodies_serial = vec![
+            make_body(0, 0, true, 1),
+            make_body(0, 1, true, 2),
+            make_body(10, 0, true, 3),
+            make_body(10, 1, true, 4),
+        ];
+        let mut contacts_serial = vec![make_contact(0, 1, 100), make_contact(2, 3, 200)];
+        let mut bodies_parallel = bodies_serial.clone();
+        let mut contacts_parallel = contacts_serial.clone();
+
+        let islands = build_islands(&bodies_serial, &contacts_serial, &NO_JOINTS);
+        assert_eq!(islands.len(), 2, "expected two disjoint islands");
+
+        let cfg = Pgs6DofOrientedConfig::default();
+        let tgs_cfg = TgsConfig::default();
+        let dt = Fix128::from_ratio(1, 60);
+
+        let mut cache_serial = ImpulseCache::default();
+        solve_oriented_islands_serial(
+            &mut bodies_serial,
+            &mut contacts_serial,
+            &islands,
+            &mut cache_serial,
+            cfg,
+            &tgs_cfg,
+            dt,
+        );
+
+        let mut caches_parallel: Vec<ImpulseCache> = (0..islands.len())
+            .map(|_| ImpulseCache::default())
+            .collect();
+        solve_oriented_islands_parallel(
+            &mut bodies_parallel,
+            &mut contacts_parallel,
+            &islands,
+            &mut caches_parallel,
+            cfg,
+            &tgs_cfg,
+            dt,
+        );
+
+        for (bs, bp) in bodies_serial.iter().zip(bodies_parallel.iter()) {
+            assert_eq!(bs.position[0].hi, bp.position[0].hi);
+            assert_eq!(bs.position[1].hi, bp.position[1].hi);
+            assert_eq!(bs.position[2].hi, bp.position[2].hi);
+            assert_eq!(bs.linear_velocity[1].hi, bp.linear_velocity[1].hi);
+        }
+    }
+}
