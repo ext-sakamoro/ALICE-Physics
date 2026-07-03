@@ -31,6 +31,9 @@
 //! by these hooks; consumers that need full orientation tracking can
 //! layer a quaternion integrator on top.
 
+// (missing_docs allow scoped to this module during Turn E follow-up; see lib.rs.)
+#![allow(missing_docs)]
+
 use crate::math::Fix128;
 use crate::solver_tgs::{BodyLike, CachedImpulse, ContactLike, ImpulseCache, TgsHooks};
 

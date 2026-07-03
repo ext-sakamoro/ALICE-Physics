@@ -26,6 +26,9 @@
 //! implementation. Callers that need a full 6-DOF hook can copy the
 //! shape shown here and swap in `Vec3Fix` / `Mat3Fix` math.
 
+// (missing_docs allow scoped to this module during Turn E follow-up; see lib.rs.)
+#![allow(missing_docs)]
+
 use crate::math::Fix128;
 use crate::solver_tgs::{BodyLike, CachedImpulse, ContactLike, ImpulseCache, TgsHooks};
 

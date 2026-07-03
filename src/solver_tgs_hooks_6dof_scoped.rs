@@ -17,6 +17,9 @@
 //! local buffer, and the write-back stage touches disjoint world
 //! indices.
 
+// (missing_docs allow scoped to this module during Turn E follow-up; see lib.rs.)
+#![allow(missing_docs)]
+
 use crate::math::Fix128;
 use crate::solver_tgs::{tgs_step, ImpulseCache, Island, TgsConfig};
 use crate::solver_tgs_hooks_6dof::{Body6DofState, Contact6Dof, Pgs6DofConfig, Pgs6DofHooks};

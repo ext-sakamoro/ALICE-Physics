@@ -182,11 +182,11 @@
 //! - Replay systems
 //! - Distributed physics simulation
 
-// TODO(phase-e-followup): re-enable `#![warn(missing_docs)]` once the
-// TGS solver family (`solver_tgs*`) has per-item `///` docs on every
-// public struct field / method. Currently allowed to unblock CI while
-// Phase E scoping / bench work is in flight.
-#![allow(missing_docs)]
+// TGS solver family (`solver_tgs*`) modules opt out of missing_docs
+// locally with `#![allow(missing_docs)]` while their per-item `///`
+// docs are being backfilled (Turn E follow-up). The rest of the crate
+// stays on the warn discipline so new modules do not regress silently.
+#![warn(missing_docs)]
 // Pedantic: suppress lints inherent to physics/math code.
 // - Cast lints: Fixed-point ↔ float conversions and index casts are pervasive.
 // - Naming: coordinate variables (px, py, pz), vertex indices (v0, v1, v2).
