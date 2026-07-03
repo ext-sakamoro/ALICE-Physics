@@ -207,12 +207,8 @@ pub fn solve_oriented_islands_parallel(
                 })
                 .collect();
             {
-                let mut hooks = Pgs6DofOrientedHooks::new(
-                    &mut local_bodies,
-                    &mut local_contacts,
-                    cache,
-                    cfg,
-                );
+                let mut hooks =
+                    Pgs6DofOrientedHooks::new(&mut local_bodies, &mut local_contacts, cache, cfg);
                 tgs_step(&mut hooks, tgs_cfg, dt);
             }
             let writeback: Vec<(usize, ContactOriented)> = island
