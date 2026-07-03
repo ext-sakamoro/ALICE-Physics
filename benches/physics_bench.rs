@@ -152,5 +152,104 @@ fn bench_bvh_query(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_physics_step, bench_math_ops, bench_bvh_query);
+// ============================================================================
+// Phase E: per-island scoped oriented TGS solver + Warm-starting observability
+// ============================================================================
+
+fn bench_tgs_oriented_scoped(c: &mut Criterion) {
+    use alice_physics::math::QuatFix;
+    use alice_physics::solver_tgs::{build_islands, ImpulseCache, JointLike, TgsConfig};
+    use alice_physics::solver_tgs_hooks_6dof_oriented::{
+        Body6DofOrientedState, ContactOriented, Pgs6DofOrientedConfig,
+    };
+    use alice_physics::solver_tgs_hooks_6dof_oriented_scoped::solve_oriented_islands_serial;
+
+    struct NoJoint;
+    impl JointLike for NoJoint {
+        fn body_a(&self) -> usize {
+            0
+        }
+        fn body_b(&self) -> usize {
+            0
+        }
+    }
+    const NO_JOINTS: [NoJoint; 0] = [];
+
+    fn make_body(px: i64, py: i64, id: u64) -> Body6DofOrientedState {
+        Body6DofOrientedState {
+            position: [Fix128::from_int(px), Fix128::from_int(py), Fix128::ZERO],
+            orientation: QuatFix::IDENTITY,
+            linear_velocity: [Fix128::ZERO; 3],
+            angular_velocity: [Fix128::ZERO; 3],
+            inv_mass: Fix128::from_int(1),
+            inv_inertia_local: [Fix128::from_int(1); 3],
+            is_dynamic: true,
+            stable_id: id,
+        }
+    }
+
+    fn make_contact(a: usize, b: usize, id: u64) -> ContactOriented {
+        ContactOriented {
+            body_a: a,
+            body_b: b,
+            stable_id: id,
+            normal: [Fix128::ZERO, Fix128::from_int(1), Fix128::ZERO],
+            tangent1: [Fix128::from_int(1), Fix128::ZERO, Fix128::ZERO],
+            tangent2: [Fix128::ZERO, Fix128::ZERO, Fix128::from_int(1)],
+            r_a: [Fix128::ZERO; 3],
+            r_b: [Fix128::ZERO; 3],
+            penetration: Fix128::from_ratio(1, 100),
+            friction: Fix128::from_ratio(1, 2),
+            restitution: Fix128::ZERO,
+            accum_normal: Fix128::ZERO,
+            accum_tangent1: Fix128::ZERO,
+            accum_tangent2: Fix128::ZERO,
+        }
+    }
+
+    let mut group = c.benchmark_group("tgs_oriented_scoped");
+
+    group.bench_function("serial_6bodies_3islands_60steps", |b| {
+        b.iter(|| {
+            // 6 bodies grouped into 3 disjoint islands (2 bodies each,
+            // connected by one contact).
+            let mut bodies: Vec<_> = (0..6)
+                .map(|i| make_body((i as i64 / 2) * 10, i as i64, i as u64))
+                .collect();
+            let mut contacts: Vec<_> = vec![
+                make_contact(0, 1, 100),
+                make_contact(2, 3, 200),
+                make_contact(4, 5, 300),
+            ];
+            let islands = build_islands(&bodies, &contacts, &NO_JOINTS);
+            let mut cache = ImpulseCache::default();
+            let cfg = Pgs6DofOrientedConfig::default();
+            let tgs_cfg = TgsConfig::default();
+            let dt = Fix128::from_ratio(1, 60);
+            for _ in 0..60 {
+                solve_oriented_islands_serial(
+                    &mut bodies,
+                    &mut contacts,
+                    &islands,
+                    &mut cache,
+                    cfg,
+                    &tgs_cfg,
+                    black_box(dt),
+                );
+            }
+            // Report warm-starting hit rate to Criterion via the black box.
+            (bodies, cache.stats().hit_rate())
+        });
+    });
+
+    group.finish();
+}
+
+criterion_group!(
+    benches,
+    bench_physics_step,
+    bench_math_ops,
+    bench_bvh_query,
+    bench_tgs_oriented_scoped,
+);
 criterion_main!(benches);
