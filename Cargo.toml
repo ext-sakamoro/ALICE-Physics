@@ -1,6 +1,6 @@
 [package]
 name = "alice-physics"
-version = "0.7.0"
+version = "0.8.0"
 edition = "2021"
 authors = ["Moroya Sakamoto <sakamoro@alicelaw.net>"]
 description = "Deterministic 128-bit Fixed-Point Physics Engine"
@@ -27,6 +27,7 @@ replay = ["alice-db"]      # Replay recording/playback via ALICE-DB
 ffi = ["std"]              # C FFI for Unity/UE5/game engines
 wasm = ["wasm-bindgen", "js-sys"] # WebAssembly bindings for browsers
 analytics = ["dep:alice-analytics", "std"]  # ALICE-Analytics simulation profiling
+gpu-solver-bridge = ["std"]  # GpuSolverBridge trait for external GPU offload (opt-in, no runtime overhead when off)
 
 [dependencies]
 rayon = { version = "1.8", optional = true }
