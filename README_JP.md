@@ -1,6 +1,6 @@
 # ALICE-Physics
 
-**決定論的128bit固定小数点物理エンジン** - v0.7.0
+**決定論的128bit固定小数点物理エンジン** - v0.8.0
 
 [English](README.md) | 日本語
 
@@ -118,6 +118,8 @@ rayon 並列版は `--features parallel` で有効化。全バリアントで Fi
 - **`BroadphaseHybrid`** — 動的 body 用 `SpatialGrid` (hash grid) と静的 body 用 `LinearBvh` の 2 層構造（Turn D 5' 案）、per-frame broad-phase コストを `O(N_total log N_total)` から `O(N_dynamic + log N_static)` に削減。推奨 per-frame flow: `clear_dynamic` → `insert_dynamic` × N → `build_dynamic` → `query_pairs`
 - **`FeatherstoneSolver::solve_with_mass_splitting`** — O(n) forward-dynamics ソルバーに mass-ratio 分割 threshold を追加（heavy / light > threshold → `dt / 2` × 2 recursion）、極端な質量比スタックの stiffness 由来 ill-conditioning を緩和。決定論は lookup 不要な乗算比較 + `Fix128::half` で保持（Phase F 11.2、body + 3 tests 完成）
 - **FFI byte-for-byte 決定性** — `AliceVec3Fix128Raw` + `alice_physics_body_get_position_fix128_raw` により Fix128 hi/lo ペアを C ABI 経由で公開。`ffi_contract_gravity_fall_deterministic` は bracket 検証 + world 再構築リプレイの hi/lo 完全一致を assert、Unity / UE5 host が bit パターン一致を検証可能（Phase F 11.3、runtime determinism gate 完成）
+
+- **`GpuSolverBridge` トレイト** (`--features gpu-solver-bridge`) — 外部 GPU オフロードバックエンド (例: ALICE-TRT `TrtSolverAdapter`) 用の opt-in 拡張面。`DiffFixture` / `GpuDivergence` 型を提供し、実装は CPU 側 solver との byte-for-byte 等価性を certify するまで runtime に受理されない。default build は CPU-native TGS pipeline のみを唯一のコードパスとして維持
 
 これらのプリミティブの決定論保証ガードレールは [`deterministic-physics-lockstep-discipline`](https://github.com/ext-sakamoro/claude-config/blob/main/claude-skills/deterministic-physics-lockstep-discipline/SKILL.md) スキル（private reference）に集約されています。
 

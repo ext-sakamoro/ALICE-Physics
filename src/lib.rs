@@ -314,6 +314,8 @@ pub mod sim_modifier;
 
 pub mod physics2d;
 
+#[cfg(feature = "gpu-solver-bridge")]
+pub mod gpu_bridge;
 #[cfg(feature = "std")]
 pub mod sketch;
 pub mod sleeping;
