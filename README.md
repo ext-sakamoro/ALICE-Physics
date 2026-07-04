@@ -1,6 +1,6 @@
 # ALICE-Physics
 
-**Deterministic 128-bit Fixed-Point Physics Engine** - v0.6.0
+**Deterministic 128-bit Fixed-Point Physics Engine** - v0.7.0
 
 English | [日本語](README_JP.md)
 
@@ -111,13 +111,13 @@ Additional building blocks stacked on top of the sub-stepping TGS core:
 
 - **Adaptive sub-stepping** — `AdaptiveSubStepConfig` + `HasVelocity` + `adaptive_substeps_for` compute a deterministic sub-step count from the fastest body's L∞ velocity (Fix128 pure, closed-form, division-free — safe under lockstep and rollback)
 - **CCD-optimised adaptive sub-stepping** — `adaptive_substeps_for_ccd` tightens the per-step translation cap to `smallest_collider_radius × safety_factor`, guaranteeing fast bodies never tunnel through thin walls
-- **Adaptive sub-TOI skeleton** — `adaptive_toi_substeps` bridges Adaptive sub-stepping with the existing `speculative_contact` TOI for pair-wise CCD (Phase F 11.1)
+- **Adaptive sub-TOI** — `adaptive_toi_substeps` bridges Adaptive sub-stepping with the existing `speculative_contact` TOI so a pair on a collision course over `dt` immediately requests `max_substeps` (Phase F 11.1, body complete)
 - **`ImpulseCache` observability** — `hits/misses/stats/hit_rate/reset_stats` expose warm-starting effectiveness so callers can gauge whether contact IDs stay stable across frames (high hit rate) or the scene is churning (low hit rate)
 - **Per-island scoped oriented solve** — `solver_tgs_hooks_6dof_oriented_scoped` extracts an isolated body / contact subset per island for the full 6-DOF oriented hook, prevents gravity double-counting, and preserves bit-perfect parallel-vs-serial equality
 - **`LinearBvh::refit_leaves` (bottom-up)** — retains the flat tree structure while requantising leaf AABBs and propagating unions to internal nodes in the i32 domain (no CORDIC / rounding dependency), enabling `O(N)` refit as an alternative to full rebuild
-- **`BroadphaseHybrid` skeleton** — layers a hash grid over a static BVH (Turn D 5' plan), reducing per-frame broad-phase work from `O(N_total log N_total)` to `O(N_dynamic + log N_static)`
-- **`FeatherstoneSolver::solve_with_mass_splitting` skeleton** — extends the O(n) forward-dynamics solver with a mass-ratio split hint for extreme mass-ratio stacks (Phase F 11.2)
-- **FFI byte-for-byte determinism** — `AliceVec3Fix128Raw` + `alice_physics_body_get_position_fix128_raw` expose Fix128 hi/lo pairs across the C ABI so Unity / UE5 hosts can assert exact bit-pattern equality (Phase F 11.3)
+- **`BroadphaseHybrid`** — layers a `SpatialGrid` hash grid over a static `LinearBvh` (Turn D 5' plan), reducing per-frame broad-phase work from `O(N_total log N_total)` to `O(N_dynamic + log N_static)`. Recommended per-frame flow: `clear_dynamic` → `insert_dynamic` × N → `build_dynamic` → `query_pairs`
+- **`FeatherstoneSolver::solve_with_mass_splitting`** — extends the O(n) forward-dynamics solver with a mass-ratio split threshold (heavy / light > threshold → `dt / 2` × 2 recursion), relieving stiffness-induced ill-conditioning for extreme mass-ratio stacks. Determinism preserved via lookup-free multiplicative comparison and `Fix128::half` (Phase F 11.2, body + 3 tests complete)
+- **FFI byte-for-byte determinism** — `AliceVec3Fix128Raw` + `alice_physics_body_get_position_fix128_raw` expose Fix128 hi/lo pairs across the C ABI. `ffi_contract_gravity_fall_deterministic` asserts a bracket bound plus a full second-world replay that must produce the exact same hi/lo pair, so Unity / UE5 hosts can assert bit-pattern equality (Phase F 11.3, runtime determinism gate complete)
 
 Determinism guardrails for every primitive above are documented in the [`deterministic-physics-lockstep-discipline`](https://github.com/ext-sakamoro/claude-config/blob/main/claude-skills/deterministic-physics-lockstep-discipline/SKILL.md) skill (private reference).
 
