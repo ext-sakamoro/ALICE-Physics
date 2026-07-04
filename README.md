@@ -1,6 +1,6 @@
 # ALICE-Physics
 
-**Deterministic 128-bit Fixed-Point Physics Engine** - v0.7.0
+**Deterministic 128-bit Fixed-Point Physics Engine** - v0.8.0
 
 English | [日本語](README_JP.md)
 
@@ -118,6 +118,8 @@ Additional building blocks stacked on top of the sub-stepping TGS core:
 - **`BroadphaseHybrid`** — layers a `SpatialGrid` hash grid over a static `LinearBvh` (Turn D 5' plan), reducing per-frame broad-phase work from `O(N_total log N_total)` to `O(N_dynamic + log N_static)`. Recommended per-frame flow: `clear_dynamic` → `insert_dynamic` × N → `build_dynamic` → `query_pairs`
 - **`FeatherstoneSolver::solve_with_mass_splitting`** — extends the O(n) forward-dynamics solver with a mass-ratio split threshold (heavy / light > threshold → `dt / 2` × 2 recursion), relieving stiffness-induced ill-conditioning for extreme mass-ratio stacks. Determinism preserved via lookup-free multiplicative comparison and `Fix128::half` (Phase F 11.2, body + 3 tests complete)
 - **FFI byte-for-byte determinism** — `AliceVec3Fix128Raw` + `alice_physics_body_get_position_fix128_raw` expose Fix128 hi/lo pairs across the C ABI. `ffi_contract_gravity_fall_deterministic` asserts a bracket bound plus a full second-world replay that must produce the exact same hi/lo pair, so Unity / UE5 hosts can assert bit-pattern equality (Phase F 11.3, runtime determinism gate complete)
+
+- **`GpuSolverBridge` trait** (`--features gpu-solver-bridge`) — opt-in extension surface for external GPU offload backends (e.g. ALICE-TRT `TrtSolverAdapter`). Ships with `DiffFixture` / `GpuDivergence` types so implementations must certify byte-for-byte equivalence with the CPU-side solver before the runtime accepts them. Default builds keep the CPU-native TGS pipeline as the only code path
 
 Determinism guardrails for every primitive above are documented in the [`deterministic-physics-lockstep-discipline`](https://github.com/ext-sakamoro/claude-config/blob/main/claude-skills/deterministic-physics-lockstep-discipline/SKILL.md) skill (private reference).
 
