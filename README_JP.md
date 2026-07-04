@@ -1,6 +1,6 @@
 # ALICE-Physics
 
-**決定論的128bit固定小数点物理エンジン** - v0.6.0
+**決定論的128bit固定小数点物理エンジン** - v0.7.0
 
 [English](README.md) | 日本語
 
@@ -111,13 +111,13 @@ rayon 並列版は `--features parallel` で有効化。全バリアントで Fi
 
 - **適応的サブステッピング** — `AdaptiveSubStepConfig` + `HasVelocity` + `adaptive_substeps_for` により、最速 body の L∞ 速度から決定論的なサブステップ数を計算（Fix128 pure、closed-form、除算なし — lockstep / rollback で安全）
 - **CCD 最適化適応的サブステッピング** — `adaptive_substeps_for_ccd` は per-step 変位上限を `最小 collider 半径 × 安全係数` に絞り、高速 body が薄い壁を通り抜けないことを保証
-- **適応的サブ-TOI スケルトン** — `adaptive_toi_substeps` は適応的サブステッピングと既存の `speculative_contact` TOI を連携するペア別 CCD の bridge（Phase F 11.1）
+- **適応的サブ-TOI** — `adaptive_toi_substeps` は適応的サブステッピングと既存の `speculative_contact` TOI を連携するペア別 CCD の bridge、collision course pair は即 `max_substeps` を要求（Phase F 11.1、body 完成）
 - **`ImpulseCache` 観測性** — `hits/misses/stats/hit_rate/reset_stats` によりウォームスタートの有効性を可視化、シーンが安定（高 hit rate）か churn 状態（低 hit rate）かを判別
 - **アイランド別スコープ oriented ソルブ** — `solver_tgs_hooks_6dof_oriented_scoped` は完全 6-DOF oriented hook を island 単位で分離、重力の重複積算を防ぎ serial-parallel の bit-perfect 一致を保証
 - **`LinearBvh::refit_leaves`（bottom-up）** — flat tree 構造を保持したまま leaf AABB を requantise、internal node へ i32 domain で union を伝播（CORDIC / rounding 依存なし）、完全 rebuild の代わりに `O(N)` refit を提供
-- **`BroadphaseHybrid` スケルトン** — 動的 body 用 hash grid と静的 body 用 BVH の 2 層構造（Turn D 5' 案）、per-frame broad-phase コストを `O(N_total log N_total)` から `O(N_dynamic + log N_static)` に削減
-- **`FeatherstoneSolver::solve_with_mass_splitting` スケルトン** — O(n) forward-dynamics ソルバーに極端な質量比スタック用の mass-ratio 分割ヒントを追加（Phase F 11.2）
-- **FFI byte-for-byte 決定性** — `AliceVec3Fix128Raw` + `alice_physics_body_get_position_fix128_raw` により Fix128 hi/lo ペアを C ABI 経由で公開、Unity / UE5 host が正確な bit パターン一致を assert 可能（Phase F 11.3）
+- **`BroadphaseHybrid`** — 動的 body 用 `SpatialGrid` (hash grid) と静的 body 用 `LinearBvh` の 2 層構造（Turn D 5' 案）、per-frame broad-phase コストを `O(N_total log N_total)` から `O(N_dynamic + log N_static)` に削減。推奨 per-frame flow: `clear_dynamic` → `insert_dynamic` × N → `build_dynamic` → `query_pairs`
+- **`FeatherstoneSolver::solve_with_mass_splitting`** — O(n) forward-dynamics ソルバーに mass-ratio 分割 threshold を追加（heavy / light > threshold → `dt / 2` × 2 recursion）、極端な質量比スタックの stiffness 由来 ill-conditioning を緩和。決定論は lookup 不要な乗算比較 + `Fix128::half` で保持（Phase F 11.2、body + 3 tests 完成）
+- **FFI byte-for-byte 決定性** — `AliceVec3Fix128Raw` + `alice_physics_body_get_position_fix128_raw` により Fix128 hi/lo ペアを C ABI 経由で公開。`ffi_contract_gravity_fall_deterministic` は bracket 検証 + world 再構築リプレイの hi/lo 完全一致を assert、Unity / UE5 host が bit パターン一致を検証可能（Phase F 11.3、runtime determinism gate 完成）
 
 これらのプリミティブの決定論保証ガードレールは [`deterministic-physics-lockstep-discipline`](https://github.com/ext-sakamoro/claude-config/blob/main/claude-skills/deterministic-physics-lockstep-discipline/SKILL.md) スキル（private reference）に集約されています。
 
