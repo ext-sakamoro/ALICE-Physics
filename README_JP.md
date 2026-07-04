@@ -121,6 +121,36 @@ rayon 並列版は `--features parallel` で有効化。全バリアントで Fi
 
 - **`GpuSolverBridge` トレイト** (`--features gpu-solver-bridge`) — 外部 GPU オフロードバックエンド (例: ALICE-TRT `TrtSolverAdapter`) 用の opt-in 拡張面。`DiffFixture` / `GpuDivergence` 型を提供し、実装は CPU 側 solver との byte-for-byte 等価性を certify するまで runtime に受理されない。default build は CPU-native TGS pipeline のみを唯一のコードパスとして維持
 
+#### コンパニオンクレート — ALICE-TRT（GPU ソルバーオフロード）
+
+[ALICE-TRT v0.2.0+](https://github.com/ext-sakamoro/ALICE-TRT) の `--features physics-solver` とペア。リファレンス実装として `TrtSolverAdapter` を提供します。ALICE-TRT 側で `physics-solver` を有効化すると本クレートの `gpu-solver-bridge` も自動的に enable されるので、feature 行 1 本で両側カバーできます。
+
+```toml
+[dependencies]
+alice-physics = { version = "0.8", features = ["gpu-solver-bridge"] }
+alice-trt     = { version = "0.2", features = ["physics-solver"] }
+```
+
+```rust
+use alice_physics::gpu_bridge::{DiffFixture, GpuSolverBridge};
+use alice_physics::math::Fix128;
+use alice_trt::TrtSolverAdapter;
+
+let mut adapter = TrtSolverAdapter::new();
+adapter.send_island(&positions, &velocities);
+adapter.dispatch_iterations(0, Fix128::from_ratio(1, 60)); // WGSL カーネルは follow-up
+adapter.recv_island(&mut positions, &mut velocities);
+
+// production ゲート: GPU パスを runtime が受理する前に CPU solver との
+// byte-for-byte 等価性を証明する
+adapter.assert_bit_exact_vs_cpu(&DiffFixture {
+    description: "gravity_fall_60_steps",
+    tolerance: Fix128::ZERO,
+})?;
+```
+
+対応リリース: [ALICE-TRT v0.2.0](https://github.com/ext-sakamoro/ALICE-TRT/releases/tag/v0.2.0)。
+
 これらのプリミティブの決定論保証ガードレールは [`deterministic-physics-lockstep-discipline`](https://github.com/ext-sakamoro/claude-config/blob/main/claude-skills/deterministic-physics-lockstep-discipline/SKILL.md) スキル（private reference）に集約されています。
 
 ## 最適化（"黒焦げ" エディション） — 100/100
