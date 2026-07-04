@@ -121,6 +121,36 @@ Additional building blocks stacked on top of the sub-stepping TGS core:
 
 - **`GpuSolverBridge` trait** (`--features gpu-solver-bridge`) — opt-in extension surface for external GPU offload backends (e.g. ALICE-TRT `TrtSolverAdapter`). Ships with `DiffFixture` / `GpuDivergence` types so implementations must certify byte-for-byte equivalence with the CPU-side solver before the runtime accepts them. Default builds keep the CPU-native TGS pipeline as the only code path
 
+#### Companion crate — ALICE-TRT (GPU solver offload)
+
+Pair with [ALICE-TRT v0.2.0+](https://github.com/ext-sakamoro/ALICE-TRT) `--features physics-solver` for the reference `GpuSolverBridge` implementation (`TrtSolverAdapter`). Enabling `physics-solver` on ALICE-TRT automatically activates `gpu-solver-bridge` on this crate, so a single feature line covers both sides.
+
+```toml
+[dependencies]
+alice-physics = { version = "0.8", features = ["gpu-solver-bridge"] }
+alice-trt     = { version = "0.2", features = ["physics-solver"] }
+```
+
+```rust
+use alice_physics::gpu_bridge::{DiffFixture, GpuSolverBridge};
+use alice_physics::math::Fix128;
+use alice_trt::TrtSolverAdapter;
+
+let mut adapter = TrtSolverAdapter::new();
+adapter.send_island(&positions, &velocities);
+adapter.dispatch_iterations(0, Fix128::from_ratio(1, 60)); // WGSL kernels land in follow-up
+adapter.recv_island(&mut positions, &mut velocities);
+
+// Production gate: certify byte-for-byte equivalence with the CPU solver
+// before accepting the GPU path at runtime.
+adapter.assert_bit_exact_vs_cpu(&DiffFixture {
+    description: "gravity_fall_60_steps",
+    tolerance: Fix128::ZERO,
+})?;
+```
+
+Companion release: [ALICE-TRT v0.2.0](https://github.com/ext-sakamoro/ALICE-TRT/releases/tag/v0.2.0).
+
 Determinism guardrails for every primitive above are documented in the [`deterministic-physics-lockstep-discipline`](https://github.com/ext-sakamoro/claude-config/blob/main/claude-skills/deterministic-physics-lockstep-discipline/SKILL.md) skill (private reference).
 
 ## Optimizations ("黒焦げ" Edition) — 100/100
