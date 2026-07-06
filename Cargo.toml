@@ -55,6 +55,10 @@ required-features = ["std"]
 name = "physics_bench"
 harness = false
 
+[[bench]]
+name = "stage_breakdown"
+harness = false
+
 [profile.release]
 opt-level = 3
 lto = "fat"
