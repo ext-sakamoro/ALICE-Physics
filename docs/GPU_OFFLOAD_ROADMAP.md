@@ -111,6 +111,39 @@ Only proceed with GPU BVH / narrow-phase / CCD after:
 
 Absent that evidence, the Phase 3 stages are premature optimisation.
 
+### Phase 3 gate status (updated 2026-07-07)
+
+**Gates 1 and 2 are satisfied.** Gate 3 is deferred to Phase 3 design.
+
+#### Gate 1: collider-attached bench variant ✅
+
+`benches/stage_breakdown_collider.rs` (commit `ac7d1b1`, 2026-07-06) measures the pile workload with and without attached `Sphere` colliders via `add_body_with_radius`. The delta between the two runs is the effective narrow-phase + post-collision solver cost — the same workload shape as `stage_breakdown` but with real collider attachment instead of the no-op fast-path.
+
+#### Gate 2: >30% of frame time in narrow-phase + PGS ✅
+
+Initial `--quick` measurements (MacBook M2 Max):
+
+| N | `pile_no_collider` | `pile_with_collider` | delta | delta / total |
+|---|---|---|---|---|
+| 100 | 41.5 ms | 1583 ms | +1542 ms | **97.4%** |
+| 1000 | 316 ms | 152740 ms | +152424 ms | **99.8%** |
+| 10000 | 3063 ms | (compute-heavy, deferred) | — | — |
+
+Narrow-phase + PGS contact solve dominates the frame at every scale that fits in `--quick` measurement. The 30% threshold is exceeded by more than 3x at N=100 and by more than 3x again at N=1000. GPU offload for these stages is now data-justified rather than intuition-driven.
+
+#### Gate 3: target workload as user requirement — deferred
+
+Gate 3 formalises that a real caller cares about the measured workload. This is a documentation / scoping task rather than a measurement one, and lands with Phase 3 design (v2.1+ series in ALICE-TRT). The measurement above lifts the "premature optimisation" concern; explicit workload documentation lands when Phase 3 kernel work begins.
+
+#### Prerequisites for Phase 3 design
+
+Before kernel work starts, `deterministic-physics-lockstep-discipline` §11.4 must be revisited: GPU BVH construction must preserve the escape-pointer forward-monotonic invariant (position-independent placeholder + build-time `debug_assert!` + traversal cycle guard). The CPU BVH's July 2026 correctness fix (ALICE-Physics `dede78c`) is the canonical reference implementation for how the GPU port must behave.
+
+#### Notes for ALICE-TRT release cadence
+
+- **v2.0.0** (2026-07-07) — Phase 2 removal wrap-up + Phase 3 gate declaration in the CHANGELOG. No Phase 3 kernel work in the crate yet.
+- **v2.1+** — Phase 3 kernel work begins here. Same additive semver posture as the Phase 1 / v1.4.x series: new WGSL kernels published under fresh constant names, `pub` API is additive, byte-exact CPU golden lands with each kernel.
+
 ## Determinism guardrails
 
 All Phase 1 and Phase 2 work must continue to observe the five determinism-breaking routes catalogued in `deterministic-physics-lockstep-discipline`:
