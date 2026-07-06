@@ -567,6 +567,43 @@ ALICE-Physics guarantees **bit-exact results** everywhere, enabling:
 
 ## Usage
 
+### Choose Your Path
+
+Pick the entry point that matches your role. All paths share the same deterministic `PhysicsWorld`, so you can start simple and layer in advanced features (rollback / GPU offload / joints) later without rewriting.
+
+| You are… | Path | Best for | Section |
+|----------|------|----------|---------|
+| **First time here** | [Hello, first physics](#hello-first-physics-30-seconds) ↓ | Sanity-check the install with a falling sphere | ↓ |
+| **Simulation dev, want the basics** | [Basic Simulation](#basic-simulation) | Rigid bodies, gravity, ground, per-frame stepping | ↓ |
+| **Netcode / lockstep game dev** | [Rollback Netcode](#rollback-netcode) | Snapshot save/load, deterministic replay, Fix128 bit-exact | ↓ |
+| **Rope / cloth / constraint dev** | [Distance Constraint](#distance-constraint-ropechain) + `joint` module | Chains, ropes, ragdolls, breakable constraints | ↓ |
+| **Perf-sensitive (many bodies)** | [BVH Broad-Phase](#bvh-broad-phase-collision) | Spatial acceleration, zero-alloc queries, Morton codes | ↓ |
+| **GPU offload (advanced)** | [GPU Solver Bridge](#companion-crate--alice-trt-gpu-solver-offload) | PGS iteration on GPU via ALICE-TRT, byte-exact vs CPU | ↑ |
+| **Unity / UE5 / Godot integrator** | C-ABI FFI | Fix128 hi/lo pairs across the C ABI, bit-pattern equality | see `alice_physics_ffi::*` |
+| **CCD / raycast / trimesh user** | Module-specific | `ccd` / `raycast` / `trimesh` modules with dedicated APIs | see [Modules](#modules) |
+
+### Hello, First Physics (30 seconds)
+
+The smallest working sample — one falling sphere onto static ground, step it, print the y-coord:
+
+```rust
+use alice_physics::prelude::*;
+
+let mut world = PhysicsWorld::new(PhysicsConfig::default());
+
+let sphere = RigidBody::new_dynamic(Vec3Fix::from_int(0, 10, 0), Fix128::ONE);
+let _sphere_id = world.add_body(sphere);
+world.add_body(RigidBody::new_static(Vec3Fix::ZERO));   // ground plane at y=0
+
+let dt = Fix128::from_ratio(1, 60);
+for frame in 0..60 {
+    world.step(dt);
+    println!("frame {frame}: y = {}", world.bodies[0].position.y.hi);
+}
+```
+
+Once this runs, jump to the path that matches your role.
+
 ### Basic Simulation
 
 ```rust
@@ -700,6 +737,96 @@ let hits = bvh.query(&query_aabb);
 let stats = bvh.stats();
 println!("Nodes: {}, Leaves: {}", stats.node_count, stats.leaf_count);
 ```
+
+### Common Recipes
+
+Additional patterns that come up frequently — copy-paste starting points.
+
+**1. Raycast against the world**
+
+```rust
+use alice_physics::prelude::*;
+
+let ray = Ray {
+    origin:    Vec3Fix::from_int(0, 5, 0),
+    direction: Vec3Fix::from_int(0, -1, 0),   // straight down
+    max_distance: Fix128::from_int(100),
+};
+if let Some(hit) = world.raycast(&ray) {
+    println!("hit body {} at distance {}", hit.body_id, hit.distance.hi);
+}
+```
+
+**2. Put idle bodies to sleep (perf win)**
+
+```rust
+// PhysicsConfig has sleeping enabled by default; tune the thresholds when needed.
+let mut config = PhysicsConfig::default();
+config.sleeping.linear_threshold  = Fix128::from_ratio(1, 100);   // 0.01 m/s
+config.sleeping.angular_threshold = Fix128::from_ratio(1, 100);
+config.sleeping.time_to_sleep     = Fix128::from_ratio(1, 2);     // 0.5 s
+let mut world = PhysicsWorld::new(config);
+```
+
+**3. Breakable constraint (rope snap under load)**
+
+```rust
+let constraint = DistanceConstraint {
+    body_a: a,
+    body_b: b,
+    local_anchor_a: Vec3Fix::ZERO,
+    local_anchor_b: Vec3Fix::ZERO,
+    target_distance: Fix128::from_int(2),
+    compliance:      Fix128::from_ratio(1, 1000),
+};
+let id = world.add_distance_constraint(constraint);
+world.set_constraint_break_force(id, Fix128::from_int(500));   // snaps > 500 N
+```
+
+**4. Static-ground quick setup**
+
+```rust
+let ground = RigidBody::new_static(Vec3Fix::ZERO);
+let ground_id = world.add_body(ground);
+world.set_collider(ground_id, Collider::plane(Vec3Fix::from_int(0, 1, 0), Fix128::ZERO));
+```
+
+**5. Save + reload a snapshot (rollback primitive)**
+
+```rust
+let snapshot: Vec<u8> = world.serialize_state();     // byte-exact across arch
+// ... later, or on another machine:
+world.deserialize_state(&snapshot);                  // resumes at frame boundary
+```
+
+**6. Continuous collision (fast-moving projectile)**
+
+```rust
+use alice_physics::ccd;
+
+let bullet = RigidBody::new_dynamic(Vec3Fix::from_int(0, 0, 0), Fix128::ONE);
+let bullet_id = world.add_body(bullet);
+world.enable_ccd(bullet_id);   // subswept collision, avoids tunneling
+```
+
+### Where to go next
+
+| I want to… | See |
+|------------|-----|
+| Understand the full type surface | [Modules](#modules) section below |
+| Deep dive into determinism guarantees | [Why Deterministic Physics?](#why-deterministic-physics) |
+| Offload PGS iterations to the GPU | [Companion crate — ALICE-TRT](#companion-crate--alice-trt-gpu-solver-offload) |
+| Wire into Unity / UE5 native plugin | `alice_physics_ffi::*` (module in this crate) |
+| See the joint catalog (12 base + 5 advanced) | [`joint`](#joint---12-joint-types--breakable-constraints) / [`joint_extra`](#joint_extra---5-advanced-joints-v050) sections |
+| Prove byte-exact CI on 3 platforms | See ALICE-TRT's Fix128 + physics-solver test matrix (companion release) |
+| Compare to Rapier / PhysX / Box2D | [Why Deterministic Physics?](#why-deterministic-physics) benchmark table |
+
+Companion crates that plug directly into `PhysicsWorld`:
+
+- **[ALICE-TRT](https://github.com/ext-sakamoro/ALICE-TRT)** (`gpu-solver-bridge` feature) — GPU PGS solver offload with byte-exact CPU parity
+- **[ALICE-Cloth](https://github.com/ext-sakamoro/ALICE-Cloth)** — XPBD cloth on top of the same Fix128 primitives
+- **[ALICE-Vehicle](https://github.com/ext-sakamoro/ALICE-Vehicle)** — Deterministic vehicle rig
+- **[ALICE-Netcode](https://github.com/ext-sakamoro/ALICE-Netcode)** — Rollback netcode plumbing built for `serialize_state` / `deserialize_state`
 
 ## Modules
 
