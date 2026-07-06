@@ -99,6 +99,15 @@ pub fn point_to_morton(point: Vec3Fix, bounds: &AABB) -> u64 {
 /// Sentinel value for "no escape" (end of traversal)
 pub const ESCAPE_NONE: u32 = u32::MAX;
 
+/// Placeholder escape target for a LEFT subtree's descendants whose
+/// correct escape (= the right sibling's index) is not yet known at
+/// push time. Value `0` is safe because index 0 is always the tree
+/// root and escape pointers strictly move forward — no legitimate
+/// escape target is ever `0`. `build_recursive` sweeps this
+/// placeholder into the real right-sibling index in a single linear
+/// pass over the left subtree once its size is known.
+const LEFT_ESCAPE_PLACEHOLDER: u32 = 0;
+
 /// BVH node (32 bytes, cache-line friendly)
 ///
 /// Layout optimized for stackless traversal:
@@ -298,12 +307,39 @@ impl LinearBvh {
         let prim_indices: Vec<u32> = primitives.iter().map(|p| p.index).collect();
 
         Self::build_recursive(&mut nodes, &primitives, 0, primitives.len(), ESCAPE_NONE);
+        debug_assert!(Self::debug_verify_escape_forward(&nodes));
 
         Self {
             nodes,
             primitives: prim_indices,
             bounds,
         }
+    }
+
+    /// Debug-only invariant: every escape pointer must be either
+    /// [`ESCAPE_NONE`] or a strictly-greater node index.
+    /// Backward escape pointers form cycles in stackless traversal
+    /// (see `find_pairs`) and drive unbounded push into the pair Vec
+    /// until OOM — this was the root cause of the 5 GB / n=50 crash
+    /// before the placeholder=0 rewrite of `build_recursive`.
+    #[cfg(debug_assertions)]
+    fn debug_verify_escape_forward(nodes: &[BvhNode]) -> bool {
+        for (i, node) in nodes.iter().enumerate() {
+            let esc = node.escape_idx();
+            if esc == ESCAPE_NONE {
+                continue;
+            }
+            if (esc as usize) <= i {
+                return false;
+            }
+        }
+        true
+    }
+
+    #[cfg(not(debug_assertions))]
+    #[inline]
+    fn debug_verify_escape_forward(_nodes: &[BvhNode]) -> bool {
+        true
     }
 
     /// Refit-only path (position update, tree structure preserved).
@@ -416,6 +452,28 @@ impl LinearBvh {
     }
 
     /// Recursive build with escape pointer assignment
+    /// Recursively build a subtree covering `primitives[start..end]`.
+    ///
+    /// Returns the subtree size (number of nodes pushed by this call
+    /// including nested descendants). The caller uses this to compute
+    /// the right sibling's starting index without a second pass.
+    ///
+    /// Escape pointer convention: the LEFT child of an internal node
+    /// cannot know its correct escape (= right sibling's index) at
+    /// push time because the right subtree has not been built yet. We
+    /// push it with the reserved placeholder `LEFT_ESCAPE_PLACEHOLDER`
+    /// (= 0, which is never a legal escape target because index 0 is
+    /// the tree root and escapes always move forward), and after the
+    /// left subtree is fully built we scan `nodes[left_idx..right_idx]`
+    /// in a single pass, replacing every placeholder with the real
+    /// right sibling index.
+    ///
+    /// The previous implementation walked only the leftmost spine via
+    /// a recursive `update_escape` and matched on `old_escape == root+1`,
+    /// which unintentionally overwrote nested placeholders at deeper
+    /// levels with the outer right-sibling index — producing backward
+    /// escape pointers that formed cycles in stackless traversal and
+    /// drove `find_pairs` into OOM push loops (5 GB at n=50 pile).
     fn build_recursive(
         nodes: &mut Vec<BvhNode>,
         primitives: &[BvhPrimitive],
@@ -435,51 +493,43 @@ impl LinearBvh {
         if count <= 4 {
             // Leaf node
             nodes.push(BvhNode::leaf(&aabb, start as u32, count as u32, escape_idx));
-        } else {
-            // Internal node - placeholder, will be updated after children
-            nodes.push(BvhNode::internal(&aabb, 0, escape_idx));
-
-            // Find split point using Morton codes
-            let mid = Self::find_split(primitives, start, end);
-
-            // Build left child (escape to right child)
-            let left_idx = nodes.len();
-            Self::build_recursive(nodes, primitives, start, mid, left_idx as u32 + 1);
-
-            // Build right child (escape to parent's escape)
-            let right_idx = nodes.len();
-            Self::build_recursive(nodes, primitives, mid, end, escape_idx);
-
-            // Update this node's first_child pointer
-            nodes[node_idx].first_child_or_prim = left_idx as u32;
-
-            // Update left subtree's escape pointers to point to right subtree
-            Self::update_escape(nodes, left_idx, right_idx as u32);
+            return 1;
         }
 
-        node_idx
-    }
+        // Internal node — its own escape is already the caller-supplied value
+        // (either parent's escape for a right child, or the placeholder set by
+        // the outer level for a left child; the outer level will fix that).
+        nodes.push(BvhNode::internal(&aabb, 0, escape_idx));
 
-    /// Update escape pointers in a subtree
-    fn update_escape(nodes: &mut [BvhNode], root: usize, new_escape: u32) {
-        let old_escape = nodes[root].escape_idx();
+        // Find split point using Morton codes
+        let mid = Self::find_split(primitives, start, end);
 
-        // Only update if this node's escape pointed to the placeholder
-        if old_escape == root as u32 + 1 {
-            let prim_count = nodes[root].prim_count();
-            nodes[root].prim_count_escape = (prim_count << 24) | (new_escape & 0x00FFFFFF);
-        }
+        // Build LEFT subtree with placeholder escape — no descendant can know
+        // the right sibling's index yet.
+        let left_idx = nodes.len();
+        let left_size =
+            Self::build_recursive(nodes, primitives, start, mid, LEFT_ESCAPE_PLACEHOLDER);
+        let right_idx = (left_idx + left_size) as u32;
 
-        // Recursively update children if internal node
-        if !nodes[root].is_leaf() {
-            let first_child = nodes[root].first_child_or_prim as usize;
-            if first_child < nodes.len() {
-                Self::update_escape(nodes, first_child, new_escape);
-                if first_child + 1 < nodes.len() {
-                    // Right child's escape is already correct (parent's escape)
-                }
+        // Build RIGHT subtree — its rightmost descendants inherit our escape.
+        let right_size = Self::build_recursive(nodes, primitives, mid, end, escape_idx);
+
+        // Update this node's first_child pointer
+        nodes[node_idx].first_child_or_prim = left_idx as u32;
+
+        // Fix every placeholder in the left subtree in a single pass.
+        // Only nodes whose escape currently equals LEFT_ESCAPE_PLACEHOLDER
+        // are touched — this is position-independent and safe under
+        // arbitrary recursion depth.
+        let end_of_left = left_idx + left_size;
+        for slot in &mut nodes[left_idx..end_of_left] {
+            if slot.escape_idx() == LEFT_ESCAPE_PLACEHOLDER {
+                let prim_count = slot.prim_count();
+                slot.prim_count_escape = (prim_count << 24) | (right_idx & 0x00FFFFFF);
             }
         }
+
+        1 + left_size + right_size
     }
 
     /// Find split point based on highest differing bit in Morton codes
