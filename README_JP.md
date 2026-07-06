@@ -567,6 +567,43 @@ ALICE-Physicsは**どこでもビット精度の結果**を保証し、以下を
 
 ## 使い方
 
+### パスを選ぶ
+
+役割ごとに最適な入り口を選んでください。全パスは同じ決定論的 `PhysicsWorld` を共有するので、シンプルに始めて後から rollback / GPU オフロード / joint を積み増しできます。
+
+| あなたは… | パス | 用途 | セクション |
+|-----------|------|-----|-----------|
+| **初めて触る** | [Hello, first physics](#hello-first-physics-30-秒) ↓ | インストール確認、落下する球体 1 個 | ↓ |
+| **物理シミュ入門** | [基本シミュレーション](#基本シミュレーション) | 剛体・重力・地面・毎フレームステップ | ↓ |
+| **ネットコード / lockstep ゲーム** | [ロールバック ネットコード](#ロールバック-ネットコード) | Snapshot 保存/読込、決定論的リプレイ、Fix128 bit-exact | ↓ |
+| **ロープ / cloth / 制約** | [距離制約](#距離制約-ロープチェーン) + `joint` モジュール | チェーン、ロープ、ragdoll、破断可能制約 | ↓ |
+| **多数の body を捌く** | [BVH ブロードフェーズ](#bvhブロードフェーズ衝突) | 空間加速、zero-alloc クエリ、Morton | ↓ |
+| **GPU オフロード (上級)** | [GPU Solver Bridge](#コンパニオンクレート--alice-trtgpu-ソルバーオフロード) | ALICE-TRT 経由の GPU PGS、CPU と byte-exact | ↑ |
+| **Unity / UE5 / Godot 統合** | C-ABI FFI | Fix128 hi/lo ペアを C ABI で公開、bit パターン一致 | `alice_physics_ffi::*` |
+| **CCD / raycast / trimesh** | モジュール個別 | `ccd` / `raycast` / `trimesh` 専用 API | [モジュール](#モジュール) 参照 |
+
+### Hello, First Physics (30 秒)
+
+最小の動くサンプル — 静的地面に球体 1 個を落として y 座標を毎フレーム出力:
+
+```rust
+use alice_physics::prelude::*;
+
+let mut world = PhysicsWorld::new(PhysicsConfig::default());
+
+let sphere = RigidBody::new_dynamic(Vec3Fix::from_int(0, 10, 0), Fix128::ONE);
+let _sphere_id = world.add_body(sphere);
+world.add_body(RigidBody::new_static(Vec3Fix::ZERO));   // y=0 の地面
+
+let dt = Fix128::from_ratio(1, 60);
+for frame in 0..60 {
+    world.step(dt);
+    println!("frame {frame}: y = {}", world.bodies[0].position.y.hi);
+}
+```
+
+これが動いたら、表の中から自分の役割に合ったパスに進んでください。
+
 ### 基本シミュレーション
 
 ```rust
@@ -700,6 +737,96 @@ let hits = bvh.query(&query_aabb);
 let stats = bvh.stats();
 println!("ノード数: {}, リーフ数: {}", stats.node_count, stats.leaf_count);
 ```
+
+### よく使うレシピ
+
+繰り返し出てくるパターンをコピペしやすい形で。
+
+**1. 世界に対する raycast**
+
+```rust
+use alice_physics::prelude::*;
+
+let ray = Ray {
+    origin:    Vec3Fix::from_int(0, 5, 0),
+    direction: Vec3Fix::from_int(0, -1, 0),   // 真下
+    max_distance: Fix128::from_int(100),
+};
+if let Some(hit) = world.raycast(&ray) {
+    println!("body {} に距離 {} で hit", hit.body_id, hit.distance.hi);
+}
+```
+
+**2. 停止した body を sleep させる (性能)**
+
+```rust
+// PhysicsConfig は sleeping デフォルト有効、閾値だけ調整
+let mut config = PhysicsConfig::default();
+config.sleeping.linear_threshold  = Fix128::from_ratio(1, 100);   // 0.01 m/s
+config.sleeping.angular_threshold = Fix128::from_ratio(1, 100);
+config.sleeping.time_to_sleep     = Fix128::from_ratio(1, 2);     // 0.5 秒
+let mut world = PhysicsWorld::new(config);
+```
+
+**3. 破断する制約 (負荷でロープが千切れる)**
+
+```rust
+let constraint = DistanceConstraint {
+    body_a: a,
+    body_b: b,
+    local_anchor_a: Vec3Fix::ZERO,
+    local_anchor_b: Vec3Fix::ZERO,
+    target_distance: Fix128::from_int(2),
+    compliance:      Fix128::from_ratio(1, 1000),
+};
+let id = world.add_distance_constraint(constraint);
+world.set_constraint_break_force(id, Fix128::from_int(500));   // > 500 N で破断
+```
+
+**4. 静的地面のクイックセットアップ**
+
+```rust
+let ground = RigidBody::new_static(Vec3Fix::ZERO);
+let ground_id = world.add_body(ground);
+world.set_collider(ground_id, Collider::plane(Vec3Fix::from_int(0, 1, 0), Fix128::ZERO));
+```
+
+**5. Snapshot 保存 + 再読込 (rollback プリミティブ)**
+
+```rust
+let snapshot: Vec<u8> = world.serialize_state();     // arch 越しに byte-exact
+// ... 後で、または別マシンで:
+world.deserialize_state(&snapshot);                  // frame 境界から再開
+```
+
+**6. Continuous collision (高速射出物)**
+
+```rust
+use alice_physics::ccd;
+
+let bullet = RigidBody::new_dynamic(Vec3Fix::from_int(0, 0, 0), Fix128::ONE);
+let bullet_id = world.add_body(bullet);
+world.enable_ccd(bullet_id);   // sub-sweep 判定、貫通防止
+```
+
+### 次に見るべきドキュメント
+
+| やりたいこと | 参照先 |
+|------------|-------|
+| 型表面を全体把握 | 下の [モジュール](#モジュール) セクション |
+| 決定性保証を深掘り | [決定論的物理エンジンが必要な理由](#決定論的物理エンジンが必要な理由) |
+| PGS を GPU にオフロード | [コンパニオンクレート — ALICE-TRT](#コンパニオンクレート--alice-trtgpu-ソルバーオフロード) |
+| Unity / UE5 ネイティブプラグイン統合 | `alice_physics_ffi::*` (本 crate 内モジュール) |
+| Joint カタログ (12 基本 + 5 応用) | [`joint`](#joint---12-種類のジョイント--breakable-constraints) / [`joint_extra`](#joint_extra---5種類の高度なジョイントv050) セクション |
+| 3 プラットフォーム CI byte-exact 保証 | ALICE-TRT の Fix128 + physics-solver test マトリクス (companion release) |
+| Rapier / PhysX / Box2D と比較 | [決定論的物理エンジンが必要な理由](#決定論的物理エンジンが必要な理由) ベンチマーク表 |
+
+`PhysicsWorld` に直接プラグインできるコンパニオンクレート:
+
+- **[ALICE-TRT](https://github.com/ext-sakamoro/ALICE-TRT)** (`gpu-solver-bridge` feature) — GPU PGS ソルバーオフロード、CPU と byte-exact
+- **[ALICE-Cloth](https://github.com/ext-sakamoro/ALICE-Cloth)** — 同じ Fix128 プリミティブ上の XPBD cloth
+- **[ALICE-Vehicle](https://github.com/ext-sakamoro/ALICE-Vehicle)** — 決定論的な車両リグ
+- **[ALICE-Netcode](https://github.com/ext-sakamoro/ALICE-Netcode)** — `serialize_state` / `deserialize_state` に載せた rollback ネットコード配管
 
 ## モジュール
 
