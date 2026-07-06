@@ -115,10 +115,7 @@ fn workload_chain(n: usize) -> PhysicsWorld {
     let mut world = PhysicsWorld::new(config);
     let mut prev = None;
     for i in 0..n {
-        let body = RigidBody::new_dynamic(
-            Vec3Fix::from_int(i as i64 * 2, 50, 0),
-            Fix128::ONE,
-        );
+        let body = RigidBody::new_dynamic(Vec3Fix::from_int(i as i64 * 2, 50, 0), Fix128::ONE);
         let id = world.add_body(body);
         if let Some(p) = prev {
             world.add_distance_constraint(
