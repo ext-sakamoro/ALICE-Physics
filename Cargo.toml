@@ -59,6 +59,10 @@ harness = false
 name = "stage_breakdown"
 harness = false
 
+[[bench]]
+name = "stage_breakdown_collider"
+harness = false
+
 [profile.release]
 opt-level = 3
 lto = "fat"
