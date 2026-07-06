@@ -123,33 +123,40 @@ rayon 並列版は `--features parallel` で有効化。全バリアントで Fi
 
 #### コンパニオンクレート — ALICE-TRT（GPU ソルバーオフロード）
 
-[ALICE-TRT v0.2.0+](https://github.com/ext-sakamoro/ALICE-TRT) の `--features physics-solver` とペア。リファレンス実装として `TrtSolverAdapter` を提供します。ALICE-TRT 側で `physics-solver` を有効化すると本クレートの `gpu-solver-bridge` も自動的に enable されるので、feature 行 1 本で両側カバーできます。
+[ALICE-TRT v1.0.0+](https://github.com/ext-sakamoro/ALICE-TRT) の `--features physics-solver` とペア。リファレンス実装として `TrtSolverAdapter` を提供します。ALICE-TRT 側で `physics-solver` を有効化すると本クレートの `gpu-solver-bridge` も自動的に enable されるので、feature 行 1 本で両側カバーできます。**ALICE-TRT v1.x は semver 安定** — 公開 adapter 表面 (`send_island` / `dispatch_iterations` / `set_gravity` / `set_floor` / `push_distance_constraint` / `recv_island` / `assert_bit_exact_vs_cpu`) は v1.x 系で bytes-stable。
 
 ```toml
 [dependencies]
 alice-physics = { version = "0.8", features = ["gpu-solver-bridge"] }
-alice-trt     = { version = "0.2", features = ["physics-solver"] }
+alice-trt     = { version = "1.3", features = ["physics-solver"] }
 ```
 
 ```rust
 use alice_physics::gpu_bridge::{DiffFixture, GpuSolverBridge};
 use alice_physics::math::Fix128;
-use alice_trt::TrtSolverAdapter;
+use alice_trt::{GpuDevice, TrtSolverAdapter};
 
-let mut adapter = TrtSolverAdapter::new();
+// Live PGS ディスパッチ (integrate + 重力 + 床 + N 個距離制約)
+let device = GpuDevice::new()?;
+let mut adapter = TrtSolverAdapter::new(&device);
+
 adapter.send_island(&positions, &velocities);
-adapter.dispatch_iterations(0, Fix128::from_ratio(1, 60)); // WGSL カーネルは follow-up
+adapter.set_gravity(Some([Fix128::ZERO, Fix128::from_ratio(-98, 10), Fix128::ZERO]));
+adapter.set_floor(Some(Fix128::ZERO));
+adapter.push_distance_constraint(0, 1, Fix128::from_int(2));   // Gauss-Seidel 順
+adapter.push_distance_constraint(1, 2, Fix128::from_int(2));
+
+adapter.dispatch_iterations(10, Fix128::from_ratio(1, 60));    // 実 GPU dispatch、no-op ではない
 adapter.recv_island(&mut positions, &mut velocities);
 
-// production ゲート: GPU パスを runtime が受理する前に CPU solver との
-// byte-for-byte 等価性を証明する
+// production gate: CPU 側 solver と byte-for-byte 等価を検証
 adapter.assert_bit_exact_vs_cpu(&DiffFixture {
-    description: "gravity_fall_60_steps",
+    description: "3body_triangle_10iter",
     tolerance: Fix128::ZERO,
 })?;
 ```
 
-対応リリース: [ALICE-TRT v0.2.0](https://github.com/ext-sakamoro/ALICE-TRT/releases/tag/v0.2.0)。
+対応リリース: [ALICE-TRT v1.3.1](https://github.com/ext-sakamoro/ALICE-TRT/releases/tag/v1.3.1) (最新)。全 ALICE-TRT リリースを macOS (Metal) / Ubuntu (Vulkan lavapipe) / Windows (DX12 WARP) 3 プラットフォームで 37 Fix128 単体テスト + 170 physics-solver テスト、CPU golden との byte-exact 検証済み。
 
 これらのプリミティブの決定論保証ガードレールは [`deterministic-physics-lockstep-discipline`](https://github.com/ext-sakamoro/claude-config/blob/main/claude-skills/deterministic-physics-lockstep-discipline/SKILL.md) スキル（private reference）に集約されています。
 
