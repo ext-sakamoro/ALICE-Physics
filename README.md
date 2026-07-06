@@ -123,33 +123,40 @@ Additional building blocks stacked on top of the sub-stepping TGS core:
 
 #### Companion crate — ALICE-TRT (GPU solver offload)
 
-Pair with [ALICE-TRT v0.2.0+](https://github.com/ext-sakamoro/ALICE-TRT) `--features physics-solver` for the reference `GpuSolverBridge` implementation (`TrtSolverAdapter`). Enabling `physics-solver` on ALICE-TRT automatically activates `gpu-solver-bridge` on this crate, so a single feature line covers both sides.
+Pair with [ALICE-TRT v1.0.0+](https://github.com/ext-sakamoro/ALICE-TRT) `--features physics-solver` for the reference `GpuSolverBridge` implementation (`TrtSolverAdapter`). Enabling `physics-solver` on ALICE-TRT automatically activates `gpu-solver-bridge` on this crate, so a single feature line covers both sides. **ALICE-TRT v1.x is semver-stable** — public adapter surface (`send_island` / `dispatch_iterations` / `set_gravity` / `set_floor` / `push_distance_constraint` / `recv_island` / `assert_bit_exact_vs_cpu`) is byte-stable across the v1.x line.
 
 ```toml
 [dependencies]
 alice-physics = { version = "0.8", features = ["gpu-solver-bridge"] }
-alice-trt     = { version = "0.2", features = ["physics-solver"] }
+alice-trt     = { version = "1.3", features = ["physics-solver"] }
 ```
 
 ```rust
 use alice_physics::gpu_bridge::{DiffFixture, GpuSolverBridge};
 use alice_physics::math::Fix128;
-use alice_trt::TrtSolverAdapter;
+use alice_trt::{GpuDevice, TrtSolverAdapter};
 
-let mut adapter = TrtSolverAdapter::new();
+// Live PGS dispatch (integrate + gravity + floor + multi-distance constraints)
+let device = GpuDevice::new()?;
+let mut adapter = TrtSolverAdapter::new(&device);
+
 adapter.send_island(&positions, &velocities);
-adapter.dispatch_iterations(0, Fix128::from_ratio(1, 60)); // WGSL kernels land in follow-up
+adapter.set_gravity(Some([Fix128::ZERO, Fix128::from_ratio(-98, 10), Fix128::ZERO]));
+adapter.set_floor(Some(Fix128::ZERO));
+adapter.push_distance_constraint(0, 1, Fix128::from_int(2));   // Gauss-Seidel ordered
+adapter.push_distance_constraint(1, 2, Fix128::from_int(2));
+
+adapter.dispatch_iterations(10, Fix128::from_ratio(1, 60));    // real GPU dispatch, not a stub
 adapter.recv_island(&mut positions, &mut velocities);
 
-// Production gate: certify byte-for-byte equivalence with the CPU solver
-// before accepting the GPU path at runtime.
+// Production gate: certify byte-for-byte equivalence with the CPU solver.
 adapter.assert_bit_exact_vs_cpu(&DiffFixture {
-    description: "gravity_fall_60_steps",
+    description: "3body_triangle_10iter",
     tolerance: Fix128::ZERO,
 })?;
 ```
 
-Companion release: [ALICE-TRT v0.2.0](https://github.com/ext-sakamoro/ALICE-TRT/releases/tag/v0.2.0).
+Companion releases: [ALICE-TRT v1.3.1](https://github.com/ext-sakamoro/ALICE-TRT/releases/tag/v1.3.1) (latest). Every ALICE-TRT release is validated on macOS (Metal) / Ubuntu (Vulkan lavapipe) / Windows (DX12 WARP) with 37 Fix128 unit tests + 170 physics-solver tests, all byte-exact against the CPU golden.
 
 Determinism guardrails for every primitive above are documented in the [`deterministic-physics-lockstep-discipline`](https://github.com/ext-sakamoro/claude-config/blob/main/claude-skills/deterministic-physics-lockstep-discipline/SKILL.md) skill (private reference).
 
