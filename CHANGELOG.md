@@ -2,6 +2,31 @@
 
 All notable changes to ALICE-Physics will be documented in this file.
 
+## [0.10.0] - 2026-07-07
+
+### Added — `PhysicsWorld` helper methods for bridge-routed contact solve
+
+Adds three public methods on `PhysicsWorld` that route the PGS contact-solve stage through a caller-supplied `&mut dyn GpuSolverBridge` while keeping the surrounding pipeline (integrate + distance + joint + velocity update) on the CPU. Zero storage of the bridge inside `PhysicsWorld` — the bridge is passed by mutable reference per call, so no lifetime or `Send + Sync` bound is imposed on the world. This is the pragmatic realisation of the v0.9.0 `GpuSolverBridge` contact-solve trait extension for callers that want end-to-end GPU offload of the numeric hot path without the `PhysicsWorld` storing a boxed trait object.
+
+- **`PhysicsWorld::solve_contact_constraints_with_bridge<B: GpuSolverBridge + ?Sized>(&mut self, bridge: &mut B)`** — run one PGS contact-solve iteration through the bridge. Applies Stage A (sensor filter, pre-solve hooks, contact modifiers) on the CPU upfront to produce a filtered constraint list; uploads that list plus per-body positions + inverse masses via `bridge.send_contact_constraints` and `bridge.send_body_state`; dispatches one iteration via `bridge.dispatch_contact_solve_iteration`; reads back the updated `cached_lambda` and positions via `bridge.recv_contact_constraints` and `bridge.recv_body_positions`; writes those results back into `self.contact_constraints[slot].cached_lambda` (via an index map from the filtered list back to the original slot) and `self.bodies[i].position`. Byte-exact CPU parity is preserved because Stage A closures are pure functions of their inputs (don't depend on live body state), so batched upfront application is equivalent to the CPU's per-constraint interleaved application.
+- **`PhysicsWorld::substep_with_bridge<B: GpuSolverBridge + ?Sized>(&mut self, bridge: &mut B, dt: Fix128)`** — run one substep with the contact-solve stage routed through the bridge. Integrate + distance + joint + velocity-update stay on the CPU; only the inner PGS contact-solve iterations use the bridge. Semantically equivalent to the private `substep(dt)` with `solve_contact_constraints(dt)` replaced by `solve_contact_constraints_with_bridge(bridge)` inside the inner iteration loop.
+- **`PhysicsWorld::step_with_bridge<B: GpuSolverBridge + ?Sized>(&mut self, bridge: &mut B, dt: Fix128)`** — run one full simulation step with bridge-routed contact solve. Mirrors `step(dt)` phase-for-phase: phase 0 event lifecycle + clear contacts, phase 0.5 island rebuild, phase 1 force fields, phase 2 collision detection, phase 3 substep loop (via `substep_with_bridge`), phase 4 sleep update, phase 5 event end. Enables the shortest opt-in path — attach a bridge, call `step_with_bridge` once per frame, get GPU-accelerated contact solve with byte-exact CPU parity.
+
+### Design rationale — why not `Option<Box<dyn ...>>` field on `PhysicsWorld`?
+
+Storing the bridge as an `Option<Box<dyn GpuSolverBridge + Send + Sync>>` field on `PhysicsWorld` was considered and deferred. Two complications:
+
+1. **Lifetime propagation**: ALICE-TRT's `TrtSolverAdapter<'a>` borrows `&'a GpuDevice`. Storing it in `Box<dyn ... + 'static>` requires either dropping the lifetime (breaking change to `TrtSolverAdapter::new` — bump `alice-trt` to a MAJOR version) or propagating the lifetime to `PhysicsWorld<'a>` (breaking change to every downstream consumer that constructs a world).
+2. **`Send + Sync` bound analysis**: wgpu resources are `Send + Sync` from wgpu 0.7+, so the trait object bound is satisfiable. But verifying the bound across the Metal / Vulkan / DX12 CI matrix requires additional test infrastructure.
+
+The helper-method approach used in this release accepts the bridge by `&mut B` per call, so both complications vanish — the borrow lives only for the duration of the method, and no bound is imposed. The trade-off is that callers must invoke `step_with_bridge` explicitly instead of the world auto-routing through the bridge on `step`. This is aligned with the ALICE-* API design principle of "explicit control over implicit magic" and matches how the parallel-vs-sequential distance-constraint dispatch is exposed on `TrtSolverAdapter` via a `set_parallel_dispatch(bool)` toggle rather than auto-detection.
+
+A future MAJOR release (e.g., `alice-trt` v3.0.0 with `TrtSolverAdapter` refactored to own `Arc<GpuDevice>`) can revisit the field-based auto-routing.
+
+### Backwards compatibility
+
+100% source-compatible with v0.9.x. The existing `step(dt)` and every existing `PhysicsWorld` API is unchanged. The new methods are additive and gated on `#[cfg(feature = "std")]` (they use the pre-solve hook and contact modifier collections which are `std`-only). Callers not using the bridge helpers see no difference from v0.9.x.
+
 ## [0.9.0] - 2026-07-07
 
 ### Added — `GpuSolverBridge` contact solve pipeline extension (v0.9 opt-in)
