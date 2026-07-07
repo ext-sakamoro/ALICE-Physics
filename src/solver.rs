@@ -2167,6 +2167,240 @@ impl PhysicsWorld {
         }
     }
 
+    /// v0.10.0 opt-in: run one PGS contact-solve iteration via a
+    /// caller-supplied [`GpuSolverBridge`] instead of the CPU-side
+    /// [`Self::solve_contact_constraints`] hot loop.
+    ///
+    /// # Byte-exact CPU parity
+    ///
+    /// The bridge-routed path applies Stage A filters (sensor skip,
+    /// pre-solve hooks, contact modifiers) on the CPU side upfront
+    /// exactly as `solve_contact_constraints` does inline. Because
+    /// the closures the hooks and modifiers evaluate depend only on
+    /// their function inputs — never on live body state that
+    /// changes during the loop — a batched upfront application is
+    /// byte-exact equivalent to the CPU's per-constraint
+    /// application. Stage B (depth ≤ 0 skip, w_sum < ε skip,
+    /// warm-start biased lambda, cached_lambda write, position
+    /// correction) is routed through the bridge, which runs the
+    /// same sequential Gauss-Seidel semantics because bridge
+    /// backends dispatch a single-workgroup single-thread compute
+    /// kernel.
+    ///
+    /// # Constraint contract
+    ///
+    /// - The bridge receives a filtered `Vec<ContactConstraint>`
+    ///   containing only the constraints that survived Stage A
+    ///   (sensor-free, hook-approved, modifier-approved). The
+    ///   contact / friction / restitution fields may be mutated
+    ///   from the original slot values if a contact modifier
+    ///   ran.
+    /// - After readback the method writes each updated
+    ///   `cached_lambda` back into `self.contact_constraints` via
+    ///   an index map, mirroring the CPU write that lands at
+    ///   `self.contact_constraints[i].cached_lambda = lambda` at
+    ///   the corresponding slot.
+    /// - Body positions are written back to `self.bodies[i].position`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the bridge implementation does not override the
+    /// v0.9.0 contact-solve methods (`send_contact_constraints`,
+    /// `send_body_state`, `dispatch_contact_solve_iteration`,
+    /// `recv_contact_constraints`, `recv_body_positions`).
+    #[cfg(feature = "std")]
+    pub fn solve_contact_constraints_with_bridge<B: crate::gpu_bridge::GpuSolverBridge + ?Sized>(
+        &mut self,
+        bridge: &mut B,
+    ) {
+        // ---- Stage A: filter + mutate on CPU ----
+        let num_constraints = self.contact_constraints.len();
+        let mut filtered: Vec<ContactConstraint> = Vec::with_capacity(num_constraints);
+        let mut mapping: Vec<usize> = Vec::with_capacity(num_constraints);
+
+        for i in 0..num_constraints {
+            let constraint = self.contact_constraints[i];
+            let body_a = self.bodies[constraint.body_a];
+            let body_b = self.bodies[constraint.body_b];
+
+            if body_a.is_sensor || body_b.is_sensor {
+                continue;
+            }
+
+            let mut contact = constraint.contact;
+            let mut friction = constraint.friction;
+            let mut restitution = constraint.restitution;
+
+            let mut skip = false;
+            for hook in &self.pre_solve_hooks {
+                if !hook(constraint.body_a, constraint.body_b, &contact) {
+                    skip = true;
+                    break;
+                }
+            }
+            if !skip {
+                for modifier in &self.contact_modifiers {
+                    if !modifier.modify_contact(
+                        constraint.body_a,
+                        constraint.body_b,
+                        &mut contact,
+                        &mut friction,
+                        &mut restitution,
+                    ) {
+                        skip = true;
+                        break;
+                    }
+                }
+            }
+            if skip {
+                continue;
+            }
+
+            filtered.push(ContactConstraint {
+                body_a: constraint.body_a,
+                body_b: constraint.body_b,
+                contact,
+                friction,
+                restitution,
+                cached_lambda: constraint.cached_lambda,
+            });
+            mapping.push(i);
+        }
+
+        if filtered.is_empty() {
+            return;
+        }
+
+        // ---- Extract per-body state ----
+        let mut positions: Vec<[Fix128; 3]> = Vec::with_capacity(self.bodies.len());
+        let mut inv_masses: Vec<Fix128> = Vec::with_capacity(self.bodies.len());
+        for body in &self.bodies {
+            positions.push([body.position.x, body.position.y, body.position.z]);
+            inv_masses.push(body.inv_mass);
+        }
+
+        // ---- Stage B: route through bridge ----
+        bridge.send_contact_constraints(&filtered);
+        bridge.send_body_state(&positions, &inv_masses);
+        bridge.dispatch_contact_solve_iteration(self.config.warm_start_factor);
+
+        let mut updated_constraints = filtered;
+        let mut updated_positions = positions;
+        bridge.recv_contact_constraints(&mut updated_constraints);
+        bridge.recv_body_positions(&mut updated_positions);
+
+        // ---- Write back cached_lambda + positions ----
+        for (filtered_idx, orig_slot) in mapping.iter().enumerate() {
+            self.contact_constraints[*orig_slot].cached_lambda =
+                updated_constraints[filtered_idx].cached_lambda;
+        }
+        for (i, pos) in updated_positions.iter().enumerate() {
+            self.bodies[i].position = Vec3Fix::new(pos[0], pos[1], pos[2]);
+        }
+    }
+
+    /// v0.10.0 opt-in: run one full simulation step with the
+    /// contact-solve stage routed through a caller-supplied
+    /// [`GpuSolverBridge`]. Semantically equivalent to
+    /// [`Self::step`] with `substep(_)` replaced by
+    /// [`Self::substep_with_bridge`] inside the substep loop.
+    ///
+    /// # Byte-exact CPU parity
+    ///
+    /// When the bridge implementation is byte-exact vs the CPU
+    /// `solve_contact_constraints`, a full `step_with_bridge`
+    /// produces `self.bodies` and `self.contact_constraints` state
+    /// byte-identical to what a CPU-only `step(dt)` call produces
+    /// from the same initial state and configuration.
+    #[cfg(feature = "std")]
+    pub fn step_with_bridge<B: crate::gpu_bridge::GpuSolverBridge + ?Sized>(
+        &mut self,
+        bridge: &mut B,
+        dt: Fix128,
+    ) {
+        // Guard: non-positive dt produces no physics update
+        if dt <= Fix128::ZERO {
+            return;
+        }
+
+        // Phase 0: Event frame lifecycle + clear stale contacts
+        self.events.begin_frame();
+        self.clear_contacts();
+
+        // Phase 0.5: Rebuild island connectivity from current joints
+        self.islands.resize(self.bodies.len());
+        self.islands.reset_unions();
+        for j in &self.joints {
+            let (a, b) = j.bodies();
+            if a < self.bodies.len() && b < self.bodies.len() {
+                self.islands.union(a, b);
+            }
+        }
+
+        // Phase 1: Apply force fields
+        if !self.force_fields.is_empty() {
+            apply_force_fields(&self.force_fields, &mut self.bodies, dt);
+        }
+
+        // Phase 2: Auto collision detection (BVH + sphere)
+        self.detect_collisions();
+
+        // Phase 3: Substep loop with bridge-routed contact solve
+        let substep_dt = dt / Fix128::from_int(self.config.substeps as i64);
+        for _ in 0..self.config.substeps {
+            self.substep_with_bridge(bridge, substep_dt);
+        }
+
+        // Phase 4: Update sleeping
+        self.islands.update_sleep(&self.bodies);
+
+        // Phase 5: End event frame
+        self.events.end_frame();
+    }
+
+    /// v0.10.0 opt-in: run one substep with the contact-solve stage
+    /// routed through a caller-supplied [`GpuSolverBridge`]. The
+    /// integrate + distance-projection + joint + velocity-update
+    /// stages stay on the CPU; only the inner PGS contact-solve
+    /// iterations are dispatched through the bridge.
+    ///
+    /// # Byte-exact CPU parity
+    ///
+    /// When the bridge implementation is byte-exact vs the CPU
+    /// `solve_contact_constraints` (which every ALICE-TRT
+    /// `TrtSolverAdapter` release since v2.6.0 asserts on the
+    /// 3-platform CI matrix), a full `substep_with_bridge` sequence
+    /// produces `self.bodies` and `self.contact_constraints` state
+    /// byte-identical to what a CPU-only `substep(dt)` call produces
+    /// from the same initial state and configuration.
+    #[cfg(feature = "std")]
+    pub fn substep_with_bridge<B: crate::gpu_bridge::GpuSolverBridge + ?Sized>(
+        &mut self,
+        bridge: &mut B,
+        dt: Fix128,
+    ) {
+        self.integrate_positions(dt);
+
+        // 1.5. Resolve SDF collisions (implicit surface contacts)
+        if !self.sdf_colliders.is_empty() {
+            self.resolve_sdf_collisions();
+        }
+
+        // 2. Solve constraints (sequential). Distance stays CPU;
+        //    contact routes through the bridge.
+        for _ in 0..self.config.iterations {
+            self.solve_distance_constraints(dt);
+            self.solve_contact_constraints_with_bridge(bridge);
+        }
+
+        // 3. Solve joint constraints
+        if !self.joints.is_empty() {
+            solve_joints(&self.joints, &mut self.bodies, dt);
+        }
+
+        self.update_velocities(dt);
+    }
+
     /// Add an SDF collider to the world
     pub fn add_sdf_collider(&mut self, collider: SdfCollider) -> usize {
         let idx = self.sdf_colliders.len();
