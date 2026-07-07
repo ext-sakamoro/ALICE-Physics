@@ -2,6 +2,28 @@
 
 All notable changes to ALICE-Physics will be documented in this file.
 
+## [0.9.0] - 2026-07-07
+
+### Added — `GpuSolverBridge` contact solve pipeline extension (v0.9 opt-in)
+
+Extends the `GpuSolverBridge` trait in `src/gpu_bridge.rs` with five new methods covering the Phase 3 contact solve pipeline stage: `send_contact_constraints`, `send_body_state`, `dispatch_contact_solve_iteration`, `recv_contact_constraints`, and `recv_body_positions`. Every new method ships with a `panic!("...not implemented by this GpuSolverBridge backend")` default implementation, so pre-v0.9 backends compile unchanged and continue to work for the integrate + distance pipeline they already implement; they only panic if a caller tries to route contact solve through them, which is fail-fast behaviour that surfaces the missing capability immediately (silent no-op defaults were considered and rejected per the ALICE-* silent-Ok(()) prohibition rule).
+
+The trait extension unblocks `ALICE-TRT::TrtSolverAdapter` v2.7.0, which implements all five new methods on top of its existing v2.6.0 `dispatch_fix128_pgs_contact_solve` standalone kernel and exposes byte-exact GPU PGS contact solve through the trait-object interface. Callers can drive a full v2.2 → v2.6 broad-phase → narrow-phase → solve pipeline via a single `&mut dyn GpuSolverBridge` handle.
+
+Deeper wire-through — where `PhysicsWorld::solve_contact_constraints` automatically routes through an attached `GpuSolverBridge` implementation — is scheduled for a follow-up release (requires an `Option<Box<dyn GpuSolverBridge + Send + Sync>>` field on `PhysicsWorld` plus the lifetime + `Send + Sync` bounds analysis for the trait-object storage). The v0.9.0 extension provides the surface; the wire-through is additive on top.
+
+- **`send_contact_constraints(&mut self, constraints: &[ContactConstraint])`** — upload the constraint list. Element indices must line up with the caller's `PhysicsWorld::contact_constraints` slot ordering so `recv_contact_constraints` can write updated `cached_lambda` warm-start values back in place.
+- **`send_body_state(&mut self, positions: &[[Fix128; 3]], inv_masses: &[Fix128])`** — upload the per-body state that contact solve reads. `positions[i]` is the position of body id `i`; `inv_masses[i] == Fix128::ZERO` marks body `i` as static.
+- **`dispatch_contact_solve_iteration(&mut self, warm_start_factor: Fix128)`** — run one sequential Gauss-Seidel PGS iteration against the uploaded state. Updates cached_lambda in place and applies position corrections. Callers loop for multiple iterations, mirroring the CPU `for _ in 0..config.iterations { ... }` pattern.
+- **`recv_contact_constraints(&self, constraints: &mut [ContactConstraint])`** — read back the post-solve `cached_lambda`; other constraint fields (body indices, contact geometry, friction, restitution) are left untouched.
+- **`recv_body_positions(&self, positions: &mut [[Fix128; 3]])`** — read back the post-solve body positions.
+
+Also updates the trait's doc-comment to describe both pipeline stages (integrate + distance, contact solve) and replaces the "Skeleton" section that predates the v0.7.x rollout.
+
+### Backwards compatibility
+
+100% source-compatible with v0.8.x. Existing `GpuSolverBridge` implementations (including the `StubBridge` test type and any external backend) compile unchanged. The new methods only affect callers that opt in to the contact solve pipeline stage.
+
 ## [0.6.0] - 2026-02-23
 
 ### Added

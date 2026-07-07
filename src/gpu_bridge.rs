@@ -26,6 +26,7 @@
 //! ordering) for the reference reasoning.
 
 use crate::math::Fix128;
+use crate::solver::ContactConstraint;
 
 /// A reference input fixture used to certify bit-exact equivalence
 /// between the CPU-side solver and an external GPU backend. Consumers
@@ -62,12 +63,25 @@ pub struct GpuDivergence {
 /// (upload → dispatch → readback) and must expose a diff-check API
 /// that the host uses to gate production use.
 ///
-/// # Skeleton
+/// # Pipeline stages
 ///
-/// The trait is intentionally minimal for the initial rollout; each
-/// method is documented with the deterministic behaviour expected
-/// from the implementer even though the associated compute shaders
-/// live in the downstream crate.
+/// The trait covers two pipeline stages:
+///
+/// - **Integrate + distance** (v0.7+): `send_island` uploads the
+///   body positions and velocities, `dispatch_iterations` runs the
+///   integrate + floor + distance projection pipeline, and
+///   `recv_island` reads back the updated state.
+/// - **Contact solve** (v0.9+, opt-in): `send_contact_constraints`
+///   uploads the contact list, `send_body_state` uploads the body
+///   positions + inverse masses used by the PGS iteration,
+///   `dispatch_contact_solve_iteration` runs one sequential
+///   Gauss-Seidel pass, and `recv_contact_constraints` +
+///   `recv_body_positions` read back the updated warm-start state
+///   and position corrections. Every contact-solve method has a
+///   `panic!` default implementation so pre-v0.9 backends that
+///   don't implement contact solve stay compilable but fail
+///   fast when a caller tries to route contact solve through
+///   them.
 pub trait GpuSolverBridge {
     /// Upload an island (positions + velocities as
     /// `[Fix128; 3]` per body) into the GPU-side buffer. The
@@ -92,6 +106,80 @@ pub trait GpuSolverBridge {
     /// This is the production gate that Unity / UE5 host bindings
     /// consult before enabling the GPU path at run time.
     fn assert_bit_exact_vs_cpu(&self, fixture: &DiffFixture) -> Result<(), GpuDivergence>;
+
+    // ---- v0.9.0: contact-solve pipeline (opt-in, default panics) ----
+
+    /// Upload the contact constraint list into the GPU-side buffer.
+    /// Element indices must line up with the caller's
+    /// `PhysicsWorld::contact_constraints` slot ordering so
+    /// subsequent [`Self::recv_contact_constraints`] can write the
+    /// updated `cached_lambda` warm-start values back in place.
+    ///
+    /// # Default
+    ///
+    /// The default implementation panics with a "not implemented by
+    /// this backend" message. Backends that support the v0.9+
+    /// contact solve pipeline must override.
+    fn send_contact_constraints(&mut self, _constraints: &[ContactConstraint]) {
+        panic!("send_contact_constraints not implemented by this GpuSolverBridge backend");
+    }
+
+    /// Upload the per-body state that the contact solve iteration
+    /// reads. `positions[i]` is the position of body id `i` (indexed
+    /// by the `body_a` / `body_b` fields of the constraints uploaded
+    /// via [`Self::send_contact_constraints`]);
+    /// `inv_masses[i]` is body `i`'s inverse mass, with
+    /// `Fix128::ZERO` marking a static body.
+    ///
+    /// # Default
+    ///
+    /// Panics; backends that support contact solve must override.
+    fn send_body_state(&mut self, _positions: &[[Fix128; 3]], _inv_masses: &[Fix128]) {
+        panic!("send_body_state not implemented by this GpuSolverBridge backend");
+    }
+
+    /// Run one sequential Gauss-Seidel PGS contact-solve iteration
+    /// against the currently uploaded constraints and body state.
+    /// Updates in-place the GPU-side `cached_lambda` on each
+    /// constraint and applies position corrections to bodies.
+    /// Callers loop this method for multiple iterations, mirroring
+    /// the CPU `for _ in 0..config.iterations { ... }` pattern
+    /// inside `PhysicsWorld::substep`.
+    ///
+    /// `warm_start_factor` is `SolverConfig::warm_start_factor`
+    /// (default 0.85 per `ContactConstraint::new`).
+    ///
+    /// # Default
+    ///
+    /// Panics; backends that support contact solve must override.
+    fn dispatch_contact_solve_iteration(&mut self, _warm_start_factor: Fix128) {
+        panic!("dispatch_contact_solve_iteration not implemented by this GpuSolverBridge backend");
+    }
+
+    /// Read back the post-solve `cached_lambda` warm-start state
+    /// into the caller-provided constraint slice. Only the
+    /// `cached_lambda` field of each element is updated; other
+    /// fields (body indices, contact geometry, friction,
+    /// restitution) are left untouched — those are the caller's
+    /// inputs that the kernel does not modify.
+    ///
+    /// # Default
+    ///
+    /// Panics; backends that support contact solve must override.
+    fn recv_contact_constraints(&self, _constraints: &mut [ContactConstraint]) {
+        panic!("recv_contact_constraints not implemented by this GpuSolverBridge backend");
+    }
+
+    /// Read back the post-solve body positions into the
+    /// caller-provided slice. Element indices must line up with
+    /// the upload order of [`Self::send_body_state`].
+    ///
+    /// # Default
+    ///
+    /// Panics; backends that support contact solve must override.
+    fn recv_body_positions(&self, _positions: &mut [[Fix128; 3]]) {
+        panic!("recv_body_positions not implemented by this GpuSolverBridge backend");
+    }
 }
 
 #[cfg(test)]
