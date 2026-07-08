@@ -2,6 +2,45 @@
 
 All notable changes to ALICE-Physics will be documented in this file.
 
+## [0.12.0] - 2026-07-08
+
+### Added — `GpuSolverBridge` joint-solve pipeline + `PhysicsWorld` auto-routing
+
+Extends the `GpuSolverBridge` trait with three new methods for joint-solve GPU offload:
+
+- **`send_joints(&mut self, joints: &[Joint])`** — upload the joint list. Not every backend is required to handle every joint variant; ALICE-TRT v3.1.0 supports only `Joint::Ball` and fails fast with a `panic!` on other variants. Default: `panic!("send_joints not implemented by this GpuSolverBridge backend")`.
+- **`send_body_rotations(&mut self, rotations: &[[Fix128; 4]])`** — upload per-body orientations as `[x, y, z, w]` quaternions. Callers who use only the contact-solve pipeline (positions + inv_masses) don't need to invoke this. Default: `panic!(...)`.
+- **`dispatch_joint_solve_iteration(&mut self, dt: Fix128)`** — run one joint-solve pass. Unlike contact solve (which iterates `config.iterations` times per substep), joint solve runs exactly **once per substep** — the correction is a Baumgarte-stabilised projection, not a Gauss-Seidel iteration. `dt` drives the compliance stabilisation term `compliance / (dt * dt)`. Default: `panic!(...)`.
+
+Position writeback reuses the existing v0.9.0 `recv_body_positions` method. Joint state itself has no per-joint mutable output (`BallJoint` has no cached lambda), so no `recv_joints` method is added.
+
+`PhysicsWorld` gains:
+
+- **`solve_joints_with_bridge<B: GpuSolverBridge + ?Sized>(&mut self, bridge: &mut B, dt: Fix128)`** — explicit-control entry point. Extracts positions + rotations + inv_masses, uploads via `send_joints` / `send_body_state` / `send_body_rotations`, dispatches `dispatch_joint_solve_iteration(dt)`, reads positions via `recv_body_positions`, writes back to `self.bodies[i].position`. Callers who prefer explicit control (game-engine wrappers, hot-swap harnesses) use this without needing to install a bridge on the world.
+- **Auto-routing at `substep` / `substep_batched` / `substep_with_bridge`** — the private `solve_joints_dispatch(&mut self, dt)` helper checks `self.gpu_solver_bridge`: if `Some`, routes via `solve_joints_with_bridge` (with an `Option::take-route-return` pattern that keeps the field visible to callers); if `None`, falls back to the existing free-function `solve_joints(&self.joints, &mut self.bodies, dt)`. All three `substep` entry points now flow through this helper, so installing a v3.1.0 ALICE-TRT `TrtSolverAdapter` on the world auto-routes both contact AND joint solve on subsequent `step` / `substep` calls.
+
+### Coordinated release — ALICE-TRT v3.1.0
+
+Alongside this release, ALICE-TRT v3.1.0 ships:
+
+- `QuatFixGpu` byte-layout mirror of `QuatFix` + `FIX128_QUAT_MUL_WGSL` and `FIX128_QUAT_ROTATE_VEC_WGSL` byte-exact primitives (v3.1.0-phase1 landed 2026-07-08 as commit `b3dc3a0`).
+- `FIX128_BALL_SOCKET_JOINT_SOLVE_WGSL` kernel that inlines quaternion rotation to compute world-space anchors, delta, normalize, correction — byte-exact vs the CPU `solve_ball_joint` reference.
+- `TrtSolverAdapter` implementation of `send_joints` / `send_body_rotations` / `dispatch_joint_solve_iteration` (filtering to `Joint::Ball` only, panic on other variants).
+- 3 byte-exact CPU-GPU joint-solve goldens (single joint / chain 4-body 3-joint / disconnected 2-island).
+- Criterion benchmark `benches/ball_socket_joint_solve.rs` at N=100 / 1000 / 10000 joints.
+
+See ALICE-TRT `docs/PHASE_4_DESIGN.md` for the coordinated design brief and forward roadmap (Hinge / Fixed / D6 to follow in v3.2 / v3.3 / v3.4).
+
+### New tests
+
+Three new `#[cfg(feature = "gpu-solver-bridge")]` tests in `solver::tests`:
+
+- **`physics_world_substep_auto_routes_joint_solve_through_bridge`** — installs a `RecordingBridge` with `Arc<AtomicUsize>` counters, calls `substep(dt)`, asserts `send_joints` / `send_body_rotations` / `dispatch_joint_solve_iteration` all fire exactly once per substep.
+- **`physics_world_substep_falls_back_to_cpu_joint_solve_when_bridge_detached`** — no bridge installed, verifies zero-anchor ball joint pulls the two bodies toward each other via CPU `solve_joints`.
+- **`physics_world_substep_joint_solve_bridge_attach_take_lifecycle`** — attach → substep (bridge dispatch increments) → take → substep (bridge dispatch NOT incremented, CPU path takes over and moves body_a).
+
+Total lib tests: **724 → 727** (all pass, zero regression against v0.11.0 baseline; default / no-default-features / std+gpu-solver-bridge feature configs all build clean).
+
 ## [0.11.0] - 2026-07-08
 
 ### Added — Field-based GPU solver bridge with automatic contact-solve routing on `step` / `substep`
