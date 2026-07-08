@@ -754,6 +754,19 @@ pub struct PhysicsWorld {
     /// Contact modifiers (called before contact resolution, can mutate contact)
     #[cfg(feature = "std")]
     contact_modifiers: Vec<Box<dyn ContactModifier>>,
+    /// v0.11.0: installed GPU solver bridge for automatic contact-solve
+    /// routing. When `Some`, every call to [`Self::step`] /
+    /// [`Self::substep`] transparently routes contact-solve through the
+    /// bridge instead of running the CPU solver inline. Installed and
+    /// removed via [`Self::set_gpu_solver_bridge`] and
+    /// [`Self::take_gpu_solver_bridge`]. Callers who want explicit
+    /// control can bypass the field entirely by using
+    /// [`Self::step_with_bridge`] / [`Self::substep_with_bridge`] /
+    /// [`Self::solve_contact_constraints_with_bridge`] directly — those
+    /// helpers ignore the installed bridge and use the borrowed one
+    /// passed in.
+    #[cfg(feature = "gpu-solver-bridge")]
+    gpu_solver_bridge: Option<Box<dyn crate::gpu_bridge::GpuSolverBridge + Send + Sync>>,
 
     // ── Integrated Subsystems ──────────────────────────────────────────
     /// Joint constraints (solved each substep alongside distance/contact)
@@ -809,6 +822,8 @@ impl PhysicsWorld {
             pre_solve_hooks: Vec::new(),
             #[cfg(feature = "std")]
             contact_modifiers: Vec::new(),
+            #[cfg(feature = "gpu-solver-bridge")]
+            gpu_solver_bridge: None,
             joints: Vec::new(),
             force_fields: Vec::new(),
             events: EventCollector::new(),
@@ -816,6 +831,50 @@ impl PhysicsWorld {
             body_collision_radii: Vec::new(),
             body_filters: Vec::new(),
         }
+    }
+
+    /// v0.11.0: install a GPU solver bridge for automatic contact-solve
+    /// routing. Subsequent calls to [`Self::step`] / [`Self::substep`]
+    /// route contact-solve through this bridge instead of the CPU
+    /// solver. Pass `Some(bridge)` to install; use
+    /// [`Self::take_gpu_solver_bridge`] to remove.
+    ///
+    /// The bridge is stored as `Box<dyn GpuSolverBridge + Send + Sync>`,
+    /// so implementers must satisfy `Send + Sync`. For ALICE-TRT v3.0.0+
+    /// this is guaranteed because `TrtSolverAdapter` uses
+    /// `Arc<GpuDevice>` and holds only `Send + Sync` fields.
+    ///
+    /// Callers who want explicit control without installing the bridge
+    /// on the world (game-engine wrapper hosts, hot-swap harnesses)
+    /// can continue to use [`Self::step_with_bridge`] /
+    /// [`Self::substep_with_bridge`] /
+    /// [`Self::solve_contact_constraints_with_bridge`] with an
+    /// externally-owned bridge — those methods ignore the installed
+    /// bridge and take a `&mut B` parameter.
+    #[cfg(feature = "gpu-solver-bridge")]
+    pub fn set_gpu_solver_bridge(
+        &mut self,
+        bridge: Option<Box<dyn crate::gpu_bridge::GpuSolverBridge + Send + Sync>>,
+    ) {
+        self.gpu_solver_bridge = bridge;
+    }
+
+    /// v0.11.0: remove and return the currently installed GPU solver
+    /// bridge, if any. Subsequent calls to [`Self::step`] /
+    /// [`Self::substep`] revert to the CPU contact solver.
+    #[cfg(feature = "gpu-solver-bridge")]
+    pub fn take_gpu_solver_bridge(
+        &mut self,
+    ) -> Option<Box<dyn crate::gpu_bridge::GpuSolverBridge + Send + Sync>> {
+        self.gpu_solver_bridge.take()
+    }
+
+    /// v0.11.0: whether a GPU solver bridge is currently installed on
+    /// this world. Cheap; does not touch the bridge.
+    #[cfg(feature = "gpu-solver-bridge")]
+    #[must_use]
+    pub const fn gpu_solver_bridge_installed(&self) -> bool {
+        self.gpu_solver_bridge.is_some()
     }
 
     /// Add rigid body, returns index
@@ -2075,9 +2134,27 @@ impl PhysicsWorld {
         }
     }
 
-    /// Solve contact constraints with pre-solve hook support (Gap 2.3)
-    #[inline(always)]
+    /// Solve contact constraints with pre-solve hook support (Gap 2.3).
+    ///
+    /// # v0.11.0 auto-routing
+    ///
+    /// If a GPU solver bridge has been installed on this world via
+    /// [`Self::set_gpu_solver_bridge`], contact-solve is routed through
+    /// the bridge (via [`Self::solve_contact_constraints_with_bridge`])
+    /// instead of running the CPU inline solver below. The bridge is
+    /// briefly taken out of `self` via `Option::take()` so the borrow
+    /// checker sees `&mut self` for the routed call, then reinstalled
+    /// on exit — the field is unchanged from the caller's perspective.
+    ///
+    /// If no bridge is installed, the existing CPU-only code path runs
+    /// unchanged.
     fn solve_contact_constraints(&mut self, _dt: Fix128) {
+        #[cfg(feature = "gpu-solver-bridge")]
+        if let Some(mut bridge) = self.gpu_solver_bridge.take() {
+            self.solve_contact_constraints_with_bridge(bridge.as_mut());
+            self.gpu_solver_bridge = Some(bridge);
+            return;
+        }
         let num_constraints = self.contact_constraints.len();
         for i in 0..num_constraints {
             let constraint = self.contact_constraints[i];
@@ -2208,7 +2285,7 @@ impl PhysicsWorld {
     /// v0.9.0 contact-solve methods (`send_contact_constraints`,
     /// `send_body_state`, `dispatch_contact_solve_iteration`,
     /// `recv_contact_constraints`, `recv_body_positions`).
-    #[cfg(feature = "std")]
+    #[cfg(feature = "gpu-solver-bridge")]
     pub fn solve_contact_constraints_with_bridge<B: crate::gpu_bridge::GpuSolverBridge + ?Sized>(
         &mut self,
         bridge: &mut B,
@@ -2312,7 +2389,7 @@ impl PhysicsWorld {
     /// produces `self.bodies` and `self.contact_constraints` state
     /// byte-identical to what a CPU-only `step(dt)` call produces
     /// from the same initial state and configuration.
-    #[cfg(feature = "std")]
+    #[cfg(feature = "gpu-solver-bridge")]
     pub fn step_with_bridge<B: crate::gpu_bridge::GpuSolverBridge + ?Sized>(
         &mut self,
         bridge: &mut B,
@@ -2373,7 +2450,7 @@ impl PhysicsWorld {
     /// produces `self.bodies` and `self.contact_constraints` state
     /// byte-identical to what a CPU-only `substep(dt)` call produces
     /// from the same initial state and configuration.
-    #[cfg(feature = "std")]
+    #[cfg(feature = "gpu-solver-bridge")]
     pub fn substep_with_bridge<B: crate::gpu_bridge::GpuSolverBridge + ?Sized>(
         &mut self,
         bridge: &mut B,
@@ -3170,5 +3247,171 @@ mod tests {
         // body_b が上方に押し出されていること
         let y = world.bodies[1].position.y.to_f32();
         assert!(y > 0.05, "Body should be pushed up: y={y}");
+    }
+
+    // -------------------------------------------------------------------
+    // v0.11.0: PhysicsWorld auto-routing to installed GPU solver bridge
+    // -------------------------------------------------------------------
+
+    /// Recording bridge implementation for the v0.11.0 auto-routing
+    /// tests. Counts invocations of contact-solve methods via shared
+    /// `Arc<AtomicUsize>` counters so the test can assert routing
+    /// occurred without needing to reach inside the boxed trait object.
+    ///
+    /// All methods are no-ops on world state (positions are not
+    /// modified), so a test that observes position drift while this
+    /// bridge is installed is proof that the CPU path ran — the bridge
+    /// intentionally does not solve.
+    #[cfg(feature = "gpu-solver-bridge")]
+    struct RecordingBridge {
+        send_contact_count: std::sync::Arc<core::sync::atomic::AtomicUsize>,
+        send_body_state_count: std::sync::Arc<core::sync::atomic::AtomicUsize>,
+        dispatch_count: std::sync::Arc<core::sync::atomic::AtomicUsize>,
+    }
+
+    #[cfg(feature = "gpu-solver-bridge")]
+    impl crate::gpu_bridge::GpuSolverBridge for RecordingBridge {
+        fn send_island(&mut self, _p: &[[Fix128; 3]], _v: &[[Fix128; 3]]) {}
+        fn dispatch_iterations(&mut self, _iters: u32, _dt: Fix128) {}
+        fn recv_island(&self, _p: &mut [[Fix128; 3]], _v: &mut [[Fix128; 3]]) {}
+        fn assert_bit_exact_vs_cpu(
+            &self,
+            _fixture: &crate::gpu_bridge::DiffFixture,
+        ) -> Result<(), crate::gpu_bridge::GpuDivergence> {
+            Ok(())
+        }
+        fn send_contact_constraints(&mut self, _c: &[ContactConstraint]) {
+            self.send_contact_count
+                .fetch_add(1, core::sync::atomic::Ordering::SeqCst);
+        }
+        fn send_body_state(&mut self, _p: &[[Fix128; 3]], _i: &[Fix128]) {
+            self.send_body_state_count
+                .fetch_add(1, core::sync::atomic::Ordering::SeqCst);
+        }
+        fn dispatch_contact_solve_iteration(&mut self, _warm_start_factor: Fix128) {
+            self.dispatch_count
+                .fetch_add(1, core::sync::atomic::Ordering::SeqCst);
+        }
+        fn recv_contact_constraints(&self, _c: &mut [ContactConstraint]) {}
+        fn recv_body_positions(&self, _p: &mut [[Fix128; 3]]) {}
+    }
+
+    #[cfg(feature = "gpu-solver-bridge")]
+    fn build_one_contact_world() -> PhysicsWorld {
+        use crate::collider::Contact;
+        let mut world = PhysicsWorld::new(SolverConfig::default());
+        let body_a = RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE);
+        let body_b = RigidBody::new_dynamic(
+            Vec3Fix::new(Fix128::from_ratio(9, 10), Fix128::ZERO, Fix128::ZERO),
+            Fix128::ONE,
+        );
+        world.add_body(body_a);
+        world.add_body(body_b);
+        let contact = Contact {
+            depth: Fix128::from_ratio(1, 10),
+            normal: Vec3Fix::new(Fix128::ONE, Fix128::ZERO, Fix128::ZERO),
+            point_a: Vec3Fix::ZERO,
+            point_b: Vec3Fix::ZERO,
+        };
+        world.add_contact(ContactConstraint::new(0, 1, contact));
+        world
+    }
+
+    /// v0.11.0: attaching a bridge via `set_gpu_solver_bridge` routes
+    /// contact-solve through the bridge on every subsequent `step`.
+    /// Verified by counting bridge method invocations.
+    #[cfg(feature = "gpu-solver-bridge")]
+    #[test]
+    fn physics_world_step_auto_routes_through_bridge_when_attached() {
+        let send_contact_count = std::sync::Arc::new(core::sync::atomic::AtomicUsize::new(0));
+        let send_body_state_count = std::sync::Arc::new(core::sync::atomic::AtomicUsize::new(0));
+        let dispatch_count = std::sync::Arc::new(core::sync::atomic::AtomicUsize::new(0));
+
+        let bridge = RecordingBridge {
+            send_contact_count: std::sync::Arc::clone(&send_contact_count),
+            send_body_state_count: std::sync::Arc::clone(&send_body_state_count),
+            dispatch_count: std::sync::Arc::clone(&dispatch_count),
+        };
+
+        let mut world = build_one_contact_world();
+        world.set_gpu_solver_bridge(Some(Box::new(bridge)));
+        assert!(world.gpu_solver_bridge_installed());
+
+        // substep は solve_contact_constraints を `config.iterations`
+        // 回呼ぶ (default 4)。auto-routing 経路はその全てを bridge に
+        // 転送するはずなので、send / dispatch は
+        // `config.iterations` 回発火する。
+        let iters = world.config.iterations;
+        let dt = Fix128::from_ratio(1, 60);
+        world.substep(dt);
+
+        assert_eq!(
+            send_contact_count.load(core::sync::atomic::Ordering::SeqCst),
+            iters,
+            "send_contact_constraints must be invoked once per PGS iteration"
+        );
+        assert_eq!(
+            send_body_state_count.load(core::sync::atomic::Ordering::SeqCst),
+            iters,
+            "send_body_state must be invoked once per PGS iteration"
+        );
+        assert_eq!(
+            dispatch_count.load(core::sync::atomic::Ordering::SeqCst),
+            iters,
+            "dispatch_contact_solve_iteration must fire once per PGS iteration"
+        );
+    }
+
+    /// v0.11.0: without a bridge installed, `step` falls back to the CPU
+    /// contact solver. Verified by observing that contact-affected body
+    /// positions drift — the CPU path applies the position correction
+    /// that the recording bridge above would not.
+    #[cfg(feature = "gpu-solver-bridge")]
+    #[test]
+    fn physics_world_step_falls_back_to_cpu_when_bridge_detached() {
+        let mut world = build_one_contact_world();
+        assert!(!world.gpu_solver_bridge_installed());
+
+        let x_before = world.bodies[0].position.x;
+        let dt = Fix128::from_ratio(1, 60);
+        world.substep(dt);
+        let x_after = world.bodies[0].position.x;
+
+        // CPU contact solve applies a position correction along the
+        // contact normal (x axis). Any non-zero drift confirms the CPU
+        // path was taken instead of the (absent) bridge path.
+        assert_ne!(
+            x_before, x_after,
+            "CPU contact solver must adjust position when no bridge is installed"
+        );
+    }
+
+    /// v0.11.0: attach / take lifecycle preserves the field invariant
+    /// (`gpu_solver_bridge_installed` reflects the current state) and
+    /// `take_gpu_solver_bridge` returns the same box on the first
+    /// call and `None` on subsequent calls.
+    #[cfg(feature = "gpu-solver-bridge")]
+    #[test]
+    fn physics_world_bridge_attach_detach_lifecycle() {
+        let mut world = PhysicsWorld::new(SolverConfig::default());
+        assert!(!world.gpu_solver_bridge_installed());
+
+        let bridge = RecordingBridge {
+            send_contact_count: std::sync::Arc::new(core::sync::atomic::AtomicUsize::new(0)),
+            send_body_state_count: std::sync::Arc::new(core::sync::atomic::AtomicUsize::new(0)),
+            dispatch_count: std::sync::Arc::new(core::sync::atomic::AtomicUsize::new(0)),
+        };
+        world.set_gpu_solver_bridge(Some(Box::new(bridge)));
+        assert!(world.gpu_solver_bridge_installed());
+
+        let taken = world.take_gpu_solver_bridge();
+        assert!(taken.is_some(), "first take must return the installed box");
+        assert!(!world.gpu_solver_bridge_installed());
+
+        let taken_again = world.take_gpu_solver_bridge();
+        assert!(
+            taken_again.is_none(),
+            "subsequent take must return None when nothing is installed"
+        );
     }
 }

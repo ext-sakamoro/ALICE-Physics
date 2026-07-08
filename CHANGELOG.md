@@ -2,6 +2,28 @@
 
 All notable changes to ALICE-Physics will be documented in this file.
 
+## [0.11.0] - 2026-07-08
+
+### Added — Field-based GPU solver bridge with automatic contact-solve routing on `step` / `substep`
+
+Introduces `PhysicsWorld::set_gpu_solver_bridge(Option<Box<dyn GpuSolverBridge + Send + Sync>>)` (with `take_gpu_solver_bridge()` / `gpu_solver_bridge_installed()` accessors) so callers can install a GPU solver bridge on the world once and have every subsequent `step` / `substep` transparently route contact-solve through the bridge. Complements the v0.10.0 explicit helper methods (`solve_contact_constraints_with_bridge` / `substep_with_bridge` / `step_with_bridge`), which continue to work unchanged with an externally-owned bridge — the helpers ignore the installed bridge and use the borrowed one passed in, giving callers a clean escape hatch for hot-swap harnesses, game-engine wrappers, or per-frame bridge choice.
+
+Internally, `PhysicsWorld::solve_contact_constraints` gained a short-circuit at the top: if a bridge is installed, `Option::take()` moves it out of `self`, calls `self.solve_contact_constraints_with_bridge(bridge.as_mut())`, then reinstalls the bridge — the field is unchanged from the caller's perspective, and `step` / `substep` inherit the auto-routing for free without needing to know about the bridge.
+
+- **`PhysicsWorld::set_gpu_solver_bridge(bridge)`** — install (`Some(_)`) or clear (`None`) the world's GPU solver bridge.
+- **`PhysicsWorld::take_gpu_solver_bridge() -> Option<Box<dyn ...>>`** — remove and return the currently installed bridge. Subsequent `step` / `substep` calls revert to the CPU contact solver.
+- **`PhysicsWorld::gpu_solver_bridge_installed() -> bool`** — read-only check of the installed state (`const fn`, no allocation).
+
+The trait object is `Box<dyn GpuSolverBridge + Send + Sync>`. Implementers must satisfy `Send + Sync`, which is satisfied by ALICE-TRT v3.0.0+ (`TrtSolverAdapter` refactored to `Arc<GpuDevice>` alongside this release — see the ALICE-TRT v3.0.0 CHANGELOG entry for the coordinated migration).
+
+Three tests added to `mod tests`: `physics_world_step_auto_routes_through_bridge_when_attached` (counter-based routing verification via `Arc<AtomicUsize>` inside a `RecordingBridge` no-op implementer, asserts `send_contact_constraints` / `send_body_state` / `dispatch_contact_solve_iteration` all fire `config.iterations` times per `substep`), `physics_world_step_falls_back_to_cpu_when_bridge_detached` (asserts CPU-driven position drift on a one-contact fixture when no bridge is installed), and `physics_world_bridge_attach_detach_lifecycle` (asserts install → `take` returns `Some` → subsequent `take` returns `None` and `gpu_solver_bridge_installed` mirrors the state).
+
+Total lib tests: **721 → 724** (all pass, zero regression against v0.10.0 baseline).
+
+### Fixed — `_with_bridge` methods now correctly gated behind `gpu-solver-bridge` feature
+
+The v0.10.0 helper methods (`solve_contact_constraints_with_bridge` / `step_with_bridge` / `substep_with_bridge`) were declared with `#[cfg(feature = "std")]` but reference the `crate::gpu_bridge` module, which is itself behind `#[cfg(feature = "gpu-solver-bridge")]`. Default builds (`std` on, `gpu-solver-bridge` off) failed with `E0433: could not find gpu_bridge in the crate root` — the pre-existing v0.10.0 CI has been red on `Test (ubuntu-latest / macos-latest / windows-latest)`, `Clippy`, and `Doc` since 2026-07-07 for this reason. Retagging the three helper methods with `#[cfg(feature = "gpu-solver-bridge")]` restores the correct gate: they only compile when the module they depend on is available. Default `cargo build --lib`, `cargo build --lib --no-default-features`, and `cargo build --lib --features std,gpu-solver-bridge` all now build clean locally; CI verification follows this push.
+
 ## [0.10.0] - 2026-07-07
 
 ### Added — `PhysicsWorld` helper methods for bridge-routed contact solve
