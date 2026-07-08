@@ -1589,10 +1589,10 @@ impl PhysicsWorld {
             self.solve_contact_constraints(dt);
         }
 
-        // 3. Solve joint constraints
-        if !self.joints.is_empty() {
-            solve_joints(&self.joints, &mut self.bodies, dt);
-        }
+        // 3. Solve joint constraints (v0.12.0: auto-routes through
+        //    installed bridge if any, otherwise falls back to CPU
+        //    `solve_joints`).
+        self.solve_joints_dispatch(dt);
 
         self.update_velocities(dt);
     }
@@ -1613,10 +1613,10 @@ impl PhysicsWorld {
             self.solve_constraints_batched(dt);
         }
 
-        // 3. Solve joint constraints
-        if !self.joints.is_empty() {
-            solve_joints(&self.joints, &mut self.bodies, dt);
-        }
+        // 3. Solve joint constraints (v0.12.0: auto-routes through
+        //    installed bridge if any, otherwise falls back to CPU
+        //    `solve_joints`).
+        self.solve_joints_dispatch(dt);
 
         self.update_velocities(dt);
     }
@@ -2470,12 +2470,97 @@ impl PhysicsWorld {
             self.solve_contact_constraints_with_bridge(bridge);
         }
 
-        // 3. Solve joint constraints
-        if !self.joints.is_empty() {
-            solve_joints(&self.joints, &mut self.bodies, dt);
-        }
+        // 3. Solve joint constraints — route through the same bridge.
+        self.solve_joints_with_bridge(bridge, dt);
 
         self.update_velocities(dt);
+    }
+
+    /// v0.12.0: run one joint-solve pass with the joint stage routed
+    /// through a caller-supplied [`GpuSolverBridge`]. Extracts body
+    /// positions + rotations + inverse masses into the shape the
+    /// bridge expects, uploads via `send_joints` + `send_body_state`
+    /// + `send_body_rotations`, dispatches
+    /// `dispatch_joint_solve_iteration(dt)`, reads back the
+    /// post-solve positions via `recv_body_positions`, and writes
+    /// them back into `self.bodies[i].position`.
+    ///
+    /// # Contract
+    ///
+    /// - The bridge must implement the v0.12.0 joint-solve methods
+    ///   (`send_joints`, `send_body_rotations`,
+    ///   `dispatch_joint_solve_iteration`); the default `panic!`
+    ///   implementations surface backends that do not.
+    /// - `dt` is the substep length used to compute
+    ///   `compliance / (dt * dt)` inside the kernel.
+    /// - When `self.joints.is_empty()`, this method is a no-op and
+    ///   returns without touching the bridge — useful for callers
+    ///   that unconditionally route through a bridge and let this
+    ///   method decide whether there's work to do.
+    ///
+    /// # Byte-exact CPU parity
+    ///
+    /// The CPU-side `solve_joints` runs each joint independently in
+    /// index order; the bridge is required to reproduce that exact
+    /// order and per-joint arithmetic. ALICE-TRT v3.1.0 satisfies
+    /// this by dispatching a single-workgroup single-thread kernel
+    /// that walks the uploaded joint list top to bottom.
+    #[cfg(feature = "gpu-solver-bridge")]
+    pub fn solve_joints_with_bridge<B: crate::gpu_bridge::GpuSolverBridge + ?Sized>(
+        &mut self,
+        bridge: &mut B,
+        dt: Fix128,
+    ) {
+        if self.joints.is_empty() {
+            return;
+        }
+
+        // ---- Extract per-body state ----
+        let mut positions: Vec<[Fix128; 3]> = Vec::with_capacity(self.bodies.len());
+        let mut inv_masses: Vec<Fix128> = Vec::with_capacity(self.bodies.len());
+        let mut rotations: Vec<[Fix128; 4]> = Vec::with_capacity(self.bodies.len());
+        for body in &self.bodies {
+            positions.push([body.position.x, body.position.y, body.position.z]);
+            inv_masses.push(body.inv_mass);
+            rotations.push([
+                body.rotation.x,
+                body.rotation.y,
+                body.rotation.z,
+                body.rotation.w,
+            ]);
+        }
+
+        // ---- Stage B: route through bridge ----
+        bridge.send_joints(&self.joints);
+        bridge.send_body_state(&positions, &inv_masses);
+        bridge.send_body_rotations(&rotations);
+        bridge.dispatch_joint_solve_iteration(dt);
+
+        let mut updated_positions = positions;
+        bridge.recv_body_positions(&mut updated_positions);
+
+        // ---- Write back positions ----
+        for (i, pos) in updated_positions.iter().enumerate() {
+            self.bodies[i].position = crate::math::Vec3Fix::new(pos[0], pos[1], pos[2]);
+        }
+    }
+
+    /// v0.12.0 private helper: solve joints either through the
+    /// installed GPU solver bridge (if any) or via the CPU
+    /// `solve_joints` fallback. Used by [`Self::step`] / substep
+    /// entry points to auto-route without every caller needing to
+    /// know about the bridge.
+    fn solve_joints_dispatch(&mut self, dt: Fix128) {
+        if self.joints.is_empty() {
+            return;
+        }
+        #[cfg(feature = "gpu-solver-bridge")]
+        if let Some(mut bridge) = self.gpu_solver_bridge.take() {
+            self.solve_joints_with_bridge(bridge.as_mut(), dt);
+            self.gpu_solver_bridge = Some(bridge);
+            return;
+        }
+        solve_joints(&self.joints, &mut self.bodies, dt);
     }
 
     /// Add an SDF collider to the world
@@ -3267,6 +3352,11 @@ mod tests {
         send_contact_count: std::sync::Arc<core::sync::atomic::AtomicUsize>,
         send_body_state_count: std::sync::Arc<core::sync::atomic::AtomicUsize>,
         dispatch_count: std::sync::Arc<core::sync::atomic::AtomicUsize>,
+        // v0.12.0 joint-solve counters (default zero; used only by the
+        // joint auto-routing tests below)
+        send_joints_count: std::sync::Arc<core::sync::atomic::AtomicUsize>,
+        send_body_rotations_count: std::sync::Arc<core::sync::atomic::AtomicUsize>,
+        dispatch_joint_count: std::sync::Arc<core::sync::atomic::AtomicUsize>,
     }
 
     #[cfg(feature = "gpu-solver-bridge")]
@@ -3294,6 +3384,18 @@ mod tests {
         }
         fn recv_contact_constraints(&self, _c: &mut [ContactConstraint]) {}
         fn recv_body_positions(&self, _p: &mut [[Fix128; 3]]) {}
+        fn send_joints(&mut self, _j: &[crate::joint::Joint]) {
+            self.send_joints_count
+                .fetch_add(1, core::sync::atomic::Ordering::SeqCst);
+        }
+        fn send_body_rotations(&mut self, _r: &[[Fix128; 4]]) {
+            self.send_body_rotations_count
+                .fetch_add(1, core::sync::atomic::Ordering::SeqCst);
+        }
+        fn dispatch_joint_solve_iteration(&mut self, _dt: Fix128) {
+            self.dispatch_joint_count
+                .fetch_add(1, core::sync::atomic::Ordering::SeqCst);
+        }
     }
 
     #[cfg(feature = "gpu-solver-bridge")]
@@ -3331,6 +3433,9 @@ mod tests {
             send_contact_count: std::sync::Arc::clone(&send_contact_count),
             send_body_state_count: std::sync::Arc::clone(&send_body_state_count),
             dispatch_count: std::sync::Arc::clone(&dispatch_count),
+            send_joints_count: std::sync::Arc::new(core::sync::atomic::AtomicUsize::new(0)),
+            send_body_rotations_count: std::sync::Arc::new(core::sync::atomic::AtomicUsize::new(0)),
+            dispatch_joint_count: std::sync::Arc::new(core::sync::atomic::AtomicUsize::new(0)),
         };
 
         let mut world = build_one_contact_world();
@@ -3400,6 +3505,9 @@ mod tests {
             send_contact_count: std::sync::Arc::new(core::sync::atomic::AtomicUsize::new(0)),
             send_body_state_count: std::sync::Arc::new(core::sync::atomic::AtomicUsize::new(0)),
             dispatch_count: std::sync::Arc::new(core::sync::atomic::AtomicUsize::new(0)),
+            send_joints_count: std::sync::Arc::new(core::sync::atomic::AtomicUsize::new(0)),
+            send_body_rotations_count: std::sync::Arc::new(core::sync::atomic::AtomicUsize::new(0)),
+            dispatch_joint_count: std::sync::Arc::new(core::sync::atomic::AtomicUsize::new(0)),
         };
         world.set_gpu_solver_bridge(Some(Box::new(bridge)));
         assert!(world.gpu_solver_bridge_installed());
@@ -3412,6 +3520,158 @@ mod tests {
         assert!(
             taken_again.is_none(),
             "subsequent take must return None when nothing is installed"
+        );
+    }
+
+    // -------------------------------------------------------------------
+    // v0.12.0: PhysicsWorld auto-routing joint solve through installed bridge
+    // -------------------------------------------------------------------
+
+    #[cfg(feature = "gpu-solver-bridge")]
+    fn build_one_ball_joint_world() -> PhysicsWorld {
+        use crate::joint::{BallJoint, Joint};
+        use crate::math::Vec3Fix;
+        let mut world = PhysicsWorld::new(SolverConfig::default());
+        let body_a = RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE);
+        let body_b = RigidBody::new_dynamic(
+            Vec3Fix::new(Fix128::from_int(1), Fix128::ZERO, Fix128::ZERO),
+            Fix128::ONE,
+        );
+        world.add_body(body_a);
+        world.add_body(body_b);
+        world.joints.push(Joint::Ball(BallJoint::new(
+            0,
+            1,
+            Vec3Fix::ZERO,
+            Vec3Fix::ZERO,
+        )));
+        world
+    }
+
+    /// v0.12.0: attaching a bridge routes joint-solve through the
+    /// bridge on every subsequent `substep` — verified by counting
+    /// bridge method invocations. Joint solve runs **once per
+    /// substep** (unlike contact solve which iterates
+    /// `config.iterations` times), so the counters should each
+    /// increment by exactly one after a single substep.
+    #[cfg(feature = "gpu-solver-bridge")]
+    #[test]
+    fn physics_world_substep_auto_routes_joint_solve_through_bridge() {
+        let send_joints_count = std::sync::Arc::new(core::sync::atomic::AtomicUsize::new(0));
+        let send_body_rotations_count =
+            std::sync::Arc::new(core::sync::atomic::AtomicUsize::new(0));
+        let dispatch_joint_count = std::sync::Arc::new(core::sync::atomic::AtomicUsize::new(0));
+
+        let bridge = RecordingBridge {
+            send_contact_count: std::sync::Arc::new(core::sync::atomic::AtomicUsize::new(0)),
+            send_body_state_count: std::sync::Arc::new(core::sync::atomic::AtomicUsize::new(0)),
+            dispatch_count: std::sync::Arc::new(core::sync::atomic::AtomicUsize::new(0)),
+            send_joints_count: std::sync::Arc::clone(&send_joints_count),
+            send_body_rotations_count: std::sync::Arc::clone(&send_body_rotations_count),
+            dispatch_joint_count: std::sync::Arc::clone(&dispatch_joint_count),
+        };
+
+        let mut world = build_one_ball_joint_world();
+        world.set_gpu_solver_bridge(Some(Box::new(bridge)));
+
+        let dt = Fix128::from_ratio(1, 60);
+        world.substep(dt);
+
+        assert_eq!(
+            send_joints_count.load(core::sync::atomic::Ordering::SeqCst),
+            1,
+            "send_joints must be invoked exactly once per substep"
+        );
+        assert_eq!(
+            send_body_rotations_count.load(core::sync::atomic::Ordering::SeqCst),
+            1,
+            "send_body_rotations must be invoked exactly once per substep"
+        );
+        assert_eq!(
+            dispatch_joint_count.load(core::sync::atomic::Ordering::SeqCst),
+            1,
+            "dispatch_joint_solve_iteration must fire exactly once per substep (single Baumgarte projection, not PGS)"
+        );
+    }
+
+    /// v0.12.0: without a bridge installed, joint solve falls back to
+    /// the CPU `solve_joints`. Verified by observing that the two
+    /// bodies (initially 1 unit apart with a zero-anchor ball joint)
+    /// get pulled together by the joint constraint.
+    #[cfg(feature = "gpu-solver-bridge")]
+    #[test]
+    fn physics_world_substep_falls_back_to_cpu_joint_solve_when_bridge_detached() {
+        let mut world = build_one_ball_joint_world();
+        assert!(!world.gpu_solver_bridge_installed());
+
+        let a_before = world.bodies[0].position.x;
+        let b_before = world.bodies[1].position.x;
+        let dt = Fix128::from_ratio(1, 60);
+        world.substep(dt);
+        let a_after = world.bodies[0].position.x;
+        let b_after = world.bodies[1].position.x;
+
+        // Zero-anchor ball joint constrains anchor_a == anchor_b,
+        // which for zero local anchors is body positions themselves.
+        // CPU `solve_ball_joint` therefore pulls each body toward
+        // the other by half the separation — bodies should move
+        // toward each other but not past each other.
+        let a_delta = (a_after - a_before).to_f32();
+        let b_delta = (b_after - b_before).to_f32();
+        assert!(
+            a_delta > 0.0,
+            "body_a should move in +x toward body_b (delta = {a_delta})"
+        );
+        assert!(
+            b_delta < 0.0,
+            "body_b should move in -x toward body_a (delta = {b_delta})"
+        );
+    }
+
+    /// v0.12.0: attach → observe joint routing → take →
+    /// verify subsequent substep uses CPU path — a mixed-lifecycle
+    /// test that exercises both the auto-routing and fallback code
+    /// paths on the same `PhysicsWorld` instance.
+    #[cfg(feature = "gpu-solver-bridge")]
+    #[test]
+    fn physics_world_substep_joint_solve_bridge_attach_take_lifecycle() {
+        let dispatch_joint_count = std::sync::Arc::new(core::sync::atomic::AtomicUsize::new(0));
+        let bridge = RecordingBridge {
+            send_contact_count: std::sync::Arc::new(core::sync::atomic::AtomicUsize::new(0)),
+            send_body_state_count: std::sync::Arc::new(core::sync::atomic::AtomicUsize::new(0)),
+            dispatch_count: std::sync::Arc::new(core::sync::atomic::AtomicUsize::new(0)),
+            send_joints_count: std::sync::Arc::new(core::sync::atomic::AtomicUsize::new(0)),
+            send_body_rotations_count: std::sync::Arc::new(core::sync::atomic::AtomicUsize::new(0)),
+            dispatch_joint_count: std::sync::Arc::clone(&dispatch_joint_count),
+        };
+
+        let mut world = build_one_ball_joint_world();
+        world.set_gpu_solver_bridge(Some(Box::new(bridge)));
+
+        let dt = Fix128::from_ratio(1, 60);
+        world.substep(dt);
+        assert_eq!(
+            dispatch_joint_count.load(core::sync::atomic::Ordering::SeqCst),
+            1,
+            "first substep must route through bridge"
+        );
+
+        let taken = world.take_gpu_solver_bridge();
+        assert!(taken.is_some(), "bridge take must return Some");
+
+        // After detach, the bridge's counter must not increment on
+        // subsequent substeps — the CPU path takes over.
+        let a_before = world.bodies[0].position.x;
+        world.substep(dt);
+        let a_after = world.bodies[0].position.x;
+        assert_eq!(
+            dispatch_joint_count.load(core::sync::atomic::Ordering::SeqCst),
+            1,
+            "after take_gpu_solver_bridge, no further bridge dispatch may occur"
+        );
+        assert_ne!(
+            a_before, a_after,
+            "CPU joint solve should move body_a toward body_b after detach"
         );
     }
 }

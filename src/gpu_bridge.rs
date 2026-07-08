@@ -180,6 +180,52 @@ pub trait GpuSolverBridge {
     fn recv_body_positions(&self, _positions: &mut [[Fix128; 3]]) {
         panic!("recv_body_positions not implemented by this GpuSolverBridge backend");
     }
+
+    // ---- v0.12.0: joint-solve pipeline (opt-in, default panics) ----
+
+    /// Upload the joint list into the GPU-side buffer. Element
+    /// indices must line up with the caller's `PhysicsWorld::joints`
+    /// slot ordering.
+    ///
+    /// Not every joint variant is required to be handled by every
+    /// backend; ALICE-TRT v3.1.0 supports only [`Joint::Ball`] and
+    /// fails-fast with a `panic!` on other variants. Future backend
+    /// revisions add Hinge / Fixed / D6 support.
+    ///
+    /// # Default
+    ///
+    /// Panics; backends that support joint solve must override.
+    fn send_joints(&mut self, _joints: &[crate::joint::Joint]) {
+        panic!("send_joints not implemented by this GpuSolverBridge backend");
+    }
+
+    /// Upload the per-body rotations that the joint-solve iteration
+    /// reads. `rotations[i]` is body `i`'s orientation quaternion,
+    /// stored as `[x, y, z, w]` matching the CPU `QuatFix` layout.
+    /// Callers who use only the contact-solve pipeline (positions +
+    /// inv_masses) do not need to upload rotations.
+    ///
+    /// # Default
+    ///
+    /// Panics; backends that support joint solve must override.
+    fn send_body_rotations(&mut self, _rotations: &[[Fix128; 4]]) {
+        panic!("send_body_rotations not implemented by this GpuSolverBridge backend");
+    }
+
+    /// Run one joint-solve pass over the currently uploaded joint
+    /// list, applying position corrections to bodies in place. Unlike
+    /// contact solve (which iterates N times per substep), joint
+    /// solve runs exactly once per substep — the correction is a
+    /// Baumgarte-stabilised projection, not a Gauss-Seidel iteration.
+    /// `dt` is the substep length used to compute the compliance
+    /// stabilisation term `compliance / (dt * dt)`.
+    ///
+    /// # Default
+    ///
+    /// Panics; backends that support joint solve must override.
+    fn dispatch_joint_solve_iteration(&mut self, _dt: Fix128) {
+        panic!("dispatch_joint_solve_iteration not implemented by this GpuSolverBridge backend");
+    }
 }
 
 #[cfg(test)]
