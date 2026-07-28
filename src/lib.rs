@@ -257,6 +257,7 @@ pub mod ellipsoid;
 pub mod erosion;
 pub mod error;
 pub mod event;
+pub mod fatigue;
 #[cfg(feature = "ffi")]
 pub mod ffi;
 pub mod filament_db;
