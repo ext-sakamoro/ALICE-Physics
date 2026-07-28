@@ -365,6 +365,7 @@ pub mod thermal;
 pub mod thermal_stress;
 pub mod torus;
 pub mod trimesh;
+pub mod turbulence;
 pub mod vehicle;
 #[cfg(feature = "wasm")]
 mod wasm;
