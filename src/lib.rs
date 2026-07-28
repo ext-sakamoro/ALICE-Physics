@@ -339,6 +339,7 @@ pub mod surface_tension_csf;
 pub mod thin_wall;
 pub mod vibration_wall;
 pub mod warp_risk;
+pub mod wave_ship;
 
 pub mod physics2d;
 
