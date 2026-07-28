@@ -229,6 +229,7 @@ pub mod articulation;
 pub mod audio_physics;
 pub mod beam_stress;
 pub mod box_collider;
+pub mod buckling;
 pub mod bvh;
 pub mod ccd;
 pub mod character;
