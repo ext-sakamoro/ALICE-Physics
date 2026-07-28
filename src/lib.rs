@@ -333,6 +333,7 @@ pub mod sim_field;
 #[cfg(feature = "std")]
 pub mod sim_modifier;
 pub mod support_volume;
+pub mod surface_tension_csf;
 #[cfg(feature = "std")]
 pub mod thin_wall;
 pub mod vibration_wall;
