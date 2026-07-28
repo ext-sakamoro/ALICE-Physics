@@ -313,6 +313,7 @@ pub mod sdf_manifold;
 pub mod sim_field;
 #[cfg(feature = "std")]
 pub mod sim_modifier;
+pub mod support_volume;
 #[cfg(feature = "std")]
 pub mod thin_wall;
 
