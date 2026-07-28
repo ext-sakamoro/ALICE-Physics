@@ -247,6 +247,7 @@ pub mod contact_viz;
 pub mod convex_decompose;
 pub mod convex_mesh_builder;
 pub mod cylinder;
+pub mod damping_rayleigh;
 #[cfg(feature = "replay")]
 pub mod db_bridge;
 pub mod debug_render;
