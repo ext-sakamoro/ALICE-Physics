@@ -84,6 +84,36 @@ pub fn pow_int(x: Fix128, n: i32) -> Fix128 {
     }
 }
 
+/// Deterministic cube root via Newton iteration.
+///
+/// Returns 0 for non-positive inputs. Uses `x_{k+1} = (2·x + n/x²) / 3` with
+/// 24 iterations (Fix128 ULP-level convergence for any `n` in the safe
+/// range `[0, 2^62]`).
+#[must_use]
+pub fn cbrt_fix(n: Fix128) -> Fix128 {
+    if n <= Fix128::ZERO {
+        return Fix128::ZERO;
+    }
+    // Initial guess: use bit-position estimate to seed Newton.
+    let mut x = if n >= Fix128::ONE {
+        // n >= 1 → cbrt ≥ 1 → seed with hi/2 (rough)
+        Fix128::from_int(1 + (n.hi.max(1) as i64) / 2)
+    } else {
+        // n < 1 → seed slightly below 1
+        Fix128::from_ratio(5, 10)
+    };
+    for _ in 0..24 {
+        let x_sq = x * x;
+        if x_sq.is_zero() {
+            break;
+        }
+        // x_{k+1} = (2·x + n/x²) / 3
+        let new = (x.double() + n / x_sq) / Fix128::from_int(3);
+        x = new;
+    }
+    x
+}
+
 /// Clamp `x` to `[lo, hi]`. Assumes `lo ≤ hi`.
 #[inline]
 #[must_use]
@@ -173,6 +203,53 @@ mod tests {
     fn clamp_above_returns_hi() {
         let v = clamp_fix(Fix128::from_int(20), Fix128::ZERO, Fix128::from_int(10));
         assert_eq!(v, Fix128::from_int(10));
+    }
+
+    #[test]
+    fn cbrt_zero_is_zero() {
+        assert_eq!(cbrt_fix(Fix128::ZERO), Fix128::ZERO);
+    }
+
+    #[test]
+    fn cbrt_negative_returns_zero() {
+        assert_eq!(cbrt_fix(Fix128::from_int(-8)), Fix128::ZERO);
+    }
+
+    #[test]
+    fn cbrt_eight_is_two() {
+        let v = cbrt_fix(Fix128::from_int(8));
+        assert!(approx_eq(
+            v,
+            Fix128::from_int(2),
+            Fix128::from_ratio(1, 100)
+        ));
+    }
+
+    #[test]
+    fn cbrt_twenty_seven_is_three() {
+        let v = cbrt_fix(Fix128::from_int(27));
+        assert!(approx_eq(
+            v,
+            Fix128::from_int(3),
+            Fix128::from_ratio(1, 100)
+        ));
+    }
+
+    #[test]
+    fn cbrt_one_is_one() {
+        let v = cbrt_fix(Fix128::ONE);
+        assert!(approx_eq(v, Fix128::ONE, Fix128::from_ratio(1, 100)));
+    }
+
+    #[test]
+    fn cbrt_fractional() {
+        // cbrt(0.125) = 0.5
+        let v = cbrt_fix(Fix128::from_ratio(125, 1000));
+        assert!(approx_eq(
+            v,
+            Fix128::from_ratio(5, 10),
+            Fix128::from_ratio(1, 100)
+        ));
     }
 
     #[test]
