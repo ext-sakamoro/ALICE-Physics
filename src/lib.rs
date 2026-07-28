@@ -312,6 +312,8 @@ pub mod sdf_manifold;
 pub mod sim_field;
 #[cfg(feature = "std")]
 pub mod sim_modifier;
+#[cfg(feature = "std")]
+pub mod thin_wall;
 
 pub mod physics2d;
 
