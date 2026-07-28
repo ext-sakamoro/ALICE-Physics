@@ -234,6 +234,7 @@ pub mod bridging;
 pub mod buckling;
 pub mod bvh;
 pub mod ccd;
+pub mod cfd_solver;
 pub mod character;
 pub mod cloth;
 pub mod cloth_fluid;
