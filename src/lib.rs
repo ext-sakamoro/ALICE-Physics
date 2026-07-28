@@ -288,6 +288,7 @@ pub mod math;
 pub mod modal;
 pub mod motor;
 pub mod multi_world;
+pub mod multiphase;
 pub mod netcode;
 #[cfg(feature = "neural")]
 pub mod neural;
