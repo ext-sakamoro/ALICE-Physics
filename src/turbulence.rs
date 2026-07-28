@@ -190,6 +190,106 @@ impl KOmegaState {
 }
 
 // ============================================================================
+// Wall functions (Session 3 I8 upgrade)
+// ============================================================================
+
+/// von Kármán constant κ (≈ 0.41) for log-law wall function.
+pub const VON_KARMAN: Fix128 = Fix128 {
+    hi: 0,
+    lo: 0x68F5_C28F_5C28_F5C3,
+};
+/// Additive log-law constant B (≈ 5.5) for smooth walls.
+pub const LOG_LAW_B: Fix128 = Fix128 {
+    hi: 5,
+    lo: 0x8000_0000_0000_0000,
+};
+
+/// y+ boundary between the viscous sublayer and the log-law region.
+pub const Y_PLUS_TRANSITION: Fix128 = Fix128 { hi: 11, lo: 0 };
+
+/// Non-dimensional wall distance `y+ = ρ·u_τ·y / μ`.
+#[must_use]
+pub fn y_plus(
+    density: Fix128,
+    u_tau: Fix128,
+    y_m: Fix128,
+    dynamic_viscosity_pas: Fix128,
+) -> Fix128 {
+    if dynamic_viscosity_pas.is_zero() {
+        return Fix128::ZERO;
+    }
+    density * u_tau * y_m / dynamic_viscosity_pas
+}
+
+/// Deterministic natural log via range reduction to `[1, 2)` + atanh series.
+#[must_use]
+fn ln_fix(x: Fix128) -> Fix128 {
+    if x <= Fix128::ZERO {
+        return Fix128::ZERO;
+    }
+    let ln2 = Fix128 {
+        hi: 0,
+        lo: 0xB172_17F7_D1CF_79AC,
+    };
+    let mut m = x;
+    let mut k: i64 = 0;
+    while m >= Fix128::from_int(2) {
+        m = m.half();
+        k += 1;
+    }
+    while m < Fix128::ONE {
+        m = m.double();
+        k -= 1;
+    }
+    let t = (m - Fix128::ONE) / (m + Fix128::ONE);
+    let t2 = t * t;
+    let mut term = t;
+    let mut sum = Fix128::ZERO;
+    for n in 0..16u32 {
+        let denom = Fix128::from_int(i64::from(2 * n + 1));
+        sum = sum + term / denom;
+        term = term * t2;
+    }
+    Fix128::from_int(k) * ln2 + sum.double()
+}
+
+/// Dimensionless velocity `u+ = u / u_τ` from the universal wall profile.
+/// - `y+ < 11.63` → `u+ = y+` (viscous sublayer).
+/// - Otherwise    → `u+ = (1/κ)·ln(y+) + B`  (log law).
+#[must_use]
+pub fn u_plus(y_plus_val: Fix128) -> Fix128 {
+    if y_plus_val <= Fix128::ZERO {
+        return Fix128::ZERO;
+    }
+    if y_plus_val < Y_PLUS_TRANSITION {
+        return y_plus_val;
+    }
+    let ln_yp = ln_fix(y_plus_val);
+    ln_yp / VON_KARMAN + LOG_LAW_B
+}
+
+/// Wall-consistent turbulent kinetic energy and dissipation in the log
+/// region. Given friction velocity `u_τ` (m/s) and wall distance `y` (m):
+///
+///   k = u_τ² / √C_μ
+///   ε = u_τ³ / (κ · y)
+#[must_use]
+pub fn wall_k_epsilon(u_tau_m_per_s: Fix128, y_m: Fix128) -> (Fix128, Fix128) {
+    if y_m.is_zero() || u_tau_m_per_s.is_zero() {
+        return (Fix128::ZERO, Fix128::ZERO);
+    }
+    let sqrt_cmu = KE_C_MU.sqrt();
+    let k = if sqrt_cmu.is_zero() {
+        Fix128::ZERO
+    } else {
+        u_tau_m_per_s * u_tau_m_per_s / sqrt_cmu
+    };
+    let u_tau_cube = u_tau_m_per_s * u_tau_m_per_s * u_tau_m_per_s;
+    let eps = u_tau_cube / (VON_KARMAN * y_m);
+    (k, eps)
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
 
@@ -356,5 +456,67 @@ mod tests {
             omega: Fix128::ZERO,
         };
         assert_eq!(st.eddy_viscosity(), Fix128::ZERO);
+    }
+
+    #[test]
+    fn von_karman_and_b_constants() {
+        assert!(approx_eq(
+            VON_KARMAN,
+            Fix128::from_ratio(41, 100),
+            Fix128::from_ratio(1, 100)
+        ));
+        assert!(approx_eq(
+            LOG_LAW_B,
+            Fix128::from_ratio(55, 10),
+            Fix128::from_ratio(1, 100)
+        ));
+    }
+
+    #[test]
+    fn y_plus_zero_viscosity_returns_zero() {
+        let v = y_plus(
+            Fix128::from_int(1000),
+            Fix128::ONE,
+            Fix128::from_ratio(1, 100),
+            Fix128::ZERO,
+        );
+        assert_eq!(v, Fix128::ZERO);
+    }
+
+    #[test]
+    fn u_plus_sublayer_linear() {
+        // y+ = 5 → u+ = 5 (viscous sublayer)
+        let up = u_plus(Fix128::from_int(5));
+        assert_eq!(up, Fix128::from_int(5));
+    }
+
+    #[test]
+    fn u_plus_log_region_increases_slowly() {
+        // y+ = 100 → u+ = (1/0.41)·ln(100) + 5.5 ≈ 2.44·4.605 + 5.5 ≈ 16.7
+        let up = u_plus(Fix128::from_int(100));
+        assert!(approx_eq(
+            up,
+            Fix128::from_ratio(167, 10),
+            Fix128::from_int(1)
+        ));
+    }
+
+    #[test]
+    fn u_plus_zero_returns_zero() {
+        assert_eq!(u_plus(Fix128::ZERO), Fix128::ZERO);
+    }
+
+    #[test]
+    fn wall_k_epsilon_positive() {
+        let (k, eps) = wall_k_epsilon(Fix128::from_ratio(5, 10), Fix128::from_ratio(1, 100));
+        assert!(k > Fix128::ZERO);
+        assert!(eps > Fix128::ZERO);
+    }
+
+    #[test]
+    fn wall_k_epsilon_zero_y_returns_zero() {
+        let (k, eps) = wall_k_epsilon(Fix128::ONE, Fix128::ZERO);
+        assert_eq!(k, Fix128::ZERO);
+        assert_eq!(eps, Fix128::ZERO);
     }
 }
