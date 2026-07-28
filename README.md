@@ -1,12 +1,19 @@
 # ALICE-Physics
 
-**Deterministic 128-bit Fixed-Point Physics Engine** - v0.8.0
+**Deterministic 128-bit Fixed-Point Physics Engine** - v0.13.0
 
 English | [日本語](README_JP.md)
 
 > Part of **[ALICE-Eco-System](https://github.com/ext-sakamoro/ALICE-Eco-System)** — 260+ crate Edge-to-Cloud data pipeline (SDF / Physics / LLM / Motion / Font / TTS)
 
 A high-precision physics engine designed for deterministic simulation across different platforms and hardware. Uses 128-bit fixed-point arithmetic to ensure bit-exact results regardless of CPU, compiler, or operating system.
+
+**v0.10-0.13 highlights** — a three-session completeness push added
+**35 modules and 3 integrated solver loops** covering the full spectrum
+from 3D-printing safety (warp / thin-wall / stress / bridging) through
+composite / plastic / fatigue mechanics, up to turbulence, VOF / level-set
+multi-phase flow, and a runnable CFD time-step loop. All bit-exact and
+Fix128 deterministic; see [Session 1-3 Additions](#session-1-3-additions-v010-013).
 
 ## Features
 
@@ -92,6 +99,105 @@ A high-precision physics engine designed for deterministic simulation across dif
 | **Multi-World** | Multiple independent physics worlds with body transfer |
 | **Particle System** | General-purpose emitters, lifetime, force field integration |
 | **no_std Compatible** | Works on embedded systems and WebAssembly |
+
+## Session 1-3 Additions (v0.10-0.13)
+
+Three completeness sessions added **35 modules + 3 integrated solver
+loops + 3 runnable examples** to close the gap between "physics primitives"
+and "usable engineering solvers." Every addition preserves Fix128 bit-exact
+determinism and cites the source formula (Roark / Timoshenko / Simo &
+Hughes / Jones / Tsai-Wu / Hill / Norton / Findley / WLF / Brackbill /
+Smagorinsky / Launder-Spalding / Wilcox / Hasselmann / Turns / Anderson /
+etc.).
+
+### Session 1 — 3D Print Safety + Structural Tier 1 (v0.10)
+
+| Module | Purpose | Formula source |
+|--------|---------|----------------|
+| `filament_db` | 10-material property DB (Young's / yield / tensile / density / Tg / anisotropy) | MatWeb / ASM Metals Handbook |
+| `thin_wall` | SDF sphere-marching wall thickness detection | Bambu/Prusa min-wall guidance |
+| `beam_stress` | Cross-section + load case + Euler buckling + FoS | Roark's Formulas for Stress and Strain |
+| `support_volume` | Overhang → filament mm³ + print time estimate | Bambu Studio support manual |
+| `anisotropic` | 9-constant orthotropic + Hill + Tsai-Wu failure | Jones, *Mechanics of Composite Materials* |
+| `plastic` | von Mises + isotropic/kinematic/combined hardening + Norton creep | Simo & Hughes; Norton (1929) |
+| `buckling` | Johnson / Euler / plate / snap-through | Timoshenko & Gere; Bažant & Cedolin |
+| `hyperelastic` | Neo-Hookean / Mooney-Rivlin / Yeoh | Ogden (1984); Yeoh (1990) |
+| `bimaterial` | Timoshenko bimetal residual + Voigt/Reuss bounds | Timoshenko (1925) |
+| `layer_adhesion` | XY vs Z 6-component effective strength envelope | Empirical FDM data |
+| `print_orientation` | Load-direction optimization + Euler grid search | Anisotropy transformation |
+| `bridging` | Material-specific max bridge distance check | Bambu/Prusa knowledge base |
+| `warp_risk` | Cooling shrinkage × footprint → Low/Medium/High/Critical | ALICE-Bamboo docs incident-tuned |
+
+### Session 2 — Structural Tier 2 + Fluid Tier 1-2 (v0.11-0.12)
+
+| Module | Purpose | Formula source |
+|--------|---------|----------------|
+| `fatigue` | Basquin S-N + Miner cumulative damage | Basquin (1910); Miner (1945) |
+| `modal` | 1-DOF / beam / Warburton plate / torsional natural frequency | Blevins; Warburton (1954) |
+| `damping_rayleigh` | C = αM + βK + fit_two_modes | Clough & Penzien |
+| `laminate` | Classical Laminate Theory ABD matrix | Jones eq. 2.84 |
+| `prestressed` | Motosh bolt preload + parabolic cable pretension | Shigley; VDI 2230 |
+| `fillet_stress` | Kirsch / Inglis / Peterson K_t | Peterson; Pilkey; Norton |
+| `vibration_wall` | Thin-wall resonance vs 6 printer excitation presets | Blevins; Bambu X1C spec |
+| `thermal_stress` | Constrained σ = c·E·α·ΔT + Tg proximity warning | Timoshenko & Goodier |
+| `creep_longterm` | Findley 3-parameter + WLF time-temperature superposition | Findley (1989); Williams et al. (1955) |
+| `non_newtonian` | Power-law / Carreau / Bingham / Herschel-Bulkley | Bird, Stewart, Lightfoot |
+| `multiphase` | VOF advection + level set reinit + curvature | Hirt & Nichols (1981); Osher & Sethian (1988) |
+| `compressible` | Ideal gas + Rankine-Hugoniot shock + Riemann invariants | Anderson, *Modern Compressible Flow* |
+| `eulerian_grid` | Staggered MAC + Jacobi/red-black GS pressure projection | Harlow & Welch (1965) |
+| `turbulence` | Smagorinsky LES + k-ε + k-ω + wall function | Pope; Wilcox; Launder & Spalding |
+| `surface_tension_csf` | Continuum Surface Force | Brackbill, Kothe & Zemach (1992) |
+| `fsi_advanced` | Solid ↔ fluid drag / buoyancy / reaction | Peskin immersed boundary |
+| `smoke_fire` | Arrhenius reaction + soot + Boussinesq buoyancy | Turns; Kuo |
+| `wave_ship` | JONSWAP spectrum + Froude-Krylov + 2-DOF | Hasselmann (1973); Faltinsen |
+| `interface_capture` | Fast Sweeping FSM + PLIC (Rider-Kothe analytical) | Zhao (2005); Youngs (1982) |
+
+### Session 3 — Solver Loops + 12 Improvements + 3 Demos (v0.13)
+
+**Integrated solver loops** — single `step(dt)` entry points that compose
+the Session 1-2 modules into a driven simulation:
+
+| Solver | Composes |
+|--------|----------|
+| `cfd_solver::CfdSolver` | MAC + turbulence + non-Newtonian + level_set + CSF + Boussinesq + gravity |
+| `structural_solver::StructuralSolver` | beam + plastic + creep + fatigue + buckling with history tracking |
+| `print_pipeline_solver` | 10 print-safety checks (warp + layer + orientation + thermal + beam + bridging + support + fillet + bimaterial) in one shot |
+
+**12 improvements** — accuracy / performance / robustness:
+
+- I1 `math_util` shared `exp_fix` / `cbrt_fix` / `pow_int` / `clamp_fix`
+- I2 `eulerian_grid` trilinear P2G / G2P (was nearest-cell)
+- I3 `multiphase` semi-Lagrangian advection (was first-order upwind)
+- I4 PLIC Rider-Kothe analytical + cbrt (bisection collapse)
+- I5 FSM Godunov 3-neighbour quadratic Eikonal (was min + dx)
+- I6 `safety::sdf_aabb` NaN/degenerate/min-dim guards
+- I7 `safety_validate` integrates `thin_wall` + `layer_adhesion` + `thermal_stress`
+- I8 turbulence log-law wall function + `ln_fix`
+- I9 pressure projection red-black Gauss-Seidel (~2× convergence)
+- I10 dynamic Smagorinsky Germano estimator
+- I11 `laminate::compute_abd` rayon parallel (feature-gated)
+- I12 `fatigue::stress_at_cycles` Newton early exit
+
+**3 runnable examples** demonstrating the solvers end-to-end:
+
+```bash
+cargo run --example cfd_smoke_plume --release          # gravity settling in a 12³ MAC grid
+cargo run --example structural_pla_shelf_creep --release  # 20 h PLA shelf under 20 N centre load
+cargo run --example print_full_safety --release        # SKADIS-style plate full safety report
+```
+
+`cfd_smoke_plume` demonstrates bit-exact `v_y = -g·t` recovery, with the
+pressure projection maintaining zero divergence at the grid centre throughout
+the run. `print_full_safety` exercises all 10 safety checks and returns a
+realistic UNSAFE verdict for a 300 × 300 × 5 mm PLA plate (Warp Critical /
+Beam FoS 1.16 / Fillet K_t 3.30) — exactly matching the failure mode
+documented in the ALICE-Bamboo warp incident.
+
+### Test count
+
+Session 1 baseline (v0.9): 719 → Session 1 end (v0.10): 904 → Session 2 end
+(v0.12): 1170 → **Session 3 end (v0.13): 1175 alice-physics tests + 53
+alice-bamboo integration tests, all passing.**
 
 ### Sub-stepping TGS Solver (preview)
 
@@ -809,6 +915,96 @@ use alice_physics::ccd;
 let bullet = RigidBody::new_dynamic(Vec3Fix::from_int(0, 0, 0), Fix128::ONE);
 let bullet_id = world.add_body(bullet);
 world.enable_ccd(bullet_id);   // subswept collision, avoids tunneling
+```
+
+### Session 3 Solver Loops (v0.13)
+
+**CFD gravity settling** — solve incompressible Navier-Stokes for one time
+step with pressure projection:
+
+```rust
+use alice_physics::cfd_solver::CfdSolver;
+use alice_physics::math::Fix128;
+
+let mut solver = CfdSolver::new(12, 12, 12, Fix128::from_ratio(1, 10));
+solver.jacobi_iterations = 100;
+
+// Water in gravity, closed box → settles, divergence ≈ 0
+for _ in 0..30 {
+    solver.step(Fix128::from_ratio(1, 1000));  // 0.001 s per step
+}
+// solver.grid.v[…] centre column will read −0.294 m/s at t = 0.03 s
+// matching −g·t exactly (bit-exact recovery of the free-fall analytical solution)
+```
+
+**Structural creep + fatigue history** — advance a PLA shelf through
+20 h of sustained load at 55 °C and print the diagnostic table:
+
+```rust
+use alice_physics::beam_stress::{CrossSection, LoadCase};
+use alice_physics::filament_db::MaterialProperties;
+use alice_physics::math::Fix128;
+use alice_physics::structural_solver::StructuralSolver;
+
+let section = CrossSection::Rectangular {
+    width_mm: Fix128::from_int(150),
+    height_mm: Fix128::from_int(10),
+};
+let load = LoadCase::SimplySupportedCenter {
+    load_n: Fix128::from_int(20),
+    length_mm: Fix128::from_int(300),
+};
+let mut solver = StructuralSolver::new(section, load, MaterialProperties::pla());
+solver.operating_temp_c = Fix128::from_int(55);
+solver.dt_s = Fix128::from_int(3600);   // 1-hour steps
+
+let history = solver.run(20);
+println!(
+    "creep {:.5}, fatigue D = {:.4}, failure step = {:?}",
+    history.plastic_state.creep_strain.to_f32(),
+    history.fatigue_damage.to_f32(),
+    history.failure_step,
+);
+```
+
+**Print pipeline safety** — run 10 print-safety checks in one call:
+
+```rust
+use alice_physics::beam_stress::{CrossSection, LoadCase};
+use alice_physics::math::Fix128;
+use alice_physics::print_orientation::LoadDirection;
+use alice_physics::print_pipeline_solver::{analyze_print_pipeline, PrintPipelineInputs};
+use alice_physics::support_volume::OverhangRegion;
+use alice_physics::warp_risk::Footprint;
+
+let footprint = Footprint {
+    area_mm2: Fix128::from_int(300 * 300),
+    max_dimension_mm: Fix128::from_int(300),
+};
+let inputs = PrintPipelineInputs {
+    beam_load: Some((
+        CrossSection::Rectangular {
+            width_mm: Fix128::from_int(50),
+            height_mm: Fix128::from_int(5),
+        },
+        LoadCase::CantileverEndPoint {
+            load_n: Fix128::from_int(30),
+            length_mm: Fix128::from_int(300),
+        },
+    )),
+    load_direction: Some(LoadDirection::axis_z()),
+    overhangs: vec![OverhangRegion {
+        projected_area_mm2: Fix128::from_int(50 * 50),
+        support_height_mm: Fix128::from_int(15),
+    }],
+    fillet: Some((Fix128::from_ratio(3, 10), Fix128::from_int(20), Fix128::from_int(40))),
+    ..Default::default()
+};
+
+let report = analyze_print_pipeline(footprint, "PLA", &inputs);
+report.print();
+// Prints warp / strength envelope / thermal / beam FoS / bridging /
+// support volume / K_t / bimaterial and an overall SAFE / UNSAFE verdict.
 ```
 
 ### Where to go next
