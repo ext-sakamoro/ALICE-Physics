@@ -278,34 +278,241 @@ pub fn project_pressure(grid: &mut MacGrid, dt_s: Fix128, density_kg_m3: Fix128,
 }
 
 // ============================================================================
-// Trilinear P2G / G2P
+// Trilinear P2G / G2P (Session 3 I2 upgrade)
 // ============================================================================
 
-/// Grid-to-particle: sample velocity at world position `pos_m`.
+/// Split a world coordinate `p` (m) into `(base_index, frac)` for a
+/// specified face-grid offset `axis_offset` (in cell units, 0 or 0.5).
+fn split(p_over_dx: Fix128, axis_offset: Fix128) -> (usize, Fix128) {
+    // Adjust for staggering (subtract offset so origin aligns with face 0).
+    let shifted = p_over_dx - axis_offset;
+    let mut base = shifted.hi;
+    // Convert `.lo` (raw fractional bits) to a Fix128 in [0, 1)
+    let frac_lo = shifted.lo;
+    // Negative shifted values: rust "hi" is floor toward negative infinity? No,
+    // Fix128.hi is signed integer part but truncation is toward zero for
+    // positive; for negative it's slightly different. Handle by explicit floor:
+    if shifted.is_negative() && frac_lo != 0 {
+        base -= 1;
+    }
+    let frac = Fix128 { hi: 0, lo: frac_lo };
+    if base < 0 {
+        (0, Fix128::ZERO)
+    } else {
+        (base as usize, frac)
+    }
+}
+
+/// Trilinear-interpolate the u-face grid at a world point.
 ///
-/// Uses linear interpolation on the u-face grid alone for the x-component
-/// (each velocity component reads its own face grid).
+/// The u-face is staggered by `+0` on X, `+0.5` on Y, `+0.5` on Z relative
+/// to the cell corner grid.
+fn sample_u_trilinear(grid: &MacGrid, pos_m: Vec3Fix) -> Fix128 {
+    if grid.dx.is_zero() {
+        return Fix128::ZERO;
+    }
+    let inv_dx = Fix128::ONE / grid.dx;
+    let fx = pos_m.x * inv_dx;
+    let fy = pos_m.y * inv_dx;
+    let fz = pos_m.z * inv_dx;
+    let (i, u) = split(fx, Fix128::ZERO);
+    let (j, v) = split(fy, Fix128::from_ratio(1, 2));
+    let (k, w) = split(fz, Fix128::from_ratio(1, 2));
+
+    let i0 = i.min(grid.nx);
+    let i1 = (i + 1).min(grid.nx);
+    let j0 = j.min(grid.ny - 1);
+    let j1 = (j + 1).min(grid.ny - 1);
+    let k0 = k.min(grid.nz - 1);
+    let k1 = (k + 1).min(grid.nz - 1);
+
+    let om_u = Fix128::ONE - u;
+    let om_v = Fix128::ONE - v;
+    let om_w = Fix128::ONE - w;
+
+    let c00 = grid.u(i0, j0, k0) * om_u + grid.u(i1, j0, k0) * u;
+    let c10 = grid.u(i0, j1, k0) * om_u + grid.u(i1, j1, k0) * u;
+    let c01 = grid.u(i0, j0, k1) * om_u + grid.u(i1, j0, k1) * u;
+    let c11 = grid.u(i0, j1, k1) * om_u + grid.u(i1, j1, k1) * u;
+
+    let c0 = c00 * om_v + c10 * v;
+    let c1 = c01 * om_v + c11 * v;
+    c0 * om_w + c1 * w
+}
+
+fn sample_v_trilinear(grid: &MacGrid, pos_m: Vec3Fix) -> Fix128 {
+    if grid.dx.is_zero() {
+        return Fix128::ZERO;
+    }
+    let inv_dx = Fix128::ONE / grid.dx;
+    let fx = pos_m.x * inv_dx;
+    let fy = pos_m.y * inv_dx;
+    let fz = pos_m.z * inv_dx;
+    let (i, u) = split(fx, Fix128::from_ratio(1, 2));
+    let (j, v) = split(fy, Fix128::ZERO);
+    let (k, w) = split(fz, Fix128::from_ratio(1, 2));
+    let i0 = i.min(grid.nx - 1);
+    let i1 = (i + 1).min(grid.nx - 1);
+    let j0 = j.min(grid.ny);
+    let j1 = (j + 1).min(grid.ny);
+    let k0 = k.min(grid.nz - 1);
+    let k1 = (k + 1).min(grid.nz - 1);
+    let om_u = Fix128::ONE - u;
+    let om_v = Fix128::ONE - v;
+    let om_w = Fix128::ONE - w;
+    let c00 = grid.v(i0, j0, k0) * om_v + grid.v(i0, j1, k0) * v;
+    let c10 = grid.v(i1, j0, k0) * om_v + grid.v(i1, j1, k0) * v;
+    let c01 = grid.v(i0, j0, k1) * om_v + grid.v(i0, j1, k1) * v;
+    let c11 = grid.v(i1, j0, k1) * om_v + grid.v(i1, j1, k1) * v;
+    let c0 = c00 * om_u + c10 * u;
+    let c1 = c01 * om_u + c11 * u;
+    c0 * om_w + c1 * w
+}
+
+fn sample_w_trilinear(grid: &MacGrid, pos_m: Vec3Fix) -> Fix128 {
+    if grid.dx.is_zero() {
+        return Fix128::ZERO;
+    }
+    let inv_dx = Fix128::ONE / grid.dx;
+    let fx = pos_m.x * inv_dx;
+    let fy = pos_m.y * inv_dx;
+    let fz = pos_m.z * inv_dx;
+    let (i, u) = split(fx, Fix128::from_ratio(1, 2));
+    let (j, v) = split(fy, Fix128::from_ratio(1, 2));
+    let (k, w) = split(fz, Fix128::ZERO);
+    let i0 = i.min(grid.nx - 1);
+    let i1 = (i + 1).min(grid.nx - 1);
+    let j0 = j.min(grid.ny - 1);
+    let j1 = (j + 1).min(grid.ny - 1);
+    let k0 = k.min(grid.nz);
+    let k1 = (k + 1).min(grid.nz);
+    let om_u = Fix128::ONE - u;
+    let om_v = Fix128::ONE - v;
+    let om_w = Fix128::ONE - w;
+    let c00 = grid.w(i0, j0, k0) * om_w + grid.w(i0, j0, k1) * w;
+    let c10 = grid.w(i1, j0, k0) * om_w + grid.w(i1, j0, k1) * w;
+    let c01 = grid.w(i0, j1, k0) * om_w + grid.w(i0, j1, k1) * w;
+    let c11 = grid.w(i1, j1, k0) * om_w + grid.w(i1, j1, k1) * w;
+    let c0 = c00 * om_u + c10 * u;
+    let c1 = c01 * om_u + c11 * u;
+    c0 * om_v + c1 * v
+}
+
+/// Grid-to-particle: trilinear-sample velocity at world position `pos_m`.
+///
+/// Correct MAC-grid staggering is applied per component; velocities read
+/// from their own face grids. Session 3 I2 upgrade from nearest-cell.
 #[must_use]
 pub fn g2p_velocity(grid: &MacGrid, pos_m: Vec3Fix) -> Vec3Fix {
     if grid.dx.is_zero() {
         return Vec3Fix::default();
     }
+    Vec3Fix::new(
+        sample_u_trilinear(grid, pos_m),
+        sample_v_trilinear(grid, pos_m),
+        sample_w_trilinear(grid, pos_m),
+    )
+}
+
+/// Scatter one particle's velocity onto the 8 nearest u-face grid nodes
+/// using trilinear weights (Session 3 I2 upgrade). The caller must
+/// separately track per-cell weight sums if quantitative velocity means
+/// are required — this routine only accumulates weighted deposits.
+fn deposit_u_trilinear(grid: &mut MacGrid, pos_m: Vec3Fix, vx: Fix128) {
+    if grid.dx.is_zero() {
+        return;
+    }
     let inv_dx = Fix128::ONE / grid.dx;
-    // Fractional index for each face grid — for the x-face grid, the origin
-    // sits at (0, 0.5·dx, 0.5·dx). Compute floor + fractional.
-    let fx = pos_m.x * inv_dx;
-    let fy = pos_m.y * inv_dx;
-    let fz = pos_m.z * inv_dx;
-    let ix = fx.hi as usize;
-    let iy = fy.hi as usize;
-    let iz = fz.hi as usize;
-    // For simplicity fall back to nearest-cell centred velocity.
-    let (ucx, vcy, wcz) = grid.cell_velocity(
-        ix.min(grid.nx - 1),
-        iy.min(grid.ny - 1),
-        iz.min(grid.nz - 1),
-    );
-    Vec3Fix::new(ucx, vcy, wcz)
+    let (i, u) = split(pos_m.x * inv_dx, Fix128::ZERO);
+    let (j, v) = split(pos_m.y * inv_dx, Fix128::from_ratio(1, 2));
+    let (k, w) = split(pos_m.z * inv_dx, Fix128::from_ratio(1, 2));
+    let om_u = Fix128::ONE - u;
+    let om_v = Fix128::ONE - v;
+    let om_w = Fix128::ONE - w;
+    let corners = [
+        (i, j, k, om_u * om_v * om_w),
+        (i + 1, j, k, u * om_v * om_w),
+        (i, j + 1, k, om_u * v * om_w),
+        (i + 1, j + 1, k, u * v * om_w),
+        (i, j, k + 1, om_u * om_v * w),
+        (i + 1, j, k + 1, u * om_v * w),
+        (i, j + 1, k + 1, om_u * v * w),
+        (i + 1, j + 1, k + 1, u * v * w),
+    ];
+    for (ci, cj, ck, weight) in corners {
+        if ci <= grid.nx && cj < grid.ny && ck < grid.nz {
+            let ix = grid.idx_u(ci, cj, ck);
+            grid.u[ix] = grid.u[ix] + weight * vx;
+        }
+    }
+}
+
+fn deposit_v_trilinear(grid: &mut MacGrid, pos_m: Vec3Fix, vy: Fix128) {
+    if grid.dx.is_zero() {
+        return;
+    }
+    let inv_dx = Fix128::ONE / grid.dx;
+    let (i, u) = split(pos_m.x * inv_dx, Fix128::from_ratio(1, 2));
+    let (j, v) = split(pos_m.y * inv_dx, Fix128::ZERO);
+    let (k, w) = split(pos_m.z * inv_dx, Fix128::from_ratio(1, 2));
+    let om_u = Fix128::ONE - u;
+    let om_v = Fix128::ONE - v;
+    let om_w = Fix128::ONE - w;
+    let corners = [
+        (i, j, k, om_u * om_v * om_w),
+        (i + 1, j, k, u * om_v * om_w),
+        (i, j + 1, k, om_u * v * om_w),
+        (i + 1, j + 1, k, u * v * om_w),
+        (i, j, k + 1, om_u * om_v * w),
+        (i + 1, j, k + 1, u * om_v * w),
+        (i, j + 1, k + 1, om_u * v * w),
+        (i + 1, j + 1, k + 1, u * v * w),
+    ];
+    for (ci, cj, ck, weight) in corners {
+        if ci < grid.nx && cj <= grid.ny && ck < grid.nz {
+            let ix = grid.idx_v(ci, cj, ck);
+            grid.v[ix] = grid.v[ix] + weight * vy;
+        }
+    }
+}
+
+fn deposit_w_trilinear(grid: &mut MacGrid, pos_m: Vec3Fix, vz: Fix128) {
+    if grid.dx.is_zero() {
+        return;
+    }
+    let inv_dx = Fix128::ONE / grid.dx;
+    let (i, u) = split(pos_m.x * inv_dx, Fix128::from_ratio(1, 2));
+    let (j, v) = split(pos_m.y * inv_dx, Fix128::from_ratio(1, 2));
+    let (k, w) = split(pos_m.z * inv_dx, Fix128::ZERO);
+    let om_u = Fix128::ONE - u;
+    let om_v = Fix128::ONE - v;
+    let om_w = Fix128::ONE - w;
+    let corners = [
+        (i, j, k, om_u * om_v * om_w),
+        (i + 1, j, k, u * om_v * om_w),
+        (i, j + 1, k, om_u * v * om_w),
+        (i + 1, j + 1, k, u * v * om_w),
+        (i, j, k + 1, om_u * om_v * w),
+        (i + 1, j, k + 1, u * om_v * w),
+        (i, j + 1, k + 1, om_u * v * w),
+        (i + 1, j + 1, k + 1, u * v * w),
+    ];
+    for (ci, cj, ck, weight) in corners {
+        if ci < grid.nx && cj < grid.ny && ck <= grid.nz {
+            let ix = grid.idx_w(ci, cj, ck);
+            grid.w[ix] = grid.w[ix] + weight * vz;
+        }
+    }
+}
+
+/// Particle-to-grid: trilinear scatter of one particle's velocity across
+/// the 8 nearest face nodes for each of u/v/w. Session 3 I2 upgrade;
+/// the earlier `p2g_nearest` implementation is retained below for callers
+/// that need the simpler (less accurate) variant.
+pub fn p2g_trilinear(grid: &mut MacGrid, pos_m: Vec3Fix, vel_m_per_s: Vec3Fix) {
+    deposit_u_trilinear(grid, pos_m, vel_m_per_s.x);
+    deposit_v_trilinear(grid, pos_m, vel_m_per_s.y);
+    deposit_w_trilinear(grid, pos_m, vel_m_per_s.z);
 }
 
 /// Particle-to-grid: scatter one particle's velocity `vel_m_per_s` at
@@ -482,5 +689,52 @@ mod tests {
         let vel = Vec3Fix::new(Fix128::ONE, Fix128::ONE, Fix128::ONE);
         p2g_nearest(&mut g, pos, vel);
         assert_eq!(g.u(0, 0, 0), Fix128::ZERO);
+    }
+
+    #[test]
+    fn p2g_trilinear_deposits_to_8_corners() {
+        // Place a particle at the exact centre of a cell (interior).
+        // Trilinear weights should distribute 1/8 to each of the 8 nearest
+        // u-face nodes (well, technically the 8 face nodes around the u-face
+        // cell whose centre is at that offset).
+        let mut g = MacGrid::new(4, 4, 4, Fix128::ONE);
+        // Particle at (1.5, 1.5, 1.5) — a cell centre.
+        // u-grid offset is (0, 0.5, 0.5) → local frac (0.5, 0.0, 0.0)
+        //   → distributes only in x, so u_lo · 0.5 + u_hi · 0.5
+        let pos = Vec3Fix::new(
+            Fix128::from_ratio(15, 10),
+            Fix128::from_ratio(15, 10),
+            Fix128::from_ratio(15, 10),
+        );
+        let vel = Vec3Fix::new(Fix128::from_int(4), Fix128::ZERO, Fix128::ZERO);
+        p2g_trilinear(&mut g, pos, vel);
+        // u(1, 1, 1) and u(2, 1, 1) should each receive 2
+        assert_eq!(g.u(1, 1, 1), Fix128::from_int(2));
+        assert_eq!(g.u(2, 1, 1), Fix128::from_int(2));
+    }
+
+    #[test]
+    fn g2p_trilinear_between_faces_interpolates() {
+        let mut g = MacGrid::new(4, 4, 4, Fix128::ONE);
+        let i0 = g.idx_u(1, 1, 1);
+        let i1 = g.idx_u(2, 1, 1);
+        g.u[i0] = Fix128::from_int(10);
+        g.u[i1] = Fix128::from_int(20);
+        // Position between the two u-faces should give ~15 by linear interp
+        let pos = Vec3Fix::new(
+            Fix128::from_ratio(15, 10),
+            Fix128::from_ratio(15, 10),
+            Fix128::from_ratio(15, 10),
+        );
+        let v = g2p_velocity(&g, pos);
+        assert_eq!(v.x, Fix128::from_int(15));
+    }
+
+    #[test]
+    fn split_negative_position_clamps_to_zero() {
+        // For a negative x coordinate the base index must clamp to 0
+        // so out-of-range particles don't crash the deposit routines.
+        let (base, _) = split(Fix128::from_int(-3), Fix128::ZERO);
+        assert_eq!(base, 0);
     }
 }
