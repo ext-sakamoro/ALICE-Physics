@@ -240,6 +240,7 @@ pub mod cloth_fluid;
 pub mod collider;
 pub mod collision_mesh_gen;
 pub mod compound;
+pub mod compressible;
 pub mod cone;
 pub mod contact_cache;
 pub mod contact_viz;
