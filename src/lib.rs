@@ -324,6 +324,7 @@ pub mod sim_modifier;
 pub mod support_volume;
 #[cfg(feature = "std")]
 pub mod thin_wall;
+pub mod warp_risk;
 
 pub mod physics2d;
 
