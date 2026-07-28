@@ -228,6 +228,7 @@ pub mod anomaly;
 pub mod articulation;
 pub mod audio_physics;
 pub mod beam_stress;
+pub mod bimaterial;
 pub mod box_collider;
 pub mod buckling;
 pub mod bvh;
