@@ -310,6 +310,7 @@ pub mod plastic;
 pub mod pressure;
 pub mod prestressed;
 pub mod print_orientation;
+pub mod print_pipeline_solver;
 #[cfg(feature = "std")]
 pub mod privacy;
 pub mod profiling;
