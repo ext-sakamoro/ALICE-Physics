@@ -291,6 +291,7 @@ pub mod multi_world;
 pub mod netcode;
 #[cfg(feature = "neural")]
 pub mod neural;
+pub mod non_newtonian;
 pub mod particle;
 #[cfg(feature = "std")]
 pub mod phase_change;
