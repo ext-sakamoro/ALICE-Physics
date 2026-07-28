@@ -347,6 +347,7 @@ pub mod gpu_bridge;
 #[cfg(feature = "std")]
 pub mod sketch;
 pub mod sleeping;
+pub mod smoke_fire;
 pub mod soft_body_cut;
 pub mod solver;
 #[cfg(feature = "std")]
