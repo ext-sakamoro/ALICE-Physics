@@ -51,6 +51,18 @@ required-features = ["std"]
 name = "cloth_simulation"
 required-features = ["std"]
 
+[[example]]
+name = "cfd_smoke_plume"
+required-features = ["std"]
+
+[[example]]
+name = "structural_pla_shelf_creep"
+required-features = ["std"]
+
+[[example]]
+name = "print_full_safety"
+required-features = ["std"]
+
 [[bench]]
 name = "physics_bench"
 harness = false
