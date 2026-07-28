@@ -280,6 +280,7 @@ pub mod gpu_sdf;
 pub mod heatmap;
 pub mod heightfield;
 pub mod hyperelastic;
+pub mod interface_capture;
 pub mod interpolation;
 pub mod joint;
 pub mod joint_extra;
