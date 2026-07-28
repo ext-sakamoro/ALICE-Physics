@@ -262,6 +262,7 @@ pub mod fatigue;
 #[cfg(feature = "ffi")]
 pub mod ffi;
 pub mod filament_db;
+pub mod fillet_stress;
 pub mod filter;
 pub mod flow_viz;
 pub mod fluid;
