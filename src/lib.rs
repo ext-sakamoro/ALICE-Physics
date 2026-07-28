@@ -246,6 +246,7 @@ pub mod contact_viz;
 #[cfg(feature = "std")]
 pub mod convex_decompose;
 pub mod convex_mesh_builder;
+pub mod creep_longterm;
 pub mod cylinder;
 pub mod damping_rayleigh;
 #[cfg(feature = "replay")]
