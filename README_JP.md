@@ -1,10 +1,12 @@
 # ALICE-Physics
 
-**決定論的128bit固定小数点物理エンジン** - v0.8.0
+**決定論的128bit固定小数点物理エンジン** - v0.13.0
 
 [English](README.md) | 日本語
 
 異なるプラットフォームやハードウェア間で決定論的なシミュレーションを実現する高精度物理エンジン。128bit固定小数点演算を使用し、CPU、コンパイラ、OSに関わらずビット精度の結果を保証します。
+
+**v0.10-0.13 の主な追加**: 3 セッションの完全実装プッシュで **35 module + 3 統合 solver loop** を追加 3D プリント安全性検証 (warp / thin-wall / stress / bridging) から composite / plastic / fatigue 力学、乱流、VOF / level-set 多相流、そして実行可能な CFD 時間ステップ loop まで全て bit-exact + Fix128 決定論を保持 詳細は [Session 1-3 追加](#session-1-3-追加-v010-013) 参照
 
 ## 機能一覧
 
@@ -90,6 +92,103 @@
 | **マルチワールド** | 複数の独立した物理ワールドとボディ転送 |
 | **パーティクルシステム** | 汎用エミッター、ライフタイム、フォースフィールド統合 |
 | **no_std対応** | 組み込みシステム・WebAssemblyで動作 |
+
+## Session 1-3 追加 (v0.10-0.13)
+
+3 セッションの完全実装プッシュで **35 module + 3 統合 solver loop + 3
+実行可能 example** を追加、「物理プリミティブ」から「実運用エンジニアリング
+ソルバー」へのギャップを埋めました 全追加は Fix128 bit-exact 決定論を保持し、
+出典 formula を明記 (Roark / Timoshenko / Simo & Hughes / Jones / Tsai-Wu /
+Hill / Norton / Findley / WLF / Brackbill / Smagorinsky / Launder-Spalding /
+Wilcox / Hasselmann / Turns / Anderson 等)
+
+### Session 1 — 3D プリント安全性 + 剛性 Tier 1 (v0.10)
+
+| Module | 用途 | Formula 出典 |
+|--------|------|--------------|
+| `filament_db` | 10 材料 property DB (Young's / yield / tensile / density / Tg / 異方性) | MatWeb / ASM Metals Handbook |
+| `thin_wall` | SDF sphere marching による壁厚検出 | Bambu/Prusa 最小壁厚基準 |
+| `beam_stress` | 断面 + 荷重ケース + Euler 座屈 + FoS | Roark's Formulas for Stress and Strain |
+| `support_volume` | overhang → filament mm³ + 印刷時間見積 | Bambu Studio support manual |
+| `anisotropic` | 9 定数 orthotropic + Hill + Tsai-Wu failure | Jones, *Mechanics of Composite Materials* |
+| `plastic` | von Mises + isotropic/kinematic/combined hardening + Norton creep | Simo & Hughes; Norton (1929) |
+| `buckling` | Johnson / Euler / plate / snap-through | Timoshenko & Gere; Bažant & Cedolin |
+| `hyperelastic` | Neo-Hookean / Mooney-Rivlin / Yeoh | Ogden (1984); Yeoh (1990) |
+| `bimaterial` | Timoshenko bimetal residual + Voigt/Reuss 境界 | Timoshenko (1925) |
+| `layer_adhesion` | XY vs Z 6-成分実効強度 envelope | FDM 実測データ |
+| `print_orientation` | 荷重方向最適化 + Euler grid search | 異方性変換 |
+| `bridging` | 材料別最大 bridge distance check | Bambu/Prusa knowledge base |
+| `warp_risk` | 冷却収縮 × footprint → Low/Medium/High/Critical | ALICE-Bamboo docs 事案校正済 |
+
+### Session 2 — 剛性 Tier 2 + 流体 Tier 1-2 (v0.11-0.12)
+
+| Module | 用途 | Formula 出典 |
+|--------|------|--------------|
+| `fatigue` | Basquin S-N + Miner 累積損傷 | Basquin (1910); Miner (1945) |
+| `modal` | 1-DOF / 梁 / Warburton 板 / ねじり固有周波数 | Blevins; Warburton (1954) |
+| `damping_rayleigh` | C = αM + βK + fit_two_modes | Clough & Penzien |
+| `laminate` | Classical Laminate Theory ABD 行列 | Jones eq. 2.84 |
+| `prestressed` | Motosh ボルト preload + parabolic cable pretension | Shigley; VDI 2230 |
+| `fillet_stress` | Kirsch / Inglis / Peterson K_t 応力集中係数 | Peterson; Pilkey; Norton |
+| `vibration_wall` | 薄壁共振 vs 6 印刷機振動 preset | Blevins; Bambu X1C spec |
+| `thermal_stress` | 拘束応力 σ = c·E·α·ΔT + Tg 近傍警告 | Timoshenko & Goodier |
+| `creep_longterm` | Findley 3-parameter + WLF time-temperature superposition | Findley (1989); Williams et al. (1955) |
+| `non_newtonian` | Power-law / Carreau / Bingham / Herschel-Bulkley | Bird, Stewart, Lightfoot |
+| `multiphase` | VOF advection + level set reinit + curvature | Hirt & Nichols (1981); Osher & Sethian (1988) |
+| `compressible` | Ideal gas + Rankine-Hugoniot 衝撃波 + Riemann invariants | Anderson, *Modern Compressible Flow* |
+| `eulerian_grid` | Staggered MAC + Jacobi/red-black GS 圧力射影 | Harlow & Welch (1965) |
+| `turbulence` | Smagorinsky LES + k-ε + k-ω + wall function | Pope; Wilcox; Launder & Spalding |
+| `surface_tension_csf` | Continuum Surface Force | Brackbill, Kothe & Zemach (1992) |
+| `fsi_advanced` | 固体 ↔ 流体 drag / buoyancy / reaction | Peskin immersed boundary |
+| `smoke_fire` | Arrhenius 反応 + soot + Boussinesq buoyancy | Turns; Kuo |
+| `wave_ship` | JONSWAP spectrum + Froude-Krylov + 2-DOF | Hasselmann (1973); Faltinsen |
+| `interface_capture` | Fast Sweeping FSM + PLIC (Rider-Kothe 解析解) | Zhao (2005); Youngs (1982) |
+
+### Session 3 — Solver Loop + 12 改善 + 3 Demo (v0.13)
+
+**統合 Solver Loop** — Session 1-2 module を組み合わせた 1 発 `step(dt)`
+呼び出しで駆動:
+
+| Solver | 統合先 |
+|--------|--------|
+| `cfd_solver::CfdSolver` | MAC + turbulence + non-Newtonian + level_set + CSF + Boussinesq + gravity |
+| `structural_solver::StructuralSolver` | beam + plastic + creep + fatigue + buckling + history tracking |
+| `print_pipeline_solver` | 10 印刷 safety check (warp + layer + orientation + thermal + beam + bridging + support + fillet + bimaterial) を one shot |
+
+**12 改善** — 精度 / 性能 / 堅牢性:
+
+- I1 `math_util` に `exp_fix` / `cbrt_fix` / `pow_int` / `clamp_fix` 共通化
+- I2 `eulerian_grid` trilinear P2G / G2P (旧 nearest-cell)
+- I3 `multiphase` semi-Lagrangian advection (旧 1 次 upwind)
+- I4 PLIC Rider-Kothe 解析解 + cbrt (bisection 縮小)
+- I5 FSM Godunov 3-neighbour quadratic Eikonal (旧 min + dx)
+- I6 `safety::sdf_aabb` NaN/degenerate/min-dim guard
+- I7 `safety_validate` に `thin_wall` + `layer_adhesion` + `thermal_stress` 統合
+- I8 turbulence log-law wall function + `ln_fix`
+- I9 圧力射影 red-black Gauss-Seidel (~2× 収束)
+- I10 dynamic Smagorinsky Germano estimator
+- I11 `laminate::compute_abd` rayon 並列 (feature-gated)
+- I12 `fatigue::stress_at_cycles` Newton 早期終了
+
+**3 実行可能 example** で solver を end-to-end 動作証明:
+
+```bash
+cargo run --example cfd_smoke_plume --release          # 12³ MAC grid で gravity settling
+cargo run --example structural_pla_shelf_creep --release  # 20h PLA 棚 20N centre load
+cargo run --example print_full_safety --release        # SKADIS 板 完全安全性 report
+```
+
+`cfd_smoke_plume` は `v_y = -g·t` を bit-exact に再現、圧力射影が grid
+中央の divergence を 0 に保つ `print_full_safety` は 10 個の安全性 check
+を実行し、300 × 300 × 5 mm PLA 板に対して現実的な UNSAFE 判定 (Warp
+Critical / Beam FoS 1.16 / Fillet K_t 3.30) を返す — ALICE-Bamboo の
+warp 事案で記録された failure mode と一致
+
+### Test 数
+
+Session 1 baseline (v0.9): 719 → Session 1 end (v0.10): 904 → Session 2
+end (v0.12): 1170 → **Session 3 end (v0.13): alice-physics 1175 test +
+alice-bamboo 53 統合 test、全 pass**
 
 ### サブステッピング TGS ソルバー（プレビュー）
 
@@ -807,6 +906,95 @@ use alice_physics::ccd;
 let bullet = RigidBody::new_dynamic(Vec3Fix::from_int(0, 0, 0), Fix128::ONE);
 let bullet_id = world.add_body(bullet);
 world.enable_ccd(bullet_id);   // sub-sweep 判定、貫通防止
+```
+
+### Session 3 Solver Loop 例 (v0.13)
+
+**CFD gravity settling** — 非圧縮 Navier-Stokes を圧力射影付きで 1 step:
+
+```rust
+use alice_physics::cfd_solver::CfdSolver;
+use alice_physics::math::Fix128;
+
+let mut solver = CfdSolver::new(12, 12, 12, Fix128::from_ratio(1, 10));
+solver.jacobi_iterations = 100;
+
+// 閉じた箱の中の水、重力で settling → divergence ≈ 0
+for _ in 0..30 {
+    solver.step(Fix128::from_ratio(1, 1000));  // 0.001 s / step
+}
+// solver.grid.v[…] 中心 column は t = 0.03 s で −0.294 m/s
+// 自由落下解 −g·t と bit-exact 一致
+```
+
+**Structural creep + fatigue 履歴** — PLA 棚に 20 h 継続荷重 @ 55°C の
+診断 table:
+
+```rust
+use alice_physics::beam_stress::{CrossSection, LoadCase};
+use alice_physics::filament_db::MaterialProperties;
+use alice_physics::math::Fix128;
+use alice_physics::structural_solver::StructuralSolver;
+
+let section = CrossSection::Rectangular {
+    width_mm: Fix128::from_int(150),
+    height_mm: Fix128::from_int(10),
+};
+let load = LoadCase::SimplySupportedCenter {
+    load_n: Fix128::from_int(20),
+    length_mm: Fix128::from_int(300),
+};
+let mut solver = StructuralSolver::new(section, load, MaterialProperties::pla());
+solver.operating_temp_c = Fix128::from_int(55);
+solver.dt_s = Fix128::from_int(3600);   // 1 時間 step
+
+let history = solver.run(20);
+println!(
+    "creep {:.5}, fatigue D = {:.4}, failure step = {:?}",
+    history.plastic_state.creep_strain.to_f32(),
+    history.fatigue_damage.to_f32(),
+    history.failure_step,
+);
+```
+
+**Print pipeline safety** — 10 印刷 safety check を 1 call:
+
+```rust
+use alice_physics::beam_stress::{CrossSection, LoadCase};
+use alice_physics::math::Fix128;
+use alice_physics::print_orientation::LoadDirection;
+use alice_physics::print_pipeline_solver::{analyze_print_pipeline, PrintPipelineInputs};
+use alice_physics::support_volume::OverhangRegion;
+use alice_physics::warp_risk::Footprint;
+
+let footprint = Footprint {
+    area_mm2: Fix128::from_int(300 * 300),
+    max_dimension_mm: Fix128::from_int(300),
+};
+let inputs = PrintPipelineInputs {
+    beam_load: Some((
+        CrossSection::Rectangular {
+            width_mm: Fix128::from_int(50),
+            height_mm: Fix128::from_int(5),
+        },
+        LoadCase::CantileverEndPoint {
+            load_n: Fix128::from_int(30),
+            length_mm: Fix128::from_int(300),
+        },
+    )),
+    load_direction: Some(LoadDirection::axis_z()),
+    overhangs: vec![OverhangRegion {
+        projected_area_mm2: Fix128::from_int(50 * 50),
+        support_height_mm: Fix128::from_int(15),
+    }],
+    fillet: Some((Fix128::from_ratio(3, 10), Fix128::from_int(20), Fix128::from_int(40))),
+    ..Default::default()
+};
+
+let report = analyze_print_pipeline(footprint, "PLA", &inputs);
+report.print();
+// warp / strength envelope / thermal / beam FoS / bridging /
+// support volume / K_t / bimaterial + 総合 SAFE / UNSAFE 判定を出力
 ```
 
 ### 次に見るべきドキュメント
