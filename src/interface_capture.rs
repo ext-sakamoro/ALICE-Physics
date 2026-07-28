@@ -135,11 +135,54 @@ fn min_neighbor(field: &Grid3d, i: usize, j: usize, k: usize, axis: usize) -> Fi
     }
 }
 
+/// Solve the 3-D Godunov Eikonal update `|∇φ| = 1` at a cell given the
+/// absolute-distance neighbours `(a, b, c)` and cell spacing `dx`
+/// (Session 3 I5 upgrade — replaces the 1-neighbour `min + dx`).
+///
+/// Algorithm (Sethian, *Level Set Methods* 2nd ed. §8.4):
+/// 1. Sort ascending: `a ≤ b ≤ c`.
+/// 2. Try 1-neighbour: `φ = a + h`. Accept if `φ ≤ b`.
+/// 3. Try 2-neighbour: solve `(φ-a)² + (φ-b)² = h²`:
+///    `φ = ½·(a + b + √(2h² − (a−b)²))`. Accept if `φ ≤ c` and radicand ≥ 0.
+/// 4. Try 3-neighbour: solve `(φ-a)² + (φ-b)² + (φ-c)² = h²`:
+///    `φ = ⅓·(a + b + c + √(3h² − (a−b)² − (b−c)² − (a−c)²))`.
 fn solve_fsm(a: Fix128, b: Fix128, c: Fix128, dx: Fix128) -> Fix128 {
-    // One-neighbour case: φ = min(a, b, c) + dx
-    let m1 = if a < b { a } else { b };
-    let m = if m1 < c { m1 } else { c };
-    m + dx
+    // Sort ascending
+    let mut sorted = [a, b, c];
+    sorted.sort_by(|x, y| x.cmp(y));
+    let (aa, bb, cc) = (sorted[0], sorted[1], sorted[2]);
+
+    let h = dx;
+    let h_sq = h * h;
+
+    // 1-neighbour attempt
+    let phi_1 = aa + h;
+    if phi_1 <= bb {
+        return phi_1;
+    }
+
+    // 2-neighbour attempt: 2·h² − (a−b)² must be ≥ 0
+    let diff_ab = aa - bb;
+    let radicand_2 = h_sq.double() - diff_ab * diff_ab;
+    if radicand_2 >= Fix128::ZERO {
+        let phi_2 = ((aa + bb) + radicand_2.sqrt()).half();
+        if phi_2 <= cc {
+            return phi_2;
+        }
+    }
+
+    // 3-neighbour attempt
+    let diff_bc = bb - cc;
+    let diff_ac = aa - cc;
+    let radicand_3 =
+        Fix128::from_int(3) * h_sq - diff_ab * diff_ab - diff_bc * diff_bc - diff_ac * diff_ac;
+    if radicand_3 >= Fix128::ZERO {
+        let sum = aa + bb + cc;
+        return (sum + radicand_3.sqrt()) / Fix128::from_int(3);
+    }
+
+    // Fallback (degenerate case): stick with the 1-neighbour estimate
+    phi_1
 }
 
 // ============================================================================
