@@ -274,6 +274,7 @@ pub mod fluid_netcode;
 pub mod force;
 #[cfg(feature = "std")]
 pub mod fracture;
+pub mod fsi_advanced;
 #[cfg(feature = "std")]
 pub mod gpu_sdf;
 pub mod heatmap;
