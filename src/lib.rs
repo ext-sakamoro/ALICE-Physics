@@ -357,6 +357,7 @@ pub mod solver_tgs_hooks_6dof_scoped;
 pub mod spatial;
 #[cfg(feature = "std")]
 pub mod thermal;
+pub mod thermal_stress;
 pub mod torus;
 pub mod trimesh;
 pub mod vehicle;
