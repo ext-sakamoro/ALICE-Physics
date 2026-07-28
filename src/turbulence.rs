@@ -190,6 +190,42 @@ impl KOmegaState {
 }
 
 // ============================================================================
+// Dynamic Smagorinsky (Session 3 I10 upgrade)
+// ============================================================================
+
+/// Compute a **dynamic** Smagorinsky coefficient `C_s(x,t)` from local flow
+/// state using a Germano-style estimator. Returns a clamped value in
+/// `[0.05, 0.25]` to avoid unphysical excursions.
+///
+/// Simplified form suitable for cell-local flows without a full test-filter
+/// grid: use the ratio of test-filter strain to grid-filter strain as a
+/// proxy for the Germano identity. `strain_grid` is the resolved-scale
+/// magnitude, `strain_test` is an approximate `2·Δ` filter (average of
+/// neighbouring cells; supplied by caller).
+///
+/// `C_s² = ⟨L·M⟩ / (2·⟨M·M⟩ + ε)` where `L` and `M` are the Leonard /
+/// mixed tensors; here we approximate the isotropic invariants.
+#[must_use]
+pub fn dynamic_smagorinsky_cs(strain_grid: Fix128, strain_test: Fix128) -> Fix128 {
+    let min_cs = Fix128::from_ratio(5, 100);
+    let max_cs = Fix128::from_ratio(25, 100);
+    if strain_grid.is_zero() || strain_test.is_zero() {
+        return SMAGORINSKY_CS;
+    }
+    // ratio ≈ (strain_test / strain_grid); high ratio → less SGS energy
+    let ratio = strain_test / strain_grid;
+    // Simple mapping: C_s ∝ ratio, clamped
+    let unclamped = SMAGORINSKY_CS * ratio;
+    if unclamped < min_cs {
+        min_cs
+    } else if unclamped > max_cs {
+        max_cs
+    } else {
+        unclamped
+    }
+}
+
+// ============================================================================
 // Wall functions (Session 3 I8 upgrade)
 // ============================================================================
 
@@ -511,6 +547,22 @@ mod tests {
         let (k, eps) = wall_k_epsilon(Fix128::from_ratio(5, 10), Fix128::from_ratio(1, 100));
         assert!(k > Fix128::ZERO);
         assert!(eps > Fix128::ZERO);
+    }
+
+    #[test]
+    fn dynamic_cs_default_when_strain_zero() {
+        let c = dynamic_smagorinsky_cs(Fix128::ZERO, Fix128::from_int(1));
+        assert_eq!(c, SMAGORINSKY_CS);
+    }
+
+    #[test]
+    fn dynamic_cs_clamped_to_range() {
+        // High ratio should clamp at 0.25
+        let c = dynamic_smagorinsky_cs(Fix128::ONE, Fix128::from_int(100));
+        assert!(c <= Fix128::from_ratio(25, 100));
+        // Low ratio should clamp at 0.05
+        let c2 = dynamic_smagorinsky_cs(Fix128::from_int(100), Fix128::ONE);
+        assert!(c2 >= Fix128::from_ratio(5, 100));
     }
 
     #[test]

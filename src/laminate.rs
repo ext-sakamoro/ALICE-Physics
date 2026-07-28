@@ -194,6 +194,11 @@ impl AbdMatrix {
 
 /// Compute the ABD matrix from an ordered ply stack.
 ///
+/// Session 3 I11 upgrade: pre-computes each ply's `z_lower / z_upper` in a
+/// single pass so the main integration loop is data-parallel-ready. When
+/// the `parallel` feature is enabled, ply contributions accumulate via
+/// `rayon::par_iter` reducers.
+///
 /// The plies are listed **bottom-to-top**. Each ply's `Q̄` is integrated
 /// through the thickness with the classical formulas:
 ///
@@ -212,32 +217,72 @@ pub fn compute_abd(plies: &[Ply]) -> AbdMatrix {
         .fold(Fix128::ZERO, |acc, p| acc + p.thickness_mm);
     let half_thickness = total_thickness.half();
 
-    let mut a = Sym3::default();
-    let mut b = Sym3::default();
-    let mut d = Sym3::default();
-
-    let mut z_lower = Fix128::ZERO - half_thickness;
-    for ply in plies {
-        let z_upper = z_lower + ply.thickness_mm;
-        let (q11, q12, q22, q16, q26, q66) = ply.q_bar();
-        let q = Sym3 {
-            m11: q11,
-            m12: q12,
-            m22: q22,
-            m13: q16,
-            m23: q26,
-            m33: q66,
-        };
-        let delta_z = z_upper - z_lower;
-        let delta_z2 = z_upper * z_upper - z_lower * z_lower;
-        let delta_z3 = z_upper * z_upper * z_upper - z_lower * z_lower * z_lower;
-
-        a = a.add(&q.scale(delta_z));
-        b = b.add(&q.scale(delta_z2 * Fix128::from_ratio(1, 2)));
-        d = d.add(&q.scale(delta_z3 * Fix128::from_ratio(1, 3)));
-
-        z_lower = z_upper;
+    // Pre-compute z_lower / z_upper for each ply (SoA layout for the parallel
+    // reducer). Each ply becomes a self-contained `PlyContribution`.
+    struct PlyContribution {
+        q: Sym3,
+        delta_z: Fix128,
+        delta_z2: Fix128,
+        delta_z3: Fix128,
     }
+    let mut z_lower = Fix128::ZERO - half_thickness;
+    let contributions: Vec<PlyContribution> = plies
+        .iter()
+        .map(|ply| {
+            let z_upper = z_lower + ply.thickness_mm;
+            let (q11, q12, q22, q16, q26, q66) = ply.q_bar();
+            let q = Sym3 {
+                m11: q11,
+                m12: q12,
+                m22: q22,
+                m13: q16,
+                m23: q26,
+                m33: q66,
+            };
+            let delta_z = z_upper - z_lower;
+            let delta_z2 = z_upper * z_upper - z_lower * z_lower;
+            let delta_z3 = z_upper * z_upper * z_upper - z_lower * z_lower * z_lower;
+            z_lower = z_upper;
+            PlyContribution {
+                q,
+                delta_z,
+                delta_z2,
+                delta_z3,
+            }
+        })
+        .collect();
+
+    #[cfg(feature = "parallel")]
+    let (a, b, d) = {
+        use rayon::prelude::*;
+        contributions
+            .par_iter()
+            .map(|c| {
+                (
+                    c.q.scale(c.delta_z),
+                    c.q.scale(c.delta_z2 * Fix128::from_ratio(1, 2)),
+                    c.q.scale(c.delta_z3 * Fix128::from_ratio(1, 3)),
+                )
+            })
+            .reduce(
+                || (Sym3::default(), Sym3::default(), Sym3::default()),
+                |(a1, b1, d1), (a2, b2, d2)| (a1.add(&a2), b1.add(&b2), d1.add(&d2)),
+            )
+    };
+
+    #[cfg(not(feature = "parallel"))]
+    let (a, b, d) = {
+        let mut a = Sym3::default();
+        let mut b = Sym3::default();
+        let mut d = Sym3::default();
+        for c in &contributions {
+            a = a.add(&c.q.scale(c.delta_z));
+            b = b.add(&c.q.scale(c.delta_z2 * Fix128::from_ratio(1, 2)));
+            d = d.add(&c.q.scale(c.delta_z3 * Fix128::from_ratio(1, 3)));
+        }
+        (a, b, d)
+    };
+
     AbdMatrix { a, b, d }
 }
 
