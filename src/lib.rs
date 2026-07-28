@@ -286,6 +286,7 @@ pub mod phase_change;
 #[cfg(feature = "std")]
 pub mod pipeline;
 pub mod plane_collider;
+pub mod plastic;
 #[cfg(feature = "std")]
 pub mod pressure;
 #[cfg(feature = "std")]
