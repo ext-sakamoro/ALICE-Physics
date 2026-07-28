@@ -4,6 +4,8 @@
 
 English | [日本語](README_JP.md)
 
+> Part of **[ALICE-Eco-System](https://github.com/ext-sakamoro/ALICE-Eco-System)** — 260+ crate Edge-to-Cloud data pipeline (SDF / Physics / LLM / Motion / Font / TTS)
+
 A high-precision physics engine designed for deterministic simulation across different platforms and hardware. Uses 128-bit fixed-point arithmetic to ensure bit-exact results regardless of CPU, compiler, or operating system.
 
 ## Features
