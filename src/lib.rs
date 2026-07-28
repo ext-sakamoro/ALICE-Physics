@@ -222,6 +222,7 @@ extern crate alloc;
 #[cfg(feature = "analytics")]
 pub mod analytics_bridge;
 pub mod animation_blend;
+pub mod anisotropic;
 #[cfg(feature = "std")]
 pub mod anomaly;
 pub mod articulation;
