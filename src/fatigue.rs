@@ -166,7 +166,9 @@ pub fn stress_at_cycles(curve: &SnCurve, cycles: u64) -> Fix128 {
 
     // Initial guess: geometric mean of 1 and target
     let mut x = target.sqrt();
-    // Newton: x_{k+1} = x_k − (x^m − target) / (m · x^(m-1))
+    // Session 3 I12 upgrade: Newton with convergence detection (early exit
+    // when |Δx| < tolerance). Retains the 32-iter safety cap.
+    let tol = Fix128::from_ratio(1, 1_000_000);
     for _ in 0..32 {
         let mut xm = Fix128::ONE;
         for _ in 0..curve.fatigue_exponent_m {
@@ -182,7 +184,12 @@ pub fn stress_at_cycles(curve: &SnCurve, cycles: u64) -> Fix128 {
         if df.is_zero() {
             break;
         }
-        x = x - f / df;
+        let delta = f / df;
+        x = x - delta;
+        // Early exit when Newton step drops below tolerance
+        if delta.abs() < tol {
+            break;
+        }
     }
     curve.endurance_stress_mpa * x
 }
