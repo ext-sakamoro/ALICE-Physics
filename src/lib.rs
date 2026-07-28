@@ -254,6 +254,7 @@ pub mod error;
 pub mod event;
 #[cfg(feature = "ffi")]
 pub mod ffi;
+pub mod filament_db;
 pub mod filter;
 pub mod flow_viz;
 pub mod fluid;
