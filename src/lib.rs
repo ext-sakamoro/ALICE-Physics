@@ -275,6 +275,7 @@ pub mod hyperelastic;
 pub mod interpolation;
 pub mod joint;
 pub mod joint_extra;
+pub mod layer_adhesion;
 pub mod mass_properties;
 pub mod material;
 pub mod math;
