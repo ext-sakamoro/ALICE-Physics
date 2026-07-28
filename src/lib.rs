@@ -336,6 +336,7 @@ pub mod sdf_manifold;
 pub mod sim_field;
 #[cfg(feature = "std")]
 pub mod sim_modifier;
+pub mod structural_solver;
 pub mod support_volume;
 pub mod surface_tension_csf;
 #[cfg(feature = "std")]
