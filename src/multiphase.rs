@@ -181,6 +181,91 @@ pub fn advect_vof_uniform(
     field.data = next;
 }
 
+/// Trilinear-interpolate a scalar `Grid3d` at continuous cell coordinates
+/// `(cx, cy, cz)`. Coordinates outside the grid clamp to boundary values.
+#[must_use]
+pub fn trilinear_sample(field: &Grid3d, cx: Fix128, cy: Fix128, cz: Fix128) -> Fix128 {
+    let clamp_neg = |v: Fix128| if v.is_negative() { Fix128::ZERO } else { v };
+    let cxx = clamp_neg(cx);
+    let cyy = clamp_neg(cy);
+    let czz = clamp_neg(cz);
+    let ix = cxx.hi as usize;
+    let iy = cyy.hi as usize;
+    let iz = czz.hi as usize;
+    let u = Fix128 { hi: 0, lo: cxx.lo };
+    let v = Fix128 { hi: 0, lo: cyy.lo };
+    let w = Fix128 { hi: 0, lo: czz.lo };
+    let om_u = Fix128::ONE - u;
+    let om_v = Fix128::ONE - v;
+    let om_w = Fix128::ONE - w;
+    let i0 = ix.min(field.nx - 1);
+    let i1 = (ix + 1).min(field.nx - 1);
+    let j0 = iy.min(field.ny - 1);
+    let j1 = (iy + 1).min(field.ny - 1);
+    let k0 = iz.min(field.nz - 1);
+    let k1 = (iz + 1).min(field.nz - 1);
+    let c00 = field.get(i0, j0, k0) * om_u + field.get(i1, j0, k0) * u;
+    let c10 = field.get(i0, j1, k0) * om_u + field.get(i1, j1, k0) * u;
+    let c01 = field.get(i0, j0, k1) * om_u + field.get(i1, j0, k1) * u;
+    let c11 = field.get(i0, j1, k1) * om_u + field.get(i1, j1, k1) * u;
+    let c0 = c00 * om_v + c10 * v;
+    let c1 = c01 * om_v + c11 * v;
+    c0 * om_w + c1 * w
+}
+
+/// Semi-Lagrangian VOF advection (Session 3 I3 upgrade).
+///
+/// For each cell, trace back along the constant velocity by `dt`, sample
+/// the previous field trilinearly, and write to the new field. This is
+/// **unconditionally stable** (no CFL restriction) unlike first-order
+/// upwind — you can take arbitrarily large `dt`, though very large steps
+/// dilute detail.
+pub fn advect_vof_uniform_semi_lagrangian(
+    field: &mut Grid3d,
+    ux_m_per_s: Fix128,
+    uy_m_per_s: Fix128,
+    uz_m_per_s: Fix128,
+    dt_s: Fix128,
+) {
+    if field.dx.is_zero() {
+        return;
+    }
+    let inv_dx = Fix128::ONE / field.dx;
+    // Displacement in cell units
+    let dx_cells = ux_m_per_s * dt_s * inv_dx;
+    let dy_cells = uy_m_per_s * dt_s * inv_dx;
+    let dz_cells = uz_m_per_s * dt_s * inv_dx;
+
+    let old = field.data.clone();
+    let old_grid = Grid3d {
+        nx: field.nx,
+        ny: field.ny,
+        nz: field.nz,
+        dx: field.dx,
+        data: old,
+    };
+    for k in 0..field.nz {
+        for j in 0..field.ny {
+            for i in 0..field.nx {
+                // Back-trace: sample position - u·dt (in cell units)
+                let cx = Fix128::from_int(i as i64) - dx_cells;
+                let cy = Fix128::from_int(j as i64) - dy_cells;
+                let cz = Fix128::from_int(k as i64) - dz_cells;
+                let val = trilinear_sample(&old_grid, cx, cy, cz);
+                let clamped = if val < Fix128::ZERO {
+                    Fix128::ZERO
+                } else if val > Fix128::ONE {
+                    Fix128::ONE
+                } else {
+                    val
+                };
+                let ix = field.idx(i, j, k);
+                field.data[ix] = clamped;
+            }
+        }
+    }
+}
+
 /// Total volume of fluid A in a VOF field: `V = Σ f · dx³`.
 #[must_use]
 pub fn total_volume_vof(field: &Grid3d) -> Fix128 {
@@ -412,6 +497,49 @@ mod tests {
         // Level set = constant → all derivatives zero → curvature 0
         let g = Grid3d::new(3, 3, 3, Fix128::ONE, Fix128::from_int(5));
         assert_eq!(curvature_at(&g, 1, 1, 1), Fix128::ZERO);
+    }
+
+    #[test]
+    fn semi_lagrangian_uniform_shifts_field() {
+        // Unit velocity, dt=1 → shift by exactly one cell (semi-Lagrangian
+        // is exact at integer displacements).
+        let mut g = Grid3d::new(6, 1, 1, Fix128::ONE, Fix128::ZERO);
+        g.set(1, 0, 0, Fix128::ONE);
+        advect_vof_uniform_semi_lagrangian(
+            &mut g,
+            Fix128::ONE,
+            Fix128::ZERO,
+            Fix128::ZERO,
+            Fix128::ONE,
+        );
+        assert!(g.get(2, 0, 0) > Fix128::from_ratio(90, 100));
+    }
+
+    #[test]
+    fn trilinear_sample_at_grid_point_returns_value() {
+        let mut g = Grid3d::new(3, 3, 3, Fix128::ONE, Fix128::ZERO);
+        g.set(1, 1, 1, Fix128::from_int(5));
+        let v = trilinear_sample(
+            &g,
+            Fix128::from_int(1),
+            Fix128::from_int(1),
+            Fix128::from_int(1),
+        );
+        assert_eq!(v, Fix128::from_int(5));
+    }
+
+    #[test]
+    fn semi_lagrangian_zero_velocity_preserves_field() {
+        let mut g = Grid3d::new(4, 4, 4, Fix128::ONE, Fix128::from_ratio(3, 10));
+        let before = g.data.clone();
+        advect_vof_uniform_semi_lagrangian(
+            &mut g,
+            Fix128::ZERO,
+            Fix128::ZERO,
+            Fix128::ZERO,
+            Fix128::ONE,
+        );
+        assert_eq!(g.data, before);
     }
 
     #[test]
