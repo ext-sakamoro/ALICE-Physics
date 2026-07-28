@@ -230,6 +230,7 @@ pub mod audio_physics;
 pub mod beam_stress;
 pub mod bimaterial;
 pub mod box_collider;
+pub mod bridging;
 pub mod buckling;
 pub mod bvh;
 pub mod ccd;
