@@ -226,6 +226,7 @@ pub mod animation_blend;
 pub mod anomaly;
 pub mod articulation;
 pub mod audio_physics;
+pub mod beam_stress;
 pub mod box_collider;
 pub mod bvh;
 pub mod ccd;
