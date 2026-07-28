@@ -38,6 +38,7 @@
 
 use crate::filament_db::MaterialProperties;
 use crate::math::Fix128;
+use crate::math_util::{exp_fix, EXP_OVERFLOW_SENTINEL};
 
 // ============================================================================
 // Findley model
@@ -122,21 +123,15 @@ impl WlfConstants {
     }
 }
 
-/// Sentinel for effectively-zero creep (T well below T_ref − 30 °C).
-pub const CREEP_FROZEN_AT: Fix128 = Fix128 {
-    hi: i64::MAX >> 32,
-    lo: 0,
-};
+/// Sentinel re-export of [`crate::math_util::EXP_OVERFLOW_SENTINEL`], used to
+/// signal "creep frozen" (temperature well below reference).
+pub const CREEP_FROZEN_AT: Fix128 = EXP_OVERFLOW_SENTINEL;
 
 /// WLF shift factor `a_T` (dimensionless multiplier). For `T > T_ref` returns
 /// a value < 1 (creep accelerates); for `T < T_ref` returns a value > 1.
 ///
-/// Since Fix128 has no native `exp`, this routine uses the identity
-/// `exp(x) = exp(x/2^k)^{2^k}` to bring the argument into the range where
-/// an 8-term Taylor series is accurate (< 0.5). Very large negative `x`
-/// (creep frozen) returns `CREEP_FROZEN_AT`; very large positive `x`
-/// (creep accelerated to ~0) returns `1 / CREEP_FROZEN_AT` which is
-/// effectively zero.
+/// Uses the shared [`crate::math_util::exp_fix`] deterministic exponential.
+/// Very cold conditions saturate at [`CREEP_FROZEN_AT`].
 #[must_use]
 pub fn wlf_shift_factor(temp_c: Fix128, t_ref_c: Fix128, wlf: &WlfConstants) -> Fix128 {
     let dt = temp_c - t_ref_c;
@@ -149,45 +144,6 @@ pub fn wlf_shift_factor(temp_c: Fix128, t_ref_c: Fix128, wlf: &WlfConstants) -> 
     let ln10 = Fix128::from_ratio(230_258_509, 100_000_000);
     let y = log_at * ln10;
     exp_fix(y)
-}
-
-/// Deterministic exponential using range reduction + Taylor series.
-#[must_use]
-fn exp_fix(x: Fix128) -> Fix128 {
-    // Saturate extreme inputs to avoid overflow.
-    let sat_hi = Fix128::from_int(20);
-    let sat_lo = Fix128::from_int(-20);
-    if x >= sat_hi {
-        return CREEP_FROZEN_AT;
-    }
-    if x <= sat_lo {
-        // Very small positive
-        return Fix128::from_ratio(1, i64::MAX >> 32);
-    }
-
-    // Range reduction: repeatedly halve x until |x| < 0.5, remember shifts.
-    let half = Fix128::from_ratio(1, 2);
-    let neg_half = Fix128::from_ratio(-1, 2);
-    let mut y = x;
-    let mut shifts: u32 = 0;
-    while y > half || y < neg_half {
-        y = y.half();
-        shifts += 1;
-    }
-
-    // 12-term Taylor series (converges quickly for |y| < 0.5).
-    let mut term = Fix128::ONE;
-    let mut sum = Fix128::ONE;
-    for k in 1..=12u32 {
-        term = term * y / Fix128::from_int(k as i64);
-        sum = sum + term;
-    }
-
-    // Undo range reduction by repeated squaring.
-    for _ in 0..shifts {
-        sum = sum * sum;
-    }
-    sum
 }
 
 /// Effective time (hours) at temperature `t` relative to reference `t_ref`,
