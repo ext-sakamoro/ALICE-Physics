@@ -289,6 +289,7 @@ pub mod layer_adhesion;
 pub mod mass_properties;
 pub mod material;
 pub mod math;
+pub mod math_util;
 pub mod modal;
 pub mod motor;
 pub mod multi_world;

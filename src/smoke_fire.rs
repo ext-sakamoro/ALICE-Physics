@@ -20,6 +20,7 @@
 //!   fires", Prog. Energy Combust. Sci. 27 (2001).
 
 use crate::math::Fix128;
+use crate::math_util::exp_fix;
 
 // ============================================================================
 // Reaction rate
@@ -65,40 +66,6 @@ impl ArrheniusReaction {
             soot_yield: Fix128::from_ratio(20, 1000),
         }
     }
-}
-
-/// Deterministic exponential (range reduction + Taylor + repeated squaring).
-///
-/// Duplicated from `creep_longterm::exp_fix` — kept small to avoid a
-/// cross-module dependency between combustion and creep.
-#[must_use]
-fn exp_fix(x: Fix128) -> Fix128 {
-    let sat_hi = Fix128::from_int(20);
-    let sat_lo = Fix128::from_int(-40);
-    if x >= sat_hi {
-        return Fix128::from_int(i64::MAX >> 32);
-    }
-    if x <= sat_lo {
-        return Fix128::ZERO;
-    }
-    let half = Fix128::from_ratio(1, 2);
-    let neg_half = Fix128::from_ratio(-1, 2);
-    let mut y = x;
-    let mut shifts: u32 = 0;
-    while y > half || y < neg_half {
-        y = y.half();
-        shifts += 1;
-    }
-    let mut term = Fix128::ONE;
-    let mut sum = Fix128::ONE;
-    for k in 1..=12u32 {
-        term = term * y / Fix128::from_int(k as i64);
-        sum = sum + term;
-    }
-    for _ in 0..shifts {
-        sum = sum * sum;
-    }
-    sum
 }
 
 /// Compute the volumetric reaction rate `r` (kg fuel / (m³·s)) at a point:
