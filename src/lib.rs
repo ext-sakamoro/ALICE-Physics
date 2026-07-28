@@ -293,6 +293,7 @@ pub mod plane_collider;
 pub mod plastic;
 #[cfg(feature = "std")]
 pub mod pressure;
+pub mod print_orientation;
 #[cfg(feature = "std")]
 pub mod privacy;
 pub mod profiling;
