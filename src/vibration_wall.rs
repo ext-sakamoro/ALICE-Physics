@@ -35,6 +35,8 @@ use crate::math::Fix128;
 use crate::modal::plate_natural_frequency_hz;
 
 #[cfg(not(feature = "std"))]
+use alloc::vec;
+#[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
 // ============================================================================

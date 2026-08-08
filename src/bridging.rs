@@ -30,6 +30,8 @@ use crate::filament_db::MaterialProperties;
 use crate::math::{Fix128, Vec3Fix};
 
 #[cfg(not(feature = "std"))]
+use alloc::vec;
+#[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
 // ============================================================================

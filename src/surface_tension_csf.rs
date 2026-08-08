@@ -30,6 +30,11 @@
 use crate::math::{Fix128, Vec3Fix};
 use crate::multiphase::{curvature_at, Grid3d};
 
+#[cfg(not(feature = "std"))]
+use alloc::vec;
+#[cfg(not(feature = "std"))]
+use alloc::vec::Vec;
+
 // ============================================================================
 // Surface tension coefficients (presets)
 // ============================================================================
