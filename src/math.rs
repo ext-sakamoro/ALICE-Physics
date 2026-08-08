@@ -29,6 +29,11 @@
 use core::cmp::Ordering;
 use core::ops::{Add, Div, Mul, Neg, Sub};
 
+#[cfg(not(feature = "std"))]
+use alloc::vec;
+#[cfg(not(feature = "std"))]
+use alloc::vec::Vec;
+
 // SIMD imports for x86_64
 #[cfg(all(feature = "simd", target_arch = "x86_64"))]
 use core::arch::x86_64::*;
@@ -1578,9 +1583,9 @@ mod tests {
 
     #[test]
     fn test_fix128_f32_roundtrip() {
-        let a = Fix128::from_f32(std::f32::consts::PI);
+        let a = Fix128::from_f32(core::f32::consts::PI);
         let back = a.to_f32();
-        assert!((back - std::f32::consts::PI).abs() < 0.001);
+        assert!((back - core::f32::consts::PI).abs() < 0.001);
 
         let b = Fix128::from_f32(-7.5);
         let back_b = b.to_f32();

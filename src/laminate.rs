@@ -36,6 +36,8 @@ use crate::anisotropic::OrthotropicElasticity;
 use crate::math::Fix128;
 
 #[cfg(not(feature = "std"))]
+use alloc::vec;
+#[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
 // ============================================================================
