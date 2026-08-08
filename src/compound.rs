@@ -21,6 +21,8 @@ use crate::collider::{Capsule, ConvexHull, Sphere, Support, AABB};
 use crate::math::{Fix128, QuatFix, Vec3Fix};
 
 #[cfg(not(feature = "std"))]
+use alloc::vec;
+#[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
 /// Enumeration of supported child shape types

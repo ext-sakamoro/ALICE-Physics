@@ -21,6 +21,15 @@
 //! 10. **Bimaterial thermal residual** (if two materials supplied)
 //!     (`bimaterial`)
 
+#[cfg(not(feature = "std"))]
+use alloc::format;
+#[cfg(not(feature = "std"))]
+use alloc::string::{String, ToString};
+#[cfg(not(feature = "std"))]
+use alloc::vec;
+#[cfg(not(feature = "std"))]
+use alloc::vec::Vec;
+
 use crate::beam_stress::{BeamAnalysis, BeamReport, CrossSection, LoadCase};
 use crate::bimaterial::{analyze_bimaterial, BimaterialReport, BimaterialSide};
 use crate::bridging::{analyze_bridges, BridgeSpan, BridgingReport};
@@ -89,7 +98,9 @@ pub struct PrintSafetyReport {
 }
 
 impl PrintSafetyReport {
-    /// Print a compact CLI summary.
+    /// Print a compact CLI summary. Only compiled under `feature = "std"`
+    /// because it uses `println!`, which is not available in no_std builds.
+    #[cfg(feature = "std")]
     pub fn print(&self) {
         println!("=== Print Safety Pipeline Report ===");
         println!("  Material: {}", self.material_name);
