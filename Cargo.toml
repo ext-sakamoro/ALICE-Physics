@@ -12,6 +12,11 @@ rust-version = "1.70.0"
 readme = "README.md"
 publish = false
 
+# cargo-machete false-positive suppression (canonical [[reference_alice_ci_canonical_template]] 罠 #3)
+# js-sys: wasm feature 用 optional dep、machete が feature-gated 依存を検出不能
+[package.metadata.cargo-machete]
+ignored = ["js-sys"]
+
 [lib]
 name = "alice_physics"
 path = "src/lib.rs"
