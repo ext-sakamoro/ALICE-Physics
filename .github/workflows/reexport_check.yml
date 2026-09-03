@@ -11,7 +11,7 @@ jobs:
     name: Report re-export counts (crate root vs prelude)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Compare crate-root pub use with prelude pub use
         # Emits a warning on mismatch. This is the informational phase of
