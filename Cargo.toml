@@ -68,6 +68,10 @@ required-features = ["std"]
 name = "print_full_safety"
 required-features = ["std"]
 
+[[example]]
+name = "buckmaster_alpoge_boussinesq_r2"
+required-features = ["std"]
+
 [[bench]]
 name = "physics_bench"
 harness = false
