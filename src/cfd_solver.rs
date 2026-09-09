@@ -112,6 +112,9 @@ impl CfdSolver {
                 }
             }
         }
+        if self.temperature.is_some() {
+            self.advect_temperature(dt_s);
+        }
         self.step_count += 1;
     }
 
@@ -359,6 +362,47 @@ impl CfdSolver {
             }
         }
         self.grid.w = w_next;
+    }
+
+    /// Semi-Lagrangian advection of the temperature field using cell-centred
+    /// velocity from the projected MAC grid.
+    ///
+    /// Called after `project_pressure` on each step when `temperature` is
+    /// present. Implements the `∂_t θ + u · ∇θ = 0` transport half of the
+    /// Boussinesq system; the buoyancy source is handled by
+    /// `apply_body_forces` and pairs with this term to complete the
+    /// physically consistent inviscid Boussinesq step.
+    fn advect_temperature(&mut self, dt_s: Fix128) {
+        let temp = match self.temperature.as_mut() {
+            Some(t) => t,
+            None => return,
+        };
+        let old = temp.data.clone();
+        let old_grid = Grid3d {
+            nx: temp.nx,
+            ny: temp.ny,
+            nz: temp.nz,
+            dx: temp.dx,
+            data: old,
+        };
+        let inv_dx = Fix128::ONE / temp.dx;
+        for k in 0..temp.nz {
+            for j in 0..temp.ny {
+                for i in 0..temp.nx {
+                    let (uc, vc, wc) = self.grid.cell_velocity(
+                        i.min(self.grid.nx - 1),
+                        j.min(self.grid.ny - 1),
+                        k.min(self.grid.nz - 1),
+                    );
+                    let cx = Fix128::from_int(i as i64) - uc * dt_s * inv_dx;
+                    let cy = Fix128::from_int(j as i64) - vc * dt_s * inv_dx;
+                    let cz = Fix128::from_int(k as i64) - wc * dt_s * inv_dx;
+                    let sampled = trilinear_sample(&old_grid, cx, cy, cz);
+                    let ix = temp.idx(i, j, k);
+                    temp.data[ix] = sampled;
+                }
+            }
+        }
     }
 
     /// Semi-Lagrangian advection of the level set using cell-centred velocity.

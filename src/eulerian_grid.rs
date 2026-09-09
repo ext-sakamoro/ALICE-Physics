@@ -204,7 +204,7 @@ pub fn project_pressure_red_black_gs(
     if grid.dx.is_zero() || density_kg_m3.is_zero() || dt_s.is_zero() {
         return;
     }
-    let scale = density_kg_m3 * grid.dx / dt_s;
+    let scale = density_kg_m3 * grid.dx * grid.dx / dt_s;
     let n = grid.nx * grid.ny * grid.nz;
     let mut rhs = vec![Fix128::ZERO; n];
     for k in 0..grid.nz {
@@ -305,7 +305,7 @@ pub fn project_pressure_jacobi(
     if grid.dx.is_zero() || density_kg_m3.is_zero() || dt_s.is_zero() {
         return;
     }
-    let scale = density_kg_m3 * grid.dx / dt_s;
+    let scale = density_kg_m3 * grid.dx * grid.dx / dt_s;
 
     // Build divergence RHS
     let n = grid.nx * grid.ny * grid.nz;
