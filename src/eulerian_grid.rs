@@ -93,17 +93,17 @@ impl MacGrid {
 
     #[inline]
     #[must_use]
-    fn idx_u(&self, i: usize, j: usize, k: usize) -> usize {
+    pub(crate) fn idx_u(&self, i: usize, j: usize, k: usize) -> usize {
         i + (self.nx + 1) * (j + self.ny * k)
     }
     #[inline]
     #[must_use]
-    fn idx_v(&self, i: usize, j: usize, k: usize) -> usize {
+    pub(crate) fn idx_v(&self, i: usize, j: usize, k: usize) -> usize {
         i + self.nx * (j + (self.ny + 1) * k)
     }
     #[inline]
     #[must_use]
-    fn idx_w(&self, i: usize, j: usize, k: usize) -> usize {
+    pub(crate) fn idx_w(&self, i: usize, j: usize, k: usize) -> usize {
         i + self.nx * (j + self.ny * k)
     }
     #[inline]
@@ -429,7 +429,7 @@ fn split(p_over_dx: Fix128, axis_offset: Fix128) -> (usize, Fix128) {
 ///
 /// The u-face is staggered by `+0` on X, `+0.5` on Y, `+0.5` on Z relative
 /// to the cell corner grid.
-fn sample_u_trilinear(grid: &MacGrid, pos_m: Vec3Fix) -> Fix128 {
+pub(crate) fn sample_u_trilinear(grid: &MacGrid, pos_m: Vec3Fix) -> Fix128 {
     if grid.dx.is_zero() {
         return Fix128::ZERO;
     }
@@ -462,7 +462,7 @@ fn sample_u_trilinear(grid: &MacGrid, pos_m: Vec3Fix) -> Fix128 {
     c0 * om_w + c1 * w
 }
 
-fn sample_v_trilinear(grid: &MacGrid, pos_m: Vec3Fix) -> Fix128 {
+pub(crate) fn sample_v_trilinear(grid: &MacGrid, pos_m: Vec3Fix) -> Fix128 {
     if grid.dx.is_zero() {
         return Fix128::ZERO;
     }
@@ -491,7 +491,7 @@ fn sample_v_trilinear(grid: &MacGrid, pos_m: Vec3Fix) -> Fix128 {
     c0 * om_w + c1 * w
 }
 
-fn sample_w_trilinear(grid: &MacGrid, pos_m: Vec3Fix) -> Fix128 {
+pub(crate) fn sample_w_trilinear(grid: &MacGrid, pos_m: Vec3Fix) -> Fix128 {
     if grid.dx.is_zero() {
         return Fix128::ZERO;
     }

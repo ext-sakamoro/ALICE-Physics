@@ -72,6 +72,10 @@ required-features = ["std"]
 name = "buckmaster_alpoge_boussinesq_r2"
 required-features = ["std"]
 
+[[example]]
+name = "buckmaster_alpoge_euler_r3"
+required-features = ["std"]
+
 [[bench]]
 name = "physics_bench"
 harness = false
