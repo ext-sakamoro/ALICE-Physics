@@ -25,7 +25,10 @@
 //! demos and validation tests. Higher-order (BFECC advection, RK3 time,
 //! multigrid pressure) is a future upgrade.
 
-use crate::eulerian_grid::{project_pressure, MacGrid};
+use crate::eulerian_grid::{
+    g2p_velocity, project_pressure, sample_u_trilinear, sample_v_trilinear, sample_w_trilinear,
+    MacGrid,
+};
 use crate::interface_capture::fast_sweeping_reinit;
 use crate::math::{Fix128, Vec3Fix};
 use crate::multiphase::{trilinear_sample, Grid3d};
@@ -89,6 +92,7 @@ impl CfdSolver {
         if dt_s.is_zero() {
             return;
         }
+        self.advect_velocity(dt_s);
         self.apply_body_forces(dt_s);
         if self.use_turbulence {
             self.apply_turbulent_diffusion(dt_s);
@@ -362,6 +366,93 @@ impl CfdSolver {
             }
         }
         self.grid.w = w_next;
+    }
+
+    /// Semi-Lagrangian self-advection of the MAC velocity field.
+    ///
+    /// Implements the `u · ∇u` transport term of the Navier–Stokes / Euler
+    /// momentum equation. For each u/v/w face, back-traces along the current
+    /// velocity by `dt_s` and resamples the corresponding face component
+    /// from the pre-advection snapshot via trilinear interpolation on the
+    /// respective staggered grid.
+    ///
+    /// Called at the start of `step` so that all subsequent operator stages
+    /// (body forces, diffusion, projection) act on the transported field.
+    /// This scheme is first-order in time and diffusive on coarse grids;
+    /// higher-order variants (BFECC, MacCormack, RK3) are future upgrades.
+    fn advect_velocity(&mut self, dt_s: Fix128) {
+        let old = self.grid.clone();
+        let dx = self.grid.dx;
+        let half = Fix128::from_ratio(1, 2);
+
+        // u faces
+        for k in 0..self.grid.nz {
+            for j in 0..self.grid.ny {
+                for i in 0..=self.grid.nx {
+                    let px = Fix128::from_int(i as i64) * dx;
+                    let py = (Fix128::from_int(j as i64) + half) * dx;
+                    let pz = (Fix128::from_int(k as i64) + half) * dx;
+                    let pos = Vec3Fix::new(px, py, pz);
+                    let vel = g2p_velocity(&old, pos);
+                    let back = Vec3Fix::new(
+                        pos.x - dt_s * vel.x,
+                        pos.y - dt_s * vel.y,
+                        pos.z - dt_s * vel.z,
+                    );
+                    let new_u = sample_u_trilinear(&old, back);
+                    let ix = self.grid.idx_u(i, j, k);
+                    if ix < self.grid.u.len() {
+                        self.grid.u[ix] = new_u;
+                    }
+                }
+            }
+        }
+
+        // v faces
+        for k in 0..self.grid.nz {
+            for j in 0..=self.grid.ny {
+                for i in 0..self.grid.nx {
+                    let px = (Fix128::from_int(i as i64) + half) * dx;
+                    let py = Fix128::from_int(j as i64) * dx;
+                    let pz = (Fix128::from_int(k as i64) + half) * dx;
+                    let pos = Vec3Fix::new(px, py, pz);
+                    let vel = g2p_velocity(&old, pos);
+                    let back = Vec3Fix::new(
+                        pos.x - dt_s * vel.x,
+                        pos.y - dt_s * vel.y,
+                        pos.z - dt_s * vel.z,
+                    );
+                    let new_v = sample_v_trilinear(&old, back);
+                    let ix = self.grid.idx_v(i, j, k);
+                    if ix < self.grid.v.len() {
+                        self.grid.v[ix] = new_v;
+                    }
+                }
+            }
+        }
+
+        // w faces
+        for k in 0..=self.grid.nz {
+            for j in 0..self.grid.ny {
+                for i in 0..self.grid.nx {
+                    let px = (Fix128::from_int(i as i64) + half) * dx;
+                    let py = (Fix128::from_int(j as i64) + half) * dx;
+                    let pz = Fix128::from_int(k as i64) * dx;
+                    let pos = Vec3Fix::new(px, py, pz);
+                    let vel = g2p_velocity(&old, pos);
+                    let back = Vec3Fix::new(
+                        pos.x - dt_s * vel.x,
+                        pos.y - dt_s * vel.y,
+                        pos.z - dt_s * vel.z,
+                    );
+                    let new_w = sample_w_trilinear(&old, back);
+                    let ix = self.grid.idx_w(i, j, k);
+                    if ix < self.grid.w.len() {
+                        self.grid.w[ix] = new_w;
+                    }
+                }
+            }
+        }
     }
 
     /// Semi-Lagrangian advection of the temperature field using cell-centred
