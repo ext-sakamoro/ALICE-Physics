@@ -53,7 +53,7 @@
 //! cargo run --release --example buckmaster_alpoge_euler_r3
 //! ```
 
-use alice_physics::cfd_solver::CfdSolver;
+use alice_physics::cfd_solver::{AdvectionScheme, CfdSolver};
 use alice_physics::math::{Fix128, Vec3Fix};
 
 const N: usize = 40;
@@ -70,18 +70,25 @@ fn main() {
     println!(
         "scenario,step,time_s,l_inf_gamma,l_inf_u_r,l_inf_u_z,l_inf_grad_gamma,l_inf_vorticity,vorticity_time_integral,max_divergence"
     );
-    run_scenario(1.0);
-    run_scenario(4.0);
+    run_scenario(1.0, AdvectionScheme::SemiLagrangian);
+    run_scenario(4.0, AdvectionScheme::SemiLagrangian);
+    run_scenario(1.0, AdvectionScheme::MacCormack);
+    run_scenario(4.0, AdvectionScheme::MacCormack);
 }
 
-fn run_scenario(gamma_0: f32) {
+fn run_scenario(gamma_0: f32, scheme: AdvectionScheme) {
     let dx = Fix128::from_f32(DX_F32);
     let dt = Fix128::from_f32(DT_F32);
     let mut solver = CfdSolver::new(N, N, N, dx);
     configure_inviscid_euler(&mut solver);
+    solver.advection_scheme = scheme;
     initialize_axisymmetric_swirl(&mut solver, gamma_0);
 
-    let scenario = format!("Gamma0={gamma_0:.0}");
+    let scheme_tag = match scheme {
+        AdvectionScheme::SemiLagrangian => "SL",
+        AdvectionScheme::MacCormack => "MC",
+    };
+    let scenario = format!("Gamma0={gamma_0:.0}_{scheme_tag}");
     let mut vort_integral = 0.0_f32;
     let mut prev_vort = 0.0_f32;
     log_diagnostics(&solver, &scenario, 0, vort_integral);

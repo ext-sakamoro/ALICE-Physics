@@ -26,14 +26,37 @@
 //! multigrid pressure) is a future upgrade.
 
 use crate::eulerian_grid::{
-    g2p_velocity, project_pressure, sample_u_trilinear, sample_v_trilinear, sample_w_trilinear,
-    MacGrid,
+    g2p_velocity, project_pressure, sample_u_range, sample_u_trilinear, sample_v_range,
+    sample_v_trilinear, sample_w_range, sample_w_trilinear, MacGrid,
 };
 use crate::interface_capture::fast_sweeping_reinit;
 use crate::math::{Fix128, Vec3Fix};
-use crate::multiphase::{trilinear_sample, Grid3d};
+use crate::multiphase::{trilinear_range, trilinear_sample, Grid3d};
 use crate::surface_tension_csf::{compute_csf_field, SIGMA_WATER_AIR};
 use crate::turbulence::{smagorinsky_eddy_viscosity, strain_rate_magnitude, SMAGORINSKY_CS};
+
+/// Selects the advection scheme applied to velocity and temperature at
+/// each solver step.
+///
+/// - `SemiLagrangian` (default): first-order back-trace with trilinear
+///   sampling. Cheap, unconditionally stable, but adds numerical
+///   diffusion on every step. Adequate for engineering demos and short
+///   time horizons.
+/// - `MacCormack`: two-pass predictor-corrector built on top of the
+///   semi-Lagrangian primitive. Second-order accurate on smooth data,
+///   preserving sharp gradients and small-scale features roughly one
+///   order of magnitude longer than plain semi-Lagrangian. No monotone
+///   flux limiter is applied — smooth initial data with the projection
+///   stage tends to remain stable, but shocks or sharp discontinuities
+///   can produce local over/under-shoots.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AdvectionScheme {
+    /// Semi-Lagrangian back-trace with trilinear sampling (first-order).
+    #[default]
+    SemiLagrangian,
+    /// MacCormack predictor-corrector (second-order, unlimited).
+    MacCormack,
+}
 
 /// Complete CFD solver state.
 pub struct CfdSolver {
@@ -44,6 +67,8 @@ pub struct CfdSolver {
     pub level_set: Option<Grid3d>,
     /// Temperature field (K), optional. Enables Boussinesq buoyancy.
     pub temperature: Option<Grid3d>,
+    /// Advection scheme used for both velocity and temperature.
+    pub advection_scheme: AdvectionScheme,
     /// Fluid density ρ (kg/m³).
     pub density_kg_m3: Fix128,
     /// Dynamic molecular viscosity μ (Pa·s).
@@ -74,6 +99,7 @@ impl CfdSolver {
             grid: MacGrid::new(nx, ny, nz, dx),
             level_set: None,
             temperature: None,
+            advection_scheme: AdvectionScheme::SemiLagrangian,
             density_kg_m3: Fix128::from_int(1000),
             dynamic_viscosity_pas: Fix128::from_ratio(1, 1000), // 1e-3 (water)
             gravity: Vec3Fix::new(Fix128::ZERO, Fix128::from_ratio(-981, 100), Fix128::ZERO),
@@ -92,7 +118,10 @@ impl CfdSolver {
         if dt_s.is_zero() {
             return;
         }
-        self.advect_velocity(dt_s);
+        match self.advection_scheme {
+            AdvectionScheme::SemiLagrangian => self.advect_velocity(dt_s),
+            AdvectionScheme::MacCormack => self.advect_velocity_maccormack(dt_s),
+        }
         self.apply_body_forces(dt_s);
         if self.use_turbulence {
             self.apply_turbulent_diffusion(dt_s);
@@ -117,7 +146,10 @@ impl CfdSolver {
             }
         }
         if self.temperature.is_some() {
-            self.advect_temperature(dt_s);
+            match self.advection_scheme {
+                AdvectionScheme::SemiLagrangian => self.advect_temperature(dt_s),
+                AdvectionScheme::MacCormack => self.advect_temperature_maccormack(dt_s),
+            }
         }
         self.step_count += 1;
     }
@@ -455,6 +487,299 @@ impl CfdSolver {
         }
     }
 
+    /// MacCormack predictor-corrector for MAC velocity self-advection.
+    ///
+    /// Runs one semi-Lagrangian pass forward (`φ̂ = SL(φ_n, dt)`), then
+    /// reverse-advects `φ̂` by `-dt` using the pre-advection velocity
+    /// `u_n` as the advecting field (`φ̃ = SL(φ̂, -dt; u_n)`), and applies
+    /// the second-order MacCormack correction
+    ///
+    /// ```text
+    /// φ_{n+1} = φ̂ + ½ · (φ_n − φ̃)
+    /// ```
+    ///
+    /// followed by a Fedkiw-style monotone limiter: for each face the
+    /// corrected value is clamped to the `[min, max]` interval spanned
+    /// by the 8 neighbouring face-value corners on `u_n` at the back-
+    /// traced position. Without this limiter the unlimited corrector
+    /// injects super-linear vorticity growth on the paper's
+    /// axisymmetric swirl setup and diverges within tens of steps.
+    fn advect_velocity_maccormack(&mut self, dt_s: Fix128) {
+        let u_n = self.grid.clone();
+
+        // Predictor: reuse the existing semi-Lagrangian pass.
+        self.advect_velocity(dt_s);
+        let phi_hat = self.grid.clone();
+
+        // Corrector: reverse-advect phi_hat using u_n's velocity by
+        // forward-tracing with +dt (equivalent to back-trace with -dt).
+        let dx = self.grid.dx;
+        let half = Fix128::from_ratio(1, 2);
+        let mut u_tilde = vec![Fix128::ZERO; self.grid.u.len()];
+        let mut v_tilde = vec![Fix128::ZERO; self.grid.v.len()];
+        let mut w_tilde = vec![Fix128::ZERO; self.grid.w.len()];
+
+        // u faces
+        for k in 0..self.grid.nz {
+            for j in 0..self.grid.ny {
+                for i in 0..=self.grid.nx {
+                    let px = Fix128::from_int(i as i64) * dx;
+                    let py = (Fix128::from_int(j as i64) + half) * dx;
+                    let pz = (Fix128::from_int(k as i64) + half) * dx;
+                    let pos = Vec3Fix::new(px, py, pz);
+                    let vel = g2p_velocity(&u_n, pos);
+                    let forward = Vec3Fix::new(
+                        pos.x + dt_s * vel.x,
+                        pos.y + dt_s * vel.y,
+                        pos.z + dt_s * vel.z,
+                    );
+                    let ix = self.grid.idx_u(i, j, k);
+                    if ix < u_tilde.len() {
+                        u_tilde[ix] = sample_u_trilinear(&phi_hat, forward);
+                    }
+                }
+            }
+        }
+        // v faces
+        for k in 0..self.grid.nz {
+            for j in 0..=self.grid.ny {
+                for i in 0..self.grid.nx {
+                    let px = (Fix128::from_int(i as i64) + half) * dx;
+                    let py = Fix128::from_int(j as i64) * dx;
+                    let pz = (Fix128::from_int(k as i64) + half) * dx;
+                    let pos = Vec3Fix::new(px, py, pz);
+                    let vel = g2p_velocity(&u_n, pos);
+                    let forward = Vec3Fix::new(
+                        pos.x + dt_s * vel.x,
+                        pos.y + dt_s * vel.y,
+                        pos.z + dt_s * vel.z,
+                    );
+                    let ix = self.grid.idx_v(i, j, k);
+                    if ix < v_tilde.len() {
+                        v_tilde[ix] = sample_v_trilinear(&phi_hat, forward);
+                    }
+                }
+            }
+        }
+        // w faces
+        for k in 0..=self.grid.nz {
+            for j in 0..self.grid.ny {
+                for i in 0..self.grid.nx {
+                    let px = (Fix128::from_int(i as i64) + half) * dx;
+                    let py = (Fix128::from_int(j as i64) + half) * dx;
+                    let pz = Fix128::from_int(k as i64) * dx;
+                    let pos = Vec3Fix::new(px, py, pz);
+                    let vel = g2p_velocity(&u_n, pos);
+                    let forward = Vec3Fix::new(
+                        pos.x + dt_s * vel.x,
+                        pos.y + dt_s * vel.y,
+                        pos.z + dt_s * vel.z,
+                    );
+                    let ix = self.grid.idx_w(i, j, k);
+                    if ix < w_tilde.len() {
+                        w_tilde[ix] = sample_w_trilinear(&phi_hat, forward);
+                    }
+                }
+            }
+        }
+
+        // Apply MacCormack correction: φ_{n+1} = φ̂ + ½ · (φ_n − φ̃).
+        for ((dst, &hat), (&n_val, &tilde)) in self
+            .grid
+            .u
+            .iter_mut()
+            .zip(phi_hat.u.iter())
+            .zip(u_n.u.iter().zip(u_tilde.iter()))
+        {
+            *dst = hat + half * (n_val - tilde);
+        }
+        for ((dst, &hat), (&n_val, &tilde)) in self
+            .grid
+            .v
+            .iter_mut()
+            .zip(phi_hat.v.iter())
+            .zip(u_n.v.iter().zip(v_tilde.iter()))
+        {
+            *dst = hat + half * (n_val - tilde);
+        }
+        for ((dst, &hat), (&n_val, &tilde)) in self
+            .grid
+            .w
+            .iter_mut()
+            .zip(phi_hat.w.iter())
+            .zip(u_n.w.iter().zip(w_tilde.iter()))
+        {
+            *dst = hat + half * (n_val - tilde);
+        }
+
+        // Monotonicity guard: clamp each face component to the local
+        // pre-advection range at the back-traced position on `u_n`.
+        for k in 0..self.grid.nz {
+            for j in 0..self.grid.ny {
+                for i in 0..=self.grid.nx {
+                    let px = Fix128::from_int(i as i64) * dx;
+                    let py = (Fix128::from_int(j as i64) + half) * dx;
+                    let pz = (Fix128::from_int(k as i64) + half) * dx;
+                    let pos = Vec3Fix::new(px, py, pz);
+                    let vel = g2p_velocity(&u_n, pos);
+                    let back = Vec3Fix::new(
+                        pos.x - dt_s * vel.x,
+                        pos.y - dt_s * vel.y,
+                        pos.z - dt_s * vel.z,
+                    );
+                    let (lo, hi) = sample_u_range(&u_n, back);
+                    let ix = self.grid.idx_u(i, j, k);
+                    if ix < self.grid.u.len() {
+                        let val = self.grid.u[ix];
+                        self.grid.u[ix] = clamp(val, lo, hi);
+                    }
+                }
+            }
+        }
+        for k in 0..self.grid.nz {
+            for j in 0..=self.grid.ny {
+                for i in 0..self.grid.nx {
+                    let px = (Fix128::from_int(i as i64) + half) * dx;
+                    let py = Fix128::from_int(j as i64) * dx;
+                    let pz = (Fix128::from_int(k as i64) + half) * dx;
+                    let pos = Vec3Fix::new(px, py, pz);
+                    let vel = g2p_velocity(&u_n, pos);
+                    let back = Vec3Fix::new(
+                        pos.x - dt_s * vel.x,
+                        pos.y - dt_s * vel.y,
+                        pos.z - dt_s * vel.z,
+                    );
+                    let (lo, hi) = sample_v_range(&u_n, back);
+                    let ix = self.grid.idx_v(i, j, k);
+                    if ix < self.grid.v.len() {
+                        let val = self.grid.v[ix];
+                        self.grid.v[ix] = clamp(val, lo, hi);
+                    }
+                }
+            }
+        }
+        for k in 0..=self.grid.nz {
+            for j in 0..self.grid.ny {
+                for i in 0..self.grid.nx {
+                    let px = (Fix128::from_int(i as i64) + half) * dx;
+                    let py = (Fix128::from_int(j as i64) + half) * dx;
+                    let pz = Fix128::from_int(k as i64) * dx;
+                    let pos = Vec3Fix::new(px, py, pz);
+                    let vel = g2p_velocity(&u_n, pos);
+                    let back = Vec3Fix::new(
+                        pos.x - dt_s * vel.x,
+                        pos.y - dt_s * vel.y,
+                        pos.z - dt_s * vel.z,
+                    );
+                    let (lo, hi) = sample_w_range(&u_n, back);
+                    let ix = self.grid.idx_w(i, j, k);
+                    if ix < self.grid.w.len() {
+                        let val = self.grid.w[ix];
+                        self.grid.w[ix] = clamp(val, lo, hi);
+                    }
+                }
+            }
+        }
+    }
+
+    /// MacCormack predictor-corrector for the temperature scalar field.
+    ///
+    /// Mirrors `advect_velocity_maccormack` on a single cell-centred
+    /// scalar. The advecting velocity is `self.grid` at call time (the
+    /// projected divergence-free field), consistent with the
+    /// semi-Lagrangian variant.
+    fn advect_temperature_maccormack(&mut self, dt_s: Fix128) {
+        if self.temperature.is_none() {
+            return;
+        }
+        let phi_n = self
+            .temperature
+            .as_ref()
+            .map(|t| t.data.clone())
+            .unwrap_or_default();
+
+        // Predictor: reuse existing SL pass.
+        self.advect_temperature(dt_s);
+
+        // Snapshot phi_hat and prepare reverse sampling grid.
+        let (nx_t, ny_t, nz_t, dx_t, phi_hat) = {
+            let temp = self
+                .temperature
+                .as_ref()
+                .expect("temperature checked above");
+            (temp.nx, temp.ny, temp.nz, temp.dx, temp.data.clone())
+        };
+        let phi_hat_grid = Grid3d {
+            nx: nx_t,
+            ny: ny_t,
+            nz: nz_t,
+            dx: dx_t,
+            data: phi_hat.clone(),
+        };
+        let inv_dx = Fix128::ONE / dx_t;
+        let half = Fix128::from_ratio(1, 2);
+        let mut phi_tilde = vec![Fix128::ZERO; phi_hat.len()];
+        for k in 0..nz_t {
+            for j in 0..ny_t {
+                for i in 0..nx_t {
+                    let (uc, vc, wc) = self.grid.cell_velocity(
+                        i.min(self.grid.nx - 1),
+                        j.min(self.grid.ny - 1),
+                        k.min(self.grid.nz - 1),
+                    );
+                    // Forward-trace = reverse advection with -dt.
+                    let cx = Fix128::from_int(i as i64) + uc * dt_s * inv_dx;
+                    let cy = Fix128::from_int(j as i64) + vc * dt_s * inv_dx;
+                    let cz = Fix128::from_int(k as i64) + wc * dt_s * inv_dx;
+                    let sampled = trilinear_sample(&phi_hat_grid, cx, cy, cz);
+                    phi_tilde[i + nx_t * (j + ny_t * k)] = sampled;
+                }
+            }
+        }
+
+        // Apply MacCormack correction.
+        if let Some(temp) = self.temperature.as_mut() {
+            for ((dst, &hat), (&n_val, &tilde)) in temp
+                .data
+                .iter_mut()
+                .zip(phi_hat.iter())
+                .zip(phi_n.iter().zip(phi_tilde.iter()))
+            {
+                *dst = hat + half * (n_val - tilde);
+            }
+        }
+
+        // Monotonicity guard: clamp to pre-advection range at back-trace
+        // position on the pre-advection temperature field.
+        let phi_n_grid = Grid3d {
+            nx: nx_t,
+            ny: ny_t,
+            nz: nz_t,
+            dx: dx_t,
+            data: phi_n,
+        };
+        if let Some(temp) = self.temperature.as_mut() {
+            for k in 0..nz_t {
+                for j in 0..ny_t {
+                    for i in 0..nx_t {
+                        let (uc, vc, wc) = self.grid.cell_velocity(
+                            i.min(self.grid.nx - 1),
+                            j.min(self.grid.ny - 1),
+                            k.min(self.grid.nz - 1),
+                        );
+                        let cx = Fix128::from_int(i as i64) - uc * dt_s * inv_dx;
+                        let cy = Fix128::from_int(j as i64) - vc * dt_s * inv_dx;
+                        let cz = Fix128::from_int(k as i64) - wc * dt_s * inv_dx;
+                        let (lo, hi) = trilinear_range(&phi_n_grid, cx, cy, cz);
+                        let ix = i + nx_t * (j + ny_t * k);
+                        let val = temp.data[ix];
+                        temp.data[ix] = clamp(val, lo, hi);
+                    }
+                }
+            }
+        }
+    }
+
     /// Semi-Lagrangian advection of the temperature field using cell-centred
     /// velocity from the projected MAC grid.
     ///
@@ -529,6 +854,16 @@ impl CfdSolver {
                 }
             }
         }
+    }
+}
+
+fn clamp(value: Fix128, lo: Fix128, hi: Fix128) -> Fix128 {
+    if value < lo {
+        lo
+    } else if value > hi {
+        hi
+    } else {
+        value
     }
 }
 
