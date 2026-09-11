@@ -520,6 +520,104 @@ pub(crate) fn sample_w_trilinear(grid: &MacGrid, pos_m: Vec3Fix) -> Fix128 {
     c0 * om_v + c1 * v
 }
 
+/// Return `(min, max)` of the 8 u-face corner values surrounding `pos_m`.
+///
+/// Used by MacCormack to clamp corrector results into the pre-advection
+/// local range (Fedkiw's monotonicity guard).
+pub(crate) fn sample_u_range(grid: &MacGrid, pos_m: Vec3Fix) -> (Fix128, Fix128) {
+    if grid.dx.is_zero() {
+        return (Fix128::ZERO, Fix128::ZERO);
+    }
+    let inv_dx = Fix128::ONE / grid.dx;
+    let (i, _) = split(pos_m.x * inv_dx, Fix128::ZERO);
+    let (j, _) = split(pos_m.y * inv_dx, Fix128::from_ratio(1, 2));
+    let (k, _) = split(pos_m.z * inv_dx, Fix128::from_ratio(1, 2));
+    let i0 = i.min(grid.nx);
+    let i1 = (i + 1).min(grid.nx);
+    let j0 = j.min(grid.ny - 1);
+    let j1 = (j + 1).min(grid.ny - 1);
+    let k0 = k.min(grid.nz - 1);
+    let k1 = (k + 1).min(grid.nz - 1);
+    corner_range(&[
+        grid.u(i0, j0, k0),
+        grid.u(i1, j0, k0),
+        grid.u(i0, j1, k0),
+        grid.u(i1, j1, k0),
+        grid.u(i0, j0, k1),
+        grid.u(i1, j0, k1),
+        grid.u(i0, j1, k1),
+        grid.u(i1, j1, k1),
+    ])
+}
+
+/// Return `(min, max)` of the 8 v-face corner values surrounding `pos_m`.
+pub(crate) fn sample_v_range(grid: &MacGrid, pos_m: Vec3Fix) -> (Fix128, Fix128) {
+    if grid.dx.is_zero() {
+        return (Fix128::ZERO, Fix128::ZERO);
+    }
+    let inv_dx = Fix128::ONE / grid.dx;
+    let (i, _) = split(pos_m.x * inv_dx, Fix128::from_ratio(1, 2));
+    let (j, _) = split(pos_m.y * inv_dx, Fix128::ZERO);
+    let (k, _) = split(pos_m.z * inv_dx, Fix128::from_ratio(1, 2));
+    let i0 = i.min(grid.nx - 1);
+    let i1 = (i + 1).min(grid.nx - 1);
+    let j0 = j.min(grid.ny);
+    let j1 = (j + 1).min(grid.ny);
+    let k0 = k.min(grid.nz - 1);
+    let k1 = (k + 1).min(grid.nz - 1);
+    corner_range(&[
+        grid.v(i0, j0, k0),
+        grid.v(i1, j0, k0),
+        grid.v(i0, j1, k0),
+        grid.v(i1, j1, k0),
+        grid.v(i0, j0, k1),
+        grid.v(i1, j0, k1),
+        grid.v(i0, j1, k1),
+        grid.v(i1, j1, k1),
+    ])
+}
+
+/// Return `(min, max)` of the 8 w-face corner values surrounding `pos_m`.
+pub(crate) fn sample_w_range(grid: &MacGrid, pos_m: Vec3Fix) -> (Fix128, Fix128) {
+    if grid.dx.is_zero() {
+        return (Fix128::ZERO, Fix128::ZERO);
+    }
+    let inv_dx = Fix128::ONE / grid.dx;
+    let (i, _) = split(pos_m.x * inv_dx, Fix128::from_ratio(1, 2));
+    let (j, _) = split(pos_m.y * inv_dx, Fix128::from_ratio(1, 2));
+    let (k, _) = split(pos_m.z * inv_dx, Fix128::ZERO);
+    let i0 = i.min(grid.nx - 1);
+    let i1 = (i + 1).min(grid.nx - 1);
+    let j0 = j.min(grid.ny - 1);
+    let j1 = (j + 1).min(grid.ny - 1);
+    let k0 = k.min(grid.nz);
+    let k1 = (k + 1).min(grid.nz);
+    corner_range(&[
+        grid.w(i0, j0, k0),
+        grid.w(i1, j0, k0),
+        grid.w(i0, j1, k0),
+        grid.w(i1, j1, k0),
+        grid.w(i0, j0, k1),
+        grid.w(i1, j0, k1),
+        grid.w(i0, j1, k1),
+        grid.w(i1, j1, k1),
+    ])
+}
+
+fn corner_range(corners: &[Fix128; 8]) -> (Fix128, Fix128) {
+    let mut lo = corners[0];
+    let mut hi = corners[0];
+    for &c in &corners[1..] {
+        if c < lo {
+            lo = c;
+        }
+        if c > hi {
+            hi = c;
+        }
+    }
+    (lo, hi)
+}
+
 /// Grid-to-particle: trilinear-sample velocity at world position `pos_m`.
 ///
 /// Correct MAC-grid staggering is applied per component; velocities read
