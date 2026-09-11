@@ -183,6 +183,48 @@ pub fn advect_vof_uniform(
     field.data = next;
 }
 
+/// Return `(min, max)` of the 8 corner values surrounding `(cx, cy, cz)`.
+///
+/// Used by MacCormack to clamp corrector results into the pre-advection
+/// local range (Fedkiw's monotonicity guard).
+#[must_use]
+pub fn trilinear_range(field: &Grid3d, cx: Fix128, cy: Fix128, cz: Fix128) -> (Fix128, Fix128) {
+    let clamp_neg = |v: Fix128| if v.is_negative() { Fix128::ZERO } else { v };
+    let cxx = clamp_neg(cx);
+    let cyy = clamp_neg(cy);
+    let czz = clamp_neg(cz);
+    let ix = cxx.hi as usize;
+    let iy = cyy.hi as usize;
+    let iz = czz.hi as usize;
+    let i0 = ix.min(field.nx - 1);
+    let i1 = (ix + 1).min(field.nx - 1);
+    let j0 = iy.min(field.ny - 1);
+    let j1 = (iy + 1).min(field.ny - 1);
+    let k0 = iz.min(field.nz - 1);
+    let k1 = (iz + 1).min(field.nz - 1);
+    let corners = [
+        field.get(i0, j0, k0),
+        field.get(i1, j0, k0),
+        field.get(i0, j1, k0),
+        field.get(i1, j1, k0),
+        field.get(i0, j0, k1),
+        field.get(i1, j0, k1),
+        field.get(i0, j1, k1),
+        field.get(i1, j1, k1),
+    ];
+    let mut lo = corners[0];
+    let mut hi = corners[0];
+    for &c in &corners[1..] {
+        if c < lo {
+            lo = c;
+        }
+        if c > hi {
+            hi = c;
+        }
+    }
+    (lo, hi)
+}
+
 /// Trilinear-interpolate a scalar `Grid3d` at continuous cell coordinates
 /// `(cx, cy, cz)`. Coordinates outside the grid clamp to boundary values.
 #[must_use]
