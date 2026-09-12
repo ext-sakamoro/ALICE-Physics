@@ -160,7 +160,7 @@ impl CfdSolver {
     }
 
     /// Convenience — step with an automatically chosen `dt` from
-    /// [`compute_max_dt`], capped by `dt_ceiling`.
+    /// [`Self::compute_max_dt`], capped by `dt_ceiling`.
     ///
     /// Useful in engineering demos where the simulation should adapt
     /// to fast transients without the caller re-computing `dt` on each

@@ -1,6 +1,6 @@
 //! Direction-dependent friction for tyres, skis, and ice-blade contacts.
 //!
-//! Complements [`crate::material::Material`] (isotropic Coulomb friction)
+//! Complements [`crate::material::PhysicsMaterial`] (isotropic Coulomb friction)
 //! with an orthotropic friction model — separate longitudinal and
 //! transverse coefficients plus a kinematic multiplier that kicks in
 //! once the tangential slip magnitude exceeds a threshold.
