@@ -279,6 +279,111 @@ pub fn transient_step_1d(temperatures: &mut [f32], material: &ThermalMaterial, d
     temperatures.copy_from_slice(&updated);
 }
 
+/// Advance one time step with **Crank–Nicolson** (implicit-trapezoidal)
+/// integration.
+///
+/// The linear system
+///
+/// ```text
+/// (I − r/2 · L) T_new = (I + r/2 · L) T_old
+/// ```
+///
+/// where `r = α(T_i) · dt / dx²` and `L` is the 1-D Laplacian
+/// stencil, is solved by the Thomas algorithm (tridiagonal LU) in
+/// `O(N)` time. Compared to [`transient_step_1d`] this is
+/// **unconditionally A-stable** — arbitrary `dt` cannot amplify the
+/// solution — and second-order accurate in time.
+///
+/// The material properties are frozen at the beginning-of-step
+/// temperatures (linearised C–N); nonlinear iteration is left as
+/// future work.
+///
+/// # Boundary conditions
+///
+/// Neumann (zero-flux) at both ends, matching [`transient_step_1d`].
+///
+/// # Panics
+///
+/// Panics if `dx <= 0.0` or `dt <= 0.0`. Arrays with fewer than three
+/// cells are returned unmodified.
+pub fn crank_nicolson_step_1d(
+    temperatures: &mut [f32],
+    material: &ThermalMaterial,
+    dx: f32,
+    dt: f32,
+) {
+    assert!(dx > 0.0, "dx must be positive");
+    assert!(dt > 0.0, "dt must be positive");
+    let n = temperatures.len();
+    if n < 3 {
+        return;
+    }
+    let inv_dx_squared = 1.0 / (dx * dx);
+
+    // Per-cell r = α(T) · dt / dx² frozen at t^n.
+    let mut r = vec![0.0_f32; n];
+    for i in 0..n {
+        r[i] = material.diffusivity_at(temperatures[i]) * dt * inv_dx_squared;
+    }
+
+    // RHS: (I + r/2 · L) T_old with Neumann ghost mirrors.
+    let mut rhs = vec![0.0_f32; n];
+    for i in 0..n {
+        let left = if i == 0 {
+            temperatures[i]
+        } else {
+            temperatures[i - 1]
+        };
+        let right = if i == n - 1 {
+            temperatures[i]
+        } else {
+            temperatures[i + 1]
+        };
+        let laplacian = left - 2.0 * temperatures[i] + right;
+        rhs[i] = temperatures[i] + 0.5 * r[i] * laplacian;
+    }
+
+    // Tridiagonal LHS. Neumann BC folds the missing ghost into the
+    // diagonal by removing one −r/2 term at the end row.
+    let mut sub = vec![0.0_f32; n];
+    let mut diag = vec![0.0_f32; n];
+    let mut sup = vec![0.0_f32; n];
+    for i in 0..n {
+        let half_r = 0.5 * r[i];
+        let neumann_left = i == 0;
+        let neumann_right = i == n - 1;
+        sub[i] = if neumann_left { 0.0 } else { -half_r };
+        sup[i] = if neumann_right { 0.0 } else { -half_r };
+        // Diag: 1 + r − r/2·(neumann count) — the ghost mirror on the
+        // implicit side absorbs one off-band coefficient into the diagonal.
+        let ghost_fold = f32::from(u8::from(neumann_left) + u8::from(neumann_right));
+        diag[i] = 1.0 + r[i] - half_r * ghost_fold;
+    }
+
+    thomas_solve_in_place(&mut sub, &mut diag, &mut sup, &mut rhs);
+    temperatures.copy_from_slice(&rhs);
+}
+
+/// Thomas algorithm — solve a tridiagonal system in place, storing the
+/// solution vector into `d`.
+fn thomas_solve_in_place(a: &mut [f32], b: &mut [f32], c: &mut [f32], d: &mut [f32]) {
+    let n = d.len();
+    if n == 0 {
+        return;
+    }
+    // Forward sweep.
+    for i in 1..n {
+        let m = a[i] / b[i - 1];
+        b[i] -= m * c[i - 1];
+        d[i] -= m * d[i - 1];
+    }
+    // Back substitution.
+    d[n - 1] /= b[n - 1];
+    for i in (0..n - 1).rev() {
+        d[i] = (d[i] - c[i] * d[i + 1]) / b[i];
+    }
+}
+
 /// CFL upper bound on the time step for [`transient_step_1d`].
 ///
 /// Uses the maximum diffusivity across the array so a single choice of
@@ -477,5 +582,110 @@ mod tests {
         let material = ThermalMaterial::steel_1018();
         let temperatures = vec![300.0_f32; 4];
         let _ = stable_dt_1d(&temperatures, &material, 0.0);
+    }
+
+    // ---- Crank–Nicolson tests -------------------------------------------
+
+    /// Constant-property material for isolating the C–N scheme from
+    /// temperature-dependent nonlinearity.
+    fn constant_material() -> ThermalMaterial {
+        ThermalMaterial {
+            name: "test_constant",
+            conductivity: TemperatureDependence::Constant(50.0),
+            specific_heat: TemperatureDependence::Constant(500.0),
+            density: TemperatureDependence::Constant(7800.0),
+            reference_temperature: 300.0,
+        }
+    }
+
+    #[test]
+    fn crank_nicolson_leaves_uniform_field_unchanged() {
+        let material = constant_material();
+        let mut t = vec![400.0_f32; 8];
+        crank_nicolson_step_1d(&mut t, &material, 0.001, 0.01);
+        for &v in &t {
+            assert!((v - 400.0).abs() < 1.0e-3);
+        }
+    }
+
+    #[test]
+    fn crank_nicolson_smooths_peak_like_explicit() {
+        let material = constant_material();
+        let mut initial = vec![300.0_f32; 9];
+        initial[4] = 500.0;
+        let mut t_impl = initial.clone();
+        let mut t_expl = initial;
+        let dx = 0.001;
+        let dt = stable_dt_1d(&t_expl, &material, dx) * 0.5;
+        for _ in 0..50 {
+            transient_step_1d(&mut t_expl, &material, dx, dt);
+            crank_nicolson_step_1d(&mut t_impl, &material, dx, dt);
+        }
+        // Both schemes must diffuse the peak; C–N should stay bounded
+        // by the initial extremum (500 K) and remain above the baseline.
+        for &v in &t_impl {
+            assert!((300.0 - 1.0e-2..=500.0 + 1.0e-2).contains(&v));
+        }
+        // At the peak cell, C–N and explicit agree to within ~15 K under
+        // this well-below-CFL step (small phase shift from trapezoidal
+        // vs forward-Euler dissipation).
+        let diff = (t_impl[4] - t_expl[4]).abs();
+        assert!(
+            diff < 15.0,
+            "peak diff {diff}, impl={} expl={}",
+            t_impl[4],
+            t_expl[4]
+        );
+    }
+
+    #[test]
+    fn crank_nicolson_is_stable_beyond_cfl() {
+        // Explicit Euler diverges beyond the CFL bound; C–N must stay
+        // finite and bounded in amplitude relative to the initial peak
+        // (the CN amplification factor lies in [-1, 1]).
+        let material = constant_material();
+        let mut t = vec![300.0_f32; 10];
+        t[5] = 800.0;
+        let dx = 0.001;
+        let cfl = stable_dt_1d(&t, &material, dx);
+        // 3× CFL is unstable for forward Euler but well-behaved for CN.
+        let dt = 3.0 * cfl;
+        let peak_initial = 800.0_f32;
+        for _ in 0..20 {
+            crank_nicolson_step_1d(&mut t, &material, dx, dt);
+            for &v in &t {
+                assert!(v.is_finite(), "temperature not finite: {v}");
+                // Amplitude never exceeds the initial max.
+                assert!(v <= peak_initial + 1.0, "overshoot: {v}");
+            }
+        }
+    }
+
+    #[test]
+    fn crank_nicolson_conserves_total_energy_approx() {
+        // Constant-property material: the discrete Neumann Laplacian
+        // has zero row sum on the interior; the two boundary rows are
+        // biased by the ghost-fold. Energy drift is bounded by that
+        // boundary term only.
+        let material = constant_material();
+        let mut t = vec![300.0_f32; 11];
+        t[5] = 900.0;
+        let dx = 0.001;
+        let dt = stable_dt_1d(&t, &material, dx);
+        let sum_initial: f32 = t.iter().sum();
+        for _ in 0..100 {
+            crank_nicolson_step_1d(&mut t, &material, dx, dt);
+        }
+        let sum_final: f32 = t.iter().sum();
+        let delta_rel = (sum_final - sum_initial).abs() / sum_initial;
+        assert!(delta_rel < 5.0e-3, "energy drift {delta_rel}");
+    }
+
+    #[test]
+    #[should_panic(expected = "dt must be positive")]
+    fn crank_nicolson_panics_on_nonpositive_dt() {
+        let material = ThermalMaterial::steel_1018();
+        let mut t = vec![300.0_f32; 6];
+        crank_nicolson_step_1d(&mut t, &material, 0.001, 0.0);
     }
 }
