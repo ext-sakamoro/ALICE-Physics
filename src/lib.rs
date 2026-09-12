@@ -237,6 +237,7 @@ pub mod bvh;
 pub mod ccd;
 pub mod cfd_solver;
 pub mod character;
+pub mod character_state;
 pub mod cloth;
 pub mod cloth_fluid;
 pub mod collider;
@@ -286,6 +287,7 @@ pub mod interface_capture;
 pub mod interpolation;
 pub mod joint;
 pub mod joint_extra;
+pub mod kinematic_loop;
 pub mod laminate;
 pub mod laminate_failure;
 pub mod layer_adhesion;
@@ -298,6 +300,7 @@ pub mod motor;
 pub mod multi_world;
 pub mod multiphase;
 pub mod netcode;
+pub mod netcode_prediction;
 #[cfg(feature = "neural")]
 pub mod neural;
 pub mod non_newtonian;
@@ -338,6 +341,7 @@ pub mod sdf_collider;
 pub mod sdf_destruction;
 pub mod sdf_force;
 pub mod sdf_manifold;
+pub mod sdf_sph;
 #[cfg(feature = "std")]
 pub mod sim_field;
 #[cfg(feature = "std")]
