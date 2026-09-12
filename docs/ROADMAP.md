@@ -7,7 +7,12 @@ Memory index pointer: `[[reference-alice-physics-v1-roadmap]]` in claude-config.
 
 **v0.13.0 landed** (commit `f37df0e`) — Session 4 push で 19 module 追加 (Tier ★★★ 4 + ★★ 7 + ★ 8)、ALICE-SDF v1.7.7 の `morphology` を S1 tier-★★★ integration partner として組合わせて 20 module 完備
 
+**v0.14.0-preview.1 landed** (commit `155bdbf` + ALICE-Fluid `935b7a6`) — Physics 拡張 v2 Priority 1 5 items (Marching Tets / 3D IPM / spatial hash SPH / Crank-Nicolson / BFECC scalar)、+16 test Physics + 7 test Fluid
+
+**v0.14.0-preview.2 landed** (commit `bc9ea4a`) — Physics 拡張 v2 Priority 2 6 items (MAC-face BFECC / nonlinear C-N / 3D thermal / BiCGStab / adaptive dt / edge-split refinement)、+21 test
+
 - module 総数: 146 src file、`pub mod` 144
+- lib test: 1364 (1327 → 1343 → 1364、v2 Priority 1+2 sprint で +37)
 - Session 1-3 (v0.10-0.12) baseline: 1175 lib tests + 53 alice-bamboo 統合 tests
 - Cargo.toml: `publish = false` (crates.io 未公開状態)、`rust-version = "1.70.0"`
 
@@ -29,12 +34,40 @@ commit `f37df0e`
 - **Tier ★ (8)**: G4 ik_physics_bridge / G7 anisotropic_friction / R5 aeroelasticity / R6 piezoelectric / R7 acoustic_wave / R8 electromagnetic / S2 sdf_fem_mesh / S5 sdf_wind_field
 - **CFD refinement**: MacCormack advection (Fedkiw monotone limiter) / velocity self-advection / pressure Poisson RHS scale fix
 
-### 🚧 v0.14.0 (推定 2-4 週間) — quick wins + API surface audit 前半
+### ✅ v0.14.0-preview.1 (Physics 拡張 v2 Priority 1、shipped 2026-09-12)
+
+commit `155bdbf` (+ ALICE-Fluid `935b7a6`)
+
+- **Marching Tets** `sdf_fem_mesh.rs` `generate_marching_tets` — surface-conforming mesh (5-tet cube × 16-case LUT)
+- **3D Spectral IPM** `spectral_ipm_3d.rs` (ALICE-Fluid) — T³ Darcy multiplier + rustfft row/col/slab pass
+- **Spatial Hash SPH** `sdf_sph.rs` `SphSpatialHash` + `step_hashed` — O(N²) → O(N·k) 近傍探索
+- **Crank-Nicolson thermal** `transient_thermal.rs` `crank_nicolson_step_1d` — A-stable + Thomas algorithm 三重対角
+- **BFECC scalar advection** `cfd_solver.rs` `AdvectionScheme::Bfecc` + `advect_temperature_bfecc`
+
++16 test (1327 → 1343) Physics, +7 test (173 → 180) Fluid
+
+### ✅ v0.14.0-preview.2 (Physics 拡張 v2 Priority 2、shipped 2026-09-12)
+
+commit `bc9ea4a`
+
+- **MAC-face BFECC** `cfd_solver.rs` `advect_velocity_bfecc` — u/v/w 面 3-pass BFECC 本実装
+- **Nonlinear Crank-Nicolson** `transient_thermal.rs` `crank_nicolson_step_1d_nonlinear` — Picard iteration α(T)
+- **3D transient thermal** `transient_thermal.rs` `transient_step_3d` + `stable_dt_3d` — Cartesian 7-stencil
+- **BiCGStab pressure solver** `eulerian_grid.rs` `project_pressure_bicgstab` — Krylov subspace + diagonal precond
+- **Adaptive time step** `cfd_solver.rs` `compute_max_dt` + `step_adaptive` — CFL 逆算 + ceiling
+- **Edge-split refinement** `sdf_fem_mesh.rs` `SdfTetMesh::refine_by_max_edge_length` — 長辺 midpoint split (non-Delaunay)
+
++21 test (1343 → 1364)
+
+### 🚧 v0.14.0 (推定 1-2 週間) — quick wins + API surface audit 前半
+
+Preview の 2 wave が landed 済み、残作業:
 
 - **G. MSRV policy 明記** (1-2 日、quick win) — `rust-version = "1.70.0"` 既記述、README / docs に policy 説明追加のみ (「N-3 stable channel まで支援」等)
 - **B. Public API surface freeze 前半** — priority module (net / character / SDF 系) の `pub` → `pub(crate)` audit 着手 (144 pub mod のうち、`net_prediction` / `character*` / `sdf_*` 系から)
 - **D. Documentation 完備** — `#![deny(missing_docs)]` を lib.rs に追加、`cargo doc --no-deps 2>&1 | grep warning` で残 warning 列挙 → fix
-- **新 example 追加** — ragdoll / SPH / joint / character の代表 example (現状 7 → 12 個目標)
+- **新 example 追加** — ragdoll / SPH / joint / character / BFECC velocity / BiCGStab pressure の代表 example (現状 7 → 14 個目標)
+- **clippy pre-existing fix** — `solver_tgs_hooks_6dof_oriented.rs:820` `approx_constant` (1.5708 → FRAC_PI_2)、Priority 2 で拡張中に露呈した block
 
 自己採点 target: 品質 90/100 (現状 100/100 optimization scorecard は維持、public API 完成度で -10)
 
