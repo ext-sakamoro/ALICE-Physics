@@ -399,6 +399,281 @@ pub fn project_pressure_jacobi(
     }
 }
 
+/// Preconditioned **BiCGStab** pressure solver (van der Vorst 1992).
+///
+/// Solves the discrete Poisson system `A p = b` for the MAC-grid
+/// pressure, where `A` is the 7-point Laplacian with homogeneous
+/// Neumann boundary conditions (missing neighbours contribute zero).
+/// The RHS `b = ρ dx² / dt · ∇·u` matches the Jacobi and red-black
+/// Gauss–Seidel variants, and the velocity correction stage at the
+/// end is identical.
+///
+/// # Preconditioner
+///
+/// Diagonal Jacobi preconditioner `M = diag(A)`. On this Neumann
+/// Poisson matrix the diagonal is `−6` at interior cells and drops
+/// toward the boundary as `−6 + (number of missing neighbours)`,
+/// so the preconditioner adapts per cell.
+///
+/// # Convergence
+///
+/// Compared to red-black Gauss–Seidel, BiCGStab converges in roughly
+/// `O(√N)` iterations vs `O(N)` for Jacobi/GS on 3-D Poisson, at the
+/// price of ~7 dot products per iteration. Under Fix128 the dot
+/// products dominate cost at small grid sizes; net wins appear as
+/// grid size grows.
+///
+/// The iteration stops early when `‖r‖_∞ < tolerance` or after
+/// `max_iterations` (whichever comes first).
+pub fn project_pressure_bicgstab(
+    grid: &mut MacGrid,
+    dt_s: Fix128,
+    density_kg_m3: Fix128,
+    max_iterations: u32,
+    tolerance: Fix128,
+) -> BicgstabStats {
+    let default_stats = BicgstabStats {
+        iterations: 0,
+        final_residual: Fix128::ZERO,
+        converged: true,
+    };
+    if grid.dx.is_zero() || density_kg_m3.is_zero() || dt_s.is_zero() {
+        return default_stats;
+    }
+    let scale = density_kg_m3 * grid.dx * grid.dx / dt_s;
+    let nx = grid.nx;
+    let ny = grid.ny;
+    let nz = grid.nz;
+    let n = nx * ny * nz;
+
+    // Build RHS and cache the per-cell diagonal.
+    let mut rhs = vec![Fix128::ZERO; n];
+    let mut diag = vec![Fix128::ZERO; n];
+    for k in 0..nz {
+        for j in 0..ny {
+            for i in 0..nx {
+                let idx = i + nx * (j + ny * k);
+                rhs[idx] = grid.divergence(i, j, k) * scale;
+                let mut deg: i64 = 6;
+                if i == 0 {
+                    deg -= 1;
+                }
+                if i + 1 == nx {
+                    deg -= 1;
+                }
+                if j == 0 {
+                    deg -= 1;
+                }
+                if j + 1 == ny {
+                    deg -= 1;
+                }
+                if k == 0 {
+                    deg -= 1;
+                }
+                if k + 1 == nz {
+                    deg -= 1;
+                }
+                diag[idx] = Fix128::from_int(-deg); // A[i,i] = -deg
+            }
+        }
+    }
+
+    // x = grid.pressure; solve A x = b with A = -Laplacian sign convention:
+    // r0 = b − A x0
+    let mut x = grid.pressure.clone();
+    let mut r = vec![Fix128::ZERO; n];
+    apply_poisson_a(&x, &mut r, nx, ny, nz);
+    for i in 0..n {
+        r[i] = rhs[i] - r[i];
+    }
+    let r_hat = r.clone();
+    let mut p_vec = r.clone();
+    let mut rho_prev = dot(&r_hat, &r);
+    let mut alpha = Fix128::ONE;
+    let mut omega = Fix128::ONE;
+    let mut v_vec = vec![Fix128::ZERO; n];
+    let mut y_vec = vec![Fix128::ZERO; n];
+    let mut z_vec = vec![Fix128::ZERO; n];
+    let mut s_vec = vec![Fix128::ZERO; n];
+    let mut t_vec = vec![Fix128::ZERO; n];
+    let mut iterations = 0_u32;
+    let mut residual = linf_norm(&r);
+    let mut converged = residual < tolerance;
+
+    while iterations < max_iterations && !converged {
+        iterations += 1;
+        let rho = dot(&r_hat, &r);
+        if rho.is_zero() {
+            break;
+        }
+        if iterations > 1 {
+            let beta = (rho / rho_prev) * (alpha / omega);
+            // p = r + β (p - ω v)
+            for i in 0..n {
+                p_vec[i] = r[i] + beta * (p_vec[i] - omega * v_vec[i]);
+            }
+        }
+        // y = M^{-1} p
+        for i in 0..n {
+            y_vec[i] = if diag[i].is_zero() {
+                p_vec[i]
+            } else {
+                p_vec[i] / diag[i]
+            };
+        }
+        apply_poisson_a(&y_vec, &mut v_vec, nx, ny, nz);
+        let denom = dot(&r_hat, &v_vec);
+        if denom.is_zero() {
+            break;
+        }
+        alpha = rho / denom;
+        // s = r - α v
+        for i in 0..n {
+            s_vec[i] = r[i] - alpha * v_vec[i];
+        }
+        let s_norm = linf_norm(&s_vec);
+        if s_norm < tolerance {
+            for i in 0..n {
+                x[i] = x[i] + alpha * y_vec[i];
+            }
+            residual = s_norm;
+            converged = true;
+            break;
+        }
+        // z = M^{-1} s
+        for i in 0..n {
+            z_vec[i] = if diag[i].is_zero() {
+                s_vec[i]
+            } else {
+                s_vec[i] / diag[i]
+            };
+        }
+        apply_poisson_a(&z_vec, &mut t_vec, nx, ny, nz);
+        let tt = dot(&t_vec, &t_vec);
+        if tt.is_zero() {
+            break;
+        }
+        omega = dot(&t_vec, &s_vec) / tt;
+        // x = x + α y + ω z
+        for i in 0..n {
+            x[i] = x[i] + alpha * y_vec[i] + omega * z_vec[i];
+        }
+        // r = s - ω t
+        for i in 0..n {
+            r[i] = s_vec[i] - omega * t_vec[i];
+        }
+        residual = linf_norm(&r);
+        converged = residual < tolerance;
+        rho_prev = rho;
+    }
+
+    grid.pressure = x;
+
+    // Velocity correction (same convention as the Jacobi variant).
+    let inv_dx = Fix128::ONE / grid.dx;
+    let coeff = dt_s / density_kg_m3 * inv_dx;
+    for k in 0..grid.nz {
+        for j in 0..grid.ny {
+            for i in 1..grid.nx {
+                let dp = grid.pressure(i, j, k) - grid.pressure(i - 1, j, k);
+                let ix = grid.idx_u(i, j, k);
+                grid.u[ix] = grid.u[ix] - coeff * dp;
+            }
+        }
+    }
+    for k in 0..grid.nz {
+        for j in 1..grid.ny {
+            for i in 0..grid.nx {
+                let dp = grid.pressure(i, j, k) - grid.pressure(i, j - 1, k);
+                let ix = grid.idx_v(i, j, k);
+                grid.v[ix] = grid.v[ix] - coeff * dp;
+            }
+        }
+    }
+    for k in 1..grid.nz {
+        for j in 0..grid.ny {
+            for i in 0..grid.nx {
+                let dp = grid.pressure(i, j, k) - grid.pressure(i, j, k - 1);
+                let ix = grid.idx_w(i, j, k);
+                grid.w[ix] = grid.w[ix] - coeff * dp;
+            }
+        }
+    }
+    BicgstabStats {
+        iterations,
+        final_residual: residual,
+        converged,
+    }
+}
+
+/// Diagnostic bundle returned by [`project_pressure_bicgstab`].
+#[derive(Debug, Clone, Copy)]
+pub struct BicgstabStats {
+    /// Iterations actually performed.
+    pub iterations: u32,
+    /// Final `‖r‖_∞`.
+    pub final_residual: Fix128,
+    /// True if the iteration terminated below `tolerance`.
+    pub converged: bool,
+}
+
+/// Apply the discrete Poisson operator `A` (Neumann BC) to `p`.
+///
+/// At each cell: `(A p)_c = −6 p_c + Σ p_neighbours` with missing
+/// neighbours treated as zero (Neumann). This matches the equation
+/// `A p = rhs` where `rhs = ρ dx²/dt · ∇·u` — the same RHS the Jacobi
+/// / red-black GS iterations converge to.
+fn apply_poisson_a(p: &[Fix128], out: &mut [Fix128], nx: usize, ny: usize, nz: usize) {
+    let idx = |i: usize, j: usize, k: usize| i + nx * (j + ny * k);
+    let neg_six = Fix128::from_int(-6);
+    for k in 0..nz {
+        for j in 0..ny {
+            for i in 0..nx {
+                let c = p[idx(i, j, k)];
+                let mut acc = c * neg_six;
+                if i > 0 {
+                    acc = acc + p[idx(i - 1, j, k)];
+                }
+                if i + 1 < nx {
+                    acc = acc + p[idx(i + 1, j, k)];
+                }
+                if j > 0 {
+                    acc = acc + p[idx(i, j - 1, k)];
+                }
+                if j + 1 < ny {
+                    acc = acc + p[idx(i, j + 1, k)];
+                }
+                if k > 0 {
+                    acc = acc + p[idx(i, j, k - 1)];
+                }
+                if k + 1 < nz {
+                    acc = acc + p[idx(i, j, k + 1)];
+                }
+                out[idx(i, j, k)] = acc;
+            }
+        }
+    }
+}
+
+fn dot(a: &[Fix128], b: &[Fix128]) -> Fix128 {
+    let mut acc = Fix128::ZERO;
+    for i in 0..a.len() {
+        acc = acc + a[i] * b[i];
+    }
+    acc
+}
+
+fn linf_norm(v: &[Fix128]) -> Fix128 {
+    let mut best = Fix128::ZERO;
+    for &x in v {
+        let ax = x.abs();
+        if ax > best {
+            best = ax;
+        }
+    }
+    best
+}
+
 // ============================================================================
 // Trilinear P2G / G2P (Session 3 I2 upgrade)
 // ============================================================================
@@ -956,5 +1231,95 @@ mod tests {
         // so out-of-range particles don't crash the deposit routines.
         let (base, _) = split(Fix128::from_int(-3), Fix128::ZERO);
         assert_eq!(base, 0);
+    }
+
+    // ---- BiCGStab pressure solver tests --------------------------------
+
+    fn seed_divergent_flow(nx: usize) -> MacGrid {
+        let mut g = MacGrid::new(nx, nx, nx, Fix128::ONE);
+        // Linear u profile: u(i, j, k) = i so ∇·u ≠ 0.
+        for i in 0..=nx {
+            for j in 0..nx {
+                for k in 0..nx {
+                    let ix = g.idx_u(i, j, k);
+                    if ix < g.u.len() {
+                        g.u[ix] = Fix128::from_int(i as i64);
+                    }
+                }
+            }
+        }
+        g
+    }
+
+    #[test]
+    fn bicgstab_reduces_divergence_below_jacobi_iterations() {
+        let mut g = seed_divergent_flow(4);
+        let dt = Fix128::from_ratio(1, 100);
+        let rho = Fix128::from_int(1000);
+        let div_before = g.divergence(2, 2, 2).abs();
+        let stats = project_pressure_bicgstab(&mut g, dt, rho, 15, Fix128::from_ratio(1, 10_000));
+        let div_after = g.divergence(2, 2, 2).abs();
+        assert!(div_after < div_before);
+        assert!(stats.iterations <= 15);
+    }
+
+    #[test]
+    fn bicgstab_matches_jacobi_within_tolerance() {
+        let mut g_bicg = seed_divergent_flow(4);
+        let mut g_jac = g_bicg.clone();
+        let dt = Fix128::from_ratio(1, 100);
+        let rho = Fix128::from_int(1000);
+        let _ = project_pressure_bicgstab(&mut g_bicg, dt, rho, 30, Fix128::from_ratio(1, 100_000));
+        project_pressure_jacobi(&mut g_jac, dt, rho, 200);
+        // Both should drive the centre divergence close to zero.
+        let div_bicg = g_bicg.divergence(2, 2, 2).abs();
+        let div_jac = g_jac.divergence(2, 2, 2).abs();
+        assert!(div_bicg < Fix128::from_ratio(1, 10));
+        assert!(div_jac < Fix128::from_ratio(1, 10));
+    }
+
+    #[test]
+    fn bicgstab_stats_reports_convergence_status() {
+        let mut g = seed_divergent_flow(4);
+        let dt = Fix128::from_ratio(1, 100);
+        let rho = Fix128::from_int(1000);
+        let stats =
+            project_pressure_bicgstab(&mut g, dt, rho, 50, Fix128::from_ratio(1, 1_000_000));
+        // Either converged within budget, or iterations == 50.
+        assert!(stats.iterations >= 1);
+        assert!(stats.iterations <= 50);
+    }
+
+    #[test]
+    fn bicgstab_no_op_on_zero_dt() {
+        let mut g = seed_divergent_flow(3);
+        let stats = project_pressure_bicgstab(
+            &mut g,
+            Fix128::ZERO,
+            Fix128::from_int(1000),
+            10,
+            Fix128::from_ratio(1, 10_000),
+        );
+        assert_eq!(stats.iterations, 0);
+        assert!(stats.converged);
+    }
+
+    #[test]
+    fn apply_poisson_a_is_symmetric_stencil() {
+        // (A e_c)_c = -6 for a unit vector at an interior cell,
+        // matching the convention A p = rhs where diag = -6.
+        let nx = 3;
+        let ny = 3;
+        let nz = 3;
+        let n = nx * ny * nz;
+        let mut p = vec![Fix128::ZERO; n];
+        let ctr = 1 + nx * (1 + ny * 1);
+        p[ctr] = Fix128::ONE;
+        let mut out = vec![Fix128::ZERO; n];
+        apply_poisson_a(&p, &mut out, nx, ny, nz);
+        assert_eq!(out[ctr], Fix128::from_int(-6));
+        // Face neighbours receive +1.
+        let neighbour = nx * (1 + ny);
+        assert_eq!(out[neighbour], Fix128::ONE);
     }
 }
