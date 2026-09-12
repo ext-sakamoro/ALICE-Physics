@@ -1,6 +1,6 @@
 # ALICE-Physics
 
-**Deterministic 128-bit Fixed-Point Physics Engine** - v0.13.0
+**Deterministic 128-bit Fixed-Point Physics Engine** - v0.12.0
 
 English | [日本語](README_JP.md)
 
@@ -8,12 +8,19 @@ English | [日本語](README_JP.md)
 
 A high-precision physics engine designed for deterministic simulation across different platforms and hardware. Uses 128-bit fixed-point arithmetic to ensure bit-exact results regardless of CPU, compiler, or operating system.
 
-**v0.10-0.13 highlights** — a three-session completeness push added
+**v0.10-0.12 highlights** — a three-session completeness push added
 **35 modules and 3 integrated solver loops** covering the full spectrum
 from 3D-printing safety (warp / thin-wall / stress / bridging) through
 composite / plastic / fatigue mechanics, up to turbulence, VOF / level-set
 multi-phase flow, and a runnable CFD time-step loop. All bit-exact and
-Fix128 deterministic; see [Session 1-3 Additions](#session-1-3-additions-v010-013).
+Fix128 deterministic; see [Session 1-3 Additions](#session-1-3-additions-v010-012).
+
+**v0.12.0 addition** — `GpuSolverBridge` gains a joint-solve pipeline
+(`send_joints` / `send_body_rotations` / `dispatch_joint_solve_iteration`)
+and `PhysicsWorld` auto-routes both contact AND joint solve through the
+installed bridge, coordinated with ALICE-TRT v3.1.0's
+`FIX128_BALL_SOCKET_JOINT_SOLVE_WGSL` kernel (byte-exact vs CPU
+`solve_ball_joint`). See [CHANGELOG.md](CHANGELOG.md).
 
 ## Features
 
@@ -100,7 +107,7 @@ Fix128 deterministic; see [Session 1-3 Additions](#session-1-3-additions-v010-01
 | **Particle System** | General-purpose emitters, lifetime, force field integration |
 | **no_std Compatible** | Works on embedded systems and WebAssembly |
 
-## Session 1-3 Additions (v0.10-0.13)
+## Session 1-3 Additions (v0.10-0.12)
 
 Three completeness sessions added **35 modules + 3 integrated solver
 loops + 3 runnable examples** to close the gap between "physics primitives"
@@ -152,7 +159,7 @@ etc.).
 | `wave_ship` | JONSWAP spectrum + Froude-Krylov + 2-DOF | Hasselmann (1973); Faltinsen |
 | `interface_capture` | Fast Sweeping FSM + PLIC (Rider-Kothe analytical) | Zhao (2005); Youngs (1982) |
 
-### Session 3 — Solver Loops + 12 Improvements + 3 Demos (v0.13)
+### Session 3 — Solver Loops + 12 Improvements + 3 Demos (v0.12)
 
 **Integrated solver loops** — single `step(dt)` entry points that compose
 the Session 1-2 modules into a driven simulation:
@@ -196,7 +203,7 @@ documented in the ALICE-Bamboo warp incident.
 ### Test count
 
 Session 1 baseline (v0.9): 719 → Session 1 end (v0.10): 904 → Session 2 end
-(v0.12): 1170 → **Session 3 end (v0.13): 1175 alice-physics tests + 53
+(v0.11): 1170 → **Session 3 end (v0.12): 1175 alice-physics tests + 53
 alice-bamboo integration tests, all passing.**
 
 ### Sub-stepping TGS Solver (preview)
@@ -235,8 +242,8 @@ Pair with [ALICE-TRT v1.0.0+](https://github.com/ext-sakamoro/ALICE-TRT) `--feat
 
 ```toml
 [dependencies]
-alice-physics = { version = "0.8", features = ["gpu-solver-bridge"] }
-alice-trt     = { version = "1.3", features = ["physics-solver"] }
+alice-physics = { version = "0.12", features = ["gpu-solver-bridge"] }
+alice-trt     = { version = "3.1", features = ["physics-solver"] }
 ```
 
 ```rust
@@ -264,7 +271,7 @@ adapter.assert_bit_exact_vs_cpu(&DiffFixture {
 })?;
 ```
 
-Companion releases: [ALICE-TRT v1.3.1](https://github.com/ext-sakamoro/ALICE-TRT/releases/tag/v1.3.1) (latest). Every ALICE-TRT release is validated on macOS (Metal) / Ubuntu (Vulkan lavapipe) / Windows (DX12 WARP) with 37 Fix128 unit tests + 170 physics-solver tests, all byte-exact against the CPU golden.
+Companion releases: [ALICE-TRT v3.1.0](https://github.com/ext-sakamoro/ALICE-TRT/releases/tag/v3.1.0) (coordinated with alice-physics v0.12.0 for joint-solve GPU offload). Every ALICE-TRT release is validated on macOS (Metal) / Ubuntu (Vulkan lavapipe) / Windows (DX12 WARP) with 37 Fix128 unit tests + 170 physics-solver tests, all byte-exact against the CPU golden.
 
 Determinism guardrails for every primitive above are documented in the [`deterministic-physics-lockstep-discipline`](https://github.com/ext-sakamoro/claude-config/blob/main/claude-skills/deterministic-physics-lockstep-discipline/SKILL.md) skill (private reference).
 
@@ -281,7 +288,7 @@ ALICE-Physics achieves a **perfect 100/100 optimization score** across 6 layers:
 | **L3: Compute** | 20/20 | Warm-start `cached_lambda`, reciprocal precomputation (`inv_rest_length`, `inv_rest_density`) |
 | **L4: GPU & Throughput** | 15/15 | `SIMD_WIDTH` const + `simd_width()`, `GpuSdfInstancedBatch`/`GpuSdfMultiDispatch`, `batch_size()` |
 | **L5: Build Profile** | 10/10 | `opt-level=3`, `lto="fat"`, `codegen-units=1`, `panic="abort"`, `strip=true` |
-| **L6: Code Quality** | 20/20 | 737 tests (645 unit + 72 integration + 20 doc), clippy 0 warnings |
+| **L6: Code Quality** | 20/20 | 1175 lib tests + 53 alice-bamboo integration tests, clippy 0 warnings |
 | **Total** | **100/100** | |
 
 ### L1: Memory Layout (15/15)
@@ -360,10 +367,9 @@ strip = true           # Strip symbols
 
 ### L6: Code Quality (20/20)
 
-- **645 unit tests** across 84 modules
-- **72 integration tests** (end-to-end physics scenarios)
-- **20 doc tests** with runnable examples
-- **Total: 737 passing tests**, clippy: 0 warnings (`-W clippy::all`)
+- **1175 lib tests** across the alice-physics crate (Session 3 end / v0.12)
+- **53 alice-bamboo integration tests** (end-to-end 3D-print safety scenarios)
+- **Total: 1228 passing tests**, clippy: 0 warnings (`-W clippy::all`)
 
 ---
 
@@ -498,8 +504,8 @@ ALICE-Physics guarantees **bit-exact results** everywhere, enabling:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                          ALICE-Physics v0.5.0                                │
-│              84 modules, 645 unit tests, 72 integration, 20 doc tests         │
+│                          ALICE-Physics v0.12.0                               │
+│         138 modules, 1175 lib tests + 53 alice-bamboo integration tests       │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │  Core Layer                                                                  │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐          │
@@ -917,7 +923,7 @@ let bullet_id = world.add_body(bullet);
 world.enable_ccd(bullet_id);   // subswept collision, avoids tunneling
 ```
 
-### Session 3 Solver Loops (v0.13)
+### Session 3 Solver Loops (v0.12)
 
 **CFD gravity settling** — solve incompressible Navier-Stokes for one time
 step with pressure projection:
