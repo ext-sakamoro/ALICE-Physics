@@ -324,6 +324,7 @@ pub mod raycast;
 #[cfg(feature = "replay")]
 pub mod replay;
 pub mod rng;
+pub mod rolling_contact;
 pub mod rope;
 pub mod rope_attach;
 #[cfg(feature = "std")]
@@ -331,6 +332,7 @@ pub mod scene_io;
 #[cfg(feature = "std")]
 pub mod sdf_adaptive;
 pub mod sdf_ccd;
+pub mod sdf_character;
 pub mod sdf_collider;
 #[cfg(feature = "std")]
 pub mod sdf_destruction;
@@ -348,6 +350,7 @@ pub mod thin_wall;
 pub mod vibration_wall;
 pub mod warp_risk;
 pub mod wave_ship;
+pub mod wind_zone;
 
 pub mod physics2d;
 
