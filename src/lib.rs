@@ -376,6 +376,7 @@ pub mod spatial;
 pub mod thermal;
 pub mod thermal_stress;
 pub mod torus;
+pub mod transient_thermal;
 pub mod trimesh;
 pub mod turbulence;
 pub mod vehicle;
