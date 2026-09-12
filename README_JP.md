@@ -1,14 +1,55 @@
 # ALICE-Physics
 
-**決定論的128bit固定小数点物理エンジン** - v0.12.0
+**決定論的128bit固定小数点物理エンジン** - v0.13.0
 
 [English](README.md) | 日本語
 
 異なるプラットフォームやハードウェア間で決定論的なシミュレーションを実現する高精度物理エンジン。128bit固定小数点演算を使用し、CPU、コンパイラ、OSに関わらずビット精度の結果を保証します。
 
-**v0.10-0.12 の主な追加**: 3 セッションの完全実装プッシュで **35 module + 3 統合 solver loop** を追加 3D プリント安全性検証 (warp / thin-wall / stress / bridging) から composite / plastic / fatigue 力学、乱流、VOF / level-set 多相流、そして実行可能な CFD 時間ステップ loop まで全て bit-exact + Fix128 決定論を保持 詳細は [Session 1-3 追加](#session-1-3-追加-v010-012) 参照
+**v0.10-0.13 の主な追加**: 4 セッションの完全実装プッシュで **54 module + 3 統合 solver loop** を追加 3D プリント安全性検証 (warp / thin-wall / stress / bridging) から composite / plastic / fatigue 力学、乱流、VOF / level-set 多相流、実行可能な CFD 時間ステップ loop、さらに v0.13.0 で 19 module の Session 4 push (ragdoll / SDF character / SDF SPH / transient thermal / composite failure / VIV / piezoelectric / acoustic / electromagnetic / IK / anisotropic friction / netcode prediction / character FSM / kinematic loop / buoyancy zone / wind zone / SDF FEM / SDF wind) までカバー 全て bit-exact + Fix128 決定論を保持 詳細は [Session 1-3 追加](#session-1-3-追加-v010-012) と [v0.13.0 Session 4 追加](#v0130-session-4-追加-19-module--3-tier-構成) を参照
+
+**v0.13.0 の追加**: 19 module の Session 4 push (下記)。コンパニオンリリース: ALICE-SDF v1.7.7 が `morphology` (signed offset + tolerance fit check) を S1 tier-★★★ 統合パートナーとして提供。
 
 **v0.12.0 の追加**: `GpuSolverBridge` に joint-solve パイプライン (`send_joints` / `send_body_rotations` / `dispatch_joint_solve_iteration`) を追加、`PhysicsWorld` が contact / joint solve の両方を装着済 bridge 経由に auto-route する。ALICE-TRT v3.1.0 の `FIX128_BALL_SOCKET_JOINT_SOLVE_WGSL` kernel と協調 (CPU `solve_ball_joint` と byte-exact 一致)。詳細は [CHANGELOG.md](CHANGELOG.md) 参照。
+
+## v0.13.0 Session 4 追加 (19 module / 3 tier 構成)
+
+v0.10-0.12 の engineering-solver 基盤の上に、game-physics 仕上げ (ragdoll / character state / netcode prediction / IK)、soft-body simulation (SDF SPH / SDF character / SDF FEM / SDF wind)、engineering research (composite failure / transient thermal / rolling contact fatigue / VIV / piezoelectric / acoustic / electromagnetic)、multi-material coupling (buoyancy zone / anisotropic friction / kinematic loop) をカバーする 19 module を追加 全て bit-exact Fix128 決定論を保持、出典 formula は module doc に明記
+
+### Tier ★★★ — 5 module (実運用 critical、downstream 直接依存)
+
+| Module | 用途 |
+|--------|------|
+| `ragdoll` | 人型 ragdoll ビルダー (pose target / joint limit / breakable constraint) (G1) |
+| `buoyancy_zone` | 境界付き 3-D 流体体積の浮力 + drag、fluid-surface CSF coupling (G2) |
+| `laminate_failure` | Tsai-Wu / Tsai-Hill / Hashin / Puck の composite failure index (R1) |
+| `transient_thermal` | 温度依存材質特性 + 1-D 非定常熱ソルバ + phase boundary tracking (R2) |
+| ALICE-SDF `morphology` | 印刷 clearance 用の signed offset + tolerance fit check (S1、ALICE-SDF v1.7.7 で ship) |
+
+### Tier ★★ — 7 module (広範な utility、ドメイン横断 glue)
+
+| Module | 用途 |
+|--------|------|
+| `wind_zone` | 境界付き 3-D 風領域 (rigid / soft body への drag + lift) (G3) |
+| `sdf_character` | SDF 地形対応キャラクターコントローラ (slope / step / air-time state) (S4) |
+| `rolling_contact` | 転がり接触疲労 (Hertz + subsurface shear + Basquin S-N cycle counting) (R3) |
+| `netcode_prediction` | クライアント予測 + 再和解 + input replay (G5) |
+| `character_state` | キャラクター FSM (idle / walk / run / jump / fall / crouch) + 遷移検証 (G6) |
+| `sdf_sph` | SDF 境界 SPH 流体 (density / viscosity / surface tension) (S3) |
+| `kinematic_loop` | 閉ループ機構の kinematic body ループ制約ソルバ (R4) |
+
+### Tier ★ — 8 module (専門分野 engineering / research)
+
+| Module | 用途 |
+|--------|------|
+| `ik_physics_bridge` | joint-limit 対応 IK ソルバ (FABRIK / CCD backend) (G4) |
+| `anisotropic_friction` | 方向依存摩擦係数 (rolling vs sliding、木目、布) (G7) |
+| `aeroelasticity` | VIV (Vortex-Induced Vibration) + flutter + galloping (R5) |
+| `piezoelectric` | センサー / アクチュエータ用 piezoelectric coupling (voltage ↔ strain) (R6) |
+| `acoustic_wave` | 1-D / 2-D / 3-D 音波伝播 + 材質インピーダンス境界 (R7) |
+| `electromagnetic` | 導体 body への電磁力場 (Lorentz / induction / eddy current) (R8) |
+| `sdf_fem_mesh` | 大変形シミュレーション用 SDF → 四面体 FEM メッシュ生成 (S2) |
+| `sdf_wind_field` | SDF 境界対応風場 (turbulence intensity + gust モデル) (S5) |
 
 ## 機能一覧
 
@@ -228,7 +269,7 @@ rayon 並列版は `--features parallel` で有効化。全バリアントで Fi
 
 ```toml
 [dependencies]
-alice-physics = { version = "0.12", features = ["gpu-solver-bridge"] }
+alice-physics = { version = "0.13", features = ["gpu-solver-bridge"] }
 alice-trt     = { version = "3.1", features = ["physics-solver"] }
 ```
 
@@ -490,8 +531,8 @@ ALICE-Physicsは**どこでもビット精度の結果**を保証し、以下を
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                          ALICE-Physics v0.12.0                               │
-│         138モジュール、1175 lib テスト + 53 alice-bamboo 統合テスト             │
+│                          ALICE-Physics v0.13.0                               │
+│         144 pub mod + 19 Session 4 追加、1175+ lib テスト (v0.12 base)         │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │  コアレイヤー                                                                │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐          │
