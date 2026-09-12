@@ -1,6 +1,6 @@
 # ALICE-Physics
 
-**Deterministic 128-bit Fixed-Point Physics Engine** - v0.12.0
+**Deterministic 128-bit Fixed-Point Physics Engine** - v0.13.0
 
 English | [日本語](README_JP.md)
 
@@ -8,12 +8,22 @@ English | [日本語](README_JP.md)
 
 A high-precision physics engine designed for deterministic simulation across different platforms and hardware. Uses 128-bit fixed-point arithmetic to ensure bit-exact results regardless of CPU, compiler, or operating system.
 
-**v0.10-0.12 highlights** — a three-session completeness push added
-**35 modules and 3 integrated solver loops** covering the full spectrum
+**v0.10-0.13 highlights** — a four-session completeness push added
+**54 modules and 3 integrated solver loops** covering the full spectrum
 from 3D-printing safety (warp / thin-wall / stress / bridging) through
 composite / plastic / fatigue mechanics, up to turbulence, VOF / level-set
-multi-phase flow, and a runnable CFD time-step loop. All bit-exact and
-Fix128 deterministic; see [Session 1-3 Additions](#session-1-3-additions-v010-012).
+multi-phase flow, runnable CFD time-step loop, plus a v0.13.0
+19-module Session 4 push (ragdoll / SDF character / SDF SPH /
+transient thermal / composite failure / VIV / piezoelectric / acoustic /
+electromagnetic / IK / anisotropic friction / netcode prediction /
+character FSM / kinematic loop / buoyancy zone / wind zone / SDF FEM /
+SDF wind). All bit-exact and Fix128 deterministic; see
+[Session 1-3 Additions](#session-1-3-additions-v010-012) and
+[v0.13.0 Session 4 Additions](#v0130-session-4-additions-19-modules-across-3-tiers).
+
+**v0.13.0 additions** — 19-module Session 4 push (see below). Companion
+release: ALICE-SDF v1.7.7 ships `morphology` (signed offset + tolerance
+fit check) as the S1 tier-★★★ integration partner.
 
 **v0.12.0 addition** — `GpuSolverBridge` gains a joint-solve pipeline
 (`send_joints` / `send_body_rotations` / `dispatch_joint_solve_iteration`)
@@ -21,6 +31,53 @@ and `PhysicsWorld` auto-routes both contact AND joint solve through the
 installed bridge, coordinated with ALICE-TRT v3.1.0's
 `FIX128_BALL_SOCKET_JOINT_SOLVE_WGSL` kernel (byte-exact vs CPU
 `solve_ball_joint`). See [CHANGELOG.md](CHANGELOG.md).
+
+## v0.13.0 Session 4 Additions (19 modules across 3 tiers)
+
+Extends the v0.10-0.12 engineering-solver foundation with a
+19-module push covering game-physics polish (ragdoll / character
+state / netcode prediction / IK), soft-body simulation (SDF SPH /
+SDF character / SDF FEM / SDF wind), engineering research
+(composite failure / transient thermal / rolling contact fatigue /
+VIV / piezoelectric / acoustic / electromagnetic), and
+multi-material coupling (buoyancy zone / anisotropic friction /
+kinematic loop). All bit-exact Fix128 deterministic; formula
+sources cited in module docs.
+
+### Tier ★★★ — 5 modules (real-world critical, downstream-load-bearing)
+
+| Module | Purpose |
+|--------|---------|
+| `ragdoll` | Humanoid ragdoll builder with pose targets, joint limits, breakable constraints (G1) |
+| `buoyancy_zone` | Bounded 3-D fluid volume with buoyancy + drag, fluid-surface CSF coupling (G2) |
+| `laminate_failure` | Tsai-Wu / Tsai-Hill / Hashin / Puck composite failure indices (R1) |
+| `transient_thermal` | Temperature-dependent material properties + 1-D unsteady heat solver + phase-boundary tracking (R2) |
+| ALICE-SDF `morphology` | Signed offset + tolerance fit check for print clearance (S1, ships in ALICE-SDF v1.7.7) |
+
+### Tier ★★ — 7 modules (broad utility, cross-domain glue)
+
+| Module | Purpose |
+|--------|---------|
+| `wind_zone` | Bounded 3-D wind volume with drag + lift on rigid / soft bodies (G3) |
+| `sdf_character` | SDF-terrain-aware character controller with slope / step / air-time state (S4) |
+| `rolling_contact` | Rolling contact fatigue (Hertz + subsurface shear + Basquin S-N cycle counting) (R3) |
+| `netcode_prediction` | Client-side prediction + reconciliation + input replay (G5) |
+| `character_state` | Character FSM (idle / walk / run / jump / fall / crouch) with transition validation (G6) |
+| `sdf_sph` | SDF-boundary SPH fluid with density / viscosity / surface tension (S3) |
+| `kinematic_loop` | Kinematic body loop constraint solver for closed-chain mechanisms (R4) |
+
+### Tier ★ — 8 modules (specialized engineering / research)
+
+| Module | Purpose |
+|--------|---------|
+| `ik_physics_bridge` | Physics-aware IK solver with joint-limit respecting FABRIK / CCD backend (G4) |
+| `anisotropic_friction` | Direction-dependent friction coefficient (rolling vs sliding, wood grain, fabric) (G7) |
+| `aeroelasticity` | Vortex-induced vibration (VIV) + flutter + galloping for slender structures (R5) |
+| `piezoelectric` | Piezoelectric coupling for sensors / actuators (voltage ↔ strain) (R6) |
+| `acoustic_wave` | 1-D / 2-D / 3-D acoustic wave propagation with material impedance boundary (R7) |
+| `electromagnetic` | Electromagnetic force field (Lorentz / induction / eddy current) for conductor bodies (R8) |
+| `sdf_fem_mesh` | SDF-to-tetrahedral FEM mesh generator for large-deformation simulation (S2) |
+| `sdf_wind_field` | SDF-boundary-aware wind field with turbulence intensity + gust modeling (S5) |
 
 ## Features
 
@@ -242,7 +299,7 @@ Pair with [ALICE-TRT v1.0.0+](https://github.com/ext-sakamoro/ALICE-TRT) `--feat
 
 ```toml
 [dependencies]
-alice-physics = { version = "0.12", features = ["gpu-solver-bridge"] }
+alice-physics = { version = "0.13", features = ["gpu-solver-bridge"] }
 alice-trt     = { version = "3.1", features = ["physics-solver"] }
 ```
 
@@ -504,8 +561,8 @@ ALICE-Physics guarantees **bit-exact results** everywhere, enabling:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                          ALICE-Physics v0.12.0                               │
-│         138 modules, 1175 lib tests + 53 alice-bamboo integration tests       │
+│                          ALICE-Physics v0.13.0                               │
+│         144 pub mod + 19 Session 4 additions, 1175+ lib tests (v0.12 base)    │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │  Core Layer                                                                  │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐          │

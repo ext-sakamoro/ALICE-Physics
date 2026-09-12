@@ -11,6 +11,90 @@ were introduced during that release window.
 - v0.11.0 — [docs/audits/STUB_AUDIT_v0.11.0.md](docs/audits/STUB_AUDIT_v0.11.0.md) (base: v0.10.0 `16674d4`)
 - v0.12.0 — [docs/audits/STUB_AUDIT_v0.12.0.md](docs/audits/STUB_AUDIT_v0.12.0.md) (base: v0.11.0 `095f115`, **0 new stubs**)
 
+## [0.13.0] - 2026-09-12
+
+### Added — 19 modules across 3 tiers (Session 4 completeness push)
+
+Extends the v0.10-0.12 engineering-solver foundation with a 19-module
+push covering game-physics polish (ragdoll / character state / netcode
+prediction / IK), soft-body simulation (SDF SPH / SDF character / SDF
+FEM / SDF wind), engineering research (composite failure / transient
+thermal / rolling contact fatigue / VIV / piezoelectric / acoustic /
+electromagnetic), and multi-material coupling (buoyancy zone /
+anisotropic friction / kinematic loop). All bit-exact Fix128
+deterministic; formula sources cited in module docs.
+
+Companion release: **ALICE-SDF v1.7.7** ships `morphology` (signed offset +
+tolerance fit check for print clearance) as the S1 tier-★★★ integration
+partner. Combine both crates for the 20-module coverage.
+
+#### Tier ★★★ — 5 modules (real-world critical, downstream-load-bearing)
+
+- **`ragdoll`** — humanoid ragdoll builder with pose targets, joint
+  limits, breakable constraints (G1)
+- **`buoyancy_zone`** — bounded 3-D fluid volume with buoyancy + drag,
+  fluid-surface CSF coupling (G2)
+- **`laminate_failure`** — Tsai-Wu / Tsai-Hill / Hashin / Puck composite
+  failure indices with FailureMode classification (R1)
+- **`transient_thermal`** — temperature-dependent material properties +
+  1-D unsteady heat solver + phase-boundary tracking (R2)
+- Companion: ALICE-SDF **`morphology`** — signed offset + tolerance fit
+  check (S1, ships in ALICE-SDF v1.7.7)
+
+#### Tier ★★ — 7 modules (broad utility, cross-domain glue)
+
+- **`wind_zone`** — bounded 3-D wind volume with drag + lift on rigid /
+  soft bodies (G3)
+- **`sdf_character`** — SDF-terrain-aware character controller with
+  slope / step / air-time state (S4)
+- **`rolling_contact`** — rolling contact fatigue (Hertz + subsurface
+  shear + Basquin S-N cycle counting) (R3)
+- **`netcode_prediction`** — client-side prediction + reconciliation +
+  input replay for lockstep / rollback netcode (G5)
+- **`character_state`** — character FSM (idle / walk / run / jump /
+  fall / crouch) with transition validation (G6)
+- **`sdf_sph`** — SDF-boundary SPH fluid with density / viscosity /
+  surface tension (S3)
+- **`kinematic_loop`** — kinematic body loop constraint solver for
+  closed-chain mechanisms (R4)
+
+#### Tier ★ — 8 modules (specialized engineering / research)
+
+- **`ik_physics_bridge`** — physics-aware IK solver with joint-limit
+  respecting FABRIK / CCD backend (G4)
+- **`anisotropic_friction`** — direction-dependent friction coefficient
+  (rolling vs sliding, wood grain, fabric) (G7)
+- **`aeroelasticity`** — vortex-induced vibration (VIV) + flutter +
+  galloping for slender structures (R5)
+- **`piezoelectric`** — piezoelectric coupling for sensors / actuators
+  (voltage ↔ strain) (R6)
+- **`acoustic_wave`** — 1-D / 2-D / 3-D acoustic wave propagation with
+  material impedance boundary (R7)
+- **`electromagnetic`** — electromagnetic force field (Lorentz /
+  induction / eddy current) for conductor bodies (R8)
+- **`sdf_fem_mesh`** — SDF-to-tetrahedral FEM mesh generator for
+  large-deformation simulation (S2)
+- **`sdf_wind_field`** — SDF-boundary-aware wind field with turbulence
+  intensity + gust modeling (S5)
+
+### Added — CFD refinements
+
+- **`cfd`**: MacCormack advection scheme with Fedkiw monotone limiter
+- **`cfd`**: velocity self-advection with Euler R3 example
+- **`cfd`**: pressure Poisson RHS scale fix + temperature advection
+
+### Infrastructure
+
+- CI: canonical CI template rollout (ALICE-SDF v1.7.7 base, Tier 1)
+- CI: security-audit hotfix — `audit --ignore` + stub-guard regex refine
+- no-std: 12 module に `alloc::vec` / `format` 追加 + `physics_bench`
+  std gate 適用
+
+### Module count
+
+Total src/ files: 138 → 146 (Session 4 additions); `pub mod` count in
+`lib.rs`: → 144.
+
 ## [0.12.0] - 2026-07-08
 
 ### Added — `GpuSolverBridge` joint-solve pipeline + `PhysicsWorld` auto-routing
