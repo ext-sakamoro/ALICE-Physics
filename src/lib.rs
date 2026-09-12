@@ -287,6 +287,7 @@ pub mod interpolation;
 pub mod joint;
 pub mod joint_extra;
 pub mod laminate;
+pub mod laminate_failure;
 pub mod layer_adhesion;
 pub mod mass_properties;
 pub mod material;
@@ -318,6 +319,7 @@ pub mod profiling;
 #[cfg(feature = "python")]
 mod python;
 pub mod query;
+pub mod ragdoll;
 pub mod raycast;
 #[cfg(feature = "replay")]
 pub mod replay;
