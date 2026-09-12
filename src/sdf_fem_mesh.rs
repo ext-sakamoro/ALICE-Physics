@@ -51,6 +51,145 @@ impl SdfTetMesh {
     pub fn tet_count(&self) -> usize {
         self.tets.len()
     }
+
+    /// Iteratively refine the mesh by splitting every tetrahedron whose
+    /// longest edge exceeds `max_edge_length`.
+    ///
+    /// Each qualifying tetrahedron is decomposed into two new tets by
+    /// inserting a midpoint on the longest edge and reconnecting the
+    /// remaining vertices. The pass repeats until no tet exceeds the
+    /// threshold or `max_passes` is reached (whichever comes first).
+    ///
+    /// **This is edge-based refinement, not Delaunay refinement** —
+    /// aspect ratio can drift as edges shorten unevenly. Callers who
+    /// need Delaunay-quality tets should postprocess with an external
+    /// remesher; this MVP is aimed at bounded-edge FEM assembly.
+    ///
+    /// Returns the number of refinement passes actually executed.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `max_edge_length <= 0.0`.
+    pub fn refine_by_max_edge_length(&mut self, max_edge_length: f32, max_passes: u32) -> u32 {
+        assert!(max_edge_length > 0.0, "max_edge_length must be positive");
+        let mut passes = 0_u32;
+        for _ in 0..max_passes {
+            passes += 1;
+            let mut changed = false;
+            let mut new_tets: Vec<Tetrahedron> = Vec::with_capacity(self.tets.len() * 2);
+            let mut edge_midpoint_cache: HashMap<(u32, u32), u32> = HashMap::new();
+            let tet_snapshot = std::mem::take(&mut self.tets);
+            for tet in &tet_snapshot {
+                let vs = tet.vertices;
+                // Find the longest edge (pair of vertex indices).
+                let edges: [(u32, u32); 6] = [
+                    (vs[0], vs[1]),
+                    (vs[0], vs[2]),
+                    (vs[0], vs[3]),
+                    (vs[1], vs[2]),
+                    (vs[1], vs[3]),
+                    (vs[2], vs[3]),
+                ];
+                let mut best_edge = 0_usize;
+                let mut best_len_sq = 0.0_f32;
+                for (k, (a, b)) in edges.iter().enumerate() {
+                    let pa = self.vertices[*a as usize];
+                    let pb = self.vertices[*b as usize];
+                    let dx = pa[0] - pb[0];
+                    let dy = pa[1] - pb[1];
+                    let dz = pa[2] - pb[2];
+                    let len_sq = dx.mul_add(dx, dy.mul_add(dy, dz * dz));
+                    if len_sq > best_len_sq {
+                        best_len_sq = len_sq;
+                        best_edge = k;
+                    }
+                }
+                let longest_len = best_len_sq.sqrt();
+                if longest_len <= max_edge_length {
+                    new_tets.push(*tet);
+                    continue;
+                }
+                changed = true;
+                let (a, b) = edges[best_edge];
+                // Deduplicated midpoint insertion.
+                let key = (a.min(b), a.max(b));
+                let mid_index = if let Some(&idx) = edge_midpoint_cache.get(&key) {
+                    idx
+                } else {
+                    let pa = self.vertices[a as usize];
+                    let pb = self.vertices[b as usize];
+                    let mid = [
+                        0.5 * (pa[0] + pb[0]),
+                        0.5 * (pa[1] + pb[1]),
+                        0.5 * (pa[2] + pb[2]),
+                    ];
+                    let idx = self.vertices.len() as u32;
+                    self.vertices.push(mid);
+                    edge_midpoint_cache.insert(key, idx);
+                    idx
+                };
+                // Split the tet by replacing the longest edge's
+                // endpoints with the midpoint on each of two child tets.
+                // For edge (a, b), the remaining two vertices are `c` and `d`.
+                let (c, d) = split_edge_remaining(vs, best_edge);
+                new_tets.push(Tetrahedron {
+                    vertices: [a, mid_index, c, d],
+                });
+                new_tets.push(Tetrahedron {
+                    vertices: [mid_index, b, c, d],
+                });
+            }
+            self.tets = new_tets;
+            if !changed {
+                break;
+            }
+        }
+        passes
+    }
+
+    /// Maximum edge length over the mesh (`0.0` on an empty mesh).
+    #[must_use]
+    pub fn max_edge_length(&self) -> f32 {
+        let mut best = 0.0_f32;
+        for tet in &self.tets {
+            let vs = tet.vertices;
+            let edges: [(u32, u32); 6] = [
+                (vs[0], vs[1]),
+                (vs[0], vs[2]),
+                (vs[0], vs[3]),
+                (vs[1], vs[2]),
+                (vs[1], vs[3]),
+                (vs[2], vs[3]),
+            ];
+            for (a, b) in edges {
+                let pa = self.vertices[a as usize];
+                let pb = self.vertices[b as usize];
+                let dx = pa[0] - pb[0];
+                let dy = pa[1] - pb[1];
+                let dz = pa[2] - pb[2];
+                let len = dx.mul_add(dx, dy.mul_add(dy, dz * dz)).sqrt();
+                if len > best {
+                    best = len;
+                }
+            }
+        }
+        best
+    }
+}
+
+/// For a tetrahedron with vertex list `[v0, v1, v2, v3]` and an
+/// enumeration-index `best_edge ∈ 0..6` naming which edge was picked,
+/// return the two remaining vertex indices.
+fn split_edge_remaining(vs: [u32; 4], best_edge: usize) -> (u32, u32) {
+    match best_edge {
+        0 => (vs[2], vs[3]), // (v0, v1)
+        1 => (vs[1], vs[3]), // (v0, v2)
+        2 => (vs[1], vs[2]), // (v0, v3)
+        3 => (vs[0], vs[3]), // (v1, v2)
+        4 => (vs[0], vs[2]), // (v1, v3)
+        5 => (vs[0], vs[1]), // (v2, v3)
+        _ => unreachable!("best_edge out of range"),
+    }
 }
 
 /// Generate a tet mesh by walking a Cartesian grid over the AABB
@@ -474,5 +613,46 @@ mod tests {
         assert_eq!(other_three(1), [0, 2, 3]);
         assert_eq!(other_three(2), [0, 1, 3]);
         assert_eq!(other_three(3), [0, 1, 2]);
+    }
+
+    // ---- Edge-split refinement tests -----------------------------------
+
+    fn one_tet_mesh(side: f32) -> SdfTetMesh {
+        let mut m = SdfTetMesh::default();
+        m.vertices.push([0.0, 0.0, 0.0]);
+        m.vertices.push([side, 0.0, 0.0]);
+        m.vertices.push([0.0, side, 0.0]);
+        m.vertices.push([0.0, 0.0, side]);
+        m.tets.push(Tetrahedron {
+            vertices: [0, 1, 2, 3],
+        });
+        m
+    }
+
+    #[test]
+    fn refine_halves_edges_after_pass() {
+        let mut m = one_tet_mesh(1.0);
+        let passes = m.refine_by_max_edge_length(0.7, 4);
+        assert!(m.max_edge_length() <= 1.0);
+        assert!(passes >= 1);
+        // Every refinement pass at least doubles the tet count while
+        // shortening the longest edge.
+        assert!(m.tet_count() >= 2);
+    }
+
+    #[test]
+    fn refine_stops_when_no_edge_exceeds_threshold() {
+        let mut m = one_tet_mesh(1.0);
+        let passes = m.refine_by_max_edge_length(10.0, 8);
+        // Threshold larger than any edge — no refinement should occur.
+        assert_eq!(m.tet_count(), 1);
+        assert!(passes >= 1);
+    }
+
+    #[test]
+    #[should_panic(expected = "max_edge_length must be positive")]
+    fn refine_panics_on_nonpositive_threshold() {
+        let mut m = one_tet_mesh(1.0);
+        let _ = m.refine_by_max_edge_length(0.0, 4);
     }
 }

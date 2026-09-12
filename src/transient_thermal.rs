@@ -384,6 +384,212 @@ fn thomas_solve_in_place(a: &mut [f32], b: &mut [f32], c: &mut [f32], d: &mut [f
     }
 }
 
+/// Nonlinear Crank–Nicolson step with **Picard iteration** on the
+/// temperature-dependent material properties.
+///
+/// The linearised [`crank_nicolson_step_1d`] freezes `α(T)` at the
+/// beginning-of-step temperatures. When `α` varies strongly across
+/// the temperature range this introduces a first-order error in each
+/// step. This nonlinear variant refines that estimate by iterating:
+///
+/// 1. Predict `T*` with `α` evaluated at the current guess.
+/// 2. Re-evaluate `α(T*)` and repeat until the change between successive
+///    iterates falls below `tolerance` (L∞) or `max_iterations` is hit.
+///
+/// A `tolerance` of `1e-4` and `max_iterations` of `5` are reasonable
+/// defaults for engineering-grade transients.
+///
+/// Returns the number of Picard iterations actually performed (0 if
+/// the array had fewer than three cells).
+///
+/// # Panics
+///
+/// Panics if `dx <= 0.0` or `dt <= 0.0`.
+pub fn crank_nicolson_step_1d_nonlinear(
+    temperatures: &mut [f32],
+    material: &ThermalMaterial,
+    dx: f32,
+    dt: f32,
+    tolerance: f32,
+    max_iterations: u32,
+) -> u32 {
+    assert!(dx > 0.0, "dx must be positive");
+    assert!(dt > 0.0, "dt must be positive");
+    let n = temperatures.len();
+    if n < 3 {
+        return 0;
+    }
+    let initial: Vec<f32> = temperatures.to_vec();
+    let mut current: Vec<f32> = temperatures.to_vec();
+    let mut iterations = 0_u32;
+    for _ in 0..max_iterations {
+        iterations += 1;
+        // Averaged temperature T̄ = ½(T_n + T_k) for the α evaluation —
+        // trapezoidal Picard, matches the C–N mid-step assumption.
+        let mut t_avg = vec![0.0_f32; n];
+        for i in 0..n {
+            t_avg[i] = 0.5 * (initial[i] + current[i]);
+        }
+        // Advance from initial using α(T̄); write result into a fresh
+        // working buffer so we can compare against `current`.
+        let mut next: Vec<f32> = initial.clone();
+        crank_nicolson_step_1d_with_alpha(&mut next, material, &t_avg, dx, dt);
+        // Convergence check in L∞.
+        let mut max_delta = 0.0_f32;
+        for i in 0..n {
+            let d = (next[i] - current[i]).abs();
+            if d > max_delta {
+                max_delta = d;
+            }
+        }
+        current = next;
+        if max_delta < tolerance {
+            break;
+        }
+    }
+    temperatures.copy_from_slice(&current);
+    iterations
+}
+
+/// Crank–Nicolson advance with a caller-supplied diffusivity sample
+/// point per cell — factored out of `crank_nicolson_step_1d` and reused
+/// by the Picard driver above.
+fn crank_nicolson_step_1d_with_alpha(
+    temperatures: &mut [f32],
+    material: &ThermalMaterial,
+    alpha_sample_temps: &[f32],
+    dx: f32,
+    dt: f32,
+) {
+    let n = temperatures.len();
+    debug_assert_eq!(alpha_sample_temps.len(), n);
+    if n < 3 {
+        return;
+    }
+    let inv_dx_squared = 1.0 / (dx * dx);
+    let mut r = vec![0.0_f32; n];
+    for i in 0..n {
+        r[i] = material.diffusivity_at(alpha_sample_temps[i]) * dt * inv_dx_squared;
+    }
+    let mut rhs = vec![0.0_f32; n];
+    for i in 0..n {
+        let left = if i == 0 {
+            temperatures[i]
+        } else {
+            temperatures[i - 1]
+        };
+        let right = if i == n - 1 {
+            temperatures[i]
+        } else {
+            temperatures[i + 1]
+        };
+        let laplacian = left - 2.0 * temperatures[i] + right;
+        rhs[i] = temperatures[i] + 0.5 * r[i] * laplacian;
+    }
+    let mut sub = vec![0.0_f32; n];
+    let mut diag = vec![0.0_f32; n];
+    let mut sup = vec![0.0_f32; n];
+    for i in 0..n {
+        let half_r = 0.5 * r[i];
+        let neumann_left = i == 0;
+        let neumann_right = i == n - 1;
+        sub[i] = if neumann_left { 0.0 } else { -half_r };
+        sup[i] = if neumann_right { 0.0 } else { -half_r };
+        let ghost_fold = f32::from(u8::from(neumann_left) + u8::from(neumann_right));
+        diag[i] = 1.0 + r[i] - half_r * ghost_fold;
+    }
+    thomas_solve_in_place(&mut sub, &mut diag, &mut sup, &mut rhs);
+    temperatures.copy_from_slice(&rhs);
+}
+
+/// 3-D explicit-Euler transient thermal advance on a Cartesian grid.
+///
+/// The temperature field is stored row-major with the ordering
+/// `t[i + nx·(j + ny·k)]`. All six external faces use Neumann
+/// (zero-flux) boundary conditions, matching [`transient_step_1d`].
+/// Per-cell diffusivity `α(T)` respects the local temperature-dependent
+/// material properties, driving the standard 7-point Laplacian.
+///
+/// # Panics
+///
+/// Panics if `dx <= 0.0` or `t.len() != nx·ny·nz`. Arrays with fewer
+/// than three cells in any dimension are returned unmodified.
+pub fn transient_step_3d(
+    t: &mut [f32],
+    nx: usize,
+    ny: usize,
+    nz: usize,
+    material: &ThermalMaterial,
+    dx: f32,
+    dt: f32,
+) {
+    assert!(dx > 0.0, "dx must be positive");
+    assert_eq!(t.len(), nx * ny * nz, "temperature slice length mismatch");
+    if nx < 3 || ny < 3 || nz < 3 {
+        return;
+    }
+    let inv_dx_squared = 1.0 / (dx * dx);
+    let idx = |i: usize, j: usize, k: usize| i + nx * (j + ny * k);
+    let mut next: Vec<f32> = t.to_vec();
+    for k in 1..nz - 1 {
+        for j in 1..ny - 1 {
+            for i in 1..nx - 1 {
+                let c = t[idx(i, j, k)];
+                let alpha = material.diffusivity_at(c);
+                let laplacian = (t[idx(i + 1, j, k)]
+                    + t[idx(i - 1, j, k)]
+                    + t[idx(i, j + 1, k)]
+                    + t[idx(i, j - 1, k)]
+                    + t[idx(i, j, k + 1)]
+                    + t[idx(i, j, k - 1)]
+                    - 6.0 * c)
+                    * inv_dx_squared;
+                next[idx(i, j, k)] = c + dt * alpha * laplacian;
+            }
+        }
+    }
+    // Neumann mirrors on all six faces (copy from the nearest interior cell).
+    for k in 0..nz {
+        for j in 0..ny {
+            next[idx(0, j, k)] = next[idx(1.min(nx - 1), j, k)];
+            next[idx(nx - 1, j, k)] = next[idx(nx.saturating_sub(2).max(0), j, k)];
+        }
+    }
+    for k in 0..nz {
+        for i in 0..nx {
+            next[idx(i, 0, k)] = next[idx(i, 1.min(ny - 1), k)];
+            next[idx(i, ny - 1, k)] = next[idx(i, ny.saturating_sub(2).max(0), k)];
+        }
+    }
+    for j in 0..ny {
+        for i in 0..nx {
+            next[idx(i, j, 0)] = next[idx(i, j, 1.min(nz - 1))];
+            next[idx(i, j, nz - 1)] = next[idx(i, j, nz.saturating_sub(2).max(0))];
+        }
+    }
+    t.copy_from_slice(&next);
+}
+
+/// CFL upper bound on the time step for [`transient_step_3d`].
+///
+/// The 3-D explicit stencil has a stricter bound than 1-D: `dt ≤ dx² /
+/// (6 · max α)` for stability (compare to `dx²/(2 α)` in 1-D).
+#[must_use]
+pub fn stable_dt_3d(t: &[f32], material: &ThermalMaterial, dx: f32) -> f32 {
+    assert!(dx > 0.0, "dx must be positive");
+    let mut max_alpha = 0.0_f32;
+    for &v in t {
+        let alpha = material.diffusivity_at(v);
+        if alpha > max_alpha {
+            max_alpha = alpha;
+        }
+    }
+    if max_alpha <= 0.0 || !max_alpha.is_finite() {
+        return f32::INFINITY;
+    }
+    dx * dx / (6.0 * max_alpha)
+}
+
 /// CFL upper bound on the time step for [`transient_step_1d`].
 ///
 /// Uses the maximum diffusivity across the array so a single choice of
@@ -687,5 +893,121 @@ mod tests {
         let material = ThermalMaterial::steel_1018();
         let mut t = vec![300.0_f32; 6];
         crank_nicolson_step_1d(&mut t, &material, 0.001, 0.0);
+    }
+
+    // ---- Nonlinear Crank–Nicolson tests --------------------------------
+
+    #[test]
+    fn nonlinear_crank_nicolson_converges_on_constant_material() {
+        // Constant α ⇒ Picard should converge in 1 iteration (T̄ never
+        // changes α, so the next iterate equals the first).
+        let material = constant_material();
+        let mut t = vec![300.0_f32; 11];
+        t[5] = 700.0;
+        let iters = crank_nicolson_step_1d_nonlinear(&mut t, &material, 0.001, 0.001, 1.0e-4, 5);
+        assert!(iters <= 2, "expected fast convergence, got {iters}");
+        for &v in &t {
+            assert!(v.is_finite());
+        }
+    }
+
+    #[test]
+    fn nonlinear_crank_nicolson_matches_linear_on_constant_material() {
+        // Under constant α, nonlinear should produce the same result
+        // as the linearised C–N (Picard converges after one iterate).
+        let material = constant_material();
+        let dx = 0.001_f32;
+        let dt = 0.001_f32;
+        let mut initial = vec![300.0_f32; 11];
+        initial[5] = 700.0;
+        let mut t_lin = initial.clone();
+        let mut t_nl = initial;
+        crank_nicolson_step_1d(&mut t_lin, &material, dx, dt);
+        let _ = crank_nicolson_step_1d_nonlinear(&mut t_nl, &material, dx, dt, 1.0e-5, 10);
+        for i in 0..t_lin.len() {
+            assert!(
+                (t_lin[i] - t_nl[i]).abs() < 1.0e-3,
+                "linear vs nonlinear diverge at {i}: {} vs {}",
+                t_lin[i],
+                t_nl[i]
+            );
+        }
+    }
+
+    // ---- 3-D transient thermal tests -----------------------------------
+
+    fn make_uniform_field_3d(n: usize, value: f32) -> Vec<f32> {
+        vec![value; n * n * n]
+    }
+
+    #[test]
+    fn transient_step_3d_preserves_uniform_field() {
+        let material = ThermalMaterial::steel_1018();
+        let mut field = make_uniform_field_3d(5, 400.0);
+        transient_step_3d(&mut field, 5, 5, 5, &material, 0.001, 0.001);
+        for &v in &field {
+            assert!((v - 400.0).abs() < 1.0e-3);
+        }
+    }
+
+    #[test]
+    fn transient_step_3d_smooths_central_peak() {
+        let material = ThermalMaterial::steel_1018();
+        let n = 5;
+        let mut field = make_uniform_field_3d(n, 300.0);
+        let ctr = 2;
+        let idx = |i, j, k| i + n * (j + n * k);
+        field[idx(ctr, ctr, ctr)] = 900.0;
+        let dt = stable_dt_3d(&field, &material, 0.001) * 0.5;
+        for _ in 0..20 {
+            transient_step_3d(&mut field, n, n, n, &material, 0.001, dt);
+        }
+        // Peak decreased, neighbours warmed above ambient.
+        assert!(field[idx(ctr, ctr, ctr)] < 900.0);
+        assert!(field[idx(ctr + 1, ctr, ctr)] > 300.0);
+    }
+
+    #[test]
+    fn stable_dt_3d_returns_positive_bound() {
+        let material = ThermalMaterial::steel_1018();
+        let field = make_uniform_field_3d(4, 400.0);
+        let dt = stable_dt_3d(&field, &material, 0.001);
+        assert!(dt > 0.0 && dt.is_finite());
+    }
+
+    #[test]
+    fn transient_step_3d_neumann_mirror_matches_interior() {
+        let material = ThermalMaterial::steel_1018();
+        let n = 4;
+        let mut field = make_uniform_field_3d(n, 300.0);
+        let idx = |i, j, k| i + n * (j + n * k);
+        field[idx(1, 1, 1)] = 800.0;
+        let dt = stable_dt_3d(&field, &material, 0.001) * 0.1;
+        transient_step_3d(&mut field, n, n, n, &material, 0.001, dt);
+        // Face cells mirror their interior neighbour.
+        assert!(
+            (field[idx(0, 1, 1)] - field[idx(1, 1, 1)]).abs() < 1.0e-3,
+            "Neumann mirror failed on -x face"
+        );
+        assert!(
+            (field[idx(n - 1, 1, 1)] - field[idx(n - 2, 1, 1)]).abs() < 1.0e-3,
+            "Neumann mirror failed on +x face"
+        );
+    }
+
+    #[test]
+    fn nonlinear_crank_nicolson_stable_on_temp_dependent_material() {
+        // Strongly temperature-dependent steel: nonlinear iterate must
+        // remain bounded and finite even with a coarse tolerance.
+        let material = ThermalMaterial::steel_1018();
+        let mut t = vec![300.0_f32; 11];
+        t[5] = 800.0;
+        let dt = stable_dt_1d(&t, &material, 0.001);
+        let iters = crank_nicolson_step_1d_nonlinear(&mut t, &material, 0.001, dt, 1.0e-4, 5);
+        assert!(iters >= 1);
+        for &v in &t {
+            assert!(v.is_finite());
+            assert!((250.0..=850.0).contains(&v), "out of envelope: {v}");
+        }
     }
 }

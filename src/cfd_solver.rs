@@ -62,9 +62,8 @@ pub enum AdvectionScheme {
     /// `φ̂ = A⁻¹(φ̃)`, compensated `φ* = φ_n + ½ (φ_n − φ̂)`, final
     /// `φ_{n+1} = A(φ*)`. Second-order accurate on smooth data with
     /// noticeably less phase error than MacCormack; the extra pass
-    /// costs ~30% more per step. The velocity field falls back to
-    /// MacCormack integration under this scheme — BFECC on the MAC
-    /// faces is deferred to future work.
+    /// costs ~30% more per step. Applied to both MAC-face velocity
+    /// (`advect_velocity_bfecc`) and the temperature scalar field.
     Bfecc,
 }
 
@@ -123,6 +122,58 @@ impl CfdSolver {
         }
     }
 
+    /// Largest `dt` satisfying `cfl_target = |u|_max · dt / dx`.
+    ///
+    /// Scans the current MAC-grid face velocities for the peak
+    /// component magnitude, then inverts the Courant condition:
+    ///
+    /// ```text
+    /// dt_max = cfl_target · dx / |u|_max
+    /// ```
+    ///
+    /// Returns `Fix128::from_int(large_value)` if the velocity field is
+    /// effectively zero (no CFL constraint), giving callers a
+    /// well-defined upper bound to compare against a scheme-specific
+    /// diffusion cap. `cfl_target` should typically be in `[0.5, 1.0]`
+    /// for semi-Lagrangian and higher for BFECC / MacCormack when
+    /// paired with a monotone clamp.
+    #[must_use]
+    pub fn compute_max_dt(&self, cfl_target: Fix128) -> Fix128 {
+        let peak = self
+            .grid
+            .u
+            .iter()
+            .chain(self.grid.v.iter())
+            .chain(self.grid.w.iter())
+            .fold(Fix128::ZERO, |acc, &v| {
+                let av = v.abs();
+                if av > acc {
+                    av
+                } else {
+                    acc
+                }
+            });
+        if peak.is_zero() {
+            return Fix128::from_int(1_000_000);
+        }
+        cfl_target * self.grid.dx / peak
+    }
+
+    /// Convenience — step with an automatically chosen `dt` from
+    /// [`compute_max_dt`], capped by `dt_ceiling`.
+    ///
+    /// Useful in engineering demos where the simulation should adapt
+    /// to fast transients without the caller re-computing `dt` on each
+    /// tick. Returns the `dt` that was actually integrated.
+    pub fn step_adaptive(&mut self, cfl_target: Fix128, dt_ceiling: Fix128) -> Fix128 {
+        let mut dt = self.compute_max_dt(cfl_target);
+        if dt > dt_ceiling {
+            dt = dt_ceiling;
+        }
+        self.step(dt);
+        dt
+    }
+
     /// One integrated time step.
     pub fn step(&mut self, dt_s: Fix128) {
         if dt_s.is_zero() {
@@ -130,12 +181,8 @@ impl CfdSolver {
         }
         match self.advection_scheme {
             AdvectionScheme::SemiLagrangian => self.advect_velocity(dt_s),
-            AdvectionScheme::MacCormack | AdvectionScheme::Bfecc => {
-                // BFECC on the MAC faces would duplicate ~200 LOC of the
-                // MacCormack pattern; fall back to MacCormack for
-                // velocity until a dedicated MAC-face BFECC lands.
-                self.advect_velocity_maccormack(dt_s);
-            }
+            AdvectionScheme::MacCormack => self.advect_velocity_maccormack(dt_s),
+            AdvectionScheme::Bfecc => self.advect_velocity_bfecc(dt_s),
         }
         self.apply_body_forces(dt_s);
         if self.use_turbulence {
@@ -796,6 +843,244 @@ impl CfdSolver {
         }
     }
 
+    /// BFECC advection of the MAC velocity field (u/v/w faces).
+    ///
+    /// Full three-pass BFECC on all three staggered components:
+    ///
+    /// ```text
+    /// φ̂  = SL(φ_n, +dt; u_n)      // predictor
+    /// φ̃  = SL(φ̂, -dt; u_n)       // reverse
+    /// φ*  = φ_n + ½ (φ_n − φ̃)     // compensated input
+    /// φ_{n+1} = SL(φ*, +dt; u_n)   // final SL from the compensated field
+    /// ```
+    ///
+    /// The final result is clipped to the pre-advection back-trace range
+    /// on `u_n` for monotonicity, matching the MacCormack limiter
+    /// convention already applied in [`advect_velocity_maccormack`].
+    ///
+    /// Compared to MacCormack, BFECC pays one extra semi-Lagrangian
+    /// pass but removes the phase-error residual on the compensator,
+    /// giving cleaner spectra on smooth flow.
+    #[allow(clippy::too_many_lines)] // canonical 3-pass BFECC structure
+    fn advect_velocity_bfecc(&mut self, dt_s: Fix128) {
+        let u_n = self.grid.clone();
+        let dx = self.grid.dx;
+        let half = Fix128::from_ratio(1, 2);
+
+        // Pass 1 — forward SL: φ̂ = SL(φ_n, +dt).
+        self.advect_velocity(dt_s);
+        let phi_hat = self.grid.clone();
+
+        // Pass 2 — reverse SL on φ̂ using u_n's advecting field:
+        // φ̃ = SL(φ̂, -dt; u_n).
+        let mut u_tilde = vec![Fix128::ZERO; self.grid.u.len()];
+        let mut v_tilde = vec![Fix128::ZERO; self.grid.v.len()];
+        let mut w_tilde = vec![Fix128::ZERO; self.grid.w.len()];
+        for k in 0..self.grid.nz {
+            for j in 0..self.grid.ny {
+                for i in 0..=self.grid.nx {
+                    let px = Fix128::from_int(i as i64) * dx;
+                    let py = (Fix128::from_int(j as i64) + half) * dx;
+                    let pz = (Fix128::from_int(k as i64) + half) * dx;
+                    let pos = Vec3Fix::new(px, py, pz);
+                    let vel = g2p_velocity(&u_n, pos);
+                    let forward = Vec3Fix::new(
+                        pos.x + dt_s * vel.x,
+                        pos.y + dt_s * vel.y,
+                        pos.z + dt_s * vel.z,
+                    );
+                    let ix = self.grid.idx_u(i, j, k);
+                    if ix < u_tilde.len() {
+                        u_tilde[ix] = sample_u_trilinear(&phi_hat, forward);
+                    }
+                }
+            }
+        }
+        for k in 0..self.grid.nz {
+            for j in 0..=self.grid.ny {
+                for i in 0..self.grid.nx {
+                    let px = (Fix128::from_int(i as i64) + half) * dx;
+                    let py = Fix128::from_int(j as i64) * dx;
+                    let pz = (Fix128::from_int(k as i64) + half) * dx;
+                    let pos = Vec3Fix::new(px, py, pz);
+                    let vel = g2p_velocity(&u_n, pos);
+                    let forward = Vec3Fix::new(
+                        pos.x + dt_s * vel.x,
+                        pos.y + dt_s * vel.y,
+                        pos.z + dt_s * vel.z,
+                    );
+                    let ix = self.grid.idx_v(i, j, k);
+                    if ix < v_tilde.len() {
+                        v_tilde[ix] = sample_v_trilinear(&phi_hat, forward);
+                    }
+                }
+            }
+        }
+        for k in 0..=self.grid.nz {
+            for j in 0..self.grid.ny {
+                for i in 0..self.grid.nx {
+                    let px = (Fix128::from_int(i as i64) + half) * dx;
+                    let py = (Fix128::from_int(j as i64) + half) * dx;
+                    let pz = Fix128::from_int(k as i64) * dx;
+                    let pos = Vec3Fix::new(px, py, pz);
+                    let vel = g2p_velocity(&u_n, pos);
+                    let forward = Vec3Fix::new(
+                        pos.x + dt_s * vel.x,
+                        pos.y + dt_s * vel.y,
+                        pos.z + dt_s * vel.z,
+                    );
+                    let ix = self.grid.idx_w(i, j, k);
+                    if ix < w_tilde.len() {
+                        w_tilde[ix] = sample_w_trilinear(&phi_hat, forward);
+                    }
+                }
+            }
+        }
+
+        // Pass 3 — build the compensated input φ* = φ_n + ½(φ_n − φ̃).
+        let mut phi_star = u_n.clone();
+        for i in 0..phi_star.u.len() {
+            phi_star.u[i] = u_n.u[i] + half * (u_n.u[i] - u_tilde[i]);
+        }
+        for i in 0..phi_star.v.len() {
+            phi_star.v[i] = u_n.v[i] + half * (u_n.v[i] - v_tilde[i]);
+        }
+        for i in 0..phi_star.w.len() {
+            phi_star.w[i] = u_n.w[i] + half * (u_n.w[i] - w_tilde[i]);
+        }
+
+        // Pass 4 — final SL from φ* using u_n's advecting field.
+        for k in 0..self.grid.nz {
+            for j in 0..self.grid.ny {
+                for i in 0..=self.grid.nx {
+                    let px = Fix128::from_int(i as i64) * dx;
+                    let py = (Fix128::from_int(j as i64) + half) * dx;
+                    let pz = (Fix128::from_int(k as i64) + half) * dx;
+                    let pos = Vec3Fix::new(px, py, pz);
+                    let vel = g2p_velocity(&u_n, pos);
+                    let back = Vec3Fix::new(
+                        pos.x - dt_s * vel.x,
+                        pos.y - dt_s * vel.y,
+                        pos.z - dt_s * vel.z,
+                    );
+                    let ix = self.grid.idx_u(i, j, k);
+                    if ix < self.grid.u.len() {
+                        self.grid.u[ix] = sample_u_trilinear(&phi_star, back);
+                    }
+                }
+            }
+        }
+        for k in 0..self.grid.nz {
+            for j in 0..=self.grid.ny {
+                for i in 0..self.grid.nx {
+                    let px = (Fix128::from_int(i as i64) + half) * dx;
+                    let py = Fix128::from_int(j as i64) * dx;
+                    let pz = (Fix128::from_int(k as i64) + half) * dx;
+                    let pos = Vec3Fix::new(px, py, pz);
+                    let vel = g2p_velocity(&u_n, pos);
+                    let back = Vec3Fix::new(
+                        pos.x - dt_s * vel.x,
+                        pos.y - dt_s * vel.y,
+                        pos.z - dt_s * vel.z,
+                    );
+                    let ix = self.grid.idx_v(i, j, k);
+                    if ix < self.grid.v.len() {
+                        self.grid.v[ix] = sample_v_trilinear(&phi_star, back);
+                    }
+                }
+            }
+        }
+        for k in 0..=self.grid.nz {
+            for j in 0..self.grid.ny {
+                for i in 0..self.grid.nx {
+                    let px = (Fix128::from_int(i as i64) + half) * dx;
+                    let py = (Fix128::from_int(j as i64) + half) * dx;
+                    let pz = Fix128::from_int(k as i64) * dx;
+                    let pos = Vec3Fix::new(px, py, pz);
+                    let vel = g2p_velocity(&u_n, pos);
+                    let back = Vec3Fix::new(
+                        pos.x - dt_s * vel.x,
+                        pos.y - dt_s * vel.y,
+                        pos.z - dt_s * vel.z,
+                    );
+                    let ix = self.grid.idx_w(i, j, k);
+                    if ix < self.grid.w.len() {
+                        self.grid.w[ix] = sample_w_trilinear(&phi_star, back);
+                    }
+                }
+            }
+        }
+
+        // Monotonicity guard — clamp each face component to the local
+        // pre-advection range at the back-traced position on `u_n`.
+        for k in 0..self.grid.nz {
+            for j in 0..self.grid.ny {
+                for i in 0..=self.grid.nx {
+                    let px = Fix128::from_int(i as i64) * dx;
+                    let py = (Fix128::from_int(j as i64) + half) * dx;
+                    let pz = (Fix128::from_int(k as i64) + half) * dx;
+                    let pos = Vec3Fix::new(px, py, pz);
+                    let vel = g2p_velocity(&u_n, pos);
+                    let back = Vec3Fix::new(
+                        pos.x - dt_s * vel.x,
+                        pos.y - dt_s * vel.y,
+                        pos.z - dt_s * vel.z,
+                    );
+                    let (lo, hi) = sample_u_range(&u_n, back);
+                    let ix = self.grid.idx_u(i, j, k);
+                    if ix < self.grid.u.len() {
+                        let val = self.grid.u[ix];
+                        self.grid.u[ix] = clamp(val, lo, hi);
+                    }
+                }
+            }
+        }
+        for k in 0..self.grid.nz {
+            for j in 0..=self.grid.ny {
+                for i in 0..self.grid.nx {
+                    let px = (Fix128::from_int(i as i64) + half) * dx;
+                    let py = Fix128::from_int(j as i64) * dx;
+                    let pz = (Fix128::from_int(k as i64) + half) * dx;
+                    let pos = Vec3Fix::new(px, py, pz);
+                    let vel = g2p_velocity(&u_n, pos);
+                    let back = Vec3Fix::new(
+                        pos.x - dt_s * vel.x,
+                        pos.y - dt_s * vel.y,
+                        pos.z - dt_s * vel.z,
+                    );
+                    let (lo, hi) = sample_v_range(&u_n, back);
+                    let ix = self.grid.idx_v(i, j, k);
+                    if ix < self.grid.v.len() {
+                        let val = self.grid.v[ix];
+                        self.grid.v[ix] = clamp(val, lo, hi);
+                    }
+                }
+            }
+        }
+        for k in 0..=self.grid.nz {
+            for j in 0..self.grid.ny {
+                for i in 0..self.grid.nx {
+                    let px = (Fix128::from_int(i as i64) + half) * dx;
+                    let py = (Fix128::from_int(j as i64) + half) * dx;
+                    let pz = Fix128::from_int(k as i64) * dx;
+                    let pos = Vec3Fix::new(px, py, pz);
+                    let vel = g2p_velocity(&u_n, pos);
+                    let back = Vec3Fix::new(
+                        pos.x - dt_s * vel.x,
+                        pos.y - dt_s * vel.y,
+                        pos.z - dt_s * vel.z,
+                    );
+                    let (lo, hi) = sample_w_range(&u_n, back);
+                    let ix = self.grid.idx_w(i, j, k);
+                    if ix < self.grid.w.len() {
+                        let val = self.grid.w[ix];
+                        self.grid.w[ix] = clamp(val, lo, hi);
+                    }
+                }
+            }
+        }
+    }
+
     /// BFECC advection of the temperature scalar field.
     ///
     /// Implements the three-pass Back-and-Forth Error Compensation and
@@ -1198,5 +1483,107 @@ mod tests {
         );
         // Bounded by pre-advection extremum (monotonicity guard).
         assert!(after_max <= before_max);
+    }
+
+    #[test]
+    fn compute_max_dt_returns_large_dt_on_zero_velocity() {
+        let s = CfdSolver::new(4, 4, 4, Fix128::from_ratio(1, 10));
+        let dt = s.compute_max_dt(Fix128::from_ratio(5, 10));
+        // With zero velocity the CFL is inactive; expect a big cap.
+        assert!(dt > Fix128::from_int(1000));
+    }
+
+    #[test]
+    fn compute_max_dt_inverts_cfl_condition() {
+        let mut s = CfdSolver::new(4, 4, 4, Fix128::from_ratio(1, 10));
+        for u in s.grid.u.iter_mut() {
+            *u = Fix128::ONE; // 1 m/s uniform
+        }
+        // dx = 0.1, CFL = 0.5, dt = 0.5 * 0.1 / 1.0 = 0.05
+        let dt = s.compute_max_dt(Fix128::from_ratio(5, 10));
+        assert!((dt - Fix128::from_ratio(5, 100)).abs() < Fix128::from_ratio(1, 1000));
+    }
+
+    #[test]
+    fn step_adaptive_respects_ceiling() {
+        let mut s = CfdSolver::new(4, 4, 4, Fix128::from_ratio(1, 10));
+        s.gravity = Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, Fix128::ZERO);
+        // Zero velocity → compute_max_dt returns huge; ceiling should
+        // clamp the actually-integrated dt.
+        let ceiling = Fix128::from_ratio(1, 100);
+        let dt_used = s.step_adaptive(Fix128::from_ratio(5, 10), ceiling);
+        assert_eq!(dt_used, ceiling);
+        assert_eq!(s.step_count, 1);
+    }
+
+    #[test]
+    fn bfecc_velocity_preserves_zero_field() {
+        let mut s = CfdSolver::new(4, 4, 4, Fix128::from_ratio(1, 10));
+        s.gravity = Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, Fix128::ZERO);
+        s.advection_scheme = AdvectionScheme::Bfecc;
+        s.step(Fix128::from_ratio(1, 100));
+        for &u in &s.grid.u {
+            assert!(u.abs() < Fix128::from_ratio(1, 100));
+        }
+    }
+
+    #[test]
+    fn bfecc_velocity_transports_uniform_flow() {
+        // Uniform u = 0.5 m/s along +x should remain approximately
+        // uniform under BFECC self-advection (no gradient to advect).
+        let mut s = CfdSolver::new(6, 6, 6, Fix128::from_ratio(1, 10));
+        s.gravity = Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, Fix128::ZERO);
+        s.advection_scheme = AdvectionScheme::Bfecc;
+        for u in s.grid.u.iter_mut() {
+            *u = Fix128::from_ratio(1, 2);
+        }
+        s.step(Fix128::from_ratio(1, 100));
+        // Interior u values should stay close to 0.5 (small boundary
+        // clamping and projection deviations are acceptable).
+        let mid = 3;
+        let interior_u = s.grid.u[s.grid.idx_u(3, mid, mid)];
+        assert!(
+            (interior_u - Fix128::from_ratio(1, 2)).abs() < Fix128::from_ratio(1, 10),
+            "interior u drifted: {interior_u:?}"
+        );
+    }
+
+    #[test]
+    fn bfecc_velocity_monotonicity_bounded_by_pre_advection() {
+        // Give a smooth Gaussian-like u profile and step once — the
+        // BFECC clamp should keep each face value bounded by its
+        // back-traced pre-advection range.
+        let mut s = CfdSolver::new(6, 6, 6, Fix128::from_ratio(1, 10));
+        s.gravity = Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, Fix128::ZERO);
+        s.advection_scheme = AdvectionScheme::Bfecc;
+        for i in 0..=6 {
+            for j in 0..6 {
+                for k in 0..6 {
+                    let ix = s.grid.idx_u(i, j, k);
+                    if ix < s.grid.u.len() {
+                        // triangular ramp along x, peak = 1 at i=3
+                        let dist = (i as i64 - 3).abs();
+                        s.grid.u[ix] = Fix128::from_ratio(3 - dist, 3);
+                    }
+                }
+            }
+        }
+        let pre_max = s
+            .grid
+            .u
+            .iter()
+            .fold(Fix128::ZERO, |a, &b| if b > a { b } else { a });
+        s.step(Fix128::from_ratio(1, 100));
+        let post_max = s
+            .grid
+            .u
+            .iter()
+            .fold(Fix128::ZERO, |a, &b| if b > a { b } else { a });
+        // BFECC must not overshoot the initial peak by more than a
+        // small tolerance (projection stage may nudge by ε).
+        assert!(
+            post_max <= pre_max + Fix128::from_ratio(1, 50),
+            "overshoot: post={post_max:?} pre={pre_max:?}"
+        );
     }
 }
