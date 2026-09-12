@@ -87,6 +87,7 @@ fn run_scenario(gamma_0: f32, scheme: AdvectionScheme) {
     let scheme_tag = match scheme {
         AdvectionScheme::SemiLagrangian => "SL",
         AdvectionScheme::MacCormack => "MC",
+        AdvectionScheme::Bfecc => "BFECC",
     };
     let scenario = format!("Gamma0={gamma_0:.0}_{scheme_tag}");
     let mut vort_integral = 0.0_f32;
