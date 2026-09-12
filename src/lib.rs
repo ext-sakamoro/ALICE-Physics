@@ -219,10 +219,13 @@ compile_error!("Feature `wasm` requires `std`.");
 #[cfg(not(feature = "std"))]
 extern crate alloc;
 
+pub mod acoustic_wave;
+pub mod aeroelasticity;
 #[cfg(feature = "analytics")]
 pub mod analytics_bridge;
 pub mod animation_blend;
 pub mod anisotropic;
+pub mod anisotropic_friction;
 #[cfg(feature = "std")]
 pub mod anomaly;
 pub mod articulation;
@@ -258,6 +261,7 @@ pub mod db_bridge;
 pub mod debug_render;
 pub mod deformable;
 pub mod dynamic_bvh;
+pub mod electromagnetic;
 pub mod ellipsoid;
 #[cfg(feature = "std")]
 pub mod erosion;
@@ -283,6 +287,7 @@ pub mod gpu_sdf;
 pub mod heatmap;
 pub mod heightfield;
 pub mod hyperelastic;
+pub mod ik_physics_bridge;
 pub mod interface_capture;
 pub mod interpolation;
 pub mod joint;
@@ -308,6 +313,7 @@ pub mod particle;
 #[cfg(feature = "std")]
 pub mod phase_change;
 #[cfg(feature = "std")]
+pub mod piezoelectric;
 pub mod pipeline;
 pub mod plane_collider;
 pub mod plastic;
@@ -339,9 +345,11 @@ pub mod sdf_character;
 pub mod sdf_collider;
 #[cfg(feature = "std")]
 pub mod sdf_destruction;
+pub mod sdf_fem_mesh;
 pub mod sdf_force;
 pub mod sdf_manifold;
 pub mod sdf_sph;
+pub mod sdf_wind_field;
 #[cfg(feature = "std")]
 pub mod sim_field;
 #[cfg(feature = "std")]
