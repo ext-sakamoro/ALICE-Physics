@@ -1,12 +1,14 @@
 # ALICE-Physics
 
-**決定論的128bit固定小数点物理エンジン** - v0.13.0
+**決定論的128bit固定小数点物理エンジン** - v0.12.0
 
 [English](README.md) | 日本語
 
 異なるプラットフォームやハードウェア間で決定論的なシミュレーションを実現する高精度物理エンジン。128bit固定小数点演算を使用し、CPU、コンパイラ、OSに関わらずビット精度の結果を保証します。
 
-**v0.10-0.13 の主な追加**: 3 セッションの完全実装プッシュで **35 module + 3 統合 solver loop** を追加 3D プリント安全性検証 (warp / thin-wall / stress / bridging) から composite / plastic / fatigue 力学、乱流、VOF / level-set 多相流、そして実行可能な CFD 時間ステップ loop まで全て bit-exact + Fix128 決定論を保持 詳細は [Session 1-3 追加](#session-1-3-追加-v010-013) 参照
+**v0.10-0.12 の主な追加**: 3 セッションの完全実装プッシュで **35 module + 3 統合 solver loop** を追加 3D プリント安全性検証 (warp / thin-wall / stress / bridging) から composite / plastic / fatigue 力学、乱流、VOF / level-set 多相流、そして実行可能な CFD 時間ステップ loop まで全て bit-exact + Fix128 決定論を保持 詳細は [Session 1-3 追加](#session-1-3-追加-v010-012) 参照
+
+**v0.12.0 の追加**: `GpuSolverBridge` に joint-solve パイプライン (`send_joints` / `send_body_rotations` / `dispatch_joint_solve_iteration`) を追加、`PhysicsWorld` が contact / joint solve の両方を装着済 bridge 経由に auto-route する。ALICE-TRT v3.1.0 の `FIX128_BALL_SOCKET_JOINT_SOLVE_WGSL` kernel と協調 (CPU `solve_ball_joint` と byte-exact 一致)。詳細は [CHANGELOG.md](CHANGELOG.md) 参照。
 
 ## 機能一覧
 
@@ -93,7 +95,7 @@
 | **パーティクルシステム** | 汎用エミッター、ライフタイム、フォースフィールド統合 |
 | **no_std対応** | 組み込みシステム・WebAssemblyで動作 |
 
-## Session 1-3 追加 (v0.10-0.13)
+## Session 1-3 追加 (v0.10-0.12)
 
 3 セッションの完全実装プッシュで **35 module + 3 統合 solver loop + 3
 実行可能 example** を追加、「物理プリミティブ」から「実運用エンジニアリング
@@ -144,7 +146,7 @@ Wilcox / Hasselmann / Turns / Anderson 等)
 | `wave_ship` | JONSWAP spectrum + Froude-Krylov + 2-DOF | Hasselmann (1973); Faltinsen |
 | `interface_capture` | Fast Sweeping FSM + PLIC (Rider-Kothe 解析解) | Zhao (2005); Youngs (1982) |
 
-### Session 3 — Solver Loop + 12 改善 + 3 Demo (v0.13)
+### Session 3 — Solver Loop + 12 改善 + 3 Demo (v0.12)
 
 **統合 Solver Loop** — Session 1-2 module を組み合わせた 1 発 `step(dt)`
 呼び出しで駆動:
@@ -187,7 +189,7 @@ warp 事案で記録された failure mode と一致
 ### Test 数
 
 Session 1 baseline (v0.9): 719 → Session 1 end (v0.10): 904 → Session 2
-end (v0.12): 1170 → **Session 3 end (v0.13): alice-physics 1175 test +
+end (v0.11): 1170 → **Session 3 end (v0.12): alice-physics 1175 test +
 alice-bamboo 53 統合 test、全 pass**
 
 ### サブステッピング TGS ソルバー（プレビュー）
@@ -226,8 +228,8 @@ rayon 並列版は `--features parallel` で有効化。全バリアントで Fi
 
 ```toml
 [dependencies]
-alice-physics = { version = "0.8", features = ["gpu-solver-bridge"] }
-alice-trt     = { version = "1.3", features = ["physics-solver"] }
+alice-physics = { version = "0.12", features = ["gpu-solver-bridge"] }
+alice-trt     = { version = "3.1", features = ["physics-solver"] }
 ```
 
 ```rust
@@ -255,7 +257,7 @@ adapter.assert_bit_exact_vs_cpu(&DiffFixture {
 })?;
 ```
 
-対応リリース: [ALICE-TRT v1.3.1](https://github.com/ext-sakamoro/ALICE-TRT/releases/tag/v1.3.1) (最新)。全 ALICE-TRT リリースを macOS (Metal) / Ubuntu (Vulkan lavapipe) / Windows (DX12 WARP) 3 プラットフォームで 37 Fix128 単体テスト + 170 physics-solver テスト、CPU golden との byte-exact 検証済み。
+対応リリース: [ALICE-TRT v3.1.0](https://github.com/ext-sakamoro/ALICE-TRT/releases/tag/v3.1.0) (alice-physics v0.12.0 と協調 joint-solve GPU offload リリース)。全 ALICE-TRT リリースを macOS (Metal) / Ubuntu (Vulkan lavapipe) / Windows (DX12 WARP) 3 プラットフォームで 37 Fix128 単体テスト + 170 physics-solver テスト、CPU golden との byte-exact 検証済み。
 
 これらのプリミティブの決定論保証ガードレールは [`deterministic-physics-lockstep-discipline`](https://github.com/ext-sakamoro/claude-config/blob/main/claude-skills/deterministic-physics-lockstep-discipline/SKILL.md) スキル（private reference）に集約されています。
 
@@ -272,7 +274,7 @@ ALICE-Physicsは6層にわたる最適化で **100/100 の完璧なスコア** �
 | **L3: 計算戦略** | 20/20 | ウォームスタート `cached_lambda`、逆数事前計算（`inv_rest_length`、`inv_rest_density`） |
 | **L4: GPU・スループット** | 15/15 | `SIMD_WIDTH`定数 + `simd_width()`、`GpuSdfInstancedBatch`/`GpuSdfMultiDispatch`、`batch_size()` |
 | **L5: ビルドプロファイル** | 10/10 | `opt-level=3`、`lto="fat"`、`codegen-units=1`、`panic="abort"`、`strip=true` |
-| **L6: コード品質** | 20/20 | 737テスト（645ユニット + 72統合 + 20ドキュメント）、clippy 0警告 |
+| **L6: コード品質** | 20/20 | 1175 lib テスト + 53 alice-bamboo 統合テスト、clippy 0警告 |
 | **合計** | **100/100** | |
 
 ### L1: メモリレイアウト (15/15)
@@ -351,10 +353,9 @@ strip = true           # シンボル除去
 
 ### L6: コード品質 (20/20)
 
-- **645ユニットテスト**（84モジュール）
-- **72統合テスト**（エンドツーエンド物理シナリオ）
-- **20ドキュメントテスト**（実行可能な例）
-- **合計: 737テストパス**、clippy: 0警告（`-W clippy::all`）
+- **1175 lib テスト** (alice-physics crate、Session 3 完了 / v0.12)
+- **53 alice-bamboo 統合テスト** (3D プリント安全性のエンドツーエンド)
+- **合計: 1228テストパス**、clippy: 0警告（`-W clippy::all`）
 
 ---
 
@@ -489,8 +490,8 @@ ALICE-Physicsは**どこでもビット精度の結果**を保証し、以下を
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                          ALICE-Physics v0.6.0                                │
-│              84モジュール、645ユニットテスト、72統合、20ドキュメントテスト         │
+│                          ALICE-Physics v0.12.0                               │
+│         138モジュール、1175 lib テスト + 53 alice-bamboo 統合テスト             │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │  コアレイヤー                                                                │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐          │
@@ -908,7 +909,7 @@ let bullet_id = world.add_body(bullet);
 world.enable_ccd(bullet_id);   // sub-sweep 判定、貫通防止
 ```
 
-### Session 3 Solver Loop 例 (v0.13)
+### Session 3 Solver Loop 例 (v0.12)
 
 **CFD gravity settling** — 非圧縮 Navier-Stokes を圧力射影付きで 1 step:
 
