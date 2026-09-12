@@ -232,6 +232,7 @@ pub mod bimaterial;
 pub mod box_collider;
 pub mod bridging;
 pub mod buckling;
+pub mod buoyancy_zone;
 pub mod bvh;
 pub mod ccd;
 pub mod cfd_solver;
