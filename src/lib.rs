@@ -233,11 +233,13 @@ pub mod audio_physics;
 pub mod beam_stress;
 pub mod bimaterial;
 pub mod box_collider;
+#[cfg(feature = "std")]
 pub mod bridging;
 pub mod buckling;
 pub mod buoyancy_zone;
 pub mod bvh;
 pub mod ccd;
+#[cfg(feature = "std")]
 pub mod cfd_solver;
 pub mod character;
 pub mod character_state;
@@ -245,6 +247,7 @@ pub mod cloth;
 pub mod cloth_fluid;
 pub mod collider;
 pub mod collision_mesh_gen;
+#[cfg(feature = "std")]
 pub mod compound;
 pub mod compressible;
 pub mod cone;
@@ -274,6 +277,7 @@ pub mod ffi;
 pub mod filament_db;
 pub mod fillet_stress;
 pub mod filter;
+#[cfg(feature = "std")]
 pub mod flow_viz;
 pub mod fluid;
 #[cfg(feature = "std")]
@@ -281,18 +285,21 @@ pub mod fluid_netcode;
 pub mod force;
 #[cfg(feature = "std")]
 pub mod fracture;
+#[cfg(feature = "std")]
 pub mod fsi_advanced;
 #[cfg(feature = "std")]
 pub mod gpu_sdf;
 pub mod heatmap;
 pub mod heightfield;
 pub mod hyperelastic;
+#[cfg(feature = "std")]
 pub mod ik_physics_bridge;
 pub mod interface_capture;
 pub mod interpolation;
 pub mod joint;
 pub mod joint_extra;
 pub mod kinematic_loop;
+#[cfg(feature = "std")]
 pub mod laminate;
 pub mod laminate_failure;
 pub mod layer_adhesion;
@@ -305,6 +312,7 @@ pub mod motor;
 pub mod multi_world;
 pub mod multiphase;
 pub mod netcode;
+#[cfg(feature = "std")]
 pub mod netcode_prediction;
 #[cfg(feature = "neural")]
 pub mod neural;
@@ -314,6 +322,7 @@ pub mod particle;
 pub mod phase_change;
 #[cfg(feature = "std")]
 pub mod piezoelectric;
+#[cfg(feature = "std")]
 pub mod pipeline;
 pub mod plane_collider;
 pub mod plastic;
@@ -321,6 +330,7 @@ pub mod plastic;
 pub mod pressure;
 pub mod prestressed;
 pub mod print_orientation;
+#[cfg(feature = "std")]
 pub mod print_pipeline_solver;
 #[cfg(feature = "std")]
 pub mod privacy;
@@ -333,6 +343,7 @@ pub mod raycast;
 #[cfg(feature = "replay")]
 pub mod replay;
 pub mod rng;
+#[cfg(feature = "std")]
 pub mod rolling_contact;
 pub mod rope;
 pub mod rope_attach;
@@ -345,9 +356,11 @@ pub mod sdf_character;
 pub mod sdf_collider;
 #[cfg(feature = "std")]
 pub mod sdf_destruction;
+#[cfg(feature = "std")]
 pub mod sdf_fem_mesh;
 pub mod sdf_force;
 pub mod sdf_manifold;
+#[cfg(feature = "std")]
 pub mod sdf_sph;
 pub mod sdf_wind_field;
 #[cfg(feature = "std")]
@@ -355,6 +368,7 @@ pub mod sim_field;
 #[cfg(feature = "std")]
 pub mod sim_modifier;
 pub mod structural_solver;
+#[cfg(feature = "std")]
 pub mod support_volume;
 pub mod surface_tension_csf;
 #[cfg(feature = "std")]
@@ -391,6 +405,7 @@ pub mod spatial;
 pub mod thermal;
 pub mod thermal_stress;
 pub mod torus;
+#[cfg(feature = "std")]
 pub mod transient_thermal;
 pub mod trimesh;
 pub mod turbulence;
@@ -423,6 +438,7 @@ pub use collision_mesh_gen::{
     compute_mesh_aabb, generate_collision_mesh, simplify_collision_mesh, CollisionMesh,
     CollisionMeshConfig,
 };
+#[cfg(feature = "std")]
 pub use compound::{CompoundShape, ShapeRef};
 pub use cone::Cone;
 pub use contact_cache::{BodyPairKey, ContactCache, ContactManifold};
@@ -444,6 +460,7 @@ pub use event::{ContactEvent, ContactEventType, EventCollector, TriggerEvent};
 /// Re-export predefined collision layer constants for convenience.
 pub use filter::layers;
 pub use filter::CollisionFilter;
+#[cfg(feature = "std")]
 pub use flow_viz::{
     generate_flow_arrows, generate_streamlines, FlowArrow, FlowVizConfig, Streamlines,
 };
@@ -574,6 +591,7 @@ pub mod prelude {
         compute_mesh_aabb, generate_collision_mesh, simplify_collision_mesh, CollisionMesh,
         CollisionMeshConfig,
     };
+    #[cfg(feature = "std")]
     pub use crate::compound::{CompoundShape, ShapeRef};
     pub use crate::cone::Cone;
     pub use crate::contact_cache::{BodyPairKey, ContactCache, ContactManifold};
@@ -594,6 +612,7 @@ pub mod prelude {
     pub use crate::event::{ContactEvent, ContactEventType, EventCollector, TriggerEvent};
     pub use crate::filter::layers;
     pub use crate::filter::CollisionFilter;
+    #[cfg(feature = "std")]
     pub use crate::flow_viz::{
         generate_flow_arrows, generate_streamlines, FlowArrow, FlowVizConfig, Streamlines,
     };
