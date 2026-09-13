@@ -4,6 +4,60 @@
 **調査 base**: alice-physics v0.13.0 (commit `d175d67` + v0.14.0-preview.3 landing)
 **目的**: `cargo publish` に必要な整備タスクを特定、ROADMAP OQ2 の 3 択 (a/b/c) を実データから決定
 
+## 追記 (v0.14.0-preview.4、2026-09-13): 案 (b) 前倒し実施結果
+
+preview.3 の投資判断「v0.16.x で 案 (b) 採用」を、下記 J-1 実態調査を経て **v0.14.0-preview.4 で前倒し実施**:
+
+### J-1 実態調査で判明した scope 拡大
+
+当初 J-1 は「4 import path が sibling rename に未追従」を想定していたが、実測で以下判明:
+
+- `alice_ml::Ternary` — sibling に **存在しない** (削除済、`TernaryWeight` は残存)
+- `alice_db::AliceDB` — sibling に **存在しない** (C-FFI 形式 `DbHandle` / `DbResult` / `DbStats` に切替済)
+- `alice_analytics::prelude` — sibling に **存在しない** (prelude module 未定義)
+- `alice_analytics::DDSketch256` / `HyperLogLog12` — sibling に **存在しない**
+- 追加: `~/ALICE-ML/src/lib.rs` と `~/ALICE-DB/src/lib.rs` は **完全に空** (1 空行のみ、src/ 内 10+ file から一切 re-export されず)
+
+Physics 側 4 bridge module (`analytics_bridge.rs` / `db_bridge.rs` / `neural.rs` / `replay.rs`) は **現行 sibling で動作不能な pre-existing 破損状態**、`default features` build では bridge が cfg-gate されているため検知されていなかった latent 破損
+
+### 前倒し実施内容 (v0.14.0-preview.4)
+
+- **4 bridge file 削除**: `src/{analytics_bridge,db_bridge,neural,replay}.rs` (合計 1424 行)
+- **`src/lib.rs` から**: 4 `pub mod` 宣言 + `#[cfg(feature = "neural")]` prelude re-export block 削除
+- **`Cargo.toml` から**: `[features]` の `neural` / `replay` / `analytics` 3 個削除、`[dependencies]` の `alice-ml` / `alice-db` / `alice-analytics` 3 行削除
+- **`[features]` に削除経緯 comment 追加**: v0.17.x J-4 での段階復帰への pointer
+
+### 検証結果 (v0.14.0-preview.4 実測)
+
+| 検証項目 | 結果 |
+|--|--|
+| `cargo build` (default) | ✅ pass |
+| `cargo build --features "std simd parallel python ffi gpu-solver-bridge"` | ✅ pass |
+| `cargo build --features "std simd parallel python wasm gpu-solver-bridge"` | ✅ pass |
+| `cargo doc --no-deps --features "..."` | ✅ pass (8 pre-existing warning は bridge 削除と無関係、GpuSolverBridge intra-doc link 系) |
+| `cargo test --lib` | ✅ **1364 passed; 0 failed** (regression 0) |
+| **`cargo publish --dry-run --allow-dirty`** (`publish = false` を temp コメントアウトして実測) | ✅ **PASS** — Packaged 195 files, 3.0 MiB (715 KiB compressed)、Verifying → Compiling → Uploading (dry run で abort) すべて正常 |
+| `cargo build --all-features` | ❌ pre-existing `compile_error!("Features wasm and ffi are mutually exclusive")` (bridge 削除と無関係、v0.14.0 内で mutual exclusive 設計の見直しが別課題) |
+
+### 実データからの OQ2 判定確定
+
+- **案 (a) 依存 chain publish 先行**: **却下** — sibling 3 crate の API 全面 redesign が必要、v1.0 前 scope 外
+- **案 (b) bridge feature 削除 (SDF v1.7.7 pattern)**: **採用済 (v0.14.0-preview.4)** — Physics 単独完結、`cargo publish --dry-run` PASS で B1 完全解消
+- **案 (c) trait 化 + 外部注入**: **defer to v1.x post-release** — architectural 改善は 1.0 後の別 track
+
+### 現時点で残っている blocker (post-preview.4)
+
+- **B4 (新規発覚)**: `--all-features` build に対する `wasm` × `ffi` mutual exclusion (pre-existing 設計制約)、`compile_error!` 発動 v0.14.0 内で feature 設計の見直しが必要 (現状は正当な設計判断、CI で `--all-features` を除外する方針で継続可)
+- **B1** (path dep version fallback): ✅ 解消済
+- **B2** (sibling 未 publish): 案 (b) 採用により Physics 側の blocker から除外、v0.17.x J-4 で bridge 復帰時に再評価
+- **B3** (all-features import drift): ✅ 解消済 (bridge 削除に伴い自動解決)
+
+### J-3 (実 publish 実行) への進捗
+
+preview.4 で **`cargo publish --dry-run` が clean pass** したため、`Cargo.toml` の `publish = false` を解除すれば **即 publish 可能な状態**に到達 v0.14.0 stable landing 前に publish 実行するか、v0.15.0 の C (cargo-semver-checks) 通過後に publish するかは別途判断
+
+## 過去記録 (preview.3、判断根拠として保持)
+
 ## 前提: 現状の `publish = false`
 
 `Cargo.toml` 13 行目で `publish = false` を明示指定、crates.io publish 不可の状態。本調査は該当行を **一時コメントアウトして dry-run** → **findings 集約後に復元** の手順で実施 (復元済、diff 0)。
