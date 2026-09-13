@@ -74,6 +74,21 @@ license-files = [{ path = "LICENSE", hash = 0x001c7e6c }]
 name = "alice-physics"
 allow = ["AGPL-3.0", "AGPL-3.0-only", "AGPL-3.0-or-later"]
 
+# ALICE ecosystem sibling crates (J-4 bridge restoration in v0.14.0-preview.8)
+# 全て同 AGPL-3.0-or-later ライセンス、alice-ml / alice-db / alice-analytics
+# は neural / replay / analytics feature 有効時にのみ pull される optional deps
+[[licenses.exceptions]]
+name = "alice-ml"
+allow = ["AGPL-3.0-or-later"]
+
+[[licenses.exceptions]]
+name = "alice-db"
+allow = ["AGPL-3.0-or-later"]
+
+[[licenses.exceptions]]
+name = "alice-analytics"
+allow = ["AGPL-3.0-or-later"]
+
 # ---------------------------------------------------------------------------
 # Bans (banned crate / duplicate / wildcard)
 # ---------------------------------------------------------------------------
