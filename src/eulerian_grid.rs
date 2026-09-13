@@ -195,7 +195,7 @@ pub fn project_pressure(grid: &mut MacGrid, dt_s: Fix128, density_kg_m3: Fix128,
 /// "black" cells where it is odd. Immediately-updated pressures propagate
 /// during each sweep, giving ~2× the convergence rate of Jacobi at the
 /// same computational cost.
-pub fn project_pressure_red_black_gs(
+pub(crate) fn project_pressure_red_black_gs(
     grid: &mut MacGrid,
     dt_s: Fix128,
     density_kg_m3: Fix128,
@@ -295,8 +295,8 @@ pub fn project_pressure_red_black_gs(
     }
 }
 
-/// Legacy Jacobi implementation, kept for benchmarking (Session 3 I9).
-pub fn project_pressure_jacobi(
+/// Legacy Jacobi implementation, kept for benchmarking (Session 3 I9, crate-internal).
+pub(crate) fn project_pressure_jacobi(
     grid: &mut MacGrid,
     dt_s: Fix128,
     density_kg_m3: Fix128,
@@ -425,7 +425,7 @@ pub fn project_pressure_jacobi(
 ///
 /// The iteration stops early when `‖r‖_∞ < tolerance` or after
 /// `max_iterations` (whichever comes first).
-pub fn project_pressure_bicgstab(
+pub(crate) fn project_pressure_bicgstab(
     grid: &mut MacGrid,
     dt_s: Fix128,
     density_kg_m3: Fix128,
@@ -606,15 +606,15 @@ pub fn project_pressure_bicgstab(
     }
 }
 
-/// Diagnostic bundle returned by [`project_pressure_bicgstab`].
+/// Diagnostic bundle returned by [`project_pressure_bicgstab`] (crate-internal).
 #[derive(Debug, Clone, Copy)]
-pub struct BicgstabStats {
+pub(crate) struct BicgstabStats {
     /// Iterations actually performed.
-    pub iterations: u32,
+    pub(crate) iterations: u32,
     /// Final `‖r‖_∞`.
-    pub final_residual: Fix128,
+    pub(crate) final_residual: Fix128,
     /// True if the iteration terminated below `tolerance`.
-    pub converged: bool,
+    pub(crate) converged: bool,
 }
 
 /// Apply the discrete Poisson operator `A` (Neumann BC) to `p`.
@@ -1004,7 +1004,7 @@ fn deposit_w_trilinear(grid: &mut MacGrid, pos_m: Vec3Fix, vz: Fix128) {
 /// the 8 nearest face nodes for each of u/v/w. Session 3 I2 upgrade;
 /// the earlier `p2g_nearest` implementation is retained below for callers
 /// that need the simpler (less accurate) variant.
-pub fn p2g_trilinear(grid: &mut MacGrid, pos_m: Vec3Fix, vel_m_per_s: Vec3Fix) {
+pub(crate) fn p2g_trilinear(grid: &mut MacGrid, pos_m: Vec3Fix, vel_m_per_s: Vec3Fix) {
     deposit_u_trilinear(grid, pos_m, vel_m_per_s.x);
     deposit_v_trilinear(grid, pos_m, vel_m_per_s.y);
     deposit_w_trilinear(grid, pos_m, vel_m_per_s.z);
@@ -1015,7 +1015,7 @@ pub fn p2g_trilinear(grid: &mut MacGrid, pos_m: Vec3Fix, vel_m_per_s: Vec3Fix) {
 ///
 /// Trilinear scatter is the "true" P2G but requires a companion weight
 /// grid; this simplified version is sufficient for coarse PIC tests.
-pub fn p2g_nearest(grid: &mut MacGrid, pos_m: Vec3Fix, vel_m_per_s: Vec3Fix) {
+pub(crate) fn p2g_nearest(grid: &mut MacGrid, pos_m: Vec3Fix, vel_m_per_s: Vec3Fix) {
     if grid.dx.is_zero() {
         return;
     }
