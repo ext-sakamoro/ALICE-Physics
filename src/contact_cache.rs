@@ -20,8 +20,8 @@ use alloc::vec::Vec;
 #[cfg(feature = "std")]
 use std::collections::HashMap;
 
-/// Maximum contact points per manifold
-pub const MAX_MANIFOLD_POINTS: usize = 4;
+/// Maximum contact points per manifold (internal cap, currently 4).
+pub(crate) const MAX_MANIFOLD_POINTS: usize = 4;
 
 /// A single cached contact point within a manifold
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -94,7 +94,7 @@ impl BodyPairKey {
 pub struct ContactManifold {
     /// Body pair this manifold belongs to
     pub pair: BodyPairKey,
-    /// Active contact points (up to `MAX_MANIFOLD_POINTS`)
+    /// Active contact points (up to 4 per manifold).
     pub points: Vec<CachedContactPoint>,
     /// Shared normal direction (average of point normals)
     pub normal: Vec3Fix,
@@ -435,9 +435,9 @@ impl core::fmt::Debug for ContactCache {
     }
 }
 
-/// Build orthonormal tangent frame from a normal vector
+/// Build orthonormal tangent frame from a normal vector (crate-internal helper).
 #[must_use]
-pub fn tangent_frame(normal: Vec3Fix) -> (Vec3Fix, Vec3Fix) {
+pub(crate) fn tangent_frame(normal: Vec3Fix) -> (Vec3Fix, Vec3Fix) {
     // Pick axis least parallel to normal
     let abs_x = normal.x.abs();
     let abs_y = normal.y.abs();
