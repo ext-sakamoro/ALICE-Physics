@@ -35,7 +35,12 @@ use std::io::{Read, Write};
 // ============================================================================
 
 /// A complete physics scene for serialization.
+///
+/// Marked `#[non_exhaustive]` so additional scene sections (particle
+/// systems, CFD grids, structural analysis) can be added post-v1.0
+/// without a breaking API change.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct PhysicsScene {
     /// Serialized rigid bodies
     pub bodies: Vec<SerializedBody>,
@@ -81,7 +86,11 @@ pub struct SerializedJoint {
 }
 
 /// Serialized physics configuration.
+///
+/// Marked `#[non_exhaustive]` so new solver parameters can be added
+/// post-v1.0 without a breaking API change.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct PhysicsConfig {
     /// Number of substeps
     pub substeps: u32,

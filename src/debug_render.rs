@@ -55,8 +55,12 @@ impl DebugColor {
     pub const ORANGE: Self = Self::new(255, 165, 0, 255);
 }
 
-/// A debug line segment
+/// A debug line segment.
+///
+/// Marked `#[non_exhaustive]` so future rendering hint fields (line
+/// width, dash pattern, etc.) can be added without a breaking API change.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct DebugLine {
     /// Start point
     pub start: Vec3Fix,
@@ -66,8 +70,12 @@ pub struct DebugLine {
     pub color: DebugColor,
 }
 
-/// A debug point
+/// A debug point.
+///
+/// Marked `#[non_exhaustive]` so future rendering hint fields can be
+/// added without a breaking API change.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct DebugPoint {
     /// Position
     pub position: Vec3Fix,
@@ -114,8 +122,13 @@ impl Default for DebugDrawFlags {
     }
 }
 
-/// Collected debug geometry for a frame
+/// Collected debug geometry for a frame.
+///
+/// Marked `#[non_exhaustive]` so additional geometry containers
+/// (triangles, meshes, labels) can be added post-v1.0 without a
+/// breaking API change.
 #[derive(Clone, Debug, Default)]
+#[non_exhaustive]
 pub struct DebugDrawData {
     /// Line segments to draw
     pub lines: Vec<DebugLine>,
