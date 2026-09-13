@@ -306,7 +306,8 @@ fn slab_test(
 /// (Phase F 11.1 CCD 統合 skeleton).
 ///
 /// Combines the sub-stepping policy from
-/// [`crate::solver_tgs::adaptive_substeps_for_ccd`] with the
+/// `crate::solver_tgs::adaptive_substeps_for_ccd` (crate-internal since
+/// v0.14.0-preview.8) with the
 /// speculative contact TOI so that fast-moving pairs receive extra
 /// sub-steps proportional to their closing speed. This prevents
 /// tunneling through thin walls (see

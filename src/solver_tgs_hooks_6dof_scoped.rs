@@ -16,6 +16,14 @@
 //! parallel dispatch is safe: each island scribbles into its own
 //! local buffer, and the write-back stage touches disjoint world
 //! indices.
+//!
+//! # Visibility
+//!
+//! `pub(crate)` since v0.14.0-preview.8 — see [`crate::solver_tgs`] for the
+//! Option-C rationale.
+
+#![allow(dead_code)]
+#![allow(rustdoc::broken_intra_doc_links)]
 
 use crate::math::Fix128;
 use crate::solver_tgs::{tgs_step, ImpulseCache, Island, TgsConfig};
@@ -39,7 +47,7 @@ use std::collections::HashMap;
 /// # Panics
 /// Panics if a contact in `island.contacts` refers to a body that is
 /// not listed in `island.bodies`.
-pub fn solve_island_isolated(
+pub(crate) fn solve_island_isolated(
     world_bodies: &mut [Body6DofState],
     world_contacts: &mut [Contact6Dof],
     island: &Island,
@@ -111,7 +119,7 @@ pub fn solve_island_isolated(
 /// islands are disjoint, this is equivalent to calling
 /// [`solve_island_isolated`] once per island in
 /// [`Island`]-canonical order.
-pub fn solve_islands_serial(
+pub(crate) fn solve_islands_serial(
     world_bodies: &mut [Body6DofState],
     world_contacts: &mut [Contact6Dof],
     islands: &[Island],
@@ -148,7 +156,7 @@ pub fn solve_islands_serial(
 /// # Panics
 /// Panics when `caches.len() != islands.len()`.
 #[cfg(feature = "parallel")]
-pub fn solve_islands_parallel(
+pub(crate) fn solve_islands_parallel(
     world_bodies: &mut [Body6DofState],
     world_contacts: &mut [Contact6Dof],
     islands: &[Island],
