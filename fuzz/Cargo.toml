@@ -50,5 +50,19 @@ name = "fuzz_cfd"
 path = "fuzz_targets/fuzz_cfd.rs"
 doc = false
 
+# Continuous collision detection — sphere_sphere_toi / sphere_plane_toi の
+# swept-input 耐性 (zero velocity / coincident start / degenerate normal 等)
+[[bin]]
+name = "fuzz_ccd"
+path = "fuzz_targets/fuzz_ccd.rs"
+doc = false
+
+# Triangle mesh — from_indexed + raycast + closest_point の
+# degenerate 入力耐性 (out-of-bounds index / zero ray / coincident vertex 等)
+[[bin]]
+name = "fuzz_trimesh"
+path = "fuzz_targets/fuzz_trimesh.rs"
+doc = false
+
 [workspace]
 members = ["."]
