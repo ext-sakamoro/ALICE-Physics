@@ -33,10 +33,10 @@ const fn expand_bits(mut v: u64) -> u64 {
 
 /// Compute 63-bit Morton code from 3D coordinates
 ///
-/// Coordinates should be normalized to [0, 2^21) range
+/// Coordinates should be normalized to [0, 2^21) range (crate-internal helper).
 #[inline]
 #[must_use]
-pub fn morton_code(x: u64, y: u64, z: u64) -> u64 {
+pub(crate) fn morton_code(x: u64, y: u64, z: u64) -> u64 {
     let x = x.min((1 << 21) - 1);
     let y = y.min((1 << 21) - 1);
     let z = z.min((1 << 21) - 1);
@@ -44,9 +44,9 @@ pub fn morton_code(x: u64, y: u64, z: u64) -> u64 {
     expand_bits(x) | (expand_bits(y) << 1) | (expand_bits(z) << 2)
 }
 
-/// Compute Morton code from a point within a bounding box
+/// Compute Morton code from a point within a bounding box (crate-internal helper).
 #[must_use]
-pub fn point_to_morton(point: Vec3Fix, bounds: &AABB) -> u64 {
+pub(crate) fn point_to_morton(point: Vec3Fix, bounds: &AABB) -> u64 {
     let size = bounds.max - bounds.min;
 
     // Compute normalized coordinates [0, 1] and clamp for negative/out-of-range
@@ -96,8 +96,8 @@ pub fn point_to_morton(point: Vec3Fix, bounds: &AABB) -> u64 {
 // BVH Node (Stackless-Ready)
 // ============================================================================
 
-/// Sentinel value for "no escape" (end of traversal)
-pub const ESCAPE_NONE: u32 = u32::MAX;
+/// Sentinel value for "no escape" (end of traversal, crate-internal).
+pub(crate) const ESCAPE_NONE: u32 = u32::MAX;
 
 /// Placeholder escape target for a LEFT subtree's descendants whose
 /// correct escape (= the right sibling's index) is not yet known at
@@ -128,8 +128,8 @@ pub struct BvhNode {
 }
 
 impl BvhNode {
-    /// Maximum primitives per leaf (fits in 8 bits)
-    pub const MAX_PRIMS_PER_LEAF: u32 = 255;
+    /// Maximum primitives per leaf (fits in 8 bits, crate-internal cap).
+    pub(crate) const MAX_PRIMS_PER_LEAF: u32 = 255;
 
     /// Create internal node
     #[inline]
@@ -145,7 +145,7 @@ impl BvhNode {
 
     /// Create leaf node.
     ///
-    /// `count` is saturated to [`Self::MAX_PRIMS_PER_LEAF`] (255) to prevent
+    /// `count` is saturated to 255 (crate-internal `MAX_PRIMS_PER_LEAF` cap) to prevent
     /// 8-bit overflow that would make the leaf appear as an internal node.
     #[inline]
     #[must_use]
@@ -741,19 +741,22 @@ pub struct BvhStats {
 ///
 /// # Status
 /// Skeleton API committed as part of Turn D next-step to freeze the
-/// public surface so downstream integration (island builder, CCD
-/// pair generation) can start compiling against a stable signature.
+/// crate-internal surface so downstream integration (island builder,
+/// CCD pair generation) can start compiling against a stable signature.
 /// The hash grid slot and per-frame refit / rebuild policy are
-/// scheduled for the follow-up commit.
-pub struct BroadphaseHybrid {
+/// scheduled for the follow-up commit; unit tests in this module
+/// cover the current signature.
+#[allow(dead_code)] // Intentional stability stub — only exercised by unit tests
+pub(crate) struct BroadphaseHybrid {
     /// BVH holding static bodies (built once at scene load, refit
     /// only if terrain deforms).
-    pub static_bvh: LinearBvh,
+    pub(crate) static_bvh: LinearBvh,
     /// Hash grid holding dynamic body index → world position, rebuilt
     /// every frame (`clear` + `insert_dynamic` loop) in `O(N_dynamic)`.
-    pub dynamic_grid: crate::spatial::SpatialGrid,
+    pub(crate) dynamic_grid: crate::spatial::SpatialGrid,
 }
 
+#[allow(dead_code)] // Intentional stability stub — only exercised by unit tests
 impl BroadphaseHybrid {
     /// Construct a hybrid broadphase over a pre-built static BVH and
     /// an empty dynamic hash grid parametrised by `cell_size` +
