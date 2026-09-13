@@ -11,6 +11,64 @@ were introduced during that release window.
 - v0.11.0 — [docs/audits/STUB_AUDIT_v0.11.0.md](docs/audits/STUB_AUDIT_v0.11.0.md) (base: v0.10.0 `16674d4`)
 - v0.12.0 — [docs/audits/STUB_AUDIT_v0.12.0.md](docs/audits/STUB_AUDIT_v0.12.0.md) (base: v0.11.0 `095f115`, **0 new stubs**)
 
+## [0.14.0-preview.5] - 2026-09-13
+
+**Second crates.io release** — v0.14.0 Phase 1 quick wins from the v1.0 roadmap
+(B4 + new examples + fuzz coverage).
+
+### Added — 3 new examples (7 → 10)
+
+- **`ragdoll_demo`** — drops a 1.75 m / 75 kg adult male ragdoll from a pelvis
+  height of 4 m and reports pelvis / head / left-hand / right-foot altitudes over
+  2 s of free fall. Exercises the v0.13.0 Session 4 `ragdoll` module (Tier ★★★ G1),
+  the 15-bone / 14-joint builder wiring, and joint constraint stability.
+- **`bfecc_advection_demo`** — compares Semi-Lagrangian / MacCormack / BFECC
+  scalar advection on a 16×8×8 MAC grid with a uniform +X flow carrying a
+  3×3×3 hot spot. Reports mass conservation (Δ) and peak preservation (%).
+  Exercises the v0.14.0-preview.1 / preview.2 `cfd_solver` BFECC additions
+  (Priority 1 scalar BFECC + Priority 2 MAC-face BFECC).
+- **`sph_boundary_demo`** — drops a 8×8×8 = 512-particle water block into a
+  hemispherical bowl SDF and compares the naive `O(N²)` `step` against the
+  spatial-hash-accelerated `O(N·k)` `step_hashed`. Exercises the v0.13.0
+  Session 4 `sdf_sph` module (Tier ★★ S3) and the v0.14.0-preview.1
+  `SphSpatialHash` + `step_hashed` additions.
+
+### Added — 2 new fuzz targets (3 → 5)
+
+- **`fuzz_joint`** (`fuzz/fuzz_targets/fuzz_joint.rs`) — builds a distance-constraint
+  joint chain of 2..=8 bodies with arbitrary offsets, target distances, and
+  compliances. First body anchored (infinite mass). Steps up to 32 substeps.
+  Guards against XPBD solver panics under degenerate configurations
+  (zero-length targets, coincident anchors, unusual compliance ratios).
+- **`fuzz_cfd`** (`fuzz/fuzz_targets/fuzz_cfd.rs`) — builds a 4..=8 cube MAC grid
+  with a temperature scalar field, seeds arbitrary u-face velocities and
+  temperature values, cycles through all three advection schemes
+  (Semi-Lagrangian / MacCormack / BFECC), steps up to 8 substeps. Guards
+  against numerical robustness regressions under seeded discontinuities.
+
+### Documented — MSRV Policy + Recommended feature combinations
+
+- `README.md` + `README_JP.md`: **Note on `--all-features`** section clarifying
+  that `wasm` and `ffi` are mutually exclusive by design (link-time constraint
+  from `wasm-bindgen` vs C ABI FFI). A recommended feature combinations table
+  (native / browser / no_std / Python) is now documented under the Building
+  section.
+- `Cargo.toml`: `[package.metadata.docs.rs]` block added with an explicit
+  feature set (`std`, `simd`, `parallel`, `ffi`, `gpu-solver-bridge`) so
+  docs.rs builds pick the native-host FFI side rather than failing on the
+  mutual-exclusion `compile_error!`.
+
+### Verification
+
+- `cargo build`, `cargo build --features "std,simd,parallel,ffi,gpu-solver-bridge"`,
+  and `cargo build --features "std,simd,parallel,wasm,gpu-solver-bridge"` all PASS.
+- `cargo test --lib`: **1364 passed / 0 failed / 0 ignored** (no regression from
+  preview.4).
+- All 10 examples build in release profile.
+- `cargo doc --no-deps --features "std,simd,parallel,ffi,gpu-solver-bridge"`
+  clean (8 pre-existing GpuSolverBridge intra-doc-link warnings, unchanged).
+- `fuzz_joint` + `fuzz_cfd` compile against `alice-physics v0.14.0-preview.5`.
+
 ## [0.14.0-preview.4] - 2026-09-13
 
 **crates.io first publish** — this pre-release is the first release published to

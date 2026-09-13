@@ -2161,6 +2161,19 @@ Downstream crates can rely on `alice-physics` not raising its MSRV within a patc
 
 ## Building
 
+**Note on `--all-features`**: `alice-physics` uses `wasm` and `ffi` as mutually exclusive features (they link `wasm-bindgen` and C ABI FFI respectively, which cannot coexist in a single binary). `cargo build --all-features` will fail with a `compile_error!` by design. Build with one or the other.
+
+**Recommended feature combinations:**
+
+| Target | Command |
+|--------|---------|
+| Native app / game engine host (Unity, UE5, Godot) | `cargo build --features "std,simd,parallel,ffi,gpu-solver-bridge"` |
+| Browser (WebGL / WebGPU via wasm-bindgen) | `cargo build --features "std,simd,parallel,wasm,gpu-solver-bridge"` |
+| Embedded / no_std | `cargo build --no-default-features` |
+| Python bindings | `cargo build --features "std,simd,parallel,python"` |
+
+docs.rs builds with the native feature set (see `[package.metadata.docs.rs]` in `Cargo.toml`).
+
 ```bash
 # Standard build
 cargo build --release
