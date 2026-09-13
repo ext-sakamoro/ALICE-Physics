@@ -2009,8 +2009,6 @@ impl core::marker::Unpin for alice_physics::contact_cache::ContactManifold
 impl core::marker::UnsafeUnpin for alice_physics::contact_cache::ContactManifold
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::contact_cache::ContactManifold
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::contact_cache::ContactManifold
-pub const alice_physics::contact_cache::MAX_MANIFOLD_POINTS: usize
-pub fn alice_physics::contact_cache::tangent_frame(alice_physics::math::Vec3Fix) -> (alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix)
 pub mod alice_physics::contact_viz
 pub struct alice_physics::contact_viz::ContactArrow
 pub alice_physics::contact_viz::ContactArrow::force_magnitude: alice_physics::math::Fix128
@@ -2408,26 +2406,6 @@ impl core::marker::Unpin for alice_physics::dynamic_bvh::DynamicAabbTree
 impl core::marker::UnsafeUnpin for alice_physics::dynamic_bvh::DynamicAabbTree
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::dynamic_bvh::DynamicAabbTree
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::dynamic_bvh::DynamicAabbTree
-pub struct alice_physics::dynamic_bvh::DynamicNode
-pub alice_physics::dynamic_bvh::DynamicNode::aabb: alice_physics::collider::AABB
-pub alice_physics::dynamic_bvh::DynamicNode::height: i32
-pub alice_physics::dynamic_bvh::DynamicNode::is_leaf: bool
-pub alice_physics::dynamic_bvh::DynamicNode::left: u32
-pub alice_physics::dynamic_bvh::DynamicNode::parent: u32
-pub alice_physics::dynamic_bvh::DynamicNode::right: u32
-pub alice_physics::dynamic_bvh::DynamicNode::user_data: u32
-impl core::clone::Clone for alice_physics::dynamic_bvh::DynamicNode
-pub fn alice_physics::dynamic_bvh::DynamicNode::clone(&self) -> alice_physics::dynamic_bvh::DynamicNode
-impl core::fmt::Debug for alice_physics::dynamic_bvh::DynamicNode
-pub fn alice_physics::dynamic_bvh::DynamicNode::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Freeze for alice_physics::dynamic_bvh::DynamicNode
-impl core::marker::Send for alice_physics::dynamic_bvh::DynamicNode
-impl core::marker::Sync for alice_physics::dynamic_bvh::DynamicNode
-impl core::marker::Unpin for alice_physics::dynamic_bvh::DynamicNode
-impl core::marker::UnsafeUnpin for alice_physics::dynamic_bvh::DynamicNode
-impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::dynamic_bvh::DynamicNode
-impl core::panic::unwind_safe::UnwindSafe for alice_physics::dynamic_bvh::DynamicNode
-pub const alice_physics::dynamic_bvh::NULL_NODE: u32
 pub mod alice_physics::electromagnetic
 pub enum alice_physics::electromagnetic::EmSource
 pub alice_physics::electromagnetic::EmSource::MagneticDipole
