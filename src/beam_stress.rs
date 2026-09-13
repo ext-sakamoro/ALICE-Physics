@@ -407,7 +407,8 @@ impl ColumnEndCondition {
 /// to slender members with slenderness ratio (KL/r) > 100 as a rule of
 /// thumb; shorter columns need Johnson's formula (not implemented here).
 #[must_use]
-pub fn euler_critical_load_n(
+#[allow(dead_code)] // Reserved standalone Euler helper — `buckling::critical_stress_mpa` is the primary path
+pub(crate) fn euler_critical_load_n(
     section: &CrossSection,
     length_mm: Fix128,
     e_mpa: Fix128,
