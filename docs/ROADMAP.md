@@ -11,6 +11,8 @@ Memory index pointer: `[[reference-alice-physics-v1-roadmap]]` in claude-config.
 
 **v0.14.0-preview.2 landed** (commit `bc9ea4a`) — Physics 拡張 v2 Priority 2 6 items (MAC-face BFECC / nonlinear C-N / 3D thermal / BiCGStab / adaptive dt / edge-split refinement)、+21 test
 
+**v0.14.0-preview.3 landed** (commit `a4d475b`、2026-09-13) — v1.0 roadmap 最短優先候補 3 項目 + clippy fix: Item G MSRV policy 明記 (README EN/JP) / Item D `#![deny(missing_docs)]` escalation (0 warning 実測、`warn` → `deny` 1-char) / clippy `approx_constant` fix (solver_tgs_hooks_6dof_oriented.rs:820 の `1.5708` → `FRAC_PI_2`) / Item J crates.io publish 前調査 (`docs/CRATES_IO_PUBLISH_INVESTIGATION.md` に集約、案 (b) SDF v1.7.7 pattern を v0.16.x で採用推奨)
+
 - module 総数: 146 src file、`pub mod` 144
 - lib test: 1364 (1327 → 1343 → 1364、v2 Priority 1+2 sprint で +37)
 - Session 1-3 (v0.10-0.12) baseline: 1175 lib tests + 53 alice-bamboo 統合 tests
@@ -59,15 +61,27 @@ commit `bc9ea4a`
 
 +21 test (1343 → 1364)
 
-### 🚧 v0.14.0 (推定 1-2 週間) — quick wins + API surface audit 前半
+### ✅ v0.14.0-preview.3 (Item G/D + clippy + J investigation、shipped 2026-09-13)
 
-Preview の 2 wave が landed 済み、残作業:
+commit `a4d475b`
 
-- **G. MSRV policy 明記** (1-2 日、quick win) — `rust-version = "1.70.0"` 既記述、README / docs に policy 説明追加のみ (「N-3 stable channel まで支援」等)
+- **Item G MSRV policy 明記** — README EN/JP に MSRV Policy section 追加 (Serde-style: MSRV bump は minor version bump 扱い、N-2 stable channel 支援、nightly 非要求)
+- **Item D `#![deny(missing_docs)]` escalation** — `src/lib.rs:189` で `warn` → `deny` (実測 0 warning、`cargo doc --no-deps` clean 確認済、file-level `#![allow(missing_docs)]` も 0 件 = 逃げ道なし)
+- **clippy pre-existing block fix** — `src/solver_tgs_hooks_6dof_oriented.rs:820` `Fix128::from_f32(1.5708)` → `Fix128::from_f32(core::f32::consts::FRAC_PI_2)` (Priority 2 で拡張中に露呈した `approx_constant` block を解消)
+- **Item J crates.io publish 前調査** — `docs/CRATES_IO_PUBLISH_INVESTIGATION.md` に集約:
+  - B1 blocker: 4 path dep (`alice-ml` / `alice-db` / `alice-analytics`) に `version = "..."` fallback 未記述、`cargo publish --dry-run` の manifest verify で reject
+  - B2 blocker: 3 sibling は全て local v0.1.0、crates.io 未 publish (`cargo search` 0 hit)
+  - B3 latent bug: `--all-features` build で 4 個の path dep import drift (sibling 側 API rename に未追従、default build では顕在化しない)
+  - **推奨**: v0.16.x で **案 (b) SDF v1.7.7 pattern** (`neural` / `replay` / `analytics` feature 削除 preview → dry-run → publish) 採用
+  - v0.14.0 内追加タスク J-1 として B3 path dep drift 4 箇所修正を予定 (下記)
+
+### 🚧 v0.14.0 (推定 1-2 週間) — API surface audit 前半 + drift fix
+
+Preview 3 wave が landed 済み、残作業:
+
 - **B. Public API surface freeze 前半** — priority module (net / character / SDF 系) の `pub` → `pub(crate)` audit 着手 (144 pub mod のうち、`net_prediction` / `character*` / `sdf_*` 系から)
-- **D. Documentation 完備** — `#![deny(missing_docs)]` を lib.rs に追加、`cargo doc --no-deps 2>&1 | grep warning` で残 warning 列挙 → fix
+- **J-1. path dep drift fix (`--all-features` build 復旧)** — `alice_db::AliceDB` / `alice_ml::{Ternary, TernaryWeight}` / `alice_analytics::prelude` の 4 import path を sibling 最新 API に追従、`cargo test --all-features` CI job 通過を confirm
 - **新 example 追加** — ragdoll / SPH / joint / character / BFECC velocity / BiCGStab pressure の代表 example (現状 7 → 14 個目標)
-- **clippy pre-existing fix** — `solver_tgs_hooks_6dof_oriented.rs:820` `approx_constant` (1.5708 → FRAC_PI_2)、Priority 2 で拡張中に露呈した block
 
 自己採点 target: 品質 90/100 (現状 100/100 optimization scorecard は維持、public API 完成度で -10)
 
@@ -81,13 +95,14 @@ Preview の 2 wave が landed 済み、残作業:
 
 - **E. Determinism CI 6 環境 matrix** — macOS ARM + macOS x86 + Linux ARM + Linux x86 + Windows + WASM で毎 PR bit-exact snapshot golden test を run、joint / cloth / fluid / SDF CCD / trimesh に拡張
 - **H. Ecosystem 契約 freeze** — ALICE-TRT `GpuSolverBridge` trait / ALICE-SDF `SdfField` trait / ALICE-Bamboo / ALICE-Anima / ALICE-Kinematics との integration point の method signature freeze、各 partner crate と semver policy 契約書化
-- **J. crates.io publish 準備** — 依存 chain (`alice-ml` / `alice-db` / `alice-analytics`) の crates.io 公開状況調査、ALICE-SDF v1.7.7 で経験した「bridge feature 削って crates.io 対応」パターンの pre-experience
+- **J-2. bridge feature 削除 preview commit** — v0.14.0-preview.3 の J investigation で判定した案 (b) SDF v1.7.7 pattern を実施: `[features]` から `neural` / `replay` / `analytics` を削除、`[dependencies]` から `alice-ml` / `alice-db` / `alice-analytics` の 3 行を削除、`src/*_bridge.rs` は `#[cfg(feature = "...")]` gate 維持で下流 downstream の path/git dep 経由継続を保証 (詳細は [`docs/CRATES_IO_PUBLISH_INVESTIGATION.md`](CRATES_IO_PUBLISH_INVESTIGATION.md) 参照)
 
 ### ⏳ v0.16.1 or v0.17.0 (推定 3-5 日) — crates.io publish 実績作り
 
-- **J 続き** — `Cargo.toml` の `publish = false` を解除、`cargo publish --dry-run` → 依存 chain の残タスク処理 → `cargo publish` 実行
+- **J-3. publish 実行** — `Cargo.toml` の `publish = false` を解除、`cargo publish --dry-run` → J-2 の bridge feature 削除 preview が landed 済なら次段 issue (recovery) → 段階 fix → `cargo publish` 実行
 - crates.io に初 publish、`cargo add alice-physics` で外部 downstream が使えるようになる
 - v1.0.0 前の publish trial-and-error 完了 (0.x のうちに済ませて stable 直前の risk 排除、ADR-002 準拠)
+- **J-4** (v0.17.x 以降): sibling 3 crate (`alice-ml` / `alice-db` / `alice-analytics`) が crates.io publish された段階で、削除した bridge feature を段階復帰 (ALICE-SDF v1.8.0 と同 pattern)
 
 ### ⏳ v1.0.0-rc.1 (推定 6-8 週間)
 
