@@ -30,6 +30,17 @@
 //! - Wilcox, "Reassessment of the scale-determining equation for advanced
 //!   turbulence models", AIAA J. 26, 1988 (k-ω).
 //! - Pope, *Turbulent Flows*, Cambridge 2000.
+//!
+//! # Integration status
+//!
+//! Only the Smagorinsky path (`smagorinsky_eddy_viscosity`,
+//! `strain_rate_magnitude`, `SMAGORINSKY_CS`) is currently wired into
+//! `cfd_solver.rs`. The k-ε / k-ω transport state, dynamic Smagorinsky
+//! coefficient, and wall functions are reserved crate-internal API
+//! awaiting downstream integration; module-level `#![allow(dead_code)]`
+//! documents this state.
+
+#![allow(dead_code)] // Reserved RANS/wall-function API — awaiting cfd_solver integration
 
 use crate::math::Fix128;
 
@@ -43,33 +54,33 @@ pub const SMAGORINSKY_CS: Fix128 = Fix128 {
     lo: 0x2B85_1EB8_51EB_851F, // ≈ 0.17
 };
 
-/// k-ε model constants (Launder & Spalding 1974).
-pub const KE_C_MU: Fix128 = Fix128 {
+/// k-ε model constants (Launder & Spalding 1974, crate-internal).
+pub(crate) const KE_C_MU: Fix128 = Fix128 {
     hi: 0,
     lo: 0x1707_5F6F_D21F_F2E5, // ≈ 0.09
 };
-/// k-ε turbulent Prandtl number for k.
-pub const KE_SIGMA_K: Fix128 = Fix128::ONE;
-/// k-ε turbulent Prandtl number for ε (≈ 1.3).
-pub const KE_SIGMA_EPS: Fix128 = Fix128 {
+/// k-ε turbulent Prandtl number for k (crate-internal).
+pub(crate) const KE_SIGMA_K: Fix128 = Fix128::ONE;
+/// k-ε turbulent Prandtl number for ε (≈ 1.3, crate-internal).
+pub(crate) const KE_SIGMA_EPS: Fix128 = Fix128 {
     hi: 1,
     lo: 0x4CCC_CCCC_CCCC_CCCD,
 };
-/// k-ε constant C_{ε1} (≈ 1.44).
-pub const KE_C1_EPS: Fix128 = Fix128 {
+/// k-ε constant C_{ε1} (≈ 1.44, crate-internal).
+pub(crate) const KE_C1_EPS: Fix128 = Fix128 {
     hi: 1,
     lo: 0x70A3_D70A_3D70_A3D7,
 };
-/// k-ε constant C_{ε2} (≈ 1.92).
-pub const KE_C2_EPS: Fix128 = Fix128 {
+/// k-ε constant C_{ε2} (≈ 1.92, crate-internal).
+pub(crate) const KE_C2_EPS: Fix128 = Fix128 {
     hi: 1,
     lo: 0xEB85_1EB8_51EB_851F,
 };
 
-/// k-ω model constant β* (= 0.09).
-pub const KW_BETA_STAR: Fix128 = KE_C_MU;
-/// k-ω model constant β (= 3/40 = 0.075).
-pub const KW_BETA: Fix128 = Fix128 {
+/// k-ω model constant β* (= 0.09, crate-internal).
+pub(crate) const KW_BETA_STAR: Fix128 = KE_C_MU;
+/// k-ω model constant β (= 3/40 = 0.075, crate-internal).
+pub(crate) const KW_BETA: Fix128 = Fix128 {
     hi: 0,
     lo: 0x1333_3333_3333_3333,
 };
@@ -108,19 +119,20 @@ pub fn strain_rate_magnitude(
 // k-ε
 // ============================================================================
 
-/// k-ε turbulence state at a single point.
+/// k-ε turbulence state at a single point (crate-internal, not yet wired to CFD solver).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-pub struct KEpsilonState {
+pub(crate) struct KEpsilonState {
     /// Turbulent kinetic energy `k` (m²/s²).
-    pub k: Fix128,
+    pub(crate) k: Fix128,
     /// Turbulent dissipation rate `ε` (m²/s³).
-    pub epsilon: Fix128,
+    pub(crate) epsilon: Fix128,
 }
 
+#[allow(dead_code)] // Reserved RANS state — unused pending k-ε integration into cfd_solver
 impl KEpsilonState {
     /// Eddy viscosity `ν_t = C_μ · k² / ε` (m²/s).
     #[must_use]
-    pub fn eddy_viscosity(&self) -> Fix128 {
+    pub(crate) fn eddy_viscosity(&self) -> Fix128 {
         if self.epsilon.is_zero() {
             return Fix128::ZERO;
         }
@@ -131,7 +143,7 @@ impl KEpsilonState {
     /// term `P_k` (m²/s³) and no diffusion or convection (point model):
     ///
     /// `dk/dt = P_k − ε`
-    pub fn advance_k(&mut self, production_k: Fix128, dt_s: Fix128) {
+    pub(crate) fn advance_k(&mut self, production_k: Fix128, dt_s: Fix128) {
         self.k = self.k + (production_k - self.epsilon) * dt_s;
         if self.k < Fix128::ZERO {
             self.k = Fix128::ZERO;
@@ -141,7 +153,7 @@ impl KEpsilonState {
     /// One explicit Euler step of the ε transport equation (point model):
     ///
     /// `dε/dt = (ε/k) · (C_{ε1}·P_k − C_{ε2}·ε)`
-    pub fn advance_epsilon(&mut self, production_k: Fix128, dt_s: Fix128) {
+    pub(crate) fn advance_epsilon(&mut self, production_k: Fix128, dt_s: Fix128) {
         if self.k.is_zero() {
             return;
         }
@@ -158,19 +170,20 @@ impl KEpsilonState {
 // k-ω
 // ============================================================================
 
-/// k-ω turbulence state at a single point.
+/// k-ω turbulence state at a single point (crate-internal, not yet wired to CFD solver).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-pub struct KOmegaState {
+pub(crate) struct KOmegaState {
     /// Turbulent kinetic energy `k` (m²/s²).
-    pub k: Fix128,
+    pub(crate) k: Fix128,
     /// Specific dissipation rate `ω = ε/(β*·k)` (1/s).
-    pub omega: Fix128,
+    pub(crate) omega: Fix128,
 }
 
+#[allow(dead_code)] // Reserved RANS state — unused pending k-ω integration into cfd_solver
 impl KOmegaState {
     /// Eddy viscosity `ν_t = k / ω` (m²/s).
     #[must_use]
-    pub fn eddy_viscosity(&self) -> Fix128 {
+    pub(crate) fn eddy_viscosity(&self) -> Fix128 {
         if self.omega.is_zero() {
             return Fix128::ZERO;
         }
@@ -179,7 +192,7 @@ impl KOmegaState {
 
     /// Convert k-ε state to k-ω via `ω = ε / (β* · k)`.
     #[must_use]
-    pub fn from_k_epsilon(state: &KEpsilonState) -> Self {
+    pub(crate) fn from_k_epsilon(state: &KEpsilonState) -> Self {
         let omega = if state.k.is_zero() {
             Fix128::ZERO
         } else {
@@ -206,7 +219,7 @@ impl KOmegaState {
 /// `C_s² = ⟨L·M⟩ / (2·⟨M·M⟩ + ε)` where `L` and `M` are the Leonard /
 /// mixed tensors; here we approximate the isotropic invariants.
 #[must_use]
-pub fn dynamic_smagorinsky_cs(strain_grid: Fix128, strain_test: Fix128) -> Fix128 {
+pub(crate) fn dynamic_smagorinsky_cs(strain_grid: Fix128, strain_test: Fix128) -> Fix128 {
     let min_cs = Fix128::from_ratio(5, 100);
     let max_cs = Fix128::from_ratio(25, 100);
     if strain_grid.is_zero() || strain_test.is_zero() {
@@ -229,23 +242,23 @@ pub fn dynamic_smagorinsky_cs(strain_grid: Fix128, strain_test: Fix128) -> Fix12
 // Wall functions (Session 3 I8 upgrade)
 // ============================================================================
 
-/// von Kármán constant κ (≈ 0.41) for log-law wall function.
-pub const VON_KARMAN: Fix128 = Fix128 {
+/// von Kármán constant κ (≈ 0.41) for log-law wall function (crate-internal).
+pub(crate) const VON_KARMAN: Fix128 = Fix128 {
     hi: 0,
     lo: 0x68F5_C28F_5C28_F5C3,
 };
-/// Additive log-law constant B (≈ 5.5) for smooth walls.
-pub const LOG_LAW_B: Fix128 = Fix128 {
+/// Additive log-law constant B (≈ 5.5) for smooth walls (crate-internal).
+pub(crate) const LOG_LAW_B: Fix128 = Fix128 {
     hi: 5,
     lo: 0x8000_0000_0000_0000,
 };
 
-/// y+ boundary between the viscous sublayer and the log-law region.
-pub const Y_PLUS_TRANSITION: Fix128 = Fix128 { hi: 11, lo: 0 };
+/// y+ boundary between the viscous sublayer and the log-law region (crate-internal).
+pub(crate) const Y_PLUS_TRANSITION: Fix128 = Fix128 { hi: 11, lo: 0 };
 
 /// Non-dimensional wall distance `y+ = ρ·u_τ·y / μ`.
 #[must_use]
-pub fn y_plus(
+pub(crate) fn y_plus(
     density: Fix128,
     u_tau: Fix128,
     y_m: Fix128,
@@ -293,7 +306,7 @@ fn ln_fix(x: Fix128) -> Fix128 {
 /// - `y+ < 11.63` → `u+ = y+` (viscous sublayer).
 /// - Otherwise    → `u+ = (1/κ)·ln(y+) + B`  (log law).
 #[must_use]
-pub fn u_plus(y_plus_val: Fix128) -> Fix128 {
+pub(crate) fn u_plus(y_plus_val: Fix128) -> Fix128 {
     if y_plus_val <= Fix128::ZERO {
         return Fix128::ZERO;
     }
@@ -310,7 +323,7 @@ pub fn u_plus(y_plus_val: Fix128) -> Fix128 {
 ///   k = u_τ² / √C_μ
 ///   ε = u_τ³ / (κ · y)
 #[must_use]
-pub fn wall_k_epsilon(u_tau_m_per_s: Fix128, y_m: Fix128) -> (Fix128, Fix128) {
+pub(crate) fn wall_k_epsilon(u_tau_m_per_s: Fix128, y_m: Fix128) -> (Fix128, Fix128) {
     if y_m.is_zero() || u_tau_m_per_s.is_zero() {
         return (Fix128::ZERO, Fix128::ZERO);
     }

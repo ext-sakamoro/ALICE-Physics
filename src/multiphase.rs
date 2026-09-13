@@ -35,6 +35,20 @@
 //! - Sussman, Smereka, Osher, "A Level Set approach for computing solutions
 //!   to incompressible two-phase flow", J. Comp. Phys. 114 (1994) —
 //!   reinitialisation.
+//!
+//! # Integration status
+//!
+//! `Grid3d`, `trilinear_range`, `trilinear_sample`, `curvature_at`, and
+//! `initialize_level_set_sphere` are wired into `cfd_solver.rs` and
+//! `surface_tension_csf.rs`. The VOF advection variants
+//! (`advect_vof_uniform`, `advect_vof_uniform_semi_lagrangian`,
+//! `total_volume_vof`) and the pseudo-time `reinitialize_level_set`
+//! (superseded by `interface_capture::fast_sweeping_reinit`) are
+//! reserved crate-internal API awaiting downstream integration.
+
+// Reserved VOF advection + legacy reinitialisation — pub(crate) but currently
+// unused outside their own unit tests.
+#![allow(dead_code)]
 
 use crate::math::Fix128;
 

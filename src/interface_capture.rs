@@ -27,6 +27,13 @@
 //!   1982 (PLIC).
 //! - Rider & Kothe, "Reconstructing volume tracking", J. Comp. Phys. 141,
 //!   1998.
+//!
+//! # Integration status
+//!
+//! Only `fast_sweeping_reinit` is currently wired into `cfd_solver.rs`.
+//! The PLIC helpers (`plic_normal`, `plic_plane_offset`,
+//! `truncated_cube_volume`) are reserved crate-internal API awaiting
+//! downstream integration; item-level `#[allow(dead_code)]` documents this.
 
 use crate::math::{Fix128, Vec3Fix};
 use crate::math_util::cbrt_fix;
@@ -190,6 +197,7 @@ fn solve_fsm(a: Fix128, b: Fix128, c: Fix128, dx: Fix128) -> Fix128 {
 // ============================================================================
 
 /// PLIC interface normal for a VOF cell: gradient of `f` via central diffs (crate-internal).
+#[allow(dead_code)] // Reserved PLIC helper — awaiting integration
 #[must_use]
 pub(crate) fn plic_normal(vof: &Grid3d, i: usize, j: usize, k: usize) -> Vec3Fix {
     if i == 0 || j == 0 || k == 0 || i + 1 >= vof.nx || j + 1 >= vof.ny || k + 1 >= vof.nz {
@@ -220,6 +228,7 @@ pub(crate) fn plic_normal(vof: &Grid3d, i: usize, j: usize, k: usize) -> Vec3Fix
 /// the intermediate regime. Overall convergence is O(1) for the corner
 /// case (previously O(40) bisection with 4³ sub-sampling per iteration).
 #[must_use]
+#[allow(dead_code)] // Reserved PLIC helper — awaiting integration
 pub(crate) fn plic_plane_offset(normal: Vec3Fix, f: Fix128, dx: Fix128) -> Fix128 {
     if f <= Fix128::ZERO {
         return dx * Fix128::from_int(-2);
@@ -294,6 +303,7 @@ pub(crate) fn plic_plane_offset(normal: Vec3Fix, f: Fix128, dx: Fix128) -> Fix12
 /// centred at the origin. Computed by trilinear sub-sampling (Monte-Carlo-
 /// free deterministic approximation via 4×4×4 grid).
 #[must_use]
+#[allow(dead_code)] // Reserved PLIC helper — awaiting integration
 pub(crate) fn truncated_cube_volume(normal: Vec3Fix, d: Fix128, dx: Fix128) -> Fix128 {
     let half = dx.half();
     let subdiv = 4u32;

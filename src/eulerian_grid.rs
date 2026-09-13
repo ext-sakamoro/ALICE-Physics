@@ -41,6 +41,19 @@
 //!   cell calculations of fluid flows in two dimensions", J. Comp. Phys. 65,
 //!   1986.
 //! - Zhu & Bridson, "Animating sand as a fluid", ACM Trans. Graph. 24, 2005.
+//!
+//! # Integration status
+//!
+//! Only the red-black Gauss-Seidel projection (`project_pressure`),
+//! trilinear sampling helpers (`sample_u/v/w_range/trilinear`), and
+//! `g2p_velocity` are currently wired into `cfd_solver.rs`. The
+//! Jacobi + BiCGStab pressure variants and P2G scatter operators
+//! are reserved crate-internal API awaiting downstream integration.
+
+// Reserved algorithm variants (Jacobi / BiCGStab pressure, P2G scatter) are
+// pub(crate) but currently unused outside their own unit tests — awaiting
+// cfd_solver integration.
+#![allow(dead_code)]
 
 use crate::math::{Fix128, Vec3Fix};
 
