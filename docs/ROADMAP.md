@@ -155,7 +155,7 @@ commit `d215f4a` / crates.io: `alice-physics = "0.14.0-preview.6"`
 
 ### ✅ v0.14.0-preview.7 (F 8/8 完全達成、shipped 2026-09-13)
 
-commit `<TBD>` / crates.io: `alice-physics = "0.14.0-preview.7"`
+commit `f1b4209` / crates.io: `alice-physics = "0.14.0-preview.7"`
 
 - **Item F 完全達成** — 新 fuzz target `fuzz_structural` (StructuralSolver + Rectangular + CantileverEndPoint + PLA、extreme aspect ratio / heavy load 耐性) 追加、fuzz coverage **7 → 8** (v1.0 目標 5-8 range を full 到達)
 - 検証: 1364 lib test PASS + `cargo fmt --check` clean + `cargo publish --dry-run` PASS + `fuzz_structural` cargo check PASS
