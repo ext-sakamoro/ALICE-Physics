@@ -133,6 +133,17 @@ commit `7d5d214` / crates.io: `alice-physics = "0.14.0-preview.5"`
 - crates.io に 2 nd publish 成功 (197 file / 3.1 MiB / 724.3 KiB compressed)
 - 検証: 1364 lib test PASS、10 example release build PASS、`cargo doc` clean
 
+### ✅ CI hotfix (fmt + release runner、2026-09-13)
+
+- **fmt fix** commit `c0e3880` — preview.5 提出時に `cargo fmt --all` を先に実行しなかった漏れ、3 example (`bfecc_advection_demo` / `ragdoll_demo` / `sph_boundary_demo`) に multi-line 化 fmt 適用、CI Format check job 通過
+- **release runner fix** commit `727d854` — `macos-15` (Apple Silicon ARM) → `macos-15-intel` (Intel-native) に置換、`x86_64-apple-darwin` target が cross-toolchain なしで build 可能に (preview.4 / preview.5 の Release workflow 失敗の pre-existing infrastructure bug fix)、次回 tag push (`v0.14.0-preview.6` 以降) で復旧確認
+
+### ✅ Public API snapshot 生成 (C 準備、2026-09-13)
+
+- **`docs/PUBLIC_API_SNAPSHOT.txt`** — `cargo +nightly public-api --simplified` 出力を repo に commit、**20,201 public API item** の baseline を確立 (B/C 用)
+- **`docs/PUBLIC_API_SNAPSHOT.md`** — snapshot の位置付け + regenerate command + diff pattern + roadmap wiring 集約
+- v1.0 Item C (cargo-semver-checks / cargo-public-api CI) の入力側整備完了、CI job 追加は v0.15.0 phase で実施
+
 ### 🚧 v0.14.0-preview.6+ / v0.14.0 stable — 継続開発
 
 Phase 1 quick wins landing 済み、以降は API polish + downstream feedback に集中:
