@@ -11,6 +11,73 @@ were introduced during that release window.
 - v0.11.0 — [docs/audits/STUB_AUDIT_v0.11.0.md](docs/audits/STUB_AUDIT_v0.11.0.md) (base: v0.10.0 `16674d4`)
 - v0.12.0 — [docs/audits/STUB_AUDIT_v0.12.0.md](docs/audits/STUB_AUDIT_v0.12.0.md) (base: v0.11.0 `095f115`, **0 new stubs**)
 
+## [0.14.0-preview.4] - 2026-09-13
+
+**crates.io first publish** — this pre-release is the first release published to
+[crates.io](https://crates.io/crates/alice-physics), landing the v0.10-0.14 accumulated
+work and clearing the pre-existing broken bridge modules that blocked publication.
+See [`docs/CRATES_IO_PUBLISH_INVESTIGATION.md`](docs/CRATES_IO_PUBLISH_INVESTIGATION.md)
+for the pre-publish investigation trail.
+
+### Added — v0.14.0 preview trail (waves 1-4)
+
+Four preview waves ship on top of v0.13.0's Session 4 (see below). Each preview
+adds test coverage and does not remove pre-existing functionality (v0.14.0-preview.4
+removes 3 optional bridge features, see the Removed section below).
+
+- **preview.1** (commit `155bdbf`, +16 lib test): Physics v2 Priority 1 — Marching
+  Tets (`sdf_fem_mesh::generate_marching_tets`), 3D Spectral IPM (ALICE-Fluid
+  companion `935b7a6`), Spatial Hash SPH (`sdf_sph::SphSpatialHash` + `step_hashed`),
+  Crank-Nicolson thermal (`transient_thermal::crank_nicolson_step_1d`), BFECC scalar
+  advection (`cfd_solver::AdvectionScheme::Bfecc`).
+- **preview.2** (commit `bc9ea4a`, +21 lib test): Physics v2 Priority 2 — MAC-face
+  BFECC (`cfd_solver::advect_velocity_bfecc`), nonlinear Crank-Nicolson
+  (`transient_thermal::crank_nicolson_step_1d_nonlinear`), 3D transient thermal
+  (`transient_thermal::transient_step_3d`), BiCGStab pressure solver
+  (`eulerian_grid::project_pressure_bicgstab`), adaptive time step
+  (`cfd_solver::compute_max_dt` + `step_adaptive`), edge-split refinement
+  (`sdf_fem_mesh::SdfTetMesh::refine_by_max_edge_length`).
+- **preview.3** (commit `a4d475b`): v1.0 roadmap quick wins — Item G MSRV policy
+  (README EN/JP Serde-style policy section), Item D `#![deny(missing_docs)]`
+  escalation (0 warning verified via `cargo doc --no-deps`), clippy `approx_constant`
+  fix (`solver_tgs_hooks_6dof_oriented.rs:820` `1.5708` → `FRAC_PI_2`), Item J
+  crates.io publish pre-investigation (`docs/CRATES_IO_PUBLISH_INVESTIGATION.md`).
+- **preview.4** (commit `69ced3d`): Item J-1 → 案 (b) SDF v1.7.7 pattern early —
+  broken bridge modules removed after discovering sibling API total drift.
+  `cargo publish --dry-run` PASS (195 files / 3.0 MiB packaged) reached.
+
+Total v0.14.0 preview lib test count: 1364 passing (baseline v0.13.0: 1327 → +37).
+
+### Removed — 3 bridge features and their optional path deps (temporarily, v0.14.0-preview.4)
+
+The `neural` / `replay` / `analytics` features and their corresponding path
+dependencies (`alice-ml` / `alice-db` / `alice-analytics`) were removed. Investigation
+found the sibling repos' current APIs had drifted beyond simple import renames:
+required types (`Ternary`, `AliceDB`, `prelude`, `DDSketch256`, `HyperLogLog12`)
+are entirely absent from the current sibling `v0.1.0` state, with `~/ALICE-ML/src/lib.rs`
+and `~/ALICE-DB/src/lib.rs` also empty. The 4 bridge modules
+(`src/{analytics_bridge,db_bridge,neural,replay}.rs`, total 1424 lines) were deleted
+outright rather than gated to satisfy CLAUDE.md's ban on preserving broken code
+under an opt-in feature (仮実装完了偽装の禁止).
+
+Restoration is scheduled for v0.17.x or later, once the sibling crates publish
+to crates.io with stable APIs. The deleted code remains accessible via git history
+(commit `69ced3d`). Downstream consumers who need the bridges can pin to the
+pre-preview.4 revision via `git` or `path` deps.
+
+### Changed — MSRV policy (Serde-style, minor bumps only)
+
+MSRV remains `1.70.0`. The policy is now Serde-style: MSRV bumps within the 0.x line
+are treated as minor version bumps (`0.14.x → 0.15.0`), never patch bumps. The MSRV
+commitment covers the latest 3 stable Rust channels (N-2 policy). Downstream can
+rely on `alice-physics` not requiring nightly or an MSRV newer than declared.
+
+### Publish infrastructure
+
+- `Cargo.toml`: `publish = false` removed — this pre-release version lands on crates.io.
+- `cargo publish --dry-run` verified PASS on preview.4 (before removing `publish = false`),
+  packaging 195 files at 3.0 MiB (715 KiB compressed).
+
 ## [0.13.0] - 2026-09-12
 
 ### Added — 19 modules across 3 tiers (Session 4 completeness push)
