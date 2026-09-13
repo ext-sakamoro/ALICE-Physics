@@ -1,14 +1,24 @@
 # ALICE-Physics
 
-**決定論的128bit固定小数点物理エンジン** - v0.13.0
+**決定論的128bit固定小数点物理エンジン** - v0.14.0-preview.6
 
 [English](README.md) | 日本語
 
+[![crates.io](https://img.shields.io/badge/crates.io-alice--physics-orange)](https://crates.io/crates/alice-physics)
+
 異なるプラットフォームやハードウェア間で決定論的なシミュレーションを実現する高精度物理エンジン。128bit固定小数点演算を使用し、CPU、コンパイラ、OSに関わらずビット精度の結果を保証します。
 
-**v0.10-0.13 の主な追加**: 4 セッションの完全実装プッシュで **54 module + 3 統合 solver loop** を追加 3D プリント安全性検証 (warp / thin-wall / stress / bridging) から composite / plastic / fatigue 力学、乱流、VOF / level-set 多相流、実行可能な CFD 時間ステップ loop、さらに v0.13.0 で 19 module の Session 4 push (ragdoll / SDF character / SDF SPH / transient thermal / composite failure / VIV / piezoelectric / acoustic / electromagnetic / IK / anisotropic friction / netcode prediction / character FSM / kinematic loop / buoyancy zone / wind zone / SDF FEM / SDF wind) までカバー 全て bit-exact + Fix128 決定論を保持 詳細は [Session 1-3 追加](#session-1-3-追加-v010-012) と [v0.13.0 Session 4 追加](#v0130-session-4-追加-19-module--3-tier-構成) を参照
+**crates.io で公開中** (v0.14.0-preview.4 初回 publish 2026-09-13、以降 preview.5 / preview.6 で拡張中) `cargo add alice-physics --pre` でインストール可能 (pre-release identifier `-preview.N` は明示的な `--pre` opt-in が必要、v0.14.0 stable landing で default 対象化) v1.0 までの timeline は [`docs/ROADMAP.md`](docs/ROADMAP.md) 参照
 
-**v0.13.0 の追加**: 19 module の Session 4 push (下記)。コンパニオンリリース: ALICE-SDF v1.7.7 が `morphology` (signed offset + tolerance fit check) を S1 tier-★★★ 統合パートナーとして提供。
+**v0.10-0.14 の主な追加**: 5 wave の完全実装プッシュで **54 module + 3 統合 solver loop + Session 4 19 module (3 tier 分類)** を追加 3D プリント安全性検証 (warp / thin-wall / stress / bridging) から composite / plastic / fatigue 力学、乱流、VOF / level-set 多相流、実行可能な CFD 時間ステップ loop、humanoid ragdoll、SDF-boundary SPH、transient thermal、composite failure、VIV / piezoelectric / acoustic / electromagnetic、IK / anisotropic friction / netcode prediction / character FSM / kinematic loop / buoyancy zone / wind zone / SDF FEM / SDF wind までカバー 全て bit-exact + Fix128 決定論を保持 詳細は [Session 1-3 追加](#session-1-3-追加-v010-012) と [v0.13.0 Session 4 追加](#v0130-session-4-追加-19-module--3-tier-構成) を参照
+
+**v0.14.0 preview series (crates.io landing)**
+
+- **preview.6** (2026-09-13) — `cargo-public-api` CI gate + fuzz coverage 5 → 7 (`fuzz_ccd` / `fuzz_trimesh`)
+- **preview.5** (2026-09-13) — Phase 1 quick wins: `[package.metadata.docs.rs]` + README recommended feature table、example 7 → 10 (`ragdoll_demo` / `bfecc_advection_demo` / `sph_boundary_demo`)、fuzz 3 → 5 (`fuzz_joint` / `fuzz_cfd`)
+- **preview.4** (2026-09-13) — 破損 `neural` / `replay` / `analytics` bridge feature を**一時削除** (sibling repo `alice-ml` / `alice-db` / `alice-analytics` が現時点 crates.io 未 publish、ALICE-SDF v1.7.7 pattern で bridge を綺麗に外し、v0.17.x での復帰予定を確保) bridge が必要な downstream は preview.4 直前の revision に `git` / `path` dep で pin
+- **preview.3** (2026-09-13) — `#![deny(missing_docs)]` escalation (0 warning)、MSRV policy 明文化、clippy `approx_constant` cleanup、crates.io publish 事前調査
+- **preview.1 / preview.2** (2026-09-12) — Physics v2 Priority 1/2 (Marching Tets、ALICE-Fluid の 3D Spectral IPM、spatial-hash SPH、Crank-Nicolson thermal、BFECC scalar / MAC-face BFECC velocity、nonlinear Crank-Nicolson、3D transient thermal、BiCGStab pressure、adaptive dt、edge-split refinement) — **+37 lib test、合計 1364**
 
 **v0.12.0 の追加**: `GpuSolverBridge` に joint-solve パイプライン (`send_joints` / `send_body_rotations` / `dispatch_joint_solve_iteration`) を追加、`PhysicsWorld` が contact / joint solve の両方を装着済 bridge 経由に auto-route する。ALICE-TRT v3.1.0 の `FIX128_BALL_SOCKET_JOINT_SOLVE_WGSL` kernel と協調 (CPU `solve_ball_joint` と byte-exact 一致)。詳細は [CHANGELOG.md](CHANGELOG.md) 参照。
 
@@ -269,7 +279,9 @@ rayon 並列版は `--features parallel` で有効化。全バリアントで Fi
 
 ```toml
 [dependencies]
-alice-physics = { version = "0.13", features = ["gpu-solver-bridge"] }
+# Pre-release identifier `-preview.N` は v0.14.0 stable までは version 完全一致必須
+# (Cargo は pre-release 系列を横断して auto-upgrade しない)
+alice-physics = { version = "0.14.0-preview.6", features = ["gpu-solver-bridge"] }
 alice-trt     = { version = "3.1", features = ["physics-solver"] }
 ```
 
@@ -315,7 +327,7 @@ ALICE-Physicsは6層にわたる最適化で **100/100 の完璧なスコア** �
 | **L3: 計算戦略** | 20/20 | ウォームスタート `cached_lambda`、逆数事前計算（`inv_rest_length`、`inv_rest_density`） |
 | **L4: GPU・スループット** | 15/15 | `SIMD_WIDTH`定数 + `simd_width()`、`GpuSdfInstancedBatch`/`GpuSdfMultiDispatch`、`batch_size()` |
 | **L5: ビルドプロファイル** | 10/10 | `opt-level=3`、`lto="fat"`、`codegen-units=1`、`panic="abort"`、`strip=true` |
-| **L6: コード品質** | 20/20 | 1175 lib テスト + 53 alice-bamboo 統合テスト、clippy 0警告 |
+| **L6: コード品質** | 20/20 | 1364 lib テスト + 53 alice-bamboo 統合テスト + 7 fuzz target、clippy 0 警告、`#![deny(missing_docs)]` |
 | **合計** | **100/100** | |
 
 ### L1: メモリレイアウト (15/15)
@@ -394,9 +406,10 @@ strip = true           # シンボル除去
 
 ### L6: コード品質 (20/20)
 
-- **1175 lib テスト** (alice-physics crate、Session 3 完了 / v0.12)
+- **1364 lib テスト** (alice-physics crate、Session 4 + v0.14.0 preview 1/2 追加)
 - **53 alice-bamboo 統合テスト** (3D プリント安全性のエンドツーエンド)
-- **合計: 1228テストパス**、clippy: 0警告（`-W clippy::all`）
+- **7 fuzz target** (`fuzz_step` / `fuzz_collision` / `fuzz_deterministic_roundtrip` / `fuzz_joint` / `fuzz_cfd` / `fuzz_ccd` / `fuzz_trimesh`)
+- **合計: 1417 テストパス**、clippy: 0 警告 (`-W clippy::all`)、`#![deny(missing_docs)]` (0 warning)
 
 ---
 
@@ -531,8 +544,8 @@ ALICE-Physicsは**どこでもビット精度の結果**を保証し、以下を
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                          ALICE-Physics v0.13.0                               │
-│         144 pub mod + 19 Session 4 追加、1175+ lib テスト (v0.12 base)         │
+│                          ALICE-Physics v0.14.0-preview.6                     │
+│         140 pub mod (preview.4 bridge 削除後)、1364 lib テスト                 │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │  コアレイヤー                                                                │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐          │
