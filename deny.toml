@@ -30,6 +30,11 @@ ignore = [
     "RUSTSEC-2026-0176",  # nth/nth_back out-of-bounds read (0.24+ 導入、0.29 で fix)
     "RUSTSEC-2026-0177",  # PyCFunction::new_closure Sync 欠落 (0.29 で fix)
     "RUSTSEC-2025-0020",  # PyString::from_object buffer overflow (0.24.1+ で fix、参考用に残置)
+    # J-4 bridge restoration (v0.14.0-preview.8) で alice-db が transitive
+    # に bincode 1.3.3 + rkyv 0.7.46 を pull sibling 側で bincode 2.x /
+    # rkyv 0.8.x 移行後に本 ignore を撤去する
+    "RUSTSEC-2025-0141",  # bincode unmaintained (via alice-db、sibling upgrade で fix)
+    "RUSTSEC-2026-0235",  # rkyv 0.7.46 out-of-bounds read (via alice-db、rkyv 0.8+ で fix)
 ]
 
 # ---------------------------------------------------------------------------
