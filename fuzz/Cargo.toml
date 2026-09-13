@@ -64,5 +64,12 @@ name = "fuzz_trimesh"
 path = "fuzz_targets/fuzz_trimesh.rs"
 doc = false
 
+# Structural solver — CantileverEndPoint 荷重 + Rectangular section + PLA 材料の
+# 極端 aspect ratio / heavy load 耐性 (Roark/Euler formula 数値安定性 gate)
+[[bin]]
+name = "fuzz_structural"
+path = "fuzz_targets/fuzz_structural.rs"
+doc = false
+
 [workspace]
 members = ["."]
