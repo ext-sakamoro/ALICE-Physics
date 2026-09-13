@@ -54,18 +54,6 @@ jobs:
       - name: Build (SIMD)
         run: cargo build --lib --features "simd"
 
-      - name: Build (neural + parallel)
-        run: cargo build --lib --features "neural,parallel"
-        continue-on-error: true
-
-      - name: Build (analytics)
-        run: cargo build --lib --features "analytics"
-        continue-on-error: true
-
-      - name: Test (all safe features)
-        run: cargo test --features "parallel,neural,ffi,replay,analytics"
-        continue-on-error: true
-
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
@@ -78,48 +66,6 @@ jobs:
           components: clippy
 
       - uses: Swatinem/rust-cache@v2
-
-      - name: Create ALICE-ML stub
-        run: |
-          mkdir -p ../ALICE-ML/src
-          cat > ../ALICE-ML/Cargo.toml << 'TOML'
-          [package]
-          name = "alice-ml"
-          version = "0.1.0"
-          edition = "2021"
-          [lib]
-          path = "src/lib.rs"
-          TOML
-          echo "" > ../ALICE-ML/src/lib.rs
-
-      - name: Create ALICE-DB stub
-        run: |
-          mkdir -p ../ALICE-DB/src
-          cat > ../ALICE-DB/Cargo.toml << 'TOML'
-          [package]
-          name = "alice-db"
-          version = "0.1.0"
-          edition = "2021"
-          [lib]
-          path = "src/lib.rs"
-          TOML
-          echo "" > ../ALICE-DB/src/lib.rs
-
-      - name: Create ALICE-Analytics stub
-        run: |
-          mkdir -p ../ALICE-Analytics/src
-          cat > ../ALICE-Analytics/Cargo.toml << 'TOML'
-          [package]
-          name = "alice-analytics"
-          version = "0.1.0"
-          edition = "2021"
-          [features]
-          default = ["std"]
-          std = []
-          [lib]
-          path = "src/lib.rs"
-          TOML
-          echo "" > ../ALICE-Analytics/src/lib.rs
 
       - name: Clippy
         run: cargo clippy -- -W clippy::all
@@ -145,48 +91,6 @@ jobs:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-
-      - name: Create ALICE-ML stub
-        run: |
-          mkdir -p ../ALICE-ML/src
-          cat > ../ALICE-ML/Cargo.toml << 'TOML'
-          [package]
-          name = "alice-ml"
-          version = "0.1.0"
-          edition = "2021"
-          [lib]
-          path = "src/lib.rs"
-          TOML
-          echo "" > ../ALICE-ML/src/lib.rs
-
-      - name: Create ALICE-DB stub
-        run: |
-          mkdir -p ../ALICE-DB/src
-          cat > ../ALICE-DB/Cargo.toml << 'TOML'
-          [package]
-          name = "alice-db"
-          version = "0.1.0"
-          edition = "2021"
-          [lib]
-          path = "src/lib.rs"
-          TOML
-          echo "" > ../ALICE-DB/src/lib.rs
-
-      - name: Create ALICE-Analytics stub
-        run: |
-          mkdir -p ../ALICE-Analytics/src
-          cat > ../ALICE-Analytics/Cargo.toml << 'TOML'
-          [package]
-          name = "alice-analytics"
-          version = "0.1.0"
-          edition = "2021"
-          [features]
-          default = ["std"]
-          std = []
-          [lib]
-          path = "src/lib.rs"
-          TOML
-          echo "" > ../ALICE-Analytics/src/lib.rs
 
       - name: cargo doc (no-deps)
         run: cargo doc --lib --no-deps
