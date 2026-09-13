@@ -33,6 +33,17 @@
 //!   (original power-law).
 //! - Bellehumeur et al., "Modeling of Bond Formation Between Polymer Filaments
 //!   in the FDM Process", J. Manuf. Processes 2004 (PLA creep parameters).
+//!
+//! # Integration status
+//!
+//! `PlasticModel`, `PlasticState`, `NortonCreep`, and `radial_return_1d`
+//! are wired into `structural_solver.rs`. `StressTensor`, `PlasticStep`,
+//! `current_yield_mpa`, and the alternate factory / accessor helpers
+//! are reserved crate-internal API awaiting downstream integration.
+
+// Reserved plasticity helpers (StressTensor, PlasticStep, alt factories) —
+// pub(crate) but currently unused outside their own unit tests.
+#![allow(dead_code)]
 
 use crate::filament_db::MaterialProperties;
 use crate::math::Fix128;
@@ -45,25 +56,25 @@ use crate::math::Fix128;
 ///
 /// Positive normal stresses are tensile.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-pub struct StressTensor {
+pub(crate) struct StressTensor {
     /// Normal stress σ_xx.
-    pub sxx: Fix128,
+    pub(crate) sxx: Fix128,
     /// Normal stress σ_yy.
-    pub syy: Fix128,
+    pub(crate) syy: Fix128,
     /// Normal stress σ_zz.
-    pub szz: Fix128,
+    pub(crate) szz: Fix128,
     /// Shear stress τ_xy.
-    pub sxy: Fix128,
+    pub(crate) sxy: Fix128,
     /// Shear stress τ_xz.
-    pub sxz: Fix128,
+    pub(crate) sxz: Fix128,
     /// Shear stress τ_yz.
-    pub syz: Fix128,
+    pub(crate) syz: Fix128,
 }
 
 impl StressTensor {
     /// Uniaxial stress along X (all other components zero).
     #[must_use]
-    pub const fn uniaxial_x(sigma: Fix128) -> Self {
+    pub(crate) const fn uniaxial_x(sigma: Fix128) -> Self {
         Self {
             sxx: sigma,
             syy: Fix128::ZERO,
@@ -76,7 +87,7 @@ impl StressTensor {
 
     /// Hydrostatic (spherical) part σ_H = ⅓·tr(σ).
     #[must_use]
-    pub fn hydrostatic(&self) -> Fix128 {
+    pub(crate) fn hydrostatic(&self) -> Fix128 {
         (self.sxx + self.syy + self.szz) * Fix128::from_ratio(1, 3)
     }
 
@@ -84,7 +95,7 @@ impl StressTensor {
     /// `σ_eq = √( ½ · ((σ_xx − σ_yy)² + (σ_yy − σ_zz)² + (σ_zz − σ_xx)²)
     ///           + 3·(τ_xy² + τ_xz² + τ_yz²) )`
     #[must_use]
-    pub fn von_mises(&self) -> Fix128 {
+    pub(crate) fn von_mises(&self) -> Fix128 {
         let d1 = self.sxx - self.syy;
         let d2 = self.syy - self.szz;
         let d3 = self.szz - self.sxx;
@@ -147,9 +158,9 @@ impl PlasticModel {
         }
     }
 
-    /// Override the hardening law.
+    /// Override the hardening law (crate-internal).
     #[must_use]
-    pub const fn with_hardening(mut self, ht: HardeningType) -> Self {
+    pub(crate) const fn with_hardening(mut self, ht: HardeningType) -> Self {
         self.hardening_type = ht;
         self
     }
@@ -183,7 +194,7 @@ pub struct PlasticState {
 /// - Kinematic: `σ_y0` (radius fixed, back-stress captures translation)
 /// - Combined: `σ_y0 + ½ · H · ε_p` (half growth, half translation)
 #[must_use]
-pub fn current_yield_mpa(model: &PlasticModel, state: &PlasticState) -> Fix128 {
+pub(crate) fn current_yield_mpa(model: &PlasticModel, state: &PlasticState) -> Fix128 {
     match model.hardening_type {
         HardeningType::Isotropic => {
             model.yield_strength_mpa + model.hardening_modulus_mpa * state.equivalent_plastic_strain
@@ -198,15 +209,15 @@ pub fn current_yield_mpa(model: &PlasticModel, state: &PlasticState) -> Fix128 {
     }
 }
 
-/// Result of an incremental plasticity update.
+/// Result of an incremental plasticity update (crate-internal).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct PlasticStep {
+pub(crate) struct PlasticStep {
     /// Actual stress magnitude after return-mapping (MPa).
-    pub stress_mpa: Fix128,
+    pub(crate) stress_mpa: Fix128,
     /// Plastic strain increment this step (dimensionless).
-    pub plastic_strain_increment: Fix128,
+    pub(crate) plastic_strain_increment: Fix128,
     /// True iff yielding occurred (plastic strain > 0).
-    pub yielded: bool,
+    pub(crate) yielded: bool,
 }
 
 /// One-dimensional radial-return update for uniaxial loading.
@@ -321,18 +332,18 @@ impl NortonCreep {
         }
     }
 
-    /// PETG at 25°C — much lower creep than PLA (higher Tg).
+    /// PETG at 25°C — much lower creep than PLA (higher Tg, crate-internal).
     #[must_use]
-    pub fn petg_room_temp() -> Self {
+    pub(crate) fn petg_room_temp() -> Self {
         Self {
             a: Fix128::from_ratio(1, 100_000_000_000),
             n: 3,
         }
     }
 
-    /// Instantaneous creep strain rate (per second) at stress `sigma_mpa`.
+    /// Instantaneous creep strain rate (per second) at stress `sigma_mpa` (crate-internal).
     #[must_use]
-    pub fn strain_rate_per_s(&self, sigma_mpa: Fix128) -> Fix128 {
+    pub(crate) fn strain_rate_per_s(&self, sigma_mpa: Fix128) -> Fix128 {
         let mut sn = Fix128::ONE;
         for _ in 0..self.n {
             sn = sn * sigma_mpa;
