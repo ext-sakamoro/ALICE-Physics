@@ -36,5 +36,19 @@ name = "fuzz_deterministic_roundtrip"
 path = "fuzz_targets/fuzz_deterministic_roundtrip.rs"
 doc = false
 
+# Distance-constraint joint chain — XPBD の
+# 退化 configuration (zero-length target / coincident anchors) 耐性
+[[bin]]
+name = "fuzz_joint"
+path = "fuzz_targets/fuzz_joint.rs"
+doc = false
+
+# 統合 CFD solver — MAC grid + temperature scalar + 3 advection scheme の
+# seeded discontinuity 耐性 (数値安定性 gate)
+[[bin]]
+name = "fuzz_cfd"
+path = "fuzz_targets/fuzz_cfd.rs"
+doc = false
+
 [workspace]
 members = ["."]

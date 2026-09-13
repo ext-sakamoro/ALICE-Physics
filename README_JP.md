@@ -1780,6 +1780,19 @@ Downstream crate は `alice-physics` が patch release で MSRV を上げない�
 
 ## ビルド
 
+**`--all-features` に関する注意**: `alice-physics` は `wasm` と `ffi` を相互排他 feature として設計 (それぞれ `wasm-bindgen` と C ABI FFI を link、単一バイナリで共存不可)。`cargo build --all-features` は意図的な `compile_error!` で失敗する どちらか片方で build
+
+**推奨 feature 組合わせ:**
+
+| ターゲット | コマンド |
+|--------|---------|
+| ネイティブアプリ / ゲームエンジン host (Unity、UE5、Godot) | `cargo build --features "std,simd,parallel,ffi,gpu-solver-bridge"` |
+| ブラウザ (WebGL / WebGPU、wasm-bindgen 経由) | `cargo build --features "std,simd,parallel,wasm,gpu-solver-bridge"` |
+| 組み込み / no_std | `cargo build --no-default-features` |
+| Python バインディング | `cargo build --features "std,simd,parallel,python"` |
+
+docs.rs はネイティブ feature set でビルド (Cargo.toml の `[package.metadata.docs.rs]` 参照)
+
 ```bash
 # 標準ビルド
 cargo build --release

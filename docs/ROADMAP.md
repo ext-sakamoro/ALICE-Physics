@@ -17,6 +17,8 @@ Memory index pointer: `[[reference-alice-physics-v1-roadmap]]` in claude-config.
 
 **J-3 実 publish 完了** (2026-09-13) — `alice-physics v0.14.0-preview.4` を **crates.io に初 publish**、Cargo.toml `version` `0.13.0` → `0.14.0-preview.4` + `publish = false` 削除、194 file / 3.0 MiB / 718.6 KiB compressed uploaded (`cargo publish` 成功、`Published alice-physics v0.14.0-preview.4 at registry crates-io`)、`cargo search` で `alice-physics = "0.14.0-preview.4"` 反映確認済 crates.io URL: https://crates.io/crates/alice-physics ADR-002 の「v1.0.0 前に crates.io publish 事前試験実施」を **v0.14.0 preview で達成**
 
+**v0.14.0-preview.5 landed** (commit `<TBD>`、2026-09-13) — Phase 1 quick wins landing: (1) B4 wasm × ffi mutual exclusion を `[package.metadata.docs.rs]` + README recommended feature table で ergonomic 化、(2) 3 新 example 追加 (`ragdoll_demo` / `bfecc_advection_demo` / `sph_boundary_demo`、現状 7 → 10 個)、(3) 2 新 fuzz target (`fuzz_joint` / `fuzz_cfd`、現状 3 → 5 個)、(4) crates.io に `0.14.0-preview.5` publish 成功 (197 file / 3.1 MiB / 724.3 KiB compressed) 検証: 1364 lib test 全 pass (regression 0)、10 example release build PASS、`cargo doc` clean cargo-public-api snapshot は nightly toolchain install 時間の関係で v0.15.0 に defer
+
 - module 総数: 146 src file、`pub mod` 144
 - lib test: 1364 (1327 → 1343 → 1364、v2 Priority 1+2 sprint で +37)
 - Session 1-3 (v0.10-0.12) baseline: 1175 lib tests + 53 alice-bamboo 統合 tests
@@ -121,14 +123,24 @@ Preview 4 wave が landed 済み、残作業:
 - ADR-002 の「v1.0.0 前に crates.io publish 事前試験実施」原則を **v0.14.0 preview で達成**
 - **J-4** (v0.17.x 以降): sibling 3 crate (`alice-ml` / `alice-db` / `alice-analytics`) が crates.io publish された段階で、削除した bridge feature を段階復帰 (ALICE-SDF v1.8.0 と同 pattern) 削除したコードは git 履歴 (v0.14.0-preview.4 commit `69ced3d`) から参照可能
 
-### ⏳ v0.14.0-preview.5+ / v0.14.0 stable — 継続開発
+### ✅ v0.14.0-preview.5 (Phase 1 quick wins、shipped 2026-09-13)
 
-preview.4 の bridge 削除で単独完結な状態を確立、以降は API polish + example 追加 + downstream feedback に集中:
+commit `<TBD>` / crates.io: `alice-physics = "0.14.0-preview.5"`
+
+- **B4 wasm × ffi mutual exclusion**: `[package.metadata.docs.rs]` 追加 + README EN/JP に recommended feature combinations table 追加 (mutual exclusion は正当な設計、ergonomic 化のみ)
+- **新 example 3 個** (7 → 10): `ragdoll_demo` / `bfecc_advection_demo` / `sph_boundary_demo`
+- **新 fuzz target 2 個** (3 → 5): `fuzz_joint` / `fuzz_cfd`
+- crates.io に 2 nd publish 成功 (197 file / 3.1 MiB / 724.3 KiB compressed)
+- 検証: 1364 lib test PASS、10 example release build PASS、`cargo doc` clean
+
+### 🚧 v0.14.0-preview.6+ / v0.14.0 stable — 継続開発
+
+Phase 1 quick wins landing 済み、以降は API polish + downstream feedback に集中:
 
 - **B. Public API surface freeze 前半** — priority module audit (v0.14.0 stable の主 gating)
-- **新 example 追加** — ragdoll / SPH / joint / character / BFECC velocity / BiCGStab pressure (現状 7 → 14 個目標)
-- **B4 (wasm × ffi mutual exclusion)** — pre-existing `compile_error!` 設計見直し (CI で `--all-features` 除外 or feature 分割)
-- 完了次第 `0.14.0-preview.5` → ... → **`0.14.0` stable** publish
+- **新 example 4 個追加** (10 → 14) — joint / character / BiCGStab pressure / adaptive dt
+- **cargo-public-api snapshot** — nightly toolchain install 済で導入 (v0.14.0-preview.6 予定)
+- 完了次第 `0.14.0-preview.6` → ... → **`0.14.0` stable** publish
 
 ### ⏳ v1.0.0-rc.1 (推定 6-8 週間)
 
