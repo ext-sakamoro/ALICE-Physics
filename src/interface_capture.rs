@@ -189,9 +189,9 @@ fn solve_fsm(a: Fix128, b: Fix128, c: Fix128, dx: Fix128) -> Fix128 {
 // PLIC reconstruction
 // ============================================================================
 
-/// PLIC interface normal for a VOF cell: gradient of `f` via central diffs.
+/// PLIC interface normal for a VOF cell: gradient of `f` via central diffs (crate-internal).
 #[must_use]
-pub fn plic_normal(vof: &Grid3d, i: usize, j: usize, k: usize) -> Vec3Fix {
+pub(crate) fn plic_normal(vof: &Grid3d, i: usize, j: usize, k: usize) -> Vec3Fix {
     if i == 0 || j == 0 || k == 0 || i + 1 >= vof.nx || j + 1 >= vof.ny || k + 1 >= vof.nz {
         return Vec3Fix::default();
     }
@@ -220,7 +220,7 @@ pub fn plic_normal(vof: &Grid3d, i: usize, j: usize, k: usize) -> Vec3Fix {
 /// the intermediate regime. Overall convergence is O(1) for the corner
 /// case (previously O(40) bisection with 4³ sub-sampling per iteration).
 #[must_use]
-pub fn plic_plane_offset(normal: Vec3Fix, f: Fix128, dx: Fix128) -> Fix128 {
+pub(crate) fn plic_plane_offset(normal: Vec3Fix, f: Fix128, dx: Fix128) -> Fix128 {
     if f <= Fix128::ZERO {
         return dx * Fix128::from_int(-2);
     }
@@ -294,7 +294,7 @@ pub fn plic_plane_offset(normal: Vec3Fix, f: Fix128, dx: Fix128) -> Fix128 {
 /// centred at the origin. Computed by trilinear sub-sampling (Monte-Carlo-
 /// free deterministic approximation via 4×4×4 grid).
 #[must_use]
-pub fn truncated_cube_volume(normal: Vec3Fix, d: Fix128, dx: Fix128) -> Fix128 {
+pub(crate) fn truncated_cube_volume(normal: Vec3Fix, d: Fix128, dx: Fix128) -> Fix128 {
     let half = dx.half();
     let subdiv = 4u32;
     let step = dx / Fix128::from_int(subdiv as i64);
