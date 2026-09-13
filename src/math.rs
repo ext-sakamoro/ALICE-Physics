@@ -355,10 +355,10 @@ impl Fix128 {
         Self { hi, lo }
     }
 
-    /// Pack two Fix128 values into SIMD registers for batch processing
+    /// Pack two Fix128 values into SIMD registers for batch processing (crate-internal).
     #[cfg(all(feature = "simd", target_arch = "x86_64"))]
     #[inline]
-    pub fn pack_pair(a: Self, b: Self) -> (u64, u64, i64, i64) {
+    pub(crate) fn pack_pair(a: Self, b: Self) -> (u64, u64, i64, i64) {
         (a.lo, b.lo, a.hi, b.hi)
     }
 }
@@ -1454,7 +1454,7 @@ pub const SIMD_WIDTH: usize = simd_width();
 /// Bitwise AND/OR then selects the correct limbs without any conditional instruction.
 #[inline(always)]
 #[must_use]
-pub const fn select_fix128(condition: bool, a: Fix128, b: Fix128) -> Fix128 {
+pub(crate) const fn select_fix128(condition: bool, a: Fix128, b: Fix128) -> Fix128 {
     // mask = 0xFFFF...FFFF when condition is true, 0x0000...0000 when false
     let mask = -(condition as i64) as u64;
     let inv_mask = !mask;
@@ -1473,7 +1473,7 @@ pub const fn select_fix128(condition: bool, a: Fix128, b: Fix128) -> Fix128 {
 /// Applies `select_fix128` component-wise.
 #[inline(always)]
 #[must_use]
-pub const fn select_vec3(condition: bool, a: Vec3Fix, b: Vec3Fix) -> Vec3Fix {
+pub(crate) const fn select_vec3(condition: bool, a: Vec3Fix, b: Vec3Fix) -> Vec3Fix {
     Vec3Fix {
         x: select_fix128(condition, a.x, b.x),
         y: select_fix128(condition, a.y, b.y),
