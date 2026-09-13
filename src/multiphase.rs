@@ -119,7 +119,7 @@ impl Grid3d {
 /// Simplification: assumes uniform velocity across the grid (rigid-body
 /// convection). For a spatially varying field pair this routine with an
 /// `EulerianGrid` velocity field from `eulerian_grid.rs` (Phase F4).
-pub fn advect_vof_uniform(
+pub(crate) fn advect_vof_uniform(
     field: &mut Grid3d,
     ux_m_per_s: Fix128,
     uy_m_per_s: Fix128,
@@ -264,7 +264,7 @@ pub fn trilinear_sample(field: &Grid3d, cx: Fix128, cy: Fix128, cz: Fix128) -> F
 /// **unconditionally stable** (no CFL restriction) unlike first-order
 /// upwind — you can take arbitrarily large `dt`, though very large steps
 /// dilute detail.
-pub fn advect_vof_uniform_semi_lagrangian(
+pub(crate) fn advect_vof_uniform_semi_lagrangian(
     field: &mut Grid3d,
     ux_m_per_s: Fix128,
     uy_m_per_s: Fix128,
@@ -310,9 +310,9 @@ pub fn advect_vof_uniform_semi_lagrangian(
     }
 }
 
-/// Total volume of fluid A in a VOF field: `V = Σ f · dx³`.
+/// Total volume of fluid A in a VOF field: `V = Σ f · dx³` (crate-internal).
 #[must_use]
-pub fn total_volume_vof(field: &Grid3d) -> Fix128 {
+pub(crate) fn total_volume_vof(field: &Grid3d) -> Fix128 {
     let cell_vol = field.dx * field.dx * field.dx;
     let sum: Fix128 = field.data.iter().copied().fold(Fix128::ZERO, |a, b| a + b);
     sum * cell_vol
@@ -353,7 +353,7 @@ pub fn initialize_level_set_sphere(
 /// The fast method here is a single-sweep signed-distance re-fit using the
 /// nearest-neighbour finite-difference gradient. Adequate for coarse grids
 /// (< 64³) and moderate deformation; higher accuracy needs the full FSM.
-pub fn reinitialize_level_set(field: &mut Grid3d, iterations: u32) {
+pub(crate) fn reinitialize_level_set(field: &mut Grid3d, iterations: u32) {
     let dtau = field.dx * Fix128::from_ratio(1, 2);
     for _ in 0..iterations {
         let mut next = field.data.clone();
