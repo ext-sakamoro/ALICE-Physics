@@ -28,6 +28,18 @@
 //! - Johnson, "Column and Strut Formulas", ASCE Trans. 42 (1899) —
 //!   parabolic formula for short columns.
 //! - Bažant & Cedolin, *Stability of Structures* (snap-through).
+//!
+//! # Integration status
+//!
+//! `analyze_column`, `ColumnBucklingReport`, and `BucklingRegime` are
+//! wired into `structural_solver.rs`. All other helpers (radius of
+//! gyration, slenderness helpers, plate/snap-through) are reserved
+//! crate-internal API — used by `analyze_column` internally but not
+//! publicly composable pending downstream integration.
+
+// Reserved buckling helpers (radius_of_gyration, slenderness, plate/snap
+// formulas) — pub(crate) but currently used only by analyze_column + tests.
+#![allow(dead_code)]
 
 use crate::beam_stress::{ColumnEndCondition, CrossSection};
 use crate::filament_db::MaterialProperties;
@@ -42,7 +54,7 @@ use crate::math::Fix128;
 /// Governs how far the cross-section extends from the neutral axis on
 /// average — the natural "size" for buckling calculations.
 #[must_use]
-pub fn radius_of_gyration_mm(section: &CrossSection) -> Fix128 {
+pub(crate) fn radius_of_gyration_mm(section: &CrossSection) -> Fix128 {
     let a = section.area_mm2();
     let i = section.second_moment_of_area_mm4();
     if a.is_zero() {
@@ -57,7 +69,7 @@ pub fn radius_of_gyration_mm(section: &CrossSection) -> Fix128 {
 /// - `50 < λ < 100`: intermediate — use Johnson formula.
 /// - `λ > 100`: slender — use Euler formula.
 #[must_use]
-pub fn slenderness_ratio(
+pub(crate) fn slenderness_ratio(
     section: &CrossSection,
     length_mm: Fix128,
     end_condition: ColumnEndCondition,
@@ -74,7 +86,7 @@ pub fn slenderness_ratio(
 /// Below this the Johnson parabolic formula applies; above, Euler.
 /// The junction is such that both formulas give the same σ_cr = σ_y / 2.
 #[must_use]
-pub fn transition_slenderness(e_mpa: Fix128, sigma_y_mpa: Fix128) -> Fix128 {
+pub(crate) fn transition_slenderness(e_mpa: Fix128, sigma_y_mpa: Fix128) -> Fix128 {
     if sigma_y_mpa.is_zero() {
         return Fix128::ZERO;
     }
@@ -105,7 +117,7 @@ pub enum BucklingRegime {
 ///
 /// Returns 0 if `slenderness` is zero (degenerate input).
 #[must_use]
-pub fn critical_stress_mpa(
+pub(crate) fn critical_stress_mpa(
     slenderness: Fix128,
     e_mpa: Fix128,
     sigma_y_mpa: Fix128,
@@ -193,7 +205,7 @@ pub fn analyze_column(
 /// - `t`: plate thickness.
 /// - `k`: geometric factor (simply supported all edges = 4, one edge free = 0.425).
 #[must_use]
-pub fn plate_buckling_mpa(
+pub(crate) fn plate_buckling_mpa(
     e_mpa: Fix128,
     poisson: Fix128,
     thickness_mm: Fix128,
@@ -229,7 +241,7 @@ pub fn plate_buckling_mpa(
 /// Coefficient is empirically derived assuming h/L ≤ 0.2. For deeper arches
 /// the Roark full solution should be used.
 #[must_use]
-pub fn snap_through_load_n(
+pub(crate) fn snap_through_load_n(
     e_mpa: Fix128,
     section_area_mm2: Fix128,
     rise_mm: Fix128,
