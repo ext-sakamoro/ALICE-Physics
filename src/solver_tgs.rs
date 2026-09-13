@@ -32,6 +32,22 @@
 //!
 //! [`RigidBody`]: crate::solver::RigidBody
 //! [`ContactConstraint`]: crate::solver::ContactConstraint
+//!
+//! # Visibility (v0.14.0-preview.8+)
+//!
+//! The whole `solver_tgs` family is `pub(crate)`. It exists as a parallel
+//! generic TGS integrator with hooks-based extension points that historically
+//! were public. As no downstream ever adopted the extension mechanism
+//! (survey: 0 refs across `ALICE-Bamboo`, `ALICE-Anima`, `Yoin`, `ALICE-LOL`,
+//! `ALICE-Kinematics`, `text-to-print-ios`), v1.0 API surface freeze
+//! (Item B) chose Option C: pub(crate) the entire subsystem. It can be
+//! re-exposed via a semver-minor bump if concrete demand emerges.
+
+// Reserved TGS extension mechanism — pub(crate) since v0.14.0-preview.8.
+// Broken intra-doc links to now-private items are expected until callers
+// rewrite the references; suppression is scoped to this module.
+#![allow(dead_code)]
+#![allow(rustdoc::broken_intra_doc_links)]
 
 use crate::math::Fix128;
 use std::collections::HashMap;
@@ -42,7 +58,7 @@ use std::collections::HashMap;
 
 /// Minimum body surface the sub-stepping solver needs. Adapters over
 /// concrete rigid-body types implement this on the outside.
-pub trait BodyLike {
+pub(crate) trait BodyLike {
     /// Stable identity used for warm-start indexing and Kalman-style
     /// caches. Must be stable across a full physics tick.
     fn stable_id(&self) -> u64;
@@ -54,7 +70,7 @@ pub trait BodyLike {
 }
 
 /// A pairwise contact between two bodies.
-pub trait ContactLike {
+pub(crate) trait ContactLike {
     /// Index into the body slice for one side of the contact.
     fn body_a(&self) -> usize;
     /// Index into the body slice for the other side.
@@ -68,7 +84,7 @@ pub trait ContactLike {
 
 /// A bilateral joint (distance, revolute, prismatic …) between two
 /// bodies. Only the coupling for island detection is required here.
-pub trait JointLike {
+pub(crate) trait JointLike {
     /// Index of the first body attached to this joint.
     fn body_a(&self) -> usize;
     /// Index of the second body attached to this joint.
@@ -83,13 +99,13 @@ pub trait JointLike {
 /// contact-normal component and the two tangential (friction)
 /// components. All values are in the contact frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct CachedImpulse {
+pub(crate) struct CachedImpulse {
     /// Normal impulse magnitude (non-negative in a healthy solve).
-    pub normal: Fix128,
+    pub(crate) normal: Fix128,
     /// First tangential impulse magnitude.
-    pub tangent1: Fix128,
+    pub(crate) tangent1: Fix128,
     /// Second tangential impulse magnitude.
-    pub tangent2: Fix128,
+    pub(crate) tangent2: Fix128,
 }
 
 /// Per-contact impulse memory carried across frames.
@@ -98,7 +114,7 @@ pub struct CachedImpulse {
 /// not touched during a physics step are dropped by [`Self::sweep`] so
 /// that stale IDs do not grow the map indefinitely.
 #[derive(Debug, Default, Clone)]
-pub struct ImpulseCache {
+pub(crate) struct ImpulseCache {
     entries: HashMap<u64, CachedImpulse>,
     // Bit set of IDs touched during the current tick.
     live: HashMap<u64, ()>,
@@ -112,18 +128,18 @@ pub struct ImpulseCache {
 /// contact IDs are stable across frames (high hit rate) or if the
 /// scene is churning (low hit rate).
 #[derive(Debug, Clone, Copy, Default)]
-pub struct ImpulseCacheStats {
+pub(crate) struct ImpulseCacheStats {
     /// Number of successful warm-start lookups (contact ID was cached).
-    pub hits: u64,
+    pub(crate) hits: u64,
     /// Number of cache misses (new or evicted contact ID).
-    pub misses: u64,
+    pub(crate) misses: u64,
 }
 
 impl ImpulseCacheStats {
     /// Ratio in `[0.0, 1.0]`. Returns `0.0` when no lookups have been
     /// performed yet.
     #[must_use]
-    pub fn hit_rate(&self) -> f64 {
+    pub(crate) fn hit_rate(&self) -> f64 {
         let total = self.hits + self.misses;
         if total == 0 {
             0.0
@@ -136,7 +152,7 @@ impl ImpulseCacheStats {
 impl ImpulseCache {
     /// Creates an empty cache.
     #[must_use]
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self::default()
     }
 
@@ -144,7 +160,7 @@ impl ImpulseCache {
     /// zero if the contact is new. The read also marks the entry as
     /// alive for the current tick so that [`Self::sweep`] preserves it.
     #[must_use]
-    pub fn take(&mut self, contact_id: u64) -> CachedImpulse {
+    pub(crate) fn take(&mut self, contact_id: u64) -> CachedImpulse {
         self.live.insert(contact_id, ());
         match self.entries.get(&contact_id).copied() {
             Some(v) => {
@@ -161,7 +177,7 @@ impl ImpulseCache {
     /// Snapshot of warm-starting effectiveness. Combine with
     /// [`Self::reset_stats`] between measurement windows.
     #[must_use]
-    pub fn stats(&self) -> ImpulseCacheStats {
+    pub(crate) fn stats(&self) -> ImpulseCacheStats {
         ImpulseCacheStats {
             hits: self.hits,
             misses: self.misses,
@@ -171,7 +187,7 @@ impl ImpulseCache {
     /// Clears the hit / miss counters without touching the cached
     /// impulses. Useful when the caller wants to isolate the hit rate
     /// over a specific window (e.g. after warm-up frames).
-    pub fn reset_stats(&mut self) {
+    pub(crate) fn reset_stats(&mut self) {
         self.hits = 0;
         self.misses = 0;
     }
@@ -179,7 +195,7 @@ impl ImpulseCache {
     /// Retrieves without marking as alive (peek). Useful for
     /// diagnostics; regular solvers should call [`Self::take`].
     #[must_use]
-    pub fn peek(&self, contact_id: u64) -> CachedImpulse {
+    pub(crate) fn peek(&self, contact_id: u64) -> CachedImpulse {
         self.entries.get(&contact_id).copied().unwrap_or_default()
     }
 
@@ -188,32 +204,32 @@ impl ImpulseCache {
     /// before the next [`Self::sweep`]; setter calls do not implicitly
     /// mark the entry as alive so that stale contacts are pruned by
     /// the very next tick's sweep.
-    pub fn set(&mut self, contact_id: u64, imp: CachedImpulse) {
+    pub(crate) fn set(&mut self, contact_id: u64, imp: CachedImpulse) {
         self.entries.insert(contact_id, imp);
     }
 
     /// Removes any entries that were not touched via [`Self::take`] or
     /// [`Self::set`] during the current tick. Call this once per
     /// physics step after all contacts have been visited.
-    pub fn sweep(&mut self) {
+    pub(crate) fn sweep(&mut self) {
         self.entries.retain(|k, _| self.live.contains_key(k));
         self.live.clear();
     }
 
     /// Number of impulses currently cached.
     #[must_use]
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.entries.len()
     }
 
     /// `true` when no impulses are cached.
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
 
     /// Drops all cached impulses.
-    pub fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         self.entries.clear();
         self.live.clear();
     }
@@ -226,7 +242,7 @@ impl ImpulseCache {
 /// Disjoint-set data structure with path compression and union by
 /// rank. Used to group bodies into islands.
 #[derive(Debug, Clone)]
-pub struct UnionFind {
+pub(crate) struct UnionFind {
     parent: Vec<usize>,
     rank: Vec<u8>,
 }
@@ -234,7 +250,7 @@ pub struct UnionFind {
 impl UnionFind {
     /// Creates a forest of `n` singleton sets.
     #[must_use]
-    pub fn new(n: usize) -> Self {
+    pub(crate) fn new(n: usize) -> Self {
         Self {
             parent: (0..n).collect(),
             rank: vec![0; n],
@@ -243,7 +259,7 @@ impl UnionFind {
 
     /// Returns the representative of the set containing `i`. Amortised
     /// α(n) via path compression.
-    pub fn find(&mut self, i: usize) -> usize {
+    pub(crate) fn find(&mut self, i: usize) -> usize {
         let mut root = i;
         while self.parent[root] != root {
             root = self.parent[root];
@@ -260,7 +276,7 @@ impl UnionFind {
 
     /// Unions the sets containing `i` and `j`. Returns `true` when a
     /// merge actually happened.
-    pub fn union(&mut self, i: usize, j: usize) -> bool {
+    pub(crate) fn union(&mut self, i: usize, j: usize) -> bool {
         let ri = self.find(i);
         let rj = self.find(j);
         if ri == rj {
@@ -280,13 +296,13 @@ impl UnionFind {
 
     /// Number of elements in the forest.
     #[must_use]
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.parent.len()
     }
 
     /// `true` when the forest is empty.
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.parent.is_empty()
     }
 }
@@ -300,13 +316,13 @@ impl UnionFind {
 /// downstream dispatch (e.g. `rayon::par_iter`) walks the same order
 /// on every run, preserving determinism.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Island {
+pub(crate) struct Island {
     /// World-index list of bodies belonging to this island, sorted ascending.
-    pub bodies: Vec<usize>,
+    pub(crate) bodies: Vec<usize>,
     /// World-index list of contacts inside this island, sorted ascending.
-    pub contacts: Vec<usize>,
+    pub(crate) contacts: Vec<usize>,
     /// World-index list of joints inside this island, sorted ascending.
-    pub joints: Vec<usize>,
+    pub(crate) joints: Vec<usize>,
 }
 
 /// Groups bodies into islands using contacts and joints as edges.
@@ -318,7 +334,7 @@ pub struct Island {
 /// Panics when any contact or joint references a body index outside of
 /// `bodies`.
 #[must_use]
-pub fn build_islands<B: BodyLike, C: ContactLike, J: JointLike>(
+pub(crate) fn build_islands<B: BodyLike, C: ContactLike, J: JointLike>(
     bodies: &[B],
     contacts: &[C],
     joints: &[J],
@@ -413,16 +429,16 @@ pub fn build_islands<B: BodyLike, C: ContactLike, J: JointLike>(
 /// substeps, few iterations" recipe recommended by recent rigid-body
 /// literature.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct TgsConfig {
+pub(crate) struct TgsConfig {
     /// Number of equal-sized sub-steps per physics tick.
-    pub substeps: u32,
+    pub(crate) substeps: u32,
     /// Velocity iterations per sub-step.
-    pub velocity_iters: u32,
+    pub(crate) velocity_iters: u32,
     /// Positional relaxation iterations per sub-step.
-    pub position_iters: u32,
+    pub(crate) position_iters: u32,
     /// When `true`, the impulse cache is consulted at the start of
     /// each velocity phase to seed the constraint impulses.
-    pub warmstart: bool,
+    pub(crate) warmstart: bool,
 }
 
 impl Default for TgsConfig {
@@ -455,15 +471,15 @@ impl Default for TgsConfig {
 /// rollback netcode (see the `deterministic-physics-lockstep-discipline`
 /// skill §11.1 CCD control).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct AdaptiveSubStepConfig {
+pub(crate) struct AdaptiveSubStepConfig {
     /// Upper bound on translation per sub-step (world units per
     /// sub-step). When `v_max * dt <= max_translation_per_step`,
     /// `substeps = min_substeps`.
-    pub max_translation_per_step: Fix128,
+    pub(crate) max_translation_per_step: Fix128,
     /// Hard cap on sub-step count for the current tick.
-    pub max_substeps: u32,
+    pub(crate) max_substeps: u32,
     /// Minimum sub-step count (typically `1`).
-    pub min_substeps: u32,
+    pub(crate) min_substeps: u32,
 }
 
 impl Default for AdaptiveSubStepConfig {
@@ -482,7 +498,7 @@ impl Default for AdaptiveSubStepConfig {
 /// and keep the closed-form deterministic across CORDIC LUT
 /// tolerances (see skill §1 path 2). Return `Fix128::ZERO` for
 /// static / sleeping bodies so they do not contribute to `v_max`.
-pub trait HasVelocity {
+pub(crate) trait HasVelocity {
     /// L∞ velocity in world units per second.
     fn velocity_l_inf(&self) -> Fix128;
 }
@@ -497,7 +513,7 @@ pub trait HasVelocity {
 /// `v_max` when the same bodies are present — safe under rayon
 /// dispatch (see skill §1 path 5).
 #[must_use]
-pub fn adaptive_substeps_for<B: HasVelocity>(
+pub(crate) fn adaptive_substeps_for<B: HasVelocity>(
     bodies: &[B],
     dt: Fix128,
     cfg: &AdaptiveSubStepConfig,
@@ -544,7 +560,7 @@ pub fn adaptive_substeps_for<B: HasVelocity>(
 /// (pure function of inputs, index-ordered iteration, no Fix128
 /// division, no floating-point comparison).
 #[must_use]
-pub fn adaptive_substeps_for_ccd<B: HasVelocity>(
+pub(crate) fn adaptive_substeps_for_ccd<B: HasVelocity>(
     bodies: &[B],
     dt: Fix128,
     smallest_collider_radius: Fix128,
@@ -699,7 +715,7 @@ mod adaptive_substeps_tests {
 /// sub-stepping loop. Consumers wire these up to their concrete solver
 /// so that the traversal (substeps, warm-start, sweep) stays here
 /// while the per-constraint math stays outside.
-pub trait TgsHooks {
+pub(crate) trait TgsHooks {
     /// Called once at the beginning of every sub-step. Typical
     /// implementations apply gravity and integrate velocities forward
     /// by `sub_dt`.
@@ -731,7 +747,7 @@ pub trait TgsHooks {
 ///
 /// # Panics
 /// Panics when `cfg.substeps == 0`.
-pub fn tgs_step<H: TgsHooks>(hooks: &mut H, cfg: &TgsConfig, dt: Fix128) {
+pub(crate) fn tgs_step<H: TgsHooks>(hooks: &mut H, cfg: &TgsConfig, dt: Fix128) {
     assert!(cfg.substeps > 0, "TgsConfig::substeps must be positive");
     let inv = Fix128::from_f32(1.0 / cfg.substeps as f32);
     let sub_dt = dt * inv;
@@ -762,11 +778,11 @@ use crate::solver::{BodyType, ContactConstraint, DistanceConstraint, RigidBody};
 /// Borrowed view of a [`RigidBody`] paired with an externally-provided
 /// stable identifier. Frame-to-frame persistence of the ID is the
 /// caller's responsibility.
-pub struct BodyRef<'a> {
+pub(crate) struct BodyRef<'a> {
     /// Reference to the underlying rigid body state.
-    pub body: &'a RigidBody,
+    pub(crate) body: &'a RigidBody,
     /// Stable identifier used for warm-start indexing across frames.
-    pub id: u64,
+    pub(crate) id: u64,
 }
 
 impl BodyLike for BodyRef<'_> {
@@ -779,11 +795,11 @@ impl BodyLike for BodyRef<'_> {
 }
 
 /// Borrowed view of a [`ContactConstraint`] plus its stable ID.
-pub struct ContactRef<'a> {
+pub(crate) struct ContactRef<'a> {
     /// Reference to the underlying contact constraint state.
-    pub contact: &'a ContactConstraint,
+    pub(crate) contact: &'a ContactConstraint,
     /// Stable identifier used for warm-start indexing across frames.
-    pub id: u64,
+    pub(crate) id: u64,
 }
 
 impl ContactLike for ContactRef<'_> {
@@ -799,9 +815,9 @@ impl ContactLike for ContactRef<'_> {
 }
 
 /// Borrowed view of a [`DistanceConstraint`] as a bilateral joint.
-pub struct DistanceRef<'a> {
+pub(crate) struct DistanceRef<'a> {
     /// Reference to the underlying distance constraint state.
-    pub joint: &'a DistanceConstraint,
+    pub(crate) joint: &'a DistanceConstraint,
 }
 
 impl JointLike for DistanceRef<'_> {
@@ -821,7 +837,7 @@ impl JointLike for DistanceRef<'_> {
 ///
 /// Available even without the `parallel` feature so that consumers can
 /// share a single call-site regardless of build configuration.
-pub fn dispatch_islands<F>(islands: &[Island], mut f: F)
+pub(crate) fn dispatch_islands<F>(islands: &[Island], mut f: F)
 where
     F: FnMut(&Island),
 {
@@ -838,7 +854,7 @@ where
 ///
 /// Available only with the `parallel` feature.
 #[cfg(feature = "parallel")]
-pub fn par_dispatch_islands<F>(islands: &[Island], f: F)
+pub(crate) fn par_dispatch_islands<F>(islands: &[Island], f: F)
 where
     F: Fn(&Island) + Send + Sync,
 {
