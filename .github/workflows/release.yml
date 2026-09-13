@@ -24,7 +24,12 @@ jobs:
             lib_name: libalice_physics.dylib
             static_lib_name: libalice_physics.a
             lib_dir: macOS
-          - os: macos-15
+          # macos-*-intel labels are GitHub's Intel-native macOS runners.
+          # Regular macos-14 / macos-15 / macos-26 are Apple Silicon (ARM) —
+          # building x86_64-apple-darwin from ARM requires either a cross
+          # toolchain or native Intel hardware. `macos-15-intel` keeps this
+          # build natively linked without cross-compilation setup.
+          - os: macos-15-intel
             target: x86_64-apple-darwin
             lib_name: libalice_physics.dylib
             static_lib_name: libalice_physics.a
