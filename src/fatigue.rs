@@ -37,6 +37,19 @@
 //! - Miner, "Cumulative damage in fatigue", J. Applied Mech. 12, 1945.
 //! - Suresh, *Fatigue of Materials* 2nd ed. Ch. 5.
 //! - ASME BPVC Section VIII, Division 2 (fatigue design curves).
+//!
+//! # Integration status
+//!
+//! `SnCurve`, `SnCurve::from_fdm_material`, `SpectrumEntry`, and
+//! `miner_damage` are wired into `structural_solver.rs`. Alternate
+//! factory presets (`steel_sus304` / `aluminum_a5052`), `INFINITE_LIFE`,
+//! `cycles_to_failure`, `stress_at_cycles`, and `FatigueReport` +
+//! `analyze_spectrum` convenience wrapper are reserved crate-internal
+//! API awaiting downstream integration.
+
+// Reserved fatigue helpers — pub(crate) but currently used internally
+// (miner_damage → cycles_to_failure → INFINITE_LIFE) or only by tests.
+#![allow(dead_code)]
 
 use crate::filament_db::MaterialProperties;
 use crate::math::Fix128;
@@ -78,9 +91,9 @@ impl SnCurve {
         }
     }
 
-    /// Standard steel preset (SUS304 grade): S_e = 0.5·UTS, m = 10.
+    /// Standard steel preset (SUS304 grade): S_e = 0.5·UTS, m = 10 (crate-internal).
     #[must_use]
-    pub fn steel_sus304() -> Self {
+    pub(crate) fn steel_sus304() -> Self {
         Self {
             ultimate_tensile_mpa: Fix128::from_int(505),
             endurance_stress_mpa: Fix128::from_int(240),
@@ -89,9 +102,9 @@ impl SnCurve {
         }
     }
 
-    /// Aluminum A5052 preset: S_e = 0.4·UTS, m = 6.
+    /// Aluminum A5052 preset: S_e = 0.4·UTS, m = 6 (crate-internal).
     #[must_use]
-    pub fn aluminum_a5052() -> Self {
+    pub(crate) fn aluminum_a5052() -> Self {
         Self {
             ultimate_tensile_mpa: Fix128::from_int(230),
             endurance_stress_mpa: Fix128::from_int(92),
@@ -101,8 +114,8 @@ impl SnCurve {
     }
 }
 
-/// Sentinel indicating infinite fatigue life (stress at or below endurance).
-pub const INFINITE_LIFE: u64 = u64::MAX;
+/// Sentinel indicating infinite fatigue life (stress at or below endurance, crate-internal).
+pub(crate) const INFINITE_LIFE: u64 = u64::MAX;
 
 // ============================================================================
 // Life predictions
@@ -116,7 +129,7 @@ pub const INFINITE_LIFE: u64 = u64::MAX;
 /// physically invalid; the function still returns a value (very small
 /// cycle count) but the caller should treat this as "static failure".
 #[must_use]
-pub fn cycles_to_failure(curve: &SnCurve, stress_mpa: Fix128) -> u64 {
+pub(crate) fn cycles_to_failure(curve: &SnCurve, stress_mpa: Fix128) -> u64 {
     if stress_mpa <= curve.endurance_stress_mpa {
         return INFINITE_LIFE;
     }
@@ -152,7 +165,7 @@ pub fn cycles_to_failure(curve: &SnCurve, stress_mpa: Fix128) -> u64 {
 /// The inverse of `cycles_to_failure`. For `cycles ≥ endurance_cycles`
 /// returns `endurance_stress_mpa`; for `cycles == 0` returns UTS.
 #[must_use]
-pub fn stress_at_cycles(curve: &SnCurve, cycles: u64) -> Fix128 {
+pub(crate) fn stress_at_cycles(curve: &SnCurve, cycles: u64) -> Fix128 {
     if cycles == 0 {
         return curve.ultimate_tensile_mpa;
     }
@@ -219,22 +232,22 @@ pub fn miner_damage(spectrum: &[SpectrumEntry], curve: &SnCurve) -> Fix128 {
     d
 }
 
-/// Cumulative damage report.
+/// Cumulative damage report (crate-internal).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct FatigueReport {
+pub(crate) struct FatigueReport {
     /// Total damage `D`.
-    pub damage: Fix128,
+    pub(crate) damage: Fix128,
     /// True iff `damage < 1` (part is expected to survive the spectrum).
-    pub is_safe: bool,
+    pub(crate) is_safe: bool,
     /// Safety factor `1 / D` — the multiplier by which the entire spectrum
     /// could be repeated before failure. Reported as a large sentinel for
     /// zero damage.
-    pub safety_factor: Fix128,
+    pub(crate) safety_factor: Fix128,
 }
 
-/// Convenience wrapper that produces a full report.
+/// Convenience wrapper that produces a full report (crate-internal).
 #[must_use]
-pub fn analyze_spectrum(spectrum: &[SpectrumEntry], curve: &SnCurve) -> FatigueReport {
+pub(crate) fn analyze_spectrum(spectrum: &[SpectrumEntry], curve: &SnCurve) -> FatigueReport {
     let damage = miner_damage(spectrum, curve);
     let sf = if damage.is_zero() {
         Fix128::from_int(i64::MAX >> 8)
