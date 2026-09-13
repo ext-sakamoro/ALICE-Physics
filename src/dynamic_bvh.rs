@@ -17,8 +17,8 @@ use crate::math::{Fix128, Vec3Fix};
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
-/// Null node sentinel
-pub const NULL_NODE: u32 = u32::MAX;
+/// Null node sentinel (internal implementation detail).
+pub(crate) const NULL_NODE: u32 = u32::MAX;
 
 /// Default AABB fat margin (extends AABB by this amount in each direction)
 const FAT_MARGIN: Fix128 = Fix128 {
@@ -26,9 +26,13 @@ const FAT_MARGIN: Fix128 = Fix128 {
     lo: 0x8000000000000000,
 }; // 0.5
 
-/// A node in the dynamic AABB tree
+/// A node in the dynamic AABB tree (internal representation).
+///
+/// Callers interact with the tree only through [`DynamicAabbTree`]'s
+/// `u32` proxy IDs; the node layout itself is a crate-private
+/// implementation detail.
 #[derive(Clone, Debug)]
-pub struct DynamicNode {
+pub(crate) struct DynamicNode {
     /// Fat AABB (enlarged for movement prediction)
     pub aabb: AABB,
     /// Parent node index (`NULL_NODE` if root)
