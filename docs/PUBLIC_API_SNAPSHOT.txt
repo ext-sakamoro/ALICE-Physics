@@ -1904,7 +1904,7 @@ impl core::marker::Unpin for alice_physics::contact_cache::BodyPairKey
 impl core::marker::UnsafeUnpin for alice_physics::contact_cache::BodyPairKey
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::contact_cache::BodyPairKey
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::contact_cache::BodyPairKey
-pub struct alice_physics::contact_cache::CachedContactPoint
+#[non_exhaustive] pub struct alice_physics::contact_cache::CachedContactPoint
 pub alice_physics::contact_cache::CachedContactPoint::age: u32
 pub alice_physics::contact_cache::CachedContactPoint::depth: alice_physics::math::Fix128
 pub alice_physics::contact_cache::CachedContactPoint::lambda_n: alice_physics::math::Fix128
@@ -1956,7 +1956,7 @@ impl core::marker::Unpin for alice_physics::contact_cache::ContactCache
 impl core::marker::UnsafeUnpin for alice_physics::contact_cache::ContactCache
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::contact_cache::ContactCache
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::contact_cache::ContactCache
-pub struct alice_physics::contact_cache::ContactManifold
+#[non_exhaustive] pub struct alice_physics::contact_cache::ContactManifold
 pub alice_physics::contact_cache::ContactManifold::friction: alice_physics::math::Fix128
 pub alice_physics::contact_cache::ContactManifold::normal: alice_physics::math::Vec3Fix
 pub alice_physics::contact_cache::ContactManifold::pair: alice_physics::contact_cache::BodyPairKey
@@ -2186,7 +2186,7 @@ impl core::marker::Unpin for alice_physics::debug_render::DebugColor
 impl core::marker::UnsafeUnpin for alice_physics::debug_render::DebugColor
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::debug_render::DebugColor
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::debug_render::DebugColor
-pub struct alice_physics::debug_render::DebugDrawData
+#[non_exhaustive] pub struct alice_physics::debug_render::DebugDrawData
 pub alice_physics::debug_render::DebugDrawData::lines: alloc::vec::Vec<alice_physics::debug_render::DebugLine>
 pub alice_physics::debug_render::DebugDrawData::points: alloc::vec::Vec<alice_physics::debug_render::DebugPoint>
 impl alice_physics::debug_render::DebugDrawData
@@ -2239,7 +2239,7 @@ impl core::marker::Unpin for alice_physics::debug_render::DebugDrawFlags
 impl core::marker::UnsafeUnpin for alice_physics::debug_render::DebugDrawFlags
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::debug_render::DebugDrawFlags
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::debug_render::DebugDrawFlags
-pub struct alice_physics::debug_render::DebugLine
+#[non_exhaustive] pub struct alice_physics::debug_render::DebugLine
 pub alice_physics::debug_render::DebugLine::color: alice_physics::debug_render::DebugColor
 pub alice_physics::debug_render::DebugLine::end: alice_physics::math::Vec3Fix
 pub alice_physics::debug_render::DebugLine::start: alice_physics::math::Vec3Fix
@@ -2259,7 +2259,7 @@ impl core::marker::Unpin for alice_physics::debug_render::DebugLine
 impl core::marker::UnsafeUnpin for alice_physics::debug_render::DebugLine
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::debug_render::DebugLine
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::debug_render::DebugLine
-pub struct alice_physics::debug_render::DebugPoint
+#[non_exhaustive] pub struct alice_physics::debug_render::DebugPoint
 pub alice_physics::debug_render::DebugPoint::color: alice_physics::debug_render::DebugColor
 pub alice_physics::debug_render::DebugPoint::position: alice_physics::math::Vec3Fix
 pub alice_physics::debug_render::DebugPoint::size: alice_physics::math::Fix128
@@ -6003,7 +6003,6 @@ impl core::marker::Unpin for alice_physics::plastic::PlasticState
 impl core::marker::UnsafeUnpin for alice_physics::plastic::PlasticState
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::plastic::PlasticState
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::plastic::PlasticState
-pub fn alice_physics::plastic::radial_return_1d(alice_physics::math::Fix128, &alice_physics::plastic::PlasticModel, &mut alice_physics::plastic::PlasticState) -> PlasticStep
 pub mod alice_physics::prelude
 pub mod alice_physics::prelude::layers
 pub const alice_physics::prelude::layers::ALL: u32
@@ -7378,7 +7377,7 @@ impl core::marker::Unpin for alice_physics::event::ContactEvent
 impl core::marker::UnsafeUnpin for alice_physics::event::ContactEvent
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::event::ContactEvent
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::event::ContactEvent
-pub struct alice_physics::prelude::ContactManifold
+#[non_exhaustive] pub struct alice_physics::prelude::ContactManifold
 pub alice_physics::prelude::ContactManifold::friction: alice_physics::math::Fix128
 pub alice_physics::prelude::ContactManifold::normal: alice_physics::math::Vec3Fix
 pub alice_physics::prelude::ContactManifold::pair: alice_physics::contact_cache::BodyPairKey
@@ -7582,7 +7581,7 @@ impl core::marker::Unpin for alice_physics::debug_render::DebugColor
 impl core::marker::UnsafeUnpin for alice_physics::debug_render::DebugColor
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::debug_render::DebugColor
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::debug_render::DebugColor
-pub struct alice_physics::prelude::DebugDrawData
+#[non_exhaustive] pub struct alice_physics::prelude::DebugDrawData
 pub alice_physics::prelude::DebugDrawData::lines: alloc::vec::Vec<alice_physics::debug_render::DebugLine>
 pub alice_physics::prelude::DebugDrawData::points: alloc::vec::Vec<alice_physics::debug_render::DebugPoint>
 impl alice_physics::debug_render::DebugDrawData
@@ -9307,7 +9306,7 @@ impl core::marker::Unpin for alice_physics::profiling::PhysicsProfiler
 impl core::marker::UnsafeUnpin for alice_physics::profiling::PhysicsProfiler
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::profiling::PhysicsProfiler
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::profiling::PhysicsProfiler
-pub struct alice_physics::prelude::PhysicsScene
+#[non_exhaustive] pub struct alice_physics::prelude::PhysicsScene
 pub alice_physics::prelude::PhysicsScene::bodies: alloc::vec::Vec<alice_physics::scene_io::SerializedBody>
 pub alice_physics::prelude::PhysicsScene::config: alice_physics::scene_io::PhysicsConfig
 pub alice_physics::prelude::PhysicsScene::joints: alloc::vec::Vec<alice_physics::scene_io::SerializedJoint>
@@ -11719,7 +11718,7 @@ impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::rope_attach::Rop
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::rope_attach::RopeAttachment
 pub fn alice_physics::rope_attach::solve_rope_attachments(&[alice_physics::rope_attach::RopeAttachment], &mut [alice_physics::math::Vec3Fix], &mut [alice_physics::math::Vec3Fix], &[alice_physics::solver::RigidBody], alice_physics::math::Fix128) -> alloc::vec::Vec<core::option::Option<usize>>
 pub mod alice_physics::scene_io
-pub struct alice_physics::scene_io::PhysicsConfig
+#[non_exhaustive] pub struct alice_physics::scene_io::PhysicsConfig
 pub alice_physics::scene_io::PhysicsConfig::damping: [i64; 2]
 pub alice_physics::scene_io::PhysicsConfig::gravity: [i64; 6]
 pub alice_physics::scene_io::PhysicsConfig::iterations: u32
@@ -11741,7 +11740,7 @@ impl core::marker::Unpin for alice_physics::scene_io::PhysicsConfig
 impl core::marker::UnsafeUnpin for alice_physics::scene_io::PhysicsConfig
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::scene_io::PhysicsConfig
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::scene_io::PhysicsConfig
-pub struct alice_physics::scene_io::PhysicsScene
+#[non_exhaustive] pub struct alice_physics::scene_io::PhysicsScene
 pub alice_physics::scene_io::PhysicsScene::bodies: alloc::vec::Vec<alice_physics::scene_io::SerializedBody>
 pub alice_physics::scene_io::PhysicsScene::config: alice_physics::scene_io::PhysicsConfig
 pub alice_physics::scene_io::PhysicsScene::joints: alloc::vec::Vec<alice_physics::scene_io::SerializedJoint>
@@ -13336,555 +13335,6 @@ pub trait alice_physics::solver::ContactModifier: core::marker::Send + core::mar
 pub fn alice_physics::solver::ContactModifier::modify_contact(&self, usize, usize, &mut alice_physics::collider::Contact, &mut alice_physics::math::Fix128, &mut alice_physics::math::Fix128) -> bool
 pub type alice_physics::solver::PhysicsConfig = alice_physics::solver::SolverConfig
 pub type alice_physics::solver::PreSolveHook = alloc::boxed::Box<(dyn core::ops::function::Fn(usize, usize, &alice_physics::collider::Contact) -> bool + core::marker::Send + core::marker::Sync)>
-pub mod alice_physics::solver_tgs
-pub struct alice_physics::solver_tgs::AdaptiveSubStepConfig
-pub alice_physics::solver_tgs::AdaptiveSubStepConfig::max_substeps: u32
-pub alice_physics::solver_tgs::AdaptiveSubStepConfig::max_translation_per_step: alice_physics::math::Fix128
-pub alice_physics::solver_tgs::AdaptiveSubStepConfig::min_substeps: u32
-impl core::clone::Clone for alice_physics::solver_tgs::AdaptiveSubStepConfig
-pub fn alice_physics::solver_tgs::AdaptiveSubStepConfig::clone(&self) -> alice_physics::solver_tgs::AdaptiveSubStepConfig
-impl core::cmp::Eq for alice_physics::solver_tgs::AdaptiveSubStepConfig
-impl core::cmp::PartialEq for alice_physics::solver_tgs::AdaptiveSubStepConfig
-pub fn alice_physics::solver_tgs::AdaptiveSubStepConfig::eq(&self, &alice_physics::solver_tgs::AdaptiveSubStepConfig) -> bool
-impl core::default::Default for alice_physics::solver_tgs::AdaptiveSubStepConfig
-pub fn alice_physics::solver_tgs::AdaptiveSubStepConfig::default() -> Self
-impl core::fmt::Debug for alice_physics::solver_tgs::AdaptiveSubStepConfig
-pub fn alice_physics::solver_tgs::AdaptiveSubStepConfig::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Copy for alice_physics::solver_tgs::AdaptiveSubStepConfig
-impl core::marker::StructuralPartialEq for alice_physics::solver_tgs::AdaptiveSubStepConfig
-impl core::marker::Freeze for alice_physics::solver_tgs::AdaptiveSubStepConfig
-impl core::marker::Send for alice_physics::solver_tgs::AdaptiveSubStepConfig
-impl core::marker::Sync for alice_physics::solver_tgs::AdaptiveSubStepConfig
-impl core::marker::Unpin for alice_physics::solver_tgs::AdaptiveSubStepConfig
-impl core::marker::UnsafeUnpin for alice_physics::solver_tgs::AdaptiveSubStepConfig
-impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::solver_tgs::AdaptiveSubStepConfig
-impl core::panic::unwind_safe::UnwindSafe for alice_physics::solver_tgs::AdaptiveSubStepConfig
-pub struct alice_physics::solver_tgs::BodyRef<'a>
-pub alice_physics::solver_tgs::BodyRef::body: &'a alice_physics::solver::RigidBody
-pub alice_physics::solver_tgs::BodyRef::id: u64
-impl alice_physics::solver_tgs::BodyLike for alice_physics::solver_tgs::BodyRef<'_>
-pub fn alice_physics::solver_tgs::BodyRef<'_>::is_dynamic(&self) -> bool
-pub fn alice_physics::solver_tgs::BodyRef<'_>::stable_id(&self) -> u64
-impl<'a> core::marker::Freeze for alice_physics::solver_tgs::BodyRef<'a>
-impl<'a> core::marker::Send for alice_physics::solver_tgs::BodyRef<'a>
-impl<'a> core::marker::Sync for alice_physics::solver_tgs::BodyRef<'a>
-impl<'a> core::marker::Unpin for alice_physics::solver_tgs::BodyRef<'a>
-impl<'a> core::marker::UnsafeUnpin for alice_physics::solver_tgs::BodyRef<'a>
-impl<'a> core::panic::unwind_safe::RefUnwindSafe for alice_physics::solver_tgs::BodyRef<'a>
-impl<'a> core::panic::unwind_safe::UnwindSafe for alice_physics::solver_tgs::BodyRef<'a>
-pub struct alice_physics::solver_tgs::CachedImpulse
-pub alice_physics::solver_tgs::CachedImpulse::normal: alice_physics::math::Fix128
-pub alice_physics::solver_tgs::CachedImpulse::tangent1: alice_physics::math::Fix128
-pub alice_physics::solver_tgs::CachedImpulse::tangent2: alice_physics::math::Fix128
-impl core::clone::Clone for alice_physics::solver_tgs::CachedImpulse
-pub fn alice_physics::solver_tgs::CachedImpulse::clone(&self) -> alice_physics::solver_tgs::CachedImpulse
-impl core::cmp::Eq for alice_physics::solver_tgs::CachedImpulse
-impl core::cmp::PartialEq for alice_physics::solver_tgs::CachedImpulse
-pub fn alice_physics::solver_tgs::CachedImpulse::eq(&self, &alice_physics::solver_tgs::CachedImpulse) -> bool
-impl core::default::Default for alice_physics::solver_tgs::CachedImpulse
-pub fn alice_physics::solver_tgs::CachedImpulse::default() -> alice_physics::solver_tgs::CachedImpulse
-impl core::fmt::Debug for alice_physics::solver_tgs::CachedImpulse
-pub fn alice_physics::solver_tgs::CachedImpulse::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Copy for alice_physics::solver_tgs::CachedImpulse
-impl core::marker::StructuralPartialEq for alice_physics::solver_tgs::CachedImpulse
-impl core::marker::Freeze for alice_physics::solver_tgs::CachedImpulse
-impl core::marker::Send for alice_physics::solver_tgs::CachedImpulse
-impl core::marker::Sync for alice_physics::solver_tgs::CachedImpulse
-impl core::marker::Unpin for alice_physics::solver_tgs::CachedImpulse
-impl core::marker::UnsafeUnpin for alice_physics::solver_tgs::CachedImpulse
-impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::solver_tgs::CachedImpulse
-impl core::panic::unwind_safe::UnwindSafe for alice_physics::solver_tgs::CachedImpulse
-pub struct alice_physics::solver_tgs::ContactRef<'a>
-pub alice_physics::solver_tgs::ContactRef::contact: &'a alice_physics::solver::ContactConstraint
-pub alice_physics::solver_tgs::ContactRef::id: u64
-impl alice_physics::solver_tgs::ContactLike for alice_physics::solver_tgs::ContactRef<'_>
-pub fn alice_physics::solver_tgs::ContactRef<'_>::body_a(&self) -> usize
-pub fn alice_physics::solver_tgs::ContactRef<'_>::body_b(&self) -> usize
-pub fn alice_physics::solver_tgs::ContactRef<'_>::stable_id(&self) -> u64
-impl<'a> core::marker::Freeze for alice_physics::solver_tgs::ContactRef<'a>
-impl<'a> core::marker::Send for alice_physics::solver_tgs::ContactRef<'a>
-impl<'a> core::marker::Sync for alice_physics::solver_tgs::ContactRef<'a>
-impl<'a> core::marker::Unpin for alice_physics::solver_tgs::ContactRef<'a>
-impl<'a> core::marker::UnsafeUnpin for alice_physics::solver_tgs::ContactRef<'a>
-impl<'a> core::panic::unwind_safe::RefUnwindSafe for alice_physics::solver_tgs::ContactRef<'a>
-impl<'a> core::panic::unwind_safe::UnwindSafe for alice_physics::solver_tgs::ContactRef<'a>
-pub struct alice_physics::solver_tgs::DistanceRef<'a>
-pub alice_physics::solver_tgs::DistanceRef::joint: &'a alice_physics::solver::DistanceConstraint
-impl alice_physics::solver_tgs::JointLike for alice_physics::solver_tgs::DistanceRef<'_>
-pub fn alice_physics::solver_tgs::DistanceRef<'_>::body_a(&self) -> usize
-pub fn alice_physics::solver_tgs::DistanceRef<'_>::body_b(&self) -> usize
-impl<'a> core::marker::Freeze for alice_physics::solver_tgs::DistanceRef<'a>
-impl<'a> core::marker::Send for alice_physics::solver_tgs::DistanceRef<'a>
-impl<'a> core::marker::Sync for alice_physics::solver_tgs::DistanceRef<'a>
-impl<'a> core::marker::Unpin for alice_physics::solver_tgs::DistanceRef<'a>
-impl<'a> core::marker::UnsafeUnpin for alice_physics::solver_tgs::DistanceRef<'a>
-impl<'a> core::panic::unwind_safe::RefUnwindSafe for alice_physics::solver_tgs::DistanceRef<'a>
-impl<'a> core::panic::unwind_safe::UnwindSafe for alice_physics::solver_tgs::DistanceRef<'a>
-pub struct alice_physics::solver_tgs::ImpulseCache
-impl alice_physics::solver_tgs::ImpulseCache
-pub fn alice_physics::solver_tgs::ImpulseCache::clear(&mut self)
-pub fn alice_physics::solver_tgs::ImpulseCache::is_empty(&self) -> bool
-pub fn alice_physics::solver_tgs::ImpulseCache::len(&self) -> usize
-pub fn alice_physics::solver_tgs::ImpulseCache::new() -> Self
-pub fn alice_physics::solver_tgs::ImpulseCache::peek(&self, u64) -> alice_physics::solver_tgs::CachedImpulse
-pub fn alice_physics::solver_tgs::ImpulseCache::reset_stats(&mut self)
-pub fn alice_physics::solver_tgs::ImpulseCache::set(&mut self, u64, alice_physics::solver_tgs::CachedImpulse)
-pub fn alice_physics::solver_tgs::ImpulseCache::stats(&self) -> alice_physics::solver_tgs::ImpulseCacheStats
-pub fn alice_physics::solver_tgs::ImpulseCache::sweep(&mut self)
-pub fn alice_physics::solver_tgs::ImpulseCache::take(&mut self, u64) -> alice_physics::solver_tgs::CachedImpulse
-impl core::clone::Clone for alice_physics::solver_tgs::ImpulseCache
-pub fn alice_physics::solver_tgs::ImpulseCache::clone(&self) -> alice_physics::solver_tgs::ImpulseCache
-impl core::default::Default for alice_physics::solver_tgs::ImpulseCache
-pub fn alice_physics::solver_tgs::ImpulseCache::default() -> alice_physics::solver_tgs::ImpulseCache
-impl core::fmt::Debug for alice_physics::solver_tgs::ImpulseCache
-pub fn alice_physics::solver_tgs::ImpulseCache::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Freeze for alice_physics::solver_tgs::ImpulseCache
-impl core::marker::Send for alice_physics::solver_tgs::ImpulseCache
-impl core::marker::Sync for alice_physics::solver_tgs::ImpulseCache
-impl core::marker::Unpin for alice_physics::solver_tgs::ImpulseCache
-impl core::marker::UnsafeUnpin for alice_physics::solver_tgs::ImpulseCache
-impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::solver_tgs::ImpulseCache
-impl core::panic::unwind_safe::UnwindSafe for alice_physics::solver_tgs::ImpulseCache
-pub struct alice_physics::solver_tgs::ImpulseCacheStats
-pub alice_physics::solver_tgs::ImpulseCacheStats::hits: u64
-pub alice_physics::solver_tgs::ImpulseCacheStats::misses: u64
-impl alice_physics::solver_tgs::ImpulseCacheStats
-pub fn alice_physics::solver_tgs::ImpulseCacheStats::hit_rate(&self) -> f64
-impl core::clone::Clone for alice_physics::solver_tgs::ImpulseCacheStats
-pub fn alice_physics::solver_tgs::ImpulseCacheStats::clone(&self) -> alice_physics::solver_tgs::ImpulseCacheStats
-impl core::default::Default for alice_physics::solver_tgs::ImpulseCacheStats
-pub fn alice_physics::solver_tgs::ImpulseCacheStats::default() -> alice_physics::solver_tgs::ImpulseCacheStats
-impl core::fmt::Debug for alice_physics::solver_tgs::ImpulseCacheStats
-pub fn alice_physics::solver_tgs::ImpulseCacheStats::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Copy for alice_physics::solver_tgs::ImpulseCacheStats
-impl core::marker::Freeze for alice_physics::solver_tgs::ImpulseCacheStats
-impl core::marker::Send for alice_physics::solver_tgs::ImpulseCacheStats
-impl core::marker::Sync for alice_physics::solver_tgs::ImpulseCacheStats
-impl core::marker::Unpin for alice_physics::solver_tgs::ImpulseCacheStats
-impl core::marker::UnsafeUnpin for alice_physics::solver_tgs::ImpulseCacheStats
-impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::solver_tgs::ImpulseCacheStats
-impl core::panic::unwind_safe::UnwindSafe for alice_physics::solver_tgs::ImpulseCacheStats
-pub struct alice_physics::solver_tgs::Island
-pub alice_physics::solver_tgs::Island::bodies: alloc::vec::Vec<usize>
-pub alice_physics::solver_tgs::Island::contacts: alloc::vec::Vec<usize>
-pub alice_physics::solver_tgs::Island::joints: alloc::vec::Vec<usize>
-impl core::clone::Clone for alice_physics::solver_tgs::Island
-pub fn alice_physics::solver_tgs::Island::clone(&self) -> alice_physics::solver_tgs::Island
-impl core::cmp::Eq for alice_physics::solver_tgs::Island
-impl core::cmp::PartialEq for alice_physics::solver_tgs::Island
-pub fn alice_physics::solver_tgs::Island::eq(&self, &alice_physics::solver_tgs::Island) -> bool
-impl core::default::Default for alice_physics::solver_tgs::Island
-pub fn alice_physics::solver_tgs::Island::default() -> alice_physics::solver_tgs::Island
-impl core::fmt::Debug for alice_physics::solver_tgs::Island
-pub fn alice_physics::solver_tgs::Island::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for alice_physics::solver_tgs::Island
-impl core::marker::Freeze for alice_physics::solver_tgs::Island
-impl core::marker::Send for alice_physics::solver_tgs::Island
-impl core::marker::Sync for alice_physics::solver_tgs::Island
-impl core::marker::Unpin for alice_physics::solver_tgs::Island
-impl core::marker::UnsafeUnpin for alice_physics::solver_tgs::Island
-impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::solver_tgs::Island
-impl core::panic::unwind_safe::UnwindSafe for alice_physics::solver_tgs::Island
-pub struct alice_physics::solver_tgs::TgsConfig
-pub alice_physics::solver_tgs::TgsConfig::position_iters: u32
-pub alice_physics::solver_tgs::TgsConfig::substeps: u32
-pub alice_physics::solver_tgs::TgsConfig::velocity_iters: u32
-pub alice_physics::solver_tgs::TgsConfig::warmstart: bool
-impl core::clone::Clone for alice_physics::solver_tgs::TgsConfig
-pub fn alice_physics::solver_tgs::TgsConfig::clone(&self) -> alice_physics::solver_tgs::TgsConfig
-impl core::cmp::Eq for alice_physics::solver_tgs::TgsConfig
-impl core::cmp::PartialEq for alice_physics::solver_tgs::TgsConfig
-pub fn alice_physics::solver_tgs::TgsConfig::eq(&self, &alice_physics::solver_tgs::TgsConfig) -> bool
-impl core::default::Default for alice_physics::solver_tgs::TgsConfig
-pub fn alice_physics::solver_tgs::TgsConfig::default() -> Self
-impl core::fmt::Debug for alice_physics::solver_tgs::TgsConfig
-pub fn alice_physics::solver_tgs::TgsConfig::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Copy for alice_physics::solver_tgs::TgsConfig
-impl core::marker::StructuralPartialEq for alice_physics::solver_tgs::TgsConfig
-impl core::marker::Freeze for alice_physics::solver_tgs::TgsConfig
-impl core::marker::Send for alice_physics::solver_tgs::TgsConfig
-impl core::marker::Sync for alice_physics::solver_tgs::TgsConfig
-impl core::marker::Unpin for alice_physics::solver_tgs::TgsConfig
-impl core::marker::UnsafeUnpin for alice_physics::solver_tgs::TgsConfig
-impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::solver_tgs::TgsConfig
-impl core::panic::unwind_safe::UnwindSafe for alice_physics::solver_tgs::TgsConfig
-pub struct alice_physics::solver_tgs::UnionFind
-impl alice_physics::solver_tgs::UnionFind
-pub fn alice_physics::solver_tgs::UnionFind::find(&mut self, usize) -> usize
-pub fn alice_physics::solver_tgs::UnionFind::is_empty(&self) -> bool
-pub fn alice_physics::solver_tgs::UnionFind::len(&self) -> usize
-pub fn alice_physics::solver_tgs::UnionFind::new(usize) -> Self
-pub fn alice_physics::solver_tgs::UnionFind::union(&mut self, usize, usize) -> bool
-impl core::clone::Clone for alice_physics::solver_tgs::UnionFind
-pub fn alice_physics::solver_tgs::UnionFind::clone(&self) -> alice_physics::solver_tgs::UnionFind
-impl core::fmt::Debug for alice_physics::solver_tgs::UnionFind
-pub fn alice_physics::solver_tgs::UnionFind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Freeze for alice_physics::solver_tgs::UnionFind
-impl core::marker::Send for alice_physics::solver_tgs::UnionFind
-impl core::marker::Sync for alice_physics::solver_tgs::UnionFind
-impl core::marker::Unpin for alice_physics::solver_tgs::UnionFind
-impl core::marker::UnsafeUnpin for alice_physics::solver_tgs::UnionFind
-impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::solver_tgs::UnionFind
-impl core::panic::unwind_safe::UnwindSafe for alice_physics::solver_tgs::UnionFind
-pub trait alice_physics::solver_tgs::BodyLike
-pub fn alice_physics::solver_tgs::BodyLike::is_dynamic(&self) -> bool
-pub fn alice_physics::solver_tgs::BodyLike::stable_id(&self) -> u64
-impl alice_physics::solver_tgs::BodyLike for alice_physics::solver_tgs::BodyRef<'_>
-pub fn alice_physics::solver_tgs::BodyRef<'_>::is_dynamic(&self) -> bool
-pub fn alice_physics::solver_tgs::BodyRef<'_>::stable_id(&self) -> u64
-impl alice_physics::solver_tgs::BodyLike for alice_physics::solver_tgs_hooks::SimpleBodyState
-pub fn alice_physics::solver_tgs_hooks::SimpleBodyState::is_dynamic(&self) -> bool
-pub fn alice_physics::solver_tgs_hooks::SimpleBodyState::stable_id(&self) -> u64
-impl alice_physics::solver_tgs::BodyLike for alice_physics::solver_tgs_hooks_6dof::Body6DofState
-pub fn alice_physics::solver_tgs_hooks_6dof::Body6DofState::is_dynamic(&self) -> bool
-pub fn alice_physics::solver_tgs_hooks_6dof::Body6DofState::stable_id(&self) -> u64
-impl alice_physics::solver_tgs::BodyLike for alice_physics::solver_tgs_hooks_6dof_oriented::Body6DofOrientedState
-pub fn alice_physics::solver_tgs_hooks_6dof_oriented::Body6DofOrientedState::is_dynamic(&self) -> bool
-pub fn alice_physics::solver_tgs_hooks_6dof_oriented::Body6DofOrientedState::stable_id(&self) -> u64
-pub trait alice_physics::solver_tgs::ContactLike
-pub fn alice_physics::solver_tgs::ContactLike::body_a(&self) -> usize
-pub fn alice_physics::solver_tgs::ContactLike::body_b(&self) -> usize
-pub fn alice_physics::solver_tgs::ContactLike::stable_id(&self) -> u64
-impl alice_physics::solver_tgs::ContactLike for alice_physics::solver_tgs::ContactRef<'_>
-pub fn alice_physics::solver_tgs::ContactRef<'_>::body_a(&self) -> usize
-pub fn alice_physics::solver_tgs::ContactRef<'_>::body_b(&self) -> usize
-pub fn alice_physics::solver_tgs::ContactRef<'_>::stable_id(&self) -> u64
-impl alice_physics::solver_tgs::ContactLike for alice_physics::solver_tgs_hooks::SimpleContact
-pub fn alice_physics::solver_tgs_hooks::SimpleContact::body_a(&self) -> usize
-pub fn alice_physics::solver_tgs_hooks::SimpleContact::body_b(&self) -> usize
-pub fn alice_physics::solver_tgs_hooks::SimpleContact::stable_id(&self) -> u64
-impl alice_physics::solver_tgs::ContactLike for alice_physics::solver_tgs_hooks_6dof::Contact6Dof
-pub fn alice_physics::solver_tgs_hooks_6dof::Contact6Dof::body_a(&self) -> usize
-pub fn alice_physics::solver_tgs_hooks_6dof::Contact6Dof::body_b(&self) -> usize
-pub fn alice_physics::solver_tgs_hooks_6dof::Contact6Dof::stable_id(&self) -> u64
-impl alice_physics::solver_tgs::ContactLike for alice_physics::solver_tgs_hooks_6dof_oriented::ContactOriented
-pub fn alice_physics::solver_tgs_hooks_6dof_oriented::ContactOriented::body_a(&self) -> usize
-pub fn alice_physics::solver_tgs_hooks_6dof_oriented::ContactOriented::body_b(&self) -> usize
-pub fn alice_physics::solver_tgs_hooks_6dof_oriented::ContactOriented::stable_id(&self) -> u64
-pub trait alice_physics::solver_tgs::HasVelocity
-pub fn alice_physics::solver_tgs::HasVelocity::velocity_l_inf(&self) -> alice_physics::math::Fix128
-pub trait alice_physics::solver_tgs::JointLike
-pub fn alice_physics::solver_tgs::JointLike::body_a(&self) -> usize
-pub fn alice_physics::solver_tgs::JointLike::body_b(&self) -> usize
-impl alice_physics::solver_tgs::JointLike for alice_physics::solver_tgs::DistanceRef<'_>
-pub fn alice_physics::solver_tgs::DistanceRef<'_>::body_a(&self) -> usize
-pub fn alice_physics::solver_tgs::DistanceRef<'_>::body_b(&self) -> usize
-pub trait alice_physics::solver_tgs::TgsHooks
-pub fn alice_physics::solver_tgs::TgsHooks::begin_substep(&mut self, alice_physics::math::Fix128)
-pub fn alice_physics::solver_tgs::TgsHooks::end_substep(&mut self, alice_physics::math::Fix128)
-pub fn alice_physics::solver_tgs::TgsHooks::position_iteration(&mut self, alice_physics::math::Fix128)
-pub fn alice_physics::solver_tgs::TgsHooks::velocity_iteration(&mut self, alice_physics::math::Fix128)
-impl alice_physics::solver_tgs::TgsHooks for alice_physics::solver_tgs_hooks::PgsHooks<'_>
-pub fn alice_physics::solver_tgs_hooks::PgsHooks<'_>::begin_substep(&mut self, alice_physics::math::Fix128)
-pub fn alice_physics::solver_tgs_hooks::PgsHooks<'_>::end_substep(&mut self, alice_physics::math::Fix128)
-pub fn alice_physics::solver_tgs_hooks::PgsHooks<'_>::position_iteration(&mut self, alice_physics::math::Fix128)
-pub fn alice_physics::solver_tgs_hooks::PgsHooks<'_>::velocity_iteration(&mut self, alice_physics::math::Fix128)
-impl alice_physics::solver_tgs::TgsHooks for alice_physics::solver_tgs_hooks_6dof::Pgs6DofHooks<'_>
-pub fn alice_physics::solver_tgs_hooks_6dof::Pgs6DofHooks<'_>::begin_substep(&mut self, alice_physics::math::Fix128)
-pub fn alice_physics::solver_tgs_hooks_6dof::Pgs6DofHooks<'_>::end_substep(&mut self, alice_physics::math::Fix128)
-pub fn alice_physics::solver_tgs_hooks_6dof::Pgs6DofHooks<'_>::position_iteration(&mut self, alice_physics::math::Fix128)
-pub fn alice_physics::solver_tgs_hooks_6dof::Pgs6DofHooks<'_>::velocity_iteration(&mut self, alice_physics::math::Fix128)
-impl alice_physics::solver_tgs::TgsHooks for alice_physics::solver_tgs_hooks_6dof_oriented::Pgs6DofOrientedHooks<'_>
-pub fn alice_physics::solver_tgs_hooks_6dof_oriented::Pgs6DofOrientedHooks<'_>::begin_substep(&mut self, alice_physics::math::Fix128)
-pub fn alice_physics::solver_tgs_hooks_6dof_oriented::Pgs6DofOrientedHooks<'_>::end_substep(&mut self, alice_physics::math::Fix128)
-pub fn alice_physics::solver_tgs_hooks_6dof_oriented::Pgs6DofOrientedHooks<'_>::position_iteration(&mut self, alice_physics::math::Fix128)
-pub fn alice_physics::solver_tgs_hooks_6dof_oriented::Pgs6DofOrientedHooks<'_>::velocity_iteration(&mut self, alice_physics::math::Fix128)
-pub fn alice_physics::solver_tgs::adaptive_substeps_for<B: alice_physics::solver_tgs::HasVelocity>(&[B], alice_physics::math::Fix128, &alice_physics::solver_tgs::AdaptiveSubStepConfig) -> u32
-pub fn alice_physics::solver_tgs::adaptive_substeps_for_ccd<B: alice_physics::solver_tgs::HasVelocity>(&[B], alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128, &alice_physics::solver_tgs::AdaptiveSubStepConfig) -> u32
-pub fn alice_physics::solver_tgs::build_islands<B: alice_physics::solver_tgs::BodyLike, C: alice_physics::solver_tgs::ContactLike, J: alice_physics::solver_tgs::JointLike>(&[B], &[C], &[J]) -> alloc::vec::Vec<alice_physics::solver_tgs::Island>
-pub fn alice_physics::solver_tgs::dispatch_islands<F>(&[alice_physics::solver_tgs::Island], F) where F: core::ops::function::FnMut(&alice_physics::solver_tgs::Island)
-pub fn alice_physics::solver_tgs::par_dispatch_islands<F>(&[alice_physics::solver_tgs::Island], F) where F: core::ops::function::Fn(&alice_physics::solver_tgs::Island) + core::marker::Send + core::marker::Sync
-pub fn alice_physics::solver_tgs::tgs_step<H: alice_physics::solver_tgs::TgsHooks>(&mut H, &alice_physics::solver_tgs::TgsConfig, alice_physics::math::Fix128)
-pub mod alice_physics::solver_tgs_hooks
-pub struct alice_physics::solver_tgs_hooks::PgsConfig
-pub alice_physics::solver_tgs_hooks::PgsConfig::baumgarte: alice_physics::math::Fix128
-pub alice_physics::solver_tgs_hooks::PgsConfig::gravity: [alice_physics::math::Fix128; 3]
-pub alice_physics::solver_tgs_hooks::PgsConfig::slop: alice_physics::math::Fix128
-pub alice_physics::solver_tgs_hooks::PgsConfig::warmstart: bool
-impl core::clone::Clone for alice_physics::solver_tgs_hooks::PgsConfig
-pub fn alice_physics::solver_tgs_hooks::PgsConfig::clone(&self) -> alice_physics::solver_tgs_hooks::PgsConfig
-impl core::default::Default for alice_physics::solver_tgs_hooks::PgsConfig
-pub fn alice_physics::solver_tgs_hooks::PgsConfig::default() -> Self
-impl core::fmt::Debug for alice_physics::solver_tgs_hooks::PgsConfig
-pub fn alice_physics::solver_tgs_hooks::PgsConfig::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Copy for alice_physics::solver_tgs_hooks::PgsConfig
-impl core::marker::Freeze for alice_physics::solver_tgs_hooks::PgsConfig
-impl core::marker::Send for alice_physics::solver_tgs_hooks::PgsConfig
-impl core::marker::Sync for alice_physics::solver_tgs_hooks::PgsConfig
-impl core::marker::Unpin for alice_physics::solver_tgs_hooks::PgsConfig
-impl core::marker::UnsafeUnpin for alice_physics::solver_tgs_hooks::PgsConfig
-impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::solver_tgs_hooks::PgsConfig
-impl core::panic::unwind_safe::UnwindSafe for alice_physics::solver_tgs_hooks::PgsConfig
-pub struct alice_physics::solver_tgs_hooks::PgsHooks<'a>
-pub alice_physics::solver_tgs_hooks::PgsHooks::bodies: &'a mut [alice_physics::solver_tgs_hooks::SimpleBodyState]
-pub alice_physics::solver_tgs_hooks::PgsHooks::cache: &'a mut alice_physics::solver_tgs::ImpulseCache
-pub alice_physics::solver_tgs_hooks::PgsHooks::cfg: alice_physics::solver_tgs_hooks::PgsConfig
-pub alice_physics::solver_tgs_hooks::PgsHooks::contacts: &'a mut [alice_physics::solver_tgs_hooks::SimpleContact]
-impl alice_physics::solver_tgs::TgsHooks for alice_physics::solver_tgs_hooks::PgsHooks<'_>
-pub fn alice_physics::solver_tgs_hooks::PgsHooks<'_>::begin_substep(&mut self, alice_physics::math::Fix128)
-pub fn alice_physics::solver_tgs_hooks::PgsHooks<'_>::end_substep(&mut self, alice_physics::math::Fix128)
-pub fn alice_physics::solver_tgs_hooks::PgsHooks<'_>::position_iteration(&mut self, alice_physics::math::Fix128)
-pub fn alice_physics::solver_tgs_hooks::PgsHooks<'_>::velocity_iteration(&mut self, alice_physics::math::Fix128)
-impl<'a> core::marker::Freeze for alice_physics::solver_tgs_hooks::PgsHooks<'a>
-impl<'a> core::marker::Send for alice_physics::solver_tgs_hooks::PgsHooks<'a>
-impl<'a> core::marker::Sync for alice_physics::solver_tgs_hooks::PgsHooks<'a>
-impl<'a> core::marker::Unpin for alice_physics::solver_tgs_hooks::PgsHooks<'a>
-impl<'a> core::marker::UnsafeUnpin for alice_physics::solver_tgs_hooks::PgsHooks<'a>
-impl<'a> core::panic::unwind_safe::RefUnwindSafe for alice_physics::solver_tgs_hooks::PgsHooks<'a>
-impl<'a> !core::panic::unwind_safe::UnwindSafe for alice_physics::solver_tgs_hooks::PgsHooks<'a>
-pub struct alice_physics::solver_tgs_hooks::SimpleBodyState
-pub alice_physics::solver_tgs_hooks::SimpleBodyState::inv_mass: alice_physics::math::Fix128
-pub alice_physics::solver_tgs_hooks::SimpleBodyState::is_dynamic: bool
-pub alice_physics::solver_tgs_hooks::SimpleBodyState::linear_velocity: [alice_physics::math::Fix128; 3]
-pub alice_physics::solver_tgs_hooks::SimpleBodyState::position: [alice_physics::math::Fix128; 3]
-pub alice_physics::solver_tgs_hooks::SimpleBodyState::stable_id: u64
-impl alice_physics::solver_tgs::BodyLike for alice_physics::solver_tgs_hooks::SimpleBodyState
-pub fn alice_physics::solver_tgs_hooks::SimpleBodyState::is_dynamic(&self) -> bool
-pub fn alice_physics::solver_tgs_hooks::SimpleBodyState::stable_id(&self) -> u64
-impl core::clone::Clone for alice_physics::solver_tgs_hooks::SimpleBodyState
-pub fn alice_physics::solver_tgs_hooks::SimpleBodyState::clone(&self) -> alice_physics::solver_tgs_hooks::SimpleBodyState
-impl core::default::Default for alice_physics::solver_tgs_hooks::SimpleBodyState
-pub fn alice_physics::solver_tgs_hooks::SimpleBodyState::default() -> Self
-impl core::fmt::Debug for alice_physics::solver_tgs_hooks::SimpleBodyState
-pub fn alice_physics::solver_tgs_hooks::SimpleBodyState::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Copy for alice_physics::solver_tgs_hooks::SimpleBodyState
-impl core::marker::Freeze for alice_physics::solver_tgs_hooks::SimpleBodyState
-impl core::marker::Send for alice_physics::solver_tgs_hooks::SimpleBodyState
-impl core::marker::Sync for alice_physics::solver_tgs_hooks::SimpleBodyState
-impl core::marker::Unpin for alice_physics::solver_tgs_hooks::SimpleBodyState
-impl core::marker::UnsafeUnpin for alice_physics::solver_tgs_hooks::SimpleBodyState
-impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::solver_tgs_hooks::SimpleBodyState
-impl core::panic::unwind_safe::UnwindSafe for alice_physics::solver_tgs_hooks::SimpleBodyState
-pub struct alice_physics::solver_tgs_hooks::SimpleContact
-pub alice_physics::solver_tgs_hooks::SimpleContact::accum_normal: alice_physics::math::Fix128
-pub alice_physics::solver_tgs_hooks::SimpleContact::body_a: usize
-pub alice_physics::solver_tgs_hooks::SimpleContact::body_b: usize
-pub alice_physics::solver_tgs_hooks::SimpleContact::friction: alice_physics::math::Fix128
-pub alice_physics::solver_tgs_hooks::SimpleContact::normal: [alice_physics::math::Fix128; 3]
-pub alice_physics::solver_tgs_hooks::SimpleContact::penetration: alice_physics::math::Fix128
-pub alice_physics::solver_tgs_hooks::SimpleContact::restitution: alice_physics::math::Fix128
-pub alice_physics::solver_tgs_hooks::SimpleContact::stable_id: u64
-impl alice_physics::solver_tgs::ContactLike for alice_physics::solver_tgs_hooks::SimpleContact
-pub fn alice_physics::solver_tgs_hooks::SimpleContact::body_a(&self) -> usize
-pub fn alice_physics::solver_tgs_hooks::SimpleContact::body_b(&self) -> usize
-pub fn alice_physics::solver_tgs_hooks::SimpleContact::stable_id(&self) -> u64
-impl core::clone::Clone for alice_physics::solver_tgs_hooks::SimpleContact
-pub fn alice_physics::solver_tgs_hooks::SimpleContact::clone(&self) -> alice_physics::solver_tgs_hooks::SimpleContact
-impl core::fmt::Debug for alice_physics::solver_tgs_hooks::SimpleContact
-pub fn alice_physics::solver_tgs_hooks::SimpleContact::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Copy for alice_physics::solver_tgs_hooks::SimpleContact
-impl core::marker::Freeze for alice_physics::solver_tgs_hooks::SimpleContact
-impl core::marker::Send for alice_physics::solver_tgs_hooks::SimpleContact
-impl core::marker::Sync for alice_physics::solver_tgs_hooks::SimpleContact
-impl core::marker::Unpin for alice_physics::solver_tgs_hooks::SimpleContact
-impl core::marker::UnsafeUnpin for alice_physics::solver_tgs_hooks::SimpleContact
-impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::solver_tgs_hooks::SimpleContact
-impl core::panic::unwind_safe::UnwindSafe for alice_physics::solver_tgs_hooks::SimpleContact
-pub mod alice_physics::solver_tgs_hooks_6dof
-pub struct alice_physics::solver_tgs_hooks_6dof::Body6DofState
-pub alice_physics::solver_tgs_hooks_6dof::Body6DofState::angular_velocity: [alice_physics::math::Fix128; 3]
-pub alice_physics::solver_tgs_hooks_6dof::Body6DofState::inv_inertia: [alice_physics::math::Fix128; 3]
-pub alice_physics::solver_tgs_hooks_6dof::Body6DofState::inv_mass: alice_physics::math::Fix128
-pub alice_physics::solver_tgs_hooks_6dof::Body6DofState::is_dynamic: bool
-pub alice_physics::solver_tgs_hooks_6dof::Body6DofState::linear_velocity: [alice_physics::math::Fix128; 3]
-pub alice_physics::solver_tgs_hooks_6dof::Body6DofState::position: [alice_physics::math::Fix128; 3]
-pub alice_physics::solver_tgs_hooks_6dof::Body6DofState::stable_id: u64
-impl alice_physics::solver_tgs::BodyLike for alice_physics::solver_tgs_hooks_6dof::Body6DofState
-pub fn alice_physics::solver_tgs_hooks_6dof::Body6DofState::is_dynamic(&self) -> bool
-pub fn alice_physics::solver_tgs_hooks_6dof::Body6DofState::stable_id(&self) -> u64
-impl core::clone::Clone for alice_physics::solver_tgs_hooks_6dof::Body6DofState
-pub fn alice_physics::solver_tgs_hooks_6dof::Body6DofState::clone(&self) -> alice_physics::solver_tgs_hooks_6dof::Body6DofState
-impl core::default::Default for alice_physics::solver_tgs_hooks_6dof::Body6DofState
-pub fn alice_physics::solver_tgs_hooks_6dof::Body6DofState::default() -> Self
-impl core::fmt::Debug for alice_physics::solver_tgs_hooks_6dof::Body6DofState
-pub fn alice_physics::solver_tgs_hooks_6dof::Body6DofState::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Copy for alice_physics::solver_tgs_hooks_6dof::Body6DofState
-impl core::marker::Freeze for alice_physics::solver_tgs_hooks_6dof::Body6DofState
-impl core::marker::Send for alice_physics::solver_tgs_hooks_6dof::Body6DofState
-impl core::marker::Sync for alice_physics::solver_tgs_hooks_6dof::Body6DofState
-impl core::marker::Unpin for alice_physics::solver_tgs_hooks_6dof::Body6DofState
-impl core::marker::UnsafeUnpin for alice_physics::solver_tgs_hooks_6dof::Body6DofState
-impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::solver_tgs_hooks_6dof::Body6DofState
-impl core::panic::unwind_safe::UnwindSafe for alice_physics::solver_tgs_hooks_6dof::Body6DofState
-pub struct alice_physics::solver_tgs_hooks_6dof::Contact6Dof
-pub alice_physics::solver_tgs_hooks_6dof::Contact6Dof::accum_normal: alice_physics::math::Fix128
-pub alice_physics::solver_tgs_hooks_6dof::Contact6Dof::accum_tangent1: alice_physics::math::Fix128
-pub alice_physics::solver_tgs_hooks_6dof::Contact6Dof::accum_tangent2: alice_physics::math::Fix128
-pub alice_physics::solver_tgs_hooks_6dof::Contact6Dof::body_a: usize
-pub alice_physics::solver_tgs_hooks_6dof::Contact6Dof::body_b: usize
-pub alice_physics::solver_tgs_hooks_6dof::Contact6Dof::friction: alice_physics::math::Fix128
-pub alice_physics::solver_tgs_hooks_6dof::Contact6Dof::normal: [alice_physics::math::Fix128; 3]
-pub alice_physics::solver_tgs_hooks_6dof::Contact6Dof::penetration: alice_physics::math::Fix128
-pub alice_physics::solver_tgs_hooks_6dof::Contact6Dof::r_a: [alice_physics::math::Fix128; 3]
-pub alice_physics::solver_tgs_hooks_6dof::Contact6Dof::r_b: [alice_physics::math::Fix128; 3]
-pub alice_physics::solver_tgs_hooks_6dof::Contact6Dof::restitution: alice_physics::math::Fix128
-pub alice_physics::solver_tgs_hooks_6dof::Contact6Dof::stable_id: u64
-pub alice_physics::solver_tgs_hooks_6dof::Contact6Dof::tangent1: [alice_physics::math::Fix128; 3]
-pub alice_physics::solver_tgs_hooks_6dof::Contact6Dof::tangent2: [alice_physics::math::Fix128; 3]
-impl alice_physics::solver_tgs::ContactLike for alice_physics::solver_tgs_hooks_6dof::Contact6Dof
-pub fn alice_physics::solver_tgs_hooks_6dof::Contact6Dof::body_a(&self) -> usize
-pub fn alice_physics::solver_tgs_hooks_6dof::Contact6Dof::body_b(&self) -> usize
-pub fn alice_physics::solver_tgs_hooks_6dof::Contact6Dof::stable_id(&self) -> u64
-impl core::clone::Clone for alice_physics::solver_tgs_hooks_6dof::Contact6Dof
-pub fn alice_physics::solver_tgs_hooks_6dof::Contact6Dof::clone(&self) -> alice_physics::solver_tgs_hooks_6dof::Contact6Dof
-impl core::fmt::Debug for alice_physics::solver_tgs_hooks_6dof::Contact6Dof
-pub fn alice_physics::solver_tgs_hooks_6dof::Contact6Dof::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Copy for alice_physics::solver_tgs_hooks_6dof::Contact6Dof
-impl core::marker::Freeze for alice_physics::solver_tgs_hooks_6dof::Contact6Dof
-impl core::marker::Send for alice_physics::solver_tgs_hooks_6dof::Contact6Dof
-impl core::marker::Sync for alice_physics::solver_tgs_hooks_6dof::Contact6Dof
-impl core::marker::Unpin for alice_physics::solver_tgs_hooks_6dof::Contact6Dof
-impl core::marker::UnsafeUnpin for alice_physics::solver_tgs_hooks_6dof::Contact6Dof
-impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::solver_tgs_hooks_6dof::Contact6Dof
-impl core::panic::unwind_safe::UnwindSafe for alice_physics::solver_tgs_hooks_6dof::Contact6Dof
-pub struct alice_physics::solver_tgs_hooks_6dof::Pgs6DofConfig
-pub alice_physics::solver_tgs_hooks_6dof::Pgs6DofConfig::baumgarte: alice_physics::math::Fix128
-pub alice_physics::solver_tgs_hooks_6dof::Pgs6DofConfig::gravity: [alice_physics::math::Fix128; 3]
-pub alice_physics::solver_tgs_hooks_6dof::Pgs6DofConfig::slop: alice_physics::math::Fix128
-pub alice_physics::solver_tgs_hooks_6dof::Pgs6DofConfig::warmstart: bool
-impl core::clone::Clone for alice_physics::solver_tgs_hooks_6dof::Pgs6DofConfig
-pub fn alice_physics::solver_tgs_hooks_6dof::Pgs6DofConfig::clone(&self) -> alice_physics::solver_tgs_hooks_6dof::Pgs6DofConfig
-impl core::default::Default for alice_physics::solver_tgs_hooks_6dof::Pgs6DofConfig
-pub fn alice_physics::solver_tgs_hooks_6dof::Pgs6DofConfig::default() -> Self
-impl core::fmt::Debug for alice_physics::solver_tgs_hooks_6dof::Pgs6DofConfig
-pub fn alice_physics::solver_tgs_hooks_6dof::Pgs6DofConfig::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Copy for alice_physics::solver_tgs_hooks_6dof::Pgs6DofConfig
-impl core::marker::Freeze for alice_physics::solver_tgs_hooks_6dof::Pgs6DofConfig
-impl core::marker::Send for alice_physics::solver_tgs_hooks_6dof::Pgs6DofConfig
-impl core::marker::Sync for alice_physics::solver_tgs_hooks_6dof::Pgs6DofConfig
-impl core::marker::Unpin for alice_physics::solver_tgs_hooks_6dof::Pgs6DofConfig
-impl core::marker::UnsafeUnpin for alice_physics::solver_tgs_hooks_6dof::Pgs6DofConfig
-impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::solver_tgs_hooks_6dof::Pgs6DofConfig
-impl core::panic::unwind_safe::UnwindSafe for alice_physics::solver_tgs_hooks_6dof::Pgs6DofConfig
-pub struct alice_physics::solver_tgs_hooks_6dof::Pgs6DofHooks<'a>
-pub alice_physics::solver_tgs_hooks_6dof::Pgs6DofHooks::bodies: &'a mut [alice_physics::solver_tgs_hooks_6dof::Body6DofState]
-pub alice_physics::solver_tgs_hooks_6dof::Pgs6DofHooks::cache: &'a mut alice_physics::solver_tgs::ImpulseCache
-pub alice_physics::solver_tgs_hooks_6dof::Pgs6DofHooks::cfg: alice_physics::solver_tgs_hooks_6dof::Pgs6DofConfig
-pub alice_physics::solver_tgs_hooks_6dof::Pgs6DofHooks::contacts: &'a mut [alice_physics::solver_tgs_hooks_6dof::Contact6Dof]
-impl<'a> alice_physics::solver_tgs_hooks_6dof::Pgs6DofHooks<'a>
-pub fn alice_physics::solver_tgs_hooks_6dof::Pgs6DofHooks<'a>::new(&'a mut [alice_physics::solver_tgs_hooks_6dof::Body6DofState], &'a mut [alice_physics::solver_tgs_hooks_6dof::Contact6Dof], &'a mut alice_physics::solver_tgs::ImpulseCache, alice_physics::solver_tgs_hooks_6dof::Pgs6DofConfig) -> Self
-impl alice_physics::solver_tgs::TgsHooks for alice_physics::solver_tgs_hooks_6dof::Pgs6DofHooks<'_>
-pub fn alice_physics::solver_tgs_hooks_6dof::Pgs6DofHooks<'_>::begin_substep(&mut self, alice_physics::math::Fix128)
-pub fn alice_physics::solver_tgs_hooks_6dof::Pgs6DofHooks<'_>::end_substep(&mut self, alice_physics::math::Fix128)
-pub fn alice_physics::solver_tgs_hooks_6dof::Pgs6DofHooks<'_>::position_iteration(&mut self, alice_physics::math::Fix128)
-pub fn alice_physics::solver_tgs_hooks_6dof::Pgs6DofHooks<'_>::velocity_iteration(&mut self, alice_physics::math::Fix128)
-impl<'a> core::marker::Freeze for alice_physics::solver_tgs_hooks_6dof::Pgs6DofHooks<'a>
-impl<'a> core::marker::Send for alice_physics::solver_tgs_hooks_6dof::Pgs6DofHooks<'a>
-impl<'a> core::marker::Sync for alice_physics::solver_tgs_hooks_6dof::Pgs6DofHooks<'a>
-impl<'a> core::marker::Unpin for alice_physics::solver_tgs_hooks_6dof::Pgs6DofHooks<'a>
-impl<'a> core::marker::UnsafeUnpin for alice_physics::solver_tgs_hooks_6dof::Pgs6DofHooks<'a>
-impl<'a> core::panic::unwind_safe::RefUnwindSafe for alice_physics::solver_tgs_hooks_6dof::Pgs6DofHooks<'a>
-impl<'a> !core::panic::unwind_safe::UnwindSafe for alice_physics::solver_tgs_hooks_6dof::Pgs6DofHooks<'a>
-pub mod alice_physics::solver_tgs_hooks_6dof_oriented
-pub struct alice_physics::solver_tgs_hooks_6dof_oriented::Body6DofOrientedState
-pub alice_physics::solver_tgs_hooks_6dof_oriented::Body6DofOrientedState::angular_velocity: [alice_physics::math::Fix128; 3]
-pub alice_physics::solver_tgs_hooks_6dof_oriented::Body6DofOrientedState::inv_inertia_local: [alice_physics::math::Fix128; 3]
-pub alice_physics::solver_tgs_hooks_6dof_oriented::Body6DofOrientedState::inv_mass: alice_physics::math::Fix128
-pub alice_physics::solver_tgs_hooks_6dof_oriented::Body6DofOrientedState::is_dynamic: bool
-pub alice_physics::solver_tgs_hooks_6dof_oriented::Body6DofOrientedState::linear_velocity: [alice_physics::math::Fix128; 3]
-pub alice_physics::solver_tgs_hooks_6dof_oriented::Body6DofOrientedState::orientation: alice_physics::math::QuatFix
-pub alice_physics::solver_tgs_hooks_6dof_oriented::Body6DofOrientedState::position: [alice_physics::math::Fix128; 3]
-pub alice_physics::solver_tgs_hooks_6dof_oriented::Body6DofOrientedState::stable_id: u64
-impl alice_physics::solver_tgs_hooks_6dof_oriented::Body6DofOrientedState
-pub fn alice_physics::solver_tgs_hooks_6dof_oriented::Body6DofOrientedState::advance(&mut self, alice_physics::math::Fix128)
-pub fn alice_physics::solver_tgs_hooks_6dof_oriented::Body6DofOrientedState::local_to_world(&self, [alice_physics::math::Fix128; 3]) -> [alice_physics::math::Fix128; 3]
-impl alice_physics::solver_tgs::BodyLike for alice_physics::solver_tgs_hooks_6dof_oriented::Body6DofOrientedState
-pub fn alice_physics::solver_tgs_hooks_6dof_oriented::Body6DofOrientedState::is_dynamic(&self) -> bool
-pub fn alice_physics::solver_tgs_hooks_6dof_oriented::Body6DofOrientedState::stable_id(&self) -> u64
-impl core::clone::Clone for alice_physics::solver_tgs_hooks_6dof_oriented::Body6DofOrientedState
-pub fn alice_physics::solver_tgs_hooks_6dof_oriented::Body6DofOrientedState::clone(&self) -> alice_physics::solver_tgs_hooks_6dof_oriented::Body6DofOrientedState
-impl core::default::Default for alice_physics::solver_tgs_hooks_6dof_oriented::Body6DofOrientedState
-pub fn alice_physics::solver_tgs_hooks_6dof_oriented::Body6DofOrientedState::default() -> Self
-impl core::fmt::Debug for alice_physics::solver_tgs_hooks_6dof_oriented::Body6DofOrientedState
-pub fn alice_physics::solver_tgs_hooks_6dof_oriented::Body6DofOrientedState::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Copy for alice_physics::solver_tgs_hooks_6dof_oriented::Body6DofOrientedState
-impl core::marker::Freeze for alice_physics::solver_tgs_hooks_6dof_oriented::Body6DofOrientedState
-impl core::marker::Send for alice_physics::solver_tgs_hooks_6dof_oriented::Body6DofOrientedState
-impl core::marker::Sync for alice_physics::solver_tgs_hooks_6dof_oriented::Body6DofOrientedState
-impl core::marker::Unpin for alice_physics::solver_tgs_hooks_6dof_oriented::Body6DofOrientedState
-impl core::marker::UnsafeUnpin for alice_physics::solver_tgs_hooks_6dof_oriented::Body6DofOrientedState
-impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::solver_tgs_hooks_6dof_oriented::Body6DofOrientedState
-impl core::panic::unwind_safe::UnwindSafe for alice_physics::solver_tgs_hooks_6dof_oriented::Body6DofOrientedState
-pub struct alice_physics::solver_tgs_hooks_6dof_oriented::ContactOriented
-pub alice_physics::solver_tgs_hooks_6dof_oriented::ContactOriented::accum_normal: alice_physics::math::Fix128
-pub alice_physics::solver_tgs_hooks_6dof_oriented::ContactOriented::accum_tangent1: alice_physics::math::Fix128
-pub alice_physics::solver_tgs_hooks_6dof_oriented::ContactOriented::accum_tangent2: alice_physics::math::Fix128
-pub alice_physics::solver_tgs_hooks_6dof_oriented::ContactOriented::body_a: usize
-pub alice_physics::solver_tgs_hooks_6dof_oriented::ContactOriented::body_b: usize
-pub alice_physics::solver_tgs_hooks_6dof_oriented::ContactOriented::friction: alice_physics::math::Fix128
-pub alice_physics::solver_tgs_hooks_6dof_oriented::ContactOriented::normal: [alice_physics::math::Fix128; 3]
-pub alice_physics::solver_tgs_hooks_6dof_oriented::ContactOriented::penetration: alice_physics::math::Fix128
-pub alice_physics::solver_tgs_hooks_6dof_oriented::ContactOriented::r_a: [alice_physics::math::Fix128; 3]
-pub alice_physics::solver_tgs_hooks_6dof_oriented::ContactOriented::r_b: [alice_physics::math::Fix128; 3]
-pub alice_physics::solver_tgs_hooks_6dof_oriented::ContactOriented::restitution: alice_physics::math::Fix128
-pub alice_physics::solver_tgs_hooks_6dof_oriented::ContactOriented::stable_id: u64
-pub alice_physics::solver_tgs_hooks_6dof_oriented::ContactOriented::tangent1: [alice_physics::math::Fix128; 3]
-pub alice_physics::solver_tgs_hooks_6dof_oriented::ContactOriented::tangent2: [alice_physics::math::Fix128; 3]
-impl alice_physics::solver_tgs::ContactLike for alice_physics::solver_tgs_hooks_6dof_oriented::ContactOriented
-pub fn alice_physics::solver_tgs_hooks_6dof_oriented::ContactOriented::body_a(&self) -> usize
-pub fn alice_physics::solver_tgs_hooks_6dof_oriented::ContactOriented::body_b(&self) -> usize
-pub fn alice_physics::solver_tgs_hooks_6dof_oriented::ContactOriented::stable_id(&self) -> u64
-impl core::clone::Clone for alice_physics::solver_tgs_hooks_6dof_oriented::ContactOriented
-pub fn alice_physics::solver_tgs_hooks_6dof_oriented::ContactOriented::clone(&self) -> alice_physics::solver_tgs_hooks_6dof_oriented::ContactOriented
-impl core::fmt::Debug for alice_physics::solver_tgs_hooks_6dof_oriented::ContactOriented
-pub fn alice_physics::solver_tgs_hooks_6dof_oriented::ContactOriented::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Copy for alice_physics::solver_tgs_hooks_6dof_oriented::ContactOriented
-impl core::marker::Freeze for alice_physics::solver_tgs_hooks_6dof_oriented::ContactOriented
-impl core::marker::Send for alice_physics::solver_tgs_hooks_6dof_oriented::ContactOriented
-impl core::marker::Sync for alice_physics::solver_tgs_hooks_6dof_oriented::ContactOriented
-impl core::marker::Unpin for alice_physics::solver_tgs_hooks_6dof_oriented::ContactOriented
-impl core::marker::UnsafeUnpin for alice_physics::solver_tgs_hooks_6dof_oriented::ContactOriented
-impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::solver_tgs_hooks_6dof_oriented::ContactOriented
-impl core::panic::unwind_safe::UnwindSafe for alice_physics::solver_tgs_hooks_6dof_oriented::ContactOriented
-pub struct alice_physics::solver_tgs_hooks_6dof_oriented::Pgs6DofOrientedConfig
-pub alice_physics::solver_tgs_hooks_6dof_oriented::Pgs6DofOrientedConfig::baumgarte: alice_physics::math::Fix128
-pub alice_physics::solver_tgs_hooks_6dof_oriented::Pgs6DofOrientedConfig::gravity: [alice_physics::math::Fix128; 3]
-pub alice_physics::solver_tgs_hooks_6dof_oriented::Pgs6DofOrientedConfig::slop: alice_physics::math::Fix128
-pub alice_physics::solver_tgs_hooks_6dof_oriented::Pgs6DofOrientedConfig::warmstart: bool
-impl core::clone::Clone for alice_physics::solver_tgs_hooks_6dof_oriented::Pgs6DofOrientedConfig
-pub fn alice_physics::solver_tgs_hooks_6dof_oriented::Pgs6DofOrientedConfig::clone(&self) -> alice_physics::solver_tgs_hooks_6dof_oriented::Pgs6DofOrientedConfig
-impl core::default::Default for alice_physics::solver_tgs_hooks_6dof_oriented::Pgs6DofOrientedConfig
-pub fn alice_physics::solver_tgs_hooks_6dof_oriented::Pgs6DofOrientedConfig::default() -> Self
-impl core::fmt::Debug for alice_physics::solver_tgs_hooks_6dof_oriented::Pgs6DofOrientedConfig
-pub fn alice_physics::solver_tgs_hooks_6dof_oriented::Pgs6DofOrientedConfig::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Copy for alice_physics::solver_tgs_hooks_6dof_oriented::Pgs6DofOrientedConfig
-impl core::marker::Freeze for alice_physics::solver_tgs_hooks_6dof_oriented::Pgs6DofOrientedConfig
-impl core::marker::Send for alice_physics::solver_tgs_hooks_6dof_oriented::Pgs6DofOrientedConfig
-impl core::marker::Sync for alice_physics::solver_tgs_hooks_6dof_oriented::Pgs6DofOrientedConfig
-impl core::marker::Unpin for alice_physics::solver_tgs_hooks_6dof_oriented::Pgs6DofOrientedConfig
-impl core::marker::UnsafeUnpin for alice_physics::solver_tgs_hooks_6dof_oriented::Pgs6DofOrientedConfig
-impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::solver_tgs_hooks_6dof_oriented::Pgs6DofOrientedConfig
-impl core::panic::unwind_safe::UnwindSafe for alice_physics::solver_tgs_hooks_6dof_oriented::Pgs6DofOrientedConfig
-pub struct alice_physics::solver_tgs_hooks_6dof_oriented::Pgs6DofOrientedHooks<'a>
-pub alice_physics::solver_tgs_hooks_6dof_oriented::Pgs6DofOrientedHooks::bodies: &'a mut [alice_physics::solver_tgs_hooks_6dof_oriented::Body6DofOrientedState]
-pub alice_physics::solver_tgs_hooks_6dof_oriented::Pgs6DofOrientedHooks::cache: &'a mut alice_physics::solver_tgs::ImpulseCache
-pub alice_physics::solver_tgs_hooks_6dof_oriented::Pgs6DofOrientedHooks::cfg: alice_physics::solver_tgs_hooks_6dof_oriented::Pgs6DofOrientedConfig
-pub alice_physics::solver_tgs_hooks_6dof_oriented::Pgs6DofOrientedHooks::contacts: &'a mut [alice_physics::solver_tgs_hooks_6dof_oriented::ContactOriented]
-impl<'a> alice_physics::solver_tgs_hooks_6dof_oriented::Pgs6DofOrientedHooks<'a>
-pub fn alice_physics::solver_tgs_hooks_6dof_oriented::Pgs6DofOrientedHooks<'a>::new(&'a mut [alice_physics::solver_tgs_hooks_6dof_oriented::Body6DofOrientedState], &'a mut [alice_physics::solver_tgs_hooks_6dof_oriented::ContactOriented], &'a mut alice_physics::solver_tgs::ImpulseCache, alice_physics::solver_tgs_hooks_6dof_oriented::Pgs6DofOrientedConfig) -> Self
-impl alice_physics::solver_tgs::TgsHooks for alice_physics::solver_tgs_hooks_6dof_oriented::Pgs6DofOrientedHooks<'_>
-pub fn alice_physics::solver_tgs_hooks_6dof_oriented::Pgs6DofOrientedHooks<'_>::begin_substep(&mut self, alice_physics::math::Fix128)
-pub fn alice_physics::solver_tgs_hooks_6dof_oriented::Pgs6DofOrientedHooks<'_>::end_substep(&mut self, alice_physics::math::Fix128)
-pub fn alice_physics::solver_tgs_hooks_6dof_oriented::Pgs6DofOrientedHooks<'_>::position_iteration(&mut self, alice_physics::math::Fix128)
-pub fn alice_physics::solver_tgs_hooks_6dof_oriented::Pgs6DofOrientedHooks<'_>::velocity_iteration(&mut self, alice_physics::math::Fix128)
-impl<'a> core::marker::Freeze for alice_physics::solver_tgs_hooks_6dof_oriented::Pgs6DofOrientedHooks<'a>
-impl<'a> core::marker::Send for alice_physics::solver_tgs_hooks_6dof_oriented::Pgs6DofOrientedHooks<'a>
-impl<'a> core::marker::Sync for alice_physics::solver_tgs_hooks_6dof_oriented::Pgs6DofOrientedHooks<'a>
-impl<'a> core::marker::Unpin for alice_physics::solver_tgs_hooks_6dof_oriented::Pgs6DofOrientedHooks<'a>
-impl<'a> core::marker::UnsafeUnpin for alice_physics::solver_tgs_hooks_6dof_oriented::Pgs6DofOrientedHooks<'a>
-impl<'a> core::panic::unwind_safe::RefUnwindSafe for alice_physics::solver_tgs_hooks_6dof_oriented::Pgs6DofOrientedHooks<'a>
-impl<'a> !core::panic::unwind_safe::UnwindSafe for alice_physics::solver_tgs_hooks_6dof_oriented::Pgs6DofOrientedHooks<'a>
-pub fn alice_physics::solver_tgs_hooks_6dof_oriented::from_vec3fix(alice_physics::math::Vec3Fix) -> [alice_physics::math::Fix128; 3]
-pub fn alice_physics::solver_tgs_hooks_6dof_oriented::integrate_orientation(alice_physics::math::QuatFix, [alice_physics::math::Fix128; 3], alice_physics::math::Fix128) -> alice_physics::math::QuatFix
-pub fn alice_physics::solver_tgs_hooks_6dof_oriented::to_vec3fix([alice_physics::math::Fix128; 3]) -> alice_physics::math::Vec3Fix
-pub mod alice_physics::solver_tgs_hooks_6dof_oriented_scoped
-pub fn alice_physics::solver_tgs_hooks_6dof_oriented_scoped::solve_oriented_island_isolated(&mut [alice_physics::solver_tgs_hooks_6dof_oriented::Body6DofOrientedState], &mut [alice_physics::solver_tgs_hooks_6dof_oriented::ContactOriented], &alice_physics::solver_tgs::Island, &mut alice_physics::solver_tgs::ImpulseCache, alice_physics::solver_tgs_hooks_6dof_oriented::Pgs6DofOrientedConfig, &alice_physics::solver_tgs::TgsConfig, alice_physics::math::Fix128)
-pub fn alice_physics::solver_tgs_hooks_6dof_oriented_scoped::solve_oriented_islands_parallel(&mut [alice_physics::solver_tgs_hooks_6dof_oriented::Body6DofOrientedState], &mut [alice_physics::solver_tgs_hooks_6dof_oriented::ContactOriented], &[alice_physics::solver_tgs::Island], &mut [alice_physics::solver_tgs::ImpulseCache], alice_physics::solver_tgs_hooks_6dof_oriented::Pgs6DofOrientedConfig, &alice_physics::solver_tgs::TgsConfig, alice_physics::math::Fix128)
-pub fn alice_physics::solver_tgs_hooks_6dof_oriented_scoped::solve_oriented_islands_serial(&mut [alice_physics::solver_tgs_hooks_6dof_oriented::Body6DofOrientedState], &mut [alice_physics::solver_tgs_hooks_6dof_oriented::ContactOriented], &[alice_physics::solver_tgs::Island], &mut alice_physics::solver_tgs::ImpulseCache, alice_physics::solver_tgs_hooks_6dof_oriented::Pgs6DofOrientedConfig, &alice_physics::solver_tgs::TgsConfig, alice_physics::math::Fix128)
-pub mod alice_physics::solver_tgs_hooks_6dof_scoped
-pub fn alice_physics::solver_tgs_hooks_6dof_scoped::solve_island_isolated(&mut [alice_physics::solver_tgs_hooks_6dof::Body6DofState], &mut [alice_physics::solver_tgs_hooks_6dof::Contact6Dof], &alice_physics::solver_tgs::Island, &mut alice_physics::solver_tgs::ImpulseCache, alice_physics::solver_tgs_hooks_6dof::Pgs6DofConfig, &alice_physics::solver_tgs::TgsConfig, alice_physics::math::Fix128)
-pub fn alice_physics::solver_tgs_hooks_6dof_scoped::solve_islands_parallel(&mut [alice_physics::solver_tgs_hooks_6dof::Body6DofState], &mut [alice_physics::solver_tgs_hooks_6dof::Contact6Dof], &[alice_physics::solver_tgs::Island], &mut [alice_physics::solver_tgs::ImpulseCache], alice_physics::solver_tgs_hooks_6dof::Pgs6DofConfig, &alice_physics::solver_tgs::TgsConfig, alice_physics::math::Fix128)
-pub fn alice_physics::solver_tgs_hooks_6dof_scoped::solve_islands_serial(&mut [alice_physics::solver_tgs_hooks_6dof::Body6DofState], &mut [alice_physics::solver_tgs_hooks_6dof::Contact6Dof], &[alice_physics::solver_tgs::Island], &mut alice_physics::solver_tgs::ImpulseCache, alice_physics::solver_tgs_hooks_6dof::Pgs6DofConfig, &alice_physics::solver_tgs::TgsConfig, alice_physics::math::Fix128)
 pub mod alice_physics::spatial
 pub struct alice_physics::spatial::SpatialGrid
 impl alice_physics::spatial::SpatialGrid
@@ -16243,7 +15693,7 @@ impl core::marker::Unpin for alice_physics::event::ContactEvent
 impl core::marker::UnsafeUnpin for alice_physics::event::ContactEvent
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::event::ContactEvent
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::event::ContactEvent
-pub struct alice_physics::ContactManifold
+#[non_exhaustive] pub struct alice_physics::ContactManifold
 pub alice_physics::ContactManifold::friction: alice_physics::math::Fix128
 pub alice_physics::ContactManifold::normal: alice_physics::math::Vec3Fix
 pub alice_physics::ContactManifold::pair: alice_physics::contact_cache::BodyPairKey
@@ -16447,7 +15897,7 @@ impl core::marker::Unpin for alice_physics::debug_render::DebugColor
 impl core::marker::UnsafeUnpin for alice_physics::debug_render::DebugColor
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::debug_render::DebugColor
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::debug_render::DebugColor
-pub struct alice_physics::DebugDrawData
+#[non_exhaustive] pub struct alice_physics::DebugDrawData
 pub alice_physics::DebugDrawData::lines: alloc::vec::Vec<alice_physics::debug_render::DebugLine>
 pub alice_physics::DebugDrawData::points: alloc::vec::Vec<alice_physics::debug_render::DebugPoint>
 impl alice_physics::debug_render::DebugDrawData
@@ -18190,7 +17640,7 @@ impl core::marker::Unpin for alice_physics::profiling::PhysicsProfiler
 impl core::marker::UnsafeUnpin for alice_physics::profiling::PhysicsProfiler
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::profiling::PhysicsProfiler
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::profiling::PhysicsProfiler
-pub struct alice_physics::PhysicsScene
+#[non_exhaustive] pub struct alice_physics::PhysicsScene
 pub alice_physics::PhysicsScene::bodies: alloc::vec::Vec<alice_physics::scene_io::SerializedBody>
 pub alice_physics::PhysicsScene::config: alice_physics::scene_io::PhysicsConfig
 pub alice_physics::PhysicsScene::joints: alloc::vec::Vec<alice_physics::scene_io::SerializedJoint>
