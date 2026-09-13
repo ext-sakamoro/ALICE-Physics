@@ -186,11 +186,54 @@ jobs:
           path: coverage-summary.txt
           retention-days: 30
 
+  public-api-diff:
+    name: cargo-public-api (surface snapshot verification)
+    runs-on: ubuntu-latest
+    # v1.0 roadmap Item C: docs/PUBLIC_API_SNAPSHOT.txt に対する
+    # cargo public-api の出力を diff、乖離があれば fail
+    # 意図的な public API 追加/変更時は開発者側で snapshot を再生成 + commit
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustc-dev
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: public-api
+
+      - name: Create ALICE optional bridge stubs
+        uses: ./.github/actions/alice-stubs
+
+      - name: Install cargo-public-api
+        run: cargo install cargo-public-api --locked
+
+      - name: Generate current snapshot
+        run: |
+          cargo +nightly public-api \
+            --features "std,simd,parallel,ffi,gpu-solver-bridge" \
+            --simplified \
+            > /tmp/current-api.txt
+
+      - name: Diff against docs/PUBLIC_API_SNAPSHOT.txt
+        run: |
+          if ! diff -u docs/PUBLIC_API_SNAPSHOT.txt /tmp/current-api.txt; then
+            echo "::error::Public API surface drift detected."
+            echo "::error::The generated snapshot differs from docs/PUBLIC_API_SNAPSHOT.txt."
+            echo "::error::"
+            echo "::error::If this drift is intentional, regenerate the baseline with:"
+            echo "::error::  cargo +nightly public-api --features \"std,simd,parallel,ffi,gpu-solver-bridge\" --simplified > docs/PUBLIC_API_SNAPSHOT.txt"
+            echo "::error::and commit the diff alongside the API change so the PR reviewer sees the delta."
+            exit 1
+          fi
+          echo "✓ Public API snapshot matches docs/PUBLIC_API_SNAPSHOT.txt"
+
   semver-checks:
     name: cargo-semver-checks (API compat、informational)
     runs-on: ubuntu-latest
-    # ALICE-Physics は publish = false (private crate) のため crates.io baseline なし
-    # git baseline (main~1) で比較、informational only
+    # v0.14.0-preview.4 で `publish = false` を解除、crates.io publish 済
+    # (2026-09-13 initial publish、以降 preview.5 / preview.6 / ...)
+    # crates.io baseline との比較も可能だが、preview 版どうしの比較は
+    # noise 多いため引き続き git baseline (main~1) で比較、informational only
     continue-on-error: true
     steps:
       - uses: actions/checkout@v5
