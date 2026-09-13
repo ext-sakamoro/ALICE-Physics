@@ -35,6 +35,19 @@
 //! - Williams, Landel, Ferry, "The temperature dependence of relaxation
 //!   mechanisms in amorphous polymers", J. Am. Chem. Soc. 77(14), 1955.
 //! - Bellehumeur (2004) — polymer creep parameters for FDM prints.
+//!
+//! # Integration status
+//!
+//! `FindleyParameters`, `FindleyParameters::pla_25c_moderate`, and
+//! `predict_strain` are wired into `structural_solver.rs`. The WLF
+//! subsystem (`WlfConstants` + `wlf_shift_factor` + `effective_time_at_temp`
+//! + `CREEP_FROZEN_AT`) and alternate factory (`petg_25c_moderate`) +
+//! standalone `strain_at` are reserved crate-internal API used by
+//! `predict_strain` internally.
+
+// Reserved WLF subsystem and alternate factories — pub(crate) but currently
+// used only via predict_strain / internal helpers / unit tests.
+#![allow(dead_code)]
 
 use crate::filament_db::MaterialProperties;
 use crate::math::Fix128;
@@ -74,9 +87,9 @@ impl FindleyParameters {
         }
     }
 
-    /// PETG at 25 °C (lower creep than PLA — higher Tg).
+    /// PETG at 25 °C (lower creep than PLA — higher Tg, crate-internal).
     #[must_use]
-    pub fn petg_25c_moderate() -> Self {
+    pub(crate) fn petg_25c_moderate() -> Self {
         Self {
             epsilon_0: Fix128::from_ratio(2, 1000),
             m: Fix128::from_ratio(1, 10_000_000_000_000_i64),
@@ -84,9 +97,9 @@ impl FindleyParameters {
         }
     }
 
-    /// Predicted total strain at time `t_hours` (dimensionless).
+    /// Predicted total strain at time `t_hours` (dimensionless, crate-internal helper called by `predict_strain`).
     #[must_use]
-    pub fn strain_at(&self, t_hours: Fix128) -> Fix128 {
+    pub(crate) fn strain_at(&self, t_hours: Fix128) -> Fix128 {
         if t_hours <= Fix128::ZERO {
             return self.epsilon_0;
         }
@@ -103,19 +116,19 @@ impl FindleyParameters {
 // Time-Temperature Superposition
 // ============================================================================
 
-/// WLF constants.
+/// WLF constants (crate-internal).
 #[derive(Clone, Copy, Debug)]
-pub struct WlfConstants {
+pub(crate) struct WlfConstants {
     /// C_1 (dimensionless).
-    pub c1: Fix128,
+    pub(crate) c1: Fix128,
     /// C_2 (°C).
-    pub c2: Fix128,
+    pub(crate) c2: Fix128,
 }
 
 impl WlfConstants {
-    /// Universal WLF (`C_1 = 17.44`, `C_2 = 51.6`), applied at `T_ref = T_g`.
+    /// Universal WLF (`C_1 = 17.44`, `C_2 = 51.6`), applied at `T_ref = T_g` (crate-internal).
     #[must_use]
-    pub fn universal() -> Self {
+    pub(crate) fn universal() -> Self {
         Self {
             c1: Fix128::from_ratio(1744, 100),
             c2: Fix128::from_ratio(516, 10),
@@ -124,16 +137,16 @@ impl WlfConstants {
 }
 
 /// Sentinel re-export of [`crate::math_util::EXP_OVERFLOW_SENTINEL`], used to
-/// signal "creep frozen" (temperature well below reference).
-pub const CREEP_FROZEN_AT: Fix128 = EXP_OVERFLOW_SENTINEL;
+/// signal "creep frozen" (temperature well below reference, crate-internal).
+pub(crate) const CREEP_FROZEN_AT: Fix128 = EXP_OVERFLOW_SENTINEL;
 
 /// WLF shift factor `a_T` (dimensionless multiplier). For `T > T_ref` returns
 /// a value < 1 (creep accelerates); for `T < T_ref` returns a value > 1.
 ///
 /// Uses the shared [`crate::math_util::exp_fix`] deterministic exponential.
-/// Very cold conditions saturate at [`CREEP_FROZEN_AT`].
+/// Very cold conditions saturate at `CREEP_FROZEN_AT` (crate-internal helper).
 #[must_use]
-pub fn wlf_shift_factor(temp_c: Fix128, t_ref_c: Fix128, wlf: &WlfConstants) -> Fix128 {
+pub(crate) fn wlf_shift_factor(temp_c: Fix128, t_ref_c: Fix128, wlf: &WlfConstants) -> Fix128 {
     let dt = temp_c - t_ref_c;
     let denom = wlf.c2 + dt;
     if denom.is_zero() {
@@ -149,7 +162,7 @@ pub fn wlf_shift_factor(temp_c: Fix128, t_ref_c: Fix128, wlf: &WlfConstants) -> 
 /// Effective time (hours) at temperature `t` relative to reference `t_ref`,
 /// using the WLF shift factor.
 #[must_use]
-pub fn effective_time_at_temp(
+pub(crate) fn effective_time_at_temp(
     t_hours: Fix128,
     temp_c: Fix128,
     t_ref_c: Fix128,
