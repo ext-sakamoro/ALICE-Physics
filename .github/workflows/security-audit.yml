@@ -188,7 +188,16 @@ jobs:
 
   public-api-diff:
     name: cargo-public-api (surface snapshot verification)
-    runs-on: ubuntu-latest
+    # macos-latest (aarch64) を採用: SIMD items (`Fix128::sub_simd` /
+    # `Vec3Fix::cross_simd` / `dot_batch_4` / `Fix128::pack_pair` 等) は
+    # `#[cfg(target_arch = "x86_64")]` gate 経由で x86_64 のみに存在、
+    # Linux x86_64 CI runner で snapshot regenerate すると Mac aarch64
+    # 開発環境の baseline と乖離して drift 誤検知が発生する
+    # Mac aarch64 runner に統一することで開発者環境と snapshot 生成環境を
+    # 一致させ、SIMD platform-specific items は「x86_64-only feature」として
+    # snapshot 対象外にする (regression detection の目的には aarch64
+    # baseline で十分、x86_64 SIMD path の変更は独立の #[cfg] gate で管理)
+    runs-on: macos-latest
     # v1.0 roadmap Item C: docs/PUBLIC_API_SNAPSHOT.txt に対する
     # cargo public-api の出力を diff、乖離があれば fail
     # 意図的な public API 追加/変更時は開発者側で snapshot を再生成 + commit
@@ -199,7 +208,7 @@ jobs:
           components: rustc-dev
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: public-api
+          shared-key: public-api-macos
 
       - name: Create ALICE optional bridge stubs
         uses: ./.github/actions/alice-stubs
