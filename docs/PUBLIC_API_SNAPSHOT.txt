@@ -2569,22 +2569,6 @@ impl core::marker::UnsafeUnpin for alice_physics::error::PhysicsError
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::error::PhysicsError
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::error::PhysicsError
 pub mod alice_physics::eulerian_grid
-pub struct alice_physics::eulerian_grid::BicgstabStats
-pub alice_physics::eulerian_grid::BicgstabStats::converged: bool
-pub alice_physics::eulerian_grid::BicgstabStats::final_residual: alice_physics::math::Fix128
-pub alice_physics::eulerian_grid::BicgstabStats::iterations: u32
-impl core::clone::Clone for alice_physics::eulerian_grid::BicgstabStats
-pub fn alice_physics::eulerian_grid::BicgstabStats::clone(&self) -> alice_physics::eulerian_grid::BicgstabStats
-impl core::fmt::Debug for alice_physics::eulerian_grid::BicgstabStats
-pub fn alice_physics::eulerian_grid::BicgstabStats::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Copy for alice_physics::eulerian_grid::BicgstabStats
-impl core::marker::Freeze for alice_physics::eulerian_grid::BicgstabStats
-impl core::marker::Send for alice_physics::eulerian_grid::BicgstabStats
-impl core::marker::Sync for alice_physics::eulerian_grid::BicgstabStats
-impl core::marker::Unpin for alice_physics::eulerian_grid::BicgstabStats
-impl core::marker::UnsafeUnpin for alice_physics::eulerian_grid::BicgstabStats
-impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::eulerian_grid::BicgstabStats
-impl core::panic::unwind_safe::UnwindSafe for alice_physics::eulerian_grid::BicgstabStats
 pub struct alice_physics::eulerian_grid::MacGrid
 pub alice_physics::eulerian_grid::MacGrid::dx: alice_physics::math::Fix128
 pub alice_physics::eulerian_grid::MacGrid::nx: usize
@@ -2614,12 +2598,7 @@ impl core::marker::UnsafeUnpin for alice_physics::eulerian_grid::MacGrid
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::eulerian_grid::MacGrid
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::eulerian_grid::MacGrid
 pub fn alice_physics::eulerian_grid::g2p_velocity(&alice_physics::eulerian_grid::MacGrid, alice_physics::math::Vec3Fix) -> alice_physics::math::Vec3Fix
-pub fn alice_physics::eulerian_grid::p2g_nearest(&mut alice_physics::eulerian_grid::MacGrid, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix)
-pub fn alice_physics::eulerian_grid::p2g_trilinear(&mut alice_physics::eulerian_grid::MacGrid, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix)
 pub fn alice_physics::eulerian_grid::project_pressure(&mut alice_physics::eulerian_grid::MacGrid, alice_physics::math::Fix128, alice_physics::math::Fix128, u32)
-pub fn alice_physics::eulerian_grid::project_pressure_bicgstab(&mut alice_physics::eulerian_grid::MacGrid, alice_physics::math::Fix128, alice_physics::math::Fix128, u32, alice_physics::math::Fix128) -> alice_physics::eulerian_grid::BicgstabStats
-pub fn alice_physics::eulerian_grid::project_pressure_jacobi(&mut alice_physics::eulerian_grid::MacGrid, alice_physics::math::Fix128, alice_physics::math::Fix128, u32)
-pub fn alice_physics::eulerian_grid::project_pressure_red_black_gs(&mut alice_physics::eulerian_grid::MacGrid, alice_physics::math::Fix128, alice_physics::math::Fix128, u32)
 pub mod alice_physics::event
 pub enum alice_physics::event::ContactEventType
 pub alice_physics::event::ContactEventType::Begin
@@ -3726,9 +3705,6 @@ impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::ik_physics_bridg
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::ik_physics_bridge::IkTargetSet
 pub mod alice_physics::interface_capture
 pub fn alice_physics::interface_capture::fast_sweeping_reinit(&mut alice_physics::multiphase::Grid3d, u32)
-pub fn alice_physics::interface_capture::plic_normal(&alice_physics::multiphase::Grid3d, usize, usize, usize) -> alice_physics::math::Vec3Fix
-pub fn alice_physics::interface_capture::plic_plane_offset(alice_physics::math::Vec3Fix, alice_physics::math::Fix128, alice_physics::math::Fix128) -> alice_physics::math::Fix128
-pub fn alice_physics::interface_capture::truncated_cube_volume(alice_physics::math::Vec3Fix, alice_physics::math::Fix128, alice_physics::math::Fix128) -> alice_physics::math::Fix128
 pub mod alice_physics::interpolation
 pub struct alice_physics::interpolation::BodySnapshot
 pub alice_physics::interpolation::BodySnapshot::position: alice_physics::math::Vec3Fix
@@ -5101,12 +5077,8 @@ impl core::marker::Unpin for alice_physics::multiphase::Grid3d
 impl core::marker::UnsafeUnpin for alice_physics::multiphase::Grid3d
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::multiphase::Grid3d
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::multiphase::Grid3d
-pub fn alice_physics::multiphase::advect_vof_uniform(&mut alice_physics::multiphase::Grid3d, alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128)
-pub fn alice_physics::multiphase::advect_vof_uniform_semi_lagrangian(&mut alice_physics::multiphase::Grid3d, alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128)
 pub fn alice_physics::multiphase::curvature_at(&alice_physics::multiphase::Grid3d, usize, usize, usize) -> alice_physics::math::Fix128
 pub fn alice_physics::multiphase::initialize_level_set_sphere(&mut alice_physics::multiphase::Grid3d, alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128)
-pub fn alice_physics::multiphase::reinitialize_level_set(&mut alice_physics::multiphase::Grid3d, u32)
-pub fn alice_physics::multiphase::total_volume_vof(&alice_physics::multiphase::Grid3d) -> alice_physics::math::Fix128
 pub fn alice_physics::multiphase::trilinear_range(&alice_physics::multiphase::Grid3d, alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128) -> (alice_physics::math::Fix128, alice_physics::math::Fix128)
 pub fn alice_physics::multiphase::trilinear_sample(&alice_physics::multiphase::Grid3d, alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128) -> alice_physics::math::Fix128
 pub mod alice_physics::netcode
@@ -14517,72 +14489,9 @@ impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::trimesh::Triangl
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::trimesh::Triangle
 pub fn alice_physics::trimesh::ray_triangle(&alice_physics::raycast::Ray, &alice_physics::trimesh::Triangle, alice_physics::math::Fix128) -> core::option::Option<alice_physics::raycast::RayHit>
 pub mod alice_physics::turbulence
-pub struct alice_physics::turbulence::KEpsilonState
-pub alice_physics::turbulence::KEpsilonState::epsilon: alice_physics::math::Fix128
-pub alice_physics::turbulence::KEpsilonState::k: alice_physics::math::Fix128
-impl alice_physics::turbulence::KEpsilonState
-pub fn alice_physics::turbulence::KEpsilonState::advance_epsilon(&mut self, alice_physics::math::Fix128, alice_physics::math::Fix128)
-pub fn alice_physics::turbulence::KEpsilonState::advance_k(&mut self, alice_physics::math::Fix128, alice_physics::math::Fix128)
-pub fn alice_physics::turbulence::KEpsilonState::eddy_viscosity(&self) -> alice_physics::math::Fix128
-impl core::clone::Clone for alice_physics::turbulence::KEpsilonState
-pub fn alice_physics::turbulence::KEpsilonState::clone(&self) -> alice_physics::turbulence::KEpsilonState
-impl core::cmp::Eq for alice_physics::turbulence::KEpsilonState
-impl core::cmp::PartialEq for alice_physics::turbulence::KEpsilonState
-pub fn alice_physics::turbulence::KEpsilonState::eq(&self, &alice_physics::turbulence::KEpsilonState) -> bool
-impl core::default::Default for alice_physics::turbulence::KEpsilonState
-pub fn alice_physics::turbulence::KEpsilonState::default() -> alice_physics::turbulence::KEpsilonState
-impl core::fmt::Debug for alice_physics::turbulence::KEpsilonState
-pub fn alice_physics::turbulence::KEpsilonState::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Copy for alice_physics::turbulence::KEpsilonState
-impl core::marker::StructuralPartialEq for alice_physics::turbulence::KEpsilonState
-impl core::marker::Freeze for alice_physics::turbulence::KEpsilonState
-impl core::marker::Send for alice_physics::turbulence::KEpsilonState
-impl core::marker::Sync for alice_physics::turbulence::KEpsilonState
-impl core::marker::Unpin for alice_physics::turbulence::KEpsilonState
-impl core::marker::UnsafeUnpin for alice_physics::turbulence::KEpsilonState
-impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::turbulence::KEpsilonState
-impl core::panic::unwind_safe::UnwindSafe for alice_physics::turbulence::KEpsilonState
-pub struct alice_physics::turbulence::KOmegaState
-pub alice_physics::turbulence::KOmegaState::k: alice_physics::math::Fix128
-pub alice_physics::turbulence::KOmegaState::omega: alice_physics::math::Fix128
-impl alice_physics::turbulence::KOmegaState
-pub fn alice_physics::turbulence::KOmegaState::eddy_viscosity(&self) -> alice_physics::math::Fix128
-pub fn alice_physics::turbulence::KOmegaState::from_k_epsilon(&alice_physics::turbulence::KEpsilonState) -> Self
-impl core::clone::Clone for alice_physics::turbulence::KOmegaState
-pub fn alice_physics::turbulence::KOmegaState::clone(&self) -> alice_physics::turbulence::KOmegaState
-impl core::cmp::Eq for alice_physics::turbulence::KOmegaState
-impl core::cmp::PartialEq for alice_physics::turbulence::KOmegaState
-pub fn alice_physics::turbulence::KOmegaState::eq(&self, &alice_physics::turbulence::KOmegaState) -> bool
-impl core::default::Default for alice_physics::turbulence::KOmegaState
-pub fn alice_physics::turbulence::KOmegaState::default() -> alice_physics::turbulence::KOmegaState
-impl core::fmt::Debug for alice_physics::turbulence::KOmegaState
-pub fn alice_physics::turbulence::KOmegaState::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Copy for alice_physics::turbulence::KOmegaState
-impl core::marker::StructuralPartialEq for alice_physics::turbulence::KOmegaState
-impl core::marker::Freeze for alice_physics::turbulence::KOmegaState
-impl core::marker::Send for alice_physics::turbulence::KOmegaState
-impl core::marker::Sync for alice_physics::turbulence::KOmegaState
-impl core::marker::Unpin for alice_physics::turbulence::KOmegaState
-impl core::marker::UnsafeUnpin for alice_physics::turbulence::KOmegaState
-impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::turbulence::KOmegaState
-impl core::panic::unwind_safe::UnwindSafe for alice_physics::turbulence::KOmegaState
-pub const alice_physics::turbulence::KE_C1_EPS: alice_physics::math::Fix128
-pub const alice_physics::turbulence::KE_C2_EPS: alice_physics::math::Fix128
-pub const alice_physics::turbulence::KE_C_MU: alice_physics::math::Fix128
-pub const alice_physics::turbulence::KE_SIGMA_EPS: alice_physics::math::Fix128
-pub const alice_physics::turbulence::KE_SIGMA_K: alice_physics::math::Fix128
-pub const alice_physics::turbulence::KW_BETA: alice_physics::math::Fix128
-pub const alice_physics::turbulence::KW_BETA_STAR: alice_physics::math::Fix128
-pub const alice_physics::turbulence::LOG_LAW_B: alice_physics::math::Fix128
 pub const alice_physics::turbulence::SMAGORINSKY_CS: alice_physics::math::Fix128
-pub const alice_physics::turbulence::VON_KARMAN: alice_physics::math::Fix128
-pub const alice_physics::turbulence::Y_PLUS_TRANSITION: alice_physics::math::Fix128
-pub fn alice_physics::turbulence::dynamic_smagorinsky_cs(alice_physics::math::Fix128, alice_physics::math::Fix128) -> alice_physics::math::Fix128
 pub fn alice_physics::turbulence::smagorinsky_eddy_viscosity(alice_physics::math::Fix128, alice_physics::math::Fix128) -> alice_physics::math::Fix128
 pub fn alice_physics::turbulence::strain_rate_magnitude(alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128) -> alice_physics::math::Fix128
-pub fn alice_physics::turbulence::u_plus(alice_physics::math::Fix128) -> alice_physics::math::Fix128
-pub fn alice_physics::turbulence::wall_k_epsilon(alice_physics::math::Fix128, alice_physics::math::Fix128) -> (alice_physics::math::Fix128, alice_physics::math::Fix128)
-pub fn alice_physics::turbulence::y_plus(alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128) -> alice_physics::math::Fix128
 pub mod alice_physics::vehicle
 pub struct alice_physics::vehicle::EngineConfig
 pub alice_physics::vehicle::EngineConfig::engine_brake: alice_physics::math::Fix128
