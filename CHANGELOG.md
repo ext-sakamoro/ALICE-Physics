@@ -11,6 +11,36 @@ were introduced during that release window.
 - v0.11.0 — [docs/audits/STUB_AUDIT_v0.11.0.md](docs/audits/STUB_AUDIT_v0.11.0.md) (base: v0.10.0 `16674d4`)
 - v0.12.0 — [docs/audits/STUB_AUDIT_v0.12.0.md](docs/audits/STUB_AUDIT_v0.12.0.md) (base: v0.11.0 `095f115`, **0 new stubs**)
 
+## [0.14.0-preview.7] - 2026-09-13
+
+**Fourth crates.io release** — completes the v1.0 Item F target range (fuzz
+coverage 5-8) with the final structural-solver target.
+
+### Added — 1 new fuzz target (7 → 8, target range complete)
+
+- **`fuzz_structural`** (`fuzz/fuzz_targets/fuzz_structural.rs`) — exercises the
+  integrated `StructuralSolver` (Rectangular section + CantileverEndPoint load +
+  PLA material defaults) with arbitrary width/height/load/length combinations up
+  to 8 solver steps. Guards against numerical instabilities in the Roark / Euler
+  buckling / Basquin fatigue formulas under extreme aspect ratios and heavy
+  loads — the solver must remain non-panicking and report failure via
+  `StructuralReport.failure_step` rather than crashing.
+
+### v1.0 roadmap progress
+
+- **Item F**: fuzz target coverage now **8/8** (`fuzz_step`, `fuzz_collision`,
+  `fuzz_deterministic_roundtrip`, `fuzz_joint`, `fuzz_cfd`, `fuzz_ccd`,
+  `fuzz_trimesh`, `fuzz_structural`). The v1.0 gate for Item F is
+  functionally satisfied; extended 24 h runs against each target are the
+  remaining validation work for v1.0-rc.
+
+### Verification
+
+- `cargo test --lib`: 1364 passed / 0 failed.
+- `cargo fmt --all --check` clean.
+- `cargo publish --dry-run` PASS.
+- `fuzz_structural` compiles against v0.14.0-preview.7.
+
 ## [0.14.0-preview.6] - 2026-09-13
 
 **Third crates.io release** — v0.14.0 Phase 2 from the v1.0 roadmap: public
