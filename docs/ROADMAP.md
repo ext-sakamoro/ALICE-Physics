@@ -17,7 +17,7 @@ Memory index pointer: `[[reference-alice-physics-v1-roadmap]]` in claude-config.
 
 **J-3 実 publish 完了** (2026-09-13) — `alice-physics v0.14.0-preview.4` を **crates.io に初 publish**、Cargo.toml `version` `0.13.0` → `0.14.0-preview.4` + `publish = false` 削除、194 file / 3.0 MiB / 718.6 KiB compressed uploaded (`cargo publish` 成功、`Published alice-physics v0.14.0-preview.4 at registry crates-io`)、`cargo search` で `alice-physics = "0.14.0-preview.4"` 反映確認済 crates.io URL: https://crates.io/crates/alice-physics ADR-002 の「v1.0.0 前に crates.io publish 事前試験実施」を **v0.14.0 preview で達成**
 
-**v0.14.0-preview.5 landed** (commit `<TBD>`、2026-09-13) — Phase 1 quick wins landing: (1) B4 wasm × ffi mutual exclusion を `[package.metadata.docs.rs]` + README recommended feature table で ergonomic 化、(2) 3 新 example 追加 (`ragdoll_demo` / `bfecc_advection_demo` / `sph_boundary_demo`、現状 7 → 10 個)、(3) 2 新 fuzz target (`fuzz_joint` / `fuzz_cfd`、現状 3 → 5 個)、(4) crates.io に `0.14.0-preview.5` publish 成功 (197 file / 3.1 MiB / 724.3 KiB compressed) 検証: 1364 lib test 全 pass (regression 0)、10 example release build PASS、`cargo doc` clean cargo-public-api snapshot は nightly toolchain install 時間の関係で v0.15.0 に defer
+**v0.14.0-preview.5 landed** (commit `7d5d214`、2026-09-13) — Phase 1 quick wins landing: (1) B4 wasm × ffi mutual exclusion を `[package.metadata.docs.rs]` + README recommended feature table で ergonomic 化、(2) 3 新 example 追加 (`ragdoll_demo` / `bfecc_advection_demo` / `sph_boundary_demo`、現状 7 → 10 個)、(3) 2 新 fuzz target (`fuzz_joint` / `fuzz_cfd`、現状 3 → 5 個)、(4) crates.io に `0.14.0-preview.5` publish 成功 (197 file / 3.1 MiB / 724.3 KiB compressed) 検証: 1364 lib test 全 pass (regression 0)、10 example release build PASS、`cargo doc` clean cargo-public-api snapshot は nightly toolchain install 時間の関係で v0.15.0 に defer
 
 - module 総数: 146 src file、`pub mod` 144
 - lib test: 1364 (1327 → 1343 → 1364、v2 Priority 1+2 sprint で +37)
@@ -125,7 +125,7 @@ Preview 4 wave が landed 済み、残作業:
 
 ### ✅ v0.14.0-preview.5 (Phase 1 quick wins、shipped 2026-09-13)
 
-commit `<TBD>` / crates.io: `alice-physics = "0.14.0-preview.5"`
+commit `7d5d214` / crates.io: `alice-physics = "0.14.0-preview.5"`
 
 - **B4 wasm × ffi mutual exclusion**: `[package.metadata.docs.rs]` 追加 + README EN/JP に recommended feature combinations table 追加 (mutual exclusion は正当な設計、ergonomic 化のみ)
 - **新 example 3 個** (7 → 10): `ragdoll_demo` / `bfecc_advection_demo` / `sph_boundary_demo`
