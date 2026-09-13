@@ -99,19 +99,14 @@ fn main() {
     );
     println!("Signal : 3×3×3 hot spot at (3, 4, 4), temperature 100 K");
     println!("Steps  : 8 × dt = 0.1 s  ⇒  0.8 s advected ≈ 0.8 cell");
-    println!(
-        "\n{:>18} | mass conservation | peak preservation",
-        "scheme"
-    );
+    println!("\n{:>18} | mass conservation | peak preservation", "scheme");
     println!("-------------------|-------------------|--------------------------");
 
     run(AdvectionScheme::SemiLagrangian, "SemiLagrangian");
     run(AdvectionScheme::MacCormack, "MacCormack");
     run(AdvectionScheme::Bfecc, "Bfecc");
 
-    println!(
-        "\nHigher peak-preservation (%) means less numerical diffusion. BFECC and"
-    );
+    println!("\nHigher peak-preservation (%) means less numerical diffusion. BFECC and");
     println!("MacCormack are second-order-in-space schemes and preserve peaks better");
     println!("than Semi-Lagrangian in divergence-free flows.");
 }

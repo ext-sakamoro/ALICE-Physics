@@ -22,7 +22,11 @@ fn main() {
 
     // Drop a full-size adult male ragdoll from a pelvis height of 4 m.
     let pelvis_position = Vec3Fix::new(Fix128::ZERO, Fix128::from_int(4), Fix128::ZERO);
-    let ragdoll = RagdollBuilder::build(&mut world, RagdollProportions::human_male(), pelvis_position);
+    let ragdoll = RagdollBuilder::build(
+        &mut world,
+        RagdollProportions::human_male(),
+        pelvis_position,
+    );
 
     println!("ALICE-Physics — Humanoid Ragdoll Demo");
     println!("=====================================");

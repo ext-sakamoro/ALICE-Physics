@@ -66,7 +66,11 @@ where
         solver_step(dt);
     }
     let elapsed = start.elapsed().as_secs_f32();
-    println!("{:>20} : {:>7.2} ms for 60 steps × 512 particles", label, elapsed * 1000.0);
+    println!(
+        "{:>20} : {:>7.2} ms for 60 steps × 512 particles",
+        label,
+        elapsed * 1000.0
+    );
     elapsed
 }
 
@@ -102,10 +106,18 @@ fn main() {
 
     // Report average density (should be near rest_density = 1000 kg/m³ after
     // enough steps, though 60 steps is short for equilibration).
-    let avg_naive: f32 =
-        solver_naive.particles.iter().map(|p| p.density).sum::<f32>() / solver_naive.particles.len() as f32;
-    let avg_hashed: f32 =
-        solver_hashed.particles.iter().map(|p| p.density).sum::<f32>() / solver_hashed.particles.len() as f32;
+    let avg_naive: f32 = solver_naive
+        .particles
+        .iter()
+        .map(|p| p.density)
+        .sum::<f32>()
+        / solver_naive.particles.len() as f32;
+    let avg_hashed: f32 = solver_hashed
+        .particles
+        .iter()
+        .map(|p| p.density)
+        .sum::<f32>()
+        / solver_hashed.particles.len() as f32;
     println!(
         "Average density (rest = 1000 kg/m³): naive = {:.1} / hashed = {:.1}",
         avg_naive, avg_hashed
