@@ -165,15 +165,16 @@ commit `f1b4209` / crates.io: `alice-physics = "0.14.0-preview.7"`
 Phase 1+2+F 完了、以降は最重量の B に集中:
 
 - **B Iteration 1 (priority modules 調査、2026-09-13 完了)** — `netcode_prediction` / `character_state` / `character` / `sdf_character` / `sdf_sph` / `sdf_wind_field` / `sdf_fem_mesh` の 7 module (53 pub item) を survey、**全て clean な public API と判定**、`pub(crate)` 格下げ候補 0 見つかった 詳細は [`docs/PUB_AUDIT_ITERATION_1.md`](PUB_AUDIT_ITERATION_1.md) 参照
-- **B Iteration 2+ (revised strategy)** — priority が誤っていた ("最近追加された module" ≠ "leak 多い module")、P1-P5 の module category に audit fokus 移動:
-  - **P1** solver 内部 (`solver_tgs*` / `constraint` / `contact_cache` / `dynamic_bvh`)
-  - **P2** math / BVH 低レベル (`math` / `bvh` / `broadphase*`)
+- **B Iteration 2 (P1 solver internals 調査、2026-09-13 完了)** — 9 module 127 pub item を survey (`solver` / `contact_cache` / `dynamic_bvh` / `solver_tgs` / `solver_tgs_hooks` / `solver_tgs_hooks_6dof` / `solver_tgs_hooks_6dof_oriented` / `solver_tgs_hooks_6dof_scoped` / `solver_tgs_hooks_6dof_oriented_scoped`)、**4 items pub(crate) 格下げ実施** (`NULL_NODE` / `DynamicNode` / `MAX_MANIFOLD_POINTS` / `tangent_frame`、2 commit)、snapshot 20,201 → 20,179 items (−22)、`solver_tgs*` extension mechanism 6 module 60+ items は **architectural decision required** で deferred (Option A: feature-gate / Option B: keep pub + unstable caveat / Option C: pub(crate) 全撤去 の 3 択、user 判断待ち) 詳細は [`docs/PUB_AUDIT_ITERATION_2.md`](PUB_AUDIT_ITERATION_2.md) 参照
+- **B Iteration 3+ (revised strategy)** — P2 以降の category audit:
+  - **P2** math / BVH 低レベル (`math` / `bvh` / `broadphase*`) + `contact_cache::CachedContactPoint` field visibility 決着 (Iter 2 deferred)
   - **P3** CFD 内部 (`eulerian_grid` / `multiphase` / `interface_capture` / `turbulence`)
   - **P4** structural 内部 (`beam_stress` / `plastic` / `buckling` / `fatigue` / `creep_longterm`)
   - **P5** I/O + 可視化 (`scene_io` / `collision_mesh_gen` / `debug_render` / `heatmap`)
-  - 各 module 1 commit で bisect 可能に保つ、変更後 `docs/PUBLIC_API_SNAPSHOT.txt` を regenerate + PR 差分で確認、downstream (`ALICE-Bamboo` / `ALICE-Anima` / `Yoin`) の使用 pattern を pre-check
+  - **User decision**: `solver_tgs*` A/B/C Option (v1.0 前に確定必須)
+  - 各 module 1 commit で bisect 可能に保つ、変更後 `docs/PUBLIC_API_SNAPSHOT.txt` を Mac aarch64 で regenerate + CI runner platform 一致確認、downstream (`ALICE-Bamboo` / `ALICE-Anima` / `Yoin` / `ALICE-LOL` / `ALICE-Kinematics` / `text-to-print-ios`) の使用 pattern を pre-check
 - **新 example 4 個追加** (10 → 14) — joint / character / BiCGStab pressure / adaptive dt
-- **Item C 出力側**: semver-checks の hard-gate 化 (現状 `continue-on-error: true`、B Iteration 2+ landing 後に有効化)
+- **Item C 出力側**: semver-checks の hard-gate 化 (現状 `continue-on-error: true`、B Iteration 3+ landing 後に有効化)
 - **F 24h 実行**: 8 target 全てで 24h fuzz run + crash 0 実績 (v1.0-rc validation の一環)
 - 完了次第 `0.14.0-preview.8` → ... → **`0.14.0` stable** publish
 
