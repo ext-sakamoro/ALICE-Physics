@@ -223,8 +223,6 @@ extern crate alloc;
 
 pub mod acoustic_wave;
 pub mod aeroelasticity;
-#[cfg(feature = "analytics")]
-pub mod analytics_bridge;
 pub mod animation_blend;
 pub mod anisotropic;
 pub mod anisotropic_friction;
@@ -261,8 +259,6 @@ pub mod convex_mesh_builder;
 pub mod creep_longterm;
 pub mod cylinder;
 pub mod damping_rayleigh;
-#[cfg(feature = "replay")]
-pub mod db_bridge;
 pub mod debug_render;
 pub mod deformable;
 pub mod dynamic_bvh;
@@ -316,8 +312,6 @@ pub mod multiphase;
 pub mod netcode;
 #[cfg(feature = "std")]
 pub mod netcode_prediction;
-#[cfg(feature = "neural")]
-pub mod neural;
 pub mod non_newtonian;
 pub mod particle;
 #[cfg(feature = "std")]
@@ -342,8 +336,6 @@ mod python;
 pub mod query;
 pub mod ragdoll;
 pub mod raycast;
-#[cfg(feature = "replay")]
-pub mod replay;
 pub mod rng;
 #[cfg(feature = "std")]
 pub mod rolling_contact;
@@ -657,12 +649,6 @@ pub mod prelude {
     pub use crate::netcode::{
         DeterministicSimulation, FrameInput, InputApplicator, NetcodeConfig, SimulationChecksum,
         SimulationSnapshot,
-    };
-    #[cfg(feature = "neural")]
-    pub use crate::neural::{
-        fix128_hard_tanh, fix128_leaky_relu, fix128_relu, fix128_tanh_approx,
-        fix128_ternary_matvec, Activation, ControllerConfig, ControllerOutput,
-        DeterministicNetwork, FixedTernaryWeight, RagdollController,
     };
     pub use crate::particle::{Particle, ParticleEmitter, ParticleSystem};
     #[cfg(feature = "std")]

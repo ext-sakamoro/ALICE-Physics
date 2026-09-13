@@ -26,23 +26,26 @@ default = ["std"]
 std = []
 simd = []            # Enable SIMD (AVX2) optimizations for x86_64
 parallel = ["rayon"] # Parallel constraint solving via graph coloring
-neural = ["alice-ml"] # Deterministic neural controller (ALICE-ML × Physics)
 python = ["pyo3", "numpy"] # Python bindings (PyO3 + NumPy zero-copy)
-replay = ["alice-db"]      # Replay recording/playback via ALICE-DB
 ffi = ["std"]              # C FFI for Unity/UE5/game engines
 wasm = ["wasm-bindgen", "js-sys"] # WebAssembly bindings for browsers
-analytics = ["dep:alice-analytics", "std"]  # ALICE-Analytics simulation profiling
 gpu-solver-bridge = ["std"]  # GpuSolverBridge trait for external GPU offload (opt-in, no runtime overhead when off)
+# `neural` (alice-ml) / `replay` (alice-db) / `analytics` (alice-analytics)
+# bridge features were removed at v0.14.0-preview.4 (2026-09-13) via the
+# ALICE-SDF v1.7.7 pattern: the sibling repos' current APIs have drifted
+# beyond simple import-path renames (required types are entirely gone
+# from `alice-ml` / `alice-db` / `alice-analytics` v0.1.0 local state),
+# so the bridge modules `src/{neural,replay,db_bridge,analytics_bridge}.rs`
+# were deleted. Restoration scheduled once the siblings publish to
+# crates.io with stable APIs (v0.17.x J-4). See docs/ROADMAP.md and
+# docs/CRATES_IO_PUBLISH_INVESTIGATION.md.
 
 [dependencies]
 rayon = { version = "1.8", optional = true }
-alice-ml = { path = "../ALICE-ML", optional = true }
 pyo3 = { version = "0.27", features = ["extension-module"], optional = true }
 numpy = { version = "0.27", optional = true }
-alice-db = { path = "../ALICE-DB", optional = true }
 wasm-bindgen = { version = "0.2", optional = true }
 js-sys = { version = "0.3", optional = true }
-alice-analytics = { path = "../ALICE-Analytics", optional = true, default-features = false, features = ["std"] }
 
 [dev-dependencies]
 tempfile = "3.10"

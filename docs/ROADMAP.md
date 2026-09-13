@@ -13,6 +13,8 @@ Memory index pointer: `[[reference-alice-physics-v1-roadmap]]` in claude-config.
 
 **v0.14.0-preview.3 landed** (commit `a4d475b`、2026-09-13) — v1.0 roadmap 最短優先候補 3 項目 + clippy fix: Item G MSRV policy 明記 (README EN/JP) / Item D `#![deny(missing_docs)]` escalation (0 warning 実測、`warn` → `deny` 1-char) / clippy `approx_constant` fix (solver_tgs_hooks_6dof_oriented.rs:820 の `1.5708` → `FRAC_PI_2`) / Item J crates.io publish 前調査 (`docs/CRATES_IO_PUBLISH_INVESTIGATION.md` に集約、案 (b) SDF v1.7.7 pattern を v0.16.x で採用推奨)
 
+**v0.14.0-preview.4 landed** (commit `<TBD>`、2026-09-13) — J-1 実態調査で sibling API drift が想定以上と判明 (`Ternary` / `AliceDB` / `prelude` / `DDSketch256` / `HyperLogLog12` 全て sibling で削除済、`~/ALICE-ML/src/lib.rs` と `~/ALICE-DB/src/lib.rs` は空)、案 (b) SDF v1.7.7 pattern を v0.16.x → **v0.14.0 に前倒し実施**: 4 bridge file 削除 (`analytics_bridge` / `db_bridge` / `neural` / `replay`、1424 行)、`Cargo.toml` から `neural` / `replay` / `analytics` 3 feature + 3 path dep 削除、`src/lib.rs` から 4 pub mod + neural prelude re-export 削除 検証: 1364 lib test 全 pass (regression 0)、`cargo publish --dry-run` PASS (195 file / 3.0 MiB packaged) — **B1/B3 blocker 完全解消、J-3 実 publish 実行が即可能な状態に到達**
+
 - module 総数: 146 src file、`pub mod` 144
 - lib test: 1364 (1327 → 1343 → 1364、v2 Priority 1+2 sprint で +37)
 - Session 1-3 (v0.10-0.12) baseline: 1175 lib tests + 53 alice-bamboo 統合 tests
@@ -75,13 +77,25 @@ commit `a4d475b`
   - **推奨**: v0.16.x で **案 (b) SDF v1.7.7 pattern** (`neural` / `replay` / `analytics` feature 削除 preview → dry-run → publish) 採用
   - v0.14.0 内追加タスク J-1 として B3 path dep drift 4 箇所修正を予定 (下記)
 
-### 🚧 v0.14.0 (推定 1-2 週間) — API surface audit 前半 + drift fix
+### ✅ v0.14.0-preview.4 (J-1 → 案 (b) 前倒し実施、shipped 2026-09-13)
 
-Preview 3 wave が landed 済み、残作業:
+commit `<TBD>`
+
+- **J-1 実態調査**: sibling API が想定以上に drift (`Ternary` / `AliceDB` / `prelude` / `DDSketch256` / `HyperLogLog12` 全て削除、sibling `lib.rs` は空) — 単純 import fix では復旧不可と判明
+- **案 (b) 前倒し実施** (SDF v1.7.7 pattern): v0.16.x で予定していた J-2 を **v0.14.0 に前倒し**
+  - `src/{analytics_bridge,db_bridge,neural,replay}.rs` 4 file 削除 (合計 1424 行)
+  - `Cargo.toml` から `neural` / `replay` / `analytics` 3 feature + `alice-ml` / `alice-db` / `alice-analytics` 3 path dep 削除
+  - `src/lib.rs` から 4 `pub mod` + `#[cfg(feature = "neural")]` prelude re-export 削除
+  - `[features]` に削除経緯 comment 追加 (v0.17.x J-4 での段階復帰への pointer)
+- **検証**: 1364 lib test 全 pass (regression 0)、`cargo doc` clean (pre-existing 8 warning は無関係)、**`cargo publish --dry-run` PASS** (195 file / 3.0 MiB packaged、B1/B3 blocker 完全解消)
+
+### 🚧 v0.14.0 (推定 1-2 週間) — API surface audit 前半 + 残 preview 済
+
+Preview 4 wave が landed 済み、残作業:
 
 - **B. Public API surface freeze 前半** — priority module (net / character / SDF 系) の `pub` → `pub(crate)` audit 着手 (144 pub mod のうち、`net_prediction` / `character*` / `sdf_*` 系から)
-- **J-1. path dep drift fix (`--all-features` build 復旧)** — `alice_db::AliceDB` / `alice_ml::{Ternary, TernaryWeight}` / `alice_analytics::prelude` の 4 import path を sibling 最新 API に追従、`cargo test --all-features` CI job 通過を confirm
 - **新 example 追加** — ragdoll / SPH / joint / character / BFECC velocity / BiCGStab pressure の代表 example (現状 7 → 14 個目標)
+- **B4 (新規発覚) 対応**: `wasm` × `ffi` mutual exclusion (pre-existing `compile_error!`) の設計見直し — CI で `--all-features` を除外し続けるか、feature 設計を分割するか判断
 
 自己採点 target: 品質 90/100 (現状 100/100 optimization scorecard は維持、public API 完成度で -10)
 
@@ -91,18 +105,21 @@ Preview 3 wave が landed 済み、残作業:
 - **C. cargo-semver-checks / cargo-public-api CI 通し** — `.github/workflows/security-audit.yml` に既に semver-checks job あり、拡張して cargo-public-api snapshot を repo に commit、PR diff で API surface 変化を可視化
 - **F. Fuzz coverage 拡張** — 現状 `fuzz_collision` + `fuzz_step` の 2 target → joint / SDF CCD / trimesh / `cfd_solver` / `structural_solver` で 5-8 target 追加、24h 実行 crash 0 実績を CHANGELOG に記載
 
-### 🚧 v0.16.0 (推定 3-4 週間) — determinism guarantee + ecosystem + publish 準備
+### 🚧 v0.16.0 (推定 2-3 週間) — determinism guarantee + ecosystem (J-2 は v0.14.0-preview.4 で前倒し完了済)
 
 - **E. Determinism CI 6 環境 matrix** — macOS ARM + macOS x86 + Linux ARM + Linux x86 + Windows + WASM で毎 PR bit-exact snapshot golden test を run、joint / cloth / fluid / SDF CCD / trimesh に拡張
 - **H. Ecosystem 契約 freeze** — ALICE-TRT `GpuSolverBridge` trait / ALICE-SDF `SdfField` trait / ALICE-Bamboo / ALICE-Anima / ALICE-Kinematics との integration point の method signature freeze、各 partner crate と semver policy 契約書化
-- **J-2. bridge feature 削除 preview commit** — v0.14.0-preview.3 の J investigation で判定した案 (b) SDF v1.7.7 pattern を実施: `[features]` から `neural` / `replay` / `analytics` を削除、`[dependencies]` から `alice-ml` / `alice-db` / `alice-analytics` の 3 行を削除、`src/*_bridge.rs` は `#[cfg(feature = "...")]` gate 維持で下流 downstream の path/git dep 経由継続を保証 (詳細は [`docs/CRATES_IO_PUBLISH_INVESTIGATION.md`](CRATES_IO_PUBLISH_INVESTIGATION.md) 参照)
+- ~~**J-2. bridge feature 削除 preview commit**~~ ✅ **v0.14.0-preview.4 で前倒し実施済** (詳細は [`docs/CRATES_IO_PUBLISH_INVESTIGATION.md`](CRATES_IO_PUBLISH_INVESTIGATION.md) の追記 section 参照)
 
-### ⏳ v0.16.1 or v0.17.0 (推定 3-5 日) — crates.io publish 実績作り
+### ⏳ v0.14.1 or v0.15.0 (推定 3-5 日) — crates.io publish 実績作り (J-3 前倒し可能)
 
-- **J-3. publish 実行** — `Cargo.toml` の `publish = false` を解除、`cargo publish --dry-run` → J-2 の bridge feature 削除 preview が landed 済なら次段 issue (recovery) → 段階 fix → `cargo publish` 実行
-- crates.io に初 publish、`cargo add alice-physics` で外部 downstream が使えるようになる
+**preview.4 で `cargo publish --dry-run` PASS 到達済**、`Cargo.toml` の `publish = false` を解除すれば即 publish 可能な状態:
+
+- **J-3. publish 実行** — `Cargo.toml` の `publish = false` を解除 → `cargo publish` 実行 → crates.io に初 publish
+- crates.io 到達後、`cargo add alice-physics` で外部 downstream が使えるようになる
 - v1.0.0 前の publish trial-and-error 完了 (0.x のうちに済ませて stable 直前の risk 排除、ADR-002 準拠)
-- **J-4** (v0.17.x 以降): sibling 3 crate (`alice-ml` / `alice-db` / `alice-analytics`) が crates.io publish された段階で、削除した bridge feature を段階復帰 (ALICE-SDF v1.8.0 と同 pattern)
+- **判断**: v0.14.0 stable landing 前に publish するか、v0.15.0 の C (cargo-semver-checks) 通過後に publish するかは別途判断 (v0.14.0 stable 前 publish なら「preview.4 の bridge 削除」で早期 downstream feedback 取得、v0.15.0 まで待つなら API polish 済状態で publish する trade-off)
+- **J-4** (v0.17.x 以降): sibling 3 crate (`alice-ml` / `alice-db` / `alice-analytics`) が crates.io publish された段階で、削除した bridge feature を段階復帰 (ALICE-SDF v1.8.0 と同 pattern) 削除したコードは git 履歴 (v0.14.0-preview.4 commit) から参照可能
 
 ### ⏳ v1.0.0-rc.1 (推定 6-8 週間)
 
