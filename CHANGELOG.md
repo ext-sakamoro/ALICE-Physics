@@ -11,6 +11,42 @@ were introduced during that release window.
 - v0.11.0 — [docs/audits/STUB_AUDIT_v0.11.0.md](docs/audits/STUB_AUDIT_v0.11.0.md) (base: v0.10.0 `16674d4`)
 - v0.12.0 — [docs/audits/STUB_AUDIT_v0.12.0.md](docs/audits/STUB_AUDIT_v0.12.0.md) (base: v0.11.0 `095f115`, **0 new stubs**)
 
+## [0.14.0-preview.6] - 2026-09-13
+
+**Third crates.io release** — v0.14.0 Phase 2 from the v1.0 roadmap: public
+API surface CI gate + fuzz coverage expansion.
+
+### Added — Public API surface CI job (v1.0 Item C)
+
+- **`.github/workflows/security-audit.yml`** now includes a
+  **`public-api-diff`** job that regenerates the `docs/PUBLIC_API_SNAPSHOT.txt`
+  baseline with `cargo +nightly public-api --simplified` and fails if the
+  regenerated snapshot drifts from the checked-in file. Intentional public API
+  additions require the developer to regenerate the snapshot locally and
+  commit it alongside the API change, so PR review sees the exact delta.
+  This closes the input side of v1.0 roadmap Item C (cargo-semver-checks /
+  cargo-public-api CI integration).
+
+### Added — 2 new fuzz targets (5 → 7)
+
+- **`fuzz_ccd`** (`fuzz/fuzz_targets/fuzz_ccd.rs`) — exercises the swept
+  continuous collision primitives `sphere_sphere_toi` and `sphere_plane_toi`
+  with arbitrary sphere pairs and plane geometry. Guards against panics on
+  zero-velocity, coincident-start, degenerate-normal, and near-tangent
+  configurations.
+- **`fuzz_trimesh`** (`fuzz/fuzz_targets/fuzz_trimesh.rs`) — builds a
+  `TriMesh::from_indexed` with arbitrary indexed geometry (indices are
+  wrapped modulo the vertex count so they always resolve) and exercises
+  `raycast` + `closest_point` queries. Guards against panics on degenerate
+  triangles, coincident vertices, and zero-direction rays.
+
+### Verification
+
+- All 1364 lib tests continue to pass (`cargo test --lib`).
+- `cargo publish --dry-run` succeeds with the new fuzz targets in place.
+- `cargo fmt --all --check` clean.
+- `cargo build --release --examples` all 10 examples build.
+
 ## [0.14.0-preview.5] - 2026-09-13
 
 **Second crates.io release** — v0.14.0 Phase 1 quick wins from the v1.0 roadmap
