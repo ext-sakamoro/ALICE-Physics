@@ -819,7 +819,6 @@ impl core::marker::Unpin for alice_physics::beam_stress::BeamReport
 impl core::marker::UnsafeUnpin for alice_physics::beam_stress::BeamReport
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::beam_stress::BeamReport
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::beam_stress::BeamReport
-pub fn alice_physics::beam_stress::euler_critical_load_n(&alice_physics::beam_stress::CrossSection, alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::beam_stress::ColumnEndCondition) -> alice_physics::math::Fix128
 pub mod alice_physics::bimaterial
 pub struct alice_physics::bimaterial::BimaterialReport
 pub alice_physics::bimaterial::BimaterialReport::bond_strength_mpa: alice_physics::math::Fix128
@@ -1015,12 +1014,6 @@ impl core::marker::UnsafeUnpin for alice_physics::buckling::ColumnBucklingReport
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::buckling::ColumnBucklingReport
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::buckling::ColumnBucklingReport
 pub fn alice_physics::buckling::analyze_column(&alice_physics::beam_stress::CrossSection, alice_physics::math::Fix128, alice_physics::beam_stress::ColumnEndCondition, &alice_physics::filament_db::MaterialProperties) -> alice_physics::buckling::ColumnBucklingReport
-pub fn alice_physics::buckling::critical_stress_mpa(alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128) -> (alice_physics::math::Fix128, alice_physics::buckling::BucklingRegime)
-pub fn alice_physics::buckling::plate_buckling_mpa(alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128) -> alice_physics::math::Fix128
-pub fn alice_physics::buckling::radius_of_gyration_mm(&alice_physics::beam_stress::CrossSection) -> alice_physics::math::Fix128
-pub fn alice_physics::buckling::slenderness_ratio(&alice_physics::beam_stress::CrossSection, alice_physics::math::Fix128, alice_physics::beam_stress::ColumnEndCondition) -> alice_physics::math::Fix128
-pub fn alice_physics::buckling::snap_through_load_n(alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128) -> alice_physics::math::Fix128
-pub fn alice_physics::buckling::transition_slenderness(alice_physics::math::Fix128, alice_physics::math::Fix128) -> alice_physics::math::Fix128
 pub mod alice_physics::buoyancy_zone
 pub enum alice_physics::buoyancy_zone::ZoneShape
 pub alice_physics::buoyancy_zone::ZoneShape::Aabb
@@ -2084,9 +2077,7 @@ pub alice_physics::creep_longterm::FindleyParameters::epsilon_0: alice_physics::
 pub alice_physics::creep_longterm::FindleyParameters::m: alice_physics::math::Fix128
 pub alice_physics::creep_longterm::FindleyParameters::n_int: u32
 impl alice_physics::creep_longterm::FindleyParameters
-pub fn alice_physics::creep_longterm::FindleyParameters::petg_25c_moderate() -> Self
 pub fn alice_physics::creep_longterm::FindleyParameters::pla_25c_moderate() -> Self
-pub fn alice_physics::creep_longterm::FindleyParameters::strain_at(&self, alice_physics::math::Fix128) -> alice_physics::math::Fix128
 impl core::clone::Clone for alice_physics::creep_longterm::FindleyParameters
 pub fn alice_physics::creep_longterm::FindleyParameters::clone(&self) -> alice_physics::creep_longterm::FindleyParameters
 impl core::cmp::Eq for alice_physics::creep_longterm::FindleyParameters
@@ -2103,27 +2094,7 @@ impl core::marker::Unpin for alice_physics::creep_longterm::FindleyParameters
 impl core::marker::UnsafeUnpin for alice_physics::creep_longterm::FindleyParameters
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::creep_longterm::FindleyParameters
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::creep_longterm::FindleyParameters
-pub struct alice_physics::creep_longterm::WlfConstants
-pub alice_physics::creep_longterm::WlfConstants::c1: alice_physics::math::Fix128
-pub alice_physics::creep_longterm::WlfConstants::c2: alice_physics::math::Fix128
-impl alice_physics::creep_longterm::WlfConstants
-pub fn alice_physics::creep_longterm::WlfConstants::universal() -> Self
-impl core::clone::Clone for alice_physics::creep_longterm::WlfConstants
-pub fn alice_physics::creep_longterm::WlfConstants::clone(&self) -> alice_physics::creep_longterm::WlfConstants
-impl core::fmt::Debug for alice_physics::creep_longterm::WlfConstants
-pub fn alice_physics::creep_longterm::WlfConstants::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Copy for alice_physics::creep_longterm::WlfConstants
-impl core::marker::Freeze for alice_physics::creep_longterm::WlfConstants
-impl core::marker::Send for alice_physics::creep_longterm::WlfConstants
-impl core::marker::Sync for alice_physics::creep_longterm::WlfConstants
-impl core::marker::Unpin for alice_physics::creep_longterm::WlfConstants
-impl core::marker::UnsafeUnpin for alice_physics::creep_longterm::WlfConstants
-impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::creep_longterm::WlfConstants
-impl core::panic::unwind_safe::UnwindSafe for alice_physics::creep_longterm::WlfConstants
-pub const alice_physics::creep_longterm::CREEP_FROZEN_AT: alice_physics::math::Fix128
-pub fn alice_physics::creep_longterm::effective_time_at_temp(alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128, &alice_physics::creep_longterm::WlfConstants) -> alice_physics::math::Fix128
 pub fn alice_physics::creep_longterm::predict_strain(&alice_physics::creep_longterm::FindleyParameters, &alice_physics::filament_db::MaterialProperties, alice_physics::math::Fix128, alice_physics::math::Fix128) -> alice_physics::math::Fix128
-pub fn alice_physics::creep_longterm::wlf_shift_factor(alice_physics::math::Fix128, alice_physics::math::Fix128, &alice_physics::creep_longterm::WlfConstants) -> alice_physics::math::Fix128
 pub mod alice_physics::cylinder
 pub struct alice_physics::cylinder::Cylinder
 pub alice_physics::cylinder::Cylinder::center: alice_physics::math::Vec3Fix
@@ -2686,35 +2657,13 @@ impl core::marker::UnsafeUnpin for alice_physics::event::TriggerEvent
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::event::TriggerEvent
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::event::TriggerEvent
 pub mod alice_physics::fatigue
-pub struct alice_physics::fatigue::FatigueReport
-pub alice_physics::fatigue::FatigueReport::damage: alice_physics::math::Fix128
-pub alice_physics::fatigue::FatigueReport::is_safe: bool
-pub alice_physics::fatigue::FatigueReport::safety_factor: alice_physics::math::Fix128
-impl core::clone::Clone for alice_physics::fatigue::FatigueReport
-pub fn alice_physics::fatigue::FatigueReport::clone(&self) -> alice_physics::fatigue::FatigueReport
-impl core::cmp::Eq for alice_physics::fatigue::FatigueReport
-impl core::cmp::PartialEq for alice_physics::fatigue::FatigueReport
-pub fn alice_physics::fatigue::FatigueReport::eq(&self, &alice_physics::fatigue::FatigueReport) -> bool
-impl core::fmt::Debug for alice_physics::fatigue::FatigueReport
-pub fn alice_physics::fatigue::FatigueReport::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Copy for alice_physics::fatigue::FatigueReport
-impl core::marker::StructuralPartialEq for alice_physics::fatigue::FatigueReport
-impl core::marker::Freeze for alice_physics::fatigue::FatigueReport
-impl core::marker::Send for alice_physics::fatigue::FatigueReport
-impl core::marker::Sync for alice_physics::fatigue::FatigueReport
-impl core::marker::Unpin for alice_physics::fatigue::FatigueReport
-impl core::marker::UnsafeUnpin for alice_physics::fatigue::FatigueReport
-impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::fatigue::FatigueReport
-impl core::panic::unwind_safe::UnwindSafe for alice_physics::fatigue::FatigueReport
 pub struct alice_physics::fatigue::SnCurve
 pub alice_physics::fatigue::SnCurve::endurance_cycles: u64
 pub alice_physics::fatigue::SnCurve::endurance_stress_mpa: alice_physics::math::Fix128
 pub alice_physics::fatigue::SnCurve::fatigue_exponent_m: u32
 pub alice_physics::fatigue::SnCurve::ultimate_tensile_mpa: alice_physics::math::Fix128
 impl alice_physics::fatigue::SnCurve
-pub fn alice_physics::fatigue::SnCurve::aluminum_a5052() -> Self
 pub fn alice_physics::fatigue::SnCurve::from_fdm_material(&alice_physics::filament_db::MaterialProperties) -> Self
-pub fn alice_physics::fatigue::SnCurve::steel_sus304() -> Self
 impl core::clone::Clone for alice_physics::fatigue::SnCurve
 pub fn alice_physics::fatigue::SnCurve::clone(&self) -> alice_physics::fatigue::SnCurve
 impl core::cmp::Eq for alice_physics::fatigue::SnCurve
@@ -2731,11 +2680,7 @@ impl core::marker::Unpin for alice_physics::fatigue::SnCurve
 impl core::marker::UnsafeUnpin for alice_physics::fatigue::SnCurve
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::fatigue::SnCurve
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::fatigue::SnCurve
-pub const alice_physics::fatigue::INFINITE_LIFE: u64
-pub fn alice_physics::fatigue::analyze_spectrum(&[alice_physics::fatigue::SpectrumEntry], &alice_physics::fatigue::SnCurve) -> alice_physics::fatigue::FatigueReport
-pub fn alice_physics::fatigue::cycles_to_failure(&alice_physics::fatigue::SnCurve, alice_physics::math::Fix128) -> u64
 pub fn alice_physics::fatigue::miner_damage(&[alice_physics::fatigue::SpectrumEntry], &alice_physics::fatigue::SnCurve) -> alice_physics::math::Fix128
-pub fn alice_physics::fatigue::stress_at_cycles(&alice_physics::fatigue::SnCurve, u64) -> alice_physics::math::Fix128
 pub type alice_physics::fatigue::SpectrumEntry = (alice_physics::math::Fix128, u64)
 pub mod alice_physics::ffi
 #[repr(C)] pub struct alice_physics::ffi::AliceBodyInfo
@@ -5996,9 +5941,7 @@ pub alice_physics::plastic::NortonCreep::a: alice_physics::math::Fix128
 pub alice_physics::plastic::NortonCreep::n: u32
 impl alice_physics::plastic::NortonCreep
 pub fn alice_physics::plastic::NortonCreep::integrate(&self, alice_physics::math::Fix128, alice_physics::math::Fix128, &mut alice_physics::plastic::PlasticState)
-pub fn alice_physics::plastic::NortonCreep::petg_room_temp() -> Self
 pub fn alice_physics::plastic::NortonCreep::pla_room_temp() -> Self
-pub fn alice_physics::plastic::NortonCreep::strain_rate_per_s(&self, alice_physics::math::Fix128) -> alice_physics::math::Fix128
 impl core::clone::Clone for alice_physics::plastic::NortonCreep
 pub fn alice_physics::plastic::NortonCreep::clone(&self) -> alice_physics::plastic::NortonCreep
 impl core::cmp::Eq for alice_physics::plastic::NortonCreep
@@ -6022,7 +5965,6 @@ pub alice_physics::plastic::PlasticModel::yield_strength_mpa: alice_physics::mat
 pub alice_physics::plastic::PlasticModel::youngs_modulus_mpa: alice_physics::math::Fix128
 impl alice_physics::plastic::PlasticModel
 pub fn alice_physics::plastic::PlasticModel::from_fdm_material(&alice_physics::filament_db::MaterialProperties) -> Self
-pub const fn alice_physics::plastic::PlasticModel::with_hardening(self, alice_physics::plastic::HardeningType) -> Self
 impl core::clone::Clone for alice_physics::plastic::PlasticModel
 pub fn alice_physics::plastic::PlasticModel::clone(&self) -> alice_physics::plastic::PlasticModel
 impl core::cmp::Eq for alice_physics::plastic::PlasticModel
@@ -6061,57 +6003,7 @@ impl core::marker::Unpin for alice_physics::plastic::PlasticState
 impl core::marker::UnsafeUnpin for alice_physics::plastic::PlasticState
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::plastic::PlasticState
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::plastic::PlasticState
-pub struct alice_physics::plastic::PlasticStep
-pub alice_physics::plastic::PlasticStep::plastic_strain_increment: alice_physics::math::Fix128
-pub alice_physics::plastic::PlasticStep::stress_mpa: alice_physics::math::Fix128
-pub alice_physics::plastic::PlasticStep::yielded: bool
-impl core::clone::Clone for alice_physics::plastic::PlasticStep
-pub fn alice_physics::plastic::PlasticStep::clone(&self) -> alice_physics::plastic::PlasticStep
-impl core::cmp::Eq for alice_physics::plastic::PlasticStep
-impl core::cmp::PartialEq for alice_physics::plastic::PlasticStep
-pub fn alice_physics::plastic::PlasticStep::eq(&self, &alice_physics::plastic::PlasticStep) -> bool
-impl core::fmt::Debug for alice_physics::plastic::PlasticStep
-pub fn alice_physics::plastic::PlasticStep::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Copy for alice_physics::plastic::PlasticStep
-impl core::marker::StructuralPartialEq for alice_physics::plastic::PlasticStep
-impl core::marker::Freeze for alice_physics::plastic::PlasticStep
-impl core::marker::Send for alice_physics::plastic::PlasticStep
-impl core::marker::Sync for alice_physics::plastic::PlasticStep
-impl core::marker::Unpin for alice_physics::plastic::PlasticStep
-impl core::marker::UnsafeUnpin for alice_physics::plastic::PlasticStep
-impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::plastic::PlasticStep
-impl core::panic::unwind_safe::UnwindSafe for alice_physics::plastic::PlasticStep
-pub struct alice_physics::plastic::StressTensor
-pub alice_physics::plastic::StressTensor::sxx: alice_physics::math::Fix128
-pub alice_physics::plastic::StressTensor::sxy: alice_physics::math::Fix128
-pub alice_physics::plastic::StressTensor::sxz: alice_physics::math::Fix128
-pub alice_physics::plastic::StressTensor::syy: alice_physics::math::Fix128
-pub alice_physics::plastic::StressTensor::syz: alice_physics::math::Fix128
-pub alice_physics::plastic::StressTensor::szz: alice_physics::math::Fix128
-impl alice_physics::plastic::StressTensor
-pub fn alice_physics::plastic::StressTensor::hydrostatic(&self) -> alice_physics::math::Fix128
-pub const fn alice_physics::plastic::StressTensor::uniaxial_x(alice_physics::math::Fix128) -> Self
-pub fn alice_physics::plastic::StressTensor::von_mises(&self) -> alice_physics::math::Fix128
-impl core::clone::Clone for alice_physics::plastic::StressTensor
-pub fn alice_physics::plastic::StressTensor::clone(&self) -> alice_physics::plastic::StressTensor
-impl core::cmp::Eq for alice_physics::plastic::StressTensor
-impl core::cmp::PartialEq for alice_physics::plastic::StressTensor
-pub fn alice_physics::plastic::StressTensor::eq(&self, &alice_physics::plastic::StressTensor) -> bool
-impl core::default::Default for alice_physics::plastic::StressTensor
-pub fn alice_physics::plastic::StressTensor::default() -> alice_physics::plastic::StressTensor
-impl core::fmt::Debug for alice_physics::plastic::StressTensor
-pub fn alice_physics::plastic::StressTensor::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Copy for alice_physics::plastic::StressTensor
-impl core::marker::StructuralPartialEq for alice_physics::plastic::StressTensor
-impl core::marker::Freeze for alice_physics::plastic::StressTensor
-impl core::marker::Send for alice_physics::plastic::StressTensor
-impl core::marker::Sync for alice_physics::plastic::StressTensor
-impl core::marker::Unpin for alice_physics::plastic::StressTensor
-impl core::marker::UnsafeUnpin for alice_physics::plastic::StressTensor
-impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::plastic::StressTensor
-impl core::panic::unwind_safe::UnwindSafe for alice_physics::plastic::StressTensor
-pub fn alice_physics::plastic::current_yield_mpa(&alice_physics::plastic::PlasticModel, &alice_physics::plastic::PlasticState) -> alice_physics::math::Fix128
-pub fn alice_physics::plastic::radial_return_1d(alice_physics::math::Fix128, &alice_physics::plastic::PlasticModel, &mut alice_physics::plastic::PlasticState) -> alice_physics::plastic::PlasticStep
+pub fn alice_physics::plastic::radial_return_1d(alice_physics::math::Fix128, &alice_physics::plastic::PlasticModel, &mut alice_physics::plastic::PlasticState) -> PlasticStep
 pub mod alice_physics::prelude
 pub mod alice_physics::prelude::layers
 pub const alice_physics::prelude::layers::ALL: u32
