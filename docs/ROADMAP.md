@@ -153,15 +153,22 @@ commit `d215f4a` / crates.io: `alice-physics = "0.14.0-preview.6"`
 - crates.io に 3rd publish 成功 (199 file / 4.6 MiB / 868.5 KiB compressed、PUBLIC_API_SNAPSHOT.txt 20,201 行増分)
 - 検証: 1364 lib test PASS、`cargo fmt --all --check` clean、fuzz target cargo check PASS
 
-### 🚧 v0.14.0-preview.7+ / v0.14.0 stable — 継続開発
+### ✅ v0.14.0-preview.7 (F 8/8 完全達成、shipped 2026-09-13)
 
-Phase 1+2 quick wins landing 済み、以降は最重量の B に集中:
+commit `<TBD>` / crates.io: `alice-physics = "0.14.0-preview.7"`
+
+- **Item F 完全達成** — 新 fuzz target `fuzz_structural` (StructuralSolver + Rectangular + CantileverEndPoint + PLA、extreme aspect ratio / heavy load 耐性) 追加、fuzz coverage **7 → 8** (v1.0 目標 5-8 range を full 到達)
+- 検証: 1364 lib test PASS + `cargo fmt --check` clean + `cargo publish --dry-run` PASS + `fuzz_structural` cargo check PASS
+
+### 🚧 v0.14.0-preview.8+ / v0.14.0 stable — 継続開発
+
+Phase 1+2+F 完了、以降は最重量の B に集中:
 
 - **B. Public API surface freeze 前半** — priority module audit (144 pub mod のうち `net_prediction` / `character*` / `sdf_*` 系から `pub(crate)` 格下げ)、v0.14.0 stable 主 gating (2-3 週間)
 - **新 example 4 個追加** (10 → 14) — joint / character / BiCGStab pressure / adaptive dt
-- **F 残 1 target** (7 → 8): `fuzz_structural` (StructuralSolver、複雑ため dedicated session で追加)
 - **Item C 出力側**: semver-checks の hard-gate 化 (現状 `continue-on-error: true`、B audit landing 後に有効化)
-- 完了次第 `0.14.0-preview.7` → ... → **`0.14.0` stable** publish
+- **F 24h 実行**: 8 target 全てで 24h fuzz run + crash 0 実績 (v1.0-rc validation の一環)
+- 完了次第 `0.14.0-preview.8` → ... → **`0.14.0` stable** publish
 
 ### ⏳ v1.0.0-rc.1 (推定 6-8 週間)
 
