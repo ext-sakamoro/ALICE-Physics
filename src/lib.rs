@@ -223,6 +223,8 @@ extern crate alloc;
 
 pub mod acoustic_wave;
 pub mod aeroelasticity;
+#[cfg(feature = "analytics")]
+pub mod analytics_bridge;
 pub mod animation_blend;
 pub mod anisotropic;
 pub mod anisotropic_friction;
@@ -259,6 +261,8 @@ pub mod convex_mesh_builder;
 pub mod creep_longterm;
 pub mod cylinder;
 pub mod damping_rayleigh;
+#[cfg(feature = "replay")]
+pub mod db_bridge;
 pub mod debug_render;
 pub mod deformable;
 pub mod dynamic_bvh;
@@ -312,6 +316,8 @@ pub mod multiphase;
 pub mod netcode;
 #[cfg(feature = "std")]
 pub mod netcode_prediction;
+#[cfg(feature = "neural")]
+pub mod neural;
 pub mod non_newtonian;
 pub mod particle;
 #[cfg(feature = "std")]
@@ -336,6 +342,8 @@ mod python;
 pub mod query;
 pub mod ragdoll;
 pub mod raycast;
+#[cfg(feature = "replay")]
+pub mod replay;
 pub mod rng;
 #[cfg(feature = "std")]
 pub mod rolling_contact;
@@ -382,18 +390,22 @@ pub mod sleeping;
 pub mod smoke_fire;
 pub mod soft_body_cut;
 pub mod solver;
+// solver_tgs* family: pub(crate) since v0.14.0-preview.8 (v1.0 Item B
+// Option C — TGS extension mechanism with zero downstream adoption is
+// hidden from the public surface; re-expose via semver-minor bump if
+// concrete demand emerges).
 #[cfg(feature = "std")]
-pub mod solver_tgs;
+pub(crate) mod solver_tgs;
 #[cfg(feature = "std")]
-pub mod solver_tgs_hooks;
+pub(crate) mod solver_tgs_hooks;
 #[cfg(feature = "std")]
-pub mod solver_tgs_hooks_6dof;
+pub(crate) mod solver_tgs_hooks_6dof;
 #[cfg(feature = "std")]
-pub mod solver_tgs_hooks_6dof_oriented;
+pub(crate) mod solver_tgs_hooks_6dof_oriented;
 #[cfg(feature = "std")]
-pub mod solver_tgs_hooks_6dof_oriented_scoped;
+pub(crate) mod solver_tgs_hooks_6dof_oriented_scoped;
 #[cfg(feature = "std")]
-pub mod solver_tgs_hooks_6dof_scoped;
+pub(crate) mod solver_tgs_hooks_6dof_scoped;
 pub mod spatial;
 #[cfg(feature = "std")]
 pub mod thermal;

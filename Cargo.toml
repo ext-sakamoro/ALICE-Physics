@@ -1,6 +1,6 @@
 [package]
 name = "alice-physics"
-version = "0.14.0-preview.7"
+version = "0.14.0-preview.8"
 edition = "2021"
 authors = ["Moroya Sakamoto <sakamoro@alicelaw.net>"]
 description = "Deterministic 128-bit Fixed-Point Physics Engine"
@@ -40,15 +40,13 @@ python = ["pyo3", "numpy"] # Python bindings (PyO3 + NumPy zero-copy)
 ffi = ["std"]              # C FFI for Unity/UE5/game engines
 wasm = ["wasm-bindgen", "js-sys"] # WebAssembly bindings for browsers
 gpu-solver-bridge = ["std"]  # GpuSolverBridge trait for external GPU offload (opt-in, no runtime overhead when off)
-# `neural` (alice-ml) / `replay` (alice-db) / `analytics` (alice-analytics)
-# bridge features were removed at v0.14.0-preview.4 (2026-09-13) via the
-# ALICE-SDF v1.7.7 pattern: the sibling repos' current APIs have drifted
-# beyond simple import-path renames (required types are entirely gone
-# from `alice-ml` / `alice-db` / `alice-analytics` v0.1.0 local state),
-# so the bridge modules `src/{neural,replay,db_bridge,analytics_bridge}.rs`
-# were deleted. Restoration scheduled once the siblings publish to
-# crates.io with stable APIs (v0.17.x J-4). See docs/ROADMAP.md and
-# docs/CRATES_IO_PUBLISH_INVESTIGATION.md.
+# J-4 restoration (v0.14.0-preview.8、2026-09-13) — sibling 3 crate が crates.io に
+# publish されたため、v0.14.0-preview.4 で削除した bridge 3 feature を復活
+# - alice-ml 0.2.0 / alice-db 0.2.0-beta.1 / alice-analytics 0.1.0 全て crates.io 済
+# - sibling API drift 対応は各 bridge module 側で restoration commit 内で修正
+neural = ["dep:alice-ml", "std"]        # Deterministic neural controller (ALICE-ML × Physics)
+replay = ["dep:alice-db", "std"]        # Replay recording/playback via ALICE-DB
+analytics = ["dep:alice-analytics", "std"]  # ALICE-Analytics simulation profiling
 
 [dependencies]
 rayon = { version = "1.8", optional = true }
@@ -56,6 +54,10 @@ pyo3 = { version = "0.27", features = ["extension-module"], optional = true }
 numpy = { version = "0.27", optional = true }
 wasm-bindgen = { version = "0.2", optional = true }
 js-sys = { version = "0.3", optional = true }
+# J-4 restoration: sibling 3 crate (今日 crates.io publish 済)
+alice-ml = { version = "0.2", optional = true, default-features = false, features = ["std"] }
+alice-db = { version = "0.2.0-beta.1", optional = true, default-features = false }
+alice-analytics = { version = "0.1", optional = true, default-features = false, features = ["std"] }
 
 [dev-dependencies]
 tempfile = "3.10"
