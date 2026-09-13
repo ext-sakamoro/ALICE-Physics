@@ -1067,29 +1067,12 @@ impl core::marker::UnsafeUnpin for alice_physics::buoyancy_zone::BuoyancyZone
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::buoyancy_zone::BuoyancyZone
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::buoyancy_zone::BuoyancyZone
 pub mod alice_physics::bvh
-pub struct alice_physics::bvh::BroadphaseHybrid
-pub alice_physics::bvh::BroadphaseHybrid::dynamic_grid: alice_physics::spatial::SpatialGrid
-pub alice_physics::bvh::BroadphaseHybrid::static_bvh: alice_physics::bvh::LinearBvh
-impl alice_physics::bvh::BroadphaseHybrid
-pub fn alice_physics::bvh::BroadphaseHybrid::build_dynamic(&mut self)
-pub fn alice_physics::bvh::BroadphaseHybrid::clear_dynamic(&mut self)
-pub fn alice_physics::bvh::BroadphaseHybrid::insert_dynamic(&mut self, usize, alice_physics::math::Vec3Fix)
-pub fn alice_physics::bvh::BroadphaseHybrid::new(alice_physics::bvh::LinearBvh, alice_physics::math::Fix128, usize) -> Self
-pub fn alice_physics::bvh::BroadphaseHybrid::query_pairs<F>(&self, &alice_physics::collider::AABB, F) where F: core::ops::function::FnMut(u32)
-impl core::marker::Freeze for alice_physics::bvh::BroadphaseHybrid
-impl core::marker::Send for alice_physics::bvh::BroadphaseHybrid
-impl core::marker::Sync for alice_physics::bvh::BroadphaseHybrid
-impl core::marker::Unpin for alice_physics::bvh::BroadphaseHybrid
-impl core::marker::UnsafeUnpin for alice_physics::bvh::BroadphaseHybrid
-impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::bvh::BroadphaseHybrid
-impl core::panic::unwind_safe::UnwindSafe for alice_physics::bvh::BroadphaseHybrid
 #[repr(C, align(32))] pub struct alice_physics::bvh::BvhNode
 pub alice_physics::bvh::BvhNode::aabb_max: [i32; 3]
 pub alice_physics::bvh::BvhNode::aabb_min: [i32; 3]
 pub alice_physics::bvh::BvhNode::first_child_or_prim: u32
 pub alice_physics::bvh::BvhNode::prim_count_escape: u32
 impl alice_physics::bvh::BvhNode
-pub const alice_physics::bvh::BvhNode::MAX_PRIMS_PER_LEAF: u32
 pub const fn alice_physics::bvh::BvhNode::escape_idx(&self) -> u32
 pub const fn alice_physics::bvh::BvhNode::get_aabb(&self) -> alice_physics::collider::AABB
 pub fn alice_physics::bvh::BvhNode::internal(&alice_physics::collider::AABB, u32, u32) -> Self
@@ -1171,9 +1154,6 @@ impl core::marker::Unpin for alice_physics::bvh::LinearBvh
 impl core::marker::UnsafeUnpin for alice_physics::bvh::LinearBvh
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::bvh::LinearBvh
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::bvh::LinearBvh
-pub const alice_physics::bvh::ESCAPE_NONE: u32
-pub fn alice_physics::bvh::morton_code(u64, u64, u64) -> u64
-pub fn alice_physics::bvh::point_to_morton(alice_physics::math::Vec3Fix, &alice_physics::collider::AABB) -> u64
 pub mod alice_physics::ccd
 pub struct alice_physics::ccd::CcdConfig
 pub alice_physics::ccd::CcdConfig::max_iterations: usize
@@ -4921,8 +4901,6 @@ impl core::marker::UnsafeUnpin for alice_physics::math::Vec3Fix
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::math::Vec3Fix
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::math::Vec3Fix
 pub const alice_physics::math::SIMD_WIDTH: usize
-pub const fn alice_physics::math::select_fix128(bool, alice_physics::math::Fix128, alice_physics::math::Fix128) -> alice_physics::math::Fix128
-pub const fn alice_physics::math::select_vec3(bool, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix) -> alice_physics::math::Vec3Fix
 pub const fn alice_physics::math::simd_width() -> usize
 pub mod alice_physics::math_util
 pub const alice_physics::math_util::EXP_OVERFLOW_SENTINEL: alice_physics::math::Fix128
@@ -6988,7 +6966,6 @@ pub alice_physics::prelude::BvhNode::aabb_min: [i32; 3]
 pub alice_physics::prelude::BvhNode::first_child_or_prim: u32
 pub alice_physics::prelude::BvhNode::prim_count_escape: u32
 impl alice_physics::bvh::BvhNode
-pub const alice_physics::bvh::BvhNode::MAX_PRIMS_PER_LEAF: u32
 pub const fn alice_physics::bvh::BvhNode::escape_idx(&self) -> u32
 pub const fn alice_physics::bvh::BvhNode::get_aabb(&self) -> alice_physics::collider::AABB
 pub fn alice_physics::bvh::BvhNode::internal(&alice_physics::collider::AABB, u32, u32) -> Self
@@ -15895,7 +15872,6 @@ pub alice_physics::BvhNode::aabb_min: [i32; 3]
 pub alice_physics::BvhNode::first_child_or_prim: u32
 pub alice_physics::BvhNode::prim_count_escape: u32
 impl alice_physics::bvh::BvhNode
-pub const alice_physics::bvh::BvhNode::MAX_PRIMS_PER_LEAF: u32
 pub const fn alice_physics::bvh::BvhNode::escape_idx(&self) -> u32
 pub const fn alice_physics::bvh::BvhNode::get_aabb(&self) -> alice_physics::collider::AABB
 pub fn alice_physics::bvh::BvhNode::internal(&alice_physics::collider::AABB, u32, u32) -> Self
