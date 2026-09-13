@@ -233,7 +233,7 @@ pub(crate) struct PlasticStep {
 /// This is the standard J2 return-mapping specialised to 1-D — sufficient
 /// for beam-like analyses. Full 3-D versions use the same structure with
 /// a deviatoric stress tensor.
-pub fn radial_return_1d(
+pub(crate) fn radial_return_1d(
     trial_stress_mpa: Fix128,
     model: &PlasticModel,
     state: &mut PlasticState,

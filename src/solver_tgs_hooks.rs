@@ -25,6 +25,14 @@
 //! Angular quantities are intentionally omitted from this reference
 //! implementation. Callers that need a full 6-DOF hook can copy the
 //! shape shown here and swap in `Vec3Fix` / `Mat3Fix` math.
+//!
+//! # Visibility
+//!
+//! `pub(crate)` since v0.14.0-preview.8 — see [`crate::solver_tgs`] for the
+//! Option-C rationale.
+
+#![allow(dead_code)]
+#![allow(rustdoc::broken_intra_doc_links)]
 
 use crate::math::Fix128;
 use crate::solver_tgs::{BodyLike, CachedImpulse, ContactLike, ImpulseCache, TgsHooks};
@@ -65,17 +73,17 @@ fn v_dot(a: Vec3, b: Vec3) -> Fix128 {
 /// reason about. A full 6-DOF implementation is expected to live in a
 /// separate module.
 #[derive(Debug, Clone, Copy)]
-pub struct SimpleBodyState {
+pub(crate) struct SimpleBodyState {
     /// World-space centre of mass.
-    pub position: Vec3,
+    pub(crate) position: Vec3,
     /// World-space linear velocity.
-    pub linear_velocity: Vec3,
+    pub(crate) linear_velocity: Vec3,
     /// Reciprocal of mass. Set to zero for static / kinematic bodies.
-    pub inv_mass: Fix128,
+    pub(crate) inv_mass: Fix128,
     /// `true` when this body participates in solver updates.
-    pub is_dynamic: bool,
+    pub(crate) is_dynamic: bool,
     /// Frame-stable identity used by [`ImpulseCache`] look-ups.
-    pub stable_id: u64,
+    pub(crate) stable_id: u64,
 }
 
 impl Default for SimpleBodyState {
@@ -108,29 +116,29 @@ impl BodyLike for SimpleBodyState {
 /// data can be written back to [`ImpulseCache`] at the end of the
 /// sub-step.
 #[derive(Debug, Clone, Copy)]
-pub struct SimpleContact {
+pub(crate) struct SimpleContact {
     /// World-index of the first body participating in the contact.
-    pub body_a: usize,
+    pub(crate) body_a: usize,
     /// World-index of the second body participating in the contact.
-    pub body_b: usize,
+    pub(crate) body_b: usize,
     /// Stable identifier used for warm-start indexing across frames.
-    pub stable_id: u64,
+    pub(crate) stable_id: u64,
     /// Unit-length world-space normal, oriented from body A into body
     /// B (i.e. positive normal impulse pushes B along `normal`).
-    pub normal: Vec3,
+    pub(crate) normal: Vec3,
     /// Signed penetration depth. Positive values mean the bodies
     /// overlap.
-    pub penetration: Fix128,
+    pub(crate) penetration: Fix128,
     /// Coulomb friction coefficient (not used by the reference
     /// linear-only hooks but present so that callers can wire in a
     /// tangential solver later).
-    pub friction: Fix128,
+    pub(crate) friction: Fix128,
     /// Restitution coefficient (unused by the linear-only reference).
-    pub restitution: Fix128,
+    pub(crate) restitution: Fix128,
     /// Accumulated normal impulse for the current sub-step. Populated
     /// by [`PgsHooks::velocity_iteration`] and written back to
     /// [`ImpulseCache`] in [`PgsHooks::end_substep`].
-    pub accum_normal: Fix128,
+    pub(crate) accum_normal: Fix128,
 }
 
 impl ContactLike for SimpleContact {
@@ -151,16 +159,16 @@ impl ContactLike for SimpleContact {
 
 /// Tunable parameters for [`PgsHooks`].
 #[derive(Debug, Clone, Copy)]
-pub struct PgsConfig {
+pub(crate) struct PgsConfig {
     /// External acceleration applied at the beginning of every sub-step.
-    pub gravity: Vec3,
+    pub(crate) gravity: Vec3,
     /// Baumgarte gain used by the positional pass to remove penetration.
-    pub baumgarte: Fix128,
+    pub(crate) baumgarte: Fix128,
     /// Penetration allowance below which no positional correction is applied.
-    pub slop: Fix128,
+    pub(crate) slop: Fix128,
     /// When `true`, the accumulator is seeded from [`ImpulseCache`] at
     /// the beginning of every sub-step.
-    pub warmstart: bool,
+    pub(crate) warmstart: bool,
 }
 
 impl Default for PgsConfig {
@@ -180,15 +188,15 @@ impl Default for PgsConfig {
 
 /// Reference [`TgsHooks`] implementation over slices of
 /// [`SimpleBodyState`] and [`SimpleContact`].
-pub struct PgsHooks<'a> {
+pub(crate) struct PgsHooks<'a> {
     /// Mutable slice of body states this hook operates on.
-    pub bodies: &'a mut [SimpleBodyState],
+    pub(crate) bodies: &'a mut [SimpleBodyState],
     /// Mutable slice of contacts this hook operates on.
-    pub contacts: &'a mut [SimpleContact],
+    pub(crate) contacts: &'a mut [SimpleContact],
     /// Warm-start impulse cache reused across frames.
-    pub cache: &'a mut ImpulseCache,
+    pub(crate) cache: &'a mut ImpulseCache,
     /// Tunable projected Gauss-Seidel parameters.
-    pub cfg: PgsConfig,
+    pub(crate) cfg: PgsConfig,
 }
 
 impl PgsHooks<'_> {
