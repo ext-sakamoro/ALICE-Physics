@@ -1764,6 +1764,20 @@ let config = PhysicsConfig::default();
 | BVH 構築 | O(n log n) | モートンコードソート |
 | BVH クエリ | O(log n) | スタックレストラバーサル |
 
+## MSRV ポリシー
+
+**最小サポート Rust バージョン: 1.70.0**
+
+ALICE-Physics は Serde 流の MSRV ポリシーを採用:
+
+- 0.x 系での MSRV bump は **minor version bump** (`0.13.x → 0.14.0`) 扱い、patch bump にはしない
+- 1.x 安定 line での MSRV bump も **minor version bump** (`1.x → 1.(x+1)`) 扱い、patch にはしない
+- MSRV コミットメントは **最新 3 stable Rust channel** (N-2 policy) をカバー、リリース時点で current stable + 過去 2 個を支援
+- `alice-physics` は nightly toolchain を要求しない
+- CI で MSRV enforcement (専用 `msrv` job で declared MSRV toolchain 上の `cargo build --locked`、v0.14.0 で追加予定)
+
+Downstream crate は `alice-physics` が patch release で MSRV を上げないことに依存でき、下流の MSRV window を破壊しない
+
 ## ビルド
 
 ```bash
