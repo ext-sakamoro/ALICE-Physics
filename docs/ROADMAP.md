@@ -166,12 +166,13 @@ Phase 1+2+F 完了、以降は最重量の B に集中:
 
 - **B Iteration 1 (priority modules 調査、2026-09-13 完了)** — `netcode_prediction` / `character_state` / `character` / `sdf_character` / `sdf_sph` / `sdf_wind_field` / `sdf_fem_mesh` の 7 module (53 pub item) を survey、**全て clean な public API と判定**、`pub(crate)` 格下げ候補 0 見つかった 詳細は [`docs/PUB_AUDIT_ITERATION_1.md`](PUB_AUDIT_ITERATION_1.md) 参照
 - **B Iteration 2 (P1 solver internals 調査、2026-09-13 完了)** — 9 module 127 pub item を survey (`solver` / `contact_cache` / `dynamic_bvh` / `solver_tgs` / `solver_tgs_hooks` / `solver_tgs_hooks_6dof` / `solver_tgs_hooks_6dof_oriented` / `solver_tgs_hooks_6dof_scoped` / `solver_tgs_hooks_6dof_oriented_scoped`)、**4 items pub(crate) 格下げ実施** (`NULL_NODE` / `DynamicNode` / `MAX_MANIFOLD_POINTS` / `tangent_frame`、2 commit)、snapshot 20,201 → 20,179 items (−22)、`solver_tgs*` extension mechanism 6 module 60+ items は **architectural decision required** で deferred (Option A: feature-gate / Option B: keep pub + unstable caveat / Option C: pub(crate) 全撤去 の 3 択、user 判断待ち) 詳細は [`docs/PUB_AUDIT_ITERATION_2.md`](PUB_AUDIT_ITERATION_2.md) 参照
-- **B Iteration 3+ (revised strategy)** — P2 以降の category audit:
-  - **P2** math / BVH 低レベル (`math` / `bvh` / `broadphase*`) + `contact_cache::CachedContactPoint` field visibility 決着 (Iter 2 deferred)
+- **B Iteration 3 (P2 math / BVH / spatial 調査、2026-09-13 完了)** — 3 module 108 pub item を survey (`math` / `bvh` / `spatial`)、**8 items pub(crate) 格下げ実施** (math: `pack_pair` / `select_fix128` / `select_vec3`、bvh: `morton_code` / `point_to_morton` / `ESCAPE_NONE` / `MAX_PRIMS_PER_LEAF` / `BroadphaseHybrid`、2 commit `dc32236` + `3f0d12c`)、snapshot 20,179 → 20,155 items (−24)、`BvhStats` は `LinearBvh::stats()` の return type leak で格下げ不可 (keep pub)、`spatial` は全 pub items が prelude commitment + 内部 cross-module 利用で保護 (0 downgrades)、`CachedContactPoint` field visibility は **v1.0-rc.1 で `#[non_exhaustive]` 化検討** として resolved 詳細は [`docs/PUB_AUDIT_ITERATION_3.md`](PUB_AUDIT_ITERATION_3.md) 参照
+- **B Iteration 4+ (revised strategy)** — P3 以降の category audit:
   - **P3** CFD 内部 (`eulerian_grid` / `multiphase` / `interface_capture` / `turbulence`)
   - **P4** structural 内部 (`beam_stress` / `plastic` / `buckling` / `fatigue` / `creep_longterm`)
   - **P5** I/O + 可視化 (`scene_io` / `collision_mesh_gen` / `debug_render` / `heatmap`)
   - **User decision**: `solver_tgs*` A/B/C Option (v1.0 前に確定必須)
+  - **v1.0-rc.1 design task**: `CachedContactPoint` field visibility の `#[non_exhaustive]` 化 or accessor-based API
   - 各 module 1 commit で bisect 可能に保つ、変更後 `docs/PUBLIC_API_SNAPSHOT.txt` を Mac aarch64 で regenerate + CI runner platform 一致確認、downstream (`ALICE-Bamboo` / `ALICE-Anima` / `Yoin` / `ALICE-LOL` / `ALICE-Kinematics` / `text-to-print-ios`) の使用 pattern を pre-check
 - **新 example 4 個追加** (10 → 14) — joint / character / BiCGStab pressure / adaptive dt
 - **Item C 出力側**: semver-checks の hard-gate 化 (現状 `continue-on-error: true`、B Iteration 3+ landing 後に有効化)
