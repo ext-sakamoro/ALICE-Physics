@@ -816,8 +816,10 @@ mod tests {
             ..Default::default()
         };
         // Rotate 90° about +Y using the axis-angle helper.
-        body.orientation =
-            QuatFix::from_axis_angle(Vec3Fix::from_f32(0.0, 1.0, 0.0), Fix128::from_f32(1.5708));
+        body.orientation = QuatFix::from_axis_angle(
+            Vec3Fix::from_f32(0.0, 1.0, 0.0),
+            Fix128::from_f32(core::f32::consts::FRAC_PI_2),
+        );
         // +X in the body frame becomes ≈ -Z in the world frame after a
         // 90° rotation about +Y.
         let world = body.local_to_world([Fix128::ONE, Fix128::ZERO, Fix128::ZERO]);

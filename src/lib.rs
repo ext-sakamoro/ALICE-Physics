@@ -185,8 +185,10 @@
 // TGS solver family (`solver_tgs*`) modules opt out of missing_docs
 // locally with `#![allow(missing_docs)]` while their per-item `///`
 // docs are being backfilled (Turn E follow-up). The rest of the crate
-// stays on the warn discipline so new modules do not regress silently.
-#![warn(missing_docs)]
+// is now under `deny` — verified 0 warnings via
+// `cargo doc --no-deps --all-features` at v0.14.0-preview.3 landing,
+// escalated from `warn` on 2026-09-13 (v1.0 roadmap Item D).
+#![deny(missing_docs)]
 // Pedantic: suppress lints inherent to physics/math code.
 // - Cast lints: Fixed-point ↔ float conversions and index casts are pervasive.
 // - Naming: coordinate variables (px, py, pz), vertex indices (v0, v1, v2).

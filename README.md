@@ -2145,9 +2145,21 @@ let config = PhysicsConfig::default();
 | BVH build | O(n log n) | Morton code sort |
 | BVH query | O(log n) | Stackless traversal |
 
-## Building
+## MSRV Policy
 
-**MSRV:** 1.70.0 (Minimum Supported Rust Version)
+**Minimum Supported Rust Version: 1.70.0**
+
+ALICE-Physics follows a Serde-style MSRV policy:
+
+- MSRV bumps within the 0.x line are treated as **minor version bumps** (`0.13.x → 0.14.0`), never patch bumps
+- MSRV bumps within a stable 1.x line will also be treated as **minor version bumps** (`1.x → 1.(x+1)`), never patch
+- The MSRV commitment covers the **latest 3 stable Rust channels** (N-2 policy) — at the time of a release, we support the current stable + previous 2
+- `alice-physics` does not require a nightly toolchain
+- CI enforces the declared MSRV via a dedicated `msrv` job (planned for v0.14.0) that runs `cargo build --locked` on the declared MSRV toolchain
+
+Downstream crates can rely on `alice-physics` not raising its MSRV within a patch release, preserving their own MSRV window.
+
+## Building
 
 ```bash
 # Standard build
