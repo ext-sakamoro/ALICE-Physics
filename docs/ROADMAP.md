@@ -144,14 +144,24 @@ commit `7d5d214` / crates.io: `alice-physics = "0.14.0-preview.5"`
 - **`docs/PUBLIC_API_SNAPSHOT.md`** — snapshot の位置付け + regenerate command + diff pattern + roadmap wiring 集約
 - v1.0 Item C (cargo-semver-checks / cargo-public-api CI) の入力側整備完了、CI job 追加は v0.15.0 phase で実施
 
-### 🚧 v0.14.0-preview.6+ / v0.14.0 stable — 継続開発
+### ✅ v0.14.0-preview.6 (Phase 2、shipped 2026-09-13)
 
-Phase 1 quick wins landing 済み、以降は API polish + downstream feedback に集中:
+commit `d215f4a` / crates.io: `alice-physics = "0.14.0-preview.6"`
 
-- **B. Public API surface freeze 前半** — priority module audit (v0.14.0 stable の主 gating)
+- **Item C 入力側**: `.github/workflows/security-audit.yml` に `public-api-diff` job 追加 — `cargo +nightly public-api --simplified` の出力を `docs/PUBLIC_API_SNAPSHOT.txt` と diff、非空なら fail 意図的 API 変更時は開発者側で snapshot 再生成 + commit を要求
+- **新 fuzz target 2 個** (5 → 7): `fuzz_ccd` (sphere_sphere_toi / sphere_plane_toi swept 入力耐性) / `fuzz_trimesh` (from_indexed + raycast + closest_point degenerate 入力耐性)
+- crates.io に 3rd publish 成功 (199 file / 4.6 MiB / 868.5 KiB compressed、PUBLIC_API_SNAPSHOT.txt 20,201 行増分)
+- 検証: 1364 lib test PASS、`cargo fmt --all --check` clean、fuzz target cargo check PASS
+
+### 🚧 v0.14.0-preview.7+ / v0.14.0 stable — 継続開発
+
+Phase 1+2 quick wins landing 済み、以降は最重量の B に集中:
+
+- **B. Public API surface freeze 前半** — priority module audit (144 pub mod のうち `net_prediction` / `character*` / `sdf_*` 系から `pub(crate)` 格下げ)、v0.14.0 stable 主 gating (2-3 週間)
 - **新 example 4 個追加** (10 → 14) — joint / character / BiCGStab pressure / adaptive dt
-- **cargo-public-api snapshot** — nightly toolchain install 済で導入 (v0.14.0-preview.6 予定)
-- 完了次第 `0.14.0-preview.6` → ... → **`0.14.0` stable** publish
+- **F 残 1 target** (7 → 8): `fuzz_structural` (StructuralSolver、複雑ため dedicated session で追加)
+- **Item C 出力側**: semver-checks の hard-gate 化 (現状 `continue-on-error: true`、B audit landing 後に有効化)
+- 完了次第 `0.14.0-preview.7` → ... → **`0.14.0` stable** publish
 
 ### ⏳ v1.0.0-rc.1 (推定 6-8 週間)
 
