@@ -23,8 +23,13 @@ use std::collections::HashMap;
 /// Maximum contact points per manifold (internal cap, currently 4).
 pub(crate) const MAX_MANIFOLD_POINTS: usize = 4;
 
-/// A single cached contact point within a manifold
+/// A single cached contact point within a manifold.
+///
+/// Marked `#[non_exhaustive]` so future warm-start / analytics fields
+/// can be added without a breaking API change; construct via the internal
+/// `CachedContactPoint::new` and inspect via public fields.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct CachedContactPoint {
     /// Contact point on body A (local space)
     pub local_point_a: Vec3Fix,
@@ -89,8 +94,12 @@ impl BodyPairKey {
     }
 }
 
-/// Contact manifold: up to 4 persistent contact points between two bodies
+/// Contact manifold: up to 4 persistent contact points between two bodies.
+///
+/// Marked `#[non_exhaustive]` so additional accumulator / diagnostic
+/// fields can be added post-v1.0 without a breaking API change.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct ContactManifold {
     /// Body pair this manifold belongs to
     pub pair: BodyPairKey,
