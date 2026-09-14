@@ -243,13 +243,14 @@ jobs:
           echo "✓ Public API snapshot matches docs/PUBLIC_API_SNAPSHOT.txt"
 
   semver-checks:
-    name: cargo-semver-checks (API compat、informational)
+    name: cargo-semver-checks (API compat、hard-gate)
     runs-on: ubuntu-latest
     # v0.14.0-preview.4 で `publish = false` を解除、crates.io publish 済
     # (2026-09-13 initial publish、以降 preview.5 / preview.6 / ...)
+    # 2026-09-14 v1.0 Item C 有効化: continue-on-error 解除、hard-gate
+    # モードに移行 breaking API 変更を含む PR はここで block される
     # crates.io baseline との比較も可能だが、preview 版どうしの比較は
-    # noise 多いため引き続き git baseline (main~1) で比較、informational only
-    continue-on-error: true
+    # noise 多いため引き続き git baseline (main~1) で比較
     steps:
       - uses: actions/checkout@v5
         with:
