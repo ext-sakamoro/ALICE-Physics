@@ -16,6 +16,15 @@ were introduced during that release window.
 Patch release from the post-1.0 strict review (7 findings). No public API
 change; `parallel`-feature batch assignment changed (see Changed).
 
+### Added
+
+- **`PhysicsScene::new(bodies, joints, config, version)`, `PhysicsConfig::new(...)`,
+  `scene_io::CURRENT_SCENE_VERSION`** — since 1.0.0 marked both structs
+  `#[non_exhaustive]`, a downstream crate had no way to build a scene for
+  `save_scene` (struct literals are rejected with E0639); the crate's own
+  fuzz target `fuzz_deterministic_roundtrip` had been failing to compile
+  since then behind the fuzz workflow's `continue-on-error`.
+
 ### Fixed
 
 - **`parallel` solver soundness** — graph coloring saturated at 64 colors:
