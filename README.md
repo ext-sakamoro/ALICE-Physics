@@ -11,9 +11,21 @@ English | [日本語](README_JP.md)
 
 > Part of **[ALICE-Eco-System](https://github.com/ext-sakamoro/ALICE-Eco-System)** — 260+ crate Edge-to-Cloud data pipeline (SDF / Physics / LLM / Motion / Font / TTS)
 
-A high-precision physics engine designed for deterministic simulation across different platforms and hardware. Uses 128-bit fixed-point arithmetic to ensure bit-exact results regardless of CPU, compiler, or operating system.
+A high-precision physics engine designed for deterministic simulation across different platforms and hardware. The rigid-body core uses 128-bit fixed-point arithmetic (`Fix128`) so its results are bit-exact regardless of CPU, compiler, or operating system; the surrounding engineering / field modules that expose `f32` APIs are deterministic within one binary — see [Determinism scope](#determinism-scope).
 
 **Published on crates.io as v1.0.0 semver-locked stable** (released 2026-09-14). Install with `cargo add alice-physics`. All 9 v1.0 roadmap items complete — see [`CHANGELOG.md`](CHANGELOG.md) for the full release scope, [`docs/MIGRATION_0.x_TO_1.0.md`](docs/MIGRATION_0.x_TO_1.0.md) for 0.x → 1.0 migration, and [`docs/ECOSYSTEM_CONTRACTS.md`](docs/ECOSYSTEM_CONTRACTS.md) for frozen partner API contracts.
+
+### Determinism scope
+
+"Bit-exact" is a property of the **Fix128 core**, not of every module in the crate. Read the table before relying on cross-platform reproducibility:
+
+| Tier | Modules | Guarantee |
+|------|---------|-----------|
+| **Fix128 core** | rigid-body solver, joints, distance / contact constraints, BVH broad-phase, GJK / EPA, CCD, sleeping, scene I/O, netcode snapshot / rollback, neural controller, and every module whose public API is expressed in `Fix128` / `Vec3Fix` / `QuatFix` | **Bit-exact across platforms** — pure `i64` / `u64` integer arithmetic, verified by the golden-hash suite on macOS ARM/x86, Linux ARM/x86, Windows and `wasm32-wasip1` |
+| **`f32` / `f64` field modules** (30) | `sdf_collider`, `sdf_manifold`, `sdf_ccd`, `sdf_sph`, `sdf_fem_mesh`, `sdf_destruction`, `sdf_character`, `sdf_adaptive`, `sdf_wind_field`, `gpu_sdf`, `thermal`, `transient_thermal`, `phase_change`, `fracture`, `erosion`, `sim_field`, `sim_modifier`, `rolling_contact`, `aeroelasticity`, `piezoelectric`, `acoustic_wave`, `pressure`, `thin_wall`, `convex_decompose`, `db_bridge`, `character_state`, `fluid_netcode`, and the `f64` statistics modules `anomaly` / `privacy` / `sketch` | **Same-binary deterministic** — identical inputs give identical outputs on one build. IEEE 754 `+ - * / sqrt` are spec-exact everywhere, but any `sin` / `cos` / `exp` / `powf` call goes through the platform `libm` and **is not guaranteed bit-exact across OS / CPU / compiler** |
+| **Boundary: `SdfCollider` / `ClosureSdf`** | user closure `Fn(f32, f32, f32) -> f32` → `Fix128::from_f32` → rigid-body contact | The rigid-body solver stays Fix128, but it inherits whatever platform dependence the closure has. For lockstep / rollback use a Fix128 SDF or ALICE-SDF's deterministic evaluator; do not call `libm` transcendentals inside the closure |
+
+The golden-hash determinism suite covers the Fix128 core only; the `f32` tiers are regression-tested for same-binary reproducibility, see [`docs/DETERMINISM_GOLDEN_TESTS.md`](docs/DETERMINISM_GOLDEN_TESTS.md).
 
 **v0.10-0.14 highlights** — a five-wave completeness push adds
 **54 modules + 3 integrated solver loops + a Session 4 19-module tier-classified push**
@@ -24,7 +36,7 @@ time-step loop, humanoid ragdoll, SDF-boundary SPH, transient thermal,
 composite failure, VIV / piezoelectric / acoustic / electromagnetic,
 IK / anisotropic friction / netcode prediction / character FSM /
 kinematic loop / buoyancy zone / wind zone / SDF FEM / SDF wind.
-All bit-exact and Fix128 deterministic; see
+Fix128 modules are bit-exact; the `f32` field / SDF modules are same-binary deterministic ([Determinism scope](#determinism-scope)); see
 [Session 1-3 Additions](#session-1-3-additions-v010-012) and
 [v0.13.0 Session 4 Additions](#v0130-session-4-additions-19-modules-across-3-tiers).
 
@@ -53,7 +65,8 @@ SDF character / SDF FEM / SDF wind), engineering research
 (composite failure / transient thermal / rolling contact fatigue /
 VIV / piezoelectric / acoustic / electromagnetic), and
 multi-material coupling (buoyancy zone / anisotropic friction /
-kinematic loop). All bit-exact Fix128 deterministic; formula
+kinematic loop). Fix128 modules bit-exact, `f32` modules same-binary
+deterministic ([Determinism scope](#determinism-scope)); formula
 sources cited in module docs.
 
 ### Tier ★★★ — 5 modules (real-world critical, downstream-load-bearing)
@@ -180,8 +193,9 @@ sources cited in module docs.
 
 Three completeness sessions added **35 modules + 3 integrated solver
 loops + 3 runnable examples** to close the gap between "physics primitives"
-and "usable engineering solvers." Every addition preserves Fix128 bit-exact
-determinism and cites the source formula (Roark / Timoshenko / Simo &
+and "usable engineering solvers." Every addition is deterministic (Fix128
+modules bit-exact, `f32` modules same-binary — see [Determinism scope](#determinism-scope))
+and cites the source formula (Roark / Timoshenko / Simo &
 Hughes / Jones / Tsai-Wu / Hill / Norton / Findley / WLF / Brackbill /
 Smagorinsky / Launder-Spalding / Wilcox / Hasselmann / Turns / Anderson /
 etc.).
@@ -553,7 +567,7 @@ Traditional physics engines using IEEE 754 floating-point can produce different 
 - Different optimization levels (-O0 vs -O3)
 - Different instruction sets (SSE vs AVX)
 
-ALICE-Physics guarantees **bit-exact results** everywhere, enabling:
+ALICE-Physics guarantees **bit-exact results** for the Fix128 core (rigid bodies, constraints, joints, collision, netcode snapshots — see [Determinism scope](#determinism-scope)), enabling:
 
 - **Lockstep Multiplayer**: All clients compute identical simulation
 - **Rollback Netcode**: Replay inputs deterministically
