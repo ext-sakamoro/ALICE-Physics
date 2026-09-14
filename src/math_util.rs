@@ -97,7 +97,7 @@ pub fn cbrt_fix(n: Fix128) -> Fix128 {
     // Initial guess: use bit-position estimate to seed Newton.
     let mut x = if n >= Fix128::ONE {
         // n >= 1 → cbrt ≥ 1 → seed with hi/2 (rough)
-        Fix128::from_int(1 + (n.hi.max(1) as i64) / 2)
+        Fix128::from_int(1 + n.hi.max(1) / 2)
     } else {
         // n < 1 → seed slightly below 1
         Fix128::from_ratio(5, 10)

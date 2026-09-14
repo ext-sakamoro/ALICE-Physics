@@ -93,9 +93,7 @@ impl ScalarField3D {
         value: f32,
     ) -> Self {
         let mut field = Self::new(nx, ny, nz, min, max);
-        for v in &mut field.data {
-            *v = value;
-        }
+        field.data.fill(value);
         field
     }
 
@@ -339,9 +337,7 @@ impl ScalarField3D {
 
     /// Set all values to zero
     pub fn clear(&mut self) {
-        for v in &mut self.data {
-            *v = 0.0;
-        }
+        self.data.fill(0.0);
     }
 
     /// Maximum value in the field

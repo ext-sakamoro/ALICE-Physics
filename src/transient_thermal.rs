@@ -552,19 +552,19 @@ pub fn transient_step_3d(
     for k in 0..nz {
         for j in 0..ny {
             next[idx(0, j, k)] = next[idx(1.min(nx - 1), j, k)];
-            next[idx(nx - 1, j, k)] = next[idx(nx.saturating_sub(2).max(0), j, k)];
+            next[idx(nx - 1, j, k)] = next[idx(nx.saturating_sub(2), j, k)];
         }
     }
     for k in 0..nz {
         for i in 0..nx {
             next[idx(i, 0, k)] = next[idx(i, 1.min(ny - 1), k)];
-            next[idx(i, ny - 1, k)] = next[idx(i, ny.saturating_sub(2).max(0), k)];
+            next[idx(i, ny - 1, k)] = next[idx(i, ny.saturating_sub(2), k)];
         }
     }
     for j in 0..ny {
         for i in 0..nx {
             next[idx(i, j, 0)] = next[idx(i, j, 1.min(nz - 1))];
-            next[idx(i, j, nz - 1)] = next[idx(i, j, nz.saturating_sub(2).max(0))];
+            next[idx(i, j, nz - 1)] = next[idx(i, j, nz.saturating_sub(2))];
         }
     }
     t.copy_from_slice(&next);

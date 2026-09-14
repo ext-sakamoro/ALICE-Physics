@@ -818,7 +818,7 @@ impl BroadphaseHybrid {
         F: FnMut(u32),
     {
         // 1. Static BVH pass.
-        self.static_bvh.query_callback(q_aabb, |idx| callback(idx));
+        self.static_bvh.query_callback(q_aabb, &mut callback);
 
         // 2. Dynamic hash grid pass, keyed on the query AABB centre.
         let center = Vec3Fix::new(
