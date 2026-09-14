@@ -19,7 +19,10 @@
 //!
 //! # Accuracy
 //!
-//! Measured against the platform `libm` over dense sweeps (see tests):
+//! Measured over dense sweeps (see tests). `f32` functions are compared with
+//! a correctly rounded reference (`f64` libm rounded once to `f32`), the
+//! `f64` functions with the platform `f64` libm — which itself varies by
+//! ≤ 1 ulp between macOS / glibc / MSVC, so those bounds carry that slack:
 //!
 //! | function | domain measured | max error |
 //! |----------|-----------------|-----------|
@@ -29,7 +32,7 @@
 //! | [`cbrt`] | `[1e-30, 1e30]` | ≤ 1 ulp (bit-hack seed + 3 Newton steps) |
 //! | [`hypot`] | finite | ≤ 1 ulp of `sqrt(x² + y²)` |
 //! | [`powf`] | `x ∈ [1e-3, 1e3]`, `|y| ≤ 8` | ≤ 1 ulp (evaluated in `f64`, rounded once) |
-//! | [`exp64`] / [`ln64`] | as above | ≤ 1 ulp (fdlibm algorithms) |
+//! | [`exp64`] / [`ln64`] | as above | ≤ 1 ulp on macOS libm, bound 2 across platform libms (fdlibm algorithms) |
 //! | [`powf64`] | as above | ≤ 16 ulp measured 13 (`exp64(y·ln64 x)` with double-double argument; the residual step is bounded by `exp64`'s own ulp) |
 //!
 //! Large arguments to [`sin`] / [`cos`] (`|x| > 2¹³`) are still deterministic
@@ -513,7 +516,15 @@ mod tests {
         (ia - ib).unsigned_abs()
     }
 
-    /// Dense sweep helper: max ulp distance to libm over `n` points in [lo, hi].
+    /// Correctly rounded `f32` reference: evaluate the platform `f64` libm
+    /// (≤ 1 ulp of 53 bits) and round once to `f32`. Comparing against the
+    /// platform `f32` libm directly would make the bound itself
+    /// platform-dependent (MSVC `cbrtf` and macOS `cbrtf` disagree by 1 ulp).
+    fn r32(f: impl Fn(f64) -> f64) -> impl Fn(f32) -> f32 {
+        move |x| f(f64::from(x)) as f32
+    }
+
+    /// Dense sweep helper: max ulp distance to the reference over `n` points in [lo, hi].
     fn sweep32(lo: f32, hi: f32, n: u32, f: impl Fn(f32) -> f32, g: impl Fn(f32) -> f32) -> u32 {
         let mut worst = 0;
         for i in 0..=n {
@@ -532,17 +543,17 @@ mod tests {
     }
 
     #[test]
-    fn sin_cos_within_2_ulp_of_libm() {
-        assert!(sweep32(-100.0, 100.0, 400_000, sin, f32::sin) <= 2);
-        assert!(sweep32(-100.0, 100.0, 400_000, cos, f32::cos) <= 2);
+    fn sin_cos_within_2_ulp_of_correctly_rounded() {
+        assert!(sweep32(-100.0, 100.0, 400_000, sin, r32(f64::sin)) <= 2);
+        assert!(sweep32(-100.0, 100.0, 400_000, cos, r32(f64::cos)) <= 2);
         assert_eq!(sin(0.0), 0.0);
         assert_eq!(cos(0.0), 1.0);
         assert!(sin(f32::INFINITY).is_nan());
     }
 
     #[test]
-    fn exp_within_2_ulp_of_libm() {
-        assert!(sweep32(-87.0, 88.0, 400_000, exp, f32::exp) <= 2);
+    fn exp_within_2_ulp_of_correctly_rounded() {
+        assert!(sweep32(-87.0, 88.0, 400_000, exp, r32(f64::exp)) <= 2);
         assert_eq!(exp(0.0), 1.0);
         assert_eq!(exp(100.0), f32::INFINITY);
         assert_eq!(exp(-200.0), 0.0);
@@ -551,34 +562,34 @@ mod tests {
     }
 
     #[test]
-    fn ln_within_1_ulp_of_libm() {
+    fn ln_within_1_ulp_of_correctly_rounded() {
         // log-spaced sweep
         let mut worst = 0;
         for i in 0..=200_000u32 {
             let x = 10f32.powf(-30.0 + 60.0 * (i as f32 / 200_000.0));
-            worst = worst.max(ulp_diff32(ln(x), x.ln()));
+            worst = worst.max(ulp_diff32(ln(x), r32(f64::ln)(x)));
         }
         assert!(worst <= 1, "ln worst ulp {worst}");
         assert_eq!(ln(1.0), 0.0);
         assert_eq!(ln(0.0), f32::NEG_INFINITY);
         assert!(ln(-1.0).is_nan());
         // subnormal input
-        assert!(ulp_diff32(ln(1.0e-40), (1.0e-40f32).ln()) <= 1);
+        assert!(ulp_diff32(ln(1.0e-40), r32(f64::ln)(1.0e-40)) <= 1);
     }
 
     #[test]
-    fn cbrt_within_1_ulp_of_libm() {
+    fn cbrt_within_1_ulp_of_correctly_rounded() {
         let mut worst = 0;
         for i in 0..=200_000u32 {
             let x = 10f32.powf(-30.0 + 60.0 * (i as f32 / 200_000.0));
-            worst = worst.max(ulp_diff32(cbrt(x), x.cbrt()));
-            worst = worst.max(ulp_diff32(cbrt(-x), (-x).cbrt()));
+            worst = worst.max(ulp_diff32(cbrt(x), r32(f64::cbrt)(x)));
+            worst = worst.max(ulp_diff32(cbrt(-x), r32(f64::cbrt)(-x)));
         }
         assert!(worst <= 1, "cbrt worst ulp {worst}");
         assert_eq!(cbrt(0.0), 0.0);
         assert_eq!(cbrt(8.0), 2.0);
         assert_eq!(cbrt(-27.0), -3.0);
-        assert!(ulp_diff32(cbrt(1.0e-40), (1.0e-40f32).cbrt()) <= 1);
+        assert!(ulp_diff32(cbrt(1.0e-40), r32(f64::cbrt)(1.0e-40)) <= 1);
     }
 
     #[test]
@@ -591,7 +602,10 @@ mod tests {
         for i in 0..=100_000u32 {
             let x = 1.0e-3 + 1.0e3 * (i as f32 / 100_000.0);
             let y = 1.0e3 - x;
-            worst = worst.max(ulp_diff32(hypot(x, y), x.hypot(y)));
+            worst = worst.max(ulp_diff32(
+                hypot(x, y),
+                (f64::from(x).hypot(f64::from(y))) as f32,
+            ));
         }
         assert!(worst <= 1, "hypot worst ulp {worst}");
         // no overflow / underflow where the naive formula would fail
@@ -600,13 +614,16 @@ mod tests {
     }
 
     #[test]
-    fn powf_within_1_ulp_of_libm() {
+    fn powf_within_1_ulp_of_correctly_rounded() {
         let mut worst = 0;
         for i in 0..=400u32 {
             let x = 10f32.powf(-3.0 + 6.0 * (i as f32 / 400.0));
             for j in 0..=160u32 {
                 let y = -8.0 + 16.0 * (j as f32 / 160.0);
-                worst = worst.max(ulp_diff32(powf(x, y), x.powf(y)));
+                worst = worst.max(ulp_diff32(
+                    powf(x, y),
+                    (f64::from(x).powf(f64::from(y))) as f32,
+                ));
             }
         }
         assert!(worst <= 1, "powf worst ulp {worst}");
@@ -632,25 +649,25 @@ mod tests {
     }
 
     #[test]
-    fn exp64_ln64_within_1_ulp_of_libm() {
+    fn exp64_ln64_within_2_ulp_of_libm() {
         let mut worst_e = 0;
         for i in 0..=400_000u32 {
             let x = -700.0 + 1400.0 * (f64::from(i) / 400_000.0);
             worst_e = worst_e.max(ulp_diff64(exp64(x), x.exp()));
         }
-        assert!(worst_e <= 1, "exp64 worst ulp {worst_e}");
+        assert!(worst_e <= 2, "exp64 worst ulp {worst_e}");
         let mut worst_l = 0;
         for i in 0..=400_000u32 {
             let x = 10f64.powf(-300.0 + 600.0 * (f64::from(i) / 400_000.0));
             worst_l = worst_l.max(ulp_diff64(ln64(x), x.ln()));
         }
-        assert!(worst_l <= 1, "ln64 worst ulp {worst_l}");
+        assert!(worst_l <= 2, "ln64 worst ulp {worst_l}");
         assert_eq!(exp64(0.0), 1.0);
         assert_eq!(ln64(1.0), 0.0);
         assert_eq!(exp64(1000.0), f64::INFINITY);
         assert_eq!(exp64(-800.0), 0.0);
         assert_eq!(ln64(0.0), f64::NEG_INFINITY);
-        assert!(ulp_diff64(ln64(1.0e-310), (1.0e-310f64).ln()) <= 1);
+        assert!(ulp_diff64(ln64(1.0e-310), (1.0e-310f64).ln()) <= 2);
     }
 
     #[test]
