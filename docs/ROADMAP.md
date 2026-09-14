@@ -3,7 +3,36 @@
 Canonical roadmap for the alice-physics crate. Primary source of truth.
 Memory index pointer: `[[reference-alice-physics-v1-roadmap]]` in claude-config.
 
-## 現在位置 (2026-09-12)
+## 🎉 現在位置 (2026-09-14): v1.0.0 stable released
+
+**alice-physics v1.0.0 = crates.io published 2026-09-14** — `Published alice-physics v1.0.0 at registry crates-io`
+- crates.io URL: https://crates.io/crates/alice-physics/1.0.0
+- GitHub Release: https://github.com/ext-sakamoro/ALICE-Physics/releases/tag/v1.0.0
+- Release commit: `ca3adae` (Cargo.toml v1.0.0 bump)
+- Install: `cargo add alice-physics` (semver-locked stable)
+
+**全 9 v1.0 Items 完了** (詳細は [`CHANGELOG.md`](../CHANGELOG.md) `[1.0.0]` entry):
+
+| Item | 完了 | 実装 |
+|--|--|--|
+| B: Public API surface freeze | ✅ | 32 module × 512 pub items audit、133+ downgrades、snapshot −795 items、solver_tgs* Option C + 7 struct `#[non_exhaustive]` |
+| C: cargo-semver-checks hard-gate | ✅ | `security-audit.yml` `continue-on-error: true` 解除 |
+| D: `#![deny(missing_docs)]` | ✅ | 0 warning 実測 |
+| E: Determinism CI 6-env matrix | ✅ | 6 platform (macOS ARM/x86 + Linux ARM/x86 + Windows + WASM) × 31 test (9 golden hash + 22 semantic invariant)、bit-exact 一致確認済 |
+| F: Fuzz coverage 8/8 | ✅ | fuzz_step / collision / deterministic_roundtrip / joint / cfd / ccd / trimesh / structural |
+| G: MSRV policy | ✅ | `rust-version = "1.70.0"` + README EN Serde-style policy |
+| H: Ecosystem contracts freeze | ✅ | [`ECOSYSTEM_CONTRACTS.md`](ECOSYSTEM_CONTRACTS.md) に 5 partner (TRT / SDF / Bamboo / Anima / Kinematics) frozen API |
+| I: Migration guide | ✅ | [`MIGRATION_0.x_TO_1.0.md`](MIGRATION_0.x_TO_1.0.md) per-module 削除項目 + `#[non_exhaustive]` 影響 + 5 step checklist |
+| J: crates.io publish | ✅ | preview.4-8 → **1.0.0 stable** promoted |
+
+**snapshot 累計進化**: 20,201 → **19,406** (−795 items across audit campaign)
+**test 累計**: 1364 lib + 9 golden + 22 semantic = **1395 test 全 pass on 6 platforms**
+
+Post-1.0 stability contract: 19,406-item public surface は 1.x で breaking なし、`cargo semver-checks` hard-gate で PR 時 enforcement、frozen partner contracts (Item H) 未変更
+
+---
+
+## 過去 milestone (v1.0 到達までの歴史)
 
 **v0.13.0 landed** (commit `f37df0e`) — Session 4 push で 19 module 追加 (Tier ★★★ 4 + ★★ 7 + ★ 8)、ALICE-SDF v1.7.7 の `morphology` を S1 tier-★★★ integration partner として組合わせて 20 module 完備
 
@@ -93,7 +122,7 @@ commit `69ced3d`
   - `[features]` に削除経緯 comment 追加 (v0.17.x J-4 での段階復帰への pointer)
 - **検証**: 1364 lib test 全 pass (regression 0)、`cargo doc` clean (pre-existing 8 warning は無関係)、**`cargo publish --dry-run` PASS** (195 file / 3.0 MiB packaged、B1/B3 blocker 完全解消)
 
-### 🚧 v0.14.0 (推定 1-2 週間) — API surface audit 前半 + 残 preview 済
+### ✅ v0.14.0 (superseded by v1.0.0 stable) (推定 1-2 週間) — API surface audit 前半 + 残 preview 済
 
 Preview 4 wave が landed 済み、残作業:
 
@@ -103,13 +132,13 @@ Preview 4 wave が landed 済み、残作業:
 
 自己採点 target: 品質 90/100 (現状 100/100 optimization scorecard は維持、public API 完成度で -10)
 
-### 🚧 v0.15.0 (推定 2-4 週間) — API stability signaling
+### ✅ v0.15.0 (superseded — all items landed within v0.14.0-preview.X chain, promoted directly to 1.0.0)
 
 - **B. Public API surface freeze 後半** — 残 module audit + `#[non_exhaustive]` 戦略適用 (struct / enum の一部) + `#[deprecated]` alias で v1.0 名確定 (v0.x で名前変えたい API に marker + alias、v1.0 で確定名だけ残す)
 - **C. cargo-semver-checks / cargo-public-api CI 通し** — `.github/workflows/security-audit.yml` に既に semver-checks job あり、拡張して cargo-public-api snapshot を repo に commit、PR diff で API surface 変化を可視化
 - **F. Fuzz coverage 拡張** — 現状 `fuzz_collision` + `fuzz_step` の 2 target → joint / SDF CCD / trimesh / `cfd_solver` / `structural_solver` で 5-8 target 追加、24h 実行 crash 0 実績を CHANGELOG に記載
 
-### 🚧 v0.16.0 (推定 2-3 週間) — determinism guarantee + ecosystem (J-2 は v0.14.0-preview.4 で前倒し完了済)
+### ✅ v0.16.0 (superseded — Item E determinism CI + Item H ecosystem contracts landed within audit campaign, promoted directly to 1.0.0)
 
 - **✅ E. Determinism CI 6 環境 matrix 完了 (2026-09-14)** — Phase 1 + Phase 2 landing 済 [`docs/DETERMINISM_GOLDEN_TESTS.md`](DETERMINISM_GOLDEN_TESTS.md) + `tests/determinism_golden.rs` に 8 fixture (rigid body 3 + Phase 2 で joint/cloth/fluid/SDF CCD/trimesh 5 追加) + `.github/workflows/ci.yml` に 6 platform matrix (macos-latest / macos-15-intel / ubuntu-latest / **ubuntu-24.04-arm** / windows-latest + 独立 `wasm-test` job で `wasm32-wasip1` + wasmtime) Mac aarch64 と wasm32-wasip1 で 8 fixture 全 hash bit-exact 一致確認済
 - **✅ H. Ecosystem 契約 freeze 完了 (2026-09-14)** — [`docs/ECOSYSTEM_CONTRACTS.md`](ECOSYSTEM_CONTRACTS.md) 起草済 (~215 行、5 partner の frozen API 一覧: TRT `GpuSolverBridge` / SDF `SdfField` / Bamboo concrete-type / Anima concrete-type / Kinematics reserved-post-1.0) + Freeze semantics (semver-minor 可否) + CI enforcement + partner responsibilities
@@ -160,7 +189,7 @@ commit `f1b4209` / crates.io: `alice-physics = "0.14.0-preview.7"`
 - **Item F 完全達成** — 新 fuzz target `fuzz_structural` (StructuralSolver + Rectangular + CantileverEndPoint + PLA、extreme aspect ratio / heavy load 耐性) 追加、fuzz coverage **7 → 8** (v1.0 目標 5-8 range を full 到達)
 - 検証: 1364 lib test PASS + `cargo fmt --check` clean + `cargo publish --dry-run` PASS + `fuzz_structural` cargo check PASS
 
-### 🚧 v0.14.0-preview.8+ / v0.14.0 stable — 継続開発
+### ✅ v0.14.0-preview.8 / promoted → v1.0.0 stable (2026-09-14) — 全 audit + ADR-003 revision で γ 直行採択
 
 Phase 1+2+F 完了、以降は最重量の B に集中:
 
