@@ -385,6 +385,24 @@ impl Sub for Fix128 {
     }
 }
 
+/// Fixed-point multiplication: the 256-bit product of the two Q64.64
+/// values, keeping bits `[192:64]`.
+///
+/// # Overflow and rounding
+///
+/// - **Wrapping**: if the mathematical product does not fit the ±2^63
+///   integer range the high bits are discarded — the result wraps modulo
+///   2^128 of the raw two's-complement representation. There is no
+///   saturation and no panic, in debug builds too (every intermediate uses
+///   `wrapping_*`). Callers that need range safety must check operands
+///   beforehand; the engine's own hot paths keep magnitudes far below the
+///   limit.
+/// - **Truncation**: fractional bits below 2^-64 are dropped, which is a
+///   floor toward −∞ on the two's-complement bit pattern (e.g.
+///   `-2^-64 * 0.5 == -2^-64`, not `0`).
+///
+/// Both properties are part of the determinism contract: the same
+/// operands yield the same bits on every platform.
 impl Mul for Fix128 {
     type Output = Self;
 
@@ -1496,6 +1514,28 @@ impl core::ops::Mul<Self> for Mat3Fix {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fix128_mul_wraps_on_integer_overflow() {
+        // 2^62 * 4 = 2^64 → integer part wraps modulo 2^64 → 0.
+        let a = Fix128::from_int(1 << 62);
+        let b = Fix128::from_int(4);
+        assert_eq!(a * b, Fix128::ZERO);
+        // 2^62 * 3 = 3·2^62 = 2^63 + 2^62 → wraps to -2^63 + 2^62 = -2^62.
+        assert_eq!(a * Fix128::from_int(3), Fix128::from_int(-(1 << 62)));
+    }
+
+    #[test]
+    fn fix128_mul_truncates_toward_negative_infinity() {
+        // -2^-64 is the raw pattern {hi: -1, lo: u64::MAX}.
+        let tiny_neg = Fix128::from_raw(-1, u64::MAX);
+        let half = Fix128::from_ratio(1, 2);
+        // Exact value -2^-65 is not representable; floor gives -2^-64.
+        assert_eq!(tiny_neg * half, tiny_neg);
+        // Positive counterpart truncates to 0.
+        let tiny_pos = Fix128::from_raw(0, 1);
+        assert_eq!(tiny_pos * half, Fix128::ZERO);
+    }
 
     #[test]
     fn test_fix128_basic_ops() {

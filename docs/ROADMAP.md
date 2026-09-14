@@ -209,21 +209,27 @@ Phase 1+2+F 完了、以降は最重量の B に集中:
 - **新 example 4 個追加** (10 → 14) — joint / character / BiCGStab pressure / adaptive dt
 - **✅ Item C 出力側 完了 (2026-09-14)**: semver-checks の hard-gate 化 (commit `3638bd1`、`security-audit.yml:245-252` の `continue-on-error: true` 解除、job name も informational → hard-gate 改称) 次 PR 以降 breaking API 変更を検知したら CI red gate として block
 - **F 24h 実行**: 8 target 全てで 24h fuzz run + crash 0 実績 (v1.0-rc validation の一環)
-- 完了次第 `0.14.0-preview.8` → ... → **`0.14.0` stable** publish
+- ✅ `0.14.0-preview.8` から **γ 直行で v1.0.0** へ (下記 決定ログ OQ 参照、`0.14.0` stable / `0.16.x` は skip)
 
-### ⏳ v1.0.0-rc.1 (推定 6-8 週間)
+### ✅ v1.0.0-rc.1 / rc.2 — skip (γ 直行、2026-09-14)
 
 - **✅ I. Migration guide 執筆完了 (2026-09-14)** — [`docs/MIGRATION_0.x_TO_1.0.md`](MIGRATION_0.x_TO_1.0.md) 起草済 (~340 行、per-module 削除項目テーブル + `#[non_exhaustive]` 影響 + Cargo.toml migration + 6-environment determinism promise + post-1.0 stability guarantees + 再曝露リクエスト手順)
-- crates.io に rc.1 publish (`0.16.1` → `1.0.0-rc.1` の pre-release version)
-- 実 downstream (ALICE-Bamboo / ALICE-Anima / SBR ゲーム側) の 1.0 対応調整、feedback 期間 4 週間
+- rc.1 / rc.2 の crates.io pre-release publish と 4 週間 feedback 期間は **実施せず** — 「決定 (revised): γ (直行)」で `0.14.0-preview.8` → `1.0.0` を直接 bump (実運用 downstream 0 の状態で RC を出しても feedback が得られないため)
+- 実 downstream (ALICE-Bamboo / ALICE-Anima / SBR ゲーム側) の 1.0 対応は 1.0.x patch line で受ける
 
-### ⏳ v1.0.0-rc.2 (推定 2-3 週間)
+### ✅ v1.0.0 stable (2026-09-14 crates.io published)
 
-- rc.1 feedback 反映、breaking change 発生時は rc.3 も許容
+- **semver 契約発動済** — `alice-physics = "1"` で下流 pin 可能、breaking change は必ず major bump
+- Release commit `ca3adae`、GitHub Release v1.0.0、詳細は本 file 冒頭「現在位置」
 
-### ⏳ v1.0.0 stable
+### 🔧 v1.0.1 patch (2026-09-15、厳密評価 7 件の対応)
 
-- **semver 契約発動** — `alice-physics = "1"` で下流 pin 可能に、breaking change は必ず major bump
+- **soundness**: `parallel` graph coloring の 64 色 overflow (同一 body が同 batch に同居 → aliasing `&mut`) を可変長 bitset + static body 除外 + disjoint `debug_assert!` で修正
+- **API**: `build_islands` の `assert!` → `PhysicsError::InvalidConstraint`
+- **CI**: clippy を default + 全 native feature set で `-D warnings` に昇格 (lint 26 件修正)、`msrv` job (1.70.0 実測) 追加
+- **FFI**: `alice_physics_version()` の hardcode `"0.6.0"` → `CARGO_PKG_VERSION`、free-fall golden raw pair を pin
+- **docs**: 決定論保証の範囲を Fix128 core に限定 (README EN/JP「Determinism scope」表)、`Fix128::mul` の wrapping / floor 挙動を doc + test 化
+- **repo**: `fuzz/target/` 256 file を git 追跡から除外
 
 ## 未決 (Open Questions)
 
