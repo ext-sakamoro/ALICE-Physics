@@ -24,46 +24,73 @@ a hard-coded golden hash recorded on Mac aarch64.
    `sha2` dev-dep), collision-resistant beyond any practical fixture
    count.
 
-## Phase 1 fixtures (this iteration)
+## Fixtures (Phase 1 + Phase 2)
 
-| Scenario | Steps | dt | Bodies | Constraints | Exercises |
-|----------|------:|----|-------:|-------------|-----------|
-| `freefall` | 60 | 1/60 s | 2 dynamic | none | gravity + Fix128 integration |
-| `kinematic_drift` | 120 | 1/60 s | 1 dynamic | none | pure velocity integration, no gravity |
-| `cascade` | 200 | 1/60 s | 5 dynamic + 1 static floor | contact | contact resolution, damping, restitution |
+### Phase 1 fixtures (rigid body core)
 
-Total: 3 scenarios + 1 meta test (`hashing_helper_is_deterministic`).
+| Scenario | Steps | dt | Bodies | Exercises |
+|----------|------:|----|-------:|-----------|
+| `freefall` | 60 | 1/60 s | 2 dynamic | gravity + Fix128 integration |
+| `kinematic_drift` | 120 | 1/60 s | 1 dynamic | pure velocity integration, no gravity |
+| `cascade` | 200 | 1/60 s | 5 dynamic + 1 static floor | contact resolution, damping, restitution |
+
+### Phase 2 fixtures (extended subsystems)
+
+| Scenario | Steps | dt | Subsystem | Exercises |
+|----------|------:|----|-----------|-----------|
+| `joint_pendulum` | 240 | 1/60 s | solver + joints | `DistanceConstraint` iteration + gravity |
+| `cloth_drape` | 120 | 1/60 s | cloth (XPBD) | soft-body constraint iteration with pinned particles |
+| `fluid_step` | 30 | 1/100 s | CFD (`CfdSolver` + `MacGrid`) | advection + diffusion + pressure projection |
+| `sdf_ccd_glance` | 90 | 1/60 s | SDF collider + speculative CCD | `f32`-based SDF distance + normal, glancing pass |
+| `trimesh_probe` | (5x5x5 samples) | — | trimesh collision | `TriMesh::collide_sphere` at 125 lattice points |
+
+Total: **8 scenarios** + 1 meta test.
 
 **Fixture hashes** (Mac aarch64, alice-physics `0.14.0-preview.8`):
-- `GOLDEN_FREEFALL       = 49598cff32da429d198e5b281f9d46d89cb5dc6a430d368942b0e5249c779905`
-- `GOLDEN_KINEMATIC_DRIFT = c79a3ee897fe95bde1bb5660ceb49552aacec0741ec4b8a2f5d46fd6c62ae099`
-- `GOLDEN_CASCADE        = 0a9fb401dcc5fbf12ecd8ef36bd03caed7fb271b68d4035b764dbe24f6a47854`
 
-## CI matrix (Phase 1 → Phase 2)
+| Scenario | SHA-256 |
+|----------|---------|
+| `freefall` | `49598cff32da429d198e5b281f9d46d89cb5dc6a430d368942b0e5249c779905` |
+| `kinematic_drift` | `c79a3ee897fe95bde1bb5660ceb49552aacec0741ec4b8a2f5d46fd6c62ae099` |
+| `cascade` | `0a9fb401dcc5fbf12ecd8ef36bd03caed7fb271b68d4035b764dbe24f6a47854` |
+| `joint_pendulum` | `d1d51ea466dd4c55c7e9c220afca66004e7401fb53a4a2781e40be3e4ba9ef8f` |
+| `cloth_drape` | `0df965eec802104c96168bf4eaf6e4096373343b39efe41bbfcdb3b3ef9d340c` |
+| `fluid_step` | `20f4ba26edef79d64321fdd19c306e80d9e464707e86ba3a036769ff7b1cd3b7` |
+| `sdf_ccd_glance` | `822813e3a278e960c30acb54ece430b0c51ddda325aa4ebb72009b26a6f62a4e` |
+| `trimesh_probe` | `85fbff506a4cd8492163697b0d9cdb2252786d5171b0ff0c125c24a84dec485a` |
 
-### Phase 1 (this iteration, 4 platforms)
+**Verified bit-exact identical hashes** on both Mac aarch64 (native) and `wasm32-wasip1` (via wasmtime) at Phase 2 landing time.
 
-Extended `.github/workflows/ci.yml` test matrix from 3 → 4:
+## CI matrix (Phase 2 complete)
 
-- `macos-latest` (aarch64-apple-darwin) — primary dev platform, golden hash source.
+Extended `.github/workflows/ci.yml` to **6 platform coverage**:
+
+### Native test matrix (5 platforms, single `test` job)
+
+- `macos-latest` (aarch64-apple-darwin) — primary dev platform, golden hash baseline.
 - `macos-15-intel` (x86_64-apple-darwin) — Mac Intel coverage.
-- `ubuntu-latest` (x86_64-unknown-linux-gnu) — Linux x86 coverage.
-- `windows-latest` (x86_64-pc-windows-msvc) — Windows x86 coverage.
+- `ubuntu-latest` (x86_64-unknown-linux-gnu) — Linux x86.
+- `ubuntu-24.04-arm` (aarch64-unknown-linux-gnu) — Linux ARM (GA runner since 2025-01).
+- `windows-latest` (x86_64-pc-windows-msvc) — Windows x86.
 
-Every PR runs all 4 platforms; a hash mismatch on any platform fails CI.
+### WASM job (1 platform, separate `wasm-test` job)
 
-### Phase 2 (deferred, 2 more platforms)
+- `wasm32-wasip1` target compiled on `ubuntu-latest`, executed via `wasmtime`
+  (installed via official `install.sh`).
+- Uses the exact same `tests/determinism_golden.rs` test file — WASI `std`
+  shim provides stdio + libtest support without code changes.
 
-- **Linux ARM** (`ubuntu-24.04-arm` runner, GitHub Actions GA since 2025).
-  - Trivially added to matrix; deferred to Phase 2 for isolated verification.
-- **WASM** (`wasm32-unknown-unknown` target + `wasmtime` runner).
-  - Requires:
-    - Cross-compile step (`cargo build --target wasm32-unknown-unknown`).
-    - WASM runner container (`wasmtime` or `wasmer`).
-    - Test harness that produces host-side hash from WASM execution
-      (via WASI `stdout` capture or shared-memory export).
-  - Deferred to Phase 2; higher risk (potential SIMD-related drift under
-    wasm32 relaxed-SIMD if that feature ever enters ALICE-Physics).
+Every PR runs all 6 platforms; a hash mismatch on any platform fails CI.
+
+### Determinism guarantees confirmed
+
+- **Fix128 arithmetic**: pure integer (`i64` + `u64` limbs) — bit-exact by
+  language spec across every target.
+- **IEEE 754 `f32` basic ops** (used by `ClosureSdf`): `+`, `-`, `*`, `/`,
+  `sqrt` are spec-required bit-exact on every architecture that Rust
+  supports (Rust reference §Behavior considered undefined).
+- **No SIMD gates** in the default-feature test path (SIMD is opt-in via
+  the `simd` feature; determinism_golden test builds without it).
 
 ## Adding a new fixture
 

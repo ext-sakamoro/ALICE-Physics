@@ -16,13 +16,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # v1.0 Item E Phase 1: 4 platform matrix
-        # - macos-latest       → aarch64-apple-darwin   (Mac ARM, primary dev)
-        # - macos-15-intel     → x86_64-apple-darwin    (Mac Intel, deprecation timeline aware)
-        # - ubuntu-latest      → x86_64-unknown-linux-gnu (Linux x86)
-        # - windows-latest     → x86_64-pc-windows-msvc (Windows x86)
-        # Phase 2 (deferred): ubuntu-24.04-arm (Linux ARM) + WASM (wasm32-unknown-unknown)
-        os: [macos-latest, macos-15-intel, ubuntu-latest, windows-latest]
+        # v1.0 Item E Phase 2: 5 native platform matrix (WASM は独立 job で扱う)
+        # - macos-latest       → aarch64-apple-darwin       (Mac ARM, primary dev, golden hash baseline)
+        # - macos-15-intel     → x86_64-apple-darwin        (Mac Intel)
+        # - ubuntu-latest      → x86_64-unknown-linux-gnu   (Linux x86)
+        # - ubuntu-24.04-arm   → aarch64-unknown-linux-gnu  (Linux ARM、GA runner 2025-01+)
+        # - windows-latest     → x86_64-pc-windows-msvc     (Windows x86)
+        # + wasm-test job below → wasm32-wasip1 (WASI) via wasmtime
+        os: [macos-latest, macos-15-intel, ubuntu-latest, ubuntu-24.04-arm, windows-latest]
     steps:
       - uses: actions/checkout@v5
 
@@ -59,6 +60,43 @@ jobs:
 
       - name: Build (SIMD)
         run: cargo build --lib --features "simd"
+
+  # v1.0 Item E Phase 2: WASM determinism check
+  # `wasm32-wasip1` target で determinism_golden test を build → wasmtime で
+  # 実行 SHA-256 hash が native platform (macOS ARM baseline) と bit-exact
+  # 一致することを検証 Fix128 は純粋整数演算のため cross-platform bit-exact、
+  # SDF 経路の f32 も IEEE 754 basic ops (+/-/*/sqrt) が platform 非依存
+  wasm-test:
+    name: Test (wasm32-wasip1 via wasmtime)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Rust toolchain (with wasm32-wasip1)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip1
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: wasm-wasip1
+
+      - name: Create ALICE optional bridge stubs
+        uses: ./.github/actions/alice-stubs
+
+      - name: Install wasmtime
+        run: |
+          curl -sSf https://wasmtime.dev/install.sh | bash
+          echo "$HOME/.wasmtime/bin" >> "$GITHUB_PATH"
+
+      - name: Build determinism_golden test (wasm32-wasip1)
+        run: cargo test --test determinism_golden --target wasm32-wasip1 --no-run
+
+      - name: Run determinism_golden test via wasmtime
+        run: |
+          WASM_BIN=$(find target/wasm32-wasip1/debug/deps -name 'determinism_golden-*.wasm' -not -name '*.d' | head -1)
+          echo "Executing: $WASM_BIN"
+          wasmtime "$WASM_BIN"
 
   clippy:
     name: Clippy

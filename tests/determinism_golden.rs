@@ -31,8 +31,13 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics::cfd_solver::CfdSolver;
+use alice_physics::cloth::Cloth;
+use alice_physics::eulerian_grid::MacGrid;
+use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics::sdf_collider::{ClosureSdf, SdfCollider};
+use alice_physics::solver::{DistanceConstraint, PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics::trimesh::TriMesh;
 use sha2::{Digest, Sha256};
 
 /// Serialise a single body's kinematic state to a stable byte layout.
@@ -228,6 +233,265 @@ fn determinism_kinematic_drift() {
 
     let hash = hash_world(&world);
     assert_golden("kinematic_drift", hash, GOLDEN_KINEMATIC_DRIFT);
+}
+
+// ============================================================================
+// Extended fixtures (Phase 2)
+// ============================================================================
+
+fn write_fix128(out: &mut Vec<u8>, f: Fix128) {
+    out.extend_from_slice(&f.hi.to_le_bytes());
+    out.extend_from_slice(&f.lo.to_le_bytes());
+}
+
+fn write_vec3(out: &mut Vec<u8>, v: Vec3Fix) {
+    write_fix128(out, v.x);
+    write_fix128(out, v.y);
+    write_fix128(out, v.z);
+}
+
+fn sha256_bytes(bytes: &[u8]) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    hasher.finalize().into()
+}
+
+/// **Scenario 4**: distance-constraint pendulum. Two dynamic bodies
+/// linked by a fixed-length `DistanceConstraint`; one heavy pivot,
+/// one lighter swinging mass. Exercises constraint iteration under
+/// gravity for 240 steps.
+const GOLDEN_JOINT_PENDULUM: &str =
+    "d1d51ea466dd4c55c7e9c220afca66004e7401fb53a4a2781e40be3e4ba9ef8f";
+
+#[test]
+fn determinism_joint_pendulum() {
+    let config = PhysicsConfig {
+        substeps: 2,
+        iterations: 8,
+        gravity: Vec3Fix::new(Fix128::ZERO, Fix128::from_int(-10), Fix128::ZERO),
+        damping: Fix128::from_ratio(999, 1000),
+        ..Default::default()
+    };
+    let mut world = PhysicsWorld::new(config);
+
+    // Pivot: heavy body near origin, high linear damping (near-fixed).
+    let pivot = RigidBody::new_dynamic(
+        Vec3Fix::new(Fix128::ZERO, Fix128::from_int(10), Fix128::ZERO),
+        Fix128::from_int(1_000),
+    )
+    .with_linear_damping(Fix128::from_ratio(1, 100));
+    let pivot_idx = world.add_body(pivot);
+
+    // Bob: lighter body offset in x, will swing under gravity.
+    let bob = RigidBody::new_dynamic(
+        Vec3Fix::new(Fix128::from_int(3), Fix128::from_int(10), Fix128::ZERO),
+        Fix128::from_int(1),
+    );
+    let bob_idx = world.add_body(bob);
+
+    world.add_distance_constraint(DistanceConstraint::new(
+        pivot_idx,
+        bob_idx,
+        Vec3Fix::ZERO, // anchor on pivot body-local
+        Vec3Fix::ZERO, // anchor on bob body-local
+        Fix128::from_int(3),
+    ));
+
+    let dt = Fix128::from_ratio(1, 60);
+    for _ in 0..240 {
+        world.step(dt);
+    }
+
+    let hash = hash_world(&world);
+    assert_golden("joint_pendulum", hash, GOLDEN_JOINT_PENDULUM);
+}
+
+/// Hash all cloth particles (position + velocity).
+fn hash_cloth(cloth: &Cloth) -> [u8; 32] {
+    let mut bytes = Vec::with_capacity(cloth.particle_count() * 48);
+    for i in 0..cloth.particle_count() {
+        write_vec3(&mut bytes, cloth.positions[i]);
+        write_vec3(&mut bytes, cloth.velocities[i]);
+    }
+    sha256_bytes(&bytes)
+}
+
+/// **Scenario 5**: 5x5 cloth grid drape under gravity for 120 steps,
+/// top row pinned. Exercises XPBD constraint iteration on a soft body.
+const GOLDEN_CLOTH_DRAPE: &str = "0df965eec802104c96168bf4eaf6e4096373343b39efe41bbfcdb3b3ef9d340c";
+
+#[test]
+fn determinism_cloth_drape() {
+    let mut cloth = Cloth::new_grid(
+        Vec3Fix::new(Fix128::ZERO, Fix128::from_int(5), Fix128::ZERO),
+        Fix128::from_int(2), // width
+        Fix128::from_int(2), // height
+        5,                   // res_x
+        5,                   // res_y
+        Fix128::ONE,         // mass per particle
+    );
+    cloth.pin_top_row(5);
+
+    let dt = Fix128::from_ratio(1, 60);
+    for _ in 0..120 {
+        cloth.step(dt);
+    }
+
+    let hash = hash_cloth(&cloth);
+    assert_golden("cloth_drape", hash, GOLDEN_CLOTH_DRAPE);
+}
+
+/// Hash a `MacGrid`'s velocity + pressure fields.
+fn hash_mac_grid(grid: &MacGrid) -> [u8; 32] {
+    let capacity = 16 * (grid.u.len() + grid.v.len() + grid.w.len() + grid.pressure.len());
+    let mut bytes = Vec::with_capacity(capacity);
+    for &f in &grid.u {
+        write_fix128(&mut bytes, f);
+    }
+    for &f in &grid.v {
+        write_fix128(&mut bytes, f);
+    }
+    for &f in &grid.w {
+        write_fix128(&mut bytes, f);
+    }
+    for &f in &grid.pressure {
+        write_fix128(&mut bytes, f);
+    }
+    sha256_bytes(&bytes)
+}
+
+/// **Scenario 6**: small (6x6x6) CFD grid stepped for 30 frames after
+/// a small initial u-velocity injection. Exercises the full CFD step
+/// pipeline (advection + diffusion + pressure projection).
+const GOLDEN_FLUID_STEP: &str = "20f4ba26edef79d64321fdd19c306e80d9e464707e86ba3a036769ff7b1cd3b7";
+
+#[test]
+fn determinism_fluid_step() {
+    let mut solver = CfdSolver::new(6, 6, 6, Fix128::from_ratio(1, 10));
+
+    // Inject a small u-velocity at (2,2,2) to have something to advect.
+    let idx = solver.grid.u.len() / 2;
+    solver.grid.u[idx] = Fix128::from_ratio(1, 10);
+
+    let dt = Fix128::from_ratio(1, 100);
+    for _ in 0..30 {
+        solver.step(dt);
+    }
+
+    let hash = hash_mac_grid(&solver.grid);
+    assert_golden("fluid_step", hash, GOLDEN_FLUID_STEP);
+}
+
+/// **Scenario 7**: dynamic body glancing past a static SDF sphere with
+/// speculative CCD enabled, 90 steps. Exercises the SDF collision path
+/// with continuous collision detection.
+const GOLDEN_SDF_CCD_GLANCE: &str =
+    "822813e3a278e960c30acb54ece430b0c51ddda325aa4ebb72009b26a6f62a4e";
+
+/// Unit sphere SDF centred at origin (f32-native per `SdfField` trait).
+///
+/// NOTE: The SDF path in alice-physics is f32-based, unlike the rest of
+/// the physics kernel which uses Fix128. IEEE 754 f32 basic ops (+, -, *,
+/// /, sqrt) are bit-exact across platforms per the Rust spec, so this
+/// fixture should remain deterministic — but any platform drift found
+/// here would indicate an f32 non-determinism issue worth investigating.
+fn unit_sphere_sdf() -> ClosureSdf {
+    ClosureSdf::new(
+        |x, y, z| (x * x + y * y + z * z).sqrt() - 1.0,
+        |x, y, z| {
+            let len = (x * x + y * y + z * z).sqrt();
+            if len > 0.0 {
+                (x / len, y / len, z / len)
+            } else {
+                (1.0, 0.0, 0.0)
+            }
+        },
+    )
+}
+
+#[test]
+fn determinism_sdf_ccd_glance() {
+    let config = PhysicsConfig {
+        substeps: 4,
+        iterations: 8,
+        gravity: Vec3Fix::ZERO,
+        damping: Fix128::ONE,
+        ..Default::default()
+    };
+    let mut world = PhysicsWorld::new(config);
+
+    // Register static SDF sphere at (5, 0, 0).
+    let sdf_collider = SdfCollider::new_static(
+        Box::new(unit_sphere_sdf()),
+        Vec3Fix::new(Fix128::from_int(5), Fix128::ZERO, Fix128::ZERO),
+        QuatFix::IDENTITY,
+    );
+    world.add_sdf_collider(sdf_collider);
+
+    // Moving body approaches with slight y-offset (glancing pass).
+    let moving = RigidBody::new_dynamic(
+        Vec3Fix::new(Fix128::ZERO, Fix128::from_ratio(3, 10), Fix128::ZERO),
+        Fix128::ONE,
+    )
+    .with_velocity(Vec3Fix::new(
+        Fix128::from_int(2),
+        Fix128::ZERO,
+        Fix128::ZERO,
+    ))
+    .with_restitution(Fix128::from_ratio(5, 10));
+    world.add_body(moving);
+
+    let dt = Fix128::from_ratio(1, 60);
+    for _ in 0..90 {
+        world.step(dt);
+    }
+
+    let hash = hash_world(&world);
+    assert_golden("sdf_ccd_glance", hash, GOLDEN_SDF_CCD_GLANCE);
+}
+
+/// Hash a series of `TriMesh::collide_sphere` results at a lattice of
+/// sample positions. Deterministic collision detection sanity check.
+const GOLDEN_TRIMESH_PROBE: &str =
+    "85fbff506a4cd8492163697b0d9cdb2252786d5171b0ff0c125c24a84dec485a";
+
+#[test]
+fn determinism_trimesh_probe() {
+    // Simple hollow-tetra-like mesh: 4 triangles forming a pyramid.
+    let vertices = vec![
+        Vec3Fix::ZERO,
+        Vec3Fix::new(Fix128::from_int(1), Fix128::ZERO, Fix128::ZERO),
+        Vec3Fix::new(Fix128::ZERO, Fix128::from_int(1), Fix128::ZERO),
+        Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, Fix128::from_int(1)),
+    ];
+    let indices = vec![0, 1, 2, 0, 2, 3, 0, 3, 1, 1, 3, 2];
+    let mesh = TriMesh::from_indexed(&vertices, &indices);
+
+    let mut bytes: Vec<u8> = Vec::with_capacity(1024);
+    let radius = Fix128::from_ratio(3, 10);
+
+    // Probe a 5x5x5 lattice around the mesh centroid.
+    for ix in 0..5 {
+        for iy in 0..5 {
+            for iz in 0..5 {
+                let p = Vec3Fix::new(
+                    Fix128::from_ratio(ix as i64 * 3, 10) - Fix128::ONE,
+                    Fix128::from_ratio(iy as i64 * 3, 10) - Fix128::ONE,
+                    Fix128::from_ratio(iz as i64 * 3, 10) - Fix128::ONE,
+                );
+                if let Some(contact) = mesh.collide_sphere(p, radius) {
+                    bytes.push(1); // "hit" marker
+                    write_vec3(&mut bytes, contact.normal);
+                    write_fix128(&mut bytes, contact.depth);
+                } else {
+                    bytes.push(0); // "miss" marker
+                }
+            }
+        }
+    }
+
+    let hash = sha256_bytes(&bytes);
+    assert_golden("trimesh_probe", hash, GOLDEN_TRIMESH_PROBE);
 }
 
 // ============================================================================
