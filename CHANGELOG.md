@@ -11,6 +11,50 @@ were introduced during that release window.
 - v0.11.0 — [docs/audits/STUB_AUDIT_v0.11.0.md](docs/audits/STUB_AUDIT_v0.11.0.md) (base: v0.10.0 `16674d4`)
 - v0.12.0 — [docs/audits/STUB_AUDIT_v0.12.0.md](docs/audits/STUB_AUDIT_v0.12.0.md) (base: v0.11.0 `095f115`, **0 new stubs**)
 
+## [1.1.0] - 2026-09-15
+
+**Every module is now cross-platform bit-exact.** 1.0.1 documented that the
+30 `f32` / `f64` field modules were only deterministic within one binary
+because they called the platform `libm`. 1.1.0 removes that caveat at the
+root instead of relabelling it.
+
+### Added
+
+- **`det_math` module** (`std` feature) — deterministic `f32` `sin / cos /
+  exp / ln / powf / powi / cbrt / hypot` and `f64` `exp64 / ln64 / powf64`
+  built only from IEEE-exact `+ - * / sqrt` and bit manipulation (integer
+  range reduction, fixed-order polynomials; Cephes / musl / fdlibm
+  algorithms). Accuracy vs `libm`: ≤ 1–2 ulp for all `f32` functions and
+  `exp64` / `ln64`, ≤ 13 ulp for `powf64`; bit pins verified on aarch64,
+  x86_64 (software `fma`, no FMA unit) and wasm32. Public so `ClosureSdf`
+  closures can use it.
+- **`tests/determinism_golden_f32.rs`** — 13 SHA-256 golden scenarios over 29
+  field modules (`sdf_*`, `gpu_sdf`, `thermal`, `transient_thermal`,
+  `phase_change`, `fracture`, `erosion`, `sim_field`, `sim_modifier`,
+  `rolling_contact`, `aeroelasticity`, `piezoelectric`, `acoustic_wave`,
+  `pressure`, `thin_wall`, `convex_decompose`, `anomaly`, `character_state`,
+  `fluid_netcode`, `privacy`, `sketch`), recorded on macOS aarch64 and
+  verified by CI on macOS x86, Linux x86 / ARM, Windows and `wasm32-wasip1`
+  (`db_bridge` is pass-through I/O with no arithmetic).
+- **`clippy.toml` `disallowed-methods`** for the 25 `f32` / `f64` `libm`
+  methods; with the `-D warnings` CI gate a stray `x.sin()` on a float is a
+  build error.
+
+### Changed
+
+- 16 production call sites (`sim_field` exp, `fracture` sin / cos,
+  `rolling_contact` cbrt / powf, `sdf_destruction` hypot, `privacy` ln / exp,
+  `sketch` ln / powf / exp, `sdf_sph` powi) and 4 test sites now use
+  `det_math`. Results move by at most a few ulp; no existing test needed a
+  tolerance change. `DDSketch` bucket boundaries can therefore differ from a
+  `libm`-based implementation by one bucket at exact boundaries — within the
+  sketch's relative-accuracy guarantee, and identical on every platform.
+- README EN / JP "Determinism scope": the 3-tier table (Fix128 bit-exact /
+  `f32` same-binary / closure boundary) collapses to "every module bit-exact",
+  with the remaining caveat limited to user closures and the ALICE-SDF CPU
+  evaluator (tracked separately).
+- CI wasm job also runs `determinism_golden_f32`.
+
 ## [1.0.1] - 2026-09-15
 
 Patch release from the post-1.0 strict review (7 findings). No public API

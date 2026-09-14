@@ -89,13 +89,17 @@ Every PR runs all 6 platforms; a hash mismatch on any platform fails CI.
 - **IEEE 754 `f32` basic ops** (used by `ClosureSdf`): `+`, `-`, `*`, `/`,
   `sqrt` are spec-required bit-exact on every architecture that Rust
   supports (Rust reference §Behavior considered undefined).
-  **Not covered**: transcendental functions (`sin`, `cos`, `exp`, `powf`,
-  `tanh`, ...) are provided by the platform `libm` and may differ in the
-  last ulp between OS / CPU / compiler. A user closure passed to
-  `ClosureSdf` that calls them makes the rigid-body contact it feeds
-  platform-dependent even though the solver itself stays Fix128. The
-  fixtures in this suite therefore use polynomial / sqrt-only SDFs; for
-  lockstep use a Fix128 SDF or ALICE-SDF's deterministic evaluator.
+  **Transcendentals** (`sin`, `cos`, `exp`, `ln`, `powf`, `cbrt`, `hypot`, …)
+  are *not* IEEE-specified and differ between platform `libm`s. Since
+  v1.1.0 every such call in the crate goes through `src/det_math.rs`
+  (integer range reduction + fixed-order polynomials over the exact basic
+  ops), and `clippy.toml` `disallowed-methods` rejects the `f32` / `f64`
+  `libm` methods at CI. A user closure passed to `ClosureSdf` is outside
+  that gate: call `det_math::*` inside it to keep the contact it feeds
+  platform-independent.
+- **`f32` / `f64` field modules** are pinned by
+  `tests/determinism_golden_f32.rs` (13 scenarios, 29 modules) with the same
+  record-on-aarch64 / verify-on-6-platforms workflow as this file.
 - **No SIMD gates** in the default-feature test path (SIMD is opt-in via
   the `simd` feature; determinism_golden test builds without it).
 

@@ -222,6 +222,13 @@ Phase 1+2+F 完了、以降は最重量の B に集中:
 - **semver 契約発動済** — `alice-physics = "1"` で下流 pin 可能、breaking change は必ず major bump
 - Release commit `ca3adae`、GitHub Release v1.0.0、詳細は本 file 冒頭「現在位置」
 
+### ✅ v1.1.0 (2026-09-15、f32/f64 module 30 個の cross-platform bit-exact 化 = 案 B)
+
+- 3 案 (A 全面 Fix128 化 / B libm 排除 / C crate 分離) から B を採用 (memory `project_alice_physics_det_f32_plan`)
+- `det_math` module (f32 8 関数 + f64 3 関数、IEEE-exact な基本演算 + bit 操作のみ) を追加、production 16 + test 4 site の `libm` 呼出を置換、`clippy.toml` `disallowed-methods` で再混入を CI red 化
+- `tests/determinism_golden_f32.rs` 13 scenario / 29 module を aarch64 で pin、x86_64 (Rosetta) / wasm32 local 一致 → CI 6 platform
+- README「Determinism scope」3 tier → 1 tier、残る境界は user closure と ALICE-SDF evaluator (alice-sdf 側で `det_math` 整合を別途、案 A は `Real for Fix128` 経由で 2.0 向け)
+
 ### 🔧 v1.0.1 patch (2026-09-15、厳密評価 7 件の対応)
 
 - **soundness**: `parallel` graph coloring の 64 色 overflow (同一 body が同 batch に同居 → aliasing `&mut`) を可変長 bitset + static body 除外 + disjoint `debug_assert!` で修正
