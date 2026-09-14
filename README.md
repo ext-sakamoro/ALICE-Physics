@@ -13,7 +13,7 @@ English | [日本語](README_JP.md)
 
 A high-precision physics engine designed for deterministic simulation across different platforms and hardware. The rigid-body core uses 128-bit fixed-point arithmetic (`Fix128`); the surrounding engineering / field modules use IEEE `f32` / `f64` with every transcendental routed through the crate's own `det_math`. Either way the result is bit-exact regardless of CPU, compiler, or operating system — see [Determinism scope](#determinism-scope).
 
-**Published on crates.io as v1.0.0 semver-locked stable** (released 2026-09-14). Install with `cargo add alice-physics`. All 9 v1.0 roadmap items complete — see [`CHANGELOG.md`](CHANGELOG.md) for the full release scope, [`docs/MIGRATION_0.x_TO_1.0.md`](docs/MIGRATION_0.x_TO_1.0.md) for 0.x → 1.0 migration, and [`docs/ECOSYSTEM_CONTRACTS.md`](docs/ECOSYSTEM_CONTRACTS.md) for frozen partner API contracts.
+**Published on crates.io as v1.1.0** (1.0.0 semver-locked stable released 2026-09-14; 1.1.0 on 2026-09-15 makes every module cross-platform bit-exact via `det_math`). Install with `cargo add alice-physics`. All 9 v1.0 roadmap items complete — see [`CHANGELOG.md`](CHANGELOG.md) for the full release scope, [`docs/MIGRATION_0.x_TO_1.0.md`](docs/MIGRATION_0.x_TO_1.0.md) for 0.x → 1.0 migration, and [`docs/ECOSYSTEM_CONTRACTS.md`](docs/ECOSYSTEM_CONTRACTS.md) for frozen partner API contracts.
 
 ### Determinism scope
 
