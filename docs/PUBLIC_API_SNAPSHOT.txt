@@ -2332,6 +2332,18 @@ impl core::marker::Unpin for alice_physics::deformable::DeformableConfig
 impl core::marker::UnsafeUnpin for alice_physics::deformable::DeformableConfig
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::deformable::DeformableConfig
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::deformable::DeformableConfig
+pub mod alice_physics::det_math
+pub fn alice_physics::det_math::cbrt(f32) -> f32
+pub fn alice_physics::det_math::cos(f32) -> f32
+pub fn alice_physics::det_math::exp(f32) -> f32
+pub fn alice_physics::det_math::exp64(f64) -> f64
+pub fn alice_physics::det_math::hypot(f32, f32) -> f32
+pub fn alice_physics::det_math::ln(f32) -> f32
+pub fn alice_physics::det_math::ln64(f64) -> f64
+pub fn alice_physics::det_math::powf(f32, f32) -> f32
+pub fn alice_physics::det_math::powf64(f64, f64) -> f64
+pub fn alice_physics::det_math::powi(f32, i32) -> f32
+pub fn alice_physics::det_math::sin(f32) -> f32
 pub mod alice_physics::dynamic_bvh
 pub struct alice_physics::dynamic_bvh::DynamicAabbTree
 pub alice_physics::dynamic_bvh::DynamicAabbTree::margin: alice_physics::math::Fix128
