@@ -11,7 +11,7 @@
 
 異なるプラットフォームやハードウェア間で決定論的なシミュレーションを実現する高精度物理エンジン。rigid-body core は 128bit 固定小数点演算 (`Fix128`)、周辺の engineering / field module は IEEE `f32` / `f64` + 超越関数を crate 自前の `det_math` に統一 いずれも CPU、コンパイラ、OS に関わらずビット精度の結果を保証する — [決定論の範囲](#決定論の範囲) 参照
 
-**crates.io で v1.0.0 semver-locked stable として公開中** (2026-09-14 release) `cargo add alice-physics` でインストール可能 v1.0 roadmap 9 項目完了 — release 全容は [`CHANGELOG.md`](CHANGELOG.md)、0.x → 1.0 移行は [`docs/MIGRATION_0.x_TO_1.0.md`](docs/MIGRATION_0.x_TO_1.0.md)、凍結済 partner API contract は [`docs/ECOSYSTEM_CONTRACTS.md`](docs/ECOSYSTEM_CONTRACTS.md) 参照
+**crates.io で v1.1.0 公開中** (1.0.0 semver-locked stable は 2026-09-14、1.1.0 は 2026-09-15 = `det_math` で全 module cross-platform bit-exact) `cargo add alice-physics` でインストール可能 v1.0 roadmap 9 項目完了 — release 全容は [`CHANGELOG.md`](CHANGELOG.md)、0.x → 1.0 移行は [`docs/MIGRATION_0.x_TO_1.0.md`](docs/MIGRATION_0.x_TO_1.0.md)、凍結済 partner API contract は [`docs/ECOSYSTEM_CONTRACTS.md`](docs/ECOSYSTEM_CONTRACTS.md) 参照
 
 ### 決定論の範囲
 
