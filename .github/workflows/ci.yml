@@ -16,7 +16,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, ubuntu-latest, windows-latest]
+        # v1.0 Item E Phase 1: 4 platform matrix
+        # - macos-latest       → aarch64-apple-darwin   (Mac ARM, primary dev)
+        # - macos-15-intel     → x86_64-apple-darwin    (Mac Intel, deprecation timeline aware)
+        # - ubuntu-latest      → x86_64-unknown-linux-gnu (Linux x86)
+        # - windows-latest     → x86_64-pc-windows-msvc (Windows x86)
+        # Phase 2 (deferred): ubuntu-24.04-arm (Linux ARM) + WASM (wasm32-unknown-unknown)
+        os: [macos-latest, macos-15-intel, ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@v5
 

@@ -111,7 +111,7 @@ Preview 4 wave が landed 済み、残作業:
 
 ### 🚧 v0.16.0 (推定 2-3 週間) — determinism guarantee + ecosystem (J-2 は v0.14.0-preview.4 で前倒し完了済)
 
-- **E. Determinism CI 6 環境 matrix** — macOS ARM + macOS x86 + Linux ARM + Linux x86 + Windows + WASM で毎 PR bit-exact snapshot golden test を run、joint / cloth / fluid / SDF CCD / trimesh に拡張
+- **🚧 E. Determinism CI 6 環境 matrix** — Phase 1 完了 (2026-09-14): [`docs/DETERMINISM_GOLDEN_TESTS.md`](DETERMINISM_GOLDEN_TESTS.md) framework + `tests/determinism_golden.rs` に 3 fixture (`freefall` / `kinematic_drift` / `cascade`) + `.github/workflows/ci.yml` test matrix 3→4 platform (macos-latest / macos-15-intel / ubuntu-latest / windows-latest) 拡張 Phase 2 (Linux ARM `ubuntu-24.04-arm` + WASM `wasm32-unknown-unknown` + wasmtime runner + joint/cloth/fluid/SDF CCD/trimesh fixture 追加) は次 session
 - **✅ H. Ecosystem 契約 freeze 完了 (2026-09-14)** — [`docs/ECOSYSTEM_CONTRACTS.md`](ECOSYSTEM_CONTRACTS.md) 起草済 (~215 行、5 partner の frozen API 一覧: TRT `GpuSolverBridge` / SDF `SdfField` / Bamboo concrete-type / Anima concrete-type / Kinematics reserved-post-1.0) + Freeze semantics (semver-minor 可否) + CI enforcement + partner responsibilities
 - ~~**J-2. bridge feature 削除 preview commit**~~ ✅ **v0.14.0-preview.4 で前倒し実施済** (詳細は [`docs/CRATES_IO_PUBLISH_INVESTIGATION.md`](CRATES_IO_PUBLISH_INVESTIGATION.md) の追記 section 参照)
 
