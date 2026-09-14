@@ -77,6 +77,12 @@ jobs:
         with:
           targets: wasm32-wasip1
 
+      # dtolnay/rust-toolchain の targets: が rustup target 追加を silent
+      # fail することがある fallback として明示 rustup target add を実行
+      # (idempotent、既に install 済なら no-op)
+      - name: Ensure wasm32-wasip1 rust-std is installed
+        run: rustup target add wasm32-wasip1
+
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: wasm-wasip1
