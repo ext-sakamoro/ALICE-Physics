@@ -339,25 +339,29 @@ mod tests {
 
     #[test]
     fn beam_load_included_in_report() {
-        let mut inputs = PrintPipelineInputs::default();
-        inputs.beam_load = Some((
-            CrossSection::Rectangular {
-                width_mm: Fix128::from_int(10),
-                height_mm: Fix128::from_int(20),
-            },
-            LoadCase::CantileverEndPoint {
-                load_n: Fix128::from_int(5),
-                length_mm: Fix128::from_int(200),
-            },
-        ));
+        let inputs = PrintPipelineInputs {
+            beam_load: Some((
+                CrossSection::Rectangular {
+                    width_mm: Fix128::from_int(10),
+                    height_mm: Fix128::from_int(20),
+                },
+                LoadCase::CantileverEndPoint {
+                    load_n: Fix128::from_int(5),
+                    length_mm: Fix128::from_int(200),
+                },
+            )),
+            ..Default::default()
+        };
         let r = analyze_print_pipeline(small_footprint(), "PLA", &inputs);
         assert!(r.beam.is_some());
     }
 
     #[test]
     fn orientation_optimized_when_load_direction_supplied() {
-        let mut inputs = PrintPipelineInputs::default();
-        inputs.load_direction = Some(LoadDirection::axis_z());
+        let inputs = PrintPipelineInputs {
+            load_direction: Some(LoadDirection::axis_z()),
+            ..Default::default()
+        };
         let r = analyze_print_pipeline(small_footprint(), "PLA", &inputs);
         assert!(r.orientation.is_some());
         assert!(r.orientation.unwrap().improvement_mpa > Fix128::ZERO);
@@ -365,13 +369,15 @@ mod tests {
 
     #[test]
     fn bridging_check_flags_over_limit() {
-        let mut inputs = PrintPipelineInputs::default();
-        inputs.bridges = vec![
-            BridgeSpan {
-                start: Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, Fix128::ZERO),
-                end: Vec3Fix::new(Fix128::from_int(30), Fix128::ZERO, Fix128::ZERO),
-            }, // 30mm > PLA 20mm
-        ];
+        let inputs = PrintPipelineInputs {
+            bridges: vec![
+                BridgeSpan {
+                    start: Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, Fix128::ZERO),
+                    end: Vec3Fix::new(Fix128::from_int(30), Fix128::ZERO, Fix128::ZERO),
+                }, // 30mm > PLA 20mm
+            ],
+            ..Default::default()
+        };
         let r = analyze_print_pipeline(small_footprint(), "PLA", &inputs);
         assert!(r.bridging.is_some());
         assert!(!r.is_safe);
@@ -379,11 +385,13 @@ mod tests {
 
     #[test]
     fn support_volume_reported() {
-        let mut inputs = PrintPipelineInputs::default();
-        inputs.overhangs = vec![OverhangRegion {
-            projected_area_mm2: Fix128::from_int(100),
-            support_height_mm: Fix128::from_int(20),
-        }];
+        let inputs = PrintPipelineInputs {
+            overhangs: vec![OverhangRegion {
+                projected_area_mm2: Fix128::from_int(100),
+                support_height_mm: Fix128::from_int(20),
+            }],
+            ..Default::default()
+        };
         let r = analyze_print_pipeline(small_footprint(), "PLA", &inputs);
         assert!(r.support.is_some());
         assert!(r.support.unwrap().total_volume_mm3 > Fix128::ZERO);
@@ -391,20 +399,24 @@ mod tests {
 
     #[test]
     fn fillet_kt_reported() {
-        let mut inputs = PrintPipelineInputs::default();
-        inputs.fillet = Some((
-            Fix128::from_ratio(2, 10),
-            Fix128::from_int(20),
-            Fix128::from_int(40),
-        ));
+        let inputs = PrintPipelineInputs {
+            fillet: Some((
+                Fix128::from_ratio(2, 10),
+                Fix128::from_int(20),
+                Fix128::from_int(40),
+            )),
+            ..Default::default()
+        };
         let r = analyze_print_pipeline(small_footprint(), "PLA", &inputs);
         assert!(r.fillet_kt.is_some());
     }
 
     #[test]
     fn bimaterial_reported() {
-        let mut inputs = PrintPipelineInputs::default();
-        inputs.secondary_material = Some(("PETG", Fix128::from_int(1), Fix128::from_int(1)));
+        let inputs = PrintPipelineInputs {
+            secondary_material: Some(("PETG", Fix128::from_int(1), Fix128::from_int(1))),
+            ..Default::default()
+        };
         let r = analyze_print_pipeline(small_footprint(), "PLA", &inputs);
         assert!(r.bimaterial.is_some());
     }

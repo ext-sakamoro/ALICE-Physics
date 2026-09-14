@@ -136,9 +136,17 @@ mod tests {
 
     #[test]
     fn presets_have_expected_ordering() {
-        assert!(speeds::AIR_20C < speeds::WATER_25C);
-        assert!(speeds::WATER_25C < speeds::STEEL_LONGITUDINAL);
-        assert!(speeds::CONCRETE_LONGITUDINAL < speeds::STEEL_LONGITUDINAL);
+        // Gas < liquid < porous solid < dense solid.
+        let ascending = [
+            speeds::AIR_20C,
+            speeds::WATER_25C,
+            speeds::CONCRETE_LONGITUDINAL,
+            speeds::STEEL_LONGITUDINAL,
+        ];
+        assert!(
+            ascending.windows(2).all(|w| w[0] < w[1]),
+            "speed presets out of order: {ascending:?}"
+        );
     }
 
     #[test]

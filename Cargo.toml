@@ -97,10 +97,8 @@ required-features = ["std"]
 [[bench]]
 name = "physics_bench"
 harness = false
-# `bench_tgs_oriented_scoped` pulls in `alice_physics::solver_tgs*` modules
-# gated on `feature = "std"` in `src/lib.rs`. Without this,
-# `cargo check --no-default-features --all-targets` (used by downstream
-# consumers like ALICE-Arena) fails to compile the bench.
+# Keeps `cargo check --no-default-features --all-targets` (used by downstream
+# consumers like ALICE-Arena) from compiling the bench without `std`.
 required-features = ["std"]
 
 [[bench]]
