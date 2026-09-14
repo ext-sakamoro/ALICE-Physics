@@ -66,6 +66,10 @@ change; `parallel`-feature batch assignment changed (see Changed).
   `rust-version = "1.70.0"` is unchanged and now verified for that scope.
 - **`fuzz/target/`** (256 build artifacts, 134 MB) removed from git tracking
   and ignored.
+- **Fuzz workflow** — job-level `continue-on-error` replaced by the
+  canonical split: `cargo fuzz build` is a blocking step (a target that no
+  longer compiles turns the workflow red), only `cargo fuzz run` is
+  informational with crash artifacts uploaded on failure.
 
 ### Removed
 
