@@ -9311,6 +9311,8 @@ pub alice_physics::prelude::PhysicsScene::bodies: alloc::vec::Vec<alice_physics:
 pub alice_physics::prelude::PhysicsScene::config: alice_physics::scene_io::PhysicsConfig
 pub alice_physics::prelude::PhysicsScene::joints: alloc::vec::Vec<alice_physics::scene_io::SerializedJoint>
 pub alice_physics::prelude::PhysicsScene::version: u32
+impl alice_physics::scene_io::PhysicsScene
+pub fn alice_physics::scene_io::PhysicsScene::new(alloc::vec::Vec<alice_physics::scene_io::SerializedBody>, alloc::vec::Vec<alice_physics::scene_io::SerializedJoint>, alice_physics::scene_io::PhysicsConfig, u32) -> Self
 impl core::clone::Clone for alice_physics::scene_io::PhysicsScene
 pub fn alice_physics::scene_io::PhysicsScene::clone(&self) -> alice_physics::scene_io::PhysicsScene
 impl core::cmp::Eq for alice_physics::scene_io::PhysicsScene
@@ -11723,6 +11725,8 @@ pub alice_physics::scene_io::PhysicsConfig::damping: [i64; 2]
 pub alice_physics::scene_io::PhysicsConfig::gravity: [i64; 6]
 pub alice_physics::scene_io::PhysicsConfig::iterations: u32
 pub alice_physics::scene_io::PhysicsConfig::substeps: u32
+impl alice_physics::scene_io::PhysicsConfig
+pub const fn alice_physics::scene_io::PhysicsConfig::new(u32, u32, [i64; 6], [i64; 2]) -> Self
 impl core::clone::Clone for alice_physics::scene_io::PhysicsConfig
 pub fn alice_physics::scene_io::PhysicsConfig::clone(&self) -> alice_physics::scene_io::PhysicsConfig
 impl core::cmp::Eq for alice_physics::scene_io::PhysicsConfig
@@ -11745,6 +11749,8 @@ pub alice_physics::scene_io::PhysicsScene::bodies: alloc::vec::Vec<alice_physics
 pub alice_physics::scene_io::PhysicsScene::config: alice_physics::scene_io::PhysicsConfig
 pub alice_physics::scene_io::PhysicsScene::joints: alloc::vec::Vec<alice_physics::scene_io::SerializedJoint>
 pub alice_physics::scene_io::PhysicsScene::version: u32
+impl alice_physics::scene_io::PhysicsScene
+pub fn alice_physics::scene_io::PhysicsScene::new(alloc::vec::Vec<alice_physics::scene_io::SerializedBody>, alloc::vec::Vec<alice_physics::scene_io::SerializedJoint>, alice_physics::scene_io::PhysicsConfig, u32) -> Self
 impl core::clone::Clone for alice_physics::scene_io::PhysicsScene
 pub fn alice_physics::scene_io::PhysicsScene::clone(&self) -> alice_physics::scene_io::PhysicsScene
 impl core::cmp::Eq for alice_physics::scene_io::PhysicsScene
@@ -11802,6 +11808,7 @@ impl core::marker::Unpin for alice_physics::scene_io::SerializedJoint
 impl core::marker::UnsafeUnpin for alice_physics::scene_io::SerializedJoint
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::scene_io::SerializedJoint
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::scene_io::SerializedJoint
+pub const alice_physics::scene_io::CURRENT_SCENE_VERSION: u32
 pub fn alice_physics::scene_io::load_scene(&std::path::Path) -> core::io::error::Result<alice_physics::scene_io::PhysicsScene>
 pub fn alice_physics::scene_io::load_scene_json(&std::path::Path) -> core::io::error::Result<alice_physics::scene_io::PhysicsScene>
 pub fn alice_physics::scene_io::save_scene(&alice_physics::scene_io::PhysicsScene, &std::path::Path) -> core::io::error::Result<()>
@@ -17645,6 +17652,8 @@ pub alice_physics::PhysicsScene::bodies: alloc::vec::Vec<alice_physics::scene_io
 pub alice_physics::PhysicsScene::config: alice_physics::scene_io::PhysicsConfig
 pub alice_physics::PhysicsScene::joints: alloc::vec::Vec<alice_physics::scene_io::SerializedJoint>
 pub alice_physics::PhysicsScene::version: u32
+impl alice_physics::scene_io::PhysicsScene
+pub fn alice_physics::scene_io::PhysicsScene::new(alloc::vec::Vec<alice_physics::scene_io::SerializedBody>, alloc::vec::Vec<alice_physics::scene_io::SerializedJoint>, alice_physics::scene_io::PhysicsConfig, u32) -> Self
 impl core::clone::Clone for alice_physics::scene_io::PhysicsScene
 pub fn alice_physics::scene_io::PhysicsScene::clone(&self) -> alice_physics::scene_io::PhysicsScene
 impl core::cmp::Eq for alice_physics::scene_io::PhysicsScene
