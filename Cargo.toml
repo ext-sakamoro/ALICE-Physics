@@ -51,7 +51,7 @@ analytics = ["dep:alice-analytics", "std"]  # ALICE-Analytics simulation profili
 [dependencies]
 rayon = { version = "1.8", optional = true }
 pyo3 = { version = "0.27", features = ["extension-module"], optional = true }
-numpy = { version = "0.27", optional = true }
+numpy = { version = "0.29", optional = true }
 wasm-bindgen = { version = "0.2", optional = true }
 js-sys = { version = "0.3", optional = true }
 # J-4 restoration: sibling 3 crate (今日 crates.io publish 済)
