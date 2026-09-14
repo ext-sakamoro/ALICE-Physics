@@ -309,7 +309,8 @@ mod tests {
     #[test]
     fn scoped_single_island_advances_only_its_body() {
         let (mut bodies, mut contacts) = build_two_disjoint_stacks();
-        let islands = build_islands(&bodies, &contacts, &[] as &[NoJoint]);
+        let islands =
+            build_islands(&bodies, &contacts, &[] as &[NoJoint]).expect("valid island inputs");
         assert_eq!(islands.len(), 2);
         let cfg = Pgs6DofConfig {
             warmstart: false,
@@ -346,7 +347,8 @@ mod tests {
     fn scoped_serial_dispatch_matches_all_at_once_after_scoping() {
         // Reference: `solve_islands_serial` over both islands.
         let (mut ref_bodies, mut ref_contacts) = build_two_disjoint_stacks();
-        let islands = build_islands(&ref_bodies, &ref_contacts, &[] as &[NoJoint]);
+        let islands = build_islands(&ref_bodies, &ref_contacts, &[] as &[NoJoint])
+            .expect("valid island inputs");
         let cfg = Pgs6DofConfig {
             warmstart: false,
             ..Pgs6DofConfig::default()
@@ -391,7 +393,8 @@ mod tests {
         // Same input, twice, must give byte-identical output.
         fn run() -> [Body6DofState; 3] {
             let (mut bodies, mut contacts) = build_two_disjoint_stacks();
-            let islands = build_islands(&bodies, &contacts, &[] as &[NoJoint]);
+            let islands =
+                build_islands(&bodies, &contacts, &[] as &[NoJoint]).expect("valid island inputs");
             let cfg = Pgs6DofConfig::default();
             let tcfg = TgsConfig::default();
             let dt = Fix128::from_f32(1.0 / 60.0);
@@ -426,7 +429,8 @@ mod tests {
         // determinism.
         let (mut serial_bodies, mut serial_contacts) = build_two_disjoint_stacks();
         let (mut par_bodies, mut par_contacts) = build_two_disjoint_stacks();
-        let islands = build_islands(&serial_bodies, &serial_contacts, &[] as &[NoJoint]);
+        let islands = build_islands(&serial_bodies, &serial_contacts, &[] as &[NoJoint])
+            .expect("valid island inputs");
         assert_eq!(islands.len(), 2);
         let cfg = Pgs6DofConfig::default();
         let tcfg = TgsConfig::default();

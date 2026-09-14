@@ -338,7 +338,8 @@ mod tests {
 
         // Scoped single-island solve.
         {
-            let islands = build_islands(&bodies_scoped, &contacts_scoped, &NO_JOINTS);
+            let islands = build_islands(&bodies_scoped, &contacts_scoped, &NO_JOINTS)
+                .expect("valid island inputs");
             assert_eq!(islands.len(), 1, "expected exactly one island");
             let mut cache = ImpulseCache::default();
             solve_oriented_island_isolated(
@@ -377,7 +378,8 @@ mod tests {
         let mut bodies_parallel = bodies_serial.clone();
         let mut contacts_parallel = contacts_serial.clone();
 
-        let islands = build_islands(&bodies_serial, &contacts_serial, &NO_JOINTS);
+        let islands = build_islands(&bodies_serial, &contacts_serial, &NO_JOINTS)
+            .expect("valid island inputs");
         assert_eq!(islands.len(), 2, "expected two disjoint islands");
 
         let cfg = Pgs6DofOrientedConfig::default();
