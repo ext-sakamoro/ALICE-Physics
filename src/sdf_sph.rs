@@ -300,7 +300,7 @@ pub fn poly6(r: f32, h: f32) -> f32 {
     if r >= h {
         return 0.0;
     }
-    let scale = 315.0 / (64.0 * core::f32::consts::PI * h.powi(9));
+    let scale = 315.0 / (64.0 * core::f32::consts::PI * crate::det_math::powi(h, 9));
     let diff = h * h - r * r;
     scale * diff * diff * diff
 }
@@ -312,7 +312,7 @@ pub fn spiky_grad(r: f32, h: f32) -> f32 {
     if r >= h {
         return 0.0;
     }
-    let scale = 45.0 / (core::f32::consts::PI * h.powi(6));
+    let scale = 45.0 / (core::f32::consts::PI * crate::det_math::powi(h, 6));
     let diff = h - r;
     scale * diff * diff
 }
@@ -390,7 +390,7 @@ pub fn viscosity_lap(r: f32, h: f32) -> f32 {
     if r >= h {
         return 0.0;
     }
-    let scale = 45.0 / (core::f32::consts::PI * h.powi(6));
+    let scale = 45.0 / (core::f32::consts::PI * crate::det_math::powi(h, 6));
     scale * (h - r)
 }
 
