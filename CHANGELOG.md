@@ -11,6 +11,73 @@ were introduced during that release window.
 - v0.11.0 — [docs/audits/STUB_AUDIT_v0.11.0.md](docs/audits/STUB_AUDIT_v0.11.0.md) (base: v0.10.0 `16674d4`)
 - v0.12.0 — [docs/audits/STUB_AUDIT_v0.12.0.md](docs/audits/STUB_AUDIT_v0.12.0.md) (base: v0.11.0 `095f115`, **0 new stubs**)
 
+## [1.0.1] - 2026-09-15
+
+Patch release from the post-1.0 strict review (7 findings). No public API
+change; `parallel`-feature batch assignment changed (see Changed).
+
+### Fixed
+
+- **`parallel` solver soundness** — graph coloring saturated at 64 colors:
+  `find_free_color` returned a constant `64` without recording occupancy, so
+  batch 64 could hold many constraints sharing one body and
+  `solve_constraints_batched` handed out aliasing `&mut RigidBody` across
+  threads (UB; reproduced with a static hub + 70 distance constraints →
+  65 batches). Colors are now an unbounded per-body bitset, static /
+  kinematic bodies (`inv_mass == 0`) are excluded from coloring and borrowed
+  shared (`BodyRef::Static`), the static snapshot is re-validated before every
+  dispatch, and `rebuild_batches` `debug_assert!`s that batches are
+  body-disjoint. 6 unit tests + `tests/parallel_batch_coloring.rs`.
+- **FFI** — `alice_physics_version()` returned a hardcoded `"0.6.0"`; it now
+  returns `CARGO_PKG_VERSION` (NUL-terminated, no C-string literal so the
+  `ffi` feature builds on the 1.70.0 MSRV).
+- **`build_islands`** (pub(crate)) — out-of-range body indices in contacts /
+  joints return `PhysicsError::InvalidConstraint` instead of `assert!`
+  panicking (an FFI host built with `panic = "abort"` would have been taken
+  down).
+- **Benches** — `benches/physics_bench.rs` no longer references the
+  `pub(crate)` `solver_tgs*` modules (it had not compiled since
+  v0.14.0-preview.8).
+
+### Changed
+
+- **`parallel` batch assignment** — excluding static bodies from coloring
+  changes which constraints share a batch. Simulations are still
+  deterministic and the default sequential path is untouched, but scenes with
+  static bodies may produce different frame results under `--features
+  parallel` than 1.0.0 did. A static floor touched by N bodies now costs 1
+  batch instead of N.
+- **CI clippy gate** — `-W clippy::all` (default features, lib only) →
+  `-D warnings` on `--all-targets` for both the default and the full native
+  feature set (`std,simd,parallel,ffi,gpu-solver-bridge,neural,replay,analytics`);
+  26 lints fixed (lib 10, tests 16).
+- **CI `msrv` job** — stable resolves an MSRV-aware lockfile
+  (`CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS=fallback`), then
+  `cargo +1.70.0 check --locked --features "std,simd,parallel,ffi,gpu-solver-bridge"`.
+  `rust-version = "1.70.0"` is unchanged and now verified for that scope.
+- **`fuzz/target/`** (256 build artifacts, 134 MB) removed from git tracking
+  and ignored.
+
+### Documented
+
+- **Determinism scope** — README EN/JP now state that bit-exact
+  cross-platform reproducibility is a property of the Fix128 core; the 30
+  `f32` / `f64` field modules (`sdf_*`, `thermal`, `fracture`, `sim_field`,
+  statistics, …) are deterministic within one binary only, and a `ClosureSdf`
+  closure that calls `libm` transcendentals makes the contact it feeds
+  platform-dependent. `docs/DETERMINISM_GOLDEN_TESTS.md` gained the same
+  caveat.
+- **MSRV policy** — scope table: library on 1.70.0 for the core native
+  features; `neural` / `replay` / `analytics` follow their sibling crates
+  (1.87 via `alice-zip 0.3.0` today); dev-dependencies need 1.71+.
+- **`Fix128::mul`** — wrapping overflow (modulo 2^128, no saturation / panic)
+  and fraction truncation (floor toward −∞) documented and pinned by tests.
+- **FFI free-fall golden** — the raw `(hi, lo)` position pair after 60 steps
+  is pinned in `ffi::tests`; Unity / UE5 hosts must reproduce it.
+- **ROADMAP** — stale `⏳ v1.0.0-rc.1 / rc.2 / stable` sections closed (rc
+  skipped by the γ direct-to-1.0 decision); v1.0.1 section added.
+- README_JP crates.io paragraph synced from v0.14.0-preview.4 to v1.0.x.
+
 ## [1.0.0] - 2026-09-14
 
 **Semver-locked stable release.** All 9 v1.0 items complete; ecosystem
