@@ -308,39 +308,6 @@ macro_rules! impl_hyperloglog {
                 }
             }
 
-            /// Count zero registers using SIMD when available
-            #[cfg(all(feature = "simd", target_arch = "x86_64"))]
-            fn count_zeros_simd(&self) -> usize {
-                #[cfg(target_arch = "x86_64")]
-                {
-                    use core::arch::x86_64::*;
-                    let mut zeros = 0usize;
-                    let chunks = self.registers.chunks_exact(32);
-                    let remainder = chunks.remainder();
-
-                    // SAFETY: chunks_exact(32) guarantees each chunk is exactly 32 bytes,
-                    // matching the __m256i width. _mm256_loadu_si256 handles unaligned loads.
-                    // AVX2 availability is checked at runtime by the cfg gate above.
-                    unsafe {
-                        let zero_vec = _mm256_setzero_si256();
-                        for chunk in chunks {
-                            let data = _mm256_loadu_si256(chunk.as_ptr() as *const __m256i);
-                            let cmp = _mm256_cmpeq_epi8(data, zero_vec);
-                            let mask = _mm256_movemask_epi8(cmp) as u32;
-                            zeros += mask.count_ones() as usize;
-                        }
-                    }
-
-                    // Handle remainder
-                    for &reg in remainder {
-                        if reg == 0 {
-                            zeros += 1;
-                        }
-                    }
-                    zeros
-                }
-            }
-
             /// Get raw registers
             #[inline]
             pub const fn registers(&self) -> &[u8] {
