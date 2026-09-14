@@ -2158,7 +2158,15 @@ ALICE-Physics follows a Serde-style MSRV policy:
 - MSRV bumps within a stable 1.x line will also be treated as **minor version bumps** (`1.x → 1.(x+1)`), never patch
 - The MSRV commitment covers the **latest 3 stable Rust channels** (N-2 policy) — at the time of a release, we support the current stable + previous 2
 - `alice-physics` does not require a nightly toolchain
-- CI enforces the declared MSRV via a dedicated `msrv` job (planned for v0.14.0) that runs `cargo build --locked` on the declared MSRV toolchain
+- CI enforces the declared MSRV via a dedicated `msrv` job (since v1.0.1): stable resolves an MSRV-aware lockfile (`CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS=fallback`), then `cargo +1.70.0 check --locked --features "std,simd,parallel,ffi,gpu-solver-bridge"` type-checks the library on 1.70.0
+
+**Scope of the MSRV guarantee** — the *library* with the default feature set and the core native features (`std`, `simd`, `parallel`, `ffi`, `gpu-solver-bridge`) builds on 1.70.0. Outside that scope:
+
+| Component | Effective MSRV | Why |
+|-----------|----------------|-----|
+| `neural` / `replay` / `analytics` bridge features | follows the sibling crate (`alice-ml` / `alice-db` / `alice-analytics`); 1.87 as of `alice-db 0.2.0-beta.1` → `alice-zip 0.3.0` | sibling crates set their own MSRV |
+| Tests / benches (dev-dependencies) | 1.71+ | `criterion`, `serde_derive` |
+| `wasm` feature | stable channel recommended | `wasm-bindgen` moves fast |
 
 Downstream crates can rely on `alice-physics` not raising its MSRV within a patch release, preserving their own MSRV window.
 

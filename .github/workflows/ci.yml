@@ -130,6 +130,34 @@ jobs:
           --features "std,simd,parallel,ffi,gpu-solver-bridge,neural,replay,analytics"
           --all-targets -- -D warnings
 
+  msrv:
+    name: MSRV (rust-version = 1.70.0)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # Stable resolves an MSRV-aware lockfile (deps whose own rust-version
+      # exceeds ours fall back to older releases); 1.70.0 then type-checks it.
+      - name: Install stable (lockfile resolver)
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install MSRV toolchain
+        uses: dtolnay/rust-toolchain@1.70.0
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Resolve MSRV-compatible lockfile
+        run: cargo +stable generate-lockfile
+        env:
+          CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS: fallback
+
+      # Library only: dev-dependencies (criterion / serde_derive) and the
+      # sibling-crate bridge features (neural / replay / analytics) follow
+      # their own MSRV, see README "MSRV Policy".
+      - name: cargo check on MSRV (lib, core native feature set)
+        run: >-
+          cargo +1.70.0 check --locked
+          --features "std,simd,parallel,ffi,gpu-solver-bridge"
+
   fmt:
     name: Format
     runs-on: ubuntu-latest

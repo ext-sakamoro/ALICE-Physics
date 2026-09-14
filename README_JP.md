@@ -1790,7 +1790,15 @@ ALICE-Physics は Serde 流の MSRV ポリシーを採用:
 - 1.x 安定 line での MSRV bump も **minor version bump** (`1.x → 1.(x+1)`) 扱い、patch にはしない
 - MSRV コミットメントは **最新 3 stable Rust channel** (N-2 policy) をカバー、リリース時点で current stable + 過去 2 個を支援
 - `alice-physics` は nightly toolchain を要求しない
-- CI で MSRV enforcement (専用 `msrv` job で declared MSRV toolchain 上の `cargo build --locked`、v0.14.0 で追加予定)
+- CI で MSRV enforcement (v1.0.1 から専用 `msrv` job): stable が MSRV 対応 lockfile を解決 (`CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS=fallback`) → `cargo +1.70.0 check --locked --features "std,simd,parallel,ffi,gpu-solver-bridge"` で 1.70.0 上の library を type-check
+
+**MSRV 保証の範囲** — *library* を default feature + core native feature (`std` / `simd` / `parallel` / `ffi` / `gpu-solver-bridge`) で build する範囲が 1.70.0 対象 範囲外:
+
+| 対象 | 実効 MSRV | 理由 |
+|------|-----------|------|
+| `neural` / `replay` / `analytics` bridge feature | sibling crate (`alice-ml` / `alice-db` / `alice-analytics`) に従う、`alice-db 0.2.0-beta.1` → `alice-zip 0.3.0` 時点で 1.87 | sibling crate が独自に MSRV を持つ |
+| test / bench (dev-dependencies) | 1.71+ | `criterion` / `serde_derive` |
+| `wasm` feature | stable channel 推奨 | `wasm-bindgen` の更新が速い |
 
 Downstream crate は `alice-physics` が patch release で MSRV を上げないことに依存でき、下流の MSRV window を破壊しない
 

@@ -818,9 +818,15 @@ pub unsafe extern "C" fn alice_physics_state_free(data: *mut u8, len: u32) {
 // ============================================================================
 
 /// Get library version string. Returns a static null-terminated string.
+///
+/// Always equals `CARGO_PKG_VERSION` of the built crate (v1.0.1 fix: the
+/// string was a hardcoded `"0.6.0"` before).
 #[no_mangle]
 pub extern "C" fn alice_physics_version() -> *const std::os::raw::c_char {
-    c"0.6.0".as_ptr()
+    // `concat!` + `env!` keeps this a `&'static str` with an explicit NUL;
+    // no C-string literal so the `ffi` feature stays within the 1.70 MSRV.
+    const VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "\0");
+    VERSION.as_ptr().cast()
 }
 
 // ============================================================================
@@ -830,6 +836,14 @@ pub extern "C" fn alice_physics_version() -> *const std::os::raw::c_char {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn version_string_matches_cargo_pkg_version() {
+        // SAFETY: `alice_physics_version` returns a NUL-terminated static
+        // string owned by the binary.
+        let s = unsafe { std::ffi::CStr::from_ptr(alice_physics_version()) };
+        assert_eq!(s.to_str().unwrap(), env!("CARGO_PKG_VERSION"));
+    }
 
     #[test]
     fn test_vec3_conversion_roundtrip() {
