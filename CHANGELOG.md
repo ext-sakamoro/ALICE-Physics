@@ -54,6 +54,9 @@ root instead of relabelling it.
   with the remaining caveat limited to user closures and the ALICE-SDF CPU
   evaluator (tracked separately).
 - CI wasm job also runs `determinism_golden_f32`.
+- Cargo.toml `homepage` / `documentation` (docs.rs) metadata added — the
+  crates.io page had no Documentation link for 1.0.0.
+- Published to crates.io 2026-09-15 (1.0.1 was GitHub-only and is included).
 
 ## [1.0.1] - 2026-09-15
 

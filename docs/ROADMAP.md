@@ -3,13 +3,14 @@
 Canonical roadmap for the alice-physics crate. Primary source of truth.
 Memory index pointer: `[[reference-alice-physics-v1-roadmap]]` in claude-config.
 
-## 🎉 現在位置 (2026-09-14): v1.0.0 stable released
+## 🎉 現在位置 (2026-09-15): v1.1.0 released (1.0.0 stable + 全 module bit-exact)
 
-**alice-physics v1.0.0 = crates.io published 2026-09-14** — `Published alice-physics v1.0.0 at registry crates-io`
-- crates.io URL: https://crates.io/crates/alice-physics/1.0.0
-- GitHub Release: https://github.com/ext-sakamoro/ALICE-Physics/releases/tag/v1.0.0
-- Release commit: `ca3adae` (Cargo.toml v1.0.0 bump)
-- Install: `cargo add alice-physics` (semver-locked stable)
+**alice-physics v1.1.0 = crates.io published 2026-09-15** — `Published alice-physics v1.1.0 at registry crates-io`
+- crates.io URL: https://crates.io/crates/alice-physics/1.1.0 (docs.rs build ✅、Documentation / Homepage link 追加)
+- GitHub Release: https://github.com/ext-sakamoro/ALICE-Physics/releases/tag/v1.1.0 (assets 15)
+- Release commit: `81ba0ab` (1.1.0 = det_math + golden_f32、1.0.1 は crates.io skip)
+- 前 release: v1.0.0 stable 2026-09-14 (`ca3adae`、https://github.com/ext-sakamoro/ALICE-Physics/releases/tag/v1.0.0)
+- Install: `cargo add alice-physics` (semver-locked、1.x 内 breaking なし)
 
 **全 9 v1.0 Items 完了** (詳細は [`CHANGELOG.md`](../CHANGELOG.md) `[1.0.0]` entry):
 
