@@ -89,6 +89,13 @@ Every PR runs all 6 platforms; a hash mismatch on any platform fails CI.
 - **IEEE 754 `f32` basic ops** (used by `ClosureSdf`): `+`, `-`, `*`, `/`,
   `sqrt` are spec-required bit-exact on every architecture that Rust
   supports (Rust reference §Behavior considered undefined).
+  **Not covered**: transcendental functions (`sin`, `cos`, `exp`, `powf`,
+  `tanh`, ...) are provided by the platform `libm` and may differ in the
+  last ulp between OS / CPU / compiler. A user closure passed to
+  `ClosureSdf` that calls them makes the rigid-body contact it feeds
+  platform-dependent even though the solver itself stays Fix128. The
+  fixtures in this suite therefore use polynomial / sqrt-only SDFs; for
+  lockstep use a Fix128 SDF or ALICE-SDF's deterministic evaluator.
 - **No SIMD gates** in the default-feature test path (SIMD is opt-in via
   the `simd` feature; determinism_golden test builds without it).
 

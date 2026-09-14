@@ -9,11 +9,23 @@
 [![License: AGPL-3.0-or-later](https://img.shields.io/crates/l/alice-physics.svg)](#license)
 [![CI](https://github.com/ext-sakamoro/ALICE-Physics/actions/workflows/ci.yml/badge.svg)](https://github.com/ext-sakamoro/ALICE-Physics/actions/workflows/ci.yml)
 
-異なるプラットフォームやハードウェア間で決定論的なシミュレーションを実現する高精度物理エンジン。128bit固定小数点演算を使用し、CPU、コンパイラ、OSに関わらずビット精度の結果を保証します。
+異なるプラットフォームやハードウェア間で決定論的なシミュレーションを実現する高精度物理エンジン。rigid-body core は 128bit 固定小数点演算 (`Fix128`) を使用し、CPU、コンパイラ、OS に関わらずビット精度の結果を保証する 周辺の engineering / field module のうち `f32` API を持つものは同一 binary 内で決定論的 — [決定論の範囲](#決定論の範囲) 参照
 
-**crates.io で公開中** (v0.14.0-preview.4 初回 publish 2026-09-13、以降 preview.5 / preview.6 で拡張中) `cargo add alice-physics --pre` でインストール可能 (pre-release identifier `-preview.N` は明示的な `--pre` opt-in が必要、v0.14.0 stable landing で default 対象化) v1.0 までの timeline は [`docs/ROADMAP.md`](docs/ROADMAP.md) 参照
+**crates.io で v1.0.0 semver-locked stable として公開中** (2026-09-14 release) `cargo add alice-physics` でインストール可能 v1.0 roadmap 9 項目完了 — release 全容は [`CHANGELOG.md`](CHANGELOG.md)、0.x → 1.0 移行は [`docs/MIGRATION_0.x_TO_1.0.md`](docs/MIGRATION_0.x_TO_1.0.md)、凍結済 partner API contract は [`docs/ECOSYSTEM_CONTRACTS.md`](docs/ECOSYSTEM_CONTRACTS.md) 参照
 
-**v0.10-0.14 の主な追加**: 5 wave の完全実装プッシュで **54 module + 3 統合 solver loop + Session 4 19 module (3 tier 分類)** を追加 3D プリント安全性検証 (warp / thin-wall / stress / bridging) から composite / plastic / fatigue 力学、乱流、VOF / level-set 多相流、実行可能な CFD 時間ステップ loop、humanoid ragdoll、SDF-boundary SPH、transient thermal、composite failure、VIV / piezoelectric / acoustic / electromagnetic、IK / anisotropic friction / netcode prediction / character FSM / kinematic loop / buoyancy zone / wind zone / SDF FEM / SDF wind までカバー 全て bit-exact + Fix128 決定論を保持 詳細は [Session 1-3 追加](#session-1-3-追加-v010-012) と [v0.13.0 Session 4 追加](#v0130-session-4-追加-19-module--3-tier-構成) を参照
+### 決定論の範囲
+
+「bit-exact」は **Fix128 core** の性質であり、crate 内の全 module の性質ではない クロスプラットフォーム再現性に依存する前に以下の表を確認すること:
+
+| Tier | Module | 保証 |
+|------|--------|------|
+| **Fix128 core** | rigid-body solver / joint / distance・contact constraint / BVH broad-phase / GJK・EPA / CCD / sleeping / scene I/O / netcode snapshot・rollback / neural controller、および public API が `Fix128` / `Vec3Fix` / `QuatFix` で表現される全 module | **プラットフォーム跨ぎで bit-exact** — 純 `i64` / `u64` 整数演算、golden-hash suite で macOS ARM/x86 / Linux ARM/x86 / Windows / `wasm32-wasip1` を検証済 |
+| **`f32` / `f64` field module** (30) | `sdf_collider` / `sdf_manifold` / `sdf_ccd` / `sdf_sph` / `sdf_fem_mesh` / `sdf_destruction` / `sdf_character` / `sdf_adaptive` / `sdf_wind_field` / `gpu_sdf` / `thermal` / `transient_thermal` / `phase_change` / `fracture` / `erosion` / `sim_field` / `sim_modifier` / `rolling_contact` / `aeroelasticity` / `piezoelectric` / `acoustic_wave` / `pressure` / `thin_wall` / `convex_decompose` / `db_bridge` / `character_state` / `fluid_netcode`、および `f64` 統計 module `anomaly` / `privacy` / `sketch` | **同一 binary 内決定論** — 同じ build なら同じ入力に同じ出力 IEEE 754 の `+ - * / sqrt` は全環境で spec 通り一致するが、`sin` / `cos` / `exp` / `powf` はプラットフォームの `libm` を経由し **OS / CPU / compiler 跨ぎの bit-exact は保証されない** |
+| **境界: `SdfCollider` / `ClosureSdf`** | user closure `Fn(f32, f32, f32) -> f32` → `Fix128::from_f32` → rigid-body contact | rigid-body solver 自体は Fix128 のまま、closure 側のプラットフォーム依存をそのまま継承する lockstep / rollback 用途では Fix128 SDF か ALICE-SDF の決定論 evaluator を使い、closure 内で `libm` の超越関数を呼ばないこと |
+
+golden-hash 決定論 suite は Fix128 core のみを対象、`f32` tier は同一 binary 再現性の regression test で担保 詳細は [`docs/DETERMINISM_GOLDEN_TESTS.md`](docs/DETERMINISM_GOLDEN_TESTS.md)
+
+**v0.10-0.14 の主な追加**: 5 wave の完全実装プッシュで **54 module + 3 統合 solver loop + Session 4 19 module (3 tier 分類)** を追加 3D プリント安全性検証 (warp / thin-wall / stress / bridging) から composite / plastic / fatigue 力学、乱流、VOF / level-set 多相流、実行可能な CFD 時間ステップ loop、humanoid ragdoll、SDF-boundary SPH、transient thermal、composite failure、VIV / piezoelectric / acoustic / electromagnetic、IK / anisotropic friction / netcode prediction / character FSM / kinematic loop / buoyancy zone / wind zone / SDF FEM / SDF wind までカバー Fix128 module は bit-exact、`f32` field / SDF module は同一 binary 内決定論 ([決定論の範囲](#決定論の範囲)) 詳細は [Session 1-3 追加](#session-1-3-追加-v010-012) と [v0.13.0 Session 4 追加](#v0130-session-4-追加-19-module--3-tier-構成) を参照
 
 **v0.14.0 preview series (crates.io landing)**
 
@@ -27,7 +39,7 @@
 
 ## v0.13.0 Session 4 追加 (19 module / 3 tier 構成)
 
-v0.10-0.12 の engineering-solver 基盤の上に、game-physics 仕上げ (ragdoll / character state / netcode prediction / IK)、soft-body simulation (SDF SPH / SDF character / SDF FEM / SDF wind)、engineering research (composite failure / transient thermal / rolling contact fatigue / VIV / piezoelectric / acoustic / electromagnetic)、multi-material coupling (buoyancy zone / anisotropic friction / kinematic loop) をカバーする 19 module を追加 全て bit-exact Fix128 決定論を保持、出典 formula は module doc に明記
+v0.10-0.12 の engineering-solver 基盤の上に、game-physics 仕上げ (ragdoll / character state / netcode prediction / IK)、soft-body simulation (SDF SPH / SDF character / SDF FEM / SDF wind)、engineering research (composite failure / transient thermal / rolling contact fatigue / VIV / piezoelectric / acoustic / electromagnetic)、multi-material coupling (buoyancy zone / anisotropic friction / kinematic loop) をカバーする 19 module を追加 Fix128 module は bit-exact、`f32` module は同一 binary 内決定論 ([決定論の範囲](#決定論の範囲))、出典 formula は module doc に明記
 
 ### Tier ★★★ — 5 module (実運用 critical、downstream 直接依存)
 
@@ -153,7 +165,7 @@ v0.10-0.12 の engineering-solver 基盤の上に、game-physics 仕上げ (ragd
 
 3 セッションの完全実装プッシュで **35 module + 3 統合 solver loop + 3
 実行可能 example** を追加、「物理プリミティブ」から「実運用エンジニアリング
-ソルバー」へのギャップを埋めました 全追加は Fix128 bit-exact 決定論を保持し、
+ソルバー」へのギャップを埋めました 全追加は決定論的 (Fix128 module は bit-exact、`f32` module は同一 binary 内、[決定論の範囲](#決定論の範囲) 参照) で、
 出典 formula を明記 (Roark / Timoshenko / Simo & Hughes / Jones / Tsai-Wu /
 Hill / Norton / Findley / WLF / Brackbill / Smagorinsky / Launder-Spalding /
 Wilcox / Hasselmann / Turns / Anderson 等)
@@ -536,7 +548,7 @@ IEEE 754浮動小数点を使用する従来の物理エンジンは、以下の
 - 異なる最適化レベル（-O0 vs -O3）
 - 異なる命令セット（SSE vs AVX）
 
-ALICE-Physicsは**どこでもビット精度の結果**を保証し、以下を実現します：
+ALICE-Physics は Fix128 core (rigid body / constraint / joint / collision / netcode snapshot、[決定論の範囲](#決定論の範囲) 参照) で **ビット精度の結果** を保証し、以下を実現します：
 
 - **ロックステップマルチプレイ**: 全クライアントが同一のシミュレーションを計算
 - **ロールバックネットコード**: 入力を決定論的に再生
