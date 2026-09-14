@@ -17,6 +17,8 @@ on:
       - 'Cargo.lock'
       - 'src/**'
       - 'deny.toml'
+      # snapshot 再生成 commit でも public-api job を再実行する (paths 漏れだと red が残り続ける)
+      - 'docs/PUBLIC_API_SNAPSHOT.txt'
       - '.github/workflows/security-audit.yml'
       - '.github/actions/**'
       - 'examples/*/Cargo.toml'
@@ -29,6 +31,8 @@ on:
       - 'Cargo.lock'
       - 'src/**'
       - 'deny.toml'
+      # snapshot 再生成 commit でも public-api job を再実行する (paths 漏れだと red が残り続ける)
+      - 'docs/PUBLIC_API_SNAPSHOT.txt'
       - '.github/workflows/security-audit.yml'
       - '.github/actions/**'
       - 'examples/*/Cargo.toml'
