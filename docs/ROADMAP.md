@@ -184,7 +184,7 @@ Phase 1+2+F 完了、以降は最重量の B に集中:
 
 ### ⏳ v1.0.0-rc.1 (推定 6-8 週間)
 
-- **I. Migration guide 執筆** — `docs/MIGRATION_0.x_TO_1.0.md` に API rename / removal / deprecation 一覧 + downstream 対応手順
+- **✅ I. Migration guide 執筆完了 (2026-09-14)** — [`docs/MIGRATION_0.x_TO_1.0.md`](MIGRATION_0.x_TO_1.0.md) 起草済 (~340 行、per-module 削除項目テーブル + `#[non_exhaustive]` 影響 + Cargo.toml migration + 6-environment determinism promise + post-1.0 stability guarantees + 再曝露リクエスト手順)
 - crates.io に rc.1 publish (`0.16.1` → `1.0.0-rc.1` の pre-release version)
 - 実 downstream (ALICE-Bamboo / ALICE-Anima / SBR ゲーム側) の 1.0 対応調整、feedback 期間 4 週間
 
