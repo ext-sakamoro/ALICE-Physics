@@ -57,6 +57,7 @@
 //! ```
 
 use alice_physics::cfd_solver::CfdSolver;
+use alice_physics::det_math;
 use alice_physics::math::{Fix128, Vec3Fix};
 use alice_physics::multiphase::Grid3d;
 
@@ -119,8 +120,8 @@ fn fill_initial_temperature(temp: &mut Grid3d, a0: f32, lambda0: f32) {
             let y = (j as f32 + 0.5 - cy) * DX_F32;
             for i in 0..NX {
                 let x = (i as f32 + 0.5 - cx) * DX_F32;
-                let r = x.hypot(y);
-                let theta = scale * (lambda0 * y).sin() * cutoff(r);
+                let r = det_math::hypot(x, y);
+                let theta = scale * det_math::sin(lambda0 * y) * cutoff(r);
                 let t_val = 1.0 + theta;
                 temp.set(i, j, k, Fix128::from_f32(t_val));
             }
@@ -139,7 +140,7 @@ fn cutoff(r: f32) -> f32 {
         0.0
     } else {
         let s = (r - R_INNER) / (R_OUTER - R_INNER);
-        0.5 * (1.0 + (std::f32::consts::PI * s).cos())
+        0.5 * (1.0 + det_math::cos(std::f32::consts::PI * s))
     }
 }
 
@@ -188,7 +189,7 @@ fn l_infty_grad_theta(solver: &CfdSolver) -> f32 {
             let t_jm = temp.get(i, j - 1, k).to_f32();
             let d_dx = (t_ip - t_im) * inv_two_dx;
             let d_dy = (t_jp - t_jm) * inv_two_dx;
-            let mag = d_dx.hypot(d_dy);
+            let mag = det_math::hypot(d_dx, d_dy);
             if mag > best {
                 best = mag;
             }

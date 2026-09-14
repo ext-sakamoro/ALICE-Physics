@@ -54,6 +54,7 @@
 //! ```
 
 use alice_physics::cfd_solver::{AdvectionScheme, CfdSolver};
+use alice_physics::det_math;
 use alice_physics::math::{Fix128, Vec3Fix};
 
 const N: usize = 40;
@@ -129,11 +130,11 @@ fn initialize_axisymmetric_swirl(solver: &mut CfdSolver, gamma_0: f32) {
             let y = (j as f32 + 0.5 - cy) * DX_F32;
             for i in 0..=N {
                 let x = (i as f32 - cx) * DX_F32;
-                let r = x.hypot(y);
+                let r = det_math::hypot(x, y);
                 let u_val = if r < 1.0e-6 {
                     0.0
                 } else {
-                    let d = ((r - R0).hypot(z - Z0)).max(0.0);
+                    let d = det_math::hypot(r - R0, z - Z0).max(0.0);
                     let gamma = gamma_0 * cutoff(d);
                     // u_x = -(y / r²) · Γ = -y · Γ / r²
                     -(y / (r * r)) * gamma
@@ -152,11 +153,11 @@ fn initialize_axisymmetric_swirl(solver: &mut CfdSolver, gamma_0: f32) {
             let y = (j as f32 - cy) * DX_F32;
             for i in 0..N {
                 let x = (i as f32 + 0.5 - cx) * DX_F32;
-                let r = x.hypot(y);
+                let r = det_math::hypot(x, y);
                 let v_val = if r < 1.0e-6 {
                     0.0
                 } else {
-                    let d = ((r - R0).hypot(z - Z0)).max(0.0);
+                    let d = det_math::hypot(r - R0, z - Z0).max(0.0);
                     let gamma = gamma_0 * cutoff(d);
                     (x / (r * r)) * gamma
                 };
@@ -177,7 +178,7 @@ fn cutoff(d: f32) -> f32 {
         0.0
     } else {
         let s = (d - R_INNER) / (R_OUTER - R_INNER);
-        0.5 * (1.0 + (std::f32::consts::PI * s).cos())
+        0.5 * (1.0 + det_math::cos(std::f32::consts::PI * s))
     }
 }
 
@@ -212,7 +213,7 @@ fn bounded_quantities(solver: &CfdSolver) -> (f32, f32, f32) {
             let y = (j as f32 + 0.5 - cy) * DX_F32;
             for i in 0..N {
                 let x = (i as f32 + 0.5 - cx) * DX_F32;
-                let r = x.hypot(y);
+                let r = det_math::hypot(x, y);
                 let (ux, uy, uz) = cell_center_velocity(solver, i, j, k);
                 let gamma = (-y).mul_add(ux, x * uy);
                 let ur = if r < 1.0e-6 {
