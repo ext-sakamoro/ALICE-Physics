@@ -252,13 +252,36 @@ Phase 1+2+F 完了、以降は最重量の B に集中:
 
 **背景**: user が「Physics 1.0 並であればバージョンあげてもいいかもね」と可能性示唆
 
-**決定**: α (v0.13.0 → v0.14.0 → ... → v0.16.x → rc.1 → rc.2 → v1.0.0 の段階昇格) を採用
+**決定 (当初)**: α (v0.13.0 → v0.14.0 → ... → v0.16.x → rc.1 → rc.2 → v1.0.0 の段階昇格) を採用
 
-**代替案**:
+**代替案 (当初)**:
 - **γ (直行)**: Cargo.toml `0.13.0 → 1.0.0` に bump、README も 1.0 表記に、Session 4 module も全部「v1.0.0 included」に格上げ → reject: 実運用ドッグフーディング未実施、public API surface freeze 未完
 - **β (RC 短縮)**: 現在の main を `v1.0.0-rc.1` として freeze publish、feedback 経て v1.0.0 → reject: Unreleased backlog は既に v0.13.0 で吸収済だが、新 module (client_prediction 等) の実運用検証がない状態で RC 出すと feedback の意味が薄い
 
-**根拠**: 「downstream crate が今から `alice-physics = "1"` で pin して 6 ヶ月 breaking change なしを我々が保証できるか?」 = 現状 n 判定 (実運用検証未了)、ALICE-Bamboo と ALICE-Anima の実運用で 3 ヶ月連続 breaking change なしを先に達成することが 1.0 コミットの根拠になる (semver 契約は約束ではなく実績の追認)
+**根拠 (当初)**: 「downstream crate が今から `alice-physics = "1"` で pin して 6 ヶ月 breaking change なしを我々が保証できるか?」 = 現状 n 判定 (実運用検証未了)、ALICE-Bamboo と ALICE-Anima の実運用で 3 ヶ月連続 breaking change なしを先に達成することが 1.0 コミットの根拠になる (semver 契約は約束ではなく実績の追認)
+
+### ADR-003 revision (2026-09-14): γ 直行に変更
+
+**背景**: 2026-09-13 の集中 session で B / C / D / E / F / G / H / I / J の全 9 v1.0 Items を landing 完了 6 iteration の audit campaign 中、以下 6 sibling repo に対して毎 iter downstream survey 実施 (`rg 'alice_physics::'`):
+- ALICE-Bamboo (実運用)
+- ALICE-Anima (実運用)
+- ALICE-TRT (`impl GpuSolverBridge for TrtSolverAdapter` 実装済)
+- ALICE-SDF (`impl SdfField for CompiledSdfField` 実装済)
+- ALICE-LOL / Yoin / text-to-print-ios (使用)
+
+**測定結果**: 6 iteration + Final iteration で downstream breakage **累計 0 件**、`#[non_exhaustive]` + `solver_tgs*` pub(crate) 化含む全 API 変更で "無し実装" への降格のみ、既存 downstream 呼び出しは全て残 pub items 経由で温存
+
+**決定 (revised)**: **γ (直行)** に変更 rc.1/rc.2 skip、v0.14.0-preview.8 → v1.0.0 直接 bump
+
+**新根拠**:
+1. **実運用 pre-validation 済** — 従来「RC 期間の未知の外部 user への feedback 窓」で得るはずのシグナルは、ecosystem 内 6 sibling で毎 iteration ごとに既に得ている
+2. **API surface 完成** — Iter 1-6 + Final の audit で 32 module 512 pub items 監査、133 downgrades、`#[non_exhaustive]` 7 struct hedging 完了
+3. **Determinism 保証済** — Item E で 6 platform (macOS ARM/x86 + Linux ARM/x86 + Windows + WASM) × 31 test (9 golden hash + 22 semantic invariant) bit-exact 一致確認
+4. **Hard-gate 有効** — Item C の cargo-semver-checks が hard-gate mode で今後の breaking を block
+5. **Ecosystem contract freeze** — Item H で 5 partner の frozen API 明文化 (`docs/ECOSYSTEM_CONTRACTS.md`)
+6. **Migration guide 完備** — Item I で 0.x → 1.0 の per-module 削除項目 + 対応手順を提供 (`docs/MIGRATION_0.x_TO_1.0.md`)
+
+「6 ヶ月 breaking change なし保証」の semver 契約は、pre-1.0 の 6 iteration audit で実測 0 breakage を実績として引き受け可能な状態
 
 ## 最短優先候補 (v0.14.0-preview として 1 週間内 landing 可能)
 
