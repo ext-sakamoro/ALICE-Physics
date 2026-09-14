@@ -4,7 +4,10 @@
 
 English | [日本語](README_JP.md)
 
-[![crates.io](https://img.shields.io/badge/crates.io-alice--physics-orange)](https://crates.io/crates/alice-physics)
+[![crates.io](https://img.shields.io/crates/v/alice-physics.svg)](https://crates.io/crates/alice-physics)
+[![docs.rs](https://img.shields.io/docsrs/alice-physics)](https://docs.rs/alice-physics)
+[![License: AGPL-3.0-or-later](https://img.shields.io/crates/l/alice-physics.svg)](#license)
+[![CI](https://github.com/ext-sakamoro/ALICE-Physics/actions/workflows/ci.yml/badge.svg)](https://github.com/ext-sakamoro/ALICE-Physics/actions/workflows/ci.yml)
 
 > Part of **[ALICE-Eco-System](https://github.com/ext-sakamoro/ALICE-Eco-System)** — 260+ crate Edge-to-Cloud data pipeline (SDF / Physics / LLM / Motion / Font / TTS)
 
