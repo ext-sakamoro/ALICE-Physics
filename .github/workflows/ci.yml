@@ -117,8 +117,18 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: Clippy
-        run: cargo clippy -- -W clippy::all
+      - name: Clippy (default features, lib + all targets)
+        run: cargo clippy --all-targets -- -D warnings
+
+      # `--all-features` is not possible: `wasm` × `ffi` is a deliberate
+      # `compile_error!`, and `python` needs a Python toolchain. Every
+      # other feature is exercised here so lint drift in feature-gated
+      # code (parallel / neural / replay / ...) is a red gate, not a `-W`.
+      - name: Clippy (full native feature set, lib + all targets)
+        run: >-
+          cargo clippy
+          --features "std,simd,parallel,ffi,gpu-solver-bridge,neural,replay,analytics"
+          --all-targets -- -D warnings
 
   fmt:
     name: Format

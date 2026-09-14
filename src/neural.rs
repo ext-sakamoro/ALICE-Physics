@@ -129,16 +129,16 @@ pub fn fix128_ternary_matvec(
     let out_n = w.out_features();
     let in_n = w.in_features();
 
-    for row in 0..out_n {
+    for (row, out) in output.iter_mut().enumerate().take(out_n) {
         let mut acc = Fix128::ZERO;
-        for col in 0..in_n {
+        for (col, &x) in input.iter().enumerate().take(in_n) {
             match w.get(row, col) {
-                Ternary::Plus => acc = acc + input[col],
-                Ternary::Minus => acc = acc - input[col],
+                Ternary::Plus => acc = acc + x,
+                Ternary::Minus => acc = acc - x,
                 Ternary::Zero => {}
             }
         }
-        output[row] = acc * weights.scale_fix;
+        *out = acc * weights.scale_fix;
     }
 }
 

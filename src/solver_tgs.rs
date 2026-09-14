@@ -1228,8 +1228,10 @@ mod tests {
 
     #[test]
     fn body_ref_reports_dynamic_state() {
-        let mut body = RigidBody::default();
-        body.body_type = BodyType::Dynamic;
+        let body = RigidBody {
+            body_type: BodyType::Dynamic,
+            ..Default::default()
+        };
         let dyn_ref = BodyRef {
             body: &body,
             id: 42,
@@ -1237,16 +1239,20 @@ mod tests {
         assert!(dyn_ref.is_dynamic());
         assert_eq!(dyn_ref.stable_id(), 42);
 
-        let mut sbody = RigidBody::default();
-        sbody.body_type = BodyType::Static;
+        let sbody = RigidBody {
+            body_type: BodyType::Static,
+            ..Default::default()
+        };
         let stat_ref = BodyRef {
             body: &sbody,
             id: 7,
         };
         assert!(!stat_ref.is_dynamic());
 
-        let mut kbody = RigidBody::default();
-        kbody.body_type = BodyType::Kinematic;
+        let kbody = RigidBody {
+            body_type: BodyType::Kinematic,
+            ..Default::default()
+        };
         let kin_ref = BodyRef {
             body: &kbody,
             id: 3,

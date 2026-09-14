@@ -586,7 +586,7 @@ mod tests {
         // I = π·d⁴/64 = π · 10000 / 64 ≈ 490.87
         let i = s.second_moment_of_area_mm4();
         // Approx π ≈ 3.14159
-        let expected = Fix128::from_ratio(3141_59 * 10_000, 100_000 * 64);
+        let expected = Fix128::from_ratio(314_159 * 10_000, 100_000 * 64);
         assert!(
             approx_eq(i, expected, Fix128::from_ratio(1, 10)),
             "got {}, expected {}",

@@ -228,8 +228,7 @@ impl ReplayPlayer {
             .scan(base + 2 * MAX_FRAMES + s, base + 2 * MAX_FRAMES + e)?;
 
         let mut result = Vec::with_capacity(xs.len());
-        for ((xt, xv), ((_, yv), (_, zv))) in xs.into_iter().zip(ys.into_iter().zip(zs.into_iter()))
-        {
+        for ((xt, xv), ((_, yv), (_, zv))) in xs.into_iter().zip(ys.into_iter().zip(zs)) {
             let frame = (xt - base) as u64;
             result.push((frame, xv, yv, zv));
         }

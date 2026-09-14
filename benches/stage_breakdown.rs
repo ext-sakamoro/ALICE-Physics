@@ -22,9 +22,10 @@ use alice_physics::sleeping::SleepConfig;
 use alice_physics::{DistanceConstraint, Fix128, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix};
 
 fn fast_sleep_config() -> SleepConfig {
-    let mut cfg = SleepConfig::default();
-    cfg.frames_to_sleep = 1; // sleep after a single idle frame
-    cfg
+    SleepConfig {
+        frames_to_sleep: 1, // sleep after a single idle frame
+        ..SleepConfig::default()
+    }
 }
 
 const FRAMES: usize = 30; // half-second at 60 FPS

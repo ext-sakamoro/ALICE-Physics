@@ -155,6 +155,11 @@ pub(crate) fn solve_islands_serial(
 ///
 /// # Panics
 /// Panics when `caches.len() != islands.len()`.
+/// Per-island result of the parallel solve phase:
+/// `(world body indices, solved local bodies, contact write-back list)`.
+#[cfg(feature = "parallel")]
+type IslandUpdate = (Vec<usize>, Vec<Body6DofState>, Vec<(usize, Contact6Dof)>);
+
 #[cfg(feature = "parallel")]
 pub(crate) fn solve_islands_parallel(
     world_bodies: &mut [Body6DofState],
@@ -174,7 +179,7 @@ pub(crate) fn solve_islands_parallel(
 
     // 1. Parallel-solve into local buffers. Each thread produces
     //    (world_indices, updated_local_bodies, contact_writeback[]).
-    let updates: Vec<(Vec<usize>, Vec<Body6DofState>, Vec<(usize, Contact6Dof)>)> = islands
+    let updates: Vec<IslandUpdate> = islands
         .par_iter()
         .zip(caches.par_iter_mut())
         .map(|(island, cache)| {
@@ -204,7 +209,7 @@ pub(crate) fn solve_islands_parallel(
             let writeback: Vec<(usize, Contact6Dof)> = island
                 .contacts
                 .iter()
-                .zip(local_contacts.into_iter())
+                .zip(local_contacts)
                 .map(|(&world_i, updated)| {
                     let orig = world_contacts[world_i];
                     (

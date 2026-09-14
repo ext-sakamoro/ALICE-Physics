@@ -379,9 +379,7 @@ mod tests {
         let mut modifier = ThermalModifier::new(config, 8, (-2.0, -2.0, -2.0), (2.0, 2.0, 2.0));
 
         // Heat the entire field
-        for v in &mut modifier.temperature.data {
-            *v = 100.0; // 80 degrees above ambient
-        }
+        modifier.temperature.data.fill(100.0); // 80 degrees above ambient
 
         let d_before = 1.0f32; // distance at surface
         let d_after = modifier.modify_distance(2.0, 0.0, 0.0, d_before);
@@ -405,9 +403,7 @@ mod tests {
         let mut modifier = ThermalModifier::new(config, 8, (-2.0, -2.0, -2.0), (2.0, 2.0, 2.0));
 
         // Set ambient to 0
-        for v in &mut modifier.temperature.data {
-            *v = 0.0;
-        }
+        modifier.temperature.data.fill(0.0);
 
         // Hot spot at center (large radius to cover grid cells)
         modifier.apply_heat_at(0.0, 0.0, 0.0, 500.0, 1.5);

@@ -2681,9 +2681,9 @@ impl PhysicsWorld {
 
     /// v0.12.0: run one joint-solve pass with the joint stage routed
     /// through a caller-supplied [`GpuSolverBridge`]. Extracts body
-    /// positions + rotations + inverse masses into the shape the
-    /// bridge expects, uploads via `send_joints` + `send_body_state`
-    /// + `send_body_rotations`, dispatches
+    /// positions, rotations and inverse masses into the shape the
+    /// bridge expects, uploads them via `send_joints`, `send_body_state`
+    /// and `send_body_rotations`, dispatches
     /// `dispatch_joint_solve_iteration(dt)`, reads back the
     /// post-solve positions via `recv_body_positions`, and writes
     /// them back into `self.bodies[i].position`.
