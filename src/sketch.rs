@@ -302,7 +302,7 @@ macro_rules! impl_hyperloglog {
                 let raw_estimate = Self::ALPHA * m * m / sum;
 
                 if raw_estimate <= 2.5 * m && zeros > 0 {
-                    m * (m / zeros as f64).ln()
+                    m * crate::det_math::ln64(m / zeros as f64)
                 } else {
                     raw_estimate
                 }
@@ -398,7 +398,7 @@ macro_rules! impl_ddsketch {
             /// Create a new sketch with given relative accuracy `alpha`.
             pub fn new(alpha: f64) -> Self {
                 let gamma = (1.0 + alpha) / (1.0 - alpha);
-                let ln_gamma = gamma.ln();
+                let ln_gamma = crate::det_math::ln64(gamma);
                 // Offset to center around 1.0 (ln(1.0) = 0)
                 // For typical latencies (1ms - 10s), we want indices to fit in BINS
                 // With offset at BINS/4, we can handle values from gamma^(-BINS/4) to gamma^(3*BINS/4)
@@ -451,7 +451,8 @@ macro_rules! impl_ddsketch {
             /// Uses standard `ln()` for quantile accuracy (`DDSketch` requires precise buckets)
             #[inline]
             fn bucket_index(&self, value: f64) -> usize {
-                let idx = (value.ln() / self.ln_gamma).ceil() as i32 + self.offset;
+                let idx =
+                    (crate::det_math::ln64(value) / self.ln_gamma).ceil() as i32 + self.offset;
                 idx.max(0) as usize
             }
 
@@ -470,7 +471,7 @@ macro_rules! impl_ddsketch {
             #[inline]
             fn bucket_lower_bound(&self, idx: usize) -> f64 {
                 let exp = (idx as i32 - self.offset) as f64;
-                self.gamma.powf(exp - 1.0)
+                crate::det_math::powf64(self.gamma, exp - 1.0)
             }
 
             /// Estimate the value at quantile `q` (0.0–1.0).
@@ -706,7 +707,7 @@ macro_rules! impl_countmin {
             /// Confidence level (1 − e^{−depth}).
             #[inline]
             pub fn confidence(&self) -> f64 {
-                1.0 - (-($d as f64)).exp()
+                1.0 - crate::det_math::exp64(-($d as f64))
             }
         }
 

@@ -73,7 +73,7 @@ pub fn hertzian_sphere_sphere(
     let e_star = 1.0 / inv_e_star;
 
     // Contact patch radius: a = ((3 P R*) / (4 E*))^(1/3).
-    let contact_radius_m = ((3.0 * load_n * r_star) / (4.0 * e_star)).cbrt();
+    let contact_radius_m = crate::det_math::cbrt((3.0 * load_n * r_star) / (4.0 * e_star));
 
     // Peak pressure: p_max = 3 P / (2 π a²).
     let peak_pressure_pa =
@@ -123,7 +123,7 @@ pub fn basquin_cycles_to_failure(
     if stress_pa <= endurance_limit_pa {
         return f32::INFINITY;
     }
-    basquin_coefficient * stress_pa.powf(-basquin_exponent)
+    basquin_coefficient * crate::det_math::powf(stress_pa, -basquin_exponent)
 }
 
 /// Convenience wrapper combining [`hertzian_sphere_sphere`] with

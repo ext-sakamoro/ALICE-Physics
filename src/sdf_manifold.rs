@@ -419,8 +419,16 @@ mod tests {
                     Contact {
                         depth: Fix128::from_f32((i as f32).mul_add(0.01, 0.1)),
                         normal: Vec3Fix::UNIT_Y,
-                        point_a: Vec3Fix::from_f32(angle.cos(), 0.0, angle.sin()),
-                        point_b: Vec3Fix::from_f32(angle.cos(), -0.1, angle.sin()),
+                        point_a: Vec3Fix::from_f32(
+                            crate::det_math::cos(angle),
+                            0.0,
+                            crate::det_math::sin(angle),
+                        ),
+                        point_b: Vec3Fix::from_f32(
+                            crate::det_math::cos(angle),
+                            -0.1,
+                            crate::det_math::sin(angle),
+                        ),
                     },
                     (i as f32).mul_add(0.01, 0.1),
                 )
