@@ -10,9 +10,12 @@
 //! Every function here is built from the guaranteed operations only —
 //! integer range reduction, fixed-degree polynomials evaluated in a fixed
 //! order, and bit-level exponent construction — so the result is a pure
-//! function of the input bits on every target. `f32::mul_add` is avoided
-//! as well: it is correctly rounded, but routing it through software `fma`
-//! on targets without the instruction is a portability risk we do not need.
+//! function of the input bits on every target. `mul_add` is not used here
+//! either, purely to keep this module's dependency surface minimal; the rest
+//! of the crate may use it — IEEE 754 specifies fused multiply-add with a
+//! single rounding, and `tests/determinism_golden_f32.rs` verifies identical
+//! bits across hardware FMA (aarch64), software `fma` (x86_64 without FMA)
+//! and wasm32.
 //!
 //! # Accuracy
 //!
