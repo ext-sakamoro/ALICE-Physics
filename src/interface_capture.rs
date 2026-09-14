@@ -156,7 +156,7 @@ fn min_neighbor(field: &Grid3d, i: usize, j: usize, k: usize, axis: usize) -> Fi
 fn solve_fsm(a: Fix128, b: Fix128, c: Fix128, dx: Fix128) -> Fix128 {
     // Sort ascending
     let mut sorted = [a, b, c];
-    sorted.sort_by(|x, y| x.cmp(y));
+    sorted.sort();
     let (aa, bb, cc) = (sorted[0], sorted[1], sorted[2]);
 
     let h = dx;
@@ -254,7 +254,7 @@ pub(crate) fn plic_plane_offset(normal: Vec3Fix, f: Fix128, dx: Fix128) -> Fix12
         // Sort ascending (m1 ≤ m2 ≤ m3)
         let (m1, m2, m3) = {
             let mut arr = [m_a, m_b, m_c];
-            arr.sort_by(|a, b| a.cmp(b));
+            arr.sort();
             (arr[0], arr[1], arr[2])
         };
         if !m2.is_zero() && !m3.is_zero() {

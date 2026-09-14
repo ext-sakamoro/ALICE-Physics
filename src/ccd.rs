@@ -323,6 +323,8 @@ fn slab_test(
 /// Skill §1 経路 2 — no floating-point comparison, closed-form
 /// clamp, deterministic sub-step count.
 #[must_use]
+// 1.0.0 で公開済の signature (crates.io)、引数 struct 化は semver major = 2.0 で実施
+#[allow(clippy::too_many_arguments)]
 pub fn adaptive_toi_substeps(
     pos_a: Vec3Fix,
     vel_a: Vec3Fix,

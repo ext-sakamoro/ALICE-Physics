@@ -48,10 +48,9 @@ impl ProfileEntry {
     #[inline]
     #[must_use]
     pub const fn average_ticks(&self) -> u64 {
-        if self.call_count == 0 {
-            0
-        } else {
-            self.total_ticks / self.call_count
+        match self.total_ticks.checked_div(self.call_count) {
+            Some(avg) => avg,
+            None => 0,
         }
     }
 

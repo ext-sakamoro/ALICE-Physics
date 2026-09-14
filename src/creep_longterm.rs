@@ -42,8 +42,8 @@
 //! `predict_strain` are wired into `structural_solver.rs`. The WLF
 //! subsystem (`WlfConstants` + `wlf_shift_factor` + `effective_time_at_temp`
 //! + `CREEP_FROZEN_AT`) and alternate factory (`petg_25c_moderate`) +
-//! standalone `strain_at` are reserved crate-internal API used by
-//! `predict_strain` internally.
+//!   standalone `strain_at` are reserved crate-internal API used by
+//!   `predict_strain` internally.
 
 // Reserved WLF subsystem and alternate factories — pub(crate) but currently
 // used only via predict_strain / internal helpers / unit tests.

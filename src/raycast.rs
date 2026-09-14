@@ -421,7 +421,7 @@ pub fn raycast_all_spheres(ray: &Ray, spheres: &[(Sphere, usize)], max_t: Fix128
     }
 
     // Deterministic stable sort by t
-    hits.sort_by(|a, b| a.t.cmp(&b.t));
+    hits.sort_by_key(|a| a.t);
     hits
 }
 
@@ -437,7 +437,7 @@ pub fn raycast_all_aabbs(ray: &Ray, aabbs: &[(AABB, usize)], max_t: Fix128) -> V
         }
     }
 
-    hits.sort_by(|a, b| a.t.cmp(&b.t));
+    hits.sort_by_key(|a| a.t);
     hits
 }
 
