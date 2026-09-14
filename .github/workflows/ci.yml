@@ -90,10 +90,11 @@ jobs:
       - name: Create ALICE optional bridge stubs
         uses: ./.github/actions/alice-stubs
 
+      # 2026-09-15: `curl … | bash` は curl が network error (35 Connection reset) でも
+      # pipeline exit が bash 側 = 0 になり step green のまま次 step で `wasmtime: command not found`
+      # (exit 127) になる (run 34863693753) 公式 setup action に置換 (retry 内蔵、pipefail 問題が消える)
       - name: Install wasmtime
-        run: |
-          curl -sSf https://wasmtime.dev/install.sh | bash
-          echo "$HOME/.wasmtime/bin" >> "$GITHUB_PATH"
+        uses: bytecodealliance/actions/wasmtime/setup@v1
 
       - name: Build determinism_golden test (wasm32-wasip1)
         run: cargo test --test determinism_golden --target wasm32-wasip1 --no-run
