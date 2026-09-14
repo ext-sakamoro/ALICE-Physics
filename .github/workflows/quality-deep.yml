@@ -25,9 +25,17 @@ env:
 
 jobs:
   mutants:
-    name: Mutation testing (cargo-mutants)
+    # 2026-09-15 初回実測: 全 crate = 30,677 mutant × 6-9 s (毎回 1378 test) × -j 2 ≈ 30 h、
+    # 300 min timeout で a* 5 file しか進まず cancelled (MISSED 290 = animation_blend 157 /
+    # anisotropic 55 / aeroelasticity 46 / analytics_bridge 26 / acoustic_wave 6)
+    # → PR は --in-diff (差分のみ)、週次は決定論 core 8 module を 8 shard 並列 (各 ~1 h 目安)
+    name: Mutation testing (cargo-mutants${{ github.event_name == 'pull_request' && ', in-diff' || format(', core shard {0}/8', matrix.shard) }})
     runs-on: ubuntu-latest
-    timeout-minutes: 300
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ github.event_name == 'pull_request' && fromJSON('[0]') || fromJSON('[0,1,2,3,4,5,6,7]') }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -38,20 +46,22 @@ jobs:
         uses: ./.github/actions/alice-stubs
       - name: Install cargo-mutants
         uses: taiki-e/install-action@cargo-mutants
-      # PR: 差分に触れた関数だけ (数分〜数十分)  週次 / 手動: 全 crate (数時間、-j 2)
       - name: Mutants (PR = in-diff)
         if: github.event_name == 'pull_request'
         run: |
           git diff origin/${{ github.base_ref }}...HEAD > /tmp/pr.diff
           cargo mutants --in-diff /tmp/pr.diff --timeout 300 -j 2 --output mutants.out || true
-      - name: Mutants (weekly = full)
+      - name: Mutants (weekly = core 8 module, shard ${{ matrix.shard }}/8)
         if: github.event_name != 'pull_request'
-        run: cargo mutants --timeout 300 -j 2 --output mutants.out || true
+        run: |
+          cargo mutants --shard ${{ matrix.shard }}/8 -j 2 --timeout 300 --output mutants.out \
+            --file src/solver.rs --file src/solver_tgs.rs --file src/math.rs --file src/collider.rs \
+            --file src/bvh.rs --file src/joint.rs --file src/contact_cache.rs --file src/ccd.rs || true
       - name: Summary
         if: always()
         run: |
           {
-            echo "## cargo-mutants"
+            echo "## cargo-mutants (shard ${{ matrix.shard }})"
             if [ -f mutants.out/outcomes.json ]; then
               python3 - <<'PY'
           import json
@@ -70,7 +80,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: mutants-out
+          name: mutants-out-${{ matrix.shard }}
           path: mutants.out
           if-no-files-found: ignore
 
