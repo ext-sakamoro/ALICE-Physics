@@ -265,6 +265,8 @@ pub mod damping_rayleigh;
 pub mod db_bridge;
 pub mod debug_render;
 pub mod deformable;
+#[cfg(feature = "std")]
+pub mod det_math;
 pub mod dynamic_bvh;
 pub mod electromagnetic;
 pub mod ellipsoid;
