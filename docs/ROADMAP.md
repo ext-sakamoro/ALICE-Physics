@@ -178,7 +178,7 @@ Phase 1+2+F 完了、以降は最重量の B に集中:
   - 詳細は [`docs/PUB_AUDIT_FINAL.md`](PUB_AUDIT_FINAL.md) 参照
 - **✅ v1.0 Item B COMPLETE** — mechanical audit + architectural decisions 全 landing 済
 - **新 example 4 個追加** (10 → 14) — joint / character / BiCGStab pressure / adaptive dt
-- **Item C 出力側**: semver-checks の hard-gate 化 (現状 `continue-on-error: true`、B Iteration 3+ landing 後に有効化)
+- **✅ Item C 出力側 完了 (2026-09-14)**: semver-checks の hard-gate 化 (commit `3638bd1`、`security-audit.yml:245-252` の `continue-on-error: true` 解除、job name も informational → hard-gate 改称) 次 PR 以降 breaking API 変更を検知したら CI red gate として block
 - **F 24h 実行**: 8 target 全てで 24h fuzz run + crash 0 実績 (v1.0-rc validation の一環)
 - 完了次第 `0.14.0-preview.8` → ... → **`0.14.0` stable** publish
 
