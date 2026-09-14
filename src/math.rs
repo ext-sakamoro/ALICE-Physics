@@ -354,13 +354,6 @@ impl Fix128 {
         let hi = self.hi.wrapping_sub(rhs.hi).wrapping_sub(borrow as i64);
         Self { hi, lo }
     }
-
-    /// Pack two Fix128 values into SIMD registers for batch processing (crate-internal).
-    #[cfg(all(feature = "simd", target_arch = "x86_64"))]
-    #[inline]
-    pub(crate) fn pack_pair(a: Self, b: Self) -> (u64, u64, i64, i64) {
-        (a.lo, b.lo, a.hi, b.hi)
-    }
 }
 
 impl Add for Fix128 {

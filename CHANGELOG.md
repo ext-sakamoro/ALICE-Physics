@@ -58,6 +58,15 @@ change; `parallel`-feature batch assignment changed (see Changed).
 - **`fuzz/target/`** (256 build artifacts, 134 MB) removed from git tracking
   and ignored.
 
+### Removed
+
+- Two `x86_64`-only `simd` helpers that were never called and only the
+  Linux x86_64 CI (not the aarch64 dev machine) flagged as dead code once
+  clippy became `-D warnings`: `Fix128::pack_pair` (pub(crate), already
+  listed as removed in the 0.x → 1.0 migration guide) and the private
+  `HyperLogLog*::count_zeros_simd` (`cardinality()` already counts zero
+  registers in its LUT loop).
+
 ### Documented
 
 - **Determinism scope** — README EN/JP now state that bit-exact
