@@ -1326,7 +1326,7 @@ mod tests {
         let nz = 3;
         let n = nx * ny * nz;
         let mut p = vec![Fix128::ZERO; n];
-        let ctr = 1 + nx * (1 + ny * 1);
+        let ctr = 1 + nx * (1 + ny);
         p[ctr] = Fix128::ONE;
         let mut out = vec![Fix128::ZERO; n];
         apply_poisson_a(&p, &mut out, nx, ny, nz);
