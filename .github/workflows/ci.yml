@@ -195,3 +195,23 @@ jobs:
         with:
           fail_level: error
           reporter: github-check
+
+  feature-powerset:
+    # 2026-09-15 追加 (karikari-review §13 / CI template 手順 4.6): feature 組合せの compile 網羅
+    # depth 2 = 単体 + 2 個組合せ (19 通り、Mac 実測 green)
+    # - wasm は `std` 必須 (`compile_error!`) なので powerset から外し、std,wasm を別 step で check
+    # - python (pyo3 build) / neural / replay / analytics (sibling crate 実体必要) は除外
+    name: Feature powerset (cargo-hack)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Create ALICE optional bridge stubs
+        uses: ./.github/actions/alice-stubs
+      - name: Install cargo-hack
+        uses: taiki-e/install-action@cargo-hack
+      - name: Powerset (depth 2, wasm/python/bridge 除外)
+        run: cargo hack check --lib --feature-powerset --depth 2 --exclude-features python,neural,replay,analytics,wasm
+      - name: std + wasm (相互排他 ffi なし)
+        run: cargo check --lib --no-default-features --features std,wasm

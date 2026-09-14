@@ -1,0 +1,138 @@
+# quality-deep — 週次 / 手動の深い品質検査 (karikari-review §13 crate 厳密評価の CI 層、2026-09-15 制定)
+#
+# 3 job、いずれも PR gate ではなく週次 + workflow_dispatch (時間がかかる / ノイズがある):
+# - mutants : cargo-mutants (test が bug を検出できるかの逆検査)  PR では --in-diff で差分のみ
+# - miri    : UB 検出 (unsafe / parallel 持ち crate)  SIMD / FFI / wasm は miri 非対応のため除外
+# - bench   : criterion 回帰 (main baseline vs HEAD、critcmp)  GH runner のノイズがあるため informational
+#
+# 罠 #22 (continue-on-error は compile error も green に潰す) に従い continue-on-error は使わない
+# informational job は結果を Job Summary に書いて exit 0 (失敗は summary で読む)
+name: Quality Deep
+
+on:
+  schedule:
+    - cron: '0 18 * * 0'   # 日曜 03:00 JST
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'Cargo.toml'
+      - '.github/workflows/quality-deep.yml'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  mutants:
+    name: Mutation testing (cargo-mutants)
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Create ALICE optional bridge stubs
+        uses: ./.github/actions/alice-stubs
+      - name: Install cargo-mutants
+        uses: taiki-e/install-action@cargo-mutants
+      # PR: 差分に触れた関数だけ (数分〜数十分)  週次 / 手動: 全 crate (数時間、-j 2)
+      - name: Mutants (PR = in-diff)
+        if: github.event_name == 'pull_request'
+        run: |
+          git diff origin/${{ github.base_ref }}...HEAD > /tmp/pr.diff
+          cargo mutants --in-diff /tmp/pr.diff --timeout 300 -j 2 --output mutants.out || true
+      - name: Mutants (weekly = full)
+        if: github.event_name != 'pull_request'
+        run: cargo mutants --timeout 300 -j 2 --output mutants.out || true
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## cargo-mutants"
+            if [ -f mutants.out/outcomes.json ]; then
+              python3 - <<'PY'
+          import json
+          d = json.load(open("mutants.out/outcomes.json"))
+          s = d.get("summary", d)
+          caught = s.get("caught", 0); missed = s.get("missed", 0); un = s.get("unviable", 0); to = s.get("timeout", 0)
+          tot = caught + missed
+          print(f"- caught {caught} / missed {missed} / unviable {un} / timeout {to}")
+          print(f"- mutation score: {caught / tot * 100:.1f}% (目標 ≥ 80%)" if tot else "- no viable mutants")
+          PY
+              echo; echo "### missed"; cat mutants.out/missed.txt 2>/dev/null | head -50
+            else
+              echo "no output (build failed?)"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mutants-out
+          path: mutants.out
+          if-no-files-found: ignore
+
+  miri:
+    name: Miri (UB 検出、parallel feature)
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install nightly + miri
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: miri
+      - uses: Swatinem/rust-cache@v2
+      - name: Create ALICE optional bridge stubs
+        uses: ./.github/actions/alice-stubs
+      # 全 1378 test は数時間かかるため unsafe / 並列に触る test を指名
+      # Mac 実測 (2026-09-15): coloring 4 test 12 s / bvh+contact_cache 26 test 17 s / solver::tests 全 52 は 10 分超
+      # 対象を増やす時は本 list に追記 (solver = BodySlicePtr raw pointer 並列、bvh = escape pointer、
+      # contact_cache = HashMap index、math = SIMD 以外の unsafe なし)
+      - name: Miri (solver coloring / batch disjoint, parallel feature)
+        run: cargo +nightly miri test --lib --features parallel -- solver::tests::coloring
+        env:
+          MIRIFLAGS: -Zmiri-disable-isolation
+      - name: Miri (bvh / contact_cache)
+        run: cargo +nightly miri test --lib -- bvh::tests contact_cache::tests
+        env:
+          MIRIFLAGS: -Zmiri-disable-isolation
+
+  bench-regress:
+    name: Bench regression (criterion, informational)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Create ALICE optional bridge stubs
+        uses: ./.github/actions/alice-stubs
+      - name: Install critcmp
+        uses: taiki-e/install-action@v2
+        with:
+          tool: critcmp
+      - name: Baseline (main)
+        run: |
+          git worktree add /tmp/base origin/main
+          cd /tmp/base
+          cp -r "$GITHUB_WORKSPACE/.github" . 2>/dev/null || true
+          cargo bench --bench physics_bench -- --save-baseline main --noplot --warm-up-time 1 --measurement-time 3
+          cp -r target/criterion "$GITHUB_WORKSPACE/target-criterion-main"
+      - name: HEAD
+        run: |
+          mkdir -p target && rm -rf target/criterion && cp -r target-criterion-main target/criterion
+          cargo bench --bench physics_bench -- --save-baseline head --noplot --warm-up-time 1 --measurement-time 3
+      - name: Compare (±15% を summary に、informational)
+        if: always()
+        run: |
+          {
+            echo "## criterion main → head (threshold 15%、GH runner ノイズあり = informational)"
+            echo '```'
+            critcmp main head --threshold 15 || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
