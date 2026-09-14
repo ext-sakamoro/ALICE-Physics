@@ -91,11 +91,16 @@ jobs:
       # Mac 実測 (2026-09-15): coloring 4 test 12 s / bvh+contact_cache 26 test 17 s / solver::tests 全 52 は 10 分超
       # 対象を増やす時は本 list に追記 (solver = BodySlicePtr raw pointer 並列、bvh = escape pointer、
       # contact_cache = HashMap index、math = SIMD 以外の unsafe なし)
-      - name: Miri (solver coloring / batch disjoint, parallel feature)
-        run: cargo +nightly miri test --lib --features parallel -- solver::tests::coloring
+      # rayon (crossbeam-epoch 0.9 の tagged pointer) は Stacked Borrows では偽 UB を報告する
+      # (2026-09-15 実測: `parallel_step_rebuilds_*` が SB で fail / Tree Borrows で pass) ため
+      # parallel test は -Zmiri-tree-borrows、pool thread の終了待ちなしは -Zmiri-ignore-leaks で許容
+      # parallel_step_static_hub_matches_sequential_solver (200 spoke × step) は miri ではメモリ不足で kill される
+      # (Mac 実測 2026-09-15) ため対象外、rebuilds_* 1 本 (TB 32 s) のみ
+      - name: Miri (solver coloring + parallel step, Tree Borrows)
+        run: cargo +nightly miri test --lib --features parallel -- solver::tests::coloring solver::tests::parallel_step_rebuilds
         env:
-          MIRIFLAGS: -Zmiri-disable-isolation
-      - name: Miri (bvh / contact_cache)
+          MIRIFLAGS: -Zmiri-disable-isolation -Zmiri-tree-borrows -Zmiri-ignore-leaks
+      - name: Miri (bvh / contact_cache, Stacked Borrows)
         run: cargo +nightly miri test --lib -- bvh::tests contact_cache::tests
         env:
           MIRIFLAGS: -Zmiri-disable-isolation
