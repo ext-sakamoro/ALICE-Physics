@@ -1,6 +1,6 @@
 # ALICE-Physics
 
-**Deterministic 128-bit Fixed-Point Physics Engine** - v0.14.0-preview.6
+**Deterministic 128-bit Fixed-Point Physics Engine** - **v1.0.0 stable**
 
 English | [日本語](README_JP.md)
 
@@ -13,7 +13,7 @@ English | [日本語](README_JP.md)
 
 A high-precision physics engine designed for deterministic simulation across different platforms and hardware. Uses 128-bit fixed-point arithmetic to ensure bit-exact results regardless of CPU, compiler, or operating system.
 
-**Published on crates.io** (v0.14.0-preview.4 initial release 2026-09-13; subsequent preview.5 / preview.6 iterations extend the surface). Install with `cargo add alice-physics --pre` (pre-release identifier requires `--pre` opt-in until v0.14.0 stable). See [`docs/ROADMAP.md`](docs/ROADMAP.md) for the v1.0 timeline.
+**Published on crates.io as v1.0.0 semver-locked stable** (released 2026-09-14). Install with `cargo add alice-physics`. All 9 v1.0 roadmap items complete — see [`CHANGELOG.md`](CHANGELOG.md) for the full release scope, [`docs/MIGRATION_0.x_TO_1.0.md`](docs/MIGRATION_0.x_TO_1.0.md) for 0.x → 1.0 migration, and [`docs/ECOSYSTEM_CONTRACTS.md`](docs/ECOSYSTEM_CONTRACTS.md) for frozen partner API contracts.
 
 **v0.10-0.14 highlights** — a five-wave completeness push adds
 **54 modules + 3 integrated solver loops + a Session 4 19-module tier-classified push**
@@ -28,13 +28,14 @@ All bit-exact and Fix128 deterministic; see
 [Session 1-3 Additions](#session-1-3-additions-v010-012) and
 [v0.13.0 Session 4 Additions](#v0130-session-4-additions-19-modules-across-3-tiers).
 
-**v0.14.0 preview series (crates.io landings)**
+**v1.0.0 release highlights** (2026-09-14)
 
-- **preview.6** (2026-09-13) — `cargo-public-api` CI gate + fuzz coverage 5 → 7 (`fuzz_ccd` / `fuzz_trimesh`).
-- **preview.5** (2026-09-13) — Phase 1 quick wins: `[package.metadata.docs.rs]` + README recommended feature table, examples 7 → 10 (`ragdoll_demo` / `bfecc_advection_demo` / `sph_boundary_demo`), fuzz 3 → 5 (`fuzz_joint` / `fuzz_cfd`).
-- **preview.4** (2026-09-13) — Broken `neural` / `replay` / `analytics` bridge features **removed temporarily** (sibling repos `alice-ml` / `alice-db` / `alice-analytics` currently unpublished; the ALICE-SDF v1.7.7 pattern removes the bridges cleanly and reserves them for restoration in v0.17.x). Downstream consumers who need the bridges pin to `git` / `path` deps against the pre-preview.4 revision.
-- **preview.3** (2026-09-13) — `#![deny(missing_docs)]` escalation (0 warnings), MSRV policy documented, clippy `approx_constant` cleanup, crates.io publish pre-investigation.
-- **preview.1 / preview.2** (2026-09-12) — Physics v2 Priority 1/2 (Marching Tets, 3D Spectral IPM in ALICE-Fluid, spatial-hash SPH, Crank-Nicolson thermal, BFECC scalar / MAC-face BFECC velocity, nonlinear Crank-Nicolson, 3D transient thermal, BiCGStab pressure, adaptive dt, edge-split refinement) — **+37 lib tests**, total 1364.
+- **API surface freeze** — 32 module × 512 pub items audit (Iterations 1-6 + Final), 133+ items `pub → pub(crate)` downgraded, snapshot 20,201 → 19,406 (−795 items). `solver_tgs*` extension mechanism moved to `pub(crate)` (Option C). 7 prelude-exported structs marked `#[non_exhaustive]` for forward-compat.
+- **6-platform bit-exact determinism** — golden hash (9 tests) + semantic invariant (22 tests) suite verified on macOS ARM/x86 + Linux ARM/x86 + Windows + WASM (`wasm32-wasip1` via `wasmtime`).
+- **Hard-gated semver enforcement** — `cargo semver-checks` blocks breaking-API PRs.
+- **Ecosystem contracts frozen** — [`docs/ECOSYSTEM_CONTRACTS.md`] catalogues API for ALICE-TRT (`GpuSolverBridge`), ALICE-SDF (`SdfField`), ALICE-Bamboo, ALICE-Anima, ALICE-Kinematics.
+- **8/8 fuzz targets** — `fuzz_step` / `fuzz_collision` / `fuzz_deterministic_roundtrip` / `fuzz_joint` / `fuzz_cfd` / `fuzz_ccd` / `fuzz_trimesh` / `fuzz_structural`.
+- **1364 lib tests + 31 determinism tests** — all passing on all 6 platforms.
 
 **v0.12.0 addition** — `GpuSolverBridge` gains a joint-solve pipeline
 (`send_joints` / `send_body_rotations` / `dispatch_joint_solve_iteration`)
@@ -274,19 +275,9 @@ Session 1 baseline (v0.9): 719 → Session 1 end (v0.10): 904 → Session 2 end
 (v0.11): 1170 → **Session 3 end (v0.12): 1175 alice-physics tests + 53
 alice-bamboo integration tests, all passing.**
 
-### Sub-stepping TGS Solver (preview)
+### Sub-stepping TGS Solver — v1.0 status: `pub(crate)` internal
 
-Trait-abstracted temporal Gauss-Seidel solver primitives that layer on top of any concrete body/contact representation:
-
-- **`TgsHooks` driver** — `begin_substep` / `velocity_iteration` / `position_iteration` / `end_substep` callbacks, split the frame into `N` sub-steps for stable high-mass-ratio stacks
-- **Impulse warm-starting** — `ImpulseCache` remembers the applied impulse per stable contact ID across frames, collapsing PGS convergence for stationary piles
-- **Connected-component islands** — union-find `build_islands` groups bodies coupled through contacts / joints into disjoint islands
-- **Reference 6-DOF hooks** — projected Gauss-Seidel with Baumgarte positional correction, Coulomb friction (`√(τ₁² + τ₂²) ≤ μ · N_acc` cone clamp) and Newton coefficient of restitution
-- **Per-island scoped solve** — body-slice partitioning + world→local index remap so gravity is not double-counted when islands are dispatched independently
-- **rayon per-island parallelisation** — bit-perfect identical to the serial variant thanks to Fix128 arithmetic and canonical island ordering (proven by `parallel_matches_serial_bit_perfect` test)
-- **Quaternion orientation integration** — `q_new = normalize(q + 0.5 · dt · (ω × q))` primitive for layering full 6-DOF simulation on top of the diagonal-inertia reference hooks
-
-Enable rayon parallel dispatch with `--features parallel`. All variants preserve Fix128 bit-perfect determinism.
+The trait-abstracted temporal Gauss-Seidel solver primitives (`TgsHooks`, `ImpulseCache`, `build_islands`, 6-DOF hooks, per-island scoped solve, rayon parallelisation, quaternion orientation integration) exist in-crate as `solver_tgs*` modules but are **`pub(crate)` since 1.0.0** — the extension mechanism had zero downstream adoption during the v1.0 API audit (Option C, see [`docs/PUB_AUDIT_FINAL.md`](docs/PUB_AUDIT_FINAL.md)). The primary `PhysicsWorld::step` API uses its own internal TGS solver in `crate::solver` and remains fully public. If your project needs a generic hooks-based TGS integrator, open an issue — re-exposing `pub(crate)` items via a semver-minor bump is non-breaking.
 
 ### Advanced solver primitives (Turn D / Phase E / Phase F)
 
@@ -310,9 +301,7 @@ Pair with [ALICE-TRT v1.0.0+](https://github.com/ext-sakamoro/ALICE-TRT) `--feat
 
 ```toml
 [dependencies]
-# Pre-release identifier `-preview.N` requires an exact version match until
-# v0.14.0 stable — Cargo does not auto-upgrade across pre-release lines.
-alice-physics = { version = "0.14.0-preview.6", features = ["gpu-solver-bridge"] }
+alice-physics = { version = "1", features = ["gpu-solver-bridge"] }
 alice-trt     = { version = "3.1", features = ["physics-solver"] }
 ```
 
@@ -358,7 +347,7 @@ ALICE-Physics achieves a **perfect 100/100 optimization score** across 6 layers:
 | **L3: Compute** | 20/20 | Warm-start `cached_lambda`, reciprocal precomputation (`inv_rest_length`, `inv_rest_density`) |
 | **L4: GPU & Throughput** | 15/15 | `SIMD_WIDTH` const + `simd_width()`, `GpuSdfInstancedBatch`/`GpuSdfMultiDispatch`, `batch_size()` |
 | **L5: Build Profile** | 10/10 | `opt-level=3`, `lto="fat"`, `codegen-units=1`, `panic="abort"`, `strip=true` |
-| **L6: Code Quality** | 20/20 | 1364 lib tests + 53 alice-bamboo integration tests + 7 fuzz targets, clippy 0 warnings, `#![deny(missing_docs)]` |
+| **L6: Code Quality** | 20/20 | 1364 lib tests + 53 alice-bamboo integration tests + 8 fuzz targets + 31 determinism tests (6-platform bit-exact), clippy 0 warnings, `#![deny(missing_docs)]`, cargo-semver-checks hard-gated |
 | **Total** | **100/100** | |
 
 ### L1: Memory Layout (15/15)
@@ -437,7 +426,7 @@ strip = true           # Strip symbols
 
 ### L6: Code Quality (20/20)
 
-- **1364 lib tests** across the alice-physics crate (Session 4 + v0.14.0 preview 1/2 additions)
+- **1364 lib tests + 31 determinism tests** across the alice-physics crate (Iter 2-6 audit + v1.0 stable release additions)
 - **53 alice-bamboo integration tests** (end-to-end 3D-print safety scenarios)
 - **7 fuzz targets** (`fuzz_step`, `fuzz_collision`, `fuzz_deterministic_roundtrip`, `fuzz_joint`, `fuzz_cfd`, `fuzz_ccd`, `fuzz_trimesh`)
 - **Total: 1417 passing tests**, clippy: 0 warnings (`-W clippy::all`), `#![deny(missing_docs)]` (0 warnings)
@@ -575,8 +564,8 @@ ALICE-Physics guarantees **bit-exact results** everywhere, enabling:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                          ALICE-Physics v0.14.0-preview.6                     │
-│         140 pub mod (after preview.4 bridge removal), 1364 lib tests           │
+│                          ALICE-Physics v1.0.0 stable                         │
+│    1364 lib tests + 31 determinism tests (9 golden + 22 semantic), 6 CI     │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │  Core Layer                                                                  │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐          │
