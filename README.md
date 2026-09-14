@@ -47,7 +47,7 @@ Fix128 modules are bit-exact; the `f32` field / SDF modules are same-binary dete
 - **Hard-gated semver enforcement** — `cargo semver-checks` blocks breaking-API PRs.
 - **Ecosystem contracts frozen** — [`docs/ECOSYSTEM_CONTRACTS.md`] catalogues API for ALICE-TRT (`GpuSolverBridge`), ALICE-SDF (`SdfField`), ALICE-Bamboo, ALICE-Anima, ALICE-Kinematics.
 - **8/8 fuzz targets** — `fuzz_step` / `fuzz_collision` / `fuzz_deterministic_roundtrip` / `fuzz_joint` / `fuzz_cfd` / `fuzz_ccd` / `fuzz_trimesh` / `fuzz_structural`.
-- **1364 lib tests + 31 determinism tests** — all passing on all 6 platforms.
+- **1372 lib tests + 31 determinism tests** — all passing on all 6 platforms.
 
 **v0.12.0 addition** — `GpuSolverBridge` gains a joint-solve pipeline
 (`send_joints` / `send_body_rotations` / `dispatch_joint_solve_iteration`)
@@ -361,7 +361,7 @@ ALICE-Physics achieves a **perfect 100/100 optimization score** across 6 layers:
 | **L3: Compute** | 20/20 | Warm-start `cached_lambda`, reciprocal precomputation (`inv_rest_length`, `inv_rest_density`) |
 | **L4: GPU & Throughput** | 15/15 | `SIMD_WIDTH` const + `simd_width()`, `GpuSdfInstancedBatch`/`GpuSdfMultiDispatch`, `batch_size()` |
 | **L5: Build Profile** | 10/10 | `opt-level=3`, `lto="fat"`, `codegen-units=1`, `panic="abort"`, `strip=true` |
-| **L6: Code Quality** | 20/20 | 1364 lib tests + 53 alice-bamboo integration tests + 8 fuzz targets + 31 determinism tests (6-platform bit-exact), clippy 0 warnings, `#![deny(missing_docs)]`, cargo-semver-checks hard-gated |
+| **L6: Code Quality** | 20/20 | 1372 lib tests + 53 alice-bamboo integration tests + 8 fuzz targets + 31 determinism tests (6-platform bit-exact), clippy `-D warnings` (default + full native feature set, all targets), MSRV 1.70.0 CI job, `#![deny(missing_docs)]`, cargo-semver-checks hard-gated |
 | **Total** | **100/100** | |
 
 ### L1: Memory Layout (15/15)
@@ -440,10 +440,10 @@ strip = true           # Strip symbols
 
 ### L6: Code Quality (20/20)
 
-- **1364 lib tests + 31 determinism tests** across the alice-physics crate (Iter 2-6 audit + v1.0 stable release additions)
+- **1372 lib tests + 31 determinism tests** across the alice-physics crate (Iter 2-6 audit + v1.0 stable release additions + v1.0.1 coloring / island / Fix128 tests)
 - **53 alice-bamboo integration tests** (end-to-end 3D-print safety scenarios)
 - **7 fuzz targets** (`fuzz_step`, `fuzz_collision`, `fuzz_deterministic_roundtrip`, `fuzz_joint`, `fuzz_cfd`, `fuzz_ccd`, `fuzz_trimesh`)
-- **Total: 1417 passing tests**, clippy: 0 warnings (`-W clippy::all`), `#![deny(missing_docs)]` (0 warnings)
+- **Total: 1498 passing tests** in `cargo test` (default features: 1372 lib + 31 determinism + 75 integration + 20 doctests; 1416 lib tests with the full native feature set), clippy: 0 warnings under `-D warnings` (default + `std,simd,parallel,ffi,gpu-solver-bridge,neural,replay,analytics`, `--all-targets`), `#![deny(missing_docs)]` (0 warnings)
 
 ---
 
@@ -579,7 +579,7 @@ ALICE-Physics guarantees **bit-exact results** for the Fix128 core (rigid bodies
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                          ALICE-Physics v1.0.0 stable                         │
-│    1364 lib tests + 31 determinism tests (9 golden + 22 semantic), 6 CI     │
+│    1372 lib tests + 31 determinism tests (9 golden + 22 semantic), 6 CI     │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │  Core Layer                                                                  │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐          │

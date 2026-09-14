@@ -342,7 +342,7 @@ ALICE-Physicsは6層にわたる最適化で **100/100 の完璧なスコア** �
 | **L3: 計算戦略** | 20/20 | ウォームスタート `cached_lambda`、逆数事前計算（`inv_rest_length`、`inv_rest_density`） |
 | **L4: GPU・スループット** | 15/15 | `SIMD_WIDTH`定数 + `simd_width()`、`GpuSdfInstancedBatch`/`GpuSdfMultiDispatch`、`batch_size()` |
 | **L5: ビルドプロファイル** | 10/10 | `opt-level=3`、`lto="fat"`、`codegen-units=1`、`panic="abort"`、`strip=true` |
-| **L6: コード品質** | 20/20 | 1364 lib テスト + 53 alice-bamboo 統合テスト + 7 fuzz target、clippy 0 警告、`#![deny(missing_docs)]` |
+| **L6: コード品質** | 20/20 | 1372 lib テスト + 53 alice-bamboo 統合テスト + 8 fuzz target + 31 決定論テスト、clippy `-D warnings` (default + 全 native feature set、all targets)、MSRV 1.70.0 CI job、`#![deny(missing_docs)]`、cargo-semver-checks hard-gate |
 | **合計** | **100/100** | |
 
 ### L1: メモリレイアウト (15/15)
@@ -421,10 +421,10 @@ strip = true           # シンボル除去
 
 ### L6: コード品質 (20/20)
 
-- **1364 lib テスト** (alice-physics crate、Session 4 + v0.14.0 preview 1/2 追加)
+- **1372 lib テスト** (alice-physics crate、Session 4 + v0.14.0 preview 1/2 + v1.0.1 coloring / island / Fix128 テスト追加)
 - **53 alice-bamboo 統合テスト** (3D プリント安全性のエンドツーエンド)
 - **7 fuzz target** (`fuzz_step` / `fuzz_collision` / `fuzz_deterministic_roundtrip` / `fuzz_joint` / `fuzz_cfd` / `fuzz_ccd` / `fuzz_trimesh`)
-- **合計: 1417 テストパス**、clippy: 0 警告 (`-W clippy::all`)、`#![deny(missing_docs)]` (0 warning)
+- **合計: 1498 テストパス** (`cargo test` default feature: 1372 lib + 31 決定論 + 75 統合 + 20 doctest、全 native feature set では lib 1416)、clippy: `-D warnings` で 0 警告 (default + `std,simd,parallel,ffi,gpu-solver-bridge,neural,replay,analytics`、`--all-targets`)、`#![deny(missing_docs)]` (0 warning)
 
 ---
 
