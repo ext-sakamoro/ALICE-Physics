@@ -74,12 +74,8 @@ impl SpatialGrid {
 
     /// Reset the grid for a fresh build pass.
     pub fn clear(&mut self) {
-        for c in &mut self.counts {
-            *c = 0;
-        }
-        for o in &mut self.cell_offsets {
-            *o = 0;
-        }
+        self.counts.fill(0);
+        self.cell_offsets.fill(0);
         self.indices.clear();
     }
 

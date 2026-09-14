@@ -938,15 +938,16 @@ impl CfdSolver {
         }
 
         // Pass 3 — build the compensated input φ* = φ_n + ½(φ_n − φ̃).
+        // 演算順序は index 版と同一 (決定論性維持): un + half * (un - ut)
         let mut phi_star = u_n.clone();
-        for i in 0..phi_star.u.len() {
-            phi_star.u[i] = u_n.u[i] + half * (u_n.u[i] - u_tilde[i]);
+        for (ps, (un, ut)) in phi_star.u.iter_mut().zip(u_n.u.iter().zip(u_tilde.iter())) {
+            *ps = *un + half * (*un - *ut);
         }
-        for i in 0..phi_star.v.len() {
-            phi_star.v[i] = u_n.v[i] + half * (u_n.v[i] - v_tilde[i]);
+        for (ps, (un, ut)) in phi_star.v.iter_mut().zip(u_n.v.iter().zip(v_tilde.iter())) {
+            *ps = *un + half * (*un - *ut);
         }
-        for i in 0..phi_star.w.len() {
-            phi_star.w[i] = u_n.w[i] + half * (u_n.w[i] - w_tilde[i]);
+        for (ps, (un, ut)) in phi_star.w.iter_mut().zip(u_n.w.iter().zip(w_tilde.iter())) {
+            *ps = *un + half * (*un - *ut);
         }
 
         // Pass 4 — final SL from φ* using u_n's advecting field.

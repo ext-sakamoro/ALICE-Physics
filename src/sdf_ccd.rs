@@ -195,7 +195,7 @@ pub fn batch_sphere_trace_sdf(
     }
 
     // Sort by earliest TOI for deterministic processing
-    results.sort_by(|a, b| a.2.t.cmp(&b.2.t));
+    results.sort_by_key(|a| a.2.t);
     results
 }
 
