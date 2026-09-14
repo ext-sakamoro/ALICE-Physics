@@ -818,7 +818,8 @@ mod tests {
             floor_contact(0, 1, 900, 0.4, 0.0, 0.005),
             floor_contact(0, 2, 901, 0.4, 0.0, 0.005),
         ];
-        let islands = build_islands(&bodies, &contacts, &[] as &[NoJoint]);
+        let islands =
+            build_islands(&bodies, &contacts, &[] as &[NoJoint]).expect("valid island inputs");
         assert_eq!(
             islands.len(),
             2,
@@ -859,7 +860,8 @@ mod tests {
             floor_contact(0, 1, 900, 0.4, 0.0, 0.01),
             floor_contact(0, 2, 901, 0.4, 0.0, 0.01),
         ];
-        let islands = build_islands(&bodies, &contacts, &[] as &[NoJoint]);
+        let islands =
+            build_islands(&bodies, &contacts, &[] as &[NoJoint]).expect("valid island inputs");
         assert_eq!(islands.len(), 2);
         let mut owned_dynamic = Vec::new();
         dispatch_islands(&islands, |island| {
@@ -892,7 +894,8 @@ mod tests {
             floor_contact(0, 2, 901, 0.4, 0.0, 0.01),
             floor_contact(0, 3, 902, 0.4, 0.0, 0.01),
         ];
-        let islands = build_islands(&bodies, &contacts, &[] as &[NoJoint]);
+        let islands =
+            build_islands(&bodies, &contacts, &[] as &[NoJoint]).expect("valid island inputs");
         assert_eq!(islands.len(), 3);
 
         let visited = AtomicUsize::new(0);

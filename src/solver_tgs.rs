@@ -49,6 +49,7 @@
 #![allow(dead_code)]
 #![allow(rustdoc::broken_intra_doc_links)]
 
+use crate::error::PhysicsError;
 use crate::math::Fix128;
 use std::collections::HashMap;
 
@@ -330,15 +331,16 @@ pub(crate) struct Island {
 /// listed in every island that touches them but do not fuse islands
 /// together.
 ///
-/// # Panics
-/// Panics when any contact or joint references a body index outside of
-/// `bodies`.
-#[must_use]
+/// # Errors
+/// Returns [`PhysicsError::InvalidConstraint`] when any contact or joint
+/// references a body index outside of `bodies`. No panic: an FFI host
+/// built with `panic = "abort"` must never be taken down by a malformed
+/// constraint list.
 pub(crate) fn build_islands<B: BodyLike, C: ContactLike, J: JointLike>(
     bodies: &[B],
     contacts: &[C],
     joints: &[J],
-) -> Vec<Island> {
+) -> Result<Vec<Island>, PhysicsError> {
     let n = bodies.len();
     let mut uf = UnionFind::new(n);
 
@@ -346,14 +348,22 @@ pub(crate) fn build_islands<B: BodyLike, C: ContactLike, J: JointLike>(
     // do not glue moving stacks together across the world.
     for c in contacts {
         let (a, b) = (c.body_a(), c.body_b());
-        assert!(a < n && b < n, "contact references body out of bounds");
+        if a >= n || b >= n {
+            return Err(PhysicsError::InvalidConstraint {
+                reason: "contact references body out of bounds",
+            });
+        }
         if bodies[a].is_dynamic() && bodies[b].is_dynamic() {
             uf.union(a, b);
         }
     }
     for j in joints {
         let (a, b) = (j.body_a(), j.body_b());
-        assert!(a < n && b < n, "joint references body out of bounds");
+        if a >= n || b >= n {
+            return Err(PhysicsError::InvalidConstraint {
+                reason: "joint references body out of bounds",
+            });
+        }
         if bodies[a].is_dynamic() && bodies[b].is_dynamic() {
             uf.union(a, b);
         }
@@ -418,7 +428,7 @@ pub(crate) fn build_islands<B: BodyLike, C: ContactLike, J: JointLike>(
         island.joints.sort_unstable();
     }
     islands.sort_by_key(|i| i.bodies.first().copied().unwrap_or(usize::MAX));
-    islands
+    Ok(islands)
 }
 
 // ---------------------------------------------------------------------------
@@ -984,7 +994,43 @@ mod tests {
         let bodies: [MockBody; 0] = [];
         let contacts: [MockContact; 0] = [];
         let joints: [MockJoint; 0] = [];
-        assert!(build_islands(&bodies, &contacts, &joints).is_empty());
+        assert!(build_islands(&bodies, &contacts, &joints)
+            .expect("valid island inputs")
+            .is_empty());
+    }
+
+    #[test]
+    fn islands_out_of_bounds_contact_is_an_error_not_a_panic() {
+        let bodies = [MockBody {
+            id: 0,
+            dynamic: true,
+        }];
+        let contacts = [MockContact { id: 7, a: 0, b: 1 }];
+        let joints: [MockJoint; 0] = [];
+        let err = build_islands(&bodies, &contacts, &joints).unwrap_err();
+        assert_eq!(
+            err,
+            PhysicsError::InvalidConstraint {
+                reason: "contact references body out of bounds"
+            }
+        );
+    }
+
+    #[test]
+    fn islands_out_of_bounds_joint_is_an_error_not_a_panic() {
+        let bodies = [MockBody {
+            id: 0,
+            dynamic: true,
+        }];
+        let contacts: [MockContact; 0] = [];
+        let joints = [MockJoint { a: 5, b: 0 }];
+        let err = build_islands(&bodies, &contacts, &joints).unwrap_err();
+        assert_eq!(
+            err,
+            PhysicsError::InvalidConstraint {
+                reason: "joint references body out of bounds"
+            }
+        );
     }
 
     #[test]
@@ -1019,7 +1065,8 @@ mod tests {
                 b: 3,
             },
         ];
-        let islands = build_islands(&bodies, &contacts, &[] as &[MockJoint]);
+        let islands =
+            build_islands(&bodies, &contacts, &[] as &[MockJoint]).expect("valid island inputs");
         assert_eq!(islands.len(), 2);
         assert_eq!(islands[0].bodies, vec![0, 1]);
         assert_eq!(islands[1].bodies, vec![2, 3]);
@@ -1047,7 +1094,7 @@ mod tests {
             b: 1,
         }];
         let joints = [MockJoint { a: 1, b: 2 }];
-        let islands = build_islands(&bodies, &contacts, &joints);
+        let islands = build_islands(&bodies, &contacts, &joints).expect("valid island inputs");
         assert_eq!(islands.len(), 1);
         assert_eq!(islands[0].bodies, vec![0, 1, 2]);
         assert_eq!(islands[0].contacts, vec![0]);
@@ -1101,7 +1148,8 @@ mod tests {
                 b: 4,
             }, // stack B internal
         ];
-        let islands = build_islands(&bodies, &contacts, &[] as &[MockJoint]);
+        let islands =
+            build_islands(&bodies, &contacts, &[] as &[MockJoint]).expect("valid island inputs");
         assert_eq!(islands.len(), 2, "static ground must not fuse islands");
         // Each island should contain the static ground as a member (so
         // that the solver has access to both sides of the contact).
@@ -1137,8 +1185,10 @@ mod tests {
                 b: 2,
             },
         ];
-        let a = build_islands(&bodies, &contacts, &[] as &[MockJoint]);
-        let b = build_islands(&bodies, &contacts, &[] as &[MockJoint]);
+        let a =
+            build_islands(&bodies, &contacts, &[] as &[MockJoint]).expect("valid island inputs");
+        let b =
+            build_islands(&bodies, &contacts, &[] as &[MockJoint]).expect("valid island inputs");
         assert_eq!(a, b);
     }
 
