@@ -76,12 +76,12 @@ fuzz_target!(|op: Op| {
                 })
                 .collect();
 
-            let scene = PhysicsScene {
+            let scene = PhysicsScene::new(
                 bodies,
-                joints: Vec::<SerializedJoint>::new(),
-                config: SceneConfig::default(),
+                Vec::<SerializedJoint>::new(),
+                SceneConfig::default(),
                 version,
-            };
+            );
 
             let Ok(()) = save_scene(&scene, &path) else {
                 let _ = std::fs::remove_file(&path);
