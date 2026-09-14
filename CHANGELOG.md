@@ -11,6 +11,84 @@ were introduced during that release window.
 - v0.11.0 — [docs/audits/STUB_AUDIT_v0.11.0.md](docs/audits/STUB_AUDIT_v0.11.0.md) (base: v0.10.0 `16674d4`)
 - v0.12.0 — [docs/audits/STUB_AUDIT_v0.12.0.md](docs/audits/STUB_AUDIT_v0.12.0.md) (base: v0.11.0 `095f115`, **0 new stubs**)
 
+## [1.0.0] - 2026-09-14
+
+**Semver-locked stable release.** All 9 v1.0 items complete; ecosystem
+contracts frozen; API surface finalised; determinism verified across 6
+platforms (macOS ARM/x86 + Linux ARM/x86 + Windows + WASM).
+
+### Release scope
+
+- **Item B — Public API surface freeze.** 32 module × 512 pub items audit
+  (Iterations 1-6 + Final), 133+ items `pub → pub(crate)` downgraded, snapshot
+  20,201 → 19,406 (−795 items). `solver_tgs*` extension mechanism moved to
+  `pub(crate)` (Option C, zero downstream adoption during audit). Seven
+  prelude-exported structs (`ContactManifold`, `CachedContactPoint`,
+  `DebugDrawData`, `DebugLine`, `DebugPoint`, `PhysicsScene`, `PhysicsConfig`)
+  marked `#[non_exhaustive]` for forward-compat.
+- **Item C — cargo-semver-checks hard-gate.** `security-audit.yml`
+  `continue-on-error: true` removed; breaking API changes now block PRs.
+- **Item D — Documentation.** `#![deny(missing_docs)]` clean (0 warning).
+- **Item E — Determinism CI 6-environment matrix.**
+  - `tests/determinism_golden.rs` — 9 SHA-256 golden-hash tests
+    (freefall / kinematic_drift / cascade / joint_pendulum / cloth_drape
+    / fluid_step / sdf_ccd_glance / trimesh_probe + hashing meta-test).
+  - `tests/determinism_semantic.rs` — 22 semantic-invariant tests
+    (5 sign/direction + 4 order/index + 4 conservation + 3 symmetry +
+    4 concrete-value + 2 Fix128 sanity).
+  - CI platforms: macos-latest (aarch64) / macos-15-intel / ubuntu-latest
+    / ubuntu-24.04-arm / windows-latest / wasm32-wasip1 (via wasmtime).
+  - Bit-exact hash parity confirmed across all 6 platforms at release time.
+- **Item F — Fuzz coverage.** 8/8 targets landed
+  (`fuzz_step` / `fuzz_collision` / `fuzz_deterministic_roundtrip` /
+  `fuzz_joint` / `fuzz_cfd` / `fuzz_ccd` / `fuzz_trimesh` / `fuzz_structural`).
+- **Item G — MSRV policy.** `rust-version = "1.70.0"`, README EN/JP
+  Serde-style policy section.
+- **Item H — Ecosystem contracts freeze.** [`docs/ECOSYSTEM_CONTRACTS.md`]
+  documents frozen API for 5 partners (TRT `GpuSolverBridge` / SDF
+  `SdfField` / Bamboo concrete-type / Anima concrete-type / Kinematics
+  reserved-post-1.0).
+- **Item I — Migration guide.** [`docs/MIGRATION_0.x_TO_1.0.md`] with
+  per-module removal tables, `#[non_exhaustive]` impact, Cargo.toml
+  migration checklist, post-1.0 stability guarantees, and re-exposure
+  request workflow.
+- **Item J — crates.io publish.** Continues from preview.4-8 lineage;
+  this 1.0.0 supersedes all preview.X and is the first semver-stable
+  release.
+
+### Direct-to-1.0 rationale (skip rc.1 / rc.2)
+
+Per revised ADR-003 (see `docs/ROADMAP.md`), the traditional RC period
+is compressed to zero because the ecosystem's primary consumers
+(ALICE-Bamboo, ALICE-Anima, ALICE-TRT, ALICE-SDF, ALICE-LOL, Yoin,
+text-to-print-ios) have been continuously validated against every audit
+iteration's downstream survey (0 breakage per iteration). The RC period's
+canonical purpose — unknown-user feedback — is already satisfied by the
+in-ecosystem consumers.
+
+### Post-1.0 stability contract
+
+- No breaking changes to items in the 19,406-item public surface without
+  a 2.0 major bump.
+- `cargo semver-checks` hard-gate enforces this at PR time.
+- Frozen partner contracts (Item H) may not be modified without partner
+  crate coordination.
+- Determinism golden hashes are semver-locked; any drift is a breaking
+  change (except documented bugfixes with published diff).
+
+### Fixture hashes (Mac aarch64 baseline, verified bit-exact on all 6 CI platforms)
+
+| Scenario | SHA-256 |
+|----------|---------|
+| `freefall` | `49598cff32da429d198e5b281f9d46d89cb5dc6a430d368942b0e5249c779905` |
+| `kinematic_drift` | `c79a3ee897fe95bde1bb5660ceb49552aacec0741ec4b8a2f5d46fd6c62ae099` |
+| `cascade` | `0a9fb401dcc5fbf12ecd8ef36bd03caed7fb271b68d4035b764dbe24f6a47854` |
+| `joint_pendulum` | `d1d51ea466dd4c55c7e9c220afca66004e7401fb53a4a2781e40be3e4ba9ef8f` |
+| `cloth_drape` | `0df965eec802104c96168bf4eaf6e4096373343b39efe41bbfcdb3b3ef9d340c` |
+| `fluid_step` | `20f4ba26edef79d64321fdd19c306e80d9e464707e86ba3a036769ff7b1cd3b7` |
+| `sdf_ccd_glance` | `822813e3a278e960c30acb54ece430b0c51ddda325aa4ebb72009b26a6f62a4e` |
+| `trimesh_probe` | `85fbff506a4cd8492163697b0d9cdb2252786d5171b0ff0c125c24a84dec485a` |
+
 ## [0.14.0-preview.7] - 2026-09-13
 
 **Fourth crates.io release** — completes the v1.0 Item F target range (fuzz
