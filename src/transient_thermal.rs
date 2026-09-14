@@ -745,7 +745,7 @@ mod tests {
         let material = ThermalMaterial::aluminum_6061();
         let mut temperatures = vec![300.0_f32; 64];
         for (i, t) in temperatures.iter_mut().enumerate() {
-            *t += ((i as f32) * 0.05).sin() * 50.0;
+            *t += crate::det_math::sin((i as f32) * 0.05) * 50.0;
         }
         let dx = 0.001;
         let dt = stable_dt_1d(&temperatures, &material, dx) * 0.5;

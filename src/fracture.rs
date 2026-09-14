@@ -217,7 +217,11 @@ impl FractureModifier {
                                 let hash =
                                     ((ix * 73856093) ^ (iy * 19349663) ^ (iz * 83492791)) as f32;
                                 let angle = hash * 0.0001;
-                                (angle.cos(), 0.0, angle.sin())
+                                (
+                                    crate::det_math::cos(angle),
+                                    0.0,
+                                    crate::det_math::sin(angle),
+                                )
                             };
 
                             self.cracks.push(Crack {

@@ -807,10 +807,10 @@ mod tests {
         let output_size = num_joints * 3;
 
         let f32_w1: Vec<f32> = (0..hidden_size * input_size)
-            .map(|i| (i as f32 * 0.7).sin())
+            .map(|i| crate::det_math::sin(i as f32 * 0.7))
             .collect();
         let f32_w2: Vec<f32> = (0..output_size * hidden_size)
-            .map(|i| (i as f32 * 1.3).cos())
+            .map(|i| crate::det_math::cos(i as f32 * 1.3))
             .collect();
 
         let bodies = [

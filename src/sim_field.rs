@@ -309,7 +309,7 @@ impl ScalarField3D {
 
     /// Exponential decay toward zero: value *= exp(-rate * dt)
     pub fn decay(&mut self, rate: f32, dt: f32) {
-        let factor = (-rate * dt).exp();
+        let factor = crate::det_math::exp(-rate * dt);
         for v in &mut self.data {
             *v *= factor;
         }
@@ -317,7 +317,7 @@ impl ScalarField3D {
 
     /// Decay toward a target value
     pub fn decay_toward(&mut self, target: f32, rate: f32, dt: f32) {
-        let factor = (-rate * dt).exp();
+        let factor = crate::det_math::exp(-rate * dt);
         for v in &mut self.data {
             *v = (*v - target).mul_add(factor, target);
         }

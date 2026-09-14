@@ -204,7 +204,7 @@ impl DestructionShape {
                 radius,
                 half_height,
             } => {
-                let d_radial = lx.hypot(lz) - radius;
+                let d_radial = crate::det_math::hypot(lx, lz) - radius;
                 let d_axial = ly.abs() - half_height;
                 let outside = d_radial
                     .max(0.0)

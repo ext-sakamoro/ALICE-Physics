@@ -556,7 +556,10 @@ mod tests {
         // Should find many surface crossings; each point should lie on |p|≈5
         assert!(!pts.is_empty());
         for p in &pts {
-            let r = (p.x.to_f32().powi(2) + p.y.to_f32().powi(2) + p.z.to_f32().powi(2)).sqrt();
+            let r = (crate::det_math::powi(p.x.to_f32(), 2)
+                + crate::det_math::powi(p.y.to_f32(), 2)
+                + crate::det_math::powi(p.z.to_f32(), 2))
+            .sqrt();
             assert!(
                 (r - 5.0).abs() < 1.5,
                 "surface point radius {} deviates from 5",

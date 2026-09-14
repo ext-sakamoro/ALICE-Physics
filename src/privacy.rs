@@ -151,7 +151,7 @@ impl LaplaceNoise {
         // Inverse transform sampling: X = μ - b * sign(U - 0.5) * ln(1 - 2|U - 0.5|)
         let u = self.rng.next_f64() - 0.5;
         let sign = if u < 0.0 { -1.0 } else { 1.0 };
-        -sign * self.scale * 2.0f64.mul_add(-u.abs(), 1.0).ln()
+        -sign * self.scale * crate::det_math::ln64(2.0f64.mul_add(-u.abs(), 1.0))
     }
 
     /// Add noise to a value
@@ -200,7 +200,7 @@ impl RandomizedResponse {
     #[must_use]
     pub fn new(epsilon: f64) -> Self {
         // p = e^ε / (1 + e^ε)
-        let exp_eps = epsilon.exp();
+        let exp_eps = crate::det_math::exp64(epsilon);
         let p_true = exp_eps / (1.0 + exp_eps);
         Self {
             p_true,
