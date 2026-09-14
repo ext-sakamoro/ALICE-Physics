@@ -9,23 +9,26 @@
 [![License: AGPL-3.0-or-later](https://img.shields.io/crates/l/alice-physics.svg)](#license)
 [![CI](https://github.com/ext-sakamoro/ALICE-Physics/actions/workflows/ci.yml/badge.svg)](https://github.com/ext-sakamoro/ALICE-Physics/actions/workflows/ci.yml)
 
-異なるプラットフォームやハードウェア間で決定論的なシミュレーションを実現する高精度物理エンジン。rigid-body core は 128bit 固定小数点演算 (`Fix128`) を使用し、CPU、コンパイラ、OS に関わらずビット精度の結果を保証する 周辺の engineering / field module のうち `f32` API を持つものは同一 binary 内で決定論的 — [決定論の範囲](#決定論の範囲) 参照
+異なるプラットフォームやハードウェア間で決定論的なシミュレーションを実現する高精度物理エンジン。rigid-body core は 128bit 固定小数点演算 (`Fix128`)、周辺の engineering / field module は IEEE `f32` / `f64` + 超越関数を crate 自前の `det_math` に統一 いずれも CPU、コンパイラ、OS に関わらずビット精度の結果を保証する — [決定論の範囲](#決定論の範囲) 参照
 
 **crates.io で v1.0.0 semver-locked stable として公開中** (2026-09-14 release) `cargo add alice-physics` でインストール可能 v1.0 roadmap 9 項目完了 — release 全容は [`CHANGELOG.md`](CHANGELOG.md)、0.x → 1.0 移行は [`docs/MIGRATION_0.x_TO_1.0.md`](docs/MIGRATION_0.x_TO_1.0.md)、凍結済 partner API contract は [`docs/ECOSYSTEM_CONTRACTS.md`](docs/ECOSYSTEM_CONTRACTS.md) 参照
 
 ### 決定論の範囲
 
-「bit-exact」は **Fix128 core** の性質であり、crate 内の全 module の性質ではない クロスプラットフォーム再現性に依存する前に以下の表を確認すること:
+crate 内の全 module が **プラットフォーム跨ぎで bit-exact** 理由は 2 系統:
 
-| Tier | Module | 保証 |
-|------|--------|------|
-| **Fix128 core** | rigid-body solver / joint / distance・contact constraint / BVH broad-phase / GJK・EPA / CCD / sleeping / scene I/O / netcode snapshot・rollback / neural controller、および public API が `Fix128` / `Vec3Fix` / `QuatFix` で表現される全 module | **プラットフォーム跨ぎで bit-exact** — 純 `i64` / `u64` 整数演算、golden-hash suite で macOS ARM/x86 / Linux ARM/x86 / Windows / `wasm32-wasip1` を検証済 |
-| **`f32` / `f64` field module** (30) | `sdf_collider` / `sdf_manifold` / `sdf_ccd` / `sdf_sph` / `sdf_fem_mesh` / `sdf_destruction` / `sdf_character` / `sdf_adaptive` / `sdf_wind_field` / `gpu_sdf` / `thermal` / `transient_thermal` / `phase_change` / `fracture` / `erosion` / `sim_field` / `sim_modifier` / `rolling_contact` / `aeroelasticity` / `piezoelectric` / `acoustic_wave` / `pressure` / `thin_wall` / `convex_decompose` / `db_bridge` / `character_state` / `fluid_netcode`、および `f64` 統計 module `anomaly` / `privacy` / `sketch` | **同一 binary 内決定論** — 同じ build なら同じ入力に同じ出力 IEEE 754 の `+ - * / sqrt` は全環境で spec 通り一致するが、`sin` / `cos` / `exp` / `powf` はプラットフォームの `libm` を経由し **OS / CPU / compiler 跨ぎの bit-exact は保証されない** |
-| **境界: `SdfCollider` / `ClosureSdf`** | user closure `Fn(f32, f32, f32) -> f32` → `Fix128::from_f32` → rigid-body contact | rigid-body solver 自体は Fix128 のまま、closure 側のプラットフォーム依存をそのまま継承する lockstep / rollback 用途では Fix128 SDF か ALICE-SDF の決定論 evaluator を使い、closure 内で `libm` の超越関数を呼ばないこと |
+| Tier | Module | bit が一致する理由 |
+|------|--------|--------------------|
+| **Fix128 core** | rigid-body solver / joint / distance・contact constraint / BVH broad-phase / GJK・EPA / CCD / sleeping / scene I/O / netcode snapshot・rollback / neural controller、および public API が `Fix128` / `Vec3Fix` / `QuatFix` の全 module | 純 `i64` / `u64` 整数演算 `tests/determinism_golden.rs` で pin |
+| **`f32` / `f64` field module** (30: `sdf_*` / `gpu_sdf` / `thermal` / `transient_thermal` / `phase_change` / `fracture` / `erosion` / `sim_field` / `sim_modifier` / `rolling_contact` / `aeroelasticity` / `piezoelectric` / `acoustic_wave` / `pressure` / `thin_wall` / `convex_decompose` / `db_bridge` / `character_state` / `fluid_netcode` / `anomaly` / `privacy` / `sketch`) | IEEE 754 の `+ - * / sqrt` と fused multiply-add は Rust が支援する全 target (SSE2+ / aarch64 / wasm32) で bit 単位に規定済 超越関数 (`sin` / `exp` / `ln` / `powf` / `cbrt` / `hypot` …) は全て [`det_math`](src/det_math.rs) (整数引数還元 + 固定順序多項式) を経由し、プラットフォーム `libm` を呼ばない `clippy.toml` の `disallowed-methods` で `libm` 呼出は CI error `tests/determinism_golden_f32.rs` (13 scenario / 29 module、`db_bridge` は演算なしの pass-through I/O) で pin |
 
-golden-hash 決定論 suite は Fix128 core のみを対象、`f32` tier は同一 binary 再現性の regression test で担保 詳細は [`docs/DETERMINISM_GOLDEN_TESTS.md`](docs/DETERMINISM_GOLDEN_TESTS.md)
+両 golden suite は CI で macOS ARM/x86 / Linux ARM/x86 / Windows / `wasm32-wasip1` を通る
 
-**v0.10-0.14 の主な追加**: 5 wave の完全実装プッシュで **54 module + 3 統合 solver loop + Session 4 19 module (3 tier 分類)** を追加 3D プリント安全性検証 (warp / thin-wall / stress / bridging) から composite / plastic / fatigue 力学、乱流、VOF / level-set 多相流、実行可能な CFD 時間ステップ loop、humanoid ragdoll、SDF-boundary SPH、transient thermal、composite failure、VIV / piezoelectric / acoustic / electromagnetic、IK / anisotropic friction / netcode prediction / character FSM / kinematic loop / buoyancy zone / wind zone / SDF FEM / SDF wind までカバー Fix128 module は bit-exact、`f32` field / SDF module は同一 binary 内決定論 ([決定論の範囲](#決定論の範囲)) 詳細は [Session 1-3 追加](#session-1-3-追加-v010-012) と [v0.13.0 Session 4 追加](#v0130-session-4-追加-19-module--3-tier-構成) を参照
+**境界 — 渡す側の code** `ClosureSdf` は user closure `Fn(f32, f32, f32) -> f32` を受ける solver 側の決定論は保たれるが closure は呼出側の code なので、内部では `f32::sin` 等でなく `alice_physics::det_math::{sin, exp, …}` を使うか、同じ規律の evaluator を持つ SDF を渡すこと (ALICE-SDF の CPU evaluator は `det_math` への整合を別途進行中、それまでは同一 binary 内決定論として扱う)
+
+**保証対象外** IEEE 754 の基本演算を守らない target: x87 向け 32-bit x86 (`i586`、SSE2 なし) と fast-math 系 flag 付き build
+
+**v0.10-0.14 の主な追加**: 5 wave の完全実装プッシュで **54 module + 3 統合 solver loop + Session 4 19 module (3 tier 分類)** を追加 3D プリント安全性検証 (warp / thin-wall / stress / bridging) から composite / plastic / fatigue 力学、乱流、VOF / level-set 多相流、実行可能な CFD 時間ステップ loop、humanoid ragdoll、SDF-boundary SPH、transient thermal、composite failure、VIV / piezoelectric / acoustic / electromagnetic、IK / anisotropic friction / netcode prediction / character FSM / kinematic loop / buoyancy zone / wind zone / SDF FEM / SDF wind までカバー 全て platform 跨ぎで bit-exact (Fix128 は整数演算、`f32` は `det_math`、[決定論の範囲](#決定論の範囲)) 詳細は [Session 1-3 追加](#session-1-3-追加-v010-012) と [v0.13.0 Session 4 追加](#v0130-session-4-追加-19-module--3-tier-構成) を参照
 
 **v0.14.0 preview series (crates.io landing)**
 
@@ -39,7 +42,7 @@ golden-hash 決定論 suite は Fix128 core のみを対象、`f32` tier は同�
 
 ## v0.13.0 Session 4 追加 (19 module / 3 tier 構成)
 
-v0.10-0.12 の engineering-solver 基盤の上に、game-physics 仕上げ (ragdoll / character state / netcode prediction / IK)、soft-body simulation (SDF SPH / SDF character / SDF FEM / SDF wind)、engineering research (composite failure / transient thermal / rolling contact fatigue / VIV / piezoelectric / acoustic / electromagnetic)、multi-material coupling (buoyancy zone / anisotropic friction / kinematic loop) をカバーする 19 module を追加 Fix128 module は bit-exact、`f32` module は同一 binary 内決定論 ([決定論の範囲](#決定論の範囲))、出典 formula は module doc に明記
+v0.10-0.12 の engineering-solver 基盤の上に、game-physics 仕上げ (ragdoll / character state / netcode prediction / IK)、soft-body simulation (SDF SPH / SDF character / SDF FEM / SDF wind)、engineering research (composite failure / transient thermal / rolling contact fatigue / VIV / piezoelectric / acoustic / electromagnetic)、multi-material coupling (buoyancy zone / anisotropic friction / kinematic loop) をカバーする 19 module を追加 全て platform 跨ぎで bit-exact ([決定論の範囲](#決定論の範囲))、出典 formula は module doc に明記
 
 ### Tier ★★★ — 5 module (実運用 critical、downstream 直接依存)
 
@@ -165,7 +168,7 @@ v0.10-0.12 の engineering-solver 基盤の上に、game-physics 仕上げ (ragd
 
 3 セッションの完全実装プッシュで **35 module + 3 統合 solver loop + 3
 実行可能 example** を追加、「物理プリミティブ」から「実運用エンジニアリング
-ソルバー」へのギャップを埋めました 全追加は決定論的 (Fix128 module は bit-exact、`f32` module は同一 binary 内、[決定論の範囲](#決定論の範囲) 参照) で、
+ソルバー」へのギャップを埋めました 全追加は platform 跨ぎで bit-exact ([決定論の範囲](#決定論の範囲) 参照) で、
 出典 formula を明記 (Roark / Timoshenko / Simo & Hughes / Jones / Tsai-Wu /
 Hill / Norton / Findley / WLF / Brackbill / Smagorinsky / Launder-Spalding /
 Wilcox / Hasselmann / Turns / Anderson 等)
@@ -342,7 +345,7 @@ ALICE-Physicsは6層にわたる最適化で **100/100 の完璧なスコア** �
 | **L3: 計算戦略** | 20/20 | ウォームスタート `cached_lambda`、逆数事前計算（`inv_rest_length`、`inv_rest_density`） |
 | **L4: GPU・スループット** | 15/15 | `SIMD_WIDTH`定数 + `simd_width()`、`GpuSdfInstancedBatch`/`GpuSdfMultiDispatch`、`batch_size()` |
 | **L5: ビルドプロファイル** | 10/10 | `opt-level=3`、`lto="fat"`、`codegen-units=1`、`panic="abort"`、`strip=true` |
-| **L6: コード品質** | 20/20 | 1372 lib テスト + 53 alice-bamboo 統合テスト + 8 fuzz target + 31 決定論テスト、clippy `-D warnings` (default + 全 native feature set、all targets)、MSRV 1.70.0 CI job、`#![deny(missing_docs)]`、cargo-semver-checks hard-gate |
+| **L6: コード品質** | 20/20 | 1382 lib テスト + 53 alice-bamboo 統合テスト + 8 fuzz target + 44 決定論テスト、clippy `-D warnings` (default + 全 native feature set、all targets)、MSRV 1.70.0 CI job、`#![deny(missing_docs)]`、cargo-semver-checks hard-gate |
 | **合計** | **100/100** | |
 
 ### L1: メモリレイアウト (15/15)
@@ -421,10 +424,10 @@ strip = true           # シンボル除去
 
 ### L6: コード品質 (20/20)
 
-- **1372 lib テスト** (alice-physics crate、Session 4 + v0.14.0 preview 1/2 + v1.0.1 coloring / island / Fix128 テスト追加)
+- **1382 lib テスト** (alice-physics crate、Session 4 + v0.14.0 preview 1/2 + v1.0.1 coloring / island / Fix128 テスト追加)
 - **53 alice-bamboo 統合テスト** (3D プリント安全性のエンドツーエンド)
 - **7 fuzz target** (`fuzz_step` / `fuzz_collision` / `fuzz_deterministic_roundtrip` / `fuzz_joint` / `fuzz_cfd` / `fuzz_ccd` / `fuzz_trimesh`)
-- **合計: 1498 テストパス** (`cargo test` default feature: 1372 lib + 31 決定論 + 75 統合 + 20 doctest、全 native feature set では lib 1416)、clippy: `-D warnings` で 0 警告 (default + `std,simd,parallel,ffi,gpu-solver-bridge,neural,replay,analytics`、`--all-targets`)、`#![deny(missing_docs)]` (0 warning)
+- **合計: 1522 テストパス** (`cargo test` default feature: 1382 lib + 44 決定論 (Fix128 golden 9 + f32 golden 13 + semantic 22) + 75 統合 + 21 doctest、全 native feature set では lib 1426)、clippy: `-D warnings` で 0 警告 (default + `std,simd,parallel,ffi,gpu-solver-bridge,neural,replay,analytics`、`--all-targets`)、`#![deny(missing_docs)]` (0 warning)
 
 ---
 
@@ -548,7 +551,7 @@ IEEE 754浮動小数点を使用する従来の物理エンジンは、以下の
 - 異なる最適化レベル（-O0 vs -O3）
 - 異なる命令セット（SSE vs AVX）
 
-ALICE-Physics は Fix128 core (rigid body / constraint / joint / collision / netcode snapshot、[決定論の範囲](#決定論の範囲) 参照) で **ビット精度の結果** を保証し、以下を実現します：
+ALICE-Physics は全 module で platform 跨ぎの **ビット精度の結果** を保証し ([決定論の範囲](#決定論の範囲) 参照)、以下を実現します：
 
 - **ロックステップマルチプレイ**: 全クライアントが同一のシミュレーションを計算
 - **ロールバックネットコード**: 入力を決定論的に再生
