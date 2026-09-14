@@ -117,8 +117,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Create ALICE optional bridge stubs
         uses: ./.github/actions/alice-stubs
+      # install-action は critcmp 未対応 (::error 注釈 + binstall fallback) のため cache-cargo-install-action
       - name: Install critcmp
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/cache-cargo-install-action@v2
         with:
           tool: critcmp
       - name: Baseline (main)
@@ -136,7 +137,12 @@ jobs:
         if: always()
         run: |
           {
-            echo "## criterion main → head (threshold 15%、GH runner ノイズあり = informational)"
+            echo "## criterion main → head (GH runner ノイズあり = informational)"
+            echo "### 全 bench (main / head)"
+            echo '```'
+            critcmp main head || true
+            echo '```'
+            echo "### 差分 15% 超のみ (dispatch on main は base = head なので空が正常)"
             echo '```'
             critcmp main head --threshold 15 || true
             echo '```'
