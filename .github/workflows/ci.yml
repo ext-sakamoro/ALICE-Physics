@@ -105,6 +105,16 @@ jobs:
           echo "Executing: $WASM_BIN"
           wasmtime "$WASM_BIN"
 
+      # v1.1.0: the f32/f64 field modules are pinned too (det_math + IEEE basic ops)
+      - name: Build determinism_golden_f32 test (wasm32-wasip1)
+        run: cargo test --test determinism_golden_f32 --target wasm32-wasip1 --no-run
+
+      - name: Run determinism_golden_f32 test via wasmtime
+        run: |
+          WASM_BIN=$(find target/wasm32-wasip1/debug/deps -name 'determinism_golden_f32-*.wasm' -not -name '*.d' | head -1)
+          echo "Executing: $WASM_BIN"
+          wasmtime "$WASM_BIN"
+
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
