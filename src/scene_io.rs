@@ -52,6 +52,37 @@ pub struct PhysicsScene {
     pub version: u32,
 }
 
+impl PhysicsScene {
+    /// Assemble a scene from its parts.
+    ///
+    /// This is the only way to construct a `PhysicsScene` from outside the
+    /// crate: the struct is `#[non_exhaustive]`, so a struct literal is
+    /// rejected downstream (E0639). Pass [`CURRENT_SCENE_VERSION`] as
+    /// `version` unless you are deliberately writing an older format.
+    ///
+    /// ```
+    /// use alice_physics::scene_io::{PhysicsConfig, PhysicsScene, CURRENT_SCENE_VERSION};
+    ///
+    /// let scene = PhysicsScene::new(Vec::new(), Vec::new(), PhysicsConfig::default(), CURRENT_SCENE_VERSION);
+    /// assert_eq!(scene.version, CURRENT_SCENE_VERSION);
+    /// assert!(scene.bodies.is_empty());
+    /// ```
+    #[must_use]
+    pub fn new(
+        bodies: Vec<SerializedBody>,
+        joints: Vec<SerializedJoint>,
+        config: PhysicsConfig,
+        version: u32,
+    ) -> Self {
+        Self {
+            bodies,
+            joints,
+            config,
+            version,
+        }
+    }
+}
+
 /// Serialized rigid body (raw fixed-point data).
 ///
 /// Position and velocity are stored as 6 i64 values:
@@ -102,6 +133,24 @@ pub struct PhysicsConfig {
     pub damping: [i64; 2],
 }
 
+impl PhysicsConfig {
+    /// Build a configuration from raw serialized values.
+    ///
+    /// `gravity` and `damping` use the same raw `Fix128` limb layout as
+    /// [`SerializedBody::position`] (`[hi, lo_as_i64, ...]`). Downstream
+    /// crates need this because the struct is `#[non_exhaustive]`; for the
+    /// engine defaults use [`PhysicsConfig::default`].
+    #[must_use]
+    pub const fn new(substeps: u32, iterations: u32, gravity: [i64; 6], damping: [i64; 2]) -> Self {
+        Self {
+            substeps,
+            iterations,
+            gravity,
+            damping,
+        }
+    }
+}
+
 impl Default for PhysicsConfig {
     fn default() -> Self {
         let grav = vec3fix_to_raw(Vec3Fix::new(
@@ -124,6 +173,9 @@ const MAGIC: &[u8; 6] = b"APHYS\0";
 
 /// Current format version.
 const CURRENT_VERSION: u32 = 1;
+
+/// Current `.aphys` / JSON scene format version, for [`PhysicsScene::new`].
+pub const CURRENT_SCENE_VERSION: u32 = CURRENT_VERSION;
 
 // ============================================================================
 // Conversion Helpers
