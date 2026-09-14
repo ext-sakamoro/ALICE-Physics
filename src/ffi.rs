@@ -1196,10 +1196,22 @@ mod tests {
             assert_eq!(raw.z.hi, raw2.z.hi, "byte-for-byte determinism (z.hi)");
             assert_eq!(raw.z.lo, raw2.z.lo, "byte-for-byte determinism (z.lo)");
 
-            // TODO(phase-f-followup): once Unity/UE5 CI publishes the
-            // reference hi/lo pair, pin the exact `(hi, lo)` values as
-            // constants here so any solver-side change is caught in
-            // both the Rust and Unity/UE5 integration layers.
+            // Golden pin (v1.0.1): the exact raw pair produced by this
+            // scenario (dynamic body at y=10, mass 1, 60 steps of 1/60 s
+            // under default gravity). Unity / UE5 host bindings replay the
+            // same scenario and must read back these six values; any
+            // solver-side change that moves them is a determinism break
+            // and must bump the golden together with a CHANGELOG entry.
+            const GOLDEN: [(i64, u64); 3] = [(0, 0), (8, 6_631_112_686_738_674_129), (0, 0)];
+            assert_eq!(
+                [
+                    (raw.x.hi, raw.x.lo),
+                    (raw.y.hi, raw.y.lo),
+                    (raw.z.hi, raw.z.lo)
+                ],
+                GOLDEN,
+                "FFI free-fall golden raw Fix128 pair drifted"
+            );
 
             alice_physics_world_destroy(world);
         }
