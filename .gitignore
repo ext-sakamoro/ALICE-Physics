@@ -17,3 +17,6 @@ Cargo.lock
 
 # Benchmarks output
 /criterion/
+
+# Fuzz build artifacts (cargo-fuzz)
+/fuzz/target/
