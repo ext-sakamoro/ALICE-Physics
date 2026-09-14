@@ -594,8 +594,11 @@ pub struct ConstraintBatch {
 /// # Safety
 ///
 /// The graph coloring invariant (`rebuild_batches`) guarantees that within
-/// a single constraint batch, no two constraints share a body index.
-/// This makes concurrent mutation of distinct body slots sound.
+/// a single constraint batch, no two constraints share a *dynamic* body
+/// index. Static / kinematic bodies (`inv_mass == 0`) are excluded from
+/// coloring and are only ever handed out as shared references
+/// (`BodyRef::Static`), so many threads may read them concurrently while
+/// no thread writes them.
 #[cfg(feature = "parallel")]
 struct BodySlicePtr {
     ptr: *mut RigidBody,
@@ -603,9 +606,9 @@ struct BodySlicePtr {
 }
 
 // SAFETY: `BodySlicePtr` is only used inside the parallel constraint solver
-// where graph-coloring guarantees that no two threads access the same index.
-// Each constraint batch touches disjoint body indices, so concurrent
-// `get_mut` calls on distinct indices are data-race-free.
+// where graph-coloring guarantees that no two threads take `&mut` to the
+// same index. Static bodies are shared read-only, dynamic bodies appear in
+// at most one constraint per batch, so all accesses are data-race-free.
 #[cfg(feature = "parallel")]
 unsafe impl Send for BodySlicePtr {}
 #[cfg(feature = "parallel")]
@@ -618,10 +621,66 @@ impl BodySlicePtr {
     /// # Safety
     ///
     /// Caller must ensure `idx < self.len` and that no other thread
-    /// concurrently accesses the same index.
+    /// concurrently accesses the same index (shared or exclusive).
     unsafe fn get_mut(&self, idx: usize) -> &mut RigidBody {
         debug_assert!(idx < self.len);
         &mut *self.ptr.add(idx)
+    }
+
+    #[inline(always)]
+    /// # Safety
+    ///
+    /// Caller must ensure `idx < self.len` and that no other thread
+    /// concurrently holds a `&mut` to the same index.
+    unsafe fn get(&self, idx: usize) -> &RigidBody {
+        debug_assert!(idx < self.len);
+        &*self.ptr.add(idx)
+    }
+
+    #[inline(always)]
+    /// Borrow slot `idx` as shared (static body) or exclusive (dynamic body).
+    ///
+    /// # Safety
+    ///
+    /// `is_static` must be the value recorded by `rebuild_batches` for this
+    /// index (see `PhysicsWorld::batch_static_bodies`); passing `false` for a
+    /// body that another thread also borrows is undefined behaviour.
+    unsafe fn borrow(&self, idx: usize, is_static: bool) -> BodyRef<'_> {
+        if is_static {
+            BodyRef::Static(self.get(idx))
+        } else {
+            BodyRef::Dynamic(self.get_mut(idx))
+        }
+    }
+}
+
+/// Body access handed to the parallel pair solvers.
+///
+/// Dynamic bodies are borrowed exclusively and receive position writes;
+/// static / kinematic bodies are borrowed shared and position writes are
+/// dropped (they would be no-ops anyway: `inv_mass == 0` makes every
+/// correction zero and the sequential path writes the unchanged position).
+#[cfg(feature = "parallel")]
+enum BodyRef<'a> {
+    Dynamic(&'a mut RigidBody),
+    Static(&'a RigidBody),
+}
+
+#[cfg(feature = "parallel")]
+impl BodyRef<'_> {
+    #[inline(always)]
+    fn get(&self) -> &RigidBody {
+        match self {
+            BodyRef::Dynamic(b) => b,
+            BodyRef::Static(b) => b,
+        }
+    }
+
+    #[inline(always)]
+    fn set_position(&mut self, position: Vec3Fix) {
+        if let BodyRef::Dynamic(b) = self {
+            b.position = position;
+        }
     }
 }
 
@@ -742,6 +801,14 @@ pub struct PhysicsWorld {
     constraint_batches: Vec<ConstraintBatch>,
     /// Whether batches need recomputation
     batches_dirty: bool,
+    /// Per-body snapshot of `inv_mass == 0` taken by `rebuild_batches`.
+    ///
+    /// Bodies flagged here were excluded from graph coloring (they are never
+    /// written by the pair solvers), so the parallel path must only ever take
+    /// shared references to them. `solve_constraints_batched` re-validates
+    /// this snapshot against the live bodies before dispatch and rebuilds the
+    /// batches if any body changed static-ness in between.
+    batch_static_bodies: Vec<bool>,
     /// Contact manifold cache for warm starting
     pub contact_cache: crate::contact_cache::ContactCache,
     /// Material pair lookup table
@@ -815,6 +882,7 @@ impl PhysicsWorld {
             sdf_collision_radius: Fix128::from_ratio(1, 2), // 0.5 default
             constraint_batches: Vec::new(),
             batches_dirty: true,
+            batch_static_bodies: Vec::new(),
             contact_cache: crate::contact_cache::ContactCache::new(),
             material_table: crate::material::MaterialTable::new(),
             body_materials: Vec::new(),
@@ -1390,9 +1458,21 @@ impl PhysicsWorld {
 
         self.constraint_batches.clear();
 
-        // Track which colors each body participates in (u64 bitmask per body)
+        // Snapshot which bodies are static / kinematic. They are never written
+        // by the pair solvers (every correction is multiplied by
+        // `inv_mass == 0`), so the parallel path borrows them shared and they
+        // impose no coloring constraint. Without this exclusion a single
+        // static floor touched by N bodies would force N sequential batches.
         let num_bodies = self.bodies.len();
-        let mut body_colors: Vec<u64> = vec![0u64; num_bodies];
+        self.batch_static_bodies.clear();
+        self.batch_static_bodies
+            .extend(self.bodies.iter().map(|b| b.inv_mass.is_zero()));
+
+        // Track which colors each dynamic body participates in. One growable
+        // bitset per body (64 colors per word) — no upper bound on colors, so a
+        // hub body shared by 65+ constraints still gets a unique color per
+        // constraint instead of aliasing into a single overflow batch.
+        let mut body_colors: Vec<Vec<u64>> = vec![Vec::new(); num_bodies];
 
         // Color distance constraints
         for (constraint_idx, constraint) in self.distance_constraints.iter().enumerate() {
@@ -1400,7 +1480,8 @@ impl PhysicsWorld {
             let body_b = constraint.body_b;
 
             // Find first color where both bodies are free
-            let color = Self::find_free_color(&body_colors, body_a, body_b);
+            let color =
+                Self::find_free_color(&body_colors, &self.batch_static_bodies, body_a, body_b);
 
             // Ensure we have enough batches
             while self.constraint_batches.len() <= color {
@@ -1413,12 +1494,8 @@ impl PhysicsWorld {
                 .push(constraint_idx);
 
             // Mark bodies as used in this color (set bit)
-            if body_a < num_bodies && color < 64 {
-                body_colors[body_a] |= 1u64 << color;
-            }
-            if body_b < num_bodies && color < 64 {
-                body_colors[body_b] |= 1u64 << color;
-            }
+            Self::mark_color(&mut body_colors, &self.batch_static_bodies, body_a, color);
+            Self::mark_color(&mut body_colors, &self.batch_static_bodies, body_b, color);
         }
 
         // Color contact constraints
@@ -1426,7 +1503,8 @@ impl PhysicsWorld {
             let body_a = constraint.body_a;
             let body_b = constraint.body_b;
 
-            let color = Self::find_free_color(&body_colors, body_a, body_b);
+            let color =
+                Self::find_free_color(&body_colors, &self.batch_static_bodies, body_a, body_b);
 
             while self.constraint_batches.len() <= color {
                 self.constraint_batches.push(ConstraintBatch::default());
@@ -1436,35 +1514,122 @@ impl PhysicsWorld {
                 .contact_indices
                 .push(constraint_idx);
 
-            if body_a < num_bodies && color < 64 {
-                body_colors[body_a] |= 1u64 << color;
-            }
-            if body_b < num_bodies && color < 64 {
-                body_colors[body_b] |= 1u64 << color;
-            }
+            Self::mark_color(&mut body_colors, &self.batch_static_bodies, body_a, color);
+            Self::mark_color(&mut body_colors, &self.batch_static_bodies, body_b, color);
         }
 
         self.batches_dirty = false;
+
+        debug_assert!(
+            self.batches_are_body_disjoint(),
+            "graph coloring produced a batch with two constraints sharing a dynamic body"
+        );
+    }
+
+    /// Occupancy word `word` of body `idx`, or 0 if the body is static,
+    /// out of range, or has no color at that word yet.
+    #[inline(always)]
+    fn color_word(
+        body_colors: &[Vec<u64>],
+        static_bodies: &[bool],
+        idx: usize,
+        word: usize,
+    ) -> u64 {
+        if static_bodies.get(idx).copied().unwrap_or(false) {
+            return 0;
+        }
+        body_colors
+            .get(idx)
+            .and_then(|words| words.get(word))
+            .copied()
+            .unwrap_or(0)
     }
 
     /// Find first color where both bodies are free (greedy coloring).
     ///
-    /// Uses a `u64` bitmask per body for O(1) occupancy checks (up to 64 colors).
-    /// Falls back to linear scan for color indices >= 64.
-    fn find_free_color(body_colors: &[u64], body_a: usize, body_b: usize) -> usize {
-        let mask_a = body_colors.get(body_a).copied().unwrap_or(0);
-        let mask_b = body_colors.get(body_b).copied().unwrap_or(0);
-        let occupied = mask_a | mask_b;
+    /// Scans the per-body occupancy bitsets word by word (64 colors per
+    /// word); the first word with a free bit yields the color. If every
+    /// allocated word is saturated the next fresh word is used, so the
+    /// number of colors is unbounded and two constraints sharing a dynamic
+    /// body never land in the same batch.
+    fn find_free_color(
+        body_colors: &[Vec<u64>],
+        static_bodies: &[bool],
+        body_a: usize,
+        body_b: usize,
+    ) -> usize {
+        let words_a = body_colors.get(body_a).map_or(0, Vec::len);
+        let words_b = body_colors.get(body_b).map_or(0, Vec::len);
+        let words = words_a.max(words_b);
 
-        // Fast path: find first zero bit via bitwise NOT + trailing zeros
-        if occupied != u64::MAX {
-            return (!occupied).trailing_zeros() as usize;
+        for word in 0..words {
+            let occupied = Self::color_word(body_colors, static_bodies, body_a, word)
+                | Self::color_word(body_colors, static_bodies, body_b, word);
+            if occupied != u64::MAX {
+                return word * 64 + (!occupied).trailing_zeros() as usize;
+            }
         }
 
-        // Overflow path (> 64 colors): linear scan from 64 onward
-        // This is extremely rare in practice (would require a single body
-        // participating in 64+ different constraint batches).
-        64
+        words * 64
+    }
+
+    /// Record that dynamic body `idx` participates in `color`.
+    ///
+    /// Static bodies and out-of-range indices are ignored (they are not
+    /// coloring constraints). Grows the body's bitset on demand.
+    #[inline(always)]
+    fn mark_color(body_colors: &mut [Vec<u64>], static_bodies: &[bool], idx: usize, color: usize) {
+        if static_bodies.get(idx).copied().unwrap_or(false) {
+            return;
+        }
+        if let Some(words) = body_colors.get_mut(idx) {
+            let word = color / 64;
+            if words.len() <= word {
+                words.resize(word + 1, 0);
+            }
+            words[word] |= 1u64 << (color % 64);
+        }
+    }
+
+    /// Check the graph coloring invariant: within one batch no two
+    /// constraints reference the same dynamic body (static bodies as
+    /// recorded in `batch_static_bodies` may repeat, they are read-only).
+    ///
+    /// O(total constraint references) with a per-body scratch marker.
+    /// Used by `rebuild_batches`' `debug_assert!` and by tests.
+    pub(crate) fn batches_are_body_disjoint(&self) -> bool {
+        let num_bodies = self.bodies.len();
+        // usize::MAX = untouched; otherwise the batch index that last used it.
+        let mut last_batch: Vec<usize> = vec![usize::MAX; num_bodies];
+
+        for (batch_idx, batch) in self.constraint_batches.iter().enumerate() {
+            let dist_bodies = batch.distance_indices.iter().map(|&i| {
+                (
+                    self.distance_constraints[i].body_a,
+                    self.distance_constraints[i].body_b,
+                )
+            });
+            let contact_bodies = batch.contact_indices.iter().map(|&i| {
+                (
+                    self.contact_constraints[i].body_a,
+                    self.contact_constraints[i].body_b,
+                )
+            });
+
+            for (a, b) in dist_bodies.chain(contact_bodies) {
+                for (k, idx) in [a, b].into_iter().enumerate() {
+                    // A constraint referencing the same body twice counts once.
+                    if (k == 1 && a == b) || idx >= num_bodies || self.batch_static_bodies[idx] {
+                        continue;
+                    }
+                    if last_batch[idx] == batch_idx {
+                        return false;
+                    }
+                    last_batch[idx] = batch_idx;
+                }
+            }
+        }
+        true
     }
 
     /// Get number of constraint batches (colors used)
@@ -1908,6 +2073,22 @@ impl PhysicsWorld {
             self.pre_process_contacts();
         }
 
+        // The coloring excluded bodies that were static when `rebuild_batches`
+        // ran. If any body changed static-ness since (e.g. the user edited
+        // `inv_mass` through `bodies` after the rebuild) the snapshot no longer
+        // matches the live world and the batches must be recomputed, otherwise
+        // two threads could take `&mut` to a body that is now dynamic.
+        let snapshot_stale = self.batch_static_bodies.len() != self.bodies.len()
+            || self
+                .bodies
+                .iter()
+                .zip(&self.batch_static_bodies)
+                .any(|(body, &was_static)| body.inv_mass.is_zero() != was_static);
+        if snapshot_stale {
+            self.batches_dirty = true;
+            self.rebuild_batches();
+        }
+
         let num_batches = self.constraint_batches.len();
 
         let bodies = BodySlicePtr {
@@ -1918,6 +2099,7 @@ impl PhysicsWorld {
             ptr: self.distance_constraints.as_mut_ptr(),
             len: self.distance_constraints.len(),
         };
+        let static_bodies: &[bool] = &self.batch_static_bodies;
 
         let wsf = self.config.warm_start_factor;
 
@@ -1927,13 +2109,17 @@ impl PhysicsWorld {
                 let indices = &self.constraint_batches[batch_idx].distance_indices;
                 indices.par_iter().for_each(|&idx| {
                     // SAFETY: Graph coloring guarantees no two constraints in
-                    // this batch share a body index. Each constraint index
-                    // appears in exactly one batch, so cached_lambda writes
-                    // are also disjoint.
+                    // this batch share a dynamic body index; static bodies are
+                    // borrowed shared only (`static_bodies` is the snapshot the
+                    // coloring was built from, validated above). Each
+                    // constraint index appears in exactly one batch, so
+                    // cached_lambda writes are also disjoint.
                     unsafe {
                         let constraint = dists.get_mut(idx);
-                        let body_a = bodies.get_mut(constraint.body_a);
-                        let body_b = bodies.get_mut(constraint.body_b);
+                        let body_a =
+                            bodies.borrow(constraint.body_a, static_bodies[constraint.body_a]);
+                        let body_b =
+                            bodies.borrow(constraint.body_b, static_bodies[constraint.body_b]);
                         Self::solve_distance_pair(body_a, body_b, constraint, dt, wsf);
                     }
                 });
@@ -1947,11 +2133,15 @@ impl PhysicsWorld {
                 };
                 let indices = &self.constraint_batches[batch_idx].contact_indices;
                 indices.par_iter().for_each(|&idx| {
-                    // SAFETY: Graph coloring guarantees disjoint body/constraint access.
+                    // SAFETY: Same invariant as Phase 1 — disjoint dynamic
+                    // bodies per batch, static bodies shared read-only,
+                    // each constraint index in exactly one batch.
                     unsafe {
                         let constraint = contacts.get_mut(idx);
-                        let body_a = bodies.get_mut(constraint.body_a);
-                        let body_b = bodies.get_mut(constraint.body_b);
+                        let body_a =
+                            bodies.borrow(constraint.body_a, static_bodies[constraint.body_a]);
+                        let body_b =
+                            bodies.borrow(constraint.body_b, static_bodies[constraint.body_b]);
                         Self::solve_contact_pair(body_a, body_b, constraint, wsf);
                     }
                 });
@@ -1967,14 +2157,23 @@ impl PhysicsWorld {
     #[cfg(feature = "parallel")]
     #[inline(always)]
     fn solve_distance_pair(
-        body_a: &mut RigidBody,
-        body_b: &mut RigidBody,
+        mut body_a: BodyRef<'_>,
+        mut body_b: BodyRef<'_>,
         constraint: &mut DistanceConstraint,
         dt: Fix128,
         warm_start_factor: Fix128,
     ) {
-        let anchor_a = body_a.position + body_a.rotation.rotate_vec(constraint.local_anchor_a);
-        let anchor_b = body_b.position + body_b.rotation.rotate_vec(constraint.local_anchor_b);
+        let (pos_a, rot_a, inv_mass_a) = {
+            let a = body_a.get();
+            (a.position, a.rotation, a.inv_mass)
+        };
+        let (pos_b, rot_b, inv_mass_b) = {
+            let b = body_b.get();
+            (b.position, b.rotation, b.inv_mass)
+        };
+
+        let anchor_a = pos_a + rot_a.rotate_vec(constraint.local_anchor_a);
+        let anchor_b = pos_b + rot_b.rotate_vec(constraint.local_anchor_b);
 
         let delta = anchor_b - anchor_a;
         let (normal, distance) = delta.normalize_with_length();
@@ -1986,7 +2185,7 @@ impl PhysicsWorld {
         let error = distance - constraint.target_distance;
 
         let compliance_term = constraint.compliance / (dt * dt);
-        let w_sum = body_a.inv_mass + body_b.inv_mass + compliance_term;
+        let w_sum = inv_mass_a + inv_mass_b + compliance_term;
 
         if w_sum < W_SUM_EPSILON {
             return;
@@ -2003,18 +2202,12 @@ impl PhysicsWorld {
         constraint.cached_lambda = lambda;
 
         // Branchless: static bodies have inv_mass == ZERO, correction * ZERO == ZERO.
-        let delta_a = correction * body_a.inv_mass;
-        let delta_b = correction * body_b.inv_mass;
-        body_a.position = select_vec3(
-            !body_a.inv_mass.is_zero(),
-            body_a.position + delta_a,
-            body_a.position,
-        );
-        body_b.position = select_vec3(
-            !body_b.inv_mass.is_zero(),
-            body_b.position - delta_b,
-            body_b.position,
-        );
+        // `set_position` is a no-op for `BodyRef::Static`, matching the
+        // sequential path which writes the unchanged position.
+        let delta_a = correction * inv_mass_a;
+        let delta_b = correction * inv_mass_b;
+        body_a.set_position(select_vec3(!inv_mass_a.is_zero(), pos_a + delta_a, pos_a));
+        body_b.set_position(select_vec3(!inv_mass_b.is_zero(), pos_b - delta_b, pos_b));
     }
 
     /// Solve a single contact constraint given mutable body references.
@@ -2025,13 +2218,22 @@ impl PhysicsWorld {
     #[cfg(feature = "parallel")]
     #[inline(always)]
     fn solve_contact_pair(
-        body_a: &mut RigidBody,
-        body_b: &mut RigidBody,
+        mut body_a: BodyRef<'_>,
+        mut body_b: BodyRef<'_>,
         constraint: &mut ContactConstraint,
         warm_start_factor: Fix128,
     ) {
+        let (pos_a, inv_mass_a, sensor_a) = {
+            let a = body_a.get();
+            (a.position, a.inv_mass, a.is_sensor)
+        };
+        let (pos_b, inv_mass_b, sensor_b) = {
+            let b = body_b.get();
+            (b.position, b.inv_mass, b.is_sensor)
+        };
+
         // Skip physics response for sensor/trigger bodies
-        if body_a.is_sensor || body_b.is_sensor {
+        if sensor_a || sensor_b {
             return;
         }
 
@@ -2041,7 +2243,7 @@ impl PhysicsWorld {
             return;
         }
 
-        let w_sum = body_a.inv_mass + body_b.inv_mass;
+        let w_sum = inv_mass_a + inv_mass_b;
         if w_sum < W_SUM_EPSILON {
             return;
         }
@@ -2057,20 +2259,21 @@ impl PhysicsWorld {
         constraint.cached_lambda = lambda;
 
         let correction = contact.normal * lambda;
-        let correction_a = correction * (body_a.inv_mass * inv_w_sum);
-        let correction_b = correction * (body_b.inv_mass * inv_w_sum);
+        let correction_a = correction * (inv_mass_a * inv_w_sum);
+        let correction_b = correction * (inv_mass_b * inv_w_sum);
 
         // Branchless: inv_mass == ZERO for static bodies, correction_x will be ZERO.
-        body_a.position = select_vec3(
-            !body_a.inv_mass.is_zero(),
-            body_a.position + correction_a,
-            body_a.position,
-        );
-        body_b.position = select_vec3(
-            !body_b.inv_mass.is_zero(),
-            body_b.position - correction_b,
-            body_b.position,
-        );
+        // `set_position` is a no-op for `BodyRef::Static`.
+        body_a.set_position(select_vec3(
+            !inv_mass_a.is_zero(),
+            pos_a + correction_a,
+            pos_a,
+        ));
+        body_b.set_position(select_vec3(
+            !inv_mass_b.is_zero(),
+            pos_b - correction_b,
+            pos_b,
+        ));
     }
 
     /// Solve distance constraints (sequential) with warm-starting (Gap 3.1).
@@ -3673,5 +3876,141 @@ mod tests {
             a_before, a_after,
             "CPU joint solve should move body_a toward body_b after detach"
         );
+    }
+
+    // ------------------------------------------------------------------
+    // Graph coloring soundness (v1.0.1): >64 colors + static exclusion
+    // ------------------------------------------------------------------
+
+    /// Hub body + `spokes` distance constraints, each spoke its own body.
+    fn hub_world(hub: RigidBody, spokes: usize) -> PhysicsWorld {
+        let mut world = PhysicsWorld::new(SolverConfig {
+            gravity: Vec3Fix::ZERO,
+            ..Default::default()
+        });
+        let hub_idx = world.add_body(hub);
+        for i in 0..spokes {
+            let spoke = world.add_body(RigidBody::new_dynamic(
+                Vec3Fix::from_int(i as i64 + 1, 0, 0),
+                Fix128::ONE,
+            ));
+            world.add_distance_constraint(DistanceConstraint::new(
+                hub_idx,
+                spoke,
+                Vec3Fix::ZERO,
+                Vec3Fix::ZERO,
+                Fix128::ONE,
+            ));
+        }
+        world
+    }
+
+    #[test]
+    fn coloring_dynamic_hub_over_64_spokes_gets_one_color_per_constraint() {
+        // Pre-1.0.1: colors saturated at 64 and every further constraint
+        // aliased into batch 64 while sharing the hub body.
+        for spokes in [65usize, 70, 200] {
+            let mut world = hub_world(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE), spokes);
+            world.rebuild_batches();
+            assert_eq!(
+                world.num_batches(),
+                spokes,
+                "dynamic hub with {spokes} spokes needs {spokes} batches"
+            );
+            assert!(world.batches_are_body_disjoint());
+        }
+    }
+
+    #[test]
+    fn coloring_static_hub_imposes_no_constraint() {
+        // A static floor touched by many bodies must not serialize the
+        // solver: all spokes are distinct dynamic bodies → single batch.
+        let mut world = hub_world(RigidBody::new_static(Vec3Fix::ZERO), 200);
+        world.rebuild_batches();
+        assert_eq!(world.num_batches(), 1);
+        assert!(world.batches_are_body_disjoint());
+    }
+
+    #[test]
+    fn coloring_contacts_and_distances_share_color_space() {
+        // Two constraint kinds on the same dynamic pair must land in
+        // different batches (the contact pass runs after the distance pass
+        // but colors are shared across both).
+        let mut world = PhysicsWorld::new(SolverConfig::default());
+        let a = world.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
+        let b = world.add_body(RigidBody::new_dynamic(
+            Vec3Fix::from_int(1, 0, 0),
+            Fix128::ONE,
+        ));
+        world.add_distance_constraint(DistanceConstraint::new(
+            a,
+            b,
+            Vec3Fix::ZERO,
+            Vec3Fix::ZERO,
+            Fix128::ONE,
+        ));
+        world.add_contact(ContactConstraint::new(
+            a,
+            b,
+            Contact {
+                point_a: Vec3Fix::ZERO,
+                point_b: Vec3Fix::ZERO,
+                normal: Vec3Fix::from_int(1, 0, 0),
+                depth: Fix128::from_ratio(1, 10),
+            },
+        ));
+        world.rebuild_batches();
+        assert_eq!(world.num_batches(), 2);
+        assert!(world.batches_are_body_disjoint());
+    }
+
+    #[test]
+    fn coloring_disjoint_check_detects_violation() {
+        // Hand-craft an invalid batch to prove the checker is not vacuous.
+        let mut world = hub_world(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE), 2);
+        world.rebuild_batches();
+        assert!(world.batches_are_body_disjoint());
+        let mut bad = ConstraintBatch::default();
+        bad.distance_indices.extend([0usize, 1]);
+        world.constraint_batches = vec![bad];
+        assert!(!world.batches_are_body_disjoint());
+    }
+
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn parallel_step_static_hub_matches_sequential_solver() {
+        // Static hub + 70 spokes: pre-1.0.1 this scene created a batch with
+        // 6 constraints all holding `&mut` to the hub. Step both solver
+        // paths and require bit-exact agreement.
+        let sub_dt = Fix128::from_ratio(1, 240);
+        let mut par = hub_world(RigidBody::new_static(Vec3Fix::ZERO), 70);
+        let mut seq = hub_world(RigidBody::new_static(Vec3Fix::ZERO), 70);
+        par.rebuild_batches();
+        seq.rebuild_batches();
+        assert_eq!(par.num_batches(), 1, "static hub → single batch");
+        for _ in 0..120 {
+            par.substep_batched(sub_dt);
+            seq.substep(sub_dt);
+        }
+        for (p, s) in par.bodies.iter().zip(&seq.bodies) {
+            assert_eq!(p.position, s.position);
+            assert_eq!(p.velocity, s.velocity);
+        }
+        assert!(par.batches_are_body_disjoint());
+    }
+
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn parallel_step_rebuilds_when_body_becomes_dynamic_after_coloring() {
+        // Coloring excluded the hub as static; flipping it to dynamic
+        // without touching constraints must not leave the stale snapshot
+        // in place (two threads would otherwise take `&mut` to the hub).
+        let mut world = hub_world(RigidBody::new_static(Vec3Fix::ZERO), 70);
+        world.rebuild_batches();
+        assert_eq!(world.num_batches(), 1);
+        world.bodies[0].inv_mass = Fix128::ONE;
+        world.solve_constraints_batched(Fix128::from_ratio(1, 60));
+        assert_eq!(world.num_batches(), 70);
+        assert!(world.batches_are_body_disjoint());
     }
 }
