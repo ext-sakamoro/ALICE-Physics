@@ -19,7 +19,7 @@
 //! are fixed. No `HashMap` or non-deterministic data structures.
 
 #[cfg(not(feature = "std"))]
-use alloc::vec::Vec;
+use alloc::{vec, vec::Vec};
 
 use core::ops::{Add, Div, Mul, Neg, Sub};
 
