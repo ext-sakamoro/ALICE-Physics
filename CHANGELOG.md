@@ -52,6 +52,15 @@ were introduced during that release window.
   value (single source of truth for the CORDIC micro-rotations).
 - Cloth bending unit tests (flat fixed point / monotone relaxation / pinned
   vertices / drape bounds) and `atan` / `atan2` / `shr_bits` tests.
+- Mutation-score tests for the `math` core (15 tests): `Mat3Fix` (index-exact
+  `mul_vec`, closed-form determinant with per-entry sensitivity, exact inverse
+  of a unimodular matrix, `mul_mat` / `*` / `scale` / `transpose`), `QuatFix`
+  (Hamilton product on the basis and a general pair, conjugate / length /
+  normalize / `from_axis_angle` components / quarter-turn `rotate_vec`),
+  `Vec3Fix` cross / `try_normalize`, branchless `select_fix128` on
+  bit-distinct patterns, `From` round trips and `Display` output, and
+  `sin` / `cos` golden bit patterns (17 angles) plus range-reduction /
+  boundary / symmetry / periodicity checks.
 - Mutation-score test suite for the `solver` core (`cargo mutants` driven,
   64 tests): exact closed-form checks for `update_velocities` (linear /
   angular derivation, restitution, Coulomb friction clamp, sensor / static
