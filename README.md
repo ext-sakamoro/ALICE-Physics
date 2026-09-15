@@ -2229,7 +2229,7 @@ ALICE-Physics follows a Serde-style MSRV policy:
 
 | Component | Effective MSRV | Why |
 |-----------|----------------|-----|
-| `neural` / `replay` / `analytics` bridge features | follows the sibling crate (`alice-ml` / `alice-db` / `alice-analytics`); 1.87 as of `alice-db 0.2.0-beta.1` → `alice-zip 0.3.0` | sibling crates set their own MSRV |
+| `neural` / `replay` / `analytics` bridge features | follows the sibling crate (`alice-ml` / `alice-db` / `alice-analytics`); 1.87 as of `alice-db 0.2.0-beta.2` → `alice-zip 0.3.0` | sibling crates set their own MSRV |
 | Tests / benches (dev-dependencies) | 1.85+ | `criterion`, `serde_derive` |
 | `wasm` feature | stable channel recommended | `wasm-bindgen` moves fast |
 

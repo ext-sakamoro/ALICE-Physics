@@ -1836,7 +1836,7 @@ ALICE-Physics は Serde 流の MSRV ポリシーを採用:
 
 | 対象 | 実効 MSRV | 理由 |
 |------|-----------|------|
-| `neural` / `replay` / `analytics` bridge feature | sibling crate (`alice-ml` / `alice-db` / `alice-analytics`) に従う、`alice-db 0.2.0-beta.1` → `alice-zip 0.3.0` 時点で 1.87 | sibling crate が独自に MSRV を持つ |
+| `neural` / `replay` / `analytics` bridge feature | sibling crate (`alice-ml` / `alice-db` / `alice-analytics`) に従う、`alice-db 0.2.0-beta.2` → `alice-zip 0.3.0` 時点で 1.87 | sibling crate が独自に MSRV を持つ |
 | test / bench (dev-dependencies) | 1.85+ | `criterion` / `serde_derive` |
 | `wasm` feature | stable channel 推奨 | `wasm-bindgen` の更新が速い |
 
