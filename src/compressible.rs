@@ -122,19 +122,21 @@ pub fn stagnation_temp_ratio(gas: &IdealGas, mach: Fix128) -> Fix128 {
     Fix128::ONE + half * gm1 * mach * mach
 }
 
-/// Isentropic stagnation pressure ratio `(p_0 / p) = (1 + (γ-1)/2·M²)^(γ/(γ-1))`.
+/// Isentropic stagnation pressure ratio `(p_0 / p) = (1 + (γ-1)/2·M²)^(γ/(γ-1))`
+/// (Anderson eq. 3.18).
 ///
-/// γ/(γ-1) is 3.5 for air (γ = 1.4). We approximate with integer exponent
-/// via repeated multiplication using `n = 4` (safe for M ≤ 2 with < 5% error).
+/// The exponent `γ/(γ−1)` (3.5 for air, 2.5 for monatomic gases) is applied
+/// exactly via [`Fix128::powf_pos`] (deterministic Fix128 throughout). Before
+/// 1.2.0 the exponent was rounded to 4 for every gas, which is 9.5 % high at
+/// `M = 1` and 34 % at `M = 2` for air (`tests/engineering_oracles_fluid.rs`).
 #[must_use]
 pub fn stagnation_pressure_ratio(gas: &IdealGas, mach: Fix128) -> Fix128 {
     let base = stagnation_temp_ratio(gas, mach);
-    // (γ/(γ-1)) for γ=1.4 → 3.5. Round to 4 for integer pow.
-    let mut r = Fix128::ONE;
-    for _ in 0..4 {
-        r = r * base;
+    let gm1 = gas.gamma - Fix128::ONE;
+    if gm1 <= Fix128::ZERO || base <= Fix128::ZERO {
+        return Fix128::ONE;
     }
-    r
+    base.powf_pos(gas.gamma / gm1)
 }
 
 // ============================================================================

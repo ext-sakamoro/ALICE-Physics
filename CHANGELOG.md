@@ -158,19 +158,58 @@ contact normal, and the contact multiplier. Everything else is bit-compatible.
   `record_frame` and `record_positions` may no longer be mixed in one
   recording. Contract tests: `scan_positions_matches_get_position_per_frame_and_body`,
   `query_bodies_contacts_and_record_energy_hit_their_own_databases`.
-- **Engineering modules, second validation batch (`tests/engineering_oracles_fluid.rs`,
-  37 oracles over 24 fluid / thermal / field modules).** Found (reported in
-  the file's test names / comments, fixes tracked separately): `compressible::
-  stagnation_pressure_ratio` uses exponent 4 instead of γ/(γ−1) (9.5 % off at
-  M = 1, 34 % at M = 2); `non_newtonian::PowerLaw::shear_thinning` evaluates
-  `K·γ̇^(1−n)` (a *decreasing* flow curve) instead of `K·γ̇^(1/n)`;
-  `buoyancy_zone::submerged_fraction` is discontinuous at the surface and
-  `depth_below_surface` gives full buoyancy below the pool floor;
-  `cfd_solver::diffuse_velocity` skips boundary faces (wall divergence);
-  `wave_ship::spectrum_density` is not JONSWAP; `aeroelasticity` van der Pol
-  damping lacks the `Ω_f` factor; `thermal` / `phase_change` melt transfer is
-  non-conservative; `surface_tension_csf::SIGMA_STEEL_ARGON` = 1.0 but
-  documented 1.6.
+- **Engineering modules, third validation batch (`tests/engineering_oracles_fluid.rs`,
+  39 oracles over 24 fluid / thermal / field modules) and the nine source
+  bugs it found, all fixed in this release:**
+  - `compressible::stagnation_pressure_ratio` used the integer exponent 4 in
+    place of γ/(γ−1) (9.5 % off at M = 1, 34 % at M = 2); it now evaluates the
+    exact exponent through the new `Fix128::powf_pos`, and the isentropic
+    table (Anderson App. A) is reproduced to 1e-5.
+  - `non_newtonian::PowerLaw::shear_thinning` evaluated `K·γ̇^(1−n)` — a
+    *decreasing* flow curve — instead of `K·γ̇^(1/n)`. `Carreau::half_exponent`
+    was documented as "`-1` ≙ `n = 0`, use for `n = 0.4`"; it is `(n−1)/2`
+    rounded, so `-1` is `n = −1`. New `Carreau::viscosity_with_index(γ̇, n)`
+    evaluates the fractional flow index exactly (polymer-melt `n = 0.4`
+    matches Bird et al. eq. 4.1-9 to 1e-5 over four decades of shear rate).
+  - `buoyancy_zone::submerged_fraction` jumped from 0 to a finite value at the
+    surface and `depth_below_surface` reported full buoyancy for bodies below
+    the pool floor. Spheres now use the exact cap volume `h²(3r−h)/(4r³)`,
+    the fraction is continuous through the surface, and the new
+    `ZoneShape::signed_depth_below_surface` returns `None` outside the zone's
+    footprint / below its floor (buoyancy → 0).
+  - `cfd_solver::diffuse_velocity` skipped the boundary face layer, so the
+    viscous step left a divergence at every wall; boundary faces are now
+    diffused with mirror neighbours. Golden `fluid_step` re-pinned.
+  - `wave_ship::spectrum_density` was not the JONSWAP form it was documented
+    as; it now evaluates `α g² ω⁻⁵ exp(−1.25 (ω_p/ω)⁴) γ^r` with the new
+    `Fix128::exp`, and the peak / high-frequency tail match the f64 formula.
+  - `aeroelasticity` van der Pol wake oscillator lacked the `ε·Ω_f` factor of
+    the Facchinetti et al. 2004 equation, so the limit-cycle growth rate did
+    not scale with the shedding frequency. Golden `engineering_family` re-pinned.
+  - `phase_change` claimed a latent-heat plateau but integrated a
+    degree-second "budget" while the temperature kept rising, and the liquid
+    flow added `transfer` below while removing only `0.3·transfer` above
+    (70 % of the moved material was created). Transitions now use the
+    enthalpy method (Voller & Cross 1981; `latent_heat_*` are in
+    kelvin-equivalent units): a melting cell sits at `T_m` while the buffer
+    fills, `T + latent` is conserved cell by cell, cooling releases it
+    symmetrically, and the result is independent of `dt`. The flow transfer
+    removes exactly what the destination accepts. Golden `modifier_family`
+    re-pinned.
+  - `surface_tension_csf::SIGMA_STEEL_ARGON` was exactly 1.0 N/m while
+    documented as ≈ 1.6 N/m (Keene 1988); the constant is now 1.6.
+  - `erosion` rate constants (`Water` 1.5×, exposure decay 5 /s, velocity
+    exponents 1/1/0/2) are now named constants (`WATER_PREFACTOR`,
+    `EXPOSURE_DECAY_PER_S`) and tabulated in the module doc as game-tuned,
+    with the reference exponents (Finnie 1960, `n ≈ 2–3`) cited; making them
+    configurable adds `ErosionConfig` fields and is scheduled for 2.0.
+- `solver_tgs::build_islands` ordered islands by their smallest body index
+  only; a static body touching several otherwise separate islands gives
+  them the same first index, and the tie order came from the `HashMap`
+  hasher (different across processes). Islands are now ordered by the full
+  lexicographic `(bodies, contacts, joints)` key. Found by the mutation-score
+  campaign (`cargo-mutants`), pinned by
+  `islands_sharing_a_static_first_body_are_ordered_lexicographically`.
 - **31 exported `extern "C"` functions now catch panics** (`ffi_guard`: sentinel
   return + per-thread message via the new `alice_physics_last_error` /
   `alice_physics_clear_last_error` / `alice_physics_string_free`). Rust 1.81+
@@ -303,6 +342,13 @@ contact normal, and the contact multiplier. Everything else is bit-compatible.
 - `Fix128::checked_div` (`None` on a zero divisor); the `Div` operator's
   `ZERO` result for a zero divisor is now a documented contract (a `Result`
   operator is a 2.0 change because `PhysicsError` is not `#[non_exhaustive]`).
+- `Fix128::powf_pos(exponent)` (positive base, non-negative exponent: integer
+  part by multiplication, 24 fractional exponent bits by repeated square
+  roots; f64 relative error < 1e-6 on the tested range) and `Fix128::exp`
+  (`2^(x·log₂e)` via `powf_pos`, `ZERO` below `e⁻⁴⁴`). Both are deterministic
+  and used by `compressible`, `wave_ship` and `Carreau::viscosity_with_index`.
+- `Carreau::viscosity_with_index`, `ZoneShape::signed_depth_below_surface`,
+  `erosion::WATER_PREFACTOR` / `EXPOSURE_DECAY_PER_S` (see Fixed).
 - `bvh::point_to_morton` is `pub` again (ALICE-TRT's GPU Morton kernel
   asserts byte-exact parity against it).
 - `tests/engineering_oracles.rs` — first engineering-module oracles:

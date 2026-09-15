@@ -935,4 +935,140 @@ mod tests {
         assert_eq!(bodies[0].velocity, v3i(2, -5, 3));
         assert_eq!(bodies[1].velocity, Vec3Fix::ZERO);
     }
+
+    // ---- mutation-score tests batch 7 (2026-09-15、cargo-mutants missed 分) ----
+
+    /// `dist_sq < best_dist_sq` (厳密 less-than): 2 点と等距離の新規点は
+    /// 先に見つかった index 0 に一致する (`<=` なら後勝ちで index 1 が更新される)
+    #[test]
+    fn manifold_match_tie_prefers_first_candidate() {
+        let mut m = manifold();
+        // A at 0、B at 1/64 (= 1.56 cm 離れ → 1 cm 閾値の外、別点として登録)
+        m.add_or_update(
+            &contact(Vec3Fix::UNIT_Y, fi(1)),
+            Vec3Fix::ZERO,
+            Vec3Fix::ZERO,
+        );
+        let b = Vec3Fix::new(Fix128::from_ratio(1, 64), Fix128::ZERO, Fix128::ZERO);
+        m.add_or_update(&contact(Vec3Fix::UNIT_Y, fi(2)), b, Vec3Fix::ZERO);
+        assert_eq!(m.point_count(), 2);
+        // 中点 1/128: 両点との dist_sq が厳密に 1/16384 で等しい (dyadic、丸めなし)
+        let mid = Vec3Fix::new(Fix128::from_ratio(1, 128), Fix128::ZERO, Fix128::ZERO);
+        let d_a = (m.points[0].local_point_a - mid).length_squared();
+        let d_b = (m.points[1].local_point_a - mid).length_squared();
+        assert_eq!(d_a, d_b);
+        assert_eq!(d_a, Fix128::from_ratio(1, 16384));
+        m.add_or_update(&contact(Vec3Fix::UNIT_Y, fi(3)), mid, Vec3Fix::ZERO);
+        assert_eq!(m.point_count(), 2);
+        assert_eq!(m.points[0].depth, fi(3), "先勝ち: index 0 が更新される");
+        assert_eq!(m.points[0].local_point_a, mid);
+        assert_eq!(m.points[0].age, 1);
+        assert_eq!(m.points[1].depth, fi(2), "index 1 は不変");
+        assert_eq!(m.points[1].local_point_a, b);
+        assert_eq!(m.points[1].age, 0);
+    }
+
+    /// 満杯時の最浅探索 `p.depth < shallowest_depth` (厳密): 最浅が同点なら
+    /// 先頭 (index 0) が置換される (`<=` なら最後の同点 index 1 が置換される)
+    #[test]
+    fn manifold_full_replaces_first_of_equal_shallowest() {
+        let mut m = manifold();
+        for (i, d) in [1, 1, 3, 4].iter().enumerate() {
+            m.add_or_update(
+                &contact(Vec3Fix::UNIT_Y, fi(*d)),
+                v3i(i as i64 * 10, 0, 0),
+                Vec3Fix::ZERO,
+            );
+        }
+        assert_eq!(m.point_count(), MAX_MANIFOLD_POINTS);
+        m.add_or_update(
+            &contact(Vec3Fix::UNIT_Y, fi(2)),
+            v3i(100, 0, 0),
+            Vec3Fix::ZERO,
+        );
+        assert_eq!(m.point_count(), 4);
+        assert_eq!(m.points[0].local_point_a, v3i(100, 0, 0));
+        assert_eq!(m.points[0].depth, fi(2));
+        assert_eq!(m.points[1].local_point_a, v3i(10, 0, 0), "同点の後方は不変");
+        assert_eq!(m.points[1].depth, fi(1));
+        let depths: Vec<Fix128> = m.points.iter().map(|p| p.depth).collect();
+        assert_eq!(depths, vec![fi(2), fi(1), fi(3), fi(4)]);
+    }
+
+    /// `point_idx < len` の境界: idx == len は範囲外 (`<=` なら index out of bounds panic)
+    #[test]
+    fn warm_start_and_store_at_exact_len_are_out_of_range() {
+        let mut m = manifold();
+        m.add_or_update(
+            &contact(Vec3Fix::UNIT_Y, fi(1)),
+            Vec3Fix::ZERO,
+            Vec3Fix::ZERO,
+        );
+        m.store_impulses(0, fi(2), fi(3), fi(4));
+        assert_eq!(m.point_count(), 1);
+        // idx 1 == len 1
+        assert_eq!(
+            m.warm_start_impulse(1),
+            (Fix128::ZERO, Fix128::ZERO, Fix128::ZERO)
+        );
+        m.store_impulses(1, fi(9), fi(9), fi(9));
+        assert_eq!(m.point_count(), 1);
+        assert_eq!(m.warm_start_impulse(0), (fi(2), fi(3), fi(4)));
+        // 空 manifold: idx 0 == len 0
+        let e = manifold();
+        assert_eq!(
+            e.warm_start_impulse(0),
+            (Fix128::ZERO, Fix128::ZERO, Fix128::ZERO)
+        );
+        let mut e2 = manifold();
+        e2.store_impulses(0, fi(1), fi(1), fi(1));
+        assert!(e2.is_empty());
+    }
+
+    /// body A の `total_impulse * inv_mass` (inv_mass ≠ 1) と tangent `t1 * (λ * factor)`
+    /// (λ * factor ≠ 1): 乗算と除算で結果が異なる値を使う
+    #[test]
+    fn apply_warm_start_scales_by_body_a_inv_mass() {
+        let mut cache = ContactCache::new();
+        cache.warm_start_factor = Fix128::from_ratio(1, 2);
+        let m = cache.get_or_create(BodyPairKey::new(0, 1), Fix128::ONE, Fix128::ZERO);
+        m.add_or_update(
+            &contact(Vec3Fix::UNIT_Z, fi(1)),
+            Vec3Fix::ZERO,
+            Vec3Fix::ZERO,
+        );
+        // normal z: t1 = z × x = y、t2 = z × y = -x、λ_t1 = 6 → 6 * 0.5 = 3、他 0
+        m.store_impulses(0, Fix128::ZERO, fi(6), Fix128::ZERO);
+        let mut bodies = vec![
+            crate::solver::RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE),
+            crate::solver::RigidBody::new_static(v3i(1, 0, 0)),
+        ];
+        bodies[0].inv_mass = fi(4);
+        cache.apply_warm_start(&mut bodies);
+        // total = y * 3、A += total * 4 = (0, 12, 0)  (÷ なら (0, 3/4, 0) / t1 ÷ 3 なら (0, 4/3, 0))
+        assert_eq!(bodies[0].velocity, v3i(0, 12, 0));
+        assert_eq!(bodies[1].velocity, Vec3Fix::ZERO);
+    }
+
+    /// reference 軸選択 `abs_x <= abs_y && abs_x <= abs_z`: 片側だけ真の normal で
+    /// X が選ばれない (`||` なら X が選ばれ t1 の零成分が変わる)
+    #[test]
+    fn tangent_frame_reference_requires_both_comparisons() {
+        // (2, 4, 1): abs_x <= abs_y 真、abs_x <= abs_z 偽 → else-if 4 <= 1 偽 → Z
+        //   t1 = normalize(n × Z) = normalize((4, -2, 0)) → z == 0、x > 0、y < 0
+        //   (X 参照なら n × X = (0, 1, -4) → x == 0)
+        let n = v3i(2, 4, 1);
+        let (t1, t2) = tangent_frame(n);
+        assert_eq!(t1.z, Fix128::ZERO);
+        assert!(t1.x > Fix128::ZERO && t1.y < Fix128::ZERO, "{t1:?}");
+        assert_eq!(t2, n.cross(t1));
+        // (2, 1, 4): abs_x <= abs_y 偽、abs_x <= abs_z 真 → else-if 1 <= 4 真 → Y
+        //   t1 = normalize(n × Y) = normalize((-4, 0, 2)) → y == 0、x < 0、z > 0
+        //   (X 参照なら n × X = (0, 4, -1) → x == 0)
+        let n2 = v3i(2, 1, 4);
+        let (u1, u2) = tangent_frame(n2);
+        assert_eq!(u1.y, Fix128::ZERO);
+        assert!(u1.x < Fix128::ZERO && u1.z > Fix128::ZERO, "{u1:?}");
+        assert_eq!(u2, n2.cross(u1));
+    }
 }
