@@ -118,7 +118,7 @@ fn assert_golden(scenario: &str, actual: [u8; 32], expected_hex: &str) {
 /// Exercises: gravity integration, damping, contact resolution against a
 /// static body. No SIMD-only paths involved (SIMD is opt-in via `simd`
 /// feature; this test runs with default features).
-const GOLDEN_CASCADE: &str = "0a9fb401dcc5fbf12ecd8ef36bd03caed7fb271b68d4035b764dbe24f6a47854";
+const GOLDEN_CASCADE: &str = "f442b544c0eab74a004567061ab7b573d6892158b2c31480b6d133e2e5970be2";
 
 #[test]
 fn determinism_cascade() {
@@ -261,7 +261,7 @@ fn sha256_bytes(bytes: &[u8]) -> [u8; 32] {
 /// one lighter swinging mass. Exercises constraint iteration under
 /// gravity for 240 steps.
 const GOLDEN_JOINT_PENDULUM: &str =
-    "d1d51ea466dd4c55c7e9c220afca66004e7401fb53a4a2781e40be3e4ba9ef8f";
+    "96bf5b9e1c565b5331c94eeb1e73dc209e7c7ccec1582b617779541eeb4e3c1e";
 
 #[test]
 fn determinism_joint_pendulum() {

@@ -151,7 +151,7 @@ pub fn capsule_cast(
     // Return closest of the three
     let mut best: Option<ShapeCastHit> = None;
     for h in [hit_a, hit_b, hit_mid].into_iter().flatten() {
-        if best.map_or(true, |b| h.t < b.t) {
+        if best.is_none_or(|b| h.t < b.t) {
             best = Some(h);
         }
     }

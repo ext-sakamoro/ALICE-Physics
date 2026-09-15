@@ -6,7 +6,12 @@
 //!
 //! # Features
 //!
-//! - **Deterministic**: Bit-exact results across all platforms (no floating-point)
+//! - **Deterministic**: the Fix128 core (rigid bodies, constraints, joints,
+//!   BVH, CCD) is bit-exact across all platforms — pure integer arithmetic.
+//!   Grid / engineering modules on `f32` / `f64` are bit-exact via `det_math`
+//!   (correctly-rounded software transcendental functions); see README
+//!   "Determinism scope" for the per-module table.
+//!   <!-- claim-test: determinism_freefall -->
 //! - **128-bit Fixed-Point**: I64F64 format with CORDIC trigonometry
 //! - **XPBD Solver**: Extended Position Based Dynamics for stable constraints
 //! - **GJK/EPA**: Robust collision detection for convex shapes
