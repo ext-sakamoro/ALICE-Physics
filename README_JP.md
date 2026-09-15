@@ -361,7 +361,7 @@ ALICE-Physicsは6層にわたる最適化で **100/100 の完璧なスコア** �
 | **L3: 計算戦略** | 20/20 | ウォームスタート `cached_lambda`、逆数事前計算（`inv_rest_length`、`inv_rest_density`） |
 | **L4: GPU・スループット** | 15/15 | `SIMD_WIDTH`定数 + `simd_width()`、`GpuSdfInstancedBatch`/`GpuSdfMultiDispatch`、`batch_size()` |
 | **L5: ビルドプロファイル** | 10/10 | `opt-level=3`、`lto="fat"`、`codegen-units=1`、`panic="abort"`、`strip=true` |
-| **L6: コード品質** | 20/20 | 1621 lib テスト + 解析解 oracle 11 本 + engineering oracle 105 本 (thermal/fatigue 5 + solid 34 + fluid 39 + misc 27) + default config oracle 13 本 + 53 alice-bamboo 統合テスト + 8 fuzz target + 44 決定論テスト、clippy `-D warnings` (default + 全 native feature set、all targets)、MSRV 1.85 CI job (default / no_std / native)、`#![deny(missing_docs)]`、cargo-semver-checks hard-gate |
+| **L6: コード品質** | 20/20 | 1695 lib テスト + 解析解 oracle 13 本 + engineering oracle 105 本 (thermal/fatigue 5 + solid 34 + fluid 39 + misc 27) + default config oracle 13 本 + 53 alice-bamboo 統合テスト + 8 fuzz target + 44 決定論テスト、clippy `-D warnings` (default + 全 native feature set、all targets)、MSRV 1.85 CI job (default / no_std / native)、`#![deny(missing_docs)]`、cargo-semver-checks hard-gate |
 | **合計** | **100/100** | |
 
 ### L1: メモリレイアウト (15/15)
@@ -1915,7 +1915,7 @@ cargo build --release --features ffi
 | 組み合わせ | ステータス | テスト数 |
 |-----------|----------|---------|
 | `--no-default-features` (no_std) | ✅ | 9 |
-| `--features std` (default) | ✅ | 1621 unit + 72 integration + 解析解 11 + engineering 105 + default config oracle 13 + 決定論 44 + 21 doc |
+| `--features std` (default) | ✅ | 1695 unit + 72 integration + 解析解 13 + engineering 105 + default config oracle 13 + 決定論 44 + 21 doc |
 | `--features simd` | ✅ | 20 |
 | `--features parallel` | ✅ | 20 |
 | `--features "simd,parallel"` | ✅ | 20 |

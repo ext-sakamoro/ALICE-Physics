@@ -397,7 +397,7 @@ ALICE-Physics achieves a **perfect 100/100 optimization score** across 6 layers:
 | **L3: Compute** | 20/20 | Warm-start `cached_lambda`, reciprocal precomputation (`inv_rest_length`, `inv_rest_density`) |
 | **L4: GPU & Throughput** | 15/15 | `SIMD_WIDTH` const + `simd_width()`, `GpuSdfInstancedBatch`/`GpuSdfMultiDispatch`, `batch_size()` |
 | **L5: Build Profile** | 10/10 | `opt-level=3`, `lto="fat"`, `codegen-units=1`, `panic="abort"`, `strip=true` |
-| **L6: Code Quality** | 20/20 | 1621 lib tests + 11 analytic-solution oracles + 105 engineering oracles (5 thermal/fatigue + 34 solid + 39 fluid + 27 misc) + 13 default-config oracles + 53 alice-bamboo integration tests + 8 fuzz targets + 44 determinism tests (6-platform bit-exact, Fix128 + f32 golden), clippy `-D warnings` (default + full native feature set, all targets), MSRV 1.85 CI job (default / no_std / native), `#![deny(missing_docs)]`, cargo-semver-checks hard-gated |
+| **L6: Code Quality** | 20/20 | 1695 lib tests + 13 analytic-solution oracles + 105 engineering oracles (5 thermal/fatigue + 34 solid + 39 fluid + 27 misc) + 13 default-config oracles + 53 alice-bamboo integration tests + 8 fuzz targets + 44 determinism tests (6-platform bit-exact, Fix128 + f32 golden), clippy `-D warnings` (default + full native feature set, all targets), MSRV 1.85 CI job (default / no_std / native), `#![deny(missing_docs)]`, cargo-semver-checks hard-gated |
 | **Total** | **100/100** | |
 
 ### L1: Memory Layout (15/15)
@@ -2313,7 +2313,7 @@ All feature combinations are tested in CI across macOS, Ubuntu, and Windows:
 | Combination | Status | Tests |
 |-------------|--------|-------|
 | `--no-default-features` (no_std) | ✅ | 9 |
-| `--features std` (default) | ✅ | 1621 unit + 72 integration + 11 analytic + 105 engineering + 13 default-config oracles + 44 determinism + 21 doc |
+| `--features std` (default) | ✅ | 1695 unit + 72 integration + 13 analytic + 105 engineering + 13 default-config oracles + 44 determinism + 21 doc |
 | `--features simd` | ✅ | 20 |
 | `--features parallel` | ✅ | 20 |
 | `--features "simd,parallel"` | ✅ | 20 |

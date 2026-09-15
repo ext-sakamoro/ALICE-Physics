@@ -210,6 +210,40 @@ contact normal, and the contact multiplier. Everything else is bit-compatible.
   lexicographic `(bodies, contacts, joints)` key. Found by the mutation-score
   campaign (`cargo-mutants`), pinned by
   `islands_sharing_a_static_first_body_are_ordered_lexicographically`.
+- **Joint angular corrections ignored the inertia split and measured twist
+  unsigned.** `apply_angular_correction` rotated *both* bodies by the full
+  λ with `w = |diag(I⁻¹)|` (a unit-inertia hinge removed `1/√3` of its
+  error per solve; a static/dynamic pair converged only over iterations),
+  the first-order `(nθ/2, 1)` update rotated by `2·atan(θ/2)`, and
+  `compute_twist_angle` returned `2·atan2(|proj|, w) ≥ 0`, so a −0.8 rad
+  hinge angle read as +0.8, hit the *max* limit and was pushed further
+  negative (the `angle < min` and negative-twist branches were dead code).
+  Now (Macklin et al. 2020 §3.3.2): `w_i = n·I_i⁻¹n`, A rotates by `w_a λ`
+  and B by `−w_b λ` with `λ = error / (w_a + w_b + α̃)`, rotations are exact
+  (`from_axis_angle`), hinge / fixed errors are true angles, and the twist
+  angle is signed in `(−π, π]`. A rigid hinge / fixed / D6 / cone-twist
+  constraint is satisfied in one solve; two dynamic bodies split the
+  correction as `w_a : w_b`. Oracles: `hinge_alignment_removes_the_full_error_in_one_solve_split_by_inertia`,
+  `hinge_limits_are_signed_and_reached_in_one_solve` (found by the
+  mutation-score campaign on `joint.rs`).
+- `collider::epa` returned the outward face normal of A⊖B — the A→B
+  direction — while `Contact::normal` is documented (and consumed by the
+  solver) as B→A; and faces through the origin (touching shapes) kept their
+  vertex winding, so one winding of a touching pair reported the far side of
+  the polytope (depth 4 instead of 0). The normal is now negated to B→A and
+  faces are oriented away from the polytope interior (initial-tetrahedron
+  centroid). `epa` had no caller outside its own tests, so the solver path
+  was unaffected. Found by the mutation-score campaign on `collider.rs`
+  (93.5 %).
+- `ccd::sphere_plane_toi` from the back side of the plane used the
+  front-side formula: it returned the time the *far* surface crossed the
+  plane (the exit) with the front normal. It is now two-sided: first contact
+  at `t = (−r − dist)/v·n`, contact normal on the sphere's side. Found by
+  the mutation-score campaign on `ccd.rs` (95.4 %).
+- `solver::W_SUM_EPSILON` was `2⁻²⁴` (6e-8) while documented as `2⁻⁴⁰`, so a
+  dynamic body heavier than 2²⁴ kg against a static one (or two bodies above
+  2²⁵ kg) had contacts, distance constraints and restitution silently
+  skipped. The constant is now the documented `2⁻⁴⁰`.
 - **Engineering modules, fourth validation batch (`tests/engineering_oracles_misc.rs`,
   27 oracles over `rolling_contact`, `fracture`, `layer_adhesion`,
   `kinematic_loop`, `sdf_force`, `anisotropic_friction`, `physics2d`,

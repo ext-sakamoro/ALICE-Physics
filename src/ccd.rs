@@ -112,7 +112,12 @@ pub fn sphere_sphere_toi(
 
 /// Exact TOI for a moving sphere against a static plane
 ///
-/// Plane: dot(normal, p) = offset
+/// Plane: dot(normal, p) = offset. Two-sided: a sphere on the back side
+/// (`dist < −r`) moving towards the plane hits it at
+/// `t = (−r − dist) / v·n`, and the returned normal points towards the
+/// sphere's side (`−n` from behind). Before 1.2.0 the back side used the
+/// front-side formula and reported the *exit* time (when the far surface
+/// crossed the plane) with the front normal.
 #[must_use]
 pub fn sphere_plane_toi(
     center: Vec3Fix,
@@ -129,13 +134,21 @@ pub fn sphere_plane_toi(
         return None;
     }
 
+    // +1 in front of the plane, −1 behind: the contact normal and the
+    // touching surface point are on the sphere's side
+    let side = if dist.is_negative() {
+        -Fix128::ONE
+    } else {
+        Fix128::ONE
+    };
+
     // Already penetrating
     if dist.abs() <= radius {
         let point = center - plane_normal * dist;
         return Some(TOI {
             t: Fix128::ZERO,
             point,
-            normal: plane_normal,
+            normal: plane_normal * side,
         });
     }
 
@@ -143,15 +156,15 @@ pub fn sphere_plane_toi(
         return None;
     }
 
-    // t when sphere surface touches plane
-    let t = (radius - dist) / vel_toward;
+    // t when the near surface of the sphere touches the plane
+    let t = (side * radius - dist) / vel_toward;
 
     if t >= Fix128::ZERO && t <= Fix128::ONE {
-        let point = center + velocity * t - plane_normal * radius;
+        let point = center + velocity * t - plane_normal * (side * radius);
         Some(TOI {
             t,
             point,
-            normal: plane_normal,
+            normal: plane_normal * side,
         })
     } else {
         None
@@ -927,7 +940,9 @@ mod tests {
         .expect("touching");
         assert_eq!(pen.t, Fix128::ZERO);
         assert_eq!(pen.point, v3i(3, 0, 0));
-        // 裏側から (dist 負、離れる向きでも |dist| > r なら t を計算): center (0,-5,0)、速度 (0,8,0) → dist -5、vel_toward 8 ≥ 0 だが dist > r ではない → t = (1+5)/8 = 3/4
+        // 裏側から: center (0,-5,0)、速度 (0,8,0) → dist -5、近い面 (y = -4) が
+        // 平面に触れる t = (-1 + 5)/8 = 1/2 (1.2.0 以前は遠い面の 3/4 = 通過時刻を返していた)
+        // normal は球側 (-y)、接触点は平面上
         let back = sphere_plane_toi(
             v3i(0, -5, 0),
             fi(1),
@@ -936,7 +951,18 @@ mod tests {
             Fix128::ZERO,
         )
         .expect("from behind");
-        assert_eq!(back.t, r(3, 4));
+        assert_eq!(back.t, r(1, 2));
+        assert_eq!(back.normal, v3i(0, -1, 0));
+        assert_eq!(back.point, Vec3Fix::ZERO);
+        // 裏側で離れる向き → None
+        assert!(sphere_plane_toi(
+            v3i(0, -5, 0),
+            fi(1),
+            v3i(0, -8, 0),
+            v3i(0, 1, 0),
+            Fix128::ZERO
+        )
+        .is_none());
     }
 
     #[test]
@@ -1279,5 +1305,367 @@ mod tests {
             Fix128::ZERO
         )
         .is_none());
+    }
+
+    // ---- mutation-score tests, round 2 (2026-09-15) ---------------------
+    //
+    // Each test below names the surviving cargo-mutants mutant it kills
+    // (line numbers refer to the non-test code above). All inputs are chosen
+    // so that the arithmetic is exact in I64F64 (powers of two, perfect
+    // squares), so equality assertions are used unless noted otherwise.
+
+    /// Kills L52 `>` -> `>=` (displacement test in `needs_ccd`).
+    ///
+    /// speed 8, dt 1/16 -> displacement 0.5; radius 1 -> half 0.5.
+    /// The contract is strict (`displacement > radius/2`), so exactly on the
+    /// boundary CCD is NOT needed even though speed 8 > threshold 5.
+    #[test]
+    fn needs_ccd_displacement_boundary_is_strict() {
+        let cfg = CcdConfig::default();
+        assert!(!needs_ccd(v3i(8, 0, 0), fi(1), r(1, 16), &cfg));
+        // One step past the boundary (displacement 1.0 > 0.5) -> needed.
+        assert!(needs_ccd(v3i(8, 0, 0), fi(1), r(1, 8), &cfg));
+    }
+
+    /// Kills L83 `*` -> `/` (contact point of the already-overlapping branch
+    /// in `sphere_sphere_toi`).
+    ///
+    /// A at (3,0,0) r=2, B at (4,0,0) r=1: c = 1 - 9 < 0 -> overlap,
+    /// normal = +x, point = center_a + normal * 2 = (5,0,0)
+    /// (normal / 2 would give (3.5,0,0)).
+    #[test]
+    fn sphere_sphere_toi_overlap_point_scales_with_radius_a() {
+        let toi = sphere_sphere_toi(
+            v3i(3, 0, 0),
+            fi(2),
+            Vec3Fix::ZERO,
+            v3i(4, 0, 0),
+            fi(1),
+            Vec3Fix::ZERO,
+        )
+        .expect("overlapping");
+        assert_eq!(toi.t, Fix128::ZERO);
+        assert_eq!(toi.normal, v3i(1, 0, 0));
+        assert_eq!(toi.point, v3i(5, 0, 0));
+    }
+
+    /// Kills L104 `+` -> `-` (pos_b), L105 `-` -> `+` (normal direction) and
+    /// L106 `*` -> `/` (point) in `sphere_sphere_toi`.
+    ///
+    /// Oblique, non-collinear impact so that every mutant changes the result:
+    /// A: center (0,1,0), r 3/2, vel (8,0,0); B: center (8,7,0), r 1/2,
+    /// vel (0,-8,0).
+    /// rel_pos = (8,6,0), rel_vel = (-8,-8,0), combined_r = 2
+    /// a = 128, b = 2*(-64-48) = -224, c = 100 - 4 = 96
+    /// disc = 224^2 - 4*128*96 = 50176 - 49152 = 1024, sqrt = 32
+    /// t = (224 - 32) / 256 = 3/4 (exact)
+    /// pos_a = (6,1,0), pos_b = (8,1,0) -> normal = (1,0,0)
+    /// point = pos_a + normal * 3/2 = (15/2, 1, 0)
+    /// - L104 mutant: pos_b = (8,13,0) -> normal = normalize(2,12,0) != +x
+    /// - L105 mutant: normal = normalize(14,2,0) != +x
+    /// - L106 mutant: point = (6 + 2/3, 1, 0)
+    #[test]
+    fn sphere_sphere_toi_oblique_impact_closed_form() {
+        let toi = sphere_sphere_toi(
+            v3i(0, 1, 0),
+            r(3, 2),
+            v3i(8, 0, 0),
+            v3i(8, 7, 0),
+            r(1, 2),
+            v3i(0, -8, 0),
+        )
+        .expect("hit at t=3/4");
+        assert_eq!(toi.t, r(3, 4));
+        assert_eq!(toi.normal, v3i(1, 0, 0));
+        assert_eq!(toi.point, Vec3Fix::new(r(15, 2), fi(1), Fix128::ZERO));
+    }
+
+    /// Kills L134 `*` -> `/` (penetrating-branch point) and L150 `*` -> `/`
+    /// (surface point, `plane_normal * radius`) in `sphere_plane_toi`.
+    ///
+    /// Penetrating: center (3, 5/2, 0), r 1, plane y = 2 -> dist 1/2 <= r,
+    /// point = center - n * dist = (3, 2, 0)  (n / dist gives (3, 1/2, 0)).
+    /// Surface: center (0,5,0), r 2, vel (0,-8,0), plane y = 0:
+    /// t = (2 - 5) / (-8) = 3/8, point = (0,5,0) + (0,-3,0) - (0,2,0) = 0
+    /// (n / r gives (0, 3/2, 0)).
+    #[test]
+    fn sphere_plane_toi_points_scale_with_dist_and_radius() {
+        let n = v3i(0, 1, 0);
+        let pen = sphere_plane_toi(
+            Vec3Fix::new(fi(3), r(5, 2), Fix128::ZERO),
+            fi(1),
+            v3i(0, 8, 0),
+            n,
+            fi(2),
+        )
+        .expect("penetrating");
+        assert_eq!(pen.t, Fix128::ZERO);
+        assert_eq!(pen.point, v3i(3, 2, 0));
+
+        let hit = sphere_plane_toi(v3i(0, 5, 0), fi(2), v3i(0, -8, 0), n, Fix128::ZERO)
+            .expect("surface hit");
+        assert_eq!(hit.t, r(3, 8));
+        assert_eq!(hit.point, Vec3Fix::ZERO);
+    }
+
+    /// Kills L185 `-` -> `+`, L185 `*` -> `/` (contact point) and
+    /// L198 `>` -> `>=` (t == 1 must still be checked) in
+    /// `conservative_advancement`.
+    ///
+    /// Distance function: plane x = 10, signed distance 10 - x, normal -x.
+    /// (1) start (8,0,0), r 2: dist 2, gap 0 -> immediate hit,
+    ///     point = pos - normal * dist = (8,0,0) - (-2,0,0) = (10,0,0)
+    ///     (`+` gives (6,0,0); normal / dist gives (8.5,0,0)).
+    /// (2) start 0, displacement (9,0,0), r 1: iteration 0 has dist 10,
+    ///     gap 9, speed 9 -> dt = 1 -> t = 1 exactly. `t > 1` is false so
+    ///     iteration 1 evaluates pos (9,0,0): dist 1, gap 0 -> Some(t = 1).
+    ///     With `>=` the function returns None at t == 1.
+    #[test]
+    fn conservative_advancement_contact_point_and_t_equal_one() {
+        let cfg = CcdConfig::default();
+        let plane = |p: Vec3Fix| (fi(10) - p.x, v3i(-1, 0, 0));
+
+        let now = conservative_advancement(v3i(8, 0, 0), v3i(16, 0, 0), fi(2), plane, &cfg)
+            .expect("immediate");
+        assert_eq!(now.t, Fix128::ZERO);
+        assert_eq!(now.point, v3i(10, 0, 0));
+
+        let edge = conservative_advancement(Vec3Fix::ZERO, v3i(9, 0, 0), fi(1), plane, &cfg)
+            .expect("touch exactly at t = 1");
+        assert_eq!(edge.t, Fix128::ONE);
+        assert_eq!(edge.point, v3i(10, 0, 0));
+    }
+
+    /// Kills the `t_enter > t_exit` mutants in `swept_aabb`:
+    /// L224 `>` -> `==` / `>=` (x), L241 `>` -> `==` / `>=` (y),
+    /// L258 `>` -> `==` / `>=` (z).
+    ///
+    /// Closed intervals: a corner-to-corner touch (`t_enter == t_exit`) is a
+    /// hit, not a miss.
+    /// - x axis: after the first slab `t_enter <= t_exit` always holds
+    ///   (`slab_test` sorts), so equality needs zero-thickness boxes:
+    ///   a = [0,0], b = [4,4], v 8 -> t0 = t1 = 1/2 -> Some(1/2).
+    /// - y axis: m [-1,1]^3, v (8,8,0), target x [5,7] y [9,11]:
+    ///   x (1/2, 1), y (1, 3/2) -> t_enter = t_exit = 1 -> Some(1).
+    /// - z axis: same with v (8,0,8), target x [5,7] z [9,11] -> Some(1).
+    #[test]
+    fn swept_aabb_corner_touch_counts_as_hit() {
+        let thin_m = AABB::new(v3i(0, -1, -1), v3i(0, 1, 1));
+        let thin_t = AABB::new(v3i(4, -1, -1), v3i(4, 1, 1));
+        assert_eq!(swept_aabb(&thin_m, v3i(8, 0, 0), &thin_t), Some(r(1, 2)));
+
+        let m = AABB::new(v3i(-1, -1, -1), v3i(1, 1, 1));
+        assert_eq!(
+            swept_aabb(&m, v3i(8, 8, 0), &AABB::new(v3i(5, 9, -1), v3i(7, 11, 1))),
+            Some(Fix128::ONE)
+        );
+        assert_eq!(
+            swept_aabb(&m, v3i(8, 0, 8), &AABB::new(v3i(5, -1, 9), v3i(7, 1, 11))),
+            Some(Fix128::ONE)
+        );
+    }
+
+    /// Kills L240 `<` -> `==` (y exit) and L257 `<` -> `==` (z exit) in
+    /// `swept_aabb`: the exit time must be lowered by a later axis.
+    ///
+    /// m [-1,1]^3, v (8,8,0), target x [5,7] y [1,2]:
+    /// x (1/2, 1), y (0, 3/8) -> t_enter 1/2 > t_exit 3/8 -> None
+    /// (the box leaves the y slab before entering the x slab).
+    /// With the mutant t_exit stays 1 and the call returns Some(1/2).
+    #[test]
+    fn swept_aabb_exit_before_enter_on_later_axis_is_miss() {
+        let m = AABB::new(v3i(-1, -1, -1), v3i(1, 1, 1));
+        assert_eq!(
+            swept_aabb(&m, v3i(8, 8, 0), &AABB::new(v3i(5, 1, -1), v3i(7, 2, 1))),
+            None
+        );
+        assert_eq!(
+            swept_aabb(&m, v3i(8, 0, 8), &AABB::new(v3i(5, -1, 1), v3i(7, 1, 2))),
+            None
+        );
+    }
+
+    /// Kills L383 `+` -> `-`, L383 `*` -> `/`, L384 `*` -> `/` (overlap
+    /// branch) and L403 / L404 `*` -> `/` (speculative branch) in
+    /// `speculative_contact`.
+    ///
+    /// Overlap: A (2,0,0) r 2, B (3,0,0) r 1/2: dist 1, gap -3/2,
+    /// point_a = (2,0,0) + (1,0,0)*2 = (4,0,0), point_b = (3,0,0) - 1/2 = (5/2,0,0).
+    /// Speculative: A 0 r 2 vel (8,0,0), B (10,0,0) r 1/2, dt 1:
+    /// gap 15/2, closing 8 -> predicted -1/2 -> depth 1/2,
+    /// point_a = (2,0,0), point_b = (19/2,0,0).
+    #[test]
+    fn speculative_contact_points_scale_with_radii() {
+        let ov = speculative_contact(
+            v3i(2, 0, 0),
+            Vec3Fix::ZERO,
+            fi(2),
+            v3i(3, 0, 0),
+            Vec3Fix::ZERO,
+            r(1, 2),
+            fi(1),
+        )
+        .expect("overlap");
+        assert_eq!(ov.depth, r(3, 2));
+        assert_eq!(ov.point_a, v3i(4, 0, 0));
+        assert_eq!(
+            ov.point_b,
+            Vec3Fix::new(r(5, 2), Fix128::ZERO, Fix128::ZERO)
+        );
+
+        let sp = speculative_contact(
+            Vec3Fix::ZERO,
+            v3i(8, 0, 0),
+            fi(2),
+            v3i(10, 0, 0),
+            Vec3Fix::ZERO,
+            r(1, 2),
+            fi(1),
+        )
+        .expect("speculative");
+        assert_eq!(sp.depth, r(1, 2));
+        assert_eq!(sp.point_a, v3i(2, 0, 0));
+        assert_eq!(
+            sp.point_b,
+            Vec3Fix::new(r(19, 2), Fix128::ZERO, Fix128::ZERO)
+        );
+    }
+
+    /// Kills L425 `-` -> `+` (dist_a), L426 `-` -> `+` (dist_b) and
+    /// L428 `<` -> `<=` (tie-break) in `capsule_plane_toi`.
+    ///
+    /// Plane y = 2 (offset 2), r 1, vel (0,-8,0).
+    /// - a y=5, b y=7: dist_a 3 < dist_b 5 -> endpoint a -> t = (1-3)/(-8) = 1/4.
+    ///   L425 mutant: dist_a = 7 -> picks b -> t = 1/2.
+    /// - a y=7, b y=5: dist_b 3 -> endpoint b -> t = 1/4.
+    ///   L426 mutant: dist_b = 7 -> picks a -> t = 1/2.
+    /// - Tie (capsule parallel to the plane): a (0,9,-1), b (0,9,1), r 1,
+    ///   vel (0,-16,0), plane y = 0: `dist_a < dist_b` is false, so endpoint b
+    ///   is used -> t = 1/2, point = (0,9,1) + (0,-8,0) - (0,1,0) = (0,0,1).
+    ///   `<=` would pick a and report (0,0,-1).
+    #[test]
+    fn capsule_plane_toi_offset_and_tie_break() {
+        let n = v3i(0, 1, 0);
+        let a_near = capsule_plane_toi(v3i(0, 5, 0), v3i(0, 7, 0), fi(1), v3i(0, -8, 0), n, fi(2))
+            .expect("hit");
+        assert_eq!(a_near.t, r(1, 4));
+        assert_eq!(a_near.point, v3i(0, 2, 0));
+
+        let b_near = capsule_plane_toi(v3i(0, 7, 0), v3i(0, 5, 0), fi(1), v3i(0, -8, 0), n, fi(2))
+            .expect("hit");
+        assert_eq!(b_near.t, r(1, 4));
+        assert_eq!(b_near.point, v3i(0, 2, 0));
+
+        let tie = capsule_plane_toi(
+            v3i(0, 9, -1),
+            v3i(0, 9, 1),
+            fi(1),
+            v3i(0, -16, 0),
+            n,
+            Fix128::ZERO,
+        )
+        .expect("hit");
+        assert_eq!(tie.t, r(1, 2));
+        assert_eq!(tie.point, v3i(0, 0, 1));
+    }
+
+    /// Kills L455 `<` -> `==` (lower clamp of the segment parameter) in
+    /// `sphere_capsule_toi`.
+    ///
+    /// Sphere (0,-9,0) r 1 vel (8,0,0); capsule (10,-5,0)-(10,5,0) r 1.
+    /// t = ((-10,-4,0)·(0,10,0)) / 100 = -2/5 -> clamped to 0 -> closest
+    /// point (10,-5,0); the sphere passes 4 below it (combined r 2) -> None.
+    /// Without the clamp the closest point would be (10,-9,0) and the sphere
+    /// would hit it at t = 1.
+    #[test]
+    fn sphere_capsule_toi_clamps_below_segment_start() {
+        assert!(sphere_capsule_toi(
+            v3i(0, -9, 0),
+            fi(1),
+            v3i(8, 0, 0),
+            v3i(10, -5, 0),
+            v3i(10, 5, 0),
+            fi(1)
+        )
+        .is_none());
+        // Control: level with the segment start it does hit at t = 1.
+        let hit = sphere_capsule_toi(
+            v3i(0, -5, 0),
+            fi(1),
+            v3i(8, 0, 0),
+            v3i(10, -5, 0),
+            v3i(10, 5, 0),
+            fi(1),
+        )
+        .expect("hit");
+        assert_eq!(hit.t, Fix128::ONE);
+    }
+
+    /// Kills L485 `<` -> `>` (support x), L490 `<` -> `<=` (support y) and
+    /// L495 `<` -> `>` (support z) in `aabb_plane_toi`.
+    ///
+    /// AABB [1,3]^3.
+    /// - Plane x = 10 with normal -x (offset -10), vel (8,0,0): support
+    ///   (max.x, min.y, min.z) = (3,1,1), dist = -3 + 10 = 7, vel_toward -8,
+    ///   t = 7/8, point = (3,1,1) + (7,0,0) = (10,1,1).
+    ///   L485 mutant picks min.x -> dist 9 -> t 9/8 -> None.
+    ///   L490 mutant picks max.y (normal.y == 0) -> point (10,3,1).
+    /// - Plane x = -5 with normal +x (offset -5), vel (-8,0,0): support
+    ///   min.x = 1, dist 6, t = 3/4 (mutant: max.x 3 -> dist 8 -> t 1).
+    /// - Plane z = 10 with normal -z (offset -10), vel (0,0,8): support
+    ///   max.z = 3, t = 7/8, point (1,1,10) (L495 mutant -> None).
+    #[test]
+    fn aabb_plane_toi_support_vertex_follows_normal_sign() {
+        let bx = AABB::new(v3i(1, 1, 1), v3i(3, 3, 3));
+
+        let neg_x = aabb_plane_toi(&bx, v3i(8, 0, 0), v3i(-1, 0, 0), fi(-10)).expect("hit");
+        assert_eq!(neg_x.t, r(7, 8));
+        assert_eq!(neg_x.point, v3i(10, 1, 1));
+
+        let pos_x = aabb_plane_toi(&bx, v3i(-8, 0, 0), v3i(1, 0, 0), fi(-5)).expect("hit");
+        assert_eq!(pos_x.t, r(3, 4));
+        assert_eq!(pos_x.point, v3i(-5, 1, 1));
+
+        let neg_z = aabb_plane_toi(&bx, v3i(0, 0, 8), v3i(0, 0, -1), fi(-10)).expect("hit");
+        assert_eq!(neg_z.t, r(7, 8));
+        assert_eq!(neg_z.point, v3i(1, 1, 10));
+    }
+
+    /// Kills L506 `>` -> `==` / `>=` (resting contact while separating),
+    /// L526 `&&` -> `||` (t > 1 must be a miss) and L527 `+` -> `-`,
+    /// `*` -> `/` (contact point) in `aabb_plane_toi`.
+    ///
+    /// - AABB resting on y = 0 (min.y = 0) moving away (0,8,0): dist == 0 is
+    ///   not "moving away from the plane", it is the penetrating branch ->
+    ///   Some(t = 0, point = support (1,0,1)).
+    /// - AABB [1,3]^3, vel (0,-1/2,0): t = 1 / (1/2) = 2 > 1 -> None.
+    /// - AABB [1,3]^3, vel (0,-8,0): t = 1/8,
+    ///   point = (1,1,1) + (0,-8,0) * 1/8 = (1,0,1)
+    ///   (`-` gives (1,2,1); velocity / t gives (1,-63,1)).
+    #[test]
+    fn aabb_plane_toi_resting_contact_and_contact_point() {
+        let n = v3i(0, 1, 0);
+        let resting = aabb_plane_toi(
+            &AABB::new(v3i(1, 0, 1), v3i(3, 2, 3)),
+            v3i(0, 8, 0),
+            n,
+            Fix128::ZERO,
+        )
+        .expect("resting contact");
+        assert_eq!(resting.t, Fix128::ZERO);
+        assert_eq!(resting.point, v3i(1, 0, 1));
+
+        let bx = AABB::new(v3i(1, 1, 1), v3i(3, 3, 3));
+        assert!(aabb_plane_toi(
+            &bx,
+            Vec3Fix::new(Fix128::ZERO, r(-1, 2), Fix128::ZERO),
+            n,
+            Fix128::ZERO
+        )
+        .is_none());
+
+        let hit = aabb_plane_toi(&bx, v3i(0, -8, 0), n, Fix128::ZERO).expect("hit");
+        assert_eq!(hit.t, r(1, 8));
+        assert_eq!(hit.point, v3i(1, 0, 1));
     }
 }
