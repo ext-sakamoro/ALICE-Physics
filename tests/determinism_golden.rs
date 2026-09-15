@@ -318,7 +318,14 @@ fn hash_cloth(cloth: &Cloth) -> [u8; 32] {
 
 /// **Scenario 5**: 5x5 cloth grid drape under gravity for 120 steps,
 /// top row pinned. Exercises XPBD constraint iteration on a soft body.
-const GOLDEN_CLOTH_DRAPE: &str = "0df965eec802104c96168bf4eaf6e4096373343b39efe41bbfcdb3b3ef9d340c";
+///
+/// Intentional drift 1.1.1: `Fix128::atan` / `atan2` (CORDIC shift carry bug)
+/// and the cloth bending constraint (standard PBD dihedral instead of the
+/// sign-blind `cos - cos` push) were fixed together. The previous value
+/// `0df965ee…` pinned a state where the bottom row had been pumped *above*
+/// the pinned top row (y = 6.92 with the top at 5); the cloth now hangs at
+/// y ≈ 3.02.
+const GOLDEN_CLOTH_DRAPE: &str = "e67fbcac730eeb8d845914d5fe084aad98288ec33328bd237dc01f5791ca5301";
 
 #[test]
 fn determinism_cloth_drape() {
