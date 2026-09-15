@@ -32,13 +32,16 @@ jobs:
     # 2 回目実測 (8 shard): GH runner は 1 mutant ≈ 7 s build + 46-76 s test (integration 含む 1382 test)、
     # 360 mutant / shard で 2h37m、7/8 shard が 180 min timeout → 16 shard + `-- --lib` (integration 除外、
     # Mac 実測 66 s → 28 s) + timeout 300 に変更 shard 2 の score: caught 64 / missed 192 = 25%
-    name: Mutation testing (cargo-mutants${{ github.event_name == 'pull_request' && ', in-diff' || format(', core shard {0}/16', matrix.shard) }})
+    # 2026-09-15 3 回目実測: default feature だけだと `#[cfg(feature = "parallel")]` / gpu-solver-bridge 内の
+    # code が compile されず「変異しても変わらない = missed」に数えられる (solver.rs で 163 / 575) → feature 軸を追加
+    name: Mutation testing (cargo-mutants${{ github.event_name == 'pull_request' && ', in-diff' || format(', core shard {0}/16', matrix.shard) }}, ${{ matrix.features == '' && 'default' || matrix.features }})
     runs-on: ubuntu-latest
     timeout-minutes: 300
     strategy:
       fail-fast: false
       matrix:
         shard: ${{ github.event_name == 'pull_request' && fromJSON('[0]') || fromJSON('[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]') }}
+        features: ['', 'parallel,gpu-solver-bridge']
     steps:
       - uses: actions/checkout@v5
         with:
@@ -53,11 +56,13 @@ jobs:
         if: github.event_name == 'pull_request'
         run: |
           git diff origin/${{ github.base_ref }}...HEAD > /tmp/pr.diff
-          cargo mutants --in-diff /tmp/pr.diff --timeout 300 -j 2 --output mutants.out -- --lib || true
+          cargo mutants --in-diff /tmp/pr.diff --timeout 300 -j 2 --output mutants.out \
+            ${{ matrix.features != '' && format('--features {0}', matrix.features) || '' }} -- --lib || true
       - name: Mutants (weekly = core 8 module, shard ${{ matrix.shard }}/16, lib test のみ)
         if: github.event_name != 'pull_request'
         run: |
           cargo mutants --shard ${{ matrix.shard }}/16 -j 2 --timeout 300 --output mutants.out \
+            ${{ matrix.features != '' && format('--features {0}', matrix.features) || '' }} \
             --file src/solver.rs --file src/solver_tgs.rs --file src/math.rs --file src/collider.rs \
             --file src/bvh.rs --file src/joint.rs --file src/contact_cache.rs --file src/ccd.rs \
             -- --lib || true
@@ -65,7 +70,7 @@ jobs:
         if: always()
         run: |
           {
-            echo "## cargo-mutants (shard ${{ matrix.shard }})"
+            echo "## cargo-mutants (shard ${{ matrix.shard }}, features: ${{ matrix.features == '' && 'default' || matrix.features }})"
             if [ -f mutants.out/outcomes.json ]; then
               python3 - <<'PY'
           import json
@@ -84,7 +89,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: mutants-out-${{ matrix.shard }}
+          name: mutants-out-${{ matrix.shard }}-${{ matrix.features == '' && 'default' || 'parallel' }}
           path: mutants.out
           if-no-files-found: ignore
 
