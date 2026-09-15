@@ -24,10 +24,22 @@ impl PhysicsMetricsSink {
     pub fn open<P: AsRef<Path>>(dir: P) -> io::Result<Self> {
         let dir = dir.as_ref();
         std::fs::create_dir_all(dir)?;
+        // lossless: metric series must read back exactly (alice-db keeps a
+        // fitted model + residuals; default mode is a lossy approximation)
+        let open = |name: &str| {
+            AliceDB::with_config(alice_db::StorageConfig {
+                data_dir: dir.join(name),
+                fit_config: alice_db::FitConfig {
+                    lossless: true,
+                    ..alice_db::FitConfig::default()
+                },
+                ..alice_db::StorageConfig::default()
+            })
+        };
         Ok(Self {
-            energy_db: AliceDB::open(dir.join("energy"))?,
-            bodies_db: AliceDB::open(dir.join("bodies"))?,
-            contacts_db: AliceDB::open(dir.join("contacts"))?,
+            energy_db: open("energy")?,
+            bodies_db: open("bodies")?,
+            contacts_db: open("contacts")?,
         })
     }
 
@@ -91,5 +103,43 @@ mod tests {
 
         let energy = sink.query_energy(0, 99).unwrap();
         assert!(!energy.is_empty());
+    }
+
+    /// `query_bodies` / `query_contacts` return exactly the recorded
+    /// `(step, value)` pairs of the requested inclusive range, in step order,
+    /// from their own database (not the energy one); `record_energy` writes
+    /// only the energy database.
+    #[test]
+    fn query_bodies_contacts_and_record_energy_hit_their_own_databases() {
+        let dir = tempdir().unwrap();
+        let sink = PhysicsMetricsSink::open(dir.path()).unwrap();
+        for step in 0..10 {
+            sink.record_step(
+                step,
+                1.5 * step as f32,
+                100.0 + step as f32,
+                7.0 - step as f32,
+            )
+            .unwrap();
+        }
+        // energy-only record at the next step: bodies / contacts must not gain a
+        // row (alice-db segments assume uniformly spaced timestamps, so the
+        // energy series stays contiguous: 0..=10)
+        sink.record_energy(10, 123.5).unwrap();
+        sink.flush().unwrap();
+
+        let bodies = sink.query_bodies(3, 6).unwrap();
+        assert_eq!(bodies, vec![(3, 103.0), (4, 104.0), (5, 105.0), (6, 106.0)]);
+        let contacts = sink.query_contacts(0, 2).unwrap();
+        assert_eq!(contacts, vec![(0, 7.0), (1, 6.0), (2, 5.0)]);
+        assert!(sink.query_bodies(10, 10).unwrap().is_empty());
+        assert!(sink.query_contacts(10, 10).unwrap().is_empty());
+        let energy = sink.query_energy(10, 10).unwrap();
+        assert_eq!(energy, vec![(10, 123.5)]);
+        // ranges are independent per database: the energy scan of 0..2 is the step formula
+        assert_eq!(
+            sink.query_energy(0, 2).unwrap(),
+            vec![(0, 0.0), (1, 1.5), (2, 3.0)]
+        );
     }
 }
