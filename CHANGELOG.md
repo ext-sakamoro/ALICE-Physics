@@ -342,6 +342,12 @@ contact normal, and the contact multiplier. Everything else is bit-compatible.
 - `Fix128::checked_div` (`None` on a zero divisor); the `Div` operator's
   `ZERO` result for a zero divisor is now a documented contract (a `Result`
   operator is a 2.0 change because `PhysicsError` is not `#[non_exhaustive]`).
+- `scripts/f32_modules.py --check`: generates the README § Determinism scope
+  "`f32` / `f64` field modules" row from `src/` (public API carrying floats,
+  test modules and conversion helpers excluded) and fails when README.md
+  disagrees; wired into the CI `fmt` job. The hand-written row said 30 and
+  mixed in three I/O-boundary modules; it now lists the 27 arithmetic
+  modules and names the 8 boundary ones separately.
 - `Fix128::powf_pos(exponent)` (positive base, non-negative exponent: integer
   part by multiplication, 24 fractional exponent bits by repeated square
   roots; f64 relative error < 1e-6 on the tested range) and `Fix128::exp`
