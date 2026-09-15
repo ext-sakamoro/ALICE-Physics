@@ -755,10 +755,13 @@ pub(crate) trait TgsHooks {
 /// [`ImpulseCache`] type that hooks are expected to consult when
 /// `cfg.warmstart` is `true`).
 ///
-/// # Panics
-/// Panics when `cfg.substeps == 0`.
+/// `cfg.substeps == 0` is a no-op (nothing to integrate); before 1.2.0 it
+/// panicked, which is an input-driven panic in a lockstep solver
+/// (karikari-review §3-1).
 pub(crate) fn tgs_step<H: TgsHooks>(hooks: &mut H, cfg: &TgsConfig, dt: Fix128) {
-    assert!(cfg.substeps > 0, "TgsConfig::substeps must be positive");
+    if cfg.substeps == 0 {
+        return;
+    }
     let inv = Fix128::from_f32(1.0 / cfg.substeps as f32);
     let sub_dt = dt * inv;
     for _ in 0..cfg.substeps {
@@ -1574,5 +1577,55 @@ mod tests {
             ),
             4
         );
+    }
+
+    #[test]
+    fn union_find_higher_rank_root_absorbs_lower_without_rank_growth() {
+        let mut uf = UnionFind::new(4);
+        uf.union(0, 1); // root rank 1
+        let root = uf.find(0);
+        assert!(uf.union(0, 3), "rank 1 側 (ri) が rank 0 (rj) を吸収");
+        assert_eq!(uf.find(3), root);
+        assert_eq!(uf.rank[root], 1, "rank は増えない");
+        assert!(uf.union(2, 1), "逆向き (ri rank 0、rj rank 1)");
+        assert_eq!(uf.find(2), root);
+        assert_eq!(uf.rank[root], 1);
+    }
+
+    #[test]
+    fn islands_static_body_touching_two_stacks_keeps_them_separate() {
+        let bodies = [
+            MockBody {
+                id: 1,
+                dynamic: true,
+            },
+            MockBody {
+                id: 2,
+                dynamic: false,
+            },
+            MockBody {
+                id: 3,
+                dynamic: true,
+            },
+        ];
+        // 0-1 (dyn-static) と 1-2 (static-dyn): static 1 は両方に添付されるが 0 と 2 は別 island
+        let contacts = [
+            MockContact { id: 1, a: 0, b: 1 },
+            MockContact { id: 2, a: 1, b: 2 },
+        ];
+        let joints: [MockJoint; 0] = [];
+        let islands = build_islands(&bodies, &contacts, &joints).expect("valid");
+        assert_eq!(islands.len(), 2);
+        assert_eq!(islands[0].bodies, vec![0, 1]);
+        assert_eq!(islands[0].contacts, vec![0]);
+        assert_eq!(islands[1].bodies, vec![1, 2]);
+        assert_eq!(islands[1].contacts, vec![1]);
+        // joint 版も同じ
+        let j2 = [MockJoint { a: 0, b: 1 }, MockJoint { a: 2, b: 1 }];
+        let noc: [MockContact; 0] = [];
+        let via_joint = build_islands(&bodies, &noc, &j2).expect("valid");
+        assert_eq!(via_joint.len(), 2);
+        assert_eq!(via_joint[0].joints, vec![0]);
+        assert_eq!(via_joint[1].joints, vec![1]);
     }
 }

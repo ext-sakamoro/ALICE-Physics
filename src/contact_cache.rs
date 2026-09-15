@@ -913,4 +913,26 @@ mod tests {
         assert!(n.dot(t1).abs() < small && n.dot(t2).abs() < small && t1.dot(t2).abs() < small);
         assert!((t1.length() - Fix128::ONE).abs() < small);
     }
+
+    #[test]
+    fn apply_warm_start_factor_scales_normal_and_both_tangents() {
+        let mut cache = ContactCache::new();
+        cache.warm_start_factor = Fix128::from_ratio(1, 4);
+        let m = cache.get_or_create(BodyPairKey::new(0, 1), Fix128::ONE, Fix128::ZERO);
+        m.add_or_update(
+            &contact(Vec3Fix::UNIT_X, fi(1)),
+            Vec3Fix::ZERO,
+            Vec3Fix::ZERO,
+        );
+        // normal x: t1 = x × y = z、t2 = x × z = -y
+        m.store_impulses(0, fi(8), fi(12), fi(20));
+        let mut bodies = vec![
+            crate::solver::RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE),
+            crate::solver::RigidBody::new_static(v3i(1, 0, 0)),
+        ];
+        cache.apply_warm_start(&mut bodies);
+        // total = x*2 + z*3 + (-y)*5 = (2, -5, 3)
+        assert_eq!(bodies[0].velocity, v3i(2, -5, 3));
+        assert_eq!(bodies[1].velocity, Vec3Fix::ZERO);
+    }
 }

@@ -54,12 +54,23 @@ pub(crate) fn morton_code(x: u64, y: u64, z: u64) -> u64 {
 #[must_use]
 pub fn point_to_morton(point: Vec3Fix, bounds: &AABB) -> u64 {
     let size = bounds.max - bounds.min;
-
-    // Compute normalized coordinates [0, 1] and clamp for negative/out-of-range
-    let nx = if size.x.is_zero() {
-        0u64
-    } else {
-        let t = (point.x - bounds.min.x) / size.x;
+    // Isotropic normalisation (1.2.0): every axis is scaled by the *largest*
+    // extent so the 21-bit cells are cubes. Per-axis [0, 1] scaling made the
+    // high Morton bits of a short axis outrank a long axis (a 2003 × 3 × 3
+    // world interleaved y/z jitter above x clusters), which mixed distant
+    // clusters into the same leaves and inflated the `find_pairs` superset.
+    let mut scale = size.x;
+    if size.y > scale {
+        scale = size.y;
+    }
+    if size.z > scale {
+        scale = size.z;
+    }
+    if scale.is_zero() || scale.is_negative() {
+        return 0;
+    }
+    let quantise = |coord: Fix128, min: Fix128| -> u64 {
+        let t = (coord - min) / scale;
         if t.is_negative() {
             0
         } else if t.hi >= 1 {
@@ -68,33 +79,9 @@ pub fn point_to_morton(point: Vec3Fix, bounds: &AABB) -> u64 {
             (t.lo >> 43) & 0x1FFFFF
         }
     };
-
-    let ny = if size.y.is_zero() {
-        0u64
-    } else {
-        let t = (point.y - bounds.min.y) / size.y;
-        if t.is_negative() {
-            0
-        } else if t.hi >= 1 {
-            0x1FFFFF
-        } else {
-            (t.lo >> 43) & 0x1FFFFF
-        }
-    };
-
-    let nz = if size.z.is_zero() {
-        0u64
-    } else {
-        let t = (point.z - bounds.min.z) / size.z;
-        if t.is_negative() {
-            0
-        } else if t.hi >= 1 {
-            0x1FFFFF
-        } else {
-            (t.lo >> 43) & 0x1FFFFF
-        }
-    };
-
+    let nx = quantise(point.x, bounds.min.x);
+    let ny = quantise(point.y, bounds.min.y);
+    let nz = quantise(point.z, bounds.min.z);
     morton_code(nx, ny, nz)
 }
 
@@ -1233,9 +1220,8 @@ mod tests {
     fn find_pairs_reports_no_pairs_between_far_clusters() {
         // 3 cluster × 4 箱 (cluster 内は互いに重なる、cluster 間は対角線上に 1000 離れる)
         // 1.1.0 以前はこれが 66 pair 全部返っていた
-        // 注: cluster を x 軸だけに並べると world bounds が異方的になり、`point_to_morton` の
-        // 軸別正規化で y/z の上位 bit が cluster より優先されて leaf が world 全体に伸びる
-        // (BVH 品質の既知課題、TRT GPU 移植と同期が必要なため別起票) — ここでは等方配置で検証
+        // 1.2.0: `point_to_morton` は最大軸で等方正規化するので x 軸一列の異方配置でも
+        // cluster が混ざらない (下の anisotropic test)、ここは対角配置
         let mut boxes = Vec::new();
         for c in 0..3i64 {
             let base = c * 1000;
@@ -1262,6 +1248,48 @@ mod tests {
             assert_eq!(i / 4, j / 4, "cluster を跨ぐ pair {i}-{j}");
             assert!(i < j);
         }
+    }
+
+    #[test]
+    fn find_pairs_anisotropic_clusters_along_x_do_not_mix() {
+        // 3 cluster × 4 箱を x 軸一列に 1000 間隔で並べる (world 2003 × 3 × 3)
+        // 1.1.0 の軸別正規化では y/z の上位 bit が x cluster より優先され leaf が world 全体に
+        // 伸びて 66 pair 全部が候補になった; 等方正規化後は cluster 内 6 × 3 = 18 のみ
+        let mut boxes = Vec::new();
+        for c in 0..3i64 {
+            let base = c * 1000;
+            boxes.push(AABB::new(
+                Vec3Fix::from_int(base, 0, 0),
+                Vec3Fix::from_int(base + 2, 2, 2),
+            ));
+            boxes.push(AABB::new(
+                Vec3Fix::from_int(base + 1, 1, 0),
+                Vec3Fix::from_int(base + 3, 3, 2),
+            ));
+            boxes.push(AABB::new(
+                Vec3Fix::from_int(base, 1, 1),
+                Vec3Fix::from_int(base + 2, 3, 3),
+            ));
+            boxes.push(AABB::new(
+                Vec3Fix::from_int(base + 1, 0, 1),
+                Vec3Fix::from_int(base + 3, 2, 3),
+            ));
+        }
+        let prims: Vec<BvhPrimitive> = boxes
+            .iter()
+            .enumerate()
+            .map(|(i, aabb)| BvhPrimitive {
+                aabb: *aabb,
+                index: i as u32,
+                morton: 0,
+            })
+            .collect();
+        let bvh = LinearBvh::build(prims);
+        let pairs = bvh.find_pairs();
+        for &(i, j) in &pairs {
+            assert_eq!(i / 4, j / 4, "cluster を跨ぐ pair {i}-{j}");
+        }
+        assert_eq!(pairs.len(), 18, "cluster 内 6 pair × 3 のみ: {pairs:?}");
     }
 
     #[test]
@@ -1364,7 +1392,7 @@ mod tests {
     }
 
     #[test]
-    fn point_to_morton_normalises_per_axis_and_clamps() {
+    fn point_to_morton_normalises_isotropically_and_clamps() {
         let bounds = AABB::new(Vec3Fix::from_int(0, 0, 0), Vec3Fix::from_int(8, 8, 8));
         assert_eq!(point_to_morton(Vec3Fix::from_int(0, 0, 0), &bounds), 0);
         // 中点 → 各軸の top bit (bit 20) だけ立つ → x: bit 60、y: bit 61、z: bit 62
@@ -1394,11 +1422,23 @@ mod tests {
         let all = morton_code(0x1FFFFF, 0x1FFFFF, 0x1FFFFF);
         assert_eq!(point_to_morton(Vec3Fix::from_int(8, 8, 8), &bounds), all);
         assert_eq!(point_to_morton(Vec3Fix::from_int(99, 99, 99), &bounds), all);
-        // 退化 (size 0) 軸は 0
+        // 等方正規化 (1.2.0): 退化 (size 0) 軸も最大軸 8 で割る → y = 3 は 3/8 = 0b011 (bit 19, 18)
         let flat = AABB::new(Vec3Fix::from_int(0, 0, 0), Vec3Fix::from_int(8, 0, 8));
         assert_eq!(
             point_to_morton(Vec3Fix::from_int(4, 3, 4), &flat),
-            (1 << 60) | (1 << 62)
+            morton_code(1 << 20, 0b11 << 18, 1 << 20)
+        );
+        // 全軸退化は 0
+        let point = AABB::new(Vec3Fix::from_int(1, 1, 1), Vec3Fix::from_int(1, 1, 1));
+        assert_eq!(point_to_morton(Vec3Fix::from_int(1, 1, 1), &point), 0);
+        // 異方 world (2003 × 3 × 3): x が支配的、y/z の jitter は下位 bit にしか入らない
+        let aniso = AABB::new(Vec3Fix::from_int(0, 0, 0), Vec3Fix::from_int(2003, 3, 3));
+        let near_a = point_to_morton(Vec3Fix::from_int(1000, 0, 0), &aniso);
+        let near_b = point_to_morton(Vec3Fix::from_int(1001, 3, 3), &aniso);
+        let far = point_to_morton(Vec3Fix::from_int(2000, 0, 0), &aniso);
+        assert!(
+            near_a.abs_diff(near_b) < near_a.abs_diff(far),
+            "x cluster が y/z jitter より優先されない"
         );
         // 単調性 (x 方向)
         let a = point_to_morton(Vec3Fix::from_int(1, 1, 1), &bounds);
@@ -1541,5 +1581,40 @@ mod tests {
             let a = n.get_aabb();
             assert_eq!(root.union(&a), root);
         }
+    }
+
+    #[test]
+    fn point_to_morton_with_non_zero_bounds_origin_and_build_orders_by_center() {
+        // bounds [10,18]³: 点 14 は中点 → top bit、点 10 は 0、点 12 は 1/4
+        let bounds = AABB::new(Vec3Fix::from_int(10, 10, 10), Vec3Fix::from_int(18, 18, 18));
+        assert_eq!(point_to_morton(Vec3Fix::from_int(10, 10, 10), &bounds), 0);
+        assert_eq!(
+            point_to_morton(Vec3Fix::from_int(14, 10, 10), &bounds),
+            1 << 60
+        );
+        assert_eq!(
+            point_to_morton(Vec3Fix::from_int(10, 12, 10), &bounds),
+            1 << 58
+        );
+        assert_eq!(
+            point_to_morton(Vec3Fix::from_int(10, 10, 16), &bounds),
+            (1 << 62) | (1 << 59)
+        );
+        // build は AABB の中心で並べる: サイズが増える箱を x 昇順に置くと primitives は [0,1,2]
+        // (中心を min-max で計算する変異なら [2,1,0] になる)
+        let boxes = [
+            AABB::new(Vec3Fix::from_int(0, 0, 0), Vec3Fix::from_int(1, 1, 1)),
+            AABB::new(Vec3Fix::from_int(10, 0, 0), Vec3Fix::from_int(12, 2, 2)),
+            AABB::new(Vec3Fix::from_int(20, 0, 0), Vec3Fix::from_int(23, 3, 3)),
+            AABB::new(Vec3Fix::from_int(30, 0, 0), Vec3Fix::from_int(34, 4, 4)),
+            AABB::new(Vec3Fix::from_int(40, 0, 0), Vec3Fix::from_int(45, 5, 5)),
+        ];
+        let bvh = build_from(&boxes);
+        assert_eq!(bvh.primitives, vec![0, 1, 2, 3, 4]);
+        assert_eq!(bvh.bounds.min, Vec3Fix::ZERO);
+        assert_eq!(bvh.bounds.max, Vec3Fix::from_int(45, 5, 5));
+        // 逆順に与えても中心順に並ぶ
+        let rev: Vec<AABB> = boxes.iter().rev().copied().collect();
+        assert_eq!(build_from(&rev).primitives, vec![4, 3, 2, 1, 0]);
     }
 }
