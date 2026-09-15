@@ -1025,6 +1025,7 @@ pub alice_physics::buoyancy_zone::ZoneShape::Sphere::radius: alice_physics::math
 impl alice_physics::buoyancy_zone::ZoneShape
 pub fn alice_physics::buoyancy_zone::ZoneShape::contains(&self, alice_physics::math::Vec3Fix) -> bool
 pub fn alice_physics::buoyancy_zone::ZoneShape::depth_below_surface(&self, alice_physics::math::Vec3Fix) -> alice_physics::math::Fix128
+pub fn alice_physics::buoyancy_zone::ZoneShape::signed_depth_below_surface(&self, alice_physics::math::Vec3Fix) -> core::option::Option<alice_physics::math::Fix128>
 impl core::clone::Clone for alice_physics::buoyancy_zone::ZoneShape
 pub fn alice_physics::buoyancy_zone::ZoneShape::clone(&self) -> alice_physics::buoyancy_zone::ZoneShape
 impl core::fmt::Debug for alice_physics::buoyancy_zone::ZoneShape
@@ -2529,6 +2530,8 @@ impl core::marker::Unpin for alice_physics::erosion::ErosionModifier
 impl core::marker::UnsafeUnpin for alice_physics::erosion::ErosionModifier
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::erosion::ErosionModifier
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::erosion::ErosionModifier
+pub const alice_physics::erosion::EXPOSURE_DECAY_PER_S: f32
+pub const alice_physics::erosion::WATER_PREFACTOR: f32
 pub mod alice_physics::error
 pub enum alice_physics::error::PhysicsError
 pub alice_physics::error::PhysicsError::CapacityExceeded
@@ -4658,6 +4661,8 @@ pub fn alice_physics::math::Fix128::to_f32(self) -> f32
 pub fn alice_physics::math::Fix128::to_f64(self) -> f64
 impl alice_physics::math::Fix128
 pub fn alice_physics::math::Fix128::checked_div(self, Self) -> core::option::Option<Self>
+pub fn alice_physics::math::Fix128::exp(self) -> Self
+pub fn alice_physics::math::Fix128::powf_pos(self, Self) -> Self
 impl core::clone::Clone for alice_physics::math::Fix128
 pub fn alice_physics::math::Fix128::clone(&self) -> alice_physics::math::Fix128
 impl core::cmp::Eq for alice_physics::math::Fix128
@@ -5271,6 +5276,7 @@ pub alice_physics::non_newtonian::Carreau::half_exponent: i32
 pub alice_physics::non_newtonian::Carreau::lambda: alice_physics::math::Fix128
 impl alice_physics::non_newtonian::Carreau
 pub fn alice_physics::non_newtonian::Carreau::viscosity(&self, alice_physics::math::Fix128) -> alice_physics::math::Fix128
+pub fn alice_physics::non_newtonian::Carreau::viscosity_with_index(&self, alice_physics::math::Fix128, alice_physics::math::Fix128) -> alice_physics::math::Fix128
 impl core::clone::Clone for alice_physics::non_newtonian::Carreau
 pub fn alice_physics::non_newtonian::Carreau::clone(&self) -> alice_physics::non_newtonian::Carreau
 impl core::cmp::Eq for alice_physics::non_newtonian::Carreau
@@ -8060,6 +8066,8 @@ pub fn alice_physics::math::Fix128::to_f32(self) -> f32
 pub fn alice_physics::math::Fix128::to_f64(self) -> f64
 impl alice_physics::math::Fix128
 pub fn alice_physics::math::Fix128::checked_div(self, Self) -> core::option::Option<Self>
+pub fn alice_physics::math::Fix128::exp(self) -> Self
+pub fn alice_physics::math::Fix128::powf_pos(self, Self) -> Self
 impl core::clone::Clone for alice_physics::math::Fix128
 pub fn alice_physics::math::Fix128::clone(&self) -> alice_physics::math::Fix128
 impl core::cmp::Eq for alice_physics::math::Fix128
@@ -16386,6 +16394,8 @@ pub fn alice_physics::math::Fix128::to_f32(self) -> f32
 pub fn alice_physics::math::Fix128::to_f64(self) -> f64
 impl alice_physics::math::Fix128
 pub fn alice_physics::math::Fix128::checked_div(self, Self) -> core::option::Option<Self>
+pub fn alice_physics::math::Fix128::exp(self) -> Self
+pub fn alice_physics::math::Fix128::powf_pos(self, Self) -> Self
 impl core::clone::Clone for alice_physics::math::Fix128
 pub fn alice_physics::math::Fix128::clone(&self) -> alice_physics::math::Fix128
 impl core::cmp::Eq for alice_physics::math::Fix128

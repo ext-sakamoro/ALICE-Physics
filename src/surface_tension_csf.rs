@@ -54,8 +54,12 @@ pub const SIGMA_MERCURY_AIR: Fix128 = Fix128 {
     hi: 0,
     lo: 0x7C28_F5C2_8F5C_28F6, // ≈ 0.485
 };
-/// Molten steel / argon at 1600 °C (N/m).
-pub const SIGMA_STEEL_ARGON: Fix128 = Fix128 { hi: 1, lo: 0 }; // ≈ 1.6 (dominant surface tension)
+/// Molten steel / argon at 1600 °C (N/m): 1.6 (Keene 1988 survey, low-sulphur
+/// Fe). Before 1.2.0 the constant was exactly 1.0 while documented as ≈ 1.6.
+pub const SIGMA_STEEL_ARGON: Fix128 = Fix128 {
+    hi: 1,
+    lo: 0x9999_9999_9999_9800, // 0.6 (f64 literal quantised)
+};
 
 // ============================================================================
 // Interface normal and delta

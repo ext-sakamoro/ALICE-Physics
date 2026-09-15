@@ -8,10 +8,17 @@
 //!
 //! # Physics Model
 //!
-//! Each cell tracks: temperature, phase state, and latent heat buffer.
-//! At phase boundary temperatures, latent heat absorbs/releases energy
-//! without changing temperature (plateau behavior). Phase transitions
-//! modify the SDF: liquid flows downward, gas expands outward.
+//! Each cell tracks: temperature, phase state, and a latent-heat buffer.
+//! Transitions use the enthalpy method (Voller & Cross 1981; Carslaw &
+//! Jaeger ch. XI for the Stefan problem): with the heat capacity normalised
+//! to 1 the latent heats are in kelvin-equivalent units, and each `update`
+//! moves temperature above a transition point into the buffer (or releases
+//! it back on cooling) until the buffer reaches the latent heat. The cell
+//! therefore sits **on the plateau** `T = T_m` while it melts and
+//! `T + latent` is conserved exactly by the transition step; the melt time
+//! is set by how fast diffusion / applied heat feed the cell, not by the
+//! step size. Phase transitions modify the SDF: liquid flows downward
+//! (mass-conserving transfer), gas expands outward.
 //!
 //! Author: Moroya Sakamoto
 
@@ -48,9 +55,11 @@ pub struct PhaseChangeConfig {
     pub melt_temperature: f32,
     /// Temperature at which liquid vaporizes to gas
     pub boil_temperature: f32,
-    /// Latent heat of fusion (energy absorbed during melting)
+    /// Latent heat of fusion in kelvin-equivalent units (`L_f / c_p`):
+    /// the temperature rise a cell must supply, and hold at
+    /// `melt_temperature`, before it turns liquid.
     pub latent_heat_fusion: f32,
-    /// Latent heat of vaporization
+    /// Latent heat of vaporization in kelvin-equivalent units (`L_v / c_p`).
     pub latent_heat_vaporization: f32,
     /// Thermal diffusion rate
     pub diffusion_rate: f32,
@@ -58,7 +67,9 @@ pub struct PhaseChangeConfig {
     pub ambient_temperature: f32,
     /// Cooling rate toward ambient
     pub cooling_rate: f32,
-    /// Liquid flow speed (gravity-driven downward)
+    /// Liquid flow speed (gravity-driven downward): fraction of a liquid
+    /// cell's offset moved to the cell below per second, and (× 0.1) the
+    /// rate at which liquid softens the surface (offset per second).
     pub liquid_flow_speed: f32,
     /// Gas expansion rate (SDF offset per second)
     pub gas_expansion_rate: f32,
@@ -156,66 +167,93 @@ impl PhaseChangeModifier {
         }
     }
 
-    /// Process phase transitions
-    fn process_transitions(&mut self, dt: f32) {
+    /// Process phase transitions (enthalpy method).
+    ///
+    /// The latent buffer holds the latent enthalpy stored in the cell, in
+    /// kelvin-equivalent units: `0..L_f` while a solid melts,
+    /// `L_f..L_f + L_v` while a liquid boils, `L_f + L_v` for gas. Heat above
+    /// a transition temperature is moved from `temperature` into the buffer
+    /// (melting / boiling) and back out of it on cooling (freezing /
+    /// condensing), so `temperature + latent_heat` is conserved cell by cell
+    /// and the cell sits on the plateau until the buffer fills or empties.
+    /// Independent of `dt`: the step only redistributes enthalpy already
+    /// present in the cell.
+    fn process_transitions(&mut self) {
         let melt_t = self.config.melt_temperature;
         let boil_t = self.config.boil_temperature;
-        let lh_fusion = self.config.latent_heat_fusion;
-        let lh_vaporization = self.config.latent_heat_vaporization;
+        let lh_fusion = self.config.latent_heat_fusion.max(0.0);
+        let lh_vaporization = self.config.latent_heat_vaporization.max(0.0);
+        let lh_total = lh_fusion + lh_vaporization;
 
         let n = self.temperature.cell_count();
         for i in 0..n {
-            let temp = self.temperature.data[i];
-            let phase_val = self.phase.data[i];
-            let lh = self.latent_heat.data[i];
+            let mut temp = self.temperature.data[i];
+            let mut phase_val = self.phase.data[i];
+            let mut lh = self.latent_heat.data[i];
 
-            // Current phase
-            let is_solid = phase_val < 0.5;
-
-            // Solid → Liquid transition
-            if is_solid && temp >= melt_t {
-                let excess = temp - melt_t;
-                let new_lh = excess.mul_add(dt, lh);
-                if new_lh >= lh_fusion {
-                    self.phase.data[i] = 1.0; // Liquid
-                    self.latent_heat.data[i] = 0.0;
-                } else {
-                    self.latent_heat.data[i] = new_lh;
+            // Solid → Liquid: superheat above T_m fills the fusion buffer
+            if phase_val < 0.5 && temp > melt_t {
+                let absorbed = (temp - melt_t).min(lh_fusion - lh).max(0.0);
+                temp -= absorbed;
+                lh += absorbed;
+                if lh >= lh_fusion {
+                    phase_val = 1.0;
+                    lh = lh_fusion;
                 }
             }
 
-            // Re-check phase after possible solid→liquid transition
-            let phase_val = self.phase.data[i];
-            let is_liquid = (0.5..1.5).contains(&phase_val);
-
-            // Liquid → Gas transition
-            if is_liquid && temp >= boil_t {
-                let excess = temp - boil_t;
-                let new_lh = excess.mul_add(dt, self.latent_heat.data[i]);
-                if new_lh >= lh_vaporization {
-                    self.phase.data[i] = 2.0; // Gas
-                    self.latent_heat.data[i] = 0.0;
-                } else {
-                    self.latent_heat.data[i] = new_lh;
+            // Liquid → Gas: superheat above T_b fills the vaporization buffer
+            if (0.5..1.5).contains(&phase_val) && temp > boil_t {
+                let absorbed = (temp - boil_t).min(lh_total - lh).max(0.0);
+                temp -= absorbed;
+                lh += absorbed;
+                if lh >= lh_total {
+                    phase_val = 2.0;
+                    lh = lh_total;
                 }
             }
 
-            // Re-check phase for cooling transitions
-            let phase_val = self.phase.data[i];
-            let is_liquid = (0.5..1.5).contains(&phase_val);
-            let is_gas = phase_val >= 1.5;
-
-            // Gas → Liquid transition (cooling)
-            if is_gas && temp < boil_t {
-                self.phase.data[i] = 1.0; // Condense to liquid
-                self.latent_heat.data[i] = 0.0;
+            // Gas → Liquid: subcooling below T_b drains the vaporization buffer
+            if phase_val >= 1.5 && temp < boil_t && lh > lh_fusion {
+                let released = (boil_t - temp).min(lh - lh_fusion);
+                temp += released;
+                lh -= released;
+                if lh <= lh_fusion {
+                    phase_val = 1.0;
+                    lh = lh_fusion;
+                }
             }
 
-            // Liquid → Solid transition (cooling)
-            if is_liquid && temp < melt_t {
-                self.phase.data[i] = 0.0; // Solidify
-                self.latent_heat.data[i] = 0.0;
+            // Liquid: a partly-boiled cell that cools first gives back the
+            // vaporization progress, then subcooling below T_m drains the
+            // fusion buffer until the cell freezes
+            if (0.5..1.5).contains(&phase_val) {
+                if temp < boil_t && lh > lh_fusion {
+                    let released = (boil_t - temp).min(lh - lh_fusion);
+                    temp += released;
+                    lh -= released;
+                }
+                if temp < melt_t && lh > 0.0 {
+                    let released = (melt_t - temp).min(lh);
+                    temp += released;
+                    lh -= released;
+                }
+                if temp < melt_t && lh <= 0.0 {
+                    phase_val = 0.0;
+                    lh = 0.0;
+                }
             }
+
+            // Solid: a partly-melted cell that cools gives its progress back
+            if phase_val < 0.5 && temp < melt_t && lh > 0.0 {
+                let released = (melt_t - temp).min(lh);
+                temp += released;
+                lh -= released;
+            }
+
+            self.temperature.data[i] = temp;
+            self.phase.data[i] = phase_val;
+            self.latent_heat.data[i] = lh;
         }
     }
 
@@ -244,8 +282,12 @@ impl PhaseChangeModifier {
             // Solid: no offset change
         }
 
-        // Liquid gravity flow: shift liquid offset downward
+        // Liquid gravity flow: move a fraction `liquid_flow · dt` (≤ 1) of
+        // each liquid cell's offset to the cell below. The amount removed
+        // from the source equals the amount the destination accepts (its
+        // `max_offset` head-room), so the column total is conserved.
         if liquid_flow > 0.0 {
+            let fraction = (liquid_flow * dt).min(1.0);
             let nx = self.sdf_offset.nx;
             let ny = self.sdf_offset.ny;
             let nz = self.sdf_offset.nz;
@@ -254,15 +296,18 @@ impl PhaseChangeModifier {
                     for iy in 1..ny {
                         let idx = self.phase.index(ix, iy, iz);
                         let below_idx = self.phase.index(ix, iy - 1, iz);
-                        let phase_above = self.phase.data[idx];
-                        // Transfer liquid offset downward
-                        if (0.5..1.5).contains(&phase_above) {
-                            let transfer = self.sdf_offset.data[idx] * liquid_flow * dt * 0.5;
-                            if transfer > 0.0 {
-                                self.sdf_offset.data[below_idx] =
-                                    (self.sdf_offset.data[below_idx] + transfer).min(max_offset);
-                                self.sdf_offset.data[idx] -= transfer * 0.3;
-                            }
+                        if !(0.5..1.5).contains(&self.phase.data[idx]) {
+                            continue;
+                        }
+                        let source = self.sdf_offset.data[idx];
+                        if source <= 0.0 {
+                            continue;
+                        }
+                        let room = (max_offset - self.sdf_offset.data[below_idx]).max(0.0);
+                        let transfer = (source * fraction).min(room);
+                        if transfer > 0.0 {
+                            self.sdf_offset.data[below_idx] += transfer;
+                            self.sdf_offset.data[idx] = source - transfer;
                         }
                     }
                 }
@@ -297,8 +342,8 @@ impl PhysicsModifier for PhaseChangeModifier {
             dt,
         );
 
-        // 3. Process phase transitions
-        self.process_transitions(dt);
+        // 3. Process phase transitions (enthalpy redistribution, dt-free)
+        self.process_transitions();
 
         // 4. Accumulate SDF offsets
         self.accumulate_offsets(dt);

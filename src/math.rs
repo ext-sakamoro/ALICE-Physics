@@ -465,6 +465,68 @@ impl Mul for Fix128 {
 }
 
 impl Fix128 {
+    /// `self^exponent` for `self > 0` and `exponent ≥ 0` (real exponent).
+    ///
+    /// Integer part of the exponent by repeated multiplication, fractional
+    /// part by its binary expansion `base^f = Π base^(1/2^k)` over the first 24
+    /// bits using successive [`Fix128::sqrt`] calls — pure integer arithmetic,
+    /// bit-identical on every platform, relative error ≲ |ln base| · 2⁻²⁴ plus
+    /// sqrt truncation (measured ≤ 1e-6 relative for results ≥ 1e-9 over
+    /// `base ∈ [1e-3, 1e3]`, `exponent ∈ [0, 8]`,
+    /// `math::tests::powf_pos_matches_f64_reference`; smaller results hit the
+    /// 2⁻⁶⁴ absolute resolution).
+    /// `self ≤ 0` or a negative exponent returns `ZERO` (no NaN; callers that
+    /// need those cases handle them explicitly).
+    #[must_use]
+    pub fn powf_pos(self, exponent: Self) -> Self {
+        if self <= Self::ZERO || exponent.is_negative() {
+            return Self::ZERO;
+        }
+        let n = exponent.hi.min(64) as u32;
+        let mut r = Self::ONE;
+        for _ in 0..n {
+            r = r * self;
+        }
+        let mut frac_bits = exponent.lo;
+        let mut root = self;
+        for _ in 0..24 {
+            root = root.sqrt(); // base^(1/2), base^(1/4), …
+            if frac_bits & (1u64 << 63) != 0 {
+                r = r * root;
+            }
+            frac_bits <<= 1;
+        }
+        r
+    }
+
+    /// Deterministic `e^self` via `2^(x·log₂e)` ([`Fix128::powf_pos`] with base 2;
+    /// negative arguments as `1 / e^|x|`). Relative error ≲ 1e-6 for
+    /// `|x| ≤ 40` (`math::tests::exp_matches_f64_reference`); `x < −44` is
+    /// below the 2⁻⁶⁴ resolution and returns `ZERO`, `x > 43` saturates at
+    /// the representable maximum instead of wrapping.
+    #[must_use]
+    pub fn exp(self) -> Self {
+        // log₂(e) = 1.442 695 040 888 963 4 (raw pair, exact to 2⁻⁶⁴)
+        const LOG2_E: Fix128 = Fix128 {
+            hi: 1,
+            lo: 8_166_282_121_979_092_992,
+        };
+        if self.is_negative() {
+            if self.hi < -44 {
+                return Self::ZERO;
+            }
+            let pos = Self::from_int(2).powf_pos(self.neg() * LOG2_E);
+            if pos.is_zero() {
+                return Self::ZERO;
+            }
+            return Self::ONE / pos;
+        }
+        if self.hi >= 43 {
+            return Self::from_raw(i64::MAX, u64::MAX);
+        }
+        Self::from_int(2).powf_pos(self * LOG2_E)
+    }
+
     /// Checked division: `None` when `rhs == 0`, otherwise `Some(self / rhs)`.
     ///
     /// The `Div` operator returns `ZERO` for a zero divisor (deterministic, no
@@ -1541,6 +1603,67 @@ impl core::ops::Mul<Self> for Mat3Fix {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[allow(clippy::disallowed_methods)] // f64::powf is the oracle
+    fn powf_pos_matches_f64_reference() {
+        let mut worst = 0.0f64;
+        for bi in 0..40 {
+            let b = 1e-3 * 1e6f64.powf(bi as f64 / 39.0); // 1e-3 .. 1e3
+            for ei in 0..=32 {
+                let e = 8.0 * ei as f64 / 32.0;
+                let got = Fix128::from_f64(b).powf_pos(Fix128::from_f64(e)).to_f64();
+                let want = b.powf(e);
+                if want < 1e-9 || want > 1e15 {
+                    continue; // Fix128 has 2⁻⁶⁴ absolute resolution: below 1e-9 the
+                              // relative error is dominated by truncation
+                }
+                let rel = ((got - want) / want).abs();
+                worst = worst.max(rel);
+                assert!(rel < 1e-6, "{b}^{e} = {got} vs {want} (rel {rel:e})");
+            }
+        }
+        assert!(worst > 0.0, "sweep ran");
+        // exact cases
+        assert_eq!(
+            Fix128::from_int(2).powf_pos(Fix128::from_int(10)),
+            Fix128::from_int(1024)
+        );
+        assert_eq!(
+            Fix128::from_int(9).powf_pos(Fix128::from_ratio(1, 2)),
+            Fix128::from_int(3)
+        );
+        assert_eq!(Fix128::from_int(5).powf_pos(Fix128::ZERO), Fix128::ONE);
+        assert_eq!(Fix128::ZERO.powf_pos(Fix128::ONE), Fix128::ZERO);
+        assert_eq!(Fix128::from_int(-2).powf_pos(Fix128::ONE), Fix128::ZERO);
+        assert_eq!(
+            Fix128::from_int(2).powf_pos(Fix128::from_int(-1)),
+            Fix128::ZERO
+        );
+    }
+
+    #[test]
+    #[allow(clippy::disallowed_methods)] // f64::exp is the oracle
+    fn exp_matches_f64_reference() {
+        for i in 0..=400 {
+            let x = -40.0 + 80.0 * f64::from(i) / 400.0;
+            let got = Fix128::from_f64(x).exp().to_f64();
+            let want = x.exp();
+            if want < 1e-9 {
+                continue; // below the 2⁻⁶⁴ resolution floor in relative terms
+            }
+            let rel = ((got - want) / want).abs();
+            assert!(rel < 2e-6, "exp({x}) = {got} vs {want} (rel {rel:e})");
+        }
+        assert_eq!(Fix128::ZERO.exp(), Fix128::ONE);
+        assert!(Fix128::from_int(-50).exp().is_zero());
+        assert_eq!(
+            Fix128::from_int(50).exp(),
+            Fix128::from_raw(i64::MAX, u64::MAX)
+        );
+        // exp(1) = e to 1e-6
+        assert!((Fix128::ONE.exp().to_f64() - core::f64::consts::E).abs() < 3e-6);
+    }
 
     #[test]
     fn div_by_zero_is_zero_and_checked_div_is_none() {

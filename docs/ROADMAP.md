@@ -9,7 +9,19 @@ Memory index pointer: `[[reference-alice-physics-v1-roadmap]]` in claude-config.
 - 修正 (挙動変化、golden 再 pin): damping を frame 単位化 (default で重力が効いていなかった) / XPBD λ 累積 (iteration 依存剛性) / sphere contact normal 逆向き / substep 毎 collision detection + contact λ 累積 (5 m/s 衝突が 700 m/s になっていた)
 - 修正 (bit 互換): `Fix128::sqrt` digit recurrence 50× / MSRV 1.70.0 → **1.85** 実証 + `resolver = "3"` / `crate-type` cdylib+staticlib / `panic = "unwind"` / SIMD dead code 除去 / README perf 表実測化 / lib.rs claim
 - **規律**: 解析解 oracle test を default config で必須 (substeps / iterations を変えて結果不変を assert)、golden hash は「変化検出」であって「正しさ」ではない
-- 残 (Backlog、claude-config `project_todos_active`): engineering 30 module の参照解 validation (大) / iterations 既定 1 + substeps 中心 (Small Steps 推奨配分) / default damping 0.99 再考 / contact solver の ALICE-TRT parity 同期 / det_math atan2・acos・asin・tan・tanh / `Div` ゼロ除算 silent ZERO / module 階層分け (core vs 教科書 wrapper)
+- 1.2.0 内で完了 (旧 Backlog): engineering oracle 3 batch (thermal/fatigue 5 + solid 34 + fluid 39、src bug 8 + 9 件修正) / `iterations` 既定 1 (Small Steps) / contact solver の ALICE-TRT 3.2.0 parity 同期 / det_math atan2・acos・asin・tan・tanh / `Fix128::checked_div` / FFI panic 隔離 31 fn / loom model test / replay + alice-db 実動作化
+- 残 (Backlog、claude-config `project_todos_active`): oracle 未着手 module (`rolling_contact` / `fracture` / `sdf_destruction` / `soft_body_cut` / `layer_adhesion` / `warp_risk` / `kinematic_loop` / `sdf_force` / `anisotropic_friction` / `physics2d` / `fluid_netcode` 他 utility) / mutation score ≥ 80 % (core 6 + a* 5 module) / default damping 0.99 再考 / module 階層分け (core vs 教科書 wrapper)
+
+### 2.0 に送る semver-breaking 設計 (1.x では doc のみ、実装は 2.0 branch)
+
+| 項目 | 1.x での状態 | 2.0 設計 |
+|--|--|--|
+| **SDF 境界の Fix128 化 (案 A)** | `SdfField::distance(f32, f32, f32) -> f32` を `det_math` で bit-exact 化 (案 B、1.1.0) 境界の f32 丸めは user closure と alice-sdf evaluator 側に残る | `trait SdfField { fn distance(&self, p: Vec3Fix) -> Fix128 }` + alice-sdf に `Real for Fix128` evaluator (alice-sdf 側の libm 76 file を `det_math` 化した後) `sdf_collider` / `sdf_ccd` / `sdf_character` / `sdf_sph` の f32 変換を全廃、`ClosureSdf` は `Fn(Vec3Fix) -> Fix128` |
+| **`RigidBody` force accumulator** | 外力は `velocity` 直接書換 or `apply_impulse` (frame 単位、substep 毎の力は表現不能) `wind_zone` / `buoyancy_zone` / `sdf_force` は velocity を直接更新 | `RigidBody { force: Vec3Fix, torque: Vec3Fix }` + `apply_force` / `apply_force_at` / `clear_forces`、solver が substep 毎に `v += force · inv_mass · h` を積分して frame 末に clear `#[non_exhaustive]` でない `RigidBody` への field 追加 = major |
+| **`Div` の `Result`** | ゼロ除算は `ZERO` (契約 doc、`checked_div` で `None`) | `PhysicsError::DivisionByZero` 追加 (`PhysicsError` は `#[non_exhaustive]` でないため major)、solver 内の除算を `checked_div` に置換して `Result` を伝播 |
+| **`ErosionConfig` の rate law field** | `Water` 1.5× / exposure decay 5 /s / 速度指数 1/1/0/2 は `pub const` (`WATER_PREFACTOR` / `EXPOSURE_DECAY_PER_S`) + module doc 表 | `velocity_exponent: f32` / `prefactor: f32` / `exposure_decay: f32` を `ErosionConfig` に追加 (全 pub field struct への追加 = `constructible_struct_adds_field` major) 既定は現 const 値 |
+| **`Carreau` の分数 flow index** | `half_exponent: i32` (整数) + `viscosity_with_index(γ̇, n)` で分数 n を評価 (1.2.0) | `flow_index: Fix128` に置換、`half_exponent` 削除 |
+| **`PhaseChangeConfig` 熱容量** | `latent_heat_*` は K 相当 (c_p = 1 正規化、1.2.0 enthalpy 法) | `heat_capacity: f32` 追加で J/kg 単位を受ける |
 
 ## v1.1.0 released 2026-09-15 (1.0.0 stable + 全 module bit-exact)
 

@@ -64,8 +64,39 @@ impl ZoneShape {
         }
     }
 
-    /// Depth of `point` below the zone's upper surface (positive when
-    /// submerged, zero when at or above the surface).
+    /// Signed depth of `point` below the zone's upper surface (negative when
+    /// the point is above it), or `None` when the point is outside the zone's
+    /// horizontal footprint / below its floor — i.e. cannot be touching the
+    /// fluid at all. Used by [`BuoyancyZone::submerged_fraction`].
+    #[must_use]
+    pub fn signed_depth_below_surface(&self, point: Vec3Fix) -> Option<Fix128> {
+        match self {
+            Self::Aabb { min, max } => {
+                if point.x < min.x || point.x > max.x || point.z < min.z || point.z > max.z {
+                    return None;
+                }
+                if point.y < min.y {
+                    return None;
+                }
+                Some(max.y - point.y)
+            }
+            Self::Sphere { centre, radius } => {
+                let dx = point.x - centre.x;
+                let dz = point.z - centre.z;
+                if dx * dx + dz * dz >= *radius * *radius {
+                    return None;
+                }
+                if point.y < centre.y - *radius {
+                    return None;
+                }
+                Some(centre.y + *radius - point.y)
+            }
+        }
+    }
+
+    /// Unsigned depth below the upper surface, `ZERO` when the point is not
+    /// inside the fluid (outside the footprint, above the surface or below
+    /// the floor).
     #[must_use]
     pub fn depth_below_surface(&self, point: Vec3Fix) -> Fix128 {
         match self {
@@ -78,8 +109,12 @@ impl ZoneShape {
                 {
                     return Fix128::ZERO;
                 }
-                let clamped_y = if point.y < min.y { min.y } else { point.y };
-                max.y - clamped_y
+                if point.y < min.y {
+                    // below the pool floor: not in the water (pre-1.2.0 clamped
+                    // to the floor and reported full depth)
+                    return Fix128::ZERO;
+                }
+                max.y - point.y
             }
             Self::Sphere { centre, radius } => {
                 let delta = point - *centre;
@@ -167,30 +202,39 @@ impl BuoyancyZone {
         buoyancy + linear_drag + quadratic_drag
     }
 
-    /// Approximate submerged fraction (`0..=1`) of a sphere of `radius`
-    /// centred at `position`.
+    /// Submerged volume fraction (`0..=1`) of a sphere of `radius` centred
+    /// at `position`: the exact spherical-cap ratio `h²(3r − h) / (4r³)` with
+    /// `h = clamp(d + r, 0, 2r)`, where `d` is the signed depth of the centre
+    /// below the zone's upper surface (negative above it).
     ///
-    /// The estimate is linear in depth of the sphere centre relative to
-    /// the zone's upper surface, capped at `1.0`. For AABB shapes the
-    /// centre must additionally lie inside the horizontal footprint;
-    /// for spheres the centre must lie inside the ball.
+    /// Continuous through the surface: a centre `r` above the surface gives
+    /// 0, at the surface ½, `r` below 1. Before 1.2.0 the fraction was the
+    /// linear estimate `(d + r) / 2r` (up to 9.4 % off the cap volume) and
+    /// jumped from 0 to ½ as the centre crossed the surface, so a body lighter
+    /// than half the fluid density could never settle
+    /// (`tests/engineering_oracles_fluid.rs`). For AABB zones the centre must
+    /// lie inside the horizontal footprint and above the floor; for sphere
+    /// zones inside the ball's horizontal extent.
     #[must_use]
     pub fn submerged_fraction(&self, position: Vec3Fix, radius: Fix128) -> Fix128 {
-        if radius.is_zero() {
+        if radius <= Fix128::ZERO {
             return Fix128::ZERO;
         }
-        let diameter = radius + radius;
-        let depth = self.shape.depth_below_surface(position);
-        if depth.is_zero() {
+        let Some(depth) = self.shape.signed_depth_below_surface(position) else {
+            return Fix128::ZERO;
+        };
+        let two_r = radius + radius;
+        let mut h = depth + radius;
+        if h <= Fix128::ZERO {
             return Fix128::ZERO;
         }
-        // fraction = clamp( (depth + radius) / diameter , 0, 1 )
-        let scaled = (depth + radius) / diameter;
-        if scaled > Fix128::ONE {
-            Fix128::ONE
-        } else {
-            scaled
+        if h >= two_r {
+            return Fix128::ONE;
         }
+        // cap volume / sphere volume = h²(3r − h) / (4 r³)
+        h = h.min(two_r);
+        let three_r_minus_h = Fix128::from_int(3) * radius - h;
+        (h * h * three_r_minus_h) / (Fix128::from_int(4) * radius * radius * radius)
     }
 }
 

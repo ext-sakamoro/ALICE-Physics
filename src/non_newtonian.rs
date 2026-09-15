@@ -20,12 +20,13 @@
 //!
 //! # Integer exponent restriction
 //!
-//! Fix128 has no fractional power; `n` is stored as an integer 1, 2, 3, or
-//! 4 (and 5 for very shear-thinning materials). For the classical
-//! polymer-melt `n ≈ 0.4`, use the Carreau model with a computed
-//! `(1 + (λγ̇)²)^((n-1)/2)` via integer Taylor expansion (implementation
-//! chooses `n_minus_1_int = -1` corresponding to `n = 0`, mildest shear
-//! thinning; refine per material).
+//! The power-law and Carreau structs store their exponent as an integer so
+//! that `Default`/`Eq` stay trivial: [`Carreau::half_exponent`] is `(n−1)/2`
+//! rounded to an integer, so `-1` is `n = −1` (steep thinning), `0` is
+//! Newtonian and `1` is `n = 3` (thickening). For the classical polymer-melt
+//! `n ≈ 0.4` use [`Carreau::viscosity_with_index`], which evaluates the
+//! fractional exponent exactly with [`Fix128::powf_pos`]; the integer field
+//! is kept for the fast path and for the `Eq`-derived `Default`.
 //!
 //! # References
 //!
@@ -76,8 +77,13 @@ impl PowerLaw {
         }
     }
 
-    /// Shear-thinning: `τ = K · γ̇^(1/n)` (represented internally as `1/γ̇^m`
-    /// where `m = n_int - 1`; used for `n < 1` values).
+    /// Shear-thinning: `τ = K · γ̇^(1/n)` with integer `n ≥ 2` (Ostwald–de Waele
+    /// with flow index `1/n < 1`; evaluated with [`Fix128::powf_pos`]).
+    ///
+    /// Before 1.2.0 the stress was computed as `K · γ̇ / γ̇ⁿ = K · γ̇^(1−n)`, a
+    /// *decreasing* flow curve (negative differential viscosity), not a
+    /// shear-thinning fluid whose stress still grows with shear rate
+    /// (`tests/engineering_oracles_fluid.rs`).
     #[must_use]
     pub fn shear_thinning(k: Fix128, n_int: u32) -> Self {
         Self {
@@ -99,11 +105,9 @@ impl PowerLaw {
             p = p * shear_rate_per_s;
         }
         if self.thinning {
-            // τ = K · γ̇ · (1 / γ̇^(m)) = K / γ̇^(m-1)
-            if p.is_zero() {
-                return Fix128::ZERO;
-            }
-            self.k * shear_rate_per_s / p
+            // τ = K · γ̇^(1/n)
+            let inv_n = Fix128::ONE / Fix128::from_int(i64::from(self.n_int));
+            self.k * shear_rate_per_s.powf_pos(inv_n)
         } else {
             self.k * p
         }
@@ -132,14 +136,41 @@ pub struct Carreau {
     pub eta_inf: Fix128,
     /// Time constant λ (s).
     pub lambda: Fix128,
-    /// Exponent difference `(n-1)/2` approximated by integer half-exponent.
-    /// Values > 0 give shear-thickening, < 0 shear-thinning. For n = 0.4
-    /// use `-1` (Newtonian regime + mild thinning).
+    /// Exponent difference `(n-1)/2` rounded to an integer: `0` is Newtonian,
+    /// `-1` is `n = −1` (steep shear-thinning), `1` is `n = 3`
+    /// (shear-thickening). Fractional indices such as the polymer-melt
+    /// `n = 0.4` are not representable here; use
+    /// [`Carreau::viscosity_with_index`] for those.
     pub half_exponent: i32,
 }
 
 impl Carreau {
-    /// Apparent viscosity at shear rate `γ̇` (Pa·s).
+    /// Apparent viscosity at shear rate `γ̇` (Pa·s) with the exact fractional
+    /// flow index `n` instead of the integer [`Carreau::half_exponent`]:
+    /// `η = η_∞ + (η_0 − η_∞) (1 + (λγ̇)²)^((n−1)/2)`.
+    ///
+    /// `n < 1` is shear-thinning (the factor is `1 / inside^((1−n)/2)`),
+    /// `n > 1` shear-thickening, `n = 1` Newtonian. Deterministic: the power
+    /// is [`Fix128::powf_pos`] (24 fractional bits of the exponent).
+    #[must_use]
+    pub fn viscosity_with_index(&self, shear_rate_per_s: Fix128, n: Fix128) -> Fix128 {
+        let l_gamma = self.lambda * shear_rate_per_s;
+        let inside = Fix128::ONE + l_gamma * l_gamma;
+        let half = Fix128::from_int(2);
+        if n < Fix128::ONE {
+            let factor = inside.powf_pos((Fix128::ONE - n) / half);
+            if factor.is_zero() {
+                return self.eta_inf;
+            }
+            self.eta_inf + (self.eta_zero - self.eta_inf) / factor
+        } else {
+            let factor = inside.powf_pos((n - Fix128::ONE) / half);
+            self.eta_inf + (self.eta_zero - self.eta_inf) * factor
+        }
+    }
+
+    /// Apparent viscosity at shear rate `γ̇` (Pa·s) using the integer
+    /// [`Carreau::half_exponent`] (repeated multiplication, no root).
     #[must_use]
     pub fn viscosity(&self, shear_rate_per_s: Fix128) -> Fix128 {
         let l_gamma = self.lambda * shear_rate_per_s;

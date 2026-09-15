@@ -351,14 +351,26 @@ impl CfdSolver {
         }
         let coeff = nu * dt_s / (self.grid.dx * self.grid.dx);
 
-        // u faces
+        // u faces (all nx + 1 of them; the boundary faces i = 0 / nx use a
+        // zero-gradient mirror like every other boundary. Before 1.2.0 they were
+        // skipped and kept their old value while the interior diffused, which
+        // created wall divergence → spurious pressure and a secondary flow up to
+        // 10 % of a plane shear profile; `tests/engineering_oracles_fluid.rs`)
         let mut u_next = self.grid.u.clone();
         for k in 0..self.grid.nz {
             for j in 0..self.grid.ny {
-                for i in 1..self.grid.nx {
+                for i in 0..=self.grid.nx {
                     let center = self.grid.u(i, j, k);
-                    let left = self.grid.u(i - 1, j, k);
-                    let right = self.grid.u(i + 1, j, k);
+                    let left = if i > 0 {
+                        self.grid.u(i - 1, j, k)
+                    } else {
+                        center
+                    };
+                    let right = if i < self.grid.nx {
+                        self.grid.u(i + 1, j, k)
+                    } else {
+                        center
+                    };
                     let down = if j > 0 {
                         self.grid.u(i, j - 1, k)
                     } else {
@@ -391,7 +403,7 @@ impl CfdSolver {
         // v faces
         let mut v_next = self.grid.v.clone();
         for k in 0..self.grid.nz {
-            for j in 1..self.grid.ny {
+            for j in 0..=self.grid.ny {
                 for i in 0..self.grid.nx {
                     let center = self.grid.v(i, j, k);
                     let left = if i > 0 {
@@ -404,8 +416,16 @@ impl CfdSolver {
                     } else {
                         center
                     };
-                    let down = self.grid.v(i, j - 1, k);
-                    let up = self.grid.v(i, j + 1, k);
+                    let down = if j > 0 {
+                        self.grid.v(i, j - 1, k)
+                    } else {
+                        center
+                    };
+                    let up = if j < self.grid.ny {
+                        self.grid.v(i, j + 1, k)
+                    } else {
+                        center
+                    };
                     let back = if k > 0 {
                         self.grid.v(i, j, k - 1)
                     } else {
@@ -427,7 +447,7 @@ impl CfdSolver {
 
         // w faces analogous
         let mut w_next = self.grid.w.clone();
-        for k in 1..self.grid.nz {
+        for k in 0..=self.grid.nz {
             for j in 0..self.grid.ny {
                 for i in 0..self.grid.nx {
                     let center = self.grid.w(i, j, k);
@@ -451,8 +471,16 @@ impl CfdSolver {
                     } else {
                         center
                     };
-                    let back = self.grid.w(i, j, k - 1);
-                    let fwd = self.grid.w(i, j, k + 1);
+                    let back = if k > 0 {
+                        self.grid.w(i, j, k - 1)
+                    } else {
+                        center
+                    };
+                    let fwd = if k < self.grid.nz {
+                        self.grid.w(i, j, k + 1)
+                    } else {
+                        center
+                    };
                     let laplacian =
                         left + right + down + up + back + fwd - center * Fix128::from_int(6);
                     let ix = i + self.grid.nx * (j + self.grid.ny * k);

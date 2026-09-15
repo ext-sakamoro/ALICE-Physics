@@ -8,8 +8,23 @@
 //!
 //! # Physics Model
 //!
-//! Erosion rate = velocity × `hardness_factor` × `contact_area` × time
-//! Accumulated erosion increases SDF distance (surface recedes).
+//! Empirical rate law, `depth += rate · (1 − hardness) · vⁿ · exposure · dt`,
+//! capped at `max_depth`; accumulated erosion increases the SDF distance
+//! (surface recedes). The per-type constants are fixed in this version:
+//!
+//! | type | `n` | prefactor | note |
+//! |---|---|---|---|
+//! | `Wind` | 1 | 1 | linear in flow speed |
+//! | `Water` | 1 | 1.5 | water carries more momentum per unit speed |
+//! | `Chemical` | 0 | 1 | speed-independent attack |
+//! | `Ablation` | 2 | 1 | kinetic-energy flux |
+//!
+//! Solid-particle erosion measurements give `n ≈ 2–3` (Finnie 1960,
+//! Bitter 1963), so `Wind` / `Water` are game-tuned rather than validated;
+//! `exposure` is re-read every frame and decays with a fixed `5 /s` when the
+//! caller stops supplying it. Making `n`, the prefactor and the exposure
+//! decay configurable adds fields to [`ErosionConfig`] and is scheduled for
+//! 2.0 (see `docs/ROADMAP.md`).
 //!
 //! Author: Moroya Sakamoto
 
@@ -168,12 +183,20 @@ impl ErosionModifier {
 
         match self.config.erosion_type {
             ErosionType::Wind => base * speed * exposure,
-            ErosionType::Water => base * speed * exposure * 1.5, // Water is more effective
-            ErosionType::Chemical => base * exposure,            // Speed-independent
-            ErosionType::Ablation => base * speed * speed * exposure, // v^2 dependent
+            ErosionType::Water => base * speed * exposure * WATER_PREFACTOR,
+            ErosionType::Chemical => base * exposure, // speed-independent
+            ErosionType::Ablation => base * speed * speed * exposure, // v² (kinetic flux)
         }
     }
 }
+
+/// Water erosion prefactor relative to wind at the same speed (module doc
+/// table).
+pub const WATER_PREFACTOR: f32 = 1.5;
+
+/// Exposure decay rate (1/s) applied every `update` when the caller does not
+/// re-supply exposure.
+pub const EXPOSURE_DECAY_PER_S: f32 = 5.0;
 
 impl PhysicsModifier for ErosionModifier {
     #[inline]
@@ -208,8 +231,9 @@ impl PhysicsModifier for ErosionModifier {
             self.erosion_depth.diffuse(dt, self.config.smoothing);
         }
 
-        // Decay exposure (needs to be re-applied each frame)
-        self.exposure.decay(5.0, dt);
+        // Decay exposure (needs to be re-applied each frame); the rate is
+        // fixed until `ErosionConfig` gains an `exposure_decay` field (2.0)
+        self.exposure.decay(EXPOSURE_DECAY_PER_S, dt);
     }
 
     fn name(&self) -> &'static str {

@@ -59,26 +59,26 @@ impl Jonswap {
         two_pi / self.peak_period_s
     }
 
-    /// Spectral density `S(ω)` (m²·s / rad) at angular frequency `ω`.
+    /// Spectral density `S(ω)` (m²·s / rad) at angular frequency `ω` — the
+    /// JONSWAP form (Hasselmann et al. 1973; Chakrabarti 1987 eq. 4.29):
+    /// `S(ω) = 5/16 · H_s²·ω_p⁴/ω⁵ · exp(−5/4·(ω_p/ω)⁴) · γ^r`,
+    /// `r = exp(−(ω−ω_p)²/(2·σ²·ω_p²))`, `σ = 0.07` for `ω ≤ ω_p`, `0.09` above.
     ///
-    /// Simplified form (Chakrabarti 1987):
-    /// `S(ω) = 5/16 · (H_s²·ω_p⁴/ω⁵) · exp(-5/4·(ω_p/ω)⁴) · γ^p`
-    /// where `p = exp(-(ω−ω_p)²/(2·σ²·ω_p²))` and `σ = 0.07` (`ω<ω_p`),
-    /// `σ = 0.09` otherwise.
-    ///
-    /// This module returns the plain Pierson-Moskowitz spectrum (γ=1
-    /// contribution zero) for numerical stability; peak enhancement is
-    /// approximated via a fixed multiplier `γ^0.5`.
+    /// `γ = 1` reduces to Pierson–Moskowitz. The spectrum peaks at `ω_p`,
+    /// vanishes for `ω → 0` and decays as `ω⁻⁵`. Before 1.2.0 the module
+    /// returned `5/16·H_s²·ω_p⁴/ω⁵·√γ` without the exponential cut-off or the
+    /// peak-enhancement shape — monotone in ω, unbounded as `ω → 0`, so the
+    /// zeroth moment diverged and `H_s` could not be recovered from it
+    /// (`tests/engineering_oracles_fluid.rs`).
     #[must_use]
     pub fn spectrum_density(&self, omega_rad_per_s: Fix128) -> Fix128 {
-        if omega_rad_per_s.is_zero() {
+        if omega_rad_per_s <= Fix128::ZERO {
             return Fix128::ZERO;
         }
         let omega_p = self.peak_omega();
         if omega_p.is_zero() {
             return Fix128::ZERO;
         }
-        // H_s² · ω_p⁴ / ω⁵
         let hs_sq = self.significant_wave_height_m * self.significant_wave_height_m;
         let op4 = omega_p * omega_p * omega_p * omega_p;
         let o5 =
@@ -86,15 +86,30 @@ impl Jonswap {
         if o5.is_zero() {
             return Fix128::ZERO;
         }
-        // Coefficient 5/16 approximated
-        let coeff = Fix128::from_ratio(5, 16);
-        // Exponential exp(-5/4 · (ω_p/ω)⁴) via integer power + saturation
-        // For simplicity use the plain PM form without the exp — under-
-        // predicts by ~2× but is monotone and stable in Fix128.
-        let simplified = coeff * hs_sq * op4 / o5;
-        // Peak enhancement: use √γ multiplier for stability
-        let sqrt_gamma = self.gamma.sqrt();
-        simplified * sqrt_gamma
+        let pm = Fix128::from_ratio(5, 16) * hs_sq * op4 / o5;
+        // exp(−5/4 (ω_p/ω)⁴)
+        let ratio = omega_p / omega_rad_per_s;
+        let ratio4 = ratio * ratio * ratio * ratio;
+        let cutoff = (Fix128::from_ratio(-5, 4) * ratio4).exp();
+        // γ^r, r = exp(−(ω − ω_p)² / (2 σ² ω_p²))
+        let sigma = if omega_rad_per_s <= omega_p {
+            Fix128::from_ratio(7, 100)
+        } else {
+            Fix128::from_ratio(9, 100)
+        };
+        let d = omega_rad_per_s - omega_p;
+        let denom = Fix128::from_int(2) * sigma * sigma * omega_p * omega_p;
+        let r = if denom.is_zero() {
+            Fix128::ZERO
+        } else {
+            (-(d * d) / denom).exp()
+        };
+        let enhancement = if self.gamma <= Fix128::ZERO {
+            Fix128::ONE
+        } else {
+            self.gamma.powf_pos(r)
+        };
+        pm * cutoff * enhancement
     }
 }
 

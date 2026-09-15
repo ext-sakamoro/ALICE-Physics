@@ -427,7 +427,16 @@ pub(crate) fn build_islands<B: BodyLike, C: ContactLike, J: JointLike>(
         island.contacts.sort_unstable();
         island.joints.sort_unstable();
     }
-    islands.sort_by_key(|i| i.bodies.first().copied().unwrap_or(usize::MAX));
+    // Full lexicographic key: two islands can share their smallest body
+    // index (a static body touching two otherwise separate islands), and
+    // `buckets` is a HashMap, so a first-body-only key would leave the tie
+    // order to the hasher.
+    islands.sort_by(|x, y| {
+        x.bodies
+            .cmp(&y.bodies)
+            .then_with(|| x.contacts.cmp(&y.contacts))
+            .then_with(|| x.joints.cmp(&y.joints))
+    });
     Ok(islands)
 }
 
@@ -1627,5 +1636,295 @@ mod tests {
         assert_eq!(via_joint.len(), 2);
         assert_eq!(via_joint[0].joints, vec![0]);
         assert_eq!(via_joint[1].joints, vec![1]);
+    }
+
+    // ---- mutation-score tests batch 7 (2026-09-15、cargo-mutants missed 分) ----
+
+    /// `ImpulseCache::is_empty` は entry ありで false (`→ true` 変異を検出)
+    #[test]
+    fn impulse_cache_is_empty_is_false_when_populated() {
+        let mut c = ImpulseCache::new();
+        assert!(c.is_empty());
+        c.set(
+            3,
+            CachedImpulse {
+                normal: Fix128::ONE,
+                tangent1: Fix128::ZERO,
+                tangent2: Fix128::ZERO,
+            },
+        );
+        assert!(!c.is_empty());
+        assert_eq!(c.len(), 1);
+        // take で live 化 → sweep 後も残り、非空のまま
+        let _ = c.take(3);
+        c.sweep();
+        assert!(!c.is_empty());
+        c.clear();
+        assert!(c.is_empty());
+    }
+
+    /// union by rank の `rank[ri] > rank[rj]` 分岐: ri が深い時は rj を ri の下に
+    /// 吊るし rank は増えない (`<` 変異だと同 rank 分岐に落ちて rank が 2 になる)
+    #[test]
+    fn union_find_deeper_left_tree_absorbs_without_rank_growth() {
+        let mut uf = UnionFind::new(5);
+        assert!(uf.union(0, 1)); // {0,1} rank 1、root 0
+        assert_eq!(uf.find(0), 0);
+        assert_eq!(uf.rank[0], 1);
+        // ri = 0 (rank 1) > rj = 2 (rank 0)
+        assert!(uf.union(0, 2));
+        assert_eq!(uf.parent[2], 0, "浅い木 2 が深い木 0 の直下");
+        assert_eq!(uf.rank[0], 1, "rank 不変");
+        assert_eq!(uf.rank[2], 0);
+        // 逆向き: ri = 3 (rank 0) < rj = 0 (rank 1) → 3 が 0 の下
+        assert!(uf.union(3, 0));
+        assert_eq!(uf.parent[3], 0);
+        assert_eq!(uf.rank[0], 1);
+        // 同 rank: rank 1 同士の merge で 2 に
+        let mut q = UnionFind::new(4);
+        q.union(0, 1);
+        q.union(2, 3);
+        assert!(q.union(1, 3));
+        let qr = q.find(0);
+        assert_eq!(q.rank[qr], 2);
+    }
+
+    /// static body は同一 island 内で複数 contact に触れても 1 回だけ列挙される
+    /// (`!dyn && !contains` の `||` 変異は既収録の static を再 push して重複する)
+    #[test]
+    fn islands_static_body_listed_once_across_multiple_contacts() {
+        let bodies = [
+            MockBody {
+                id: 0,
+                dynamic: false,
+            },
+            MockBody {
+                id: 1,
+                dynamic: true,
+            },
+            MockBody {
+                id: 2,
+                dynamic: true,
+            },
+        ];
+        let joints: [MockJoint; 0] = [];
+        // static が a 側に 2 回
+        let as_a = [
+            MockContact { id: 1, a: 0, b: 1 },
+            MockContact { id: 2, a: 0, b: 2 },
+            MockContact { id: 3, a: 1, b: 2 },
+        ];
+        let islands = build_islands(&bodies, &as_a, &joints).expect("valid");
+        assert_eq!(islands.len(), 1);
+        assert_eq!(islands[0].bodies, vec![0, 1, 2]);
+        assert_eq!(islands[0].contacts, vec![0, 1, 2]);
+        // static が b 側に 2 回
+        let as_b = [
+            MockContact { id: 1, a: 1, b: 0 },
+            MockContact { id: 2, a: 2, b: 0 },
+            MockContact { id: 3, a: 1, b: 2 },
+        ];
+        let islands = build_islands(&bodies, &as_b, &joints).expect("valid");
+        assert_eq!(islands.len(), 1);
+        assert_eq!(islands[0].bodies, vec![0, 1, 2]);
+        assert_eq!(islands[0].contacts, vec![0, 1, 2]);
+    }
+
+    /// Island order when several islands share their smallest body index: a
+    /// static ground (body 0) touched by three separate dynamic bodies gives
+    /// three islands whose first body is 0. The order must be the full
+    /// lexicographic order of the body lists, whatever the HashMap yields.
+    #[test]
+    fn islands_sharing_a_static_first_body_are_ordered_lexicographically() {
+        let mut bodies = vec![MockBody {
+            id: 0,
+            dynamic: false,
+        }];
+        for id in 1..=8u64 {
+            bodies.push(MockBody { id, dynamic: true });
+        }
+        let joints: [MockJoint; 0] = [];
+        // ground touches 8, 3 and 5 (deliberately not ascending)
+        let contacts = [
+            MockContact { id: 1, a: 0, b: 8 },
+            MockContact { id: 2, a: 3, b: 0 },
+            MockContact { id: 3, a: 0, b: 5 },
+        ];
+        for _ in 0..16 {
+            let islands = build_islands(&bodies, &contacts, &joints).expect("valid");
+            // isolated dynamic bodies (1, 2, 4, 6, 7) each form a singleton
+            // island after the three ground islands
+            let order: Vec<Vec<usize>> = islands.iter().map(|i| i.bodies.clone()).collect();
+            assert_eq!(
+                order,
+                vec![
+                    vec![0, 3],
+                    vec![0, 5],
+                    vec![0, 8],
+                    vec![1],
+                    vec![2],
+                    vec![4],
+                    vec![6],
+                    vec![7]
+                ]
+            );
+            assert_eq!(islands[0].contacts, vec![1]);
+            assert_eq!(islands[1].contacts, vec![2]);
+            assert_eq!(islands[2].contacts, vec![0]);
+        }
+    }
+
+    /// joint 経由の static 添付: 1 回だけ列挙 (`||` 変異 → 重複) かつ必ず添付される
+    /// (`!` 削除変異 → static b が island に入らない)
+    #[test]
+    fn islands_static_body_attached_once_via_joints() {
+        let bodies = [
+            MockBody {
+                id: 0,
+                dynamic: false,
+            },
+            MockBody {
+                id: 1,
+                dynamic: true,
+            },
+            MockBody {
+                id: 2,
+                dynamic: true,
+            },
+        ];
+        let contacts: [MockContact; 0] = [];
+        // static が a 側に 2 回
+        let as_a = [
+            MockJoint { a: 0, b: 1 },
+            MockJoint { a: 0, b: 2 },
+            MockJoint { a: 1, b: 2 },
+        ];
+        let islands = build_islands(&bodies, &contacts, &as_a).expect("valid");
+        assert_eq!(islands.len(), 1);
+        assert_eq!(islands[0].bodies, vec![0, 1, 2]);
+        assert_eq!(islands[0].joints, vec![0, 1, 2]);
+        // static が b 側に 2 回
+        let as_b = [
+            MockJoint { a: 1, b: 0 },
+            MockJoint { a: 2, b: 0 },
+            MockJoint { a: 1, b: 2 },
+        ];
+        let islands = build_islands(&bodies, &contacts, &as_b).expect("valid");
+        assert_eq!(islands.len(), 1);
+        assert_eq!(islands[0].bodies, vec![0, 1, 2]);
+        assert_eq!(islands[0].joints, vec![0, 1, 2]);
+        // 単一 joint (dyn a、static b): static b が添付される
+        let single = [MockJoint { a: 1, b: 0 }];
+        let islands = build_islands(&bodies, &contacts, &single).expect("valid");
+        assert_eq!(islands.len(), 2);
+        assert_eq!(islands[0].bodies, vec![0, 1]);
+        assert_eq!(islands[0].joints, vec![0]);
+        assert_eq!(islands[1].bodies, vec![2]);
+        assert!(islands[1].joints.is_empty());
+        // dyn-static joint は 2 つの dyn を融合しない (`&&` → `||` 変異は union してしまう)
+        // (両 island の bodies.first() が static 0 で同点 → 出力順は HashMap 依存、bodies 全体で比較)
+        let bridge = [MockJoint { a: 1, b: 0 }, MockJoint { a: 0, b: 2 }];
+        let mut islands = build_islands(&bodies, &contacts, &bridge).expect("valid");
+        islands.sort_by(|x, y| x.bodies.cmp(&y.bodies));
+        assert_eq!(islands.len(), 2);
+        assert_eq!(islands[0].bodies, vec![0, 1]);
+        assert_eq!(islands[0].joints, vec![0]);
+        assert_eq!(islands[1].bodies, vec![0, 2]);
+        assert_eq!(islands[1].joints, vec![1]);
+    }
+
+    /// adapter accessor が下層 constraint の index / 注入 id をそのまま返す
+    /// (`→ 0` / `→ 1` 変異を index 2 / 3、id 5 で検出)
+    #[test]
+    fn adapter_refs_forward_body_indices_and_ids() {
+        use crate::collider::Contact;
+        use crate::math::Vec3Fix;
+        let contact = ContactConstraint::new(
+            2,
+            3,
+            Contact {
+                depth: Fix128::ZERO,
+                normal: Vec3Fix::UNIT_Y,
+                point_a: Vec3Fix::ZERO,
+                point_b: Vec3Fix::ZERO,
+            },
+        );
+        let cref = ContactRef {
+            contact: &contact,
+            id: 5,
+        };
+        assert_eq!(ContactLike::body_a(&cref), 2);
+        assert_eq!(ContactLike::body_b(&cref), 3);
+        assert_eq!(ContactLike::stable_id(&cref), 5);
+        let swapped = ContactConstraint::new(
+            7,
+            4,
+            Contact {
+                depth: Fix128::ZERO,
+                normal: Vec3Fix::UNIT_Y,
+                point_a: Vec3Fix::ZERO,
+                point_b: Vec3Fix::ZERO,
+            },
+        );
+        let sref = ContactRef {
+            contact: &swapped,
+            id: 9,
+        };
+        assert_eq!(ContactLike::body_a(&sref), 7);
+        assert_eq!(ContactLike::body_b(&sref), 4);
+        assert_eq!(ContactLike::stable_id(&sref), 9);
+        let joint = DistanceConstraint::new(2, 3, Vec3Fix::ZERO, Vec3Fix::ZERO, Fix128::ONE);
+        let jref = DistanceRef { joint: &joint };
+        assert_eq!(JointLike::body_a(&jref), 2);
+        assert_eq!(JointLike::body_b(&jref), 3);
+        let joint2 = DistanceConstraint::new(6, 8, Vec3Fix::ZERO, Vec3Fix::ZERO, Fix128::ONE);
+        let jref2 = DistanceRef { joint: &joint2 };
+        assert_eq!(JointLike::body_a(&jref2), 6);
+        assert_eq!(JointLike::body_b(&jref2), 8);
+        // build_islands 経由でも index が正しく伝わる (body 2-3 が結合)
+        let bodies: Vec<RigidBody> = (0..4)
+            .map(|_| RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE))
+            .collect();
+        let brefs: Vec<BodyRef<'_>> = bodies
+            .iter()
+            .enumerate()
+            .map(|(i, b)| BodyRef {
+                body: b,
+                id: i as u64,
+            })
+            .collect();
+        let islands = build_islands(&brefs, &[cref], &[jref]).expect("valid");
+        assert_eq!(islands.len(), 3);
+        assert_eq!(islands[2].bodies, vec![2, 3]);
+        assert_eq!(islands[2].contacts, vec![0]);
+        assert_eq!(islands[2].joints, vec![0]);
+    }
+
+    /// `par_dispatch_islands` は全 island に対して closure を 1 回ずつ呼ぶ
+    /// (`→ ()` 変異は 0 回)
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn par_dispatch_islands_runs_closure_for_each_island_exactly_once() {
+        use std::sync::Mutex;
+        let islands: Vec<Island> = (0..7)
+            .map(|i| Island {
+                bodies: vec![i * 2, i * 2 + 1],
+                contacts: vec![i],
+                joints: vec![],
+            })
+            .collect();
+        let seen = Mutex::new(Vec::new());
+        par_dispatch_islands(&islands, |isl| {
+            seen.lock().expect("no poison").push(isl.contacts[0]);
+        });
+        let mut got = seen.into_inner().expect("no poison");
+        got.sort_unstable();
+        assert_eq!(got, (0..7).collect::<Vec<_>>());
+        // 空 slice は 0 回
+        let none = Mutex::new(0usize);
+        par_dispatch_islands(&[], |_| {
+            *none.lock().expect("no poison") += 1;
+        });
+        assert_eq!(none.into_inner().expect("no poison"), 0);
     }
 }
