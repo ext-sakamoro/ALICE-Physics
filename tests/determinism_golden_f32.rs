@@ -637,9 +637,11 @@ fn golden_sdf_soft_family() {
 // ---------------------------------------------------------------------------
 // 17-22. Modifier family: thermal / transient_thermal / phase_change / erosion /
 //        pressure / sim_modifier (composed)
+// Re-pinned 1.2.0: phase_change uses the enthalpy method (plateau at T_m,
+// T + latent conserved) and a mass-conserving liquid flow transfer.
 // ---------------------------------------------------------------------------
 
-const GOLDEN_MODIFIERS: &str = "d91511990ca5cbb155ab5368da16a6c0627f9b0cb741b3a5c051e4c9633f0f29";
+const GOLDEN_MODIFIERS: &str = "7668fb6b44e947bb4eae14fdd93d2128ae0f713f8754d83ba7da0098918fe7ab";
 
 #[test]
 fn golden_modifier_family() {
@@ -737,9 +739,11 @@ fn golden_modifier_family() {
 // ---------------------------------------------------------------------------
 // 23-26. Engineering scalars: aeroelasticity / piezoelectric / acoustic_wave /
 //        convex_decompose
+// Re-pinned 1.2.0: aeroelasticity VIV lift oscillator gains the ε·Ω_f
+// factor of the Facchinetti wake-oscillator equation.
 // ---------------------------------------------------------------------------
 
-const GOLDEN_ENGINEERING: &str = "b7e637efa9a6a0f3ced6b94239afd71653f597d90c175a62fea474cf7438d397";
+const GOLDEN_ENGINEERING: &str = "a8ea86787d7a12469796eac680a8cb8f8f69655d1c3816ac5cfbc82b2e7012cb";
 
 #[test]
 fn golden_engineering_family() {

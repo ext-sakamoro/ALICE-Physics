@@ -696,20 +696,19 @@ fn linf_norm(v: &[Fix128]) -> Fix128 {
 fn split(p_over_dx: Fix128, axis_offset: Fix128) -> (usize, Fix128) {
     // Adjust for staggering (subtract offset so origin aligns with face 0).
     let shifted = p_over_dx - axis_offset;
-    let mut base = shifted.hi;
-    // Convert `.lo` (raw fractional bits) to a Fix128 in [0, 1)
-    let frac_lo = shifted.lo;
-    // Negative shifted values: rust "hi" is floor toward negative infinity? No,
-    // Fix128.hi is signed integer part but truncation is toward zero for
-    // positive; for negative it's slightly different. Handle by explicit floor:
-    if shifted.is_negative() && frac_lo != 0 {
-        base -= 1;
-    }
-    let frac = Fix128 { hi: 0, lo: frac_lo };
-    if base < 0 {
+    // Fix128 is two's-complement I64F64: `hi` is already floor(shifted) and
+    // `lo` the non-negative fractional part in [0, 1), for negative values
+    // too. Anything left of face 0 clamps to the first face.
+    if shifted.hi < 0 {
         (0, Fix128::ZERO)
     } else {
-        (base as usize, frac)
+        (
+            shifted.hi as usize,
+            Fix128 {
+                hi: 0,
+                lo: shifted.lo,
+            },
+        )
     }
 }
 

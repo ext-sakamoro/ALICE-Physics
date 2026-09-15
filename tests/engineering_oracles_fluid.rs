@@ -131,35 +131,43 @@ fn cfd_solver_shear_mode_decays_at_the_viscous_rate() {
         "run is not in the useful decay range: {decay}"
     );
 
-    let centre = nx / 2;
+    // 1.2.0: the boundary faces diffuse too (zero-gradient mirror), so the
+    // shear profile is uniform in x — check the wall column (i = 0) and the
+    // centre column against the same closed form; before 1.2.0 the wall column
+    // was 27 % off and drove a secondary v flow of ~10 % of A.
     let mut worst = 0.0f64;
     let mut mean = 0.0f64;
-    for j in 0..ny {
-        let got = solver.grid.u(centre, j, 0).to_f64();
-        let want = amp * (PI * (j as f64 + 0.5) / ny as f64).cos() * decay;
-        worst = worst.max((got - want).abs());
-        mean += got;
+    for i in [0usize, nx / 2, nx] {
+        for j in 0..ny {
+            let got = solver.grid.u(i, j, 0).to_f64();
+            let want = amp * (PI * (j as f64 + 0.5) / ny as f64).cos() * decay;
+            worst = worst.max((got - want).abs());
+            if i == nx / 2 {
+                mean += got;
+            }
+        }
     }
     mean /= ny as f64;
     // discrete decay (1 − 4 r sin²(π dx / 2L))^n vs exp(−ν π² t / L²) differ by
-    // 0.03 % here; 1 % of the mode amplitude is the stated tolerance (the
-    // residual boundary contamination measured at this column is ≈ 0.1 %).
+    // 0.03 % here; 0.5 % of the mode amplitude covers it at every column
     assert!(
-        worst < 0.01 * amp,
-        "shear mode max error {worst:.3e} m/s (1 % of A = {:.1e})",
-        0.01 * amp
+        worst < 0.005 * amp,
+        "shear mode max error {worst:.3e} m/s (0.5 % of A = {:.1e})",
+        0.005 * amp
     );
     // zero-flux walls conserve the momentum of the column (mode has zero mean)
     assert!(mean.abs() < 1e-4 * amp, "column mean drifted to {mean:.3e}");
-    // the secondary flow driven by the frozen boundary strip must not reach
-    // the centre: |v| there stays below 1 % of the shear amplitude, and w
-    // (no z variation anywhere) stays at rounding level
-    let v_centre = (0..=ny)
-        .map(|j| solver.grid.v(centre, j, 0).to_f64().abs())
+    // a pure shear mode drives no secondary flow anywhere: |v| stays at the
+    // level of the divergence-projection rounding
+    let v_max = solver
+        .grid
+        .v
+        .iter()
+        .map(|v| v.to_f64().abs())
         .fold(0.0, f64::max);
     assert!(
-        v_centre < 0.01 * amp,
-        "secondary v at centre {v_centre:.3e}"
+        v_max < 1e-3 * amp,
+        "secondary v {v_max:.3e} (should be rounding only)"
     );
     let w_max = solver
         .grid
@@ -500,8 +508,37 @@ fn buoyancy_zone_fully_submerged_sphere_matches_archimedes() {
         zone.submerged_fraction(Vec3Fix::from_int(0, -1, 0), r),
         Fix128::ONE
     );
-    // the crate's linear estimate is exact at half submersion: h = r → ½
-    // (exact cap volume h²(3r − h)/(4r³) = ½ too)
+    // 1.2.0: exact spherical cap h²(3r − h)/(4r³) — centre r above the surface
+    // → 0, at r/2 above → h = r/2 → (1/4)(5/2)/4 = 5/32, at the surface → ½,
+    // r/2 below → h = 3r/2 → (9/4)(3/2)/4 = 27/32; continuous through the surface
+    for (y, want) in [(1.0f64, 0.0f64), (0.5, 5.0 / 32.0), (-0.5, 27.0 / 32.0)] {
+        let got = zone
+            .submerged_fraction(
+                Vec3Fix::new(Fix128::ZERO, Fix128::from_f64(y), Fix128::ZERO),
+                r,
+            )
+            .to_f64();
+        assert!(
+            (got - want).abs() < 1e-9,
+            "centre y = {y}: fraction {got}, cap {want}"
+        );
+    }
+    let just_above = zone
+        .submerged_fraction(
+            Vec3Fix::new(Fix128::ZERO, Fix128::from_ratio(1, 1_000_000), Fix128::ZERO),
+            r,
+        )
+        .to_f64();
+    assert!(
+        (just_above - 0.5).abs() < 1e-5,
+        "no jump at the surface: {just_above}"
+    );
+    // below the pool floor there is no water
+    assert_eq!(
+        zone.submerged_fraction(Vec3Fix::from_int(0, -12, 0), r),
+        Fix128::ZERO
+    );
+    // at half submersion the cap is exactly ½
     let half = zone.submerged_fraction(
         Vec3Fix::new(
             Fix128::ZERO,
@@ -610,21 +647,34 @@ fn compressible_isentropic_stagnation_relations() {
     let p_half = stagnation_pressure_ratio(&air, Fix128::from_ratio(1, 2)).to_f64();
     let p_one = stagnation_pressure_ratio(&air, Fix128::ONE).to_f64();
     assert!(p_one > p_half && p_half > 1.0, "p₀/p must grow with M");
-    // Anderson Table A.1: p₀/p = 1.1862 at M = 0.5, 1.8929 at M = 1.
-    // What the crate computes is (T₀/T)⁴ (documented "< 5 % for M ≤ 2"):
+    // Anderson Table A.1: p₀/p = 1.1862 at M = 0.5, 1.8929 at M = 1, 7.824 at M = 2
+    // (1.2.0: exact γ/(γ−1) exponent; before, (T₀/T)⁴ was 9.5 % high at M = 1)
     let exact_half = 1.05f64.powf(3.5);
     let exact_one = 1.2f64.powf(3.5);
+    let exact_two = 1.8f64.powf(3.5);
     assert!(
-        rel_err(p_half, exact_half) < 0.05,
-        "p₀/p(M=0.5) = {p_half} vs {exact_half} — outside the documented 5 %"
+        rel_err(p_half, exact_half) < 1e-6,
+        "p₀/p(M=0.5) = {p_half} vs {exact_half}"
     );
-    // At M = 1 the integer-exponent substitution is already 9.5 % off
-    // (2.0736 vs 1.8929) — recorded here as the measured deviation so the
-    // number is visible in CI logs, not asserted against 5 %.
-    let dev_one = rel_err(p_one, exact_one);
     assert!(
-        dev_one > 0.05,
-        "documented 5 % bound would hold at M = 1: {dev_one}"
+        rel_err(p_one, exact_one) < 1e-6,
+        "p₀/p(M=1) = {p_one} vs {exact_one}"
+    );
+    let p_two = stagnation_pressure_ratio(&air, Fix128::from_int(2)).to_f64();
+    assert!(
+        rel_err(p_two, exact_two) < 1e-6,
+        "p₀/p(M=2) = {p_two} vs {exact_two}"
+    );
+    // monatomic gas: γ = 5/3 → exponent 2.5 (the old fixed 4 was 22 % high at M = 1)
+    let helium = IdealGas {
+        gas_constant: Fix128::from_int(2077),
+        gamma: Fix128::from_ratio(5, 3),
+    };
+    let he_one = stagnation_pressure_ratio(&helium, Fix128::ONE).to_f64();
+    let he_exact = (1.0 + (5.0 / 3.0 - 1.0) / 2.0f64).powf(2.5);
+    assert!(
+        rel_err(he_one, he_exact) < 1e-6,
+        "He p₀/p(M=1) = {he_one} vs {he_exact}"
     );
     // Riemann invariants J± = u ± 2a/(γ−1) (Anderson eq. 7.66)
     let (jp, jm) = riemann_invariants(&air, Fix128::from_int(100), Fix128::from_int(340));
@@ -683,11 +733,30 @@ fn non_newtonian_bingham_herschel_bulkley_and_power_law_closed_forms() {
         newton.apparent_viscosity(Fix128::from_int(7)),
         Fix128::from_ratio(1, 1000)
     );
+    // shear-thinning Ostwald–de Waele τ = K γ̇^(1/n) (Chhabra & Richardson eq. 1.4,
+    // flow index 1/n < 1): K = 2, n = 2 → τ(4) = 4, τ(9) = 6, τ(16) = 8 — the stress
+    // still GROWS with shear rate while the apparent viscosity K γ̇^(1/n − 1) falls
+    // (1.2.0: the previous code returned K γ̇^(1−n), a decreasing flow curve)
+    let thinning = PowerLaw::shear_thinning(Fix128::from_int(2), 2);
+    for (g, want) in [(4i64, 4.0f64), (9, 6.0), (16, 8.0), (100, 20.0)] {
+        let tau = thinning.stress(Fix128::from_int(g)).to_f64();
+        assert!((tau - want).abs() < 1e-6, "τ({g}) = {tau}, want {want}");
+    }
+    let eta4 = thinning.apparent_viscosity(Fix128::from_int(4)).to_f64();
+    let eta16 = thinning.apparent_viscosity(Fix128::from_int(16)).to_f64();
+    assert!(
+        (eta4 - 1.0).abs() < 1e-6 && (eta16 - 0.5).abs() < 1e-6,
+        "η(4) = {eta4}, η(16) = {eta16}"
+    );
     // flow curves are monotone increasing in γ̇ (Chhabra & Richardson §1.3)
     let mut prev = Fix128::ZERO;
     for g in 1..=50i64 {
         let gd = Fix128::from_int(g);
-        let tau = mud.stress(gd) + hb.stress(gd) + dilatant.stress(gd) + newton.stress(gd);
+        let tau = mud.stress(gd)
+            + hb.stress(gd)
+            + dilatant.stress(gd)
+            + newton.stress(gd)
+            + thinning.stress(gd);
         assert!(tau > prev);
         prev = tau;
     }
@@ -723,6 +792,58 @@ fn non_newtonian_carreau_limits_and_midpoint() {
         let eta = melt.viscosity(Fix128::from_int(g));
         assert!(eta <= prev);
         prev = eta;
+    }
+}
+
+/// Fractional flow index through `viscosity_with_index`: the polymer-melt
+/// `n = 0.4` (Bird et al. Table 4.1-2 order of magnitude) against the f64
+/// closed form over four decades of shear rate, and consistency with the
+/// integer path at `n = −1` / `n = 3`.
+#[test]
+fn non_newtonian_carreau_fractional_index_matches_closed_form() {
+    let melt = Carreau {
+        eta_zero: Fix128::from_int(1000),
+        eta_inf: Fix128::from_int(10),
+        lambda: Fix128::from_ratio(1, 10),
+        half_exponent: -1,
+    };
+    let n = Fix128::from_ratio(2, 5); // 0.4
+    for &gamma in &[0.0f64, 0.1, 1.0, 10.0, 100.0, 1000.0, 10_000.0] {
+        let got = melt
+            .viscosity_with_index(Fix128::from_f64(gamma), n)
+            .to_f64();
+        let want = 10.0 + 990.0 * (1.0 + (0.1 * gamma).powi(2)).powf((0.4 - 1.0) / 2.0);
+        assert!(
+            rel_err(got, want) < 1e-5,
+            "Carreau n = 0.4 at γ̇ = {gamma}: {got} vs {want}"
+        );
+    }
+    // n = 1 is Newtonian at every shear rate
+    assert!(fix_close(
+        melt.viscosity_with_index(Fix128::from_int(500), Fix128::ONE),
+        Fix128::from_int(1000)
+    ));
+    // integer members agree with the repeated-multiplication path
+    for &gamma in &[0i64, 3, 10, 30] {
+        let g = Fix128::from_int(gamma);
+        assert!(
+            fix_close(
+                melt.viscosity_with_index(g, Fix128::from_int(-1)),
+                melt.viscosity(g)
+            ),
+            "n = −1 mismatch at γ̇ = {gamma}"
+        );
+        let thick = Carreau {
+            half_exponent: 1,
+            ..melt
+        };
+        assert!(
+            fix_close(
+                thick.viscosity_with_index(g, Fix128::from_int(3)),
+                thick.viscosity(g)
+            ),
+            "n = 3 mismatch at γ̇ = {gamma}"
+        );
     }
 }
 
@@ -799,71 +920,154 @@ fn surface_tension_csf_smeared_delta_has_unit_area() {
 }
 
 // ============================================================================
-// phase_change — latent-heat budget (Stefan-type plateau timer)
+// phase_change — enthalpy method (Stefan plateau + enthalpy conservation)
 // ============================================================================
 
-/// The crate melts a cell once `∫ (T − T_m) dt ≥ L_f` — a degree-second
-/// latent budget. With constant superheat ΔT the closed form is
-/// `t_melt = L_f / ΔT` (the lumped Stefan condition
-/// `L dX/dt = k ∂T/∂n` with the flux replaced by ΔT; Carslaw & Jaeger
-/// ch. XI). ΔT = 50 K, L_f = 50 → exactly 10 steps of 0.1 s; boiling with
-/// L_v = 100 at ΔT = 50 → 20 more steps.
+/// Enthalpy method (Voller & Cross 1981): with `c_p = 1` the cell enthalpy
+/// is `H = T + latent`; heating a solid past `T_m` holds `T = T_m` while
+/// the latent buffer fills to `L_f`, then the surplus reappears as
+/// temperature. Step-by-step closed form for a single isolated cell heated
+/// by `q` per step: `T = T_m`, `latent = k·q − (T_m − T_0)` on the plateau,
+/// and `T = T_0 + k·q − L_f` once `latent = L_f` (Carslaw & Jaeger ch. XI,
+/// lumped limit). The same run must not depend on the step size.
 #[test]
-fn phase_change_latent_budget_gives_the_lumped_stefan_melt_time() {
+fn phase_change_enthalpy_plateau_and_conservation() {
     let config = PhaseChangeConfig {
         melt_temperature: 200.0,
         boil_temperature: 500.0,
         latent_heat_fusion: 50.0,
         latent_heat_vaporization: 100.0,
         diffusion_rate: 0.0,
-        ambient_temperature: 250.0,
+        ambient_temperature: 190.0,
         cooling_rate: 0.0,
         liquid_flow_speed: 0.0,
         gas_expansion_rate: 0.0,
         gas_dissipation_rate: 0.0,
         max_offset: 3.0,
     };
+    for &dt in &[0.1f32, 0.025] {
+        let mut m = PhaseChangeModifier::new(config, 4, (-1.0, -1.0, -1.0), (1.0, 1.0, 1.0));
+        // heat 5 K per step: 2 steps to reach T_m, 10 more on the plateau
+        for step in 1..=20 {
+            for v in &mut m.temperature.data {
+                *v += 5.0;
+            }
+            m.update(dt);
+            let (t, lh) = (m.temperature.data[0], m.latent_heat.data[0]);
+            let supplied = 190.0 + 5.0 * step as f32;
+            assert!(
+                (t + lh - supplied).abs() < 1e-3,
+                "dt {dt} step {step}: enthalpy T + L = {} vs {supplied}",
+                t + lh
+            );
+            if supplied <= 200.0 {
+                assert_eq!(m.phase_at(0.0, 0.0, 0.0), Phase::Solid);
+                assert_eq!(lh, 0.0);
+            } else if supplied < 250.0 {
+                assert_eq!(m.phase_at(0.0, 0.0, 0.0), Phase::Solid, "step {step}");
+                assert_eq!(t, 200.0, "plateau at T_m, step {step}");
+                assert_eq!(lh, supplied - 200.0);
+            } else {
+                assert_eq!(m.phase_at(0.0, 0.0, 0.0), Phase::Liquid, "step {step}");
+                assert_eq!(lh, 50.0);
+                assert_eq!(t, supplied - 50.0, "surplus returns to T, step {step}");
+            }
+        }
+    }
+    // a big superheat melts in one step and the surplus above L_f survives
     let mut m = PhaseChangeModifier::new(config, 4, (-1.0, -1.0, -1.0), (1.0, 1.0, 1.0));
-    m.temperature.data.fill(250.0); // ΔT = 50 above melt
-    for step in 1..=9 {
-        m.update(0.1);
-        assert_eq!(
-            m.phase_at(0.0, 0.0, 0.0),
-            Phase::Solid,
-            "still solid at step {step}"
-        );
-        let lh = f64::from(m.latent_heat.data[0]);
-        assert!((lh - 5.0 * step as f64).abs() < 1e-6, "budget {lh}");
-    }
-    m.update(0.1);
-    assert_eq!(
-        m.phase_at(0.0, 0.0, 0.0),
-        Phase::Liquid,
-        "melts at t = L_f/ΔT = 1 s"
-    );
-    assert_eq!(m.latent_heat.data[0], 0.0, "budget resets on transition");
-    // now boil: ΔT = 50 above 500 K → t = 100 / 50 = 2 s = 20 steps
-    m.temperature.data.fill(550.0);
-    for _ in 0..19 {
-        m.update(0.1);
-        assert_eq!(m.phase_at(0.0, 0.0, 0.0), Phase::Liquid);
-    }
-    m.update(0.1);
-    assert_eq!(m.phase_at(0.0, 0.0, 0.0), Phase::Gas);
-    // cooling below the boiling point condenses, below melting solidifies
-    m.temperature.data.fill(300.0);
+    m.temperature.data.fill(330.0);
     m.update(0.1);
     assert_eq!(m.phase_at(0.0, 0.0, 0.0), Phase::Liquid);
-    m.temperature.data.fill(100.0);
+    assert_eq!(m.temperature.data[0], 280.0);
+    // boil: 500 + 100 needed; 560 → plateau at 500 with 60 stored
+    m.temperature.data.fill(560.0);
     m.update(0.1);
-    assert_eq!(m.phase_at(0.0, 0.0, 0.0), Phase::Solid);
-    // phase state is a pure function of the thermal history: the budget
-    // never goes negative and superheat below T_m accumulates nothing
-    m.temperature.data.fill(199.0);
-    for _ in 0..50 {
-        m.update(0.1);
+    assert_eq!(m.phase_at(0.0, 0.0, 0.0), Phase::Liquid);
+    assert_eq!(m.temperature.data[0], 500.0);
+    assert_eq!(m.latent_heat.data[0], 110.0);
+    m.temperature.data.fill(540.0);
+    m.update(0.1);
+    assert_eq!(m.phase_at(0.0, 0.0, 0.0), Phase::Gas, "buffer full → gas");
+    assert_eq!(m.temperature.data[0], 500.0);
+    assert_eq!(m.latent_heat.data[0], 150.0);
+    m.temperature.data.fill(510.0);
+    m.update(0.1);
+    assert_eq!(m.phase_at(0.0, 0.0, 0.0), Phase::Gas);
+    assert_eq!(m.temperature.data[0], 510.0, "gas above T_b stores nothing");
+    // cooling is the mirror image: a gas at 470 releases 30 of L_v and sits
+    // at 500; a liquid at 170 releases L_f on the 200 plateau, then freezes
+    m.temperature.data.fill(470.0);
+    m.update(0.1);
+    assert_eq!(m.phase_at(0.0, 0.0, 0.0), Phase::Gas);
+    assert_eq!(m.temperature.data[0], 500.0);
+    assert_eq!(m.latent_heat.data[0], 120.0);
+    m.temperature.data.fill(380.0);
+    m.update(0.1);
+    assert_eq!(m.phase_at(0.0, 0.0, 0.0), Phase::Liquid, "condensed");
+    assert_eq!(m.temperature.data[0], 450.0);
+    assert_eq!(m.latent_heat.data[0], 50.0);
+    m.temperature.data.fill(170.0);
+    m.update(0.1);
+    assert_eq!(m.phase_at(0.0, 0.0, 0.0), Phase::Liquid, "freezing plateau");
+    assert_eq!(m.temperature.data[0], 200.0);
+    assert_eq!(m.latent_heat.data[0], 20.0);
+    m.temperature.data.fill(170.0);
+    m.update(0.1);
+    assert_eq!(m.phase_at(0.0, 0.0, 0.0), Phase::Solid, "frozen");
+    assert_eq!(m.temperature.data[0], 190.0);
+    assert_eq!(m.latent_heat.data[0], 0.0);
+}
+
+/// Liquid gravity flow moves SDF offset down a column without creating or
+/// destroying it: `Σ offset` over the column is unchanged by the transfer
+/// (only the gas / liquid source terms add material, both zero here).
+#[test]
+fn phase_change_liquid_flow_conserves_column_offset() {
+    let config = PhaseChangeConfig {
+        melt_temperature: 200.0,
+        boil_temperature: 500.0,
+        latent_heat_fusion: 0.0,
+        latent_heat_vaporization: 0.0,
+        diffusion_rate: 0.0,
+        ambient_temperature: 300.0, // everything liquid
+        cooling_rate: 0.0,
+        liquid_flow_speed: 2.0,
+        gas_expansion_rate: 0.0,
+        gas_dissipation_rate: 0.0,
+        max_offset: 3.0,
+    };
+    let mut m = PhaseChangeModifier::new(config, 4, (-1.0, -1.0, -1.0), (1.0, 1.0, 1.0));
+    m.update(0.0); // classify all cells as liquid without moving anything
+    assert_eq!(m.phase_at(0.0, 0.0, 0.0), Phase::Liquid);
+    // column x = 0, z = 0: top cell carries 1.0 of offset
+    let top = m.sdf_offset.index(0, 3, 0);
+    m.sdf_offset.data[top] = 1.0;
+    let column_sum = |m: &PhaseChangeModifier| -> f64 {
+        (0..4)
+            .map(|iy| f64::from(m.sdf_offset.data[m.sdf_offset.index(0, iy, 0)]))
+            .sum()
+    };
+    // liquid softening adds 0.1 · flow · dt per liquid cell per step; the
+    // transfer itself must add nothing on top of that
+    let dt = 0.05f32;
+    let softening_per_step = f64::from(0.1 * 2.0 * dt) * 4.0;
+    for step in 1..=40 {
+        m.update(dt);
+        let want = 1.0 + softening_per_step * step as f64;
+        let got = column_sum(&m);
+        assert!(
+            (got - want).abs() < 1e-4,
+            "step {step}: column offset {got} vs {want}"
+        );
     }
-    assert!(m.latent_heat.data.iter().all(|&v| v == 0.0));
+    // and the material actually moved down: the bottom cell holds more than
+    // it could have gained from softening alone
+    let bottom = m.sdf_offset.data[m.sdf_offset.index(0, 0, 0)];
+    assert!(
+        f64::from(bottom) > softening_per_step / 4.0 * 40.0 + 0.5,
+        "bottom cell {bottom}"
+    );
 }
 
 // ============================================================================
@@ -1053,10 +1257,9 @@ fn sdf_wind_field_shelter_ramp_invariants() {
 /// The body is then a linear oscillator driven at Ω_s whose steady
 /// amplitude is `F₀ / √((ω_n² − Ω²)² + (2ζω_nΩ)²)` (Rao, *Mechanical
 /// Vibrations* eq. 3.29). Forward Euler at `Ω dt = 4e-4` adds ~1.5 % to
-/// the limit-cycle amplitude, hence the 3 % tolerances. The crate's `ε`
-/// is a rate (0.3 /s, growth `ε/2 = 0.15 /s`) rather than Facchinetti's
-/// dimensionless `ε Ω_f`, so the cycle takes ~30 s to establish from a
-/// small seed; the run starts from `q = 1` and measures over 35–40 s.
+/// the limit-cycle amplitude, hence the 3 % tolerances. 1.2.0: the damping is
+/// Facchinetti's `ε Ω_f (q² − 1) q̇` (growth rate `ε Ω_f / 2 ≈ 3 /s` here), so the
+/// cycle is established within a second; the run still measures over 35–40 s.
 #[test]
 fn aeroelasticity_van_der_pol_amplitude_and_strouhal_frequency() {
     let params = VivParameters {
@@ -1093,8 +1296,10 @@ fn aeroelasticity_van_der_pol_amplitude_and_strouhal_frequency() {
     );
     let f_measured = crossings as f64 / (2.0 * 10.0);
     let f_strouhal = 0.2 * 0.5 / 0.03;
+    // zero-crossing count over 10 s resolves 0.05 Hz (1.5 %); the Van der Pol
+    // frequency is Ω(1 − ε²/16) (Strogatz §7.6) = 0.6 % below Ω_f at ε = 0.3
     assert!(
-        rel_err(f_measured, f_strouhal) < 0.01,
+        rel_err(f_measured, f_strouhal) < 0.025,
         "shedding frequency {f_measured} Hz vs St·U/D = {f_strouhal} Hz"
     );
     // driven body: amplitude ratio y/q equals the transfer function
@@ -1105,9 +1310,12 @@ fn aeroelasticity_van_der_pol_amplitude_and_strouhal_frequency() {
     let transfer = force_per_q
         / ((wn * wn - omega * omega).powi(2) + (2.0 * zeta * wn * omega).powi(2)).sqrt();
     let ratio = f64::from(y_peak) / f64::from(q_peak);
+    // at ε = 0.3 the Van der Pol cycle carries a ~3 % third harmonic; the body
+    // (linear, near-resonant) responds to the fundamental, so y_peak / q_peak sits
+    // a few % below the single-frequency transfer function — 5 % tolerance
     assert!(
-        rel_err(ratio, transfer) < 0.03,
-        "y/q = {ratio} vs |H(Ω)|·F/q = {transfer} (3 %)"
+        rel_err(ratio, transfer) < 0.05,
+        "y/q = {ratio} vs |H(Ω)|·F/q = {transfer} (5 %)"
     );
 }
 
@@ -1653,29 +1861,67 @@ fn wave_ship_heave_free_oscillation_period_and_static_offset() {
     );
 }
 
-/// The spectrum is documented as a Pierson–Moskowitz prefactor without
-/// the `exp(−5/4 (ω_p/ω)⁴)` factor and with a `√γ` multiplier — it is not
-/// JONSWAP (Hasselmann 1973) and has no peak; see the report. Pinned:
-/// `ω⁻⁵` tail and the exact `5/16 H_s² ω_p⁴ ω⁻⁵ √γ` value it implements.
+/// Hasselmann et al. 1973 / Chakrabarti 1987 eq. (4.29) JONSWAP:
+/// `S(ω) = 5/16 H_s² ω_p⁴ ω⁻⁵ exp(−5/4 (ω_p/ω)⁴) γ^r`. Checked against the
+/// f64 evaluation of the same formula, its peak location, the ω⁻⁵ tail and
+/// the Pierson–Moskowitz reduction at γ = 1 (1.2.0; before, the module
+/// returned the tail factor only, monotone and unbounded as ω → 0).
 #[test]
-fn wave_ship_spectrum_implements_the_documented_omega_minus_five_form() {
+fn wave_ship_spectrum_is_jonswap() {
     let j = Jonswap::north_sea();
     let wp = j.peak_omega().to_f64();
     assert!(rel_err(wp, 2.0 * PI / 9.0) < 1e-12);
+    let hs = j.significant_wave_height_m.to_f64();
+    let gamma = j.gamma.to_f64();
+    let reference = |w: f64| {
+        let sigma = if w <= wp { 0.07 } else { 0.09 };
+        let r = (-(w - wp).powi(2) / (2.0 * sigma * sigma * wp * wp)).exp();
+        5.0 / 16.0 * hs * hs * wp.powi(4) / w.powi(5)
+            * (-1.25 * (wp / w).powi(4)).exp()
+            * gamma.powf(r)
+    };
+    for k in 1..=40 {
+        let w = wp * f64::from(k) / 10.0; // 0.1 ω_p .. 4 ω_p
+        let got = j.spectrum_density(Fix128::from_f64(w)).to_f64();
+        let want = reference(w);
+        if want < 1e-9 {
+            assert!(got < 1e-8, "S({w}) = {got} should be ≈ 0 (want {want:e})");
+            continue;
+        }
+        assert!(rel_err(got, want) < 1e-4, "S({w}) = {got} vs {want}");
+    }
+    // peak at ω_p: larger than either neighbour
     let s_p = j.spectrum_density(j.peak_omega()).to_f64();
-    let want = 5.0 / 16.0 * 9.0 * wp.powi(4) / wp.powi(5) * 3.3f64.sqrt();
-    assert!(rel_err(s_p, want) < 1e-9, "S(ω_p) = {s_p} vs {want}");
-    let s_2p = j.spectrum_density(j.peak_omega().double()).to_f64();
+    let s_lo = j.spectrum_density(Fix128::from_f64(wp * 0.9)).to_f64();
+    let s_hi = j.spectrum_density(Fix128::from_f64(wp * 1.1)).to_f64();
     assert!(
-        rel_err(s_2p, s_p / 32.0) < 1e-9,
-        "ω⁻⁵ tail: S(2ω_p)/S(ω_p) = 1/32"
+        s_p > s_lo && s_p > s_hi,
+        "no peak at ω_p: {s_lo} {s_p} {s_hi}"
     );
-    // a genuine PM/JONSWAP spectrum would satisfy S(2ω_p)/S(ω_p) = e^{75/64}/32 ≈ 0.101
-    // and S(ω_p/2) ≪ S(ω_p); the implemented form keeps rising below ω_p instead:
-    let s_half = j.spectrum_density(j.peak_omega().half()).to_f64();
+    // ω⁻⁵ tail far above the peak: S(4ω_p)/S(3ω_p) ≈ (3/4)⁵ · (cut-off ratio ≈ 1)
+    let s3 = j.spectrum_density(Fix128::from_f64(3.0 * wp)).to_f64();
+    let s4 = j.spectrum_density(Fix128::from_f64(4.0 * wp)).to_f64();
     assert!(
-        rel_err(s_half, 32.0 * s_p) < 1e-9,
-        "S(ω_p/2) = {s_half} = 32 S(ω_p)"
+        rel_err(
+            s4 / s3,
+            (0.75f64).powi(5) * (-1.25 * (0.25f64.powi(4) - (1.0 / 3.0f64).powi(4))).exp()
+        ) < 1e-3
+    );
+    // Pierson–Moskowitz reduction (γ = 1): m₀ = ∫S dω ≈ H_s²/16 (Chakrabarti eq. 4.20)
+    let pm = Jonswap {
+        gamma: Fix128::ONE,
+        ..Jonswap::north_sea()
+    };
+    let (mut m0, dw) = (0.0f64, wp / 200.0);
+    let mut w = dw;
+    while w < 12.0 * wp {
+        m0 += pm.spectrum_density(Fix128::from_f64(w)).to_f64() * dw;
+        w += dw;
+    }
+    assert!(
+        rel_err(m0, hs * hs / 16.0) < 0.02,
+        "PM m₀ = {m0} vs H_s²/16 = {}",
+        hs * hs / 16.0
     );
     assert_eq!(j.spectrum_density(Fix128::ZERO), Fix128::ZERO);
 }

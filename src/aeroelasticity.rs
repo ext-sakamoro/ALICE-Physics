@@ -69,7 +69,8 @@ pub struct VivParameters {
     pub structural_damping_ratio: f32,
     /// Strouhal number `St` — typical 0.2 for subcritical Re.
     pub strouhal_number: f32,
-    /// Wake oscillator constant `ε`.
+    /// Van der Pol parameter ε (dimensionless; the damping term is
+    /// `ε·Ω_f·(q² − 1)·q̇`, Facchinetti et al. 2004 eq. 3). 0.3 in the paper.
     pub wake_epsilon: f32,
     /// Coupling `A · ÿ / D` — Facchinetti 2004 value ~12.
     pub wake_coupling_a: f32,
@@ -119,9 +120,16 @@ pub fn viv_step(state: &mut VivState, params: &VivParameters, dt: f32) {
     let acc_body = fluid_force * state.wake_q
         - structural_damping * state.velocity_m_s
         - natural_sq * state.displacement_m;
-    let acc_wake = -params.wake_epsilon * (state.wake_q * state.wake_q - 1.0) * state.wake_qdot
-        - omega_s_sq * state.wake_q
-        + params.wake_coupling_a * acc_body / params.diameter_m;
+    // Facchinetti et al. 2004 eq. (3): q̈ + ε Ω_f (q² − 1) q̇ + Ω_f² q = A ÿ / D.
+    // The Van der Pol damping is scaled by the shedding frequency Ω_f, so ε is
+    // the dimensionless 0.3 of the paper and the wake locks in within a few
+    // shedding periods. Before 1.2.0 the Ω_f factor was missing: ε acted as a
+    // rate of 0.3 /s, the limit cycle took ~30 s instead of ~1 s to establish
+    // (`tests/engineering_oracles_fluid.rs`).
+    let acc_wake =
+        -params.wake_epsilon * omega_s * (state.wake_q * state.wake_q - 1.0) * state.wake_qdot
+            - omega_s_sq * state.wake_q
+            + params.wake_coupling_a * acc_body / params.diameter_m;
 
     // Explicit Euler.
     state.velocity_m_s += acc_body * dt;

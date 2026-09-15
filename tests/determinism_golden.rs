@@ -370,7 +370,9 @@ fn hash_mac_grid(grid: &MacGrid) -> [u8; 32] {
 /// **Scenario 6**: small (6x6x6) CFD grid stepped for 30 frames after
 /// a small initial u-velocity injection. Exercises the full CFD step
 /// pipeline (advection + diffusion + pressure projection).
-const GOLDEN_FLUID_STEP: &str = "20f4ba26edef79d64321fdd19c306e80d9e464707e86ba3a036769ff7b1cd3b7";
+/// Re-pinned 1.2.0: boundary faces are diffused with mirror neighbours
+/// (before, the outer face layer was skipped by the viscous step).
+const GOLDEN_FLUID_STEP: &str = "0c867f70a24de57bc47907e4c1bc9a8e6fddbd9004b03ead0e05de7528a57ed8";
 
 #[test]
 fn determinism_fluid_step() {
