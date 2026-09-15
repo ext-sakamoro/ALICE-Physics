@@ -1,0 +1,6 @@
+# cargo-mutants configuration (quality-deep.yml weekly / scoped / in-diff jobs)
+#
+# Mutants inside `#[cfg(test)] mod tests` helpers (`tests::snapshot_world`,
+# `tests::near`, …) are not production code and only dilute the score; the
+# lib tests are the oracle, not the subject.
+exclude_re = ["tests::"]
