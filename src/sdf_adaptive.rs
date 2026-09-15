@@ -341,4 +341,76 @@ mod tests {
             "After invalidation should use Standard"
         );
     }
+
+    #[cfg(feature = "std")]
+    #[test]
+    fn invalidate_all_forces_fresh_evaluation_for_every_body() {
+        let sdf =
+            SdfCollider::new_static(Box::new(unit_sphere()), Vec3Fix::ZERO, QuatFix::IDENTITY);
+        // 同じ球を +X に 1 ずらした SDF: 位置 (5,0,0) の距離は 4 → 3 に変わる
+        let shifted = SdfCollider::new_static(
+            Box::new(unit_sphere()),
+            Vec3Fix::from_int(1, 0, 0),
+            QuatFix::IDENTITY,
+        );
+        let positions = [
+            Vec3Fix::from_f32(5.0, 0.0, 0.0),
+            Vec3Fix::from_f32(0.0, 5.0, 0.0),
+            Vec3Fix::from_f32(0.0, 0.0, 5.0),
+        ];
+
+        let mut evaluator = AdaptiveSdfEvaluator::new(3, AdaptiveConfig::default());
+        evaluator.begin_frame();
+        for (i, p) in positions.iter().enumerate() {
+            let (d, _) = evaluator.evaluate(i, *p, &sdf);
+            assert!((d - 4.0).abs() < 1e-5, "body {i} dist {d}");
+        }
+        // 全 body が cache 済 (距離 4 > high_res 2、移動 0) → 次 frame は Cached
+        evaluator.begin_frame();
+        for (i, p) in positions.iter().enumerate() {
+            assert_eq!(
+                evaluator.determine_level(i, *p),
+                EvalLevel::Cached,
+                "body {i}"
+            );
+        }
+        // 対照: invalidate しないと shifted SDF に対しても stale な 4 が返る
+        let (stale, _) = evaluator.evaluate(0, positions[0], &shifted);
+        assert!((stale - 4.0).abs() < 1e-5, "stale cached dist {stale}");
+        assert_eq!(evaluator.stats(), (1, 1));
+
+        evaluator.invalidate_all();
+        for (i, p) in positions.iter().enumerate() {
+            assert_eq!(
+                evaluator.determine_level(i, *p),
+                EvalLevel::Standard,
+                "body {i}"
+            );
+        }
+        // 全 body が再評価され、shifted SDF の値が返る (saved は増えない)
+        evaluator.begin_frame();
+        let expected = [3.0_f32, (26.0_f32).sqrt() - 1.0, (26.0_f32).sqrt() - 1.0];
+        for (i, p) in positions.iter().enumerate() {
+            let (d, _) = evaluator.evaluate(i, *p, &shifted);
+            assert!(
+                (d - expected[i]).abs() < 1e-4,
+                "body {i} dist {d}, want {}",
+                expected[i]
+            );
+        }
+        assert_eq!(evaluator.stats(), (0, 3));
+        // 再評価後は再び valid (Cached に戻る)
+        evaluator.begin_frame();
+        for (i, p) in positions.iter().enumerate() {
+            assert_eq!(
+                evaluator.determine_level(i, *p),
+                EvalLevel::Cached,
+                "body {i}"
+            );
+        }
+        // 空 evaluator でも panic しない
+        let mut empty = AdaptiveSdfEvaluator::new(0, AdaptiveConfig::default());
+        empty.invalidate_all();
+        assert_eq!(empty.determine_level(0, Vec3Fix::ZERO), EvalLevel::Standard);
+    }
 }

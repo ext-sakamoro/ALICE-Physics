@@ -343,4 +343,62 @@ mod tests {
         assert_eq!(aabb.min.y.hi, 5);
         assert_eq!(aabb.max.y.hi, 5);
     }
+
+    #[test]
+    fn set_height_updates_one_cell_and_feeds_bilinear_sampling() {
+        // 4 (width, x) × 3 (depth, z) の平地、spacing 1、origin 原点
+        let mut hf = HeightField::flat(4, 3, Fix128::ONE, Vec3Fix::ZERO, Fix128::ZERO);
+        hf.set_height(2, 1, Fix128::from_int(8));
+        // 該当 cell だけが変わる (index = gx + gz * width の取り違えを検出)
+        for gz in 0..3u32 {
+            for gx in 0..4u32 {
+                let want = if (gx, gz) == (2, 1) {
+                    Fix128::from_int(8)
+                } else {
+                    Fix128::ZERO
+                };
+                assert_eq!(hf.get_height(gx, gz), want, "({gx}, {gz})");
+            }
+        }
+        // 頂点上のサンプルはその高さ、隣接頂点との中点は線形補間 = 4、cell 中央は 8/4 = 2
+        assert_eq!(
+            hf.sample_height(Fix128::from_int(2), Fix128::from_int(1)),
+            Fix128::from_int(8)
+        );
+        assert_eq!(
+            hf.sample_height(Fix128::from_ratio(5, 2), Fix128::from_int(1)),
+            Fix128::from_int(4)
+        );
+        assert_eq!(
+            hf.sample_height(Fix128::from_int(2), Fix128::from_ratio(1, 2)),
+            Fix128::from_int(4)
+        );
+        assert_eq!(
+            hf.sample_height(Fix128::from_ratio(3, 2), Fix128::from_ratio(1, 2)),
+            Fix128::from_int(2)
+        );
+        // 2 cell 以上離れた点には影響しない
+        assert_eq!(
+            hf.sample_height(Fix128::from_ratio(1, 2), Fix128::from_ratio(3, 2)),
+            Fix128::ZERO
+        );
+        // 上書きできる
+        hf.set_height(2, 1, Fix128::from_int(-3));
+        assert_eq!(hf.get_height(2, 1), Fix128::from_int(-3));
+        // 範囲外 (gx == width / gz == depth) は無視され、他の cell も壊さない
+        hf.set_height(4, 0, Fix128::from_int(99));
+        hf.set_height(0, 3, Fix128::from_int(99));
+        hf.set_height(u32::MAX, u32::MAX, Fix128::from_int(99));
+        let mut sum = Fix128::ZERO;
+        for gz in 0..3u32 {
+            for gx in 0..4u32 {
+                sum = sum + hf.get_height(gx, gz);
+            }
+        }
+        assert_eq!(sum, Fix128::from_int(-3));
+        // AABB の y 範囲は set_height に追従する
+        let aabb = hf.aabb();
+        assert_eq!(aabb.min.y, Fix128::from_int(-3));
+        assert_eq!(aabb.max.y, Fix128::ZERO);
+    }
 }

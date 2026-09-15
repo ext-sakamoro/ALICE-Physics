@@ -34,7 +34,7 @@ pub struct DeformableConfig {
     pub substeps: usize,
     /// Gravity
     pub gravity: Vec3Fix,
-    /// Velocity damping
+    /// Velocity retention per frame (`step()` call), applied once per frame since 1.2.0
     pub damping: Fix128,
     /// Volume preservation compliance (0 = rigid volume)
     pub volume_compliance: Fix128,
@@ -249,6 +249,7 @@ impl DeformableBody {
         for _ in 0..self.config.substeps {
             self.substep(substep_dt);
         }
+        self.apply_frame_damping();
     }
 
     /// Step with SDF collision
@@ -258,6 +259,19 @@ impl DeformableBody {
         for _ in 0..self.config.substeps {
             self.substep(substep_dt);
             self.resolve_sdf_collisions(sdf_colliders);
+        }
+        self.apply_frame_damping();
+    }
+
+    /// `config.damping` once per frame (velocity retention per `step()` call).
+    ///
+    /// 1.2.0: applied per substep before, which made the terminal velocity
+    /// depend on `substeps` (`g·h·d/(1−d)`, `h = dt/substeps`) — the same
+    /// defect as the rigid-body solver's frame damping fix.
+    fn apply_frame_damping(&mut self) {
+        let d = self.config.damping;
+        for v in &mut self.velocities {
+            *v = *v * d;
         }
     }
 
@@ -272,7 +286,6 @@ impl DeformableBody {
             }
             self.prev_positions[i] = self.positions[i];
             self.velocities[i] = self.velocities[i] + self.config.gravity * dt;
-            self.velocities[i] = self.velocities[i] * self.config.damping;
             self.positions[i] = self.positions[i] + self.velocities[i] * dt;
         }
 
@@ -695,5 +708,90 @@ mod tests {
             com.x.hi >= -10 && com.x.hi <= 10,
             "COM should be reasonable"
         );
+    }
+
+    /// 原点中心の単位球 SDF (f32 sqrt のみ、det_math gate 対象外)
+    #[cfg(feature = "std")]
+    fn unit_sphere_collider() -> crate::sdf_collider::SdfCollider {
+        use crate::sdf_collider::{ClosureSdf, SdfCollider};
+        let field = ClosureSdf::new(
+            |x, y, z| (x * x + y * y + z * z).sqrt() - 1.0,
+            |x, y, z| {
+                let len = (x * x + y * y + z * z).sqrt();
+                if len > 1e-6 {
+                    (x / len, y / len, z / len)
+                } else {
+                    (0.0, 1.0, 0.0)
+                }
+            },
+        );
+        SdfCollider::new_static(
+            Box::new(field),
+            Vec3Fix::ZERO,
+            crate::math::QuatFix::IDENTITY,
+        )
+    }
+
+    /// 単位球からの符号付き距離 (f32 oracle)
+    #[cfg(feature = "std")]
+    fn sphere_dist(p: Vec3Fix) -> f32 {
+        let (x, y, z) = p.to_f32();
+        (x * x + y * y + z * z).sqrt() - 1.0
+    }
+
+    #[cfg(feature = "std")]
+    #[test]
+    fn step_with_sdf_keeps_cube_particles_outside_unit_sphere() {
+        // 一辺 1 の cube (8 corner) を y = 2.5 から球の上に落とす
+        let make = || {
+            DeformableBody::new_cube(
+                Vec3Fix::new(Fix128::ZERO, Fix128::from_ratio(5, 2), Fix128::ZERO),
+                Fix128::from_ratio(1, 2),
+                Fix128::from_int(8),
+            )
+        };
+        let sphere = [unit_sphere_collider()];
+        let mut body = make();
+        let dt = Fix128::from_ratio(1, 60);
+        let mut min_dist = f32::MAX;
+        for frame in 0..60 {
+            body.step_with_sdf(dt, &sphere);
+            for (i, p) in body.positions.iter().enumerate() {
+                let d = sphere_dist(*p);
+                min_dist = min_dist.min(d);
+                assert!(
+                    d >= -1e-3,
+                    "frame {frame} particle {i} inside sphere: dist {d}"
+                );
+            }
+        }
+        assert!(min_dist < 0.05, "never touched: min dist {min_dist}");
+        // 重心は球の上 (y > 0) に留まる (貫通落下なら y < 0)
+        let (_, cy, _) = body.center_of_mass().to_f32();
+        assert!(cy > 0.5, "center of mass y {cy}");
+
+        // SDF なしでは球を貫通する frame が存在する
+        let mut free = make();
+        let mut free_min = f32::MAX;
+        for _ in 0..60 {
+            free.step(dt);
+            for p in &free.positions {
+                free_min = free_min.min(sphere_dist(*p));
+            }
+        }
+        assert!(
+            free_min < -0.1,
+            "without SDF the cube should pass through: {free_min}"
+        );
+
+        // collider が空なら step と bit 一致
+        let mut a = make();
+        let mut b = make();
+        for _ in 0..10 {
+            a.step_with_sdf(dt, &[]);
+            b.step(dt);
+        }
+        assert_eq!(a.positions, b.positions);
+        assert_eq!(a.velocities, b.velocities);
     }
 }

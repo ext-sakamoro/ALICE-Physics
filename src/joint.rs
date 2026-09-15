@@ -2059,4 +2059,104 @@ mod tests {
         solve_joints(&[mk(1)], &mut all, DT);
         assert!(near_v(all[1].position, Vec3Fix::ZERO));
     }
+
+    // ---- D6 builders ---------------------------------------------------
+
+    #[test]
+    fn d6_with_linear_motion_and_limits_builders_drive_solver() {
+        // builder は各軸に個別に格納する (x/y/z の取り違えを検出)
+        let j = D6Joint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO)
+            .with_linear_motion(D6Motion::Locked, D6Motion::Limited, D6Motion::Free)
+            .with_linear_limits(v3i(-7, -2, -9), v3i(7, 2, 9));
+        assert_eq!(
+            (j.linear_x, j.linear_y, j.linear_z),
+            (D6Motion::Locked, D6Motion::Limited, D6Motion::Free)
+        );
+        assert_eq!(j.linear_limit_min, v3i(-7, -2, -9));
+        assert_eq!(j.linear_limit_max, v3i(7, 2, 9));
+        // angular 側は default (Free / ±π) のまま
+        assert_eq!(
+            (j.angular_x, j.angular_y, j.angular_z),
+            (D6Motion::Free, D6Motion::Free, D6Motion::Free)
+        );
+        assert_eq!(j.angular_limit_max.y, Fix128::PI);
+
+        // 手書き field 設定と builder は同一 joint を作る
+        let mut manual = D6Joint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO);
+        manual.linear_x = D6Motion::Locked;
+        manual.linear_y = D6Motion::Limited;
+        manual.linear_z = D6Motion::Free;
+        manual.linear_limit_min = v3i(-7, -2, -9);
+        manual.linear_limit_max = v3i(7, 2, 9);
+        assert_eq!(j, manual);
+
+        // solver: B (4, 3, 5)、A static / B inv 1 → x locked → 0、y limited [-2, 2] → 2、z free → 5
+        let mut bodies = pair(Vec3Fix::ZERO, 0, v3i(4, 3, 5), 1);
+        solve_d6_joint(&j, &mut bodies, DT);
+        assert_eq!(bodies[1].position, v3i(0, 2, 5));
+        // 下限側: y = -6 → error -6 - (-2) = -4 → (0, -2, 0)
+        let mut low = pair(Vec3Fix::ZERO, 0, v3i(0, -6, 0), 1);
+        solve_d6_joint(&j, &mut low, DT);
+        assert_eq!(low[1].position, v3i(0, -2, 0));
+        // 限界内 (0, 1, 0) は不変
+        let mut inside = pair(Vec3Fix::ZERO, 0, v3i(0, 1, 0), 1);
+        solve_d6_joint(&j, &mut inside, DT);
+        assert_eq!(inside[1].position, v3i(0, 1, 0));
+    }
+
+    #[test]
+    fn d6_with_angular_motion_and_limits_builders_drive_solver() {
+        let q = Fix128::from_ratio(1, 4);
+        let j = D6Joint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO)
+            .with_angular_motion(D6Motion::Free, D6Motion::Locked, D6Motion::Limited)
+            .with_angular_limits(Vec3Fix::new(-q, -q, -q), Vec3Fix::new(q, q, q));
+        assert_eq!(
+            (j.angular_x, j.angular_y, j.angular_z),
+            (D6Motion::Free, D6Motion::Locked, D6Motion::Limited)
+        );
+        assert_eq!(j.angular_limit_min, Vec3Fix::new(-q, -q, -q));
+        assert_eq!(j.angular_limit_max, Vec3Fix::new(q, q, q));
+        // linear 側は default (Free / ±1) のまま
+        assert_eq!(
+            (j.linear_x, j.linear_y, j.linear_z),
+            (D6Motion::Free, D6Motion::Free, D6Motion::Free)
+        );
+        assert_eq!(j.linear_limit_min, v3i(-1, -1, -1));
+
+        let angle = |b: &[RigidBody], axis: Vec3Fix| {
+            let rel = b[1].rotation.mul(b[0].rotation.conjugate());
+            compute_twist_angle(rel, axis)
+        };
+        // z Limited [-1/4, 1/4]: 1/2 回転は限界に向かって減る
+        let mut over = pair(Vec3Fix::ZERO, 0, Vec3Fix::ZERO, 1);
+        over[1].rotation = QuatFix::from_axis_angle(Vec3Fix::UNIT_Z, Fix128::from_ratio(1, 2));
+        let o0 = angle(&over, Vec3Fix::UNIT_Z);
+        solve_d6_joint(&j, &mut over, DT);
+        let o1 = angle(&over, Vec3Fix::UNIT_Z);
+        assert!(o1 < o0, "{o1:?} < {o0:?}");
+        assert!(o1 >= q, "limit は over-correct しない: {o1:?}");
+        // z 1/10 は限界内 → z 角は不変 (y Locked が拾う twist は数値 noise 程度、2^-40 以下)
+        let mut inside = pair(Vec3Fix::ZERO, 0, Vec3Fix::ZERO, 1);
+        inside[1].rotation = QuatFix::from_axis_angle(Vec3Fix::UNIT_Z, Fix128::from_ratio(1, 10));
+        let z0 = angle(&inside, Vec3Fix::UNIT_Z);
+        solve_d6_joint(&j, &mut inside, DT);
+        let z1 = angle(&inside, Vec3Fix::UNIT_Z);
+        assert!(near(z0, z1), "{z0:?} vs {z1:?}");
+        // y Locked: 1/10 でも引き戻される、x Free: 1/2 でも不変
+        let mut locked = pair(Vec3Fix::ZERO, 0, Vec3Fix::ZERO, 1);
+        locked[1].rotation = QuatFix::from_axis_angle(Vec3Fix::UNIT_Y, Fix128::from_ratio(1, 10));
+        let l0 = angle(&locked, Vec3Fix::UNIT_Y).abs();
+        solve_d6_joint(&j, &mut locked, DT);
+        assert!(angle(&locked, Vec3Fix::UNIT_Y).abs() < l0);
+        let mut free = pair(Vec3Fix::ZERO, 0, Vec3Fix::ZERO, 1);
+        free[1].rotation = QuatFix::from_axis_angle(Vec3Fix::UNIT_X, Fix128::from_ratio(1, 2));
+        let x0 = angle(&free, Vec3Fix::UNIT_X);
+        solve_d6_joint(&j, &mut free, DT);
+        let x1 = angle(&free, Vec3Fix::UNIT_X);
+        assert!(near(x0, x1), "{x0:?} vs {x1:?}");
+        assert!(
+            x1 > Fix128::from_ratio(49, 100),
+            "x Free は 1/2 のまま: {x1:?}"
+        );
+    }
 }

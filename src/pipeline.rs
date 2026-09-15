@@ -760,4 +760,189 @@ mod tests {
         assert_eq!(snapshot.event_count, 11);
         assert!((snapshot.mean - 55.0).abs() < 1.0);
     }
+
+    #[test]
+    fn metric_event_with_timestamp_sets_only_the_timestamp() {
+        let base = MetricEvent::gauge(hash("g"), 2.5);
+        assert_eq!(base.timestamp, 0, "constructors start at ts = 0");
+
+        let stamped = base.with_timestamp(1_700_000_000_123);
+        assert_eq!(stamped.timestamp, 1_700_000_000_123);
+        // Every other field is carried through unchanged.
+        assert_eq!(stamped.name_hash, base.name_hash);
+        assert_eq!(stamped.metric_type, MetricType::Gauge);
+        assert!((stamped.value - 2.5).abs() < 1e-12);
+
+        // Chaining overwrites: the last timestamp wins.
+        let twice = stamped.with_timestamp(7);
+        assert_eq!(twice.timestamp, 7);
+        assert_eq!(
+            MetricEvent::counter(1, 1.0)
+                .with_timestamp(u64::MAX)
+                .timestamp,
+            u64::MAX
+        );
+
+        // The timestamp is what a slot records as last_update.
+        let mut slot = MetricSlot::new(hash("g"), 0.05);
+        slot.process(&MetricEvent::gauge(hash("g"), 1.0).with_timestamp(50));
+        slot.process(&MetricEvent::gauge(hash("g"), 2.0).with_timestamp(20));
+        assert_eq!(
+            slot.last_update, 50,
+            "last_update is the max timestamp seen"
+        );
+    }
+
+    #[test]
+    fn pipeline_queue_len_and_dropped_events_count_exactly() {
+        // QUEUE_SIZE = 8 → ring capacity is 7 (one slot kept empty).
+        let mut p = MetricPipeline::<4, 8>::new(0.05);
+        assert_eq!(p.queue_len(), 0);
+        assert_eq!(p.dropped_events(), 0);
+
+        let h = hash("q");
+        let mut accepted = 0u64;
+        let mut rejected = 0u64;
+        for i in 0..12 {
+            if p.submit(MetricEvent::counter(h, 1.0).with_timestamp(i)) {
+                accepted += 1;
+            } else {
+                rejected += 1;
+            }
+            // queue_len tracks accepted-but-unflushed events, capped at capacity
+            assert_eq!(p.queue_len(), accepted as usize, "after submit #{i}");
+            assert_eq!(p.dropped_events(), rejected, "after submit #{i}");
+        }
+        assert_eq!(accepted, 7, "capacity = QUEUE_SIZE - 1");
+        assert_eq!(rejected, 5, "12 pushes over capacity 7 → 5 dropped");
+        assert_eq!(p.queue_len(), 7);
+        assert_eq!(p.dropped_events(), 5);
+
+        // flush drains the queue; dropped is a lifetime counter and persists.
+        p.flush();
+        assert_eq!(p.queue_len(), 0);
+        assert_eq!(p.dropped_events(), 5);
+        assert_eq!(p.total_events(), 7);
+        let slot = p.get_slot(h).expect("slot created by flush");
+        assert_eq!(slot.event_count, 7);
+        assert!((slot.counter - 7.0).abs() < 1e-12);
+
+        // After flushing, the queue accepts again and drops accumulate.
+        for _ in 0..9 {
+            p.submit(MetricEvent::counter(h, 1.0));
+        }
+        assert_eq!(p.queue_len(), 7);
+        assert_eq!(p.dropped_events(), 7);
+
+        // reset clears both the queue and the dropped counter.
+        p.reset();
+        assert_eq!(p.queue_len(), 0);
+        assert_eq!(p.dropped_events(), 0);
+        assert_eq!(p.total_events(), 0);
+    }
+
+    #[test]
+    fn pipeline_get_slot_mut_edits_are_visible_and_hash_checked() {
+        let mut p = MetricPipeline::<16, 32>::new(0.05);
+        let h = hash("mutable");
+        assert!(p.get_slot_mut(h).is_none(), "no slot before any event");
+
+        p.submit(MetricEvent::counter(h, 4.0));
+        p.flush();
+
+        {
+            let slot = p.get_slot_mut(h).expect("slot exists after flush");
+            assert_eq!(slot.name_hash, h);
+            assert!((slot.counter - 4.0).abs() < 1e-12);
+            // Mutate through the &mut: process another event and set the gauge.
+            slot.process(&MetricEvent::counter(h, 6.0));
+            slot.gauge = 99.0;
+        }
+        let slot = p.get_slot(h).expect("slot still present");
+        assert!(
+            (slot.counter - 10.0).abs() < 1e-12,
+            "mutation via get_slot_mut persisted"
+        );
+        assert!((slot.gauge - 99.0).abs() < 1e-12);
+        assert_eq!(slot.event_count, 2);
+
+        // A hash that maps to the same bucket but is not the slot's hash is
+        // rejected by the name_hash filter (never returns the wrong metric).
+        let other = h.wrapping_add(16); // same index in a 16-slot pipeline
+        assert_eq!((other as usize) % 16, (h as usize) % 16);
+        assert!(p.get_slot_mut(other).is_none());
+        assert!(p.get_slot(other).is_none());
+    }
+
+    #[test]
+    fn pipeline_iter_slots_yields_exactly_the_active_slots() {
+        let mut p = MetricPipeline::<64, 128>::new(0.05);
+        assert_eq!(p.iter_slots().count(), 0);
+
+        // Pick names whose hashes land in distinct buckets (mod 64) so each
+        // one creates its own slot; the assertion below guards that choice.
+        let names = ["a", "b", "c", "d", "e"];
+        let mut hashes = Vec::new();
+        for n in names {
+            hashes.push(hash(n));
+        }
+        let mut buckets: Vec<usize> = hashes.iter().map(|&h| (h as usize) % 64).collect();
+        buckets.sort_unstable();
+        buckets.dedup();
+        assert_eq!(
+            buckets.len(),
+            names.len(),
+            "test names must not collide mod 64"
+        );
+
+        for (i, &h) in hashes.iter().enumerate() {
+            p.submit(MetricEvent::counter(h, (i + 1) as f64));
+        }
+        // Nothing is active until flushed.
+        assert_eq!(p.iter_slots().count(), 0);
+        p.flush();
+
+        let mut seen: Vec<u64> = p.iter_slots().map(|s| s.name_hash).collect();
+        assert_eq!(seen.len(), names.len());
+        seen.sort_unstable();
+        let mut expected = hashes.clone();
+        expected.sort_unstable();
+        assert_eq!(seen, expected);
+
+        // Sum of counters over the iterator equals Σ (i+1) = 15.
+        let total: f64 = p.iter_slots().map(|s| s.counter).sum();
+        assert!((total - 15.0).abs() < 1e-12);
+
+        // Re-submitting an existing metric does not add a slot.
+        p.submit(MetricEvent::counter(hashes[0], 1.0));
+        p.flush();
+        assert_eq!(p.iter_slots().count(), names.len());
+    }
+
+    #[test]
+    fn metric_entry_name_str_roundtrips_and_truncates_at_64() {
+        let e = MetricEntry::new("http.requests_total", MetricType::Counter);
+        assert_eq!(e.name_str(), "http.requests_total");
+        assert_eq!(e.name_len, "http.requests_total".len());
+        assert_eq!(e.hash, hash("http.requests_total"));
+
+        let empty = MetricEntry::new("", MetricType::Gauge);
+        assert_eq!(empty.name_str(), "");
+        assert_eq!(empty.name_len, 0);
+
+        // Exactly 64 ASCII bytes fit; the 65th and beyond are dropped.
+        let long = "x".repeat(70);
+        let truncated = MetricEntry::new(&long, MetricType::Histogram);
+        assert_eq!(truncated.name_len, 64);
+        assert_eq!(truncated.name_str().len(), 64);
+        assert_eq!(truncated.name_str(), &long[..64]);
+        // The hash is still over the full, untruncated name.
+        assert_eq!(truncated.hash, hash(&long));
+
+        // Registry lookups hand back an entry whose name_str is the key.
+        let mut reg = MetricRegistry::<4>::new();
+        assert!(reg.register("db.latency", MetricType::Histogram).is_some());
+        let found = reg.lookup("db.latency").expect("registered");
+        assert_eq!(found.name_str(), "db.latency");
+    }
 }

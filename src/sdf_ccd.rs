@@ -296,4 +296,87 @@ mod tests {
         let result = ray_march_sdf(origin, direction, max_dist, &sdf, &config);
         assert!(result.is_some(), "Ray should hit sphere");
     }
+
+    #[test]
+    fn batch_sphere_trace_sdf_filters_bodies_and_sorts_by_closed_form_toi() {
+        use crate::solver::RigidBody;
+        let colliders = [
+            // 0: 地面 y = 0
+            SdfCollider::new_static(Box::new(ground_plane()), Vec3Fix::ZERO, QuatFix::IDENTITY),
+            // 1: 単位球 (原点)
+            SdfCollider::new_static(Box::new(unit_sphere()), Vec3Fix::ZERO, QuatFix::IDENTITY),
+            // 2: 単位球を body 3 に attach (body 3 に対しては self-collision skip)
+            SdfCollider::new_dynamic(Box::new(unit_sphere()), 3),
+        ];
+        let radius = Fix128::from_f32(0.5);
+        let config = SdfCcdConfig::default(); // velocity_threshold 5、tolerance 0.001
+
+        let fast_down = Vec3Fix::from_int(0, -10, 0);
+        let fast_right = Vec3Fix::from_int(10, 0, 0);
+        let mut bodies = vec![
+            // 0: (0, 5, 0) → 下へ 10: 球 top 接触 y = 1.5 → t 0.35 (sdf 1 と 2)、地面 y = 0.5 → t 0.45
+            RigidBody::new_dynamic(Vec3Fix::from_int(0, 5, 0), Fix128::ONE)
+                .with_velocity(fast_down),
+            // 1: (-5, 5, 0) → 右へ 10: 球も地面も miss
+            RigidBody::new_dynamic(Vec3Fix::from_int(-5, 5, 0), Fix128::ONE)
+                .with_velocity(fast_right),
+            // 2: static は速くても skip
+            RigidBody::new_static(Vec3Fix::from_int(0, 5, 0)).with_velocity(fast_down),
+            // 3: (-7, 0, 0) → 右へ 10: 地面は既に貫入 (gap -0.5) → t 0、球 x = -1.5 → t 0.55、sdf 2 は self skip
+            RigidBody::new_dynamic(Vec3Fix::from_int(-7, 0, 0), Fix128::ONE)
+                .with_velocity(fast_right),
+            // 4: body 0 と同じ軌道だが速度 1 < threshold 5 → skip
+            RigidBody::new_dynamic(Vec3Fix::from_int(0, 5, 0), Fix128::ONE)
+                .with_velocity(Vec3Fix::from_int(0, -1, 0)),
+        ];
+        let displacements = [fast_down, fast_right, fast_down, fast_right, fast_down];
+
+        let hits = batch_sphere_trace_sdf(&bodies, &displacements, radius, &colliders, &config);
+        let keys: Vec<(usize, usize)> = hits.iter().map(|(b, s, _)| (*b, *s)).collect();
+        // t 昇順、同値 (body 0 の sdf 1 / 2 は同じ field) は stable sort で挿入順
+        assert_eq!(keys, vec![(3, 0), (0, 1), (0, 2), (0, 0), (3, 1)]);
+        let expected_t = [0.0_f32, 0.35, 0.35, 0.45, 0.55];
+        for (k, want) in expected_t.iter().enumerate() {
+            let t = hits[k].2.t.to_f32();
+            assert!((t - want).abs() < 1e-3, "hit {k} t {t}, want {want}");
+        }
+        // 法線: 地面 +Y、球 top +Y、球の -x 側 -X
+        let n = |k: usize| hits[k].2.normal.to_f32();
+        for k in [0usize, 1, 2, 3] {
+            let (nx, ny, nz) = n(k);
+            assert!(
+                nx.abs() < 1e-4 && (ny - 1.0).abs() < 1e-4 && nz.abs() < 1e-4,
+                "hit {k}"
+            );
+        }
+        let (nx, ny, nz) = n(4);
+        assert!((nx + 1.0).abs() < 1e-4 && ny.abs() < 1e-4 && nz.abs() < 1e-4);
+        // 接触点は SDF 表面上: 地面 hit の y ≈ 0、球 hit は |p| ≈ 1
+        let (_, py, _) = hits[3].2.point.to_f32();
+        assert!(py.abs() < 2e-3, "ground contact point y {py}");
+        for k in [1usize, 2, 4] {
+            let (px, py, pz) = hits[k].2.point.to_f32();
+            let r = (px * px + py * py + pz * pz).sqrt();
+            assert!((r - 1.0).abs() < 2e-3, "hit {k} contact point radius {r}");
+        }
+
+        // velocity_threshold を 0 にすると body 4 も (body 0 と同じ 3 hit で) 拾われる
+        let lenient = SdfCcdConfig {
+            velocity_threshold: Fix128::ZERO,
+            ..SdfCcdConfig::default()
+        };
+        let all = batch_sphere_trace_sdf(&bodies, &displacements, radius, &colliders, &lenient);
+        assert_eq!(all.len(), 8);
+        assert_eq!(all.iter().filter(|(b, _, _)| *b == 4).count(), 3);
+        // zip: displacement が足りない body は評価されない
+        let short =
+            batch_sphere_trace_sdf(&bodies, &displacements[..1], radius, &colliders, &config);
+        assert_eq!(short.len(), 3);
+        assert!(short.iter().all(|(b, _, _)| *b == 0));
+        // body 3 を static にすると (3, *) が消える
+        bodies[3].inv_mass = Fix128::ZERO;
+        let no3 = batch_sphere_trace_sdf(&bodies, &displacements, radius, &colliders, &config);
+        assert_eq!(no3.len(), 3);
+        assert!(no3.iter().all(|(b, _, _)| *b == 0));
+    }
 }
