@@ -2159,4 +2159,267 @@ mod tests {
             "x Free は 1/2 のまま: {x1:?}"
         );
     }
+
+    // ---- batch 6: anchors / compliance / limit equality / compute_force ----
+
+    /// A: static at origin、z 軸 180° 回転、anchor (1,0,0) → world anchor (-1,0,0)
+    /// B: inv 1 at (3,-2,0)、anchor (0,2,0) → world anchor (3,0,0)  ⇒ gap 4 (x 方向)
+    fn anchored_pair() -> Vec<RigidBody> {
+        let mut b = pair(Vec3Fix::ZERO, 0, v3i(3, -2, 0), 1);
+        b[0].rotation = QuatFix::new(Fix128::ZERO, Fix128::ZERO, Fix128::ONE, Fix128::ZERO);
+        b
+    }
+
+    const A_ANCHOR: Vec3Fix = Vec3Fix {
+        x: Fix128::ONE,
+        y: Fix128::ZERO,
+        z: Fix128::ZERO,
+    };
+    const B_ANCHOR: Vec3Fix = Vec3Fix {
+        x: Fix128::ZERO,
+        y: Fix128 { hi: 2, lo: 0 },
+        z: Fix128::ZERO,
+    };
+
+    #[test]
+    fn every_joint_positional_part_uses_rotated_local_anchors() {
+        // 全 joint で B は (3,-2,0) → (-1,-2,0) に 4 移動 (world anchor が A の (-1,0,0) に重なる)
+        let expect = v3i(-1, -2, 0);
+        let mut b = anchored_pair();
+        solve_ball_joint(&BallJoint::new(0, 1, A_ANCHOR, B_ANCHOR), &mut b, DT);
+        assert!(near_v(b[1].position, expect), "ball {:?}", b[1].position);
+        let mut h = anchored_pair();
+        solve_hinge_joint(
+            &HingeJoint::new(0, 1, A_ANCHOR, B_ANCHOR, Vec3Fix::UNIT_Z, Vec3Fix::UNIT_Z),
+            &mut h,
+            DT,
+        );
+        assert!(near_v(h[1].position, expect), "hinge {:?}", h[1].position);
+        let mut f = anchored_pair();
+        // fixed は相対回転も見るので target を A の回転 (180°) に合わせる
+        solve_fixed_joint(
+            &FixedJoint::new(
+                0,
+                1,
+                A_ANCHOR,
+                B_ANCHOR,
+                QuatFix::new(Fix128::ZERO, Fix128::ZERO, -Fix128::ONE, Fix128::ZERO),
+            ),
+            &mut f,
+            DT,
+        );
+        assert!(near_v(f[1].position, expect), "fixed {:?}", f[1].position);
+        let mut ct = anchored_pair();
+        solve_cone_twist_joint(
+            &ConeTwistJoint::new(0, 1, A_ANCHOR, B_ANCHOR, Vec3Fix::UNIT_Z, Vec3Fix::UNIT_Z),
+            &mut ct,
+            DT,
+        );
+        assert!(near_v(ct[1].position, expect), "cone {:?}", ct[1].position);
+        // d6 全軸 Locked: frame は A の回転に従う (180° で x,y 反転) が locked の結果は同じ
+        let mut d6j = D6Joint::new(0, 1, A_ANCHOR, B_ANCHOR);
+        d6j.linear_x = D6Motion::Locked;
+        d6j.linear_y = D6Motion::Locked;
+        d6j.linear_z = D6Motion::Locked;
+        let mut d = anchored_pair();
+        solve_d6_joint(&d6j, &mut d, DT);
+        assert!(near_v(d[1].position, expect), "d6 {:?}", d[1].position);
+        // slider (軸 x、A 回転で world 軸 -x): perp は y 成分 0 なので along のみ → 移動なし、
+        // B anchor を (0,3,0) にして perp 1 を作る → B の y が -1 動く
+        let mut sl = anchored_pair();
+        solve_slider_joint(
+            &SliderJoint::new(0, 1, Vec3Fix::UNIT_X, A_ANCHOR, v3i(0, 3, 0)),
+            &mut sl,
+            DT,
+        );
+        assert!(
+            near_v(sl[1].position, v3i(3, -3, 0)),
+            "slider {:?}",
+            sl[1].position
+        );
+        // spring: rest 4 なら力 0 (anchor 込みの距離が 4)、rest 2 なら k=1 で 2 → impulse 1/2
+        let mut sp0 = anchored_pair();
+        solve_spring_joint(
+            &SpringJoint::new(0, 1, A_ANCHOR, B_ANCHOR, fi(4), Fix128::ONE, Fix128::ZERO),
+            &mut sp0,
+            DT,
+        );
+        assert_eq!(sp0[1].position, v3i(3, -2, 0));
+        let mut sp = anchored_pair();
+        solve_spring_joint(
+            &SpringJoint::new(0, 1, A_ANCHOR, B_ANCHOR, fi(2), Fix128::ONE, Fix128::ZERO),
+            &mut sp,
+            DT,
+        );
+        assert!(
+            near_v(
+                sp[1].position,
+                Vec3Fix::new(Fix128::from_ratio(5, 2), fi(-2), Fix128::ZERO)
+            ),
+            "spring {:?}",
+            sp[1].position
+        );
+    }
+
+    #[test]
+    fn compliance_softens_every_positional_joint_identically() {
+        // A static、B inv 1、gap 4、compliance 1/16 (dt 1/4 → term 1) → w 2 → 移動 2
+        let expect = v3i(2, 0, 0);
+        let mut h = HingeJoint::new(
+            0,
+            1,
+            Vec3Fix::ZERO,
+            Vec3Fix::ZERO,
+            Vec3Fix::UNIT_Z,
+            Vec3Fix::UNIT_Z,
+        );
+        h.compliance = Fix128::from_ratio(1, 16);
+        let mut bh = pair(Vec3Fix::ZERO, 0, v3i(4, 0, 0), 1);
+        solve_hinge_joint(&h, &mut bh, DT);
+        assert_eq!(bh[1].position, expect, "hinge");
+        let mut f = FixedJoint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO, QuatFix::IDENTITY);
+        f.compliance = Fix128::from_ratio(1, 16);
+        let mut bf = pair(Vec3Fix::ZERO, 0, v3i(4, 0, 0), 1);
+        solve_fixed_joint(&f, &mut bf, DT);
+        assert_eq!(bf[1].position, expect, "fixed");
+        let mut c = ConeTwistJoint::new(
+            0,
+            1,
+            Vec3Fix::ZERO,
+            Vec3Fix::ZERO,
+            Vec3Fix::UNIT_Z,
+            Vec3Fix::UNIT_Z,
+        );
+        c.compliance = Fix128::from_ratio(1, 16);
+        let mut bc = pair(Vec3Fix::ZERO, 0, v3i(4, 0, 0), 1);
+        solve_cone_twist_joint(&c, &mut bc, DT);
+        assert_eq!(bc[1].position, expect, "cone");
+        let mut s = SliderJoint::new(0, 1, Vec3Fix::UNIT_X, Vec3Fix::ZERO, Vec3Fix::ZERO);
+        s.compliance = Fix128::from_ratio(1, 16);
+        let mut bs = pair(Vec3Fix::ZERO, 0, v3i(0, 4, 0), 1); // perp 4
+        solve_slider_joint(&s, &mut bs, DT);
+        assert_eq!(bs[1].position, v3i(0, 2, 0), "slider");
+        let mut d = D6Joint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO);
+        d.linear_x = D6Motion::Locked;
+        d.compliance = Fix128::from_ratio(1, 16);
+        let mut bd = pair(Vec3Fix::ZERO, 0, v3i(4, 0, 0), 1);
+        solve_d6_joint(&d, &mut bd, DT);
+        assert_eq!(bd[1].position, expect, "d6");
+        // angular compliance: hinge 軸誤差の補正量が小さくなる (compliance 0 との比較)
+        let mk = |ac: Fix128| {
+            let mut j = HingeJoint::new(
+                0,
+                1,
+                Vec3Fix::ZERO,
+                Vec3Fix::ZERO,
+                Vec3Fix::UNIT_Z,
+                Vec3Fix::UNIT_Z,
+            );
+            j.angular_compliance = ac;
+            let mut b = pair(Vec3Fix::ZERO, 0, Vec3Fix::ZERO, 1);
+            b[1].rotation = QuatFix::from_axis_angle(Vec3Fix::UNIT_X, Fix128::from_ratio(1, 2));
+            solve_hinge_joint(&j, &mut b, DT);
+            let a = b[0].rotation.rotate_vec(Vec3Fix::UNIT_Z);
+            let c = b[1].rotation.rotate_vec(Vec3Fix::UNIT_Z);
+            a.cross(c).length()
+        };
+        assert!(
+            mk(Fix128::from_ratio(1, 4)) > mk(Fix128::ZERO),
+            "angular compliance で補正が弱まる"
+        );
+    }
+
+    #[test]
+    fn limit_equality_is_inside_the_allowed_range() {
+        // slider along == min ちょうど → 不変 (`<` false)、d6 proj == limit_max → 不変、cone == limit → 不変
+        let sj = SliderJoint::new(0, 1, Vec3Fix::UNIT_X, Vec3Fix::ZERO, Vec3Fix::ZERO)
+            .with_limits(fi(-1), fi(2));
+        let mut at_min = pair(Vec3Fix::ZERO, 0, v3i(-1, 0, 0), 1);
+        solve_slider_joint(&sj, &mut at_min, DT);
+        assert_eq!(at_min[1].position, v3i(-1, 0, 0));
+        let mut dj = D6Joint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO);
+        dj.linear_y = D6Motion::Limited; // [-1, 1]
+        let mut at_max = pair(Vec3Fix::ZERO, 0, v3i(0, 1, 0), 1);
+        solve_d6_joint(&dj, &mut at_max, DT);
+        assert_eq!(at_max[1].position, v3i(0, 1, 0));
+        let mut at_lo = pair(Vec3Fix::ZERO, 0, v3i(0, -1, 0), 1);
+        solve_d6_joint(&dj, &mut at_lo, DT);
+        assert_eq!(at_lo[1].position, v3i(0, -1, 0));
+        // d6 limited で下限割れ: (0,-3,0) → -3 - (-1) = -2 → B += 2 → (0,-1,0) (上限側は既存 test)
+        let mut below = pair(Vec3Fix::ZERO, 0, v3i(0, -3, 0), 1);
+        solve_d6_joint(&dj, &mut below, DT);
+        assert_eq!(below[1].position, v3i(0, -1, 0));
+    }
+
+    #[test]
+    fn compute_force_honours_anchors_and_rotation_for_every_kind() {
+        let bodies = anchored_pair(); // world anchor 距離 4 (x)
+        assert_eq!(
+            Joint::Ball(BallJoint::new(0, 1, A_ANCHOR, B_ANCHOR)).compute_force(&bodies),
+            fi(4)
+        );
+        assert_eq!(
+            Joint::Hinge(HingeJoint::new(
+                0,
+                1,
+                A_ANCHOR,
+                B_ANCHOR,
+                Vec3Fix::UNIT_Z,
+                Vec3Fix::UNIT_Z
+            ))
+            .compute_force(&bodies),
+            fi(4)
+        );
+        assert_eq!(
+            Joint::Fixed(FixedJoint::new(0, 1, A_ANCHOR, B_ANCHOR, QuatFix::IDENTITY))
+                .compute_force(&bodies),
+            fi(4)
+        );
+        assert_eq!(
+            Joint::D6(D6Joint::new(0, 1, A_ANCHOR, B_ANCHOR)).compute_force(&bodies),
+            fi(4)
+        );
+        assert_eq!(
+            Joint::ConeTwist(ConeTwistJoint::new(
+                0,
+                1,
+                A_ANCHOR,
+                B_ANCHOR,
+                Vec3Fix::UNIT_Z,
+                Vec3Fix::UNIT_Z
+            ))
+            .compute_force(&bodies),
+            fi(4)
+        );
+        // spring: |k (4 - rest)| = |3 (4 - 1)| = 9
+        assert_eq!(
+            Joint::Spring(SpringJoint::new(
+                0,
+                1,
+                A_ANCHOR,
+                B_ANCHOR,
+                fi(1),
+                fi(3),
+                Fix128::ZERO
+            ))
+            .compute_force(&bodies),
+            fi(9)
+        );
+        // slider 軸 y (A 回転で world -y): delta (4,0,0) の perp は 4、軸 x なら perp 0
+        assert_eq!(
+            Joint::Slider(SliderJoint::new(0, 1, Vec3Fix::UNIT_Y, A_ANCHOR, B_ANCHOR))
+                .compute_force(&bodies),
+            fi(4)
+        );
+        assert_eq!(
+            Joint::Slider(SliderJoint::new(0, 1, Vec3Fix::UNIT_X, A_ANCHOR, B_ANCHOR))
+                .compute_force(&bodies),
+            Fix128::ZERO
+        );
+        // anchor なしなら距離は |(3,-2,0)| = √13 ≠ 4
+        assert_ne!(
+            Joint::Ball(BallJoint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO)).compute_force(&bodies),
+            fi(4)
+        );
+    }
 }

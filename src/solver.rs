@@ -5957,4 +5957,21 @@ mod tests {
         assert!(auto.contact_constraints.is_empty());
         assert_eq!(auto.trigger_events().len(), 1);
     }
+
+    #[test]
+    fn raycast_far_intersection_off_center_and_max_distance_cull_inside_aabb() {
+        // origin (9,0,0) が球 (10,0,0) r=2 の内側 (中心から 1 ずれ): b=-1, c=-3, disc=4 → t_near=-1<0 → t_far = 1+2 = 3
+        let world = sphere_world(&[v3(10, 0, 0)]);
+        assert_eq!(
+            world.raycast(v3(9, 0, 0), v3(1, 0, 0), Fix128::from_int(100)),
+            Some((0, Fix128::from_int(3)))
+        );
+        // 球 (10,0,0) r=3 に y=2 の平行 ray: AABB [7,13] は max 7.5 の ray box と重なるが t = 10 - √5 ≈ 7.76 > 7.5 → None
+        let mut big = quiet_world();
+        big.add_body_with_radius(RigidBody::new_static(v3(10, 0, 0)), Fix128::from_int(3));
+        assert_eq!(big.raycast(v3(0, 2, 0), v3(1, 0, 0), r(15, 2)), None);
+        assert!(big
+            .raycast(v3(0, 2, 0), v3(1, 0, 0), Fix128::from_int(8))
+            .is_some());
+    }
 }
