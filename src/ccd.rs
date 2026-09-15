@@ -742,4 +742,542 @@ mod tests {
         );
         assert!(toi.is_none());
     }
+
+    // ---- mutation-score tests (2026-09-15) ----------------------------
+
+    fn fi(n: i64) -> Fix128 {
+        Fix128::from_int(n)
+    }
+
+    fn r(n: i64, d: i64) -> Fix128 {
+        Fix128::from_ratio(n, d)
+    }
+
+    fn v3i(x: i64, y: i64, z: i64) -> Vec3Fix {
+        Vec3Fix::from_int(x, y, z)
+    }
+
+    #[test]
+    fn needs_ccd_requires_both_displacement_and_speed_thresholds() {
+        let cfg = CcdConfig::default(); // velocity_threshold 5
+                                        // speed 8, dt 1/4 → 変位 2 > r/2 (r=2 → 1) かつ 8 > 5 → true
+        assert!(needs_ccd(v3i(8, 0, 0), fi(2), r(1, 4), &cfg));
+        // 変位不足: speed 8, dt 1/16 → 0.5 == r/2 → `>` false
+        assert!(!needs_ccd(v3i(8, 0, 0), fi(2), r(1, 16), &cfg));
+        // 速度不足: speed 4 (< 5) だが変位 4 > 1
+        assert!(!needs_ccd(v3i(4, 0, 0), fi(2), fi(1), &cfg));
+        // 速度ちょうど 5 は `>` false
+        assert!(!needs_ccd(v3i(5, 0, 0), fi(2), fi(1), &cfg));
+        assert!(needs_ccd(v3i(0, 0, 6), fi(2), fi(1), &cfg));
+    }
+
+    #[test]
+    fn sphere_sphere_toi_closed_form() {
+        // A at 0 r=1 速度 (8,0,0)、B at (10,0,0) r=1 静止 → 接触は距離 2 → t = (10-2)/8 = 1
+        let toi = sphere_sphere_toi(
+            Vec3Fix::ZERO,
+            fi(1),
+            v3i(8, 0, 0),
+            v3i(10, 0, 0),
+            fi(1),
+            Vec3Fix::ZERO,
+        )
+        .expect("hit at t=1");
+        assert_eq!(toi.t, Fix128::ONE);
+        assert_eq!(toi.normal, v3i(1, 0, 0));
+        assert_eq!(toi.point, v3i(9, 0, 0)); // pos_a(8) + n * r_a
+                                             // 相対速度: B も逆向き (-8) → t = 8/16 = 1/2、point = 4 + 1
+        let t2 = sphere_sphere_toi(
+            Vec3Fix::ZERO,
+            fi(1),
+            v3i(8, 0, 0),
+            v3i(10, 0, 0),
+            fi(1),
+            v3i(-8, 0, 0),
+        )
+        .expect("t=1/2");
+        assert_eq!(t2.t, r(1, 2));
+        assert_eq!(t2.point, v3i(5, 0, 0));
+        // 半径が効く: r_b = 3 → 距離 4 で接触 → t = 6/8 = 3/4
+        let t3 = sphere_sphere_toi(
+            Vec3Fix::ZERO,
+            fi(1),
+            v3i(8, 0, 0),
+            v3i(10, 0, 0),
+            fi(3),
+            Vec3Fix::ZERO,
+        )
+        .expect("t=3/4");
+        assert_eq!(t3.t, r(3, 4));
+        // 届かない (t > 1)、離れていく、横にずれて外れる、静止
+        assert!(sphere_sphere_toi(
+            Vec3Fix::ZERO,
+            fi(1),
+            v3i(4, 0, 0),
+            v3i(10, 0, 0),
+            fi(1),
+            Vec3Fix::ZERO
+        )
+        .is_none());
+        assert!(sphere_sphere_toi(
+            Vec3Fix::ZERO,
+            fi(1),
+            v3i(-8, 0, 0),
+            v3i(10, 0, 0),
+            fi(1),
+            Vec3Fix::ZERO
+        )
+        .is_none());
+        assert!(sphere_sphere_toi(
+            Vec3Fix::ZERO,
+            fi(1),
+            v3i(8, 0, 0),
+            v3i(10, 5, 0),
+            fi(1),
+            Vec3Fix::ZERO
+        )
+        .is_none());
+        assert!(sphere_sphere_toi(
+            Vec3Fix::ZERO,
+            fi(1),
+            Vec3Fix::ZERO,
+            v3i(10, 0, 0),
+            fi(1),
+            Vec3Fix::ZERO
+        )
+        .is_none());
+        // 既に重なっている → t = 0、normal は a→b
+        let ov = sphere_sphere_toi(
+            Vec3Fix::ZERO,
+            fi(1),
+            Vec3Fix::ZERO,
+            v3i(1, 0, 0),
+            fi(1),
+            Vec3Fix::ZERO,
+        )
+        .expect("overlap");
+        assert_eq!(ov.t, Fix128::ZERO);
+        assert_eq!(ov.normal, v3i(1, 0, 0));
+        assert_eq!(ov.point, v3i(1, 0, 0));
+        // 接線 (disc == 0): B at (10, 2, 0) r=1、A r=1 → 距離 2 の接線経路 → t = 10/8 > 1 → None、速度 16 → t = 10/16
+        let tan = sphere_sphere_toi(
+            Vec3Fix::ZERO,
+            fi(1),
+            v3i(16, 0, 0),
+            v3i(10, 2, 0),
+            fi(1),
+            Vec3Fix::ZERO,
+        )
+        .expect("tangent");
+        assert_eq!(tan.t, r(5, 8));
+    }
+
+    #[test]
+    fn sphere_plane_toi_closed_form() {
+        // 平面 y = 0 (normal +y、offset 0)、球 center (0,5,0) r=1 速度 (0,-8,0) → t = (1-5)/(-8) = 1/2
+        let toi = sphere_plane_toi(
+            v3i(0, 5, 0),
+            fi(1),
+            v3i(0, -8, 0),
+            v3i(0, 1, 0),
+            Fix128::ZERO,
+        )
+        .expect("hit");
+        assert_eq!(toi.t, r(1, 2));
+        assert_eq!(toi.point, v3i(0, 0, 0)); // center + v t - n r = (0,1,0) - (0,1,0)
+        assert_eq!(toi.normal, v3i(0, 1, 0));
+        // offset が効く: 平面 y = 2 → dist 3 → t = (1-3)/(-8) = 1/4、point = (0, 2, 0)
+        let off =
+            sphere_plane_toi(v3i(0, 5, 0), fi(1), v3i(0, -8, 0), v3i(0, 1, 0), fi(2)).expect("hit");
+        assert_eq!(off.t, r(1, 4));
+        assert_eq!(off.point, v3i(0, 2, 0));
+        // 離れていく / 平行 / 届かない
+        assert!(sphere_plane_toi(
+            v3i(0, 5, 0),
+            fi(1),
+            v3i(0, 8, 0),
+            v3i(0, 1, 0),
+            Fix128::ZERO
+        )
+        .is_none());
+        assert!(sphere_plane_toi(
+            v3i(0, 5, 0),
+            fi(1),
+            v3i(8, 0, 0),
+            v3i(0, 1, 0),
+            Fix128::ZERO
+        )
+        .is_none());
+        assert!(sphere_plane_toi(
+            v3i(0, 5, 0),
+            fi(1),
+            v3i(0, -2, 0),
+            v3i(0, 1, 0),
+            Fix128::ZERO
+        )
+        .is_none());
+        // 既に貫通 (|dist| <= r): dist 1 == r → t 0、point は投影点
+        let pen = sphere_plane_toi(
+            v3i(3, 1, 0),
+            fi(1),
+            v3i(0, 8, 0),
+            v3i(0, 1, 0),
+            Fix128::ZERO,
+        )
+        .expect("touching");
+        assert_eq!(pen.t, Fix128::ZERO);
+        assert_eq!(pen.point, v3i(3, 0, 0));
+        // 裏側から (dist 負、離れる向きでも |dist| > r なら t を計算): center (0,-5,0)、速度 (0,8,0) → dist -5、vel_toward 8 ≥ 0 だが dist > r ではない → t = (1+5)/8 = 3/4
+        let back = sphere_plane_toi(
+            v3i(0, -5, 0),
+            fi(1),
+            v3i(0, 8, 0),
+            v3i(0, 1, 0),
+            Fix128::ZERO,
+        )
+        .expect("from behind");
+        assert_eq!(back.t, r(3, 4));
+    }
+
+    #[test]
+    fn conservative_advancement_converges_on_a_plane() {
+        let cfg = CcdConfig {
+            max_iterations: 32,
+            tolerance: r(1, 1000),
+            velocity_threshold: fi(5),
+        };
+        // 距離関数: 平面 x = 10 (signed distance = 10 - x、normal -x 向き)
+        let plane = |p: Vec3Fix| (fi(10) - p.x, v3i(-1, 0, 0));
+        // start 0、変位 (16,0,0)、r=1 → 接触は x = 9 → t = 9/16 (gap は幾何級数で 0 に収束)
+        let toi = conservative_advancement(Vec3Fix::ZERO, v3i(16, 0, 0), fi(1), plane, &cfg)
+            .expect("hit");
+        assert!((toi.t - r(9, 16)).abs() < r(1, 1000), "t {:?}", toi.t);
+        assert_eq!(toi.normal, v3i(-1, 0, 0));
+        // 届かない (変位 4 → x=4、gap 5)、速度 0
+        assert!(
+            conservative_advancement(Vec3Fix::ZERO, v3i(4, 0, 0), fi(1), plane, &cfg).is_none()
+        );
+        assert!(
+            conservative_advancement(Vec3Fix::ZERO, Vec3Fix::ZERO, fi(1), plane, &cfg).is_none()
+        );
+        // 既に tolerance 内 (start x = 9) → t = 0
+        let now = conservative_advancement(v3i(9, 0, 0), v3i(16, 0, 0), fi(1), plane, &cfg)
+            .expect("immediate");
+        assert_eq!(now.t, Fix128::ZERO);
+        // max_iterations 1 では収束せず None
+        let one = CcdConfig {
+            max_iterations: 1,
+            ..cfg
+        };
+        assert!(
+            conservative_advancement(Vec3Fix::ZERO, v3i(16, 0, 0), fi(1), plane, &one).is_none()
+        );
+    }
+
+    #[test]
+    fn swept_aabb_entry_time_per_axis_and_overlap_cases() {
+        let m = AABB::new(v3i(-1, -1, -1), v3i(1, 1, 1));
+        let target = AABB::new(v3i(5, -1, -1), v3i(7, 1, 1));
+        // x で 4 離れ、速度 8 → t = 1/2
+        assert_eq!(swept_aabb(&m, v3i(8, 0, 0), &target), Some(r(1, 2)));
+        // 速度 2 → t = 2 > 1 → None
+        assert_eq!(swept_aabb(&m, v3i(2, 0, 0), &target), None);
+        // 逆向き → None、y でずれて通過しない → None
+        assert_eq!(swept_aabb(&m, v3i(-8, 0, 0), &target), None);
+        assert_eq!(
+            swept_aabb(&m, v3i(8, 0, 0), &AABB::new(v3i(5, 3, -1), v3i(7, 5, 1))),
+            None
+        );
+        // 斜め: y でも 4 離れた target、速度 (8, 8, 0) → x,y とも t 1/2 で進入 → 1/2
+        assert_eq!(
+            swept_aabb(&m, v3i(8, 8, 0), &AABB::new(v3i(5, 5, -1), v3i(7, 7, 1))),
+            Some(r(1, 2))
+        );
+        // 各軸の enter は max 側: x は 1/2、y は 1/4 で進入 → 1/2
+        assert_eq!(
+            swept_aabb(&m, v3i(8, 8, 0), &AABB::new(v3i(5, 3, -1), v3i(7, 5, 1))),
+            Some(r(1, 2))
+        );
+        // y 軸と z 軸単独
+        assert_eq!(
+            swept_aabb(&m, v3i(0, 8, 0), &AABB::new(v3i(-1, 5, -1), v3i(1, 7, 1))),
+            Some(r(1, 2))
+        );
+        assert_eq!(
+            swept_aabb(
+                &m,
+                v3i(0, 0, -8),
+                &AABB::new(v3i(-1, -1, -7), v3i(1, 1, -5))
+            ),
+            Some(r(1, 2))
+        );
+        // 既に重なっている → 0、静止で重ならない → None、静止で重なる → 0
+        assert_eq!(
+            swept_aabb(&m, v3i(8, 0, 0), &AABB::new(Vec3Fix::ZERO, v3i(2, 2, 2))),
+            Some(Fix128::ZERO)
+        );
+        assert_eq!(swept_aabb(&m, Vec3Fix::ZERO, &target), None);
+        assert_eq!(
+            swept_aabb(&m, Vec3Fix::ZERO, &AABB::new(Vec3Fix::ZERO, v3i(2, 2, 2))),
+            Some(Fix128::ZERO)
+        );
+        // 速度ちょうど 4 → t = 1 (`<=` 境界)
+        assert_eq!(swept_aabb(&m, v3i(4, 0, 0), &target), Some(Fix128::ONE));
+    }
+
+    #[test]
+    fn slab_test_orders_times_and_handles_static_axis() {
+        // a [-1,1] → b [5,7]、vel 8: t0 = (5-1)/8 = 1/2、t1 = (7+1)/8 = 1
+        assert_eq!(
+            slab_test(fi(-1), fi(1), fi(5), fi(7), fi(8)),
+            Some((r(1, 2), fi(1)))
+        );
+        // 負の速度では swap される: a [5,7] → b [-1,1]、vel -8: t0 = (-1-7)/-8 = 1、t1 = (1-5)/-8 = 1/2 → (1/2, 1)
+        assert_eq!(
+            slab_test(fi(5), fi(7), fi(-1), fi(1), fi(-8)),
+            Some((r(1, 2), fi(1)))
+        );
+        // 静止: 重なりなし → None、重なり / 接触 → 無限区間
+        assert_eq!(slab_test(fi(-1), fi(1), fi(5), fi(7), Fix128::ZERO), None);
+        assert_eq!(
+            slab_test(fi(-1), fi(1), fi(0), fi(7), Fix128::ZERO),
+            Some((fi(-1000000), fi(1000000)))
+        );
+        assert_eq!(
+            slab_test(fi(-1), fi(1), fi(1), fi(7), Fix128::ZERO),
+            Some((fi(-1000000), fi(1000000)))
+        );
+        assert_eq!(
+            slab_test(fi(-1), fi(1), fi(-7), fi(-1), Fix128::ZERO),
+            Some((fi(-1000000), fi(1000000)))
+        );
+    }
+
+    #[test]
+    fn speculative_contact_predicts_gap_breach() {
+        // A at 0 r=1、B at (10,0,0) r=1、gap 8、closing 8*dt: dt 1/2 → predicted 4 > 0 → None
+        assert!(speculative_contact(
+            Vec3Fix::ZERO,
+            v3i(8, 0, 0),
+            fi(1),
+            v3i(10, 0, 0),
+            Vec3Fix::ZERO,
+            fi(1),
+            r(1, 2)
+        )
+        .is_none());
+        // dt 2 → predicted -8 → depth 8
+        let c = speculative_contact(
+            Vec3Fix::ZERO,
+            v3i(8, 0, 0),
+            fi(1),
+            v3i(10, 0, 0),
+            Vec3Fix::ZERO,
+            fi(1),
+            fi(2),
+        )
+        .expect("breach");
+        assert_eq!(c.depth, fi(8));
+        assert_eq!(c.normal, v3i(1, 0, 0));
+        assert_eq!(c.point_a, v3i(1, 0, 0));
+        assert_eq!(c.point_b, v3i(9, 0, 0));
+        // predicted == 0 ちょうど (dt 1) は `<` false → None
+        assert!(speculative_contact(
+            Vec3Fix::ZERO,
+            v3i(8, 0, 0),
+            fi(1),
+            v3i(10, 0, 0),
+            Vec3Fix::ZERO,
+            fi(1),
+            fi(1)
+        )
+        .is_none());
+        // 離れる向き → None、既に重なり → depth = -gap
+        assert!(speculative_contact(
+            Vec3Fix::ZERO,
+            v3i(-8, 0, 0),
+            fi(1),
+            v3i(10, 0, 0),
+            Vec3Fix::ZERO,
+            fi(1),
+            fi(9)
+        )
+        .is_none());
+        let ov = speculative_contact(
+            Vec3Fix::ZERO,
+            Vec3Fix::ZERO,
+            fi(1),
+            v3i(1, 0, 0),
+            Vec3Fix::ZERO,
+            fi(1),
+            fi(1),
+        )
+        .expect("overlap");
+        assert_eq!(ov.depth, fi(1));
+        assert_eq!(ov.point_b, Vec3Fix::ZERO);
+        // 同一点 → None、B の速度も効く (B が -8 → closing 16、dt 1 → predicted -8)
+        assert!(speculative_contact(
+            Vec3Fix::ZERO,
+            v3i(8, 0, 0),
+            fi(1),
+            Vec3Fix::ZERO,
+            Vec3Fix::ZERO,
+            fi(1),
+            fi(1)
+        )
+        .is_none());
+        let both = speculative_contact(
+            Vec3Fix::ZERO,
+            v3i(8, 0, 0),
+            fi(1),
+            v3i(10, 0, 0),
+            v3i(-8, 0, 0),
+            fi(1),
+            fi(1),
+        )
+        .expect("both");
+        assert_eq!(both.depth, fi(8));
+        // adaptive_toi_substeps: 衝突コースなら max、そうでなければ 1、max 0 は 1 に clamp
+        assert_eq!(
+            adaptive_toi_substeps(
+                Vec3Fix::ZERO,
+                v3i(8, 0, 0),
+                fi(1),
+                v3i(10, 0, 0),
+                Vec3Fix::ZERO,
+                fi(1),
+                fi(2),
+                6
+            ),
+            6
+        );
+        assert_eq!(
+            adaptive_toi_substeps(
+                Vec3Fix::ZERO,
+                v3i(8, 0, 0),
+                fi(1),
+                v3i(10, 0, 0),
+                Vec3Fix::ZERO,
+                fi(1),
+                r(1, 2),
+                6
+            ),
+            1
+        );
+        assert_eq!(
+            adaptive_toi_substeps(
+                Vec3Fix::ZERO,
+                v3i(8, 0, 0),
+                fi(1),
+                v3i(10, 0, 0),
+                Vec3Fix::ZERO,
+                fi(1),
+                fi(2),
+                0
+            ),
+            1
+        );
+    }
+
+    #[test]
+    fn capsule_and_aabb_plane_toi_use_closest_feature() {
+        let n = v3i(0, 1, 0);
+        // capsule 端点 a (0,5,0) / b (0,9,0) r=1、速度 (0,-8,0) → 近い方 a → t = (1-5)/-8 = 1/2
+        let cap = capsule_plane_toi(
+            v3i(0, 5, 0),
+            v3i(0, 9, 0),
+            fi(1),
+            v3i(0, -8, 0),
+            n,
+            Fix128::ZERO,
+        )
+        .expect("hit");
+        assert_eq!(cap.t, r(1, 2));
+        // 端点を入れ替えても同じ (b が近い場合の分岐)
+        let cap2 = capsule_plane_toi(
+            v3i(0, 9, 0),
+            v3i(0, 5, 0),
+            fi(1),
+            v3i(0, -8, 0),
+            n,
+            Fix128::ZERO,
+        )
+        .expect("hit");
+        assert_eq!(cap2.t, r(1, 2));
+        // sphere_capsule: 球 (0,0,0) r=1 速度 (8,0,0)、capsule 線分 (10,-5,0)-(10,5,0) r=1 → 最近点 (10,0,0) → t = 1
+        let sc = sphere_capsule_toi(
+            Vec3Fix::ZERO,
+            fi(1),
+            v3i(8, 0, 0),
+            v3i(10, -5, 0),
+            v3i(10, 5, 0),
+            fi(1),
+        )
+        .expect("hit");
+        assert_eq!(sc.t, Fix128::ONE);
+        // clamp: 球が線分の延長上 (y = 9) → 最近点は端 (10,5,0) → 距離 √(100+16)... 横方向 4 のずれで外れる (速度 8 では届かない)
+        assert!(sphere_capsule_toi(
+            v3i(0, 9, 0),
+            fi(1),
+            v3i(8, 0, 0),
+            v3i(10, -5, 0),
+            v3i(10, 5, 0),
+            fi(1)
+        )
+        .is_none());
+        // 退化 capsule (a == b) は球扱い
+        let deg = sphere_capsule_toi(
+            Vec3Fix::ZERO,
+            fi(1),
+            v3i(8, 0, 0),
+            v3i(10, 0, 0),
+            v3i(10, 0, 0),
+            fi(1),
+        )
+        .expect("sphere");
+        assert_eq!(deg.t, Fix128::ONE);
+        // aabb_plane: 箱 [1,3]³ 速度 (0,-8,0)、平面 y=0 → 最下点 y=1 → t = 1/8、point は support 頂点 + 移動
+        let ab = aabb_plane_toi(
+            &AABB::new(v3i(1, 1, 1), v3i(3, 3, 3)),
+            v3i(0, -8, 0),
+            n,
+            Fix128::ZERO,
+        )
+        .expect("hit");
+        assert_eq!(ab.t, r(1, 8));
+        assert_eq!(ab.normal, n);
+        // 法線が -y なら support は max 側 (y=3)、平面 y = 5 (offset -5 for normal -y): dist = -3 + 5 = 2、速度 (0,8,0) → vel_toward -8 → t = 2/8 = 1/4
+        let ab2 = aabb_plane_toi(
+            &AABB::new(v3i(1, 1, 1), v3i(3, 3, 3)),
+            v3i(0, 8, 0),
+            v3i(0, -1, 0),
+            fi(-5),
+        )
+        .expect("hit");
+        assert_eq!(ab2.t, r(1, 4));
+        // 離れる / 既に貫通 (t 0) / 平行
+        assert!(aabb_plane_toi(
+            &AABB::new(v3i(1, 1, 1), v3i(3, 3, 3)),
+            v3i(0, 8, 0),
+            n,
+            Fix128::ZERO
+        )
+        .is_none());
+        let pen = aabb_plane_toi(
+            &AABB::new(v3i(1, -1, 1), v3i(3, 3, 3)),
+            v3i(0, 8, 0),
+            n,
+            Fix128::ZERO,
+        )
+        .expect("penetrating");
+        assert_eq!(pen.t, Fix128::ZERO);
+        assert_eq!(pen.point, v3i(1, -1, 1));
+        assert!(aabb_plane_toi(
+            &AABB::new(v3i(1, 1, 1), v3i(3, 3, 3)),
+            v3i(8, 0, 0),
+            n,
+            Fix128::ZERO
+        )
+        .is_none());
+    }
 }

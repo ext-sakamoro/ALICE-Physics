@@ -46,12 +46,30 @@ were introduced during that release window.
   correct. Found by the new mutation-score tests; the fix drops the
   removed body's references first, then remaps.
 
+- **`LinearBvh::find_pairs` returned every pair regardless of overlap.** Each
+  primitive was queried with the BVH's *world* bounds instead of its own AABB,
+  so the broad phase reported all `n·(n-1)/2` candidates and
+  `PhysicsWorld::detect_collisions` ran the narrow phase on every pair
+  (O(n²)). Collision results were still correct (the narrow phase filtered
+  them), but the "Linear BVH broad-phase" was effectively disabled. Each leaf
+  is now queried with its own quantised AABB; the result is a superset of the
+  truly overlapping pairs (never misses one) and the contact set / order are
+  unchanged, so no determinism golden moved.
+
 ### Added
 
 - `Fix128::shr_bits(i)` — exact arithmetic right shift of the full 128-bit
   value (single source of truth for the CORDIC micro-rotations).
 - Cloth bending unit tests (flat fixed point / monotone relaxation / pinned
   vertices / drape bounds) and `atan` / `atan2` / `shr_bits` tests.
+- Mutation-score tests for `contact_cache` (1 cm matching, nearest-of-many,
+  full-manifold replacement, averaged normal, cache lifecycle / stale frames,
+  warm-start impulses, tangent frame), `collider` (exact AABB union /
+  surface area, support functions, GJK configurations, EPA minimum-penetration
+  axis and depth), `ccd` (closed-form sphere / plane / capsule / AABB TOI,
+  swept AABB, slab test, conservative advancement, speculative contact) and
+  `bvh` (broad-phase pair semantics, Morton interleave, per-axis
+  normalisation and clamping, i32 floor / ceil, `find_split`, stats).
 - Mutation-score tests for every joint solver (15 tests): closed-form
   inverse-mass splits for ball / hinge / fixed / slider / cone-twist
   positional parts, rotated local anchors, compliance, hinge axis alignment

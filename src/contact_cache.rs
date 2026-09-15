@@ -617,4 +617,300 @@ mod tests {
         assert!(bodies[0].velocity.y > Fix128::ZERO);
         assert!(bodies[1].velocity.y < Fix128::ZERO);
     }
+
+    // ---- mutation-score tests (2026-09-15) ----------------------------
+
+    fn fi(n: i64) -> Fix128 {
+        Fix128::from_int(n)
+    }
+
+    fn v3i(x: i64, y: i64, z: i64) -> Vec3Fix {
+        Vec3Fix::from_int(x, y, z)
+    }
+
+    fn contact(normal: Vec3Fix, depth: Fix128) -> Contact {
+        Contact {
+            depth,
+            normal,
+            point_a: Vec3Fix::ZERO,
+            point_b: Vec3Fix::ZERO,
+        }
+    }
+
+    fn manifold() -> ContactManifold {
+        ContactManifold::new(
+            BodyPairKey::new(0, 1),
+            Fix128::from_ratio(1, 2),
+            Fix128::ZERO,
+        )
+    }
+
+    #[test]
+    fn manifold_add_matches_within_1cm_and_preserves_impulses() {
+        let mut m = manifold();
+        m.add_or_update(&contact(Vec3Fix::UNIT_Y, fi(1)), v3i(1, 0, 0), v3i(1, 1, 0));
+        assert_eq!(m.point_count(), 1);
+        assert!(!m.is_empty());
+        m.store_impulses(0, fi(5), fi(6), fi(7));
+        // 0.5 cm ずれた点 = 同一点として更新 (impulse 保持、age +1、depth 更新)
+        let near = Vec3Fix::new(
+            Fix128::ONE + Fix128::from_ratio(1, 200),
+            Fix128::ZERO,
+            Fix128::ZERO,
+        );
+        m.add_or_update(&contact(Vec3Fix::UNIT_Y, fi(2)), near, v3i(1, 1, 0));
+        assert_eq!(m.point_count(), 1);
+        assert_eq!(m.warm_start_impulse(0), (fi(5), fi(6), fi(7)));
+        assert_eq!(m.points[0].age, 1);
+        assert_eq!(m.points[0].depth, fi(2));
+        assert_eq!(m.points[0].local_point_a, near);
+        // 更新後の点 (1.005) から 2 cm 離れた点は新規点 (1 cm 閾値の外)
+        let edge = Vec3Fix::new(
+            Fix128::ONE + Fix128::from_ratio(5, 200),
+            Fix128::ZERO,
+            Fix128::ZERO,
+        );
+        m.add_or_update(&contact(Vec3Fix::UNIT_Y, fi(1)), edge, v3i(1, 1, 0));
+        assert_eq!(m.point_count(), 2);
+        assert_eq!(
+            m.warm_start_impulse(1),
+            (Fix128::ZERO, Fix128::ZERO, Fix128::ZERO)
+        );
+        // 範囲外 index は 0、store は無視
+        assert_eq!(
+            m.warm_start_impulse(9),
+            (Fix128::ZERO, Fix128::ZERO, Fix128::ZERO)
+        );
+        m.store_impulses(9, fi(1), fi(1), fi(1));
+        assert_eq!(m.point_count(), 2);
+        m.clear();
+        assert!(m.is_empty());
+        assert_eq!(m.point_count(), 0);
+        assert_eq!(m.normal, Vec3Fix::ZERO);
+    }
+
+    #[test]
+    fn manifold_picks_nearest_of_several_candidates() {
+        let mut m = manifold();
+        m.add_or_update(
+            &contact(Vec3Fix::UNIT_Y, fi(1)),
+            v3i(0, 0, 0),
+            Vec3Fix::ZERO,
+        );
+        m.add_or_update(
+            &contact(Vec3Fix::UNIT_Y, fi(1)),
+            v3i(5, 0, 0),
+            Vec3Fix::ZERO,
+        );
+        m.store_impulses(0, fi(10), Fix128::ZERO, Fix128::ZERO);
+        m.store_impulses(1, fi(20), Fix128::ZERO, Fix128::ZERO);
+        // (5.004, 0, 0) は点 1 に一致 → 点 1 の impulse 20 が残り、点 0 は不変
+        let p = Vec3Fix::new(
+            fi(5) + Fix128::from_ratio(1, 250),
+            Fix128::ZERO,
+            Fix128::ZERO,
+        );
+        m.add_or_update(&contact(Vec3Fix::UNIT_Y, fi(3)), p, Vec3Fix::ZERO);
+        assert_eq!(m.point_count(), 2);
+        assert_eq!(m.warm_start_impulse(1).0, fi(20));
+        assert_eq!(m.points[1].depth, fi(3));
+        assert_eq!(m.points[0].depth, fi(1));
+    }
+
+    #[test]
+    fn manifold_full_replaces_shallowest_only_if_deeper() {
+        let mut m = manifold();
+        for (i, d) in [3, 1, 4, 2].iter().enumerate() {
+            m.add_or_update(
+                &contact(Vec3Fix::UNIT_Y, fi(*d)),
+                v3i(i as i64 * 10, 0, 0),
+                Vec3Fix::ZERO,
+            );
+        }
+        assert_eq!(m.point_count(), MAX_MANIFOLD_POINTS);
+        // 5 点目 depth 0.5 < 最浅 1 → 追加されない
+        m.add_or_update(
+            &contact(Vec3Fix::UNIT_Y, Fix128::from_ratio(1, 2)),
+            v3i(100, 0, 0),
+            Vec3Fix::ZERO,
+        );
+        assert_eq!(m.point_count(), 4);
+        assert!(m.points.iter().all(|p| p.local_point_a.x != fi(100)));
+        // depth 1 == 最浅 1 → `>` は false → 追加されない
+        m.add_or_update(
+            &contact(Vec3Fix::UNIT_Y, fi(1)),
+            v3i(100, 0, 0),
+            Vec3Fix::ZERO,
+        );
+        assert!(m.points.iter().all(|p| p.local_point_a.x != fi(100)));
+        // depth 2.5 > 最浅 1 (index 1) → index 1 が置換される
+        m.add_or_update(
+            &contact(Vec3Fix::UNIT_Y, Fix128::from_ratio(5, 2)),
+            v3i(100, 0, 0),
+            Vec3Fix::ZERO,
+        );
+        assert_eq!(m.point_count(), 4);
+        assert_eq!(m.points[1].local_point_a, v3i(100, 0, 0));
+        assert_eq!(m.points[1].depth, Fix128::from_ratio(5, 2));
+        let depths: Vec<Fix128> = m.points.iter().map(|p| p.depth).collect();
+        assert_eq!(depths, vec![fi(3), Fix128::from_ratio(5, 2), fi(4), fi(2)]);
+    }
+
+    #[test]
+    fn manifold_normal_is_normalized_average_of_point_normals() {
+        let mut m = manifold();
+        m.add_or_update(&contact(v3i(3, 0, 0), fi(1)), v3i(0, 0, 0), Vec3Fix::ZERO);
+        assert_eq!(m.normal, Vec3Fix::UNIT_X); // (3,0,0)/3
+        m.add_or_update(&contact(v3i(0, 4, 0), fi(1)), v3i(10, 0, 0), Vec3Fix::ZERO);
+        // sum (3,4,0)、len 5 → (0.6, 0.8, 0)
+        assert_eq!(
+            m.normal,
+            Vec3Fix::new(fi(3) / fi(5), fi(4) / fi(5), Fix128::ZERO)
+        );
+        // 打ち消し合う normal → len 0 → 直前の normal を維持
+        let before = m.normal;
+        m.add_or_update(
+            &contact(v3i(-3, -4, 0), fi(1)),
+            v3i(20, 0, 0),
+            Vec3Fix::ZERO,
+        );
+        assert_eq!(m.normal, before);
+        assert_eq!(m.stale_frames, 0);
+    }
+
+    #[test]
+    fn cache_get_or_create_find_frames_and_counts() {
+        let mut cache = ContactCache::new();
+        let k01 = BodyPairKey::new(0, 1);
+        let k23 = BodyPairKey::new(2, 3);
+        cache
+            .get_or_create(k01, Fix128::ONE, Fix128::ZERO)
+            .add_or_update(
+                &contact(Vec3Fix::UNIT_Y, fi(1)),
+                Vec3Fix::ZERO,
+                Vec3Fix::ZERO,
+            );
+        cache
+            .get_or_create(k01, Fix128::ONE, Fix128::ZERO)
+            .add_or_update(
+                &contact(Vec3Fix::UNIT_Y, fi(1)),
+                v3i(5, 0, 0),
+                Vec3Fix::ZERO,
+            );
+        cache
+            .get_or_create(k23, Fix128::ONE, Fix128::ZERO)
+            .add_or_update(
+                &contact(Vec3Fix::UNIT_Y, fi(1)),
+                Vec3Fix::ZERO,
+                Vec3Fix::ZERO,
+            );
+        assert_eq!(cache.manifold_count(), 2, "同じ pair は再利用");
+        assert_eq!(cache.total_contact_points(), 3);
+        assert_eq!(cache.find(&k01).map(ContactManifold::point_count), Some(2));
+        assert_eq!(cache.find(&k23).map(ContactManifold::point_count), Some(1));
+        assert!(cache.find(&BodyPairKey::new(4, 5)).is_none());
+        // 順序違いの key は同一 (正規化)
+        assert_eq!(BodyPairKey::new(1, 0), k01);
+        assert!(cache.find(&BodyPairKey::new(1, 0)).is_some());
+        // stale: begin_frame で +1、max 3 を超えると end_frame で落ちる (k23 だけ touch し続ける)
+        for _ in 0..3 {
+            cache.begin_frame();
+            cache
+                .get_or_create(k23, Fix128::ONE, Fix128::ZERO)
+                .add_or_update(
+                    &contact(Vec3Fix::UNIT_Y, fi(1)),
+                    Vec3Fix::ZERO,
+                    Vec3Fix::ZERO,
+                );
+            cache.end_frame();
+        }
+        assert_eq!(cache.manifold_count(), 2, "stale 3 == max 3 は残る");
+        cache.begin_frame();
+        cache.end_frame();
+        assert_eq!(cache.manifold_count(), 1, "stale 4 > 3 で落ちる");
+        assert!(cache.find(&k01).is_none());
+        assert!(cache.find(&k23).is_some(), "index は再構築される");
+        assert_eq!(cache.total_contact_points(), 1);
+        cache.clear();
+        assert_eq!(cache.manifold_count(), 0);
+        assert_eq!(cache.total_contact_points(), 0);
+        assert!(cache.find(&k23).is_none());
+        let dbg = format!("{cache:?}");
+        assert!(
+            dbg.contains("ContactCache") && dbg.contains("max_stale_frames: 3"),
+            "{dbg}"
+        );
+    }
+
+    #[test]
+    fn apply_warm_start_applies_scaled_cached_impulses() {
+        let mut cache = ContactCache::new();
+        cache.warm_start_factor = Fix128::from_ratio(1, 2);
+        let m = cache.get_or_create(BodyPairKey::new(0, 1), Fix128::ONE, Fix128::ZERO);
+        m.add_or_update(
+            &contact(Vec3Fix::UNIT_Z, fi(1)),
+            Vec3Fix::ZERO,
+            Vec3Fix::ZERO,
+        );
+        // normal z: tangent_frame(z) = (z × x = y, z × y = -x) → t1 = (0,1,0), t2 = (-1,0,0)
+        m.store_impulses(0, fi(4), fi(2), fi(6));
+        let mut bodies = vec![
+            crate::solver::RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE),
+            crate::solver::RigidBody::new_dynamic(v3i(1, 0, 0), Fix128::ONE),
+        ];
+        bodies[1].inv_mass = fi(3);
+        cache.apply_warm_start(&mut bodies);
+        // total = z*(4*0.5) + y*(2*0.5) + (-x)*(6*0.5) = (-3, 1, 2)、A += total*1、B -= total*3
+        assert_eq!(bodies[0].velocity, v3i(-3, 1, 2));
+        assert_eq!(bodies[1].velocity, v3i(9, -3, -6));
+        // static 側は不変、body index 範囲外の manifold は skip
+        let mut st = vec![
+            crate::solver::RigidBody::new_static(Vec3Fix::ZERO),
+            crate::solver::RigidBody::new_dynamic(v3i(1, 0, 0), Fix128::ONE),
+        ];
+        cache.apply_warm_start(&mut st);
+        assert_eq!(st[0].velocity, Vec3Fix::ZERO);
+        assert_eq!(st[1].velocity, v3i(3, -1, -2));
+        let mut short = vec![crate::solver::RigidBody::new_dynamic(
+            Vec3Fix::ZERO,
+            Fix128::ONE,
+        )];
+        cache.apply_warm_start(&mut short);
+        assert_eq!(short[0].velocity, Vec3Fix::ZERO);
+    }
+
+    #[test]
+    fn tangent_frame_picks_least_parallel_axis_and_is_orthonormal() {
+        // normal = x → reference は y (abs_x が最小でない、abs_y <= abs_z) → t1 = x × y = z、t2 = x × z = -y
+        assert_eq!(
+            tangent_frame(Vec3Fix::UNIT_X),
+            (Vec3Fix::UNIT_Z, -Vec3Fix::UNIT_Y)
+        );
+        // normal = y → reference x (abs_x <= abs_y && abs_x <= abs_z) → t1 = y × x = -z、t2 = y × -z = -x
+        assert_eq!(
+            tangent_frame(Vec3Fix::UNIT_Y),
+            (-Vec3Fix::UNIT_Z, -Vec3Fix::UNIT_X)
+        );
+        // normal = z → reference x → t1 = z × x = y、t2 = z × y = -x
+        assert_eq!(
+            tangent_frame(Vec3Fix::UNIT_Z),
+            (Vec3Fix::UNIT_Y, -Vec3Fix::UNIT_X)
+        );
+        // 同率 (abs_x == abs_y == abs_z): `<=` で x が選ばれる
+        let d = Vec3Fix::new(Fix128::ONE, Fix128::ONE, Fix128::ONE);
+        let (t1, t2) = tangent_frame(d);
+        let expect_t1 = d.cross(Vec3Fix::UNIT_X).normalize();
+        assert_eq!(t1, expect_t1);
+        assert_eq!(t2, d.cross(t1));
+        // 一般 normal: t1 ⊥ n、t2 ⊥ n、t1 ⊥ t2 (数 ulp)
+        let n = Vec3Fix::new(
+            Fix128::from_ratio(1, 3),
+            Fix128::from_ratio(-2, 3),
+            Fix128::from_ratio(2, 3),
+        );
+        let (t1, t2) = tangent_frame(n);
+        let small = Fix128 { hi: 0, lo: 1 << 24 };
+        assert!(n.dot(t1).abs() < small && n.dot(t2).abs() < small && t1.dot(t2).abs() < small);
+        assert!((t1.length() - Fix128::ONE).abs() < small);
+    }
 }
