@@ -21,6 +21,7 @@
 // simulation state, so the det_math determinism gate does not apply.
 #![allow(clippy::disallowed_methods)]
 
+use alice_physics::joint::{solve_joints, HingeJoint, Joint};
 use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
 use alice_physics::solver::{BodyType, DistanceConstraint, PhysicsConfig, PhysicsWorld, RigidBody};
 
@@ -373,4 +374,113 @@ fn resting_body_on_static_support_stays_put_and_sleeps() {
     );
     assert!(world.is_sleeping(ball), "resting ball never fell asleep");
     assert_eq!(world.bodies[ground].position, Vec3Fix::ZERO);
+}
+
+// ---------------------------------------------------------------------------
+// Joints: angular XPBD (Macklin et al. 2020 §3.3.2) — exact split by
+// `w_i = n · I_i⁻¹ n`, signed twist angle
+// ---------------------------------------------------------------------------
+
+fn axis_angle_of(q: QuatFix) -> (Vec3Fix, f64) {
+    let (axis, s) = Vec3Fix::new(q.x, q.y, q.z).normalize_with_length();
+    let angle = 2.0 * s.to_f64().atan2(q.w.to_f64());
+    (axis, angle)
+}
+
+/// A rigid hinge (compliance 0) whose axes are misaligned by θ removes the
+/// whole error in one solve: the relative rotation about the correction
+/// axis changes by exactly `(w_a + w_b) λ = θ`. With a static A only B
+/// moves; with two dynamic bodies the rotations split as `w_a : w_b`
+/// (`w_i = n · I_i⁻¹ n`, here 1 : 3), which is Macklin 2020 eq. 5–6. The
+/// first-order update `(n θ/2, 1)` is exact in direction and `O(θ³)` in
+/// magnitude, hence the tolerances. Before 1.2.0 both bodies received the
+/// full λ with `w = |diag(I⁻¹)|`, so a unit-inertia hinge removed `1/√3`
+/// of θ per step and static/dynamic pairs converged only over iterations.
+#[test]
+fn hinge_alignment_removes_the_full_error_in_one_solve_split_by_inertia() {
+    let theta = 0.3f64;
+    let tilt = QuatFix::from_axis_angle(Vec3Fix::UNIT_Z, Fix128::from_f64(theta));
+    // static A (axis x), dynamic B with axis x rotated by θ about z
+    let mut bodies = vec![
+        RigidBody::new_static(Vec3Fix::ZERO),
+        RigidBody::new(Vec3Fix::ZERO, Fix128::ONE),
+    ];
+    bodies[1].rotation = tilt;
+    let hinge = Joint::Hinge(HingeJoint::new(
+        0,
+        1,
+        Vec3Fix::ZERO,
+        Vec3Fix::ZERO,
+        Vec3Fix::UNIT_X,
+        Vec3Fix::UNIT_X,
+    ));
+    solve_joints(&[hinge], &mut bodies, r(1, 60));
+    let axis_b = bodies[1].rotation.rotate_vec(Vec3Fix::UNIT_X);
+    let residual = axis_b.cross(Vec3Fix::UNIT_X).length().to_f64();
+    assert!(
+        residual < theta.powi(3) / 8.0 + 1e-9,
+        "static/dynamic: axis error {residual} left after one rigid solve (θ = {theta})"
+    );
+
+    // two dynamic bodies, inverse inertia about z 1 : 3 → A rotates θ/4, B by −3θ/4
+    let mut bodies = vec![
+        RigidBody::new(Vec3Fix::ZERO, Fix128::ONE),
+        RigidBody::new(Vec3Fix::ZERO, Fix128::ONE),
+    ];
+    bodies[0].inv_inertia = Vec3Fix::from_int(1, 1, 1);
+    bodies[1].inv_inertia = Vec3Fix::from_int(3, 3, 3);
+    bodies[1].rotation = tilt;
+    solve_joints(&[hinge], &mut bodies, r(1, 60));
+    let (ax_a, ang_a) = axis_angle_of(bodies[0].rotation);
+    assert!(
+        (ang_a - theta / 4.0).abs() < 1e-3 && (ax_a.z.to_f64() - 1.0).abs() < 1e-9,
+        "A rotated {ang_a} about {ax_a:?}, want θ/4 = {} about +z",
+        theta / 4.0
+    );
+    let (ax_b, ang_b) = axis_angle_of(bodies[1].rotation);
+    // B started at +θ and rotates by −3θ/4 → +θ/4 about z
+    assert!(
+        (ang_b - theta / 4.0).abs() < 1e-3 && (ax_b.z.to_f64() - 1.0).abs() < 1e-9,
+        "B at {ang_b} about {ax_b:?}, want θ/4"
+    );
+    let axis_a = bodies[0].rotation.rotate_vec(Vec3Fix::UNIT_X);
+    let axis_b = bodies[1].rotation.rotate_vec(Vec3Fix::UNIT_X);
+    assert!(
+        axis_a.cross(axis_b).length().to_f64() < 1e-3,
+        "axes aligned"
+    );
+}
+
+/// Hinge angle limits act on the *signed* relative angle: a B rotated by
+/// −0.8 rad about the hinge axis with `angle_min = −0.5` is pushed *up* to
+/// −0.5, and one rotated by +0.8 with `angle_max = 0.5` is pushed *down* to
+/// 0.5; the limit is reached in one rigid solve. Before 1.2.0 the twist
+/// angle was measured unsigned (`2·atan2(|proj|, w) ≥ 0`), so −0.8 read as
+/// +0.8, hit the *max* limit and was pushed further negative.
+#[test]
+fn hinge_limits_are_signed_and_reached_in_one_solve() {
+    for &(start, want) in &[(-0.8f64, -0.5f64), (0.8, 0.5), (-0.3, -0.3), (0.3, 0.3)] {
+        let mut bodies = vec![
+            RigidBody::new_static(Vec3Fix::ZERO),
+            RigidBody::new(Vec3Fix::ZERO, Fix128::ONE),
+        ];
+        bodies[1].rotation = QuatFix::from_axis_angle(Vec3Fix::UNIT_X, Fix128::from_f64(start));
+        let mut h = HingeJoint::new(
+            0,
+            1,
+            Vec3Fix::ZERO,
+            Vec3Fix::ZERO,
+            Vec3Fix::UNIT_X,
+            Vec3Fix::UNIT_X,
+        );
+        h.angle_min = Some(r(-1, 2));
+        h.angle_max = Some(r(1, 2));
+        solve_joints(&[Joint::Hinge(h)], &mut bodies, r(1, 60));
+        let (axis, ang) = axis_angle_of(bodies[1].rotation);
+        let signed = ang * axis.x.to_f64().signum();
+        assert!(
+            (signed - want).abs() < 2e-3,
+            "start {start}: angle after solve {signed}, want {want}"
+        );
+    }
 }

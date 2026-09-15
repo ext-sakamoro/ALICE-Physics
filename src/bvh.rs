@@ -49,7 +49,7 @@ pub(crate) fn morton_code(x: u64, y: u64, z: u64) -> u64 {
 /// Public since 1.2.0: ALICE-TRT's GPU Morton kernel asserts byte-exact
 /// parity against this function (the 1.0 API freeze had made it
 /// `pub(crate)`, which broke that parity test against a path dependency).
-/// The per-axis normalisation and the 10-bit quantisation are the
+/// The isotropic normalisation and the 21-bit-per-axis quantisation are the
 /// determinism contract; changing either re-pins the BVH goldens.
 #[must_use]
 pub fn point_to_morton(point: Vec3Fix, bounds: &AABB) -> u64 {
@@ -1616,5 +1616,183 @@ mod tests {
         // 逆順に与えても中心順に並ぶ
         let rev: Vec<AABB> = boxes.iter().rev().copied().collect();
         assert_eq!(build_from(&rev).primitives, vec![4, 3, 2, 1, 0]);
+    }
+
+    // ---- mutation-kill tests (cargo-mutants missed list, 2026-09-15) ----
+
+    /// `expand_bits` line 27 `<<` → `>>`: input bits 8..=20 only reach their
+    /// final slot through the `<< 16` stage (after stage 1 they sit at 8..=15
+    /// and 32..=36, and the mask of stage 2 keeps 24..=31 / 48..=52), so a
+    /// `>> 16` drops every one of them. Exact expectations: 0x100 → bit 24,
+    /// 0x1FFFFF → every third bit 0..=60 = 0x1249249249249249, 0b1011 → bits
+    /// 0 / 3 / 9 = 0x209, alternating 0x155555 → 0x1041041041041041.
+    #[test]
+    fn expand_bits_exact_values_for_high_input_bits() {
+        assert_eq!(expand_bits(0x100), 1 << 24);
+        assert_eq!(expand_bits(0x1FFFFF), 0x1249_2492_4924_9249);
+        assert_eq!(expand_bits(0b1011), 0x209);
+        assert_eq!(expand_bits(0x15_5555), 0x1041_0410_4104_1041);
+        assert_eq!(expand_bits(0xA_AAAA), 0x0208_2082_0820_8208);
+    }
+
+    /// `morton_code` lines 41 / 42 `(1 << 21) - 1` → `/ 1` / `+ 1` in the y / z
+    /// clamp: 2^21 must clamp to 2^21 - 1 (all 21 bits set → every third bit of
+    /// the code); the mutants let 2^21 through and `expand_bits` masks bit 21
+    /// away, giving 0 for that axis. All three axes saturated = 2^63 - 1.
+    #[test]
+    fn morton_code_clamps_y_and_z_to_21_bits() {
+        let all = 0x1249_2492_4924_9249u64;
+        assert_eq!(morton_code(0, 1 << 21, 0), all << 1);
+        assert_eq!(morton_code(0, 0, 1 << 21), all << 2);
+        assert_eq!(morton_code(0, 1 << 30, 0), morton_code(0, (1 << 21) - 1, 0));
+        assert_eq!(morton_code(0, 0, 1 << 30), morton_code(0, 0, (1 << 21) - 1));
+        assert_eq!(
+            morton_code(1 << 21, 1 << 21, 1 << 21),
+            0x7FFF_FFFF_FFFF_FFFF
+        );
+        assert_eq!(morton_code(1 << 21, 1 << 21, 1 << 21), u64::MAX >> 1);
+    }
+
+    /// `point_to_morton` lines 63 / 66 `>` → `==`: the y (z) extent takes over
+    /// the isotropic scale only when it is strictly larger than the running
+    /// maximum. In a 2 × 8 × 2 box the point y = 4 is 4/8 → bit 20 of the y
+    /// axis → Morton bit 61; with the scale stuck at x = 2 it would be 4/2 = 2
+    /// → saturated. x = 1 must likewise be scaled by 8 (1/8 → bit 18 → bit 54)
+    /// and not by its own extent 2 (1/2 → bit 60). Max corner → all 21 bits on
+    /// every axis, min corner → 0.
+    #[test]
+    fn point_to_morton_scale_picks_strictly_larger_y_and_z_extent() {
+        let tall = AABB::new(Vec3Fix::ZERO, Vec3Fix::from_int(2, 8, 2));
+        assert_eq!(point_to_morton(Vec3Fix::from_int(0, 4, 0), &tall), 1 << 61);
+        assert_eq!(point_to_morton(Vec3Fix::from_int(1, 0, 0), &tall), 1 << 54);
+        let deep = AABB::new(Vec3Fix::ZERO, Vec3Fix::from_int(2, 2, 8));
+        assert_eq!(point_to_morton(Vec3Fix::from_int(0, 0, 4), &deep), 1 << 62);
+        assert_eq!(point_to_morton(Vec3Fix::from_int(0, 1, 0), &deep), 1 << 55);
+        // max corner: the long axis saturates, the short axes are 2/8 = 1/4 → bit 19
+        assert_eq!(
+            point_to_morton(Vec3Fix::from_int(2, 8, 2), &tall),
+            morton_code(1 << 19, 0x1F_FFFF, 1 << 19)
+        );
+        assert_eq!(
+            point_to_morton(Vec3Fix::from_int(2, 2, 8), &deep),
+            morton_code(1 << 19, 1 << 19, 0x1F_FFFF)
+        );
+        assert_eq!(point_to_morton(Vec3Fix::ZERO, &tall), 0);
+        assert_eq!(point_to_morton(Vec3Fix::ZERO, &deep), 0);
+    }
+
+    /// `point_to_morton` line 69 `||` → `&&`: inverted bounds (max < min) have
+    /// a negative scale and must map to 0. With `&&` the quantiser runs and
+    /// (2 - 4) / -4 = 1/2 sets bit 20 on every axis (0b111 << 60).
+    #[test]
+    fn point_to_morton_inverted_bounds_map_to_zero() {
+        let inverted = AABB {
+            min: Vec3Fix::from_int(4, 4, 4),
+            max: Vec3Fix::ZERO,
+        };
+        assert_eq!(point_to_morton(Vec3Fix::from_int(2, 2, 2), &inverted), 0);
+        assert_eq!(point_to_morton(Vec3Fix::from_int(9, -9, 0), &inverted), 0);
+    }
+
+    /// `LinearBvh::build` lines 289 / 290 `+` → `-` / `*` in the y / z centre:
+    /// boxes y ∈ [1, 3] (centre 2) and y ∈ [-3, -1] (centre -2), identical on
+    /// x / z, given in the order [+, -] → the negative box sorts first
+    /// (`primitives == [1, 0]`). `(min - max) / 2` is -1 for both and
+    /// `(min * max) / 2` is 3/2 for both, so the stable sort would keep [0, 1].
+    #[test]
+    fn build_sorts_by_y_and_z_centre_not_by_difference_or_product() {
+        let y_pos = AABB::new(Vec3Fix::from_int(0, 1, 0), Vec3Fix::from_int(2, 3, 2));
+        let y_neg = AABB::new(Vec3Fix::from_int(0, -3, 0), Vec3Fix::from_int(2, -1, 2));
+        assert_eq!(build_from(&[y_pos, y_neg]).primitives, vec![1, 0]);
+        assert_eq!(build_from(&[y_neg, y_pos]).primitives, vec![0, 1]);
+        let z_pos = AABB::new(Vec3Fix::from_int(0, 0, 1), Vec3Fix::from_int(2, 2, 3));
+        let z_neg = AABB::new(Vec3Fix::from_int(0, 0, -3), Vec3Fix::from_int(2, 2, -1));
+        assert_eq!(build_from(&[z_pos, z_neg]).primitives, vec![1, 0]);
+        assert_eq!(build_from(&[z_neg, z_pos]).primitives, vec![0, 1]);
+    }
+
+    /// `debug_verify_escape_forward` line 320 `→ true` and line 322 `==` →
+    /// `!=`: a backward escape pointer (node 2 → 1) and a self-loop (node 0 →
+    /// 0) must be reported. Only the debug-profile body is under test here;
+    /// the release stub always returns `true`.
+    #[cfg(debug_assertions)]
+    #[test]
+    fn debug_verify_escape_forward_rejects_backward_pointer() {
+        let aabb = unit_box(0, 0, 0);
+        let backward = [
+            BvhNode::internal(&aabb, 1, ESCAPE_NONE),
+            BvhNode::leaf(&aabb, 0, 1, 2),
+            BvhNode::leaf(&aabb, 1, 1, 1),
+        ];
+        assert!(!LinearBvh::debug_verify_escape_forward(&backward));
+        let self_loop = [
+            BvhNode::internal(&aabb, 1, 0),
+            BvhNode::leaf(&aabb, 0, 1, 2),
+        ];
+        assert!(!LinearBvh::debug_verify_escape_forward(&self_loop));
+    }
+
+    /// Forward pointers and `ESCAPE_NONE` are accepted in both profiles
+    /// (`debug_verify_escape_forward` line 335 release stub → `false`).
+    #[test]
+    fn debug_verify_escape_forward_accepts_forward_and_none() {
+        let aabb = unit_box(0, 0, 0);
+        let good = [
+            BvhNode::internal(&aabb, 1, ESCAPE_NONE),
+            BvhNode::leaf(&aabb, 0, 1, 2),
+            BvhNode::leaf(&aabb, 1, 1, ESCAPE_NONE),
+        ];
+        assert!(LinearBvh::debug_verify_escape_forward(&good));
+        assert!(LinearBvh::debug_verify_escape_forward(&[]));
+        let built = build_from(&(0..9i64).map(|i| unit_box(i * 3, 0, 0)).collect::<Vec<_>>());
+        assert!(LinearBvh::debug_verify_escape_forward(&built.nodes));
+    }
+
+    /// `refit_leaves` line 417 `&` → `^` / `|` and line 418 `<` → `==` / `>`,
+    /// `!=` → `==`: the right child must be folded into its parent. 8 boxes
+    /// along x → the root is internal over two subtrees and the last
+    /// primitive is in the right one; only that primitive grows to y = 50, so
+    /// the root's y max must become 50 (the left child alone would give 1).
+    /// Symmetrically, growing primitive 0 (left subtree) to y = -40 must reach
+    /// the root's min.
+    #[test]
+    fn refit_leaves_folds_right_child_into_parent() {
+        let boxes: Vec<AABB> = (0..8i64).map(|i| unit_box(i * 3, 0, 0)).collect();
+        let mut bvh = build_from(&boxes);
+        assert!(!bvh.nodes[0].is_leaf(), "8 prims must not fit one leaf");
+        let mut grown = boxes.clone();
+        grown[7] = AABB::new(Vec3Fix::from_int(21, 0, 0), Vec3Fix::from_int(22, 50, 1));
+        bvh.refit_leaves(&grown);
+        assert_eq!(bvh.nodes[0].aabb_max, [22, 50, 1]);
+        assert_eq!(bvh.nodes[0].aabb_min, [0, 0, 0]);
+
+        let mut bvh2 = build_from(&boxes);
+        let mut low = boxes.clone();
+        low[0] = AABB::new(Vec3Fix::from_int(0, -40, 0), Vec3Fix::from_int(1, 1, 1));
+        bvh2.refit_leaves(&low);
+        assert_eq!(bvh2.nodes[0].aabb_min, [0, -40, 0]);
+        assert_eq!(bvh2.nodes[0].aabb_max, [22, 1, 1]);
+    }
+
+    /// `refit_leaves` line 418 `<` → `<=` and `&&` → `||`: a left child whose
+    /// escape points exactly one past the end (`== node_count`) has no right
+    /// sibling, so the parent takes the left AABB and no node is indexed out
+    /// of range (the mutants read `nodes[node_count]` and panic).
+    #[test]
+    fn refit_leaves_left_escape_at_node_count_means_no_right_sibling() {
+        let leaf_box = unit_box(0, 0, 0);
+        let mut bvh = LinearBvh {
+            nodes: vec![
+                BvhNode::internal(&unit_box(-5, -5, -5), 1, ESCAPE_NONE),
+                BvhNode::leaf(&leaf_box, 0, 1, 2),
+            ],
+            primitives: vec![0],
+            bounds: leaf_box,
+        };
+        bvh.refit_leaves(&[unit_box(3, 4, 5)]);
+        assert_eq!(bvh.nodes[1].aabb_min, [3, 4, 5]);
+        assert_eq!(bvh.nodes[1].aabb_max, [4, 5, 6]);
+        assert_eq!(bvh.nodes[0].aabb_min, [3, 4, 5]);
+        assert_eq!(bvh.nodes[0].aabb_max, [4, 5, 6]);
     }
 }
