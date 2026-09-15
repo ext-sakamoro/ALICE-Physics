@@ -79,6 +79,12 @@ jobs:
       - name: Test (parallel — unit + integration)
         run: cargo test --features "parallel"
 
+      # full native feature set: the gpu-solver-bridge tests were only linted
+      # (clippy), never run, before 1.2.0 — the quality-deep mutants job found
+      # them failing in the unmutated tree
+      - name: Test (full native feature set, lib)
+        run: cargo test --lib --features "std,simd,parallel,ffi,gpu-solver-bridge"
+
       # test, not just build: a feature whose code is only compiled is a feature
       # whose effect nobody verifies (external review 2026-09-15: the SIMD paths
       # were scalar with dead intrinsics and no test caught the mismatch claim).

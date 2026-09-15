@@ -3728,24 +3728,23 @@ mod tests {
         }
     }
 
+    /// Two overlapping unit spheres in zero gravity: since 1.2.0 contacts are
+    /// re-detected in every substep, so the contact the bridge tests observe
+    /// has to come from `detect_collisions` (a manually added contact would
+    /// be cleared at the start of the substep).
     #[cfg(feature = "gpu-solver-bridge")]
     fn build_one_contact_world() -> PhysicsWorld {
-        use crate::collider::Contact;
-        let mut world = PhysicsWorld::new(SolverConfig::default());
+        let mut world = PhysicsWorld::new(SolverConfig {
+            gravity: Vec3Fix::ZERO,
+            ..SolverConfig::default()
+        });
         let body_a = RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE);
         let body_b = RigidBody::new_dynamic(
-            Vec3Fix::new(Fix128::from_ratio(9, 10), Fix128::ZERO, Fix128::ZERO),
+            Vec3Fix::new(Fix128::from_ratio(19, 10), Fix128::ZERO, Fix128::ZERO),
             Fix128::ONE,
         );
-        world.add_body(body_a);
-        world.add_body(body_b);
-        let contact = Contact {
-            depth: Fix128::from_ratio(1, 10),
-            normal: Vec3Fix::new(Fix128::ONE, Fix128::ZERO, Fix128::ZERO),
-            point_a: Vec3Fix::ZERO,
-            point_b: Vec3Fix::ZERO,
-        };
-        world.add_contact(ContactConstraint::new(0, 1, contact));
+        world.add_body_with_radius(body_a, Fix128::ONE);
+        world.add_body_with_radius(body_b, Fix128::ONE);
         world
     }
 
