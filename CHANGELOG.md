@@ -32,7 +32,7 @@ contact normal, and the contact multiplier. Everything else is bit-compatible.
   `substeps` halved the fall speed, and `examples/basic_physics.rs` fell at a
   constant 4 m/s. Damping is now applied once per frame after the substep
   loop (`apply_frame_damping`); `substeps` no longer changes the physics.
-  1 s of free fall under the default config: `y = −4.17` (analytic −5.0 with
+  1 s of free fall under the default config: `y = −4.14` (analytic −5.0 with
   the documented frame damping; 1.1.0 gave `−1.64`). Golden `cascade` and
   `joint_pendulum` re-pinned.
 - **XPBD compliant constraints had iteration-dependent stiffness.** The
@@ -117,6 +117,44 @@ contact normal, and the contact multiplier. Everything else is bit-compatible.
   (sqrt + 3 divisions), which every BVH candidate used to pay (57 k
   candidates for 2 700 contacts on the 1000-sphere grid). Same contacts,
   same order.
+- **Engineering modules, first validation batch (`tests/engineering_oracles_solid.rs`,
+  34 textbook oracles).** Found and fixed: `modal::torsional_frequency_hz`
+  reused the beam formula's 10^4.5 SI scale (torsional needs 10³; every
+  torsional frequency was 31.6× too high); `mass_properties::capsule_mass_properties`
+  added the hemisphere parallel-axis shift on top of the full-sphere 2/5·m·r²
+  (I⊥ over by 9/64·m_sph·r², a capsule with h = 0 was not a sphere);
+  `print_orientation::optimize_analytical` rotated about Y only and missed the
+  in-plane optimum for loads with a Y component (now θx = atan2(−z, y));
+  `thermal_stress::analyze_thermal_stress` returned +E·α·ΔT (heating as
+  tension) against its own "positive = tensile" contract — sign flipped, a
+  restrained part cooling on the bed now reports tension;
+  `plastic::NortonCreep::pla_room_temp` (A = 3e-10, 466 % strain in 6 months)
+  and `creep_longterm::FindleyParameters::pla_25c_moderate` (m = 1e-12, 8.7 %
+  at 6 months) did not match the 1 % / 6 months calibration their docstrings
+  cite — recalibrated (A = 6.34e-13, m = 8.3e-14), PETG preset scaled with them;
+  `creep_longterm::predict_strain` applied the universal WLF shift *below*
+  `T_g`, where `a_T ≈ 10^37` froze room-temperature PLA creep to zero — WLF
+  is now applied above `T_g` only; `structural_solver` wrote max(Norton,
+  Findley) back into the Norton state so the next increment landed on the
+  Findley value — the state keeps the pure Norton accumulation, the report
+  carries the max. Doc corrections: `bimaterial::thermal_residual_stress_mpa`
+  sign/layer, `hyperelastic` Mooney–Rivlin formula, `prestressed` cable
+  stiffness (uniform vs point load), `mass_properties::convex_hull_mass_properties`
+  reference point.
+- **31 exported `extern "C"` functions now catch panics** (`ffi_guard`: sentinel
+  return + per-thread message via the new `alice_physics_last_error` /
+  `alice_physics_clear_last_error` / `alice_physics_string_free`). Rust 1.81+
+  aborts the host process when a panic reaches the C boundary; before 1.2.0
+  only `world_step` / `world_step_n` were guarded. The FFI free-fall golden
+  the Unity / UE5 bindings replay was still pinned on the pre-1.2.0 damping
+  (y = 8.36) because CI only *built* the `ffi` feature — it now runs the
+  `ffi` tests and the golden is y = 5.8594.
+- `bvh::point_to_morton` normalises every axis by the largest extent
+  (isotropic cells). Per-axis scaling let a short axis' Morton bits outrank a
+  long axis, mixing distant clusters into one leaf on anisotropic worlds
+  (2003 × 3 × 3: 66 candidate pairs for 18 real ones). No golden moved; the
+  ALICE-TRT Morton kernel consumes CPU-computed codes and needs no change.
+- `solver_tgs::tgs_step` with `substeps == 0` is a no-op instead of a panic.
 - `EventCollector::report_trigger` now reports a pair once per frame like
   `report_contact` (a second report within the frame emitted a duplicate
   enter event).
@@ -254,6 +292,22 @@ contact normal, and the contact multiplier. Everything else is bit-compatible.
 - `benches/physics_bench.rs::thousand_overlapping_spheres_1_step` — the
   external review's 1000-body scene (dense first frame 65 ms, 7.7 ms/frame
   once the bodies separate, Apple M-series).
+- `fuzz/fuzz_targets/fuzz_step_parity.rs` — arbitrary scenes (overlapping
+  spheres, rods under contact, sleeping, mixed masses, every substep /
+  iteration count) stepped twice through `step` and twice through
+  `step_parallel`; asserts each path is deterministic and that the two agree
+  bit-for-bit whenever the constraint graph makes the Gauss–Seidel orderings
+  equivalent. Its first run showed that `step_parallel` is *not* bit-identical
+  to `step` once constraints share a body (different Gauss–Seidel order); the
+  contract is now documented on `step_parallel` (lockstep peers use one path).
+- loom model tests (`--cfg loom`, quality-deep `loom` job) of the
+  graph-colouring invariant the batched solver's raw-pointer slice wrappers
+  rely on: every constraint of a colour batch is handed to its own loom thread
+  and writes its body slots through `loom::cell::UnsafeCell`; a colouring that
+  shared a dynamic body inside a batch would surface as an unsynchronised
+  access on one of the explored interleavings.
+- `DebugLine::new` / `DebugPoint::new` (the structs are `#[non_exhaustive]`;
+  downstream code had no way to build one).
 - `tests/default_configs.rs` — every `Config` type with a `Default` impl
   (12 reachable from the public API, `Tgs` / `Pgs` / `AdaptiveSubStep` in
   their own unit tests) is exercised on its default values in the most

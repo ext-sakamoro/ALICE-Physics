@@ -121,7 +121,9 @@ pub fn cable_pretension_n(w_n_per_mm: Fix128, span_mm: Fix128, sag_mm: Fix128) -
 }
 
 /// Effective stiffness of a tensioned cable in the transverse direction
-/// (small displacements). `k_transverse ≈ 8·T / L` for parabolic cable.
+/// (small displacements). `k_transverse = 8·T / L` is the stiffness against a
+/// *uniformly distributed* transverse load (Irvine 1981: `H = wL²/8s`); a
+/// mid-span *point* load sees `4·T / L`.
 #[must_use]
 pub fn tensioned_cable_stiffness_n_per_mm(tension_n: Fix128, span_mm: Fix128) -> Fix128 {
     if span_mm.is_zero() {

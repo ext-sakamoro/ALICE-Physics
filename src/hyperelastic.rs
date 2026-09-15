@@ -237,7 +237,7 @@ pub fn strain_energy_density(model: &HyperelasticModel, stretch: &Stretch) -> Fi
 ///
 /// For incompressible hyperelastic materials the standard result is:
 /// - Neo-Hookean:  σ = μ·(λ² − 1/λ)
-/// - Mooney-Rivlin: σ = 2·(C₁ − C₂/λ)·(λ² − 1/λ)
+/// - Mooney-Rivlin: σ = 2·(C₁ + C₂/λ)·(λ² − 1/λ)  (Ogden 1984 §4.3; the code has always used `+`)
 /// - Yeoh:         σ = 2·(λ² − 1/λ)·(C₁ + 2·C₂·(I₁ − 3) + 3·C₃·(I₁ − 3)²)
 ///
 /// These are the derivatives of the strain-energy density under the

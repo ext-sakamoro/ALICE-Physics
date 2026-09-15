@@ -67,10 +67,15 @@ pub fn analyze_thermal_stress(
     installation_temp_c: Fix128,
     operating_temp_c: Fix128,
 ) -> ThermalStressReport {
+    // A restrained part that *cools* below the temperature it was fixed at
+    // wants to shrink and is held → tension (positive per the report's
+    // contract); heating → compression. σ = −E·α·(T_op − T_inst)·c. Before
+    // 1.2.0 the sign was +E·α·ΔT (compression reported as tension for the
+    // usual print-cooling-on-the-bed case; `tests/engineering_oracles_solid.rs`).
     let dt = operating_temp_c - installation_temp_c;
     let alpha = published_cte_per_c(material);
     let e_mpa = material.youngs_modulus_gpa * Fix128::from_int(1000);
-    let sigma = e_mpa * alpha * dt * constraint_coefficient;
+    let sigma = -(e_mpa * alpha * dt * constraint_coefficient);
 
     let tg = material.glass_transition_c;
     let near_glass = if tg.is_zero() {
@@ -160,14 +165,24 @@ mod tests {
     #[test]
     fn cooling_creates_tensile_stress() {
         // PLA installed at 60°C (bed), cooled to 20°C, fully constrained
-        // dT = -40 → negative sigma
+        // dT = -40 → the restrained part wants to shrink → tension (positive,
+        // as the report's `positive = tensile` contract says; the test named
+        // "creates tensile stress" asserted a negative value before 1.2.0)
         let report = analyze_thermal_stress(
             &MaterialProperties::pla(),
             Fix128::ONE,
             Fix128::from_int(60),
             Fix128::from_int(20),
         );
-        assert!(report.thermal_stress_mpa < Fix128::ZERO);
+        assert!(report.thermal_stress_mpa > Fix128::ZERO);
+        // heating a restrained part → compression
+        let heated = analyze_thermal_stress(
+            &MaterialProperties::pla(),
+            Fix128::ONE,
+            Fix128::from_int(20),
+            Fix128::from_int(50),
+        );
+        assert!(heated.thermal_stress_mpa < Fix128::ZERO);
     }
 
     #[test]

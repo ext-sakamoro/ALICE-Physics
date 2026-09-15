@@ -322,12 +322,14 @@ pub struct NortonCreep {
 
 impl NortonCreep {
     /// PLA at 25°C — significant creep even at moderate stress.
-    /// Values calibrated to Bellehumeur (2004): 1% strain / 6 months at 10 MPa.
+    /// Calibrated to Bellehumeur (2004): 1 % strain after 6 months at 10 MPa,
+    /// i.e. `A = 0.01 / (10³ MPa³ · 1.5768e7 s) ≈ 6.34e-13 /(MPa³·s)`, `n = 3`.
+    /// Before 1.2.0 `A = 3e-10` was 470× the documented calibration (466 %
+    /// strain in 6 months; `tests/engineering_oracles_solid.rs`).
     #[must_use]
     pub fn pla_room_temp() -> Self {
-        // A = 3e-10 per second, n = 3
         Self {
-            a: Fix128::from_ratio(3, 10_000_000_000),
+            a: Fix128::from_ratio(634, 1_000_000_000_000_000_i64),
             n: 3,
         }
     }
@@ -335,8 +337,10 @@ impl NortonCreep {
     /// PETG at 25°C — much lower creep than PLA (higher Tg, crate-internal).
     #[must_use]
     pub(crate) fn petg_room_temp() -> Self {
+        // ≈ 6× lower than the PLA calibration (1.2.0: 1e-11 was 16× *above*
+        // the corrected PLA value)
         Self {
-            a: Fix128::from_ratio(1, 100_000_000_000),
+            a: Fix128::from_ratio(1, 10_000_000_000_000_i64),
             n: 3,
         }
     }

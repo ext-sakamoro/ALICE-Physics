@@ -16,7 +16,8 @@
 //!
 //! Engineering system throughout — same as `beam_stress`: mm / N / MPa /
 //! g/cm³. Frequency returned in Hz. Internal derivations use a fixed
-//! `10^4.5` scale factor to bridge to SI (see beam derivation comment).
+//! `10^4.5` scale factor to bridge to SI for the beam formula (see its
+//! derivation comment); the torsional formula has no `1/L²` and scales by 10³.
 //!
 //! # References
 //!
@@ -199,14 +200,16 @@ pub fn torsional_frequency_hz(
     if length_mm.is_zero() || i_p_g_mm2.is_zero() {
         return Fix128::ZERO;
     }
-    // Torsional stiffness k_theta = G·J / L [MPa·mm³ = N·mm/rad]
+    // Torsional stiffness k_theta = G·J / L [MPa·mm⁴/mm = N·mm/rad]
     let k_theta = g_mpa * j_mm4 / length_mm;
-    // ω = √(k / I_p). Units: √(N·mm/rad / (g·mm²)) = √(N/(g·mm·rad))
-    // Convert to SI (N/(kg·m·rad)) by dividing by 10⁻⁶ ... use the 10^4.5
-    // scaling as elsewhere.
+    // ω = √(k / I_p) in SI: k [N·mm] = 10⁻³ N·m, I_p [g·mm²] = 10⁻⁹ kg·m²,
+    // so ω = √(10⁻³ / 10⁻⁹) · √(k_eng / I_eng) = 10³ · √(k_eng / I_eng).
+    // (Before 1.2.0 this reused the beam formula's 10^4.5, whose extra 10^1.5
+    // comes from the beam's 1/L² term — every torsional frequency was 31.6×
+    // too high; `tests/engineering_oracles_solid.rs`.)
     let ratio = k_theta / i_p_g_mm2;
     let omega_scaled = ratio.sqrt();
-    let scale = Fix128::from_ratio(31_622_776, 1000);
+    let scale = Fix128::from_int(1000);
     let two_pi = Fix128::PI + Fix128::PI;
     omega_scaled * scale / two_pi
 }

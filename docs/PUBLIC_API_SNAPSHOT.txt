@@ -2244,6 +2244,8 @@ impl core::panic::unwind_safe::UnwindSafe for alice_physics::debug_render::Debug
 pub alice_physics::debug_render::DebugLine::color: alice_physics::debug_render::DebugColor
 pub alice_physics::debug_render::DebugLine::end: alice_physics::math::Vec3Fix
 pub alice_physics::debug_render::DebugLine::start: alice_physics::math::Vec3Fix
+impl alice_physics::debug_render::DebugLine
+pub const fn alice_physics::debug_render::DebugLine::new(alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::debug_render::DebugColor) -> Self
 impl core::clone::Clone for alice_physics::debug_render::DebugLine
 pub fn alice_physics::debug_render::DebugLine::clone(&self) -> alice_physics::debug_render::DebugLine
 impl core::cmp::Eq for alice_physics::debug_render::DebugLine
@@ -2264,6 +2266,8 @@ impl core::panic::unwind_safe::UnwindSafe for alice_physics::debug_render::Debug
 pub alice_physics::debug_render::DebugPoint::color: alice_physics::debug_render::DebugColor
 pub alice_physics::debug_render::DebugPoint::position: alice_physics::math::Vec3Fix
 pub alice_physics::debug_render::DebugPoint::size: alice_physics::math::Fix128
+impl alice_physics::debug_render::DebugPoint
+pub const fn alice_physics::debug_render::DebugPoint::new(alice_physics::math::Vec3Fix, alice_physics::debug_render::DebugColor, alice_physics::math::Fix128) -> Self
 impl core::clone::Clone for alice_physics::debug_render::DebugPoint
 pub fn alice_physics::debug_render::DebugPoint::clone(&self) -> alice_physics::debug_render::DebugPoint
 impl core::cmp::Eq for alice_physics::debug_render::DebugPoint
@@ -2810,10 +2814,13 @@ impl core::panic::unwind_safe::UnwindSafe for alice_physics::ffi::AliceVec3Fix12
 #[no_mangle] pub unsafe c fn alice_physics::ffi::alice_physics_body_set_position(*mut alice_physics::solver::PhysicsWorld, u32, alice_physics::ffi::AliceVec3) -> u8
 #[no_mangle] pub unsafe c fn alice_physics::ffi::alice_physics_body_set_restitution(*mut alice_physics::solver::PhysicsWorld, u32, f64) -> u8
 #[no_mangle] pub unsafe c fn alice_physics::ffi::alice_physics_body_set_velocity(*mut alice_physics::solver::PhysicsWorld, u32, alice_physics::ffi::AliceVec3) -> u8
+#[no_mangle] pub c fn alice_physics::ffi::alice_physics_clear_last_error()
 #[no_mangle] pub c fn alice_physics::ffi::alice_physics_config_default() -> alice_physics::ffi::AlicePhysicsConfig
+#[no_mangle] pub c fn alice_physics::ffi::alice_physics_last_error() -> *mut std::os::raw::c_char
 #[no_mangle] pub unsafe c fn alice_physics::ffi::alice_physics_state_deserialize(*mut alice_physics::solver::PhysicsWorld, *const u8, u32) -> u8
 #[no_mangle] pub unsafe c fn alice_physics::ffi::alice_physics_state_free(*mut u8, u32)
 #[no_mangle] pub unsafe c fn alice_physics::ffi::alice_physics_state_serialize(*const alice_physics::solver::PhysicsWorld, *mut u32) -> *mut u8
+#[no_mangle] pub unsafe c fn alice_physics::ffi::alice_physics_string_free(*mut std::os::raw::c_char)
 #[no_mangle] pub c fn alice_physics::ffi::alice_physics_version() -> *const std::os::raw::c_char
 #[no_mangle] pub unsafe c fn alice_physics::ffi::alice_physics_world_body_count(*const alice_physics::solver::PhysicsWorld) -> u32
 #[no_mangle] pub c fn alice_physics::ffi::alice_physics_world_create() -> *mut alice_physics::solver::PhysicsWorld

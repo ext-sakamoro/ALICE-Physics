@@ -55,6 +55,11 @@ jobs:
 
       # 1.2.0: the C ABI consumers (Unity P/Invoke, unreal-plugin/) link the
       # cdylib / staticlib — assert both are actually produced, not just the rlib.
+      # the ffi test module (goldens the Unity / UE5 bindings replay) was never
+      # executed in CI before 1.2.0 — only built
+      - name: Test (FFI, lib)
+        run: cargo test --lib --features "ffi" ffi::
+
       - name: Build (FFI) + assert cdylib / staticlib artifacts
         shell: bash
         run: |

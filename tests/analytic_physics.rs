@@ -118,7 +118,7 @@ fn default_config_free_fall_reaches_analytic_within_frame_damping() {
     // Discrete closed form of the 1.2.0 scheme with s substeps and frame damping d:
     //   y_{n+1} = y_n + v_n dt + g dt^2 (s+1)/(2s)   (symplectic Euler inside the frame)
     //   v_{n+1} = (v_n + g dt) d                       (damping once per frame)
-    // → y_60 = -4.171 (undamped -5.083); pre-1.2.0 gave -1.641.
+    // → y_60 = -4.1406 (undamped -5.083); pre-1.2.0 gave -1.641.
     let (g, d, dt, s) = (10.0, 0.99, DT60, 8.0);
     let mut y_ref = 0.0;
     let mut v = 0.0;

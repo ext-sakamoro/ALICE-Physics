@@ -70,6 +70,15 @@ pub struct DebugLine {
     pub color: DebugColor,
 }
 
+impl DebugLine {
+    /// Construct a line segment (the struct is `#[non_exhaustive]`, so this
+    /// is the only way to build one outside the crate; 1.2.0).
+    #[must_use]
+    pub const fn new(start: Vec3Fix, end: Vec3Fix, color: DebugColor) -> Self {
+        Self { start, end, color }
+    }
+}
+
 /// A debug point.
 ///
 /// Marked `#[non_exhaustive]` so future rendering hint fields can be
@@ -83,6 +92,19 @@ pub struct DebugPoint {
     pub color: DebugColor,
     /// Size (for rendering)
     pub size: Fix128,
+}
+
+impl DebugPoint {
+    /// Construct a point (the struct is `#[non_exhaustive]`, so this is the
+    /// only way to build one outside the crate; 1.2.0).
+    #[must_use]
+    pub const fn new(position: Vec3Fix, color: DebugColor, size: Fix128) -> Self {
+        Self {
+            position,
+            color,
+            size,
+        }
+    }
 }
 
 /// What to draw in debug mode
@@ -155,17 +177,13 @@ impl DebugDrawData {
     /// Add a line
     #[inline]
     pub fn line(&mut self, start: Vec3Fix, end: Vec3Fix, color: DebugColor) {
-        self.lines.push(DebugLine { start, end, color });
+        self.lines.push(DebugLine::new(start, end, color));
     }
 
     /// Add a point
     #[inline]
     pub fn point(&mut self, position: Vec3Fix, color: DebugColor, size: Fix128) {
-        self.points.push(DebugPoint {
-            position,
-            color,
-            size,
-        });
+        self.points.push(DebugPoint::new(position, color, size));
     }
 
     /// Draw an AABB wireframe (12 edges)
@@ -391,5 +409,28 @@ mod tests {
     #[test]
     fn test_debug_color() {
         assert_eq!(DebugColor::RED, DebugColor::new(255, 50, 50, 255));
+    }
+
+    #[test]
+    fn debug_line_and_point_constructors_match_add_methods() {
+        let mut data = DebugDrawData::default();
+        data.line(Vec3Fix::ZERO, Vec3Fix::from_int(1, 0, 0), DebugColor::RED);
+        data.point(
+            Vec3Fix::from_int(0, 2, 0),
+            DebugColor::GREEN,
+            Fix128::from_ratio(1, 2),
+        );
+        assert_eq!(
+            data.lines[0],
+            DebugLine::new(Vec3Fix::ZERO, Vec3Fix::from_int(1, 0, 0), DebugColor::RED)
+        );
+        assert_eq!(
+            data.points[0],
+            DebugPoint::new(
+                Vec3Fix::from_int(0, 2, 0),
+                DebugColor::GREEN,
+                Fix128::from_ratio(1, 2)
+            )
+        );
     }
 }

@@ -150,6 +150,26 @@ jobs:
           path: mutants.out
           if-no-files-found: ignore
 
+  loom:
+    name: loom (batch colouring protocol, --cfg loom)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Create ALICE optional bridge stubs
+        uses: ./.github/actions/alice-stubs
+      # loom explores every interleaving of the threads that write one colour
+      # batch; a colouring that put two constraints sharing a dynamic body into
+      # the same batch shows up as an unsynchronised access (the invariant the
+      # raw-pointer slice wrappers rely on, karikari-review §13 loom 規約)
+      - name: loom model tests
+        run: cargo test --lib --features parallel loom_ -- --nocapture
+        env:
+          RUSTFLAGS: --cfg loom
+          LOOM_MAX_PREEMPTIONS: 3
+
   miri:
     name: Miri (UB 検出、parallel feature)
     runs-on: ubuntu-latest

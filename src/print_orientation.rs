@@ -211,16 +211,18 @@ pub fn optimize_analytical(load: &LoadDirection, m: &MaterialProperties) -> Orie
     let theta_id = angle_to_z_axis(load, &OrientationCandidate::IDENTITY);
     let yield_id = effective_yield_at_angle(m, theta_id);
 
-    // Analytical optimum: rotate so load points along +X (any XY direction is fine)
-    // → θ = π/2 → σ_eff = σ_xy (maximum)
-    // Concrete rotation: rotate about Y by (π/2 - θ_z_load), where θ_z_load = angle
-    // between original load and +Z.
-    // For a 3D load vector, one simple way is: theta_y = θ_id − π/2 to align load
-    // with +X after R_Y. This gives cos(θ_new) = ~0 → σ_eff ≈ σ_xy.
-    let theta_y = theta_id - Fix128::HALF_PI;
+    // Analytical optimum: put the load into the print (XY) plane → θ = π/2 →
+    // σ_eff = σ_xy (the maximum of the mixing rule). `angle_to_z_axis` applies
+    // R_X then R_Y; after R_X the load's z is `z₁ = y·sinθx + z·cosθx`, which
+    // is exactly zero for θx = atan2(−z, y) (also when y = 0 or z = 0), and
+    // R_Y then leaves `z₂ = −x·sinθy + z₁·cosθy = 0` for θy = 0 whatever x is.
+    // Before 1.2.0 this rotated about Y only by θ_id − π/2, which reaches the
+    // plane only for loads with no Y component (a (0, 1, 1) load ended at
+    // θ = π/3, 9 % below the optimum the grid search finds;
+    // `tests/engineering_oracles_solid.rs`).
     let best = OrientationCandidate {
-        theta_x: Fix128::ZERO,
-        theta_y,
+        theta_x: Fix128::atan2(-load.z, load.y),
+        theta_y: Fix128::ZERO,
     };
     let theta_best = angle_to_z_axis(load, &best);
     let yield_best = effective_yield_at_angle(m, theta_best);

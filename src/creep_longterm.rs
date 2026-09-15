@@ -72,17 +72,19 @@ pub struct FindleyParameters {
 }
 
 impl FindleyParameters {
-    /// PLA at 25 °C under moderate stress (Bellehumeur 2004 fit).
-    /// Uses `n = 3` (integer approximation of 0.25).
+    /// PLA at 25 °C under moderate stress (Bellehumeur 2004 fit):
+    /// `ε₀ = 0.3 %`, and `m` chosen so the creep term reaches 0.7 %
+    /// (total ≈ 1 %) at 6 months (4380 h): `m = 0.007 / 4380³ ≈ 8.3e-14`.
     ///
-    /// **Warning**: integer `n=3` is a *coarser* approximation than the
-    /// fractional 0.25 in the literature — it over-predicts long-term
-    /// strain but keeps within a factor of 2 up to ~1 year.
+    /// **Warning**: integer `n = 3` is a much steeper time law than the
+    /// literature's 0.25 — the fit matches at 6 months only, under-predicts
+    /// before and over-predicts after (≈ 6 % total at 1 year). Before 1.2.0
+    /// `m = 1e-12` gave 8.7 % at 6 months while the docstring claimed 1 %.
     #[must_use]
     pub fn pla_25c_moderate() -> Self {
         Self {
             epsilon_0: Fix128::from_ratio(3, 1000),
-            m: Fix128::from_ratio(1, 1_000_000_000_000_i64),
+            m: Fix128::from_ratio(83, 1_000_000_000_000_000_i64),
             n_int: 3,
         }
     }
@@ -181,9 +183,17 @@ pub(crate) fn effective_time_at_temp(
 
 /// Predict long-term strain under constant stress and temperature.
 ///
-/// Combines `FindleyParameters` with WLF shift to give an effective strain
-/// at the requested time. When the material's `T_ref` is `T_g` and the
-/// operating temperature is well below `T_g − 30 °C`, creep is minimal.
+/// Combines `FindleyParameters` with a WLF time–temperature shift **above
+/// `T_g`** (the domain the universal constants are fitted for, Williams,
+/// Landel & Ferry 1955: `T_g ≤ T ≤ T_g + 100 °C`), referenced to `T_g`. At
+/// or below `T_g` the parameters are used as calibrated: the crate presets
+/// (`pla_25c_moderate`, …) are room-temperature fits, and the glassy-regime
+/// temperature dependence follows Arrhenius with an activation energy the
+/// parameter set does not carry (a 2.0 field). Before 1.2.0 the WLF shift
+/// was applied *below* `T_g` too, where the universal constants give
+/// `a_T ≈ 10^37` at `T_g − 35 °C` — the effective time collapsed to zero and
+/// room-temperature PLA reported no creep at all
+/// (`tests/engineering_oracles_solid.rs`).
 #[must_use]
 pub fn predict_strain(
     parameters: &FindleyParameters,
@@ -191,10 +201,12 @@ pub fn predict_strain(
     t_hours: Fix128,
     operating_temp_c: Fix128,
 ) -> Fix128 {
-    // Use T_g as WLF reference (universal WLF is applied at T_g)
-    let t_ref = material.glass_transition_c;
+    let t_g = material.glass_transition_c;
+    if t_g.is_zero() || operating_temp_c <= t_g {
+        return parameters.strain_at(t_hours);
+    }
     let wlf = WlfConstants::universal();
-    let t_eff = effective_time_at_temp(t_hours, operating_temp_c, t_ref, &wlf);
+    let t_eff = effective_time_at_temp(t_hours, operating_temp_c, t_g, &wlf);
     parameters.strain_at(t_eff)
 }
 

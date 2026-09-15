@@ -176,6 +176,22 @@ void alice_physics_state_free(uint8_t* data, uint32_t len);
 /** Get library version string (null-terminated). */
 const char* alice_physics_version(void);
 
+/* ---- Panic isolation (1.2.0) ------------------------------------------------
+ * Every function above catches Rust panics inside the call and returns its
+ * documented sentinel (0 / UINT32_MAX / NULL) instead of aborting the host.
+ * The panic message is kept per thread: */
+
+/** Most recent panic message on this thread (heap string, take semantics: a
+ *  second call returns NULL until the next error), or NULL. Free with
+ *  alice_physics_string_free. */
+char* alice_physics_last_error(void);
+
+/** Discard the most recent panic message on this thread. */
+void alice_physics_clear_last_error(void);
+
+/** Free a string returned by alice_physics_last_error (NULL is a no-op). */
+void alice_physics_string_free(char* s);
+
 #ifdef __cplusplus
 }
 #endif

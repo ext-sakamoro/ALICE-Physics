@@ -141,6 +141,10 @@ namespace AlicePhysics
 
         // Version
         [DllImport(DLL)] public static extern IntPtr alice_physics_version();
+        // Panic isolation (1.2.0): sentinel return + per-thread message
+        [DllImport(DLL)] public static extern IntPtr alice_physics_last_error();
+        [DllImport(DLL)] public static extern void alice_physics_clear_last_error();
+        [DllImport(DLL)] public static extern void alice_physics_string_free(IntPtr s);
     }
 
     // ========================================================================
