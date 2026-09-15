@@ -347,3 +347,30 @@ fn torque_free_rotation_angle_equals_omega_t() {
         assert!(q.z.to_f64() > 0.0, "rotation axis flipped");
     }
 }
+
+// ---------------------------------------------------------------------------
+// 11. Resting contact: a body at rest on a static body stays put and falls
+//     asleep (before 1.2.0 every detected contact reset the sleep timer, so a
+//     resting stack could never sleep)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn resting_body_on_static_support_stays_put_and_sleeps() {
+    let mut world = PhysicsWorld::new(PhysicsConfig::default());
+    let ground = world.add_body_with_radius(RigidBody::new_static(Vec3Fix::ZERO), Fix128::ONE);
+    // resting exactly on top: centre distance = r + r = 2
+    let ball = world.add_body_with_radius(
+        RigidBody::new_dynamic(Vec3Fix::from_int(0, 2, 0), Fix128::ONE),
+        Fix128::ONE,
+    );
+    run(&mut world, 300, r(1, 60)); // 5 s
+    let y = world.bodies[ball].position.y.to_f64();
+    assert!((y - 2.0).abs() < 0.05, "resting ball drifted to y = {y}");
+    assert!(
+        world.bodies[ball].velocity.length().to_f64() < 0.05,
+        "resting ball still moving: {:?}",
+        world.bodies[ball].velocity
+    );
+    assert!(world.is_sleeping(ball), "resting ball never fell asleep");
+    assert_eq!(world.bodies[ground].position, Vec3Fix::ZERO);
+}
