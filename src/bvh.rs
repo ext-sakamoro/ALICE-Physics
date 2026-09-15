@@ -655,33 +655,50 @@ impl LinearBvh {
         }
     }
 
-    /// Find all potentially colliding pairs (broad phase)
-    /// Uses stackless traversal internally.
+    /// Broad-phase candidate pairs `(i, j)` with `i < j` (primitive indices).
+    ///
+    /// Every pair whose AABBs overlap is reported. The result is a
+    /// **superset**: each leaf is queried with its own (i32-quantised) AABB,
+    /// which is the union of up to [`BvhNode::MAX_PRIMS_PER_LEAF`] primitives,
+    /// so a pair can be reported when only their leaves overlap. Callers run a
+    /// narrow phase on the result (see `PhysicsWorld::detect_collisions`).
+    ///
+    /// Before 1.1.1 every primitive was queried with the BVH's *world*
+    /// bounds, so this returned all `n·(n-1)/2` pairs regardless of overlap
+    /// and the broad phase was effectively disabled (O(n²) narrow phase).
     #[must_use]
     pub fn find_pairs(&self) -> Vec<(u32, u32)> {
         let mut pairs = Vec::new();
-
         if self.nodes.is_empty() || self.primitives.is_empty() {
             return pairs;
         }
-
-        // For each primitive, query overlapping primitives
-        // This is O(n * log n) average case with good spatial locality
-        for &prim_i in &self.primitives {
-            self.query_callback(&self.bounds, |prim_j| {
-                if prim_i < prim_j {
-                    pairs.push((prim_i, prim_j));
+        let mut candidates: Vec<u32> = Vec::new();
+        for node in &self.nodes {
+            if !node.is_leaf() {
+                continue;
+            }
+            let start = node.first_child_or_prim as usize;
+            let count = node.prim_count() as usize;
+            candidates.clear();
+            self.query_stackless(&node.aabb_min, &node.aabb_max, &mut candidates);
+            for i in start..start + count {
+                let Some(&prim_i) = self.primitives.get(i) else {
+                    continue;
+                };
+                for &prim_j in &candidates {
+                    if prim_i < prim_j {
+                        pairs.push((prim_i, prim_j));
+                    }
                 }
-            });
+            }
         }
-
         // Remove duplicates (deterministic)
         pairs.sort_unstable();
         pairs.dedup();
         pairs
     }
 
-    /// Get statistics about the BVH
+    /// Node / leaf / primitive counts for diagnostics.
     #[must_use]
     pub fn stats(&self) -> BvhStats {
         let mut stats = BvhStats {
@@ -1181,5 +1198,286 @@ mod tests {
         assert_eq!(internal.prim_count(), 0);
         assert_eq!(internal.escape_idx(), 0xABCDEF);
         assert_eq!(internal.first_child_or_prim, 50);
+    }
+
+    // ---- find_pairs (1.1.1: leaf AABB で query、全 pair 返却 bug の修正) ----
+
+    fn unit_box(x: i64, y: i64, z: i64) -> AABB {
+        AABB::new(
+            Vec3Fix::from_int(x, y, z),
+            Vec3Fix::from_int(x + 1, y + 1, z + 1),
+        )
+    }
+
+    fn build_from(boxes: &[AABB]) -> LinearBvh {
+        LinearBvh::build(
+            boxes
+                .iter()
+                .enumerate()
+                .map(|(i, b)| BvhPrimitive {
+                    aabb: *b,
+                    index: i as u32,
+                    morton: 0,
+                })
+                .collect(),
+        )
+    }
+
+    #[test]
+    fn find_pairs_reports_no_pairs_between_far_clusters() {
+        // 3 cluster × 4 箱 (cluster 内は互いに重なる、cluster 間は対角線上に 1000 離れる)
+        // 1.1.0 以前はこれが 66 pair 全部返っていた
+        // 注: cluster を x 軸だけに並べると world bounds が異方的になり、`point_to_morton` の
+        // 軸別正規化で y/z の上位 bit が cluster より優先されて leaf が world 全体に伸びる
+        // (BVH 品質の既知課題、TRT GPU 移植と同期が必要なため別起票) — ここでは等方配置で検証
+        let mut boxes = Vec::new();
+        for c in 0..3i64 {
+            let base = c * 1000;
+            boxes.push(AABB::new(
+                Vec3Fix::from_int(base, base, base),
+                Vec3Fix::from_int(base + 2, base + 2, base + 2),
+            ));
+            boxes.push(AABB::new(
+                Vec3Fix::from_int(base + 1, base, base),
+                Vec3Fix::from_int(base + 3, base + 2, base + 2),
+            ));
+            boxes.push(AABB::new(
+                Vec3Fix::from_int(base, base + 1, base),
+                Vec3Fix::from_int(base + 2, base + 3, base + 2),
+            ));
+            boxes.push(AABB::new(
+                Vec3Fix::from_int(base + 1, base + 1, base + 1),
+                Vec3Fix::from_int(base + 3, base + 3, base + 3),
+            ));
+        }
+        let pairs = build_from(&boxes).find_pairs();
+        assert_eq!(pairs.len(), 18, "cluster 内 6 pair × 3 のみ: {pairs:?}");
+        for (i, j) in &pairs {
+            assert_eq!(i / 4, j / 4, "cluster を跨ぐ pair {i}-{j}");
+            assert!(i < j);
+        }
+    }
+
+    #[test]
+    fn find_pairs_is_a_superset_of_true_overlaps_and_strictly_smaller_than_all_pairs() {
+        // 8×8 の格子に 1×1 箱を間隔 3 で置く (重なりなし) + 各箱に少し重なる相棒を追加
+        let mut boxes = Vec::new();
+        for gx in 0..8i64 {
+            for gz in 0..8i64 {
+                boxes.push(unit_box(gx * 3, 0, gz * 3));
+            }
+        }
+        let n_base = boxes.len();
+        for k in 0..n_base {
+            let b = boxes[k];
+            let half = Fix128::from_ratio(1, 2);
+            boxes.push(AABB::new(
+                Vec3Fix::new(b.min.x + half, b.min.y, b.min.z),
+                Vec3Fix::new(b.max.x + half, b.max.y, b.max.z),
+            ));
+        }
+        let n = boxes.len();
+        let pairs = build_from(&boxes).find_pairs();
+        // (1) 真に重なる pair (各箱とその相棒 = n_base 組) は必ず含む
+        for k in 0..n_base {
+            let want = (k as u32, (k + n_base) as u32);
+            assert!(pairs.contains(&want), "missing overlapping pair {want:?}");
+        }
+        // (2) 全 pair より真に小さい (broad-phase が機能している)
+        let all = n * (n - 1) / 2;
+        assert!(
+            pairs.len() < all / 4,
+            "{} of {all} pairs = broad-phase が効いていない",
+            pairs.len()
+        );
+        // (3) 報告 pair は近傍のみ (leaf 4 個の和より遠い箱は絶対に組にならない: 格子間隔 3 × 8 で 21 以上離れる箱は不可)
+        for (i, j) in &pairs {
+            let a = boxes[*i as usize];
+            let b = boxes[*j as usize];
+            let dx = (a.min.x - b.min.x).abs();
+            let dz = (a.min.z - b.min.z).abs();
+            assert!(
+                dx < Fix128::from_int(21) && dz < Fix128::from_int(21),
+                "far pair {i}-{j}"
+            );
+        }
+        // (4) 決定論: 同じ入力で同じ結果、昇順・重複なし
+        let again = build_from(&boxes).find_pairs();
+        assert_eq!(pairs, again);
+        for w in pairs.windows(2) {
+            assert!(w[0] < w[1]);
+        }
+    }
+
+    #[test]
+    fn find_pairs_touching_and_empty_cases() {
+        // 接触ちょうど (max == min) は i32 量子化で overlap 扱い (superset に含まれる)
+        // 4 個以下は単一 leaf になるので全 pair が候補 = superset 契約の範囲内
+        let touching =
+            build_from(&[unit_box(0, 0, 0), unit_box(1, 0, 0), unit_box(50, 50, 50)]).find_pairs();
+        assert!(touching.contains(&(0, 1)));
+        // leaf が分かれる規模 (2 cluster × 5) では遠い cluster 間の pair は出ない
+        let mut two = Vec::new();
+        for k in 0..5i64 {
+            two.push(unit_box(k, 0, 0));
+        }
+        for k in 0..5i64 {
+            two.push(unit_box(500 + k, 500, 500));
+        }
+        let pairs = build_from(&two).find_pairs();
+        assert!(pairs.contains(&(0, 1)) && pairs.contains(&(5, 6)));
+        assert!(
+            pairs.iter().all(|(i, j)| (*i < 5) == (*j < 5)),
+            "cluster 間 pair: {pairs:?}"
+        );
+        assert!(build_from(&[]).find_pairs().is_empty());
+        assert!(build_from(&[unit_box(0, 0, 0)]).find_pairs().is_empty());
+    }
+
+    // ---- morton / quantisation / split helpers -------------------------
+
+    #[test]
+    fn expand_bits_and_morton_code_interleave_exactly() {
+        assert_eq!(expand_bits(0), 0);
+        assert_eq!(expand_bits(1), 1);
+        assert_eq!(expand_bits(0b11), 0b1001);
+        assert_eq!(expand_bits(0b111), 0b1001001);
+        assert_eq!(expand_bits(0b1000), 1 << 9);
+        assert_eq!(expand_bits(1 << 20), 1 << 60);
+        // x → bit 0、y → bit 1、z → bit 2 の順で interleave
+        assert_eq!(morton_code(1, 0, 0), 0b001);
+        assert_eq!(morton_code(0, 1, 0), 0b010);
+        assert_eq!(morton_code(0, 0, 1), 0b100);
+        assert_eq!(morton_code(2, 2, 2), 0b111000);
+        assert_eq!(morton_code(0b11, 0b01, 0b10), 0b001_011 | 0b100_000);
+        // 21 bit で clamp
+        assert_eq!(morton_code(1 << 30, 0, 0), morton_code((1 << 21) - 1, 0, 0));
+        // 単調性: 同じ y,z なら x が大きいほど code が大きい
+        assert!(morton_code(5, 3, 3) < morton_code(6, 3, 3));
+        assert!(morton_code(3, 5, 3) < morton_code(3, 6, 3));
+    }
+
+    #[test]
+    fn point_to_morton_normalises_per_axis_and_clamps() {
+        let bounds = AABB::new(Vec3Fix::from_int(0, 0, 0), Vec3Fix::from_int(8, 8, 8));
+        assert_eq!(point_to_morton(Vec3Fix::from_int(0, 0, 0), &bounds), 0);
+        // 中点 → 各軸の top bit (bit 20) だけ立つ → x: bit 60、y: bit 61、z: bit 62
+        assert_eq!(
+            point_to_morton(Vec3Fix::from_int(4, 0, 0), &bounds),
+            1 << 60
+        );
+        assert_eq!(
+            point_to_morton(Vec3Fix::from_int(0, 4, 0), &bounds),
+            1 << 61
+        );
+        assert_eq!(
+            point_to_morton(Vec3Fix::from_int(0, 0, 4), &bounds),
+            1 << 62
+        );
+        assert_eq!(
+            point_to_morton(Vec3Fix::from_int(4, 4, 4), &bounds),
+            0b111 << 60
+        );
+        // 1/4 → bit 19 → x なら bit 57
+        assert_eq!(
+            point_to_morton(Vec3Fix::from_int(2, 0, 0), &bounds),
+            1 << 57
+        );
+        // 範囲外は clamp: 負 → 0、max 以上 → 全 bit
+        assert_eq!(point_to_morton(Vec3Fix::from_int(-5, -5, -5), &bounds), 0);
+        let all = morton_code(0x1FFFFF, 0x1FFFFF, 0x1FFFFF);
+        assert_eq!(point_to_morton(Vec3Fix::from_int(8, 8, 8), &bounds), all);
+        assert_eq!(point_to_morton(Vec3Fix::from_int(99, 99, 99), &bounds), all);
+        // 退化 (size 0) 軸は 0
+        let flat = AABB::new(Vec3Fix::from_int(0, 0, 0), Vec3Fix::from_int(8, 0, 8));
+        assert_eq!(
+            point_to_morton(Vec3Fix::from_int(4, 3, 4), &flat),
+            (1 << 60) | (1 << 62)
+        );
+        // 単調性 (x 方向)
+        let a = point_to_morton(Vec3Fix::from_int(1, 1, 1), &bounds);
+        let b = point_to_morton(Vec3Fix::from_int(2, 1, 1), &bounds);
+        assert!(a < b);
+    }
+
+    #[test]
+    fn fix128_to_i32_floor_and_ceil_semantics() {
+        assert_eq!(fix128_floor_i32(Fix128::from_ratio(5, 2)), 2);
+        assert_eq!(fix128_floor_i32(Fix128::from_int(2)), 2);
+        assert_eq!(fix128_floor_i32(Fix128::from_ratio(-5, 2)), -3);
+        assert_eq!(fix128_ceil_i32(Fix128::from_ratio(5, 2)), 3);
+        assert_eq!(fix128_ceil_i32(Fix128::from_int(2)), 2);
+        assert_eq!(fix128_ceil_i32(Fix128::from_ratio(-5, 2)), -2);
+        assert_eq!(fix128_ceil_i32(Fix128 { hi: 7, lo: 1 }), 8);
+        // clamp
+        assert_eq!(fix128_floor_i32(Fix128::from_int(1 << 40)), i32::MAX);
+        assert_eq!(fix128_ceil_i32(Fix128::from_int(-(1 << 40))), i32::MIN);
+        let aabb = AABB::new(
+            Vec3Fix::new(
+                Fix128::from_ratio(-1, 2),
+                Fix128::from_ratio(3, 2),
+                Fix128::ZERO,
+            ),
+            Vec3Fix::new(
+                Fix128::from_ratio(1, 2),
+                Fix128::from_ratio(5, 2),
+                Fix128::from_int(3),
+            ),
+        );
+        assert_eq!(aabb_to_i32_min(&aabb), [-1, 1, 0]);
+        assert_eq!(aabb_to_i32_max(&aabb), [1, 3, 3]);
+    }
+
+    #[test]
+    fn find_split_splits_at_highest_differing_morton_bit() {
+        let mk = |codes: &[u64]| -> Vec<BvhPrimitive> {
+            codes
+                .iter()
+                .enumerate()
+                .map(|(i, &m)| BvhPrimitive {
+                    aabb: unit_box(0, 0, 0),
+                    index: i as u32,
+                    morton: m,
+                })
+                .collect()
+        };
+        // 最上位差分 bit (bit 3) が 0 の group [0b0001, 0b0011, 0b0101] と 1 の group [0b1000, 0b1001] → split = 3
+        let prims = mk(&[0b0001, 0b0011, 0b0101, 0b1000, 0b1001]);
+        assert_eq!(LinearBvh::find_split(&prims, 0, 5), 3);
+        // 先頭 1 個だけ 0 group → 1
+        let prims2 = mk(&[0b0001, 0b1000, 0b1001, 0b1100]);
+        assert_eq!(LinearBvh::find_split(&prims2, 0, 4), 1);
+        // 全部同じ code → 中央
+        let same = mk(&[7, 7, 7, 7, 7, 7]);
+        assert_eq!(LinearBvh::find_split(&same, 0, 6), 3);
+        // 部分区間 [2, 6): codes [0b10, 0b10, 0b11, 0b11] は bit 0 で分かれる → 4
+        let prims3 = mk(&[0, 0, 0b10, 0b10, 0b11, 0b11]);
+        assert_eq!(LinearBvh::find_split(&prims3, 2, 6), 4);
+        // 結果は必ず (start, end) の内側
+        let prims4 = mk(&[0, 0b1111]);
+        assert_eq!(LinearBvh::find_split(&prims4, 0, 2), 1);
+    }
+
+    #[test]
+    fn build_and_stats_reflect_leaf_partitioning() {
+        let boxes: Vec<AABB> = (0..9i64).map(|i| unit_box(i * 3, i * 3, i * 3)).collect();
+        let bvh = build_from(&boxes);
+        let st = bvh.stats();
+        assert_eq!(st.primitive_count, 9);
+        assert_eq!(st.node_count, bvh.nodes.len());
+        assert_eq!(st.leaf_count + st.internal_count, st.node_count);
+        assert!(
+            st.leaf_count >= 3,
+            "9 prims / 4 per leaf → 3 leaf 以上: {st:?}"
+        );
+        assert!(st.max_leaf_prims <= 4 && st.max_leaf_prims >= 1);
+        // 全 primitive index が 1 回ずつ現れる
+        let mut idx: Vec<u32> = bvh.primitives.clone();
+        idx.sort_unstable();
+        assert_eq!(idx, (0..9).collect::<Vec<u32>>());
+        // 空
+        let empty = LinearBvh::build(Vec::new());
+        assert_eq!(empty.stats().node_count, 0);
+        assert!(empty.query(&unit_box(0, 0, 0)).is_empty());
     }
 }
