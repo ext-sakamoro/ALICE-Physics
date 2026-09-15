@@ -52,6 +52,18 @@ were introduced during that release window.
   value (single source of truth for the CORDIC micro-rotations).
 - Cloth bending unit tests (flat fixed point / monotone relaxation / pinned
   vertices / drape bounds) and `atan` / `atan2` / `shr_bits` tests.
+- Mutation-score tests for every joint solver (15 tests): closed-form
+  inverse-mass splits for ball / hinge / fixed / slider / cone-twist
+  positional parts, rotated local anchors, compliance, hinge axis alignment
+  and angle limits (over / under / inside / no-limit), fixed relative
+  rotation, slider perpendicular removal and travel limits, spring
+  stiffness + damping impulses (extension / compression / at rest), D6
+  linear Locked / Limited / Free per axis and angular Locked / Limited,
+  cone-twist cone and twist limits, `Joint::bodies` / `compute_force` per
+  kind, and `solve_joints_breakable` strict-threshold / skip-broken /
+  descending-index semantics. Before this the hinge, fixed, D6 and
+  cone-twist solvers had no test that failed when the whole function was
+  replaced by `()`.
 - Mutation-score tests for the `math` core (15 tests): `Mat3Fix` (index-exact
   `mul_vec`, closed-form determinant with per-entry sensitivity, exact inverse
   of a unimodular matrix, `mul_mat` / `*` / `scale` / `transpose`), `QuatFix`
