@@ -101,10 +101,10 @@ pub struct RigidBody {
     /// Gravity scale multiplier (1.0 = normal, 0.0 = no gravity, 2.0 = double)
     pub gravity_scale: Fix128,
     /// Per-body linear damping factor (1.0 = no damping, 0.0 = full damping)
-    /// Overrides global damping when set. Applied per substep.
+    /// Multiplied with the global damping, applied once per frame (`step()`).
     pub linear_damping: Fix128,
     /// Per-body angular damping factor (1.0 = no damping, 0.0 = full damping)
-    /// Overrides global damping when set. Applied per substep.
+    /// Multiplied with the global damping, applied once per frame (`step()`).
     pub angular_damping: Fix128,
     /// Whether this body is a sensor/trigger (detects overlap but no physics response)
     pub is_sensor: bool,
@@ -461,11 +461,13 @@ pub struct DistanceConstraint {
     pub target_distance: Fix128,
     /// Inverse stiffness (0 = infinitely stiff)
     pub compliance: Fix128,
-    /// Cached lambda (Lagrange multiplier) from the previous substep for warm-starting.
+    /// XPBD Lagrange multiplier accumulated over the current substep.
     ///
-    /// Warm-starting seeds the solver with the accumulated impulse from the last
-    /// substep, reducing iterations needed for convergence (standard XPBD technique).
-    /// Initialized to `Fix128::ZERO`; updated every solve iteration (Gap 3.1).
+    /// Zeroed at the start of every substep and incremented by `dlambda` in each
+    /// solve iteration (Macklin 2016), so the compliance term `alpha~ * lambda`
+    /// sees the total force applied so far and the effective stiffness is
+    /// independent of `iterations`. Before 1.2.0 it held only the last
+    /// iteration's increment and was carried across substeps.
     pub cached_lambda: Fix128,
 }
 
@@ -511,10 +513,9 @@ pub struct ContactConstraint {
     pub friction: Fix128,
     /// Restitution (bounciness) coefficient
     pub restitution: Fix128,
-    /// Cached lambda (Lagrange multiplier) for warm-starting.
-    ///
-    /// Seeds the solver with the accumulated impulse from the previous substep,
-    /// reducing iterations needed for convergence (same technique as distance constraints).
+    /// Contact multiplier accumulated over the substep the contact lives in
+    /// (contacts are re-detected every substep since 1.2.0): the separation
+    /// along `contact.normal` already applied by earlier solver iterations.
     pub cached_lambda: Fix128,
 }
 
@@ -546,10 +547,18 @@ pub struct SolverConfig {
     pub iterations: usize,
     /// Gravity vector
     pub gravity: Vec3Fix,
-    /// Global damping factor
+    /// Global velocity-retention factor, applied **once per frame** (`step()`),
+    /// independent of `substeps` (1.0 = no damping). Before 1.2.0 it was applied
+    /// per substep, which made the result depend on `substeps`.
     pub damping: Fix128,
-    /// Warm-start relaxation factor (0.0〜1.0)。
-    /// cached_lambda にこの係数を乗じて初期推定とする。
+    /// **No effect since 1.2.0** (kept for struct compatibility).
+    ///
+    /// Distance constraints follow standard XPBD (`lambda = 0` at substep
+    /// start, accumulated over iterations) and contacts are re-detected every
+    /// substep and accumulate their multiplier within it, so there is no
+    /// previous-substep multiplier left to warm-start from. Before 1.2.0 the
+    /// factor biased both solvers and was the source of the iteration-dependent
+    /// stiffness (distance) and the energy-creating re-push (contact).
     /// 0.8〜0.95 が安定的。デフォルト 0.85。
     pub warm_start_factor: Fix128,
 }
@@ -1447,7 +1456,10 @@ impl PhysicsWorld {
         self.add_contact(constraint);
     }
 
-    /// Clear all contact constraints (call before collision detection)
+    /// Clear all contact constraints. `step()` does this at the start of every
+    /// substep (1.2.0) before `detect_collisions`, so contacts added manually
+    /// between frames are not seen by `step()`; drive the substep API yourself
+    /// if you generate contacts outside the built-in sphere / SDF detection.
     pub fn clear_contacts(&mut self) {
         self.contact_constraints.clear();
         self.batches_dirty = true;
@@ -1661,9 +1673,9 @@ impl PhysicsWorld {
             return;
         }
 
-        // Phase 0: Event frame lifecycle + clear stale contacts
+        // Phase 0: Event frame lifecycle (contacts are cleared and re-detected
+        // in every substep since 1.2.0, see `substep`)
         self.events.begin_frame();
-        self.clear_contacts();
 
         // Phase 0.5: Rebuild island connectivity from current joints
         self.islands.resize(self.bodies.len());
@@ -1680,14 +1692,19 @@ impl PhysicsWorld {
             apply_force_fields(&self.force_fields, &mut self.bodies, dt);
         }
 
-        // Phase 2: Auto collision detection (BVH + sphere)
-        self.detect_collisions();
+        // Phase 2 (collision detection) moved into the substep — Small Steps
+        // (Müller et al. 2020): a frame-level contact set solved 8× with a
+        // stale depth re-pushed the penetration every substep and turned a
+        // 5 m/s head-on collision into 700 m/s (1.2.0, R4-2).
 
         // Phase 3: Substep loop
         let substep_dt = dt / Fix128::from_int(self.config.substeps as i64);
         for _ in 0..self.config.substeps {
             self.substep(substep_dt);
         }
+
+        // Phase 3.5: Frame-level damping (1.2.0, was per substep)
+        self.apply_frame_damping();
 
         // Phase 4: Update sleeping
         self.islands.update_sleep(&self.bodies);
@@ -1708,9 +1725,9 @@ impl PhysicsWorld {
             return;
         }
 
-        // Phase 0: Event frame lifecycle + clear stale contacts
+        // Phase 0: Event frame lifecycle (contacts are cleared and re-detected
+        // in every substep since 1.2.0, see `substep`)
         self.events.begin_frame();
-        self.clear_contacts();
 
         // Phase 0.5: Rebuild island connectivity from current joints
         self.islands.resize(self.bodies.len());
@@ -1727,15 +1744,17 @@ impl PhysicsWorld {
             apply_force_fields(&self.force_fields, &mut self.bodies, dt);
         }
 
-        // Phase 2: Auto collision detection
-        self.detect_collisions();
+        // Phase 2 (collision detection) is per substep since 1.2.0, see `step`.
 
-        // Phase 3: Rebuild batches and substep
-        self.rebuild_batches();
+        // Phase 3: Substep loop (batches are rebuilt inside each substep after
+        // detection, `solve_constraints_batched` re-colours on dirty)
         let substep_dt = dt / Fix128::from_int(self.config.substeps as i64);
         for _ in 0..self.config.substeps {
             self.substep_batched(substep_dt);
         }
+
+        // Phase 3.5: Frame-level damping (1.2.0, was per substep)
+        self.apply_frame_damping();
 
         // Phase 4: Update sleeping
         self.islands.update_sleep(&self.bodies);
@@ -1747,6 +1766,12 @@ impl PhysicsWorld {
     /// Single substep
     fn substep(&mut self, dt: Fix128) {
         self.integrate_positions(dt);
+        self.reset_lambdas();
+
+        // 1.2. Collision detection on the predicted positions (Small Steps).
+        //      Contacts live for exactly one substep.
+        self.clear_contacts();
+        self.detect_collisions();
 
         // 1.5. Resolve SDF collisions (implicit surface contacts)
         #[cfg(feature = "std")]
@@ -1772,6 +1797,12 @@ impl PhysicsWorld {
     #[cfg(feature = "parallel")]
     fn substep_batched(&mut self, dt: Fix128) {
         self.integrate_positions(dt);
+        self.reset_lambdas();
+
+        // 1.2. Collision detection on the predicted positions (Small Steps).
+        self.clear_contacts();
+        self.detect_collisions();
+        self.rebuild_batches();
 
         // 1.5. Resolve SDF collisions
         #[cfg(feature = "std")]
@@ -1801,7 +1832,6 @@ impl PhysicsWorld {
         #[cfg(feature = "parallel")]
         {
             let gravity = self.config.gravity;
-            let damping = self.config.damping;
             let sleep_data = &self.islands.sleep_data;
             self.bodies
                 .par_iter_mut()
@@ -1839,9 +1869,9 @@ impl PhysicsWorld {
                     // Apply gravity (with per-body scale)
                     body.velocity = body.velocity + gravity * body.gravity_scale * dt;
 
-                    // Apply damping
-                    body.velocity = body.velocity * damping * body.linear_damping;
-                    body.angular_velocity = body.angular_velocity * damping * body.angular_damping;
+                    // Damping is applied once per frame in `apply_frame_damping`
+                    // (1.2.0). Applying it here, per substep, made the terminal
+                    // velocity depend on `substeps` (v_inf = g*h*d/(1-d)).
 
                     // Predict position
                     body.position = body.position + body.velocity * dt;
@@ -1890,12 +1920,8 @@ impl PhysicsWorld {
                 let grav = self.config.gravity * self.bodies[i].gravity_scale * dt;
                 self.bodies[i].velocity = self.bodies[i].velocity + grav;
 
-                // Apply damping
-                self.bodies[i].velocity =
-                    self.bodies[i].velocity * self.config.damping * self.bodies[i].linear_damping;
-                self.bodies[i].angular_velocity = self.bodies[i].angular_velocity
-                    * self.config.damping
-                    * self.bodies[i].angular_damping;
+                // Damping: once per frame in `apply_frame_damping` (see the
+                // `parallel` branch above for the rationale).
 
                 // Predict position
                 self.bodies[i].position = self.bodies[i].position + self.bodies[i].velocity * dt;
@@ -1908,6 +1934,49 @@ impl PhysicsWorld {
                     self.bodies[i].rotation = delta_rot.mul(self.bodies[i].rotation).normalize();
                 }
             }
+        }
+    }
+
+    /// Reset the XPBD Lagrange multipliers of the distance constraints at the
+    /// start of a substep (Macklin 2016, Algorithm 1: `lambda = 0`).
+    ///
+    /// Within the substep `solve_distance_constraints` / `solve_distance_pair`
+    /// accumulate `dlambda` into `cached_lambda`. Carrying a fraction of the
+    /// previous substep's `lambda` over (the pre-1.2.0 "warm start") is not
+    /// valid for a position-based multiplier: the carried value is treated as
+    /// force already applied this substep although it was not, which inflates
+    /// the steady-state extension of compliant constraints
+    /// (`C = mg/k * (1 + wsf / (1 - wsf))`, 6.7x at `wsf = 0.85`). For rigid
+    /// constraints (`compliance == 0`) `lambda` never enters the correction, so
+    /// their behaviour is unchanged. `warm_start_factor` now only affects the
+    /// contact solver (byte-exact parity contract with `GpuSolverBridge`
+    /// implementations, see `solve_contact_pair`).
+    fn reset_lambdas(&mut self) {
+        for c in &mut self.distance_constraints {
+            c.cached_lambda = Fix128::ZERO;
+        }
+    }
+
+    /// Apply global and per-body velocity damping **once per frame**.
+    ///
+    /// `SolverConfig::damping` / `RigidBody::linear_damping` /
+    /// `RigidBody::angular_damping` are velocity-retention factors per
+    /// `step()` call. Before 1.2.0 they were multiplied in every substep, so
+    /// the default `substeps: 8, damping: 0.99` gave every body a terminal
+    /// velocity of `g * h * d / (1 - d)` with `h = dt / substeps` — about
+    /// 2 m/s under default gravity — and doubling `substeps` halved the fall
+    /// speed. A precision parameter must not change the physics, so damping
+    /// now runs after the substep loop, on the velocities derived by the last
+    /// `update_velocities`. Static / kinematic / sleeping bodies are skipped.
+    fn apply_frame_damping(&mut self) {
+        let damping = self.config.damping;
+        for i in 0..self.bodies.len() {
+            if self.bodies[i].body_type != BodyType::Dynamic || self.islands.is_sleeping(i) {
+                continue;
+            }
+            let body = &mut self.bodies[i];
+            body.velocity = body.velocity * damping * body.linear_damping;
+            body.angular_velocity = body.angular_velocity * damping * body.angular_damping;
         }
     }
 
@@ -2107,8 +2176,6 @@ impl PhysicsWorld {
         };
         let static_bodies: &[bool] = &self.batch_static_bodies;
 
-        let wsf = self.config.warm_start_factor;
-
         for batch_idx in 0..num_batches {
             // Phase 1: Distance constraints — parallel within batch
             {
@@ -2126,7 +2193,7 @@ impl PhysicsWorld {
                             bodies.borrow(constraint.body_a, static_bodies[constraint.body_a]);
                         let body_b =
                             bodies.borrow(constraint.body_b, static_bodies[constraint.body_b]);
-                        Self::solve_distance_pair(body_a, body_b, constraint, dt, wsf);
+                        Self::solve_distance_pair(body_a, body_b, constraint, dt);
                     }
                 });
             }
@@ -2148,7 +2215,7 @@ impl PhysicsWorld {
                             bodies.borrow(constraint.body_a, static_bodies[constraint.body_a]);
                         let body_b =
                             bodies.borrow(constraint.body_b, static_bodies[constraint.body_b]);
-                        Self::solve_contact_pair(body_a, body_b, constraint, wsf);
+                        Self::solve_contact_pair(body_a, body_b, constraint);
                     }
                 });
             }
@@ -2167,7 +2234,6 @@ impl PhysicsWorld {
         mut body_b: BodyRef<'_>,
         constraint: &mut DistanceConstraint,
         dt: Fix128,
-        warm_start_factor: Fix128,
     ) {
         let (pos_a, rot_a, inv_mass_a) = {
             let a = body_a.get();
@@ -2197,15 +2263,18 @@ impl PhysicsWorld {
             return;
         }
 
-        // Warm-start: bias the error by the cached lambda (scaled by relaxation factor)
-        // from the previous substep, reducing iterations needed for convergence.
+        // XPBD (Macklin 2016): `cached_lambda` is the Lagrange multiplier
+        // accumulated over this substep (zeroed by `reset_lambdas`).
+        //   dlambda = (C - alpha~ * lambda) / (w_a + w_b + alpha~)
+        //   lambda += dlambda,  dx = dlambda * w * grad C
+        // Before 1.2.0 `lambda` was overwritten instead of accumulated, so the
+        // alpha~*lambda term was always under-estimated and the effective
+        // stiffness of compliant constraints depended on `iterations`.
         let inv_w_sum = Fix128::ONE / w_sum;
-        let biased_error = error - constraint.cached_lambda * warm_start_factor * compliance_term;
-        let lambda = biased_error * inv_w_sum;
-        let correction = normal * lambda;
-
-        // Store lambda for warm-starting on the next substep.
-        constraint.cached_lambda = lambda;
+        let lambda = constraint.cached_lambda;
+        let dlambda = (error - lambda * compliance_term) * inv_w_sum;
+        constraint.cached_lambda = lambda + dlambda;
+        let correction = normal * dlambda;
 
         // Branchless: static bodies have inv_mass == ZERO, correction * ZERO == ZERO.
         // `set_position` is a no-op for `BodyRef::Static`, matching the
@@ -2227,7 +2296,6 @@ impl PhysicsWorld {
         mut body_a: BodyRef<'_>,
         mut body_b: BodyRef<'_>,
         constraint: &mut ContactConstraint,
-        warm_start_factor: Fix128,
     ) {
         let (pos_a, inv_mass_a, sensor_a) = {
             let a = body_a.get();
@@ -2254,17 +2322,22 @@ impl PhysicsWorld {
             return;
         }
 
-        // Warm-start: bias depth by cached lambda from previous substep.
+        // Accumulated non-negative contact multiplier (1.2.0). The contact is
+        // re-detected every substep, so `depth` is the penetration at the start
+        // of this substep and `cached_lambda` the separation already applied in
+        // earlier iterations: dlambda = depth - lambda, clamped to lambda >= 0.
+        // Before 1.2.0 every iteration re-pushed `depth - 0.85 * lambda_prev`
+        // against a frame-stale depth, which multiplied the separation by the
+        // iteration and substep counts (5 m/s collision → 700 m/s at defaults).
         let inv_w_sum = Fix128::ONE / w_sum;
-        let biased_depth = contact.depth - constraint.cached_lambda * warm_start_factor;
-        let lambda = if biased_depth > Fix128::ZERO {
-            biased_depth
-        } else {
-            Fix128::ZERO
-        };
-        constraint.cached_lambda = lambda;
+        let lambda = constraint.cached_lambda;
+        let dlambda = contact.depth - lambda;
+        if dlambda <= Fix128::ZERO {
+            return;
+        }
+        constraint.cached_lambda = lambda + dlambda;
 
-        let correction = contact.normal * lambda;
+        let correction = contact.normal * dlambda;
         let correction_a = correction * (inv_mass_a * inv_w_sum);
         let correction_b = correction * (inv_mass_b * inv_w_sum);
 
@@ -2316,16 +2389,13 @@ impl PhysicsWorld {
                 continue;
             }
 
-            // Warm-start: bias the error by subtracting the previously cached lambda
-            // (scaled by relaxation factor) so the solver starts from a good initial guess.
+            // XPBD: accumulate the Lagrange multiplier over the substep
+            // (see `solve_distance_pair` for the derivation).
             let inv_w_sum = Fix128::ONE / w_sum;
-            let biased_error =
-                error - constraint.cached_lambda * self.config.warm_start_factor * compliance_term;
-            let lambda = biased_error * inv_w_sum;
-            let correction = normal * lambda;
-
-            // Store lambda for warm-starting on the next substep.
-            self.distance_constraints[i].cached_lambda = lambda;
+            let lambda = constraint.cached_lambda;
+            let dlambda = (error - lambda * compliance_term) * inv_w_sum;
+            self.distance_constraints[i].cached_lambda = lambda + dlambda;
+            let correction = normal * dlambda;
 
             // Branchless apply corrections: static bodies have inv_mass == ZERO.
             let delta_a = correction * body_a.inv_mass;
@@ -2422,20 +2492,16 @@ impl PhysicsWorld {
                 continue;
             }
 
-            // Warm-start: bias the penetration depth by cached lambda from previous substep.
+            // Accumulated contact multiplier, see `solve_contact_pair`.
             let inv_w_sum = Fix128::ONE / w_sum;
-            let wsf = self.config.warm_start_factor;
-            let biased_depth = contact.depth - constraint.cached_lambda * wsf;
-            let lambda = if biased_depth > Fix128::ZERO {
-                biased_depth
-            } else {
-                Fix128::ZERO
-            };
+            let lambda = constraint.cached_lambda;
+            let dlambda = contact.depth - lambda;
+            if dlambda <= Fix128::ZERO {
+                continue;
+            }
+            self.contact_constraints[i].cached_lambda = lambda + dlambda;
 
-            // Store lambda for warm-starting on the next substep.
-            self.contact_constraints[i].cached_lambda = lambda;
-
-            let correction = contact.normal * lambda;
+            let correction = contact.normal * dlambda;
             let correction_a = correction * (body_a.inv_mass * inv_w_sum);
             let correction_b = correction * (body_b.inv_mass * inv_w_sum);
 
@@ -2609,9 +2675,9 @@ impl PhysicsWorld {
             return;
         }
 
-        // Phase 0: Event frame lifecycle + clear stale contacts
+        // Phase 0: Event frame lifecycle (contacts are cleared and re-detected
+        // in every substep since 1.2.0, see `substep`)
         self.events.begin_frame();
-        self.clear_contacts();
 
         // Phase 0.5: Rebuild island connectivity from current joints
         self.islands.resize(self.bodies.len());
@@ -2628,14 +2694,16 @@ impl PhysicsWorld {
             apply_force_fields(&self.force_fields, &mut self.bodies, dt);
         }
 
-        // Phase 2: Auto collision detection (BVH + sphere)
-        self.detect_collisions();
+        // Phase 2 (collision detection) is per substep since 1.2.0, see `step`.
 
         // Phase 3: Substep loop with bridge-routed contact solve
         let substep_dt = dt / Fix128::from_int(self.config.substeps as i64);
         for _ in 0..self.config.substeps {
             self.substep_with_bridge(bridge, substep_dt);
         }
+
+        // Phase 3.5: Frame-level damping (1.2.0, was per substep)
+        self.apply_frame_damping();
 
         // Phase 4: Update sleeping
         self.islands.update_sleep(&self.bodies);
@@ -2666,6 +2734,11 @@ impl PhysicsWorld {
         dt: Fix128,
     ) {
         self.integrate_positions(dt);
+        self.reset_lambdas();
+
+        // 1.2. Collision detection on the predicted positions (Small Steps).
+        self.clear_contacts();
+        self.detect_collisions();
 
         // 1.5. Resolve SDF collisions (implicit surface contacts)
         if !self.sdf_colliders.is_empty() {
@@ -2934,14 +3007,22 @@ impl PhysicsWorld {
                 .and_then(|r| *r)
                 .unwrap_or(Fix128::ZERO);
 
-            let delta = self.bodies[b].position - self.bodies[a].position;
+            // Contact normal points from B to A (`Contact::normal` contract, same
+            // as the EPA / SDF paths and what `solve_contact_constraints` /
+            // `update_velocities` assume: A is moved along +n, B along -n).
+            // Before 1.2.0 this path used `pos_b - pos_a` (A → B), so every
+            // sphere-sphere contact pushed the bodies *into* each other and a
+            // plain head-on collision accelerated both bodies (4 m/s → 114 m/s
+            // in 4 frames). `tests/analytic_physics.rs::head_on_collision_*`.
+            let delta = self.bodies[a].position - self.bodies[b].position;
             let (normal, dist) = delta.normalize_with_length();
             let combined_radius = radius_a + radius_b;
 
             if dist < combined_radius && !dist.is_zero() {
                 let depth = combined_radius - dist;
-                let point_a = self.bodies[a].position + normal * radius_a;
-                let point_b = self.bodies[b].position - normal * radius_b;
+                let point_a = self.bodies[a].position - normal * radius_a;
+                let point_b = self.bodies[b].position + normal * radius_b;
+                // Approach speed along the normal: negative while closing.
                 let rel_vel = (self.bodies[a].velocity - self.bodies[b].velocity).dot(normal);
                 let is_sensor = self.bodies[a].is_sensor || self.bodies[b].is_sensor;
 
@@ -3505,15 +3586,13 @@ mod tests {
     }
 
     #[test]
-    fn test_contact_warm_start_convergence() {
-        // warm_start_factor > 0 で contact constraint の収束を検証。
-        // step() は clear_contacts() を呼ぶので、衝突検出経由ではなく
-        // substep を直接呼び出してテスト。
+    fn test_manual_contact_pushes_body_out_by_depth() {
+        // 手動 contact は substep が clear_contacts するので (1.2.0)、solver level の
+        // `solve_contact_constraints` を直接 iterations 回呼んで検証
         let config = SolverConfig {
             substeps: 1,
             iterations: 2,
             gravity: Vec3Fix::ZERO,
-            warm_start_factor: Fix128::from_ratio(85, 100),
             ..Default::default()
         };
         let mut world = PhysicsWorld::new(config);
@@ -3534,13 +3613,17 @@ mod tests {
         };
         world.add_contact(ContactConstraint::new(0, 1, contact));
 
-        // substep を直接呼ぶ（step は clear_contacts してしまうため）
         let dt = Fix128::from_ratio(1, 60);
-        world.substep(dt);
+        for _ in 0..world.config.iterations {
+            world.solve_contact_constraints(dt);
+        }
 
-        // body_b が上方に押し出されていること
+        // body_b は depth ちょうど 1 回分 (0.05) 上に押し出される、2 iteration でも 2 倍にならない
         let y = world.bodies[1].position.y.to_f32();
-        assert!(y > 0.05, "Body should be pushed up: y={y}");
+        assert!(
+            (y - 0.10).abs() < 1e-5,
+            "Body should be pushed up by depth once: y={y}"
+        );
     }
 
     // -------------------------------------------------------------------
@@ -4673,7 +4756,9 @@ mod tests {
 
     #[test]
     fn detect_collisions_overlapping_spheres_produce_exact_contact() {
-        // r=1, r=1、距離 1.5 → depth = 0.5、normal = +x (a → b)、point_a = (1,0,0)、point_b = (0.5,0,0)
+        // r=1, r=1、距離 1.5 → depth = 0.5、normal = -x (B → A、`Contact::normal` 契約)、
+        // point_a = pos_a - n·r_a = (1,0,0)、point_b = pos_b + n·r_b = (0.5,0,0)
+        // (1.2.0 以前は a → b で pin していた = 押し込み方向の bug を test が固定していた)
         let mut world = two_spheres(3, 2, Fix128::ONE, Fix128::ONE);
         world.detect_collisions();
         assert_eq!(world.contact_constraints.len(), 1);
@@ -4684,7 +4769,7 @@ mod tests {
             "depth {:?}",
             c.contact.depth
         );
-        assert_near_vec(c.contact.normal, v3(1, 0, 0), "normal");
+        assert_near_vec(c.contact.normal, v3(-1, 0, 0), "normal");
         assert_near_vec(c.contact.point_a, v3(1, 0, 0), "point_a");
         assert_near_vec(
             c.contact.point_b,
@@ -4740,9 +4825,9 @@ mod tests {
         world.bodies[1].velocity = v3(-1, 0, 0);
         world.detect_collisions();
         let ev = &world.contact_events()[0];
-        // rel_vel = (v_a - v_b) · n = (3, 7, 0) · (1,0,0) = 3
+        // rel_vel = (v_a - v_b) · n = (3, 7, 0) · (-1,0,0) = -3 (接近中は負、B → A normal)
         assert!(
-            near(ev.relative_velocity, Fix128::from_int(3)),
+            near(ev.relative_velocity, Fix128::from_int(-3)),
             "rel_vel {:?}",
             ev.relative_velocity
         );
@@ -4970,11 +5055,11 @@ mod tests {
     }
 
     #[test]
-    fn solve_distance_constraints_warm_start_biases_error() {
-        // 前 substep の cached_lambda = 1、warm_start_factor = 1、compliance_term = 1 (上と同設定)
-        // biased_error = 2 - 1*1*1 = 1 → λ = 1/2 → B: 4 - 0.5 = 3.5
+    fn solve_distance_constraints_accumulates_lambda_xpbd() {
+        // substep 途中 (前 iteration で λ = 1 が累積済)、compliance_term = 1 (上と同設定)
+        // dλ = (C - α̃λ) / w_sum = (2 - 1*1) / 2 = 1/2 → B: 4 - 0.5 = 3.5、λ = 1 + 1/2 = 3/2
+        // (1.2.0 以前は λ を上書きしていたので cached_lambda = 1/2 になっていた)
         let mut world = quiet_world();
-        world.config.warm_start_factor = Fix128::ONE;
         let a = world.add_body(RigidBody::new_static(Vec3Fix::ZERO));
         let b = world.add_body(RigidBody::new_dynamic(v3(4, 0, 0), Fix128::ONE));
         let mut c = dc(a, b);
@@ -4989,7 +5074,50 @@ mod tests {
             world.bodies[b].position,
             Vec3Fix::new(r(7, 2), Fix128::ZERO, Fix128::ZERO)
         );
-        assert_eq!(world.distance_constraints[0].cached_lambda, r(1, 2));
+        assert_eq!(world.distance_constraints[0].cached_lambda, r(3, 2));
+    }
+
+    #[test]
+    fn reset_lambdas_zeroes_distance_lambda() {
+        let mut world = quiet_world();
+        let a = world.add_body(RigidBody::new_static(Vec3Fix::ZERO));
+        let b = world.add_body(RigidBody::new_dynamic(v3(4, 0, 0), Fix128::ONE));
+        let mut c = dc(a, b);
+        c.cached_lambda = Fix128::from_int(3);
+        world.add_distance_constraint(c);
+        world.reset_lambdas();
+        assert_eq!(world.distance_constraints[0].cached_lambda, Fix128::ZERO);
+    }
+
+    #[test]
+    fn xpbd_compliant_extension_is_iteration_independent() {
+        // 1 kg を compliance 0.01 (k = 100 N/m) の距離拘束で吊る → 定常伸び mg/k = 0.1 m
+        // iterations を 1..16 と変えても同じ伸びに収束する (1.2.0 以前は iter 倍で伸び半減)
+        let run = |iters: usize| {
+            let mut world = quiet_world();
+            world.config.gravity = v3(0, -10, 0);
+            world.config.damping = Fix128::ONE;
+            world.config.substeps = 4;
+            world.config.iterations = iters;
+            let a = world.add_body(RigidBody::new_static(Vec3Fix::ZERO));
+            let b = world.add_body(RigidBody::new_dynamic(v3(0, -1, 0), Fix128::ONE));
+            world.bodies[b].linear_damping = r(9, 10); // settle the oscillation
+            let mut c = dc(a, b);
+            c.target_distance = Fix128::ONE;
+            c.compliance = r(1, 100);
+            world.add_distance_constraint(c);
+            for _ in 0..600 {
+                world.step(r(1, 60));
+            }
+            (-world.bodies[b].position.y - Fix128::ONE).to_f64()
+        };
+        let ext: Vec<f64> = [1usize, 2, 4, 8, 16].iter().map(|&i| run(i)).collect();
+        for (i, e) in ext.iter().enumerate() {
+            assert!(
+                (e - 0.1).abs() < 0.01,
+                "iterations index {i}: extension {e} m, expected 0.1 ± 0.01 (all: {ext:?})"
+            );
+        }
     }
 
     #[test]
@@ -5105,32 +5233,43 @@ mod tests {
     }
 
     #[test]
-    fn solve_contact_constraints_warm_start_clamps_lambda_at_zero() {
-        // depth 1/2、cached 1、wsf 1 → biased = -1/2 → λ = 0 (`>` は false) → 動かない
+    fn solve_contact_constraints_accumulates_lambda_and_pushes_depth_once() {
+        // depth 1/2、λ 累積済 1 (≥ depth) → dλ ≤ 0 → 動かない、λ 不変
         let mut world = contact_world(Fix128::ONE, Fix128::ONE, r(1, 2));
-        world.config.warm_start_factor = Fix128::ONE;
         world.contact_constraints[0].cached_lambda = Fix128::ONE;
         world.solve_contact_constraints(r(1, 4));
         assert_eq!(world.bodies[0].position, Vec3Fix::ZERO);
-        assert_eq!(world.contact_constraints[0].cached_lambda, Fix128::ZERO);
+        assert_eq!(world.contact_constraints[0].cached_lambda, Fix128::ONE);
 
-        // biased == 0 ちょうど (depth 1/2、cached 1/2) → `>` は false → λ = 0
+        // λ == depth ちょうど → dλ = 0 → 動かない
         let mut edge = contact_world(Fix128::ONE, Fix128::ONE, r(1, 2));
-        edge.config.warm_start_factor = Fix128::ONE;
         edge.contact_constraints[0].cached_lambda = r(1, 2);
         edge.solve_contact_constraints(r(1, 4));
         assert_eq!(edge.bodies[0].position, Vec3Fix::ZERO);
 
-        // cached 1/4、wsf 1/2 → biased = 1/2 - 1/8 = 3/8 → A += 3/16
+        // λ 1/4 → dλ = 1/2 - 1/4 = 1/4 → A += 1/8 (w_a / w_sum = 1/2)、λ = 1/2
         let mut partial = contact_world(Fix128::ONE, Fix128::ONE, r(1, 2));
-        partial.config.warm_start_factor = r(1, 2);
         partial.contact_constraints[0].cached_lambda = r(1, 4);
         partial.solve_contact_constraints(r(1, 4));
         assert_eq!(
             partial.bodies[0].position,
-            Vec3Fix::new(r(3, 16), Fix128::ZERO, Fix128::ZERO)
+            Vec3Fix::new(r(1, 8), Fix128::ZERO, Fix128::ZERO)
         );
-        assert_eq!(partial.contact_constraints[0].cached_lambda, r(3, 8));
+        assert_eq!(partial.contact_constraints[0].cached_lambda, r(1, 2));
+
+        // 4 iteration 回しても総押し出し量は depth 1 回分 (1.2.0 以前は iteration 毎に再 push)
+        let mut iters = contact_world(Fix128::ONE, Fix128::ONE, r(1, 2));
+        for _ in 0..4 {
+            iters.solve_contact_constraints(r(1, 4));
+        }
+        assert_eq!(
+            iters.bodies[0].position,
+            Vec3Fix::new(r(1, 4), Fix128::ZERO, Fix128::ZERO)
+        );
+        assert_eq!(
+            iters.bodies[1].position,
+            Vec3Fix::new(r(3, 4), Fix128::ZERO, Fix128::ZERO)
+        );
     }
 
     #[test]
@@ -5407,15 +5546,25 @@ mod tests {
 
         world.integrate_positions(dt);
 
-        // v = (4,0,0) + g*scale*dt = (4, -1, 0) → damping 1/2 * 1/2 → (1, -1/4, 0)
-        // pos = (1,1,1) + v*dt = (1.25, 15/16, 1)、prev = (1,1,1)
+        // v = (4,0,0) + g*scale*dt = (4, -1, 0)  (damping は integrate では掛からない、1.2.0)
+        // pos = (1,1,1) + v*dt = (2, 3/4, 1)、prev = (1,1,1)
         let b = &world.bodies[i];
         assert_eq!(
             b.velocity,
+            Vec3Fix::new(Fix128::from_int(4), -Fix128::ONE, Fix128::ZERO)
+        );
+        assert_eq!(
+            b.position,
+            Vec3Fix::new(Fix128::from_int(2), r(3, 4), Fix128::ONE)
+        );
+        assert_eq!(b.prev_position, v3(1, 1, 1));
+
+        // frame damping: global 1/2 * per-body 1/2 → (1, -1/4, 0)
+        world.apply_frame_damping();
+        assert_eq!(
+            world.bodies[i].velocity,
             Vec3Fix::new(Fix128::ONE, -r(1, 4), Fix128::ZERO)
         );
-        assert_eq!(b.position, Vec3Fix::new(r(5, 4), r(15, 16), Fix128::ONE));
-        assert_eq!(b.prev_position, v3(1, 1, 1));
     }
 
     #[test]
@@ -5424,20 +5573,76 @@ mod tests {
         world.config.damping = Fix128::ONE;
         let i = world.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
         world.bodies[i].angular_velocity = v3(0, 0, 2);
-        world.bodies[i].angular_damping = r(1, 2); // → (0,0,1)
+        world.bodies[i].angular_damping = r(1, 2); // frame damping → (0,0,1)
         let dt = r(1, 4);
 
         world.integrate_positions(dt);
 
         let b = &world.bodies[i];
-        assert_eq!(b.angular_velocity, v3(0, 0, 1));
-        // 回転は z 軸 angle = 1 * 1/4 の quaternion (正規化済) と一致
-        let expected = QuatFix::from_axis_angle(v3(0, 0, 1), r(1, 4))
+        // integrate は damping を掛けない (1.2.0)、角速度は 2 のまま
+        assert_eq!(b.angular_velocity, v3(0, 0, 2));
+        // 回転は z 軸 angle = 2 * 1/4 の quaternion (正規化済) と一致
+        let expected = QuatFix::from_axis_angle(v3(0, 0, 1), r(1, 2))
             .mul(QuatFix::IDENTITY)
             .normalize();
         assert_eq!(b.rotation, expected);
         assert_eq!(b.prev_rotation, QuatFix::IDENTITY);
         assert!(b.rotation != QuatFix::IDENTITY);
+        world.apply_frame_damping();
+        assert_eq!(world.bodies[i].angular_velocity, v3(0, 0, 1));
+    }
+
+    #[test]
+    fn apply_frame_damping_skips_static_kinematic_and_sleeping() {
+        let mut world = quiet_world();
+        world.config.damping = r(1, 2);
+        let st = world.add_body(RigidBody::new_static(Vec3Fix::ZERO));
+        let mut kin = RigidBody::new_static(Vec3Fix::ZERO);
+        kin.body_type = BodyType::Kinematic;
+        let ki = world.add_body(kin);
+        let dy = world.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
+        for &i in &[st, ki, dy] {
+            world.bodies[i].velocity = v3(2, 0, 0);
+            world.bodies[i].angular_velocity = v3(0, 4, 0);
+        }
+        world.apply_frame_damping();
+        assert_eq!(world.bodies[st].velocity, v3(2, 0, 0));
+        assert_eq!(world.bodies[ki].velocity, v3(2, 0, 0));
+        assert_eq!(world.bodies[dy].velocity, v3(1, 0, 0));
+        assert_eq!(world.bodies[dy].angular_velocity, v3(0, 2, 0));
+    }
+
+    #[test]
+    fn free_fall_is_substep_independent_with_frame_damping() {
+        // 重力 -10、damping ONE、1 秒 (60 frame) → y = -5.0、substeps を変えても同じ
+        // (1.2.0 以前は substep 内 damping で終端速度 g*h*d/(1-d) が substeps 依存だった)
+        let fall = |substeps: usize| {
+            let mut world = quiet_world();
+            world.config.gravity = v3(0, -10, 0);
+            world.config.damping = Fix128::ONE;
+            world.config.substeps = substeps;
+            let b = world.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
+            for _ in 0..60 {
+                world.step(r(1, 60));
+            }
+            world.bodies[b].position.y.to_f64()
+        };
+        let ys: Vec<f64> = [1usize, 2, 4, 8, 16].iter().map(|&n| fall(n)).collect();
+        for y in &ys {
+            // symplectic Euler の離散化誤差 g*dt/2 = 1/12 → -5 - 0.083、substeps 増で -5 に寄る
+            assert!(
+                (y + 5.0).abs() < 0.1,
+                "free fall y = {y}, expected -5.0 ± 0.1 (all: {ys:?})"
+            );
+        }
+        // 既定 config (damping 0.99 / frame) でも 1 秒で 3.5 m 以上落ちる (旧: -1.64 m)
+        let mut world = PhysicsWorld::new(PhysicsConfig::default());
+        let b = world.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
+        for _ in 0..60 {
+            world.step(r(1, 60));
+        }
+        let y = world.bodies[b].position.y.to_f64();
+        assert!(y < -3.5, "default config fell only to y = {y}");
     }
 
     #[test]

@@ -37,8 +37,12 @@ jobs:
       - name: Create ALICE optional bridge stubs
         uses: ./.github/actions/alice-stubs
 
-      - name: Build (no_std)
-        run: cargo build --lib --no-default-features
+      # `crate-type` includes cdylib/staticlib (FFI consumers, 1.2.0); a no_std
+      # cdylib needs a panic_handler + allocator, so the no_std *library* build is
+      # checked as rlib only (same workaround as ALICE-ML). Downstream no_std
+      # users always get the rlib.
+      - name: Build (no_std, rlib)
+        run: cargo rustc --lib --no-default-features --crate-type rlib
 
       - name: Build (std only)
         run: cargo build --lib --no-default-features --features "std"
@@ -49,8 +53,15 @@ jobs:
       - name: Test (unit + integration + doc)
         run: cargo test
 
-      - name: Build (FFI)
-        run: cargo build --features "ffi"
+      # 1.2.0: the C ABI consumers (Unity P/Invoke, unreal-plugin/) link the
+      # cdylib / staticlib — assert both are actually produced, not just the rlib.
+      - name: Build (FFI) + assert cdylib / staticlib artifacts
+        shell: bash
+        run: |
+          cargo build --features "ffi"
+          ls target/debug/
+          ls target/debug/libalice_physics.so target/debug/libalice_physics.dylib target/debug/alice_physics.dll 2>/dev/null | grep -q . || { echo "no cdylib produced"; exit 1; }
+          ls target/debug/libalice_physics.a target/debug/alice_physics.lib 2>/dev/null | grep -q . || { echo "no staticlib produced"; exit 1; }
 
       - name: Build (parallel)
         run: cargo build --lib --features "parallel"
@@ -58,8 +69,11 @@ jobs:
       - name: Test (parallel — unit + integration)
         run: cargo test --features "parallel"
 
-      - name: Build (SIMD)
-        run: cargo build --lib --features "simd"
+      # test, not just build: a feature whose code is only compiled is a feature
+      # whose effect nobody verifies (external review 2026-09-15: the SIMD paths
+      # were scalar with dead intrinsics and no test caught the mismatch claim).
+      - name: Test (SIMD, lib)
+        run: cargo test --lib --features "simd"
 
   # v1.0 Item E Phase 2: WASM determinism check
   # `wasm32-wasip1` target で determinism_golden test を build → wasmtime で
@@ -141,32 +155,33 @@ jobs:
           --features "std,simd,parallel,ffi,gpu-solver-bridge,neural,replay,analytics"
           --all-targets -- -D warnings
 
+  # The declared `rust-version` is compiled with exactly that toolchain
+  # (resolver = "3" makes the fresh resolution MSRV-aware, Cargo.lock is not
+  # committed for this library) for the default, no_std and full native feature
+  # sets. Bump `rust-version` and the
+  # `@<version>` below in the same commit (karikari §3-1 #53 / template 罠 #27).
+  # The pre-1.2.0 job regenerated the lockfile with stable and checked only the
+  # std feature set, so the "1.70.0" claim was never actually compiled.
   msrv:
-    name: MSRV (rust-version = 1.70.0)
+    name: MSRV (rust-version = 1.85)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-
-      # Stable resolves an MSRV-aware lockfile (deps whose own rust-version
-      # exceeds ours fall back to older releases); 1.70.0 then type-checks it.
-      - name: Install stable (lockfile resolver)
-        uses: dtolnay/rust-toolchain@stable
       - name: Install MSRV toolchain
-        uses: dtolnay/rust-toolchain@1.70.0
+        uses: dtolnay/rust-toolchain@1.85
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: Resolve MSRV-compatible lockfile
-        run: cargo +stable generate-lockfile
-        env:
-          CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS: fallback
-
+      - name: cargo check on MSRV (lib, default features)
+        run: cargo +1.85 check --lib
+      - name: cargo check on MSRV (lib, no_std, rlib)
+        run: cargo +1.85 rustc --lib --no-default-features --crate-type rlib
       # Library only: dev-dependencies (criterion / serde_derive) and the
       # sibling-crate bridge features (neural / replay / analytics) follow
       # their own MSRV, see README "MSRV Policy".
       - name: cargo check on MSRV (lib, core native feature set)
         run: >-
-          cargo +1.70.0 check --locked
+          cargo +1.85 check --lib
           --features "std,simd,parallel,ffi,gpu-solver-bridge"
 
   fmt:
@@ -222,7 +237,9 @@ jobs:
         uses: ./.github/actions/alice-stubs
       - name: Install cargo-hack
         uses: taiki-e/install-action@cargo-hack
+      # rustc --crate-type rlib: combos without `std` cannot build the cdylib
+      # (no panic_handler / allocator), see "Build (no_std, rlib)" above.
       - name: Powerset (depth 2, wasm/python/bridge 除外)
-        run: cargo hack check --lib --feature-powerset --depth 2 --exclude-features python,neural,replay,analytics,wasm
+        run: cargo hack rustc --lib --crate-type rlib --feature-powerset --depth 2 --exclude-features python,neural,replay,analytics,wasm
       - name: std + wasm (相互排他 ffi なし)
         run: cargo check --lib --no-default-features --features std,wasm

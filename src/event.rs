@@ -106,9 +106,12 @@ impl EventCollector {
         let was_active = self.prev_pairs.binary_search(&pair).is_ok();
         let already_reported = self.curr_pairs.contains(&pair);
 
-        if !already_reported {
-            self.curr_pairs.push(pair);
+        if already_reported {
+            // Collision detection runs once per substep since 1.2.0; a pair is
+            // reported once per frame (first substep that sees it).
+            return;
         }
+        self.curr_pairs.push(pair);
 
         let event_type = if was_active {
             ContactEventType::Persist

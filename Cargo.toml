@@ -1,7 +1,10 @@
 [package]
 name = "alice-physics"
-version = "1.1.0"
+version = "1.2.0"
 edition = "2021"
+# MSRV-aware dependency resolution (cargo 1.84+); paired with the CI `msrv` job
+# that compiles with exactly `rust-version` (std + no_std) so the claim is verified.
+resolver = "3"
 authors = ["Moroya Sakamoto <sakamoro@alicelaw.net>"]
 description = "Deterministic 128-bit Fixed-Point Physics Engine"
 license = "AGPL-3.0-or-later"
@@ -10,7 +13,10 @@ homepage = "https://github.com/ext-sakamoro/ALICE-Physics"
 documentation = "https://docs.rs/alice-physics"
 keywords = ["physics", "deterministic", "fixed-point", "xpbd", "simulation"]
 categories = ["game-development", "simulation", "science"]
-rust-version = "1.70.0"
+# 1.85: `f32::abs` / `f64::abs` are `core` (no_std build) since 1.85; the lockfile
+# is v4 (cargo 1.78+) and rayon-core 1.13 needs 1.80. The previous "1.70.0" claim
+# had never been compiled (1.70 cannot even parse the lockfile).
+rust-version = "1.85"
 readme = "README.md"
 
 # docs.rs build feature set — omits `wasm` because it is mutually exclusive with
@@ -32,6 +38,11 @@ ignored = ["js-sys"]
 [lib]
 name = "alice_physics"
 path = "src/lib.rs"
+# rlib for Rust users; cdylib (.so/.dll/.dylib) + staticlib (.a) for the C ABI
+# consumers (`--features ffi`: Unity C# P/Invoke, unreal-plugin/, include/).
+# Before 1.2.0 only the rlib was produced, so the Unity / UE5 bindings had
+# nothing to link against.
+crate-type = ["rlib", "cdylib", "staticlib"]
 
 [features]
 default = ["std"]
@@ -115,7 +126,10 @@ harness = false
 opt-level = 3
 lto = "fat"
 codegen-units = 1
-panic = "abort"
+# `unwind`, not `abort`: the FFI layer promises "returns 0 on internal panic" via
+# `catch_unwind`, which only holds when panics unwind. `abort` would take the
+# Unity / UE5 host process down with it (1.2.0; was `abort`).
+panic = "unwind"
 strip = true
 
 [profile.bench]

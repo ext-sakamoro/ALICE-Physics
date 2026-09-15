@@ -128,7 +128,7 @@ impl ForceFieldInstance {
         }
         self.affected_bodies
             .as_ref()
-            .map_or(true, |list| list.contains(&body_index))
+            .is_none_or(|list| list.contains(&body_index))
     }
 }
 

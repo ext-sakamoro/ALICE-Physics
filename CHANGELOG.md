@@ -13,7 +13,92 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-09-15
+
+Minor release driven by an external review of 1.1.0 (three rounds, clone →
+build → bench on Linux x86_64) plus the analytic-oracle test suite written in
+response. Four of the fixes below change simulation results
+(**documented bugfix drift**, golden hashes re-pinned as described in
+`tests/determinism_golden.rs`): frame-level damping, XPBD lambda
+accumulation, per-substep collision detection with the corrected sphere
+contact normal, and the contact multiplier. Everything else is bit-compatible.
+
 ### Fixed
+
+- **Gravity did not work under the default configuration.** `damping` (and
+  the per-body `linear_damping` / `angular_damping`) was multiplied into the
+  velocity in every *substep*, so with `substeps: 8, damping: 0.99` every
+  dynamic body had a terminal velocity of `g·h·d/(1−d) ≈ 2 m/s`, doubling
+  `substeps` halved the fall speed, and `examples/basic_physics.rs` fell at a
+  constant 4 m/s. Damping is now applied once per frame after the substep
+  loop (`apply_frame_damping`); `substeps` no longer changes the physics.
+  1 s of free fall under the default config: `y = −4.17` (analytic −5.0 with
+  the documented frame damping; 1.1.0 gave `−1.64`). Golden `cascade` and
+  `joint_pendulum` re-pinned.
+- **XPBD compliant constraints had iteration-dependent stiffness.** The
+  distance solver overwrote the Lagrange multiplier with the last increment
+  instead of accumulating it, and carried `0.85 × λ` across substeps as a
+  "warm start" — invalid for a position-based multiplier (it counts force
+  that was never applied). A 1 kg mass on a `compliance = 0.01` spring
+  stretched 0.19 m at 1 iteration and 0.01 m at 16 (analytic `mg/k = 0.1 m`).
+  The solver now follows Macklin 2016: `λ = 0` at substep start,
+  `Δλ = (C − α̃λ)/(w + α̃)`, `λ += Δλ`. Extension is `0.1 m ± 1%` for
+  1…16 iterations and the natural period matches `2π√(m/k)` within 3%.
+  Rigid constraints (`compliance = 0`) are bit-identical to before.
+- **Sphere–sphere auto-collision pushed bodies *into* each other.**
+  `detect_collisions` built the contact normal as `pos_b − pos_a` (A → B)
+  while `Contact::normal`, the EPA / SDF paths and both solvers use B → A.
+  Every automatically detected contact therefore accelerated the bodies
+  along their approach direction (head-on 4 m/s vs 1 m/s: 114 m/s after four
+  frames). The unit test pinned the inverted normal. Normal, contact points
+  and the reported approach speed (now negative while closing) are corrected.
+- **Contacts were re-applied every iteration and every substep against a
+  frame-stale depth.** Collision detection ran once per frame; the eight
+  substeps then each re-pushed the same penetration (biased by
+  `0.85 × λ_prev`) and derived velocities from the per-substep displacement,
+  so a 5 m/s head-on collision separated at ~700 m/s under the default
+  configuration (momentum conserved, energy ×139). Collision detection now
+  runs at the start of every substep on the predicted positions ("Small
+  Steps", Müller et al. 2020), contacts live for one substep, and the contact
+  multiplier accumulates within it (`Δλ = depth − λ`, clamped at 0) so a
+  penetration is resolved exactly once. Separation speed is now ≤ closing
+  speed and kinetic energy never increases across a collision. Contact
+  `Begin` / `Persist` / `End` events are still per frame (`report_contact`
+  de-duplicates a pair within a frame).
+- **`Fix128::sqrt` ran 64 Newton iterations, each a 64-step long division
+  (≈ 4 096 inner steps, 9.7 µs).** Replaced by a 96-step restoring digit
+  recurrence on the 192-bit radicand: exact floor, **bit-identical** to the
+  previous result (verified over 20 000 samples + edge values against the
+  retained Newton reference and an independent `r² ≤ N < (r+1)²` oracle),
+  193 ns. `Vec3Fix::normalize` 10.4 µs → 0.6 µs; the 10-body benchmark
+  5.1 ms → 0.4 ms; 1000 overlapping bodies 432 ms → 3.9 ms/frame together
+  with the BVH fix below.
+- **Declared MSRV `1.70.0` was false.** That toolchain cannot parse the v4
+  lockfile, `rayon-core 1.13` needs 1.80 and the `no_std` build needs
+  `core::f32::abs` (1.85). The CI `msrv` job regenerated the lockfile with
+  stable and checked only the `std` feature set, so the claim was never
+  compiled. `rust-version = "1.85"`, `resolver = "3"`, and the job now
+  compiles the default, `no_std` (rlib) and full native feature sets with
+  exactly 1.85. Raising the declared MSRV is the minor bump the README
+  policy prescribes; nobody could have built 1.1.0 on 1.70–1.84.
+- **`--features ffi` produced no linkable library.** `[lib]` had no
+  `crate-type`, so only an rlib was built while `unreal-plugin/` and the C#
+  bindings reference `alice_physics.dll` / `libalice_physics.dylib`.
+  `crate-type = ["rlib", "cdylib", "staticlib"]`; CI asserts the artifacts.
+  Standalone `no_std` builds of *this package* must use
+  `cargo rustc --lib --no-default-features --crate-type rlib` (a cdylib
+  needs a panic handler and allocator); dependents are unaffected.
+- **`panic = "abort"` in the release profile voided the FFI contract.**
+  `alice_physics_world_step` documents "returns 0 on internal panic" via
+  `catch_unwind`, which cannot catch under `abort`; the release profile now
+  unwinds so a host (Unity / UE5) gets the error code instead of a crash.
+- `lib.rs` claimed "bit-exact across all platforms (no floating-point)"
+  while 24 modules use `f32`/`f64`; the claim now scopes the Fix128 core and
+  points at README "Determinism scope" (`det_math` covers the float modules).
+- README "Performance Characteristics" listed hand-estimated cycle counts
+  (`Fix128 div ~40 cycles`; measured 141 ns ≈ 450 cycles, and `O(1)` for a
+  64-step loop). The table is now measured (`benches/physics_bench.rs`,
+  criterion) with the algorithm named per row.
 
 - **`Fix128::atan` / `Fix128::atan2` were wrong by up to ~0.17 rad.** The
   vectoring CORDIC (`cordic_atan`) had its own copy of the 128-bit `x >> i`
@@ -56,8 +141,46 @@ were introduced during that release window.
   truly overlapping pairs (never misses one) and the contact set / order are
   unchanged, so no determinism golden moved.
 
+### Changed
+
+- `simd` feature: the `add_simd` / `sub_simd` bodies loaded both operands into
+  `__m128i` and then discarded them; `dot_simd_sse2`, `cross_simd` and
+  `dot_batch_4` were already scalar. The dead intrinsics are removed and the
+  feature is documented as **scalar-equivalent** (SSE2 has no 128-bit multiply
+  and no lo→hi carry). The API surface is kept for a future AVX-512 / NEON
+  batch path; CI now runs the `simd` tests instead of only building.
+- `SolverConfig::warm_start_factor` has no effect (kept for struct
+  compatibility); see the XPBD and contact fixes above.
+- `DistanceConstraint::cached_lambda` / `ContactConstraint::cached_lambda`
+  now hold the multiplier accumulated over the current substep (zeroed at
+  substep start) instead of the previous substep's last increment.
+- `PhysicsWorld::clear_contacts` + `detect_collisions` run inside every
+  substep; contacts added manually between frames are no longer seen by
+  `step()` (they were already cleared at frame start before 1.2.0).
+- **`GpuSolverBridge` implementations (ALICE-TRT `TrtSolverAdapter`) that
+  assert byte-exact parity with the CPU `solve_contact_constraints` must
+  adopt the accumulated-multiplier formulation** (`Δλ = depth − λ`, no
+  `warm_start_factor` bias). The bridge trait itself is unchanged.
+- README: License section states the AGPL copyleft consequence for Unity /
+  UE5 / Godot integrations and the commercial-license contact; `no_std`
+  build instructions updated for the new `crate-type`.
+
 ### Added
 
+- `tests/analytic_physics.rs` — ten closed-form oracles run on the default
+  configuration: free fall (substep-independent), default-config fall with
+  frame damping (exact discrete closed form), projectile parabola, terminal
+  velocity `g·dt·d/(1−d)`, XPBD static extension `mg/k` (iteration-
+  independent), spring natural period `2π√(m/k)`, small-angle pendulum
+  period `2π√(L/g)`, head-on collision (momentum conserved, no energy gain),
+  kinematic target reached bit-exactly, torque-free rotation `θ = ωt`.
+  Three of the four review bugs above were fixed without any of the 1456
+  pre-existing tests failing; these oracles fail on 1.1.0.
+- `math::tests`: Newton-reference bit-equality and exact-floor oracle for
+  `sqrt` (20 000 LCG samples + edges, monotonicity), and a dense f64
+  reference sweep for `sin` / `cos` / `atan` / `atan2` / `sqrt` (a golden
+  bit pattern only detects change; a value wrong from the start is pinned
+  as-is — this is how the 1.0.0 `atan` bug shipped).
 - `Fix128::shr_bits(i)` — exact arithmetic right shift of the full 128-bit
   value (single source of truth for the CORDIC micro-rotations).
 - Cloth bending unit tests (flat fixed point / monotone relaxation / pinned
