@@ -182,7 +182,10 @@ impl CompoundShape {
     /// Compute the AABB enclosing all children (in local space)
     pub fn compute_aabb(&mut self) -> AABB {
         if self.children.is_empty() {
-            return AABB::new(Vec3Fix::ZERO, Vec3Fix::ZERO);
+            // an empty compound has a valid (degenerate) box: cache it like any other
+            self.cached_aabb = AABB::new(Vec3Fix::ZERO, Vec3Fix::ZERO);
+            self.dirty = false;
+            return self.cached_aabb;
         }
 
         let first = self.child_world_aabb(0, Vec3Fix::ZERO, QuatFix::IDENTITY);
@@ -572,13 +575,17 @@ mod tests {
     #[test]
     fn compute_aabb_is_exact_union_of_children_in_local_space_and_clears_dirty() {
         let mut compound = CompoundShape::new();
-        // 空: 退化 AABB (原点) を返す (early return、cache / dirty には触らない)
+        // 空: 退化 AABB (原点) を返し、他の case と同じく cache して dirty を下ろす (1.2.0)
         assert!(compound.dirty);
         assert_eq!(
             compound.compute_aabb(),
             AABB::new(Vec3Fix::ZERO, Vec3Fix::ZERO)
         );
-        assert!(compound.dirty);
+        assert!(!compound.dirty);
+        assert_eq!(
+            compound.cached_aabb,
+            AABB::new(Vec3Fix::ZERO, Vec3Fix::ZERO)
+        );
 
         // 球 r=1 at (10, 0, 0): [9, 11] × [-1, 1] × [-1, 1]
         compound.add_sphere(
