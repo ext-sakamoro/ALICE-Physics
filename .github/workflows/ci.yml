@@ -58,7 +58,9 @@ jobs:
       # the ffi test module (goldens the Unity / UE5 bindings replay) was never
       # executed in CI before 1.2.0 — only built
       - name: Test (FFI, lib)
-        run: cargo test --lib --features "ffi" ffi::
+        # quoted: a bare trailing `ffi::` makes YAML read the line as a mapping
+        # (actionlint syntax-check; two pushes were red on this, 2026-09-15)
+        run: 'cargo test --lib --features "ffi" "ffi::"'
 
       - name: Build (FFI) + assert cdylib / staticlib artifacts
         shell: bash
