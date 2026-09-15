@@ -60,8 +60,13 @@ jobs:
         run: |
           cargo build --features "ffi"
           ls target/debug/
-          ls target/debug/libalice_physics.so target/debug/libalice_physics.dylib target/debug/alice_physics.dll 2>/dev/null | grep -q . || { echo "no cdylib produced"; exit 1; }
-          ls target/debug/libalice_physics.a target/debug/alice_physics.lib 2>/dev/null | grep -q . || { echo "no staticlib produced"; exit 1; }
+          # `-f` tests, not `ls a b c | grep`: under `set -o pipefail` a missing
+          # sibling name makes `ls` exit 2 and fails the pipeline even when the
+          # platform's artifact is present (first run of this step, 2026-09-15).
+          cdylib=0; for f in target/debug/libalice_physics.so target/debug/libalice_physics.dylib target/debug/alice_physics.dll; do [ -f "$f" ] && cdylib=1; done
+          staticlib=0; for f in target/debug/libalice_physics.a target/debug/alice_physics.lib; do [ -f "$f" ] && staticlib=1; done
+          [ "$cdylib" = 1 ] || { echo "no cdylib produced"; exit 1; }
+          [ "$staticlib" = 1 ] || { echo "no staticlib produced"; exit 1; }
 
       - name: Build (parallel)
         run: cargo build --lib --features "parallel"
