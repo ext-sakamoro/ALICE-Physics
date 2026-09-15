@@ -22,6 +22,14 @@ on:
         required: false
         default: ''
         type: string
+      features:
+        # feature-gated module (analytics_bridge = `analytics`、replay 等) は default 軸では
+        # 全 mutant が「非 compile = missed」になり 0 % に見える (2026-09-15 a* run) → 測定する
+        # feature を明示する 空 = 通常の 2 軸 (default / parallel,gpu-solver-bridge)
+        description: 'scoped 測定時に有効化する cargo features (例: analytics)、空なら 2 軸'
+        required: false
+        default: ''
+        type: string
   pull_request:
     branches: [main]
     paths:
@@ -42,6 +50,12 @@ jobs:
       fail-fast: false
       matrix:
         features: ['', 'parallel,gpu-solver-bridge']
+        exclude:
+          # an explicit `features` input replaces the two default axes
+          - features: ${{ inputs.features != '' && '' || 'never' }}
+          - features: ${{ inputs.features != '' && 'parallel,gpu-solver-bridge' || 'never' }}
+        include:
+          - features: ${{ inputs.features }}
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
