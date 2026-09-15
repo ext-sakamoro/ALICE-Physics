@@ -34,10 +34,6 @@
 use core::cmp::Ordering;
 use core::ops::{Add, Div, Mul, Neg, Sub};
 
-#[cfg(not(feature = "std"))]
-use alloc::vec;
-#[cfg(not(feature = "std"))]
-use alloc::vec::Vec;
 
 // ============================================================================
 // Fix128 (I64F64) - 128-bit Fixed-Point Number
