@@ -216,6 +216,11 @@ jobs:
       - name: Check formatting
         run: cargo fmt -- --check
 
+      # README § Determinism scope lists the f32 / f64 modules; the list is
+      # generated from src/ and drifts silently when a module is added (1.2.0)
+      - name: README f32 module row matches src/
+        run: python3 scripts/f32_modules.py --check
+
   doc:
     name: Doc (RUSTDOCFLAGS=-Dwarnings)
     runs-on: ubuntu-latest
