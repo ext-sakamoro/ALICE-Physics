@@ -23,3 +23,8 @@ updates:
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
+      # `dtolnay/rust-toolchain@1.85` is the MSRV job's toolchain pin (rust-version
+      # = 1.85 compiled for real); bumping it to a newer toolchain would silently
+      # turn the MSRV check into a stable check. Change it together with
+      # `rust-version` in Cargo.toml only.
+      - dependency-name: "dtolnay/rust-toolchain"
