@@ -1480,4 +1480,583 @@ mod tests {
             "Joint without break_force should never break"
         );
     }
+
+    // ---- mutation-score tests (2026-09-15) ----------------------------
+    // dt = 1/4 (inv exact)、位置は整数、質量は inv_mass を直接設定して閉形式と bit 単位一致
+
+    fn fi(n: i64) -> Fix128 {
+        Fix128::from_int(n)
+    }
+
+    fn v3i(x: i64, y: i64, z: i64) -> Vec3Fix {
+        Vec3Fix::from_int(x, y, z)
+    }
+
+    const DT: Fix128 = Fix128 { hi: 0, lo: 1 << 62 }; // 1/4
+
+    /// A: inv_mass ia at pa、B: inv_mass ib at pb (inv_inertia は (1,1,1))
+    fn pair(pa: Vec3Fix, ia: i64, pb: Vec3Fix, ib: i64) -> Vec<RigidBody> {
+        let mut a = RigidBody::new_dynamic(pa, Fix128::ONE);
+        let mut b = RigidBody::new_dynamic(pb, Fix128::ONE);
+        a.inv_mass = fi(ia);
+        b.inv_mass = fi(ib);
+        a.inv_inertia = v3i(1, 1, 1);
+        b.inv_inertia = v3i(1, 1, 1);
+        if ia == 0 {
+            a.body_type = crate::solver::BodyType::Static;
+        }
+        if ib == 0 {
+            b.body_type = crate::solver::BodyType::Static;
+        }
+        vec![a, b]
+    }
+
+    fn near(a: Fix128, b: Fix128) -> bool {
+        (a - b).abs() < Fix128 { hi: 0, lo: 1 << 24 }
+    }
+
+    fn near_v(a: Vec3Fix, b: Vec3Fix) -> bool {
+        near(a.x, b.x) && near(a.y, b.y) && near(a.z, b.z)
+    }
+
+    // ---- ball ----------------------------------------------------------
+
+    #[test]
+    fn ball_joint_splits_gap_by_inverse_mass() {
+        // A inv 1 at 0、B inv 3 at (4,0,0)、anchor 0 → gap 4、λ = 1 → A +1、B -3 → 両方 (1,0,0)
+        let mut bodies = pair(Vec3Fix::ZERO, 1, v3i(4, 0, 0), 3);
+        let j = BallJoint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO);
+        solve_ball_joint(&j, &mut bodies, DT);
+        assert_eq!(bodies[0].position, v3i(1, 0, 0));
+        assert_eq!(bodies[1].position, v3i(1, 0, 0));
+    }
+
+    #[test]
+    fn ball_joint_local_anchors_are_rotated_and_static_side_fixed() {
+        // A static at 0 with anchor (1,0,0) rotated 180° about z → world anchor (-1,0,0)
+        // B inv 1 at (3,0,0) anchor (0,0,0) → gap 4 → B moves to (-1,0,0)
+        let mut bodies = pair(Vec3Fix::ZERO, 0, v3i(3, 0, 0), 1);
+        bodies[0].rotation = QuatFix::new(Fix128::ZERO, Fix128::ZERO, Fix128::ONE, Fix128::ZERO);
+        let j = BallJoint::new(0, 1, v3i(1, 0, 0), Vec3Fix::ZERO);
+        solve_ball_joint(&j, &mut bodies, DT);
+        assert_eq!(bodies[0].position, Vec3Fix::ZERO);
+        assert_eq!(bodies[1].position, v3i(-1, 0, 0));
+        // B 側 anchor (0,2,0): B の world anchor が A anchor に重なる位置 = (-1,-2,0)
+        let mut bodies2 = pair(Vec3Fix::ZERO, 0, v3i(3, 0, 0), 1);
+        bodies2[0].rotation = QuatFix::new(Fix128::ZERO, Fix128::ZERO, Fix128::ONE, Fix128::ZERO);
+        let j2 = BallJoint::new(0, 1, v3i(1, 0, 0), v3i(0, 2, 0));
+        solve_ball_joint(&j2, &mut bodies2, DT);
+        assert!(
+            near_v(bodies2[1].position, v3i(-1, -2, 0)),
+            "{:?}",
+            bodies2[1].position
+        );
+    }
+
+    #[test]
+    fn ball_joint_compliance_and_degenerate_cases() {
+        // compliance 1/16 → term 1、A static、B inv 1 gap 4 → w 2 → λ 2 → B at (2,0,0)
+        let mut bodies = pair(Vec3Fix::ZERO, 0, v3i(4, 0, 0), 1);
+        let mut j = BallJoint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO);
+        j.compliance = Fix128::from_ratio(1, 16);
+        solve_ball_joint(&j, &mut bodies, DT);
+        assert_eq!(bodies[1].position, v3i(2, 0, 0));
+        // 一致点 / 両 static → 変化なし
+        let mut same = pair(v3i(1, 1, 1), 1, v3i(1, 1, 1), 1);
+        solve_ball_joint(
+            &BallJoint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO),
+            &mut same,
+            DT,
+        );
+        assert_eq!(same[0].position, v3i(1, 1, 1));
+        let mut statics = pair(Vec3Fix::ZERO, 0, v3i(4, 0, 0), 0);
+        solve_ball_joint(
+            &BallJoint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO),
+            &mut statics,
+            DT,
+        );
+        assert_eq!(statics[1].position, v3i(4, 0, 0));
+    }
+
+    // ---- hinge ---------------------------------------------------------
+
+    #[test]
+    fn hinge_joint_positional_part_matches_ball_joint() {
+        let mut bodies = pair(Vec3Fix::ZERO, 1, v3i(4, 0, 0), 3);
+        let j = HingeJoint::new(
+            0,
+            1,
+            Vec3Fix::ZERO,
+            Vec3Fix::ZERO,
+            Vec3Fix::UNIT_Z,
+            Vec3Fix::UNIT_Z,
+        );
+        solve_hinge_joint(&j, &mut bodies, DT);
+        assert_eq!(bodies[0].position, v3i(1, 0, 0));
+        assert_eq!(bodies[1].position, v3i(1, 0, 0));
+        // 軸が揃っていれば回転は不変
+        assert_eq!(bodies[0].rotation, QuatFix::IDENTITY);
+        assert_eq!(bodies[1].rotation, QuatFix::IDENTITY);
+    }
+
+    #[test]
+    fn hinge_joint_aligns_axes_monotonically() {
+        // B の軸を x 軸周りに 0.5 rad 傾ける → 反復で軸誤差が単調減少、A (static) は不動
+        let mut bodies = pair(Vec3Fix::ZERO, 0, Vec3Fix::ZERO, 1);
+        bodies[1].rotation = QuatFix::from_axis_angle(Vec3Fix::UNIT_X, Fix128::from_ratio(1, 2));
+        let j = HingeJoint::new(
+            0,
+            1,
+            Vec3Fix::ZERO,
+            Vec3Fix::ZERO,
+            Vec3Fix::UNIT_Z,
+            Vec3Fix::UNIT_Z,
+        );
+        let err = |b: &[RigidBody]| {
+            let a = b[0].rotation.rotate_vec(Vec3Fix::UNIT_Z);
+            let c = b[1].rotation.rotate_vec(Vec3Fix::UNIT_Z);
+            a.cross(c).length()
+        };
+        let mut prev = err(&bodies);
+        assert!(prev > Fix128::from_ratio(1, 10));
+        for i in 0..30 {
+            solve_hinge_joint(&j, &mut bodies, DT);
+            let e = err(&bodies);
+            assert!(e <= prev, "iter {i}: {prev:?} -> {e:?}");
+            prev = e;
+        }
+        assert!(prev < Fix128::from_ratio(1, 1000));
+        assert_eq!(bodies[0].rotation, QuatFix::IDENTITY);
+        // 両 dynamic なら両方が回る (A も IDENTITY から離れる)
+        let mut both = pair(Vec3Fix::ZERO, 1, Vec3Fix::ZERO, 1);
+        both[1].rotation = QuatFix::from_axis_angle(Vec3Fix::UNIT_X, Fix128::from_ratio(1, 2));
+        solve_hinge_joint(&j, &mut both, DT);
+        assert!(both[0].rotation != QuatFix::IDENTITY);
+    }
+
+    #[test]
+    fn hinge_joint_limits_push_angle_back_into_range() {
+        // 軸 z、B を z 周りに +1 rad 回す、limit [-0.5, 0.5] → max 超過 → 角度が減る
+        let j = HingeJoint::new(
+            0,
+            1,
+            Vec3Fix::ZERO,
+            Vec3Fix::ZERO,
+            Vec3Fix::UNIT_Z,
+            Vec3Fix::UNIT_Z,
+        )
+        .with_limits(Fix128::from_ratio(-1, 2), Fix128::from_ratio(1, 2));
+        let angle = |b: &[RigidBody]| {
+            let rel = b[1].rotation.mul(b[0].rotation.conjugate());
+            compute_twist_angle(rel, Vec3Fix::UNIT_Z)
+        };
+        let mut over = pair(Vec3Fix::ZERO, 0, Vec3Fix::ZERO, 1);
+        over[1].rotation = QuatFix::from_axis_angle(Vec3Fix::UNIT_Z, Fix128::ONE);
+        let a0 = angle(&over);
+        assert!(near(a0, Fix128::ONE), "{a0:?}");
+        solve_hinge_joint(&j, &mut over, DT);
+        let a1 = angle(&over);
+        assert!(
+            a1 < a0 && a1 >= Fix128::from_ratio(1, 2) - Fix128::from_ratio(1, 100),
+            "{a0:?} -> {a1:?}"
+        );
+        // min 側: -1 rad → 増える
+        let mut under = pair(Vec3Fix::ZERO, 0, Vec3Fix::ZERO, 1);
+        under[1].rotation = QuatFix::from_axis_angle(Vec3Fix::UNIT_Z, fi(-1));
+        let b0 = angle(&under);
+        solve_hinge_joint(&j, &mut under, DT);
+        let b1 = angle(&under);
+        assert!(b1 > b0, "{b0:?} -> {b1:?}");
+        // 範囲内 (0.25) は不変、limit なしも不変
+        let mut inside = pair(Vec3Fix::ZERO, 0, Vec3Fix::ZERO, 1);
+        inside[1].rotation = QuatFix::from_axis_angle(Vec3Fix::UNIT_Z, Fix128::from_ratio(1, 4));
+        let r0 = inside[1].rotation;
+        solve_hinge_joint(&j, &mut inside, DT);
+        assert_eq!(inside[1].rotation, r0);
+        let mut free = pair(Vec3Fix::ZERO, 0, Vec3Fix::ZERO, 1);
+        free[1].rotation = QuatFix::from_axis_angle(Vec3Fix::UNIT_Z, Fix128::ONE);
+        let f0 = free[1].rotation;
+        let nolimit = HingeJoint::new(
+            0,
+            1,
+            Vec3Fix::ZERO,
+            Vec3Fix::ZERO,
+            Vec3Fix::UNIT_Z,
+            Vec3Fix::UNIT_Z,
+        );
+        solve_hinge_joint(&nolimit, &mut free, DT);
+        assert_eq!(free[1].rotation, f0);
+    }
+
+    // ---- fixed ---------------------------------------------------------
+
+    #[test]
+    fn fixed_joint_restores_relative_rotation_and_position() {
+        let mut bodies = pair(Vec3Fix::ZERO, 1, v3i(4, 0, 0), 3);
+        let j = FixedJoint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO, QuatFix::IDENTITY);
+        solve_fixed_joint(&j, &mut bodies, DT);
+        assert_eq!(bodies[0].position, v3i(1, 0, 0));
+        assert_eq!(bodies[1].position, v3i(1, 0, 0));
+        // 相対回転 identity で B が z 周り 0.5 rad ずれている → 反復で相対回転誤差が単調減少
+        let mut rot = pair(Vec3Fix::ZERO, 0, Vec3Fix::ZERO, 1);
+        rot[1].rotation = QuatFix::from_axis_angle(Vec3Fix::UNIT_Z, Fix128::from_ratio(1, 2));
+        let err = |b: &[RigidBody]| {
+            let e = b[1].rotation.mul(b[0].rotation.conjugate());
+            Vec3Fix::new(e.x, e.y, e.z).length()
+        };
+        let mut prev = err(&rot);
+        for i in 0..30 {
+            solve_fixed_joint(&j, &mut rot, DT);
+            let e = err(&rot);
+            assert!(e <= prev, "iter {i}");
+            prev = e;
+        }
+        assert!(prev < Fix128::from_ratio(1, 1000));
+        // 目標相対回転が 90° なら、B が 90° 回っている状態は不変
+        let target = QuatFix::from_axis_angle(Vec3Fix::UNIT_Z, Fix128::HALF_PI);
+        let j90 = FixedJoint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO, target);
+        let mut ok = pair(Vec3Fix::ZERO, 0, Vec3Fix::ZERO, 1);
+        ok[1].rotation = target;
+        let before = ok[1].rotation;
+        solve_fixed_joint(&j90, &mut ok, DT);
+        assert!(
+            near(ok[1].rotation.x, before.x)
+                && near(ok[1].rotation.z, before.z)
+                && near(ok[1].rotation.w, before.w)
+        );
+    }
+
+    // ---- slider --------------------------------------------------------
+
+    #[test]
+    fn slider_joint_removes_perpendicular_offset_only() {
+        // 軸 x、B が (3, 4, 0): along 3 は自由、perp (0,4,0) を除去 → inv 1 / static → B (3,0,0)
+        let mut bodies = pair(Vec3Fix::ZERO, 0, v3i(3, 4, 0), 1);
+        let j = SliderJoint::new(0, 1, Vec3Fix::UNIT_X, Vec3Fix::ZERO, Vec3Fix::ZERO);
+        solve_slider_joint(&j, &mut bodies, DT);
+        assert_eq!(bodies[1].position, v3i(3, 0, 0));
+        // 両 dynamic inv 1 / 3: perp 4 → λ 1 → A +1 (y)、B -3 (y) → A (0,1,0)、B (3,1,0)
+        let mut both = pair(Vec3Fix::ZERO, 1, v3i(3, 4, 0), 3);
+        solve_slider_joint(&j, &mut both, DT);
+        assert_eq!(both[0].position, v3i(0, 1, 0));
+        assert_eq!(both[1].position, v3i(3, 1, 0));
+        // 軸は A の回転で回る: A を z 周り 180° → world 軸 -x、perp は同じ y → 同結果
+        let mut rot = pair(Vec3Fix::ZERO, 0, v3i(3, 4, 0), 1);
+        rot[0].rotation = QuatFix::new(Fix128::ZERO, Fix128::ZERO, Fix128::ONE, Fix128::ZERO);
+        solve_slider_joint(&j, &mut rot, DT);
+        assert_eq!(rot[1].position, v3i(3, 0, 0));
+    }
+
+    #[test]
+    fn slider_joint_limits_clamp_travel_along_axis() {
+        let j = SliderJoint::new(0, 1, Vec3Fix::UNIT_X, Vec3Fix::ZERO, Vec3Fix::ZERO)
+            .with_limits(fi(-1), fi(2));
+        // along 5 > max 2 → error 3、A static / B inv 1 → B -3 → (2,0,0)
+        let mut over = pair(Vec3Fix::ZERO, 0, v3i(5, 0, 0), 1);
+        solve_slider_joint(&j, &mut over, DT);
+        assert_eq!(over[1].position, v3i(2, 0, 0));
+        // along -4 < min -1 → error 3 → B +3 → (-1,0,0)
+        let mut under = pair(Vec3Fix::ZERO, 0, v3i(-4, 0, 0), 1);
+        solve_slider_joint(&j, &mut under, DT);
+        assert_eq!(under[1].position, v3i(-1, 0, 0));
+        // 両 dynamic inv 1/3、along 6 → error 4、λ 1 → A +1、B -3 → A (1,0,0)、B (3,0,0)
+        let mut both = pair(Vec3Fix::ZERO, 1, v3i(6, 0, 0), 3);
+        solve_slider_joint(&j, &mut both, DT);
+        assert_eq!(both[0].position, v3i(1, 0, 0));
+        assert_eq!(both[1].position, v3i(3, 0, 0));
+        // 境界 (along == max) と範囲内は不変
+        let mut edge = pair(Vec3Fix::ZERO, 0, v3i(2, 0, 0), 1);
+        solve_slider_joint(&j, &mut edge, DT);
+        assert_eq!(edge[1].position, v3i(2, 0, 0));
+        let mut inside = pair(Vec3Fix::ZERO, 0, v3i(1, 0, 0), 1);
+        solve_slider_joint(&j, &mut inside, DT);
+        assert_eq!(inside[1].position, v3i(1, 0, 0));
+    }
+
+    // ---- spring --------------------------------------------------------
+
+    #[test]
+    fn spring_joint_force_is_stiffness_times_displacement_plus_damping() {
+        // rest 1、k 2、c 0、距離 4 → F = 2*3 = 6、impulse = n*6*dt(1/4) = 1.5 → A +1.5 (inv 1)、B -4.5 (inv 3)
+        let mut bodies = pair(Vec3Fix::ZERO, 1, v3i(4, 0, 0), 3);
+        let j = SpringJoint::new(
+            0,
+            1,
+            Vec3Fix::ZERO,
+            Vec3Fix::ZERO,
+            fi(1),
+            fi(2),
+            Fix128::ZERO,
+        );
+        solve_spring_joint(&j, &mut bodies, DT);
+        assert_eq!(
+            bodies[0].position,
+            Vec3Fix::new(Fix128::from_ratio(3, 2), Fix128::ZERO, Fix128::ZERO)
+        );
+        assert_eq!(
+            bodies[1].position,
+            Vec3Fix::new(Fix128::from_ratio(-1, 2), Fix128::ZERO, Fix128::ZERO)
+        );
+        // 圧縮 (距離 4 < rest 8) → 負の力で離れる: F = 2*(-4) = -8 → impulse -2 → A -2、B +2 (inv 1/1)
+        let mut comp = pair(Vec3Fix::ZERO, 1, v3i(4, 0, 0), 1);
+        let jc = SpringJoint::new(
+            0,
+            1,
+            Vec3Fix::ZERO,
+            Vec3Fix::ZERO,
+            fi(8),
+            fi(2),
+            Fix128::ZERO,
+        );
+        solve_spring_joint(&jc, &mut comp, DT);
+        assert_eq!(comp[0].position, v3i(-2, 0, 0));
+        assert_eq!(comp[1].position, v3i(6, 0, 0));
+        // damping: rest 4 (力 0)、c 2、B が +x に 3 で離れる → F = 2*3 = 6 → impulse 1.5 → A +1.5、B -1.5
+        let mut damp = pair(Vec3Fix::ZERO, 1, v3i(4, 0, 0), 1);
+        damp[1].velocity = v3i(3, 0, 0);
+        let jd = SpringJoint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO, fi(4), fi(2), fi(2));
+        solve_spring_joint(&jd, &mut damp, DT);
+        assert_eq!(
+            damp[0].position,
+            Vec3Fix::new(Fix128::from_ratio(3, 2), Fix128::ZERO, Fix128::ZERO)
+        );
+        assert_eq!(
+            damp[1].position,
+            Vec3Fix::new(Fix128::from_ratio(5, 2), Fix128::ZERO, Fix128::ZERO)
+        );
+        // rest にあり速度 0 → 不変、一致点 → 不変
+        let mut rest = pair(Vec3Fix::ZERO, 1, v3i(4, 0, 0), 1);
+        solve_spring_joint(&jd, &mut rest, DT);
+        assert_eq!(rest[1].position, v3i(4, 0, 0));
+    }
+
+    // ---- D6 ------------------------------------------------------------
+
+    #[test]
+    fn d6_joint_linear_locked_limited_and_free_axes() {
+        let mut j = D6Joint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO);
+        j.linear_x = D6Motion::Locked;
+        j.linear_y = D6Motion::Limited; // [-1, 1]
+        j.linear_z = D6Motion::Free;
+        // B at (4, 3, 5): x locked → -4、y limited → -(3-1) = -2、z free → 0 ⇒ B (0, 1, 5) (A static / B inv 1)
+        let mut bodies = pair(Vec3Fix::ZERO, 0, v3i(4, 3, 5), 1);
+        solve_d6_joint(&j, &mut bodies, DT);
+        assert_eq!(bodies[1].position, v3i(0, 1, 5));
+        // y が下限側: (0, -6, 0) → error -6-(-1) = -5 → B +5 → (0,-1,0)
+        let mut low = pair(Vec3Fix::ZERO, 0, v3i(0, -6, 0), 1);
+        solve_d6_joint(&j, &mut low, DT);
+        assert_eq!(low[1].position, v3i(0, -1, 0));
+        // 両 dynamic inv 1/3、x locked、B (4,0,0) → λ 1 → A +1、B -3
+        let mut both = pair(Vec3Fix::ZERO, 1, v3i(4, 0, 0), 3);
+        solve_d6_joint(&j, &mut both, DT);
+        assert_eq!(both[0].position, v3i(1, 0, 0));
+        assert_eq!(both[1].position, v3i(1, 0, 0));
+        // frame_a を z 周り 180° 回転 → world x 軸が反転しても locked の結果は同じ (符号が両方で反転)
+        let mut jf = j;
+        jf.local_frame_a = QuatFix::new(Fix128::ZERO, Fix128::ZERO, Fix128::ONE, Fix128::ZERO);
+        let mut flipped = pair(Vec3Fix::ZERO, 0, v3i(4, 0, 0), 1);
+        solve_d6_joint(&jf, &mut flipped, DT);
+        assert_eq!(flipped[1].position, Vec3Fix::ZERO);
+    }
+
+    #[test]
+    fn d6_joint_angular_locked_axis_pulls_rotation_back() {
+        let mut j = D6Joint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO);
+        j.angular_z = D6Motion::Locked;
+        let angle = |b: &[RigidBody]| {
+            let rel = b[1].rotation.mul(b[0].rotation.conjugate());
+            compute_twist_angle(rel, Vec3Fix::UNIT_Z)
+        };
+        let mut bodies = pair(Vec3Fix::ZERO, 0, Vec3Fix::ZERO, 1);
+        bodies[1].rotation = QuatFix::from_axis_angle(Vec3Fix::UNIT_Z, Fix128::from_ratio(1, 2));
+        let mut prev = angle(&bodies).abs();
+        for i in 0..30 {
+            solve_d6_joint(&j, &mut bodies, DT);
+            let a = angle(&bodies).abs();
+            assert!(a <= prev, "iter {i}");
+            prev = a;
+        }
+        assert!(prev < Fix128::from_ratio(1, 1000));
+        // Limited [-0.25, 0.25] で 0.5 → 減る、0.1 → 不変、Free → 不変
+        let mut jl = D6Joint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO);
+        jl.angular_z = D6Motion::Limited;
+        jl.angular_limit_min = Vec3Fix::new(
+            Fix128::from_ratio(-1, 4),
+            Fix128::from_ratio(-1, 4),
+            Fix128::from_ratio(-1, 4),
+        );
+        jl.angular_limit_max = Vec3Fix::new(
+            Fix128::from_ratio(1, 4),
+            Fix128::from_ratio(1, 4),
+            Fix128::from_ratio(1, 4),
+        );
+        let mut over = pair(Vec3Fix::ZERO, 0, Vec3Fix::ZERO, 1);
+        over[1].rotation = QuatFix::from_axis_angle(Vec3Fix::UNIT_Z, Fix128::from_ratio(1, 2));
+        let o0 = angle(&over);
+        solve_d6_joint(&jl, &mut over, DT);
+        assert!(angle(&over) < o0);
+        let mut inside = pair(Vec3Fix::ZERO, 0, Vec3Fix::ZERO, 1);
+        inside[1].rotation = QuatFix::from_axis_angle(Vec3Fix::UNIT_Z, Fix128::from_ratio(1, 10));
+        let r0 = inside[1].rotation;
+        solve_d6_joint(&jl, &mut inside, DT);
+        assert_eq!(inside[1].rotation, r0);
+        let free = D6Joint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO);
+        let mut f = pair(Vec3Fix::ZERO, 0, v3i(4, 3, 5), 1);
+        f[1].rotation = QuatFix::from_axis_angle(Vec3Fix::UNIT_Z, Fix128::from_ratio(1, 2));
+        let (p0, q0) = (f[1].position, f[1].rotation);
+        solve_d6_joint(&free, &mut f, DT);
+        assert_eq!((f[1].position, f[1].rotation), (p0, q0));
+    }
+
+    // ---- cone twist ----------------------------------------------------
+
+    #[test]
+    fn cone_twist_joint_enforces_cone_and_twist_limits() {
+        // twist 軸 z、cone limit 0.25 rad: B を x 周り 1 rad 傾ける → cone 角 1 > 0.25 → 減る
+        let cone_angle = |b: &[RigidBody]| {
+            let a = b[0].rotation.rotate_vec(Vec3Fix::UNIT_Z);
+            let c = b[1].rotation.rotate_vec(Vec3Fix::UNIT_Z);
+            Fix128::atan2(a.cross(c).length(), a.dot(c))
+        };
+        let j = ConeTwistJoint::new(
+            0,
+            1,
+            Vec3Fix::ZERO,
+            Vec3Fix::ZERO,
+            Vec3Fix::UNIT_Z,
+            Vec3Fix::UNIT_Z,
+        )
+        .with_limits(Fix128::from_ratio(1, 4), Fix128::from_ratio(1, 4));
+        let mut tilted = pair(Vec3Fix::ZERO, 0, Vec3Fix::ZERO, 1);
+        tilted[1].rotation = QuatFix::from_axis_angle(Vec3Fix::UNIT_X, Fix128::ONE);
+        let c0 = cone_angle(&tilted);
+        assert!(near(c0, Fix128::ONE), "{c0:?}");
+        solve_cone_twist_joint(&j, &mut tilted, DT);
+        let c1 = cone_angle(&tilted);
+        assert!(c1 < c0, "{c0:?} -> {c1:?}");
+        // 反復で cone limit 近傍まで単調に戻る
+        let mut prev = c1;
+        for _ in 0..40 {
+            solve_cone_twist_joint(&j, &mut tilted, DT);
+            let c = cone_angle(&tilted);
+            assert!(c <= prev + Fix128 { hi: 0, lo: 1 << 30 });
+            prev = c;
+        }
+        assert!(
+            prev < Fix128::from_ratio(1, 4) + Fix128::from_ratio(1, 50),
+            "{prev:?}"
+        );
+        // twist: z 周り 1 rad (cone 0) → twist 1 > 0.25 → 減る
+        let twist = |b: &[RigidBody]| {
+            let rel = b[1].rotation.mul(b[0].rotation.conjugate());
+            compute_twist_angle(rel, Vec3Fix::UNIT_Z)
+        };
+        let mut twisted = pair(Vec3Fix::ZERO, 0, Vec3Fix::ZERO, 1);
+        twisted[1].rotation = QuatFix::from_axis_angle(Vec3Fix::UNIT_Z, Fix128::ONE);
+        let t0 = twist(&twisted);
+        solve_cone_twist_joint(&j, &mut twisted, DT);
+        assert!(twist(&twisted) < t0);
+        // 範囲内 (cone 0.1、twist 0.1) は不変、位置部は ball と同じ
+        let mut inside = pair(Vec3Fix::ZERO, 0, Vec3Fix::ZERO, 1);
+        inside[1].rotation = QuatFix::from_axis_angle(Vec3Fix::UNIT_X, Fix128::from_ratio(1, 10));
+        let r0 = inside[1].rotation;
+        solve_cone_twist_joint(&j, &mut inside, DT);
+        assert_eq!(inside[1].rotation, r0);
+        let mut pos = pair(Vec3Fix::ZERO, 1, v3i(4, 0, 0), 3);
+        solve_cone_twist_joint(&j, &mut pos, DT);
+        assert_eq!(pos[0].position, v3i(1, 0, 0));
+        assert_eq!(pos[1].position, v3i(1, 0, 0));
+    }
+
+    // ---- Joint enum: bodies / compute_force / breakable ----------------
+
+    #[test]
+    fn joint_bodies_and_compute_force_per_kind() {
+        let bodies = pair(Vec3Fix::ZERO, 1, v3i(3, 4, 0), 1); // 距離 5
+        let ball = Joint::Ball(BallJoint::new(2, 7, Vec3Fix::ZERO, Vec3Fix::ZERO));
+        assert_eq!(ball.bodies(), (2, 7));
+        let ball01 = Joint::Ball(BallJoint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO));
+        assert_eq!(ball01.compute_force(&bodies), fi(5));
+        let hinge = Joint::Hinge(HingeJoint::new(
+            0,
+            1,
+            Vec3Fix::ZERO,
+            Vec3Fix::ZERO,
+            Vec3Fix::UNIT_Z,
+            Vec3Fix::UNIT_Z,
+        ));
+        assert_eq!(hinge.compute_force(&bodies), fi(5));
+        let fixed = Joint::Fixed(FixedJoint::new(
+            0,
+            1,
+            Vec3Fix::ZERO,
+            Vec3Fix::ZERO,
+            QuatFix::IDENTITY,
+        ));
+        assert_eq!(fixed.compute_force(&bodies), fi(5));
+        // slider (軸 x): perp = (0,4,0) → 4
+        let slider = Joint::Slider(SliderJoint::new(
+            0,
+            1,
+            Vec3Fix::UNIT_X,
+            Vec3Fix::ZERO,
+            Vec3Fix::ZERO,
+        ));
+        assert_eq!(slider.compute_force(&bodies), fi(4));
+        // spring: |k (dist - rest)| = |2 (5 - 8)| = 6
+        let spring = Joint::Spring(SpringJoint::new(
+            0,
+            1,
+            Vec3Fix::ZERO,
+            Vec3Fix::ZERO,
+            fi(8),
+            fi(2),
+            Fix128::ZERO,
+        ));
+        assert_eq!(spring.compute_force(&bodies), fi(6));
+        let d6 = Joint::D6(D6Joint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO));
+        assert_eq!(d6.compute_force(&bodies), fi(5));
+        let ct = Joint::ConeTwist(ConeTwistJoint::new(
+            0,
+            1,
+            Vec3Fix::ZERO,
+            Vec3Fix::ZERO,
+            Vec3Fix::UNIT_Z,
+            Vec3Fix::UNIT_Z,
+        ));
+        assert_eq!(ct.compute_force(&bodies), fi(5));
+        // anchor が効く: A anchor (3,4,0) なら距離 0
+        let anchored = Joint::Ball(BallJoint::new(0, 1, v3i(3, 4, 0), Vec3Fix::ZERO));
+        assert_eq!(anchored.compute_force(&bodies), Fix128::ZERO);
+    }
+
+    #[test]
+    fn solve_joints_breakable_breaks_strictly_above_threshold_and_skips_broken() {
+        // 距離 5 の ball joint: break 5 → 壊れない (`>` は false)、break 4 → 壊れて解かれない
+        let mk = |bf: i64| {
+            Joint::Ball(BallJoint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO).with_break_force(fi(bf)))
+        };
+        let mut hold = pair(Vec3Fix::ZERO, 0, v3i(3, 4, 0), 1);
+        let broken = solve_joints_breakable(&[mk(5)], &mut hold, DT);
+        assert!(broken.is_empty());
+        assert!(
+            near_v(hold[1].position, Vec3Fix::ZERO),
+            "解かれて A に一致 {:?}",
+            hold[1].position
+        );
+        let mut snap = pair(Vec3Fix::ZERO, 0, v3i(3, 4, 0), 1);
+        let broken2 = solve_joints_breakable(&[mk(4)], &mut snap, DT);
+        assert_eq!(broken2, vec![0]);
+        assert_eq!(snap[1].position, v3i(3, 4, 0), "壊れた joint は解かれない");
+        // 複数: index 降順で返る、壊れていない方は解かれる
+        let mut multi = pair(Vec3Fix::ZERO, 0, v3i(3, 4, 0), 1);
+        let js = [mk(4), mk(100), mk(1)];
+        let broken3 = solve_joints_breakable(&js, &mut multi, DT);
+        assert_eq!(broken3, vec![2, 0]);
+        assert!(near_v(multi[1].position, Vec3Fix::ZERO));
+        // solve_joints (非 breakable) は全部解く
+        let mut all = pair(Vec3Fix::ZERO, 0, v3i(3, 4, 0), 1);
+        solve_joints(&[mk(1)], &mut all, DT);
+        assert!(near_v(all[1].position, Vec3Fix::ZERO));
+    }
 }
