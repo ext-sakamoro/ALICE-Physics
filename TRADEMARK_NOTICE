@@ -6,9 +6,17 @@ permission to use, modify, and distribute this software but does not
 grant permission to use these trademarks except as required for
 reasonable and customary use in describing the origin of the software.
 
-If you fork this project, you must remove or replace the "ALICE" prefix
-in your fork's name and clearly indicate that your fork is not an
-official ALICE product.
+Forks are welcome under the AGPL. To keep the origin clear without
+getting in the way of forking:
+
+- Do not publish a fork under a package / crate / product name that
+  starts with "ALICE-" or "alice-" (registries, app stores, binaries),
+  and do not present it as an official ALICE product.
+- Keeping "ALICE" in the repository history, in source comments, in
+  attribution and in statements such as "a fork of ALICE-Physics" is
+  reasonable and customary use and is fine.
+- If in doubt, add one line to your README: "Not an official ALICE
+  product."
 
 See BRAND_GUIDELINES.md in ALICE-Eco-System for full trademark policy.
 Official reference: https://alicelaw.net

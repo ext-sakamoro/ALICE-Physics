@@ -211,8 +211,15 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
 
-      - name: cargo doc (no-deps)
+      # Both the default and the docs.rs feature set: feature-gated modules
+      # (gpu_bridge / ffi) had 9 broken intra-doc links that the default-only
+      # job never saw (1.2.0).
+      - name: cargo doc (no-deps, default features)
         run: cargo doc --lib --no-deps
+        env:
+          RUSTDOCFLAGS: "-Dwarnings"
+      - name: cargo doc (no-deps, docs.rs feature set)
+        run: cargo doc --lib --no-deps --features "std,simd,parallel,ffi,gpu-solver-bridge"
         env:
           RUSTDOCFLAGS: "-Dwarnings"
 

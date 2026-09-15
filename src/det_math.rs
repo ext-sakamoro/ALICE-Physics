@@ -32,6 +32,10 @@
 //! | [`cbrt`] | `[1e-30, 1e30]` | ≤ 1 ulp (bit-hack seed + 3 Newton steps) |
 //! | [`hypot`] | finite | ≤ 1 ulp of `sqrt(x² + y²)` |
 //! | [`powf`] | `x ∈ [1e-3, 1e3]`, `|y| ≤ 8` | ≤ 1 ulp (evaluated in `f64`, rounded once) |
+//! | [`atan`] / [`atan2`] | `|x| ≤ 1e4`, all quadrants | ≤ 1 ulp (fdlibm in `f64`, rounded once) |
+//! | [`asin`] / [`acos`] | `[-1, 1]` | ≤ 1 ulp (fdlibm in `f64`, rounded once) |
+//! | [`tan`] | `|x| ≤ 100` | ≤ 1 ulp (fdlibm `k_sin`/`k_cos` in `f64`) |
+//! | [`tanh`] | finite | ≤ 1 ulp (`exp64` based, `x` below 2^-14) |
 //! | [`exp64`] / [`ln64`] | as above | ≤ 1 ulp on macOS libm, bound 2 across platform libms (fdlibm algorithms) |
 //! | [`powf64`] | as above | ≤ 16 ulp measured 13 (`exp64(y·ln64 x)` with double-double argument; the residual step is bounded by `exp64`'s own ulp) |
 //!
@@ -339,6 +343,375 @@ pub fn hypot(x: f32, y: f32) -> f32 {
 }
 
 // ---------------------------------------------------------------------------
+// f32 inverse trigonometric / tan / tanh (1.2.0)
+//
+// Evaluated in double precision with fdlibm's algorithms (basic IEEE
+// operations only) and rounded once to `f32`, so the `f32` result is within
+// 1 ulp of correctly rounded over the measured domains (see tests).
+// ---------------------------------------------------------------------------
+
+/// Deterministic `atan(x)`.
+#[must_use]
+pub fn atan(x: f32) -> f32 {
+    atan64(f64::from(x)) as f32
+}
+
+/// Deterministic `atan2(y, x)` in `(-π, π]`, IEEE special cases as fdlibm.
+#[must_use]
+pub fn atan2(y: f32, x: f32) -> f32 {
+    atan2_64(f64::from(y), f64::from(x)) as f32
+}
+
+/// Deterministic `asin(x)`; `NaN` outside `[-1, 1]`.
+#[must_use]
+pub fn asin(x: f32) -> f32 {
+    asin64(f64::from(x)) as f32
+}
+
+/// Deterministic `acos(x)`; `NaN` outside `[-1, 1]`.
+#[must_use]
+pub fn acos(x: f32) -> f32 {
+    acos64(f64::from(x)) as f32
+}
+
+/// Deterministic `tan(x)` (`sin/cos` of the double-precision kernels).
+///
+/// Argument reduction is exact for `|x| < 2^20·π/2`; beyond that the result
+/// is still deterministic but loses accuracy (as `sin` / `cos` do).
+#[must_use]
+pub fn tan(x: f32) -> f32 {
+    if !x.is_finite() {
+        return f32::NAN;
+    }
+    let (k, r) = reduce_pio2_64(f64::from(x));
+    let (s, c) = (k_sin64(r), k_cos64(r));
+    // tan(x + kπ/2): even k → sin/cos, odd k → -cos/sin
+    let t = if k & 1 == 0 { s / c } else { -c / s };
+    t as f32
+}
+
+/// Deterministic `tanh(x)`.
+///
+/// `|x| < 2^-14 → x` (the cubic term is below half an `f32` ulp), otherwise
+/// `(e^{2|x|} − 1) / (e^{2|x|} + 1)` in double precision via [`exp64`].
+#[must_use]
+pub fn tanh(x: f32) -> f32 {
+    if x.is_nan() {
+        return f32::NAN;
+    }
+    let ax = x.abs();
+    if ax < 6.103_515_625e-5 {
+        return x;
+    }
+    if ax > 10.0 {
+        // 1 - 2e^{-20} rounds to 1.0 in f32
+        return if x < 0.0 { -1.0 } else { 1.0 };
+    }
+    let e = exp64(2.0 * f64::from(ax));
+    let t = ((e - 1.0) / (e + 1.0)) as f32;
+    if x < 0.0 {
+        -t
+    } else {
+        t
+    }
+}
+
+// fdlibm s_atan.c
+// fdlibm's atan(0.5) / atan(1) / atan(1.5) / atan(inf) high parts; the π/4
+// and π/2 entries are exactly `core::f64::consts::{FRAC_PI_4, FRAC_PI_2}`
+// (same f64 bits), spelled via the constants to keep `approx_constant` quiet.
+const ATANHI: [f64; 4] = [
+    4.636_476_090_008_060_935_15e-01,
+    core::f64::consts::FRAC_PI_4,
+    9.827_937_232_473_290_540_82e-01,
+    core::f64::consts::FRAC_PI_2,
+];
+const ATANLO: [f64; 4] = [
+    2.269_877_745_296_168_709_24e-17,
+    3.061_616_997_868_383_017_93e-17,
+    1.390_331_103_123_099_845_16e-17,
+    6.123_233_995_736_766_035_87e-17,
+];
+const AT: [f64; 11] = [
+    3.333_333_333_333_293_180_27e-01,
+    -1.999_999_999_987_648_324_76e-01,
+    1.428_571_427_593_712_314_80e-01,
+    -1.111_111_040_546_235_578_80e-01,
+    9.090_887_133_436_506_561_96e-02,
+    -7.691_876_205_044_829_994_95e-02,
+    6.661_073_137_387_531_206_69e-02,
+    -5.833_570_133_790_573_486_45e-02,
+    4.976_877_994_615_932_360_17e-02,
+    -3.653_157_274_421_691_552_70e-02,
+    1.628_582_011_536_578_236_23e-02,
+];
+
+/// Deterministic `atan(x)` in double precision (fdlibm `s_atan.c`).
+#[must_use]
+pub fn atan64(x: f64) -> f64 {
+    if x.is_nan() {
+        return f64::NAN;
+    }
+    let ax = x.abs();
+    if ax >= 7.378_697_629_483_820_646_6e19 {
+        // |x| >= 2^66: atan(x) = ±π/2 (the tiny term of fdlibm rounds away)
+        return if x > 0.0 {
+            ATANHI[3] + ATANLO[3]
+        } else {
+            -ATANHI[3] - ATANLO[3]
+        };
+    }
+    let (id, t): (i32, f64) = if ax < 0.4375 {
+        if ax < 7.450_580_596_923_828_125e-9 {
+            // |x| < 2^-27
+            return x;
+        }
+        (-1, x)
+    } else if ax < 1.1875 {
+        if ax < 0.6875 {
+            (0, (2.0 * ax - 1.0) / (2.0 + ax))
+        } else {
+            (1, (ax - 1.0) / (ax + 1.0))
+        }
+    } else if ax < 2.4375 {
+        (2, (ax - 1.5) / (1.0 + 1.5 * ax))
+    } else {
+        (3, -1.0 / ax)
+    };
+    let z = t * t;
+    let w = z * z;
+    let s1 = z * (AT[0] + w * (AT[2] + w * (AT[4] + w * (AT[6] + w * (AT[8] + w * AT[10])))));
+    let s2 = w * (AT[1] + w * (AT[3] + w * (AT[5] + w * (AT[7] + w * AT[9]))));
+    if id < 0 {
+        return t - t * (s1 + s2);
+    }
+    let i = id as usize;
+    let r = ATANHI[i] - ((t * (s1 + s2) - ATANLO[i]) - t);
+    if x < 0.0 {
+        -r
+    } else {
+        r
+    }
+}
+
+const PI_64: f64 = core::f64::consts::PI;
+const PI_LO_64: f64 = 1.224_646_799_147_353_207_2e-16;
+const PIO2_HI_64: f64 = core::f64::consts::FRAC_PI_2;
+const PIO2_LO_64: f64 = 6.123_233_995_736_766_035_87e-17;
+const PIO4_HI_64: f64 = core::f64::consts::FRAC_PI_4;
+
+/// Deterministic `atan2(y, x)` in double precision (fdlibm `e_atan2.c`).
+#[must_use]
+pub fn atan2_64(y: f64, x: f64) -> f64 {
+    if x.is_nan() || y.is_nan() {
+        return f64::NAN;
+    }
+    if x == 1.0 {
+        return atan64(y);
+    }
+    // m: bit0 = sign(y), bit1 = sign(x)
+    let m = (y.is_sign_negative() as u32) | ((x.is_sign_negative() as u32) << 1);
+    if y == 0.0 {
+        return match m {
+            0 | 1 => y,  // atan(±0, +anything) = ±0
+            2 => PI_64,  // atan(+0, -anything) = π
+            _ => -PI_64, // atan(-0, -anything) = -π
+        };
+    }
+    if x == 0.0 {
+        return if y < 0.0 { -PIO2_HI_64 } else { PIO2_HI_64 };
+    }
+    if x.is_infinite() {
+        if y.is_infinite() {
+            return match m {
+                0 => PIO4_HI_64,
+                1 => -PIO4_HI_64,
+                2 => 3.0 * PIO4_HI_64,
+                _ => -3.0 * PIO4_HI_64,
+            };
+        }
+        return match m {
+            0 => 0.0,
+            1 => -0.0,
+            2 => PI_64,
+            _ => -PI_64,
+        };
+    }
+    if y.is_infinite() {
+        return if y < 0.0 { -PIO2_HI_64 } else { PIO2_HI_64 };
+    }
+    let ex = ((x.to_bits() >> 52) & 0x7ff) as i32;
+    let ey = ((y.to_bits() >> 52) & 0x7ff) as i32;
+    let k = ey - ex;
+    let z = if k > 60 {
+        PIO2_HI_64 + 0.5 * PI_LO_64
+    } else if x < 0.0 && k < -60 {
+        0.0
+    } else {
+        atan64((y / x).abs())
+    };
+    match m {
+        0 => z,
+        1 => -z,
+        2 => PI_64 - (z - PI_LO_64),
+        _ => (z - PI_LO_64) - PI_64,
+    }
+}
+
+// fdlibm e_asin.c / e_acos.c
+const PS0: f64 = 1.666_666_666_666_666_574_15e-01;
+const PS1: f64 = -3.255_658_186_224_009_154_05e-01;
+const PS2: f64 = 2.012_125_321_348_629_258_81e-01;
+const PS3: f64 = -4.005_553_450_067_941_140_27e-02;
+const PS4: f64 = 7.915_349_942_898_145_321_76e-04;
+const PS5: f64 = 3.479_331_075_960_211_675_70e-05;
+const QS1: f64 = -2.403_394_911_734_414_218_78e+00;
+const QS2: f64 = 2.020_945_760_233_505_694_71e+00;
+const QS3: f64 = -6.882_839_716_054_532_930_30e-01;
+const QS4: f64 = 7.703_815_055_590_193_527_91e-02;
+
+#[inline(always)]
+fn asin_pq(t: f64) -> (f64, f64) {
+    let p = t * (PS0 + t * (PS1 + t * (PS2 + t * (PS3 + t * (PS4 + t * PS5)))));
+    let q = 1.0 + t * (QS1 + t * (QS2 + t * (QS3 + t * QS4)));
+    (p, q)
+}
+
+/// `x` with the low 32 bits of its mantissa cleared (fdlibm `SET_LOW_WORD(w, 0)`).
+#[inline(always)]
+fn clear_low_word(x: f64) -> f64 {
+    f64::from_bits(x.to_bits() & 0xffff_ffff_0000_0000)
+}
+
+fn asin64(x: f64) -> f64 {
+    let ax = x.abs();
+    if ax >= 1.0 {
+        if ax == 1.0 {
+            return x * PIO2_HI_64 + x * PIO2_LO_64;
+        }
+        return f64::NAN;
+    }
+    if ax < 0.5 {
+        if ax < 7.450_580_596_923_828_125e-9 {
+            return x;
+        }
+        let t = x * x;
+        let (p, q) = asin_pq(t);
+        let w = p / q;
+        return x + x * w;
+    }
+    let w = 1.0 - ax;
+    let t = w * 0.5;
+    let (p, q) = asin_pq(t);
+    let s = t.sqrt();
+    let r = if ax >= 0.975 {
+        let w = p / q;
+        PIO2_HI_64 - (2.0 * (s + s * w) - PIO2_LO_64)
+    } else {
+        let w = clear_low_word(s);
+        let c = (t - w * w) / (s + w);
+        let r = p / q;
+        let p = 2.0 * s * r - (PIO2_LO_64 - 2.0 * c);
+        let q = PIO4_HI_64 - 2.0 * w;
+        PIO4_HI_64 - (p - q)
+    };
+    if x < 0.0 {
+        -r
+    } else {
+        r
+    }
+}
+
+fn acos64(x: f64) -> f64 {
+    let ax = x.abs();
+    if ax >= 1.0 {
+        if x == 1.0 {
+            return 0.0;
+        }
+        if x == -1.0 {
+            return PI_64 + 2.0 * PIO2_LO_64;
+        }
+        return f64::NAN;
+    }
+    if ax < 0.5 {
+        if ax < 6.938_893_903_907_228_377_6e-18 {
+            // |x| < 2^-57
+            return PIO2_HI_64 + PIO2_LO_64;
+        }
+        let z = x * x;
+        let (p, q) = asin_pq(z);
+        let r = p / q;
+        return PIO2_HI_64 - (x - (PIO2_LO_64 - x * r));
+    }
+    if x < 0.0 {
+        // |x| >= 0.5 and negative (fdlibm branches on the sign here, so x == -0.5 lands here)
+        let z = (1.0 + x) * 0.5;
+        let (p, q) = asin_pq(z);
+        let s = z.sqrt();
+        let r = p / q;
+        let w = r * s - PIO2_LO_64;
+        return PI_64 - 2.0 * (s + w);
+    }
+    let z = (1.0 - x) * 0.5;
+    let s = z.sqrt();
+    let df = clear_low_word(s);
+    let c = (z - df * df) / (s + df);
+    let (p, q) = asin_pq(z);
+    let r = p / q;
+    let w = r * s + c;
+    2.0 * (df + w)
+}
+
+// fdlibm k_sin.c / k_cos.c kernels on |r| <= π/4, and a Cody–Waite
+// reduction with the 33-bit / 33-bit / 53-bit split of π/2 (e_rem_pio2.c),
+// exact for |x| < 2^20·π/2.
+const S1: f64 = -1.666_666_666_666_663_243_48e-01;
+const S2: f64 = 8.333_333_333_322_489_461_24e-03;
+const S3: f64 = -1.984_126_982_985_794_931_34e-04;
+const S4: f64 = 2.755_731_370_707_006_767_89e-06;
+const S5: f64 = -2.505_076_025_340_686_341_95e-08;
+const S6: f64 = 1.589_690_995_211_550_102_21e-10;
+const C1: f64 = 4.166_666_666_666_660_190_37e-02;
+const C2: f64 = -1.388_888_888_887_410_957_49e-03;
+const C3: f64 = 2.480_158_728_947_672_941_78e-05;
+const C4: f64 = -2.755_731_435_139_066_330_35e-07;
+const C5: f64 = 2.087_572_321_298_174_827_90e-09;
+const C6: f64 = -1.135_964_755_778_819_482_65e-11;
+const PIO2_1_64: f64 = 1.570_796_326_734_125_614_17e+00;
+const PIO2_1T_64: f64 = 6.077_100_506_506_192_249_32e-11;
+const PIO2_2_64: f64 = 6.077_100_506_303_965_976_60e-11;
+const PIO2_2T_64: f64 = 2.022_266_248_795_950_631_54e-21;
+
+#[inline(always)]
+fn k_sin64(x: f64) -> f64 {
+    let z = x * x;
+    let v = z * x;
+    let r = S2 + z * (S3 + z * (S4 + z * (S5 + z * S6)));
+    x + v * (S1 + z * r)
+}
+
+#[inline(always)]
+fn k_cos64(x: f64) -> f64 {
+    let z = x * x;
+    let r = z * (C1 + z * (C2 + z * (C3 + z * (C4 + z * (C5 + z * C6)))));
+    let hz = 0.5 * z;
+    let w = 1.0 - hz;
+    w + ((1.0 - w) - hz + (z * r))
+}
+
+/// Reduce `x` to `(k mod 4, r)` with `x = k·π/2 + r`, `|r| ≤ π/4`, in double.
+#[inline(always)]
+fn reduce_pio2_64(x: f64) -> (i32, f64) {
+    let kf = (x * core::f64::consts::FRAC_2_PI).round();
+    let r = if kf.abs() < 1_048_576.0 {
+        (x - kf * PIO2_1_64) - kf * PIO2_1T_64
+    } else {
+        ((x - kf * PIO2_1_64) - kf * PIO2_2_64) - kf * PIO2_2T_64
+    };
+    ((kf as i32) & 3, r)
+}
+
+// ---------------------------------------------------------------------------
 // f64
 // ---------------------------------------------------------------------------
 
@@ -549,6 +922,74 @@ mod tests {
         assert_eq!(sin(0.0), 0.0);
         assert_eq!(cos(0.0), 1.0);
         assert!(sin(f32::INFINITY).is_nan());
+    }
+
+    #[test]
+    fn atan_asin_acos_tan_tanh_within_1_ulp_of_correctly_rounded() {
+        assert!(sweep32(-1e4, 1e4, 400_000, atan, r32(f64::atan)) <= 1);
+        assert!(sweep32(-4.0, 4.0, 400_000, atan, r32(f64::atan)) <= 1);
+        assert!(sweep32(-1.0, 1.0, 400_000, asin, r32(f64::asin)) <= 1);
+        {
+            let mut worst = 0;
+            let mut wx = 0.0f32;
+            for i in 0..=400_000u32 {
+                let x = -1.0 + 2.0 * (i as f32 / 400_000.0);
+                let d = ulp_diff32(acos(x), (f64::from(x)).acos() as f32);
+                if d > worst {
+                    worst = d;
+                    wx = x;
+                }
+            }
+            assert!(
+                worst <= 1,
+                "acos worst {worst} ulp at {wx}: {} vs {}",
+                acos(wx),
+                (f64::from(wx)).acos() as f32
+            );
+        }
+        assert!(sweep32(-100.0, 100.0, 400_000, tan, r32(f64::tan)) <= 1);
+        assert!(sweep32(-12.0, 12.0, 400_000, tanh, r32(f64::tanh)) <= 1);
+        assert!(sweep32(-1e-3, 1e-3, 100_000, tanh, r32(f64::tanh)) <= 1);
+        // atan2: every quadrant, axes, mixed magnitudes
+        let mut worst = 0;
+        for iy in -200i32..=200 {
+            for ix in -200i32..=200 {
+                let (y, x) = (iy as f32 * 0.37, ix as f32 * 1.13);
+                let a = atan2(y, x);
+                let b = (f64::from(y)).atan2(f64::from(x)) as f32;
+                worst = worst.max(ulp_diff32(a, b));
+            }
+        }
+        assert!(worst <= 1, "atan2 worst {worst} ulp");
+        for &(y, x) in &[
+            (0.0f32, 1.0f32),
+            (0.0, -1.0),
+            (-0.0, -1.0),
+            (1.0, 0.0),
+            (-1.0, 0.0),
+            (1e30, 1e-30),
+            (1e-30, -1e30),
+        ] {
+            let a = atan2(y, x);
+            let b = (f64::from(y)).atan2(f64::from(x)) as f32;
+            assert!(
+                a.to_bits() == b.to_bits() || ulp_diff32(a, b) <= 1,
+                "atan2({y}, {x}) = {a} vs {b}"
+            );
+        }
+        assert!(asin(1.5).is_nan() && acos(-1.5).is_nan() && tan(f32::INFINITY).is_nan());
+        assert_eq!(asin(1.0), core::f32::consts::FRAC_PI_2);
+        assert_eq!(acos(1.0), 0.0);
+        assert_eq!(tanh(0.0), 0.0);
+        assert_eq!(tanh(50.0), 1.0);
+        assert_eq!(tanh(-50.0), -1.0);
+        // double-precision entry points against the platform libm (≤ 1 ulp slack, see module docs)
+        let mut worst64 = 0;
+        for i in 0..=200_000 {
+            let x = -1e6 + 2e6 * (i as f64 / 200_000.0);
+            worst64 = worst64.max(ulp_diff64(atan64(x), x.atan()));
+        }
+        assert!(worst64 <= 1, "atan64 worst {worst64} ulp");
     }
 
     #[test]

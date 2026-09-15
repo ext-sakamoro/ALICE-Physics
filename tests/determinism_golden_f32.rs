@@ -639,7 +639,7 @@ fn golden_sdf_soft_family() {
 //        pressure / sim_modifier (composed)
 // ---------------------------------------------------------------------------
 
-const GOLDEN_MODIFIERS: &str = "d252f5a987e2d904bb53095fa9c1a30ae9f3ff993ddd214ae6ead319b5c41b42";
+const GOLDEN_MODIFIERS: &str = "d91511990ca5cbb155ab5368da16a6c0627f9b0cb741b3a5c051e4c9633f0f29";
 
 #[test]
 fn golden_modifier_family() {

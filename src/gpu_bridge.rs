@@ -188,7 +188,7 @@ pub trait GpuSolverBridge {
     /// slot ordering.
     ///
     /// Not every joint variant is required to be handled by every
-    /// backend; ALICE-TRT v3.1.0 supports only [`Joint::Ball`] and
+    /// backend; ALICE-TRT v3.1.0 supports only [`JointType::Ball`](crate::joint::JointType::Ball) and
     /// fails-fast with a `panic!` on other variants. Future backend
     /// revisions add Hinge / Fixed / D6 support.
     ///

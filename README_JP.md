@@ -28,6 +28,18 @@ crate 内の全 module が **プラットフォーム跨ぎで bit-exact** 理�
 
 **保証対象外** IEEE 754 の基本演算を守らない target: x87 向け 32-bit x86 (`i586`、SSE2 なし) と fast-math 系 flag 付き build
 
+### 正しさの範囲 — 「決定論的」が言っていること / 言っていないこと
+
+bit 一致は「全 peer が同じ数値を出す」ことしか保証しない、その数値が正しいかは別の性質 2026-09-15 の外部レビューは 1456 test + golden 44 が全 green のまま既定 config の物理バグ 4 件を見つけた (`CHANGELOG.md` 1.2.0)、以後この 2 つを明示的に分けて扱う 下表の **検証** は「`tests/` で閉形式解 or 独立参照と突合済」の意味、golden hash は *変化* しか検出しない
+
+| 層 | module | 検証 |
+|----|--------|------|
+| **Core** — 決定論保証の本体 | `math` (`Fix128` / `Vec3Fix` / `QuatFix` / CORDIC)、`solver` (XPBD 剛体、距離 / 接触拘束、sleeping)、`joint`、`bvh`、`collider` (GJK / EPA)、`ccd`、`contact_cache`、`sdf_collider`、`netcode` / snapshot | `tests/analytic_physics.rs` — 自由落下 / 放物 / 終端速度 / `mg/k` 伸び / バネと振り子の周期 / 衝突の運動量 + energy 上限 / kinematic 目標 / torque-free 回転 / 静止接触、`math::tests` の sqrt / 超越関数 oracle、`det_math` の correctly-rounded 参照 sweep |
+| **Engineering / field module** — 教科書公式の決定論実装 | `transient_thermal`、`fatigue` | `tests/engineering_oracles.rs` — cosine 固有 mode 減衰 (Carslaw & Jaeger、explicit / Crank–Nicolson)、Basquin / Miner 閉形式 |
+| | `thermal`、`thermal_stress`、`creep_longterm`、`laminate_failure` (Tsai-Wu / Hashin / Puck)、`rolling_contact`、`aeroelasticity` (Facchinetti 2004)、`piezoelectric`、`acoustic_wave`、`pressure`、`thin_wall`、`fracture`、`erosion`、`phase_change`、`cfd_solver`、`sdf_sph`、`eulerian_grid`、`sim_field`、`bimaterial`、`warp_risk` (経験則 fit: ALICE-Bamboo の 2 data point)、他 `f32` 30 module | **未検証** — 公式は文献どおり実装され bit-exact だが、参照 solver (ANSYS / Abaqus) / 教科書例題 / 実験値との突合 test はない 「引用式の実装」として扱い、検証済予測として扱わない `tests/engineering_oracles.rs` に 1 module 1 PR で追加 (text-to-print が使う thermal / warp / fatigue を優先) |
+
+**向いている用途** bit-exact replay が要件そのものである領域: rollback netcode (格闘 / RTS / .io、数十〜数百 body)、server 側 replay 検証 / anti-cheat、再現性が要る研究 / 監査 batch 1000 体重なり球 scene (`cargo bench --bench physics_bench` `thousand_overlapping_spheres_1_step`) で既定 config 数 ms/frame **向いていない用途** 一般ゲーム物理の置換: 破壊表現、数千体の群衆、60 fps の VFX 級接触数は設計点の外、決定論が要らないなら float engine が固定小数点のコストを払う理由はない
+
 **v0.10-0.14 の主な追加**: 5 wave の完全実装プッシュで **54 module + 3 統合 solver loop + Session 4 19 module (3 tier 分類)** を追加 3D プリント安全性検証 (warp / thin-wall / stress / bridging) から composite / plastic / fatigue 力学、乱流、VOF / level-set 多相流、実行可能な CFD 時間ステップ loop、humanoid ragdoll、SDF-boundary SPH、transient thermal、composite failure、VIV / piezoelectric / acoustic / electromagnetic、IK / anisotropic friction / netcode prediction / character FSM / kinematic loop / buoyancy zone / wind zone / SDF FEM / SDF wind までカバー 全て platform 跨ぎで bit-exact (Fix128 は整数演算、`f32` は `det_math`、[決定論の範囲](#決定論の範囲)) 詳細は [Session 1-3 追加](#session-1-3-追加-v010-012) と [v0.13.0 Session 4 追加](#v0130-session-4-追加-19-module--3-tier-構成) を参照
 
 **v0.14.0 preview series (crates.io landing)**
@@ -1769,7 +1781,7 @@ PhysicsWorld ──► SimulationChecksum ──► WorldHash ──► Desync�
 ```rust
 let config = PhysicsConfig {
     substeps: 8,       // フレームあたりのXPBDサブステップ数
-    iterations: 4,     // サブステップあたりの拘束反復回数
+    iterations: 1,     // サブステップあたりの solver pass (既定 1: Small Steps、増やすなら iterations でなく substeps)
     gravity: Vec3Fix::new(
         Fix128::ZERO,
         Fix128::from_int(-10),  // -10 m/s²
@@ -1792,16 +1804,17 @@ let config = PhysicsConfig::default();
 | Fix128 加算/減算 | 128bit add with carry | < 1 ns |
 | Fix128 乗算 | 64×64→128 部分積 3 回 | 1.1 ns |
 | Fix128 除算 | u128 整数商 + 小数部 64 step 長除算 | 141 ns |
-| Fix128 sqrt | 96 step restoring digit recurrence (exact floor) | 193 ns (1.1.0: 9,676 ns、Newton × 除算 64 回) |
+| Fix128 sqrt | 96 step restoring digit recurrence (exact floor) | 193〜354 ns (run 間ばらつき、1.1.0: 9,676 ns、Newton × 除算 64 回) |
 | Vec3Fix normalize | sqrt 1 回 + 除算 3 回 | 618 ns (1.1.0: 10,390 ns) |
 | CORDIC sin/cos / atan | 48 反復固定 | ~1 µs |
 | GJK 交差 | 最大 64 反復 | — |
 | EPA 侵入深度 | 最大 64 反復 | — |
 | BVH 構築 | Morton code sort、O(n log n) | — |
 | BVH query / find_pairs | leaf AABB 毎の stackless 走査、O(n log n) 期待 | 1.1.0 は root AABB で query → O(n²) |
-| World step、10 body × 60 step (default config) | | 404 µs (1.1.0: 5.11 ms) |
+| World step、10 body × 60 step (default config) | | 398 µs (1.1.0: 5.11 ms) |
+| World step、1000 重なり球 (10³ grid、default config: 8 substep 毎に detection) | `thousand_overlapping_spheres_1_step` | 初 frame 65 ms (接触 2,700、broad-phase 候補 57k × 8)、body が離れる 2〜10 frame 目: 7.7 ms/frame |
 
-1.1.0 の外部レビュー (Linux x86_64) では重なり 1000 体で 432 ms/frame、sqrt + BVH 修正後は同 scene が 3.9 ms/frame で 2000 体まで線形 数値を引用する前に対象環境で bench を再実行すること
+1.1.0 の外部レビュー (Linux x86_64) では frame 1 回 detection で重なり 1000 体 432 ms/frame、1.2.0 は substep 毎 detection (正しさの要件、CHANGELOG 参照) なので密な初 frame は重く定常は軽い 数値を引用する前に対象環境で bench を再実行すること
 
 ## MSRV ポリシー
 

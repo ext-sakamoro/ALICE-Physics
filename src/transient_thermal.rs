@@ -263,19 +263,30 @@ pub fn transient_step_1d(temperatures: &mut [f32], material: &ThermalMaterial, d
     let n = temperatures.len();
     let inv_dx_squared = 1.0 / (dx * dx);
     let mut updated = Vec::with_capacity(n);
-    // Neumann BC: T_new[0] mirrors T_new[1], T_new[n-1] mirrors T_new[n-2].
-    // We compute interior cells first, then reapply BC.
-    updated.push(temperatures[0]);
-    for i in 1..n - 1 {
+    // Zero-flux (Neumann) faces at the outer edges of cells 0 and n−1: the
+    // virtual neighbour outside the rod equals the boundary cell itself, so
+    // every cell in the slice is a physical cell of length `dx` and the rod is
+    // `n·dx` long — the same finite-volume convention as
+    // [`crank_nicolson_step_1d`]. Before 1.2.0 this function instead copied
+    // cells 1 / n−2 into cells 0 / n−1 after the update, which made the two
+    // end cells ghost cells (rod length `(n−2)·dx`) and gave a different
+    // decay rate from the Crank–Nicolson step on the same array; the cosine
+    // eigenmode oracle (`tests/engineering_oracles.rs`) exposed the mismatch.
+    for i in 0..n {
+        let left = if i == 0 {
+            temperatures[0]
+        } else {
+            temperatures[i - 1]
+        };
+        let right = if i == n - 1 {
+            temperatures[n - 1]
+        } else {
+            temperatures[i + 1]
+        };
         let alpha = material.diffusivity_at(temperatures[i]);
-        let laplacian =
-            (temperatures[i + 1] - 2.0 * temperatures[i] + temperatures[i - 1]) * inv_dx_squared;
+        let laplacian = (right - 2.0 * temperatures[i] + left) * inv_dx_squared;
         updated.push(temperatures[i] + dt * alpha * laplacian);
     }
-    updated.push(temperatures[n - 1]);
-    // Zero-flux BCs: mirror the interior cells.
-    updated[0] = updated[1];
-    updated[n - 1] = updated[n - 2];
     temperatures.copy_from_slice(&updated);
 }
 
@@ -531,40 +542,23 @@ pub fn transient_step_3d(
     let inv_dx_squared = 1.0 / (dx * dx);
     let idx = |i: usize, j: usize, k: usize| i + nx * (j + ny * k);
     let mut next: Vec<f32> = t.to_vec();
-    for k in 1..nz - 1 {
-        for j in 1..ny - 1 {
-            for i in 1..nx - 1 {
-                let c = t[idx(i, j, k)];
-                let alpha = material.diffusivity_at(c);
-                let laplacian = (t[idx(i + 1, j, k)]
-                    + t[idx(i - 1, j, k)]
-                    + t[idx(i, j + 1, k)]
-                    + t[idx(i, j - 1, k)]
-                    + t[idx(i, j, k + 1)]
-                    + t[idx(i, j, k - 1)]
-                    - 6.0 * c)
-                    * inv_dx_squared;
-                next[idx(i, j, k)] = c + dt * alpha * laplacian;
-            }
-        }
-    }
-    // Neumann mirrors on all six faces (copy from the nearest interior cell).
+    // Zero-flux faces on all six sides: the virtual neighbour outside the
+    // block equals the face cell itself (same convention as the 1-D steps
+    // since 1.2.0; every cell is physical).
     for k in 0..nz {
         for j in 0..ny {
-            next[idx(0, j, k)] = next[idx(1.min(nx - 1), j, k)];
-            next[idx(nx - 1, j, k)] = next[idx(nx.saturating_sub(2), j, k)];
-        }
-    }
-    for k in 0..nz {
-        for i in 0..nx {
-            next[idx(i, 0, k)] = next[idx(i, 1.min(ny - 1), k)];
-            next[idx(i, ny - 1, k)] = next[idx(i, ny.saturating_sub(2), k)];
-        }
-    }
-    for j in 0..ny {
-        for i in 0..nx {
-            next[idx(i, j, 0)] = next[idx(i, j, 1.min(nz - 1))];
-            next[idx(i, j, nz - 1)] = next[idx(i, j, nz.saturating_sub(2))];
+            for i in 0..nx {
+                let c = t[idx(i, j, k)];
+                let xm = if i == 0 { c } else { t[idx(i - 1, j, k)] };
+                let xp = if i == nx - 1 { c } else { t[idx(i + 1, j, k)] };
+                let ym = if j == 0 { c } else { t[idx(i, j - 1, k)] };
+                let yp = if j == ny - 1 { c } else { t[idx(i, j + 1, k)] };
+                let zm = if k == 0 { c } else { t[idx(i, j, k - 1)] };
+                let zp = if k == nz - 1 { c } else { t[idx(i, j, k + 1)] };
+                let alpha = material.diffusivity_at(c);
+                let laplacian = (xp + xm + yp + ym + zp + zm - 6.0 * c) * inv_dx_squared;
+                next[idx(i, j, k)] = c + dt * alpha * laplacian;
+            }
         }
     }
     t.copy_from_slice(&next);
@@ -976,23 +970,33 @@ mod tests {
     }
 
     #[test]
-    fn transient_step_3d_neumann_mirror_matches_interior() {
-        let material = ThermalMaterial::steel_1018();
+    fn transient_step_3d_zero_flux_faces_conserve_energy() {
+        // 1.2.0: every cell is physical and the outer faces carry zero flux, so
+        // the total energy (sum of temperatures at constant properties) is
+        // conserved exactly up to f32 rounding, and the hot cell's heat spreads
+        // to its 6 neighbours only (a face cell is *not* a copy of its
+        // neighbour any more — that was the pre-1.2.0 ghost-cell convention).
+        let material = ThermalMaterial {
+            name: "const",
+            conductivity: TemperatureDependence::Constant(40.0),
+            specific_heat: TemperatureDependence::Constant(500.0),
+            density: TemperatureDependence::Constant(8000.0),
+            reference_temperature: 293.15,
+        };
         let n = 4;
         let mut field = make_uniform_field_3d(n, 300.0);
         let idx = |i, j, k| i + n * (j + n * k);
         field[idx(1, 1, 1)] = 800.0;
+        let before: f64 = field.iter().map(|&v| f64::from(v)).sum();
         let dt = stable_dt_3d(&field, &material, 0.001) * 0.1;
         transient_step_3d(&mut field, n, n, n, &material, 0.001, dt);
-        // Face cells mirror their interior neighbour.
-        assert!(
-            (field[idx(0, 1, 1)] - field[idx(1, 1, 1)]).abs() < 1.0e-3,
-            "Neumann mirror failed on -x face"
-        );
-        assert!(
-            (field[idx(n - 1, 1, 1)] - field[idx(n - 2, 1, 1)]).abs() < 1.0e-3,
-            "Neumann mirror failed on +x face"
-        );
+        let after: f64 = field.iter().map(|&v| f64::from(v)).sum();
+        assert!((after - before).abs() < 1e-2, "energy {before} → {after}");
+        assert!(field[idx(1, 1, 1)] < 800.0);
+        assert!(field[idx(0, 1, 1)] > 300.0 && field[idx(2, 1, 1)] > 300.0);
+        // a face cell not adjacent to the hot cell is untouched
+        assert_eq!(field[idx(0, 0, 0)], 300.0);
+        assert_eq!(field[idx(3, 3, 3)], 300.0);
     }
 
     #[test]

@@ -543,7 +543,8 @@ impl ContactConstraint {
 pub struct SolverConfig {
     /// Number of substeps per frame
     pub substeps: usize,
-    /// Number of constraint iterations per substep
+    /// Number of constraint solver passes per substep (default 1 since 1.2.0,
+    /// Small Steps: prefer more `substeps` over more `iterations`)
     pub iterations: usize,
     /// Gravity vector
     pub gravity: Vec3Fix,
@@ -570,7 +571,12 @@ impl Default for SolverConfig {
     fn default() -> Self {
         Self {
             substeps: 8,
-            iterations: 4,
+            // 1.2.0: Small Steps (Müller et al. 2020) — with collision detection
+            // and constraint re-evaluation per substep, one Gauss-Seidel pass per
+            // substep beats several; the previous 8 × 4 = 32 passes cost 4× for
+            // no accuracy gain. Raise `iterations` only for stiff *rigid*
+            // constraint chains that must converge within a single substep.
+            iterations: 1,
             gravity: Vec3Fix::new(
                 Fix128::ZERO,
                 Fix128::from_int(-10), // -10 m/s^2
@@ -911,7 +917,7 @@ impl PhysicsWorld {
     }
 
     /// v0.11.0: install a GPU solver bridge for automatic contact-solve
-    /// routing. Subsequent calls to [`Self::step`] / [`Self::substep`]
+    /// routing. Subsequent calls to [`Self::step`] / the substep loop
     /// route contact-solve through this bridge instead of the CPU
     /// solver. Pass `Some(bridge)` to install; use
     /// [`Self::take_gpu_solver_bridge`] to remove.
@@ -938,7 +944,7 @@ impl PhysicsWorld {
 
     /// v0.11.0: remove and return the currently installed GPU solver
     /// bridge, if any. Subsequent calls to [`Self::step`] /
-    /// [`Self::substep`] revert to the CPU contact solver.
+    /// the substep loop revert to the CPU contact solver.
     #[cfg(feature = "gpu-solver-bridge")]
     pub fn take_gpu_solver_bridge(
         &mut self,
@@ -2520,8 +2526,8 @@ impl PhysicsWorld {
     }
 
     /// v0.10.0 opt-in: run one PGS contact-solve iteration via a
-    /// caller-supplied [`GpuSolverBridge`] instead of the CPU-side
-    /// [`Self::solve_contact_constraints`] hot loop.
+    /// caller-supplied [`GpuSolverBridge`](crate::gpu_bridge::GpuSolverBridge) instead of the CPU-side
+    /// `solve_contact_constraints` hot loop.
     ///
     /// # Byte-exact CPU parity
     ///
@@ -2653,7 +2659,7 @@ impl PhysicsWorld {
 
     /// v0.10.0 opt-in: run one full simulation step with the
     /// contact-solve stage routed through a caller-supplied
-    /// [`GpuSolverBridge`]. Semantically equivalent to
+    /// [`GpuSolverBridge`](crate::gpu_bridge::GpuSolverBridge). Semantically equivalent to
     /// [`Self::step`] with `substep(_)` replaced by
     /// [`Self::substep_with_bridge`] inside the substep loop.
     ///
@@ -2713,7 +2719,7 @@ impl PhysicsWorld {
     }
 
     /// v0.10.0 opt-in: run one substep with the contact-solve stage
-    /// routed through a caller-supplied [`GpuSolverBridge`]. The
+    /// routed through a caller-supplied [`GpuSolverBridge`](crate::gpu_bridge::GpuSolverBridge). The
     /// integrate + distance-projection + joint + velocity-update
     /// stages stay on the CPU; only the inner PGS contact-solve
     /// iterations are dispatched through the bridge.
@@ -2759,7 +2765,7 @@ impl PhysicsWorld {
     }
 
     /// v0.12.0: run one joint-solve pass with the joint stage routed
-    /// through a caller-supplied [`GpuSolverBridge`]. Extracts body
+    /// through a caller-supplied [`GpuSolverBridge`](crate::gpu_bridge::GpuSolverBridge). Extracts body
     /// positions, rotations and inverse masses into the shape the
     /// bridge expects, uploads them via `send_joints`, `send_body_state`
     /// and `send_body_rotations`, dispatches
@@ -2970,6 +2976,40 @@ impl PhysicsWorld {
                 continue;
             }
 
+            // Sphere-sphere narrow phase (safe indexing for deserialization robustness)
+            let radius_a = self
+                .body_collision_radii
+                .get(a)
+                .and_then(|r| *r)
+                .unwrap_or(Fix128::ZERO);
+            let radius_b = self
+                .body_collision_radii
+                .get(b)
+                .and_then(|r| *r)
+                .unwrap_or(Fix128::ZERO);
+
+            // Contact normal points from B to A (`Contact::normal` contract, same
+            // as the EPA / SDF paths and what `solve_contact_constraints` /
+            // `update_velocities` assume: A is moved along +n, B along -n).
+            // Before 1.2.0 this path used `pos_b - pos_a` (A → B), so every
+            // sphere-sphere contact pushed the bodies *into* each other and a
+            // plain head-on collision accelerated both bodies (4 m/s → 114 m/s
+            // in 4 frames). `tests/analytic_physics.rs::head_on_collision_*`.
+            let delta = self.bodies[a].position - self.bodies[b].position;
+            let combined_radius = radius_a + radius_b;
+            // Squared-distance early out *first*: the BVH candidate set is a
+            // superset of the overlapping pairs (49k candidates for 2.7k contacts
+            // on the 1000-sphere grid) and the quantised leaf AABBs cannot be
+            // tightened without a BVH API change, so every candidate pays only
+            // 3 multiplies + a compare here; the filter / static / sleep lookups
+            // and the sqrt + 3 divisions of `normalize_with_length` run only for
+            // real overlaps. Same `dist < combined_radius` decision (both sides
+            // exact for |delta| < 2^31), same contact order.
+            let dist_sq = delta.length_squared();
+            if dist_sq >= combined_radius * combined_radius || dist_sq.is_zero() {
+                continue;
+            }
+
             // Filter check
             let filter_a = self
                 .body_filters
@@ -2995,28 +3035,7 @@ impl PhysicsWorld {
                 continue;
             }
 
-            // Sphere-sphere narrow phase (safe indexing for deserialization robustness)
-            let radius_a = self
-                .body_collision_radii
-                .get(a)
-                .and_then(|r| *r)
-                .unwrap_or(Fix128::ZERO);
-            let radius_b = self
-                .body_collision_radii
-                .get(b)
-                .and_then(|r| *r)
-                .unwrap_or(Fix128::ZERO);
-
-            // Contact normal points from B to A (`Contact::normal` contract, same
-            // as the EPA / SDF paths and what `solve_contact_constraints` /
-            // `update_velocities` assume: A is moved along +n, B along -n).
-            // Before 1.2.0 this path used `pos_b - pos_a` (A → B), so every
-            // sphere-sphere contact pushed the bodies *into* each other and a
-            // plain head-on collision accelerated both bodies (4 m/s → 114 m/s
-            // in 4 frames). `tests/analytic_physics.rs::head_on_collision_*`.
-            let delta = self.bodies[a].position - self.bodies[b].position;
             let (normal, dist) = delta.normalize_with_length();
-            let combined_radius = radius_a + radius_b;
 
             if dist < combined_radius && !dist.is_zero() {
                 let depth = combined_radius - dist;
@@ -3058,9 +3077,17 @@ impl PhysicsWorld {
                 info.rel_vel,
             );
 
-            // Wake sleeping bodies on contact
-            self.islands.wake_body(info.body_a);
-            self.islands.wake_body(info.body_b);
+            // Wake a *sleeping* island touched by this contact. Waking
+            // unconditionally (pre-1.2.0) reset `idle_frames` of every body in
+            // resting contact on every detection, so a stack could never fall
+            // asleep, and `wake_island` walks all bodies — O(contacts × bodies)
+            // per detection (3.7 ms of a 6 ms step at 2700 contacts / 1000 bodies).
+            if self.islands.is_sleeping(info.body_a) {
+                self.islands.wake_island(info.body_a);
+            }
+            if self.islands.is_sleeping(info.body_b) {
+                self.islands.wake_island(info.body_b);
+            }
 
             if info.is_sensor {
                 self.events.report_trigger(info.body_a, info.body_b);

@@ -32,6 +32,33 @@ Both golden suites run on macOS ARM / x86, Linux ARM / x86, Windows and `wasm32-
 **Boundary — code you pass in.** `ClosureSdf` takes a user closure `Fn(f32, f32, f32) -> f32`. The solver stays deterministic, but the closure is your code: call `alice_physics::det_math::{sin, exp, …}` instead of `f32::sin` etc. inside it, or hand in an SDF whose evaluator has the same discipline. (ALICE-SDF's CPU evaluator is being aligned with `det_math`; until then treat it as same-binary deterministic.)
 
 **Out of scope.** Targets that do not honour IEEE 754 for the basic operations: 32-bit x86 built for x87 (`i586`, no SSE2) and any build with fast-math style flags.
+
+### Correctness scope — what "deterministic" does and does not tell you
+
+Bit-exactness says every peer computes the same numbers; it says nothing
+about whether those numbers are right. The 2026-09-15 external review found
+four physics bugs in the default configuration with 1456 tests and 44 golden
+hashes green (see `CHANGELOG.md` 1.2.0), so the crate now separates the two
+properties explicitly. **Validation** below means "compared against a
+closed-form solution or an independent reference in `tests/`"; the golden
+hashes only detect *change*.
+
+| Layer | Modules | Validation |
+|-------|---------|------------|
+| **Core** — what the determinism guarantee is for | `math` (`Fix128`, `Vec3Fix`, `QuatFix`, CORDIC), `solver` (XPBD rigid bodies, distance / contact constraints, sleeping), `joint`, `bvh`, `collider` (GJK / EPA), `ccd`, `contact_cache`, `sdf_collider`, `netcode` / snapshot | `tests/analytic_physics.rs` — free fall, projectile, terminal velocity, `mg/k` extension, spring and pendulum periods, collision momentum + energy bound, kinematic targets, torque-free rotation, resting contact; `sqrt` / transcendental oracles in `math::tests`; `det_math` sweeps vs correctly-rounded references |
+| **Engineering / field modules** — textbook formulas made deterministic | `transient_thermal`, `fatigue` | `tests/engineering_oracles.rs` — cosine eigenmode decay (Carslaw & Jaeger) for explicit and Crank–Nicolson steps, Basquin / Miner closed forms |
+| | `thermal`, `thermal_stress`, `creep_longterm`, `laminate_failure` (Tsai-Wu / Hashin / Puck), `rolling_contact`, `aeroelasticity` (Facchinetti 2004), `piezoelectric`, `acoustic_wave`, `pressure`, `thin_wall`, `fracture`, `erosion`, `phase_change`, `cfd_solver`, `sdf_sph`, `eulerian_grid`, `sim_field`, `bimaterial`, `warp_risk` (empirical fit: two ALICE-Bamboo data points), and the rest of the 30 `f32` modules | **none yet** — the formulas are implemented as published and the code is bit-exact, but no test compares them with a reference solver (ANSYS / Abaqus), a textbook worked example or experimental data. Treat their numbers as *implementations of the cited equation*, not as validated predictions, until the module gains an oracle in `tests/engineering_oracles.rs` (one module per PR; `thermal` / `warp` / `fatigue` are first because text-to-print uses them) |
+
+**Where the crate fits.** The core is built for use cases where bit-exact
+replay is the requirement, not a nicety: rollback netcode (fighting / RTS /
+`.io` games, tens to hundreds of bodies), server-side replay verification and
+anti-cheat, and reproducible research or audit batches. Measured on the
+1000-overlapping-sphere scene (`cargo bench --bench physics_bench`,
+`thousand_overlapping_spheres_1_step`) it runs at a few ms per frame with the
+default configuration. It is **not** a drop-in replacement for a float engine
+in a general game: destruction, crowds of thousands, VFX-grade contact counts
+at 60 fps are outside its design point, and a float engine pays none of the
+fixed-point cost for a determinism it does not need.
 **v0.10-0.14 highlights** — a five-wave completeness push adds
 **54 modules + 3 integrated solver loops + a Session 4 19-module tier-classified push**
 covering the full spectrum from 3D-printing safety (warp / thin-wall /
@@ -2142,7 +2169,7 @@ alice-physics = { path = "../ALICE-Physics", features = ["neural"] }
 // SolverConfig / PhysicsConfig
 let config = PhysicsConfig {
     substeps: 8,       // XPBD substeps per frame (more = stable but slower)
-    iterations: 4,     // Constraint iterations per substep
+    iterations: 1,     // Solver passes per substep (default 1: Small Steps — raise substeps, not iterations)
     gravity: Vec3Fix::new(
         Fix128::ZERO,
         Fix128::from_int(-10),  // -10 m/s²
@@ -2167,19 +2194,20 @@ machine-dependent; the algorithmic column is what the implementation actually do
 | Fix128 add/sub | 128-bit add with carry | < 1 ns |
 | Fix128 mul | 3 × 64×64→128 partial products | 1.1 ns |
 | Fix128 div | u128 integer quotient + 64-step long division for the fraction | 141 ns |
-| Fix128 sqrt | 96-step restoring digit recurrence (exact floor) | 193 ns (1.1.0: 9,676 ns, Newton × 64 divisions) |
+| Fix128 sqrt | 96-step restoring digit recurrence (exact floor) | 193–354 ns across runs (1.1.0: 9,676 ns, Newton × 64 divisions) |
 | Vec3Fix normalize | length via sqrt + 3 div | 618 ns (1.1.0: 10,390 ns) |
 | CORDIC sin/cos / atan | 48 fixed iterations | ~1 µs |
 | GJK intersection | max 64 iterations | — |
 | EPA penetration | max 64 iterations | — |
 | BVH build | Morton code sort, O(n log n) | — |
 | BVH query / find_pairs | stackless traversal per leaf AABB, O(n log n) expected | 1.1.0 queried the root AABB → O(n²) |
-| World step, 10 bodies × 60 steps (default config) | | 404 µs (1.1.0: 5.11 ms) |
+| World step, 10 bodies × 60 steps (default config) | | 398 µs (1.1.0: 5.11 ms) |
+| World step, 1000 overlapping spheres (10³ grid, default config: detection in each of 8 substeps) | `thousand_overlapping_spheres_1_step` | first frame 65 ms (2 700 contacts, 57 k broad-phase candidates × 8); frames 2–10 as the bodies separate: 7.7 ms/frame |
 
 External review of 1.1.0 (Linux x86_64) measured 1000 overlapping bodies at
-432 ms/frame; with the sqrt and BVH fixes the same scene runs at 3.9 ms/frame and
-scales linearly to 2000 bodies. Re-run the bench on your target before quoting
-numbers.
+432 ms/frame with frame-level detection; 1.2.0 detects in every substep (a
+correctness requirement, see CHANGELOG), so the dense first frame costs more and
+the steady state less. Re-run the bench on your target before quoting numbers.
 
 ## MSRV Policy
 
