@@ -274,6 +274,12 @@ contact normal, and the contact multiplier. Everything else is bit-compatible.
   value (single source of truth for the CORDIC micro-rotations).
 - Cloth bending unit tests (flat fixed point / monotone relaxation / pinned
   vertices / drape bounds) and `atan` / `atan2` / `shr_bits` tests.
+- Mutation-score tests (batch 6, towards the 80 % core target): rotated local
+  anchors and compliance for every positional joint, limit-equality cases,
+  `Joint::compute_force` with anchors, off-centre far-intersection and
+  in-AABB distance cull for `raycast`, non-zero-origin Morton bounds and
+  centre-ordered BVH build, warm-start factor scaling of both tangents,
+  union-find rank absorption and static-body island separation.
 - Mutation-score tests for `solver_tgs` (union-find merge / rank / path
   compression, impulse-cache hit / miss / sweep semantics, island static
   attachment and canonical ordering, adaptive sub-step clamp and search).
