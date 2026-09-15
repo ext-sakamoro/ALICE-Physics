@@ -383,6 +383,12 @@ contact normal, and the contact multiplier. Everything else is bit-compatible.
   loop and the runner died of OOM twice), and the `|| true` that hid a red
   unmutated baseline is replaced by exit-code handling (0 / 2 / 3 are
   measurements, 4 = baseline red fails the job).
+- `scripts/preflight.sh [--quick]`: local reproduction of every CI gate
+  (actionlint, fmt, f32 row, clippy ×2, no_std rlib, wasm32 golden build,
+  rustdoc ×2, public-api snapshot, then the test suites). Three pushes in
+  one day were red on steps that had never been run locally.
+- `.cargo/mutants.toml`: `exclude_re = ["tests::"]` so cargo-mutants does not
+  count mutants inside test helpers.
 - `scripts/f32_modules.py --check`: generates the README § Determinism scope
   "`f32` / `f64` field modules" row from `src/` (public API carrying floats,
   test modules and conversion helpers excluded) and fails when README.md
