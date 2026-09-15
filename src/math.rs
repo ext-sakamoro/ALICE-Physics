@@ -464,6 +464,35 @@ impl Mul for Fix128 {
     }
 }
 
+impl Fix128 {
+    /// Checked division: `None` when `rhs == 0`, otherwise `Some(self / rhs)`.
+    ///
+    /// The `Div` operator returns `ZERO` for a zero divisor (deterministic, no
+    /// panic, no NaN) which is convenient in solver hot paths but hides bugs
+    /// in caller code that never expected a zero — use this in validation and
+    /// setup paths. Bit-identical to `/` for every non-zero divisor.
+    #[inline]
+    #[must_use]
+    pub fn checked_div(self, rhs: Self) -> Option<Self> {
+        if rhs.is_zero() {
+            None
+        } else {
+            Some(self / rhs)
+        }
+    }
+}
+
+/// Fixed-point division, `floor` toward −∞ on the raw bit pattern like `Mul`.
+///
+/// # Division by zero
+///
+/// Returns `ZERO` (documented contract since 1.2.0; the behaviour predates
+/// it). This keeps the solver deterministic and panic-free — a zero inverse
+/// mass, a degenerate normal or a zero `dt` never poisons a lockstep peer with
+/// NaN — but it also means a caller bug is silently masked. Use
+/// [`Fix128::checked_div`] where a zero divisor is an error. A `Result`-based
+/// operator is planned for 2.0 (`PhysicsError` is not `#[non_exhaustive]`,
+/// so a new variant cannot be added in 1.x).
 impl Div for Fix128 {
     type Output = Self;
 
@@ -1512,6 +1541,22 @@ impl core::ops::Mul<Self> for Mat3Fix {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn div_by_zero_is_zero_and_checked_div_is_none() {
+        let x = Fix128::from_int(7);
+        assert_eq!(x / Fix128::ZERO, Fix128::ZERO);
+        assert_eq!(Fix128::ZERO / Fix128::ZERO, Fix128::ZERO);
+        assert_eq!(x.checked_div(Fix128::ZERO), None);
+        assert_eq!(
+            x.checked_div(Fix128::from_int(2)),
+            Some(Fix128::from_ratio(7, 2))
+        );
+        assert_eq!(
+            Fix128::from_ratio(-1, 3).checked_div(Fix128::from_ratio(2, 7)),
+            Some(Fix128::from_ratio(-1, 3) / Fix128::from_ratio(2, 7))
+        );
+    }
 
     #[test]
     fn fix128_mul_wraps_on_integer_overflow() {

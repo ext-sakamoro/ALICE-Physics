@@ -49,6 +49,41 @@ fn bench_physics_step(c: &mut Criterion) {
         });
     });
 
+    // 1000 overlapping spheres on a 10³ grid (the external-review scene,
+    // 2026-09-15): exercises BVH build + find_pairs + sphere narrow phase +
+    // contact solve in every substep (Small Steps, 8 × per frame at defaults).
+    // 1.1.0 measured 432 ms/frame (dead broad phase + Newton sqrt).
+    group.sample_size(20);
+    group.bench_function("thousand_overlapping_spheres_1_step", |b| {
+        b.iter_batched(
+            || {
+                let mut world = PhysicsWorld::new(PhysicsConfig::default());
+                for x in 0..10i64 {
+                    for y in 0..10i64 {
+                        for z in 0..10i64 {
+                            // spacing 1.5 < diameter 2 → every neighbour pair overlaps
+                            let pos = Vec3Fix::new(
+                                Fix128::from_ratio(3 * x, 2),
+                                Fix128::from_ratio(3 * y, 2) + Fix128::from_int(20),
+                                Fix128::from_ratio(3 * z, 2),
+                            );
+                            world.add_body_with_radius(
+                                RigidBody::new_dynamic(pos, Fix128::ONE),
+                                Fix128::ONE,
+                            );
+                        }
+                    }
+                }
+                world
+            },
+            |mut world| {
+                world.step(black_box(Fix128::from_ratio(1, 60)));
+                world.bodies[0].position
+            },
+            criterion::BatchSize::LargeInput,
+        );
+    });
+
     group.finish();
 }
 

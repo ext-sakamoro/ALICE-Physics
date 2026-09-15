@@ -6,7 +6,11 @@
 use crate::math::{Fix128, Vec3Fix};
 
 #[cfg(not(feature = "std"))]
+use alloc::collections::BTreeSet;
+#[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
+#[cfg(feature = "std")]
+use std::collections::BTreeSet;
 
 /// Type of contact event
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -57,12 +61,15 @@ pub struct EventCollector {
     trigger_events: Vec<TriggerEvent>,
     /// Active contact pairs from previous frame (for begin/persist/end tracking)
     prev_pairs: Vec<(usize, usize)>,
+    /// Active contact pairs this frame (ordered set: membership tests are
+    /// O(log n); the linear `Vec::contains` made `report_contact` O(pairs²) —
+    /// 3 ms per detection at 2700 contacts, run 8× per frame since 1.2.0)
     /// Active contact pairs this frame
-    curr_pairs: Vec<(usize, usize)>,
+    curr_pairs: BTreeSet<(usize, usize)>,
     /// Active trigger overlaps from previous frame
     prev_triggers: Vec<(usize, usize)>,
     /// Active trigger overlaps this frame
-    curr_triggers: Vec<(usize, usize)>,
+    curr_triggers: BTreeSet<(usize, usize)>,
 }
 
 impl EventCollector {
@@ -73,9 +80,9 @@ impl EventCollector {
             contact_events: Vec::new(),
             trigger_events: Vec::new(),
             prev_pairs: Vec::new(),
-            curr_pairs: Vec::new(),
+            curr_pairs: BTreeSet::new(),
             prev_triggers: Vec::new(),
-            curr_triggers: Vec::new(),
+            curr_triggers: BTreeSet::new(),
         }
     }
 
@@ -83,13 +90,15 @@ impl EventCollector {
     pub fn begin_frame(&mut self) {
         self.contact_events.clear();
         self.trigger_events.clear();
-        core::mem::swap(&mut self.prev_pairs, &mut self.curr_pairs);
+        // BTreeSet iterates in sorted order, so `prev_*` are sorted for
+        // `binary_search` without an explicit sort.
+        self.prev_pairs.clear();
+        self.prev_pairs.extend(self.curr_pairs.iter().copied());
         self.curr_pairs.clear();
-        core::mem::swap(&mut self.prev_triggers, &mut self.curr_triggers);
+        self.prev_triggers.clear();
+        self.prev_triggers
+            .extend(self.curr_triggers.iter().copied());
         self.curr_triggers.clear();
-        // Sort prev lists for binary_search lookups
-        self.prev_pairs.sort_unstable();
-        self.prev_triggers.sort_unstable();
     }
 
     /// Report a contact between two bodies
@@ -104,14 +113,11 @@ impl EventCollector {
     ) {
         let pair = normalize_pair(body_a, body_b);
         let was_active = self.prev_pairs.binary_search(&pair).is_ok();
-        let already_reported = self.curr_pairs.contains(&pair);
-
-        if already_reported {
-            // Collision detection runs once per substep since 1.2.0; a pair is
-            // reported once per frame (first substep that sees it).
+        // Collision detection runs once per substep since 1.2.0; a pair is
+        // reported once per frame (first substep that sees it).
+        if !self.curr_pairs.insert(pair) {
             return;
         }
-        self.curr_pairs.push(pair);
 
         let event_type = if was_active {
             ContactEventType::Persist
@@ -133,9 +139,7 @@ impl EventCollector {
     /// Report a trigger overlap
     pub fn report_trigger(&mut self, trigger_body: usize, other_body: usize) {
         let pair = normalize_pair(trigger_body, other_body);
-        if !self.curr_triggers.contains(&pair) {
-            self.curr_triggers.push(pair);
-        }
+        self.curr_triggers.insert(pair);
 
         let was_active = self.prev_triggers.binary_search(&pair).is_ok();
         if !was_active {
