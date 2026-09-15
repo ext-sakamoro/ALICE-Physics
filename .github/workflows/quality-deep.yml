@@ -13,6 +13,15 @@ on:
   schedule:
     - cron: '0 18 * * 0'   # 日曜 03:00 JST
   workflow_dispatch:
+    inputs:
+      scope:
+        # 例: "--file src/solver.rs -F update_velocities -F raycast"  空 = 通常の core 16 shard × 2 feature
+        # Mac local は他 session の cargo build と競合してメモリ不足 / timeout で測定が壊れる (2026-09-15)
+        # ため、関数限定の measurement は GH runner で行う (mutants-scoped job 1 本、shard job は skip)
+        description: 'cargo mutants の対象限定引数 (--file / -F)、空なら週次と同じ core shard'
+        required: false
+        default: ''
+        type: string
   pull_request:
     branches: [main]
     paths:
@@ -24,7 +33,55 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  mutants-scoped:
+    name: Mutation testing (scoped, ${{ inputs.scope }})
+    if: github.event_name == 'workflow_dispatch' && inputs.scope != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        features: ['', 'parallel,gpu-solver-bridge']
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Create ALICE optional bridge stubs
+        uses: ./.github/actions/alice-stubs
+      - name: Install cargo-mutants
+        uses: taiki-e/install-action@cargo-mutants
+      - name: Mutants (scoped)
+        run: |
+          cargo mutants ${{ inputs.scope }} --timeout 300 -j 2 --output mutants.out \
+            ${{ matrix.features != '' && format('--features {0}', matrix.features) || '' }} -- --lib || true
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## cargo-mutants scoped: \`${{ inputs.scope }}\` (features: ${{ matrix.features == '' && 'default' || matrix.features }})"
+            if [ -f mutants.out/outcomes.json ]; then
+              python3 - <<'PY'
+          import json
+          d = json.load(open("mutants.out/outcomes.json"))
+          caught = d.get("caught", 0); missed = d.get("missed", 0); un = d.get("unviable", 0); to = d.get("timeout", 0)
+          tot = caught + missed
+          print(f"- caught {caught} / missed {missed} / unviable {un} / timeout {to}")
+          print(f"- mutation score: {caught / tot * 100:.1f}% (目標 ≥ 80%)" if tot else "- no viable mutants")
+          PY
+              echo; echo "### missed"; cat mutants.out/missed.txt 2>/dev/null | head -100
+            else
+              echo "no output (build failed?)"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mutants-scoped-${{ matrix.features == '' && 'default' || 'parallel' }}
+          path: mutants.out
+          if-no-files-found: ignore
+
   mutants:
+    if: github.event_name != 'workflow_dispatch' || inputs.scope == ''
     # 2026-09-15 初回実測: 全 crate = 30,677 mutant × 6-9 s (毎回 1378 test) × -j 2 ≈ 30 h、
     # 300 min timeout で a* 5 file しか進まず cancelled (MISSED 290 = animation_blend 157 /
     # anisotropic 55 / aeroelasticity 46 / analytics_bridge 26 / acoustic_wave 6)
