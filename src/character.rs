@@ -470,7 +470,11 @@ impl CharacterController {
         self.platform_velocity
     }
 
-    /// Apply gravity and update position (convenience method)
+    /// Integrate gravity into the velocity while airborne (`v += g·dt`).
+    ///
+    /// Does **not** move the character; the position update happens in the
+    /// controller's own step / move path (before 1.2.0 the doc claimed
+    /// "and update position", which the code never did).
     pub fn apply_gravity(&mut self, gravity: Vec3Fix, dt: Fix128) {
         if !self.grounded {
             self.velocity = self.velocity + gravity * dt;

@@ -117,6 +117,17 @@ contact normal, and the contact multiplier. Everything else is bit-compatible.
   (sqrt + 3 divisions), which every BVH candidate used to pay (57 k
   candidates for 2 700 contacts on the 1000-sphere grid). Same contacts,
   same order.
+- `EventCollector::report_trigger` now reports a pair once per frame like
+  `report_contact` (a second report within the frame emitted a duplicate
+  enter event).
+- `CompoundShape::compute_aabb` on an empty compound caches the degenerate
+  box and clears `dirty` like every other case (it returned early and left
+  the shape dirty).
+- `CharacterController::apply_gravity` doc corrected: it integrates the
+  velocity while airborne and does not move the character.
+- `Vehicle::update` doc states the frame-level coupling contract (position
+  is stationary at rest, frame-end vertical velocity samples ≈ −g·dt/2);
+  substep-level coupling needs a force accumulator on `RigidBody` (2.0).
 - `EventCollector`: the per-frame contact pair set is a `BTreeSet` instead
   of a `Vec` searched linearly, so `report_contact` is O(log n) per contact
   instead of O(n) (it ran 8× per frame after the per-substep detection).

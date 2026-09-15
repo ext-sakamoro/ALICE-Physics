@@ -139,7 +139,11 @@ impl EventCollector {
     /// Report a trigger overlap
     pub fn report_trigger(&mut self, trigger_body: usize, other_body: usize) {
         let pair = normalize_pair(trigger_body, other_body);
-        self.curr_triggers.insert(pair);
+        // One report per pair per frame (detection runs once per substep since
+        // 1.2.0); same rule as `report_contact`.
+        if !self.curr_triggers.insert(pair) {
+            return;
+        }
 
         let was_active = self.prev_triggers.binary_search(&pair).is_ok();
         if !was_active {

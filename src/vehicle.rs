@@ -262,7 +262,20 @@ impl Vehicle {
         Self::new(VehicleConfig::default())
     }
 
-    /// Update vehicle physics
+    /// Update vehicle physics: raycast the wheels, evaluate suspension /
+    /// drive / brake / steering / aero forces and apply them to `chassis` as
+    /// one impulse `F·dt`. Call once per frame **before** `PhysicsWorld::step`.
+    ///
+    /// # Frame-level coupling
+    ///
+    /// The impulse lands at the start of the frame while the world integrates
+    /// gravity per substep, so at rest the chassis' *position* is stationary
+    /// (ride height `r + rest·(1 − mg/k)`, `tests/default_configs.rs`) but its
+    /// frame-end vertical velocity samples the saw-tooth at ≈ `−g·dt/2`
+    /// (−0.08 m/s at 60 Hz) rather than 0. Read positions, not velocities, for
+    /// "is the car settled" logic. Substep-level coupling needs a force
+    /// accumulator on `RigidBody`, which is a layout change (`#[repr(C)]`,
+    /// FFI header) and therefore a 2.0 item.
     #[allow(clippy::too_many_lines)]
     pub fn update(&mut self, chassis: &mut RigidBody, dt: Fix128) {
         if chassis.is_static() {
