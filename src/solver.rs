@@ -1724,6 +1724,17 @@ impl PhysicsWorld {
     /// When `parallel` feature is enabled, processes independent constraint
     /// batches in parallel using Rayon. Includes the same integrated pipeline
     /// as `step()`: force fields, collision detection, joints, events, sleeping.
+    ///
+    /// # Determinism contract
+    ///
+    /// `step_parallel` is deterministic — the same world stepped twice, on any
+    /// number of threads and on every platform, produces the same bits (graph
+    /// colouring is deterministic and constraints inside a batch touch
+    /// disjoint bodies). It is **not** bit-identical to [`Self::step`] once two
+    /// constraints share a body: the batches are a different Gauss–Seidel
+    /// ordering than constraint index order, and Gauss–Seidel is order
+    /// dependent. Lockstep / rollback peers must therefore all use the same
+    /// path (`fuzz/fuzz_targets/fuzz_step_parity.rs` checks both properties).
     #[cfg(feature = "parallel")]
     pub fn step_parallel(&mut self, dt: Fix128) {
         // Guard: non-positive dt produces no physics update
@@ -5973,5 +5984,156 @@ mod tests {
         assert!(big
             .raycast(v3(0, 2, 0), v3(1, 0, 0), Fix128::from_int(8))
             .is_some());
+    }
+}
+
+/// loom model of the invariant `BodySlicePtr` / `DistConstraintSlicePtr` /
+/// `ContactConstraintSlicePtr` rely on: every constraint of one colour batch
+/// touches disjoint dynamic bodies, so the batch can be written by any
+/// number of threads without synchronisation.
+///
+/// The raw-pointer wrappers themselves are invisible to loom (plain memory);
+/// what loom can exhaustively check is the *protocol*: take the real batches
+/// `rebuild_batches` produces for scenes that exercise the hard cases (a
+/// shared static floor, a dynamic hub, rods under contact), give every
+/// constraint of a batch to its own loom thread, and let each thread write
+/// its two body slots through a `loom::cell::UnsafeCell`. If the colouring
+/// ever placed two constraints sharing a dynamic body in one batch, loom
+/// reports the unsynchronised concurrent access on one of its interleavings.
+/// Run with `RUSTFLAGS="--cfg loom" cargo test --lib loom_` (quality-deep).
+#[cfg(all(test, loom))]
+mod loom_tests {
+    use super::*;
+    use loom::cell::UnsafeCell;
+    use loom::sync::Arc;
+    use loom::thread;
+
+    fn v3(x: i64, y: i64, z: i64) -> Vec3Fix {
+        Vec3Fix::from_int(x, y, z)
+    }
+
+    /// (dynamic-body pairs per batch) for a scene: static bodies are excluded
+    /// because the solver borrows them shared (`BodyRef::Static`).
+    fn batches_of(world: &mut PhysicsWorld) -> Vec<Vec<(Option<usize>, Option<usize>)>> {
+        world.rebuild_batches();
+        let dynamic = |i: usize| (!world.bodies[i].inv_mass.is_zero()).then_some(i);
+        world
+            .constraint_batches
+            .iter()
+            .map(|b| {
+                let mut pairs = Vec::new();
+                for &ci in &b.distance_indices {
+                    let c = world.distance_constraints[ci];
+                    pairs.push((dynamic(c.body_a), dynamic(c.body_b)));
+                }
+                for &ci in &b.contact_indices {
+                    let c = world.contact_constraints[ci];
+                    pairs.push((dynamic(c.body_a), dynamic(c.body_b)));
+                }
+                pairs
+            })
+            .collect()
+    }
+
+    fn check_batches(batches: Vec<Vec<(Option<usize>, Option<usize>)>>, n_bodies: usize) {
+        for batch in batches {
+            // loom explores every interleaving of up to a handful of threads
+            for chunk in batch.chunks(3) {
+                let chunk: Vec<_> = chunk.to_vec();
+                let n = n_bodies;
+                loom::model(move || {
+                    let slots: Arc<Vec<UnsafeCell<u32>>> =
+                        Arc::new((0..n).map(|_| UnsafeCell::new(0)).collect());
+                    let handles: Vec<_> = chunk
+                        .iter()
+                        .copied()
+                        .map(|(a, b)| {
+                            let slots = Arc::clone(&slots);
+                            thread::spawn(move || {
+                                for body in [a, b].into_iter().flatten() {
+                                    // the solver writes position / velocity of
+                                    // each dynamic body of its constraint
+                                    slots[body].with_mut(|p| unsafe { *p += 1 });
+                                }
+                            })
+                        })
+                        .collect();
+                    for h in handles {
+                        h.join().unwrap();
+                    }
+                });
+            }
+        }
+    }
+
+    #[test]
+    fn loom_batches_touch_disjoint_dynamic_bodies_static_floor_hub() {
+        // 6 dynamic spheres resting on one static sphere + 2 rods
+        let mut world = PhysicsWorld::new(SolverConfig {
+            gravity: Vec3Fix::ZERO,
+            ..SolverConfig::default()
+        });
+        let floor =
+            world.add_body_with_radius(RigidBody::new_static(Vec3Fix::ZERO), Fix128::from_int(4));
+        let mut ids = Vec::new();
+        for i in 0..6i64 {
+            let angle = Fix128::from_ratio(i, 6) * Fix128::TWO_PI;
+            let (s, c) = angle.sin_cos();
+            let pos = Vec3Fix::new(
+                c * Fix128::from_int(4),
+                s * Fix128::from_int(4),
+                Fix128::ZERO,
+            );
+            ids.push(
+                world.add_body_with_radius(RigidBody::new_dynamic(pos, Fix128::ONE), Fix128::ONE),
+            );
+        }
+        for w in ids.windows(2).take(2) {
+            world.add_distance_constraint(DistanceConstraint {
+                body_a: w[0],
+                body_b: w[1],
+                local_anchor_a: Vec3Fix::ZERO,
+                local_anchor_b: Vec3Fix::ZERO,
+                target_distance: Fix128::from_int(4),
+                compliance: Fix128::ZERO,
+                cached_lambda: Fix128::ZERO,
+            });
+        }
+        let _ = floor;
+        world.clear_contacts();
+        world.detect_collisions();
+        assert!(
+            !world.contact_constraints.is_empty(),
+            "spheres must touch the floor"
+        );
+        let n = world.bodies.len();
+        check_batches(batches_of(&mut world), n);
+    }
+
+    #[test]
+    fn loom_batches_touch_disjoint_dynamic_bodies_dynamic_hub() {
+        // one dynamic hub connected to 5 dynamic spokes: every spoke rod
+        // shares the hub, so the colouring must serialise them into 5 batches
+        let mut world = PhysicsWorld::new(SolverConfig {
+            gravity: Vec3Fix::ZERO,
+            ..SolverConfig::default()
+        });
+        let hub = world.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
+        for i in 0..5i64 {
+            let spoke = world.add_body(RigidBody::new_dynamic(v3(3 * (i + 1), 0, 0), Fix128::ONE));
+            world.add_distance_constraint(DistanceConstraint {
+                body_a: hub,
+                body_b: spoke,
+                local_anchor_a: Vec3Fix::ZERO,
+                local_anchor_b: Vec3Fix::ZERO,
+                target_distance: Fix128::from_int(3 * (i + 1)),
+                compliance: Fix128::ZERO,
+                cached_lambda: Fix128::ZERO,
+            });
+        }
+        let n = world.bodies.len();
+        let batches = batches_of(&mut world);
+        assert_eq!(batches.len(), 5, "hub forces one batch per spoke");
+        check_batches(batches, n);
     }
 }

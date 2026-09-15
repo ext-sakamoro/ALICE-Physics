@@ -150,8 +150,11 @@ pub fn effective_modulus_reuss_mpa(a: &BimaterialSide, b: &BimaterialSide) -> Fi
 /// Simplified Timoshenko formula (equal thickness limit):
 /// `σ_res = (Δα · ΔT · E_a · E_b) / (E_a + E_b)`
 ///
-/// Returned value is the peak longitudinal stress in the layer with the
-/// lower CTE (compression in the higher-CTE layer). Positive = tension.
+/// Returned value is the peak longitudinal stress in layer `a`:
+/// `+` (tension) when `a` has the *higher* CTE (it wants to shrink more on
+/// cooling and is held by `b`), `−` (compression) when `a` has the lower CTE;
+/// layer `b` carries the opposite sign. (The pre-1.2.0 doc said "the
+/// lower-CTE layer"; the formula was always layer `a`.)
 #[must_use]
 pub fn thermal_residual_stress_mpa(
     a: &BimaterialSide,

@@ -1482,7 +1482,11 @@ fn test_rebuild_batches_constraint_chain() {
 // Test 38 — step_parallel (feature = "parallel")
 // ============================================================================
 
-/// Verify step_parallel() produces deterministic results identical to step().
+/// Verify step_parallel() produces results identical to step() on a scene with
+/// no shared-body constraints (single body: the Gauss–Seidel orderings
+/// coincide). With shared bodies the two paths are each deterministic but not
+/// bit-identical — see `PhysicsWorld::step_parallel` and
+/// `fuzz/fuzz_targets/fuzz_step_parity.rs`.
 #[cfg(feature = "parallel")]
 #[test]
 fn test_step_parallel_determinism() {
