@@ -333,18 +333,19 @@ n², joint angular split / unsigned twist, EPA normal sign).
 | module | score | measured |
 |---|---|---|
 | `ccd` | **95.4 %** (208 / 218) | local run after batch 8 |
+| `joint` | **94.5 %** (358 / 379) | scoped run 34969836733 after batch 8 |
 | `collider` | **93.5 %** (145 / 155) | local run after batch 8 |
-| `math` | 92.2 % (295 / 320) | weekly run at `b187144`, partial shards; scoped run pending |
+| `math` | **91.3 %** (570 / 624, 13 timeouts) | scoped run 34960080446 |
 | `contact_cache` | 88.0 % (66 / 75) | scoped run at `3c12ee6`, before batch 7 tests |
+| `bvh` | **87.1 %** (210 / 241, 10 timeouts) | scoped run 34969844505 after batch 8 |
+| `solver` | **82.4 %** compiled code (509 / 618) on the `parallel,gpu-solver-bridge` axis; 76.3 % raw (509 / 667) when the 49 mutants in `cfg(not(feature = "parallel"))` code — not compiled on that axis — are counted as missed | scoped run 34969828635 after batch 8; the default-feature axis of the same run is still measuring |
 | `solver_tgs` | 81.7 % (89 / 109) | weekly run at `b187144`, before batch 7 tests |
-| `bvh` | 79.9 % (135 / 169) | weekly run at `b187144`, before batch 8 (9 tests added) |
-| `solver` | 76.2 % compiled code (433 / 568) | weekly run at `b187144`, before batch 8 (24 tests added); 163 further mutants sit in `cfg(feature = "parallel" / "gpu-solver-bridge")` code and are measured on that feature axis |
-| `joint` | 72.0 % (206 / 286) | weekly run at `b187144`, before batch 8 (15 tests + 8 re-derived after the angular-split fix) |
 
-Rows marked "before batch N" are the last *measured* figure; the tests written
-since target the listed misses (equivalent mutants documented in each test
-module) and are re-measured by the scoped `quality-deep` dispatch. The next
-measured numbers replace this table; estimates are not written here.
+Rows marked "before batch N" are the last *measured* figure; the tests
+written since target the listed misses (equivalent mutants are documented in
+each test module) and are re-measured by the scoped `quality-deep` dispatch.
+Only measured numbers are written here; timeouts count as neither caught nor
+missed.
 
 ### Test count
 

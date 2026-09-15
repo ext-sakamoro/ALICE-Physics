@@ -278,15 +278,15 @@ warp 事案で記録された failure mode と一致
 | module | score | 測定 |
 |---|---|---|
 | `ccd` | **95.4 %** (208 / 218) | batch 8 後の local run |
+| `joint` | **94.5 %** (358 / 379) | batch 8 後の scoped run 34969836733 |
 | `collider` | **93.5 %** (145 / 155) | batch 8 後の local run |
-| `math` | 92.2 % (295 / 320) | `b187144` 週次 run、shard 一部、scoped run 実行中 |
+| `math` | **91.3 %** (570 / 624、timeout 13) | scoped run 34960080446 |
 | `contact_cache` | 88.0 % (66 / 75) | `3c12ee6` scoped run、batch 7 test 前 |
+| `bvh` | **87.1 %** (210 / 241、timeout 10) | batch 8 後の scoped run 34969844505 |
+| `solver` | **82.4 %** (compiled code、509 / 618、`parallel,gpu-solver-bridge` 軸)、`cfg(not(feature = "parallel"))` 側の 49 変異 (この軸では非 compile) を missed に数えると 76.3 % (509 / 667) | batch 8 後の scoped run 34969828635、同 run の default 軸は測定中 |
 | `solver_tgs` | 81.7 % (89 / 109) | `b187144` 週次 run、batch 7 test 前 |
-| `bvh` | 79.9 % (135 / 169) | `b187144` 週次 run、batch 8 (9 test 追加) 前 |
-| `solver` | 76.2 % (compiled code、433 / 568) | `b187144` 週次 run、batch 8 (24 test 追加) 前、別途 163 変異は `cfg(feature = "parallel" / "gpu-solver-bridge")` 側で feature 軸測定 |
-| `joint` | 72.0 % (206 / 286) | `b187144` 週次 run、batch 8 (15 test + 角補正修正後の再導出 8) 前 |
 
-「batch N 前」は最後に *測定* した値 以後に書いた test は列挙された miss を狙ったもの (等価変異は各 test module に記載) で、scoped `quality-deep` dispatch で再測定する 次の測定値でこの表を置換、見込み値は書かない
+「batch N 前」は最後に *測定* した値 以後に書いた test は列挙された miss を狙ったもの (等価変異は各 test module に記載) で、scoped `quality-deep` dispatch で再測定する 測定値だけを書く、timeout は caught にも missed にも数えない
 
 ### Test 数
 
