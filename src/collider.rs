@@ -737,4 +737,290 @@ mod tests {
         let result = gjk(&scaled_a, &b);
         assert!(result.colliding, "Scaled sphere should collide");
     }
+
+    // ---- mutation-score tests (2026-09-15) ----------------------------
+
+    fn fi(n: i64) -> Fix128 {
+        Fix128::from_int(n)
+    }
+
+    fn v3i(x: i64, y: i64, z: i64) -> Vec3Fix {
+        Vec3Fix::from_int(x, y, z)
+    }
+
+    fn near(a: Fix128, b: Fix128) -> bool {
+        (a - b).abs() < Fix128 { hi: 0, lo: 1 << 24 }
+    }
+
+    #[test]
+    fn aabb_from_center_half_union_and_surface_area_exact() {
+        let a = AABB::from_center_half(v3i(1, 2, 3), v3i(1, 2, 3));
+        assert_eq!(a.min, v3i(0, 0, 0));
+        assert_eq!(a.max, v3i(2, 4, 6));
+        // 2 (xy + yz + zx) = 2 (8 + 24 + 12) = 88
+        assert_eq!(a.surface_area(), fi(88));
+        let b = AABB::new(v3i(-5, 1, 2), v3i(1, 3, 9));
+        // union: min は成分ごとの小さい方、max は大きい方 (各軸で self / other が勝つ組合せを混ぜる)
+        let u = a.union(&b);
+        assert_eq!(u.min, v3i(-5, 0, 0));
+        assert_eq!(u.max, v3i(2, 4, 9));
+        assert_eq!(b.union(&a), u, "対称");
+        assert_eq!(a.union(&a), a);
+        // surface_area の 3 項が独立に効く: 各軸を伸ばすと増分が閉形式
+        let base = AABB::new(Vec3Fix::ZERO, v3i(1, 2, 3)); // 2(2+6+3) = 22
+        assert_eq!(base.surface_area(), fi(22));
+        assert_eq!(
+            AABB::new(Vec3Fix::ZERO, v3i(2, 2, 3)).surface_area(),
+            fi(32)
+        ); // 2(4+6+6)
+        assert_eq!(
+            AABB::new(Vec3Fix::ZERO, v3i(1, 3, 3)).surface_area(),
+            fi(30)
+        ); // 2(3+9+3)
+        assert_eq!(
+            AABB::new(Vec3Fix::ZERO, v3i(1, 2, 4)).surface_area(),
+            fi(28)
+        ); // 2(2+8+4)
+        assert_eq!(
+            AABB::new(v3i(1, 1, 1), v3i(1, 1, 1)).surface_area(),
+            Fix128::ZERO
+        );
+    }
+
+    #[test]
+    fn aabb_intersects_boundary_semantics() {
+        let a = AABB::new(Vec3Fix::ZERO, v3i(2, 2, 2));
+        assert!(a.intersects(&AABB::new(v3i(1, 1, 1), v3i(3, 3, 3))));
+        assert!(!a.intersects(&AABB::new(v3i(3, 0, 0), v3i(4, 2, 2))));
+        // 各軸単独で離れている
+        assert!(!a.intersects(&AABB::new(v3i(0, 3, 0), v3i(2, 4, 2))));
+        assert!(!a.intersects(&AABB::new(v3i(0, 0, -5), v3i(2, 2, -3))));
+        let touching = a.intersects(&AABB::new(v3i(2, 0, 0), v3i(3, 2, 2)));
+        // 接触ちょうどの真偽は実装依存だが、少し重なれば必ず true、少し離れれば必ず false
+        assert!(a.intersects(&AABB::new(
+            Vec3Fix::new(fi(2) - Fix128::from_ratio(1, 8), Fix128::ZERO, Fix128::ZERO),
+            v3i(3, 2, 2)
+        )));
+        assert!(!a.intersects(&AABB::new(
+            Vec3Fix::new(fi(2) + Fix128::from_ratio(1, 8), Fix128::ZERO, Fix128::ZERO),
+            v3i(3, 2, 2)
+        )));
+        let _ = touching;
+    }
+
+    #[test]
+    fn support_functions_return_extreme_points() {
+        let aabb = AABB::new(v3i(-1, -2, -3), v3i(4, 5, 6));
+        assert_eq!(aabb.support(v3i(1, 1, 1)), v3i(4, 5, 6));
+        assert_eq!(aabb.support(v3i(-1, -1, -1)), v3i(-1, -2, -3));
+        assert_eq!(aabb.support(v3i(1, -1, 1)), v3i(4, -2, 6));
+        assert_eq!(aabb.support(v3i(-1, 1, -1)), v3i(-1, 5, -3));
+        // 成分 0 は `>=` で max 側
+        assert_eq!(aabb.support(Vec3Fix::ZERO), v3i(4, 5, 6));
+        let sphere = Sphere::new(v3i(1, 1, 1), fi(2));
+        assert_eq!(sphere.support(v3i(0, 5, 0)), v3i(1, 3, 1));
+        assert_eq!(sphere.support(v3i(-3, 0, 0)), v3i(-1, 1, 1));
+        let capsule = Capsule::new(v3i(0, -2, 0), v3i(0, 2, 0), Fix128::ONE);
+        assert_eq!(capsule.support(v3i(0, 1, 0)), v3i(0, 3, 0));
+        assert_eq!(capsule.support(v3i(0, -1, 0)), v3i(0, -3, 0));
+        assert_eq!(
+            capsule.support(v3i(1, 0, 0)),
+            v3i(1, 2, 0),
+            "da == db は b 側 (`>` false)"
+        );
+        assert_eq!(
+            capsule.support(v3i(4, 3, 0)),
+            Vec3Fix::new(
+                Fix128::from_ratio(4, 5),
+                fi(2) + Fix128::from_ratio(3, 5),
+                Fix128::ZERO
+            )
+        );
+        let hull = ConvexHull::new(vec![v3i(0, 0, 0), v3i(3, 0, 0), v3i(0, 4, 0), v3i(0, 0, 5)]);
+        assert_eq!(hull.support(v3i(1, 0, 0)), v3i(3, 0, 0));
+        assert_eq!(hull.support(v3i(0, 1, 0)), v3i(0, 4, 0));
+        assert_eq!(hull.support(v3i(0, 0, 1)), v3i(0, 0, 5));
+        assert_eq!(hull.support(v3i(-1, -1, -1)), v3i(0, 0, 0));
+        // 同点 (dot が等しい) は最初の頂点 (`>` false)
+        assert_eq!(hull.support(v3i(0, 0, -1)), v3i(0, 0, 0));
+    }
+
+    #[test]
+    fn gjk_box_box_and_sphere_box_configurations() {
+        let a = AABB::new(v3i(-1, -1, -1), v3i(1, 1, 1));
+        // 重なり (各軸)、接触前後、完全包含、離れている
+        assert!(
+            gjk(
+                &a,
+                &AABB::new(
+                    Vec3Fix::new(Fix128::from_ratio(1, 2), fi(-1), fi(-1)),
+                    v3i(3, 1, 1)
+                )
+            )
+            .colliding
+        );
+        assert!(
+            gjk(
+                &a,
+                &AABB::new(
+                    Vec3Fix::new(fi(-1), Fix128::from_ratio(1, 2), fi(-1)),
+                    v3i(1, 3, 1)
+                )
+            )
+            .colliding
+        );
+        assert!(
+            gjk(
+                &a,
+                &AABB::new(
+                    Vec3Fix::new(fi(-1), fi(-1), Fix128::from_ratio(1, 2)),
+                    v3i(1, 1, 3)
+                )
+            )
+            .colliding
+        );
+        assert!(!gjk(&a, &AABB::new(v3i(2, -1, -1), v3i(4, 1, 1))).colliding);
+        assert!(!gjk(&a, &AABB::new(v3i(-1, 2, -1), v3i(1, 4, 1))).colliding);
+        assert!(!gjk(&a, &AABB::new(v3i(-1, -1, -4), v3i(1, 1, -2))).colliding);
+        assert!(
+            gjk(
+                &a,
+                &AABB::new(
+                    Vec3Fix::new(
+                        Fix128::from_ratio(-1, 4),
+                        Fix128::from_ratio(-1, 4),
+                        Fix128::from_ratio(-1, 4)
+                    ),
+                    Vec3Fix::new(
+                        Fix128::from_ratio(1, 4),
+                        Fix128::from_ratio(1, 4),
+                        Fix128::from_ratio(1, 4)
+                    )
+                )
+            )
+            .colliding,
+            "包含"
+        );
+        // 対角方向にずれた箱 (line / triangle / tetrahedron 全経路)
+        assert!(
+            gjk(
+                &a,
+                &AABB::new(
+                    Vec3Fix::new(
+                        Fix128::from_ratio(1, 2),
+                        Fix128::from_ratio(1, 2),
+                        Fix128::from_ratio(1, 2)
+                    ),
+                    v3i(3, 3, 3)
+                )
+            )
+            .colliding
+        );
+        assert!(
+            !gjk(
+                &a,
+                &AABB::new(
+                    Vec3Fix::new(
+                        Fix128::from_ratio(3, 2),
+                        Fix128::from_ratio(3, 2),
+                        Fix128::from_ratio(3, 2)
+                    ),
+                    v3i(3, 3, 3)
+                )
+            )
+            .colliding
+        );
+        // 球 vs 箱: 角の外側 (距離 > r) と内側
+        let corner_out = Sphere::new(v3i(2, 2, 2), Fix128::ONE); // 角 (1,1,1) まで √3 ≈ 1.73 > 1
+        assert!(!gjk(&a, &corner_out).colliding);
+        let corner_in = Sphere::new(v3i(2, 2, 2), fi(2));
+        assert!(gjk(&a, &corner_in).colliding);
+        let face = Sphere::new(
+            Vec3Fix::new(fi(2) - Fix128::from_ratio(1, 2), Fix128::ZERO, Fix128::ZERO),
+            Fix128::ONE,
+        );
+        assert!(gjk(&a, &face).colliding);
+        let face_out = Sphere::new(
+            Vec3Fix::new(fi(2) + Fix128::from_ratio(1, 2), Fix128::ZERO, Fix128::ZERO),
+            Fix128::ONE,
+        );
+        assert!(!gjk(&a, &face_out).colliding);
+        // capsule vs 箱
+        let cap = Capsule::new(v3i(-3, 0, 0), v3i(3, 0, 0), Fix128::from_ratio(1, 2));
+        assert!(gjk(&a, &cap).colliding);
+        let cap_far = Capsule::new(v3i(-3, 3, 0), v3i(3, 3, 0), Fix128::from_ratio(1, 2));
+        assert!(!gjk(&a, &cap_far).colliding);
+        // 対称
+        assert_eq!(gjk(&a, &corner_in).colliding, gjk(&corner_in, &a).colliding);
+    }
+
+    /// 2 shape の Minkowski 差の 4 方向 support から EPA 用初期四面体を作る
+    fn tetra<A: Support, B: Support>(a: &A, b: &B) -> [Vec3Fix; 4] {
+        let dirs = [v3i(1, 1, 1), v3i(-1, -1, 1), v3i(-1, 1, -1), v3i(1, -1, -1)];
+        let mut out = [Vec3Fix::ZERO; 4];
+        for (i, d) in dirs.iter().enumerate() {
+            out[i] = a.support(*d) - b.support(-*d);
+        }
+        out
+    }
+
+    #[test]
+    fn epa_reports_minimum_penetration_axis_and_depth() {
+        let a = AABB::new(v3i(-1, -1, -1), v3i(1, 1, 1));
+        // B が +x 側に 0.5 だけ重なる (y/z は 2 重なる) → 最小侵入 0.5、法線 ±x
+        let b = AABB::new(
+            Vec3Fix::new(Fix128::from_ratio(1, 2), fi(-1), fi(-1)),
+            v3i(3, 1, 1),
+        );
+        let c = epa(&a, &b, &tetra(&a, &b)).expect("overlapping boxes");
+        assert!(
+            near(c.depth, Fix128::from_ratio(1, 2)),
+            "depth {:?}",
+            c.depth
+        );
+        assert!(
+            near(c.normal.x.abs(), Fix128::ONE)
+                && near(c.normal.y, Fix128::ZERO)
+                && near(c.normal.z, Fix128::ZERO),
+            "{:?}",
+            c.normal
+        );
+        // +y 側に 0.25 重なる → depth 0.25、法線 ±y
+        let by = AABB::new(
+            Vec3Fix::new(fi(-1), Fix128::from_ratio(3, 4), fi(-1)),
+            v3i(1, 3, 1),
+        );
+        let cy = epa(&a, &by, &tetra(&a, &by)).expect("overlapping boxes");
+        assert!(
+            near(cy.depth, Fix128::from_ratio(1, 4)),
+            "depth {:?}",
+            cy.depth
+        );
+        assert!(
+            near(cy.normal.y.abs(), Fix128::ONE) && near(cy.normal.x, Fix128::ZERO),
+            "{:?}",
+            cy.normal
+        );
+        // -z 側に 0.125 重なる
+        let bz = AABB::new(
+            v3i(-1, -1, -3),
+            Vec3Fix::new(fi(1), fi(1), fi(-1) + Fix128::from_ratio(1, 8)),
+        );
+        let cz = epa(&a, &bz, &tetra(&a, &bz)).expect("overlapping boxes");
+        assert!(
+            near(cz.depth, Fix128::from_ratio(1, 8)),
+            "depth {:?}",
+            cz.depth
+        );
+        assert!(near(cz.normal.z.abs(), Fix128::ONE), "{:?}", cz.normal);
+        // 法線は単位長、point_a と point_b は法線方向に depth 離れている
+        for cc in [c, cy, cz] {
+            assert!(near(cc.normal.length(), Fix128::ONE));
+            let sep = (cc.point_a - cc.point_b).dot(cc.normal).abs();
+            assert!(near(sep, cc.depth), "sep {sep:?} vs depth {:?}", cc.depth);
+        }
+        // 四面体未満は None
+        assert!(epa(&a, &b, &tetra(&a, &b)[..3]).is_none());
+        assert!(epa(&a, &b, &[]).is_none());
+    }
 }
