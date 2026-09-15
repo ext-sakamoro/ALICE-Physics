@@ -4257,6 +4257,7 @@ impl core::marker::UnsafeUnpin for alice_physics::kinematic_loop::LoopClosureCon
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::kinematic_loop::LoopClosureConstraint
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::kinematic_loop::LoopClosureConstraint
 pub fn alice_physics::kinematic_loop::four_bar_linkage(&mut alice_physics::solver::PhysicsWorld, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128) -> alice_physics::kinematic_loop::FourBarLinkage
+pub fn alice_physics::kinematic_loop::try_four_bar_linkage(&mut alice_physics::solver::PhysicsWorld, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128) -> core::result::Result<alice_physics::kinematic_loop::FourBarLinkage, alice_physics::error::PhysicsError>
 pub mod alice_physics::laminate
 pub struct alice_physics::laminate::AbdMatrix
 pub alice_physics::laminate::AbdMatrix::a: alice_physics::laminate::Sym3
