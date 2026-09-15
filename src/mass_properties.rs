@@ -173,8 +173,17 @@ pub fn capsule_mass_properties(
     // Sphere Iyy (along axis): no offset needed (axially symmetric)
     let sph_iyy = sph_i_own;
 
-    // Sphere Ixx (perpendicular): parallel axis theorem for offset along Y
-    let sph_ixx = sph_i_own + sph_mass * hemi_offset2;
+    // Sphere Ixx (perpendicular): each hemisphere about its *own centroid*
+    // is 83/320 m_h r² (not the full sphere's 2/5 m r² about the sphere
+    // centre — that value already contains the hemisphere-centroid offset
+    // of 3r/8), then the parallel-axis shift to the capsule centre:
+    //   2 · [83/320 m_h r² + m_h (h/2 + 3r/8)²]
+    //   = m_sph · (2/5 r² + h²/4 + 3 h r / 8)
+    // Before 1.2.0 the shift was added on top of 2/5 m r², over-predicting
+    // I⊥ by 9/64 m_sph r² (a capsule with h = 0 did not reduce to a sphere;
+    // `tests/engineering_oracles_solid.rs`).
+    let hemi_own = Fix128::from_ratio(83, 320) * sph_mass * r2;
+    let sph_ixx = hemi_own + sph_mass * hemi_offset2;
 
     let iyy = cyl_iyy + sph_iyy;
     let ixx = cyl_ixx + sph_ixx;
@@ -193,8 +202,11 @@ pub fn capsule_mass_properties(
 /// to form a closed convex surface (convex hull vertex soup).
 ///
 /// For a simple approximation, this uses the centroid as the decomposition origin
-/// and assumes the vertices form triangle fans. For best results, pass vertices
-/// from an actual convex hull with face connectivity.
+/// and assumes the vertices form triangle fans (an exact tiling only for a
+/// tetrahedron). Mass and centre of mass are exact for that case; the inertia is
+/// a point-mass-per-tetrahedron approximation taken about the **origin**, not
+/// about the centre of mass — shift it with `translate_inertia` if needed. For best
+/// results, pass vertices from an actual convex hull with face connectivity.
 #[must_use]
 pub fn convex_hull_mass_properties(vertices: &[Vec3Fix], density: Fix128) -> MassProperties {
     if vertices.len() < 4 {

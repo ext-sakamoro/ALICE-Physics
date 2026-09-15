@@ -54,6 +54,7 @@ jobs:
           - fuzz_step
           - fuzz_collision
           - fuzz_deterministic_roundtrip
+          - fuzz_step_parity
     steps:
       - uses: actions/checkout@v5
 

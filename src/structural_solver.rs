@@ -140,18 +140,23 @@ impl StructuralSolver {
         // 3. Creep — accumulate short-term Norton over one dt window.
         self.norton_creep
             .integrate(sigma, self.dt_s, &mut self.state);
-        // Also compute long-term creep strain projection at operating temperature
-        // for reporting (does not feed back into radial return).
+        // Also compute the long-term Findley projection at the operating
+        // temperature for reporting (does not feed back into radial return).
+        // `state.creep_strain` stays the pure Norton accumulation; the report
+        // carries max(Norton, Findley). Before 1.2.0 the max was written back
+        // into the state, so the next Norton increment landed on top of the
+        // Findley value and the reported creep was neither model.
         let long_term_creep_strain = predict_strain(
             &self.creep_params,
             &self.material,
             self.elapsed_hours,
             self.operating_temp_c,
         );
-        // Combine short + long-term into the state creep field (max of the two)
-        if long_term_creep_strain > self.state.creep_strain {
-            self.state.creep_strain = long_term_creep_strain;
-        }
+        let reported_creep = if long_term_creep_strain > self.state.creep_strain {
+            long_term_creep_strain
+        } else {
+            self.state.creep_strain
+        };
 
         // 4. Fatigue: apply the current stress as one cycle.
         let spectrum: [SpectrumEntry; 1] = [(sigma, 1)];
@@ -189,7 +194,7 @@ impl StructuralSolver {
             bending_stress_mpa: sigma,
             buckling_fos,
             plastic_strain: self.state.equivalent_plastic_strain,
-            creep_strain: self.state.creep_strain,
+            creep_strain: reported_creep,
             fatigue_damage: self.fatigue_damage,
             failed_this_step: failed_now,
             is_safe: self.failure_step.is_none(),
@@ -330,7 +335,12 @@ mod tests {
         solver.operating_temp_c = Fix128::from_int(55); // close to PLA Tg
         let r1 = solver.step();
         let r_later = solver.run(10);
-        assert!(r_later.plastic_state.creep_strain >= r1.creep_strain);
+        // the Norton accumulation in the state grows on its own (1.2.0: it is
+        // no longer overwritten by the Findley projection), and the reported
+        // creep of a later step is monotone
+        let r11 = solver.step();
+        assert!(r_later.plastic_state.creep_strain > Fix128::ZERO);
+        assert!(r11.creep_strain >= r1.creep_strain);
     }
 
     #[test]

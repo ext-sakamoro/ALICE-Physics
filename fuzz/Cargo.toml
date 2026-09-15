@@ -13,7 +13,13 @@ arbitrary = { version = "1", features = ["derive"] }
 
 [dependencies.alice-physics]
 path = ".."
-features = ["std"]
+features = ["std", "parallel"]
+
+[features]
+# the parity target compares `step` with `step_parallel`; the feature is on by
+# default so the plain `cargo fuzz build` covers both paths
+default = ["parallel"]
+parallel = ["alice-physics/parallel"]
 
 # cargo-machete false-positive 予防 (canonical [[reference_alice_ci_canonical_template]] 罠 #3)
 [package.metadata.cargo-machete]
@@ -73,3 +79,10 @@ doc = false
 
 [workspace]
 members = ["."]
+
+# 1.2.0: step / step_parallel bit-exact parity on arbitrary scenes (contacts +
+# rods + sleeping + kinematic), the SDF `fuzz_eval_parity` pattern
+[[bin]]
+name = "fuzz_step_parity"
+path = "fuzz_targets/fuzz_step_parity.rs"
+doc = false

@@ -14,6 +14,101 @@ use crate::math::{Fix128, QuatFix, Vec3Fix};
 use crate::solver::{PhysicsWorld, RigidBody, SolverConfig};
 
 // ============================================================================
+// Panic isolation (1.2.0)
+// ============================================================================
+
+/// Message of the most recent panic caught at the FFI boundary on this
+/// thread; read with [`alice_physics_last_error`], cleared with
+/// [`alice_physics_clear_last_error`].
+///
+/// A panic that reaches an `extern "C"` frame aborts the process on Rust
+/// 1.81+ and takes the host (Unity, Unreal, a Python interpreter) down with
+/// it. Every exported function therefore runs its body through
+/// [`ffi_guard`]: a panic is caught inside the function, its message stored
+/// here, and the function returns its documented sentinel (`0`, `u32::MAX`,
+/// null). Before 1.2.0 only `alice_physics_world_step` / `_step_n` were
+/// guarded (31 exported functions, 29 raw).
+mod guard {
+    use std::cell::RefCell;
+    use std::panic::{catch_unwind, AssertUnwindSafe};
+
+    thread_local! {
+        static LAST_ERROR: RefCell<Option<String>> = const { RefCell::new(None) };
+    }
+
+    /// Record an error message for `alice_physics_last_error`.
+    pub fn set_last_error(msg: impl Into<String>) {
+        LAST_ERROR.with(|slot| *slot.borrow_mut() = Some(msg.into()));
+    }
+
+    /// Take the most recent error message (leaves the slot empty).
+    pub fn take_last_error() -> Option<String> {
+        LAST_ERROR.with(|slot| slot.borrow_mut().take())
+    }
+
+    /// Clear the most recent error message.
+    pub fn clear_last_error() {
+        LAST_ERROR.with(|slot| *slot.borrow_mut() = None);
+    }
+
+    /// Run `body`, converting a panic into `default` plus a recorded message.
+    ///
+    /// The closure is treated as unwind-safe: every FFI body only touches its
+    /// arguments and the world behind the caller's pointer, and a
+    /// `PhysicsWorld` that panicked mid-step is left in whatever state the
+    /// panic found it in — the host is told (return sentinel + message) and
+    /// should destroy the world rather than keep stepping it.
+    #[inline]
+    pub fn ffi_guard<T>(default: T, body: impl FnOnce() -> T) -> T {
+        match catch_unwind(AssertUnwindSafe(body)) {
+            Ok(v) => v,
+            Err(payload) => {
+                let msg = payload
+                    .downcast_ref::<&str>()
+                    .map(|s| (*s).to_string())
+                    .or_else(|| payload.downcast_ref::<String>().cloned())
+                    .unwrap_or_else(|| "panic with non-string payload".to_string());
+                set_last_error(format!("alice-physics FFI panic: {msg}"));
+                default
+            }
+        }
+    }
+}
+
+use guard::ffi_guard;
+
+/// Most recent panic message caught at the FFI boundary on this thread, as a
+/// heap-allocated C string, or null when there is none. Free it with
+/// [`alice_physics_string_free`]. Reading takes the message (a second call
+/// returns null until the next error).
+#[no_mangle]
+pub extern "C" fn alice_physics_last_error() -> *mut std::os::raw::c_char {
+    match guard::take_last_error() {
+        Some(msg) => std::ffi::CString::new(msg.replace('\0', " "))
+            .map_or(std::ptr::null_mut(), std::ffi::CString::into_raw),
+        None => std::ptr::null_mut(),
+    }
+}
+
+/// Discard the most recent FFI panic message on this thread.
+#[no_mangle]
+pub extern "C" fn alice_physics_clear_last_error() {
+    guard::clear_last_error();
+}
+
+/// Free a string returned by [`alice_physics_last_error`].
+///
+/// # Safety
+/// `s` must be null or a pointer returned by `alice_physics_last_error` that
+/// has not been freed yet.
+#[no_mangle]
+pub unsafe extern "C" fn alice_physics_string_free(s: *mut std::os::raw::c_char) {
+    if !s.is_null() {
+        drop(std::ffi::CString::from_raw(s));
+    }
+}
+
+// ============================================================================
 // C-compatible types
 // ============================================================================
 
@@ -118,8 +213,10 @@ impl AliceQuat {
 /// Returns an opaque pointer. Must be freed with `alice_physics_world_destroy`.
 #[no_mangle]
 pub extern "C" fn alice_physics_world_create() -> *mut PhysicsWorld {
-    let world = PhysicsWorld::new(SolverConfig::default());
-    Box::into_raw(Box::new(world))
+    ffi_guard(std::ptr::null_mut(), || {
+        let world = PhysicsWorld::new(SolverConfig::default());
+        Box::into_raw(Box::new(world))
+    })
 }
 
 /// Create a physics world with custom config.
@@ -127,19 +224,21 @@ pub extern "C" fn alice_physics_world_create() -> *mut PhysicsWorld {
 pub extern "C" fn alice_physics_world_create_with_config(
     config: AlicePhysicsConfig,
 ) -> *mut PhysicsWorld {
-    let solver_config = SolverConfig {
-        substeps: config.substeps as usize,
-        iterations: config.iterations as usize,
-        gravity: Vec3Fix::new(
-            Fix128::from_f64(config.gravity_x),
-            Fix128::from_f64(config.gravity_y),
-            Fix128::from_f64(config.gravity_z),
-        ),
-        damping: Fix128::from_f64(config.damping),
-        ..Default::default()
-    };
-    let world = PhysicsWorld::new(solver_config);
-    Box::into_raw(Box::new(world))
+    ffi_guard(std::ptr::null_mut(), || {
+        let solver_config = SolverConfig {
+            substeps: config.substeps as usize,
+            iterations: config.iterations as usize,
+            gravity: Vec3Fix::new(
+                Fix128::from_f64(config.gravity_x),
+                Fix128::from_f64(config.gravity_y),
+                Fix128::from_f64(config.gravity_z),
+            ),
+            damping: Fix128::from_f64(config.damping),
+            ..Default::default()
+        };
+        let world = PhysicsWorld::new(solver_config);
+        Box::into_raw(Box::new(world))
+    })
 }
 
 /// Destroy a physics world.
@@ -148,9 +247,11 @@ pub extern "C" fn alice_physics_world_create_with_config(
 /// `world` must be a valid pointer from `alice_physics_world_create*`.
 #[no_mangle]
 pub unsafe extern "C" fn alice_physics_world_destroy(world: *mut PhysicsWorld) {
-    if !world.is_null() {
-        drop(Box::from_raw(world));
-    }
+    ffi_guard((), || {
+        if !world.is_null() {
+            drop(Box::from_raw(world));
+        }
+    })
 }
 
 /// Step the simulation by dt seconds (as f64, converted to Fix128).
@@ -161,14 +262,16 @@ pub unsafe extern "C" fn alice_physics_world_destroy(world: *mut PhysicsWorld) {
 /// `world` must be a valid pointer.
 #[no_mangle]
 pub unsafe extern "C" fn alice_physics_world_step(world: *mut PhysicsWorld, dt: f64) -> u8 {
-    let w = match world.as_mut() {
-        Some(w) => w as *mut PhysicsWorld,
-        None => return 0,
-    };
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        (*w).step(Fix128::from_f64(dt));
-    }));
-    result.is_ok() as u8
+    ffi_guard(0, || {
+        let w = match world.as_mut() {
+            Some(w) => w as *mut PhysicsWorld,
+            None => return 0,
+        };
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            (*w).step(Fix128::from_f64(dt));
+        }));
+        result.is_ok() as u8
+    })
 }
 
 /// Step the simulation N times with fixed dt (batch stepping).
@@ -184,17 +287,19 @@ pub unsafe extern "C" fn alice_physics_world_step_n(
     dt: f64,
     steps: u32,
 ) -> u8 {
-    let w = match world.as_mut() {
-        Some(w) => w as *mut PhysicsWorld,
-        None => return 0,
-    };
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let dt_fix = Fix128::from_f64(dt);
-        for _ in 0..steps {
-            (*w).step(dt_fix);
-        }
-    }));
-    result.is_ok() as u8
+    ffi_guard(0, || {
+        let w = match world.as_mut() {
+            Some(w) => w as *mut PhysicsWorld,
+            None => return 0,
+        };
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let dt_fix = Fix128::from_f64(dt);
+            for _ in 0..steps {
+                (*w).step(dt_fix);
+            }
+        }));
+        result.is_ok() as u8
+    })
 }
 
 /// Get the number of bodies.
@@ -203,10 +308,10 @@ pub unsafe extern "C" fn alice_physics_world_step_n(
 /// `world` must be a valid pointer from `alice_physics_world_create*`, or null.
 #[no_mangle]
 pub unsafe extern "C" fn alice_physics_world_body_count(world: *const PhysicsWorld) -> u32 {
-    match world.as_ref() {
+    ffi_guard(0, || match world.as_ref() {
         Some(w) => w.bodies.len() as u32,
         None => 0,
-    }
+    })
 }
 
 /// Get all body positions as a flat [x,y,z, x,y,z, ...] f64 array (zero-copy write).
@@ -222,24 +327,26 @@ pub unsafe extern "C" fn alice_physics_world_get_positions_batch(
     out: *mut f64,
     out_capacity: u32,
 ) -> u8 {
-    let w = match world.as_ref() {
-        Some(w) => w,
-        None => return 0,
-    };
-    if out.is_null() {
-        return 0;
-    }
-    let n = w.bodies.len();
-    if (out_capacity as usize) < n * 3 {
-        return 0;
-    }
-    let buf = std::slice::from_raw_parts_mut(out, n * 3);
-    for (i, body) in w.bodies.iter().enumerate() {
-        buf[i * 3] = body.position.x.to_f64();
-        buf[i * 3 + 1] = body.position.y.to_f64();
-        buf[i * 3 + 2] = body.position.z.to_f64();
-    }
-    1
+    ffi_guard(0, || {
+        let w = match world.as_ref() {
+            Some(w) => w,
+            None => return 0,
+        };
+        if out.is_null() {
+            return 0;
+        }
+        let n = w.bodies.len();
+        if (out_capacity as usize) < n * 3 {
+            return 0;
+        }
+        let buf = std::slice::from_raw_parts_mut(out, n * 3);
+        for (i, body) in w.bodies.iter().enumerate() {
+            buf[i * 3] = body.position.x.to_f64();
+            buf[i * 3 + 1] = body.position.y.to_f64();
+            buf[i * 3 + 2] = body.position.z.to_f64();
+        }
+        1
+    })
 }
 
 /// Get all body velocities as a flat [vx,vy,vz, ...] f64 array (zero-copy write).
@@ -252,24 +359,26 @@ pub unsafe extern "C" fn alice_physics_world_get_velocities_batch(
     out: *mut f64,
     out_capacity: u32,
 ) -> u8 {
-    let w = match world.as_ref() {
-        Some(w) => w,
-        None => return 0,
-    };
-    if out.is_null() {
-        return 0;
-    }
-    let n = w.bodies.len();
-    if (out_capacity as usize) < n * 3 {
-        return 0;
-    }
-    let buf = std::slice::from_raw_parts_mut(out, n * 3);
-    for (i, body) in w.bodies.iter().enumerate() {
-        buf[i * 3] = body.velocity.x.to_f64();
-        buf[i * 3 + 1] = body.velocity.y.to_f64();
-        buf[i * 3 + 2] = body.velocity.z.to_f64();
-    }
-    1
+    ffi_guard(0, || {
+        let w = match world.as_ref() {
+            Some(w) => w,
+            None => return 0,
+        };
+        if out.is_null() {
+            return 0;
+        }
+        let n = w.bodies.len();
+        if (out_capacity as usize) < n * 3 {
+            return 0;
+        }
+        let buf = std::slice::from_raw_parts_mut(out, n * 3);
+        for (i, body) in w.bodies.iter().enumerate() {
+            buf[i * 3] = body.velocity.x.to_f64();
+            buf[i * 3 + 1] = body.velocity.y.to_f64();
+            buf[i * 3 + 2] = body.velocity.z.to_f64();
+        }
+        1
+    })
 }
 
 /// Set all body velocities from a flat [vx,vy,vz, ...] f64 array (batch update).
@@ -282,26 +391,28 @@ pub unsafe extern "C" fn alice_physics_world_set_velocities_batch(
     data: *const f64,
     count: u32,
 ) -> u8 {
-    let w = match world.as_mut() {
-        Some(w) => w,
-        None => return 0,
-    };
-    if data.is_null() {
-        return 0;
-    }
-    let n = w.bodies.len();
-    if (count as usize) < n * 3 {
-        return 0;
-    }
-    let buf = std::slice::from_raw_parts(data, n * 3);
-    for (i, body) in w.bodies.iter_mut().enumerate() {
-        body.velocity = Vec3Fix::new(
-            Fix128::from_f64(buf[i * 3]),
-            Fix128::from_f64(buf[i * 3 + 1]),
-            Fix128::from_f64(buf[i * 3 + 2]),
-        );
-    }
-    1
+    ffi_guard(0, || {
+        let w = match world.as_mut() {
+            Some(w) => w,
+            None => return 0,
+        };
+        if data.is_null() {
+            return 0;
+        }
+        let n = w.bodies.len();
+        if (count as usize) < n * 3 {
+            return 0;
+        }
+        let buf = std::slice::from_raw_parts(data, n * 3);
+        for (i, body) in w.bodies.iter_mut().enumerate() {
+            body.velocity = Vec3Fix::new(
+                Fix128::from_f64(buf[i * 3]),
+                Fix128::from_f64(buf[i * 3 + 1]),
+                Fix128::from_f64(buf[i * 3 + 2]),
+            );
+        }
+        1
+    })
 }
 
 /// Apply impulses to multiple bodies in batch.
@@ -316,29 +427,31 @@ pub unsafe extern "C" fn alice_physics_body_apply_impulses_batch(
     data: *const f64,
     count: u32,
 ) -> u8 {
-    let w = match world.as_mut() {
-        Some(w) => w,
-        None => return 0,
-    };
-    if data.is_null() || count % 4 != 0 {
-        return 0;
-    }
-    let buf = std::slice::from_raw_parts(data, count as usize);
-    let n_bodies = w.bodies.len();
-
-    for chunk in buf.chunks_exact(4) {
-        let body_id = chunk[0] as usize;
-        if body_id >= n_bodies {
-            continue;
+    ffi_guard(0, || {
+        let w = match world.as_mut() {
+            Some(w) => w,
+            None => return 0,
+        };
+        if data.is_null() || count % 4 != 0 {
+            return 0;
         }
-        let impulse = Vec3Fix::new(
-            Fix128::from_f64(chunk[1]),
-            Fix128::from_f64(chunk[2]),
-            Fix128::from_f64(chunk[3]),
-        );
-        w.bodies[body_id].apply_impulse(impulse);
-    }
-    1
+        let buf = std::slice::from_raw_parts(data, count as usize);
+        let n_bodies = w.bodies.len();
+
+        for chunk in buf.chunks_exact(4) {
+            let body_id = chunk[0] as usize;
+            if body_id >= n_bodies {
+                continue;
+            }
+            let impulse = Vec3Fix::new(
+                Fix128::from_f64(chunk[1]),
+                Fix128::from_f64(chunk[2]),
+                Fix128::from_f64(chunk[3]),
+            );
+            w.bodies[body_id].apply_impulse(impulse);
+        }
+        1
+    })
 }
 
 // ============================================================================
@@ -355,13 +468,13 @@ pub unsafe extern "C" fn alice_physics_body_add_dynamic(
     position: AliceVec3,
     mass: f64,
 ) -> u32 {
-    match world.as_mut() {
+    ffi_guard(u32::MAX, || match world.as_mut() {
         Some(w) => {
             let body = RigidBody::new_dynamic(position.to_vec3fix(), Fix128::from_f64(mass));
             w.add_body(body) as u32
         }
         None => u32::MAX,
-    }
+    })
 }
 
 /// Add a static body. Returns body index.
@@ -373,13 +486,13 @@ pub unsafe extern "C" fn alice_physics_body_add_static(
     world: *mut PhysicsWorld,
     position: AliceVec3,
 ) -> u32 {
-    match world.as_mut() {
+    ffi_guard(u32::MAX, || match world.as_mut() {
         Some(w) => {
             let body = RigidBody::new_static(position.to_vec3fix());
             w.add_body(body) as u32
         }
         None => u32::MAX,
-    }
+    })
 }
 
 /// Add a sensor (trigger) body. Returns body index.
@@ -391,13 +504,13 @@ pub unsafe extern "C" fn alice_physics_body_add_sensor(
     world: *mut PhysicsWorld,
     position: AliceVec3,
 ) -> u32 {
-    match world.as_mut() {
+    ffi_guard(u32::MAX, || match world.as_mut() {
         Some(w) => {
             let body = RigidBody::new_sensor(position.to_vec3fix());
             w.add_body(body) as u32
         }
         None => u32::MAX,
-    }
+    })
 }
 
 /// Get body info (read-only snapshot).
@@ -410,23 +523,25 @@ pub unsafe extern "C" fn alice_physics_body_get_info(
     body_id: u32,
     out: *mut AliceBodyInfo,
 ) -> u8 {
-    let (w, o) = match (world.as_ref(), out.as_mut()) {
-        (Some(w), Some(o)) => (w, o),
-        _ => return 0,
-    };
-    match w.bodies.get(body_id as usize) {
-        Some(b) => {
-            o.position = AliceVec3::from_vec3fix(b.position);
-            o.velocity = AliceVec3::from_vec3fix(b.velocity);
-            o.angular_velocity = AliceVec3::from_vec3fix(b.angular_velocity);
-            o.rotation = AliceQuat::from_quatfix(b.rotation);
-            o.inv_mass = b.inv_mass.to_f64();
-            o.is_static = b.is_static() as u8;
-            o.is_sensor = b.is_sensor as u8;
-            1
+    ffi_guard(0, || {
+        let (w, o) = match (world.as_ref(), out.as_mut()) {
+            (Some(w), Some(o)) => (w, o),
+            _ => return 0,
+        };
+        match w.bodies.get(body_id as usize) {
+            Some(b) => {
+                o.position = AliceVec3::from_vec3fix(b.position);
+                o.velocity = AliceVec3::from_vec3fix(b.velocity);
+                o.angular_velocity = AliceVec3::from_vec3fix(b.angular_velocity);
+                o.rotation = AliceQuat::from_quatfix(b.rotation);
+                o.inv_mass = b.inv_mass.to_f64();
+                o.is_static = b.is_static() as u8;
+                o.is_sensor = b.is_sensor as u8;
+                1
+            }
+            None => 0,
         }
-        None => 0,
-    }
+    })
 }
 
 /// Get body position.
@@ -439,17 +554,19 @@ pub unsafe extern "C" fn alice_physics_body_get_position(
     body_id: u32,
     out: *mut AliceVec3,
 ) -> u8 {
-    let (w, o) = match (world.as_ref(), out.as_mut()) {
-        (Some(w), Some(o)) => (w, o),
-        _ => return 0,
-    };
-    match w.bodies.get(body_id as usize) {
-        Some(b) => {
-            *o = AliceVec3::from_vec3fix(b.position);
-            1
+    ffi_guard(0, || {
+        let (w, o) = match (world.as_ref(), out.as_mut()) {
+            (Some(w), Some(o)) => (w, o),
+            _ => return 0,
+        };
+        match w.bodies.get(body_id as usize) {
+            Some(b) => {
+                *o = AliceVec3::from_vec3fix(b.position);
+                1
+            }
+            None => 0,
         }
-        None => 0,
-    }
+    })
 }
 
 /// Raw Fix128 pair (hi:i64, lo:u64) exposed across the C ABI so
@@ -493,30 +610,32 @@ pub unsafe extern "C" fn alice_physics_body_get_position_fix128_raw(
     body_id: u32,
     out: *mut AliceVec3Fix128Raw,
 ) -> u8 {
-    let (w, o) = match (world.as_ref(), out.as_mut()) {
-        (Some(w), Some(o)) => (w, o),
-        _ => return 0,
-    };
-    match w.bodies.get(body_id as usize) {
-        Some(b) => {
-            *o = AliceVec3Fix128Raw {
-                x: AliceFix128Raw {
-                    hi: b.position.x.hi,
-                    lo: b.position.x.lo,
-                },
-                y: AliceFix128Raw {
-                    hi: b.position.y.hi,
-                    lo: b.position.y.lo,
-                },
-                z: AliceFix128Raw {
-                    hi: b.position.z.hi,
-                    lo: b.position.z.lo,
-                },
-            };
-            1
+    ffi_guard(0, || {
+        let (w, o) = match (world.as_ref(), out.as_mut()) {
+            (Some(w), Some(o)) => (w, o),
+            _ => return 0,
+        };
+        match w.bodies.get(body_id as usize) {
+            Some(b) => {
+                *o = AliceVec3Fix128Raw {
+                    x: AliceFix128Raw {
+                        hi: b.position.x.hi,
+                        lo: b.position.x.lo,
+                    },
+                    y: AliceFix128Raw {
+                        hi: b.position.y.hi,
+                        lo: b.position.y.lo,
+                    },
+                    z: AliceFix128Raw {
+                        hi: b.position.z.hi,
+                        lo: b.position.z.lo,
+                    },
+                };
+                1
+            }
+            None => 0,
         }
-        None => 0,
-    }
+    })
 }
 
 /// Set body position.
@@ -529,7 +648,7 @@ pub unsafe extern "C" fn alice_physics_body_set_position(
     body_id: u32,
     position: AliceVec3,
 ) -> u8 {
-    match world.as_mut() {
+    ffi_guard(0, || match world.as_mut() {
         Some(w) => match w.bodies.get_mut(body_id as usize) {
             Some(b) => {
                 b.position = position.to_vec3fix();
@@ -538,7 +657,7 @@ pub unsafe extern "C" fn alice_physics_body_set_position(
             None => 0,
         },
         None => 0,
-    }
+    })
 }
 
 /// Get body velocity.
@@ -551,17 +670,19 @@ pub unsafe extern "C" fn alice_physics_body_get_velocity(
     body_id: u32,
     out: *mut AliceVec3,
 ) -> u8 {
-    let (w, o) = match (world.as_ref(), out.as_mut()) {
-        (Some(w), Some(o)) => (w, o),
-        _ => return 0,
-    };
-    match w.bodies.get(body_id as usize) {
-        Some(b) => {
-            *o = AliceVec3::from_vec3fix(b.velocity);
-            1
+    ffi_guard(0, || {
+        let (w, o) = match (world.as_ref(), out.as_mut()) {
+            (Some(w), Some(o)) => (w, o),
+            _ => return 0,
+        };
+        match w.bodies.get(body_id as usize) {
+            Some(b) => {
+                *o = AliceVec3::from_vec3fix(b.velocity);
+                1
+            }
+            None => 0,
         }
-        None => 0,
-    }
+    })
 }
 
 /// Set body velocity.
@@ -574,7 +695,7 @@ pub unsafe extern "C" fn alice_physics_body_set_velocity(
     body_id: u32,
     velocity: AliceVec3,
 ) -> u8 {
-    match world.as_mut() {
+    ffi_guard(0, || match world.as_mut() {
         Some(w) => match w.bodies.get_mut(body_id as usize) {
             Some(b) => {
                 b.velocity = velocity.to_vec3fix();
@@ -583,7 +704,7 @@ pub unsafe extern "C" fn alice_physics_body_set_velocity(
             None => 0,
         },
         None => 0,
-    }
+    })
 }
 
 /// Get body rotation as quaternion.
@@ -596,17 +717,19 @@ pub unsafe extern "C" fn alice_physics_body_get_rotation(
     body_id: u32,
     out: *mut AliceQuat,
 ) -> u8 {
-    let (w, o) = match (world.as_ref(), out.as_mut()) {
-        (Some(w), Some(o)) => (w, o),
-        _ => return 0,
-    };
-    match w.bodies.get(body_id as usize) {
-        Some(b) => {
-            *o = AliceQuat::from_quatfix(b.rotation);
-            1
+    ffi_guard(0, || {
+        let (w, o) = match (world.as_ref(), out.as_mut()) {
+            (Some(w), Some(o)) => (w, o),
+            _ => return 0,
+        };
+        match w.bodies.get(body_id as usize) {
+            Some(b) => {
+                *o = AliceQuat::from_quatfix(b.rotation);
+                1
+            }
+            None => 0,
         }
-        None => 0,
-    }
+    })
 }
 
 /// Set body restitution (bounciness, 0.0-1.0).
@@ -619,7 +742,7 @@ pub unsafe extern "C" fn alice_physics_body_set_restitution(
     body_id: u32,
     restitution: f64,
 ) -> u8 {
-    match world.as_mut() {
+    ffi_guard(0, || match world.as_mut() {
         Some(w) => match w.bodies.get_mut(body_id as usize) {
             Some(b) => {
                 b.restitution = Fix128::from_f64(restitution);
@@ -628,7 +751,7 @@ pub unsafe extern "C" fn alice_physics_body_set_restitution(
             None => 0,
         },
         None => 0,
-    }
+    })
 }
 
 /// Set body friction coefficient.
@@ -641,7 +764,7 @@ pub unsafe extern "C" fn alice_physics_body_set_friction(
     body_id: u32,
     friction: f64,
 ) -> u8 {
-    match world.as_mut() {
+    ffi_guard(0, || match world.as_mut() {
         Some(w) => match w.bodies.get_mut(body_id as usize) {
             Some(b) => {
                 b.friction = Fix128::from_f64(friction);
@@ -650,7 +773,7 @@ pub unsafe extern "C" fn alice_physics_body_set_friction(
             None => 0,
         },
         None => 0,
-    }
+    })
 }
 
 /// Apply impulse at center of mass.
@@ -663,7 +786,7 @@ pub unsafe extern "C" fn alice_physics_body_apply_impulse(
     body_id: u32,
     impulse: AliceVec3,
 ) -> u8 {
-    match world.as_mut() {
+    ffi_guard(0, || match world.as_mut() {
         Some(w) => match w.bodies.get_mut(body_id as usize) {
             Some(b) => {
                 b.apply_impulse(impulse.to_vec3fix());
@@ -672,7 +795,7 @@ pub unsafe extern "C" fn alice_physics_body_apply_impulse(
             None => 0,
         },
         None => 0,
-    }
+    })
 }
 
 /// Apply impulse at a world-space point.
@@ -686,7 +809,7 @@ pub unsafe extern "C" fn alice_physics_body_apply_impulse_at(
     impulse: AliceVec3,
     point: AliceVec3,
 ) -> u8 {
-    match world.as_mut() {
+    ffi_guard(0, || match world.as_mut() {
         Some(w) => match w.bodies.get_mut(body_id as usize) {
             Some(b) => {
                 b.apply_impulse_at(impulse.to_vec3fix(), point.to_vec3fix());
@@ -695,7 +818,7 @@ pub unsafe extern "C" fn alice_physics_body_apply_impulse_at(
             None => 0,
         },
         None => 0,
-    }
+    })
 }
 
 // ============================================================================
@@ -727,13 +850,15 @@ pub unsafe extern "C" fn alice_physics_world_set_gravity(
     y: f64,
     z: f64,
 ) {
-    if let Some(w) = world.as_mut() {
-        w.config.gravity = Vec3Fix::new(
-            Fix128::from_f64(x),
-            Fix128::from_f64(y),
-            Fix128::from_f64(z),
-        );
-    }
+    ffi_guard((), || {
+        if let Some(w) = world.as_mut() {
+            w.config.gravity = Vec3Fix::new(
+                Fix128::from_f64(x),
+                Fix128::from_f64(y),
+                Fix128::from_f64(z),
+            );
+        }
+    })
 }
 
 /// Set substeps on an existing world.
@@ -742,9 +867,11 @@ pub unsafe extern "C" fn alice_physics_world_set_gravity(
 /// `world` must be a valid pointer from `alice_physics_world_create*`.
 #[no_mangle]
 pub unsafe extern "C" fn alice_physics_world_set_substeps(world: *mut PhysicsWorld, substeps: u32) {
-    if let Some(w) = world.as_mut() {
-        w.config.substeps = substeps as usize;
-    }
+    ffi_guard((), || {
+        if let Some(w) = world.as_mut() {
+            w.config.substeps = substeps as usize;
+        }
+    })
 }
 
 // ============================================================================
@@ -761,22 +888,24 @@ pub unsafe extern "C" fn alice_physics_state_serialize(
     world: *const PhysicsWorld,
     out_len: *mut u32,
 ) -> *mut u8 {
-    let w = match world.as_ref() {
-        Some(w) => w,
-        None => {
-            if let Some(len) = out_len.as_mut() {
-                *len = 0;
+    ffi_guard(std::ptr::null_mut(), || {
+        let w = match world.as_ref() {
+            Some(w) => w,
+            None => {
+                if let Some(len) = out_len.as_mut() {
+                    *len = 0;
+                }
+                return std::ptr::null_mut();
             }
-            return std::ptr::null_mut();
+        };
+        let state = w.serialize_state();
+        let len = state.len();
+        if let Some(out) = out_len.as_mut() {
+            *out = len as u32;
         }
-    };
-    let state = w.serialize_state();
-    let len = state.len();
-    if let Some(out) = out_len.as_mut() {
-        *out = len as u32;
-    }
-    let boxed = state.into_boxed_slice();
-    Box::into_raw(boxed) as *mut u8
+        let boxed = state.into_boxed_slice();
+        Box::into_raw(boxed) as *mut u8
+    })
 }
 
 /// Deserialize world state (restores from serialized snapshot).
@@ -790,15 +919,17 @@ pub unsafe extern "C" fn alice_physics_state_deserialize(
     data: *const u8,
     len: u32,
 ) -> u8 {
-    let w = match world.as_mut() {
-        Some(w) => w,
-        None => return 0,
-    };
-    if data.is_null() || len == 0 {
-        return 0;
-    }
-    let slice = std::slice::from_raw_parts(data, len as usize);
-    w.deserialize_state(slice) as u8
+    ffi_guard(0, || {
+        let w = match world.as_mut() {
+            Some(w) => w,
+            None => return 0,
+        };
+        if data.is_null() || len == 0 {
+            return 0;
+        }
+        let slice = std::slice::from_raw_parts(data, len as usize);
+        w.deserialize_state(slice) as u8
+    })
 }
 
 /// Free a serialized state buffer.
@@ -807,10 +938,12 @@ pub unsafe extern "C" fn alice_physics_state_deserialize(
 /// `data` must be a pointer returned by `alice_physics_state_serialize` with matching `len`.
 #[no_mangle]
 pub unsafe extern "C" fn alice_physics_state_free(data: *mut u8, len: u32) {
-    if !data.is_null() && len > 0 {
-        let slice = std::slice::from_raw_parts_mut(data, len as usize);
-        drop(Box::from_raw(slice as *mut [u8]));
-    }
+    ffi_guard((), || {
+        if !data.is_null() && len > 0 {
+            let slice = std::slice::from_raw_parts_mut(data, len as usize);
+            drop(Box::from_raw(slice as *mut [u8]));
+        }
+    })
 }
 
 // ============================================================================
@@ -1196,13 +1329,20 @@ mod tests {
             assert_eq!(raw.z.hi, raw2.z.hi, "byte-for-byte determinism (z.hi)");
             assert_eq!(raw.z.lo, raw2.z.lo, "byte-for-byte determinism (z.lo)");
 
-            // Golden pin (v1.0.1): the exact raw pair produced by this
-            // scenario (dynamic body at y=10, mass 1, 60 steps of 1/60 s
-            // under default gravity). Unity / UE5 host bindings replay the
-            // same scenario and must read back these six values; any
-            // solver-side change that moves them is a determinism break
-            // and must bump the golden together with a CHANGELOG entry.
-            const GOLDEN: [(i64, u64); 3] = [(0, 0), (8, 6_631_112_686_738_674_129), (0, 0)];
+            // Golden pin: the exact raw pair produced by this scenario
+            // (dynamic body at y=10, mass 1, 60 steps of 1/60 s under default
+            // gravity). Unity / UE5 host bindings replay the same scenario and
+            // must read back these six values; any solver-side change that
+            // moves them is a determinism break and must bump the golden
+            // together with a CHANGELOG entry.
+            // v1.0.1 pin: (8, 6_631_112_686_738_674_129) = y 8.36 — the
+            // per-substep damping bug (terminal velocity ≈ 2 m/s).
+            // 1.2.0 pin: y = 10 − 4.1406 = 5.8594, the discrete closed form
+            // of frame damping with 8 substeps (`tests/analytic_physics.rs`,
+            // `default_config_free_fall_reaches_analytic_within_frame_damping`).
+            const GOLDEN: [(i64, u64); 3] = [(0, 0), (5, 15_853_912_786_096_156_128), (0, 0)];
+            let y = raw.y.hi as f64 + raw.y.lo as f64 / (1u128 << 64) as f64;
+            assert!((y - 5.859_4).abs() < 1e-3, "FFI free fall y = {y}");
             assert_eq!(
                 [
                     (raw.x.hi, raw.x.lo),
@@ -1213,6 +1353,94 @@ mod tests {
                 "FFI free-fall golden raw Fix128 pair drifted"
             );
 
+            alice_physics_world_destroy(world);
+        }
+    }
+
+    // ---- panic isolation (1.2.0) ----------------------------------------
+
+    #[test]
+    fn ffi_guard_turns_panic_into_sentinel_and_message() {
+        guard::clear_last_error();
+        let v = ffi_guard(u32::MAX, || {
+            if true {
+                panic!("boom {}", 42);
+            }
+            7
+        });
+        assert_eq!(v, u32::MAX);
+        let msg = guard::take_last_error().expect("message recorded");
+        assert!(msg.contains("boom 42"), "{msg}");
+        assert!(guard::take_last_error().is_none(), "take clears the slot");
+        assert_eq!(ffi_guard(0u8, || 1u8), 1);
+        assert!(guard::take_last_error().is_none());
+    }
+
+    #[test]
+    fn last_error_ffi_round_trips_through_c_string() {
+        guard::clear_last_error();
+        assert!(alice_physics_last_error().is_null());
+        guard::set_last_error("alice-physics FFI panic: index 7 out of range");
+        let p = alice_physics_last_error();
+        assert!(!p.is_null());
+        let text = unsafe { std::ffi::CStr::from_ptr(p) }
+            .to_str()
+            .expect("utf-8")
+            .to_owned();
+        assert_eq!(text, "alice-physics FFI panic: index 7 out of range");
+        unsafe { alice_physics_string_free(p) };
+        // take semantics: gone after one read
+        assert!(alice_physics_last_error().is_null());
+        guard::set_last_error("x");
+        alice_physics_clear_last_error();
+        assert!(alice_physics_last_error().is_null());
+        // null is a no-op for the free
+        unsafe { alice_physics_string_free(std::ptr::null_mut()) };
+    }
+
+    #[test]
+    fn hostile_inputs_return_sentinels_without_unwinding() {
+        // null world everywhere → sentinel, never a panic reaching the caller
+        let null = std::ptr::null_mut::<PhysicsWorld>();
+        unsafe {
+            assert_eq!(alice_physics_world_step(null, 1.0 / 60.0), 0);
+            assert_eq!(alice_physics_world_step_n(null, 1.0 / 60.0, 5), 0);
+            assert_eq!(alice_physics_world_body_count(null), 0);
+            assert_eq!(
+                alice_physics_body_add_static(
+                    null,
+                    AliceVec3 {
+                        x: 0.0,
+                        y: 0.0,
+                        z: 0.0
+                    }
+                ),
+                u32::MAX
+            );
+            alice_physics_world_set_gravity(null, 0.0, -1.0, 0.0);
+            alice_physics_world_set_substeps(null, 3);
+            alice_physics_world_destroy(null);
+        }
+        // zero substeps then step: the world must survive (dt / 0 → ZERO → no substep)
+        let world = alice_physics_world_create();
+        unsafe {
+            alice_physics_world_set_substeps(world, 0);
+            alice_physics_body_add_dynamic(
+                world,
+                AliceVec3 {
+                    x: 0.0,
+                    y: 5.0,
+                    z: 0.0,
+                },
+                1.0,
+            );
+            assert_eq!(alice_physics_world_step(world, 1.0 / 60.0), 1);
+            // NaN / infinite dt is clamped by Fix128::from_f64, not a panic
+            assert_eq!(alice_physics_world_step(world, f64::NAN), 1);
+            assert_eq!(alice_physics_world_step(world, f64::INFINITY), 1);
+            // garbage state
+            let junk = [0xFFu8; 13];
+            assert_eq!(alice_physics_state_deserialize(world, junk.as_ptr(), 13), 0);
             alice_physics_world_destroy(world);
         }
     }
