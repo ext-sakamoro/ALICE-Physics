@@ -70,4 +70,7 @@ cargo test --lib --features "$NATIVE"
 step "cargo test --lib (ffi module)"
 cargo test --lib --features "ffi" "ffi::"
 
+step "cargo test --lib (neural / replay / analytics via crates.io siblings)"
+cargo test --lib --features "neural,replay,analytics"
+
 echo; echo "preflight OK"

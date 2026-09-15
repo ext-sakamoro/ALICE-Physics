@@ -417,6 +417,11 @@ contact normal, and the contact multiplier. Everything else is bit-compatible.
   loop and the runner died of OOM twice), and the `|| true` that hid a red
   unmutated baseline is replaced by exit-code handling (0 / 2 / 3 are
   measurements, 4 = baseline red fails the job).
+- `alice-db` optional dependency `0.2.0-beta.1` → `0.2.0-beta.2` (the
+  archived-path read stub that made every replay value 0.0 is fixed there),
+  and a new CI job `sibling-features` runs `cargo test --lib --features
+  "neural,replay,analytics"` against the crates.io siblings so the bridge
+  contract tests are executed on every push.
 - `scripts/preflight.sh [--quick]`: local reproduction of every CI gate
   (actionlint, fmt, f32 row, clippy ×2, no_std rlib, wasm32 golden build,
   rustdoc ×2, public-api snapshot, then the test suites). Three pushes in

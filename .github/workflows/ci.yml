@@ -98,6 +98,23 @@ jobs:
   # 実行 SHA-256 hash が native platform (macOS ARM baseline) と bit-exact
   # 一致することを検証 Fix128 は純粋整数演算のため cross-platform bit-exact、
   # SDF 経路の f32 も IEEE 754 basic ops (+/-/*/sqrt) が platform 非依存
+  sibling-features:
+    name: Test (neural / replay / analytics via crates.io siblings)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: sibling-features
+      # The bridge modules (alice-ml / alice-db / alice-analytics) come from
+      # crates.io. Their contract tests never ran in CI before 1.2.0, which is
+      # how alice-db 0.2.0-beta.1's archived-path stub (every replay read 0.0)
+      # went unnoticed; fixed in alice-db 0.2.0-beta.2.
+      - name: Test (lib, neural + replay + analytics)
+        run: cargo test --lib --features "neural,replay,analytics"
+
   wasm-test:
     name: Test (wasm32-wasip1 via wasmtime)
     runs-on: ubuntu-latest
