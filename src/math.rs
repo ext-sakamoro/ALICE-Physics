@@ -1988,4 +1988,647 @@ mod tests {
             }
         );
     }
+
+    // ---- Mat3Fix (mutation-score tests, 2026-09-15) ---------------------
+
+    fn fi(n: i64) -> Fix128 {
+        Fix128::from_int(n)
+    }
+
+    fn v3i(x: i64, y: i64, z: i64) -> Vec3Fix {
+        Vec3Fix::from_int(x, y, z)
+    }
+
+    /// 列ベクトル指定の整数行列 (M = [c0 c1 c2])
+    fn mat(c0: (i64, i64, i64), c1: (i64, i64, i64), c2: (i64, i64, i64)) -> Mat3Fix {
+        Mat3Fix::from_cols(
+            v3i(c0.0, c0.1, c0.2),
+            v3i(c1.0, c1.1, c1.2),
+            v3i(c2.0, c2.1, c2.2),
+        )
+    }
+
+    #[test]
+    fn mat3_mul_vec_uses_every_entry_with_the_right_index() {
+        // 9 entry 全て異なる素数 → どの entry の取り違えでも値が変わる
+        let m = mat((2, 3, 5), (7, 11, 13), (17, 19, 23));
+        let v = v3i(1, 10, 100);
+        // row i = c0[i]*1 + c1[i]*10 + c2[i]*100
+        assert_eq!(
+            m.mul_vec(v),
+            v3i(2 + 70 + 1700, 3 + 110 + 1900, 5 + 130 + 2300)
+        );
+        assert_eq!(Mat3Fix::IDENTITY.mul_vec(v), v);
+        assert_eq!(m.mul_vec(Vec3Fix::UNIT_X), v3i(2, 3, 5));
+        assert_eq!(m.mul_vec(Vec3Fix::UNIT_Y), v3i(7, 11, 13));
+        assert_eq!(m.mul_vec(Vec3Fix::UNIT_Z), v3i(17, 19, 23));
+    }
+
+    #[test]
+    fn mat3_determinant_closed_form() {
+        // det [[2,7,17],[3,11,19],[5,13,23]] (列指定) = -78
+        let m = mat((2, 3, 5), (7, 11, 13), (17, 19, 23));
+        assert_eq!(m.determinant(), fi(-78));
+        assert_eq!(Mat3Fix::IDENTITY.determinant(), Fix128::ONE);
+        assert_eq!(
+            Mat3Fix::diagonal(fi(2), fi(3), fi(-4)).determinant(),
+            fi(-24)
+        );
+        // 列が線形従属 → 0
+        assert_eq!(
+            mat((1, 2, 3), (2, 4, 6), (0, 1, 0)).determinant(),
+            Fix128::ZERO
+        );
+        // 転置不変
+        assert_eq!(m.transpose().determinant(), fi(-78));
+        // 各 entry を単独で変えると det が変わる (どの項も効いている)
+        for r in 0..3 {
+            for c in 0..3 {
+                let mut m2 = m;
+                let col = match c {
+                    0 => &mut m2.col0,
+                    1 => &mut m2.col1,
+                    _ => &mut m2.col2,
+                };
+                match r {
+                    0 => col.x = col.x + Fix128::ONE,
+                    1 => col.y = col.y + Fix128::ONE,
+                    _ => col.z = col.z + Fix128::ONE,
+                }
+                assert_ne!(m2.determinant(), fi(-78), "entry ({r},{c}) は det に効く");
+            }
+        }
+    }
+
+    #[test]
+    fn mat3_inverse_exact_for_unimodular_matrix() {
+        // det = 1 の整数行列 → 逆行列も整数で exact
+        // M = [[1,2,3],[0,1,4],[5,6,0]] (行表記) → det 1、M⁻¹ = [[-24,18,5],[20,-15,-4],[-5,4,1]]
+        let m = mat((1, 0, 5), (2, 1, 6), (3, 4, 0));
+        assert_eq!(m.determinant(), Fix128::ONE);
+        let inv = m.inverse().expect("det 1");
+        assert_eq!(inv, mat((-24, 20, -5), (18, -15, 4), (5, -4, 1)));
+        assert_eq!(m.mul_mat(inv), Mat3Fix::IDENTITY);
+        assert_eq!(inv.mul_mat(m), Mat3Fix::IDENTITY);
+        assert_eq!(m * inv, Mat3Fix::IDENTITY);
+        // 各 cofactor が正しい位置にある: inv の全 9 entry が異なる値
+        let e = [
+            inv.col0.x, inv.col0.y, inv.col0.z, inv.col1.x, inv.col1.y, inv.col1.z, inv.col2.x,
+            inv.col2.y, inv.col2.z,
+        ];
+        for i in 0..9 {
+            for j in (i + 1)..9 {
+                assert_ne!(e[i], e[j], "entries {i} and {j}");
+            }
+        }
+    }
+
+    #[test]
+    fn mat3_inverse_scales_by_reciprocal_determinant() {
+        // det = -8 (2 の冪) → 1/det exact
+        let m = Mat3Fix::diagonal(fi(2), fi(-2), fi(2));
+        let inv = m.inverse().expect("det -8");
+        assert_eq!(
+            inv,
+            Mat3Fix::diagonal(
+                Fix128::from_ratio(1, 2),
+                Fix128::from_ratio(-1, 2),
+                Fix128::from_ratio(1, 2)
+            )
+        );
+        // 一般行列 det = -78 の逆行列 × 元 = I (数 ulp 許容)
+        let g = mat((2, 3, 5), (7, 11, 13), (17, 19, 23));
+        let gi = g.inverse().expect("det -78");
+        let p = g.mul_mat(gi);
+        let close = |a: Fix128, b: Fix128| (a - b).abs() < Fix128 { hi: 0, lo: 1 << 20 };
+        for (col, unit) in [
+            (p.col0, Vec3Fix::UNIT_X),
+            (p.col1, Vec3Fix::UNIT_Y),
+            (p.col2, Vec3Fix::UNIT_Z),
+        ] {
+            assert!(
+                close(col.x, unit.x) && close(col.y, unit.y) && close(col.z, unit.z),
+                "{col:?} vs {unit:?}"
+            );
+        }
+        assert!(Mat3Fix::ZERO.inverse().is_none());
+        assert!(mat((1, 2, 3), (2, 4, 6), (0, 1, 0)).inverse().is_none());
+        assert_eq!(Mat3Fix::IDENTITY.inverse(), Some(Mat3Fix::IDENTITY));
+    }
+
+    #[test]
+    fn mat3_scale_mul_mat_and_operator_agree() {
+        let m = mat((2, 3, 5), (7, 11, 13), (17, 19, 23));
+        assert_eq!(m.scale(fi(3)), mat((6, 9, 15), (21, 33, 39), (51, 57, 69)));
+        assert_eq!(m.scale(Fix128::ZERO), Mat3Fix::ZERO);
+        let n = mat((1, 0, 0), (0, 2, 0), (1, 1, 1));
+        // (M N) col_j = M · (N col_j)
+        let mn = m.mul_mat(n);
+        assert_eq!(mn.col0, m.mul_vec(v3i(1, 0, 0)));
+        assert_eq!(mn.col1, m.mul_vec(v3i(0, 2, 0)));
+        assert_eq!(mn.col2, m.mul_vec(v3i(1, 1, 1)));
+        assert_eq!(m * n, mn);
+        assert_ne!(n.mul_mat(m), mn, "非可換");
+        assert_eq!(m.mul_mat(Mat3Fix::IDENTITY), m);
+        assert_eq!(Mat3Fix::IDENTITY * m, m);
+        assert_eq!(m.transpose().transpose(), m);
+        assert_eq!(m.transpose().col0, v3i(2, 7, 17));
+    }
+
+    // ---- QuatFix -------------------------------------------------------
+
+    fn q(x: i64, y: i64, z: i64, w: i64) -> QuatFix {
+        QuatFix::new(fi(x), fi(y), fi(z), fi(w))
+    }
+
+    #[test]
+    fn quat_mul_is_the_hamilton_product() {
+        // 基底: i*j = k, j*k = i, k*i = j, i*i = -1
+        let i = q(1, 0, 0, 0);
+        let j = q(0, 1, 0, 0);
+        let k = q(0, 0, 1, 0);
+        let one = q(0, 0, 0, 1);
+        assert_eq!(i.mul(j), k);
+        assert_eq!(j.mul(k), i);
+        assert_eq!(k.mul(i), j);
+        assert_eq!(j.mul(i), q(0, 0, -1, 0));
+        assert_eq!(i.mul(i), q(0, 0, 0, -1));
+        assert_eq!(one.mul(i), i);
+        assert_eq!(i.mul(one), i);
+        // 一般: (1,2,3,4) * (5,6,7,8) = (24, 48, 48, -6)
+        let a = q(1, 2, 3, 4);
+        let b = q(5, 6, 7, 8);
+        assert_eq!(a.mul(b), q(24, 48, 48, -6));
+        assert_eq!(b.mul(a), q(32, 32, 56, -6));
+        assert_ne!(a.mul(b), b.mul(a));
+    }
+
+    #[test]
+    fn quat_conjugate_length_and_normalize() {
+        let a = q(1, -2, 3, -4);
+        assert_eq!(a.conjugate(), q(-1, 2, -3, -4));
+        assert_eq!(a.conjugate().conjugate(), a);
+        assert_eq!(a.length_squared(), fi(30));
+        assert_eq!(q(0, 0, 0, 2).length_squared(), fi(4));
+        assert_eq!(q(3, 0, 0, 0).length_squared(), fi(9));
+        // a * conj(a) = |a|² (実部のみ)
+        assert_eq!(a.mul(a.conjugate()), q(0, 0, 0, 30));
+        // normalize: (0,0,0,2) → (0,0,0,1)、(0,3,0,4) → (0,0.6,0,0.8) は 5 で割る
+        assert_eq!(q(0, 0, 0, 2).normalize(), QuatFix::IDENTITY);
+        assert_eq!(q(0, 0, -4, 0).normalize(), q(0, 0, -1, 0));
+        let n = q(0, 3, 0, 4).normalize();
+        assert_eq!(
+            n,
+            QuatFix::new(Fix128::ZERO, fi(3) / fi(5), Fix128::ZERO, fi(4) / fi(5))
+        );
+        assert_eq!(q(0, 0, 0, 0).normalize(), QuatFix::IDENTITY);
+    }
+
+    #[test]
+    fn quat_from_axis_angle_components() {
+        // 軸は正規化され、(x,y,z) = axis·sin(θ/2)、w = cos(θ/2)
+        let theta = Fix128::from_ratio(1, 2);
+        let (s, c) = theta.half().sin_cos();
+        let qq = QuatFix::from_axis_angle(v3i(0, 0, 5), theta);
+        assert_eq!(qq, QuatFix::new(Fix128::ZERO, Fix128::ZERO, s, c));
+        let qx = QuatFix::from_axis_angle(v3i(-2, 0, 0), theta);
+        assert_eq!(qx, QuatFix::new(-s, Fix128::ZERO, Fix128::ZERO, c));
+        // 角度 0 → identity 近傍 (CORDIC gain 込み)
+        let q0 = QuatFix::from_axis_angle(v3i(1, 0, 0), Fix128::ZERO);
+        assert!((q0.w - Fix128::ONE).abs() < Fix128 { hi: 0, lo: 1 << 20 });
+        assert!(q0.x.abs() < Fix128 { hi: 0, lo: 1 << 20 });
+    }
+
+    #[test]
+    fn quat_rotate_vec_by_quarter_turns() {
+        // z 軸 90° 回転: x → y、y → -x (数 ulp 許容)
+        let rz = QuatFix::from_axis_angle(v3i(0, 0, 1), Fix128::HALF_PI);
+        let close = |a: Vec3Fix, b: Vec3Fix| (a - b).length() < Fix128 { hi: 0, lo: 1 << 24 };
+        assert!(close(rz.rotate_vec(Vec3Fix::UNIT_X), Vec3Fix::UNIT_Y));
+        assert!(close(rz.rotate_vec(Vec3Fix::UNIT_Y), -Vec3Fix::UNIT_X));
+        assert!(close(rz.rotate_vec(Vec3Fix::UNIT_Z), Vec3Fix::UNIT_Z));
+        // 180°: (0,0,1,0) は exact
+        let half = q(0, 0, 1, 0);
+        assert_eq!(half.rotate_vec(v3i(1, 2, 3)), v3i(-1, -2, 3));
+        assert_eq!(QuatFix::IDENTITY.rotate_vec(v3i(1, 2, 3)), v3i(1, 2, 3));
+    }
+
+    // ---- Vec3Fix helpers / select / From / Display ----------------------
+
+    #[test]
+    fn vec3_cross_try_normalize_and_batch_dot() {
+        assert_eq!(v3i(1, 0, 0).cross(v3i(0, 1, 0)), v3i(0, 0, 1));
+        assert_eq!(v3i(0, 1, 0).cross(v3i(1, 0, 0)), v3i(0, 0, -1));
+        assert_eq!(v3i(1, 2, 3).cross(v3i(4, 5, 6)), v3i(-3, 6, -3));
+        assert_eq!(v3i(1, 2, 3).cross(v3i(1, 2, 3)), Vec3Fix::ZERO);
+        assert_eq!(v3i(0, 0, 4).try_normalize(), Some(v3i(0, 0, 1)));
+        assert_eq!(v3i(0, -2, 0).try_normalize(), Some(v3i(0, -1, 0)));
+        assert_eq!(Vec3Fix::ZERO.try_normalize(), None);
+        assert_eq!(v3i(1, 2, 3).scale(fi(-2)), v3i(-2, -4, -6));
+    }
+
+    #[cfg(all(feature = "simd", target_arch = "x86_64"))]
+    #[test]
+    fn vec3_dot_batch_4_matches_scalar_dot() {
+        let a = [v3i(1, 0, 0), v3i(1, 1, 1), v3i(2, 3, 4), v3i(-1, 0, 5)];
+        let b = [v3i(7, 8, 9), v3i(1, 2, 3), v3i(5, 6, 7), v3i(4, 4, 4)];
+        assert_eq!(Vec3Fix::dot_batch_4(a, b), [fi(7), fi(6), fi(56), fi(16)]);
+    }
+
+    #[test]
+    fn select_fix128_is_a_bit_exact_branchless_select() {
+        // hi / lo ともに全 bit パターンが異なる 2 値: & / | / ^ の取り違えで必ず壊れる
+        let a = Fix128 {
+            hi: 0x5A5A_5A5A_5A5A_5A5A,
+            lo: 0xA5A5_A5A5_A5A5_A5A5,
+        };
+        let b = Fix128 {
+            hi: -0x0F0F_0F0F_0F0F_0F10,
+            lo: 0x0F0F_0F0F_0F0F_0F0F,
+        };
+        assert_eq!(select_fix128(true, a, b), a);
+        assert_eq!(select_fix128(false, a, b), b);
+        assert_eq!(select_fix128(true, b, a), b);
+        assert_eq!(select_fix128(false, b, a), a);
+        assert_eq!(select_fix128(true, Fix128::ZERO, a), Fix128::ZERO);
+        assert_eq!(select_fix128(false, a, Fix128::ZERO), Fix128::ZERO);
+    }
+
+    #[test]
+    fn from_impls_roundtrip_and_display_format() {
+        assert_eq!(Fix128::from(-7i64), fi(-7));
+        assert_eq!(Fix128::from(9i32), fi(9));
+        let arr3: [Fix128; 3] = v3i(1, -2, 3).into();
+        assert_eq!(arr3, [fi(1), fi(-2), fi(3)]);
+        assert_eq!(Vec3Fix::from([fi(4), fi(5), fi(-6)]), v3i(4, 5, -6));
+        let arr4: [Fix128; 4] = q(1, 2, 3, 4).into();
+        assert_eq!(arr4, [fi(1), fi(2), fi(3), fi(4)]);
+        assert_eq!(QuatFix::from([fi(-1), fi(0), fi(2), fi(3)]), q(-1, 0, 2, 3));
+        assert_eq!(format!("{}", Fix128::from_ratio(-5, 4)), "-1.2500");
+        assert_eq!(format!("{}", v3i(1, -2, 3)), "(1.0000, -2.0000, 3.0000)");
+        assert_eq!(
+            format!("{}", q(0, 0, 0, 1)),
+            "(0.0000, 0.0000, 0.0000, 1.0000)"
+        );
+    }
+
+    // ---- sin / cos (CORDIC range reduction + golden pins) ---------------
+
+    #[test]
+    fn sin_cos_golden_bit_patterns() {
+        // 17 角度の (angle, sin, cos) bit pattern pin (1.1.1 の shr_bits 集約前後で不変を確認済)
+        // 範囲: [-π/2, π/2] 内 / 第 2・3 象限 / ±π ちょうど / 複数周回 (3π, -7π/2) / 大きな値 (100, -1000.25)
+        let table: [(&str, Fix128, Fix128, Fix128); 17] = [
+            (
+                "0",
+                Fix128 { hi: 0, lo: 0 },
+                Fix128 {
+                    hi: -1,
+                    lo: 18446744073709456430,
+                },
+                Fix128 { hi: 1, lo: 1453 },
+            ),
+            (
+                "pi/6",
+                Fix128 {
+                    hi: 0,
+                    lo: 9658692610769497123,
+                },
+                Fix128 {
+                    hi: 0,
+                    lo: 9223372036854815772,
+                },
+                Fix128 {
+                    hi: 0,
+                    lo: 15975348984942493703,
+                },
+            ),
+            (
+                "pi/4",
+                Fix128 {
+                    hi: 0,
+                    lo: 14488038916154245684,
+                },
+                Fix128 {
+                    hi: 0,
+                    lo: 13043817825332851804,
+                },
+                Fix128 {
+                    hi: 0,
+                    lo: 13043817825332714670,
+                },
+            ),
+            (
+                "pi/3",
+                Fix128 {
+                    hi: 1,
+                    lo: 870641147829442630,
+                },
+                Fix128 {
+                    hi: 0,
+                    lo: 15975348984942493703,
+                },
+                Fix128 {
+                    hi: 0,
+                    lo: 9223372036854815772,
+                },
+            ),
+            (
+                "pi/2",
+                Fix128 {
+                    hi: 1,
+                    lo: 10529333758598939753,
+                },
+                Fix128 { hi: 1, lo: 1453 },
+                Fix128 {
+                    hi: -1,
+                    lo: 18446744073709456430,
+                },
+            ),
+            (
+                "2pi/3",
+                Fix128 {
+                    hi: 2,
+                    lo: 1741282295658885258,
+                },
+                Fix128 {
+                    hi: 0,
+                    lo: 15975348984942493703,
+                },
+                Fix128 {
+                    hi: -1,
+                    lo: 9223372036854735844,
+                },
+            ),
+            (
+                "pi",
+                Fix128 {
+                    hi: 3,
+                    lo: 2611923443488327891,
+                },
+                Fix128 {
+                    hi: -1,
+                    lo: 18446744073709456430,
+                },
+                Fix128 {
+                    hi: -2,
+                    lo: 18446744073709550163,
+                },
+            ),
+            (
+                "-pi/6",
+                Fix128 {
+                    hi: -1,
+                    lo: 8788051462940054493,
+                },
+                Fix128 {
+                    hi: -1,
+                    lo: 9223372036854735845,
+                },
+                Fix128 {
+                    hi: 0,
+                    lo: 15975348984942493709,
+                },
+            ),
+            (
+                "-pi/2",
+                Fix128 {
+                    hi: -2,
+                    lo: 7917410315110611863,
+                },
+                Fix128 {
+                    hi: -2,
+                    lo: 18446744073709550164,
+                },
+                Fix128 {
+                    hi: -1,
+                    lo: 18446744073709456423,
+                },
+            ),
+            (
+                "-3pi/4",
+                Fix128 {
+                    hi: -3,
+                    lo: 11876115472665917794,
+                },
+                Fix128 {
+                    hi: -1,
+                    lo: 5402926248376699811,
+                },
+                Fix128 {
+                    hi: -1,
+                    lo: 5402926248376836953,
+                },
+            ),
+            (
+                "-pi",
+                Fix128 {
+                    hi: -4,
+                    lo: 15834820630221223725,
+                },
+                Fix128 {
+                    hi: -1,
+                    lo: 18446744073709456430,
+                },
+                Fix128 {
+                    hi: -2,
+                    lo: 18446744073709550163,
+                },
+            ),
+            (
+                "5pi/4",
+                Fix128 {
+                    hi: 3,
+                    lo: 17099962359642573575,
+                },
+                Fix128 {
+                    hi: -1,
+                    lo: 5402926248376699811,
+                },
+                Fix128 {
+                    hi: -1,
+                    lo: 5402926248376836953,
+                },
+            ),
+            (
+                "3pi",
+                Fix128 {
+                    hi: 9,
+                    lo: 7835770330464983673,
+                },
+                Fix128 {
+                    hi: -1,
+                    lo: 18446744073709456430,
+                },
+                Fix128 {
+                    hi: -2,
+                    lo: 18446744073709550163,
+                },
+            ),
+            (
+                "-7pi/2",
+                Fix128 {
+                    hi: -11,
+                    lo: 81639984645628190,
+                },
+                Fix128 { hi: 1, lo: 1453 },
+                Fix128 { hi: 0, lo: 95186 },
+            ),
+            (
+                "1/2",
+                Fix128 {
+                    hi: 0,
+                    lo: 9223372036854775808,
+                },
+                Fix128 {
+                    hi: 0,
+                    lo: 8843840213032159770,
+                },
+                Fix128 {
+                    hi: 0,
+                    lo: 16188540922742043083,
+                },
+            ),
+            (
+                "100",
+                Fix128 { hi: 100, lo: 0 },
+                Fix128 {
+                    hi: -1,
+                    lo: 9105946684437943138,
+                },
+                Fix128 {
+                    hi: 0,
+                    lo: 15906975547020722691,
+                },
+            ),
+            (
+                "-1000.25",
+                Fix128 {
+                    hi: -1001,
+                    lo: 13835058055282163712,
+                },
+                Fix128 {
+                    hi: -1,
+                    lo: 1101110721943816547,
+                },
+                Fix128 {
+                    hi: 0,
+                    lo: 6277847604637333680,
+                },
+            ),
+        ];
+        for (name, angle, sin, cos) in table {
+            let (s, c) = angle.sin_cos();
+            assert_eq!(s, sin, "sin({name})");
+            assert_eq!(c, cos, "cos({name})");
+            assert_eq!(angle.sin(), sin, "sin() alias {name}");
+            assert_eq!(angle.cos(), cos, "cos() alias {name}");
+        }
+    }
+
+    #[test]
+    // 参照値として platform libm を使う (許容 1e-11、決定論の pin は sin_cos_golden_bit_patterns 側)
+    #[allow(clippy::disallowed_methods)]
+    fn sin_cos_large_and_negative_angles_reduce_correctly() {
+        let two_pi = core::f64::consts::PI * 2.0;
+        let cases: [(Fix128, f64); 9] = [
+            (Fix128::PI * fi(3), 3.0 * core::f64::consts::PI),
+            (
+                (Fix128::PI * Fix128::from_ratio(7, 2)).neg(),
+                -3.5 * core::f64::consts::PI,
+            ),
+            (fi(100), 100.0),
+            (Fix128::from_ratio(-4001, 4), -1000.25),
+            (Fix128::TWO_PI + Fix128::from_ratio(1, 2), two_pi + 0.5),
+            (
+                (Fix128::TWO_PI + Fix128::from_ratio(1, 2)).neg(),
+                -(two_pi + 0.5),
+            ),
+            (
+                Fix128::PI * fi(1000) + fi(1),
+                1000.0 * core::f64::consts::PI + 1.0,
+            ),
+            (
+                Fix128::PI + Fix128::from_ratio(1, 1000),
+                core::f64::consts::PI + 0.001,
+            ),
+            (
+                (Fix128::PI + Fix128::from_ratio(1, 1000)).neg(),
+                -(core::f64::consts::PI + 0.001),
+            ),
+        ];
+        for (angle, f) in cases {
+            let (s, c) = angle.sin_cos();
+            assert!(
+                (s.to_f64() - f.sin()).abs() < 1e-11,
+                "sin({f}) = {} vs {}",
+                s.to_f64(),
+                f.sin()
+            );
+            assert!(
+                (c.to_f64() - f.cos()).abs() < 1e-11,
+                "cos({f}) = {} vs {}",
+                c.to_f64(),
+                f.cos()
+            );
+        }
+    }
+
+    #[test]
+    fn sin_cos_boundaries_and_symmetries() {
+        let eps = Fix128 { hi: 0, lo: 1 << 24 }; // 2^-40
+        let close = |a: Fix128, b: Fix128| (a - b).abs() < eps;
+        // ±π ちょうどは reduction を通らない (`>` / `<` は false)、π+ε は通る: どちらも sin ≈ 0、cos ≈ -1
+        for a in [
+            Fix128::PI,
+            Fix128::PI.neg(),
+            Fix128::PI + Fix128 { hi: 0, lo: 1 },
+            Fix128::PI.neg() - Fix128 { hi: 0, lo: 1 },
+        ] {
+            let (s, c) = a.sin_cos();
+            assert!(
+                close(s, Fix128::ZERO) && close(c, fi(-1)),
+                "{a:?}: {s:?} {c:?}"
+            );
+        }
+        // ±π/2 ちょうど (quadrant 分岐は `>` false) と π/2+ε (分岐 true): sin ≈ ±1、cos ≈ 0
+        for (a, sign) in [
+            (Fix128::HALF_PI, 1),
+            (Fix128::HALF_PI.neg(), -1),
+            (Fix128::HALF_PI + Fix128 { hi: 0, lo: 1 }, 1),
+        ] {
+            let (s, c) = a.sin_cos();
+            assert!(
+                close(s, fi(sign)) && close(c, Fix128::ZERO),
+                "{a:?}: {s:?} {c:?}"
+            );
+        }
+        // 第 2 / 第 3 象限の符号: sin(2π/3) > 0, cos < 0 / sin(-2π/3) < 0, cos < 0
+        let (s2, c2) = (Fix128::PI * Fix128::from_ratio(2, 3)).sin_cos();
+        assert!(s2 > Fix128::ZERO && c2 < Fix128::ZERO);
+        let (s3, c3) = (Fix128::PI * Fix128::from_ratio(-2, 3)).sin_cos();
+        assert!(s3 < Fix128::ZERO && c3 < Fix128::ZERO);
+        // 奇関数 / 偶関数、周期性 (2π 加算で reduction 経路が変わっても一致)
+        for x in [
+            Fix128::from_ratio(1, 3),
+            Fix128::from_ratio(-7, 5),
+            fi(2),
+            Fix128::from_ratio(11, 4),
+        ] {
+            let (s, c) = x.sin_cos();
+            let (sn, cn) = x.neg().sin_cos();
+            assert!(
+                close(s + sn, Fix128::ZERO) && close(c, cn),
+                "odd/even {x:?}"
+            );
+            let (sp, cp) = (x + Fix128::TWO_PI).sin_cos();
+            let (sm, cm) = (x - Fix128::TWO_PI * fi(3)).sin_cos();
+            assert!(
+                close(s, sp) && close(c, cp) && close(s, sm) && close(c, cm),
+                "period {x:?}"
+            );
+            // sin² + cos² = 1
+            assert!(close(s * s + c * c, Fix128::ONE), "pythagoras {x:?}");
+        }
+    }
 }
