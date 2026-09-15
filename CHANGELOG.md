@@ -62,6 +62,9 @@ were introduced during that release window.
   value (single source of truth for the CORDIC micro-rotations).
 - Cloth bending unit tests (flat fixed point / monotone relaxation / pinned
   vertices / drape bounds) and `atan` / `atan2` / `shr_bits` tests.
+- Mutation-score tests for `solver_tgs` (union-find merge / rank / path
+  compression, impulse-cache hit / miss / sweep semantics, island static
+  attachment and canonical ordering, adaptive sub-step clamp and search).
 - Mutation-score tests for `contact_cache` (1 cm matching, nearest-of-many,
   full-manifold replacement, averaged normal, cache lifecycle / stale frames,
   warm-start impulses, tangent frame), `collider` (exact AABB union /
