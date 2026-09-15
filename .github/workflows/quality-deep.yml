@@ -52,8 +52,19 @@ jobs:
         uses: taiki-e/install-action@cargo-mutants
       - name: Mutants (scoped)
         run: |
-          cargo mutants ${{ inputs.scope }} --timeout 300 -j 2 --output mutants.out \
-            ${{ matrix.features != '' && format('--features {0}', matrix.features) || '' }} -- --lib || true
+          # --build-timeout + ulimit: a mutated `const fn` (math.rs CORDIC tables) can
+          # send rustc const-eval into an unbounded loop that the test timeout never
+          # reaches; the runner then dies of OOM (shard 7/8 twice, 2026-09-15).
+          # Exit codes: 0 all caught, 2 missed, 3 timeouts = measurement results;
+          # anything else (4 = unmutated baseline red, 1 = usage) fails the job —
+          # a red baseline measured nothing and used to be hidden by `|| true`.
+          ulimit -v 6291456
+          set +e
+          cargo mutants ${{ inputs.scope }} --timeout 300 --build-timeout 240 -j 2 --output mutants.out \
+            ${{ matrix.features != '' && format('--features {0}', matrix.features) || '' }} -- --lib
+          rc=$?
+          set -e
+          case $rc in 0|2|3) ;; *) echo "::error::cargo-mutants exit $rc (baseline red or usage error)"; exit $rc;; esac
       - name: Summary
         if: always()
         run: |
@@ -113,16 +124,26 @@ jobs:
         if: github.event_name == 'pull_request'
         run: |
           git diff origin/${{ github.base_ref }}...HEAD > /tmp/pr.diff
-          cargo mutants --in-diff /tmp/pr.diff --timeout 300 -j 2 --output mutants.out \
-            ${{ matrix.features != '' && format('--features {0}', matrix.features) || '' }} -- --lib || true
+          ulimit -v 6291456
+          set +e
+          cargo mutants --in-diff /tmp/pr.diff --timeout 300 --build-timeout 240 -j 2 --output mutants.out \
+            ${{ matrix.features != '' && format('--features {0}', matrix.features) || '' }} -- --lib
+          rc=$?
+          set -e
+          case $rc in 0|2|3) ;; *) echo "::error::cargo-mutants exit $rc (baseline red or usage error)"; exit $rc;; esac
       - name: Mutants (weekly = core 8 module, shard ${{ matrix.shard }}/16, lib test のみ)
         if: github.event_name != 'pull_request'
         run: |
-          cargo mutants --shard ${{ matrix.shard }}/16 -j 2 --timeout 300 --output mutants.out \
+          ulimit -v 6291456
+          set +e
+          cargo mutants --shard ${{ matrix.shard }}/16 -j 2 --timeout 300 --build-timeout 240 --output mutants.out \
             ${{ matrix.features != '' && format('--features {0}', matrix.features) || '' }} \
             --file src/solver.rs --file src/solver_tgs.rs --file src/math.rs --file src/collider.rs \
             --file src/bvh.rs --file src/joint.rs --file src/contact_cache.rs --file src/ccd.rs \
-            -- --lib || true
+            -- --lib
+          rc=$?
+          set -e
+          case $rc in 0|2|3) ;; *) echo "::error::cargo-mutants exit $rc (baseline red or usage error)"; exit $rc;; esac
       - name: Summary
         if: always()
         run: |

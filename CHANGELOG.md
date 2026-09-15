@@ -342,6 +342,11 @@ contact normal, and the contact multiplier. Everything else is bit-compatible.
 - `Fix128::checked_div` (`None` on a zero divisor); the `Div` operator's
   `ZERO` result for a zero divisor is now a documented contract (a `Result`
   operator is a 2.0 change because `PhysicsError` is not `#[non_exhaustive]`).
+- `quality-deep.yml` mutation jobs: `--build-timeout 240` + `ulimit -v 6 GiB`
+  (a mutated `const fn` in `math.rs` sent rustc const-eval into an unbounded
+  loop and the runner died of OOM twice), and the `|| true` that hid a red
+  unmutated baseline is replaced by exit-code handling (0 / 2 / 3 are
+  measurements, 4 = baseline red fails the job).
 - `scripts/f32_modules.py --check`: generates the README § Determinism scope
   "`f32` / `f64` field modules" row from `src/` (public API carrying floats,
   test modules and conversion helpers excluded) and fails when README.md
