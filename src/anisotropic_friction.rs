@@ -9,14 +9,22 @@
 //! and relative tangential velocity `v_tan`, the friction force is
 //!
 //! ```text
-//! v_long = v_tan · t_long
+//! v_long  = v_tan · t_long
 //! v_trans = v_tan · t_trans
-//! F = -N · ( μ_long  · sign(v_long)  · t_long
-//!          + μ_trans · sign(v_trans) · t_trans )
+//! |v_tan| = sqrt(v_long² + v_trans²)
+//! F = -N · ( μ_long · v_long · t_long + μ_trans · v_trans · t_trans ) / |v_tan|
 //! ```
 //!
-//! where `N` is the contact normal force and each coefficient becomes
-//! `μ_static` below the slip threshold and `μ_kinetic` above it.
+//! — the orthotropic *friction ellipse* (Zmitrowicz 1981; the same law as
+//! Bullet / PhysX anisotropic friction): along a principal axis it is Coulomb
+//! `−μ N t̂`, for oblique slip the magnitude is `N sqrt(μ_long² cos²θ +
+//! μ_trans² sin²θ)` and the direction is the ellipse normal, and with
+//! `μ_long = μ_trans` it reduces to isotropic Coulomb `−μ N v̂` for every
+//! slip direction. (Before 1.2.0 the module summed `sign(v_i) μ_i t̂_i` per
+//! axis — a box law that was `√2 μ N` at 45° in the isotropic case.)
+//! `N` is the contact normal force; the coefficients switch from
+//! `μ_static` to `μ_kinetic` once the tangential slip speed `|v_tan|`
+//! exceeds the threshold (inclusive: at the threshold static applies).
 
 use crate::math::{Fix128, Vec3Fix};
 
@@ -95,35 +103,34 @@ impl AnisotropicFriction {
         }
         let v_long = relative_velocity.dot(tangent_long);
         let v_trans = relative_velocity.dot(tangent_trans);
-        let mu_long = self.select_coefficient(v_long, true);
-        let mu_trans = self.select_coefficient(v_trans, false);
-        let long_force = tangent_long * (-normal_force * mu_long * sign(v_long));
-        let trans_force = tangent_trans * (-normal_force * mu_trans * sign(v_trans));
+        // |v_tan|; exact on the principal axes (no square/root round trip)
+        // so the Coulomb limit there is bit-exact.
+        let slip = if v_long.is_zero() {
+            v_trans.abs()
+        } else if v_trans.is_zero() {
+            v_long.abs()
+        } else {
+            (v_long * v_long + v_trans * v_trans).sqrt()
+        };
+        if slip.is_zero() {
+            return Vec3Fix::ZERO;
+        }
+        let (mu_long, mu_trans) = self.select_coefficients(slip);
+        // Friction ellipse: each axis contributes in proportion to its share
+        // of the slip velocity, so the total is −N · M v̂ with M = diag(μ).
+        let long_force = tangent_long * (-normal_force * mu_long * v_long / slip);
+        let trans_force = tangent_trans * (-normal_force * mu_trans * v_trans / slip);
         long_force + trans_force
     }
 
-    fn select_coefficient(&self, speed: Fix128, longitudinal: bool) -> Fix128 {
-        let mag = speed.abs();
-        let (static_mu, kinetic_mu) = if longitudinal {
-            (self.longitudinal_static, self.longitudinal_kinetic)
+    /// `(μ_long, μ_trans)` for the given tangential slip speed: static at
+    /// or below the threshold, kinetic above it.
+    fn select_coefficients(&self, slip_speed: Fix128) -> (Fix128, Fix128) {
+        if slip_speed <= self.slip_threshold_m_s {
+            (self.longitudinal_static, self.transverse_static)
         } else {
-            (self.transverse_static, self.transverse_kinetic)
-        };
-        if mag <= self.slip_threshold_m_s {
-            static_mu
-        } else {
-            kinetic_mu
+            (self.longitudinal_kinetic, self.transverse_kinetic)
         }
-    }
-}
-
-fn sign(x: Fix128) -> Fix128 {
-    if x > Fix128::ZERO {
-        Fix128::ONE
-    } else if x < Fix128::ZERO {
-        -Fix128::ONE
-    } else {
-        Fix128::ZERO
     }
 }
 

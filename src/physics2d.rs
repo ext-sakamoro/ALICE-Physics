@@ -625,13 +625,28 @@ impl PhysicsWorld2D {
             body.angle = body.angle + body.angular_velocity * sub_dt;
         }
 
-        // 2. Detect collisions
+        // 2. Detect collisions (pairs + the pre-solve normal velocity each
+        //    pair approaches with, which the restitution pass needs)
         let contacts = self.detect_all_contacts();
+        let pre_normal_velocity: Vec<Fix128> = contacts
+            .iter()
+            .map(|c| self.contact_normal_velocity(c))
+            .collect();
+        let mut lambda_n = vec![Fix128::ZERO; contacts.len()];
 
-        // 3. Solve constraints (position-based)
+        // 3. Solve constraints (position-based). The penetration is
+        //    re-evaluated from the current positions in every iteration
+        //    (Macklin 2016 / 2020) instead of re-applying the depth measured
+        //    before the solve: before 1.2.0 each iteration pushed the same
+        //    stale depth again, so `iterations = 8` separated a 2 m/s head-on
+        //    collision at 14 m/s.
         for _ in 0..iterations {
-            // Solve contact constraints
-            solve_contacts_xpbd(&mut self.bodies, &contacts);
+            for (k, pair) in contacts.iter().enumerate() {
+                let Some(current) = self.check_collision_2d(pair.body_a, pair.body_b) else {
+                    continue;
+                };
+                lambda_n[k] = lambda_n[k] + solve_contact_position(&mut self.bodies, &current);
+            }
 
             // Solve joints
             solve_joints_2d(&mut self.bodies, &self.joints, sub_dt);
@@ -648,6 +663,147 @@ impl PhysicsWorld2D {
             }
             body.velocity = (body.position - body.prev_position) * inv_dt;
             body.angular_velocity = (body.angle - body.prev_angle) * inv_dt;
+        }
+
+        // 5. Velocity pass (Macklin et al. 2020 "Detailed rigid body
+        //    simulation with XPBD" §3.6): Newton restitution
+        //    `v_n' = max(−e v̄_n, 0)` against the pre-solve approach speed
+        //    and Coulomb friction `|Δv_t| ≤ μ λ_n / h`. Before 1.2.0
+        //    `restitution` / `friction` were never read.
+        let restitution_threshold = self.gravity.length() * sub_dt * Fix128::from_int(2);
+        for (k, pair) in contacts.iter().enumerate() {
+            if lambda_n[k] <= Fix128::ZERO {
+                continue;
+            }
+            self.apply_contact_velocity_pass(
+                pair,
+                pre_normal_velocity[k],
+                lambda_n[k] * inv_dt,
+                restitution_threshold,
+            );
+        }
+    }
+
+    /// Relative normal velocity of the two bodies at the contact point,
+    /// `(v_b − v_a) · n` with `n` pointing from A to B (negative while
+    /// approaching).
+    fn contact_normal_velocity(&self, c: &Contact2D) -> Fix128 {
+        let (va, vb) = (
+            self.point_velocity(c.body_a, c.point),
+            self.point_velocity(c.body_b, c.point),
+        );
+        (vb - va).dot(c.normal)
+    }
+
+    /// Velocity of a body's material point at world position `p`.
+    fn point_velocity(&self, body: usize, p: Vec2Fix) -> Vec2Fix {
+        let b = &self.bodies[body];
+        let r = p - b.position;
+        b.velocity + r.perpendicular() * b.angular_velocity
+    }
+
+    /// Restitution + friction impulses for one contact after the velocity
+    /// derivation. `friction_bound` is `μ λ_n / h` before the `μ` factor
+    /// (i.e. `λ_n / h`), `pre_vn` the approach speed before the solve.
+    fn apply_contact_velocity_pass(
+        &mut self,
+        c: &Contact2D,
+        pre_vn: Fix128,
+        lambda_n_over_h: Fix128,
+        restitution_threshold: Fix128,
+    ) {
+        let (a, b, n) = (c.body_a, c.body_b, c.normal);
+        let dyn_a = self.bodies[a].body_type == BodyType2D::Dynamic;
+        let dyn_b = self.bodies[b].body_type == BodyType2D::Dynamic;
+        if !dyn_a && !dyn_b {
+            return;
+        }
+        let r_a = c.point - self.bodies[a].position;
+        let r_b = c.point - self.bodies[b].position;
+        let inv_m_a = if dyn_a {
+            self.bodies[a].inv_mass
+        } else {
+            Fix128::ZERO
+        };
+        let inv_m_b = if dyn_b {
+            self.bodies[b].inv_mass
+        } else {
+            Fix128::ZERO
+        };
+        let inv_i_a = if dyn_a {
+            self.bodies[a].inv_inertia
+        } else {
+            Fix128::ZERO
+        };
+        let inv_i_b = if dyn_b {
+            self.bodies[b].inv_inertia
+        } else {
+            Fix128::ZERO
+        };
+        // generalised inverse mass along a direction d at the contact point
+        let w_along = |d: Vec2Fix| {
+            let ra_d = r_a.cross_scalar(d);
+            let rb_d = r_b.cross_scalar(d);
+            inv_m_a + inv_m_b + inv_i_a * ra_d * ra_d + inv_i_b * rb_d * rb_d
+        };
+        // apply an impulse `p` along `d` (+ on B, − on A)
+        let apply = |bodies: &mut [RigidBody2D], d: Vec2Fix, p: Fix128| {
+            if dyn_a {
+                bodies[a].velocity = bodies[a].velocity - d * (p * inv_m_a);
+                bodies[a].angular_velocity =
+                    bodies[a].angular_velocity - r_a.cross_scalar(d) * p * inv_i_a;
+            }
+            if dyn_b {
+                bodies[b].velocity = bodies[b].velocity + d * (p * inv_m_b);
+                bodies[b].angular_velocity =
+                    bodies[b].angular_velocity + r_b.cross_scalar(d) * p * inv_i_b;
+            }
+        };
+
+        // --- restitution ---
+        let v_rel = self.point_velocity(b, c.point) - self.point_velocity(a, c.point);
+        let vn = v_rel.dot(n);
+        // only a genuine approach bounces; resting contacts (|v̄_n| below
+        // 2 g h) get e = 0 so stacks do not jitter
+        let e = if pre_vn < -restitution_threshold {
+            let ea = self.bodies[a].restitution;
+            let eb = self.bodies[b].restitution;
+            if ea > eb {
+                ea
+            } else {
+                eb
+            }
+        } else {
+            Fix128::ZERO
+        };
+        let target = -e * pre_vn;
+        let target = if target.is_negative() {
+            Fix128::ZERO
+        } else {
+            target
+        };
+        let w_n = w_along(n);
+        if vn < target && !w_n.is_zero() {
+            apply(&mut self.bodies, n, (target - vn) / w_n);
+        }
+
+        // --- Coulomb friction ---
+        let v_rel = self.point_velocity(b, c.point) - self.point_velocity(a, c.point);
+        let vt = v_rel - n * v_rel.dot(n);
+        let vt_len = vt.length();
+        if vt_len.is_zero() {
+            return;
+        }
+        let mu = (self.bodies[a].friction * self.bodies[b].friction).sqrt();
+        let max_dv = mu * lambda_n_over_h;
+        let dv = if vt_len < max_dv { vt_len } else { max_dv };
+        if dv.is_zero() {
+            return;
+        }
+        let t = vt * (Fix128::ONE / vt_len);
+        let w_t = w_along(t);
+        if !w_t.is_zero() {
+            apply(&mut self.bodies, t, -dv / w_t);
         }
     }
 
@@ -1114,16 +1270,19 @@ fn closest_point_on_segment(seg_a: Vec2Fix, seg_b: Vec2Fix, point: Vec2Fix) -> V
 // XPBD Contact Solver
 // ============================================================================
 
-/// Solve contact constraints using XPBD position correction.
-fn solve_contacts_xpbd(bodies: &mut [RigidBody2D], contacts: &[Contact2D]) {
-    for contact in contacts {
+/// Resolve one contact's current penetration by a positional correction
+/// (rigid XPBD contact, compliance 0) and return the positional multiplier
+/// applied (the depth removed), which the velocity pass turns into the
+/// normal force bound for friction.
+fn solve_contact_position(bodies: &mut [RigidBody2D], contact: &Contact2D) -> Fix128 {
+    {
         let a = contact.body_a;
         let b = contact.body_b;
         let normal = contact.normal;
         let depth = contact.depth;
 
         if depth.is_negative() || depth.is_zero() {
-            continue;
+            return Fix128::ZERO;
         }
 
         let inv_mass_a = bodies[a].inv_mass;
@@ -1131,7 +1290,7 @@ fn solve_contacts_xpbd(bodies: &mut [RigidBody2D], contacts: &[Contact2D]) {
         let total_inv_mass = inv_mass_a + inv_mass_b;
 
         if total_inv_mass.is_zero() {
-            continue;
+            return Fix128::ZERO;
         }
 
         let correction = normal * depth;
@@ -1168,6 +1327,7 @@ fn solve_contacts_xpbd(bodies: &mut [RigidBody2D], contacts: &[Contact2D]) {
                 bodies[b].angle = bodies[b].angle + db;
             }
         }
+        depth
     }
 }
 
