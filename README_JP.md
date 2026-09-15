@@ -271,6 +271,23 @@ cargo run --example print_full_safety --release        # SKADIS 板 完全安全
 Critical / Beam FoS 1.16 / Fillet K_t 3.30) を返す — ALICE-Bamboo の
 warp 事案で記録された failure mode と一致
 
+### Mutation score (cargo-mutants、`quality-deep.yml`)
+
+「test が通る」は「test が値を検証している」を意味しない core module は [cargo-mutants](https://mutants.rs) (`-- --lib`、test helper は `.cargo/mutants.toml` で除外) で測る 変異後にどれかの test が落ちれば *caught*、score = caught / (caught + missed)、unviable は除外 開始時 **32.0 %** (2026-09-15、16 shard 週次 run)、途中で本体 bug 6 件を検出 (`remove_body` の拘束付替え / `Fix128::atan` CORDIC shift / cloth bending 符号 / `LinearBvh::find_pairs` n² / joint 角補正の慣性分配 + 符号なし twist / EPA normal 符号)
+
+| module | score | 測定 |
+|---|---|---|
+| `ccd` | **95.4 %** (208 / 218) | batch 8 後の local run |
+| `collider` | **93.5 %** (145 / 155) | batch 8 後の local run |
+| `math` | 92.2 % (295 / 320) | `b187144` 週次 run、shard 一部、scoped run 実行中 |
+| `contact_cache` | 88.0 % (66 / 75) | `3c12ee6` scoped run、batch 7 test 前 |
+| `solver_tgs` | 81.7 % (89 / 109) | `b187144` 週次 run、batch 7 test 前 |
+| `bvh` | 79.9 % (135 / 169) | `b187144` 週次 run、batch 8 (9 test 追加) 前 |
+| `solver` | 76.2 % (compiled code、433 / 568) | `b187144` 週次 run、batch 8 (24 test 追加) 前、別途 163 変異は `cfg(feature = "parallel" / "gpu-solver-bridge")` 側で feature 軸測定 |
+| `joint` | 72.0 % (206 / 286) | `b187144` 週次 run、batch 8 (15 test + 角補正修正後の再導出 8) 前 |
+
+「batch N 前」は最後に *測定* した値 以後に書いた test は列挙された miss を狙ったもの (等価変異は各 test module に記載) で、scoped `quality-deep` dispatch で再測定する 次の測定値でこの表を置換、見込み値は書かない
+
 ### Test 数
 
 Session 1 baseline (v0.9): 719 → Session 1 end (v0.10): 904 → Session 2
@@ -440,10 +457,10 @@ strip = true           # シンボル除去
 
 ### L6: コード品質 (20/20)
 
-- **1382 lib テスト** (alice-physics crate、Session 4 + v0.14.0 preview 1/2 + v1.0.1 coloring / island / Fix128 テスト追加)
+- **1695 lib テスト** (alice-physics crate、Session 4 + v0.14.0 preview 1/2 + v1.0.1 coloring / island / Fix128 + 1.2.0 mutation batch 1-8 / 解析解 oracle)
 - **53 alice-bamboo 統合テスト** (3D プリント安全性のエンドツーエンド)
 - **7 fuzz target** (`fuzz_step` / `fuzz_collision` / `fuzz_deterministic_roundtrip` / `fuzz_joint` / `fuzz_cfd` / `fuzz_ccd` / `fuzz_trimesh`)
-- **合計: 1522 テストパス** (`cargo test` default feature: 1382 lib + 44 決定論 (Fix128 golden 9 + f32 golden 13 + semantic 22) + 75 統合 + 21 doctest、全 native feature set では lib 1426)、clippy: `-D warnings` で 0 警告 (default + `std,simd,parallel,ffi,gpu-solver-bridge,neural,replay,analytics`、`--all-targets`)、`#![deny(missing_docs)]` (0 warning)
+- **合計: 2001 テストパス** (`cargo test` default feature: 1695 lib + 44 決定論 (Fix128 golden 9 + f32 golden 13 + semantic 22) + 75 統合 + 21 doctest、全 native feature set では lib 1426)、clippy: `-D warnings` で 0 警告 (default + `std,simd,parallel,ffi,gpu-solver-bridge,neural,replay,analytics`、`--all-targets`)、`#![deny(missing_docs)]` (0 warning)
 
 ---
 

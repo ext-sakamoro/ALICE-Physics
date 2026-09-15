@@ -83,7 +83,7 @@ All bit-exact across platforms — Fix128 modules by integer arithmetic, `f32` m
 - **Hard-gated semver enforcement** — `cargo semver-checks` blocks breaking-API PRs.
 - **Ecosystem contracts frozen** — [`docs/ECOSYSTEM_CONTRACTS.md`] catalogues API for ALICE-TRT (`GpuSolverBridge`), ALICE-SDF (`SdfField`), ALICE-Bamboo, ALICE-Anima, ALICE-Kinematics.
 - **8/8 fuzz targets** — `fuzz_step` / `fuzz_collision` / `fuzz_deterministic_roundtrip` / `fuzz_joint` / `fuzz_cfd` / `fuzz_ccd` / `fuzz_trimesh` / `fuzz_structural`.
-- **1382 lib tests + 44 determinism tests** — all passing on all 6 platforms.
+- **1695 lib tests + 44 determinism tests** — all passing on all 6 platforms.
 
 **v0.12.0 addition** — `GpuSolverBridge` gains a joint-solve pipeline
 (`send_joints` / `send_body_rotations` / `dispatch_joint_solve_iteration`)
@@ -319,6 +319,33 @@ realistic UNSAFE verdict for a 300 × 300 × 5 mm PLA plate (Warp Critical /
 Beam FoS 1.16 / Fillet K_t 3.30) — exactly matching the failure mode
 documented in the ALICE-Bamboo warp incident.
 
+### Mutation score (cargo-mutants, `quality-deep.yml`)
+
+"Tests pass" says nothing about whether they check values. The core modules
+are measured with [cargo-mutants](https://mutants.rs) (`-- --lib`, test
+helpers excluded via `.cargo/mutants.toml`); a mutant is *caught* when some
+test fails after the mutation. Score = caught / (caught + missed), unviable
+mutants excluded. The campaign started at **32.0 %** (2026-09-15, 16-shard
+weekly run) and found six real defects on the way (`remove_body` constraint
+remap, `Fix128::atan` CORDIC shift, cloth bending sign, `LinearBvh::find_pairs`
+n², joint angular split / unsigned twist, EPA normal sign).
+
+| module | score | measured |
+|---|---|---|
+| `ccd` | **95.4 %** (208 / 218) | local run after batch 8 |
+| `collider` | **93.5 %** (145 / 155) | local run after batch 8 |
+| `math` | 92.2 % (295 / 320) | weekly run at `b187144`, partial shards; scoped run pending |
+| `contact_cache` | 88.0 % (66 / 75) | scoped run at `3c12ee6`, before batch 7 tests |
+| `solver_tgs` | 81.7 % (89 / 109) | weekly run at `b187144`, before batch 7 tests |
+| `bvh` | 79.9 % (135 / 169) | weekly run at `b187144`, before batch 8 (9 tests added) |
+| `solver` | 76.2 % compiled code (433 / 568) | weekly run at `b187144`, before batch 8 (24 tests added); 163 further mutants sit in `cfg(feature = "parallel" / "gpu-solver-bridge")` code and are measured on that feature axis |
+| `joint` | 72.0 % (206 / 286) | weekly run at `b187144`, before batch 8 (15 tests + 8 re-derived after the angular-split fix) |
+
+Rows marked "before batch N" are the last *measured* figure; the tests written
+since target the listed misses (equivalent mutants documented in each test
+module) and are re-measured by the scoped `quality-deep` dispatch. The next
+measured numbers replace this table; estimates are not written here.
+
 ### Test count
 
 Session 1 baseline (v0.9): 719 → Session 1 end (v0.10): 904 → Session 2 end
@@ -476,10 +503,10 @@ strip = true           # Strip symbols
 
 ### L6: Code Quality (20/20)
 
-- **1382 lib tests + 44 determinism tests** across the alice-physics crate (Iter 2-6 audit + v1.0 stable release additions + v1.0.1 coloring / island / Fix128 tests)
+- **1695 lib tests + 44 determinism tests** across the alice-physics crate (Iter 2-6 audit + v1.0 stable release additions + v1.0.1 coloring / island / Fix128 tests + 1.2.0 mutation-score batches 1-8 and analytic oracles)
 - **53 alice-bamboo integration tests** (end-to-end 3D-print safety scenarios)
-- **7 fuzz targets** (`fuzz_step`, `fuzz_collision`, `fuzz_deterministic_roundtrip`, `fuzz_joint`, `fuzz_cfd`, `fuzz_ccd`, `fuzz_trimesh`)
-- **Total: 1522 passing tests** in `cargo test` (default features: 1382 lib + 44 determinism (9 Fix128 golden + 13 f32 golden + 22 semantic) + 75 integration + 21 doctests; 1426 lib tests with the full native feature set), clippy: 0 warnings under `-D warnings` (default + `std,simd,parallel,ffi,gpu-solver-bridge,neural,replay,analytics`, `--all-targets`), `#![deny(missing_docs)]` (0 warnings)
+- **9 fuzz targets** (`fuzz_step`, `fuzz_collision`, `fuzz_deterministic_roundtrip`, `fuzz_joint`, `fuzz_cfd`, `fuzz_ccd`, `fuzz_trimesh`, `fuzz_structural`, `fuzz_step_parity`)
+- **Total: 2001 passing tests** in `cargo test` (default features: 1695 lib + 44 determinism (9 Fix128 golden + 13 f32 golden + 22 semantic) + 220 integration / oracle (72 + 13 analytic + 105 engineering + 13 default-config + 3 parallel + 14 other) + 21 doctests + 3 ignored; 1728 lib tests with the full native feature set), clippy: 0 warnings under `-D warnings` (default + `std,simd,parallel,ffi,gpu-solver-bridge,neural,replay,analytics`, `--all-targets`), `#![deny(missing_docs)]` (0 warnings)
 
 ---
 
@@ -615,7 +642,7 @@ ALICE-Physics guarantees **bit-exact results** across platforms for every module
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                          ALICE-Physics v1.0.0 stable                         │
-│    1382 lib tests + 44 determinism tests (9 golden + 22 semantic), 6 CI     │
+│    1695 lib tests + 44 determinism tests (9 golden + 22 semantic), 6 CI     │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │  Core Layer                                                                  │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐          │
