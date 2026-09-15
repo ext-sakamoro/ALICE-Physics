@@ -55,7 +55,7 @@ wasm = ["wasm-bindgen", "js-sys"] # WebAssembly bindings for browsers
 gpu-solver-bridge = ["std"]  # GpuSolverBridge trait for external GPU offload (opt-in, no runtime overhead when off)
 # J-4 restoration (v0.14.0-preview.8、2026-09-13) — sibling 3 crate が crates.io に
 # publish されたため、v0.14.0-preview.4 で削除した bridge 3 feature を復活
-# - alice-ml 0.2.0 / alice-db 0.2.0-beta.1 / alice-analytics 0.1.0 全て crates.io 済
+# - alice-ml 0.2.0 / alice-db 0.2.0-beta.2 / alice-analytics 0.1.0 全て crates.io 済
 # - sibling API drift 対応は各 bridge module 側で restoration commit 内で修正
 neural = ["dep:alice-ml", "std"]        # Deterministic neural controller (ALICE-ML × Physics)
 replay = ["dep:alice-db", "std"]        # Replay recording/playback via ALICE-DB
@@ -69,7 +69,7 @@ wasm-bindgen = { version = "0.2", optional = true }
 js-sys = { version = "0.3", optional = true }
 # J-4 restoration: sibling 3 crate (今日 crates.io publish 済)
 alice-ml = { version = "0.2", optional = true, default-features = false, features = ["std"] }
-alice-db = { version = "0.2.0-beta.1", optional = true, default-features = false }
+alice-db = { version = "0.2.0-beta.2", optional = true, default-features = false }
 alice-analytics = { version = "0.1", optional = true, default-features = false, features = ["std"] }
 
 [dev-dependencies]
