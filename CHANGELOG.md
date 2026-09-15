@@ -15,6 +15,28 @@ were introduced during that release window.
 
 ### Fixed
 
+- **`Fix128::atan` / `Fix128::atan2` were wrong by up to ~0.17 rad.** The
+  vectoring CORDIC (`cordic_atan`) had its own copy of the 128-bit `x >> i`
+  micro-rotation that dropped the bits carried from `hi` into `lo`, so
+  `ONE >> 1` evaluated to `0` instead of `0.5` (`atan(0) = -0.1725`,
+  `atan2(0, -1) = 2.969`, `atan(1/2) = -0.1725`). `cordic_sin_cos` had the
+  correct shift, so `sin` / `cos` are unchanged bit-for-bit. Both CORDICs now
+  share a single `Fix128::shr_bits` (arithmetic 128-bit shift) and `atan` /
+  `atan2` are pinned by golden bit patterns plus a 1e-12 `libm` oracle.
+  Affected callers: `ConeTwistJoint` cone / twist angles, cloth bending rest
+  angles, `animation_blend` slerp, `print_orientation`, `contact_viz`.
+- **Cloth bending constraint pumped energy at the flat rest angle.** With the
+  corrected `atan2` the flat rest dihedral is exactly `π`, and the previous
+  simplified `cos(angle) - cos(rest)` push became `1 + cos(angle) ≥ 0` —
+  sign-blind — so a hanging cloth accumulated energy until its bottom row rose
+  *above* the pinned top (`test_cloth_drape` bottom `y = +1.06`, golden
+  scenario `y = 6.92` with the top at 5). Replaced by the standard PBD
+  dihedral constraint (Müller et al. 2007, Appendix A: `C = atan2(|n₁×n₂|,
+  n₁·n₂) - φ₀`, four-vertex gradients, `bend_compliance` in the denominator).
+  A flat cloth is now a bit-exact fixed point and a folded cloth relaxes
+  monotonically. The `cloth_drape` determinism golden was re-pinned
+  (`0df965ee…` → `e67fbcac…`, bottom row now hangs at `y ≈ 3.02`).
+
 - **`PhysicsWorld::remove_body` re-attached the removed body's constraints
   and joints to the body swapped into its slot.** The `last -> idx` index
   remap ran before the "drop everything that referenced `idx`" pass, so a
@@ -26,6 +48,10 @@ were introduced during that release window.
 
 ### Added
 
+- `Fix128::shr_bits(i)` — exact arithmetic right shift of the full 128-bit
+  value (single source of truth for the CORDIC micro-rotations).
+- Cloth bending unit tests (flat fixed point / monotone relaxation / pinned
+  vertices / drape bounds) and `atan` / `atan2` / `shr_bits` tests.
 - Mutation-score test suite for the `solver` core (`cargo mutants` driven,
   64 tests): exact closed-form checks for `update_velocities` (linear /
   angular derivation, restitution, Coulomb friction clamp, sensor / static
