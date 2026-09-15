@@ -980,12 +980,28 @@ impl PhysicsWorld {
             return None;
         }
         let last = self.bodies.len() - 1;
+
+        // 1. Drop every constraint / joint that references the body being removed.
+        //    This must happen BEFORE the `last -> idx` remap: after `swap_remove`
+        //    the moved last body occupies `idx`, so a constraint that still says
+        //    `idx` would silently re-attach to the wrong body (2026-09-15 bug fix,
+        //    found by the remove_body mutation tests; v1.1.0 and earlier produced
+        //    `(idx, idx)` self-constraints for the swapped-in body).
+        self.distance_constraints
+            .retain(|c| c.body_a != idx && c.body_b != idx);
+        self.contact_constraints
+            .retain(|c| c.body_a != idx && c.body_b != idx);
+        self.joints.retain(|j| {
+            let (a, b) = j.bodies();
+            a != idx && b != idx
+        });
+
         let removed = self.bodies.swap_remove(idx);
         self.body_materials.swap_remove(idx);
         self.body_collision_radii.swap_remove(idx);
         self.body_filters.swap_remove(idx);
 
-        // Remap references from `last` -> `idx` in all constraints and joints
+        // 2. Remap references from `last` -> `idx` in all remaining constraints and joints
         if idx != last {
             for c in &mut self.distance_constraints {
                 if c.body_a == last {
@@ -1005,16 +1021,6 @@ impl PhysicsWorld {
             }
             self.remap_joint_indices(last, idx);
         }
-
-        // Remove constraints that referenced the removed body
-        self.distance_constraints
-            .retain(|c| c.body_a < self.bodies.len() && c.body_b < self.bodies.len());
-        self.contact_constraints
-            .retain(|c| c.body_a < self.bodies.len() && c.body_b < self.bodies.len());
-        self.joints.retain(|j| {
-            let (a, b) = j.bodies();
-            a < self.bodies.len() && b < self.bodies.len()
-        });
 
         // Rebuild IslandManager to match new body count and connectivity
         let new_len = self.bodies.len();
@@ -4012,5 +4018,1544 @@ mod tests {
         world.solve_constraints_batched(Fix128::from_ratio(1, 60));
         assert_eq!(world.num_batches(), 70);
         assert!(world.batches_are_body_disjoint());
+    }
+
+    // ------------------------------------------------------------------
+    // Mutation-score tests (2026-09-15, quality-deep core score 32% 対応)
+    // 各 test は cargo-mutants の missed 変異 (演算子置換 / 分岐反転 / 符号削除)
+    // を値の厳密一致で殺すことを目的にする  dt は 2 の冪の逆数 (1/4) にして
+    // inv_dt が Fix128 で exact になるようにし、expected は独立に手計算した値
+    // ------------------------------------------------------------------
+
+    /// gravity 0 / damping なしの world (integrate の副作用を消して単機能を観測)
+    fn quiet_world() -> PhysicsWorld {
+        let config = SolverConfig {
+            gravity: Vec3Fix::ZERO,
+            damping: Fix128::ONE,
+            ..SolverConfig::default()
+        };
+        PhysicsWorld::new(config)
+    }
+
+    fn v3(x: i64, y: i64, z: i64) -> Vec3Fix {
+        Vec3Fix::from_int(x, y, z)
+    }
+
+    fn r(n: i64, d: i64) -> Fix128 {
+        Fix128::from_ratio(n, d)
+    }
+
+    #[test]
+    fn update_velocities_linear_velocity_is_position_delta_times_inv_dt() {
+        let mut world = quiet_world();
+        let dyn_idx = world.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
+        let static_idx = world.add_body(RigidBody::new_static(v3(5, 5, 5)));
+        let dt = r(1, 4); // inv_dt = 4 exactly
+
+        // prev → position の差分 (1/4, -1/2, 3/4) → velocity は (1, -2, 3)
+        world.bodies[dyn_idx].prev_position = v3(1, 1, 1);
+        world.bodies[dyn_idx].position = Vec3Fix::new(
+            Fix128::ONE + r(1, 4),
+            Fix128::ONE - r(1, 2),
+            Fix128::ONE + r(3, 4),
+        );
+        // static body にも差分を仕込む: 処理対象外なので velocity は ZERO のまま
+        world.bodies[static_idx].prev_position = v3(0, 0, 0);
+        world.bodies[static_idx].position = v3(5, 5, 5);
+
+        world.update_velocities(dt);
+
+        assert_eq!(world.bodies[dyn_idx].velocity, v3(1, -2, 3));
+        assert_eq!(world.bodies[static_idx].velocity, Vec3Fix::ZERO);
+    }
+
+    #[test]
+    fn update_velocities_angular_velocity_from_rotation_delta_positive_w() {
+        let mut world = quiet_world();
+        let idx = world.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
+        let dt = r(1, 4);
+        // 小さい回転 (θ = 1/2 rad) → dq.w > 0 の分岐
+        let q = QuatFix::from_axis_angle(v3(1, 2, 3), r(1, 2));
+        world.bodies[idx].prev_rotation = QuatFix::IDENTITY;
+        world.bodies[idx].rotation = q;
+
+        world.update_velocities(dt);
+
+        // dq = q * conj(I) = q、angular = 2 * dq.xyz / dt = dq.xyz * 8
+        let eight = Fix128::from_int(8);
+        let expected = Vec3Fix::new(q.x * eight, q.y * eight, q.z * eight);
+        assert_eq!(world.bodies[idx].angular_velocity, expected);
+        assert!(expected.x > Fix128::ZERO && expected.z > Fix128::ZERO);
+    }
+
+    #[test]
+    fn update_velocities_angular_velocity_negative_w_flips_sign() {
+        let mut world = quiet_world();
+        let idx = world.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
+        let dt = r(1, 4);
+        // θ = 3π/2 → w = cos(3π/4) < 0 → 符号反転分岐
+        let theta = Fix128::PI + Fix128::HALF_PI;
+        let q = QuatFix::from_axis_angle(v3(1, -2, 3), theta);
+        assert!(q.w < Fix128::ZERO, "test precondition: w must be negative");
+        world.bodies[idx].prev_rotation = QuatFix::IDENTITY;
+        world.bodies[idx].rotation = q;
+
+        world.update_velocities(dt);
+
+        let eight = Fix128::from_int(8);
+        let expected = Vec3Fix::new(-q.x * eight, -q.y * eight, -q.z * eight);
+        assert_eq!(world.bodies[idx].angular_velocity, expected);
+        // 3 成分とも非零で符号が独立に検証されること
+        assert!(
+            expected.x != Fix128::ZERO && expected.y != Fix128::ZERO && expected.z != Fix128::ZERO
+        );
+    }
+
+    #[test]
+    fn update_velocities_angular_velocity_zero_w_takes_positive_branch() {
+        let mut world = quiet_world();
+        let idx = world.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
+        let dt = r(1, 4);
+        // w == 0 ちょうど (π 回転) → `<` は false = 正の分岐 (`<=` / `==` 変異はここで死ぬ)
+        let q = QuatFix::new(Fix128::ZERO, Fix128::ZERO, Fix128::ONE, Fix128::ZERO);
+        world.bodies[idx].prev_rotation = QuatFix::IDENTITY;
+        world.bodies[idx].rotation = q;
+
+        world.update_velocities(dt);
+
+        assert_eq!(world.bodies[idx].angular_velocity, v3(0, 0, 8));
+    }
+
+    /// 接触 1 本を直接差し込む helper (normal は B → A 方向 = +x)
+    fn push_contact(
+        world: &mut PhysicsWorld,
+        a: usize,
+        b: usize,
+        friction: Fix128,
+        restitution: Fix128,
+    ) {
+        let contact = Contact {
+            depth: r(1, 100),
+            normal: v3(1, 0, 0),
+            point_a: Vec3Fix::ZERO,
+            point_b: Vec3Fix::ZERO,
+        };
+        let mut c = ContactConstraint::new(a, b, contact);
+        c.friction = friction;
+        c.restitution = restitution;
+        world.contact_constraints.push(c);
+    }
+
+    /// Phase 1 は velocity を (position - prev) * inv_dt で上書きするので、
+    /// 速度 v を与えるには prev_position = position - v * dt を仕込む (dt = 1/4 固定)
+    fn give_velocity(world: &mut PhysicsWorld, idx: usize, v: Vec3Fix) {
+        let b = &mut world.bodies[idx];
+        b.prev_position = b.position - v * r(1, 4);
+        b.prev_rotation = b.rotation;
+    }
+
+    /// 全 body の prev を現在値に揃える (速度 0)
+    fn freeze_positions(world: &mut PhysicsWorld) {
+        for b in &mut world.bodies {
+            b.prev_position = b.position;
+            b.prev_rotation = b.rotation;
+        }
+    }
+
+    #[test]
+    fn update_velocities_restitution_splits_impulse_by_inverse_mass() {
+        let mut world = quiet_world();
+        let a = world.add_body(RigidBody::new_dynamic(v3(0, 0, 0), Fix128::ONE));
+        let b = world.add_body(RigidBody::new_dynamic(v3(1, 0, 0), Fix128::ONE));
+        push_contact(&mut world, a, b, Fix128::ZERO, r(1, 2));
+        freeze_positions(&mut world);
+        // A が B に向かって -x に 1 で接近 (vn = -1 < 0)
+        give_velocity(&mut world, a, v3(-1, 0, 0));
+
+        world.update_velocities(r(1, 4));
+
+        // delta_vn = -(1 + 0.5) * (-1) = 1.5、inv_w = 1/2 → A += 0.75、B -= 0.75
+        assert_eq!(
+            world.bodies[a].velocity,
+            Vec3Fix::new(-r(1, 4), Fix128::ZERO, Fix128::ZERO)
+        );
+        assert_eq!(
+            world.bodies[b].velocity,
+            Vec3Fix::new(-r(3, 4), Fix128::ZERO, Fix128::ZERO)
+        );
+    }
+
+    #[test]
+    fn update_velocities_restitution_skips_separating_contact() {
+        let mut world = quiet_world();
+        let a = world.add_body(RigidBody::new_dynamic(v3(0, 0, 0), Fix128::ONE));
+        let b = world.add_body(RigidBody::new_dynamic(v3(1, 0, 0), Fix128::ONE));
+        push_contact(&mut world, a, b, Fix128::ZERO, r(1, 2));
+        freeze_positions(&mut world);
+        // vn = +1 > 0 (離れていく) → restitution なし、tangent なし → 無変化
+        give_velocity(&mut world, a, v3(1, 0, 0));
+
+        world.update_velocities(r(1, 4));
+
+        assert_eq!(world.bodies[a].velocity, v3(1, 0, 0));
+        assert_eq!(world.bodies[b].velocity, Vec3Fix::ZERO);
+    }
+
+    #[test]
+    fn update_velocities_restitution_uses_mass_ratio() {
+        let mut world = quiet_world();
+        // A: inv_mass 1、B: inv_mass 3 (直接設定、1/(1/3) の丸めを避ける) → inv_w = 1/4 exact
+        let a = world.add_body(RigidBody::new_dynamic(v3(0, 0, 0), Fix128::ONE));
+        let b = world.add_body(RigidBody::new_dynamic(v3(1, 0, 0), Fix128::ONE));
+        world.bodies[b].inv_mass = Fix128::from_int(3);
+        push_contact(&mut world, a, b, Fix128::ZERO, Fix128::ZERO);
+        freeze_positions(&mut world);
+        give_velocity(&mut world, a, v3(-2, 0, 0)); // vn = -2、e = 0 → delta_vn = 2
+
+        world.update_velocities(r(1, 4));
+
+        // A += 2 * (1 * 1/4) = 0.5 → -1.5、B -= 2 * (3 * 1/4) = 1.5 → -1.5 (完全非弾性で速度一致)
+        assert_eq!(
+            world.bodies[a].velocity,
+            Vec3Fix::new(-r(3, 2), Fix128::ZERO, Fix128::ZERO)
+        );
+        assert_eq!(
+            world.bodies[b].velocity,
+            Vec3Fix::new(-r(3, 2), Fix128::ZERO, Fix128::ZERO)
+        );
+    }
+
+    #[test]
+    fn update_velocities_friction_clamped_by_coulomb_limit() {
+        let mut world = quiet_world();
+        let a = world.add_body(RigidBody::new_dynamic(v3(0, 0, 0), Fix128::ONE));
+        let b = world.add_body(RigidBody::new_static(v3(1, 0, 0))); // inv_mass 0 → w_sum = 1
+        push_contact(&mut world, a, b, r(1, 2), Fix128::ZERO);
+        freeze_positions(&mut world);
+        // 法線成分は正 (離れる) にして restitution を素通りさせ、vn2 = +4 を Coulomb 上限の元にする
+        give_velocity(&mut world, a, v3(4, 3, 0));
+
+        world.update_velocities(r(1, 4));
+
+        // tangent_speed = 3、max = 0.5 * 4 = 2 → clamp 2、A.y -= 2 * 1 → 1、x は不変
+        assert_eq!(
+            world.bodies[a].velocity,
+            Vec3Fix::new(Fix128::from_int(4), Fix128::ONE, Fix128::ZERO)
+        );
+        assert_eq!(world.bodies[b].velocity, Vec3Fix::ZERO);
+    }
+
+    #[test]
+    fn update_velocities_friction_below_limit_removes_all_tangential_velocity() {
+        let mut world = quiet_world();
+        let a = world.add_body(RigidBody::new_dynamic(v3(0, 0, 0), Fix128::ONE));
+        let b = world.add_body(RigidBody::new_static(v3(1, 0, 0)));
+        push_contact(&mut world, a, b, Fix128::ONE, Fix128::ZERO); // μ = 1 → max = |vn2| = 4
+        freeze_positions(&mut world);
+        give_velocity(&mut world, a, v3(4, 0, 3));
+
+        world.update_velocities(r(1, 4));
+
+        // tangent_speed = 3 < max 4 → applied = 3 → z 成分 0
+        assert_eq!(
+            world.bodies[a].velocity,
+            Vec3Fix::new(Fix128::from_int(4), Fix128::ZERO, Fix128::ZERO)
+        );
+    }
+
+    #[test]
+    fn update_velocities_friction_boundary_equal_to_limit_uses_limit() {
+        let mut world = quiet_world();
+        let a = world.add_body(RigidBody::new_dynamic(v3(0, 0, 0), Fix128::ONE));
+        let b = world.add_body(RigidBody::new_static(v3(1, 0, 0)));
+        push_contact(&mut world, a, b, Fix128::ONE, Fix128::ZERO); // max = |vn2| = 3
+        freeze_positions(&mut world);
+        // tangent_speed == max (3 == 3): `<` は false → max 側 (値は同じ 3 だが `<=`/`>` 変異で経路が変わる)
+        give_velocity(&mut world, a, v3(3, 3, 0));
+
+        world.update_velocities(r(1, 4));
+
+        assert_eq!(
+            world.bodies[a].velocity,
+            Vec3Fix::new(Fix128::from_int(3), Fix128::ZERO, Fix128::ZERO)
+        );
+    }
+
+    #[test]
+    fn update_velocities_sensor_on_either_side_skips_response() {
+        for sensor_side in 0..2 {
+            let mut world = quiet_world();
+            let a = world.add_body(RigidBody::new_dynamic(v3(0, 0, 0), Fix128::ONE));
+            let b = world.add_body(RigidBody::new_dynamic(v3(1, 0, 0), Fix128::ONE));
+            world.bodies[if sensor_side == 0 { a } else { b }].is_sensor = true;
+            push_contact(&mut world, a, b, r(1, 2), r(1, 2));
+            freeze_positions(&mut world);
+            give_velocity(&mut world, a, v3(-1, 2, 0));
+
+            world.update_velocities(r(1, 4));
+
+            assert_eq!(
+                world.bodies[a].velocity,
+                v3(-1, 2, 0),
+                "sensor side {sensor_side}"
+            );
+            assert_eq!(
+                world.bodies[b].velocity,
+                Vec3Fix::ZERO,
+                "sensor side {sensor_side}"
+            );
+        }
+    }
+
+    #[test]
+    fn update_velocities_two_static_bodies_are_skipped() {
+        let mut world = quiet_world();
+        let a = world.add_body(RigidBody::new_static(v3(0, 0, 0)));
+        let b = world.add_body(RigidBody::new_static(v3(1, 0, 0)));
+        push_contact(&mut world, a, b, Fix128::ONE, Fix128::ONE);
+        // static は Phase 1 で skip、Phase 2 は w_sum < ε で skip → velocity は不変 (手書き値のまま)
+        freeze_positions(&mut world);
+        world.bodies[a].velocity = v3(-1, 1, 0);
+
+        world.update_velocities(r(1, 4));
+
+        assert_eq!(world.bodies[a].velocity, v3(-1, 1, 0));
+    }
+
+    // ---- raycast ------------------------------------------------------
+
+    /// 半径 2 の球を pos に置いた world (gravity なし)
+    fn sphere_world(positions: &[Vec3Fix]) -> PhysicsWorld {
+        let mut world = quiet_world();
+        for &p in positions {
+            world.add_body_with_radius(RigidBody::new_static(p), Fix128::from_int(2));
+        }
+        world
+    }
+
+    #[test]
+    fn raycast_hit_distance_is_exact_closed_form() {
+        // 原点から +x、球 (10,0,0) r=2 → b=-10, c=96, disc=4, t = 10 - 2 = 8
+        let world = sphere_world(&[v3(10, 0, 0)]);
+        let hit = world.raycast(Vec3Fix::ZERO, v3(1, 0, 0), Fix128::from_int(100));
+        assert_eq!(hit, Some((0, Fix128::from_int(8))));
+        // direction は正規化される: (3,0,0) でも同じ t
+        let hit2 = world.raycast(Vec3Fix::ZERO, v3(3, 0, 0), Fix128::from_int(100));
+        assert_eq!(hit2, Some((0, Fix128::from_int(8))));
+    }
+
+    #[test]
+    fn raycast_along_every_axis_and_direction() {
+        // ray AABB の min/max 選択 (x/y/z × </>) を全て通す
+        for (dir, pos) in [
+            (v3(1, 0, 0), v3(10, 0, 0)),
+            (v3(-1, 0, 0), v3(-10, 0, 0)),
+            (v3(0, 1, 0), v3(0, 10, 0)),
+            (v3(0, -1, 0), v3(0, -10, 0)),
+            (v3(0, 0, 1), v3(0, 0, 10)),
+            (v3(0, 0, -1), v3(0, 0, -10)),
+        ] {
+            let world = sphere_world(&[pos]);
+            assert_eq!(
+                world.raycast(Vec3Fix::ZERO, dir, Fix128::from_int(100)),
+                Some((0, Fix128::from_int(8))),
+                "dir {dir:?}"
+            );
+            // 逆向きは外れる
+            assert_eq!(
+                world.raycast(
+                    Vec3Fix::ZERO,
+                    dir * Fix128::from_int(-1),
+                    Fix128::from_int(100)
+                ),
+                None
+            );
+        }
+    }
+
+    #[test]
+    fn raycast_origin_on_surface_hits_at_zero_not_far_side() {
+        // origin (8,0,0)、球 (10,0,0) r=2: oc=(-2,0,0), b=-2, c=0, disc=4 → t_near = 0 (`<` は false)
+        let world = sphere_world(&[v3(10, 0, 0)]);
+        let hit = world.raycast(v3(8, 0, 0), v3(1, 0, 0), Fix128::from_int(100));
+        assert_eq!(hit, Some((0, Fix128::ZERO)));
+    }
+
+    #[test]
+    fn raycast_from_inside_sphere_uses_far_intersection() {
+        // origin = 球心: b=0, c=-4, disc=4 → t_near = -2 < 0 → t_far = 2
+        let world = sphere_world(&[v3(10, 0, 0)]);
+        let hit = world.raycast(v3(10, 0, 0), v3(1, 0, 0), Fix128::from_int(100));
+        assert_eq!(hit, Some((0, Fix128::from_int(2))));
+    }
+
+    #[test]
+    fn raycast_max_distance_boundary_inclusive() {
+        let world = sphere_world(&[v3(10, 0, 0)]);
+        // t = 8 == max → hit (`>` は false)
+        assert_eq!(
+            world.raycast(Vec3Fix::ZERO, v3(1, 0, 0), Fix128::from_int(8)),
+            Some((0, Fix128::from_int(8)))
+        );
+        // t = 8 > max 7 → miss (ray AABB は球に届かない or 距離で reject)
+        assert_eq!(
+            world.raycast(Vec3Fix::ZERO, v3(1, 0, 0), Fix128::from_int(7)),
+            None
+        );
+        // AABB は届くが距離で reject: max = 7.9 (AABB は球 [8,12] と 7.9 で非交差)、
+        // 代わりに max = 9 で AABB 交差 + t=8 ≤ 9 → hit、max = 8 - ε 相当は上で網羅
+        assert_eq!(
+            world.raycast(Vec3Fix::ZERO, v3(1, 0, 0), Fix128::from_int(9)),
+            Some((0, Fix128::from_int(8)))
+        );
+    }
+
+    #[test]
+    fn raycast_returns_nearest_regardless_of_body_order() {
+        // 手前 (10) と奥 (20) の球、index 順を両方試す
+        let near = v3(10, 0, 0);
+        let far = v3(20, 0, 0);
+        let w1 = sphere_world(&[far, near]);
+        assert_eq!(
+            w1.raycast(Vec3Fix::ZERO, v3(1, 0, 0), Fix128::from_int(100)),
+            Some((1, Fix128::from_int(8)))
+        );
+        let w2 = sphere_world(&[near, far]);
+        assert_eq!(
+            w2.raycast(Vec3Fix::ZERO, v3(1, 0, 0), Fix128::from_int(100)),
+            Some((0, Fix128::from_int(8)))
+        );
+    }
+
+    #[test]
+    fn raycast_misses_sphere_beside_the_ray() {
+        // 球 (10, 5, 0) r=2: 最接近距離 5 > 2 → disc < 0 → None
+        let world = sphere_world(&[v3(10, 5, 0)]);
+        assert_eq!(
+            world.raycast(Vec3Fix::ZERO, v3(1, 0, 0), Fix128::from_int(100)),
+            None
+        );
+        // 球 (10, 2, 0): 接線 (disc = 0) → t = 10 で hit
+        let tangent = sphere_world(&[v3(10, 2, 0)]);
+        assert_eq!(
+            tangent.raycast(Vec3Fix::ZERO, v3(1, 0, 0), Fix128::from_int(100)),
+            Some((0, Fix128::from_int(10)))
+        );
+    }
+
+    #[test]
+    fn raycast_zero_direction_and_no_collidable_bodies_return_none() {
+        let world = sphere_world(&[v3(10, 0, 0)]);
+        assert_eq!(
+            world.raycast(Vec3Fix::ZERO, Vec3Fix::ZERO, Fix128::from_int(100)),
+            None
+        );
+        let mut no_radius = quiet_world();
+        no_radius.add_body(RigidBody::new_static(v3(10, 0, 0)));
+        assert_eq!(
+            no_radius.raycast(Vec3Fix::ZERO, v3(1, 0, 0), Fix128::from_int(100)),
+            None
+        );
+        // radius を後から消すと当たらなくなる
+        let mut cleared = sphere_world(&[v3(10, 0, 0)]);
+        cleared.clear_body_collision_radius(0);
+        assert_eq!(
+            cleared.raycast(Vec3Fix::ZERO, v3(1, 0, 0), Fix128::from_int(100)),
+            None
+        );
+        // set で復活
+        cleared.set_body_collision_radius(0, Fix128::from_int(2));
+        assert_eq!(
+            cleared.raycast(Vec3Fix::ZERO, v3(1, 0, 0), Fix128::from_int(100)),
+            Some((0, Fix128::from_int(8)))
+        );
+    }
+
+    // ---- remove_body ---------------------------------------------------
+
+    fn dc(a: usize, b: usize) -> DistanceConstraint {
+        DistanceConstraint {
+            body_a: a,
+            body_b: b,
+            local_anchor_a: Vec3Fix::ZERO,
+            local_anchor_b: Vec3Fix::ZERO,
+            target_distance: Fix128::ONE,
+            compliance: Fix128::ZERO,
+            cached_lambda: Fix128::ZERO,
+        }
+    }
+
+    fn three_body_world_with_all_pairs() -> PhysicsWorld {
+        let mut world = quiet_world();
+        for i in 0..3 {
+            world.add_body(RigidBody::new_dynamic(v3(i, 0, 0), Fix128::ONE));
+        }
+        world.add_distance_constraint(dc(0, 1));
+        world.add_distance_constraint(dc(1, 2));
+        world.add_distance_constraint(dc(0, 2));
+        world.contact_constraints.push(ContactConstraint::new(
+            0,
+            1,
+            Contact {
+                depth: Fix128::ZERO,
+                normal: v3(1, 0, 0),
+                point_a: Vec3Fix::ZERO,
+                point_b: Vec3Fix::ZERO,
+            },
+        ));
+        world.contact_constraints.push(ContactConstraint::new(
+            1,
+            2,
+            Contact {
+                depth: Fix128::ZERO,
+                normal: v3(1, 0, 0),
+                point_a: Vec3Fix::ZERO,
+                point_b: Vec3Fix::ZERO,
+            },
+        ));
+        world.contact_constraints.push(ContactConstraint::new(
+            0,
+            2,
+            Contact {
+                depth: Fix128::ZERO,
+                normal: v3(1, 0, 0),
+                point_a: Vec3Fix::ZERO,
+                point_b: Vec3Fix::ZERO,
+            },
+        ));
+        world
+    }
+
+    fn dist_pairs(world: &PhysicsWorld) -> Vec<(usize, usize)> {
+        world
+            .distance_constraints
+            .iter()
+            .map(|c| (c.body_a, c.body_b))
+            .collect()
+    }
+
+    fn contact_pairs(world: &PhysicsWorld) -> Vec<(usize, usize)> {
+        world
+            .contact_constraints
+            .iter()
+            .map(|c| (c.body_a, c.body_b))
+            .collect()
+    }
+
+    #[test]
+    fn remove_body_middle_drops_its_constraints_and_remaps_last() {
+        let mut world = three_body_world_with_all_pairs();
+        let removed = world.remove_body(1).expect("index 1 exists");
+        assert_eq!(removed.position, v3(1, 0, 0));
+        assert_eq!(world.bodies.len(), 2);
+        // 旧 A2 が index 1 に移動
+        assert_eq!(world.bodies[1].position, v3(2, 0, 0));
+        // A1 に触る 2 本は消え、(0-2) だけが (0,1) に remap
+        assert_eq!(dist_pairs(&world), vec![(0, 1)]);
+        assert_eq!(contact_pairs(&world), vec![(0, 1)]);
+        assert_eq!(world.body_materials.len(), 2);
+        assert_eq!(world.body_collision_radii.len(), 2);
+        assert_eq!(world.body_filters.len(), 2);
+    }
+
+    #[test]
+    fn remove_body_first_remaps_last_into_slot_zero() {
+        let mut world = three_body_world_with_all_pairs();
+        world.remove_body(0).expect("index 0 exists");
+        assert_eq!(world.bodies[0].position, v3(2, 0, 0));
+        assert_eq!(world.bodies[1].position, v3(1, 0, 0));
+        // 残るのは (1-2) → (1,0)
+        assert_eq!(dist_pairs(&world), vec![(1, 0)]);
+        assert_eq!(contact_pairs(&world), vec![(1, 0)]);
+    }
+
+    #[test]
+    fn remove_body_last_needs_no_remap() {
+        let mut world = three_body_world_with_all_pairs();
+        world.remove_body(2).expect("index 2 exists");
+        assert_eq!(world.bodies.len(), 2);
+        assert_eq!(world.bodies[1].position, v3(1, 0, 0));
+        assert_eq!(dist_pairs(&world), vec![(0, 1)]);
+        assert_eq!(contact_pairs(&world), vec![(0, 1)]);
+    }
+
+    #[test]
+    fn remove_body_out_of_range_is_none_and_leaves_world_untouched() {
+        let mut world = three_body_world_with_all_pairs();
+        assert!(world.remove_body(3).is_none());
+        assert!(world.remove_body(usize::MAX).is_none());
+        assert_eq!(world.bodies.len(), 3);
+        assert_eq!(dist_pairs(&world), vec![(0, 1), (1, 2), (0, 2)]);
+    }
+
+    #[test]
+    fn remove_body_never_leaves_self_or_dangling_references() {
+        // 4 body 全 pair、各 index を順に消して不変条件を検査
+        for victim in 0..4 {
+            let mut world = quiet_world();
+            for i in 0..4 {
+                world.add_body(RigidBody::new_dynamic(v3(i, 0, 0), Fix128::ONE));
+            }
+            for a in 0..4 {
+                for b in (a + 1)..4 {
+                    world.add_distance_constraint(dc(a, b));
+                }
+            }
+            world.remove_body(victim).expect("in range");
+            let n = world.bodies.len();
+            assert_eq!(n, 3);
+            // 残 3 body の全 pair = 3 本、自己参照なし、範囲内
+            assert_eq!(world.distance_constraints.len(), 3, "victim {victim}");
+            for c in &world.distance_constraints {
+                assert!(
+                    c.body_a < n && c.body_b < n,
+                    "victim {victim}: dangling {:?}",
+                    (c.body_a, c.body_b)
+                );
+                assert_ne!(c.body_a, c.body_b, "victim {victim}: self constraint");
+            }
+            // 残った body の position 集合 = 元 4 点から victim を除いたもの
+            let mut xs: Vec<i64> = world.bodies.iter().map(|b| b.position.x.hi).collect();
+            xs.sort_unstable();
+            let mut expected: Vec<i64> = (0..4).filter(|&i| i != victim as i64).collect();
+            expected.sort_unstable();
+            assert_eq!(xs, expected);
+        }
+    }
+
+    #[test]
+    fn remove_body_with_joint_drops_joint_and_rebuilds_islands() {
+        let mut world = quiet_world();
+        for i in 0..3 {
+            world.add_body(RigidBody::new_dynamic(v3(i, 0, 0), Fix128::ONE));
+        }
+        let j = crate::joint::BallJoint::new(1, 2, Vec3Fix::ZERO, Vec3Fix::ZERO);
+        world.add_joint(Joint::Ball(j));
+        let j2 = crate::joint::BallJoint::new(0, 2, Vec3Fix::ZERO, Vec3Fix::ZERO);
+        world.add_joint(Joint::Ball(j2));
+        assert_eq!(world.joint_count(), 2);
+        world.remove_body(1).expect("in range");
+        // (1-2) は消え、(0-2) は (0,1) に remap
+        assert_eq!(world.joint_count(), 1);
+        assert_eq!(world.joints[0].bodies(), (0, 1));
+        // island は新 body 数で再構築され、joint で 0 と 1 が同一 island
+        assert_eq!(world.islands.find(0), world.islands.find(1));
+    }
+
+    // ---- detect_collisions --------------------------------------------
+
+    /// |a - b| が 2^-60 未満 (normalize の sqrt 丸め 数 ulp を許容、変異の差は桁違いなので検出力は不変)
+    fn near(a: Fix128, b: Fix128) -> bool {
+        let d = (a - b).abs();
+        d.hi == 0 && d.lo < (1u64 << 4)
+    }
+
+    fn assert_near_vec(a: Vec3Fix, b: Vec3Fix, what: &str) {
+        assert!(
+            near(a.x, b.x) && near(a.y, b.y) && near(a.z, b.z),
+            "{what}: {a:?} vs {b:?}"
+        );
+    }
+
+    /// 半径 r の dynamic 球 2 個を x 軸上 dist 離して置く
+    fn two_spheres(dist_num: i64, dist_den: i64, r_a: Fix128, r_b: Fix128) -> PhysicsWorld {
+        let mut world = quiet_world();
+        world.add_body_with_radius(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE), r_a);
+        world.add_body_with_radius(
+            RigidBody::new_dynamic(
+                Vec3Fix::new(r(dist_num, dist_den), Fix128::ZERO, Fix128::ZERO),
+                Fix128::ONE,
+            ),
+            r_b,
+        );
+        world
+    }
+
+    #[test]
+    fn detect_collisions_overlapping_spheres_produce_exact_contact() {
+        // r=1, r=1、距離 1.5 → depth = 0.5、normal = +x (a → b)、point_a = (1,0,0)、point_b = (0.5,0,0)
+        let mut world = two_spheres(3, 2, Fix128::ONE, Fix128::ONE);
+        world.detect_collisions();
+        assert_eq!(world.contact_constraints.len(), 1);
+        let c = &world.contact_constraints[0];
+        assert_eq!((c.body_a, c.body_b), (0, 1));
+        assert!(
+            near(c.contact.depth, r(1, 2)),
+            "depth {:?}",
+            c.contact.depth
+        );
+        assert_near_vec(c.contact.normal, v3(1, 0, 0), "normal");
+        assert_near_vec(c.contact.point_a, v3(1, 0, 0), "point_a");
+        assert_near_vec(
+            c.contact.point_b,
+            Vec3Fix::new(r(1, 2), Fix128::ZERO, Fix128::ZERO),
+            "point_b",
+        );
+        // event も 1 件、rel_vel は 0
+        assert_eq!(world.contact_events().len(), 1);
+        assert!(world.trigger_events().is_empty());
+    }
+
+    #[test]
+    fn detect_collisions_asymmetric_radii_split_points_correctly() {
+        // r_a = 2, r_b = 1/2、距離 2 → combined 2.5、depth 0.5
+        let mut world = two_spheres(2, 1, Fix128::from_int(2), r(1, 2));
+        world.detect_collisions();
+        assert_eq!(world.contact_constraints.len(), 1);
+        let c = world.contact_constraints[0].contact;
+        assert!(near(c.depth, r(1, 2)), "depth {:?}", c.depth);
+        assert_near_vec(c.point_a, v3(2, 0, 0), "point_a"); // a.pos + n * r_a
+        assert_near_vec(
+            c.point_b,
+            Vec3Fix::new(r(3, 2), Fix128::ZERO, Fix128::ZERO),
+            "point_b",
+        ); // b.pos - n * r_b
+    }
+
+    #[test]
+    fn detect_collisions_touching_exactly_is_not_a_contact() {
+        // dist == combined (2 == 1+1): `<` は false → 接触なし (`<=` 変異はここで死ぬ)
+        let mut world = two_spheres(2, 1, Fix128::ONE, Fix128::ONE);
+        world.detect_collisions();
+        assert!(world.contact_constraints.is_empty());
+        assert!(world.contact_events().is_empty());
+        // 少しでも近ければ接触
+        let mut world2 = two_spheres(199, 100, Fix128::ONE, Fix128::ONE);
+        world2.detect_collisions();
+        assert_eq!(world2.contact_constraints.len(), 1);
+    }
+
+    #[test]
+    fn detect_collisions_coincident_centers_are_skipped() {
+        // dist == 0 → normal 不定なので skip (`!dist.is_zero()`)
+        let mut world = two_spheres(0, 1, Fix128::ONE, Fix128::ONE);
+        world.detect_collisions();
+        assert!(world.contact_constraints.is_empty());
+    }
+
+    #[test]
+    fn detect_collisions_relative_velocity_is_reported_along_normal() {
+        let mut world = two_spheres(3, 2, Fix128::ONE, Fix128::ONE);
+        world.bodies[0].velocity = v3(2, 7, 0); // a → b 方向 +2 (y 成分は normal 直交で無視)
+        world.bodies[1].velocity = v3(-1, 0, 0);
+        world.detect_collisions();
+        let ev = &world.contact_events()[0];
+        // rel_vel = (v_a - v_b) · n = (3, 7, 0) · (1,0,0) = 3
+        assert!(
+            near(ev.relative_velocity, Fix128::from_int(3)),
+            "rel_vel {:?}",
+            ev.relative_velocity
+        );
+        assert!(near(ev.depth, r(1, 2)), "depth {:?}", ev.depth);
+    }
+
+    #[test]
+    fn detect_collisions_sensor_reports_trigger_instead_of_constraint() {
+        for sensor_side in 0..2 {
+            let mut world = two_spheres(3, 2, Fix128::ONE, Fix128::ONE);
+            world.bodies[sensor_side].is_sensor = true;
+            world.detect_collisions();
+            assert!(world.contact_constraints.is_empty(), "side {sensor_side}");
+            assert_eq!(world.trigger_events().len(), 1, "side {sensor_side}");
+            assert_eq!(world.contact_events().len(), 1, "side {sensor_side}");
+        }
+    }
+
+    #[test]
+    fn detect_collisions_static_static_pair_is_skipped_but_static_dynamic_is_not() {
+        let mut world = quiet_world();
+        world.add_body_with_radius(RigidBody::new_static(Vec3Fix::ZERO), Fix128::ONE);
+        world.add_body_with_radius(
+            RigidBody::new_static(Vec3Fix::new(r(3, 2), Fix128::ZERO, Fix128::ZERO)),
+            Fix128::ONE,
+        );
+        world.detect_collisions();
+        assert!(world.contact_constraints.is_empty());
+
+        let mut mixed = quiet_world();
+        mixed.add_body_with_radius(RigidBody::new_static(Vec3Fix::ZERO), Fix128::ONE);
+        mixed.add_body_with_radius(
+            RigidBody::new_dynamic(
+                Vec3Fix::new(r(3, 2), Fix128::ZERO, Fix128::ZERO),
+                Fix128::ONE,
+            ),
+            Fix128::ONE,
+        );
+        mixed.detect_collisions();
+        assert_eq!(mixed.contact_constraints.len(), 1);
+    }
+
+    #[test]
+    fn detect_collisions_filter_blocks_same_group_and_masked_layers() {
+        // 同一 group (非 0) → 衝突しない
+        let mut same_group = two_spheres(3, 2, Fix128::ONE, Fix128::ONE);
+        let g = CollisionFilter {
+            layer: 1,
+            mask: u32::MAX,
+            group: 7,
+        };
+        same_group.set_body_filter(0, g);
+        same_group.set_body_filter(1, g);
+        same_group.detect_collisions();
+        assert!(same_group.contact_constraints.is_empty());
+
+        // 片方向 mask 不一致 (a.layer & b.mask == 0) → 衝突しない (`&&` の右側も検査)
+        for side in 0..2 {
+            let mut masked = two_spheres(3, 2, Fix128::ONE, Fix128::ONE);
+            masked.set_body_filter(
+                side,
+                CollisionFilter {
+                    layer: 1 << 5,
+                    mask: u32::MAX,
+                    group: 0,
+                },
+            );
+            masked.set_body_filter(
+                1 - side,
+                CollisionFilter {
+                    layer: 1,
+                    mask: !(1 << 5),
+                    group: 0,
+                },
+            );
+            masked.detect_collisions();
+            assert!(masked.contact_constraints.is_empty(), "side {side}");
+        }
+
+        // 異なる group + 相互 mask 一致 → 衝突する
+        let mut ok = two_spheres(3, 2, Fix128::ONE, Fix128::ONE);
+        ok.set_body_filter(
+            0,
+            CollisionFilter {
+                layer: 1,
+                mask: u32::MAX,
+                group: 1,
+            },
+        );
+        ok.set_body_filter(
+            1,
+            CollisionFilter {
+                layer: 1,
+                mask: u32::MAX,
+                group: 2,
+            },
+        );
+        ok.detect_collisions();
+        assert_eq!(ok.contact_constraints.len(), 1);
+    }
+
+    #[test]
+    fn detect_collisions_both_sleeping_skipped_one_sleeping_wakes() {
+        let mut both = two_spheres(3, 2, Fix128::ONE, Fix128::ONE);
+        both.islands.sleep_data[0].state = crate::sleeping::SleepState::Sleeping;
+        both.islands.sleep_data[1].state = crate::sleeping::SleepState::Sleeping;
+        both.detect_collisions();
+        assert!(both.contact_constraints.is_empty());
+
+        let mut one = two_spheres(3, 2, Fix128::ONE, Fix128::ONE);
+        one.islands.sleep_data[0].state = crate::sleeping::SleepState::Sleeping;
+        one.detect_collisions();
+        assert_eq!(one.contact_constraints.len(), 1);
+        // 接触で起こされる
+        assert!(!one.islands.is_sleeping(0));
+    }
+
+    #[test]
+    fn detect_collisions_needs_two_collidable_bodies() {
+        // body 1 個 / radius 付き 1 個だけ → 何も起きない
+        let mut single = quiet_world();
+        single.add_body_with_radius(
+            RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE),
+            Fix128::ONE,
+        );
+        single.detect_collisions();
+        assert!(single.contact_constraints.is_empty());
+
+        let mut one_radius = quiet_world();
+        one_radius.add_body_with_radius(
+            RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE),
+            Fix128::ONE,
+        );
+        one_radius.add_body(RigidBody::new_dynamic(
+            Vec3Fix::new(r(1, 2), Fix128::ZERO, Fix128::ZERO),
+            Fix128::ONE,
+        ));
+        one_radius.detect_collisions();
+        assert!(one_radius.contact_constraints.is_empty());
+    }
+
+    #[test]
+    fn detect_collisions_uses_combined_material_of_pair() {
+        let mut world = two_spheres(3, 2, Fix128::ONE, Fix128::ONE);
+        world.detect_collisions();
+        let c = world.contact_constraints[0];
+        let combined = world.combined_material(0, 1);
+        assert_eq!(c.friction, combined.friction);
+        assert_eq!(c.restitution, combined.restitution);
+    }
+
+    // ---- solve_distance_constraints -----------------------------------
+
+    #[test]
+    fn solve_distance_constraints_rigid_splits_error_by_inverse_mass() {
+        // A (inv 1) at 0、B (inv 3) at x=4、target 2 → error 2、w_sum 4、lambda 1/2
+        // A += n*λ*1 = +0.5、B -= n*λ*3 = -1.5 → 距離 4 - 2 = 2 で一発収束
+        let mut world = quiet_world();
+        let a = world.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
+        let b = world.add_body(RigidBody::new_dynamic(v3(4, 0, 0), Fix128::ONE));
+        world.bodies[b].inv_mass = Fix128::from_int(3);
+        let mut c = dc(a, b);
+        c.target_distance = Fix128::from_int(2);
+        world.add_distance_constraint(c);
+
+        world.solve_distance_constraints(r(1, 4));
+
+        assert_eq!(
+            world.bodies[a].position,
+            Vec3Fix::new(r(1, 2), Fix128::ZERO, Fix128::ZERO)
+        );
+        assert_eq!(
+            world.bodies[b].position,
+            Vec3Fix::new(r(5, 2), Fix128::ZERO, Fix128::ZERO)
+        );
+        assert_eq!(world.distance_constraints[0].cached_lambda, r(1, 2));
+    }
+
+    #[test]
+    fn solve_distance_constraints_static_side_does_not_move() {
+        // A static at 0、B (inv 1) at 4、target 1 → error 3、w_sum 1 → B -= 3 → x = 1
+        let mut world = quiet_world();
+        let a = world.add_body(RigidBody::new_static(Vec3Fix::ZERO));
+        let b = world.add_body(RigidBody::new_dynamic(v3(4, 0, 0), Fix128::ONE));
+        world.add_distance_constraint(dc(a, b)); // target 1
+
+        world.solve_distance_constraints(r(1, 4));
+
+        assert_eq!(world.bodies[a].position, Vec3Fix::ZERO);
+        assert_eq!(world.bodies[b].position, v3(1, 0, 0));
+    }
+
+    #[test]
+    fn solve_distance_constraints_negative_error_pushes_apart() {
+        // 距離 1 < target 3 → error -2、両 inv 1 → w_sum 2、λ = -1 → A -= 1 (x=-1)、B += 1 (x=2)
+        let mut world = quiet_world();
+        let a = world.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
+        let b = world.add_body(RigidBody::new_dynamic(v3(1, 0, 0), Fix128::ONE));
+        let mut c = dc(a, b);
+        c.target_distance = Fix128::from_int(3);
+        world.add_distance_constraint(c);
+
+        world.solve_distance_constraints(r(1, 4));
+
+        assert_eq!(world.bodies[a].position, v3(-1, 0, 0));
+        assert_eq!(world.bodies[b].position, v3(2, 0, 0));
+    }
+
+    #[test]
+    fn solve_distance_constraints_compliance_softens_correction() {
+        // compliance 1/16、dt 1/4 → compliance_term = (1/16)/(1/16) = 1
+        // A static、B inv 1 at 4、target 2 → error 2、w_sum = 1 + 1 = 2、λ = 1 → B: 4 - 1 = 3
+        let mut world = quiet_world();
+        let a = world.add_body(RigidBody::new_static(Vec3Fix::ZERO));
+        let b = world.add_body(RigidBody::new_dynamic(v3(4, 0, 0), Fix128::ONE));
+        let mut c = dc(a, b);
+        c.target_distance = Fix128::from_int(2);
+        c.compliance = r(1, 16);
+        world.add_distance_constraint(c);
+
+        world.solve_distance_constraints(r(1, 4));
+
+        assert_eq!(world.bodies[b].position, v3(3, 0, 0));
+        assert_eq!(world.distance_constraints[0].cached_lambda, Fix128::ONE);
+    }
+
+    #[test]
+    fn solve_distance_constraints_warm_start_biases_error() {
+        // 前 substep の cached_lambda = 1、warm_start_factor = 1、compliance_term = 1 (上と同設定)
+        // biased_error = 2 - 1*1*1 = 1 → λ = 1/2 → B: 4 - 0.5 = 3.5
+        let mut world = quiet_world();
+        world.config.warm_start_factor = Fix128::ONE;
+        let a = world.add_body(RigidBody::new_static(Vec3Fix::ZERO));
+        let b = world.add_body(RigidBody::new_dynamic(v3(4, 0, 0), Fix128::ONE));
+        let mut c = dc(a, b);
+        c.target_distance = Fix128::from_int(2);
+        c.compliance = r(1, 16);
+        c.cached_lambda = Fix128::ONE;
+        world.add_distance_constraint(c);
+
+        world.solve_distance_constraints(r(1, 4));
+
+        assert_eq!(
+            world.bodies[b].position,
+            Vec3Fix::new(r(7, 2), Fix128::ZERO, Fix128::ZERO)
+        );
+        assert_eq!(world.distance_constraints[0].cached_lambda, r(1, 2));
+    }
+
+    #[test]
+    fn solve_distance_constraints_anchor_offsets_are_rotated_into_world() {
+        // B に local anchor (0,1,0)、B を z 軸 π 回転 → world anchor は B.pos + (0,-1,0)
+        // A static at 0、B at (0,2,0) → anchor_b = (0,1,0)、距離 1 == target 1 → 補正なし
+        let mut world = quiet_world();
+        let a = world.add_body(RigidBody::new_static(Vec3Fix::ZERO));
+        let b = world.add_body(RigidBody::new_dynamic(v3(0, 2, 0), Fix128::ONE));
+        world.bodies[b].rotation =
+            QuatFix::new(Fix128::ZERO, Fix128::ZERO, Fix128::ONE, Fix128::ZERO);
+        let mut c = dc(a, b);
+        c.local_anchor_b = v3(0, 1, 0);
+        world.add_distance_constraint(c);
+
+        world.solve_distance_constraints(r(1, 4));
+
+        assert_eq!(world.bodies[b].position, v3(0, 2, 0));
+        // 回転していなければ anchor は (0,3,0)、距離 3 → error 2 → B は -2 動く
+        let mut unrotated = quiet_world();
+        let a2 = unrotated.add_body(RigidBody::new_static(Vec3Fix::ZERO));
+        let b2 = unrotated.add_body(RigidBody::new_dynamic(v3(0, 2, 0), Fix128::ONE));
+        let mut c2 = dc(a2, b2);
+        c2.local_anchor_b = v3(0, 1, 0);
+        unrotated.add_distance_constraint(c2);
+        unrotated.solve_distance_constraints(r(1, 4));
+        assert_near_vec(unrotated.bodies[b2].position, v3(0, 0, 0), "unrotated B");
+        // normalize の sqrt 丸め 数 ulp
+    }
+
+    #[test]
+    fn solve_distance_constraints_skips_coincident_and_double_static() {
+        let mut world = quiet_world();
+        let a = world.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
+        let b = world.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE)); // 同一点
+        world.add_distance_constraint(dc(a, b));
+        world.solve_distance_constraints(r(1, 4));
+        assert_eq!(world.bodies[a].position, Vec3Fix::ZERO);
+        assert_eq!(world.bodies[b].position, Vec3Fix::ZERO);
+        assert_eq!(world.distance_constraints[0].cached_lambda, Fix128::ZERO);
+
+        let mut statics = quiet_world();
+        let s1 = statics.add_body(RigidBody::new_static(Vec3Fix::ZERO));
+        let s2 = statics.add_body(RigidBody::new_static(v3(5, 0, 0)));
+        statics.add_distance_constraint(dc(s1, s2));
+        statics.solve_distance_constraints(r(1, 4));
+        assert_eq!(statics.bodies[s2].position, v3(5, 0, 0));
+        assert_eq!(statics.distance_constraints[0].cached_lambda, Fix128::ZERO);
+    }
+
+    // ---- solve_contact_constraints ------------------------------------
+
+    fn contact_world(inv_a: Fix128, inv_b: Fix128, depth: Fix128) -> PhysicsWorld {
+        let mut world = quiet_world();
+        let a = world.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
+        let b = world.add_body(RigidBody::new_dynamic(v3(1, 0, 0), Fix128::ONE));
+        world.bodies[a].inv_mass = inv_a;
+        world.bodies[b].inv_mass = inv_b;
+        let contact = Contact {
+            depth,
+            normal: v3(1, 0, 0),
+            point_a: Vec3Fix::ZERO,
+            point_b: Vec3Fix::ZERO,
+        };
+        world
+            .contact_constraints
+            .push(ContactConstraint::new(a, b, contact));
+        world
+    }
+
+    #[test]
+    fn solve_contact_constraints_pushes_apart_by_depth_weighted_by_inverse_mass() {
+        // inv 1 / inv 3、depth 1 → λ = 1、inv_w = 1/4 → A += n * 1/4、B -= n * 3/4
+        let mut world = contact_world(Fix128::ONE, Fix128::from_int(3), Fix128::ONE);
+        world.solve_contact_constraints(r(1, 4));
+        assert_eq!(
+            world.bodies[0].position,
+            Vec3Fix::new(r(1, 4), Fix128::ZERO, Fix128::ZERO)
+        );
+        assert_eq!(
+            world.bodies[1].position,
+            Vec3Fix::new(r(1, 4), Fix128::ZERO, Fix128::ZERO)
+        );
+        assert_eq!(world.contact_constraints[0].cached_lambda, Fix128::ONE);
+    }
+
+    #[test]
+    fn solve_contact_constraints_zero_or_negative_depth_is_skipped() {
+        for depth in [Fix128::ZERO, -r(1, 2)] {
+            let mut world = contact_world(Fix128::ONE, Fix128::ONE, depth);
+            world.solve_contact_constraints(r(1, 4));
+            assert_eq!(world.bodies[0].position, Vec3Fix::ZERO, "depth {depth:?}");
+            assert_eq!(world.bodies[1].position, v3(1, 0, 0), "depth {depth:?}");
+            assert_eq!(world.contact_constraints[0].cached_lambda, Fix128::ZERO);
+        }
+    }
+
+    #[test]
+    fn solve_contact_constraints_static_side_absorbs_nothing() {
+        // A static (inv 0)、B inv 1、depth 1/2 → B -= 1/2、A 不動
+        let mut world = contact_world(Fix128::ZERO, Fix128::ONE, r(1, 2));
+        world.solve_contact_constraints(r(1, 4));
+        assert_eq!(world.bodies[0].position, Vec3Fix::ZERO);
+        assert_eq!(
+            world.bodies[1].position,
+            Vec3Fix::new(r(1, 2), Fix128::ZERO, Fix128::ZERO)
+        );
+        // 両 static は skip、cached_lambda も 0 のまま
+        let mut both = contact_world(Fix128::ZERO, Fix128::ZERO, r(1, 2));
+        both.solve_contact_constraints(r(1, 4));
+        assert_eq!(both.bodies[1].position, v3(1, 0, 0));
+        assert_eq!(both.contact_constraints[0].cached_lambda, Fix128::ZERO);
+    }
+
+    #[test]
+    fn solve_contact_constraints_warm_start_clamps_lambda_at_zero() {
+        // depth 1/2、cached 1、wsf 1 → biased = -1/2 → λ = 0 (`>` は false) → 動かない
+        let mut world = contact_world(Fix128::ONE, Fix128::ONE, r(1, 2));
+        world.config.warm_start_factor = Fix128::ONE;
+        world.contact_constraints[0].cached_lambda = Fix128::ONE;
+        world.solve_contact_constraints(r(1, 4));
+        assert_eq!(world.bodies[0].position, Vec3Fix::ZERO);
+        assert_eq!(world.contact_constraints[0].cached_lambda, Fix128::ZERO);
+
+        // biased == 0 ちょうど (depth 1/2、cached 1/2) → `>` は false → λ = 0
+        let mut edge = contact_world(Fix128::ONE, Fix128::ONE, r(1, 2));
+        edge.config.warm_start_factor = Fix128::ONE;
+        edge.contact_constraints[0].cached_lambda = r(1, 2);
+        edge.solve_contact_constraints(r(1, 4));
+        assert_eq!(edge.bodies[0].position, Vec3Fix::ZERO);
+
+        // cached 1/4、wsf 1/2 → biased = 1/2 - 1/8 = 3/8 → A += 3/16
+        let mut partial = contact_world(Fix128::ONE, Fix128::ONE, r(1, 2));
+        partial.config.warm_start_factor = r(1, 2);
+        partial.contact_constraints[0].cached_lambda = r(1, 4);
+        partial.solve_contact_constraints(r(1, 4));
+        assert_eq!(
+            partial.bodies[0].position,
+            Vec3Fix::new(r(3, 16), Fix128::ZERO, Fix128::ZERO)
+        );
+        assert_eq!(partial.contact_constraints[0].cached_lambda, r(3, 8));
+    }
+
+    #[test]
+    fn solve_contact_constraints_sensor_skips_response() {
+        for side in 0..2 {
+            let mut world = contact_world(Fix128::ONE, Fix128::ONE, Fix128::ONE);
+            world.bodies[side].is_sensor = true;
+            world.solve_contact_constraints(r(1, 4));
+            assert_eq!(world.bodies[0].position, Vec3Fix::ZERO, "side {side}");
+            assert_eq!(world.bodies[1].position, v3(1, 0, 0), "side {side}");
+        }
+    }
+
+    #[cfg(feature = "std")]
+    #[test]
+    fn solve_contact_constraints_pre_solve_hook_can_discard_and_modifier_can_rescale() {
+        // hook が false → skip
+        let mut vetoed = contact_world(Fix128::ONE, Fix128::ONE, Fix128::ONE);
+        vetoed.add_pre_solve_hook(Box::new(|_a, _b, _c| false));
+        vetoed.solve_contact_constraints(r(1, 4));
+        assert_eq!(vetoed.bodies[0].position, Vec3Fix::ZERO);
+
+        // hook が true → 通常通り
+        let mut allowed = contact_world(Fix128::ONE, Fix128::ONE, Fix128::ONE);
+        allowed.add_pre_solve_hook(Box::new(|_a, _b, _c| true));
+        allowed.solve_contact_constraints(r(1, 4));
+        assert_eq!(
+            allowed.bodies[0].position,
+            Vec3Fix::new(r(1, 2), Fix128::ZERO, Fix128::ZERO)
+        );
+
+        // modifier が depth を半分に → λ = 1/2 → A += 1/4
+        struct Halve;
+        impl ContactModifier for Halve {
+            fn modify_contact(
+                &self,
+                _a: usize,
+                _b: usize,
+                c: &mut Contact,
+                _f: &mut Fix128,
+                _r: &mut Fix128,
+            ) -> bool {
+                c.depth = c.depth.half();
+                true
+            }
+        }
+        let mut halved = contact_world(Fix128::ONE, Fix128::ONE, Fix128::ONE);
+        halved.add_contact_modifier(Box::new(Halve));
+        halved.solve_contact_constraints(r(1, 4));
+        assert_eq!(
+            halved.bodies[0].position,
+            Vec3Fix::new(r(1, 4), Fix128::ZERO, Fix128::ZERO)
+        );
+
+        // modifier が false → 捨てる
+        struct Discard;
+        impl ContactModifier for Discard {
+            fn modify_contact(
+                &self,
+                _a: usize,
+                _b: usize,
+                _c: &mut Contact,
+                _f: &mut Fix128,
+                _r: &mut Fix128,
+            ) -> bool {
+                false
+            }
+        }
+        let mut discarded = contact_world(Fix128::ONE, Fix128::ONE, Fix128::ONE);
+        discarded.add_contact_modifier(Box::new(Discard));
+        discarded.solve_contact_constraints(r(1, 4));
+        assert_eq!(discarded.bodies[0].position, Vec3Fix::ZERO);
+    }
+
+    // ---- RigidBody force / torque / impulse ---------------------------
+
+    /// inv_mass 2、inv_inertia (1, 2, 4) の body、初期 velocity / angular を非零にして加算を観測
+    fn loaded_body() -> RigidBody {
+        let mut b = RigidBody::new_dynamic(v3(1, 2, 3), Fix128::ONE);
+        b.inv_mass = Fix128::from_int(2);
+        b.inv_inertia = v3(1, 2, 4);
+        b.velocity = v3(10, 20, 30);
+        b.angular_velocity = v3(-1, -2, -3);
+        b
+    }
+
+    #[test]
+    fn add_force_scales_by_inverse_mass_and_dt() {
+        let mut b = loaded_body();
+        b.add_force(v3(4, -8, 16), r(1, 4)); // Δv = F * 2 * 1/4 = (2, -4, 8)
+        assert_eq!(b.velocity, v3(12, 16, 38));
+        assert_eq!(b.angular_velocity, v3(-1, -2, -3));
+        let mut st = RigidBody::new_static(Vec3Fix::ZERO);
+        st.add_force(v3(4, 4, 4), Fix128::ONE);
+        assert_eq!(st.velocity, Vec3Fix::ZERO);
+    }
+
+    #[test]
+    fn add_torque_scales_each_axis_by_inverse_inertia_and_dt() {
+        let mut b = loaded_body();
+        b.add_torque(v3(8, 8, 8), r(1, 4)); // Δω = (8*1, 8*2, 8*4) * 1/4 = (2, 4, 8)
+        assert_eq!(b.angular_velocity, v3(1, 2, 5));
+        assert_eq!(b.velocity, v3(10, 20, 30));
+        let mut st = RigidBody::new_static(Vec3Fix::ZERO);
+        st.add_torque(v3(8, 8, 8), Fix128::ONE);
+        assert_eq!(st.angular_velocity, Vec3Fix::ZERO);
+    }
+
+    #[test]
+    fn apply_impulse_scales_by_inverse_mass_only() {
+        let mut b = loaded_body();
+        b.apply_impulse(v3(1, 2, 3)); // Δv = (2, 4, 6)
+        assert_eq!(b.velocity, v3(12, 24, 36));
+        assert_eq!(b.angular_velocity, v3(-1, -2, -3));
+        let mut st = RigidBody::new_static(Vec3Fix::ZERO);
+        st.apply_impulse(v3(1, 1, 1));
+        assert_eq!(st.velocity, Vec3Fix::ZERO);
+    }
+
+    #[test]
+    fn apply_impulse_at_adds_lever_arm_torque() {
+        // position (1,2,3)、point (2,2,3) → r = (1,0,0)、impulse (0,3,0) → r × J = (0,0,3)
+        // Δω = (0*1, 0*2, 3*4) = (0,0,12)、Δv = J * 2 = (0,6,0)
+        let mut b = loaded_body();
+        b.apply_impulse_at(v3(0, 3, 0), v3(2, 2, 3));
+        assert_eq!(b.velocity, v3(10, 26, 30));
+        assert_eq!(b.angular_velocity, v3(-1, -2, 9));
+
+        // r = (0,1,0)、J = (0,0,5) → r × J = (5,0,0) → Δω = (5,0,0)
+        let mut c = loaded_body();
+        c.apply_impulse_at(v3(0, 0, 5), v3(1, 3, 3));
+        assert_eq!(c.angular_velocity, v3(4, -2, -3));
+        assert_eq!(c.velocity, v3(10, 20, 40));
+
+        // r = (0,0,1)、J = (7,0,0) → r × J = (0,7,0) → Δω = (0,14,0)
+        let mut d = loaded_body();
+        d.apply_impulse_at(v3(7, 0, 0), v3(1, 2, 4));
+        assert_eq!(d.angular_velocity, v3(-1, 12, -3));
+
+        // 着力点 = 重心 → torque なし
+        let mut e = loaded_body();
+        e.apply_impulse_at(v3(7, 0, 0), v3(1, 2, 3));
+        assert_eq!(e.angular_velocity, v3(-1, -2, -3));
+        assert_eq!(e.velocity, v3(24, 20, 30));
+
+        let mut st = RigidBody::new_static(Vec3Fix::ZERO);
+        st.apply_impulse_at(v3(1, 1, 1), v3(1, 0, 0));
+        assert_eq!(st.velocity, Vec3Fix::ZERO);
+        assert_eq!(st.angular_velocity, Vec3Fix::ZERO);
+    }
+
+    // ---- serialize / deserialize ---------------------------------------
+
+    fn snapshot_world() -> PhysicsWorld {
+        let mut world = quiet_world();
+        let mut a = RigidBody::new_dynamic(v3(1, 2, 3), Fix128::ONE);
+        a.velocity = v3(4, 5, 6);
+        a.angular_velocity = v3(7, 8, 9);
+        a.rotation = QuatFix::from_axis_angle(v3(1, 1, 0), r(1, 3));
+        world.add_body(a);
+        let mut b = RigidBody::new_dynamic(v3(-1, -2, -3), Fix128::ONE);
+        b.velocity = Vec3Fix::new(r(1, 3), r(-2, 7), r(5, 11));
+        world.add_body(b);
+        world
+    }
+
+    #[test]
+    fn deserialize_state_roundtrip_restores_every_field_bit_exact() {
+        let src = snapshot_world();
+        let bytes = src.serialize_state();
+        assert_eq!(bytes.len(), 4 + 2 * 208);
+        let mut dst = quiet_world();
+        dst.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
+        dst.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
+        assert!(dst.deserialize_state(&bytes));
+        for i in 0..2 {
+            assert_eq!(dst.bodies[i].position, src.bodies[i].position, "pos {i}");
+            assert_eq!(dst.bodies[i].velocity, src.bodies[i].velocity, "vel {i}");
+            assert_eq!(dst.bodies[i].rotation, src.bodies[i].rotation, "rot {i}");
+            assert_eq!(
+                dst.bodies[i].angular_velocity, src.bodies[i].angular_velocity,
+                "ang {i}"
+            );
+        }
+        // 並列配列は body 数に同期
+        assert_eq!(dst.body_collision_radii.len(), 2);
+        assert_eq!(dst.body_filters.len(), 2);
+        assert_eq!(dst.body_materials.len(), 2);
+    }
+
+    #[test]
+    fn deserialize_state_every_single_byte_flip_changes_some_field() {
+        // 1 byte でも壊れた snapshot は必ずどれかの field に反映される (silent 無視 / 別 field 混入を検出)
+        let src = snapshot_world();
+        let bytes = src.serialize_state();
+        for pos in 4..bytes.len() {
+            let mut bad = bytes.clone();
+            bad[pos] ^= 0x01;
+            let mut dst = snapshot_world();
+            assert!(dst.deserialize_state(&bad), "byte {pos}");
+            let body = (pos - 4) / 208;
+            let field = ((pos - 4) % 208) / 48; // 0 pos / 1 vel / 2 rot(64 byte = 2 slot 相当は 128..192) / 3 ang
+            let changed_body = (0..2)
+                .filter(|&i| {
+                    let (s, d) = (&src.bodies[i], &dst.bodies[i]);
+                    s.position != d.position
+                        || s.velocity != d.velocity
+                        || s.rotation != d.rotation
+                        || s.angular_velocity != d.angular_velocity
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(
+                changed_body,
+                vec![body],
+                "byte {pos} must change only body {body}"
+            );
+            let (s, d) = (&src.bodies[body], &dst.bodies[body]);
+            let off = (pos - 4) % 208;
+            match off {
+                0..=47 => assert!(
+                    s.position != d.position && s.velocity == d.velocity,
+                    "byte {pos} → position"
+                ),
+                48..=95 => assert!(
+                    s.velocity != d.velocity && s.position == d.position,
+                    "byte {pos} → velocity"
+                ),
+                96..=159 => assert!(
+                    s.rotation != d.rotation && s.angular_velocity == d.angular_velocity,
+                    "byte {pos} → rotation"
+                ),
+                _ => assert!(
+                    s.angular_velocity != d.angular_velocity && s.rotation == d.rotation,
+                    "byte {pos} → angular"
+                ),
+            }
+            let _ = field;
+        }
+    }
+
+    #[test]
+    fn deserialize_state_rejects_short_or_mismatched_input() {
+        let src = snapshot_world();
+        let bytes = src.serialize_state();
+        let mut dst = snapshot_world();
+        assert!(!dst.deserialize_state(&bytes[..3])); // header 未満
+        assert!(!dst.deserialize_state(&bytes[..4 + 208 + 100])); // 2 体目が途中で切れる
+        let mut one_body = quiet_world();
+        one_body.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
+        assert!(!one_body.deserialize_state(&bytes)); // count 不一致
+                                                      // 拒否時は元の状態を保つ (先頭 body だけ書き換わっていない)
+        assert_eq!(one_body.bodies[0].position, Vec3Fix::ZERO);
+        // ぴったり 1 body 分 + header なら OK
+        let mut exact = quiet_world();
+        exact.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
+        let mut one = 1u32.to_le_bytes().to_vec();
+        one.extend_from_slice(&bytes[4..4 + 208]);
+        assert!(exact.deserialize_state(&one));
+        assert_eq!(exact.bodies[0].position, v3(1, 2, 3));
+    }
+
+    // ---- integrate_positions -----------------------------------------
+
+    #[test]
+    fn integrate_positions_applies_gravity_damping_and_predicts_position() {
+        let mut world = quiet_world();
+        world.config.gravity = v3(0, -8, 0);
+        world.config.damping = r(1, 2);
+        let i = world.add_body(RigidBody::new_dynamic(v3(1, 1, 1), Fix128::ONE));
+        world.bodies[i].velocity = v3(4, 0, 0);
+        world.bodies[i].gravity_scale = r(1, 2);
+        world.bodies[i].linear_damping = r(1, 2);
+        let dt = r(1, 4);
+
+        world.integrate_positions(dt);
+
+        // v = (4,0,0) + g*scale*dt = (4, -1, 0) → damping 1/2 * 1/2 → (1, -1/4, 0)
+        // pos = (1,1,1) + v*dt = (1.25, 15/16, 1)、prev = (1,1,1)
+        let b = &world.bodies[i];
+        assert_eq!(
+            b.velocity,
+            Vec3Fix::new(Fix128::ONE, -r(1, 4), Fix128::ZERO)
+        );
+        assert_eq!(b.position, Vec3Fix::new(r(5, 4), r(15, 16), Fix128::ONE));
+        assert_eq!(b.prev_position, v3(1, 1, 1));
+    }
+
+    #[test]
+    fn integrate_positions_angular_damping_and_rotation_prediction() {
+        let mut world = quiet_world();
+        world.config.damping = Fix128::ONE;
+        let i = world.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
+        world.bodies[i].angular_velocity = v3(0, 0, 2);
+        world.bodies[i].angular_damping = r(1, 2); // → (0,0,1)
+        let dt = r(1, 4);
+
+        world.integrate_positions(dt);
+
+        let b = &world.bodies[i];
+        assert_eq!(b.angular_velocity, v3(0, 0, 1));
+        // 回転は z 軸 angle = 1 * 1/4 の quaternion (正規化済) と一致
+        let expected = QuatFix::from_axis_angle(v3(0, 0, 1), r(1, 4))
+            .mul(QuatFix::IDENTITY)
+            .normalize();
+        assert_eq!(b.rotation, expected);
+        assert_eq!(b.prev_rotation, QuatFix::IDENTITY);
+        assert!(b.rotation != QuatFix::IDENTITY);
+    }
+
+    #[test]
+    fn integrate_positions_static_kinematic_and_sleeping_paths() {
+        let mut world = quiet_world();
+        world.config.gravity = v3(0, -8, 0);
+        let st = world.add_body(RigidBody::new_static(v3(0, 5, 0)));
+        let mut kin = RigidBody::new_static(v3(0, 0, 0));
+        kin.body_type = BodyType::Kinematic;
+        kin.set_kinematic_target(v3(2, 0, 0), QuatFix::IDENTITY);
+        let ki = world.add_body(kin);
+        let sl = world.add_body(RigidBody::new_dynamic(v3(9, 9, 9), Fix128::ONE));
+        world.islands.sleep_data[sl].state = crate::sleeping::SleepState::Sleeping;
+        let dt = r(1, 4);
+
+        world.integrate_positions(dt);
+
+        // static: 完全不動
+        assert_eq!(world.bodies[st].position, v3(0, 5, 0));
+        assert_eq!(world.bodies[st].velocity, Vec3Fix::ZERO);
+        // kinematic: target に snap、velocity = Δ/dt = (8,0,0)、prev は旧位置
+        assert_eq!(world.bodies[ki].position, v3(2, 0, 0));
+        assert_eq!(world.bodies[ki].velocity, v3(8, 0, 0));
+        assert_eq!(world.bodies[ki].prev_position, Vec3Fix::ZERO);
+        // sleeping: 重力なし、prev == position
+        assert_eq!(world.bodies[sl].position, v3(9, 9, 9));
+        assert_eq!(world.bodies[sl].prev_position, v3(9, 9, 9));
+        assert_eq!(world.bodies[sl].velocity, Vec3Fix::ZERO);
+    }
+
+    // ---- step (substep 分割 / 重力の閉形式) ----------------------------
+
+    #[test]
+    fn step_free_fall_matches_closed_form_over_substeps() {
+        // gravity -8、damping 1、substeps 4、dt 1 → substep_dt 1/4
+        // 半陰的 Euler: v_k = -8 * k/4、x_k = x_{k-1} + v_k/4 → 1 step 後 v = -8、x = -(2+4+6+8)/4 = -5
+        let mut world = quiet_world();
+        world.config.gravity = v3(0, -8, 0);
+        world.config.damping = Fix128::ONE;
+        world.config.substeps = 4;
+        world.config.iterations = 1;
+        let i = world.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
+
+        world.step(Fix128::ONE);
+
+        assert_eq!(world.bodies[i].velocity, v3(0, -8, 0));
+        assert_eq!(world.bodies[i].position, v3(0, -5, 0));
+        // substeps 1 なら x = -8 (1 回で落ちる)
+        let mut single = quiet_world();
+        single.config.gravity = v3(0, -8, 0);
+        single.config.damping = Fix128::ONE;
+        single.config.substeps = 1;
+        let j = single.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
+        single.step(Fix128::ONE);
+        assert_eq!(single.bodies[j].position, v3(0, -8, 0));
+    }
+
+    // ---- setters / counters ------------------------------------------
+
+    #[test]
+    fn combined_material_uses_registered_pair_override_and_ignores_out_of_range() {
+        let mut world = quiet_world();
+        let a = world.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
+        let b = world.add_body(RigidBody::new_dynamic(v3(1, 0, 0), Fix128::ONE));
+        let metal = world.material_table.register_metal();
+        world
+            .material_table
+            .set_pair_override(0, metal, r(1, 8), r(7, 8));
+        world.set_body_material(b, metal);
+        let c = world.combined_material(a, b);
+        assert_eq!((c.friction, c.restitution), (r(1, 8), r(7, 8)));
+        // 順序を入れ替えても同じ (対称)
+        let c2 = world.combined_material(b, a);
+        assert_eq!((c2.friction, c2.restitution), (r(1, 8), r(7, 8)));
+        // 範囲外 index は DEFAULT_MATERIAL 扱い = (default, metal) の組ではなく (default, default)
+        let d = world.combined_material(a, 99);
+        let dd = world.material_table.combine(0, 0);
+        assert_eq!((d.friction, d.restitution), (dd.friction, dd.restitution));
+        // set_body_material の範囲外は無視
+        world.set_body_material(99, metal);
+        assert_eq!(world.body_materials.len(), 2);
+    }
+
+    #[test]
+    fn body_setters_ignore_out_of_range_and_apply_in_range() {
+        let mut world = quiet_world();
+        let a = world.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
+        world.set_body_collision_radius(a, r(3, 2));
+        assert_eq!(world.body_collision_radii[a], Some(r(3, 2)));
+        world.set_body_collision_radius(5, Fix128::ONE);
+        assert_eq!(world.body_collision_radii.len(), 1);
+        world.clear_body_collision_radius(5);
+        assert_eq!(world.body_collision_radii[a], Some(r(3, 2)));
+        world.clear_body_collision_radius(a);
+        assert_eq!(world.body_collision_radii[a], None);
+
+        let f = CollisionFilter {
+            layer: 4,
+            mask: 8,
+            group: 2,
+        };
+        world.set_body_filter(a, f);
+        assert_eq!(world.body_filters[a], f);
+        world.set_body_filter(5, CollisionFilter::DEFAULT);
+        assert_eq!(world.body_filters[a], f);
+    }
+
+    #[test]
+    fn active_body_count_excludes_sleeping() {
+        let mut world = quiet_world();
+        for i in 0..3 {
+            world.add_body(RigidBody::new_dynamic(v3(i, 0, 0), Fix128::ONE));
+        }
+        assert_eq!(world.active_body_count(), 3);
+        world.islands.sleep_data[1].state = crate::sleeping::SleepState::Sleeping;
+        assert_eq!(world.active_body_count(), 2);
+        world.islands.sleep_data[0].state = crate::sleeping::SleepState::Sleeping;
+        world.islands.sleep_data[2].state = crate::sleeping::SleepState::Sleeping;
+        assert_eq!(world.active_body_count(), 0);
     }
 }

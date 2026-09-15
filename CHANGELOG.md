@@ -11,6 +11,33 @@ were introduced during that release window.
 - v0.11.0 — [docs/audits/STUB_AUDIT_v0.11.0.md](docs/audits/STUB_AUDIT_v0.11.0.md) (base: v0.10.0 `16674d4`)
 - v0.12.0 — [docs/audits/STUB_AUDIT_v0.12.0.md](docs/audits/STUB_AUDIT_v0.12.0.md) (base: v0.11.0 `095f115`, **0 new stubs**)
 
+## [Unreleased]
+
+### Fixed
+
+- **`PhysicsWorld::remove_body` re-attached the removed body's constraints
+  and joints to the body swapped into its slot.** The `last -> idx` index
+  remap ran before the "drop everything that referenced `idx`" pass, so a
+  distance / contact constraint or joint on the removed body survived with
+  `body == idx` — now pointing at the moved last body — and could even
+  become a `(idx, idx)` self-constraint. Only removing the last body was
+  correct. Found by the new mutation-score tests; the fix drops the
+  removed body's references first, then remaps.
+
+### Added
+
+- Mutation-score test suite for the `solver` core (`cargo mutants` driven,
+  64 tests): exact closed-form checks for `update_velocities` (linear /
+  angular derivation, restitution, Coulomb friction clamp, sensor / static
+  skips), `raycast` (closed-form hit distance, every axis, surface / inside /
+  boundary cases, nearest-of-many), `remove_body` (first / middle / last,
+  joints, islands, invariants), `detect_collisions` (exact contact geometry,
+  touching boundary, filters, sleeping, sensors), `solve_distance_constraints`
+  / `solve_contact_constraints` (mass split, compliance, warm start, anchors,
+  hooks / modifiers), `RigidBody` force / torque / impulse lever arms,
+  `serialize_state` byte-flip sensitivity, `integrate_positions` paths and
+  `step` free-fall closed form.
+
 ## [1.1.0] - 2026-09-15
 
 **Every module is now cross-platform bit-exact.** 1.0.1 documented that the
