@@ -9,7 +9,12 @@
 //!
 //! # Features
 //!
-//! - **SIMD Acceleration**: When `simd` feature is enabled, uses platform intrinsics
+//! - **`simd` feature**: exposes the `*_simd` / `dot_batch_4` API surface and
+//!   `SIMD_WIDTH`. As of 1.2.0 every one of these is **scalar-equivalent**:
+//!   SSE2/AVX2 have no 128-bit multiply and cannot propagate the lo→hi carry a
+//!   Fix128 add needs, so the intrinsic paths were never faster than the
+//!   ADC chain LLVM already emits. The feature is kept so downstream code can
+//!   target a future AVX-512 / NEON batch path without an API change.
 //! - **Determinism**: All operations produce bit-identical results across platforms
 //! - **Zero-allocation**: Hot paths use no heap allocation
 //!
@@ -33,10 +38,6 @@ use core::ops::{Add, Div, Mul, Neg, Sub};
 use alloc::vec;
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
-
-// SIMD imports for x86_64
-#[cfg(all(feature = "simd", target_arch = "x86_64"))]
-use core::arch::x86_64::*;
 
 // ============================================================================
 // Fix128 (I64F64) - 128-bit Fixed-Point Number
@@ -208,48 +209,56 @@ impl Fix128 {
         }
     }
 
-    /// Square root using Newton-Raphson iteration
+    /// Square root, exact floor: `floor(sqrt(self))` in I64F64.
     ///
-    /// Deterministic: Fixed number of iterations
+    /// Restoring digit-recurrence (one result bit per step) on the 192-bit
+    /// radicand `self << 64`, 96 fixed steps, so the result is the largest
+    /// `r` with `r * r <= self` — bit-identical on every platform and to the
+    /// pre-1.2.0 Newton-Raphson implementation (verified over 20 000 samples
+    /// plus edge values in `tests::sqrt_matches_newton_reference`).
+    ///
+    /// Before 1.2.0 this ran 64 Newton iterations, each calling the 64-step
+    /// long division, ≈ 4 096 inner steps per call (≈ 10 µs); 3-5 iterations
+    /// had already converged. The recurrence needs 96 shift/compare/subtract
+    /// steps (≈ 24× faster, see `benches/physics_bench.rs::fix128_sqrt`).
+    ///
+    /// Negative input returns `ZERO` (deterministic, no NaN).
+    ///
+    /// Deterministic: fixed number of iterations, integer-only.
     #[must_use]
     pub fn sqrt(self) -> Self {
         if self.is_negative() || self.is_zero() {
             return Self::ZERO;
         }
 
-        // Initial guess: deterministic bit-width estimation (no f64)
-        // For Fix128 (I64F64), value = (hi << 64 | lo) / 2^64
-        // Estimate sqrt via bit position: if highest set bit is at position b,
-        // sqrt is approximately at bit position b/2.
-        let sig_bits = if self.hi > 0 {
-            128 - (self.hi as u64).leading_zeros() as i64
-        } else if self.hi == 0 && self.lo > 0 {
-            64 - self.lo.leading_zeros() as i64
-        } else {
-            1
-        };
-        // Shift accounts for the 64 fractional bits: result bit = (sig_bits + 63) / 2
-        let result_bit = ((sig_bits + 63) / 2) as u32;
-        let mut x = if result_bit >= 64 {
-            Self {
-                hi: 1i64 << (result_bit - 64).min(62),
-                lo: 0,
+        // Radicand N = (hi:lo) << 64 as a 192-bit integer; result = isqrt(N),
+        // which is sqrt(value) * 2^64 = the I64F64 encoding of sqrt(value).
+        // Process 2 radicand bits per step from the top: the first 64 steps
+        // consume the 128 bits of (hi:lo), the remaining 32 steps consume the
+        // 64 appended zero bits.
+        let n = ((self.hi as u128) << 64) | (self.lo as u128);
+        let mut rem: u128 = 0;
+        let mut root: u128 = 0;
+        let mut i = 0u32;
+        while i < 96 {
+            // Next two radicand bits (MSB first). rem < 2*root + 1 < 2^97
+            // before the shift, so rem << 2 | bits < 2^99 never overflows u128.
+            let bits = if i < 64 { (n >> (126 - 2 * i)) & 3 } else { 0 };
+            rem = (rem << 2) | bits;
+            let trial = (root << 2) | 1;
+            if rem >= trial {
+                rem -= trial;
+                root = (root << 1) | 1;
+            } else {
+                root <<= 1;
             }
-        } else {
-            Self {
-                hi: 0,
-                lo: 1u64 << result_bit,
-            }
-        };
-
-        // Newton-Raphson: x = (x + n/x) / 2
-        // Fixed 64 iterations for determinism
-        for _ in 0..64 {
-            let div = self / x;
-            x = (x + div).half();
+            i += 1;
         }
 
-        x
+        Self {
+            hi: (root >> 64) as i64,
+            lo: root as u64,
+        }
     }
 
     /// Divide by 2 (bit shift, exact)
@@ -339,51 +348,38 @@ impl Fix128 {
     // SIMD-Accelerated Operations (x86_64 only)
     // ========================================================================
 
-    /// SIMD-accelerated addition (x86_64 AVX2)
+    /// Addition through the `simd` feature's API surface — **scalar-equivalent**.
     ///
-    /// Uses 128-bit integer operations when available.
-    /// Falls back to scalar on other platforms.
+    /// Bit-identical to `self + rhs`. SSE2's `_mm_add_epi64` adds the two
+    /// 64-bit lanes independently and cannot carry from `lo` into `hi`, so a
+    /// Fix128 add has no profitable SSE2 form; LLVM already emits `add`/`adc`
+    /// for the scalar path. Before 1.2.0 this function loaded both operands
+    /// into `__m128i` registers and then discarded them (`let _ = (a, b)`),
+    /// i.e. it was scalar with dead intrinsics.
+    ///
     /// # Safety
     ///
-    /// Caller must ensure the CPU supports SSE2. Guaranteed by
-    /// `#[target_feature]` when called from the safe `Add` impl.
+    /// No preconditions; kept `unsafe` + `#[target_feature(enable = "sse2")]`
+    /// for signature compatibility with existing callers.
     #[cfg(all(feature = "simd", target_arch = "x86_64"))]
     #[inline]
     #[target_feature(enable = "sse2")]
     pub unsafe fn add_simd(self, rhs: Self) -> Self {
-        // Load as 128-bit integers using SSE2
-        // self = [lo, hi], rhs = [lo, hi]
-        let a = _mm_set_epi64x(self.hi, self.lo as i64);
-        let b = _mm_set_epi64x(rhs.hi, rhs.lo as i64);
-
-        // 64-bit addition with manual carry propagation
-        // Low parts
-        let lo_sum = (self.lo as u128) + (rhs.lo as u128);
-        let lo = lo_sum as u64;
-        let carry = (lo_sum >> 64) as i64;
-
-        // High parts with carry
-        let hi = self.hi.wrapping_add(rhs.hi).wrapping_add(carry);
-
-        // Suppress unused variable warning
-        let _ = (a, b);
-
-        Self { hi, lo }
+        self + rhs
     }
 
-    /// SIMD-accelerated subtraction (x86_64 SSE2)
+    /// Subtraction through the `simd` feature's API surface — **scalar-equivalent**
+    /// (see [`Self::add_simd`]).
     ///
     /// # Safety
     ///
-    /// Caller must ensure the CPU supports SSE2. Guaranteed by
-    /// `#[target_feature]` when called from the safe `Sub` impl.
+    /// No preconditions; kept `unsafe` + `#[target_feature(enable = "sse2")]`
+    /// for signature compatibility with existing callers.
     #[cfg(all(feature = "simd", target_arch = "x86_64"))]
     #[inline]
     #[target_feature(enable = "sse2")]
     pub unsafe fn sub_simd(self, rhs: Self) -> Self {
-        let (lo, borrow) = self.lo.overflowing_sub(rhs.lo);
-        let hi = self.hi.wrapping_sub(rhs.hi).wrapping_sub(borrow as i64);
-        Self { hi, lo }
+        self - rhs
     }
 }
 
@@ -967,22 +963,19 @@ impl Vec3Fix {
     ///
     /// # Determinism guarantee
     ///
-    /// Fix128 multiplication is 128-bit integer arithmetic (`u128`/`i128`) with
-    /// no floating-point rounding — no SSE2/AVX2 instruction exists that performs
-    /// this directly. Therefore the three component multiplications remain scalar
-    /// (bit-identical across platforms). After the three products are computed we
-    /// use SSE2 64-bit integer addition (`_mm_add_epi64`) to accelerate the two
-    /// successive Fix128 additions, enabling the CPU's out-of-order execution to
-    /// overlap the lo/hi lane adds.
+    /// Dot product on the `simd` feature's x86_64 path — **scalar-equivalent**.
     ///
-    /// The result is **bit-exact** to the scalar `dot()` method because:
-    /// - All multiplications use identical 128-bit integer paths.
-    /// - The SSE2 additions are integer additions (no rounding), identical to the
-    ///   scalar `wrapping_add` / `overflowing_add` carry logic.
+    /// Fix128 multiplication is 128-bit integer arithmetic (`u128`/`i128`); no
+    /// SSE2/AVX2 instruction performs it, and the two Fix128 additions cannot
+    /// use `_mm_add_epi64` because it does not carry from `lo` into `hi` (see
+    /// the comment in the body). The result is bit-exact to `dot()` because it
+    /// *is* `dot()`. Kept as the dispatch target of `dot_simd` so a future
+    /// AVX-512 / NEON batch path can land without an API change.
     ///
     /// # Safety
     ///
-    /// Caller must ensure the target CPU supports SSE2 (guaranteed on all x86_64).
+    /// No preconditions; `#[target_feature(enable = "sse2")]` is always
+    /// satisfied on x86_64.
     #[cfg(all(feature = "simd", target_arch = "x86_64"))]
     #[target_feature(enable = "sse2")]
     unsafe fn dot_simd_sse2(self, rhs: Self) -> Fix128 {
@@ -1036,7 +1029,8 @@ impl Vec3Fix {
         self.dot_simd(self)
     }
 
-    /// SIMD-optimized cross product
+    /// Cross product through the `simd` feature's API surface —
+    /// **scalar-equivalent**, bit-identical to `cross()` (see the module docs).
     #[cfg(all(feature = "simd", target_arch = "x86_64"))]
     #[inline]
     pub fn cross_simd(self, rhs: Self) -> Self {
@@ -1056,9 +1050,9 @@ impl Vec3Fix {
         }
     }
 
-    /// Batch dot product for multiple vector pairs
-    ///
-    /// Computes dot products for 4 vector pairs simultaneously (when available)
+    /// Batch dot product for 4 vector pairs — **scalar-equivalent** (four
+    /// `dot()` calls, bit-identical). The batch shape is the API a future
+    /// AVX-512 / NEON path would fill in.
     #[cfg(all(feature = "simd", target_arch = "x86_64"))]
     pub fn dot_batch_4(a: [Self; 4], b: [Self; 4]) -> [Fix128; 4] {
         // Process all 4 pairs
@@ -2629,6 +2623,202 @@ mod tests {
             );
             // sin² + cos² = 1
             assert!(close(s * s + c * c, Fix128::ONE), "pythagoras {x:?}");
+        }
+    }
+
+    // ---- sqrt: digit recurrence vs Newton reference vs exact floor oracle ----
+
+    /// The pre-1.2.0 implementation, kept as a bit-for-bit reference.
+    fn sqrt_newton_reference(v: Fix128) -> Fix128 {
+        if v.is_negative() || v.is_zero() {
+            return Fix128::ZERO;
+        }
+        let sig_bits = if v.hi > 0 {
+            128 - (v.hi as u64).leading_zeros() as i64
+        } else if v.hi == 0 && v.lo > 0 {
+            64 - v.lo.leading_zeros() as i64
+        } else {
+            1
+        };
+        let result_bit = ((sig_bits + 63) / 2) as u32;
+        let mut x = if result_bit >= 64 {
+            Fix128 {
+                hi: 1i64 << (result_bit - 64).min(62),
+                lo: 0,
+            }
+        } else {
+            Fix128 {
+                hi: 0,
+                lo: 1u64 << result_bit,
+            }
+        };
+        for _ in 0..64 {
+            let div = v / x;
+            x = (x + div).half();
+        }
+        x
+    }
+
+    /// 256-bit square of a u128 as (hi, lo) limbs.
+    fn square_wide(r: u128) -> (u128, u128) {
+        let (a, b) = (r >> 64, r & 0xFFFF_FFFF_FFFF_FFFF);
+        let bb = b * b;
+        let ab = a * b; // < 2^128
+        let aa = a * a;
+        // r^2 = aa<<128 + 2ab<<64 + bb
+        let (mid, c1) = bb.overflowing_add(ab << 65);
+        let hi = aa + (ab >> 63) + c1 as u128;
+        (hi, mid)
+    }
+
+    /// Exact-floor property of I64F64 sqrt: with N = raw << 64 (192-bit),
+    /// root^2 <= N < (root+1)^2.
+    fn assert_sqrt_is_exact_floor(v: Fix128) {
+        let r = v.sqrt();
+        let root = ((r.hi as u128) << 64) | r.lo as u128;
+        let n = ((v.hi as u128) << 64) | v.lo as u128; // N = (n_hi:n_lo) = n << 64 → (n>>64, n<<64)
+        let n_hi = n >> 64;
+        let n_lo = n << 64;
+        let (lo_hi, lo_lo) = square_wide(root);
+        assert!(
+            (lo_hi, lo_lo) <= (n_hi, n_lo),
+            "root^2 > N for {v:?} (root {root:#x})"
+        );
+        let (up_hi, up_lo) = square_wide(root + 1);
+        assert!(
+            (up_hi, up_lo) > (n_hi, n_lo),
+            "(root+1)^2 <= N for {v:?} (root {root:#x})"
+        );
+    }
+
+    fn lcg_samples(n: usize) -> impl Iterator<Item = Fix128> {
+        // Deterministic LCG (Knuth MMIX), mixes magnitudes from 2^-64 to 2^62.
+        let mut state: u64 = 0x9E37_79B9_7F4A_7C15;
+        (0..n).map(move |i| {
+            state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            let lo = state;
+            state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            // Vary the integer-part magnitude: 0 .. 2^62 by shifting.
+            let shift = (i % 64) as u32;
+            let hi = ((state >> 1) >> shift) as i64;
+            Fix128 { hi, lo }
+        })
+    }
+
+    #[test]
+    fn sqrt_matches_newton_reference() {
+        let edges = [
+            Fix128::ZERO,
+            Fix128::from_raw(0, 1),
+            Fix128::from_raw(0, u64::MAX),
+            Fix128::ONE,
+            Fix128::from_ratio(1, 4),
+            Fix128::from_int(2),
+            Fix128::from_int(4),
+            Fix128::from_int(1_000_000),
+            Fix128::from_raw(i64::MAX, u64::MAX),
+            Fix128::from_int(-3),
+        ];
+        for v in edges.iter().copied().chain(lcg_samples(20_000)) {
+            assert_eq!(v.sqrt(), sqrt_newton_reference(v), "sqrt drift for {v:?}");
+        }
+    }
+
+    #[test]
+    fn sqrt_is_exact_floor_and_monotonic() {
+        assert_eq!(Fix128::from_ratio(1, 4).sqrt(), Fix128::from_ratio(1, 2));
+        assert_eq!(Fix128::from_int(4).sqrt(), Fix128::from_int(2));
+        assert_eq!(Fix128::from_int(-3).sqrt(), Fix128::ZERO);
+        let mut prev = Fix128::ZERO;
+        let mut samples: Vec<Fix128> = lcg_samples(20_000).collect();
+        samples.push(Fix128::from_raw(i64::MAX, u64::MAX));
+        samples.push(Fix128::from_raw(0, 1));
+        samples.sort();
+        for v in samples {
+            assert_sqrt_is_exact_floor(v);
+            let r = v.sqrt();
+            assert!(r >= prev, "sqrt not monotonic at {v:?}");
+            prev = r;
+        }
+    }
+
+    // ---- transcendental oracle sweep (f64 libm reference) ----
+    //
+    // Golden bit patterns only detect *change*; a value that was wrong from the
+    // start gets pinned as-is (that is how the 1.0.0 atan bug shipped). Every
+    // Fix128 transcendental is therefore also checked against an independent
+    // f64 reference over a dense sweep of the domain.
+
+    #[test]
+    #[allow(clippy::disallowed_methods)] // the f64 libm values are the oracle on purpose
+    fn transcendental_sweep_matches_f64_reference() {
+        // CORDIC with 48 iterations: worst-case error ≈ 2^-46 ≈ 1.4e-14 plus
+        // range-reduction rounding; f64 reference itself carries 1e-16.
+        const TOL: f64 = 1e-11;
+        let steps = 4_000;
+        for i in 0..=steps {
+            // x sweeps [-4π, 4π] (range reduction on both sides) for sin / cos
+            let t = -4.0 * core::f64::consts::PI
+                + 8.0 * core::f64::consts::PI * (i as f64) / (steps as f64);
+            let x = Fix128::from_f64(t);
+            let xf = x.to_f64();
+            let (s, c) = x.sin_cos();
+            assert!(
+                (s.to_f64() - xf.sin()).abs() < TOL,
+                "sin({xf}) = {} vs {}",
+                s.to_f64(),
+                xf.sin()
+            );
+            assert!(
+                (c.to_f64() - xf.cos()).abs() < TOL,
+                "cos({xf}) = {} vs {}",
+                c.to_f64(),
+                xf.cos()
+            );
+            // atan over [-40, 40] (both sides of |x| = 1 argument reduction)
+            let a = Fix128::from_f64(t * 10.0 / core::f64::consts::PI);
+            let af = a.to_f64();
+            assert!(
+                (a.atan().to_f64() - af.atan()).abs() < TOL,
+                "atan({af}) = {} vs {}",
+                a.atan().to_f64(),
+                af.atan()
+            );
+            // sqrt over (0, 1e6]
+            let q = Fix128::from_f64(1e6 * (i as f64 + 1.0) / (steps as f64 + 1.0));
+            let qf = q.to_f64();
+            assert!(
+                (q.sqrt().to_f64() - qf.sqrt()).abs() < 1e-9 * qf.sqrt().max(1.0),
+                "sqrt({qf}) = {} vs {}",
+                q.sqrt().to_f64(),
+                qf.sqrt()
+            );
+        }
+        // atan2: all four quadrants + axes, radius varied
+        for iy in -20i64..=20 {
+            for ix in -20i64..=20 {
+                if ix == 0 && iy == 0 {
+                    continue;
+                }
+                let y = Fix128::from_ratio(iy * 7, 13);
+                let x = Fix128::from_ratio(ix * 5, 11);
+                let (yf, xf) = (y.to_f64(), x.to_f64());
+                let got = Fix128::atan2(y, x).to_f64();
+                let want = yf.atan2(xf);
+                // atan2 returns in (-π, π]; the reference may return -π on the
+                // negative x axis with -0.0 — normalise both to [0, 2π).
+                let norm =
+                    |v: f64| (v + 2.0 * core::f64::consts::PI) % (2.0 * core::f64::consts::PI);
+                assert!(
+                    (norm(got) - norm(want)).abs() < TOL
+                        || (norm(got) - norm(want)).abs() > 2.0 * core::f64::consts::PI - TOL,
+                    "atan2({yf}, {xf}) = {got} vs {want}"
+                );
+            }
         }
     }
 }

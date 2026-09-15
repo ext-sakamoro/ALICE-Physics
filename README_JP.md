@@ -345,7 +345,7 @@ ALICE-Physicsは6層にわたる最適化で **100/100 の完璧なスコア** �
 | **L3: 計算戦略** | 20/20 | ウォームスタート `cached_lambda`、逆数事前計算（`inv_rest_length`、`inv_rest_density`） |
 | **L4: GPU・スループット** | 15/15 | `SIMD_WIDTH`定数 + `simd_width()`、`GpuSdfInstancedBatch`/`GpuSdfMultiDispatch`、`batch_size()` |
 | **L5: ビルドプロファイル** | 10/10 | `opt-level=3`、`lto="fat"`、`codegen-units=1`、`panic="abort"`、`strip=true` |
-| **L6: コード品質** | 20/20 | 1382 lib テスト + 53 alice-bamboo 統合テスト + 8 fuzz target + 44 決定論テスト、clippy `-D warnings` (default + 全 native feature set、all targets)、MSRV 1.70.0 CI job、`#![deny(missing_docs)]`、cargo-semver-checks hard-gate |
+| **L6: コード品質** | 20/20 | 1525 lib テスト + 解析解 oracle 10 本 + 53 alice-bamboo 統合テスト + 8 fuzz target + 44 決定論テスト、clippy `-D warnings` (default + 全 native feature set、all targets)、MSRV 1.85 CI job (default / no_std / native)、`#![deny(missing_docs)]`、cargo-semver-checks hard-gate |
 | **合計** | **100/100** | |
 
 ### L1: メモリレイアウト (15/15)
@@ -1784,20 +1784,28 @@ let config = PhysicsConfig::default();
 
 ## 性能特性
 
-| 演算 | 計算量 | 備考 |
-|------|--------|------|
-| Fix128 加算/減算 | O(1) | ~2-3サイクル |
-| Fix128 乗算 | O(1) | ~10サイクル（128bit乗算） |
-| Fix128 除算 | O(1) | ~40サイクル（128bit除算） |
-| CORDIC sin/cos | O(48) | 48回反復、決定論的 |
-| GJK 交差判定 | O(64) | 最大64回反復 |
-| EPA 貫通深度 | O(64) | 最大64回反復 |
-| BVH 構築 | O(n log n) | モートンコードソート |
-| BVH クエリ | O(log n) | スタックレストラバーサル |
+計測値 (推定でなく実測): `cargo bench --bench physics_bench` (criterion、release profile)、Apple M 系、2026-09-15、alice-physics 1.2.0 絶対値は環境依存、Algorithm 列が実装の実態
+<!-- perf-measured: 2026-09-15 benches/physics_bench.rs -->
+
+| 演算 | アルゴリズム | 実測 |
+|------|------------|------|
+| Fix128 加算/減算 | 128bit add with carry | < 1 ns |
+| Fix128 乗算 | 64×64→128 部分積 3 回 | 1.1 ns |
+| Fix128 除算 | u128 整数商 + 小数部 64 step 長除算 | 141 ns |
+| Fix128 sqrt | 96 step restoring digit recurrence (exact floor) | 193 ns (1.1.0: 9,676 ns、Newton × 除算 64 回) |
+| Vec3Fix normalize | sqrt 1 回 + 除算 3 回 | 618 ns (1.1.0: 10,390 ns) |
+| CORDIC sin/cos / atan | 48 反復固定 | ~1 µs |
+| GJK 交差 | 最大 64 反復 | — |
+| EPA 侵入深度 | 最大 64 反復 | — |
+| BVH 構築 | Morton code sort、O(n log n) | — |
+| BVH query / find_pairs | leaf AABB 毎の stackless 走査、O(n log n) 期待 | 1.1.0 は root AABB で query → O(n²) |
+| World step、10 body × 60 step (default config) | | 404 µs (1.1.0: 5.11 ms) |
+
+1.1.0 の外部レビュー (Linux x86_64) では重なり 1000 体で 432 ms/frame、sqrt + BVH 修正後は同 scene が 3.9 ms/frame で 2000 体まで線形 数値を引用する前に対象環境で bench を再実行すること
 
 ## MSRV ポリシー
 
-**最小サポート Rust バージョン: 1.70.0**
+**最小サポート Rust バージョン: 1.85**
 
 ALICE-Physics は Serde 流の MSRV ポリシーを採用:
 
@@ -1805,14 +1813,14 @@ ALICE-Physics は Serde 流の MSRV ポリシーを採用:
 - 1.x 安定 line での MSRV bump も **minor version bump** (`1.x → 1.(x+1)`) 扱い、patch にはしない
 - MSRV コミットメントは **最新 3 stable Rust channel** (N-2 policy) をカバー、リリース時点で current stable + 過去 2 個を支援
 - `alice-physics` は nightly toolchain を要求しない
-- CI で MSRV enforcement (v1.0.1 から専用 `msrv` job): stable が MSRV 対応 lockfile を解決 (`CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS=fallback`) → `cargo +1.70.0 check --locked --features "std,simd,parallel,ffi,gpu-solver-bridge"` で 1.70.0 上の library を type-check
+- CI の専用 `msrv` job が宣言 MSRV を実 compile: `cargo +1.85 check` を default feature / `no_std` (rlib) / core native feature set の 3 通り、`resolver = "3"` (MSRV-aware) で解決 1.0.x〜1.1.0 は 1.70.0 を宣言していたが、その toolchain は lockfile を parse できず `no_std` build は `core::f32::abs` (1.85) を要求していたため 1.2.0 で訂正 (上記 policy 通り minor bump)
 
-**MSRV 保証の範囲** — *library* を default feature + core native feature (`std` / `simd` / `parallel` / `ffi` / `gpu-solver-bridge`) で build する範囲が 1.70.0 対象 範囲外:
+**MSRV 保証の範囲** — *library* を default feature / `no_std` (`--no-default-features`、rlib) / core native feature (`std` / `simd` / `parallel` / `ffi` / `gpu-solver-bridge`) で build する範囲が 1.85 対象 範囲外:
 
 | 対象 | 実効 MSRV | 理由 |
 |------|-----------|------|
 | `neural` / `replay` / `analytics` bridge feature | sibling crate (`alice-ml` / `alice-db` / `alice-analytics`) に従う、`alice-db 0.2.0-beta.1` → `alice-zip 0.3.0` 時点で 1.87 | sibling crate が独自に MSRV を持つ |
-| test / bench (dev-dependencies) | 1.71+ | `criterion` / `serde_derive` |
+| test / bench (dev-dependencies) | 1.85+ | `criterion` / `serde_derive` |
 | `wasm` feature | stable channel 推奨 | `wasm-bindgen` の更新が速い |
 
 Downstream crate は `alice-physics` が patch release で MSRV を上げないことに依存でき、下流の MSRV window を破壊しない
@@ -1827,7 +1835,7 @@ Downstream crate は `alice-physics` が patch release で MSRV を上げない�
 |--------|---------|
 | ネイティブアプリ / ゲームエンジン host (Unity、UE5、Godot) | `cargo build --features "std,simd,parallel,ffi,gpu-solver-bridge"` |
 | ブラウザ (WebGL / WebGPU、wasm-bindgen 経由) | `cargo build --features "std,simd,parallel,wasm,gpu-solver-bridge"` |
-| 組み込み / no_std | `cargo build --no-default-features` |
+| 組み込み / no_std | 依存として使う場合は `default-features = false`、単体 build は `cargo rustc --lib --no-default-features --crate-type rlib` (package は C ABI 用に `cdylib`/`staticlib` も宣言しており、これらは `std` が必要) |
 | Python バインディング | `cargo build --features "std,simd,parallel,python"` |
 
 docs.rs はネイティブ feature set でビルド (Cargo.toml の `[package.metadata.docs.rs]` 参照)
@@ -1837,7 +1845,10 @@ docs.rs はネイティブ feature set でビルド (Cargo.toml の `[package.me
 cargo build --release
 
 # no_stdビルド（組み込み/WASM向け）
-cargo build --release --no-default-features
+cargo rustc --release --lib --no-default-features --crate-type rlib
+
+# Unity / UE5 向け C ABI 成果物 (target/release/libalice_physics.{so,dylib,a}、alice_physics.dll)
+cargo build --release --features ffi
 
 # テスト実行
 cargo test
@@ -1854,7 +1865,7 @@ cargo test --features "simd,parallel"
 | Feature | デフォルト | 説明 |
 |---------|----------|------|
 | `std` | Yes | 標準ライブラリサポート |
-| `simd` | No | SIMD高速化 Fix128/Vec3Fix 演算（x86_64） |
+| `simd` | No | `*_simd` / `dot_batch_4` API surface + `SIMD_WIDTH` **1.2.0 時点でスカラ等価**: SSE2/AVX2 に 128bit 乗算がなく lo→hi の carry も伝播できないため、intrinsic 経路がスカラ ADC chain より速くなることはない 将来の AVX-512 / NEON batch 経路のために API を保持 |
 | `parallel` | No | Rayonによる拘束バッチング（グラフ彩色並列解決） |
 | `neural` | No | ALICE-ML三値推論による決定論的ニューラルコントローラ |
 | `python` | No | Pythonバインディング（PyO3 + NumPyゼロコピー） |
@@ -1887,7 +1898,7 @@ cargo build --release --features ffi
 | 組み合わせ | ステータス | テスト数 |
 |-----------|----------|---------|
 | `--no-default-features` (no_std) | ✅ | 9 |
-| `--features std` (default) | ✅ | 645 + 72 + 20 |
+| `--features std` (default) | ✅ | 1525 unit + 72 integration + 解析解 oracle 10 + 決定論 44 + 21 doc |
 | `--features simd` | ✅ | 20 |
 | `--features parallel` | ✅ | 20 |
 | `--features "simd,parallel"` | ✅ | 20 |
@@ -2397,7 +2408,9 @@ v0.6.0 テストサマリ:
 
 ## ライセンス
 
-AGPL-3.0 - 詳細は [LICENSE](LICENSE) を参照。
+AGPL-3.0-or-later - 詳細は [LICENSE](LICENSE) を参照。
+
+AGPL は強いコピーレフト: `alice-physics` を (Unity / UE5 binding 経由を含め) link して配布 / 提供するゲーム・アプリケーションは AGPL で公開する義務がある これはオープンなエコシステムのための意図的な選択 AGPL 義務なしの商用利用は別ライセンスを用意するので <sakamoro@alicelaw.net> まで連絡
 
 Copyright (C) 2024-2026 Moroya Sakamoto
 

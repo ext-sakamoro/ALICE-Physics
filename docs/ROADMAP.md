@@ -3,7 +3,15 @@
 Canonical roadmap for the alice-physics crate. Primary source of truth.
 Memory index pointer: `[[reference-alice-physics-v1-roadmap]]` in claude-config.
 
-## 🎉 現在位置 (2026-09-15): v1.1.0 released (1.0.0 stable + 全 module bit-exact)
+## 🎉 現在位置 (2026-09-15): v1.2.0 (外部レビュー 3 round + 解析解 oracle 対応、publish は user 判断)
+
+**v1.2.0 = 外部レビュー (Linux x86_64 実測、Round 1-3) 由来の重大修正 + `tests/analytic_physics.rs` 10 本** (詳細 [`CHANGELOG.md`](../CHANGELOG.md) `[1.2.0]`):
+- 修正 (挙動変化、golden 再 pin): damping を frame 単位化 (default で重力が効いていなかった) / XPBD λ 累積 (iteration 依存剛性) / sphere contact normal 逆向き / substep 毎 collision detection + contact λ 累積 (5 m/s 衝突が 700 m/s になっていた)
+- 修正 (bit 互換): `Fix128::sqrt` digit recurrence 50× / MSRV 1.70.0 → **1.85** 実証 + `resolver = "3"` / `crate-type` cdylib+staticlib / `panic = "unwind"` / SIMD dead code 除去 / README perf 表実測化 / lib.rs claim
+- **規律**: 解析解 oracle test を default config で必須 (substeps / iterations を変えて結果不変を assert)、golden hash は「変化検出」であって「正しさ」ではない
+- 残 (Backlog、claude-config `project_todos_active`): engineering 30 module の参照解 validation (大) / iterations 既定 1 + substeps 中心 (Small Steps 推奨配分) / default damping 0.99 再考 / contact solver の ALICE-TRT parity 同期 / det_math atan2・acos・asin・tan・tanh / `Div` ゼロ除算 silent ZERO / module 階層分け (core vs 教科書 wrapper)
+
+## v1.1.0 released 2026-09-15 (1.0.0 stable + 全 module bit-exact)
 
 **alice-physics v1.1.0 = crates.io published 2026-09-15** — `Published alice-physics v1.1.0 at registry crates-io`
 - crates.io URL: https://crates.io/crates/alice-physics/1.1.0 (docs.rs build ✅、Documentation / Homepage link 追加)
@@ -21,7 +29,7 @@ Memory index pointer: `[[reference-alice-physics-v1-roadmap]]` in claude-config.
 | D: `#![deny(missing_docs)]` | ✅ | 0 warning 実測 |
 | E: Determinism CI 6-env matrix | ✅ | 6 platform (macOS ARM/x86 + Linux ARM/x86 + Windows + WASM) × 31 test (9 golden hash + 22 semantic invariant)、bit-exact 一致確認済 |
 | F: Fuzz coverage 8/8 | ✅ | fuzz_step / collision / deterministic_roundtrip / joint / cfd / ccd / trimesh / structural |
-| G: MSRV policy | ✅ | `rust-version = "1.70.0"` + README EN Serde-style policy |
+| G: MSRV policy | ✅ | `rust-version = "1.70.0"` + README EN Serde-style policy (1.2.0 で 1.85 に訂正: 1.70 宣言は未検証で偽だった、CI msrv job が実 compile) |
 | H: Ecosystem contracts freeze | ✅ | [`ECOSYSTEM_CONTRACTS.md`](ECOSYSTEM_CONTRACTS.md) に 5 partner (TRT / SDF / Bamboo / Anima / Kinematics) frozen API |
 | I: Migration guide | ✅ | [`MIGRATION_0.x_TO_1.0.md`](MIGRATION_0.x_TO_1.0.md) per-module 削除項目 + `#[non_exhaustive]` 影響 + 5 step checklist |
 | J: crates.io publish | ✅ | preview.4-8 → **1.0.0 stable** promoted |

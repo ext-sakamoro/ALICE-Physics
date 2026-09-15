@@ -12,12 +12,15 @@ English | [日本語](README_JP.md)
 > Part of **[ALICE-Eco-System](https://github.com/ext-sakamoro/ALICE-Eco-System)** — 260+ crate Edge-to-Cloud data pipeline (SDF / Physics / LLM / Motion / Font / TTS)
 
 A high-precision physics engine designed for deterministic simulation across different platforms and hardware. The rigid-body core uses 128-bit fixed-point arithmetic (`Fix128`); the surrounding engineering / field modules use IEEE `f32` / `f64` with every transcendental routed through the crate's own `det_math`. Either way the result is bit-exact regardless of CPU, compiler, or operating system — see [Determinism scope](#determinism-scope).
+<!-- claim-test: determinism_freefall -->
 
-**Published on crates.io as v1.1.0** (1.0.0 semver-locked stable released 2026-09-14; 1.1.0 on 2026-09-15 makes every module cross-platform bit-exact via `det_math`). Install with `cargo add alice-physics`. All 9 v1.0 roadmap items complete — see [`CHANGELOG.md`](CHANGELOG.md) for the full release scope, [`docs/MIGRATION_0.x_TO_1.0.md`](docs/MIGRATION_0.x_TO_1.0.md) for 0.x → 1.0 migration, and [`docs/ECOSYSTEM_CONTRACTS.md`](docs/ECOSYSTEM_CONTRACTS.md) for frozen partner API contracts.
+**Published on crates.io** (1.0.0 semver-locked stable released 2026-09-14; 1.1.0 makes every module cross-platform bit-exact via `det_math`; 1.2.0 fixes the default-config physics found by the 2026-09-15 external review and adds analytic-solution oracles — see `CHANGELOG.md`).
+<!-- claim-test: golden_sim_field --> Install with `cargo add alice-physics`. All 9 v1.0 roadmap items complete — see [`CHANGELOG.md`](CHANGELOG.md) for the full release scope, [`docs/MIGRATION_0.x_TO_1.0.md`](docs/MIGRATION_0.x_TO_1.0.md) for 0.x → 1.0 migration, and [`docs/ECOSYSTEM_CONTRACTS.md`](docs/ECOSYSTEM_CONTRACTS.md) for frozen partner API contracts.
 
 ### Determinism scope
 
 Every module in the crate is **bit-exact across platforms**, for two different reasons:
+<!-- claim-test: golden_rolling_contact -->
 
 | Tier | Modules | Why the bits agree everywhere |
 |------|---------|-------------------------------|
@@ -363,7 +366,7 @@ ALICE-Physics achieves a **perfect 100/100 optimization score** across 6 layers:
 | **L3: Compute** | 20/20 | Warm-start `cached_lambda`, reciprocal precomputation (`inv_rest_length`, `inv_rest_density`) |
 | **L4: GPU & Throughput** | 15/15 | `SIMD_WIDTH` const + `simd_width()`, `GpuSdfInstancedBatch`/`GpuSdfMultiDispatch`, `batch_size()` |
 | **L5: Build Profile** | 10/10 | `opt-level=3`, `lto="fat"`, `codegen-units=1`, `panic="abort"`, `strip=true` |
-| **L6: Code Quality** | 20/20 | 1372 lib tests + 53 alice-bamboo integration tests + 8 fuzz targets + 44 determinism tests (6-platform bit-exact, Fix128 + f32 golden), clippy `-D warnings` (default + full native feature set, all targets), MSRV 1.70.0 CI job, `#![deny(missing_docs)]`, cargo-semver-checks hard-gated |
+| **L6: Code Quality** | 20/20 | 1525 lib tests + 10 analytic-solution oracles + 53 alice-bamboo integration tests + 8 fuzz targets + 44 determinism tests (6-platform bit-exact, Fix128 + f32 golden), clippy `-D warnings` (default + full native feature set, all targets), MSRV 1.85 CI job (default / no_std / native), `#![deny(missing_docs)]`, cargo-semver-checks hard-gated |
 | **Total** | **100/100** | |
 
 ### L1: Memory Layout (15/15)
@@ -2052,7 +2055,8 @@ let config = RenderConfig {
 
 ## Deterministic Neural Controller (ALICE-ML Integration)
 
-ALICE-Physics integrates with [ALICE-ML](../ALICE-ML) to provide **bit-exact deterministic AI** for game characters. By combining 1.58-bit ternary weights {-1, 0, +1} with 128-bit fixed-point arithmetic, neural inference reduces to pure addition/subtraction — no floating-point, no rounding, no platform-dependent behavior.
+ALICE-Physics integrates with [ALICE-ML](../ALICE-ML) to provide **bit-exact deterministic AI** for game characters. By combining 1.58-bit ternary weights {-1, 0, +1} with 128-bit fixed-point arithmetic, neural inference reduces to pure addition/subtraction — the inference path is integer-only (`Fix128` mat-vec, no IEEE 754 rounding, no platform-dependent behavior).
+<!-- claim-test: test_fix128_ternary_matvec_manual -->
 
 This is the "holy grail" for networked fighting games and action games: all clients compute identical AI behavior without synchronization.
 
@@ -2153,20 +2157,33 @@ let config = PhysicsConfig::default();
 
 ## Performance Characteristics
 
-| Operation | Complexity | Notes |
-|-----------|------------|-------|
-| Fix128 add/sub | O(1) | ~2-3 cycles |
-| Fix128 mul | O(1) | ~10 cycles (128-bit multiply) |
-| Fix128 div | O(1) | ~40 cycles (128-bit division) |
-| CORDIC sin/cos | O(48) | 48 iterations, deterministic |
-| GJK intersection | O(64) | Max 64 iterations |
-| EPA penetration | O(64) | Max 64 iterations |
-| BVH build | O(n log n) | Morton code sort |
-| BVH query | O(log n) | Stackless traversal |
+Measured, not estimated: `cargo bench --bench physics_bench` (criterion, release
+profile) on Apple M-series, 2026-09-15, alice-physics 1.2.0. Absolute numbers are
+machine-dependent; the algorithmic column is what the implementation actually does.
+<!-- perf-measured: 2026-09-15 benches/physics_bench.rs -->
+
+| Operation | Algorithm | Measured |
+|-----------|-----------|----------|
+| Fix128 add/sub | 128-bit add with carry | < 1 ns |
+| Fix128 mul | 3 × 64×64→128 partial products | 1.1 ns |
+| Fix128 div | u128 integer quotient + 64-step long division for the fraction | 141 ns |
+| Fix128 sqrt | 96-step restoring digit recurrence (exact floor) | 193 ns (1.1.0: 9,676 ns, Newton × 64 divisions) |
+| Vec3Fix normalize | length via sqrt + 3 div | 618 ns (1.1.0: 10,390 ns) |
+| CORDIC sin/cos / atan | 48 fixed iterations | ~1 µs |
+| GJK intersection | max 64 iterations | — |
+| EPA penetration | max 64 iterations | — |
+| BVH build | Morton code sort, O(n log n) | — |
+| BVH query / find_pairs | stackless traversal per leaf AABB, O(n log n) expected | 1.1.0 queried the root AABB → O(n²) |
+| World step, 10 bodies × 60 steps (default config) | | 404 µs (1.1.0: 5.11 ms) |
+
+External review of 1.1.0 (Linux x86_64) measured 1000 overlapping bodies at
+432 ms/frame; with the sqrt and BVH fixes the same scene runs at 3.9 ms/frame and
+scales linearly to 2000 bodies. Re-run the bench on your target before quoting
+numbers.
 
 ## MSRV Policy
 
-**Minimum Supported Rust Version: 1.70.0**
+**Minimum Supported Rust Version: 1.85**
 
 ALICE-Physics follows a Serde-style MSRV policy:
 
@@ -2174,14 +2191,14 @@ ALICE-Physics follows a Serde-style MSRV policy:
 - MSRV bumps within a stable 1.x line will also be treated as **minor version bumps** (`1.x → 1.(x+1)`), never patch
 - The MSRV commitment covers the **latest 3 stable Rust channels** (N-2 policy) — at the time of a release, we support the current stable + previous 2
 - `alice-physics` does not require a nightly toolchain
-- CI enforces the declared MSRV via a dedicated `msrv` job (since v1.0.1): stable resolves an MSRV-aware lockfile (`CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS=fallback`), then `cargo +1.70.0 check --locked --features "std,simd,parallel,ffi,gpu-solver-bridge"` type-checks the library on 1.70.0
+- CI enforces the declared MSRV via a dedicated `msrv` job: `cargo +1.85 check` on the default feature set, the `no_std` build (rlib) and the core native feature set, resolved by `resolver = "3"` (MSRV-aware). 1.0.x–1.1.0 declared 1.70.0; that toolchain could not even parse the lockfile and the `no_std` build needed `core::f32::abs` (1.85), so the claim was corrected in 1.2.0 (minor bump per the policy above)
 
-**Scope of the MSRV guarantee** — the *library* with the default feature set and the core native features (`std`, `simd`, `parallel`, `ffi`, `gpu-solver-bridge`) builds on 1.70.0. Outside that scope:
+**Scope of the MSRV guarantee** — the *library* with the default feature set, `no_std` (`--no-default-features`, as rlib) and the core native features (`std`, `simd`, `parallel`, `ffi`, `gpu-solver-bridge`) builds on 1.85. Outside that scope:
 
 | Component | Effective MSRV | Why |
 |-----------|----------------|-----|
 | `neural` / `replay` / `analytics` bridge features | follows the sibling crate (`alice-ml` / `alice-db` / `alice-analytics`); 1.87 as of `alice-db 0.2.0-beta.1` → `alice-zip 0.3.0` | sibling crates set their own MSRV |
-| Tests / benches (dev-dependencies) | 1.71+ | `criterion`, `serde_derive` |
+| Tests / benches (dev-dependencies) | 1.85+ | `criterion`, `serde_derive` |
 | `wasm` feature | stable channel recommended | `wasm-bindgen` moves fast |
 
 Downstream crates can rely on `alice-physics` not raising its MSRV within a patch release, preserving their own MSRV window.
@@ -2196,7 +2213,7 @@ Downstream crates can rely on `alice-physics` not raising its MSRV within a patc
 |--------|---------|
 | Native app / game engine host (Unity, UE5, Godot) | `cargo build --features "std,simd,parallel,ffi,gpu-solver-bridge"` |
 | Browser (WebGL / WebGPU via wasm-bindgen) | `cargo build --features "std,simd,parallel,wasm,gpu-solver-bridge"` |
-| Embedded / no_std | `cargo build --no-default-features` |
+| Embedded / no_std | as a dependency: `default-features = false`; standalone: `cargo rustc --lib --no-default-features --crate-type rlib` (the package also declares `cdylib`/`staticlib` for the C ABI, which need `std`) |
 | Python bindings | `cargo build --features "std,simd,parallel,python"` |
 
 docs.rs builds with the native feature set (see `[package.metadata.docs.rs]` in `Cargo.toml`).
@@ -2205,8 +2222,11 @@ docs.rs builds with the native feature set (see `[package.metadata.docs.rs]` in 
 # Standard build
 cargo build --release
 
-# no_std build (for embedded/WASM)
-cargo build --release --no-default-features
+# no_std library build (for embedded/WASM); downstream crates just set default-features = false
+cargo rustc --release --lib --no-default-features --crate-type rlib
+
+# C ABI artifacts for Unity / UE5 (target/release/libalice_physics.{so,dylib,a}, alice_physics.dll)
+cargo build --release --features ffi
 
 # Run tests
 cargo test
@@ -2226,7 +2246,7 @@ cargo bench
 | Feature | Default | Description |
 |---------|---------|-------------|
 | `std` | Yes | Standard library support |
-| `simd` | No | SIMD-accelerated Fix128/Vec3Fix operations (x86_64) |
+| `simd` | No | `*_simd` / `dot_batch_4` API surface + `SIMD_WIDTH`. **Scalar-equivalent as of 1.2.0**: SSE2/AVX2 have no 128-bit multiply and cannot carry lo→hi, so no intrinsic path is faster than the scalar ADC chain; kept for a future AVX-512 / NEON batch path |
 | `parallel` | No | Constraint batching with Rayon (graph-colored parallel solving) |
 | `neural` | No | Deterministic neural controller via ALICE-ML ternary inference |
 | `python` | No | Python bindings (PyO3 + NumPy zero-copy) |
@@ -2261,11 +2281,11 @@ All feature combinations are tested in CI across macOS, Ubuntu, and Windows:
 | Combination | Status | Tests |
 |-------------|--------|-------|
 | `--no-default-features` (no_std) | ✅ | 9 |
-| `--features std` (default) | ✅ | 645 unit + 72 integration + 20 doc |
+| `--features std` (default) | ✅ | 1525 unit + 72 integration + 10 analytic oracle + 44 determinism + 21 doc |
 | `--features simd` | ✅ | 20 |
 | `--features parallel` | ✅ | 20 |
 | `--features "simd,parallel"` | ✅ | 20 |
-| `--features ffi` | ✅ | build only |
+| `--features ffi` | ✅ | build + cdylib/staticlib artifact check |
 | `--features python` | ✅ | 1 |
 | `--features replay` | ✅ | build only |
 | `--features analytics` | ✅ | build only |
@@ -2920,7 +2940,13 @@ Standardized `[profile.bench]` added for consistent benchmarking across ALICE cr
 
 ## License
 
-AGPL-3.0 - See [LICENSE](LICENSE) for details.
+AGPL-3.0-or-later - See [LICENSE](LICENSE) for details.
+
+AGPL is a strong copyleft: a game or application that links `alice-physics`
+(including through the Unity / UE5 bindings) and is distributed or served to
+users must be released under the AGPL as well. That is intentional for the open
+ecosystem. For commercial use without the AGPL obligations, contact
+<sakamoro@alicelaw.net> for a separate license.
 
 Copyright (C) 2024-2026 Moroya Sakamoto
 
