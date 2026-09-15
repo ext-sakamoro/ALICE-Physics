@@ -261,6 +261,37 @@ impl Fix128 {
         Self { hi, lo }
     }
 
+    /// Arithmetic right shift of the full 128-bit value by `i` bits (exact `self / 2^i`,
+    /// rounding toward negative infinity).
+    ///
+    /// The single source of truth for the CORDIC `x >> i` / `y >> i` micro-rotations
+    /// (`cordic_sin_cos` and `cordic_atan`). Before 1.1.1 `cordic_atan` had its own copy
+    /// that dropped the bits carried from `hi` into `lo`, so `ONE >> 1` evaluated to `0`
+    /// instead of `0.5` and every `atan` / `atan2` result was off by up to ~0.17 rad.
+    #[inline]
+    #[must_use]
+    pub const fn shr_bits(self, i: u32) -> Self {
+        if i == 0 {
+            return self;
+        }
+        if i >= 128 {
+            let hi = self.hi >> 63;
+            return Self { hi, lo: hi as u64 };
+        }
+        if i >= 64 {
+            // hi の下位ビットが lo に降りる、hi は符号のみ残る
+            let lo = (self.hi >> (i - 64)) as u64;
+            return Self {
+                hi: self.hi >> 63,
+                lo,
+            };
+        }
+        Self {
+            hi: self.hi >> i,
+            lo: (self.lo >> i) | ((self.hi as u64) << (64 - i)),
+        }
+    }
+
     /// Multiply by 2 (bit shift, exact)
     #[inline]
     #[must_use]
@@ -677,22 +708,8 @@ fn cordic_sin_cos(angle: Fix128) -> (Fix128, Fix128) {
     for (i, &angle) in CORDIC_ANGLES.iter().enumerate().take(48) {
         let d = if z.is_negative() { -1i64 } else { 1i64 };
 
-        let x_shift = Fix128 {
-            hi: x.hi >> i.min(63),
-            lo: if i < 64 {
-                (x.lo >> i) | ((x.hi as u64) << (64 - i.max(1)))
-            } else {
-                0
-            },
-        };
-        let y_shift = Fix128 {
-            hi: y.hi >> i.min(63),
-            lo: if i < 64 {
-                (y.lo >> i) | ((y.hi as u64) << (64 - i.max(1)))
-            } else {
-                0
-            },
-        };
+        let x_shift = x.shr_bits(i as u32);
+        let y_shift = y.shr_bits(i as u32);
 
         let new_x;
         let new_y;
@@ -729,14 +746,8 @@ fn cordic_atan(v: Fix128) -> Fix128 {
     for (i, &angle) in CORDIC_ANGLES.iter().enumerate().take(48) {
         let d = if y.is_negative() { 1i64 } else { -1i64 };
 
-        let x_shift = Fix128 {
-            hi: x.hi >> i.min(63),
-            lo: if i < 64 { x.lo >> i } else { 0 },
-        };
-        let y_shift = Fix128 {
-            hi: y.hi >> i.min(63),
-            lo: if i < 64 { y.lo >> i } else { 0 },
-        };
+        let x_shift = x.shr_bits(i as u32);
+        let y_shift = y.shr_bits(i as u32);
 
         if d > 0 {
             x = x - y_shift;
@@ -1792,5 +1803,189 @@ mod tests {
                 );
             }
         }
+    }
+
+    // ---- atan / atan2 (1.1.1: cordic_atan の shift 桁落ち修正) --------
+
+    fn close_f64(v: Fix128, expect: f64, tol: f64) -> bool {
+        (v.to_f64() - expect).abs() <= tol
+    }
+
+    #[test]
+    fn shr_bits_is_exact_arithmetic_shift() {
+        let one = Fix128::ONE;
+        assert_eq!(one.shr_bits(0), one);
+        assert_eq!(one.shr_bits(1), Fix128::from_ratio(1, 2)); // 1.1.1 以前の atan 版は 0 になっていた
+        assert_eq!(one.shr_bits(3), Fix128::from_ratio(1, 8));
+        assert_eq!(Fix128::from_int(-1).shr_bits(1), Fix128::from_ratio(-1, 2));
+        assert_eq!(Fix128::from_int(-6).shr_bits(2), Fix128::from_ratio(-3, 2));
+        let v = Fix128 {
+            hi: 5,
+            lo: 0x8000_0000_0000_0001,
+        };
+        assert_eq!(
+            v.shr_bits(1),
+            Fix128 {
+                hi: 2,
+                lo: 0xC000_0000_0000_0000
+            }
+        );
+        assert_eq!(v.shr_bits(64), Fix128 { hi: 0, lo: 5 });
+        assert_eq!(v.shr_bits(65), Fix128 { hi: 0, lo: 2 });
+        assert_eq!(
+            Fix128::from_int(-1).shr_bits(64),
+            Fix128 {
+                hi: -1,
+                lo: u64::MAX
+            }
+        );
+        assert_eq!(v.shr_bits(200), Fix128::ZERO);
+        assert_eq!(
+            Fix128::from_int(-1).shr_bits(200),
+            Fix128 {
+                hi: -1,
+                lo: u64::MAX
+            }
+        );
+        // half() と 1 bit shift は同値
+        for x in [
+            Fix128::PI,
+            Fix128::from_ratio(-7, 3),
+            Fix128::from_int(1234),
+        ] {
+            assert_eq!(x.shr_bits(1), x.half());
+        }
+    }
+
+    #[test]
+    // 参照値として platform libm を使う (許容 1e-12、決定論の pin は *_golden_bit_patterns 側)
+    #[allow(clippy::disallowed_methods)]
+    fn atan_matches_f64_within_1e12() {
+        for (v, expect) in [
+            (Fix128::ZERO, 0.0),
+            (Fix128::ONE, core::f64::consts::FRAC_PI_4),
+            (Fix128::from_int(-1), -core::f64::consts::FRAC_PI_4),
+            (Fix128::from_ratio(1, 2), 0.5f64.atan()),
+            (Fix128::from_int(3), 3f64.atan()),
+            (Fix128::from_ratio(-1, 8), (-0.125f64).atan()),
+            (Fix128::from_int(1000), 1000f64.atan()),
+        ] {
+            let got = v.atan();
+            assert!(
+                close_f64(got, expect, 1e-12),
+                "atan({}) = {} vs {expect}",
+                v.to_f64(),
+                got.to_f64()
+            );
+        }
+    }
+
+    #[test]
+    fn atan_golden_bit_patterns_1_1_1() {
+        // 修正後の実装値を pin (cross-platform bit-exact の source of truth、意図的変更時のみ更新)
+        let cases: [(Fix128, i64, u64); 7] = [
+            (Fix128::ZERO, -1, 18446744073709455410),
+            (Fix128::ONE, 0, 14488038916154342774),
+            (Fix128::from_int(-1), -1, 3958705157555404150),
+            (Fix128::from_ratio(1, 2), 0, 8552788783625182168),
+            (Fix128::from_int(3), 1, 4594083626069865406),
+            (Fix128::from_ratio(-1, 8), -1, 16152799315017801038),
+            (Fix128::from_int(1000), 1, 10510887020674212946),
+        ];
+        for (v, hi, lo) in cases {
+            assert_eq!(v.atan(), Fix128 { hi, lo }, "atan({})", v.to_f64());
+        }
+    }
+
+    #[test]
+    // 参照値として platform libm を使う (許容 1e-12、決定論の pin は *_golden_bit_patterns 側)
+    #[allow(clippy::disallowed_methods)]
+    fn atan2_matches_f64_in_every_quadrant_and_on_axes() {
+        let cases: [(i64, i64); 10] = [
+            (1, 1),
+            (1, -1),
+            (-1, -1),
+            (-1, 1),
+            (1, 0),
+            (-1, 0),
+            (0, 1),
+            (0, -1),
+            (3, 4),
+            (-2, 5),
+        ];
+        for (y, x) in cases {
+            let got = Fix128::atan2(Fix128::from_int(y), Fix128::from_int(x));
+            let expect = (y as f64).atan2(x as f64);
+            assert!(
+                close_f64(got, expect, 1e-12),
+                "atan2({y}, {x}) = {} vs {expect}",
+                got.to_f64()
+            );
+        }
+        assert_eq!(Fix128::atan2(Fix128::ZERO, Fix128::ZERO), Fix128::ZERO);
+    }
+
+    #[test]
+    fn atan2_golden_bit_patterns_1_1_1() {
+        let cases: [(i64, i64, i64, u64); 11] = [
+            (1, 1, 0, 14488038916154342774),
+            (1, -1, 2, 6570628601043732041),
+            (-1, -1, -3, 11876115472666014883),
+            (-1, 1, -1, 3958705157555404150),
+            (1, 0, 1, 10529333758598939753),
+            (-1, 0, -2, 7917410315110611863),
+            (0, 1, -1, 18446744073709455410),
+            (0, -1, 3, 2611923443488231685),
+            (0, 0, 0, 0),
+            (3, 4, 0, 11870500265058138062),
+            (-2, 5, -1, 11427640316703283098),
+        ];
+        for (y, x, hi, lo) in cases {
+            assert_eq!(
+                Fix128::atan2(Fix128::from_int(y), Fix128::from_int(x)),
+                Fix128 { hi, lo },
+                "atan2({y}, {x})"
+            );
+        }
+    }
+
+    #[test]
+    // 参照値として platform libm を使う (許容 1e-12、決定論の pin は *_golden_bit_patterns 側)
+    #[allow(clippy::disallowed_methods)]
+    fn atan_identities_hold() {
+        // odd: atan(-x) == -atan(x) (CORDIC は符号対称なので bit-exact ではなく 1e-12)
+        for v in [
+            Fix128::from_ratio(1, 3),
+            Fix128::from_int(2),
+            Fix128::from_ratio(17, 5),
+        ] {
+            let a = v.atan();
+            let b = (-v).atan();
+            assert!(close_f64(a + b, 0.0, 1e-12), "odd symmetry {}", v.to_f64());
+            // atan(x) + atan(1/x) == π/2 (x > 0)
+            let c = (Fix128::ONE / v).atan();
+            assert!(
+                close_f64(a + c, core::f64::consts::FRAC_PI_2, 1e-12),
+                "complement {}",
+                v.to_f64()
+            );
+            // atan2(y, x) == atan(y/x) for x > 0
+            let d = Fix128::atan2(v, Fix128::from_int(2));
+            assert!(close_f64(
+                d,
+                (v / Fix128::from_int(2)).atan().to_f64(),
+                1e-12
+            ));
+        }
+        // sin / cos は本修正で bit 単位で不変 (代表点 pin)
+        let (s, c) = Fix128::HALF_PI.sin_cos();
+        assert_eq!(s, Fix128 { hi: 1, lo: 1453 });
+        assert_eq!(
+            c,
+            Fix128 {
+                hi: -1,
+                lo: 18446744073709456430
+            }
+        );
     }
 }

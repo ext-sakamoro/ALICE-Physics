@@ -356,56 +356,93 @@ impl Cloth {
         }
     }
 
-    /// Solve bending constraints (dihedral angle)
+    /// Solve bending constraints (dihedral angle).
+    ///
+    /// Standard position-based dihedral constraint (Müller et al. 2007,
+    /// "Position Based Dynamics", Appendix A): with the shared edge `p0 p1`
+    /// and the opposite vertices `p2 p3`,
+    ///
+    /// ```text
+    /// n1 = normalize((p1-p0) × (p2-p0)),  n2 = normalize((p1-p0) × (p3-p0)),
+    /// d  = n1·n2,  C = atan2(|n1×n2|, d) - φ0
+    /// ```
+    ///
+    /// and the four gradients `q_i` of Appendix A. The correction is
+    /// `Δp_i = -w_i · sin(angle) · C / (Σ w_j |q_j|² + α/dt²) · q_i`, so a
+    /// flat rest configuration (`d = -1`, `sin = 0`) produces **no** correction
+    /// and cannot pump energy.
+    ///
+    /// Before 1.1.1 this used the simplified `cos(angle) - cos(φ0)` push along
+    /// the face normals. With the correct `atan2` (fixed in 1.1.1) the flat rest
+    /// angle is exactly `π`, so that error term became `1 + cos(angle) ≥ 0` —
+    /// sign-blind — and the cloth accumulated energy until it flew upward.
     #[inline(always)]
+    #[allow(clippy::many_single_char_names, clippy::similar_names)]
     fn solve_bend_constraints(&mut self, dt: Fix128) {
         let compliance = self.config.bend_compliance / (dt * dt);
 
         for c_idx in 0..self.bend_constraints.len() {
             let c = self.bend_constraints[c_idx];
             let p0 = self.positions[c.i0];
-            let p1 = self.positions[c.i1];
-            let p2 = self.positions[c.i2];
-            let p3 = self.positions[c.i3];
+            // Translate so that p0 is the origin (Appendix A convention p1 = 0)
+            let p1 = self.positions[c.i1] - p0;
+            let p2 = self.positions[c.i2] - p0;
+            let p3 = self.positions[c.i3] - p0;
 
-            // Compute dihedral angle between triangles (p0,p1,p2) and (p0,p1,p3)
-            let edge = p1 - p0;
-            let n1 = edge.cross(p2 - p0);
-            let n2 = edge.cross(p3 - p0);
-
-            let n1_len = n1.length();
-            let n2_len = n2.length();
-            if n1_len.is_zero() || n2_len.is_zero() {
+            let c12 = p1.cross(p2);
+            let c13 = p1.cross(p3);
+            let len12 = c12.length();
+            let len13 = c13.length();
+            if len12.is_zero() || len13.is_zero() {
                 continue;
             }
+            let inv12 = Fix128::ONE / len12;
+            let inv13 = Fix128::ONE / len13;
+            let n1 = c12 * inv12;
+            let n2 = c13 * inv13;
 
-            // Precompute reciprocals to replace two per-constraint divisions.
-            let inv_n1_len = Fix128::ONE / n1_len;
-            let inv_n2_len = Fix128::ONE / n2_len;
-            let n1_norm = n1 * inv_n1_len;
-            let n2_norm = n2 * inv_n2_len;
+            let d = n1.dot(n2);
+            let sin_angle = n1.cross(n2).length();
+            let angle = Fix128::atan2(sin_angle, d);
+            let error = angle - c.rest_angle;
 
-            let cos_angle = n1_norm.dot(n2_norm);
-            let cos_rest = c.rest_angle.cos();
-            let error = cos_angle - cos_rest;
+            // Gradients (Appendix A, with p1 := our p1 (edge end), p3 := p2, p4 := p3)
+            let q2 = (p1.cross(n2) + (n1.cross(p1)) * d) * inv12;
+            let q3 = (p1.cross(n1) + (n2.cross(p1)) * d) * inv13;
+            let q1 = (p2.cross(n2) + (n1.cross(p2)) * d) * (-inv12)
+                + (p3.cross(n1) + (n2.cross(p3)) * d) * (-inv13);
+            let q0 = -(q1 + q2 + q3);
 
-            // Simplified bending: push opposite vertices toward rest angle
+            let w0 = self.inv_masses[c.i0];
+            let w1 = self.inv_masses[c.i1];
             let w2 = self.inv_masses[c.i2];
             let w3 = self.inv_masses[c.i3];
-            let w_sum = w2 + w3 + compliance;
-            if w_sum.is_zero() {
+            let denom = w0 * q0.length_squared()
+                + w1 * q1.length_squared()
+                + w2 * q2.length_squared()
+                + w3 * q3.length_squared()
+                + compliance;
+            if denom.is_zero() {
                 continue;
             }
 
-            let lambda = error / w_sum;
-            let grad2 = n1_norm * lambda;
-            let grad3 = n2_norm * (-lambda);
+            // s = sin(angle) · C / denom (sqrt(1 - d²) == |n1 × n2|)
+            let scale = sin_angle * error / denom;
+            if scale.is_zero() {
+                continue;
+            }
 
+            if !w0.is_zero() {
+                self.positions[c.i0] = self.positions[c.i0] - q0 * (w0 * scale);
+            }
+            if !w1.is_zero() {
+                self.positions[c.i1] = self.positions[c.i1] - q1 * (w1 * scale);
+            }
             if !w2.is_zero() {
-                self.positions[c.i2] = self.positions[c.i2] - grad2 * w2;
+                self.positions[c.i2] = self.positions[c.i2] - q2 * (w2 * scale);
             }
             if !w3.is_zero() {
-                self.positions[c.i3] = self.positions[c.i3] - grad3 * w3;
+                self.positions[c.i3] = self.positions[c.i3] - q3 * (w3 * scale);
             }
         }
     }
@@ -829,6 +866,138 @@ mod tests {
                 ny.abs() > 0.5,
                 "Normals should point mostly in Y for flat grid"
             );
+        }
+    }
+
+    // ---- bending (dihedral) constraint, 1.1.1 ------------------------
+
+    /// 2 三角形 (0,1,2) / (1,0,3) が edge 0-1 を共有する最小 cloth、全 particle 質量 1
+    fn two_triangle_cloth() -> Cloth {
+        let mut cloth = Cloth::new_grid(
+            Vec3Fix::ZERO,
+            Fix128::ONE,
+            Fix128::ONE,
+            2,
+            2,
+            Fix128::from_ratio(1, 100),
+        );
+        assert_eq!(cloth.particle_count(), 4);
+        assert_eq!(
+            cloth.bend_constraints.len(),
+            1,
+            "2x2 grid = 2 triangles = 1 shared edge"
+        );
+        cloth.config.bend_compliance = Fix128::ZERO;
+        cloth
+    }
+
+    fn dihedral(cloth: &Cloth) -> Fix128 {
+        let c = cloth.bend_constraints[0];
+        let p0 = cloth.positions[c.i0];
+        let e = cloth.positions[c.i1] - p0;
+        let n1 = e.cross(cloth.positions[c.i2] - p0).normalize();
+        let n2 = e.cross(cloth.positions[c.i3] - p0).normalize();
+        Fix128::atan2(n1.cross(n2).length(), n1.dot(n2))
+    }
+
+    #[test]
+    fn bend_flat_rest_is_pi_and_flat_cloth_is_a_fixed_point() {
+        let mut cloth = two_triangle_cloth();
+        // 平面の隣接三角形: 法線は逆向き → rest = π (1.1.1 の atan2 修正で正確になった)
+        let rest = cloth.bend_constraints[0].rest_angle;
+        assert!(
+            (rest - Fix128::PI).abs() < Fix128::from_ratio(1, 1_000_000),
+            "rest {rest:?}"
+        );
+        let before = cloth.positions.clone();
+        for _ in 0..50 {
+            cloth.solve_bend_constraints(Fix128::from_ratio(1, 60));
+        }
+        // sin(π) = 0 → 補正 0、bit 単位で不動 (旧実装は 1 + cos ≥ 0 で押し続けた)
+        assert_eq!(cloth.positions, before);
+    }
+
+    #[test]
+    fn bend_folded_cloth_relaxes_monotonically_toward_flat() {
+        let mut cloth = two_triangle_cloth();
+        let c = cloth.bend_constraints[0];
+        // grid は x-z 平面なので法線方向 = y に持ち上げて折る
+        cloth.positions[c.i3].y = Fix128::from_ratio(1, 2);
+        let rest = cloth.bend_constraints[0].rest_angle;
+        let mut prev_err = (dihedral(&cloth) - rest).abs();
+        assert!(
+            prev_err > Fix128::from_ratio(1, 10),
+            "初期折れ角 {prev_err:?}"
+        );
+        for iter in 0..40 {
+            cloth.solve_bend_constraints(Fix128::from_ratio(1, 60));
+            let err = (dihedral(&cloth) - rest).abs();
+            assert!(
+                err <= prev_err,
+                "iter {iter}: error grew {prev_err:?} -> {err:?}"
+            );
+            prev_err = err;
+        }
+        assert!(
+            prev_err < Fix128::from_ratio(1, 100),
+            "40 iter 後も {prev_err:?}"
+        );
+        // 位置が有限範囲に留まる (発散なし)
+        for p in &cloth.positions {
+            assert!(p.length() < Fix128::from_int(4), "{p:?}");
+        }
+    }
+
+    #[test]
+    fn bend_pinned_vertices_do_not_move() {
+        let mut cloth = two_triangle_cloth();
+        let c = cloth.bend_constraints[0];
+        cloth.inv_masses[c.i0] = Fix128::ZERO;
+        cloth.inv_masses[c.i1] = Fix128::ZERO;
+        cloth.inv_masses[c.i2] = Fix128::ZERO;
+        cloth.positions[c.i3].y = Fix128::from_ratio(1, 2);
+        let fixed = [
+            cloth.positions[c.i0],
+            cloth.positions[c.i1],
+            cloth.positions[c.i2],
+        ];
+        let before_i3 = cloth.positions[c.i3];
+        for _ in 0..10 {
+            cloth.solve_bend_constraints(Fix128::from_ratio(1, 60));
+        }
+        assert_eq!(cloth.positions[c.i0], fixed[0]);
+        assert_eq!(cloth.positions[c.i1], fixed[1]);
+        assert_eq!(cloth.positions[c.i2], fixed[2]);
+        assert!(cloth.positions[c.i3] != before_i3, "自由頂点だけが動く");
+    }
+
+    #[test]
+    fn drape_bottom_row_ends_below_pinned_top_and_above_free_fall() {
+        // 上段 pin、120 step: 下段は下がる (drape) が、拘束があるので自由落下 (y = -g t²/2) より上
+        let mut cloth = Cloth::new_grid(
+            Vec3Fix::ZERO,
+            Fix128::from_int(2),
+            Fix128::from_int(2),
+            5,
+            5,
+            Fix128::from_ratio(1, 100),
+        );
+        cloth.pin_top_row(5);
+        let start_bottom = cloth.positions[20].y;
+        let dt = Fix128::from_ratio(1, 60);
+        for _ in 0..120 {
+            cloth.step(dt);
+        }
+        let bottom = cloth.positions[20].y;
+        assert!(
+            bottom < start_bottom,
+            "下がる: {start_bottom:?} -> {bottom:?}"
+        );
+        assert!(bottom < cloth.positions[0].y, "top より下");
+        // 2 秒の自由落下 = -19.6 より上 (布は吊られている)
+        assert!(bottom > Fix128::from_int(-20), "発散していない {bottom:?}");
+        for p in &cloth.positions {
+            assert!(p.length() < Fix128::from_int(30), "{p:?}");
         }
     }
 }
