@@ -338,7 +338,7 @@ n², joint angular split / unsigned twist, EPA normal sign).
 | `math` | **91.3 %** (570 / 624, 13 timeouts) | scoped run 34960080446 |
 | `contact_cache` | 88.0 % (66 / 75) | scoped run at `3c12ee6`, before batch 7 tests |
 | `bvh` | **87.1 %** (210 / 241, 10 timeouts) | scoped run 34969844505 after batch 8 |
-| `solver` | **82.4 %** compiled code (509 / 618) on the `parallel,gpu-solver-bridge` axis; 76.3 % raw (509 / 667) when the 49 mutants in `cfg(not(feature = "parallel"))` code — not compiled on that axis — are counted as missed | scoped run 34969828635 after batch 8; the default-feature axis of the same run is still measuring |
+| `solver` | **94.9 %** compiled code on the default axis (485 / 511; the other 175 mutants sit in `cfg(feature = "parallel" / "gpu-solver-bridge")` code that is not compiled there, raw 70.7 %) and **82.4 %** on the `parallel,gpu-solver-bridge` axis (509 / 618; 49 mutants in `cfg(not(feature = "parallel"))` code not compiled there, raw 76.3 %) | scoped run 34969828635 after batch 8, both axes |
 | `solver_tgs` | 81.7 % (89 / 109) | weekly run at `b187144`, before batch 7 tests |
 
 Rows marked "before batch N" are the last *measured* figure; the tests

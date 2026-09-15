@@ -283,7 +283,7 @@ warp 事案で記録された failure mode と一致
 | `math` | **91.3 %** (570 / 624、timeout 13) | scoped run 34960080446 |
 | `contact_cache` | 88.0 % (66 / 75) | `3c12ee6` scoped run、batch 7 test 前 |
 | `bvh` | **87.1 %** (210 / 241、timeout 10) | batch 8 後の scoped run 34969844505 |
-| `solver` | **82.4 %** (compiled code、509 / 618、`parallel,gpu-solver-bridge` 軸)、`cfg(not(feature = "parallel"))` 側の 49 変異 (この軸では非 compile) を missed に数えると 76.3 % (509 / 667) | batch 8 後の scoped run 34969828635、同 run の default 軸は測定中 |
+| `solver` | **94.9 %** (default 軸の compiled code、485 / 511、残り 175 変異は `cfg(feature = "parallel" / "gpu-solver-bridge")` 側で同軸では非 compile、raw 70.7 %) / **82.4 %** (`parallel,gpu-solver-bridge` 軸、509 / 618、`cfg(not(feature = "parallel"))` 側 49 変異は非 compile、raw 76.3 %) | batch 8 後の scoped run 34969828635、両軸 |
 | `solver_tgs` | 81.7 % (89 / 109) | `b187144` 週次 run、batch 7 test 前 |
 
 「batch N 前」は最後に *測定* した値 以後に書いた test は列挙された miss を狙ったもの (等価変異は各 test module に記載) で、scoped `quality-deep` dispatch で再測定する 測定値だけを書く、timeout は caught にも missed にも数えない
