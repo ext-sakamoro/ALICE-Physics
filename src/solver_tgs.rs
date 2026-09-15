@@ -1322,4 +1322,257 @@ mod tests {
         assert_eq!(h.pos, 3); // 3 * 1
         assert_eq!(h.end, 3);
     }
+
+    // ---- mutation-score tests (2026-09-15) ----------------------------
+
+    #[test]
+    fn union_find_union_reports_merge_and_uses_rank() {
+        let mut uf = UnionFind::new(6);
+        assert_eq!(uf.len(), 6);
+        assert!(!uf.is_empty());
+        assert!(UnionFind::new(0).is_empty());
+        assert!(uf.union(0, 1), "初回 merge は true");
+        assert!(!uf.union(0, 1), "同一集合は false");
+        assert!(!uf.union(1, 0));
+        assert!(uf.union(2, 3));
+        assert!(uf.union(0, 2), "集合同士の merge");
+        assert_eq!(uf.find(3), uf.find(1));
+        assert_ne!(uf.find(4), uf.find(0));
+        // 4 と 5 は独立、5 を 4 に繋いでから全体に
+        assert!(uf.union(4, 5));
+        assert!(uf.union(5, 3));
+        let root = uf.find(0);
+        for i in 0..6 {
+            assert_eq!(uf.find(i), root, "{i}");
+        }
+        // path compression: find 後は parent が root 直結
+        assert_eq!(uf.parent[5], root);
+        // rank: 深い木の下に浅い木がぶら下がる (rank 1 の木 {0,1} に単独 6 を merge → root は変わらない)
+        let mut r = UnionFind::new(3);
+        r.union(0, 1);
+        let root01 = r.find(0);
+        r.union(2, 0);
+        assert_eq!(r.find(2), root01, "rank の高い側が root のまま");
+        assert_eq!(r.rank[root01], 1);
+        // 同 rank 同士の merge で rank が増える
+        let mut q = UnionFind::new(4);
+        q.union(0, 1);
+        q.union(2, 3);
+        q.union(0, 2);
+        let qr = q.find(0);
+        assert_eq!(q.rank[qr], 2);
+    }
+
+    #[test]
+    fn impulse_cache_counts_hits_and_misses_and_reports_hit_rate() {
+        let mut c = ImpulseCache::new();
+        assert!(c.is_empty());
+        assert_eq!(c.len(), 0);
+        // 未登録 → miss、default
+        assert_eq!(c.take(7), CachedImpulse::default());
+        let s = c.stats();
+        assert_eq!((s.hits, s.misses), (0, 1));
+        assert!((s.hit_rate() - 0.0).abs() < 1e-12);
+        let imp = CachedImpulse {
+            normal: Fix128::from_int(3),
+            tangent1: Fix128::from_int(-1),
+            tangent2: Fix128::from_ratio(1, 2),
+        };
+        c.set(7, imp);
+        assert_eq!(c.len(), 1);
+        assert_eq!(c.peek(7), imp);
+        assert_eq!(
+            c.peek(8),
+            CachedImpulse::default(),
+            "peek は counter を動かさない"
+        );
+        assert_eq!(c.take(7), imp);
+        assert_eq!(c.take(7), imp);
+        assert_eq!(c.take(9), CachedImpulse::default());
+        let s = c.stats();
+        assert_eq!((s.hits, s.misses), (2, 2));
+        assert!((s.hit_rate() - 0.5).abs() < 1e-12);
+        c.reset_stats();
+        let s = c.stats();
+        assert_eq!((s.hits, s.misses), (0, 0));
+        assert_eq!(s.hit_rate(), 0.0, "total 0 は 0.0");
+        // hit_rate = hits / (hits + misses): 3 hit 1 miss → 0.75
+        let st = ImpulseCacheStats { hits: 3, misses: 1 };
+        assert!((st.hit_rate() - 0.75).abs() < 1e-12);
+        // sweep: 今 tick に take していない entry は落ちる
+        c.set(100, imp);
+        c.set(200, imp);
+        let _ = c.take(100);
+        c.sweep();
+        assert_eq!(c.peek(100), imp);
+        assert_eq!(c.peek(200), CachedImpulse::default());
+        assert_eq!(
+            c.peek(7),
+            imp,
+            "7 is live in this tick (taken before sweep)"
+        );
+        // 次 tick: 何も take せず sweep → 全 entry が落ちる (live は sweep で clear 済)
+        c.sweep();
+        assert!(c.is_empty());
+        c.set(1, imp);
+        c.clear();
+        assert!(c.is_empty());
+        assert_eq!(c.peek(100), CachedImpulse::default());
+    }
+
+    #[test]
+    fn islands_attach_static_neighbours_and_sort_canonically() {
+        // bodies: 0 dyn, 1 dyn, 2 static, 3 dyn (孤立), 4 dyn
+        let bodies = [
+            MockBody {
+                id: 10,
+                dynamic: true,
+            },
+            MockBody {
+                id: 11,
+                dynamic: true,
+            },
+            MockBody {
+                id: 12,
+                dynamic: false,
+            },
+            MockBody {
+                id: 13,
+                dynamic: true,
+            },
+            MockBody {
+                id: 14,
+                dynamic: true,
+            },
+        ];
+        // contact 0: 1-0 (dyn-dyn、逆順)、contact 1: 4-2 (dyn-static)、contact 2: 2-2 (static-static → 無視)
+        let contacts = [
+            MockContact { id: 1, a: 1, b: 0 },
+            MockContact { id: 2, a: 4, b: 2 },
+            MockContact { id: 3, a: 2, b: 2 },
+        ];
+        let joints: [MockJoint; 0] = [];
+        let islands = build_islands(&bodies, &contacts, &joints).expect("valid");
+        // island は bodies.first() 昇順: {0,1} / {2,4} / {3}
+        assert_eq!(islands.len(), 3);
+        assert_eq!(islands[0].bodies, vec![0, 1]);
+        assert_eq!(islands[0].contacts, vec![0]);
+        assert_eq!(
+            islands[1].bodies,
+            vec![2, 4],
+            "static 2 attached to island of 4, sorted"
+        );
+        assert_eq!(islands[1].contacts, vec![1]);
+        assert_eq!(islands[2].bodies, vec![3]);
+        assert!(islands[2].contacts.is_empty());
+        // static-static contact はどの island にも入らない
+        assert!(islands.iter().all(|i| !i.contacts.contains(&2)));
+        // joint は dyn 同士を merge し、static とは添付のみ
+        let joints2 = [MockJoint { a: 3, b: 1 }, MockJoint { a: 2, b: 3 }];
+        let with_joints = build_islands(&bodies, &contacts, &joints2).expect("valid");
+        assert_eq!(with_joints.len(), 2);
+        assert_eq!(with_joints[0].bodies, vec![0, 1, 2, 3]);
+        assert_eq!(with_joints[0].joints, vec![0, 1]);
+        assert_eq!(
+            with_joints[1].bodies,
+            vec![2, 4],
+            "static body is attached to both islands"
+        );
+    }
+
+    #[test]
+    fn adaptive_substeps_clamp_and_repeated_addition_search() {
+        struct V(Fix128);
+        impl HasVelocity for V {
+            fn velocity_l_inf(&self) -> Fix128 {
+                self.0
+            }
+        }
+        let cfg = AdaptiveSubStepConfig {
+            max_translation_per_step: Fix128::from_ratio(1, 4),
+            max_substeps: 6,
+            min_substeps: 2,
+        };
+        let dt = Fix128::ONE;
+        // travel <= 1/4 → min (2)
+        assert_eq!(
+            adaptive_substeps_for(&[V(Fix128::from_ratio(1, 4))], dt, &cfg),
+            2
+        );
+        // travel 1 → n = 4 (4 * 1/4 >= 1)、travel 1.1 → 5、travel 100 → clamp 6
+        assert_eq!(adaptive_substeps_for(&[V(Fix128::ONE)], dt, &cfg), 4);
+        assert_eq!(
+            adaptive_substeps_for(&[V(Fix128::from_ratio(11, 10))], dt, &cfg),
+            5
+        );
+        assert_eq!(
+            adaptive_substeps_for(&[V(Fix128::from_int(100))], dt, &cfg),
+            6
+        );
+        // v_max は最大値 (順序非依存)
+        assert_eq!(
+            adaptive_substeps_for(
+                &[V(Fix128::ZERO), V(Fix128::ONE), V(Fix128::from_ratio(1, 2))],
+                dt,
+                &cfg
+            ),
+            4
+        );
+        assert_eq!(
+            adaptive_substeps_for(&[V(Fix128::ONE), V(Fix128::ZERO)], dt, &cfg),
+            4
+        );
+        // dt が効く: v 2、dt 1/2 → travel 1 → 4
+        assert_eq!(
+            adaptive_substeps_for(&[V(Fix128::from_int(2))], Fix128::from_ratio(1, 2), &cfg),
+            4
+        );
+        // min 0 は 1 に、max < min は min に clamp
+        let odd = AdaptiveSubStepConfig {
+            max_translation_per_step: Fix128::ONE,
+            max_substeps: 1,
+            min_substeps: 0,
+        };
+        assert_eq!(
+            adaptive_substeps_for(&[V(Fix128::from_int(50))], dt, &odd),
+            1
+        );
+        let inv = AdaptiveSubStepConfig {
+            max_translation_per_step: Fix128::ONE,
+            max_substeps: 2,
+            min_substeps: 5,
+        };
+        assert_eq!(
+            adaptive_substeps_for(&[V(Fix128::from_int(50))], dt, &inv),
+            5
+        );
+        // ccd: effective step = min(radius * safety, max_translation)
+        // radius 1/8 × safety 1 = 1/8 < 1/4 → travel 1 なら 8 → clamp 6
+        assert_eq!(
+            adaptive_substeps_for_ccd(
+                &[V(Fix128::ONE)],
+                dt,
+                Fix128::from_ratio(1, 8),
+                Fix128::ONE,
+                &cfg
+            ),
+            6
+        );
+        // radius 1 × safety 1 = 1 > 1/4 → 1/4 のまま → 4
+        assert_eq!(
+            adaptive_substeps_for_ccd(&[V(Fix128::ONE)], dt, Fix128::ONE, Fix128::ONE, &cfg),
+            4
+        );
+        // safety が効く: radius 1 × safety 1/8 → 1/8 → travel 1/2 で 4
+        assert_eq!(
+            adaptive_substeps_for_ccd(
+                &[V(Fix128::from_ratio(1, 2))],
+                dt,
+                Fix128::ONE,
+                Fix128::from_ratio(1, 8),
+                &cfg
+            ),
+            4
+        );
+    }
 }
