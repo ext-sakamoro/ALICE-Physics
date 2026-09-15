@@ -338,4 +338,89 @@ mod tests {
         assert!((back.y - pos.y).abs() < eps);
         assert!((back.z - pos.z).abs() < eps);
     }
+
+    /// 3 world (それぞれ異なる gravity / 衝突 / joint 構成) を同じ内容で 2 組作る
+    #[cfg(feature = "parallel")]
+    fn build_scene() -> MultiWorld {
+        let mut mw = MultiWorld::new();
+        // world 0: 既定重力、球 2 個が衝突する
+        let w0 = mw.add_world(PhysicsConfig::default());
+        mw.worlds[w0].add_body_with_radius(
+            RigidBody::new_dynamic(Vec3Fix::from_int(0, 4, 0), Fix128::ONE),
+            Fix128::ONE,
+        );
+        mw.worlds[w0].add_body_with_radius(RigidBody::new_static(Vec3Fix::ZERO), Fix128::ONE);
+        // world 1: 横向き重力、3 body が距離拘束で連結
+        let w1 = mw.add_world(PhysicsConfig {
+            gravity: Vec3Fix::from_int(3, 0, 0),
+            ..PhysicsConfig::default()
+        });
+        let a = mw.worlds[w1].add_body(RigidBody::new_static(Vec3Fix::ZERO));
+        let b = mw.worlds[w1].add_body(RigidBody::new_dynamic(
+            Vec3Fix::from_int(0, -2, 0),
+            Fix128::ONE,
+        ));
+        let c = mw.worlds[w1].add_body(RigidBody::new_dynamic(
+            Vec3Fix::from_int(0, -4, 0),
+            Fix128::from_int(2),
+        ));
+        mw.worlds[w1].add_distance_constraint(crate::solver::DistanceConstraint::new(
+            a,
+            b,
+            Vec3Fix::ZERO,
+            Vec3Fix::ZERO,
+            Fix128::from_int(2),
+        ));
+        mw.worlds[w1].add_distance_constraint(crate::solver::DistanceConstraint::new(
+            b,
+            c,
+            Vec3Fix::ZERO,
+            Vec3Fix::ZERO,
+            Fix128::from_int(2),
+        ));
+        // world 2: 空 (step が no-op でも壊れない)
+        mw.add_world(PhysicsConfig::default());
+        mw
+    }
+
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn step_all_parallel_is_bit_identical_to_sequential_step_all() {
+        let mut seq = build_scene();
+        let mut par = build_scene();
+        let dt = Fix128::from_ratio(1, 60);
+        for frame in 0..30 {
+            seq.step_all(dt);
+            par.step_all_parallel(dt);
+            assert_eq!(seq.world_count(), par.world_count());
+            for (w, (ws, wp)) in seq.worlds.iter().zip(par.worlds.iter()).enumerate() {
+                assert_eq!(ws.bodies.len(), wp.bodies.len(), "frame {frame} world {w}");
+                for (i, (bs, bp)) in ws.bodies.iter().zip(wp.bodies.iter()).enumerate() {
+                    assert_eq!(bs.position, bp.position, "frame {frame} world {w} body {i}");
+                    assert_eq!(bs.velocity, bp.velocity, "frame {frame} world {w} body {i}");
+                    assert_eq!(bs.rotation, bp.rotation, "frame {frame} world {w} body {i}");
+                    assert_eq!(
+                        bs.angular_velocity, bp.angular_velocity,
+                        "frame {frame} world {w} body {i}"
+                    );
+                }
+                assert_eq!(
+                    ws.contact_events().len(),
+                    wp.contact_events().len(),
+                    "frame {frame} world {w}"
+                );
+            }
+        }
+        // 実際に何かが動いた (自明な一致ではない): world 0 は落下して球に接触、world 1 は +x へ振れる
+        let w0 = &par.worlds[0].bodies[0].position;
+        assert!(w0.y < Fix128::from_int(4) && w0.y > Fix128::ONE, "{w0:?}");
+        assert!(par.worlds[1].bodies[2].position.x > Fix128::ZERO);
+        // world 間の独立性: world 2 は空のまま、world 0 の body 数も不変
+        assert_eq!(par.worlds[2].bodies.len(), 0);
+        assert_eq!(par.total_body_count(), 5);
+        // 空 MultiWorld でも parallel step は no-op
+        let mut empty = MultiWorld::new();
+        empty.step_all_parallel(dt);
+        assert_eq!(empty.world_count(), 0);
+    }
 }

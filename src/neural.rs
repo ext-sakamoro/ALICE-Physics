@@ -882,4 +882,57 @@ mod tests {
         assert_eq!(clamp_fix128(Fix128::from_int(10), min, max).hi, 5);
         assert_eq!(clamp_fix128(Fix128::from_int(-10), min, max).hi, -5);
     }
+
+    #[test]
+    fn from_ternary_weight_with_scale_stores_scale_and_scales_matvec_linearly() {
+        // Exact ternary matrix (no quantization involved):
+        //   [+1, -1,  0]
+        //   [ 0, +1, +1]
+        let values = [1i8, -1, 0, 0, 1, 1];
+        let tw = TernaryWeight::from_ternary(&values, 2, 3);
+        let scale = Fix128::from_ratio(3, 4); // 0.75, exact in Fix128
+
+        let ftw = FixedTernaryWeight::from_ternary_weight_with_scale(tw.clone(), scale);
+        // The explicit scale is stored bit-for-bit, and the f32 scale of the
+        // wrapped TernaryWeight (1.0 from `from_ternary`) is NOT consulted.
+        assert_eq!(ftw.scale(), scale);
+        assert_ne!(ftw.scale(), Fix128::from_f64(f64::from(tw.scale())));
+        assert_eq!(ftw.out_features(), 2);
+        assert_eq!(ftw.in_features(), 3);
+
+        // matvec: unscaled sums are  row0 = 5 - 3 + 0 = 2,  row1 = 3 + 7 = 10
+        let input = [
+            Fix128::from_int(5),
+            Fix128::from_int(3),
+            Fix128::from_int(7),
+        ];
+        let mut out = [Fix128::ZERO; 2];
+        fix128_ternary_matvec(&input, &ftw, &mut out);
+        assert_eq!(out[0], Fix128::from_int(2) * scale); // 1.5
+        assert_eq!(out[1], Fix128::from_int(10) * scale); // 7.5
+        assert_eq!(out[0], Fix128::from_ratio(3, 2));
+        assert_eq!(out[1], Fix128::from_ratio(15, 2));
+
+        // Linearity in the scale: doubling the scale doubles every output
+        // bit-exactly (ternary accumulation is pure add/sub, scale applied once).
+        let double = FixedTernaryWeight::from_ternary_weight_with_scale(
+            tw.clone(),
+            scale * Fix128::from_int(2),
+        );
+        let mut out2 = [Fix128::ZERO; 2];
+        fix128_ternary_matvec(&input, &double, &mut out2);
+        assert_eq!(out2[0], out[0] * Fix128::from_int(2));
+        assert_eq!(out2[1], out[1] * Fix128::from_int(2));
+
+        // Unit scale reproduces the raw ternary sums; zero scale zeroes output.
+        let unit = FixedTernaryWeight::from_ternary_weight_with_scale(tw.clone(), Fix128::ONE);
+        let mut out1 = [Fix128::ZERO; 2];
+        fix128_ternary_matvec(&input, &unit, &mut out1);
+        assert_eq!(out1[0], Fix128::from_int(2));
+        assert_eq!(out1[1], Fix128::from_int(10));
+        let zero = FixedTernaryWeight::from_ternary_weight_with_scale(tw, Fix128::ZERO);
+        let mut out0 = [Fix128::ONE; 2];
+        fix128_ternary_matvec(&input, &zero, &mut out0);
+        assert!(out0[0].is_zero() && out0[1].is_zero());
+    }
 }

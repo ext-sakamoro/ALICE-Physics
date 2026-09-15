@@ -959,4 +959,83 @@ mod tests {
         assert!(bodies[1].position.y > Fix128::from_int(-1000));
         assert!(bodies[2].position.y > Fix128::from_int(-1000));
     }
+
+    #[test]
+    fn apply_motors_drives_each_motored_link_along_its_joint_axis() {
+        // root (static) at origin、link 1 (inv 1) at (4,0,0)、link 2 (inv 2) at (4,3,0)
+        // link1 motor: kp 10 / target 距離 6 (現在 4) → force 20、dt 1/4 → impulse 5 → body1 += (5,0,0)
+        // link2 motor: kp 10 / target 距離 1 (現在 3、軸 +y) → force -20 → impulse (0,-5,0)
+        //   body1 (inv 1) -= (0,-5,0) → (5, 5, 0)、body2 (inv 2) += (0,-10,0)
+        let mut bodies = vec![
+            RigidBody::new_static(Vec3Fix::ZERO),
+            RigidBody::new_dynamic(Vec3Fix::from_int(4, 0, 0), Fix128::ONE),
+            RigidBody::new_dynamic(Vec3Fix::from_int(4, 3, 0), Fix128::ONE),
+        ];
+        bodies[2].inv_mass = Fix128::from_int(2);
+
+        let mut artic = ArticulatedBody::new(0, true);
+        let l1 = artic.add_link(
+            0,
+            1,
+            Joint::Ball(BallJoint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO)),
+            Vec3Fix::from_int(4, 0, 0),
+        );
+        let l2 = artic.add_link(
+            l1,
+            2,
+            Joint::Ball(BallJoint::new(1, 2, Vec3Fix::ZERO, Vec3Fix::ZERO)),
+            Vec3Fix::from_int(0, 3, 0),
+        );
+        let mut m1 = PdController::new(Fix128::from_int(10), Fix128::ZERO, Fix128::from_int(100));
+        m1.set_position_target(Fix128::from_int(6));
+        let mut m2 = m1;
+        m2.set_position_target(Fix128::ONE);
+        artic.set_motor(l1, m1);
+        artic.set_motor(l2, m2);
+        // 範囲外 link への set_motor は無視
+        artic.set_motor(99, m1);
+        assert_eq!(artic.link_count(), 3);
+
+        let dt = Fix128::from_ratio(1, 4);
+        artic.apply_motors(&mut bodies, dt);
+        assert_eq!(bodies[0].velocity, Vec3Fix::ZERO);
+        assert_eq!(bodies[1].velocity, Vec3Fix::from_int(5, 5, 0));
+        assert_eq!(bodies[2].velocity, Vec3Fix::from_int(0, -10, 0));
+
+        // 手計算と同じ結果を motor::apply_motors (free fn) でも得る = 両実装の等価性
+        let mut flat = vec![
+            RigidBody::new_static(Vec3Fix::ZERO),
+            RigidBody::new_dynamic(Vec3Fix::from_int(4, 0, 0), Fix128::ONE),
+            RigidBody::new_dynamic(Vec3Fix::from_int(4, 3, 0), Fix128::ONE),
+        ];
+        flat[2].inv_mass = Fix128::from_int(2);
+        let joints: Vec<Joint> = artic.joints().into_iter().copied().collect();
+        let motors = [
+            crate::motor::JointMotor::new(0, m1),
+            crate::motor::JointMotor::new(1, m2),
+        ];
+        crate::motor::apply_motors(&motors, &joints, &mut flat, dt);
+        assert_eq!(flat[1].velocity, bodies[1].velocity);
+        assert_eq!(flat[2].velocity, bodies[2].velocity);
+
+        // Off motor / motor なし link は何もしない
+        let mut idle = ArticulatedBody::new(0, true);
+        let li = idle.add_link(
+            0,
+            1,
+            Joint::Ball(BallJoint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO)),
+            Vec3Fix::from_int(4, 0, 0),
+        );
+        let mut quiet = vec![
+            RigidBody::new_static(Vec3Fix::ZERO),
+            RigidBody::new_dynamic(Vec3Fix::from_int(4, 0, 0), Fix128::ONE),
+        ];
+        idle.apply_motors(&mut quiet, dt);
+        assert_eq!(quiet[1].velocity, Vec3Fix::ZERO);
+        let mut off = m1;
+        off.disable();
+        idle.set_motor(li, off);
+        idle.apply_motors(&mut quiet, dt);
+        assert_eq!(quiet[1].velocity, Vec3Fix::ZERO);
+    }
 }

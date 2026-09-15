@@ -47,6 +47,7 @@ hashes only detect *change*.
 |-------|---------|------------|
 | **Core** — what the determinism guarantee is for | `math` (`Fix128`, `Vec3Fix`, `QuatFix`, CORDIC), `solver` (XPBD rigid bodies, distance / contact constraints, sleeping), `joint`, `bvh`, `collider` (GJK / EPA), `ccd`, `contact_cache`, `sdf_collider`, `netcode` / snapshot | `tests/analytic_physics.rs` — free fall, projectile, terminal velocity, `mg/k` extension, spring and pendulum periods, collision momentum + energy bound, kinematic targets, torque-free rotation, resting contact; `sqrt` / transcendental oracles in `math::tests`; `det_math` sweeps vs correctly-rounded references |
 | **Engineering / field modules** — textbook formulas made deterministic | `transient_thermal`, `fatigue` | `tests/engineering_oracles.rs` — cosine eigenmode decay (Carslaw & Jaeger) for explicit and Crank–Nicolson steps, Basquin / Miner closed forms |
+| | `cloth`, `rope`, `deformable`, `fluid` (PBF), `character`, `vehicle` (`WheelConfig` / `EngineConfig`), `sleeping`, `netcode`, `audio_physics`, `support` (print supports), `neural` | `tests/default_configs.rs` — every `Config::default()` on its most ordinary scenario: hanging curtain / rope geometry, free-fall closed form for a deformable cube and a fluid block's centre of mass, wheel compression `mg/k`, engine first-frame `Δv = T·gear/(r·m)·dt`, sleep at exactly `frames_to_sleep`, lockstep checksums + rollback bit-exact, support volumes to 1e-6 |
 | | `thermal`, `thermal_stress`, `creep_longterm`, `laminate_failure` (Tsai-Wu / Hashin / Puck), `rolling_contact`, `aeroelasticity` (Facchinetti 2004), `piezoelectric`, `acoustic_wave`, `pressure`, `thin_wall`, `fracture`, `erosion`, `phase_change`, `cfd_solver`, `sdf_sph`, `eulerian_grid`, `sim_field`, `bimaterial`, `warp_risk` (empirical fit: two ALICE-Bamboo data points), and the rest of the 30 `f32` modules | **none yet** — the formulas are implemented as published and the code is bit-exact, but no test compares them with a reference solver (ANSYS / Abaqus), a textbook worked example or experimental data. Treat their numbers as *implementations of the cited equation*, not as validated predictions, until the module gains an oracle in `tests/engineering_oracles.rs` (one module per PR; `thermal` / `warp` / `fatigue` are first because text-to-print uses them) |
 
 **Where the crate fits.** The core is built for use cases where bit-exact
@@ -393,7 +394,7 @@ ALICE-Physics achieves a **perfect 100/100 optimization score** across 6 layers:
 | **L3: Compute** | 20/20 | Warm-start `cached_lambda`, reciprocal precomputation (`inv_rest_length`, `inv_rest_density`) |
 | **L4: GPU & Throughput** | 15/15 | `SIMD_WIDTH` const + `simd_width()`, `GpuSdfInstancedBatch`/`GpuSdfMultiDispatch`, `batch_size()` |
 | **L5: Build Profile** | 10/10 | `opt-level=3`, `lto="fat"`, `codegen-units=1`, `panic="abort"`, `strip=true` |
-| **L6: Code Quality** | 20/20 | 1525 lib tests + 10 analytic-solution oracles + 53 alice-bamboo integration tests + 8 fuzz targets + 44 determinism tests (6-platform bit-exact, Fix128 + f32 golden), clippy `-D warnings` (default + full native feature set, all targets), MSRV 1.85 CI job (default / no_std / native), `#![deny(missing_docs)]`, cargo-semver-checks hard-gated |
+| **L6: Code Quality** | 20/20 | 1595 lib tests + 11 analytic-solution oracles + 5 engineering oracles + 12 default-config oracles + 53 alice-bamboo integration tests + 8 fuzz targets + 44 determinism tests (6-platform bit-exact, Fix128 + f32 golden), clippy `-D warnings` (default + full native feature set, all targets), MSRV 1.85 CI job (default / no_std / native), `#![deny(missing_docs)]`, cargo-semver-checks hard-gated |
 | **Total** | **100/100** | |
 
 ### L1: Memory Layout (15/15)
@@ -2309,7 +2310,7 @@ All feature combinations are tested in CI across macOS, Ubuntu, and Windows:
 | Combination | Status | Tests |
 |-------------|--------|-------|
 | `--no-default-features` (no_std) | ✅ | 9 |
-| `--features std` (default) | ✅ | 1525 unit + 72 integration + 10 analytic oracle + 44 determinism + 21 doc |
+| `--features std` (default) | ✅ | 1595 unit + 72 integration + 11 analytic + 5 engineering + 12 default-config oracles + 44 determinism + 21 doc |
 | `--features simd` | ✅ | 20 |
 | `--features parallel` | ✅ | 20 |
 | `--features "simd,parallel"` | ✅ | 20 |

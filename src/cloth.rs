@@ -35,7 +35,7 @@ pub struct ClothConfig {
     pub substeps: usize,
     /// Gravity vector
     pub gravity: Vec3Fix,
-    /// Velocity damping (0..1)
+    /// Velocity retention per frame (`step()` call), applied once per frame since 1.2.0
     pub damping: Fix128,
     /// Stretch constraint compliance (0 = rigid edges)
     pub stretch_compliance: Fix128,
@@ -260,6 +260,7 @@ impl Cloth {
         for _ in 0..self.config.substeps {
             self.substep(substep_dt);
         }
+        self.apply_frame_damping();
     }
 
     /// Step with SDF collision
@@ -270,6 +271,19 @@ impl Cloth {
         for _ in 0..self.config.substeps {
             self.substep(substep_dt);
             self.resolve_sdf_collisions(sdf_colliders);
+        }
+        self.apply_frame_damping();
+    }
+
+    /// `config.damping` once per frame (velocity retention per `step()` call).
+    ///
+    /// 1.2.0: applied per substep before, which made the terminal velocity
+    /// depend on `substeps` (`g·h·d/(1−d)`, `h = dt/substeps`) — the same
+    /// defect as the rigid-body solver's frame damping fix.
+    fn apply_frame_damping(&mut self) {
+        let d = self.config.damping;
+        for v in &mut self.velocities {
+            *v = *v * d;
         }
     }
 
@@ -289,7 +303,6 @@ impl Cloth {
             let wind_force = self.compute_wind_force(i);
             self.velocities[i] =
                 self.velocities[i] + (self.config.gravity + wind_force * self.inv_masses[i]) * dt;
-            self.velocities[i] = self.velocities[i] * self.config.damping;
             self.positions[i] = self.positions[i] + self.velocities[i] * dt;
         }
 
@@ -999,5 +1012,103 @@ mod tests {
         for p in &cloth.positions {
             assert!(p.length() < Fix128::from_int(30), "{p:?}");
         }
+    }
+
+    /// 原点中心の単位球 SDF (f32 sqrt のみ、det_math gate 対象外)
+    #[cfg(feature = "std")]
+    fn unit_sphere_collider() -> crate::sdf_collider::SdfCollider {
+        use crate::sdf_collider::{ClosureSdf, SdfCollider};
+        let field = ClosureSdf::new(
+            |x, y, z| (x * x + y * y + z * z).sqrt() - 1.0,
+            |x, y, z| {
+                let len = (x * x + y * y + z * z).sqrt();
+                if len > 1e-6 {
+                    (x / len, y / len, z / len)
+                } else {
+                    (0.0, 1.0, 0.0)
+                }
+            },
+        );
+        SdfCollider::new_static(
+            Box::new(field),
+            Vec3Fix::ZERO,
+            crate::math::QuatFix::IDENTITY,
+        )
+    }
+
+    /// 単位球からの符号付き距離 (f32 oracle)
+    #[cfg(feature = "std")]
+    fn sphere_dist(p: Vec3Fix) -> f32 {
+        let (x, y, z) = p.to_f32();
+        (x * x + y * y + z * z).sqrt() - 1.0
+    }
+
+    #[cfg(feature = "std")]
+    #[test]
+    fn step_with_sdf_drapes_cloth_over_unit_sphere_without_penetration() {
+        // 2×2 の 5×5 grid を y = 2 に水平配置、中心 particle (index 12) が (0, 2, 0)
+        let make = || {
+            Cloth::new_grid(
+                Vec3Fix::from_int(-1, 2, -1),
+                Fix128::from_int(2),
+                Fix128::from_int(2),
+                5,
+                5,
+                Fix128::from_ratio(1, 100),
+            )
+        };
+        let sphere = [unit_sphere_collider()];
+        let mut cloth = make();
+        let thickness = cloth.config.thickness.to_f32();
+        let dt = Fix128::from_ratio(1, 60);
+        let mut min_dist = f32::MAX;
+        for frame in 0..60 {
+            cloth.step_with_sdf(dt, &sphere);
+            // 各 frame 終了時: 全 free particle は thickness 以上 球の外 (push-out は substep 末尾)
+            for (i, p) in cloth.positions.iter().enumerate() {
+                let d = sphere_dist(*p);
+                min_dist = min_dist.min(d);
+                assert!(
+                    d >= thickness - 1e-3,
+                    "frame {frame} particle {i} dist {d} < thickness {thickness}"
+                );
+            }
+        }
+        // 実際に接触している (自明に真ではない)
+        assert!(
+            min_dist < thickness + 0.05,
+            "never touched: min dist {min_dist}"
+        );
+        // 中心 particle は球頂点 (y = 1 + thickness) 付近で静止
+        let (cx, cy, cz) = cloth.positions[12].to_f32();
+        assert!(
+            (0.99..=1.1).contains(&cy),
+            "center particle y {cy} (x {cx}, z {cz})"
+        );
+        assert!(
+            cx.abs() < 0.1 && cz.abs() < 0.1,
+            "center drifted: ({cx}, {cz})"
+        );
+
+        // SDF なしなら同じ布は球を素通りして落下する (1 s、-10 m/s² → y ≈ -3)
+        let mut free = make();
+        for _ in 0..60 {
+            free.step(dt);
+        }
+        let (_, fy, _) = free.positions[12].to_f32();
+        assert!(
+            fy < 0.0,
+            "without SDF the cloth should fall through: y {fy}"
+        );
+
+        // collider が空なら step と bit 一致
+        let mut a = make();
+        let mut b = make();
+        for _ in 0..10 {
+            a.step_with_sdf(dt, &[]);
+            b.step(dt);
+        }
+        assert_eq!(a.positions, b.positions);
+        assert_eq!(a.velocities, b.velocities);
     }
 }

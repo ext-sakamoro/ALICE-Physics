@@ -663,4 +663,101 @@ mod tests {
         let contact = mesh.collide_aabb(&aabb);
         assert!(contact.is_some(), "AABB should collide with ground mesh");
     }
+
+    #[test]
+    fn from_triangles_matches_from_indexed_and_covers_every_triangle() {
+        // 地面 2 枚 + 離れた高台 1 枚 (BVH が全 primitive を包むことを確認)
+        let tris = vec![
+            Triangle::new(
+                Vec3Fix::from_int(-10, 0, -10),
+                Vec3Fix::from_int(10, 0, -10),
+                Vec3Fix::from_int(10, 0, 10),
+            ),
+            Triangle::new(
+                Vec3Fix::from_int(-10, 0, -10),
+                Vec3Fix::from_int(10, 0, 10),
+                Vec3Fix::from_int(-10, 0, 10),
+            ),
+            Triangle::new(
+                Vec3Fix::from_int(99, 5, 99),
+                Vec3Fix::from_int(101, 5, 99),
+                Vec3Fix::from_int(100, 5, 101),
+            ),
+        ];
+        let mesh = TriMesh::from_triangles(tris.clone());
+        assert_eq!(mesh.triangle_count(), 3);
+        assert_eq!(mesh.triangles, tris);
+        // bounds = 全 triangle AABB の union (独立計算)
+        let mut want = tris[0].aabb();
+        for t in &tris[1..] {
+            want = want.union(&t.aabb());
+        }
+        assert_eq!(mesh.bounds, want);
+        assert_eq!(mesh.bounds.min, Vec3Fix::from_int(-10, 0, -10));
+        assert_eq!(mesh.bounds.max, Vec3Fix::from_int(101, 5, 101));
+
+        // 同じ geometry を from_indexed で組んだ mesh と query 結果が一致する
+        let vertices = vec![
+            Vec3Fix::from_int(-10, 0, -10),
+            Vec3Fix::from_int(10, 0, -10),
+            Vec3Fix::from_int(10, 0, 10),
+            Vec3Fix::from_int(-10, 0, 10),
+            Vec3Fix::from_int(99, 5, 99),
+            Vec3Fix::from_int(101, 5, 99),
+            Vec3Fix::from_int(100, 5, 101),
+        ];
+        let indexed = TriMesh::from_indexed(&vertices, &[0, 1, 2, 0, 2, 3, 4, 5, 6]);
+        assert_eq!(indexed.triangles, mesh.triangles);
+        assert_eq!(indexed.bounds, mesh.bounds);
+
+        let down = Vec3Fix::new(Fix128::ZERO, Fix128::NEG_ONE, Fix128::ZERO);
+        // (5, 5, -5) の真下は triangle 0、(-5, 5, 5) は triangle 1、(100, 10, 100) は triangle 2
+        let cases = [
+            (Vec3Fix::from_int(5, 5, -5), 0usize, 5i64),
+            (Vec3Fix::from_int(-5, 5, 5), 1, 5),
+            (Vec3Fix::from_int(100, 10, 100), 2, 5),
+        ];
+        for (origin, tri_idx, t_want) in cases {
+            let ray = Ray::new(origin, down);
+            let hit = mesh.raycast(&ray, Fix128::from_int(100));
+            let hit_indexed = indexed.raycast(&ray, Fix128::from_int(100));
+            match (hit, hit_indexed) {
+                (Some(h), Some(hi)) => {
+                    assert_eq!(h.body_index, tri_idx, "origin {origin:?}");
+                    // Möller–Trumbore の除算で数 ulp 丸まる
+                    let err = (h.t - Fix128::from_int(t_want)).abs();
+                    assert!(
+                        err < Fix128 { hi: 0, lo: 1 << 24 },
+                        "origin {origin:?}: t {:?}",
+                        h.t
+                    );
+                    assert_eq!(
+                        (h.t, h.body_index, h.point),
+                        (hi.t, hi.body_index, hi.point)
+                    );
+                }
+                other => panic!("both meshes must hit for {origin:?}: {other:?}"),
+            }
+        }
+        // 何もない場所は miss
+        let miss = Ray::new(Vec3Fix::from_int(50, 5, 50), down);
+        assert!(mesh.raycast(&miss, Fix128::from_int(100)).is_none());
+        // closest_point も一致し、高台の真上では triangle 2 の頂点面 (y = 5) に落ちる
+        let q = Vec3Fix::from_int(100, 8, 100);
+        assert_eq!(mesh.closest_point(q), indexed.closest_point(q));
+        let (cp, idx) = mesh.closest_point(q);
+        assert_eq!(idx, 2);
+        assert_eq!(cp, Vec3Fix::from_int(100, 5, 100));
+
+        // 空 mesh: triangle 0、bounds は退化 AABB、raycast は None
+        let empty = TriMesh::from_triangles(Vec::new());
+        assert_eq!(empty.triangle_count(), 0);
+        assert_eq!(empty.bounds, AABB::new(Vec3Fix::ZERO, Vec3Fix::ZERO));
+        assert!(empty
+            .raycast(
+                &Ray::new(Vec3Fix::from_int(0, 5, 0), down),
+                Fix128::from_int(100)
+            )
+            .is_none());
+    }
 }

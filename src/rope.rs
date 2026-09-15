@@ -34,7 +34,7 @@ pub struct RopeConfig {
     pub substeps: usize,
     /// Gravity vector
     pub gravity: Vec3Fix,
-    /// Velocity damping (0..1, 1 = no damping)
+    /// Velocity retention per frame (`step()` call), applied once per frame since 1.2.0
     pub damping: Fix128,
     /// Distance constraint compliance (0 = rigid)
     pub compliance: Fix128,
@@ -205,6 +205,7 @@ impl Rope {
         for _ in 0..self.config.substeps {
             self.substep(substep_dt);
         }
+        self.apply_frame_damping();
     }
 
     /// Step rope with SDF collision
@@ -215,6 +216,19 @@ impl Rope {
         for _ in 0..self.config.substeps {
             self.substep(substep_dt);
             self.resolve_sdf_collisions(sdf_colliders);
+        }
+        self.apply_frame_damping();
+    }
+
+    /// `config.damping` once per frame (velocity retention per `step()` call).
+    ///
+    /// 1.2.0: applied per substep before, which made the terminal velocity
+    /// depend on `substeps` (`g·h·d/(1−d)`, `h = dt/substeps`) — the same
+    /// defect as the rigid-body solver's frame damping fix.
+    fn apply_frame_damping(&mut self) {
+        let d = self.config.damping;
+        for v in &mut self.velocities {
+            *v = *v * d;
         }
     }
 
@@ -230,7 +244,6 @@ impl Rope {
 
             self.prev_positions[i] = self.positions[i];
             self.velocities[i] = self.velocities[i] + self.config.gravity * dt;
-            self.velocities[i] = self.velocities[i] * self.config.damping;
             self.positions[i] = self.positions[i] + self.velocities[i] * dt;
         }
 
@@ -449,5 +462,104 @@ mod tests {
             initial_length.to_f32(),
             current_length.to_f32()
         );
+    }
+
+    /// 原点中心の単位球 SDF (f32 sqrt のみ、det_math gate 対象外)
+    #[cfg(feature = "std")]
+    fn unit_sphere_collider() -> crate::sdf_collider::SdfCollider {
+        use crate::sdf_collider::{ClosureSdf, SdfCollider};
+        let field = ClosureSdf::new(
+            |x, y, z| (x * x + y * y + z * z).sqrt() - 1.0,
+            |x, y, z| {
+                let len = (x * x + y * y + z * z).sqrt();
+                if len > 1e-6 {
+                    (x / len, y / len, z / len)
+                } else {
+                    (0.0, 1.0, 0.0)
+                }
+            },
+        );
+        SdfCollider::new_static(
+            Box::new(field),
+            Vec3Fix::ZERO,
+            crate::math::QuatFix::IDENTITY,
+        )
+    }
+
+    /// 単位球からの符号付き距離 (f32 oracle)
+    #[cfg(feature = "std")]
+    fn sphere_dist(p: Vec3Fix) -> f32 {
+        let (x, y, z) = p.to_f32();
+        (x * x + y * y + z * z).sqrt() - 1.0
+    }
+
+    #[cfg(feature = "std")]
+    #[test]
+    fn step_with_sdf_keeps_free_rope_particles_outside_unit_sphere() {
+        // 長さ 2 の水平 rope (8 segment、粒子間 0.25) を y = 2 から球の上に落とす
+        let make = || {
+            Rope::new(
+                Vec3Fix::from_int(-1, 2, 0),
+                Vec3Fix::from_int(1, 2, 0),
+                8,
+                Fix128::ONE,
+            )
+        };
+        let sphere = [unit_sphere_collider()];
+        let mut rope = make();
+        let dt = Fix128::from_ratio(1, 60);
+        let mut min_dist = f32::MAX;
+        for frame in 0..60 {
+            rope.step_with_sdf(dt, &sphere);
+            for (i, p) in rope.positions.iter().enumerate() {
+                let d = sphere_dist(*p);
+                min_dist = min_dist.min(d);
+                assert!(
+                    d >= -1e-3,
+                    "frame {frame} particle {i} inside sphere: dist {d}"
+                );
+            }
+        }
+        assert!(min_dist < 0.05, "never touched: min dist {min_dist}");
+        // rope 長は保たれる (rest 2、compliance 0)
+        let len = rope.current_length().to_f32();
+        assert!((len - 2.0).abs() < 0.2, "length {len}");
+
+        // SDF なしでは球を貫通する frame が存在する
+        let mut free = make();
+        let mut free_min = f32::MAX;
+        for _ in 0..60 {
+            free.step(dt);
+            for p in &free.positions {
+                free_min = free_min.min(sphere_dist(*p));
+            }
+        }
+        assert!(
+            free_min < -0.1,
+            "without SDF the rope should pass through: {free_min}"
+        );
+
+        // pinned particle (inv_mass 0) は SDF に押されない: 球内に pin した start は動かない
+        let mut pinned = Rope::new(
+            Vec3Fix::from_f32(0.0, 0.5, 0.0),
+            Vec3Fix::from_int(0, 3, 0),
+            5,
+            Fix128::ONE,
+        );
+        pinned.pin_start();
+        for _ in 0..10 {
+            pinned.step_with_sdf(dt, &sphere);
+        }
+        assert_eq!(pinned.positions[0], Vec3Fix::from_f32(0.0, 0.5, 0.0));
+
+        // collider が空なら step と bit 一致
+        let mut a = make();
+        let mut b = make();
+        for _ in 0..10 {
+            a.step_with_sdf(dt, &[]);
+            b.step(dt);
+        }
+        assert_eq!(a.positions, b.positions);
+        assert_eq!(a.velocities, b.velocities);
     }
 }

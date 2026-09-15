@@ -358,4 +358,80 @@ mod tests {
         let d = modified.distance(2.0, 0.0, 0.0);
         assert!((d - 0.5).abs() < 0.01, "Single modifier expand, got {d}");
     }
+
+    /// 地面 (distance = y): 数値誤差なしで offset を観測できる
+    fn ground() -> ClosureSdf {
+        ClosureSdf::new(|_x, y, _z| y, |_x, _y, _z| (0.0, 1.0, 0.0))
+    }
+
+    /// update(dt) で amount が dt ずつ増える (状態を持つ) modifier
+    struct GrowModifier {
+        amount: f32,
+    }
+
+    impl PhysicsModifier for GrowModifier {
+        fn modify_distance(&self, _x: f32, _y: f32, _z: f32, d: f32) -> f32 {
+            d - self.amount
+        }
+        fn update(&mut self, dt: f32) {
+            self.amount += dt;
+        }
+        fn name(&self) -> &'static str {
+            "grow"
+        }
+    }
+
+    #[test]
+    fn clear_modifiers_restores_original_field_and_allows_re_adding() {
+        let mut modified = ModifiedSdf::new(Box::new(ground()))
+            .with_modifier(Box::new(ExpandModifier { amount: 0.25 }))
+            .with_modifier(Box::new(ExpandModifier { amount: 0.5 }));
+        assert_eq!(modified.modifier_count(), 2);
+        // y = 2 → 2 - 0.25 - 0.5 = 1.25
+        assert!((modified.distance(0.0, 2.0, 0.0) - 1.25).abs() < 1e-6);
+
+        modified.clear_modifiers();
+        assert_eq!(modified.modifier_count(), 0);
+        assert!(modified.modifier_mut(0).is_none());
+        // 元の field そのまま
+        assert!((modified.distance(0.0, 2.0, 0.0) - 2.0).abs() < 1e-6);
+        let (nx, ny, nz) = modified.normal(0.0, 2.0, 0.0);
+        assert!(nx.abs() < 1e-6 && (ny - 1.0).abs() < 1e-6 && nz.abs() < 1e-6);
+        // 空でもう一度 clear しても問題なし、再追加で再び効く
+        modified.clear_modifiers();
+        modified.add_modifier(Box::new(ExpandModifier { amount: 1.0 }));
+        assert_eq!(modified.modifier_count(), 1);
+        assert!((modified.distance(0.0, 2.0, 0.0) - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn modifier_mut_gives_in_place_access_by_index() {
+        let mut modified = ModifiedSdf::new(Box::new(ground()))
+            .with_modifier(Box::new(GrowModifier { amount: 0.25 }))
+            .with_modifier(Box::new(ExpandModifier { amount: 0.5 }));
+        // y = 2 → 2 - 0.25 - 0.5 = 1.25
+        assert!((modified.distance(0.0, 2.0, 0.0) - 1.25).abs() < 1e-6);
+
+        // index 順に対応する modifier が返る
+        assert_eq!(modified.modifier_mut(0).map(|m| m.name()), Some("grow"));
+        assert_eq!(modified.modifier_mut(1).map(|m| m.name()), Some("expand"));
+        assert!(modified.modifier_mut(2).is_none());
+
+        // 返された &mut を通した update は field に反映される: grow 0.25 → 0.75
+        match modified.modifier_mut(0) {
+            Some(m) => m.update(0.5),
+            None => panic!("modifier 0 must exist"),
+        }
+        assert!((modified.distance(0.0, 2.0, 0.0) - 0.75).abs() < 1e-6);
+        // expand (index 1) は状態を持たないので update しても不変
+        match modified.modifier_mut(1) {
+            Some(m) => m.update(0.5),
+            None => panic!("modifier 1 must exist"),
+        }
+        assert!((modified.distance(0.0, 2.0, 0.0) - 0.75).abs() < 1e-6);
+        // ModifiedSdf::update(dt) は全 modifier を進める = modifier_mut(0).update と同じ効果
+        modified.update(0.25);
+        assert!((modified.distance(0.0, 2.0, 0.0) - 0.5).abs() < 1e-6);
+        assert_eq!(modified.modifier_count(), 2);
+    }
 }

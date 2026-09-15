@@ -44,9 +44,15 @@ pub(crate) fn morton_code(x: u64, y: u64, z: u64) -> u64 {
     expand_bits(x) | (expand_bits(y) << 1) | (expand_bits(z) << 2)
 }
 
-/// Compute Morton code from a point within a bounding box (crate-internal helper).
+/// Compute the Morton code of a point within a bounding box.
+///
+/// Public since 1.2.0: ALICE-TRT's GPU Morton kernel asserts byte-exact
+/// parity against this function (the 1.0 API freeze had made it
+/// `pub(crate)`, which broke that parity test against a path dependency).
+/// The per-axis normalisation and the 10-bit quantisation are the
+/// determinism contract; changing either re-pins the BVH goldens.
 #[must_use]
-pub(crate) fn point_to_morton(point: Vec3Fix, bounds: &AABB) -> u64 {
+pub fn point_to_morton(point: Vec3Fix, bounds: &AABB) -> u64 {
     let size = bounds.max - bounds.min;
 
     // Compute normalized coordinates [0, 1] and clamp for negative/out-of-range
@@ -1479,5 +1485,61 @@ mod tests {
         let empty = LinearBvh::build(Vec::new());
         assert_eq!(empty.stats().node_count, 0);
         assert!(empty.query(&unit_box(0, 0, 0)).is_empty());
+    }
+
+    #[test]
+    fn get_aabb_reconstructs_integer_boxes_exactly_and_conservatively_rounds_fractions() {
+        // 整数 AABB は圧縮 (i32) → 復元で bit 一致 (負値含む)
+        let boxes = [
+            unit_box(0, 0, 0),
+            AABB::new(Vec3Fix::from_int(-7, 3, -12), Vec3Fix::from_int(5, 9, -2)),
+            AABB::new(
+                Vec3Fix::from_int(-1000, -1000, -1000),
+                Vec3Fix::from_int(1000, 1000, 1000),
+            ),
+        ];
+        for (i, b) in boxes.iter().enumerate() {
+            let leaf = BvhNode::leaf(b, 4, 2, 9);
+            assert_eq!(leaf.get_aabb(), *b, "leaf {i}");
+            let internal = BvhNode::internal(b, 1, ESCAPE_NONE);
+            assert_eq!(internal.get_aabb(), *b, "internal {i}");
+            // 復元した箱は自分自身の i32 テストと整合する
+            assert!(leaf.intersects_i32(&leaf.aabb_min, &leaf.aabb_max));
+        }
+
+        // 小数 AABB: min は floor、max は ceil で保守的に膨らむ (元の箱を必ず包む)
+        let frac = AABB::new(
+            Vec3Fix::new(
+                Fix128::from_ratio(-5, 2), // -2.5 → -3
+                Fix128::from_ratio(1, 4),  //  0.25 → 0
+                Fix128::from_int(3),       //  3 → 3 (整数はそのまま)
+            ),
+            Vec3Fix::new(
+                Fix128::from_ratio(7, 2),  //  3.5 → 4
+                Fix128::from_ratio(-1, 4), // -0.25 → 0
+                Fix128::from_int(6),       //  6 → 6
+            ),
+        );
+        let node = BvhNode::leaf(&frac, 0, 1, ESCAPE_NONE);
+        let got = node.get_aabb();
+        assert_eq!(got.min, Vec3Fix::from_int(-3, 0, 3));
+        assert_eq!(got.max, Vec3Fix::from_int(4, 0, 6));
+        assert_eq!(
+            got.union(&frac),
+            got,
+            "reconstructed box must enclose original"
+        );
+
+        // build 後の root node の get_aabb は bvh.bounds を包み、整数入力なら一致
+        let bvh = build_from(&boxes);
+        let root = bvh.nodes[0].get_aabb();
+        assert_eq!(root, bvh.bounds);
+        assert_eq!(root.min, Vec3Fix::from_int(-1000, -1000, -1000));
+        assert_eq!(root.max, Vec3Fix::from_int(1000, 1000, 1000));
+        // 全 leaf の get_aabb は root に含まれる
+        for n in &bvh.nodes {
+            let a = n.get_aabb();
+            assert_eq!(root.union(&a), root);
+        }
     }
 }

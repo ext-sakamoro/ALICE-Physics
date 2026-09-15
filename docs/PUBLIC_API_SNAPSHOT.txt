@@ -1147,6 +1147,7 @@ impl core::marker::Unpin for alice_physics::bvh::LinearBvh
 impl core::marker::UnsafeUnpin for alice_physics::bvh::LinearBvh
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::bvh::LinearBvh
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::bvh::LinearBvh
+pub fn alice_physics::bvh::point_to_morton(alice_physics::math::Vec3Fix, &alice_physics::collider::AABB) -> u64
 pub mod alice_physics::ccd
 pub struct alice_physics::ccd::CcdConfig
 pub alice_physics::ccd::CcdConfig::max_iterations: usize
@@ -2333,6 +2334,12 @@ impl core::marker::UnsafeUnpin for alice_physics::deformable::DeformableConfig
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::deformable::DeformableConfig
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::deformable::DeformableConfig
 pub mod alice_physics::det_math
+pub fn alice_physics::det_math::acos(f32) -> f32
+pub fn alice_physics::det_math::asin(f32) -> f32
+pub fn alice_physics::det_math::atan(f32) -> f32
+pub fn alice_physics::det_math::atan2(f32, f32) -> f32
+pub fn alice_physics::det_math::atan2_64(f64, f64) -> f64
+pub fn alice_physics::det_math::atan64(f64) -> f64
 pub fn alice_physics::det_math::cbrt(f32) -> f32
 pub fn alice_physics::det_math::cos(f32) -> f32
 pub fn alice_physics::det_math::exp(f32) -> f32
@@ -2344,6 +2351,8 @@ pub fn alice_physics::det_math::powf(f32, f32) -> f32
 pub fn alice_physics::det_math::powf64(f64, f64) -> f64
 pub fn alice_physics::det_math::powi(f32, i32) -> f32
 pub fn alice_physics::det_math::sin(f32) -> f32
+pub fn alice_physics::det_math::tan(f32) -> f32
+pub fn alice_physics::det_math::tanh(f32) -> f32
 pub mod alice_physics::dynamic_bvh
 pub struct alice_physics::dynamic_bvh::DynamicAabbTree
 pub alice_physics::dynamic_bvh::DynamicAabbTree::margin: alice_physics::math::Fix128
@@ -4640,6 +4649,8 @@ pub fn alice_physics::math::Fix128::sin_cos(self) -> (Self, Self)
 pub fn alice_physics::math::Fix128::sqrt(self) -> Self
 pub fn alice_physics::math::Fix128::to_f32(self) -> f32
 pub fn alice_physics::math::Fix128::to_f64(self) -> f64
+impl alice_physics::math::Fix128
+pub fn alice_physics::math::Fix128::checked_div(self, Self) -> core::option::Option<Self>
 impl core::clone::Clone for alice_physics::math::Fix128
 pub fn alice_physics::math::Fix128::clone(&self) -> alice_physics::math::Fix128
 impl core::cmp::Eq for alice_physics::math::Fix128
@@ -8040,6 +8051,8 @@ pub fn alice_physics::math::Fix128::sin_cos(self) -> (Self, Self)
 pub fn alice_physics::math::Fix128::sqrt(self) -> Self
 pub fn alice_physics::math::Fix128::to_f32(self) -> f32
 pub fn alice_physics::math::Fix128::to_f64(self) -> f64
+impl alice_physics::math::Fix128
+pub fn alice_physics::math::Fix128::checked_div(self, Self) -> core::option::Option<Self>
 impl core::clone::Clone for alice_physics::math::Fix128
 pub fn alice_physics::math::Fix128::clone(&self) -> alice_physics::math::Fix128
 impl core::cmp::Eq for alice_physics::math::Fix128
@@ -16364,6 +16377,8 @@ pub fn alice_physics::math::Fix128::sin_cos(self) -> (Self, Self)
 pub fn alice_physics::math::Fix128::sqrt(self) -> Self
 pub fn alice_physics::math::Fix128::to_f32(self) -> f32
 pub fn alice_physics::math::Fix128::to_f64(self) -> f64
+impl alice_physics::math::Fix128
+pub fn alice_physics::math::Fix128::checked_div(self, Self) -> core::option::Option<Self>
 impl core::clone::Clone for alice_physics::math::Fix128
 pub fn alice_physics::math::Fix128::clone(&self) -> alice_physics::math::Fix128
 impl core::cmp::Eq for alice_physics::math::Fix128
