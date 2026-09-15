@@ -787,11 +787,14 @@ fn solve_hinge_joint(joint: &HingeJoint, bodies: &mut [crate::solver::RigidBody]
     let world_axis_b = body_b.rotation.rotate_vec(joint.local_axis_b);
 
     let axis_error = world_axis_a.cross(world_axis_b);
-    let (correction_axis, error_mag) = axis_error.normalize_with_length();
+    let (correction_axis, sin_err) = axis_error.normalize_with_length();
 
-    if !error_mag.is_zero() {
+    if !sin_err.is_zero() {
+        // true misalignment angle, not its sine (exact in one rigid solve)
+        let error_mag = Fix128::atan2(sin_err, world_axis_a.dot(world_axis_b));
         let angular_compliance = joint.angular_compliance / (dt * dt);
-        let w_ang = body_a.inv_inertia.length() + body_b.inv_inertia.length() + angular_compliance;
+        let w_ang =
+            angular_w_sum(bodies, joint.body_a, joint.body_b, correction_axis) + angular_compliance;
 
         if !w_ang.is_zero() {
             let inv_w_ang = Fix128::ONE / w_ang;
@@ -807,7 +810,7 @@ fn solve_hinge_joint(joint: &HingeJoint, bodies: &mut [crate::solver::RigidBody]
         }
     }
 
-    // 3. Angle limits
+    // 3. Angle limits (rigid: no angular compliance, a limit is a stop)
     if let (Some(min_angle), Some(max_angle)) = (joint.angle_min, joint.angle_max) {
         let body_a = bodies[joint.body_a];
         let body_b = bodies[joint.body_b];
@@ -819,7 +822,7 @@ fn solve_hinge_joint(joint: &HingeJoint, bodies: &mut [crate::solver::RigidBody]
 
         if angle < min_angle {
             let error = min_angle - angle;
-            let w_ang = body_a.inv_inertia.length() + body_b.inv_inertia.length();
+            let w_ang = angular_w_sum(bodies, joint.body_a, joint.body_b, world_axis_a);
             if !w_ang.is_zero() {
                 let inv_w_ang = Fix128::ONE / w_ang;
                 apply_angular_correction(
@@ -832,7 +835,7 @@ fn solve_hinge_joint(joint: &HingeJoint, bodies: &mut [crate::solver::RigidBody]
             }
         } else if angle > max_angle {
             let error = angle - max_angle;
-            let w_ang = body_a.inv_inertia.length() + body_b.inv_inertia.length();
+            let w_ang = angular_w_sum(bodies, joint.body_a, joint.body_b, world_axis_a);
             if !w_ang.is_zero() {
                 let inv_w_ang = Fix128::ONE / w_ang;
                 apply_angular_correction(
@@ -885,16 +888,23 @@ fn solve_fixed_joint(joint: &FixedJoint, bodies: &mut [crate::solver::RigidBody]
 
     // Extract error as rotation vector (axis * angle)
     let error_vec = Vec3Fix::new(rot_error.x, rot_error.y, rot_error.z);
-    let (correction_axis, error_mag) = error_vec.normalize_with_length();
+    let (correction_axis, sin_half) = error_vec.normalize_with_length();
 
-    if !error_mag.is_zero() {
+    if !sin_half.is_zero() {
+        // rotation angle of the error quaternion (shortest arc: flip to w ≥ 0)
+        let (sin_half, cos_half) = if rot_error.w.is_negative() {
+            (-sin_half, -rot_error.w)
+        } else {
+            (sin_half, rot_error.w)
+        };
+        let error_mag = Fix128::atan2(sin_half, cos_half).double();
         let angular_compliance = joint.angular_compliance / (dt * dt);
-        let w_ang = body_a.inv_inertia.length() + body_b.inv_inertia.length() + angular_compliance;
+        let w_ang =
+            angular_w_sum(bodies, joint.body_a, joint.body_b, correction_axis) + angular_compliance;
 
         if !w_ang.is_zero() {
             let inv_w_ang = Fix128::ONE / w_ang;
-            let two = Fix128::from_int(2);
-            let angular_lambda = (error_mag * two) * inv_w_ang;
+            let angular_lambda = error_mag * inv_w_ang;
 
             apply_angular_correction(
                 bodies,
@@ -1101,12 +1111,9 @@ fn solve_d6_joint(joint: &D6Joint, bodies: &mut [crate::solver::RigidBody], dt: 
         }
     }
 
-    // Angular constraints per axis
+    // Angular constraints per axis (w is axis-dependent: n · I⁻¹ n)
     let angular_compliance = joint.angular_compliance / (dt * dt);
-    let w_ang = body_a.inv_inertia.length() + body_b.inv_inertia.length() + angular_compliance;
-
-    if !w_ang.is_zero() {
-        let inv_w_ang = Fix128::ONE / w_ang;
+    {
         let rel_quat = body_b.rotation.mul(body_a.rotation.conjugate());
 
         let ang_axes = [
@@ -1148,13 +1155,17 @@ fn solve_d6_joint(joint: &D6Joint, bodies: &mut [crate::solver::RigidBody], dt: 
             };
 
             if !error.is_zero() {
-                apply_angular_correction(
-                    bodies,
-                    joint.body_a,
-                    joint.body_b,
-                    axis,
-                    error * inv_w_ang,
-                );
+                let w_ang =
+                    angular_w_sum(bodies, joint.body_a, joint.body_b, axis) + angular_compliance;
+                if !w_ang.is_zero() {
+                    apply_angular_correction(
+                        bodies,
+                        joint.body_a,
+                        joint.body_b,
+                        axis,
+                        error / w_ang,
+                    );
+                }
             }
         }
     }
@@ -1215,8 +1226,8 @@ fn solve_cone_twist_joint(
 
         if !cross_len.is_zero() {
             let angular_compliance = joint.angular_compliance / (dt * dt);
-            let w_ang =
-                body_a.inv_inertia.length() + body_b.inv_inertia.length() + angular_compliance;
+            let w_ang = angular_w_sum(bodies, joint.body_a, joint.body_b, correction_axis)
+                + angular_compliance;
 
             if !w_ang.is_zero() {
                 let inv_w_ang = Fix128::ONE / w_ang;
@@ -1245,7 +1256,8 @@ fn solve_cone_twist_joint(
         };
 
         let angular_compliance = joint.angular_compliance / (dt * dt);
-        let w_ang = body_a.inv_inertia.length() + body_b.inv_inertia.length() + angular_compliance;
+        let w_ang =
+            angular_w_sum(bodies, joint.body_a, joint.body_b, world_axis_a) + angular_compliance;
 
         if !w_ang.is_zero() {
             let inv_w_ang = Fix128::ONE / w_ang;
@@ -1260,49 +1272,84 @@ fn solve_cone_twist_joint(
     }
 }
 
-/// Apply angular correction to two bodies (utility)
-///
-/// Uses `split_at_mut` to safely obtain two mutable references.
+/// Generalised inverse mass of a body for a rotation about the world axis
+/// `axis`: `n · I⁻¹ n` with the diagonal inverse inertia expressed in the
+/// body frame (Macklin et al. 2020 eq. 3). Zero for static bodies.
+fn angular_inverse_mass(body: &crate::solver::RigidBody, axis: Vec3Fix) -> Fix128 {
+    if body.inv_mass.is_zero() {
+        return Fix128::ZERO;
+    }
+    let local = body.rotation.conjugate().rotate_vec(axis);
+    local.x * local.x * body.inv_inertia.x
+        + local.y * local.y * body.inv_inertia.y
+        + local.z * local.z * body.inv_inertia.z
+}
+
+/// Sum of the two bodies' angular inverse masses about `axis` (the `w` of
+/// an XPBD angular constraint before the compliance term).
+fn angular_w_sum(
+    bodies: &[crate::solver::RigidBody],
+    idx_a: usize,
+    idx_b: usize,
+    axis: Vec3Fix,
+) -> Fix128 {
+    angular_inverse_mass(&bodies[idx_a], axis) + angular_inverse_mass(&bodies[idx_b], axis)
+}
+
+/// Apply the angular XPBD correction `λ` about the world axis `axis`: body
+/// A rotates by `w_a λ`, body B by `−w_b λ` (`w_i = n · I_i⁻¹ n`), so the
+/// *relative* rotation changes by `(w_a + w_b) λ` — exactly the error when
+/// the caller used `λ = error / (w_a + w_b + α̃)`. Before 1.2.0 both bodies
+/// received the full `λ` regardless of inertia and `w` was the vector
+/// length of the inverse-inertia diagonal, so a unit-inertia hinge removed
+/// only `1/√3` of its error per step.
 fn apply_angular_correction(
     bodies: &mut [crate::solver::RigidBody],
     idx_a: usize,
     idx_b: usize,
     axis: Vec3Fix,
-    magnitude: Fix128,
+    lambda: Fix128,
 ) {
-    let half_mag = magnitude.half();
-    let inv_mass_a = bodies[idx_a].inv_mass;
-    let inv_mass_b = bodies[idx_b].inv_mass;
-
-    if !inv_mass_a.is_zero() {
-        let delta_q = QuatFix::new(
-            axis.x * half_mag,
-            axis.y * half_mag,
-            axis.z * half_mag,
-            Fix128::ONE,
-        );
-        bodies[idx_a].rotation = delta_q.mul(bodies[idx_a].rotation).normalize();
+    let w_a = angular_inverse_mass(&bodies[idx_a], axis);
+    let w_b = angular_inverse_mass(&bodies[idx_b], axis);
+    if !w_a.is_zero() {
+        bodies[idx_a].rotation = rotate_by_angle(bodies[idx_a].rotation, axis, w_a * lambda);
     }
-    if !inv_mass_b.is_zero() {
-        let delta_q = QuatFix::new(
-            -(axis.x * half_mag),
-            -(axis.y * half_mag),
-            -(axis.z * half_mag),
-            Fix128::ONE,
-        );
-        bodies[idx_b].rotation = delta_q.mul(bodies[idx_b].rotation).normalize();
+    if !w_b.is_zero() {
+        bodies[idx_b].rotation = rotate_by_angle(bodies[idx_b].rotation, axis, -(w_b * lambda));
     }
 }
 
-/// Compute twist angle of a quaternion around a given axis
+/// `q ← normalize(axis_angle(axis, θ) ⊗ q)`: rotation by exactly `θ` about
+/// the world axis (CORDIC `sin_cos`, deterministic), so a rigid constraint
+/// whose error is a true angle is satisfied in a single solve. (The
+/// first-order `(n θ/2, 1)` update used before 1.2.0 rotates by
+/// `2·atan(θ/2)`, 2 % short at 0.3 rad.)
+fn rotate_by_angle(q: QuatFix, axis: Vec3Fix, theta: Fix128) -> QuatFix {
+    if theta.is_zero() {
+        return q;
+    }
+    QuatFix::from_axis_angle(axis, theta).mul(q).normalize()
+}
+
+/// Signed twist angle of `q` about `axis` in `(−π, π]`: the swing–twist
+/// decomposition keeps the component of the rotation vector along `axis`,
+/// `angle = 2 · atan2(q_xyz · axis, q_w)` after flipping `q` to the
+/// `w ≥ 0` cover. Before 1.2.0 this returned `2 · atan2(|proj|, w) ≥ 0`, so
+/// a rotation of −1 rad measured as +1 and every angle limit pushed
+/// negative rotations the wrong way.
 fn compute_twist_angle(q: QuatFix, axis: Vec3Fix) -> Fix128 {
     let qv = Vec3Fix::new(q.x, q.y, q.z);
-    let proj = axis * qv.dot(axis);
+    let s = qv.dot(axis);
+    let proj = axis * s;
     let twist = QuatFix::new(proj.x, proj.y, proj.z, q.w).normalize();
-
-    // angle = 2 * atan2(|twist.xyz|, twist.w)
-    let xyz_len = Vec3Fix::new(twist.x, twist.y, twist.z).length();
-    Fix128::atan2(xyz_len, twist.w).double()
+    let signed = Vec3Fix::new(twist.x, twist.y, twist.z).dot(axis);
+    let (signed, w) = if twist.w.is_negative() {
+        (-signed, -twist.w)
+    } else {
+        (signed, twist.w)
+    };
+    Fix128::atan2(signed, w).double()
 }
 
 #[cfg(all(test, feature = "std"))]
@@ -1870,10 +1917,13 @@ mod tests {
         let mut bodies = pair(Vec3Fix::ZERO, 0, Vec3Fix::ZERO, 1);
         bodies[1].rotation = QuatFix::from_axis_angle(Vec3Fix::UNIT_Z, Fix128::from_ratio(1, 2));
         let mut prev = angle(&bodies).abs();
+        // 1.2.0: the rigid solve is exact, so the angle is ~0 after one pass
+        // and later passes only see ulp-level noise (2⁻⁴⁰ tolerance)
+        let noise = Fix128::from_raw(0, 1 << 24);
         for i in 0..30 {
             solve_d6_joint(&j, &mut bodies, DT);
             let a = angle(&bodies).abs();
-            assert!(a <= prev, "iter {i}");
+            assert!(a <= prev + noise, "iter {i}");
             prev = a;
         }
         assert!(prev < Fix128::from_ratio(1, 1000));
@@ -2134,7 +2184,11 @@ mod tests {
         solve_d6_joint(&j, &mut over, DT);
         let o1 = angle(&over, Vec3Fix::UNIT_Z);
         assert!(o1 < o0, "{o1:?} < {o0:?}");
-        assert!(o1 >= q, "limit は over-correct しない: {o1:?}");
+        // 1.2.0: exact solve lands on the limit (±2⁻⁴⁰ rounding), never below
+        assert!(
+            o1 >= q - Fix128::from_raw(0, 1 << 24),
+            "limit は over-correct しない: {o1:?}"
+        );
         // z 1/10 は限界内 → z 角は不変 (y Locked が拾う twist は数値 noise 程度、2^-40 以下)
         let mut inside = pair(Vec3Fix::ZERO, 0, Vec3Fix::ZERO, 1);
         inside[1].rotation = QuatFix::from_axis_angle(Vec3Fix::UNIT_Z, Fix128::from_ratio(1, 10));
@@ -2421,5 +2475,700 @@ mod tests {
             Joint::Ball(BallJoint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO)).compute_force(&bodies),
             fi(4)
         );
+    }
+
+    // ---- batch 7: angular / limit / compliance arithmetic (mutation kills, 2026-09-15) ----
+    //
+    // Conventions used below (all derived by hand, see each test's comment):
+    // * `DT = 1/4` so `dt * dt = 1/16` and `compliance / dt²` is `compliance * 16`.
+    // * `set_inv_inertia(i_a, i_b)` sets an isotropic `inv_inertia = (i, i, i)`, so the
+    //   angular inverse mass `w = n · I⁻¹ n` is exactly `i` for every unit axis and every
+    //   body orientation (static bodies contribute 0 regardless).
+    // * `q35(axis)` is the unit quaternion `(axis * 3/5, 4/5)`: a rotation of
+    //   `θ = 2·atan(3/4) ≈ 1.287 002 rad` with `sin θ = 24/25`, `cos θ = 7/25`.
+    // * `apply_angular_correction(λ)` rotates A by exactly `+w_a λ` and B by `−w_b λ`, and
+    //   every caller uses `λ = error / (w_a + w_b + α̃)`, so with `α̃ = 0` one solve changes
+    //   the relative angle by exactly `error` (lands on the limit / on zero).
+
+    /// Isotropic `inv_inertia = (i, i, i)` on both bodies: `n · I⁻¹ n == i` for any unit `n`.
+    fn set_inv_inertia(b: &mut [RigidBody], ia: Fix128, ib: Fix128) {
+        b[0].inv_inertia = Vec3Fix::new(ia, ia, ia);
+        b[1].inv_inertia = Vec3Fix::new(ib, ib, ib);
+    }
+
+    /// Unit quaternion `(axis * 3/5, 4/5)`: rotation by `2·atan(3/4) ≈ 1.287 rad`.
+    fn q35(axis: Vec3Fix) -> QuatFix {
+        let s = Fix128::from_ratio(3, 5);
+        QuatFix::new(axis.x * s, axis.y * s, axis.z * s, Fix128::from_ratio(4, 5))
+    }
+
+    /// Relative twist of B w.r.t. A about `axis` (same formula as the solvers, signed).
+    fn rel_twist(b: &[RigidBody], axis: Vec3Fix) -> Fix128 {
+        compute_twist_angle(b[1].rotation.mul(b[0].rotation.conjugate()), axis)
+    }
+
+    /// Angle between the bodies' world z axes (cone angle of a z twist axis).
+    fn tilt_z(b: &[RigidBody]) -> Fix128 {
+        let a = b[0].rotation.rotate_vec(Vec3Fix::UNIT_Z);
+        let c = b[1].rotation.rotate_vec(Vec3Fix::UNIT_Z);
+        Fix128::atan2(a.cross(c).length(), a.dot(c))
+    }
+
+    /// Angle between world z and `q`'s z axis.
+    fn tilt_from_world_z(q: QuatFix) -> Fix128 {
+        let c = q.rotate_vec(Vec3Fix::UNIT_Z);
+        Fix128::atan2(Vec3Fix::UNIT_Z.cross(c).length(), Vec3Fix::UNIT_Z.dot(c))
+    }
+
+    /// `θ = 2·atan2(3, 4)`, the rotation angle of `q35`.
+    fn theta35() -> Fix128 {
+        Fix128::atan2(fi(3), fi(4)).double()
+    }
+
+    /// Kills `776:64` / `876:64` / `950:64` / `1104:68` / `1200:64` (`correction * inv_mass_a`
+    /// → `/`) and `1030:81` (spring `impulse * inv_mass_a` → `/`).
+    ///
+    /// A inv_mass 3 at 0, B inv_mass 1 at gap 4 → w = 4, λ = 1, correction = 1:
+    /// A moves `1 * 3 = 3` (mutant: `1 / 3`), B moves `1 * 1 = 1` → both land on 3.
+    /// Spring: rest 1, k 2, dist 4 → F = 6, impulse = 6 · ¼ = 3/2 → A += 3/2 · 3 = 9/2
+    /// (mutant: 3/2 / 3 = 1/2), B −= 3/2 → 5/2.
+    #[test]
+    fn positional_body_a_update_multiplies_by_inverse_mass() {
+        let expect = v3i(3, 0, 0);
+        let mut h = pair(Vec3Fix::ZERO, 3, v3i(4, 0, 0), 1);
+        solve_hinge_joint(
+            &HingeJoint::new(
+                0,
+                1,
+                Vec3Fix::ZERO,
+                Vec3Fix::ZERO,
+                Vec3Fix::UNIT_Z,
+                Vec3Fix::UNIT_Z,
+            ),
+            &mut h,
+            DT,
+        );
+        assert_eq!((h[0].position, h[1].position), (expect, expect), "hinge");
+        let mut f = pair(Vec3Fix::ZERO, 3, v3i(4, 0, 0), 1);
+        solve_fixed_joint(
+            &FixedJoint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO, QuatFix::IDENTITY),
+            &mut f,
+            DT,
+        );
+        assert_eq!((f[0].position, f[1].position), (expect, expect), "fixed");
+        let mut c = pair(Vec3Fix::ZERO, 3, v3i(4, 0, 0), 1);
+        solve_cone_twist_joint(
+            &ConeTwistJoint::new(
+                0,
+                1,
+                Vec3Fix::ZERO,
+                Vec3Fix::ZERO,
+                Vec3Fix::UNIT_Z,
+                Vec3Fix::UNIT_Z,
+            ),
+            &mut c,
+            DT,
+        );
+        assert_eq!((c[0].position, c[1].position), (expect, expect), "cone");
+        let mut d6 = D6Joint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO);
+        d6.linear_x = D6Motion::Locked;
+        let mut d = pair(Vec3Fix::ZERO, 3, v3i(4, 0, 0), 1);
+        solve_d6_joint(&d6, &mut d, DT);
+        assert_eq!((d[0].position, d[1].position), (expect, expect), "d6");
+        // slider: axis x, gap (0,4,0) is entirely perpendicular → same split along y
+        let mut s = pair(Vec3Fix::ZERO, 3, v3i(0, 4, 0), 1);
+        solve_slider_joint(
+            &SliderJoint::new(0, 1, Vec3Fix::UNIT_X, Vec3Fix::ZERO, Vec3Fix::ZERO),
+            &mut s,
+            DT,
+        );
+        assert_eq!(
+            (s[0].position, s[1].position),
+            (v3i(0, 3, 0), v3i(0, 3, 0)),
+            "slider"
+        );
+        let mut sp = pair(Vec3Fix::ZERO, 3, v3i(4, 0, 0), 1);
+        solve_spring_joint(
+            &SpringJoint::new(
+                0,
+                1,
+                Vec3Fix::ZERO,
+                Vec3Fix::ZERO,
+                fi(1),
+                fi(2),
+                Fix128::ZERO,
+            ),
+            &mut sp,
+            DT,
+        );
+        assert_eq!(
+            sp[0].position,
+            Vec3Fix::new(Fix128::from_ratio(9, 2), Fix128::ZERO, Fix128::ZERO),
+            "spring A"
+        );
+        assert_eq!(
+            sp[1].position,
+            Vec3Fix::new(Fix128::from_ratio(5, 2), Fix128::ZERO, Fix128::ZERO),
+            "spring B"
+        );
+    }
+
+    /// Kills `795:59` (`angular_compliance / dt²` → `*`), `795:65` (`dt * dt` → `/`, `+`),
+    /// `797` (`angular_w_sum + angular_compliance` → `-`, `*`), `1296` (`w_a + w_b` → `*`)
+    /// and the `w_a * λ` / `w_b * λ` products in `apply_angular_correction` (1316 / 1319).
+    ///
+    /// Both dynamic, `w_a = 1/2`, `w_b = 1/4`, `angular_compliance = 1/64` → term 1/4,
+    /// `w = 1/2 + 1/4 + 1/4 = 1`. B = q35(x) tilts its z axis by `θ` about +x, the
+    /// misalignment angle is `atan2(24/25, 7/25) = θ`, `λ = θ / 1 = θ`:
+    /// A rotates `+θ/2` about x, B rotates `−θ/4` → B's tilt from world z is `3θ/4`,
+    /// the residual angle between the two axes is `θ/4` (compliance keeps 1/4 of the error).
+    /// Mutants: `w ∈ {0.751, 0.766, 0.781 (795), 0.5, 0.1875 (797), 0.375 (1296)}` →
+    /// A's tilt `∈ {0.666θ, 0.653θ, 0.64θ, θ, 2.67θ, 1.33θ}` instead of `θ/2`.
+    #[test]
+    fn hinge_axis_alignment_uses_angular_compliance_and_inertia_sum() {
+        let mut j = HingeJoint::new(
+            0,
+            1,
+            Vec3Fix::ZERO,
+            Vec3Fix::ZERO,
+            Vec3Fix::UNIT_Z,
+            Vec3Fix::UNIT_Z,
+        );
+        j.angular_compliance = Fix128::from_ratio(1, 64);
+        let mut b = pair(Vec3Fix::ZERO, 1, Vec3Fix::ZERO, 1);
+        set_inv_inertia(&mut b, Fix128::from_ratio(1, 2), Fix128::from_ratio(1, 4));
+        b[1].rotation = q35(Vec3Fix::UNIT_X);
+        let theta = theta35();
+        assert!(near(tilt_z(&b), theta));
+        solve_hinge_joint(&j, &mut b, DT);
+        let a_tilt = tilt_from_world_z(b[0].rotation);
+        let b_tilt = tilt_from_world_z(b[1].rotation);
+        let rel = tilt_z(&b);
+        assert!(near(a_tilt, theta.half()), "A tilt {a_tilt:?} vs θ/2");
+        assert!(
+            near(b_tilt, theta - theta / fi(4)),
+            "B tilt {b_tilt:?} vs 3θ/4"
+        );
+        assert!(near(rel, theta / fi(4)), "residual {rel:?} vs θ/4");
+        // A rotated about +x (its z axis tipped toward −y), B rotated back about −x
+        assert!(b[0].rotation.rotate_vec(Vec3Fix::UNIT_Z).y < Fix128::ZERO);
+    }
+
+    /// Kills `900` (`error_mag` from `atan2(...).double()`), `901:59` (`angular_compliance / dt²`
+    /// → `*`), `901:65` (`dt * dt` → `/`, `+`), `903` (`+ angular_compliance` → `-`, `*`) and
+    /// `1319` (`w_b * λ` → `/`).
+    ///
+    /// A static, `w_b = 3/4`, `angular_compliance = 1/64` → term 1/4, `w = 1`. B = q35(z),
+    /// target identity → error quaternion q35(z), `error_mag = 2·atan2(3/5, 4/5) = θ`,
+    /// `λ = θ`, B rotates `−3θ/4` → residual relative twist exactly `θ/4 ≈ 0.3218`.
+    /// Mutants: `w ∈ {0.751, 0.766, 0.781, 0.5, 0.1875}` → residual
+    /// `∈ {0.001θ, 0.02θ, 0.04θ, −θ/2, −3θ (wraps to 2.42)}`; `w_b / λ` → `θ − 0.583`.
+    #[test]
+    fn fixed_joint_rotation_lock_uses_angular_compliance_and_inertia_sum() {
+        let mut j = FixedJoint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO, QuatFix::IDENTITY);
+        j.angular_compliance = Fix128::from_ratio(1, 64);
+        let mut b = pair(Vec3Fix::ZERO, 0, Vec3Fix::ZERO, 1);
+        set_inv_inertia(&mut b, Fix128::ZERO, Fix128::from_ratio(3, 4));
+        b[1].rotation = q35(Vec3Fix::UNIT_Z);
+        let theta = theta35();
+        assert!(near(rel_twist(&b, Vec3Fix::UNIT_Z), theta));
+        solve_fixed_joint(&j, &mut b, DT);
+        let after = rel_twist(&b, Vec3Fix::UNIT_Z);
+        assert!(near(after, theta / fi(4)), "{after:?} vs θ/4");
+        assert_eq!(b[0].rotation, QuatFix::IDENTITY, "static A never rotates");
+        // rigid (compliance 0) + w_b = 1: one solve restores the identity exactly
+        let rigid = FixedJoint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO, QuatFix::IDENTITY);
+        let mut r = pair(Vec3Fix::ZERO, 0, Vec3Fix::ZERO, 1);
+        set_inv_inertia(&mut r, Fix128::ZERO, Fix128::ONE);
+        r[1].rotation = q35(Vec3Fix::UNIT_Z);
+        solve_fixed_joint(&rigid, &mut r, DT);
+        assert!(near(rel_twist(&r, Vec3Fix::UNIT_Z), Fix128::ZERO));
+        assert!(near(r[1].rotation.w.abs(), Fix128::ONE));
+    }
+
+    /// Kills `823:18` (`<` → `==`), `824:35` (`min − angle` → `/`, `+`), `826:16`
+    /// (`!w_ang.is_zero()` negation), `827:45` (`1 / w` → `*`), `833:21` (sign of λ),
+    /// `833:29` (`error * inv_w` → `/`, `+`), `1296` (`w_a + w_b` → `*`) and `1316` (`w_a * λ`).
+    ///
+    /// Static A, `w_b = 2`: B = q35(z) (`θ ≈ 1.287`), limits `[2, 3]` → `e = 2 − θ ≈ 0.713`,
+    /// `λ = −e / 2`, B rotates `−w_b λ = +e` → the angle lands on the limit, exactly 2.
+    /// Mutants: `==` / `!` → 1.287; `/` (`2/θ`) → 2.841; `+` → θ+3.287 (wraps to −1.709);
+    /// `inv_w = 2` and `e / inv_w` → B rotates 4e → wraps to −2.144; `e + 1/2` → wraps to −2.57;
+    /// sign → 0.574; `w_a * w_b = 0` → no move.
+    /// Two dynamic bodies, `w_a = 2`, `w_b = 6` (`w = 8`): A rotates `2λ = −e/4`, B rotates
+    /// `+6e/8`, relative angle again exactly 2 and A's own angle is `−e/4`.
+    #[test]
+    fn hinge_min_limit_lands_exactly_on_the_limit() {
+        let j = HingeJoint::new(
+            0,
+            1,
+            Vec3Fix::ZERO,
+            Vec3Fix::ZERO,
+            Vec3Fix::UNIT_Z,
+            Vec3Fix::UNIT_Z,
+        )
+        .with_limits(fi(2), fi(3));
+        let theta = theta35();
+        let e = fi(2) - theta;
+        let mut b = pair(Vec3Fix::ZERO, 0, Vec3Fix::ZERO, 1);
+        set_inv_inertia(&mut b, Fix128::ZERO, fi(2));
+        b[1].rotation = q35(Vec3Fix::UNIT_Z);
+        assert!(near(rel_twist(&b, Vec3Fix::UNIT_Z), theta));
+        solve_hinge_joint(&j, &mut b, DT);
+        let after = rel_twist(&b, Vec3Fix::UNIT_Z);
+        assert!(near(after, fi(2)), "{after:?} vs 2");
+        assert_eq!(b[0].rotation, QuatFix::IDENTITY);
+
+        let mut both = pair(Vec3Fix::ZERO, 1, Vec3Fix::ZERO, 1);
+        set_inv_inertia(&mut both, fi(2), fi(6));
+        both[1].rotation = q35(Vec3Fix::UNIT_Z);
+        solve_hinge_joint(&j, &mut both, DT);
+        let rel = rel_twist(&both, Vec3Fix::UNIT_Z);
+        let a_angle = compute_twist_angle(both[0].rotation, Vec3Fix::UNIT_Z);
+        let b_angle = compute_twist_angle(both[1].rotation, Vec3Fix::UNIT_Z);
+        assert!(near(rel, fi(2)), "rel {rel:?} vs 2");
+        assert!(near(a_angle, -(e / fi(4))), "A {a_angle:?} vs −e/4");
+        assert!(
+            near(b_angle, theta + (e * fi(3)) / fi(4)),
+            "B {b_angle:?} vs θ + 3e/4"
+        );
+    }
+
+    /// Kills `837:31` (`angle − max` → `+`) and `846` (`error * inv_w` → `/`, `+`).
+    ///
+    /// Static A, `w_b = 2`, limits `[1/4, 1/2]`: `e = θ − 1/2 ≈ 0.787`, `λ = e / 2`,
+    /// B rotates `−2λ = −e` → lands exactly on 1/2.
+    /// Mutants: `+` → `e = θ + 1/2` → B ends at `−1/2`; `e / inv_w = 2e` → B rotates `−4e`
+    /// → wraps to 2.14; `e + inv_w` → 1.287 − 2.574 = −1.287.
+    #[test]
+    fn hinge_max_limit_lands_exactly_on_the_limit() {
+        let j = HingeJoint::new(
+            0,
+            1,
+            Vec3Fix::ZERO,
+            Vec3Fix::ZERO,
+            Vec3Fix::UNIT_Z,
+            Vec3Fix::UNIT_Z,
+        )
+        .with_limits(Fix128::from_ratio(1, 4), Fix128::from_ratio(1, 2));
+        let mut b = pair(Vec3Fix::ZERO, 0, Vec3Fix::ZERO, 1);
+        set_inv_inertia(&mut b, Fix128::ZERO, fi(2));
+        b[1].rotation = q35(Vec3Fix::UNIT_Z);
+        solve_hinge_joint(&j, &mut b, DT);
+        let after = rel_twist(&b, Vec3Fix::UNIT_Z);
+        assert!(near(after, Fix128::from_ratio(1, 2)), "{after:?} vs 1/2");
+    }
+
+    /// Negative-angle branch (live since `compute_twist_angle` became signed): B = q35(z)⁻¹
+    /// reads `−θ ≈ −1.287`, limits `[−1/2, 1/2]` → `angle < min`, `e = −1/2 + θ ≈ 0.787`,
+    /// `λ = −e / w_b`, B rotates `+e` → lands exactly on `−1/2`.
+    /// Also pins the sign convention itself: `q` and `−q` (same rotation) read the same angle,
+    /// and the inverse reads the negated angle (kills the `w < 0` flip in `compute_twist_angle`,
+    /// 1347-1348, and `.double()` at 1352).
+    #[test]
+    fn hinge_min_limit_with_negative_angle_pushes_toward_min() {
+        let theta = theta35();
+        let q = q35(Vec3Fix::UNIT_Z);
+        let neg_q = QuatFix::new(-q.x, -q.y, -q.z, -q.w);
+        assert!(near(compute_twist_angle(q, Vec3Fix::UNIT_Z), theta));
+        assert!(near(compute_twist_angle(neg_q, Vec3Fix::UNIT_Z), theta));
+        assert!(near(
+            compute_twist_angle(q.conjugate(), Vec3Fix::UNIT_Z),
+            -theta
+        ));
+
+        let j = HingeJoint::new(
+            0,
+            1,
+            Vec3Fix::ZERO,
+            Vec3Fix::ZERO,
+            Vec3Fix::UNIT_Z,
+            Vec3Fix::UNIT_Z,
+        )
+        .with_limits(Fix128::from_ratio(-1, 2), Fix128::from_ratio(1, 2));
+        let mut b = pair(Vec3Fix::ZERO, 0, Vec3Fix::ZERO, 1);
+        set_inv_inertia(&mut b, Fix128::ZERO, Fix128::ONE);
+        b[1].rotation = q.conjugate();
+        assert!(near(rel_twist(&b, Vec3Fix::UNIT_Z), -theta));
+        solve_hinge_joint(&j, &mut b, DT);
+        let after = rel_twist(&b, Vec3Fix::UNIT_Z);
+        assert!(near(after, Fix128::from_ratio(-1, 2)), "{after:?} vs −1/2");
+        // positive side: +θ lands on +1/2
+        let mut p = pair(Vec3Fix::ZERO, 0, Vec3Fix::ZERO, 1);
+        set_inv_inertia(&mut p, Fix128::ZERO, Fix128::ONE);
+        p[1].rotation = q;
+        solve_hinge_joint(&j, &mut p, DT);
+        assert!(near(
+            rel_twist(&p, Vec3Fix::UNIT_Z),
+            Fix128::from_ratio(1, 2)
+        ));
+    }
+
+    /// Regression pin: with the angle exactly on a limit nothing happens, bit for bit.
+    /// (`<` → `<=` / `>` → `>=` at 823 / 836 are equivalent mutants: they enter the branch
+    /// with `error = 0`, `λ = 0`, and `rotate_by_angle` returns `q` unchanged for `θ = 0`.)
+    #[test]
+    fn hinge_limit_equality_is_a_bitwise_no_op() {
+        let mk = |min: Fix128, max: Fix128| {
+            HingeJoint::new(
+                0,
+                1,
+                Vec3Fix::ZERO,
+                Vec3Fix::ZERO,
+                Vec3Fix::UNIT_Z,
+                Vec3Fix::UNIT_Z,
+            )
+            .with_limits(min, max)
+        };
+        let mut b = pair(Vec3Fix::ZERO, 0, Vec3Fix::ZERO, 1);
+        set_inv_inertia(&mut b, fi(3), fi(1));
+        b[1].rotation = q35(Vec3Fix::UNIT_Z);
+        let before = b[1].rotation;
+        let theta = rel_twist(&b, Vec3Fix::UNIT_Z);
+        // angle == min
+        solve_hinge_joint(&mk(theta, theta + fi(1)), &mut b, DT);
+        assert_eq!(b[1].rotation, before, "angle == min must not touch B");
+        // angle == max
+        solve_hinge_joint(&mk(theta - fi(1), theta), &mut b, DT);
+        assert_eq!(b[1].rotation, before, "angle == max must not touch B");
+    }
+
+    /// Kills `927:36` (`pos_a + rot(anchor_a)` → `-`) and `930:26` (`anchor_b − anchor_a` → `+`).
+    ///
+    /// A static at 0 with `local_anchor_a = (0, 1, 0)`; B inv_mass 1 at `(3, 5, 0)`, axis x.
+    /// `delta = (3, 4, 0)`, perpendicular part `(0, 4, 0)` (power of two → exact `1/len`)
+    /// → B moves to `(3, 1, 0)`. Either mutant yields `delta = (3, 6, 0)` → B near `(3, −1, 0)`.
+    #[test]
+    fn slider_adds_anchor_a_and_uses_b_minus_a() {
+        let j = SliderJoint::new(0, 1, Vec3Fix::UNIT_X, v3i(0, 1, 0), Vec3Fix::ZERO);
+        let mut b = pair(Vec3Fix::ZERO, 0, v3i(3, 5, 0), 1);
+        solve_slider_joint(&j, &mut b, DT);
+        assert_eq!(b[1].position, v3i(3, 1, 0));
+    }
+
+    /// Kills `965:45` (`1 / w` → `*`), `966:54` (`error * inv_w` → `/`), `967:20`
+    /// (`!inv_mass_a.is_zero()` negation), `969:55` (A `−` → `+`), `969:68` (A `* inv_mass` → `/`),
+    /// `973:68` (B `* inv_mass` → `/`) and `984:68` (max branch, A `* inv_mass` → `/`).
+    ///
+    /// A inv_mass 3 at 0, B inv_mass 5, limits `[−1, 2]`.
+    /// min: B at `(−5, 0, 0)` → along −5, `e = 4`, `w = 8`, `correction = 4/8 = 1/2` along x:
+    /// A −= 1/2 · 3 = 3/2 → `(−3/2, 0, 0)`, B += 1/2 · 5 = 5/2 → `(−5/2, 0, 0)` (along = −1).
+    /// Mutants: `inv_w = 8` / `e / inv_w` → correction 32; `!` → A stays at 0; `+` → A at +3/2;
+    /// A `/` → 1/6; B `/` → 1/10.
+    /// max: B at `(6, 0, 0)` → `e = 4`, correction 1/2: A += 3/2, B −= 5/2 → along = 2.
+    #[test]
+    fn slider_limit_corrections_split_by_inverse_mass() {
+        let j = SliderJoint::new(0, 1, Vec3Fix::UNIT_X, Vec3Fix::ZERO, Vec3Fix::ZERO)
+            .with_limits(fi(-1), fi(2));
+        let half = Fix128::from_ratio(1, 2);
+        let mut under = pair(Vec3Fix::ZERO, 3, v3i(-5, 0, 0), 5);
+        solve_slider_joint(&j, &mut under, DT);
+        assert_eq!(
+            under[0].position,
+            Vec3Fix::new(-(fi(3) * half), Fix128::ZERO, Fix128::ZERO)
+        );
+        assert_eq!(
+            under[1].position,
+            Vec3Fix::new(-(fi(5) * half), Fix128::ZERO, Fix128::ZERO)
+        );
+        assert_eq!(under[1].position.x - under[0].position.x, fi(-1));
+        let mut over = pair(Vec3Fix::ZERO, 3, v3i(6, 0, 0), 5);
+        solve_slider_joint(&j, &mut over, DT);
+        assert_eq!(
+            over[0].position,
+            Vec3Fix::new(fi(3) * half, Fix128::ZERO, Fix128::ZERO)
+        );
+        assert_eq!(
+            over[1].position,
+            Vec3Fix::new(fi(7) * half, Fix128::ZERO, Fix128::ZERO)
+        );
+        assert_eq!(over[1].position.x - over[0].position.x, fi(2));
+    }
+
+    /// Kills `1015:35` (`v_b − v_a` → `+`).
+    ///
+    /// rest 4 = distance (spring force 0), damping 2, `v_a = (1, 0, 0)`, `v_b = (3, 0, 0)`:
+    /// relative velocity along the normal is `3 − 1 = 2` → `F = 4`, impulse `4 · ¼ = 1`
+    /// → A `(1, 0, 0)`, B `(3, 0, 0)`. Mutant: `3 + 1 = 4` → impulse 2 → A `(2, 0, 0)`.
+    #[test]
+    fn spring_damping_uses_relative_velocity_b_minus_a() {
+        let j = SpringJoint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO, fi(4), fi(2), fi(2));
+        let mut b = pair(Vec3Fix::ZERO, 1, v3i(4, 0, 0), 1);
+        b[0].velocity = v3i(1, 0, 0);
+        b[1].velocity = v3i(3, 0, 0);
+        solve_spring_joint(&j, &mut b, DT);
+        assert_eq!(b[0].position, v3i(1, 0, 0));
+        assert_eq!(b[1].position, v3i(3, 0, 0));
+    }
+
+    /// Kills `1115:55` (`angular_compliance / dt²` → `*`), `1115:61` (`dt * dt` → `/`, `+`),
+    /// `1159` (`angular_w_sum + angular_compliance` → `-`, `*`) and `1166` (`error / w_ang` → `*`).
+    ///
+    /// Static A, `w_b = 3/4`, `angular_compliance = 3/64` → term 3/4, `w = 3/2`. z Locked,
+    /// B = q35(z): `error = θ`, `λ = 2θ/3`, B rotates `−(3/4)(2θ/3) = −θ/2` → residual `θ/2`.
+    /// Mutants: `w ∈ {0.753, 0.797, 0.844}` → residual `{0.004θ, 0.059θ, 0.111θ}`;
+    /// `w = 0` → no move (θ); `w = 0.5625` → `−0.33θ`; `error * w` → `λ = 1.5θ` → `−0.125θ`.
+    #[test]
+    fn d6_locked_angular_axis_uses_angular_compliance_and_inertia_sum() {
+        let mut j = D6Joint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO);
+        j.angular_z = D6Motion::Locked;
+        j.angular_compliance = Fix128::from_ratio(3, 64);
+        let mut b = pair(Vec3Fix::ZERO, 0, Vec3Fix::ZERO, 1);
+        set_inv_inertia(&mut b, Fix128::ZERO, Fix128::from_ratio(3, 4));
+        b[1].rotation = q35(Vec3Fix::UNIT_Z);
+        let theta = theta35();
+        solve_d6_joint(&j, &mut b, DT);
+        let after = rel_twist(&b, Vec3Fix::UNIT_Z);
+        assert!(near(after, theta.half()), "{after:?} vs θ/2");
+    }
+
+    /// Kills `1146:30` (`<` → `==`), `1147:31` (`angle − min` → `/`, `+`) and `1149:31`
+    /// (`angle − max` → `+`); also exercises the live negative-angle `angle < min` branch.
+    ///
+    /// Static A, `w_b = 1`, no compliance → `λ = error`, B rotates `−error`: one solve lands
+    /// exactly on the violated limit.
+    /// min: limits `[2, 3]`, B = q35(z) → `error = θ − 2 < 0` → angle becomes 2.
+    /// Mutants: `==` → 1.287; `/` (`θ/2`) → 0.6435; `+` (`θ + 2`) → −2.0.
+    /// max: limits `[1/4, 1/2]` → `error = θ − 1/2` → angle 1/2. Mutant `+` → −1/2.
+    /// negative: B = q35(z)⁻¹ (angle −θ), limits `[−1/2, 1/2]` → `error = −θ + 1/2` → −1/2.
+    #[test]
+    fn d6_limited_angular_axis_lands_exactly_on_the_limit() {
+        let mk = |min: Fix128, max: Fix128| {
+            let mut j = D6Joint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO);
+            j.angular_z = D6Motion::Limited;
+            j.angular_limit_min.z = min;
+            j.angular_limit_max.z = max;
+            j
+        };
+        let half = Fix128::from_ratio(1, 2);
+        let run = |rot: QuatFix, min: Fix128, max: Fix128| {
+            let mut b = pair(Vec3Fix::ZERO, 0, Vec3Fix::ZERO, 1);
+            set_inv_inertia(&mut b, Fix128::ZERO, Fix128::ONE);
+            b[1].rotation = rot;
+            solve_d6_joint(&mk(min, max), &mut b, DT);
+            rel_twist(&b, Vec3Fix::UNIT_Z)
+        };
+        let q = q35(Vec3Fix::UNIT_Z);
+        let under = run(q, fi(2), fi(3));
+        assert!(near(under, fi(2)), "min: {under:?} vs 2");
+        let over = run(q, Fix128::from_ratio(1, 4), half);
+        assert!(near(over, half), "max: {over:?} vs 1/2");
+        let negative = run(q.conjugate(), -half, half);
+        assert!(near(negative, -half), "negative: {negative:?} vs −1/2");
+    }
+
+    /// Kills `1225:32` (`cone − limit` → `/`, `+`), `1228:63` (`angular_compliance / dt²` → `*`),
+    /// `1228:69` (`dt * dt` → `/`, `+`), `1230` (`+ angular_compliance` → `-`, `*`), `1233:45`
+    /// (`1 / w` → `*`) and `1239:27` (`error * inv_w` → `/`, `+`).
+    ///
+    /// Static A, `w_b = 1/2`, `angular_compliance = 1/64` → term 1/4, `w = 3/4`, `inv_w = 4/3`.
+    /// B = q35(x) → cone angle `φ = θ`, `cone_limit = 1/2` → `e = θ − 1/2 ≈ 0.787`,
+    /// `λ = 4e/3`, B rotates `−(1/2)(4e/3) = −2e/3` about +x → `φ' = θ − 2e/3 = (θ + 1)/3 ≈ 0.7623`.
+    /// Mutants: `/` (`2θ`) → 0.429; `+` → 0.096; `w ∈ {0.501, 0.516, 0.531}` → 0.502 / 0.524 /
+    /// 0.546; `w = 1/4` → 0.287; `w = 1/8` → 1.861; `inv_w = 3/4` and `e / inv_w` → 0.992;
+    /// `e + inv_w` → 0.227.
+    #[test]
+    fn cone_limit_correction_uses_angular_compliance_and_inertia_sum() {
+        let half = Fix128::from_ratio(1, 2);
+        let mut j = ConeTwistJoint::new(
+            0,
+            1,
+            Vec3Fix::ZERO,
+            Vec3Fix::ZERO,
+            Vec3Fix::UNIT_Z,
+            Vec3Fix::UNIT_Z,
+        )
+        .with_limits(half, half);
+        j.angular_compliance = Fix128::from_ratio(1, 64);
+        let mut b = pair(Vec3Fix::ZERO, 0, Vec3Fix::ZERO, 1);
+        set_inv_inertia(&mut b, Fix128::ZERO, half);
+        b[1].rotation = q35(Vec3Fix::UNIT_X);
+        let theta = theta35();
+        assert!(near(tilt_z(&b), theta));
+        let expected = (theta + Fix128::ONE) / fi(3);
+        solve_cone_twist_joint(&j, &mut b, DT);
+        let after = tilt_z(&b);
+        assert!(near(after, expected), "{after:?} vs {expected:?}");
+        // twist stayed zero: B still rotates about x only
+        assert!(near(rel_twist(&b, Vec3Fix::UNIT_Z), Fix128::ZERO));
+        // rigid, w_b = 1: one solve lands exactly on the cone limit
+        let rigid = ConeTwistJoint::new(
+            0,
+            1,
+            Vec3Fix::ZERO,
+            Vec3Fix::ZERO,
+            Vec3Fix::UNIT_Z,
+            Vec3Fix::UNIT_Z,
+        )
+        .with_limits(half, half);
+        let mut r = pair(Vec3Fix::ZERO, 0, Vec3Fix::ZERO, 1);
+        set_inv_inertia(&mut r, Fix128::ZERO, Fix128::ONE);
+        r[1].rotation = q35(Vec3Fix::UNIT_X);
+        solve_cone_twist_joint(&rigid, &mut r, DT);
+        assert!(near(tilt_z(&r), half));
+    }
+
+    /// Kills `1252:36` (`twist_angle > 0` → `<`, `==`), `1253:25` (`twist − limit` → `/`, `+`),
+    /// `1255` (`twist + limit` → `-`, now live), `1258` / `1260` (compliance term) and
+    /// `1269` (`error * inv_w`).
+    ///
+    /// Static A, `w_b = 1/2`, `angular_compliance = 1/64` → `w = 3/4`, `inv_w = 4/3`,
+    /// `twist_limit = 1/2`.
+    /// positive: B = q35(z), twist `θ`, `e = θ − 1/2`, B rotates `−2e/3` → `(θ + 1)/3 ≈ 0.7623`.
+    /// `<` / `==` take the `twist + limit` branch (`e = θ + 1/2`) → 0.096; `/` → −0.429.
+    /// negative: B = q35(z)⁻¹, twist `−θ`, `e = −θ + 1/2`, B rotates `+2|e|/3` → `−(θ + 1)/3`.
+    /// Mutant `twist − limit` there → `e = −θ − 1/2` → −0.096.
+    #[test]
+    fn twist_limit_correction_error_arithmetic() {
+        let half = Fix128::from_ratio(1, 2);
+        let mut j = ConeTwistJoint::new(
+            0,
+            1,
+            Vec3Fix::ZERO,
+            Vec3Fix::ZERO,
+            Vec3Fix::UNIT_Z,
+            Vec3Fix::UNIT_Z,
+        )
+        .with_limits(half, half);
+        j.angular_compliance = Fix128::from_ratio(1, 64);
+        let theta = theta35();
+        let expected = (theta + Fix128::ONE) / fi(3);
+        let q = q35(Vec3Fix::UNIT_Z);
+
+        let mut pos = pair(Vec3Fix::ZERO, 0, Vec3Fix::ZERO, 1);
+        set_inv_inertia(&mut pos, Fix128::ZERO, half);
+        pos[1].rotation = q;
+        solve_cone_twist_joint(&j, &mut pos, DT);
+        let after = rel_twist(&pos, Vec3Fix::UNIT_Z);
+        assert!(near(after, expected), "positive: {after:?} vs {expected:?}");
+        assert!(near(tilt_z(&pos), Fix128::ZERO));
+
+        let mut neg = pair(Vec3Fix::ZERO, 0, Vec3Fix::ZERO, 1);
+        set_inv_inertia(&mut neg, Fix128::ZERO, half);
+        neg[1].rotation = q.conjugate();
+        assert!(near(rel_twist(&neg, Vec3Fix::UNIT_Z), -theta));
+        solve_cone_twist_joint(&j, &mut neg, DT);
+        let after = rel_twist(&neg, Vec3Fix::UNIT_Z);
+        assert!(
+            near(after, -expected),
+            "negative: {after:?} vs {:?}",
+            -expected
+        );
+
+        // rigid, w_b = 1: ±θ land exactly on ±1/2
+        let rigid = ConeTwistJoint::new(
+            0,
+            1,
+            Vec3Fix::ZERO,
+            Vec3Fix::ZERO,
+            Vec3Fix::UNIT_Z,
+            Vec3Fix::UNIT_Z,
+        )
+        .with_limits(half, half);
+        for (rot, limit) in [(q, half), (q.conjugate(), -half)] {
+            let mut r = pair(Vec3Fix::ZERO, 0, Vec3Fix::ZERO, 1);
+            set_inv_inertia(&mut r, Fix128::ZERO, Fix128::ONE);
+            r[1].rotation = rot;
+            solve_cone_twist_joint(&rigid, &mut r, DT);
+            let t = rel_twist(&r, Vec3Fix::UNIT_Z);
+            assert!(near(t, limit), "{t:?} vs {limit:?}");
+        }
+    }
+
+    /// Regression pin: cone / twist angle exactly on the limit is a bitwise no-op.
+    /// (`>` → `>=` at 1224 / 1251 are equivalent mutants: `error = 0`, `λ = 0`, and
+    /// `rotate_by_angle` returns `q` unchanged for `θ = 0`.)
+    #[test]
+    fn cone_and_twist_limit_equality_is_a_bitwise_no_op() {
+        let mk = |cone: Fix128, twist: Fix128| {
+            ConeTwistJoint::new(
+                0,
+                1,
+                Vec3Fix::ZERO,
+                Vec3Fix::ZERO,
+                Vec3Fix::UNIT_Z,
+                Vec3Fix::UNIT_Z,
+            )
+            .with_limits(cone, twist)
+        };
+        // cone == limit (twist is 0 < π)
+        let mut c = pair(Vec3Fix::ZERO, 0, Vec3Fix::ZERO, 1);
+        c[1].rotation = q35(Vec3Fix::UNIT_X);
+        let a = c[0].rotation.rotate_vec(Vec3Fix::UNIT_Z).normalize();
+        let bz = c[1].rotation.rotate_vec(Vec3Fix::UNIT_Z).normalize();
+        let (_, cross_len) = a.cross(bz).normalize_with_length();
+        let cone = Fix128::atan2(cross_len, a.dot(bz));
+        let before = c[1].rotation;
+        solve_cone_twist_joint(&mk(cone, Fix128::PI), &mut c, DT);
+        assert_eq!(c[1].rotation, before, "cone == limit must not touch B");
+        // twist == limit (cone is 0 < π/2)
+        let mut t = pair(Vec3Fix::ZERO, 0, Vec3Fix::ZERO, 1);
+        t[1].rotation = q35(Vec3Fix::UNIT_Z);
+        let twist = rel_twist(&t, Vec3Fix::UNIT_Z);
+        let before = t[1].rotation;
+        solve_cone_twist_joint(&mk(Fix128::HALF_PI, twist), &mut t, DT);
+        assert_eq!(t[1].rotation, before, "twist == limit must not touch B");
+    }
+
+    /// Kills the anisotropic terms of `angular_inverse_mass` (1282-1285: body-frame
+    /// `conjugate()` rotation, `x²·I_x + y²·I_y + z²·I_z` → `-`, `/`), its static
+    /// early-return (1279), and the `w_a λ` / `−w_b λ` split in `apply_angular_correction`
+    /// (1313-1319).
+    ///
+    /// A = q35(x), B = q35(z) ⊗ q35(x) (B is A twisted by `θ` about world z), both hinge
+    /// local axes are `(0, 24/25, 7/25)` = world z in either body frame, so the axes stay
+    /// aligned and the limit branch measures a relative twist of exactly `θ` about world z.
+    /// `inv_inertia_a = (5, 2, 7)` → `w_a = (24/25)²·2 + (7/25)²·7 = (1152 + 343)/625 = 2.392`,
+    /// `inv_inertia_b = (11, 13, 3)` → `w_b = (24/25)²·13 + (7/25)²·3 = (7488 + 147)/625 = 12.216`,
+    /// `w = 9130/625`. Limits `[2, 3]`: `e = 2 − θ`, A rotates `−w_a e / w` about z, B
+    /// `+w_b e / w`; the relative angle lands exactly on 2 and A's rotation is `−1495 e / 9130`.
+    /// (Isotropic-inertia mutants would give `w_a = 5` or `7`, `w_b = 11` or `3`; dropping
+    /// `conjugate()` rotates the axis the wrong way: `(0, −24/25, 7/25)` has the same squares
+    /// here, which is why the sign of A's rotation and the `x²I_x − y²I_y` mutants are pinned
+    /// through `w_a` / `w_b` and the exact landing on 2.)
+    #[test]
+    fn angular_inverse_mass_is_anisotropic_and_split_by_body() {
+        let local_axis = Vec3Fix::new(
+            Fix128::ZERO,
+            Fix128::from_ratio(24, 25),
+            Fix128::from_ratio(7, 25),
+        );
+        let j = HingeJoint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO, local_axis, local_axis)
+            .with_limits(fi(2), fi(3));
+        let theta = theta35();
+        let e = fi(2) - theta;
+        let qa = q35(Vec3Fix::UNIT_X);
+        let mut b = pair(Vec3Fix::ZERO, 1, Vec3Fix::ZERO, 1);
+        b[0].inv_inertia = v3i(5, 2, 7);
+        b[1].inv_inertia = v3i(11, 13, 3);
+        b[0].rotation = qa;
+        b[1].rotation = q35(Vec3Fix::UNIT_Z).mul(qa).normalize();
+        assert!(near_v(qa.rotate_vec(local_axis), Vec3Fix::UNIT_Z));
+        assert!(near_v(
+            b[1].rotation.rotate_vec(local_axis),
+            Vec3Fix::UNIT_Z
+        ));
+        assert!(near(rel_twist(&b, Vec3Fix::UNIT_Z), theta));
+        let w_a = Fix128::from_ratio(1152 + 343, 625);
+        let w_b = Fix128::from_ratio(7488 + 147, 625);
+        assert!(near(angular_inverse_mass(&b[0], Vec3Fix::UNIT_Z), w_a));
+        assert!(near(angular_inverse_mass(&b[1], Vec3Fix::UNIT_Z), w_b));
+        let a_before = b[0].rotation;
+        solve_hinge_joint(&j, &mut b, DT);
+        let rel = rel_twist(&b, Vec3Fix::UNIT_Z);
+        assert!(near(rel, fi(2)), "rel {rel:?} vs 2");
+        let a_delta = b[0].rotation.mul(a_before.conjugate());
+        let a_angle = compute_twist_angle(a_delta, Vec3Fix::UNIT_Z);
+        let expected_a = -(w_a * e) / (w_a + w_b);
+        assert!(near(a_angle, expected_a), "A {a_angle:?} vs {expected_a:?}");
+        // A rotated about world z only: its own z axis direction is unchanged
+        assert!(near_v(
+            b[0].rotation.rotate_vec(local_axis),
+            Vec3Fix::UNIT_Z
+        ));
+        // static A contributes 0 even with non-zero inv_inertia
+        let mut s = pair(Vec3Fix::ZERO, 0, Vec3Fix::ZERO, 1);
+        s[0].inv_inertia = v3i(5, 2, 7);
+        assert_eq!(angular_inverse_mass(&s[0], Vec3Fix::UNIT_Z), Fix128::ZERO);
     }
 }

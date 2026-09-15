@@ -29,10 +29,14 @@ use crate::sleeping::{IslandManager, SleepConfig};
 
 /// Minimum effective inverse-mass sum below which constraint solving is skipped.
 /// Prevents division explosion when two near-static bodies are in contact.
-/// Value: ~2^-40 ≈ 9.1e-13 in Fix128.
+/// Value: 2^-40 ≈ 9.1e-13 in Fix128 (`lo = 1 << 24`). Before 1.2.0 the raw
+/// value was `1 << 40` = 2^-24 ≈ 6e-8 while the doc said 2^-40, so a dynamic
+/// body heavier than 2^24 kg against a static one (or two bodies above
+/// 2^25 kg) had its contacts, distance constraints and restitution
+/// silently skipped.
 const W_SUM_EPSILON: Fix128 = Fix128 {
     hi: 0,
-    lo: 0x0000010000000000,
+    lo: 0x0000000001000000,
 };
 
 #[cfg(not(feature = "std"))]
@@ -5983,6 +5987,658 @@ mod tests {
         assert!(big
             .raycast(v3(0, 2, 0), v3(1, 0, 0), Fix128::from_int(8))
             .is_some());
+    }
+
+    // ---- mutation-kill tests (cargo-mutants missed list, 2026-09-15) ----
+
+    /// `RigidBody::set_velocity` / `set_position` / `set_rotation` → `()`,
+    /// `mass` → `Default` / `/` → `*`, `speed` → `Default`: every setter stores
+    /// the exact value (position / rotation also reset the XPBD `prev_*`),
+    /// mass 4 has `inv_mass` 1/4 and `mass()` must invert it back to 4 (the
+    /// `*` mutant returns 1/4), a static body reports 0, and |(3, -4, 0)| = 5.
+    #[test]
+    fn rigid_body_setters_and_mass_speed_report_exact_values() {
+        let mut body = RigidBody::new(v3(1, 1, 1), Fix128::from_int(4));
+        assert_eq!(body.inv_mass, r(1, 4));
+        assert_eq!(body.mass(), Fix128::from_int(4));
+        assert_eq!(RigidBody::new_static(Vec3Fix::ZERO).mass(), Fix128::ZERO);
+
+        body.set_velocity(v3(3, -4, 0));
+        assert_eq!(body.velocity, v3(3, -4, 0));
+        assert_eq!(body.speed(), Fix128::from_int(5));
+
+        body.set_position(v3(7, -8, 9));
+        assert_eq!(body.position, v3(7, -8, 9));
+        assert_eq!(body.prev_position, v3(7, -8, 9));
+
+        let q = QuatFix::from_axis_angle(v3(0, 1, 0), r(1, 3));
+        assert_ne!(q, QuatFix::IDENTITY);
+        body.set_rotation(q);
+        assert_eq!(body.rotation, q);
+        assert_eq!(body.prev_rotation, q);
+    }
+
+    /// `apply_impulse_at` line 297 / `add_torque` line 321 `*` → `/` on the x
+    /// component: with `inv_inertia = (4, 4, 4)` and torque x = 2 the product
+    /// is 8 (impulse) / 8 · dt = 4 (torque, dt = 1/2); the quotient would be
+    /// 1/2 / 1/4. Lever arm r = (0, 1, 0), impulse (0, 0, 2) → r × F = (2, 0, 0).
+    #[test]
+    fn apply_impulse_at_and_add_torque_multiply_x_by_inverse_inertia() {
+        let mut body = RigidBody::new(v3(5, 5, 5), Fix128::ONE);
+        body.inv_inertia = v3(4, 4, 4);
+        body.apply_impulse_at(v3(0, 0, 2), v3(5, 6, 5));
+        assert_eq!(body.velocity, v3(0, 0, 2));
+        assert_eq!(body.angular_velocity, v3(8, 0, 0));
+
+        let mut spun = RigidBody::new(Vec3Fix::ZERO, Fix128::ONE);
+        spun.inv_inertia = v3(4, 4, 4);
+        spun.add_torque(v3(2, 0, 0), r(1, 2));
+        assert_eq!(spun.angular_velocity, v3(4, 0, 0));
+    }
+
+    /// `body_count` → `0` / `1`, `get_body` → `Some(Default)`, `get_body_mut` →
+    /// `None` / `Some(Default)`: counts 0 → 2 → 1 across add / remove, the
+    /// accessors return the body at that slot (position (3, 4, 5), not the
+    /// default origin) and `None` past the end; a write through `get_body_mut`
+    /// must land in `bodies`.
+    #[test]
+    fn body_count_and_get_body_accessors_track_the_body_vector() {
+        let mut world = quiet_world();
+        assert_eq!(world.body_count(), 0);
+        assert!(world.get_body(0).is_none());
+        assert!(world.get_body_mut(0).is_none());
+
+        world.add_body(RigidBody::new_dynamic(v3(3, 4, 5), Fix128::ONE));
+        world.add_body(RigidBody::new_dynamic(v3(6, 7, 8), Fix128::ONE));
+        assert_eq!(world.body_count(), 2);
+        assert_eq!(world.get_body(0).map(|b| b.position), Some(v3(3, 4, 5)));
+        assert_eq!(world.get_body(1).map(|b| b.position), Some(v3(6, 7, 8)));
+        assert!(world.get_body(2).is_none());
+
+        world
+            .get_body_mut(1)
+            .expect("body 1 exists")
+            .set_velocity(v3(-1, -2, -3));
+        assert_eq!(world.bodies[1].velocity, v3(-1, -2, -3));
+        assert!(world.get_body_mut(2).is_none());
+
+        assert!(world.remove_body(0).is_some());
+        assert_eq!(world.body_count(), 1);
+    }
+
+    /// `set_body_material` line 1109, `set_body_collision_radius` line 1213,
+    /// `clear_body_collision_radius` line 1220, `set_body_filter` line 1227,
+    /// `combined_material` lines 1413 / 1418 `<` → `<=`: an index equal to the
+    /// body count is out of range and must be ignored (the mutants index one
+    /// past the end and panic). `body_filter` → `Default` is killed by reading
+    /// back a non-default filter.
+    #[test]
+    fn index_equal_to_body_count_is_out_of_range_for_every_setter() {
+        let mut world = quiet_world();
+        let a = world.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
+        let len = world.body_count();
+        let metal = world.material_table.register_metal();
+
+        world.set_body_material(len, metal);
+        world.set_body_collision_radius(len, Fix128::ONE);
+        world.clear_body_collision_radius(len);
+        world.set_body_filter(len, CollisionFilter::NONE);
+        assert_eq!(
+            world.body_materials,
+            vec![crate::material::DEFAULT_MATERIAL]
+        );
+        assert_eq!(world.body_collision_radii, vec![None]);
+        assert_eq!(world.body_filters, vec![CollisionFilter::DEFAULT]);
+
+        world.set_body_material(a, metal);
+        let default_metal = world
+            .material_table
+            .combine(crate::material::DEFAULT_MATERIAL, metal);
+        let default_default = world.material_table.combine(0, 0);
+        assert_ne!(default_metal.friction, default_default.friction);
+        for (x, y, want) in [
+            (len, a, default_metal),
+            (a, len, default_metal),
+            (len, len, default_default),
+        ] {
+            let c = world.combined_material(x, y);
+            assert_eq!(
+                (c.friction, c.restitution),
+                (want.friction, want.restitution),
+                "({x}, {y}) must treat the out-of-range side as the default material"
+            );
+        }
+        let custom = CollisionFilter {
+            layer: 1 << 3,
+            mask: 1 << 9,
+            group: 5,
+        };
+        world.set_body_filter(a, custom);
+        assert_eq!(world.body_filter(a), custom);
+        assert_eq!(world.body_filter(len), CollisionFilter::DEFAULT);
+    }
+
+    /// `begin_frame` / `end_frame` → `()` and `clear_contacts` → `()`: a cached
+    /// manifold ages by one per `begin_frame` (4 calls → `stale_frames == 4`)
+    /// and `end_frame` prunes it once it exceeds `max_stale_frames` (3);
+    /// `clear_contacts` empties the constraint list.
+    #[test]
+    fn contact_cache_frame_lifecycle_ages_and_prunes_manifolds() {
+        let mut world = quiet_world();
+        let a = world.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
+        let b = world.add_body(RigidBody::new_dynamic(v3(1, 0, 0), Fix128::ONE));
+        push_contact(&mut world, a, b, r(1, 2), r(1, 2));
+        let c = world.contact_constraints.pop().expect("pushed");
+        world.add_contact(c);
+        assert_eq!(world.contact_constraints.len(), 1);
+        assert_eq!(world.contact_cache.manifold_count(), 1);
+        assert_eq!(world.contact_cache.manifolds[0].stale_frames, 0);
+
+        for _ in 0..4 {
+            world.begin_frame();
+        }
+        assert_eq!(world.contact_cache.manifolds[0].stale_frames, 4);
+        world.end_frame();
+        assert_eq!(world.contact_cache.manifold_count(), 0);
+
+        world.clear_contacts();
+        assert!(world.contact_constraints.is_empty());
+    }
+
+    /// `remove_joint` → `None` and line 1179 `>=` → `<`: two joints get
+    /// indices 0 / 1, index 2 is out of range (`None`), removing 0 returns
+    /// `Some` and leaves one joint, after which index 1 is out of range.
+    #[test]
+    fn add_and_remove_joint_roundtrip() {
+        use crate::joint::{BallJoint, Joint};
+        let mut world = quiet_world();
+        let a = world.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
+        let b = world.add_body(RigidBody::new_dynamic(v3(1, 0, 0), Fix128::ONE));
+        let j0 = world.add_joint(Joint::Ball(BallJoint::new(
+            a,
+            b,
+            Vec3Fix::ZERO,
+            Vec3Fix::ZERO,
+        )));
+        let j1 = world.add_joint(Joint::Ball(BallJoint::new(
+            b,
+            a,
+            v3(1, 0, 0),
+            Vec3Fix::ZERO,
+        )));
+        assert_eq!((j0, j1), (0, 1));
+        assert_eq!(world.joint_count(), 2);
+        assert!(world.remove_joint(2).is_none());
+        assert_eq!(world.joint_count(), 2);
+        let removed = world.remove_joint(0).expect("joint 0 exists");
+        assert_eq!(removed.bodies(), (a, b));
+        assert_eq!(world.joint_count(), 1);
+        assert_eq!(world.joints[0].bodies(), (b, a));
+        assert!(world.remove_joint(1).is_none());
+    }
+
+    /// `add_force_field` → `0` / `1`, `remove_force_field` → `None` and line
+    /// 1203 `>=` → `<`, `step` line 1697 `!` deleted: fields get indices 0 / 1,
+    /// index 2 is `None`, removing 1 leaves one field, and `step` applies the
+    /// remaining directional field once per frame: F = (2, 0, 0), m = 1,
+    /// dt = 1/4 → v = 1/2, then 8 substeps of 1/32 move x by 8 · (1/2)(1/32) =
+    /// 1/8 (quiet world: no gravity, no damping).
+    #[test]
+    fn force_field_add_remove_and_step_applies_directional_force() {
+        use crate::force::{ForceField, ForceFieldInstance};
+        let mut world = quiet_world();
+        let body = world.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
+        let wind = ForceFieldInstance::new(ForceField::Directional {
+            direction: Vec3Fix::UNIT_X,
+            strength: Fix128::from_int(2),
+        });
+        let drag = ForceFieldInstance::new(ForceField::Drag {
+            coefficient: Fix128::ONE,
+        });
+        assert_eq!(world.add_force_field(wind), 0);
+        assert_eq!(world.add_force_field(drag), 1);
+        assert_eq!(world.force_fields.len(), 2);
+        assert!(world.remove_force_field(2).is_none());
+        assert!(matches!(
+            world.remove_force_field(1).map(|f| f.field),
+            Some(ForceField::Drag { .. })
+        ));
+        assert!(world.remove_force_field(1).is_none());
+        assert_eq!(world.force_fields.len(), 1);
+
+        world.step(r(1, 4));
+        assert_eq!(
+            world.bodies[body].velocity,
+            Vec3Fix::new(r(1, 2), Fix128::ZERO, Fix128::ZERO)
+        );
+        assert_eq!(
+            world.bodies[body].position,
+            Vec3Fix::new(r(1, 8), Fix128::ZERO, Fix128::ZERO)
+        );
+    }
+
+    /// `is_sleeping` → `false` / `true` and `wake_body` → `()`: after one step
+    /// the static body is asleep (static bodies always are), the moving
+    /// dynamic body and an out-of-range index are not, and `wake_body` wakes
+    /// the static one again.
+    #[test]
+    fn is_sleeping_and_wake_body_reflect_island_state() {
+        let mut world = quiet_world();
+        let floor = world.add_body(RigidBody::new_static(Vec3Fix::ZERO));
+        let mover = world.add_body(RigidBody::new_dynamic(v3(0, 5, 0), Fix128::ONE));
+        world.bodies[mover].velocity = v3(5, 0, 0);
+        world.step(r(1, 4));
+        assert!(world.is_sleeping(floor));
+        assert!(!world.is_sleeping(mover));
+        assert!(!world.is_sleeping(99));
+        world.wake_body(floor);
+        assert!(!world.is_sleeping(floor));
+        assert!(!world.is_sleeping(mover));
+    }
+
+    /// `set_sleep_config` → `()`: with `frames_to_sleep = 2` an idle body is
+    /// asleep after two frames; under the default 60 frames it is not.
+    #[test]
+    fn set_sleep_config_changes_frames_to_sleep() {
+        let cfg = SleepConfig {
+            frames_to_sleep: 2,
+            ..SleepConfig::default()
+        };
+        let mut quick = quiet_world();
+        let idle = quick.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
+        quick.set_sleep_config(cfg);
+        assert_eq!(quick.islands.config, cfg);
+        quick.step(r(1, 4));
+        assert!(!quick.is_sleeping(idle));
+        quick.step(r(1, 4));
+        assert!(quick.is_sleeping(idle));
+
+        let mut slow = quiet_world();
+        let idle2 = slow.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
+        slow.step(r(1, 4));
+        slow.step(r(1, 4));
+        assert!(!slow.is_sleeping(idle2));
+    }
+
+    /// `drain_contact_events` / `drain_trigger_events` → `vec![]`: draining
+    /// returns the events of the last detection and leaves the collector
+    /// empty.
+    #[test]
+    fn drain_events_return_the_events_and_empty_the_collector() {
+        let mut world = two_spheres(3, 2, Fix128::ONE, Fix128::ONE);
+        world.detect_collisions();
+        assert_eq!(world.contact_events().len(), 1);
+        let drained = world.drain_contact_events();
+        assert_eq!(drained.len(), 1);
+        assert_eq!((drained[0].body_a, drained[0].body_b), (0, 1));
+        assert_eq!(drained[0].event_type, crate::event::ContactEventType::Begin);
+        assert!(world.contact_events().is_empty());
+        assert!(world.drain_contact_events().is_empty());
+
+        let mut sensor = two_spheres(3, 2, Fix128::ONE, Fix128::ONE);
+        sensor.bodies[1].is_sensor = true;
+        sensor.detect_collisions();
+        let triggers = sensor.drain_trigger_events();
+        assert_eq!(triggers.len(), 1);
+        assert!(triggers[0].entered);
+        assert!(sensor.trigger_events().is_empty());
+        assert!(sensor.drain_trigger_events().is_empty());
+    }
+
+    /// `step` line 1691 `<` → `==` / `>`: the joint island rebuild at the start
+    /// of every step (`reset_unions` then `union` for every in-range joint)
+    /// must leave both bodies of a joint in one island.
+    #[test]
+    fn step_rebuilds_joint_islands_from_scratch() {
+        use crate::joint::{BallJoint, Joint};
+        let mut world = quiet_world();
+        let a = world.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
+        let b = world.add_body(RigidBody::new_dynamic(v3(1, 0, 0), Fix128::ONE));
+        let c = world.add_body(RigidBody::new_dynamic(v3(9, 0, 0), Fix128::ONE));
+        world.add_joint(Joint::Ball(BallJoint::new(
+            a,
+            b,
+            Vec3Fix::ZERO,
+            Vec3Fix::ZERO,
+        )));
+        // `add_joint` already unions; wipe that so only `step`'s rebuild counts
+        world.islands.reset_unions();
+        assert_ne!(world.islands.find(a), world.islands.find(b));
+        world.step(r(1, 4));
+        assert_eq!(world.islands.find(a), world.islands.find(b));
+        assert_ne!(world.islands.find(a), world.islands.find(c));
+    }
+
+    /// `integrate_positions` line 1905 `-` → `+`: a kinematic body's velocity
+    /// is (target - position) / dt = ((5, 2, 3) - (1, 2, 3)) · 4 = (16, 0, 0)
+    /// right after integration (the sum would give (24, 16, 24)); the body
+    /// lands on the target and `prev_position` keeps the old position.
+    #[test]
+    fn integrate_positions_kinematic_velocity_is_target_minus_position_over_dt() {
+        let mut world = quiet_world();
+        let k = world.add_body(RigidBody::new_kinematic(v3(1, 2, 3)));
+        world.bodies[k].set_kinematic_target(v3(5, 2, 3), QuatFix::IDENTITY);
+        world.integrate_positions(r(1, 4));
+        assert_eq!(world.bodies[k].velocity, v3(16, 0, 0));
+        assert_eq!(world.bodies[k].position, v3(5, 2, 3));
+        assert_eq!(world.bodies[k].prev_position, v3(1, 2, 3));
+    }
+
+    /// `update_velocities` lines 2055 / 2073 `-` → `+` (relative velocity),
+    /// 2089 `/` → `*` (`inv_w`), 2091 / 2093 `*` → `/` and 2093 `+` → `-`
+    /// (friction split): both bodies dynamic (inv 1 / inv 3 → inv_w = 1/4),
+    /// contact normal +y (B → A), vA = (3, -4, 0), vB = (1, -2, 0), e = 1/2,
+    /// μ = 1/2.
+    /// Restitution: vn = (2, -2, 0)·n = -2 → Δvn = 3 → A += 3/4, B -= 9/4 →
+    /// A (3, -13/4, 0), B (1, -17/4, 0). Friction: rel = (2, 1, 0), vn2 = 1,
+    /// tangent (2, 0, 0) speed 2, limit μ·|vn2| = 1/2 → impulse (1/2, 0, 0);
+    /// A -= 1/2 · 1/4, B += 1/2 · 3/4 → A (23/8, -13/4, 0), B (11/8, -17/4, 0).
+    /// (`inv_w = w_sum` would give A.x = 1 / B.x = 7, `+` → `-` on B gives 5/8.)
+    #[test]
+    fn update_velocities_friction_and_restitution_split_between_two_dynamic_bodies() {
+        let mut world = quiet_world();
+        let a = world.add_body(RigidBody::new_dynamic(v3(0, 1, 0), Fix128::ONE));
+        let b = world.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
+        world.bodies[b].inv_mass = Fix128::from_int(3);
+        let contact = Contact {
+            depth: r(1, 100),
+            normal: v3(0, 1, 0),
+            point_a: Vec3Fix::ZERO,
+            point_b: Vec3Fix::ZERO,
+        };
+        let mut c = ContactConstraint::new(a, b, contact);
+        c.friction = r(1, 2);
+        c.restitution = r(1, 2);
+        world.contact_constraints.push(c);
+        freeze_positions(&mut world);
+        give_velocity(&mut world, a, v3(3, -4, 0));
+        give_velocity(&mut world, b, v3(1, -2, 0));
+
+        world.update_velocities(r(1, 4));
+
+        assert_near_vec(
+            world.bodies[a].velocity,
+            Vec3Fix::new(r(23, 8), r(-13, 4), Fix128::ZERO),
+            "A",
+        );
+        assert_near_vec(
+            world.bodies[b].velocity,
+            Vec3Fix::new(r(11, 8), r(-17, 4), Fix128::ZERO),
+            "B",
+        );
+    }
+
+    /// Half of `W_SUM_EPSILON` (an inverse mass strictly below the skip
+    /// threshold).
+    fn half_epsilon() -> Fix128 {
+        Fix128 {
+            hi: 0,
+            lo: W_SUM_EPSILON.lo >> 1,
+        }
+    }
+
+    /// `update_velocities` line 2050 `<` → `<=` / `==`: a contact whose
+    /// `w_sum` is exactly `W_SUM_EPSILON` is solved (A: inv_mass = ε against a
+    /// static B, vn = -4, e = 1/2 → Δvn = 6, inv_w = 1/ε, ε · 1/ε = 1 → A.y =
+    /// -4 + 6 = 2), one with `w_sum = ε/2` is skipped (A keeps (0, -4, 0)).
+    #[test]
+    fn update_velocities_w_sum_epsilon_boundary() {
+        for (inv_mass, expected_y) in [(W_SUM_EPSILON, 2), (half_epsilon(), -4)] {
+            let mut world = quiet_world();
+            let a = world.add_body(RigidBody::new_dynamic(v3(0, 1, 0), Fix128::ONE));
+            let b = world.add_body(RigidBody::new_static(Vec3Fix::ZERO));
+            world.bodies[a].inv_mass = inv_mass;
+            let contact = Contact {
+                depth: r(1, 100),
+                normal: v3(0, 1, 0),
+                point_a: Vec3Fix::ZERO,
+                point_b: Vec3Fix::ZERO,
+            };
+            let mut c = ContactConstraint::new(a, b, contact);
+            c.friction = Fix128::ZERO;
+            c.restitution = r(1, 2);
+            world.contact_constraints.push(c);
+            freeze_positions(&mut world);
+            give_velocity(&mut world, a, v3(0, -4, 0));
+
+            world.update_velocities(r(1, 4));
+
+            assert_eq!(
+                world.bodies[a].velocity,
+                v3(0, expected_y, 0),
+                "inv_mass {inv_mass:?}"
+            );
+        }
+    }
+
+    /// `solve_distance_constraints` line 2394 `<` → `<=` / `==`: with A at
+    /// (0, 4, 0), inv_mass = ε, static B at the origin and target 1 the error
+    /// is 3 and `w_sum == ε` is solved: dlambda = 3/ε, correction · ε moves A
+    /// by the full error to (0, 1, 0). With inv_mass = ε/2 the constraint is
+    /// skipped and A stays at (0, 4, 0).
+    #[test]
+    fn solve_distance_constraints_w_sum_epsilon_boundary() {
+        for (inv_mass, expected) in [(W_SUM_EPSILON, v3(0, 1, 0)), (half_epsilon(), v3(0, 4, 0))] {
+            let mut world = quiet_world();
+            let a = world.add_body(RigidBody::new_dynamic(v3(0, 4, 0), Fix128::ONE));
+            let b = world.add_body(RigidBody::new_static(Vec3Fix::ZERO));
+            world.bodies[a].inv_mass = inv_mass;
+            world.add_distance_constraint(dc(a, b));
+            world.solve_distance_constraints(r(1, 4));
+            assert_near_vec(world.bodies[a].position, expected, "A position");
+            assert_eq!(world.bodies[b].position, Vec3Fix::ZERO);
+        }
+    }
+
+    /// `solve_contact_constraints` line 2497 `<` → `<=` / `==`: depth 1 along
+    /// +x against a static B; `w_sum == ε` pushes A by the full depth
+    /// (ε · 1/ε = 1) to (1, 0, 0), `w_sum = ε/2` is skipped.
+    #[test]
+    fn solve_contact_constraints_w_sum_epsilon_boundary() {
+        for (inv_mass, expected) in [
+            (W_SUM_EPSILON, v3(1, 0, 0)),
+            (half_epsilon(), Vec3Fix::ZERO),
+        ] {
+            let mut world = contact_world(inv_mass, Fix128::ZERO, Fix128::ONE);
+            world.solve_contact_constraints(r(1, 4));
+            assert_eq!(world.bodies[0].position, expected, "inv_mass {inv_mass:?}");
+            assert_eq!(world.bodies[1].position, v3(1, 0, 0));
+        }
+    }
+
+    /// `solve_distance_constraints` line 2377 `+` → `-` (anchor A) and line
+    /// 2407 `*` → `/` (`delta_a`): A at (0, 2, 0) with local anchor (0, 1, 0)
+    /// and inv_mass 2, static B at the origin, target 1 → world anchor
+    /// (0, 3, 0), error 2, w_sum 2, dlambda 1, correction (0, -1, 0) · 2 →
+    /// A lands on the origin. The `-` anchor gives error 0 (A stays), the `/`
+    /// gives half the move (A at (0, 3/2, 0)).
+    #[test]
+    fn solve_distance_constraints_anchor_a_offset_and_inverse_mass_scaling() {
+        let mut world = quiet_world();
+        let a = world.add_body(RigidBody::new_dynamic(v3(0, 2, 0), Fix128::ONE));
+        let b = world.add_body(RigidBody::new_static(Vec3Fix::ZERO));
+        world.bodies[a].inv_mass = Fix128::from_int(2);
+        let mut c = dc(a, b);
+        c.local_anchor_a = v3(0, 1, 0);
+        world.add_distance_constraint(c);
+
+        world.solve_distance_constraints(r(1, 4));
+
+        assert_near_vec(world.bodies[a].position, Vec3Fix::ZERO, "A");
+        assert_eq!(world.bodies[b].position, Vec3Fix::ZERO);
+        assert_eq!(world.distance_constraints[0].cached_lambda, Fix128::ONE);
+    }
+
+    /// `detect_collisions` line 2933 / 2952 `<` → `>` (early return with 3
+    /// bodies / 3 primitives) and line 3009 `*` → `+` (squared-distance early
+    /// out): three collidable bodies, A at the origin and B at (2, 1, 1)
+    /// (dist² = 6) with radii 3/2 each (combined 3: 6 < 3² = 9 overlaps, but
+    /// 6 ≥ 3 + 3 = 6 would be culled), C far away. Exactly one contact, depth
+    /// 3 - √6.
+    #[test]
+    fn detect_collisions_three_bodies_squared_distance_cull_uses_squared_radius() {
+        let mut world = quiet_world();
+        let radius = r(3, 2);
+        world.add_body_with_radius(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE), radius);
+        world.add_body_with_radius(RigidBody::new_dynamic(v3(2, 1, 1), Fix128::ONE), radius);
+        world.add_body_with_radius(RigidBody::new_dynamic(v3(50, 50, 50), Fix128::ONE), radius);
+        world.detect_collisions();
+        assert_eq!(world.contact_constraints.len(), 1);
+        let c = world.contact_constraints[0];
+        assert_eq!((c.body_a, c.body_b), (0, 1));
+        let expected_depth = Fix128::from_int(3) - Fix128::from_int(6).sqrt();
+        assert!(
+            near(c.contact.depth, expected_depth),
+            "depth {:?} vs {expected_depth:?}",
+            c.contact.depth
+        );
+        assert_eq!(world.contact_events().len(), 1);
+    }
+
+    /// `remove_sdf_collider` → `None` and line 2863 `<` → `<=` / `==` / `>`,
+    /// `set_sdf_collision_radius` → `()`: index 1 of a single collider is out
+    /// of range (`None`, no panic), index 0 is removed, and the radius setter
+    /// stores 3/4.
+    #[test]
+    fn remove_sdf_collider_boundary_and_sdf_radius_setter() {
+        use crate::sdf_collider::{ClosureSdf, SdfCollider};
+        let mut world = quiet_world();
+        let ground = ClosureSdf::new(|_x, y, _z| y, |_x, _y, _z| (0.0, 1.0, 0.0));
+        assert_eq!(
+            world.add_sdf_collider(SdfCollider::new_static(
+                Box::new(ground),
+                Vec3Fix::ZERO,
+                QuatFix::IDENTITY,
+            )),
+            0
+        );
+        assert!(world.remove_sdf_collider(1).is_none());
+        assert_eq!(world.sdf_colliders.len(), 1);
+        assert!(world.remove_sdf_collider(0).is_some());
+        assert!(world.sdf_colliders.is_empty());
+        assert!(world.remove_sdf_collider(0).is_none());
+
+        world.set_sdf_collision_radius(r(3, 4));
+        assert_eq!(world.sdf_collision_radius, r(3, 4));
+    }
+
+    /// `deserialize_state` line 3173 `<` → `<=`: a 4-byte snapshot (header
+    /// only, count 0) of an empty world is valid.
+    #[test]
+    fn deserialize_state_accepts_header_only_snapshot_of_empty_world() {
+        let src = quiet_world();
+        let bytes = src.serialize_state();
+        assert_eq!(bytes.len(), 4);
+        let mut dst = quiet_world();
+        assert!(dst.deserialize_state(&bytes));
+        assert_eq!(dst.body_count(), 0);
+    }
+
+    /// `deserialize_state` lines 3237 / 3241 / 3245 `<` → `==` / `>`: when the
+    /// parallel arrays are shorter than `bodies` (a body pushed straight into
+    /// `bodies`), the resync loops must extend them to the body count with
+    /// default entries.
+    #[test]
+    fn deserialize_state_extends_short_parallel_arrays_to_body_count() {
+        let mut world = quiet_world();
+        world.add_body(RigidBody::new_dynamic(v3(1, 2, 3), Fix128::ONE));
+        world.set_body_collision_radius(0, r(1, 2));
+        world
+            .bodies
+            .push(RigidBody::new_dynamic(v3(4, 5, 6), Fix128::ONE));
+        world
+            .bodies
+            .push(RigidBody::new_dynamic(v3(7, 8, 9), Fix128::ONE));
+        assert_eq!(world.body_collision_radii.len(), 1);
+        let bytes = world.serialize_state();
+        assert!(world.deserialize_state(&bytes));
+        assert_eq!(world.body_collision_radii, vec![Some(r(1, 2)), None, None]);
+        assert_eq!(world.body_filters, vec![CollisionFilter::DEFAULT; 3]);
+        assert_eq!(
+            world.body_materials,
+            vec![crate::material::DEFAULT_MATERIAL; 3]
+        );
+        assert_eq!(world.islands.sleep_data.len(), 3);
+        assert_eq!(world.bodies[2].position, v3(7, 8, 9));
+    }
+
+    /// `batches_are_body_disjoint` line 1646 `&&` → `||` / `a == b` → `a != b`
+    /// (conflict through the *second* body of both constraints) and `||` →
+    /// `&&` (a self-constraint counts its body once): constraints (1, 0) and
+    /// (2, 0) share body 0 only as `body_b`, so one batch holding both is
+    /// invalid; a batch holding only the self-constraint (1, 1) is valid.
+    #[test]
+    fn batches_are_body_disjoint_checks_second_body_and_self_constraints() {
+        let mut world = quiet_world();
+        for i in 0..3i64 {
+            world.add_body(RigidBody::new_dynamic(v3(i, 0, 0), Fix128::ONE));
+        }
+        world.add_distance_constraint(dc(1, 0));
+        world.add_distance_constraint(dc(2, 0));
+        world.rebuild_batches();
+        assert_eq!(world.num_batches(), 2);
+        assert!(world.batches_are_body_disjoint());
+
+        let mut shared_b = ConstraintBatch::default();
+        shared_b.distance_indices.extend([0usize, 1]);
+        world.constraint_batches = vec![shared_b];
+        assert!(!world.batches_are_body_disjoint());
+
+        world.distance_constraints.push(dc(1, 1));
+        let mut self_only = ConstraintBatch::default();
+        self_only.distance_indices.push(2);
+        world.constraint_batches = vec![self_only];
+        assert!(world.batches_are_body_disjoint());
+
+        let mut self_and_other = ConstraintBatch::default();
+        self_and_other.distance_indices.extend([2usize, 0]);
+        world.constraint_batches = vec![self_and_other];
+        assert!(!world.batches_are_body_disjoint());
+    }
+
+    /// `raycast` line 1397 `<` → `<=` / `==`: (1) two spheres hit at exactly
+    /// the same t (mirror images across the ray) — the first BVH candidate
+    /// wins; the candidates come in Morton order, so the sphere with the
+    /// smaller y (body 1) is reported. (2) A ray cast in -x meets the far
+    /// sphere first in Morton order (smaller x) and the nearer sphere second;
+    /// the nearer one (body 1, t = 10 - 2 = 8) must replace it.
+    #[test]
+    fn raycast_ties_keep_first_candidate_and_nearer_later_candidate_replaces() {
+        let mut tie = quiet_world();
+        tie.add_body_with_radius(
+            RigidBody::new_static(Vec3Fix::new(Fix128::from_int(5), r(1, 2), Fix128::ZERO)),
+            Fix128::ONE,
+        );
+        tie.add_body_with_radius(
+            RigidBody::new_static(Vec3Fix::new(Fix128::from_int(5), r(-1, 2), Fix128::ZERO)),
+            Fix128::ONE,
+        );
+        let hit = tie
+            .raycast(Vec3Fix::ZERO, v3(1, 0, 0), Fix128::from_int(20))
+            .expect("both spheres straddle the ray");
+        assert_eq!(hit.0, 1);
+        // t = 5 - sqrt(3/4) for both
+        let expected_t = Fix128::from_int(5) - r(3, 4).sqrt();
+        assert!(near(hit.1, expected_t), "t {:?} vs {expected_t:?}", hit.1);
+
+        let far_first = sphere_world(&[v3(5, 0, 0), v3(10, 0, 0)]);
+        assert_eq!(
+            far_first.raycast(v3(20, 0, 0), v3(-1, 0, 0), Fix128::from_int(100)),
+            Some((1, Fix128::from_int(8)))
+        );
+    }
+
+    /// `Debug for PhysicsWorld` → `Ok(())`: the output names the type and the
+    /// body count.
+    #[test]
+    fn physics_world_debug_lists_type_and_counts() {
+        let mut world = quiet_world();
+        world.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
+        world.add_body(RigidBody::new_dynamic(v3(1, 0, 0), Fix128::ONE));
+        let text = format!("{world:?}");
+        assert!(text.starts_with("PhysicsWorld"), "{text}");
+        assert!(text.contains("bodies: 2"), "{text}");
+        assert!(text.contains("joints: 0"), "{text}");
     }
 }
 
