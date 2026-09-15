@@ -659,8 +659,8 @@ impl LinearBvh {
     ///
     /// Every pair whose AABBs overlap is reported. The result is a
     /// **superset**: each leaf is queried with its own (i32-quantised) AABB,
-    /// which is the union of up to [`BvhNode::MAX_PRIMS_PER_LEAF`] primitives,
-    /// so a pair can be reported when only their leaves overlap. Callers run a
+    /// which is the union of the (at most four, see `build`) primitives it
+    /// holds, so a pair can be reported when only their leaves overlap. Callers run a
     /// narrow phase on the result (see `PhysicsWorld::detect_collisions`).
     ///
     /// Before 1.1.1 every primitive was queried with the BVH's *world*
