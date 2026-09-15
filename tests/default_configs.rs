@@ -236,6 +236,9 @@ fn cloth_config_default_pinned_curtain_sags_and_stays_bounded() {
     // 1.2.0: damping is 0.99 per *frame* (not per substep), so the curtain
     // swings for a few seconds before settling — 15 s of simulation.
     let mut lowest_bottom = start[bottom_row[0]].y.to_f64();
+    // 900 frames = 15 s: at 10 s the bottom row still sways by ~2.5 cm (Gauss–Seidel
+    // ordering makes the transient asymmetric); the settled-state checks below need
+    // the residual under 1 cm. This is the long pole of the suite (~20 s debug).
     for frame in 0..900 {
         cloth.step(dt60());
         // top row is pinned: bit-identical
@@ -384,14 +387,17 @@ fn rope_config_default_hanging_rope_keeps_length_and_ends_below_anchor() {
 #[test]
 fn fluid_config_default_block_falls_as_a_whole_without_explosion() {
     let config = FluidConfig::default();
+    // 4×4×4 block at spacing h/2: every interior particle has 26+ neighbours,
+    // which is what the pre-1.2.0 unit test (spacing = h, zero neighbours)
+    // never exercised. 64 particles keep the debug-build runtime ≈ 8 s.
     let mut fluid = Fluid::new_block(
         Vec3Fix::from_int(0, 0, 0),
-        Vec3Fix::new(r(4, 10), r(4, 10), r(4, 10)),
+        Vec3Fix::new(r(3, 10), r(3, 10), r(3, 10)),
         r(1, 10),
         config,
     );
     let n = fluid.particle_count();
-    assert_eq!(n, 125, "5x5x5 block");
+    assert_eq!(n, 64, "4x4x4 block");
     let com = |f: &Fluid| {
         let mut s = (0.0, 0.0, 0.0);
         for p in &f.positions {
@@ -403,7 +409,7 @@ fn fluid_config_default_block_falls_as_a_whole_without_explosion() {
     };
     let com0 = com(&fluid);
 
-    let frames = 60;
+    let frames = 30;
     let mut prev_y = com0.1;
     for frame in 0..frames {
         fluid.step(dt60());
@@ -415,7 +421,7 @@ fn fluid_config_default_block_falls_as_a_whole_without_explosion() {
             c.1
         );
         prev_y = c.1;
-        // A 0.4 m block in free fall stays a block: after `frame` frames no
+        // A 0.3 m block in free fall stays a block: after `frame` frames no
         // particle can be further than the free-fall drop plus its own size.
         let bound = 2.0 + 10.0 * ((frame + 1) as f64 * DT60).powi(2) / 2.0;
         for (i, p) in fluid.positions.iter().enumerate() {
