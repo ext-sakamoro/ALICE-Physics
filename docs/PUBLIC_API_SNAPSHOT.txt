@@ -4634,6 +4634,7 @@ pub const fn alice_physics::math::Fix128::from_raw(i64, u64) -> Self
 pub const fn alice_physics::math::Fix128::half(self) -> Self
 pub const fn alice_physics::math::Fix128::is_negative(self) -> bool
 pub const fn alice_physics::math::Fix128::is_zero(self) -> bool
+pub const fn alice_physics::math::Fix128::shr_bits(self, u32) -> Self
 pub fn alice_physics::math::Fix128::sin(self) -> Self
 pub fn alice_physics::math::Fix128::sin_cos(self) -> (Self, Self)
 pub fn alice_physics::math::Fix128::sqrt(self) -> Self
@@ -8033,6 +8034,7 @@ pub const fn alice_physics::math::Fix128::from_raw(i64, u64) -> Self
 pub const fn alice_physics::math::Fix128::half(self) -> Self
 pub const fn alice_physics::math::Fix128::is_negative(self) -> bool
 pub const fn alice_physics::math::Fix128::is_zero(self) -> bool
+pub const fn alice_physics::math::Fix128::shr_bits(self, u32) -> Self
 pub fn alice_physics::math::Fix128::sin(self) -> Self
 pub fn alice_physics::math::Fix128::sin_cos(self) -> (Self, Self)
 pub fn alice_physics::math::Fix128::sqrt(self) -> Self
@@ -16356,6 +16358,7 @@ pub const fn alice_physics::math::Fix128::from_raw(i64, u64) -> Self
 pub const fn alice_physics::math::Fix128::half(self) -> Self
 pub const fn alice_physics::math::Fix128::is_negative(self) -> bool
 pub const fn alice_physics::math::Fix128::is_zero(self) -> bool
+pub const fn alice_physics::math::Fix128::shr_bits(self, u32) -> Self
 pub fn alice_physics::math::Fix128::sin(self) -> Self
 pub fn alice_physics::math::Fix128::sin_cos(self) -> (Self, Self)
 pub fn alice_physics::math::Fix128::sqrt(self) -> Self
