@@ -121,13 +121,20 @@ impl FluidDelta {
         let mut positions = Vec::new();
         let mut velocities = Vec::new();
 
-        let threshold_sq = threshold * threshold;
+        // Per-component comparison against the threshold, never squared:
+        // a component change below 2⁻³² squares to exactly 0 in Fix128, so
+        // `length_squared() > τ²` dropped 1-ulp changes even at τ = 0 and the
+        // receiver silently diverged from the sender (1.2.0). With τ = 0 any
+        // bit difference counts; with τ > 0 the per-particle error after
+        // `apply` is bounded by τ per component.
+        let exceeds =
+            |d: Vec3Fix| d.x.abs() > threshold || d.y.abs() > threshold || d.z.abs() > threshold;
 
         for i in 0..new_positions.len().min(old_positions.len()) {
-            let pos_diff = (new_positions[i] - old_positions[i]).length_squared();
-            let vel_diff = (new_velocities[i] - old_velocities[i]).length_squared();
+            let pos_diff = new_positions[i] - old_positions[i];
+            let vel_diff = new_velocities[i] - old_velocities[i];
 
-            if pos_diff > threshold_sq || vel_diff > threshold_sq {
+            if exceeds(pos_diff) || exceeds(vel_diff) {
                 changed_indices.push(i as u32);
                 positions.push(new_positions[i]);
                 velocities.push(new_velocities[i]);

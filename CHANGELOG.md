@@ -210,6 +210,42 @@ contact normal, and the contact multiplier. Everything else is bit-compatible.
   lexicographic `(bodies, contacts, joints)` key. Found by the mutation-score
   campaign (`cargo-mutants`), pinned by
   `islands_sharing_a_static_first_body_are_ordered_lexicographically`.
+- **Engineering modules, fourth validation batch (`tests/engineering_oracles_misc.rs`,
+  27 oracles over `rolling_contact`, `fracture`, `layer_adhesion`,
+  `kinematic_loop`, `sdf_force`, `anisotropic_friction`, `physics2d`,
+  `sdf_destruction`, `soft_body_cut`, `fluid_netcode`) and the four source
+  bugs it found, all fixed:**
+  - `anisotropic_friction::friction_force` summed `sign(v_i) μ_i t̂_i` per
+    axis — a box law whose isotropic limit was `√2 μN` at 45° and pointed
+    off the slip direction. It is now the orthotropic friction ellipse
+    (Zmitrowicz 1981): `F = −N (μ_long v_long t̂_long + μ_trans v_trans
+    t̂_trans) / |v_tan|`, exact Coulomb on the principal axes and `−μN v̂`
+    when the coefficients are equal; the static / kinetic switch uses the
+    total slip speed.
+  - `kinematic_loop::four_bar_linkage` registered three zero-anchor ball
+    joints and discarded `rocker_length`, so the solver collapsed every
+    link to length 0. The mechanism is now four pin bodies joined by rigid
+    distance constraints carrying the link lengths, the coupler pin is
+    placed by the circle–circle intersection at crank angle 0 (Norton
+    §4.5), `O₄` is a static ground pin (loop closed by construction) and
+    `FourBarLinkage::joints` are distance-constraint indices. New
+    `try_four_bar_linkage` returns `InvalidConfiguration` when the lengths
+    cannot close; `four_bar_linkage` panics on that input (documented).
+  - `physics2d` contact solve re-applied the depth measured before the
+    solve in every iteration, so `iterations = 8` separated a 2 m/s head-on
+    collision at 14 m/s, and `RigidBody2D::restitution` / `friction` were
+    never read. The penetration is now re-evaluated from the current
+    positions in each iteration and a velocity pass (Macklin et al. 2020)
+    applies Newton restitution `v_n' = max(−e v̄_n, 0)` (`e = max(e_a, e_b)`,
+    zero below `2 g h` so stacks rest) and Coulomb friction bounded by
+    `μ λ_n / h` (`μ = √(μ_a μ_b)`). Head-on: `v_sep = e·v_app`, identical for
+    1 / 2 / 8 iterations and 1 / 4 / 16 substeps; a locked disc slides to a
+    stop at `μ g`.
+  - `fluid_netcode::FluidDelta::compute` compared `|Δ|² > τ²`; a component
+    change below 2⁻³² squares to exactly 0 in `Fix128`, so a 1-ulp change
+    was dropped even at `τ = 0` while the delta's checksum claimed the
+    states matched (a silent lockstep desync). Components are now compared
+    against `τ` directly.
 - **31 exported `extern "C"` functions now catch panics** (`ffi_guard`: sentinel
   return + per-thread message via the new `alice_physics_last_error` /
   `alice_physics_clear_last_error` / `alice_physics_string_free`). Rust 1.81+
