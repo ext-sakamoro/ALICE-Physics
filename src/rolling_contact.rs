@@ -322,4 +322,115 @@ mod tests {
     fn basquin_panics_on_nonpositive_exponent() {
         let _ = basquin_cycles_to_failure(1.0e9, 5.0e34, 0.0, 1.0e8);
     }
+
+    /// Physical sanity of a `(E, ν, C, m, σ_e)` preset tuple.
+    fn assert_preset_sane(name: &str, p: (f32, f32, f32, f32, f32), e_lo: f32, e_hi: f32) {
+        let (e, nu, c, m, sigma_e) = p;
+        assert!(e >= e_lo && e <= e_hi, "{name}: E = {e} Pa out of range");
+        assert!(nu > 0.0 && nu < 0.5, "{name}: ν = {nu} not in (0, 0.5)");
+        assert!(c > 0.0 && c.is_finite(), "{name}: Basquin C = {c}");
+        assert!(m > 0.0 && m < 20.0, "{name}: Basquin m = {m}");
+        assert!(
+            sigma_e > 0.0 && sigma_e < e,
+            "{name}: endurance limit {sigma_e} must be positive and below E"
+        );
+        // Basquin C must be usable: with σ = σ_e the life is finite and > 1 cycle.
+        let n = basquin_cycles_to_failure(sigma_e * 1.01, c, m, sigma_e);
+        assert!(n.is_finite() && n > 1.0, "{name}: N({sigma_e}·1.01) = {n}");
+    }
+
+    /// Two presets are distinct if any field differs by more than a
+    /// relative 1e-6 (tolerance-based, never an exact float compare).
+    fn presets_differ(a: (f32, f32, f32, f32, f32), b: (f32, f32, f32, f32, f32)) -> bool {
+        let rel = |x: f32, y: f32| (x - y).abs() > 1.0e-6 * x.abs().max(y.abs());
+        rel(a.0, b.0) || rel(a.1, b.1) || rel(a.2, b.2) || rel(a.3, b.3) || rel(a.4, b.4)
+    }
+
+    #[test]
+    fn gear_steel_8620_preset_is_sane_and_distinct() {
+        let gear = materials::gear_steel_8620();
+        // Steel: E in [190, 215] GPa.
+        assert_preset_sane("gear_steel_8620", gear, 190.0e9, 215.0e9);
+        assert!((gear.0 - 205.0e9).abs() < 1.0, "E = 205 GPa");
+        assert!((gear.1 - 0.29).abs() < 1e-6, "ν = 0.29");
+        // Differs from the other presets in at least the modulus.
+        let bearing = materials::bearing_steel_52100();
+        let ceramic = materials::silicon_nitride();
+        assert!(presets_differ(gear, bearing));
+        assert!(presets_differ(gear, ceramic));
+        assert!(
+            gear.0 < bearing.0,
+            "case-hardened 8620 is slightly less stiff than 52100"
+        );
+        assert!(gear.4 < bearing.4, "8620 endurance limit below 52100");
+    }
+
+    #[test]
+    fn silicon_nitride_preset_is_sane_and_distinct() {
+        let sn = materials::silicon_nitride();
+        // Si3N4 ceramic: E in [290, 330] GPa.
+        assert_preset_sane("silicon_nitride", sn, 290.0e9, 330.0e9);
+        assert!((sn.0 - 310.0e9).abs() < 1.0, "E = 310 GPa");
+        assert!((sn.1 - 0.27).abs() < 1e-6, "ν = 0.27");
+        let bearing = materials::bearing_steel_52100();
+        let gear = materials::gear_steel_8620();
+        assert!(presets_differ(sn, bearing));
+        assert!(presets_differ(sn, gear));
+        // Ceramic is the stiffest, has the lowest Poisson ratio and the
+        // highest endurance limit of the three presets.
+        assert!(sn.0 > bearing.0 && sn.0 > gear.0);
+        assert!(sn.1 < bearing.1 && sn.1 < gear.1);
+        assert!(sn.4 > bearing.4 && sn.4 > gear.4);
+    }
+
+    #[test]
+    fn presets_feed_hertz_and_match_closed_form_relations() {
+        // Hybrid bearing: silicon-nitride ball on 8620 gear-steel flank.
+        let (e1, nu1, _, _, _) = materials::silicon_nitride();
+        let (e2, nu2, _, _, _) = materials::gear_steel_8620();
+        let load = 250.0;
+        let r1 = 4.0e-3;
+        let r2 = 12.0e-3;
+        let c = hertzian_sphere_sphere(load, r1, r2, e1, e2, nu1, nu2);
+
+        // Closed-form Hertz relations documented by the module:
+        //   1/R* = 1/R1 + 1/R2
+        //   1/E* = (1-ν1²)/E1 + (1-ν2²)/E2
+        //   a    = (3 P R* / (4 E*))^(1/3)  ⇔  a³ = 3 P R* / (4 E*)
+        //   p_max = 3 P / (2 π a²)
+        //   z_max_shear = 0.48 a
+        let r_star = 1.0 / (1.0 / r1 + 1.0 / r2);
+        let e_star = 1.0 / ((1.0 - nu1 * nu1) / e1 + (1.0 - nu2 * nu2) / e2);
+        let a = c.contact_radius_m;
+        let a_cubed = a * a * a;
+        let expected_a_cubed = 3.0 * load * r_star / (4.0 * e_star);
+        let rel = (a_cubed - expected_a_cubed).abs() / expected_a_cubed;
+        assert!(rel < 1.0e-4, "a³ relation: rel err = {rel}");
+
+        let expected_p = 3.0 * load / (2.0 * PI * a * a);
+        let rel_p = (c.peak_pressure_pa - expected_p).abs() / expected_p;
+        assert!(rel_p < 1.0e-5, "p_max relation: rel err = {rel_p}");
+
+        let ratio = c.max_shear_depth_m / a;
+        assert!((ratio - 0.48).abs() < 1.0e-5, "shear depth ratio = {ratio}");
+
+        // Sanity of magnitude: a bearing-scale patch is sub-millimetre and
+        // p_max is in the GPa regime.
+        assert!(a > 1.0e-5 && a < 1.0e-3, "a = {a}");
+        assert!(c.peak_pressure_pa > 1.0e8 && c.peak_pressure_pa < 1.0e10);
+
+        // Symmetry: swapping the two bodies leaves the result unchanged.
+        let swapped = hertzian_sphere_sphere(load, r2, r1, e2, e1, nu2, nu1);
+        assert!((swapped.contact_radius_m - a).abs() / a < 1.0e-6);
+        assert!(
+            (swapped.peak_pressure_pa - c.peak_pressure_pa).abs() / c.peak_pressure_pa < 1.0e-6
+        );
+
+        // Stiffer pairing (ceramic on ceramic) → smaller patch, higher p_max
+        // than the gear-steel-on-gear-steel pairing at the same load.
+        let cc = hertzian_sphere_sphere(load, r1, r2, e1, e1, nu1, nu1);
+        let gg = hertzian_sphere_sphere(load, r1, r2, e2, e2, nu2, nu2);
+        assert!(cc.contact_radius_m < gg.contact_radius_m);
+        assert!(cc.peak_pressure_pa > gg.peak_pressure_pa);
+    }
 }

@@ -271,6 +271,7 @@ fn clamp(v: Fix128, min: Fix128, max: Fix128) -> Fix128 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::joint::BallJoint;
 
     #[test]
     fn test_pd_position_control() {
@@ -338,5 +339,125 @@ mod tests {
             mag < Fix128::from_ratio(1, 10),
             "Zero error should give zero torque"
         );
+    }
+
+    /// A (inv_mass ia) at origin、B (inv_mass ib) at (4, 0, 0)、Ball joint 0-1
+    fn motor_scene(ia: i64, ib: i64) -> (Vec<RigidBody>, Vec<Joint>) {
+        let mut a = RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE);
+        let mut b = RigidBody::new_dynamic(Vec3Fix::from_int(4, 0, 0), Fix128::ONE);
+        a.inv_mass = Fix128::from_int(ia);
+        b.inv_mass = Fix128::from_int(ib);
+        let joints = vec![Joint::Ball(BallJoint::new(
+            0,
+            1,
+            Vec3Fix::ZERO,
+            Vec3Fix::ZERO,
+        ))];
+        (vec![a, b], joints)
+    }
+
+    #[test]
+    fn apply_motors_position_mode_pushes_along_joint_axis_by_force_dt_inv_mass() {
+        // kp 10 / kd 0 / max 100、target 距離 6、現在 4 → force = 10 * 2 = 20
+        // dt 1/4 → impulse 5 → B (inv 1) velocity += (5, 0, 0)、A static は不動
+        let (mut bodies, joints) = motor_scene(0, 1);
+        let mut pd = PdController::new(Fix128::from_int(10), Fix128::ZERO, Fix128::from_int(100));
+        pd.set_position_target(Fix128::from_int(6));
+        let motors = [JointMotor::new(0, pd)];
+        apply_motors(&motors, &joints, &mut bodies, Fix128::from_ratio(1, 4));
+        assert_eq!(bodies[1].velocity, Vec3Fix::from_int(5, 0, 0));
+        assert_eq!(bodies[0].velocity, Vec3Fix::ZERO);
+
+        // 目標が現在より近い (2) → force = -20 → B は A 側へ (-5, 0, 0)
+        let (mut closer, joints) = motor_scene(0, 1);
+        let mut pd_in = pd;
+        pd_in.set_position_target(Fix128::from_int(2));
+        apply_motors(
+            &[JointMotor::new(0, pd_in)],
+            &joints,
+            &mut closer,
+            Fix128::from_ratio(1, 4),
+        );
+        assert_eq!(closer[1].velocity, Vec3Fix::from_int(-5, 0, 0));
+
+        // 両 dynamic (inv 1 / inv 2): impulse 5 → A -= 5、B += 10 (運動量 = 質量比で分配)
+        let (mut both, joints) = motor_scene(1, 2);
+        apply_motors(
+            &[JointMotor::new(0, pd)],
+            &joints,
+            &mut both,
+            Fix128::from_ratio(1, 4),
+        );
+        assert_eq!(both[0].velocity, Vec3Fix::from_int(-5, 0, 0));
+        assert_eq!(both[1].velocity, Vec3Fix::from_int(10, 0, 0));
+
+        // max_force 8 で clamp → impulse 2
+        let (mut clamped, joints) = motor_scene(0, 1);
+        let mut pd_clamp =
+            PdController::new(Fix128::from_int(10), Fix128::ZERO, Fix128::from_int(8));
+        pd_clamp.set_position_target(Fix128::from_int(6));
+        apply_motors(
+            &[JointMotor::new(0, pd_clamp)],
+            &joints,
+            &mut clamped,
+            Fix128::from_ratio(1, 4),
+        );
+        assert_eq!(clamped[1].velocity, Vec3Fix::from_int(2, 0, 0));
+    }
+
+    #[test]
+    fn apply_motors_velocity_mode_uses_relative_velocity_along_axis() {
+        // kp 10、target vel 3、B が +x に 1 → vel_error 2 → force 20 → impulse 5 → B (6, 0, 0)
+        // 軸直交成分 (y) は current_vel に寄与しない
+        let (mut bodies, joints) = motor_scene(0, 1);
+        bodies[1].velocity = Vec3Fix::from_int(1, 7, 0);
+        let mut pd = PdController::new(Fix128::from_int(10), Fix128::ZERO, Fix128::from_int(100));
+        pd.set_velocity_target(Fix128::from_int(3));
+        apply_motors(
+            &[JointMotor::new(0, pd)],
+            &joints,
+            &mut bodies,
+            Fix128::from_ratio(1, 4),
+        );
+        assert_eq!(bodies[1].velocity, Vec3Fix::from_int(6, 7, 0));
+    }
+
+    #[test]
+    fn apply_motors_skips_off_out_of_range_zero_force_and_coincident_bodies() {
+        let (mut bodies, joints) = motor_scene(0, 1);
+        let mut pd = PdController::new(Fix128::from_int(10), Fix128::ZERO, Fix128::from_int(100));
+        pd.set_position_target(Fix128::from_int(6));
+        let dt = Fix128::from_ratio(1, 4);
+
+        // Off
+        let mut off = pd;
+        off.disable();
+        apply_motors(&[JointMotor::new(0, off)], &joints, &mut bodies, dt);
+        assert_eq!(bodies[1].velocity, Vec3Fix::ZERO);
+        // joint index 範囲外
+        apply_motors(&[JointMotor::new(1, pd)], &joints, &mut bodies, dt);
+        assert_eq!(bodies[1].velocity, Vec3Fix::ZERO);
+        // body index 範囲外 (joint が body 5 を参照)
+        let far = [Joint::Ball(BallJoint::new(
+            0,
+            5,
+            Vec3Fix::ZERO,
+            Vec3Fix::ZERO,
+        ))];
+        apply_motors(&[JointMotor::new(0, pd)], &far, &mut bodies, dt);
+        assert_eq!(bodies[1].velocity, Vec3Fix::ZERO);
+        // 目標 = 現在距離 4 → force 0 → 不変
+        let mut at_target = pd;
+        at_target.set_position_target(Fix128::from_int(4));
+        apply_motors(&[JointMotor::new(0, at_target)], &joints, &mut bodies, dt);
+        assert_eq!(bodies[1].velocity, Vec3Fix::ZERO);
+        // 同一点 (current_pos 0) → 方向が定義できず skip
+        bodies[1].position = Vec3Fix::ZERO;
+        apply_motors(&[JointMotor::new(0, pd)], &joints, &mut bodies, dt);
+        assert_eq!(bodies[1].velocity, Vec3Fix::ZERO);
+        // 通常 path は動く (上の skip が「何もしない」だけでない事の対照)
+        bodies[1].position = Vec3Fix::from_int(4, 0, 0);
+        apply_motors(&[JointMotor::new(0, pd)], &joints, &mut bodies, dt);
+        assert_eq!(bodies[1].velocity, Vec3Fix::from_int(5, 0, 0));
     }
 }

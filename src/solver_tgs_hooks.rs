@@ -574,4 +574,121 @@ mod tests {
             bodies[0].position[1].to_f32()
         );
     }
+
+    // ---- default-config oracles (2026-09-15, CLAUDE.md § 解析解突合テスト規律) ----
+    // `PgsConfig` / `TgsConfig` / `AdaptiveSubStepConfig` live in pub(crate)
+    // modules, so their defaults are exercised here rather than in tests/.
+
+    /// Free fall of one dynamic body through `tgs_step` with every default:
+    /// symplectic Euler over `substeps` → `y = −g dt² · Σ_{k=1..s} k / s²` per
+    /// frame plus `v dt`, i.e. `y_60 = −g/2 · (1 + 1/s)` … the same discrete
+    /// closed form the rigid-body solver satisfies. `v_60 = −g` exactly.
+    #[test]
+    fn pgs_and_tgs_defaults_free_fall_matches_symplectic_closed_form() {
+        let tgs = crate::solver_tgs::TgsConfig::default();
+        assert_eq!(
+            (tgs.substeps, tgs.velocity_iters, tgs.position_iters),
+            (4, 4, 2)
+        );
+        assert!(tgs.warmstart);
+        let pgs = PgsConfig::default();
+        let g = pgs.gravity[1].to_f64();
+        assert!((g + 9.81).abs() < 1e-6, "default gravity {g}");
+        assert!(pgs.gravity[0].is_zero() && pgs.gravity[2].is_zero());
+
+        let mut bodies = [dynamic_body(1, 1.0, 100.0)];
+        let mut contacts: [SimpleContact; 0] = [];
+        let mut cache = ImpulseCache::new();
+        let dt = Fix128::from_ratio(1, 60);
+        let frames = 60;
+        for _ in 0..frames {
+            let mut hooks = PgsHooks {
+                bodies: &mut bodies,
+                contacts: &mut contacts,
+                cache: &mut cache,
+                cfg: pgs,
+            };
+            crate::solver_tgs::tgs_step(&mut hooks, &tgs, dt);
+        }
+        let s = tgs.substeps as f64;
+        let dtf = 1.0 / 60.0;
+        let mut y = 100.0;
+        let mut v = 0.0;
+        for _ in 0..frames {
+            y += v * dtf + g * dtf * dtf * (s + 1.0) / (2.0 * s);
+            v += g * dtf;
+        }
+        let got_y = bodies[0].position[1].to_f64();
+        let got_v = bodies[0].linear_velocity[1].to_f64();
+        assert!((got_y - y).abs() < 1e-6, "y = {got_y}, closed form {y}");
+        assert!((got_v - v).abs() < 1e-6, "v = {got_v}, closed form {v}");
+        assert!((got_v + 9.81).abs() < 1e-6, "after 1 s v = −g");
+        // no lateral motion from a vertical gravity vector
+        assert!(bodies[0].position[0].is_zero() && bodies[0].position[2].is_zero());
+    }
+
+    /// The default `slop` (5 mm) and `baumgarte` (0.2) act on a resting
+    /// contact the way the docs promise: penetration below the slop is left
+    /// alone, above it a fraction is removed per position pass and the body
+    /// is never pushed *into* the floor.
+    #[test]
+    fn pgs_default_resting_contact_is_stable_and_respects_slop() {
+        let pgs = PgsConfig::default();
+        assert!((pgs.slop.to_f64() - 0.005).abs() < 1e-6);
+        assert!((pgs.baumgarte.to_f64() - 0.2).abs() < 1e-6);
+        assert!(pgs.warmstart);
+        let tgs = crate::solver_tgs::TgsConfig::default();
+        // body resting 2 mm into the floor: below slop → untouched by the
+        // position pass, gravity is cancelled by the normal impulse
+        let mut bodies = [static_body(0), dynamic_body(1, 1.0, -0.002)];
+        let mut contacts = [floor_contact(0, 1, 7, 0.002)];
+        let mut cache = ImpulseCache::new();
+        let dt = Fix128::from_ratio(1, 60);
+        for _ in 0..120 {
+            let mut hooks = PgsHooks {
+                bodies: &mut bodies,
+                contacts: &mut contacts,
+                cache: &mut cache,
+                cfg: pgs,
+            };
+            crate::solver_tgs::tgs_step(&mut hooks, &tgs, dt);
+        }
+        let y = bodies[1].position[1].to_f64();
+        let vy = bodies[1].linear_velocity[1].to_f64();
+        assert!(
+            y <= 0.0 && y > -0.05,
+            "resting body drifted to y = {y} (must stay within 5 cm of the floor, never above it)"
+        );
+        assert!(vy.abs() < 0.2, "resting body still moving: vy = {vy}");
+        // the normal impulse accumulated over the frame carries the weight
+        assert!(
+            contacts[0].accum_normal > Fix128::ZERO,
+            "no normal impulse accumulated against gravity"
+        );
+    }
+
+    /// `AdaptiveSubStepConfig::default()` — 0.1 world units per sub-step,
+    /// clamp [1, 16]: a body at v world-units/s over dt = 1/60 needs
+    /// `ceil(v / 6)` sub-steps, and a static scene needs exactly 1.
+    #[test]
+    fn adaptive_substep_default_gives_ceil_of_travel_over_tenth() {
+        let cfg = crate::solver_tgs::AdaptiveSubStepConfig::default();
+        assert_eq!((cfg.min_substeps, cfg.max_substeps), (1, 16));
+        assert!((cfg.max_translation_per_step.to_f64() - 0.1).abs() < 1e-12);
+        struct V(Fix128);
+        impl crate::solver_tgs::HasVelocity for V {
+            fn velocity_l_inf(&self) -> Fix128 {
+                self.0
+            }
+        }
+        let dt = Fix128::from_ratio(1, 60);
+        let n =
+            |v: i64| crate::solver_tgs::adaptive_substeps_for(&[V(Fix128::from_int(v))], dt, &cfg);
+        assert_eq!(n(0), 1, "static scene");
+        assert_eq!(n(6), 1, "travel exactly 0.1");
+        assert_eq!(n(7), 2, "travel 0.1167 → 2 sub-steps");
+        assert_eq!(n(60), 10, "travel 1.0 → 10 sub-steps");
+        assert_eq!(n(96), 16, "travel 1.6 → 16 (cap)");
+        assert_eq!(n(10_000), 16, "clamped at max_substeps");
+    }
 }

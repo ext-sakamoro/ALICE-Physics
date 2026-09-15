@@ -749,4 +749,53 @@ mod tests {
         assert!(tree.query(&make_aabb(0, 0, 0)).is_empty());
         assert!(tree.find_pairs().is_empty());
     }
+
+    #[test]
+    fn get_aabb_returns_fattened_proxy_box_and_tracks_update() {
+        let mut tree = DynamicAabbTree::new();
+        tree.margin = Fix128::from_ratio(1, 2);
+        let m = Vec3Fix::new(tree.margin, tree.margin, tree.margin);
+
+        // insert: 格納される proxy AABB は tight box を margin だけ膨らませたもの
+        let tight0 = make_aabb(0, 0, 0);
+        let tight1 = AABB::new(Vec3Fix::from_int(-7, 3, -12), Vec3Fix::from_int(5, 9, -2));
+        let p0 = tree.insert(tight0, 10);
+        let p1 = tree.insert(tight1, 11);
+        assert_eq!(tree.get_aabb(p0), AABB::new(tight0.min - m, tight0.max + m));
+        assert_eq!(tree.get_aabb(p1), AABB::new(tight1.min - m, tight1.max + m));
+        // 別 proxy の箱は混ざらない
+        assert_ne!(tree.get_aabb(p0), tree.get_aabb(p1));
+        assert_eq!(tree.user_data(p0), 10);
+        assert_eq!(tree.user_data(p1), 11);
+
+        // fat 内の移動は update が false を返し get_aabb は変わらない
+        let inside = AABB::new(
+            Vec3Fix::new(Fix128::from_ratio(1, 4), Fix128::ZERO, Fix128::ZERO),
+            Vec3Fix::new(Fix128::from_ratio(5, 4), Fix128::ONE, Fix128::ONE),
+        );
+        let before = tree.get_aabb(p0);
+        assert!(!tree.update(p0, inside));
+        assert_eq!(tree.get_aabb(p0), before);
+
+        // fat を出る移動は再挿入され、新しい tight box を margin 付きで返す
+        let moved = make_aabb(30, 0, 0);
+        assert!(tree.update(p0, moved));
+        assert_eq!(tree.get_aabb(p0), AABB::new(moved.min - m, moved.max + m));
+        // query は get_aabb の箱と整合: 新位置で見つかり、旧位置では見つからない
+        assert!(tree.query(&make_aabb(30, 0, 0)).contains(&10));
+        assert!(!tree.query(&make_aabb(0, 0, 0)).contains(&10));
+        // get_aabb と丁度接する query (margin 端) も overlap 扱い
+        let fat = tree.get_aabb(p0);
+        let touching = AABB::new(
+            Vec3Fix::new(fat.max.x, Fix128::ZERO, Fix128::ZERO),
+            Vec3Fix::new(fat.max.x + Fix128::ONE, Fix128::ONE, Fix128::ONE),
+        );
+        assert!(tree.query(&touching).contains(&10));
+
+        // margin 0 なら tight box がそのまま返る
+        let mut exact = DynamicAabbTree::new();
+        exact.margin = Fix128::ZERO;
+        let q = exact.insert(tight1, 0);
+        assert_eq!(exact.get_aabb(q), tight1);
+    }
 }

@@ -371,4 +371,60 @@ mod tests {
         assert_eq!(events.contact_events()[0].body_a, 1);
         assert_eq!(events.contact_events()[0].body_b, 3);
     }
+
+    #[test]
+    fn has_events_tracks_contact_and_trigger_queues_across_frame_lifecycle() {
+        let mut events = EventCollector::new();
+        assert!(!events.has_events());
+        events.begin_frame();
+        assert!(!events.has_events());
+
+        // contact だけ → true、drain で空になれば false
+        events.report_contact(
+            0,
+            1,
+            Vec3Fix::UNIT_Y,
+            Vec3Fix::ZERO,
+            Fix128::ONE,
+            Fix128::ZERO,
+        );
+        assert!(events.has_events());
+        assert_eq!(events.drain_contact_events().len(), 1);
+        assert!(!events.has_events());
+
+        // trigger だけ → true (contact 側が空でも)
+        events.report_trigger(5, 6);
+        assert!(events.has_events());
+        assert!(events.contact_events().is_empty());
+        assert_eq!(events.drain_trigger_events().len(), 1);
+        assert!(!events.has_events());
+
+        // 同じ pair の再報告は event を生まない (curr_pairs 重複) → false のまま
+        events.report_contact(
+            1,
+            0,
+            Vec3Fix::UNIT_Y,
+            Vec3Fix::ZERO,
+            Fix128::ONE,
+            Fix128::ZERO,
+        );
+        assert!(!events.has_events());
+        events.end_frame();
+        assert!(!events.has_events(), "全 pair 継続中なので End/exit なし");
+
+        // 次 frame: 何も報告せず end_frame → End 1 + exit 1 が生成され true
+        events.begin_frame();
+        assert!(!events.has_events(), "begin_frame は queue を空にする");
+        events.end_frame();
+        assert!(events.has_events());
+        assert_eq!(events.contact_events().len(), 1);
+        assert_eq!(events.contact_events()[0].event_type, ContactEventType::End);
+        assert_eq!(events.trigger_events().len(), 1);
+        assert!(!events.trigger_events()[0].entered);
+
+        // 更に次 frame: 完全に静か → false
+        events.begin_frame();
+        events.end_frame();
+        assert!(!events.has_events());
+    }
 }

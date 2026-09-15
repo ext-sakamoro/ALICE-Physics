@@ -529,4 +529,134 @@ mod tests {
         blender.set_animated();
         assert_eq!(blender.mode, BlendMode::Animated);
     }
+
+    fn pose_at(n: usize, x: i64) -> SkeletonPose {
+        let mut p = SkeletonPose::new(n);
+        for (i, b) in p.bones.iter_mut().enumerate() {
+            b.position = Vec3Fix::from_int(x, i as i64, 0);
+        }
+        p
+    }
+
+    #[test]
+    fn bone_count_follows_construction_lerp_and_sampling() {
+        assert_eq!(SkeletonPose::new(0).bone_count(), 0);
+        let five = SkeletonPose::new(5);
+        assert_eq!(five.bone_count(), 5);
+        assert_eq!(five.bone_count(), five.bones.len());
+        // lerp は短い方の本数
+        let two = SkeletonPose::new(2);
+        assert_eq!(
+            SkeletonPose::lerp(&five, &two, Fix128::from_ratio(1, 2)).bone_count(),
+            2
+        );
+        assert_eq!(
+            SkeletonPose::lerp(&two, &five, Fix128::from_ratio(1, 2)).bone_count(),
+            2
+        );
+        // clip.sample は clip の bone 数
+        let clip = AnimationClip::new(3, Fix128::ONE);
+        assert_eq!(clip.sample(Fix128::ZERO).bone_count(), 3);
+        // bones を伸ばせば追従
+        let mut grown = two;
+        grown.bones.push(BonePose::default());
+        assert_eq!(grown.bone_count(), 3);
+        // blender の 3 pose は同じ本数で始まる
+        let blender = AnimationBlender::new(4);
+        assert_eq!(blender.animation_pose.bone_count(), 4);
+        assert_eq!(blender.physics_pose.bone_count(), 4);
+        assert_eq!(blender.output_pose.bone_count(), 4);
+    }
+
+    #[test]
+    fn go_animated_blends_from_ragdoll_back_to_animation_at_transition_speed() {
+        let mut blender = AnimationBlender::new(2);
+        blender.animation_pose = pose_at(2, 0);
+        blender.physics_pose = pose_at(2, 8);
+        blender.set_ragdoll();
+        assert_eq!(blender.blend_weight, Fix128::ONE);
+
+        blender.go_animated();
+        assert_eq!(blender.mode, BlendMode::Blend);
+        assert_eq!(blender.target_weight, Fix128::ZERO);
+        assert_eq!(
+            blender.blend_weight,
+            Fix128::ONE,
+            "go_* は即時に weight を変えない"
+        );
+        assert!(blender.is_transitioning());
+
+        // transition_speed 2 × dt 1/4 = 1/2 per update: 1 → 1/2 (Blend、中点) → 0 (Animated)
+        let dt = Fix128::from_ratio(1, 4);
+        blender.update(dt);
+        assert_eq!(blender.blend_weight, Fix128::from_ratio(1, 2));
+        assert_eq!(blender.mode, BlendMode::Blend);
+        assert!(blender.is_transitioning());
+        for (i, b) in blender.output_pose.bones.iter().enumerate() {
+            assert_eq!(b.position, Vec3Fix::from_int(4, i as i64, 0), "bone {i}");
+            assert_eq!(b.rotation, QuatFix::IDENTITY);
+        }
+
+        blender.update(dt);
+        assert_eq!(blender.blend_weight, Fix128::ZERO);
+        assert_eq!(blender.mode, BlendMode::Animated);
+        assert!(!blender.is_transitioning());
+        assert_eq!(blender.output_pose.bones, blender.animation_pose.bones);
+
+        // 以後 update しても Animated のまま animation pose を出力 (physics を変えても無関係)
+        blender.physics_pose = pose_at(2, -100);
+        blender.update(dt);
+        assert_eq!(blender.mode, BlendMode::Animated);
+        assert_eq!(blender.output_pose.bones, pose_at(2, 0).bones);
+
+        // 逆方向 (Animated → go_ragdoll) も同じ速度で 2 update で Ragdoll
+        blender.go_ragdoll();
+        blender.update(dt);
+        assert_eq!(blender.blend_weight, Fix128::from_ratio(1, 2));
+        blender.update(dt);
+        assert_eq!(blender.mode, BlendMode::Ragdoll);
+        assert_eq!(blender.output_pose.bones, pose_at(2, -100).bones);
+    }
+
+    #[test]
+    fn go_powered_outputs_physics_pose_and_exposes_animation_as_motor_targets() {
+        let mut blender = AnimationBlender::new(3);
+        blender.animation_pose = pose_at(3, 1);
+        blender.physics_pose = pose_at(3, 9);
+
+        blender.go_powered();
+        assert_eq!(blender.mode, BlendMode::Powered);
+        assert_eq!(blender.target_weight, Fix128::ONE);
+        // motor target は animation pose そのもの
+        assert_eq!(blender.get_motor_targets().bones, pose_at(3, 1).bones);
+        assert_eq!(blender.get_motor_targets().bone_count(), 3);
+
+        let dt = Fix128::from_ratio(1, 4);
+        // Powered は途中 weight (1/2) でも lerp せず physics pose を出力、mode も自動遷移しない
+        blender.update(dt);
+        assert_eq!(blender.blend_weight, Fix128::from_ratio(1, 2));
+        assert_eq!(blender.mode, BlendMode::Powered);
+        assert_eq!(blender.output_pose.bones, pose_at(3, 9).bones);
+        blender.update(dt);
+        assert_eq!(blender.blend_weight, Fix128::ONE);
+        assert_eq!(
+            blender.mode,
+            BlendMode::Powered,
+            "Powered は Ragdoll に変わらない"
+        );
+        assert!(!blender.is_transitioning());
+        blender.update(dt);
+        assert_eq!(blender.mode, BlendMode::Powered);
+        assert_eq!(blender.output_pose.bones, pose_at(3, 9).bones);
+
+        // animation pose を差し替えると motor target も追従 (出力は physics のまま)
+        blender.animation_pose = pose_at(3, 5);
+        blender.update(dt);
+        assert_eq!(blender.get_motor_targets().bones, pose_at(3, 5).bones);
+        assert_eq!(blender.output_pose.bones, pose_at(3, 9).bones);
+
+        // Animated モードでも get_motor_targets は animation pose を返す
+        blender.set_animated();
+        assert_eq!(blender.get_motor_targets().bones, pose_at(3, 5).bones);
+    }
 }

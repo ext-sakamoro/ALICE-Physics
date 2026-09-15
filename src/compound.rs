@@ -568,4 +568,65 @@ mod tests {
             compound.overlapping_children(&query_all, Vec3Fix::ZERO, QuatFix::IDENTITY);
         assert_eq!(result_all.len(), 2);
     }
+
+    #[test]
+    fn compute_aabb_is_exact_union_of_children_in_local_space_and_clears_dirty() {
+        let mut compound = CompoundShape::new();
+        // 空: 退化 AABB (原点) を返す (early return、cache / dirty には触らない)
+        assert!(compound.dirty);
+        assert_eq!(
+            compound.compute_aabb(),
+            AABB::new(Vec3Fix::ZERO, Vec3Fix::ZERO)
+        );
+        assert!(compound.dirty);
+
+        // 球 r=1 at (10, 0, 0): [9, 11] × [-1, 1] × [-1, 1]
+        compound.add_sphere(
+            Sphere::new(Vec3Fix::ZERO, Fix128::ONE),
+            Vec3Fix::from_int(10, 0, 0),
+            QuatFix::IDENTITY,
+        );
+        assert!(compound.dirty, "add_* は dirty を立てる");
+        let one = compound.compute_aabb();
+        assert_eq!(one.min, Vec3Fix::from_int(9, -1, -1));
+        assert_eq!(one.max, Vec3Fix::from_int(11, 1, 1));
+        assert_eq!(compound.cached_aabb, one);
+        assert!(!compound.dirty);
+
+        // capsule (0,-3,0)-(0,3,0) r=2 at (-4, 0, 5): x [-6, -2]、y [-5, 5]、z [3, 7]
+        compound.add_capsule(
+            Capsule::new(
+                Vec3Fix::from_int(0, -3, 0),
+                Vec3Fix::from_int(0, 3, 0),
+                Fix128::from_int(2),
+            ),
+            Vec3Fix::from_int(-4, 0, 5),
+            QuatFix::IDENTITY,
+        );
+        // 球 center offset (0, 0, -8) r=1 at 原点: z [-9, -7]
+        compound.add_sphere(
+            Sphere::new(Vec3Fix::from_int(0, 0, -8), Fix128::ONE),
+            Vec3Fix::ZERO,
+            QuatFix::IDENTITY,
+        );
+        let all = compound.compute_aabb();
+        // union: x [-6, 11]、y [-5, 5]、z [-9, 7]
+        assert_eq!(all.min, Vec3Fix::from_int(-6, -5, -9));
+        assert_eq!(all.max, Vec3Fix::from_int(11, 5, 7));
+        assert_eq!(compound.cached_aabb, all);
+        assert!(!compound.dirty);
+        // world_aabb(identity) と同一、各 child AABB を全て包む
+        assert_eq!(all, compound.world_aabb(Vec3Fix::ZERO, QuatFix::IDENTITY));
+        for i in 0..compound.len() {
+            let c = compound.child_world_aabb(i, Vec3Fix::ZERO, QuatFix::IDENTITY);
+            assert_eq!(all.union(&c), all, "child {i} not enclosed");
+        }
+        // 冪等
+        assert_eq!(compound.compute_aabb(), all);
+        // body transform には依存しない (local space)、world_aabb は平行移動で追従する
+        let shifted = compound.world_aabb(Vec3Fix::from_int(100, 0, 0), QuatFix::IDENTITY);
+        assert_eq!(shifted.min, Vec3Fix::from_int(94, -5, -9));
+        assert_eq!(shifted.max, Vec3Fix::from_int(111, 5, 7));
+        assert_eq!(compound.compute_aabb(), all);
+    }
 }

@@ -588,4 +588,65 @@ mod tests {
         let cc = CharacterController::new(Vec3Fix::ZERO, config);
         assert_eq!(cc.config.height.hi, 2);
     }
+
+    #[test]
+    fn apply_gravity_accumulates_only_while_airborne() {
+        let mut cc = CharacterController::new_default(Vec3Fix::from_int(0, 5, 0));
+        let g = Vec3Fix::from_int(0, -10, 0);
+        let dt = Fix128::from_ratio(1, 4);
+        assert!(!cc.grounded);
+        cc.apply_gravity(g, dt);
+        // v = g * dt = (0, -5/2, 0)
+        assert_eq!(
+            cc.velocity,
+            Vec3Fix::new(Fix128::ZERO, -Fix128::from_ratio(5, 2), Fix128::ZERO)
+        );
+        cc.apply_gravity(g, dt);
+        assert_eq!(cc.velocity, Vec3Fix::from_int(0, -5, 0));
+        // 既存の水平速度は保持され、y だけ積算
+        cc.velocity = Vec3Fix::from_int(3, 0, 0);
+        cc.apply_gravity(g, dt);
+        assert_eq!(
+            cc.velocity,
+            Vec3Fix::new(Fix128::from_int(3), -Fix128::from_ratio(5, 2), Fix128::ZERO)
+        );
+        // grounded 中は重力を積まない
+        cc.grounded = true;
+        cc.apply_gravity(g, dt);
+        assert_eq!(
+            cc.velocity,
+            Vec3Fix::new(Fix128::from_int(3), -Fix128::from_ratio(5, 2), Fix128::ZERO)
+        );
+    }
+
+    #[test]
+    fn get_platform_velocity_reports_ground_body_velocity_and_clears_after_leaving() {
+        // default config: height 1.8 / radius 0.3 → feet = y - 0.6、probe = 0.1 + 0.01
+        // platform (kinematic、inv_mass 0) at origin は半径 0.3 の球扱い → top 0.3
+        // character y = 1 → feet 0.4、gap 0.1 < 0.11 → grounded
+        let mut cc = CharacterController::new_default(Vec3Fix::from_int(0, 1, 0));
+        assert_eq!(cc.get_platform_velocity(), Vec3Fix::ZERO);
+        let mut platform = RigidBody::new_kinematic(Vec3Fix::ZERO);
+        platform.velocity = Vec3Fix::from_int(5, 0, 0);
+        // dynamic body (接地判定対象外) が同じ位置にあっても platform 判定に影響しない
+        let mut dynamic = RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE);
+        dynamic.velocity = Vec3Fix::from_int(-9, 0, 0);
+        let bodies = vec![dynamic, platform];
+
+        let res = cc.move_and_slide(Vec3Fix::ZERO, &bodies, &[]);
+        assert!(cc.grounded);
+        assert_eq!(cc.ground_body_index, Some(1));
+        assert_eq!(cc.get_platform_velocity(), Vec3Fix::from_int(5, 0, 0));
+        assert_eq!(res.platform_velocity, cc.get_platform_velocity());
+        assert_eq!(cc.position, Vec3Fix::from_int(0, 1, 0));
+
+        // 次 frame: platform 速度が変位に加算されて character が (5, 1, 0) へ運ばれ、
+        // platform 上から外れるので platform 速度は ZERO に戻る
+        let res2 = cc.move_and_slide(Vec3Fix::ZERO, &bodies, &[]);
+        assert_eq!(cc.position, Vec3Fix::from_int(5, 1, 0));
+        assert!(!cc.grounded);
+        assert_eq!(cc.ground_body_index, None);
+        assert_eq!(cc.get_platform_velocity(), Vec3Fix::ZERO);
+        assert_eq!(res2.platform_velocity, Vec3Fix::ZERO);
+    }
 }

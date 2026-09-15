@@ -915,4 +915,141 @@ mod tests {
         // Different value is anomaly (MAD = 0)
         assert!(detector.is_anomaly(5.1));
     }
+
+    #[test]
+    fn ewma_set_alpha_clamps_and_flips_detection() {
+        // Clamp contract: alpha is confined to [0.001, 1.0].
+        let mut d = EwmaDetector::new(0.1, 3.0);
+        d.set_alpha(5.0);
+        assert!((d.alpha() - 1.0).abs() < 1e-12, "alpha={}", d.alpha());
+        d.set_alpha(0.0);
+        assert!((d.alpha() - 0.001).abs() < 1e-12, "alpha={}", d.alpha());
+        d.set_alpha(0.5);
+        assert!((d.alpha() - 0.5).abs() < 1e-12, "alpha={}", d.alpha());
+
+        // Detection contract: same observation sequence, different alpha,
+        // opposite verdicts. Sequence 10, 10, 100 with k = 3.
+        //
+        // alpha = 0.001 (slow):
+        //   ewma = 10 + 0.001·90 = 10.09
+        //   var  = 0.999·(0.001·90·90) = 8.0919 → std ≈ 2.8446
+        //   threshold = 3·std ≈ 8.53 → 100 flagged, 10 not.
+        let mut slow = EwmaDetector::new(0.1, 3.0);
+        slow.set_alpha(0.001);
+        for v in [10.0, 10.0, 100.0] {
+            slow.observe(v);
+        }
+        assert!((slow.ewma() - 10.09).abs() < 1e-9, "ewma={}", slow.ewma());
+        assert!(
+            (slow.std_dev() - 8.0919_f64.sqrt()).abs() < 1e-9,
+            "std={}",
+            slow.std_dev()
+        );
+        assert!(slow.is_anomaly(100.0));
+        assert!(!slow.is_anomaly(10.0));
+
+        // alpha = 1.0 (no memory): ewma tracks the last value exactly and
+        // var = (1 - 1)·… = 0, so any deviation from 100 is anomalous.
+        let mut fast = EwmaDetector::new(0.1, 3.0);
+        fast.set_alpha(1.0);
+        for v in [10.0, 10.0, 100.0] {
+            fast.observe(v);
+        }
+        assert!((fast.ewma() - 100.0).abs() < 1e-12, "ewma={}", fast.ewma());
+        assert!(fast.std_dev().abs() < 1e-12, "std={}", fast.std_dev());
+        assert!(!fast.is_anomaly(100.0));
+        assert!(fast.is_anomaly(10.0));
+    }
+
+    #[test]
+    fn ewma_set_threshold_k_changes_verdict_at_fixed_score() {
+        // alpha = 0.5, sequence 10, 10, 12:
+        //   after 3rd: ewma = 11, var = 0.5·(0.5·2·2) = 1 → std = 1
+        // anomaly_score(13) = |13 - 11| / 1 = 2 exactly, independent of k.
+        let mut d = EwmaDetector::new(0.5, 3.0);
+        for v in [10.0, 10.0, 12.0] {
+            d.observe(v);
+        }
+        assert!((d.std_dev() - 1.0).abs() < 1e-12, "std={}", d.std_dev());
+        assert!((d.anomaly_score(13.0) - 2.0).abs() < 1e-12);
+
+        // k = 3 → 2 > 3 is false
+        assert!(!d.is_anomaly(13.0));
+        // k = 1.5 → 2 > 1.5 is true
+        d.set_threshold_k(1.5);
+        assert!((d.threshold_k() - 1.5).abs() < 1e-12);
+        assert!(d.is_anomaly(13.0));
+        // score is unchanged by k
+        assert!((d.anomaly_score(13.0) - 2.0).abs() < 1e-12);
+        // k = 2 → 2 > 2 is false (strict inequality)
+        d.set_threshold_k(2.0);
+        assert!(!d.is_anomaly(13.0));
+    }
+
+    #[test]
+    fn mad_set_threshold_k_changes_verdict_at_fixed_score() {
+        // Values 1..=9: median = 5, |x - 5| = 4,3,2,1,0,1,2,3,4 → MAD = 2.
+        // threshold = k · 2 · 1.4826 = 2.9652·k
+        let mut d = MadDetector::new(3.0);
+        for v in 1..=9 {
+            d.observe(f64::from(v));
+        }
+        assert!((d.median() - 5.0).abs() < 1e-12, "median={}", d.median());
+        assert!((d.mad() - 2.0).abs() < 1e-12, "mad={}", d.mad());
+        // score(13) = 8 / (2 · 1.4826) — independent of k
+        let score13 = 8.0 / (2.0 * 1.4826);
+        assert!((d.anomaly_score(13.0) - score13).abs() < 1e-12);
+
+        // k = 3 → threshold 8.8956: 15 (dev 10) flagged, 13 (dev 8) not
+        assert!(d.is_anomaly(15.0));
+        assert!(!d.is_anomaly(13.0));
+
+        // k = 2 → threshold 5.9304: 13 now flagged
+        d.set_threshold_k(2.0);
+        assert!((d.threshold_k() - 2.0).abs() < 1e-12);
+        assert!(d.is_anomaly(13.0));
+        assert!((d.anomaly_score(13.0) - score13).abs() < 1e-12);
+
+        // k = 4 → threshold 11.8608: even 15 is no longer flagged
+        d.set_threshold_k(4.0);
+        assert!(!d.is_anomaly(15.0));
+        assert!(!d.is_anomaly(13.0));
+    }
+
+    #[test]
+    fn composite_with_thresholds_propagates_each_parameter() {
+        let c = CompositeDetector::with_thresholds(2.5, 0.25, 4.5, 1.0);
+        assert!((c.mad.threshold_k() - 2.5).abs() < 1e-12);
+        assert!((c.ewma.alpha() - 0.25).abs() < 1e-12);
+        assert!((c.ewma.threshold_k() - 4.5).abs() < 1e-12);
+        assert!(!c.require_consensus);
+        assert_eq!(c.count(), 0);
+
+        // zscore_k has no getter; verify it by isolating the Z-score path:
+        // make MAD / EWMA thresholds astronomically large so only the
+        // Z-score detector can flag, then compare zscore_k = 1 vs 100.
+        //
+        // Observations 10, 11, 9, 10, 11, 9: mean = 10, sample variance =
+        // (0+1+1+0+1+1)/5 = 0.8 → std ≈ 0.894; z(12) = 2/0.894 ≈ 2.236.
+        let obs = [10.0, 11.0, 9.0, 10.0, 11.0, 9.0];
+        let mut loose = CompositeDetector::with_thresholds(1e6, 0.1, 1e6, 100.0);
+        let mut tight = CompositeDetector::with_thresholds(1e6, 0.1, 1e6, 1.0);
+        for &v in &obs {
+            loose.observe(v);
+            tight.observe(v);
+        }
+        assert_eq!(loose.count(), 6);
+        assert!((tight.zscore.mean() - 10.0).abs() < 1e-12);
+        assert!((tight.zscore.variance() - 0.8).abs() < 1e-12);
+        // Neither MAD nor EWMA fires at 12 with k = 1e6.
+        assert!(!loose.mad.is_anomaly(12.0));
+        assert!(!loose.ewma.is_anomaly(12.0));
+        assert!(!tight.mad.is_anomaly(12.0));
+        assert!(!tight.ewma.is_anomaly(12.0));
+        // Only the Z-score threshold differs → only it decides the verdict.
+        assert!(!loose.is_anomaly(12.0));
+        assert!(tight.is_anomaly(12.0));
+        assert!(tight.zscore.is_anomaly(12.0));
+        assert!(!loose.zscore.is_anomaly(12.0));
+    }
 }

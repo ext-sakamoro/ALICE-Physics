@@ -506,4 +506,66 @@ mod tests {
         assert_eq!(gen.events.len(), 1);
         assert_eq!(gen.events[0].event_type, AudioEventType::Slide);
     }
+
+    #[test]
+    fn get_events_returns_this_frames_events_in_order_and_respects_cap() {
+        let config = AudioConfig {
+            max_events_per_frame: 2,
+            ..AudioConfig::default()
+        };
+        let mut gen = AudioGenerator::new(3, config);
+        gen.set_material(1, AudioMaterial::METAL);
+        assert!(gen.get_events().is_empty());
+        gen.begin_frame();
+
+        let contact_at = |x: i64| Contact {
+            depth: Fix128::from_ratio(1, 10),
+            normal: Vec3Fix::UNIT_Y,
+            point_a: Vec3Fix::from_int(x, 0, 0),
+            point_b: Vec3Fix::from_int(x, -1, 0),
+        };
+        // 1: impact、speed 5 → volume = sqrt(5/20) = 1/2
+        gen.process_contact(0, 1, &contact_at(1), Vec3Fix::from_int(0, -5, 0), true);
+        // 2: slide (接線 5 > 1/2)、材質 WOOD × WOOD (body 2 は default)
+        gen.process_contact(0, 2, &contact_at(2), Vec3Fix::from_int(5, 0, 0), false);
+        // 3: cap (2) 超過で捨てられる
+        gen.process_contact(1, 2, &contact_at(3), Vec3Fix::from_int(0, -9, 0), true);
+
+        let events = gen.get_events();
+        assert_eq!(events.len(), 2);
+        assert_eq!(events, gen.events.as_slice());
+        // 挿入順 (position = contact.point_a)
+        assert_eq!(events[0].position, Vec3Fix::from_int(1, 0, 0));
+        assert_eq!(events[1].position, Vec3Fix::from_int(2, 0, 0));
+        assert_eq!(events[0].event_type, AudioEventType::Impact);
+        assert_eq!(events[1].event_type, AudioEventType::Slide);
+        assert_eq!(
+            (events[0].material_a, events[0].material_b),
+            (MaterialType::Wood, MaterialType::Metal)
+        );
+        assert_eq!(
+            (events[1].material_a, events[1].material_b),
+            (MaterialType::Wood, MaterialType::Wood)
+        );
+        let vol_err = (events[0].volume - Fix128::from_ratio(1, 2)).abs();
+        assert!(
+            vol_err < Fix128::from_ratio(1, 1_000_000),
+            "volume {:?}",
+            events[0].volume
+        );
+        // slide の roughness = (5/20) * avg_hardness、impact (接線 0) は 0
+        assert_eq!(events[0].roughness, Fix128::ZERO);
+        let wood = AudioMaterial::WOOD;
+        assert_eq!(
+            events[1].roughness,
+            Fix128::from_ratio(1, 4) * wood.hardness
+        );
+
+        // 次 frame で空になり、再度 process すれば新しい slice
+        gen.begin_frame();
+        assert!(gen.get_events().is_empty());
+        gen.process_contact(1, 2, &contact_at(3), Vec3Fix::from_int(0, -9, 0), true);
+        assert_eq!(gen.get_events().len(), 1);
+        assert_eq!(gen.get_events()[0].position, Vec3Fix::from_int(3, 0, 0));
+    }
 }

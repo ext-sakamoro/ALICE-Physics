@@ -609,4 +609,136 @@ mod tests {
         let hit = ray_capsule(&ray, &capsule, Fix128::from_int(100));
         assert!(hit.is_some(), "Ray should hit capsule");
     }
+
+    #[test]
+    fn raycast_spheres_returns_nearest_hit_regardless_of_list_order() {
+        // 原点 (-5, 0, 0) から +X: 各球の閉形式 t (= |oc| 成分 - sqrt(disc) は全て整数)
+        //   idx 7: center (10,0,0) r 2 → t = 15 - 2 = 13
+        //   idx 3: center (0,5,0)  r 1 → miss (軸から 5 離れている)
+        //   idx 1: center (0,0,0)  r 1 → t = 5 - 1 = 4
+        //   idx 9: center (-3,0,0) r 1 → t = 2 - 1 = 1  (最近)
+        //   idx 4: center (-20,0,0) r 1 → 後方 (t < 0) → 無視
+        let ray = Ray::new(Vec3Fix::from_int(-5, 0, 0), Vec3Fix::UNIT_X);
+        let far = (
+            Sphere::new(Vec3Fix::from_int(10, 0, 0), Fix128::from_int(2)),
+            7usize,
+        );
+        let off = (Sphere::new(Vec3Fix::from_int(0, 5, 0), Fix128::ONE), 3usize);
+        let mid = (Sphere::new(Vec3Fix::from_int(0, 0, 0), Fix128::ONE), 1usize);
+        let near = (
+            Sphere::new(Vec3Fix::from_int(-3, 0, 0), Fix128::ONE),
+            9usize,
+        );
+        let behind = (
+            Sphere::new(Vec3Fix::from_int(-20, 0, 0), Fix128::ONE),
+            4usize,
+        );
+        let spheres = [far, off, mid, near, behind];
+        let max_t = Fix128::from_int(100);
+
+        let hit = raycast_spheres(&ray, &spheres, max_t);
+        assert_eq!(
+            hit,
+            Some(RayHit {
+                t: Fix128::ONE,
+                point: Vec3Fix::from_int(-4, 0, 0),
+                normal: Vec3Fix::from_int(-1, 0, 0),
+                body_index: 9,
+            })
+        );
+        // 順序を逆にしても同じ最近傍
+        let mut reversed = spheres;
+        reversed.reverse();
+        assert_eq!(raycast_spheres(&ray, &reversed, max_t), hit);
+        // raycast_all の先頭 (t 昇順) と一致
+        let all = raycast_all_spheres(&ray, &spheres, max_t);
+        assert_eq!(all.first().copied(), hit);
+        assert_eq!(
+            all.iter().map(|h| h.body_index).collect::<Vec<_>>(),
+            vec![9, 1, 7]
+        );
+
+        // 最近傍を外すと次 (idx 1、t = 4) になる
+        let without_near = [far, off, mid, behind];
+        let second = raycast_spheres(&ray, &without_near, max_t);
+        assert_eq!(
+            second.map(|h| (h.t, h.body_index)),
+            Some((Fix128::from_int(4), 1))
+        );
+        assert_eq!(second.map(|h| h.point), Some(Vec3Fix::from_int(-1, 0, 0)));
+        assert_eq!(second.map(|h| h.normal), Some(Vec3Fix::from_int(-1, 0, 0)));
+
+        // max_t で切る: 1 未満なら None、[1, 4) なら idx 9 だけ
+        assert!(raycast_spheres(&ray, &spheres, Fix128::from_ratio(1, 2)).is_none());
+        assert_eq!(
+            raycast_spheres(&ray, &spheres, Fix128::from_int(3)).map(|h| h.body_index),
+            Some(9)
+        );
+        // 全部 miss / 空 list
+        assert!(raycast_spheres(&ray, &[off, behind], max_t).is_none());
+        assert!(raycast_spheres(&ray, &[], max_t).is_none());
+    }
+
+    #[test]
+    fn raycast_aabbs_returns_nearest_hit_regardless_of_list_order() {
+        // 原点 (-5, 0, 0) から +X: slab の t は整数
+        //   idx 0: [2,4]  → t = 7
+        //   idx 1: [6,8]  → t = 11
+        //   idx 2: [2,4] × y [3,5] → 軸外 miss
+        //   idx 5: [-1,1] → t = 4 (最近)、面法線 -X
+        //   idx 8: [-9,-7] → 後方 → 無視
+        let ray = Ray::new(Vec3Fix::from_int(-5, 0, 0), Vec3Fix::UNIT_X);
+        let bx = |x0: i64, x1: i64, y0: i64, y1: i64| {
+            AABB::new(Vec3Fix::from_int(x0, y0, -1), Vec3Fix::from_int(x1, y1, 1))
+        };
+        let a = (bx(2, 4, -1, 1), 0usize);
+        let b = (bx(6, 8, -1, 1), 1usize);
+        let off = (bx(2, 4, 3, 5), 2usize);
+        let near = (bx(-1, 1, -1, 1), 5usize);
+        let behind = (bx(-9, -7, -1, 1), 8usize);
+        let aabbs = [a, b, off, near, behind];
+        let max_t = Fix128::from_int(100);
+
+        let hit = raycast_aabbs(&ray, &aabbs, max_t);
+        assert_eq!(
+            hit,
+            Some(RayHit {
+                t: Fix128::from_int(4),
+                point: Vec3Fix::from_int(-1, 0, 0),
+                normal: Vec3Fix::from_int(-1, 0, 0),
+                body_index: 5,
+            })
+        );
+        let mut reversed = aabbs;
+        reversed.reverse();
+        assert_eq!(raycast_aabbs(&ray, &reversed, max_t), hit);
+        let all = raycast_all_aabbs(&ray, &aabbs, max_t);
+        assert_eq!(all.first().copied(), hit);
+        assert_eq!(
+            all.iter().map(|h| h.body_index).collect::<Vec<_>>(),
+            vec![5, 0, 1]
+        );
+
+        // 最近傍を外すと idx 0 (t = 7)
+        let second = raycast_aabbs(&ray, &[a, b, off, behind], max_t);
+        assert_eq!(
+            second.map(|h| (h.t, h.body_index)),
+            Some((Fix128::from_int(7), 0))
+        );
+        // 原点が箱の内部なら t_max 側 (出口) が返る: [-6,-4] → t = 1、法線 +X
+        let inside = (bx(-6, -4, -1, 1), 6usize);
+        let exit = raycast_aabbs(&ray, &[inside], max_t);
+        assert_eq!(
+            exit.map(|h| (h.t, h.body_index, h.normal)),
+            Some((Fix128::ONE, 6, Vec3Fix::from_int(1, 0, 0)))
+        );
+        // max_t: 4 未満なら None、[4, 7) なら idx 5 のみ
+        assert!(raycast_aabbs(&ray, &aabbs, Fix128::from_int(3)).is_none());
+        assert_eq!(
+            raycast_aabbs(&ray, &aabbs, Fix128::from_int(5)).map(|h| h.body_index),
+            Some(5)
+        );
+        assert!(raycast_aabbs(&ray, &[off, behind], max_t).is_none());
+        assert!(raycast_aabbs(&ray, &[], max_t).is_none());
+    }
 }

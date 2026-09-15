@@ -99,6 +99,40 @@ contact normal, and the contact multiplier. Everything else is bit-compatible.
   (`Fix128 div ~40 cycles`; measured 141 ns ≈ 450 cycles, and `O(1)` for a
   64-step loop). The table is now measured (`benches/physics_bench.rs`,
   criterion) with the algorithm named per row.
+- **`transient_thermal::transient_step_1d` / `transient_step_3d` and
+  `crank_nicolson_step_1d` integrated different rods for the same array.**
+  The explicit steps copied cells 1 / n−2 into cells 0 / n−1 after the update
+  (end cells were ghost copies, rod length `(n−2)·dx`), while Crank–Nicolson
+  treated every cell as physical with zero-flux outer faces (`n·dx`), so the
+  two decayed the same initial profile at different rates. Both explicit
+  steps now use the finite-volume convention of the Crank–Nicolson step.
+  Found by the cosine-eigenmode oracle (`tests/engineering_oracles.rs`);
+  golden `modifier_family` (f32) re-pinned.
+- **Every detected contact reset the sleep timer of both bodies**, so a
+  resting stack could never fall asleep. `detect_collisions` now wakes an
+  island only when one of the two bodies is actually sleeping
+  (`tests/analytic_physics.rs::resting_body_on_static_support_stays_put_and_sleeps`).
+- `detect_collisions` narrow phase: squared-distance early-out runs before
+  the filter / static / sleep lookups and before `normalize_with_length`
+  (sqrt + 3 divisions), which every BVH candidate used to pay (57 k
+  candidates for 2 700 contacts on the 1000-sphere grid). Same contacts,
+  same order.
+- `EventCollector`: the per-frame contact pair set is a `BTreeSet` instead
+  of a `Vec` searched linearly, so `report_contact` is O(log n) per contact
+  instead of O(n) (it ran 8× per frame after the per-substep detection).
+- **`fluid`: the default surface tension and vorticity confinement threw a
+  resting block apart.** `apply_surface_tension` / `apply_vorticity_confinement`
+  added raw kernel sums (`W ≈ 260` at `r = h/2`) to the velocity without the
+  `m/ρ₀` volume weight or `dt`; a 5×5×5 block with `FluidConfig::default()`
+  scattered to ±4 m in one frame. Both terms are now the documented
+  accelerations (Becker & Teschner 2007 cohesion, Macklin & Müller 2013
+  vorticity, PBF eq. 16) integrated over `dt`. The pre-existing unit test
+  used spacing `= h`, where no particle has a neighbour, so the terms had
+  never been exercised (`tests/default_configs.rs`).
+- **`cloth` / `rope` / `deformable` / `fluid` applied `damping` per
+  substep** (same defect as the rigid-body solver's R2-1: terminal velocity
+  and settling depend on `substeps`). Damping is now applied once per
+  `step()` in all four particle modules; golden `cloth_drape` re-pinned.
 
 - **`Fix128::atan` / `Fix128::atan2` were wrong by up to ~0.17 rad.** The
   vectoring CORDIC (`cordic_atan`) had its own copy of the 128-bit `x >> i`
@@ -143,6 +177,21 @@ contact normal, and the contact multiplier. Everything else is bit-compatible.
 
 ### Changed
 
+- **`SolverConfig::default().iterations` is 1 (was 4).** With collision
+  detection and constraint re-evaluation per substep (Small Steps, Müller
+  et al. 2020) one Gauss–Seidel pass per substep is the recommended
+  configuration; 8 × 4 = 32 passes cost 4× for no accuracy gain. Raise
+  `iterations` only for stiff rigid chains that must converge within one
+  substep. `damping` stays 0.99 per frame.
+- `TRADEMARK_NOTICE`: forks are asked not to publish under a package /
+  product name starting with `ALICE-` and not to present as official;
+  keeping the name in history, comments and attribution is explicitly fine
+  (the previous wording required removing the prefix from the fork's name).
+- README: "Correctness scope" section separates *bit-exact* from
+  *validated* — core modules list their analytic oracles, engineering
+  modules are marked `validation: none` until they gain one — and states
+  where the crate fits (rollback netcode, replay verification, reproducible
+  research) and where it does not (general float-engine replacement).
 - `simd` feature: the `add_simd` / `sub_simd` bodies loaded both operands into
   `__m128i` and then discarded them; `dot_simd_sse2`, `cross_simd` and
   `dot_batch_4` were already scalar. The dead intrinsics are removed and the
@@ -167,15 +216,44 @@ contact normal, and the contact multiplier. Everything else is bit-compatible.
 
 ### Added
 
-- `tests/analytic_physics.rs` — ten closed-form oracles run on the default
+- `det_math`: `atan`, `atan2`, `asin`, `acos`, `tan`, `tanh` (`f32`, fdlibm
+  kernels evaluated in `f64` and rounded once, ≤ 1 ulp of correctly rounded
+  over the measured domains) and `atan64` / `atan2_64`; the `clippy.toml`
+  gate already forbade the `libm` versions, now there is a replacement for
+  every listed function that the crate uses.
+- `Fix128::checked_div` (`None` on a zero divisor); the `Div` operator's
+  `ZERO` result for a zero divisor is now a documented contract (a `Result`
+  operator is a 2.0 change because `PhysicsError` is not `#[non_exhaustive]`).
+- `bvh::point_to_morton` is `pub` again (ALICE-TRT's GPU Morton kernel
+  asserts byte-exact parity against it).
+- `tests/engineering_oracles.rs` — first engineering-module oracles:
+  transient thermal cosine-eigenmode decay (Carslaw & Jaeger) for the
+  explicit and Crank–Nicolson steps plus their mutual agreement, uniform
+  field fixed point, Basquin / Miner closed forms for `fatigue`.
+- `tests/analytic_physics.rs` — eleven closed-form oracles run on the default
   configuration: free fall (substep-independent), default-config fall with
   frame damping (exact discrete closed form), projectile parabola, terminal
   velocity `g·dt·d/(1−d)`, XPBD static extension `mg/k` (iteration-
   independent), spring natural period `2π√(m/k)`, small-angle pendulum
   period `2π√(L/g)`, head-on collision (momentum conserved, no energy gain),
-  kinematic target reached bit-exactly, torque-free rotation `θ = ωt`.
+  kinematic target reached bit-exactly, torque-free rotation `θ = ωt`,
+  resting contact that stays put and falls asleep.
   Three of the four review bugs above were fixed without any of the 1456
   pre-existing tests failing; these oracles fail on 1.1.0.
+- `benches/physics_bench.rs::thousand_overlapping_spheres_1_step` — the
+  external review's 1000-body scene (dense first frame 65 ms, 7.7 ms/frame
+  once the bodies separate, Apple M-series).
+- `tests/default_configs.rs` — every `Config` type with a `Default` impl
+  (12 reachable from the public API, `Tgs` / `Pgs` / `AdaptiveSubStep` in
+  their own unit tests) is exercised on its default values in the most
+  ordinary scenario with a closed-form or invariant assertion.
+- 65 unit tests for public functions that had no test, doc example, example
+  or bench reference (`alice-strict-eval` 13): builders, SDF-coupled particle
+  steps, raycasts, interpolation, events, metrics pipeline, anomaly /
+  privacy / sketch, material presets, `det_math`-style closed forms.
+- CI: the `Doc` job also builds the docs.rs feature set with
+  `RUSTDOCFLAGS=-Dwarnings` (9 broken intra-doc links in feature-gated
+  modules were invisible to the default-only build).
 - `math::tests`: Newton-reference bit-equality and exact-floor oracle for
   `sqrt` (20 000 LCG samples + edges, monotonicity), and a dense f64
   reference sweep for `sin` / `cos` / `atan` / `atan2` / `sqrt` (a golden

@@ -786,4 +786,76 @@ mod tests {
         assert_eq!(a.density_g_cm3, b.density_g_cm3);
         assert_eq!(a.anisotropy_z_ratio, b.anisotropy_z_ratio);
     }
+
+    #[test]
+    fn tensile_z_is_tensile_times_anisotropy() {
+        // PLA: 60 MPa × 0.65 = 39 MPa. Fix128 product of an exact integer and
+        // 65/100 is bit-identical to the direct product.
+        let pla = MaterialProperties::pla();
+        let tz = pla.tensile_z();
+        assert_eq!(tz, Fix128::from_int(60) * Fix128::from_ratio(65, 100));
+        // Within 2^-60 of the exact 39 (65/100 is not dyadic).
+        let diff = (tz - Fix128::from_int(39)).abs();
+        assert!(
+            diff < Fix128::from_ratio(1, 1_000_000_000),
+            "tensile_z(PLA) ≈ 39 MPa"
+        );
+        assert!(tz < pla.tensile_strength_mpa);
+        // Same ratio as yield_z / yield: tensile_z / tensile == anisotropy.
+        assert_eq!(
+            pla.tensile_z(),
+            pla.tensile_strength_mpa * pla.anisotropy_z_ratio
+        );
+
+        // Isotropic sheet metal: tensile_z == tensile (ratio = 1 exactly).
+        let sus = MaterialProperties::sus304();
+        assert_eq!(sus.tensile_z(), sus.tensile_strength_mpa);
+    }
+
+    #[test]
+    fn youngs_pa_is_gpa_times_1e9_exactly() {
+        // PETG: 2.0 GPa → 2_000_000_000 Pa; 2.0 = 20/10 is exact in Fix128.
+        let petg = MaterialProperties::petg();
+        assert_eq!(petg.youngs_pa(), Fix128::from_int(2_000_000_000));
+
+        // PLA: 3.5 GPa → 3_500_000_000 Pa (3.5 is dyadic, so exact).
+        let pla = MaterialProperties::pla();
+        assert_eq!(pla.youngs_pa(), Fix128::from_int(3_500_000_000));
+
+        // Generic: youngs_pa / GPA_TO_PA recovers the stored GPa value.
+        for m in [
+            MaterialProperties::abs(),
+            MaterialProperties::pc(),
+            MaterialProperties::sus304(),
+            MaterialProperties::a5052(),
+        ] {
+            let diff = (m.youngs_pa() / GPA_TO_PA - m.youngs_modulus_gpa).abs();
+            assert!(
+                diff < Fix128::from_ratio(1, 1_000_000),
+                "{}: youngs_pa round-trip",
+                m.name
+            );
+            assert!(m.youngs_pa() > m.youngs_modulus_gpa);
+        }
+    }
+
+    #[test]
+    fn yield_pa_is_mpa_times_1e6_exactly() {
+        // PLA yield = 50 MPa → 50_000_000 Pa (integer × integer: exact).
+        let pla = MaterialProperties::pla();
+        assert_eq!(pla.yield_pa(), Fix128::from_int(50_000_000));
+        // PC yield = 65 MPa → 65_000_000 Pa
+        let pc = MaterialProperties::pc();
+        assert_eq!(pc.yield_pa(), Fix128::from_int(65_000_000));
+        // Every preset: yield_pa == yield_strength_mpa × 1e6 and, for the
+        // rigid (non-elastomer) materials, σ_y < E (strain at yield ≪ 1).
+        // TPU is excluded from the σ_y < E check: E = 20 MPa < σ_y = 30 MPa
+        // is physically correct for an elastomer (yield strain > 100 %).
+        for m in FilamentDb::with_defaults().iter() {
+            assert_eq!(m.yield_pa(), m.yield_strength_mpa * MPA_TO_PA, "{}", m.name);
+            if m.name != "TPU" {
+                assert!(m.yield_pa() < m.youngs_pa(), "{}: σ_y < E", m.name);
+            }
+        }
+    }
 }

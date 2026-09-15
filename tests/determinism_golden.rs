@@ -325,7 +325,7 @@ fn hash_cloth(cloth: &Cloth) -> [u8; 32] {
 /// `0df965ee…` pinned a state where the bottom row had been pumped *above*
 /// the pinned top row (y = 6.92 with the top at 5); the cloth now hangs at
 /// y ≈ 3.02.
-const GOLDEN_CLOTH_DRAPE: &str = "e67fbcac730eeb8d845914d5fe084aad98288ec33328bd237dc01f5791ca5301";
+const GOLDEN_CLOTH_DRAPE: &str = "ba4fd85c6e390518ef3326802fb3a29498e1994245901e8636cdad9c0ae1d556";
 
 #[test]
 fn determinism_cloth_drape() {

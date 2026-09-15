@@ -655,4 +655,107 @@ mod tests {
         assert_eq!(encoded1.len(), 64);
         assert_eq!(encoded2.len(), 64);
     }
+
+    #[test]
+    fn aggregator_estimate_sum_is_exact_sum_of_inputs() {
+        let mut agg = PrivateAggregator::new(0.5);
+        assert!(agg.estimate_sum().abs() < 1e-12, "empty sum must be 0");
+
+        // Dyadic values → the running f64 sum is exact, so the contract
+        // Σ inputs can be checked to ~1 ulp.
+        let inputs = [1.5, -2.25, 4.0, 0.125, 100.0];
+        let mut expected = 0.0;
+        for &v in &inputs {
+            agg.add(v);
+            expected += v;
+        }
+        assert_eq!(agg.count(), inputs.len() as u64);
+        assert!(
+            (agg.estimate_sum() - expected).abs() < 1e-12,
+            "sum={} expected={expected}",
+            agg.estimate_sum()
+        );
+        assert!((agg.estimate_sum() - 103.375).abs() < 1e-12);
+        // mean = sum / n
+        assert!((agg.estimate_mean() - 103.375 / 5.0).abs() < 1e-12);
+
+        agg.reset();
+        assert_eq!(agg.count(), 0);
+        assert!(agg.estimate_sum().abs() < 1e-12);
+    }
+
+    #[test]
+    fn aggregator_standard_error_matches_closed_form() {
+        // SE = scale · √2 / √n
+        let scale = 0.75;
+        let mut agg = PrivateAggregator::new(scale);
+        assert!(agg.standard_error().is_infinite(), "n = 0 → SE must be +∞");
+
+        for n in 1..=16u64 {
+            agg.add(0.0);
+            let expected = scale * core::f64::consts::SQRT_2 / (n as f64).sqrt();
+            let se = agg.standard_error();
+            assert!(
+                (se - expected).abs() < 1e-15,
+                "n={n}: se={se} expected={expected}"
+            );
+        }
+        // n = 2 → SE = scale exactly (√2/√2 = 1); n = 8 → SE = scale / 2
+        let mut two = PrivateAggregator::new(scale);
+        two.add(1.0);
+        two.add(1.0);
+        assert!((two.standard_error() - scale).abs() < 1e-15);
+        let mut eight = PrivateAggregator::new(scale);
+        for _ in 0..8 {
+            eight.add(1.0);
+        }
+        assert!((eight.standard_error() - scale / 2.0).abs() < 1e-15);
+        // SE is independent of the values added, only of n and scale.
+        let mut shifted = PrivateAggregator::new(scale);
+        for v in [10.0, -30.0] {
+            shifted.add(v);
+        }
+        assert!((shifted.standard_error() - two.standard_error()).abs() < 1e-15);
+    }
+
+    #[test]
+    fn budget_is_exhausted_only_when_spent_reaches_max() {
+        let mut b = PrivacyBudget::new(1.0);
+        assert!(!b.is_exhausted());
+        assert!((b.remaining() - 1.0).abs() < 1e-12);
+
+        // Spend in dyadic steps so the running total is exact.
+        assert!(b.try_spend(0.5));
+        assert!(!b.is_exhausted());
+        assert!(b.try_spend(0.25));
+        assert!(!b.is_exhausted());
+        assert!((b.remaining() - 0.25).abs() < 1e-12);
+
+        // Reaching exactly max_epsilon exhausts the budget (>=).
+        assert!(b.try_spend(0.25));
+        assert!(b.is_exhausted());
+        assert!(b.remaining().abs() < 1e-12);
+        assert_eq!(b.query_count(), 3);
+
+        // Once exhausted, any positive spend is refused and state is frozen.
+        assert!(!b.try_spend(1e-9));
+        assert!(b.is_exhausted());
+        assert_eq!(b.query_count(), 3);
+        assert!((b.spent() - 1.0).abs() < 1e-12);
+
+        // A refused spend does not exhaust the budget.
+        let mut c = PrivacyBudget::new(1.0);
+        assert!(!c.try_spend(1.5));
+        assert!(!c.is_exhausted());
+        assert_eq!(c.query_count(), 0);
+
+        // Zero-capacity budget is exhausted from the start.
+        let z = PrivacyBudget::new(0.0);
+        assert!(z.is_exhausted());
+
+        // reset clears exhaustion.
+        b.reset();
+        assert!(!b.is_exhausted());
+        assert_eq!(b.query_count(), 0);
+    }
 }

@@ -36,6 +36,7 @@ bit 一致は「全 peer が同じ数値を出す」ことしか保証しない�
 |----|--------|------|
 | **Core** — 決定論保証の本体 | `math` (`Fix128` / `Vec3Fix` / `QuatFix` / CORDIC)、`solver` (XPBD 剛体、距離 / 接触拘束、sleeping)、`joint`、`bvh`、`collider` (GJK / EPA)、`ccd`、`contact_cache`、`sdf_collider`、`netcode` / snapshot | `tests/analytic_physics.rs` — 自由落下 / 放物 / 終端速度 / `mg/k` 伸び / バネと振り子の周期 / 衝突の運動量 + energy 上限 / kinematic 目標 / torque-free 回転 / 静止接触、`math::tests` の sqrt / 超越関数 oracle、`det_math` の correctly-rounded 参照 sweep |
 | **Engineering / field module** — 教科書公式の決定論実装 | `transient_thermal`、`fatigue` | `tests/engineering_oracles.rs` — cosine 固有 mode 減衰 (Carslaw & Jaeger、explicit / Crank–Nicolson)、Basquin / Miner 閉形式 |
+| | `cloth`、`rope`、`deformable`、`fluid` (PBF)、`character`、`vehicle` (`WheelConfig` / `EngineConfig`)、`sleeping`、`netcode`、`audio_physics`、`support`、`neural` | `tests/default_configs.rs` — 全 `Config::default()` を最も普通の scenario で: カーテン / ロープの幾何、deformable 立方体と fluid block 重心の自由落下閉形式、wheel 圧縮 `mg/k`、engine 初 frame `Δv = T·gear/(r·m)·dt`、`frames_to_sleep` ちょうどで sleep、lockstep checksum + rollback bit 一致、support 体積 1e-6 |
 | | `thermal`、`thermal_stress`、`creep_longterm`、`laminate_failure` (Tsai-Wu / Hashin / Puck)、`rolling_contact`、`aeroelasticity` (Facchinetti 2004)、`piezoelectric`、`acoustic_wave`、`pressure`、`thin_wall`、`fracture`、`erosion`、`phase_change`、`cfd_solver`、`sdf_sph`、`eulerian_grid`、`sim_field`、`bimaterial`、`warp_risk` (経験則 fit: ALICE-Bamboo の 2 data point)、他 `f32` 30 module | **未検証** — 公式は文献どおり実装され bit-exact だが、参照 solver (ANSYS / Abaqus) / 教科書例題 / 実験値との突合 test はない 「引用式の実装」として扱い、検証済予測として扱わない `tests/engineering_oracles.rs` に 1 module 1 PR で追加 (text-to-print が使う thermal / warp / fatigue を優先) |
 
 **向いている用途** bit-exact replay が要件そのものである領域: rollback netcode (格闘 / RTS / .io、数十〜数百 body)、server 側 replay 検証 / anti-cheat、再現性が要る研究 / 監査 batch 1000 体重なり球 scene (`cargo bench --bench physics_bench` `thousand_overlapping_spheres_1_step`) で既定 config 数 ms/frame **向いていない用途** 一般ゲーム物理の置換: 破壊表現、数千体の群衆、60 fps の VFX 級接触数は設計点の外、決定論が要らないなら float engine が固定小数点のコストを払う理由はない
@@ -357,7 +358,7 @@ ALICE-Physicsは6層にわたる最適化で **100/100 の完璧なスコア** �
 | **L3: 計算戦略** | 20/20 | ウォームスタート `cached_lambda`、逆数事前計算（`inv_rest_length`、`inv_rest_density`） |
 | **L4: GPU・スループット** | 15/15 | `SIMD_WIDTH`定数 + `simd_width()`、`GpuSdfInstancedBatch`/`GpuSdfMultiDispatch`、`batch_size()` |
 | **L5: ビルドプロファイル** | 10/10 | `opt-level=3`、`lto="fat"`、`codegen-units=1`、`panic="abort"`、`strip=true` |
-| **L6: コード品質** | 20/20 | 1525 lib テスト + 解析解 oracle 10 本 + 53 alice-bamboo 統合テスト + 8 fuzz target + 44 決定論テスト、clippy `-D warnings` (default + 全 native feature set、all targets)、MSRV 1.85 CI job (default / no_std / native)、`#![deny(missing_docs)]`、cargo-semver-checks hard-gate |
+| **L6: コード品質** | 20/20 | 1595 lib テスト + 解析解 oracle 11 本 + engineering oracle 5 本 + default config oracle 12 本 + 53 alice-bamboo 統合テスト + 8 fuzz target + 44 決定論テスト、clippy `-D warnings` (default + 全 native feature set、all targets)、MSRV 1.85 CI job (default / no_std / native)、`#![deny(missing_docs)]`、cargo-semver-checks hard-gate |
 | **合計** | **100/100** | |
 
 ### L1: メモリレイアウト (15/15)
@@ -1911,7 +1912,7 @@ cargo build --release --features ffi
 | 組み合わせ | ステータス | テスト数 |
 |-----------|----------|---------|
 | `--no-default-features` (no_std) | ✅ | 9 |
-| `--features std` (default) | ✅ | 1525 unit + 72 integration + 解析解 oracle 10 + 決定論 44 + 21 doc |
+| `--features std` (default) | ✅ | 1595 unit + 72 integration + 解析解 11 + engineering 5 + default config oracle 12 + 決定論 44 + 21 doc |
 | `--features simd` | ✅ | 20 |
 | `--features parallel` | ✅ | 20 |
 | `--features "simd,parallel"` | ✅ | 20 |

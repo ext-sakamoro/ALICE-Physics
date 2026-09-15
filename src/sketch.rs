@@ -1011,4 +1011,98 @@ mod tests {
         assert_eq!(top[1].hash, 2);
         assert_eq!(top[2].hash, 3);
     }
+
+    #[test]
+    fn countmin_error_bound_is_e_over_width() {
+        let e = core::f64::consts::E;
+        let cases: [(f64, usize); 3] = [
+            (CountMinSketch1024x5::new().error_bound(), 1024),
+            (CountMinSketch2048x7::new().error_bound(), 2048),
+            (CountMinSketch4096x5::new().error_bound(), 4096),
+        ];
+        for (bound, width) in cases {
+            let expected = e / width as f64;
+            assert!(
+                (bound - expected).abs() < 1e-15,
+                "width={width}: bound={bound} expected={expected}"
+            );
+        }
+        // The bound is a property of the width, not of the contents.
+        let mut cms = CountMinSketch1024x5::new();
+        let empty_bound = cms.error_bound();
+        for i in 0..500u64 {
+            cms.insert_hash(i, 3);
+        }
+        assert!((cms.error_bound() - empty_bound).abs() < 1e-15);
+        // Wider sketch → tighter bound.
+        assert!(
+            CountMinSketch4096x5::new().error_bound() < CountMinSketch1024x5::new().error_bound()
+        );
+    }
+
+    #[test]
+    fn countmin_insert_bytes_and_estimate_bytes_roundtrip() {
+        let mut cms = CountMinSketch2048x7::new();
+        assert_eq!(cms.estimate_bytes(b"never-inserted"), 0);
+
+        for _ in 0..7 {
+            cms.insert_bytes(b"alpha");
+        }
+        for _ in 0..3 {
+            cms.insert_bytes(b"beta");
+        }
+        assert_eq!(cms.total(), 10);
+
+        // Count-Min never under-estimates; with 2048 columns × 7 rows and
+        // only two distinct keys the min over rows is exact.
+        assert_eq!(cms.estimate_bytes(b"alpha"), 7);
+        assert_eq!(cms.estimate_bytes(b"beta"), 3);
+        assert_eq!(cms.estimate_bytes(b"gamma"), 0);
+
+        // insert_bytes is exactly insert_hash(FnvHasher::hash_bytes(b), 1):
+        // the byte path and the pre-hashed path must agree bit-for-bit.
+        let h = FnvHasher::hash_bytes(b"alpha");
+        assert_eq!(cms.estimate_hash(h), cms.estimate_bytes(b"alpha"));
+        let mut via_hash = CountMinSketch2048x7::new();
+        for _ in 0..7 {
+            via_hash.insert_hash(h, 1);
+        }
+        assert_eq!(via_hash.estimate_bytes(b"alpha"), 7);
+        assert_eq!(via_hash.estimate_bytes(b"beta"), 0);
+
+        // Merging two sketches built through insert_bytes adds counts.
+        cms.merge(&via_hash);
+        assert_eq!(cms.estimate_bytes(b"alpha"), 14);
+        assert_eq!(cms.estimate_bytes(b"beta"), 3);
+        assert_eq!(cms.total(), 17);
+    }
+
+    #[test]
+    fn hyperloglog_insert_bytes_is_idempotent_and_matches_hash_path() {
+        let mut hll = HyperLogLog10::new();
+        assert!(hll.cardinality().abs() < 1e-12, "empty HLL → 0");
+
+        // Same bytes inserted many times count once.
+        for _ in 0..1000 {
+            hll.insert_bytes(b"duplicate");
+        }
+        let one = hll.cardinality();
+        assert!(one > 0.5 && one < 1.5, "cardinality={one}");
+        let set = hll.registers().iter().filter(|&&r| r != 0).count();
+        assert_eq!(set, 1, "exactly one register touched");
+
+        // insert_bytes(b) == insert_hash(FnvHasher::hash_bytes(b)): the two
+        // paths must produce identical register arrays.
+        let mut via_bytes = HyperLogLog10::new();
+        let mut via_hash = HyperLogLog10::new();
+        for i in 0..200u32 {
+            let key = i.to_le_bytes();
+            via_bytes.insert_bytes(&key);
+            via_hash.insert_hash(FnvHasher::hash_bytes(&key));
+        }
+        assert_eq!(via_bytes.registers(), via_hash.registers());
+        let est = via_bytes.cardinality();
+        // 1024 registers → ~3.2 % typical error; allow 25 % on n = 200
+        assert!(est > 150.0 && est < 250.0, "estimate={est}");
+    }
 }

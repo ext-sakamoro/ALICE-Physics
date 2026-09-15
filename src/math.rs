@@ -2866,4 +2866,113 @@ mod tests {
             }
         }
     }
+
+    // -----------------------------------------------------------------------
+    // sub_simd / cross_simd bit-exactness (x86_64 + `simd` feature only)
+    // -----------------------------------------------------------------------
+
+    /// `Fix128::sub_simd` must be bit-identical to `-`, including borrow
+    /// propagation from `lo` into `hi` and wrapping at the i64 boundary.
+    #[cfg(all(feature = "simd", target_arch = "x86_64"))]
+    #[test]
+    fn fix128_sub_simd_is_bit_exact_with_operator_sub() {
+        let cases: [(Fix128, Fix128); 8] = [
+            (fi(7), fi(3)),
+            (fi(3), fi(7)),
+            (fi(-5), fi(9)),
+            // lo borrow: 0 - tiny must borrow one from hi
+            (Fix128::from_raw(1, 0), Fix128::from_raw(0, 1)),
+            // lo wraps fully around
+            (Fix128::from_raw(0, 0), Fix128::from_raw(0, u64::MAX)),
+            // arbitrary fractional bit patterns
+            (
+                Fix128::from_raw(3, 0xABCD_EF01_2345_6789),
+                Fix128::from_raw(-1, 0x1111_2222_3333_4444),
+            ),
+            (
+                Fix128::from_raw(-7, 0xFEDC_BA98_7654_3210),
+                Fix128::from_raw(5, 0xAAAA_BBBB_CCCC_DDDD),
+            ),
+            // i64 wrap on hi (wrapping semantics of `-` must be mirrored)
+            (Fix128::from_raw(i64::MIN, 0), Fix128::from_raw(1, 0)),
+        ];
+        for (a, b) in cases {
+            let scalar = a - b;
+            // SAFETY: `sub_simd` has no preconditions; SSE2 is part of the
+            // x86_64 baseline so the `target_feature(enable = "sse2")`
+            // requirement is always satisfied on this target.
+            let simd = unsafe { a.sub_simd(b) };
+            assert_eq!(
+                simd.hi, scalar.hi,
+                "sub_simd hi mismatch for {a:?} - {b:?}: {:#018x} vs {:#018x}",
+                simd.hi, scalar.hi
+            );
+            assert_eq!(
+                simd.lo, scalar.lo,
+                "sub_simd lo mismatch for {a:?} - {b:?}: {:#018x} vs {:#018x}",
+                simd.lo, scalar.lo
+            );
+            // and the closed-form: (a - b) + b == a
+            assert_eq!(simd + b, a);
+        }
+        // Explicit borrow check: (1.0) - (2^-64) == 0.FFFF…F (hi 0, lo MAX)
+        // SAFETY: as above.
+        let borrowed = unsafe { Fix128::from_raw(1, 0).sub_simd(Fix128::from_raw(0, 1)) };
+        assert_eq!(borrowed, Fix128::from_raw(0, u64::MAX));
+    }
+
+    /// `Vec3Fix::cross_simd` must be bit-identical to `cross()` and satisfy
+    /// the closed-form cross-product identities.
+    #[cfg(all(feature = "simd", target_arch = "x86_64"))]
+    #[test]
+    fn vec3_cross_simd_is_bit_exact_with_cross() {
+        // Right-handed basis: x × y = z, y × z = x, z × x = y
+        let x = v3i(1, 0, 0);
+        let y = v3i(0, 1, 0);
+        let z = v3i(0, 0, 1);
+        assert_eq!(x.cross_simd(y), z);
+        assert_eq!(y.cross_simd(z), x);
+        assert_eq!(z.cross_simd(x), y);
+        // Anti-commutativity and self-cross = 0
+        assert_eq!(y.cross_simd(x), z.scale(fi(-1)));
+        assert_eq!(x.cross_simd(x), Vec3Fix::ZERO);
+
+        // Textbook integer case: (1,2,3) × (4,5,6) = (-3, 6, -3)
+        assert_eq!(v3i(1, 2, 3).cross_simd(v3i(4, 5, 6)), v3i(-3, 6, -3));
+
+        // Arbitrary fractional patterns: bit-exact with the scalar path,
+        // and the result is orthogonal to both inputs (dot == 0 exactly is
+        // not guaranteed after Fix128 rounding, so compare to the scalar
+        // path's dot instead of to zero).
+        let pairs = [
+            (v3i(1, 2, 3), v3i(4, 5, 6)),
+            (v3i(-7, 0, 11), v3i(2, -9, 5)),
+            (
+                Vec3Fix::new(
+                    Fix128::from_raw(3, 0xABCD_EF01_2345_6789),
+                    Fix128::from_raw(-1, 0x1111_2222_3333_4444),
+                    Fix128::from_raw(7, 0xFEDC_BA98_7654_3210),
+                ),
+                Vec3Fix::new(
+                    Fix128::from_raw(2, 0x9876_5432_10FE_DCBA),
+                    Fix128::from_raw(5, 0xAAAA_BBBB_CCCC_DDDD),
+                    Fix128::from_raw(-3, 0x0F0F_0F0F_0F0F_0F0F),
+                ),
+            ),
+        ];
+        for (a, b) in pairs {
+            let scalar = a.cross(b);
+            let simd = a.cross_simd(b);
+            assert_eq!(simd.x.hi, scalar.x.hi, "{a:?} × {b:?}: x.hi");
+            assert_eq!(simd.x.lo, scalar.x.lo, "{a:?} × {b:?}: x.lo");
+            assert_eq!(simd.y.hi, scalar.y.hi, "{a:?} × {b:?}: y.hi");
+            assert_eq!(simd.y.lo, scalar.y.lo, "{a:?} × {b:?}: y.lo");
+            assert_eq!(simd.z.hi, scalar.z.hi, "{a:?} × {b:?}: z.hi");
+            assert_eq!(simd.z.lo, scalar.z.lo, "{a:?} × {b:?}: z.lo");
+            assert_eq!(simd.dot(a), scalar.dot(a));
+            assert_eq!(simd.dot(b), scalar.dot(b));
+            // a × b == -(b × a)
+            assert_eq!(b.cross_simd(a), simd.scale(fi(-1)));
+        }
+    }
 }

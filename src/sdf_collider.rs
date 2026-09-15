@@ -585,4 +585,75 @@ mod tests {
             "Penetration should be ~0.5, got {depth}"
         );
     }
+
+    #[test]
+    fn detect_sdf_contacts_reports_penetrating_dynamic_bodies_with_closed_form_depth() {
+        use crate::solver::RigidBody;
+        let ground =
+            SdfCollider::new_static(Box::new(ground_plane()), Vec3Fix::ZERO, QuatFix::IDENTITY);
+        // 単位球 SDF (原点) を body 5 に attach (self-collision skip の確認用)
+        let attached = SdfCollider::new_dynamic(Box::new(unit_sphere()), 5);
+        let colliders = [ground, attached];
+        let radius = Fix128::from_ratio(1, 2);
+
+        let mut bodies = vec![
+            // 0: dynamic、(5, 0.25, 0) → 地面貫入 0.5 - 0.25 = 0.25、球からは遠い
+            RigidBody::new_dynamic(Vec3Fix::from_f32(5.0, 0.25, 0.0), Fix128::ONE),
+            // 1: dynamic、(0, 2, 0) → 地面 非接触、球 距離 1 ≥ 0.5 → 非接触
+            RigidBody::new_dynamic(Vec3Fix::from_f32(0.0, 2.0, 0.0), Fix128::ONE),
+            // 2: static、y = -1 (完全貫入) でも skip
+            RigidBody::new_static(Vec3Fix::from_f32(0.0, -1.0, 0.0)),
+            // 3: dynamic、(0, 0, 5) 地面上 → 貫入 0.5、球からは距離 4 → 非接触
+            RigidBody::new_dynamic(Vec3Fix::from_f32(0.0, 0.0, 5.0), Fix128::ONE),
+            // 4: dynamic、(1.2, 3, 0) → 地面 非接触、球 距離 sqrt(10.44)-1 ≈ 2.23 → 非接触
+            RigidBody::new_dynamic(Vec3Fix::from_f32(1.2, 3.0, 0.0), Fix128::ONE),
+            // 5: dynamic、(1.2, 0, 0) → 地面貫入 0.5、自身に attach された球 SDF は skip
+            RigidBody::new_dynamic(Vec3Fix::from_f32(1.2, 0.0, 0.0), Fix128::ONE),
+        ];
+
+        let contacts = detect_sdf_contacts(&bodies, &colliders, radius);
+        let idxs: Vec<usize> = contacts.iter().map(|(i, _)| *i).collect();
+        // body 順 → collider 順で列挙される
+        assert_eq!(idxs, vec![0, 3, 5]);
+        let expected_depth = [0.25_f32, 0.5, 0.5];
+        for (k, want) in expected_depth.iter().enumerate() {
+            let d = contacts[k].1.depth.to_f32();
+            assert!(
+                (d - want).abs() < 1e-5,
+                "contact {k} depth {d}, want {want}"
+            );
+            let (nx, ny, nz) = contacts[k].1.normal.to_f32();
+            assert!(nx.abs() < 1e-5 && (ny - 1.0).abs() < 1e-5 && nz.abs() < 1e-5);
+            // point_b は SDF 表面 (y = 0)、point_a は球の最下点 (y = pos - 0.5)
+            let (_, pby, _) = contacts[k].1.point_b.to_f32();
+            let (_, pay, _) = contacts[k].1.point_a.to_f32();
+            let (_, y, _) = bodies[idxs[k]].position.to_f32();
+            assert!(pby.abs() < 1e-5, "contact {k} point_b.y {pby}");
+            assert!(
+                (pay - (y - 0.5)).abs() < 1e-5,
+                "contact {k} point_a.y {pay}"
+            );
+        }
+
+        // 同じ位置 (1.2, 0, 0) の別 body (index 6) は球 SDF との接触も報告される:
+        // 距離 0.2 < 0.5 → 貫入 0.3、法線 +X (self-collision skip は index で判定)
+        bodies.push(RigidBody::new_dynamic(
+            Vec3Fix::from_f32(1.2, 0.0, 0.0),
+            Fix128::ONE,
+        ));
+        let c2 = detect_sdf_contacts(&bodies, &colliders, radius);
+        let idxs2: Vec<usize> = c2.iter().map(|(i, _)| *i).collect();
+        assert_eq!(idxs2, vec![0, 3, 5, 6, 6]);
+        let sphere_contact = &c2[4].1;
+        let d = sphere_contact.depth.to_f32();
+        assert!((d - 0.3).abs() < 1e-5, "sphere depth {d}");
+        let (nx, ny, nz) = sphere_contact.normal.to_f32();
+        assert!((nx - 1.0).abs() < 1e-5 && ny.abs() < 1e-5 && nz.abs() < 1e-5);
+
+        // 半径 0 なら地面上 (y=0) の body は接触しない (penetration <= 0 → None)
+        let none = detect_sdf_contacts(&bodies[3..4], &colliders[..1], Fix128::ZERO);
+        assert!(none.is_empty());
+        // collider なし → 空
+        assert!(detect_sdf_contacts(&bodies, &[], radius).is_empty());
+    }
 }

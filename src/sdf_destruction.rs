@@ -556,4 +556,61 @@ mod tests {
             "Normal should be approximately unit length"
         );
     }
+
+    #[test]
+    fn optimize_keeps_only_the_32_most_recent_craters() {
+        // 地面 (distance = y): crater i は中心 (3i, 0, 0) 半径 1 の球
+        // crater 中心では sharp subtraction max(0, -(-1)) = 1、未破壊なら 0
+        let ground = ClosureSdf::new(|_x, y, _z| y, |_x, _y, _z| (0.0, 1.0, 0.0));
+        let mut dsdf = DestructibleSdf::new(Box::new(ground));
+        let center_x = |i: usize| (i * 3) as f32;
+
+        // 32 個までは optimize が何もしない
+        for i in 0..32 {
+            dsdf.apply_destruction(DestructionShape::sphere(
+                Vec3Fix::from_f32(center_x(i), 0.0, 0.0),
+                1.0,
+            ));
+        }
+        dsdf.optimize();
+        assert_eq!(dsdf.destruction_count(), 32);
+        assert_eq!(dsdf.total_destruction_count(), 32);
+        for i in 0..32 {
+            let d = dsdf.distance(center_x(i), 0.0, 0.0);
+            assert!((d - 1.0).abs() < 1e-6, "crater {i} should be carved: {d}");
+        }
+
+        // 40 個 → 最古の 8 個 (i = 0..8) が落ち、i = 8..40 の 32 個が残る
+        for i in 32..40 {
+            dsdf.apply_destruction(DestructionShape::sphere(
+                Vec3Fix::from_f32(center_x(i), 0.0, 0.0),
+                1.0,
+            ));
+        }
+        assert_eq!(dsdf.destruction_count(), 40);
+        for i in 0..40 {
+            let d = dsdf.distance(center_x(i), 0.0, 0.0);
+            assert!((d - 1.0).abs() < 1e-6, "crater {i} before optimize: {d}");
+        }
+        dsdf.optimize();
+        assert_eq!(dsdf.destruction_count(), 32);
+        // 統計値は drop されても減らない
+        assert_eq!(dsdf.total_destruction_count(), 40);
+        for i in 0..8 {
+            let d = dsdf.distance(center_x(i), 0.0, 0.0);
+            assert!(d.abs() < 1e-6, "oldest crater {i} should be restored: {d}");
+        }
+        for i in 8..40 {
+            let d = dsdf.distance(center_x(i), 0.0, 0.0);
+            assert!(
+                (d - 1.0).abs() < 1e-6,
+                "recent crater {i} should remain: {d}"
+            );
+        }
+        // 冪等: もう一度呼んでも変わらない
+        dsdf.optimize();
+        assert_eq!(dsdf.destruction_count(), 32);
+        let d = dsdf.distance(center_x(8), 0.0, 0.0);
+        assert!((d - 1.0).abs() < 1e-6, "{d}");
+    }
 }

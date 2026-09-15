@@ -404,4 +404,86 @@ mod tests {
         let result = combine_rule_priority(CombineRule::Average, CombineRule::Multiply);
         assert_eq!(result, CombineRule::Multiply);
     }
+
+    /// 非 2 冪の有理数同士の平均は Fix128 で 1 ulp 丸まり得る
+    fn near(a: Fix128, b: Fix128) -> bool {
+        (a - b).abs() < Fix128 { hi: 0, lo: 1 << 8 }
+    }
+
+    #[test]
+    fn register_wood_ice_concrete_store_documented_coefficients_and_rules() {
+        let mut table = MaterialTable::new();
+        let wood = table.register_wood();
+        let ice = table.register_ice();
+        let concrete = table.register_concrete();
+        // id は登録順 (default が 0)、struct 側 id も同じ値に書き換わる
+        assert_eq!((wood, ice, concrete), (1, 2, 3));
+        assert_eq!(table.len(), 4);
+        assert_eq!(table.get(wood).id, wood);
+        assert_eq!(table.get(ice).id, ice);
+        assert_eq!(table.get(concrete).id, concrete);
+
+        let w = table.get(wood);
+        assert_eq!(w.dynamic_friction, Fix128::from_ratio(5, 10));
+        assert_eq!(w.static_friction, Fix128::from_ratio(5, 10));
+        assert_eq!(w.restitution, Fix128::from_ratio(3, 10));
+        assert_eq!(w.friction_combine, CombineRule::Average);
+        assert_eq!(w.restitution_combine, CombineRule::Average);
+
+        let i = table.get(ice);
+        assert_eq!(i.dynamic_friction, Fix128::from_ratio(5, 100));
+        assert_eq!(i.restitution, Fix128::from_ratio(1, 10));
+        assert_eq!(i.friction_combine, CombineRule::Min);
+        assert_eq!(i.restitution_combine, CombineRule::Min);
+
+        let c = table.get(concrete);
+        assert_eq!(c.dynamic_friction, Fix128::from_ratio(6, 10));
+        assert_eq!(c.restitution, Fix128::from_ratio(2, 10));
+        assert_eq!(c.friction_combine, CombineRule::Average);
+        assert_eq!(c.restitution_combine, CombineRule::Average);
+
+        // wood × concrete: Average → friction (0.5+0.6)/2 = 0.55、restitution (0.3+0.2)/2 = 0.25
+        let wc = table.combine(wood, concrete);
+        assert!(near(wc.friction, Fix128::from_ratio(55, 100)), "{wc:?}");
+        assert!(near(wc.restitution, Fix128::from_ratio(25, 100)), "{wc:?}");
+        // ice × concrete: Min は Average より低優先 → Average 採用 → (0.05+0.6)/2 = 0.325
+        let ic = table.combine(ice, concrete);
+        assert!(near(ic.friction, Fix128::from_ratio(325, 1000)), "{ic:?}");
+        assert!(near(ic.restitution, Fix128::from_ratio(15, 100)), "{ic:?}");
+        // ice × ice: 両方 Min → 0.05 / 0.1
+        let ii = table.combine(ice, ice);
+        assert_eq!(ii.friction, Fix128::from_ratio(5, 100));
+        assert_eq!(ii.restitution, Fix128::from_ratio(1, 10));
+        // 対称
+        assert_eq!(table.combine(concrete, ice), ic);
+    }
+
+    #[test]
+    fn with_static_friction_only_changes_static_coefficient() {
+        let base = PhysicsMaterial::new(7, Fix128::from_ratio(3, 10), Fix128::from_ratio(2, 10));
+        let m = base.with_static_friction(Fix128::from_ratio(9, 10));
+        assert_eq!(m.static_friction, Fix128::from_ratio(9, 10));
+        assert_eq!(m.dynamic_friction, Fix128::from_ratio(3, 10));
+        assert_eq!(m.restitution, Fix128::from_ratio(2, 10));
+        assert_eq!(m.id, 7);
+        assert_eq!(m.friction_combine, base.friction_combine);
+        assert_eq!(m.restitution_combine, base.restitution_combine);
+        // static_friction 以外は元と同一
+        let mut expected = base;
+        expected.static_friction = Fix128::from_ratio(9, 10);
+        assert_eq!(m, expected);
+
+        // combine は dynamic_friction を使う: static を変えても pair 結果は不変
+        let mut table = MaterialTable::new();
+        let plain = table.register(base);
+        let sticky = table.register(m);
+        let plain_pair = table.combine(plain, DEFAULT_MATERIAL);
+        let sticky_pair = table.combine(sticky, DEFAULT_MATERIAL);
+        assert_eq!(plain_pair, sticky_pair);
+        // (0.3 + 0.5) / 2 = 0.4
+        assert!(
+            near(sticky_pair.friction, Fix128::from_ratio(4, 10)),
+            "{sticky_pair:?}"
+        );
+    }
 }

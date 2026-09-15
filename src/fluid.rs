@@ -40,13 +40,15 @@ pub struct FluidConfig {
     pub substeps: usize,
     /// Gravity vector
     pub gravity: Vec3Fix,
-    /// Velocity damping
+    /// Velocity retention per frame (`step()` call), applied once per frame
+    /// since 1.2.0 (per substep before, which made the result depend on `substeps`)
     pub damping: Fix128,
     /// Viscosity coefficient (XSPH)
     pub viscosity: Fix128,
-    /// Vorticity confinement strength
+    /// Vorticity confinement strength ε (`Δv = ε · dt · N × ω`, PBF §5)
     pub vorticity_strength: Fix128,
-    /// Surface tension coefficient
+    /// Surface tension / cohesion coefficient κ
+    /// (`Δv_i = κ · dt · Σ_j (m_j/ρ₀) (x_j − x_i)/r · W_ij`)
     pub surface_tension: Fix128,
     /// Particle mass
     pub particle_mass: Fix128,
@@ -188,6 +190,7 @@ impl Fluid {
         for _ in 0..self.config.substeps {
             self.substep(substep_dt);
         }
+        self.apply_frame_damping();
     }
 
     /// Step with SDF boundary
@@ -198,6 +201,7 @@ impl Fluid {
             self.substep(substep_dt);
             self.resolve_sdf_boundary(sdf_colliders);
         }
+        self.apply_frame_damping();
     }
 
     /// Single substep
@@ -206,10 +210,11 @@ impl Fluid {
         let h = self.config.kernel_radius;
         let h_sq = h * h;
 
-        // 1. Predict positions
+        // 1. Predict positions (damping is applied once per frame in `step`,
+        //    1.2.0 — per substep it made the terminal velocity depend on
+        //    `substeps`, the same defect as the rigid-body solver's R2-1)
         for i in 0..n {
             self.velocities[i] = self.velocities[i] + self.config.gravity * dt;
-            self.velocities[i] = self.velocities[i] * self.config.damping;
             self.predicted[i] = self.positions[i] + self.velocities[i] * dt;
         }
 
@@ -303,15 +308,32 @@ impl Fluid {
         // 5. Apply viscosity (XSPH)
         self.apply_viscosity();
 
-        // 6. Surface tension (cohesion force toward neighbors)
+        // 6. Surface tension (cohesion acceleration toward neighbors)
         if !self.config.surface_tension.is_zero() {
-            self.apply_surface_tension();
+            self.apply_surface_tension(dt);
         }
 
         // 7. Vorticity confinement (re-inject rotational energy lost to damping)
         if !self.config.vorticity_strength.is_zero() {
-            self.apply_vorticity_confinement();
+            self.apply_vorticity_confinement(dt);
         }
+    }
+
+    /// `damping` once per frame (velocity retention per `step()` call).
+    fn apply_frame_damping(&mut self) {
+        let d = self.config.damping;
+        for v in &mut self.velocities {
+            *v = *v * d;
+        }
+    }
+
+    /// Particle volume `m / ρ₀` — the SPH normalisation that turns a kernel
+    /// sum `Σ_j W_ij` into a dimensionless number of order 1 (and `Σ_j ∇W_ij`
+    /// into `O(1/h)`), so the cohesion and confinement terms below are
+    /// accelerations with the documented coefficients, not raw kernel sums.
+    #[inline]
+    fn particle_volume(&self) -> Fix128 {
+        self.config.particle_mass * self.inv_rest_density
     }
 
     /// XSPH viscosity smoothing
@@ -347,13 +369,20 @@ impl Fluid {
         }
     }
 
-    /// Surface tension via pairwise cohesion forces.
-    /// Particles attract neighbors, creating surface-minimizing behavior.
-    fn apply_surface_tension(&mut self) {
+    /// Surface tension via pairwise cohesion accelerations
+    /// (Becker & Teschner 2007 form):
+    /// `Δv_i = κ · dt · Σ_j (m_j / ρ₀) · (x_j − x_i)/r · W(r)`.
+    ///
+    /// Pairwise antisymmetric, so the centre of mass is untouched. Before
+    /// 1.2.0 the un-normalised kernel sum (`W ≈ 260` at `r = h/2`,
+    /// `h = 0.2`) was added straight to the velocity without `m/ρ₀` or `dt`,
+    /// which threw a resting 5×5×5 block apart by ±4 m in a single frame at
+    /// the default coefficient (`tests/default_configs.rs`).
+    fn apply_surface_tension(&mut self, dt: Fix128) {
         let n = self.particle_count();
         let h = self.config.kernel_radius;
         let h_sq = h * h;
-        let coeff = self.config.surface_tension;
+        let coeff = self.config.surface_tension * dt * self.particle_volume();
         let mut neighbors_buf = Vec::new();
 
         for i in 0..n {
@@ -379,12 +408,20 @@ impl Fluid {
         }
     }
 
-    /// Vorticity confinement: re-inject rotational energy lost to damping.
-    fn apply_vorticity_confinement(&mut self) {
+    /// Vorticity confinement (Macklin & Müller 2013, §5):
+    /// `ω_i = Σ_j (m_j/ρ₀) (v_j − v_i) × ∇W_ij`,
+    /// `η_i = Σ_j (m_j/ρ₀) |ω_j| ∇W_ij`, `N = η/|η|`,
+    /// `Δv_i = ε · dt · (N × ω_i)`.
+    ///
+    /// Same 1.2.0 normalisation fix as `apply_surface_tension`: the kernel
+    /// sums carry `m/ρ₀` and the confinement acceleration is integrated over
+    /// `dt` instead of being added to the velocity as-is.
+    fn apply_vorticity_confinement(&mut self, dt: Fix128) {
         let n = self.particle_count();
         let h = self.config.kernel_radius;
         let h_sq = h * h;
-        let epsilon = self.config.vorticity_strength;
+        let vol = self.particle_volume();
+        let epsilon = self.config.vorticity_strength * dt;
         let mut neighbors_buf = Vec::new();
 
         // Compute per-particle curl of velocity
@@ -403,7 +440,7 @@ impl Fluid {
                     continue;
                 }
                 let r = r_sq.sqrt();
-                let grad_mag = spiky_grad(r, h);
+                let grad_mag = spiky_grad(r, h) * vol;
                 let grad = delta / r * grad_mag;
                 let vel_diff = self.velocities[j] - self.velocities[i];
                 curl = curl + vel_diff.cross(grad);
@@ -427,9 +464,12 @@ impl Fluid {
                     continue;
                 }
                 let r = r_sq.sqrt();
-                let grad_w = spiky_grad(r, h);
-                let curl_mag_diff = curls[j].length() - curls[i].length();
-                grad_mag_curl = grad_mag_curl + delta / r * (grad_w * curl_mag_diff);
+                let grad_w = spiky_grad(r, h) * vol;
+                // PBF eq. 16 uses |ω_j| at the neighbour
+                grad_mag_curl = grad_mag_curl + delta / r * (grad_w * curls[j].length());
+            }
+            if grad_mag_curl.length_squared().is_zero() {
+                continue;
             }
             let n_vec = grad_mag_curl.normalize();
             let force = n_vec.cross(curls[i]) * epsilon;
@@ -554,5 +594,95 @@ mod tests {
         grid.query_neighbors_into(Vec3Fix::ZERO, h_sq, &mut neighbors);
         assert!(neighbors.contains(&0), "Should find self");
         assert!(neighbors.contains(&1), "Should find nearby particle");
+    }
+
+    /// 原点中心の単位球 SDF (f32 sqrt のみ、det_math gate 対象外)
+    #[cfg(feature = "std")]
+    fn unit_sphere_collider() -> crate::sdf_collider::SdfCollider {
+        use crate::sdf_collider::{ClosureSdf, SdfCollider};
+        let field = ClosureSdf::new(
+            |x, y, z| (x * x + y * y + z * z).sqrt() - 1.0,
+            |x, y, z| {
+                let len = (x * x + y * y + z * z).sqrt();
+                if len > 1e-6 {
+                    (x / len, y / len, z / len)
+                } else {
+                    (0.0, 1.0, 0.0)
+                }
+            },
+        );
+        SdfCollider::new_static(
+            Box::new(field),
+            Vec3Fix::ZERO,
+            crate::math::QuatFix::IDENTITY,
+        )
+    }
+
+    /// 単位球からの符号付き距離 (f32 oracle)
+    #[cfg(feature = "std")]
+    fn sphere_dist(p: Vec3Fix) -> f32 {
+        let (x, y, z) = p.to_f32();
+        (x * x + y * y + z * z).sqrt() - 1.0
+    }
+
+    #[cfg(feature = "std")]
+    #[test]
+    fn step_with_sdf_contains_fluid_particles_inside_unit_sphere() {
+        // kernel 半径 0.2 より離した 3 粒子 (相互作用なし) を球内に置き、重力で落とす
+        // fluid の SDF は「容器」: 外に出た粒子 (dist > 0) を表面へ戻し法線速度を反射
+        let make = || {
+            Fluid::new(
+                vec![
+                    Vec3Fix::from_f32(0.0, 0.5, 0.0),
+                    Vec3Fix::from_f32(0.3, 0.2, 0.0),
+                    Vec3Fix::from_f32(-0.3, 0.1, 0.3),
+                ],
+                FluidConfig::default(),
+            )
+        };
+        let sphere = [unit_sphere_collider()];
+        let mut fluid = make();
+        let dt = Fix128::from_ratio(1, 60);
+        let mut max_dist = f32::MIN;
+        for frame in 0..120 {
+            fluid.step_with_sdf(dt, &sphere);
+            for (i, p) in fluid.positions.iter().enumerate() {
+                let d = sphere_dist(*p);
+                max_dist = max_dist.max(d);
+                assert!(
+                    d <= 1e-3,
+                    "frame {frame} particle {i} escaped sphere: dist {d}"
+                );
+            }
+        }
+        // 実際に壁に当たっている (2 s で 20 m 落ちるはずが半径 1 の球内)
+        assert!(
+            max_dist > -0.05,
+            "never reached the wall: max dist {max_dist}"
+        );
+        for (i, p) in fluid.positions.iter().enumerate() {
+            let (_, y, _) = p.to_f32();
+            assert!(y >= -1.0 - 1e-3, "particle {i} below sphere bottom: y {y}");
+        }
+
+        // SDF なしでは粒子は落下して球外へ
+        let mut free = make();
+        for _ in 0..120 {
+            free.step(dt);
+        }
+        for (i, p) in free.positions.iter().enumerate() {
+            let d = sphere_dist(*p);
+            assert!(d > 1.0, "particle {i} should have fallen out: dist {d}");
+        }
+
+        // collider が空なら step と bit 一致
+        let mut a = make();
+        let mut b = make();
+        for _ in 0..10 {
+            a.step_with_sdf(dt, &[]);
+            b.step(dt);
+        }
+        assert_eq!(a.positions, b.positions);
+        assert_eq!(a.velocities, b.velocities);
     }
 }

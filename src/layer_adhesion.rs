@@ -251,4 +251,70 @@ mod tests {
         let fos_z = s.fos_normal_z(Fix128::from_int(30));
         assert_eq!(fos_min, fos_z);
     }
+
+    #[test]
+    fn fos_shear_xy_is_allowable_over_applied() {
+        // PLA σ_y = 50 MPa → τ_xy = 0.6·50 = 30 MPa.
+        let s =
+            EffectiveStrength::for_material(&MaterialProperties::pla(), PrintOrientation::XYFlat);
+        let tau_xy = Fix128::from_int(50) * Fix128::from_ratio(6, 10);
+        assert_eq!(s.shear_xy_mpa, tau_xy);
+
+        // 15 MPa applied → FoS = 30 / 15 = 2 (30 is exact here since
+        // 50 × 6/10 is computed once; the division by an integer is exact).
+        let fos = s.fos_shear_xy(Fix128::from_int(15));
+        assert_eq!(fos, s.shear_xy_mpa / Fix128::from_int(15));
+        let diff = (fos - Fix128::from_int(2)).abs();
+        assert!(diff < Fix128::from_ratio(1, 1_000_000_000), "FoS ≈ 2");
+
+        // Sign-insensitive: applied −15 MPa gives the same FoS.
+        assert_eq!(s.fos_shear_xy(Fix128::from_int(-15)), fos);
+        // FoS < 1 when applied exceeds allowable (60 MPa → 0.5).
+        let half = s.fos_shear_xy(Fix128::from_int(60));
+        assert!((half - Fix128::from_ratio(1, 2)).abs() < Fix128::from_ratio(1, 1_000_000_000));
+        // Zero applied → sentinel (same as the normal-direction path).
+        assert_eq!(s.fos_shear_xy(Fix128::ZERO), s.fos_normal_x(Fix128::ZERO));
+        // Within-layer shear FoS exceeds the across-layer FoS for equal load.
+        assert!(s.fos_shear_xy(Fix128::from_int(15)) > s.fos_shear_xz(Fix128::from_int(15)));
+    }
+
+    #[test]
+    fn fos_shear_xz_uses_across_layer_allowable() {
+        // PLA: τ_xy = 30 MPa, inter = (1 + 0.65)/2 = 0.825 → τ_xz = 24.75 MPa.
+        let pla = MaterialProperties::pla();
+        let s = EffectiveStrength::for_material(&pla, PrintOrientation::XYFlat);
+        let tau_xy = pla.yield_strength_mpa * Fix128::from_ratio(6, 10);
+        let inter = (Fix128::ONE + pla.anisotropy_z_ratio) * Fix128::from_ratio(1, 2);
+        assert_eq!(s.shear_xz_mpa, tau_xy * inter);
+        assert_eq!(
+            s.shear_xz_mpa, s.shear_yz_mpa,
+            "XZ and YZ share the across-layer value"
+        );
+        let diff = (s.shear_xz_mpa - Fix128::from_ratio(2475, 100)).abs();
+        assert!(
+            diff < Fix128::from_ratio(1, 1_000_000_000),
+            "τ_xz ≈ 24.75 MPa"
+        );
+
+        // 11 MPa applied → FoS = 24.75 / 11 = 2.25 exactly in rationals.
+        let fos = s.fos_shear_xz(Fix128::from_int(11));
+        assert_eq!(fos, s.shear_xz_mpa / Fix128::from_int(11));
+        let diff = (fos - Fix128::from_ratio(225, 100)).abs();
+        assert!(diff < Fix128::from_ratio(1, 1_000_000_000), "FoS ≈ 2.25");
+
+        // Sign-insensitive and zero sentinel.
+        assert_eq!(s.fos_shear_xz(Fix128::from_int(-11)), fos);
+        assert!(s.fos_shear_xz(Fix128::ZERO) > Fix128::from_int(1_000_000));
+
+        // Isotropic sheet metal: inter = 1 → τ_xz == τ_xy → equal FoS.
+        let sus = EffectiveStrength::for_material(
+            &MaterialProperties::sus304(),
+            PrintOrientation::XYFlat,
+        );
+        assert_eq!(sus.shear_xz_mpa, sus.shear_xy_mpa);
+        assert_eq!(
+            sus.fos_shear_xz(Fix128::from_int(40)),
+            sus.fos_shear_xy(Fix128::from_int(40))
+        );
+    }
 }

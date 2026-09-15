@@ -412,4 +412,61 @@ mod tests {
         // Helium has smaller molecular mass → faster sound
         assert!(a_he > a_air);
     }
+
+    #[test]
+    fn speed_of_sound_from_pd_matches_sqrt_gamma_p_over_rho() {
+        let g = IdealGas::air();
+
+        // Exact case: γ·p/ρ = 1.4 · 100_000 / 1.4 = 100_000 → a = √100000
+        // Choose ρ = 1.4 so the ratio is an exact integer in Fix128.
+        let p = Fix128::from_int(100_000);
+        let rho = Fix128::from_ratio(14, 10);
+        let a = g.speed_of_sound_from_pd(p, rho);
+        let expected = Fix128::from_int(100_000).sqrt();
+        // The only non-exact step is the Fix128 sqrt itself; the argument
+        // 1.4·100000/1.4 may differ from 100000 by ~2^-64, so allow 1e-9.
+        assert!(
+            approx_eq(a, expected, Fix128::from_ratio(1, 1_000_000_000)),
+            "a = {} expected = {}",
+            a.to_f64(),
+            expected.to_f64()
+        );
+        // √100000 ≈ 316.2278
+        assert!(approx_eq(
+            a,
+            Fix128::from_ratio(3_162_278, 10_000),
+            Fix128::from_ratio(1, 1000)
+        ));
+
+        // Consistency with the temperature form: for an ideal gas
+        // p/ρ = R·T, so a(p, ρ) == a(T) when p = ρ·R·T.
+        let t = Fix128::from_int(288);
+        let rho2 = Fix128::from_ratio(1225, 1000);
+        let p2 = g.pressure(rho2, t);
+        let a_pd = g.speed_of_sound_from_pd(p2, rho2);
+        let a_t = g.speed_of_sound(t);
+        assert!(
+            approx_eq(a_pd, a_t, Fix128::from_ratio(1, 1_000_000)),
+            "a_pd = {} a_T = {}",
+            a_pd.to_f64(),
+            a_t.to_f64()
+        );
+        // ≈ 340 m/s at 15 °C
+        assert!(approx_eq(a_pd, Fix128::from_int(340), Fix128::from_int(2)));
+
+        // Helium at the same p, ρ: γ = 5/3 > 1.4 → faster.
+        let he = IdealGas::helium();
+        assert!(he.speed_of_sound_from_pd(p, rho) > a);
+
+        // Scaling law: a ∝ √p at fixed ρ — quadrupling p doubles a.
+        let a4 = g.speed_of_sound_from_pd(p * Fix128::from_int(4), rho);
+        assert!(approx_eq(
+            a4,
+            a * Fix128::from_int(2),
+            Fix128::from_ratio(1, 1_000_000)
+        ));
+
+        // ρ = 0 guard returns 0 rather than dividing by zero.
+        assert_eq!(g.speed_of_sound_from_pd(p, Fix128::ZERO), Fix128::ZERO);
+    }
 }

@@ -5790,4 +5790,171 @@ mod tests {
         world.islands.sleep_data[2].state = crate::sleeping::SleepState::Sleeping;
         assert_eq!(world.active_body_count(), 0);
     }
+
+    // ---- hook / modifier clearing, RigidBody builders -------------------
+
+    #[cfg(feature = "std")]
+    #[test]
+    fn clear_pre_solve_hooks_restores_normal_contact_response() {
+        // veto hook が入っている間は contact が捨てられて A は動かない
+        let mut world = contact_world(Fix128::ONE, Fix128::ONE, Fix128::ONE);
+        world.add_pre_solve_hook(Box::new(|_a, _b, _c| false));
+        world.add_pre_solve_hook(Box::new(|_a, _b, _c| false));
+        assert_eq!(world.pre_solve_hooks.len(), 2);
+        world.solve_contact_constraints(r(1, 4));
+        assert_eq!(world.bodies[0].position, Vec3Fix::ZERO);
+
+        // clear 後は hook 0 個 → 通常通り λ = 1、inv_w = 1/2 → A += 1/2
+        world.clear_pre_solve_hooks();
+        assert!(world.pre_solve_hooks.is_empty());
+        world.solve_contact_constraints(r(1, 4));
+        assert_eq!(
+            world.bodies[0].position,
+            Vec3Fix::new(r(1, 2), Fix128::ZERO, Fix128::ZERO)
+        );
+        assert_eq!(
+            world.bodies[1].position,
+            Vec3Fix::new(r(1, 2), Fix128::ZERO, Fix128::ZERO)
+        );
+    }
+
+    #[cfg(feature = "std")]
+    #[test]
+    fn clear_contact_modifiers_restores_normal_contact_response() {
+        struct Discard;
+        impl ContactModifier for Discard {
+            fn modify_contact(
+                &self,
+                _a: usize,
+                _b: usize,
+                _c: &mut Contact,
+                _f: &mut Fix128,
+                _r: &mut Fix128,
+            ) -> bool {
+                false
+            }
+        }
+        let mut world = contact_world(Fix128::ONE, Fix128::ONE, Fix128::ONE);
+        world.add_contact_modifier(Box::new(Discard));
+        assert_eq!(world.contact_modifiers.len(), 1);
+        world.solve_contact_constraints(r(1, 4));
+        assert_eq!(world.bodies[0].position, Vec3Fix::ZERO);
+
+        world.clear_contact_modifiers();
+        assert!(world.contact_modifiers.is_empty());
+        world.solve_contact_constraints(r(1, 4));
+        assert_eq!(
+            world.bodies[0].position,
+            Vec3Fix::new(r(1, 2), Fix128::ZERO, Fix128::ZERO)
+        );
+    }
+
+    #[test]
+    fn set_angular_velocity_overwrites_and_drives_rotation_prediction() {
+        let mut world = quiet_world();
+        let i = world.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
+        world.bodies[i].angular_velocity = v3(5, 5, 5);
+        world.bodies[i].set_angular_velocity(v3(0, 0, 2));
+        assert_eq!(world.bodies[i].angular_velocity, v3(0, 0, 2));
+        // 直接代入 (apply_impulse 系と違い static でも通る)
+        let mut st = RigidBody::new_static(Vec3Fix::ZERO);
+        st.set_angular_velocity(v3(1, 0, 0));
+        assert_eq!(st.angular_velocity, v3(1, 0, 0));
+
+        // 設定した ω が積分で使われる: z 軸 angle = 2 * 1/4 の回転
+        world.integrate_positions(r(1, 4));
+        let expected = QuatFix::from_axis_angle(v3(0, 0, 1), r(1, 2))
+            .mul(QuatFix::IDENTITY)
+            .normalize();
+        assert_eq!(world.bodies[i].rotation, expected);
+    }
+
+    #[test]
+    fn with_angular_damping_is_stored_and_applied_once_per_frame_by_step() {
+        let body = RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE).with_angular_damping(r(1, 2));
+        assert_eq!(body.angular_damping, r(1, 2));
+        assert_eq!(body.linear_damping, Fix128::ONE);
+
+        // substeps を変えても damping は frame 毎に 1 回だけ: ω_damped == ω_undamped * 1 * 1/2
+        // (substep 毎なら substeps=4 で 1/16 になる)
+        for substeps in [1usize, 4] {
+            let mut undamped = quiet_world();
+            undamped.config.substeps = substeps;
+            let u = undamped.add_body(
+                RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE).with_velocity(v3(3, 0, 0)),
+            );
+            undamped.bodies[u].set_angular_velocity(v3(0, 0, 2));
+
+            let mut damped = quiet_world();
+            damped.config.substeps = substeps;
+            let d = damped.add_body(
+                RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE)
+                    .with_velocity(v3(3, 0, 0))
+                    .with_angular_damping(r(1, 2)),
+            );
+            damped.bodies[d].set_angular_velocity(v3(0, 0, 2));
+
+            undamped.step(r(1, 4));
+            damped.step(r(1, 4));
+
+            let expected = undamped.bodies[u].angular_velocity * Fix128::ONE * r(1, 2);
+            assert_eq!(
+                damped.bodies[d].angular_velocity, expected,
+                "substeps {substeps}"
+            );
+            // 角 damping は線速度に影響しない
+            assert_eq!(
+                damped.bodies[d].velocity, undamped.bodies[u].velocity,
+                "substeps {substeps}"
+            );
+            let ratio = damped.bodies[d].angular_velocity.z.to_f64()
+                / undamped.bodies[u].angular_velocity.z.to_f64();
+            assert!(
+                (ratio - 0.5).abs() < 1e-9,
+                "substeps {substeps}: ratio {ratio}"
+            );
+        }
+    }
+
+    #[test]
+    fn with_sensor_stores_flag_and_sensor_body_skips_contact_response() {
+        let sensor = RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE).with_sensor(true);
+        assert!(sensor.is_sensor);
+        assert!(!sensor.with_sensor(false).is_sensor);
+
+        // contact_world と同じ配置だが A を builder で sensor にする
+        let mut world = quiet_world();
+        let a =
+            world.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE).with_sensor(true));
+        let b = world.add_body(RigidBody::new_dynamic(v3(1, 0, 0), Fix128::ONE));
+        let contact = Contact {
+            depth: Fix128::ONE,
+            normal: v3(1, 0, 0),
+            point_a: Vec3Fix::ZERO,
+            point_b: Vec3Fix::ZERO,
+        };
+        world
+            .contact_constraints
+            .push(ContactConstraint::new(a, b, contact));
+        world.solve_contact_constraints(r(1, 4));
+        assert_eq!(world.bodies[a].position, Vec3Fix::ZERO);
+        assert_eq!(world.bodies[b].position, v3(1, 0, 0));
+
+        // 自動検出でも sensor は trigger event になり contact constraint を作らない
+        let mut auto = quiet_world();
+        auto.add_body_with_radius(
+            RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE).with_sensor(true),
+            Fix128::ONE,
+        );
+        auto.add_body_with_radius(
+            RigidBody::new_dynamic(
+                Vec3Fix::new(r(3, 2), Fix128::ZERO, Fix128::ZERO),
+                Fix128::ONE,
+            ),
+            Fix128::ONE,
+        );
+        auto.detect_collisions();
+        assert!(auto.contact_constraints.is_empty());
+        assert_eq!(auto.trigger_events().len(), 1);
+    }
 }
