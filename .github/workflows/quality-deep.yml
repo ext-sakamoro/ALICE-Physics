@@ -28,14 +28,17 @@ jobs:
     # 2026-09-15 初回実測: 全 crate = 30,677 mutant × 6-9 s (毎回 1378 test) × -j 2 ≈ 30 h、
     # 300 min timeout で a* 5 file しか進まず cancelled (MISSED 290 = animation_blend 157 /
     # anisotropic 55 / aeroelasticity 46 / analytics_bridge 26 / acoustic_wave 6)
-    # → PR は --in-diff (差分のみ)、週次は決定論 core 8 module を 8 shard 並列 (各 ~1 h 目安)
-    name: Mutation testing (cargo-mutants${{ github.event_name == 'pull_request' && ', in-diff' || format(', core shard {0}/8', matrix.shard) }})
+    # → PR は --in-diff (差分のみ)、週次は決定論 core 8 module を shard 並列
+    # 2 回目実測 (8 shard): GH runner は 1 mutant ≈ 7 s build + 46-76 s test (integration 含む 1382 test)、
+    # 360 mutant / shard で 2h37m、7/8 shard が 180 min timeout → 16 shard + `-- --lib` (integration 除外、
+    # Mac 実測 66 s → 28 s) + timeout 300 に変更 shard 2 の score: caught 64 / missed 192 = 25%
+    name: Mutation testing (cargo-mutants${{ github.event_name == 'pull_request' && ', in-diff' || format(', core shard {0}/16', matrix.shard) }})
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 300
     strategy:
       fail-fast: false
       matrix:
-        shard: ${{ github.event_name == 'pull_request' && fromJSON('[0]') || fromJSON('[0,1,2,3,4,5,6,7]') }}
+        shard: ${{ github.event_name == 'pull_request' && fromJSON('[0]') || fromJSON('[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]') }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -50,13 +53,14 @@ jobs:
         if: github.event_name == 'pull_request'
         run: |
           git diff origin/${{ github.base_ref }}...HEAD > /tmp/pr.diff
-          cargo mutants --in-diff /tmp/pr.diff --timeout 300 -j 2 --output mutants.out || true
-      - name: Mutants (weekly = core 8 module, shard ${{ matrix.shard }}/8)
+          cargo mutants --in-diff /tmp/pr.diff --timeout 300 -j 2 --output mutants.out -- --lib || true
+      - name: Mutants (weekly = core 8 module, shard ${{ matrix.shard }}/16, lib test のみ)
         if: github.event_name != 'pull_request'
         run: |
-          cargo mutants --shard ${{ matrix.shard }}/8 -j 2 --timeout 300 --output mutants.out \
+          cargo mutants --shard ${{ matrix.shard }}/16 -j 2 --timeout 300 --output mutants.out \
             --file src/solver.rs --file src/solver_tgs.rs --file src/math.rs --file src/collider.rs \
-            --file src/bvh.rs --file src/joint.rs --file src/contact_cache.rs --file src/ccd.rs || true
+            --file src/bvh.rs --file src/joint.rs --file src/contact_cache.rs --file src/ccd.rs \
+            -- --lib || true
       - name: Summary
         if: always()
         run: |
