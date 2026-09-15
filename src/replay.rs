@@ -7,12 +7,22 @@
 //!
 //! # Key Encoding
 //!
-//! Single DB instance with multiplexed channels:
+//! Single DB instance, channels **interleaved per frame** so the key sequence
+//! is dense and uniformly spaced — the property ALICE-DB's segment models
+//! (including the `RawLzma` fallback) assume when they map a timestamp back
+//! to a sample index:
 //! ```text
-//! timestamp = channel * MAX_FRAMES + frame
-//! channel   = body_id * 6 + component
-//! component = 0:pos_x, 1:pos_y, 2:pos_z, 3:vel_x, 4:vel_y, 5:vel_z
+//! timestamp = frame * channels + body_id * components + component
+//! channels  = body_count * components
+//! components = 6 (record_frame: pos_x, pos_y, pos_z, vel_x, vel_y, vel_z)
+//!            | 3 (record_positions: pos_x, pos_y, pos_z)
 //! ```
+//! The recorder writes the layout (`body_count`, `components`) to
+//! `<path>/replay_layout` so the player can decode without being told.
+//! Before 1.2.0 the layout was `channel * MAX_FRAMES + frame` (one block of
+//! 10⁷ keys per channel); inside one flushed segment those keys are sparse
+//! and irregular, so every read landed on the wrong sample
+//! (`scan_positions_matches_get_position_per_frame_and_body`).
 //!
 //! # Example
 //!
@@ -45,11 +55,59 @@ use alice_db::AliceDB;
 use std::io;
 use std::path::Path;
 
-/// Maximum frames per channel (~46 hours at 60fps)
-const MAX_FRAMES: i64 = 10_000_000;
+/// Components per body when velocities are recorded: pos_x, pos_y, pos_z, vel_x, vel_y, vel_z
+const FULL_COMPONENTS: usize = 6;
+/// Components per body for position-only recordings
+const POSITION_COMPONENTS: usize = 3;
+/// Layout manifest written next to the ALICE-DB files
+const LAYOUT_FILE: &str = "replay_layout";
 
-/// Components per body: pos_x, pos_y, pos_z, vel_x, vel_y, vel_z
-const COMPONENTS_PER_BODY: i64 = 6;
+/// A replay of a deterministic engine must read back the bits it wrote.
+/// ALICE-DB fits procedural models (polynomial / Fourier) to a series and,
+/// by default, keeps the model when its relative error is below a threshold —
+/// a *lossy* reconstruction. `FitConfig::lossless` stores the per-sample
+/// residuals so the model + residual is exact (requires alice-db ≥
+/// 0.2.0-beta.2, where the mmap read path applies them).
+fn open_lossless(path: &Path) -> io::Result<AliceDB> {
+    let config = alice_db::StorageConfig {
+        data_dir: path.to_path_buf(),
+        fit_config: alice_db::FitConfig {
+            lossless: true,
+            ..alice_db::FitConfig::default()
+        },
+        ..alice_db::StorageConfig::default()
+    };
+    AliceDB::with_config(config)
+}
+
+fn layout_path(db_path: &Path) -> std::path::PathBuf {
+    db_path.join(LAYOUT_FILE)
+}
+
+fn write_layout(db_path: &Path, body_count: usize, components: usize) -> io::Result<()> {
+    std::fs::create_dir_all(db_path)?;
+    std::fs::write(layout_path(db_path), format!("{body_count} {components}\n"))
+}
+
+fn read_layout(db_path: &Path) -> io::Result<Option<(usize, usize)>> {
+    match std::fs::read_to_string(layout_path(db_path)) {
+        Ok(text) => {
+            let mut it = text.split_whitespace();
+            let parse = |s: Option<&str>| s.and_then(|v| v.parse::<usize>().ok());
+            match (parse(it.next()), parse(it.next())) {
+                (Some(b), Some(c)) if c == FULL_COMPONENTS || c == POSITION_COMPONENTS => {
+                    Ok(Some((b, c)))
+                }
+                _ => Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "malformed replay_layout",
+                )),
+            }
+        }
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e),
+    }
+}
 
 /// Records rigid body positions and velocities to ALICE-DB each frame.
 ///
@@ -63,8 +121,10 @@ pub struct ReplayRecorder {
     db: AliceDB,
     frame: u64,
     body_count: usize,
-    /// Pre-computed channel base offsets: `body_id * 6 * MAX_FRAMES`
-    channel_bases: Vec<i64>,
+    /// Components per body (6 after `record_frame`, 3 after
+    /// `record_positions`); fixed by the first recorded frame.
+    components: Option<usize>,
+    db_path: std::path::PathBuf,
     /// Reusable batch buffer — allocated once, cleared each frame
     batch_buf: Vec<(i64, f32)>,
 }
@@ -76,19 +136,40 @@ impl ReplayRecorder {
     /// * `path` - Directory for ALICE-DB storage
     /// * `body_count` - Number of bodies to record per frame
     pub fn new<P: AsRef<Path>>(path: P, body_count: usize) -> io::Result<Self> {
-        let db = AliceDB::open(path)?;
-        // Pre-compute channel base offsets to avoid per-frame multiplication
-        let channel_bases: Vec<i64> = (0..body_count)
-            .map(|i| i as i64 * COMPONENTS_PER_BODY * MAX_FRAMES)
-            .collect();
-        let batch_buf = Vec::with_capacity(body_count * COMPONENTS_PER_BODY as usize);
+        let db_path = path.as_ref().to_path_buf();
+        let db = open_lossless(&db_path)?;
+        let batch_buf = Vec::with_capacity(body_count * FULL_COMPONENTS);
         Ok(Self {
             db,
             frame: 0,
             body_count,
-            channel_bases,
+            components: None,
+            db_path,
             batch_buf,
         })
+    }
+
+    /// Fix the layout on the first recorded frame (and reject mixing
+    /// `record_frame` with `record_positions` in one recording, which would
+    /// break the dense key sequence).
+    fn set_components(&mut self, components: usize) -> io::Result<()> {
+        match self.components {
+            None => {
+                write_layout(&self.db_path, self.body_count, components)?;
+                self.components = Some(components);
+                Ok(())
+            }
+            Some(c) if c == components => Ok(()),
+            Some(_) => Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "a replay records either frames (6 components) or positions (3); do not mix",
+            )),
+        }
+    }
+
+    #[inline]
+    fn key(&self, frame: i64, body: usize, component: usize, components: usize) -> i64 {
+        frame * (self.body_count * components) as i64 + (body * components + component) as i64
     }
 
     /// Record all body positions and velocities for the current frame.
@@ -96,22 +177,25 @@ impl ReplayRecorder {
     /// Zero heap allocation after the first call (reuses internal buffer).
     #[inline]
     pub fn record_frame(&mut self, world: &PhysicsWorld) -> io::Result<()> {
+        self.set_components(FULL_COMPONENTS)?;
         let frame = self.frame as i64;
-        let count = self.body_count.min(world.bodies.len());
         self.batch_buf.clear();
 
-        for i in 0..count {
-            let body = &world.bodies[i];
-            let (px, py, pz) = body.position.to_f32();
-            let (vx, vy, vz) = body.velocity.to_f32();
-            let base = self.channel_bases[i];
-
-            self.batch_buf.push((base + frame, px));
-            self.batch_buf.push((base + MAX_FRAMES + frame, py));
-            self.batch_buf.push((base + 2 * MAX_FRAMES + frame, pz));
-            self.batch_buf.push((base + 3 * MAX_FRAMES + frame, vx));
-            self.batch_buf.push((base + 4 * MAX_FRAMES + frame, vy));
-            self.batch_buf.push((base + 5 * MAX_FRAMES + frame, vz));
+        // every body of the layout gets its 6 keys (missing bodies as 0.0) so
+        // the key sequence stays dense
+        for i in 0..self.body_count {
+            let (px, py, pz, vx, vy, vz) = match world.bodies.get(i) {
+                Some(body) => {
+                    let (px, py, pz) = body.position.to_f32();
+                    let (vx, vy, vz) = body.velocity.to_f32();
+                    (px, py, pz, vx, vy, vz)
+                }
+                None => (0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+            };
+            for (c, v) in [px, py, pz, vx, vy, vz].into_iter().enumerate() {
+                self.batch_buf
+                    .push((self.key(frame, i, c, FULL_COMPONENTS), v));
+            }
         }
 
         self.db.put_batch(&self.batch_buf)?;
@@ -124,18 +208,19 @@ impl ReplayRecorder {
     /// Zero heap allocation after the first call.
     #[inline]
     pub fn record_positions(&mut self, world: &PhysicsWorld) -> io::Result<()> {
+        self.set_components(POSITION_COMPONENTS)?;
         let frame = self.frame as i64;
-        let count = self.body_count.min(world.bodies.len());
         self.batch_buf.clear();
 
-        for i in 0..count {
-            let body = &world.bodies[i];
-            let (px, py, pz) = body.position.to_f32();
-            let base = self.channel_bases[i];
-
-            self.batch_buf.push((base + frame, px));
-            self.batch_buf.push((base + MAX_FRAMES + frame, py));
-            self.batch_buf.push((base + 2 * MAX_FRAMES + frame, pz));
+        for i in 0..self.body_count {
+            let (px, py, pz) = world
+                .bodies
+                .get(i)
+                .map_or((0.0, 0.0, 0.0), |b| b.position.to_f32());
+            for (c, v) in [px, py, pz].into_iter().enumerate() {
+                self.batch_buf
+                    .push((self.key(frame, i, c, POSITION_COMPONENTS), v));
+            }
         }
 
         self.db.put_batch(&self.batch_buf)?;
@@ -167,13 +252,30 @@ impl ReplayRecorder {
 pub struct ReplayPlayer {
     db: AliceDB,
     body_count: usize,
+    /// Components per body from `replay_layout` (6 or 3; 6 when the file is absent)
+    components: usize,
 }
 
 impl ReplayPlayer {
     /// Open a replay for playback.
     pub fn open<P: AsRef<Path>>(path: P, body_count: usize) -> io::Result<Self> {
-        let db = AliceDB::open(path)?;
-        Ok(Self { db, body_count })
+        let layout = read_layout(path.as_ref())?;
+        let db = open_lossless(path.as_ref())?;
+        let (body_count, components) = match layout {
+            Some((b, c)) => (b, c),
+            None => (body_count, FULL_COMPONENTS),
+        };
+        Ok(Self {
+            db,
+            body_count,
+            components,
+        })
+    }
+
+    #[inline]
+    fn key(&self, frame: u64, body: usize, component: usize) -> i64 {
+        frame as i64 * (self.body_count * self.components) as i64
+            + (body * self.components + component) as i64
     }
 
     /// Get position of a body at a specific frame.
@@ -181,12 +283,12 @@ impl ReplayPlayer {
     /// Returns `None` if the frame/body wasn't recorded.
     #[inline]
     pub fn get_position(&self, frame: u64, body_id: usize) -> io::Result<Option<(f32, f32, f32)>> {
-        let f = frame as i64;
-        let base = body_id as i64 * COMPONENTS_PER_BODY * MAX_FRAMES;
-
-        let x = self.db.get(base + f)?;
-        let y = self.db.get(base + MAX_FRAMES + f)?;
-        let z = self.db.get(base + 2 * MAX_FRAMES + f)?;
+        if body_id >= self.body_count {
+            return Ok(None);
+        }
+        let x = self.db.get(self.key(frame, body_id, 0))?;
+        let y = self.db.get(self.key(frame, body_id, 1))?;
+        let z = self.db.get(self.key(frame, body_id, 2))?;
 
         match (x, y, z) {
             (Some(x), Some(y), Some(z)) => Ok(Some((x, y, z))),
@@ -197,12 +299,12 @@ impl ReplayPlayer {
     /// Get velocity of a body at a specific frame.
     #[inline]
     pub fn get_velocity(&self, frame: u64, body_id: usize) -> io::Result<Option<(f32, f32, f32)>> {
-        let f = frame as i64;
-        let base = body_id as i64 * COMPONENTS_PER_BODY * MAX_FRAMES;
-
-        let vx = self.db.get(base + 3 * MAX_FRAMES + f)?;
-        let vy = self.db.get(base + 4 * MAX_FRAMES + f)?;
-        let vz = self.db.get(base + 5 * MAX_FRAMES + f)?;
+        if body_id >= self.body_count || self.components < FULL_COMPONENTS {
+            return Ok(None);
+        }
+        let vx = self.db.get(self.key(frame, body_id, 3))?;
+        let vy = self.db.get(self.key(frame, body_id, 4))?;
+        let vz = self.db.get(self.key(frame, body_id, 5))?;
 
         match (vx, vy, vz) {
             (Some(vx), Some(vy), Some(vz)) => Ok(Some((vx, vy, vz))),
@@ -217,22 +319,43 @@ impl ReplayPlayer {
         start_frame: u64,
         end_frame: u64,
     ) -> io::Result<Vec<(u64, f32, f32, f32)>> {
-        let base = body_id as i64 * COMPONENTS_PER_BODY * MAX_FRAMES;
-        let s = start_frame as i64;
-        let e = end_frame as i64;
-
-        let xs = self.db.scan(base + s, base + e)?;
-        let ys = self.db.scan(base + MAX_FRAMES + s, base + MAX_FRAMES + e)?;
-        let zs = self
-            .db
-            .scan(base + 2 * MAX_FRAMES + s, base + 2 * MAX_FRAMES + e)?;
-
-        let mut result = Vec::with_capacity(xs.len());
-        for ((xt, xv), ((_, yv), (_, zv))) in xs.into_iter().zip(ys.into_iter().zip(zs)) {
-            let frame = (xt - base) as u64;
-            result.push((frame, xv, yv, zv));
+        if body_id >= self.body_count || end_frame < start_frame {
+            return Ok(Vec::new());
         }
-
+        // one dense range over the interleaved keys, then pick this body's
+        // three position channels frame by frame
+        let channels = (self.body_count * self.components) as i64;
+        let rows = self.db.scan(
+            self.key(start_frame, 0, 0),
+            self.key(end_frame, self.body_count - 1, self.components - 1),
+        )?;
+        let mut result: Vec<(u64, f32, f32, f32)> = Vec::new();
+        let mut current: Option<(u64, [Option<f32>; 3])> = None;
+        for (key, value) in rows {
+            let frame = (key / channels) as u64;
+            let ch = (key % channels) as usize;
+            if ch / self.components != body_id {
+                continue;
+            }
+            let comp = ch % self.components;
+            if comp > 2 {
+                continue;
+            }
+            match &mut current {
+                Some((f, acc)) if *f == frame => acc[comp] = Some(value),
+                _ => {
+                    if let Some((f, [Some(x), Some(y), Some(z)])) = current.take() {
+                        result.push((f, x, y, z));
+                    }
+                    let mut acc = [None; 3];
+                    acc[comp] = Some(value);
+                    current = Some((frame, acc));
+                }
+            }
+        }
+        if let Some((f, [Some(x), Some(y), Some(z)])) = current {
+            result.push((f, x, y, z));
+        }
         Ok(result)
     }
 
@@ -314,6 +437,71 @@ mod tests {
         // Velocity was not recorded
         assert!(player.get_velocity(0, 0).unwrap().is_none());
 
+        player.close().unwrap();
+    }
+
+    /// `scan_positions` returns the recorded frames of one body in order, with
+    /// frame-relative indices, and agrees with `get_position` frame by frame;
+    /// it does not leak other bodies' rows.
+    #[test]
+    #[allow(clippy::disallowed_methods)] // f32::powi builds the closed-form reference only
+    fn scan_positions_matches_get_position_per_frame_and_body() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("scan.replay");
+        let mut world = PhysicsWorld::new(PhysicsConfig {
+            gravity: Vec3Fix::ZERO,
+            ..PhysicsConfig::default()
+        });
+        let mut a = RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE);
+        a.velocity = Vec3Fix::from_int(6, 0, 0); // 0.1 m per frame at 60 Hz
+        let mut b = RigidBody::new_dynamic(Vec3Fix::from_int(0, 10, 0), Fix128::ONE);
+        b.velocity = Vec3Fix::from_int(0, 0, -6);
+        world.add_body(a);
+        world.add_body(b);
+        let mut recorder = ReplayRecorder::new(&path, 2).unwrap();
+        for _ in 0..8 {
+            world.step(Fix128::from_ratio(1, 60));
+            recorder.record_frame(&world).unwrap();
+        }
+        recorder.close().unwrap();
+
+        let player = ReplayPlayer::open(&path, 2).unwrap();
+        let rows = player.scan_positions(0, 2, 5).unwrap();
+        assert_eq!(rows.len(), 4, "inclusive frame range 2..=5: {rows:?}");
+        for (i, (frame, x, y, z)) in rows.iter().enumerate() {
+            assert_eq!(*frame, 2 + i as u64, "frame-relative index");
+            let (gx, gy, gz) = player.get_position(*frame, 0).unwrap().expect("recorded");
+            assert!((x - gx).abs() < 1e-6 && (y - gy).abs() < 1e-6 && (z - gz).abs() < 1e-6);
+            // body 0 moves along +x: 0.1 m in frame 0, then × 0.99 per frame (default
+            // frame damping) → x_n = 0.1 · Σ_{k=0}^{n} 0.99^k
+            let want_x: f32 = (0..=*frame).map(|k| 0.1 * 0.99f32.powi(k as i32)).sum();
+            assert!(
+                (x - want_x).abs() < 1e-4,
+                "frame {frame}: x = {x}, want {want_x}"
+            );
+            assert!(
+                y.abs() < 1e-6 && z.abs() < 1e-6,
+                "body 0 does not move in y/z"
+            );
+        }
+        // body 1: y stays 10, z decreases — proves the scan is per body, not interleaved
+        let rows_b = player.scan_positions(1, 0, 7).unwrap();
+        assert_eq!(rows_b.len(), 8);
+        for (frame, x, y, z) in rows_b {
+            assert!(
+                x.abs() < 1e-6 && (y - 10.0).abs() < 1e-6,
+                "body 1 frame {frame}: ({x}, {y}, {z})"
+            );
+            let want_z: f32 = -(0..=frame)
+                .map(|k| 0.1 * 0.99f32.powi(k as i32))
+                .sum::<f32>();
+            assert!(
+                (z - want_z).abs() < 1e-4,
+                "body 1 frame {frame}: z = {z}, want {want_z}"
+            );
+        }
+        // out of range: empty
+        assert!(player.scan_positions(0, 20, 30).unwrap().is_empty());
         player.close().unwrap();
     }
 }

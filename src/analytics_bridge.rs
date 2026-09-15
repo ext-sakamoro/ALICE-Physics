@@ -121,4 +121,60 @@ mod tests {
         assert!(tel.energy_drift_p99() >= 0.0);
         assert!(tel.unique_collision_pairs() >= 1.0);
     }
+
+    /// p99 estimators: for a known distribution the 99th percentile is bracketed
+    /// by the sample values (DDSketch relative error), and it is monotone —
+    /// feeding a larger tail raises it, feeding only small values keeps it low.
+    #[test]
+    fn step_time_and_contacts_p99_track_the_upper_tail() {
+        let mut tel = PhysicsTelemetry::new();
+        // 990 steps at 1.0 ms and 10 at 50 ms: p99 sits at the boundary of the
+        // 50 ms tail (between 1 and 50, and >= the p50 of 1 ms)
+        for _ in 0..990 {
+            tel.record_step_time(1000.0);
+            tel.record_contacts(10.0);
+        }
+        for _ in 0..10 {
+            tel.record_step_time(50_000.0);
+            tel.record_contacts(400.0);
+        }
+        let st99 = tel.step_time_p99();
+        let ct99 = tel.contacts_p99();
+        assert!(
+            st99 >= tel.step_time_p50(),
+            "p99 {st99} below p50 {}",
+            tel.step_time_p50()
+        );
+        assert!(
+            (1000.0 * 0.95..=50_000.0 * 1.05).contains(&st99), // DDSketch relative error
+            "step p99 {st99} outside [1 ms, 50 ms]"
+        );
+        assert!(
+            ct99 >= tel.contacts_p50() * 0.95,
+            "contacts p99 {ct99} below p50"
+        );
+        assert!(
+            (10.0 * 0.95..=400.0 * 1.05).contains(&ct99),
+            "contacts p99 {ct99} outside [10, 400]"
+        );
+        // a uniform stream: p99 ≈ the (only) value within sketch error
+        let mut flat = PhysicsTelemetry::new();
+        for _ in 0..500 {
+            flat.record_step_time(2000.0);
+            flat.record_contacts(3.0);
+        }
+        assert!(
+            (flat.step_time_p99() - 2000.0).abs() < 2000.0 * 0.05,
+            "{}",
+            flat.step_time_p99()
+        );
+        assert!(
+            (flat.contacts_p99() - 3.0).abs() < 3.0 * 0.05,
+            "{}",
+            flat.contacts_p99()
+        );
+        // ordering: heavier tail → larger p99
+        assert!(tel.step_time_p99() > flat.step_time_p99());
+        assert!(tel.contacts_p99() > flat.contacts_p99());
+    }
 }

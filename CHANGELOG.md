@@ -141,6 +141,36 @@ contact normal, and the contact multiplier. Everything else is bit-compatible.
   sign/layer, `hyperelastic` Mooney–Rivlin formula, `prestressed` cable
   stiffness (uniform vs point load), `mass_properties::convex_hull_mass_properties`
   reference point.
+- **`replay` was unreadable and `db_bridge` metrics read back as zeros.**
+  Two independent causes: (a) the published `alice-db 0.2.0-beta.1` returns
+  0.0 for every `RawLzma`-stored value from its mmap read path and ignores
+  the lossless residuals there (fixed in alice-db 0.2.0-beta.2, which this
+  crate now requires for the `replay` feature); (b) `ReplayRecorder` keyed
+  samples as `channel × 10⁷ + frame`, a sparse and irregular sequence inside
+  one segment, while alice-db maps a timestamp back to a sample by assuming
+  uniform spacing — every read landed on the wrong sample. Keys are now
+  interleaved per frame (`frame × channels + body × components + component`,
+  dense), a `replay_layout` manifest records `(body_count, components)`, and
+  both `ReplayRecorder` / `PhysicsMetricsSink` open their databases in
+  lossless mode so a deterministic replay reads back exactly what it wrote
+  (default alice-db mode keeps a fitted polynomial / Fourier model when its
+  relative error is under a threshold — a lossy approximation).
+  `record_frame` and `record_positions` may no longer be mixed in one
+  recording. Contract tests: `scan_positions_matches_get_position_per_frame_and_body`,
+  `query_bodies_contacts_and_record_energy_hit_their_own_databases`.
+- **Engineering modules, second validation batch (`tests/engineering_oracles_fluid.rs`,
+  37 oracles over 24 fluid / thermal / field modules).** Found (reported in
+  the file's test names / comments, fixes tracked separately): `compressible::
+  stagnation_pressure_ratio` uses exponent 4 instead of γ/(γ−1) (9.5 % off at
+  M = 1, 34 % at M = 2); `non_newtonian::PowerLaw::shear_thinning` evaluates
+  `K·γ̇^(1−n)` (a *decreasing* flow curve) instead of `K·γ̇^(1/n)`;
+  `buoyancy_zone::submerged_fraction` is discontinuous at the surface and
+  `depth_below_surface` gives full buoyancy below the pool floor;
+  `cfd_solver::diffuse_velocity` skips boundary faces (wall divergence);
+  `wave_ship::spectrum_density` is not JONSWAP; `aeroelasticity` van der Pol
+  damping lacks the `Ω_f` factor; `thermal` / `phase_change` melt transfer is
+  non-conservative; `surface_tension_csf::SIGMA_STEEL_ARGON` = 1.0 but
+  documented 1.6.
 - **31 exported `extern "C"` functions now catch panics** (`ffi_guard`: sentinel
   return + per-thread message via the new `alice_physics_last_error` /
   `alice_physics_clear_last_error` / `alice_physics_string_free`). Rust 1.81+
