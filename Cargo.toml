@@ -1,6 +1,6 @@
 [package]
 name = "alice-physics"
-version = "1.2.0"
+version = "1.3.0"
 edition = "2021"
 # MSRV-aware dependency resolution (cargo 1.84+); paired with the CI `msrv` job
 # that compiles with exactly `rust-version` (std + no_std) so the claim is verified.
@@ -46,7 +46,7 @@ crate-type = ["rlib", "cdylib", "staticlib"]
 
 [features]
 default = ["std"]
-std = []
+std = ["alice-det-math/std"]
 simd = []            # Enable SIMD (AVX2) optimizations for x86_64
 parallel = ["rayon"] # Parallel constraint solving via graph coloring
 python = ["pyo3", "numpy"] # Python bindings (PyO3 + NumPy zero-copy)
@@ -71,6 +71,11 @@ js-sys = { version = "0.3", optional = true }
 alice-ml = { version = "0.2", optional = true, default-features = false, features = ["std"] }
 alice-db = { version = "0.2.0-beta.2", optional = true, default-features = false }
 alice-analytics = { version = "0.1", optional = true, default-features = false, features = ["std"] }
+# 1.3.0: `det_math` moved to its own crate so alice-sdf (and anything else)
+# evaluates the same transcendental law; re-exported as `alice_physics::det_math`.
+# no_std-capable (software sqrt without `std`), so the module is no longer
+# gated on `std`.
+alice-det-math = { version = "0.1", default-features = false }
 
 [dev-dependencies]
 tempfile = "3.10"

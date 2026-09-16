@@ -2339,6 +2339,13 @@ impl core::marker::UnsafeUnpin for alice_physics::deformable::DeformableConfig
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::deformable::DeformableConfig
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::deformable::DeformableConfig
 pub mod alice_physics::det_math
+pub use alice_physics::det_math::acos64
+pub use alice_physics::det_math::asin64
+pub use alice_physics::det_math::round
+pub use alice_physics::det_math::round64
+pub use alice_physics::det_math::sin_cos
+pub use alice_physics::det_math::sqrt
+pub use alice_physics::det_math::sqrt64
 pub fn alice_physics::det_math::acos(f32) -> f32
 pub fn alice_physics::det_math::asin(f32) -> f32
 pub fn alice_physics::det_math::atan(f32) -> f32

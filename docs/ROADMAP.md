@@ -3,7 +3,11 @@
 Canonical roadmap for the alice-physics crate. Primary source of truth.
 Memory index pointer: `[[reference-alice-physics-v1-roadmap]]` in claude-config.
 
-## 🎉 現在位置 (2026-09-15): v1.2.0 (セルフレビュー 3 round + 解析解 oracle 対応、publish は user 判断)
+## 🎉 現在位置 (2026-09-16): v1.3.0 (`det_math` → `alice-det-math` crate 切り出し、crates.io publish)
+
+**v1.3.0 = `det_math` を [`alice-det-math`](https://crates.io/crates/alice-det-math) 0.1.0 として独立 crate 化し `pub use` で再 export** (API 不変、golden f32 13 scenario bit 不変) alice-sdf 3.1.0 が同じ crate で評価するので `SdfField` 境界が crate 跨ぎで bit-exact になる (下表「SDF 境界の Fix128 化」の前提条件) 副産物: `det_math` が `std` gate 不要 (software sqrt)、初回 CI が x86 vs ARM の default NaN 符号差 (huge trig 引数 / cbrt overflow) を検出して修正
+
+## 前回位置 (2026-09-15): v1.2.0 (セルフレビュー 3 round + 解析解 oracle 対応)
 
 **v1.2.0 = セルフレビュー (別環境 Linux x86_64 実測、Round 1-3) 由来の重大修正 + `tests/analytic_physics.rs` 10 本** (詳細 [`CHANGELOG.md`](../CHANGELOG.md) `[1.2.0]`):
 - 修正 (挙動変化、golden 再 pin): damping を frame 単位化 (default で重力が効いていなかった) / XPBD λ 累積 (iteration 依存剛性) / sphere contact normal 逆向き / substep 毎 collision detection + contact λ 累積 (5 m/s 衝突が 700 m/s になっていた)

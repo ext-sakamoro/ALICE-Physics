@@ -270,8 +270,56 @@ pub mod damping_rayleigh;
 pub mod db_bridge;
 pub mod debug_render;
 pub mod deformable;
-#[cfg(feature = "std")]
-pub mod det_math;
+/// Deterministic `f32` / `f64` transcendentals (cross-platform bit-exact).
+///
+/// Since 1.3.0 the implementation lives in the [`alice_det_math`] crate;
+/// every function here is an `#[inline]` delegation to it, so
+/// `alice_physics::det_math::sin` and `alice_det_math::sin` are the same law
+/// — ALICE-SDF's evaluator uses the same crate, which is what makes the
+/// `SdfField` boundary bit-exact across the two. Available without `std`
+/// (software `sqrt`; same bits).
+///
+/// The functions are delegations rather than a `pub use` because
+/// `cargo-semver-checks` cannot see items re-exported from another crate and
+/// would report the 1.2.0 API as removed.
+pub mod det_math {
+    pub use alice_det_math::{acos64, asin64, round, round64, sin_cos, sqrt, sqrt64};
+
+    macro_rules! delegate {
+        ($(fn $name:ident($($arg:ident: $ty:ty),*) -> $ret:ty;)*) => {
+            $(
+                #[doc = concat!("Delegates to [`alice_det_math::", stringify!($name), "`].")]
+                #[inline]
+                #[must_use]
+                pub fn $name($($arg: $ty),*) -> $ret {
+                    alice_det_math::$name($($arg),*)
+                }
+            )*
+        };
+    }
+
+    delegate! {
+        fn sin(x: f32) -> f32;
+        fn cos(x: f32) -> f32;
+        fn exp(x: f32) -> f32;
+        fn ln(x: f32) -> f32;
+        fn powf(x: f32, y: f32) -> f32;
+        fn powi(x: f32, n: i32) -> f32;
+        fn cbrt(x: f32) -> f32;
+        fn hypot(x: f32, y: f32) -> f32;
+        fn atan(x: f32) -> f32;
+        fn atan2(y: f32, x: f32) -> f32;
+        fn asin(x: f32) -> f32;
+        fn acos(x: f32) -> f32;
+        fn tan(x: f32) -> f32;
+        fn tanh(x: f32) -> f32;
+        fn atan64(x: f64) -> f64;
+        fn atan2_64(y: f64, x: f64) -> f64;
+        fn exp64(x: f64) -> f64;
+        fn ln64(x: f64) -> f64;
+        fn powf64(x: f64, y: f64) -> f64;
+    }
+}
 pub mod dynamic_bvh;
 pub mod electromagnetic;
 pub mod ellipsoid;
