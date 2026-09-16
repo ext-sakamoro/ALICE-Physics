@@ -15,7 +15,7 @@ were introduced during that release window.
 
 ## [1.2.0] - 2026-09-15
 
-Minor release driven by an external review of 1.1.0 (three rounds, clone →
+Minor release driven by a maintainer self-review of 1.1.0 (three rounds, independent environment: clone →
 build → bench on Linux x86_64) plus the analytic-oracle test suite written in
 response. Four of the fixes below change simulation results
 (**documented bugfix drift**, golden hashes re-pinned as described in
@@ -475,7 +475,7 @@ contact normal, and the contact multiplier. Everything else is bit-compatible.
   Three of the four review bugs above were fixed without any of the 1456
   pre-existing tests failing; these oracles fail on 1.1.0.
 - `benches/physics_bench.rs::thousand_overlapping_spheres_1_step` — the
-  external review's 1000-body scene (dense first frame 65 ms, 7.7 ms/frame
+  self-review's 1000-body scene (dense first frame 65 ms, 7.7 ms/frame
   once the bodies separate, Apple M-series).
 - `fuzz/fuzz_targets/fuzz_step_parity.rs` — arbitrary scenes (overlapping
   spheres, rods under contact, sleeping, mixed masses, every substep /

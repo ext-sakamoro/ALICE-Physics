@@ -3,9 +3,9 @@
 Canonical roadmap for the alice-physics crate. Primary source of truth.
 Memory index pointer: `[[reference-alice-physics-v1-roadmap]]` in claude-config.
 
-## 🎉 現在位置 (2026-09-15): v1.2.0 (外部レビュー 3 round + 解析解 oracle 対応、publish は user 判断)
+## 🎉 現在位置 (2026-09-15): v1.2.0 (セルフレビュー 3 round + 解析解 oracle 対応、publish は user 判断)
 
-**v1.2.0 = 外部レビュー (Linux x86_64 実測、Round 1-3) 由来の重大修正 + `tests/analytic_physics.rs` 10 本** (詳細 [`CHANGELOG.md`](../CHANGELOG.md) `[1.2.0]`):
+**v1.2.0 = セルフレビュー (別環境 Linux x86_64 実測、Round 1-3) 由来の重大修正 + `tests/analytic_physics.rs` 10 本** (詳細 [`CHANGELOG.md`](../CHANGELOG.md) `[1.2.0]`):
 - 修正 (挙動変化、golden 再 pin): damping を frame 単位化 (default で重力が効いていなかった) / XPBD λ 累積 (iteration 依存剛性) / sphere contact normal 逆向き / substep 毎 collision detection + contact λ 累積 (5 m/s 衝突が 700 m/s になっていた)
 - 修正 (bit 互換): `Fix128::sqrt` digit recurrence 50× / MSRV 1.70.0 → **1.85** 実証 + `resolver = "3"` / `crate-type` cdylib+staticlib / `panic = "unwind"` / SIMD dead code 除去 / README perf 表実測化 / lib.rs claim
 - **規律**: 解析解 oracle test を default config で必須 (substeps / iterations を変えて結果不変を assert)、golden hash は「変化検出」であって「正しさ」ではない

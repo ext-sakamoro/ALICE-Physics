@@ -16,7 +16,7 @@ English | [日本語](README_JP.md)
 A high-precision physics engine designed for deterministic simulation across different platforms and hardware. The rigid-body core uses 128-bit fixed-point arithmetic (`Fix128`); the surrounding engineering / field modules use IEEE `f32` / `f64` with every transcendental routed through the crate's own `det_math`. Either way the result is bit-exact regardless of CPU, compiler, or operating system — see [Determinism scope](#determinism-scope).
 <!-- claim-test: determinism_freefall -->
 
-**Published on crates.io** (1.0.0 semver-locked stable released 2026-09-14; 1.1.0 makes every module cross-platform bit-exact via `det_math`; 1.2.0 fixes the default-config physics found by the 2026-09-15 external review and adds analytic-solution oracles — see `CHANGELOG.md`).
+**Published on crates.io** (1.0.0 semver-locked stable released 2026-09-14; 1.1.0 makes every module cross-platform bit-exact via `det_math`; 1.2.0 fixes the default-config physics found by the 2026-09-15 maintainer self-review and adds analytic-solution oracles — see `CHANGELOG.md`).
 <!-- claim-test: golden_sim_field --> Install with `cargo add alice-physics`. All 9 v1.0 roadmap items complete — see [`CHANGELOG.md`](CHANGELOG.md) for the full release scope, [`docs/MIGRATION_0.x_TO_1.0.md`](docs/MIGRATION_0.x_TO_1.0.md) for 0.x → 1.0 migration, and [`docs/ECOSYSTEM_CONTRACTS.md`](docs/ECOSYSTEM_CONTRACTS.md) for frozen partner API contracts.
 
 ### Determinism scope
@@ -38,7 +38,7 @@ Both golden suites run on macOS ARM / x86, Linux ARM / x86, Windows and `wasm32-
 ### Correctness scope — what "deterministic" does and does not tell you
 
 Bit-exactness says every peer computes the same numbers; it says nothing
-about whether those numbers are right. The 2026-09-15 external review found
+about whether those numbers are right. The 2026-09-15 maintainer self-review found
 four physics bugs in the default configuration with 1456 tests and 44 golden
 hashes green (see `CHANGELOG.md` 1.2.0), so the crate now separates the two
 properties explicitly. **Validation** below means "compared against a
@@ -2238,7 +2238,7 @@ machine-dependent; the algorithmic column is what the implementation actually do
 | World step, 10 bodies × 60 steps (default config) | | 398 µs (1.1.0: 5.11 ms) |
 | World step, 1000 overlapping spheres (10³ grid, default config: detection in each of 8 substeps) | `thousand_overlapping_spheres_1_step` | first frame 65 ms (2 700 contacts, 57 k broad-phase candidates × 8); frames 2–10 as the bodies separate: 7.7 ms/frame |
 
-External review of 1.1.0 (Linux x86_64) measured 1000 overlapping bodies at
+The maintainer's self-review of 1.1.0 (independent Linux x86_64 environment) measured 1000 overlapping bodies at
 432 ms/frame with frame-level detection; 1.2.0 detects in every substep (a
 correctness requirement, see CHANGELOG), so the dense first frame costs more and
 the steady state less. Re-run the bench on your target before quoting numbers.
