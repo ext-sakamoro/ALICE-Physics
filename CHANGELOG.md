@@ -226,6 +226,23 @@ contact normal, and the contact multiplier. Everything else is bit-compatible.
   correction as `w_a : w_b`. Oracles: `hinge_alignment_removes_the_full_error_in_one_solve_split_by_inertia`,
   `hinge_limits_are_signed_and_reached_in_one_solve` (found by the
   mutation-score campaign on `joint.rs`).
+- `Fix128::atan2(y, x)` formed `y / x` unconditionally; with `|x|` a few
+  ulp the quotient overflows the 64-bit integer part (`1 / 2⁻⁶³ = 2⁶³`), so
+  `atan2(1, 2 ulp)` returned −0.755 instead of π/2. Visible as a wrong-way
+  `quat_slerp` between nearly opposite rotations whose fixed-point dot
+  product truncates to ±2 ulp. For `|y| > |x|` the complement
+  `±π/2 − atan(x / y)` is used now; every case is within 1e-12 of the f64
+  reference. Golden hashes unchanged (no pinned scenario hit the range).
+- `AnimationClip::sample` before the first keyframe extrapolated the first
+  segment backwards (`local_t < 0`: keys at t = 1 / 3 sampled at t = 0 gave
+  `2·p₀ − p₁`); it now holds the first keyframe's pose.
+- `analytics_bridge::PhysicsTelemetry::new` built its `DDSketch256` with
+  `α = 0.01`, whose 256 bins only cover `[0.28, 45.6]`; every step time above
+  45 µs (the documented unit) fell outside the histogram and `p50` / `p99`
+  both degraded to the running maximum (990 × 1000 µs + 10 × 50 000 µs
+  reported p50 = 50 000). Now `α = 0.05` (`PhysicsTelemetry::ALPHA`, range
+  `≈ [1.6e-3, 2.1e8]`, as `alice-analytics` recommends for the 256-bin
+  sketch). Found by the mutation-score campaign on the a* modules.
 - `collider::epa` returned the outward face normal of A⊖B — the A→B
   direction — while `Contact::normal` is documented (and consumed by the
   solver) as B→A; and faces through the origin (touching shapes) kept their

@@ -859,6 +859,21 @@ fn cordic_atan2(y: Fix128, x: Fix128) -> Fix128 {
         };
     }
 
+    // Keep the CORDIC argument in [−1, 1]: for |y| > |x| use the complement
+    // atan2(y, x) = ±π/2 − atan(x / y). Before 1.2.0 `y / x` was formed
+    // unconditionally, and with |x| a few ulp it overflowed the 64-bit
+    // integer part (1 / 2⁻⁶³ = 2⁶³), so atan2(1, 2 ulp) returned −0.755
+    // instead of π/2 — visible as a wrong-way quaternion slerp between
+    // nearly opposite rotations.
+    if y.abs() > x.abs() {
+        let complement = cordic_atan(x / y);
+        return if y.is_negative() {
+            Fix128::HALF_PI.neg() - complement
+        } else {
+            Fix128::HALF_PI - complement
+        };
+    }
+
     let ratio = y / x;
     let base_atan = cordic_atan(ratio);
 
@@ -3092,5 +3107,42 @@ mod tests {
             // a × b == -(b × a)
             assert_eq!(b.cross_simd(a), simd.scale(fi(-1)));
         }
+    }
+    /// `atan2` with |y| > |x|: the ratio `y / x` overflows the i64 integer
+    /// part once |x| is a few ulp (1 / 2⁻⁶³ = 2⁶³), so before 1.2.0
+    /// `atan2(1, 2 ulp)` returned −0.755. The complement form keeps every
+    /// case within 1e-12 of the f64 reference, including the quadrant
+    /// boundaries and the exact axes.
+    #[test]
+    #[allow(clippy::disallowed_methods)]
+    fn atan2_is_accurate_when_x_is_a_few_ulp() {
+        let ulp2 = Fix128::from_raw(0, 2);
+        let cases = [
+            (Fix128::ONE, ulp2),
+            (Fix128::ONE, -ulp2),
+            (-Fix128::ONE, ulp2),
+            (-Fix128::ONE, -ulp2),
+            (Fix128::ONE - Fix128::from_raw(0, 3), ulp2),
+            (Fix128::from_ratio(7, 3), Fix128::from_ratio(-1, 5)),
+            (Fix128::from_ratio(-7, 3), Fix128::from_ratio(1, 5)),
+            (Fix128::from_ratio(1, 5), Fix128::from_ratio(-7, 3)),
+            (Fix128::from_int(3), Fix128::from_int(4)),
+            (Fix128::from_int(4), Fix128::from_int(3)),
+        ];
+        for (y, x) in cases {
+            let got = Fix128::atan2(y, x).to_f64();
+            let want = y.to_f64().atan2(x.to_f64());
+            assert!(
+                (got - want).abs() < 1e-12,
+                "atan2({}, {}) = {got}, want {want}",
+                y.to_f64(),
+                x.to_f64()
+            );
+        }
+        // exact axes are unchanged
+        assert_eq!(Fix128::atan2(Fix128::ONE, Fix128::ZERO), Fix128::HALF_PI);
+        assert_eq!(Fix128::atan2(-Fix128::ONE, Fix128::ZERO), -Fix128::HALF_PI);
+        // atan(0) through CORDIC is ~5e-15, not exactly 0 (unchanged behaviour)
+        assert!(Fix128::atan2(Fix128::ZERO, Fix128::ONE).abs() < Fix128::from_f64(1e-12));
     }
 }
