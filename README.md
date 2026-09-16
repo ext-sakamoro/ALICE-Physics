@@ -83,7 +83,7 @@ All bit-exact across platforms — Fix128 modules by integer arithmetic, `f32` m
 - **Hard-gated semver enforcement** — `cargo semver-checks` blocks breaking-API PRs.
 - **Ecosystem contracts frozen** — [`docs/ECOSYSTEM_CONTRACTS.md`] catalogues API for ALICE-TRT (`GpuSolverBridge`), ALICE-SDF (`SdfField`), ALICE-Bamboo, ALICE-Anima, ALICE-Kinematics.
 - **8/8 fuzz targets** — `fuzz_step` / `fuzz_collision` / `fuzz_deterministic_roundtrip` / `fuzz_joint` / `fuzz_cfd` / `fuzz_ccd` / `fuzz_trimesh` / `fuzz_structural`.
-- **1695 lib tests + 44 determinism tests** — all passing on all 6 platforms.
+- **1730 lib tests + 44 determinism tests** — all passing on all 6 platforms.
 
 **v0.12.0 addition** — `GpuSolverBridge` gains a joint-solve pipeline
 (`send_joints` / `send_body_rotations` / `dispatch_joint_solve_iteration`)
@@ -425,7 +425,7 @@ ALICE-Physics achieves a **perfect 100/100 optimization score** across 6 layers:
 | **L3: Compute** | 20/20 | Warm-start `cached_lambda`, reciprocal precomputation (`inv_rest_length`, `inv_rest_density`) |
 | **L4: GPU & Throughput** | 15/15 | `SIMD_WIDTH` const + `simd_width()`, `GpuSdfInstancedBatch`/`GpuSdfMultiDispatch`, `batch_size()` |
 | **L5: Build Profile** | 10/10 | `opt-level=3`, `lto="fat"`, `codegen-units=1`, `panic="abort"`, `strip=true` |
-| **L6: Code Quality** | 20/20 | 1695 lib tests + 13 analytic-solution oracles + 105 engineering oracles (5 thermal/fatigue + 34 solid + 39 fluid + 27 misc) + 13 default-config oracles + 53 alice-bamboo integration tests + 8 fuzz targets + 44 determinism tests (6-platform bit-exact, Fix128 + f32 golden), clippy `-D warnings` (default + full native feature set, all targets), MSRV 1.85 CI job (default / no_std / native), `#![deny(missing_docs)]`, cargo-semver-checks hard-gated |
+| **L6: Code Quality** | 20/20 | 1730 lib tests + 13 analytic-solution oracles + 105 engineering oracles (5 thermal/fatigue + 34 solid + 39 fluid + 27 misc) + 13 default-config oracles + 53 alice-bamboo integration tests + 8 fuzz targets + 44 determinism tests (6-platform bit-exact, Fix128 + f32 golden), clippy `-D warnings` (default + full native feature set, all targets), MSRV 1.85 CI job (default / no_std / native), `#![deny(missing_docs)]`, cargo-semver-checks hard-gated |
 | **Total** | **100/100** | |
 
 ### L1: Memory Layout (15/15)
@@ -504,10 +504,10 @@ strip = true           # Strip symbols
 
 ### L6: Code Quality (20/20)
 
-- **1695 lib tests + 44 determinism tests** across the alice-physics crate (Iter 2-6 audit + v1.0 stable release additions + v1.0.1 coloring / island / Fix128 tests + 1.2.0 mutation-score batches 1-8 and analytic oracles)
+- **1730 lib tests + 44 determinism tests** across the alice-physics crate (Iter 2-6 audit + v1.0 stable release additions + v1.0.1 coloring / island / Fix128 tests + 1.2.0 mutation-score batches 1-8 and analytic oracles)
 - **53 alice-bamboo integration tests** (end-to-end 3D-print safety scenarios)
 - **9 fuzz targets** (`fuzz_step`, `fuzz_collision`, `fuzz_deterministic_roundtrip`, `fuzz_joint`, `fuzz_cfd`, `fuzz_ccd`, `fuzz_trimesh`, `fuzz_structural`, `fuzz_step_parity`)
-- **Total: 2001 passing tests** in `cargo test` (default features: 1695 lib + 44 determinism (9 Fix128 golden + 13 f32 golden + 22 semantic) + 220 integration / oracle (72 + 13 analytic + 105 engineering + 13 default-config + 3 parallel + 14 other) + 21 doctests + 3 ignored; 1728 lib tests with the full native feature set), clippy: 0 warnings under `-D warnings` (default + `std,simd,parallel,ffi,gpu-solver-bridge,neural,replay,analytics`, `--all-targets`), `#![deny(missing_docs)]` (0 warnings)
+- **Total: 2036 passing tests** in `cargo test` (default features: 1730 lib + 44 determinism (9 Fix128 golden + 13 f32 golden + 22 semantic) + 220 integration / oracle (72 + 13 analytic + 105 engineering + 13 default-config + 3 parallel + 14 other) + 21 doctests + 3 ignored; 1763 lib tests with the full native feature set), clippy: 0 warnings under `-D warnings` (default + `std,simd,parallel,ffi,gpu-solver-bridge,neural,replay,analytics`, `--all-targets`), `#![deny(missing_docs)]` (0 warnings)
 
 ---
 
@@ -643,7 +643,7 @@ ALICE-Physics guarantees **bit-exact results** across platforms for every module
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                          ALICE-Physics v1.0.0 stable                         │
-│    1695 lib tests + 44 determinism tests (9 golden + 22 semantic), 6 CI     │
+│    1730 lib tests + 44 determinism tests (9 golden + 22 semantic), 6 CI     │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │  Core Layer                                                                  │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐          │
@@ -2341,7 +2341,7 @@ All feature combinations are tested in CI across macOS, Ubuntu, and Windows:
 | Combination | Status | Tests |
 |-------------|--------|-------|
 | `--no-default-features` (no_std) | ✅ | 9 |
-| `--features std` (default) | ✅ | 1695 unit + 72 integration + 13 analytic + 105 engineering + 13 default-config oracles + 44 determinism + 21 doc |
+| `--features std` (default) | ✅ | 1730 unit + 72 integration + 13 analytic + 105 engineering + 13 default-config oracles + 44 determinism + 21 doc |
 | `--features simd` | ✅ | 20 |
 | `--features parallel` | ✅ | 20 |
 | `--features "simd,parallel"` | ✅ | 20 |

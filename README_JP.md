@@ -378,7 +378,7 @@ ALICE-Physicsは6層にわたる最適化で **100/100 の完璧なスコア** �
 | **L3: 計算戦略** | 20/20 | ウォームスタート `cached_lambda`、逆数事前計算（`inv_rest_length`、`inv_rest_density`） |
 | **L4: GPU・スループット** | 15/15 | `SIMD_WIDTH`定数 + `simd_width()`、`GpuSdfInstancedBatch`/`GpuSdfMultiDispatch`、`batch_size()` |
 | **L5: ビルドプロファイル** | 10/10 | `opt-level=3`、`lto="fat"`、`codegen-units=1`、`panic="abort"`、`strip=true` |
-| **L6: コード品質** | 20/20 | 1695 lib テスト + 解析解 oracle 13 本 + engineering oracle 105 本 (thermal/fatigue 5 + solid 34 + fluid 39 + misc 27) + default config oracle 13 本 + 53 alice-bamboo 統合テスト + 8 fuzz target + 44 決定論テスト、clippy `-D warnings` (default + 全 native feature set、all targets)、MSRV 1.85 CI job (default / no_std / native)、`#![deny(missing_docs)]`、cargo-semver-checks hard-gate |
+| **L6: コード品質** | 20/20 | 1730 lib テスト + 解析解 oracle 13 本 + engineering oracle 105 本 (thermal/fatigue 5 + solid 34 + fluid 39 + misc 27) + default config oracle 13 本 + 53 alice-bamboo 統合テスト + 8 fuzz target + 44 決定論テスト、clippy `-D warnings` (default + 全 native feature set、all targets)、MSRV 1.85 CI job (default / no_std / native)、`#![deny(missing_docs)]`、cargo-semver-checks hard-gate |
 | **合計** | **100/100** | |
 
 ### L1: メモリレイアウト (15/15)
@@ -457,10 +457,10 @@ strip = true           # シンボル除去
 
 ### L6: コード品質 (20/20)
 
-- **1695 lib テスト** (alice-physics crate、Session 4 + v0.14.0 preview 1/2 + v1.0.1 coloring / island / Fix128 + 1.2.0 mutation batch 1-8 / 解析解 oracle)
+- **1730 lib テスト** (alice-physics crate、Session 4 + v0.14.0 preview 1/2 + v1.0.1 coloring / island / Fix128 + 1.2.0 mutation batch 1-8 / 解析解 oracle)
 - **53 alice-bamboo 統合テスト** (3D プリント安全性のエンドツーエンド)
 - **7 fuzz target** (`fuzz_step` / `fuzz_collision` / `fuzz_deterministic_roundtrip` / `fuzz_joint` / `fuzz_cfd` / `fuzz_ccd` / `fuzz_trimesh`)
-- **合計: 2001 テストパス** (`cargo test` default feature: 1695 lib + 44 決定論 (Fix128 golden 9 + f32 golden 13 + semantic 22) + 75 統合 + 21 doctest、全 native feature set では lib 1426)、clippy: `-D warnings` で 0 警告 (default + `std,simd,parallel,ffi,gpu-solver-bridge,neural,replay,analytics`、`--all-targets`)、`#![deny(missing_docs)]` (0 warning)
+- **合計: 2036 テストパス** (`cargo test` default feature: 1730 lib + 44 決定論 (Fix128 golden 9 + f32 golden 13 + semantic 22) + 75 統合 + 21 doctest、全 native feature set では lib 1426)、clippy: `-D warnings` で 0 警告 (default + `std,simd,parallel,ffi,gpu-solver-bridge,neural,replay,analytics`、`--all-targets`)、`#![deny(missing_docs)]` (0 warning)
 
 ---
 
@@ -1932,7 +1932,7 @@ cargo build --release --features ffi
 | 組み合わせ | ステータス | テスト数 |
 |-----------|----------|---------|
 | `--no-default-features` (no_std) | ✅ | 9 |
-| `--features std` (default) | ✅ | 1695 unit + 72 integration + 解析解 13 + engineering 105 + default config oracle 13 + 決定論 44 + 21 doc |
+| `--features std` (default) | ✅ | 1730 unit + 72 integration + 解析解 13 + engineering 105 + default config oracle 13 + 決定論 44 + 21 doc |
 | `--features simd` | ✅ | 20 |
 | `--features parallel` | ✅ | 20 |
 | `--features "simd,parallel"` | ✅ | 20 |

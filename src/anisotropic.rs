@@ -671,4 +671,416 @@ mod tests {
             assert_eq!(r.failure_index, Fix128::ZERO);
         }
     }
+
+    // ------------------------------------------------------------------
+    // Mutation-killing closed-form tests (cargo-mutants 2026-09-16)
+    // ------------------------------------------------------------------
+
+    /// 1e-9 absolute tolerance: CORDIC sin/cos and Fix128 division are exact
+    /// to ~1e-19, so any operator mutant moves the result by orders more.
+    fn tight() -> Fix128 {
+        Fix128::from_ratio(1, 1_000_000_000)
+    }
+
+    /// Distinct-modulus test material so that every term of the Jones
+    /// transformation formula has a unique magnitude:
+    /// E_L = 200, E_T = 100, E_Z = 400, ν_LT = 1/4, ν_LZ = 1/8, G_LT = 50,
+    /// G_LZ = 25 (MPa).
+    fn distinct_ortho() -> OrthotropicElasticity {
+        OrthotropicElasticity {
+            e_l_mpa: Fix128::from_int(200),
+            e_t_mpa: Fix128::from_int(100),
+            e_z_mpa: Fix128::from_int(400),
+            nu_lt: Fix128::from_ratio(1, 4),
+            nu_lz: Fix128::from_ratio(1, 8),
+            nu_tz: Fix128::from_ratio(3, 10),
+            g_lt_mpa: Fix128::from_int(50),
+            g_lz_mpa: Fix128::from_int(25),
+            g_tz_mpa: Fix128::from_int(20),
+        }
+    }
+
+    /// Kills `from_fdm_material` (elasticity) lines 97–99: G_LT = E/(2(1+ν))
+    /// with E = 2 GPa = 2000 MPa, ν = 0.35 → G_LT = 2000/2.7 = 20000/27,
+    /// G_LZ = G_TZ = G_LT·0.5 = 10000/27.
+    #[test]
+    fn ortho_from_fdm_shear_moduli_closed_form() {
+        let m = MaterialProperties {
+            youngs_modulus_gpa: Fix128::from_int(2),
+            anisotropy_z_ratio: Fix128::from_ratio(1, 2),
+            ..MaterialProperties::pla()
+        };
+        let o = OrthotropicElasticity::from_fdm_material(&m);
+        assert_eq!(o.e_l_mpa, Fix128::from_int(2000));
+        assert_eq!(o.e_z_mpa, Fix128::from_int(1000));
+        assert!(
+            approx_eq(o.g_lt_mpa, Fix128::from_ratio(20000, 27), tight()),
+            "G_LT = {} expected 740.740…",
+            o.g_lt_mpa.to_f64()
+        );
+        assert!(
+            approx_eq(o.g_lz_mpa, Fix128::from_ratio(10000, 27), tight()),
+            "G_LZ = {} expected 370.370…",
+            o.g_lz_mpa.to_f64()
+        );
+        assert_eq!(o.g_tz_mpa, o.g_lz_mpa);
+        assert_eq!(o.nu_lt, Fix128::from_ratio(35, 100));
+        assert_eq!(o.nu_lz, Fix128::from_ratio(3, 10));
+        assert_eq!(o.nu_tz, o.nu_lz);
+    }
+
+    /// Kills `e_at_angle_lt` lines 124–127, 136–143 (all `*`/`/`/`+`/`-`
+    /// operator mutants). Jones eq. 2.85 at θ = 45° (c² = s² = ½, c⁴ = s⁴ = ¼):
+    /// 1/E = ¼·(1/200) + ¼·(1/100) + ¼·(1/50 − 2·¼/200)
+    ///     = 0.00125 + 0.0025 + 0.004375 = 0.008125 → E = 1600/13 ≈ 123.077.
+    #[test]
+    fn e_at_angle_lt_45deg_jones_closed_form() {
+        let o = distinct_ortho();
+        let e45 = o.e_at_angle_lt(Fix128::HALF_PI.half());
+        assert!(
+            approx_eq(e45, Fix128::from_ratio(1600, 13), tight()),
+            "E(45°) = {} expected 123.0769…",
+            e45.to_f64()
+        );
+        // θ = 90° → E_T exactly (E_L ≠ E_T here, unlike the PLA fixture)
+        let e90 = o.e_at_angle_lt(Fix128::HALF_PI);
+        assert!(
+            approx_eq(e90, Fix128::from_int(100), tight()),
+            "E(90°) = {} expected 100",
+            e90.to_f64()
+        );
+        // θ = 0 → E_L exactly
+        let e0 = o.e_at_angle_lt(Fix128::ZERO);
+        assert!(approx_eq(e0, Fix128::from_int(200), tight()));
+    }
+
+    /// Kills `e_at_angle_lz` lines 155–158, 162–167. Same formula with
+    /// (E_L, E_Z, G_LZ, ν_LZ) = (200, 400, 25, 1/8) at 45°:
+    /// 1/E = ¼·(1/200) + ¼·(1/400) + ¼·(1/25 − 2·⅛/200)
+    ///     = 0.00125 + 0.000625 + ¼·(0.04 − 0.00125) = 0.01156250 → E = 3200/37.
+    #[test]
+    fn e_at_angle_lz_45deg_jones_closed_form() {
+        let o = distinct_ortho();
+        let e45 = o.e_at_angle_lz(Fix128::HALF_PI.half());
+        assert!(
+            approx_eq(e45, Fix128::from_ratio(3200, 37), tight()),
+            "E_LZ(45°) = {} expected 86.486…",
+            e45.to_f64()
+        );
+        let e90 = o.e_at_angle_lz(Fix128::HALF_PI);
+        assert!(
+            approx_eq(e90, Fix128::from_int(400), tight()),
+            "E_LZ(90°) = {} expected 400",
+            e90.to_f64()
+        );
+        let e0 = o.e_at_angle_lz(Fix128::ZERO);
+        assert!(approx_eq(e0, Fix128::from_int(200), tight()));
+    }
+
+    /// Kills the `||` → `&&` guard mutants at lines 130 and 159: with exactly
+    /// one modulus zero the function must still return 0 (Fix128 `x / 0 = 0`,
+    /// so the mutated guard would fall through and produce a finite modulus).
+    #[test]
+    fn e_at_angle_zero_modulus_guard_each_operand() {
+        let base = distinct_ortho();
+        let theta = Fix128::HALF_PI.half();
+        let cases_lt = [
+            OrthotropicElasticity {
+                e_l_mpa: Fix128::ZERO,
+                ..base
+            },
+            OrthotropicElasticity {
+                e_t_mpa: Fix128::ZERO,
+                ..base
+            },
+            OrthotropicElasticity {
+                g_lt_mpa: Fix128::ZERO,
+                ..base
+            },
+        ];
+        for (i, o) in cases_lt.iter().enumerate() {
+            assert_eq!(o.e_at_angle_lt(theta), Fix128::ZERO, "LT case {i}");
+        }
+        let cases_lz = [
+            OrthotropicElasticity {
+                e_l_mpa: Fix128::ZERO,
+                ..base
+            },
+            OrthotropicElasticity {
+                e_z_mpa: Fix128::ZERO,
+                ..base
+            },
+            OrthotropicElasticity {
+                g_lz_mpa: Fix128::ZERO,
+                ..base
+            },
+        ];
+        for (i, o) in cases_lz.iter().enumerate() {
+            assert_eq!(o.e_at_angle_lz(theta), Fix128::ZERO, "LZ case {i}");
+        }
+        // Sanity: the unmodified material is non-zero at the same angle.
+        assert!(base.e_at_angle_lt(theta) > Fix128::ZERO);
+        assert!(base.e_at_angle_lz(theta) > Fix128::ZERO);
+    }
+
+    /// Kills `AnisotropicStrength::from_fdm_material` line 219:
+    /// σ_y = 40, ratio = ½ → S_LT = 24, S_LZ = S_TZ = 12, X_Z = 20 (all dyadic).
+    #[test]
+    fn strength_from_fdm_closed_form() {
+        let m = MaterialProperties {
+            yield_strength_mpa: Fix128::from_int(40),
+            anisotropy_z_ratio: Fix128::from_ratio(1, 2),
+            ..MaterialProperties::pla()
+        };
+        let s = AnisotropicStrength::from_fdm_material(&m);
+        assert_eq!(s.x_l_tension_mpa, Fix128::from_int(40));
+        assert_eq!(s.x_l_compression_mpa, Fix128::from_int(40));
+        assert_eq!(s.x_t_tension_mpa, Fix128::from_int(40));
+        assert_eq!(s.x_t_compression_mpa, Fix128::from_int(40));
+        assert_eq!(s.x_z_tension_mpa, Fix128::from_int(20));
+        assert_eq!(s.x_z_compression_mpa, Fix128::from_int(20));
+        assert!(approx_eq(s.s_lt_mpa, Fix128::from_int(24), tight()));
+        assert!(
+            approx_eq(s.s_lz_mpa, Fix128::from_int(12), tight()),
+            "S_LZ = {} expected 12",
+            s.s_lz_mpa.to_f64()
+        );
+        assert_eq!(s.s_tz_mpa, s.s_lz_mpa);
+    }
+
+    /// Asymmetric strength envelope: tension ≠ compression on every axis so
+    /// the sign-dependent allowable selection is observable.
+    fn asym_strength() -> AnisotropicStrength {
+        AnisotropicStrength {
+            x_l_tension_mpa: Fix128::from_int(40),
+            x_l_compression_mpa: Fix128::from_int(80),
+            x_t_tension_mpa: Fix128::from_int(20),
+            x_t_compression_mpa: Fix128::from_int(60),
+            x_z_tension_mpa: Fix128::from_int(10),
+            x_z_compression_mpa: Fix128::from_int(50),
+            s_lt_mpa: Fix128::from_int(16),
+            s_lz_mpa: Fix128::from_int(8),
+            s_tz_mpa: Fix128::from_int(4),
+        }
+    }
+
+    /// Kills `evaluate_failure` line 318 (`<` → `<=`): at failure_index
+    /// exactly 1 the report is *not* safe (doc: "True iff failure_index < 1").
+    /// One ulp below 1 is safe.
+    #[test]
+    fn evaluate_failure_index_exactly_one_is_not_safe() {
+        let s = asym_strength();
+        let at_limit = OrthotropicStress::axial(Fix128::from_int(40), Fix128::ZERO, Fix128::ZERO);
+        let r = evaluate_failure(&at_limit, &s, FailureCriterion::MaximumStress);
+        assert_eq!(r.failure_index, Fix128::ONE);
+        assert!(!r.is_safe, "index == 1 is incipient failure, not safe");
+        assert_eq!(r.reserve_factor, Fix128::ONE);
+
+        let one_ulp = Fix128::from_raw(0, 1);
+        let just_below =
+            OrthotropicStress::axial(Fix128::from_int(40) - one_ulp, Fix128::ZERO, Fix128::ZERO);
+        let r2 = evaluate_failure(&just_below, &s, FailureCriterion::MaximumStress);
+        assert!(r2.failure_index < Fix128::ONE);
+        assert!(r2.is_safe);
+    }
+
+    /// Reserve factor = 1/index for index > ε; with index = ¼ → 4 exactly.
+    #[test]
+    fn evaluate_failure_reserve_factor_exact() {
+        let s = asym_strength();
+        let stress = OrthotropicStress::axial(Fix128::from_int(10), Fix128::ZERO, Fix128::ZERO);
+        let r = evaluate_failure(&stress, &s, FailureCriterion::MaximumStress);
+        assert_eq!(r.failure_index, Fix128::from_ratio(1, 4));
+        assert_eq!(r.reserve_factor, Fix128::from_int(4));
+        assert!(r.is_safe);
+    }
+
+    /// Kills `max_stress_index` lines 338, 343, 348 (`>=` → `<`): a positive
+    /// normal stress must be divided by the *tensile* allowable and a negative
+    /// one by the *compressive* allowable, on each axis independently.
+    #[test]
+    fn max_stress_selects_tension_vs_compression_allowable_per_axis() {
+        let s = asym_strength();
+        // L: +20 / 40 = ½ ; −20 / 80 = ¼
+        let l_pos = OrthotropicStress::axial(Fix128::from_int(20), Fix128::ZERO, Fix128::ZERO);
+        let l_neg = OrthotropicStress::axial(Fix128::from_int(-20), Fix128::ZERO, Fix128::ZERO);
+        assert_eq!(max_stress_index(&l_pos, &s), Fix128::from_ratio(1, 2));
+        assert_eq!(max_stress_index(&l_neg, &s), Fix128::from_ratio(1, 4));
+        // T: +10 / 20 = ½ ; −15 / 60 = ¼
+        let t_pos = OrthotropicStress::axial(Fix128::ZERO, Fix128::from_int(10), Fix128::ZERO);
+        let t_neg = OrthotropicStress::axial(Fix128::ZERO, Fix128::from_int(-15), Fix128::ZERO);
+        assert_eq!(max_stress_index(&t_pos, &s), Fix128::from_ratio(1, 2));
+        assert_eq!(max_stress_index(&t_neg, &s), Fix128::from_ratio(1, 4));
+        // Z: +5 / 10 = ½ ; −25 / 50 = ½ (compressive allowable 5× larger)
+        let z_pos = OrthotropicStress::axial(Fix128::ZERO, Fix128::ZERO, Fix128::from_int(5));
+        let z_neg = OrthotropicStress::axial(Fix128::ZERO, Fix128::ZERO, Fix128::from_int(-25));
+        assert_eq!(max_stress_index(&z_pos, &s), Fix128::from_ratio(1, 2));
+        assert_eq!(max_stress_index(&z_neg, &s), Fix128::from_ratio(1, 2));
+        // Shear components use their own allowables: 4/16, 2/8, 3/4 → worst ¾
+        let shear = OrthotropicStress {
+            sigma_l: Fix128::ZERO,
+            sigma_t: Fix128::ZERO,
+            sigma_z: Fix128::ZERO,
+            tau_lt: Fix128::from_int(4),
+            tau_lz: Fix128::from_int(-2),
+            tau_tz: Fix128::from_int(3),
+        };
+        assert_eq!(max_stress_index(&shear, &s), Fix128::from_ratio(3, 4));
+    }
+
+    /// Kills `hill_index` lines 394–407 (every operator mutant). All inputs
+    /// are powers of two so the arithmetic is exact in Fix128:
+    ///
+    /// X_L = 2, X_T = 4, X_Z = 8 → 1/X² = ¼, 1/16, 1/64
+    /// F = ½(1/16 + 1/64 − ¼) = −11/128, G = ½(1/64 + ¼ − 1/16) = 13/128,
+    /// H = ½(¼ + 1/16 − 1/64) = 19/128
+    /// S_LT = 2, S_LZ = 4, S_TZ = 8 → 1/S² = ¼, 1/16, 1/64
+    /// σ = (3, 5, 11) → (σ_T−σ_Z)² = 36, (σ_Z−σ_L)² = 64, (σ_L−σ_T)² = 4
+    /// τ_LT = 3, τ_LZ = 3, τ_TZ = 2
+    ///
+    /// f = (−11·36 + 13·64 + 19·4)/128 + 4/64 + 9/16 + 9/4
+    ///   = 4 + 1/16 + 9/16 + 9/4 = 55/8.
+    #[test]
+    fn hill_index_dyadic_closed_form() {
+        let s = AnisotropicStrength {
+            x_l_tension_mpa: Fix128::from_int(2),
+            x_l_compression_mpa: Fix128::from_int(2),
+            x_t_tension_mpa: Fix128::from_int(4),
+            x_t_compression_mpa: Fix128::from_int(4),
+            x_z_tension_mpa: Fix128::from_int(8),
+            x_z_compression_mpa: Fix128::from_int(8),
+            s_lt_mpa: Fix128::from_int(2),
+            s_lz_mpa: Fix128::from_int(4),
+            s_tz_mpa: Fix128::from_int(8),
+        };
+        let stress = OrthotropicStress {
+            sigma_l: Fix128::from_int(3),
+            sigma_t: Fix128::from_int(5),
+            sigma_z: Fix128::from_int(11),
+            tau_lt: Fix128::from_int(3),
+            tau_lz: Fix128::from_int(3),
+            tau_tz: Fix128::from_int(2),
+        };
+        let f = hill_index(&stress, &s);
+        assert_eq!(f, Fix128::from_ratio(55, 8), "hill = {}", f.to_f64());
+        let r = evaluate_failure(&stress, &s, FailureCriterion::Hill);
+        assert_eq!(r.failure_index, f);
+        assert!(!r.is_safe);
+    }
+
+    /// Hill is pressure-insensitive: hydrostatic normal stress with no shear
+    /// gives exactly 0 (all three differences vanish). Guards the `-` → `+`
+    /// mutants at lines 398–400 with a second, independent fixture.
+    #[test]
+    fn hill_index_hydrostatic_is_zero() {
+        let s = AnisotropicStrength {
+            x_l_tension_mpa: Fix128::from_int(2),
+            x_l_compression_mpa: Fix128::from_int(2),
+            x_t_tension_mpa: Fix128::from_int(4),
+            x_t_compression_mpa: Fix128::from_int(4),
+            x_z_tension_mpa: Fix128::from_int(8),
+            x_z_compression_mpa: Fix128::from_int(8),
+            s_lt_mpa: Fix128::from_int(2),
+            s_lz_mpa: Fix128::from_int(4),
+            s_tz_mpa: Fix128::from_int(8),
+        };
+        let hydro = OrthotropicStress::axial(
+            Fix128::from_int(7),
+            Fix128::from_int(7),
+            Fix128::from_int(7),
+        );
+        assert_eq!(hill_index(&hydro, &s), Fix128::ZERO);
+    }
+
+    /// Kills `tsai_wu_index` lines 435–466 (every operator mutant and the
+    /// `-½` sign deletion at line 446). All strengths are powers of two so
+    /// products, reciprocals and the Hoffman square roots are exact dyadics:
+    ///
+    /// X_Lt = 2, X_Lc = 8 → F_L = ½ − ⅛ = 3/8,  F_LL = 1/16
+    /// X_Tt = 4, X_Tc = 16 → F_T = ¼ − 1/16 = 3/16, F_TT = 1/64
+    /// X_Zt = 8, X_Zc = 32 → F_Z = ⅛ − 1/32 = 3/32, F_ZZ = 1/256
+    /// S_LT = 4, S_LZ = 8, S_TZ = 16 → F_SS = 1/16, 1/64, 1/256
+    /// F_LT = −½·√(1/1024) = −1/64, F_LZ = −½·√(1/4096) = −1/128,
+    /// F_TZ = −½·√(1/16384) = −1/256
+    /// σ = (3, 5, 7), τ_LT = 3, τ_LZ = 2, τ_TZ = 5
+    ///
+    /// f = 9/8 + 15/16 + 21/32 + 9/16 + 25/64 + 49/256 + 9/16 + 1/16 + 25/256
+    ///     − 15/32 − 21/64 − 35/128 = 900/256 = 225/64.
+    #[test]
+    fn tsai_wu_index_dyadic_closed_form() {
+        let s = AnisotropicStrength {
+            x_l_tension_mpa: Fix128::from_int(2),
+            x_l_compression_mpa: Fix128::from_int(8),
+            x_t_tension_mpa: Fix128::from_int(4),
+            x_t_compression_mpa: Fix128::from_int(16),
+            x_z_tension_mpa: Fix128::from_int(8),
+            x_z_compression_mpa: Fix128::from_int(32),
+            s_lt_mpa: Fix128::from_int(4),
+            s_lz_mpa: Fix128::from_int(8),
+            s_tz_mpa: Fix128::from_int(16),
+        };
+        let stress = OrthotropicStress {
+            sigma_l: Fix128::from_int(3),
+            sigma_t: Fix128::from_int(5),
+            sigma_z: Fix128::from_int(7),
+            tau_lt: Fix128::from_int(3),
+            tau_lz: Fix128::from_int(2),
+            tau_tz: Fix128::from_int(5),
+        };
+        let f = tsai_wu_index(&stress, &s);
+        assert_eq!(f, Fix128::from_ratio(225, 64), "tsai-wu = {}", f.to_f64());
+        let r = evaluate_failure(&stress, &s, FailureCriterion::TsaiWu);
+        assert_eq!(r.failure_index, f);
+    }
+
+    /// Tsai-Wu at the uniaxial strengths gives exactly 1 on both sides:
+    /// σ_L = +X_Lt → F_L·X_Lt + F_LL·X_Lt² = (1/X_Lt − 1/X_Lc)·X_Lt + X_Lt/X_Lc = 1,
+    /// σ_L = −X_Lc → −(1/X_Lt − 1/X_Lc)·X_Lc + X_Lc/X_Lt = 1.
+    /// Kills the linear-term sign mutants (435–437) independently of the
+    /// quadratic terms, and the same on the T and Z axes.
+    #[test]
+    fn tsai_wu_unit_at_uniaxial_strengths() {
+        let s = AnisotropicStrength {
+            x_l_tension_mpa: Fix128::from_int(2),
+            x_l_compression_mpa: Fix128::from_int(8),
+            x_t_tension_mpa: Fix128::from_int(4),
+            x_t_compression_mpa: Fix128::from_int(16),
+            x_z_tension_mpa: Fix128::from_int(8),
+            x_z_compression_mpa: Fix128::from_int(32),
+            s_lt_mpa: Fix128::from_int(4),
+            s_lz_mpa: Fix128::from_int(8),
+            s_tz_mpa: Fix128::from_int(16),
+        };
+        let z = Fix128::ZERO;
+        let cases = [
+            OrthotropicStress::axial(Fix128::from_int(2), z, z),
+            OrthotropicStress::axial(Fix128::from_int(-8), z, z),
+            OrthotropicStress::axial(z, Fix128::from_int(4), z),
+            OrthotropicStress::axial(z, Fix128::from_int(-16), z),
+            OrthotropicStress::axial(z, z, Fix128::from_int(8)),
+            OrthotropicStress::axial(z, z, Fix128::from_int(-32)),
+        ];
+        for (i, st) in cases.iter().enumerate() {
+            let f = tsai_wu_index(st, &s);
+            assert_eq!(f, Fix128::ONE, "case {i}: tsai-wu = {}", f.to_f64());
+        }
+        // Pure shear at each shear strength is also exactly 1 (F_SS·S² = 1).
+        let shear_cases = [
+            (Fix128::from_int(4), z, z),
+            (z, Fix128::from_int(8), z),
+            (z, z, Fix128::from_int(16)),
+        ];
+        for (i, (lt, lz, tz)) in shear_cases.iter().enumerate() {
+            let st = OrthotropicStress {
+                sigma_l: z,
+                sigma_t: z,
+                sigma_z: z,
+                tau_lt: *lt,
+                tau_lz: *lz,
+                tau_tz: *tz,
+            };
+            let f = tsai_wu_index(&st, &s);
+            assert_eq!(f, Fix128::ONE, "shear case {i}: tsai-wu = {}", f.to_f64());
+        }
+    }
 }
