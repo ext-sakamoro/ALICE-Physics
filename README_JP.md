@@ -275,7 +275,7 @@ warp 事案で記録された failure mode と一致
 
 ### Mutation score (cargo-mutants、`quality-deep.yml`)
 
-「test が通る」は「test が値を検証している」を意味しない core module は [cargo-mutants](https://mutants.rs) (`-- --lib`、test helper は `.cargo/mutants.toml` で除外) で測る 変異後にどれかの test が落ちれば *caught*、score = caught / (caught + missed)、unviable は除外 開始時 **32.0 %** (2026-09-15、16 shard 週次 run)、途中で本体 bug 6 件を検出 (`remove_body` の拘束付替え / `Fix128::atan` CORDIC shift / cloth bending 符号 / `LinearBvh::find_pairs` n² / joint 角補正の慣性分配 + 符号なし twist / EPA normal 符号)
+「test が通る」は「test が値を検証している」を意味しない core module は [cargo-mutants](https://mutants.rs) (`-- --lib`、test helper は `.cargo/mutants.toml` で除外) で測る 変異後にどれかの test が落ちれば *caught*、score = caught / (caught + missed)、unviable は除外 開始時 **32.0 %** (2026-09-15、16 shard 週次 run)、途中で本体 bug 11 件を検出 (`remove_body` の拘束付替え / `Fix128::atan` CORDIC shift / cloth bending 符号 / `LinearBvh::find_pairs` n² / joint 角補正の慣性分配 + 符号なし twist / EPA normal 符号 / sphere–plane 裏側 TOI / `W_SUM_EPSILON` / `Fix128::atan2` の y 軸近傍 overflow / DDSketch α 範囲外 / `AnimationClip::sample` 外挿)
 
 | module | score | 測定 |
 |---|---|---|
@@ -287,6 +287,11 @@ warp 事案で記録された failure mode と一致
 | `bvh` | **87.1 %** (210 / 241、timeout 10) | batch 8 後の scoped run 34969844505 |
 | `solver` | **94.9 %** (default 軸の compiled code、485 / 511、残り 175 変異は `cfg(feature = "parallel" / "gpu-solver-bridge")` 側で同軸では非 compile、raw 70.7 %) / **82.4 %** (`parallel,gpu-solver-bridge` 軸、509 / 618、`cfg(not(feature = "parallel"))` 側 49 変異は非 compile、raw 76.3 %) | batch 8 後の scoped run 34969828635、両軸 |
 | `solver_tgs` | 81.7 % (89 / 109) | `b187144` 週次 run、batch 7 test 前 |
+| `acoustic_wave` | **100 %** (35 / 35) | batch 9 後の scoped run 35038286072 |
+| `aeroelasticity` | **100 %** (76 / 76) | batch 9 後の scoped run 35038286072 (旧 37.8 %) |
+| `analytics_bridge` | **100 %** (26 / 26、`analytics` feature 軸) | batch 9 後の scoped run 35038291951 (default 軸では module 自体が非 compile で全 mutant が missed に見える = 測定 artefact、score ではない) |
+| `anisotropic` | **99.2 %** (249 / 251) | batch 9 後の scoped run 35038286072 (旧 38.2 %) |
+| `animation_blend` | **97.6 %** (203 / 208) | batch 9 後の scoped run 35038286072 (旧 42.9 %) |
 
 「batch N 前」は最後に *測定* した値 以後に書いた test は列挙された miss を狙ったもの (等価変異は各 test module に記載) で、scoped `quality-deep` dispatch で再測定する 測定値だけを書く、timeout は caught にも missed にも数えない
 
