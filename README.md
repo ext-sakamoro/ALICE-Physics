@@ -9,6 +9,8 @@ English | [日本語](README_JP.md)
 [![License: AGPL-3.0-or-later](https://img.shields.io/crates/l/alice-physics.svg)](#license)
 [![CI](https://github.com/ext-sakamoro/ALICE-Physics/actions/workflows/ci.yml/badge.svg)](https://github.com/ext-sakamoro/ALICE-Physics/actions/workflows/ci.yml)
 
+> **License**: AGPL-3.0-or-later. A separate commercial license (no AGPL obligations) is available — contact <sakamoro@alicelaw.net>. Details in [License](#license).
+
 > Part of **[ALICE-Eco-System](https://github.com/ext-sakamoro/ALICE-Eco-System)** — 260+ crate Edge-to-Cloud data pipeline (SDF / Physics / LLM / Motion / Font / TTS)
 
 A high-precision physics engine designed for deterministic simulation across different platforms and hardware. The rigid-body core uses 128-bit fixed-point arithmetic (`Fix128`); the surrounding engineering / field modules use IEEE `f32` / `f64` with every transcendental routed through the crate's own `det_math`. Either way the result is bit-exact regardless of CPU, compiler, or operating system — see [Determinism scope](#determinism-scope).
