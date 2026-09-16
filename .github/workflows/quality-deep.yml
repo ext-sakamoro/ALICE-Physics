@@ -49,13 +49,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        features: ['', 'parallel,gpu-solver-bridge']
-        exclude:
-          # an explicit `features` input replaces the two default axes
-          - features: ${{ inputs.features != '' && '' || 'never' }}
-          - features: ${{ inputs.features != '' && 'parallel,gpu-solver-bridge' || 'never' }}
-        include:
-          - features: ${{ inputs.features }}
+        # an explicit `features` input replaces the two default axes (an
+        # `exclude` entry with an empty-string value does not match, so the
+        # axis list is built with fromJSON instead; 2026-09-16)
+        features: ${{ fromJSON(inputs.features != '' && format('["{0}"]', inputs.features) || '["", "parallel,gpu-solver-bridge"]') }}
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
@@ -99,7 +96,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: mutants-scoped-${{ matrix.features == '' && 'default' || 'parallel' }}
+          name: mutants-scoped-${{ matrix.features == '' && 'default' || matrix.features }}
           path: mutants.out
           if-no-files-found: ignore
 

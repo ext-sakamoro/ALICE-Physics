@@ -328,9 +328,11 @@ are measured with [cargo-mutants](https://mutants.rs) (`-- --lib`, test
 helpers excluded via `.cargo/mutants.toml`); a mutant is *caught* when some
 test fails after the mutation. Score = caught / (caught + missed), unviable
 mutants excluded. The campaign started at **32.0 %** (2026-09-15, 16-shard
-weekly run) and found six real defects on the way (`remove_body` constraint
+weekly run) and found eleven real defects on the way (`remove_body` constraint
 remap, `Fix128::atan` CORDIC shift, cloth bending sign, `LinearBvh::find_pairs`
-n², joint angular split / unsigned twist, EPA normal sign).
+n², joint angular split / unsigned twist, EPA normal sign, back-side
+sphere–plane TOI, `W_SUM_EPSILON`, `Fix128::atan2` overflow near the y axis,
+DDSketch α out of range, `AnimationClip::sample` extrapolation).
 
 | module | score | measured |
 |---|---|---|
@@ -342,6 +344,11 @@ n², joint angular split / unsigned twist, EPA normal sign).
 | `bvh` | **87.1 %** (210 / 241, 10 timeouts) | scoped run 34969844505 after batch 8 |
 | `solver` | **94.9 %** compiled code on the default axis (485 / 511; the other 175 mutants sit in `cfg(feature = "parallel" / "gpu-solver-bridge")` code that is not compiled there, raw 70.7 %) and **82.4 %** on the `parallel,gpu-solver-bridge` axis (509 / 618; 49 mutants in `cfg(not(feature = "parallel"))` code not compiled there, raw 76.3 %) | scoped run 34969828635 after batch 8, both axes |
 | `solver_tgs` | 81.7 % (89 / 109) | weekly run at `b187144`, before batch 7 tests |
+| `acoustic_wave` | **100 %** (35 / 35) | scoped run 35038286072 after batch 9 |
+| `aeroelasticity` | **100 %** (76 / 76) | scoped run 35038286072 after batch 9 (was 37.8 %) |
+| `analytics_bridge` | **100 %** (26 / 26) on the `analytics` feature axis | scoped run 35038291951 after batch 9 (on the default axis the module is not compiled, so every mutant reads as missed — a measurement artefact, not a score) |
+| `anisotropic` | **99.2 %** (249 / 251) | scoped run 35038286072 after batch 9 (was 38.2 %) |
+| `animation_blend` | **97.6 %** (203 / 208) | scoped run 35038286072 after batch 9 (was 42.9 %) |
 
 Rows marked "before batch N" are the last *measured* figure; the tests
 written since target the listed misses (equivalent mutants are documented in
