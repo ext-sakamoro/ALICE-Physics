@@ -3145,4 +3145,127 @@ mod tests {
         // atan(0) through CORDIC is ~5e-15, not exactly 0 (unchanged behaviour)
         assert!(Fix128::atan2(Fix128::ZERO, Fix128::ONE).abs() < Fix128::from_f64(1e-12));
     }
+
+    // ------------------------------------------------------------------
+    // Mutation-score batch 10 (scoped run 34960080446, 54 missed).
+    //
+    // Killable misses are covered below. The remaining misses are equivalent
+    // mutants and are documented here rather than hidden:
+    // - `|` → `^` on disjoint bit ranges: `sqrt` (`(rem << 2) | bits`,
+    //   `(root << k) | 1`), `half` / `shr_bits` / `double` (carry bit into a
+    //   freshly shifted-in zero), `Div` (`(hi << 64) | lo`), `select_fix128`
+    //   (`mask` and `!mask` are complementary) — identical results.
+    // - `from_f64`: `f < 0.0` → `<=`: for `f == 0.0` `lo` is 0 and both
+    //   branches yield the same value.
+    // - `from_ratio`: `num < 0` → `<=` (0 negated is 0) and `denom < 0` →
+    //   `<=` (`denom == 0` already returned).
+    // - `cordic_sin_cos`: `>` → `>=` / `<` → `<=` on the ±π boundaries and
+    //   `+ π` → `- π` in `k = floor((θ + π) / 2π)` reduce to the same angle
+    //   because the clamp that follows absorbs exactly one 2π; the clamp
+    //   branches themselves (`θ > π` / `θ < −π` after reduction) are only
+    //   reachable through rounding of `2π · k` and no sampled angle reaches
+    //   them; `d > 0` → `>=` in both CORDIC loops: `d` is ±1, never 0.
+    // - `sqrt`: `i += 1` → `i *= 1` loops forever and can only time out.
+    // ------------------------------------------------------------------
+
+    /// `ceil` rounds toward +∞: integers are fixed points, any fraction
+    /// bumps the integer part by exactly one (also across zero for
+    /// negative inputs, where the two's-complement `hi` is already the floor).
+    #[test]
+    fn ceil_rounds_toward_positive_infinity() {
+        assert_eq!(Fix128::from_int(2).ceil(), Fix128::from_int(2));
+        assert_eq!(Fix128::from_int(-2).ceil(), Fix128::from_int(-2));
+        assert_eq!(Fix128::ZERO.ceil(), Fix128::ZERO);
+        assert_eq!(Fix128::from_ratio(5, 2).ceil(), Fix128::from_int(3));
+        assert_eq!(Fix128::from_ratio(-5, 2).ceil(), Fix128::from_int(-2));
+        assert_eq!(Fix128::from_ratio(-1, 2).ceil(), Fix128::ZERO);
+        assert_eq!(Fix128::from_raw(7, 1).ceil(), Fix128::from_int(8));
+        // ceil(x) − x ∈ [0, 1) and ceil(x) == −floor(−x)
+        for raw in [
+            Fix128::from_ratio(1, 3),
+            Fix128::from_ratio(-1, 3),
+            Fix128::from_ratio(1_000_001, 7),
+            Fix128::from_ratio(-1_000_001, 7),
+            Fix128::from_raw(-3, u64::MAX),
+        ] {
+            let c = raw.ceil();
+            assert!(c >= raw && c - raw < Fix128::ONE, "{raw}");
+            assert_eq!(c, raw.neg().floor().neg(), "{raw}");
+        }
+    }
+
+    /// `from_ratio` takes the sign from `num` and `denom` independently:
+    /// −3/5 == 3/−5 == −(3/5), and −3/−5 == 3/5. The negative value is
+    /// pinned to its two's-complement pair: 3/5 = ⌊0.6 · 2⁶⁴⌋ =
+    /// 11068046444225730969, so −3/5 = (−1, 2⁶⁴ − 11068046444225730969).
+    #[test]
+    fn from_ratio_sign_comes_from_both_operands() {
+        let pos = Fix128::from_ratio(3, 5);
+        assert_eq!(pos, Fix128::from_raw(0, 11_068_046_444_225_730_969));
+        let neg = Fix128::from_raw(-1, 7_378_697_629_483_820_647);
+        assert_eq!(Fix128::from_ratio(-3, 5), neg);
+        assert_eq!(Fix128::from_ratio(3, -5), neg);
+        assert_eq!(Fix128::from_ratio(-3, -5), pos);
+        assert_eq!(neg, pos.neg());
+        assert_eq!(Fix128::from_ratio(0, -5), Fix128::ZERO);
+        assert_eq!(Fix128::from_ratio(-7, 1), Fix128::from_int(-7));
+        assert_eq!(Fix128::from_ratio(7, -1), Fix128::from_int(-7));
+        assert!(Fix128::from_ratio(1, -1_000_000).is_negative());
+    }
+
+    /// `exp` cut-off boundary: e⁻⁴⁴ = 7.78 · 10⁻²⁰ is 1.435 · 2⁻⁶⁴ (oracle:
+    /// 60-digit decimal evaluation of e⁻⁴⁴ · 2⁶⁴ = 1.4353…), so it is still
+    /// representable, while e⁻⁴⁵ = 0.53 · 2⁻⁶⁴ truncates to zero. The
+    /// `hi < -44` early return must therefore not include −44, and must fire
+    /// for every smaller integer part. Between −44 and −43.67 the
+    /// intermediate 2^(|x|·log₂e) exceeds 2⁶³ and wraps in `powf_pos`, which
+    /// lands the reciprocal on 2 ulp instead of the truncated 1 ulp — within
+    /// one ulp of the true value, so the assertion is a range, not a pin.
+    #[test]
+    fn exp_cutoff_boundary_is_minus_44() {
+        let at_boundary = Fix128::from_int(-44).exp();
+        assert!(!at_boundary.is_zero());
+        assert!(at_boundary <= Fix128::from_raw(0, 2), "{at_boundary}");
+        assert_eq!(Fix128::from_int(-45).exp(), Fix128::ZERO);
+        assert_eq!(Fix128::from_int(-46).exp(), Fix128::ZERO);
+        assert_eq!(Fix128::from_int(-100).exp(), Fix128::ZERO);
+        assert_eq!(Fix128::from_raw(-45, 1).exp(), Fix128::ZERO);
+        // just above the boundary is still non-zero and ordered
+        let a = Fix128::from_raw(-44, 1).exp();
+        let b = Fix128::from_int(-43).exp();
+        assert!(!a.is_zero());
+        assert!(a < b, "{a} < {b}");
+    }
+
+    /// `QuatFix::normalize` divides every component by the length (as a
+    /// reciprocal multiply); a mutant that multiplies `x` by the length
+    /// instead of its reciprocal is only visible with a non-zero `x` and a
+    /// length ≠ 1: (3, 0, 0, 4) / 5 → x = 0.6, not 15.
+    #[test]
+    fn quat_normalize_divides_x_by_length() {
+        let n = q(3, 0, 0, 4).normalize();
+        assert_eq!(
+            n,
+            QuatFix::new(fi(3) / fi(5), Fix128::ZERO, Fix128::ZERO, fi(4) / fi(5))
+        );
+        // reciprocal multiply differs from a direct division by a few ulp
+        let x = q(-6, 0, 0, 8).normalize().x;
+        assert!((x - fi(-6) / fi(10)).abs() < Fix128::from_raw(0, 16), "{x}");
+        assert_eq!(q(1, 0, 0, 0).normalize(), q(1, 0, 0, 0));
+    }
+
+    /// `simd_width()` is the compile-time lane count and never 0; without
+    /// the `simd` feature it is exactly 1 (the scalar path), with it on
+    /// x86_64 it is 4 (SSE2) or 8 (AVX2) and on aarch64 4 (NEON).
+    #[test]
+    fn simd_width_matches_the_build_target() {
+        assert!(simd_width() >= 1);
+        assert_eq!(SIMD_WIDTH, simd_width());
+        #[cfg(not(feature = "simd"))]
+        assert_eq!(simd_width(), 1);
+        #[cfg(all(feature = "simd", target_arch = "x86_64"))]
+        assert!(matches!(simd_width(), 4 | 8));
+        #[cfg(all(feature = "simd", target_arch = "aarch64"))]
+        assert_eq!(simd_width(), 4);
+    }
 }
