@@ -13,6 +13,26 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-09-16
+
+### Changed
+
+- `det_math` is now the [`alice-det-math`](https://crates.io/crates/alice-det-math)
+  0.1.0 crate, re-exported as `alice_physics::det_math` (same paths, same
+  functions). The extraction is bit-for-bit for every input the engine feeds
+  it: `tests/determinism_golden_f32.rs` (13 scenarios, 29 modules) is
+  unchanged. ALICE-SDF's evaluator moves onto the same crate, which is what
+  makes the `SdfField` boundary bit-exact across the two crates.
+- `det_math` no longer requires the `std` feature (the crate provides
+  `round` / `sqrt` from basic operations; software square root without `std`,
+  same bits).
+- `det_math` differences inherited from the crate (none affect a value the
+  golden scenarios pin): a NaN input to `asin64` / `acos64` / `powi` returns
+  the canonical NaN instead of propagating; `sin` / `cos` / `tan` of `|x| > 2^24`
+  never return a platform-signed NaN; `cbrt` above 2^96 no longer overflows
+  (`cbrt(f32::MAX)` is finite and correct); `asin64` / `acos64` are public;
+  `sin_cos`, `round`, `round64`, `sqrt`, `sqrt64` and the `simd` module are new.
+
 ## [1.2.0] - 2026-09-15
 
 Minor release driven by a maintainer self-review of 1.1.0 (three rounds, independent environment: clone →
