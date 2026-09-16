@@ -32,11 +32,6 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      # inline stubs は composite action に集約 (canonical CI template [[reference_alice_ci_canonical_template]])
-      # security-audit.yml / fuzz.yml と DRY で共有、license field 追加も一元管理
-      - name: Create ALICE optional bridge stubs
-        uses: ./.github/actions/alice-stubs
-
       # `crate-type` includes cdylib/staticlib (FFI consumers, 1.2.0); a no_std
       # cdylib needs a panic_handler + allocator, so the no_std *library* build is
       # checked as rlib only (same workaround as ALICE-ML). Downstream no_std
@@ -135,9 +130,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: wasm-wasip1
-
-      - name: Create ALICE optional bridge stubs
-        uses: ./.github/actions/alice-stubs
 
       # 2026-09-15: `curl … | bash` は curl が network error (35 Connection reset) でも
       # pipeline exit が bash 側 = 0 になり step green のまま次 step で `wasmtime: command not found`
@@ -280,8 +272,6 @@ jobs:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Create ALICE optional bridge stubs
-        uses: ./.github/actions/alice-stubs
       - name: Install cargo-hack
         uses: taiki-e/install-action@cargo-hack
       # rustc --crate-type rlib: combos without `std` cannot build the cdylib
