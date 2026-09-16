@@ -60,8 +60,6 @@ jobs:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Create ALICE optional bridge stubs
-        uses: ./.github/actions/alice-stubs
       - name: Install cargo-mutants
         uses: taiki-e/install-action@cargo-mutants
       - name: Mutants (scoped)
@@ -130,8 +128,6 @@ jobs:
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Create ALICE optional bridge stubs
-        uses: ./.github/actions/alice-stubs
       - name: Install cargo-mutants
         uses: taiki-e/install-action@cargo-mutants
       - name: Mutants (PR = in-diff)
@@ -193,8 +189,6 @@ jobs:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Create ALICE optional bridge stubs
-        uses: ./.github/actions/alice-stubs
       # loom explores every interleaving of the threads that write one colour
       # batch; a colouring that put two constraints sharing a dynamic body into
       # the same batch shows up as an unsynchronised access (the invariant the
@@ -216,8 +210,6 @@ jobs:
         with:
           components: miri
       - uses: Swatinem/rust-cache@v2
-      - name: Create ALICE optional bridge stubs
-        uses: ./.github/actions/alice-stubs
       # 全 1378 test は数時間かかるため unsafe / 並列に触る test を指名
       # Mac 実測 (2026-09-15): coloring 4 test 12 s / bvh+contact_cache 26 test 17 s / solver::tests 全 52 は 10 分超
       # 対象を増やす時は本 list に追記 (solver = BodySlicePtr raw pointer 並列、bvh = escape pointer、
@@ -246,8 +238,6 @@ jobs:
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Create ALICE optional bridge stubs
-        uses: ./.github/actions/alice-stubs
       # install-action は critcmp 未対応 (::error 注釈 + binstall fallback) のため cache-cargo-install-action
       - name: Install critcmp
         uses: taiki-e/cache-cargo-install-action@v2
