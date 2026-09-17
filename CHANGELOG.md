@@ -13,6 +13,16 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-09-17
+
+### Changed
+
+- `alice-det-math` 0.2: cheaper range reduction in `sin` / `cos` / `exp`
+  (differs from 0.1 only within an ulp of an exact tie), single-precision
+  fdlibm `atan` / `atan2` (≤ 1 ulp, ~3× faster), SIMD kernels rewritten for
+  wide 0.7 on aarch64. `tests/determinism_golden_f32.rs` (13 scenarios, 29
+  modules) is unchanged — no engine value moved.
+
 ## [1.3.0] - 2026-09-16
 
 ### Changed
