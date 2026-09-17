@@ -83,17 +83,17 @@ use guard::ffi_guard;
 /// returns null until the next error).
 #[no_mangle]
 pub extern "C" fn alice_physics_last_error() -> *mut std::os::raw::c_char {
-    match guard::take_last_error() {
+    ffi_guard(std::ptr::null_mut(), || match guard::take_last_error() {
         Some(msg) => std::ffi::CString::new(msg.replace('\0', " "))
             .map_or(std::ptr::null_mut(), std::ffi::CString::into_raw),
         None => std::ptr::null_mut(),
-    }
+    })
 }
 
 /// Discard the most recent FFI panic message on this thread.
 #[no_mangle]
 pub extern "C" fn alice_physics_clear_last_error() {
-    guard::clear_last_error();
+    ffi_guard((), guard::clear_last_error);
 }
 
 /// Free a string returned by [`alice_physics_last_error`].
@@ -103,9 +103,11 @@ pub extern "C" fn alice_physics_clear_last_error() {
 /// has not been freed yet.
 #[no_mangle]
 pub unsafe extern "C" fn alice_physics_string_free(s: *mut std::os::raw::c_char) {
-    if !s.is_null() {
-        drop(std::ffi::CString::from_raw(s));
-    }
+    ffi_guard((), || {
+        if !s.is_null() {
+            drop(std::ffi::CString::from_raw(s));
+        }
+    });
 }
 
 // ============================================================================
@@ -828,15 +830,28 @@ pub unsafe extern "C" fn alice_physics_body_apply_impulse_at(
 /// Get default physics config.
 #[no_mangle]
 pub extern "C" fn alice_physics_config_default() -> AlicePhysicsConfig {
-    let cfg = SolverConfig::default();
-    AlicePhysicsConfig {
-        substeps: cfg.substeps as u32,
-        iterations: cfg.iterations as u32,
-        gravity_x: cfg.gravity.x.to_f64(),
-        gravity_y: cfg.gravity.y.to_f64(),
-        gravity_z: cfg.gravity.z.to_f64(),
-        damping: cfg.damping.to_f64(),
-    }
+    // panic 時は全 0 (substeps 0 は solver 側で無効 config として扱われる)
+    ffi_guard(
+        AlicePhysicsConfig {
+            substeps: 0,
+            iterations: 0,
+            gravity_x: 0.0,
+            gravity_y: 0.0,
+            gravity_z: 0.0,
+            damping: 0.0,
+        },
+        || {
+            let cfg = SolverConfig::default();
+            AlicePhysicsConfig {
+                substeps: cfg.substeps as u32,
+                iterations: cfg.iterations as u32,
+                gravity_x: cfg.gravity.x.to_f64(),
+                gravity_y: cfg.gravity.y.to_f64(),
+                gravity_z: cfg.gravity.z.to_f64(),
+                damping: cfg.damping.to_f64(),
+            }
+        },
+    )
 }
 
 /// Set gravity on an existing world.
@@ -956,10 +971,12 @@ pub unsafe extern "C" fn alice_physics_state_free(data: *mut u8, len: u32) {
 /// string was a hardcoded `"0.6.0"` before).
 #[no_mangle]
 pub extern "C" fn alice_physics_version() -> *const std::os::raw::c_char {
-    // `concat!` + `env!` keeps this a `&'static str` with an explicit NUL;
-    // no C-string literal so the `ffi` feature stays within the 1.70 MSRV.
-    const VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "\0");
-    VERSION.as_ptr().cast()
+    ffi_guard(std::ptr::null(), || {
+        // `concat!` + `env!` keeps this a `&'static str` with an explicit NUL;
+        // no C-string literal so the `ffi` feature stays within the 1.70 MSRV.
+        const VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "\0");
+        VERSION.as_ptr().cast()
+    })
 }
 
 // ============================================================================

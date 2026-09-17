@@ -13,6 +13,9 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Fixed
+- FFI: `alice_physics_last_error` / `_clear_last_error` / `_string_free` / `_config_default` / `_version` の 5 本も `ffi_guard` 経由に (34 fn 全て panic 隔離、strict-eval 3b) `config_default` の panic 時 sentinel は全 0 の `AlicePhysicsConfig`
+
 ## [1.4.0] - 2026-09-17
 
 ### Changed
