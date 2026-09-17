@@ -82,7 +82,7 @@ tempfile = "3.10"
 criterion = { version = "0.5", default-features = false }
 # v1.0 Item E: determinism golden tests hash by SHA-256 (platform-independent
 # canonical hash) — dev-only, does not affect production surface
-sha2 = "0.10"
+sha2 = "0.11"
 
 # loom model test of the graph-colouring invariant the batched solver's raw
 # pointer wrappers rely on (`--cfg loom`, quality-deep `loom` job, 1.2.0).
