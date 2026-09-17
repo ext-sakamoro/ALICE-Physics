@@ -339,7 +339,7 @@ DDSketch α out of range, `AnimationClip::sample` extrapolation).
 | `ccd` | **95.4 %** (208 / 218) | local run after batch 8 |
 | `joint` | **94.5 %** (358 / 379) | scoped run 34969836733 after batch 8 |
 | `collider` | **93.5 %** (145 / 155) | local run after batch 8 |
-| `math` | **91.3 %** (570 / 624, 13 timeouts) | scoped run 34960080446 |
+| `math` | **96.0 %** (606 / 631, 14 timeouts) on the `simd` axis; **92.7 %** (588 / 634, 11 timeouts) on the default axis, where the 21 extra misses are `cross_simd` / `dot_batch_4` / `simd_width` in `cfg(feature = "simd", x86_64)` code that is not compiled there. The 25 remaining misses are equivalent mutants (`\|` → `^` on disjoint bit ranges, the ±π reduction boundaries absorbed by the clamp, `d > 0` → `>=` with `d = ±1`), listed in `math::tests` batch 10 | scoped runs 35087290255 (`simd`) / 35087286606 (default + parallel, 92.7 %) after batch 10 (was 91.3 %) |
 | `contact_cache` | 88.0 % (66 / 75) | scoped run at `3c12ee6`, before batch 7 tests |
 | `bvh` | **87.1 %** (210 / 241, 10 timeouts) | scoped run 34969844505 after batch 8 |
 | `solver` | **94.9 %** compiled code on the default axis (485 / 511; the other 175 mutants sit in `cfg(feature = "parallel" / "gpu-solver-bridge")` code that is not compiled there, raw 70.7 %) and **82.4 %** on the `parallel,gpu-solver-bridge` axis (509 / 618; 49 mutants in `cfg(not(feature = "parallel"))` code not compiled there, raw 76.3 %) | scoped run 34969828635 after batch 8, both axes |

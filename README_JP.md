@@ -282,7 +282,7 @@ warp 事案で記録された failure mode と一致
 | `ccd` | **95.4 %** (208 / 218) | batch 8 後の local run |
 | `joint` | **94.5 %** (358 / 379) | batch 8 後の scoped run 34969836733 |
 | `collider` | **93.5 %** (145 / 155) | batch 8 後の local run |
-| `math` | **91.3 %** (570 / 624、timeout 13) | scoped run 34960080446 |
+| `math` | **96.0 %** (606 / 631、timeout 14) `simd` 軸; default 軸は **92.7 %** (588 / 634、timeout 11)、差分 21 は `cfg(feature = "simd", x86_64)` の `cross_simd` / `dot_batch_4` / `simd_width` が default 軸で compile されないため 残 missed 25 は等価 mutant (disjoint bit の `\|` → `^`、clamp が吸収する ±π reduction 境界、`d = ±1` の `d > 0` → `>=`)、`math::tests` batch 10 に列挙 | batch 10 後の scoped run 35087290255 (`simd`) / 35087286606 (default + parallel、92.7 %) (91.3 % から) |
 | `contact_cache` | 88.0 % (66 / 75) | `3c12ee6` scoped run、batch 7 test 前 |
 | `bvh` | **87.1 %** (210 / 241、timeout 10) | batch 8 後の scoped run 34969844505 |
 | `solver` | **94.9 %** (default 軸の compiled code、485 / 511、残り 175 変異は `cfg(feature = "parallel" / "gpu-solver-bridge")` 側で同軸では非 compile、raw 70.7 %) / **82.4 %** (`parallel,gpu-solver-bridge` 軸、509 / 618、`cfg(not(feature = "parallel"))` 側 49 変異は非 compile、raw 76.3 %) | batch 8 後の scoped run 34969828635、両軸 |
