@@ -8,6 +8,7 @@
 //!
 //! - **Deterministic**: the Fix128 core (rigid bodies, constraints, joints,
 //!   BVH, CCD) is bit-exact across all platforms — pure integer arithmetic.
+//!   <!-- claim-test: test_multi_step_bit_exact -->
 //!   Grid / engineering modules on `f32` / `f64` are bit-exact via `det_math`
 //!   (correctly-rounded software transcendental functions); see README
 //!   "Determinism scope" for the per-module table.
