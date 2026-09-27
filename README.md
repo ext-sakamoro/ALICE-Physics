@@ -153,6 +153,7 @@ sources cited in module docs.
 | **XPBD Solver** | Extended Position Based Dynamics for stable constraint solving |
 | **GJK/EPA Collision** | Robust collision detection for convex shapes |
 | **Stackless BVH** | Morton code-based spatial acceleration with escape pointers |
+| **Metric-aware broadphase** | A clearance can declare which norm it was measured in; `MetricWeights` (a non-negative mix of `‖·‖₁` / `‖·‖₂` / `‖·‖∞`) converts it to the Euclidean bound the boxes need, with exact closed forms. Euclidean by default, bit-identical to having no metric |
 | **Constraint Batching** | Graph-colored parallel constraint solving |
 | **Rollback Support** | Complete state serialization for netcode |
 | **Neural Controller** | Deterministic AI via ALICE-ML ternary weights + Fix128 inference |

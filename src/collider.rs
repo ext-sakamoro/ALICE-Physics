@@ -8,6 +8,7 @@
 //! - **EPA (Expanding Polytope Algorithm)**: Computes penetration depth and normal
 
 use crate::math::{Fix128, Vec3Fix};
+use crate::metric::MetricWeights;
 
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
@@ -112,6 +113,19 @@ impl AABB {
             min: center - half,
             max: center + half,
         }
+    }
+
+    /// The tight box of the ball `{x : g(x − center) ≤ radius}` in the
+    /// metric `metric`.
+    ///
+    /// The half-width is [`MetricWeights::axis_extent`], which is exact:
+    /// a cube-metric ball of radius `r` gives exactly `[−r, r]³`, and an
+    /// octahedral one the same box with the ball inscribed in it. For the
+    /// Euclidean metric this is `from_center_half(center, (r, r, r))`.
+    #[must_use]
+    pub fn from_metric_ball(center: Vec3Fix, radius: Fix128, metric: MetricWeights) -> Self {
+        let e = metric.axis_extent(radius);
+        Self::from_center_half(center, Vec3Fix::new(e, e, e))
     }
 
     /// Check if two AABBs intersect (broad phase)

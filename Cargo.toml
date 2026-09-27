@@ -75,7 +75,7 @@ alice-analytics = { version = "0.1", optional = true, default-features = false, 
 # evaluates the same transcendental law; re-exported as `alice_physics::det_math`.
 # no_std-capable (software sqrt without `std`), so the module is no longer
 # gated on `std`.
-alice-det-math = { version = "0.2", default-features = false }
+alice-det-math = { version = "0.3", default-features = false }
 
 [dev-dependencies]
 tempfile = "3.10"
