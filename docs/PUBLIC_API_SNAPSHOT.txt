@@ -1485,6 +1485,7 @@ pub alice_physics::collider::AABB::max: alice_physics::math::Vec3Fix
 pub alice_physics::collider::AABB::min: alice_physics::math::Vec3Fix
 impl alice_physics::collider::AABB
 pub fn alice_physics::collider::AABB::from_center_half(alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix) -> Self
+pub fn alice_physics::collider::AABB::from_metric_ball(alice_physics::math::Vec3Fix, alice_physics::math::Fix128, alice_physics::metric::MetricWeights) -> Self
 pub fn alice_physics::collider::AABB::intersects(&self, &Self) -> bool
 pub const fn alice_physics::collider::AABB::new(alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix) -> Self
 pub fn alice_physics::collider::AABB::surface_area(&self) -> alice_physics::math::Fix128
@@ -2368,6 +2369,7 @@ pub fn alice_physics::det_math::tanh(f32) -> f32
 pub mod alice_physics::dynamic_bvh
 pub struct alice_physics::dynamic_bvh::DynamicAabbTree
 pub alice_physics::dynamic_bvh::DynamicAabbTree::margin: alice_physics::math::Fix128
+pub alice_physics::dynamic_bvh::DynamicAabbTree::metric: alice_physics::metric::MetricWeights
 impl alice_physics::dynamic_bvh::DynamicAabbTree
 pub fn alice_physics::dynamic_bvh::DynamicAabbTree::find_pairs(&self) -> alloc::vec::Vec<(u32, u32)>
 pub fn alice_physics::dynamic_bvh::DynamicAabbTree::get_aabb(&self, u32) -> alice_physics::collider::AABB
@@ -4873,6 +4875,59 @@ pub fn alice_physics::math_util::cbrt_fix(alice_physics::math::Fix128) -> alice_
 pub fn alice_physics::math_util::clamp_fix(alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128) -> alice_physics::math::Fix128
 pub fn alice_physics::math_util::exp_fix(alice_physics::math::Fix128) -> alice_physics::math::Fix128
 pub fn alice_physics::math_util::pow_int(alice_physics::math::Fix128, i32) -> alice_physics::math::Fix128
+pub mod alice_physics::metric
+#[non_exhaustive] pub enum alice_physics::metric::MetricError
+pub alice_physics::metric::MetricError::Degenerate
+pub alice_physics::metric::MetricError::NotConvex
+impl core::clone::Clone for alice_physics::metric::MetricError
+pub fn alice_physics::metric::MetricError::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::metric::MetricError
+impl core::cmp::PartialEq for alice_physics::metric::MetricError
+pub fn alice_physics::metric::MetricError::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::metric::MetricError
+pub fn alice_physics::metric::MetricError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for alice_physics::metric::MetricError
+pub fn alice_physics::metric::MetricError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::metric::MetricError
+impl core::marker::StructuralPartialEq for alice_physics::metric::MetricError
+impl core::marker::Freeze for alice_physics::metric::MetricError
+impl core::marker::Send for alice_physics::metric::MetricError
+impl core::marker::Sync for alice_physics::metric::MetricError
+impl core::marker::Unpin for alice_physics::metric::MetricError
+impl core::marker::UnsafeUnpin for alice_physics::metric::MetricError
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::metric::MetricError
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::metric::MetricError
+pub struct alice_physics::metric::MetricWeights
+impl alice_physics::metric::MetricWeights
+pub const alice_physics::metric::MetricWeights::L1: Self
+pub const alice_physics::metric::MetricWeights::L2: Self
+pub const alice_physics::metric::MetricWeights::LINF: Self
+pub fn alice_physics::metric::MetricWeights::axis_extent(self, alice_physics::math::Fix128) -> alice_physics::math::Fix128
+pub fn alice_physics::metric::MetricWeights::euclidean_radius(self, alice_physics::math::Fix128) -> alice_physics::math::Fix128
+pub fn alice_physics::metric::MetricWeights::is_euclidean(self) -> bool
+pub fn alice_physics::metric::MetricWeights::lipschitz(self) -> alice_physics::math::Fix128
+pub fn alice_physics::metric::MetricWeights::minimum(self) -> alice_physics::math::Fix128
+pub fn alice_physics::metric::MetricWeights::new(alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128) -> core::result::Result<Self, alice_physics::metric::MetricError>
+pub fn alice_physics::metric::MetricWeights::norm(self, alice_physics::math::Vec3Fix) -> alice_physics::math::Fix128
+pub const fn alice_physics::metric::MetricWeights::weights(self) -> (alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128)
+impl core::clone::Clone for alice_physics::metric::MetricWeights
+pub fn alice_physics::metric::MetricWeights::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::metric::MetricWeights
+impl core::cmp::PartialEq for alice_physics::metric::MetricWeights
+pub fn alice_physics::metric::MetricWeights::eq(&self, &Self) -> bool
+impl core::default::Default for alice_physics::metric::MetricWeights
+pub fn alice_physics::metric::MetricWeights::default() -> Self
+impl core::fmt::Debug for alice_physics::metric::MetricWeights
+pub fn alice_physics::metric::MetricWeights::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::metric::MetricWeights
+impl core::marker::StructuralPartialEq for alice_physics::metric::MetricWeights
+impl core::marker::Freeze for alice_physics::metric::MetricWeights
+impl core::marker::Send for alice_physics::metric::MetricWeights
+impl core::marker::Sync for alice_physics::metric::MetricWeights
+impl core::marker::Unpin for alice_physics::metric::MetricWeights
+impl core::marker::UnsafeUnpin for alice_physics::metric::MetricWeights
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::metric::MetricWeights
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::metric::MetricWeights
 pub mod alice_physics::modal
 pub enum alice_physics::modal::BeamBoundary
 pub alice_physics::modal::BeamBoundary::Cantilever
@@ -6529,6 +6584,7 @@ pub alice_physics::prelude::AABB::max: alice_physics::math::Vec3Fix
 pub alice_physics::prelude::AABB::min: alice_physics::math::Vec3Fix
 impl alice_physics::collider::AABB
 pub fn alice_physics::collider::AABB::from_center_half(alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix) -> Self
+pub fn alice_physics::collider::AABB::from_metric_ball(alice_physics::math::Vec3Fix, alice_physics::math::Fix128, alice_physics::metric::MetricWeights) -> Self
 pub fn alice_physics::collider::AABB::intersects(&self, &Self) -> bool
 pub const fn alice_physics::collider::AABB::new(alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix) -> Self
 pub fn alice_physics::collider::AABB::surface_area(&self) -> alice_physics::math::Fix128
@@ -7883,6 +7939,7 @@ impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::solver::Distance
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::solver::DistanceConstraint
 pub struct alice_physics::prelude::DynamicAabbTree
 pub alice_physics::prelude::DynamicAabbTree::margin: alice_physics::math::Fix128
+pub alice_physics::prelude::DynamicAabbTree::metric: alice_physics::metric::MetricWeights
 impl alice_physics::dynamic_bvh::DynamicAabbTree
 pub fn alice_physics::dynamic_bvh::DynamicAabbTree::find_pairs(&self) -> alloc::vec::Vec<(u32, u32)>
 pub fn alice_physics::dynamic_bvh::DynamicAabbTree::get_aabb(&self, u32) -> alice_physics::collider::AABB
@@ -14835,6 +14892,7 @@ pub alice_physics::AABB::max: alice_physics::math::Vec3Fix
 pub alice_physics::AABB::min: alice_physics::math::Vec3Fix
 impl alice_physics::collider::AABB
 pub fn alice_physics::collider::AABB::from_center_half(alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix) -> Self
+pub fn alice_physics::collider::AABB::from_metric_ball(alice_physics::math::Vec3Fix, alice_physics::math::Fix128, alice_physics::metric::MetricWeights) -> Self
 pub fn alice_physics::collider::AABB::intersects(&self, &Self) -> bool
 pub const fn alice_physics::collider::AABB::new(alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix) -> Self
 pub fn alice_physics::collider::AABB::surface_area(&self) -> alice_physics::math::Fix128
@@ -16211,6 +16269,7 @@ impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::solver::Distance
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::solver::DistanceConstraint
 pub struct alice_physics::DynamicAabbTree
 pub alice_physics::DynamicAabbTree::margin: alice_physics::math::Fix128
+pub alice_physics::DynamicAabbTree::metric: alice_physics::metric::MetricWeights
 impl alice_physics::dynamic_bvh::DynamicAabbTree
 pub fn alice_physics::dynamic_bvh::DynamicAabbTree::find_pairs(&self) -> alloc::vec::Vec<(u32, u32)>
 pub fn alice_physics::dynamic_bvh::DynamicAabbTree::get_aabb(&self, u32) -> alice_physics::collider::AABB

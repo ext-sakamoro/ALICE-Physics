@@ -13,6 +13,7 @@
 
 use crate::collider::AABB;
 use crate::math::{Fix128, Vec3Fix};
+use crate::metric::MetricWeights;
 
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
@@ -85,6 +86,14 @@ pub struct DynamicAabbTree {
     root: u32,
     /// AABB fattening margin
     pub margin: Fix128,
+    /// The metric [`margin`](Self::margin) is measured in.
+    ///
+    /// A margin is a *clearance*, so under a non-Euclidean metric it has to
+    /// be converted before it can pad a Euclidean box: a clearance of `m` in
+    /// the cube metric reaches `√3·m` in Euclidean space, and padding by the
+    /// plain `m` lets pairs through the broadphase. Euclidean by default,
+    /// and that path is bit-identical to having no metric at all.
+    pub metric: MetricWeights,
 }
 
 impl DynamicAabbTree {
@@ -96,6 +105,7 @@ impl DynamicAabbTree {
             free_list: Vec::new(),
             root: NULL_NODE,
             margin: FAT_MARGIN,
+            metric: MetricWeights::L2,
         }
     }
 
@@ -278,7 +288,9 @@ impl DynamicAabbTree {
     // =========== Internal methods ===========
 
     fn fatten(&self, aabb: AABB) -> AABB {
-        let m = Vec3Fix::new(self.margin, self.margin, self.margin);
+        // the margin is a clearance in `self.metric`; the box is Euclidean
+        let pad = self.metric.euclidean_radius(self.margin);
+        let m = Vec3Fix::new(pad, pad, pad);
         AABB::new(aabb.min - m, aabb.max + m)
     }
 

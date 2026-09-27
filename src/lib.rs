@@ -365,6 +365,7 @@ pub mod mass_properties;
 pub mod material;
 pub mod math;
 pub mod math_util;
+pub mod metric;
 pub mod modal;
 pub mod motor;
 pub mod multi_world;
