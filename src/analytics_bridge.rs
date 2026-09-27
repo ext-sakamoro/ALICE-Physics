@@ -176,13 +176,9 @@ mod tests {
             flat.record_step_time(2000.0);
             flat.record_contacts(3.0);
         }
-        // DDSketch returns the bucket's lower bound: within [v/γ, v]
-        assert_bucket_of(flat.step_time_p99(), 2000.0, "flat step p99");
-        assert!(
-            flat.contacts_p99() <= 3.0 && flat.contacts_p99() >= 3.0 / GAMMA,
-            "{}",
-            flat.contacts_p99()
-        );
+        // DDSketch guarantees a relative error of at most α on every quantile
+        assert_within_relative_error(flat.step_time_p99(), 2000.0, "flat step p99");
+        assert_within_relative_error(flat.contacts_p99(), 3.0, "flat contacts p99");
         // ordering: a tail that occupies rank ≥ 99 % (15 of 1000 samples)
         // raises p99 to the tail value; 10 of 1000 (above) leaves it at the
         // base value — rank arithmetic, not the sketch's max fallback
@@ -195,24 +191,35 @@ mod tests {
             heavy.record_step_time(50_000.0);
             heavy.record_contacts(400.0);
         }
-        assert_bucket_of(heavy.step_time_p99(), 50_000.0, "heavy step p99");
-        assert_bucket_of(heavy.contacts_p99(), 400.0, "heavy contacts p99");
+        assert_within_relative_error(heavy.step_time_p99(), 50_000.0, "heavy step p99");
+        assert_within_relative_error(heavy.contacts_p99(), 400.0, "heavy contacts p99");
         assert!(heavy.step_time_p99() > tel.step_time_p99());
         assert!(heavy.contacts_p99() > tel.contacts_p99());
     }
 
-    /// `DDSketch256::new(α)` has `γ = (1 + α) / (1 − α)` and returns the lower
-    /// bound `γ^(k−1)` of the bucket `(γ^(k−1), γ^k]` holding the value of
-    /// rank `⌈q·n⌉`, so for a sample `v` of that rank the estimate lies in
-    /// `[v/γ, v]` (`≈ [0.905 v, v]` for `α = 0.05`). With 20 samples, p50 is
-    /// rank 10 and p99 is rank 20 (the maximum).
-    const GAMMA: f64 = (1.0 + PhysicsTelemetry::ALPHA) / (1.0 - PhysicsTelemetry::ALPHA);
-
-    fn assert_bucket_of(actual: f64, v: f64, what: &str) {
+    /// oracle: the DDSketch relative-error guarantee. `DDSketch256::new(α)`
+    /// promises `|estimate − v| ≤ α·v` for the sample `v` of rank `⌈q·n⌉`, so
+    /// the estimate lies in `[v·(1 − α), v·(1 + α)]` (`= [0.95 v, 1.05 v]` for
+    /// `α = 0.05`). That bound is the documented contract, so it is what this
+    /// oracle pins — **not** where inside its bucket the implementation happens
+    /// to report from. With 20 samples, p50 is rank 10 and p99 is rank 20 (the
+    /// maximum).
+    ///
+    /// History: until 2026-09-27 this helper asserted `[v/γ, v]` with
+    /// `γ = (1 + α)/(1 − α)`, i.e. that the sketch returns the *lower bound*
+    /// `γ^(k−1)` of the bucket. `alice-analytics 0.1.0` did; `0.1.1` reports
+    /// from inside the bucket instead (p50 of 1000 µs → 1047.9). Both satisfy
+    /// the ±α contract, so pinning the implementation detail turned a
+    /// within-contract upstream change into a CI failure. `Cargo.lock` is
+    /// gitignored here, so CI resolves the newest sibling while a stale local
+    /// lock does not — the divergence only showed up on the runner.
+    fn assert_within_relative_error(actual: f64, v: f64, what: &str) {
+        let alpha = PhysicsTelemetry::ALPHA;
+        let lo = v * (1.0 - alpha);
+        let hi = v * (1.0 + alpha);
         assert!(
-            actual <= v && actual >= v / GAMMA,
-            "{what} = {actual}, expected in [{}, {v}]",
-            v / GAMMA
+            actual >= lo && actual <= hi,
+            "{what} = {actual}, expected in [{lo}, {hi}] (|estimate − {v}| <= {alpha}·{v})"
         );
     }
 
@@ -230,8 +237,8 @@ mod tests {
         for _ in 0..10 {
             tel.record_step_time(50_000.0);
         }
-        assert_bucket_of(tel.step_time_p50(), 1000.0, "p50");
-        assert_bucket_of(tel.step_time_p99(), 1000.0, "p99");
+        assert_within_relative_error(tel.step_time_p50(), 1000.0, "p50");
+        assert_within_relative_error(tel.step_time_p99(), 1000.0, "p99");
         // the tail is still visible one rank higher: rank 991+ is 50 000
         let mut tail = PhysicsTelemetry::new();
         for _ in 0..90 {
@@ -240,7 +247,7 @@ mod tests {
         for _ in 0..10 {
             tail.record_step_time(50_000.0);
         }
-        assert_bucket_of(tail.step_time_p99(), 50_000.0, "p99 with 10 % outliers");
+        assert_within_relative_error(tail.step_time_p99(), 50_000.0, "p99 with 10 % outliers");
     }
 
     /// Known sample sets, exact rank arithmetic:
@@ -284,11 +291,11 @@ mod tests {
         }
 
         assert_eq!(tel.total_steps(), 20);
-        assert_bucket_of(tel.step_time_p50(), 10.0, "step_time_p50");
-        assert_bucket_of(tel.step_time_p99(), 40.0, "step_time_p99");
-        assert_bucket_of(tel.contacts_p50(), 3.0, "contacts_p50");
-        assert_bucket_of(tel.contacts_p99(), 30.0, "contacts_p99");
-        assert_bucket_of(tel.energy_drift_p99(), 20.0, "energy_drift_p99");
+        assert_within_relative_error(tel.step_time_p50(), 10.0, "step_time_p50");
+        assert_within_relative_error(tel.step_time_p99(), 40.0, "step_time_p99");
+        assert_within_relative_error(tel.contacts_p50(), 3.0, "contacts_p50");
+        assert_within_relative_error(tel.contacts_p99(), 30.0, "contacts_p99");
+        assert_within_relative_error(tel.energy_drift_p99(), 20.0, "energy_drift_p99");
         let pairs = tel.unique_collision_pairs();
         assert!(
             (39.5..=41.0).contains(&pairs),
@@ -306,8 +313,8 @@ mod tests {
         let mut t = PhysicsTelemetry::new();
         t.record_step_time(10.0);
         assert_eq!(t.total_steps(), 1);
-        assert_bucket_of(t.step_time_p50(), 10.0, "step_time_p50");
-        assert_bucket_of(t.step_time_p99(), 10.0, "step_time_p99");
+        assert_within_relative_error(t.step_time_p50(), 10.0, "step_time_p50");
+        assert_within_relative_error(t.step_time_p99(), 10.0, "step_time_p99");
         assert_eq!(t.contacts_p50(), 0.0);
         assert_eq!(t.contacts_p99(), 0.0);
         assert_eq!(t.energy_drift_p99(), 0.0);
@@ -319,8 +326,8 @@ mod tests {
         assert_eq!(t.total_steps(), 0);
         assert_eq!(t.step_time_p50(), 0.0);
         assert_eq!(t.step_time_p99(), 0.0);
-        assert_bucket_of(t.contacts_p50(), 3.0, "contacts_p50");
-        assert_bucket_of(t.contacts_p99(), 3.0, "contacts_p99");
+        assert_within_relative_error(t.contacts_p50(), 3.0, "contacts_p50");
+        assert_within_relative_error(t.contacts_p99(), 3.0, "contacts_p99");
         assert_eq!(t.energy_drift_p99(), 0.0);
         assert_eq!(t.unique_collision_pairs(), 0.0);
 
@@ -330,7 +337,7 @@ mod tests {
         assert_eq!(t.total_steps(), 0);
         assert_eq!(t.step_time_p50(), 0.0);
         assert_eq!(t.contacts_p50(), 0.0);
-        assert_bucket_of(t.energy_drift_p99(), 0.5, "energy_drift_p99 (|−0.5|)");
+        assert_within_relative_error(t.energy_drift_p99(), 0.5, "energy_drift_p99 (|−0.5|)");
         assert_eq!(t.unique_collision_pairs(), 0.0);
 
         // record_collision_pair → HLL only; one register → 4096·ln(4096/4095)

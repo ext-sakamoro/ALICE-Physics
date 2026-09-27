@@ -18,6 +18,7 @@ were introduced during that release window.
 - README / lib.rs の全称 claim を実態に限定し、各 claim 行に `<!-- claim-test: fn -->` で検証 test を紐付け (strict-eval 検査 1、2026-09-17)
 
 ### Fixed
+- **`analytics_bridge` の test oracle が実装詳細を pin していたため `alice-analytics 0.1.1` で CI red になっていたのを修正 (2026-09-27)** 旧 `assert_bucket_of` は「DDSketch が bucket の下限 `γ^(k−1)` を返す」前提で `[v/γ, v]` を assert していた 0.1.0 はそう返していたが 0.1.1 は bucket 内部から返す (1000 µs の p50 → 1047.9) **どちらも `|estimate − v| ≤ α·v` の契約内**なので、契約ではなく実装を pin していた test が契約内の上流変更で落ちていた `assert_within_relative_error` に置換して `[v(1−α), v(1+α)]` = 契約そのものを oracle にした (呼び出し 15 箇所 + 直書き 1 箇所、`GAMMA` 定数は不要化) 露出経路: **`Cargo.lock` は gitignore なので CI は最新 sibling を解決する**が local の古い lock は 0.1.0 のまま = local pass / CI fail の乖離が runner 側でしか出なかった (`Locking 175 packages to latest ...` が lock 不在の証跡) 検証: `alice-analytics 0.1.1` で lib test 1,748 全 pass + clippy `-D warnings` 0
 - FFI: `alice_physics_last_error` / `_clear_last_error` / `_string_free` / `_config_default` / `_version` の 5 本も `ffi_guard` 経由に (34 fn 全て panic 隔離、strict-eval 3b) `config_default` の panic 時 sentinel は全 0 の `AlicePhysicsConfig`
 
 ## [1.4.0] - 2026-09-17
