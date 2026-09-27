@@ -14,6 +14,7 @@ were introduced during that release window.
 ## [Unreleased]
 
 ### Changed
+- **License: `AGPL-3.0-or-later` → `AGPL-3.0-or-later OR LicenseRef-Commercial` (dual-licensed、2026-09-27)** AGPL 側の条件は一切変わらず、商用ライセンスという選択肢が追加されただけ (既存の AGPL 利用者への影響なし) 従来 README に「商用は別途連絡」と書いてあるだけで **SPDX が `AGPL-3.0-or-later` 単独だったため cargo-deny / FOSSA / SBOM には「商用オプションなし」と見えていた** のを解消 変更点: (1) SPDX を dual 宣言 (2) `LICENSE` → `LICENSE-AGPL` に rename (3) `LICENSE-COMMERCIAL.md` 新規 — 商用が必要になる 6 条件 (クローズドソース製品 / 商用 SaaS / **エッジ・ファームウェア配布** / エンジン plugin 再配布 / プラットフォーム NDA / 保証・indemnity) と付与内容 (決定論 golden vector へのアクセスを含む) を明記 (4) README / README_JP に選択肢表 + optional feature の AGPL 伝播注記 (`neural` → alice-ml / `replay` → alice-db は AGPL、`analytics` と必須 `alice-det-math` は `MIT OR Apache-2.0`) (5) 商用問い合わせ先は法人窓口 `contact@extoria.co.jp` (開発 / author 連絡は `sakamoro@alicelaw.net` のまま)
 - README / lib.rs の全称 claim を実態に限定し、各 claim 行に `<!-- claim-test: fn -->` で検証 test を紐付け (strict-eval 検査 1、2026-09-17)
 
 ### Fixed
