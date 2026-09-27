@@ -9,7 +9,7 @@ English | [日本語](README_JP.md)
 [![License: AGPL-3.0-or-later](https://img.shields.io/crates/l/alice-physics.svg)](#license)
 [![CI](https://github.com/ext-sakamoro/ALICE-Physics/actions/workflows/ci.yml/badge.svg)](https://github.com/ext-sakamoro/ALICE-Physics/actions/workflows/ci.yml)
 
-> **License**: AGPL-3.0-or-later. A separate commercial license (no AGPL obligations) is available — contact <sakamoro@alicelaw.net>. Details in [License](#license).
+> **License**: `AGPL-3.0-or-later OR LicenseRef-Commercial` (dual-licensed). The AGPL option is free. A Commercial License (no AGPL obligations) is available for closed-source products, proprietary SaaS, edge / firmware distribution, and engine plugin redistribution — enquiries to <contact@extoria.co.jp>. Details in [License](#license).
 
 > Part of **[ALICE-Eco-System](https://github.com/ext-sakamoro/ALICE-Eco-System)** — 260+ crate Edge-to-Cloud data pipeline (SDF / Physics / LLM / Motion / Font / TTS)
 
@@ -3011,13 +3011,26 @@ Standardized `[profile.bench]` added for consistent benchmarking across ALICE cr
 
 ## License
 
-AGPL-3.0-or-later - See [LICENSE](LICENSE) for details.
+`AGPL-3.0-or-later OR LicenseRef-Commercial` — dual-licensed. Pick either.
 
-AGPL is a strong copyleft: a game or application that links `alice-physics`
-(including through the Unity / UE5 bindings) and is distributed or served to
-users must be released under the AGPL as well. That is intentional for the open
-ecosystem. For commercial use without the AGPL obligations, contact
-<sakamoro@alicelaw.net> for a separate license.
+| Option | Terms | Use it when |
+|--------|-------|-------------|
+| **AGPL-3.0-or-later** | [LICENSE-AGPL](LICENSE-AGPL) — free, no reporting obligation | Your project is itself AGPL-compatible open source, or you are only using it internally |
+| **Commercial License** | [LICENSE-COMMERCIAL.md](LICENSE-COMMERCIAL.md) — paid, removes the copyleft | Closed-source product, proprietary SaaS, edge / firmware distribution, engine plugin redistribution, or a platform NDA that forbids source disclosure |
+
+AGPL is a strong copyleft: a game, application, firmware image, or service that
+links `alice-physics` — including through the C ABI / FFI, the Unity / UE5 /
+Godot bindings, the Python bindings, or the WebAssembly build — and is
+distributed or served to users must be released under the AGPL as well. That is
+intentional for the open ecosystem, and the Commercial License exists for the
+cases where it is not something you are able to do.
+
+Commercial licence enquiries: <contact@extoria.co.jp>
+
+Note on optional features: the bridge features `neural` (`alice-ml`) and
+`replay` (`alice-db`) pull additional AGPL-licensed crates. `analytics`
+(`alice-analytics`) and the mandatory `alice-det-math` dependency are
+`MIT OR Apache-2.0`. Dependency licences apply independently of this crate's.
 
 Copyright (C) 2024-2026 Moroya Sakamoto
 

@@ -9,7 +9,7 @@
 [![License: AGPL-3.0-or-later](https://img.shields.io/crates/l/alice-physics.svg)](#license)
 [![CI](https://github.com/ext-sakamoro/ALICE-Physics/actions/workflows/ci.yml/badge.svg)](https://github.com/ext-sakamoro/ALICE-Physics/actions/workflows/ci.yml)
 
-> **ライセンス**: AGPL-3.0-or-later AGPL 義務なしの商用ライセンスは別途用意 — <sakamoro@alicelaw.net> まで 詳細は [ライセンス](#ライセンス)
+> **ライセンス**: `AGPL-3.0-or-later OR LicenseRef-Commercial` (デュアルライセンス) AGPL 側は無償 クローズドソース製品 / 商用 SaaS / エッジ・ファームウェア配布 / エンジン plugin 再配布 には AGPL 義務なしの商用ライセンスを用意 — 問い合わせは <contact@extoria.co.jp> 詳細は [ライセンス](#ライセンス)
 
 異なるプラットフォームやハードウェア間で決定論的なシミュレーションを実現する高精度物理エンジン。rigid-body core は 128bit 固定小数点演算 (`Fix128`)、周辺の engineering / field module は IEEE `f32` / `f64` + 超越関数を crate 自前の `det_math` に統一 いずれも CPU、コンパイラ、OS に関わらずビット精度の結果を保証する — [決定論の範囲](#決定論の範囲) 参照
 
@@ -2449,9 +2449,18 @@ v0.6.0 テストサマリ:
 
 ## ライセンス
 
-AGPL-3.0-or-later - 詳細は [LICENSE](LICENSE) を参照。
+`AGPL-3.0-or-later OR LicenseRef-Commercial` — デュアルライセンス どちらかを選べる
 
-AGPL は強いコピーレフト: `alice-physics` を (Unity / UE5 binding 経由を含め) link して配布 / 提供するゲーム・アプリケーションは AGPL で公開する義務がある これはオープンなエコシステムのための意図的な選択 AGPL 義務なしの商用利用は別ライセンスを用意するので <sakamoro@alicelaw.net> まで連絡
+| 選択肢 | 条文 | こういう時 |
+|--------|------|-----------|
+| **AGPL-3.0-or-later** | [LICENSE-AGPL](LICENSE-AGPL) — 無償、報告義務なし | 自分の project も AGPL 互換の OSS、または社内利用のみ |
+| **商用ライセンス** | [LICENSE-COMMERCIAL.md](LICENSE-COMMERCIAL.md) — 有償、コピーレフト義務を解除 | クローズドソース製品 / 商用 SaaS / エッジ・ファームウェア配布 / エンジン plugin 再配布 / ソース開示を禁じるプラットフォーム NDA |
+
+AGPL は強いコピーレフト: `alice-physics` を link して配布 / 提供するゲーム・アプリケーション・ファームウェア・サービスは AGPL で公開する義務がある (C ABI / FFI、Unity / UE5 / Godot binding、Python binding、WebAssembly build 経由を含む) これはオープンなエコシステムのための意図的な選択で、それが実行できない場合のために商用ライセンスを用意している
+
+商用ライセンスの問い合わせ: <contact@extoria.co.jp>
+
+optional feature の注記: bridge feature の `neural` (`alice-ml`) と `replay` (`alice-db`) は追加で AGPL の crate を引く `analytics` (`alice-analytics`) と必須依存の `alice-det-math` は `MIT OR Apache-2.0` 依存 crate のライセンスは本 crate とは独立に適用される
 
 Copyright (C) 2024-2026 Moroya Sakamoto
 
