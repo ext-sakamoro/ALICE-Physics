@@ -439,6 +439,94 @@ fn cantilever_converges_from_below() {
 /// multiply, which a debug build does not inline; a debug run of this test did
 /// not finish in ten minutes on an M3, while the three-level test above takes
 /// about a second.
+/// Where each preconditioner actually bottoms out at the finest level.
+///
+/// The question this answers is not "which is faster" but **"was the stopping
+/// rule right"**. A fixed window of 1,000 abandoned the unpreconditioned solve
+/// at a relative residual of 1.63e-9, while the same solve run to a 500,000
+/// iteration budget reached 9.41e-10 — so that stop was premature, and every
+/// comparison drawn from it compared a false stop against a budget exhaustion.
+///
+/// So this runs each preconditioner twice, once under the default patience and
+/// once with the window floor raised twentyfold, and asserts the one thing that
+/// has to hold either way: **more patience cannot produce a worse residual**. If
+/// the patient run is strictly better, the impatient stop was premature; if they
+/// agree, that residual is the floor. Both readings are useful, and the
+/// assertion is true under both, so it is the numbers that decide rather than a
+/// threshold picked to make something pass.
+///
+/// ```text
+/// cargo test --release --test analytic_fem_convergence -- --ignored --nocapture
+/// ```
+///
+/// Four solves of 25,600 elements; budget a few minutes in release.
+#[test]
+#[ignore = "4 solves at 25,600 tets; the stopping-rule diagnostic"]
+fn finest_level_residual_floor_by_preconditioner() {
+    let cell = 0.25_f64;
+    for mode in [Preconditioner::None, Preconditioner::JacobiScaled] {
+        let default_patience = SolverConfig::try_new(100_000, Fix128::from_raw(0, 1 << 34))
+            .expect("valid")
+            .with_preconditioner(mode);
+        let patient = default_patience
+            .with_stagnation(20_000, default_patience.stagnation_min_improvement())
+            .expect("valid");
+
+        let mut residuals = Vec::new();
+        for (label, cfg) in [("default", &default_patience), ("patient", &patient)] {
+            let m = run_level_reporting(cell, cfg);
+            eprintln!(
+                "[floor] {mode:?} / {label:<7} -> {:<28} iters {:>6}  rel resid {:.4e}",
+                m.0, m.1, m.2
+            );
+            residuals.push(m.2);
+        }
+        assert!(
+            residuals[1] <= residuals[0] * 1.000_001,
+            "{mode:?}: waiting longer produced a worse residual ({:.4e} patient vs {:.4e} \
+             default), which a monotone iteration cannot do — the stopping rule or the \
+             bookkeeping is wrong",
+            residuals[1],
+            residuals[0]
+        );
+    }
+}
+
+/// Solve one level without panicking on a non-convergent outcome, returning
+/// `(outcome, iterations, relative residual)` so a diagnostic can report all
+/// three.
+fn run_level_reporting(cell: f64, config: &SolverConfig) -> (String, u32, f64) {
+    let level = mesh_at(cell);
+    assert_domain_is_exact(&level, cell);
+    let material = ElasticMaterial::new(fx(E_MPA), fx(NU)).expect("valid material");
+    let bc = cantilever_bc(&level.mesh);
+    match solve(&level.mesh, &material, &bc, config) {
+        Ok(out) => (
+            "Ok".to_owned(),
+            out.iterations,
+            out.relative_residual.to_f64(),
+        ),
+        Err(alice_physics::linear_elastic_fem::FemError::Stagnated {
+            iterations,
+            relative_residual,
+            without_improvement,
+        }) => (
+            format!("Stagnated(no gain {without_improvement})"),
+            iterations,
+            relative_residual.to_f64(),
+        ),
+        Err(alice_physics::linear_elastic_fem::FemError::NotConverged {
+            iterations,
+            relative_residual,
+        }) => (
+            "NotConverged(budget)".to_owned(),
+            iterations,
+            relative_residual.to_f64(),
+        ),
+        Err(other) => panic!("cell {cell}: {other:?}"),
+    }
+}
+
 /// The same series with the preconditioner switched off, so the two can be
 /// compared where it matters.
 ///

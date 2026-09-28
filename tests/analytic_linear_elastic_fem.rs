@@ -817,12 +817,13 @@ fn preconditioner_does_not_change_the_answer() {
 #[test]
 fn stagnation_settings_are_validated() {
     let base = SolverConfig::default();
-    assert!(base.stagnation_window() > 0);
+    assert!(base.stagnation_min_window() > 0);
+    assert!(base.stagnation_window_fraction() > Fix128::ZERO);
     assert!(base.stagnation_min_improvement() > Fix128::ZERO);
     assert!(base.stagnation_min_improvement() < Fix128::ONE);
 
     let tuned = base.with_stagnation(50, fx(0.01)).expect("valid");
-    assert_eq!(tuned.stagnation_window(), 50);
+    assert_eq!(tuned.stagnation_min_window(), 50);
     // the rest of the configuration survives
     assert_eq!(tuned.max_iterations(), base.max_iterations());
     assert_eq!(tuned.relative_tolerance(), base.relative_tolerance());
@@ -835,6 +836,23 @@ fn stagnation_settings_are_validated() {
     assert!(
         base.with_stagnation(50, Fix128::ONE).is_err(),
         "an improvement factor of 1 demands the residual reach zero every window"
+    );
+
+    let scaled = base.with_stagnation_fraction(fx(0.25)).expect("valid");
+    assert_eq!(scaled.stagnation_window_fraction(), fx(0.25));
+    assert_eq!(scaled.stagnation_min_window(), base.stagnation_min_window());
+    assert!(
+        base.with_stagnation_fraction(Fix128::ZERO).is_err(),
+        "a zero fraction degenerates to the fixed window the scaling replaces"
+    );
+    assert!(
+        base.with_stagnation_fraction(fx(-1.0)).is_err(),
+        "a negative fraction has no meaning"
+    );
+    assert!(
+        base.with_stagnation_fraction(Fix128::ONE).is_err(),
+        "at a fraction of 1 the condition `iterations - last >= iterations` needs \
+         `last <= 0`, so the rule can never fire and a hopeless solve burns the budget"
     );
 }
 
