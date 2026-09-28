@@ -61,7 +61,8 @@
 #![allow(clippy::disallowed_methods)]
 
 use alice_physics::linear_elastic_fem::{
-    solve, Axis, BoundaryConditions, ElasticMaterial, FemSolution, SolverConfig,
+    solve, stiffness_diagonal_stats, Axis, BoundaryConditions, ElasticMaterial, FemSolution,
+    Preconditioner, SolverConfig,
 };
 use alice_physics::math::Fix128;
 use alice_physics::sdf_collider::ClosureSdf;
@@ -279,6 +280,11 @@ struct Measured {
     /// its tolerance and one that reached it with room to spare are different
     /// situations, and only the number distinguishes them.
     relative_residual: f64,
+    /// `max / min` of the stiffness diagonal over the free degrees of freedom.
+    /// A diagonal preconditioner stretches individual components by up to this
+    /// factor around the mean, which is what decides whether the scaled inner
+    /// products stay inside the representable range.
+    diagonal_spread: f64,
 }
 
 /// Solve one level and return the tip deflection.
@@ -287,10 +293,20 @@ fn run_level(cell: f64, config: &SolverConfig) -> Measured {
     assert_domain_is_exact(&level, cell);
     let material = ElasticMaterial::new(fx(E_MPA), fx(NU)).expect("valid material");
     let bc = cantilever_bc(&level.mesh);
+    let stats = stiffness_diagonal_stats(&level.mesh, &material, &bc)
+        .unwrap_or_else(|e| panic!("cell {cell}: diagonal statistics failed: {e:?}"));
     let out = solve(&level.mesh, &material, &bc, config).unwrap_or_else(|e| {
-        panic!("cell {cell}: solve failed: {e:?}");
+        panic!(
+            "cell {cell}: solve failed: {e:?} (diagonal min {:.4e} mean {:.4e} max {:.4e}, \
+             spread {:.1})",
+            stats.min.to_f64(),
+            stats.mean.to_f64(),
+            stats.max.to_f64(),
+            stats.max.to_f64() / stats.min.to_f64()
+        );
     });
     Measured {
+        diagonal_spread: stats.max.to_f64() / stats.min.to_f64(),
         tip_mm: tip_deflection_mm(&level.mesh, &out),
         tets: level.mesh.tet_count(),
         iterations: out.iterations,
@@ -322,8 +338,14 @@ fn report(cells: &[f64], m: &[Measured]) {
     eprintln!("  target (bending + shear)   = {:.6} mm", eb + shear);
     for (i, x) in m.iter().enumerate() {
         eprintln!(
-            "  cell {:<6} tets {:>6}  cg iters {:>6}  rel resid {:.3e}  tip {:.6} mm  ({:.1}% of target)",
-            cells[i], x.tets, x.iterations, x.relative_residual, x.tip_mm,
+            "  cell {:<6} tets {:>6}  cg iters {:>6}  rel resid {:.3e}  diag spread {:>7.1}  \
+             tip {:.6} mm  ({:.1}% of target)",
+            cells[i],
+            x.tets,
+            x.iterations,
+            x.relative_residual,
+            x.diagonal_spread,
+            x.tip_mm,
             100.0 * x.tip_mm / (eb + shear)
         );
     }
@@ -417,6 +439,51 @@ fn cantilever_converges_from_below() {
 /// multiply, which a debug build does not inline; a debug run of this test did
 /// not finish in ten minutes on an M3, while the three-level test above takes
 /// about a second.
+/// The same series with the preconditioner switched off, so the two can be
+/// compared where it matters.
+///
+/// Measured at 25,600 elements, the two settings disagree in a way the coarse
+/// levels gave no hint of: unpreconditioned reached a relative residual of
+/// 9.41e-10 (and was still improving when a 500,000 iteration budget ran out),
+/// while Jacobi stalled at 4.66e-9 — five times worse — after 4,766. On the
+/// meshes up to 3,200 elements Jacobi is the better of the two on both counts,
+/// which is exactly why this pair has to be run at the fine level to decide
+/// anything.
+///
+/// ```text
+/// cargo test --release --test analytic_fem_convergence -- --ignored --nocapture
+/// ```
+///
+/// runs both. The numbers to line up are the achieved residual, the iteration
+/// count and whether the outcome is `Ok`, `Stagnated` or `NotConverged`.
+#[test]
+#[ignore = "25,600 tets at cell 0.25; the A/B partner of the test above"]
+fn cantilever_without_preconditioner() {
+    let cells = [2.0, 1.0, 0.5, 0.25];
+    let config = SolverConfig::try_new(500_000, Fix128::from_raw(0, 1 << 34))
+        .expect("valid")
+        .with_preconditioner(Preconditioner::None);
+    eprintln!("=== preconditioner: None ===");
+    let measured: Vec<Measured> = cells.iter().map(|c| run_level(*c, &config)).collect();
+    report(&cells, &measured);
+    let deflections: Vec<f64> = measured.iter().map(|x| x.tip_mm).collect();
+    let target = euler_bernoulli_tip_mm() + shear_tip_mm();
+    for (c, d) in cells.iter().zip(&deflections) {
+        assert!(
+            *d < target,
+            "cell {c}: {d:.6} mm exceeds the beam value {target:.6} mm"
+        );
+    }
+    for w in deflections.windows(2) {
+        assert!(
+            w[1] > w[0],
+            "refinement must increase the deflection: {:.6} -> {:.6}",
+            w[0],
+            w[1]
+        );
+    }
+}
+
 #[test]
 #[ignore = "25,600 tets at cell 0.25; run with --release, see the doc comment"]
 fn cantilever_order_estimates_agree() {
