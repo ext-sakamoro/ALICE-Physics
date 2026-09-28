@@ -1,0 +1,479 @@
+//! Closed-form oracles for `alice_physics::linear_elastic_fem`.
+//!
+//! Every expected value here comes from the equations of linear elasticity, not
+//! from running the solver. Where a tolerance appears, the comment says what it
+//! is made of.
+//!
+//! # Why these scenes
+//!
+//! P1 tetrahedra represent a *linear* displacement field exactly, so for any
+//! field of the form `u(x) = A·x + b` the discrete solution is the analytic one
+//! up to solver tolerance and `Fix128` rounding — no discretisation error at
+//! all. That makes uniaxial tension, hydrostatic compression and rigid body
+//! motion **exact** oracles rather than asymptotic ones, and it means a failure
+//! is a bug in `B`, `D`, the assembly or the solver, never "the mesh was too
+//! coarse".
+//!
+//! Bending is deliberately *not* here. Euler-Bernoulli tip deflection is only
+//! the limit of the FEM answer, and P1 tets converge to it from below slowly
+//! (shear locking), so a tolerance on it would be pinning the mesh resolution
+//! rather than the solver. That oracle belongs with a convergence study.
+//!
+//! The meshes are built directly rather than through
+//! `sdf_fem_mesh::generate`, for two reasons: the generator drops every cube
+//! that straddles the surface, so its domain is not the box the closed form is
+//! written for; and its 5-tet dicing is applied with one fixed pattern per
+//! cube, which does not produce matching triangulations on shared faces. Both
+//! are mesher properties and would be measured here as if they were solver
+//! error ([[feedback_oracle_scene_hits_verifier_limit]]). Kuhn's 6-tet
+//! subdivision, used below, conforms across every shared face because the
+//! diagonal it induces on a face depends only on that face's own corners.
+//!
+//! Author: Moroya Sakamoto
+
+#![cfg(feature = "std")]
+// The oracle values are closed-form f64 evaluations, not simulation state.
+#![allow(clippy::disallowed_methods)]
+
+use alice_physics::linear_elastic_fem::{
+    solve, Axis, BoundaryConditions, ElasticMaterial, SolverConfig, StressTensor,
+};
+use alice_physics::math::Fix128;
+use alice_physics::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
+
+// ---------------------------------------------------------------------------
+// scene construction
+// ---------------------------------------------------------------------------
+
+/// Node index within an `(nx+1) × (ny+1) × (nz+1)` lattice.
+fn node_index(nx: usize, ny: usize, i: usize, j: usize, k: usize) -> u32 {
+    u32::try_from(i + j * (nx + 1) + k * (nx + 1) * (ny + 1)).expect("lattice fits u32")
+}
+
+/// Axis-aligned box `[0,nx·h] × [0,ny·h] × [0,nz·h]` split into Kuhn 6-tet cells.
+///
+/// Kuhn's subdivision cuts each cube into the six tetrahedra that share the
+/// main diagonal, one per ordering of the three unit steps. Every face diagonal
+/// it produces is the one between that face's `(0,0)` and `(1,1)` corners, which
+/// both cubes sharing the face agree on, so the mesh is conforming for any
+/// `nx, ny, nz`.
+fn kuhn_box(nx: usize, ny: usize, nz: usize, h: f32) -> SdfTetMesh {
+    let mut mesh = SdfTetMesh::default();
+    for k in 0..=nz {
+        for j in 0..=ny {
+            for i in 0..=nx {
+                mesh.vertices
+                    .push([i as f32 * h, j as f32 * h, k as f32 * h]);
+            }
+        }
+    }
+    // the six orderings of the unit steps x, y, z
+    const PATHS: [[usize; 3]; 6] = [
+        [0, 1, 2],
+        [0, 2, 1],
+        [1, 0, 2],
+        [1, 2, 0],
+        [2, 0, 1],
+        [2, 1, 0],
+    ];
+    for k in 0..nz {
+        for j in 0..ny {
+            for i in 0..nx {
+                for path in PATHS {
+                    let mut step = [0usize; 3];
+                    let mut corners = [0u32; 4];
+                    corners[0] = node_index(nx, ny, i, j, k);
+                    for (n, axis) in path.into_iter().enumerate() {
+                        step[axis] = 1;
+                        corners[n + 1] =
+                            node_index(nx, ny, i + step[0], j + step[1], k + step[2]);
+                    }
+                    mesh.tets.push(Tetrahedron { vertices: corners });
+                }
+            }
+        }
+    }
+    mesh
+}
+
+fn fx(v: f64) -> Fix128 {
+    Fix128::from_f64(v)
+}
+
+/// PLA-like: 3.5 GPa, ν = 0.35. Chosen so `1−2ν = 0.30` stays well away from
+/// the incompressible limit where λ diverges.
+fn pla() -> ElasticMaterial {
+    ElasticMaterial::new(fx(3500.0), fx(0.35)).expect("E > 0 and ν in (-1, 0.5)")
+}
+
+const E_MPA: f64 = 3500.0;
+const NU: f64 = 0.35;
+
+fn close(got: Fix128, want: f64, tol: f64, what: &str) {
+    let g = got.to_f64();
+    assert!(
+        (g - want).abs() <= tol,
+        "{what}: got {g:.12e}, closed form {want:.12e}, difference {:.3e} > tol {tol:.3e}",
+        (g - want).abs()
+    );
+}
+
+// ---------------------------------------------------------------------------
+// oracle 1 — patch test, uniaxial tension
+// ---------------------------------------------------------------------------
+
+/// Prescribing the exact linear field on the boundary must reproduce it inside.
+///
+/// Oracle: for uniaxial stress `σ_xx = σ` with the other five components zero,
+/// Hooke's law inverts to `ε_xx = σ/E`, `ε_yy = ε_zz = −ν σ/E`, so
+/// `u(x,y,z) = (σ/E)·(x, −ν y, −ν z)`. This field is linear, hence exactly
+/// representable by P1 tetrahedra, so **every** element must report
+/// `σ_xx = σ` and zero elsewhere, and the interior node must land on the field.
+///
+/// This is the standard FEM patch test (Irons): it fails if `B`, `D`, the
+/// element volume, the assembly or the Dirichlet elimination is wrong.
+#[test]
+fn patch_test_uniaxial_tension_is_exact() {
+    let mesh = kuhn_box(2, 2, 2, 5.0); // 27 nodes, 48 tets, exactly one interior node
+    assert_eq!(mesh.vertex_count(), 27);
+    assert_eq!(mesh.tet_count(), 48);
+
+    let sigma = 10.0_f64; // MPa
+    let exx = sigma / E_MPA;
+    let field = |p: [f32; 3]| -> [f64; 3] {
+        [
+            exx * f64::from(p[0]),
+            -NU * exx * f64::from(p[1]),
+            -NU * exx * f64::from(p[2]),
+        ]
+    };
+
+    let mut bc = BoundaryConditions::new();
+    let interior = node_index(2, 2, 1, 1, 1);
+    for (v, p) in mesh.vertices.iter().enumerate() {
+        let v = u32::try_from(v).expect("fits");
+        if v == interior {
+            continue; // the one degree of freedom the solver has to find
+        }
+        let u = field(*p);
+        bc.prescribe_all(v, [fx(u[0]), fx(u[1]), fx(u[2])]);
+    }
+    assert_eq!(bc.prescribed_count(), 26 * 3);
+
+    let out = solve(&mesh, &pla(), &bc, &SolverConfig::default()).expect("patch test is well posed");
+
+    // interior node sits on the analytic field
+    let want = field(mesh.vertices[interior as usize]);
+    for (axis, w) in Axis::ALL.into_iter().zip(want) {
+        close(
+            out.displacements[interior as usize][axis.index()],
+            w,
+            1e-12,
+            &format!("interior node u_{axis:?}"),
+        );
+    }
+
+    // every element carries the same uniaxial stress
+    for (t, s) in out.element_stress.iter().enumerate() {
+        close(s.xx, sigma, 1e-9, &format!("tet {t} σ_xx"));
+        close(s.yy, 0.0, 1e-9, &format!("tet {t} σ_yy"));
+        close(s.zz, 0.0, 1e-9, &format!("tet {t} σ_zz"));
+        close(s.xy, 0.0, 1e-9, &format!("tet {t} σ_xy"));
+        close(s.yz, 0.0, 1e-9, &format!("tet {t} σ_yz"));
+        close(s.zx, 0.0, 1e-9, &format!("tet {t} σ_zx"));
+        close(s.von_mises(), sigma, 1e-9, &format!("tet {t} von Mises"));
+    }
+    close(out.max_von_mises_mpa(), sigma, 1e-9, "max von Mises");
+}
+
+// ---------------------------------------------------------------------------
+// oracle 2 — patch test, hydrostatic compression
+// ---------------------------------------------------------------------------
+
+/// Under pressure `p` the stress is `σ = −p·I` and the strain is isotropic:
+/// `ε = −p(1−2ν)/E` on each axis, so `u(x) = −p(1−2ν)/E · x`.
+///
+/// This exercises the part of `D` that uniaxial tension leaves nearly idle —
+/// the off-diagonal `λ` block — and pins the von Mises formula from the other
+/// side, because a purely hydrostatic state has **zero** equivalent stress.
+#[test]
+fn patch_test_hydrostatic_is_exact() {
+    let mesh = kuhn_box(2, 2, 2, 5.0);
+    let pressure = 12.0_f64; // MPa
+    let eps = -pressure * (1.0 - 2.0 * NU) / E_MPA;
+
+    let mut bc = BoundaryConditions::new();
+    let interior = node_index(2, 2, 1, 1, 1);
+    for (v, p) in mesh.vertices.iter().enumerate() {
+        let v = u32::try_from(v).expect("fits");
+        if v == interior {
+            continue;
+        }
+        bc.prescribe_all(
+            v,
+            [
+                fx(eps * f64::from(p[0])),
+                fx(eps * f64::from(p[1])),
+                fx(eps * f64::from(p[2])),
+            ],
+        );
+    }
+
+    let out = solve(&mesh, &pla(), &bc, &SolverConfig::default()).expect("well posed");
+
+    for (t, s) in out.element_stress.iter().enumerate() {
+        close(s.xx, -pressure, 1e-9, &format!("tet {t} σ_xx"));
+        close(s.yy, -pressure, 1e-9, &format!("tet {t} σ_yy"));
+        close(s.zz, -pressure, 1e-9, &format!("tet {t} σ_zz"));
+        close(s.hydrostatic(), -pressure, 1e-9, &format!("tet {t} mean"));
+        // deviatoric part is identically zero, so von Mises must vanish
+        close(s.von_mises(), 0.0, 1e-9, &format!("tet {t} von Mises"));
+    }
+}
+
+// ---------------------------------------------------------------------------
+// oracle 3 — rigid body motion carries no stress
+// ---------------------------------------------------------------------------
+
+/// A constant displacement is in the null space of the strain operator, so the
+/// stress must be identically zero — not "small". Catches a `B` matrix with a
+/// spurious constant term and a shape-function gradient that does not sum to
+/// zero over the four nodes.
+#[test]
+fn rigid_translation_produces_zero_stress() {
+    let mesh = kuhn_box(2, 1, 1, 3.0);
+    let shift = [fx(0.7), fx(-1.3), fx(2.0)];
+
+    let mut bc = BoundaryConditions::new();
+    for v in 0..u32::try_from(mesh.vertex_count()).expect("fits") {
+        bc.prescribe_all(v, shift);
+    }
+
+    let out = solve(&mesh, &pla(), &bc, &SolverConfig::default()).expect("fully prescribed");
+
+    for (t, s) in out.element_stress.iter().enumerate() {
+        for (name, c) in [
+            ("xx", s.xx),
+            ("yy", s.yy),
+            ("zz", s.zz),
+            ("xy", s.xy),
+            ("yz", s.yz),
+            ("zx", s.zx),
+        ] {
+            close(c, 0.0, 1e-9, &format!("tet {t} σ_{name} under translation"));
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// oracle 4 — traction-loaded bar (force driven, free lateral surfaces)
+// ---------------------------------------------------------------------------
+
+/// The same uniaxial state, but reached through *loads* instead of prescribed
+/// displacements, with the lateral surfaces free.
+///
+/// Oracle: a bar of length `L` and cross-section `A` pulled by total force `F`
+/// carries `σ = F/A` and stretches by `δ = F·L/(A·E)`. The lateral faces are
+/// traction free, so the bar also contracts by `−ν·δ·(w/L)` across its width;
+/// both come out of the same closed form as oracle 1 with `σ = F/A`.
+///
+/// The end face is loaded by consistent nodal forces: for a constant traction
+/// on a triangulated face, each triangle gives one third of `traction × area`
+/// to each of its three nodes. Getting that wrong (lumping equally per node,
+/// say) perturbs the answer, which is the point — this test covers the load
+/// path that the prescribed-displacement patch tests never touch.
+#[test]
+fn traction_loaded_bar_matches_closed_form() {
+    let (nx, ny, nz, h) = (4usize, 1usize, 1usize, 2.5_f32);
+    let mesh = kuhn_box(nx, ny, nz, h);
+    let length = f64::from(h) * nx as f64; // 10 mm
+    let width = f64::from(h) * ny as f64; // 2.5 mm
+    let height = f64::from(h) * nz as f64; // 2.5 mm
+    let area = width * height;
+
+    let total_force = 50.0_f64; // N
+    let sigma = total_force / area;
+    let delta = total_force * length / (area * E_MPA);
+
+    let mut bc = BoundaryConditions::new();
+
+    // x = 0 face: roller in x. Pin exactly three more components to remove the
+    // remaining rigid body modes without restraining the lateral contraction:
+    // node (0,0,0) also in y and z, node (0,ny,0) in z, node (0,0,nz) in y.
+    for k in 0..=nz {
+        for j in 0..=ny {
+            bc.prescribe(node_index(nx, ny, 0, j, k), Axis::X, Fix128::ZERO);
+        }
+    }
+    bc.prescribe(node_index(nx, ny, 0, 0, 0), Axis::Y, Fix128::ZERO);
+    bc.prescribe(node_index(nx, ny, 0, 0, 0), Axis::Z, Fix128::ZERO);
+    bc.prescribe(node_index(nx, ny, 0, ny, 0), Axis::Z, Fix128::ZERO);
+    bc.prescribe(node_index(nx, ny, 0, 0, nz), Axis::Y, Fix128::ZERO);
+
+    // x = L face: the four corner nodes of a single 2.5 × 2.5 quad, split by
+    // Kuhn into two triangles sharing the (0,0)-(1,1) diagonal. Consistent
+    // nodal forces for a uniform traction: each triangle hands area/3 of the
+    // traction to each of its nodes, so the two diagonal nodes get two thirds
+    // of a triangle's share each and the other two get one third.
+    let n00 = node_index(nx, ny, nx, 0, 0);
+    let n10 = node_index(nx, ny, nx, ny, 0);
+    let n01 = node_index(nx, ny, nx, 0, nz);
+    let n11 = node_index(nx, ny, nx, ny, nz);
+    let tri = total_force / 2.0; // force carried by each of the two triangles
+    for (node, share) in [
+        (n00, 2.0 / 3.0),
+        (n11, 2.0 / 3.0),
+        (n10, 1.0 / 3.0),
+        (n01, 1.0 / 3.0),
+    ] {
+        bc.add_load(node, Axis::X, fx(tri * share));
+    }
+
+    let out = solve(&mesh, &pla(), &bc, &SolverConfig::default()).expect("well posed");
+
+    // uniform axial stress everywhere
+    for (t, s) in out.element_stress.iter().enumerate() {
+        close(s.xx, sigma, 1e-6, &format!("tet {t} σ_xx"));
+        close(s.yy, 0.0, 1e-6, &format!("tet {t} σ_yy"));
+        close(s.zz, 0.0, 1e-6, &format!("tet {t} σ_zz"));
+        close(s.xy, 0.0, 1e-6, &format!("tet {t} σ_xy"));
+    }
+
+    // tip extension δ = F L / (A E)
+    for j in 0..=ny {
+        for k in 0..=nz {
+            let n = node_index(nx, ny, nx, j, k) as usize;
+            close(
+                out.displacements[n][0],
+                delta,
+                1e-9,
+                &format!("tip node ({j},{k}) u_x"),
+            );
+        }
+    }
+
+    // lateral contraction at the tip: u_y = −ν·(σ/E)·y
+    let n = node_index(nx, ny, nx, ny, 0) as usize;
+    close(
+        out.displacements[n][1],
+        -NU * (sigma / E_MPA) * width,
+        1e-9,
+        "tip node u_y (Poisson contraction)",
+    );
+}
+
+// ---------------------------------------------------------------------------
+// oracle 5 — material and configuration contracts
+// ---------------------------------------------------------------------------
+
+/// `λ = Eν/((1+ν)(1−2ν))`, `μ = E/(2(1+ν))`, and the constructor refuses the
+/// values that make the stiffness indefinite.
+#[test]
+fn lame_parameters_and_material_validation() {
+    let m = pla();
+    let (lambda, mu) = m.lame();
+    let want_lambda = E_MPA * NU / ((1.0 + NU) * (1.0 - 2.0 * NU));
+    let want_mu = E_MPA / (2.0 * (1.0 + NU));
+    close(lambda, want_lambda, 1e-6, "λ");
+    close(mu, want_mu, 1e-6, "μ");
+
+    // E = 2μ(1+ν) is an identity, so it holds for any admissible ν
+    close(mu * fx(2.0) * (Fix128::ONE + fx(NU)), E_MPA, 1e-6, "2μ(1+ν) = E");
+
+    assert!(ElasticMaterial::new(fx(0.0), fx(0.3)).is_err(), "E = 0");
+    assert!(ElasticMaterial::new(fx(-1.0), fx(0.3)).is_err(), "E < 0");
+    assert!(
+        ElasticMaterial::new(fx(3500.0), fx(0.5)).is_err(),
+        "ν = 0.5 is incompressible, λ diverges"
+    );
+    assert!(
+        ElasticMaterial::new(fx(3500.0), fx(0.6)).is_err(),
+        "ν > 0.5 makes the stiffness indefinite"
+    );
+    assert!(
+        ElasticMaterial::new(fx(3500.0), fx(-1.0)).is_err(),
+        "ν = -1 makes μ/λ degenerate"
+    );
+
+    assert!(SolverConfig::try_new(0, fx(1e-9)).is_err(), "zero budget");
+    assert!(
+        SolverConfig::try_new(100, Fix128::ZERO).is_err(),
+        "zero tolerance is unreachable in fixed point"
+    );
+    assert!(
+        SolverConfig::try_new(100, Fix128::ONE).is_err(),
+        "tolerance of 1 accepts the zero vector"
+    );
+}
+
+/// Von Mises is built from the closed form, not from the solver.
+#[test]
+fn von_mises_matches_closed_form() {
+    // an arbitrary non-symmetric state, so a transposed or dropped shear term
+    // shows up
+    let s = StressTensor {
+        xx: fx(120.0),
+        yy: fx(-40.0),
+        zz: fx(15.0),
+        xy: fx(30.0),
+        yz: fx(-12.0),
+        zx: fx(7.0),
+    };
+    let (sxx, syy, szz) = (120.0_f64, -40.0, 15.0);
+    let (sxy, syz, szx) = (30.0_f64, -12.0, 7.0);
+    let want = (0.5
+        * ((sxx - syy).powi(2) + (syy - szz).powi(2) + (szz - sxx).powi(2))
+        + 3.0 * (sxy * sxy + syz * syz + szx * szx))
+        .sqrt();
+    close(s.von_mises(), want, 1e-6, "von Mises");
+    close(s.hydrostatic(), (sxx + syy + szz) / 3.0, 1e-9, "mean stress");
+}
+
+// ---------------------------------------------------------------------------
+// oracle 6 — the errors are reported, not absorbed
+// ---------------------------------------------------------------------------
+
+/// A mesh with no constraints has three free translations, so the stiffness is
+/// singular; the solver must say so rather than return whatever the iteration
+/// happened to reach.
+#[test]
+fn unconstrained_mesh_is_rejected() {
+    let mesh = kuhn_box(1, 1, 1, 4.0);
+    let mut bc = BoundaryConditions::new();
+    bc.add_load(0, Axis::X, fx(1.0));
+    let err = solve(&mesh, &pla(), &bc, &SolverConfig::default()).unwrap_err();
+    assert!(
+        matches!(
+            err,
+            alice_physics::linear_elastic_fem::FemError::UnderConstrained
+                | alice_physics::linear_elastic_fem::FemError::NotConverged { .. }
+        ),
+        "expected a rigid-body-mode diagnosis, got {err:?}"
+    );
+}
+
+/// A boundary condition on a vertex the mesh does not have is a caller bug and
+/// must not be silently dropped.
+#[test]
+fn out_of_range_vertex_is_rejected() {
+    let mesh = kuhn_box(1, 1, 1, 4.0);
+    let mut bc = BoundaryConditions::new();
+    bc.fix(9_999);
+    let err = solve(&mesh, &pla(), &bc, &SolverConfig::default()).unwrap_err();
+    assert!(
+        matches!(
+            err,
+            alice_physics::linear_elastic_fem::FemError::VertexOutOfRange { vertex: 9_999, .. }
+        ),
+        "expected VertexOutOfRange, got {err:?}"
+    );
+}
+
+/// An empty mesh is an error, not an empty solution.
+#[test]
+fn empty_mesh_is_rejected() {
+    let mesh = SdfTetMesh::default();
+    let bc = BoundaryConditions::new();
+    let err = solve(&mesh, &pla(), &bc, &SolverConfig::default()).unwrap_err();
+    assert_eq!(err, alice_physics::linear_elastic_fem::FemError::EmptyMesh);
+}
