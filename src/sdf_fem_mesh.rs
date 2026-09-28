@@ -1,22 +1,44 @@
 //! Cartesian tetrahedral mesh generation from a signed distance field.
 //!
-//! Companion of [`crate::deformable`] and [`crate::sdf_collider`] that
-//! exposes a scaffold-tier "SDF → tet mesh" pipeline. Each Cartesian
-//! cube fully inside the SDF is diced into five reference tetrahedra
-//! (the standard "5-tet cube" pattern); cubes crossing the surface
-//! are dropped by the MVP because clip-tet extraction is
-//! substantially more code than the module aims to ship.
+//! Companion of [`crate::deformable`], [`crate::linear_elastic_fem`] and
+//! [`crate::sdf_collider`]. [`generate`] dices every Cartesian cube that lies
+//! fully inside the SDF into five tetrahedra; [`generate_marching_tets`] also
+//! clips the cubes the surface crosses.
+//!
+//! # Conformity
+//!
+//! Both generators produce a **conforming** mesh: two tetrahedra meet along a
+//! shared face, edge or vertex and nothing else. That is a precondition for the
+//! FEM — a mismatched face makes the displacement field discontinuous across it
+//! and there is no convergence guarantee — and it is not free. Three things
+//! have to line up, each of which was wrong here until 2026-09-29:
+//!
+//! - **The cube dicing alternates** ([`CUBE_FIVE_TETS`], selected by
+//!   [`cell_parity`]). A cube has two 5-tet decompositions and a single one used
+//!   everywhere puts opposite diagonals on the two faces it shares along each
+//!   axis.
+//! - **Vertices are interned by topology**, not by position: a lattice corner
+//!   by its cell coordinate, a zero crossing by the pair of corners whose
+//!   segment carries it. No coordinate comparison and so no threshold to tune.
+//! - **Quadrilateral faces of a clipped wedge take the diagonal through their
+//!   smallest vertex index** (`prism_to_tets`), so the two sub-tetrahedra that
+//!   meet along one make the same choice.
+//!
+//! `tests/mesh_conformity.rs` counts this directly, by face census. **Do not
+//! use the FEM patch test for it**: two triangulations of a square interpolate
+//! a linear field identically, so a patch test comes back exact on a
+//! non-conforming mesh (measured: 3.6e-15 MPa while 576 of 768 singly-used
+//! faces were interior).
 //!
 //! # Limitations
 //!
-//! - Only cubes with all eight corners strictly inside the SDF are
-//!   emitted. Surface-conforming cells / Marching Tets / Delaunay
-//!   refinement are future work.
-//! - Vertex indices are deduplicated via a small `HashMap` keyed on
-//!   the integer lattice cell coordinate; positions are always
-//!   sampled at cell corners, not shifted to the SDF surface.
-//! - The generated mesh is intended for downstream `deformable::…`
-//!   FEM callers; it is not tuned for rendering.
+//! - [`generate`] emits only cubes with all eight corners inside, so it meshes
+//!   strictly less than the shape: a 20 mm box at 4 mm cells yields the inner
+//!   16 mm. Use [`generate_marching_tets`] when the surface matters.
+//! - Edge-based refinement ([`SdfTetMesh::refine_by_max_edge_length`]) is not
+//!   Delaunay refinement; aspect ratio can drift.
+//! - The generated mesh is intended for downstream FEM callers; it is not tuned
+//!   for rendering.
 
 use std::collections::HashMap;
 
@@ -250,7 +272,7 @@ pub fn generate<F: SdfField + ?Sized>(
                     });
                     cube_verts[slot] = idx;
                 }
-                for tet in cube_to_five_tets(cube_verts) {
+                for tet in cube_to_five_tets(cube_verts, cell_parity(ix, iy, iz)) {
                     mesh.tets.push(tet);
                 }
             }
@@ -283,6 +305,7 @@ pub fn generate_marching_tets<F: SdfField + ?Sized>(
 ) -> SdfTetMesh {
     assert!(cell > 0.0, "cell must be positive");
     let mut mesh = SdfTetMesh::default();
+    let mut table: HashMap<VertexKey, u32> = HashMap::new();
     let nx = ((max[0] - min[0]) / cell).max(1.0) as i32;
     let ny = ((max[1] - min[1]) / cell).max(1.0) as i32;
     let nz = ((max[2] - min[2]) / cell).max(1.0) as i32;
@@ -311,28 +334,24 @@ pub fn generate_marching_tets<F: SdfField + ?Sized>(
                 if corner_sdf.iter().all(|&d| d > 0.0) {
                     continue;
                 }
-                // Standard 5-tet decomposition of the cube (vertex indices
-                // into the 8-element `corner_*` arrays).
-                for sub_tet in [
-                    [0, 1, 2, 5],
-                    [0, 2, 3, 7],
-                    [0, 4, 5, 7],
-                    [2, 5, 6, 7],
-                    [0, 2, 5, 7],
-                ] {
-                    let positions = [
-                        corner_positions[sub_tet[0]],
-                        corner_positions[sub_tet[1]],
-                        corner_positions[sub_tet[2]],
-                        corner_positions[sub_tet[3]],
-                    ];
-                    let sdf_values = [
-                        corner_sdf[sub_tet[0]],
-                        corner_sdf[sub_tet[1]],
-                        corner_sdf[sub_tet[2]],
-                        corner_sdf[sub_tet[3]],
-                    ];
-                    marching_tet_emit(&mut mesh, positions, sdf_values);
+                let corner_ids: [[i32; 3]; 8] = [
+                    [ix, iy, iz],
+                    [ix + 1, iy, iz],
+                    [ix + 1, iy + 1, iz],
+                    [ix, iy + 1, iz],
+                    [ix, iy, iz + 1],
+                    [ix + 1, iy, iz + 1],
+                    [ix + 1, iy + 1, iz + 1],
+                    [ix, iy + 1, iz + 1],
+                ];
+                // The base dicing alternates for the same reason `generate`
+                // does: a fixed pattern disagrees with the neighbour on every
+                // shared face.
+                for sub_tet in CUBE_FIVE_TETS[cell_parity(ix, iy, iz)] {
+                    let ids = sub_tet.map(|i| corner_ids[i]);
+                    let positions = sub_tet.map(|i| corner_positions[i]);
+                    let sdf_values = sub_tet.map(|i| corner_sdf[i]);
+                    marching_tet_emit(&mut mesh, &mut table, ids, positions, sdf_values);
                 }
             }
         }
@@ -350,7 +369,13 @@ fn corner_pos(min: [f32; 3], cell: f32, ix: i32, iy: i32, iz: i32) -> [f32; 3] {
 
 /// Emit clipped tetrahedra into `mesh` for a single sub-tetrahedron
 /// against the SDF represented by `sdf_values` at the four vertices.
-fn marching_tet_emit(mesh: &mut SdfTetMesh, v: [[f32; 3]; 4], sdf: [f32; 4]) {
+fn marching_tet_emit(
+    mesh: &mut SdfTetMesh,
+    table: &mut HashMap<VertexKey, u32>,
+    ids: [[i32; 3]; 4],
+    v: [[f32; 3]; 4],
+    sdf: [f32; 4],
+) {
     // Bitmask of inside vertices (bit i = 1 iff sdf[i] < 0).
     let mut mask: u8 = 0;
     for (i, &d) in sdf.iter().enumerate() {
@@ -358,57 +383,51 @@ fn marching_tet_emit(mesh: &mut SdfTetMesh, v: [[f32; 3]; 4], sdf: [f32; 4]) {
             mask |= 1 << i;
         }
     }
-    // Fast paths.
     if mask == 0b0000 {
         return;
     }
+    let corner = |mesh: &mut SdfTetMesh, table: &mut HashMap<VertexKey, u32>, i: usize| -> u32 {
+        intern(mesh, table, VertexKey::Corner(ids[i]), v[i])
+    };
     if mask == 0b1111 {
-        emit_tet(mesh, v[0], v[1], v[2], v[3]);
+        let c = [
+            corner(mesh, table, 0),
+            corner(mesh, table, 1),
+            corner(mesh, table, 2),
+            corner(mesh, table, 3),
+        ];
+        push_tet(mesh, c);
         return;
     }
-    // Linear-interpolate to the zero crossing along edge (a, b).
-    let interp = |a: usize, b: usize| -> [f32; 3] {
-        let denom = sdf[a] - sdf[b];
-        let t = if denom.abs() < 1.0e-9 {
-            0.5
-        } else {
-            sdf[a] / denom
-        };
-        [
-            v[a][0] + t * (v[b][0] - v[a][0]),
-            v[a][1] + t * (v[b][1] - v[a][1]),
-            v[a][2] + t * (v[b][2] - v[a][2]),
-        ]
-    };
-    let count = mask.count_ones();
-    match count {
+
+    match mask.count_ones() {
         1 => {
-            // One vertex inside; emit one tet from that vertex to three
-            // edge intersections. Identify the interior vertex.
+            // One vertex inside; one tet from it to three edge crossings.
             let inside = mask.trailing_zeros() as usize;
-            let others: [usize; 3] = other_three(inside);
-            let e0 = interp(inside, others[0]);
-            let e1 = interp(inside, others[1]);
-            let e2 = interp(inside, others[2]);
-            emit_tet(mesh, v[inside], e0, e1, e2);
+            let others = other_three(inside);
+            let p = corner(mesh, table, inside);
+            let e0 = crossing_vertex(mesh, table, ids, v, sdf, inside, others[0]);
+            let e1 = crossing_vertex(mesh, table, ids, v, sdf, inside, others[1]);
+            let e2 = crossing_vertex(mesh, table, ids, v, sdf, inside, others[2]);
+            push_tet(mesh, [p, e0, e1, e2]);
         }
         3 => {
-            // Three vertices inside; complement of case 1.
+            // Three inside; the complement of case 1, decomposed as a wedge.
             let outside = (!mask & 0b1111).trailing_zeros() as usize;
-            let insides: [usize; 3] = other_three(outside);
-            let e0 = interp(insides[0], outside);
-            let e1 = interp(insides[1], outside);
-            let e2 = interp(insides[2], outside);
-            // Interior polytope = original tet minus tet(outside, e0, e1, e2).
-            // Decompose the remaining wedge into three tetrahedra.
-            emit_tet(mesh, v[insides[0]], v[insides[1]], v[insides[2]], e0);
-            emit_tet(mesh, v[insides[1]], v[insides[2]], e0, e1);
-            emit_tet(mesh, v[insides[2]], e0, e1, e2);
+            let insides = other_three(outside);
+            let a = corner(mesh, table, insides[0]);
+            let b = corner(mesh, table, insides[1]);
+            let c = corner(mesh, table, insides[2]);
+            let e0 = crossing_vertex(mesh, table, ids, v, sdf, insides[0], outside);
+            let e1 = crossing_vertex(mesh, table, ids, v, sdf, insides[1], outside);
+            let e2 = crossing_vertex(mesh, table, ids, v, sdf, insides[2], outside);
+            for tet in prism_to_tets([a, b, c], [e0, e1, e2]) {
+                push_tet(mesh, tet);
+            }
         }
         2 => {
-            // Two vertices inside, two outside. The interior polytope is
-            // a wedge (triangular prism) with six vertices: the two
-            // interior vertices plus four edge intersections.
+            // Two inside, two outside: the interior polytope is a wedge with
+            // six vertices.
             let mut insides = [0_usize; 2];
             let mut outsides = [0_usize; 2];
             let mut ip = 0;
@@ -422,17 +441,17 @@ fn marching_tet_emit(mesh: &mut SdfTetMesh, v: [[f32; 3]; 4], sdf: [f32; 4]) {
                     op += 1;
                 }
             }
-            let a = v[insides[0]];
-            let b = v[insides[1]];
-            let e_a_c = interp(insides[0], outsides[0]);
-            let e_a_d = interp(insides[0], outsides[1]);
-            let e_b_c = interp(insides[1], outsides[0]);
-            let e_b_d = interp(insides[1], outsides[1]);
-            // Prism decomposition into three tets: (a, b, e_bc, e_ac),
-            // (a, e_bc, e_ac, e_bd), (a, e_ac, e_bd, e_ad).
-            emit_tet(mesh, a, b, e_b_c, e_a_c);
-            emit_tet(mesh, a, e_b_c, e_a_c, e_b_d);
-            emit_tet(mesh, a, e_a_c, e_b_d, e_a_d);
+            let a = corner(mesh, table, insides[0]);
+            let b = corner(mesh, table, insides[1]);
+            let e_a_c = crossing_vertex(mesh, table, ids, v, sdf, insides[0], outsides[0]);
+            let e_a_d = crossing_vertex(mesh, table, ids, v, sdf, insides[0], outsides[1]);
+            let e_b_c = crossing_vertex(mesh, table, ids, v, sdf, insides[1], outsides[0]);
+            let e_b_d = crossing_vertex(mesh, table, ids, v, sdf, insides[1], outsides[1]);
+            // the wedge is a prism with triangular ends (a, e_a_c, e_a_d) and
+            // (b, e_b_c, e_b_d), paired corner for corner
+            for tet in prism_to_tets([a, e_a_c, e_a_d], [b, e_b_c, e_b_d]) {
+                push_tet(mesh, tet);
+            }
         }
         _ => unreachable!("count 0 and 4 handled above"),
     }
@@ -450,19 +469,145 @@ fn other_three(exclude: usize) -> [usize; 3] {
     out
 }
 
-fn emit_tet(mesh: &mut SdfTetMesh, a: [f32; 3], b: [f32; 3], c: [f32; 3], d: [f32; 3]) {
-    let base = mesh.vertices.len() as u32;
-    mesh.vertices.push(a);
-    mesh.vertices.push(b);
-    mesh.vertices.push(c);
-    mesh.vertices.push(d);
-    mesh.tets.push(Tetrahedron {
-        vertices: [base, base + 1, base + 2, base + 3],
-    });
+/// Identity of a Marching Tetrahedra vertex.
+///
+/// Keyed by **topology, not position**. A crossing vertex always lies on the
+/// segment between two lattice corners and is placed by interpolating the same
+/// two signed distances, so every sub-tetrahedron that meets that segment
+/// computes bit-identical coordinates for it. Keying on the corner pair
+/// therefore identifies it exactly, with no distance threshold to tune — the
+/// question "are these two floats the same point?" never comes up.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum VertexKey {
+    /// A lattice corner.
+    Corner([i32; 3]),
+    /// The zero crossing on the segment between two lattice corners, stored
+    /// with the lexicographically smaller corner first so both sides of the
+    /// segment produce the same key.
+    Crossing([i32; 3], [i32; 3]),
 }
 
-/// Canonical 5-tet decomposition of a unit cube. Input indices are
-/// ordered as
+impl VertexKey {
+    #[inline]
+    fn crossing(a: [i32; 3], b: [i32; 3]) -> Self {
+        if a <= b {
+            Self::Crossing(a, b)
+        } else {
+            Self::Crossing(b, a)
+        }
+    }
+}
+
+/// Return the index of `key`, inserting `position` on first sight.
+fn intern(
+    mesh: &mut SdfTetMesh,
+    table: &mut HashMap<VertexKey, u32>,
+    key: VertexKey,
+    position: [f32; 3],
+) -> u32 {
+    *table.entry(key).or_insert_with(|| {
+        let index = mesh.vertices.len() as u32;
+        mesh.vertices.push(position);
+        index
+    })
+}
+
+/// Index of the zero crossing on sub-tet edge `(a, b)`.
+///
+/// Snaps to a corner when the crossing lands exactly on one, so a vertex is
+/// never emitted twice under two different keys.
+fn crossing_vertex(
+    mesh: &mut SdfTetMesh,
+    table: &mut HashMap<VertexKey, u32>,
+    ids: [[i32; 3]; 4],
+    v: [[f32; 3]; 4],
+    sdf: [f32; 4],
+    a: usize,
+    b: usize,
+) -> u32 {
+    let denom = sdf[a] - sdf[b];
+    let t = if denom.abs() < 1.0e-9 {
+        0.5
+    } else {
+        sdf[a] / denom
+    };
+    if t <= 0.0 {
+        return intern(mesh, table, VertexKey::Corner(ids[a]), v[a]);
+    }
+    if t >= 1.0 {
+        return intern(mesh, table, VertexKey::Corner(ids[b]), v[b]);
+    }
+    let position = [
+        v[a][0] + t * (v[b][0] - v[a][0]),
+        v[a][1] + t * (v[b][1] - v[a][1]),
+        v[a][2] + t * (v[b][2] - v[a][2]),
+    ];
+    intern(mesh, table, VertexKey::crossing(ids[a], ids[b]), position)
+}
+
+/// Split a triangular prism into three tetrahedra, choosing every quadrilateral
+/// face's diagonal through that face's smallest vertex index.
+///
+/// `bottom[k]` is paired with `top[k]`; the three quadrilateral faces are
+/// `(bottom[k], bottom[k+1], top[k+1], top[k])`.
+///
+/// The rule matters for conformity, not for quality. Two clipped
+/// sub-tetrahedra that meet along such a face see the same four global indices,
+/// so picking the diagonal by index makes them agree — while any fixed choice
+/// (an apex hard-coded to one corner, say) makes them disagree and leaves the
+/// mesh non-conforming, which is the defect this replaced.
+///
+/// Rotating the smallest index to `bottom[0]` also avoids the prism
+/// configuration that has no three-tetrahedron split at all: the two faces
+/// meeting at that corner then both take their diagonal through it, so the three
+/// diagonals cannot all circulate the same way (Dompierre et al., *How to
+/// Subdivide Pyramids, Prisms and Hexahedra into Tetrahedra*).
+fn prism_to_tets(bottom: [u32; 3], top: [u32; 3]) -> [[u32; 4]; 3] {
+    let mut b = bottom;
+    let mut t = top;
+    let all = [b[0], b[1], b[2], t[0], t[1], t[2]];
+    let mut lowest = 0usize;
+    for (i, v) in all.iter().enumerate() {
+        if *v < all[lowest] {
+            lowest = i;
+        }
+    }
+    if lowest >= 3 {
+        core::mem::swap(&mut b, &mut t);
+        lowest -= 3;
+    }
+    let b = [b[lowest], b[(lowest + 1) % 3], b[(lowest + 2) % 3]];
+    let t = [t[lowest], t[(lowest + 1) % 3], t[(lowest + 2) % 3]];
+    if b[1].min(t[2]) < b[2].min(t[1]) {
+        [
+            [b[0], b[1], b[2], t[2]],
+            [b[0], b[1], t[2], t[1]],
+            [b[0], t[1], t[2], t[0]],
+        ]
+    } else {
+        [
+            [b[0], b[1], b[2], t[1]],
+            [b[0], t[1], b[2], t[2]],
+            [b[0], t[1], t[2], t[0]],
+        ]
+    }
+}
+
+/// Push a tetrahedron, dropping it when two of its vertices coincide (which the
+/// corner snapping above can produce on a degenerate crossing).
+fn push_tet(mesh: &mut SdfTetMesh, vertices: [u32; 4]) {
+    for i in 0..4 {
+        for j in (i + 1)..4 {
+            if vertices[i] == vertices[j] {
+                return;
+            }
+        }
+    }
+    mesh.tets.push(Tetrahedron { vertices });
+}
+
+/// The two 5-tet decompositions of a cube, as indices into a corner array
+/// ordered
 ///
 /// ```text
 ///   4 ---- 5
@@ -473,26 +618,53 @@ fn emit_tet(mesh: &mut SdfTetMesh, a: [f32; 3], b: [f32; 3], c: [f32; 3], d: [f3
 /// 3 ---- 2
 /// ```
 ///
-/// The five tets are the four corners `(0,1,2,5)`, `(0,2,3,7)`,
-/// `(0,4,5,7)`, `(2,5,6,7)`, and the interior `(0,2,5,7)`.
-fn cube_to_five_tets(v: [u32; 8]) -> [Tetrahedron; 5] {
+/// A cube has exactly two such decompositions, one per set of alternating
+/// corners: `{0,2,5,7}` and `{1,3,4,6}`. Each is four corner tetrahedra plus the
+/// regular tetrahedron on the alternating set.
+///
+/// **They must alternate.** A single decomposition used for every cube puts
+/// opposite diagonals on the two faces it shares with its neighbours along each
+/// axis, so the triangulations on a shared face disagree and the mesh is
+/// non-conforming — the displacement field of a downstream FEM is then
+/// discontinuous across that face. Alternating by the parity of the cell index
+/// makes every shared face agree: the `{0,2,5,7}` decomposition puts the
+/// diagonal of its `+x` face between corners 2 and 5, and the `{1,3,4,6}` one
+/// puts its `−x` face diagonal between corners 3 and 4, which are the same two
+/// lattice points.
+pub(crate) const CUBE_FIVE_TETS: [[[usize; 4]; 5]; 2] = [
+    // even parity: interior tet on {0,2,5,7}
     [
-        Tetrahedron {
-            vertices: [v[0], v[1], v[2], v[5]],
-        },
-        Tetrahedron {
-            vertices: [v[0], v[2], v[3], v[7]],
-        },
-        Tetrahedron {
-            vertices: [v[0], v[4], v[5], v[7]],
-        },
-        Tetrahedron {
-            vertices: [v[2], v[5], v[6], v[7]],
-        },
-        Tetrahedron {
-            vertices: [v[0], v[2], v[5], v[7]],
-        },
-    ]
+        [0, 1, 2, 5],
+        [0, 2, 3, 7],
+        [0, 4, 5, 7],
+        [2, 5, 6, 7],
+        [0, 2, 5, 7],
+    ],
+    // odd parity: mirrored, interior tet on {1,3,4,6}
+    [
+        [0, 1, 3, 4],
+        [1, 2, 3, 6],
+        [1, 4, 5, 6],
+        [3, 4, 6, 7],
+        [1, 3, 4, 6],
+    ],
+];
+
+/// Parity of a lattice cell, selecting which row of [`CUBE_FIVE_TETS`] to use.
+///
+/// `rem_euclid` rather than `& 1` so that negative cell indices alternate the
+/// same way as positive ones.
+#[inline]
+pub(crate) const fn cell_parity(ix: i32, iy: i32, iz: i32) -> usize {
+    ((ix + iy + iz).rem_euclid(2)) as usize
+}
+
+/// Dice one cube into five tetrahedra, alternating the decomposition so that
+/// neighbouring cubes agree on their shared faces.
+fn cube_to_five_tets(v: [u32; 8], parity: usize) -> [Tetrahedron; 5] {
+    CUBE_FIVE_TETS[parity].map(|t| Tetrahedron {
+        vertices: [v[t[0]], v[t[1]], v[t[2]], v[t[3]]],
+    })
 }
 
 #[cfg(test)]
