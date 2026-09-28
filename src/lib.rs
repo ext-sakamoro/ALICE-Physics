@@ -334,9 +334,6 @@ pub mod fatigue;
 pub mod ffi;
 pub mod filament_db;
 
-/// Small-strain linear elastic FEM on tetrahedra (P1), producing a Cauchy
-/// stress tensor per element from an [`sdf_fem_mesh::SdfTetMesh`].
-pub mod linear_elastic_fem;
 pub mod fillet_stress;
 pub mod filter;
 #[cfg(feature = "std")]
@@ -365,6 +362,9 @@ pub mod kinematic_loop;
 pub mod laminate;
 pub mod laminate_failure;
 pub mod layer_adhesion;
+/// Small-strain linear elastic FEM on tetrahedra (P1), producing a Cauchy
+/// stress tensor per element from an [`sdf_fem_mesh::SdfTetMesh`].
+pub mod linear_elastic_fem;
 pub mod mass_properties;
 pub mod material;
 pub mod math;

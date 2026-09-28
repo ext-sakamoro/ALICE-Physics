@@ -19,15 +19,27 @@
 //! (shear locking), so a tolerance on it would be pinning the mesh resolution
 //! rather than the solver. That oracle belongs with a convergence study.
 //!
-//! The meshes are built directly rather than through
-//! `sdf_fem_mesh::generate`, for two reasons: the generator drops every cube
-//! that straddles the surface, so its domain is not the box the closed form is
-//! written for; and its 5-tet dicing is applied with one fixed pattern per
-//! cube, which does not produce matching triangulations on shared faces. Both
-//! are mesher properties and would be measured here as if they were solver
-//! error ([[feedback_oracle_scene_hits_verifier_limit]]). Kuhn's 6-tet
-//! subdivision, used below, conforms across every shared face because the
-//! diagonal it induces on a face depends only on that face's own corners.
+//! The meshes are built directly rather than through `sdf_fem_mesh::generate`,
+//! for two measured reasons. The generator drops every cube that straddles the
+//! surface, so its domain is not the box the closed form is written for (a
+//! 20 mm box at 4 mm cells meshes only the inner 16 mm). And its 5-tet dicing
+//! uses one fixed pattern for every cube, which leaves the triangulations on
+//! shared cube faces disagreeing: over a 4×4×4 block, 576 of the 768
+//! singly-used faces are interior, against the 192 that are genuinely on the
+//! domain boundary. Both are mesher properties and would be measured here as if
+//! they were solver error ([[feedback_oracle_scene_hits_verifier_limit]]).
+//!
+//! Kuhn's 6-tet subdivision, used below, conforms across every shared face
+//! because the diagonal it induces on a face depends only on that face's own
+//! corners.
+//!
+//! One caution worth keeping: **the linear patch test cannot detect that
+//! disagreement.** The two triangulations of a square interpolate a linear
+//! function identically, and the element contributions telescope to zero over
+//! any geometric partition of the domain whatever the faces look like, so a
+//! patch test on the generator's output comes back exact (3.6e-15 MPa) while
+//! the interfaces are still mismatched. The discrepancy only appears for a
+//! solution that is not linear across the face.
 //!
 //! Author: Moroya Sakamoto
 
@@ -35,6 +47,7 @@
 // The oracle values are closed-form f64 evaluations, not simulation state.
 #![allow(clippy::disallowed_methods)]
 
+use alice_physics::filament_db::{MaterialCategory, MaterialProperties};
 use alice_physics::linear_elastic_fem::{
     solve, Axis, BoundaryConditions, ElasticMaterial, SolverConfig, StressTensor,
 };
@@ -85,8 +98,7 @@ fn kuhn_box(nx: usize, ny: usize, nz: usize, h: f32) -> SdfTetMesh {
                     corners[0] = node_index(nx, ny, i, j, k);
                     for (n, axis) in path.into_iter().enumerate() {
                         step[axis] = 1;
-                        corners[n + 1] =
-                            node_index(nx, ny, i + step[0], j + step[1], k + step[2]);
+                        corners[n + 1] = node_index(nx, ny, i + step[0], j + step[1], k + step[2]);
                     }
                     mesh.tets.push(Tetrahedron { vertices: corners });
                 }
@@ -160,7 +172,8 @@ fn patch_test_uniaxial_tension_is_exact() {
     }
     assert_eq!(bc.prescribed_count(), 26 * 3);
 
-    let out = solve(&mesh, &pla(), &bc, &SolverConfig::default()).expect("patch test is well posed");
+    let out =
+        solve(&mesh, &pla(), &bc, &SolverConfig::default()).expect("patch test is well posed");
 
     // interior node sits on the analytic field
     let want = field(mesh.vertices[interior as usize]);
@@ -232,7 +245,74 @@ fn patch_test_hydrostatic_is_exact() {
 }
 
 // ---------------------------------------------------------------------------
-// oracle 3 — rigid body motion carries no stress
+// oracle 3 — simple shear, all three shear rows at once
+// ---------------------------------------------------------------------------
+
+/// The field `u = (γ₁y + γ₃z, γ₂z, 0)` is linear, so P1 reproduces it exactly,
+/// and it has **no** normal strain: differentiating gives `ε_xx = ε_yy = ε_zz =
+/// 0` and engineering shears `γ_xy = γ₁`, `γ_yz = γ₂`, `γ_zx = γ₃`. Hooke's law
+/// then gives `σ_xy = μγ₁`, `σ_yz = μγ₂`, `σ_zx = μγ₃` and zero normal stress
+/// (the trace vanishes, so `λ` contributes nothing), and
+/// `von Mises = √(3(σ_xy² + σ_yz² + σ_zx²))`.
+///
+/// The three shear rates are deliberately **distinct**, so swapping any two
+/// rows of `B` — or of `D`'s shear block — moves a component and is caught.
+///
+/// This test exists because it was missing: the tension, hydrostatic and rigid
+/// body scenes all have identically zero shear strain, so swapping two shear
+/// rows of `B` left every one of them green. Only the force-driven bar noticed,
+/// and it noticed for the wrong reason (a different operator, not a measured
+/// shear).
+#[test]
+fn patch_test_simple_shear_is_exact() {
+    let mesh = kuhn_box(2, 2, 2, 5.0);
+    let (g1, g2, g3) = (1.0e-3_f64, 2.0e-3, 3.0e-3);
+    let field = |p: [f32; 3]| -> [f64; 3] {
+        let (_x, y, z) = (f64::from(p[0]), f64::from(p[1]), f64::from(p[2]));
+        [g1 * y + g3 * z, g2 * z, 0.0]
+    };
+
+    let mut bc = BoundaryConditions::new();
+    let interior = node_index(2, 2, 1, 1, 1);
+    for (v, p) in mesh.vertices.iter().enumerate() {
+        let v = u32::try_from(v).expect("fits");
+        if v == interior {
+            continue;
+        }
+        let u = field(*p);
+        bc.prescribe_all(v, [fx(u[0]), fx(u[1]), fx(u[2])]);
+    }
+
+    let out = solve(&mesh, &pla(), &bc, &SolverConfig::default()).expect("well posed");
+
+    let mu = E_MPA / (2.0 * (1.0 + NU));
+    let (sxy, syz, szx) = (mu * g1, mu * g2, mu * g3);
+    let vm = (3.0 * (sxy * sxy + syz * syz + szx * szx)).sqrt();
+
+    let want = field(mesh.vertices[interior as usize]);
+    for (axis, w) in Axis::ALL.into_iter().zip(want) {
+        close(
+            out.displacements[interior as usize][axis.index()],
+            w,
+            1e-12,
+            &format!("interior node u_{axis:?} under simple shear"),
+        );
+    }
+
+    for (t, s) in out.element_stress.iter().enumerate() {
+        close(s.xx, 0.0, 1e-9, &format!("tet {t} σ_xx (shear has none)"));
+        close(s.yy, 0.0, 1e-9, &format!("tet {t} σ_yy (shear has none)"));
+        close(s.zz, 0.0, 1e-9, &format!("tet {t} σ_zz (shear has none)"));
+        close(s.xy, sxy, 1e-9, &format!("tet {t} σ_xy = μγ₁"));
+        close(s.yz, syz, 1e-9, &format!("tet {t} σ_yz = μγ₂"));
+        close(s.zx, szx, 1e-9, &format!("tet {t} σ_zx = μγ₃"));
+        close(s.hydrostatic(), 0.0, 1e-9, &format!("tet {t} mean stress"));
+        close(s.von_mises(), vm, 1e-9, &format!("tet {t} von Mises"));
+    }
+}
+
+// ---------------------------------------------------------------------------
+// oracle 4 — rigid body motion carries no stress
 // ---------------------------------------------------------------------------
 
 /// A constant displacement is in the null space of the strain operator, so the
@@ -378,7 +458,12 @@ fn lame_parameters_and_material_validation() {
     close(mu, want_mu, 1e-6, "μ");
 
     // E = 2μ(1+ν) is an identity, so it holds for any admissible ν
-    close(mu * fx(2.0) * (Fix128::ONE + fx(NU)), E_MPA, 1e-6, "2μ(1+ν) = E");
+    close(
+        mu * fx(2.0) * (Fix128::ONE + fx(NU)),
+        E_MPA,
+        1e-6,
+        "2μ(1+ν) = E",
+    );
 
     assert!(ElasticMaterial::new(fx(0.0), fx(0.3)).is_err(), "E = 0");
     assert!(ElasticMaterial::new(fx(-1.0), fx(0.3)).is_err(), "E < 0");
@@ -421,16 +506,121 @@ fn von_mises_matches_closed_form() {
     };
     let (sxx, syy, szz) = (120.0_f64, -40.0, 15.0);
     let (sxy, syz, szx) = (30.0_f64, -12.0, 7.0);
-    let want = (0.5
-        * ((sxx - syy).powi(2) + (syy - szz).powi(2) + (szz - sxx).powi(2))
+    let want = (0.5 * ((sxx - syy).powi(2) + (syy - szz).powi(2) + (szz - sxx).powi(2))
         + 3.0 * (sxy * sxy + syz * syz + szx * szx))
         .sqrt();
     close(s.von_mises(), want, 1e-6, "von Mises");
-    close(s.hydrostatic(), (sxx + syy + szz) / 3.0, 1e-9, "mean stress");
+    close(
+        s.hydrostatic(),
+        (sxx + syy + szz) / 3.0,
+        1e-9,
+        "mean stress",
+    );
 }
 
 // ---------------------------------------------------------------------------
-// oracle 6 — the errors are reported, not absorbed
+// oracle 6 — the unit contract, fixed by numbers rather than by prose
+// ---------------------------------------------------------------------------
+
+/// mm in, N in, MPa out.
+///
+/// The numbers are chosen so that every plausible alternative convention lands
+/// somewhere else by a factor of at least 1000:
+///
+/// - `E = 1000 MPa`, a `2 mm × 2 mm` section, `L = 8 mm`, `F = 200 N`
+/// - `σ = F/A = 50 MPa`. If `E` were read as GPa the stress would be unchanged,
+///   but the extension would be 1000× smaller.
+/// - `δ = σL/E = 50 · 8 / 1000 = 0.4 mm`. If lengths were metres, `δ` would be
+///   0.4 m; if forces were kN, `σ` would be 50 kPa.
+///
+/// A convention change that kept all three consistent is not a bug, which is
+/// why the assertion is on the absolute numbers and not on a ratio.
+#[test]
+fn unit_contract_is_mm_newton_mpa() {
+    let (nx, ny, nz, h) = (4usize, 1usize, 1usize, 2.0_f32);
+    let mesh = kuhn_box(nx, ny, nz, h);
+    let material = ElasticMaterial::new(fx(1000.0), fx(0.30)).expect("valid");
+
+    let mut bc = BoundaryConditions::new();
+    for k in 0..=nz {
+        for j in 0..=ny {
+            bc.prescribe(node_index(nx, ny, 0, j, k), Axis::X, Fix128::ZERO);
+        }
+    }
+    bc.prescribe(node_index(nx, ny, 0, 0, 0), Axis::Y, Fix128::ZERO);
+    bc.prescribe(node_index(nx, ny, 0, 0, 0), Axis::Z, Fix128::ZERO);
+    bc.prescribe(node_index(nx, ny, 0, ny, 0), Axis::Z, Fix128::ZERO);
+    bc.prescribe(node_index(nx, ny, 0, 0, nz), Axis::Y, Fix128::ZERO);
+
+    let total_force = 200.0_f64; // N over a 2 mm x 2 mm face
+    let tri = total_force / 2.0;
+    for (node, share) in [
+        (node_index(nx, ny, nx, 0, 0), 2.0 / 3.0),
+        (node_index(nx, ny, nx, ny, nz), 2.0 / 3.0),
+        (node_index(nx, ny, nx, ny, 0), 1.0 / 3.0),
+        (node_index(nx, ny, nx, 0, nz), 1.0 / 3.0),
+    ] {
+        bc.add_load(node, Axis::X, fx(tri * share));
+    }
+
+    let out = solve(&mesh, &material, &bc, &SolverConfig::default()).expect("well posed");
+
+    close(out.max_von_mises_mpa(), 50.0, 1e-6, "σ = F/A in MPa");
+    let tip = node_index(nx, ny, nx, 0, 0) as usize;
+    close(out.displacements[tip][0], 0.4, 1e-7, "δ = σL/E in mm");
+}
+
+/// `from_filament` converts GPa to MPa and takes Poisson's ratio from the
+/// category table; `with_poisson` overrides it without touching `E`.
+#[test]
+fn from_filament_converts_units_and_fills_poisson() {
+    let pla_entry = MaterialProperties::pla();
+    assert_eq!(pla_entry.category, MaterialCategory::Fdm);
+
+    let m = ElasticMaterial::from_filament(&pla_entry).expect("PLA is a valid elastic material");
+    // datasheet entry is 3.5 GPa
+    close(
+        m.youngs_modulus_mpa(),
+        3500.0,
+        1e-9,
+        "E from filament (GPa -> MPa)",
+    );
+    close(
+        m.poissons_ratio(),
+        0.35,
+        1e-9,
+        "ν from the Fdm row of the category table",
+    );
+    assert_eq!(
+        m.poissons_ratio(),
+        ElasticMaterial::default_poissons_ratio(MaterialCategory::Fdm),
+        "from_filament must read the same table the accessor exposes"
+    );
+
+    let measured = m.with_poisson(fx(0.41)).expect("valid ratio");
+    close(measured.poissons_ratio(), 0.41, 1e-9, "overridden ν");
+    assert_eq!(
+        measured.youngs_modulus_mpa(),
+        m.youngs_modulus_mpa(),
+        "with_poisson must not disturb E"
+    );
+    assert!(
+        measured.with_poisson(fx(0.5)).is_err(),
+        "the override is validated like the constructor"
+    );
+
+    // the four categories are distinct enough to be worth a table at all
+    let fdm = ElasticMaterial::default_poissons_ratio(MaterialCategory::Fdm);
+    let metal = ElasticMaterial::default_poissons_ratio(MaterialCategory::SheetMetal);
+    let powder = ElasticMaterial::default_poissons_ratio(MaterialCategory::Powder);
+    assert!(
+        metal < fdm && fdm < powder,
+        "table ordering: steel < FDM < PA12"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// oracle 7 — the errors are reported, not absorbed
 // ---------------------------------------------------------------------------
 
 /// A mesh with no constraints has three free translations, so the stiffness is

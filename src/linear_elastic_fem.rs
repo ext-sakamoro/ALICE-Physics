@@ -43,6 +43,8 @@
 //! - P1 tetrahedra are stiff in bending. A beam resolved by a few elements
 //!   through the thickness under-predicts deflection; refine through the
 //!   thickness rather than along the span.
+//! - The rigid-body-mode check is a necessary condition, not a sufficient one
+//!   (see [`FemError::UnderConstrained`]).
 //!
 //! Author: Moroya Sakamoto
 
@@ -86,21 +88,29 @@ pub enum FemError {
     InvalidMaterial(&'static str),
     /// A solver setting is outside its usable range.
     InvalidConfig(&'static str),
-    /// A boundary condition names a vertex the mesh does not have.
+    /// A boundary condition or a tetrahedron names a vertex the mesh does not
+    /// have.
     VertexOutOfRange {
         /// The offending vertex index.
         vertex: u32,
         /// Number of vertices in the mesh.
         vertex_count: usize,
     },
-    /// A tetrahedron has (numerically) zero volume, so its shape function
-    /// gradients are undefined.
+    /// A tetrahedron has zero volume, so its shape function gradients are
+    /// undefined.
     DegenerateElement {
         /// Index into `SdfTetMesh::tets`.
         tet: usize,
     },
-    /// Every degree of freedom is prescribed, or the constraints leave a rigid
-    /// body mode free — either way there is nothing well-posed to solve.
+    /// The constraints cannot remove all six rigid body modes.
+    ///
+    /// Reported when fewer than six degrees of freedom are prescribed (a
+    /// necessary condition — three translations and three rotations need six
+    /// constraints), and when the iteration meets a search direction with
+    /// `pᵀKp ≤ 0`, which on a positive semi-definite stiffness means `p` is a
+    /// rigid body mode. Constraints that are six or more but badly placed (all
+    /// on one line, say) are *not* caught up front; those surface as
+    /// [`Self::NotConverged`].
     UnderConstrained,
     /// The conjugate gradient iteration hit its budget.
     NotConverged {
@@ -130,25 +140,85 @@ impl ElasticMaterial {
     /// range on which the isotropic stiffness is positive definite. `ν = 0.5`
     /// is incompressible and makes the Lamé first parameter diverge.
     pub fn new(youngs_modulus_mpa: Fix128, poissons_ratio: Fix128) -> Result<Self, FemError> {
-        let _ = (youngs_modulus_mpa, poissons_ratio);
-        todo!("STUB: ElasticMaterial::new (linear elastic FEM, stage 2)")
+        if youngs_modulus_mpa <= Fix128::ZERO {
+            return Err(FemError::InvalidMaterial(
+                "Young's modulus must be positive",
+            ));
+        }
+        if poissons_ratio <= Fix128::NEG_ONE {
+            return Err(FemError::InvalidMaterial(
+                "Poisson's ratio must be greater than -1",
+            ));
+        }
+        if poissons_ratio >= half() {
+            return Err(FemError::InvalidMaterial(
+                "Poisson's ratio must be less than 0.5 (0.5 is incompressible)",
+            ));
+        }
+        Ok(Self {
+            youngs_modulus_mpa,
+            poissons_ratio,
+        })
     }
 
-    /// Build from a filament database entry plus a Poisson's ratio.
+    /// Build from a filament database entry.
     ///
-    /// [`crate::filament_db::MaterialProperties`] stores `youngs_modulus_gpa`
-    /// but no Poisson's ratio, so the caller supplies it. Typical values:
-    /// 0.33-0.36 for PLA / ABS, 0.40-0.48 for TPU, 0.30 for steel.
+    /// [`crate::filament_db::MaterialProperties`] carries `youngs_modulus_gpa`
+    /// (converted to MPa here) but no Poisson's ratio, so the ratio comes from
+    /// [`Self::default_poissons_ratio`] for the entry's category. Override it
+    /// with [`Self::with_poisson`] when a measured value is available — read
+    /// that function's notes before relying on the default.
     ///
     /// # Errors
     ///
     /// As [`Self::new`].
     pub fn from_filament(
         material: &crate::filament_db::MaterialProperties,
-        poissons_ratio: Fix128,
     ) -> Result<Self, FemError> {
-        let _ = (material, poissons_ratio);
-        todo!("STUB: ElasticMaterial::from_filament (linear elastic FEM, stage 2)")
+        let e_mpa = material.youngs_modulus_gpa * Fix128::from_int(1000);
+        Self::new(e_mpa, Self::default_poissons_ratio(material.category))
+    }
+
+    /// Replace the Poisson's ratio, keeping Young's modulus.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::new`].
+    pub fn with_poisson(self, poissons_ratio: Fix128) -> Result<Self, FemError> {
+        Self::new(self.youngs_modulus_mpa, poissons_ratio)
+    }
+
+    /// Poisson's ratio used for a material category when the database does not
+    /// carry one.
+    ///
+    /// | category | value | the case it covers | spread across the category |
+    /// |---|---|---|---|
+    /// | `Fdm` | 0.35 | bulk amorphous thermoplastic (PLA / ABS / PETG) | ≈0.33-0.36 for the bulk polymer; a printed part is anisotropic and its effective ratio depends on raster angle and layer bonding |
+    /// | `SheetMetal` | 0.30 | steel | aluminium alloys are ≈0.33, copper ≈0.34 — the category cannot tell them apart |
+    /// | `Sla` | 0.35 | cured photopolymer resin | quoted between 0.3 and 0.4 depending on formulation and post-cure |
+    /// | `Powder` | 0.40 | sintered PA12 (SLS / MJF) | metal powder beds are nearer 0.30, so this default is wrong for them |
+    ///
+    /// **These are widely quoted engineering values, not measurements, and this
+    /// crate has not verified them against a primary source.** They are here so
+    /// that `E` coming from a database is not paired with a ratio invented at
+    /// the call site; they are not a substitute for a datasheet. Pass a
+    /// measured value through [`Self::with_poisson`] when correctness matters.
+    ///
+    /// How much the choice moves the answer: for a **uniaxial** stress state
+    /// the stress does not depend on `ν` at all (only the lateral strain does),
+    /// so a 0.33-vs-0.36 disagreement changes nothing a yield check sees. It
+    /// does matter under multiaxial or kinematically constrained loading, where
+    /// `ν` enters through `λ` and grows without bound as `ν → 0.5`.
+    #[must_use]
+    pub fn default_poissons_ratio(category: crate::filament_db::MaterialCategory) -> Fix128 {
+        use crate::filament_db::MaterialCategory as C;
+        // `from_ratio` rather than `from_f64`: the value is a rational, and the
+        // database entries next door are written the same way.
+        match category {
+            C::Fdm | C::Sla => Fix128::from_ratio(35, 100),
+            C::SheetMetal => Fix128::from_ratio(30, 100),
+            C::Powder => Fix128::from_ratio(40, 100),
+        }
     }
 
     /// Young's modulus (MPa).
@@ -165,10 +235,16 @@ impl ElasticMaterial {
 
     /// Lamé parameters `(λ, μ)` in MPa.
     ///
-    /// `λ = Eν / ((1+ν)(1−2ν))`, `μ = E / (2(1+ν))`.
+    /// `λ = Eν / ((1+ν)(1−2ν))`, `μ = E / (2(1+ν))`. Both denominators are
+    /// non-zero for every `ν` [`Self::new`] admits.
     #[must_use]
     pub fn lame(&self) -> (Fix128, Fix128) {
-        todo!("STUB: ElasticMaterial::lame (linear elastic FEM, stage 2)")
+        let nu = self.poissons_ratio;
+        let one_plus = Fix128::ONE + nu;
+        let one_minus_two = Fix128::ONE - (nu + nu);
+        let lambda = self.youngs_modulus_mpa * nu / (one_plus * one_minus_two);
+        let mu = self.youngs_modulus_mpa / (one_plus + one_plus);
+        (lambda, mu)
     }
 }
 
@@ -196,26 +272,43 @@ impl BoundaryConditions {
     /// so a face-wide sweep followed by a per-node correction does what it
     /// reads like.
     pub fn prescribe(&mut self, vertex: u32, axis: Axis, displacement_mm: Fix128) -> &mut Self {
-        let _ = (vertex, axis, displacement_mm);
-        todo!("STUB: BoundaryConditions::prescribe (linear elastic FEM, stage 2)")
+        if let Some(slot) = self
+            .prescribed
+            .iter_mut()
+            .find(|(v, a, _)| *v == vertex && *a == axis)
+        {
+            slot.2 = displacement_mm;
+        } else {
+            self.prescribed.push((vertex, axis, displacement_mm));
+        }
+        self
     }
 
     /// Prescribe all three components of a node to zero.
     pub fn fix(&mut self, vertex: u32) -> &mut Self {
-        let _ = vertex;
-        todo!("STUB: BoundaryConditions::fix (linear elastic FEM, stage 2)")
+        self.prescribe_all(vertex, [Fix128::ZERO; 3])
     }
 
     /// Prescribe all three components of a node to a displacement (mm).
     pub fn prescribe_all(&mut self, vertex: u32, displacement_mm: [Fix128; 3]) -> &mut Self {
-        let _ = (vertex, displacement_mm);
-        todo!("STUB: BoundaryConditions::prescribe_all (linear elastic FEM, stage 2)")
+        for axis in Axis::ALL {
+            self.prescribe(vertex, axis, displacement_mm[axis.index()]);
+        }
+        self
     }
 
     /// Add a nodal force component (N). Repeated calls accumulate.
     pub fn add_load(&mut self, vertex: u32, axis: Axis, force_n: Fix128) -> &mut Self {
-        let _ = (vertex, axis, force_n);
-        todo!("STUB: BoundaryConditions::add_load (linear elastic FEM, stage 2)")
+        if let Some(slot) = self
+            .loads
+            .iter_mut()
+            .find(|(v, a, _)| *v == vertex && *a == axis)
+        {
+            slot.2 = slot.2 + force_n;
+        } else {
+            self.loads.push((vertex, axis, force_n));
+        }
+        self
     }
 
     /// Number of prescribed degrees of freedom.
@@ -254,13 +347,17 @@ impl StressTensor {
     /// `√( ½[(σxx−σyy)² + (σyy−σzz)² + (σzz−σxx)²] + 3(σxy² + σyz² + σzx²) )`.
     #[must_use]
     pub fn von_mises(&self) -> Fix128 {
-        todo!("STUB: StressTensor::von_mises (linear elastic FEM, stage 2)")
+        let a = self.xx - self.yy;
+        let b = self.yy - self.zz;
+        let c = self.zz - self.xx;
+        let shear = self.xy * self.xy + self.yz * self.yz + self.zx * self.zx;
+        (half() * (a * a + b * b + c * c) + Fix128::from_int(3) * shear).sqrt()
     }
 
     /// Trace / 3 — the hydrostatic (mean) stress (MPa).
     #[must_use]
     pub fn hydrostatic(&self) -> Fix128 {
-        todo!("STUB: StressTensor::hydrostatic (linear elastic FEM, stage 2)")
+        (self.xx + self.yy + self.zz) / Fix128::from_int(3)
     }
 }
 
@@ -283,8 +380,23 @@ impl SolverConfig {
     /// `max_iterations == 0`, or `relative_tolerance` outside `(0, 1)` — a
     /// tolerance of 1 or more accepts the zero vector as a solution.
     pub fn try_new(max_iterations: u32, relative_tolerance: Fix128) -> Result<Self, FemError> {
-        let _ = (max_iterations, relative_tolerance);
-        todo!("STUB: SolverConfig::try_new (linear elastic FEM, stage 2)")
+        if max_iterations == 0 {
+            return Err(FemError::InvalidConfig("max_iterations must be positive"));
+        }
+        if relative_tolerance <= Fix128::ZERO {
+            return Err(FemError::InvalidConfig(
+                "relative_tolerance must be positive",
+            ));
+        }
+        if relative_tolerance >= Fix128::ONE {
+            return Err(FemError::InvalidConfig(
+                "relative_tolerance of 1 or more accepts the zero vector",
+            ));
+        }
+        Ok(Self {
+            max_iterations,
+            relative_tolerance,
+        })
     }
 
     /// Iteration budget.
@@ -301,18 +413,23 @@ impl SolverConfig {
 }
 
 impl Default for SolverConfig {
-    /// 10,000 iterations, relative residual 2^-40 (≈ 9.1e-13).
+    /// 10,000 iterations, relative residual 2⁻³⁰ (≈ 9.3e-10).
     ///
     /// Conjugate gradient converges in at most `n` iterations in exact
     /// arithmetic, so on a well-conditioned mesh the budget never binds; it is
     /// there so an ill-conditioned one reports [`FemError::NotConverged`]
-    /// rather than running forever. The tolerance is a power of two so it is
-    /// exact in [`Fix128`], and sits well above the 2^-64 resolution so the
-    /// residual can still be compared meaningfully when it is reached.
+    /// rather than running forever.
+    ///
+    /// The tolerance is a power of two, so it is exact in [`Fix128`], and it
+    /// sits well clear of the floor the representation imposes: the residual
+    /// norm is `√(rᵀr)` and `rᵀr` cannot go below 2⁻⁶⁴, so residual norms under
+    /// about 2⁻³² are indistinguishable from zero. A tolerance below that floor
+    /// would be unreachable and would turn a converged solve into
+    /// [`FemError::NotConverged`].
     fn default() -> Self {
         Self {
             max_iterations: 10_000,
-            relative_tolerance: Fix128::from_raw(0, 1 << 24),
+            relative_tolerance: Fix128::from_raw(0, 1 << 34),
         }
     }
 }
@@ -327,7 +444,7 @@ pub struct FemSolution {
     pub element_stress: Vec<StressTensor>,
     /// Conjugate gradient iterations performed.
     pub iterations: u32,
-    /// `‖r‖ / ‖b‖` at the final iteration.
+    /// `‖r‖ / ‖b‖` at the final iteration. Zero when the load vector is zero.
     pub relative_residual: Fix128,
 }
 
@@ -335,11 +452,168 @@ impl FemSolution {
     /// Largest von Mises stress over all elements (MPa).
     ///
     /// The number a yield check compares against
-    /// [`crate::filament_db::MaterialProperties::yield_strength_mpa`].
+    /// [`crate::filament_db::MaterialProperties::yield_strength_mpa`]. Zero for
+    /// a solution with no elements.
     #[must_use]
     pub fn max_von_mises_mpa(&self) -> Fix128 {
-        todo!("STUB: FemSolution::max_von_mises_mpa (linear elastic FEM, stage 2)")
+        self.element_stress
+            .iter()
+            .map(StressTensor::von_mises)
+            .max()
+            .unwrap_or(Fix128::ZERO)
     }
+}
+
+/// One half, exactly.
+#[inline]
+fn half() -> Fix128 {
+    Fix128::from_raw(0, 1 << 63)
+}
+
+#[inline]
+fn sub3(a: [Fix128; 3], b: [Fix128; 3]) -> [Fix128; 3] {
+    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+}
+
+#[inline]
+fn cross3(a: [Fix128; 3], b: [Fix128; 3]) -> [Fix128; 3] {
+    [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    ]
+}
+
+#[inline]
+fn dot3(a: [Fix128; 3], b: [Fix128; 3]) -> Fix128 {
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+}
+
+#[inline]
+fn div3(a: [Fix128; 3], d: Fix128) -> [Fix128; 3] {
+    [a[0] / d, a[1] / d, a[2] / d]
+}
+
+/// Constant per-element quantities: shape function gradients (1/mm) and
+/// volume (mm³).
+#[derive(Clone, Copy)]
+struct Element {
+    nodes: [usize; 4],
+    grad: [[Fix128; 3]; 4],
+    volume: Fix128,
+}
+
+/// Precompute `∇N` and `|V|` for every tetrahedron.
+///
+/// With `J = [p₁−p₀, p₂−p₀, p₃−p₀]` as columns, the rows of `J⁻¹` are the
+/// gradients of `N₁, N₂, N₃`, and `∇N₀ = −(∇N₁+∇N₂+∇N₃)` because the four
+/// shape functions sum to one everywhere. The volume uses `|det J| / 6`, so a
+/// tetrahedron wound the other way contributes the same stiffness.
+fn build_elements(mesh: &SdfTetMesh) -> Result<Vec<Element>, FemError> {
+    let vertex_count = mesh.vertices.len();
+    let six = Fix128::from_int(6);
+    let mut elements = Vec::with_capacity(mesh.tets.len());
+    for (t, tet) in mesh.tets.iter().enumerate() {
+        let mut nodes = [0usize; 4];
+        let mut p = [[Fix128::ZERO; 3]; 4];
+        for (i, &v) in tet.vertices.iter().enumerate() {
+            let idx = v as usize;
+            if idx >= vertex_count {
+                return Err(FemError::VertexOutOfRange {
+                    vertex: v,
+                    vertex_count,
+                });
+            }
+            nodes[i] = idx;
+            let q = mesh.vertices[idx];
+            p[i] = [
+                Fix128::from_f32(q[0]),
+                Fix128::from_f32(q[1]),
+                Fix128::from_f32(q[2]),
+            ];
+        }
+        let e1 = sub3(p[1], p[0]);
+        let e2 = sub3(p[2], p[0]);
+        let e3 = sub3(p[3], p[0]);
+        let det = dot3(e1, cross3(e2, e3));
+        if det.is_zero() {
+            return Err(FemError::DegenerateElement { tet: t });
+        }
+        let g1 = div3(cross3(e2, e3), det);
+        let g2 = div3(cross3(e3, e1), det);
+        let g3 = div3(cross3(e1, e2), det);
+        let g0 = [
+            -(g1[0] + g2[0] + g3[0]),
+            -(g1[1] + g2[1] + g3[1]),
+            -(g1[2] + g2[2] + g3[2]),
+        ];
+        elements.push(Element {
+            nodes,
+            grad: [g0, g1, g2, g3],
+            volume: det.abs() / six,
+        });
+    }
+    Ok(elements)
+}
+
+/// `σ = D B u_e` for one element (constant over the element).
+fn element_stress(element: &Element, u: &[Fix128], lambda: Fix128, mu: Fix128) -> StressTensor {
+    let mut exx = Fix128::ZERO;
+    let mut eyy = Fix128::ZERO;
+    let mut ezz = Fix128::ZERO;
+    let mut gxy = Fix128::ZERO;
+    let mut gyz = Fix128::ZERO;
+    let mut gzx = Fix128::ZERO;
+    for (g, &node) in element.grad.iter().zip(element.nodes.iter()) {
+        let base = node * 3;
+        let (ux, uy, uz) = (u[base], u[base + 1], u[base + 2]);
+        exx = exx + g[0] * ux;
+        eyy = eyy + g[1] * uy;
+        ezz = ezz + g[2] * uz;
+        gxy = gxy + g[1] * ux + g[0] * uy;
+        gyz = gyz + g[2] * uy + g[1] * uz;
+        gzx = gzx + g[2] * ux + g[0] * uz;
+    }
+    let trace = exx + eyy + ezz;
+    let two_mu = mu + mu;
+    StressTensor {
+        xx: lambda * trace + two_mu * exx,
+        yy: lambda * trace + two_mu * eyy,
+        zz: lambda * trace + two_mu * ezz,
+        xy: mu * gxy,
+        yz: mu * gyz,
+        zx: mu * gzx,
+    }
+}
+
+/// `out = K u`, accumulated element by element in mesh order.
+fn apply_stiffness(
+    elements: &[Element],
+    u: &[Fix128],
+    lambda: Fix128,
+    mu: Fix128,
+    out: &mut [Fix128],
+) {
+    out.fill(Fix128::ZERO);
+    for element in elements {
+        let s = element_stress(element, u, lambda, mu);
+        for (g, &node) in element.grad.iter().zip(element.nodes.iter()) {
+            let base = node * 3;
+            out[base] = out[base] + element.volume * (g[0] * s.xx + g[1] * s.xy + g[2] * s.zx);
+            out[base + 1] =
+                out[base + 1] + element.volume * (g[1] * s.yy + g[0] * s.xy + g[2] * s.yz);
+            out[base + 2] =
+                out[base + 2] + element.volume * (g[2] * s.zz + g[1] * s.yz + g[0] * s.zx);
+        }
+    }
+}
+
+fn dot(a: &[Fix128], b: &[Fix128]) -> Fix128 {
+    let mut acc = Fix128::ZERO;
+    for (x, y) in a.iter().zip(b.iter()) {
+        acc = acc + *x * *y;
+    }
+    acc
 }
 
 /// Solve the linear elastic boundary value problem on `mesh`.
@@ -353,6 +627,136 @@ pub fn solve(
     boundary: &BoundaryConditions,
     config: &SolverConfig,
 ) -> Result<FemSolution, FemError> {
-    let _ = (mesh, material, boundary, config);
-    todo!("STUB: linear_elastic_fem::solve (linear elastic FEM, stage 2)")
+    let vertex_count = mesh.vertices.len();
+    if vertex_count == 0 || mesh.tets.is_empty() {
+        return Err(FemError::EmptyMesh);
+    }
+    for &(vertex, _, _) in boundary.prescribed.iter().chain(boundary.loads.iter()) {
+        if vertex as usize >= vertex_count {
+            return Err(FemError::VertexOutOfRange {
+                vertex,
+                vertex_count,
+            });
+        }
+    }
+
+    let elements = build_elements(mesh)?;
+    let (lambda, mu) = material.lame();
+    let ndof = vertex_count * 3;
+
+    // Dirichlet data, zero on the free degrees of freedom.
+    let mut prescribed_value = vec![Fix128::ZERO; ndof];
+    let mut is_free = vec![true; ndof];
+    for &(vertex, axis, value) in &boundary.prescribed {
+        let d = vertex as usize * 3 + axis.index();
+        is_free[d] = false;
+        prescribed_value[d] = value;
+    }
+    let constrained = is_free.iter().filter(|f| !**f).count();
+    if constrained < 6 {
+        // Three translations and three rotations need six constraints; fewer
+        // leaves the stiffness singular whatever the mesh looks like.
+        return Err(FemError::UnderConstrained);
+    }
+
+    // b = f_ext − K u_prescribed, restricted to the free degrees of freedom.
+    let mut scratch = vec![Fix128::ZERO; ndof];
+    apply_stiffness(&elements, &prescribed_value, lambda, mu, &mut scratch);
+    let mut b = vec![Fix128::ZERO; ndof];
+    for &(vertex, axis, force) in &boundary.loads {
+        let d = vertex as usize * 3 + axis.index();
+        if is_free[d] {
+            b[d] = b[d] + force;
+        }
+    }
+    for (d, value) in b.iter_mut().enumerate() {
+        if is_free[d] {
+            *value = *value - scratch[d];
+        } else {
+            *value = Fix128::ZERO;
+        }
+    }
+
+    // Conjugate gradient on the free block. `x`, `r` and `p` stay zero on the
+    // prescribed degrees of freedom, so the element loop can run over the whole
+    // vector without a scatter/gather step.
+    let mut x = vec![Fix128::ZERO; ndof];
+    let mut r = b.clone();
+    let mut p = b.clone();
+    let mut rr = dot(&r, &r);
+    let b_norm = dot(&b, &b).sqrt();
+    let target = config.relative_tolerance * b_norm;
+
+    let mut iterations = 0u32;
+    let mut residual_norm = rr.sqrt();
+    while residual_norm > target {
+        if iterations >= config.max_iterations {
+            return Err(FemError::NotConverged {
+                iterations,
+                relative_residual: relative(residual_norm, b_norm),
+            });
+        }
+        apply_stiffness(&elements, &p, lambda, mu, &mut scratch);
+        for (d, value) in scratch.iter_mut().enumerate() {
+            if !is_free[d] {
+                *value = Fix128::ZERO;
+            }
+        }
+        let pkp = dot(&p, &scratch);
+        if pkp <= Fix128::ZERO {
+            // K is positive semi-definite, so a non-positive pᵀKp means p is in
+            // its null space: a rigid body mode the constraints did not remove.
+            return Err(FemError::UnderConstrained);
+        }
+        let alpha = rr / pkp;
+        for d in 0..ndof {
+            if is_free[d] {
+                x[d] = x[d] + alpha * p[d];
+                r[d] = r[d] - alpha * scratch[d];
+            }
+        }
+        let rr_next = dot(&r, &r);
+        let beta = rr_next / rr;
+        for d in 0..ndof {
+            if is_free[d] {
+                p[d] = r[d] + beta * p[d];
+            }
+        }
+        rr = rr_next;
+        residual_norm = rr.sqrt();
+        iterations += 1;
+    }
+
+    // Recombine the prescribed and solved parts.
+    for (d, value) in x.iter_mut().enumerate() {
+        if !is_free[d] {
+            *value = prescribed_value[d];
+        }
+    }
+
+    let displacements = (0..vertex_count)
+        .map(|v| [x[v * 3], x[v * 3 + 1], x[v * 3 + 2]])
+        .collect();
+    let element_stress = elements
+        .iter()
+        .map(|e| element_stress(e, &x, lambda, mu))
+        .collect();
+
+    Ok(FemSolution {
+        displacements,
+        element_stress,
+        iterations,
+        relative_residual: relative(residual_norm, b_norm),
+    })
+}
+
+/// `‖r‖ / ‖b‖`, defined as zero when the load vector is zero (the solution is
+/// then exactly the prescribed field and there is nothing to converge to).
+#[inline]
+fn relative(residual_norm: Fix128, b_norm: Fix128) -> Fix128 {
+    if b_norm.is_zero() {
+        Fix128::ZERO
+    } else {
+        residual_norm / b_norm
+    }
 }
