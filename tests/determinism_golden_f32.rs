@@ -550,7 +550,14 @@ fn golden_sdf_collision_family() {
 // 13-16. SDF soft-body / character family: fem_mesh / character / wind / gpu batch
 // ---------------------------------------------------------------------------
 
-const GOLDEN_SDF_SOFT: &str = "fe673fb6d5ad25c6322228f1f39711f0edd61b810a61d36bdda8c1640e45550a";
+// Re-pinned 2026-09-29: `sdf_fem_mesh::generate` now alternates the 5-tet cube
+// decomposition so neighbouring cells agree on their shared faces. That changes
+// the connectivity, so `refine_by_max_edge_length` splits a different set of
+// edges and inserts fewer midpoints (81 vertices after refinement, was 91).
+// Everything this scenario hashes *before* refinement is unchanged
+// (vertex_count 27, tet_count 40, max_edge_length 0.707106769), which is the
+// expected signature of a change that only re-wires faces.
+const GOLDEN_SDF_SOFT: &str = "ca33c80d85e26740cfdf8c69121b549a0b9dddff058b4688d776e8bcd2fece1b";
 
 #[test]
 fn golden_sdf_soft_family() {
