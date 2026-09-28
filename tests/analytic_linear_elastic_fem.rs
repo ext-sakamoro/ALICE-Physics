@@ -45,7 +45,8 @@
 
 use alice_physics::filament_db::{MaterialCategory, MaterialProperties};
 use alice_physics::linear_elastic_fem::{
-    solve, Axis, BoundaryConditions, ElasticMaterial, SolverConfig, StressTensor,
+    solve, stiffness_diagonal_stats, Axis, BoundaryConditions, ElasticMaterial, Preconditioner,
+    SolverConfig, StressTensor,
 };
 use alice_physics::math::Fix128;
 use alice_physics::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
@@ -723,6 +724,93 @@ fn unreachable_tolerance_stagnates_instead_of_burning_the_budget() {
              NotConverged here would tell the caller to raise a budget that cannot help"
         ),
     }
+}
+
+/// A preconditioner changes how the iteration gets there, never where it gets.
+///
+/// `K x = b` has one solution; `M` only reshapes the path. So both settings must
+/// land on the same closed form, to the same tolerance — if they disagree, one
+/// of them is solving a different system. What they are allowed to differ in is
+/// the iteration count, which is reported.
+#[test]
+fn preconditioner_does_not_change_the_answer() {
+    let (nx, ny, nz, h) = (4usize, 1usize, 1usize, 2.5_f32);
+    let mesh = kuhn_box(nx, ny, nz, h);
+    let width = f64::from(h) * ny as f64;
+    let height = f64::from(h) * nz as f64;
+    let area = width * height;
+    let total_force = 50.0_f64;
+    let sigma = total_force / area;
+
+    let mut bc = BoundaryConditions::new();
+    for k in 0..=nz {
+        for j in 0..=ny {
+            bc.prescribe(node_index(nx, ny, 0, j, k), Axis::X, Fix128::ZERO);
+        }
+    }
+    bc.prescribe(node_index(nx, ny, 0, 0, 0), Axis::Y, Fix128::ZERO);
+    bc.prescribe(node_index(nx, ny, 0, 0, 0), Axis::Z, Fix128::ZERO);
+    bc.prescribe(node_index(nx, ny, 0, ny, 0), Axis::Z, Fix128::ZERO);
+    bc.prescribe(node_index(nx, ny, 0, 0, nz), Axis::Y, Fix128::ZERO);
+    let tri = total_force / 2.0;
+    for (node, share) in [
+        (node_index(nx, ny, nx, 0, 0), 2.0 / 3.0),
+        (node_index(nx, ny, nx, ny, nz), 2.0 / 3.0),
+        (node_index(nx, ny, nx, ny, 0), 1.0 / 3.0),
+        (node_index(nx, ny, nx, 0, nz), 1.0 / 3.0),
+    ] {
+        bc.add_load(node, Axis::X, fx(tri * share));
+    }
+
+    let mut results = Vec::new();
+    for mode in [Preconditioner::None, Preconditioner::JacobiScaled] {
+        let cfg = SolverConfig::default().with_preconditioner(mode);
+        let out = solve(&mesh, &pla(), &bc, &cfg).expect("well posed either way");
+        eprintln!(
+            "[precond] {mode:?}: {} iterations, rel resid {:.3e}, max von Mises {:.6} MPa",
+            out.iterations,
+            out.relative_residual.to_f64(),
+            out.max_von_mises_mpa().to_f64()
+        );
+        close(
+            out.max_von_mises_mpa(),
+            sigma,
+            1e-6,
+            &format!("{mode:?}: sigma = F/A"),
+        );
+        results.push(out);
+    }
+
+    // same problem, same answer
+    for (t, (a, b)) in results[0]
+        .element_stress
+        .iter()
+        .zip(results[1].element_stress.iter())
+        .enumerate()
+    {
+        for (name, x, y) in [("xx", a.xx, b.xx), ("yy", a.yy, b.yy), ("zz", a.zz, b.zz)] {
+            assert!(
+                (x.to_f64() - y.to_f64()).abs() < 1e-6,
+                "tet {t} sigma_{name} differs between preconditioners: {:.9} vs {:.9}",
+                x.to_f64(),
+                y.to_f64()
+            );
+        }
+    }
+
+    let stats = stiffness_diagonal_stats(&mesh, &pla(), &bc).expect("well posed");
+    eprintln!(
+        "[diag] free dofs {} min {:.4e} mean {:.4e} max {:.4e} (max/min {:.2})",
+        stats.free_dofs,
+        stats.min.to_f64(),
+        stats.mean.to_f64(),
+        stats.max.to_f64(),
+        stats.max.to_f64() / stats.min.to_f64()
+    );
+    assert!(
+        stats.min > Fix128::ZERO && stats.min <= stats.mean && stats.mean <= stats.max,
+        "diagonal statistics must be ordered and positive"
+    );
 }
 
 /// The stagnation rule is configurable and validated like the rest.
