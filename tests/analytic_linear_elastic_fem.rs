@@ -20,26 +20,22 @@
 //! rather than the solver. That oracle belongs with a convergence study.
 //!
 //! The meshes are built directly rather than through `sdf_fem_mesh::generate`,
-//! for two measured reasons. The generator drops every cube that straddles the
-//! surface, so its domain is not the box the closed form is written for (a
-//! 20 mm box at 4 mm cells meshes only the inner 16 mm). And its 5-tet dicing
-//! uses one fixed pattern for every cube, which leaves the triangulations on
-//! shared cube faces disagreeing: over a 4×4×4 block, 576 of the 768
-//! singly-used faces are interior, against the 192 that are genuinely on the
-//! domain boundary. Both are mesher properties and would be measured here as if
-//! they were solver error ([[feedback_oracle_scene_hits_verifier_limit]]).
+//! because the generator drops every cube that straddles the surface, so its
+//! domain is not the box the closed form is written for (a 20 mm box at 4 mm
+//! cells meshes only the inner 16 mm). That is a mesher property and would be
+//! measured here as if it were solver error
+//! ([[feedback_oracle_scene_hits_verifier_limit]]). Kuhn's 6-tet subdivision,
+//! used below, conforms across every shared face because the diagonal it
+//! induces on a face depends only on that face's own corners.
 //!
-//! Kuhn's 6-tet subdivision, used below, conforms across every shared face
-//! because the diagonal it induces on a face depends only on that face's own
-//! corners.
-//!
-//! One caution worth keeping: **the linear patch test cannot detect that
-//! disagreement.** The two triangulations of a square interpolate a linear
-//! function identically, and the element contributions telescope to zero over
-//! any geometric partition of the domain whatever the faces look like, so a
-//! patch test on the generator's output comes back exact (3.6e-15 MPa) while
-//! the interfaces are still mismatched. The discrepancy only appears for a
-//! solution that is not linear across the face.
+//! The generator was also non-conforming when these oracles were written; that
+//! is fixed, and `tests/mesh_conformity.rs` now pins it. **Do not add a patch
+//! test over there to check conformity**: two triangulations of a square
+//! interpolate a linear function identically, and the element contributions
+//! telescope to zero over any geometric partition of the domain whatever the
+//! faces look like, so a patch test on a non-conforming mesh comes back exact
+//! (measured at 3.6e-15 MPa). Only a solution that is not linear across the
+//! face sees the difference.
 //!
 //! Author: Moroya Sakamoto
 
