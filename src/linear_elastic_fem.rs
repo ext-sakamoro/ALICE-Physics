@@ -430,7 +430,8 @@ pub struct DiagonalStats {
 pub struct SolverConfig {
     max_iterations: u32,
     relative_tolerance: Fix128,
-    stagnation_window: u32,
+    stagnation_min_window: u32,
+    stagnation_window_fraction: Fix128,
     stagnation_min_improvement: Fix128,
     preconditioner: Preconditioner,
 }
@@ -463,20 +464,27 @@ impl SolverConfig {
         })
     }
 
-    /// Replace the stagnation rule.
+    /// Replace the floor of the stagnation window and the improvement that
+    /// counts as progress.
     ///
-    /// The iteration is abandoned when the *best* residual so far has not
-    /// improved by a factor of at least `min_improvement` over the last
-    /// `window` iterations. Tracking the best rather than the latest matters:
-    /// the residual norm of conjugate gradient is not monotone, and a rule that
-    /// compared consecutive values would abandon a healthy solve on an
-    /// oscillation.
+    /// The window itself is **not** this number — see
+    /// [`Self::with_stagnation_fraction`]. This is the smallest it may be, which
+    /// only binds on short solves.
+    ///
+    /// Progress is measured against the *best* residual so far, not the
+    /// previous one. The residual norm of conjugate gradient is not monotone,
+    /// and a rule comparing consecutive values would abandon a healthy solve on
+    /// an oscillation.
     ///
     /// # Errors
     ///
-    /// `window == 0`, or `min_improvement` outside `(0, 1)`.
-    pub fn with_stagnation(self, window: u32, min_improvement: Fix128) -> Result<Self, FemError> {
-        if window == 0 {
+    /// `min_window == 0`, or `min_improvement` outside `(0, 1)`.
+    pub fn with_stagnation(
+        self,
+        min_window: u32,
+        min_improvement: Fix128,
+    ) -> Result<Self, FemError> {
+        if min_window == 0 {
             return Err(FemError::InvalidConfig(
                 "stagnation window must be positive",
             ));
@@ -487,10 +495,57 @@ impl SolverConfig {
             ));
         }
         Ok(Self {
-            stagnation_window: window,
+            stagnation_min_window: min_window,
             stagnation_min_improvement: min_improvement,
             ..self
         })
+    }
+
+    /// How the stagnation window scales with the work already done.
+    ///
+    /// The window is `max(min_window, fraction × iterations so far)`.
+    ///
+    /// A fixed window cannot work, because the iteration count of conjugate
+    /// gradient grows with the problem: measured on a 10:1 cantilever, 254
+    /// iterations at 3,200 elements and over 2,400 at 25,600. A window generous
+    /// enough for the small problem cuts the large one off while it is still
+    /// improving — a fixed 1,000 abandoned the 25,600-element solve at a
+    /// relative residual of 1.63e-9, while running the same solve to a 500,000
+    /// iteration budget reached 9.41e-10 and was still improving.
+    ///
+    /// Scaling by the work done makes the rule scale free, and it still
+    /// terminates: the iteration stops at `last / (1 − fraction)`, where `last`
+    /// is the iteration of the most recent improvement. The default `0.5` reads
+    /// *"give up at twice the iteration that produced your best result"*.
+    ///
+    /// **`fraction` has to be below 1.** At exactly 1 the condition is
+    /// `iterations − last ≥ iterations`, which needs `last ≤ 0`; the rule can
+    /// then never fire and a hopeless solve runs the whole budget. That is not
+    /// hypothetical — a default of `1` was written here first, and
+    /// `unreachable_tolerance_stagnates_instead_of_burning_the_budget` caught it
+    /// immediately: the same solve went from stopping at 1,034 iterations to
+    /// using all 200,000 and returning `NotConverged`.
+    ///
+    /// # Errors
+    ///
+    /// `fraction` is outside `(0, 1)`.
+    pub fn with_stagnation_fraction(self, fraction: Fix128) -> Result<Self, FemError> {
+        if fraction <= Fix128::ZERO || fraction >= Fix128::ONE {
+            return Err(FemError::InvalidConfig(
+                "stagnation window fraction must be strictly between 0 and 1; at 1 the rule \
+                 can never fire",
+            ));
+        }
+        Ok(Self {
+            stagnation_window_fraction: fraction,
+            ..self
+        })
+    }
+
+    /// Fraction of the iterations so far that the window scales with.
+    #[must_use]
+    pub const fn stagnation_window_fraction(&self) -> Fix128 {
+        self.stagnation_window_fraction
     }
 
     /// Choose the preconditioner.
@@ -508,11 +563,10 @@ impl SolverConfig {
         self.preconditioner
     }
 
-    /// Iterations the best residual may go without improving before the solve
-    /// is abandoned.
+    /// Smallest the stagnation window may be, whatever the iteration count.
     #[must_use]
-    pub const fn stagnation_window(&self) -> u32 {
-        self.stagnation_window
+    pub const fn stagnation_min_window(&self) -> u32 {
+        self.stagnation_min_window
     }
 
     /// Relative improvement in the best residual that counts as progress.
@@ -552,11 +606,14 @@ impl Default for SolverConfig {
         Self {
             max_iterations: 10_000,
             relative_tolerance: Fix128::from_raw(0, 1 << 34),
-            // 1000 iterations is longer than a healthy solve of this kind takes
-            // in total (292 for a 3200-element cantilever), so the rule cannot
-            // fire on a converging problem; 2^-10 ≈ 0.1% is small enough that
-            // genuine progress always clears it.
-            stagnation_window: 1_000,
+            // The window is `max(500, 0.5 × iterations so far)`, so a hopeless
+            // solve is abandoned at twice the iteration that produced its best
+            // residual, however large the problem is. 500 is a floor for short
+            // solves, where a proportional window would be a handful of
+            // iterations. 2^-10 ≈ 0.1% is small enough that genuine progress
+            // always clears it.
+            stagnation_min_window: 500,
+            stagnation_window_fraction: half(),
             stagnation_min_improvement: Fix128::from_raw(0, 1 << 54),
             preconditioner: Preconditioner::JacobiScaled,
         }
@@ -919,7 +976,19 @@ pub fn solve(
                 relative_residual: relative(residual_norm, b_norm),
             });
         }
-        if since_improvement >= config.stagnation_window {
+        // `max(min_window, fraction × iterations so far)`: a fixed window does
+        // not scale, because the iteration count grows with the problem.
+        let window = {
+            let scaled =
+                config.stagnation_window_fraction * Fix128::from_int(i64::from(iterations));
+            let scaled = if scaled.is_negative() {
+                0
+            } else {
+                u32::try_from(scaled.hi).unwrap_or(u32::MAX)
+            };
+            scaled.max(config.stagnation_min_window)
+        };
+        if since_improvement >= window {
             return Err(FemError::Stagnated {
                 iterations,
                 relative_residual: relative(best_residual, b_norm),
