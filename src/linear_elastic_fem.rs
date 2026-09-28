@@ -112,12 +112,29 @@ pub enum FemError {
     /// on one line, say) are *not* caught up front; those surface as
     /// [`Self::NotConverged`].
     UnderConstrained,
-    /// The conjugate gradient iteration hit its budget.
+    /// The conjugate gradient iteration hit its budget while still making
+    /// progress. Raising [`SolverConfig::max_iterations`] is the right response.
     NotConverged {
         /// Iterations performed.
         iterations: u32,
         /// Relative residual reached.
         relative_residual: Fix128,
+    },
+    /// The iteration stopped improving before reaching the tolerance.
+    ///
+    /// Distinct from [`Self::NotConverged`] on purpose, because the two call
+    /// for opposite responses: more iterations fix one and do nothing for the
+    /// other. Stagnation means the residual has hit the floor the conditioning
+    /// and the arithmetic impose — roughly `κ(K)·ε` — so the fix is a better
+    /// conditioned system (preconditioning, a less slender geometry, a coarser
+    /// mesh) or a tolerance placed above that floor.
+    Stagnated {
+        /// Iterations performed before the iteration was abandoned.
+        iterations: u32,
+        /// Best relative residual reached.
+        relative_residual: Fix128,
+        /// Iterations the best residual went without improving.
+        without_improvement: u32,
     },
 }
 
@@ -370,6 +387,8 @@ impl StressTensor {
 pub struct SolverConfig {
     max_iterations: u32,
     relative_tolerance: Fix128,
+    stagnation_window: u32,
+    stagnation_min_improvement: Fix128,
 }
 
 impl SolverConfig {
@@ -396,7 +415,51 @@ impl SolverConfig {
         Ok(Self {
             max_iterations,
             relative_tolerance,
+            ..Self::default()
         })
+    }
+
+    /// Replace the stagnation rule.
+    ///
+    /// The iteration is abandoned when the *best* residual so far has not
+    /// improved by a factor of at least `min_improvement` over the last
+    /// `window` iterations. Tracking the best rather than the latest matters:
+    /// the residual norm of conjugate gradient is not monotone, and a rule that
+    /// compared consecutive values would abandon a healthy solve on an
+    /// oscillation.
+    ///
+    /// # Errors
+    ///
+    /// `window == 0`, or `min_improvement` outside `(0, 1)`.
+    pub fn with_stagnation(self, window: u32, min_improvement: Fix128) -> Result<Self, FemError> {
+        if window == 0 {
+            return Err(FemError::InvalidConfig(
+                "stagnation window must be positive",
+            ));
+        }
+        if min_improvement <= Fix128::ZERO || min_improvement >= Fix128::ONE {
+            return Err(FemError::InvalidConfig(
+                "stagnation improvement must be a fraction strictly between 0 and 1",
+            ));
+        }
+        Ok(Self {
+            stagnation_window: window,
+            stagnation_min_improvement: min_improvement,
+            ..self
+        })
+    }
+
+    /// Iterations the best residual may go without improving before the solve
+    /// is abandoned.
+    #[must_use]
+    pub const fn stagnation_window(&self) -> u32 {
+        self.stagnation_window
+    }
+
+    /// Relative improvement in the best residual that counts as progress.
+    #[must_use]
+    pub const fn stagnation_min_improvement(&self) -> Fix128 {
+        self.stagnation_min_improvement
     }
 
     /// Iteration budget.
@@ -430,6 +493,12 @@ impl Default for SolverConfig {
         Self {
             max_iterations: 10_000,
             relative_tolerance: Fix128::from_raw(0, 1 << 34),
+            // 1000 iterations is longer than a healthy solve of this kind takes
+            // in total (292 for a 3200-element cantilever), so the rule cannot
+            // fire on a converging problem; 2^-10 ≈ 0.1% is small enough that
+            // genuine progress always clears it.
+            stagnation_window: 1_000,
+            stagnation_min_improvement: Fix128::from_raw(0, 1 << 54),
         }
     }
 }
@@ -608,6 +677,35 @@ fn apply_stiffness(
     }
 }
 
+/// Diagonal of the global stiffness, assembled element by element.
+///
+/// For node `i` with shape function gradient `g`, the diagonal entry of
+/// `Bᵢᵀ D Bᵢ` on axis `a` works out to `(λ+2μ)·g_a² + μ·(g_b² + g_c²)` with
+/// `b, c` the other two axes — the normal row of `D` contributes the first term
+/// and the two shear rows the second. Scaled by the element volume and summed,
+/// that is `diag(K)` without ever forming `K`.
+fn stiffness_diagonal(
+    elements: &[Element],
+    lambda: Fix128,
+    mu: Fix128,
+    ndof: usize,
+) -> Vec<Fix128> {
+    let mut diag = vec![Fix128::ZERO; ndof];
+    let lambda_2mu = lambda + mu + mu;
+    for element in elements {
+        for (g, &node) in element.grad.iter().zip(element.nodes.iter()) {
+            let sq = [g[0] * g[0], g[1] * g[1], g[2] * g[2]];
+            let base = node * 3;
+            for axis in 0..3 {
+                let others = sq[(axis + 1) % 3] + sq[(axis + 2) % 3];
+                diag[base + axis] =
+                    diag[base + axis] + element.volume * (lambda_2mu * sq[axis] + mu * others);
+            }
+        }
+    }
+    diag
+}
+
 fn dot(a: &[Fix128], b: &[Fix128]) -> Fix128 {
     let mut acc = Fix128::ZERO;
     for (x, y) in a.iter().zip(b.iter()) {
@@ -677,23 +775,92 @@ pub fn solve(
         }
     }
 
-    // Conjugate gradient on the free block. `x`, `r` and `p` stay zero on the
-    // prescribed degrees of freedom, so the element loop can run over the whole
-    // vector without a scatter/gather step.
+    // Jacobi-preconditioned conjugate gradient on the free block. `x`, `r`,
+    // `p` and `z` stay zero on the prescribed degrees of freedom, so the element
+    // loop can run over the whole vector without a scatter/gather step.
+    //
+    // The preconditioner is the reciprocal of `diag(K)`. It costs one division
+    // per free degree of freedom per iteration and leaves the answer unchanged;
+    // what it changes is the conditioning the iteration sees, and with it both
+    // the iteration count and the residual floor the arithmetic can reach. A
+    // slender beam is exactly the case where that matters: the condition number
+    // grows as `(L/t)²/h²`, and an unpreconditioned solve on a 10:1 beam at
+    // 25,600 elements was measured stalling 1% above a 2⁻³⁰ tolerance after
+    // 500,000 iterations.
+    let diag = stiffness_diagonal(&elements, lambda, mu, ndof);
+    let mut diag_sum = Fix128::ZERO;
+    let mut free_count = 0u32;
+    for (d, value) in diag.iter().enumerate() {
+        if !is_free[d] {
+            continue;
+        }
+        if *value <= Fix128::ZERO {
+            // K is positive definite on the free block, so a non-positive
+            // diagonal entry means this degree of freedom is attached to no
+            // element at all.
+            return Err(FemError::UnderConstrained);
+        }
+        diag_sum = diag_sum + *value;
+        free_count += 1;
+    }
+    // The preconditioner is `mean(diag) / diag`, not `1 / diag`.
+    //
+    // Scaling `M` by a constant leaves the conjugate gradient iterates
+    // unchanged — `α` and `β` absorb it exactly — but it decides what magnitude
+    // the inner products live at, and in fixed point that is not free. With the
+    // plain reciprocal, `z = r / diag` is about 10⁴ times smaller than `r` here,
+    // so the terms of `rᵀz` and `pᵀKp` fall by 10⁸ and land under the 2⁻⁶⁴
+    // resolution: measured on the traction bar, `rᵀz` and `pᵀKp` both rounded to
+    // exactly zero at iteration 31 with the residual still a factor of 1.6 above
+    // the tolerance. Dividing by the mean keeps `z` the size of `r`, which is
+    // where the available dynamic range is.
+    // `free_count == 0` means every degree of freedom is prescribed. The loop
+    // below then never runs (the load vector is zero, so the residual starts at
+    // zero) and `precond` is never read, but the mean would divide by zero.
+    let mean_diag = if free_count == 0 {
+        Fix128::ONE
+    } else {
+        diag_sum / Fix128::from_int(i64::from(free_count))
+    };
+    let mut precond = vec![Fix128::ZERO; ndof];
+    for d in 0..ndof {
+        if is_free[d] {
+            precond[d] = mean_diag / diag[d];
+        }
+    }
+
     let mut x = vec![Fix128::ZERO; ndof];
     let mut r = b.clone();
-    let mut p = b.clone();
-    let mut rr = dot(&r, &r);
+    let mut z = vec![Fix128::ZERO; ndof];
+    for d in 0..ndof {
+        if is_free[d] {
+            z[d] = r[d] * precond[d];
+        }
+    }
+    let mut p = z.clone();
+    let mut rz = dot(&r, &z);
     let b_norm = dot(&b, &b).sqrt();
     let target = config.relative_tolerance * b_norm;
 
     let mut iterations = 0u32;
-    let mut residual_norm = rr.sqrt();
+    let mut residual_norm = dot(&r, &r).sqrt();
+    // Stagnation bookkeeping: the best residual seen and how long ago it was
+    // beaten by the configured margin.
+    let mut best_residual = residual_norm;
+    let mut since_improvement = 0u32;
+
     while residual_norm > target {
         if iterations >= config.max_iterations {
             return Err(FemError::NotConverged {
                 iterations,
                 relative_residual: relative(residual_norm, b_norm),
+            });
+        }
+        if since_improvement >= config.stagnation_window {
+            return Err(FemError::Stagnated {
+                iterations,
+                relative_residual: relative(best_residual, b_norm),
+                without_improvement: since_improvement,
             });
         }
         apply_stiffness(&elements, &p, lambda, mu, &mut scratch);
@@ -704,27 +871,56 @@ pub fn solve(
         }
         let pkp = dot(&p, &scratch);
         if pkp <= Fix128::ZERO {
-            // K is positive semi-definite, so a non-positive pᵀKp means p is in
-            // its null space: a rigid body mode the constraints did not remove.
-            return Err(FemError::UnderConstrained);
+            if iterations == 0 {
+                // The very first search direction is `M⁻¹b`, so a non-positive
+                // `pᵀKp` there means `K` is singular in that direction: a rigid
+                // body mode the constraints did not remove.
+                return Err(FemError::UnderConstrained);
+            }
+            // Later on, `K` has already proved positive definite along every
+            // direction tried, so this is the search direction having shrunk
+            // until its inner product no longer registers. That is the
+            // arithmetic floor, which is what `Stagnated` describes.
+            return Err(FemError::Stagnated {
+                iterations,
+                relative_residual: relative(best_residual, b_norm),
+                without_improvement: since_improvement,
+            });
         }
-        let alpha = rr / pkp;
+        let alpha = rz / pkp;
         for d in 0..ndof {
             if is_free[d] {
                 x[d] = x[d] + alpha * p[d];
                 r[d] = r[d] - alpha * scratch[d];
             }
         }
-        let rr_next = dot(&r, &r);
-        let beta = rr_next / rr;
         for d in 0..ndof {
             if is_free[d] {
-                p[d] = r[d] + beta * p[d];
+                z[d] = r[d] * precond[d];
             }
         }
-        rr = rr_next;
-        residual_norm = rr.sqrt();
+        let rz_next = dot(&r, &z);
+        let beta = rz_next / rz;
+        for d in 0..ndof {
+            if is_free[d] {
+                p[d] = z[d] + beta * p[d];
+            }
+        }
+        rz = rz_next;
+        residual_norm = dot(&r, &r).sqrt();
         iterations += 1;
+
+        // Progress is measured against the best residual so far, not the
+        // previous one: the conjugate gradient residual norm is not monotone.
+        if residual_norm < best_residual - best_residual * config.stagnation_min_improvement {
+            best_residual = residual_norm;
+            since_improvement = 0;
+        } else {
+            if residual_norm < best_residual {
+                best_residual = residual_norm;
+            }
+            since_improvement += 1;
+        }
     }
 
     // Recombine the prescribed and solved parts.

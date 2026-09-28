@@ -270,8 +270,19 @@ fn tip_deflection_mm(mesh: &SdfTetMesh, out: &FemSolution) -> f64 {
     -sum / count as f64
 }
 
+/// One level's measurements.
+struct Measured {
+    tip_mm: f64,
+    tets: usize,
+    iterations: u32,
+    /// Reported on success as well as on failure: a solve that *just* reached
+    /// its tolerance and one that reached it with room to spare are different
+    /// situations, and only the number distinguishes them.
+    relative_residual: f64,
+}
+
 /// Solve one level and return the tip deflection.
-fn run_level(cell: f64, config: &SolverConfig) -> (f64, usize, u32) {
+fn run_level(cell: f64, config: &SolverConfig) -> Measured {
     let level = mesh_at(cell);
     assert_domain_is_exact(&level, cell);
     let material = ElasticMaterial::new(fx(E_MPA), fx(NU)).expect("valid material");
@@ -279,11 +290,12 @@ fn run_level(cell: f64, config: &SolverConfig) -> (f64, usize, u32) {
     let out = solve(&level.mesh, &material, &bc, config).unwrap_or_else(|e| {
         panic!("cell {cell}: solve failed: {e:?}");
     });
-    (
-        tip_deflection_mm(&level.mesh, &out),
-        level.mesh.tet_count(),
-        out.iterations,
-    )
+    Measured {
+        tip_mm: tip_deflection_mm(&level.mesh, &out),
+        tets: level.mesh.tet_count(),
+        iterations: out.iterations,
+        relative_residual: out.relative_residual.to_f64(),
+    }
 }
 
 /// Richardson order from three deflections on successively halved cells.
@@ -296,7 +308,8 @@ fn richardson_limit(mid: f64, fine: f64, p: f64) -> f64 {
     fine + (fine - mid) / (2.0_f64.powf(p) - 1.0)
 }
 
-fn report(cells: &[f64], deflections: &[f64], tets: &[usize], iters: &[u32]) {
+fn report(cells: &[f64], m: &[Measured]) {
+    let deflections: Vec<f64> = m.iter().map(|x| x.tip_mm).collect();
     let eb = euler_bernoulli_tip_mm();
     let shear = shear_tip_mm();
     eprintln!("cantilever L={LENGTH} w={WIDTH} t={THICKNESS} (slenderness {:.0}), P={LOAD} N, E={E_MPA} MPa, nu={NU}",
@@ -307,14 +320,11 @@ fn report(cells: &[f64], deflections: &[f64], tets: &[usize], iters: &[u32]) {
         100.0 * shear / eb
     );
     eprintln!("  target (bending + shear)   = {:.6} mm", eb + shear);
-    for i in 0..cells.len() {
+    for (i, x) in m.iter().enumerate() {
         eprintln!(
-            "  cell {:<6} tets {:>6}  cg iters {:>5}  tip {:.6} mm  ({:.1}% of target)",
-            cells[i],
-            tets[i],
-            iters[i],
-            deflections[i],
-            100.0 * deflections[i] / (eb + shear)
+            "  cell {:<6} tets {:>6}  cg iters {:>6}  rel resid {:.3e}  tip {:.6} mm  ({:.1}% of target)",
+            cells[i], x.tets, x.iterations, x.relative_residual, x.tip_mm,
+            100.0 * x.tip_mm / (eb + shear)
         );
     }
     for i in 0..deflections.len().saturating_sub(2) {
@@ -347,16 +357,9 @@ fn report(cells: &[f64], deflections: &[f64], tets: &[usize], iters: &[u32]) {
 fn cantilever_converges_from_below() {
     let cells = [2.0, 1.0, 0.5];
     let config = SolverConfig::try_new(200_000, Fix128::from_raw(0, 1 << 34)).expect("valid");
-    let mut deflections = Vec::new();
-    let mut tets = Vec::new();
-    let mut iters = Vec::new();
-    for c in cells {
-        let (d, t, it) = run_level(c, &config);
-        deflections.push(d);
-        tets.push(t);
-        iters.push(it);
-    }
-    report(&cells, &deflections, &tets, &iters);
+    let measured: Vec<Measured> = cells.iter().map(|c| run_level(*c, &config)).collect();
+    report(&cells, &measured);
+    let deflections: Vec<f64> = measured.iter().map(|x| x.tip_mm).collect();
 
     let target = euler_bernoulli_tip_mm() + shear_tip_mm();
 
@@ -419,30 +422,52 @@ fn cantilever_converges_from_below() {
 fn cantilever_order_estimates_agree() {
     let cells = [2.0, 1.0, 0.5, 0.25];
     let config = SolverConfig::try_new(500_000, Fix128::from_raw(0, 1 << 34)).expect("valid");
-    let mut deflections = Vec::new();
-    let mut tets = Vec::new();
-    let mut iters = Vec::new();
-    for c in cells {
-        let (d, t, it) = run_level(c, &config);
-        deflections.push(d);
-        tets.push(t);
-        iters.push(it);
-    }
-    report(&cells, &deflections, &tets, &iters);
+    let measured: Vec<Measured> = cells.iter().map(|c| run_level(*c, &config)).collect();
+    report(&cells, &measured);
+    let deflections: Vec<f64> = measured.iter().map(|x| x.tip_mm).collect();
 
-    let p1 = order(deflections[0], deflections[1], deflections[2]);
-    let p2 = order(deflections[1], deflections[2], deflections[3]);
-    let limit = richardson_limit(deflections[2], deflections[3], p2);
+    // Two estimates, from cells 2/1/0.5 and 1/0.5/0.25. Only the second can be
+    // asymptotic: the coarsest level has one element through the thickness, and
+    // a single layer of linear tetrahedra has no bending mode at all, so any
+    // triple containing it measures the departure from that degeneracy rather
+    // than the order of the scheme.
+    let coarse_triple = order(deflections[0], deflections[1], deflections[2]);
+    let fine_triple = order(deflections[1], deflections[2], deflections[3]);
+    let limit = richardson_limit(deflections[2], deflections[3], fine_triple);
     let target = euler_bernoulli_tip_mm() + shear_tip_mm();
+    eprintln!("  order 2/1/0.5    = {coarse_triple:.3}  (includes the one-element-thick level)");
+    eprintln!("  order 1/0.5/0.25 = {fine_triple:.3}  <- the one that can be asymptotic");
     eprintln!(
         "  Richardson limit {limit:.6} mm, target {target:.6} mm, ratio {:.4}",
         limit / target
     );
 
+    for (c, d) in cells.iter().zip(&deflections) {
+        assert!(
+            *d < target,
+            "cell {c}: {d:.6} mm exceeds the beam value {target:.6} mm"
+        );
+    }
+    for w in deflections.windows(2) {
+        assert!(
+            w[1] > w[0],
+            "refinement must increase the deflection: {:.6} -> {:.6}",
+            w[0],
+            w[1]
+        );
+    }
+
+    // The band was fixed before the number was measured, and it is not to be
+    // widened to fit one. A linear element with an exactly integrated stiffness
+    // is a second-order scheme; the re-entrant corner at the clamp can pull the
+    // observed order down, but not to the 0.571 the coarse triple shows. If the
+    // measurement lands outside the band, report it — the finding is then "still
+    // pre-asymptotic at 25,600 elements", which is itself worth knowing.
     assert!(
-        (p1 - p2).abs() < 0.5,
-        "order estimates from successive triples disagree ({p1:.3} vs {p2:.3}), so the \
-         sequence has not reached its asymptotic range and neither number means anything"
+        fine_triple > 1.0 && fine_triple < 3.0,
+        "the order from the three finest levels is {fine_triple:.3}, outside the band a \
+         second-order scheme produces. Do not widen the band: either the series is still \
+         pre-asymptotic, or something upstream is wrong"
     );
     assert!(
         (limit / target - 1.0).abs() < 0.10,

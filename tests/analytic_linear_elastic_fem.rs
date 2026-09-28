@@ -655,6 +655,101 @@ fn out_of_range_vertex_is_rejected() {
     );
 }
 
+/// A tolerance below the arithmetic floor must be abandoned quickly and said
+/// so, not ground at until the budget runs out.
+///
+/// `Fix128` carries 64 fractional bits, so an inner product whose terms fall
+/// under 2⁻⁶⁴ rounds to zero and the residual cannot improve any further. A
+/// tolerance placed under that floor is unreachable by construction. What the
+/// solver must not do is spend the whole budget finding that out: measured
+/// before this rule existed, an unpreconditioned solve of a 25,600-element
+/// cantilever ran 500,000 iterations over 24.8 minutes to stop 1% above its
+/// tolerance, and the report could not say whether more iterations would have
+/// helped.
+///
+/// The two outcomes are deliberately different error variants because they call
+/// for opposite responses: `NotConverged` means raise the budget, `Stagnated`
+/// means the budget is irrelevant.
+#[test]
+fn unreachable_tolerance_stagnates_instead_of_burning_the_budget() {
+    let (nx, ny, nz, h) = (4usize, 1usize, 1usize, 2.5_f32);
+    let mesh = kuhn_box(nx, ny, nz, h);
+    let mut bc = BoundaryConditions::new();
+    for k in 0..=nz {
+        for j in 0..=ny {
+            bc.prescribe(node_index(nx, ny, 0, j, k), Axis::X, Fix128::ZERO);
+        }
+    }
+    bc.prescribe(node_index(nx, ny, 0, 0, 0), Axis::Y, Fix128::ZERO);
+    bc.prescribe(node_index(nx, ny, 0, 0, 0), Axis::Z, Fix128::ZERO);
+    bc.prescribe(node_index(nx, ny, 0, ny, 0), Axis::Z, Fix128::ZERO);
+    bc.prescribe(node_index(nx, ny, 0, 0, nz), Axis::Y, Fix128::ZERO);
+    for node in [
+        node_index(nx, ny, nx, 0, 0),
+        node_index(nx, ny, nx, ny, nz),
+        node_index(nx, ny, nx, ny, 0),
+        node_index(nx, ny, nx, 0, nz),
+    ] {
+        bc.add_load(node, Axis::X, fx(12.5));
+    }
+
+    // 2^-60 is below anything the residual can reach in Q64.64 here.
+    let budget = 200_000;
+    let cfg = SolverConfig::try_new(budget, Fix128::from_raw(0, 1 << 4)).expect("valid config");
+    let err = solve(&mesh, &pla(), &bc, &cfg).unwrap_err();
+
+    match err {
+        alice_physics::linear_elastic_fem::FemError::Stagnated {
+            iterations,
+            relative_residual,
+            without_improvement,
+        } => {
+            eprintln!(
+                "[stagnation] gave up after {iterations} of {budget} iterations, \
+                 best relative residual {:.3e}, {without_improvement} without improvement",
+                relative_residual.to_f64()
+            );
+            assert!(
+                iterations < budget / 10,
+                "the point of the rule is to stop early: it used {iterations} of {budget}"
+            );
+            assert!(
+                relative_residual.to_f64() > 0.0,
+                "a stagnation report must carry the residual it actually reached"
+            );
+        }
+        other => panic!(
+            "an unreachable tolerance must be reported as stagnation, not as {other:?}; \
+             NotConverged here would tell the caller to raise a budget that cannot help"
+        ),
+    }
+}
+
+/// The stagnation rule is configurable and validated like the rest.
+#[test]
+fn stagnation_settings_are_validated() {
+    let base = SolverConfig::default();
+    assert!(base.stagnation_window() > 0);
+    assert!(base.stagnation_min_improvement() > Fix128::ZERO);
+    assert!(base.stagnation_min_improvement() < Fix128::ONE);
+
+    let tuned = base.with_stagnation(50, fx(0.01)).expect("valid");
+    assert_eq!(tuned.stagnation_window(), 50);
+    // the rest of the configuration survives
+    assert_eq!(tuned.max_iterations(), base.max_iterations());
+    assert_eq!(tuned.relative_tolerance(), base.relative_tolerance());
+
+    assert!(base.with_stagnation(0, fx(0.01)).is_err(), "zero window");
+    assert!(
+        base.with_stagnation(50, Fix128::ZERO).is_err(),
+        "zero improvement never counts as progress, so nothing would ever stagnate"
+    );
+    assert!(
+        base.with_stagnation(50, Fix128::ONE).is_err(),
+        "an improvement factor of 1 demands the residual reach zero every window"
+    );
+}
+
 /// An empty mesh is an error, not an empty solution.
 #[test]
 fn empty_mesh_is_rejected() {
