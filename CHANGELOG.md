@@ -13,6 +13,38 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Changed — `sdf_fem_mesh` の出力が変わりました (決定論 hash を持つ下流に影響)
+
+`generate` / `generate_marching_tets` を**適合 (conforming) mesh** を返すように
+直しました。隣接する要素が面・辺・頂点だけで接する、という FEM の前提条件です。
+**tet の接続が変わるので、この mesh から導かれる値を golden hash などに pin して
+いる利用者は再 pin が必要です。**
+
+変わるもの / 変わらないものは以下のとおりです (半径 1 の球 / bounds ±1 / cell 0.5
+で実測):
+
+| | 変更前 | 変更後 |
+|---|---|---|
+| `vertex_count` (生成直後) | 27 | 27 (不変) |
+| `tet_count` (生成直後) | 40 | 40 (不変) |
+| `max_edge_length` (生成直後) | 0.707106769 | 0.707106769 (不変) |
+| `refine_by_max_edge_length` 後の `vertex_count` | 91 | **81** |
+
+頂点は格子隅、tet は cube あたり 5 個で、これは分割 pattern を入れ替えても同じ
+です。変わるのは**面をどう三角形に割るか**だけなので、生成直後の量は動きません。
+細分後に頂点が減るのは、共有面の対角線が一致した結果、隣り合う要素が同じ辺を
+共有して中点が 1 個で済むようになったためです。
+
+決定論は保たれています。本 CHANGELOG の hash 更新は MacBook Air (M3) と
+Mac mini (M2 Pro) で独立に同じ値を実測しました。
+
+内部の詳細 (cube 分割の交互配置 / 零交差頂点の位相 key による intern / 切断多面体
+の quad 対角線を最小頂点 index で選ぶ) は `sdf_fem_mesh` の module doc を参照して
+ください。適合性は `tests/mesh_conformity.rs` が面センサスで CI 固定します。
+**FEM の patch test は適合性の検査に使えません** — 正方形の 2 通りの三角形分割は
+線形関数を同一に補間するので、非適合 mesh でも誤差 3.6e-15 で通ります。
+
+
 ### Added
 - **`metric` module — a distance can now say which norm it was measured in
   (2026-09-27)** `MetricWeights` is a non-negative combination of `‖·‖₁` /
