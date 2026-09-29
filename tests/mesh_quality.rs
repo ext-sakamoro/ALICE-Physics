@@ -78,7 +78,7 @@
 #![cfg(feature = "std")]
 #![allow(clippy::disallowed_methods)]
 
-use alice_physics::sdf_collider::ClosureSdf;
+use alice_physics::sdf_collider::{ClosureSdf, SdfField};
 use alice_physics::sdf_fem_mesh::{generate, generate_marching_tets, SdfTetMesh};
 
 /// Where the gate sits, in degrees — between the measured good and bad
@@ -107,6 +107,58 @@ struct Scene {
     sdf: ClosureSdf,
     half_extent: f32,
     volume: f64,
+    /// Closed-form surface area, which is what bounds how far the meshed volume
+    /// can stray in either direction. See [`surface_band`].
+    area: f64,
+}
+
+/// How far the enclosed volume may differ from the shape's, in either direction.
+///
+/// Every vertex the mesher puts on the boundary is either a lattice corner
+/// warped onto the isosurface or a zero crossing on a lattice edge, and a
+/// lattice edge is at most `sqrt(3) * cell` long. So the meshed boundary lies
+/// within one cell of the true surface, and sweeping the surface through that
+/// distance is the most volume that can be gained or lost.
+///
+/// This is derived from the geometry rather than read off a measurement, which
+/// matters because the direction it guards has never been observed: every scene
+/// here comes out *under* the shape. A number fitted to the deficits would say
+/// nothing about an excess.
+///
+/// It is deliberately looser than the `SNAP_CELL_FRACTION * cell` the warp
+/// actually guarantees — that constant is private to the mesher, and a copy of
+/// it here would be free to drift away from it.
+fn surface_band(area: f64, cell: f32) -> f64 {
+    area * f64::from(cell)
+}
+
+/// The largest signed distance found at any element's centroid.
+///
+/// This is the sharp test for the direction the volume cannot see. A mesh that
+/// bridges over a hole, or fills a concave pocket, puts whole elements in the
+/// region where the field is positive, and their centroids sit roughly a hole
+/// radius outside the shape. The volume misses this because it only ever sees a
+/// total, and on the scenes here the total is *short* by far more than a small
+/// pocket would add — measured on a torus at cell 0.375, the band that the
+/// surface area allows is 2.14 times the shape's whole volume, so the volume
+/// comparison would accept a mesh enclosing three of them.
+///
+/// An element that legitimately straddles the surface has a centroid within
+/// about half its own size of it, so the bound is one cell: a lattice edge is at
+/// most `sqrt(3) * cell` and the centroid is the average of four of its corners.
+fn deepest_outside<F: SdfField + ?Sized>(mesh: &SdfTetMesh, sdf: &F) -> f64 {
+    let mut deepest = f64::NEG_INFINITY;
+    for tet in &mesh.tets {
+        let mut c = [0.0_f32; 3];
+        for v in tet.vertices {
+            let p = mesh.vertices[v as usize];
+            for k in 0..3 {
+                c[k] += p[k] / 4.0;
+            }
+        }
+        deepest = deepest.max(f64::from(sdf.distance(c[0], c[1], c[2])));
+    }
+    deepest
 }
 
 /// A slab and a square rod, both only a few cells thick.
@@ -187,6 +239,7 @@ fn scenes() -> Vec<Scene> {
             sdf: ball_sdf(1.0),
             half_extent: 1.5,
             volume: 4.0 / 3.0 * std::f64::consts::PI,
+            area: 4.0 * std::f64::consts::PI,
         },
         Scene {
             name: "torus",
@@ -194,6 +247,8 @@ fn scenes() -> Vec<Scene> {
             half_extent: 1.5,
             // 2 pi^2 R r^2
             volume: 2.0 * std::f64::consts::PI * std::f64::consts::PI * 0.8 * 0.35 * 0.35,
+            // 4 pi^2 R r
+            area: 4.0 * std::f64::consts::PI * std::f64::consts::PI * 0.8 * 0.35,
         },
     ]
 }
@@ -514,6 +569,13 @@ fn marching_tets_volume_converges() {
     }
 }
 
+/// Rebuild the mesh for a probe that needs it after `marching_series` has
+/// already consumed one.
+fn mesh_for_probe(scene: &Scene, cell: f32) -> SdfTetMesh {
+    let h = scene.half_extent;
+    generate_marching_tets(&scene.sdf, [-h, -h, -h], [h, h, h], cell)
+}
+
 fn check_volume_converges(scene: &Scene) {
     let analytic = scene.volume;
     let series = marching_series(scene);
@@ -521,7 +583,40 @@ fn check_volume_converges(scene: &Scene) {
     let errors: Vec<f64> = series
         .into_iter()
         .map(|(cell, q)| {
-            let err = (q.total_volume - analytic).abs() / analytic;
+            // Signed, not `abs()`. The two directions mean different things: a
+            // deficit is the expected discretisation error and is covered by the
+            // convergence requirement below, while an excess means the mesher
+            // enclosed something the shape does not contain — a hole bridged
+            // over, say — and nothing else in the suite is looking for that.
+            let signed = q.total_volume - analytic;
+            let band = surface_band(scene.area, cell);
+            assert!(
+                signed <= band,
+                "{}: cell {cell}: the mesh encloses {signed:.4} more than the shape, past the \
+                 {band:.4} that sweeping its {:.3} of surface through one cell allows. Every \
+                 boundary vertex sits on a lattice edge or a warped corner, so the boundary \
+                 cannot be further than that from the real one — an excess past it means volume \
+                 was enclosed that no part of the surface accounts for",
+                scene.name,
+                scene.area
+            );
+            let deepest = deepest_outside(&mesh_for_probe(scene, cell), &scene.sdf);
+            eprintln!(
+                "[outside] {:<9} cell {cell:<7} signed volume error {signed:+.4}  \
+                 band {band:.4} ({:.2} of the exact volume)  deepest centroid {deepest:+.4}",
+                scene.name,
+                band / analytic
+            );
+            assert!(
+                deepest <= f64::from(cell),
+                "{}: cell {cell}: an element's centroid sits {deepest:.4} outside the shape, \
+                 further than the one cell an element straddling the surface can reach. The mesh \
+                 has enclosed a region the shape does not contain. The volume total cannot see \
+                 this — its band here is {:.2} times the whole shape",
+                scene.name,
+                band / analytic
+            );
+            let err = signed.abs() / analytic;
             eprintln!(
                 "[volume]  {:<9} cell {cell:<7} tets {:>5}  volume {:.6}  analytic {:.6}  \
                  error {:.3}%",
@@ -670,6 +765,60 @@ fn thin_bodies_keep_their_thickness() {
                 hw[1],
                 100.0 * w[0],
                 100.0 * w[1]
+            );
+        }
+    }
+}
+
+/// Two slabs with a gap between them, which is where a mesher can enclose
+/// something the shape does not contain.
+///
+/// The warp moves a lattice corner onto the isosurface, and a corner sitting in
+/// a narrow gap is within reach of *both* of its faces. If it went to the wrong
+/// one, or if the gap were narrow enough that no lattice corner landed inside it
+/// at all, the two slabs would be meshed as one solid block. The volume total
+/// would barely notice — the band it allows is larger than the whole shape on
+/// some of the scenes here — so [`deepest_outside`] is what answers it.
+///
+/// The gap is swept in units of `cell`, and the answer is not uniform: a gap
+/// narrower than a lattice cell cannot be represented at all, because the field
+/// is only sampled at corners and none of them fall inside it. That is
+/// under-resolution rather than a defect of the warp, and it is what the printed
+/// sweep is for — the assertion only covers gaps a cell or wider, where the
+/// mesher does have the information it needs.
+#[test]
+fn a_gap_wider_than_a_cell_is_not_bridged() {
+    const CELL: f32 = 0.25;
+    for gap_in_cells in [0.5_f32, 0.8, 1.0, 1.5, 2.0, 3.0] {
+        let gap = gap_in_cells * CELL;
+        let half_gap = f64::from(gap) / 2.0;
+        // Two slabs filling |z| in [gap/2, gap/2 + 0.75], offset off the lattice.
+        let sdf = ClosureSdf::new(
+            move |x, y, z| {
+                let inside_slab = |v: f32| {
+                    let a = v.abs();
+                    (gap / 2.0 - a).max(a - (gap / 2.0 + 0.75))
+                };
+                let planar = (x.abs() - 1.0).max(y.abs() - 1.0);
+                planar.max(inside_slab(z - 0.03))
+            },
+            |_, _, _| (0.0, 0.0, 1.0),
+        );
+        let mesh = generate_marching_tets(&sdf, [-2.0, -2.0, -2.0], [2.0, 2.0, 2.0], CELL);
+        let deepest = deepest_outside(&mesh, &sdf);
+        let bridged = deepest > half_gap * 0.5;
+        eprintln!(
+            "[gap]     gap {gap:.4} ({gap_in_cells:.1} cells)  tets {:>6}  \
+             deepest centroid {deepest:+.4}  half gap {half_gap:.4}  \
+             bridged {bridged}",
+            mesh.tet_count()
+        );
+        if gap_in_cells >= 1.0 {
+            assert!(
+                deepest <= f64::from(CELL),
+                "gap {gap:.4} is {gap_in_cells:.1} cells wide, so lattice corners fall inside it \
+                 and the mesher has what it needs to keep the slabs apart. An element centroid \
+                 {deepest:.4} outside the shape means it bridged them anyway"
             );
         }
     }
