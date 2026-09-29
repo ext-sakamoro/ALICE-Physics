@@ -2074,6 +2074,182 @@ pub fn alice_physics::convex_decompose::decompose_sdf(&dyn alice_physics::sdf_co
 pub mod alice_physics::convex_mesh_builder
 pub fn alice_physics::convex_mesh_builder::build_convex_hull(&[alice_physics::math::Vec3Fix]) -> alice_physics::collider::ConvexHull
 pub fn alice_physics::convex_mesh_builder::compute_centroid(&[alice_physics::math::Vec3Fix]) -> alice_physics::math::Vec3Fix
+pub mod alice_physics::coupled_iteration
+#[non_exhaustive] pub enum alice_physics::coupled_iteration::ConfigFault
+pub alice_physics::coupled_iteration::ConfigFault::DivergenceRatioNotAboveOne
+pub alice_physics::coupled_iteration::ConfigFault::InsufficientRatioSamples
+pub alice_physics::coupled_iteration::ConfigFault::NonPositiveTolerance
+pub alice_physics::coupled_iteration::ConfigFault::ScaleOutOfRange
+pub alice_physics::coupled_iteration::ConfigFault::StagnationFractionOutOfRange
+pub alice_physics::coupled_iteration::ConfigFault::ZeroSweepBudget
+impl core::clone::Clone for alice_physics::coupled_iteration::ConfigFault
+pub fn alice_physics::coupled_iteration::ConfigFault::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::coupled_iteration::ConfigFault
+impl core::cmp::PartialEq for alice_physics::coupled_iteration::ConfigFault
+pub fn alice_physics::coupled_iteration::ConfigFault::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::coupled_iteration::ConfigFault
+pub fn alice_physics::coupled_iteration::ConfigFault::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::coupled_iteration::ConfigFault
+impl core::marker::StructuralPartialEq for alice_physics::coupled_iteration::ConfigFault
+impl core::marker::Freeze for alice_physics::coupled_iteration::ConfigFault
+impl core::marker::Send for alice_physics::coupled_iteration::ConfigFault
+impl core::marker::Sync for alice_physics::coupled_iteration::ConfigFault
+impl core::marker::Unpin for alice_physics::coupled_iteration::ConfigFault
+impl core::marker::UnsafeUnpin for alice_physics::coupled_iteration::ConfigFault
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::coupled_iteration::ConfigFault
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::coupled_iteration::ConfigFault
+#[non_exhaustive] pub enum alice_physics::coupled_iteration::CoupledIterationError
+pub alice_physics::coupled_iteration::CoupledIterationError::ArithmeticWrapped
+pub alice_physics::coupled_iteration::CoupledIterationError::ArithmeticWrapped::sweeps: u32
+pub alice_physics::coupled_iteration::CoupledIterationError::Diverging
+pub alice_physics::coupled_iteration::CoupledIterationError::Diverging::observed_ratio: alice_physics::math::Fix128
+pub alice_physics::coupled_iteration::CoupledIterationError::Diverging::sweeps: u32
+pub alice_physics::coupled_iteration::CoupledIterationError::InvalidConfig
+pub alice_physics::coupled_iteration::CoupledIterationError::InvalidConfig::fault: alice_physics::coupled_iteration::ConfigFault
+pub alice_physics::coupled_iteration::CoupledIterationError::NotConverged
+pub alice_physics::coupled_iteration::CoupledIterationError::NotConverged::residual: alice_physics::math::Fix128
+pub alice_physics::coupled_iteration::CoupledIterationError::NotConverged::sweeps: u32
+pub alice_physics::coupled_iteration::CoupledIterationError::Stagnated
+pub alice_physics::coupled_iteration::CoupledIterationError::Stagnated::best_residual: alice_physics::math::Fix128
+pub alice_physics::coupled_iteration::CoupledIterationError::Stagnated::first_residual: alice_physics::math::Fix128
+pub alice_physics::coupled_iteration::CoupledIterationError::Stagnated::sweeps: u32
+pub alice_physics::coupled_iteration::CoupledIterationError::Stagnated::sweeps_since_improvement: u32
+impl core::clone::Clone for alice_physics::coupled_iteration::CoupledIterationError
+pub fn alice_physics::coupled_iteration::CoupledIterationError::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::coupled_iteration::CoupledIterationError
+impl core::cmp::PartialEq for alice_physics::coupled_iteration::CoupledIterationError
+pub fn alice_physics::coupled_iteration::CoupledIterationError::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::coupled_iteration::CoupledIterationError
+pub fn alice_physics::coupled_iteration::CoupledIterationError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::coupled_iteration::CoupledIterationError
+impl core::marker::StructuralPartialEq for alice_physics::coupled_iteration::CoupledIterationError
+impl core::marker::Freeze for alice_physics::coupled_iteration::CoupledIterationError
+impl core::marker::Send for alice_physics::coupled_iteration::CoupledIterationError
+impl core::marker::Sync for alice_physics::coupled_iteration::CoupledIterationError
+impl core::marker::Unpin for alice_physics::coupled_iteration::CoupledIterationError
+impl core::marker::UnsafeUnpin for alice_physics::coupled_iteration::CoupledIterationError
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::coupled_iteration::CoupledIterationError
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::coupled_iteration::CoupledIterationError
+pub enum alice_physics::coupled_iteration::MonitorVerdict
+pub alice_physics::coupled_iteration::MonitorVerdict::Continue
+pub alice_physics::coupled_iteration::MonitorVerdict::Converged
+pub alice_physics::coupled_iteration::MonitorVerdict::Stop(alice_physics::coupled_iteration::CoupledIterationError)
+impl core::clone::Clone for alice_physics::coupled_iteration::MonitorVerdict
+pub fn alice_physics::coupled_iteration::MonitorVerdict::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::coupled_iteration::MonitorVerdict
+impl core::cmp::PartialEq for alice_physics::coupled_iteration::MonitorVerdict
+pub fn alice_physics::coupled_iteration::MonitorVerdict::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::coupled_iteration::MonitorVerdict
+pub fn alice_physics::coupled_iteration::MonitorVerdict::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::coupled_iteration::MonitorVerdict
+impl core::marker::StructuralPartialEq for alice_physics::coupled_iteration::MonitorVerdict
+impl core::marker::Freeze for alice_physics::coupled_iteration::MonitorVerdict
+impl core::marker::Send for alice_physics::coupled_iteration::MonitorVerdict
+impl core::marker::Sync for alice_physics::coupled_iteration::MonitorVerdict
+impl core::marker::Unpin for alice_physics::coupled_iteration::MonitorVerdict
+impl core::marker::UnsafeUnpin for alice_physics::coupled_iteration::MonitorVerdict
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::coupled_iteration::MonitorVerdict
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::coupled_iteration::MonitorVerdict
+pub struct alice_physics::coupled_iteration::ContractionMonitor
+impl alice_physics::coupled_iteration::ContractionMonitor
+pub const fn alice_physics::coupled_iteration::ContractionMonitor::best_residual(&self) -> alice_physics::math::Fix128
+pub fn alice_physics::coupled_iteration::ContractionMonitor::new(alice_physics::coupled_iteration::SubIterationConfig) -> core::result::Result<Self, alice_physics::coupled_iteration::CoupledIterationError>
+pub fn alice_physics::coupled_iteration::ContractionMonitor::observe(&mut self, alice_physics::math::Fix128) -> alice_physics::coupled_iteration::MonitorVerdict
+pub const fn alice_physics::coupled_iteration::ContractionMonitor::observed_ratio(&self) -> core::option::Option<alice_physics::math::Fix128>
+pub const fn alice_physics::coupled_iteration::ContractionMonitor::sweeps(&self) -> u32
+impl core::clone::Clone for alice_physics::coupled_iteration::ContractionMonitor
+pub fn alice_physics::coupled_iteration::ContractionMonitor::clone(&self) -> Self
+impl core::fmt::Debug for alice_physics::coupled_iteration::ContractionMonitor
+pub fn alice_physics::coupled_iteration::ContractionMonitor::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::coupled_iteration::ContractionMonitor
+impl core::marker::Freeze for alice_physics::coupled_iteration::ContractionMonitor
+impl core::marker::Send for alice_physics::coupled_iteration::ContractionMonitor
+impl core::marker::Sync for alice_physics::coupled_iteration::ContractionMonitor
+impl core::marker::Unpin for alice_physics::coupled_iteration::ContractionMonitor
+impl core::marker::UnsafeUnpin for alice_physics::coupled_iteration::ContractionMonitor
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::coupled_iteration::ContractionMonitor
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::coupled_iteration::ContractionMonitor
+pub struct alice_physics::coupled_iteration::EquilibrationScale
+impl alice_physics::coupled_iteration::EquilibrationScale
+pub const alice_physics::coupled_iteration::EquilibrationScale::IDENTITY: Self
+pub const alice_physics::coupled_iteration::EquilibrationScale::MAX_EXPONENT: u32
+pub fn alice_physics::coupled_iteration::EquilibrationScale::covering(alice_physics::math::Fix128) -> core::result::Result<Self, alice_physics::coupled_iteration::ConfigFault>
+pub const fn alice_physics::coupled_iteration::EquilibrationScale::exponent(self) -> u32
+pub fn alice_physics::coupled_iteration::EquilibrationScale::factor(self) -> alice_physics::math::Fix128
+pub fn alice_physics::coupled_iteration::EquilibrationScale::round_trip_bound(self) -> alice_physics::math::Fix128
+pub const fn alice_physics::coupled_iteration::EquilibrationScale::scale_down(self, alice_physics::math::Fix128) -> alice_physics::math::Fix128
+pub fn alice_physics::coupled_iteration::EquilibrationScale::scale_up(self, alice_physics::math::Fix128) -> alice_physics::math::Fix128
+impl core::clone::Clone for alice_physics::coupled_iteration::EquilibrationScale
+pub fn alice_physics::coupled_iteration::EquilibrationScale::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::coupled_iteration::EquilibrationScale
+impl core::cmp::Ord for alice_physics::coupled_iteration::EquilibrationScale
+pub fn alice_physics::coupled_iteration::EquilibrationScale::cmp(&self, &Self) -> core::cmp::Ordering
+impl core::cmp::PartialEq for alice_physics::coupled_iteration::EquilibrationScale
+pub fn alice_physics::coupled_iteration::EquilibrationScale::eq(&self, &Self) -> bool
+impl core::cmp::PartialOrd for alice_physics::coupled_iteration::EquilibrationScale
+pub fn alice_physics::coupled_iteration::EquilibrationScale::partial_cmp(&self, &Self) -> core::option::Option<core::cmp::Ordering>
+impl core::fmt::Debug for alice_physics::coupled_iteration::EquilibrationScale
+pub fn alice_physics::coupled_iteration::EquilibrationScale::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::coupled_iteration::EquilibrationScale
+impl core::marker::StructuralPartialEq for alice_physics::coupled_iteration::EquilibrationScale
+impl core::marker::Freeze for alice_physics::coupled_iteration::EquilibrationScale
+impl core::marker::Send for alice_physics::coupled_iteration::EquilibrationScale
+impl core::marker::Sync for alice_physics::coupled_iteration::EquilibrationScale
+impl core::marker::Unpin for alice_physics::coupled_iteration::EquilibrationScale
+impl core::marker::UnsafeUnpin for alice_physics::coupled_iteration::EquilibrationScale
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::coupled_iteration::EquilibrationScale
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::coupled_iteration::EquilibrationScale
+pub struct alice_physics::coupled_iteration::SubIterationConfig
+pub alice_physics::coupled_iteration::SubIterationConfig::divergence_ratio: alice_physics::math::Fix128
+pub alice_physics::coupled_iteration::SubIterationConfig::max_sweeps: u32
+pub alice_physics::coupled_iteration::SubIterationConfig::ratio_samples: u32
+pub alice_physics::coupled_iteration::SubIterationConfig::relative_tolerance: alice_physics::math::Fix128
+pub alice_physics::coupled_iteration::SubIterationConfig::stagnation_fraction: alice_physics::math::Fix128
+impl alice_physics::coupled_iteration::SubIterationConfig
+pub fn alice_physics::coupled_iteration::SubIterationConfig::new(u32, alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128, u32) -> core::result::Result<Self, alice_physics::coupled_iteration::ConfigFault>
+pub fn alice_physics::coupled_iteration::SubIterationConfig::validate(&self) -> core::result::Result<(), alice_physics::coupled_iteration::ConfigFault>
+impl core::clone::Clone for alice_physics::coupled_iteration::SubIterationConfig
+pub fn alice_physics::coupled_iteration::SubIterationConfig::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::coupled_iteration::SubIterationConfig
+impl core::cmp::PartialEq for alice_physics::coupled_iteration::SubIterationConfig
+pub fn alice_physics::coupled_iteration::SubIterationConfig::eq(&self, &Self) -> bool
+impl core::default::Default for alice_physics::coupled_iteration::SubIterationConfig
+pub fn alice_physics::coupled_iteration::SubIterationConfig::default() -> Self
+impl core::fmt::Debug for alice_physics::coupled_iteration::SubIterationConfig
+pub fn alice_physics::coupled_iteration::SubIterationConfig::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::coupled_iteration::SubIterationConfig
+impl core::marker::StructuralPartialEq for alice_physics::coupled_iteration::SubIterationConfig
+impl core::marker::Freeze for alice_physics::coupled_iteration::SubIterationConfig
+impl core::marker::Send for alice_physics::coupled_iteration::SubIterationConfig
+impl core::marker::Sync for alice_physics::coupled_iteration::SubIterationConfig
+impl core::marker::Unpin for alice_physics::coupled_iteration::SubIterationConfig
+impl core::marker::UnsafeUnpin for alice_physics::coupled_iteration::SubIterationConfig
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::coupled_iteration::SubIterationConfig
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::coupled_iteration::SubIterationConfig
+pub struct alice_physics::coupled_iteration::SubIterationReport
+pub alice_physics::coupled_iteration::SubIterationReport::observed_ratio: core::option::Option<alice_physics::math::Fix128>
+pub alice_physics::coupled_iteration::SubIterationReport::residual: alice_physics::math::Fix128
+pub alice_physics::coupled_iteration::SubIterationReport::sweeps: u32
+impl core::clone::Clone for alice_physics::coupled_iteration::SubIterationReport
+pub fn alice_physics::coupled_iteration::SubIterationReport::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::coupled_iteration::SubIterationReport
+impl core::cmp::PartialEq for alice_physics::coupled_iteration::SubIterationReport
+pub fn alice_physics::coupled_iteration::SubIterationReport::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::coupled_iteration::SubIterationReport
+pub fn alice_physics::coupled_iteration::SubIterationReport::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::coupled_iteration::SubIterationReport
+impl core::marker::StructuralPartialEq for alice_physics::coupled_iteration::SubIterationReport
+impl core::marker::Freeze for alice_physics::coupled_iteration::SubIterationReport
+impl core::marker::Send for alice_physics::coupled_iteration::SubIterationReport
+impl core::marker::Sync for alice_physics::coupled_iteration::SubIterationReport
+impl core::marker::Unpin for alice_physics::coupled_iteration::SubIterationReport
+impl core::marker::UnsafeUnpin for alice_physics::coupled_iteration::SubIterationReport
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::coupled_iteration::SubIterationReport
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::coupled_iteration::SubIterationReport
+pub const alice_physics::coupled_iteration::L2_TERM_FLOOR: alice_physics::math::Fix128
+pub fn alice_physics::coupled_iteration::residual_norm_inf(&[alice_physics::math::Fix128]) -> alice_physics::math::Fix128
+pub fn alice_physics::coupled_iteration::residual_norm_l2_checked(&[alice_physics::math::Fix128]) -> core::result::Result<alice_physics::math::Fix128, alice_physics::coupled_iteration::CoupledIterationError>
+pub fn alice_physics::coupled_iteration::run_sub_iteration<F>(alice_physics::coupled_iteration::SubIterationConfig, F) -> core::result::Result<alice_physics::coupled_iteration::SubIterationReport, alice_physics::coupled_iteration::CoupledIterationError> where F: core::ops::function::FnMut(u32) -> alice_physics::math::Fix128
 pub mod alice_physics::creep_longterm
 pub struct alice_physics::creep_longterm::FindleyParameters
 pub alice_physics::creep_longterm::FindleyParameters::epsilon_0: alice_physics::math::Fix128
