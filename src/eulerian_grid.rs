@@ -542,23 +542,56 @@ impl MacGrid {
     /// Marks `u` at `i = 0, nx`, `v` at `j = 0, ny` and `w` at `k = 0, nz`.
     /// Interior faces are left untouched, so this composes with obstacle
     /// masks set through [`MacGrid::set_u_solid`] and friends.
+    ///
+    /// # The walls are no-slip
+    ///
+    /// ⚠️ **Changed behaviour.** These are [`FaceBc::Wall`], so the viscous
+    /// term of [`crate::cfd_solver::CfdSolver::step`] mirrors them with the
+    /// no-slip ghost. Before the no-slip ghost existed they behaved as
+    /// free-slip, which for a sealed container of viscous fluid was the wrong
+    /// condition, not a milder one. A caller that genuinely wants free slip
+    /// has to say so, by overwriting the layer with [`FaceBc::SlipWall`]
+    /// through [`MacGrid::set_u_bc`] and friends afterwards.
+    ///
+    /// # An axis one cell thick becomes a symmetry plane
+    ///
+    /// ⚠️ **An axis with a single cell gets [`FaceBc::SlipWall`] instead**,
+    /// because a box one cell thick cannot resolve a boundary layer: no-slip
+    /// on both of its faces makes every ghost of the in-plane components
+    /// `−u_in`, which damps the flow by `4 ν dt / dx²` per step and leaves a
+    /// field that looks like a broken solver rather than like a thin box.
+    /// Measured on the `16 × 16 × 1` lid-driven cavity of
+    /// `tests/analytic_cfd_wall_bc.rs`: the centreline peak falls from 86.0 %
+    /// of the Ghia (1982) reference to **4.2 %**.
+    ///
+    /// A single cell along an axis always means "this problem is
+    /// two-dimensional", so the symmetry plane is what the caller meant. The
+    /// faces are still walls for the pressure — they have to be, or the
+    /// Poisson problem degenerates into a screened one — they just exert no
+    /// shear. A caller who really wants a no-slip sheet one cell thick can
+    /// set [`FaceBc::Wall`] on that layer explicitly.
     pub fn set_closed_box_walls(&mut self) {
+        let wall = FaceBc::Wall {
+            velocity: Vec3Fix::ZERO,
+        };
+        let along = |n: usize| if n == 1 { FaceBc::SlipWall } else { wall };
+        let (bc_x, bc_y, bc_z) = (along(self.nx), along(self.ny), along(self.nz));
         for k in 0..self.nz {
             for j in 0..self.ny {
-                self.set_u_solid(0, j, k, true);
-                self.set_u_solid(self.nx, j, k, true);
+                self.set_u_bc(0, j, k, bc_x);
+                self.set_u_bc(self.nx, j, k, bc_x);
             }
         }
         for k in 0..self.nz {
             for i in 0..self.nx {
-                self.set_v_solid(i, 0, k, true);
-                self.set_v_solid(i, self.ny, k, true);
+                self.set_v_bc(i, 0, k, bc_y);
+                self.set_v_bc(i, self.ny, k, bc_y);
             }
         }
         for j in 0..self.ny {
             for i in 0..self.nx {
-                self.set_w_solid(i, j, 0, true);
-                self.set_w_solid(i, j, self.nz, true);
+                self.set_w_bc(i, j, 0, bc_z);
+                self.set_w_bc(i, j, self.nz, bc_z);
             }
         }
     }
