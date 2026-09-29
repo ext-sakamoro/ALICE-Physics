@@ -36,9 +36,11 @@
 //!
 //! # Oracles vs characterisation
 //!
-//! All five are `#[ignore = "src bug: …"]`: the red is correct and is held
-//! back only because the solver has not caught up. `cargo test --test
-//! analytic_multibody_dynamics -- --ignored` runs them.
+//! Every oracle above is `#[ignore = "src bug: …"]`: the red is correct and
+//! is held back only because the solver has not caught up. `cargo test --test
+//! analytic_multibody_dynamics -- --ignored` runs them, and that command is
+//! the authority on how many there are — this paragraph deliberately does not
+//! say, so that adding an oracle cannot make it wrong.
 //!
 //! Ignoring them costs no CI coverage, because the last section of this file
 //! —  [`characterises_the_present_solver`] and its neighbours — is **not**
