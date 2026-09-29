@@ -13,12 +13,24 @@
 //! chain. That is a one-way composition of geometry, weaker than a staggered
 //! (weak) coupling.
 //!
+//! ⚠️ **Measured: of the five production implementors, only `fracture` reads
+//! that scalar.** The other four add their own offset and ignore what arrived,
+//! so the chain looks like a plain sum from the signature alone. `fracture`
+//! branches on the incoming distance, which is the one place where a physics
+//! observes what another physics did — and is where the chain's order
+//! dependence comes from.
+//!
 //! ⚠️ **Measured: "temperature" exists three times over, in two number
 //! systems.** `thermal::ThermalModifier.temperature` and
 //! `phase_change::PhaseChangeModifier.temperature` are both `ScalarField3D`
 //! (`f32`); `cfd_solver::CfdSolver.temperature` is an `Option<Grid3d>`
 //! (`Fix128`). No file under `src/` names both field types, so no code path
 //! can relate them.
+//!
+//! ⚠️ **Measured: they are not joined through the geometry either.** A shared
+//! SDF would couple the two layers without copying any field — the fluid would
+//! see a melted surface. The modules that speak `SdfField` and the modules that
+//! hold a `Fix128` fluid container are disjoint, so that path is absent too.
 //!
 //! # Why these tests are not vacuous
 //!
@@ -235,6 +247,62 @@ fn no_module_names_both_field_types() {
         both.is_empty(),
         "these modules now name both field types: {both:?} — a conversion or a \
          coupling path may exist; re-derive the layer analysis"
+    );
+}
+
+/// The two layers are not joined through the geometry either.
+///
+/// The bit-exactness results below would still hold if the two subsystems
+/// exchanged nothing directly but both read the same SDF — the fluid would
+/// then respond to a melted surface without any field ever being copied. That
+/// is a real coupling (through shared state rather than through a field), and
+/// it is ruled out separately: the modules that speak the SDF interface and
+/// the modules that hold a `Fix128` fluid container are disjoint sets, so the
+/// solver has no way to see the geometry the modifiers alter.
+#[test]
+fn the_sdf_interface_and_the_fix128_fluid_never_meet() {
+    let root = concat!(env!("CARGO_MANIFEST_DIR"), "/src");
+    let mut sdf_side: Vec<String> = Vec::new();
+    let mut fluid_side: Vec<String> = Vec::new();
+    let mut both: Vec<String> = Vec::new();
+
+    for entry in std::fs::read_dir(root).expect("src/ is readable") {
+        let path = entry.expect("readable dir entry").path();
+        if path.extension().and_then(|e| e.to_str()) != Some("rs") {
+            continue;
+        }
+        let name = path.file_name().unwrap().to_string_lossy().into_owned();
+        if name == "lib.rs" {
+            continue; // re-export hub: names everything, relates nothing
+        }
+        let body = std::fs::read_to_string(&path).expect("readable source file");
+        let sdf = body.contains("SdfField");
+        let fluid =
+            body.contains("Grid3d") || body.contains("MacGrid") || body.contains("CfdSolver");
+        if sdf {
+            sdf_side.push(name.clone());
+        }
+        if fluid {
+            fluid_side.push(name.clone());
+        }
+        if sdf && fluid {
+            both.push(name);
+        }
+    }
+
+    assert!(
+        sdf_side.len() >= 8 && fluid_side.len() >= 3,
+        "expected both populations to be substantial (SDF side {}, fluid side \
+         {}); disjointness between a large set and an empty one says nothing",
+        sdf_side.len(),
+        fluid_side.len()
+    );
+    assert!(
+        both.is_empty(),
+        "these modules now hold both an SDF interface and a Fix128 fluid \
+         container: {both:?} — the fluid can now see the geometry the modifiers \
+         alter, which is a coupling through shared state even if no field is \
+         copied"
     );
 }
 
