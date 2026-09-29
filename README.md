@@ -186,7 +186,10 @@ transcendentals are shared rather than reimplemented per crate.
 | **Sleep/Islands** | Automatic sleep with Union-Find island management |
 | **Triangle Mesh** | BVH-accelerated triangle mesh collision (Moller-Trumbore) |
 | **Height Field** | Grid terrain with bilinear interpolation |
-| **Articulated Bodies** | Multi-joint chains, ragdolls, robotic arms with FK propagation |
+| **Articulated Bodies** | Multi-joint chains, ragdolls, robotic arms with **Featherstone articulated-body algorithm** (absolute coordinates, rank-n ABI update, gravity as base acceleration) |
+| **Corotational FEM** | Geometric nonlinearity for large rotations — per-element polar decomposition, answer independent of the increment count to 3-4 ulp |
+| **CFD wall BC** | Face-level solid mask inside the pressure projection (homogeneous Neumann), shared by the red-black GS / Jacobi / BiCGStab solvers |
+| **Maxwell FDTD** | Source-free Yee-lattice field solver in normalised units (`c = ε₀ = μ₀ = Δx = 1`), checked against the exact discrete dispersion relation |
 | **Force Fields** | Wind, gravity wells, drag, buoyancy, vortex, explosion, magnetic dipole |
 | **PD Controllers** | 1D/3D proportional-derivative joint motors |
 | **Collision Filtering** | Layer/mask bitmask system with collision groups |

@@ -13,6 +13,77 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added — 共回転 FEM (幾何学的非線形の大回転)
+
+`solve_corotational` を追加 各要素の変形勾配から極分解で回転因子を取り、その frame で
+線形弾性則を評価します 大回転下でも応力が回転に追随するので、線形小変形 solver が
+返す偽の伸びが消えます
+
+停止規則は **最後の増分だけ frame 収束、途中の増分は残差規則** としました 答えを決めるのは
+最後の増分の出力なので、そこを許容差で止めると許容差が答えに入ります 途中の増分は次が
+開く状態を作る継続経路で、初期値としてしか効きません
+
+- 増分数を変えた時の答えの差が **3.5e10 ulp → 3-4 ulp**、Newton 反復数は変更前より安く 32 予算内
+- ⚠️ **bit 一致 (0 ulp) には到達しません** 写像 `R ← P(F(CG(R)))` にビット単位の不動点が
+  存在しないことを 2 系統の独立実測で確認済 到達点の 3-4 ulp は
+  `the_increment_spread_stays_at_the_arithmetic_floor` が両側から pin します
+
+### Added — CFD の壁境界条件を圧力射影の中に (`eulerian_grid`)
+
+`MacGrid` に face 単位の solid flag (`u_solid` / `v_solid` / `w_solid`) と
+`set_closed_box_walls` / `enforce_solid_faces` / `set_{u,v,w}_solid` / `is_{u,v,w}_solid` を追加
+`PoissonMask` を red-black GS / Jacobi / BiCGStab の 3 solver が共有します
+
+solid face は off-diagonal も対角の数え上げも落ちます (homogeneous Neumann)
+solid でない領域境界 face は従来どおり外部 `p = 0` なので、mask 未設定なら挙動は変わりません
+
+- 壁 face の法線速度 **0.5 → 0 (厳密)**、閉じた箱の断面正味流量 **1.1 → < 1e-9**
+- lid-driven cavity の中心線を Ghia et al. (1982) Table I と突合: **文献比 4.5% → 86.2%**
+  (16x16) 解像度を上げると 8/16/32 で **66.8 / 86.2 / 94.5%**、偏差比 1.76 / 1.77 =
+  ほぼ 1 次収束なので、残差は離散化誤差です
+- 除数 1/6 固定をやめたので薄いスラブの遮蔽 Poisson 化が解消 (nz=1 の射影後
+  `max|div|` **0.99993 → 8.67e-19**)
+- `apply_poisson_a` の対角と BiCGStab 前処理の不一致を解消し
+  `poisson_operator_diagonal_matches_the_preconditioner` で機械 check
+
+⚠️ **文献値は一次確認していません** 原論文 PDF に到達できず、独立 3 転記が Re=100 の
+17 行で全桁一致したものを使っています 経緯は `tests/analytic_cfd_wall_bc.rs` の module doc に記載
+
+### Added — Maxwell 場 solver (source-free Yee FDTD、`maxwell_fdtd`)
+
+`electromagnetic` は剛体への Lorentz 力だけを扱い、場を解く solver はありませんでした
+`maxwell_fdtd` を新設し、Yee 格子の陽解法で `E` / `H` を時間発展させます
+
+単位は **正規化 (c = ε₀ = μ₀ = Δx = 1)** です ⚠️ **SI では組めません** — `Fix128` は Q64.64 で
+ULP が `5.421e-20` に対し `ε₀·μ₀ = 1/c² = 1.113e-17` は ULP の **205 倍 = 有効 7.7 bit**
+しか残らず、CFL の成立性も `Δx` 依存になります (1 m で 3.4e-9、1 µm で 2.0e-3)
+3 次元 CFL 上限 `1/√3` 以下の最良 dyadic として `S = 9/16` を採ります (余裕 2.57%)
+
+- oracle は連続体でなく **厳密離散分散関係**と突合します 残差は `S=1/2` の整数 λ で **0 ULP**
+- 4x4 空洞の周期 6 が **144 step まで 0 ULP** (bit 完全一致)
+- `max|div B|` は **0.93 ULP/step** で線形
+- `electromagnetic` の既存 API は変更ありません
+
+### Changed — 多体 forward dynamics を real Featherstone ABA に (`articulation`)
+
+`FeatherstoneSolver` は 3 pass の形を持っていましたが、⚠️ **`solve()` は `link.joint` を
+一度も読まず**、`vel_linear` / `vel_angular` / `abi_angular` は書かれるだけで読まれず、
+`_bias_torque` / `_joint_accel` は未使用でした 実際に計算していたのは
+`accel_i = g · m_i / (subtree の質量和)` = スケールされた自由落下です
+
+絶対座標 (world frame) の ABA として書き直しました `Joint` は anchor 対しか持たず関節角 `q` が
+存在しないので、最小座標の教科書式は使えません world frame なら親子の Plücker 変換が
+恒等になり、関節速度が `v_i − v_parent` で厳密に取れます
+
+⚠️ **重力は外力 wrench でなく base 加速度の置換 (RBDA §7.3) で入れています** 自由落下と
+静止平衡で `p^A = 0` になり `q̈ = D⁻¹·0` が `D⁻¹` の丸めに依らず厳密に 0 になるので、
+厳密一致の oracle が通ります 代償は一様場前提で `gravity_scale` を読めないことです
+
+- 解析解 oracle 12 本 (自由落下する鎖の重心加速度 / weld の拘束 / 複合振子の閉形式 / 関節軸が
+  通すモーメント / 慣性と角加速度の単調性 ほか)
+- ⚠️ 既存の `test_featherstone_solver` は自由落下 solver 時代の期待値だったので、
+  「平衡 scene は動かない」+「傾けた scene は動く」の 2 本に分割しました
+
 ### Fixed — 段階細分が hanging node を残す (`sdf_fem_mesh`)
 
 最長辺二分は 1 つの四面体を分割するだけで、面を共有する隣に伝播しません 片側だけ
