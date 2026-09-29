@@ -188,8 +188,9 @@ transcendentals are shared rather than reimplemented per crate.
 | **Height Field** | Grid terrain with bilinear interpolation |
 | **Articulated Bodies** | Multi-joint chains, ragdolls, robotic arms with **Featherstone articulated-body algorithm** (absolute coordinates, rank-n ABI update, gravity as base acceleration) |
 | **Corotational FEM** | Geometric nonlinearity for large rotations — per-element polar decomposition, answer independent of the increment count to 3-4 ulp |
-| **CFD wall BC** | Face-level solid mask inside the pressure projection (homogeneous Neumann), shared by the red-black GS / Jacobi / BiCGStab solvers |
-| **Maxwell FDTD** | Source-free Yee-lattice field solver in normalised units (`c = ε₀ = μ₀ = Δx = 1`), checked against the exact discrete dispersion relation |
+| **CFD boundary conditions** | `FaceBc` per face — solid wall (tangential no-slip), symmetry plane, prescribed inflow (velocity Dirichlet, pressure Neumann) and outflow (pressure Dirichlet), all honoured inside the pressure projection and shared by the red-black GS / Jacobi / BiCGStab solvers. Checked against the discrete Poiseuille profile (convergence ratio 4.000) and Ghia et al. (1982) |
+| **Maxwell FDTD** | Yee-lattice field solver in normalised units (`c = ε₀ = μ₀ = Δx = 1`) with current / charge sources, Gauss's law, discrete charge continuity (0 ULP over 30 steps) and a split-field PML absorbing layer. Checked against the exact discrete dispersion relation |
+| **Cross-physics field channel** | `CoupledField` carries a Fix128 scalar field between solvers (trilinear sample / gradient / splat / diffuse). Opt-in: `reconcile_mean` joins the temperature fields that `thermal` and `phase_change` own separately, and the default modifier chain is unchanged |
 | **Force Fields** | Wind, gravity wells, drag, buoyancy, vortex, explosion, magnetic dipole |
 | **PD Controllers** | 1D/3D proportional-derivative joint motors |
 | **Collision Filtering** | Layer/mask bitmask system with collision groups |
