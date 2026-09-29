@@ -654,6 +654,14 @@ pub struct FemSolution {
     pub iterations: u32,
     /// `‖r‖ / ‖b‖` at the final iteration. Zero when the load vector is zero.
     pub relative_residual: Fix128,
+    /// The relative tolerance the iteration was actually held to.
+    ///
+    /// Equal to [`SolverConfig::relative_tolerance`] unless that tolerance would
+    /// have demanded a residual norm the arithmetic cannot represent, in which
+    /// case it is the floor instead — see [`RESIDUAL_NORM_FLOOR`]. Compare the
+    /// two to find out whether the request was met on its own terms or on the
+    /// arithmetic's.
+    pub effective_relative_tolerance: Fix128,
 }
 
 impl FemSolution {
@@ -671,6 +679,39 @@ impl FemSolution {
             .unwrap_or(Fix128::ZERO)
     }
 }
+
+/// Smallest residual norm the iteration is asked to reach, whatever the
+/// configured tolerance says.
+///
+/// `‖r‖ = √(rᵀr)` and `rᵀr` is a [`Fix128`], so it is an integer multiple of
+/// `2⁻⁶⁴` and `‖r‖` is `√k · 2⁻³²`. **The residual norm is quantised**, and the
+/// steps near the bottom are enormous in relative terms: the sequence of
+/// reachable values is `0`, then `2⁻³²`, `√2·2⁻³²`, `√3·2⁻³²`, … Measured on the
+/// cantilever, `rᵀr` at stagnation was raw `8` — eight units of `2⁻⁶⁴` — giving
+/// `‖r‖ = 6.585e-10`, and the relative residuals seen across every run stood in
+/// the ratio `√3 : √2 : 1`, which is this quantisation and nothing else.
+///
+/// A *relative* tolerance therefore has a floor of `2⁻³² / ‖b‖`, and that floor
+/// **moves with the load vector**. It is not a constant of the crate: the same
+/// total force spread over a finer mesh gives each node less, so `‖b‖` shrinks
+/// and the floor rises. Measured on one beam at four resolutions:
+///
+/// | degrees of freedom | `‖b‖` | floor `2⁻³²/‖b‖` |
+/// |---|---|---|
+/// | 72 | 2.108 | 1.10e-10 |
+/// | 297 | 1.633 | 1.43e-10 |
+/// | 1,575 | 0.928 | 2.51e-10 |
+/// | 9,963 | 0.495 | 4.71e-10 |
+///
+/// So a fixed relative tolerance is a trap: `2⁻³⁰` is comfortable at 72 degrees
+/// of freedom and unreachable at 9,963, where the smallest attainable relative
+/// residual is 9.41e-10 against a tolerance of 9.31e-10 — short by 1%, forever.
+/// Before this floor existed that cost 500,000 iterations and 24.8 minutes to
+/// discover, twice.
+///
+/// Four units of `2⁻³²` leaves room for the quantisation to land a step or two
+/// above the very bottom without the answer flipping between converged and not.
+pub const RESIDUAL_NORM_FLOOR: Fix128 = Fix128::from_raw(0, 1 << 34);
 
 /// One half, exactly.
 #[inline]
@@ -982,7 +1023,14 @@ pub fn solve(
     let mut p = z.clone();
     let mut rz = dot(&r, &z);
     let b_norm = dot(&b, &b).sqrt();
-    let target = config.relative_tolerance * b_norm;
+    // Never ask for a residual norm the representation cannot express; see
+    // `RESIDUAL_NORM_FLOOR`.
+    let requested = config.relative_tolerance * b_norm;
+    let target = if requested > RESIDUAL_NORM_FLOOR {
+        requested
+    } else {
+        RESIDUAL_NORM_FLOOR
+    };
 
     let mut iterations = 0u32;
     let mut residual_norm = dot(&r, &r).sqrt();
@@ -1097,6 +1145,7 @@ pub fn solve(
         element_stress,
         iterations,
         relative_residual: relative(residual_norm, b_norm),
+        effective_relative_tolerance: relative(target, b_norm),
     })
 }
 

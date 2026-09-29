@@ -127,6 +127,33 @@ fn close(got: Fix128, want: f64, tol: f64, what: &str) {
     );
 }
 
+/// The traction bar of `traction_loaded_bar_matches_closed_form`, as a fixture
+/// for the solver-behaviour tests that only need a well-posed problem.
+fn traction_bar() -> (SdfTetMesh, BoundaryConditions) {
+    let (nx, ny, nz, h) = (4usize, 1usize, 1usize, 2.5_f32);
+    let mesh = kuhn_box(nx, ny, nz, h);
+    let mut bc = BoundaryConditions::new();
+    for k in 0..=nz {
+        for j in 0..=ny {
+            bc.prescribe(node_index(nx, ny, 0, j, k), Axis::X, Fix128::ZERO);
+        }
+    }
+    bc.prescribe(node_index(nx, ny, 0, 0, 0), Axis::Y, Fix128::ZERO);
+    bc.prescribe(node_index(nx, ny, 0, 0, 0), Axis::Z, Fix128::ZERO);
+    bc.prescribe(node_index(nx, ny, 0, ny, 0), Axis::Z, Fix128::ZERO);
+    bc.prescribe(node_index(nx, ny, 0, 0, nz), Axis::Y, Fix128::ZERO);
+    let tri = 50.0_f64 / 2.0;
+    for (node, share) in [
+        (node_index(nx, ny, nx, 0, 0), 2.0 / 3.0),
+        (node_index(nx, ny, nx, ny, nz), 2.0 / 3.0),
+        (node_index(nx, ny, nx, ny, 0), 1.0 / 3.0),
+        (node_index(nx, ny, nx, 0, nz), 1.0 / 3.0),
+    ] {
+        bc.add_load(node, Axis::X, fx(tri * share));
+    }
+    (mesh, bc)
+}
+
 // ---------------------------------------------------------------------------
 // oracle 1 — patch test, uniaxial tension
 // ---------------------------------------------------------------------------
@@ -656,101 +683,95 @@ fn out_of_range_vertex_is_rejected() {
     );
 }
 
-/// A tolerance the arithmetic cannot reach must end quickly, and say which kind
-/// of ending it was.
+/// A tolerance below the arithmetic's floor is raised to the floor, and the
+/// solution says so.
 ///
-/// **Whether a tolerance is reachable is not a property of `Fix128` alone — the
-/// preconditioner moves the floor.** That is the finding this test now pins, and
-/// it was not the assumption it was written under: with no preconditioner the
-/// residual of this small problem reaches *exactly zero* in 35 iterations, so
-/// even `2⁻⁶⁰` is met; with the Jacobi preconditioner the inner products bottom
-/// out first and the same tolerance is unreachable.
+/// `‖r‖ = √(rᵀr)` with `rᵀr` an integer multiple of `2⁻⁶⁴`, so the residual norm
+/// is quantised at `√k · 2⁻³²` and a relative tolerance has a hard floor of
+/// `2⁻³² / ‖b‖`. Asking for less is not a strict request, it is an impossible
+/// one, and before [`RESIDUAL_NORM_FLOOR`] existed it cost 500,000 iterations
+/// and 24.8 minutes to find that out — twice, on two different machines.
 ///
-/// Both endings are acceptable. The one that is not is spending the whole
-/// budget: measured before the stagnation rule existed, an unpreconditioned
-/// solve of a 25,600-element cantilever ran 500,000 iterations over 24.8 minutes
-/// to stop 1% above its tolerance, and could not say whether more iterations
-/// would have helped. `NotConverged` at the budget is therefore the failure
-/// condition here, for either preconditioner.
+/// So the solver clamps the target and reports the tolerance it actually used.
+/// This test pins both halves: the clamp happens, and the solve then ends
+/// quickly rather than grinding.
 #[test]
-fn unreachable_tolerance_stagnates_instead_of_burning_the_budget() {
-    use alice_physics::linear_elastic_fem::FemError;
-
-    let (nx, ny, nz, h) = (4usize, 1usize, 1usize, 2.5_f32);
-    let mesh = kuhn_box(nx, ny, nz, h);
-    let mut bc = BoundaryConditions::new();
-    for k in 0..=nz {
-        for j in 0..=ny {
-            bc.prescribe(node_index(nx, ny, 0, j, k), Axis::X, Fix128::ZERO);
-        }
-    }
-    bc.prescribe(node_index(nx, ny, 0, 0, 0), Axis::Y, Fix128::ZERO);
-    bc.prescribe(node_index(nx, ny, 0, 0, 0), Axis::Z, Fix128::ZERO);
-    bc.prescribe(node_index(nx, ny, 0, ny, 0), Axis::Z, Fix128::ZERO);
-    bc.prescribe(node_index(nx, ny, 0, 0, nz), Axis::Y, Fix128::ZERO);
-    for node in [
-        node_index(nx, ny, nx, 0, 0),
-        node_index(nx, ny, nx, ny, nz),
-        node_index(nx, ny, nx, ny, 0),
-        node_index(nx, ny, nx, 0, nz),
-    ] {
-        bc.add_load(node, Axis::X, fx(12.5));
-    }
-
-    // 2^-60, far below the tolerances any caller would set.
+fn tolerance_below_the_floor_is_clamped_and_reported() {
+    // 2^-60, far below anything reachable.
+    let asked = Fix128::from_raw(0, 1 << 4);
     let budget = 200_000;
-    let base = SolverConfig::try_new(budget, Fix128::from_raw(0, 1 << 4)).expect("valid config");
+    let cfg = SolverConfig::try_new(budget, asked).expect("valid config");
+    let (mesh, bc) = traction_bar();
 
     for mode in [Preconditioner::None, Preconditioner::JacobiScaled] {
-        let cfg = base.with_preconditioner(mode);
-        match solve(&mesh, &pla(), &bc, &cfg) {
-            Ok(out) => {
-                eprintln!(
-                    "[floor] {mode:?}: met it — {} iterations, residual {:.3e}",
-                    out.iterations,
-                    out.relative_residual.to_f64()
-                );
-                assert_eq!(
-                    out.relative_residual,
-                    Fix128::ZERO,
-                    "{mode:?}: the only way to satisfy a 2^-60 relative tolerance is for the \
-                     residual to round to exactly zero"
-                );
-                assert!(
-                    out.iterations < budget / 10,
-                    "{mode:?}: reached it, but took {} of {budget} iterations",
-                    out.iterations
-                );
-            }
-            Err(FemError::Stagnated {
-                iterations,
-                relative_residual,
-                without_improvement,
-            }) => {
-                eprintln!(
-                    "[floor] {mode:?}: gave up after {iterations} of {budget}, best residual \
-                     {:.3e}, {without_improvement} without improvement",
-                    relative_residual.to_f64()
-                );
-                assert!(
-                    iterations < budget / 10,
-                    "{mode:?}: the point of the rule is to stop early; it used {iterations} \
-                     of {budget}"
-                );
-                assert!(
-                    relative_residual > Fix128::ZERO,
-                    "{mode:?}: a stagnation report must carry the residual it reached"
-                );
-            }
-            Err(other) => panic!(
-                "{mode:?}: an unreachable tolerance must end as a met tolerance or as \
-                 stagnation, never as {other:?} — burning a budget tells the caller to raise \
-                 a budget that cannot help"
-            ),
-        }
+        let out = solve(&mesh, &pla(), &bc, &cfg.with_preconditioner(mode))
+            .unwrap_or_else(|e| panic!("{mode:?}: a clamped tolerance must be reachable: {e:?}"));
+        eprintln!(
+            "[clamp] {mode:?}: asked {:.3e}, held to {:.3e}, reached {:.3e} in {} iterations",
+            asked.to_f64(),
+            out.effective_relative_tolerance.to_f64(),
+            out.relative_residual.to_f64(),
+            out.iterations
+        );
+        assert!(
+            out.effective_relative_tolerance > asked,
+            "{mode:?}: a 2^-60 request must be clamped, but the solution reports it was held \
+             to {:.3e}",
+            out.effective_relative_tolerance.to_f64()
+        );
+        assert!(
+            out.relative_residual <= out.effective_relative_tolerance,
+            "{mode:?}: the reported residual must satisfy the tolerance actually used"
+        );
+        assert!(
+            out.iterations < budget / 10,
+            "{mode:?}: used {} of {budget} iterations; the clamp exists so this ends quickly",
+            out.iterations
+        );
     }
 }
 
+/// The stagnation rule produces a `Stagnated`, carrying the residual and the
+/// count, when it fires.
+///
+/// The clamp above removes the common way of reaching it, so the rule is
+/// exercised here directly by making it absurdly impatient — a window floor of
+/// one iteration. This checks the mechanism and its payload, not the physics.
+#[test]
+fn stagnation_reports_its_residual_and_count() {
+    use alice_physics::linear_elastic_fem::FemError;
+    let (mesh, bc) = traction_bar();
+    let cfg = SolverConfig::try_new(50_000, Fix128::from_raw(0, 1 << 4))
+        .expect("valid")
+        .with_stagnation(1, fx(0.5))
+        .expect("valid");
+
+    match solve(&mesh, &pla(), &bc, &cfg) {
+        Err(FemError::Stagnated {
+            iterations,
+            relative_residual,
+            without_improvement,
+        }) => {
+            eprintln!(
+                "[stagnation] {iterations} iterations, best {:.3e}, {without_improvement} \
+                 without improvement",
+                relative_residual.to_f64()
+            );
+            assert!(iterations < 50_000, "an impatient rule must fire early");
+            assert!(
+                relative_residual > Fix128::ZERO,
+                "a stagnation report must carry the residual it reached"
+            );
+            assert!(without_improvement >= 1, "the count must be reported");
+        }
+        Ok(out) => panic!(
+            "a window floor of one iteration should abandon almost anything, yet the solve \
+             converged in {} iterations",
+            out.iterations
+        ),
+        Err(other) => panic!("expected Stagnated, got {other:?}"),
+    }
+}
 /// A preconditioner changes how the iteration gets there, never where it gets.
 ///
 /// `K x = b` has one solution; `M` only reshapes the path. So both settings must

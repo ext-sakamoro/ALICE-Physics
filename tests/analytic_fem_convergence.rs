@@ -106,12 +106,16 @@ const WIDTH: f64 = 2.0;
 ///
 /// ⚠️ The first version of this note claimed the change also lowers the residual
 /// floor, on the reasoning that the floor is about `κ·ε`. **The measurement does
-/// not support that**: the same `9.4118e-10` appears at both slendernesses, and
-/// `residual_floor_vs_problem_size` finds that the three coarser levels reach a
-/// residual of *exactly zero* while only the finest stagnates. Whatever sets the
-/// floor tracks problem size rather than conditioning. The claim is left here,
-/// corrected, rather than deleted, because the reasoning is the kind that sounds
-/// right and is not.
+/// not support that.** The unpreconditioned floor came back as
+/// `Fix128 { hi: 0, lo: 17361671804 }` = `9.411781e-10` at *both* slendernesses —
+/// bit identical across 9,963 and 19,683 degrees of freedom, and across 21,965
+/// and 500,000 iterations — while the coarser levels reached a residual of
+/// exactly zero. The floor tracks `2⁻³² / ‖b‖`, which is the arithmetic and the
+/// load vector, not the conditioning.
+///
+/// The claim is left here, corrected, rather than deleted: two people arrived at
+/// the `κ·ε` reasoning independently, which is a fair sign that it is the kind
+/// that sounds right and is not.
 ///
 /// The study still measures what it set out to: a beam at 5:1 bends, P1
 /// tetrahedra are still too stiff for it, and the approach is still from below.
@@ -483,59 +487,85 @@ fn cantilever_converges_from_below() {
 /// multiply, which a debug build does not inline; a debug run of this test did
 /// not finish in ten minutes on an M3, while the three-level test above takes
 /// about a second.
-/// Where the residual bottoms out, as a function of problem size.
+/// The tolerance floor engages where it should, and it **moves with the mesh**.
 ///
-/// **The per-level residuals the convergence study prints are not floors.** They
-/// are the first value that fell below the tolerance, so they are bounded above
-/// by the tolerance and below by wherever the step happened to land: a line
-/// through them measures the tolerance, not the arithmetic. To see a floor the
-/// tolerance has to be out of reach, and then the stagnation rule reports where
-/// the iteration actually stopped improving.
+/// ⚠️ This test used to try to measure the floor empirically, by asking for a
+/// tolerance of `2⁻⁶⁰` and recording where each level stopped improving. That
+/// worked until `RESIDUAL_NORM_FLOOR` was added — the clamp now makes such a
+/// request reachable, so the same run reports the clamp rather than the floor.
+/// **The fix removed the instrument that found it.** Rather than adding a way to
+/// switch the clamp off for one diagnostic, the test now asserts what is still
+/// visible, which turns out to be the more useful statement.
 ///
-/// So this asks for `2⁻⁶⁰` at every level and records where each one gives up.
-/// Four points, raw, with `Preconditioner::None`:
+/// The residual norm is quantised at `√k · 2⁻³²`, so a *relative* tolerance has
+/// a floor of `2⁻³² / ‖b‖` — and `‖b‖` is not a constant of the crate. The same
+/// total load spread over a finer mesh gives each node less, so `‖b‖` shrinks
+/// and the floor rises. Measured here (asking for `2⁻⁶⁰` so the clamp always
+/// engages, and reading back the tolerance actually used):
 ///
-/// - if the floor **grows with the degree of freedom count**, the limit is
-///   accumulated rounding and scales with the work
-/// - if it is **flat**, the limit is the representation and no amount of
-///   reshaping the problem will move it
-/// - if a level reaches **exactly zero**, that level has no floor at all — which
-///   the small traction bar in the companion file does, in 35 iterations
+/// | degrees of freedom | `‖b‖` | effective tolerance |
+/// |---|---|---|
+/// | 72 | 2.108 | 4.42e-10 |
+/// | 297 | 1.633 | 5.70e-10 |
+/// | 1,575 | 0.928 | 1.00e-9 |
+/// | 9,963 | 0.495 | 1.88e-9 |
 ///
-/// The assertion is only that every level ends in bounded time with a reported
-/// residual. The numbers are the output.
+/// **That monotone rise is the point.** A fixed relative tolerance is a trap:
+/// `2⁻³⁰` is comfortable at 72 degrees of freedom and below the floor at 9,963.
+/// Asserting the rise keeps the fact visible even though the clamp now hides its
+/// consequence.
 #[test]
-#[ignore = "4 solves with an unreachable tolerance; the floor-vs-size measurement"]
-fn residual_floor_vs_problem_size() {
+#[ignore = "4 solves; the tolerance-floor measurement"]
+fn tolerance_floor_rises_as_the_mesh_refines() {
     let cells = [2.0, 1.0, 0.5, 0.25];
-    // 2^-60: below anything a caller would ask for, so the run continues until
-    // the iteration itself stops making progress.
-    let cfg = SolverConfig::try_new(200_000, Fix128::from_raw(0, 1 << 4))
+    // 2^-60: below the floor at every level, so the clamp always engages and the
+    // reported effective tolerance *is* the floor.
+    let asked = Fix128::from_raw(0, 1 << 4);
+    let cfg = SolverConfig::try_new(200_000, asked)
         .expect("valid")
         .with_preconditioner(Preconditioner::None);
-    eprintln!("=== residual floor vs problem size (tolerance 2^-60, no preconditioner) ===");
+    let material = ElasticMaterial::new(fx(E_MPA), fx(NU)).expect("valid material");
+
+    let mut effective = Vec::new();
     for c in cells {
         let level = mesh_at(c);
-        let dofs = level.mesh.vertex_count() * 3;
-        let (outcome, iterations, residual, raw) = run_level_reporting(c, &cfg);
+        assert_domain_is_exact(&level, c);
+        let bc = cantilever_bc(&level.mesh);
+        let out = solve(&level.mesh, &material, &bc, &cfg)
+            .unwrap_or_else(|e| panic!("cell {c}: a clamped tolerance must be reachable: {e:?}"));
+        let eff = out.effective_relative_tolerance.to_f64();
         eprintln!(
-            "[floorsize] cell {c:<6} tets {:>6} dofs {:>6}  {:<28} iters {:>6}  \
-             resid {:.4e}  raw hi {} lo {}",
+            "[floorsize] cell {c:<6} tets {:>6} dofs {:>6}  iters {:>6}  effective tol {:.4e}  \
+             reached {:.4e}",
             level.mesh.tet_count(),
-            dofs,
-            outcome,
-            iterations,
-            residual,
-            raw.0,
-            raw.1
+            level.mesh.vertex_count() * 3,
+            out.iterations,
+            eff,
+            out.relative_residual.to_f64()
         );
         assert!(
-            iterations < 200_000,
-            "cell {c}: an unreachable tolerance must end before the budget does"
+            out.effective_relative_tolerance > asked,
+            "cell {c}: 2^-60 is below the floor everywhere, so the clamp must engage"
+        );
+        assert!(
+            out.relative_residual <= out.effective_relative_tolerance,
+            "cell {c}: the reported residual must satisfy the tolerance actually used"
+        );
+        effective.push(eff);
+    }
+
+    for (i, w) in effective.windows(2).enumerate() {
+        assert!(
+            w[1] > w[0],
+            "the floor must rise as the mesh refines, because the same load spread over more \
+             nodes shrinks ‖b‖: between cells {} and {} it went {:.4e} -> {:.4e}",
+            cells[i],
+            cells[i + 1],
+            w[0],
+            w[1]
         );
     }
 }
-
 /// Where each preconditioner actually bottoms out at the finest level.
 ///
 /// The question this answers is not "which is faster" but **"was the stopping
