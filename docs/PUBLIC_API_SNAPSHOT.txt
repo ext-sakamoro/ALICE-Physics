@@ -12648,6 +12648,26 @@ pub const fn alice_physics::sdf_destruction::destruction_from_explosion(alice_ph
 pub fn alice_physics::sdf_destruction::destruction_from_impact(&alice_physics::collider::Contact, alice_physics::math::Fix128, f32, f32, f32) -> alice_physics::sdf_destruction::DestructionShape
 pub fn alice_physics::sdf_destruction::destruction_from_projectile(alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, f32, f32) -> alice_physics::sdf_destruction::DestructionShape
 pub mod alice_physics::sdf_fem_mesh
+#[non_exhaustive] pub enum alice_physics::sdf_fem_mesh::BoundaryFaceError
+pub alice_physics::sdf_fem_mesh::BoundaryFaceError::NonManifoldFace
+pub alice_physics::sdf_fem_mesh::BoundaryFaceError::NonManifoldFace::face: [u32; 3]
+pub alice_physics::sdf_fem_mesh::BoundaryFaceError::NonManifoldFace::uses: usize
+impl core::clone::Clone for alice_physics::sdf_fem_mesh::BoundaryFaceError
+pub fn alice_physics::sdf_fem_mesh::BoundaryFaceError::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::sdf_fem_mesh::BoundaryFaceError
+impl core::cmp::PartialEq for alice_physics::sdf_fem_mesh::BoundaryFaceError
+pub fn alice_physics::sdf_fem_mesh::BoundaryFaceError::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::sdf_fem_mesh::BoundaryFaceError
+pub fn alice_physics::sdf_fem_mesh::BoundaryFaceError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::sdf_fem_mesh::BoundaryFaceError
+impl core::marker::StructuralPartialEq for alice_physics::sdf_fem_mesh::BoundaryFaceError
+impl core::marker::Freeze for alice_physics::sdf_fem_mesh::BoundaryFaceError
+impl core::marker::Send for alice_physics::sdf_fem_mesh::BoundaryFaceError
+impl core::marker::Sync for alice_physics::sdf_fem_mesh::BoundaryFaceError
+impl core::marker::Unpin for alice_physics::sdf_fem_mesh::BoundaryFaceError
+impl core::marker::UnsafeUnpin for alice_physics::sdf_fem_mesh::BoundaryFaceError
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::sdf_fem_mesh::BoundaryFaceError
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::sdf_fem_mesh::BoundaryFaceError
 #[non_exhaustive] pub enum alice_physics::sdf_fem_mesh::RefineError
 pub alice_physics::sdf_fem_mesh::RefineError::Unfinished
 pub alice_physics::sdf_fem_mesh::RefineError::Unfinished::passes: u32
@@ -12672,6 +12692,7 @@ pub struct alice_physics::sdf_fem_mesh::SdfTetMesh
 pub alice_physics::sdf_fem_mesh::SdfTetMesh::tets: alloc::vec::Vec<alice_physics::sdf_fem_mesh::Tetrahedron>
 pub alice_physics::sdf_fem_mesh::SdfTetMesh::vertices: alloc::vec::Vec<[f32; 3]>
 impl alice_physics::sdf_fem_mesh::SdfTetMesh
+pub fn alice_physics::sdf_fem_mesh::SdfTetMesh::boundary_faces(&self) -> core::result::Result<alloc::vec::Vec<[u32; 3]>, alice_physics::sdf_fem_mesh::BoundaryFaceError>
 pub fn alice_physics::sdf_fem_mesh::SdfTetMesh::max_edge_length(&self) -> f32
 pub fn alice_physics::sdf_fem_mesh::SdfTetMesh::refine_by_max_edge_length(&mut self, f32, u32) -> u32
 pub fn alice_physics::sdf_fem_mesh::SdfTetMesh::tet_count(&self) -> usize
