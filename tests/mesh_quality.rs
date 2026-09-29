@@ -979,8 +979,95 @@ fn non_convex_scenes() -> Vec<(&'static str, ClosureSdf, f64)> {
 /// caller picks `cell` from the smallest feature it cares about. For a printed
 /// part that is the minimum wall thickness, which the designer knows.
 #[test]
-#[ignore = "diagnostic: the argument for choosing cell from the feature size"]
 fn a_cavity_narrower_than_a_cell_leaves_no_trace() {
+    const CELL: f32 = 0.25;
+    // Two claims, both of which this file made in prose before it made them here.
+    //
+    // The prose is the reasoning behind sending callers to pick `cell` from the
+    // smallest feature they care about, and prose is not checked by anything: if
+    // a later mesher started resolving sub-cell features, or if concave corners
+    // stopped reaching as far outside, the argument would quietly stop holding
+    // and the only trace would be a paragraph nobody reruns.
+    let solid = cavity_mesh(0.0, CELL);
+    let sub_cell = cavity_mesh(0.05, CELL);
+    assert_eq!(
+        solid, sub_cell,
+        "a cavity 0.4 cells across left a mesh that differs from a solid block. That is the \
+         better outcome — it means the mesher now sees features this small — but the contract \
+         that callers pick `cell` from their smallest feature was justified by it *not* seeing \
+         them, so that reasoning has to be redone"
+    );
+
+    // And the overlap that makes it undetectable after the fact: a bridged
+    // sub-cell cavity puts an element centroid less far outside the shape than a
+    // legitimately clipped concave corner does, so no threshold on that quantity
+    // separates the two.
+    let bridged = deepest_outside(&sub_cell, &cavity_sdf(0.05));
+    let mut legitimate = f64::NEG_INFINITY;
+    for (name, sdf, _) in non_convex_scenes() {
+        let mesh = generate_marching_tets(&sdf, [-2.0, -2.0, -2.0], [2.0, 2.0, 2.0], CELL);
+        let d = deepest_outside(&mesh, &sdf);
+        eprintln!(
+            "[overlap] concave {name:<8} deepest {d:+.4} ({:.2} cells)",
+            d / f64::from(CELL)
+        );
+        legitimate = legitimate.max(d);
+    }
+    eprintln!(
+        "[overlap] bridged sub-cell cavity deepest {bridged:+.4} ({:.2} cells) against a \
+         legitimate concave maximum of {legitimate:+.4} ({:.2} cells)",
+        bridged / f64::from(CELL),
+        legitimate / f64::from(CELL)
+    );
+    assert!(
+        bridged < legitimate,
+        "a bridged sub-cell cavity now reaches {bridged:.4} outside the shape, further than the \
+         {legitimate:.4} a legitimately clipped concave corner does. The two populations no \
+         longer overlap, so a threshold between them would separate them — the claim that this \
+         is undetectable after the fact no longer holds and the gate should be built"
+    );
+}
+
+/// A solid block with a cubical cavity of the given half-extent (`0.0` for none).
+fn cavity_sdf(cavity_half: f32) -> ClosureSdf {
+    const OFF: f32 = 0.07;
+    ClosureSdf::new(
+        move |x, y, z| {
+            let p = [x - OFF, y + OFF, z - OFF];
+            let boxed = |half: [f32; 3]| -> f32 {
+                let d = [
+                    p[0].abs() - half[0],
+                    p[1].abs() - half[1],
+                    p[2].abs() - half[2],
+                ];
+                let out = [d[0].max(0.0), d[1].max(0.0), d[2].max(0.0)];
+                (out[0] * out[0] + out[1] * out[1] + out[2] * out[2]).sqrt()
+                    + d[0].max(d[1]).max(d[2]).min(0.0)
+            };
+            let outer = boxed([1.0, 1.0, 1.0]);
+            if cavity_half <= 0.0 {
+                outer
+            } else {
+                outer.max(-boxed([cavity_half, cavity_half, cavity_half]))
+            }
+        },
+        |_, _, _| (0.0, 0.0, 1.0),
+    )
+}
+
+fn cavity_mesh(cavity_half: f32, cell: f32) -> SdfTetMesh {
+    generate_marching_tets(
+        &cavity_sdf(cavity_half),
+        [-2.0, -2.0, -2.0],
+        [2.0, 2.0, 2.0],
+        cell,
+    )
+}
+
+/// The sweep the two assertions above were read off, kept for the table.
+#[test]
+#[ignore = "diagnostic: the table behind a_cavity_narrower_than_a_cell_leaves_no_trace"]
+fn cavity_size_sweep() {
     const CELL: f32 = 0.25;
     const OFF: f32 = 0.07;
     let boxed = |p: [f32; 3], half: [f32; 3]| -> f32 {
