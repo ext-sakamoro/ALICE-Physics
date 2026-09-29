@@ -37,6 +37,12 @@
 //!   16 mm. Use [`generate_marching_tets`] when the surface matters.
 //! - Edge-based refinement ([`SdfTetMesh::refine_by_max_edge_length`]) is not
 //!   Delaunay refinement; aspect ratio can drift.
+//! - [`generate_marching_tets`] warps lattice corners onto the surface when a
+//!   zero crossing lands within `SNAP_CELL_FRACTION * cell` of them, which is
+//!   what keeps element quality from degrading under refinement. It moves the
+//!   meshed boundary by up to that distance, and it is not a substitute for
+//!   Delaunay refinement: it bounds how close a crossing gets to a *corner*, not
+//!   how close two crossings get to each other.
 //! - The generated mesh is intended for downstream FEM callers; it is not tuned
 //!   for rendering.
 
@@ -218,6 +224,35 @@ fn split_edge_remaining(vs: [u32; 4], best_edge: usize) -> (u32, u32) {
 /// `[min .. max]` at spacing `cell` and dicing every fully-interior
 /// cube into five tetrahedra.
 ///
+/// # Not for stress analysis — use [`generate_marching_tets`]
+///
+/// A cube is kept only when all eight of its corners are inside, so the mesh is
+/// a staircase strictly inside the shape rather than the shape. Measured on a
+/// 9.4 x 2.6 x 2.2 bar whose exact volume is 53.768
+/// (`tests/mesh_to_fem_stress.rs`):
+///
+/// | cell | meshed volume | fraction |
+/// |---|---|---|
+/// | 0.5 | 27.000 | 50% |
+/// | 0.375 | 37.969 | 71% |
+/// | 0.25 | 36.422 | 68% |
+///
+/// A load spread over the real cross-section is then carried by a smaller one,
+/// so every stress that comes back is wrong by that ratio — and refining does
+/// not reliably help, because a cell size that does not divide the thickness
+/// loses a whole layer, which is what happened between 0.375 and 0.25 above.
+///
+/// **Nothing in the solver can notice this.** The FEM has no way to know what
+/// shape the caller meant, and a patch test on this mesh comes back exact to
+/// 6e-9 relative, the same as on a mesh of the true shape, because P1 elements
+/// reproduce a linear field exactly on any domain. So the mistake is silent in
+/// every direction a caller might look from.
+///
+/// What this generator *is* good for is anything that wants a fast interior
+/// fill with uniformly shaped elements and does not care that the boundary is
+/// approximate: its element quality is a flat 54.74° minimum dihedral angle at
+/// every cell size, because every element is one of the two 5-tet patterns.
+///
 /// # Panics
 ///
 /// Panics if `cell <= 0`.
@@ -281,6 +316,155 @@ pub fn generate<F: SdfField + ?Sized>(
     mesh
 }
 
+/// The lattice `generate_marching_tets` clips against, after every corner that
+/// sits very close to the surface has been moved onto it.
+///
+/// # Why the corner moves, and not the crossing
+///
+/// The defect being fixed is a zero crossing landing a hair away from a lattice
+/// corner, which leaves a clipped element with one edge orders of magnitude
+/// shorter than its neighbours. The obvious repair — round that crossing onto
+/// the corner — does not work, and it is worth recording why, because it looks
+/// like it should.
+///
+/// Rounding the crossing brings the corner itself into the element while leaving
+/// the corner's *sign* alone, so the other edges meeting that corner still carry
+/// crossings of their own. An element can then hold both endpoints of a lattice
+/// edge together with an unrounded crossing lying on it, and three collinear
+/// vertices make a flat tetrahedron whatever the fourth one does. Measured on a
+/// unit ball at cell 0.25: worst element `(0.75, 0.5, -0.25)`,
+/// `(0.5, 0.75, -0.25)`, `(0.75, 0.75, 0)`, `(0.628918, 0.75, -0.121082)`, the
+/// last of which is on the segment joining the middle two at parameter 0.515672
+/// along both of its varying coordinates. Volume 1.55e-10 against a typical
+/// 2.6e-3, and a dihedral angle of 0°.
+///
+/// Warping the corner instead puts it *on* the isosurface and sets its value to
+/// zero, which retires every crossing on every edge meeting it at once — the
+/// field no longer changes sign along those edges. So a corner that still
+/// carries a sign after this pass is one whose incident crossings are all
+/// further away than [`SNAP_CELL_FRACTION`], and there is no short edge left to
+/// create. This is the warping step of Labelle and Shewchuk, *Isosurface
+/// Stuffing* (SIGGRAPH 2007), restricted to a cubic lattice.
+///
+/// # Conformity
+///
+/// The warp is a property of a lattice corner, decided once from its own value
+/// and its 26 neighbours' values, and every cell that touches that corner reads
+/// the same answer out of this table. Cells are never consulted, so there is
+/// nothing for two of them to disagree about.
+struct WarpedLattice {
+    origin: [f32; 3],
+    cell: f32,
+    dims: [i32; 3],
+    /// Position and signed distance per corner, in `x`-fastest order over
+    /// `dims + 1`. The value is exactly zero at a corner that was warped.
+    nodes: Vec<([f32; 3], f32)>,
+}
+
+impl WarpedLattice {
+    /// The 26 lattice directions a corner can have a neighbour in.
+    ///
+    /// All of them, rather than the six axis directions, because the 5-tet
+    /// dicing uses face and body diagonals as element edges too, and a crossing
+    /// near a corner is just as bad on one of those.
+    fn neighbour_offsets() -> impl Iterator<Item = [i32; 3]> {
+        (-1..=1).flat_map(move |dz| {
+            (-1..=1).flat_map(move |dy| {
+                (-1..=1).filter_map(move |dx: i32| {
+                    if dx == 0 && dy == 0 && dz == 0 {
+                        None
+                    } else {
+                        Some([dx, dy, dz])
+                    }
+                })
+            })
+        })
+    }
+
+    fn build<F: SdfField + ?Sized>(sdf: &F, origin: [f32; 3], cell: f32, dims: [i32; 3]) -> Self {
+        let counts = [dims[0] + 1, dims[1] + 1, dims[2] + 1];
+        let total = (counts[0] as usize) * (counts[1] as usize) * (counts[2] as usize);
+        let mut raw = Vec::with_capacity(total);
+        for iz in 0..counts[2] {
+            for iy in 0..counts[1] {
+                for ix in 0..counts[0] {
+                    let p = corner_pos(origin, cell, ix, iy, iz);
+                    raw.push((p, sdf.distance(p[0], p[1], p[2])));
+                }
+            }
+        }
+
+        // Every warp decision reads `raw`, never the partially warped table, so
+        // the result does not depend on the order corners are visited in.
+        let snap_distance = SNAP_CELL_FRACTION * cell;
+        let index =
+            |id: [i32; 3]| -> usize { ((id[2] * counts[1] + id[1]) * counts[0] + id[0]) as usize };
+        let mut nodes = raw.clone();
+        for iz in 0..counts[2] {
+            for iy in 0..counts[1] {
+                for ix in 0..counts[0] {
+                    let here = index([ix, iy, iz]);
+                    let (p, s0) = raw[here];
+                    if s0 == 0.0 {
+                        continue;
+                    }
+                    let mut best: Option<(f32, [f32; 3])> = None;
+                    for d in Self::neighbour_offsets() {
+                        let n = [ix + d[0], iy + d[1], iz + d[2]];
+                        if n.iter().zip(counts).any(|(&c, limit)| c < 0 || c >= limit) {
+                            continue;
+                        }
+                        let (q, s1) = raw[index(n)];
+                        // A crossing exists exactly where the inside test used
+                        // by `marching_tet_emit` disagrees at the two ends.
+                        if (s0 < 0.0) == (s1 < 0.0) {
+                            continue;
+                        }
+                        let t = s0 / (s0 - s1);
+                        let at = [
+                            p[0] + t * (q[0] - p[0]),
+                            p[1] + t * (q[1] - p[1]),
+                            p[2] + t * (q[2] - p[2]),
+                        ];
+                        let dx = at[0] - p[0];
+                        let dy = at[1] - p[1];
+                        let dz = at[2] - p[2];
+                        let dist = (dx * dx + dy * dy + dz * dz).sqrt();
+                        if dist < snap_distance && best.is_none_or(|(b, _)| dist < b) {
+                            best = Some((dist, at));
+                        }
+                    }
+                    if let Some((_, at)) = best {
+                        nodes[here] = (at, 0.0);
+                    }
+                }
+            }
+        }
+        Self {
+            origin,
+            cell,
+            dims,
+            nodes,
+        }
+    }
+
+    fn index(&self, id: [i32; 3]) -> usize {
+        let counts = [self.dims[0] + 1, self.dims[1] + 1, self.dims[2] + 1];
+        ((id[2] * counts[1] + id[1]) * counts[0] + id[0]) as usize
+    }
+
+    fn position(&self, id: [i32; 3]) -> [f32; 3] {
+        self.nodes.get(self.index(id)).map_or_else(
+            || corner_pos(self.origin, self.cell, id[0], id[1], id[2]),
+            |n| n.0,
+        )
+    }
+
+    fn value(&self, id: [i32; 3]) -> f32 {
+        self.nodes.get(self.index(id)).map_or(0.0, |n| n.1)
+    }
+}
+
 /// Generate a **surface-conforming** tet mesh via Marching Tetrahedra.
 ///
 /// Each Cartesian cube is diced into five reference tetrahedra; for each
@@ -310,30 +494,11 @@ pub fn generate_marching_tets<F: SdfField + ?Sized>(
     let ny = ((max[1] - min[1]) / cell).max(1.0) as i32;
     let nz = ((max[2] - min[2]) / cell).max(1.0) as i32;
 
+    let lattice = WarpedLattice::build(sdf, min, cell, [nx, ny, nz]);
+
     for iz in 0..nz {
         for iy in 0..ny {
             for ix in 0..nx {
-                let corner_positions: [[f32; 3]; 8] = [
-                    corner_pos(min, cell, ix, iy, iz),
-                    corner_pos(min, cell, ix + 1, iy, iz),
-                    corner_pos(min, cell, ix + 1, iy + 1, iz),
-                    corner_pos(min, cell, ix, iy + 1, iz),
-                    corner_pos(min, cell, ix, iy, iz + 1),
-                    corner_pos(min, cell, ix + 1, iy, iz + 1),
-                    corner_pos(min, cell, ix + 1, iy + 1, iz + 1),
-                    corner_pos(min, cell, ix, iy + 1, iz + 1),
-                ];
-                let corner_sdf: [f32; 8] = std::array::from_fn(|i| {
-                    sdf.distance(
-                        corner_positions[i][0],
-                        corner_positions[i][1],
-                        corner_positions[i][2],
-                    )
-                });
-                // Skip cubes that are entirely outside.
-                if corner_sdf.iter().all(|&d| d > 0.0) {
-                    continue;
-                }
                 let corner_ids: [[i32; 3]; 8] = [
                     [ix, iy, iz],
                     [ix + 1, iy, iz],
@@ -344,6 +509,12 @@ pub fn generate_marching_tets<F: SdfField + ?Sized>(
                     [ix + 1, iy + 1, iz + 1],
                     [ix, iy + 1, iz + 1],
                 ];
+                let corner_positions: [[f32; 3]; 8] = corner_ids.map(|id| lattice.position(id));
+                let corner_sdf: [f32; 8] = corner_ids.map(|id| lattice.value(id));
+                // Skip cubes that are entirely outside.
+                if corner_sdf.iter().all(|&d| d > 0.0) {
+                    continue;
+                }
                 // The base dicing alternates for the same reason `generate`
                 // does: a fixed pattern disagrees with the neighbour on every
                 // shared face.
@@ -516,6 +687,67 @@ fn intern(
 ///
 /// Snaps to a corner when the crossing lands exactly on one, so a vertex is
 /// never emitted twice under two different keys.
+/// How close to a lattice corner a zero crossing may land, as a fraction of
+/// `cell`, before the corner is warped onto the surface instead.
+///
+/// # Why this exists
+///
+/// Marching tetrahedra place a vertex wherever the field changes sign along a
+/// lattice edge. Nothing stops that point from landing arbitrarily close to one
+/// end, and when it does, the clipped element it belongs to has one edge orders
+/// of magnitude shorter than the rest — a sliver, whose stiffness matrix is
+/// ill-conditioned and whose reconstructed gradients are worst exactly where it
+/// is thinnest. Refining the grid does not help: a finer lattice only offers
+/// more edges for a crossing to land near the end of. Measured on a unit ball
+/// before the warp, the worst dihedral angle in the mesh was 6.66° at cell 0.375
+/// and *4.59°* at cell 0.1875 — worse at the finer resolution, while the
+/// enclosed volume converged correctly. Geometry was never the problem; element
+/// shape was.
+///
+/// # What it costs
+///
+/// A warped corner moves by less than `SNAP_CELL_FRACTION · cell`, and it moves
+/// onto the isosurface, so that is also the bound on how far the meshed boundary
+/// moves. The bound is proportional to `cell`, so it vanishes under refinement
+/// at the same first order as the discretisation it sits inside.
+/// `tests/mesh_quality.rs::marching_tets_volume_converges` holds that claim to a
+/// measurement rather than to this paragraph.
+///
+/// The threshold has to stay under half the shortest lattice edge, which is
+/// `cell`, or a corner could warp past its neighbour.
+///
+/// # Why this value
+///
+/// Chosen from the measurement in `tests/mesh_quality.rs`, inside the band
+/// `0.15` to `0.30` declared before that measurement was taken: the smallest
+/// value in the band that reaches the 10° minimum-dihedral target on both test
+/// scenes. Worst dihedral angle over the sphere and torus series:
+///
+/// | fraction | ball | torus |
+/// |---|---|---|
+/// | 0.00 | 4.59° | — |
+/// | 0.15 | 4.85° | — |
+/// | 0.20 | 8.51° | — |
+/// | 0.25 | 8.51° | — |
+/// | **0.30** | **16.39°** | **10.20°** |
+///
+/// Values above the band measure better still — `0.45` reaches 21.50° and
+/// 15.20° — and are not used, because moving a declared band after seeing the
+/// numbers is the same operation whichever way the numbers went. The ceiling is
+/// real and not far above: at `0.49` corners on opposite sides of the torus tube
+/// warp towards each other and the worst angle collapses to 3.80°. Nothing in
+/// the *volume* measurement sees that, which is why the minimum dihedral angle
+/// is the gate and the volume convergence is the companion.
+///
+/// # Conformity
+///
+/// Warping cannot pull two elements apart, because it never consults a cell:
+/// see [`WarpedLattice`]. An element that collapses because several of its
+/// corners warped to the same place is dropped by [`push_tet`]; the faces it
+/// would have contributed have collapsed with it, so no neighbour is left facing
+/// a hole. `tests/mesh_conformity.rs` re-measures that by face census.
+const SNAP_CELL_FRACTION: f32 = 0.30;
+
 fn crossing_vertex(
     mesh: &mut SdfTetMesh,
     table: &mut HashMap<VertexKey, u32>,
@@ -531,6 +763,15 @@ fn crossing_vertex(
     } else {
         sdf[a] / denom
     };
+    // A crossing that lands exactly on one end is that end. The parameter is
+    // exact in both cases — `sdf[a] == 0` gives `t == 0` and `sdf[b] == 0` gives
+    // `t == 1` — so no tolerance enters here, and neither does any dependence on
+    // which end the caller passed first.
+    //
+    // Crossings that land merely *close* to a corner are not handled here at
+    // all: [`WarpedLattice`] has already moved the corner onto the surface, so a
+    // corner still carrying a sign is one whose incident crossings are all
+    // further away than the warp threshold.
     if t <= 0.0 {
         return intern(mesh, table, VertexKey::Corner(ids[a]), v[a]);
     }
@@ -595,6 +836,36 @@ fn prism_to_tets(bottom: [u32; 3], top: [u32; 3]) -> [[u32; 4]; 3] {
 
 /// Push a tetrahedron, dropping it when two of its vertices coincide (which the
 /// corner snapping above can produce on a degenerate crossing).
+/// Append a tetrahedron, unless it does not enclose anything.
+///
+/// Two ways to enclose nothing, and both occur once crossings are snapped onto
+/// lattice corners (see [`SNAP_CELL_FRACTION`]):
+///
+/// - Two of the four vertices are the *same* vertex, because two crossings of
+///   the sub-tetrahedron snapped to the same corner.
+/// - The four vertices are distinct but coplanar. Index comparison cannot see
+///   this one. It is not merely useless: `linear_elastic_fem` rejects a
+///   zero-volume element with [`FemError::DegenerateElement`], so a single one
+///   fails the whole solve.
+///
+/// **No test scene currently produces the second case.** Removing the check
+/// leaves `tests/mesh_quality.rs` green, so it is a defence and not a measured
+/// necessity — said plainly here so that nobody later reads its presence as
+/// evidence that something needs it. It earned its place under a different
+/// design: rounding the *crossing* onto the corner, which the lattice warp
+/// replaced, emitted 72 to 120 exactly-coplanar elements per mesh.
+///
+/// The test is exact equality with zero rather than a tolerance. A tolerance
+/// would be a second, unmeasured quality threshold competing with the
+/// minimum-dihedral gate in `tests/mesh_quality.rs`, and the two would disagree.
+/// The division of labour is that this function keeps non-tetrahedra out, and
+/// the gate keeps badly shaped tetrahedra out.
+///
+/// Dropping these does not open the mesh: a collapsed element's faces have
+/// collapsed with it, so there is no neighbour left facing a hole.
+/// `tests/mesh_conformity.rs` re-measures that by face census.
+///
+/// [`FemError::DegenerateElement`]: crate::linear_elastic_fem::FemError::DegenerateElement
 fn push_tet(mesh: &mut SdfTetMesh, vertices: [u32; 4]) {
     for i in 0..4 {
         for j in (i + 1)..4 {
@@ -603,7 +874,26 @@ fn push_tet(mesh: &mut SdfTetMesh, vertices: [u32; 4]) {
             }
         }
     }
+    let p = vertices.map(|v| mesh.vertices[v as usize]);
+    if tet_signed_volume_x6(p) == 0.0 {
+        return;
+    }
     mesh.tets.push(Tetrahedron { vertices });
+}
+
+/// Six times the signed volume of a tetrahedron, in `f64`.
+///
+/// `f64` because the inputs are `f32`: every difference and product of the
+/// coordinates this mesher produces is then exact, so a tetrahedron whose
+/// corners really are coplanar lands on zero instead of on a small rounding
+/// residue that a threshold would have to guess at.
+fn tet_signed_volume_x6(p: [[f32; 3]; 4]) -> f64 {
+    let e = |i: usize, k: usize| f64::from(p[i][k]) - f64::from(p[0][k]);
+    let a = [e(1, 0), e(1, 1), e(1, 2)];
+    let b = [e(2, 0), e(2, 1), e(2, 2)];
+    let c = [e(3, 0), e(3, 1), e(3, 2)];
+    a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0])
+        + a[2] * (b[0] * c[1] - b[1] * c[0])
 }
 
 /// The two 5-tet decompositions of a cube, as indices into a corner array

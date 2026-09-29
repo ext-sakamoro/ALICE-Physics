@@ -13,6 +13,45 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Fixed — `sdf_fem_mesh` の sliver (格子頂点 warping)
+
+marching tetrahedra は零交差を格子辺のどこにでも置くので、辺の端に極端に寄ると
+その要素だけ辺長が桁違いに短くなります (sliver) 細かくしても直らず、単位球の実測で
+最小二面角は cell 0.375 で 6.66°、cell 0.1875 で **4.59°** と**細かくするほど悪化**
+していました 体積は正しく収束していたので、幾何ではなく要素形状だけの問題です
+
+**格子頂点の側を等値面へ動かす** (Labelle & Shewchuk, *Isosurface Stuffing* 2007 の
+warping を立方格子に限定) 交点を格子頂点へ丸める逆向きの手当ては機能しません
+格子頂点が符号を保ったまま要素に入るため、同じ頂点に接する別の辺の交点と共線になり
+平坦な四面体ができます (実測: cell 0.25 で体積 1.55e-10 / 二面角 0°)
+
+- 閾値 `SNAP_CELL_FRACTION = 0.30` — 事前宣言した帯域 0.15〜0.30 の中で 10° 目標に
+  届く最小値 面の移動量の上界は `0.30 · cell` で、`cell` に比例するので細分で消えます
+- 最小二面角 (球 / トーラス、3 解像度): 4.59° → **10.20°** 以上
+- 体積誤差は 1.3 ポイント悪化 (cell 0.375、球で 7.56% → 8.86%) 差は cell に比例して
+  縮み、収束次数は 2 以上を維持します
+- 零体積要素の除去を `push_tet` に追加 (warping 後の scene では発火しませんが、
+  `linear_elastic_fem` が要素 1 個で solve 全体を弾くため防御として残します)
+
+### Added — mesh 品質と応力用途の CI gate
+
+- `tests/mesh_quality.rs` — **最小二面角**を gate、radius-edge は併記のみ
+  radius-edge は sliver を見ません (実測: cell 0.1875 で 1,448 要素が radius-edge 2
+  未満なのに最悪二面角 4.59°) 体積は絶対値でなく**収束次数** ≥ 1 で判定します
+- `tests/mesh_to_fem_stress.rs` — mesh を実際に `linear_elastic_fem` へ通す end-to-end
+  一様応力が厳密に出ること (marching、相対偏差 1.7e-8 以下) と、`generate` の体積欠損を
+  pin します
+
+### Changed — `generate` は応力解析に使わない (doc 明記)
+
+`generate` は 8 頂点すべてが内側の立方体だけを残すので、形状より内側の階段を
+メッシュ化します 実測 (9.4 x 2.6 x 2.2 の棒、厳密体積 53.768): cell 0.5 で 50%、
+0.375 で 71%、0.25 で 68% — **細かくしても単調に改善しません** 応力は断面積比の分だけ
+ずれますが、**patch test は `generate` でも 6e-9 で厳密に通る**ので計器側からは見えません
+API は分割せず、`generate` / `linear_elastic_fem` の doc で `generate_marching_tets`
+へ誘導します
+
+
 ### Added — 線形弾性 FEM (tet P1) `linear_elastic_fem`
 
 四面体メッシュ上で `K u = f` を解き、要素ごとの Cauchy 応力テンソルと von Mises

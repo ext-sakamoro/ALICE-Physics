@@ -7,6 +7,14 @@
 //! or a notch, and [`crate::deformable`] is an XPBD solver whose volume and
 //! shape constraints never form a stress tensor.
 //!
+//! # Which mesh to hand it
+//!
+//! [`crate::sdf_fem_mesh::generate_marching_tets`], not
+//! [`crate::sdf_fem_mesh::generate`]. The latter meshes a staircase strictly
+//! inside the shape — measured at 50% to 71% of a bar's volume — so the stresses
+//! it yields are wrong by that ratio, and neither this solver nor a patch test
+//! can tell. The reasoning and the measurement are on `generate` itself.
+//!
 //! # Units
 //!
 //! Millimetre / newton / megapascal, matching [`crate::structural_solver`]:
