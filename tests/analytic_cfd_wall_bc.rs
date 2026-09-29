@@ -254,14 +254,24 @@ fn projection_reaches_the_boundary_layer_in_a_closed_box() {
 /// Oracle: if the data has no `z` dependence and the `z` walls carry no flux,
 /// the 3-D projection **is** the 2-D projection. The answer therefore cannot
 /// depend on how many `z` layers the slab is cut into — `nz = 1`, `2` and `4`
-/// must give the same `u` field, bit for bit, because `Fix128` arithmetic is
-/// deterministic and the per-cell stencil is identical.
+/// must give the same `u` field.
 ///
 /// The fixed `1/6` divisor broke exactly this: at `nz = 1` both `z`
 /// neighbours are missing and their zero contributions turn the operator into
 /// a screened Poisson `∇²p − (2/dx²)p`, whose screening length is shorter
 /// than one cell — the pressure collapses to `−rhs/6` and almost no
 /// correction is applied (measured: 0.007 % of the divergence removed).
+///
+/// # Why this is a tolerance and not a bit-for-bit comparison
+///
+/// The *converged* solution is `z`-invariant, but the red-black sweep that
+/// reaches it is not run in the same order at different layer counts: a
+/// cell's colour is the parity of `i + j + k`, so the `k = 1` layer is
+/// coloured opposite to `k = 0` and a neighbour that is already updated in
+/// one layout is still stale in the other. That reorders the `Fix128`
+/// additions. The measured spread is a few `Fix128` ulps (`2⁻⁶⁴ ≈ 5.4e-20`),
+/// and the gate below is twelve orders of magnitude looser while still ruling
+/// out anything the screened operator would produce (which is `O(0.1)`).
 #[test]
 fn walled_slab_projection_is_independent_of_the_layer_count() {
     let n = 6usize;
@@ -301,18 +311,28 @@ fn walled_slab_projection_is_independent_of_the_layer_count() {
         profiles.push(layer0);
     }
 
+    println!("max |div u| after projection at nz = 1 / 2 / 4: {divergences:?}");
     assert!(
         divergences.iter().all(|&d| d < 1e-6),
         "a walled slab must project at every layer count, max |∇·u| = {divergences:?}"
     );
-    assert_eq!(
-        profiles[0], profiles[1],
-        "nz = 1 and nz = 2 must give the identical u field for z-invariant data"
-    );
-    assert_eq!(
-        profiles[0], profiles[2],
-        "nz = 1 and nz = 4 must give the identical u field for z-invariant data"
-    );
+    // Compared in `Fix128`, not `f64`: the ulps in question are below f64
+    // resolution and a `to_f64` difference would round to exactly zero.
+    let tolerance = Fix128::from_ratio(1, 1_000_000_000_000);
+    for (label, other) in [("nz = 2", &profiles[1]), ("nz = 4", &profiles[2])] {
+        let spread = profiles[0]
+            .iter()
+            .zip(other.iter())
+            .map(|(a, b)| (*a - *b).abs())
+            .fold(Fix128::ZERO, |acc, d| if d > acc { d } else { acc });
+        println!("nz = 1 vs {label}: max |du| = {:.4e}", spread.to_f64());
+        assert!(
+            spread < tolerance,
+            "nz = 1 and {label} must give the same u field for z-invariant data, \
+             max difference {:.4e}",
+            spread.to_f64()
+        );
+    }
 }
 
 // ===========================================================================
@@ -509,5 +529,44 @@ fn lid_driven_cavity_return_flow_matches_ghia_1982() {
                  (got {u:+.5}, reference {u_ref:+.5})"
             );
         }
+    }
+}
+
+/// Where the residual gap to Ghia comes from: refine the grid and watch it
+/// shrink.
+///
+/// Re = 100 is laminar, so a wall model has nothing to do here — the
+/// remaining difference should be discretisation (cell size plus the
+/// numerical diffusion of semi-Lagrangian advection). The falsifiable form of
+/// that claim is that the peak return velocity moves toward the reference as
+/// the cell size halves; if it plateaus instead, the gap is a model error and
+/// not a resolution error.
+///
+/// `#[ignore]`d because the `32²` run is ~4× the cells at ~4× the steps in a
+/// debug build; run it with
+/// `cargo test --release --test analytic_cfd_wall_bc -- --ignored --nocapture`.
+#[test]
+#[ignore = "resolution sweep: three cavity runs, minutes in a debug build"]
+fn cavity_gap_to_ghia_shrinks_with_resolution() {
+    let mut previous = f64::INFINITY;
+    for &(n, steps, gs) in &[(8usize, 300u32, 120u32), (16, 600, 200), (32, 1600, 400)] {
+        let (profile, flux) = run_lid_driven_cavity(n, steps, gs, true);
+        let peak = profile.iter().fold(0.0f64, |acc, &(_, u)| acc.min(u));
+        let deviation = max_deviation_from_ghia(&profile);
+        println!(
+            "n={n:3}  peak {peak:+.5} ({:.1} % of reference)  max deviation {deviation:.5}  \
+             centreline net flux {flux:+.3e}",
+            100.0 * peak / GHIA_RE100_PEAK_RETURN
+        );
+        assert!(
+            flux.abs() < 1e-6,
+            "the cavity must stay sealed at every resolution (n={n}, flux {flux:+.3e})"
+        );
+        assert!(
+            deviation < previous,
+            "refining to n={n} must move the profile toward the reference \
+             ({deviation:.5} vs {previous:.5} at the previous resolution)"
+        );
+        previous = deviation;
     }
 }

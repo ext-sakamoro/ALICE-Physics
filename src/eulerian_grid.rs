@@ -50,13 +50,27 @@
 //! Jacobi + BiCGStab pressure variants and P2G scatter operators
 //! are reserved crate-internal API awaiting downstream integration.
 //!
-//! # Face mask (storage only at this commit)
+//! # Face mask — walls inside the projection
 //!
-//! `u_solid` / `v_solid` / `w_solid` record which faces are walls, and
-//! [`MacGrid::set_closed_box_walls`] / [`MacGrid::enforce_solid_faces`]
-//! operate on them. **The pressure projection does not read them yet**, so a
-//! grid with walls still leaks across them — that is what
-//! `tests/analytic_cfd_wall_bc.rs` pins red.
+//! `u_solid` / `v_solid` / `w_solid` mark which faces are walls
+//! ([`MacGrid::set_closed_box_walls`] does the six boundary layers of a
+//! sealed box). The mask is part of the Poisson problem, not a post-pass:
+//!
+//! - a **solid** face carries no flux, so it leaves both the off-diagonal
+//!   coupling and the diagonal count — the homogeneous Neumann condition
+//!   `∂p/∂n = 0` — and its normal velocity is held at zero;
+//! - a face that is **not** solid always counts toward the diagonal; on the
+//!   domain boundary its neighbour is the exterior `p = 0` (open / free
+//!   surface), which is the behaviour of a grid with no mask set.
+//!
+//! Two consequences that the old fixed `1/6` divisor got wrong:
+//!
+//! - the diagonal is the number of open faces, so a slab with walled `z`
+//!   sides is a genuine 2-D Poisson problem at any `nz` instead of a screened
+//!   one that barely moves the field;
+//! - the velocity correction sweeps every face including the boundary layer,
+//!   so the rim cells have the degree of freedom they need and their
+//!   divergence is removed with the rest.
 
 // Reserved algorithm variants (Jacobi / BiCGStab pressure, P2G scatter) are
 // pub(crate) but currently unused outside their own unit tests — awaiting
@@ -308,6 +322,200 @@ impl MacGrid {
 }
 
 // ============================================================================
+// Poisson stencil under the face mask
+// ============================================================================
+
+/// Which faces of each cell take part in the pressure solve.
+///
+/// `open[c]` is ordered `[-x, +x, -y, +y, -z, +z]`. A solid face is closed:
+/// it contributes neither an off-diagonal coupling nor a count to the
+/// diagonal, which is the homogeneous Neumann condition. An open face always
+/// counts toward the diagonal; when it sits on the domain boundary its
+/// neighbour pressure is the exterior `p = 0`.
+///
+/// Owned rather than borrowed so the solvers can keep mutating the grid.
+struct PoissonMask {
+    nx: usize,
+    ny: usize,
+    nz: usize,
+    open: Vec<[bool; 6]>,
+}
+
+impl PoissonMask {
+    fn from_grid(grid: &MacGrid) -> Self {
+        let (nx, ny, nz) = (grid.nx, grid.ny, grid.nz);
+        let mut open = vec![[true; 6]; nx * ny * nz];
+        for k in 0..nz {
+            for j in 0..ny {
+                for i in 0..nx {
+                    open[i + nx * (j + ny * k)] = [
+                        !grid.is_u_solid(i, j, k),
+                        !grid.is_u_solid(i + 1, j, k),
+                        !grid.is_v_solid(i, j, k),
+                        !grid.is_v_solid(i, j + 1, k),
+                        !grid.is_w_solid(i, j, k),
+                        !grid.is_w_solid(i, j, k + 1),
+                    ];
+                }
+            }
+        }
+        Self { nx, ny, nz, open }
+    }
+
+    /// Number of open faces of cell `c`; `−degree` is the matrix diagonal.
+    #[inline]
+    fn degree(&self, c: usize) -> i64 {
+        self.open[c].iter().filter(|&&o| o).count() as i64
+    }
+
+    /// Sum of the neighbour pressures reachable through the open faces of
+    /// cell `(i, j, k)`. Faces open onto the exterior contribute `p = 0`.
+    #[inline]
+    fn neighbour_sum(&self, p: &[Fix128], i: usize, j: usize, k: usize) -> Fix128 {
+        let c = i + self.nx * (j + self.ny * k);
+        let o = self.open[c];
+        let mut acc = Fix128::ZERO;
+        if o[0] && i > 0 {
+            acc = acc + p[c - 1];
+        }
+        if o[1] && i + 1 < self.nx {
+            acc = acc + p[c + 1];
+        }
+        if o[2] && j > 0 {
+            acc = acc + p[c - self.nx];
+        }
+        if o[3] && j + 1 < self.ny {
+            acc = acc + p[c + self.nx];
+        }
+        if o[4] && k > 0 {
+            acc = acc + p[c - self.nx * self.ny];
+        }
+        if o[5] && k + 1 < self.nz {
+            acc = acc + p[c + self.nx * self.ny];
+        }
+        acc
+    }
+
+    /// `out = A p` with `(A p)_c = −degree(c)·p_c + Σ_open p_neighbour`.
+    fn apply(&self, p: &[Fix128], out: &mut [Fix128]) {
+        for k in 0..self.nz {
+            for j in 0..self.ny {
+                for i in 0..self.nx {
+                    let c = i + self.nx * (j + self.ny * k);
+                    out[c] =
+                        p[c] * Fix128::from_int(-self.degree(c)) + self.neighbour_sum(p, i, j, k);
+                }
+            }
+        }
+    }
+}
+
+/// `1 / degree(c)` per cell, zero where a cell is sealed on all six faces.
+///
+/// A sealed cell has no flux across any face, so its divergence — and with it
+/// its right-hand side — is identically zero and the relaxation drives its
+/// pressure to zero. That is the correct answer: the cell is decoupled from
+/// the rest of the field and its pressure has no gradient to produce.
+fn inverse_degrees(mask: &PoissonMask, n: usize) -> Vec<Fix128> {
+    let mut inv = vec![Fix128::ZERO; n];
+    for (c, slot) in inv.iter_mut().enumerate() {
+        let deg = mask.degree(c);
+        if deg > 0 {
+            *slot = Fix128::from_ratio(1, deg);
+        }
+    }
+    inv
+}
+
+/// Subtract `coeff · ∇p` from the face velocities and hold the walls at zero.
+///
+/// The sweep covers **every** face, boundary layer included: the Poisson
+/// operator counts a non-solid boundary face against the exterior `p = 0`, so
+/// skipping it leaves the rim cells with no degree of freedom and their
+/// divergence grows instead of vanishing.
+fn subtract_pressure_gradient(grid: &mut MacGrid, coeff: Fix128) {
+    for k in 0..grid.nz {
+        for j in 0..grid.ny {
+            for i in 0..=grid.nx {
+                let ix = grid.idx_u(i, j, k);
+                if grid.u_solid[ix] {
+                    grid.u[ix] = Fix128::ZERO;
+                    continue;
+                }
+                let hi = if i < grid.nx {
+                    grid.pressure(i, j, k)
+                } else {
+                    Fix128::ZERO
+                };
+                let lo = if i > 0 {
+                    grid.pressure(i - 1, j, k)
+                } else {
+                    Fix128::ZERO
+                };
+                grid.u[ix] = grid.u[ix] - coeff * (hi - lo);
+            }
+        }
+    }
+    for k in 0..grid.nz {
+        for j in 0..=grid.ny {
+            for i in 0..grid.nx {
+                let ix = grid.idx_v(i, j, k);
+                if grid.v_solid[ix] {
+                    grid.v[ix] = Fix128::ZERO;
+                    continue;
+                }
+                let hi = if j < grid.ny {
+                    grid.pressure(i, j, k)
+                } else {
+                    Fix128::ZERO
+                };
+                let lo = if j > 0 {
+                    grid.pressure(i, j - 1, k)
+                } else {
+                    Fix128::ZERO
+                };
+                grid.v[ix] = grid.v[ix] - coeff * (hi - lo);
+            }
+        }
+    }
+    for k in 0..=grid.nz {
+        for j in 0..grid.ny {
+            for i in 0..grid.nx {
+                let ix = grid.idx_w(i, j, k);
+                if grid.w_solid[ix] {
+                    grid.w[ix] = Fix128::ZERO;
+                    continue;
+                }
+                let hi = if k < grid.nz {
+                    grid.pressure(i, j, k)
+                } else {
+                    Fix128::ZERO
+                };
+                let lo = if k > 0 {
+                    grid.pressure(i, j, k - 1)
+                } else {
+                    Fix128::ZERO
+                };
+                grid.w[ix] = grid.w[ix] - coeff * (hi - lo);
+            }
+        }
+    }
+}
+
+/// Build `rhs = ρ dx²/dt · ∇·u` after the walls have been enforced.
+fn poisson_rhs(grid: &MacGrid, scale: Fix128) -> Vec<Fix128> {
+    let mut rhs = vec![Fix128::ZERO; grid.nx * grid.ny * grid.nz];
+    for k in 0..grid.nz {
+        for j in 0..grid.ny {
+            for i in 0..grid.nx {
+                rhs[i + grid.nx * (j + grid.ny * k)] = grid.divergence(i, j, k) * scale;
+            }
+        }
+    }
+    rhs
+}
+
+// ============================================================================
 // Pressure projection (Jacobi)
 // ============================================================================
 
@@ -343,18 +551,12 @@ pub(crate) fn project_pressure_red_black_gs(
     if grid.dx.is_zero() || density_kg_m3.is_zero() || dt_s.is_zero() {
         return;
     }
+    grid.enforce_solid_faces();
     let scale = density_kg_m3 * grid.dx * grid.dx / dt_s;
     let n = grid.nx * grid.ny * grid.nz;
-    let mut rhs = vec![Fix128::ZERO; n];
-    for k in 0..grid.nz {
-        for j in 0..grid.ny {
-            for i in 0..grid.nx {
-                let idx = i + grid.nx * (j + grid.ny * k);
-                rhs[idx] = grid.divergence(i, j, k) * scale;
-            }
-        }
-    }
-    let sixth = Fix128::from_ratio(1, 6);
+    let rhs = poisson_rhs(grid, scale);
+    let mask = PoissonMask::from_grid(grid);
+    let inv_deg = inverse_degrees(&mask, n);
     for _ in 0..iterations {
         // Two-colour sweep (colour ∈ {0, 1})
         for colour in 0..2u32 {
@@ -364,74 +566,17 @@ pub(crate) fn project_pressure_red_black_gs(
                         if ((i + j + k) as u32 % 2) != colour {
                             continue;
                         }
-                        let px = if i > 0 {
-                            grid.pressure(i - 1, j, k)
-                        } else {
-                            Fix128::ZERO
-                        };
-                        let pxx = if i + 1 < grid.nx {
-                            grid.pressure(i + 1, j, k)
-                        } else {
-                            Fix128::ZERO
-                        };
-                        let py = if j > 0 {
-                            grid.pressure(i, j - 1, k)
-                        } else {
-                            Fix128::ZERO
-                        };
-                        let pyy = if j + 1 < grid.ny {
-                            grid.pressure(i, j + 1, k)
-                        } else {
-                            Fix128::ZERO
-                        };
-                        let pz = if k > 0 {
-                            grid.pressure(i, j, k - 1)
-                        } else {
-                            Fix128::ZERO
-                        };
-                        let pzz = if k + 1 < grid.nz {
-                            grid.pressure(i, j, k + 1)
-                        } else {
-                            Fix128::ZERO
-                        };
                         let idx = i + grid.nx * (j + grid.ny * k);
-                        grid.pressure[idx] = (px + pxx + py + pyy + pz + pzz - rhs[idx]) * sixth;
+                        let neighbours = mask.neighbour_sum(&grid.pressure, i, j, k);
+                        grid.pressure[idx] = (neighbours - rhs[idx]) * inv_deg[idx];
                     }
                 }
             }
         }
     }
 
-    // Velocity correction (same as Jacobi variant)
     let inv_dx = Fix128::ONE / grid.dx;
-    let coeff = dt_s / density_kg_m3 * inv_dx;
-    for k in 0..grid.nz {
-        for j in 0..grid.ny {
-            for i in 1..grid.nx {
-                let dp = grid.pressure(i, j, k) - grid.pressure(i - 1, j, k);
-                let ix = grid.idx_u(i, j, k);
-                grid.u[ix] = grid.u[ix] - coeff * dp;
-            }
-        }
-    }
-    for k in 0..grid.nz {
-        for j in 1..grid.ny {
-            for i in 0..grid.nx {
-                let dp = grid.pressure(i, j, k) - grid.pressure(i, j - 1, k);
-                let ix = grid.idx_v(i, j, k);
-                grid.v[ix] = grid.v[ix] - coeff * dp;
-            }
-        }
-    }
-    for k in 1..grid.nz {
-        for j in 0..grid.ny {
-            for i in 0..grid.nx {
-                let dp = grid.pressure(i, j, k) - grid.pressure(i, j, k - 1);
-                let ix = grid.idx_w(i, j, k);
-                grid.w[ix] = grid.w[ix] - coeff * dp;
-            }
-        }
-    }
+    subtract_pressure_gradient(grid, dt_s / density_kg_m3 * inv_dx);
 }
 
 /// Legacy Jacobi implementation, kept for benchmarking (Session 3 I9, crate-internal).
@@ -444,60 +589,22 @@ pub(crate) fn project_pressure_jacobi(
     if grid.dx.is_zero() || density_kg_m3.is_zero() || dt_s.is_zero() {
         return;
     }
+    grid.enforce_solid_faces();
     let scale = density_kg_m3 * grid.dx * grid.dx / dt_s;
-
-    // Build divergence RHS
     let n = grid.nx * grid.ny * grid.nz;
-    let mut rhs = vec![Fix128::ZERO; n];
-    for k in 0..grid.nz {
-        for j in 0..grid.ny {
-            for i in 0..grid.nx {
-                let idx = i + grid.nx * (j + grid.ny * k);
-                rhs[idx] = grid.divergence(i, j, k) * scale;
-            }
-        }
-    }
+    let rhs = poisson_rhs(grid, scale);
+    let mask = PoissonMask::from_grid(grid);
+    let inv_deg = inverse_degrees(&mask, n);
 
-    // Jacobi iterations for -∇²p = rhs
-    // At interior cell: 6·p_c − Σ p_neighbours = -rhs (2nd order FD)
-    let sixth = Fix128::from_ratio(1, 6);
+    // Jacobi iterations for `A p = rhs`, `A` the masked 7-point Laplacian.
     let mut p_new = grid.pressure.clone();
     for _ in 0..iterations {
         for k in 0..grid.nz {
             for j in 0..grid.ny {
                 for i in 0..grid.nx {
-                    let px = if i > 0 {
-                        grid.pressure(i - 1, j, k)
-                    } else {
-                        Fix128::ZERO
-                    };
-                    let pxx = if i + 1 < grid.nx {
-                        grid.pressure(i + 1, j, k)
-                    } else {
-                        Fix128::ZERO
-                    };
-                    let py = if j > 0 {
-                        grid.pressure(i, j - 1, k)
-                    } else {
-                        Fix128::ZERO
-                    };
-                    let pyy = if j + 1 < grid.ny {
-                        grid.pressure(i, j + 1, k)
-                    } else {
-                        Fix128::ZERO
-                    };
-                    let pz = if k > 0 {
-                        grid.pressure(i, j, k - 1)
-                    } else {
-                        Fix128::ZERO
-                    };
-                    let pzz = if k + 1 < grid.nz {
-                        grid.pressure(i, j, k + 1)
-                    } else {
-                        Fix128::ZERO
-                    };
                     let idx = i + grid.nx * (j + grid.ny * k);
-                    p_new[idx] = (px + pxx + py + pyy + pz + pzz - rhs[idx]) * sixth;
+                    let neighbours = mask.neighbour_sum(&grid.pressure, i, j, k);
+                    p_new[idx] = (neighbours - rhs[idx]) * inv_deg[idx];
                 }
             }
         }
@@ -506,53 +613,27 @@ pub(crate) fn project_pressure_jacobi(
 
     // Velocity correction: u ← u − (dt/ρ)·∇p
     let inv_dx = Fix128::ONE / grid.dx;
-    let coeff = dt_s / density_kg_m3 * inv_dx;
-
-    // u faces (skip boundaries)
-    for k in 0..grid.nz {
-        for j in 0..grid.ny {
-            for i in 1..grid.nx {
-                let dp = grid.pressure(i, j, k) - grid.pressure(i - 1, j, k);
-                let ix = grid.idx_u(i, j, k);
-                grid.u[ix] = grid.u[ix] - coeff * dp;
-            }
-        }
-    }
-    for k in 0..grid.nz {
-        for j in 1..grid.ny {
-            for i in 0..grid.nx {
-                let dp = grid.pressure(i, j, k) - grid.pressure(i, j - 1, k);
-                let ix = grid.idx_v(i, j, k);
-                grid.v[ix] = grid.v[ix] - coeff * dp;
-            }
-        }
-    }
-    for k in 1..grid.nz {
-        for j in 0..grid.ny {
-            for i in 0..grid.nx {
-                let dp = grid.pressure(i, j, k) - grid.pressure(i, j, k - 1);
-                let ix = grid.idx_w(i, j, k);
-                grid.w[ix] = grid.w[ix] - coeff * dp;
-            }
-        }
-    }
+    subtract_pressure_gradient(grid, dt_s / density_kg_m3 * inv_dx);
 }
 
 /// Preconditioned **BiCGStab** pressure solver (van der Vorst 1992).
 ///
 /// Solves the discrete Poisson system `A p = b` for the MAC-grid
-/// pressure, where `A` is the 7-point Laplacian with homogeneous
-/// Neumann boundary conditions (missing neighbours contribute zero).
-/// The RHS `b = ρ dx² / dt · ∇·u` matches the Jacobi and red-black
-/// Gauss–Seidel variants, and the velocity correction stage at the
-/// end is identical.
+/// pressure, where `A` is the 7-point Laplacian restricted by the face mask:
+/// a solid face drops out entirely (homogeneous Neumann) and an open face on
+/// the domain boundary couples to the exterior `p = 0`. The RHS
+/// `b = ρ dx² / dt · ∇·u` matches the Jacobi and red-black Gauss–Seidel
+/// variants, and the velocity correction stage at the end is identical.
 ///
 /// # Preconditioner
 ///
-/// Diagonal Jacobi preconditioner `M = diag(A)`. On this Neumann
-/// Poisson matrix the diagonal is `−6` at interior cells and drops
-/// toward the boundary as `−6 + (number of missing neighbours)`,
-/// so the preconditioner adapts per cell.
+/// Diagonal Jacobi preconditioner `M = diag(A)`, read from the **same**
+/// stencil the operator uses: `−(number of open faces)`, which is `−6` in the
+/// interior and drops by one per walled face. Before the face mask landed the
+/// operator used a fixed `−6` while the preconditioner counted missing
+/// neighbours, so the two disagreed at every boundary cell — harmless for the
+/// answer, but it slowed the iteration and the doc described the
+/// preconditioner as if it were the operator.
 ///
 /// # Convergence
 ///
@@ -579,49 +660,23 @@ pub(crate) fn project_pressure_bicgstab(
     if grid.dx.is_zero() || density_kg_m3.is_zero() || dt_s.is_zero() {
         return default_stats;
     }
+    grid.enforce_solid_faces();
     let scale = density_kg_m3 * grid.dx * grid.dx / dt_s;
-    let nx = grid.nx;
-    let ny = grid.ny;
-    let nz = grid.nz;
-    let n = nx * ny * nz;
+    let n = grid.nx * grid.ny * grid.nz;
 
-    // Build RHS and cache the per-cell diagonal.
-    let mut rhs = vec![Fix128::ZERO; n];
+    // Build RHS and cache the per-cell diagonal from the operator's own mask.
+    let rhs = poisson_rhs(grid, scale);
+    let mask = PoissonMask::from_grid(grid);
     let mut diag = vec![Fix128::ZERO; n];
-    for k in 0..nz {
-        for j in 0..ny {
-            for i in 0..nx {
-                let idx = i + nx * (j + ny * k);
-                rhs[idx] = grid.divergence(i, j, k) * scale;
-                let mut deg: i64 = 6;
-                if i == 0 {
-                    deg -= 1;
-                }
-                if i + 1 == nx {
-                    deg -= 1;
-                }
-                if j == 0 {
-                    deg -= 1;
-                }
-                if j + 1 == ny {
-                    deg -= 1;
-                }
-                if k == 0 {
-                    deg -= 1;
-                }
-                if k + 1 == nz {
-                    deg -= 1;
-                }
-                diag[idx] = Fix128::from_int(-deg); // A[i,i] = -deg
-            }
-        }
+    for (c, slot) in diag.iter_mut().enumerate() {
+        *slot = Fix128::from_int(-mask.degree(c)); // A[c,c] = −degree(c)
     }
 
     // x = grid.pressure; solve A x = b with A = -Laplacian sign convention:
     // r0 = b − A x0
     let mut x = grid.pressure.clone();
     let mut r = vec![Fix128::ZERO; n];
-    apply_poisson_a(&x, &mut r, nx, ny, nz);
+    mask.apply(&x, &mut r);
     for i in 0..n {
         r[i] = rhs[i] - r[i];
     }
@@ -660,7 +715,7 @@ pub(crate) fn project_pressure_bicgstab(
                 p_vec[i] / diag[i]
             };
         }
-        apply_poisson_a(&y_vec, &mut v_vec, nx, ny, nz);
+        mask.apply(&y_vec, &mut v_vec);
         let denom = dot(&r_hat, &v_vec);
         if denom.is_zero() {
             break;
@@ -687,7 +742,7 @@ pub(crate) fn project_pressure_bicgstab(
                 s_vec[i] / diag[i]
             };
         }
-        apply_poisson_a(&z_vec, &mut t_vec, nx, ny, nz);
+        mask.apply(&z_vec, &mut t_vec);
         let tt = dot(&t_vec, &t_vec);
         if tt.is_zero() {
             break;
@@ -710,34 +765,7 @@ pub(crate) fn project_pressure_bicgstab(
 
     // Velocity correction (same convention as the Jacobi variant).
     let inv_dx = Fix128::ONE / grid.dx;
-    let coeff = dt_s / density_kg_m3 * inv_dx;
-    for k in 0..grid.nz {
-        for j in 0..grid.ny {
-            for i in 1..grid.nx {
-                let dp = grid.pressure(i, j, k) - grid.pressure(i - 1, j, k);
-                let ix = grid.idx_u(i, j, k);
-                grid.u[ix] = grid.u[ix] - coeff * dp;
-            }
-        }
-    }
-    for k in 0..grid.nz {
-        for j in 1..grid.ny {
-            for i in 0..grid.nx {
-                let dp = grid.pressure(i, j, k) - grid.pressure(i, j - 1, k);
-                let ix = grid.idx_v(i, j, k);
-                grid.v[ix] = grid.v[ix] - coeff * dp;
-            }
-        }
-    }
-    for k in 1..grid.nz {
-        for j in 0..grid.ny {
-            for i in 0..grid.nx {
-                let dp = grid.pressure(i, j, k) - grid.pressure(i, j, k - 1);
-                let ix = grid.idx_w(i, j, k);
-                grid.w[ix] = grid.w[ix] - coeff * dp;
-            }
-        }
-    }
+    subtract_pressure_gradient(grid, dt_s / density_kg_m3 * inv_dx);
     BicgstabStats {
         iterations,
         final_residual: residual,
@@ -754,44 +782,6 @@ pub(crate) struct BicgstabStats {
     pub(crate) final_residual: Fix128,
     /// True if the iteration terminated below `tolerance`.
     pub(crate) converged: bool,
-}
-
-/// Apply the discrete Poisson operator `A` (Neumann BC) to `p`.
-///
-/// At each cell: `(A p)_c = −6 p_c + Σ p_neighbours` with missing
-/// neighbours treated as zero (Neumann). This matches the equation
-/// `A p = rhs` where `rhs = ρ dx²/dt · ∇·u` — the same RHS the Jacobi
-/// / red-black GS iterations converge to.
-fn apply_poisson_a(p: &[Fix128], out: &mut [Fix128], nx: usize, ny: usize, nz: usize) {
-    let idx = |i: usize, j: usize, k: usize| i + nx * (j + ny * k);
-    let neg_six = Fix128::from_int(-6);
-    for k in 0..nz {
-        for j in 0..ny {
-            for i in 0..nx {
-                let c = p[idx(i, j, k)];
-                let mut acc = c * neg_six;
-                if i > 0 {
-                    acc = acc + p[idx(i - 1, j, k)];
-                }
-                if i + 1 < nx {
-                    acc = acc + p[idx(i + 1, j, k)];
-                }
-                if j > 0 {
-                    acc = acc + p[idx(i, j - 1, k)];
-                }
-                if j + 1 < ny {
-                    acc = acc + p[idx(i, j + 1, k)];
-                }
-                if k > 0 {
-                    acc = acc + p[idx(i, j, k - 1)];
-                }
-                if k + 1 < nz {
-                    acc = acc + p[idx(i, j, k + 1)];
-                }
-                out[idx(i, j, k)] = acc;
-            }
-        }
-    }
 }
 
 fn dot(a: &[Fix128], b: &[Fix128]) -> Fix128 {
@@ -1443,21 +1433,92 @@ mod tests {
     }
 
     #[test]
-    fn apply_poisson_a_is_symmetric_stencil() {
-        // (A e_c)_c = -6 for a unit vector at an interior cell,
-        // matching the convention A p = rhs where diag = -6.
+    fn poisson_operator_diagonal_matches_the_preconditioner() {
+        // The preconditioner BiCGStab divides by must be the diagonal of the
+        // operator it is preconditioning: `(A e_c)_c == −degree(c)`. Before
+        // the face mask the operator used a fixed −6 while `diag` counted
+        // missing neighbours, so the two disagreed on every boundary cell.
         let nx = 3;
         let ny = 3;
         let nz = 3;
+        let mut grid = MacGrid::new(nx, ny, nz, Fix128::from_ratio(1, 8));
+        grid.set_u_solid(1, 1, 1, true); // one interior wall face
+        let mask = PoissonMask::from_grid(&grid);
         let n = nx * ny * nz;
-        let mut p = vec![Fix128::ZERO; n];
-        let ctr = 1 + nx * (1 + ny);
-        p[ctr] = Fix128::ONE;
-        let mut out = vec![Fix128::ZERO; n];
-        apply_poisson_a(&p, &mut out, nx, ny, nz);
-        assert_eq!(out[ctr], Fix128::from_int(-6));
-        // Face neighbours receive +1.
-        let neighbour = nx * (1 + ny);
-        assert_eq!(out[neighbour], Fix128::ONE);
+        for c in 0..n {
+            let mut e = vec![Fix128::ZERO; n];
+            e[c] = Fix128::ONE;
+            let mut out = vec![Fix128::ZERO; n];
+            mask.apply(&e, &mut out);
+            assert_eq!(
+                out[c],
+                Fix128::from_int(-mask.degree(c)),
+                "diagonal of cell {c} disagrees with degree()"
+            );
+        }
+    }
+
+    #[test]
+    fn poisson_operator_is_symmetric() {
+        // `A` must be symmetric for BiCGStab's convergence theory to apply:
+        // `(A e_a)_b == (A e_b)_a`. A one-sided face mask (marking a face
+        // solid for one of its two cells only) would break it.
+        let nx = 3;
+        let ny = 3;
+        let nz = 2;
+        let mut grid = MacGrid::new(nx, ny, nz, Fix128::from_ratio(1, 8));
+        grid.set_closed_box_walls();
+        grid.set_v_solid(1, 1, 0, true);
+        let mask = PoissonMask::from_grid(&grid);
+        let n = nx * ny * nz;
+        let mut columns = Vec::with_capacity(n);
+        for c in 0..n {
+            let mut e = vec![Fix128::ZERO; n];
+            e[c] = Fix128::ONE;
+            let mut out = vec![Fix128::ZERO; n];
+            mask.apply(&e, &mut out);
+            columns.push(out);
+        }
+        for (a, col_a) in columns.iter().enumerate() {
+            for (b, col_b) in columns.iter().enumerate() {
+                assert_eq!(col_a[b], col_b[a], "A[{b},{a}] != A[{a},{b}]");
+            }
+        }
+    }
+
+    #[test]
+    fn closed_box_degree_drops_to_the_open_face_count() {
+        // A sealed 1-cell-thick slab has its two z faces walled, so the
+        // stencil is the 2-D one (degree 4), not the 3-D one with two zero
+        // contributions (degree 6) the fixed 1/6 divisor assumed.
+        let mut grid = MacGrid::new(2, 2, 1, Fix128::from_ratio(1, 8));
+        grid.set_closed_box_walls();
+        let mask = PoissonMask::from_grid(&grid);
+        for c in 0..4 {
+            assert_eq!(mask.degree(c), 2, "corner cell of a sealed 2x2x1 slab");
+        }
+        let mut open_slab = MacGrid::new(2, 2, 1, Fix128::from_ratio(1, 8));
+        open_slab.set_w_solid(0, 0, 0, true);
+        open_slab.set_w_solid(0, 0, 1, true);
+        let open_mask = PoissonMask::from_grid(&open_slab);
+        assert_eq!(
+            open_mask.degree(0),
+            4,
+            "only the z faces are walled, the four lateral faces stay open"
+        );
+    }
+
+    #[test]
+    fn walls_are_held_at_zero_by_the_projection() {
+        let mut grid = MacGrid::new(4, 4, 4, Fix128::from_ratio(1, 8));
+        grid.u.fill(Fix128::ONE);
+        grid.set_closed_box_walls();
+        project_pressure(&mut grid, Fix128::from_ratio(1, 100), Fix128::ONE, 50);
+        for j in 0..4 {
+            for k in 0..4 {
+                assert_eq!(grid.u(0, j, k), Fix128::ZERO);
+                assert_eq!(grid.u(4, j, k), Fix128::ZERO);
+            }
+        }
     }
 }

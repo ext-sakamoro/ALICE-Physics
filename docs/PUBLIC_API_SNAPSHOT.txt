@@ -2762,13 +2762,24 @@ pub alice_physics::eulerian_grid::MacGrid::ny: usize
 pub alice_physics::eulerian_grid::MacGrid::nz: usize
 pub alice_physics::eulerian_grid::MacGrid::pressure: alloc::vec::Vec<alice_physics::math::Fix128>
 pub alice_physics::eulerian_grid::MacGrid::u: alloc::vec::Vec<alice_physics::math::Fix128>
+pub alice_physics::eulerian_grid::MacGrid::u_solid: alloc::vec::Vec<bool>
 pub alice_physics::eulerian_grid::MacGrid::v: alloc::vec::Vec<alice_physics::math::Fix128>
+pub alice_physics::eulerian_grid::MacGrid::v_solid: alloc::vec::Vec<bool>
 pub alice_physics::eulerian_grid::MacGrid::w: alloc::vec::Vec<alice_physics::math::Fix128>
+pub alice_physics::eulerian_grid::MacGrid::w_solid: alloc::vec::Vec<bool>
 impl alice_physics::eulerian_grid::MacGrid
 pub fn alice_physics::eulerian_grid::MacGrid::cell_velocity(&self, usize, usize, usize) -> (alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128)
 pub fn alice_physics::eulerian_grid::MacGrid::divergence(&self, usize, usize, usize) -> alice_physics::math::Fix128
+pub fn alice_physics::eulerian_grid::MacGrid::enforce_solid_faces(&mut self)
+pub fn alice_physics::eulerian_grid::MacGrid::is_u_solid(&self, usize, usize, usize) -> bool
+pub fn alice_physics::eulerian_grid::MacGrid::is_v_solid(&self, usize, usize, usize) -> bool
+pub fn alice_physics::eulerian_grid::MacGrid::is_w_solid(&self, usize, usize, usize) -> bool
 pub fn alice_physics::eulerian_grid::MacGrid::new(usize, usize, usize, alice_physics::math::Fix128) -> Self
 pub fn alice_physics::eulerian_grid::MacGrid::pressure(&self, usize, usize, usize) -> alice_physics::math::Fix128
+pub fn alice_physics::eulerian_grid::MacGrid::set_closed_box_walls(&mut self)
+pub fn alice_physics::eulerian_grid::MacGrid::set_u_solid(&mut self, usize, usize, usize, bool)
+pub fn alice_physics::eulerian_grid::MacGrid::set_v_solid(&mut self, usize, usize, usize, bool)
+pub fn alice_physics::eulerian_grid::MacGrid::set_w_solid(&mut self, usize, usize, usize, bool)
 pub fn alice_physics::eulerian_grid::MacGrid::u(&self, usize, usize, usize) -> alice_physics::math::Fix128
 pub fn alice_physics::eulerian_grid::MacGrid::v(&self, usize, usize, usize) -> alice_physics::math::Fix128
 pub fn alice_physics::eulerian_grid::MacGrid::w(&self, usize, usize, usize) -> alice_physics::math::Fix128
