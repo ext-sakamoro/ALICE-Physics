@@ -10,15 +10,52 @@
 //! # The instrument
 //!
 //! Prescribe an exact linear displacement field on every boundary node. A P1
-//! tetrahedral element reproduces a linear field exactly, so for *any*
-//! conforming mesh of *any* domain the interior must come back with the same
-//! constant stress, whatever the element shapes are. Deviation from it is
-//! therefore not discretisation error — it is the solver failing to converge on
-//! an ill-conditioned mesh.
+//! tetrahedral element reproduces a linear field exactly, so the *discretisation*
+//! is exact and the only thing left between the answer and `E * eps` is the
+//! conjugate gradient iteration, which stops at a tolerance. How far from exact
+//! it stops is set by the conditioning of the stiffness matrix, and that is set
+//! by element shape. So the quantity to read is
 //!
-//! This is the one thing a patch test is good for here. It says nothing about
-//! whether the faces line up (measured: exact to 3.6e-15 MPa on a mesh with 576
-//! of 768 faces dangling), so conformity stays in its own file.
+//! ```text
+//! amplification = relative stress deviation / achieved relative residual
+//! ```
+//!
+//! Not the deviation alone: the residual is where the solver chose to stop, and
+//! dividing it out leaves the factor by which bad elements turn a converged
+//! residual into a wrong answer. It is a measured stand-in for the condition
+//! number, and unlike the deviation it does not drift with problem size.
+//!
+//! # What this instrument is and is not blind to
+//!
+//! Three properties, three different answers, all measured in this crate:
+//!
+//! | property | does the patch test see it? |
+//! |---|---|
+//! | faces line up (conformity) | **no** — exact to 3.6e-15 MPa with 576 of 768 faces dangling |
+//! | the domain is the right shape | **no** — exact to 6e-9 on `generate`'s staircase |
+//! | element shape (slivers) | **yes** — amplification 7-21 against 168-348 |
+//!
+//! The first two are geometry, and a linear field is reproduced exactly on any
+//! geometry. The third is not geometry: it enters through the solve, which stops
+//! early. So conformity keeps its own file and its own census, and this file
+//! carries the element-shape claim.
+//!
+//! # One direction this file cannot cover
+//!
+//! Its scene is a box, and element quality on a box improves as the lattice warp
+//! is widened. Widening it too far collapses *other* shapes — at
+//! `SNAP_CELL_FRACTION = 0.49` corners on opposite sides of a torus tube warp
+//! towards each other — and this file reads that as an improvement. Measured by
+//! rebuilding the mesher at three warp settings:
+//!
+//! | warp | `mesh_quality.rs` | this file |
+//! |---|---|---|
+//! | disabled | red, 4.59° | red, amplification 347.9 |
+//! | 0.30 (shipped) | green | green, 7.1 to 20.7 |
+//! | 0.49 (too wide) | red, 3.80° | **green, 5.2 to 12.3** |
+//!
+//! So the minimum dihedral angle stays a gate rather than becoming a report: it
+//! is the only thing in the suite watching the upper side.
 //!
 //! Author: Moroya Sakamoto
 
@@ -57,6 +94,13 @@ fn bar_sdf() -> ClosureSdf {
         |_, _, _| (1.0, 0.0, 0.0),
     )
 }
+
+/// How much worse than its own residual the answer is allowed to be.
+///
+/// See `marching_tets_mesh_carries_an_exact_uniform_stress`: measured at 7.1 to
+/// 20.7 on the meshes this crate produces and 168.3 to 347.9 with the lattice
+/// warp disabled, so this sits roughly a factor of three from each.
+const MAX_AMPLIFICATION: f64 = 60.0;
 
 const YOUNGS_MPA: f64 = 200_000.0;
 const POISSON: f64 = 0.3;
@@ -117,11 +161,27 @@ fn fx(value: f64) -> Fix128 {
 
 /// The mesh a stress analysis is meant to use.
 ///
-/// The claim is not that the answer is approximately right. On a linear field a
-/// P1 mesh is *exact*, so anything the solver gives back that is not the
-/// constant `E * eps` is the conjugate gradient iteration failing on badly
-/// shaped elements — which is exactly what the warp in `sdf_fem_mesh` is there
-/// to prevent, and what this measures from the far end.
+/// # The threshold is measured, not conventional
+///
+/// Both populations were measured on this scene, by building the same mesh with
+/// the lattice warp on and off:
+///
+/// | cell | warped | warp disabled |
+/// |---|---|---|
+/// | 0.5 | 7.1 | 347.9 |
+/// | 0.375 | 8.4 | 168.3 |
+/// | 0.25 | **20.7** | **168.3** |
+///
+/// The achieved residual is the same either way (8.0e-10 to 9.1e-10, the
+/// tolerance floor), so the whole difference is in how wrong the answer is at
+/// the point the solver stopped — which is the conditioning, which is element
+/// shape.
+///
+/// `MAX_AMPLIFICATION` is placed between the two: 2.9 times above the worst
+/// warped mesh and 2.8 times below the best unwarped one. A round number picked
+/// from a textbook would not have that property, and the first version of this
+/// test had one — `deviation < 1e-5` — which passed the unwarped mesh's 2.3e-7
+/// and so was not testing anything.
 #[test]
 fn marching_tets_mesh_carries_an_exact_uniform_stress() {
     let sdf = bar_sdf();
@@ -141,15 +201,20 @@ fn marching_tets_mesh_carries_an_exact_uniform_stress() {
         }
         eprintln!(
             "[stress]  marching  cell {cell:<6} tets {:>5}  iterations {:>5}  \
-             worst von Mises deviation {:.3e}  (expected {expected:.1} MPa)",
+             deviation {:.3e}  residual {:.3e}  amplification {:.1}",
             mesh.tet_count(),
             solution.iterations,
-            worst
+            worst,
+            solution.relative_residual.to_f64(),
+            worst / solution.relative_residual.to_f64()
         );
+        let amplification = worst / solution.relative_residual.to_f64();
         assert!(
-            worst < 1.0e-5,
-            "cell {cell}: a linear field is exact on P1 elements, so {worst:.3e} relative \
-             deviation is the solver losing on element shape, not discretisation"
+            amplification < MAX_AMPLIFICATION,
+            "cell {cell}: the answer is {amplification:.1} times worse than the residual the \
+             solver stopped at. A linear field is exact on P1 elements whatever the domain, so \
+             this is conditioning — element shape — and not discretisation. Measured at 7.1 to \
+             20.7 on a warped lattice and 168.3 to 347.9 without one"
         );
     }
 }

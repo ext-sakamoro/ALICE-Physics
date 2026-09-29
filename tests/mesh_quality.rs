@@ -20,14 +20,58 @@
 //! So this file gates the **minimum dihedral angle** and reports the
 //! radius-edge distribution alongside it, rather than the other way round.
 //!
-//! # Target
+//! # What this gate is for, now that the solver can be asked directly
 //!
-//! **10° is the target**, declared here before the fix that follows it was
-//! written, and it is not to be widened to fit a measurement. Finite element
-//! practice usually asks for 10-15°; below roughly 10° the interpolation error
-//! constant grows fast enough that refining the mesh stops helping. If the
-//! measurement lands short, the gate is set where the measurement supports and
-//! **the gap is stated**, not hidden by moving the target.
+//! The minimum dihedral angle is a *proxy*. What actually hurts a finite element
+//! solve is the condition number of the stiffness matrix, and
+//! `tests/mesh_to_fem_stress.rs` measures that end to end by running the FEM and
+//! reading how far its answer lands from an exact one. That file carries the
+//! claim "element shape is not breaking the solve"; this one does not.
+//!
+//! Two jobs are left here, and both are worth a gate:
+//!
+//! - **The upper side.** Warping corners too far collapses the mesh in a way the
+//!   stress test does not see, because its scene is a box: at
+//!   `SNAP_CELL_FRACTION = 0.49` corners on opposite sides of the torus tube warp
+//!   towards each other and the worst angle falls to 3.80°, while the volume
+//!   convergence stays clean. Nothing else in the suite is looking at that.
+//! - **Cheap regression detection across more scenes** than it is worth running
+//!   a full solve on.
+//!
+//! # The threshold is measured, not conventional
+//!
+//! **10° was the target declared before the fix**, taken from finite element
+//! practice, and the mesh now clears it — but only by 0.20° on the torus at the
+//! finest level, which is too thin to gate on and says more about the convention
+//! than about the mesh.
+//!
+//! So the gate is placed between the two measured populations instead:
+//!
+//! | | worst minimum dihedral angle |
+//! |---|---|
+//! | warped lattice (ball and torus, 3 levels) | **10.20°** |
+//! | warp disabled | 4.59° |
+//! | warp far too wide (`0.49`) | 3.80° |
+//!
+//! `MIN_DIHEDRAL_DEG` sits 1.28 times under the worst good mesh, 1.74 times over
+//! the unwarped one and 2.11 times over the over-warped one. The 10° convention
+//! stays written down here as the reference it is, and not as the number a test
+//! asserts.
+//!
+//! # Why this stays a gate and not a report
+//!
+//! Measured by rebuilding the mesher at three warp settings and running both
+//! files:
+//!
+//! | warp | this file | `mesh_to_fem_stress.rs` |
+//! |---|---|---|
+//! | disabled | red, 4.59° | red, amplification 347.9 |
+//! | 0.30 (shipped) | green | green, 7.1 to 20.7 |
+//! | 0.49 (too wide) | red, 3.80° | **green, 5.2 to 12.3** |
+//!
+//! The solver-side measurement is the better instrument for the lower side and
+//! is where the primary claim lives. It cannot see the upper side at all,
+//! because its scene is a box and a box only improves as the warp widens.
 //!
 //! Author: Moroya Sakamoto
 
@@ -37,10 +81,18 @@
 use alice_physics::sdf_collider::ClosureSdf;
 use alice_physics::sdf_fem_mesh::{generate, generate_marching_tets, SdfTetMesh};
 
-/// The angle a finite element mesh should not go below, in degrees.
+/// Where the gate sits, in degrees — between the measured good and bad
+/// populations, not on the engineering convention.
 ///
-/// See the module documentation: declared before the measurement, not after.
-const TARGET_MIN_DIHEDRAL_DEG: f64 = 10.0;
+/// See the module documentation for both populations and all three margins.
+const MIN_DIHEDRAL_DEG: f64 = 8.0;
+
+/// The minimum dihedral angle finite element practice usually asks for.
+///
+/// Reported, never asserted. Kept so that the distance between what the mesh
+/// achieves and what the convention wants stays visible: at the finest torus
+/// level it is 0.20°.
+const CONVENTIONAL_MIN_DIHEDRAL_DEG: f64 = 10.0;
 
 /// A scene to mesh, with a closed form for the volume it encloses.
 ///
@@ -239,7 +291,7 @@ fn measure(mesh: &SdfTetMesh) -> Quality {
             q.worst = Some((p, vol));
         }
         q.max_dihedral_deg = q.max_dihedral_deg.max(hi);
-        if lo < TARGET_MIN_DIHEDRAL_DEG {
+        if lo < CONVENTIONAL_MIN_DIHEDRAL_DEG {
             q.below_target += 1;
         }
         let re = circumradius(p) / shortest_edge(p);
@@ -271,7 +323,7 @@ fn report(name: &str, cell: f32, q: &Quality, analytic_volume: f64) {
         q.radius_edge_buckets,
         q.total_volume,
         analytic_volume,
-        TARGET_MIN_DIHEDRAL_DEG,
+        CONVENTIONAL_MIN_DIHEDRAL_DEG,
         q.below_target
     );
     if let Some((p, vol)) = q.worst {
@@ -308,18 +360,18 @@ fn whole_cube_dicing_has_uniform_quality() {
 
 /// Marching tetrahedra clip cells against the surface, and a zero crossing that
 /// lands close to a lattice corner makes a very short edge — which is where the
-/// slivers come from.
+/// slivers come from. `sdf_fem_mesh` warps the corner onto the surface instead;
+/// this is the measurement that says whether it still is.
 ///
-/// The target is stated in the module documentation and in
-/// `TARGET_MIN_DIHEDRAL_DEG`. It was fixed before the fix was written.
+/// Both the gate and the convention it replaced are in the module documentation.
 #[test]
-fn marching_tets_meets_the_dihedral_target() {
+fn marching_tets_stays_out_of_the_sliver_population() {
     for scene in scenes() {
-        check_dihedral_target(&scene);
+        check_dihedral_population(&scene);
     }
 }
 
-fn check_dihedral_target(scene: &Scene) {
+fn check_dihedral_population(scene: &Scene) {
     let series = marching_series(scene);
     // Every level is measured and printed before anything is asserted. Asserting
     // inside the loop would stop at the first level that fails and hide the rest
@@ -337,11 +389,12 @@ fn check_dihedral_target(scene: &Scene) {
         scene.name
     );
     assert!(
-        worst >= TARGET_MIN_DIHEDRAL_DEG,
-        "{}: worst dihedral angle over the series is {worst:.2}°, under the \
-         {TARGET_MIN_DIHEDRAL_DEG}° target. Do not raise the target to fit this number: either \
-         the warp needs to reach further, or the shortfall is a measured limitation to be \
-         reported",
+        worst >= MIN_DIHEDRAL_DEG,
+        "{}: worst dihedral angle over the series is {worst:.2}°, under the {MIN_DIHEDRAL_DEG}° \
+         gate. That gate is where the measured good and bad meshes separate (10.20° against \
+         4.59° and 3.80°), so landing under it means the mesh has joined the bad population — \
+         in either direction, since warping too far collapses elements as surely as not warping \
+         at all. Do not move the gate to fit the number",
         scene.name
     );
 }
