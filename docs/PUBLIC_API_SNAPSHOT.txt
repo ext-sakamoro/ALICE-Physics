@@ -4507,6 +4507,240 @@ pub const alice_physics::layers::SENSOR: u32
 pub const alice_physics::layers::STATIC: u32
 pub const alice_physics::layers::TRIGGER: u32
 pub const alice_physics::layers::VEHICLE: u32
+pub mod alice_physics::linear_elastic_fem
+pub enum alice_physics::linear_elastic_fem::Axis
+pub alice_physics::linear_elastic_fem::Axis::X
+pub alice_physics::linear_elastic_fem::Axis::Y
+pub alice_physics::linear_elastic_fem::Axis::Z
+impl alice_physics::linear_elastic_fem::Axis
+pub const alice_physics::linear_elastic_fem::Axis::ALL: [Self; 3]
+pub const fn alice_physics::linear_elastic_fem::Axis::index(self) -> usize
+impl core::clone::Clone for alice_physics::linear_elastic_fem::Axis
+pub fn alice_physics::linear_elastic_fem::Axis::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::linear_elastic_fem::Axis
+impl core::cmp::PartialEq for alice_physics::linear_elastic_fem::Axis
+pub fn alice_physics::linear_elastic_fem::Axis::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::linear_elastic_fem::Axis
+pub fn alice_physics::linear_elastic_fem::Axis::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for alice_physics::linear_elastic_fem::Axis
+pub fn alice_physics::linear_elastic_fem::Axis::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for alice_physics::linear_elastic_fem::Axis
+impl core::marker::StructuralPartialEq for alice_physics::linear_elastic_fem::Axis
+impl core::marker::Freeze for alice_physics::linear_elastic_fem::Axis
+impl core::marker::Send for alice_physics::linear_elastic_fem::Axis
+impl core::marker::Sync for alice_physics::linear_elastic_fem::Axis
+impl core::marker::Unpin for alice_physics::linear_elastic_fem::Axis
+impl core::marker::UnsafeUnpin for alice_physics::linear_elastic_fem::Axis
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::linear_elastic_fem::Axis
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::linear_elastic_fem::Axis
+#[non_exhaustive] pub enum alice_physics::linear_elastic_fem::FemError
+pub alice_physics::linear_elastic_fem::FemError::DegenerateElement
+pub alice_physics::linear_elastic_fem::FemError::DegenerateElement::tet: usize
+pub alice_physics::linear_elastic_fem::FemError::EmptyMesh
+pub alice_physics::linear_elastic_fem::FemError::InvalidConfig(&'static str)
+pub alice_physics::linear_elastic_fem::FemError::InvalidMaterial(&'static str)
+pub alice_physics::linear_elastic_fem::FemError::NotConverged
+pub alice_physics::linear_elastic_fem::FemError::NotConverged::iterations: u32
+pub alice_physics::linear_elastic_fem::FemError::NotConverged::relative_residual: alice_physics::math::Fix128
+pub alice_physics::linear_elastic_fem::FemError::Stagnated
+pub alice_physics::linear_elastic_fem::FemError::Stagnated::iterations: u32
+pub alice_physics::linear_elastic_fem::FemError::Stagnated::relative_residual: alice_physics::math::Fix128
+pub alice_physics::linear_elastic_fem::FemError::Stagnated::without_improvement: u32
+pub alice_physics::linear_elastic_fem::FemError::UnderConstrained
+pub alice_physics::linear_elastic_fem::FemError::VertexOutOfRange
+pub alice_physics::linear_elastic_fem::FemError::VertexOutOfRange::vertex: u32
+pub alice_physics::linear_elastic_fem::FemError::VertexOutOfRange::vertex_count: usize
+impl core::clone::Clone for alice_physics::linear_elastic_fem::FemError
+pub fn alice_physics::linear_elastic_fem::FemError::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::linear_elastic_fem::FemError
+impl core::cmp::PartialEq for alice_physics::linear_elastic_fem::FemError
+pub fn alice_physics::linear_elastic_fem::FemError::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::linear_elastic_fem::FemError
+pub fn alice_physics::linear_elastic_fem::FemError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::linear_elastic_fem::FemError
+impl core::marker::StructuralPartialEq for alice_physics::linear_elastic_fem::FemError
+impl core::marker::Freeze for alice_physics::linear_elastic_fem::FemError
+impl core::marker::Send for alice_physics::linear_elastic_fem::FemError
+impl core::marker::Sync for alice_physics::linear_elastic_fem::FemError
+impl core::marker::Unpin for alice_physics::linear_elastic_fem::FemError
+impl core::marker::UnsafeUnpin for alice_physics::linear_elastic_fem::FemError
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::linear_elastic_fem::FemError
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::linear_elastic_fem::FemError
+#[non_exhaustive] pub enum alice_physics::linear_elastic_fem::Preconditioner
+pub alice_physics::linear_elastic_fem::Preconditioner::JacobiScaled
+pub alice_physics::linear_elastic_fem::Preconditioner::None
+impl core::clone::Clone for alice_physics::linear_elastic_fem::Preconditioner
+pub fn alice_physics::linear_elastic_fem::Preconditioner::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::linear_elastic_fem::Preconditioner
+impl core::cmp::PartialEq for alice_physics::linear_elastic_fem::Preconditioner
+pub fn alice_physics::linear_elastic_fem::Preconditioner::eq(&self, &Self) -> bool
+impl core::default::Default for alice_physics::linear_elastic_fem::Preconditioner
+pub fn alice_physics::linear_elastic_fem::Preconditioner::default() -> Self
+impl core::fmt::Debug for alice_physics::linear_elastic_fem::Preconditioner
+pub fn alice_physics::linear_elastic_fem::Preconditioner::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::linear_elastic_fem::Preconditioner
+impl core::marker::StructuralPartialEq for alice_physics::linear_elastic_fem::Preconditioner
+impl core::marker::Freeze for alice_physics::linear_elastic_fem::Preconditioner
+impl core::marker::Send for alice_physics::linear_elastic_fem::Preconditioner
+impl core::marker::Sync for alice_physics::linear_elastic_fem::Preconditioner
+impl core::marker::Unpin for alice_physics::linear_elastic_fem::Preconditioner
+impl core::marker::UnsafeUnpin for alice_physics::linear_elastic_fem::Preconditioner
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::linear_elastic_fem::Preconditioner
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::linear_elastic_fem::Preconditioner
+pub struct alice_physics::linear_elastic_fem::BoundaryConditions
+impl alice_physics::linear_elastic_fem::BoundaryConditions
+pub fn alice_physics::linear_elastic_fem::BoundaryConditions::add_load(&mut self, u32, alice_physics::linear_elastic_fem::Axis, alice_physics::math::Fix128) -> &mut Self
+pub fn alice_physics::linear_elastic_fem::BoundaryConditions::fix(&mut self, u32) -> &mut Self
+pub fn alice_physics::linear_elastic_fem::BoundaryConditions::load_count(&self) -> usize
+pub fn alice_physics::linear_elastic_fem::BoundaryConditions::new() -> Self
+pub fn alice_physics::linear_elastic_fem::BoundaryConditions::prescribe(&mut self, u32, alice_physics::linear_elastic_fem::Axis, alice_physics::math::Fix128) -> &mut Self
+pub fn alice_physics::linear_elastic_fem::BoundaryConditions::prescribe_all(&mut self, u32, [alice_physics::math::Fix128; 3]) -> &mut Self
+pub fn alice_physics::linear_elastic_fem::BoundaryConditions::prescribed_count(&self) -> usize
+impl core::clone::Clone for alice_physics::linear_elastic_fem::BoundaryConditions
+pub fn alice_physics::linear_elastic_fem::BoundaryConditions::clone(&self) -> Self
+impl core::cmp::PartialEq for alice_physics::linear_elastic_fem::BoundaryConditions
+pub fn alice_physics::linear_elastic_fem::BoundaryConditions::eq(&self, &Self) -> bool
+impl core::default::Default for alice_physics::linear_elastic_fem::BoundaryConditions
+pub fn alice_physics::linear_elastic_fem::BoundaryConditions::default() -> Self
+impl core::fmt::Debug for alice_physics::linear_elastic_fem::BoundaryConditions
+pub fn alice_physics::linear_elastic_fem::BoundaryConditions::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for alice_physics::linear_elastic_fem::BoundaryConditions
+impl core::marker::Freeze for alice_physics::linear_elastic_fem::BoundaryConditions
+impl core::marker::Send for alice_physics::linear_elastic_fem::BoundaryConditions
+impl core::marker::Sync for alice_physics::linear_elastic_fem::BoundaryConditions
+impl core::marker::Unpin for alice_physics::linear_elastic_fem::BoundaryConditions
+impl core::marker::UnsafeUnpin for alice_physics::linear_elastic_fem::BoundaryConditions
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::linear_elastic_fem::BoundaryConditions
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::linear_elastic_fem::BoundaryConditions
+pub struct alice_physics::linear_elastic_fem::DiagonalStats
+pub alice_physics::linear_elastic_fem::DiagonalStats::free_dofs: usize
+pub alice_physics::linear_elastic_fem::DiagonalStats::max: alice_physics::math::Fix128
+pub alice_physics::linear_elastic_fem::DiagonalStats::mean: alice_physics::math::Fix128
+pub alice_physics::linear_elastic_fem::DiagonalStats::min: alice_physics::math::Fix128
+impl core::clone::Clone for alice_physics::linear_elastic_fem::DiagonalStats
+pub fn alice_physics::linear_elastic_fem::DiagonalStats::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::linear_elastic_fem::DiagonalStats
+impl core::cmp::PartialEq for alice_physics::linear_elastic_fem::DiagonalStats
+pub fn alice_physics::linear_elastic_fem::DiagonalStats::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::linear_elastic_fem::DiagonalStats
+pub fn alice_physics::linear_elastic_fem::DiagonalStats::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::linear_elastic_fem::DiagonalStats
+impl core::marker::StructuralPartialEq for alice_physics::linear_elastic_fem::DiagonalStats
+impl core::marker::Freeze for alice_physics::linear_elastic_fem::DiagonalStats
+impl core::marker::Send for alice_physics::linear_elastic_fem::DiagonalStats
+impl core::marker::Sync for alice_physics::linear_elastic_fem::DiagonalStats
+impl core::marker::Unpin for alice_physics::linear_elastic_fem::DiagonalStats
+impl core::marker::UnsafeUnpin for alice_physics::linear_elastic_fem::DiagonalStats
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::linear_elastic_fem::DiagonalStats
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::linear_elastic_fem::DiagonalStats
+pub struct alice_physics::linear_elastic_fem::ElasticMaterial
+impl alice_physics::linear_elastic_fem::ElasticMaterial
+pub fn alice_physics::linear_elastic_fem::ElasticMaterial::default_poissons_ratio(alice_physics::filament_db::MaterialCategory) -> alice_physics::math::Fix128
+pub fn alice_physics::linear_elastic_fem::ElasticMaterial::from_filament(&alice_physics::filament_db::MaterialProperties) -> core::result::Result<Self, alice_physics::linear_elastic_fem::FemError>
+pub fn alice_physics::linear_elastic_fem::ElasticMaterial::lame(&self) -> (alice_physics::math::Fix128, alice_physics::math::Fix128)
+pub fn alice_physics::linear_elastic_fem::ElasticMaterial::new(alice_physics::math::Fix128, alice_physics::math::Fix128) -> core::result::Result<Self, alice_physics::linear_elastic_fem::FemError>
+pub const fn alice_physics::linear_elastic_fem::ElasticMaterial::poissons_ratio(&self) -> alice_physics::math::Fix128
+pub fn alice_physics::linear_elastic_fem::ElasticMaterial::with_poisson(self, alice_physics::math::Fix128) -> core::result::Result<Self, alice_physics::linear_elastic_fem::FemError>
+pub const fn alice_physics::linear_elastic_fem::ElasticMaterial::youngs_modulus_mpa(&self) -> alice_physics::math::Fix128
+impl core::clone::Clone for alice_physics::linear_elastic_fem::ElasticMaterial
+pub fn alice_physics::linear_elastic_fem::ElasticMaterial::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::linear_elastic_fem::ElasticMaterial
+impl core::cmp::PartialEq for alice_physics::linear_elastic_fem::ElasticMaterial
+pub fn alice_physics::linear_elastic_fem::ElasticMaterial::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::linear_elastic_fem::ElasticMaterial
+pub fn alice_physics::linear_elastic_fem::ElasticMaterial::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::linear_elastic_fem::ElasticMaterial
+impl core::marker::StructuralPartialEq for alice_physics::linear_elastic_fem::ElasticMaterial
+impl core::marker::Freeze for alice_physics::linear_elastic_fem::ElasticMaterial
+impl core::marker::Send for alice_physics::linear_elastic_fem::ElasticMaterial
+impl core::marker::Sync for alice_physics::linear_elastic_fem::ElasticMaterial
+impl core::marker::Unpin for alice_physics::linear_elastic_fem::ElasticMaterial
+impl core::marker::UnsafeUnpin for alice_physics::linear_elastic_fem::ElasticMaterial
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::linear_elastic_fem::ElasticMaterial
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::linear_elastic_fem::ElasticMaterial
+pub struct alice_physics::linear_elastic_fem::FemSolution
+pub alice_physics::linear_elastic_fem::FemSolution::displacements: alloc::vec::Vec<[alice_physics::math::Fix128; 3]>
+pub alice_physics::linear_elastic_fem::FemSolution::effective_relative_tolerance: alice_physics::math::Fix128
+pub alice_physics::linear_elastic_fem::FemSolution::element_stress: alloc::vec::Vec<alice_physics::linear_elastic_fem::StressTensor>
+pub alice_physics::linear_elastic_fem::FemSolution::iterations: u32
+pub alice_physics::linear_elastic_fem::FemSolution::relative_residual: alice_physics::math::Fix128
+impl alice_physics::linear_elastic_fem::FemSolution
+pub fn alice_physics::linear_elastic_fem::FemSolution::max_von_mises_mpa(&self) -> alice_physics::math::Fix128
+impl core::clone::Clone for alice_physics::linear_elastic_fem::FemSolution
+pub fn alice_physics::linear_elastic_fem::FemSolution::clone(&self) -> Self
+impl core::cmp::PartialEq for alice_physics::linear_elastic_fem::FemSolution
+pub fn alice_physics::linear_elastic_fem::FemSolution::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::linear_elastic_fem::FemSolution
+pub fn alice_physics::linear_elastic_fem::FemSolution::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for alice_physics::linear_elastic_fem::FemSolution
+impl core::marker::Freeze for alice_physics::linear_elastic_fem::FemSolution
+impl core::marker::Send for alice_physics::linear_elastic_fem::FemSolution
+impl core::marker::Sync for alice_physics::linear_elastic_fem::FemSolution
+impl core::marker::Unpin for alice_physics::linear_elastic_fem::FemSolution
+impl core::marker::UnsafeUnpin for alice_physics::linear_elastic_fem::FemSolution
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::linear_elastic_fem::FemSolution
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::linear_elastic_fem::FemSolution
+pub struct alice_physics::linear_elastic_fem::SolverConfig
+impl alice_physics::linear_elastic_fem::SolverConfig
+pub const fn alice_physics::linear_elastic_fem::SolverConfig::max_iterations(&self) -> u32
+pub const fn alice_physics::linear_elastic_fem::SolverConfig::preconditioner(&self) -> alice_physics::linear_elastic_fem::Preconditioner
+pub const fn alice_physics::linear_elastic_fem::SolverConfig::relative_tolerance(&self) -> alice_physics::math::Fix128
+pub const fn alice_physics::linear_elastic_fem::SolverConfig::stagnation_min_improvement(&self) -> alice_physics::math::Fix128
+pub const fn alice_physics::linear_elastic_fem::SolverConfig::stagnation_min_window(&self) -> u32
+pub const fn alice_physics::linear_elastic_fem::SolverConfig::stagnation_window_fraction(&self) -> alice_physics::math::Fix128
+pub fn alice_physics::linear_elastic_fem::SolverConfig::try_new(u32, alice_physics::math::Fix128) -> core::result::Result<Self, alice_physics::linear_elastic_fem::FemError>
+pub const fn alice_physics::linear_elastic_fem::SolverConfig::with_preconditioner(self, alice_physics::linear_elastic_fem::Preconditioner) -> Self
+pub fn alice_physics::linear_elastic_fem::SolverConfig::with_stagnation(self, u32, alice_physics::math::Fix128) -> core::result::Result<Self, alice_physics::linear_elastic_fem::FemError>
+pub fn alice_physics::linear_elastic_fem::SolverConfig::with_stagnation_fraction(self, alice_physics::math::Fix128) -> core::result::Result<Self, alice_physics::linear_elastic_fem::FemError>
+impl core::clone::Clone for alice_physics::linear_elastic_fem::SolverConfig
+pub fn alice_physics::linear_elastic_fem::SolverConfig::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::linear_elastic_fem::SolverConfig
+impl core::cmp::PartialEq for alice_physics::linear_elastic_fem::SolverConfig
+pub fn alice_physics::linear_elastic_fem::SolverConfig::eq(&self, &Self) -> bool
+impl core::default::Default for alice_physics::linear_elastic_fem::SolverConfig
+pub fn alice_physics::linear_elastic_fem::SolverConfig::default() -> Self
+impl core::fmt::Debug for alice_physics::linear_elastic_fem::SolverConfig
+pub fn alice_physics::linear_elastic_fem::SolverConfig::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::linear_elastic_fem::SolverConfig
+impl core::marker::StructuralPartialEq for alice_physics::linear_elastic_fem::SolverConfig
+impl core::marker::Freeze for alice_physics::linear_elastic_fem::SolverConfig
+impl core::marker::Send for alice_physics::linear_elastic_fem::SolverConfig
+impl core::marker::Sync for alice_physics::linear_elastic_fem::SolverConfig
+impl core::marker::Unpin for alice_physics::linear_elastic_fem::SolverConfig
+impl core::marker::UnsafeUnpin for alice_physics::linear_elastic_fem::SolverConfig
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::linear_elastic_fem::SolverConfig
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::linear_elastic_fem::SolverConfig
+pub struct alice_physics::linear_elastic_fem::StressTensor
+pub alice_physics::linear_elastic_fem::StressTensor::xx: alice_physics::math::Fix128
+pub alice_physics::linear_elastic_fem::StressTensor::xy: alice_physics::math::Fix128
+pub alice_physics::linear_elastic_fem::StressTensor::yy: alice_physics::math::Fix128
+pub alice_physics::linear_elastic_fem::StressTensor::yz: alice_physics::math::Fix128
+pub alice_physics::linear_elastic_fem::StressTensor::zx: alice_physics::math::Fix128
+pub alice_physics::linear_elastic_fem::StressTensor::zz: alice_physics::math::Fix128
+impl alice_physics::linear_elastic_fem::StressTensor
+pub fn alice_physics::linear_elastic_fem::StressTensor::hydrostatic(&self) -> alice_physics::math::Fix128
+pub fn alice_physics::linear_elastic_fem::StressTensor::von_mises(&self) -> alice_physics::math::Fix128
+impl core::clone::Clone for alice_physics::linear_elastic_fem::StressTensor
+pub fn alice_physics::linear_elastic_fem::StressTensor::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::linear_elastic_fem::StressTensor
+impl core::cmp::PartialEq for alice_physics::linear_elastic_fem::StressTensor
+pub fn alice_physics::linear_elastic_fem::StressTensor::eq(&self, &Self) -> bool
+impl core::default::Default for alice_physics::linear_elastic_fem::StressTensor
+pub fn alice_physics::linear_elastic_fem::StressTensor::default() -> Self
+impl core::fmt::Debug for alice_physics::linear_elastic_fem::StressTensor
+pub fn alice_physics::linear_elastic_fem::StressTensor::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::linear_elastic_fem::StressTensor
+impl core::marker::StructuralPartialEq for alice_physics::linear_elastic_fem::StressTensor
+impl core::marker::Freeze for alice_physics::linear_elastic_fem::StressTensor
+impl core::marker::Send for alice_physics::linear_elastic_fem::StressTensor
+impl core::marker::Sync for alice_physics::linear_elastic_fem::StressTensor
+impl core::marker::Unpin for alice_physics::linear_elastic_fem::StressTensor
+impl core::marker::UnsafeUnpin for alice_physics::linear_elastic_fem::StressTensor
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::linear_elastic_fem::StressTensor
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::linear_elastic_fem::StressTensor
+pub const alice_physics::linear_elastic_fem::RESIDUAL_NORM_FLOOR: alice_physics::math::Fix128
+pub fn alice_physics::linear_elastic_fem::solve(&alice_physics::sdf_fem_mesh::SdfTetMesh, &alice_physics::linear_elastic_fem::ElasticMaterial, &alice_physics::linear_elastic_fem::BoundaryConditions, &alice_physics::linear_elastic_fem::SolverConfig) -> core::result::Result<alice_physics::linear_elastic_fem::FemSolution, alice_physics::linear_elastic_fem::FemError>
+pub fn alice_physics::linear_elastic_fem::stiffness_diagonal_stats(&alice_physics::sdf_fem_mesh::SdfTetMesh, &alice_physics::linear_elastic_fem::ElasticMaterial, &alice_physics::linear_elastic_fem::BoundaryConditions) -> core::result::Result<alice_physics::linear_elastic_fem::DiagonalStats, alice_physics::linear_elastic_fem::FemError>
 pub mod alice_physics::mass_properties
 pub struct alice_physics::mass_properties::MassProperties
 pub alice_physics::mass_properties::MassProperties::center_of_mass: alice_physics::math::Vec3Fix

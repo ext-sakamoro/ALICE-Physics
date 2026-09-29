@@ -364,6 +364,12 @@ pub mod laminate_failure;
 pub mod layer_adhesion;
 /// Small-strain linear elastic FEM on tetrahedra (P1), producing a Cauchy
 /// stress tensor per element from an [`sdf_fem_mesh::SdfTetMesh`].
+///
+/// `std` only, because its input is: [`sdf_fem_mesh`] deduplicates vertices
+/// through a `HashMap`, which `alloc` does not provide, so it carries the same
+/// gate. Adding `alloc` imports here would not help — the module cannot be
+/// built at all without the type it consumes.
+#[cfg(feature = "std")]
 pub mod linear_elastic_fem;
 pub mod mass_properties;
 pub mod material;

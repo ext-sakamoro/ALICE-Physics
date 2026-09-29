@@ -35,8 +35,9 @@
 //!
 //! # Limitations
 //!
-//! - Isotropic material only. [`crate::filament_db::MaterialProperties`] has
-//!   no Poisson's ratio, so [`ElasticMaterial::from_filament`] takes one.
+//! - Isotropic material only. `MaterialProperties` carries no Poisson's ratio,
+//!   so `ElasticMaterial::from_filament` fills it from a category table and
+//!   `with_poisson` overrides it.
 //! - Small strain, small displacement: no geometric nonlinearity, no contact,
 //!   no plasticity. Past yield the result is the *elastic* stress, which is
 //!   what a yield check wants as its input.
@@ -44,7 +45,7 @@
 //!   through the thickness under-predicts deflection; refine through the
 //!   thickness rather than along the span.
 //! - The rigid-body-mode check is a necessary condition, not a sufficient one
-//!   (see [`FemError::UnderConstrained`]).
+//!   (see `FemError::UnderConstrained`).
 //!
 //! Author: Moroya Sakamoto
 
