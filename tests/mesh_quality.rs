@@ -959,10 +959,13 @@ fn non_convex_scenes() -> Vec<(&'static str, ClosureSdf, f64)> {
 /// | 1.2 cells across | 2508 | +0.0758 (0.30 cells) |
 /// | 3.2 cells across | 2486 | +0.1025 (0.41 cells) |
 ///
-/// The first two produce **the same mesh**, tet for tet: the cavity is not
-/// merely meshed badly, it is not there. And at 0.4 cells across the probe
-/// reads *negative* — the mesh looks entirely interior, because the field only
-/// reaches +0.05 anywhere in that cavity and no element centroid lands on it.
+/// At 0.4 cells across the mesh is **identical to a solid block**, vertex for
+/// vertex — the cavity is not merely meshed badly, it is not there — and the
+/// probe reads *negative*, because the field only reaches +0.05 anywhere inside
+/// it and no element centroid lands on that. At 0.8 cells across the counts
+/// still match a solid block exactly, 673 vertices and 2456 elements, but the
+/// mesh is **not** identical: one vertex has moved onto the cavity's face. Equal
+/// counts are not the same mesh, and `cavity_trace_by_size` has the breakdown.
 ///
 /// That is not a weakness of this particular probe. A cavity is bridged only
 /// when it is narrower than a cell, so the field inside it never exceeds about
@@ -990,12 +993,18 @@ fn a_cavity_narrower_than_a_cell_leaves_no_trace() {
     // and the only trace would be a paragraph nobody reruns.
     let solid = cavity_mesh(0.0, CELL);
     let sub_cell = cavity_mesh(0.05, CELL);
-    assert_eq!(
-        solid, sub_cell,
+    assert!(
+        solid == sub_cell,
         "a cavity 0.4 cells across left a mesh that differs from a solid block. That is the \
          better outcome — it means the mesher now sees features this small — but the contract \
          that callers pick `cell` from their smallest feature was justified by it *not* seeing \
-         them, so that reasoning has to be redone"
+         them, so that reasoning has to be redone. {}",
+        // Not `assert_eq!`: it prints both sides through `Debug`, and these carry
+        // several hundred vertices and a couple of thousand elements each, so the
+        // sentence above ends up buried in 260 KB of coordinates. Measured while
+        // breaking this test on purpose. A summary of where they first part
+        // company is what is actually wanted.
+        first_difference(&solid, &sub_cell)
     );
 
     // And the overlap that makes it undetectable after the fact: a bridged
@@ -1026,6 +1035,33 @@ fn a_cavity_narrower_than_a_cell_leaves_no_trace() {
          longer overlap, so a threshold between them would separate them — the claim that this \
          is undetectable after the fact no longer holds and the gate should be built"
     );
+}
+
+/// Where two meshes first differ, in one line.
+fn first_difference(a: &SdfTetMesh, b: &SdfTetMesh) -> String {
+    if a.vertex_count() != b.vertex_count() || a.tet_count() != b.tet_count() {
+        return format!(
+            "Sizes differ: {} vertices / {} elements against {} / {}",
+            a.vertex_count(),
+            a.tet_count(),
+            b.vertex_count(),
+            b.tet_count()
+        );
+    }
+    for (i, (p, q)) in a.vertices.iter().zip(&b.vertices).enumerate() {
+        if p != q {
+            return format!("Same sizes; vertex {i} is {p:?} against {q:?}");
+        }
+    }
+    for (i, (p, q)) in a.tets.iter().zip(&b.tets).enumerate() {
+        if p.vertices != q.vertices {
+            return format!(
+                "Same sizes and vertices; element {i} is {:?} against {:?}",
+                p.vertices, q.vertices
+            );
+        }
+    }
+    "No difference found, which contradicts the comparison that failed".to_owned()
 }
 
 /// A solid block with a cubical cavity of the given half-extent (`0.0` for none).
@@ -1100,6 +1136,56 @@ fn cavity_size_sweep() {
             q.total_volume,
             100.0 * (q.total_volume - exact) / exact,
             deepest / f64::from(CELL)
+        );
+    }
+}
+
+/// Exactly what trace a cavity of each size leaves, against a solid block.
+///
+/// | cavity | differing vertices | differing elements | identical |
+/// |---|---|---|---|
+/// | 0.4 cells | 0 | 0 | **yes** |
+/// | 0.8 cells | 1 | 16 | no |
+/// | 1.2 cells | 338 | 1410 | no |
+///
+/// The counts are the point. At 0.8 cells across the mesh has **the same number
+/// of vertices and the same number of elements** as a solid block — 673 and
+/// 2456 — and is still not the same mesh. An earlier version of this file
+/// claimed those two were identical "tet for tet", on the strength of the counts
+/// matching. They are not; one vertex moved onto the cavity's lower face and
+/// sixteen elements were re-indexed around it.
+///
+/// So the boundary at which a feature genuinely vanishes is narrower than the
+/// tet count suggested, and `a_cavity_narrower_than_a_cell_leaves_no_trace`
+/// compares whole meshes rather than counts for that reason.
+#[test]
+#[ignore = "diagnostic: the evidence table for what each cavity size leaves behind"]
+fn cavity_trace_by_size() {
+    const CELL: f32 = 0.25;
+    let solid = cavity_mesh(0.0, CELL);
+    for h in [0.05_f32, 0.10, 0.15] {
+        let m = cavity_mesh(h, CELL);
+        let dv = solid
+            .vertices
+            .iter()
+            .zip(&m.vertices)
+            .filter(|(a, b)| a != b)
+            .count();
+        let dt = solid
+            .tets
+            .iter()
+            .zip(&m.tets)
+            .filter(|(a, b)| a.vertices != b.vertices)
+            .count();
+        eprintln!(
+            "[trace] cavity {h:.2} ({:.1} cells)  verts {} vs {}  tets {} vs {}  \
+             differing verts {dv}  differing tets {dt}  identical {}",
+            2.0 * f64::from(h) / f64::from(CELL),
+            solid.vertex_count(),
+            m.vertex_count(),
+            solid.tet_count(),
+            m.tet_count(),
+            solid == m
         );
     }
 }
