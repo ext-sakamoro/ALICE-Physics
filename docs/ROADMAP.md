@@ -267,6 +267,16 @@ Phase 1+2+F 完了、以降は最重量の B に集中:
 - **docs**: 決定論保証の範囲を Fix128 core に限定 (README EN/JP「Determinism scope」表)、`Fix128::mul` の wrapping / floor 挙動を doc + test 化
 - **repo**: `fuzz/target/` 256 file を git 追跡から除外
 
+### ✅ 線形弾性 FEM (tet P1) + mesh 適合化 + CG solver (2026-09-29、`9eab3c1`〜`b165569` 12 commit)
+
+`Constraint::Stress` を無次元ヒューリスティックから実応力に置き換える前提を整えた 消費者が存在しなかった `SdfTetMesh` に、初めて solver が付いた
+
+- **`linear_elastic_fem`** — tet P1 で `K u = f`、要素ごとの Cauchy 応力と von Mises、mm / N / MPa、`Fix128` の四則 + sqrt のみで cross-target bit 一致 `feature = "std"` gate (`sdf_fem_mesh` の頂点 intern が `HashMap` を使い `alloc` に無いため)
+- **oracle 12 本を実装より先に red で実測** (`tests/analytic_linear_elastic_fem.rs`) + **収束研究** (`tests/analytic_fem_convergence.rs`、`#[ignore]`/release — 片持ち梁 4 段細分、次数 1.395、Richardson 極限が目標の 0.22% 以内)
+- **mesh を適合化** — 非適合の原因は 3 件 (cube 5-tet 分割が全 cube 同一 pattern / `generate_marching_tets` の頂点 dedup ゼロ / 切断多面体の quad 対角線が固定) `tests/mesh_conformity.rs` が面センサスで CI 固定 ⚠️ **patch test は非適合を原理的に検出できない** (実測 3.6e-15 MPa で通る) ので使わないこと
+- **CG solver** — `FemError::Stagnated` を `NotConverged` と別 variant に (停滞窓は反復数に比例)、`FemSolution::effective_relative_tolerance` で実効許容差を報告 (相対残差の床は `2⁻³² / ‖b‖` でメッシュ細分とともに上がる)、Jacobi 前処理は選択可能だが既定 `None` (形状由来の悪条件では対角がほぼ一様で効かない)
+- ⚠️ **残る前提**: `generate_marching_tets` の sliver (最小二面角が細分で 7.25° → 4.59° と悪化) — 頂点スナップと最小二面角 gate は別途
+
 ## 未決 (Open Questions)
 
 ### OQ1: pub API の scope 決定
