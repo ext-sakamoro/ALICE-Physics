@@ -48,11 +48,20 @@
 //! # Euler-Bernoulli is not the target on its own
 //!
 //! `δ = PL³/(3EI)` is the slender limit. A real beam also shears, adding
-//! `PL/(κGA)`. With the 10:1 slenderness used here the shear term is a few
-//! percent — small, but far larger than the difference the last refinement
-//! makes, so comparing against the bending term alone would look like a
-//! convergence failure. Both are computed and reported; the assertion uses the
-//! sum.
+//! `PL/(κGA)`. At the 5:1 slenderness used here the shear term is 3.24% of the
+//! tip deflection — small, but far larger than the difference the last
+//! refinement makes, so comparing against the bending term alone would look
+//! like a convergence failure. Both are computed and reported; the assertion
+//! uses the sum, and both follow from the constants, so changing the geometry
+//! needs no change to the formulas.
+//!
+//! # The residual floor is reported raw
+//!
+//! Each level prints its achieved residual both as a decimal and as raw
+//! `Fix128` parts. "Is this the same floor as the other configuration?" is a
+//! bit-identity question, and five printed digits cannot answer it: two
+//! residuals that agree to five digits may differ, and the difference is exactly
+//! what separates "the arithmetic bottomed out" from "the conditioning did".
 //!
 //! Author: Moroya Sakamoto
 
@@ -86,13 +95,23 @@ const WIDTH: f64 = 2.0;
 /// residual, and reaching the tolerance was extrapolated at 550,000 iterations
 /// and 27 minutes.
 ///
-/// Halving the slenderness divides the condition number by four, which both
-/// lowers the residual floor the arithmetic imposes (roughly `κ·ε`) and halves
-/// the element count at a given resolution through the thickness (12,800 rather
-/// than 25,600 at eight elements). The cost is that shear deformation grows from
-/// 0.81% of the tip deflection to 3.24% — which changes nothing here, because
-/// the target below is bending **plus** shear and both terms are computed from
-/// these constants.
+/// Halving the slenderness divides the condition number by four and halves the
+/// element count at a given resolution through the thickness (12,800 rather than
+/// 25,600 at eight elements). Measured: the residual that took 500,000
+/// iterations at 10:1 takes 21,965 at 5:1 — a twenty-three-fold saving, matching
+/// the fourfold condition number. The cost is that shear deformation grows from
+/// 0.81% of the tip deflection to 3.24%, which changes nothing here because the
+/// target below is bending **plus** shear and both terms follow from these
+/// constants.
+///
+/// ⚠️ The first version of this note claimed the change also lowers the residual
+/// floor, on the reasoning that the floor is about `κ·ε`. **The measurement does
+/// not support that**: the same `9.4118e-10` appears at both slendernesses, and
+/// `residual_floor_vs_problem_size` finds that the three coarser levels reach a
+/// residual of *exactly zero* while only the finest stagnates. Whatever sets the
+/// floor tracks problem size rather than conditioning. The claim is left here,
+/// corrected, rather than deleted, because the reasoning is the kind that sounds
+/// right and is not.
 ///
 /// The study still measures what it set out to: a beam at 5:1 bends, P1
 /// tetrahedra are still too stiff for it, and the approach is still from below.
@@ -297,6 +316,11 @@ struct Measured {
     /// its tolerance and one that reached it with room to spare are different
     /// situations, and only the number distinguishes them.
     relative_residual: f64,
+    /// The same number as raw `Fix128` parts. Decimal formatting rounds, and the
+    /// question "is this the same floor?" is a bit-identity question: two
+    /// residuals that print the same to five digits may differ, and two that
+    /// differ in the last bit are not the same floor.
+    residual_raw: (i64, u64),
     /// `max / min` of the stiffness diagonal over the free degrees of freedom.
     /// A diagonal preconditioner stretches individual components by up to this
     /// factor around the mean, which is what decides whether the scaled inner
@@ -323,6 +347,7 @@ fn run_level(cell: f64, config: &SolverConfig) -> Measured {
         );
     });
     Measured {
+        residual_raw: (out.relative_residual.hi, out.relative_residual.lo),
         diagonal_spread: stats.max.to_f64() / stats.min.to_f64(),
         tip_mm: tip_deflection_mm(&level.mesh, &out),
         tets: level.mesh.tet_count(),
@@ -355,12 +380,14 @@ fn report(cells: &[f64], m: &[Measured]) {
     eprintln!("  target (bending + shear)   = {:.6} mm", eb + shear);
     for (i, x) in m.iter().enumerate() {
         eprintln!(
-            "  cell {:<6} tets {:>6}  cg iters {:>6}  rel resid {:.3e}  diag spread {:>7.1}  \
-             tip {:.6} mm  ({:.1}% of target)",
+            "  cell {:<6} tets {:>6}  cg iters {:>6}  rel resid {:.3e} (raw hi {} lo {})  \
+             diag spread {:>7.1}  tip {:.6} mm  ({:.1}% of target)",
             cells[i],
             x.tets,
             x.iterations,
             x.relative_residual,
+            x.residual_raw.0,
+            x.residual_raw.1,
             x.diagonal_spread,
             x.tip_mm,
             100.0 * x.tip_mm / (eb + shear)
@@ -456,6 +483,59 @@ fn cantilever_converges_from_below() {
 /// multiply, which a debug build does not inline; a debug run of this test did
 /// not finish in ten minutes on an M3, while the three-level test above takes
 /// about a second.
+/// Where the residual bottoms out, as a function of problem size.
+///
+/// **The per-level residuals the convergence study prints are not floors.** They
+/// are the first value that fell below the tolerance, so they are bounded above
+/// by the tolerance and below by wherever the step happened to land: a line
+/// through them measures the tolerance, not the arithmetic. To see a floor the
+/// tolerance has to be out of reach, and then the stagnation rule reports where
+/// the iteration actually stopped improving.
+///
+/// So this asks for `2⁻⁶⁰` at every level and records where each one gives up.
+/// Four points, raw, with `Preconditioner::None`:
+///
+/// - if the floor **grows with the degree of freedom count**, the limit is
+///   accumulated rounding and scales with the work
+/// - if it is **flat**, the limit is the representation and no amount of
+///   reshaping the problem will move it
+/// - if a level reaches **exactly zero**, that level has no floor at all — which
+///   the small traction bar in the companion file does, in 35 iterations
+///
+/// The assertion is only that every level ends in bounded time with a reported
+/// residual. The numbers are the output.
+#[test]
+#[ignore = "4 solves with an unreachable tolerance; the floor-vs-size measurement"]
+fn residual_floor_vs_problem_size() {
+    let cells = [2.0, 1.0, 0.5, 0.25];
+    // 2^-60: below anything a caller would ask for, so the run continues until
+    // the iteration itself stops making progress.
+    let cfg = SolverConfig::try_new(200_000, Fix128::from_raw(0, 1 << 4))
+        .expect("valid")
+        .with_preconditioner(Preconditioner::None);
+    eprintln!("=== residual floor vs problem size (tolerance 2^-60, no preconditioner) ===");
+    for c in cells {
+        let level = mesh_at(c);
+        let dofs = level.mesh.vertex_count() * 3;
+        let (outcome, iterations, residual, raw) = run_level_reporting(c, &cfg);
+        eprintln!(
+            "[floorsize] cell {c:<6} tets {:>6} dofs {:>6}  {:<28} iters {:>6}  \
+             resid {:.4e}  raw hi {} lo {}",
+            level.mesh.tet_count(),
+            dofs,
+            outcome,
+            iterations,
+            residual,
+            raw.0,
+            raw.1
+        );
+        assert!(
+            iterations < 200_000,
+            "cell {c}: an unreachable tolerance must end before the budget does"
+        );
+    }
+}
+
 /// Where each preconditioner actually bottoms out at the finest level.
 ///
 /// The question this answers is not "which is faster" but **"was the stopping
@@ -493,8 +573,9 @@ fn finest_level_residual_floor_by_preconditioner() {
         for (label, cfg) in [("default", &default_patience), ("patient", &patient)] {
             let m = run_level_reporting(cell, cfg);
             eprintln!(
-                "[floor] {mode:?} / {label:<7} -> {:<28} iters {:>6}  rel resid {:.4e}",
-                m.0, m.1, m.2
+                "[floor] {mode:?} / {label:<7} -> {:<28} iters {:>6}  rel resid {:.4e}  \
+                 raw hi {} lo {}",
+                m.0, m.1, m.2, m.3 .0, m.3 .1
             );
             residuals.push(m.2);
         }
@@ -512,7 +593,7 @@ fn finest_level_residual_floor_by_preconditioner() {
 /// Solve one level without panicking on a non-convergent outcome, returning
 /// `(outcome, iterations, relative residual)` so a diagnostic can report all
 /// three.
-fn run_level_reporting(cell: f64, config: &SolverConfig) -> (String, u32, f64) {
+fn run_level_reporting(cell: f64, config: &SolverConfig) -> (String, u32, f64, (i64, u64)) {
     let level = mesh_at(cell);
     assert_domain_is_exact(&level, cell);
     let material = ElasticMaterial::new(fx(E_MPA), fx(NU)).expect("valid material");
@@ -522,6 +603,7 @@ fn run_level_reporting(cell: f64, config: &SolverConfig) -> (String, u32, f64) {
             "Ok".to_owned(),
             out.iterations,
             out.relative_residual.to_f64(),
+            (out.relative_residual.hi, out.relative_residual.lo),
         ),
         Err(alice_physics::linear_elastic_fem::FemError::Stagnated {
             iterations,
@@ -531,6 +613,7 @@ fn run_level_reporting(cell: f64, config: &SolverConfig) -> (String, u32, f64) {
             format!("Stagnated(no gain {without_improvement})"),
             iterations,
             relative_residual.to_f64(),
+            (relative_residual.hi, relative_residual.lo),
         ),
         Err(alice_physics::linear_elastic_fem::FemError::NotConverged {
             iterations,
@@ -539,6 +622,7 @@ fn run_level_reporting(cell: f64, config: &SolverConfig) -> (String, u32, f64) {
             "NotConverged(budget)".to_owned(),
             iterations,
             relative_residual.to_f64(),
+            (relative_residual.hi, relative_residual.lo),
         ),
         Err(other) => panic!("cell {cell}: {other:?}"),
     }
