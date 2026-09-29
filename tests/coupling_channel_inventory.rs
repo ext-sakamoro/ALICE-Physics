@@ -131,20 +131,32 @@ fn cfd_state(s: &CfdSolver) -> Vec<(i64, u64)> {
 /// fails and the behavioural conclusions have to be re-derived.
 #[test]
 fn physics_modifier_offers_no_channel_for_another_physics_state() {
-    let src = include_str!("../src/sim_modifier.rs");
-    let start = src
-        .find("pub trait PhysicsModifier")
-        .expect("PhysicsModifier trait declaration");
-    let body = &src[start..];
-    let end = body.find("\n}\n").expect("end of trait block");
-    let body = &body[..end];
+    // A Windows checkout hands `include_str!` CRLF, so the extraction is
+    // normalised first and then checked against a CRLF copy, rather than
+    // relying on whichever ending this platform happens to produce.
+    fn declared_methods(src: &str) -> Vec<String> {
+        let src = src.replace('\r', "");
+        let start = src
+            .find("pub trait PhysicsModifier")
+            .expect("PhysicsModifier trait declaration");
+        let body = &src[start..];
+        let end = body.find("\n}\n").expect("end of trait block");
+        body[..end]
+            .lines()
+            .map(str::trim)
+            .filter(|l| l.starts_with("fn "))
+            .map(ToOwned::to_owned)
+            .collect()
+    }
 
-    // Collect the declared method signatures, comments stripped.
-    let methods: Vec<&str> = body
-        .lines()
-        .map(str::trim)
-        .filter(|l| l.starts_with("fn "))
-        .collect();
+    let raw = include_str!("../src/sim_modifier.rs");
+    let methods = declared_methods(raw);
+    assert_eq!(
+        methods,
+        declared_methods(&raw.replace('\r', "").replace('\n', "\r\n")),
+        "the guard reads a different trait surface depending on the checkout's \
+         line endings, so it cannot be trusted on one platform and not another"
+    );
 
     assert_eq!(
         methods,
