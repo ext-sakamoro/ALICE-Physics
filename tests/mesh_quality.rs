@@ -186,6 +186,15 @@ fn thin_scenes() -> Vec<ThinScene> {
             half: [2.0, 0.31, 0.27],
             centre: [0.07, -0.05, 0.03],
         },
+        // Cross-section 1.5 by 1.3 cells at the coarsest level, which is the
+        // narrowest a body can be and still have lattice corners inside it along
+        // both thin axes. Narrower than this and the mesher has nothing to work
+        // with; see `a_cavity_narrower_than_a_cell_leaves_no_trace`.
+        ThinScene {
+            name: "hairrod",
+            half: [2.0, 0.1875, 0.1625],
+            centre: [0.07, -0.05, 0.03],
+        },
     ]
 }
 
@@ -821,5 +830,189 @@ fn a_gap_wider_than_a_cell_is_not_bridged() {
                  {deepest:.4} outside the shape means it bridged them anyway"
             );
         }
+    }
+}
+
+/// Shapes with a concave side, which is where a mesher can enclose what the
+/// shape does not contain.
+///
+/// Every scene up to here is convex, and on a convex shape the clipped mesh is
+/// essentially inscribed: it can only come out *short*. That made the whole
+/// suite blind in one direction for as long as the volume was its only
+/// instrument, because the volume is a single total and the band the surface
+/// area allows is larger than some of these shapes entirely.
+///
+/// The three here each fail differently if the mesher gets it wrong:
+///
+/// - **hollow** — a box with a closed cavity inside it. Bridging the cavity adds
+///   its whole volume and produces a mesh with no internal boundary at all.
+/// - **holed plate** — a plate with a bore through it. Bridging fills the bore.
+/// - **ell** — two boxes meeting at a re-entrant corner. Nothing to bridge, but
+///   the concave edge is where clipped elements are most awkward, so it is here
+///   as the shape-quality half of the same question.
+///
+/// Each feature is sized several cells across, so the lattice has the samples it
+/// needs; a feature under one cell wide is invisible to this mesher and that is
+/// measured separately in `a_gap_wider_than_a_cell_is_not_bridged`.
+#[test]
+fn concave_shapes_do_not_get_filled_in() {
+    for (name, sdf, volume) in non_convex_scenes() {
+        for cell in [0.25_f32, 0.1875, 0.125] {
+            let mesh = generate_marching_tets(&sdf, [-2.0, -2.0, -2.0], [2.0, 2.0, 2.0], cell);
+            let q = measure(&mesh);
+            let deepest = deepest_outside(&mesh, &sdf);
+            eprintln!(
+                "[concave] {name:<8} cell {cell:<7} tets {:>6}  inverted {:>4}  \
+                 min dihedral {:>6.2}°  volume {:.4} / {volume:.4} ({:+.2}%)  \
+                 deepest centroid {deepest:+.4}",
+                q.tets,
+                q.inverted,
+                q.min_dihedral_deg,
+                q.total_volume,
+                100.0 * (q.total_volume - volume) / volume
+            );
+            assert_eq!(q.inverted, 0, "{name}: cell {cell}");
+            assert_eq!(q.degenerate, 0, "{name}: cell {cell}");
+            assert!(
+                deepest <= f64::from(cell),
+                "{name}: cell {cell}: an element's centroid sits {deepest:.4} outside the shape. \
+                 On a concave shape that means the mesher closed over the concavity — the volume \
+                 would read this as the mesh being *closer* to the analytic figure, not further"
+            );
+            assert!(
+                q.min_dihedral_deg >= MIN_DIHEDRAL_DEG,
+                "{name}: cell {cell}: {:.2}° is under the {MIN_DIHEDRAL_DEG}° gate",
+                q.min_dihedral_deg
+            );
+        }
+    }
+}
+
+/// `(name, field, exact volume)` for the concave scenes.
+///
+/// The fields are built by combining boxes and a cylinder with `min` and `max`,
+/// which is exact in sign everywhere — all the mesher reads — even though the
+/// magnitude is only a bound inside the shape.
+fn non_convex_scenes() -> Vec<(&'static str, ClosureSdf, f64)> {
+    const OFF: f32 = 0.07;
+    let boxed = |p: [f32; 3], half: [f32; 3]| -> f32 {
+        let d = [
+            p[0].abs() - half[0],
+            p[1].abs() - half[1],
+            p[2].abs() - half[2],
+        ];
+        let out = [d[0].max(0.0), d[1].max(0.0), d[2].max(0.0)];
+        (out[0] * out[0] + out[1] * out[1] + out[2] * out[2]).sqrt()
+            + d[0].max(d[1]).max(d[2]).min(0.0)
+    };
+    vec![
+        (
+            "hollow",
+            ClosureSdf::new(
+                move |x, y, z| {
+                    let p = [x - OFF, y + OFF, z - OFF];
+                    boxed(p, [1.0, 1.0, 1.0]).max(-boxed(p, [0.4, 0.4, 0.4]))
+                },
+                |_, _, _| (0.0, 0.0, 1.0),
+            ),
+            8.0 - 0.512,
+        ),
+        (
+            "holed",
+            ClosureSdf::new(
+                move |x, y, z| {
+                    let p = [x - OFF, y + OFF, z - OFF];
+                    let plate = boxed(p, [1.0, 1.0, 0.25]);
+                    let bore = (p[0] * p[0] + p[1] * p[1]).sqrt() - 0.35;
+                    plate.max(-bore)
+                },
+                |_, _, _| (0.0, 0.0, 1.0),
+            ),
+            2.0 * 2.0 * 0.5 - std::f64::consts::PI * 0.35 * 0.35 * 0.5,
+        ),
+        (
+            "ell",
+            ClosureSdf::new(
+                move |x, y, z| {
+                    let p = [x - OFF, y + OFF, z - OFF];
+                    let a = boxed([p[0] + 0.5, p[1], p[2]], [0.5, 1.0, 0.4]);
+                    let b = boxed([p[0], p[1] + 0.5, p[2]], [1.0, 0.5, 0.4]);
+                    a.min(b)
+                },
+                |_, _, _| (0.0, 0.0, 1.0),
+            ),
+            // two 1 x 2 x 0.8 and 2 x 1 x 0.8 slabs overlapping in a 1 x 1 x 0.8 block
+            (1.0 * 2.0 + 2.0 * 1.0 - 1.0 * 1.0) * 0.8,
+        ),
+    ]
+}
+
+/// Why no check on the finished mesh can catch a feature narrower than a cell,
+/// and therefore why the cell has to be chosen from the feature size.
+///
+/// Sweeping a cubical cavity inside a solid block at cell 0.25:
+///
+/// | cavity | tets | deepest centroid |
+/// |---|---|---|
+/// | 0.4 cells across | 2456 | **-0.0087** |
+/// | 0.8 cells across | **2456** | +0.0450 (0.18 cells) |
+/// | 1.2 cells across | 2508 | +0.0758 (0.30 cells) |
+/// | 3.2 cells across | 2486 | +0.1025 (0.41 cells) |
+///
+/// The first two produce **the same mesh**, tet for tet: the cavity is not
+/// merely meshed badly, it is not there. And at 0.4 cells across the probe
+/// reads *negative* — the mesh looks entirely interior, because the field only
+/// reaches +0.05 anywhere in that cavity and no element centroid lands on it.
+///
+/// That is not a weakness of this particular probe. A cavity is bridged only
+/// when it is narrower than a cell, so the field inside it never exceeds about
+/// half a cell; and an element that legitimately straddles a concave corner has
+/// its centroid outside the shape by up to 0.41 of a cell, measured above. The
+/// signal is smaller than the legitimate range, so **no threshold on how far
+/// outside the shape the mesh reaches can separate them** — and sampling the
+/// field more finely does not help, because the quantity itself is bounded by
+/// the feature size.
+///
+/// Detecting it would take a topological check — every sign change in a finer
+/// sampling matched against a boundary in the mesh — which is the same work as
+/// meshing at that finer cell. So the remedy is not a gate but a contract: the
+/// caller picks `cell` from the smallest feature it cares about. For a printed
+/// part that is the minimum wall thickness, which the designer knows.
+#[test]
+#[ignore = "diagnostic: the argument for choosing cell from the feature size"]
+fn a_cavity_narrower_than_a_cell_leaves_no_trace() {
+    const CELL: f32 = 0.25;
+    const OFF: f32 = 0.07;
+    let boxed = |p: [f32; 3], half: [f32; 3]| -> f32 {
+        let d = [
+            p[0].abs() - half[0],
+            p[1].abs() - half[1],
+            p[2].abs() - half[2],
+        ];
+        let out = [d[0].max(0.0), d[1].max(0.0), d[2].max(0.0)];
+        (out[0] * out[0] + out[1] * out[1] + out[2] * out[2]).sqrt()
+            + d[0].max(d[1]).max(d[2]).min(0.0)
+    };
+    for cavity_half in [0.05_f32, 0.1, 0.15, 0.2, 0.3, 0.4, 0.6] {
+        let sdf = ClosureSdf::new(
+            move |x, y, z| {
+                let p = [x - OFF, y + OFF, z - OFF];
+                boxed(p, [1.0, 1.0, 1.0]).max(-boxed(p, [cavity_half, cavity_half, cavity_half]))
+            },
+            |_, _, _| (0.0, 0.0, 1.0),
+        );
+        let mesh = generate_marching_tets(&sdf, [-2.0, -2.0, -2.0], [2.0, 2.0, 2.0], CELL);
+        let deepest = deepest_outside(&mesh, &sdf);
+        let exact = 8.0 - 8.0 * f64::from(cavity_half).powi(3);
+        let q = measure(&mesh);
+        eprintln!(
+            "[cavity]  half {cavity_half:.2} ({:.1} cells across)  tets {:>6}  \
+             volume {:.4} / {exact:.4} ({:+.2}%)  deepest {deepest:+.4} ({:.2} cells)",
+            2.0 * f64::from(cavity_half) / f64::from(CELL),
+            q.tets,
+            q.total_volume,
+            100.0 * (q.total_volume - exact) / exact,
+            deepest / f64::from(CELL)
+        );
     }
 }
