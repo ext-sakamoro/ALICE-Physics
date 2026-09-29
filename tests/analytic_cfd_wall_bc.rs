@@ -341,6 +341,9 @@ fn walled_slab_projection_is_independent_of_the_layer_count() {
 
 /// Grid resolution of the cavity oracle that runs in CI.
 const CAVITY_N: usize = 16;
+/// `dt = 1/20`. Both explicit limits at `n = 16` are looser than this:
+/// viscous `dx^2/(4v) = 0.0977` and Courant `dx/U = 0.0625`.
+const CAVITY_DT_RECIPROCAL: i64 = 20;
 /// Steps taken to reach the steady state (`t = 30` at `dt = 0.05`).
 const CAVITY_STEPS: u32 = 600;
 /// Gauss-Seidel sweeps per projection.
@@ -366,8 +369,14 @@ const CAVITY_GS: u32 = 200;
 /// `u_ghost = 2U − u_in` instead, so the difference `2(U − u_in)` is added
 /// explicitly here. That is an operator split, not a solver change, and it is
 /// identical on both sides of the comparison.
+/// `dt_reciprocal` gives the step as `1 / dt_reciprocal`. It is a parameter
+/// rather than a constant because both stability limits of the explicit
+/// scheme scale with the cell size: the viscous one as `dx²/(4ν)` and the
+/// Courant one as `dx/U`. At `n = 32` the `dt = 1/20` that is comfortable at
+/// `n = 16` exceeds both, and the run blows up instead of refining.
 fn run_lid_driven_cavity(
     n: usize,
+    dt_reciprocal: i64,
     steps: u32,
     gs_iterations: u32,
     walls_in_projection: bool,
@@ -376,7 +385,7 @@ fn run_lid_driven_cavity(
     let lid_u = Fix128::ONE;
     // Re = U·L/ν = 100 with U = L = 1 and ρ = 1 → ν = μ = 1/100.
     let nu = Fix128::from_ratio(1, 100);
-    let dt = Fix128::from_ratio(1, 20);
+    let dt = Fix128::from_ratio(1, dt_reciprocal);
 
     let mut solver = CfdSolver::new(n, n, 1, dx);
     solver.gravity = Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, Fix128::ZERO);
@@ -476,10 +485,20 @@ fn max_deviation_from_ghia(profile: &[(f64, f64)]) -> f64 {
 /// imposed from outside the projection.
 #[test]
 fn lid_driven_cavity_return_flow_matches_ghia_1982() {
-    let (with_mask, flux_with_mask) =
-        run_lid_driven_cavity(CAVITY_N, CAVITY_STEPS, CAVITY_GS, true);
-    let (outside_only, flux_outside_only) =
-        run_lid_driven_cavity(CAVITY_N, CAVITY_STEPS, CAVITY_GS, false);
+    let (with_mask, flux_with_mask) = run_lid_driven_cavity(
+        CAVITY_N,
+        CAVITY_DT_RECIPROCAL,
+        CAVITY_STEPS,
+        CAVITY_GS,
+        true,
+    );
+    let (outside_only, flux_outside_only) = run_lid_driven_cavity(
+        CAVITY_N,
+        CAVITY_DT_RECIPROCAL,
+        CAVITY_STEPS,
+        CAVITY_GS,
+        false,
+    );
 
     let peak_with_mask = with_mask.iter().fold(0.0f64, |acc, &(_, u)| acc.min(u));
     let peak_outside_only = outside_only.iter().fold(0.0f64, |acc, &(_, u)| acc.min(u));
@@ -538,24 +557,33 @@ fn lid_driven_cavity_return_flow_matches_ghia_1982() {
 /// Re = 100 is laminar, so a wall model has nothing to do here — the
 /// remaining difference should be discretisation (cell size plus the
 /// numerical diffusion of semi-Lagrangian advection). The falsifiable form of
-/// that claim is that the peak return velocity moves toward the reference as
-/// the cell size halves; if it plateaus instead, the gap is a model error and
-/// not a resolution error.
+/// that claim is that the deviation from the reference falls as the cell size
+/// halves; if it plateaus instead, the gap is a model error and not a
+/// resolution error.
 ///
-/// `#[ignore]`d because the `32²` run is ~4× the cells at ~4× the steps in a
-/// debug build; run it with
-/// `cargo test --release --test analytic_cfd_wall_bc -- --ignored --nocapture`.
+/// Every row runs to the same physical time `t = 30` with a `dt` inside both
+/// explicit stability limits at that resolution, so the rows differ only in
+/// the cell size. Keeping `dt = 1/20` at `n = 32` (above both limits) instead
+/// produces a peak of `-0.43627`, more than twice the reference, and leaks
+/// `-1.3e-3` through the sealed centreline — a blow-up, not a refinement.
+///
+/// `#[ignore]`d because the `32²` row is 2400 steps on 4× the cells; run it
+/// with `cargo test --release --test analytic_cfd_wall_bc -- --ignored --nocapture`.
 #[test]
-#[ignore = "resolution sweep: three cavity runs, minutes in a debug build"]
+#[ignore = "resolution sweep: three cavity runs to t = 30, minutes in a debug build"]
 fn cavity_gap_to_ghia_shrinks_with_resolution() {
     let mut previous = f64::INFINITY;
-    for &(n, steps, gs) in &[(8usize, 300u32, 120u32), (16, 600, 200), (32, 1600, 400)] {
-        let (profile, flux) = run_lid_driven_cavity(n, steps, gs, true);
+    for &(n, dt_reciprocal, steps, gs) in &[
+        (8usize, 20i64, 600u32, 120u32),
+        (16, 20, 600, 200),
+        (32, 80, 2400, 400),
+    ] {
+        let (profile, flux) = run_lid_driven_cavity(n, dt_reciprocal, steps, gs, true);
         let peak = profile.iter().fold(0.0f64, |acc, &(_, u)| acc.min(u));
         let deviation = max_deviation_from_ghia(&profile);
         println!(
-            "n={n:3}  peak {peak:+.5} ({:.1} % of reference)  max deviation {deviation:.5}  \
-             centreline net flux {flux:+.3e}",
+            "n={n:3}  dt=1/{dt_reciprocal}  peak {peak:+.5} ({:.1} % of reference)  \
+             max deviation {deviation:.5}  centreline net flux {flux:+.3e}",
             100.0 * peak / GHIA_RE100_PEAK_RETURN
         );
         assert!(
