@@ -49,6 +49,14 @@
 //! `g2p_velocity` are currently wired into `cfd_solver.rs`. The
 //! Jacobi + BiCGStab pressure variants and P2G scatter operators
 //! are reserved crate-internal API awaiting downstream integration.
+//!
+//! # Face mask (storage only at this commit)
+//!
+//! `u_solid` / `v_solid` / `w_solid` record which faces are walls, and
+//! [`MacGrid::set_closed_box_walls`] / [`MacGrid::enforce_solid_faces`]
+//! operate on them. **The pressure projection does not read them yet**, so a
+//! grid with walls still leaks across them — that is what
+//! `tests/analytic_cfd_wall_bc.rs` pins red.
 
 // Reserved algorithm variants (Jacobi / BiCGStab pressure, P2G scatter) are
 // pub(crate) but currently unused outside their own unit tests — awaiting
@@ -86,10 +94,18 @@ pub struct MacGrid {
     pub w: Vec<Fix128>,
     /// Cell-centred pressure `[nx · ny · nz]`.
     pub pressure: Vec<Fix128>,
+    /// Solid flag per X-face `[(nx+1) · ny · nz]`; see [`MacGrid::set_u_solid`].
+    pub u_solid: Vec<bool>,
+    /// Solid flag per Y-face `[nx · (ny+1) · nz]`; see [`MacGrid::set_v_solid`].
+    pub v_solid: Vec<bool>,
+    /// Solid flag per Z-face `[nx · ny · (nz+1)]`; see [`MacGrid::set_w_solid`].
+    pub w_solid: Vec<bool>,
 }
 
 impl MacGrid {
-    /// Empty grid initialised to zero everywhere.
+    /// Empty grid initialised to zero everywhere, with every face fluid
+    /// (no walls). Call [`MacGrid::set_closed_box_walls`] to turn the six
+    /// domain-boundary face layers into no-through-flow walls.
     #[must_use]
     pub fn new(nx: usize, ny: usize, nz: usize, dx: Fix128) -> Self {
         Self {
@@ -101,6 +117,9 @@ impl MacGrid {
             v: vec![Fix128::ZERO; nx * (ny + 1) * nz],
             w: vec![Fix128::ZERO; nx * ny * (nz + 1)],
             pressure: vec![Fix128::ZERO; nx * ny * nz],
+            u_solid: vec![false; (nx + 1) * ny * nz],
+            v_solid: vec![false; nx * (ny + 1) * nz],
+            w_solid: vec![false; nx * ny * (nz + 1)],
         }
     }
 
@@ -166,6 +185,113 @@ impl MacGrid {
         let v_c = (self.v(i, j, k) + self.v(i, j + 1, k)).half();
         let w_c = (self.w(i, j, k) + self.w(i, j, k + 1)).half();
         (u_c, v_c, w_c)
+    }
+
+    /// Is the X-face `(i, j, k)` a wall? Out of range returns `false`
+    /// (there is no such face).
+    #[must_use]
+    pub fn is_u_solid(&self, i: usize, j: usize, k: usize) -> bool {
+        if i > self.nx || j >= self.ny || k >= self.nz {
+            return false;
+        }
+        self.u_solid[self.idx_u(i, j, k)]
+    }
+    /// Is the Y-face `(i, j, k)` a wall?
+    #[must_use]
+    pub fn is_v_solid(&self, i: usize, j: usize, k: usize) -> bool {
+        if i >= self.nx || j > self.ny || k >= self.nz {
+            return false;
+        }
+        self.v_solid[self.idx_v(i, j, k)]
+    }
+    /// Is the Z-face `(i, j, k)` a wall?
+    #[must_use]
+    pub fn is_w_solid(&self, i: usize, j: usize, k: usize) -> bool {
+        if i >= self.nx || j >= self.ny || k > self.nz {
+            return false;
+        }
+        self.w_solid[self.idx_w(i, j, k)]
+    }
+
+    /// Mark the X-face `(i, j, k)` as a wall (`true`) or as fluid (`false`).
+    ///
+    /// A wall face carries no flux: the pressure projection holds its normal
+    /// velocity at zero and drops it from the Poisson stencil, which is the
+    /// homogeneous Neumann condition `∂p/∂n = 0` on that face. A face left
+    /// `false` on the domain boundary keeps the open condition (exterior
+    /// pressure `p = 0`). Out-of-range indices are ignored.
+    pub fn set_u_solid(&mut self, i: usize, j: usize, k: usize, solid: bool) {
+        if i > self.nx || j >= self.ny || k >= self.nz {
+            return;
+        }
+        let ix = self.idx_u(i, j, k);
+        self.u_solid[ix] = solid;
+    }
+    /// Mark the Y-face `(i, j, k)` as a wall; see [`MacGrid::set_u_solid`].
+    pub fn set_v_solid(&mut self, i: usize, j: usize, k: usize, solid: bool) {
+        if i >= self.nx || j > self.ny || k >= self.nz {
+            return;
+        }
+        let ix = self.idx_v(i, j, k);
+        self.v_solid[ix] = solid;
+    }
+    /// Mark the Z-face `(i, j, k)` as a wall; see [`MacGrid::set_u_solid`].
+    pub fn set_w_solid(&mut self, i: usize, j: usize, k: usize, solid: bool) {
+        if i >= self.nx || j >= self.ny || k > self.nz {
+            return;
+        }
+        let ix = self.idx_w(i, j, k);
+        self.w_solid[ix] = solid;
+    }
+
+    /// Turn the six domain-boundary face layers into walls — the closed box
+    /// used by the lid-driven cavity and by any sealed container.
+    ///
+    /// Marks `u` at `i = 0, nx`, `v` at `j = 0, ny` and `w` at `k = 0, nz`.
+    /// Interior faces are left untouched, so this composes with obstacle
+    /// masks set through [`MacGrid::set_u_solid`] and friends.
+    pub fn set_closed_box_walls(&mut self) {
+        for k in 0..self.nz {
+            for j in 0..self.ny {
+                self.set_u_solid(0, j, k, true);
+                self.set_u_solid(self.nx, j, k, true);
+            }
+        }
+        for k in 0..self.nz {
+            for i in 0..self.nx {
+                self.set_v_solid(i, 0, k, true);
+                self.set_v_solid(i, self.ny, k, true);
+            }
+        }
+        for j in 0..self.ny {
+            for i in 0..self.nx {
+                self.set_w_solid(i, j, 0, true);
+                self.set_w_solid(i, j, self.nz, true);
+            }
+        }
+    }
+
+    /// Zero the normal velocity on every face marked solid.
+    ///
+    /// The projection calls this before it builds the divergence right-hand
+    /// side, so whatever advection / body forces / diffusion left on a wall
+    /// face never enters the Poisson problem.
+    pub fn enforce_solid_faces(&mut self) {
+        for (val, solid) in self.u.iter_mut().zip(self.u_solid.iter()) {
+            if *solid {
+                *val = Fix128::ZERO;
+            }
+        }
+        for (val, solid) in self.v.iter_mut().zip(self.v_solid.iter()) {
+            if *solid {
+                *val = Fix128::ZERO;
+            }
+        }
+        for (val, solid) in self.w.iter_mut().zip(self.w_solid.iter()) {
+            if *solid {
+                *val = Fix128::ZERO;
+            }
+        }
     }
 
     /// Divergence at cell (i, j, k). Positive = fluid expanding.

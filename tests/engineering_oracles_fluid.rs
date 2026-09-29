@@ -187,11 +187,19 @@ fn cfd_solver_shear_mode_decays_at_the_viscous_rate() {
 
 /// `project_pressure` solves `∇²p = (ρ/dt) ∇·u*` and subtracts
 /// `(dt/ρ) ∇p` (Chorin 1968; Bridson, *Fluid Simulation for Computer
-/// Graphics* ch. 5). The oracle is the defining property: interior cells
-/// are divergence-free afterwards, and an already divergence-free field
-/// is a fixed point (its pressure is identically zero).
+/// Graphics* ch. 5). The oracle is the defining property: **every** cell is
+/// divergence-free afterwards, and an already divergence-free field is a
+/// fixed point (its pressure is identically zero).
+///
+/// The sweep covers the whole domain, boundary layer included. There is
+/// nothing special about a rim cell: the correction subtracts the same
+/// gradient the Poisson operator solved for, so the residual is uniform.
+/// This test used to scan `1..n-1`, which structurally excluded the rim —
+/// with the boundary faces left out of the correction the rim divergence
+/// rose from `3.137` to `13.773` on `u = sin(πx)` and no assertion here
+/// could see it.
 #[test]
-fn eulerian_grid_projection_removes_interior_divergence() {
+fn eulerian_grid_projection_removes_divergence_including_the_rim() {
     let n = 6usize;
     let dx = Fix128::from_ratio(1, 16);
     let mut grid = MacGrid::new(n, n, n, dx);
@@ -219,16 +227,16 @@ fn eulerian_grid_projection_removes_interior_divergence() {
     // iterations leave ~1e-14 of the initial residual.
     project_pressure(&mut grid, Fix128::from_ratio(1, 100), Fix128::ONE, 150);
     let mut worst = 0.0f64;
-    for k in 1..n - 1 {
-        for j in 1..n - 1 {
-            for i in 1..n - 1 {
+    for k in 0..n {
+        for j in 0..n {
+            for i in 0..n {
                 worst = worst.max(grid.divergence(i, j, k).to_f64().abs());
             }
         }
     }
     assert!(
         worst < 1e-8,
-        "interior divergence after projection {worst:.3e} (was 1.0)"
+        "divergence after projection {worst:.3e} over the whole domain, rim included (was 1.0)"
     );
     assert!(
         grid.pressure.iter().any(|p| !p.is_zero()),
