@@ -175,7 +175,7 @@ fn boundary_rotation(mesh: &SdfTetMesh, turn: Turn) -> (BoundaryConditions, Vec<
 fn corotational_config(increments: u32) -> CorotationalConfig {
     CorotationalConfig::try_new(
         SolverConfig::try_new(200_000, Fix128::from_raw(0, 1 << 34)).expect("valid linear config"),
-        32,                          // Newton iterations per increment
+        32,                           // Newton iterations per increment
         Fix128::from_raw(0, 1 << 34), // Newton relative tolerance, 2^-30
         increments,
         32, // polar iteration budget, from the measured 6-19
@@ -403,7 +403,8 @@ fn the_small_rotation_limit_agrees_with_the_linear_solver() {
     let mesh = kuhn_cube(4, SIDE / 4.0);
     let (bc, interior) = boundary_rotation(&mesh, turn);
 
-    let linear_config = SolverConfig::try_new(200_000, Fix128::from_raw(0, 1 << 34)).expect("valid");
+    let linear_config =
+        SolverConfig::try_new(200_000, Fix128::from_raw(0, 1 << 34)).expect("valid");
     let linear = solve(&mesh, &pla(), &bc, &linear_config).expect("well posed");
     let coro = solve_corotational(&mesh, &pla(), &bc, &corotational_config(1)).expect("converges");
 
@@ -497,8 +498,9 @@ fn rotated_uniform_stretch_matches_the_closed_form() {
     let mut drift = 0.0_f64;
     for &v in &interior {
         let want = field(vert(&mesh, v));
-        for axis in 0..3 {
-            drift = drift.max((out.field.displacements[v as usize][axis].to_f64() - want[axis]).abs());
+        for (axis, want_axis) in want.iter().enumerate() {
+            drift =
+                drift.max((out.field.displacements[v as usize][axis].to_f64() - want_axis).abs());
         }
     }
 
