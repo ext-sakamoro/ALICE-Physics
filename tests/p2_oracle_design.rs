@@ -44,6 +44,7 @@ use alice_physics::linear_elastic_fem::{
     solve, Axis, BoundaryConditions, ElasticMaterial, SolverConfig,
 };
 use alice_physics::math::Fix128;
+use alice_physics::quadratic_elastic_fem::{solve_quadratic, QuadraticMesh};
 use alice_physics::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
 
 const E_MPA: f64 = 3500.0;
@@ -463,82 +464,248 @@ fn degree_three_blindness_belongs_to_the_lattice_not_to_the_element() {
     );
 }
 
-/// The oracle a P2 element will have to pass, written now so that it is red now.
+/// A degree-3 field with **no body force**, for comparing the two elements.
 ///
-/// `cell_l2` for a P1 element converges at second order. A P2 element on the
-/// same meshes has to reach third order in that norm; nothing less distinguishes
-/// it from the element that is already there. The mesh is the perturbed one,
-/// because the test above measures that a uniform lattice hides the very thing
-/// this is trying to see.
+/// `u = c·(Re((y+iz)³), Re((z+ix)³), Re((x+iy)³))`, i.e.
+/// `c·(y³−3yz², z³−3zx², x³−3xy²)`. Each component is independent of its own
+/// coordinate, so every normal strain and the trace vanish and equilibrium
+/// reduces to `μ·Δ₂uᵢ`; each component is harmonic in its two coordinates, so
+/// `div σ ≡ 0` exactly.
 ///
-/// ⚠️ **This test fails on the current crate**, and that is its present job: it
-/// is the red that the P2 work has to turn green. It is not a regression and
-/// must not be "fixed" by lowering the exponent.
+/// ⚠️ **The absence of a body force is what makes the comparison fair.** A
+/// consistent load for a *linear* body force is exact on P1 through the closed
+/// form `M·f`, but on P2 the product `N_i·f` is **cubic**, which the
+/// degree-2 Hammer–Stroud rule the element assembles with does not integrate
+/// exactly. Comparing the two elements on a field with a source term would
+/// therefore be comparing their load quadrature as much as their function
+/// spaces. With no source there is no load vector at all.
+fn cubic_zero_source(p: [f64; 3]) -> [f64; 3] {
+    let [x, y, z] = p;
+    let c = AMPLITUDE;
+    let re3 = |a: f64, b: f64| a * a * a - 3.0 * a * b * b;
+    [c * re3(y, z), c * re3(z, x), c * re3(x, y)]
+}
+
+/// Volume-weighted error at the element centroids, for one element type.
 ///
-/// Measured red, `d90b18e`, before any P2 code exists:
+/// The centroid value of a P1 field is the mean of its four nodal values; of a
+/// P2 field it is `Σ Nᵢ(¼,¼,¼,¼) uᵢ`, which is `−1/8` on each corner and `1/4`
+/// on each edge node (they sum to one, as they must).
+fn cubic_cell_l2(cells: usize, quadratic: bool) -> (f64, u32, f64) {
+    let h = SIDE / cells as f64;
+    let mesh = kuhn_cube(cells, h, JITTER);
+    let eps = h * 1e-4;
+    let on_boundary = |p: [f64; 3]| p.iter().any(|&c| c < eps || c > SIDE - eps);
+    let config = SolverConfig::try_new(500_000, Fix128::from_raw(0, 1 << 34))
+        .expect("valid")
+        .with_stagnation(2_000, Fix128::from_raw(0, 1 << 54))
+        .expect("valid");
+
+    // Displacement at every node of whichever discretisation is in use.
+    let (positions, displacements, iterations, residual) = if quadratic {
+        let q = QuadraticMesh::from_tet_mesh(&mesh).expect("well formed");
+        let mut positions = Vec::with_capacity(q.node_count());
+        let mut bc = BoundaryConditions::new();
+        for node in 0..u32::try_from(q.node_count()).expect("fits") {
+            let f = q.node_position(node).expect("in range");
+            let p = [f[0].to_f64(), f[1].to_f64(), f[2].to_f64()];
+            positions.push(p);
+            if on_boundary(p) {
+                let u = cubic_zero_source(p);
+                bc.prescribe_all(node, [fx(u[0]), fx(u[1]), fx(u[2])]);
+            }
+        }
+        let out = solve_quadratic(&q, &pla(), &bc, &config).expect("well posed");
+        let mut weighted = 0.0_f64;
+        let mut total = 0.0_f64;
+        for e in 0..q.element_count() {
+            let nodes = q.element_nodes(e).expect("in range");
+            // Volume from the four corners; the element is straight-edged.
+            let corner = |slot: usize| positions[nodes[slot] as usize];
+            let volume = tet_volume_from(corner(0), corner(1), corner(2), corner(3));
+            let mut centroid = [0.0_f64; 3];
+            let mut interp = [0.0_f64; 3];
+            for slot in 0..10 {
+                let w = if slot < 4 { -0.125 } else { 0.25 };
+                let p = positions[nodes[slot] as usize];
+                let u = out.displacements[nodes[slot] as usize];
+                for axis in 0..3 {
+                    interp[axis] += w * u[axis].to_f64();
+                    if slot < 4 {
+                        centroid[axis] += p[axis] / 4.0;
+                    }
+                }
+            }
+            let want = cubic_zero_source(centroid);
+            let mut sq = 0.0_f64;
+            for axis in 0..3 {
+                let e = interp[axis] - want[axis];
+                sq += e * e;
+            }
+            weighted += sq * volume;
+            total += volume;
+        }
+        return (
+            (weighted / total).sqrt(),
+            out.iterations,
+            out.relative_residual.to_f64(),
+        );
+    } else {
+        let mut bc = BoundaryConditions::new();
+        let mut positions = Vec::with_capacity(mesh.vertex_count());
+        for v in 0..u32::try_from(mesh.vertex_count()).expect("fits") {
+            let p = vert(&mesh, v);
+            positions.push(p);
+            if on_boundary(p) {
+                let u = cubic_zero_source(p);
+                bc.prescribe_all(v, [fx(u[0]), fx(u[1]), fx(u[2])]);
+            }
+        }
+        let out = solve(&mesh, &pla(), &bc, &config).expect("well posed");
+        let d = (0..mesh.vertex_count())
+            .map(|n| {
+                [
+                    out.displacements[n][0].to_f64(),
+                    out.displacements[n][1].to_f64(),
+                    out.displacements[n][2].to_f64(),
+                ]
+            })
+            .collect::<Vec<_>>();
+        (positions, d, out.iterations, out.relative_residual.to_f64())
+    };
+
+    let mut weighted = 0.0_f64;
+    let mut total = 0.0_f64;
+    for tet in &mesh.tets {
+        let p: Vec<[f64; 3]> = tet
+            .vertices
+            .iter()
+            .map(|&i| positions[i as usize])
+            .collect();
+        let volume = tet_volume_from(p[0], p[1], p[2], p[3]);
+        let mut centroid = [0.0_f64; 3];
+        let mut interp = [0.0_f64; 3];
+        for (slot, &i) in tet.vertices.iter().enumerate() {
+            for axis in 0..3 {
+                centroid[axis] += p[slot][axis] / 4.0;
+                interp[axis] += displacements[i as usize][axis] / 4.0;
+            }
+        }
+        let want = cubic_zero_source(centroid);
+        let mut sq = 0.0_f64;
+        for axis in 0..3 {
+            let e = interp[axis] - want[axis];
+            sq += e * e;
+        }
+        weighted += sq * volume;
+        total += volume;
+    }
+    ((weighted / total).sqrt(), iterations, residual)
+}
+
+fn tet_volume_from(a: [f64; 3], b: [f64; 3], c: [f64; 3], d: [f64; 3]) -> f64 {
+    let u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+    let v = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+    let w = [d[0] - a[0], d[1] - a[1], d[2] - a[2]];
+    let det = u[0] * (v[1] * w[2] - v[2] * w[1]) - u[1] * (v[0] * w[2] - v[2] * w[0])
+        + u[2] * (v[0] * w[1] - v[1] * w[0]);
+    det.abs() / 6.0
+}
+
+/// The acceptance criterion for the quadratic element, and the P1 measurement
+/// that makes it non-vacuous.
 ///
-/// ```text
-/// [p2oracle] cell L2 order = +1.895 (P1 gives ~2, the P2 target is ~3)
-/// a second-order element cannot pass this: cell L2 converged at +1.895.
-/// ```
+/// Both elements solve the **same** manufactured problem on the **same**
+/// perturbed meshes, with no body force on either side. The claim is about the
+/// function spaces and nothing else: P1 converges at second order in the
+/// element-interior `L²` norm, P2 at third.
 ///
-/// # Why this is `#[ignore]`d rather than deleted or left red
-///
-/// **The red is correct.** It is held back only because the implementation has
-/// not caught up — not because the assertion, the mesh or the exponent is in
-/// doubt. `cargo test --test p2_oracle_design -- --ignored` runs it, and the
-/// commit that lands a P2 element removes this attribute in the same diff.
-///
-/// ⚠️ **Do not "fix" it by lowering the exponent.** 2.7 is what separates a
-/// third-order element from the second-order one already in the crate; a band
-/// that a P1 tetrahedron can satisfy tests nothing.
-///
-/// Ignoring it costs no coverage, because
-/// [`characterises_the_p1_second_order_limit_on_a_perturbed_mesh`] is **not**
-/// ignored and pins the same number from the other side: it asserts that P1 on
-/// this mesh converges at 1.895 in `cell L2`, within a band no third-order
-/// element can satisfy. Any change to the element, the assembly or the mesh
-/// moves that number and reds *that* test in CI. So the pair is: this one is the
-/// goal, its companion is the guard, and **exactly one of the two is green at
-/// any time** — the moment P2 lands, the companion turns red and forces the
-/// attribute below to come off in the same diff.
+/// ⚠️ The P1 arm is not decoration. Without it, a P2 order of 3 could come from
+/// the mesh sequence, the norm or the field rather than from the element, and
+/// the test would have no way to say so.
 #[test]
-#[ignore = "the red is correct: a P2 element must reach third order in cell L2, \
-            and the P1 element in the crate cannot. Remove this attribute in the \
-            commit that lands P2, and delete \
-            `characterises_the_p1_second_order_limit_on_a_perturbed_mesh` in the \
-            same diff. CI coverage is not lost: that companion test is not \
-            ignored and pins the same number from the second-order side"]
-fn p2_must_reach_third_order_and_p1_does_not() {
-    let cells = [4usize, 8, 16];
-    let levels = study(
-        "the P2 target: third order in cell L2 on a perturbed mesh",
-        JITTER,
-        &cells,
+fn p2_reaches_third_order_where_p1_reaches_second() {
+    let cells = [2usize, 4, 8];
+    eprintln!("[p2oracle] ---- cubic zero-source field, perturbed lattice, both elements ----");
+    eprintln!(
+        "[p2oracle] {:>7}  {:>6}  {:>13}  {:>6}  {:>10}",
+        "h(mm)", "elem", "cell L2", "iters", "residual"
     );
-    let p = order(levels[0].cell_l2, levels[1].cell_l2, levels[2].cell_l2);
-    eprintln!("[p2oracle] cell L2 order = {p:+.3} (P1 gives ~2, the P2 target is ~3)");
+    let mut p1 = Vec::new();
+    let mut p2 = Vec::new();
+    for &c in &cells {
+        for quadratic in [false, true] {
+            let (l2, iters, residual) = cubic_cell_l2(c, quadratic);
+            eprintln!(
+                "[p2oracle] {:>7.4}  {:>6}  {:>13.6e}  {:>6}  {:>10.3e}",
+                SIDE / c as f64,
+                if quadratic { "P2" } else { "P1" },
+                l2,
+                iters,
+                residual
+            );
+            if quadratic {
+                p2.push((l2, residual));
+            } else {
+                p1.push((l2, residual));
+            }
+        }
+    }
+
+    for (label, rows) in [("P1", &p1), ("P2", &p2)] {
+        for (l2, residual) in rows.iter() {
+            assert!(
+                *residual <= 1.0e-9,
+                "{label}: a solve stopped at residual {residual:.3e}, so its error {l2:.3e}                  measures the conjugate gradient and not the element"
+            );
+        }
+    }
+
+    let order_p1 = order(p1[0].0, p1[1].0, p1[2].0);
+    let order_p2 = order(p2[0].0, p2[1].0, p2[2].0);
+    eprintln!("[p2oracle] cell L2 order: P1 {order_p1:+.3}, P2 {order_p2:+.3}");
+
     assert!(
-        p > 2.7,
-        "a second-order element cannot pass this: cell L2 converged at {p:+.3}. When P2 \
-         lands, this is the assertion that says so"
+        order_p1 > 1.6 && order_p1 < 2.4,
+        "P1 must converge at second order on this field for the comparison to mean \
+         anything; got {order_p1:+.3}"
+    );
+    assert!(
+        order_p2 > 2.7,
+        "the quadratic element must reach third order in cell L2; got {order_p2:+.3} \
+         against P1's {order_p1:+.3}. This is the acceptance criterion for P2 and is not \
+         a band to widen"
     );
 }
 
-/// The guard half of the pair: what the element in the crate *does* do.
+/// What the **P1** element does on this study, pinned so that it keeps doing it.
 ///
-/// [`p2_must_reach_third_order_and_p1_does_not`] states the target and is
-/// `#[ignore]`d until P2 exists. A target alone is not coverage — a doc comment
-/// recording "P1 gives +1.895" is prose, and prose does not go red when the P1
-/// assembly regresses. This test is the measurement, and it runs in CI.
+/// ⚠️ **This test outlived the contract it was written under, and the change is
+/// worth recording.** It was first written as the guard half of a pair whose
+/// other half, `p2_must_reach_third_order_and_p1_does_not`, was `#[ignore]`d
+/// until a quadratic element existed — on the assumption that P2 would
+/// *replace* P1 in `run_level`, so that exactly one of the two would be green
+/// at any time and the upper edge of the band below would force the ignore
+/// attribute off in the same diff.
 ///
-/// The band is deliberately two-sided. The lower edge catches a P1 regression
-/// (a broken `B` matrix, a wrong consistent load, a mesh that stopped being
-/// conforming). **The upper edge is what makes the pair work**: 2.4 is below any
-/// third-order convergence, so the day a P2 element is wired into this study,
-/// *this* test goes red and the diff cannot be landed without also removing the
-/// `#[ignore]` from its companion and deleting this function. Exactly one of the
-/// two is green at any time.
+/// **P2 landed as a separate entry point instead** ([`solve_quadratic`]), so
+/// P1 stays, and "P1 converges at second order on a perturbed lattice" stays
+/// true. Deleting this test would throw away a measurement that is still
+/// correct. The pair was therefore dissolved:
+/// [`p2_reaches_third_order_where_p1_reaches_second`] now carries **both** arms
+/// itself, on one field and one mesh sequence, and this test keeps its own
+/// separate job.
+///
+/// That job is two-sided:
+///
+/// - The **lower edge** catches a P1 regression — a broken `B` matrix, a wrong
+///   consistent load, a mesh that stopped being conforming. Measured: dividing
+///   the consistent load by 24 instead of 20 drops the order to `+0.074`.
+/// - The **upper edge** catches the study being quietly re-pointed at the
+///   quadratic element. `run_level` here is P1 by construction and the numbers
+///   below are P1 numbers; if a future change routes it through
+///   `solve_quadratic`, the order jumps past 2.4 and this test says so rather
+///   than silently re-labelling P2 results as P1 ones.
 #[test]
 fn characterises_the_p1_second_order_limit_on_a_perturbed_mesh() {
     let cells = [4usize, 8, 16];
@@ -562,7 +729,7 @@ fn characterises_the_p1_second_order_limit_on_a_perturbed_mesh() {
     }
 
     let p = order(levels[0].cell_l2, levels[1].cell_l2, levels[2].cell_l2);
-    eprintln!("[p2oracle] P1 cell L2 order = {p:+.3} (measured +1.895 at d90b18e)");
+    eprintln!("[p2oracle] P1 cell L2 order = {p:+.3} (measured +1.895 at d90b18e, P1 study)");
     assert!(
         p > 1.6,
         "P1 must still converge at second order in cell L2; got {p:+.3}. This is a \
@@ -572,8 +739,10 @@ fn characterises_the_p1_second_order_limit_on_a_perturbed_mesh() {
     assert!(
         p < 2.4,
         "cell L2 converged at {p:+.3}, which is past what a second-order element can \
-         do. If a P2 element has been wired into `run_level`, this test has done its \
-         job: remove `#[ignore]` from `p2_must_reach_third_order_and_p1_does_not` and \
-         delete this function in the same diff"
+         do. `run_level` in this file is the P1 study; if it has been re-pointed at \
+         `quadratic_elastic_fem::solve_quadratic`, this test has done its job — put it \
+         back, and put the P2 measurement in \
+         `p2_reaches_third_order_where_p1_reaches_second`, which already runs both \
+         elements on one field"
     );
 }

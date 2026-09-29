@@ -407,6 +407,7 @@ pub mod privacy;
 pub mod profiling;
 #[cfg(feature = "python")]
 mod python;
+pub mod quadratic_elastic_fem;
 pub mod query;
 pub mod ragdoll;
 pub mod raycast;
