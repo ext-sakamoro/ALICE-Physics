@@ -98,6 +98,39 @@ fn two_tets_across_a_face() -> SdfTetMesh {
     mesh
 }
 
+/// The same scene with the upper tetrahedron split by hand, which is what the
+/// graded refinement used to produce.
+///
+/// Built here rather than by calling [`SdfTetMesh::refine_by_max_edge_length`]
+/// **on purpose**. That refiner is being made conforming, and once it is, it can
+/// no longer produce a hanging node — which would take this whole file's subject
+/// matter with it. The measurements below are the reason the refiner is being
+/// changed at all, so they have to outlive the change: losing them would leave
+/// the fix with no record of what it fixed.
+///
+/// The split is the one bisection of the shared face's longest edge, the
+/// hypotenuse `(4,0,0)-(0,4,0)`, applied to the `z > 0` tetrahedron only. The
+/// `z < 0` tetrahedron keeps the whole face, so its face has three corners while
+/// its neighbour's has four points on it.
+///
+/// `the_hand_built_scene_matches_what_the_old_refiner_produced` holds this to
+/// the refiner's output while that output still exists.
+fn two_tets_with_a_hanging_node() -> SdfTetMesh {
+    let mut mesh = two_tets_across_a_face();
+    // midpoint of the shared face's hypotenuse
+    let mid = u32::try_from(mesh.vertex_count()).expect("fits u32");
+    mesh.vertices.push([2.0, 2.0, 0.0]);
+    // replace the upper tetrahedron (0,1,2,3) with its two halves
+    mesh.tets.retain(|t| t.vertices != [0, 1, 2, 3]);
+    mesh.tets.push(Tetrahedron {
+        vertices: [0, 1, mid, 3],
+    });
+    mesh.tets.push(Tetrahedron {
+        vertices: [0, mid, 2, 3],
+    });
+    mesh
+}
+
 /// Every `(hanging vertex, face it hangs on)` pair in the mesh.
 ///
 /// A vertex hangs on a face when it lies in that triangle's plane, inside its
@@ -259,9 +292,7 @@ fn the_graded_mesh_has_hanging_nodes_and_the_conforming_one_does_not() {
         "the unrefined scene must be conforming, or everything below is measuring the wrong thing"
     );
 
-    let mut graded = two_tets_across_a_face();
-    let passes = graded.refine_by_max_edge_length(5.0, 1);
-    assert_eq!(passes, 1);
+    let graded = two_tets_with_a_hanging_node();
     let hanging = hanging_nodes(&graded);
     eprintln!(
         "[hanging] after one graded pass: {} tets, {} hanging node/face pairs",
@@ -309,8 +340,7 @@ fn the_graded_mesh_has_hanging_nodes_and_the_conforming_one_does_not() {
 /// is loud.
 #[test]
 fn a_hanging_node_tears_the_field_even_on_a_linear_one() {
-    let mut graded = two_tets_across_a_face();
-    graded.refine_by_max_edge_length(5.0, 1);
+    let graded = two_tets_with_a_hanging_node();
     let hanging: Vec<u32> = hanging_nodes(&graded).iter().map(|(v, _)| *v).collect();
 
     let scale = |field: &dyn Fn([f64; 3]) -> [f64; 3]| -> f64 {
@@ -338,13 +368,23 @@ fn a_hanging_node_tears_the_field_even_on_a_linear_one() {
         );
     }
 
+    // A band, not a sign. Once the refiner is conforming, the scene above is the
+    // only place this defect exists, and nothing else would notice it drifting.
+    // The scene and the arithmetic are both deterministic, so the value is
+    // reproducible; the band is wide enough not to be a hash of it.
     assert!(
-        rel[0] > 1.0e-2,
-        "a hanging node leaves the coarse element contributing no force there, so the shared \
-         face acts traction-free from the fine side and even a linear field is torn. Measured \
-         {:.3e} — if this is now small, the defect has changed character and the reasoning below \
-         about which remedy to pick has to be redone",
+        (0.13..0.17).contains(&rel[0]),
+        "the measured tear is {:.4}, outside the 0.13 to 0.17 this scene has produced. A hanging \
+         node leaves the coarse element contributing no force there, so the shared face acts \
+         traction-free from the fine side and even a linear field is torn. If this has moved, \
+         the scene has changed and the case for propagating refinement rests on a number that no \
+         longer exists",
         rel[0]
+    );
+    assert!(
+        (0.011..0.015).contains(&rel[1]),
+        "the quadratic tear is {:.4}, outside the 0.011 to 0.015 this scene has produced",
+        rel[1]
     );
 }
 
@@ -361,8 +401,7 @@ fn a_hanging_node_tears_the_field_even_on_a_linear_one() {
 /// lands in the blind arm.
 #[test]
 fn prescribing_the_hanging_node_is_what_makes_a_patch_test_blind() {
-    let mut graded = two_tets_across_a_face();
-    graded.refine_by_max_edge_length(5.0, 1);
+    let graded = two_tets_with_a_hanging_node();
     let scale = (0..graded.vertex_count())
         .map(|i| {
             let u = linear(vert(&graded, u32::try_from(i).expect("fits")));
@@ -389,8 +428,7 @@ fn prescribing_the_hanging_node_is_what_makes_a_patch_test_blind() {
 /// mechanism made visible.
 #[test]
 fn holding_the_hanging_node_restores_the_rest_of_the_patch() {
-    let mut graded = two_tets_across_a_face();
-    graded.refine_by_max_edge_length(5.0, 1);
+    let graded = two_tets_with_a_hanging_node();
     let hanging: Vec<u32> = hanging_nodes(&graded).iter().map(|(v, _)| *v).collect();
     let others: Vec<u32> = (0..u32::try_from(graded.vertex_count()).expect("fits"))
         .filter(|v| !hanging.contains(v))
@@ -445,8 +483,7 @@ fn holding_the_hanging_node_restores_the_rest_of_the_patch() {
 /// *first* — see [`the_three_ways_out`].
 #[test]
 fn constraining_the_hanging_node_to_its_parent_edge_closes_the_tear() {
-    let mut graded = two_tets_across_a_face();
-    graded.refine_by_max_edge_length(5.0, 1);
+    let graded = two_tets_with_a_hanging_node();
     let pairs = hanging_nodes(&graded);
 
     for (name, field) in [
@@ -559,4 +596,72 @@ fn the_three_ways_out() {
         "halving and doubling has to round-trip exactly, or the constraint u = (a+b)/2 would \
          introduce an error of its own and option (a) would need a different argument"
     );
+}
+
+/// The hand-built scene carries the same defect as the refiner's output, to the
+/// last digit of every measurement in this file.
+///
+/// It is **not the same mesh**. The refinement threshold sits below *both*
+/// tetrahedra's longest edges, so the refiner splits the lower one as well — on
+/// an edge that is not part of the shared face — and comes out with 7 vertices
+/// and 4 elements against the hand build's 6 and 3. That extra split leaves the
+/// shared face whole on the lower side, so it has nothing to do with the hanging
+/// node, and the hand build is the minimal scene that carries the defect.
+///
+/// "Has nothing to do with it" is the kind of claim this file exists to distrust,
+/// so it is measured rather than argued: every quantity reported above is
+/// computed on both scenes and required to agree exactly.
+///
+/// This test can only run while the refiner still produces hanging nodes. Once it
+/// is made conforming the comparison becomes impossible, and the measurements
+/// stand on the hand-built scene alone — which is why they carry numeric bands
+/// rather than only signs.
+#[test]
+fn the_hand_built_scene_carries_the_same_defect_as_the_refiner_did() {
+    let mut refined = two_tets_across_a_face();
+    let passes = refined.refine_by_max_edge_length(5.0, 1);
+    assert_eq!(passes, 1, "one pass must have run");
+    let built = two_tets_with_a_hanging_node();
+
+    eprintln!(
+        "[faithful] refiner: {} vertices / {} tets;  hand-built: {} / {}",
+        refined.vertex_count(),
+        refined.tet_count(),
+        built.vertex_count(),
+        built.tet_count()
+    );
+
+    for (name, field) in [
+        ("linear", &linear as &dyn Fn([f64; 3]) -> [f64; 3]),
+        ("quadratic", &quadratic as &dyn Fn([f64; 3]) -> [f64; 3]),
+    ] {
+        let mut measured = Vec::new();
+        for mesh in [&refined, &built] {
+            let hanging: Vec<u32> = hanging_nodes(mesh).iter().map(|(v, _)| *v).collect();
+            let free = solve_with_exact_boundary(mesh, field, &hanging);
+            let held = solve_with_exact_boundary(mesh, field, &[]);
+            measured.push((
+                incompatibility(mesh, &free),
+                incompatibility(mesh, &held),
+                nodal_error(mesh, &free, field, &hanging),
+            ));
+        }
+        eprintln!(
+            "[faithful]   {name:<10} refiner {:.6e} / {:.6e} / {:.6e}   \
+             hand-built {:.6e} / {:.6e} / {:.6e}",
+            measured[0].0,
+            measured[0].1,
+            measured[0].2,
+            measured[1].0,
+            measured[1].1,
+            measured[1].2
+        );
+        assert_eq!(
+            measured[0], measured[1],
+            "{name}: the hand-built scene has to reproduce the refiner's numbers exactly, or the \
+             measurements in this file describe something the refiner never produced. The extra \
+             split the refiner makes on the lower tetrahedron is supposed to be irrelevant to \
+             the hanging node; if these differ, it is not"
+        );
+    }
 }

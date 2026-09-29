@@ -299,17 +299,21 @@ fn uniform_refinement_stays_conforming() {
     }
 }
 
-/// **The finding.** Graded refinement — the only kind adaptivity needs — leaves
-/// hanging nodes, because longest-edge bisection splits one tetrahedron without
-/// propagating the split to the neighbour that shares the face.
+/// Graded refinement — the only kind adaptivity needs — must leave the mesh
+/// conforming, which means propagating each split to the neighbour that shares
+/// the face.
 ///
-/// This is asserted as a positive result: the present primitive is a *uniform*
-/// refiner, and any adaptive-remeshing work has to add neighbour propagation
-/// (longest-edge closure / red-green refinement) before it can be used. If this
-/// test ever greens, the primitive gained that propagation and the note in
-/// `sdf_fem_mesh`'s Limitations is out of date.
+/// # Before
+///
+/// It did not. One pass on the minimal graded scene left a `z = 0` face used by
+/// a single tetrahedron, and `tests/hanging_node_effect.rs` measured what that
+/// costs: the displacement field tears by 15% of itself on a *linear* exact
+/// solution, because the coarse element contributes no force at the hanging node
+/// and the shared face behaves traction-free from the fine side. That file keeps
+/// the defect reproducible on a hand-built scene, so the measurement survives
+/// this test going green.
 #[test]
-fn graded_refinement_leaves_hanging_faces() {
+fn graded_refinement_stays_conforming() {
     let mut mesh = two_tets_across_a_face();
     // between 4√2 ≈ 5.657 (an edge of the shared face) and 20.396 (not)
     let passes = mesh.refine_by_max_edge_length(5.0, 1);
@@ -322,20 +326,11 @@ fn graded_refinement_leaves_hanging_faces() {
         shared,
         once
     );
-    for tet in &mesh.tets {
-        let v = tet.vertices;
-        eprintln!(
-            "    tet {:?} -> {:?}",
-            v,
-            v.map(|i| mesh.vertices[i as usize])
-        );
-    }
 
-    assert!(
-        once > 0,
-        "graded longest-edge bisection was expected to leave at least one z = 0 face \
-         used by a single tetrahedron; the census found shared {shared} / once {once}. \
-         If the refiner now propagates the split to the neighbour, this test has \
-         served its purpose and the Limitations note needs updating"
+    assert_eq!(
+        once, 0,
+        "graded longest-edge bisection split one tetrahedron without splitting the neighbour \
+         that shares the face, leaving {once} hanging face(s) at z = 0 against {shared} shared. \
+         The split has to propagate until nothing hangs"
     );
 }
