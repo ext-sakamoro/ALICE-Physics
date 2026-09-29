@@ -13,6 +13,35 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added — `Mat3Fix::polar_rotation` (極分解の回転因子)
+
+変形勾配 `F` に含まれる回転を伸びから分離して返します (`F = R·U`、`U` は対称正定値)
+共回転 (co-rotational) 定式化がこれを必要とし、crate には SVD も固有値分解も無かったため
+追加しました `Mat3Fix::max_abs_component` と `PolarError` も公開しています
+
+Higham の Newton 反復 `R_{k+1} = ½(R_k + R_k⁻ᵀ)` で、必要な演算は inverse / transpose /
+加算 / 半分 だけです 平方根も三角関数も固有値解法も使わないので `Fix128` の厳密演算に
+閉じ、`no_std` でも使えます 厳密に表現できる回転 24 個 (成分が 0 か ±1) は **bit 一致で
+そのまま返ります**
+
+⚠️ **`Fix128` の乗算は切り捨てなので、この反復に厳密な不動点は存在しません** 収束後も
+1 ulp/1-2 step で漂流し続けます (24 step 追跡の実測を doc に収録) そのため停止条件は
+「変化 ≤ 4 ulp」で、`next == r` や周期 2 の検出では終わりません 反復値は 2 の冪で
+正規化してあるので `‖r‖ ≈ 1`、つまり ulp 数は相対量です
+
+反復回数の実測は 6〜19 step (最悪は `diag(1, 1, 1e-4)`) なので **`max_iters` は 32 を
+推奨、16 では足りません** 一様な scaling では回数が変わりません (`diag(1e3, 1e3, 1e2)`
+と `diag(1e-3, 1e-3, 1e-4)` がともに 9〜10 step)
+
+`det F ≤ 0` は `det_floor` に関係なく無条件で棄却します (鏡映を silent に返さないため)
+`PolarError` は `Inverted` / `Degenerate` / `SingularStep` / `NotConverged` の 4 variant で、
+**呼び出し側の次の行動が原因ごとに逆になる**ため 1 つに潰していません (`#[non_exhaustive]`)
+
+oracle は `tests/analytic_polar_decomposition.rs` 11 本 (直交性 / `det R = +1` / `U` の
+対称正定値 / 再構成 / bit 一致 / Gram-Schmidt との分離 / 反転の棄却 / 閾値の scale 不変性 /
+idempotence / 停止 bound の破壊試験)
+
+
 ### Fixed — `sdf_fem_mesh` の sliver (格子頂点 warping)
 
 marching tetrahedra は零交差を格子辺のどこにでも置くので、辺の端に極端に寄ると

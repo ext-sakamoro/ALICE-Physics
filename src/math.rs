@@ -1400,6 +1400,53 @@ pub struct Mat3Fix {
     pub col2: Vec3Fix,
 }
 
+/// Why [`Mat3Fix::polar_rotation`] could not produce a rotation.
+///
+/// The three refusals and the two iteration outcomes are separate variants on
+/// purpose: **the caller's next action is different for each**, and collapsing
+/// them into one `None` was measured to mislead. The same crate already learned
+/// this for the conjugate gradient, where `pᵀKp ≤ 0` was reported uniformly as
+/// "under-constrained" until it was split into a null space (add constraints) and
+/// a rounding floor (revisit the preconditioner or the tolerance) — see
+/// `feedback_fixedpoint_iterative_solver_thresholds`. During this type's own
+/// development a budget that was merely too small was read as a degeneracy and
+/// cost a round of diagnosis, which is the same failure one layer up.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum PolarError {
+    /// `det F ≤ 0`: the deformation has turned the element inside out.
+    ///
+    /// There is no rotation factor — the nearest orthogonal matrix is a reflection
+    /// with `det = −1`. **Fix the mesh or the deformation**; a larger budget or a
+    /// lower floor will not help. Returned whatever `det_floor` was given, so a
+    /// caller passing a negative floor still cannot receive a reflection.
+    Inverted,
+    /// `det F ≤ det_floor`: too close to singular for the caller's policy.
+    ///
+    /// **Revisit the floor, or the element that produced this gradient.**
+    Degenerate,
+    /// An intermediate iterate was exactly singular, so it could not be inverted.
+    ///
+    /// Distinct from [`Self::Degenerate`] because the *input* passed the floor:
+    /// what failed is the path, not the data. **Lower the floor's tolerance for
+    /// ill-conditioning, or inspect the gradient.**
+    SingularStep {
+        /// Steps completed before the singular iterate.
+        steps: u32,
+    },
+    /// `max_iters` was exhausted while the change was still above the settling
+    /// bound.
+    ///
+    /// ⚠️ **The input is fine — raise the budget.** Measured requirements run to 21
+    /// steps for a gradient with one singular value four decades from one, so a
+    /// budget of 16 is too small for the general case; see
+    /// [`Mat3Fix::polar_rotation`] for the table.
+    NotConverged {
+        /// Steps performed, equal to the `max_iters` that was given.
+        steps: u32,
+    },
+}
+
 impl Mat3Fix {
     /// Identity matrix
     pub const IDENTITY: Self = Self {
@@ -1513,6 +1560,270 @@ impl Mat3Fix {
             col1: Vec3Fix::new(c10 * inv_det, c11 * inv_det, c12 * inv_det),
             col2: Vec3Fix::new(c20 * inv_det, c21 * inv_det, c22 * inv_det),
         })
+    }
+
+    /// Sum of two matrices, component by component.
+    #[inline]
+    fn add_mat(self, rhs: Self) -> Self {
+        Self {
+            col0: self.col0 + rhs.col0,
+            col1: self.col1 + rhs.col1,
+            col2: self.col2 + rhs.col2,
+        }
+    }
+
+    /// Smallest power of two at or above a **positive** `v`.
+    ///
+    /// Only used to pick an exact divisor for the polar iteration, which needs the
+    /// divisor within a factor of two of `v` and nothing more, so when doubling
+    /// the leading bit would leave the range the leading bit itself is returned
+    /// instead of failing. `Fix128::ONE` for a non-positive `v`, which
+    /// [`Self::polar_rotation`] has already rejected before it gets here.
+    fn ceil_power_of_two(v: Fix128) -> Fix128 {
+        if v <= Fix128::ZERO {
+            return Fix128::ONE;
+        }
+        let raw = ((v.hi as u64 as u128) << 64) | v.lo as u128;
+        let bits = 128 - raw.leading_zeros();
+        let floor_pow = 1u128 << (bits - 1);
+        let pow = if raw == floor_pow || bits >= 127 {
+            floor_pow
+        } else {
+            floor_pow << 1
+        };
+        Fix128 {
+            hi: (pow >> 64) as i64,
+            lo: pow as u64,
+        }
+    }
+
+    /// Largest absolute component, as a scale for this matrix.
+    ///
+    /// Useful for turning an intrinsic, scale-free criterion into an absolute one
+    /// at the call site: a determinant scales as the **cube** of the matrix, so
+    /// `‖F‖³` is the quantity a determinant floor has to be expressed against.
+    /// See [`Self::polar_rotation`].
+    #[must_use]
+    pub fn max_abs_component(self) -> Fix128 {
+        let mut worst = Fix128::ZERO;
+        for c in [self.col0, self.col1, self.col2] {
+            for v in [c.x, c.y, c.z] {
+                let a = v.abs();
+                if a > worst {
+                    worst = a;
+                }
+            }
+        }
+        worst
+    }
+
+    /// Rotation factor `R` of the polar decomposition `F = R·U`, where `U` is
+    /// symmetric positive definite.
+    ///
+    /// This is the piece a co-rotational formulation needs: the rotation a
+    /// deformation gradient contains, separated from the stretch, so an element's
+    /// small-strain stiffness can be rotated into the deformed frame instead of
+    /// reading a large rotation as a strain.
+    ///
+    /// # Method
+    ///
+    /// Higham's Newton iteration for the orthogonal polar factor,
+    ///
+    /// ```text
+    /// R₀ = F,   R_{k+1} = ½ (R_k + R_k⁻ᵀ)
+    /// ```
+    ///
+    /// which needs only [`Self::inverse`], [`Self::transpose`], addition and a
+    /// halving — no square root, no trigonometry, no eigensolver. Every operation
+    /// is one [`Fix128`] performs exactly, so two runs on different targets
+    /// produce bit-identical rotations and nothing here can reach a platform
+    /// `libm`. Nothing allocates, so this is available in `no_std` builds.
+    ///
+    /// # Convergence, measured
+    ///
+    /// Quadratic near the answer — the number of correct bits doubles per step —
+    /// and linear while a singular value is far from one, where the iteration
+    /// halves the distance per step. Measured change per step for a general
+    /// gradient:
+    ///
+    /// ```text
+    /// 4.17e-1 → 8.01e-2 → 3.20e-3 → 5.12e-6 → 1.31e-11 → 0
+    /// ```
+    ///
+    /// Measured step counts to the settling bound
+    /// (`tests/analytic_polar_decomposition.rs` prints the first four; the rest were
+    /// measured by raising `max_iters` until the call succeeded):
+    ///
+    /// | `F` | steps |
+    /// |---|---|
+    /// | simple shear `γ = 0.4` | 6 |
+    /// | `diag(1.5, 0.8, 1.1)` | 7 |
+    /// | rotation ∘ `diag(1.3, 0.9, 1.05)` | 7 |
+    /// | a general full matrix | 7 |
+    /// | `diag(1, 1, 0.1)` | 9 |
+    /// | `diag(1e3, 1e3, 1e2)` | 9 |
+    /// | `diag(4, 1, 0.25)` | 10 |
+    /// | `diag(1e-3, 1e-3, 1e-4)` | 10 |
+    /// | `diag(1, 1, 0.01)` | 13 |
+    /// | `diag(1, 1, 1e-4)` | 19 |
+    ///
+    /// So **`max_iters = 32` covers everything measured with margin, and 16 is not
+    /// enough** — the flattest gradient the intrinsic floor still accepts needs 19.
+    ///
+    /// The two uniformly scaled rows are the point of the normalisation below:
+    /// `diag(1e3, 1e3, 1e2)` and `diag(1e-3, 1e-3, 1e-4)` are the same shape six
+    /// decades apart and both finish in 9 or 10 steps, so **the budget a caller has
+    /// to pass does not depend on the units its field is expressed in**. What the
+    /// count does depend on is the *spread*: `diag(1, 1, 1e-4)` is slow because one
+    /// singular value is four decades from the others, and no uniform scaling can
+    /// fix that.
+    ///
+    /// An exactly representable rotation is returned *unchanged*: its largest
+    /// component lies in `[1/√3, 1]` so the divisor is exactly one, and for
+    /// orthogonal `F`, `F⁻ᵀ = F`, so the first step is `½(F + F)` with no
+    /// rounding.
+    ///
+    /// # Why the iteration stops on a change of a few bits, not on no change
+    ///
+    /// ⚠️ **There is in general no matrix this iteration leaves unchanged.**
+    /// [`Fix128`] multiplication **truncates** rather than rounding to nearest, so
+    /// the rounded map carries a systematic bias of a fraction of a unit in the
+    /// last place per step, and the iterate keeps creeping after it has converged
+    /// to everything the representation can hold. Measured on a rotation about x
+    /// built from `3/5` and `4/5` (whose determinant is `1 + 819·2⁻⁶⁴`, not
+    /// exactly one), tracked for 24 steps:
+    ///
+    /// ```text
+    /// step  1: col1.y lo=…730314   col1.z lo=…641784
+    /// step  4: col1.y lo=…730312   col1.z lo=…641785
+    /// step  9: col1.y lo=…730310   col1.z lo=…641786
+    /// step 14: col1.y lo=…730309   col1.z lo=…641787   ← no fixed point, no cycle
+    /// ```
+    ///
+    /// So `next == r` is not a reachable stopping condition, and neither is a
+    /// period-two cycle: both were tried and both burned the whole budget, which
+    /// the caller then received as a failure to decompose. The drift is **1 unit
+    /// in the last place per one or two steps**; the iteration stops at a change of
+    /// **4**, which is above the drift with margin and far below anything a caller
+    /// of a rotation matrix can observe.
+    ///
+    /// Rounding to nearest would not remove the need for this rule — it would make
+    /// the bias unbiased rather than systematic, and the map would still be a
+    /// discretisation with no guaranteed fixed point.
+    ///
+    /// The bound is scale free because the iterate is normalised: `‖r‖ ≈ 1`, so
+    /// "four units in the last place" is a relative quantity, not the absolute
+    /// threshold that always breaks at some other problem size.
+    ///
+    /// # Why `det_floor` is a parameter and not a constant
+    ///
+    /// A matrix does not know the scale of the field it came from, so a floor
+    /// written *inside* this function would be an absolute threshold — the shape
+    /// that always breaks at some problem size. The policy belongs to the caller:
+    /// a finite-element assembly derives it from the element volume, and a caller
+    /// that only wants the intrinsic numerical criterion passes
+    ///
+    /// ```text
+    /// det_floor = ε · ‖F‖³      (Self::max_abs_component gives ‖F‖)
+    /// ```
+    ///
+    /// which is scale free, because both sides scale as the cube of the matrix.
+    ///
+    /// # Returns `None`
+    ///
+    /// - When `det F ≤ 0`, **whatever `det_floor` is given**. A non-positive
+    ///   determinant means the deformation has turned the element inside out, and
+    ///   the nearest orthogonal matrix is then a *reflection* with `det = −1`.
+    ///   Returning it would silently flip the sign of every stress component, so
+    ///   this rejection is not delegated to the caller's floor: a caller that
+    ///   passes a negative `det_floor` still cannot get a reflection back.
+    /// - When `det F ≤ det_floor`.
+    /// - When `max_iters` is exhausted, or an intermediate matrix is exactly
+    ///   singular.
+    ///
+    /// # Errors
+    ///
+    /// One of the four [`PolarError`] variants, which are kept separate because the
+    /// caller's next action differs for each: [`PolarError::Inverted`] and
+    /// [`PolarError::Degenerate`] are about the data, [`PolarError::NotConverged`]
+    /// is about the budget, and [`PolarError::SingularStep`] is about the path.
+    pub fn polar_rotation(self, det_floor: Fix128, max_iters: u32) -> Result<Self, PolarError> {
+        self.polar_rotation_steps(det_floor, max_iters)
+            .map(|(r, _)| r)
+    }
+
+    /// [`Self::polar_rotation`], also reporting how many iterations it took.
+    ///
+    /// Crate-internal so the step count can be pinned by a test without becoming
+    /// part of the published surface.
+    pub(crate) fn polar_rotation_steps(
+        self,
+        det_floor: Fix128,
+        max_iters: u32,
+    ) -> Result<(Self, u32), PolarError> {
+        let det = self.determinant();
+        // Unconditional, and checked before the caller's floor: a reflection must
+        // not be reachable through `det_floor`, however that floor was chosen.
+        if det <= Fix128::ZERO {
+            return Err(PolarError::Inverted);
+        }
+        if det <= det_floor {
+            return Err(PolarError::Degenerate);
+        }
+
+        // Normalise by a **power of two** at or above ‖F‖ before iterating.
+        //
+        // The polar factor is invariant under a positive scaling (`F/s = R·(U/s)`
+        // and `U/s` is still symmetric positive definite), but the *iteration
+        // count* is not: Higham's iteration is linear while the singular values
+        // are far from one, halving the largest per step. Measured, `diag(1, 1, 0.1)`
+        // needs 9 steps and the six-decades-smaller `diag(1e-3, 1e-3, 1e-4)` needs
+        // 10 — without normalisation the second did not converge in 16 at all, so a
+        // caller's budget would have depended on the units its field is expressed
+        // in.
+        //
+        // Dividing by ‖F‖ itself would fix the step count and **break
+        // idempotence**: the iteration settles on a fixed point of the rounded
+        // map, which for `diag(1.5, 0.8, 1.1)` is `diag(1 − 2⁻⁶⁴, …)`, and
+        // dividing *that* by its own largest component lands on the neighbouring
+        // fixed point `I`. Rounding the divisor up to a power of two avoids it:
+        // every column of an orthogonal matrix is a unit vector, so its largest
+        // component is at least `1/√3 ≈ 0.577` and at most `1`, which rounds up to
+        // exactly one — a rotation is therefore never rescaled, and feeding one
+        // back in returns it bit for bit.
+        // `det > 0` already rules out a zero matrix, so the scale is positive.
+        let divisor = Self::ceil_power_of_two(self.max_abs_component());
+        let mut r = if divisor == Fix128::ONE {
+            self
+        } else {
+            Self {
+                col0: self.col0 / divisor,
+                col1: self.col1 / divisor,
+                col2: self.col2 / divisor,
+            }
+        };
+        /// Change at which the iteration is considered settled, in units of
+        /// `2⁻⁶⁴`. The measured drift of the truncating map is one per one or two
+        /// steps, so four is above it with margin; the iterate is normalised to
+        /// `‖r‖ ≈ 1`, which is what makes a bit count a relative quantity.
+        const SETTLED: Fix128 = Fix128 { hi: 0, lo: 4 };
+
+        let half = Fix128 { hi: 0, lo: 1 << 63 }; // exactly 0.5
+        let mut steps = 0_u32;
+        while steps < max_iters {
+            let inverse = match r.inverse() {
+                Some(i) => i,
+                None => return Err(PolarError::SingularStep { steps }),
+            };
+            let next = r.add_mat(inverse.transpose()).scale(half);
+            steps += 1;
+            let change = next.add_mat(r.scale(Fix128::NEG_ONE)).max_abs_component();
+            r = next;
+            if change <= SETTLED {
+                return Ok((r, steps));
+            }
+        }
+        Err(PolarError::NotConverged { steps })
     }
 }
 
