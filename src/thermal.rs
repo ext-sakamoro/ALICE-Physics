@@ -13,6 +13,7 @@
 //!
 //! Author: Moroya Sakamoto
 
+use crate::coupled_field::{CoupledField, CoupledFieldError, CoupledScalar};
 use crate::sim_field::ScalarField3D;
 use crate::sim_modifier::PhysicsModifier;
 
@@ -304,6 +305,38 @@ impl PhysicsModifier for ThermalModifier {
 
     fn is_active(&self) -> bool {
         self.enabled
+    }
+}
+
+// ============================================================================
+// Coupling channel
+// ============================================================================
+
+/// The temperature field is shared through a deterministic `Fix128` channel.
+///
+/// `ThermalModifier` and [`crate::phase_change::PhaseChangeModifier`] each own
+/// a temperature field and nothing relates them — `PhysicsModifier::update`
+/// receives only `dt`, so neither can read the other's. Going through
+/// [`CoupledField`] gives the pair one agreed field; see
+/// [`crate::coupled_field::reconcile_mean`].
+///
+/// This does not change what `update` does: coupling happens only when the
+/// caller reconciles, so an existing chain behaves exactly as before.
+impl CoupledScalar for ThermalModifier {
+    fn coupled_name(&self) -> &'static str {
+        "temperature"
+    }
+
+    fn coupled_channel(&self) -> Result<CoupledField, CoupledFieldError> {
+        CoupledField::try_matching(&self.temperature)
+    }
+
+    fn publish(&self, out: &mut CoupledField) -> Result<(), CoupledFieldError> {
+        out.copy_from_f32(&self.temperature)
+    }
+
+    fn adopt(&mut self, src: &CoupledField) -> Result<(), CoupledFieldError> {
+        src.write_to_f32(&mut self.temperature)
     }
 }
 

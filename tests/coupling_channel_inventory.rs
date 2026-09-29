@@ -4,14 +4,24 @@
 //! (thermal, pressure, fracture, phase change, erosion, and the Fix128 CFD
 //! solver). This file measures what they can and cannot hand to each other.
 //!
-//! ⚠️ **Measured: the only channel between the `PhysicsModifier` implementors
-//! is the scalar SDF distance, and there is no channel at all between them and
-//! the `Fix128` core.** `update` receives `dt` and nothing else, so a modifier
-//! has no argument through which another modifier's field could arrive, and
-//! `modify_distance` takes `&self`, so nothing can be written back. The
-//! composition in `ModifiedSdf::eval_distance` folds one `f32` through the
-//! chain. That is a one-way composition of geometry, weaker than a staggered
-//! (weak) coupling.
+//! ⚠️ **Measured: along the `PhysicsModifier` path, the only channel between
+//! the implementors is the scalar SDF distance.** `update` receives `dt` and
+//! nothing else, so a modifier has no argument through which another
+//! modifier's field could arrive, and `modify_distance` takes `&self`, so
+//! nothing can be written back. The composition in
+//! `ModifiedSdf::eval_distance` folds one `f32` through the chain. That is a
+//! one-way composition of geometry, weaker than a staggered (weak) coupling.
+//!
+//! ⚠️ **Since 2026-09-30 that is no longer the whole picture.**
+//! `coupled_field::CoupledScalar` is a second, opt-in path: a subsystem can
+//! publish its field into a `Fix128` `CoupledField` and adopt one back, and
+//! `coupled_field::reconcile_mean` makes a set of participants agree. Nothing
+//! in `ModifiedSdf::update` calls it, so every measurement below still holds
+//! **for the default path** — which is why the tests that assert "they never
+//! meet" now say so in their names. `reconcile_mean_is_the_path_that_does_join_
+//! the_two_temperature_owners` is the counterpart that fails if that opt-in
+//! path is removed; without it, deleting the whole channel would leave this
+//! file green.
 //!
 //! ⚠️ **Measured: of the five production implementors, only `fracture` reads
 //! that scalar.** The other four add their own offset and ignore what arrived,
@@ -24,8 +34,16 @@
 //! systems.** `thermal::ThermalModifier.temperature` and
 //! `phase_change::PhaseChangeModifier.temperature` are both `ScalarField3D`
 //! (`f32`); `cfd_solver::CfdSolver.temperature` is an `Option<Grid3d>`
-//! (`Fix128`). No file under `src/` names both field types, so no code path
-//! can relate them.
+//! (`Fix128`). The two `f32` owners can now be related to each other, on
+//! demand, through `CoupledField`; the CFD grid still cannot be reached from
+//! either, because no file under `src/` names both `ScalarField3D` and
+//! `Grid3d`.
+//!
+//! ⚠️ That last check is a **string match over `src/*.rs`, not a reachability
+//! analysis**: one doc comment mentioning the other type turns it red, and a
+//! real conversion routed through a third module would leave it green. Treat
+//! it as a tripwire on the obvious case, not as proof of disjointness
+//! (Backlog has this noted).
 //!
 //! ⚠️ **Measured: they are not joined through the geometry either.** A shared
 //! SDF would couple the two layers without copying any field — the fluid would
@@ -449,15 +467,20 @@ fn thermal_field_moves_the_sdf_and_not_the_fluid() {
 // ============================================================================
 
 /// `ThermalModifier` and `PhaseChangeModifier` each own a temperature field
-/// over the same region. Composed in one `ModifiedSdf`, they can disagree
-/// about the temperature at a point without limit, and neither moves toward
-/// the other.
+/// over the same region. Composed in one `ModifiedSdf` and stepped, they can
+/// disagree about the temperature at a point without limit, and neither moves
+/// toward the other.
 ///
 /// This is the same conjunction as above, within the `f32` layer: the
 /// perturbation changes the modifier it was applied to, both fields are live,
 /// and the other field is bit-identical.
+///
+/// ⚠️ **Scope: the `ModifiedSdf::update` path only.** A path that does
+/// reconcile them exists — see
+/// `reconcile_mean_is_the_path_that_does_join_the_two_temperature_owners`.
+/// What this test pins is that stepping the chain never invokes it.
 #[test]
-fn the_two_f32_temperature_fields_never_reconcile() {
+fn stepping_the_modifier_chain_never_reconciles_the_two_f32_temperature_fields() {
     let probe = (0.0_f32, 0.0_f32, 0.0_f32);
 
     // Both modifiers start from the same ambient so the disagreement below is
@@ -548,8 +571,11 @@ fn the_two_f32_temperature_fields_never_reconcile() {
 /// `ModifiedSdf::update` calls each modifier's `update(dt)` in turn, so this is
 /// a Jacobi sweep over subsystems with no exchange: the gap can only close by
 /// each field independently decaying toward its own ambient.
+///
+/// ⚠️ **Scope: `ModifiedSdf::update` only.** `reconcile_mean` closes this same
+/// gap in one call; nothing steps it for you.
 #[test]
-fn a_point_has_two_temperatures_and_the_gap_does_not_close() {
+fn a_point_has_two_temperatures_and_stepping_does_not_close_the_gap() {
     let probe = (0.0_f32, 0.0_f32, 0.0_f32);
     let cfg_t = ThermalConfig {
         ambient_temperature: 20.0,
@@ -612,6 +638,101 @@ fn a_point_has_two_temperatures_and_the_gap_does_not_close() {
         phase_after, 0.0,
         "the phase-change modifier developed an offset ({phase_after}) without \
          ever being heated; it read the thermal field"
+    );
+}
+
+/// The opt-in path that **does** join the two temperature owners.
+///
+/// Every other test in this file asserts an absence, and an absence keeps
+/// passing when the thing that was absent is deleted. This one asserts the
+/// presence of `coupled_field::reconcile_mean`, so removing the channel — or
+/// stopping either modifier from implementing `CoupledScalar` — turns this
+/// file red instead of leaving it quietly green.
+///
+/// It also fixes the boundary the tests above now claim: the gap they measure
+/// is a property of `ModifiedSdf::update`, not of the crate. Here the same two
+/// modifiers, diverged the same way, are made to agree by one call that
+/// `update` does not make on anyone's behalf.
+#[test]
+fn reconcile_mean_is_the_path_that_does_join_the_two_temperature_owners() {
+    use alice_physics::coupled_field::{reconcile_mean, CoupledScalar};
+    use alice_physics::sim_modifier::PhysicsModifier;
+
+    let probe = (0.0_f32, 0.0_f32, 0.0_f32);
+    let mut thermal = ThermalModifier::new(
+        ThermalConfig {
+            ambient_temperature: 20.0,
+            ..ThermalConfig::default()
+        },
+        RES,
+        MIN,
+        MAX,
+    );
+    let mut phase = PhaseChangeModifier::new(
+        PhaseChangeConfig {
+            ambient_temperature: 20.0,
+            ..PhaseChangeConfig::default()
+        },
+        RES,
+        MIN,
+        MAX,
+    );
+
+    // Diverge them exactly as the "never reconciles" tests do: heat one, step
+    // both, and let the absence of any exchange do the rest.
+    thermal.apply_heat_at(probe.0, probe.1, probe.2, 3_000.0, 1.5);
+    for _ in 0..STEPS {
+        thermal.update(DT);
+        phase.update(DT);
+    }
+
+    let before_t = thermal.temperature_at(probe.0, probe.1, probe.2);
+    let before_p = phase.temperature_at(probe.0, probe.1, probe.2);
+    // (1) the gap is real — otherwise "they agree afterwards" is trivial.
+    assert!(
+        (before_t - before_p).abs() > 100.0,
+        "the two owners differ by only {} degrees before reconciling; this \
+         test needs a real gap to close",
+        (before_t - before_p).abs()
+    );
+    // (2) both fields are live, i.e. neither is sitting at its initial state.
+    assert_ne!(
+        before_t, 20.0,
+        "the thermal field never moved off ambient; it is not participating"
+    );
+
+    let mut channel = thermal
+        .coupled_channel()
+        .expect("the channel matches the modifier's own grid");
+    {
+        let mut participants: [&mut dyn CoupledScalar; 2] = [&mut thermal, &mut phase];
+        reconcile_mean(&mut participants, &mut channel)
+            .expect("both modifiers are on the same grid");
+    }
+
+    // (3) and now the same point reads one temperature through both owners.
+    let after_t = thermal.temperature_at(probe.0, probe.1, probe.2);
+    let after_p = phase.temperature_at(probe.0, probe.1, probe.2);
+    assert_eq!(
+        after_t.to_bits(),
+        after_p.to_bits(),
+        "after reconcile_mean the probe still reads two temperatures \
+         ({after_t} vs {after_p}); the channel did not join them"
+    );
+    assert!(
+        after_t > before_t.min(before_p) && after_t < before_t.max(before_p),
+        "the agreed temperature {after_t} is not between the two inputs \
+         ({before_t}, {before_p}); one field was copied over the other rather \
+         than reconciled"
+    );
+
+    // (4) the channel joined them on purpose and not by flattening everything:
+    // a point far from the heat must still differ from the hot probe.
+    let cold = thermal.temperature_at(1.8, 1.8, 1.8);
+    assert!(
+        (after_t - cold).abs() > 1.0,
+        "the whole field collapsed to one value ({after_t} vs {cold}); the \
+         agreement above would then say nothing about coupling"
     );
 }
 

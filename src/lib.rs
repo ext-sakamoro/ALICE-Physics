@@ -146,6 +146,7 @@
 //! - [`erosion`]: Wind, water, chemical, ablation erosion
 //! - [`fracture`]: Stress-driven crack propagation with CSG subtraction
 //! - [`phase_change`]: Solid/liquid/gas transitions driven by temperature
+//! - [`coupled_field`]: Deterministic `Fix128` channel for sharing one field between physics
 //!
 //! ## Game Systems
 //! - [`animation_blend`]: Ragdoll animation blending with SLERP
@@ -264,6 +265,7 @@ pub mod contact_viz;
 #[cfg(feature = "std")]
 pub mod convex_decompose;
 pub mod convex_mesh_builder;
+pub mod coupled_field;
 pub mod coupled_iteration;
 pub mod creep_longterm;
 pub mod cylinder;
