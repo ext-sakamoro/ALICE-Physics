@@ -5371,6 +5371,61 @@ pub fn alice_physics::math_util::cbrt_fix(alice_physics::math::Fix128) -> alice_
 pub fn alice_physics::math_util::clamp_fix(alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128) -> alice_physics::math::Fix128
 pub fn alice_physics::math_util::exp_fix(alice_physics::math::Fix128) -> alice_physics::math::Fix128
 pub fn alice_physics::math_util::pow_int(alice_physics::math::Fix128, i32) -> alice_physics::math::Fix128
+pub mod alice_physics::maxwell_fdtd
+pub enum alice_physics::maxwell_fdtd::Component
+pub alice_physics::maxwell_fdtd::Component::Ex
+pub alice_physics::maxwell_fdtd::Component::Ey
+pub alice_physics::maxwell_fdtd::Component::Ez
+pub alice_physics::maxwell_fdtd::Component::Hx
+pub alice_physics::maxwell_fdtd::Component::Hy
+pub alice_physics::maxwell_fdtd::Component::Hz
+impl core::clone::Clone for alice_physics::maxwell_fdtd::Component
+pub fn alice_physics::maxwell_fdtd::Component::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::maxwell_fdtd::Component
+impl core::cmp::PartialEq for alice_physics::maxwell_fdtd::Component
+pub fn alice_physics::maxwell_fdtd::Component::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::maxwell_fdtd::Component
+pub fn alice_physics::maxwell_fdtd::Component::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for alice_physics::maxwell_fdtd::Component
+pub fn alice_physics::maxwell_fdtd::Component::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for alice_physics::maxwell_fdtd::Component
+impl core::marker::StructuralPartialEq for alice_physics::maxwell_fdtd::Component
+impl core::marker::Freeze for alice_physics::maxwell_fdtd::Component
+impl core::marker::Send for alice_physics::maxwell_fdtd::Component
+impl core::marker::Sync for alice_physics::maxwell_fdtd::Component
+impl core::marker::Unpin for alice_physics::maxwell_fdtd::Component
+impl core::marker::UnsafeUnpin for alice_physics::maxwell_fdtd::Component
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::maxwell_fdtd::Component
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::maxwell_fdtd::Component
+pub struct alice_physics::maxwell_fdtd::YeeGrid
+impl alice_physics::maxwell_fdtd::YeeGrid
+pub const fn alice_physics::maxwell_fdtd::YeeGrid::component_dims(&self, alice_physics::maxwell_fdtd::Component) -> (usize, usize, usize)
+pub const fn alice_physics::maxwell_fdtd::YeeGrid::courant(&self) -> alice_physics::math::Fix128
+pub const fn alice_physics::maxwell_fdtd::YeeGrid::dims(&self) -> (usize, usize, usize)
+pub fn alice_physics::maxwell_fdtd::YeeGrid::div_b(&self, usize, usize, usize) -> alice_physics::math::Fix128
+pub fn alice_physics::maxwell_fdtd::YeeGrid::get(&self, alice_physics::maxwell_fdtd::Component, usize, usize, usize) -> alice_physics::math::Fix128
+pub fn alice_physics::maxwell_fdtd::YeeGrid::max_abs_div_b(&self) -> alice_physics::math::Fix128
+pub fn alice_physics::maxwell_fdtd::YeeGrid::max_abs_field(&self) -> alice_physics::math::Fix128
+pub fn alice_physics::maxwell_fdtd::YeeGrid::new(usize, usize, usize, alice_physics::math::Fix128) -> Self
+pub fn alice_physics::maxwell_fdtd::YeeGrid::set(&mut self, alice_physics::maxwell_fdtd::Component, usize, usize, usize, alice_physics::math::Fix128)
+pub fn alice_physics::maxwell_fdtd::YeeGrid::step(&mut self)
+impl core::clone::Clone for alice_physics::maxwell_fdtd::YeeGrid
+pub fn alice_physics::maxwell_fdtd::YeeGrid::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::maxwell_fdtd::YeeGrid
+impl core::cmp::PartialEq for alice_physics::maxwell_fdtd::YeeGrid
+pub fn alice_physics::maxwell_fdtd::YeeGrid::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::maxwell_fdtd::YeeGrid
+pub fn alice_physics::maxwell_fdtd::YeeGrid::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for alice_physics::maxwell_fdtd::YeeGrid
+impl core::marker::Freeze for alice_physics::maxwell_fdtd::YeeGrid
+impl core::marker::Send for alice_physics::maxwell_fdtd::YeeGrid
+impl core::marker::Sync for alice_physics::maxwell_fdtd::YeeGrid
+impl core::marker::Unpin for alice_physics::maxwell_fdtd::YeeGrid
+impl core::marker::UnsafeUnpin for alice_physics::maxwell_fdtd::YeeGrid
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::maxwell_fdtd::YeeGrid
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::maxwell_fdtd::YeeGrid
+pub const alice_physics::maxwell_fdtd::COURANT_3D: alice_physics::math::Fix128
+pub fn alice_physics::maxwell_fdtd::cfl_limit_3d() -> alice_physics::math::Fix128
 pub mod alice_physics::metric
 #[non_exhaustive] pub enum alice_physics::metric::MetricError
 pub alice_physics::metric::MetricError::Degenerate

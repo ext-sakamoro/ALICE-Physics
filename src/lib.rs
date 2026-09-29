@@ -376,6 +376,7 @@ pub mod mass_properties;
 pub mod material;
 pub mod math;
 pub mod math_util;
+pub mod maxwell_fdtd;
 pub mod metric;
 pub mod modal;
 pub mod motor;
