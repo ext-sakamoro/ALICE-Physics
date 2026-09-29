@@ -2846,6 +2846,37 @@ impl core::marker::UnsafeUnpin for alice_physics::error::PhysicsError
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::error::PhysicsError
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::error::PhysicsError
 pub mod alice_physics::eulerian_grid
+#[non_exhaustive] pub enum alice_physics::eulerian_grid::FaceBc
+pub alice_physics::eulerian_grid::FaceBc::Fluid
+pub alice_physics::eulerian_grid::FaceBc::Inflow
+pub alice_physics::eulerian_grid::FaceBc::Inflow::normal_velocity: alice_physics::math::Fix128
+pub alice_physics::eulerian_grid::FaceBc::Outflow
+pub alice_physics::eulerian_grid::FaceBc::SlipWall
+pub alice_physics::eulerian_grid::FaceBc::Wall
+pub alice_physics::eulerian_grid::FaceBc::Wall::velocity: alice_physics::math::Vec3Fix
+impl alice_physics::eulerian_grid::FaceBc
+pub fn alice_physics::eulerian_grid::FaceBc::blocks_pressure(self) -> bool
+pub fn alice_physics::eulerian_grid::FaceBc::is_inflow(self) -> bool
+pub fn alice_physics::eulerian_grid::FaceBc::is_wall(self) -> bool
+pub fn alice_physics::eulerian_grid::FaceBc::no_slip_velocity(self) -> core::option::Option<alice_physics::math::Vec3Fix>
+impl core::clone::Clone for alice_physics::eulerian_grid::FaceBc
+pub fn alice_physics::eulerian_grid::FaceBc::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::eulerian_grid::FaceBc
+impl core::cmp::PartialEq for alice_physics::eulerian_grid::FaceBc
+pub fn alice_physics::eulerian_grid::FaceBc::eq(&self, &Self) -> bool
+impl core::default::Default for alice_physics::eulerian_grid::FaceBc
+pub fn alice_physics::eulerian_grid::FaceBc::default() -> Self
+impl core::fmt::Debug for alice_physics::eulerian_grid::FaceBc
+pub fn alice_physics::eulerian_grid::FaceBc::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::eulerian_grid::FaceBc
+impl core::marker::StructuralPartialEq for alice_physics::eulerian_grid::FaceBc
+impl core::marker::Freeze for alice_physics::eulerian_grid::FaceBc
+impl core::marker::Send for alice_physics::eulerian_grid::FaceBc
+impl core::marker::Sync for alice_physics::eulerian_grid::FaceBc
+impl core::marker::Unpin for alice_physics::eulerian_grid::FaceBc
+impl core::marker::UnsafeUnpin for alice_physics::eulerian_grid::FaceBc
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::eulerian_grid::FaceBc
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::eulerian_grid::FaceBc
 pub struct alice_physics::eulerian_grid::MacGrid
 pub alice_physics::eulerian_grid::MacGrid::dx: alice_physics::math::Fix128
 pub alice_physics::eulerian_grid::MacGrid::nx: usize
@@ -2861,6 +2892,7 @@ pub alice_physics::eulerian_grid::MacGrid::w_solid: alloc::vec::Vec<bool>
 impl alice_physics::eulerian_grid::MacGrid
 pub fn alice_physics::eulerian_grid::MacGrid::cell_velocity(&self, usize, usize, usize) -> (alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128)
 pub fn alice_physics::eulerian_grid::MacGrid::divergence(&self, usize, usize, usize) -> alice_physics::math::Fix128
+pub fn alice_physics::eulerian_grid::MacGrid::enforce_face_boundaries(&mut self)
 pub fn alice_physics::eulerian_grid::MacGrid::enforce_solid_faces(&mut self)
 pub fn alice_physics::eulerian_grid::MacGrid::is_u_solid(&self, usize, usize, usize) -> bool
 pub fn alice_physics::eulerian_grid::MacGrid::is_v_solid(&self, usize, usize, usize) -> bool
@@ -2868,12 +2900,24 @@ pub fn alice_physics::eulerian_grid::MacGrid::is_w_solid(&self, usize, usize, us
 pub fn alice_physics::eulerian_grid::MacGrid::new(usize, usize, usize, alice_physics::math::Fix128) -> Self
 pub fn alice_physics::eulerian_grid::MacGrid::pressure(&self, usize, usize, usize) -> alice_physics::math::Fix128
 pub fn alice_physics::eulerian_grid::MacGrid::set_closed_box_walls(&mut self)
+pub fn alice_physics::eulerian_grid::MacGrid::set_u_bc(&mut self, usize, usize, usize, alice_physics::eulerian_grid::FaceBc)
 pub fn alice_physics::eulerian_grid::MacGrid::set_u_solid(&mut self, usize, usize, usize, bool)
+pub fn alice_physics::eulerian_grid::MacGrid::set_v_bc(&mut self, usize, usize, usize, alice_physics::eulerian_grid::FaceBc)
 pub fn alice_physics::eulerian_grid::MacGrid::set_v_solid(&mut self, usize, usize, usize, bool)
+pub fn alice_physics::eulerian_grid::MacGrid::set_w_bc(&mut self, usize, usize, usize, alice_physics::eulerian_grid::FaceBc)
 pub fn alice_physics::eulerian_grid::MacGrid::set_w_solid(&mut self, usize, usize, usize, bool)
 pub fn alice_physics::eulerian_grid::MacGrid::u(&self, usize, usize, usize) -> alice_physics::math::Fix128
+pub fn alice_physics::eulerian_grid::MacGrid::u_bc(&self, usize, usize, usize) -> alice_physics::eulerian_grid::FaceBc
+pub fn alice_physics::eulerian_grid::MacGrid::u_wall_across_y(&self, usize, usize, usize, bool) -> core::option::Option<alice_physics::math::Vec3Fix>
+pub fn alice_physics::eulerian_grid::MacGrid::u_wall_across_z(&self, usize, usize, usize, bool) -> core::option::Option<alice_physics::math::Vec3Fix>
 pub fn alice_physics::eulerian_grid::MacGrid::v(&self, usize, usize, usize) -> alice_physics::math::Fix128
+pub fn alice_physics::eulerian_grid::MacGrid::v_bc(&self, usize, usize, usize) -> alice_physics::eulerian_grid::FaceBc
+pub fn alice_physics::eulerian_grid::MacGrid::v_wall_across_x(&self, usize, usize, usize, bool) -> core::option::Option<alice_physics::math::Vec3Fix>
+pub fn alice_physics::eulerian_grid::MacGrid::v_wall_across_z(&self, usize, usize, usize, bool) -> core::option::Option<alice_physics::math::Vec3Fix>
 pub fn alice_physics::eulerian_grid::MacGrid::w(&self, usize, usize, usize) -> alice_physics::math::Fix128
+pub fn alice_physics::eulerian_grid::MacGrid::w_bc(&self, usize, usize, usize) -> alice_physics::eulerian_grid::FaceBc
+pub fn alice_physics::eulerian_grid::MacGrid::w_wall_across_x(&self, usize, usize, usize, bool) -> core::option::Option<alice_physics::math::Vec3Fix>
+pub fn alice_physics::eulerian_grid::MacGrid::w_wall_across_y(&self, usize, usize, usize, bool) -> core::option::Option<alice_physics::math::Vec3Fix>
 impl core::clone::Clone for alice_physics::eulerian_grid::MacGrid
 pub fn alice_physics::eulerian_grid::MacGrid::clone(&self) -> Self
 impl core::fmt::Debug for alice_physics::eulerian_grid::MacGrid
