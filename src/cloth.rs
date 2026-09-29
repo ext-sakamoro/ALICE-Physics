@@ -818,43 +818,65 @@ mod tests {
         );
     }
 
+    /// 折り返して 2 層が重なった布で、自己接触が層を引き離すことを確かめる
+    ///
+    /// ⚠️ **旧 scene (5x5 を上端 pin で吊るす) は自己交差しなかったので、
+    /// `self_collision = false` にしても green だった** (2026-09-29 破壊試験で実測:
+    /// 最小粒子間距離 0.49994 に対し判定閾値 0.025 = 余裕 20 倍、`too_close` は 0 で
+    /// assert は `0 < 25`) 余裕を締め直しても「自己交差しない場面で自己接触を測っている」
+    /// ことは変わらないので、**scene を置換**した
+    ///
+    /// 折り返しは**等長**なので辺拘束と喧嘩しない (行 3 → `(y=1, z=2)`、行 4 → `(y=1, z=1)`
+    /// で全ての辺と対角が元の長さを保つ) 行 1 と行 4 は辺で繋がっていない重なり対になる
+    ///
+    /// ⚠️ この test が言えるのは **粒子-粒子の斥力が働いていること**だけです
+    /// 頂点が三角形の内部を通り抜ける経路は粒子-粒子では原理的に見られないので、
+    /// そちらは `tests/analytic_self_contact.rs` の目標 oracle が担当する
     #[test]
     fn test_cloth_self_collision() {
-        let mut cloth = Cloth::new_grid(
-            Vec3Fix::ZERO,
-            Fix128::from_int(2),
-            Fix128::from_int(2),
-            5,
-            5,
-            Fix128::from_ratio(1, 100),
-        );
-        cloth.config.self_collision = true;
-        cloth.config.self_collision_distance = Fix128::from_ratio(5, 100); // 0.05
-        cloth.pin_top_row(5);
-
-        let dt = Fix128::from_ratio(1, 60);
-        for _ in 0..60 {
-            cloth.step(dt);
-        }
-
-        // Verify no two non-connected particles are closer than self_collision_distance
-        // (This is a basic sanity check; exact enforcement depends on iterations)
-        let min_d = cloth.config.self_collision_distance.to_f32();
-        let n = cloth.particle_count();
-        let mut too_close = 0;
-        for i in 0..n {
-            for j in (i + 1)..n {
-                let d = (cloth.positions[i] - cloth.positions[j]).length().to_f32();
-                if d < min_d * 0.5 {
-                    // allow some tolerance
-                    too_close += 1;
+        fn folded(self_collision: bool) -> Fix128 {
+            const R: usize = 5;
+            let mut cloth = Cloth::new_grid(
+                Vec3Fix::ZERO,
+                Fix128::from_int(4),
+                Fix128::from_int(4),
+                R,
+                R,
+                Fix128::from_ratio(1, 100),
+            );
+            cloth.config.self_collision = self_collision;
+            // 層間 (1.0) より大きく取って、重なりが判定に入るようにする
+            cloth.config.self_collision_distance = Fix128::from_ratio(3, 2);
+            cloth.config.gravity = Vec3Fix::ZERO;
+            for x in 0..R {
+                cloth.positions[3 * R + x] =
+                    Vec3Fix::new(cloth.positions[x].x, Fix128::ONE, Fix128::from_int(2));
+                cloth.positions[4 * R + x] =
+                    Vec3Fix::new(cloth.positions[x].x, Fix128::ONE, Fix128::ONE);
+            }
+            cloth.prev_positions = cloth.positions.clone();
+            for x in 0..R {
+                cloth.inv_masses[x] = Fix128::ZERO;
+            }
+            cloth.step(Fix128::from_ratio(1, 60));
+            // 行 1 と行 4 の層間最小距離
+            let mut gap = Fix128::from_int(1 << 20);
+            for x in 0..R {
+                let d = (cloth.positions[4 * R + x] - cloth.positions[R + x]).length();
+                if d < gap {
+                    gap = d;
                 }
             }
+            gap
         }
-        // With self-collision enabled, severely overlapping particles should be rare
+
+        let gap_on = folded(true);
+        let gap_off = folded(false);
         assert!(
-            too_close < n,
-            "Self-collision should prevent extreme particle overlap"
+            gap_on > gap_off,
+            "自己接触を有効にしても層が引き離されていない (ON {} <= OFF {})",
+            gap_on.to_f32(),
+            gap_off.to_f32()
         );
     }
 
