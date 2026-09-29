@@ -109,6 +109,77 @@ struct Scene {
     volume: f64,
 }
 
+/// A slab and a square rod, both only a few cells thick.
+///
+/// These are where the warp is expected to hurt most, and they are measured
+/// apart from the closed shapes because the quantity that matters is different.
+/// The warp moves a corner by up to `SNAP_CELL_FRACTION * cell`, and when the
+/// body is two or three cells thick that is a large fraction of the thickness —
+/// with a corner on each face free to move *inwards*, the mesh can come out
+/// systematically thinner than the shape while every element in it stays
+/// well formed. No existing gate would notice: the dihedral angle is a shape
+/// measure, and the volume gate reads a convergence order, which a uniform
+/// shrink barely disturbs.
+///
+/// So `thin_scenes` are gated on measured thickness, not on angles.
+fn thin_scenes() -> Vec<ThinScene> {
+    vec![
+        ThinScene {
+            name: "plate",
+            half: [2.0, 2.0, 0.31],
+            centre: [0.07, -0.05, 0.03],
+        },
+        ThinScene {
+            name: "rod",
+            half: [2.0, 0.31, 0.27],
+            centre: [0.07, -0.05, 0.03],
+        },
+    ]
+}
+
+/// A box that is thin in one or two directions, with its exact half-extents.
+struct ThinScene {
+    name: &'static str,
+    half: [f32; 3],
+    centre: [f32; 3],
+}
+
+impl ThinScene {
+    fn sdf(&self) -> ClosureSdf {
+        let (half, centre) = (self.half, self.centre);
+        ClosureSdf::new(
+            move |x, y, z| {
+                let d = [
+                    (x - centre[0]).abs() - half[0],
+                    (y - centre[1]).abs() - half[1],
+                    (z - centre[2]).abs() - half[2],
+                ];
+                let out = [d[0].max(0.0), d[1].max(0.0), d[2].max(0.0)];
+                (out[0] * out[0] + out[1] * out[1] + out[2] * out[2]).sqrt()
+                    + d[0].max(d[1]).max(d[2]).min(0.0)
+            },
+            |_, _, _| (0.0, 0.0, 1.0),
+        )
+    }
+}
+
+/// The extent of the meshed vertices along each axis.
+///
+/// Read off the vertices rather than the volume, because the question is whether
+/// the *surface* moved: a plate that keeps its volume by bulging in the middle
+/// while its faces pull in is still the wrong plate.
+fn measured_extent(mesh: &SdfTetMesh) -> [f64; 3] {
+    let mut lo = [f64::INFINITY; 3];
+    let mut hi = [f64::NEG_INFINITY; 3];
+    for v in &mesh.vertices {
+        for k in 0..3 {
+            lo[k] = lo[k].min(f64::from(v[k]));
+            hi[k] = hi[k].max(f64::from(v[k]));
+        }
+    }
+    [hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]]
+}
+
 fn scenes() -> Vec<Scene> {
     vec![
         Scene {
@@ -500,5 +571,106 @@ fn check_volume_converges(scene: &Scene) {
             hw[0],
             hw[1]
         );
+    }
+}
+
+/// Bodies only a few cells thick, where the warp moves corners by a large
+/// fraction of the thickness.
+///
+/// The concern is that corners on the two faces of a thin body are drawn towards
+/// each other, so the mesh comes out thinner than the shape while every element
+/// in it stays well formed — which the dihedral gate would pass and the closed
+/// shapes' volume gate would not be looking at.
+///
+/// Two quantities answer it, because either alone can be fooled:
+///
+/// - **The extent**, from the extreme vertices. It comes back exactly right at
+///   every level, so the faces of the box are where they should be. On its own
+///   that proves little: extremes say nothing about a face dimpled between them.
+/// - **The volume**, which has a closed form on a box and does see the dimple.
+///
+/// The volume is gated on convergence rather than on a level, for the reason the
+/// closed shapes are: any fixed percentage would be a number read off the
+/// measurement. Measured deficits at the shipped warp — plate 4.80%, 2.44%,
+/// 1.11% and rod 21.35%, 11.92%, 4.25% — which are orders of 1.9 to 2.5. The rod
+/// starts far off because its cross-section is barely two cells across, and that
+/// is a statement about asking for a mesh that coarse, not about the warp.
+///
+/// The warp's own share is visible by rebuilding at other widths: at cell 0.25
+/// the plate holds 96.92% with no warp, 95.20% at the shipped 0.30 and 93.55% at
+/// 0.49. So widening the warp does trade volume for element shape here, in the
+/// direction and roughly the amount the `SNAP_CELL_FRACTION * cell` bound
+/// allows, and it converges away.
+#[test]
+fn thin_bodies_keep_their_thickness() {
+    for scene in thin_scenes() {
+        let sdf = scene.sdf();
+        let exact = scene.half.map(|h| 2.0 * f64::from(h));
+        let exact_volume = exact[0] * exact[1] * exact[2];
+        let cells = [0.25_f32, 0.1875, 0.125];
+        let mut deficits = Vec::new();
+        // Measured first, asserted afterwards, so that a failure at the coarsest
+        // level does not hide how the series was going.
+        for cell in cells {
+            let mesh = generate_marching_tets(&sdf, [-3.0, -3.0, -3.0], [3.0, 3.0, 3.0], cell);
+            let q = measure(&mesh);
+            let extent = measured_extent(&mesh);
+            let ratios: [f64; 3] = std::array::from_fn(|k| extent[k] / exact[k]);
+            let volume_ratio = q.total_volume / exact_volume;
+            eprintln!(
+                "[thin]    {:<9} cell {cell:<7} tets {:>6}  inverted {:>4}  \
+                 min dihedral {:>6.2}°  extent ratio {:.3} / {:.3} / {:.3}  \
+                 volume {:.4}  thickness in cells {:.1}",
+                scene.name,
+                q.tets,
+                q.inverted,
+                q.min_dihedral_deg,
+                ratios[0],
+                ratios[1],
+                ratios[2],
+                volume_ratio,
+                exact[2] / f64::from(cell)
+            );
+            assert_eq!(q.inverted, 0, "{}: cell {cell}", scene.name);
+            assert_eq!(q.degenerate, 0, "{}: cell {cell}", scene.name);
+            assert!(
+                q.min_dihedral_deg >= MIN_DIHEDRAL_DEG,
+                "{}: cell {cell}: {:.2}° is under the {MIN_DIHEDRAL_DEG}° gate",
+                scene.name,
+                q.min_dihedral_deg
+            );
+            for (k, ratio) in ratios.iter().enumerate() {
+                let lost = (1.0 - ratio) * exact[k];
+                assert!(
+                    lost < f64::from(cell),
+                    "{}: cell {cell}, axis {k}: the meshed body is {lost:.4} shorter than the \
+                     shape, more than one cell",
+                    scene.name
+                );
+            }
+            deficits.push(1.0 - volume_ratio);
+        }
+        for (w, hw) in deficits.windows(2).zip(cells.windows(2)) {
+            let order = (w[0] / w[1]).ln() / (f64::from(hw[0]) / f64::from(hw[1])).ln();
+            eprintln!(
+                "[thin]    {:<9} cell {:<7} -> {:<7} deficit {:.2}% -> {:.2}%  order {order:.2}",
+                scene.name,
+                hw[0],
+                hw[1],
+                100.0 * w[0],
+                100.0 * w[1]
+            );
+            assert!(
+                order >= 1.0,
+                "{}: the volume the mesh is missing has to vanish at least as fast as the cell \
+                 size, since that is what bounds how far the warp moves a face. Observed order \
+                 {order:.2} between cell {} and {}, deficits {:.2}% and {:.2}%",
+                scene.name,
+                hw[0],
+                hw[1],
+                100.0 * w[0],
+                100.0 * w[1]
+            );
+        }
     }
 }
