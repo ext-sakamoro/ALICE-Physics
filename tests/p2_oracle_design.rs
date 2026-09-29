@@ -482,12 +482,33 @@ fn degree_three_blindness_belongs_to_the_lattice_not_to_the_element() {
 /// a second-order element cannot pass this: cell L2 converged at +1.895.
 /// ```
 ///
-/// `#[ignore]` only so that a committed red does not stop every other gate in
-/// the repository. Run it with `cargo test --test p2_oracle_design -- --ignored`
-/// and delete the attribute the moment P2 is wired in; the assertion itself is
-/// the acceptance criterion and does not change.
+/// # Why this is `#[ignore]`d rather than deleted or left red
+///
+/// **The red is correct.** It is held back only because the implementation has
+/// not caught up — not because the assertion, the mesh or the exponent is in
+/// doubt. `cargo test --test p2_oracle_design -- --ignored` runs it, and the
+/// commit that lands a P2 element removes this attribute in the same diff.
+///
+/// ⚠️ **Do not "fix" it by lowering the exponent.** 2.7 is what separates a
+/// third-order element from the second-order one already in the crate; a band
+/// that a P1 tetrahedron can satisfy tests nothing.
+///
+/// Ignoring it costs no coverage, because
+/// [`characterises_the_p1_second_order_limit_on_a_perturbed_mesh`] is **not**
+/// ignored and pins the same number from the other side: it asserts that P1 on
+/// this mesh converges at 1.895 in `cell L2`, within a band no third-order
+/// element can satisfy. Any change to the element, the assembly or the mesh
+/// moves that number and reds *that* test in CI. So the pair is: this one is the
+/// goal, its companion is the guard, and **exactly one of the two is green at
+/// any time** — the moment P2 lands, the companion turns red and forces the
+/// attribute below to come off in the same diff.
 #[test]
-#[ignore = "the P2 acceptance criterion: red until P2 exists (cell L2 order +1.895 on P1)"]
+#[ignore = "the red is correct: a P2 element must reach third order in cell L2, \
+            and the P1 element in the crate cannot. Remove this attribute in the \
+            commit that lands P2, and delete \
+            `characterises_the_p1_second_order_limit_on_a_perturbed_mesh` in the \
+            same diff. CI coverage is not lost: that companion test is not \
+            ignored and pins the same number from the second-order side"]
 fn p2_must_reach_third_order_and_p1_does_not() {
     let cells = [4usize, 8, 16];
     let levels = study(
@@ -501,5 +522,58 @@ fn p2_must_reach_third_order_and_p1_does_not() {
         p > 2.7,
         "a second-order element cannot pass this: cell L2 converged at {p:+.3}. When P2 \
          lands, this is the assertion that says so"
+    );
+}
+
+/// The guard half of the pair: what the element in the crate *does* do.
+///
+/// [`p2_must_reach_third_order_and_p1_does_not`] states the target and is
+/// `#[ignore]`d until P2 exists. A target alone is not coverage — a doc comment
+/// recording "P1 gives +1.895" is prose, and prose does not go red when the P1
+/// assembly regresses. This test is the measurement, and it runs in CI.
+///
+/// The band is deliberately two-sided. The lower edge catches a P1 regression
+/// (a broken `B` matrix, a wrong consistent load, a mesh that stopped being
+/// conforming). **The upper edge is what makes the pair work**: 2.4 is below any
+/// third-order convergence, so the day a P2 element is wired into this study,
+/// *this* test goes red and the diff cannot be landed without also removing the
+/// `#[ignore]` from its companion and deleting this function. Exactly one of the
+/// two is green at any time.
+#[test]
+fn characterises_the_p1_second_order_limit_on_a_perturbed_mesh() {
+    let cells = [4usize, 8, 16];
+    let levels = study(
+        "the P1 guard: second order in cell L2 on the same perturbed mesh",
+        JITTER,
+        &cells,
+    );
+
+    // The solves have to have converged before the order means anything — the
+    // same precondition the locking sweeps carry, for the same reason.
+    for l in &levels {
+        assert!(
+            l.residual <= 1.0e-9,
+            "h={:.4}: the solve stopped at residual {:.3e} after {} iterations, so the \
+             order below would be measuring the conjugate gradient",
+            l.h,
+            l.residual,
+            l.iterations
+        );
+    }
+
+    let p = order(levels[0].cell_l2, levels[1].cell_l2, levels[2].cell_l2);
+    eprintln!("[p2oracle] P1 cell L2 order = {p:+.3} (measured +1.895 at d90b18e)");
+    assert!(
+        p > 1.6,
+        "P1 must still converge at second order in cell L2; got {p:+.3}. This is a \
+         regression in the element, the consistent load or the mesh — not a signal \
+         to widen the band"
+    );
+    assert!(
+        p < 2.4,
+        "cell L2 converged at {p:+.3}, which is past what a second-order element can \
+         do. If a P2 element has been wired into `run_level`, this test has done its \
+         job: remove `#[ignore]` from `p2_must_reach_third_order_and_p1_does_not` and \
+         delete this function in the same diff"
     );
 }
