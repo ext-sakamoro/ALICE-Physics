@@ -550,14 +550,28 @@ fn golden_sdf_collision_family() {
 // 13-16. SDF soft-body / character family: fem_mesh / character / wind / gpu batch
 // ---------------------------------------------------------------------------
 
-// Re-pinned 2026-09-29: `sdf_fem_mesh::generate` now alternates the 5-tet cube
-// decomposition so neighbouring cells agree on their shared faces. That changes
-// the connectivity, so `refine_by_max_edge_length` splits a different set of
-// edges and inserts fewer midpoints (81 vertices after refinement, was 91).
-// Everything this scenario hashes *before* refinement is unchanged
-// (vertex_count 27, tet_count 40, max_edge_length 0.707106769), which is the
-// expected signature of a change that only re-wires faces.
-const GOLDEN_SDF_SOFT: &str = "ca33c80d85e26740cfdf8c69121b549a0b9dddff058b4688d776e8bcd2fece1b";
+// Re-pinned 2026-09-29 (second time that day): the refiner now propagates each
+// split to the neighbour that shares the face, and breaks ties on edge length by
+// the edge's sorted vertex indices rather than by the edge's position in a
+// tetrahedron's own edge list. Both change which edges get bisected.
+//
+// Checked before re-pinning that only the refinement moved: everything this
+// scenario hashes *before* it is identical to what the previous re-pin recorded
+// — vertex_count 27, tet_count 40, max_edge_length 0.707106769. After it, 63
+// vertices where there were 81.
+//
+// Fewer, although propagation only ever adds work. That is the tie-break:
+// neighbouring tetrahedra now agree on which of their edges is longest, so they
+// share one midpoint where they used to insert two. Agreement is what the
+// tie-break is for, and this is it turning up in a vertex count.
+//
+// Two passes no longer finish, so the scenario now exercises
+// `RefineError::Unfinished`. Left at two on purpose: raising the budget would
+// move more of this hash than the change being recorded here.
+//
+// Earlier re-pin, same day: `generate` began alternating the 5-tet cube
+// decomposition (81 vertices after refinement, was 91).
+const GOLDEN_SDF_SOFT: &str = "da3481748bcd75abb105a5ccffc22eda58dded060d1f82ac817ddc11349d1d18";
 
 #[test]
 fn golden_sdf_soft_family() {
@@ -572,7 +586,17 @@ fn golden_sdf_soft_family() {
     s.usize(mesh.vertex_count());
     s.usize(mesh.tet_count());
     s.f32(mesh.max_edge_length());
-    let passes = mesh.refine_by_max_edge_length(0.6, 2);
+    // Two passes is not enough now that splits propagate to the neighbour, so
+    // this exercises the unfinished arm. Kept at two rather than raised, because
+    // the scenario's job is to pin the arithmetic and a budget change would move
+    // more of the hash than the refiner change itself.
+    let passes = match mesh.try_refine_conforming(0.6, 2) {
+        Ok(p) | Err(alice_physics::sdf_fem_mesh::RefineError::Unfinished { passes: p, .. }) => p,
+        // `RefineError` is `#[non_exhaustive]`, so this arm is required. A new
+        // variant would mean the refiner can fail in a way this scenario has
+        // never seen, and hashing some substitute number would bury that.
+        Err(other) => panic!("unexpected refinement failure: {other:?}"),
+    };
     s.u64(u64::from(passes));
     s.usize(mesh.vertex_count());
     for v in mesh.vertices.iter().take(48) {

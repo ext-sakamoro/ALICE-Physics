@@ -12445,6 +12445,26 @@ pub const fn alice_physics::sdf_destruction::destruction_from_explosion(alice_ph
 pub fn alice_physics::sdf_destruction::destruction_from_impact(&alice_physics::collider::Contact, alice_physics::math::Fix128, f32, f32, f32) -> alice_physics::sdf_destruction::DestructionShape
 pub fn alice_physics::sdf_destruction::destruction_from_projectile(alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, f32, f32) -> alice_physics::sdf_destruction::DestructionShape
 pub mod alice_physics::sdf_fem_mesh
+#[non_exhaustive] pub enum alice_physics::sdf_fem_mesh::RefineError
+pub alice_physics::sdf_fem_mesh::RefineError::Unfinished
+pub alice_physics::sdf_fem_mesh::RefineError::Unfinished::passes: u32
+pub alice_physics::sdf_fem_mesh::RefineError::Unfinished::tets_left: usize
+impl core::clone::Clone for alice_physics::sdf_fem_mesh::RefineError
+pub fn alice_physics::sdf_fem_mesh::RefineError::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::sdf_fem_mesh::RefineError
+impl core::cmp::PartialEq for alice_physics::sdf_fem_mesh::RefineError
+pub fn alice_physics::sdf_fem_mesh::RefineError::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::sdf_fem_mesh::RefineError
+pub fn alice_physics::sdf_fem_mesh::RefineError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::sdf_fem_mesh::RefineError
+impl core::marker::StructuralPartialEq for alice_physics::sdf_fem_mesh::RefineError
+impl core::marker::Freeze for alice_physics::sdf_fem_mesh::RefineError
+impl core::marker::Send for alice_physics::sdf_fem_mesh::RefineError
+impl core::marker::Sync for alice_physics::sdf_fem_mesh::RefineError
+impl core::marker::Unpin for alice_physics::sdf_fem_mesh::RefineError
+impl core::marker::UnsafeUnpin for alice_physics::sdf_fem_mesh::RefineError
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::sdf_fem_mesh::RefineError
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::sdf_fem_mesh::RefineError
 pub struct alice_physics::sdf_fem_mesh::SdfTetMesh
 pub alice_physics::sdf_fem_mesh::SdfTetMesh::tets: alloc::vec::Vec<alice_physics::sdf_fem_mesh::Tetrahedron>
 pub alice_physics::sdf_fem_mesh::SdfTetMesh::vertices: alloc::vec::Vec<[f32; 3]>
@@ -12452,6 +12472,7 @@ impl alice_physics::sdf_fem_mesh::SdfTetMesh
 pub fn alice_physics::sdf_fem_mesh::SdfTetMesh::max_edge_length(&self) -> f32
 pub fn alice_physics::sdf_fem_mesh::SdfTetMesh::refine_by_max_edge_length(&mut self, f32, u32) -> u32
 pub fn alice_physics::sdf_fem_mesh::SdfTetMesh::tet_count(&self) -> usize
+pub fn alice_physics::sdf_fem_mesh::SdfTetMesh::try_refine_conforming(&mut self, f32, u32) -> core::result::Result<u32, alice_physics::sdf_fem_mesh::RefineError>
 pub fn alice_physics::sdf_fem_mesh::SdfTetMesh::vertex_count(&self) -> usize
 impl core::clone::Clone for alice_physics::sdf_fem_mesh::SdfTetMesh
 pub fn alice_physics::sdf_fem_mesh::SdfTetMesh::clone(&self) -> Self
