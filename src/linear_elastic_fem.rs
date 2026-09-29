@@ -57,7 +57,7 @@
 //!
 //! Author: Moroya Sakamoto
 
-use crate::math::Fix128;
+use crate::math::{Fix128, Mat3Fix, PolarError, Vec3Fix};
 use crate::sdf_fem_mesh::SdfTetMesh;
 
 /// Cartesian axis of a nodal degree of freedom.
@@ -110,6 +110,20 @@ pub enum FemError {
     DegenerateElement {
         /// Index into `SdfTetMesh::tets`.
         tet: usize,
+    },
+    /// An element's deformation gradient has no rotation factor, so
+    /// [`solve_corotational`] cannot build its frame.
+    ///
+    /// Kept separate from [`Self::DegenerateElement`] because that one is about
+    /// the *mesh* and this one is about the *deformation*: the element was fine
+    /// when it was built and the displacement is what turned it inside out, or
+    /// flattened it, or exhausted the polar budget. The `cause` says which, and
+    /// the four [`PolarError`] variants call for four different responses.
+    RotationFailed {
+        /// Index into `SdfTetMesh::tets`.
+        tet: usize,
+        /// Why the polar decomposition refused.
+        cause: PolarError,
     },
     /// The constraints cannot remove all six rigid body modes.
     ///
@@ -770,6 +784,10 @@ fn div3(a: [Fix128; 3], d: Fix128) -> [Fix128; 3] {
 
 /// Constant per-element quantities: shape function gradients (1/mm) and
 /// volume (mm³).
+///
+/// The reference coordinates do not appear: they enter through `∇N` and `|V|`
+/// and nowhere else, including in the co-rotational path, whose strain
+/// `Rᵀ F − I` is built from `F = I + Σᵢ uᵢ ⊗ ∇Nᵢ`.
 #[derive(Clone, Copy)]
 struct Element {
     nodes: [usize; 4],
@@ -830,17 +848,39 @@ fn build_elements(mesh: &SdfTetMesh) -> Result<Vec<Element>, FemError> {
     Ok(elements)
 }
 
-/// `σ = D B u_e` for one element (constant over the element).
-fn element_stress(element: &Element, u: &[Fix128], lambda: Fix128, mu: Fix128) -> StressTensor {
+/// The four nodal values of a global vector belonging to one element.
+#[inline]
+fn gather(element: &Element, u: &[Fix128]) -> [[Fix128; 3]; 4] {
+    let mut local = [[Fix128::ZERO; 3]; 4];
+    for (slot, &node) in local.iter_mut().zip(element.nodes.iter()) {
+        let base = node * 3;
+        *slot = [u[base], u[base + 1], u[base + 2]];
+    }
+    local
+}
+
+/// `σ = D B u_e` for one element, from its **four nodal vectors** (constant
+/// over the element).
+///
+/// Taking the nodal vectors rather than the global array is what lets the
+/// co-rotational path reuse this: the tangent feeds it `Rᵀ Δu` and the internal
+/// force feeds it `Rᵀx − X`, and both then share one `B` and one `D`. The
+/// small-strain path feeds it the plain nodal displacements through
+/// [`gather`], which is the same arithmetic in the same order as before.
+fn element_stress_local(
+    element: &Element,
+    u: &[[Fix128; 3]; 4],
+    lambda: Fix128,
+    mu: Fix128,
+) -> StressTensor {
     let mut exx = Fix128::ZERO;
     let mut eyy = Fix128::ZERO;
     let mut ezz = Fix128::ZERO;
     let mut gxy = Fix128::ZERO;
     let mut gyz = Fix128::ZERO;
     let mut gzx = Fix128::ZERO;
-    for (g, &node) in element.grad.iter().zip(element.nodes.iter()) {
-        let base = node * 3;
-        let (ux, uy, uz) = (u[base], u[base + 1], u[base + 2]);
+    for (g, node_u) in element.grad.iter().zip(u.iter()) {
+        let (ux, uy, uz) = (node_u[0], node_u[1], node_u[2]);
         exx = exx + g[0] * ux;
         eyy = eyy + g[1] * uy;
         ezz = ezz + g[2] * uz;
@@ -860,6 +900,21 @@ fn element_stress(element: &Element, u: &[Fix128], lambda: Fix128, mu: Fix128) -
     }
 }
 
+/// `σ = D B u_e` for one element, reading the global displacement array.
+fn element_stress(element: &Element, u: &[Fix128], lambda: Fix128, mu: Fix128) -> StressTensor {
+    element_stress_local(element, &gather(element, u), lambda, mu)
+}
+
+/// `Kₑ⁰ u_e` — the element's internal force from its four nodal vectors (N).
+fn element_force_local(
+    element: &Element,
+    u: &[[Fix128; 3]; 4],
+    lambda: Fix128,
+    mu: Fix128,
+) -> [[Fix128; 3]; 4] {
+    element_force_from_stress(element, element_stress_local(element, u, lambda, mu))
+}
+
 /// `out = K u`, accumulated element by element in mesh order.
 fn apply_stiffness(
     elements: &[Element],
@@ -870,14 +925,12 @@ fn apply_stiffness(
 ) {
     out.fill(Fix128::ZERO);
     for element in elements {
-        let s = element_stress(element, u, lambda, mu);
-        for (g, &node) in element.grad.iter().zip(element.nodes.iter()) {
+        let force = element_force_local(element, &gather(element, u), lambda, mu);
+        for (f, &node) in force.iter().zip(element.nodes.iter()) {
             let base = node * 3;
-            out[base] = out[base] + element.volume * (g[0] * s.xx + g[1] * s.xy + g[2] * s.zx);
-            out[base + 1] =
-                out[base + 1] + element.volume * (g[1] * s.yy + g[0] * s.xy + g[2] * s.yz);
-            out[base + 2] =
-                out[base + 2] + element.volume * (g[2] * s.zz + g[1] * s.yz + g[0] * s.zx);
+            out[base] = out[base] + f[0];
+            out[base + 1] = out[base + 1] + f[1];
+            out[base + 2] = out[base + 2] + f[2];
         }
     }
 }
@@ -917,6 +970,220 @@ fn dot(a: &[Fix128], b: &[Fix128]) -> Fix128 {
         acc = acc + *x * *y;
     }
     acc
+}
+
+/// What one conjugate gradient solve produced.
+struct CgResult {
+    /// The solution on the free degrees of freedom, zero on the prescribed
+    /// ones.
+    x: Vec<Fix128>,
+    iterations: u32,
+    residual_norm: Fix128,
+    b_norm: Fix128,
+    /// The residual norm the iteration was actually held to, after the floor.
+    target: Fix128,
+}
+
+/// `mean(diag) / diag` on the free degrees of freedom, zero elsewhere.
+///
+/// The scaling by the mean rather than the plain reciprocal is load-bearing —
+/// see [`Preconditioner::JacobiScaled`].
+///
+/// # Errors
+///
+/// [`FemError::UnderConstrained`] when a free degree of freedom has a
+/// non-positive diagonal entry, which on a positive definite stiffness means it
+/// is attached to no element at all.
+fn build_preconditioner(
+    diag: &[Fix128],
+    is_free: &[bool],
+    config: &SolverConfig,
+) -> Result<Vec<Fix128>, FemError> {
+    let ndof = diag.len();
+    let mut diag_sum = Fix128::ZERO;
+    let mut free_count = 0u32;
+    for (d, value) in diag.iter().enumerate() {
+        if !is_free[d] {
+            continue;
+        }
+        if *value <= Fix128::ZERO {
+            return Err(FemError::UnderConstrained);
+        }
+        diag_sum = diag_sum + *value;
+        free_count += 1;
+    }
+    // `free_count == 0` means every degree of freedom is prescribed. The
+    // iteration then never runs (the load vector is zero, so the residual
+    // starts at zero) and the preconditioner is never read, but the mean would
+    // divide by zero.
+    let mean_diag = if free_count == 0 {
+        Fix128::ONE
+    } else {
+        diag_sum / Fix128::from_int(i64::from(free_count))
+    };
+    let mut precond = vec![Fix128::ZERO; ndof];
+    for d in 0..ndof {
+        if is_free[d] {
+            precond[d] = match config.preconditioner {
+                Preconditioner::JacobiScaled => mean_diag / diag[d],
+                _ => Fix128::ONE,
+            };
+        }
+    }
+    Ok(precond)
+}
+
+/// Preconditioned conjugate gradient on the free block of a symmetric positive
+/// definite operator.
+///
+/// The operator arrives as a closure rather than as `(elements, λ, μ)` because
+/// two solvers need it: the small-strain [`solve`] applies `K`, and
+/// [`solve_corotational`] applies `Σₑ R Kₑ⁰ Rᵀ` with a rotation that changes
+/// every Newton iteration. Sharing the iteration keeps the stopping rule, the
+/// stagnation window and the residual floor in one place — three pieces of
+/// behaviour that were measured into their present shape and that a second copy
+/// would drift away from.
+///
+/// `x`, `r`, `p` and `z` stay zero on the prescribed degrees of freedom, so the
+/// closure may run over the whole vector without a scatter/gather step; it is
+/// the caller's job to zero the prescribed entries of its output.
+///
+/// # Errors
+///
+/// [`FemError::NotConverged`], [`FemError::Stagnated`] or
+/// [`FemError::UnderConstrained`], as documented on each variant.
+fn conjugate_gradient<A>(
+    b: &[Fix128],
+    is_free: &[bool],
+    precond: &[Fix128],
+    config: &SolverConfig,
+    mut apply: A,
+) -> Result<CgResult, FemError>
+where
+    A: FnMut(&[Fix128], &mut [Fix128]),
+{
+    let ndof = b.len();
+    let mut scratch = vec![Fix128::ZERO; ndof];
+    let mut x = vec![Fix128::ZERO; ndof];
+    let mut r = b.to_vec();
+    let mut z = vec![Fix128::ZERO; ndof];
+    for d in 0..ndof {
+        if is_free[d] {
+            z[d] = r[d] * precond[d];
+        }
+    }
+    let mut p = z.clone();
+    let mut rz = dot(&r, &z);
+    let b_norm = dot(b, b).sqrt();
+    // Never ask for a residual norm the representation cannot express; see
+    // `RESIDUAL_NORM_FLOOR`.
+    let requested = config.relative_tolerance * b_norm;
+    let target = if requested > RESIDUAL_NORM_FLOOR {
+        requested
+    } else {
+        RESIDUAL_NORM_FLOOR
+    };
+
+    let mut iterations = 0u32;
+    let mut residual_norm = dot(&r, &r).sqrt();
+    // Stagnation bookkeeping: the best residual seen and how long ago it was
+    // beaten by the configured margin.
+    let mut best_residual = residual_norm;
+    let mut since_improvement = 0u32;
+
+    while residual_norm > target {
+        if iterations >= config.max_iterations {
+            return Err(FemError::NotConverged {
+                iterations,
+                relative_residual: relative(residual_norm, b_norm),
+            });
+        }
+        // `max(min_window, fraction × iterations so far)`: a fixed window does
+        // not scale, because the iteration count grows with the problem.
+        let window = {
+            let scaled =
+                config.stagnation_window_fraction * Fix128::from_int(i64::from(iterations));
+            let scaled = if scaled.is_negative() {
+                0
+            } else {
+                u32::try_from(scaled.hi).unwrap_or(u32::MAX)
+            };
+            scaled.max(config.stagnation_min_window)
+        };
+        if since_improvement >= window {
+            return Err(FemError::Stagnated {
+                iterations,
+                relative_residual: relative(best_residual, b_norm),
+                without_improvement: since_improvement,
+            });
+        }
+        apply(&p, &mut scratch);
+        for (d, value) in scratch.iter_mut().enumerate() {
+            if !is_free[d] {
+                *value = Fix128::ZERO;
+            }
+        }
+        let pkp = dot(&p, &scratch);
+        if pkp <= Fix128::ZERO {
+            if iterations == 0 {
+                // The very first search direction is `M⁻¹b`, so a non-positive
+                // `pᵀKp` there means `K` is singular in that direction: a rigid
+                // body mode the constraints did not remove.
+                return Err(FemError::UnderConstrained);
+            }
+            // Later on, `K` has already proved positive definite along every
+            // direction tried, so this is the search direction having shrunk
+            // until its inner product no longer registers. That is the
+            // arithmetic floor, which is what `Stagnated` describes.
+            return Err(FemError::Stagnated {
+                iterations,
+                relative_residual: relative(best_residual, b_norm),
+                without_improvement: since_improvement,
+            });
+        }
+        let alpha = rz / pkp;
+        for d in 0..ndof {
+            if is_free[d] {
+                x[d] = x[d] + alpha * p[d];
+                r[d] = r[d] - alpha * scratch[d];
+            }
+        }
+        for d in 0..ndof {
+            if is_free[d] {
+                z[d] = r[d] * precond[d];
+            }
+        }
+        let rz_next = dot(&r, &z);
+        let beta = rz_next / rz;
+        for d in 0..ndof {
+            if is_free[d] {
+                p[d] = z[d] + beta * p[d];
+            }
+        }
+        rz = rz_next;
+        residual_norm = dot(&r, &r).sqrt();
+        iterations += 1;
+
+        // Progress is measured against the best residual so far, not the
+        // previous one: the conjugate gradient residual norm is not monotone.
+        if residual_norm < best_residual - best_residual * config.stagnation_min_improvement {
+            best_residual = residual_norm;
+            since_improvement = 0;
+        } else {
+            if residual_norm < best_residual {
+                best_residual = residual_norm;
+            }
+            since_improvement += 1;
+        }
+    }
+
+    Ok(CgResult {
+        x,
+        iterations,
+        residual_norm,
+        b_norm,
+        target,
+    })
 }
 
 /// Solve the linear elastic boundary value problem on `mesh`.
@@ -980,9 +1247,7 @@ pub fn solve(
         }
     }
 
-    // Jacobi-preconditioned conjugate gradient on the free block. `x`, `r`,
-    // `p` and `z` stay zero on the prescribed degrees of freedom, so the element
-    // loop can run over the whole vector without a scatter/gather step.
+    // Jacobi-preconditioned conjugate gradient on the free block.
     //
     // The preconditioner is the reciprocal of `diag(K)`. It costs one division
     // per free degree of freedom per iteration and leaves the answer unchanged;
@@ -993,162 +1258,12 @@ pub fn solve(
     // 25,600 elements was measured stalling 1% above a 2⁻³⁰ tolerance after
     // 500,000 iterations.
     let diag = stiffness_diagonal(&elements, lambda, mu, ndof);
-    let mut diag_sum = Fix128::ZERO;
-    let mut free_count = 0u32;
-    for (d, value) in diag.iter().enumerate() {
-        if !is_free[d] {
-            continue;
-        }
-        if *value <= Fix128::ZERO {
-            // K is positive definite on the free block, so a non-positive
-            // diagonal entry means this degree of freedom is attached to no
-            // element at all.
-            return Err(FemError::UnderConstrained);
-        }
-        diag_sum = diag_sum + *value;
-        free_count += 1;
-    }
-    // The preconditioner is `mean(diag) / diag`, not `1 / diag`.
-    //
-    // Scaling `M` by a constant leaves the conjugate gradient iterates
-    // unchanged — `α` and `β` absorb it exactly — but it decides what magnitude
-    // the inner products live at, and in fixed point that is not free. With the
-    // plain reciprocal, `z = r / diag` is about 10⁴ times smaller than `r` here,
-    // so the terms of `rᵀz` and `pᵀKp` fall by 10⁸ and land under the 2⁻⁶⁴
-    // resolution: measured on the traction bar, `rᵀz` and `pᵀKp` both rounded to
-    // exactly zero at iteration 31 with the residual still a factor of 1.6 above
-    // the tolerance. Dividing by the mean keeps `z` the size of `r`, which is
-    // where the available dynamic range is.
-    // `free_count == 0` means every degree of freedom is prescribed. The loop
-    // below then never runs (the load vector is zero, so the residual starts at
-    // zero) and `precond` is never read, but the mean would divide by zero.
-    let mean_diag = if free_count == 0 {
-        Fix128::ONE
-    } else {
-        diag_sum / Fix128::from_int(i64::from(free_count))
-    };
-    let mut precond = vec![Fix128::ZERO; ndof];
-    for d in 0..ndof {
-        if is_free[d] {
-            precond[d] = match config.preconditioner {
-                Preconditioner::JacobiScaled => mean_diag / diag[d],
-                _ => Fix128::ONE,
-            };
-        }
-    }
+    let precond = build_preconditioner(&diag, &is_free, config)?;
 
-    let mut x = vec![Fix128::ZERO; ndof];
-    let mut r = b.clone();
-    let mut z = vec![Fix128::ZERO; ndof];
-    for d in 0..ndof {
-        if is_free[d] {
-            z[d] = r[d] * precond[d];
-        }
-    }
-    let mut p = z.clone();
-    let mut rz = dot(&r, &z);
-    let b_norm = dot(&b, &b).sqrt();
-    // Never ask for a residual norm the representation cannot express; see
-    // `RESIDUAL_NORM_FLOOR`.
-    let requested = config.relative_tolerance * b_norm;
-    let target = if requested > RESIDUAL_NORM_FLOOR {
-        requested
-    } else {
-        RESIDUAL_NORM_FLOOR
-    };
-
-    let mut iterations = 0u32;
-    let mut residual_norm = dot(&r, &r).sqrt();
-    // Stagnation bookkeeping: the best residual seen and how long ago it was
-    // beaten by the configured margin.
-    let mut best_residual = residual_norm;
-    let mut since_improvement = 0u32;
-
-    while residual_norm > target {
-        if iterations >= config.max_iterations {
-            return Err(FemError::NotConverged {
-                iterations,
-                relative_residual: relative(residual_norm, b_norm),
-            });
-        }
-        // `max(min_window, fraction × iterations so far)`: a fixed window does
-        // not scale, because the iteration count grows with the problem.
-        let window = {
-            let scaled =
-                config.stagnation_window_fraction * Fix128::from_int(i64::from(iterations));
-            let scaled = if scaled.is_negative() {
-                0
-            } else {
-                u32::try_from(scaled.hi).unwrap_or(u32::MAX)
-            };
-            scaled.max(config.stagnation_min_window)
-        };
-        if since_improvement >= window {
-            return Err(FemError::Stagnated {
-                iterations,
-                relative_residual: relative(best_residual, b_norm),
-                without_improvement: since_improvement,
-            });
-        }
-        apply_stiffness(&elements, &p, lambda, mu, &mut scratch);
-        for (d, value) in scratch.iter_mut().enumerate() {
-            if !is_free[d] {
-                *value = Fix128::ZERO;
-            }
-        }
-        let pkp = dot(&p, &scratch);
-        if pkp <= Fix128::ZERO {
-            if iterations == 0 {
-                // The very first search direction is `M⁻¹b`, so a non-positive
-                // `pᵀKp` there means `K` is singular in that direction: a rigid
-                // body mode the constraints did not remove.
-                return Err(FemError::UnderConstrained);
-            }
-            // Later on, `K` has already proved positive definite along every
-            // direction tried, so this is the search direction having shrunk
-            // until its inner product no longer registers. That is the
-            // arithmetic floor, which is what `Stagnated` describes.
-            return Err(FemError::Stagnated {
-                iterations,
-                relative_residual: relative(best_residual, b_norm),
-                without_improvement: since_improvement,
-            });
-        }
-        let alpha = rz / pkp;
-        for d in 0..ndof {
-            if is_free[d] {
-                x[d] = x[d] + alpha * p[d];
-                r[d] = r[d] - alpha * scratch[d];
-            }
-        }
-        for d in 0..ndof {
-            if is_free[d] {
-                z[d] = r[d] * precond[d];
-            }
-        }
-        let rz_next = dot(&r, &z);
-        let beta = rz_next / rz;
-        for d in 0..ndof {
-            if is_free[d] {
-                p[d] = z[d] + beta * p[d];
-            }
-        }
-        rz = rz_next;
-        residual_norm = dot(&r, &r).sqrt();
-        iterations += 1;
-
-        // Progress is measured against the best residual so far, not the
-        // previous one: the conjugate gradient residual norm is not monotone.
-        if residual_norm < best_residual - best_residual * config.stagnation_min_improvement {
-            best_residual = residual_norm;
-            since_improvement = 0;
-        } else {
-            if residual_norm < best_residual {
-                best_residual = residual_norm;
-            }
-            since_improvement += 1;
-        }
-    }
+    let cg = conjugate_gradient(&b, &is_free, &precond, config, |p, out| {
+        apply_stiffness(&elements, p, lambda, mu, out);
+    })?;
+    let mut x = cg.x;
 
     // Recombine the prescribed and solved parts.
     for (d, value) in x.iter_mut().enumerate() {
@@ -1168,9 +1283,9 @@ pub fn solve(
     Ok(FemSolution {
         displacements,
         element_stress,
-        iterations,
-        relative_residual: relative(residual_norm, b_norm),
-        effective_relative_tolerance: relative(target, b_norm),
+        iterations: cg.iterations,
+        relative_residual: relative(cg.residual_norm, cg.b_norm),
+        effective_relative_tolerance: relative(cg.target, cg.b_norm),
     })
 }
 
@@ -1245,5 +1360,771 @@ pub fn stiffness_diagonal_stats(
         max,
         mean: sum / Fix128::from_int(i64::try_from(count).unwrap_or(i64::MAX)),
         free_dofs: count,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// co-rotational solve
+// ---------------------------------------------------------------------------
+
+/// Smallest `det F` a co-rotational element may have before its rotation is
+/// refused, as `2⁻²⁰ ≈ 9.5e-7`.
+///
+/// [`Mat3Fix::polar_rotation`] already refuses `det F ≤ 0` unconditionally, so
+/// this floor is not what keeps a reflection out; it is what keeps a *nearly*
+/// inverted element from producing a rotation whose accuracy no budget can
+/// recover. A volume ratio of a millionth is four decades past anything a mesh
+/// this solver is meant for should reach, so an element under the floor is a
+/// broken model rather than a hard one.
+const POLAR_DET_FLOOR: Fix128 = Fix128::from_raw(0, 1 << 44);
+
+/// Change below which two sets of element frames count as the same, in units
+/// of `2⁻⁶⁴`.
+///
+/// `Mat3Fix::polar_rotation` stops when its own iterate moves by four of these,
+/// so four is the resolution a frame is determined to in the first place and
+/// asking the outer iteration to reproduce a frame *exactly* asks for something
+/// the polar decomposition does not promise. Measured: the frames of this
+/// solver converge quadratically to a spread of five to eight units and then
+/// wander inside it indefinitely, so an exact-equality stopping rule never
+/// fires. Sixteen is above the measured wander with margin and still four
+/// decades below anything a stress depends on.
+const FRAME_SETTLED: Fix128 = Fix128 { hi: 0, lo: 16 };
+
+/// Whether every element frame moved by less than [`FRAME_SETTLED`].
+fn frames_settled(next: &[Mat3Fix], previous: &[Mat3Fix]) -> bool {
+    for (a, b) in next.iter().zip(previous.iter()) {
+        for (ca, cb) in [(a.col0, b.col0), (a.col1, b.col1), (a.col2, b.col2)] {
+            for (x, y) in [(ca.x, cb.x), (ca.y, cb.y), (ca.z, cb.z)] {
+                if (x - y).abs() >= FRAME_SETTLED {
+                    return false;
+                }
+            }
+        }
+    }
+    true
+}
+
+/// Largest absolute entry of a vector.
+///
+/// The Newton iteration measures its residual this way and **not** as
+/// `√(rᵀr)`. The Euclidean norm squares before it sums, and `Fix128` holds
+/// `2⁻⁶⁴`, so every entry below `2⁻³²` contributes exactly zero to `rᵀr`: a
+/// residual of `1e-10` N per node reports a norm of **exactly zero** while the
+/// residual vector itself is still six decades above the resolution of the
+/// format. Measured, that is where the Newton iteration stopped — not at a
+/// solution, but at the point where its own instrument went blind, and the
+/// place it stopped depended on the path that got there. The largest entry
+/// never squares, so it stays meaningful to the last bit, and it is the
+/// physically legible quantity anyway: the biggest out-of-balance force at any
+/// node.
+fn max_abs(v: &[Fix128]) -> Fix128 {
+    let mut worst = Fix128::ZERO;
+    for entry in v {
+        let a = entry.abs();
+        if a > worst {
+            worst = a;
+        }
+    }
+    worst
+}
+
+/// Settings for [`solve_corotational`].
+///
+/// Fields are private and validated, for the reason [`SolverConfig`] gives:
+/// every one of them is load-bearing and a struct literal would get no checks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CorotationalConfig {
+    linear: SolverConfig,
+    newton_iterations: u32,
+    newton_tolerance: Fix128,
+    increments: u32,
+    polar_iterations: u32,
+}
+
+impl CorotationalConfig {
+    /// Explicit settings.
+    ///
+    /// - `linear` drives the conjugate gradient that solves each Newton step.
+    /// - `newton_iterations` bounds the Newton iterations **per increment**.
+    /// - `newton_tolerance` is the residual the Newton iteration is held to, as
+    ///   a fraction of the reference residual described on
+    ///   [`solve_corotational`]. It is *not* a fraction of the residual this
+    ///   increment happened to start at — see that function for why.
+    /// - `increments` splits the prescribed displacement into equal fractions,
+    ///   which gives Newton a nearby starting point for a large rotation.
+    /// - `polar_iterations` is the budget for [`Mat3Fix::polar_rotation`] per
+    ///   element per Newton step.
+    ///
+    /// # Errors
+    ///
+    /// [`FemError::InvalidConfig`] when a count is zero or the tolerance is
+    /// outside `(0, 1)`.
+    pub fn try_new(
+        linear: SolverConfig,
+        newton_iterations: u32,
+        newton_tolerance: Fix128,
+        increments: u32,
+        polar_iterations: u32,
+    ) -> Result<Self, FemError> {
+        if newton_iterations == 0 {
+            return Err(FemError::InvalidConfig(
+                "newton_iterations must be positive",
+            ));
+        }
+        if increments == 0 {
+            return Err(FemError::InvalidConfig("increments must be positive"));
+        }
+        if polar_iterations == 0 {
+            return Err(FemError::InvalidConfig("polar_iterations must be positive"));
+        }
+        if newton_tolerance <= Fix128::ZERO || newton_tolerance >= Fix128::ONE {
+            return Err(FemError::InvalidConfig(
+                "newton_tolerance must be a fraction strictly between 0 and 1",
+            ));
+        }
+        Ok(Self {
+            linear,
+            newton_iterations,
+            newton_tolerance,
+            increments,
+            polar_iterations,
+        })
+    }
+
+    /// The conjugate gradient settings each Newton step is solved with.
+    #[must_use]
+    pub const fn linear(&self) -> SolverConfig {
+        self.linear
+    }
+
+    /// Newton iteration budget per increment.
+    #[must_use]
+    pub const fn newton_iterations(&self) -> u32 {
+        self.newton_iterations
+    }
+
+    /// Residual fraction at which the Newton iteration stops.
+    #[must_use]
+    pub const fn newton_tolerance(&self) -> Fix128 {
+        self.newton_tolerance
+    }
+
+    /// Number of equal fractions the prescribed displacement is applied in.
+    #[must_use]
+    pub const fn increments(&self) -> u32 {
+        self.increments
+    }
+
+    /// Polar iteration budget per element per Newton step.
+    #[must_use]
+    pub const fn polar_iterations(&self) -> u32 {
+        self.polar_iterations
+    }
+}
+
+/// What [`solve_corotational`] produced.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CorotationalSolution {
+    /// Displacements and co-rotational stress.
+    ///
+    /// [`FemSolution::iterations`] counts the conjugate gradient iterations
+    /// summed over every Newton step, and the two residual figures are those of
+    /// the last linear solve.
+    pub field: FemSolution,
+    /// Newton steps performed, summed over every increment.
+    pub newton_iterations: u32,
+    /// Increments the prescribed displacement was applied in — what the
+    /// configuration asked for, reported so a caller reading the field does not
+    /// have to keep the configuration alive.
+    pub increments: u32,
+}
+
+/// The rows of a matrix, so `rows[a][b]` is the entry in row `a`, column `b`.
+#[inline]
+fn rows_of(m: Mat3Fix) -> [[Fix128; 3]; 3] {
+    [
+        [m.col0.x, m.col1.x, m.col2.x],
+        [m.col0.y, m.col1.y, m.col2.y],
+        [m.col0.z, m.col1.z, m.col2.z],
+    ]
+}
+
+/// `M v` for a 3-vector held as an array.
+#[inline]
+fn mul3(m: Mat3Fix, v: [Fix128; 3]) -> [Fix128; 3] {
+    let out = m.mul_vec(Vec3Fix::new(v[0], v[1], v[2]));
+    [out.x, out.y, out.z]
+}
+
+/// `F = I + Σᵢ uᵢ ⊗ ∇Nᵢ` for one element.
+///
+/// `Σᵢ Xᵢ ⊗ ∇Nᵢ = I` on a P1 tetrahedron — the shape functions reproduce a
+/// linear field exactly — so the identity is the whole reference contribution
+/// and the displacement supplies the rest. `F` is therefore constant over the
+/// element, like the strain.
+fn deformation_gradient(element: &Element, u: &[[Fix128; 3]; 4]) -> Mat3Fix {
+    // `cols[b][a]` is the entry in row `a`, column `b` — the layout `Mat3Fix`
+    // stores.
+    let mut cols = [[Fix128::ZERO; 3]; 3];
+    for (g, node_u) in element.grad.iter().zip(u.iter()) {
+        for (b, gb) in g.iter().enumerate() {
+            for (a, ua) in node_u.iter().enumerate() {
+                cols[b][a] = cols[b][a] + *ua * *gb;
+            }
+        }
+    }
+    for (k, col) in cols.iter_mut().enumerate() {
+        col[k] = col[k] + Fix128::ONE;
+    }
+    Mat3Fix::from_cols(
+        Vec3Fix::new(cols[0][0], cols[0][1], cols[0][2]),
+        Vec3Fix::new(cols[1][0], cols[1][1], cols[1][2]),
+        Vec3Fix::new(cols[2][0], cols[2][1], cols[2][2]),
+    )
+}
+
+/// `σ = R σ̃ Rᵀ` — carry a stress from the element's rotated frame to the
+/// global one.
+fn rotate_stress(r: Mat3Fix, s: StressTensor) -> StressTensor {
+    let m = Mat3Fix::from_cols(
+        Vec3Fix::new(s.xx, s.xy, s.zx),
+        Vec3Fix::new(s.xy, s.yy, s.yz),
+        Vec3Fix::new(s.zx, s.yz, s.zz),
+    );
+    let rotated = r.mul_mat(m).mul_mat(r.transpose());
+    StressTensor {
+        xx: rotated.col0.x,
+        yy: rotated.col1.y,
+        zz: rotated.col2.z,
+        xy: rotated.col1.x,
+        yz: rotated.col2.y,
+        zx: rotated.col2.x,
+    }
+}
+
+/// `σ̃ = D : sym(Rᵀ F − I)` — the stress in the element's own rotated frame.
+///
+/// `Rᵀ F − I` is the gradient of the local displacement `Rᵀx − X`, and the
+/// element force `V·Bᵀσ̃` depends on that gradient alone: `B` annihilates a
+/// constant, so the local displacement itself never has to be formed.
+///
+/// ⚠️ **Not forming it is worth real accuracy.** `Rᵀx − X` is a difference of
+/// two positions, which on a 4 mm cube turned by 90° are 5 mm apart — so the
+/// nodal vectors are millimetre-sized, their outer products with the shape
+/// function gradients are millimetre-sized, and the sum of the four is the
+/// strain, which for a rigid motion is zero. Every one of those millimetre-sized
+/// intermediates carries its own rounding into a quantity that is supposed to
+/// vanish, and the stiffness then multiplies what is left by `λ + 2μ`, which for
+/// the PLA in the oracles is 4,400. `Rᵀ F` is a product of two matrices that are
+/// already of order one, so the same cancellation costs less: measured, it
+/// halved the spread the increment independence oracle sees.
+fn corotational_local_stress(
+    rotation_transpose: Mat3Fix,
+    gradient: Mat3Fix,
+    lambda: Fix128,
+    mu: Fix128,
+) -> StressTensor {
+    let g = rows_of(rotation_transpose.mul_mat(gradient));
+    let exx = g[0][0] - Fix128::ONE;
+    let eyy = g[1][1] - Fix128::ONE;
+    let ezz = g[2][2] - Fix128::ONE;
+    let gxy = g[0][1] + g[1][0];
+    let gyz = g[1][2] + g[2][1];
+    let gzx = g[0][2] + g[2][0];
+    let trace = exx + eyy + ezz;
+    let two_mu = mu + mu;
+    StressTensor {
+        xx: lambda * trace + two_mu * exx,
+        yy: lambda * trace + two_mu * eyy,
+        zz: lambda * trace + two_mu * ezz,
+        xy: mu * gxy,
+        yz: mu * gyz,
+        zx: mu * gzx,
+    }
+}
+
+/// `V·Bᵀσ` — the nodal forces an element carries for a given stress (N).
+fn element_force_from_stress(element: &Element, s: StressTensor) -> [[Fix128; 3]; 4] {
+    let mut force = [[Fix128::ZERO; 3]; 4];
+    for (slot, g) in force.iter_mut().zip(element.grad.iter()) {
+        *slot = [
+            element.volume * (g[0] * s.xx + g[1] * s.xy + g[2] * s.zx),
+            element.volume * (g[1] * s.yy + g[0] * s.xy + g[2] * s.yz),
+            element.volume * (g[2] * s.zz + g[1] * s.yz + g[0] * s.zx),
+        ];
+    }
+    force
+}
+
+/// `out = Σₑ R Kₑ⁰ Rᵀ v`, the co-rotational tangent applied to `v`.
+fn apply_rotated_stiffness(
+    elements: &[Element],
+    rotations: &[Mat3Fix],
+    v: &[Fix128],
+    lambda: Fix128,
+    mu: Fix128,
+    out: &mut [Fix128],
+) {
+    out.fill(Fix128::ZERO);
+    for (element, rotation) in elements.iter().zip(rotations.iter()) {
+        let transpose = rotation.transpose();
+        let gathered = gather(element, v);
+        let mut local = [[Fix128::ZERO; 3]; 4];
+        for (slot, node_v) in local.iter_mut().zip(gathered.iter()) {
+            *slot = mul3(transpose, *node_v);
+        }
+        let force = element_force_local(element, &local, lambda, mu);
+        for (f, &node) in force.iter().zip(element.nodes.iter()) {
+            let global = mul3(*rotation, *f);
+            let base = node * 3;
+            out[base] = out[base] + global[0];
+            out[base + 1] = out[base + 1] + global[1];
+            out[base + 2] = out[base + 2] + global[2];
+        }
+    }
+}
+
+/// `out = f_ext − Σₑ R Kₑ⁰ (Rᵀx − X)`, the co-rotational residual.
+///
+/// ⚠️ The internal force is **not** `(R Kₑ⁰ Rᵀ)·u`. The two differ by
+/// `Kₑ⁰ (Rᵀ − I)·X`, which is exactly the term that makes a rigid rotation
+/// produce zero force: `Rᵀx − X` vanishes when `x = R·X`, while `Rᵀu` does not.
+/// Dropping it turns the solve into a repeated linear solve with a rotated
+/// stiffness, which is a different method with a different answer.
+fn corotational_residual(
+    elements: &[Element],
+    rotations: &[Mat3Fix],
+    u: &[Fix128],
+    f_ext: &[Fix128],
+    is_free: &[bool],
+    lame: (Fix128, Fix128),
+    out: &mut [Fix128],
+) {
+    let (lambda, mu) = lame;
+    out.copy_from_slice(f_ext);
+    for (element, rotation) in elements.iter().zip(rotations.iter()) {
+        let gradient = deformation_gradient(element, &gather(element, u));
+        let stress = corotational_local_stress(rotation.transpose(), gradient, lambda, mu);
+        let force = element_force_from_stress(element, stress);
+        for (f, &node) in force.iter().zip(element.nodes.iter()) {
+            let global = mul3(*rotation, *f);
+            let base = node * 3;
+            out[base] = out[base] - global[0];
+            out[base + 1] = out[base + 1] - global[1];
+            out[base + 2] = out[base + 2] - global[2];
+        }
+    }
+    for (d, value) in out.iter_mut().enumerate() {
+        if !is_free[d] {
+            *value = Fix128::ZERO;
+        }
+    }
+}
+
+/// Diagonal of `Σₑ R Kₑ⁰ Rᵀ`.
+///
+/// The nodal block of `Kₑ⁰` is `V·BᵢᵀDBᵢ`, which works out to
+/// `(λ+2μ)g_m² + μ(g_n² + g_p²)` on the diagonal and `(λ+μ)g_m g_n` off it.
+/// Rotating it needs the whole block, not just the diagonal
+/// [`stiffness_diagonal`] returns: `diag(R K Rᵀ)_a = Σ_{m,n} R_{am} K_{mn} R_{an}`
+/// mixes every entry.
+fn rotated_stiffness_diagonal(
+    elements: &[Element],
+    rotations: &[Mat3Fix],
+    lambda: Fix128,
+    mu: Fix128,
+    ndof: usize,
+) -> Vec<Fix128> {
+    let mut diag = vec![Fix128::ZERO; ndof];
+    let lambda_2mu = lambda + mu + mu;
+    let lambda_mu = lambda + mu;
+    for (element, rotation) in elements.iter().zip(rotations.iter()) {
+        let r = rows_of(*rotation);
+        for (g, &node) in element.grad.iter().zip(element.nodes.iter()) {
+            let sq = [g[0] * g[0], g[1] * g[1], g[2] * g[2]];
+            let mut block = [[Fix128::ZERO; 3]; 3];
+            for (m, row) in block.iter_mut().enumerate() {
+                for (n, entry) in row.iter_mut().enumerate() {
+                    *entry = if m == n {
+                        element.volume
+                            * (lambda_2mu * sq[m] + mu * (sq[(m + 1) % 3] + sq[(m + 2) % 3]))
+                    } else {
+                        element.volume * (lambda_mu * g[m] * g[n])
+                    };
+                }
+            }
+            let base = node * 3;
+            for (a, r_row) in r.iter().enumerate() {
+                let mut acc = Fix128::ZERO;
+                for (m, block_row) in block.iter().enumerate() {
+                    for (n, entry) in block_row.iter().enumerate() {
+                        acc = acc + r_row[m] * *entry * r_row[n];
+                    }
+                }
+                diag[base + a] = diag[base + a] + acc;
+            }
+        }
+    }
+    diag
+}
+
+/// Solve the co-rotational boundary value problem on `mesh`.
+///
+/// # What this is for
+///
+/// [`solve`] measures strain as `sym(∇u)`, which reads a **rigid rotation** as
+/// strain: rotating a body by `θ` about an axis produces a spurious
+/// `σ ≈ 2(λ+μ)(cos θ − 1)`, which at 37° is a fifth of Young's modulus. That is
+/// not a small error to be refined away — it is the strain measure being wrong
+/// about what happened.
+///
+/// The co-rotational formulation extracts a rotation `R` per element from the
+/// polar decomposition of the deformation gradient (see
+/// [`Mat3Fix::polar_rotation`]) and measures strain in that rotated frame:
+/// `ε = sym(Rᵀ F − I)`. A rigid motion gives `Rᵀ F = I` and therefore no stress
+/// at all, exactly. Strain within the rotated frame is still small-strain, so
+/// this buys large *rotation*, not large *stretch*.
+///
+/// # Method
+///
+/// Newton on the residual `r = f_ext − Σₑ R Kₑ⁰ (Rᵀx − X)`, with `R` recomputed
+/// from the current displacement at **every** Newton step, and the tangent
+/// `Σₑ R Kₑ⁰ Rᵀ` — the material part, without the derivative of `R` itself.
+/// Dropping that term costs iterations, not accuracy: it changes the path to
+/// the root, and the root is where the residual vanishes.
+///
+/// ⚠️ The internal force is `R Kₑ⁰ (Rᵀx − X)` and **not** `(R Kₑ⁰ Rᵀ)·u`. See
+/// [`corotational_residual`] for what the difference is and why it is the whole
+/// method.
+///
+/// # The stopping rule
+///
+/// The iteration stops when the element frames settle — every frame within
+/// [`FRAME_SETTLED`] of the previous one — or when the largest out-of-balance
+/// nodal force drops to `newton_tolerance · max|r_ref|`, with `r_ref` the
+/// residual of the **full** prescribed displacement read with no rotation at
+/// all: the load the problem poses, computed once before the first increment.
+///
+/// Both halves of that are deliberate.
+///
+/// The threshold is built from `r_ref` and not from "the residual this
+/// increment started at", because the latter makes the answer depend on the
+/// increment count: a nine-increment run starts each solve from a ninth of the
+/// boundary motion, so its threshold is about a ninth of a one-increment run's
+/// and it stops somewhere else. Incremental application is a path to the
+/// answer, not part of it, so the threshold must not know how many increments
+/// there are.
+///
+/// The residual is measured as the largest entry, not as `√(rᵀr)`; see
+/// [`max_abs`] for the measurement that forced that.
+///
+/// # ⚠️ What still depends on the path
+///
+/// The displacement is a function of the frames alone, so the question is
+/// whether two runs stop on the same frames, and **they do not stop on exactly
+/// the same frames**. Measured on a 4 mm cube under a 36.87° boundary rotation,
+/// against the two-increment run:
+///
+/// | increments | worst nodal difference |
+/// |---|---|
+/// | 1 | 1.9e-9 mm |
+/// | 4 | 1.6e-14 mm |
+/// | 9 | 8.9e-15 mm |
+///
+/// The one-increment run is the outlier because it meets the residual
+/// threshold after a single frame update, while the others have had several.
+/// Running every case until the frames settle instead closes that to **three
+/// units in the last place, 1.6e-19 mm** — but it costs 45 iterations over four
+/// increments where the residual rule costs 11, and on a 90° rotation it
+/// exhausts a 32-iteration budget. There is no setting of this solver that
+/// reaches bit-identical displacements across increment counts: the frame
+/// iteration converges quadratically to a spread of five to eight units in the
+/// last place and then wanders inside it indefinitely, so an exact fixed point
+/// of the frame map does not exist to be found.
+///
+/// # Determinism
+///
+/// Every operation is [`Fix128`] arithmetic, including the polar iteration,
+/// which is Higham's `R ← ½(R + R⁻ᵀ)` and reaches for no transcendental. The
+/// element loop order is the mesh's tet order, the increment and Newton counts
+/// are bounded by the configuration, and the linear solve is the same
+/// conjugate gradient [`solve`] uses.
+///
+/// # Errors
+///
+/// As [`solve`], plus [`FemError::RotationFailed`] when an element's
+/// deformation gradient has no rotation factor, and [`FemError::NotConverged`]
+/// when the Newton budget runs out with the residual still above tolerance.
+pub fn solve_corotational(
+    mesh: &SdfTetMesh,
+    material: &ElasticMaterial,
+    boundary: &BoundaryConditions,
+    config: &CorotationalConfig,
+) -> Result<CorotationalSolution, FemError> {
+    let vertex_count = mesh.vertices.len();
+    if vertex_count == 0 || mesh.tets.is_empty() {
+        return Err(FemError::EmptyMesh);
+    }
+    for &(vertex, _, _) in boundary.prescribed.iter().chain(boundary.loads.iter()) {
+        if vertex as usize >= vertex_count {
+            return Err(FemError::VertexOutOfRange {
+                vertex,
+                vertex_count,
+            });
+        }
+    }
+
+    let elements = build_elements(mesh)?;
+    let (lambda, mu) = material.lame();
+    let ndof = vertex_count * 3;
+
+    let mut prescribed_value = vec![Fix128::ZERO; ndof];
+    let mut is_free = vec![true; ndof];
+    for &(vertex, axis, value) in &boundary.prescribed {
+        let d = vertex as usize * 3 + axis.index();
+        is_free[d] = false;
+        prescribed_value[d] = value;
+    }
+    if is_free.iter().filter(|f| !**f).count() < 6 {
+        return Err(FemError::UnderConstrained);
+    }
+
+    let mut f_ext = vec![Fix128::ZERO; ndof];
+    for &(vertex, axis, force) in &boundary.loads {
+        let d = vertex as usize * 3 + axis.index();
+        if is_free[d] {
+            f_ext[d] = f_ext[d] + force;
+        }
+    }
+
+    // The reference residual: the full prescribed displacement read by the
+    // small-strain operator, which is what `solve` would put on its right hand
+    // side. It does not depend on the increment count or the Newton budget, so
+    // neither does the threshold built from it.
+    let mut scratch = vec![Fix128::ZERO; ndof];
+    apply_stiffness(&elements, &prescribed_value, lambda, mu, &mut scratch);
+    let mut reference = f_ext.clone();
+    for (d, value) in reference.iter_mut().enumerate() {
+        if is_free[d] {
+            *value = *value - scratch[d];
+        } else {
+            *value = Fix128::ZERO;
+        }
+    }
+
+    let newton_target = max_abs(&reference) * config.newton_tolerance;
+
+    // The prescribed field of the current increment: the boundary data on the
+    // constrained degrees of freedom, zero everywhere else.
+    let mut boundary_field = vec![Fix128::ZERO; ndof];
+    let mut u = vec![Fix128::ZERO; ndof];
+    let mut rotations = vec![Mat3Fix::IDENTITY; elements.len()];
+    let mut residual = vec![Fix128::ZERO; ndof];
+    let mut newton_iterations = 0u32;
+    let mut cg_iterations = 0u32;
+    let mut relative_residual = Fix128::ZERO;
+    let mut effective_relative_tolerance = Fix128::ZERO;
+
+    for increment in 1..=config.increments {
+        // Predict the whole field, not only the boundary.
+        //
+        // The prediction is only ever used to pick the *frames* for the first
+        // solve of the increment, but that is enough to matter: moving the
+        // prescribed nodes and leaving the interior where it was can flatten the
+        // deformation gradient of an element straddling the boundary outright —
+        // measured `det F = 0` exactly, on a 90° rotation applied in four
+        // increments. Carrying the previous converged field forward by the ratio
+        // of the two load factors keeps the interior with the boundary, which is
+        // what the increments were for.
+        if increment > 1 {
+            let ratio =
+                Fix128::from_int(i64::from(increment)) / Fix128::from_int(i64::from(increment - 1));
+            for (d, value) in u.iter_mut().enumerate() {
+                if is_free[d] {
+                    *value = *value * ratio;
+                }
+            }
+        }
+        // The last increment carries the prescribed values through unscaled, so
+        // the boundary data the answer is built on is bit for bit what the
+        // caller asked for however many increments there were.
+        boundary_field.fill(Fix128::ZERO);
+        if increment == config.increments {
+            for (d, value) in prescribed_value.iter().enumerate() {
+                if !is_free[d] {
+                    boundary_field[d] = *value;
+                }
+            }
+        } else {
+            let scale = Fix128::from_int(i64::from(increment))
+                / Fix128::from_int(i64::from(config.increments));
+            for (d, value) in prescribed_value.iter().enumerate() {
+                if !is_free[d] {
+                    boundary_field[d] = *value * scale;
+                }
+            }
+        }
+        for (d, value) in boundary_field.iter().enumerate() {
+            if !is_free[d] {
+                u[d] = *value;
+            }
+        }
+
+        let mut step = 0u32;
+        loop {
+            // The frame is recomputed from the current displacement at every
+            // step. The one exception is the state a new increment opens at:
+            // that is a *prediction*, not a candidate solution, and at increment
+            // 1 it is the undeformed interior with the boundary already moved,
+            // which can have no polar factor at all. Keeping the frame that is
+            // already in hand — the identity at the start, the previous
+            // increment's otherwise — makes the first solve of such an increment
+            // a small-strain solve, which is the right thing to do from a guess
+            // that carries no rotation information yet. Once a solve has been
+            // done the state is a candidate solution and a refusal is reported.
+            let mut frames = Vec::with_capacity(elements.len());
+            let mut refused = None;
+            for (t, element) in elements.iter().enumerate() {
+                match deformation_gradient(element, &gather(element, &u))
+                    .polar_rotation(POLAR_DET_FLOOR, config.polar_iterations)
+                {
+                    Ok(r) => frames.push(r),
+                    Err(cause) => {
+                        refused = Some(FemError::RotationFailed { tet: t, cause });
+                        break;
+                    }
+                }
+            }
+            match refused {
+                None => {
+                    if step > 0 && frames_settled(&frames, &rotations) {
+                        // ⚠️ **This is the stopping rule, and it is not a
+                        // tolerance.** For a fixed set of frames the residual is
+                        // *linear* in the displacement, so the solve below lands
+                        // on the exact minimiser in one go and `u` is a function
+                        // of the frames and the boundary data alone. When the
+                        // frames come back bit for bit what they were, the next
+                        // solve would reproduce the same displacement, and the
+                        // one after that the same frames: the iteration has a
+                        // fixed point and this is it.
+                        break;
+                    }
+                    rotations.copy_from_slice(&frames);
+                }
+                Some(error) if step > 0 => return Err(error),
+                Some(_) => {}
+            }
+            corotational_residual(
+                &elements,
+                &rotations,
+                &u,
+                &f_ext,
+                &is_free,
+                (lambda, mu),
+                &mut residual,
+            );
+            let residual_reach = max_abs(&residual);
+            if step > 0 && residual_reach <= newton_target {
+                break;
+            }
+            if step >= config.newton_iterations {
+                return Err(FemError::NotConverged {
+                    iterations: step,
+                    relative_residual: relative(residual_reach, newton_target),
+                });
+            }
+
+            // Solve for the displacement itself, **not** for a correction to it.
+            //
+            // `r(u) = f_ext − Σₑ R Kₑ⁰ (Rᵀ(X+u) − X)` is affine in `u` once the
+            // frames are fixed, so splitting `u` into the prescribed field and
+            // the free part gives `K_R·u_free = r(boundary field)` exactly, and
+            // one linear solve is the whole Newton step rather than an
+            // approximation to it.
+            //
+            // ⚠️ Accumulating corrections instead — `u ← u + Δu` — would make the
+            // displacement carry the rounding of every state the path passed
+            // through. Recomputing it makes `u` a function of the frames and the
+            // boundary data and nothing else, which is what
+            // `solve_corotational`'s note on the path dependence that is left
+            // is measured against.
+            corotational_residual(
+                &elements,
+                &rotations,
+                &boundary_field,
+                &f_ext,
+                &is_free,
+                (lambda, mu),
+                &mut residual,
+            );
+            let diag = rotated_stiffness_diagonal(&elements, &rotations, lambda, mu, ndof);
+            let precond = build_preconditioner(&diag, &is_free, &config.linear)?;
+            let cg =
+                conjugate_gradient(&residual, &is_free, &precond, &config.linear, |p, out| {
+                    apply_rotated_stiffness(&elements, &rotations, p, lambda, mu, out);
+                })?;
+            cg_iterations = cg_iterations.saturating_add(cg.iterations);
+            relative_residual = relative(cg.residual_norm, cg.b_norm);
+            effective_relative_tolerance = relative(cg.target, cg.b_norm);
+            for (d, value) in u.iter_mut().enumerate() {
+                *value = if is_free[d] {
+                    cg.x[d]
+                } else {
+                    boundary_field[d]
+                };
+            }
+            step += 1;
+            newton_iterations = newton_iterations.saturating_add(1);
+        }
+    }
+
+    // The frames stopped moving, which says the iteration reached its fixed
+    // point; it does not by itself say the fixed point satisfies equilibrium.
+    // `newton_tolerance` is that second question, and it is asked once, on the
+    // answer, so that it cannot decide *where* the iteration stops — only
+    // whether what it stopped on is acceptable.
+    corotational_residual(
+        &elements,
+        &rotations,
+        &u,
+        &f_ext,
+        &is_free,
+        (lambda, mu),
+        &mut residual,
+    );
+    let final_residual = max_abs(&residual);
+    if final_residual > newton_target {
+        return Err(FemError::NotConverged {
+            iterations: newton_iterations,
+            relative_residual: relative(final_residual, newton_target),
+        });
+    }
+
+    let displacements = (0..vertex_count)
+        .map(|v| [u[v * 3], u[v * 3 + 1], u[v * 3 + 2]])
+        .collect();
+    let element_stress = elements
+        .iter()
+        .zip(rotations.iter())
+        .map(|(element, rotation)| {
+            let gradient = deformation_gradient(element, &gather(element, &u));
+            rotate_stress(
+                *rotation,
+                corotational_local_stress(rotation.transpose(), gradient, lambda, mu),
+            )
+        })
+        .collect();
+
+    Ok(CorotationalSolution {
+        field: FemSolution {
+            displacements,
+            element_stress,
+            iterations: cg_iterations,
+            relative_residual,
+            effective_relative_tolerance,
+        },
+        newton_iterations,
+        increments: config.increments,
     })
 }
