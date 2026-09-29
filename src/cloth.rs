@@ -462,8 +462,25 @@ impl Cloth {
 
     /// Solve self-collision using spatial hash grid.
     ///
-    /// Particles closer than `self_collision_distance` are pushed apart.
-    /// Uses a spatial hash grid (same pattern as fluid.rs) for O(n) neighbor search.
+    /// Applies a pairwise separation projection to non-adjacent particles closer
+    /// than `self_collision_distance`, using a spatial hash grid (same pattern as
+    /// fluid.rs) for O(n) neighbor search.
+    ///
+    /// ⚠️ **This does not guarantee that the separation is achieved.** The doc used
+    /// to read "Particles closer than `self_collision_distance` are pushed apart",
+    /// which is false: in a crumpled sheet the projection moves the particles but
+    /// leaves the separation metric untouched. Measured 2026-09-29 on a 9x9 sheet
+    /// compressed to 1/8 over 60 steps with `self_collision_distance = 0.5`:
+    /// enabling self-collision changes the positions (not bit-identical) yet the
+    /// minimum non-adjacent distance is `0.197401` **either way**, and the number of
+    /// pairs below the threshold is `74` **either way**.
+    ///
+    /// The correction is also Gauss-Seidel (`positions[i]` is written in place and
+    /// read by later pairs), so the pair order is load-bearing. Both are expected to
+    /// be fixed together when vertex-face self-collision lands as a Jacobi-style
+    /// accumulation; see `tests/analytic_self_contact.rs` for the oracle and
+    /// `self_collision_moves_particles_without_improving_their_separation` for the
+    /// test that pins the present behaviour.
     #[inline(always)]
     fn solve_self_collision(&mut self) {
         let n = self.particle_count();
