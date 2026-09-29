@@ -63,19 +63,25 @@ const E_MPA: f64 = 3500.0;
 /// the problem is linear, so this does not move `FEM / beam`, and it divides the
 /// reachable relative residual by the same factor. See `Beam::load`.
 ///
-/// ⚠️ The usable range is **two-sided**, and both ends were measured by
-/// `reachable_residual_scales_with_the_load` at `ν = 0.49`:
+/// ⚠️ The usable range is **two-sided**, and both ends are pinned by
+/// [`stagnated_covers_three_mechanisms_that_the_return_value_cannot_separate`]
+/// at `ν = 0.49`:
 ///
 /// | load (N) | outcome |
 /// |---|---|
 /// | 4 | stagnates at `1.035e-9`, above the `2⁻³⁰` tolerance |
 /// | 400 | converges, 408 iterations, ratio 0.7795 |
 /// | 40 000 | converges, 406 iterations, ratio 0.7795 — **the same ratio** |
-/// | 4 000 000 | stagnates at relative residual **exactly 1.0**, 201 iterations |
+/// | 4 000 000 | stagnates through the `pᵀKp ≤ 0` branch, 201 iterations |
 ///
-/// The bottom end is the `2⁻³² / ‖b‖` floor. The top end is saturation: the
-/// residual never decreases at all, so a load chosen "generously large" is not
-/// safe either. 400 sits in the middle of the measured window.
+/// The bottom end is the `2⁻³² / ‖b‖` floor. The top end is saturation, and it
+/// leaves through an explicit early exit in `solve` rather than through the
+/// stagnation window — so a load chosen "generously large" is not safe either.
+/// 400 sits in the middle of the measured window.
+///
+/// ⚠️ Both ends are **window-independent**, which is what separates them from
+/// the third way a solve can stagnate here. Do not read a `Stagnated` return as
+/// evidence for any one of the three.
 const LOAD_FOR_HEADROOM: f64 = 400.0;
 
 fn fx(v: f64) -> Fix128 {
@@ -362,12 +368,34 @@ fn line(sweep: String, r: &Row) {
     );
 }
 
-/// The tolerance the sweeps solve to, and the budget.
+/// The tolerance the sweeps solve to, the budget, and — load-bearing — the
+/// stagnation window.
 ///
-/// `2⁻³⁰` is the tolerance the convergence study uses; the budget is large
+/// `2⁻³⁰` is the tolerance the convergence study uses. The budget is large
 /// because conditioning is the thing being pushed on.
+///
+/// ⚠️ **`with_stagnation(2_000, …)` is not a formality, and the default 500 is
+/// what this file originally mistook for a property of the element.** The
+/// conjugate gradient residual norm is not monotone, and `best_residual` starts
+/// at `‖r₀‖ = ‖b‖`, so it is not updated until the residual first drops below
+/// where it began. The length of that opening excursion grows as `ν → ½`;
+/// past the default window the solve is abandoned and reports
+/// `relative_residual` of **exactly 1.0** — which reads as "the iteration did
+/// nothing" and is in fact "it has not yet beaten its starting point".
+///
+/// Measured, same scene, `JacobiScaled`, load 400:
+///
+/// | ν | window 500 | window 2 000 |
+/// |---|---|---|
+/// | 0.499 | `Stagnated`, residual 1.0 | converges, 1 054 iterations, 9.205e-10 |
+/// | 0.4999 | `Stagnated`, residual 1.0 | converges, 2 268 iterations, 7.718e-10 |
+///
+/// 10 000 and 50 000 give the same iteration counts and residuals, so 2 000 is
+/// past the knee rather than merely larger.
 fn sweep_config() -> SolverConfig {
     SolverConfig::try_new(400_000, Fix128::from_raw(0, 1 << 34))
+        .expect("valid")
+        .with_stagnation(2_000, Fix128::from_raw(0, 1 << 54))
         .expect("valid")
         .with_preconditioner(Preconditioner::JacobiScaled)
 }
@@ -376,26 +404,24 @@ fn sweep_config() -> SolverConfig {
 // sweep 1: volumetric locking — geometry fixed, ν varies
 // ---------------------------------------------------------------------------
 
-/// The highest Poisson ratio this solver reaches on this problem.
-///
-/// Not a modelling choice: `the_load_window_closes_as_the_poisson_ratio_approaches_one_half`
-/// and `at_nu_0_499_the_iteration_takes_no_step` measure that 0.499 does not
-/// solve at any load, with either preconditioner, while the stiffness diagonal
-/// stays perfectly ordinary. The sweep stops here because past here there is no
-/// answer to read, not because the element stops being interesting.
-const HIGHEST_SOLVABLE_NU: f64 = 0.49;
-
 /// Volumetric locking: the same beam and the same mesh, stiffened only by
 /// pushing `ν` towards the incompressible limit.
 ///
 /// `ν` enters the yardstick only through the shear term, which is 3.2% of the
 /// tip deflection and changes by 15% across the sweep — so the target moves by
-/// about half a percent while the ratio moves by several. Anything that large
-/// is the element.
+/// about half a percent while the ratio moves by 19%. Anything that large is
+/// the element.
+///
+/// ⚠️ The first version of this sweep stopped at `ν = 0.49` and carried a
+/// constant called `HIGHEST_SOLVABLE_NU`, on the measurement that 0.499 did not
+/// solve at any load with either preconditioner. That measurement was real and
+/// the conclusion drawn from it was wrong: the limit was the **stagnation
+/// window**, not the crate. See `sweep_config`. There is no incompressibility
+/// limit to report here.
 #[test]
 fn volumetric_locking_by_poisson_ratio() {
     let config = sweep_config();
-    let nus = [0.3, 0.45, HIGHEST_SOLVABLE_NU];
+    let nus = [0.3, 0.45, 0.49, 0.499, 0.4999];
     header("volumetric: L=10 t=2 (slenderness 5), cell 0.5, nu varies");
     let rows: Vec<Row> = nus
         .iter()
@@ -437,6 +463,14 @@ fn volumetric_locking_by_poisson_ratio() {
         );
     }
 
+    // The near-incompressible end is the number a P2 (or B-bar, or mixed)
+    // element has to improve on, so it is pinned rather than merely printed.
+    assert!(
+        (rows[4].ratio - 0.7068).abs() < 5.0e-4,
+        "nu=0.4999 measured 0.7068 at d90b18e; got {:.4}",
+        rows[4].ratio
+    );
+
     // The mesh is the one the through-thickness sweep calls `n_t = 4`, so the
     // nu = 0.3 row is the same specimen and must agree with it. A drift here
     // would mean the two sweeps are not measuring the same thing.
@@ -445,37 +479,6 @@ fn volumetric_locking_by_poisson_ratio() {
         "nu=0.3 at cell 0.5 is the n_t=4 row of the other sweep; got {:.4}, want 0.8749",
         rows[0].ratio
     );
-}
-
-/// Pins the limit itself, so that a solver change reopens the study.
-///
-/// If this test ever fails because `nu = 0.499` *solved*, that is not a
-/// regression: it means `HIGHEST_SOLVABLE_NU` can be raised and the volumetric
-/// sweep extended. The value of pinning it is that the extension is not
-/// forgotten.
-#[test]
-fn nu_0_499_does_not_solve_at_any_load_in_the_window() {
-    let beam = |load| Beam {
-        length: 10.0,
-        width: 2.0,
-        thickness: 2.0,
-        cell: 0.5,
-        nu: 0.499,
-        load,
-    };
-    let config = sweep_config();
-    for load in [0.4, 4.0, 40.0, 400.0, 4_000.0, 40_000.0] {
-        let b = beam(load);
-        let mesh = b.mesh();
-        let material = ElasticMaterial::new(fx(E_MPA), fx(b.nu)).expect("nu in (-1, 0.5)");
-        let bc = cantilever_bc(&b, &mesh);
-        let outcome = solve(&mesh, &material, &bc, &config);
-        assert!(
-            outcome.is_err(),
-            "nu=0.499 solved at load {load} — the conjugate gradient has improved, so \
-             raise HIGHEST_SOLVABLE_NU and extend volumetric_locking_by_poisson_ratio"
-        );
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -605,162 +608,136 @@ fn bending_stiffness_excess_by_elements_through_thickness() {
 }
 
 // ---------------------------------------------------------------------------
-// probe: the load window, and where it closes
+// probe: `Stagnated` does not mean one thing
 // ---------------------------------------------------------------------------
 
-/// Maps the two-sided load window against the Poisson ratio.
+/// Three different failures return `FemError::Stagnated`, and the return value
+/// does not distinguish them.
 ///
-/// The stopping rule is relative, and `Fix128` bounds the residual *norm* from
-/// below (`rᵀr` bottoms out at `2⁻⁶⁴`, so `‖r‖` cannot go under about `2⁻³²`).
-/// The smallest reachable `‖r‖/‖b‖` is therefore `2⁻³² / ‖b‖`, which **falls**
-/// as the load rises. At the other end the inner products saturate and the
-/// residual stops moving at all. So there is a window, not a direction.
+/// This test exists because two of the three were misread in this file's own
+/// history. Each row below is a separate mechanism, and the only way to tell
+/// them apart is to vary something and watch which ones move:
 ///
-/// ⚠️ The window is not fixed: as `ν → ½` the first Lamé parameter diverges, `K`
-/// grows with it, and the saturating end comes down to meet the floor. Where
-/// the two meet, **no load solves the problem** — and the failure is not a
-/// message about incompressibility, it is `Stagnated`. That is the limit this
-/// probe exists to locate, because every ratio reported above it would
-/// otherwise be read as an element property.
+/// | mechanism | what it is | moves with |
+/// |---|---|---|
+/// | **relative-residual floor** | `‖r‖` cannot go below about `2⁻³²`, so the smallest reachable `‖r‖/‖b‖` is `2⁻³²/‖b‖` | the **load** (raising it lowers the floor) |
+/// | **saturation** | `pᵀKp` turns non-positive and `solve` takes the explicit early exit | the **load** (lowering it) |
+/// | **window shorter than the transient** | the residual has not yet beaten `‖b‖`, so `best_residual` is still the starting value | the **stagnation window** |
 ///
-/// Printed as a map. What is asserted is the part that is arithmetic and not
-/// conditioning: where two loads both converge, they must agree on the answer.
+/// ⚠️ **The third reports `relative_residual` of exactly 1.0, which is the
+/// *initial* residual and not a frozen one.** It was read here as "the
+/// iteration takes no step" and routed onwards as an arithmetic defect. The
+/// conjugate gradient was in fact stepping normally: measured `alpha` on its
+/// first three iterations at `ν = 0.499` was `1.59e-5`, `9.93e-6`, `3.75e-6`,
+/// and the raw fraction of the first is `293_626_138_802_593` — fourteen digits
+/// above one ulp. The residual grew over those iterations (92.8 → 263 → 602),
+/// and so did the residual of `ν = 0.49`, which converges in 517. **Growth
+/// early on is ordinary**; `solve` says so in its own note on why progress is
+/// measured against the best residual rather than the previous one.
+///
+/// The load-dependent pair is window-independent and the window-dependent one
+/// is load-independent, which is what makes them three mechanisms and not one.
 #[test]
-fn the_load_window_closes_as_the_poisson_ratio_approaches_one_half() {
-    let config = sweep_config();
-    let nus = [0.49, 0.499, 0.4999];
-    let loads = [0.4, 4.0, 40.0, 400.0, 4_000.0, 40_000.0];
-    eprintln!("[locking] ---- probe: load window, L=10 t=2 cell=0.5 ----");
-    eprintln!(
-        "[locking] {:>8}  {:>10}  {:>8}  {:>6}  {:>10}",
-        "nu", "load(N)", "ratio", "iters", "residual"
-    );
-    let mut solved_any = false;
-    for nu in nus {
-        let mut ratios: Vec<(f64, f64)> = Vec::new();
-        for load in loads {
-            let beam = Beam {
-                length: 10.0,
-                width: 2.0,
-                thickness: 2.0,
-                cell: 0.5,
-                nu,
-                load,
-            };
-            let mesh = beam.mesh();
-            let material = ElasticMaterial::new(fx(E_MPA), fx(beam.nu)).expect("nu in (-1, 0.5)");
-            let bc = cantilever_bc(&beam, &mesh);
-            match solve(&mesh, &material, &bc, &config) {
-                Ok(out) => {
-                    let ratio = tip_deflection_mm(&beam, &mesh, &out) / beam.beam_tip_mm();
-                    eprintln!(
-                        "[locking] {nu:>8}  {load:>10.1}  {ratio:>8.4}  {:>6}  {:>10.3e}",
-                        out.iterations,
-                        out.relative_residual.to_f64()
-                    );
-                    ratios.push((load, ratio));
-                    solved_any = true;
-                }
-                Err(e) => {
-                    let tag = match e {
-                        alice_physics::linear_elastic_fem::FemError::Stagnated {
-                            relative_residual,
-                            iterations,
-                            ..
-                        } => format!(
-                            "stagnated {:>6}  {:>10.3e}",
-                            iterations,
-                            relative_residual.to_f64()
-                        ),
-                        other => format!("{other:?}"),
-                    };
-                    eprintln!("[locking] {nu:>8}  {load:>10.1}  {:>8}  {tag}", "-");
-                }
-            }
-        }
-        // Where the window is open at all, its width is a free choice: the
-        // problem is linear, so two loads inside it must give the same answer.
-        if let Some((first_load, first_ratio)) = ratios.first().copied() {
-            for (load, ratio) in &ratios[1..] {
-                assert!(
-                    (ratio - first_ratio).abs() < 1.0e-6,
-                    "nu={nu}: the problem is linear, so loads {first_load} and {load} must \
-                     agree; got {first_ratio:.8} then {ratio:.8}"
-                );
-            }
-        }
-    }
-    assert!(
-        solved_any,
-        "the probe measures nothing if no (nu, load) pair solves at all"
-    );
-}
-
-/// Which side of the solve stops at `ν = 0.499`.
-///
-/// The map above shows `Stagnated` with a relative residual of **exactly 1.0**
-/// and `without_improvement` equal to the whole window, at every load from 0.4
-/// to 40 000. A residual that never leaves its starting value is not a stiff
-/// element and not a saturating load: the iteration is taking no step at all.
-///
-/// This narrows it to two candidates, and reports both so the next reader does
-/// not have to re-derive them — the stiffness is unrepresentable (visible in the
-/// diagonal), or the step length underflows (the diagonal is fine and both
-/// preconditioners behave the same).
-#[test]
-fn at_nu_0_499_the_iteration_takes_no_step() {
-    let beam = Beam {
+fn stagnated_covers_three_mechanisms_that_the_return_value_cannot_separate() {
+    let make = |nu: f64, load: f64| Beam {
         length: 10.0,
         width: 2.0,
         thickness: 2.0,
         cell: 0.5,
-        nu: 0.499,
-        load: 400.0,
+        nu,
+        load,
     };
-    let mesh = beam.mesh();
-    let material = ElasticMaterial::new(fx(E_MPA), fx(beam.nu)).expect("nu in (-1, 0.5)");
-    let bc = cantilever_bc(&beam, &mesh);
-
-    let lame_lambda = E_MPA * beam.nu / ((1.0 + beam.nu) * (1.0 - 2.0 * beam.nu));
-    let stats = stiffness_diagonal_stats(&mesh, &material, &bc).expect("stats");
-    eprintln!(
-        "[locking] nu=0.499: lame lambda {:.4e} MPa, diagonal min {:.6e} mean {:.6e} \
-         max {:.6e}, spread {:.2}, free dofs {}",
-        lame_lambda,
-        stats.min.to_f64(),
-        stats.mean.to_f64(),
-        stats.max.to_f64(),
-        stats.max.to_f64() / stats.min.to_f64(),
-        stats.free_dofs
-    );
-    eprintln!(
-        "[locking] nu=0.499: diagonal min raw {:?}, max raw {:?}",
-        (stats.min.hi, stats.min.lo),
-        (stats.max.hi, stats.max.lo)
-    );
-
-    for pc in [Preconditioner::None, Preconditioner::JacobiScaled] {
-        let config = SolverConfig::try_new(400_000, Fix128::from_raw(0, 1 << 34))
+    let cfg = |window: u32| {
+        SolverConfig::try_new(400_000, Fix128::from_raw(0, 1 << 34))
             .expect("valid")
-            .with_preconditioner(pc);
-        match solve(&mesh, &material, &bc, &config) {
-            Ok(out) => eprintln!(
-                "[locking] nu=0.499 {pc:?}: converged in {} iterations, residual {:.3e}",
-                out.iterations,
-                out.relative_residual.to_f64()
-            ),
-            Err(e) => eprintln!("[locking] nu=0.499 {pc:?}: {e:?}"),
-        }
-    }
+            .with_stagnation(window, Fix128::from_raw(0, 1 << 54))
+            .expect("valid")
+            .with_preconditioner(Preconditioner::JacobiScaled)
+    };
+    let run = |beam: &Beam, config: &SolverConfig| {
+        let mesh = beam.mesh();
+        let material = ElasticMaterial::new(fx(E_MPA), fx(beam.nu)).expect("nu in (-1, 0.5)");
+        let bc = cantilever_bc(beam, &mesh);
+        solve(&mesh, &material, &bc, config)
+    };
 
-    // The diagonal is the only part that can be pinned without deciding which
-    // candidate is right: if it were unrepresentable the stats call would not
-    // have produced finite, positive, well-separated numbers.
+    eprintln!("[locking] ---- Stagnated: three mechanisms, L=10 t=2 cell=0.5 ----");
+    eprintln!(
+        "[locking] {:>8}  {:>10}  {:>7}  {:>32}",
+        "nu", "load(N)", "window", "outcome"
+    );
+    let seen = |nu: f64, load: f64, window: u32| -> Option<(u32, f64)> {
+        let beam = make(nu, load);
+        let out = run(&beam, &cfg(window));
+        match out {
+            Ok(o) => {
+                eprintln!(
+                    "[locking] {nu:>8}  {load:>10.1}  {window:>7}  converged {:>6} it, {:>10.3e}",
+                    o.iterations,
+                    o.relative_residual.to_f64()
+                );
+                None
+            }
+            Err(alice_physics::linear_elastic_fem::FemError::Stagnated {
+                iterations,
+                relative_residual,
+                without_improvement,
+            }) => {
+                eprintln!(
+                    "[locking] {nu:>8}  {load:>10.1}  {window:>7}  Stagnated {iterations:>6} it, \
+                     {:>10.3e}, without_improvement {without_improvement}",
+                    relative_residual.to_f64()
+                );
+                Some((iterations, relative_residual.to_f64()))
+            }
+            Err(e) => panic!("nu={nu} load={load} window={window}: unexpected {e:?}"),
+        }
+    };
+
+    // (1) floor: load 4 stagnates just above the 2⁻³⁰ tolerance, and a larger
+    // window buys more iterations and the same residual. Not a window problem.
+    let floor_small = seen(0.49, 4.0, 500).expect("load 4 stagnates at the floor");
+    let floor_large = seen(0.49, 4.0, 2_000).expect("load 4 stagnates at the floor");
     assert!(
-        stats.min.to_f64() > 0.0 && stats.max.to_f64() > stats.min.to_f64(),
-        "the stiffness diagonal at nu=0.499 must at least be positive and ordered \
-         before 'the iteration takes no step' can mean anything: min {:?} max {:?}",
-        stats.min,
-        stats.max
+        (floor_small.1 - floor_large.1).abs() < 1.0e-12,
+        "the floor is a property of ‖b‖, so widening the window must not move it: \
+         {:.6e} then {:.6e}",
+        floor_small.1,
+        floor_large.1
+    );
+    assert!(
+        floor_large.0 > floor_small.0,
+        "a wider window must at least buy more iterations before giving up: {} then {}",
+        floor_small.0,
+        floor_large.0
+    );
+
+    // (2) saturation: load 4e6 exits through the `pᵀKp <= 0` branch, so
+    // `without_improvement` is below the window and widening it changes nothing
+    // at all — not even the iteration count.
+    let sat_small = seen(0.49, 4_000_000.0, 500).expect("load 4e6 saturates");
+    let sat_large = seen(0.49, 4_000_000.0, 2_000).expect("load 4e6 saturates");
+    assert!(
+        sat_small.0 == sat_large.0,
+        "saturation leaves through a different branch than the window, so the window \
+         must not change the iteration count: {} then {}",
+        sat_small.0,
+        sat_large.0
+    );
+
+    // (3) window: the one that *is* the window. Same load, same everything, and
+    // widening it turns the failure into a converged solve.
+    let win_small = seen(0.4999, 400.0, 500).expect("nu=0.4999 stagnates at window 500");
+    assert!(
+        (win_small.1 - 1.0).abs() < 1.0e-12,
+        "the window failure reports the starting residual, which is exactly 1.0; \
+         got {:.6e}",
+        win_small.1
+    );
+    assert!(
+        seen(0.4999, 400.0, 2_000).is_none(),
+        "widening the window must solve the case that only the window was stopping — \
+         if this now stagnates, the third mechanism has changed and the table in this \
+         test's note is stale"
     );
 }
