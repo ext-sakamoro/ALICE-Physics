@@ -769,6 +769,57 @@ fn prescribed_velocity_means_neumann_pressure() {
     assert_eq!(FaceBc::Outflow.no_slip_velocity(), None);
 }
 
+/// Oracle: `set_closed_box_walls` gives no-slip walls on every axis that has
+/// room for a boundary layer, and symmetry planes on every axis that does not.
+///
+/// ⚠️ The single-cell case is the one that matters. No-slip on both faces of a
+/// one-cell-thick axis makes every ghost of the in-plane components `−u_in`,
+/// which damps the flow by `4 ν dt / dx²` per step; on the `16 × 16 × 1`
+/// lid-driven cavity of `tests/analytic_cfd_wall_bc.rs` that takes the
+/// centreline peak from 86.0 % of the Ghia reference down to 4.2 %. A caller
+/// who writes `set_closed_box_walls()` on a quasi-2-D grid and gets that is
+/// going to conclude the solver is broken, so the default has to be right
+/// rather than documented.
+#[test]
+fn a_closed_box_is_no_slip_except_where_it_is_one_cell_thick() {
+    // Fully three-dimensional: all six layers are no-slip walls.
+    let mut solid = MacGrid::new(4, 4, 4, Fix128::from_ratio(1, 4));
+    solid.set_closed_box_walls();
+    let wall = FaceBc::Wall {
+        velocity: Vec3Fix::ZERO,
+    };
+    assert_eq!(solid.u_bc(0, 1, 1), wall);
+    assert_eq!(solid.u_bc(4, 1, 1), wall);
+    assert_eq!(solid.v_bc(1, 0, 1), wall);
+    assert_eq!(solid.v_bc(1, 4, 1), wall);
+    assert_eq!(solid.w_bc(1, 1, 0), wall);
+    assert_eq!(solid.w_bc(1, 1, 4), wall);
+
+    // A slab one cell thick in `z`: the `z` layers become symmetry planes and
+    // nothing else changes.
+    let mut slab = MacGrid::new(4, 4, 1, Fix128::from_ratio(1, 4));
+    slab.set_closed_box_walls();
+    assert_eq!(slab.u_bc(0, 1, 0), wall, "the in-plane walls stay no-slip");
+    assert_eq!(slab.v_bc(1, 0, 0), wall, "the in-plane walls stay no-slip");
+    assert_eq!(
+        slab.w_bc(1, 1, 0),
+        FaceBc::SlipWall,
+        "a one-cell axis cannot resolve a boundary layer, so it is a symmetry plane"
+    );
+    assert_eq!(slab.w_bc(1, 1, 1), FaceBc::SlipWall);
+    // Still a wall for the pressure — that part must not change, or the
+    // Poisson problem degenerates into the screened one.
+    assert!(slab.is_w_solid(1, 1, 0) && slab.is_w_solid(1, 1, 1));
+    assert!(slab.w_bc(1, 1, 0).blocks_pressure());
+
+    // The rule is per axis, not specific to `z`.
+    let mut needle = MacGrid::new(1, 4, 1, Fix128::from_ratio(1, 4));
+    needle.set_closed_box_walls();
+    assert_eq!(needle.u_bc(0, 1, 0), FaceBc::SlipWall);
+    assert_eq!(needle.v_bc(0, 0, 0), wall);
+    assert_eq!(needle.w_bc(0, 1, 0), FaceBc::SlipWall);
+}
+
 /// Oracle: every condition round-trips through the setters, and the legacy
 /// solid flag keeps agreeing with the condition that replaced it.
 ///

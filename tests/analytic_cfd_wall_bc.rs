@@ -58,6 +58,16 @@ const GHIA_RE100: [(f64, f64); 17] = [
 /// Peak return velocity in the reference profile (`y = 0.4531`).
 const GHIA_RE100_PEAK_RETURN: f64 = -0.21090;
 
+/// Largest deviation from the Ghia profile that the **test-side** wall term
+/// reached, before the no-slip ghost moved into `CfdSolver::step` (measured on
+/// this same `16 × 16` run: peak `-0.18174`, 86.2 % of the reference).
+///
+/// The solver-side condition has to be at least this close. It measures
+/// `0.03162` — 31 % better — with a peak of `-0.18128`, 86.0 %. See
+/// [`lid_driven_cavity_return_flow_matches_ghia_1982`] for why the whole-profile
+/// deviation is the gate and the peak fraction is not.
+const TEST_SIDE_WALL_TERM_MAX_DEVIATION: f64 = 0.04581;
+
 // ===========================================================================
 // Helpers
 // ===========================================================================
@@ -376,10 +386,13 @@ const CAVITY_GS: u32 = 200;
 ///   viscous term is missing because it mirrors the boundary with a
 ///   zero-gradient ghost.
 ///
-/// The `z` faces of the `true` run are `FaceBc::SlipWall`, not walls: the
-/// slab is one cell thick, and two no-slip plates `dx` apart are a different
-/// problem from the two-dimensional one Ghia tabulated (measured: the
-/// centreline peak falls to -0.00886, 4.2 % of the reference).
+/// The `z` faces of the `true` run come out as `FaceBc::SlipWall` because the
+/// slab is one cell thick and `set_closed_box_walls` makes a single-cell axis
+/// a symmetry plane. Two no-slip plates `dx` apart are a different problem
+/// from the two-dimensional one Ghia tabulated — measured, by forcing
+/// `FaceBc::Wall` on those layers: the centreline peak falls to -0.00886,
+/// **4.2 %** of the reference. Nothing in this file sets those layers, so this
+/// run is also the gate on that default.
 /// `dt_reciprocal` gives the step as `1 / dt_reciprocal`. It is a parameter
 /// rather than a constant because both stability limits of the explicit
 /// scheme scale with the cell size: the viscous one as `dx²/(4ν)` and the
@@ -405,15 +418,12 @@ fn run_lid_driven_cavity(
     solver.jacobi_iterations = gs_iterations;
     solver.use_turbulence = false;
     if walls_in_projection {
-        // Six no-slip walls, then the two `z` layers relaxed to symmetry
-        // planes (the slab is one cell thick) and the lid given its velocity.
+        // Six walls, then the lid given its velocity. Nothing relaxes the two
+        // `z` layers: `set_closed_box_walls` makes an axis one cell thick a
+        // symmetry plane on its own, and this run is the gate on that — with
+        // no-slip on both faces of a one-cell slab the centreline peak falls
+        // to 4.2 % of the reference.
         solver.grid.set_closed_box_walls();
-        for j in 0..n {
-            for i in 0..n {
-                solver.grid.set_w_bc(i, j, 0, FaceBc::SlipWall);
-                solver.grid.set_w_bc(i, j, 1, FaceBc::SlipWall);
-            }
-        }
         for i in 0..n {
             solver.grid.set_v_bc(
                 i,
@@ -514,9 +524,39 @@ fn max_deviation_from_ghia(profile: &[(f64, f64)]) -> f64 {
 /// The tolerances are set by the discretisation, not by the reference:
 /// `16 × 16` cells with semi-Lagrangian advection smear the primary vortex,
 /// so the peak return velocity is expected to come in short of the reference
-/// `−0.21090`. The gate asks for **half** of it — far below what the scheme
-/// should manage and far above the `29 %` measured when the walls were only
-/// imposed from outside the projection.
+/// `−0.21090`.
+///
+/// # Which number is the gate, and why it was changed
+///
+/// The **largest deviation over the whole tabulated profile** is the primary
+/// assertion, and the peak-as-a-fraction-of-reference is secondary. When the
+/// no-slip wall term moved from this file into `CfdSolver::step` the two
+/// metrics disagreed:
+///
+/// | | centreline peak | fraction of reference | max deviation |
+/// |---|---|---|---|
+/// | reference, Ghia (1982) | `-0.21090` | 100 % | — |
+/// | wall term applied from the test side (previous) | `-0.18174` | **86.2 %** | **0.04581** |
+/// | wall term inside the solver (current) | `-0.18128` | **86.0 %** | **0.03162** |
+///
+/// So the fraction fell by 0.2 points while the whole profile moved 31 %
+/// closer. Both numbers are kept above deliberately: the criterion was
+/// restated, and that has to be legible or a later reader will ask why a run
+/// below "86.2 %" passes.
+///
+/// The reason for the restatement is that the peak fraction is a **single
+/// sampled point** of a profile the scheme smears, so it moves with anything
+/// that changes the order of operations inside a step — and moving the wall
+/// term into the solver does exactly that, because the walls are now imposed
+/// before advection and before the viscous term rather than once from
+/// outside. The maximum deviation reads every tabulated height, so it cannot
+/// be moved by one point drifting across a threshold. The gate is therefore
+/// "at least as close to the reference as the test-side workaround managed",
+/// `0.04581`, which the current run clears with 31 % to spare.
+///
+/// The peak gate is kept as well, at **half** the reference — far below what
+/// the scheme should manage and far above the `0 %` this same run produces
+/// when the walls are only imposed from outside the projection.
 #[test]
 fn lid_driven_cavity_return_flow_matches_ghia_1982() {
     let (with_mask, flux_with_mask) = run_lid_driven_cavity(
@@ -562,6 +602,16 @@ fn lid_driven_cavity_return_flow_matches_ghia_1982() {
         flux_with_mask.abs() < 1e-6,
         "net x flux through the centreline of a sealed cavity must be 0, got {flux_with_mask:+.5e}"
     );
+    // Primary gate: the whole profile, against what the test-side workaround
+    // managed before the wall term moved into the solver. See the doc comment
+    // for why this replaced the peak fraction as the primary metric.
+    assert!(
+        dev_with_mask < TEST_SIDE_WALL_TERM_MAX_DEVIATION,
+        "the solver-side no-slip wall must stay at least as close to Ghia as the \
+         test-side workaround did: max deviation {dev_with_mask:.5} against \
+         {TEST_SIDE_WALL_TERM_MAX_DEVIATION:.5}"
+    );
+    // Secondary: the single sampled peak, kept at half the reference.
     assert!(
         peak_with_mask <= 0.5 * GHIA_RE100_PEAK_RETURN,
         "peak return velocity {peak_with_mask:+.5} is below half the reference \
