@@ -7,7 +7,9 @@
 //! formulation — they do not depend on whether links are modelled as point
 //! masses on massless rods or as rigid bodies with their own inertia tensors,
 //! nor on the integrator's order. That makes them safe to assert exactly rather
-//! than within a tuned tolerance.
+//! than within a tuned tolerance. The exceptions are the closed-form oracles
+//! 11, 12 and 13, which do read the scene's mass and inertia; each states its
+//! derivation and carries a bound instead of an exact equality.
 //!
 //! # Why these
 //!
@@ -43,6 +45,11 @@
 //! 11. [`compound_pendulum_matches_its_closed_form_angular_acceleration`] — the
 //!     one closed-form number in the file, with the hinge deliberately away
 //!     from the world origin.
+//! 12. [`centrifugal_coupling_to_a_rotating_parent_matches_its_closed_form`] —
+//!     the velocity-product acceleration `c = v × (v - v_parent)`, which is
+//!     identically zero in every scene whose parent is at rest.
+//! 13. [`anisotropic_inertia_is_carried_into_world_axes`] — the conjugation
+//!     `R I Rᵀ`, which is invisible to every scene whose bodies are spheres.
 //!
 //! Oracles 2 and 3 are both "nothing moves", so on their own they could be
 //! satisfied by a solver that does nothing. Oracle 1 rules that out: its
@@ -91,23 +98,42 @@
 //! | `D⁻¹` replaced by the identity in pass 3 | 5, 8, 9, 11 |
 //! | the joint anchor forced to the world origin | 11 |
 //!
-//! Two are **not** caught, and both are gaps in these scenes rather than in the
-//! solver:
+//! Two escaped that set, and both were gaps in the scenes rather than in the
+//! solver. Oracles 12 and 13 were written to close them, and the mutations were
+//! re-run to confirm that they do:
+//!
+//! | mutation | oracles red |
+//! |---|---|
+//! | `c = v × (v - v_parent)` forced to zero | 12 only |
+//! | the two operands of that cross product swapped | 12 only |
+//! | `R I Rᵀ` → `I` | 13 only |
+//! | `R I Rᵀ` → `Rᵀ I R` | 13 only |
+//!
+//! Why the other eleven were blind to each:
 //!
 //! * **Dropping the velocity-product acceleration `c = v × (v - v_parent)`.**
 //!   `v × v` is identically zero, so `c` vanishes for every link whose parent is
 //!   at rest — which is every link in every scene here that has a static base.
 //!   The one scene with a moving parent is oracle 9, and dropping `c` there
 //!   solves a different but still self-consistent system, so momentum is still
-//!   conserved and oracle 9 cannot see it either. Closing this needs a closed
-//!   form for a *moving* multi-link chain: a rigid assembly spinning about a
-//!   fixed hinge is the obvious candidate, where the centrifugal coupling
-//!   between the links is analytic.
+//!   conserved and oracle 9 cannot see it either. Oracle 12 closes it with a
+//!   *kinematic* parent: an infinitely massive base carrying a prescribed
+//!   angular velocity, which the solver reads and never writes, so the link's
+//!   hinge point accelerates centripetally by an amount fixed by the scene.
+//!   Under the mutation that scene answers exactly zero.
 //! * **Not rotating the inertia tensor into world axes (`R I Rᵀ` → `I`).**
-//!   Every body here has an isotropic inertia — `RigidBody::new` builds
-//!   `diag(2m/5)` and oracle 8 scales it uniformly — and `R (k·1) Rᵀ = k·1`
-//!   exactly, so the rotation has nothing to act on. Closing this needs an
-//!   anisotropic inertia on a body that turns appreciably.
+//!   Every body in oracles 1 to 12 has an isotropic inertia — `RigidBody::new`
+//!   builds `diag(2m/5)` and oracle 8 scales it uniformly — and
+//!   `R (k·1) Rᵀ = k·1` exactly, so the rotation has nothing to act on. Oracle
+//!   13 gives one body `diag(2, 5, 10)` and turns it by the 120° rotation about
+//!   `(1,1,1)`, whose quaternion `(½,½,½,½)` is exact in `Fix128`; the world
+//!   hinge axis then samples `I_yy` rather than `I_zz`, and the mutation lands
+//!   on the unturned body's answer instead.
+//!
+//! Both of these were still-open gaps when this file was first landed, which is
+//! the general lesson they carry: a term that is *identically* zero across a
+//! whole test set is not thereby verified. A scene has to be built for which it
+//! is the only nonzero thing in the answer.
 //!
 //! Nothing in this file touches `src/`.
 
@@ -1100,4 +1126,309 @@ fn compound_pendulum_matches_its_closed_form_angular_acceleration() {
         Fix128::ZERO,
         "a hinge about z admits no rotation about y",
     );
+}
+
+// ---------------------------------------------------------------------------
+// Oracle 12 — the velocity-product term, seen from a moving parent
+// ---------------------------------------------------------------------------
+
+/// A link hinged to a **rotating** base picks up the angular acceleration that
+/// the centripetal motion of its own hinge point demands, and nothing else.
+///
+/// # Why this scene exists
+///
+/// The velocity-product acceleration is `c = v × (v - v_parent)`. The spatial
+/// motion cross product is alternating, so `v × v` is identically zero and `c`
+/// collapses whenever the parent is at rest. Every other scene in this file
+/// hangs its chain from a base that never moves, so every one of them would
+/// pass with `c` deleted outright. The only way to make `c` load-bearing is a
+/// parent that is genuinely moving while the joint to it is free to turn.
+///
+/// The base here is a body of infinite mass carrying a prescribed constant
+/// angular velocity `Omega` about the world `z` axis through the origin — a
+/// kinematic base, the standard way to impose a motion rather than solve for
+/// one. The solver never writes to it (it is the held root), so `Omega` is a
+/// constant of the scene rather than a state that has to be integrated
+/// correctly for the oracle to mean anything. Its spatial acceleration about
+/// the origin is exactly zero, which is what a held root is given, so the
+/// scene is self-consistent.
+///
+/// # Where the expected value comes from
+///
+/// Take moments about the hinge point `P`, which is a point of the rotating
+/// base at radius `d` and therefore accelerates centripetally,
+/// `a_P = -Omega^2 P`. For a rigid body of mass `m`, centroidal inertia `I_c`
+/// about the hinge axis, and `r = c - P` the vector from hinge to centre of
+/// mass,
+///
+/// ```text
+///   sum M_P = I_c alpha + m (r x a_c)_z ,   a_c = a_P + alpha x r - omega^2 r
+/// ```
+///
+/// The hinge force acts at `P` and so contributes no moment about it, and there
+/// is no gravity in this scene, so `sum M_P = 0`. The body is released with
+/// zero angular velocity, so the `omega^2 r` term drops; `r x (alpha x r)` is
+/// `alpha |r|^2`; and with `r = (0, L, 0)` perpendicular to `a_P = (-Omega^2 d,
+/// 0, 0)` the remaining cross product is `L Omega^2 d` along `z`. Hence
+///
+/// ```text
+///   alpha = - m L Omega^2 d / (I_c + m L^2)
+/// ```
+///
+/// With `m = 5`, `L = 3`, `d = 2`, `Omega = 4` and `I_c = 2 m / 5 = 2` that is
+/// `-480 / 47 rad/s^2`, and after one semi-implicit Euler step of `1/60 s` the
+/// link turns at `-8/47 rad/s`. Every quantity on the right is an input to the
+/// scene.
+///
+/// Note that `alpha` does not depend on the link's own angular velocity at all
+/// in this configuration, which is why the link may be released from rest: the
+/// entire answer is the centrifugal coupling to the parent.
+///
+/// # Why one step
+///
+/// The closed form above is evaluated at the initial configuration. The scene's
+/// kinematic base keeps its velocity but not its orientation (a held root is
+/// never integrated), so the prescribed motion is exact at `t = 0` and the
+/// oracle is a first-step oracle, like oracle 11.
+///
+/// # Why the companion case is here
+///
+/// With `Omega = 0` the same scene is a link hanging off a motionless base in
+/// zero gravity, whose acceleration is exactly zero. Asserting both halves
+/// makes the pair non-degenerate: a solver that always answers zero fails the
+/// first, and one that invents motion fails the second. Deleting `c` makes the
+/// first half answer exactly zero — the link's bias force `v x* (I v)` vanishes
+/// for pure translation, so with `c` gone there is no nonzero term left
+/// anywhere in the scene.
+#[test]
+fn centrifugal_coupling_to_a_rotating_parent_matches_its_closed_form() {
+    let spin = Fix128::from_int(4);
+    let moving = spun_base_scene(spin);
+    let still = spun_base_scene(Fix128::ZERO);
+
+    // Inputs, all read from the scene description rather than from a run.
+    let mass = Fix128::from_int(5);
+    let hinge_radius = Fix128::from_int(2); // d
+    let arm = Fix128::from_int(3); // L
+    let inertia_about_com = mass * Fix128::from_ratio(2, 5); // RigidBody::new
+    let expected = (Fix128::ZERO - mass * arm * spin * spin * hinge_radius)
+        / (inertia_about_com + mass * arm * arm)
+        * dt();
+
+    let tolerance = Fix128::from_ratio(1, 1i64 << 40);
+    let error = moving.z - expected;
+    assert!(
+        error.abs() < tolerance,
+        "a link hinged to a base spinning at Omega = {} feels its hinge point \
+         accelerate centripetally, so after one step omega_z must be \
+         -m L Omega^2 d / (I_c + m L^2) * dt = {} rad/s; got {}, off by {} \
+         against a bound of {}. An exact zero here means the velocity-product \
+         acceleration c = v x (v - v_parent) never reached the answer",
+        spin.to_f64(),
+        expected.to_f64(),
+        moving.z.to_f64(),
+        error.to_f64(),
+        tolerance.to_f64(),
+    );
+    assert_eq!(
+        Vec3Fix::new(moving.x, moving.y, Fix128::ZERO),
+        Vec3Fix::ZERO,
+        "a hinge about z admits no rotation about x or y, got {moving:?}",
+    );
+    assert_eq!(
+        still,
+        Vec3Fix::ZERO,
+        "with the base at rest and no gravity the same scene is in \
+         equilibrium, so the link must not start turning, got {still:?}",
+    );
+}
+
+/// One step of a link hinged about `z` to a base spinning at `spin`, in zero
+/// gravity. Returns the link's angular velocity afterwards.
+///
+/// The base sits at the origin with infinite mass and carries the prescribed
+/// angular velocity. The hinge point is at `(2, 0, 0)`, a point of the base at
+/// radius `d = 2`, and the link's centre of mass is at `(2, 3, 0)`, i.e. an arm
+/// of `L = 3` perpendicular to that radius. The link starts with the velocity
+/// that rigid attachment demands and no rotation of its own: every point of it
+/// moves at `Omega z x P`, the velocity of the hinge point.
+fn spun_base_scene(spin: Fix128) -> Vec3Fix {
+    let hinge = Vec3Fix::from_int(2, 0, 0);
+    let mut base = RigidBody::new_static(Vec3Fix::ZERO);
+    base.angular_velocity = Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, spin);
+
+    let mut link = RigidBody::new(Vec3Fix::from_int(2, 3, 0), Fix128::from_int(5));
+    // v = Omega z x hinge = (0, 2 Omega, 0), shared by every point of the link
+    // because it is not rotating.
+    link.velocity = Vec3Fix::new(Fix128::ZERO, spin * hinge.x, Fix128::ZERO);
+
+    let mut bodies = vec![base, link];
+    let mut artic = ArticulatedBody::new(0, /* fixed_base = */ true);
+    artic.add_link(
+        0,
+        1,
+        Joint::Hinge(HingeJoint::new(
+            0,
+            1,
+            hinge,
+            Vec3Fix::from_int(0, -3, 0),
+            Vec3Fix::from_int(0, 0, 1),
+            Vec3Fix::from_int(0, 0, 1),
+        )),
+        Vec3Fix::from_int(0, 3, 0),
+    );
+
+    let mut solver = FeatherstoneSolver::new();
+    solver.solve(&artic, &mut bodies, Vec3Fix::ZERO, dt());
+    bodies[1].angular_velocity
+}
+
+// ---------------------------------------------------------------------------
+// Oracle 13 — the inertia tensor is carried into world axes
+// ---------------------------------------------------------------------------
+
+/// A compound pendulum whose body is anisotropic and turned swings at the rate
+/// set by the inertia **about the world hinge axis**, not by the stored
+/// diagonal.
+///
+/// # Why this scene exists
+///
+/// `RigidBody` stores its inertia as a diagonal in body axes, so the spatial
+/// inertia has to conjugate it into world axes as `R I R^T`. Every other body
+/// in this file is a sphere — `RigidBody::new` builds `diag(2m/5)` and oracle 8
+/// scales it uniformly — and `R (k 1) R^T = k 1` exactly for any `R`, so
+/// dropping the conjugation changes nothing anywhere else in the file. Making
+/// it load-bearing needs an anisotropic inertia on a body that is actually
+/// turned relative to the world.
+///
+/// # Where the expected value comes from
+///
+/// A rigid body on a hinge has one degree of freedom, so released from rest
+/// (no gyroscopic term) with a stationary hinge point it obeys the scalar
+///
+/// ```text
+///   alpha  = M_axis / I_axis
+///   M_axis = ((c - P) x m g) . n
+///   I_axis = n^T (R I_local R^T) n + m |(c - P) perpendicular to n|^2
+/// ```
+///
+/// the second term being the parallel-axis theorem for the distance from the
+/// centre of mass to the hinge *line*.
+///
+/// The rotation used is `q = (1/2, 1/2, 1/2, 1/2)`, the 120-degree turn about
+/// `(1, 1, 1)` that cycles `x -> y -> z -> x`. It is a unit quaternion whose
+/// every component is a power of two, so it is exact in `Fix128` and so is the
+/// conjugation. Its inverse carries the world `z` axis onto the body `y` axis,
+/// so `n^T (R I_local R^T) n` is exactly `I_yy` — the anisotropy is selected by
+/// the rotation, not merely scaled by it.
+///
+/// With `I_local = diag(2, 5, 10)`, `m = 3`, the hinge at the origin and the
+/// centre of mass at `(4, 0, 0)`:
+///
+/// ```text
+///   turned:    I_axis = I_yy + m |r|^2 = 5 + 48 = 53 ,  alpha = -120 / 53
+///   upright:   I_axis = I_zz + m |r|^2 = 10 + 48 = 58 , alpha = -120 / 58
+/// ```
+///
+/// Both halves are asserted. The turned one fails if the conjugation is
+/// dropped, because it then answers with `I_zz`; the upright one fails if the
+/// conjugation is applied where it should not be, and it holds the scene
+/// honest by showing that the two answers differ only by the rotation.
+#[test]
+fn anisotropic_inertia_is_carried_into_world_axes() {
+    // q = (1/2, 1/2, 1/2, 1/2): 120 degrees about (1, 1, 1), x -> y -> z -> x.
+    let half = Fix128::from_ratio(1, 2);
+    let turned = QuatFix::new(half, half, half, half);
+
+    let mass = Fix128::from_int(3);
+    let arm = Fix128::from_int(4);
+    // I_local = diag(2, 5, 10); the world hinge axis picks out I_yy when the
+    // body is turned and I_zz when it is not.
+    let local_inertia = Vec3Fix::from_int(2, 5, 10);
+    let moment = Fix128::ZERO - mass * arm * Fix128::from_int(10); // (r x m g)_z
+
+    let leverage = mass * arm * arm;
+    let expect_turned = moment / (local_inertia.y + leverage) * dt();
+    let expect_upright = moment / (local_inertia.z + leverage) * dt();
+
+    assert_ne!(
+        expect_turned, expect_upright,
+        "the scene is only a test of the conjugation if the two rotations \
+         give different answers",
+    );
+
+    let tolerance = Fix128::from_ratio(1, 1i64 << 40);
+    for (label, rotation, expected, other) in [
+        ("turned", turned, expect_turned, expect_upright),
+        ("upright", QuatFix::IDENTITY, expect_upright, expect_turned),
+    ] {
+        let got = anisotropic_pendulum(rotation, mass, arm, local_inertia);
+        let error = got.z - expected;
+        assert!(
+            error.abs() < tolerance,
+            "{label} pendulum: a hinge about world z swings at M / I_axis with \
+             I_axis = n^T R I_local R^T n + m |r|^2, so omega_z after one step \
+             must be {} rad/s; got {}, off by {} against a bound of {}. The \
+             other rotation's answer is {} rad/s — landing on that one means \
+             the inertia was never carried into world axes",
+            expected.to_f64(),
+            got.z.to_f64(),
+            error.to_f64(),
+            tolerance.to_f64(),
+            other.to_f64(),
+        );
+        assert_eq!(
+            Vec3Fix::new(got.x, got.y, Fix128::ZERO),
+            Vec3Fix::ZERO,
+            "{label} pendulum: a hinge about z admits no rotation about x or \
+             y, got {got:?}",
+        );
+    }
+}
+
+/// One step of an anisotropic compound pendulum hinged about world `z` at the
+/// origin, released from rest under gravity, with the body pre-rotated by
+/// `rotation`. Returns its angular velocity afterwards.
+fn anisotropic_pendulum(
+    rotation: QuatFix,
+    mass: Fix128,
+    arm: Fix128,
+    local_inertia: Vec3Fix,
+) -> Vec3Fix {
+    let mut link = RigidBody::new(Vec3Fix::new(arm, Fix128::ZERO, Fix128::ZERO), mass);
+    link.rotation = rotation;
+    link.inv_inertia = Vec3Fix::new(
+        Fix128::ONE / local_inertia.x,
+        Fix128::ONE / local_inertia.y,
+        Fix128::ONE / local_inertia.z,
+    );
+
+    // The hinge in the link's own frame is `R^-1 (-arm, 0, 0)`. Only the
+    // parent-side anchor enters the motion subspace, so this is bookkeeping
+    // for `forward_kinematics` rather than an input to the oracle.
+    let local_anchor = rotation.conjugate().rotate_vec(Vec3Fix::new(
+        Fix128::ZERO - arm,
+        Fix128::ZERO,
+        Fix128::ZERO,
+    ));
+
+    let mut bodies = vec![RigidBody::new_static(Vec3Fix::ZERO), link];
+    let mut artic = ArticulatedBody::new(0, /* fixed_base = */ true);
+    artic.add_link(
+        0,
+        1,
+        Joint::Hinge(HingeJoint::new(
+            0,
+            1,
+            Vec3Fix::ZERO,
+            local_anchor,
+            Vec3Fix::from_int(0, 0, 1),
+            Vec3Fix::from_int(0, 0, 1),
+        )),
+        Vec3Fix::new(arm, Fix128::ZERO, Fix128::ZERO),
+    );
+
+    let mut solver = FeatherstoneSolver::new();
+    solver.solve(&artic, &mut bodies, gravity(), dt());
+    bodies[1].angular_velocity
 }
