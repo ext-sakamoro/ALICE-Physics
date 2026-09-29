@@ -1478,7 +1478,9 @@ impl core::marker::UnsafeUnpin for alice_physics::cloth_fluid::ClothFluidCouplin
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::cloth_fluid::ClothFluidCoupling
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::cloth_fluid::ClothFluidCoupling
 pub fn alice_physics::cloth_fluid::apply_cloth_boundary_to_fluid(&[alice_physics::math::Vec3Fix], &[alice_physics::math::Vec3Fix], &[alice_physics::math::Vec3Fix], &mut [alice_physics::math::Vec3Fix], alice_physics::math::Fix128)
+pub fn alice_physics::cloth_fluid::apply_cloth_boundary_to_fluid_with_residual(&[alice_physics::math::Vec3Fix], &[alice_physics::math::Vec3Fix], &[alice_physics::math::Vec3Fix], &mut [alice_physics::math::Vec3Fix], alice_physics::math::Fix128) -> alice_physics::math::Fix128
 pub fn alice_physics::cloth_fluid::apply_fluid_forces_to_cloth(&alice_physics::cloth_fluid::ClothFluidCoupling, &[alice_physics::math::Vec3Fix], &mut [alice_physics::math::Vec3Fix], &[alice_physics::math::Vec3Fix], &[alice_physics::math::Vec3Fix], alice_physics::math::Fix128, alice_physics::math::Fix128)
+pub fn alice_physics::cloth_fluid::apply_fluid_forces_to_cloth_with_residual(&alice_physics::cloth_fluid::ClothFluidCoupling, &[alice_physics::math::Vec3Fix], &mut [alice_physics::math::Vec3Fix], &[alice_physics::math::Vec3Fix], &[alice_physics::math::Vec3Fix], alice_physics::math::Fix128, alice_physics::math::Fix128) -> alice_physics::math::Fix128
 pub mod alice_physics::collider
 pub struct alice_physics::collider::AABB
 pub alice_physics::collider::AABB::max: alice_physics::math::Vec3Fix
