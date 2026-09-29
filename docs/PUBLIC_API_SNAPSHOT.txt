@@ -2076,6 +2076,97 @@ pub fn alice_physics::convex_decompose::decompose_sdf(&dyn alice_physics::sdf_co
 pub mod alice_physics::convex_mesh_builder
 pub fn alice_physics::convex_mesh_builder::build_convex_hull(&[alice_physics::math::Vec3Fix]) -> alice_physics::collider::ConvexHull
 pub fn alice_physics::convex_mesh_builder::compute_centroid(&[alice_physics::math::Vec3Fix]) -> alice_physics::math::Vec3Fix
+pub mod alice_physics::coupled_field
+pub enum alice_physics::coupled_field::CoupledFieldError
+pub alice_physics::coupled_field::CoupledFieldError::BoundsMismatch
+pub alice_physics::coupled_field::CoupledFieldError::EmptyGrid
+pub alice_physics::coupled_field::CoupledFieldError::EmptyGrid::resolution: (usize, usize, usize)
+pub alice_physics::coupled_field::CoupledFieldError::NoParticipants
+pub alice_physics::coupled_field::CoupledFieldError::ResolutionMismatch
+pub alice_physics::coupled_field::CoupledFieldError::ResolutionMismatch::channel: (usize, usize, usize)
+pub alice_physics::coupled_field::CoupledFieldError::ResolutionMismatch::other: (usize, usize, usize)
+impl core::clone::Clone for alice_physics::coupled_field::CoupledFieldError
+pub fn alice_physics::coupled_field::CoupledFieldError::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::coupled_field::CoupledFieldError
+impl core::cmp::PartialEq for alice_physics::coupled_field::CoupledFieldError
+pub fn alice_physics::coupled_field::CoupledFieldError::eq(&self, &Self) -> bool
+impl core::error::Error for alice_physics::coupled_field::CoupledFieldError
+impl core::fmt::Debug for alice_physics::coupled_field::CoupledFieldError
+pub fn alice_physics::coupled_field::CoupledFieldError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for alice_physics::coupled_field::CoupledFieldError
+pub fn alice_physics::coupled_field::CoupledFieldError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::coupled_field::CoupledFieldError
+impl core::marker::StructuralPartialEq for alice_physics::coupled_field::CoupledFieldError
+impl core::marker::Freeze for alice_physics::coupled_field::CoupledFieldError
+impl core::marker::Send for alice_physics::coupled_field::CoupledFieldError
+impl core::marker::Sync for alice_physics::coupled_field::CoupledFieldError
+impl core::marker::Unpin for alice_physics::coupled_field::CoupledFieldError
+impl core::marker::UnsafeUnpin for alice_physics::coupled_field::CoupledFieldError
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::coupled_field::CoupledFieldError
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::coupled_field::CoupledFieldError
+pub struct alice_physics::coupled_field::CoupledField
+impl alice_physics::coupled_field::CoupledField
+pub fn alice_physics::coupled_field::CoupledField::add(&mut self, usize, usize, usize, alice_physics::math::Fix128)
+pub fn alice_physics::coupled_field::CoupledField::add_assign(&mut self, &Self) -> core::result::Result<(), alice_physics::coupled_field::CoupledFieldError>
+pub fn alice_physics::coupled_field::CoupledField::as_mut_slice(&mut self) -> &mut [alice_physics::math::Fix128]
+pub fn alice_physics::coupled_field::CoupledField::as_slice(&self) -> &[alice_physics::math::Fix128]
+pub fn alice_physics::coupled_field::CoupledField::blend_from(&mut self, &Self, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::coupled_field::CoupledFieldError>
+pub const fn alice_physics::coupled_field::CoupledField::cell_count(&self) -> usize
+pub const fn alice_physics::coupled_field::CoupledField::cell_size(&self) -> (alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128)
+pub fn alice_physics::coupled_field::CoupledField::clamp(&mut self, alice_physics::math::Fix128, alice_physics::math::Fix128)
+pub fn alice_physics::coupled_field::CoupledField::clear(&mut self)
+pub fn alice_physics::coupled_field::CoupledField::contains(&self, alice_physics::math::Vec3Fix) -> bool
+pub fn alice_physics::coupled_field::CoupledField::copy_from_f32(&mut self, &alice_physics::sim_field::ScalarField3D) -> core::result::Result<(), alice_physics::coupled_field::CoupledFieldError>
+pub fn alice_physics::coupled_field::CoupledField::decay(&mut self, alice_physics::math::Fix128, alice_physics::math::Fix128)
+pub fn alice_physics::coupled_field::CoupledField::decay_toward(&mut self, alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128)
+pub fn alice_physics::coupled_field::CoupledField::diffuse(&mut self, alice_physics::math::Fix128, alice_physics::math::Fix128)
+pub fn alice_physics::coupled_field::CoupledField::fill(&mut self, alice_physics::math::Fix128)
+pub fn alice_physics::coupled_field::CoupledField::get(&self, usize, usize, usize) -> alice_physics::math::Fix128
+pub fn alice_physics::coupled_field::CoupledField::gradient(&self, alice_physics::math::Vec3Fix) -> alice_physics::math::Vec3Fix
+pub const fn alice_physics::coupled_field::CoupledField::index(&self, usize, usize, usize) -> usize
+pub const fn alice_physics::coupled_field::CoupledField::max(&self) -> (alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128)
+pub fn alice_physics::coupled_field::CoupledField::max_value(&self) -> alice_physics::math::Fix128
+pub const fn alice_physics::coupled_field::CoupledField::min(&self) -> (alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128)
+pub const fn alice_physics::coupled_field::CoupledField::nx(&self) -> usize
+pub const fn alice_physics::coupled_field::CoupledField::ny(&self) -> usize
+pub const fn alice_physics::coupled_field::CoupledField::nz(&self) -> usize
+pub fn alice_physics::coupled_field::CoupledField::same_grid_as(&self, &Self) -> bool
+pub fn alice_physics::coupled_field::CoupledField::sample(&self, alice_physics::math::Vec3Fix) -> alice_physics::math::Fix128
+pub fn alice_physics::coupled_field::CoupledField::scale_div(&mut self, alice_physics::math::Fix128)
+pub fn alice_physics::coupled_field::CoupledField::set(&mut self, usize, usize, usize, alice_physics::math::Fix128)
+pub fn alice_physics::coupled_field::CoupledField::splat(&mut self, alice_physics::math::Vec3Fix, alice_physics::math::Fix128)
+pub fn alice_physics::coupled_field::CoupledField::sum(&self) -> alice_physics::math::Fix128
+pub fn alice_physics::coupled_field::CoupledField::try_matching(&alice_physics::sim_field::ScalarField3D) -> core::result::Result<Self, alice_physics::coupled_field::CoupledFieldError>
+pub fn alice_physics::coupled_field::CoupledField::try_new(usize, usize, usize, (alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128), (alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128)) -> core::result::Result<Self, alice_physics::coupled_field::CoupledFieldError>
+pub fn alice_physics::coupled_field::CoupledField::try_new_filled(usize, usize, usize, (alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128), (alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128), alice_physics::math::Fix128) -> core::result::Result<Self, alice_physics::coupled_field::CoupledFieldError>
+pub fn alice_physics::coupled_field::CoupledField::write_to_f32(&self, &mut alice_physics::sim_field::ScalarField3D) -> core::result::Result<(), alice_physics::coupled_field::CoupledFieldError>
+impl core::clone::Clone for alice_physics::coupled_field::CoupledField
+pub fn alice_physics::coupled_field::CoupledField::clone(&self) -> Self
+impl core::fmt::Debug for alice_physics::coupled_field::CoupledField
+pub fn alice_physics::coupled_field::CoupledField::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for alice_physics::coupled_field::CoupledField
+impl core::marker::Send for alice_physics::coupled_field::CoupledField
+impl core::marker::Sync for alice_physics::coupled_field::CoupledField
+impl core::marker::Unpin for alice_physics::coupled_field::CoupledField
+impl core::marker::UnsafeUnpin for alice_physics::coupled_field::CoupledField
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::coupled_field::CoupledField
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::coupled_field::CoupledField
+pub trait alice_physics::coupled_field::CoupledScalar
+pub fn alice_physics::coupled_field::CoupledScalar::adopt(&mut self, &alice_physics::coupled_field::CoupledField) -> core::result::Result<(), alice_physics::coupled_field::CoupledFieldError>
+pub fn alice_physics::coupled_field::CoupledScalar::coupled_channel(&self) -> core::result::Result<alice_physics::coupled_field::CoupledField, alice_physics::coupled_field::CoupledFieldError>
+pub fn alice_physics::coupled_field::CoupledScalar::coupled_name(&self) -> &'static str
+pub fn alice_physics::coupled_field::CoupledScalar::publish(&self, &mut alice_physics::coupled_field::CoupledField) -> core::result::Result<(), alice_physics::coupled_field::CoupledFieldError>
+impl alice_physics::coupled_field::CoupledScalar for alice_physics::phase_change::PhaseChangeModifier
+pub fn alice_physics::phase_change::PhaseChangeModifier::adopt(&mut self, &alice_physics::coupled_field::CoupledField) -> core::result::Result<(), alice_physics::coupled_field::CoupledFieldError>
+pub fn alice_physics::phase_change::PhaseChangeModifier::coupled_channel(&self) -> core::result::Result<alice_physics::coupled_field::CoupledField, alice_physics::coupled_field::CoupledFieldError>
+pub fn alice_physics::phase_change::PhaseChangeModifier::coupled_name(&self) -> &'static str
+pub fn alice_physics::phase_change::PhaseChangeModifier::publish(&self, &mut alice_physics::coupled_field::CoupledField) -> core::result::Result<(), alice_physics::coupled_field::CoupledFieldError>
+impl alice_physics::coupled_field::CoupledScalar for alice_physics::thermal::ThermalModifier
+pub fn alice_physics::thermal::ThermalModifier::adopt(&mut self, &alice_physics::coupled_field::CoupledField) -> core::result::Result<(), alice_physics::coupled_field::CoupledFieldError>
+pub fn alice_physics::thermal::ThermalModifier::coupled_channel(&self) -> core::result::Result<alice_physics::coupled_field::CoupledField, alice_physics::coupled_field::CoupledFieldError>
+pub fn alice_physics::thermal::ThermalModifier::coupled_name(&self) -> &'static str
+pub fn alice_physics::thermal::ThermalModifier::publish(&self, &mut alice_physics::coupled_field::CoupledField) -> core::result::Result<(), alice_physics::coupled_field::CoupledFieldError>
+pub fn alice_physics::coupled_field::reconcile_mean(&mut [&mut dyn alice_physics::coupled_field::CoupledScalar], &mut alice_physics::coupled_field::CoupledField) -> core::result::Result<(), alice_physics::coupled_field::CoupledFieldError>
 pub mod alice_physics::coupled_iteration
 #[non_exhaustive] pub enum alice_physics::coupled_iteration::ConfigFault
 pub alice_physics::coupled_iteration::ConfigFault::DivergenceRatioNotAboveOne
@@ -6080,6 +6171,11 @@ pub fn alice_physics::phase_change::PhaseChangeModifier::apply_heat_at(&mut self
 pub fn alice_physics::phase_change::PhaseChangeModifier::new(alice_physics::phase_change::PhaseChangeConfig, usize, (f32, f32, f32), (f32, f32, f32)) -> Self
 pub fn alice_physics::phase_change::PhaseChangeModifier::phase_at(&self, f32, f32, f32) -> alice_physics::phase_change::Phase
 pub fn alice_physics::phase_change::PhaseChangeModifier::temperature_at(&self, f32, f32, f32) -> f32
+impl alice_physics::coupled_field::CoupledScalar for alice_physics::phase_change::PhaseChangeModifier
+pub fn alice_physics::phase_change::PhaseChangeModifier::adopt(&mut self, &alice_physics::coupled_field::CoupledField) -> core::result::Result<(), alice_physics::coupled_field::CoupledFieldError>
+pub fn alice_physics::phase_change::PhaseChangeModifier::coupled_channel(&self) -> core::result::Result<alice_physics::coupled_field::CoupledField, alice_physics::coupled_field::CoupledFieldError>
+pub fn alice_physics::phase_change::PhaseChangeModifier::coupled_name(&self) -> &'static str
+pub fn alice_physics::phase_change::PhaseChangeModifier::publish(&self, &mut alice_physics::coupled_field::CoupledField) -> core::result::Result<(), alice_physics::coupled_field::CoupledFieldError>
 impl alice_physics::sim_modifier::PhysicsModifier for alice_physics::phase_change::PhaseChangeModifier
 pub fn alice_physics::phase_change::PhaseChangeModifier::is_active(&self) -> bool
 pub fn alice_physics::phase_change::PhaseChangeModifier::modify_distance(&self, f32, f32, f32, f32) -> f32
@@ -9903,6 +9999,11 @@ pub fn alice_physics::phase_change::PhaseChangeModifier::apply_heat_at(&mut self
 pub fn alice_physics::phase_change::PhaseChangeModifier::new(alice_physics::phase_change::PhaseChangeConfig, usize, (f32, f32, f32), (f32, f32, f32)) -> Self
 pub fn alice_physics::phase_change::PhaseChangeModifier::phase_at(&self, f32, f32, f32) -> alice_physics::phase_change::Phase
 pub fn alice_physics::phase_change::PhaseChangeModifier::temperature_at(&self, f32, f32, f32) -> f32
+impl alice_physics::coupled_field::CoupledScalar for alice_physics::phase_change::PhaseChangeModifier
+pub fn alice_physics::phase_change::PhaseChangeModifier::adopt(&mut self, &alice_physics::coupled_field::CoupledField) -> core::result::Result<(), alice_physics::coupled_field::CoupledFieldError>
+pub fn alice_physics::phase_change::PhaseChangeModifier::coupled_channel(&self) -> core::result::Result<alice_physics::coupled_field::CoupledField, alice_physics::coupled_field::CoupledFieldError>
+pub fn alice_physics::phase_change::PhaseChangeModifier::coupled_name(&self) -> &'static str
+pub fn alice_physics::phase_change::PhaseChangeModifier::publish(&self, &mut alice_physics::coupled_field::CoupledField) -> core::result::Result<(), alice_physics::coupled_field::CoupledFieldError>
 impl alice_physics::sim_modifier::PhysicsModifier for alice_physics::phase_change::PhaseChangeModifier
 pub fn alice_physics::phase_change::PhaseChangeModifier::is_active(&self) -> bool
 pub fn alice_physics::phase_change::PhaseChangeModifier::modify_distance(&self, f32, f32, f32, f32) -> f32
@@ -11095,6 +11196,11 @@ pub fn alice_physics::thermal::ThermalModifier::add_heat_point(&mut self, f32, f
 pub fn alice_physics::thermal::ThermalModifier::apply_heat_at(&mut self, f32, f32, f32, f32, f32)
 pub fn alice_physics::thermal::ThermalModifier::new(alice_physics::thermal::ThermalConfig, usize, (f32, f32, f32), (f32, f32, f32)) -> Self
 pub fn alice_physics::thermal::ThermalModifier::temperature_at(&self, f32, f32, f32) -> f32
+impl alice_physics::coupled_field::CoupledScalar for alice_physics::thermal::ThermalModifier
+pub fn alice_physics::thermal::ThermalModifier::adopt(&mut self, &alice_physics::coupled_field::CoupledField) -> core::result::Result<(), alice_physics::coupled_field::CoupledFieldError>
+pub fn alice_physics::thermal::ThermalModifier::coupled_channel(&self) -> core::result::Result<alice_physics::coupled_field::CoupledField, alice_physics::coupled_field::CoupledFieldError>
+pub fn alice_physics::thermal::ThermalModifier::coupled_name(&self) -> &'static str
+pub fn alice_physics::thermal::ThermalModifier::publish(&self, &mut alice_physics::coupled_field::CoupledField) -> core::result::Result<(), alice_physics::coupled_field::CoupledFieldError>
 impl alice_physics::sim_modifier::PhysicsModifier for alice_physics::thermal::ThermalModifier
 pub fn alice_physics::thermal::ThermalModifier::is_active(&self) -> bool
 pub fn alice_physics::thermal::ThermalModifier::modify_distance(&self, f32, f32, f32, f32) -> f32
@@ -14315,6 +14421,11 @@ pub fn alice_physics::thermal::ThermalModifier::add_heat_point(&mut self, f32, f
 pub fn alice_physics::thermal::ThermalModifier::apply_heat_at(&mut self, f32, f32, f32, f32, f32)
 pub fn alice_physics::thermal::ThermalModifier::new(alice_physics::thermal::ThermalConfig, usize, (f32, f32, f32), (f32, f32, f32)) -> Self
 pub fn alice_physics::thermal::ThermalModifier::temperature_at(&self, f32, f32, f32) -> f32
+impl alice_physics::coupled_field::CoupledScalar for alice_physics::thermal::ThermalModifier
+pub fn alice_physics::thermal::ThermalModifier::adopt(&mut self, &alice_physics::coupled_field::CoupledField) -> core::result::Result<(), alice_physics::coupled_field::CoupledFieldError>
+pub fn alice_physics::thermal::ThermalModifier::coupled_channel(&self) -> core::result::Result<alice_physics::coupled_field::CoupledField, alice_physics::coupled_field::CoupledFieldError>
+pub fn alice_physics::thermal::ThermalModifier::coupled_name(&self) -> &'static str
+pub fn alice_physics::thermal::ThermalModifier::publish(&self, &mut alice_physics::coupled_field::CoupledField) -> core::result::Result<(), alice_physics::coupled_field::CoupledFieldError>
 impl alice_physics::sim_modifier::PhysicsModifier for alice_physics::thermal::ThermalModifier
 pub fn alice_physics::thermal::ThermalModifier::is_active(&self) -> bool
 pub fn alice_physics::thermal::ThermalModifier::modify_distance(&self, f32, f32, f32, f32) -> f32
@@ -18300,6 +18411,11 @@ pub fn alice_physics::phase_change::PhaseChangeModifier::apply_heat_at(&mut self
 pub fn alice_physics::phase_change::PhaseChangeModifier::new(alice_physics::phase_change::PhaseChangeConfig, usize, (f32, f32, f32), (f32, f32, f32)) -> Self
 pub fn alice_physics::phase_change::PhaseChangeModifier::phase_at(&self, f32, f32, f32) -> alice_physics::phase_change::Phase
 pub fn alice_physics::phase_change::PhaseChangeModifier::temperature_at(&self, f32, f32, f32) -> f32
+impl alice_physics::coupled_field::CoupledScalar for alice_physics::phase_change::PhaseChangeModifier
+pub fn alice_physics::phase_change::PhaseChangeModifier::adopt(&mut self, &alice_physics::coupled_field::CoupledField) -> core::result::Result<(), alice_physics::coupled_field::CoupledFieldError>
+pub fn alice_physics::phase_change::PhaseChangeModifier::coupled_channel(&self) -> core::result::Result<alice_physics::coupled_field::CoupledField, alice_physics::coupled_field::CoupledFieldError>
+pub fn alice_physics::phase_change::PhaseChangeModifier::coupled_name(&self) -> &'static str
+pub fn alice_physics::phase_change::PhaseChangeModifier::publish(&self, &mut alice_physics::coupled_field::CoupledField) -> core::result::Result<(), alice_physics::coupled_field::CoupledFieldError>
 impl alice_physics::sim_modifier::PhysicsModifier for alice_physics::phase_change::PhaseChangeModifier
 pub fn alice_physics::phase_change::PhaseChangeModifier::is_active(&self) -> bool
 pub fn alice_physics::phase_change::PhaseChangeModifier::modify_distance(&self, f32, f32, f32, f32) -> f32
@@ -19564,6 +19680,11 @@ pub fn alice_physics::thermal::ThermalModifier::add_heat_point(&mut self, f32, f
 pub fn alice_physics::thermal::ThermalModifier::apply_heat_at(&mut self, f32, f32, f32, f32, f32)
 pub fn alice_physics::thermal::ThermalModifier::new(alice_physics::thermal::ThermalConfig, usize, (f32, f32, f32), (f32, f32, f32)) -> Self
 pub fn alice_physics::thermal::ThermalModifier::temperature_at(&self, f32, f32, f32) -> f32
+impl alice_physics::coupled_field::CoupledScalar for alice_physics::thermal::ThermalModifier
+pub fn alice_physics::thermal::ThermalModifier::adopt(&mut self, &alice_physics::coupled_field::CoupledField) -> core::result::Result<(), alice_physics::coupled_field::CoupledFieldError>
+pub fn alice_physics::thermal::ThermalModifier::coupled_channel(&self) -> core::result::Result<alice_physics::coupled_field::CoupledField, alice_physics::coupled_field::CoupledFieldError>
+pub fn alice_physics::thermal::ThermalModifier::coupled_name(&self) -> &'static str
+pub fn alice_physics::thermal::ThermalModifier::publish(&self, &mut alice_physics::coupled_field::CoupledField) -> core::result::Result<(), alice_physics::coupled_field::CoupledFieldError>
 impl alice_physics::sim_modifier::PhysicsModifier for alice_physics::thermal::ThermalModifier
 pub fn alice_physics::thermal::ThermalModifier::is_active(&self) -> bool
 pub fn alice_physics::thermal::ThermalModifier::modify_distance(&self, f32, f32, f32, f32) -> f32
