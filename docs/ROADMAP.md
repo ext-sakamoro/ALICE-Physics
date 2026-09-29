@@ -3,7 +3,7 @@
 Canonical roadmap for the alice-physics crate. Primary source of truth.
 Memory index pointer: `[[reference-alice-physics-v1-roadmap]]` in claude-config.
 
-## 🎉 現在位置 (2026-09-30): 4 課題を landing (共回転 FEM / CFD 壁 BC / Maxwell FDTD / 多体 ABA)
+## 🎉 現在位置 (2026-09-30): 4 課題の第 2 increment を landing
 
 ⚠️ **番号で呼ばない** — 記録には「壁 N/4」が 2 組あり一致しません (詳細は memory
 `project_alice_physics_research_walls` § 番号の曖昧性) 話題名で参照してください
@@ -15,8 +15,24 @@ Memory index pointer: `[[reference-alice-physics-v1-roadmap]]` in claude-config.
 | Maxwell FDTD | `ecd8c61` | source-free Yee、⚠️ **SI は `ε₀·μ₀` が 7.7 bit で不可**、正規化単位 + `S=9/16` |
 | 多体 ABA | `1bab99b` | ⚠️ **`solve()` が `link.joint` を読まない**状態から real ABA、oracle 12 本 |
 
-**次の increment**: Maxwell の Gauss の法則 / 電荷保存 / PML / CFD の inflow-outflow BC と
-接線 no-slip / 多体は破壊試験で残る 2 変異 (実装でなく scene の穴) / 物理間連成 channel
+### 第 2 increment (2026-09-30、上表の続き)
+
+| 話題 | commit | 到達点 |
+|---|---|---|
+| 物理間連成 | `d75d6dc` | `CoupledField` (Fix128 scalar 場) + `reconcile_mean` ⚠️ **opt-in で production caller は 0**、既定経路は 1 bit も不変 `diffuse` が次数 2.009 / 2.002 / 2.001 で収束 |
+| Maxwell 第 2 | `3d3c377` | Gauss の法則 / 電荷保存 (`∇·E − ρ` が **0 ULP / 30 step**) / split-field PML (PEC 比 **1/18**) oracle 9 → **31 本**、破壊試験 21 変異すべて red |
+| CFD 第 2 | `599c5a0` `cbe3def` | `FaceBc` 5 variant (inflow / outflow / 対称面) + 接線 no-slip を src へ 離散 Poiseuille と **3.206e-9**、収束比 **4.000 / 4.000** ⚠️ Ghia は **86.2% → 86.0%** (最大偏差は 0.04581 → **0.03162** で 31% 改善、差は演算子順序) |
+| 多体 第 2 | `d6b58d4` | 破壊試験で素通りしていた 2 変異を scene 2 本で塞ぎ oracle 12 → **14 本** ⚠️ **実装でなく scene 側の穴**で `articulation` は変更なし |
+
+⚠️ **oracle 設計で 3 つの盲点が実測された** (いずれも「green な理由が実装の正しさ以外にある」型)
+
+1. **対称 / 退化した scene では staggered 格子の残り成分が未検証** CFD の `w` は準 2D で恒等的に 0、Maxwell の TM 配置は `Ex`/`Ey`/`Hz` を bit 厳密に 0 に保つので、どちらもゴースト / 係数の変異が素通りした 対処は同じ閉形式を 6 通りの向きで回すこと
+2. **等方な構成では軸 / index の配線が観測できない** 非等方な寸法にしても足りず、**ラベルの巡回置換に対する不変性** (`x→y→z→x` で bit 一致) を測る必要がある
+3. **誤差項が相殺する parameter 点が存在する** CFD の `dt = dx²/(8ν)` では空間離散化誤差と演算子分離誤差が厳密に相殺し、連続解にぴたり乗る (両方の項が未検証になる) test の doc で禁止点として明記
+
+**次の increment**: Armaly (1983) backward-facing step の再付着長さ突合 (前提は揃った) /
+移流への壁の扱い (接線 no-slip は現状粘性項のみ) / 反射係数 `R` の直接測定 (入射波と反射波の分離) /
+`CoupledField` の実配線 (現状 opt-in で production caller 0) / 演算子分離誤差 `−G dt` を消すか (別 y/n)
 
 ## 前回位置 (2026-09-29): v1.5.0 (`Mat3Fix::polar_rotation` = 極分解の回転因子)
 

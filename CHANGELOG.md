@@ -13,6 +13,87 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added — 物理間で場を渡す決定性 channel (`coupled_field`)
+
+連成の唯一の経路が SDF の scalar 距離 (`PhysicsModifier::modify_distance`、全 f32) で、
+物理間でデータを渡す型が存在しませんでした `CoupledField` を新設し、Fix128 の 3D scalar 場と
+`CoupledScalar` trait (`publish` / `adopt`) + `reconcile_mean` を追加しました
+
+⚠️ **opt-in です** `reconcile_mean` の呼び出し元は crate 内に無く、`ModifiedSdf::update` の
+既定経路は 1 bit も変わりません 実態は「`thermal` と `phase_change` が各自持つ温度場を整合させる
+**経路を呼べるようになった**」であって「整合するようになった」ではありません
+
+- 三線形 `sample` / 中心差分 `gradient` / 逆三線形 `splat` / 陽解法 `diffuse` / `decay_toward`
+- 格子不一致は resample せず `CoupledFieldError` で返します (`try_new` / `try_matching`)
+- `diffuse` の減衰率が解析解 `exp(-νk²T)` に対し **次数 2.009 / 2.002 / 2.001** で収束
+  (`dt ∝ h²` で空間と時間の誤差を揃える必要があります)
+- `splat` の丸め上界を導出: `|総量 − value| ≤ 8(1 + 2⌈|value|⌉)` ulp (`Mul` が切り捨てのため)
+- ⚠️ **境界は反射 ghost で `ScalarField3D::diffuse` (中心値コピー) と境界 1 層が一致しません**
+  中心値コピー BC では `sin(kx)` が離散 Laplacian の固有ベクトルにならず閉形式の減衰率が
+  存在しないためです f32 側を揃えるかは別途判断 (既存消費者の境界値が変わります)
+
+### Added — Maxwell に Gauss の法則 / 電荷保存 / PML (`maxwell_fdtd`)
+
+source-free だった Yee solver に電流密度 `J` (辺) / 電荷密度 `ρ` (interior node) と
+split-field PML を追加しました `Option<Box<_>>` の遅延確保なので、source も absorber も
+使わない格子は算術も確保量も変わりません
+
+- `∇·E` (node) / `gauss_residual` / `max_abs_gauss_residual` を既存の `div_b` の上に追加
+- Ampère 則の `−S·J` と連続の式の `ρ −= S·(∇·J)` が**同じ離散 divergence** を使うので
+  `∇·E − ρ` は毎 step 打ち消し合います 実測 **0 ULP / 30 step** (`S=1/2` + 整数 `J`)
+- 損失更新の 3 項漸化式 `q^{n+1} = (2c − b²λ)q^n − c²q^{n−1}` が **0 ULP / 16 step**
+- PML 残留 envelope は PEC 箱の **1/18** (20x16x12 / depth `[5,3,2]` / σmax 4)
+- ⚠️ **PML は層内のセルだけ split 更新**します 全域を split にすると `trunc(S·d₁)+trunc(S·d₂)`
+  が `trunc(S·(d₁+d₂))` と乱数 20 万組の **47.0% で 1 ULP 相違**し、bit 一致 oracle が落ちます
+  損失 0 の構成は従来の unsplit 経路をそのまま通ります
+- ⚠️ **`depth` は軸ごと (`[usize; 3]`) です** 等方だと 3 軸の σ プロファイルが同一になり、
+  軸の配線が原理的に検証できません (誤った軸で減衰させても減衰しているため)
+- ⚠️ **`Absorber::Uniform` は PML ではなく一様損失媒質です** 斜め入射で反射します
+- ⚠️ lossless 領域の `max|div B|` は 0 でなく **31 ULP / 200 step** です `Fix128::Mul` が
+  切り捨てであることの帰結で、bug ではありません (全域は 8e-4 なので限定は飾りではありません)
+
+### Added — CFD の inflow / outflow を face の型に (`eulerian_grid`)
+
+`FaceBc` (`#[non_exhaustive]`) を追加: `Fluid` / `Wall { velocity }` / `SlipWall` /
+`Inflow { normal_velocity }` / `Outflow` 圧力との対応を実装で明示し、**inflow は法線速度の
+Dirichlet なので圧力 Neumann**、**outflow は圧力 Dirichlet** としました 閉じた箱では sparse map が
+空なので hot loop は既存の dense fast path のみを通ります
+
+- duct (12x8) で流入 4.0 を厳密保持、流出との imbalance **9.7e-7**、`max|div|` **2.6e-7**
+- 発達した出口の peak/mean **1.4885** (放物線 1.5 / 栓流 1.0)
+- ⚠️ **`Outflow` は収束時に開放 rim 面と同一です** domain 境界の `Fluid` が既に外部 `p = 0`
+  だったので、`Outflow` が加えるのは圧力条件ではなく外挿だけです (200 sweep で差 4.8e-5)
+  未収束 solve での mass balance 優位 (imbalance 0.831 vs 0.915) のみを oracle にしています
+- Armaly (1983) backward-facing step の突合は前提が揃っただけで、まだ組んでいません
+
+### Changed — 壁の接線 no-slip を solver に (`cfd_solver`)
+
+`diffuse_velocity` が境界でゼロ勾配ミラー = free-slip 相当だったため、lid-driven cavity の
+oracle は test 側で `u_ghost = 2U − u_in` 相当の項を明示して回避していました ミラーを
+`2 u_wall − u_in` にして src 側に移し、test 側の回避項を削除しました
+
+- 平面 Poiseuille の離散閉形式と突合し `max|u − 閉形式|` **3.206e-9**、格子細分で **収束比 4.000 / 4.000**
+- ⚠️ 離散不動点は `u_j = (G/2ν)y_j(H−y_j) + G dx²/(8ν) − G dt` で **dt にも依存します**
+  第 2 項が空間離散化誤差、第 3 項が演算子分離誤差 (体積力を粘性項の前に適用するため、
+  壁の行だけ ghost が定数を打ち消しません) ⚠️ **`dt = dx²/(8ν)` では第 2 項と第 3 項が
+  厳密に相殺し、連続解の放物線にぴたり乗ります** 正しさの証拠に見えて両方の項が未検証に
+  なるので、oracle はこの点を使いません (test の doc に禁止パラメータ点として明記)
+- Ghia Re=100 の中心線突合は **86.2% → 86.0%**、⚠️ **字面の「86.2% 以上」は満たしていません**
+  最大偏差は **0.04581 → 0.03162 (31% 改善)** で、差の出所は演算子順序です (src 版は壁を
+  移流前 / 粘性前に強制するので step 内の系列が変わります) oracle の主 assert は 1 点標本の
+  ピーク比でなく全高さを読む最大偏差にしました
+- ⚠️ **`set_closed_box_walls()` が no-slip になります** (圧力側は不変) 粘性流の閉じた箱は
+  no-slip が物理的な境界条件なので、free-slip だった方が defect でした free-slip が要る場合は
+  `SlipWall` を明示してください
+
+### Fixed — 1 セル厚の軸が閉じた箱で面内の流れを潰す (`eulerian_grid`)
+
+`set_closed_box_walls()` が 1 セルしかない軸にも no-slip を置くため、準 2D 板の面内の流れが
+`4νdt/dx²`/step で減衰していました (cavity の Ghia 比 86.0% → **4.2%**) 1 セル厚の軸には
+`SlipWall` (対称面) を置くようにしました 圧力側は壁のままなので Poisson は遮蔽問題に
+退化しません
+
+
 ### Added — 共回転 FEM (幾何学的非線形の大回転)
 
 `solve_corotational` を追加 各要素の変形勾配から極分解で回転因子を取り、その frame で
@@ -83,6 +164,12 @@ ULP が `5.421e-20` に対し `ε₀·μ₀ = 1/c² = 1.113e-17` は ULP の **2
   通すモーメント / 慣性と角加速度の単調性 ほか)
 - ⚠️ 既存の `test_featherstone_solver` は自由落下 solver 時代の期待値だったので、
   「平衡 scene は動かない」+「傾けた scene は動く」の 2 本に分割しました
+- 破壊試験 9 変異のうち 2 件が oracle を素通りしていたので scene を 2 本足しました
+  (oracle 12 / 13) ⚠️ **どちらも実装でなく scene 側の穴**で `articulation` は変更ありません
+  速度積項 `c = v × (v − v_parent)` は `v × v ≡ 0` なので親が静止する scene では恒等的に消え、
+  空間慣性の world 回転 `R I Rᵀ` は等方慣性 `diag(2m/5)` では厳密に消えます 規定角速度を持つ
+  base に hinge で繋いだ link (閉形式 `α = −m L Ω² d / (I_c + m L²)`) と、非軸整列 120° 回転
+  (四元数 `(½,½,½,½)`、全成分 2 冪なので Fix128 で厳密) を掛けた異方慣性の複合振子で塞ぎました
 
 ### Fixed — 段階細分が hanging node を残す (`sdf_fem_mesh`)
 
