@@ -61,6 +61,36 @@ use std::collections::HashMap;
 
 use crate::sdf_collider::SdfField;
 
+/// Why a refinement stopped short.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum RefineError {
+    /// The pass budget ran out while tetrahedra still needed splitting.
+    ///
+    /// Distinguished from a clean finish on purpose: the caller's next move is
+    /// to raise the budget and refine again, which is the opposite of what a
+    /// finished refinement calls for, and the old `-> u32` signature returned the
+    /// same number in both cases.
+    Unfinished {
+        /// Passes executed before giving up.
+        passes: u32,
+        /// Tetrahedra that still had an edge to split.
+        tets_left: usize,
+    },
+}
+
+/// The six edges of a tetrahedron, in the order `split_edge_remaining` expects.
+fn tet_edges(vs: [u32; 4]) -> [(u32, u32); 6] {
+    [
+        (vs[0], vs[1]),
+        (vs[0], vs[2]),
+        (vs[0], vs[3]),
+        (vs[1], vs[2]),
+        (vs[1], vs[3]),
+        (vs[2], vs[3]),
+    ]
+}
+
 /// A single tetrahedron given by four vertex indices into
 /// [`SdfTetMesh::vertices`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -91,99 +121,198 @@ impl SdfTetMesh {
         self.tets.len()
     }
 
-    /// Iteratively refine the mesh by splitting every tetrahedron whose
-    /// longest edge exceeds `max_edge_length`.
+    /// Refine until no edge is longer than `max_edge_length`, keeping the mesh
+    /// conforming.
     ///
-    /// Each qualifying tetrahedron is decomposed into two new tets by
-    /// inserting a midpoint on the longest edge and reconnecting the
-    /// remaining vertices. The pass repeats until no tet exceeds the
-    /// threshold or `max_passes` is reached (whichever comes first).
+    /// Each pass bisects, in every tetrahedron that needs it, the longest of the
+    /// edges that either exceed the threshold or have already been bisected
+    /// somewhere else. That second condition is the propagation: a neighbour's
+    /// split leaves a midpoint on a shared edge, and the tetrahedron on the other
+    /// side splits on it in the following pass rather than being left with a
+    /// vertex sitting in the middle of its face.
     ///
-    /// **This is edge-based refinement, not Delaunay refinement** —
-    /// aspect ratio can drift as edges shorten unevenly. Callers who
-    /// need Delaunay-quality tets should postprocess with an external
-    /// remesher; this MVP is aimed at bounded-edge FEM assembly.
+    /// # Why propagation is not optional
     ///
-    /// Returns the number of refinement passes actually executed.
+    /// Splitting one side only leaves a *hanging node*, and the coarse element
+    /// then contributes no force there, so the shared face behaves like a
+    /// traction-free surface from the fine side. Measured in
+    /// `tests/hanging_node_effect.rs`: the displacement field tears by 15% of
+    /// itself on an exactly *linear* solution, which is the case a patch test is
+    /// built from. The tear is not small, and it is not the kind of error that
+    /// refinement reduces — it is a discontinuity in the field.
+    ///
+    /// Adaptive meshers elsewhere do leave hanging nodes on purpose and tie them
+    /// to their parent edge with a constraint. This crate has no constraint
+    /// machinery, so here they are a defect rather than a design.
+    ///
+    /// # Ties
+    ///
+    /// "Longest" needs a tie-break that two neighbouring tetrahedra agree on, or
+    /// they choose different edges of the same face and the propagation never
+    /// settles. Equal lengths are therefore broken by the edge's sorted vertex
+    /// indices, which is a property of the edge itself and reads the same from
+    /// either side. Breaking ties by position within a tetrahedron's own edge
+    /// list — which is what this did before — is not: the same edge has a
+    /// different position in each tetrahedron that holds it.
+    ///
+    /// A single run would look correct either way, and
+    /// `determinism_golden_f32` would not notice, because it re-runs the same
+    /// binary rather than comparing two meshers that disagree.
+    ///
+    /// # Quality
+    ///
+    /// **This is edge-based refinement, not Delaunay refinement** — aspect ratio
+    /// can drift as edges shorten unevenly. Callers who need Delaunay-quality
+    /// tets should postprocess with an external remesher; this is aimed at
+    /// bounded-edge FEM assembly.
+    ///
+    /// # Errors
+    ///
+    /// [`RefineError::Unfinished`] when `max_passes` runs out with work left.
+    /// That is a real possibility rather than a formality: propagation makes more
+    /// work than the caller asked for, so a budget that suffices without it can
+    /// fall short with it. The error carries what remained, so the caller can
+    /// raise the budget knowingly rather than guess.
     ///
     /// # Panics
     ///
     /// Panics if `max_edge_length <= 0.0`.
-    pub fn refine_by_max_edge_length(&mut self, max_edge_length: f32, max_passes: u32) -> u32 {
+    pub fn try_refine_conforming(
+        &mut self,
+        max_edge_length: f32,
+        max_passes: u32,
+    ) -> Result<u32, RefineError> {
         assert!(max_edge_length > 0.0, "max_edge_length must be positive");
+        let limit_sq = max_edge_length * max_edge_length;
+        // Midpoints persist across passes: a tetrahedron has to split on an edge
+        // whose midpoint exists, whichever pass created it. The condition clears
+        // itself, because after the split neither half holds that edge any more.
+        let mut midpoints: HashMap<(u32, u32), u32> = HashMap::new();
         let mut passes = 0_u32;
         for _ in 0..max_passes {
             passes += 1;
             let mut changed = false;
             let mut new_tets: Vec<Tetrahedron> = Vec::with_capacity(self.tets.len() * 2);
-            let mut edge_midpoint_cache: HashMap<(u32, u32), u32> = HashMap::new();
-            let tet_snapshot = std::mem::take(&mut self.tets);
-            for tet in &tet_snapshot {
-                let vs = tet.vertices;
-                // Find the longest edge (pair of vertex indices).
-                let edges: [(u32, u32); 6] = [
-                    (vs[0], vs[1]),
-                    (vs[0], vs[2]),
-                    (vs[0], vs[3]),
-                    (vs[1], vs[2]),
-                    (vs[1], vs[3]),
-                    (vs[2], vs[3]),
-                ];
-                let mut best_edge = 0_usize;
-                let mut best_len_sq = 0.0_f32;
-                for (k, (a, b)) in edges.iter().enumerate() {
-                    let pa = self.vertices[*a as usize];
-                    let pb = self.vertices[*b as usize];
-                    let dx = pa[0] - pb[0];
-                    let dy = pa[1] - pb[1];
-                    let dz = pa[2] - pb[2];
-                    let len_sq = dx.mul_add(dx, dy.mul_add(dy, dz * dz));
-                    if len_sq > best_len_sq {
-                        best_len_sq = len_sq;
-                        best_edge = k;
-                    }
-                }
-                let longest_len = best_len_sq.sqrt();
-                if longest_len <= max_edge_length {
+            let snapshot = std::mem::take(&mut self.tets);
+            for tet in &snapshot {
+                let Some(k) = self.edge_to_split(tet, limit_sq, &midpoints) else {
                     new_tets.push(*tet);
                     continue;
-                }
-                changed = true;
-                let (a, b) = edges[best_edge];
-                // Deduplicated midpoint insertion.
-                let key = (a.min(b), a.max(b));
-                let mid_index = if let Some(&idx) = edge_midpoint_cache.get(&key) {
-                    idx
-                } else {
-                    let pa = self.vertices[a as usize];
-                    let pb = self.vertices[b as usize];
-                    let mid = [
-                        0.5 * (pa[0] + pb[0]),
-                        0.5 * (pa[1] + pb[1]),
-                        0.5 * (pa[2] + pb[2]),
-                    ];
-                    let idx = self.vertices.len() as u32;
-                    self.vertices.push(mid);
-                    edge_midpoint_cache.insert(key, idx);
-                    idx
                 };
-                // Split the tet by replacing the longest edge's
-                // endpoints with the midpoint on each of two child tets.
-                // For edge (a, b), the remaining two vertices are `c` and `d`.
-                let (c, d) = split_edge_remaining(vs, best_edge);
+                changed = true;
+                let (a, b) = tet_edges(tet.vertices)[k];
+                let mid = self.midpoint_of(a, b, &mut midpoints);
+                let (c, d) = split_edge_remaining(tet.vertices, k);
                 new_tets.push(Tetrahedron {
-                    vertices: [a, mid_index, c, d],
+                    vertices: [a, mid, c, d],
                 });
                 new_tets.push(Tetrahedron {
-                    vertices: [mid_index, b, c, d],
+                    vertices: [mid, b, c, d],
                 });
             }
             self.tets = new_tets;
             if !changed {
-                break;
+                return Ok(passes - 1);
             }
         }
-        passes
+        let remaining = self
+            .tets
+            .iter()
+            .filter(|t| self.edge_to_split(t, limit_sq, &midpoints).is_some())
+            .count();
+        if remaining == 0 {
+            return Ok(passes);
+        }
+        Err(RefineError::Unfinished {
+            passes,
+            tets_left: remaining,
+        })
+    }
+
+    /// Which of the six edges to bisect, if any: the longest among those that are
+    /// over the limit or already carry a midpoint.
+    ///
+    /// Ties go to the edge whose sorted vertex indices are smaller, so that two
+    /// tetrahedra sharing a face pick the same one.
+    fn edge_to_split(
+        &self,
+        tet: &Tetrahedron,
+        limit_sq: f32,
+        midpoints: &HashMap<(u32, u32), u32>,
+    ) -> Option<usize> {
+        let edges = tet_edges(tet.vertices);
+        let mut best: Option<(usize, f32, (u32, u32))> = None;
+        for (k, (a, b)) in edges.iter().enumerate() {
+            let key = (*a.min(b), *a.max(b));
+            let pa = self.vertices[*a as usize];
+            let pb = self.vertices[*b as usize];
+            let dx = pa[0] - pb[0];
+            let dy = pa[1] - pb[1];
+            let dz = pa[2] - pb[2];
+            let len_sq = dx.mul_add(dx, dy.mul_add(dy, dz * dz));
+            if len_sq <= limit_sq && !midpoints.contains_key(&key) {
+                continue;
+            }
+            let better = match best {
+                None => true,
+                Some((_, blen, bkey)) => len_sq > blen || (len_sq == blen && key < bkey),
+            };
+            if better {
+                best = Some((k, len_sq, key));
+            }
+        }
+        best.map(|(k, _, _)| k)
+    }
+
+    fn midpoint_of(&mut self, a: u32, b: u32, midpoints: &mut HashMap<(u32, u32), u32>) -> u32 {
+        let key = (a.min(b), a.max(b));
+        if let Some(&idx) = midpoints.get(&key) {
+            return idx;
+        }
+        let pa = self.vertices[a as usize];
+        let pb = self.vertices[b as usize];
+        let mid = [
+            0.5 * (pa[0] + pb[0]),
+            0.5 * (pa[1] + pb[1]),
+            0.5 * (pa[2] + pb[2]),
+        ];
+        let idx = u32::try_from(self.vertices.len()).expect("vertex count fits u32");
+        self.vertices.push(mid);
+        midpoints.insert(key, idx);
+        idx
+    }
+
+    /// Refine until no edge is longer than `max_edge_length`.
+    ///
+    /// # Deprecated
+    ///
+    /// The return value cannot say whether the work finished. `passes ==
+    /// max_passes` means either "the last pass happened to be the last one
+    /// needed" or "the budget ran out with work left", and the caller's next move
+    /// is opposite in the two cases — carry on, or refine again. Use
+    /// [`SdfTetMesh::try_refine_conforming`], which distinguishes them.
+    ///
+    /// The refinement itself is the same and is conforming; only the reporting is
+    /// worse. On exhaustion this returns `max_passes`, which is what it has
+    /// always returned in that case.
+    ///
+    /// The count also changed meaning: it is now the number of passes that did
+    /// work, so a mesh already under the threshold returns `0` where this used to
+    /// return `1`. The old number included the pass that looked and found nothing
+    /// to do, which made "did nothing" and "did one round" the same answer.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `max_edge_length <= 0.0`.
+    #[deprecated(
+        since = "1.6.0",
+        note = "use try_refine_conforming: this cannot report an exhausted budget"
+    )]
+    pub fn refine_by_max_edge_length(&mut self, max_edge_length: f32, max_passes: u32) -> u32 {
+        match self.try_refine_conforming(max_edge_length, max_passes) {
+            Ok(passes) => passes,
+            Err(RefineError::Unfinished { passes, .. }) => passes,
+        }
     }
 
     /// Maximum edge length over the mesh (`0.0` on an empty mesh).
@@ -1127,29 +1256,53 @@ mod tests {
     }
 
     #[test]
-    fn refine_halves_edges_after_pass() {
+    fn refine_reports_an_exhausted_budget_instead_of_a_pass_count() {
+        // Four passes do not bring a unit tetrahedron under 0.7, and the old
+        // signature said "4" — the same answer it gave for a clean finish. The
+        // assertion that used to stand here, `max_edge_length() <= 1.0`, was
+        // loose enough to pass on the unfinished mesh, so nothing noticed.
         let mut m = one_tet_mesh(1.0);
-        let passes = m.refine_by_max_edge_length(0.7, 4);
-        assert!(m.max_edge_length() <= 1.0);
+        let cramped = m.try_refine_conforming(0.7, 4);
+        assert!(
+            matches!(cramped, Err(RefineError::Unfinished { passes: 4, .. })),
+            "four passes is not enough here and the refiner has to say so: {cramped:?}"
+        );
+        assert!(
+            m.max_edge_length() > 0.7,
+            "and the mesh is indeed not there yet"
+        );
+
+        let mut m = one_tet_mesh(1.0);
+        let passes = m
+            .try_refine_conforming(0.7, 32)
+            .expect("thirty-two passes finishes a single tetrahedron");
+        assert!(
+            m.max_edge_length() <= 0.7,
+            "a clean finish means the threshold is met"
+        );
         assert!(passes >= 1);
-        // Every refinement pass at least doubles the tet count while
-        // shortening the longest edge.
         assert!(m.tet_count() >= 2);
     }
 
     #[test]
     fn refine_stops_when_no_edge_exceeds_threshold() {
         let mut m = one_tet_mesh(1.0);
-        let passes = m.refine_by_max_edge_length(10.0, 8);
+        let passes = m
+            .try_refine_conforming(10.0, 8)
+            .expect("nothing to do finishes immediately");
         // Threshold larger than any edge — no refinement should occur.
         assert_eq!(m.tet_count(), 1);
-        assert!(passes >= 1);
+        // Zero, not one. The count is of passes that did work; the probe pass
+        // that finds nothing to do is not one of them. The old signature
+        // returned 1 here, which made "did nothing" indistinguishable from "did
+        // one round of splitting".
+        assert_eq!(passes, 0);
     }
 
     #[test]
     #[should_panic(expected = "max_edge_length must be positive")]
     fn refine_panics_on_nonpositive_threshold() {
         let mut m = one_tet_mesh(1.0);
-        let _ = m.refine_by_max_edge_length(0.0, 4);
+        let _ = m.try_refine_conforming(0.0, 4);
     }
 }

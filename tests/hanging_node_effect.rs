@@ -52,6 +52,29 @@
 //! is exactly the amount by which the displacement field is torn, and it is zero
 //! on a conforming mesh because there is no such node.
 //!
+//! # The scene is hand-built, and why
+//!
+//! [`SdfTetMesh::try_refine_conforming`] propagates splits to the neighbour, so
+//! it no longer produces a hanging node and cannot supply the scene these
+//! measurements need. The scene is therefore built here directly.
+//!
+//! While the old refiner still existed, a test held the hand build to it. It
+//! compared the two on every quantity this file reports and required exact
+//! agreement, and got it:
+//!
+//! | field | tear, free | tear, held | nodal error |
+//! |---|---|---|---|
+//! | linear | 2.977778e-4 | 2.550586e-17 | 2.977778e-4 |
+//! | quadratic | 5.111111e-5 | 8.000000e-5 | 9.555556e-5 |
+//!
+//! Both scenes gave those numbers to the last digit, on meshes that were not
+//! identical: the refiner also split the lower tetrahedron, on an edge outside
+//! the shared face, and came out with 7 vertices and 4 elements against the hand
+//! build's 6 and 3. The hand build is the minimal carrier of the defect. That
+//! test is gone with the behaviour it compared against; what is left in its place
+//! are the numeric bands on the measurements below, so the scene cannot drift
+//! unnoticed now that nothing else produces it.
+//!
 //! # Status
 //!
 //! Investigation. Nothing here changes the mesher or the solver; it measures the
@@ -596,72 +619,4 @@ fn the_three_ways_out() {
         "halving and doubling has to round-trip exactly, or the constraint u = (a+b)/2 would \
          introduce an error of its own and option (a) would need a different argument"
     );
-}
-
-/// The hand-built scene carries the same defect as the refiner's output, to the
-/// last digit of every measurement in this file.
-///
-/// It is **not the same mesh**. The refinement threshold sits below *both*
-/// tetrahedra's longest edges, so the refiner splits the lower one as well — on
-/// an edge that is not part of the shared face — and comes out with 7 vertices
-/// and 4 elements against the hand build's 6 and 3. That extra split leaves the
-/// shared face whole on the lower side, so it has nothing to do with the hanging
-/// node, and the hand build is the minimal scene that carries the defect.
-///
-/// "Has nothing to do with it" is the kind of claim this file exists to distrust,
-/// so it is measured rather than argued: every quantity reported above is
-/// computed on both scenes and required to agree exactly.
-///
-/// This test can only run while the refiner still produces hanging nodes. Once it
-/// is made conforming the comparison becomes impossible, and the measurements
-/// stand on the hand-built scene alone — which is why they carry numeric bands
-/// rather than only signs.
-#[test]
-fn the_hand_built_scene_carries_the_same_defect_as_the_refiner_did() {
-    let mut refined = two_tets_across_a_face();
-    let passes = refined.refine_by_max_edge_length(5.0, 1);
-    assert_eq!(passes, 1, "one pass must have run");
-    let built = two_tets_with_a_hanging_node();
-
-    eprintln!(
-        "[faithful] refiner: {} vertices / {} tets;  hand-built: {} / {}",
-        refined.vertex_count(),
-        refined.tet_count(),
-        built.vertex_count(),
-        built.tet_count()
-    );
-
-    for (name, field) in [
-        ("linear", &linear as &dyn Fn([f64; 3]) -> [f64; 3]),
-        ("quadratic", &quadratic as &dyn Fn([f64; 3]) -> [f64; 3]),
-    ] {
-        let mut measured = Vec::new();
-        for mesh in [&refined, &built] {
-            let hanging: Vec<u32> = hanging_nodes(mesh).iter().map(|(v, _)| *v).collect();
-            let free = solve_with_exact_boundary(mesh, field, &hanging);
-            let held = solve_with_exact_boundary(mesh, field, &[]);
-            measured.push((
-                incompatibility(mesh, &free),
-                incompatibility(mesh, &held),
-                nodal_error(mesh, &free, field, &hanging),
-            ));
-        }
-        eprintln!(
-            "[faithful]   {name:<10} refiner {:.6e} / {:.6e} / {:.6e}   \
-             hand-built {:.6e} / {:.6e} / {:.6e}",
-            measured[0].0,
-            measured[0].1,
-            measured[0].2,
-            measured[1].0,
-            measured[1].1,
-            measured[1].2
-        );
-        assert_eq!(
-            measured[0], measured[1],
-            "{name}: the hand-built scene has to reproduce the refiner's numbers exactly, or the \
-             measurements in this file describe something the refiner never produced. The extra \
-             split the refiner makes on the lower tetrahedron is supposed to be irrelevant to \
-             the hanging node; if these differ, it is not"
-        );
-    }
 }
