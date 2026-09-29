@@ -307,8 +307,13 @@ pub fn generate<F: SdfField + ?Sized>(
                     });
                     cube_verts[slot] = idx;
                 }
+                // Through `push_tet` rather than straight onto `mesh.tets`, so
+                // that this generator's elements are wound the same way as the
+                // clipping one's. One entry of `CUBE_FIVE_TETS` is wound the
+                // other way, which put exactly a tenth of this mesh at negative
+                // signed volume until it was routed here.
                 for tet in cube_to_five_tets(cube_verts, cell_parity(ix, iy, iz)) {
-                    mesh.tets.push(tet);
+                    push_tet(&mut mesh, tet.vertices);
                 }
             }
         }
@@ -875,9 +880,28 @@ fn push_tet(mesh: &mut SdfTetMesh, vertices: [u32; 4]) {
         }
     }
     let p = vertices.map(|v| mesh.vertices[v as usize]);
-    if tet_signed_volume_x6(p) == 0.0 {
+    let signed = tet_signed_volume_x6(p);
+    if signed == 0.0 {
         return;
     }
+    // Emit every element wound the same way. Both generators otherwise produce a
+    // mix: `CUBE_FIVE_TETS` has one entry of one parity wound the other way, so
+    // `generate` alone comes out at exactly one tenth negative (measured 16 of
+    // 160, 68 of 680, 192 of 1920), and the marching cases add their own.
+    //
+    // Nothing downstream currently minds — `linear_elastic_fem` takes
+    // `det.abs()` and the volume measurements take `abs()` too. That is the
+    // problem: while the sign is meaningless, *no gate can use it*, and a warp
+    // that folded an element through its opposite face would be invisible to
+    // conformity (which counts face uses), to the dihedral angle (unsigned), to
+    // the volume (summed as `abs()`) and to the FEM. Fixing the winding here is
+    // what makes `inverted == 0` a proposition worth asserting, which
+    // `tests/mesh_quality.rs` then does.
+    let vertices = if signed < 0.0 {
+        [vertices[0], vertices[1], vertices[3], vertices[2]]
+    } else {
+        vertices
+    };
     mesh.tets.push(Tetrahedron { vertices });
 }
 

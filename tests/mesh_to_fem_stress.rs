@@ -18,12 +18,33 @@
 //!
 //! ```text
 //! amplification = relative stress deviation / achieved relative residual
+//! shape penalty = amplification(marching mesh) / amplification(generate mesh)
 //! ```
 //!
-//! Not the deviation alone: the residual is where the solver chose to stop, and
-//! dividing it out leaves the factor by which bad elements turn a converged
-//! residual into a wrong answer. It is a measured stand-in for the condition
-//! number, and unlike the deviation it does not drift with problem size.
+//! The amplification is a measured stand-in for the condition number: the
+//! residual is where the solver chose to stop, and dividing it out leaves the
+//! factor by which the matrix turns a converged residual into a wrong answer.
+//!
+//! But the amplification is **not** a property of element shape alone — it grows
+//! with problem size for any mesh at all, because the condition number of an
+//! elliptic operator does. Measured on [`generate`], whose elements are a flat
+//! 54.74° at every cell size so that shape is held fixed by construction:
+//!
+//! | dofs | 1,140 | 3,150 | 9,120 | 25,200 | 80,325 |
+//! |---|---|---|---|---|---|
+//! | amplification | 5.0 | 7.5 | 10.0 | 16.9 | 28.5 |
+//!
+//! That is a factor of 5.7 over 70 times the degrees of freedom, so
+//! `amplification ~ dofs^0.41` — near the `dofs^(1/3)` that `sqrt(kappa)` with
+//! `kappa ~ h^-2` predicts. Gating the amplification against a fixed number
+//! would therefore be the same mistake the volume gate was moved away from: it
+//! would pass today and fail on a finer mesh that is no worse. The first version
+//! of this file did exactly that, at 60, while the shipped mesher already
+//! measured 28.4 at cell 0.125.
+//!
+//! So the gate divides it out. `generate` is run on the same scene at the same
+//! cell size and its amplification used as the denominator, which holds problem
+//! size roughly fixed and leaves element shape as the difference.
 //!
 //! # What this instrument is and is not blind to
 //!
@@ -95,12 +116,29 @@ fn bar_sdf() -> ClosureSdf {
     )
 }
 
-/// How much worse than its own residual the answer is allowed to be.
+/// How much worse the clipped mesh may condition the problem than a mesh of
+/// uniformly shaped elements at the same cell size.
 ///
-/// See `marching_tets_mesh_carries_an_exact_uniform_stress`: measured at 7.1 to
-/// 20.7 on the meshes this crate produces and 168.3 to 347.9 with the lattice
-/// warp disabled, so this sits roughly a factor of three from each.
-const MAX_AMPLIFICATION: f64 = 60.0;
+/// Measured over five cell sizes, as
+/// `amplification(generate_marching_tets) / amplification(generate)`:
+///
+/// | cell | 0.5 | 0.375 | 0.25 | 0.1875 | 0.125 |
+/// |---|---|---|---|---|---|
+/// | shipped warp | 1.42 | 1.12 | **2.07** | 1.16 | 1.00 |
+/// | warp disabled | 69.6 | 22.4 | 27.4 | 12.1 | **8.7** |
+///
+/// This sits 2.2 times over the worst shipped figure and 1.9 times under the
+/// best broken one.
+///
+/// The two populations do close on each other under refinement (a factor of 49
+/// apart at cell 0.5, 8.7 at cell 0.125), because a slivered mesh's
+/// amplification is set by its worst element and stays flat near 200 to 350
+/// while a healthy mesh's climbs with problem size. Whoever extends this series
+/// further should expect the margin to keep narrowing, and should not close it
+/// by moving this number — the minimum dihedral angle in `mesh_quality.rs` does
+/// not have that weakness, being independent of problem size, which is the other
+/// reason it is still a gate.
+const MAX_SHAPE_PENALTY: f64 = 4.5;
 
 const YOUNGS_MPA: f64 = 200_000.0;
 const POISSON: f64 = 0.3;
@@ -161,27 +199,24 @@ fn fx(value: f64) -> Fix128 {
 
 /// The mesh a stress analysis is meant to use.
 ///
-/// # The threshold is measured, not conventional
+/// # What is compared against what
 ///
-/// Both populations were measured on this scene, by building the same mesh with
-/// the lattice warp on and off:
+/// The same scene at the same cell size is meshed twice: once by the generator
+/// under test, once by [`generate`], whose elements are one of two fixed 5-tet
+/// patterns and so are the same shape at every resolution. Both are solved, and
+/// the ratio of their amplifications is what this asserts. The achieved residual
+/// is the same in every run (8.0e-10 to 9.1e-10, the tolerance floor), so all of
+/// the difference is in how wrong the answer is where the solver stopped.
 ///
-/// | cell | warped | warp disabled |
-/// |---|---|---|
-/// | 0.5 | 7.1 | 347.9 |
-/// | 0.375 | 8.4 | 168.3 |
-/// | 0.25 | **20.7** | **168.3** |
+/// The `generate` mesh is *not* a good mesh — it is the wrong shape, half to
+/// two-thirds of the volume, see the test below. It is used only for its element
+/// quality, which is constant.
 ///
-/// The achieved residual is the same either way (8.0e-10 to 9.1e-10, the
-/// tolerance floor), so the whole difference is in how wrong the answer is at
-/// the point the solver stopped — which is the conditioning, which is element
-/// shape.
-///
-/// `MAX_AMPLIFICATION` is placed between the two: 2.9 times above the worst
-/// warped mesh and 2.8 times below the best unwarped one. A round number picked
-/// from a textbook would not have that property, and the first version of this
-/// test had one — `deviation < 1e-5` — which passed the unwarped mesh's 2.3e-7
-/// and so was not testing anything.
+/// `MAX_SHAPE_PENALTY` carries both populations and the reasoning for the
+/// number. Two earlier versions of this assertion were worth less: `deviation <
+/// 1e-5` passed a slivered mesh's 2.3e-7 outright, and `amplification < 60`
+/// would have passed every mesh of any quality once the problem grew a few times
+/// larger, since a healthy mesh already measures 28.4 at cell 0.125.
 #[test]
 fn marching_tets_mesh_carries_an_exact_uniform_stress() {
     let sdf = bar_sdf();
@@ -209,12 +244,21 @@ fn marching_tets_mesh_carries_an_exact_uniform_stress() {
             worst / solution.relative_residual.to_f64()
         );
         let amplification = worst / solution.relative_residual.to_f64();
+
+        let reference = generate(&sdf, [-6.0, -3.0, -3.0], [6.0, 3.0, 3.0], cell);
+        let reference_amplification = uniform_stress_amplification(&reference, &material, eps);
+        let penalty = amplification / reference_amplification;
+        eprintln!(
+            "[penalty] marching  cell {cell:<6} amplification {amplification:>7.1}  \
+             uniform-element reference {reference_amplification:>7.1}  penalty {penalty:.2}"
+        );
         assert!(
-            amplification < MAX_AMPLIFICATION,
-            "cell {cell}: the answer is {amplification:.1} times worse than the residual the \
-             solver stopped at. A linear field is exact on P1 elements whatever the domain, so \
-             this is conditioning — element shape — and not discretisation. Measured at 7.1 to \
-             20.7 on a warped lattice and 168.3 to 347.9 without one"
+            penalty < MAX_SHAPE_PENALTY,
+            "cell {cell}: this mesh conditions the problem {penalty:.2} times worse than a mesh \
+             of uniformly shaped elements at the same cell size. A linear field is exact on P1 \
+             elements whatever the domain, so what is left is conditioning — element shape — and \
+             not discretisation. Measured at 1.00 to 2.07 on the shipped mesher and 8.7 to 69.6 \
+             with its lattice warp disabled"
         );
     }
 }
@@ -273,10 +317,12 @@ fn whole_cube_dicing_is_not_a_stress_mesh() {
         let volume = mesh_volume(&mesh);
         eprintln!(
             "[stress]  generate  cell {cell:<6} tets {:>5}  iterations {:>5}  \
-             worst von Mises deviation {:.3e}  volume {volume:.3} / {:.3}",
+             deviation {:.3e}  residual {:.3e}  amplification {:.1}  volume {volume:.3} / {:.3}",
             mesh.tet_count(),
             solution.iterations,
             worst,
+            solution.relative_residual.to_f64(),
+            worst / solution.relative_residual.to_f64(),
             analytic_bar_volume()
         );
         volumes.push(volume);
@@ -288,6 +334,20 @@ fn whole_cube_dicing_is_not_a_stress_mesh() {
          the guidance that sends stress users to `generate_marching_tets` needs revisiting. \
          Volumes {volumes:?} against {analytic:.3}"
     );
+}
+
+/// Solve the uniform-stress problem on `mesh` and return how many times worse
+/// the answer is than the residual the solver stopped at.
+fn uniform_stress_amplification(mesh: &SdfTetMesh, material: &ElasticMaterial, eps: f64) -> f64 {
+    let bc = prescribe_uniaxial(mesh, POISSON, eps);
+    let solution = solve(mesh, material, &bc, &SolverConfig::default())
+        .unwrap_or_else(|e| panic!("the FEM rejected a mesh this crate produced: {e:?}"));
+    let expected = YOUNGS_MPA * eps;
+    let mut worst = 0.0_f64;
+    for s in &solution.element_stress {
+        worst = worst.max((s.von_mises().to_f64() - expected).abs() / expected);
+    }
+    worst / solution.relative_residual.to_f64()
 }
 
 fn analytic_bar_volume() -> f64 {
@@ -311,4 +371,61 @@ fn mesh_volume(mesh: &SdfTetMesh) -> f64 {
             / 6.0;
     }
     total
+}
+
+/// Why the amplification grows with refinement, which decides whether gating it
+/// on an absolute number is legitimate at all.
+///
+/// Measured above, the warped mesh amplifies by 7.1, 8.4 and 20.7 at cells 0.5,
+/// 0.375 and 0.25. Two mechanisms could produce that, and they call for
+/// different gates:
+///
+/// - **(a) element shape degrades under refinement.** Then the gate is reading
+///   what it is supposed to read, and an absolute threshold is right.
+/// - **(b) the condition number grows with problem size** for any mesh at all.
+///   Then the amplification drifts the same way the raw deviation did, and
+///   pinning it to 60 repeats the mistake the volume gate was moved away from.
+///
+/// [`generate`] separates them. Every element it emits is one of the two 5-tet
+/// patterns, so its minimum dihedral angle is a flat 54.74° at every cell size —
+/// element quality is held fixed by construction while the problem grows. Any
+/// rise in *its* amplification is mechanism (b) and nothing else.
+///
+/// Ignored by default because the finest levels are slow in a debug build; run
+/// it when the threshold is in question.
+#[test]
+#[ignore = "diagnostic: run when the amplification threshold is in question"]
+fn amplification_growth_is_problem_size_or_element_shape() {
+    let sdf = bar_sdf();
+    let material = steel();
+    let eps = 1.0e-3;
+    let expected = YOUNGS_MPA * eps;
+    for cell in [0.5_f32, 0.375, 0.25, 0.1875, 0.125] {
+        for (name, mesh) in [
+            (
+                "generate",
+                generate(&sdf, [-6.0, -3.0, -3.0], [6.0, 3.0, 3.0], cell),
+            ),
+            (
+                "marching",
+                generate_marching_tets(&sdf, [-6.0, -3.0, -3.0], [6.0, 3.0, 3.0], cell),
+            ),
+        ] {
+            let bc = prescribe_uniaxial(&mesh, POISSON, eps);
+            let solution = solve(&mesh, &material, &bc, &SolverConfig::default())
+                .unwrap_or_else(|e| panic!("{name} cell {cell}: {e:?}"));
+            let mut worst = 0.0_f64;
+            for s in &solution.element_stress {
+                worst = worst.max((s.von_mises().to_f64() - expected).abs() / expected);
+            }
+            eprintln!(
+                "[growth]  {name:<9} cell {cell:<7} dofs {:>7}  tets {:>6}  iterations {:>5}  \
+                 amplification {:>7.1}",
+                mesh.vertex_count() * 3,
+                mesh.tet_count(),
+                solution.iterations,
+                worst / solution.relative_residual.to_f64()
+            );
+        }
+    }
 }
