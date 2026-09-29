@@ -29,7 +29,7 @@
 #![cfg(feature = "std")]
 
 use alice_physics::cfd_solver::CfdSolver;
-use alice_physics::eulerian_grid::{project_pressure, MacGrid};
+use alice_physics::eulerian_grid::{project_pressure, FaceBc, MacGrid};
 use alice_physics::math::{Fix128, Vec3Fix};
 
 /// Ghia (1982) Table I, Re = 100: `(y, u)` on the vertical centreline of a
@@ -363,12 +363,23 @@ const CAVITY_GS: u32 = 200;
 /// - `true` — the same faces are additionally marked solid, so the
 ///   constraint is part of the Poisson problem.
 ///
-/// The tangential no-slip walls and the moving lid are applied the same way
-/// in both runs: the viscous term in `diffuse_velocity` mirrors the boundary
-/// with a zero-gradient ghost value, and a wall with velocity `U` needs
-/// `u_ghost = 2U − u_in` instead, so the difference `2(U − u_in)` is added
-/// explicitly here. That is an operator split, not a solver change, and it is
-/// identical on both sides of the comparison.
+/// The tangential no-slip walls and the moving lid follow the same split:
+///
+/// - `true` — the four sides are `FaceBc::Wall`, the lid is a `FaceBc::Wall`
+///   carrying `velocity = (1, 0, 0)`, and the viscous term inside
+///   `CfdSolver::step` mirrors them with the no-slip ghost. **Nothing is
+///   applied from the test side**, which is the point of the run: if the
+///   condition were not in the solver the profile would collapse.
+/// - `false` — no face conditions at all, so the run emulates from the
+///   outside everything a caller could do without them: zero the boundary
+///   normal velocities before each step, and add the `2(U − u_in)` the
+///   viscous term is missing because it mirrors the boundary with a
+///   zero-gradient ghost.
+///
+/// The `z` faces of the `true` run are `FaceBc::SlipWall`, not walls: the
+/// slab is one cell thick, and two no-slip plates `dx` apart are a different
+/// problem from the two-dimensional one Ghia tabulated (measured: the
+/// centreline peak falls to -0.00886, 4.2 % of the reference).
 /// `dt_reciprocal` gives the step as `1 / dt_reciprocal`. It is a parameter
 /// rather than a constant because both stability limits of the explicit
 /// scheme scale with the cell size: the viscous one as `dx²/(4ν)` and the
@@ -394,36 +405,59 @@ fn run_lid_driven_cavity(
     solver.jacobi_iterations = gs_iterations;
     solver.use_turbulence = false;
     if walls_in_projection {
+        // Six no-slip walls, then the two `z` layers relaxed to symmetry
+        // planes (the slab is one cell thick) and the lid given its velocity.
         solver.grid.set_closed_box_walls();
+        for j in 0..n {
+            for i in 0..n {
+                solver.grid.set_w_bc(i, j, 0, FaceBc::SlipWall);
+                solver.grid.set_w_bc(i, j, 1, FaceBc::SlipWall);
+            }
+        }
+        for i in 0..n {
+            solver.grid.set_v_bc(
+                i,
+                n,
+                0,
+                FaceBc::Wall {
+                    velocity: Vec3Fix::new(lid_u, Fix128::ZERO, Fix128::ZERO),
+                },
+            );
+        }
     }
 
     let shear = nu * dt / (dx * dx);
     let two = Fix128::from_int(2);
     for _ in 0..steps {
-        // Tangential no-slip on the four side walls + the moving lid.
-        for i in 0..=n {
-            let ix_bot = i;
-            solver.grid.u[ix_bot] = solver.grid.u[ix_bot] - shear * two * solver.grid.u(i, 0, 0);
-            let ix_top = i + (n + 1) * (n - 1);
-            solver.grid.u[ix_top] =
-                solver.grid.u[ix_top] + shear * two * (lid_u - solver.grid.u(i, n - 1, 0));
-        }
-        for j in 0..=n {
-            let ix_left = n * j;
-            solver.grid.v[ix_left] = solver.grid.v[ix_left] - shear * two * solver.grid.v(0, j, 0);
-            let ix_right = (n - 1) + n * j;
-            solver.grid.v[ix_right] =
-                solver.grid.v[ix_right] - shear * two * solver.grid.v(n - 1, j, 0);
-        }
-        // No-through-flow imposed from outside the solver — everything a
-        // caller can do without a face mask.
-        for j in 0..n {
-            solver.grid.u[(n + 1) * j] = Fix128::ZERO;
-            solver.grid.u[n + (n + 1) * j] = Fix128::ZERO;
-        }
-        for i in 0..n {
-            solver.grid.v[i] = Fix128::ZERO;
-            solver.grid.v[i + n * n] = Fix128::ZERO;
+        if !walls_in_projection {
+            // Tangential no-slip on the four side walls + the moving lid,
+            // added from outside because the solver has no wall to mirror.
+            for i in 0..=n {
+                let ix_bot = i;
+                solver.grid.u[ix_bot] =
+                    solver.grid.u[ix_bot] - shear * two * solver.grid.u(i, 0, 0);
+                let ix_top = i + (n + 1) * (n - 1);
+                solver.grid.u[ix_top] =
+                    solver.grid.u[ix_top] + shear * two * (lid_u - solver.grid.u(i, n - 1, 0));
+            }
+            for j in 0..=n {
+                let ix_left = n * j;
+                solver.grid.v[ix_left] =
+                    solver.grid.v[ix_left] - shear * two * solver.grid.v(0, j, 0);
+                let ix_right = (n - 1) + n * j;
+                solver.grid.v[ix_right] =
+                    solver.grid.v[ix_right] - shear * two * solver.grid.v(n - 1, j, 0);
+            }
+            // No-through-flow imposed from outside the solver — everything a
+            // caller can do without a face mask.
+            for j in 0..n {
+                solver.grid.u[(n + 1) * j] = Fix128::ZERO;
+                solver.grid.u[n + (n + 1) * j] = Fix128::ZERO;
+            }
+            for i in 0..n {
+                solver.grid.v[i] = Fix128::ZERO;
+                solver.grid.v[i + n * n] = Fix128::ZERO;
+            }
         }
 
         solver.step(dt);

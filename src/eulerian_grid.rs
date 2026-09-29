@@ -71,6 +71,30 @@
 //! - the velocity correction sweeps every face including the boundary layer,
 //!   so the rim cells have the degree of freedom they need and their
 //!   divergence is removed with the rest.
+//!
+//! # Flow boundaries — inflow and outflow
+//!
+//! [`FaceBc`] names what a face is, and [`MacGrid::set_u_bc`] and friends set
+//! it. The four conditions differ in exactly two places, the pressure stencil
+//! and [`MacGrid::enforce_face_boundaries`]:
+//!
+//! | condition | pressure | normal velocity |
+//! |---|---|---|
+//! | [`FaceBc::Fluid`] | interior coupling, exterior `p = 0` on the rim | free |
+//! | [`FaceBc::Wall`] | homogeneous Neumann (face dropped) | held at 0, no-slip ghost for the viscous term |
+//! | [`FaceBc::SlipWall`] | homogeneous Neumann (face dropped) | held at 0, zero-gradient tangential ghost |
+//! | [`FaceBc::Inflow`] | homogeneous Neumann (face dropped) | held at the prescribed value |
+//! | [`FaceBc::Outflow`] | exterior `p = 0`, i.e. Dirichlet | zero-gradient extrapolation from the interior |
+//!
+//! A prescribed normal velocity is a velocity Dirichlet condition, and a
+//! Dirichlet velocity is a Neumann pressure: the projection has no freedom
+//! left on that face, so it must drop out of the stencil exactly like a wall.
+//! The flux the inflow pushes in has to leave somewhere, and the only faces
+//! that can carry it are the ones whose pressure is Dirichlet — the outflow
+//! and plain fluid rim faces. **A domain with an inflow and no such face has
+//! no solution**: the pure-Neumann Poisson problem is only solvable when the
+//! net boundary flux is zero, and the relaxation will drift instead of
+//! converging.
 
 // Reserved algorithm variants (Jacobi / BiCGStab pressure, P2G scatter) are
 // pub(crate) but currently unused outside their own unit tests — awaiting
@@ -80,9 +104,197 @@
 use crate::math::{Fix128, Vec3Fix};
 
 #[cfg(not(feature = "std"))]
+use alloc::collections::BTreeMap;
+#[cfg(not(feature = "std"))]
 use alloc::vec;
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
+#[cfg(feature = "std")]
+use std::collections::BTreeMap;
+
+// ============================================================================
+// Face boundary conditions
+// ============================================================================
+
+/// What a single MAC face is: interior fluid, a wall, or a place where the
+/// flow enters or leaves the domain.
+///
+/// See the module header for the table of what each one does to the pressure
+/// stencil and to the normal velocity. Set with [`MacGrid::set_u_bc`] /
+/// [`MacGrid::set_v_bc`] / [`MacGrid::set_w_bc`], read back with
+/// [`MacGrid::u_bc`] / [`MacGrid::v_bc`] / [`MacGrid::w_bc`].
+///
+/// [`FaceBc::Inflow`] and [`FaceBc::Outflow`] are only meaningful on the
+/// domain boundary; on an interior face the neighbouring cell exists and the
+/// "exterior" the condition refers to does not.
+///
+/// The enum is `#[non_exhaustive]` — a convective outflow and a periodic pair
+/// are the obvious next entries — so a downstream `match` needs a wildcard
+/// arm. Building the variants is unaffected: the variants themselves are
+/// exhaustive, and `tests/analytic_cfd_flow_bc.rs` constructs every one of
+/// them from outside the crate so that stays true.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[non_exhaustive]
+pub enum FaceBc {
+    /// Ordinary fluid face. On the domain boundary this is the open
+    /// condition: the exterior pressure is `p = 0` and nothing constrains
+    /// the velocity. This is what every face of a fresh [`MacGrid`] is.
+    #[default]
+    Fluid,
+    /// No-slip wall moving at `velocity` (the zero vector for a wall at
+    /// rest; the lid of a lid-driven cavity is a wall with a tangential
+    /// velocity). No flux through the face, and the viscous term mirrors
+    /// the tangential components with the no-slip ghost `2 u_wall − u_in`
+    /// instead of a zero gradient.
+    Wall {
+        /// Velocity of the wall itself. The component normal to the face is
+        /// ignored — a wall that moved into the fluid would not be a wall.
+        velocity: Vec3Fix,
+    },
+    /// Free-slip wall / symmetry plane: no flux, but no tangential shear
+    /// either, so the viscous term keeps the zero-gradient mirror.
+    ///
+    /// This is what the `z` faces of a quasi-2-D run want. Marking them
+    /// [`FaceBc::Wall`] instead makes the sheet no-slip against two plates
+    /// one cell apart, which damps the in-plane flow by `4 ν dt / dx²` per
+    /// step rather than modelling a two-dimensional problem.
+    SlipWall,
+    /// Prescribed normal velocity (velocity Dirichlet). The face carries no
+    /// pressure degree of freedom — homogeneous Neumann, exactly like a wall
+    /// — but its normal velocity is held at `normal_velocity` instead of at
+    /// zero, every step, after advection and diffusion have had their say.
+    Inflow {
+        /// Signed velocity along the face normal (`+x` for an X-face), so a
+        /// positive value on the `i = 0` layer pushes fluid into the domain
+        /// and a positive value on `i = nx` pulls it out.
+        normal_velocity: Fix128,
+    },
+    /// Outflow: the exterior pressure is the Dirichlet `p = 0` and the normal
+    /// velocity is extrapolated with zero gradient from the interior face
+    /// next to it before the projection runs.
+    ///
+    /// ⚠️ On the domain boundary the *pressure* side of this is what
+    /// [`FaceBc::Fluid`] already did, so **at a converged pressure solve an
+    /// outflow face and a plain open rim face agree**; the zero-gradient
+    /// extrapolation is a better starting iterate, not a different condition.
+    /// Measured on a 12×8 duct: the two fields differ by `4.8e-5` with 200
+    /// Gauss-Seidel sweeps and by `1.3e-2` with one, and at one sweep the
+    /// extrapolated run is the one closer to closing its mass balance
+    /// (`tests/analytic_cfd_flow_bc.rs`). The variant is here because the
+    /// caller's intent — *this* is where the flow leaves — cannot be read off
+    /// a face that merely was not marked, and because a convective outflow
+    /// has somewhere to go.
+    Outflow,
+}
+
+impl FaceBc {
+    /// Does the face block flow (either kind of wall)?
+    #[must_use]
+    pub fn is_wall(self) -> bool {
+        matches!(self, Self::Wall { .. } | Self::SlipWall)
+    }
+
+    /// Is the normal velocity of this face prescribed by the caller, rather
+    /// than held at zero (a wall) or solved for (fluid, outflow)?
+    #[must_use]
+    pub fn is_inflow(self) -> bool {
+        matches!(self, Self::Inflow { .. })
+    }
+
+    /// Does the face carry no pressure degree of freedom?
+    ///
+    /// True for both walls and for [`FaceBc::Inflow`]: all three fix the
+    /// normal velocity, so the Poisson problem must drop the face from both
+    /// the off-diagonal coupling and the diagonal count.
+    ///
+    /// This is the predicate the Poisson stencil is built from, not a
+    /// restatement of it — the mask and the velocity correction both route
+    /// through here so that the documented rule and the solved problem cannot
+    /// drift. They did once: while this method merely described the rule and
+    /// the mask spelled it out again, dropping [`FaceBc::Inflow`] from here
+    /// changed nothing a duct could measure.
+    #[must_use]
+    pub fn blocks_pressure(self) -> bool {
+        self.is_wall() || self.is_inflow()
+    }
+
+    /// Velocity of the no-slip wall this face is, if it is one.
+    ///
+    /// `None` for [`FaceBc::SlipWall`] — a symmetry plane has no velocity to
+    /// impose — and for everything that is not a wall.
+    #[must_use]
+    pub fn no_slip_velocity(self) -> Option<Vec3Fix> {
+        match self {
+            Self::Wall { velocity } => Some(velocity),
+            _ => None,
+        }
+    }
+}
+
+/// Read a face condition out of the sparse map, falling back to the dense
+/// solid flag and then to [`FaceBc::Fluid`].
+fn read_face_bc(map: &BTreeMap<usize, FaceBc>, solid: &[bool], ix: usize) -> FaceBc {
+    if let Some(bc) = map.get(&ix) {
+        return *bc;
+    }
+    if solid[ix] {
+        FaceBc::Wall {
+            velocity: Vec3Fix::ZERO,
+        }
+    } else {
+        FaceBc::Fluid
+    }
+}
+
+/// Store a face condition, keeping the map to the faces that are *not* plain
+/// fluid and not a wall at rest — those two are what the dense solid flag
+/// already says, and leaving them out keeps the map empty for the common
+/// closed box.
+fn write_face_bc(map: &mut BTreeMap<usize, FaceBc>, ix: usize, bc: FaceBc) {
+    let default_wall = FaceBc::Wall {
+        velocity: Vec3Fix::ZERO,
+    };
+    if bc == FaceBc::Fluid || bc == default_wall {
+        map.remove(&ix);
+    } else {
+        map.insert(ix, bc);
+    }
+}
+
+/// The condition `set_u_solid` and friends stand for.
+fn wall_or_fluid(solid: bool) -> FaceBc {
+    if solid {
+        FaceBc::Wall {
+            velocity: Vec3Fix::ZERO,
+        }
+    } else {
+        FaceBc::Fluid
+    }
+}
+
+/// The wall separating two same-component faces, if *every* face in between
+/// is a no-slip wall.
+///
+/// `None` entries are faces that do not exist (the pair straddles the domain
+/// edge), which do not veto. Anything that is not a [`FaceBc::Wall`] does
+/// veto: a half-open gap is not a wall, and a [`FaceBc::SlipWall`] is asking
+/// for the zero-gradient mirror rather than a no-slip ghost.
+fn wall_between(a: Option<FaceBc>, b: Option<FaceBc>) -> Option<Vec3Fix> {
+    let side = |bc: Option<FaceBc>| match bc {
+        None => Some(None),
+        Some(FaceBc::Wall { velocity }) => Some(Some(velocity)),
+        Some(_) => None,
+    };
+    match (side(a)?, side(b)?) {
+        (Some(p), Some(q)) => Some(Vec3Fix::new(
+            (p.x + q.x).half(),
+            (p.y + q.y).half(),
+            (p.z + q.z).half(),
+        )),
+        (Some(p), None) | (None, Some(p)) => Some(p),
+        (None, None) => None,
+    }
+}
 
 // ============================================================================
 // MAC grid
@@ -114,6 +326,16 @@ pub struct MacGrid {
     pub v_solid: Vec<bool>,
     /// Solid flag per Z-face `[nx · ny · (nz+1)]`; see [`MacGrid::set_w_solid`].
     pub w_solid: Vec<bool>,
+    /// X-faces whose condition is neither plain fluid nor a wall at rest —
+    /// a moving wall, a symmetry plane, an inflow or an outflow — keyed by
+    /// face index. Empty for a closed box, which the dense `u_solid` flag
+    /// already describes. Private so that it cannot drift from `u_solid`:
+    /// [`MacGrid::set_u_bc`] writes both.
+    u_face_bc: BTreeMap<usize, FaceBc>,
+    /// Y-face conditions; see `u_face_bc`.
+    v_face_bc: BTreeMap<usize, FaceBc>,
+    /// Z-face conditions; see `u_face_bc`.
+    w_face_bc: BTreeMap<usize, FaceBc>,
 }
 
 impl MacGrid {
@@ -134,6 +356,9 @@ impl MacGrid {
             u_solid: vec![false; (nx + 1) * ny * nz],
             v_solid: vec![false; nx * (ny + 1) * nz],
             w_solid: vec![false; nx * ny * (nz + 1)],
+            u_face_bc: BTreeMap::new(),
+            v_face_bc: BTreeMap::new(),
+            w_face_bc: BTreeMap::new(),
         }
     }
 
@@ -234,28 +459,81 @@ impl MacGrid {
     /// homogeneous Neumann condition `∂p/∂n = 0` on that face. A face left
     /// `false` on the domain boundary keeps the open condition (exterior
     /// pressure `p = 0`). Out-of-range indices are ignored.
+    ///
+    /// Shorthand for [`MacGrid::set_u_bc`] with `FaceBc::Wall { velocity:
+    /// Vec3Fix::ZERO }` / [`FaceBc::Fluid`], so it also clears any inflow,
+    /// outflow or wall velocity previously set on that face.
     pub fn set_u_solid(&mut self, i: usize, j: usize, k: usize, solid: bool) {
+        self.set_u_bc(i, j, k, wall_or_fluid(solid));
+    }
+    /// Mark the Y-face `(i, j, k)` as a wall; see [`MacGrid::set_u_solid`].
+    pub fn set_v_solid(&mut self, i: usize, j: usize, k: usize, solid: bool) {
+        self.set_v_bc(i, j, k, wall_or_fluid(solid));
+    }
+    /// Mark the Z-face `(i, j, k)` as a wall; see [`MacGrid::set_u_solid`].
+    pub fn set_w_solid(&mut self, i: usize, j: usize, k: usize, solid: bool) {
+        self.set_w_bc(i, j, k, wall_or_fluid(solid));
+    }
+
+    /// Boundary condition of the X-face `(i, j, k)`. Out of range returns
+    /// [`FaceBc::Fluid`] (there is no such face).
+    #[must_use]
+    pub fn u_bc(&self, i: usize, j: usize, k: usize) -> FaceBc {
+        if i > self.nx || j >= self.ny || k >= self.nz {
+            return FaceBc::Fluid;
+        }
+        read_face_bc(&self.u_face_bc, &self.u_solid, self.idx_u(i, j, k))
+    }
+    /// Boundary condition of the Y-face `(i, j, k)`; see [`MacGrid::u_bc`].
+    #[must_use]
+    pub fn v_bc(&self, i: usize, j: usize, k: usize) -> FaceBc {
+        if i >= self.nx || j > self.ny || k >= self.nz {
+            return FaceBc::Fluid;
+        }
+        read_face_bc(&self.v_face_bc, &self.v_solid, self.idx_v(i, j, k))
+    }
+    /// Boundary condition of the Z-face `(i, j, k)`; see [`MacGrid::u_bc`].
+    #[must_use]
+    pub fn w_bc(&self, i: usize, j: usize, k: usize) -> FaceBc {
+        if i >= self.nx || j >= self.ny || k > self.nz {
+            return FaceBc::Fluid;
+        }
+        read_face_bc(&self.w_face_bc, &self.w_solid, self.idx_w(i, j, k))
+    }
+
+    /// Set the boundary condition of the X-face `(i, j, k)`.
+    ///
+    /// Out-of-range indices are ignored. See [`FaceBc`] and the module
+    /// header for what each condition does; the prescribed velocity of an
+    /// [`FaceBc::Inflow`] is reimposed by
+    /// [`MacGrid::enforce_face_boundaries`], which the projection calls.
+    pub fn set_u_bc(&mut self, i: usize, j: usize, k: usize, bc: FaceBc) {
         if i > self.nx || j >= self.ny || k >= self.nz {
             return;
         }
         let ix = self.idx_u(i, j, k);
-        self.u_solid[ix] = solid;
+        self.u_solid[ix] = bc.is_wall();
+        write_face_bc(&mut self.u_face_bc, ix, bc);
     }
-    /// Mark the Y-face `(i, j, k)` as a wall; see [`MacGrid::set_u_solid`].
-    pub fn set_v_solid(&mut self, i: usize, j: usize, k: usize, solid: bool) {
+    /// Set the boundary condition of the Y-face `(i, j, k)`; see
+    /// [`MacGrid::set_u_bc`].
+    pub fn set_v_bc(&mut self, i: usize, j: usize, k: usize, bc: FaceBc) {
         if i >= self.nx || j > self.ny || k >= self.nz {
             return;
         }
         let ix = self.idx_v(i, j, k);
-        self.v_solid[ix] = solid;
+        self.v_solid[ix] = bc.is_wall();
+        write_face_bc(&mut self.v_face_bc, ix, bc);
     }
-    /// Mark the Z-face `(i, j, k)` as a wall; see [`MacGrid::set_u_solid`].
-    pub fn set_w_solid(&mut self, i: usize, j: usize, k: usize, solid: bool) {
+    /// Set the boundary condition of the Z-face `(i, j, k)`; see
+    /// [`MacGrid::set_u_bc`].
+    pub fn set_w_bc(&mut self, i: usize, j: usize, k: usize, bc: FaceBc) {
         if i >= self.nx || j >= self.ny || k > self.nz {
             return;
         }
         let ix = self.idx_w(i, j, k);
-        self.w_solid[ix] = solid;
+        self.w_solid[ix] = bc.is_wall();
+        write_face_bc(&mut self.w_face_bc, ix, bc);
     }
 
     /// Turn the six domain-boundary face layers into walls — the closed box
@@ -287,9 +565,9 @@ impl MacGrid {
 
     /// Zero the normal velocity on every face marked solid.
     ///
-    /// The projection calls this before it builds the divergence right-hand
-    /// side, so whatever advection / body forces / diffusion left on a wall
-    /// face never enters the Poisson problem.
+    /// Walls only. [`MacGrid::enforce_face_boundaries`] is the superset that
+    /// also reimposes inflow values and extrapolates outflow faces, and is
+    /// what the projection and [`crate::cfd_solver::CfdSolver::step`] call.
     pub fn enforce_solid_faces(&mut self) {
         for (val, solid) in self.u.iter_mut().zip(self.u_solid.iter()) {
             if *solid {
@@ -306,6 +584,174 @@ impl MacGrid {
                 *val = Fix128::ZERO;
             }
         }
+    }
+
+    /// Impose every face condition on the normal velocities.
+    ///
+    /// Walls go to zero (what [`MacGrid::enforce_solid_faces`] does on its
+    /// own), inflow faces go back to their prescribed value, and outflow
+    /// faces take the value of the face one cell inside the domain. The
+    /// projection calls this before it builds the divergence right-hand
+    /// side, and [`crate::cfd_solver::CfdSolver::step`] calls it before
+    /// advection and before the viscous term, so a wall never feeds a
+    /// stale value into either.
+    pub fn enforce_face_boundaries(&mut self) {
+        for k in 0..self.nz {
+            for j in 0..self.ny {
+                for i in 0..=self.nx {
+                    let ix = self.idx_u(i, j, k);
+                    match self.u_bc(i, j, k) {
+                        FaceBc::Fluid => {}
+                        FaceBc::Inflow { normal_velocity } => self.u[ix] = normal_velocity,
+                        FaceBc::Outflow => {
+                            let inner = if i > 0 { i - 1 } else { i + 1 };
+                            self.u[ix] = self.u(inner, j, k);
+                        }
+                        _ => self.u[ix] = Fix128::ZERO,
+                    }
+                }
+            }
+        }
+        for k in 0..self.nz {
+            for j in 0..=self.ny {
+                for i in 0..self.nx {
+                    let ix = self.idx_v(i, j, k);
+                    match self.v_bc(i, j, k) {
+                        FaceBc::Fluid => {}
+                        FaceBc::Inflow { normal_velocity } => self.v[ix] = normal_velocity,
+                        FaceBc::Outflow => {
+                            let inner = if j > 0 { j - 1 } else { j + 1 };
+                            self.v[ix] = self.v(i, inner, k);
+                        }
+                        _ => self.v[ix] = Fix128::ZERO,
+                    }
+                }
+            }
+        }
+        for k in 0..=self.nz {
+            for j in 0..self.ny {
+                for i in 0..self.nx {
+                    let ix = self.idx_w(i, j, k);
+                    match self.w_bc(i, j, k) {
+                        FaceBc::Fluid => {}
+                        FaceBc::Inflow { normal_velocity } => self.w[ix] = normal_velocity,
+                        FaceBc::Outflow => {
+                            let inner = if k > 0 { k - 1 } else { k + 1 };
+                            self.w[ix] = self.w(i, j, inner);
+                        }
+                        _ => self.w[ix] = Fix128::ZERO,
+                    }
+                }
+            }
+        }
+    }
+
+    /// Does the X-face `(i, j, k)` carry no pressure degree of freedom?
+    ///
+    /// Reads the dense wall flag first and only consults the sparse map when
+    /// the face is not a wall — and not at all while the map is empty, which
+    /// is the closed box and the no-boundary default.
+    #[inline]
+    #[must_use]
+    pub(crate) fn u_blocks_pressure(&self, i: usize, j: usize, k: usize) -> bool {
+        self.is_u_solid(i, j, k)
+            || (!self.u_face_bc.is_empty() && self.u_bc(i, j, k).blocks_pressure())
+    }
+    /// See [`MacGrid::u_blocks_pressure`].
+    #[inline]
+    #[must_use]
+    pub(crate) fn v_blocks_pressure(&self, i: usize, j: usize, k: usize) -> bool {
+        self.is_v_solid(i, j, k)
+            || (!self.v_face_bc.is_empty() && self.v_bc(i, j, k).blocks_pressure())
+    }
+    /// See [`MacGrid::u_blocks_pressure`].
+    #[inline]
+    #[must_use]
+    pub(crate) fn w_blocks_pressure(&self, i: usize, j: usize, k: usize) -> bool {
+        self.is_w_solid(i, j, k)
+            || (!self.w_face_bc.is_empty() && self.w_bc(i, j, k).blocks_pressure())
+    }
+
+    /// Is the X-face `(i, j, k)` an inflow, i.e. is its normal velocity
+    /// prescribed rather than solved for?
+    #[inline]
+    #[must_use]
+    fn u_is_inflow(&self, i: usize, j: usize, k: usize) -> bool {
+        !self.u_face_bc.is_empty() && self.u_bc(i, j, k).is_inflow()
+    }
+    #[inline]
+    #[must_use]
+    fn v_is_inflow(&self, i: usize, j: usize, k: usize) -> bool {
+        !self.v_face_bc.is_empty() && self.v_bc(i, j, k).is_inflow()
+    }
+    #[inline]
+    #[must_use]
+    fn w_is_inflow(&self, i: usize, j: usize, k: usize) -> bool {
+        !self.w_face_bc.is_empty() && self.w_bc(i, j, k).is_inflow()
+    }
+
+    /// The no-slip wall standing between the X-face `(i, j, k)` and its
+    /// neighbour one cell away in `y` (`forward` selects `+y`), if there is
+    /// one.
+    ///
+    /// The two faces sit either side of the plane `y = j_f · dx` at
+    /// `x = i · dx`, which is the corner shared by the Y-faces `(i−1, j_f,
+    /// k)` and `(i, j_f, k)`; both have to be no-slip walls for the mirror
+    /// to cross a wall. A viscous term uses the returned velocity `u_wall`
+    /// as the no-slip ghost `2 u_wall − u_in`; `None` means the ordinary
+    /// neighbour (or, on the domain edge, the zero-gradient mirror).
+    #[must_use]
+    pub fn u_wall_across_y(&self, i: usize, j: usize, k: usize, forward: bool) -> Option<Vec3Fix> {
+        let jf = if forward { j + 1 } else { j };
+        wall_between(
+            (i > 0).then(|| self.v_bc(i - 1, jf, k)),
+            (i < self.nx).then(|| self.v_bc(i, jf, k)),
+        )
+    }
+    /// See [`MacGrid::u_wall_across_y`]; the separating faces are Z-faces.
+    #[must_use]
+    pub fn u_wall_across_z(&self, i: usize, j: usize, k: usize, forward: bool) -> Option<Vec3Fix> {
+        let kf = if forward { k + 1 } else { k };
+        wall_between(
+            (i > 0).then(|| self.w_bc(i - 1, j, kf)),
+            (i < self.nx).then(|| self.w_bc(i, j, kf)),
+        )
+    }
+    /// See [`MacGrid::u_wall_across_y`]; a Y-face mirrored along `x`.
+    #[must_use]
+    pub fn v_wall_across_x(&self, i: usize, j: usize, k: usize, forward: bool) -> Option<Vec3Fix> {
+        let if_ = if forward { i + 1 } else { i };
+        wall_between(
+            (j > 0).then(|| self.u_bc(if_, j - 1, k)),
+            (j < self.ny).then(|| self.u_bc(if_, j, k)),
+        )
+    }
+    /// See [`MacGrid::u_wall_across_y`]; a Y-face mirrored along `z`.
+    #[must_use]
+    pub fn v_wall_across_z(&self, i: usize, j: usize, k: usize, forward: bool) -> Option<Vec3Fix> {
+        let kf = if forward { k + 1 } else { k };
+        wall_between(
+            (j > 0).then(|| self.w_bc(i, j - 1, kf)),
+            (j < self.ny).then(|| self.w_bc(i, j, kf)),
+        )
+    }
+    /// See [`MacGrid::u_wall_across_y`]; a Z-face mirrored along `x`.
+    #[must_use]
+    pub fn w_wall_across_x(&self, i: usize, j: usize, k: usize, forward: bool) -> Option<Vec3Fix> {
+        let if_ = if forward { i + 1 } else { i };
+        wall_between(
+            (k > 0).then(|| self.u_bc(if_, j, k - 1)),
+            (k < self.nz).then(|| self.u_bc(if_, j, k)),
+        )
+    }
+    /// See [`MacGrid::u_wall_across_y`]; a Z-face mirrored along `y`.
+    #[must_use]
+    pub fn w_wall_across_y(&self, i: usize, j: usize, k: usize, forward: bool) -> Option<Vec3Fix> {
+        let jf = if forward { j + 1 } else { j };
+        wall_between(
+            (k > 0).then(|| self.v_bc(i, jf, k - 1)),
+            (k < self.nz).then(|| self.v_bc(i, jf, k)),
+        )
     }
 
     /// Divergence at cell (i, j, k). Positive = fluid expanding.
@@ -327,11 +773,13 @@ impl MacGrid {
 
 /// Which faces of each cell take part in the pressure solve.
 ///
-/// `open[c]` is ordered `[-x, +x, -y, +y, -z, +z]`. A solid face is closed:
-/// it contributes neither an off-diagonal coupling nor a count to the
-/// diagonal, which is the homogeneous Neumann condition. An open face always
-/// counts toward the diagonal; when it sits on the domain boundary its
-/// neighbour pressure is the exterior `p = 0`.
+/// `open[c]` is ordered `[-x, +x, -y, +y, -z, +z]`. A face whose normal
+/// velocity is fixed — either kind of wall, or an [`FaceBc::Inflow`] — is
+/// closed: it contributes neither an off-diagonal coupling nor a count to
+/// the diagonal, which is the homogeneous Neumann condition. An open face
+/// always counts toward the diagonal; when it sits on the domain boundary
+/// its neighbour pressure is the exterior `p = 0`, which is the Dirichlet
+/// side of [`FaceBc::Outflow`] and of a plain [`FaceBc::Fluid`] rim.
 ///
 /// Owned rather than borrowed so the solvers can keep mutating the grid.
 struct PoissonMask {
@@ -349,12 +797,12 @@ impl PoissonMask {
             for j in 0..ny {
                 for i in 0..nx {
                     open[i + nx * (j + ny * k)] = [
-                        !grid.is_u_solid(i, j, k),
-                        !grid.is_u_solid(i + 1, j, k),
-                        !grid.is_v_solid(i, j, k),
-                        !grid.is_v_solid(i, j + 1, k),
-                        !grid.is_w_solid(i, j, k),
-                        !grid.is_w_solid(i, j, k + 1),
+                        !grid.u_blocks_pressure(i, j, k),
+                        !grid.u_blocks_pressure(i + 1, j, k),
+                        !grid.v_blocks_pressure(i, j, k),
+                        !grid.v_blocks_pressure(i, j + 1, k),
+                        !grid.w_blocks_pressure(i, j, k),
+                        !grid.w_blocks_pressure(i, j, k + 1),
                     ];
                 }
             }
@@ -433,6 +881,11 @@ fn inverse_degrees(mask: &PoissonMask, n: usize) -> Vec<Fix128> {
 /// operator counts a non-solid boundary face against the exterior `p = 0`, so
 /// skipping it leaves the rim cells with no degree of freedom and their
 /// divergence grows instead of vanishing.
+///
+/// An [`FaceBc::Inflow`] face is skipped rather than corrected: its normal
+/// velocity is prescribed, the stencil dropped it for exactly that reason,
+/// and the value it must keep is the one
+/// [`MacGrid::enforce_face_boundaries`] put there.
 fn subtract_pressure_gradient(grid: &mut MacGrid, coeff: Fix128) {
     for k in 0..grid.nz {
         for j in 0..grid.ny {
@@ -440,6 +893,9 @@ fn subtract_pressure_gradient(grid: &mut MacGrid, coeff: Fix128) {
                 let ix = grid.idx_u(i, j, k);
                 if grid.u_solid[ix] {
                     grid.u[ix] = Fix128::ZERO;
+                    continue;
+                }
+                if grid.u_is_inflow(i, j, k) {
                     continue;
                 }
                 let hi = if i < grid.nx {
@@ -464,6 +920,9 @@ fn subtract_pressure_gradient(grid: &mut MacGrid, coeff: Fix128) {
                     grid.v[ix] = Fix128::ZERO;
                     continue;
                 }
+                if grid.v_is_inflow(i, j, k) {
+                    continue;
+                }
                 let hi = if j < grid.ny {
                     grid.pressure(i, j, k)
                 } else {
@@ -484,6 +943,9 @@ fn subtract_pressure_gradient(grid: &mut MacGrid, coeff: Fix128) {
                 let ix = grid.idx_w(i, j, k);
                 if grid.w_solid[ix] {
                     grid.w[ix] = Fix128::ZERO;
+                    continue;
+                }
+                if grid.w_is_inflow(i, j, k) {
                     continue;
                 }
                 let hi = if k < grid.nz {
@@ -551,7 +1013,7 @@ pub(crate) fn project_pressure_red_black_gs(
     if grid.dx.is_zero() || density_kg_m3.is_zero() || dt_s.is_zero() {
         return;
     }
-    grid.enforce_solid_faces();
+    grid.enforce_face_boundaries();
     let scale = density_kg_m3 * grid.dx * grid.dx / dt_s;
     let n = grid.nx * grid.ny * grid.nz;
     let rhs = poisson_rhs(grid, scale);
@@ -589,7 +1051,7 @@ pub(crate) fn project_pressure_jacobi(
     if grid.dx.is_zero() || density_kg_m3.is_zero() || dt_s.is_zero() {
         return;
     }
-    grid.enforce_solid_faces();
+    grid.enforce_face_boundaries();
     let scale = density_kg_m3 * grid.dx * grid.dx / dt_s;
     let n = grid.nx * grid.ny * grid.nz;
     let rhs = poisson_rhs(grid, scale);
@@ -660,7 +1122,7 @@ pub(crate) fn project_pressure_bicgstab(
     if grid.dx.is_zero() || density_kg_m3.is_zero() || dt_s.is_zero() {
         return default_stats;
     }
-    grid.enforce_solid_faces();
+    grid.enforce_face_boundaries();
     let scale = density_kg_m3 * grid.dx * grid.dx / dt_s;
     let n = grid.nx * grid.ny * grid.nz;
 

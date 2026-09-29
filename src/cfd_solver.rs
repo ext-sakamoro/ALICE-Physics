@@ -175,16 +175,26 @@ impl CfdSolver {
     }
 
     /// One integrated time step.
+    ///
+    /// The face boundary conditions of the grid ([`crate::eulerian_grid::FaceBc`]) are imposed
+    /// three times: once before advection, so nothing samples a stale value
+    /// off a wall; once after the body forces, so the viscous term sees the
+    /// wall itself rather than a wall plus `g dt`; and once inside the
+    /// projection, which is where they enter the Poisson problem. A grid
+    /// with no boundary conditions set — the default — is untouched by all
+    /// three.
     pub fn step(&mut self, dt_s: Fix128) {
         if dt_s.is_zero() {
             return;
         }
+        self.grid.enforce_face_boundaries();
         match self.advection_scheme {
             AdvectionScheme::SemiLagrangian => self.advect_velocity(dt_s),
             AdvectionScheme::MacCormack => self.advect_velocity_maccormack(dt_s),
             AdvectionScheme::Bfecc => self.advect_velocity_bfecc(dt_s),
         }
         self.apply_body_forces(dt_s);
+        self.grid.enforce_face_boundaries();
         if self.use_turbulence {
             self.apply_turbulent_diffusion(dt_s);
         } else {
@@ -345,11 +355,27 @@ impl CfdSolver {
     }
 
     /// Explicit Laplacian: `u_new = u + dt·ν·∇²u`.
+    ///
+    /// # Tangential walls
+    ///
+    /// The mirror used for a neighbour that lies on the far side of a
+    /// [`crate::eulerian_grid::FaceBc::Wall`] is the no-slip ghost `2 u_wall − u_in`, not the
+    /// zero-gradient `u_in`. Those two differ by `2 (u_wall − u_in)`, which
+    /// is the whole of the viscous shear the wall exerts: with the
+    /// zero-gradient mirror the wall is free-slip, a lid-driven cavity never
+    /// drives the fluid and a channel never develops a profile.
+    ///
+    /// `MacGrid::u_wall_across_y` and its five siblings answer whether the
+    /// mirror crosses a wall, so an obstacle in the middle of the domain
+    /// gets the same treatment as the outer box. A [`crate::eulerian_grid::FaceBc::SlipWall`]
+    /// deliberately keeps the zero-gradient mirror — that is the symmetry
+    /// plane a quasi-2-D run wants on its `z` faces.
     fn diffuse_velocity(&mut self, nu: Fix128, dt_s: Fix128) {
         if nu.is_zero() || self.grid.dx.is_zero() {
             return;
         }
         let coeff = nu * dt_s / (self.grid.dx * self.grid.dx);
+        let two = Fix128::from_int(2);
 
         // u faces (all nx + 1 of them; the boundary faces i = 0 / nx use a
         // zero-gradient mirror like every other boundary. Before 1.2.0 they were
@@ -371,25 +397,25 @@ impl CfdSolver {
                     } else {
                         center
                     };
-                    let down = if j > 0 {
-                        self.grid.u(i, j - 1, k)
-                    } else {
-                        center
+                    let down = match self.grid.u_wall_across_y(i, j, k, false) {
+                        Some(wall) => two * wall.x - center,
+                        None if j > 0 => self.grid.u(i, j - 1, k),
+                        None => center,
                     };
-                    let up = if j + 1 < self.grid.ny {
-                        self.grid.u(i, j + 1, k)
-                    } else {
-                        center
+                    let up = match self.grid.u_wall_across_y(i, j, k, true) {
+                        Some(wall) => two * wall.x - center,
+                        None if j + 1 < self.grid.ny => self.grid.u(i, j + 1, k),
+                        None => center,
                     };
-                    let back = if k > 0 {
-                        self.grid.u(i, j, k - 1)
-                    } else {
-                        center
+                    let back = match self.grid.u_wall_across_z(i, j, k, false) {
+                        Some(wall) => two * wall.x - center,
+                        None if k > 0 => self.grid.u(i, j, k - 1),
+                        None => center,
                     };
-                    let fwd = if k + 1 < self.grid.nz {
-                        self.grid.u(i, j, k + 1)
-                    } else {
-                        center
+                    let fwd = match self.grid.u_wall_across_z(i, j, k, true) {
+                        Some(wall) => two * wall.x - center,
+                        None if k + 1 < self.grid.nz => self.grid.u(i, j, k + 1),
+                        None => center,
                     };
                     let laplacian =
                         left + right + down + up + back + fwd - center * Fix128::from_int(6);
@@ -406,15 +432,15 @@ impl CfdSolver {
             for j in 0..=self.grid.ny {
                 for i in 0..self.grid.nx {
                     let center = self.grid.v(i, j, k);
-                    let left = if i > 0 {
-                        self.grid.v(i - 1, j, k)
-                    } else {
-                        center
+                    let left = match self.grid.v_wall_across_x(i, j, k, false) {
+                        Some(wall) => two * wall.y - center,
+                        None if i > 0 => self.grid.v(i - 1, j, k),
+                        None => center,
                     };
-                    let right = if i + 1 < self.grid.nx {
-                        self.grid.v(i + 1, j, k)
-                    } else {
-                        center
+                    let right = match self.grid.v_wall_across_x(i, j, k, true) {
+                        Some(wall) => two * wall.y - center,
+                        None if i + 1 < self.grid.nx => self.grid.v(i + 1, j, k),
+                        None => center,
                     };
                     let down = if j > 0 {
                         self.grid.v(i, j - 1, k)
@@ -426,15 +452,15 @@ impl CfdSolver {
                     } else {
                         center
                     };
-                    let back = if k > 0 {
-                        self.grid.v(i, j, k - 1)
-                    } else {
-                        center
+                    let back = match self.grid.v_wall_across_z(i, j, k, false) {
+                        Some(wall) => two * wall.y - center,
+                        None if k > 0 => self.grid.v(i, j, k - 1),
+                        None => center,
                     };
-                    let fwd = if k + 1 < self.grid.nz {
-                        self.grid.v(i, j, k + 1)
-                    } else {
-                        center
+                    let fwd = match self.grid.v_wall_across_z(i, j, k, true) {
+                        Some(wall) => two * wall.y - center,
+                        None if k + 1 < self.grid.nz => self.grid.v(i, j, k + 1),
+                        None => center,
                     };
                     let laplacian =
                         left + right + down + up + back + fwd - center * Fix128::from_int(6);
@@ -451,25 +477,25 @@ impl CfdSolver {
             for j in 0..self.grid.ny {
                 for i in 0..self.grid.nx {
                     let center = self.grid.w(i, j, k);
-                    let left = if i > 0 {
-                        self.grid.w(i - 1, j, k)
-                    } else {
-                        center
+                    let left = match self.grid.w_wall_across_x(i, j, k, false) {
+                        Some(wall) => two * wall.z - center,
+                        None if i > 0 => self.grid.w(i - 1, j, k),
+                        None => center,
                     };
-                    let right = if i + 1 < self.grid.nx {
-                        self.grid.w(i + 1, j, k)
-                    } else {
-                        center
+                    let right = match self.grid.w_wall_across_x(i, j, k, true) {
+                        Some(wall) => two * wall.z - center,
+                        None if i + 1 < self.grid.nx => self.grid.w(i + 1, j, k),
+                        None => center,
                     };
-                    let down = if j > 0 {
-                        self.grid.w(i, j - 1, k)
-                    } else {
-                        center
+                    let down = match self.grid.w_wall_across_y(i, j, k, false) {
+                        Some(wall) => two * wall.z - center,
+                        None if j > 0 => self.grid.w(i, j - 1, k),
+                        None => center,
                     };
-                    let up = if j + 1 < self.grid.ny {
-                        self.grid.w(i, j + 1, k)
-                    } else {
-                        center
+                    let up = match self.grid.w_wall_across_y(i, j, k, true) {
+                        Some(wall) => two * wall.z - center,
+                        None if j + 1 < self.grid.ny => self.grid.w(i, j + 1, k),
+                        None => center,
                     };
                     let back = if k > 0 {
                         self.grid.w(i, j, k - 1)
