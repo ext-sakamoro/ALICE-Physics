@@ -43,6 +43,17 @@
 //!   meshed boundary by up to that distance, and it is not a substitute for
 //!   Delaunay refinement: it bounds how close a crossing gets to a *corner*, not
 //!   how close two crossings get to each other.
+//! - **A feature narrower than one cell is meshed over, silently.** The field is
+//!   only sampled at lattice corners, so a gap that no corner falls inside does
+//!   not exist as far as the mesher is concerned. Measured on two slabs with a
+//!   swept gap at cell 0.25: gaps of 0.5 and 0.8 cells come back as one solid
+//!   block, and gaps of 1.0 cells and wider are kept apart. Nothing reports it —
+//!   the mesh is conforming, its elements are well shaped, and its volume is
+//!   *larger* rather than smaller, which no convergence check is watching for.
+//!   A part with a 0.2 mm slot meshed at 0.25 mm cells comes back solid.
+//!   `tests/mesh_quality.rs::a_gap_wider_than_a_cell_is_not_bridged` pins the
+//!   boundary. This is the sampling limit and not the warp: the warp does not
+//!   close a gap the lattice can see.
 //! - The generated mesh is intended for downstream FEM callers; it is not tuned
 //!   for rendering.
 
