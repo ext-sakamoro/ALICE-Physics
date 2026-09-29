@@ -85,7 +85,7 @@ assert できない**ことで、warp が要素を自分の面の向こう側へ
   ここまでの scene は全て凸で、凸形状では clip した mesh は内接に近く**短くしか出ません**
   体積だけが計器だった間、suite は片方向に盲目でした 凹形状では重心が正側に出るのが正常です
   (再入角を跨ぐ要素、実測 +0.0025〜+0.1025 = 最大 0.41 cell) 全 scene で gate 内
-- ⚠️ `a_cavity_narrower_than_a_cell_leaves_no_trace` (診断) — **1 cell 未満の feature は
+- ⚠️ `a_cavity_narrower_than_a_cell_leaves_no_trace` — **1 cell 未満の feature は
   完成した mesh に対するどんな検査でも捕まえられません** cavity を掃引すると 0.4 cell 幅と
   0.8 cell 幅が **tet 単位で同一の mesh** を出し、0.4 cell では重心 probe が**負**を返します
   (場が cavity 内で +0.05 までしか上がらない) 塞がるのは 1 cell 未満の時だけなので食い込みは
@@ -94,6 +94,12 @@ assert できない**ことで、warp が要素を自分の面の向こう側へ
   効きません 検出するには「細かい標本の符号変化を mesh の境界と突合する」位相的な検査が要り、
   それは細かい cell で切り直すのと同じ手間です **gate でなく契約で解くべき問題**
   (呼び出し側が最小 feature 寸法から `cell` を決める)
+  ⚠️ **この散文の主張自体を assert にしてあります** — (1) 0.4 cell 幅の cavity を入れた mesh が
+  **中実ブロックと完全一致** (2) 塞がった cavity の食い込みが**正常な凹形状の最大値より小さい**
+  前者が破れたら mesher が sub-cell を見るようになった合図、後者が破れたら 2 群が分離したので
+  gate を作るべき合図です どちらも契約を見直すべき時に red で教えます
+  (散文で書いて以後誰も測らない状態を避ける、[[feedback_physics_analytic_oracle_rule_2026_09_15]]
+  の「test に付けた散文の根拠も oracle として検証する」準拠)
 - `tests/mesh_quality.rs` の `a_gap_wider_than_a_cell_is_not_bridged` — 隙間幅の掃引
   **warp は見える隙間を塞いでいません** 境界はちょうど 1 cell で、0.5 / 0.8 cell は
   1 個の塊になり 1.0 cell 以上は分かれます 格子角が 1 つも入らない幅は標本化の限界であって
