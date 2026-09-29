@@ -50,6 +50,11 @@ impl Default for ClothFluidCoupling {
 ///   (approximated by nearby fluid particle count).
 ///
 /// Cloth velocities are modified in place.
+///
+/// This is a thin wrapper over [`apply_fluid_forces_to_cloth_with_residual`],
+/// which does the work and additionally reports the interface force. Callers
+/// that sub-iterate the coupling want that one; this one discards the report.
+/// There is deliberately only one implementation, so the two cannot drift.
 pub fn apply_fluid_forces_to_cloth(
     coupling: &ClothFluidCoupling,
     cloth_positions: &[Vec3Fix],
@@ -59,8 +64,76 @@ pub fn apply_fluid_forces_to_cloth(
     fluid_density: Fix128,
     dt: Fix128,
 ) {
+    let _ = apply_fluid_forces_to_cloth_with_residual(
+        coupling,
+        cloth_positions,
+        cloth_velocities,
+        fluid_positions,
+        fluid_velocities,
+        fluid_density,
+        dt,
+    );
+}
+
+/// Apply the fluid-to-cloth forces and report the interface force norm.
+///
+/// Identical in effect to [`apply_fluid_forces_to_cloth`]; the return value is
+/// `‖F_interface‖_∞` over the cloth particles, where `F` is the net force the
+/// fluid exerts (drag, buoyancy and surface tension combined) **before** it is
+/// multiplied by `dt`.
+///
+/// # ⚠️ This is the force, not the iteration residual
+///
+/// The value returned is the **absolute** interface force at this sweep. It
+/// does **not** go to zero as a sub-iteration converges — it converges to the
+/// equilibrium force, which is generally non-zero. Handing it straight to a
+/// convergence test would compare a physical magnitude against a tolerance and
+/// never settle.
+///
+/// The residual of the fixed-point iteration is the **change** in interface
+/// force between sweeps, `‖F^(j) − F^(j−1)‖_∞`. Because each sweep restarts the
+/// cloth velocities from the step's initial state and adds `F·dt`, the iterate
+/// difference satisfies
+///
+/// ```text
+/// ‖v^(j+1) − v^(j)‖_∞ = dt · ‖F^(j) − F^(j−1)‖_∞
+/// ```
+///
+/// exactly, so a driver obtains the force residual by differencing the state,
+/// and the constant `dt` cancels in the relative stopping rules of
+/// [`crate::coupled_iteration`]. `tests/cloth_fluid_sub_iteration.rs` does
+/// exactly that.
+///
+/// What this return value is good for is a `dt`-independent reading of how hard
+/// the interface is pushing — the velocity change would shrink with `dt` and so
+/// could not distinguish "the interface is balanced" from "the step is small".
+///
+/// # What this supports, and what it does not
+///
+/// Driving this coupling under [`crate::coupled_iteration::run_sub_iteration`]
+/// measures the **contraction ratio of the splitting** and detects divergence,
+/// including the silent `Fix128` wrap. ⚠️ It does **not** establish that the
+/// converged state is physically correct: this coupling is particle-based and
+/// has no closed form to compare against. The closed-form claims live in
+/// `tests/analytic_added_mass_coupling.rs` on the one-degree-of-freedom piston,
+/// and are deliberately not transferred here.
+///
+/// The applied update is byte-for-byte what [`apply_fluid_forces_to_cloth`]
+/// has always produced: each force term keeps its own multiplication by `dt`,
+/// because `Fix128` multiplication truncates and regrouping the products would
+/// change the result. Only the reported norm is new.
+pub fn apply_fluid_forces_to_cloth_with_residual(
+    coupling: &ClothFluidCoupling,
+    cloth_positions: &[Vec3Fix],
+    cloth_velocities: &mut [Vec3Fix],
+    fluid_positions: &[Vec3Fix],
+    fluid_velocities: &[Vec3Fix],
+    fluid_density: Fix128,
+    dt: Fix128,
+) -> Fix128 {
+    let mut interface_force = Fix128::ZERO;
     if dt.is_zero() || fluid_positions.is_empty() || cloth_positions.is_empty() {
-        return;
+        return interface_force;
     }
 
     // Interaction radius: larger radius catches more fluid neighbors
@@ -104,9 +177,24 @@ pub fn apply_fluid_forces_to_cloth(
         // Surface tension: pulls cloth toward local fluid center
         let tension_force = avg_fluid_vel * coupling.surface_tension;
 
-        // Apply forces as velocity change (F * dt)
+        // Apply forces as velocity change (F * dt). Each term keeps its own
+        // multiplication: `Fix128` multiplication truncates, so folding the
+        // three into one product would change the result.
         cloth_velocities[ci] = cv - drag_force * dt + buoyancy_force * dt + tension_force * dt;
+
+        // Report the net interface force. Additions are exact in `Fix128`
+        // (wrapping two's complement), so summing the terms here cannot
+        // perturb what was applied above.
+        let net = buoyancy_force + tension_force - drag_force;
+        for component in [net.x, net.y, net.z] {
+            let magnitude = component.abs();
+            if magnitude > interface_force {
+                interface_force = magnitude;
+            }
+        }
     }
+
+    interface_force
 }
 
 // ============================================================================
@@ -120,6 +208,9 @@ pub fn apply_fluid_forces_to_cloth(
 /// passing through the cloth.
 ///
 /// `cloth_normals` should contain per-particle surface normals.
+///
+/// A thin wrapper over [`apply_cloth_boundary_to_fluid_with_residual`], which
+/// does the work and additionally reports the interface correction.
 pub fn apply_cloth_boundary_to_fluid(
     cloth_positions: &[Vec3Fix],
     cloth_normals: &[Vec3Fix],
@@ -127,8 +218,40 @@ pub fn apply_cloth_boundary_to_fluid(
     fluid_velocities: &mut [Vec3Fix],
     repulsion_strength: Fix128,
 ) {
+    let _ = apply_cloth_boundary_to_fluid_with_residual(
+        cloth_positions,
+        cloth_normals,
+        fluid_positions,
+        fluid_velocities,
+        repulsion_strength,
+    );
+}
+
+/// Apply the cloth-to-fluid boundary repulsion and report its norm.
+///
+/// Identical in effect to [`apply_cloth_boundary_to_fluid`]; the return value
+/// is `‖Δv‖_∞` over the fluid particles.
+///
+/// ⚠️ Unlike the fluid-to-cloth direction, this reports a **velocity
+/// correction rather than a force**, because `repulsion_strength` already
+/// carries the step: this API has no `dt` to divide out. The two directions
+/// are therefore not in the same units, and a caller combining them into one
+/// residual must scale them itself. Feeding either to
+/// [`crate::coupled_iteration::run_sub_iteration`] on its own is unaffected,
+/// since every stopping rule there is relative to the first residual.
+///
+/// The applied update is byte-for-byte what
+/// [`apply_cloth_boundary_to_fluid`] has always produced.
+pub fn apply_cloth_boundary_to_fluid_with_residual(
+    cloth_positions: &[Vec3Fix],
+    cloth_normals: &[Vec3Fix],
+    fluid_positions: &[Vec3Fix],
+    fluid_velocities: &mut [Vec3Fix],
+    repulsion_strength: Fix128,
+) -> Fix128 {
+    let mut interface_correction = Fix128::ZERO;
     if cloth_positions.is_empty() || fluid_positions.is_empty() {
-        return;
+        return interface_correction;
     }
 
     let repulsion_radius = Fix128::from_ratio(1, 4);
@@ -161,15 +284,25 @@ pub fn apply_cloth_boundary_to_fluid(
             let overlap = repulsion_radius - dist;
             let force_mag = repulsion_strength * overlap * inv_dist;
 
+            let correction = normal * force_mag;
             if proj.is_negative() {
                 // Fluid is on the back side: push away along -normal
-                fluid_velocities[fi] = fluid_velocities[fi] - normal * force_mag;
+                fluid_velocities[fi] = fluid_velocities[fi] - correction;
             } else {
                 // Fluid is on the front side: push away along +normal
-                fluid_velocities[fi] = fluid_velocities[fi] + normal * force_mag;
+                fluid_velocities[fi] = fluid_velocities[fi] + correction;
+            }
+
+            for component in [correction.x, correction.y, correction.z] {
+                let magnitude = component.abs();
+                if magnitude > interface_correction {
+                    interface_correction = magnitude;
+                }
             }
         }
     }
+
+    interface_correction
 }
 
 // ============================================================================
@@ -344,5 +477,166 @@ mod tests {
         );
 
         assert_eq!(cloth_vel[0].x.hi, original.x.hi);
+    }
+
+    // ------------------------------------------------------------------
+    // The reporting variants: what the prose above claims, as assertions
+    // ------------------------------------------------------------------
+
+    /// A scene with all three force terms live, so none of them can be
+    /// dropped without the assertions noticing.
+    fn coupled_scene() -> (
+        ClothFluidCoupling,
+        Vec<Vec3Fix>,
+        Vec<Vec3Fix>,
+        Vec<Vec3Fix>,
+        Vec<Vec3Fix>,
+    ) {
+        let coupling = ClothFluidCoupling::default();
+        let quarter = Fix128::from_ratio(1, 4);
+        let eighth = Fix128::from_ratio(1, 8);
+        let cloth_pos = vec![
+            Vec3Fix::ZERO,
+            Vec3Fix::new(quarter, Fix128::ZERO, Fix128::ZERO),
+        ];
+        let cloth_vel = vec![Vec3Fix::from_int(3, 0, 0), Vec3Fix::from_int(0, -2, 0)];
+        let fluid_pos = vec![
+            Vec3Fix::ZERO,
+            Vec3Fix::new(eighth, Fix128::ZERO, Fix128::ZERO),
+        ];
+        let fluid_vel = vec![Vec3Fix::from_int(0, 1, 0), Vec3Fix::from_int(1, 0, 0)];
+        (coupling, cloth_pos, cloth_vel, fluid_pos, fluid_vel)
+    }
+
+    #[test]
+    fn the_wrapper_and_the_reporting_variant_leave_identical_state() {
+        // The wrapper exists so that there is only one implementation. If it
+        // ever grows its own copy, this goes red on the first divergence.
+        let (coupling, cloth_pos, cloth_vel, fluid_pos, fluid_vel) = coupled_scene();
+        let dt = Fix128::from_ratio(1, 60);
+
+        let mut through_wrapper = cloth_vel.clone();
+        apply_fluid_forces_to_cloth(
+            &coupling,
+            &cloth_pos,
+            &mut through_wrapper,
+            &fluid_pos,
+            &fluid_vel,
+            Fix128::ONE,
+            dt,
+        );
+
+        let mut through_reporting = cloth_vel.clone();
+        let force = apply_fluid_forces_to_cloth_with_residual(
+            &coupling,
+            &cloth_pos,
+            &mut through_reporting,
+            &fluid_pos,
+            &fluid_vel,
+            Fix128::ONE,
+            dt,
+        );
+
+        assert_eq!(through_wrapper, through_reporting);
+        assert!(
+            force > Fix128::ZERO,
+            "this scene must exert a force, or the comparison above is vacuous"
+        );
+        // The state must actually have moved, or two no-ops would match.
+        assert_ne!(through_wrapper, cloth_vel);
+    }
+
+    #[test]
+    fn the_boundary_wrapper_and_its_reporting_variant_leave_identical_state() {
+        let (_, cloth_pos, _, fluid_pos, fluid_vel) = coupled_scene();
+        let normals = vec![Vec3Fix::UNIT_Y, Vec3Fix::UNIT_Y];
+        let strength = Fix128::from_ratio(1, 4);
+
+        let mut through_wrapper = fluid_vel.clone();
+        apply_cloth_boundary_to_fluid(
+            &cloth_pos,
+            &normals,
+            &fluid_pos,
+            &mut through_wrapper,
+            strength,
+        );
+
+        let mut through_reporting = fluid_vel.clone();
+        let correction = apply_cloth_boundary_to_fluid_with_residual(
+            &cloth_pos,
+            &normals,
+            &fluid_pos,
+            &mut through_reporting,
+            strength,
+        );
+
+        assert_eq!(through_wrapper, through_reporting);
+        assert!(
+            correction > Fix128::ZERO,
+            "this scene must repel, or the comparison above is vacuous"
+        );
+        assert_ne!(through_wrapper, fluid_vel);
+    }
+
+    #[test]
+    fn the_reported_force_does_not_move_when_the_step_does() {
+        // This is the reason the fluid-to-cloth direction reports a force and
+        // not a velocity change. Halving `dt` must halve what is applied while
+        // leaving the reported force alone; a velocity change would halve too,
+        // and so could not tell "the interface is balanced" from "the step is
+        // small".
+        let (coupling, cloth_pos, cloth_vel, fluid_pos, fluid_vel) = coupled_scene();
+
+        let mut coarse_state = cloth_vel.clone();
+        let coarse_force = apply_fluid_forces_to_cloth_with_residual(
+            &coupling,
+            &cloth_pos,
+            &mut coarse_state,
+            &fluid_pos,
+            &fluid_vel,
+            Fix128::ONE,
+            Fix128::from_ratio(1, 60),
+        );
+
+        let mut fine_state = cloth_vel.clone();
+        let fine_force = apply_fluid_forces_to_cloth_with_residual(
+            &coupling,
+            &cloth_pos,
+            &mut fine_state,
+            &fluid_pos,
+            &fluid_vel,
+            Fix128::ONE,
+            Fix128::from_ratio(1, 120),
+        );
+
+        assert_eq!(
+            coarse_force, fine_force,
+            "the reported force must not depend on the step"
+        );
+
+        // And the applied change must, or the test above says nothing.
+        let coarse_change = (coarse_state[0] - cloth_vel[0]).x.abs();
+        let fine_change = (fine_state[0] - cloth_vel[0]).x.abs();
+        assert!(
+            fine_change < coarse_change,
+            "halving the step must shrink what is applied: {coarse_change:?} -> {fine_change:?}"
+        );
+    }
+
+    #[test]
+    fn an_empty_scene_reports_no_interface_force() {
+        let (coupling, cloth_pos, cloth_vel, _, _) = coupled_scene();
+        let mut state = cloth_vel.clone();
+        let force = apply_fluid_forces_to_cloth_with_residual(
+            &coupling,
+            &cloth_pos,
+            &mut state,
+            &[],
+            &[],
+            Fix128::ONE,
+            Fix128::from_ratio(1, 60),
+        );
+        assert_eq!(force, Fix128::ZERO);
+        assert_eq!(state, cloth_vel);
     }
 }
