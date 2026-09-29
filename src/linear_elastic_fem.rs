@@ -381,16 +381,39 @@ impl StressTensor {
 /// Which preconditioner the conjugate gradient iteration uses.
 ///
 /// The choice does not change the answer — it changes how many iterations are
-/// needed and, in fixed point, **what residual is reachable at all**. Those two
-/// can point in opposite directions, so this is a knob and not a constant:
-/// measured on a 10:1 cantilever, [`Self::JacobiScaled`] cut the iteration count
-/// by 13% on meshes up to 3,200 elements, and at 25,600 elements it stalled at a
-/// relative residual of 4.66e-9 where the unpreconditioned solve had reached
-/// 9.41e-10.
+/// needed and, in fixed point, what residual is reachable at all.
+///
+/// # Which to use
+///
+/// A diagonal preconditioner can only fix ill-conditioning that **is** diagonal:
+/// materials of very different stiffness in one mesh, elements of very different
+/// size, a badly scaled unit system. Ill-conditioning that comes from the
+/// *shape* — a slender beam, a thin shell — leaves the diagonal nearly uniform,
+/// so Jacobi has almost nothing to rescale and only adds arithmetic.
+///
+/// The measurements say the same thing. On a 10:1 cantilever the stiffness
+/// diagonal has a `max/min` spread of 8.0 **at every resolution** — it does not
+/// widen as the mesh refines, because the ratio between an interior node and an
+/// edge node is a property of the stencil, not of the cell size. And the two
+/// settings diverge with the problem:
+///
+/// | problem | `None` | `JacobiScaled` |
+/// |---|---|---|
+/// | 52 free DOFs, spread 3.2 | 34 iterations, 4.98e-10 | **32 iterations, 6.19e-11** |
+/// | 19,683 free DOFs, spread 8.0 | **2,863 iterations, 1.63e-9** | 10,113 iterations, 4.51e-9 |
+/// | the same, given more patience | **23,842 iterations, 1.33e-9** | 100,000 iterations, 3.91e-9 |
+///
+/// At the fine level `None` reaches a better residual in a thirty-fifth of the
+/// iterations. [`Self::None`] is therefore the default: this crate's mesher emits
+/// uniform cells of one material, which is exactly the case where a diagonal
+/// preconditioner has the least to offer. Turn [`Self::JacobiScaled`] on for a
+/// graded or multi-material mesh, where the diagonal carries real information —
+/// and measure, rather than assume, that it helped.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[non_exhaustive]
 pub enum Preconditioner {
     /// None. The iteration works on `K` as it stands.
+    #[default]
     None,
     /// Diagonal (Jacobi), scaled so its mean is one.
     ///
@@ -399,7 +422,6 @@ pub enum Preconditioner {
     /// magnitude the inner products live at, and `Fix128` has a hard floor at
     /// `2⁻⁶⁴`. With a plain `1/diag` the terms of `rᵀz` and `pᵀKp` fall below
     /// that floor and round to zero while the residual is still above tolerance.
-    #[default]
     JacobiScaled,
 }
 
@@ -615,7 +637,7 @@ impl Default for SolverConfig {
             stagnation_min_window: 500,
             stagnation_window_fraction: half(),
             stagnation_min_improvement: Fix128::from_raw(0, 1 << 54),
-            preconditioner: Preconditioner::JacobiScaled,
+            preconditioner: Preconditioner::None,
         }
     }
 }

@@ -656,23 +656,26 @@ fn out_of_range_vertex_is_rejected() {
     );
 }
 
-/// A tolerance below the arithmetic floor must be abandoned quickly and said
-/// so, not ground at until the budget runs out.
+/// A tolerance the arithmetic cannot reach must end quickly, and say which kind
+/// of ending it was.
 ///
-/// `Fix128` carries 64 fractional bits, so an inner product whose terms fall
-/// under 2⁻⁶⁴ rounds to zero and the residual cannot improve any further. A
-/// tolerance placed under that floor is unreachable by construction. What the
-/// solver must not do is spend the whole budget finding that out: measured
-/// before this rule existed, an unpreconditioned solve of a 25,600-element
-/// cantilever ran 500,000 iterations over 24.8 minutes to stop 1% above its
-/// tolerance, and the report could not say whether more iterations would have
-/// helped.
+/// **Whether a tolerance is reachable is not a property of `Fix128` alone — the
+/// preconditioner moves the floor.** That is the finding this test now pins, and
+/// it was not the assumption it was written under: with no preconditioner the
+/// residual of this small problem reaches *exactly zero* in 35 iterations, so
+/// even `2⁻⁶⁰` is met; with the Jacobi preconditioner the inner products bottom
+/// out first and the same tolerance is unreachable.
 ///
-/// The two outcomes are deliberately different error variants because they call
-/// for opposite responses: `NotConverged` means raise the budget, `Stagnated`
-/// means the budget is irrelevant.
+/// Both endings are acceptable. The one that is not is spending the whole
+/// budget: measured before the stagnation rule existed, an unpreconditioned
+/// solve of a 25,600-element cantilever ran 500,000 iterations over 24.8 minutes
+/// to stop 1% above its tolerance, and could not say whether more iterations
+/// would have helped. `NotConverged` at the budget is therefore the failure
+/// condition here, for either preconditioner.
 #[test]
 fn unreachable_tolerance_stagnates_instead_of_burning_the_budget() {
+    use alice_physics::linear_elastic_fem::FemError;
+
     let (nx, ny, nz, h) = (4usize, 1usize, 1usize, 2.5_f32);
     let mesh = kuhn_box(nx, ny, nz, h);
     let mut bc = BoundaryConditions::new();
@@ -694,35 +697,57 @@ fn unreachable_tolerance_stagnates_instead_of_burning_the_budget() {
         bc.add_load(node, Axis::X, fx(12.5));
     }
 
-    // 2^-60 is below anything the residual can reach in Q64.64 here.
+    // 2^-60, far below the tolerances any caller would set.
     let budget = 200_000;
-    let cfg = SolverConfig::try_new(budget, Fix128::from_raw(0, 1 << 4)).expect("valid config");
-    let err = solve(&mesh, &pla(), &bc, &cfg).unwrap_err();
+    let base = SolverConfig::try_new(budget, Fix128::from_raw(0, 1 << 4)).expect("valid config");
 
-    match err {
-        alice_physics::linear_elastic_fem::FemError::Stagnated {
-            iterations,
-            relative_residual,
-            without_improvement,
-        } => {
-            eprintln!(
-                "[stagnation] gave up after {iterations} of {budget} iterations, \
-                 best relative residual {:.3e}, {without_improvement} without improvement",
-                relative_residual.to_f64()
-            );
-            assert!(
-                iterations < budget / 10,
-                "the point of the rule is to stop early: it used {iterations} of {budget}"
-            );
-            assert!(
-                relative_residual.to_f64() > 0.0,
-                "a stagnation report must carry the residual it actually reached"
-            );
+    for mode in [Preconditioner::None, Preconditioner::JacobiScaled] {
+        let cfg = base.with_preconditioner(mode);
+        match solve(&mesh, &pla(), &bc, &cfg) {
+            Ok(out) => {
+                eprintln!(
+                    "[floor] {mode:?}: met it — {} iterations, residual {:.3e}",
+                    out.iterations,
+                    out.relative_residual.to_f64()
+                );
+                assert_eq!(
+                    out.relative_residual,
+                    Fix128::ZERO,
+                    "{mode:?}: the only way to satisfy a 2^-60 relative tolerance is for the \
+                     residual to round to exactly zero"
+                );
+                assert!(
+                    out.iterations < budget / 10,
+                    "{mode:?}: reached it, but took {} of {budget} iterations",
+                    out.iterations
+                );
+            }
+            Err(FemError::Stagnated {
+                iterations,
+                relative_residual,
+                without_improvement,
+            }) => {
+                eprintln!(
+                    "[floor] {mode:?}: gave up after {iterations} of {budget}, best residual \
+                     {:.3e}, {without_improvement} without improvement",
+                    relative_residual.to_f64()
+                );
+                assert!(
+                    iterations < budget / 10,
+                    "{mode:?}: the point of the rule is to stop early; it used {iterations} \
+                     of {budget}"
+                );
+                assert!(
+                    relative_residual > Fix128::ZERO,
+                    "{mode:?}: a stagnation report must carry the residual it reached"
+                );
+            }
+            Err(other) => panic!(
+                "{mode:?}: an unreachable tolerance must end as a met tolerance or as \
+                 stagnation, never as {other:?} — burning a budget tells the caller to raise \
+                 a budget that cannot help"
+            ),
         }
-        other => panic!(
-            "an unreachable tolerance must be reported as stagnation, not as {other:?}; \
-             NotConverged here would tell the caller to raise a budget that cannot help"
-        ),
     }
 }
 
