@@ -3,7 +3,22 @@
 Canonical roadmap for the alice-physics crate. Primary source of truth.
 Memory index pointer: `[[reference-alice-physics-v1-roadmap]]` in claude-config.
 
-## 🎉 現在位置 (2026-09-29): v1.5.0 (`Mat3Fix::polar_rotation` = 極分解の回転因子)
+## 🎉 現在位置 (2026-09-30): 4 課題を landing (共回転 FEM / CFD 壁 BC / Maxwell FDTD / 多体 ABA)
+
+⚠️ **番号で呼ばない** — 記録には「壁 N/4」が 2 組あり一致しません (詳細は memory
+`project_alice_physics_research_walls` § 番号の曖昧性) 話題名で参照してください
+
+| 課題 | commit | 到達点 |
+|---|---|---|
+| 共回転 FEM | `6896e0a` | 増分独立性 3.5e10 → **3-4 ulp** ⚠️ **0 ulp は到達不能** (不動点が存在しない) |
+| CFD 壁 BC | `8fec2ff` | Ghia Re=100 **4.5% → 86.2%**、解像度 sweep で 94.5% まで 1 次収束 |
+| Maxwell FDTD | `ecd8c61` | source-free Yee、⚠️ **SI は `ε₀·μ₀` が 7.7 bit で不可**、正規化単位 + `S=9/16` |
+| 多体 ABA | `1bab99b` | ⚠️ **`solve()` が `link.joint` を読まない**状態から real ABA、oracle 12 本 |
+
+**次の increment**: Maxwell の Gauss の法則 / 電荷保存 / PML / CFD の inflow-outflow BC と
+接線 no-slip / 多体は破壊試験で残る 2 変異 (実装でなく scene の穴) / 物理間連成 channel
+
+## 前回位置 (2026-09-29): v1.5.0 (`Mat3Fix::polar_rotation` = 極分解の回転因子)
 
 **v1.5.0 = 極分解の追加のみ** (`Mat3Fix::polar_rotation` / `max_abs_component` / `PolarError`) engine の既存 path は 1 bit も動いていない (golden f32 13 scenario 不変、全 24 test target green) 共回転 (co-rotational) FEM の前提として入れた primitive で、⚠️ **共回転そのものはまだ入っていない** (下表の該当 Phase 参照)
 
