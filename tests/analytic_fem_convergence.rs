@@ -73,12 +73,29 @@ use std::collections::HashMap;
 // beam definition (mm / N / MPa)
 // ---------------------------------------------------------------------------
 
-/// Span along x.
-const LENGTH: f64 = 20.0;
+/// Span along x. See [`THICKNESS`] for why the slenderness is 5 and not 10.
+const LENGTH: f64 = 10.0;
 /// Width along y.
 const WIDTH: f64 = 2.0;
-/// Thickness along z, the bending direction. `LENGTH / THICKNESS = 10`, which
-/// keeps the Euler-Bernoulli term within a few percent of the beam answer.
+/// Thickness along z, the bending direction.
+///
+/// `LENGTH / THICKNESS = 5`. The first version used 10, which is more slender
+/// and so closer to the Euler-Bernoulli limit, and it could not be solved: the
+/// condition number of the stiffness grows as `(L/t)²`, and at the finest level
+/// the residual crawled as `iters^-0.106` — 8.3× the iterations bought 1.22× the
+/// residual, and reaching the tolerance was extrapolated at 550,000 iterations
+/// and 27 minutes.
+///
+/// Halving the slenderness divides the condition number by four, which both
+/// lowers the residual floor the arithmetic imposes (roughly `κ·ε`) and halves
+/// the element count at a given resolution through the thickness (12,800 rather
+/// than 25,600 at eight elements). The cost is that shear deformation grows from
+/// 0.81% of the tip deflection to 3.24% — which changes nothing here, because
+/// the target below is bending **plus** shear and both terms are computed from
+/// these constants.
+///
+/// The study still measures what it set out to: a beam at 5:1 bends, P1
+/// tetrahedra are still too stiff for it, and the approach is still from below.
 const THICKNESS: f64 = 2.0;
 /// Total end load along −z.
 const LOAD: f64 = 4.0;
