@@ -13,8 +13,8 @@
 //! and there is no convergence guarantee — and it is not free. Three things
 //! have to line up, each of which was wrong here until 2026-09-29:
 //!
-//! - **The cube dicing alternates** ([`CUBE_FIVE_TETS`], selected by
-//!   [`cell_parity`]). A cube has two 5-tet decompositions and a single one used
+//! - **The cube dicing alternates** (`CUBE_FIVE_TETS`, selected by
+//!   `cell_parity`). A cube has two 5-tet decompositions and a single one used
 //!   everywhere puts opposite diagonals on the two faces it shares along each
 //!   axis.
 //! - **Vertices are interned by topology**, not by position: a lattice corner
