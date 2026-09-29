@@ -372,7 +372,11 @@ fn hash_mac_grid(grid: &MacGrid) -> [u8; 32] {
 /// pipeline (advection + diffusion + pressure projection).
 /// Re-pinned 1.2.0: boundary faces are diffused with mirror neighbours
 /// (before, the outer face layer was skipped by the viscous step).
-const GOLDEN_FLUID_STEP: &str = "0c867f70a24de57bc47907e4c1bc9a8e6fddbd9004b03ead0e05de7528a57ed8";
+/// Re-pinned again with the projection face mask: the velocity correction
+/// now sweeps the boundary face layer too, so the rim cells are projected
+/// like every other cell. This grid has no walls marked, so the change here
+/// is the rim sweep alone — see `tests/analytic_cfd_wall_bc.rs`.
+const GOLDEN_FLUID_STEP: &str = "a85d2248fd3cb2d0d7fb276d3563ddf7602f13d191e8f9982b990a3d1153a98f";
 
 #[test]
 fn determinism_fluid_step() {
