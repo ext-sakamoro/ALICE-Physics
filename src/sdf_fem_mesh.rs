@@ -79,6 +79,23 @@ pub enum RefineError {
     },
 }
 
+/// Why a boundary-face extraction was refused.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum BoundaryFaceError {
+    /// A triangular face is shared by more than two tetrahedra.
+    ///
+    /// Such a mesh is not a manifold, so "the boundary" is not defined on it.
+    /// This is a definite error rather than a degraded answer, which is why it
+    /// is refused instead of returned.
+    NonManifoldFace {
+        /// The offending face, by sorted vertex index.
+        face: [u32; 3],
+        /// How many tetrahedra claimed it.
+        uses: usize,
+    },
+}
+
 /// The six edges of a tetrahedron, in the order `split_edge_remaining` expects.
 fn tet_edges(vs: [u32; 4]) -> [(u32, u32); 6] {
     [
@@ -119,6 +136,74 @@ impl SdfTetMesh {
     #[must_use]
     pub fn tet_count(&self) -> usize {
         self.tets.len()
+    }
+
+    /// The triangular faces on the boundary of the meshed region, by sorted
+    /// vertex index, in ascending order.
+    ///
+    /// A face used by exactly one tetrahedron is returned; a face used by two is
+    /// interior and is not.
+    ///
+    /// # ⚠️ This assumes the mesh is conforming
+    ///
+    /// **On a non-conforming mesh this returns interior faces as boundary ones.**
+    /// A hanging face — one whose neighbour on the far side was diced the other
+    /// way, so no tetrahedron claims it from that side — is also "used once", and
+    /// nothing in the use count tells the two apart. Measured on this crate
+    /// (2026-09-29, after a graded refinement): the plane `z = 0` had 3 singly
+    /// used faces and **all three were interior**.
+    ///
+    /// `generate` and `generate_marching_tets` produce conforming meshes
+    /// (`tests/mesh_conformity.rs` measures this independently, from the
+    /// generator's occupancy rule rather than from the mesh), so their output is
+    /// safe input. A hand-built mesh, or the output of the deprecated
+    /// [`SdfTetMesh::refine_by_max_edge_length`] called with too small a pass
+    /// budget, is not — the latter returns only a pass count, so an exhausted
+    /// budget is indistinguishable from a finished one. Prefer
+    /// [`SdfTetMesh::try_refine_conforming`], which reports that case as
+    /// [`RefineError::Unfinished`].
+    ///
+    /// # What is checked, and what is not
+    ///
+    /// A face claimed by **three or more** tetrahedra is a definite error and is
+    /// refused ([`BoundaryFaceError::NonManifoldFace`]). **A hanging face is not
+    /// detected** — it is indistinguishable from a boundary face by use count
+    /// alone, and deciding it needs the geometry the caller meshed against.
+    /// Callers that must be sure should census the faces against their own
+    /// occupancy rule, as `tests/mesh_conformity.rs` does.
+    ///
+    /// # Errors
+    ///
+    /// [`BoundaryFaceError::NonManifoldFace`] when some face is used more than
+    /// twice.
+    pub fn boundary_faces(&self) -> Result<Vec<[u32; 3]>, BoundaryFaceError> {
+        let mut uses: HashMap<[u32; 3], usize> = HashMap::new();
+        for tet in &self.tets {
+            let v = tet.vertices;
+            for face in [
+                [v[0], v[1], v[2]],
+                [v[0], v[1], v[3]],
+                [v[0], v[2], v[3]],
+                [v[1], v[2], v[3]],
+            ] {
+                let mut key = face;
+                key.sort_unstable();
+                *uses.entry(key).or_insert(0) += 1;
+            }
+        }
+        let mut out = Vec::new();
+        for (face, count) in uses {
+            if count > 2 {
+                return Err(BoundaryFaceError::NonManifoldFace { face, uses: count });
+            }
+            if count == 1 {
+                out.push(face);
+            }
+        }
+        // `HashMap` iteration order is unspecified, so sort before returning:
+        // the caller must not see a different order from one run to the next.
+        out.sort_unstable();
+        Ok(out)
     }
 
     /// Refine until no edge is longer than `max_edge_length`, keeping the mesh
