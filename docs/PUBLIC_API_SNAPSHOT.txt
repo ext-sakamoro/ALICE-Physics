@@ -4768,9 +4768,11 @@ impl alice_physics::linear_elastic_fem::BoundaryConditions
 pub fn alice_physics::linear_elastic_fem::BoundaryConditions::add_load(&mut self, u32, alice_physics::linear_elastic_fem::Axis, alice_physics::math::Fix128) -> &mut Self
 pub fn alice_physics::linear_elastic_fem::BoundaryConditions::fix(&mut self, u32) -> &mut Self
 pub fn alice_physics::linear_elastic_fem::BoundaryConditions::load_count(&self) -> usize
+pub fn alice_physics::linear_elastic_fem::BoundaryConditions::loads(&self) -> &[(u32, alice_physics::linear_elastic_fem::Axis, alice_physics::math::Fix128)]
 pub fn alice_physics::linear_elastic_fem::BoundaryConditions::new() -> Self
 pub fn alice_physics::linear_elastic_fem::BoundaryConditions::prescribe(&mut self, u32, alice_physics::linear_elastic_fem::Axis, alice_physics::math::Fix128) -> &mut Self
 pub fn alice_physics::linear_elastic_fem::BoundaryConditions::prescribe_all(&mut self, u32, [alice_physics::math::Fix128; 3]) -> &mut Self
+pub fn alice_physics::linear_elastic_fem::BoundaryConditions::prescribed(&self) -> &[(u32, alice_physics::linear_elastic_fem::Axis, alice_physics::math::Fix128)]
 pub fn alice_physics::linear_elastic_fem::BoundaryConditions::prescribed_count(&self) -> usize
 impl core::clone::Clone for alice_physics::linear_elastic_fem::BoundaryConditions
 pub fn alice_physics::linear_elastic_fem::BoundaryConditions::clone(&self) -> Self
@@ -11898,6 +11900,29 @@ pub const alice_physics::profiling::STAGE_INTEGRATION: usize
 pub const alice_physics::profiling::STAGE_NARROWPHASE: usize
 pub const alice_physics::profiling::STAGE_SOLVER: usize
 pub const alice_physics::profiling::STAGE_TOTAL_STEP: usize
+pub mod alice_physics::quadratic_elastic_fem
+pub struct alice_physics::quadratic_elastic_fem::QuadraticMesh
+impl alice_physics::quadratic_elastic_fem::QuadraticMesh
+pub const fn alice_physics::quadratic_elastic_fem::QuadraticMesh::corner_count(&self) -> usize
+pub fn alice_physics::quadratic_elastic_fem::QuadraticMesh::edge_count(&self) -> usize
+pub fn alice_physics::quadratic_elastic_fem::QuadraticMesh::edge_node(&self, u32, u32) -> core::option::Option<u32>
+pub fn alice_physics::quadratic_elastic_fem::QuadraticMesh::element_count(&self) -> usize
+pub fn alice_physics::quadratic_elastic_fem::QuadraticMesh::element_nodes(&self, usize) -> core::option::Option<[u32; 10]>
+pub fn alice_physics::quadratic_elastic_fem::QuadraticMesh::from_tet_mesh(&alice_physics::sdf_fem_mesh::SdfTetMesh) -> core::result::Result<Self, alice_physics::linear_elastic_fem::FemError>
+pub fn alice_physics::quadratic_elastic_fem::QuadraticMesh::node_count(&self) -> usize
+pub fn alice_physics::quadratic_elastic_fem::QuadraticMesh::node_position(&self, u32) -> core::option::Option<[alice_physics::math::Fix128; 3]>
+impl core::clone::Clone for alice_physics::quadratic_elastic_fem::QuadraticMesh
+pub fn alice_physics::quadratic_elastic_fem::QuadraticMesh::clone(&self) -> Self
+impl core::fmt::Debug for alice_physics::quadratic_elastic_fem::QuadraticMesh
+pub fn alice_physics::quadratic_elastic_fem::QuadraticMesh::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for alice_physics::quadratic_elastic_fem::QuadraticMesh
+impl core::marker::Send for alice_physics::quadratic_elastic_fem::QuadraticMesh
+impl core::marker::Sync for alice_physics::quadratic_elastic_fem::QuadraticMesh
+impl core::marker::Unpin for alice_physics::quadratic_elastic_fem::QuadraticMesh
+impl core::marker::UnsafeUnpin for alice_physics::quadratic_elastic_fem::QuadraticMesh
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::quadratic_elastic_fem::QuadraticMesh
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::quadratic_elastic_fem::QuadraticMesh
+pub fn alice_physics::quadratic_elastic_fem::solve_quadratic(&alice_physics::quadratic_elastic_fem::QuadraticMesh, &alice_physics::linear_elastic_fem::ElasticMaterial, &alice_physics::linear_elastic_fem::BoundaryConditions, &alice_physics::linear_elastic_fem::SolverConfig) -> core::result::Result<alice_physics::linear_elastic_fem::FemSolution, alice_physics::linear_elastic_fem::FemError>
 pub mod alice_physics::query
 pub struct alice_physics::query::BatchRayQuery
 pub alice_physics::query::BatchRayQuery::direction: alice_physics::math::Vec3Fix

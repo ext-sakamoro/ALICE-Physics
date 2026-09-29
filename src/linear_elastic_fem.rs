@@ -337,6 +337,22 @@ impl BoundaryConditions {
         self
     }
 
+    /// The prescribed degrees of freedom, in the order they were added.
+    ///
+    /// Read access for solvers that live outside this module — the quadratic
+    /// element in [`crate::quadratic_elastic_fem`] consumes the same boundary
+    /// data and cannot reach the private field.
+    #[must_use]
+    pub fn prescribed(&self) -> &[(u32, Axis, Fix128)] {
+        &self.prescribed
+    }
+
+    /// The nodal loads, in the order they were added. See [`Self::prescribed`].
+    #[must_use]
+    pub fn loads(&self) -> &[(u32, Axis, Fix128)] {
+        &self.loads
+    }
+
     /// Number of prescribed degrees of freedom.
     #[must_use]
     pub fn prescribed_count(&self) -> usize {
