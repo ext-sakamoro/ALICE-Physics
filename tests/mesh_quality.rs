@@ -1038,6 +1038,19 @@ fn a_cavity_narrower_than_a_cell_leaves_no_trace() {
 }
 
 /// Where two meshes first differ, in one line.
+///
+/// Two of the four arms have been exercised by breaking the caller on purpose:
+/// differing sizes (a resolvable cavity against a solid block) and differing
+/// vertex positions with matching sizes (a 0.8-cell cavity against a 0.4-cell
+/// one, which is how the "same counts, different mesh" case was found).
+///
+/// The remaining two have **not** been reached, and it is not clear they can be.
+/// Identical vertex arrays mean the interning met the same keys in the same
+/// order, which pins the set of crossings and corners each cell contributed, so
+/// there is little room left for the element lists to differ. They are kept
+/// because the function has to be total and a wrong answer here would be worse
+/// than a vague one, but they are unverified: treat their wording as untested if
+/// one ever fires.
 fn first_difference(a: &SdfTetMesh, b: &SdfTetMesh) -> String {
     if a.vertex_count() != b.vertex_count() || a.tet_count() != b.tet_count() {
         return format!(
