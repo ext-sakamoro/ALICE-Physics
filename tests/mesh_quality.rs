@@ -241,6 +241,9 @@ fn signed_volume(p: [[f64; 3]; 4]) -> f64 {
 struct Quality {
     tets: usize,
     degenerate: usize,
+    /// Elements whose signed volume is negative, i.e. whose vertex order winds
+    /// the opposite way from the rest.
+    inverted: usize,
     min_dihedral_deg: f64,
     max_dihedral_deg: f64,
     worst_radius_edge: f64,
@@ -264,6 +267,7 @@ fn measure(mesh: &SdfTetMesh) -> Quality {
     let mut q = Quality {
         tets: mesh.tet_count(),
         degenerate: 0,
+        inverted: 0,
         min_dihedral_deg: 180.0,
         max_dihedral_deg: 0.0,
         worst_radius_edge: 0.0,
@@ -279,6 +283,9 @@ fn measure(mesh: &SdfTetMesh) -> Quality {
         });
         let vol = signed_volume(p);
         q.total_volume += vol.abs();
+        if vol < 0.0 {
+            q.inverted += 1;
+        }
         if vol.abs() <= 0.0 {
             q.degenerate += 1;
             continue;
@@ -313,10 +320,11 @@ fn measure(mesh: &SdfTetMesh) -> Quality {
 fn report(name: &str, cell: f32, q: &Quality, analytic_volume: f64) {
     eprintln!(
         "[quality] {name:<10} cell {cell:<7} tets {:>5}  degenerate {:>3}  \
-         min dihedral {:>6.2}°  max {:>6.2}°  worst r/e {:>7.2}  \
+         inverted {:>5}  min dihedral {:>6.2}°  max {:>6.2}°  worst r/e {:>7.2}  \
          buckets {:?}  volume {:.4} / {:.4}  below {}°: {}",
         q.tets,
         q.degenerate,
+        q.inverted,
         q.min_dihedral_deg,
         q.max_dihedral_deg,
         q.worst_radius_edge,
@@ -382,6 +390,18 @@ fn check_dihedral_population(scene: &Scene) {
         .map(|(_, q)| q.min_dihedral_deg)
         .fold(180.0_f64, f64::min);
     let degenerate: usize = series.iter().map(|(_, q)| q.degenerate).sum();
+    let inverted: usize = series.iter().map(|(_, q)| q.inverted).sum();
+    assert_eq!(
+        inverted, 0,
+        "{}: {inverted} elements are wound the opposite way from the rest. Both generators used \
+         to emit a mix — `CUBE_FIVE_TETS` has one entry of one parity wound backwards, putting a \
+         tenth of `generate`'s output at negative signed volume — and every consumer took \
+         `abs()`, so the sign carried no information and nothing could be asserted about it. Now \
+         that `push_tet` normalises it, a negative element means the mesher folded one through \
+         its own face, which conformity (face counts), the dihedral angle (unsigned), the volume \
+         (summed as `abs()`) and the FEM (`det.abs()`) would all report as healthy",
+        scene.name
+    );
     assert_eq!(
         degenerate, 0,
         "{}: {degenerate} elements enclose no volume. A zero-volume element is not a \
