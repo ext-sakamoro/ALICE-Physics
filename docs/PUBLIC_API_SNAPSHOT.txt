@@ -4872,6 +4872,29 @@ impl core::panic::unwind_safe::UnwindSafe for alice_physics::material::PhysicsMa
 pub const alice_physics::material::DEFAULT_MATERIAL: alice_physics::material::MaterialId
 pub type alice_physics::material::MaterialId = u16
 pub mod alice_physics::math
+#[non_exhaustive] pub enum alice_physics::math::PolarError
+pub alice_physics::math::PolarError::Degenerate
+pub alice_physics::math::PolarError::Inverted
+pub alice_physics::math::PolarError::NotConverged
+pub alice_physics::math::PolarError::NotConverged::steps: u32
+pub alice_physics::math::PolarError::SingularStep
+pub alice_physics::math::PolarError::SingularStep::steps: u32
+impl core::clone::Clone for alice_physics::math::PolarError
+pub fn alice_physics::math::PolarError::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::math::PolarError
+impl core::cmp::PartialEq for alice_physics::math::PolarError
+pub fn alice_physics::math::PolarError::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::math::PolarError
+pub fn alice_physics::math::PolarError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::math::PolarError
+impl core::marker::StructuralPartialEq for alice_physics::math::PolarError
+impl core::marker::Freeze for alice_physics::math::PolarError
+impl core::marker::Send for alice_physics::math::PolarError
+impl core::marker::Sync for alice_physics::math::PolarError
+impl core::marker::Unpin for alice_physics::math::PolarError
+impl core::marker::UnsafeUnpin for alice_physics::math::PolarError
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::math::PolarError
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::math::PolarError
 #[repr(C)] pub struct alice_physics::math::Fix128
 pub alice_physics::math::Fix128::hi: i64
 pub alice_physics::math::Fix128::lo: u64
@@ -4975,8 +4998,10 @@ pub fn alice_physics::math::Mat3Fix::determinant(self) -> alice_physics::math::F
 pub const fn alice_physics::math::Mat3Fix::diagonal(alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128) -> Self
 pub const fn alice_physics::math::Mat3Fix::from_cols(alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix) -> Self
 pub fn alice_physics::math::Mat3Fix::inverse(self) -> core::option::Option<Self>
+pub fn alice_physics::math::Mat3Fix::max_abs_component(self) -> alice_physics::math::Fix128
 pub fn alice_physics::math::Mat3Fix::mul_mat(self, Self) -> Self
 pub fn alice_physics::math::Mat3Fix::mul_vec(self, alice_physics::math::Vec3Fix) -> alice_physics::math::Vec3Fix
+pub fn alice_physics::math::Mat3Fix::polar_rotation(self, alice_physics::math::Fix128, u32) -> core::result::Result<Self, alice_physics::math::PolarError>
 pub fn alice_physics::math::Mat3Fix::scale(self, alice_physics::math::Fix128) -> Self
 pub const fn alice_physics::math::Mat3Fix::transpose(self) -> Self
 impl core::clone::Clone for alice_physics::math::Mat3Fix
@@ -9152,8 +9177,10 @@ pub fn alice_physics::math::Mat3Fix::determinant(self) -> alice_physics::math::F
 pub const fn alice_physics::math::Mat3Fix::diagonal(alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128) -> Self
 pub const fn alice_physics::math::Mat3Fix::from_cols(alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix) -> Self
 pub fn alice_physics::math::Mat3Fix::inverse(self) -> core::option::Option<Self>
+pub fn alice_physics::math::Mat3Fix::max_abs_component(self) -> alice_physics::math::Fix128
 pub fn alice_physics::math::Mat3Fix::mul_mat(self, Self) -> Self
 pub fn alice_physics::math::Mat3Fix::mul_vec(self, alice_physics::math::Vec3Fix) -> alice_physics::math::Vec3Fix
+pub fn alice_physics::math::Mat3Fix::polar_rotation(self, alice_physics::math::Fix128, u32) -> core::result::Result<Self, alice_physics::math::PolarError>
 pub fn alice_physics::math::Mat3Fix::scale(self, alice_physics::math::Fix128) -> Self
 pub const fn alice_physics::math::Mat3Fix::transpose(self) -> Self
 impl core::clone::Clone for alice_physics::math::Mat3Fix
@@ -17482,8 +17509,10 @@ pub fn alice_physics::math::Mat3Fix::determinant(self) -> alice_physics::math::F
 pub const fn alice_physics::math::Mat3Fix::diagonal(alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128) -> Self
 pub const fn alice_physics::math::Mat3Fix::from_cols(alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix) -> Self
 pub fn alice_physics::math::Mat3Fix::inverse(self) -> core::option::Option<Self>
+pub fn alice_physics::math::Mat3Fix::max_abs_component(self) -> alice_physics::math::Fix128
 pub fn alice_physics::math::Mat3Fix::mul_mat(self, Self) -> Self
 pub fn alice_physics::math::Mat3Fix::mul_vec(self, alice_physics::math::Vec3Fix) -> alice_physics::math::Vec3Fix
+pub fn alice_physics::math::Mat3Fix::polar_rotation(self, alice_physics::math::Fix128, u32) -> core::result::Result<Self, alice_physics::math::PolarError>
 pub fn alice_physics::math::Mat3Fix::scale(self, alice_physics::math::Fix128) -> Self
 pub const fn alice_physics::math::Mat3Fix::transpose(self) -> Self
 impl core::clone::Clone for alice_physics::math::Mat3Fix
