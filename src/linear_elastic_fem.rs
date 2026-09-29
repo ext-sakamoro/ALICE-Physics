@@ -1795,53 +1795,70 @@ fn rotated_stiffness_diagonal(
 /// the root, and the root is where the residual vanishes.
 ///
 /// ⚠️ The internal force is `R Kₑ⁰ (Rᵀx − X)` and **not** `(R Kₑ⁰ Rᵀ)·u`. See
-/// [`corotational_residual`] for what the difference is and why it is the whole
-/// method.
+/// `corotational_residual` (private) for what the difference is and why it is the
+/// whole method.
 ///
 /// # The stopping rule
 ///
-/// The iteration stops when the element frames settle — every frame within
-/// [`FRAME_SETTLED`] of the previous one — or when the largest out-of-balance
-/// nodal force drops to `newton_tolerance · max|r_ref|`, with `r_ref` the
-/// residual of the **full** prescribed displacement read with no rotation at
-/// all: the load the problem poses, computed once before the first increment.
+/// **The last increment stops only when the element frames settle** — every
+/// frame within `FRAME_SETTLED` (private) of the previous one. Earlier increments
+/// stop on that or on the largest out-of-balance nodal force dropping to
+/// `newton_tolerance · max|r_ref|`, with `r_ref` the residual of the **full**
+/// prescribed displacement read with no rotation at all: the load the problem
+/// poses, computed once before the first increment.
 ///
-/// Both halves of that are deliberate.
+/// Every part of that is deliberate.
+///
+/// The answer is the last increment's output, and for a fixed set of frames it
+/// is a function of those frames and the boundary data alone. A tolerance that
+/// decides where the last increment stops is therefore *in* the answer, and it
+/// was: with the residual deciding, a one-increment run met the threshold after
+/// a single frame update while a nine-increment run had had several, and the two
+/// stopped on different frames. Earlier increments are a continuation path whose
+/// only product is the state the next one opens at, so a tolerance is the right
+/// instrument there — see the stopping rule in the body for what running them to
+/// settled frames costs and why.
 ///
 /// The threshold is built from `r_ref` and not from "the residual this
 /// increment started at", because the latter makes the answer depend on the
 /// increment count: a nine-increment run starts each solve from a ninth of the
-/// boundary motion, so its threshold is about a ninth of a one-increment run's
-/// and it stops somewhere else. Incremental application is a path to the
-/// answer, not part of it, so the threshold must not know how many increments
-/// there are.
+/// boundary motion, so its threshold is about a ninth of a one-increment run's.
+/// Incremental application is a path to the answer, not part of it, so the
+/// threshold must not know how many increments there are.
 ///
 /// The residual is measured as the largest entry, not as `√(rᵀr)`; see
-/// [`max_abs`] for the measurement that forced that.
+/// `max_abs` (private) for the measurement that forced that.
+///
+/// `newton_tolerance` is also asked once at the very end, on the answer, so that
+/// it can say whether what the frames settled on satisfies equilibrium without
+/// being able to say *where* they settle.
 ///
 /// # ⚠️ What still depends on the path
 ///
 /// The displacement is a function of the frames alone, so the question is
 /// whether two runs stop on the same frames, and **they do not stop on exactly
-/// the same frames**. Measured on a 4 mm cube under a 36.87° boundary rotation,
-/// against the two-increment run:
+/// the same frames**. Measured on the 4 mm cube of
+/// `tests/analytic_corotational.rs`, as the worst nodal difference in units in
+/// the last place over every pair of the increment counts 1, 2, 3, 4, 6, 9, 12:
 ///
-/// | increments | worst nodal difference |
-/// |---|---|
-/// | 1 | 1.9e-9 mm |
-/// | 4 | 1.6e-14 mm |
-/// | 9 | 8.9e-15 mm |
+/// | boundary rotation | residual deciding | frames deciding |
+/// |---|---|---|
+/// | 1 mrad | 2.0e6 | **2** |
+/// | 11.5° | 8.6e6 | **3** |
+/// | 36.87° | 3.5e10 | **4** |
+/// | 68.8° | 8.4e10 | **5** |
+/// | 90° | 1.6e10 | **5** |
+/// | 126° | 3.3e10 | **4** |
 ///
-/// The one-increment run is the outlier because it meets the residual
-/// threshold after a single frame update, while the others have had several.
-/// Running every case until the frames settle instead closes that to **three
-/// units in the last place, 1.6e-19 mm** — but it costs 45 iterations over four
-/// increments where the residual rule costs 11, and on a 90° rotation it
-/// exhausts a 32-iteration budget. There is no setting of this solver that
-/// reaches bit-identical displacements across increment counts: the frame
-/// iteration converges quadratically to a spread of five to eight units in the
-/// last place and then wanders inside it indefinitely, so an exact fixed point
-/// of the frame map does not exist to be found.
+/// One unit in the last place is 5.4e-20 mm, so the right-hand column is a
+/// spread of about 2.7e-19 mm. It is not zero and it is not reachable: the frame
+/// iteration converges to a spread of a few units in the last place and then
+/// wanders inside it indefinitely, so an exact fixed point of the frame map does
+/// not exist to be found. `the_answer_does_not_depend_on_the_increment_count` in
+/// that file asks for bit-identical displacements and is ignored for exactly
+/// that reason; its companion
+/// `the_increment_spread_stays_at_the_arithmetic_floor` is not ignored and pins
+/// the right-hand column.
 ///
 /// # Determinism
 ///
@@ -1927,6 +1944,7 @@ pub fn solve_corotational(
     let mut effective_relative_tolerance = Fix128::ZERO;
 
     for increment in 1..=config.increments {
+        let final_increment = increment == config.increments;
         // Predict the whole field, not only the boundary.
         //
         // The prediction is only ever used to pick the *frames* for the first
@@ -2015,24 +2033,49 @@ pub fn solve_corotational(
                 Some(error) if step > 0 => return Err(error),
                 Some(_) => {}
             }
-            corotational_residual(
-                &elements,
-                &rotations,
-                &u,
-                &f_ext,
-                &is_free,
-                (lambda, mu),
-                &mut residual,
-            );
-            let residual_reach = max_abs(&residual);
-            if step > 0 && residual_reach <= newton_target {
-                break;
-            }
-            if step >= config.newton_iterations {
-                return Err(FemError::NotConverged {
-                    iterations: step,
-                    relative_residual: relative(residual_reach, newton_target),
-                });
+            // ⚠️ **The residual is not consulted on the last increment.**
+            //
+            // The answer is the last increment's output, and it is a function of
+            // that increment's frames and boundary data alone. Letting a
+            // *tolerance* decide where the last increment stops therefore puts
+            // the tolerance into the answer: a one-increment run meets the
+            // threshold after a single frame update where a nine-increment run
+            // has had several, and the two stop on different frames. Measured on
+            // the 4 mm cube of `tests/analytic_corotational.rs` under a 36.87°
+            // boundary rotation, the six pairs of one, two, four and nine
+            // increments differed by 1.3e5 to 3.5e10 units in the last place with
+            // the residual deciding, and by 3 to 4 with only the frames deciding.
+            //
+            // Earlier increments keep the residual rule, and that is not a
+            // half-measure: they are a continuation path whose only product is
+            // the state the next increment opens at. Running them to settled
+            // frames buys nothing and costs a great deal, because the states they
+            // visit are not near-rigid. Applying a 90° rotation in four
+            // increments prescribes `½(R − I)x` at the halfway point, whose
+            // deformation gradient `½(I + R)` is a 45° rotation carrying a 29%
+            // compression — far outside the small strain the co-rotational model
+            // is linear in, and the frame iteration crawls there: the same cube
+            // took 1165 steps on that one increment against 3 on the last one.
+            if !final_increment || step >= config.newton_iterations {
+                corotational_residual(
+                    &elements,
+                    &rotations,
+                    &u,
+                    &f_ext,
+                    &is_free,
+                    (lambda, mu),
+                    &mut residual,
+                );
+                let residual_reach = max_abs(&residual);
+                if !final_increment && step > 0 && residual_reach <= newton_target {
+                    break;
+                }
+                if step >= config.newton_iterations {
+                    return Err(FemError::NotConverged {
+                        iterations: step,
+                        relative_residual: relative(residual_reach, newton_target),
+                    });
+                }
             }
 
             // Solve for the displacement itself, **not** for a correction to it.
