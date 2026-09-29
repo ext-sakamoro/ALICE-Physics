@@ -13,6 +13,49 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added — 線形弾性 FEM (tet P1) `linear_elastic_fem`
+
+四面体メッシュ上で `K u = f` を解き、要素ごとの Cauchy 応力テンソルと von Mises
+応力を返します。単位は **mm / N / MPa** で `structural_solver` と統一、演算は
+`Fix128` の加減乗除と sqrt のみ (超越関数なし) なので異なる target で bit 一致
+します。
+
+```rust
+let mesh = sdf_fem_mesh::generate_marching_tets(&sdf, min, max, cell);
+let solution = linear_elastic_fem::solve(&mesh, &material, &boundary, &config)?;
+let peak = solution.max_von_mises_mpa();
+```
+
+- **`feature = "std"` 必須** — `sdf_fem_mesh` が頂点 intern に `HashMap` を使い、
+  `alloc` はこれを提供しないため、`no_std` では入力の型が存在しません。
+- **応力解析には `generate_marching_tets` を使ってください。** `generate` は 8 隅
+  すべてが内部の cube だけを残すので境界が階段状になり、その凹角 (内角 `3π/2`)
+  が弾性の応力特異点を人工的に作ります。単位球 / cell 0.1875 では解析体積の 60 %
+  しか再現しません (marching tets は 98 %)。
+- 検証は `tests/analytic_linear_elastic_fem.rs` (12 本、実装より先に red を実測)
+  と `tests/analytic_fem_convergence.rs` (`#[ignore]`、release — 片持ち梁 4 段細分
+  で次数 1.395 / Richardson 極限が目標の 0.22 % 以内)。
+
+### Added — CG solver の停滞検出と実効許容差の報告
+
+- **`FemError::Stagnated`** を `NotConverged` (予算切れ) と別 variant で追加。
+  改善が止まったのか予算が足りないのかで利用者の次の行動が逆になるため、
+  同じ error に畳んでいません。達成残差と打ち切り反復数を返します。
+  停滞窓は反復数に比例させます (`max(min_window, fraction × これまでの反復数)`)
+  — 254 反復で十分な固定窓は 20,000 反復では早すぎるためです。
+- **`FemSolution::effective_relative_tolerance`** — 相対残差には床があり、
+  `r·r` が `2⁻⁶⁴` の整数倍なので `‖r‖` は `√k · 2⁻³²` に量子化されます。到達
+  可能な最小の相対残差は `2⁻³² / ‖b‖` で、同じ総荷重を細かいメッシュに配ると
+  `‖b‖` が縮むため **床はメッシュを細かくするほど上がります** (実測 72 DOF で
+  1.10e-10 → 9,963 DOF で 4.71e-10)。solver は目標を `max(tol · ‖b‖, floor)` に
+  clamp し、**黙って緩める代わりに実際に課した許容差を返します**。許容差が届く
+  粗いメッシュでは従来どおりの値が効きます。
+- **Jacobi 前処理を選択可能にしました (既定は `None`)。** 対角前処理が直せるのは
+  対角に由来する悪条件 (材料の混在 / 要素寸法の大きな差 / 単位系の歪み) だけで、
+  形状由来の悪条件 (細長い梁 / 薄い殻) では対角がほぼ一様なため直す対象を持たず
+  演算だけ増えます。実測: 細長い片持ち梁 9,963 DOF で、前処理なしに対し 35 倍の
+  反復で 2.4 倍悪い残差にしか届きませんでした。
+
 ### Changed — `sdf_fem_mesh` の出力が変わりました (決定論 hash を持つ下流に影響)
 
 `generate` / `generate_marching_tets` を**適合 (conforming) mesh** を返すように
