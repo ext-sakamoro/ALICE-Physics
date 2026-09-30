@@ -181,14 +181,19 @@
 //! while moving `x_1` by `2.3e-3`, whereas `dt = 1/8` leaves the range where
 //! the time discretisation is converging and was rejected.
 //!
-//! ⚠️ **The gap is dominated by resolution and the remainder is unknown.**
-//! Refinement moves both quantities toward the reference (`x_1 = 4.3944` at
-//! `ny = 8`, `>= 4.7220` at `ny = 16`, `>= 5.3032` at `ny = 32`, and the upper
-//! bubble appears at `ny = 16`), but the finer two are lower bounds that never
-//! settled in time, so **no convergence order can be read off them** and
-//! nothing here shows whether a residual survives refinement. Saying the
-//! literature gap is "discretisation" would be claiming more than was
-//! measured.
+//! ⚠️ **This paragraph used to read "the gap is dominated by resolution and
+//! the remainder is unknown", and the attribution was wrong.** Under
+//! `SemiLagrangian` refinement does move both quantities toward the reference
+//! (`x_1 = 4.3944` at `ny = 8`, `>= 4.7220` at `ny = 16`, `>= 5.3032` at
+//! `ny = 32`, and the upper bubble appears at `ny = 16`), and the finer two
+//! remain lower bounds that never settled in time, so **no convergence order
+//! can be read off them**. What was wrong is reading that sweep as a
+//! resolution sweep: it holds `advection_scheme` at its default, and the
+//! numerical viscosity of that scheme is itself `O(dx^2)`, so **one axis was
+//! moving two causes at once**. At the same `ny = 8`, `MacCormack` reads
+//! `7.2459` and `Bfecc` `7.2736` — past `6.10` on the other side. The per-axis
+//! table, what it does not cover, and the three hypotheses it rules out are in
+//! the doc comment of `the_reattachment_length_matches_gartling`.
 //!
 //! ## The upper wall reads zero, and why that is not self-certifying
 //!
@@ -1836,20 +1841,102 @@ fn the_upper_wall_readout_finds_the_bubble_of_the_reflected_step() {
 ///
 /// # What is known about the gap
 ///
-/// It is **dominated by resolution**, and how much of it survives refinement
-/// is undetermined. Measured (`L = 16`, `t = 256`, in the module header):
-/// `x_1 = 4.3944` at `ny = 8`, `>= 4.7220` at `ny = 16`, `>= 5.3032` at
-/// `ny = 32` — moving toward `6.10`, and the upper-wall bubble appears at
-/// `ny = 16` and lengthens at `ny = 32`. ⚠️ **The finer two are lower bounds
-/// and no convergence order can be read off them**, because neither had
-/// settled in time within the step budget that was affordable; that is a
-/// different situation from "the order is wrong", and conflating the two would
-/// claim the residual is not discretisation when nothing here shows that.
-/// So the honest statement is: refinement moves both quantities the right way,
-/// and whether `ny = 8` could reach `6.10` under a better wall treatment or a
-/// higher-order advection — rather than only under refinement — is not known.
+/// ⚠️ **This section used to attribute the gap to resolution, and that was
+/// wrong.** Its previous opening was "it is **dominated by resolution**, and
+/// how much of it survives refinement is undetermined", resting on the `ny`
+/// sweep in the module header. The observation was sound; the attribution was
+/// not, because that sweep **holds `advection_scheme` at its default
+/// `SemiLagrangian` and varies only `dx`** — and the numerical viscosity of
+/// linear-interpolation semi-Lagrangian advection is itself `O(dx^2)`:
+///
+/// ```text
+///   nu_num ~ dx^2 C (1 - C) / (2 dt) = 2.3e-2    against    nu = 1.25e-3
+/// ```
+///
+/// with `C = 1.5 (1/16) / (1/8) = 0.75` on this scene. ⚠️ **One axis was
+/// therefore moving two causes at once and could not separate them.** A factor
+/// of 19 between `nu_num` and `nu` puts the default `ny = 8` configuration at
+/// an effective Reynolds number in the forties rather than 800.
+///
+/// ## The orthogonal sweep, one axis at a time
+///
+/// ⚠️ **Measured at `c617e30`, release** — the parent of the commit that
+/// changed the pressure solver's slab decomposition, so these are pre-change
+/// figures. Each row varies **one** setting and states what is held; the
+/// tolerances to compare against are this test's own, `dx` for `x_1` and
+/// `2 dx` for `L_u`.
+///
+/// | axis | held fixed | from -> to | `x_1` | `L_u` |
+/// |---|---|---|---|---|
+/// | — | — | Gartling | **6.10** | **5.63** |
+/// | `advection_scheme` | `ny = 8`, `L = 12`, `dt = 1/16`, `t = 256`, 30 sweeps | `SemiLagrangian` -> `MacCormack` | 4.3921 -> **7.2459** | none -> none |
+/// | `advection_scheme` | same | `SemiLagrangian` -> `Bfecc` | 4.3921 -> 7.2736 | none -> none |
+/// | `t` (within one run) | `MacCormack`, `ny = 8`, `L = 20`, 60 sweeps | `256 -> 512` | 7.2455 -> 7.2456 | none -> none |
+/// | `t` (within one run) | `MacCormack`, `ny = 16`, `L = 20`, 120 sweeps | `256 -> 512` | 6.1651 -> **6.2805** | — |
+/// | sweeps | `MacCormack`, `ny = 16`, `L = 12`, `t = 256` | `30 -> 120` | 6.1752 -> 6.1649 | 4.539 -> 4.3585 |
+/// | `L` | `MacCormack`, `ny = 16`, `t = 256`, 30 sweeps | `12 -> 20` | 6.1752 -> 6.1672 | 4.539 -> 4.3588 |
+/// | `ny` | `MacCormack`, `L = 20`, `t = 512` | `8 -> 16` | 7.2456 -> 6.2805 | none -> 4.2358 |
+///
+/// The sweeps row is also the mass-conservation row: the worst flux imbalance
+/// goes `5.0e-3 -> 2.9e-6` across it, so **30 sweeps does not converge the
+/// projection on `192 x 16`** and the `4.539` in that column is a figure taken
+/// off an under-converged solve.
+///
+/// ⚠️ **The `ny` row is the one comparison that is not single-axis**: a finer
+/// grid needs a smaller `dt` (Courant) and more sweeps, so it carries both.
+/// Those two are bounded by their own rows at `0.010` and `0.008`, two orders
+/// below the `0.97` the row shows, so the direction is unambiguous even though
+/// the row is not clean.
+///
+/// ## Three things a reader would otherwise try first
+///
+/// 1. ⚠️ **Running longer moves `x_1` away from `6.10`, and it has not
+///    stopped.** At `ny = 16` the value is `6.1651` at `t = 256` and `6.2805`
+///    at `t = 512`, still climbing — so the `6.16` that looks nearly in
+///    tolerance is **a transient passing through**, not an answer. `ny = 8`
+///    does settle (`7.2455 -> 7.2456`). The same asymmetry is recorded for
+///    `SemiLagrangian` on
+///    [`reattachment_lengthens_under_grid_refinement`], where `ny = 16` needs
+///    `t = 464` to go bit-stable.
+/// 2. ⚠️ **Giving advection a no-slip wall treatment is not the lever**, even
+///    though this file previously asked whether it might be. Measured with the
+///    ghost `2 u_wall - u_in` in the y direction (a throwaway branch, not
+///    landed; `MacGrid::u_wall_across_y` makes it implementable inside
+///    `cfd_solver` alone): `SemiLagrangian` goes `4.3921 -> 2.0789` but
+///    `MacCormack` only `7.2459 -> 7.0946`. ⚠️ **How much the missing wall
+///    treatment matters is itself a function of the scheme's order** — it is a
+///    factor of two under first order and 2 % under second — and neither
+///    direction approaches `6.10`.
+/// 3. ⚠️ **Lengthening the channel shortens the upper bubble rather than
+///    lengthening it.** `x_3 = 10.48` sits at 87 % of `L = 12`, which invites
+///    the guess that the outflow is truncating it; on the clean `L` row above,
+///    `12 -> 20` moves `L_u` by `-0.180`, away from `5.63`. ⚠️ **An earlier
+///    reading of these same runs put that figure at `+0.0003` by comparing
+///    across two axes at once** (`L = 12` at 120 sweeps against `L = 20` at
+///    30), where the sweeps effect of `-0.1805` and the length effect of
+///    `-0.1802` almost cancel. Two axes moving a quantity by the same amount
+///    is exactly the shape that makes a confounded pair look like a null
+///    result.
+///
+/// ## What is not measured
+///
+/// - **`ny = 32` and finer.** The `ny` row extrapolates to roughly `+0.03` at
+///   `ny = 32`, which is the `dx = 1/32` tolerance itself — i.e. the boundary,
+///   with no margin either way. ⚠️ **`L_u` has no such extrapolation**: it is
+///   absent at `ny = 8` and `4.24` at `ny = 16` against `5.63`, so nothing here
+///   says it arrives by `ny = 32`. Cost is why it is unmeasured: the `t = 512`
+///   run at `ny = 16` takes `1078 s` in release, and `ny = 32` multiplies that
+///   by four for cells, two for the Courant-halved `dt`, and again for the
+///   longer settling time and larger sweep count — `2.4` to `9.5` hours for one
+///   point, against the `timeout-minutes: 180` on the `ignored-tests` job that
+///   would have to run it.
+/// - **The time at which `ny >= 16` settles under `MacCormack`.** Only that it
+///   has not by `t = 512`. The same quantity is unknown for `SemiLagrangian` at
+///   `ny = 32` and is recorded as unknown on the refinement sweep.
+/// - **Whether the pressure solver change in this commit's ancestry moves any
+///   of the above.** Every figure here predates it.
 #[test]
-#[ignore = "src gap: x_1 = 4.3921 against Gartling's 6.10 (72.0 %, short by 13.7 cells) and no upper-wall bubble at all; the gap is dominated by resolution and the remainder is undetermined. Distinct from the runtime ignore on its twin: this one fails, and costs the same to run"]
+#[ignore = "src gap: x_1 = 4.3921 against Gartling's 6.10 (72.0 %, short by 13.7 cells) and no upper-wall bubble at all. This string previously attributed the gap to resolution; an orthogonal sweep over {advection_scheme, ny, t, sweep count, L} says otherwise, because at the same ny = 8 the MacCormack scheme reads 7.2459 and BFECC 7.2736, both past 6.10 on the other side. The best measured configuration is x_1 = 6.2805 and L_u = 4.2358 against 5.63, still moving away from 6.10 at t = 512; ny = 32 is unmeasured at 2.4 to 9.5 hours per point. See the doc comment for the per-axis table. Distinct from the runtime ignore on its twin: this one fails, and costs the same to run"]
 fn the_reattachment_length_matches_gartling() {
     let dx = 1.0 / (2 * LIT_S_CELLS) as f64;
     let m = measure_gartling_re_800();
