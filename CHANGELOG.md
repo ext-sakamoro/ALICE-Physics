@@ -90,6 +90,28 @@ byte が無い」不変条件の対象に含める)、拒否 test に **v1 blob 
 
 ⚠️ この性質が失われたら blob に `prev` (1 body あたり 112 byte) を足す必要があるので、
 **不変条件として pin** してある。対照実験を先に置いたことで無駄な format 拡張を回避できた。
+### Added — SDF character の up 軸と押し出し上限 (`sdf_character`)
+
+`SdfCharacter` の接地判定が `+Y` 固定だったため、up が位置ごとに変わる球面世界では地面に
+立っていても `is_grounded` が `false` を返していました `up: [f32; 3]` を追加し、probe を
+`-up` 方向に取って法線との内積で判定します
+
+- `ground_contact` を新設し、probe 点の距離 / 法線 / up との内積を `GroundContact` で返します
+  `is_grounded` はその内積を `ground_up_threshold` と比べるだけになりました
+- `up` は使用時に正規化します 0 長 / 非有限の軸は `+Y` に落とします (probe 座標が NaN になると
+  以降の比較が全て false になり、接地を静かに失うため)
+- `max_push` を追加し、1 反復の押し出し量に上限を置けるようにしました 既定は `f32::INFINITY`
+  (上限なし) なので厳密距離場の算術は 1 bit も変わりません (`golden_sdf_soft_family` 不変)
+- ⚠️ **`MoveOutcome::converged` は貫通していないことを保証しません** `|∇f| = L > 1` の場
+  (gyroid 壁など) は距離が最大 L 倍過大に出るので、押し出しが自由空間を飛び越えて隣の sheet の
+  内部に入ります 周期 sheet 場での実測では、上限なしだと iteration 5 で `converged = true` に
+  なりますが位置は開始点から 2.5 周期先で、solid sheet 3 枚を貫通した後です `max_push` を
+  自由空間の幅より小さく取ると隣接 pocket に留まります
+- ⚠️ **pub field の追加なので、`SdfCharacter` を struct literal で構築している下流は影響を
+  受けます** repo 内の構築は `new` / `Default` 経由のみ (実測)
+- oracle 15 本 (`tests/analytic_sdf_character_up_axis.rs`): 半径 300 の球面を整数格子 124 方向で
+  掃く / 自由帯 `|u| >= t + radius/L` の閉形式突合 / どの pocket で止まるかの突合 破壊試験 5 種
+  (clamp 削除 / up 無視 / 正規化削除 / fallback 削除 / 判定反転) で全て red を確認済
 
 ### Changed — `serialize_state` に magic / version と sleep 状態を入れる (format v1、WM-08)
 
