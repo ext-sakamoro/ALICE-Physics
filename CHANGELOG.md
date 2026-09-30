@@ -13,6 +13,43 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Changed — `serialize_state` に magic / version と sleep 状態を入れる (format v1、WM-08)
+
+⚠️ **blob format が変わります** 旧 blob は magic 不一致で `deserialize_state` が `false` を返して
+**明示的に拒否**します (検査しないと旧 blob の先頭 4 byte を magic と読んで誤解釈するため)。
+
+| 範囲 | 内容 |
+|---|---|
+| `[0..4)` | magic `b"APHY"` (`PhysicsWorld::STATE_MAGIC`) |
+| `[4..6)` | version u16 = 1 (`PhysicsWorld::STATE_VERSION`) |
+| `[6..8)` | reserved u16 = 0 |
+| `[8..12)` | body 数 u32 |
+| `[12..)` | body ごと 208 byte (position 48 + velocity 48 + rotation 64 + angular_velocity 48) |
+| 続き | body ごと 5 byte (`SleepState` u8 + `idle_frames` u32) |
+
+**なぜ sleep を入れたか**: `deserialize_state` 末尾の `IslandManager::new` が sleep 状態を
+既定に戻していたため、**巻き戻した先で眠るタイミングがずれて軌道が割れていました**。
+`tests/wm08_state_coverage.rs` を追加 (3 本) して実装前に red を実測しています。
+
+⚠️ **対照実験を先に green にしてから本命を書きました** — 既定重力のままだと body が加速し続けて
+`idle_frames` が 1 度も溜まらず、被覆が無いのに `rollback_then_continue` が green になります
+(scene 依存の偶然)。重力ゼロ + 等速ドリフトにすると眠った瞬間に位置が凍るので軌道差に出ます。
+
+⚠️ **reserved も検査します** — 検査しないと blob 内に silent に無視される byte が残り、
+「1 byte でも壊れたらどれかの field に反映される」という既存の不変条件に穴が空きます。
+
+既存 test 4 件を新 layout に追従させ、うち 2 件は**強化**しました:
+`deserialize_state_every_single_byte_flip_changes_some_field` を header / body / sleep の
+3 領域に分割し (header を壊したら**拒否される**ことを追加)、
+`deserialize_state_rejects_short_or_mismatched_input` に「sleep 部が 1 byte 欠けても拒否」と
+「旧 format の blob は magic 不一致で拒否」を追加。
+
+検証: lib 1763 + integration 全 suite green (回帰 0)。**破壊試験**として sleep 復元を削ると
+`wm08_state_coverage` の本命 2 本が red になり、戻すと green になることを実測。
+
+✅ **副産物**: `SimulationChecksum` は blob 全 byte から導出する (B-13) ので、
+**checksum 側の変更 0 行で sleep も被覆に入りました**。
+
 ### Changed — `SimulationChecksum` を `serialize_state()` の blob から導出 (被覆の単一源化)
 
 ⚠️ **checksum の値が変わります** 同一 version 同士の比較にのみ使ってください (lockstep の

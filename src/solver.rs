@@ -25,7 +25,7 @@ use crate::force::{apply_force_fields, ForceFieldInstance};
 use crate::joint::{solve_joints, Joint};
 use crate::math::{select_vec3, Fix128, QuatFix, Vec3Fix};
 use crate::sdf_collider::SdfCollider;
-use crate::sleeping::{IslandManager, SleepConfig};
+use crate::sleeping::{IslandManager, SleepConfig, SleepData, SleepState};
 
 /// Minimum effective inverse-mass sum below which constraint solving is skipped.
 /// Prevents division explosion when two near-static bodies are in contact.
@@ -3125,15 +3125,57 @@ impl PhysicsWorld {
         self.bodies.get_mut(idx)
     }
 
+    /// [`Self::serialize_state`] blob の magic
+    ///
+    /// ⚠️ 旧 format は先頭が body 数だったので、magic を検査しないと
+    /// **新実装が旧 blob を誤って解釈する**
+    pub const STATE_MAGIC: [u8; 4] = *b"APHY";
+
+    /// [`Self::serialize_state`] blob の format version
+    ///
+    /// v1 = header 12 byte + body ごと 208 byte + body ごと sleep 5 byte
+    /// 被覆を足す時はここを上げ、[`Self::deserialize_state`] で分岐する
+    /// (不一致を silent に読み替えない)
+    pub const STATE_VERSION: u16 = 1;
+
     /// Serialize world state (for rollback netcode).
     ///
-    /// Saves per-body: position, velocity, rotation, angular velocity.
-    /// Does NOT save constraints, joints, force fields, collision radii,
-    /// or filters — in rollback netcode these are derived from game state
-    /// and re-created each frame.
+    /// # 被覆 (v1、2026-09-30)
+    ///
+    /// | 範囲 | 内容 |
+    /// |---|---|
+    /// | `[0..4)` | magic [`Self::STATE_MAGIC`] (`b"APHY"`) |
+    /// | `[4..6)` | version u16 = [`Self::STATE_VERSION`] |
+    /// | `[6..8)` | reserved u16 = 0 (将来の flag 用、8 byte 境界揃え) |
+    /// | `[8..12)` | body 数 u32 |
+    /// | `[12..)` | body ごとに 208 byte = position 48 + velocity 48 + rotation 64 + angular_velocity 48 |
+    /// | 続き | body ごとに 5 byte = [`SleepState`] u8 + `idle_frames` u32 |
+    ///
+    /// ⚠️ **`SleepState` + `idle_frames` を v1 で被覆に入れた** (WM-08)
+    /// 旧 format は body の運動状態だけを持ち、`deserialize_state` 末尾の
+    /// `IslandManager::new` が sleep 状態を 0 に戻していたため、
+    /// **巻き戻した先で眠るタイミングがずれて軌道が割れた**
+    /// (`tests/wm08_state_coverage.rs` が対照実験付きで red を実測してから実装)
+    ///
+    /// ⚠️ **magic と version を入れた理由**: 旧 blob は先頭が body 数なので、
+    /// 検査しないと**新実装が旧 blob を誤って解釈する** magic 不一致 /
+    /// version 不一致は `deserialize_state` が `false` を返して明示的に拒否する
+    ///
+    /// 依然として保存しないもの: constraints / joints / force fields /
+    /// collision radii / filters / materials (rollback netcode では game state
+    /// から毎 frame 再構築される前提)
+    ///
+    /// ⚠️ [`crate::netcode::SimulationChecksum`] は **本 blob の全 byte から
+    /// 導出**される (被覆の単一源化、B-13) ので、ここに state を足すと
+    /// checksum も自動で追従する
     #[must_use]
     pub fn serialize_state(&self) -> Vec<u8> {
         let mut data = Vec::new();
+
+        // Header: magic + version + reserved
+        data.extend_from_slice(&Self::STATE_MAGIC);
+        data.extend_from_slice(&Self::STATE_VERSION.to_le_bytes());
+        data.extend_from_slice(&0u16.to_le_bytes());
 
         // Body count
         let count = self.bodies.len() as u32;
@@ -3176,6 +3218,25 @@ impl PhysicsWorld {
             data.extend_from_slice(&body.angular_velocity.z.lo.to_le_bytes());
         }
 
+        // Sleep 状態 (body ごとに 5 byte、WM-08)
+        //
+        // ⚠️ `sleep_data` は body 数に合わせて resize されている前提だが、
+        // 短い場合は既定 (Awake / 0) で埋める — blob の長さを body 数だけで
+        // 決められるようにして、読み側の長さ検査を単純に保つ
+        for i in 0..self.bodies.len() {
+            let sd = self
+                .islands
+                .sleep_data
+                .get(i)
+                .copied()
+                .unwrap_or_else(SleepData::new);
+            data.push(match sd.state {
+                SleepState::Awake => 0,
+                SleepState::Sleeping => 1,
+            });
+            data.extend_from_slice(&sd.idle_frames.to_le_bytes());
+        }
+
         data
     }
 
@@ -3185,18 +3246,40 @@ impl PhysicsWorld {
     /// filters, materials, island manager) are resized to match the body
     /// count, preserving existing entries and zero-filling new ones.
     pub fn deserialize_state(&mut self, data: &[u8]) -> bool {
-        if data.len() < 4 {
+        // Header 12 byte: magic 4 + version 2 + reserved 2 + count 4
+        if data.len() < 12 {
+            return false;
+        }
+        // ⚠️ magic / version を検査しないと **旧 blob (先頭が body 数) を
+        // 新 format として誤って解釈する** 不一致は明示的に拒否する
+        if data[0..4] != Self::STATE_MAGIC {
+            return false;
+        }
+        if u16::from_le_bytes([data[4], data[5]]) != Self::STATE_VERSION {
+            return false;
+        }
+        // ⚠️ reserved も検査する — 検査しないと **blob の中に silent に
+        // 無視される byte が残り**、「1 byte でも壊れたらどれかの field に
+        // 反映される」という不変条件に穴が空く (将来 flag に使う時は
+        // `STATE_VERSION` を上げて分岐する)
+        if u16::from_le_bytes([data[6], data[7]]) != 0 {
             return false;
         }
 
-        let count = u32::from_le_bytes([data[0], data[1], data[2], data[3]]) as usize;
+        let count = u32::from_le_bytes([data[8], data[9], data[10], data[11]]) as usize;
 
         if count != self.bodies.len() {
             return false;
         }
 
+        // 長さ検査は body 数から一意に決まる (header + 運動状態 + sleep)
+        let expected = 12 + count * 208 + count * 5;
+        if data.len() < expected {
+            return false;
+        }
+
         // Per-body: position(48) + velocity(48) + rotation(64) + angular_velocity(48) = 208 bytes
-        let mut offset = 4;
+        let mut offset = 12;
         for body in &mut self.bodies {
             if offset + 208 > data.len() {
                 return false;
@@ -3261,7 +3344,32 @@ impl PhysicsWorld {
             self.body_materials.push(crate::material::DEFAULT_MATERIAL);
         }
         self.body_materials.truncate(n);
+        // ⚠️ `IslandManager::new` は sleep_data を既定 (Awake / idle_frames 0) に
+        // 戻すので、**この後に blob から復元する** 順序を逆にすると復元が消える
         self.islands = IslandManager::new(n, self.islands.config);
+
+        // Sleep 状態の復元 (WM-08) — body の運動状態を読んだ直後から続く
+        for i in 0..n {
+            let state = match data[offset] {
+                0 => SleepState::Awake,
+                1 => SleepState::Sleeping,
+                // 未知の値は拒否する (silent に Awake へ倒すと被覆の穴が
+                // 「復元できた」ように見える)
+                _ => return false,
+            };
+            offset += 1;
+            let idle_frames = u32::from_le_bytes([
+                data[offset],
+                data[offset + 1],
+                data[offset + 2],
+                data[offset + 3],
+            ]);
+            offset += 4;
+            if let Some(sd) = self.islands.sleep_data.get_mut(i) {
+                sd.state = state;
+                sd.idle_frames = idle_frames;
+            }
+        }
 
         true
     }
@@ -5481,7 +5589,8 @@ mod tests {
     fn deserialize_state_roundtrip_restores_every_field_bit_exact() {
         let src = snapshot_world();
         let bytes = src.serialize_state();
-        assert_eq!(bytes.len(), 4 + 2 * 208);
+        // v1: header 12 + body ごと 208 + body ごと sleep 5
+        assert_eq!(bytes.len(), 12 + 2 * 208 + 2 * 5);
         let mut dst = quiet_world();
         dst.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
         dst.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
@@ -5504,15 +5613,48 @@ mod tests {
     #[test]
     fn deserialize_state_every_single_byte_flip_changes_some_field() {
         // 1 byte でも壊れた snapshot は必ずどれかの field に反映される (silent 無視 / 別 field 混入を検出)
+        //
+        // ⚠️ v1 format は 3 領域に分かれる — **どの領域にも silent に無視される
+        // byte が無い**ことを領域ごとに確かめる
+        //   [0..12)                    header (magic / version / reserved) → **拒否される**
+        //   [12, 12+n*208)             body の運動状態 → 該当 body の該当 field が変わる
+        //   [12+n*208, 12+n*208+n*5)   sleep 状態 → 該当 body の sleep_data が変わる
         let src = snapshot_world();
         let bytes = src.serialize_state();
-        for pos in 4..bytes.len() {
+        let body_end = 12 + 2 * 208;
+
+        // 領域 1: header — 1 byte 壊れたら受け付けない
+        for pos in 0..12 {
+            let mut bad = bytes.clone();
+            bad[pos] ^= 0x01;
+            let mut dst = snapshot_world();
+            assert!(
+                !dst.deserialize_state(&bad),
+                "header byte {pos} を壊しても受け付けている (silent に無視される byte がある)"
+            );
+        }
+
+        // 領域 3: sleep — 1 byte 壊れたら sleep_data が変わる
+        for pos in body_end..bytes.len() {
+            let mut bad = bytes.clone();
+            bad[pos] ^= 0x01;
+            let mut dst = snapshot_world();
+            assert!(dst.deserialize_state(&bad), "sleep byte {pos}");
+            let i = (pos - body_end) / 5;
+            assert_ne!(
+                dst.islands.sleep_data[i], src.islands.sleep_data[i],
+                "sleep byte {pos} は body {i} の sleep_data を変えるべき"
+            );
+        }
+
+        // 領域 2: body の運動状態
+        for pos in 12..body_end {
             let mut bad = bytes.clone();
             bad[pos] ^= 0x01;
             let mut dst = snapshot_world();
             assert!(dst.deserialize_state(&bad), "byte {pos}");
-            let body = (pos - 4) / 208;
-            let field = ((pos - 4) % 208) / 48; // 0 pos / 1 vel / 2 rot(64 byte = 2 slot 相当は 128..192) / 3 ang
+            let body = (pos - 12) / 208;
+            let field = ((pos - 12) % 208) / 48; // 0 pos / 1 vel / 2 rot(64 byte = 2 slot 相当は 128..192) / 3 ang
             let changed_body = (0..2)
                 .filter(|&i| {
                     let (s, d) = (&src.bodies[i], &dst.bodies[i]);
@@ -5528,7 +5670,7 @@ mod tests {
                 "byte {pos} must change only body {body}"
             );
             let (s, d) = (&src.bodies[body], &dst.bodies[body]);
-            let off = (pos - 4) % 208;
+            let off = (pos - 12) % 208;
             match off {
                 0..=47 => assert!(
                     s.position != d.position && s.velocity == d.velocity,
@@ -5556,18 +5698,34 @@ mod tests {
         let src = snapshot_world();
         let bytes = src.serialize_state();
         let mut dst = snapshot_world();
-        assert!(!dst.deserialize_state(&bytes[..3])); // header 未満
-        assert!(!dst.deserialize_state(&bytes[..4 + 208 + 100])); // 2 体目が途中で切れる
+        assert!(!dst.deserialize_state(&bytes[..11])); // header 未満 (v1 は 12 byte)
+        assert!(!dst.deserialize_state(&bytes[..12 + 208 + 100])); // 2 体目が途中で切れる
+        assert!(
+            !dst.deserialize_state(&bytes[..bytes.len() - 1]),
+            "sleep 部が 1 byte 欠けても拒否する (長さ検査が body 数から一意に決まる)"
+        );
+        // ⚠️ 旧 format (先頭が body 数、header なし) は magic 不一致で拒否される
+        // 検査しないと **旧 blob の先頭 4 byte を magic と読んで誤解釈する**
+        let mut legacy = 2u32.to_le_bytes().to_vec();
+        legacy.extend_from_slice(&bytes[12..12 + 2 * 208]);
+        assert!(
+            !dst.deserialize_state(&legacy),
+            "旧 format の blob は magic 不一致で拒否されるべき"
+        );
         let mut one_body = quiet_world();
         one_body.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
         assert!(!one_body.deserialize_state(&bytes)); // count 不一致
                                                       // 拒否時は元の状態を保つ (先頭 body だけ書き換わっていない)
         assert_eq!(one_body.bodies[0].position, Vec3Fix::ZERO);
-        // ぴったり 1 body 分 + header なら OK
+        // ぴったり 1 body 分 (header + 運動状態 + sleep) なら OK
         let mut exact = quiet_world();
         exact.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
-        let mut one = 1u32.to_le_bytes().to_vec();
-        one.extend_from_slice(&bytes[4..4 + 208]);
+        let mut one = PhysicsWorld::STATE_MAGIC.to_vec();
+        one.extend_from_slice(&PhysicsWorld::STATE_VERSION.to_le_bytes());
+        one.extend_from_slice(&0u16.to_le_bytes());
+        one.extend_from_slice(&1u32.to_le_bytes());
+        one.extend_from_slice(&bytes[12..12 + 208]);
+        one.extend_from_slice(&bytes[12 + 2 * 208..12 + 2 * 208 + 5]);
         assert!(exact.deserialize_state(&one));
         assert_eq!(exact.bodies[0].position, v3(1, 2, 3));
     }
@@ -6528,7 +6686,8 @@ mod tests {
     fn deserialize_state_accepts_header_only_snapshot_of_empty_world() {
         let src = quiet_world();
         let bytes = src.serialize_state();
-        assert_eq!(bytes.len(), 4);
+        // v1: body 0 体なら header 12 byte だけ
+        assert_eq!(bytes.len(), 12);
         let mut dst = quiet_world();
         assert!(dst.deserialize_state(&bytes));
         assert_eq!(dst.body_count(), 0);
