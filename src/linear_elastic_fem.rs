@@ -583,10 +583,17 @@ impl SolverConfig {
     /// **`fraction` has to be below 1.** At exactly 1 the condition is
     /// `iterations − last ≥ iterations`, which needs `last ≤ 0`; the rule can
     /// then never fire and a hopeless solve runs the whole budget. That is not
-    /// hypothetical — a default of `1` was written here first, and
-    /// `unreachable_tolerance_stagnates_instead_of_burning_the_budget` caught it
-    /// immediately: the same solve went from stopping at 1,034 iterations to
-    /// using all 200,000 and returning `NotConverged`.
+    /// hypothetical — a default of `1` was written here first and was caught on
+    /// the unreachable-tolerance scene immediately: the same solve went from
+    /// stopping at 1,034 iterations to using all 200,000 and returning
+    /// `NotConverged`.
+    ///
+    /// ⚠️ **The test that caught it no longer carries that name.** The scene is
+    /// now `tolerance_below_the_floor_is_clamped_and_reported` in
+    /// `tests/analytic_linear_elastic_fem.rs`, and the rejection above is pinned
+    /// by `config_rejects_a_stagnation_fraction_that_can_never_fire` in
+    /// `coupled_iteration`. Neither of them asserts that the **default**
+    /// `fraction` is below one; see the Backlog.
     ///
     /// # Errors
     ///
