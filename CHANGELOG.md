@@ -29,6 +29,21 @@ were introduced during that release window.
 - ⚠️ 許容値 (`1e-9 mm` / `1e-2 MPa`) は red のため未実測の目標値です 配線時に再実測が必要です
 - 反転条件 (どの変更で `#[ignore]` を外すか) と、半端な配線がどの assert に当たるかを doc に記載
 
+### Added — 多体 ABA の rank-n 更新を有理数の閉形式で pin (`analytic_multibody_dynamics`)
+
+rank-n 更新 `-U D⁻¹ Uᵀ` を測る oracle が「weld の腕と hinge の腕は違う動きをする」という
+定性の `assert_ne!` だけでした 水平に伸ばした二重振子を静止 release する scene で
+絶対角の Lagrange 式から `θ̈₁ = -650/161` / `θ̈₂ = +450/161` を導き、weld 版の複合振子
+`α = -100/51` と対で assert する oracle を追加しました (test のみ、`src/` の変更なし)
+
+- `θ̈₂` が正 (= 外側 link の角加速度が重力と逆向き) が答えの本体なので、符号を独立の
+  assert に置いています 子の慣性を未縮約で親へ渡す solver は weld 側の値に着地します
+- 丸め実測: hinge 版 `ω₁` 4 ulp / `ω₂` 0 ulp / weld 版 各 1 ulp (bound は `2⁻⁴⁰`)
+- 破壊試験 4 変異のうち 3 変異が red、**bias 項 `U D⁻¹ u` の削除は素通り**します
+  `u = τ - Sᵀ p^A` は静止 release の全 scene で恒等的に 0 なので、first-step oracle では
+  原理的に検出できません (捕まえているのは動く chain の運動量保存 oracle のみ) 経緯は
+  test の module doc に記載しています
+
 ### Added — 物理間で場を渡す決定性 channel (`coupled_field`)
 
 連成の唯一の経路が SDF の scalar 距離 (`PhysicsModifier::modify_distance`、全 f32) で、

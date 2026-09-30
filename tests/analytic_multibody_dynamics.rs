@@ -8,8 +8,8 @@
 //! masses on massless rods or as rigid bodies with their own inertia tensors,
 //! nor on the integrator's order. That makes them safe to assert exactly rather
 //! than within a tuned tolerance. The exceptions are the closed-form oracles
-//! 11, 12 and 13, which do read the scene's mass and inertia; each states its
-//! derivation and carries a bound instead of an exact equality.
+//! 11, 12, 13 and 14, which do read the scene's mass and inertia; each states
+//! its derivation and carries a bound instead of an exact equality.
 //!
 //! # Why these
 //!
@@ -50,6 +50,9 @@
 //!     identically zero in every scene whose parent is at rest.
 //! 13. [`anisotropic_inertia_is_carried_into_world_axes`] — the conjugation
 //!     `R I Rᵀ`, which is invisible to every scene whose bodies are spheres.
+//! 14. [`double_pendulum_rank_reduction_matches_its_closed_form`] — oracle 10's
+//!     subject, the rank-`n` reduction `-U D⁻¹ Uᵀ`, against a closed form over
+//!     the rationals rather than a qualitative "these two differ".
 //!
 //! Oracles 2 and 3 are both "nothing moves", so on their own they could be
 //! satisfied by a solver that does nothing. Oracle 1 rules that out: its
@@ -122,8 +125,9 @@
 //!   hinge point accelerates centripetally by an amount fixed by the scene.
 //!   Under the mutation that scene answers exactly zero.
 //! * **Not rotating the inertia tensor into world axes (`R I Rᵀ` → `I`).**
-//!   Every body in oracles 1 to 12 has an isotropic inertia — `RigidBody::new`
-//!   builds `diag(2m/5)` and oracle 8 scales it uniformly — and
+//!   Every body in oracles 1 to 12, and in oracle 14, has an isotropic inertia
+//!   — `RigidBody::new` builds `diag(2m/5)`, oracle 8 scales it uniformly and
+//!   oracle 14 replaces it with `diag(2, 2, 2)` — and
 //!   `R (k·1) Rᵀ = k·1` exactly, so the rotation has nothing to act on. Oracle
 //!   13 gives one body `diag(2, 5, 10)` and turns it by the 120° rotation about
 //!   `(1,1,1)`, whose quaternion `(½,½,½,½)` is exact in `Fix128`; the world
@@ -134,6 +138,38 @@
 //! the general lesson they carry: a term that is *identically* zero across a
 //! whole test set is not thereby verified. A scene has to be built for which it
 //! is the only nonzero thing in the answer.
+//!
+//! Oracle 14 was then written to turn oracle 10's qualitative claim into a
+//! closed form, and four more mutations were run against the whole set. Three
+//! are caught and one is not:
+//!
+//! | mutation | oracles red | oracle 10 | oracle 14 | where the mutant lands |
+//! |---|---|---|---|---|
+//! | `-U D⁻¹ Uᵀ` dropped (`inertia.sub(correction)` → `inertia`) | 9, 14 | **green** | red | `ω₁ = -0.0326797385620915`, exactly the welded `-5/153`; `ω₂` flips to `-5/306` |
+//! | the bias term `U D⁻¹ u` dropped | 9 | green | **green** | — |
+//! | the child's spatial inertia never added to the parent's | 9, 14 | **green** | red | `ω₁ = -0.0757575757575758` |
+//! | the gravity substitution `a₀ := -a_g` dropped | 2, 3, 4, 5, 7, 8, 10, 11, 13, 14 | red | red | everything stops: `ω₁ = 0` |
+//!
+//! Read the oracle 10 column: it is red for one of those four, and *not* for the
+//! rank-`n` deletion, which is the term oracle 10 is about. A qualitative
+//! `assert_ne!` asks whether two scenes differ, so it cannot see a mutation that
+//! leaves them differing while moving both by the wrong amount. That is the
+//! whole reason oracle 14 exists, and the two columns above are the measurement
+//! of it rather than an argument for it.
+//!
+//! The bias term escapes, and for the same structural reason as the two above:
+//! `u = τ - Sᵀ p^A` has `τ = 0` (no motors anywhere in this file), a leaf's
+//! `p^A` is `v ×* (I v)` which vanishes at rest, and gravity never enters `p^A`
+//! because the base-acceleration substitution carries it. So `u` is
+//! *identically* zero in every scene released from rest — which is oracles 11,
+//! 12, 13 and 14, all of them first-step oracles. The only thing that sees the
+//! term is oracle 9, whose chain is already moving. Closing it needs a
+//! double pendulum released with nonzero angular velocity, whose closed form
+//! carries the velocity-product terms this file has so far been able to drop;
+//! that is a new scene rather than a change here, and it is filed in the
+//! backlog rather than fixed. The narrower lesson is that a first-step oracle
+//! released from rest buys its cheap closed form by killing every term
+//! proportional to velocity.
 //!
 //! Nothing in this file touches `src/`.
 
@@ -985,9 +1021,14 @@ fn inboard_link_of_arm(outboard: Joint) -> (Vec3Fix, Vec3Fix) {
 /// So the *inboard* link must move differently in the two cases, even though
 /// nothing about the inboard link itself was changed. A solver that passed each
 /// child's plain rigid inertia up to its parent — no rank update at all — would
-/// give the two arms the same shoulder motion and fail here. That is the case
-/// no other oracle in this file covers, because every other scene that moves
-/// has only one moving link.
+/// give the two arms the same shoulder motion and fail here. Every other scene
+/// in this file that moves has only one moving link, so this is the only place
+/// two moving links meet — but the claim here is only that the two arms differ.
+/// [`double_pendulum_rank_reduction_matches_its_closed_form`] pins the same
+/// reduction quantitatively, and the two are not interchangeable: dropping the
+/// rank update leaves *this* test green, measured. The mutated solver still
+/// gives the two elbows different shoulder motions, so "they differ" still
+/// holds while both numbers are wrong.
 #[test]
 fn outboard_joint_changes_what_the_inboard_link_feels() {
     let welded = inboard_link_of_arm(Joint::Fixed(FixedJoint::new(
@@ -1431,4 +1472,253 @@ fn anisotropic_pendulum(
     let mut solver = FeatherstoneSolver::new();
     solver.solve(&artic, &mut bodies, gravity(), dt());
     bodies[1].angular_velocity
+}
+
+// ---------------------------------------------------------------------------
+// Oracle 14 — the rank-`n` reduction, against a closed form over the rationals
+// ---------------------------------------------------------------------------
+
+/// A planar two-link arm released from rest, horizontal along `+x`, hinged
+/// about world `z` at the origin, with `outboard` as the elbow. Returns the
+/// angular velocities of the upper arm and the forearm after one step.
+///
+/// Both links get an inertia of exactly 2 about every axis, written as the
+/// reciprocal `1/2` rather than left at `RigidBody::new`'s default `2m/5`:
+/// `2/5` is not a dyadic rational, so the default is 2 only up to the rounding
+/// of `from_ratio(2, 5)`, and the closed form below wants it exact.
+fn horizontal_double_pendulum(outboard: Joint) -> (Vec3Fix, Vec3Fix) {
+    let mut bodies = vec![
+        RigidBody::new_static(Vec3Fix::ZERO),
+        RigidBody::new(Vec3Fix::from_int(2, 0, 0), Fix128::from_int(5)),
+        RigidBody::new(Vec3Fix::from_int(6, 0, 0), Fix128::from_int(5)),
+    ];
+    let half = Fix128::from_ratio(1, 2);
+    bodies[1].inv_inertia = Vec3Fix::new(half, half, half);
+    bodies[2].inv_inertia = Vec3Fix::new(half, half, half);
+
+    let mut artic = ArticulatedBody::new(0, /* fixed_base = */ true);
+    let upper = artic.add_link(
+        0,
+        1,
+        // Shoulder at the world origin, hinged about +z.
+        Joint::Hinge(HingeJoint::new(
+            0,
+            1,
+            Vec3Fix::ZERO,
+            Vec3Fix::from_int(-2, 0, 0),
+            Vec3Fix::from_int(0, 0, 1),
+            Vec3Fix::from_int(0, 0, 1),
+        )),
+        Vec3Fix::from_int(2, 0, 0),
+    );
+    // Elbow at (4, 0, 0) = body 1's position plus its local anchor. Only the
+    // parent-side anchor enters the motion subspace; the child-side one is
+    // bookkeeping for `forward_kinematics`, so it is set to the value that
+    // agrees with it in world coordinates rather than being load-bearing here.
+    artic.add_link(upper, 2, outboard, Vec3Fix::from_int(4, 0, 0));
+
+    let mut solver = FeatherstoneSolver::new();
+    solver.solve(&artic, &mut bodies, gravity(), dt());
+    (bodies[1].angular_velocity, bodies[2].angular_velocity)
+}
+
+/// The elbow of the arm in [`horizontal_double_pendulum`], as a hinge about
+/// world `z`.
+fn elbow_hinge() -> Joint {
+    Joint::Hinge(HingeJoint::new(
+        1,
+        2,
+        Vec3Fix::from_int(2, 0, 0),
+        Vec3Fix::from_int(-2, 0, 0),
+        Vec3Fix::from_int(0, 0, 1),
+        Vec3Fix::from_int(0, 0, 1),
+    ))
+}
+
+/// The same elbow, welded.
+fn elbow_weld() -> Joint {
+    Joint::Fixed(FixedJoint::new(
+        1,
+        2,
+        Vec3Fix::from_int(2, 0, 0),
+        Vec3Fix::from_int(-2, 0, 0),
+        QuatFix::IDENTITY,
+    ))
+}
+
+/// The rank-`n` reduction `-U D⁻¹ Uᵀ` matches a closed form over the rationals,
+/// and its sign is the thing that tells it apart from having no reduction at
+/// all: with a free elbow the forearm's angular acceleration comes out
+/// *against* gravity.
+///
+/// # Where the expected values come from
+///
+/// The scene is a planar double pendulum released from rest, so the Lagrangian
+/// route gives the whole answer in two lines. Take `θ₁` and `θ₂` as the two
+/// links' absolute angles from straight down, `c₁` and `c₂` as each link's
+/// hinge-to-centre distance, `L₁` as the shoulder-to-elbow distance, and `I₁`,
+/// `I₂` as the centroidal inertias about `z`. Then
+///
+/// ```text
+///   T = ½(I₁ + m₁c₁² + m₂L₁²) θ̇₁² + ½(I₂ + m₂c₂²) θ̇₂²
+///       + m₂ L₁ c₂ cos(θ₁ - θ₂) θ̇₁ θ̇₂
+///   V = -m₁ g c₁ cos θ₁ - m₂ g (L₁ cos θ₁ + c₂ cos θ₂)
+/// ```
+///
+/// so the mass matrix and the gravity gradient are
+///
+/// ```text
+///   M₁₁ = I₁ + m₁c₁² + m₂L₁²      M₁₂ = M₂₁ = m₂ L₁ c₂ cos(θ₁ - θ₂)
+///   M₂₂ = I₂ + m₂c₂²
+///   G₁  = (m₁c₁ + m₂L₁) g sin θ₁   G₂ = m₂ c₂ g sin θ₂
+/// ```
+///
+/// Released from rest every term quadratic in `θ̇` drops out, leaving
+/// `M θ̈ = -G`, which is a 2×2 solve. Here the arm lies along `+x` so both
+/// angles are exactly a right angle — `sin = 1`, `cos = 0`, so `θ₁ - θ₂ = 0`
+/// and `cos(θ₁ - θ₂) = 1` — and with `m₁ = m₂ = 5`, `I₁ = I₂ = 2`, `c₁ = c₂ = 2`,
+/// `L₁ = 4`, `g = 10`:
+///
+/// ```text
+///   M₁₁ = 2 + 20 + 80 = 102   M₁₂ = 5·4·2 = 40   M₂₂ = 2 + 20 = 22
+///   G₁  = (10 + 20)·10 = 300  G₂  = 10·10 = 100
+///   det = 102·22 - 40² = 2244 - 1600 = 644
+///   θ̈₁ = -(M₂₂G₁ - M₁₂G₂)/det = -(6600 - 4000)/644 = -650/161
+///   θ̈₂ = -(M₁₁G₂ - M₁₂G₁)/det = -(10200 - 12000)/644 = +450/161
+/// ```
+///
+/// After one step of `dt = 1/60`, `ω = θ̈ dt`, so `ω₁ = -65/966` and
+/// `ω₂ = +15/322`. A rotation about `+z` carries `+x` towards `+y`, and
+/// increasing `θ` from a right angle does the same, so `θ̇` is `ω_z` with no
+/// sign flip.
+///
+/// The derivation was checked against the textbook case of two uniform rods of
+/// length `L` (`I = mL²/12`, `c = L/2`, `L₁ = L`) in the same formulae, which
+/// gives `θ̈₁ = -9g/(7L)` and `θ̈₂ = +3g/(7L)`; both come out of the algebra
+/// above.
+///
+/// # Why the sign of `ω₂` is the answer
+///
+/// `θ̈₂` is *positive* while gravity pulls the forearm down. The forearm is not
+/// being lifted by gravity: the shoulder is dropping fast enough that, in the
+/// frame of the falling upper arm, the elbow is thrown the other way. That is
+/// the coupling `M₁₂` doing its work, and on the solver's side it is exactly
+/// the `-U D⁻¹ Uᵀ` reduction plus its bias `U D⁻¹ u`. A solver that passed each
+/// child's unreduced rigid inertia up to its parent has no such coupling and
+/// lands on the welded answer, where both links turn the same way as gravity.
+/// So the sign is asserted on its own line, not just inside the tolerance.
+///
+/// # The welded twin
+///
+/// With the elbow welded the arm is one rigid body on the shoulder hinge, and
+/// the reduction term is identically zero because a zero-degree-of-freedom
+/// joint has no `U` at all. Then `I_hinge α = M` about `z`:
+///
+/// ```text
+///   I_hinge = I₁ + m₁c₁² + I₂ + m₂(L₁ + c₂)² = 2 + 20 + 2 + 180 = 204
+///   M       = -(m₁ c₁ + m₂(L₁ + c₂)) g = -(10 + 30)·10 = -400
+///   α       = -400/204 = -100/51        ω = α dt = -5/153
+/// ```
+///
+/// and both links share that `ω`, being rigidly joined. Asserting the two
+/// scenes together is what makes the pair non-degenerate: the hinged numbers
+/// alone could be met by a solver that gets the magnitudes right for the wrong
+/// reason, and the welded numbers alone are what the *unreduced* solver returns
+/// for both. [`outboard_joint_changes_what_the_inboard_link_feels`] already
+/// asserts that the two scenes differ; this one says by how much.
+///
+/// # Why this one has a tolerance
+///
+/// Same reason as oracle 11. The solver reaches these accelerations through
+/// `D⁻¹ (u - Uᵀ a')` with `D` assembled out of 6×6 spatial inertias about the
+/// world origin, not by the 2×2 solve above, so the two routes to the same real
+/// numbers round differently in their last bits. The bound is the same `2⁻⁴⁰`:
+/// about twenty binary orders above the rounding, and orders below the shift
+/// that a missing reduction, a missing bias or a wrong moment arm would make —
+/// each of those moves `ω₂` by more than `0.04`, which is `2³⁴` times the bound.
+#[test]
+fn double_pendulum_rank_reduction_matches_its_closed_form() {
+    let tolerance = Fix128::from_ratio(1, 1i64 << 40);
+
+    // --- hinged elbow: the reduction is active -----------------------------
+    let (upper, forearm) = horizontal_double_pendulum(elbow_hinge());
+
+    let want_upper = Fix128::from_ratio(-65, 966);
+    let want_forearm = Fix128::from_ratio(15, 322);
+
+    let upper_error = upper.z - want_upper;
+    assert!(
+        upper_error.abs() < tolerance,
+        "the upper arm of a horizontal double pendulum released from rest turns \
+         at theta1ddot = -650/161 rad/s^2, so after one step omega_z must be \
+         {} rad/s; got {}, off by {} against a bound of {}",
+        want_upper.to_f64(),
+        upper.z.to_f64(),
+        upper_error.to_f64(),
+        tolerance.to_f64(),
+    );
+
+    let forearm_error = forearm.z - want_forearm;
+    assert!(
+        forearm_error.abs() < tolerance,
+        "the forearm turns at theta2ddot = +450/161 rad/s^2, so after one step \
+         omega_z must be {} rad/s; got {}, off by {} against a bound of {}",
+        want_forearm.to_f64(),
+        forearm.z.to_f64(),
+        forearm_error.to_f64(),
+        tolerance.to_f64(),
+    );
+
+    // The sign, on its own line: this is what a solver without the rank-`n`
+    // reduction cannot produce, whatever its magnitudes.
+    assert!(
+        forearm.z > Fix128::ZERO,
+        "the forearm's angular acceleration is against gravity, which only the \
+         coupling M12 -- the `-U D^-1 U^T` reduction and its bias -- can \
+         produce; a solver passing unreduced child inertias upward turns it the \
+         same way as gravity, got {}",
+        forearm.z.to_f64(),
+    );
+
+    for (name, spin) in [("upper arm", upper), ("forearm", forearm)] {
+        assert_eq!(
+            spin.x,
+            Fix128::ZERO,
+            "{name}: a hinge about z admits no rotation about x",
+        );
+        assert_eq!(
+            spin.y,
+            Fix128::ZERO,
+            "{name}: a hinge about z admits no rotation about y",
+        );
+    }
+
+    // --- welded elbow: the reduction is identically zero -------------------
+    let (welded_upper, welded_forearm) = horizontal_double_pendulum(elbow_weld());
+
+    let want_welded = Fix128::from_ratio(-5, 153);
+    for (name, spin) in [("upper arm", welded_upper), ("forearm", welded_forearm)] {
+        let error = spin.z - want_welded;
+        assert!(
+            error.abs() < tolerance,
+            "welded, the arm is one rigid body on the shoulder hinge with \
+             I_hinge = 204 and M = -400, so alpha = -100/51 and after one step \
+             {name} omega_z must be {} rad/s; got {}, off by {} against a bound \
+             of {}",
+            want_welded.to_f64(),
+            spin.z.to_f64(),
+            error.to_f64(),
+            tolerance.to_f64(),
+        );
+        assert_eq!(
+            spin.x,
+            Fix128::ZERO,
+            "welded {name}: a hinge about z admits no rotation about x",
+        );
+        assert_eq!(
+            spin.y,
+            Fix128::ZERO,
+            "welded {name}: a hinge about z admits no rotation about y",
+        );
+    }
 }
