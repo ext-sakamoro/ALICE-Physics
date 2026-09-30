@@ -910,3 +910,134 @@ fn step_takes_the_least_penetrating_sample_when_the_run_did_not_converge() {
         "and that sample must differ from the raw final position here"
     );
 }
+
+// ───────────── なぜ 2 つの安全弁に「安全な既定」が無いか ─────────────
+//
+// `max_push` と `min_up_alignment` は、実測で必要と分かった不変条件を opt-in
+// にしたものなので「既定を安全側にすべきでは」という問いが自然に出る
+// ⚠️ **両方とも、既定にすると別の正しい場を壊す** ここはその反例を閉形式で
+// 固定して、既定を動かす変更が red になるようにする
+
+#[test]
+fn capping_the_push_by_default_would_strand_a_deeply_penetrating_character() {
+    // 厳密距離場に深く入った場合、正しい 1 回の押し出しは `radius - d` で、
+    // `d` は任意に深くなりうる `max_push` を capsule の大きさ程度で既定 cap
+    // すると、`max_iterations` 予算内で脱出できなくなる
+    //
+    // 閉形式: 平面 `y` の内側 `y = -5` から出るには `radius + 5 = 5.35` 必要
+    // cap を `radius`(0.35) にすると 1 反復 0.35 なので 8 反復で 2.8 しか進めず、
+    // `-5 → -2.2` で予算切れ (脱出に要る反復数は ceil(5.35/0.35) = 16)
+    let plane = ClosureSdf::new(|_x, y, _z| y, |_x, _y, _z| (0.0, 1.0, 0.0));
+    let deep = [0.0, -5.0, 0.0];
+
+    let unclamped = SdfCharacter::new(deep, CAP_R, 1.8);
+    let out = unclamped.move_and_slide(&plane, [0.0, 0.0, 0.0]);
+    assert!(
+        out.converged && out.iterations == 1,
+        "既定 (INFINITY) は 1 反復で脱出する: converged={} iters={}",
+        out.converged,
+        out.iterations
+    );
+    // 閉形式: `-5 + (radius + 5 + skin)` = `radius + skin`
+    // ⚠️ 初稿は `CAP_R + 5.0 + skin` と書いて外した (開始点が -5 であることを
+    // 足し忘れた) 押し出し量と着地点を混同しない
+    assert!(
+        (out.position[1] - (CAP_R + unclamped.skin_width)).abs() < 1.0e-4,
+        "expected {}, got {}",
+        CAP_R + unclamped.skin_width,
+        out.position[1]
+    );
+
+    let mut capped = SdfCharacter::new(deep, CAP_R, 1.8);
+    capped.max_push = CAP_R;
+    let out = capped.move_and_slide(&plane, [0.0, 0.0, 0.0]);
+    assert!(
+        !out.converged,
+        "cap を既定にすると脱出できない (この test が既定変更の red 化を担う)"
+    );
+    assert_eq!(out.iterations, capped.max_iterations);
+    let reached = -5.0 + CAP_R * (capped.max_iterations as f32);
+    assert!(
+        (out.position[1] - reached).abs() < 1.0e-4,
+        "閉形式 {reached} に届くだけ: {}",
+        out.position[1]
+    );
+}
+
+#[test]
+fn substituting_up_by_default_would_push_a_character_into_a_ceiling() {
+    // `min_up_alignment` は「地面に埋まった geometry の seam で法線が世界の
+    // 中心を向く」場のためのもの ⚠️ **天井の下にいる状態も `n·up ≈ -1`** で、
+    // 法線だけからは区別できない
+    //
+    // 天井 = `y = 0` より上が solid、外向き法線は `-Y` 天井にめり込んだ
+    // character は `-Y` に押し出されるのが正しい `up = +Y` を代入すると
+    // **さらに天井の中へ** 進む
+    //
+    // 閉形式: `f(y) = -y` なので `y = 0.1` で `d = -0.1`、押し出し量は
+    // `radius + 0.1 + skin = 0.4501` 正しい向き (-Y) なら `y = -0.3501`
+    // (天井の外)、`up` 代入なら `y = +0.5501` (天井の中、しかも深い)
+    let ceiling = ClosureSdf::new(|_x, y, _z| -y, |_x, _y, _z| (0.0, -1.0, 0.0));
+    let inside = [0.0, 0.1, 0.0];
+    let push = CAP_R + 0.1 + 1.0e-4;
+
+    let plain = SdfCharacter::new(inside, CAP_R, 1.8);
+    let out = plain.move_and_slide(&ceiling, [0.0, 0.0, 0.0]);
+    assert!(
+        (out.position[1] - (0.1 - push)).abs() < 1.0e-5,
+        "既定は法線方向 (-Y) に逃がす: expected {}, got {}",
+        0.1 - push,
+        out.position[1]
+    );
+    assert!(out.converged, "天井の外に出ている");
+
+    // 1 反復だけ見ると閉形式どおり `+Y` に `push` だけ動く (= 天井の中へ)
+    let mut one_step = SdfCharacter::new(inside, CAP_R, 1.8);
+    one_step.min_up_alignment = -0.2;
+    one_step.max_iterations = 1;
+    let out = one_step.move_and_slide(&ceiling, [0.0, 0.0, 0.0]);
+    assert!(
+        (out.position[1] - (0.1 + push)).abs() < 1.0e-5,
+        "guard を既定にすると +Y に押される: expected {}, got {}",
+        0.1 + push,
+        out.position[1]
+    );
+
+    // ⚠️ **予算いっぱい回すと発散する** 深く入るほど `radius - d` が増えるので
+    // 押し出しが毎反復 大きくなる ⚠️ 初稿は 1 反復分 (0.5501) を期待して
+    // 外した (実測 114.88) 反復の累積を忘れない
+    let mut guarded = SdfCharacter::new(inside, CAP_R, 1.8);
+    guarded.min_up_alignment = -0.2;
+    let out = guarded.move_and_slide(&ceiling, [0.0, 0.0, 0.0]);
+    assert!(!out.converged, "天井の中を昇り続けるので収束しない");
+    assert_eq!(out.iterations, guarded.max_iterations);
+    assert!(
+        out.position[1] > 100.0,
+        "予算 8 反復で発散する (実測 114.88): {}",
+        out.position[1]
+    );
+    assert!(
+        out.position[1] > 0.1,
+        "元より深く入っている: {} > 0.1",
+        out.position[1]
+    );
+}
+
+#[test]
+fn the_resolved_position_helper_is_the_safe_read_of_an_outcome() {
+    // `converged` だけを読む消費側の誤りを 1 呼び出しで潰す
+    // (収束時は `position`、非収束時は `best_position`)
+    let field = periodic_sheets();
+    let mut ch = SdfCharacter::new([0.0, 0.1, 0.0], CAP_R, 1.8);
+    ch.max_iterations = 1;
+    let out = ch.move_and_slide(&field, [0.0, 0.0, 0.0]);
+    assert!(!out.converged);
+    assert_eq!(out.resolved_position(), out.best_position);
+    assert_ne!(out.resolved_position(), out.position);
+
+    let plane = ClosureSdf::new(|_x, y, _z| y, |_x, _y, _z| (0.0, 1.0, 0.0));
+    let ch = SdfCharacter::new([0.0, -0.1, 0.0], CAP_R, 1.8);
+    let out = ch.move_and_slide(&plane, [0.0, 0.0, 0.0]);
+    assert!(out.converged);
+    assert_eq!(out.resolved_position(), out.position);
+}

@@ -12807,6 +12807,8 @@ pub alice_physics::sdf_character::MoveOutcome::best_position: [f32; 3]
 pub alice_physics::sdf_character::MoveOutcome::converged: bool
 pub alice_physics::sdf_character::MoveOutcome::iterations: usize
 pub alice_physics::sdf_character::MoveOutcome::position: [f32; 3]
+impl alice_physics::sdf_character::MoveOutcome
+pub const fn alice_physics::sdf_character::MoveOutcome::resolved_position(&self) -> [f32; 3]
 impl core::clone::Clone for alice_physics::sdf_character::MoveOutcome
 pub fn alice_physics::sdf_character::MoveOutcome::clone(&self) -> Self
 impl core::cmp::PartialEq for alice_physics::sdf_character::MoveOutcome
