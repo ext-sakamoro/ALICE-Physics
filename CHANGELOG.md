@@ -13,6 +13,22 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added — 熱弾性の受け入れ oracle を配線前に固定 (`tests/analytic_thermoelastic.rs`)
+
+`linear_elastic_fem` に固有ひずみ (熱膨張) の項が無く (`thermal` / `temperature` / `eigenstrain`
+の語が 0 件)、`CoupledField` は residual に配線されていません 実装より先に受け入れ基準を
+閉形式で固定するため、oracle 2 本を `#[ignore]` で追加しました (実装変更なし)
+
+- 自由熱膨張: 剛体 6 自由度のみ拘束 ⇒ `u = α ΔT · X` (affine) と 全要素 `σ = 0` を独立に assert
+- 完全拘束: 全境界 `u = 0` ⇒ `u ≡ 0` と `σ = −E α ΔT/(1 − 2ν) · I = −1750/3 MPa`
+  (`E = 3500`, `ν = 7/20`, `α = 1/1000`, `ΔT = 50`) を符号付き成分ごとに assert
+- 閉形式は `−E α ΔT/(1 − 2ν)` と `−(3λ + 2μ) α ΔT` の 2 経路で相互検算し、厳密有理数
+  `−1750/3` との一致も assert します どちらも P1 空間に厳密に乗るため離散化誤差はありません
+- ⚠️ `#[ignore]` を外した時の red を module doc に実測付きで記載しました 差は期待値そのもの
+  (`2e-1 mm = α ΔT · L` / `5.833e2 MPa = 1750/3`) で、解が恒等的に零 = 項が無いことを示します
+- ⚠️ 許容値 (`1e-9 mm` / `1e-2 MPa`) は red のため未実測の目標値です 配線時に再実測が必要です
+- 反転条件 (どの変更で `#[ignore]` を外すか) と、半端な配線がどの assert に当たるかを doc に記載
+
 ### Added — 物理間で場を渡す決定性 channel (`coupled_field`)
 
 連成の唯一の経路が SDF の scalar 距離 (`PhysicsModifier::modify_distance`、全 f32) で、
