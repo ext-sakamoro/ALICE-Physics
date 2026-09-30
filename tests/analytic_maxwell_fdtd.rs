@@ -1744,3 +1744,781 @@ fn the_loss_free_arithmetic_form_is_pinned() {
 /// Recorded 2026-09-30 from the configuration in
 /// [`the_loss_free_arithmetic_form_is_pinned`], as a raw Q64.64 bit pattern.
 const PINNED_LOSS_FREE_PROBE: i128 = -222_621_341_326_374_155;
+
+// ---------------------------------------------------------------------------
+// O7 — 反射係数 `R` そのもの (離散伝達行列の閉形式 vs 定常場からの mode 分離)
+// ---------------------------------------------------------------------------
+//
+// O6 が測っているのは **N step 後の残留場 envelope** で、`R = |反射| / |入射|`
+// とは別の量です (複数回の往復 + 数値分散 + まだ壁に届いていない分の混合)
+// ここでは単一周波数の定常状態を作り、`R` を **2 経路**で出して突き合わせます:
+//
+//   (A) 離散 Yee + split-field の更新式から導いた **2×2 伝達行列の閉形式**
+//   (B) solver の定常場から 6 点 DFT で複素振幅を取り、`A j^m` / `B j^{−m}` に分離
+//
+// ⚠️ (A) は実装を 1 つも呼びません `loss_coefficients` / `cubic_graded_sigma` /
+// `theoretical_pml_reflection` は全部「実装」なので、係数も σ プロファイルも
+// ここで再導出します (`loss_coefficients_are_the_closed_form` が別途 契約 test)
+//
+// # 1-D 化 — なぜ全部が有理数 + √3 に落ちるのか
+//
+// `nx × 2 × 1` の格子で `Ez` だけを励起します `nz = 1` なので `Ex` / `Ey` の
+// 更新 loop (`for k in 1..nz`) が空集合で `Ex = Ey = Hz ≡ 0`、`ny = 2` なので
+// `Ez` は `j = 1` だけ ⇒ 残る自由度は x 方向の 1-D 鎖です:
+//
+// ```text
+// Hx[i][0] ← Hx[i][0] − S·Ez_i          Hx[i][1] ← Hx[i][1] + S·Ez_i
+//   ⇒ 0 から始めれば恒に Hx[i][1] = −Hx[i][0] ≡ −X_i   (y 方向の遮断項)
+// Hy_{i+½}  ← Hy_{i+½} + S·(Ez_{i+1} − Ez_i)
+// Ez_i      ← Ez_i + S·((Hy_i − Hy_{i−1}) + 2 X_i)
+// ```
+//
+// `H` を消去すると `Ez^{n+1} − 2Ez^n + Ez^{n−1} = S²(δ²Ez − λ_y Ez)`、`λ_y = 2`
+// なので離散分散関係は
+//
+// ```text
+// 4 sin²(ωS/2) = S²·(4 sin²(kx/2) + λ_y)
+// ```
+//
+// `S = 1/2` と **周期 6** (`ωS = π/3`) を入れると `4·(1/4) = (1/4)(4 sin²(kx/2) + 2)`
+// ⇒ `sin²(kx/2) = 1/2` ⇒ **`kx = π/2`** (空間周期 4 cell、`e^{ikx} = i`)
+// 時間側は `z = e^{iπ/3} = 1/2 + i√3/2` ⇒ 全部 `Q(√3)[i]` の中で閉じます
+// (超越関数は `√3` の `sqrt` 1 回だけ、`clippy.toml` の `f64::sin` 禁止と両立)
+//
+// # (A) の導出 — 4 成分が 2×2 に落ちる
+//
+// 時間調和 `X^{n+1} = z X^n` に直し、`H` の半 step 位相を振幅に吸収します
+// (`Hy^{n+½} = Ĥ'_{i+½} z^n` と置く = `Ĥ' = Ĥ z^{1/2}`、これで √z が出てこない)
+// x のみの PML なので `σy = σz = 0` ⇒ `Ezy` と `Hx` は **損失なし + 空間結合なし**:
+//
+// ```text
+// X̂'_i (1 − 1/z) = −S Ê_i                 Êy_i (z − 1) = 2S X̂'_i
+//   ⇒ Êy_i = −λ_y S²·z/(z−1)² · Ê_i,     μ ≡ Êx_i/Ê_i = 1 + λ_y S²·z/(z−1)²
+// ```
+//
+// `(z−1)²/z = z − 2 + 1/z = 2cos θ − 2 = −4 sin²(θ/2)` なので `θ = π/3` では
+// `z/(z−1)² = −1` ⇒ **`μ = 1 − 2S² = 1/2`** (有理数、ここで √3 が消える)
+//
+// 残る 2 成分 (`Êx`, `Ĥ'`) に `ca = (1−a)/(1+a)`, `cb = S/(1+a)`, `a = σS/2` を入れると
+// **`(1+a)` が約分で消えます**:
+//
+// ```text
+// w(a) ≡ (z−1) + a(z+1) = (3a−1)/2 + i(√3/2)(1+a)
+// F_i     = μ·(z − ca_i)/cb_i  = μ·2·w(a_i)      = w(a_i)        (μ = 1/2)
+// v_{i+½} = cb_{i+½}·z/(z − ca_{i+½}) の逆数 ×2 = 2 w(a_{i+½})/z
+// ```
+//
+// これで 1 cell 進む写像が 2×2 になります (`det = 1`、symplectic):
+//
+// ```text
+// Ĥ'_{i+½} = Ĥ'_{i−½} + F_i Ê_i
+// Ê_{i+1}  = Ê_i + v_{i+½} Ĥ'_{i+½}        T_i = [[1 + v F, v], [F, 1]]
+// ```
+//
+// PEC (`Ê_0 = 0`) から `Ĥ'_{½} = 1` を正規化として march し、層の外側 (`i ≥ depth`)
+// の隣接 2 点で mode 分離します (`j ≡ e^{ikx} = i`、`j^{-1} = −j`):
+//
+// ```text
+// Ê_m = A j^m + B j^{−m},  Ê_{m+1} = j(A j^m − B j^{−m})
+//   ⇒ P ≡ A j^m = (Ê_m − j Ê_{m+1})/2,   Q ≡ B j^{−m} = (Ê_m + j Ê_{m+1})/2
+//   ⇒ |R| = |Q| / |P|
+// ```
+//
+// `A` が `e^{+ikx}` 側 = 時間因子 `e^{+iωt}` と合わせて **−x 方向 (= 層に向かう)**
+// なので入射、`B` が反射です 純進行波なら `Q = 0`、PEC 単体なら `A + B = 0` で `|R| = 1`
+// が自動的に出ます (どちらも下の test が実測で確認)
+//
+// # (B) の測定 — ⚠️ 駐波比 (VSWR) では測れない
+//
+// ⚠️ `kx = π/2` では `|Ê_i|` が **2 値しか取りません** (`|A+B|` が偶 `i`、`|A−B|` が奇 `i`)
+// 包絡線の周期 2 cell を 2 点でしか刻めないので `B/A` の**位相 ψ が測れず**、
+//
+// ```text
+// (VSWR − 1)/(VSWR + 1) ≈ |R·cos ψ|      (|R| ではない)
+// ```
+//
+// になります 実測 (2026-09-30) で真値の **0.31〜0.996 倍**、最悪 3.2 倍ずれ しかも比が
+// `σ_max` に対して非単調なので係数で補正もできません
+// `the_standing_wave_ratio_is_not_the_reflection_coefficient_here` が この事実を pin します
+// ⚠️ 時間方向の「6 step の max」も同型で、位相次第で `cos(π/6) = 0.866` まで潰れます (13% 誤差)
+//
+// ⇒ 採るのは **6 点 DFT で複素振幅を取り出す**経路です 定常場は厳密に単一周波数なので
+// `Ê_i ∝ Σ_{m} Ez_i^{t₀+m} z^{−m}` が厳密に直交します (窓長が 3 の倍数なら
+// `Σ z̄^{2m} = 0`、`z̄²` が原始 3 乗根なので) 位相 `z^{t₀}` は全 `i` 共通なので `|B/A|` に効きません
+//
+// # ⚠️ source は滑らかに立ち上げないと定常に来ない
+//
+// 駆動は `J(n) = s(n mod 6)`, `s = [0,1,1,0,−1,−1] = (2/√3)·sin(nπ/3)` (厳密に単一周波数)
+// ですが、`n = 0` から素で入れると switch-on の広帯域成分が残ります
+// ⚠️ **待っても DFT 窓を伸ばしても直りません**: 通過帯域端 (`λ → 2` と `λ → 6`) の成分は
+// **群速度が 0 に近く PML まで到達しない**ので、格子の中に居残ります
+// 実測 (σ_max = 4、真値 4.4164e-2): settle 300 / 600 / 900 で 4.00e-2 / 3.61e-2 / **6.88e-2**
+// = ±70% 振れました (100 周期 DFT でも settle 900 で 0.6% 残る)
+// ⇒ 振幅を smoothstep (`3t²−2t³`) で 600 step かけて立ち上げます (注入自体がほぼ単色になる)
+// 立ち上げ後の `J` は厳密に整数なので、測定窓の中の算術は ramp の影響を受けません
+//
+// # ⚠️ 連続体の `theoretical_pml_reflection` とは比較しません
+//
+// あれは `exp(−2∫σ dx)` = **連続体**の値で、ここで測るのは離散格子の `R` です 別の量なので
+// 不等式で結びません (O6 の同じ裁定と同軸) 比は `println!` で出すだけで assert しません
+// 実測 (depth 4): `σ_max` = 1 / 2 / 4 / 8 で 離散/連続体 = **1.4 / 2.1 / 102.5 / 4.3e5**
+// ⚠️ 4 cell/波長では grading の cell 間段差そのものがインピーダンス不整合になるので、
+// `σ_max` を上げると連続体の予測は指数で下がるのに離散の実測は**上がります** (最小は `σ_max ≈ 3`)
+//
+// # 破壊試験 (2026-09-30 実測、変異は 1 つずつ `src/maxwell_fdtd.rs` に入れて復元)
+//
+// 5 変異すべてで file が red、復元後は 38 test すべて green です (本 § の 7 test のうち
+// `the_discrete_transfer_matrix_...` は閉形式だけを見るので src に依存せず、
+// `a_pec_backed_lattice_...` は `Absorber::None` なので PML の変異に反応しません
+// = 残る 5 test が変異を捕まえる側です):
+//
+// | 変異 (`src/maxwell_fdtd.rs`) | 本 § の red | 他 § の red |
+// |---|---|---|
+// | `Ezx` の損失係数を `ca_e[0][i]` → `ca_e[1][j]` (軸取り違え) | **5** | `relabelling_the_axes_…` |
+// | `loss_coefficients` の `cb = S/(1+a)` → `S/(2(1+a))` (分子 2 → 1) | **4** | 契約 test / 損失漸化式 / O6 |
+// | `cubic_graded_sigma` の `t*t*t` → `t` (3 乗 → 1 乗) | **5** | `theoretical_reflection_…` |
+// | `sigma_at` が `depth[(axis+1)%3]` を読む (層が別の軸に付く) | **5** | **0** |
+// | (盲点確認) `Exy` の損失係数を `ca_e[1][j]` → `ca_e[2][k]` | **0** | `relabelling_the_axes_…` |
+//
+// ⚠️ **`depth[(axis+1)%3]` を捕まえるのは本 § だけ**でした O6 の格子は `depth = [5,3,2]` で
+// 3 軸とも層があるので、軸を巡回させても「どこかに層がある」状態が保たれて吸収量が変わりません
+// x のみに層を張る配置が、層が**どの軸に付いているか**を初めて観測可能にしています
+//
+// ⚠️ `cb` 半減で `the_standing_wave_ratio_is_not_the_reflection_coefficient_here` だけが
+// green のままなのは**正しい**挙動です あれは同じ場から取った 2 つの測定量の**関係**を
+// 述べていて、`|R|` の絶対値には触れていません (絶対値側は他の 4 test が見る)
+//
+// ⚠️ **本 § の盲点**: x のみ PML + TM なので `Ex` / `Ey` / `Hz` と `Exy` / `Exz` /
+// `Eyz` / `Hzx` / `Hzy` は恒等的に 0 の上しか走りません ⇒ **`Exy` 系の軸取り違えは
+// ここでは red になりません** (上の表で実測、担当は
+// `relabelling_the_axes_relabels_the_solution_exactly`)
+// = 対称 / 退化した配置が成分を検証しない、O6 冒頭と同じ構造の盲点です
+
+/// `Q(√3)[i]` の元 この節の閉形式が全部この中で閉じる
+///
+/// `Fix128` の add / sub / mul / div だけで書けるので、超越関数は `√3` を出す
+/// `sqrt` 1 回に限られる
+#[derive(Clone, Copy, Debug)]
+struct Cx {
+    re: Fix128,
+    im: Fix128,
+}
+
+impl Cx {
+    const fn new(re: Fix128, im: Fix128) -> Self {
+        Self { re, im }
+    }
+
+    const fn zero() -> Self {
+        Self::new(Fix128::ZERO, Fix128::ZERO)
+    }
+
+    const fn one() -> Self {
+        Self::new(Fix128::ONE, Fix128::ZERO)
+    }
+
+    fn add(self, o: Self) -> Self {
+        Self::new(self.re + o.re, self.im + o.im)
+    }
+
+    fn sub(self, o: Self) -> Self {
+        Self::new(self.re - o.re, self.im - o.im)
+    }
+
+    fn mul(self, o: Self) -> Self {
+        Self::new(
+            self.re * o.re - self.im * o.im,
+            self.re * o.im + self.im * o.re,
+        )
+    }
+
+    fn scale(self, s: Fix128) -> Self {
+        Self::new(self.re * s, self.im * s)
+    }
+
+    fn conj(self) -> Self {
+        Self::new(self.re, Fix128::ZERO - self.im)
+    }
+
+    fn norm2(self) -> Fix128 {
+        self.re * self.re + self.im * self.im
+    }
+
+    fn div(self, o: Self) -> Self {
+        let n = o.norm2();
+        let p = self.mul(o.conj());
+        Self::new(p.re / n, p.im / n)
+    }
+
+    /// 虚数単位を掛ける (`kx = π/2` なので `e^{ikx} = i`、mode 分離で使う)
+    fn mul_i(self) -> Self {
+        Self::new(Fix128::ZERO - self.im, self.re)
+    }
+
+    fn abs(self) -> Fix128 {
+        self.norm2().sqrt()
+    }
+}
+
+/// `√3/2` = `z` の虚部 この節で唯一の無理数
+fn half_root3() -> Fix128 {
+    Fix128::from_int(3).sqrt().half()
+}
+
+/// `z = e^{iπ/3} = 1/2 + i√3/2` (周期 6 の時間因子)
+fn unit_z() -> Cx {
+    Cx::new(Fix128::from_ratio(1, 2), half_root3())
+}
+
+/// `z^{−m}` の厳密な表、`m = 0..6`
+///
+/// `z³ = −1` なので `z̄³ = −1` で、6 個全部が `±1`, `±1/2`, `±√3/2` の組み合わせに
+/// なる ⚠️ 繰り返し乗算で作ると 1 ULP ずつ drift するので表で持つ
+fn inv_z_powers() -> [Cx; 6] {
+    let h = half_root3();
+    let half = Fix128::from_ratio(1, 2);
+    let nh = Fix128::ZERO - half;
+    let nr = Fix128::ZERO - h;
+    [
+        Cx::new(Fix128::ONE, Fix128::ZERO),
+        Cx::new(half, nr),
+        Cx::new(nh, nr),
+        Cx::new(Fix128::NEG_ONE, Fix128::ZERO),
+        Cx::new(nh, h),
+        Cx::new(half, h),
+    ]
+}
+
+/// `w(a) = (z−1) + a(z+1) = (3a−1)/2 + i(√3/2)(1+a)`
+///
+/// 損失係数 `ca = (1−a)/(1+a)`, `cb = S/(1+a)` を伝達行列に入れると `(1+a)` が
+/// 約分で消えて、整数座標側は `F = w(a)`、半整数座標側は `v = 2w(a)/z` になる
+fn w_of(a: Fix128) -> Cx {
+    Cx::new(
+        (Fix128::from_int(3) * a - Fix128::ONE).half(),
+        half_root3() * (Fix128::ONE + a),
+    )
+}
+
+/// 左側 x 層の整数座標 `i` での σ、3 乗 grading の**再導出** (実装を呼ばない)
+///
+/// 層の内縁からの距離は `d − i` cell なので `t = (d−i)/d`、`σ = σ_max t³`
+fn layer_sigma_at_edge(i: i64, depth: i64, sigma_max: Fix128) -> Fix128 {
+    if depth == 0 || i >= depth {
+        return Fix128::ZERO;
+    }
+    let t = Fix128::from_ratio(depth - i, depth);
+    sigma_max * t * t * t
+}
+
+/// 同じく半整数座標 `i + ½` での σ 倍した距離で見るので有理数のまま
+fn layer_sigma_at_face(i: i64, depth: i64, sigma_max: Fix128) -> Fix128 {
+    let into2 = 2 * depth - 2 * i - 1;
+    if depth == 0 || into2 <= 0 {
+        return Fix128::ZERO;
+    }
+    let t = Fix128::from_ratio(into2, 2 * depth);
+    sigma_max * t * t * t
+}
+
+/// PEC から層を抜ける閉形式 march `Ê_0 .. Ê_upto` を返す (`Ĥ'_{½} = 1` が正規化)
+fn march_out_of_the_pec(depth: i64, sigma_max: Fix128, courant: Fix128, upto: usize) -> Vec<Cx> {
+    assert!(upto >= 2, "need two lossless samples to split the modes");
+    let inv_z = unit_z().conj(); // |z| = 1 なので 1/z = z̄
+    let two = Fix128::from_int(2);
+    let a_edge = |i: i64| (layer_sigma_at_edge(i, depth, sigma_max) * courant).half();
+    let a_face = |i: i64| (layer_sigma_at_face(i, depth, sigma_max) * courant).half();
+    let v_at = |i: i64| w_of(a_face(i)).scale(two).mul(inv_z);
+
+    let mut e = vec![Cx::zero(); upto + 1];
+    // Ê_0 = 0 (PEC)、Ĥ'_{½} は自由なので 1 に取る
+    let mut h = Cx::one();
+    e[1] = v_at(0).mul(h);
+    for i in 1..upto {
+        h = h.add(w_of(a_edge(i as i64)).mul(e[i]));
+        e[i + 1] = e[i].add(v_at(i as i64).mul(h));
+    }
+    e
+}
+
+/// 隣接 2 点から `(|入射|, |反射|)` を出す (`kx = π/2` 前提)
+fn split_modes(e_m: Cx, e_m1: Cx) -> (Fix128, Fix128) {
+    let incident = e_m.sub(e_m1.mul_i());
+    let reflected = e_m.add(e_m1.mul_i());
+    (incident.abs(), reflected.abs())
+}
+
+/// `|R| = |反射| / |入射|` を `Ê[m]`, `Ê[m+1]` から
+fn reflection_at(e: &[Cx], m: usize) -> Fix128 {
+    let (incident, reflected) = split_modes(e[m], e[m + 1]);
+    assert!(
+        !incident.is_zero(),
+        "incident amplitude vanished; the reference plane is not in the lossless region"
+    );
+    reflected / incident
+}
+
+/// 周期 6 の離散正弦 `= (2/√3)·sin(nπ/3)`、整数なので `S·J` が dyadic で厳密
+const SRC_PERIOD_6: [i64; 6] = [0, 1, 1, 0, -1, -1];
+
+/// smoothstep `3t² − 2t³` の立ち上げ `n ≥ ramp` では厳密に 1
+fn ramp_at(n: usize, ramp: usize) -> Fix128 {
+    if ramp == 0 || n >= ramp {
+        return Fix128::ONE;
+    }
+    let t = Fix128::from_ratio(n as i64, ramp as i64);
+    Fix128::from_int(3) * t * t - Fix128::from_int(2) * t * t * t
+}
+
+/// 導波路を定常まで回して `Ê_i` (`i = 0..=nx`、`j = 1`, `k = 0`) を返す
+///
+/// `depth = 0` は `Absorber::None` (PEC 終端の control)
+fn steady_amplitudes(
+    nx: usize,
+    depth: usize,
+    sigma_max: Fix128,
+    settle: usize,
+    periods: usize,
+) -> Vec<Cx> {
+    const RAMP: usize = 600;
+    let s = Fix128::from_ratio(1, 2);
+    let absorber = if depth == 0 {
+        Absorber::None
+    } else {
+        Absorber::GradedPml {
+            depth: [depth, 0, 0],
+            sigma_max,
+        }
+    };
+    let mut grid = YeeGrid::new_with_absorber(nx, 2, 1, s, absorber);
+    let middle = nx / 2;
+    let win = 6 * periods;
+    assert!(win % 6 == 0, "the DFT window must be whole periods");
+    let powers = inv_z_powers();
+    let mut acc = vec![Cx::zero(); nx + 1];
+    for n in 0..(settle + win) {
+        let drive = ramp_at(n, RAMP) * Fix128::from_int(SRC_PERIOD_6[n % 6]);
+        grid.set_current(Component::Ez, middle, 1, 0, drive);
+        grid.step();
+        if n >= settle {
+            let p = powers[(n - settle) % 6];
+            for (i, slot) in acc.iter_mut().enumerate() {
+                *slot = slot.add(p.scale(grid.get(Component::Ez, i, 1, 0)));
+            }
+        }
+    }
+    // Σ Re[Ê z^{t₀+m}]·z^{−m} = (win/2)·Ê z^{t₀}   (窓長が 3 の倍数なので交差項が 0)
+    let norm = Fix128::from_ratio(2, win as i64);
+    acc.iter().map(|c| c.scale(norm)).collect()
+}
+
+/// 定常場の空間包絡線の `(max, min)` 無損失領域だけを見る
+fn envelope_extremes(e: &[Cx], lo: usize, hi: usize) -> (Fix128, Fix128) {
+    let mut worst = Fix128::ZERO;
+    let mut best = Fix128::ZERO;
+    for (n, i) in (lo..=hi).enumerate() {
+        let a = e[i].abs();
+        if n == 0 || a > worst {
+            worst = a;
+        }
+        if n == 0 || a < best {
+            best = a;
+        }
+    }
+    (worst, best)
+}
+
+/// 測定に使う設定 深さ 4 / `σ_max = 4` が第 1 点 (O6 の理論反射 test と同じ組)
+const NX: usize = 64;
+const SETTLE: usize = 1200;
+const PERIODS: usize = 100;
+/// 反射係数の参照面は層の内縁 `i = depth` ここから外は無損失
+const PROFILE_CELLS: usize = 14;
+
+/// 相対差を `1e-9` 単位で返す
+///
+/// ⚠️ `Fix128` の `Display` は小数 4 桁なので、`1e-7` 級の相対差はそのまま出すと
+/// `0.0000` になって証跡にならない 落ちた時に読める桁で出す
+fn relative_nano(gap: Fix128, reference: Fix128) -> Fix128 {
+    (gap / reference) * Fix128::from_int(1_000_000_000)
+}
+
+/// (A) の式そのものの oracle — 無損失の伝達行列の固有値が `±i` であること
+///
+/// ⚠️ **これを先に通します** これが green でなければ `F` / `v` の式が間違っている
+/// ので、その後の突合は意味を持ちません 内容は 3 つとも閉形式で、どれも
+/// `4 sin²(ωS/2) = S²λ` (= 離散分散関係) の言い換えです:
+///
+/// * `trace T|_{σ=0} = 2 + v(0)F(0) = 0` ⟺ 固有値が `±i` ⟺ `kx = ±π/2`
+///   展開すると `2(z−1)z̄·(z−1) = −2` ⟺ **`(z−1)² = −z`** (`|z| = 1` なので)
+/// * `ζ₊ = (z̄/2)(1+i)` を種にした march が `1 → i → −1 → −i → 1` と**周期 4 で
+///   厳密に巡回**する (= 進行波が固有解、反射成分が出ない)
+/// * 層なし (`depth = 0`) の march は `Ê_0 = 0` から `A + B = 0` になるので `|R| = 1`
+///
+/// **実測** (2026-09-30) と bound の出所は 2 段に分かれます:
+///
+/// * **1 式で書ける恒等式**は `√3` の丸め 1 回しか入らないので `≤ 4 ULP`
+///   (実測: `(z−1)² + z` と trace のどちらも各成分 **2 ULP**)
+/// * **march を経る量**は 1 cell あたり 1-2 ULP 積むので `≤ 64 ULP`
+///   (実測: 進行波が 20 cell で worst **21 ULP**、PEC 単体の `|入射| − |反射|` が
+///   11 cell で **18 ULP** ⇒ 宣言 64 は約 3 倍の余裕)
+/// * 純進行波の反射成分は `|B|/|A| < 1e-9` (実測 4e-19 未満、下限は打ち切りで決まる)
+#[test]
+fn the_discrete_transfer_matrix_has_the_travelling_wave_as_its_eigensolution() {
+    let s = Fix128::from_ratio(1, 2);
+    let z = unit_z();
+    let two = Fix128::from_int(2);
+    // 1 式で書ける恒等式は √3 の丸め 1 回ぶん (実測 2 ULP)
+    let budget: i128 = 4;
+    // march を経る量は 1 cell あたり 1-2 ULP 積む (実測 21 / 18 ULP、下の 2 箇所で使う)
+    let march_budget: i128 = 64;
+
+    // (z−1)² = −z
+    let zm1 = z.sub(Cx::one());
+    let sq = zm1.mul(zm1);
+    assert!(
+        ulp_gap(sq.re, Fix128::ZERO - z.re) <= budget
+            && ulp_gap(sq.im, Fix128::ZERO - z.im) <= budget,
+        "(z-1)^2 must be -z (omega*S = pi/3): got {sq:?}, want {:?}",
+        Cx::zero().sub(z)
+    );
+
+    // trace T|_{σ=0} = 2 + v(0)·F(0) = 0
+    let v0 = w_of(Fix128::ZERO).scale(two).mul(z.conj());
+    let f0 = w_of(Fix128::ZERO);
+    let trace = Cx::new(two, Fix128::ZERO).add(v0.mul(f0));
+    assert!(
+        ulp_gap(trace.re, Fix128::ZERO) <= budget && ulp_gap(trace.im, Fix128::ZERO) <= budget,
+        "the lossless transfer matrix must have trace 0 (eigenvalues ±i): {trace:?}"
+    );
+
+    // 進行波は固有解: ζ₊ = (z̄/2)(1+i) を種にすると 1 → i → −1 → −i と巡回する
+    let zeta_plus = z
+        .conj()
+        .scale(Fix128::from_ratio(1, 2))
+        .mul(Cx::new(Fix128::ONE, Fix128::ONE));
+    let want = [
+        Cx::one(),
+        Cx::new(Fix128::ZERO, Fix128::ONE),
+        Cx::new(Fix128::NEG_ONE, Fix128::ZERO),
+        Cx::new(Fix128::ZERO, Fix128::NEG_ONE),
+    ];
+    let mut e = Cx::one();
+    let mut h = zeta_plus;
+    let mut worst: i128 = 0;
+    let mut samples = vec![e];
+    for m in 0..20usize {
+        let w = want[m % 4];
+        worst = worst.max(ulp_gap(e.re, w.re)).max(ulp_gap(e.im, w.im));
+        h = h.add(f0.mul(e));
+        e = e.add(v0.mul(h));
+        samples.push(e);
+    }
+    assert!(
+        worst <= march_budget,
+        "a travelling wave must stay one over 20 cells; worst deviation {worst} ULP"
+    );
+    let (incident, reflected) = split_modes(samples[10], samples[11]);
+    assert!(
+        reflected < incident * Fix128::from_ratio(1, 1_000_000_000),
+        "a pure travelling wave must split into no reflected part: {reflected} vs {incident}"
+    );
+    println!("travelling wave: worst {worst} ULP over 20 cells, |B|/|A| = {reflected}");
+
+    // 層なしの PEC 終端は |R| = 1
+    let bare = march_out_of_the_pec(0, Fix128::ZERO, s, 12);
+    let (incident, reflected) = split_modes(bare[10], bare[11]);
+    println!(
+        "bare PEC: |A| = {incident}, |B| = {reflected}, gap = {} ULP",
+        ulp_gap(incident, reflected)
+    );
+    assert!(
+        ulp_gap(incident, reflected) <= march_budget,
+        "a bare PEC wall must reflect everything: |A| = {incident}, |B| = {reflected}"
+    );
+}
+
+/// 本体 — (A) 閉形式 と (B) 実測 が相対 `1e-3` 以内で一致する
+///
+/// **宣言 bound は相対 `1e-3`、`n` には依存させません** (漸化式でなく定常解の比なので
+/// step 数に比例する量ではない) **実測** (2026-09-30、`nx = 64` / ramp 600 / settle 1200 /
+/// 100 周期):
+///
+/// | 掃引 | (A) | (B) | 相対差 |
+/// |---|---|---|---|
+/// | `σ_max = 1`, d=4 | 1.952704454e-1 | 1.952770948e-1 | **3.41e-5** |
+/// | `σ_max = 2`, d=4 | 4.459805628e-2 | 4.459804439e-2 | **2.67e-7** |
+/// | `σ_max = 4`, d=4 | 4.416421203e-2 | 4.416423313e-2 | **4.78e-7** |
+/// | `σ_max = 4`, d=2 | 1.485699435e-1 | 1.485673437e-1 | 1.75e-5 |
+/// | `σ_max = 4`, d=6 | 6.607283725e-3 | 6.607271374e-3 | 1.87e-6 |
+/// | `σ_max = 4`, d=8 | 1.838820199e-3 | 1.838823487e-3 | 1.79e-6 |
+///
+/// worst 3.41e-5 に対し 1e-3 は 29 倍の余裕で、bound が実測の言い換えになっていません
+/// ⚠️ `nx` を上げると settle が足りなくなります (`nx = 96` で 3.7e-5、往復が 333 step)
+/// `nx` は 64 に固定し、残差を `nx` 依存の bound で吸収しません
+#[test]
+fn the_measured_reflection_matches_the_discrete_transfer_matrix() {
+    let s = Fix128::from_ratio(1, 2);
+    let tol = Fix128::from_ratio(1, 1000);
+
+    let mut cases: Vec<(usize, i64)> = vec![(4, 1), (4, 2), (4, 4)];
+    cases.extend([(2usize, 4i64), (6, 4), (8, 4)]);
+
+    for (depth, sigma) in cases {
+        let sigma_max = Fix128::from_int(sigma);
+        let closed = march_out_of_the_pec(depth as i64, sigma_max, s, depth + 2);
+        let want = reflection_at(&closed, depth);
+        let measured = steady_amplitudes(NX, depth, sigma_max, SETTLE, PERIODS);
+        let got = reflection_at(&measured, depth);
+        let gap = (got - want).abs();
+        assert!(
+            gap < want * tol,
+            "d={depth} sigma_max={sigma}: closed form {want}, measured {got}, gap {gap} \
+             exceeds the declared 1e-3 relative bound"
+        );
+        // 連続体との比は記録だけ (別の量なので assert しない、O6 の裁定と同軸)
+        let continuum = theoretical_pml_reflection(depth, sigma_max);
+        println!(
+            "d={depth} sigma_max={sigma}: (A) {want}  (B) {got}  relative gap {} e-9  \
+             continuum {continuum}  discrete/continuum {}",
+            relative_nano(gap, want),
+            want / continuum
+        );
+    }
+}
+
+/// 層の**中**の複素 profile が閉形式 march の定数倍であること
+///
+/// source (`i = nx/2`) より左には source が無いので、`Ê_0 = 0` を満たす 2 階漸化式の
+/// 解は **1 次元** ⇒ solver の `Ê_i` は march の結果の定数倍でなければなりません
+/// ⚠️ scalar な `|R|` は層全体を 1 個の数字に潰しますが、こちらは**層の中の係数を
+/// 1 本ずつ pin します** (破壊試験でも先に bite する)
+///
+/// ⚠️ **この残差 assert が (B) を (A) の仮定から独立にしています** `A j^m` / `B j^{−m}`
+/// への分離は `kx = π/2` を**前提**にしているので、実装側の分散関係が違っていても
+/// ずれは `A` / `B` に吸収されて `|B/A|` が「もっともらしい値」を返しえます
+/// (2 経路突合は**両側が同じだけ間違うと green になる**のが既知の失敗形)
+/// profile 一致は `Ê_i` を 1 点ずつ複素数で比べるので `A` / `B` に逃げ場がなく、
+/// mode 分離を経由しません ⇒ **print でなく assert、bound も宣言します**
+///
+/// **実測** (2026-09-30、`σ_max = 4` / d=4、`i = 4` で正規化、場の大きさは 1 前後):
+/// worst **7.7e-7** (`σ_max = 1` では 3.9e-5) ⇒ 宣言 bound は `1e-5` で 13 倍の余裕
+#[test]
+fn the_field_inside_the_layer_is_the_transfer_matrix_solution() {
+    let s = Fix128::from_ratio(1, 2);
+    let depth = 4usize;
+    let sigma_max = Fix128::from_int(4);
+    let closed = march_out_of_the_pec(depth as i64, sigma_max, s, PROFILE_CELLS);
+    let measured = steady_amplitudes(NX, depth, sigma_max, SETTLE, PERIODS);
+    // 正規化は参照面で行う (march の振幅は Ĥ'_{½} = 1 という任意の規格)
+    let scale = measured[depth].div(closed[depth]);
+    let mut worst = Fix128::ZERO;
+    for i in 0..=PROFILE_CELLS {
+        let want = closed[i].mul(scale);
+        let gap = measured[i].sub(want).abs();
+        if gap > worst {
+            worst = gap;
+        }
+    }
+    assert!(
+        worst < Fix128::from_ratio(1, 100_000),
+        "the field inside the layer must be the closed-form march up to one constant; \
+         worst deviation {worst}"
+    );
+    println!(
+        "layer profile worst deviation = {} e-9 over {PROFILE_CELLS} cells",
+        worst * Fix128::from_int(1_000_000_000)
+    );
+}
+
+/// `σ_max` の単調性は **この範囲だけ** — 4 cell/波長では最小が `σ_max ≈ 3` で反転する
+///
+/// **実測** (2026-09-30、(B) 実測値、d=4):
+///
+/// | `σ_max` | 1 | 2 | 3 | 4 | 6 |
+/// |---|---|---|---|---|---|
+/// | `\|R\|` | 1.953e-1 | 4.460e-2 | 3.986e-2 | 4.416e-2 | 6.161e-2 |
+///
+/// ⚠️ **`2 → 4` の余裕は 0.98% しかありません** 決定論なので test は安定しますが、
+/// 物理的な主張としては弱いので `σ_max = 6` での**反転も一緒に pin** します
+/// (「単調に良くなる」と読まれると `σ_max` を上げる改変が入る)
+///
+/// 深さ側は強く単調です (**実測**、`σ_max = 4`): d = 2/4/6/8 で
+/// 1.486e-1 / 4.416e-2 / 6.607e-3 / 1.839e-3 = 各段 3.3〜6.7 倍
+/// ⇒ **`σ_max` を上げるのは depth を増やすのと等価ではありません**
+#[test]
+fn reflection_falls_with_sigma_max_here_and_rises_beyond_it() {
+    let sigma_run: Vec<Fix128> = [1i64, 2, 4, 6]
+        .iter()
+        .map(|&sigma| {
+            let r = reflection_at(
+                &steady_amplitudes(NX, 4, Fix128::from_int(sigma), SETTLE, PERIODS),
+                4,
+            );
+            println!("sigma_max {sigma}: |R| = {r}");
+            r
+        })
+        .collect();
+    // ⚠️ この 2 本は主 assert ではありません 余裕が薄いので、落ちた時に「退行」でなく
+    //    「余裕不足」を先に疑えるよう margin を数値で残します
+    //    実測 (2026-09-30) の余裕: 1 -> 2 は 4.4 倍、**2 -> 4 は 0.98% しかない**
+    //    (4.459804439e-2 -> 4.416423313e-2) 単調性は法則ではなく この範囲の性質です
+    assert!(
+        sigma_run[0] > sigma_run[1] && sigma_run[1] > sigma_run[2],
+        "|R| must fall over sigma_max 1 -> 2 -> 4 (margin at 2 -> 4 is only 0.98%, \
+         measured 2026-09-30, so check the margin before assuming a regression): {sigma_run:?}"
+    );
+    println!(
+        "sigma_max 2 -> 4 margin = {} (measured 0.0097 = 0.98% on 2026-09-30)",
+        (sigma_run[1] - sigma_run[2]) / sigma_run[1]
+    );
+    // 反転の特性化 ⚠️ これがないと「単調に良くなる」と読まれて sigma_max を上げる改変が入る
+    assert!(
+        sigma_run[3] > sigma_run[2],
+        "the trend must reverse by sigma_max 6 (the grading steps become the mismatch): \
+         {} at 6 against {} at 4",
+        sigma_run[3],
+        sigma_run[2]
+    );
+
+    // 主 assert — 深さ側は各段が桁で効くので、物理的に頑健な主張はこちら
+    let depth_run: Vec<Fix128> = [2usize, 4, 6, 8]
+        .iter()
+        .map(|&depth| {
+            let r = reflection_at(
+                &steady_amplitudes(NX, depth, Fix128::from_int(4), SETTLE, PERIODS),
+                depth,
+            );
+            println!("depth {depth}: |R| = {r}");
+            r
+        })
+        .collect();
+    let three = Fix128::from_int(3);
+    for pair in depth_run.windows(2) {
+        assert!(
+            pair[0] > pair[1] * three,
+            "deepening the layer must cut |R| by at least 3x: {} -> {}",
+            pair[0],
+            pair[1]
+        );
+    }
+}
+
+/// control — 吸収層が無ければ `|R| = 1`、空間包絡線に節が立つ
+///
+/// 反証器です 場を 0 にするだけの実装や、`|R|` の抽出が壊れている実装はここで落ちます
+///
+/// ⚠️ **無損失 cavity は吸収が無いので過渡が永久に残ります** 測定精度は DFT 窓の長さだけで
+/// 決まるので、ここだけ窓を 600 周期 (3600 step) に伸ばします **実測** (2026-09-30):
+/// 100 周期では `A_min/A_max = 3.93e-3` で `< 1/1000` に届かず、600 周期で **1.60e-4**
+/// (`|R|` は 0.995995 → **0.999829**) 2000 周期では 9.56e-6 まで下がります
+///
+/// ⚠️ 駆動する `Ez[nx/2]` は共振 mode `kx = π/2` (= `m = nx/2` の cavity mode) の
+/// **節**なので共振成長は起きません (節に置いた source はその mode を駆動しない)
+/// 起きていれば振幅が線形に伸びて測定できません
+#[test]
+fn a_pec_backed_lattice_reflects_everything() {
+    let long_window = 600usize;
+    let e = steady_amplitudes(NX, 0, Fix128::ZERO, SETTLE, long_window);
+    let r = reflection_at(&e, 4);
+    assert!(
+        r > Fix128::from_ratio(999, 1000),
+        "a lattice with no absorber must reflect everything: |R| = {r}"
+    );
+    let (worst, best) = envelope_extremes(&e, 8, NX - 8);
+    assert!(
+        best < worst * Fix128::from_ratio(1, 1000),
+        "a full standing wave must have nodes: A_min = {best}, A_max = {worst}"
+    );
+    println!("control: |R| = {r}, A_min = {best}, A_max = {worst}");
+}
+
+/// ⚠️ 駐波比は反射係数ではない — この動作点で使えないことを pin する
+///
+/// `kx = π/2` (4 cell/波長) では `|Ê_i|` が `|A+B|` (偶 `i`) と `|A−B|` (奇 `i`) の
+/// **2 値しか取りません** ⇒ 包絡線の極値がサンプル点に載らず、`B/A` の位相 ψ が測れない
+/// ⇒ `(VSWR−1)/(VSWR+1) ≈ |R·cos ψ|` になります
+///
+/// **実測** (2026-09-30、d=4、真値は mode 分離):
+///
+/// | `σ_max` | 真の `\|R\|` | `(VSWR−1)/(VSWR+1)` | 比 |
+/// |---|---|---|---|
+/// | 2 | 4.460e-2 | 3.055e-2 | 0.685 |
+/// | 3 | 3.986e-2 | 1.252e-2 | **0.314** |
+/// | 4 | 4.416e-2 | 2.679e-2 | 0.607 |
+/// | 16 | 1.319e-1 | 6.011e-2 | 0.456 |
+///
+/// 比が `σ_max` に対して非単調なので、係数で補正することもできません
+/// この test があるのは、`|R|` の抽出を「包絡線の max/min を割るだけ」に**簡約する
+/// 改変を止める**ためです (見た目は簡単で、数字も同じ桁で返ってくる)
+#[test]
+fn the_standing_wave_ratio_is_not_the_reflection_coefficient_here() {
+    for sigma in [3i64, 4] {
+        let e = steady_amplitudes(NX, 4, Fix128::from_int(sigma), SETTLE, PERIODS);
+        let truth = reflection_at(&e, 4);
+        let (worst, best) = envelope_extremes(&e, 8, NX - 8);
+        // (VSWR−1)/(VSWR+1) = (A_max − A_min)/(A_max + A_min)
+        let from_vswr = (worst - best) / (worst + best);
+        println!(
+            "sigma_max {sigma}: |R| = {truth}, from VSWR = {from_vswr}, ratio = {}",
+            from_vswr / truth
+        );
+        assert!(
+            from_vswr < truth * Fix128::from_ratio(4, 5),
+            "the standing-wave ratio must under-report |R| here (it measures |R cos psi|): \
+             {from_vswr} against {truth}"
+        );
+    }
+}
+
+/// 精度 parameter 独立性 — `|R|` が settle 数と DFT 窓長に依存しないこと
+///
+/// ⚠️ **ramp を入れた効果が「たまたま 600 step で合った」でないことの裏取りです**
+/// ramp 無しでは settle 300 / 600 / 900 が 4.00e-2 / 3.61e-2 / 6.88e-2 と ±70% 振れます
+/// (§ 冒頭) 同じ sweep を ramp 有りで回して、宣言 bound (相対 `1e-3`) の中に収まる
+/// = 測定が settle / 窓長という**解像度 parameter に依存しない**ことを固定します
+///
+/// `σ_max = 4` / d=4 で settle `{1200, 2400}` × 窓 `{100, 200 周期}` の 4 組を回し、
+/// 4 組すべてが閉形式 (4.416421203e-2) から相対 `1e-3` 以内、かつ**互いに** `1e-3` 以内
+/// であることを assert します 各組の相対差は `println!` で出るので、落ちた時にどの
+/// 組合せで外れたかが分かります **実測** (2026-09-30、相対差): settle 1200 で
+/// 4.78e-7 (100 周期) / 2.48e-7 (200 周期)、settle 2400 で 3.82e-7 / 2.31e-7
+/// ⇒ 4 組の散らばりが 2.5e-7 程度で、宣言 `1e-3` に対して 3 桁以上の余裕があります
+#[test]
+fn the_measurement_does_not_depend_on_the_settle_or_the_window() {
+    let s = Fix128::from_ratio(1, 2);
+    let depth = 4usize;
+    let sigma_max = Fix128::from_int(4);
+    let tol = Fix128::from_ratio(1, 1000);
+    let closed = march_out_of_the_pec(depth as i64, sigma_max, s, depth + 2);
+    let want = reflection_at(&closed, depth);
+
+    let mut seen: Vec<Fix128> = Vec::new();
+    for settle in [1200usize, 2400] {
+        for periods in [100usize, 200] {
+            let got = reflection_at(
+                &steady_amplitudes(NX, depth, sigma_max, settle, periods),
+                depth,
+            );
+            let gap = (got - want).abs();
+            println!(
+                "settle {settle} periods {periods}: |R| = {got}, relative gap to the closed \
+                 form = {} e-9",
+                relative_nano(gap, want)
+            );
+            assert!(
+                gap < want * tol,
+                "settle {settle} / {periods} periods: |R| = {got} against the closed form \
+                 {want}; the measurement must not depend on either resolution knob"
+            );
+            seen.push(got);
+        }
+    }
+    // 互いにも 1e-3 以内 (閉形式を経由せずに parameter 独立性そのものを言う)
+    for (a, b) in seen.iter().zip(seen.iter().skip(1)) {
+        assert!(
+            (*a - *b).abs() < *a * tol,
+            "two resolution settings disagreed: {a} against {b}"
+        );
+    }
+}
