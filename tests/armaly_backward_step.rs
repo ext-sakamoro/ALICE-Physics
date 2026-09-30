@@ -100,18 +100,22 @@
 //! | | asserts | runs |
 //! |---|---|---|
 //! | `the_reattachment_length_matches_gartling` | `x_1 = 6.10`, bubble `4.85 .. 10.48`, `L_u = 5.63`, each to within a cell | no — `#[ignore = "src gap: …"]`, it fails |
-//! | `the_reattachment_length_is_pinned_at_the_resolution_ci_can_afford` | `x_1 = 4.392103184 ± 1e-3`, no upper-wall bubble | no — `#[ignore = "runtime: …"]`, it passes but costs `+154..+309 s` per CI `Test` job |
+//! | `the_reattachment_length_is_pinned_at_the_resolution_ci_can_afford` | `x_1 = 4.392103184 ± 1e-3`, no upper-wall bubble | **yes**, at `+154 s` per CI `Test` job |
 //!
-//! ⚠️ **So layer 1 currently has no assertion that runs, and that was not the
-//! intent.** The pinned twin was landed enabled; CI then measured it at
-//! `+154..+309 s` per `Test` job against a 60 s budget, and it was ignored
-//! pending a decision on whether that trade is worth making. The cost is
-//! entirely that one test: measured locally, the 6 tests predating layer 1
-//! take `14.20 s`, adding the `separation_x` contract and the reflected-step
-//! control takes `14.81 s`, and adding the pin takes `69.57 s`. Those two
-//! cheap ones stay enabled, so the **upper-wall readout is still guarded**
-//! even with the pin off — which is the part that would otherwise rot
-//! silently.
+//! ⚠️ **The pinned twin is deliberately expensive, and the decision to keep it
+//! running was made explicitly.** It was landed enabled, `#[ignore]`d for one
+//! commit when CI measured `+154 s` per `Test` job against a 60 s budget, and
+//! then enabled again with the budget raised instead. The cost is entirely
+//! that one test: measured locally, the 6 tests predating layer 1 take
+//! `14.20 s`, adding the `separation_x` contract and the reflected-step
+//! control takes `14.81 s`, and adding the pin takes `69.57 s`.
+//!
+//! ⚠️ **The argument that settled it was not about seconds.** `#[ignore]` on a
+//! test that *passes* is a deletion performed procedurally: there is no runner
+//! in this repository for an ignored test to be deferred *to*, so "ignored
+//! for cost" and "removed" have identical consequences. Cost belongs in a
+//! schedule — `quality-deep.yml` already has one — and not in an attribute
+//! that reads as configuration.
 //!
 //! Measured on the shared scene (`ny = 8`, `L = 12H`, `dt = 1/16`, `t = 256`,
 //! 30 sweeps):
@@ -124,26 +128,25 @@
 //! | `L_u` | — | 5.63 | — |
 //!
 //! ⚠️ **The two ignore reasons in this repository mean different things and
-//! are labelled differently.** `runtime:` passes but is too slow for CI —
-//! the refinement sweep at the bottom of this file, and now the pinned twin
-//! as well. `src gap:` **fails**, and would cost nothing extra to run. Both
-//! kinds sit next to each other in this one layer, which is why the labels
-//! carry the distinction: reading `#[ignore]` as a single category would say
-//! that layer 1 is two tests nobody runs, and lose that one of them is
-//! waiting on a CI budget while the other is waiting on the solver.
+//! are labelled differently.** `runtime:` passes but is too slow for the
+//! per-push matrix — the refinement sweep at the bottom of this file.
+//! `src gap:` **fails**, and would cost nothing extra to run — the literature
+//! twin above. Reading `#[ignore]` as a single category loses the difference
+//! between something waiting on a schedule and something waiting on the
+//! solver, and those want opposite handling: the first should be run
+//! somewhere, the second should be *reported* when it starts passing.
 //!
 //! ⚠️ **Nothing in this repository runs `#[ignore]`d tests** — there is no
 //! `--ignored` or `--include-ignored` anywhere in `scripts/` or `.github/`, so
 //! the attribute keeps a test compiling and nothing more. In particular
 //! **nobody will be told when the gap closes and the ignored twin starts
 //! passing**; writing a reversal condition into a doc comment does not create
-//! anything that fires it. Somewhere for the ignored tests to run is filed in
-//! the backlog, and it matters more here than elsewhere: with the pinned twin
-//! also ignored for runtime, **both halves of layer 1 are now written-down
-//! statements that only the compiler checks.** What still runs are the two
-//! cheap ones — the `separation_x` contract and the reflected-step control —
-//! and they are worth having precisely because they are what would rot into a
-//! vacuous pass without anyone noticing.
+//! anything that fires it. There are **51** `#[ignore]`s in this repository and
+//! nothing executes any of them; giving them somewhere to run is filed in the
+//! backlog. ⚠️ **That is the reason the pinned twin is not ignored despite
+//! costing what it costs** — it is the half of layer 1 that can notice a
+//! change, and suppressing it would have left the whole layer as prose the
+//! compiler type-checks.
 //!
 //! ## Why the pinned scene is not Gartling's
 //!
@@ -438,6 +441,29 @@
 //! its steadiness; M8 leaves it perfectly steady and moves it by `2.0`. A test
 //! with only the window would miss M7; one with only the settling check would
 //! miss M8.
+//!
+//! ⚠️ **M5 was re-run after the reflected-step control was changed to print
+//! its measurements before asserting**, because the first version of that test
+//! unwrapped the abscissae before printing and so produced a panic message
+//! with **no measured value in it at all**. The failure now reads:
+//!
+//! ```text
+//! Re=  16 24x8 steps=640: reflection residual 43 ulp = 2.331e-18
+//!   lower x_r Some(0.1429734239751133)
+//!   upper x_r None  upper x_s None
+//!   reversed faces: upper wall of the reflected scene 0, same row of the
+//!                   unreflected scene 0 (expected >= 1 and 0)
+//!   upper row (reflected)   [0.0, 0.0311…, 0.1056…, …]   <- attached throughout
+//!   bottom row (unreflected) [0.0, -0.0032…, 0.0194…, …] <- reverses at once
+//! ```
+//!
+//! — from which the cause is readable rather than guessable: the residual is
+//! at its usual floor, so the reflection itself is intact; the reference half
+//! still locates its crossing; and the row being read as "the upper wall" is
+//! positive everywhere while the bottom row is not. That combination says the
+//! readout is pointing at the wrong row, which is what M5 did. ⚠️ **An
+//! assertion can be correct and still leave a regression undiagnosable**, and
+//! nothing about a green run reveals it.
 //!
 //! ⚠️ **M8 went red on the reflected-step control too, which was not the
 //! prediction** — the expectation was that a `y`-symmetric mutation would
@@ -1216,6 +1242,17 @@ fn reattachment_grows_with_reynolds_number_on_the_step_field() {
 /// a loss of determinism. The rounded `4.3944` used in the inequality below is
 /// unaffected either way.)
 ///
+/// ⚠️ **The step count at which `ny = 16` settles has since been found, by a
+/// separate sweep of 40 sample points from `t = 16` to `t = 640`: it reaches
+/// `4.723804046` and is bit-stable from `t = 464`, with `1e-6` agreement by
+/// `t ~ 480`. `ny = 8` settles to `4.394360271`, and the approach is monotone
+/// in time at both resolutions (39 consecutive differences, none negative).**
+/// That means the a fortiori inequality below could be replaced by the direct
+/// comparison `4.723804046 > 4.394360271`. ⚠️ **Deliberately not done here** —
+/// it changes what the gate claims rather than correcting a number, so it
+/// belongs to its own increment and its own review. Recorded so the next
+/// person does not re-measure it.
+///
 /// so at `ny = 8` the answer has stopped moving (`2.47e-4` apart) while at
 /// `ny = 16` it is still climbing by `9.0e-2` over the same interval. Reading
 /// both off at `t = 256` and calling the pair a refinement study would be
@@ -1389,7 +1426,7 @@ const LIT_STEPS: u32 = 4096;
 /// Half the 60 sweeps the other scenes in this file use, because this is the
 /// one run that has to fit in a CI budget and the sweeps are the bulk of its
 /// cost. ⚠️ Measured not to move the answer: `x_1 = 4.392_103_184` here
-/// against `4.392_103_201` at 60 sweeps, agreeing to `1.7e-8`, while the flux
+/// against `4.392_103_202` at 60 sweeps, agreeing to `1.8e-8`, while the flux
 /// imbalance is `2.4e-8` — four orders inside the `1e-3` this test asserts.
 /// ⚠️ 15 sweeps was rejected: it reaches the same `x_1` (`4.392_103_100`) but
 /// gets there more slowly in time, so the settling check below reads `1.6e-3`
@@ -1609,37 +1646,75 @@ fn the_upper_wall_readout_finds_the_bubble_of_the_reflected_step() {
 
         let lower_row = bottom_row(&lower.grid);
         let upper_row = top_row(&upper.grid);
-        let lower_x_r =
-            reattachment_x(&lower_row, dx).expect("the step wall must separate and reattach");
-        let upper_x_r = reattachment_x(&upper_row, dx)
-            .expect("the reflected step must put the same bubble against the upper wall");
-        let upper_x_s = separation_x(&upper_row, dx)
-            .expect("the reflected bubble opens at the step, i.e. at the inflow plane");
+        let control_row = top_row(&lower.grid);
+        let lower_x_r = reattachment_x(&lower_row, dx);
+        let upper_x_r = reattachment_x(&upper_row, dx);
+        let upper_x_s = separation_x(&upper_row, dx);
+        let upper_reversed = upper_row.iter().filter(|u| **u < 0.0).count();
+        let control_reversed = control_row.iter().filter(|u| **u < 0.0).count();
+
+        // ⚠️ Everything is printed *before* the first assertion, and the
+        // abscissae are still `Option` here on purpose. An earlier version
+        // unwrapped them first and printed afterwards, which meant a
+        // regression produced a panic message and **not one measured number** —
+        // the rows, the residual and the reversed-face counts were all
+        // unreachable on the failing path. Whatever broke this has to be
+        // readable from the output alone.
         println!(
-            "Re={re:4} {nx}x{ny} steps={steps}: reflection residual {worst} ulp = {:.3e}  \
-             lower x_r {lower_x_r:.16}  upper x_r {upper_x_r:.16}  upper x_s {upper_x_s:.3e}  \
-             upper reversed {}  (same row on the unreflected field: {})",
+            "Re={re:4} {nx}x{ny} steps={steps}: reflection residual {worst} ulp = {:.3e}\n  \
+             lower x_r {lower_x_r:?}\n  upper x_r {upper_x_r:?}  upper x_s {upper_x_s:?}\n  \
+             reversed faces: upper wall of the reflected scene {upper_reversed}, \
+             same row of the unreflected scene {control_reversed} (expected >= 1 and 0)\n  \
+             upper row (reflected)   {upper_row:?}\n  \
+             bottom row (unreflected) {lower_row:?}",
             worst as f64 * ULP,
-            upper_row.iter().filter(|u| **u < 0.0).count(),
-            top_row(&lower.grid).iter().filter(|u| **u < 0.0).count(),
         );
 
         // The readout fires: there is a bubble against the upper wall, it
         // opens at the step, and it is located — this is the control.
         assert!(
-            upper_row.iter().filter(|u| **u < 0.0).count() >= 1,
+            upper_reversed >= 1,
             "Re={re}: the reflected step must reverse the flow against the upper \
-             wall, or the upper-wall readout is not reading that wall"
+             wall, or the upper-wall readout is not reading that wall; found \
+             {upper_reversed} reversed faces in the row printed above"
         );
+        let Some(upper_x_s) = upper_x_s else {
+            panic!(
+                "Re={re}: the reflected bubble must open at the step plane, but no \
+                 crossing into reverse flow was located at all in a row with \
+                 {upper_reversed} reversed faces — so `separation_x` is not \
+                 finding what the row contains"
+            );
+        };
         assert!(
             upper_x_s < dx,
-            "Re={re}: the reflected bubble opens at the step plane, got {upper_x_s}"
+            "Re={re}: the reflected bubble opens at the step plane, i.e. below \
+             x = {dx}, got {upper_x_s}"
         );
         // And it is the *same* bubble, which is what makes it a control on the
         // value and not only on the readout firing.
+        let Some(lower_x_r) = lower_x_r else {
+            panic!(
+                "Re={re}: the step wall must separate and reattach — no crossing \
+                 on the bottom row printed above, so the reference half of the \
+                 reflection is missing and the comparison cannot be made"
+            );
+        };
+        let Some(upper_x_r) = upper_x_r else {
+            panic!(
+                "Re={re}: the reflected step must put the same bubble against the \
+                 upper wall, but no reattachment was located there while the \
+                 unreflected scene reattaches at {lower_x_r:.16}; the upper row \
+                 printed above has {upper_reversed} reversed faces"
+            );
+        };
         assert_eq!(
-            upper_x_r, lower_x_r,
-            "Re={re}: reflecting the scene must reflect the reattachment point"
+            upper_x_r,
+            lower_x_r,
+            "Re={re}: reflecting the scene must reflect the reattachment point \
+             (difference {:.3e}), so either the discretisation is not symmetric \
+             in y or the two readouts are not reading mirrored rows",
+            upper_x_r - lower_x_r
         );
         // The reflection is exact to the arithmetic floor. Measured 43 ulp at
         // Re = 16 and 142 at Re = 96; the budget is a constant because this is
@@ -1658,10 +1733,11 @@ fn the_upper_wall_readout_finds_the_bubble_of_the_reflected_step() {
         // the assertions above are about the reflection and not about every
         // field having a bubble everywhere.
         assert_eq!(
-            top_row(&lower.grid).iter().filter(|u| **u < 0.0).count(),
-            0,
+            control_reversed, 0,
             "Re={re}: the unreflected scene must have no upper-wall reverse \
-             flow, else the control says nothing"
+             flow, else the control says nothing — found {control_reversed} \
+             reversed faces in a row that should be attached everywhere, which \
+             would mean the two scenes are not reflections of one another"
         );
     }
 }
@@ -1763,16 +1839,16 @@ fn the_reattachment_length_matches_gartling() {
 /// Oracle: the twin of the above — what the solver does produce on that scene
 /// today, so that it moving is noticed even though the target is out of reach.
 ///
-/// # ⚠️ `runtime`-ignored after measurement, against the intent above
+/// # ⚠️ It runs, and it is the most expensive test in this file
 ///
-/// This test was written to be the one part of layer 1 that runs, and it was
-/// landed that way in the commit that introduced it. **CI then measured it at
-/// `+154` to `+309` seconds per `Test` job**, against a budget of 60, so it
-/// carries `#[ignore = "runtime: …"]` until someone decides that trade is
-/// worth making. ⚠️ **The consequence is that layer 1 currently has no
-/// assertion that runs at all**, which is exactly the failure mode the module
-/// header describes — it is recorded here rather than papered over, because
-/// the decision is about spending CI minutes and not about the physics.
+/// It was landed enabled, `#[ignore]`d for one commit when CI measured it at
+/// `+154 s` per `Test` job against a 60 s budget, and then enabled again: the
+/// budget was raised rather than the test dropped. The reasoning was that a
+/// **passing** change-detector suppressed by `#[ignore]` is a deletion carried
+/// out procedurally, and that this repository has no runner for ignored tests
+/// to be suppressed *into* — of the 51 `#[ignore]`s here, none are executed by
+/// anything in `scripts/` or `.github/`. The cost is recorded below so the
+/// trade stays visible rather than becoming folklore.
 ///
 /// Measured, one `cargo test --test armaly_backward_step` per row, same
 /// machine, load average 3.2:
@@ -1784,23 +1860,41 @@ fn the_reattachment_length_matches_gartling() {
 /// | + this test | **69.57 s** |
 ///
 /// so the two other layer-1 tests cost `+0.6 s` between them and **this one
-/// costs `+54.8 s` by itself**. Those two therefore stay enabled; only this
-/// one is ignored, which is why the reflected-step control still guards the
-/// upper-wall readout even now.
+/// costs `+54.8 s` by itself** (`76.99 s` of binary time when isolated on CI
+/// hardware).
 ///
-/// On CI, against its own parent commit: `+154 s` (ubuntu-latest), `+199 s`
-/// (macos-15-intel), `+202 s` (ubuntu-24.04-arm), `+227 s` (macos-latest),
-/// `+309 s` (windows-latest), while the two jobs that run no integration
-/// tests moved `+1 s` and `+2 s` — which is what says the figure is the test
-/// and not runner noise. ⚠️ **Runner noise is nevertheless of the same order**
-/// (the parent commit *added* a test file and still came out 326 s faster than
-/// its own parent on macos-15-intel), so treat the five numbers as a range and
-/// not as a measurement of one quantity.
+/// ⚠️ **The `Test` job runs the integration tests twice**, which is where a
+/// factor of two between two honest measurements came from: `ci.yml` has both
+/// `cargo test` and `cargo test --features "parallel"`, while its other two
+/// steps are `--lib` and skip this file. The binary's own increment is
+/// `76.99 s`; the job's is `2 x 76.99 = 154 s`. ⚠️ **Quoting a binary's
+/// `finished in` as the CI cost understates it by that factor**, and a third
+/// feature set would make it three.
 ///
-/// ⚠️ **Reversal condition: if the CI budget is raised to accommodate roughly
-/// `+150..+300 s` on each `Test` job, delete this `#[ignore]`.** Nothing else
-/// needs to change; the assertions below are unmodified and were green on CI
-/// in the commit that landed them.
+/// On CI, measured three ways because two of them are not trustworthy on
+/// their own: against its own parent commit, and then with this test ignored
+/// for one commit as a control before it was enabled again.
+///
+/// | `Test` job | parent | this test on | this test off |
+/// |---|---|---|---|
+/// | ubuntu-latest | 547 | 701 | **547** |
+/// | ubuntu-24.04-arm | 586 | 788 | 583 |
+/// | macos-latest | 633 | 860 | 616 |
+/// | macos-15-intel | 956 | 1155 | 869 |
+/// | windows-latest | 442 | 751 | ⚠️ 716 |
+///
+/// ⚠️ **Only the third column establishes that the increment is this test.**
+/// ubuntu-latest goes `547 -> 701 -> 547`, returning exactly; arm and
+/// macos-latest return to within 3 s and 17 s. ⚠️ **windows stays 274 s above
+/// its parent with the test switched off, and macos-15-intel lands 87 s
+/// below** — those two jobs move by as much as the thing being measured, so
+/// they cannot be used as instruments. The jobs that run no integration tests
+/// at all moved `+1 s` and `+2 s`.
+///
+/// ⚠️ **A before/after pair cannot separate a real increment from runner
+/// noise here; the third point — putting it back — is what does.** That is
+/// also why the figure quoted above is `+154 s` from the one job that
+/// round-tripped, rather than the `+154..+309` range the pair suggested.
 ///
 /// ## Why the scene is the cheapest one that works
 ///
@@ -1814,12 +1908,32 @@ fn the_reattachment_length_matches_gartling() {
 /// load average 17.7 on 8 cores from sibling sessions, under which the same
 /// 4096-step run timed anywhere between 65 s and 183 s and a 15-sweep run
 /// appeared *slower* than a 60-sweep one. Poisson cell-sweeps were used
-/// instead, being load-independent: `96 x 8 x 4096 x 30 = 94.4 M` against
-/// `77.2 M` for the whole of the rest of this file. ⚠️ **That proxy
-/// under-predicted the real cost by 2.8x** (it implied `+20 s`; the measured
-/// figure once the machine went quiet was `+54.8 s`), so it is fine for
-/// ranking two variants and not for deciding whether something fits in a
-/// budget. The numbers above are wall clock.
+/// instead, being load-independent: this test is
+/// `96 x 8 x 4096 x 30 = 94.37 M`, against
+///
+/// | test | cell-sweeps |
+/// |---|---|
+/// | `reattachment_grows_with_reynolds_number_on_the_step_field` | 36.86 M |
+/// | `every_cross_section_telescopes_to_the_inflow_flux` | 19.66 M |
+/// | `the_step_outlet_develops_into_the_two_term_profile` | 14.75 M |
+/// | `the_upper_wall_readout_finds_the_bubble_of_the_reflected_step` | 14.75 M |
+/// | `the_two_term_developed_profile_is_an_exact_fixed_point` | 5.90 M |
+/// | **rest of this file** | **91.91 M** |
+///
+/// so this one test is `1.027x` the rest of the file put together. (⚠️ that
+/// figure first read `1.22x` against `77.2 M`, which is the four solver tests
+/// that **predate** layer 1 — it left out the reflected-step control, which
+/// landed in the same commit and is part of "the rest of the file" from the
+/// moment it exists. `1.22x` is still the right number against the
+/// pre-layer-1 four, and that is the comparison `+141%` in the memory note
+/// refers to. ⚠️ The two `14.75 M` entries agreeing is a coincidence:
+/// `48 x 8` cells for 640 steps and `24 x 8` for 640 steps on two scenes are
+/// both `384` cell-columns, so it is not double counting.)
+///
+/// ⚠️ **That proxy under-predicted the real cost by 2.8x** (it implied
+/// `+20 s`; the measured figure once the machine went quiet was `+54.8 s`), so
+/// it is fine for ranking two variants and not for deciding whether something
+/// fits in a budget. The numbers above are wall clock.
 ///
 /// ## `L = 12` rather than Gartling's `30`
 ///
@@ -1854,36 +1968,64 @@ fn the_reattachment_length_matches_gartling() {
 /// | 1/16 | 0.75 | 4.392103 | `t = 256` (`N = 4096`) |
 /// | 1/32 | 0.375 | 4.394360 | `t = 256` (`N = 8192`) |
 ///
-/// ⚠️ **`dt = 1/8` was rejected although it is half the cost again.** Its
-/// successive differences are `3.35e-2` then `2.0e-3`, a ratio of 16.7 per
-/// halving where a first-order scheme gives 2 and a second-order one 4 — so
-/// `dt = 1/8` is not in the range where the time discretisation is converging,
-/// which is unsurprising at CFL 1.5, and pinning there would pin a number
-/// outside the regime the other two share. `1/16` and `1/32` differ by
-/// `2.3e-3`, consistent with each other.
+/// ⚠️ **`dt = 1/8` was rejected although it is half the cost again.** From the
+/// settled column above, the successive differences are
+/// `4.392103 - 4.358627 = 3.348e-2` and then
+/// `4.394360 - 4.392103 = 2.257e-3`, a ratio of **14.8** per halving where a
+/// first-order scheme gives 2 and a second-order one 4 — so `dt = 1/8` is not
+/// in the range where the time discretisation is converging, which is
+/// unsurprising at CFL 1.5, and pinning there would pin a number outside the
+/// regime the other two share. `1/16` and `1/32` differ by `2.3e-3`,
+/// consistent with each other.
+///
+/// (⚠️ this paragraph first read `2.0e-3` and a ratio of `16.7`, computed
+/// against `4.394114`, which is the `dt = 1/32` value at `t = 128` — **not
+/// settled**; the settled one at `t = 256` is `4.394360`. The `16.7` also
+/// reached the message of the commit that landed this test and is **not being
+/// rewritten there**, history being kept as it is, so this note is the record.
+/// The conclusion does not depend on which figure is used: 14.8 and 16.7 are
+/// both far outside the 2-to-4 band that would indicate convergence.)
 ///
 /// ## Settling
 ///
 /// Asserted rather than asserted-around: `x_1` is read at `t = 128` and
-/// `t = 256` of the same run and the two must agree to `1e-3` (measured
-/// `3.1e-4`). ⚠️ **Steadiness cannot be taken from the flux imbalance**, which
-/// tracks the Gauss-Seidel residual and not the slowest mode of the flow —
-/// measured at `ny = 16` it reads `7.7e-7`, small enough to look settled,
-/// while `x_1` was still climbing by `9.0e-2` per doubling. The quantity being
-/// pinned is the quantity whose steadiness is checked.
+/// `t = 256` of the same run and the two must agree to `1e-3`. Measured on the
+/// **30 sweeps this test actually uses**, `5.131e-4`. ⚠️ The figure depends on
+/// the sweep count, because sweeps buy time-convergence rate here and not a
+/// different answer:
+///
+/// | sweeps | `x_1(t=128)` vs `x_1(t=256)` | same `x_1` at `t = 256`? |
+/// |---|---|---|
+/// | 15 | `1.559e-3` — **outside the `1e-3` budget** | yes, `4.392103100` |
+/// | **30** | **`5.131e-4`** | yes, `4.392103184` |
+/// | 60 | `3.129e-4` | yes, `4.392103202` |
+///
+/// ⚠️ **An earlier draft quoted the 60-sweep `3.1e-4` next to the 30-sweep
+/// configuration**, which made the margin look twice as comfortable as it is.
+/// All three reach the same `x_1` to `1.8e-8`; what differs is how fast they
+/// get there, which is exactly what this assertion measures and why 15 sweeps
+/// was rejected.
+///
+/// ⚠️ **Steadiness cannot be taken from the flux imbalance**, which tracks the
+/// Gauss-Seidel residual and not the slowest mode of the flow — measured at
+/// `ny = 16` it reads `7.7e-7`, small enough to look settled, while `x_1` was
+/// still climbing by `9.0e-2` per doubling. The quantity being pinned is the
+/// quantity whose steadiness is checked.
 ///
 /// ## The window
 ///
-/// `1e-3` around the measured value, which is three times the `3.1e-4` the run
+/// `1e-3` around the measured value, which is `1.95x` the `5.131e-4` the run
 /// still moves by between its two sample points: anything inside it is the
 /// same answer reached with a slightly different budget, and anything outside
-/// it is the solver having moved. That is `0.02 %` of `x_1`.
+/// it is the solver having moved. That is `0.02 %` of `x_1`. ⚠️ **`1.95x` is
+/// tighter cover than it sounds** — the settling assertion above fails first if
+/// the run stops settling, so this window only has to separate "same answer"
+/// from "different answer", not to absorb the transient as well.
 ///
 /// ⚠️ **If this test fails after a deliberate improvement, it has done its
 /// job** — read the twin above and flip the two `#[ignore]` attributes rather
 /// than widening this window.
 #[test]
-#[ignore = "runtime: +154..+309 s per CI Test job against a 60 s budget (+54.8 s locally, the other two layer-1 tests cost +0.6 s between them). Not a src gap — the assertions below pass. Delete this attribute if the budget is raised; see the doc comment"]
 fn the_reattachment_length_is_pinned_at_the_resolution_ci_can_afford() {
     // Measured on this scene and budget. See the doc comment for the window.
     const PINNED_X_1: f64 = 4.392_103_184;
