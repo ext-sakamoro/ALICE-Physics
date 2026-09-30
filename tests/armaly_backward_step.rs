@@ -136,17 +136,35 @@
 //! solver, and those want opposite handling: the first should be run
 //! somewhere, the second should be *reported* when it starts passing.
 //!
-//! ⚠️ **Nothing in this repository runs `#[ignore]`d tests** — there is no
-//! `--ignored` or `--include-ignored` anywhere in `scripts/` or `.github/`, so
-//! the attribute keeps a test compiling and nothing more. In particular
-//! **nobody will be told when the gap closes and the ignored twin starts
-//! passing**; writing a reversal condition into a doc comment does not create
-//! anything that fires it. There are **51** `#[ignore]`s in this repository and
-//! nothing executes any of them; giving them somewhere to run is filed in the
-//! backlog. ⚠️ **That is the reason the pinned twin is not ignored despite
-//! costing what it costs** — it is the half of layer 1 that can notice a
-//! change, and suppressing it would have left the whole layer as prose the
-//! compiler type-checks.
+//! ⚠️ **`#[ignore]`d tests are now executed — `quality-deep.yml` runs them on
+//! a schedule and checks each one against the claim in its reason string**
+//! (`scripts/run_ignored.py`, landed in `279a9d6`): a `runtime:` test is
+//! expected to **pass**, and a `src gap:` test that starts passing is
+//! **reported**, because that is its reversal condition being met. So the two
+//! labels are not decoration; they are what tells that job which outcome is
+//! the good one.
+//!
+//! ⚠️ **This paragraph previously said the opposite** — that nothing ran
+//! ignored tests and that finding somewhere for them was still only filed in
+//! the backlog. That was true when layer 1 was written and stopped being true
+//! while it was being reviewed. ⚠️ **It also claimed "51 `#[ignore]`s", which
+//! was never right**: the real count is **18** across 10 files, two of them in
+//! this file
+//! (`grep -rnE "^[[:space:]]*#\[ignore" tests/ src/ | wc -l`, and
+//! `cargo test --all-targets -- --list --ignored` enumerates the same 18).
+//! `51` came from `grep -c "#\[ignore"`, which counts **lines mentioning the
+//! attribute** — mostly prose in doc comments like this one, so the figure
+//! grew as this very passage was written, and the naive count now reads 56.
+//!
+//! ⚠️ **Convention, because the error was in the counting and not in the
+//! configuration: when a doc comment states a count, it states the command
+//! that produced it.** "Which config was measured" is not enough — `51` and
+//! `18` are the same repository on the same day.
+//!
+//! ⚠️ **The pinned twin is still not ignored**, and the reason survives the
+//! above: a scheduled runner makes an ignored test observable, not prompt, and
+//! the pin is the half of layer 1 that notices a change on the push that
+//! causes it.
 //!
 //! ## Why the pinned scene is not Gartling's
 //!
@@ -1843,7 +1861,11 @@ fn the_reattachment_length_matches_gartling() {
 ///
 /// It was landed enabled, `#[ignore]`d for one commit when CI measured it at
 /// `+154 s` per `Test` job against a 60 s budget, and then enabled again: the
-/// budget was raised rather than the test dropped. The reasoning was that a
+/// budget was raised rather than the test dropped. ⚠️ **The attribute was the
+/// only thing that moved** — enabling it again restored the state it landed
+/// in, byte for byte in the assertions, which is why the destructive-testing
+/// results below were not re-derived for it and why its mutation red set is
+/// unchanged from the commit that introduced it. The reasoning was that a
 /// **passing** change-detector suppressed by `#[ignore]` is a deletion carried
 /// out procedurally, and that this repository has no runner for ignored tests
 /// to be suppressed *into* — of the 51 `#[ignore]`s here, none are executed by
@@ -1930,10 +1952,16 @@ fn the_reattachment_length_matches_gartling() {
 /// `48 x 8` cells for 640 steps and `24 x 8` for 640 steps on two scenes are
 /// both `384` cell-columns, so it is not double counting.)
 ///
-/// ⚠️ **That proxy under-predicted the real cost by 2.8x** (it implied
-/// `+20 s`; the measured figure once the machine went quiet was `+54.8 s`), so
-/// it is fine for ranking two variants and not for deciding whether something
-/// fits in a budget. The numbers above are wall clock.
+/// ⚠️ **That proxy under-predicts the real cost — by between 1.9x and 3.6x
+/// depending on what it is compared against**, so it is fine for ranking two
+/// variants and useless for deciding whether something fits in a budget. The
+/// spread is deliberately left as a range: the three figures in circulation
+/// (`1.9x` against CI binary seconds with a `27.91 s` baseline, `3.6x` against
+/// local wall clock with a `14.81 s` baseline, and a `2.8x` that was computed
+/// against a superseded `+20 s` estimate) differ because their measurement
+/// bases differ, ⚠️ **which is the very thing this paragraph is warning
+/// about**. Picking one would hide it, and the exact multiplier does not
+/// change the conclusion. The numbers above are wall clock.
 ///
 /// ## `L = 12` rather than Gartling's `30`
 ///
