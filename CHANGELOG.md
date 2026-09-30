@@ -13,6 +13,41 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added — `#[ignore]` test を走らせて理由文の主張と突き合わせる週次 job (`quality-deep.yml`)
+
+⚠️ **これまで `#[ignore]` test を走らせる経路が repo に 1 つも存在しませんでした**。
+`scripts/` にも `.github/` にも `--ignored` / `--include-ignored` は無く、ignore 側は
+compile されるだけだったため、(1) runtime の主張は誰も検証せず (2) gap が実装されて
+ignore 側が通るようになっても誰も気付かない、という 2 つの穴が開いていました。
+
+⚠️ **`#[ignore]` はこの repo で 2 つの互換でない意味に使われており、理由文だけが
+それを見分ける手掛かりです**。したがって 1 回の `--ignored` 走行を「green か red か」
+では読めません。
+
+| 理由文の接頭 | 意味 | 期待 | 不一致時 |
+|---|---|---|---|
+| `runtime:` / `runtime only:` | 通るが CI には遅い | **pass** | job を red に |
+| `src gap:` / `src bug:` / `the red is correct` | 現状では通らない (目標 / 既知 bug の記録) | **fail** | **pass したら反転条件の成立として報告** (red にしない) |
+| その他 | 未棚卸し | — | 分類と結果を列挙のみ |
+
+実測の内訳 (本 commit 時点、**18 本**): `runtime:` **3** / `src gap:` 系 **7** /
+未棚卸し **8**。⚠️ **`grep -rn "#\[ignore"` の 56 hit は doc comment 中の言及を含む
+数であり、attribute の実数ではありません** (`^\s*#\[ignore` で 18)。
+
+初回走行の結果は **18 本すべてが理由文どおり** でした。`runtime:` 3 本は pass、
+`src gap:` 系 7 本は fail、反転条件の成立は 0 件、表の導出漏れも 0 件です。
+⚠️ **未棚卸し 8 本は全部 pass しました** — つまり 8 本とも gap の記録ではなく
+費用による ignore であり、`runtime:` 系として理由文を書き直す候補です。
+
+`scripts/run_ignored.py` が振り分けます。⚠️ **期待値表は source の理由文から毎回
+導出し、file には持ちません** (表そのものが drift しないため)。導出漏れ (表にあるのに
+走らない / 走ったのに表に無い) は `::warning` として報告します。feature set は
+`scripts/preflight.sh` の `NATIVE` を読み、workflow 側に feature 文字列を書きません。
+
+`schedule` (日曜 03:00 JST) と `workflow_dispatch` の両方から走ります。PR では
+走らせません — `runtime:` の 1 本だけで CI Test job に `+154..+309 s` かかる実測が
+あるためで、本 file の他 job と同じ方針です。
+
 ### Changed — overflow flag を blob の被覆に入れる (format v2、doctrine B-12 の残件)
 
 ⚠️ **v1 blob は version 不一致で拒否されます** (`deserialize_state` が `false`)。
