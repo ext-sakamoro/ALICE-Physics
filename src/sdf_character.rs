@@ -19,21 +19,68 @@
 //! 3. Push the character out along the surface normal by
 //!    `radius − sample`, rounding up to
 //!    `radius − sample + skin_width` so the next query starts safely
-//!    outside the field.
+//!    outside the field, and capping the step at `max_push`.
 //! 4. Repeat steps 2-3 until either the sample is `>= radius` or the
 //!    iteration budget is exhausted.
 //! 5. Return the corrected position (regardless of whether all
 //!    iterations converged; a caller wanting hard guarantees can
 //!    inspect [`MoveOutcome::converged`]).
 //!
+//! # Fields that are not exact distance fields
+//!
+//! Step 3 treats the sample as a true distance. For a field with
+//! `|∇f| = L > 1` — gyroid walls and many other implicit surfaces are in
+//! that class — the sample **overstates** the penetration by up to `L`,
+//! so the full push can clear the free gap and land inside the next
+//! sheet of geometry, i.e. the character tunnels through a wall.
+//!
+//! ⚠️ [`MoveOutcome::converged`] does **not** rule this out. The hop
+//! length depends on the penetration depth, so the loop keeps jumping
+//! until one hop happens to land in a gap and then reports success — in
+//! a pocket the character never legally reached. On the periodic-sheet
+//! field of `tests/analytic_sdf_character_up_axis.rs` it converges on
+//! iteration 5, two and a half periods away, having crossed three solid
+//! sheets.
+//!
+//! [`SdfCharacter::max_push`] caps one iteration's step for exactly that
+//! case: with the cap below the free gap's width the character walks out
+//! into the adjacent pocket instead of jumping past it. It defaults to
+//! [`f32::INFINITY`], so an exact distance field keeps the original
+//! single-step arithmetic bit for bit.
+//!
 //! # Ground detection
 //!
-//! [`SdfCharacter::is_grounded`] returns `true` when the SDF value a
-//! short probe distance below the character is closer than
-//! `ground_probe_epsilon` and the surface normal at that probe points
-//! roughly upward (positive Y component ≥ `ground_up_threshold`).
+//! [`SdfCharacter::ground_contact`] probes a short distance along
+//! `−up` and reports the sampled distance together with the surface
+//! normal and its alignment to `up`;
+//! [`SdfCharacter::is_grounded`] thresholds that alignment against
+//! `ground_up_threshold`.
+//!
+//! [`SdfCharacter::up`] defaults to `+Y`, which is what a level with a
+//! single gravity direction wants. A sphere world's up axis is
+//! **radial** (`p / |p|`) and differs per position, so those consumers
+//! set `up` every frame — with a fixed `+Y` probe a character standing
+//! on the equator of a planet reports "not grounded" while standing on
+//! the ground.
 
 use crate::sdf_collider::SdfField;
+
+/// What the ground probe found below the character.
+///
+/// Returned by [`SdfCharacter::ground_contact`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct GroundContact {
+    /// SDF value at the probe point. Negative when the probe is inside
+    /// the surface, which is the common case for a character resting on
+    /// the ground.
+    pub distance: f32,
+    /// Unit surface normal at the probe point, as the field reports it.
+    pub normal: [f32; 3],
+    /// `normal · up` with `up` normalized — the quantity
+    /// [`SdfCharacter::is_grounded`] compares against
+    /// `ground_up_threshold`. `1.0` is a surface square to the up axis.
+    pub up_alignment: f32,
+}
 
 /// Result of an SDF move-and-slide call.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -67,10 +114,25 @@ pub struct SdfCharacter {
     /// SDF distance below the character considered "grounded". Typical
     /// value: 0.05 m.
     pub ground_probe_epsilon: f32,
-    /// Minimum vertical component of the ground normal for the
+    /// Minimum component of the ground normal along [`Self::up`] for the
     /// character to be considered standing on that surface. Typical:
     /// 0.7 (≈ 45° slope).
     pub ground_up_threshold: f32,
+    /// Up axis the ground probe walks against, in world space. Need not
+    /// be normalized (it is normalized on use); a zero or non-finite
+    /// axis falls back to `+Y`.
+    ///
+    /// Defaults to `+Y`. A sphere world sets this to the radial
+    /// direction `p / |p|` each frame.
+    pub up: [f32; 3],
+    /// Upper bound on one penetration-resolution step (m).
+    ///
+    /// Defaults to [`f32::INFINITY`] — no clamping, which keeps the
+    /// arithmetic of an exact distance field unchanged. Set it for
+    /// fields whose gradient magnitude exceeds 1 (gyroid walls and
+    /// similar), where an unclamped push can jump over the free gap into
+    /// the next sheet of geometry; see the module docs.
+    pub max_push: f32,
 }
 
 impl Default for SdfCharacter {
@@ -83,6 +145,8 @@ impl Default for SdfCharacter {
             skin_width: 1.0e-4,
             ground_probe_epsilon: 5.0e-2,
             ground_up_threshold: 0.7,
+            up: [0.0, 1.0, 0.0],
+            max_push: f32::INFINITY,
         }
     }
 }
@@ -125,7 +189,10 @@ impl SdfCharacter {
                 break;
             }
             let (nx, ny, nz) = field.normal(pos[0], pos[1], pos[2]);
-            let push = self.radius - d + self.skin_width;
+            // `max_push` is `INFINITY` by default, and `min` with
+            // `INFINITY` returns the left operand unchanged, so an exact
+            // distance field keeps the original arithmetic bit for bit.
+            let push = (self.radius - d + self.skin_width).min(self.max_push);
             pos[0] += nx * push;
             pos[1] += ny * push;
             pos[2] += nz * push;
@@ -138,17 +205,60 @@ impl SdfCharacter {
         }
     }
 
-    /// `true` when the character stands on a surface with normal
-    /// pointing predominantly upward.
+    /// [`Self::up`] normalized, falling back to `+Y` for a zero or
+    /// non-finite axis so the probe can never produce `NaN` coordinates.
+    ///
+    /// `+Y` (the default) normalizes to itself exactly: the length is
+    /// `1.0` and dividing by `1.0` is exact in IEEE-754.
+    ///
+    /// The length goes through [`crate::det_math::sqrt`] rather than
+    /// `f32::sqrt` — this module is not `std`-gated, and the platform
+    /// libm is not cross-platform bit-exact.
+    #[must_use]
+    fn up_unit(&self) -> [f32; 3] {
+        let [x, y, z] = self.up;
+        let len = crate::det_math::sqrt(x * x + y * y + z * z);
+        if len > 0.0 && len.is_finite() {
+            [x / len, y / len, z / len]
+        } else {
+            [0.0, 1.0, 0.0]
+        }
+    }
+
+    /// Probe `radius + ground_probe_epsilon` along `−up` and report what
+    /// the field says there.
+    ///
+    /// `None` when the probe point is farther than
+    /// `ground_probe_epsilon` from any surface (the character is in the
+    /// air). The alignment test itself is left to the caller, or to
+    /// [`Self::is_grounded`].
+    #[must_use]
+    pub fn ground_contact<F: SdfField + ?Sized>(&self, field: &F) -> Option<GroundContact> {
+        let up = self.up_unit();
+        let reach = self.radius + self.ground_probe_epsilon;
+        let probe = [
+            self.position[0] - up[0] * reach,
+            self.position[1] - up[1] * reach,
+            self.position[2] - up[2] * reach,
+        ];
+        let distance = field.distance(probe[0], probe[1], probe[2]);
+        if distance > self.ground_probe_epsilon {
+            return None;
+        }
+        let (nx, ny, nz) = field.normal(probe[0], probe[1], probe[2]);
+        Some(GroundContact {
+            distance,
+            normal: [nx, ny, nz],
+            up_alignment: nx * up[0] + ny * up[1] + nz * up[2],
+        })
+    }
+
+    /// `true` when the character stands on a surface whose normal points
+    /// predominantly along [`Self::up`].
     #[must_use]
     pub fn is_grounded<F: SdfField + ?Sized>(&self, field: &F) -> bool {
-        let probe_y = self.position[1] - self.radius - self.ground_probe_epsilon;
-        let d = field.distance(self.position[0], probe_y, self.position[2]);
-        if d > self.ground_probe_epsilon {
-            return false;
-        }
-        let (_nx, ny, _nz) = field.normal(self.position[0], probe_y, self.position[2]);
-        ny >= self.ground_up_threshold
+        self.ground_contact(field)
+            .is_some_and(|c| c.up_alignment >= self.ground_up_threshold)
     }
 }
 

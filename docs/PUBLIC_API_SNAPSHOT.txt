@@ -12782,6 +12782,25 @@ pub fn alice_physics::sdf_ccd::batch_sphere_trace_sdf(&[alice_physics::solver::R
 pub fn alice_physics::sdf_ccd::ray_march_sdf(alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &alice_physics::sdf_collider::SdfCollider, &alice_physics::sdf_ccd::SdfCcdConfig) -> core::option::Option<alice_physics::ccd::TOI>
 pub fn alice_physics::sdf_ccd::sphere_trace_sdf(alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &alice_physics::sdf_collider::SdfCollider, &alice_physics::sdf_ccd::SdfCcdConfig) -> core::option::Option<alice_physics::ccd::TOI>
 pub mod alice_physics::sdf_character
+pub struct alice_physics::sdf_character::GroundContact
+pub alice_physics::sdf_character::GroundContact::distance: f32
+pub alice_physics::sdf_character::GroundContact::normal: [f32; 3]
+pub alice_physics::sdf_character::GroundContact::up_alignment: f32
+impl core::clone::Clone for alice_physics::sdf_character::GroundContact
+pub fn alice_physics::sdf_character::GroundContact::clone(&self) -> Self
+impl core::cmp::PartialEq for alice_physics::sdf_character::GroundContact
+pub fn alice_physics::sdf_character::GroundContact::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::sdf_character::GroundContact
+pub fn alice_physics::sdf_character::GroundContact::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::sdf_character::GroundContact
+impl core::marker::StructuralPartialEq for alice_physics::sdf_character::GroundContact
+impl core::marker::Freeze for alice_physics::sdf_character::GroundContact
+impl core::marker::Send for alice_physics::sdf_character::GroundContact
+impl core::marker::Sync for alice_physics::sdf_character::GroundContact
+impl core::marker::Unpin for alice_physics::sdf_character::GroundContact
+impl core::marker::UnsafeUnpin for alice_physics::sdf_character::GroundContact
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::sdf_character::GroundContact
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::sdf_character::GroundContact
 pub struct alice_physics::sdf_character::MoveOutcome
 pub alice_physics::sdf_character::MoveOutcome::converged: bool
 pub alice_physics::sdf_character::MoveOutcome::iterations: usize
@@ -12806,10 +12825,13 @@ pub alice_physics::sdf_character::SdfCharacter::ground_probe_epsilon: f32
 pub alice_physics::sdf_character::SdfCharacter::ground_up_threshold: f32
 pub alice_physics::sdf_character::SdfCharacter::height: f32
 pub alice_physics::sdf_character::SdfCharacter::max_iterations: usize
+pub alice_physics::sdf_character::SdfCharacter::max_push: f32
 pub alice_physics::sdf_character::SdfCharacter::position: [f32; 3]
 pub alice_physics::sdf_character::SdfCharacter::radius: f32
 pub alice_physics::sdf_character::SdfCharacter::skin_width: f32
+pub alice_physics::sdf_character::SdfCharacter::up: [f32; 3]
 impl alice_physics::sdf_character::SdfCharacter
+pub fn alice_physics::sdf_character::SdfCharacter::ground_contact<F: alice_physics::sdf_collider::SdfField + ?core::marker::Sized>(&self, &F) -> core::option::Option<alice_physics::sdf_character::GroundContact>
 pub fn alice_physics::sdf_character::SdfCharacter::is_grounded<F: alice_physics::sdf_collider::SdfField + ?core::marker::Sized>(&self, &F) -> bool
 pub fn alice_physics::sdf_character::SdfCharacter::move_and_slide<F: alice_physics::sdf_collider::SdfField + ?core::marker::Sized>(&self, &F, [f32; 3]) -> alice_physics::sdf_character::MoveOutcome
 pub fn alice_physics::sdf_character::SdfCharacter::new([f32; 3], f32, f32) -> Self
