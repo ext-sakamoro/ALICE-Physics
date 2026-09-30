@@ -3210,10 +3210,12 @@ impl PhysicsWorld {
 
     /// [`Self::serialize_state`] blob の format version
     ///
-    /// v1 = header 12 byte + body ごと 208 byte + body ごと sleep 5 byte
+    /// v1 = header 12 + body ごと 208 + body ごと sleep 5
+    /// v2 = v1 + **world ごと overflow flag 1 byte** (doctrine B-12)
+    ///
     /// 被覆を足す時はここを上げ、[`Self::deserialize_state`] で分岐する
-    /// (不一致を silent に読み替えない)
-    pub const STATE_VERSION: u16 = 1;
+    /// (不一致を silent に読み替えない — 旧 version の blob は `false` で拒否)
+    pub const STATE_VERSION: u16 = 2;
 
     /// Serialize world state (for rollback netcode).
     ///
@@ -3314,6 +3316,12 @@ impl PhysicsWorld {
             data.extend_from_slice(&sd.idle_frames.to_le_bytes());
         }
 
+        // overflow flag (world ごと 1 byte、v2、doctrine B-12)
+        //
+        // ⚠️ **flag は状態の一部** — blob に入れないと overflow した枝を
+        // 巻き戻した先で `undecided` が消えて B-12 が目的を達成しない
+        data.push(u8::from(self.overflow_detected));
+
         data
     }
 
@@ -3350,7 +3358,7 @@ impl PhysicsWorld {
         }
 
         // 長さ検査は body 数から一意に決まる (header + 運動状態 + sleep)
-        let expected = 12 + count * 208 + count * 5;
+        let expected = 12 + count * 208 + count * 5 + 1;
         if data.len() < expected {
             return false;
         }
@@ -3447,6 +3455,18 @@ impl PhysicsWorld {
                 sd.idle_frames = idle_frames;
             }
         }
+
+        // overflow flag の復元 (v2)
+        //
+        // ⚠️ **読み込んだ状態に従う** (立てるだけでなく下げる) — sticky は
+        // 「step を重ねても落ちない」ことであって、**別の枝を読み込んでも
+        // 残る**ことではない 残すと探索で枝を跨いで汚染する
+        self.overflow_detected = match data[offset] {
+            0 => false,
+            1 => true,
+            // 未知の値は拒否 (silent に false へ倒すと undecided が消える)
+            _ => return false,
+        };
 
         true
     }
@@ -5666,8 +5686,8 @@ mod tests {
     fn deserialize_state_roundtrip_restores_every_field_bit_exact() {
         let src = snapshot_world();
         let bytes = src.serialize_state();
-        // v1: header 12 + body ごと 208 + body ごと sleep 5
-        assert_eq!(bytes.len(), 12 + 2 * 208 + 2 * 5);
+        // v2: header 12 + body ごと 208 + body ごと sleep 5 + world ごと flag 1
+        assert_eq!(bytes.len(), 12 + 2 * 208 + 2 * 5 + 1);
         let mut dst = quiet_world();
         dst.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
         dst.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
@@ -5711,8 +5731,25 @@ mod tests {
             );
         }
 
-        // 領域 3: sleep — 1 byte 壊れたら sleep_data が変わる
-        for pos in body_end..bytes.len() {
+        // 領域 4: flag (末尾 1 byte) — 壊したら overflow_detected が変わる
+        //
+        // ⚠️ v2 で足した領域も「silent に無視される byte が無い」不変条件の
+        // 対象に含める (flag は 0/1 なので 0x01 の flip で必ず値が変わる)
+        {
+            let pos = bytes.len() - 1;
+            let mut bad = bytes.clone();
+            bad[pos] ^= 0x01;
+            let mut dst = snapshot_world();
+            assert!(dst.deserialize_state(&bad), "flag byte {pos}");
+            assert_ne!(
+                dst.overflow_detected(),
+                src.overflow_detected(),
+                "flag byte {pos} を壊しても overflow_detected が変わらない"
+            );
+        }
+
+        // 領域 3: sleep — 1 byte 壊れたら sleep_data が変わる (flag の手前まで)
+        for pos in body_end..bytes.len() - 1 {
             let mut bad = bytes.clone();
             bad[pos] ^= 0x01;
             let mut dst = snapshot_world();
@@ -5779,7 +5816,7 @@ mod tests {
         assert!(!dst.deserialize_state(&bytes[..12 + 208 + 100])); // 2 体目が途中で切れる
         assert!(
             !dst.deserialize_state(&bytes[..bytes.len() - 1]),
-            "sleep 部が 1 byte 欠けても拒否する (長さ検査が body 数から一意に決まる)"
+            "末尾 (v2 の flag) が 1 byte 欠けても拒否する (長さ検査が body 数から一意に決まる)"
         );
         // ⚠️ 旧 format (先頭が body 数、header なし) は magic 不一致で拒否される
         // 検査しないと **旧 blob の先頭 4 byte を magic と読んで誤解釈する**
@@ -5788,6 +5825,15 @@ mod tests {
         assert!(
             !dst.deserialize_state(&legacy),
             "旧 format の blob は magic 不一致で拒否されるべき"
+        );
+        // ⚠️ v1 blob (magic は合うが version が 1) も拒否される
+        // version を検査しないと **flag 1 byte 短い blob を v2 として読む**
+        let mut v1 = bytes.clone();
+        v1[4] = 1;
+        v1.truncate(v1.len() - 1);
+        assert!(
+            !dst.deserialize_state(&v1),
+            "v1 blob は version 不一致で拒否されるべき"
         );
         let mut one_body = quiet_world();
         one_body.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
@@ -5803,6 +5849,7 @@ mod tests {
         one.extend_from_slice(&1u32.to_le_bytes());
         one.extend_from_slice(&bytes[12..12 + 208]);
         one.extend_from_slice(&bytes[12 + 2 * 208..12 + 2 * 208 + 5]);
+        one.push(0); // v2: flag
         assert!(exact.deserialize_state(&one));
         assert_eq!(exact.bodies[0].position, v3(1, 2, 3));
     }
@@ -6763,8 +6810,8 @@ mod tests {
     fn deserialize_state_accepts_header_only_snapshot_of_empty_world() {
         let src = quiet_world();
         let bytes = src.serialize_state();
-        // v1: body 0 体なら header 12 byte だけ
-        assert_eq!(bytes.len(), 12);
+        // v2: body 0 体でも header 12 + flag 1
+        assert_eq!(bytes.len(), 13);
         let mut dst = quiet_world();
         assert!(dst.deserialize_state(&bytes));
         assert_eq!(dst.body_count(), 0);

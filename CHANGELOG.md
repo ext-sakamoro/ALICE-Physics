@@ -13,6 +13,39 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Changed — overflow flag を blob の被覆に入れる (format v2、doctrine B-12 の残件)
+
+⚠️ **v1 blob は version 不一致で拒否されます** (`deserialize_state` が `false`)。
+magic は一致するので、**version を検査しないと flag 1 byte 短い v1 blob を v2 として
+読んでしまいます**。
+
+| 範囲 | 内容 |
+|---|---|
+| `[0..12)` | header (magic / version = **2** / reserved / body 数) |
+| `[12..)` | body ごと 208 byte (運動状態) |
+| 続き | body ごと 5 byte (`SleepState` + `idle_frames`) |
+| **末尾** | **world ごと 1 byte (overflow flag)** |
+
+**なぜ必要か**: doctrine B-12 が「flag は状態の一部なので被覆に含める —
+`PhysicsWorld` に持つだけでは **overflow した枝を巻き戻した先で flag が消えて
+`undecided` が失われる**」と指摘しており、v1 では未収録でした。
+
+⚠️ **復元は「読み込んだ状態に従う」** (立てるだけでなく**下げる**)。sticky は
+「`step` を重ねても落ちない」ことであって「別の枝を読み込んでも残る」ことではありません。
+残すと探索で枝を跨いで汚染します。
+
+`tests/wm01_flag_survives_rollback.rs` を追加 (3 本、実装前に 3/3 red を実測)。
+⚠️ **対照実験を 1 度書き直しました** — 当初の「flag が立つ前後で blob が変わるか」は
+**洗浄 step が sleep 状態も変えるので flag が被覆外でも green になる** (= flag を見て
+いない) ため、**blob 長に flag 1 byte が含まれるか**という直接量に差し替えています。
+
+既存 test 4 件を v2 に追従させ、2 点**強化**しました:
+byte-flip test に **flag 領域 (領域 4)** を追加 (v2 で足した byte も「silent に無視される
+byte が無い」不変条件の対象に含める)、拒否 test に **v1 blob の version 拒否**を追加。
+
+検証: lib 1763 + **全 48 suite green** (回帰 0)。**破壊試験**として flag の復元を削ると
+`wm01_flag_survives_rollback` の本命 2 本が red になり、戻すと green になることを実測。
+
 ### Added — 範囲外の積を 3 値の `undecided` として表に出す (WM-01 / doctrine B-12)
 
 `Fix128::checked_mul` / `Vec3Fix::checked_scale` / `PhysicsWorld::overflow_detected()` を追加。
