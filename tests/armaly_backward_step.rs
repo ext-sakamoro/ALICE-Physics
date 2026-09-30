@@ -16,11 +16,11 @@
 //! The file name kept the word "armaly" because the backlog entry that asked
 //! for this work uses it; the scene below is Gartling's.
 //!
-//! The comparison against Gartling's numbers is not in this file. What is
-//! here are three statements that hold whatever the literature says, so that
+//! Three of the four layers here hold whatever the literature says, so that
 //! when the literature comparison misses it is already known whether the
 //! solver conserves mass, whether it reaches the right developed profile, and
-//! what the reattachment detector means.
+//! what the reattachment detector means. The fourth, layer 1, is the
+//! comparison itself — and it misses, by a lot.
 //!
 //! # The scene
 //!
@@ -88,6 +88,89 @@
 //! inlet channel would hold — a fixed point rather than a shape that starts
 //! developing in the first few cells — and because its mean is exactly `1`,
 //! which is what fixes `Re`.
+//!
+//! # Layer 1 — the comparison against Gartling, as a pair of twins
+//!
+//! The solver does not reproduce Gartling's numbers, so the comparison is
+//! written as two tests over **the same scene, budget and readout**: one
+//! asserting the literature values and carrying `#[ignore]`, one asserting
+//! what the solver produces today and carrying none. Exactly one of the pair
+//! is enabled at a time, so the scene is simulated once.
+//!
+//! | | asserts | runs |
+//! |---|---|---|
+//! | `the_reattachment_length_matches_gartling` | `x_1 = 6.10`, bubble `4.85 .. 10.48`, `L_u = 5.63`, each to within a cell | no — `#[ignore = "src gap: …"]` |
+//! | `the_reattachment_length_is_pinned_at_the_resolution_ci_can_afford` | `x_1 = 4.392103184 ± 1e-3`, no upper-wall bubble | **yes** |
+//!
+//! Measured on the shared scene (`ny = 8`, `L = 12H`, `dt = 1/16`, `t = 256`,
+//! 30 sweeps):
+//!
+//! | quantity | solver | Gartling | gap |
+//! |---|---|---|---|
+//! | `x_1` | 4.392103184 | 6.10 | 72.0 %, short by 1.708 = 13.7 cells |
+//! | upper `x_2` | none | 4.85 | no bubble at all |
+//! | upper `x_3` | none | 10.48 | — |
+//! | `L_u` | — | 5.63 | — |
+//!
+//! ⚠️ **The two ignore reasons in this repository mean different things and
+//! are labelled differently.** `runtime:` (the refinement sweep at the bottom
+//! of this file) passes but is too slow for CI; `src gap:` (the twin above)
+//! would run in CI in the same time as its non-ignored twin and is ignored
+//! because it **fails**. Reading `#[ignore]` as one category loses that.
+//!
+//! ⚠️ **Nothing in this repository runs `#[ignore]`d tests** — there is no
+//! `--ignored` or `--include-ignored` anywhere in `scripts/` or `.github/`, so
+//! the attribute keeps a test compiling and nothing more. In particular
+//! **nobody will be told when the gap closes and the ignored twin starts
+//! passing**; writing a reversal condition into a doc comment does not create
+//! anything that fires it. That is why the twin that *does* run pins today's
+//! number: it is the only part of layer 1 that can notice a change. Somewhere
+//! for the gap-ignored twins to run is filed in the backlog.
+//!
+//! ## Why the pinned scene is not Gartling's
+//!
+//! Gartling's channel is `L = 30` and his own computations are far finer than
+//! `ny = 8`. Both departures are measured rather than assumed — the length
+//! tables are in the doc comment of the pinned twin. The short version:
+//! `x_1` stops depending on `L` by `L = 12` (`L = 12` and `L = 16` agree to
+//! `1e-6` at `Re = 800`), and `dt = 1/16` rather than `1/32` halves the cost
+//! while moving `x_1` by `2.3e-3`, whereas `dt = 1/8` leaves the range where
+//! the time discretisation is converging and was rejected.
+//!
+//! ⚠️ **The gap is dominated by resolution and the remainder is unknown.**
+//! Refinement moves both quantities toward the reference (`x_1 = 4.3944` at
+//! `ny = 8`, `>= 4.7220` at `ny = 16`, `>= 5.3032` at `ny = 32`, and the upper
+//! bubble appears at `ny = 16`), but the finer two are lower bounds that never
+//! settled in time, so **no convergence order can be read off them** and
+//! nothing here shows whether a residual survives refinement. Saying the
+//! literature gap is "discretisation" would be claiming more than was
+//! measured.
+//!
+//! ## The upper wall reads zero, and why that is not self-certifying
+//!
+//! The pinned twin asserts that there is **no** upper-wall bubble, which is a
+//! quantity reading zero — the shape of statement this repository has been
+//! caught by before, where zero meant nothing was reaching the measurement
+//! rather than that the measurement was zero. Three things keep it honest, and
+//! the first two are not enough on their own:
+//!
+//! 1. the same field's lower wall carries 35 reversed faces, so the readout
+//!    is not blind to reverse flow in general;
+//! 2. the upper row is checked to be a *wall-adjacent* row (its outlet value
+//!    is below mid-channel), which excludes an interior row, while the "no
+//!    reversal" assertion itself excludes the opposite wall's row;
+//! 3. **a positive control on a field that does have a bubble there** —
+//!    reflecting the step to the other wall must reflect the answer, and
+//!    `the_upper_wall_readout_finds_the_bubble_of_the_reflected_step` checks
+//!    that the reflected reattachment equals the original to every printed
+//!    digit (`0.1429734239751133` both ways) with the fields agreeing to
+//!    43 ulp.
+//!
+//! ⚠️ **Mutation M5 below is the reason (3) exists**: pointing the upper
+//! readout one row away from the wall leaves the pinned twin **green** — it
+//! still finds no reversal, and that row is still below mid-channel — and only
+//! the reflected-step control turns red. Without it "no bubble at `ny = 8`"
+//! and "the upper readout does not work" are the same test result.
 //!
 //! # Layer 2 — every cross-section carries the inflow flux
 //!
@@ -266,7 +349,7 @@
 //!
 //! ⚠️ **Only the `ny = 8` row is converged in time.** At `ny = 16`, `x_1` is
 //! `4.631712` at `t = 128` against `4.721966` at `t = 256` — still climbing by
-//! `9.0e-2` — where `ny = 8` moves by `2.9e-4` over the same interval. So the
+//! `9.0e-2` — where `ny = 8` moves by `2.47e-4` over the same interval. So the
 //! finer rows are **lower bounds**, and the step count at which they settle
 //! was not found (filed in the backlog). ⚠️ **The flux imbalance does not
 //! reveal this**: at `ny = 16` it is `7.70e-7`, small enough to look settled,
@@ -316,6 +399,38 @@
 //! ⚠️ **M2 leaving layer 2 green is correct, not a gap**: a free-slip wall
 //! still conserves mass. A mass-conservation oracle cannot see a missing shear
 //! condition, which is why layer 3 exists.
+//!
+//! ## Layer 1, added later
+//!
+//! Four more mutations, same protocol, `src/` restored after each and verified
+//! with `git diff --stat -- src/` coming back empty. The marker is printed
+//! from a test this time rather than from the shell, for the reason recorded
+//! above.
+//!
+//! | # | mutation | red | still green | restored |
+//! |---|---|---|---|---|
+//! | M5 | *(test side)* `top_row` reads `ny - 2`, one row in from the upper wall | the reflected-step control (`Re = 16` reflected shows no bubble on that row) | ⚠️ **the pinned twin, including its "no upper bubble" and wall-adjacency assertions** — and layers 2, 3, 4 | green |
+//! | M6 | *(test side)* `separation_x` interpolates from the wrong end of the bracketing pair | the `separation_x` contract (`0.3125` against `0.4375`), and the control's "the reflected bubble opens at the step" | the pinned twin, layers 2, 3, 4 | green |
+//! | M7 | `u_wall_across_y` returns `None` on the `-y` side, so the lower wall alone loses its no-slip ghost | the pinned twin **via its settling assertion** (`x_1` drifts `1.47e-2` between the two sample points, against a `1e-3` budget) and the control (`Re = 16` no longer separates at all) | the `separation_x` contract | green |
+//! | M8 | `diffuse_velocity` doubles the viscous coefficient (`y`-reflection preserved) | the pinned twin **via its window** (`x_1 = 2.414514151`, settled to `5.3e-6`, so settling passes and the pin catches it) and the control | the `separation_x` contract | green |
+//!
+//! ⚠️ **M7 and M8 are caught by different assertions of the same test, and
+//! that is why it carries both.** M7 leaves `x_1` near its pinned value
+//! (`4.3175` against `4.3921`, inside a window three times wider) but destroys
+//! its steadiness; M8 leaves it perfectly steady and moves it by `2.0`. A test
+//! with only the window would miss M7; one with only the settling check would
+//! miss M8.
+//!
+//! ⚠️ **M8 went red on the reflected-step control too, which was not the
+//! prediction** — the expectation was that a `y`-symmetric mutation would
+//! leave it green and thereby show the pin catching something the control
+//! cannot. It failed earlier than that instead: doubling the viscosity removes
+//! the `Re = 16` bubble altogether, so the control's own precondition ("the
+//! step wall must separate and reattach") fires before any reflection residual
+//! is computed, and **the residual was never measured under M8**. So this set
+//! demonstrates the control catching what the pin cannot (M5) but not the
+//! converse; a mutation that moves `x_1` at `Re = 800` while leaving a bubble
+//! at `Re = 16` would be needed for that and was not constructed.
 
 #![cfg(feature = "std")]
 
@@ -408,10 +523,28 @@ fn developed_profile(ny: usize, q: f64) -> Vec<f64> {
 // The scene
 // ===========================================================================
 
+/// Which wall the step sits against. [`StepSide::Upper`] is the same problem
+/// reflected in `y`, which is what makes it a positive control for the
+/// upper-wall readout: the wall that carries the bubble swaps over, and nothing
+/// else about the discretisation does.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+enum StepSide {
+    Lower,
+    Upper,
+}
+
 /// Gartling's backward-facing step: downstream height `H = 1` in `2 s_cells`
 /// cells, step height `S = H/2`, channel length `nx dx`, `nu = 1/nu_recip`
 /// and therefore `Re = nu_recip`.
 fn backward_facing_step(s_cells: usize, nx: usize, nu_recip: i64) -> CfdSolver {
+    step_scene(s_cells, nx, nu_recip, StepSide::Lower)
+}
+
+/// [`backward_facing_step`] with the step against either wall. Row `j` of the
+/// `Upper` scene is row `ny - 1 - j` of the `Lower` one, inflow column
+/// included, so the two fields are reflections of each other and any
+/// difference between them is arithmetic.
+fn step_scene(s_cells: usize, nx: usize, nu_recip: i64, side: StepSide) -> CfdSolver {
     let ny = 2 * s_cells;
     let dx_recip = ny as i64;
     let mut solver = CfdSolver::new(nx, ny, 1, Fix128::from_ratio(1, dx_recip));
@@ -435,12 +568,23 @@ fn backward_facing_step(s_cells: usize, nx: usize, nu_recip: i64) -> CfdSolver {
         grid.set_v_bc(i, 0, 0, WALL);
         grid.set_v_bc(i, ny, 0, WALL);
     }
-    // The step: the lower half of the inflow plane is the step face.
-    for j in 0..s_cells {
-        grid.set_u_bc(0, j, 0, WALL);
-    }
-    for (m, &u) in inlet_column(s_cells).iter().enumerate() {
-        grid.set_u_bc(0, s_cells + m, 0, FaceBc::Inflow { normal_velocity: u });
+    // Half of the inflow plane is the step face and the other half carries the
+    // inlet column — which half, and in which order, is the reflection.
+    let column = inlet_column(s_cells);
+    for m in 0..s_cells {
+        let (step_j, flow_j, source) = match side {
+            StepSide::Lower => (m, s_cells + m, m),
+            StepSide::Upper => (s_cells + m, m, s_cells - 1 - m),
+        };
+        grid.set_u_bc(0, step_j, 0, WALL);
+        grid.set_u_bc(
+            0,
+            flow_j,
+            0,
+            FaceBc::Inflow {
+                normal_velocity: column[source],
+            },
+        );
     }
     for j in 0..ny {
         grid.set_u_bc(nx, j, 0, FaceBc::Outflow);
@@ -536,6 +680,22 @@ fn bottom_row(grid: &MacGrid) -> Vec<f64> {
     (0..=grid.nx).map(|i| grid.u(i, 0, 0).to_f64()).collect()
 }
 
+/// The row of `u` faces nearest the **upper** wall, `u(i, ny - 1, 0)`.
+///
+/// ⚠️ Which row this is cannot be checked by "it found no bubble" — that is
+/// what an inoperative readout also reports. The two statements are separated
+/// here by asserting, on the same field, that this row is a *near-wall* row
+/// (its outlet value is below the one at mid-channel, which excludes an
+/// interior row) while carrying no reversal (which excludes the opposite
+/// wall's row, where 35 faces are reversed); and by
+/// [`the_upper_wall_readout_finds_the_bubble_of_the_reflected_step`], which
+/// runs it on a field that does have a bubble against this wall.
+fn top_row(grid: &MacGrid) -> Vec<f64> {
+    (0..=grid.nx)
+        .map(|i| grid.u(i, grid.ny - 1, 0).to_f64())
+        .collect()
+}
+
 /// Reattachment abscissa: the first place `row` stops being negative, in the
 /// units `dx` is given in. `row[i]` sits at `x = i dx`.
 ///
@@ -546,6 +706,19 @@ fn reattachment_x(row: &[f64], dx: f64) -> Option<f64> {
     (0..row.len().saturating_sub(1))
         .find(|&i| row[i] < 0.0 && row[i + 1] >= 0.0)
         .map(|i| dx * (i as f64 + (-row[i]) / (row[i + 1] - row[i])))
+}
+
+/// Separation abscissa: the mirror image of [`reattachment_x`] — the first
+/// place `row` *starts* being negative, between the last non-negative face `i`
+/// and the first negative one `i + 1`.
+///
+/// Needed because Gartling's upper-wall bubble is detached from the inflow
+/// plane (`x_2 = 4.85`), so unlike the lower wall its opening is an interior
+/// crossing and has to be located rather than assumed to be at `x = 0`.
+fn separation_x(row: &[f64], dx: f64) -> Option<f64> {
+    (0..row.len().saturating_sub(1))
+        .find(|&i| row[i] >= 0.0 && row[i + 1] < 0.0)
+        .map(|i| dx * (i as f64 + row[i] / (row[i] - row[i + 1])))
 }
 
 // ===========================================================================
@@ -1013,10 +1186,19 @@ fn reattachment_grows_with_reynolds_number_on_the_step_field() {
 ///
 /// | `ny` | `x_1` at `t = 128` | `x_1` at `t = 256` |
 /// |---|---|---|
-/// | 8 | 4.394114 | 4.394400 |
+/// | 8 | 4.394114 | 4.394360 |
 /// | 16 | 4.631712 | 4.721966 |
 ///
-/// so at `ny = 8` the answer has stopped moving (`2.9e-4` apart) while at
+/// (⚠️ the `ny = 8` entry at `t = 256` read `4.394400` when this table first
+/// landed, and the `2.9e-4` computed from it appeared here and in the module
+/// header. Re-measured on the same scene: `4.394113515` at `t = 128`, which
+/// reproduces the landed `t = 128` figure exactly, and `4.394360266` at
+/// `t = 256`. Since the same scene reproduces bit-for-bit — this is
+/// fixed-point arithmetic — the disagreement was a transcription slip and not
+/// a loss of determinism. The rounded `4.3944` used in the inequality below is
+/// unaffected either way.)
+///
+/// so at `ny = 8` the answer has stopped moving (`2.47e-4` apart) while at
 /// `ny = 16` it is still climbing by `9.0e-2` over the same interval. Reading
 /// both off at `t = 256` and calling the pair a refinement study would be
 /// comparing a converged number with an unconverged one.
@@ -1146,5 +1328,572 @@ fn reattachment_lengthens_under_grid_refinement() {
         reattachment > separation,
         "the upper-wall bubble must close downstream of where it opens: \
          {separation:.4} .. {reattachment:.4}"
+    );
+}
+
+// ===========================================================================
+// Layer 1 — the comparison against Gartling (1990) at Re = 800
+// ===========================================================================
+
+/// Gartling (1990), `Re = 800`, normalised to `H = 1`. Transcribed in
+/// `memory/reference_armaly_gartling_values.md`, where each value is recorded
+/// with the sources that agree on it; only the ones that agree to the last
+/// printed digit are used as targets here.
+///
+/// Lower-wall reattachment. Three independent transcriptions agree
+/// (`6.10` on `H = 1`, `12.20` and `12.2` on the step height `S = 0.5`).
+const GARTLING_X_1: f64 = 6.10;
+/// Upper-wall separation, two transcriptions (`4.85`, and `9.7` on `S`).
+const GARTLING_X_2: f64 = 4.85;
+/// Upper-wall bubble length `x_3 - x_2`, two transcriptions agreeing to the
+/// last digit (`5.63`, and `11.26` on `S`).
+const GARTLING_L_U: f64 = 5.63;
+/// Upper-wall reattachment. ⚠️ **Rounding-consistent only**, not agreeing to
+/// the last printed digit: one source prints `10.48` (`20.96` on `S`) and the
+/// other `21.0` on `S`, i.e. `10.5`. Carried with the uncertainty below rather
+/// than used as an exact target, which is why the bubble *length* is the hard
+/// statement and this is the soft one.
+const GARTLING_X_3: f64 = 10.48;
+/// Spread between the two transcriptions of [`GARTLING_X_3`].
+const GARTLING_X_3_UNCERTAINTY: f64 = 0.02;
+
+// The scene and budget both layer-1 twins run. They share these so that the
+// twins differ **only** in what they assert — see the module header.
+/// `ny = 2 * 4 = 8`, `dx = 1/8`.
+const LIT_S_CELLS: usize = 4;
+/// `L = 12 H`. Gartling's channel is `L = 30`; measured, `x_1` does not depend
+/// on it once the outflow is far enough away (table in the module header).
+const LIT_LENGTH: f64 = 12.0;
+/// `dt = 1/16`, i.e. a CFL number of `0.75` against the inlet peak `1.5`.
+const LIT_DT_RECIP: i64 = 16;
+/// `t = 256`. `x_1` is settled to better than `1e-3` by half this (asserted).
+const LIT_STEPS: u32 = 4096;
+/// Half the 60 sweeps the other scenes in this file use, because this is the
+/// one run that has to fit in a CI budget and the sweeps are the bulk of its
+/// cost. ⚠️ Measured not to move the answer: `x_1 = 4.392_103_184` here
+/// against `4.392_103_201` at 60 sweeps, agreeing to `1.7e-8`, while the flux
+/// imbalance is `2.4e-8` — four orders inside the `1e-3` this test asserts.
+/// ⚠️ 15 sweeps was rejected: it reaches the same `x_1` (`4.392_103_100`) but
+/// gets there more slowly in time, so the settling check below reads `1.6e-3`
+/// between its two sample points and no longer demonstrates what it claims.
+const LIT_JACOBI_SWEEPS: u32 = 30;
+
+/// What one run of the shared layer-1 scene yields.
+///
+/// The twins share the scene, the budget and the readout — not one execution:
+/// each calls [`measure_gartling_re_800`] itself, so enabling both runs the
+/// simulation twice. Today exactly one of them is enabled, and the flip
+/// described on the ignored twin keeps that true.
+struct StepMeasurement {
+    /// Lower-wall reattachment at the end of the budget.
+    x_1: f64,
+    /// The same, half-way through, so that settling is visible in one run.
+    x_1_halfway: f64,
+    /// Upper-wall bubble, if the field has one.
+    upper_separation: Option<f64>,
+    upper_reattachment: Option<f64>,
+    /// Reversed faces in the wall-adjacent rows.
+    upper_reversed: usize,
+    lower_reversed: usize,
+    /// First face downstream of the step on the lower wall; negative while the
+    /// bubble starts at the step, as it must.
+    lower_first_face: f64,
+    /// Outlet `u` in the upper wall-adjacent row and at mid-channel. The first
+    /// must be the smaller — that is what says which row was read.
+    outlet_near_upper_wall: f64,
+    outlet_mid_channel: f64,
+    max_abs_div: f64,
+    worst_flux_imbalance: f64,
+}
+
+/// Runs the shared layer-1 scene once and reads everything off it.
+fn measure_gartling_re_800() -> StepMeasurement {
+    let ny = 2 * LIT_S_CELLS;
+    let dx = 1.0 / ny as f64;
+    let nx = (LIT_LENGTH / dx).round() as usize;
+    let dt = Fix128::from_ratio(1, LIT_DT_RECIP);
+    let mut solver = backward_facing_step(LIT_S_CELLS, nx, 800);
+    solver.jacobi_iterations = LIT_JACOBI_SWEEPS;
+
+    for _ in 0..LIT_STEPS / 2 {
+        solver.step(dt);
+    }
+    let x_1_halfway = reattachment_x(&bottom_row(&solver.grid), dx)
+        .expect("the lower wall must separate at Re = 800 half-way through the budget");
+    for _ in LIT_STEPS / 2..LIT_STEPS {
+        solver.step(dt);
+    }
+
+    let lower = bottom_row(&solver.grid);
+    let upper = top_row(&solver.grid);
+    let x_1 =
+        reattachment_x(&lower, dx).expect("the lower wall must separate and reattach at Re = 800");
+
+    let inflow = column_flux(&solver.grid, 0);
+    let mut worst_flux_imbalance = 0.0f64;
+    for i in 1..=nx {
+        let imbalance = (column_flux(&solver.grid, i) - inflow).abs().to_f64();
+        worst_flux_imbalance = worst_flux_imbalance.max(imbalance);
+    }
+
+    StepMeasurement {
+        x_1,
+        x_1_halfway,
+        upper_separation: separation_x(&upper, dx),
+        upper_reattachment: reattachment_x(&upper, dx),
+        upper_reversed: upper.iter().filter(|u| **u < 0.0).count(),
+        lower_reversed: lower.iter().filter(|u| **u < 0.0).count(),
+        lower_first_face: lower[1],
+        outlet_near_upper_wall: upper[nx],
+        outlet_mid_channel: solver.grid.u(nx, ny / 2, 0).to_f64(),
+        max_abs_div: max_abs_divergence(&solver.grid),
+        worst_flux_imbalance,
+    }
+}
+
+/// One printed summary, shared by the twins so their outputs are comparable.
+fn report(measurement: &StepMeasurement) {
+    let m = measurement;
+    let dx = 1.0 / (2 * LIT_S_CELLS) as f64;
+    println!(
+        "Gartling Re=800, ny={} dx=1/{} L={} dt=1/{} N={} sweeps={LIT_JACOBI_SWEEPS}:\n  \
+         x_1 = {:.9}  (half-way {:.9}, delta {:.3e})  reference {GARTLING_X_1} \
+         => {:.1} % of it, short by {:.4} = {:.1} cells\n  \
+         upper wall: {} reversed faces, separation {:?}, reattachment {:?}  \
+         reference {GARTLING_X_2} .. {GARTLING_X_3} (L_u = {GARTLING_L_U})\n  \
+         lower wall: {} reversed faces, first face {:+.6e}\n  \
+         outlet u: near upper wall {:.6}, mid-channel {:.6}\n  \
+         max |div u| {:.3e}, worst flux imbalance {:.3e}",
+        2 * LIT_S_CELLS,
+        2 * LIT_S_CELLS,
+        LIT_LENGTH,
+        LIT_DT_RECIP,
+        LIT_STEPS,
+        m.x_1,
+        m.x_1_halfway,
+        (m.x_1 - m.x_1_halfway).abs(),
+        100.0 * m.x_1 / GARTLING_X_1,
+        GARTLING_X_1 - m.x_1,
+        (GARTLING_X_1 - m.x_1) / dx,
+        m.upper_reversed,
+        m.upper_separation,
+        m.upper_reattachment,
+        m.lower_reversed,
+        m.lower_first_face,
+        m.outlet_near_upper_wall,
+        m.outlet_mid_channel,
+        m.max_abs_div,
+        m.worst_flux_imbalance,
+    );
+}
+
+/// Oracle: the contract of [`separation_x`], against rows written down here,
+/// so that locating the *opening* of the upper-wall bubble is pinned
+/// independently of any flow — the counterpart of
+/// [`the_reattachment_detector_reports_the_first_sign_change`].
+///
+/// ⚠️ This is one of the two halves that keep "the upper wall has no bubble"
+/// from being the same statement as "the upper-wall readout does not work".
+/// This half fixes what the locator means; the other half,
+/// [`the_upper_wall_readout_finds_the_bubble_of_the_reflected_step`], shows
+/// the readout firing on a real field.
+#[test]
+fn the_separation_detector_reports_the_first_crossing_into_reverse_flow() {
+    let dx = 0.25f64;
+    // Crossing between index 1 (+3) and 2 (-1): 1 + 3/4 cells. Asymmetric on
+    // purpose — swapping the endpoints or sliding the index-to-x mapping by
+    // half a cell gives 1.25 or 2.25 instead.
+    assert_eq!(
+        separation_x(&[1.0, 3.0, -1.0, -2.0], dx),
+        Some(dx * 1.75),
+        "row[i] sits at x = i dx and the crossing into reverse flow is \
+         interpolated between the bracketing faces"
+    );
+    // Mirrored magnitudes one cell further along: 2 + 1/4 cells. Using the
+    // wrong endpoint of the pair gives 2.75 here and 1.25 above.
+    assert_eq!(
+        separation_x(&[2.0, 1.0, 1.0, -3.0], dx),
+        Some(dx * 2.25),
+        "the weight is the non-negative face's share of the drop across the pair"
+    );
+    // Zero counts as attached, so a row that opens at the very first face —
+    // which is what a step at the inflow plane gives — separates at x = 0.
+    assert_eq!(separation_x(&[0.0, -1.0, -2.0], dx), Some(0.0));
+    // Never reverses, and reverses only after it has already come back.
+    assert_eq!(separation_x(&[1.0, 2.0, 3.0], dx), None);
+    assert_eq!(
+        separation_x(&[1.0, -1.0, 1.0, -1.0], dx),
+        Some(dx * 0.5),
+        "the first opening, not the second"
+    );
+    // Rows too short to bracket anything.
+    assert_eq!(separation_x(&[1.0], dx), None);
+    assert_eq!(separation_x(&[], dx), None);
+    println!("separation_x contract: 7 hand-written rows agree");
+}
+
+/// Oracle: **the positive control for the upper-wall readout.** Reflecting the
+/// step to the other wall has to reflect the answer, so the row that reports
+/// "no bubble" on Gartling's scene reports the *same* bubble the lower wall
+/// had, once the bubble is against it.
+///
+/// This is the statement that makes the absence of an upper-wall bubble at
+/// `Re = 800` mean something. Without it, `upper_reversed == 0` is equally
+/// well explained by a readout that looks at the wrong row, or a locator that
+/// never fires — the failure mode this repository keeps meeting, where a
+/// quantity reads zero because nothing reaches it rather than because it is
+/// zero.
+///
+/// Measured, `24 x 8`, `L = 3H`, `dt = 1/32`:
+///
+/// | `Re` | steps | reflection residual | lower `x_r` (`Lower`) | upper `x_r` (`Upper`) |
+/// |---|---|---|---|---|
+/// | 16 | 640 | 43 ulp | 0.1429734239751133 | 0.1429734239751133 |
+/// | 96 | 1600 | 142 ulp | 0.7502761449264386 | 0.7502761449264386 |
+///
+/// — the two abscissae agree in **every printed digit**, and the fields agree
+/// to the arithmetic floor rather than exactly, which is expected: the two
+/// runs execute different traversal orders over the same arithmetic, so the
+/// Gauss-Seidel sweeps accumulate their roundings in a different sequence.
+/// The field residual is the honest bound (`142 ulp = 7.7e-18`); the
+/// abscissae, being interpolated in `f64`, land on the same double.
+///
+/// ⚠️ **Only the `Re = 16` row is run.** `Re = 96` needs 1600 steps on two
+/// scenes, which is `36.9 M` Poisson cell-sweeps — as much as every other test
+/// in this file put together — and it is a second instance of a statement the
+/// first row already makes. It is recorded above rather than gated, the same
+/// way `ny = 32` is recorded rather than gated in the refinement sweep.
+#[test]
+fn the_upper_wall_readout_finds_the_bubble_of_the_reflected_step() {
+    let (s_cells, nx) = (4usize, 24usize);
+    let ny = 2 * s_cells;
+    let dx = 1.0 / ny as f64;
+    let dt = Fix128::from_ratio(1, 32);
+
+    for &(re, steps) in &[(16i64, 640u32)] {
+        let mut lower = step_scene(s_cells, nx, re, StepSide::Lower);
+        let mut upper = step_scene(s_cells, nx, re, StepSide::Upper);
+        for _ in 0..steps {
+            lower.step(dt);
+            upper.step(dt);
+        }
+
+        // The fields are reflections: row j of one is row ny-1-j of the other.
+        let mut worst = 0u128;
+        for j in 0..ny {
+            for i in 0..=nx {
+                worst = worst.max(ulp_gap(
+                    lower.grid.u(i, j, 0),
+                    upper.grid.u(i, ny - 1 - j, 0),
+                ));
+            }
+        }
+
+        let lower_row = bottom_row(&lower.grid);
+        let upper_row = top_row(&upper.grid);
+        let lower_x_r =
+            reattachment_x(&lower_row, dx).expect("the step wall must separate and reattach");
+        let upper_x_r = reattachment_x(&upper_row, dx)
+            .expect("the reflected step must put the same bubble against the upper wall");
+        let upper_x_s = separation_x(&upper_row, dx)
+            .expect("the reflected bubble opens at the step, i.e. at the inflow plane");
+        println!(
+            "Re={re:4} {nx}x{ny} steps={steps}: reflection residual {worst} ulp = {:.3e}  \
+             lower x_r {lower_x_r:.16}  upper x_r {upper_x_r:.16}  upper x_s {upper_x_s:.3e}  \
+             upper reversed {}  (same row on the unreflected field: {})",
+            worst as f64 * ULP,
+            upper_row.iter().filter(|u| **u < 0.0).count(),
+            top_row(&lower.grid).iter().filter(|u| **u < 0.0).count(),
+        );
+
+        // The readout fires: there is a bubble against the upper wall, it
+        // opens at the step, and it is located — this is the control.
+        assert!(
+            upper_row.iter().filter(|u| **u < 0.0).count() >= 1,
+            "Re={re}: the reflected step must reverse the flow against the upper \
+             wall, or the upper-wall readout is not reading that wall"
+        );
+        assert!(
+            upper_x_s < dx,
+            "Re={re}: the reflected bubble opens at the step plane, got {upper_x_s}"
+        );
+        // And it is the *same* bubble, which is what makes it a control on the
+        // value and not only on the readout firing.
+        assert_eq!(
+            upper_x_r, lower_x_r,
+            "Re={re}: reflecting the scene must reflect the reattachment point"
+        );
+        // The reflection is exact to the arithmetic floor. Measured 43 ulp at
+        // Re = 16 and 142 at Re = 96; the budget is a constant because this is
+        // rounding in the pressure sweeps, not something that accumulates with
+        // the mesh. ⚠️ Reversal condition: if this grows, widen the constant
+        // and record the new value — do not convert it to a `to_f64`
+        // tolerance, which at 1e-17 against a field of order 1 would pass on
+        // anything.
+        assert!(
+            worst <= 512,
+            "Re={re}: reflecting the scene must reflect the field to the \
+             arithmetic floor, off by {worst} ulp = {:.3e}",
+            worst as f64 * ULP
+        );
+        // Not vacuous: the unreflected field has nothing against that wall, so
+        // the assertions above are about the reflection and not about every
+        // field having a bubble everywhere.
+        assert_eq!(
+            top_row(&lower.grid).iter().filter(|u| **u < 0.0).count(),
+            0,
+            "Re={re}: the unreflected scene must have no upper-wall reverse \
+             flow, else the control says nothing"
+        );
+    }
+}
+
+/// Oracle: **the target.** `x_1` and the upper-wall bubble equal Gartling's
+/// values, to within one cell of the mesh that produced them.
+///
+/// # Why this is `#[ignore]`d, and what would remove the attribute
+///
+/// ⚠️ **`src gap`, not runtime.** This test runs the same scene and the same
+/// number of steps as its twin
+/// [`the_reattachment_length_is_pinned_at_the_resolution_ci_can_afford`],
+/// which is not ignored, so it costs the same and would run in CI. It is
+/// ignored because **it does not pass**: the solver reaches `x_1 = 4.3921`
+/// against Gartling's `6.10`, i.e. 72.0 % of it, short by `1.708 = 13.7`
+/// cells, and produces **no upper-wall bubble at all** where Gartling has one
+/// spanning `4.85 .. 10.48`.
+///
+/// ⚠️ **Reversal condition, verbatim: when `x_1` reaches `6.10` to within one
+/// cell, delete the `#[ignore]` on this test and put
+/// `#[ignore = "superseded by the literature comparison"]` on the pinned twin
+/// below.** The twin exists to notice the solver moving at all; this one
+/// exists to say where it has to get to. They are written against one shared
+/// measurement so that the flip is those two attribute edits and nothing else.
+///
+/// ⚠️ **`#[ignore]`d tests are not run anywhere in this repository** — there
+/// is no `--ignored` or `--include-ignored` invocation in `scripts/` or
+/// `.github/`, so nothing will tell anyone when this starts passing. The
+/// attribute keeps it compiling, and the twin is what actually guards the
+/// number. Giving the gap-ignored twins somewhere to run is filed in the
+/// backlog; until that exists, this test is a written-down target that the
+/// compiler keeps honest, and saying otherwise would overstate it.
+///
+/// # Where the tolerance comes from
+///
+/// One cell, `dx`. Not a fitted number and not the literature's own precision
+/// — Gartling prints `6.10`, so his rounding is `±0.005`, two orders tighter
+/// than anything claimable here. A reattachment point is located by
+/// interpolating between two faces `dx` apart, so agreement to within a cell
+/// of the mesh is the strongest statement a mesh of that spacing supports,
+/// and it tightens automatically under refinement, which is the direction the
+/// gap has to close in. The bubble length gets `2 dx`, being a difference of
+/// two located crossings. [`GARTLING_X_3`] additionally carries
+/// [`GARTLING_X_3_UNCERTAINTY`], because its two transcriptions agree only
+/// after rounding — which is why the hard statement is the bubble *length*
+/// [`GARTLING_L_U`], where they agree to the last digit.
+///
+/// # What is known about the gap
+///
+/// It is **dominated by resolution**, and how much of it survives refinement
+/// is undetermined. Measured (`L = 16`, `t = 256`, in the module header):
+/// `x_1 = 4.3944` at `ny = 8`, `>= 4.7220` at `ny = 16`, `>= 5.3032` at
+/// `ny = 32` — moving toward `6.10`, and the upper-wall bubble appears at
+/// `ny = 16` and lengthens at `ny = 32`. ⚠️ **The finer two are lower bounds
+/// and no convergence order can be read off them**, because neither had
+/// settled in time within the step budget that was affordable; that is a
+/// different situation from "the order is wrong", and conflating the two would
+/// claim the residual is not discretisation when nothing here shows that.
+/// So the honest statement is: refinement moves both quantities the right way,
+/// and whether `ny = 8` could reach `6.10` under a better wall treatment or a
+/// higher-order advection — rather than only under refinement — is not known.
+#[test]
+#[ignore = "src gap: x_1 = 4.3921 against Gartling's 6.10 (72.0 %, short by 13.7 cells) and no upper-wall bubble at all; the gap is dominated by resolution and the remainder is undetermined. Not a runtime ignore — this costs exactly what its non-ignored twin costs"]
+fn the_reattachment_length_matches_gartling() {
+    let dx = 1.0 / (2 * LIT_S_CELLS) as f64;
+    let m = measure_gartling_re_800();
+    report(&m);
+
+    assert!(
+        (m.x_1 - GARTLING_X_1).abs() <= dx,
+        "x_1 must equal Gartling's {GARTLING_X_1} to within one cell ({dx}), got \
+         {:.6} — short by {:.4}",
+        m.x_1,
+        GARTLING_X_1 - m.x_1
+    );
+    let x_2 = m
+        .upper_separation
+        .expect("Gartling's field separates from the upper wall at x_2 = 4.85");
+    let x_3 = m
+        .upper_reattachment
+        .expect("Gartling's upper-wall bubble closes again at x_3 = 10.48");
+    assert!(
+        (x_2 - GARTLING_X_2).abs() <= dx,
+        "the upper wall must separate at {GARTLING_X_2} to within one cell, got {x_2:.6}"
+    );
+    assert!(
+        (x_3 - GARTLING_X_3).abs() <= dx + GARTLING_X_3_UNCERTAINTY,
+        "the upper wall must reattach at {GARTLING_X_3} to within one cell plus \
+         the {GARTLING_X_3_UNCERTAINTY} spread between its two transcriptions, got {x_3:.6}"
+    );
+    assert!(
+        (x_3 - x_2 - GARTLING_L_U).abs() <= 2.0 * dx,
+        "the upper-wall bubble must be {GARTLING_L_U} long to within two cells \
+         (it is a difference of two located crossings), got {:.6}",
+        x_3 - x_2
+    );
+}
+
+/// Oracle: the twin of the above — what the solver does produce on that scene
+/// today, so that it moving is noticed even though the target is out of reach.
+///
+/// ⚠️ **Not `#[ignore]`d, and that is the point.** The scene is the cheapest
+/// one in which `x_1` is settled: `ny = 8`, `L = 12 H`, `dt = 1/16`,
+/// `t = 256`, 30 sweeps. Each of those four was measured rather than assumed,
+/// because a gate nobody runs is indistinguishable from an assertion nobody
+/// wrote — and in this repository `#[ignore]` means nobody runs it, there
+/// being no `--ignored` invocation anywhere in `scripts/` or `.github/`.
+///
+/// ⚠️ **It is still the most expensive test in this file**, and its cost is
+/// quoted as *work* rather than seconds because the machine it was developed
+/// on could not measure seconds reliably — load average 17.7 on 8 cores from
+/// sibling sessions, under which the same 4096-step run timed anywhere between
+/// 65 s and 183 s and a 15-sweep run appeared *slower* than a 60-sweep one.
+/// Counting Poisson cell-sweeps instead, which is load-independent:
+/// `96 x 8 x 4096 x 30 = 94.4 M` against `77.2 M` for the whole of the rest of
+/// this file, i.e. this one test is `1.22x` everything else here.
+///
+/// ## `L = 12` rather than Gartling's `30`
+///
+/// `x_1` stops depending on the channel length well before Gartling's `L`.
+/// Measured at `Re = 800`, `ny = 8`, `t = 128`, `dt = 1/32` and `dt = 1/16`:
+///
+/// | `L/H` | `x_1` at `dt = 1/32` | `x_1` at `dt = 1/16` |
+/// |---|---|---|
+/// | 6 | 4.403020 | 4.393623 |
+/// | 8 | 4.394267 | 4.392235 |
+/// | 12 | 4.394114 | 4.392103 |
+/// | 16 | 4.394114 | 4.392102 |
+/// | 30 | — | 4.392172 (still falling) |
+///
+/// `L = 12` and `L = 16` agree to `1e-6`, so the outflow has stopped mattering
+/// by `12`; `L = 6` is `8.7e-3` away and `L = 8` still `1.5e-4`, so it has not
+/// by `8`. ⚠️ **`Re = 96` cannot be used to make this argument** even though
+/// `x_r/S` there is unchanged to four digits from `L = 6H` to `16H` (module
+/// header): the Reynolds number differs by a factor of eight and with it the
+/// length of everything downstream. The rows above are all at `Re = 800`.
+/// `L = 30` reads `4.392172` while still descending toward the others, which
+/// is its own transient and not a disagreement.
+///
+/// ## `dt = 1/16` rather than `1/32`
+///
+/// Halving the step count by doubling `dt` moves the answer in the fourth
+/// digit and settles roughly twice as fast. Measured, `L = 12`, `ny = 8`:
+///
+/// | `dt` | CFL | `x_1` once settled | settled by |
+/// |---|---|---|---|
+/// | 1/8 | 1.5 | 4.358627 | `t = 256` (`N = 2048`) |
+/// | 1/16 | 0.75 | 4.392103 | `t = 256` (`N = 4096`) |
+/// | 1/32 | 0.375 | 4.394360 | `t = 256` (`N = 8192`) |
+///
+/// ⚠️ **`dt = 1/8` was rejected although it is half the cost again.** Its
+/// successive differences are `3.35e-2` then `2.0e-3`, a ratio of 16.7 per
+/// halving where a first-order scheme gives 2 and a second-order one 4 — so
+/// `dt = 1/8` is not in the range where the time discretisation is converging,
+/// which is unsurprising at CFL 1.5, and pinning there would pin a number
+/// outside the regime the other two share. `1/16` and `1/32` differ by
+/// `2.3e-3`, consistent with each other.
+///
+/// ## Settling
+///
+/// Asserted rather than asserted-around: `x_1` is read at `t = 128` and
+/// `t = 256` of the same run and the two must agree to `1e-3` (measured
+/// `3.1e-4`). ⚠️ **Steadiness cannot be taken from the flux imbalance**, which
+/// tracks the Gauss-Seidel residual and not the slowest mode of the flow —
+/// measured at `ny = 16` it reads `7.7e-7`, small enough to look settled,
+/// while `x_1` was still climbing by `9.0e-2` per doubling. The quantity being
+/// pinned is the quantity whose steadiness is checked.
+///
+/// ## The window
+///
+/// `1e-3` around the measured value, which is three times the `3.1e-4` the run
+/// still moves by between its two sample points: anything inside it is the
+/// same answer reached with a slightly different budget, and anything outside
+/// it is the solver having moved. That is `0.02 %` of `x_1`.
+///
+/// ⚠️ **If this test fails after a deliberate improvement, it has done its
+/// job** — read the twin above and flip the two `#[ignore]` attributes rather
+/// than widening this window.
+#[test]
+fn the_reattachment_length_is_pinned_at_the_resolution_ci_can_afford() {
+    // Measured on this scene and budget. See the doc comment for the window.
+    const PINNED_X_1: f64 = 4.392_103_184;
+    const WINDOW: f64 = 1e-3;
+
+    let m = measure_gartling_re_800();
+    report(&m);
+
+    // Settled, read off the pinned quantity itself.
+    assert!(
+        (m.x_1 - m.x_1_halfway).abs() < 1e-3,
+        "x_1 must have settled within this budget, {:.9} at t = {} against \
+         {:.9} at t = {}",
+        m.x_1_halfway,
+        LIT_STEPS / 2 / LIT_DT_RECIP as u32,
+        m.x_1,
+        LIT_STEPS / LIT_DT_RECIP as u32
+    );
+    // The pin.
+    assert!(
+        (m.x_1 - PINNED_X_1).abs() <= WINDOW,
+        "x_1 was {PINNED_X_1} on this scene and is now {:.9} ({:+.3e}). If this \
+         is a deliberate improvement toward Gartling's {GARTLING_X_1}, do not \
+         widen the window — remove the #[ignore] from \
+         `the_reattachment_length_matches_gartling` and mark this test \
+         superseded",
+        m.x_1,
+        m.x_1 - PINNED_X_1
+    );
+    // The upper wall carries no bubble at this resolution, which is the other
+    // half of the distance to Gartling and the thing refinement brings in.
+    // ⚠️ Meaningful only next to the two statements that keep it from being
+    // "the readout does not work": the row identity checked just below, and
+    // the reflected-step control in
+    // `the_upper_wall_readout_finds_the_bubble_of_the_reflected_step`.
+    assert_eq!(
+        m.upper_reversed, 0,
+        "eight cells cannot carry the upper-wall boundary layer, so there must \
+         be no reverse flow there yet; Gartling's bubble at \
+         {GARTLING_X_2}..{GARTLING_X_3} is what refinement has to bring in. \
+         Found {} reversed faces — if this is refinement or an improvement, \
+         see the twin above",
+        m.upper_reversed
+    );
+    // Which row `top_row` read. A near-wall row carries less than mid-channel;
+    // an interior row would not, and the opposite wall's row would have failed
+    // the assertion above with 35 reversed faces. Together those two pin the
+    // row without needing a bubble to be present.
+    assert!(
+        m.outlet_near_upper_wall < m.outlet_mid_channel,
+        "the upper-wall row must be the wall-adjacent one — its outlet value \
+         {:.6} has to be below the mid-channel {:.6}, or the row above reports \
+         'no bubble' about the wrong part of the channel",
+        m.outlet_near_upper_wall,
+        m.outlet_mid_channel
+    );
+    // Not vacuous: the lower wall does separate, and the bubble starts at the
+    // step rather than somewhere down the channel.
+    assert!(
+        m.lower_reversed >= 8 && m.lower_first_face < 0.0,
+        "the lower wall must carry a real separation starting at the step: \
+         {} reversed faces, first face {:+.3e}",
+        m.lower_reversed,
+        m.lower_first_face
+    );
+    // And the run is a converged solve, not a field that stopped being
+    // projected.
+    assert!(
+        m.worst_flux_imbalance < 1e-3,
+        "the run must conserve mass across every cross-section, worst \
+         imbalance {:.3e}",
+        m.worst_flux_imbalance
     );
 }
