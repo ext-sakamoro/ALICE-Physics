@@ -32,7 +32,7 @@
 //!   Phil. Trans. Roy. Soc. A 243, 1951.
 //! - Bower, *Applied Mechanics of Solids* Ch. 3 (numerical implementation).
 
-use crate::math::Fix128;
+use crate::math::{Fix128, Mat3Fix, Vec3Fix};
 
 // ============================================================================
 // Stretch state
@@ -288,6 +288,130 @@ pub fn small_strain_shear_modulus(model: &HyperelasticModel) -> Fix128 {
 }
 
 // ============================================================================
+// Tensor Cauchy stress (what a finite element needs)
+// ============================================================================
+
+/// `(∂W/∂I₁, ∂W/∂I₂)` at first invariant `i1`.
+///
+/// Both are constants for Neo-Hookean and Mooney-Rivlin; only Yeoh's `W₁`
+/// depends on the deformation. `W₂` is zero for every model that is a function
+/// of `I₁` alone.
+fn energy_derivatives(model: &HyperelasticModel, i1: Fix128) -> (Fix128, Fix128) {
+    match model {
+        HyperelasticModel::NeoHookean { mu_mpa } => {
+            (*mu_mpa * Fix128::from_ratio(1, 2), Fix128::ZERO)
+        }
+        HyperelasticModel::MooneyRivlin { c1_mpa, c2_mpa } => (*c1_mpa, *c2_mpa),
+        HyperelasticModel::Yeoh {
+            c1_mpa,
+            c2_mpa,
+            c3_mpa,
+        } => {
+            let d = i1 - Fix128::from_int(3);
+            (
+                *c1_mpa + Fix128::from_int(2) * *c2_mpa * d + Fix128::from_int(3) * *c3_mpa * d * d,
+                Fix128::ZERO,
+            )
+        }
+    }
+}
+
+/// Cauchy stress `σ` for a deformation gradient `f`, in the frame `f` is written
+/// in (MPa). `None` when `det F ≤ 0` — a reflected or collapsed element has no
+/// stress under any of these models.
+///
+/// # What is added to the models above and why
+///
+/// The module's models are **incompressible**: `W` is a function of the
+/// isochoric invariants only, so it fixes the stress up to an arbitrary pressure
+/// and cannot be evaluated on its own. A finite element has to answer with a
+/// number, so this function adds the volumetric pair the module doc names as
+/// missing:
+///
+/// ```text
+/// W_total(I₁, I₂, J) = W(I₁, I₂) − p_ref·(J − 1) + K/2·(J − 1)²
+/// ```
+///
+/// with `p_ref = 2(W₁ + 2W₂)` evaluated at the **undeformed** state. The linear
+/// term is what makes the reference state stress free (without it `σ(I) = p_ref·I`,
+/// a body under pressure at rest); the quadratic term is the bulk response, and
+/// `bulk_modulus_mpa` is its `K`. Differentiating,
+///
+/// ```text
+/// σ = (2/J)·[ (W₁ + I₁·W₂)·B − W₂·B² ]  +  [ K·(J − 1) − p_ref ]·I,   B = F Fᵀ
+/// ```
+///
+/// which is the standard isotropic result `σ = (2/J)·F·(∂W/∂C)·Fᵀ`.
+///
+/// ⚠️ **`W` is not re-normalised by `J^(−2/3)`.** The deviatoric response is
+/// therefore the incompressible one **exactly at `J = 1`** and drifts from it as
+/// `J` departs from one; `K` is what keeps `J` near one. That is a deliberate
+/// limitation and not an approximation that refines away: a `J^(−2/3)` split
+/// needs a cube root, which `Fix128` does not carry, and the alternative of
+/// iterating for one would put a tolerance inside a constitutive law.
+///
+/// # Checks a caller can make
+///
+/// - `σ(I) = 0` exactly, for every model and every `K`.
+/// - At `J = 1` and Neo-Hookean, `σ = μ·(B − I)`, so `dev σ = μ·dev B`.
+/// - `I₂ = ½·(I₁² − tr B²)` here. That is the same number as [`Stretch::i2`]
+///   when `J = 1`, which is the only place the two are both defined.
+#[must_use]
+pub fn cauchy_stress(
+    model: &HyperelasticModel,
+    bulk_modulus_mpa: Fix128,
+    f: Mat3Fix,
+) -> Option<Mat3Fix> {
+    let j = f.determinant();
+    if j <= Fix128::ZERO {
+        return None;
+    }
+    let b = f.mul_mat(f.transpose());
+    let i1 = b.col0.x + b.col1.y + b.col2.z;
+    let (w1, w2) = energy_derivatives(model, i1);
+    let (w1_ref, w2_ref) = energy_derivatives(model, Fix128::from_int(3));
+    let p_ref = Fix128::from_int(2) * (w1_ref + w2_ref.double());
+
+    let two_over_j = Fix128::from_int(2) / j;
+    let mut s = b.scale(two_over_j * (w1 + i1 * w2));
+    if !w2.is_zero() {
+        s = mat_sub(s, b.mul_mat(b).scale(two_over_j * w2));
+    }
+    let pressure = bulk_modulus_mpa * (j - Fix128::ONE) - p_ref;
+    Some(mat_add_diagonal(s, pressure))
+}
+
+/// `a − b`, entry by entry.
+fn mat_sub(a: Mat3Fix, b: Mat3Fix) -> Mat3Fix {
+    Mat3Fix::from_cols(
+        Vec3Fix::new(
+            a.col0.x - b.col0.x,
+            a.col0.y - b.col0.y,
+            a.col0.z - b.col0.z,
+        ),
+        Vec3Fix::new(
+            a.col1.x - b.col1.x,
+            a.col1.y - b.col1.y,
+            a.col1.z - b.col1.z,
+        ),
+        Vec3Fix::new(
+            a.col2.x - b.col2.x,
+            a.col2.y - b.col2.y,
+            a.col2.z - b.col2.z,
+        ),
+    )
+}
+
+/// `m + s·I`.
+fn mat_add_diagonal(m: Mat3Fix, s: Fix128) -> Mat3Fix {
+    Mat3Fix::from_cols(
+        Vec3Fix::new(m.col0.x + s, m.col0.y, m.col0.z),
+        Vec3Fix::new(m.col1.x, m.col1.y + s, m.col1.z),
+        Vec3Fix::new(m.col2.x, m.col2.y, m.col2.z + s),
+    )
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
 
@@ -461,6 +585,69 @@ mod tests {
     fn stretch_uniaxial_lambda_zero_is_unity() {
         let s = Stretch::uniaxial(Fix128::ZERO);
         assert_eq!(s, Stretch::UNITY);
+    }
+
+    /// The reference state carries no stress, for every model and every bulk
+    /// modulus.
+    ///
+    /// This is what the `−p_ref·(J−1)` term in [`cauchy_stress`] is for: without
+    /// it the deviatoric part alone leaves `σ(I) = 2(W₁+2W₂)·I`, a body under
+    /// pressure at rest. ⚠️ **No solver test can see that**: a *uniform* stress
+    /// puts zero force on an interior node whatever the stress is, so the
+    /// oracles in `tests/analytic_corotational.rs` stay green under exactly this
+    /// mutation (measured 2026-10-01, `13 passed`). It is checked here instead.
+    #[test]
+    fn cauchy_stress_vanishes_in_the_reference_state() {
+        for model in [
+            HyperelasticModel::tpu_soft(),
+            HyperelasticModel::silicone_soft(),
+            HyperelasticModel::natural_rubber(),
+        ] {
+            for bulk in [Fix128::ZERO, Fix128::from_int(1), Fix128::from_int(4000)] {
+                let s = cauchy_stress(&model, bulk, Mat3Fix::IDENTITY).expect("det I = 1 > 0");
+                assert_eq!(
+                    s,
+                    Mat3Fix::ZERO,
+                    "{model:?} at K = {} carries stress when undeformed",
+                    bulk.to_f32()
+                );
+            }
+        }
+    }
+
+    /// Neo-Hookean at `J = 1` is `σ = μ·(B − I)`, written out here from the
+    /// definition rather than taken from the function under test.
+    ///
+    /// `F = diag(2, 1/2, 1)` has `det F = 1`, so `B = diag(4, 1/4, 1)` and
+    /// `σ = μ·diag(3, −3/4, 0)`. With `μ = 3` (TPU) that is `(9, −9/4, 0)`.
+    #[test]
+    fn cauchy_stress_neo_hookean_isochoric_closed_form() {
+        let f = Mat3Fix::diagonal(Fix128::from_int(2), Fix128::from_ratio(1, 2), Fix128::ONE);
+        let s = cauchy_stress(&HyperelasticModel::tpu_soft(), Fix128::from_int(4000), f)
+            .expect("det F = 1");
+        let want = [Fix128::from_int(9), Fix128::from_ratio(-9, 4), Fix128::ZERO];
+        let got = [s.col0.x, s.col1.y, s.col2.z];
+        for (g, w) in got.iter().zip(want.iter()) {
+            assert!(
+                approx_eq(*g, *w, Fix128::from_ratio(1, 1000)),
+                "σ = {:?}, expected diag(9, -2.25, 0)",
+                got.map(Fix128::to_f32)
+            );
+        }
+        assert_eq!(s.col1.x, Fix128::ZERO, "a diagonal F gives a diagonal σ");
+        assert_eq!(s.col2.y, Fix128::ZERO, "a diagonal F gives a diagonal σ");
+    }
+
+    /// An element turned inside out, or flattened, has no stress under any of
+    /// these models — `2/J` is not defined and neither is the pull back.
+    #[test]
+    fn cauchy_stress_refuses_a_non_positive_determinant() {
+        let model = HyperelasticModel::tpu_soft();
+        let bulk = Fix128::from_int(4000);
+        let flat = Mat3Fix::diagonal(Fix128::ONE, Fix128::ONE, Fix128::ZERO);
+        let inverted = Mat3Fix::diagonal(Fix128::from_int(-1), Fix128::ONE, Fix128::ONE);
+        assert!(cauchy_stress(&model, bulk, flat).is_none());
+        assert!(cauchy_stress(&model, bulk, inverted).is_none());
     }
 
     #[test]

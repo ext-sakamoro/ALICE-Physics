@@ -57,6 +57,7 @@
 //!
 //! Author: Moroya Sakamoto
 
+use crate::hyperelastic::HyperelasticModel;
 use crate::math::{Fix128, Mat3Fix, PolarError, Vec3Fix};
 use crate::sdf_fem_mesh::SdfTetMesh;
 
@@ -1440,6 +1441,7 @@ pub struct CorotationalConfig {
     newton_tolerance: Fix128,
     increments: u32,
     polar_iterations: u32,
+    material: Option<HyperelasticModel>,
 }
 
 impl CorotationalConfig {
@@ -1489,7 +1491,49 @@ impl CorotationalConfig {
             newton_tolerance,
             increments,
             polar_iterations,
+            material: None,
         })
+    }
+
+    /// Evaluate the element stress with `model` instead of the co-rotational
+    /// linear law.
+    ///
+    /// # What changes
+    ///
+    /// Without this the element carries `σ = R·(λ tr ε I + 2μ ε)·Rᵀ` with
+    /// `ε = sym(RᵀF − I)`: exact for large *rotation*, linear in *stretch*. With
+    /// it the element carries [`crate::hyperelastic::cauchy_stress`] evaluated at
+    /// the deformation gradient, which is a large-stretch law — the difference
+    /// is 46 % of the linear value at a 125 % principal stretch, measured by the
+    /// twins in `tests/analytic_corotational.rs`.
+    ///
+    /// `μ` (or `C₁`, `C₂`, `C₃`) comes from `model`; the bulk modulus that fixes
+    /// the pressure comes from the [`ElasticMaterial`] passed to
+    /// [`solve_corotational`], as `K = λ + 2μ/3`. The two are therefore allowed
+    /// to disagree, and nothing checks that they describe the same solid — that
+    /// is the caller's to keep straight.
+    ///
+    /// # ⚠️ What it costs
+    ///
+    /// The residual stops being affine in the displacement, so the Newton step
+    /// is no longer exact and the **frame-settling stopping rule no longer
+    /// applies**: with a material law the last increment stops on the residual
+    /// like every other one. The increment independence
+    /// [`solve_corotational`] documents is therefore **not** claimed here — it is
+    /// a property of the linear law's exact step. The tangent stays the
+    /// co-rotational linear one, which makes this a modified Newton iteration:
+    /// it decides how many steps, not where they land.
+    #[must_use]
+    pub const fn with_hyperelastic(mut self, model: HyperelasticModel) -> Self {
+        self.material = Some(model);
+        self
+    }
+
+    /// The material law the element stress is evaluated with, or `None` for the
+    /// co-rotational linear law.
+    #[must_use]
+    pub const fn hyperelastic(&self) -> Option<HyperelasticModel> {
+        self.material
     }
 
     /// The conjugate gradient settings each Newton step is solved with.
@@ -1644,6 +1688,52 @@ fn corotational_local_stress(
     }
 }
 
+/// `σ` and `P = J σ F⁻ᵀ` for one element under a hyperelastic law, or `None`
+/// when `F` has no positive determinant or no inverse.
+///
+/// The Cauchy stress is what the caller reports and what an oracle compares
+/// against; the first Piola-Kirchhoff stress is what the nodal force integral
+/// needs, because the shape function gradients [`Element`] carries are gradients
+/// in the **reference** configuration. `∫ P : ∇₀N dV₀` is the internal force of
+/// a total-Lagrangian element and is exact at any stretch, where the
+/// co-rotational `R·(V Bᵀσ̃)` is the same integral with `P` approximated by
+/// `R σ̃` — right for large rotation, linear in stretch.
+fn hyperelastic_stress(
+    model: &HyperelasticModel,
+    bulk_modulus: Fix128,
+    gradient: Mat3Fix,
+) -> Option<(StressTensor, Mat3Fix)> {
+    let sigma = crate::hyperelastic::cauchy_stress(model, bulk_modulus, gradient)?;
+    let inverse_transpose = gradient.inverse()?.transpose();
+    let piola = sigma
+        .mul_mat(inverse_transpose)
+        .scale(gradient.determinant());
+    let cauchy = StressTensor {
+        xx: sigma.col0.x,
+        yy: sigma.col1.y,
+        zz: sigma.col2.z,
+        xy: sigma.col1.x,
+        yz: sigma.col2.y,
+        zx: sigma.col2.x,
+    };
+    Some((cauchy, piola))
+}
+
+/// `V₀·P ∇₀Nᵢ` — the nodal forces an element carries for a first Piola-Kirchhoff
+/// stress (N). `P` is not symmetric, which is why this cannot go through
+/// [`element_force_from_stress`].
+fn element_force_from_piola(element: &Element, p: Mat3Fix) -> [[Fix128; 3]; 4] {
+    let rows = rows_of(p);
+    let mut force = [[Fix128::ZERO; 3]; 4];
+    for (slot, g) in force.iter_mut().zip(element.grad.iter()) {
+        for (axis, out) in slot.iter_mut().enumerate() {
+            let row = rows[axis];
+            *out = element.volume * (row[0] * g[0] + row[1] * g[1] + row[2] * g[2]);
+        }
+    }
+    force
+}
+
 /// `V·Bᵀσ` — the nodal forces an element carries for a given stress (N).
 fn element_force_from_stress(element: &Element, s: StressTensor) -> [[Fix128; 3]; 4] {
     let mut force = [[Fix128::ZERO; 3]; 4];
@@ -1685,6 +1775,23 @@ fn apply_rotated_stiffness(
     }
 }
 
+/// The parts of a co-rotational solve every element loop reads.
+///
+/// A bundle rather than eight parameters, for the reason `clippy` gives: past
+/// about seven, a call site stops being readable and a transposed pair of
+/// same-typed slices stops being a compile error. `rotations` moves every Newton
+/// step, so this is built at the call site rather than held.
+struct Assembly<'a> {
+    /// Elements in mesh order.
+    elements: &'a [Element],
+    /// One frame per element, in the same order.
+    rotations: &'a [Mat3Fix],
+    /// `(λ, μ)` of the linear law, in MPa.
+    lame: (Fix128, Fix128),
+    /// Which degrees of freedom the solve may move.
+    is_free: &'a [bool],
+}
+
 /// `out = f_ext − Σₑ R Kₑ⁰ (Rᵀx − X)`, the co-rotational residual.
 ///
 /// ⚠️ The internal force is **not** `(R Kₑ⁰ Rᵀ)·u`. The two differ by
@@ -1692,23 +1799,48 @@ fn apply_rotated_stiffness(
 /// produce zero force: `Rᵀx − X` vanishes when `x = R·X`, while `Rᵀu` does not.
 /// Dropping it turns the solve into a repeated linear solve with a rotated
 /// stiffness, which is a different method with a different answer.
+///
+/// With `material` set the internal force is the total-Lagrangian
+/// `Σₑ V₀ P ∇₀N` of that law instead (see [`hyperelastic_stress`]), and the
+/// frames are then used for nothing here — the hyperelastic stress is objective
+/// on its own, so it needs no frame to be carried into. `Err` when an element
+/// has no positive `det F`.
 fn corotational_residual(
-    elements: &[Element],
-    rotations: &[Mat3Fix],
+    assembly: &Assembly<'_>,
     u: &[Fix128],
     f_ext: &[Fix128],
-    is_free: &[bool],
-    lame: (Fix128, Fix128),
+    material: Option<(HyperelasticModel, Fix128)>,
     out: &mut [Fix128],
-) {
-    let (lambda, mu) = lame;
+) -> Result<(), FemError> {
+    let &Assembly {
+        elements,
+        rotations,
+        lame: (lambda, mu),
+        is_free,
+    } = assembly;
     out.copy_from_slice(f_ext);
-    for (element, rotation) in elements.iter().zip(rotations.iter()) {
+    for (tet, (element, rotation)) in elements.iter().zip(rotations.iter()).enumerate() {
         let gradient = deformation_gradient(element, &gather(element, u));
-        let stress = corotational_local_stress(rotation.transpose(), gradient, lambda, mu);
-        let force = element_force_from_stress(element, stress);
+        let (force, frame) = match &material {
+            Some((model, bulk)) => {
+                let (_, piola) = hyperelastic_stress(model, *bulk, gradient).ok_or(
+                    FemError::RotationFailed {
+                        tet,
+                        cause: PolarError::Inverted,
+                    },
+                )?;
+                (element_force_from_piola(element, piola), Mat3Fix::IDENTITY)
+            }
+            None => (
+                element_force_from_stress(
+                    element,
+                    corotational_local_stress(rotation.transpose(), gradient, lambda, mu),
+                ),
+                *rotation,
+            ),
+        };
         for (f, &node) in force.iter().zip(element.nodes.iter()) {
-            let global = mul3(*rotation, *f);
+            let global = mul3(frame, *f);
             let base = node * 3;
             out[base] = out[base] - global[0];
             out[base + 1] = out[base + 1] - global[1];
@@ -1720,6 +1852,72 @@ fn corotational_residual(
             *value = Fix128::ZERO;
         }
     }
+    Ok(())
+}
+
+/// `Σₑ (f_lin − f_mat)(u)`, scattered to the nodes and zeroed on the prescribed
+/// degrees of freedom.
+///
+/// # Why a step built on the linear operator lands on the material's root
+///
+/// With the frames fixed the co-rotational linear internal force is affine,
+/// `f_lin(u) = A u + b`, which is what lets [`solve_corotational`] solve for the
+/// displacement itself rather than a correction to it: the right hand side
+/// `r_lin(boundary field)` is exactly `f_ext − A·u_prescribed − b` on the free
+/// rows. Adding this term to that right hand side gives
+///
+/// ```text
+/// A·u_free = f_ext − f_lin(bf) + f_lin(u) − f_mat(u)
+/// ```
+///
+/// and substituting `f_lin(u) = f_lin(bf) + A·u_free` collapses it to
+/// `f_ext = f_mat(u)`: **a fixed point of this iteration is equilibrium under
+/// the material law, exactly**, with the linear operator deciding only how many
+/// steps it takes to get there. `A` is not the material tangent, so this is a
+/// modified Newton iteration and converges linearly rather than quadratically.
+///
+/// When no material is set the term is identically zero and nothing about the
+/// existing path changes — that is checked by the linear oracles, which are bit
+/// for bit unmoved by this function existing.
+fn material_correction(
+    assembly: &Assembly<'_>,
+    u: &[Fix128],
+    model: &HyperelasticModel,
+    bulk_modulus: Fix128,
+    out: &mut [Fix128],
+) -> Result<(), FemError> {
+    let &Assembly {
+        elements,
+        rotations,
+        lame: (lambda, mu),
+        is_free,
+    } = assembly;
+    for (tet, (element, rotation)) in elements.iter().zip(rotations.iter()).enumerate() {
+        let gradient = deformation_gradient(element, &gather(element, u));
+        let (_, piola) =
+            hyperelastic_stress(model, bulk_modulus, gradient).ok_or(FemError::RotationFailed {
+                tet,
+                cause: PolarError::Inverted,
+            })?;
+        let linear = element_force_from_stress(
+            element,
+            corotational_local_stress(rotation.transpose(), gradient, lambda, mu),
+        );
+        let material = element_force_from_piola(element, piola);
+        for ((l, m), &node) in linear.iter().zip(material.iter()).zip(element.nodes.iter()) {
+            let rotated = mul3(*rotation, *l);
+            let base = node * 3;
+            for axis in 0..3 {
+                out[base + axis] = out[base + axis] + rotated[axis] - m[axis];
+            }
+        }
+    }
+    for (d, value) in out.iter_mut().enumerate() {
+        if !is_free[d] {
+            *value = Fix128::ZERO;
+        }
+    }
+    Ok(())
 }
 
 /// Diagonal of `Σₑ R Kₑ⁰ Rᵀ`.
@@ -1894,6 +2092,14 @@ pub fn solve_corotational(
 
     let elements = build_elements(mesh)?;
     let (lambda, mu) = material.lame();
+    // `K = λ + 2μ/3` — the bulk modulus of the same isotropic solid, which is
+    // what fixes the pressure an incompressible strain energy leaves free. The
+    // deviatoric response comes from the model in the configuration, so the two
+    // are free to describe different solids; see
+    // [`CorotationalConfig::with_hyperelastic`].
+    let law = config
+        .material
+        .map(|model| (model, lambda + (mu + mu) / Fix128::from_int(3)));
     let ndof = vertex_count * 3;
 
     let mut prescribed_value = vec![Fix128::ZERO; ndof];
@@ -2016,7 +2222,14 @@ pub fn solve_corotational(
             }
             match refused {
                 None => {
-                    if step > 0 && frames_settled(&frames, &rotations) {
+                    // ⚠️ **The frame rule is the linear law's, and only the
+                    // linear law's.** It is sound because the step below is
+                    // *exact* for fixed frames, so reproducing the frames
+                    // reproduces the displacement. A material law makes the step
+                    // inexact — the frames can repeat while the displacement is
+                    // still moving toward the root — so with one set the
+                    // residual decides on every increment.
+                    if law.is_none() && step > 0 && frames_settled(&frames, &rotations) {
                         // ⚠️ **This is the stopping rule, and it is not a
                         // tolerance.** For a fixed set of frames the residual is
                         // *linear* in the displacement, so the solve below lands
@@ -2056,18 +2269,27 @@ pub fn solve_corotational(
             // compression — far outside the small strain the co-rotational model
             // is linear in, and the frame iteration crawls there: the same cube
             // took 1165 steps on that one increment against 3 on the last one.
-            if !final_increment || step >= config.newton_iterations {
+            let residual_decides = !final_increment || law.is_some();
+            // Step 0 is the state the increment *opened* at — a prediction, and
+            // with a material law possibly a degenerate one, which is why the
+            // frame loop above tolerates a refusal there. Nothing reads the
+            // residual at step 0 (the break below needs `step > 0` and the
+            // budget is at least one), so it is not formed.
+            if (residual_decides && step > 0) || step >= config.newton_iterations {
                 corotational_residual(
-                    &elements,
-                    &rotations,
+                    &Assembly {
+                        elements: &elements,
+                        rotations: &rotations,
+                        lame: (lambda, mu),
+                        is_free: &is_free,
+                    },
                     &u,
                     &f_ext,
-                    &is_free,
-                    (lambda, mu),
+                    law,
                     &mut residual,
-                );
+                )?;
                 let residual_reach = max_abs(&residual);
-                if !final_increment && step > 0 && residual_reach <= newton_target {
+                if residual_decides && step > 0 && residual_reach <= newton_target {
                     break;
                 }
                 if step >= config.newton_iterations {
@@ -2092,15 +2314,21 @@ pub fn solve_corotational(
             // boundary data and nothing else, which is what
             // `solve_corotational`'s note on the path dependence that is left
             // is measured against.
-            corotational_residual(
-                &elements,
-                &rotations,
-                &boundary_field,
-                &f_ext,
-                &is_free,
-                (lambda, mu),
-                &mut residual,
-            );
+            let assembly = Assembly {
+                elements: &elements,
+                rotations: &rotations,
+                lame: (lambda, mu),
+                is_free: &is_free,
+            };
+            corotational_residual(&assembly, &boundary_field, &f_ext, None, &mut residual)?;
+            // `f_lin(u) − f_mat(u)`, which turns the exact step of the linear law
+            // into a modified Newton step whose fixed point is equilibrium under
+            // the material law. See `material_correction` (private).
+            if let Some((model, bulk)) = law {
+                if step > 0 {
+                    material_correction(&assembly, &u, &model, bulk, &mut residual)?;
+                }
+            }
             let diag = rotated_stiffness_diagonal(&elements, &rotations, lambda, mu, ndof);
             let precond = build_preconditioner(&diag, &is_free, &config.linear)?;
             let cg =
@@ -2128,14 +2356,17 @@ pub fn solve_corotational(
     // answer, so that it cannot decide *where* the iteration stops — only
     // whether what it stopped on is acceptable.
     corotational_residual(
-        &elements,
-        &rotations,
+        &Assembly {
+            elements: &elements,
+            rotations: &rotations,
+            lame: (lambda, mu),
+            is_free: &is_free,
+        },
         &u,
         &f_ext,
-        &is_free,
-        (lambda, mu),
+        law,
         &mut residual,
-    );
+    )?;
     let final_residual = max_abs(&residual);
     if final_residual > newton_target {
         return Err(FemError::NotConverged {
@@ -2147,17 +2378,26 @@ pub fn solve_corotational(
     let displacements = (0..vertex_count)
         .map(|v| [u[v * 3], u[v * 3 + 1], u[v * 3 + 2]])
         .collect();
-    let element_stress = elements
-        .iter()
-        .zip(rotations.iter())
-        .map(|(element, rotation)| {
-            let gradient = deformation_gradient(element, &gather(element, &u));
-            rotate_stress(
+    let mut element_stress = Vec::with_capacity(elements.len());
+    for (tet, (element, rotation)) in elements.iter().zip(rotations.iter()).enumerate() {
+        let gradient = deformation_gradient(element, &gather(element, &u));
+        element_stress.push(match law {
+            // Cauchy stress, already in the global frame: a hyperelastic law is
+            // objective, so nothing is rotated into place afterwards.
+            Some((model, bulk)) => {
+                hyperelastic_stress(&model, bulk, gradient)
+                    .ok_or(FemError::RotationFailed {
+                        tet,
+                        cause: PolarError::Inverted,
+                    })?
+                    .0
+            }
+            None => rotate_stress(
                 *rotation,
                 corotational_local_stress(rotation.transpose(), gradient, lambda, mu),
-            )
-        })
-        .collect();
+            ),
+        });
+    }
 
     Ok(CorotationalSolution {
         field: FemSolution {

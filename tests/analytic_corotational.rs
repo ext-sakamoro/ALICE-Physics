@@ -26,11 +26,13 @@
 //! it does on the same scene. That is the destruction test for the update policy,
 //! and it costs nothing.
 //!
-//! # Destruction tests, measured 2026-09-30
+//! # Destruction tests, re-measured 2026-10-01
 //!
-//! One mutation at a time in `src/linear_elastic_fem.rs`, restored in between.
-//! Both were run against the twin oracles added for the hyperelastic gap; the
-//! baseline is `9 passed / 0 failed / 2 ignored`.
+//! One mutation at a time, restored in between. ⚠️ **The whole table was
+//! re-measured when the material law was wired in**: the 2026-09-30 numbers were
+//! taken when the stress path had no branch, and a branch can move which oracle
+//! sees which mutation. The baseline is now `13 passed / 0 failed / 1 ignored`
+//! here and `21 passed` in `cargo test --lib hyperelastic`.
 //!
 //! ⚠️ **A mutation run must print `### MUTATION: <what was changed>` on its own
 //! line**, and the restored green must land in the same log. A destruction test
@@ -40,17 +42,40 @@
 //! announcing mutations over messages instead does not scale, because destruction
 //! tests come in batches.
 //!
-//! | mutation | oracles that went red | restored |
-//! | --- | --- | --- |
-//! | `rotate_stress` returns `σ̃` unrotated (drop the `R` in `σ = R σ̃ Rᵀ`) | `the_corotational_linear_law_is_what_the_element_returns_today` (off by 1970.370372 MPa, which is exactly the off-diagonal `σ_xy` the rotation produces) and `rotated_uniform_stretch_matches_the_closed_form` — 2 red, 7 green | 9 passed |
-//! | `corotational_local_stress` drops the `Rᵀ` (`ε = sym(RᵀF − I)` → `sym(F − I)`) | 7 red, including `boundary_rigid_rotation_leaves_the_interior_unstressed` (`NotConverged`, residual 1.5e8× the target) and the new pin (`RotationFailed { tet: 82, Inverted }`) | 9 passed |
+//! | mutation | oracles that went red |
+//! | --- | --- |
+//! | `rotate_stress` returns `σ̃` unrotated (drop the `R` in `σ = R σ̃ Rᵀ`) | 2: `the_corotational_linear_law_is_what_the_element_returns_without_a_material` and `rotated_uniform_stretch_matches_the_closed_form` |
+//! | `corotational_local_stress` drops the `Rᵀ` (`ε = sym(RᵀF − I)` → `sym(F − I)`) | **10** |
+//! | `solve_corotational` ignores the configured model (`law` forced to `None`) | 2: `the_neo_hookean_deviator_is_what_the_element_returns_under_that_law` and `the_material_law_moves_the_answer_and_the_answer_is_equilibrium` |
+//! | `energy_derivatives` returns `μ` instead of `μ/2` for Neo-Hookean | the same 2 |
+//! | `material_correction` returns without accumulating | 1: `the_material_law_moves_…` (`NotConverged`) |
+//! | `cauchy_stress` flips the sign of `K·(J−1)` | 1: `the_material_law_moves_…` |
+//! | `hyperelastic_stress` drops the `J` in `P = J σ F⁻ᵀ` | 1: `the_material_law_moves_…` |
+//! | `hyperelastic_stress` transposes the product (`F⁻ᵀσ` for `σF⁻ᵀ`) | 1: `the_material_law_moves_…` |
+//! | `cauchy_stress` drops the `−p_ref` that makes the reference state stress free | **0 here**, 2 in `cargo test --lib hyperelastic` |
+//! | `hyperelastic_stress` drops the `F⁻ᵀ` in `P = J σ F⁻ᵀ` | ⚠️ **0 anywhere** |
 //!
-//! The first mutation is confined to the reporting path, so it separates cleanly:
-//! only the two stress oracles see it. The second is in the residual, so it takes
-//! the solve down with it — including
-//! `characterises_which_stretches_the_corotational_solve_reaches`, which is worth
-//! knowing, because it means that test is sensitive to the strain measure and not
-//! only to the stopping rule it is named for.
+//! Three things that table says and the prose would not:
+//!
+//! - The first mutation is confined to the reporting path of the *linear* law, so
+//!   it separates cleanly and the two material oracles do not see it. The second
+//!   is in the residual and in the frames the material path also solves against,
+//!   so it takes almost everything down — including
+//!   `characterises_which_stretches_the_corotational_solve_reaches`, which means
+//!   that test is sensitive to the strain measure and not only to the stopping
+//!   rule it is named for.
+//! - ⚠️ **A uniform stress is invisible to a solve.** It puts zero force on an
+//!   interior node whatever it is, so a mutation that shifts every element's
+//!   stress by the same tensor — dropping `−p_ref` — leaves every oracle in this
+//!   file green. That one is checked in `src/hyperelastic.rs` instead, by
+//!   `cauchy_stress_vanishes_in_the_reference_state`.
+//! - ⚠️ **Dropping the `F⁻ᵀ` survives everything.** The affine scenes cannot see
+//!   it for the reason above, and on the inhomogeneous scene the solver's own
+//!   equilibrium check uses the same broken force, so it converges to a different
+//!   state and calls it equilibrium. Catching it needs an oracle the internal
+//!   force cannot satisfy by agreeing with itself — objectivity under a
+//!   superposed rotation is the cheap one, since `P = J σ F⁻ᵀ` rotates to `Q P`
+//!   and `P = J σ` does not. Not written; see the Backlog.
 //!
 //! Author: Moroya Sakamoto
 
@@ -62,8 +87,8 @@ use alice_physics::hyperelastic::{
     strain_energy_density, uniaxial_cauchy_stress, HyperelasticModel, Stretch,
 };
 use alice_physics::linear_elastic_fem::{
-    solve, solve_corotational, BoundaryConditions, CorotationalConfig, ElasticMaterial, FemError,
-    SolverConfig,
+    solve, solve_corotational, Axis, BoundaryConditions, CorotationalConfig, ElasticMaterial,
+    FemError, SolverConfig,
 };
 use alice_physics::math::Fix128;
 use alice_physics::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
@@ -731,24 +756,48 @@ fn rotated_uniform_stretch_matches_the_closed_form() {
 // the hyperelastic twins
 // ---------------------------------------------------------------------------
 //
-// Two oracles on **one scene**, pinning the two sides of the same gap:
+// Two oracles on **one geometry**, one per constitutive law:
 //
-// - `the_neo_hookean_deviator_is_not_what_the_element_returns` — `#[ignore]`.
-//   The target: the deviatoric Cauchy stress an incompressible Neo-Hookean solid
-//   carries at this deformation.
-// - `the_corotational_linear_law_is_what_the_element_returns_today` — always
-//   green. The same scene under the co-rotational *linear* law, which is what the
-//   element actually evaluates.
+// - `the_neo_hookean_deviator_is_what_the_element_returns_under_that_law` — the
+//   deviatoric Cauchy stress an incompressible Neo-Hookean solid carries at this
+//   deformation, asked of a solve configured with
+//   `CorotationalConfig::with_hyperelastic`.
+// - `the_corotational_linear_law_is_what_the_element_returns_without_a_material`
+//   — the same geometry with no material set, under the co-rotational *linear*
+//   law.
 //
-// # ⚠️ Reversal condition, verbatim
+// # ⚠️ How the reversal condition was discharged, and where it was not followed
 //
-// **On the commit that makes the material law swappable through
-// `HyperelasticModel`, drop the `#[ignore]` from
-// `the_neo_hookean_deviator_is_not_what_the_element_returns` and flip
-// `the_corotational_linear_law_is_what_the_element_returns_today` to
-// `#[ignore = "superseded"]`.** Both edits belong in that one diff: keeping the
-// linear pin green next to a green Neo-Hookean oracle would assert two different
-// answers for one scene.
+// Until `with_hyperelastic` existed, the first of these was `#[ignore]`d as
+// `the_neo_hookean_deviator_is_not_what_the_element_returns`, and the comment
+// here said, verbatim:
+//
+// > **On the commit that makes the material law swappable through
+// > `HyperelasticModel`, drop the `#[ignore]` from … and flip
+// > `the_corotational_linear_law_is_what_the_element_returns_today` to
+// > `#[ignore = "superseded"]`.** Both edits belong in that one diff: keeping the
+// > linear pin green next to a green Neo-Hookean oracle would assert two
+// > different answers for one scene.
+//
+// The `#[ignore]` was dropped. **The linear pin was kept green**, against the
+// letter of that instruction, because its stated reason stopped holding the
+// moment the law became swappable: the law is now *part of the scene*, so the
+// two tests no longer name one scene with two answers — they name two scenes.
+// Ignoring the linear one would have deleted the only test the destruction table
+// below is written against, which the instruction itself notes an `#[ignore]`d
+// oracle cannot replace. Both were renamed, because "is not what the element
+// returns" and "today" had both become false.
+//
+// # ⚠️ What these two do **not** cover
+//
+// The solution of this scene is affine, and an affine displacement is an exact
+// equilibrium under **every** homogeneous law — uniform stress puts zero force on
+// an interior node whatever the stress is. So the two above pin the constitutive
+// law and say nothing about whether the *solve* reaches the material's root:
+// measured, the material run here takes one Newton step per increment, the same
+// as the linear one, and never forms the correction term that carries the law
+// into the step. `the_material_law_moves_the_answer_and_the_answer_is_equilibrium`
+// is the one that does, on an inhomogeneous scene.
 //
 // # Why the stretch has to be isochoric
 //
@@ -863,14 +912,7 @@ fn deviator_in_the_stretch_frame(
 /// `the_neo_hookean_uniaxial_helper_agrees_with_its_closed_form` checks that
 /// module against its own closed form separately.
 #[test]
-#[ignore = "src gap: solve_corotational has no material model. `grep -rn \
-            'hyperelastic|plastic::' src` finds zero references from \
-            linear_elastic_fem.rs, so the element evaluates the co-rotational \
-            linear law and returns the deviator pinned by \
-            the_corotational_linear_law_is_what_the_element_returns_today \
-            (measured gap: 1254.29 MPa on dev_1, 46% of the linear value). \
-            Reversal condition is in the module comment above this test."]
-fn the_neo_hookean_deviator_is_not_what_the_element_returns() {
+fn the_neo_hookean_deviator_is_what_the_element_returns_under_that_law() {
     let mu = lame().1;
     let turn = THREE_FOUR_FIVE;
 
@@ -896,11 +938,18 @@ fn the_neo_hookean_deviator_is_not_what_the_element_returns() {
 
     let mesh = kuhn_cube(4, SIDE / 4.0);
     let (bc, interior) = boundary_rotated_stretch(&mesh, turn, ISOCHORIC_U);
+    // The model's μ is the material's own Lamé μ, read off the same
+    // `ElasticMaterial` the solve is given, so the two describe one solid. The
+    // closed form above uses the `f64` value of the same expression.
     let out = solve_corotational(
         &mesh,
         &pla(),
         &bc,
-        &corotational_config_with_newton_budget(2, STRETCH_NEWTON_BUDGET),
+        &corotational_config_with_newton_budget(2, STRETCH_NEWTON_BUDGET).with_hyperelastic(
+            HyperelasticModel::NeoHookean {
+                mu_mpa: pla().lame().1,
+            },
+        ),
     )
     .expect("the scene converges at this Newton budget; see the_reachable_stretches_…");
 
@@ -927,8 +976,9 @@ fn the_neo_hookean_deviator_is_not_what_the_element_returns() {
         }
     }
     eprintln!(
-        "  Neo-Hookean dev σ̃ = ({:.6}, {:.6}, {:.6}) MPa, worst |dev − oracle| = {worst:.4} MPa",
-        dev[0], dev[1], dev[2]
+        "  Neo-Hookean dev σ̃ = ({:.6}, {:.6}, {:.6}) MPa, worst |dev − oracle| = {worst:.3e} MPa, \
+         interior drift {drift:.3e} mm, {} Newton steps over {} increments",
+        dev[0], dev[1], dev[2], out.newton_iterations, out.increments
     );
     assert!(
         worst < 1e-2,
@@ -938,8 +988,9 @@ fn the_neo_hookean_deviator_is_not_what_the_element_returns() {
     );
 }
 
-/// **The current state, pinned.** The same scene under the co-rotational *linear*
-/// law — what `solve_corotational` evaluates today.
+/// **The default law, pinned.** The same geometry with no material model set —
+/// the co-rotational *linear* law, which is what `solve_corotational` evaluates
+/// when [`CorotationalConfig::with_hyperelastic`] is not called.
 ///
 /// ```text
 /// ε      = U − I = diag(5/4, −1/3, −1/3)      tr ε = 5/4 − 2/3 = 7/12
@@ -955,18 +1006,22 @@ fn the_neo_hookean_deviator_is_not_what_the_element_returns() {
 /// component is 3527 MPa, so the 1e-2 tolerance has three orders of headroom —
 /// the affine field is exact in P1 and all that is left is the `Fix128` floor.
 ///
-/// # ⚠️ This is the oracle the destruction tests break
+/// # ⚠️ This is the oracle the linear law's destruction tests break
+///
+/// Both mutations below are on the co-rotational path, which the material path
+/// does not take, so **its twin cannot stand in for this test** — re-measured
+/// 2026-10-01 and the twin stays green under the first of them. The full table
+/// is in the module comment.
 ///
 /// | mutation in `src/linear_elastic_fem.rs` | measured |
 /// | --- | --- |
-/// | `σ = R σ̃ Rᵀ` → return `σ̃` unrotated | red here (off-diagonal `σ̃₁₂` term) and in `rotated_uniform_stretch_matches_the_closed_form` |
-/// | `ε = sym(RᵀF − I)` → drop the `Rᵀ` | red here **and** in `boundary_rigid_rotation_leaves_the_interior_unstressed` |
+/// | `σ = R σ̃ Rᵀ` → return `σ̃` unrotated | red here (off-diagonal `σ̃₁₂` term) and in `rotated_uniform_stretch_matches_the_closed_form`, 2 of 13 |
+/// | `ε = sym(RᵀF − I)` → drop the `Rᵀ` | red here and in 9 others, including `boundary_rigid_rotation_leaves_the_interior_unstressed` |
 ///
-/// Its twin cannot serve that purpose: an `#[ignore]`d oracle is not run, and a
-/// test that only pins an `Err` variant stays red under every mutation of the
-/// stress path, so it would report nothing.
+/// That is also why this test was kept green when its twin's `#[ignore]` came
+/// off — see the reversal condition in the module comment above.
 #[test]
-fn the_corotational_linear_law_is_what_the_element_returns_today() {
+fn the_corotational_linear_law_is_what_the_element_returns_without_a_material() {
     let (lambda, mu) = lame();
     let turn = THREE_FOUR_FIVE;
 
@@ -1031,12 +1086,122 @@ fn the_corotational_linear_law_is_what_the_element_returns_today() {
          worst component is {worst:.9} MPa off a state whose largest component is {:.3} MPa",
         dev[0].abs()
     );
-    // the gap the ignored twin measures, printed so the two numbers sit together
+    // the gap the twin measures, printed so the two numbers sit together
     let nh = mu * 665.0 / 216.0;
     eprintln!(
-        "    Neo-Hookean would carry {nh:.6} MPa on dev_1, a gap of {:.4} MPa ({:.1}% of this)",
+        "    Neo-Hookean carries {nh:.6} MPa on dev_1, a gap of {:.4} MPa ({:.1}% of this)",
         nh - dev[0],
         100.0 * (nh - dev[0]) / dev[0]
+    );
+}
+
+/// **The material law decides the answer, not only the reported stress.**
+///
+/// # Why the twins above cannot say this
+///
+/// Their solution is affine, and an affine displacement is an exact equilibrium
+/// under *every* homogeneous law: a uniform stress puts zero force on an interior
+/// node whatever the stress is. So the linear solve already lands on the
+/// material's root, the iteration stops after one step per increment, and the
+/// term that carries the law into the step is never formed. Measured: **2 Newton
+/// steps over 2 increments**, the same as the linear twin's path to the same
+/// displacement.
+///
+/// This test puts a 200 N load on the single node at the centre of the cube, with
+/// the same isochoric boundary data. The field is then inhomogeneous, the two laws
+/// disagree about it, and the iteration has to work: measured **181 Newton steps**
+/// against the linear law's 84.
+///
+/// # ⚠️ What is asserted, and why `Ok` is the strong part
+///
+/// There is no closed form for an inhomogeneous field on this mesh, so the
+/// oracle is not a value — it is that `solve_corotational` returns `Ok` **under
+/// the Neo-Hookean law**. It returns `Ok` only after checking, on the answer, that
+/// the largest out-of-balance nodal force is within `newton_tolerance` of the
+/// reference load, with the internal force computed from that law. So `Ok` says
+/// the field handed back is in equilibrium under Neo-Hookean, and a step that
+/// carried the wrong law — or none — would converge somewhere that is not, and
+/// report `NotConverged`.
+///
+/// Two more measurements are pinned because they are what separate "the law is in
+/// the step" from "the law is in the report":
+///
+/// - the answer moves by `9.173e-3 mm` from the linear law's, four orders above
+///   the `2.3e-10 mm` the affine scene shows;
+/// - it does **not** move with the increment count — `9.356e-11 mm` between one
+///   increment and two, five orders below the law gap, which says the iteration
+///   is converging to a root rather than stopping where the path left it. ⚠️ It
+///   is not *zero*: unlike the linear law's exact step, this one stops on a
+///   tolerance, so [`solve_corotational`]'s increment independence is not claimed
+///   here.
+#[test]
+fn the_material_law_moves_the_answer_and_the_answer_is_equilibrium() {
+    let turn = THREE_FOUR_FIVE;
+    let mesh = kuhn_cube(4, SIDE / 4.0);
+    let (bc, _) = boundary_rotated_stretch(&mesh, turn, ISOCHORIC_U);
+
+    // The one node at the centre of the cube, which `boundary_rotated_stretch`
+    // left free. `SIDE / 2` is a lattice point at n = 4, checked here rather than
+    // assumed, because a mesh change that moved it would otherwise load nothing.
+    let centre = (0..u32::try_from(mesh.vertex_count()).expect("fits"))
+        .find(|&v| {
+            vert(&mesh, v)
+                .iter()
+                .all(|c| (c - SIDE / 2.0).abs() < SIDE * 1e-9)
+        })
+        .expect("the 4-cell cube has a node at its centre");
+    let mut loaded = bc.clone();
+    loaded.add_load(centre, Axis::X, fx(200.0));
+
+    let neo_hookean = HyperelasticModel::NeoHookean {
+        mu_mpa: pla().lame().1,
+    };
+    let solve_with = |increments: u32, model: Option<HyperelasticModel>| {
+        let base = corotational_config_with_newton_budget(increments, 512);
+        let config = match model {
+            Some(m) => base.with_hyperelastic(m),
+            None => base,
+        };
+        solve_corotational(&mesh, &pla(), &loaded, &config)
+    };
+
+    let linear = solve_with(1, None).expect("the linear law reaches this load");
+    let material = solve_with(1, Some(neo_hookean))
+        .expect("the Neo-Hookean field must satisfy Neo-Hookean equilibrium");
+    let split = solve_with(2, Some(neo_hookean)).expect("same, applied in two increments");
+
+    let worst = |a: &[[Fix128; 3]], b: &[[Fix128; 3]]| {
+        let mut w = 0.0_f64;
+        for (x, y) in a.iter().zip(b.iter()) {
+            for (cx, cy) in x.iter().zip(y.iter()) {
+                w = w.max((cx.to_f64() - cy.to_f64()).abs());
+            }
+        }
+        w
+    };
+    let law_gap = worst(&linear.field.displacements, &material.field.displacements);
+    let increment_gap = worst(&material.field.displacements, &split.field.displacements);
+
+    eprintln!(
+        "  loaded centre node: linear {} Newton steps, Neo-Hookean {} (1 increment) / {} (2)",
+        linear.newton_iterations, material.newton_iterations, split.newton_iterations
+    );
+    eprintln!(
+        "    |u_linear − u_neo-hookean| = {law_gap:.3e} mm, \
+         |u(1 increment) − u(2)| = {increment_gap:.3e} mm"
+    );
+
+    assert!(
+        law_gap > 1e-3,
+        "the two laws must disagree about an inhomogeneous field; they differ by \
+         {law_gap:.3e} mm, which is the order the affine scene reports when the law \
+         is not in the step at all"
+    );
+    assert!(
+        increment_gap < 1e-8,
+        "the converged field must be the material's root and not where the \
+         continuation path stopped; one and two increments differ by \
+         {increment_gap:.3e} mm"
     );
 }
 
@@ -1215,7 +1380,7 @@ fn the_neo_hookean_uniaxial_helper_agrees_with_its_closed_form() {
 /// [`STRETCH_NEWTON_BUDGET`] is 64 because 32 does not converge at this stretch
 /// and the measured floor is 47 — a number chosen to make the solve *finish*. That
 /// makes it a load-bearing default of
-/// `the_corotational_linear_law_is_what_the_element_returns_today`, and "the
+/// `the_corotational_linear_law_is_what_the_element_returns_without_a_material`, and "the
 /// budget was raised to converge, not to move the answer" is exactly what that pin
 /// means. So it is checked here rather than asserted in prose.
 ///
