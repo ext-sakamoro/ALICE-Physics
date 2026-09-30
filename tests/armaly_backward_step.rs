@@ -111,11 +111,14 @@
 //! control takes `14.81 s`, and adding the pin takes `69.57 s`.
 //!
 //! ⚠️ **The argument that settled it was not about seconds.** `#[ignore]` on a
-//! test that *passes* is a deletion performed procedurally: there is no runner
-//! in this repository for an ignored test to be deferred *to*, so "ignored
-//! for cost" and "removed" have identical consequences. Cost belongs in a
-//! schedule — `quality-deep.yml` already has one — and not in an attribute
-//! that reads as configuration.
+//! test that *passes* is a deletion performed procedurally: ⚠️ **at the time
+//! there was no runner** in this repository for an ignored test to be deferred
+//! *to*, so "ignored for cost" and "removed" had identical consequences. Cost
+//! belongs in a schedule — `quality-deep.yml` already has one — and not in an
+//! attribute that reads as configuration. ⚠️ **The premise in that sentence is
+//! now false and the conclusion still holds**: `run_ignored.py` gives ignored
+//! tests a runner (see below), but a weekly runner makes a change *observable*
+//! rather than *prompt*, which is the distinction the pin is for.
 //!
 //! Measured on the shared scene (`ny = 8`, `L = 12H`, `dt = 1/16`, `t = 256`,
 //! 30 sweeps):
@@ -153,8 +156,10 @@
 //! (`grep -rnE "^[[:space:]]*#\[ignore" tests/ src/ | wc -l`, and
 //! `cargo test --all-targets -- --list --ignored` enumerates the same 18).
 //! `51` came from `grep -c "#\[ignore"`, which counts **lines mentioning the
-//! attribute** — mostly prose in doc comments like this one, so the figure
-//! grew as this very passage was written, and the naive count now reads 56.
+//! attribute** — mostly prose in doc comments like this one. ⚠️ **That count
+//! is not quoted here, because it grows every time this passage is edited**:
+//! `grep -rn "#\[ignore" tests/ src/ | wc -l` reports it, and it has no fixed
+//! value to record.
 //!
 //! ⚠️ **Convention, because the error was in the counting and not in the
 //! configuration: when a doc comment states a count, it states the command
@@ -1781,13 +1786,39 @@ fn the_upper_wall_readout_finds_the_bubble_of_the_reflected_step() {
 /// exists to say where it has to get to. They are written against one shared
 /// measurement so that the flip is those two attribute edits and nothing else.
 ///
-/// ⚠️ **`#[ignore]`d tests are not run anywhere in this repository** — there
-/// is no `--ignored` or `--include-ignored` invocation in `scripts/` or
-/// `.github/`, so nothing will tell anyone when this starts passing. The
-/// attribute keeps it compiling, and the twin is what actually guards the
-/// number. Giving the gap-ignored twins somewhere to run is filed in the
-/// backlog; until that exists, this test is a written-down target that the
-/// compiler keeps honest, and saying otherwise would overstate it.
+/// ⚠️ **Something does report the reversal: `scripts/run_ignored.py`, run by
+/// `quality-deep.yml` on its weekly schedule** (`cron: 0 18 * * 0`), ⚠️ **and
+/// on `workflow_dispatch`, so it can be run on demand rather than waited
+/// for.** That script reads the reason
+/// string on each `#[ignore]`, classifies this one as `src gap:` — expected to
+/// fail — and treats it *starting to pass* as the event worth announcing
+/// (`::notice` plus a summary section, exit 0). So the reversal condition above
+/// is not only written down here; ⚠️ **it is the condition a job actively
+/// watches for.** The twin still guards the number on every push, because a
+/// weekly job makes the flip **observable, not prompt**.
+///
+/// ⚠️ **This paragraph previously claimed the opposite** — that ignored tests
+/// were "not run anywhere", that there was no `--ignored` or
+/// `--include-ignored` invocation in `scripts/` or `.github/`, that "nothing
+/// will tell anyone when this starts passing", and that a runner was only
+/// filed in the backlog. All four were true when this test was written and
+/// stopped being true hours later, in `279a9d6`, ⚠️ **while this very file was
+/// under review** (the backlog item is closed). Kept here rather than deleted
+/// because the reversal instructions above were written on that assumption and
+/// a reader who remembers the old wording needs to know which half changed.
+///
+/// ⚠️ **This paragraph depends on repository infrastructure, so it goes stale
+/// without anything failing.** If `run_ignored.py` stops running, stops
+/// classifying by reason prefix, or loses the `src gap:` category, the claim
+/// above is false again and no assertion here will say so. ⚠️ **The same
+/// premise had already gone stale twice before this edit and lived in four
+/// separate places in this one file** — so when changing it, grep the *claim*
+/// across the whole file (`no runner`, `nobody runs`, `not run anywhere`,
+/// `none are executed`, `nothing will tell`, `--ignored` invocation,
+/// `--include-ignored`) and drive the count to zero, rather than fixing the
+/// paragraph that happened to be read. ⚠️ **The last two phrasings were in
+/// this file and absent from the first version of this list**, which is the
+/// failure mode a sweep list has: an incomplete one grants false confidence.
 ///
 /// # Where the tolerance comes from
 ///
@@ -1867,10 +1898,28 @@ fn the_reattachment_length_matches_gartling() {
 /// results below were not re-derived for it and why its mutation red set is
 /// unchanged from the commit that introduced it. The reasoning was that a
 /// **passing** change-detector suppressed by `#[ignore]` is a deletion carried
-/// out procedurally, and that this repository has no runner for ignored tests
-/// to be suppressed *into* — of the 51 `#[ignore]`s here, none are executed by
-/// anything in `scripts/` or `.github/`. The cost is recorded below so the
+/// out procedurally, and that at the time this repository had no runner for
+/// ignored tests to be suppressed *into*. The cost is recorded below so the
 /// trade stays visible rather than becoming folklore.
+///
+/// ⚠️ **Both halves of that reasoning have since been corrected, and the
+/// decision is unchanged.** `scripts/run_ignored.py` (`279a9d6`) now executes
+/// the ignored tests weekly from `quality-deep.yml`, so "no runner" is false —
+/// but a weekly runner makes a suppressed change-detector **observable, not
+/// prompt**, and prompt is the whole point of a pin. ⚠️ **The count was also
+/// wrong: it is 18, not 51** — `51` counted *lines mentioning the attribute*,
+/// most of them prose in doc comments like this one, so it grew as the prose
+/// was written. The real figures, with the commands that produce them:
+///
+/// | figure | command | value |
+/// |---|---|---|
+/// | `#[ignore]` attributes | `grep -rnE "^[[:space:]]*#\[ignore" tests/ src/ \| wc -l` | **18** |
+/// | the same, via the harness | `cargo test --all-targets -- --list --ignored` | **18** |
+/// | lines mentioning it (the wrong count) | `grep -rn "#\[ignore" tests/ src/ \| wc -l` | ⚠️ no fixed value: it grows with this prose |
+///
+/// ⚠️ **`51` and `18` are the same repository on the same day**, which is why
+/// the convention in the module header is that a stated count carries the
+/// command that produced it.
 ///
 /// Measured, one `cargo test --test armaly_backward_step` per row, same
 /// machine, load average 3.2:
@@ -1922,9 +1971,14 @@ fn the_reattachment_length_matches_gartling() {
 ///
 /// `ny = 8`, `L = 12 H`, `dt = 1/16`, `t = 256`, 30 sweeps — each measured
 /// rather than assumed, because a gate nobody runs is indistinguishable from
-/// an assertion nobody wrote, and in this repository `#[ignore]` means nobody
-/// runs it, there being no `--ignored` invocation in `scripts/` or
-/// `.github/`.
+/// an assertion nobody wrote, and a gate too expensive to keep is a gate that
+/// ends up `#[ignore]`d. ⚠️ **The original wording here added "and in this
+/// repository `#[ignore]` means nobody runs it, there being no `--ignored`
+/// invocation", which is no longer true** — `scripts/run_ignored.py` runs them
+/// weekly from `quality-deep.yml`. ⚠️ **The argument for a cheap scene does
+/// not depend on that**: what matters is that this test runs on **every push
+/// to `main` and every pull request** (`ci.yml`), which a weekly runner does
+/// not provide, so its cost lands in that matrix either way.
 ///
 /// ⚠️ **Local seconds could not be trusted while this was being developed** —
 /// load average 17.7 on 8 cores from sibling sessions, under which the same
@@ -1952,16 +2006,42 @@ fn the_reattachment_length_matches_gartling() {
 /// `48 x 8` cells for 640 steps and `24 x 8` for 640 steps on two scenes are
 /// both `384` cell-columns, so it is not double counting.)
 ///
-/// ⚠️ **That proxy under-predicts the real cost — by between 1.9x and 3.6x
-/// depending on what it is compared against**, so it is fine for ranking two
-/// variants and useless for deciding whether something fits in a budget. The
-/// spread is deliberately left as a range: the three figures in circulation
-/// (`1.9x` against CI binary seconds with a `27.91 s` baseline, `3.6x` against
-/// local wall clock with a `14.81 s` baseline, and a `2.8x` that was computed
-/// against a superseded `+20 s` estimate) differ because their measurement
-/// bases differ, ⚠️ **which is the very thing this paragraph is warning
-/// about**. Picking one would hide it, and the exact multiplier does not
-/// change the conclusion. The numbers above are wall clock.
+/// ⚠️ **That proxy under-predicts the real cost — by between 2.6x and 3.6x
+/// depending on which seconds it is compared against**, so it is fine for
+/// ranking two variants and useless for deciding whether something fits in a
+/// budget. ⚠️ **Only the upper end is self-contained here**: on the local wall
+/// clock the proxy predicts `1.027 x 14.81 = 15.21 s` against a measured
+/// `69.57 - 14.81 = 54.76 s`, i.e. `3.60x`, from the two tables above and
+/// nothing else.
+///
+/// ⚠️ **The lower end rests on CI binary seconds, which are not recorded in
+/// this file.** There are two candidate baselines for "the rest of the file" —
+/// `27.91 s` at `b57fa34` (the six tests predating layer 1, no reflected-step
+/// control) and `26.15 s` at `f0f5ed2` (the pin `#[ignore]`d, so the control
+/// is in) — and each pairs with its own increment off the same `103.14 s`
+/// pin-on total, giving `75.23 s` and `76.99 s`, hence `2.62x` and `2.87x`.
+/// ⚠️ **Those two cannot be told apart.** The same binary on the same commit
+/// `b57fa34` timed `27.91 s` and `25.97 s` across the job's two feature passes
+/// (run 36673095055, job 109752153863) — a `1.94 s` spread, wider than the
+/// `1.76 s` between the two baselines — while the scope difference actually
+/// being argued over is the `+0.61 s` the table above records for adding the
+/// contract and the control (`14.81 - 14.20`). ⚠️ **The pin-on total is no
+/// steadier**: the identical 11 tests measured `103.14 s` at `144df00` and
+/// `116.84 s` at `f13c82b` (runs 36680629713 and 36688818382), 13 % apart with
+/// the assertions byte for byte the same, which on its own moves the CI-basis
+/// multiplier between `2.6x` and `3.4x`.
+///
+/// ⚠️ **So `2.6x` is the weaker of the two candidates, taken deliberately.**
+/// The claim being made is that the proxy *under*-predicts, so the honest
+/// bound is the one that claims least. Quoting `2.87x` as "the scope-matched
+/// figure" would assert a distinction the instrument does not support — the
+/// same error as the `1.9x` this replaces, which came from a proxy ratio whose
+/// numerator counted the reflected-step control while its denominator did not.
+/// ⚠️ **Note the ratio used throughout is `1.027x`** (this test over the rest
+/// of the file, as above); `186.28 / 91.91` is `1 +` that and predicts twice
+/// the increment if used in its place. The wall-clock row is wall clock; the
+/// CI figures are binary seconds and understate the job by the factor of two
+/// in the note above.
 ///
 /// ## `L = 12` rather than Gartling's `30`
 ///
