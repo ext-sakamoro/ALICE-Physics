@@ -884,3 +884,464 @@ fn face_conditions_round_trip_and_agree_with_the_solid_flag() {
     assert_eq!(plain.v_bc(0, 0, 0), FaceBc::Fluid);
     assert_eq!(plain.w_bc(0, 0, 0), FaceBc::Fluid);
 }
+
+// ===========================================================================
+// Oracles 7-9 — plane Couette: the scene in which both error terms of the
+// Poiseuille closed form are individually zero
+// ===========================================================================
+//
+// Plane Couette is the companion the Poiseuille oracles above need. Poiseuille
+// pins the wall treatment *together with* two error terms it has to predict;
+// Couette pins it in a field where both of those terms are **absent**, so when
+// a harder benchmark (a backward-facing step, say) misses its reference, "the
+// viscous term at the wall" can be struck off the list of suspects by running
+// this one instead of reasoning about it.
+//
+// Scene: `nx = 6`, `ny = 8`, `nz = 1`, `dx = 1/8` (so `H = ny dx = 1`),
+// `ν = 1/8`, `ρ = 1`, **no body force**. The `y = 0` layer is a wall at rest,
+// the `y = H` layer a wall moving at `U = 1`, the `z` layers are symmetry
+// planes, the whole `i = 0` layer is a prescribed inflow and the whole
+// `i = nx` layer an outflow. The continuum solution is `u(y) = U y / H`.
+//
+// # Why this is an exact fixed point and not an accurate one
+//
+// Write `u_j = U y_j / H` with `y_j = (j + ½) dx`, i.e. `u_j = (2j+1)/(2 ny)`.
+// Four things have to vanish, and each one vanishes **on its own**:
+//
+// 1. **Interior rows.** The second difference of a linear field is zero:
+//    `u_{j−1} + u_{j+1} − 2 u_j = 0`.
+// 2. **The static wall row.** The no-slip ghost is `2·0 − u_0 = −u_0`, and the
+//    field's own extension below the wall is `f(−h) = −f(h) = −u_0` for
+//    `h = dx/2`, because **a line is odd about the wall**. The ghost *is* the
+//    extension, so the wall row's second difference is the second difference
+//    of a line, which is zero: `−u_0 + u_1 − 2 u_0 = u_1 − 3 u_0 = 0`.
+//    ⚠️ This is exactly the step that produced `+G dx²/(8ν)` in the Poiseuille
+//    header: there the field is a **parabola**, which is *not* odd about the
+//    wall, and the ghost misses `f(−h)` by `2 A h²`.
+// 3. **The lid row.** The moving ghost is `2U − u_{ny−1}`, and
+//    `f(H + h) = U(H + h)/H = 2U − U(H − h)/H = 2U − u_{ny−1}`. Again the
+//    ghost is the extension: `u_{ny−2} + (2U − u_{ny−1}) − 2 u_{ny−1} = 0`.
+// 4. **Advection, the body force and the projection.** `v = w = 0`, so the
+//    back-trace moves along `x` only, and the field is uniform in `x`, so the
+//    interpolation is the identity. The body force is zero, so the `−G dt` of
+//    the Poiseuille header — the term that exists because the solver adds the
+//    force *before* the viscous step and only the wall row can see a constant
+//    — has nothing to carry. The divergence is zero, so the pressure right
+//    hand side is zero and the correction is zero.
+//
+// ⚠️ **"Both terms are individually zero" is a different claim from "the two
+// terms cancel", and the difference is testable.** At the forbidden step
+// `dt = dx²/(8ν)` — `1/64` at this resolution — the Poiseuille run lands on
+// the continuum parabola because `+G dx²/(8ν)` and `−G dt` are equal and
+// opposite while both are still wrong. Perturb `dt` there and the agreement
+// breaks. Here the fixed point does not depend on `dt` at all, which is why
+// oracle 7 runs the identical scene at `dt = 1/64`, `1/128` and `1/256`: the
+// cancellation reading predicts three different answers, the correct reading
+// predicts the same one three times.
+//
+// # What this oracle does not see
+//
+// ⚠️ **It does not verify the wall treatment of advection.** `v = 0`, so no
+// back-trace ever crosses a wall, and the field is uniform along the flow, so
+// a back-trace that leaves the inlet would read the right value even if it
+// clamped to the interior instead of reading the `Inflow` face. The Backlog
+// item "CFD の移流に壁の扱いが無い (接線 no-slip は粘性項のみ)" is **not**
+// closed by this file. M14 of the table below is the demonstration: it stays
+// green, and that is the correct outcome, not a hole.
+//
+// # Break tests (measured, continuing the M1-M11 series of the no-slip commit)
+//
+// Each mutation went into `src/` on its own, was measured, and was reverted;
+// the last column is the re-measured green. `(a)` is
+// `plane_couette_profile_is_an_exact_fixed_point`, `(b)` is
+// `couette_converges_to_the_linear_profile_from_rest`, `(c)` is
+// `a_symmetry_plane_under_the_lid_leaves_the_flow_uniform`.
+//
+// | # | mutation | (a) | (b) | (c) | restored |
+// |---|---|---|---|---|---|
+// | M12 | lid ghost `2U − u` → `U − u` (the `up` arm of the `u` component; a wall at rest has `2·0 = 0` so the floor is untouched) | **red**, `6.8e18` ulps at `(i=6, j=7)` | **red**, `6.7e18` ulps against a bound of 64 | **red**, the symmetry-plane twin drifts `6.8e18` ulps off uniform `U` | green |
+// | M13 | floor ghost `−u` → `+u`, i.e. zero gradient (the `down` arm of the `u` component) | **red**, `2.5e18` ulps at `(i=6, j=0)` | **red**, `2.4e18` ulps | **red**, the outlet floor face reads `+1.000000`, which is what makes it indistinguishable from the symmetry-plane twin | green |
+// | M14 | the `u` back-trace never reads the `i = 0` face, clamping to the first interior face instead of the `Inflow` layer | green | green | green | green |
+//
+// ⚠️ **M14 staying green is the designed outcome and is recorded here so that
+// nobody "fixes" this file by making it red.** Two independent reasons: the
+// field is uniform in `x`, so substituting one X-face for another returns the
+// same number; and `CfdSolver::step` calls `enforce_face_boundaries` again
+// after advection, so whatever the back-trace wrote onto the `i = 0` layer is
+// overwritten by the prescribed inflow before the viscous term sees it. An
+// oracle that could see M14 needs a field with structure along the flow — a
+// backward-facing step, not a Couette.
+//
+// ⚠️ **M12 and M13 make (a) red on the ulp assertion itself**, which is the
+// evidence that `assert_eq!(worst, 0)` is load-bearing rather than the
+// strongest available false green: a frozen field, or wall rows that never
+// ran, would also report zero ulps.
+
+/// Cells along the flow for the Couette scene.
+const COUETTE_NX: usize = 6;
+/// Cells across the gap for the Couette scene, so `H = ny · dx = 1`.
+const COUETTE_NY: usize = 8;
+/// One `Fix128` ulp, `2⁻⁶⁴`, for printing an ulp count as a magnitude.
+const ULP: f64 = 5.421_010_862_427_522e-20;
+
+/// Distance from the linear profile left after the transient, in ulps.
+///
+/// Measured 12 (`6.5e-19`) at `t = 8` and unchanged from there to `t = 20`, so
+/// it is the arithmetic residue of the iteration rather than an unconverged
+/// transient. The bound is that measurement with room, not a fitted tolerance.
+const COUETTE_TRANSIENT_ULPS: u128 = 64;
+
+/// Raw I64F64 bit pattern as a signed integer, so differences count ulps.
+fn raw(v: Fix128) -> i128 {
+    ((v.hi as i128) << 64) | (v.lo as i128)
+}
+
+/// Distance between two fixed-point values in units of the last place.
+///
+/// ⚠️ Compared as bit patterns, never through `to_f64`: the quantities this
+/// file pins differ by a handful of ulps of `2⁻⁶⁴`, which `f64` rounds away
+/// to nothing.
+fn ulp_gap(a: Fix128, b: Fix128) -> u128 {
+    (raw(a) - raw(b)).unsigned_abs()
+}
+
+/// `u(y_j)` of the plane Couette profile `U y / H` with `U = H = 1`.
+///
+/// `y_j = (j + ½) dx` and `dx = 1/ny`, so `u_j = (2j + 1) / (2 ny)`, which is
+/// exact in `Fix128` because the denominator is a power of two.
+fn couette_profile(j: usize) -> Fix128 {
+    Fix128::from_ratio(2 * j as i64 + 1, 2 * COUETTE_NY as i64)
+}
+
+/// The uniform inlet at the lid speed `U = 1` that the controls use.
+fn uniform_lid_speed(_j: usize) -> Fix128 {
+    Fix128::ONE
+}
+
+/// Plane Couette: a lid at `y = H` moving at `U = 1`, `bottom` on the `y = 0`
+/// layer, symmetry planes in `z`, the whole `i = 0` layer prescribed from
+/// `inlet` and the whole `i = nx` layer an outflow. No body force.
+fn couette(bottom: FaceBc, inlet: fn(usize) -> Fix128) -> CfdSolver {
+    let dx = Fix128::from_ratio(1, COUETTE_NY as i64);
+    let mut solver = CfdSolver::new(COUETTE_NX, COUETTE_NY, 1, dx);
+    solver.density_kg_m3 = Fix128::ONE;
+    solver.dynamic_viscosity_pas = Fix128::from_ratio(1, NU_RECIPROCAL); // ρ = 1, so μ = ν
+    solver.gravity = Vec3Fix::ZERO;
+    solver.jacobi_iterations = 60;
+    solver.use_turbulence = false;
+
+    let lid = FaceBc::Wall {
+        velocity: Vec3Fix::new(Fix128::ONE, Fix128::ZERO, Fix128::ZERO),
+    };
+    for q in 0..COUETTE_NX {
+        for r in 0..solver.grid.nz {
+            set_face_bc(&mut solver.grid, 1, 0, q, r, bottom);
+            set_face_bc(&mut solver.grid, 1, COUETTE_NY, q, r, lid);
+        }
+    }
+    mark_boundary_layers(&mut solver.grid, 2, FaceBc::SlipWall);
+    for k in 0..solver.grid.nz {
+        for j in 0..COUETTE_NY {
+            solver.grid.set_u_bc(
+                0,
+                j,
+                k,
+                FaceBc::Inflow {
+                    normal_velocity: inlet(j),
+                },
+            );
+            solver.grid.set_u_bc(COUETTE_NX, j, k, FaceBc::Outflow);
+        }
+    }
+    solver
+}
+
+/// Put `f(j)` on every X-face, both boundary layers included.
+fn seed_u_profile(solver: &mut CfdSolver, f: fn(usize) -> Fix128) {
+    let (nx, ny, nz) = (solver.grid.nx, solver.grid.ny, solver.grid.nz);
+    for k in 0..nz {
+        for j in 0..ny {
+            for i in 0..=nx {
+                let ix = i + (nx + 1) * (j + ny * k);
+                solver.grid.u[ix] = f(j);
+            }
+        }
+    }
+}
+
+/// Worst `|u − f(j)|` over every X-face in ulps, with the face it happened on.
+fn worst_u_ulps(solver: &CfdSolver, f: fn(usize) -> Fix128) -> (u128, usize, usize) {
+    let mut worst = (0u128, 0usize, 0usize);
+    for k in 0..solver.grid.nz {
+        for j in 0..solver.grid.ny {
+            for i in 0..=solver.grid.nx {
+                let gap = ulp_gap(solver.grid.u(i, j, k), f(j));
+                if gap > worst.0 {
+                    worst = (gap, i, j);
+                }
+            }
+        }
+    }
+    worst
+}
+
+// ---------------------------------------------------------------------------
+// Oracle 7 — the linear profile is stationary to the last bit
+// ---------------------------------------------------------------------------
+
+/// Oracle: `u_j = U y_j / H` is an **exact** fixed point of the split scheme —
+/// not "accurate to the discretisation error", stationary bit for bit. See the
+/// section header for the four reasons, each of which holds on its own.
+///
+/// The three step sizes include `dt = dx²/(8ν) = 1/64`, the step at which the
+/// two Poiseuille error terms cancel. It is an ordinary step here, and the
+/// answer is the same at all three: a scene whose agreement came from a
+/// cancellation would move with `dt`.
+///
+/// ⚠️ **Measured: `0` ulps, and that is what is asserted.** The header of this
+/// file warns that `Fix128` truncates every product, so the expectation going
+/// in was a per-step allowance of an ulp or two from the interpolation
+/// `(1 − t) u + t u`; it does not appear, because every quantity in this scene
+/// is a dyadic rational with a small numerator and the products land exactly in
+/// Q64.64. With `m = 2j + 1` and a back-trace of `u_j dt` at `dt = 1/128`, the
+/// weights are `m/256` and `(256 − m)/256`, and
+/// `(m/16)(m/256) + (m/16)((256 − m)/256) = 256 m / 4096 = m/16` with nothing
+/// to truncate at any step.
+///
+/// ⚠️ If a future arithmetic change makes this a small non-zero number, widen it
+/// to a budget proportional to the step count — do not delete the assertion.
+/// The claim being pinned is stationarity; a bound that grows with the step
+/// count still pins it, a bound that grows with `dt` or with `ν` does not.
+#[test]
+fn plane_couette_profile_is_an_exact_fixed_point() {
+    const STEPS: u32 = 200;
+    for &dt_reciprocal in &[64i64, 128, 256] {
+        let mut solver = couette(
+            FaceBc::Wall {
+                velocity: Vec3Fix::ZERO,
+            },
+            couette_profile,
+        );
+        seed_u_profile(&mut solver, couette_profile);
+        let dt = Fix128::from_ratio(1, dt_reciprocal);
+        for _ in 0..STEPS {
+            solver.step(dt);
+        }
+
+        let (worst, i, j) = worst_u_ulps(&solver, couette_profile);
+        let worst_div = max_abs_divergence(&solver.grid);
+        println!(
+            "Couette fixed point, dt=1/{dt_reciprocal}, {STEPS} steps: worst {worst} ulps \
+             ({:.3e}) at (i={i}, j={j}), max |div| {worst_div:.3e} — all measured",
+            worst as f64 * ULP
+        );
+
+        assert_eq!(
+            worst, 0,
+            "dt=1/{dt_reciprocal}: the linear Couette profile is a bit-exact fixed \
+             point of this scheme; worst deviation {worst} ulps at (i={i}, j={j})"
+        );
+        // ⚠️ The two assertions below are what stop the one above being the
+        // strongest available false green. A scheme that froze the field, or
+        // one whose wall rows never ran at all, would leave the seeded profile
+        // exactly where it was and report zero ulps for the wrong reason — zero
+        // can mean "correct" or it can mean "nothing flowed". These say the
+        // field being held still is the *sheared* one, so the wall rows really
+        // are carrying a non-zero ghost rather than sitting in a flat field
+        // that any mirror whatsoever would reproduce. They run after the ulp
+        // assertion because a frozen field is exactly the case in which that
+        // one passes; the order costs nothing and makes a broken run report its
+        // ulp count instead of a single face.
+        assert_eq!(
+            solver.grid.u(COUETTE_NX / 2, 0, 0),
+            Fix128::from_ratio(1, 16),
+            "the floor face must carry U h / H = 1/16"
+        );
+        assert_eq!(
+            solver.grid.u(COUETTE_NX / 2, COUETTE_NY - 1, 0),
+            Fix128::from_ratio(15, 16),
+            "the face under the lid must carry U (H − h) / H = 15/16"
+        );
+        assert!(
+            worst_div < 1e-15,
+            "dt=1/{dt_reciprocal}: a unidirectional x-uniform field is divergence \
+             free by construction, worst |div| {worst_div:.3e}"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Oracle 8 — the same closed form reached from rest
+// ---------------------------------------------------------------------------
+
+/// Oracle: started from rest with the same conditions, the run converges to
+/// the same closed form, and every cross-section carries the same flux.
+///
+/// Oracle 7 shows the profile does not move once it is there, which a scheme
+/// that had frozen the field entirely would also satisfy. This one shows the
+/// profile is what the scheme *arrives at*, and the closed form for the flux —
+/// `Σ_j u_j = U H / (2 dx) = ny/2 = 4`, the trapezoidal sum of a line — is a
+/// second, independent statement about the same run.
+///
+/// Measured: `12` ulps (`6.5e-19`) from the closed form at `t = 8`, unchanged
+/// through `t = 20`, so the residue is arithmetic and not an unfinished
+/// transient. The slowest mode of the start-up problem decays as
+/// `exp(−ν π² t / H²)`, which is `4.3e-5` at `t = 8`; the run is well past it.
+#[test]
+fn couette_converges_to_the_linear_profile_from_rest() {
+    let mut solver = couette(
+        FaceBc::Wall {
+            velocity: Vec3Fix::ZERO,
+        },
+        couette_profile,
+    );
+    let dt = Fix128::from_ratio(1, 128);
+    for n in 1..=1280u32 {
+        solver.step(dt);
+        if n % 256 == 0 {
+            let (w, _, _) = worst_u_ulps(&solver, couette_profile);
+            println!(
+                "  after {n:5} steps (t = {:5.2}): worst {w} ulps ({:.3e}) — measured",
+                f64::from(n) / 128.0,
+                w as f64 * ULP
+            );
+        }
+    }
+
+    let (worst, i, j) = worst_u_ulps(&solver, couette_profile);
+    for j in 0..COUETTE_NY {
+        println!(
+            "  j={j}  u(mid) {:+.12}  closed form {:+.12}",
+            solver.grid.u(COUETTE_NX / 2, j, 0).to_f64(),
+            couette_profile(j).to_f64()
+        );
+    }
+
+    let flux = column_flux(&solver.grid, 0);
+    let expected_flux = COUETTE_NY as f64 / 2.0; // Σ_j u_j = ny/2, analytic
+    let mut worst_column = 0.0f64;
+    for i in 0..=COUETTE_NX {
+        worst_column = worst_column.max((column_flux(&solver.grid, i) - flux).abs());
+    }
+    println!(
+        "Couette from rest: worst {worst} ulps at (i={i}, j={j}), flux {flux:+.12} \
+         (closed form {expected_flux:+.1}), worst column spread {worst_column:.3e} — measured"
+    );
+
+    assert!(
+        worst <= COUETTE_TRANSIENT_ULPS,
+        "from rest the run must reach the linear profile: worst {worst} ulps at \
+         (i={i}, j={j}), bound {COUETTE_TRANSIENT_ULPS}"
+    );
+    assert!(
+        (flux - expected_flux).abs() < 1e-12,
+        "the trapezoidal sum of the closed form is {expected_flux}, measured {flux:+.12}"
+    );
+    assert!(
+        worst_column < 1e-12,
+        "every cross-section carries the same flux, spread {worst_column:.3e}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Oracle 9 — control: it is the no-slip floor that creates the shear
+// ---------------------------------------------------------------------------
+
+/// Control for oracles 7 and 8, in the shape of a twin: the same lid, the same
+/// uniform inlet `U`, and the floor either a symmetry plane or a wall.
+///
+/// With the symmetry plane, a uniform `U` is itself an exact fixed point — the
+/// zero-gradient mirror makes the floor row's second difference `u_1 − u_0` and
+/// the lid ghost becomes `2U − U = U`, so nothing anywhere has a gradient to
+/// diffuse. With the wall, the very same run has to develop shear. That is the
+/// falsifier for "the no-slip ghost reached the solver": a mirror that quietly
+/// reverted to zero gradient would make the two runs identical, and the pair
+/// says so without depending on how close either one gets to any profile.
+///
+/// ⚠️ **The inlet of this control is a plug, not the linear profile, and that
+/// is deliberate.** The obvious way to write the control — keep the linear
+/// inlet of oracles 7 and 8 and only swap the floor for a symmetry plane —
+/// does *not* settle on uniform `U`, so there would be no closed form to
+/// compare against. The viscous relaxation time across the gap is
+/// `H²/(ν π²) ≈ 0.81` while the advective transit of this domain is
+/// `nx dx / U = 0.75`: the prescribed inlet profile reaches the outlet before
+/// the interior has forgotten it, so the steady field is a developing one with
+/// no elementary form. Making the inlet a plug removes the mismatch, because
+/// then uniform `U` satisfies the inlet, the symmetry plane, the lid ghost and
+/// the projection simultaneously — an exact fixed point, measured at `0` ulps.
+///
+/// ⚠️ **The no-slip twin does not converge to the linear Couette profile, and
+/// must not be asserted to.** The plug inlet holds the flux at `ny · U = 8`
+/// while the linear profile carries `ny/2 = 4`, so the developing column
+/// overshoots above `U` in the middle (measured peak `1.2534` against the
+/// floor's `0.2766`). That is the reason oracles 7 and 8 prescribe the linear
+/// profile at the inlet rather than a plug: a plug inlet and the Couette answer
+/// are different flow rates, so no run can satisfy both.
+///
+/// Measured at `t ≈ 3.1`, outlet column: symmetry plane flat at `U` to `0`
+/// ulps; wall spread `0.977` between `0.2766` at the floor and `1.2534` in the
+/// middle.
+#[test]
+fn a_symmetry_plane_under_the_lid_leaves_the_flow_uniform() {
+    const STEPS: u32 = 400;
+    let dt = Fix128::from_ratio(1, 128);
+
+    let mut slip = couette(FaceBc::SlipWall, uniform_lid_speed);
+    seed_u_profile(&mut slip, uniform_lid_speed);
+    let mut wall = couette(
+        FaceBc::Wall {
+            velocity: Vec3Fix::ZERO,
+        },
+        uniform_lid_speed,
+    );
+    seed_u_profile(&mut wall, uniform_lid_speed);
+    for _ in 0..STEPS {
+        slip.step(dt);
+        wall.step(dt);
+    }
+
+    let (slip_worst, i, j) = worst_u_ulps(&slip, uniform_lid_speed);
+    let mut lowest = f64::INFINITY;
+    let mut highest = f64::NEG_INFINITY;
+    let mut wall_flux = 0.0f64;
+    for j in 0..COUETTE_NY {
+        let u = wall.grid.u(COUETTE_NX, j, 0).to_f64();
+        lowest = lowest.min(u);
+        highest = highest.max(u);
+        wall_flux += u;
+        println!(
+            "  j={j}  symmetry plane {:+.12}  no-slip floor {u:+.12}",
+            slip.grid.u(COUETTE_NX, j, 0).to_f64()
+        );
+    }
+    println!(
+        "{STEPS} steps: symmetry plane deviates from uniform U by {slip_worst} ulps at \
+         (i={i}, j={j}); no-slip outlet spans {lowest:+.6}..{highest:+.6} \
+         (spread {:.6}) at flux {wall_flux:+.6} — all measured",
+        highest - lowest
+    );
+
+    assert_eq!(
+        slip_worst, 0,
+        "with a symmetry plane under the lid, a uniform U is a bit-exact fixed \
+         point; deviation {slip_worst} ulps at (i={i}, j={j})"
+    );
+    assert!(
+        lowest < 0.5,
+        "the no-slip floor must brake the fluid next to it, outlet floor face \
+         {lowest:+.6} against the lid speed 1"
+    );
+    assert!(
+        highest - lowest > 0.5,
+        "the no-slip twin must develop shear where the symmetry plane twin stays \
+         flat, outlet spread {:.6}",
+        highest - lowest
+    );
+    // The flux is conserved, which is why the twin cannot become the linear
+    // profile: it is a different flow rate.
+    assert!(
+        (wall_flux - COUETTE_NY as f64).abs() < 1e-6,
+        "the prescribed plug inlet fixes the flux at {}, measured {wall_flux:+.6}",
+        COUETTE_NY
+    );
+}
