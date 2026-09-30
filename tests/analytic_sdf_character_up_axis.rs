@@ -428,3 +428,234 @@ fn an_exact_distance_field_is_untouched_by_the_clamp_being_reachable() {
         out.position[1]
     );
 }
+
+// ───────────── inward-normal guard / least-penetrating sample ─────────────
+
+/// A field whose gradient points **inward** (toward the planet centre) at
+/// the sample point: `f(p) = x0 - x`, so `∇f = (-1, 0, 0)` everywhere and
+/// the field is negative for `x > x0`.
+///
+/// This is the seam case: geometry buried in the ground reports a normal
+/// that faces the centre, and pushing along it drives the character
+/// underground instead of out.
+fn inward_normal_field(x0: f32) -> ClosureSdf {
+    ClosureSdf::new(move |x, _y, _z| x0 - x, |_x, _y, _z| (-1.0, 0.0, 0.0))
+}
+
+#[test]
+fn an_inward_normal_drives_the_character_toward_the_centre_by_default() {
+    // Closed form: at x = R the field is x0 - R = -1.0 (x0 = R - 1), so
+    // the push is radius - d + skin = 0.35 + 1.0 + 1e-4 = 1.3501 along
+    // (-1, 0, 0) — i.e. 1.35 m DEEPER. Pinned as the default behaviour so
+    // the guard below is visibly the thing that changes it.
+    let x0 = PLANET_R - 1.0;
+    let mut ch = SdfCharacter::new([PLANET_R, 0.0, 0.0], CAP_R, 1.8);
+    ch.up = [1.0, 0.0, 0.0];
+    ch.max_iterations = 1;
+    assert!(
+        ch.min_up_alignment.is_infinite() && ch.min_up_alignment.is_sign_negative(),
+        "default must not substitute the push direction"
+    );
+    let out = ch.move_and_slide(&inward_normal_field(x0), [0.0, 0.0, 0.0]);
+    let expected = PLANET_R - (CAP_R - (x0 - PLANET_R) + ch.skin_width);
+    assert!(
+        (out.position[0] - expected).abs() < 1.0e-4,
+        "expected {expected}, got {}",
+        out.position[0]
+    );
+    assert!(
+        out.position[0] < PLANET_R,
+        "default push must move inward here, got {}",
+        out.position[0]
+    );
+}
+
+#[test]
+fn the_guard_substitutes_the_up_axis_when_the_normal_faces_the_centre() {
+    // `n · up = -1`, below the -0.2 threshold, so the push direction
+    // becomes `up` itself. Magnitude is unchanged, so the closed-form
+    // landing point is the mirror of the test above.
+    let x0 = PLANET_R - 1.0;
+    let mut ch = SdfCharacter::new([PLANET_R, 0.0, 0.0], CAP_R, 1.8);
+    ch.up = [1.0, 0.0, 0.0];
+    ch.min_up_alignment = -0.2;
+    ch.max_iterations = 1;
+    let out = ch.move_and_slide(&inward_normal_field(x0), [0.0, 0.0, 0.0]);
+    let expected = PLANET_R + (CAP_R - (x0 - PLANET_R) + ch.skin_width);
+    assert!(
+        (out.position[0] - expected).abs() < 1.0e-4,
+        "expected {expected}, got {}",
+        out.position[0]
+    );
+    assert!(
+        out.position[0] > PLANET_R,
+        "guarded push must move outward, got {}",
+        out.position[0]
+    );
+}
+
+#[test]
+fn the_guard_leaves_a_sideways_normal_alone() {
+    // A wall pushing horizontally has `n · up = 0`, which is above the
+    // -0.2 threshold: the guard must not hijack it, otherwise the
+    // character cannot be pushed out of a wall at all.
+    let wall = ClosureSdf::new(|_x, _y, z| z, |_x, _y, _z| (0.0, 0.0, 1.0));
+    let mut ch = SdfCharacter::new([0.0, PLANET_R, -0.1], CAP_R, 1.8);
+    ch.up = [0.0, 1.0, 0.0];
+    ch.min_up_alignment = -0.2;
+    ch.max_iterations = 1;
+    let out = ch.move_and_slide(&wall, [0.0, 0.0, 0.0]);
+    let expected = -0.1 + (CAP_R - (-0.1) + ch.skin_width);
+    assert!(
+        (out.position[2] - expected).abs() < 1.0e-6,
+        "sideways push must survive the guard: expected {expected}, got {}",
+        out.position[2]
+    );
+    assert!(
+        (out.position[1] - PLANET_R).abs() < 1.0e-6,
+        "guard must not add an up component here, got {}",
+        out.position[1]
+    );
+}
+
+#[test]
+fn the_outcome_reports_the_least_penetrating_sample_it_saw() {
+    // On the periodic-sheet field the first push makes things WORSE:
+    // f(0.1) = -1.6, and the landing point y = 2.0501 samples
+    // f = L * (0.0501 - 0.5) = -1.7996. A caller that takes `position`
+    // blindly is deeper than when it started; `best_position` is the
+    // input, which is the least-penetrating sample of the run.
+    let field = periodic_sheets();
+    let mut ch = SdfCharacter::new([0.0, 0.1, 0.0], CAP_R, 1.8);
+    ch.max_iterations = 1;
+    let out = ch.move_and_slide(&field, [0.0, 0.0, 0.0]);
+    assert!(!out.converged);
+    let final_d = SHEET_L * (sheet_offset(out.position[1]).abs() - SHEET_T);
+    assert!(
+        (final_d - (-1.7996)).abs() < 1.0e-3,
+        "closed-form final sample is -1.7996, got {final_d}"
+    );
+    assert!(
+        (out.best_distance - (-1.6)).abs() < 1.0e-4,
+        "closed-form best sample is -1.6, got {}",
+        out.best_distance
+    );
+    assert!(
+        (out.best_position[1] - 0.1).abs() < 1.0e-6,
+        "best position must be the input here, got {}",
+        out.best_position[1]
+    );
+    assert!(
+        out.best_distance > final_d,
+        "best must beat the final sample: {} vs {final_d}",
+        out.best_distance
+    );
+}
+
+#[test]
+fn the_best_sample_equals_the_final_one_when_the_run_converges() {
+    // Back-compat framing: on an exact field the run improves
+    // monotonically, so `best_*` adds nothing and callers can keep using
+    // `position`.
+    let plane = ClosureSdf::new(|_x, y, _z| y, |_x, _y, _z| (0.0, 1.0, 0.0));
+    let ch = SdfCharacter::new([0.0, -0.1, 0.0], CAP_R, 1.8);
+    let out = ch.move_and_slide(&plane, [0.0, 0.0, 0.0]);
+    assert!(out.converged);
+    assert_eq!(out.best_position, out.position);
+    assert!(
+        (out.best_distance - (CAP_R + ch.skin_width)).abs() < 1.0e-6,
+        "converged sample is radius + skin above the plane, got {}",
+        out.best_distance
+    );
+}
+
+#[test]
+fn a_collision_free_move_reports_the_sampled_distance_as_best() {
+    // Zero iterations: the first sample already cleared `radius`, so
+    // `best_*` must describe that sample rather than stay at a sentinel.
+    let plane = ClosureSdf::new(|_x, y, _z| y, |_x, _y, _z| (0.0, 1.0, 0.0));
+    let ch = SdfCharacter::new([0.0, 2.0, 0.0], CAP_R, 1.8);
+    let out = ch.move_and_slide(&plane, [1.0, 0.0, 0.0]);
+    assert_eq!(out.iterations, 0);
+    assert!(out.converged);
+    assert_eq!(out.best_position, out.position);
+    assert!((out.best_distance - 2.0).abs() < 1.0e-6);
+}
+
+/// A field where every push makes things worse: the distance decreases
+/// with `y` while the normal keeps pointing `+Y`.
+///
+/// `ClosureSdf` takes the distance and the normal as independent
+/// closures, and a field that is not an exact distance field is free to
+/// have a normal that disagrees with the distance's own gradient — which
+/// is precisely the situation the least-penetrating sample exists for.
+///
+/// `f(y) = -0.5 - 0.1 y`, `n = +Y`.
+fn worsening_funnel() -> ClosureSdf {
+    ClosureSdf::new(|_x, y, _z| -0.5 - 0.1 * y, |_x, _y, _z| (0.0, 1.0, 0.0))
+}
+
+#[test]
+fn the_best_sample_is_the_start_when_every_push_makes_it_worse() {
+    // Closed form: f(0) = -0.5 is the maximum of the whole run, since f
+    // is strictly decreasing in y and every push moves +Y. The three
+    // loop samples are -0.5, -0.585, -0.6785 (pushes 0.8501 and 0.935),
+    // so a controller that kept only the LAST sample would report
+    // -0.6785 — worse than the position it was handed.
+    let mut ch = SdfCharacter::new([0.0, 0.0, 0.0], CAP_R, 1.8);
+    ch.max_iterations = 3;
+    let out = ch.move_and_slide(&worsening_funnel(), [0.0, 0.0, 0.0]);
+    assert!(!out.converged);
+    assert!(
+        (out.best_distance - (-0.5)).abs() < 1.0e-5,
+        "best must be the starting sample -0.5, got {}",
+        out.best_distance
+    );
+    assert!(
+        out.best_position[1].abs() < 1.0e-6,
+        "best position must be the start, got {}",
+        out.best_position[1]
+    );
+    // And the raw final position is strictly worse, which is the reason
+    // the field exists.
+    let final_d = -0.5 - 0.1 * out.position[1];
+    assert!(
+        final_d < out.best_distance,
+        "final {final_d} should be worse than best {}",
+        out.best_distance
+    );
+}
+
+#[test]
+fn the_best_sample_includes_the_position_the_last_push_produced() {
+    // The loop only samples at its top, so the position created by the
+    // final push is measured after the loop. Closed form on the sheet
+    // field with a budget of 5: the five loop samples are
+    // -1.6, -1.7996, -1.2008, -1.0028, -0.40882, and the sixth position
+    // (y = 5.156713) samples L * (0.843287 - 0.5) = +1.3731 — the best of
+    // the run by a wide margin, and above `radius`.
+    //
+    // ⚠️ `converged` is still false here: the budget ran out on the very
+    // push that escaped. A caller reading only `converged` would discard
+    // a position that is actually clear of the geometry.
+    let mut ch = SdfCharacter::new([0.0, 0.1, 0.0], CAP_R, 1.8);
+    ch.max_iterations = 5;
+    let out = ch.move_and_slide(&periodic_sheets(), [0.0, 0.0, 0.0]);
+    assert!(!out.converged, "budget must run out on the escaping push");
+    assert_eq!(out.iterations, 5);
+    assert!(
+        (out.best_distance - 1.3731).abs() < 1.0e-3,
+        "expected the post-loop sample +1.3731, got {}",
+        out.best_distance
+    );
+    assert!(
+        (out.best_position[1] - 5.156_713).abs() < 1.0e-4,
+        "best must be the final position, got {}",
+        out.best_position[1]
+    );
+    assert_eq!(out.best_position, out.position);
+    assert!(
+        out.best_distance >= ch.radius,
+        "the escaping sample clears the capsule radius"
+    );
+}

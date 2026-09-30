@@ -48,6 +48,22 @@
 //! [`f32::INFINITY`], so an exact distance field keeps the original
 //! single-step arithmetic bit for bit.
 //!
+//! Two more consequences of an inexact field, both opt-in for the same
+//! bit-compatibility reason:
+//!
+//! - **The normal can face the centre of the world.** Geometry buried in
+//!   the ground reports that at the seam, and pushing along it drives the
+//!   character underground. [`SdfCharacter::min_up_alignment`] rejects
+//!   those normals and pushes along [`SdfCharacter::up`] instead, at the
+//!   same magnitude. Default [`f32::NEG_INFINITY`] never substitutes.
+//! - **A push can land deeper than it started.** The run therefore
+//!   records the least-penetrating sample it saw in
+//!   [`MoveOutcome::best_position`] / [`MoveOutcome::best_distance`],
+//!   including the position produced by the final push. A caller that
+//!   must never return a worse position than it was handed uses those
+//!   when [`MoveOutcome::converged`] is `false`. This is reporting only —
+//!   [`MoveOutcome::position`] keeps its old value.
+//!
 //! # Ground detection
 //!
 //! [`SdfCharacter::ground_contact`] probes a short distance along
@@ -93,6 +109,18 @@ pub struct MoveOutcome {
     /// Number of penetration-resolution iterations that ran (0 when
     /// the initial displacement was already collision-free).
     pub iterations: usize,
+    /// Position of the least-penetrating sample the run saw, including
+    /// the starting one.
+    ///
+    /// Equal to [`Self::position`] whenever the run converged, and
+    /// whenever the samples improved monotonically. They differ on
+    /// fields that are not exact distance fields, where a push can land
+    /// **deeper** than where it started — see the module docs. A caller
+    /// that must never hand back a worse position than it was given uses
+    /// this field when [`Self::converged`] is `false`.
+    pub best_position: [f32; 3],
+    /// The sampled distance at [`Self::best_position`].
+    pub best_distance: f32,
 }
 
 /// Vertical-capsule character driven by SDF-swept move-and-slide.
@@ -133,6 +161,20 @@ pub struct SdfCharacter {
     /// similar), where an unclamped push can jump over the free gap into
     /// the next sheet of geometry; see the module docs.
     pub max_push: f32,
+    /// Minimum `normal · up` for the field's normal to be used as the
+    /// push direction. Below it the push runs along [`Self::up`] instead,
+    /// at the same magnitude.
+    ///
+    /// Defaults to [`f32::NEG_INFINITY`] — the normal is always taken, so
+    /// the original arithmetic is untouched (and [`Self::up`] is not even
+    /// normalized, so the default path costs nothing).
+    ///
+    /// Geometry buried in the ground produces normals that face the
+    /// centre of the world at the seam, and pushing along one drives the
+    /// character underground rather than out of the surface. `-0.2` keeps
+    /// sideways pushes (a wall has `normal · up = 0`) while rejecting
+    /// those.
+    pub min_up_alignment: f32,
 }
 
 impl Default for SdfCharacter {
@@ -147,6 +189,7 @@ impl Default for SdfCharacter {
             ground_up_threshold: 0.7,
             up: [0.0, 1.0, 0.0],
             max_push: f32::INFINITY,
+            min_up_alignment: f32::NEG_INFINITY,
         }
     }
 }
@@ -182,13 +225,35 @@ impl SdfCharacter {
         ];
         let mut iterations = 0;
         let mut converged = false;
+        // `min_up_alignment` is `NEG_INFINITY` by default; skipping the
+        // normalization entirely in that case keeps the default path free
+        // of the `sqrt` as well as of the substitution.
+        let guard_up = if self.min_up_alignment.is_finite() {
+            Some(self.up_unit())
+        } else {
+            None
+        };
+        let mut best_position = pos;
+        let mut best_distance = f32::NEG_INFINITY;
         while iterations < self.max_iterations {
             let d = field.distance(pos[0], pos[1], pos[2]);
+            if d > best_distance {
+                best_distance = d;
+                best_position = pos;
+            }
             if d >= self.radius {
                 converged = true;
                 break;
             }
-            let (nx, ny, nz) = field.normal(pos[0], pos[1], pos[2]);
+            let (mut nx, mut ny, mut nz) = field.normal(pos[0], pos[1], pos[2]);
+            if let Some(up) = guard_up {
+                // A normal facing the centre of the world would push the
+                // character further in; run along `up` at the same
+                // magnitude instead.
+                if nx * up[0] + ny * up[1] + nz * up[2] < self.min_up_alignment {
+                    [nx, ny, nz] = up;
+                }
+            }
             // `max_push` is `INFINITY` by default, and `min` with
             // `INFINITY` returns the left operand unchanged, so an exact
             // distance field keeps the original arithmetic bit for bit.
@@ -198,10 +263,24 @@ impl SdfCharacter {
             pos[2] += nz * push;
             iterations += 1;
         }
+        if !converged {
+            // The loop only samples at its top, so the position produced
+            // by the last push has not been measured yet. Without this
+            // the budget-exhausted case would compare `best` against one
+            // sample too few — and that final push is exactly the one
+            // that can have made things worse.
+            let d = field.distance(pos[0], pos[1], pos[2]);
+            if d > best_distance {
+                best_distance = d;
+                best_position = pos;
+            }
+        }
         MoveOutcome {
             position: pos,
             converged,
             iterations,
+            best_position,
+            best_distance,
         }
     }
 
