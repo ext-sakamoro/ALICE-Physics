@@ -183,28 +183,31 @@ impl SimulationChecksum {
     ///
     /// Uses XOR-rotate mixing per body for O(n) computation.
     /// Avalanche mixing ensures single-bit differences propagate.
+    /// # 被覆は `serialize_state` の blob に従う (単一源化、B-13)
+    ///
+    /// 旧実装は field を手で並べており、**position は `.hi` + `.lo`、velocity と
+    /// rotation は `.hi` だけ、`angular_velocity` は 1 語も**混ぜていなかった
+    /// 208 byte/body のうち **角速度 48 byte + 小数語 56 byte が盲点**で、
+    /// 「角速度が完全に別の 2 世界」「velocity.y が 1 ulp 違う 2 世界」が
+    /// いずれも同一 checksum になる = **desync 検出が false green になりうる**
+    /// (`tests/wm08_checksum_coverage.rs` が red を実測してから置換した)
+    ///
+    /// 検証の道具が状態の被覆より狭いのが原因なので、**blob の全 byte から
+    /// 導出**して被覆の定義を 1 箇所にした ⇒ 以後 `serialize_state` に state を
+    /// 足すと checksum も自動で追従する (盲点が構造的に生まれない)
+    ///
+    /// ⚠️ **checksum の値は旧実装と変わる** 同一 version 同士の比較にのみ使う
+    /// こと (lockstep の peer 間で version を混ぜない)
     #[must_use]
     pub fn from_world(world: &PhysicsWorld) -> Self {
+        let blob = world.serialize_state();
         let mut hash: u64 = 0;
-        for (i, body) in world.bodies.iter().enumerate() {
-            let mut h: u64 = i as u64;
-            // Position
-            h ^= (body.position.x.hi as u64).rotate_left(5);
-            h ^= (body.position.x.lo).rotate_left(11);
-            h ^= (body.position.y.hi as u64).rotate_left(17);
-            h ^= (body.position.y.lo).rotate_left(23);
-            h ^= (body.position.z.hi as u64).rotate_left(29);
-            h ^= (body.position.z.lo).rotate_left(37);
-            // Velocity
-            h ^= (body.velocity.x.hi as u64).rotate_left(7);
-            h ^= (body.velocity.y.hi as u64).rotate_left(13);
-            h ^= (body.velocity.z.hi as u64).rotate_left(19);
-            // Rotation
-            h ^= (body.rotation.w.hi as u64).rotate_left(3);
-            h ^= (body.rotation.x.hi as u64).rotate_left(41);
-            h ^= (body.rotation.y.hi as u64).rotate_left(47);
-            h ^= (body.rotation.z.hi as u64).rotate_left(53);
-            // Avalanche (WyHash-style)
+        for (i, chunk) in blob.chunks(8).enumerate() {
+            let mut word = [0u8; 8];
+            word[..chunk.len()].copy_from_slice(chunk);
+            // index を混ぜる — 混ぜないと 2 つの word の入れ替えが XOR で消える
+            let mut h = u64::from_le_bytes(word) ^ (i as u64).rotate_left(32);
+            // Avalanche (WyHash-style、旧実装と同じ混合)
             h = (h ^ (h >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
             h = (h ^ (h >> 27)).wrapping_mul(0x94d049bb133111eb);
             h ^= h >> 31;
