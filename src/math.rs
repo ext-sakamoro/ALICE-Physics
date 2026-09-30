@@ -459,7 +459,67 @@ impl Mul for Fix128 {
     }
 }
 
+impl Vec3Fix {
+    /// 各成分を `s` 倍し、**どれか 1 成分でも範囲外なら `None`** を返す
+    ///
+    /// [`Fix128::checked_mul`] の `Vec3Fix` 版 発散検出の投入点
+    /// (積分 `position += velocity*dt` と速度導出) で使う
+    #[must_use]
+    pub fn checked_scale(self, s: Fix128) -> Option<Self> {
+        Some(Self {
+            x: self.x.checked_mul(s)?,
+            y: self.y.checked_mul(s)?,
+            z: self.z.checked_mul(s)?,
+        })
+    }
+}
+
 impl Fix128 {
+    /// [`Mul`] と同じ積を計算し、**範囲外なら `None`** を返す
+    ///
+    /// # なぜ必要か (WM-01 / doctrine B-12)
+    ///
+    /// `Mul` は全段 `wrapping_*` なので **範囲外の積が silent に巻き戻る**
+    /// 実測 (2026-09-30): `2⁴⁰ × 2⁴⁰` は exact `1.21e24` だが、Q64.64 では
+    /// `hh = 2⁸⁰` で `2⁸⁰ mod 2⁶⁴ = 0` なので **`hi` が厳密に 0** になる
+    ///
+    /// ⇒ `position += velocity * dt` が 0 加算になり、`update_velocities` が
+    /// `velocity = (position − prev_position) * inv_dt` で速度も 0 に上書きする
+    /// ⇒ **「原点で完全に静止した自己整合な状態」** に落ちる
+    /// ⚠️ **静止は物理的に妥当なのでどの不変条件でも red にならない**ため、
+    /// 「値が大きい / 値が飛んだ」を見る検出器では原理的に捕まえられない
+    ///
+    /// ⚠️ **`Mul` 自体の挙動は変えない** — 既存の決定論 golden と bit 互換を
+    /// 保つため、検出が要る経路だけが本 method を使う
+    /// (`PhysicsWorld::step` の積分と速度導出、`PhysicsWorld::overflow_detected`)
+    #[must_use]
+    pub fn checked_mul(self, rhs: Self) -> Option<Self> {
+        let a_hi = self.hi as i128;
+        let a_lo = self.lo as u128;
+        let b_hi = rhs.hi as i128;
+        let b_lo = rhs.lo as u128;
+
+        // `Mul` と同じ 256 bit 積の中央 128 bit を作る (ここは wrapping で良い
+        // — 落とす上位 bit があるかは下の try_from で判定する)
+        let ll = a_lo.wrapping_mul(b_lo);
+        let hl = a_hi.wrapping_mul(b_lo as i128);
+        let lh = (a_lo as i128).wrapping_mul(b_hi);
+        let hh = a_hi.wrapping_mul(b_hi);
+        let ll_hi = (ll >> 64) as i128;
+
+        let mid = hl.wrapping_add(lh).wrapping_add(ll_hi);
+        let mid_lo = mid as u64;
+
+        // ⚠️ `Mul` は `as i64` で切り捨てる 2 箇所を try_from で検査する
+        // (`hh` が i64 に収まらない = 上位 bit を落としている、
+        //  `mid >> 64` も同様、さらに加算自体の overflow も拒否する)
+        let hh_i64 = i64::try_from(hh).ok()?;
+        let mid_hi = i64::try_from(mid >> 64).ok()?;
+        let hi = hh_i64.checked_add(mid_hi)?;
+
+        Some(Self { hi, lo: mid_lo })
+    }
+
     /// `self^exponent` for `self > 0` and `exponent ≥ 0` (real exponent).
     ///
     /// Integer part of the exponent by repeated multiplication, fractional
