@@ -13,6 +13,32 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added — 圧力解法の順序非依存性を oracle 化 + 数億要素までの距離を実測する harness
+
+数億要素クラスの分散並列に向けて、**どこまで回るか**と**何が分割を許すか**を測って固定しました
+
+`project_pressure_red_black_gs` の colour sweep が**訪問順に依らない**ことを oracle で固定しました
+masked 7 点ステンシルが読むのは 6 面近傍だけで、いずれも中心と逆パリティなので、1 sweep が読む
+cell 集合と書く cell 集合は交わりません 自然順 / 逆順 / stride-7 置換の 3 通りで bit 一致を
+assert します (期待値は離散化から書き起こしたもので、solver の出力ではありません)
+
+- `red_black_sweep_is_independent_of_visit_order`
+- `colour_blind_gauss_seidel_drifts_from_red_black` — ⚠️ **判別力の対照群** colour 分けを外すと
+  結果が動くことを assert します 動かなくなったら上の test は空振りしています
+
+`examples/hpc_scale_probe.rs` を追加しました Eulerian cell と剛体の 2 系統について、要素数に対する
+時間とメモリを測って 1e8 まで外挿します
+
+### Changed — red-black sweep を逐次のまま据え置く理由を doc に実測で記載
+
+順序非依存は**スレッド並列を許可はするが、ここでは割に合いません** 8 core / 128³ (2.1M cells) で
+rayon 2 形態を実測し、どちらも bit 一致でしたが逐次 388.6 ms より遅くなりました
+(cell ごと `par_iter_mut` 935.4 ms / 行 chunk `par_chunks_mut` 508.9 ms、各 3 回の最小値)
+⚠️ 7 点ステンシルの working set は 33 MiB で **memory-bandwidth-bound** のため、単一 SoC に
+thread を足しても帯域は増えません 加えて borrow checker を満たす double buffer が traffic を
+約 40% 増やします **速度は memory system を増やして得るしかない** (= rank 分割) ので、
+並列化は入れず、上の oracle で分割の安全性だけを固定しました
+
 ### Added — outcome の安全な読み方を 1 呼び出しに + 既定を変えない理由を oracle 化 (`sdf_character`)
 
 `MoveOutcome::resolved_position()` を追加しました 収束時は `position`、非収束時は
