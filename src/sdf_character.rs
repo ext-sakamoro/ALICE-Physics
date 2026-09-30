@@ -78,6 +78,33 @@
 //! set `up` every frame — with a fixed `+Y` probe a character standing
 //! on the equator of a planet reports "not grounded" while standing on
 //! the ground.
+//!
+//! # One frame
+//!
+//! [`SdfCharacter::velocity`] plus [`SdfCharacter::apply_gravity`] and
+//! [`SdfCharacter::step`] cover a whole frame, so a ballistic fall and
+//! its landing live here rather than in each consumer:
+//!
+//! ```
+//! # use alice_physics::sdf_character::SdfCharacter;
+//! # use alice_physics::sdf_collider::ClosureSdf;
+//! # let field = ClosureSdf::new(|_x, y, _z| y, |_x, _y, _z| (0.0, 1.0, 0.0));
+//! let mut ch = SdfCharacter::new([0.0, 4.0, 0.0], 0.35, 1.8);
+//! let dt = 1.0 / 60.0;
+//! for _ in 0..240 {
+//!     ch.apply_gravity([0.0, -9.81, 0.0], dt);
+//!     // `control` is the frame's own locomotion, already scaled by dt.
+//!     ch.step(&field, dt, [0.0, 0.0, 0.0]);
+//! }
+//! // Resting on the surface, with the fall absorbed by the contact.
+//! assert!((ch.position[1] - (0.35 + ch.skin_width)).abs() < 1.0e-3);
+//! assert!(ch.velocity[1].abs() < 1.0e-6);
+//! ```
+//!
+//! [`SdfCharacter::step`] removes only the velocity component pointing
+//! **into** what was hit, so the character slides along a wall rather
+//! than sticking to it, and a jump that brushes the floor keeps its
+//! upward speed.
 
 use crate::sdf_collider::SdfField;
 
@@ -175,6 +202,14 @@ pub struct SdfCharacter {
     /// sideways pushes (a wall has `normal · up = 0`) while rejecting
     /// those.
     pub min_up_alignment: f32,
+    /// Kinematic velocity (m/s, world space), integrated by
+    /// [`Self::apply_gravity`] and consumed by [`Self::step`].
+    ///
+    /// Defaults to zero. [`crate::character::CharacterController`] has
+    /// carried a velocity since 1.0; this is the SDF controller's
+    /// equivalent, so a ballistic fall and its landing are expressed by
+    /// the controller rather than by each consumer.
+    pub velocity: [f32; 3],
 }
 
 impl Default for SdfCharacter {
@@ -190,6 +225,7 @@ impl Default for SdfCharacter {
             up: [0.0, 1.0, 0.0],
             max_push: f32::INFINITY,
             min_up_alignment: f32::NEG_INFINITY,
+            velocity: [0.0, 0.0, 0.0],
         }
     }
 }
@@ -282,6 +318,91 @@ impl SdfCharacter {
             best_position,
             best_distance,
         }
+    }
+
+    /// Integrate an acceleration into [`Self::velocity`] (`v += a·dt`).
+    ///
+    /// Unconditional: gating it on whether the character is standing is
+    /// the caller's decision (a hovering or flying mode overrides the
+    /// radial velocity outright rather than accumulating).
+    pub fn apply_gravity(&mut self, gravity: [f32; 3], dt: f32) {
+        self.velocity[0] += gravity[0] * dt;
+        self.velocity[1] += gravity[1] * dt;
+        self.velocity[2] += gravity[2] * dt;
+    }
+
+    /// Advance one frame: integrate the velocity, resolve the resulting
+    /// penetration, adopt the resulting position, and remove the part of
+    /// the velocity that points into whatever was hit.
+    ///
+    /// `control` is the caller's own displacement for this frame (tangent
+    /// locomotion, a teleport nudge, …) and is added to `velocity · dt`.
+    ///
+    /// The position adopted is [`MoveOutcome::position`] when the
+    /// resolution converged and [`MoveOutcome::best_position`] otherwise,
+    /// so a frame can never end deeper than it started on a field that is
+    /// not an exact distance field.
+    ///
+    /// # Contact response
+    ///
+    /// The resolution's net correction gives the contact direction. Only
+    /// the velocity component pointing **into** the surface is removed,
+    /// which is the inelastic kinematic law: landing stops the fall and
+    /// leaves the tangential motion, so the character slides along a wall
+    /// instead of sticking to it. Velocity already pointing away from the
+    /// surface is untouched, so brushing the floor mid-jump does not eat
+    /// the jump.
+    pub fn step<F: SdfField + ?Sized>(
+        &mut self,
+        field: &F,
+        dt: f32,
+        control: [f32; 3],
+    ) -> MoveOutcome {
+        let displacement = [
+            self.velocity[0] * dt + control[0],
+            self.velocity[1] * dt + control[1],
+            self.velocity[2] * dt + control[2],
+        ];
+        let unresolved = [
+            self.position[0] + displacement[0],
+            self.position[1] + displacement[1],
+            self.position[2] + displacement[2],
+        ];
+        let outcome = self.move_and_slide(field, displacement);
+        let adopted = if outcome.converged {
+            outcome.position
+        } else {
+            outcome.best_position
+        };
+        self.position = adopted;
+
+        let correction = [
+            adopted[0] - unresolved[0],
+            adopted[1] - unresolved[1],
+            adopted[2] - unresolved[2],
+        ];
+        let len = crate::det_math::sqrt(
+            correction[0] * correction[0]
+                + correction[1] * correction[1]
+                + correction[2] * correction[2],
+        );
+        // No correction means no contact, so the velocity is untouched.
+        // The threshold is `skin_width` because a converged resolution
+        // always overshoots by at least that much.
+        if len > self.skin_width {
+            let n = [
+                correction[0] / len,
+                correction[1] / len,
+                correction[2] / len,
+            ];
+            let into = self.velocity[0] * n[0] + self.velocity[1] * n[1] + self.velocity[2] * n[2];
+            if into < 0.0 {
+                self.velocity[0] -= n[0] * into;
+                self.velocity[1] -= n[1] * into;
+                self.velocity[2] -= n[2] * into;
+            }
+        }
+        outcome
     }
 
     /// [`Self::up`] normalized, falling back to `+Y` for a zero or
