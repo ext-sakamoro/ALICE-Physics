@@ -13,6 +13,41 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Changed — `SimulationChecksum` を `serialize_state()` の blob から導出 (被覆の単一源化)
+
+⚠️ **checksum の値が変わります** 同一 version 同士の比較にのみ使ってください (lockstep の
+peer 間で version を混ぜない) API と型は不変で、値の互換性のみが切れます
+
+旧実装は field を手で並べており、**position は `.hi` + `.lo`、velocity と rotation は `.hi`
+だけ、`angular_velocity` は 1 語も**混ぜていませんでした。208 byte/body のうち **角速度
+48 byte + 小数語 56 byte が盲点**で、以下がいずれも同一 checksum になっていました:
+
+| 2 世界の差 | 旧 checksum | blob |
+|---|---|---|
+| `angular_velocity` が全成分別物 | **同一** | 区別する |
+| `velocity.y` が 1 ulp (`.lo` +1) | **同一** | 区別する |
+| `rotation.z` が 1 ulp (`.lo` +1) | **同一** | 区別する |
+| `angular_velocity.x` が 1 ulp | **同一** | 区別する |
+| `position.y` が 1 ulp | 区別する | 区別する |
+
+1 ulp は lockstep の desync が始まる最小単位なので、**desync 検出が false green になりえます**。
+原因は「検証の道具が状態の被覆より狭い」ことなので、**blob の全 byte から導出**して被覆の
+定義を 1 箇所にしました。以後 `serialize_state` に state を足すと checksum も自動で追従します
+(盲点が構造的に生まれない)。
+
+`tests/wm08_checksum_coverage.rs` を追加 (6 本: 上表の 4 本 + 陽性対照 2 本)。**実装前に
+本命 4 本の red を実測**してから置換しています。陽性対照 (同一世界 / `position.y.lo`) は
+「常に不一致を返す」実装でも全部 green になるのを防ぐために入れてあります。
+
+既存 test への波及なし: netcode lib 18 / `determinism_golden` 9 / `determinism_semantic` 22 /
+`integration_physics` 72 がいずれも green。**checksum の値を pin している golden は存在しない**
+ため再生成は不要でした。
+
+⚠️ **既知のコスト (未対処)**: `from_world` が `serialize_state()` を呼ぶため、**checksum 1 回
+あたり `4 + 208n` byte の Vec 確保が増えます** (`advance_frame` が frame ごとに 2 回、
+`checksum()` / `checksum_at()` も経由)。被覆の単一源化を保ったまま確保を消すには
+`serialize_state` と `from_world` が共有する word visitor に切り出す必要があり、別途。
+
 ### Added — PML の反射係数 `R` を離散伝達行列と定常場の 2 経路で突合 (`analytic_maxwell_fdtd`)
 
 これまで PML の評価に使っていたのは N step 後の残留場 envelope で、`R = |反射|/|入射|` とは
