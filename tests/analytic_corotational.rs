@@ -26,14 +26,35 @@
 //! it does on the same scene. That is the destruction test for the update policy,
 //! and it costs nothing.
 //!
+//! # Destruction tests, measured 2026-09-30
+//!
+//! One mutation at a time in `src/linear_elastic_fem.rs`, restored in between.
+//! Both were run against the twin oracles added for the hyperelastic gap; the
+//! baseline is `9 passed / 0 failed / 2 ignored`.
+//!
+//! | mutation | oracles that went red | restored |
+//! | --- | --- | --- |
+//! | `rotate_stress` returns `σ̃` unrotated (drop the `R` in `σ = R σ̃ Rᵀ`) | `the_corotational_linear_law_is_what_the_element_returns_today` (off by 1970.370372 MPa, which is exactly the off-diagonal `σ_xy` the rotation produces) and `rotated_uniform_stretch_matches_the_closed_form` — 2 red, 7 green | 9 passed |
+//! | `corotational_local_stress` drops the `Rᵀ` (`ε = sym(RᵀF − I)` → `sym(F − I)`) | 7 red, including `boundary_rigid_rotation_leaves_the_interior_unstressed` (`NotConverged`, residual 1.5e8× the target) and the new pin (`RotationFailed { tet: 82, Inverted }`) | 9 passed |
+//!
+//! The first mutation is confined to the reporting path, so it separates cleanly:
+//! only the two stress oracles see it. The second is in the residual, so it takes
+//! the solve down with it — including
+//! `characterises_which_stretches_the_corotational_solve_reaches`, which is worth
+//! knowing, because it means that test is sensitive to the strain measure and not
+//! only to the stopping rule it is named for.
+//!
 //! Author: Moroya Sakamoto
 
 #![cfg(feature = "std")]
 // The oracle values are closed-form f64 evaluations, not simulation state.
 #![allow(clippy::disallowed_methods)]
 
+use alice_physics::hyperelastic::{
+    strain_energy_density, uniaxial_cauchy_stress, HyperelasticModel, Stretch,
+};
 use alice_physics::linear_elastic_fem::{
-    solve, solve_corotational, BoundaryConditions, CorotationalConfig, ElasticMaterial,
+    solve, solve_corotational, BoundaryConditions, CorotationalConfig, ElasticMaterial, FemError,
     SolverConfig,
 };
 use alice_physics::math::Fix128;
@@ -173,9 +194,32 @@ fn boundary_rotation(mesh: &SdfTetMesh, turn: Turn) -> (BoundaryConditions, Vec<
 }
 
 fn corotational_config(increments: u32) -> CorotationalConfig {
+    corotational_config_with_newton_budget(increments, 32)
+}
+
+/// Same, with the per-increment Newton budget spelled out.
+///
+/// ⚠️ **The Newton budget is the only field that differs from
+/// [`corotational_config`]** — same linear `SolverConfig`, same Newton tolerance,
+/// same polar budget, same increment count. That restriction is deliberate: the
+/// ignored twin below has to red for one reason (no material law), so nothing
+/// else about the solve may move underneath it.
+///
+/// The 32 [`corotational_config`] uses is a *frame-settling* budget, not an
+/// equilibrium one: on the last increment the iteration runs until the element
+/// frames stop moving, and only then is the residual checked. Large stretches
+/// need more of those steps than large rotations do — at the 125 % stretch the
+/// twins use, the **measured floor is 47** (46 refuses) and the twins pass 64 for
+/// headroom. So a scene can be reported as `NotConverged` with a residual that is
+/// already well *inside* tolerance. See
+/// `characterises_which_stretches_the_corotational_solve_reaches`.
+fn corotational_config_with_newton_budget(
+    increments: u32,
+    newton_iterations: u32,
+) -> CorotationalConfig {
     CorotationalConfig::try_new(
         SolverConfig::try_new(200_000, Fix128::from_raw(0, 1 << 34)).expect("valid linear config"),
-        32,                           // Newton iterations per increment
+        newton_iterations,            // Newton iterations per increment
         Fix128::from_raw(0, 1 << 34), // Newton relative tolerance, 2^-30
         increments,
         32, // polar iteration budget, from the measured 6-19
@@ -673,4 +717,487 @@ fn rotated_uniform_stretch_matches_the_closed_form() {
          off a state whose largest component is {:.3} MPa",
         want_xx.abs().max(want_yy.abs()).max(want_zz.abs())
     );
+}
+
+// ---------------------------------------------------------------------------
+// the hyperelastic twins
+// ---------------------------------------------------------------------------
+//
+// Two oracles on **one scene**, pinning the two sides of the same gap:
+//
+// - `the_neo_hookean_deviator_is_not_what_the_element_returns` — `#[ignore]`.
+//   The target: the deviatoric Cauchy stress an incompressible Neo-Hookean solid
+//   carries at this deformation.
+// - `the_corotational_linear_law_is_what_the_element_returns_today` — always
+//   green. The same scene under the co-rotational *linear* law, which is what the
+//   element actually evaluates.
+//
+// # ⚠️ Reversal condition, verbatim
+//
+// **On the commit that makes the material law swappable through
+// `HyperelasticModel`, drop the `#[ignore]` from
+// `the_neo_hookean_deviator_is_not_what_the_element_returns` and flip
+// `the_corotational_linear_law_is_what_the_element_returns_today` to
+// `#[ignore = "superseded"]`.** Both edits belong in that one diff: keeping the
+// linear pin green next to a green Neo-Hookean oracle would assert two different
+// answers for one scene.
+//
+// # Why the stretch has to be isochoric
+//
+// `hyperelastic.rs` carries no volumetric term — its module doc says "All models
+// assume incompressibility (`J = λ₁·λ₂·λ₃ = 1`)", and `W = μ/2·(I₁ − 3)` for
+// Neo-Hookean. For an incompressible solid the pressure is not a function of the
+// deformation; it is whatever the constraint needs it to be. So a stretch with
+// `J ≠ 1` has **no** Neo-Hookean stress to compare against, and `U` is chosen on
+// the exactly-rational isochoric family `diag(a², 1/a, 1/a)` (`det U = 1` for
+// every `a`) with `a = 3/2`.
+//
+// # Why only the deviator
+//
+// Every boundary node is prescribed here, so nothing in the scene fixes the
+// hydrostatic part: `σ = μ B − p I` holds for any `p`. Both oracles therefore
+// subtract `tr σ / 3 · I` from the measured stress and compare deviators only.
+// **The trace is never compared.**
+
+/// `U = diag(9/4, 2/3, 2/3)` — `a = 3/2` on `diag(a², 1/a, 1/a)`, so `det U = 1`
+/// exactly. A 125 % first principal stretch: far outside small strain, which is
+/// the point — it is where the linear and the Neo-Hookean deviators are furthest
+/// apart (measured: 1254 MPa on the first component, 46 % of the linear value).
+const ISOCHORIC_U: [f64; 3] = [9.0 / 4.0, 2.0 / 3.0, 2.0 / 3.0];
+
+/// Newton budget the twins run with.
+///
+/// ⚠️ **Not the house default of 32.** At this stretch the frame iteration needs
+/// 47 steps on the final increment, and the budget check fires before the
+/// residual is looked at, so 32 returns `NotConverged` with
+/// `relative_residual = 0.217` — a residual 4.6× *inside* tolerance.
+/// `characterises_which_stretches_the_corotational_solve_reaches` pins that threshold.
+const STRETCH_NEWTON_BUDGET: u32 = 64;
+
+/// `u = (R·U − I)·X`, the affine field the twins prescribe.
+fn rotated_stretch_field(turn: Turn, stretch: [f64; 3], p: [f64; 3]) -> [f64; 3] {
+    let s = [p[0] * stretch[0], p[1] * stretch[1], p[2] * stretch[2]];
+    [
+        turn.cos * s[0] - turn.sin * s[1] - p[0],
+        turn.sin * s[0] + turn.cos * s[1] - p[1],
+        s[2] - p[2],
+    ]
+}
+
+/// Prescribe [`rotated_stretch_field`] on the boundary, interior free.
+fn boundary_rotated_stretch(
+    mesh: &SdfTetMesh,
+    turn: Turn,
+    stretch: [f64; 3],
+) -> (BoundaryConditions, Vec<u32>) {
+    let eps = SIDE * 1e-9;
+    let mut bc = BoundaryConditions::new();
+    let mut interior = Vec::new();
+    for v in 0..u32::try_from(mesh.vertex_count()).expect("fits") {
+        let p = vert(mesh, v);
+        if p.iter().any(|&c| c < eps || c > SIDE - eps) {
+            let u = rotated_stretch_field(turn, stretch, p);
+            bc.prescribe_all(v, [fx(u[0]), fx(u[1]), fx(u[2])]);
+        } else {
+            interior.push(v);
+        }
+    }
+    (bc, interior)
+}
+
+/// `σ̃ = Rᵀ σ R` for a rotation about z, then `dev σ̃ = σ̃ − tr σ / 3 · I`.
+///
+/// Returns `(dev σ̃₁₁, dev σ̃₂₂, dev σ̃₃₃, σ̃₁₂)`. The trace is taken from the
+/// unrotated stress because it is rotation invariant, which is also a cheap check
+/// that the rotation above is the right way round.
+fn deviator_in_the_stretch_frame(
+    turn: Turn,
+    s: &alice_physics::linear_elastic_fem::StressTensor,
+) -> [f64; 4] {
+    let (c, sn) = (turn.cos, turn.sin);
+    let (sxx, syy, szz, sxy) = (s.xx.to_f64(), s.yy.to_f64(), s.zz.to_f64(), s.xy.to_f64());
+    let t11 = c * c * sxx + 2.0 * c * sn * sxy + sn * sn * syy;
+    let t22 = sn * sn * sxx - 2.0 * c * sn * sxy + c * c * syy;
+    let t12 = c * sn * (syy - sxx) + (c * c - sn * sn) * sxy;
+    let third = (sxx + syy + szz) / 3.0;
+    [t11 - third, t22 - third, szz - third, t12]
+}
+
+/// **The target.** The deviatoric stress an incompressible Neo-Hookean solid
+/// carries at `F = R·U`, `U = diag(9/4, 2/3, 2/3)`.
+///
+/// # The closed form, derived here
+///
+/// `σ = μ B − p I` with `B = F Fᵀ = R U² Rᵀ`, so in the stretch frame
+/// `σ̃ = μ U² − p I` and
+///
+/// ```text
+/// U²      = diag(81/16, 4/9, 4/9) = diag(2187, 192, 192) / 432
+/// tr U²   = 81/16 + 8/9 = (729 + 128)/144 = 857/144 = 2571/432
+/// tr U²/3 = 857/432
+/// dev σ̃  = μ (U² − tr(U²)/3 · I)
+///         = μ · diag(2187 − 857, 192 − 857, 192 − 857) / 432
+///         = μ · diag(1330, −665, −665) / 432
+///         = μ · diag(665/216, −665/432, −665/432)
+/// ```
+///
+/// Two independent checks on that line, both asserted below:
+///
+/// - `Σ dev = 1330 − 665 − 665 = 0`
+/// - `dev₁ − dev₂ = μ·1995/432 = μ·665/144`, which must equal the principal
+///   stress difference `μ(λ₁² − λ₂²) = μ(81/16 − 4/9) = μ·665/144`
+///
+/// `μ` is the Lamé `μ` of [`pla`] (`E/(2(1+ν)) = 35000/27 = 1296.296… MPa`), so
+/// `dev σ̃ = (3990.912209, −1995.456104, −1995.456104) MPa`.
+///
+/// ⚠️ The expected values are written from the rationals above. Nothing in
+/// `hyperelastic.rs` is called to produce them —
+/// `the_neo_hookean_uniaxial_helper_agrees_with_its_closed_form` checks that
+/// module against its own closed form separately.
+#[test]
+#[ignore = "src gap: solve_corotational has no material model. `grep -rn \
+            'hyperelastic|plastic::' src` finds zero references from \
+            linear_elastic_fem.rs, so the element evaluates the co-rotational \
+            linear law and returns the deviator pinned by \
+            the_corotational_linear_law_is_what_the_element_returns_today \
+            (measured gap: 1254.29 MPa on dev_1, 46% of the linear value). \
+            Reversal condition is in the module comment above this test."]
+fn the_neo_hookean_deviator_is_not_what_the_element_returns() {
+    let mu = lame().1;
+    let turn = THREE_FOUR_FIVE;
+
+    // det U = 1 exactly, which is what makes the incompressible model applicable.
+    let det_u = ISOCHORIC_U[0] * ISOCHORIC_U[1] * ISOCHORIC_U[2];
+    assert!(
+        (det_u - 1.0).abs() < 1e-12,
+        "the Neo-Hookean models in hyperelastic.rs carry no volumetric term, so \
+         the stretch must be isochoric; det U = {det_u}"
+    );
+
+    // the closed form, from the rationals in the doc comment
+    let dev = [mu * 665.0 / 216.0, -mu * 665.0 / 432.0, -mu * 665.0 / 432.0];
+    assert!(
+        (dev[0] + dev[1] + dev[2]).abs() < 1e-9,
+        "a deviator is traceless; got {:.6}",
+        dev[0] + dev[1] + dev[2]
+    );
+    assert!(
+        ((dev[0] - dev[1]) - mu * 665.0 / 144.0).abs() < 1e-9,
+        "dev_1 − dev_2 must equal the principal stress difference μ(λ₁² − λ₂²) = μ·665/144"
+    );
+
+    let mesh = kuhn_cube(4, SIDE / 4.0);
+    let (bc, interior) = boundary_rotated_stretch(&mesh, turn, ISOCHORIC_U);
+    let out = solve_corotational(
+        &mesh,
+        &pla(),
+        &bc,
+        &corotational_config_with_newton_budget(2, STRETCH_NEWTON_BUDGET),
+    )
+    .expect("the scene converges at this Newton budget; see the_reachable_stretches_…");
+
+    // the affine field is exactly representable by P1, so the kinematics are not
+    // what this oracle is about — check them anyway so a red is unambiguous.
+    let mut drift = 0.0_f64;
+    for &v in &interior {
+        let want = rotated_stretch_field(turn, ISOCHORIC_U, vert(&mesh, v));
+        for (axis, want_axis) in want.iter().enumerate() {
+            drift =
+                drift.max((out.field.displacements[v as usize][axis].to_f64() - want_axis).abs());
+        }
+    }
+    assert!(
+        drift < 1e-6,
+        "interior is {drift:.3e} mm off the affine field"
+    );
+
+    let mut worst = 0.0_f64;
+    for st in &out.field.element_stress {
+        let got = deviator_in_the_stretch_frame(turn, st);
+        for (g, w) in got.iter().zip([dev[0], dev[1], dev[2], 0.0]) {
+            worst = worst.max((g - w).abs());
+        }
+    }
+    eprintln!(
+        "  Neo-Hookean dev σ̃ = ({:.6}, {:.6}, {:.6}) MPa, worst |dev − oracle| = {worst:.4} MPa",
+        dev[0], dev[1], dev[2]
+    );
+    assert!(
+        worst < 1e-2,
+        "an incompressible Neo-Hookean element must carry dev σ̃ = μ(U² − tr(U²)/3·I); \
+         worst component is {worst:.4} MPa off a state whose largest component is {:.3} MPa",
+        dev[0]
+    );
+}
+
+/// **The current state, pinned.** The same scene under the co-rotational *linear*
+/// law — what `solve_corotational` evaluates today.
+///
+/// ```text
+/// ε      = U − I = diag(5/4, −1/3, −1/3)      tr ε = 5/4 − 2/3 = 7/12
+/// σ̃      = λ tr(ε) I + 2μ ε
+///        = (5005.144033, 900.205761, 900.205761) MPa   for E = 3500, ν = 0.35
+/// σ      = R σ̃ Rᵀ
+/// dev σ̃  = (2736.625514, −1368.312757, −1368.312757) MPa
+/// ```
+///
+/// Compared as a deviator for the same reason as its twin: every boundary degree
+/// of freedom is prescribed, so the hydrostatic part is not determined by the
+/// scene. Measured worst deviation 3.5e-6 MPa against a state whose largest
+/// component is 3527 MPa, so the 1e-2 tolerance has three orders of headroom —
+/// the affine field is exact in P1 and all that is left is the `Fix128` floor.
+///
+/// # ⚠️ This is the oracle the destruction tests break
+///
+/// | mutation in `src/linear_elastic_fem.rs` | measured |
+/// | --- | --- |
+/// | `σ = R σ̃ Rᵀ` → return `σ̃` unrotated | red here (off-diagonal `σ̃₁₂` term) and in `rotated_uniform_stretch_matches_the_closed_form` |
+/// | `ε = sym(RᵀF − I)` → drop the `Rᵀ` | red here **and** in `boundary_rigid_rotation_leaves_the_interior_unstressed` |
+///
+/// Its twin cannot serve that purpose: an `#[ignore]`d oracle is not run, and a
+/// test that only pins an `Err` variant stays red under every mutation of the
+/// stress path, so it would report nothing.
+#[test]
+fn the_corotational_linear_law_is_what_the_element_returns_today() {
+    let (lambda, mu) = lame();
+    let turn = THREE_FOUR_FIVE;
+
+    let e = [
+        ISOCHORIC_U[0] - 1.0,
+        ISOCHORIC_U[1] - 1.0,
+        ISOCHORIC_U[2] - 1.0,
+    ];
+    let trace = e[0] + e[1] + e[2];
+    let s_local = [
+        lambda * trace + 2.0 * mu * e[0],
+        lambda * trace + 2.0 * mu * e[1],
+        lambda * trace + 2.0 * mu * e[2],
+    ];
+    let third = (s_local[0] + s_local[1] + s_local[2]) / 3.0;
+    let dev = [
+        s_local[0] - third,
+        s_local[1] - third,
+        s_local[2] - third,
+        0.0,
+    ];
+
+    let mesh = kuhn_cube(4, SIDE / 4.0);
+    let (bc, interior) = boundary_rotated_stretch(&mesh, turn, ISOCHORIC_U);
+    let out = solve_corotational(
+        &mesh,
+        &pla(),
+        &bc,
+        &corotational_config_with_newton_budget(2, STRETCH_NEWTON_BUDGET),
+    )
+    .expect("125 % stretch converges with a Newton budget of 64");
+
+    let mut drift = 0.0_f64;
+    for &v in &interior {
+        let want = rotated_stretch_field(turn, ISOCHORIC_U, vert(&mesh, v));
+        for (axis, want_axis) in want.iter().enumerate() {
+            drift =
+                drift.max((out.field.displacements[v as usize][axis].to_f64() - want_axis).abs());
+        }
+    }
+
+    let mut worst = 0.0_f64;
+    for st in &out.field.element_stress {
+        let got = deviator_in_the_stretch_frame(turn, st);
+        for (g, w) in got.iter().zip(dev) {
+            worst = worst.max((g - w).abs());
+        }
+    }
+
+    eprintln!(
+        "  co-rotational linear dev σ̃ = ({:.6}, {:.6}) MPa, interior drift {drift:.3e} mm, \
+         worst |dev − closed form| = {worst:.9} MPa",
+        dev[0], dev[1]
+    );
+    assert!(
+        drift < 1e-6,
+        "the affine field is exactly representable by P1; worst node is {drift:.3e} mm off"
+    );
+    assert!(
+        worst < 1e-2,
+        "the element must return dev(λ tr(U−I) I + 2μ (U−I)) rotated into the global frame; \
+         worst component is {worst:.9} MPa off a state whose largest component is {:.3} MPa",
+        dev[0].abs()
+    );
+    // the gap the ignored twin measures, printed so the two numbers sit together
+    let nh = mu * 665.0 / 216.0;
+    eprintln!(
+        "    Neo-Hookean would carry {nh:.6} MPa on dev_1, a gap of {:.4} MPa ({:.1}% of this)",
+        nh - dev[0],
+        100.0 * (nh - dev[0]) / dev[0]
+    );
+}
+
+/// **Characterisation, not correctness.** Records which stretches
+/// `solve_corotational` reaches today, and that `NotConverged` covers two
+/// unrelated situations.
+///
+/// ⚠️ **Nothing here is asserted to be the right behaviour.** In particular the
+/// `a = 5/4` refusal below is pinned as *the current state*, not as correct: a
+/// frame fixed point that fails equilibrium may well be a defect of the stopping
+/// rule or of the formulation, and settling that is a design question this file
+/// does not answer. If a later change makes `a = 5/4` converge, **this test is
+/// supposed to go red** — update it, do not read the red as a regression.
+///
+/// This replaces a bisection. "The largest stretch that converges" is only a
+/// meaningful quantity if the reachable set is an interval, and it is not:
+/// measured on the exactly-rational isochoric family `U = diag(a², 1/a, 1/a)`,
+///
+/// | `a` | first stretch | budget 32 | 64 | 4096 |
+/// | --- | --- | --- | --- | --- |
+/// | 9/8 | +27 % | ok | ok | ok |
+/// | 6/5 | +44 % | ok | ok | ok |
+/// | **5/4** | **+56 %** | **NotConverged** | **NotConverged** | **NotConverged** |
+/// | 4/3 | +78 % | ok | ok | ok |
+/// | 7/5 | +96 % | ok | ok | ok |
+/// | **3/2** | **+125 %** | **NotConverged** | **ok** | ok |
+///
+/// A bisection would cross the `a = 5/4` hole and report a threshold that is not
+/// one. The same shape shows up off the isochoric family: sweeping
+/// `U(t) = I + t·diag(5/4, −1/3, −1/3)` at 0.01 finds two holes,
+/// `t ∈ [0.22, 0.36]` and `t ≥ 0.80`.
+///
+/// # ⚠️ The two `NotConverged`s
+///
+/// `relative_residual` is `residual / newton_target`, so **below 1 means the
+/// residual already met the tolerance**.
+///
+/// - `iterations == budget`: the frame iteration on the final increment ran out
+///   of steps. The residual is not what refused — at `a = 3/2` it is `0.217`,
+///   i.e. 4.6× inside tolerance. Raising the budget fixes it (threshold 47).
+/// - `iterations < budget`: the frames settled and the fixed point they settled
+///   on does not satisfy equilibrium (`relative_residual` 1.03…1.7). Raising the
+///   budget changes nothing — at `a = 5/4` six budgets from 32 to 4096 return the
+///   identical `iterations` and `relative_residual`.
+///
+/// Telling them apart matters because the responses are opposite: a budget for
+/// the first, the tolerance or the formulation for the second. The `a = 5/4` band
+/// is the second kind and is not addressed here.
+///
+/// `FemError::Stagnated` has the same shape — three mechanisms behind one variant,
+/// measured separately in `tests/locking_p1.rs`. Two variants of one enum now
+/// conflate distinguishable causes, so the pattern is the enum's, not one
+/// variant's.
+#[test]
+fn characterises_which_stretches_the_corotational_solve_reaches() {
+    let turn = THREE_FOUR_FIVE;
+    let mesh = kuhn_cube(4, SIDE / 4.0);
+
+    // U = diag(a², 1/a, 1/a) — isochoric for every a, and rational for rational a.
+    let isochoric = |num: f64, den: f64| {
+        let a = num / den;
+        [a * a, 1.0 / a, 1.0 / a]
+    };
+    let attempt = |stretch: [f64; 3], budget: u32| {
+        let (bc, _) = boundary_rotated_stretch(&mesh, turn, stretch);
+        solve_corotational(
+            &mesh,
+            &pla(),
+            &bc,
+            &corotational_config_with_newton_budget(2, budget),
+        )
+        .map(|_| ())
+    };
+
+    // the hole: a = 5/4 refuses, while the larger a = 4/3 and a = 7/5 do not
+    let hole = isochoric(5.0, 4.0);
+    let err = attempt(hole, 32).expect_err("a = 5/4 does not converge");
+    let (hole_iterations, hole_residual) = match err {
+        FemError::NotConverged {
+            iterations,
+            relative_residual,
+        } => (iterations, relative_residual),
+        other => panic!("expected NotConverged at a = 5/4, got {other:?}"),
+    };
+    assert!(
+        hole_iterations < 32,
+        "a = 5/4 stops because the frames settled on a non-equilibrium fixed point, \
+         so it must report fewer iterations than the budget; got {hole_iterations}"
+    );
+    assert!(
+        hole_residual > Fix128::ONE,
+        "…and a residual above the tolerance it was measured against"
+    );
+    // budget independence: identical iterations and residual at 128x the budget.
+    // One extra budget is enough to make the point; 4096 is the largest measured.
+    for budget in [4096_u32] {
+        match attempt(hole, budget) {
+            Err(FemError::NotConverged {
+                iterations,
+                relative_residual,
+            }) => {
+                assert_eq!(
+                    (iterations, relative_residual),
+                    (hole_iterations, hole_residual),
+                    "a = 5/4 is budget independent, so budget {budget} must reproduce \
+                     the budget-32 result bit for bit"
+                );
+            }
+            other => panic!("a = 5/4 must refuse at budget {budget}; got {other:?}"),
+        }
+    }
+    // larger stretches on the same family do converge — this is the
+    // non-monotonicity. Only the two witnesses *above* a = 5/4 are run; a = 9/8
+    // and a = 6/5 are in the table but would add nothing an assert can use.
+    for (num, den) in [(4.0, 3.0), (7.0, 5.0)] {
+        attempt(isochoric(num, den), 32).unwrap_or_else(|e| {
+            panic!("a = {num}/{den} is expected to converge at the house budget; got {e:?}")
+        });
+    }
+
+    // the budget case: a = 3/2 refuses at 32 with a residual *inside* tolerance,
+    // and the threshold is 47
+    match attempt(ISOCHORIC_U, 32) {
+        Err(FemError::NotConverged {
+            iterations,
+            relative_residual,
+        }) => {
+            assert_eq!(
+                iterations, 32,
+                "a = 3/2 runs out of frame-settling steps, so it must report the budget"
+            );
+            assert!(
+                relative_residual < Fix128::ONE,
+                "⚠️ the residual is already inside tolerance when the budget fires; \
+                 got {relative_residual} × the target"
+            );
+        }
+        other => panic!("a = 3/2 must refuse at the house budget of 32; got {other:?}"),
+    }
+    attempt(ISOCHORIC_U, 46).expect_err("46 frame-settling steps are not enough at a = 3/2");
+    attempt(ISOCHORIC_U, 47).expect("47 is the measured threshold at a = 3/2");
+    attempt(ISOCHORIC_U, STRETCH_NEWTON_BUDGET)
+        .expect("the budget the twin oracles above use must converge");
+    eprintln!(
+        "  a = 5/4 refuses at every budget (iterations {hole_iterations}, \
+         residual {hole_residual} × target) while a = 4/3 and a = 7/5 converge; \
+         a = 3/2 needs 47 frame-settling steps"
+    );
+}
+
+/// Contract check on the module the twins are *about*.
+///
+/// The gap they pin is wiring, not constitutive: `hyperelastic.rs` gets the
+/// incompressible Neo-Hookean uniaxial stress right. `σ = μ(λ² − 1/λ)` is the
+/// standard result, written here from the formula rather than taken from the
+/// function under test.
+#[test]
+fn the_neo_hookean_uniaxial_helper_agrees_with_its_closed_form() {
+    let mu = 3.0_f64;
+    let model = HyperelasticModel::NeoHookean { mu_mpa: fx(mu) };
+    for lambda in [0.5_f64, 0.8, 1.0, 1.25, 2.0, 2.25] {
+        let want = mu * (lambda * lambda - 1.0 / lambda);
+        let got = uniaxial_cauchy_stress(&model, fx(lambda)).to_f64();
+        assert!(
+            (got - want).abs() < 1e-9,
+            "σ(λ = {lambda}) must be μ(λ² − 1/λ) = {want:.9}; got {got:.9}"
+        );
+    }
+    // the strain energy of the undeformed state is zero, and it grows with stretch
+    let w_unity = strain_energy_density(&model, &Stretch::UNITY).to_f64();
+    assert!(w_unity.abs() < 1e-9, "W(I) must vanish; got {w_unity:.9}");
 }

@@ -43,6 +43,29 @@ rank-n 更新 `-U D⁻¹ Uᵀ` を測る oracle が「weld の腕と hinge の�
   `u = τ - Sᵀ p^A` は静止 release の全 scene で恒等的に 0 なので、first-step oracle では
   原理的に検出できません (捕まえているのは動く chain の運動量保存 oracle のみ) 経緯は
   test の module doc に記載しています
+### Added — 共回転 FEM の超弾性 gap を双子 oracle で固定 (`tests/analytic_corotational.rs`)
+
+`hyperelastic.rs` の構成則 3 model は実在しますが `linear_elastic_fem.rs` からの参照が 0 件で、
+要素には載っていません 等容な `U = diag(9/4, 2/3, 2/3)` (`det U = 1` 厳密) の affine 場を
+全境界に課す 1 つの scene に、**双子の oracle** を置きました
+
+- `the_neo_hookean_deviator_is_not_what_the_element_returns` — 目標 (`#[ignore]`、反転条件を doc に逐語)
+  非圧縮 Neo-Hookean の偏差応力 `dev σ̃ = μ diag(665/216, −665/432, −665/432)` を有理数から導出
+  全境界 prescribe では圧力が不定なので偏差のみ比較します (trace は比較しません)
+- `the_corotational_linear_law_is_what_the_element_returns_today` — 現状 pin (常時 green)
+  同 scene の共回転線形則を `< 1e-2 MPa` で固定 実測誤差 3.5e-6 MPa (最大成分 3527 MPa)
+  両者の差は dev₁ で 1254.29 MPa (線形値の 46%)
+- `characterises_which_stretches_the_corotational_solve_reaches` — 現状 pin (正しさの主張ではありません)
+  ⚠️ **収束する伸張の集合は区間ではありません** 等容 family `diag(a², 1/a, 1/a)` で
+  a=5/4 (+56%) は budget 32〜4096 で `NotConverged` のまま、a=4/3 (+78%) と a=7/5 (+96%) は収束します
+  ⚠️ **`NotConverged` は 2 機構**: `iterations == budget` は frame が静まらないだけで
+  残差は許容の 1/4.6 (budget を上げれば解ける、a=3/2 の閾値は 47) / `iterations < budget` は
+  frame の不動点が平衡でない (budget 非依存)
+- `the_neo_hookean_uniaxial_helper_agrees_with_its_closed_form` — 契約 test
+  `uniaxial_cauchy_stress` が `μ(λ² − 1/λ)` と一致することを確認 (gap は配線であって構成則ではない)
+
+破壊試験 2 件 (`σ = R σ̃ Rᵀ` の R 落とし / `ε = sym(RᵀF − I)` の Rᵀ 落とし) で red を実測し、
+復元後の green も実測しました 表は test file の module doc にあります
 
 ### Added — 物理間で場を渡す決定性 channel (`coupled_field`)
 
