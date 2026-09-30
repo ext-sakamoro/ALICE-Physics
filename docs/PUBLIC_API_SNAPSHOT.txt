@@ -10185,6 +10185,8 @@ pub alice_physics::prelude::PhysicsWorld::material_table: alice_physics::materia
 pub alice_physics::prelude::PhysicsWorld::sdf_colliders: alloc::vec::Vec<alice_physics::sdf_collider::SdfCollider>
 pub alice_physics::prelude::PhysicsWorld::sdf_collision_radius: alice_physics::math::Fix128
 impl alice_physics::solver::PhysicsWorld
+pub const alice_physics::solver::PhysicsWorld::STATE_MAGIC: [u8; 4]
+pub const alice_physics::solver::PhysicsWorld::STATE_VERSION: u16
 pub fn alice_physics::solver::PhysicsWorld::active_body_count(&self) -> usize
 pub fn alice_physics::solver::PhysicsWorld::add_body(&mut self, alice_physics::solver::RigidBody) -> usize
 pub fn alice_physics::solver::PhysicsWorld::add_body_with_radius(&mut self, alice_physics::solver::RigidBody, alice_physics::math::Fix128) -> usize
@@ -14101,6 +14103,8 @@ pub alice_physics::solver::PhysicsWorld::material_table: alice_physics::material
 pub alice_physics::solver::PhysicsWorld::sdf_colliders: alloc::vec::Vec<alice_physics::sdf_collider::SdfCollider>
 pub alice_physics::solver::PhysicsWorld::sdf_collision_radius: alice_physics::math::Fix128
 impl alice_physics::solver::PhysicsWorld
+pub const alice_physics::solver::PhysicsWorld::STATE_MAGIC: [u8; 4]
+pub const alice_physics::solver::PhysicsWorld::STATE_VERSION: u16
 pub fn alice_physics::solver::PhysicsWorld::active_body_count(&self) -> usize
 pub fn alice_physics::solver::PhysicsWorld::add_body(&mut self, alice_physics::solver::RigidBody) -> usize
 pub fn alice_physics::solver::PhysicsWorld::add_body_with_radius(&mut self, alice_physics::solver::RigidBody, alice_physics::math::Fix128) -> usize
@@ -18615,6 +18619,8 @@ pub alice_physics::PhysicsWorld::material_table: alice_physics::material::Materi
 pub alice_physics::PhysicsWorld::sdf_colliders: alloc::vec::Vec<alice_physics::sdf_collider::SdfCollider>
 pub alice_physics::PhysicsWorld::sdf_collision_radius: alice_physics::math::Fix128
 impl alice_physics::solver::PhysicsWorld
+pub const alice_physics::solver::PhysicsWorld::STATE_MAGIC: [u8; 4]
+pub const alice_physics::solver::PhysicsWorld::STATE_VERSION: u16
 pub fn alice_physics::solver::PhysicsWorld::active_body_count(&self) -> usize
 pub fn alice_physics::solver::PhysicsWorld::add_body(&mut self, alice_physics::solver::RigidBody) -> usize
 pub fn alice_physics::solver::PhysicsWorld::add_body_with_radius(&mut self, alice_physics::solver::RigidBody, alice_physics::math::Fix128) -> usize
