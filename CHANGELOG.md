@@ -13,6 +13,27 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added — 圧力解法の領域分割 (z slab + halo 交換) を oracle 化
+
+圧力解法を `z` 方向の連続 slab に分け、colour sweep ごとに幅 1 の halo を交換する経路を足しました
+**分割数を変えても monolithic な解法と bit 一致します** (`Fix128` の加算は mod 2¹²⁸ の群演算なので、
+正しい分割なら許容誤差でなく完全一致が正しい要求です)
+
+- `slab_decomposition_reproduces_the_monolithic_pressure_solve` — 深さを割り切る分割 (8³ を 1/2/4/8)、
+  割り切らない分割 (7³ を 2/3/4、5³ を 4)、⚠️ **rank が余って何も所有しない分割** (3³ を 4) を含みます
+- `a_halo_exchanged_once_per_iteration_diverges_from_the_monolithic_solve` — ⚠️ **判別力の対照群**
+  halo を 1 sweep 遅らせると一致しなくなることを assert します
+- `slab_bounds_partition_every_layer_exactly_once` — nz 1..16 × ranks 1..20 の全組で、各層の所有者が
+  ちょうど 1 つであることを確認します
+
+⚠️ **各 rank は自分の halo の外を全部 sentinel で塗り潰した buffer を持ちます** stencil が halo を越えて
+読んだ場合に、たまたま正しい値が見えて通ってしまうのでなく**不一致として露見する**ためです
+(halo 幅を 0 にする破壊試験で `8³ / 2 slab` が実際に red になることを確認済)
+
+本段階は**分割の正しさ**だけを固定し、transport は持ちません 各 rank が全長 buffer を持つのはそのためで、
+slab 局所の記憶域と `RankTransport` は MPI backend と同時に入れます 全長のまま試験すると、
+halo 幅の誤りが deadlock でなく**不一致**として落ちます
+
 ### Added — 圧力解法の順序非依存性を oracle 化 + 数億要素までの距離を実測する harness
 
 数億要素クラスの分散並列に向けて、**どこまで回るか**と**何が分割を許すか**を測って固定しました

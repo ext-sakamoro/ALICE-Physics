@@ -1103,6 +1103,181 @@ pub(crate) fn project_pressure_red_black_gs(
     subtract_pressure_gradient(grid, dt_s / density_kg_m3 * inv_dx);
 }
 
+/// When a slab decomposition sends its boundary layers to the neighbouring
+/// ranks.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum HaloSchedule {
+    /// After every colour sweep. A red cell on a slab boundary is read by a
+    /// black cell in the neighbouring slab during the very next sweep, so this
+    /// is the schedule that reproduces the monolithic solve.
+    EverySweep,
+    /// Only after a full red+black iteration, so the second sweep of each
+    /// iteration reads a stale halo. Kept as the control for
+    /// `a_halo_exchanged_once_per_iteration_diverges_from_the_monolithic_solve`:
+    /// if this ever stopped diverging, the bit-equality test above would be
+    /// passing for reasons unrelated to the exchange.
+    EveryIteration,
+}
+
+/// The `z` layers owned by `rank` when `nz` layers are split across `ranks`
+/// contiguous slabs. Ranks may be empty when `ranks > nz`.
+fn slab_bounds(nz: usize, ranks: usize, rank: usize) -> (usize, usize) {
+    (rank * nz / ranks, (rank + 1) * nz / ranks)
+}
+
+/// The rank owning layer `k`, or `None` if no rank does.
+fn slab_owner(bounds: &[(usize, usize)], k: usize) -> Option<usize> {
+    bounds.iter().position(|&(k0, k1)| k0 <= k && k < k1)
+}
+
+/// Overwrite every layer a rank may not read — outside its owned range widened
+/// by one halo layer — with a value far from any physical pressure.
+///
+/// This is what gives the decomposition test teeth: a stencil that reached past
+/// the halo would pull the sentinel into the result instead of silently reading
+/// a correct value that some other rank happened to leave in a shared buffer.
+fn poison_beyond_halo(
+    buf: &mut [Fix128],
+    nz: usize,
+    plane: usize,
+    (k0, k1): (usize, usize),
+    sentinel: Fix128,
+) {
+    let lo = k0.saturating_sub(1);
+    let hi = (k1 + 1).min(nz);
+    for k in 0..nz {
+        if k >= lo && k < hi {
+            continue;
+        }
+        let base = k * plane;
+        for slot in &mut buf[base..base + plane] {
+            *slot = sentinel;
+        }
+    }
+}
+
+/// Copy one boundary layer in each direction from the rank that owns it.
+///
+/// Only halo layers are written, and owned layers are never touched, so the
+/// order the ranks are serviced in cannot matter.
+fn exchange_slab_halos(
+    local: &mut [Vec<Fix128>],
+    bounds: &[(usize, usize)],
+    nz: usize,
+    plane: usize,
+) {
+    for r in 0..bounds.len() {
+        let (k0, k1) = bounds[r];
+        if k0 == k1 {
+            continue; // empty rank: nothing owned, nothing to surround
+        }
+        for layer in [k0.checked_sub(1), (k1 < nz).then_some(k1)]
+            .into_iter()
+            .flatten()
+        {
+            let Some(src) = slab_owner(bounds, layer) else {
+                continue;
+            };
+            let base = layer * plane;
+            let incoming = local[src][base..base + plane].to_vec();
+            local[r][base..base + plane].copy_from_slice(&incoming);
+        }
+    }
+}
+
+/// The red-black pressure projection run as `ranks` contiguous `z` slabs that
+/// exchange a single halo layer, rather than as one monolithic sweep.
+///
+/// This is the decomposition that lets the solve span more than one memory
+/// system, which the scale probe showed is the only way past both walls at the
+/// hundreds-of-millions-of-elements target: a 1e8-body state does not fit in one
+/// machine's RAM, and the stencil is bandwidth-bound so extra threads on one SoC
+/// buy nothing.
+///
+/// The result is identical bit for bit to [`project_pressure_red_black_gs`] for
+/// every rank count, because a colour sweep's reads and writes are disjoint (see
+/// that function's notes) and `Fix128` addition is a group operation mod 2¹²⁸.
+/// `slab_decomposition_reproduces_the_monolithic_pressure_solve` pins that.
+///
+/// Each rank still holds a full-size buffer here, with everything beyond its
+/// halo poisoned, because the point of this stage is to fix the *decomposition*
+/// — which layers a rank may read, and when they must arrive — without also
+/// taking on a transport. Slab-local storage and a `RankTransport` come with the
+/// MPI backend; keeping the buffers whole is what lets the exchange schedule be
+/// tested in-process, where a wrong halo width fails as a mismatch rather than
+/// as a deadlock.
+pub(crate) fn project_pressure_decomposed(
+    grid: &mut MacGrid,
+    dt_s: Fix128,
+    density_kg_m3: Fix128,
+    iterations: u32,
+    ranks: usize,
+    schedule: HaloSchedule,
+) {
+    if grid.dx.is_zero() || density_kg_m3.is_zero() || dt_s.is_zero() || ranks == 0 {
+        return;
+    }
+    grid.enforce_face_boundaries();
+    let scale = density_kg_m3 * grid.dx * grid.dx / dt_s;
+    let (nx, ny, nz) = (grid.nx, grid.ny, grid.nz);
+    let n = nx * ny * nz;
+    let plane = nx * ny;
+    let rhs = poisson_rhs(grid, scale);
+    let mask = PoissonMask::from_grid(grid);
+    let inv_deg = inverse_degrees(&mask, n);
+
+    // Far outside the pressures this solve produces, so a stray read shows up as
+    // a mismatch of many units rather than one in the last place.
+    let sentinel = Fix128::from_int(1_000_000);
+    let bounds: Vec<(usize, usize)> = (0..ranks).map(|r| slab_bounds(nz, ranks, r)).collect();
+    let mut local: Vec<Vec<Fix128>> = bounds
+        .iter()
+        .map(|&b| {
+            let mut buf = grid.pressure.clone();
+            poison_beyond_halo(&mut buf, nz, plane, b, sentinel);
+            buf
+        })
+        .collect();
+
+    for _ in 0..iterations {
+        for colour in 0..2u32 {
+            for (r, &(k0, k1)) in bounds.iter().enumerate() {
+                let buf = &mut local[r];
+                for k in k0..k1 {
+                    for j in 0..ny {
+                        for i in 0..nx {
+                            if ((i + j + k) as u32 % 2) != colour {
+                                continue;
+                            }
+                            let idx = i + nx * (j + ny * k);
+                            let neighbours = mask.neighbour_sum(buf, i, j, k);
+                            buf[idx] = (neighbours - rhs[idx]) * inv_deg[idx];
+                        }
+                    }
+                }
+            }
+            if schedule == HaloSchedule::EverySweep {
+                exchange_slab_halos(&mut local, &bounds, nz, plane);
+            }
+        }
+        if schedule == HaloSchedule::EveryIteration {
+            exchange_slab_halos(&mut local, &bounds, nz, plane);
+        }
+    }
+
+    // Gather: every layer is owned by exactly one rank.
+    for (r, &(k0, k1)) in bounds.iter().enumerate() {
+        for k in k0..k1 {
+            let base = k * plane;
+            let owned = local[r][base..base + plane].to_vec();
+            grid.pressure[base..base + plane].copy_from_slice(&owned);
+        }
+    }
+
+    let inv_dx = Fix128::ONE / grid.dx;
+    subtract_pressure_gradient(grid, dt_s / density_kg_m3 * inv_dx);
+}
+
 /// Legacy Jacobi implementation, kept for benchmarking (Session 3 I9, crate-internal).
 pub(crate) fn project_pressure_jacobi(
     grid: &mut MacGrid,
@@ -2074,6 +2249,93 @@ mod tests {
                 "red-black result changed with the visit order: the sweep is not \
                  order-independent, so the parallel path cannot be bit-identical",
             );
+        }
+    }
+
+    /// Splitting the domain into `z` slabs that exchange one halo layer after
+    /// every colour sweep reproduces the monolithic solve exactly — for rank
+    /// counts that divide the depth and for ones that do not, including a split
+    /// fine enough to leave a rank with nothing to own.
+    ///
+    /// Exactness, not a tolerance: `Fix128` addition is a group operation mod
+    /// 2¹²⁸, so a decomposition that is correct at all is correct to the bit.
+    #[test]
+    fn slab_decomposition_reproduces_the_monolithic_pressure_solve() {
+        let dt = Fix128::from_ratio(1, 100);
+        let rho = Fix128::from_int(1000);
+
+        // (grid size, ranks): even splits, uneven splits, and `ranks > nz`
+        // (which leaves rank 0 owning nothing).
+        for &(n, ranks) in &[
+            (8usize, 1usize),
+            (8, 2),
+            (8, 4),
+            (8, 8),
+            (7, 2),
+            (7, 3),
+            (7, 4),
+            (5, 4),
+            (3, 4),
+        ] {
+            let base = seed_divergent_flow(n);
+
+            let mut monolithic = base.clone();
+            project_pressure_red_black_gs(&mut monolithic, dt, rho, 6);
+
+            let mut split = base.clone();
+            project_pressure_decomposed(&mut split, dt, rho, 6, ranks, HaloSchedule::EverySweep);
+
+            assert!(
+                grids_are_bit_equal(&monolithic, &split),
+                "{n}³ grid split across {ranks} slabs did not reproduce the \
+                 monolithic solve: either one halo layer is not enough for the \
+                 7-point stencil, or a rank read past its halo",
+            );
+        }
+    }
+
+    /// Teeth for the test above: delay the exchange by one sweep and the slabs
+    /// stop agreeing with the monolithic solve.
+    ///
+    /// Without this, `slab_decomposition_reproduces_the_monolithic_pressure_solve`
+    /// could pass on a decomposition that never actually depended on the
+    /// exchange arriving on time.
+    #[test]
+    fn a_halo_exchanged_once_per_iteration_diverges_from_the_monolithic_solve() {
+        let dt = Fix128::from_ratio(1, 100);
+        let rho = Fix128::from_int(1000);
+        let base = seed_divergent_flow(8);
+
+        let mut monolithic = base.clone();
+        project_pressure_red_black_gs(&mut monolithic, dt, rho, 6);
+
+        let mut stale = base.clone();
+        project_pressure_decomposed(&mut stale, dt, rho, 6, 4, HaloSchedule::EveryIteration);
+
+        assert!(
+            !grids_are_bit_equal(&monolithic, &stale),
+            "a halo one sweep out of date still reproduced the monolithic solve, \
+             so the bit-equality test above is not actually testing the exchange",
+        );
+    }
+
+    /// The slabs must tile the depth exactly: every layer owned once, none twice.
+    #[test]
+    fn slab_bounds_partition_every_layer_exactly_once() {
+        for nz in 1usize..=16 {
+            for ranks in 1usize..=20 {
+                let bounds: Vec<(usize, usize)> =
+                    (0..ranks).map(|r| slab_bounds(nz, ranks, r)).collect();
+                for k in 0..nz {
+                    let owners = bounds.iter().filter(|&&(k0, k1)| k0 <= k && k < k1).count();
+                    assert_eq!(
+                        owners, 1,
+                        "layer {k} of {nz} has {owners} owners across {ranks} ranks",
+                    );
+                }
+                let owned: usize = bounds.iter().map(|&(k0, k1)| k1 - k0).sum();
+                assert_eq!(owned, nz, "{ranks} ranks over {nz} layers own {owned}");
+            }
         }
     }
 
