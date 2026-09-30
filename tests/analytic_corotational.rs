@@ -32,6 +32,14 @@
 //! Both were run against the twin oracles added for the hyperelastic gap; the
 //! baseline is `9 passed / 0 failed / 2 ignored`.
 //!
+//! ⚠️ **A mutation run must print `### MUTATION: <what was changed>` on its own
+//! line**, and the restored green must land in the same log. A destruction test
+//! produces a real red on purpose, and anyone reading the output from outside —
+//! another session triaging failures, a later reader of a log — cannot otherwise
+//! tell it from a genuine break. The marker costs one line and no coordination;
+//! announcing mutations over messages instead does not scale, because destruction
+//! tests come in batches.
+//!
 //! | mutation | oracles that went red | restored |
 //! | --- | --- | --- |
 //! | `rotate_stress` returns `σ̃` unrotated (drop the `R` in `σ = R σ̃ Rᵀ`) | `the_corotational_linear_law_is_what_the_element_returns_today` (off by 1970.370372 MPa, which is exactly the off-diagonal `σ_xy` the rotation produces) and `rotated_uniform_stretch_matches_the_closed_form` — 2 red, 7 green | 9 passed |
@@ -1200,4 +1208,109 @@ fn the_neo_hookean_uniaxial_helper_agrees_with_its_closed_form() {
     // the strain energy of the undeformed state is zero, and it grows with stretch
     let w_unity = strain_energy_density(&model, &Stretch::UNITY).to_f64();
     assert!(w_unity.abs() < 1e-9, "W(I) must vanish; got {w_unity:.9}");
+}
+
+/// The Newton budget the twins run with does not change the answer they pin.
+///
+/// [`STRETCH_NEWTON_BUDGET`] is 64 because 32 does not converge at this stretch
+/// and the measured floor is 47 — a number chosen to make the solve *finish*. That
+/// makes it a load-bearing default of
+/// `the_corotational_linear_law_is_what_the_element_returns_today`, and "the
+/// budget was raised to converge, not to move the answer" is exactly what that pin
+/// means. So it is checked here rather than asserted in prose.
+///
+/// ⚠️ `the_answer_does_not_depend_on_the_newton_budget` does **not** cover this.
+/// That test is older than the twins, runs a different scene (a rigid rotation, no
+/// stretch) through [`corotational_config`], and never reaches a budget above 32 —
+/// so nothing in it touches the `64` the twins depend on.
+///
+/// Doubling the budget past a converged solve is a pure no-op on the iteration:
+/// the extra steps are never taken, because the frames have already settled and
+/// the loop exits on that, not on the count. The measured difference is therefore
+/// `0` ulp on every stress component, and `assert_eq!` is the honest bound.
+///
+/// ⚠️ **`0 == 0` is the shape a vacuous comparison takes**, so the comparison was
+/// checked against a difference it *should* see: replacing the second solve with
+/// one at 4 increments instead of a doubled budget moves it to **11 ulp on the
+/// displacement and 69819 ulp on the stress**. The zero above is a fact about
+/// raising the budget, not an artifact of comparing a value with itself.
+#[test]
+fn the_budget_the_twins_use_does_not_change_what_they_pin() {
+    let turn = THREE_FOUR_FIVE;
+    let mesh = kuhn_cube(4, SIDE / 4.0);
+    let (bc, _) = boundary_rotated_stretch(&mesh, turn, ISOCHORIC_U);
+
+    let solve_at = |budget: u32| {
+        solve_corotational(
+            &mesh,
+            &pla(),
+            &bc,
+            &corotational_config_with_newton_budget(2, budget),
+        )
+        .unwrap_or_else(|e| panic!("budget {budget} must converge at this stretch; got {e:?}"))
+    };
+
+    let at_64 = solve_at(STRETCH_NEWTON_BUDGET);
+    let at_128 = solve_at(STRETCH_NEWTON_BUDGET * 2);
+
+    // displacements first: same helper the increment-spread oracle uses
+    let spread = worst_ulp(&at_64.field.displacements, &at_128.field.displacements);
+
+    // then the stresses, which are what the twins actually assert on
+    let mut worst_stress_ulp = 0_u128;
+    for (a, b) in at_64
+        .field
+        .element_stress
+        .iter()
+        .zip(at_128.field.element_stress.iter())
+    {
+        for (x, y) in [
+            (a.xx, b.xx),
+            (a.yy, b.yy),
+            (a.zz, b.zz),
+            (a.xy, b.xy),
+            (a.yz, b.yz),
+            (a.zx, b.zx),
+        ] {
+            worst_stress_ulp = worst_stress_ulp.max((raw(x) - raw(y)).unsigned_abs());
+        }
+    }
+
+    eprintln!(
+        "  budget {} vs {}: displacement spread {spread} ulp, stress spread {worst_stress_ulp} ulp",
+        STRETCH_NEWTON_BUDGET,
+        STRETCH_NEWTON_BUDGET * 2
+    );
+    eprintln!(
+        "    newton_iterations: {} at budget {}, {} at budget {}",
+        at_64.newton_iterations,
+        STRETCH_NEWTON_BUDGET,
+        at_128.newton_iterations,
+        STRETCH_NEWTON_BUDGET * 2
+    );
+
+    // ⚠️ The discriminator. A `0` spread would also be produced by two solves
+    // that both stopped *on the budget* — but then the pinned value would be "what
+    // 64 steps happen to give", not the converged answer, and raising the budget
+    // further would keep moving it. Both sides must have exited on the frames
+    // settling, which means strictly fewer steps than the budget allowed.
+    assert!(
+        at_64.newton_iterations < STRETCH_NEWTON_BUDGET,
+        "the pinned solve must stop because the frames settled, not because the \
+         budget ran out; it used all {} steps",
+        at_64.newton_iterations
+    );
+    assert_eq!(
+        at_64.newton_iterations, at_128.newton_iterations,
+        "a converged solve does not take more steps when it is allowed more"
+    );
+    assert_eq!(
+        spread, 0,
+        "doubling a budget the solve already finished inside must not move the \
+         displacement by a single bit"
+    );
+    assert_eq!(
+        worst_stress_ulp, 0,
+        "…nor the stress the twin oracles compare against their closed forms"
+    );
 }

@@ -114,6 +114,11 @@ rank-n 更新 `-U D⁻¹ Uᵀ` を測る oracle が「weld の腕と hinge の�
   frame の不動点が平衡でない (budget 非依存)
 - `the_neo_hookean_uniaxial_helper_agrees_with_its_closed_form` — 契約 test
   `uniaxial_cauchy_stress` が `μ(λ² − 1/λ)` と一致することを確認 (gap は配線であって構成則ではない)
+- `the_budget_the_twins_use_does_not_change_what_they_pin` (green)
+  現状 pin が既定にしている Newton budget 64 が答えを動かしていないことを固定
+  budget 64 と 128 で変位・応力とも **0 ulp** (`newton_iterations` は両方 48)
+  ⚠️ **0 ulp は両側が budget 上で打ち切られていても出る**ので、
+  `newton_iterations < budget` と 64 側 == 128 側 も併せて assert している
 
 破壊試験 2 件 (`σ = R σ̃ Rᵀ` の R 落とし / `ε = sym(RᵀF − I)` の Rᵀ 落とし) で red を実測し、
 復元後の green も実測しました 表は test file の module doc にあります
