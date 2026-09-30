@@ -238,21 +238,44 @@ jobs:
     # v1.0 roadmap Item C: docs/PUBLIC_API_SNAPSHOT.txt に対する
     # cargo public-api の出力を diff、乖離があれば fail
     # 意図的な public API 追加/変更時は開発者側で snapshot を再生成 + commit
+    # ⚠️ **toolchain と cargo-public-api は version pin する** (2026-09-30)
+    #
+    # 旧構成は `dtolnay/rust-toolchain@nightly` (= 常に最新) + `cargo install
+    # cargo-public-api --locked` (= 常に最新) だったので、**snapshot が commit と
+    # 無関係に drift** した 実測 (run 36672491680): diff は 1 行だけで
+    #
+    #   -pub ...DestructionType::Custom::sdf: alloc::sync::Arc<...>
+    #   +pub ...DestructionType::Custom::sdf: alloc::rcs::arc::Arc<...>
+    #
+    # = **nightly の std 内部 module 再編による rendering 変更**で、公開 API は
+    # 1 文字も変わっていない ⚠️ **時間に対して flaky (commit に対してではない)**
+    # ので「再実行したら通る」類ではなく、**snapshot を再生成するまで `src/` を
+    # 触る全 commit が red** になる (実測: B-13 の commit が巻き込まれた)
+    #
+    # 対処は pin の 2 本立て — rendering を決めるのは **rustdoc (nightly) と
+    # cargo-public-api の両方**なので、片方だけ pin しても drift は残る
+    #
+    # **pin を上げる時は意図的に**: toolchain / tool の version を上げた commit で
+    # `cargo +nightly-<新日付> public-api --features "std,simd,parallel,ffi,gpu-solver-bridge"
+    # --simplified > docs/PUBLIC_API_SNAPSHOT.txt` を同時に走らせ、diff を同 commit
+    # に載せる (そうすれば「API が変わった」と「rendering が変わった」を diff で
+    # 区別できる) 2026-09-30 時点の pin は local 開発環境と一致を実測済
     steps:
       - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: nightly-2026-09-26
           components: rustc-dev
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: public-api-macos
 
-      - name: Install cargo-public-api
-        run: cargo install cargo-public-api --locked
+      - name: Install cargo-public-api (version pin、上の comment 参照)
+        run: cargo install cargo-public-api --locked --version 0.52.0
 
       - name: Generate current snapshot
         run: |
-          cargo +nightly public-api \
+          cargo +nightly-2026-09-26 public-api \
             --features "std,simd,parallel,ffi,gpu-solver-bridge" \
             --simplified \
             > /tmp/current-api.txt
