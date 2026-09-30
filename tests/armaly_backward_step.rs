@@ -99,8 +99,19 @@
 //!
 //! | | asserts | runs |
 //! |---|---|---|
-//! | `the_reattachment_length_matches_gartling` | `x_1 = 6.10`, bubble `4.85 .. 10.48`, `L_u = 5.63`, each to within a cell | no — `#[ignore = "src gap: …"]` |
-//! | `the_reattachment_length_is_pinned_at_the_resolution_ci_can_afford` | `x_1 = 4.392103184 ± 1e-3`, no upper-wall bubble | **yes** |
+//! | `the_reattachment_length_matches_gartling` | `x_1 = 6.10`, bubble `4.85 .. 10.48`, `L_u = 5.63`, each to within a cell | no — `#[ignore = "src gap: …"]`, it fails |
+//! | `the_reattachment_length_is_pinned_at_the_resolution_ci_can_afford` | `x_1 = 4.392103184 ± 1e-3`, no upper-wall bubble | no — `#[ignore = "runtime: …"]`, it passes but costs `+154..+309 s` per CI `Test` job |
+//!
+//! ⚠️ **So layer 1 currently has no assertion that runs, and that was not the
+//! intent.** The pinned twin was landed enabled; CI then measured it at
+//! `+154..+309 s` per `Test` job against a 60 s budget, and it was ignored
+//! pending a decision on whether that trade is worth making. The cost is
+//! entirely that one test: measured locally, the 6 tests predating layer 1
+//! take `14.20 s`, adding the `separation_x` contract and the reflected-step
+//! control takes `14.81 s`, and adding the pin takes `69.57 s`. Those two
+//! cheap ones stay enabled, so the **upper-wall readout is still guarded**
+//! even with the pin off — which is the part that would otherwise rot
+//! silently.
 //!
 //! Measured on the shared scene (`ny = 8`, `L = 12H`, `dt = 1/16`, `t = 256`,
 //! 30 sweeps):
@@ -113,19 +124,26 @@
 //! | `L_u` | — | 5.63 | — |
 //!
 //! ⚠️ **The two ignore reasons in this repository mean different things and
-//! are labelled differently.** `runtime:` (the refinement sweep at the bottom
-//! of this file) passes but is too slow for CI; `src gap:` (the twin above)
-//! would run in CI in the same time as its non-ignored twin and is ignored
-//! because it **fails**. Reading `#[ignore]` as one category loses that.
+//! are labelled differently.** `runtime:` passes but is too slow for CI —
+//! the refinement sweep at the bottom of this file, and now the pinned twin
+//! as well. `src gap:` **fails**, and would cost nothing extra to run. Both
+//! kinds sit next to each other in this one layer, which is why the labels
+//! carry the distinction: reading `#[ignore]` as a single category would say
+//! that layer 1 is two tests nobody runs, and lose that one of them is
+//! waiting on a CI budget while the other is waiting on the solver.
 //!
 //! ⚠️ **Nothing in this repository runs `#[ignore]`d tests** — there is no
 //! `--ignored` or `--include-ignored` anywhere in `scripts/` or `.github/`, so
 //! the attribute keeps a test compiling and nothing more. In particular
 //! **nobody will be told when the gap closes and the ignored twin starts
 //! passing**; writing a reversal condition into a doc comment does not create
-//! anything that fires it. That is why the twin that *does* run pins today's
-//! number: it is the only part of layer 1 that can notice a change. Somewhere
-//! for the gap-ignored twins to run is filed in the backlog.
+//! anything that fires it. Somewhere for the ignored tests to run is filed in
+//! the backlog, and it matters more here than elsewhere: with the pinned twin
+//! also ignored for runtime, **both halves of layer 1 are now written-down
+//! statements that only the compiler checks.** What still runs are the two
+//! cheap ones — the `separation_x` contract and the reflected-step control —
+//! and they are worth having precisely because they are what would rot into a
+//! vacuous pass without anyone noticing.
 //!
 //! ## Why the pinned scene is not Gartling's
 //!
@@ -1706,7 +1724,7 @@ fn the_upper_wall_readout_finds_the_bubble_of_the_reflected_step() {
 /// and whether `ny = 8` could reach `6.10` under a better wall treatment or a
 /// higher-order advection — rather than only under refinement — is not known.
 #[test]
-#[ignore = "src gap: x_1 = 4.3921 against Gartling's 6.10 (72.0 %, short by 13.7 cells) and no upper-wall bubble at all; the gap is dominated by resolution and the remainder is undetermined. Not a runtime ignore — this costs exactly what its non-ignored twin costs"]
+#[ignore = "src gap: x_1 = 4.3921 against Gartling's 6.10 (72.0 %, short by 13.7 cells) and no upper-wall bubble at all; the gap is dominated by resolution and the remainder is undetermined. Distinct from the runtime ignore on its twin: this one fails, and costs the same to run"]
 fn the_reattachment_length_matches_gartling() {
     let dx = 1.0 / (2 * LIT_S_CELLS) as f64;
     let m = measure_gartling_re_800();
@@ -1745,21 +1763,63 @@ fn the_reattachment_length_matches_gartling() {
 /// Oracle: the twin of the above — what the solver does produce on that scene
 /// today, so that it moving is noticed even though the target is out of reach.
 ///
-/// ⚠️ **Not `#[ignore]`d, and that is the point.** The scene is the cheapest
-/// one in which `x_1` is settled: `ny = 8`, `L = 12 H`, `dt = 1/16`,
-/// `t = 256`, 30 sweeps. Each of those four was measured rather than assumed,
-/// because a gate nobody runs is indistinguishable from an assertion nobody
-/// wrote — and in this repository `#[ignore]` means nobody runs it, there
-/// being no `--ignored` invocation anywhere in `scripts/` or `.github/`.
+/// # ⚠️ `runtime`-ignored after measurement, against the intent above
 ///
-/// ⚠️ **It is still the most expensive test in this file**, and its cost is
-/// quoted as *work* rather than seconds because the machine it was developed
-/// on could not measure seconds reliably — load average 17.7 on 8 cores from
-/// sibling sessions, under which the same 4096-step run timed anywhere between
-/// 65 s and 183 s and a 15-sweep run appeared *slower* than a 60-sweep one.
-/// Counting Poisson cell-sweeps instead, which is load-independent:
-/// `96 x 8 x 4096 x 30 = 94.4 M` against `77.2 M` for the whole of the rest of
-/// this file, i.e. this one test is `1.22x` everything else here.
+/// This test was written to be the one part of layer 1 that runs, and it was
+/// landed that way in the commit that introduced it. **CI then measured it at
+/// `+154` to `+309` seconds per `Test` job**, against a budget of 60, so it
+/// carries `#[ignore = "runtime: …"]` until someone decides that trade is
+/// worth making. ⚠️ **The consequence is that layer 1 currently has no
+/// assertion that runs at all**, which is exactly the failure mode the module
+/// header describes — it is recorded here rather than papered over, because
+/// the decision is about spending CI minutes and not about the physics.
+///
+/// Measured, one `cargo test --test armaly_backward_step` per row, same
+/// machine, load average 3.2:
+///
+/// | tests run | wall |
+/// |---|---|
+/// | the 6 that predate layer 1 | 14.20 s |
+/// | + `separation_x` contract + reflected-step control | 14.81 s |
+/// | + this test | **69.57 s** |
+///
+/// so the two other layer-1 tests cost `+0.6 s` between them and **this one
+/// costs `+54.8 s` by itself**. Those two therefore stay enabled; only this
+/// one is ignored, which is why the reflected-step control still guards the
+/// upper-wall readout even now.
+///
+/// On CI, against its own parent commit: `+154 s` (ubuntu-latest), `+199 s`
+/// (macos-15-intel), `+202 s` (ubuntu-24.04-arm), `+227 s` (macos-latest),
+/// `+309 s` (windows-latest), while the two jobs that run no integration
+/// tests moved `+1 s` and `+2 s` — which is what says the figure is the test
+/// and not runner noise. ⚠️ **Runner noise is nevertheless of the same order**
+/// (the parent commit *added* a test file and still came out 326 s faster than
+/// its own parent on macos-15-intel), so treat the five numbers as a range and
+/// not as a measurement of one quantity.
+///
+/// ⚠️ **Reversal condition: if the CI budget is raised to accommodate roughly
+/// `+150..+300 s` on each `Test` job, delete this `#[ignore]`.** Nothing else
+/// needs to change; the assertions below are unmodified and were green on CI
+/// in the commit that landed them.
+///
+/// ## Why the scene is the cheapest one that works
+///
+/// `ny = 8`, `L = 12 H`, `dt = 1/16`, `t = 256`, 30 sweeps — each measured
+/// rather than assumed, because a gate nobody runs is indistinguishable from
+/// an assertion nobody wrote, and in this repository `#[ignore]` means nobody
+/// runs it, there being no `--ignored` invocation in `scripts/` or
+/// `.github/`.
+///
+/// ⚠️ **Local seconds could not be trusted while this was being developed** —
+/// load average 17.7 on 8 cores from sibling sessions, under which the same
+/// 4096-step run timed anywhere between 65 s and 183 s and a 15-sweep run
+/// appeared *slower* than a 60-sweep one. Poisson cell-sweeps were used
+/// instead, being load-independent: `96 x 8 x 4096 x 30 = 94.4 M` against
+/// `77.2 M` for the whole of the rest of this file. ⚠️ **That proxy
+/// under-predicted the real cost by 2.8x** (it implied `+20 s`; the measured
+/// figure once the machine went quiet was `+54.8 s`), so it is fine for
+/// ranking two variants and not for deciding whether something fits in a
+/// budget. The numbers above are wall clock.
 ///
 /// ## `L = 12` rather than Gartling's `30`
 ///
@@ -1823,6 +1883,7 @@ fn the_reattachment_length_matches_gartling() {
 /// job** — read the twin above and flip the two `#[ignore]` attributes rather
 /// than widening this window.
 #[test]
+#[ignore = "runtime: +154..+309 s per CI Test job against a 60 s budget (+54.8 s locally, the other two layer-1 tests cost +0.6 s between them). Not a src gap — the assertions below pass. Delete this attribute if the budget is raised; see the doc comment"]
 fn the_reattachment_length_is_pinned_at_the_resolution_ci_can_afford() {
     // Measured on this scene and budget. See the doc comment for the window.
     const PINNED_X_1: f64 = 4.392_103_184;
