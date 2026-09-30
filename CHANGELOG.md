@@ -121,11 +121,23 @@ byte が無い」不変条件の対象に含める)、拒否 test に **v1 blob 
 - ⚠️ **`converged == false` でも `best_distance >= radius` になる場合があります** (予算が
   尽きた押し出しがちょうど脱出だった場合) `converged` だけを読むと、実際には geometry から
   離れている位置を捨てます
-- oracle 23 本 (`tests/analytic_sdf_character_up_axis.rs`): 半径 300 の球面を整数格子 124 方向で
+- `velocity` / `apply_gravity` / `step` を追加し、弾道落下と着地を controller 側で表せるように
+  しました `character::CharacterController` は 1.0 から velocity を持っていたので、SDF 版だけが
+  非対称だった形です `step` は 速度積分 → 押し出し → 接触した向きの速度成分の除去 を 1 frame 分
+  行い、⚠️ **収束しなかった場合は `best_position` を採る**ので frame が開始点より深く終わりません
+- 接触応答は **面へ向かう成分のみ**を落とします (非弾性の kinematic 則) 壁では接線成分が残るので
+  貼り付かず滑り、外向きの速度は触らないので跳躍中に床を擦っても跳躍が消えません
+- oracle 32 本 (`tests/analytic_sdf_character_up_axis.rs`): 半径 300 の球面を整数格子 124 方向で
   掃く / 自由帯 `|u| >= t + radius/L` の閉形式突合 / どの pocket で止まるかの突合 / 中心向き
-  法線の閉形式突合 / 単調に悪化する場での最良 sample 突合 破壊試験 9 種 (clamp 削除 / up 無視 /
-  正規化削除 / fallback 削除 / 接地判定反転 / guard 削除 / guard 無条件化 / loop 後 sample 削除 /
-  best を最終 sample 固定) で全て red を確認済
+  法線の閉形式突合 / 単調に悪化する場での最良 sample 突合 / 接触応答の閉形式突合 破壊試験 15 種
+  (clamp 削除 / up 無視 / 正規化削除 / fallback 削除 / 接地判定反転 / guard 削除 / guard 無条件化 /
+  loop 後 sample 削除 / best を最終 sample 固定 / 速度除去の削除 / 外向き速度も除去 / control 無視 /
+  best 不採用 / `apply_gravity` の `dt` 落とし 2 軸) で全て red を確認済
+- ⚠️ **oracle 側で 3 件の空振りと 1 件の誤った期待値を自分で検出しました** 記録として: `up` の
+  正規化 (probe が深く入るだけでは接地が成立してしまう) / `best_*` の両側 (単調悪化と最終改善の
+  2 場が必要) / `apply_gravity` の軸別 (Y だけ見ていた) / 球面での接線速度 (`2.0 ± 1e-3` を期待
+  したが閉形式は `2.002222`、接触法線が接線変位で 1.11e-4 rad 傾くため) ⚠️ **許容差を緩めずに
+  閉形式を導出して assert しました**
 
 ### Changed — `serialize_state` に magic / version と sleep 状態を入れる (format v1、WM-08)
 

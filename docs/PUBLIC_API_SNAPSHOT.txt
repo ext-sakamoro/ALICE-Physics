@@ -12833,11 +12833,14 @@ pub alice_physics::sdf_character::SdfCharacter::position: [f32; 3]
 pub alice_physics::sdf_character::SdfCharacter::radius: f32
 pub alice_physics::sdf_character::SdfCharacter::skin_width: f32
 pub alice_physics::sdf_character::SdfCharacter::up: [f32; 3]
+pub alice_physics::sdf_character::SdfCharacter::velocity: [f32; 3]
 impl alice_physics::sdf_character::SdfCharacter
+pub fn alice_physics::sdf_character::SdfCharacter::apply_gravity(&mut self, [f32; 3], f32)
 pub fn alice_physics::sdf_character::SdfCharacter::ground_contact<F: alice_physics::sdf_collider::SdfField + ?core::marker::Sized>(&self, &F) -> core::option::Option<alice_physics::sdf_character::GroundContact>
 pub fn alice_physics::sdf_character::SdfCharacter::is_grounded<F: alice_physics::sdf_collider::SdfField + ?core::marker::Sized>(&self, &F) -> bool
 pub fn alice_physics::sdf_character::SdfCharacter::move_and_slide<F: alice_physics::sdf_collider::SdfField + ?core::marker::Sized>(&self, &F, [f32; 3]) -> alice_physics::sdf_character::MoveOutcome
 pub fn alice_physics::sdf_character::SdfCharacter::new([f32; 3], f32, f32) -> Self
+pub fn alice_physics::sdf_character::SdfCharacter::step<F: alice_physics::sdf_collider::SdfField + ?core::marker::Sized>(&mut self, &F, f32, [f32; 3]) -> alice_physics::sdf_character::MoveOutcome
 impl core::clone::Clone for alice_physics::sdf_character::SdfCharacter
 pub fn alice_physics::sdf_character::SdfCharacter::clone(&self) -> Self
 impl core::cmp::PartialEq for alice_physics::sdf_character::SdfCharacter

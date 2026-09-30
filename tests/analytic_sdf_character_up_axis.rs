@@ -659,3 +659,254 @@ fn the_best_sample_includes_the_position_the_last_push_produced() {
         "the escaping sample clears the capsule radius"
     );
 }
+
+// ─────────────── velocity state / contact response (`step`) ───────────────
+
+/// `f(p) = y`, the exact distance field of the half-space below `y = 0`.
+fn ground_plane() -> ClosureSdf {
+    ClosureSdf::new(|_x, y, _z| y, |_x, _y, _z| (0.0, 1.0, 0.0))
+}
+
+#[test]
+fn gravity_accumulates_into_the_velocity_state() {
+    // `v += g dt`, twice, on all three axes with distinct magnitudes.
+    //
+    // ⚠️ The first draft only checked `velocity[1]`, and a mutation that
+    // dropped `* dt` on the X axis passed it. A per-axis integrator needs
+    // a per-axis oracle.
+    let mut ch = SdfCharacter::new([0.0, 10.0, 0.0], CAP_R, 1.8);
+    assert_eq!(
+        ch.velocity,
+        [0.0, 0.0, 0.0],
+        "default velocity must be zero"
+    );
+    let dt = 1.0 / 60.0;
+    let g = [1.5_f32, -14.0, 3.25];
+    ch.apply_gravity(g, dt);
+    for (axis, (got, accel)) in ch.velocity.iter().zip(g.iter()).enumerate() {
+        let want = accel * dt;
+        assert!(
+            (got - want).abs() < 1.0e-6,
+            "axis {axis} after one step: expected {want}, got {got}"
+        );
+    }
+    ch.apply_gravity(g, dt);
+    for (axis, (got, accel)) in ch.velocity.iter().zip(g.iter()).enumerate() {
+        let want = 2.0 * accel * dt;
+        assert!(
+            (got - want).abs() < 1.0e-6,
+            "axis {axis} after two steps: expected {want}, got {got}"
+        );
+    }
+}
+
+#[test]
+fn a_free_fall_step_advances_by_velocity_times_dt_and_keeps_the_velocity() {
+    // No contact, so `step` is exactly the integrator: 10 - 5/60.
+    let mut ch = SdfCharacter::new([0.0, 10.0, 0.0], CAP_R, 1.8);
+    ch.velocity = [0.0, -5.0, 0.0];
+    let dt = 1.0 / 60.0;
+    let out = ch.step(&ground_plane(), dt, [0.0, 0.0, 0.0]);
+    assert_eq!(out.iterations, 0, "free fall must not resolve anything");
+    assert!((ch.position[1] - (10.0 - 5.0 * dt)).abs() < 1.0e-6);
+    assert!(
+        (ch.velocity[1] - (-5.0)).abs() < 1.0e-7,
+        "velocity must survive a contact-free step, got {}",
+        ch.velocity[1]
+    );
+}
+
+#[test]
+fn landing_removes_the_velocity_into_the_surface_and_keeps_the_tangent() {
+    // Falling fast enough to penetrate in one step. Closed form: the
+    // resolution puts the centre at `radius + skin` above the plane, the
+    // normal is +Y, and the inelastic kinematic law removes only the
+    // normal component — so `vy` becomes 0 while `vx` is untouched.
+    let mut ch = SdfCharacter::new([0.0, CAP_R, 0.0], CAP_R, 1.8);
+    ch.velocity = [3.0, -20.0, 0.0];
+    let out = ch.step(&ground_plane(), 1.0 / 60.0, [0.0, 0.0, 0.0]);
+    assert!(out.iterations >= 1, "the fall must have penetrated");
+    assert!(
+        (ch.position[1] - (CAP_R + ch.skin_width)).abs() < 1.0e-5,
+        "expected to rest at radius + skin, got {}",
+        ch.position[1]
+    );
+    assert!(
+        ch.velocity[1].abs() < 1.0e-6,
+        "normal velocity must be removed, got {}",
+        ch.velocity[1]
+    );
+    assert!(
+        (ch.velocity[0] - 3.0).abs() < 1.0e-6,
+        "tangential velocity must survive (slide, not stop), got {}",
+        ch.velocity[0]
+    );
+}
+
+#[test]
+fn a_contact_does_not_add_velocity_away_from_the_surface() {
+    // Already moving up and out: the contact must not touch the velocity,
+    // otherwise a character brushing the floor while jumping loses its
+    // jump. Only the component pointing INTO the surface is removed.
+    let mut ch = SdfCharacter::new([0.0, CAP_R * 0.5, 0.0], CAP_R, 1.8);
+    ch.velocity = [0.0, 8.0, 0.0];
+    let out = ch.step(&ground_plane(), 1.0 / 60.0, [0.0, 0.0, 0.0]);
+    assert!(
+        out.iterations >= 1,
+        "must have been penetrating at the start"
+    );
+    assert!(
+        (ch.velocity[1] - 8.0).abs() < 1.0e-6,
+        "outward velocity must be preserved, got {}",
+        ch.velocity[1]
+    );
+}
+
+#[test]
+fn a_wall_removes_only_the_component_into_the_wall() {
+    // Wall at z = 0 with normal +Z. Moving (1, 0, -6): the z part is
+    // removed, the x part slides along the wall.
+    let wall = ClosureSdf::new(|_x, _y, z| z, |_x, _y, _z| (0.0, 0.0, 1.0));
+    let mut ch = SdfCharacter::new([0.0, 0.0, CAP_R * 0.5], CAP_R, 1.8);
+    ch.velocity = [1.0, 0.0, -6.0];
+    let out = ch.step(&wall, 1.0 / 60.0, [0.0, 0.0, 0.0]);
+    assert!(out.iterations >= 1);
+    assert!(
+        ch.velocity[2].abs() < 1.0e-6,
+        "into-wall component must go, got {}",
+        ch.velocity[2]
+    );
+    assert!(
+        (ch.velocity[0] - 1.0).abs() < 1.0e-6,
+        "along-wall component must stay, got {}",
+        ch.velocity[0]
+    );
+}
+
+#[test]
+fn the_control_displacement_is_added_on_top_of_the_velocity() {
+    // Tangent locomotion (the control term) and ballistic motion (the
+    // velocity term) must both land in the same displacement, or a walking
+    // character stops falling.
+    let mut ch = SdfCharacter::new([0.0, 10.0, 0.0], CAP_R, 1.8);
+    ch.velocity = [0.0, -5.0, 0.0];
+    let dt = 1.0 / 60.0;
+    let out = ch.step(&ground_plane(), dt, [2.0 * dt, 0.0, 0.0]);
+    assert_eq!(out.iterations, 0);
+    assert!((ch.position[0] - 2.0 * dt).abs() < 1.0e-6);
+    assert!((ch.position[1] - (10.0 - 5.0 * dt)).abs() < 1.0e-6);
+}
+
+#[test]
+fn step_on_a_sphere_world_rests_at_the_surface_with_zero_radial_velocity() {
+    // The whole point of the up axis: the same `step` works with radial
+    // gravity. Closed form: the character ends at |p| = R + radius + skin
+    // and the radial velocity is gone, on a direction that is not +Y.
+    let field = planet();
+    let dir = [1.0, 0.0, 0.0];
+    let mut ch = SdfCharacter::new([PLANET_R + CAP_R, 0.0, 0.0], CAP_R, 1.8);
+    ch.up = dir;
+    ch.min_up_alignment = -0.2;
+    ch.velocity = [-20.0, 0.0, 2.0];
+    let out = ch.step(&field, 1.0 / 60.0, [0.0, 0.0, 0.0]);
+    assert!(out.iterations >= 1, "the fall must have penetrated");
+    let radius_now = (ch.position[0] * ch.position[0]
+        + ch.position[1] * ch.position[1]
+        + ch.position[2] * ch.position[2])
+        .sqrt();
+    assert!(
+        (radius_now - (PLANET_R + CAP_R + ch.skin_width)).abs() < 1.0e-2,
+        "expected |p| = R + radius + skin, got {radius_now}"
+    );
+    assert!(
+        ch.velocity[0].abs() < 1.0e-3,
+        "radial velocity must be removed, got {}",
+        ch.velocity[0]
+    );
+
+    // Closed form for the response. The contact normal is the radial
+    // direction at the penetrating point, and that point has already moved
+    // tangentially by `v_z · dt`, so the normal is tilted off `+X` by
+    // `atan(0.0333 / 300)` ≈ 1.11e-4 rad. Removing `v · n` along that
+    // tilted normal therefore feeds a little into `+Z`:
+    // `v_z' = v_z − n_z (v · n)` = 2 + 2.22e-3 = 2.002222.
+    //
+    // ⚠️ The first draft of this test asserted `v_z == 2.0 ± 1e-3` and
+    // failed at 2.002222. The tolerance was the error, not the response —
+    // so the expectation is derived here instead of widened.
+    let dt = 1.0 / 60.0;
+    let unresolved = [PLANET_R + CAP_R - 20.0 * dt, 0.0, 2.0 * dt];
+    let len = (unresolved[0] * unresolved[0] + unresolved[2] * unresolved[2]).sqrt();
+    let n = [unresolved[0] / len, 0.0, unresolved[2] / len];
+    let v0 = [-20.0_f32, 0.0, 2.0];
+    let into = v0[0] * n[0] + v0[2] * n[2];
+    let expected = [v0[0] - n[0] * into, 0.0, v0[2] - n[2] * into];
+    for (axis, (got, want)) in ch.velocity.iter().zip(expected.iter()).enumerate() {
+        assert!(
+            (got - want).abs() < 1.0e-4,
+            "axis {axis}: expected {want}, got {got}"
+        );
+    }
+    // The law itself: nothing is left pointing into the surface, and the
+    // response never adds speed.
+    let residual = ch.velocity[0] * n[0] + ch.velocity[1] * n[1] + ch.velocity[2] * n[2];
+    assert!(
+        residual.abs() < 1.0e-4,
+        "velocity into the surface must be gone, residual {residual}"
+    );
+    let speed_before = (v0[0] * v0[0] + v0[2] * v0[2]).sqrt();
+    let speed_after = (ch.velocity[0] * ch.velocity[0]
+        + ch.velocity[1] * ch.velocity[1]
+        + ch.velocity[2] * ch.velocity[2])
+        .sqrt();
+    assert!(
+        speed_after <= speed_before + 1.0e-4,
+        "the contact must not add speed: {speed_after} > {speed_before}"
+    );
+    assert!(
+        (ch.velocity[2] - 2.0).abs() < 5.0e-3,
+        "tangential velocity must survive, got {}",
+        ch.velocity[2]
+    );
+}
+
+#[test]
+fn step_reports_the_same_outcome_move_and_slide_would() {
+    // `step` must not become a second, divergent implementation of the
+    // resolution: its outcome has to agree with `move_and_slide` given
+    // the same total displacement.
+    let field = periodic_sheets();
+    let dt = 1.0 / 60.0;
+    let mut stepped = SdfCharacter::new([0.0, 0.1, 0.0], CAP_R, 1.8);
+    stepped.velocity = [0.0, -1.0, 0.0];
+    let direct = {
+        let probe = stepped;
+        probe.move_and_slide(&field, [0.0, -dt, 0.0])
+    };
+    let out = stepped.step(&field, dt, [0.0, 0.0, 0.0]);
+    assert_eq!(out.position, direct.position);
+    assert_eq!(out.converged, direct.converged);
+    assert_eq!(out.iterations, direct.iterations);
+    assert_eq!(out.best_position, direct.best_position);
+}
+
+#[test]
+fn step_takes_the_least_penetrating_sample_when_the_run_did_not_converge() {
+    // The consumer-facing consequence of `best_position`: `step` must not
+    // hand back a position that is deeper than where it started, which is
+    // what taking `position` blindly would do on this field.
+    let field = periodic_sheets();
+    let mut ch = SdfCharacter::new([0.0, 0.1, 0.0], CAP_R, 1.8);
+    ch.max_iterations = 1;
+    let out = ch.step(&field, 1.0 / 60.0, [0.0, 0.0, 0.0]);
+    assert!(!out.converged);
+    assert_eq!(
+        ch.position, out.best_position,
+        "step must adopt the least-penetrating sample when it did not converge"
+    );
+    assert!(
+        (ch.position[1] - out.best_position[1]).abs() < 1.0e-9
+            && (ch.position[1] - out.position[1]).abs() > 1.0e-3,
+        "and that sample must differ from the raw final position here"
+    );
+}
