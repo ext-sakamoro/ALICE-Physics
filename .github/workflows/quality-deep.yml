@@ -1,9 +1,10 @@
 # quality-deep — 週次 / 手動の深い品質検査 (karikari-review §13 crate 厳密評価の CI 層、2026-09-15 制定)
 #
-# 3 job、いずれも PR gate ではなく週次 + workflow_dispatch (時間がかかる / ノイズがある):
+# いずれも PR gate ではなく週次 + workflow_dispatch (時間がかかる / ノイズがある):
 # - mutants : cargo-mutants (test が bug を検出できるかの逆検査)  PR では --in-diff で差分のみ
 # - miri    : UB 検出 (unsafe / parallel 持ち crate)  SIMD / FFI / wasm は miri 非対応のため除外
 # - bench   : criterion 回帰 (main baseline vs HEAD、critcmp)  GH runner のノイズがあるため informational
+# - ignored : `#[ignore]` test を実際に走らせて理由文の主張と突き合わせる (2026-09-30 追加)
 #
 # 罠 #22 (continue-on-error は compile error も green に潰す) に従い continue-on-error は使わない
 # informational job は結果を Job Summary に書いて exit 0 (失敗は summary で読む)
@@ -224,6 +225,45 @@ jobs:
         run: cargo +nightly miri test --lib -- bvh::tests contact_cache::tests
         env:
           MIRIFLAGS: -Zmiri-disable-isolation
+
+  ignored-tests:
+    # `#[ignore]` はこの repo で 2 つの互換でない意味に使われており、理由文だけが
+    # それを見分ける手掛かり (`runtime:` = 通るが CI には遅い / `src gap:` `src bug:`
+    # `the red is correct` = 現状では通らない目標) したがって 1 回の `--ignored` 走行を
+    # 「green か red か」では読めない — `runtime:` の fail は退行、`src gap:` の pass は
+    # doc に書かれた反転条件の成立であって、後者で job を red にすると意味が逆になる
+    # 振り分けは scripts/run_ignored.py が行う (期待値表は source の理由文から毎回導出、
+    # file に持たないので表そのものは drift しない 導出漏れは drift として報告される)
+    #
+    # 2026-09-30 追加の背景: それまで `--ignored` / `--include-ignored` を走らせる経路が
+    # scripts/ にも .github/ にも 1 つも無く、ignore 側は compile されるだけで
+    # (1) runtime の主張は誰も検証せず (2) gap が埋まっても誰も気付かない状態だった
+    #
+    # PR では走らせない (本 file の他 job と同じ方針): `runtime:` の 1 本だけで
+    # CI Test job に +154..+309 s かかる実測がある (armaly_backward_step.rs の理由文)
+    name: Ignored tests (runtime = must pass / src gap = must fail)
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # build が落ちた時にも分類だけは log に残す (build 不要、1 秒未満)
+      # step summary には書かない (下の step が同じ表を出すため二重になる)
+      - name: Expectation table (derived from the #[ignore] reason strings)
+        run: python3 scripts/run_ignored.py --list
+      # feature set は scripts/preflight.sh の NATIVE を読む (script 側) —
+      # preflight と 1 feature 違えた再生成で公開 API が 126 行消えた事案があるため
+      # workflow 側に feature 文字列を書かない
+      - name: Run the ignored tests and check each one against its reason
+        run: python3 scripts/run_ignored.py
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: ignored-report
+          path: target/ignored-report.md
+          if-no-files-found: ignore
 
   bench-regress:
     name: Bench regression (criterion, informational)
