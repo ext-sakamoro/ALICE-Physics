@@ -868,6 +868,15 @@ pub struct PhysicsWorld {
     body_collision_radii: Vec<Option<Fix128>>,
     /// Per-body collision filter (layer/mask/group)
     body_filters: Vec<CollisionFilter>,
+    /// 範囲外の積を踏んだか (sticky、[`PhysicsWorld::overflow_detected`])
+    ///
+    /// ⚠️ **`Fix128` の `Mul` 自体からは world に到達できない** (純粋な trait
+    /// impl、crate は `no_std` 対応なので `thread_local` も使えない) ので、
+    /// **発散が起きる経路** (積分と速度導出) で `checked_mul` を呼んでここに
+    /// 立てる doctrine B-12 の「`mul` の中で world の flag を立てる」は
+    /// 到達不能なため、WM-01 の結論「`mul` の積が範囲外を演算側で見る」を
+    /// 呼び出し側で実現した形
+    overflow_detected: bool,
 }
 
 impl PhysicsWorld {
@@ -917,6 +926,7 @@ impl PhysicsWorld {
             islands: IslandManager::new(0, SleepConfig::default()),
             body_collision_radii: Vec::new(),
             body_filters: Vec::new(),
+            overflow_detected: false,
         }
     }
 
@@ -1850,6 +1860,10 @@ impl PhysicsWorld {
     /// are saved so that `update_velocities` derives zero velocity.
     #[inline]
     fn integrate_positions(&mut self, dt: Fix128) {
+        // ⚠️ 範囲外の積を集める受け皿 — parallel branch の closure から
+        // `self` に書けないので Atomic で受けて関数末尾で flag に畳み込む
+        // (bool の OR は結合的・可換なので rayon の実行順に依存しない)
+        let overflow = core::sync::atomic::AtomicBool::new(false);
         #[cfg(feature = "parallel")]
         {
             let gravity = self.config.gravity;
@@ -1895,7 +1909,13 @@ impl PhysicsWorld {
                     // velocity depend on `substeps` (v_inf = g*h*d/(1-d)).
 
                     // Predict position
-                    body.position = body.position + body.velocity * dt;
+                    // ⚠️ parallel branch でも同じ検出を行う — 片方だけだと
+                    // `--features parallel` で guard が silent に消える
+                    // (closure から `self` に書けないので bool を reduce する)
+                    match body.velocity.checked_scale(dt) {
+                        Some(d) => body.position = body.position + d,
+                        None => overflow.store(true, core::sync::atomic::Ordering::Relaxed),
+                    }
 
                     // Predict rotation (single sqrt via normalize_with_length)
                     let (axis, ang_speed) = body.angular_velocity.normalize_with_length();
@@ -1945,7 +1965,13 @@ impl PhysicsWorld {
                 // `parallel` branch above for the rationale).
 
                 // Predict position
-                self.bodies[i].position = self.bodies[i].position + self.bodies[i].velocity * dt;
+                // ⚠️ `checked_scale` で範囲外を検出する (WM-01 / B-12)
+                // 範囲外なら **位置を動かさず** flag を立てる — 0 加算されて
+                // 「原点で静止した自己整合な状態」に落ちるのを表に出すため
+                match self.bodies[i].velocity.checked_scale(dt) {
+                    Some(d) => self.bodies[i].position = self.bodies[i].position + d,
+                    None => self.overflow_detected = true,
+                }
 
                 // Predict rotation (single sqrt via normalize_with_length)
                 let (axis, ang_speed) = self.bodies[i].angular_velocity.normalize_with_length();
@@ -1955,6 +1981,11 @@ impl PhysicsWorld {
                     self.bodies[i].rotation = delta_rot.mul(self.bodies[i].rotation).normalize();
                 }
             }
+        }
+
+        // ⚠️ 受け皿を sticky flag に畳み込む (1 度立ったら落ちない)
+        if overflow.load(core::sync::atomic::Ordering::Relaxed) {
+            self.overflow_detected = true;
         }
     }
 
@@ -2006,6 +2037,10 @@ impl PhysicsWorld {
     #[inline]
     fn update_velocities(&mut self, dt: Fix128) {
         let inv_dt = Fix128::ONE / dt;
+        // ⚠️ 範囲外の積を集める受け皿 — parallel branch の closure から
+        // `self` に書けないので Atomic で受けて関数末尾で flag に畳み込む
+        // (bool の OR は結合的・可換なので rayon の実行順に依存しない)
+        let overflow = core::sync::atomic::AtomicBool::new(false);
 
         // --- Phase 1: Derive velocities from position/rotation changes ---
         #[cfg(feature = "parallel")]
@@ -2014,7 +2049,12 @@ impl PhysicsWorld {
                 if body.body_type == BodyType::Static {
                     return;
                 }
-                body.velocity = (body.position - body.prev_position) * inv_dt;
+                // ⚠️ 速度導出も範囲外を検出する (WM-01 経路 2)
+                // 範囲外なら速度を更新しない (0 に上書きされるのを防ぐ)
+                match (body.position - body.prev_position).checked_scale(inv_dt) {
+                    Some(v) => body.velocity = v,
+                    None => overflow.store(true, core::sync::atomic::Ordering::Relaxed),
+                }
                 // Angular velocity from rotation change:
                 // delta_q = rotation * prev_rotation^-1
                 // angular_velocity = 2 * delta_q.xyz / dt  (when delta_q.w > 0)
@@ -2036,7 +2076,12 @@ impl PhysicsWorld {
                 if body.body_type == BodyType::Static {
                     continue;
                 }
-                body.velocity = (body.position - body.prev_position) * inv_dt;
+                // ⚠️ 速度導出も範囲外を検出する (WM-01 経路 2)
+                // 範囲外なら速度を更新しない (0 に上書きされるのを防ぐ)
+                match (body.position - body.prev_position).checked_scale(inv_dt) {
+                    Some(v) => body.velocity = v,
+                    None => overflow.store(true, core::sync::atomic::Ordering::Relaxed),
+                }
                 // Angular velocity from rotation change
                 let dq = body.rotation.mul(body.prev_rotation.conjugate());
                 let two_inv_dt = inv_dt + inv_dt;
@@ -2107,6 +2152,11 @@ impl PhysicsWorld {
                 self.bodies[constraint.body_b].velocity = self.bodies[constraint.body_b].velocity
                     + friction_impulse * (body_b.inv_mass * inv_w);
             }
+        }
+
+        // ⚠️ 受け皿を sticky flag に畳み込む (1 度立ったら落ちない)
+        if overflow.load(core::sync::atomic::Ordering::Relaxed) {
+            self.overflow_detected = true;
         }
     }
 
@@ -3123,6 +3173,33 @@ impl PhysicsWorld {
     #[inline]
     pub fn get_body_mut(&mut self, idx: usize) -> Option<&mut RigidBody> {
         self.bodies.get_mut(idx)
+    }
+
+    /// 範囲外の積が起きた step があったか (sticky、WM-01 / doctrine B-12)
+    ///
+    /// `true` は **この world の軌道が信用できない** ことを意味する
+    /// doctrine §3 の 3 値で言えば `undecided` — 探索では「この枝は未決定」
+    ///
+    /// # なぜ値ベースの検出器では足りないか
+    ///
+    /// `Fix128::mul` の積が範囲外で 2 の冪だと `hi` が厳密に 0 になり
+    /// (`2⁴⁰ × 2⁴⁰`)、`position += velocity*dt` が 0 加算 →
+    /// `update_velocities` が速度も 0 に上書き →
+    /// **「原点で完全に静止した自己整合な状態」** に落ちる
+    /// ⚠️ **静止は物理的に妥当なのでどの不変条件でも red にならない**
+    ///
+    /// # sticky である理由
+    ///
+    /// 1 度立ったら `step` を重ねても落ちない 落ちると探索が
+    /// 「未決定だった枝」を後の step で決定済と誤認する
+    ///
+    /// ⚠️ **flag は状態の一部**なので [`Self::serialize_state`] の被覆に
+    /// 入れる必要がある (入れないと巻き戻した先で `undecided` が消える、
+    /// doctrine B-12 の指摘) — 現行 format v1 は**未収録**で、次の format
+    /// 改定 (v2) で入れる
+    #[must_use]
+    pub const fn overflow_detected(&self) -> bool {
+        self.overflow_detected
     }
 
     /// [`Self::serialize_state`] blob の magic

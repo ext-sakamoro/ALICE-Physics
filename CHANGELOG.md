@@ -13,6 +13,51 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added — 範囲外の積を 3 値の `undecided` として表に出す (WM-01 / doctrine B-12)
+
+`Fix128::checked_mul` / `Vec3Fix::checked_scale` / `PhysicsWorld::overflow_detected()` を追加。
+⚠️ **`Mul` 自体の挙動は変えていません** (既存の決定論 golden と bit 互換)。
+
+**なぜ値ベースの検出器では足りないか**: `Fix128` の積が `2⁶³` を超えて 2 の冪だと
+`hi` が **厳密に 0** になり (`2⁴⁰ × 2⁴⁰`)、`position += velocity*dt` が 0 加算 →
+`update_velocities` が速度も 0 に上書き → **「原点で完全に静止した自己整合な状態」**
+に落ちます。⚠️ **静止は物理的に妥当なのでどの不変条件でも red になりません**。
+
+⚠️ **doctrine B-12 の「`mul` の中で `PhysicsWorld` の flag を立てる」は到達不能**でした
+(`impl Mul for Fix128` は純粋な trait impl で world context を持たず、crate は `no_std`
+対応なので `thread_local` も使えない)。WM-01 の結論「`mul` の積が範囲外を演算側で見る」を
+**呼び出し側の `checked_mul`** で実現しています。
+
+投入点は **発散が起きる経路** = 積分 (`position += velocity*dt`) と速度導出
+(`(position − prev) * inv_dt`)。⚠️ **parallel / serial の両 branch に入れました** —
+片方だけだと `--features parallel` で guard が silent に消えます (closure から `self` に
+書けないので `AtomicBool` で受けて関数末尾で sticky flag に畳み込む、bool の OR は
+結合的・可換なので rayon の実行順に依存しない)。
+
+`tests/wm01_overflow_is_not_silent.rs` を追加 (6 本)。⚠️ **洗浄が起きるのは `dt ≫ 1`**
+(WM-01 の再現条件 `g = -2³⁰` / `dt = 2²⁰`) で、`dt < 1` では **原理的に起きません**
+(Q64.64 で `dt.hi = 0` ⇒ `hh = velocity.hi × 0 = 0`)。対照実験を 3 本置いてあります:
+洗浄が実際に起きること / 正常 scene で誤検出 0 / 範囲内で `checked_mul` が `*` と一致
+(「常に `None`」実装を弾く)。**破壊試験**として積分の検出を外すと本命 2 本が red に
+なることを実測。
+
+⚠️ **flag はまだ blob の被覆に入っていません** (doctrine B-12 の「flag は状態の一部」)。
+巻き戻した先で `undecided` が消えるため、次の format 改定 (v2) で入れます。
+
+### Added — 眠っている body の `prev` が blob 被覆に不要であることの不変条件 guard
+
+`tests/wm08_prev_state_coverage.rs` を追加 (3 本)。`solver.rs:1929` の
+`// Skip sleeping bodies (preserve prev for zero-velocity derivation)` から
+「眠っている body の `prev` は blob 外の load-bearing state」と仮説を立てたが、
+⚠️ **対照実験が否定**した (`prev` をずらして `wake_body` → 12 step しても軌道が完全一致)。
+
+**真因**: `wake_body` 後の substep 先頭で `prev_position = position` が再代入されるので、
+保持されていた `prev` は `update_velocities` に届く前に上書きされる。⇒ `:1929` は
+**眠っている間の防御的不変条件**であって巻き戻しを跨ぐ state ではない。
+
+⚠️ この性質が失われたら blob に `prev` (1 body あたり 112 byte) を足す必要があるので、
+**不変条件として pin** してある。対照実験を先に置いたことで無駄な format 拡張を回避できた。
+
 ### Changed — `serialize_state` に magic / version と sleep 状態を入れる (format v1、WM-08)
 
 ⚠️ **blob format が変わります** 旧 blob は magic 不一致で `deserialize_state` が `false` を返して

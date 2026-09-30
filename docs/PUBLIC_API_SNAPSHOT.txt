@@ -5300,6 +5300,7 @@ pub fn alice_physics::math::Fix128::to_f32(self) -> f32
 pub fn alice_physics::math::Fix128::to_f64(self) -> f64
 impl alice_physics::math::Fix128
 pub fn alice_physics::math::Fix128::checked_div(self, Self) -> core::option::Option<Self>
+pub fn alice_physics::math::Fix128::checked_mul(self, Self) -> core::option::Option<Self>
 pub fn alice_physics::math::Fix128::exp(self) -> Self
 pub fn alice_physics::math::Fix128::powf_pos(self, Self) -> Self
 impl core::clone::Clone for alice_physics::math::Fix128
@@ -5459,6 +5460,8 @@ pub fn alice_physics::math::Vec3Fix::normalize_with_length(self) -> (Self, alice
 pub fn alice_physics::math::Vec3Fix::scale(self, alice_physics::math::Fix128) -> Self
 pub fn alice_physics::math::Vec3Fix::to_f32(self) -> (f32, f32, f32)
 pub fn alice_physics::math::Vec3Fix::try_normalize(self) -> core::option::Option<Self>
+impl alice_physics::math::Vec3Fix
+pub fn alice_physics::math::Vec3Fix::checked_scale(self, alice_physics::math::Fix128) -> core::option::Option<Self>
 impl core::clone::Clone for alice_physics::math::Vec3Fix
 pub fn alice_physics::math::Vec3Fix::clone(&self) -> Self
 impl core::cmp::Eq for alice_physics::math::Vec3Fix
@@ -8859,6 +8862,7 @@ pub fn alice_physics::math::Fix128::to_f32(self) -> f32
 pub fn alice_physics::math::Fix128::to_f64(self) -> f64
 impl alice_physics::math::Fix128
 pub fn alice_physics::math::Fix128::checked_div(self, Self) -> core::option::Option<Self>
+pub fn alice_physics::math::Fix128::checked_mul(self, Self) -> core::option::Option<Self>
 pub fn alice_physics::math::Fix128::exp(self) -> Self
 pub fn alice_physics::math::Fix128::powf_pos(self, Self) -> Self
 impl core::clone::Clone for alice_physics::math::Fix128
@@ -10218,6 +10222,7 @@ pub fn alice_physics::solver::PhysicsWorld::is_sleeping(&self, usize) -> bool
 pub fn alice_physics::solver::PhysicsWorld::joint_count(&self) -> usize
 pub fn alice_physics::solver::PhysicsWorld::new(alice_physics::solver::SolverConfig) -> Self
 pub fn alice_physics::solver::PhysicsWorld::num_batches(&self) -> usize
+pub const fn alice_physics::solver::PhysicsWorld::overflow_detected(&self) -> bool
 pub fn alice_physics::solver::PhysicsWorld::raycast(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128) -> core::option::Option<(usize, alice_physics::math::Fix128)>
 pub fn alice_physics::solver::PhysicsWorld::rebuild_batches(&mut self)
 pub fn alice_physics::solver::PhysicsWorld::remove_body(&mut self, usize) -> core::option::Option<alice_physics::solver::RigidBody>
@@ -11414,6 +11419,8 @@ pub fn alice_physics::math::Vec3Fix::normalize_with_length(self) -> (Self, alice
 pub fn alice_physics::math::Vec3Fix::scale(self, alice_physics::math::Fix128) -> Self
 pub fn alice_physics::math::Vec3Fix::to_f32(self) -> (f32, f32, f32)
 pub fn alice_physics::math::Vec3Fix::try_normalize(self) -> core::option::Option<Self>
+impl alice_physics::math::Vec3Fix
+pub fn alice_physics::math::Vec3Fix::checked_scale(self, alice_physics::math::Fix128) -> core::option::Option<Self>
 impl core::clone::Clone for alice_physics::math::Vec3Fix
 pub fn alice_physics::math::Vec3Fix::clone(&self) -> Self
 impl core::cmp::Eq for alice_physics::math::Vec3Fix
@@ -14136,6 +14143,7 @@ pub fn alice_physics::solver::PhysicsWorld::is_sleeping(&self, usize) -> bool
 pub fn alice_physics::solver::PhysicsWorld::joint_count(&self) -> usize
 pub fn alice_physics::solver::PhysicsWorld::new(alice_physics::solver::SolverConfig) -> Self
 pub fn alice_physics::solver::PhysicsWorld::num_batches(&self) -> usize
+pub const fn alice_physics::solver::PhysicsWorld::overflow_detected(&self) -> bool
 pub fn alice_physics::solver::PhysicsWorld::raycast(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128) -> core::option::Option<(usize, alice_physics::math::Fix128)>
 pub fn alice_physics::solver::PhysicsWorld::rebuild_batches(&mut self)
 pub fn alice_physics::solver::PhysicsWorld::remove_body(&mut self, usize) -> core::option::Option<alice_physics::solver::RigidBody>
@@ -17275,6 +17283,7 @@ pub fn alice_physics::math::Fix128::to_f32(self) -> f32
 pub fn alice_physics::math::Fix128::to_f64(self) -> f64
 impl alice_physics::math::Fix128
 pub fn alice_physics::math::Fix128::checked_div(self, Self) -> core::option::Option<Self>
+pub fn alice_physics::math::Fix128::checked_mul(self, Self) -> core::option::Option<Self>
 pub fn alice_physics::math::Fix128::exp(self) -> Self
 pub fn alice_physics::math::Fix128::powf_pos(self, Self) -> Self
 impl core::clone::Clone for alice_physics::math::Fix128
@@ -18652,6 +18661,7 @@ pub fn alice_physics::solver::PhysicsWorld::is_sleeping(&self, usize) -> bool
 pub fn alice_physics::solver::PhysicsWorld::joint_count(&self) -> usize
 pub fn alice_physics::solver::PhysicsWorld::new(alice_physics::solver::SolverConfig) -> Self
 pub fn alice_physics::solver::PhysicsWorld::num_batches(&self) -> usize
+pub const fn alice_physics::solver::PhysicsWorld::overflow_detected(&self) -> bool
 pub fn alice_physics::solver::PhysicsWorld::raycast(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128) -> core::option::Option<(usize, alice_physics::math::Fix128)>
 pub fn alice_physics::solver::PhysicsWorld::rebuild_batches(&mut self)
 pub fn alice_physics::solver::PhysicsWorld::remove_body(&mut self, usize) -> core::option::Option<alice_physics::solver::RigidBody>
@@ -19955,6 +19965,8 @@ pub fn alice_physics::math::Vec3Fix::normalize_with_length(self) -> (Self, alice
 pub fn alice_physics::math::Vec3Fix::scale(self, alice_physics::math::Fix128) -> Self
 pub fn alice_physics::math::Vec3Fix::to_f32(self) -> (f32, f32, f32)
 pub fn alice_physics::math::Vec3Fix::try_normalize(self) -> core::option::Option<Self>
+impl alice_physics::math::Vec3Fix
+pub fn alice_physics::math::Vec3Fix::checked_scale(self, alice_physics::math::Fix128) -> core::option::Option<Self>
 impl core::clone::Clone for alice_physics::math::Vec3Fix
 pub fn alice_physics::math::Vec3Fix::clone(&self) -> Self
 impl core::cmp::Eq for alice_physics::math::Vec3Fix
