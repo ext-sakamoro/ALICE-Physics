@@ -12802,6 +12802,8 @@ impl core::marker::UnsafeUnpin for alice_physics::sdf_character::GroundContact
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::sdf_character::GroundContact
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::sdf_character::GroundContact
 pub struct alice_physics::sdf_character::MoveOutcome
+pub alice_physics::sdf_character::MoveOutcome::best_distance: f32
+pub alice_physics::sdf_character::MoveOutcome::best_position: [f32; 3]
 pub alice_physics::sdf_character::MoveOutcome::converged: bool
 pub alice_physics::sdf_character::MoveOutcome::iterations: usize
 pub alice_physics::sdf_character::MoveOutcome::position: [f32; 3]
@@ -12826,6 +12828,7 @@ pub alice_physics::sdf_character::SdfCharacter::ground_up_threshold: f32
 pub alice_physics::sdf_character::SdfCharacter::height: f32
 pub alice_physics::sdf_character::SdfCharacter::max_iterations: usize
 pub alice_physics::sdf_character::SdfCharacter::max_push: f32
+pub alice_physics::sdf_character::SdfCharacter::min_up_alignment: f32
 pub alice_physics::sdf_character::SdfCharacter::position: [f32; 3]
 pub alice_physics::sdf_character::SdfCharacter::radius: f32
 pub alice_physics::sdf_character::SdfCharacter::skin_width: f32

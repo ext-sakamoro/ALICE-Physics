@@ -107,11 +107,25 @@ byte が無い」不変条件の対象に含める)、拒否 test に **v1 blob 
   内部に入ります 周期 sheet 場での実測では、上限なしだと iteration 5 で `converged = true` に
   なりますが位置は開始点から 2.5 周期先で、solid sheet 3 枚を貫通した後です `max_push` を
   自由空間の幅より小さく取ると隣接 pocket に留まります
-- ⚠️ **pub field の追加なので、`SdfCharacter` を struct literal で構築している下流は影響を
-  受けます** repo 内の構築は `new` / `Default` 経由のみ (実測)
-- oracle 15 本 (`tests/analytic_sdf_character_up_axis.rs`): 半径 300 の球面を整数格子 124 方向で
-  掃く / 自由帯 `|u| >= t + radius/L` の閉形式突合 / どの pocket で止まるかの突合 破壊試験 5 種
-  (clamp 削除 / up 無視 / 正規化削除 / fallback 削除 / 判定反転) で全て red を確認済
+- ⚠️ **pub field の追加なので、`SdfCharacter` / `MoveOutcome` を struct literal で構築して
+  いる下流は影響を受けます** repo 内の構築は `new` / `Default` 経由のみ、path dep 下流 26 repo
+  にも `SdfCharacter` の参照は 0 件 (実測)
+- `min_up_alignment` を追加し、世界の中心を向いた法線を押し出し方向に採らないようにしました
+  地面に埋まった geometry の seam は中心向きの法線を返すので、そのまま押すと地中へ潜ります
+  閾値を下回った時は `up` 方向に同じ量だけ押します 既定は `f32::NEG_INFINITY` (常に法線を採る)
+  で、壁の横押し出し (`normal · up = 0`) は `-0.2` 程度なら従来どおり通ります
+- `MoveOutcome` に `best_position` / `best_distance` を追加しました 非厳密な場では押し出しが
+  開始点より深い位置に着地しうるため、run 中で最も浅かった sample を報告します loop 後の
+  最終押し出しで生じた位置も含みます ⚠️ **報告のみで `position` の値は変わりません**
+  入力より悪い位置を返せない呼び出し側は `converged == false` の時にこちらを使います
+- ⚠️ **`converged == false` でも `best_distance >= radius` になる場合があります** (予算が
+  尽きた押し出しがちょうど脱出だった場合) `converged` だけを読むと、実際には geometry から
+  離れている位置を捨てます
+- oracle 23 本 (`tests/analytic_sdf_character_up_axis.rs`): 半径 300 の球面を整数格子 124 方向で
+  掃く / 自由帯 `|u| >= t + radius/L` の閉形式突合 / どの pocket で止まるかの突合 / 中心向き
+  法線の閉形式突合 / 単調に悪化する場での最良 sample 突合 破壊試験 9 種 (clamp 削除 / up 無視 /
+  正規化削除 / fallback 削除 / 接地判定反転 / guard 削除 / guard 無条件化 / loop 後 sample 削除 /
+  best を最終 sample 固定) で全て red を確認済
 
 ### Changed — `serialize_state` に magic / version と sleep 状態を入れる (format v1、WM-08)
 
