@@ -150,6 +150,25 @@ pub struct MoveOutcome {
     pub best_distance: f32,
 }
 
+impl MoveOutcome {
+    /// The position a caller should adopt: [`Self::position`] when the
+    /// resolution converged, [`Self::best_position`] otherwise.
+    ///
+    /// Reading [`Self::position`] unconditionally hands back a point that
+    /// can be **deeper than the one the caller passed in** on a field that
+    /// is not an exact distance field — see the module docs. This is the
+    /// safe read, in one call, so consumers do not each rewrite the same
+    /// conditional.
+    #[must_use]
+    pub const fn resolved_position(&self) -> [f32; 3] {
+        if self.converged {
+            self.position
+        } else {
+            self.best_position
+        }
+    }
+}
+
 /// Vertical-capsule character driven by SDF-swept move-and-slide.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SdfCharacter {
@@ -369,11 +388,7 @@ impl SdfCharacter {
             self.position[2] + displacement[2],
         ];
         let outcome = self.move_and_slide(field, displacement);
-        let adopted = if outcome.converged {
-            outcome.position
-        } else {
-            outcome.best_position
-        };
+        let adopted = outcome.resolved_position();
         self.position = adopted;
 
         let correction = [

@@ -13,6 +13,32 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added — outcome の安全な読み方を 1 呼び出しに + 既定を変えない理由を oracle 化 (`sdf_character`)
+
+`MoveOutcome::resolved_position()` を追加しました 収束時は `position`、非収束時は
+`best_position` を返します 非厳密な場では `position` を無条件に読むと **呼び出し側が渡した点より
+深い位置**が返りうるので、その条件分岐を消費側が各自書き直さずに済ませます `step` も内部で同じ
+述語を使うようにしました (同じ法則の二重記述の解消)
+
+`max_push` / `min_up_alignment` は「実測で必要と分かった不変条件が opt-in になっている」形なので
+既定を安全側へ倒す案がありましたが、⚠️ **どちらも既定にすると別の正しい場を壊す**ことが分かったので
+据え置き、**その理由を oracle にしました** (doc の主張でなく test にしないと腐るため):
+
+- ⚠️ **`max_push` を capsule 大で cap すると深い貫入から脱出できなくなります** 厳密距離場の
+  `y = -5` から出るには `radius + 5` の押し出しが要り、`radius` で cap すると 8 反復で 2.8 しか
+  進めません (脱出には 16 反復) `capping_the_push_by_default_would_strand_a_deeply_penetrating_character`
+- ⚠️ **`min_up_alignment = -0.2` を既定にすると天井が壊れます** 「地面に埋まった geometry の
+  seam」と「天井の下」は **どちらも `n·up ≈ -1`** で法線から区別できません 前者は `up` へ、後者は
+  法線方向 (下) へ押すのが正しいので、既定にすると天井にめり込み、⚠️ **深くなるほど押し出しが増えて
+  発散します** (予算 8 反復で `y = 0.1` → `114.88`) `substituting_up_by_default_would_push_a_character_into_a_ceiling`
+  ⇒ `-0.2` は**球面世界固有の policy** であって一般の安全側ではありません
+- 破壊試験: 既定を `max_push = 0.35` に変えると **12 本**、`min_up_alignment = -0.2` に変えると
+  **3 本** が red になります (= 既定変更が test で止まる)
+
+⚠️ **`#[non_exhaustive]` の付与は本 increment に含めていません** publish 済の **1.4.0 が
+`pub mod sdf_character` と全 field pub の `SdfCharacter` / `MoveOutcome` を公開している**ため、
+付与は 1.4.0 に対する破壊的変更であり **major bump が要る判断** になります (user 裁定待ち)
+
 ### Added — `#[ignore]` test を走らせて理由文の主張と突き合わせる週次 job (`quality-deep.yml`)
 
 ⚠️ **これまで `#[ignore]` test を走らせる経路が repo に 1 つも存在しませんでした**。
