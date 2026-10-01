@@ -1184,11 +1184,39 @@ fn a_thickness_far_above_the_local_edge_length_is_outside_the_model() {
 /// ⚠️ 頂点を共有する対は距離 0 が構成上の事実なので母集団から外します (実装側の
 /// `collect_edge_edge_candidates` と同じ除外) ⚠️ **平行な対は外しません** 実装は平行を
 /// 捨てますが、計器が同じ盲点を持つと「捨てた分は測られない」ことになります
+/// 辺-辺の分離の測定結果 ⚠️ **argmin は対の完全な形 (2 辺 = 4 頂点) で返します**
+///
+/// ⚠️⚠️ 旧版は `argmin: (usize, usize)` に **外側の辺の index と `usize::MAX`** を入れて
+/// おり、**最小を取った対の正体が追えませんでした** 同 file の `nonadjacent_separation`
+/// の doc が「値だけ返していた頃、その対が pin された境界粒子で固定であることが 2 週間
+/// 見えなかった」と記録している罠の **辺-辺版で、同じ穴が空いたまま**でした
+/// (2026-10-01 実測: ALL の argmin は自己接触 ON / OFF とも `(0,9)x(10,18)` で
+/// **4 頂点中 3 つが pin**、辺 `(0,9)` は両端とも pin = test が毎 step 代入する座標)
+struct EdgeEdgeSeparation {
+    /// 最小の辺-辺距離²
+    min_d2: Fix128,
+    /// `threshold` 未満の対の数
+    violations: usize,
+    /// 母集団に入った対の数 (反 vacuous 判定用)
+    population: usize,
+    /// 最小を取った対の 4 頂点
+    argmin: (usize, usize, usize, usize),
+    /// そのうち pin (`inv_mass == 0`) された頂点の数
+    argmin_pinned: usize,
+}
+
+/// 非隣接な辺対の分離を測る `free_only` で **solver が支配する部分集合**に絞れます
+///
+/// ⚠️ `free_only = true` は 4 頂点すべてが自由な対だけを残します 1 つでも pin された
+/// 頂点を含む対は、test 自身が毎 step 座標を代入する kinematic driver の影響下にあり、
+/// **solver の効果を測る母集団に混ぜてはいけません**
 fn edge_edge_separation(
     positions: &[Vec3Fix],
     triangles: &[[usize; 3]],
     threshold: Fix128,
-) -> (Fix128, usize, (usize, usize)) {
+    pinned: &dyn Fn(usize) -> bool,
+    free_only: bool,
+) -> EdgeEdgeSeparation {
     let mut edges: Vec<(usize, usize)> = Vec::new();
     for t in triangles {
         for (a, b) in [(t[0], t[1]), (t[1], t[2]), (t[2], t[0])] {
@@ -1200,13 +1228,18 @@ fn edge_edge_separation(
 
     let t2 = threshold * threshold;
     let mut min_d2 = Fix128::from_int(1 << 20);
-    let mut argmin = (usize::MAX, usize::MAX);
+    let mut argmin = (usize::MAX, usize::MAX, usize::MAX, usize::MAX);
     let mut violations = 0usize;
+    let mut population = 0usize;
     for (i, &(a0, a1)) in edges.iter().enumerate() {
         for &(b0, b1) in &edges[i + 1..] {
             if a0 == b0 || a0 == b1 || a1 == b0 || a1 == b1 {
                 continue; // 頂点を共有する対は距離 0 が構成上の事実
             }
+            if free_only && (pinned(a0) || pinned(a1) || pinned(b0) || pinned(b1)) {
+                continue; // driver の影響下にある対は solver の計器に入れない
+            }
+            population += 1;
             let d2 = segment_segment_distance_squared(
                 positions[a0],
                 positions[a1],
@@ -1215,14 +1248,24 @@ fn edge_edge_separation(
             );
             if d2 < min_d2 {
                 min_d2 = d2;
-                argmin = (i, usize::MAX);
+                argmin = (a0, a1, b0, b1);
             }
             if d2 < t2 {
                 violations += 1;
             }
         }
     }
-    (min_d2, violations, argmin)
+    let argmin_pinned = usize::from(pinned(argmin.0))
+        + usize::from(pinned(argmin.1))
+        + usize::from(pinned(argmin.2))
+        + usize::from(pinned(argmin.3));
+    EdgeEdgeSeparation {
+        min_d2,
+        violations,
+        population,
+        argmin,
+        argmin_pinned,
+    }
 }
 
 /// **guard** — 辺-辺の段は、自分が拘束している量 (辺-辺距離) を実際に改善する
@@ -1239,10 +1282,49 @@ fn edge_edge_separation(
 /// | 最小の辺-辺距離² | **5.225e-3** | 1.550e-3 |
 /// | 閾値 (0.05) 未満の辺対 | **0** | 3 |
 ///
-/// 件数 0 は「全ての辺対が接触厚まで離れた」= 段が約束している不変量そのものですが、
-/// ⚠️ **assert は `viol_on < viol_off` (margin 3) と `min_on > 2·min_off` (実測 3.37 倍)
-/// に置いています** 収束を等値で assert すると反復回数や substep 数の無関係な変更で
-/// 折れるので、0 は記録に留めます 件数 0 が崩れたら**弱めずに原因を調べること**
+/// # ⚠️⚠️ 2026-10-01: `min_on > 2·min_off` は撤去しました (proxy が逆を向いていた)
+///
+/// 旧 assert は `viol_on < viol_off` と **`min_on > 2·min_off` (実測 3.37 倍)** の 2 本で、
+/// 「収束を等値で assert すると無関係な変更で折れる」という理由で最小距離の比を proxy に
+/// 採っていました ⚠️ **その proxy は測りたい性質と逆を向いています** — **貫通し切った面
+/// どうしは「遠い」と測られ**、正しく接触して止まった面は「近い」と測られるからです
+///
+/// 実測 (9x9 crumple / 60 step / radius 0.05、`segment_segment_distance_squared`):
+///
+/// | build | 自己接触 | 母集団 | 違反数 | 最小距離² | argmin の対 | **4 頂点中 pin 数** |
+/// |---|---|---|---|---|---|---|
+/// | base `8ddb608` | ON | ALL 20617 | **0** | 5.2249e-3 | (1,9)x(10,18) | **3** |
+/// | base `8ddb608` | OFF | ALL 20617 | 3 | 1.5499e-3 | (0,9)x(10,18) | **3** |
+/// | base `8ddb608` | ON | FREE 6637 | **0** | **2.657e-2** | (58,66)x(59,67) | 0 |
+/// | base `8ddb608` | OFF | FREE 6637 | **0** | **7.093e-2** | (57,65)x(58,66) | 0 |
+/// | 辺-辺 frame 修復後 | ON | ALL 20617 | **2** | 2.3786e-3 | (0,9)x(10,18) | **3** |
+/// | 辺-辺 frame 修復後 | OFF | ALL 20617 | 3 | 1.5499e-3 | (0,9)x(10,18) | **3** |
+/// | 辺-辺 frame 修復後 | ON | FREE 6637 | **0** | **4.556e-2** | (60,68)x(69,70) | 0 |
+/// | 辺-辺 frame 修復後 | OFF | FREE 6637 | **0** | **7.093e-2** | (57,65)x(58,66) | 0 |
+///
+/// 読み取れること 3 点:
+///
+/// 1. ⚠️⚠️ **3.37 倍の green は pin された対が最小を支配していたから出ていた数字です**
+///    ALL の argmin は自己接触 ON / OFF とも 4 頂点中 3 つが pin で、辺 `(0,9)` は両端とも
+///    pin = **この test 自身が毎 step 代入する座標**です solver は 1 bit も動かせません
+/// 2. ⚠️ **自由頂点だけに絞ると base の時点で ON (2.657e-2) < OFF (7.093e-2)** = 「ON の
+///    方が最小距離が大きい」は **solver が支配する部分集合では base でも成立していません**
+///    ⇒ 旧 assert は **green であったこと自体が誤り**でした
+/// 3. 辺-辺の frame 掃過修復はこの部分集合を **2.657e-2 → 4.556e-2 に改善**しています
+///    (比 0.37 → 0.64) ⚠️ **依然 1 未満**なのは、接触して止まる方が最小距離は小さく出る
+///    という 1. と同じ理由なので、これ自体は欠陥とは限りません
+///
+/// # 現在の assert と、その反 vacuous 性
+///
+/// **違反件数** (= 段が約束している不変量) の側に置き直しました ⚠️ **自由部分集合の違反
+/// 件数は 4 通りすべて 0 なので、比較の assert としては空振りします** (上表) ⇒ 比較は
+/// ALL で行い、自由部分集合は**絶対的な不変量**として別に assert します (OFF でも 0 なので
+/// 「段が効いている証拠」にはならない、と明示したうえで)
+///
+/// ⚠️ **ON の ALL 違反件数は base の 0 から 2 に増えています** 隠さず記録します: frame
+/// 掃過修復が保証するのは **非貫通** (`gap ≥ 0`) であって `thickness` の確保ではなく、
+/// 貫通対を距離 0 に置くので**定義上 `thickness` 違反になります** `thickness` まで詰める
+/// には clamp しながら収束させる設計が要り、本 task の範囲外です (Backlog 起票済)
 #[test]
 fn self_collision_improves_the_edge_edge_separation_it_constrains() {
     let radius = default_radius();
@@ -1256,23 +1338,48 @@ fn self_collision_improves_the_edge_edge_separation_it_constrains() {
         9,
         Fix128::from_ratio(1, 100),
     );
-    let (min_on, viol_on, _) = edge_edge_separation(&pos_on, &cloth.triangles, radius);
-    let (min_off, viol_off, _) = edge_edge_separation(&pos_off, &cloth.triangles, radius);
+    let pinned = |i: usize| {
+        let (r, c) = (i / 9, i % 9);
+        r == 0 || c == 0 || r == 8 || c == 8
+    };
+    let all_on = edge_edge_separation(&pos_on, &cloth.triangles, radius, &pinned, false);
+    let all_off = edge_edge_separation(&pos_off, &cloth.triangles, radius, &pinned, false);
+    let free_on = edge_edge_separation(&pos_on, &cloth.triangles, radius, &pinned, true);
 
-    // 反 vacuous: 自己接触を切った側に違反が 1 件も無ければ、改善も何も言っていない
+    // 反 vacuous 1: 自己接触を切った側に違反が 1 件も無ければ、改善も何も言っていない
     assert!(
-        viol_off > 0,
+        all_off.violations > 0,
         "自己接触 OFF でも閾値未満の辺対が無い この guard は違反の起きない scene では無意味"
     );
+    // 反 vacuous 2: 自由頂点だけの母集団が空なら、下の絶対 assert は何も見ていない
     assert!(
-        viol_on < viol_off,
-        "辺-辺の段が違反件数を減らしていない (ON {viol_on} / OFF {viol_off}、実測は 0 / 3)"
+        free_on.population > 0,
+        "自由頂点だけの辺対が 0 件 scene の pin 構成が変わっている"
     );
+
     assert!(
-        min_on > min_off * Fix128::from_int(2),
-        "辺-辺の段が最小の辺-辺距離² を 2 倍に開いていない (ON {} / OFF {}、実測 3.37 倍)",
-        min_on.to_f32(),
-        min_off.to_f32()
+        all_on.violations < all_off.violations,
+        "辺-辺の段が違反件数を減らしていない (ON {} / OFF {}、実測は 2 / 3) \
+         ⚠️ 最小距離の比で測らないこと: 貫通し切った面は「遠い」と測られる (doc の表)",
+        all_on.violations,
+        all_off.violations
+    );
+
+    // ⚠️ 絶対的な不変量 比較ではありません (自己接触 OFF でも 0 なので、これが green でも
+    // 「段が効いている」証拠にはならない) solver が動かせる領域に違反を残さないことだけを
+    // 見ており、崩れたら弱めずに原因を調べること
+    assert_eq!(
+        free_on.violations, 0,
+        "solver が支配する辺対 ({} 件) に接触厚未満が {} 件残った",
+        free_on.population, free_on.violations
+    );
+
+    // ⚠️ ALL の argmin が driver 支配であることを記録として固定する これが崩れたら
+    // 上の表の読み方 (3.37 倍は pin された対の数字) が変わるので doc を見直すこと
+    assert!(
+        all_on.argmin_pinned > 0,
+        "ALL の argmin ({:?}) に pin された頂点が 1 つも無い 計器の母集団構成が変わった",
+        all_on.argmin
     );
 }
 
