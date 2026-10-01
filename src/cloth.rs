@@ -351,8 +351,7 @@ impl Cloth {
             self.solve_edge_constraints(dt);
             self.solve_bend_constraints(dt);
             if self.config.self_collision {
-                self.solve_vertex_face_self_collision(&candidates);
-                self.solve_edge_edge_self_collision(&edge_candidates);
+                self.solve_self_collision(&candidates, &edge_candidates);
             }
         }
 
@@ -665,20 +664,18 @@ impl Cloth {
     /// vertex-face pair at the same threshold. `test_point_triangle_subsumes_point_point`
     /// pins that inequality.
     ///
-    /// Edge-edge contact is handled by `solve_edge_edge_self_collision`, which runs in the
-    /// same iteration and accumulates into its own buffer: a vertex can be within
-    /// `thickness` of no face at all while two edges interpenetrate (the X crossing), so
-    /// neither pass subsumes the other.
-    fn solve_vertex_face_self_collision(&mut self, candidates: &[(u32, u32)]) {
-        let thickness = self.config.self_collision_distance;
-        if thickness.is_zero() || candidates.is_empty() {
-            return;
-        }
+    /// Edge-edge contact is accumulated by `accumulate_edge_edge_contacts` into the **same**
+    /// `Δ`/`hits` buffer: a vertex can be within `thickness` of no face at all while two
+    /// edges interpenetrate (the X crossing), so neither stage subsumes the other, and
+    /// ⚠️ **they must not average separately** (see `solve_self_collision`).
+    fn accumulate_vertex_face_contacts(
+        &self,
+        candidates: &[(u32, u32)],
+        thickness: Fix128,
+        delta: &mut [Vec3Fix],
+        hits: &mut [u32],
+    ) {
         let thickness_sq = thickness * thickness;
-        let n = self.particle_count();
-        let mut delta = vec![Vec3Fix::ZERO; n];
-        let mut hits = vec![0u32; n];
-
         for &(vi, ti) in candidates {
             let vi = vi as usize;
             let tri = self.triangles[ti as usize];
@@ -731,16 +728,9 @@ impl Cloth {
                 hits[idx] += 1;
             }
         }
-
-        for i in 0..n {
-            if hits[i] == 0 || self.inv_masses[i].is_zero() {
-                continue;
-            }
-            self.positions[i] = self.positions[i] + delta[i] / Fix128::from_int(i64::from(hits[i]));
-        }
     }
 
-    /// Solve edge-edge (segment-segment) self-contact, Jacobi accumulation.
+    /// Accumulate edge-edge (segment-segment) self-contact, Jacobi accumulation.
     ///
     /// This is the half of cloth self-contact that vertex-face cannot see. Two sheets can
     /// cross so that each sheet's vertices stay far from every triangle of the other while
@@ -762,12 +752,14 @@ impl Cloth {
     ///
     /// # Determinism
     ///
-    /// Same construction as the vertex-face pass: each pair's normal is computed **once**
-    /// and reused for all four gradients, corrections are summed into a per-vertex `Δ` with
-    /// `+` (the exact group operation of `Z/2¹²⁸`) and applied after the sweep, averaged by
-    /// the number of contacts that touched the vertex. The pair order is therefore not
-    /// load-bearing (`edge_edge_result_is_independent_of_the_pair_order`). No Gauss-Seidel
-    /// in-place write, so no dependence on the traversal order of the edge list.
+    /// Same construction as the vertex-face stage, into the **same** buffer: each pair's
+    /// normal is computed **once** and reused for all four gradients, corrections are summed
+    /// into a per-vertex `Δ` with `+` (the exact group operation of `Z/2¹²⁸`) and applied
+    /// after the sweep, averaged by the number of contacts that touched the vertex. The pair
+    /// order is therefore not load-bearing
+    /// (`edge_edge_result_is_independent_of_the_pair_order`,
+    /// `self_collision_is_independent_of_the_pair_order_across_both_stages`). No
+    /// Gauss-Seidel in-place write, so no dependence on the traversal order of the edge list.
     ///
     /// # What it does not cover
     ///
@@ -777,16 +769,14 @@ impl Cloth {
     /// (`resolve_self_contact_over_frame`) tests vertex chords against triangles, not edge
     /// pairs against each other. ⚠️ **Parallel pairs are skipped** by
     /// `closest_points_on_segments`.
-    fn solve_edge_edge_self_collision(&mut self, candidates: &[[u32; 4]]) {
-        let thickness = self.config.self_collision_distance;
-        if thickness.is_zero() || candidates.is_empty() {
-            return;
-        }
+    fn accumulate_edge_edge_contacts(
+        &self,
+        candidates: &[[u32; 4]],
+        thickness: Fix128,
+        delta: &mut [Vec3Fix],
+        hits: &mut [u32],
+    ) {
         let thickness_sq = thickness * thickness;
-        let n = self.particle_count();
-        let mut delta = vec![Vec3Fix::ZERO; n];
-        let mut hits = vec![0u32; n];
-
         for &[i0, i1, j0, j1] in candidates {
             let (i0, i1, j0, j1) = (i0 as usize, i1 as usize, j0 as usize, j1 as usize);
             let (p1, q1) = (self.positions[i0], self.positions[i1]);
@@ -840,6 +830,41 @@ impl Cloth {
             hits[j0] += 1;
             hits[j1] += 1;
         }
+    }
+
+    /// One self-contact iteration: both stages into **one** `Δ`/`hits` buffer, applied once.
+    ///
+    /// ⚠️ **The shared buffer is load-bearing, not a tidiness choice.** With a buffer per
+    /// stage, a vertex touched by 5 vertex-face contacts and 1 edge-edge contact receives
+    /// `(Σ_vf)/5 + (Σ_ee)/1`, so the single edge-edge contact is weighted five times what
+    /// each vertex-face contact gets. The averaging denominator is supposed to be "the
+    /// number of contacts that touched **the vertex**", which is 6, not "the number that
+    /// touched it within its own stage".
+    ///
+    /// Measured on the 9x9 crumple scene (`tests/analytic_self_contact.rs`, radius 0.05,
+    /// 60 steps) when edge-edge was first wired as a second, separately averaged pass:
+    ///
+    /// | | vertex-face only | separate buffers | shared buffer |
+    /// |---|---|---|---|
+    /// | min vertex-face distance², self-contact ON | 8.64e-4 | **1.79e-5** | see the test |
+    /// | same, OFF | 6.08e-5 | 6.08e-5 | 6.08e-5 |
+    ///
+    /// ⚠️ With separate buffers, **turning self-contact on made the vertex-face separation
+    /// worse than turning it off** — and 61 of 61 firing edge-edge contacts were genuine
+    /// long-range pairs (0 in-surface neighbours), so it was the weighting, not spurious
+    /// contacts. `self_collision_improves_the_vertex_face_separation_it_constrains` is the
+    /// test that catches it.
+    fn solve_self_collision(&mut self, vertex_face: &[(u32, u32)], edge_edge: &[[u32; 4]]) {
+        let thickness = self.config.self_collision_distance;
+        if thickness.is_zero() || (vertex_face.is_empty() && edge_edge.is_empty()) {
+            return;
+        }
+        let n = self.particle_count();
+        let mut delta = vec![Vec3Fix::ZERO; n];
+        let mut hits = vec![0u32; n];
+
+        self.accumulate_vertex_face_contacts(vertex_face, thickness, &mut delta, &mut hits);
+        self.accumulate_edge_edge_contacts(edge_edge, thickness, &mut delta, &mut hits);
 
         for i in 0..n {
             if hits[i] == 0 || self.inv_masses[i].is_zero() {
@@ -847,6 +872,18 @@ impl Cloth {
             }
             self.positions[i] = self.positions[i] + delta[i] / Fix128::from_int(i64::from(hits[i]));
         }
+    }
+
+    /// Vertex-face stage on its own — the closed-form tests drive one stage at a time
+    #[cfg(test)]
+    fn solve_vertex_face_self_collision(&mut self, candidates: &[(u32, u32)]) {
+        self.solve_self_collision(candidates, &[]);
+    }
+
+    /// Edge-edge stage on its own — the closed-form tests drive one stage at a time
+    #[cfg(test)]
+    fn solve_edge_edge_self_collision(&mut self, candidates: &[[u32; 4]]) {
+        self.solve_self_collision(&[], candidates);
     }
 
     /// Number of repair passes `resolve_self_contact_over_frame` is allowed.
@@ -2222,9 +2259,7 @@ mod tests {
         cloth.positions[4] = Vec3Fix::new(Fix128::ZERO, h, Fix128::ONE);
         cloth.positions[5] = Vec3Fix::new(Fix128::ZERO, h + eight, Fix128::ZERO);
         cloth.prev_positions = cloth.positions.clone();
-        for v in &mut cloth.velocities {
-            *v = Vec3Fix::ZERO;
-        }
+        cloth.velocities.fill(Vec3Fix::ZERO);
         cloth
     }
 
@@ -2358,6 +2393,107 @@ mod tests {
         assert_eq!(
             forward.positions, reverse.positions,
             "辺-辺の対を逆順に処理すると結果が変わる = 蓄積が順序依存"
+        );
+    }
+
+    /// 2 段を 1 本の buffer に統合しても、両方の対の列挙順が結果を変えない
+    ///
+    /// ⚠️ **buffer を統合すると蓄積の順序が変わる**ので、段ごとの順序非依存
+    /// (`self_contact_result_is_independent_of_the_pair_order` /
+    /// `edge_edge_result_is_independent_of_the_pair_order`) とは別に測り直す必要があります
+    /// 成立の根拠は `Fix128` の加算が `Z/2¹²⁸` の厳密な群演算であること
+    /// (`tests/reduction_order_independence.rs`) で、段をまたいでも同じです
+    #[test]
+    fn self_collision_is_independent_of_the_pair_order_across_both_stages() {
+        let mut forward = folded_cloth_with_contacts();
+        let mut reverse = folded_cloth_with_contacts();
+        let margin = forward.config.self_collision_distance.double();
+        let mut vf = forward.collect_vertex_face_candidates(margin);
+        let mut ee = forward.collect_edge_edge_candidates(margin);
+        assert!(
+            vf.len() > 1 && ee.len() > 1,
+            "候補が 頂点-面 {} 件 / 辺-辺 {} 件 では順序非依存性を試せない",
+            vf.len(),
+            ee.len()
+        );
+        let before = forward.positions.clone();
+        forward.solve_self_collision(&vf, &ee);
+        assert!(
+            forward.positions != before,
+            "2 段を統合した投影が 1 bit も発火しない この scene は判別に向かない"
+        );
+        vf.reverse();
+        ee.reverse();
+        reverse.solve_self_collision(&vf, &ee);
+        assert_eq!(
+            forward.positions, reverse.positions,
+            "両段の対を逆順に処理すると結果が変わる = 統合 buffer の蓄積が順序依存"
+        );
+    }
+
+    /// 統合 buffer では、同じ頂点に触れた**両段**の件数で割る (段ごとに割らない)
+    ///
+    /// # 閉形式
+    ///
+    /// `x_crossing_scene` に、辺 `(0,1)` の両端 0 / 1 を巻き込む頂点-面接触を 1 件
+    /// 追加した状態で 1 回投影します 頂点 0 / 1 は **辺-辺 1 件 + 頂点-面 1 件 = 2 件**に
+    /// 触られるので、統合 buffer なら両方の寄与の和を **2** で割ります
+    ///
+    /// ⚠️ 段ごとに割ると `(Σ_ee)/1 + (Σ_vf)/1` になって **辺-辺の寄与が 2 倍**残ります
+    /// それが crumple で「自己接触 ON が OFF より悪い」を生んだ形です
+    /// (詳細は `solve_self_collision` の doc の表)
+    #[test]
+    fn the_averaging_denominator_counts_contacts_from_both_stages() {
+        let eighth = Fix128::from_ratio(1, 8);
+        let quarter = Fix128::from_ratio(1, 4);
+        let ee_pair = [[0u32, 1, 3, 4]];
+        let vf_pair = [(0u32, 1u32)]; // 頂点 0 と三角形 T1 = [3,4,5]
+
+        // 頂点 0 を x = −1 から x = −1/8 に寄せる T1 は平面 x = 0 に載るので、
+        // 頂点 0 から辺 (3,4) までの距離² は (1/8)² + (1/8)² = 1/32 < 1/16 = thickness²
+        // になり、頂点-面の接触が 1 件立つ 辺 (0,1) x (3,4) の交差は保たれる
+        let scene = || {
+            let mut c = x_crossing_scene(eighth, quarter);
+            c.positions[0] = Vec3Fix::new(-eighth, Fix128::ZERO, Fix128::ZERO);
+            c.prev_positions = c.positions.clone();
+            c
+        };
+
+        let base = scene().positions[0];
+        let margin = quarter.double();
+        let probe = scene();
+        assert!(
+            probe
+                .collect_vertex_face_candidates(margin)
+                .contains(&(0, 1)),
+            "頂点 0 と三角形 1 の対が候補に入らない"
+        );
+        assert!(
+            probe
+                .collect_edge_edge_candidates(margin)
+                .contains(&ee_pair[0]),
+            "辺 (0,1) x (3,4) の対が候補に入らない"
+        );
+
+        let mut vf_only = scene();
+        vf_only.solve_self_collision(&vf_pair, &[]);
+        let d_vf = vf_only.positions[0] - base;
+        let mut ee_only = scene();
+        ee_only.solve_self_collision(&[], &ee_pair);
+        let d_ee = ee_only.positions[0] - base;
+        assert!(
+            d_vf != Vec3Fix::ZERO && d_ee != Vec3Fix::ZERO,
+            "片方の段が発火していない (頂点-面 {d_vf:?} / 辺-辺 {d_ee:?}) この scene は判別に向かない"
+        );
+
+        let mut both = scene();
+        both.solve_self_collision(&vf_pair, &ee_pair);
+        assert_eq!(
+            both.positions[0] - base,
+            (d_vf + d_ee) / Fix128::from_int(2),
+            "統合 buffer の補正が「段ごとの寄与の和の 1/2」になっていない \
+             = 平均の分母が両段の件数 2 になっていない \
+             (段ごとに割ると和そのものが残り、辺-辺が 2 倍過大評価される)"
         );
     }
 
