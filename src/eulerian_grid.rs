@@ -2626,6 +2626,833 @@ pub(crate) fn project_pressure_slab_local_over<T: SlabTransport>(
     }
 }
 
+// ============================================================================
+// Crossing a process boundary with slab-local storage
+// ============================================================================
+//
+// [`project_pressure_slab_local_over`] above shrinks what one rank holds, but it
+// still drives every rank from one process: it asks the transport for rank `r`'s
+// band for every `r`, so a transport holding one band cannot serve it. What was
+// therefore still unmeasured is the thing the hundred-million-cell target needs
+// — several processes, each holding one band, agreeing with the single-process
+// solve to the bit.
+//
+// Two crossings have to be made for that, and they are not the same shape.
+//
+// ## The pressure halo, once per colour sweep
+//
+// That is the schedule [`exchange_slab_halos_local`] already walks, and it is
+// written against [`SlabTransport`], so a rank-local driver reuses it unchanged
+// and the only new thing is a transport whose `slab_mut` serves its own rank and
+// refuses every other — [`SlabSocketTransport`]. The walk being shared is why
+// there is no second sequence to keep in step with the first here;
+// `both_exchange_walks_deliver_the_same_layers_in_the_same_order` continues to
+// pin the one pair of walks that does exist.
+//
+// ## The face conditions, once before the solve
+//
+// [`MacGrid::enforce_face_boundaries`] is a *prefix propagation along `z`*: a
+// Z-face marked [`FaceBc::Outflow`] copies the face one cell inside the domain,
+// which for the first Z-face of a rank is a layer the rank below owns — and
+// copies it *after* that rank has imposed its own conditions, because the
+// monolithic loop runs in ascending `k` and reads values it has already
+// rewritten. So the enforcement serialises across the ranks: one layer per slab
+// boundary, received before a rank enforces and sent after it has. That one
+// layer is the halo this stage had to add, and [`PlaneChannel`] is what carries
+// it.
+//
+// The X- and Y-face conditions need no halo: an outflow X-face copies a face in
+// the same cell layer, so the propagation there runs inside a rank's band.
+//
+// ### What that halo is for, since it looks removable
+//
+// Measured: with the Z-outflow on the *domain boundary* alone — which is where
+// [`FaceBc::Outflow`]'s own documentation says the condition is meaningful — no
+// rank ever reads outside its band, and the enforcement runs to completion with
+// nothing handed over. The reason is structural: the first Z-face a rank writes
+// is the one at `k0`, which for `k0 > 0` is an interior layer, while the faces at
+// `0` and `nz` are each held by a rank that also holds the layer they read. So
+// the halo is load-bearing only when an *interior* Z-face is marked
+// [`FaceBc::Outflow`] — a configuration the crate calls meaningless and
+// nonetheless accepts.
+//
+// It stays, because "meaningless" is a promise asked of the caller and not
+// something the API refuses, and a decomposition is required to agree with the
+// single-process solve over everything the API accepts. The two facts are pinned
+// as a pair so that this paragraph cannot rot into a reason to delete the halo:
+// `a_z_outflow_on_the_domain_boundary_alone_needs_no_face_halo` fixes that the
+// boundary case needs nothing, and
+// `an_interior_z_outflow_is_what_makes_the_face_halo_load_bearing` fixes that the
+// interior case aborts without it. Removing the halo leaves the second one red.
+//
+// ## Why the top Z-face layer is recomputed instead of carried back
+//
+// A rank owning `k0..k1` holds Z-faces `k0..=k1` — one more than it writes,
+// because its own divergence needs the face above its last cell — and the extra
+// one is written by the rank above. That looks like a second crossing in the
+// opposite direction: the rank would have to learn the *enforced* value of layer
+// `k1` from its neighbour. It does not. The condition on layer `k1` is one the
+// rank already holds, and the only value that condition can read is layer
+// `k1 − 1`, which the rank has just enforced itself. So each rank enforces
+// `k0..=k1` — the whole band it holds, its own top layer included — and the two
+// ranks sharing a layer compute the same value out of the same expression over
+// the same input. One redundant plane of arithmetic per boundary buys the
+// absence of a second message, and
+// `both_ranks_sharing_a_z_face_layer_enforce_it_to_the_same_value` pins that the
+// two agree rather than assuming it.
+
+/// A rank was asked to impose the conditions on its first Z-face, that face is
+/// an outflow, and the layer below it — which the rank below owns — was not
+/// handed over.
+///
+/// Named once because `#[should_panic]` matches on the text.
+pub(crate) const SLAB_FACE_HALO_MISSING: &str =
+    "slab face conditions: the first Z-face of this rank is an outflow and copies the face \
+     one layer below the slab, which the rank below has to hand over";
+
+/// The face conditions on the faces one rank holds, kept the way `MacGrid`
+/// keeps them.
+///
+/// [`FaceFlags`] carries the three predicates the *solve* needs, which is all a
+/// stencil ever asks for. Imposing the conditions needs more than predicates:
+/// the prescribed velocity of an [`FaceBc::Inflow`] is a value, and
+/// [`FaceBc::Outflow`] is not distinguishable from plain fluid by any of the
+/// three. Carrying the condition densely would cost more than the field it
+/// describes — a [`FaceBc`] is wider than the [`Fix128`] velocity on the face —
+/// so it is carried the way [`MacGrid`] carries it: sparsely, for the faces that
+/// are neither plain fluid nor a wall at rest, with the dense solid flag of
+/// [`FaceFlags`] standing for the rest. The precedence between the two is
+/// `read_face_bc`'s, because that is the function
+/// [`MacGrid::enforce_face_boundaries`] reads its conditions through.
+///
+/// Keyed by the index inside the rank's own face array and kept ascending in it,
+/// which is the order [`enforce_slab_face_boundaries`] walks the faces in and
+/// the order the monolithic enforcement walks the whole domain in. That order is
+/// load-bearing: an outflow face reads a neighbour that may itself be an outflow
+/// face, and whether the neighbour has already been rewritten is part of the
+/// answer.
+pub(crate) struct SlabFaceConditions {
+    nx: usize,
+    ny: usize,
+    /// First owned cell layer.
+    k0: usize,
+    /// One past the last owned cell layer.
+    k1: usize,
+    /// `(index into the rank's X-face array, condition)`, ascending.
+    u: Vec<(usize, FaceBc)>,
+    /// Y-faces; see `u`.
+    v: Vec<(usize, FaceBc)>,
+    /// Z-faces of layers `k0..=k1`; see `u`.
+    w: Vec<(usize, FaceBc)>,
+}
+
+impl SlabFaceConditions {
+    /// No conditions at all: every face plain fluid, every wall described by the
+    /// dense flag alone.
+    ///
+    /// The constructor a rank with no [`MacGrid`] starts from; it then names the
+    /// faces that differ with [`SlabFaceConditions::set_u`] and its siblings.
+    pub(crate) fn new(nx: usize, ny: usize, (k0, k1): (usize, usize)) -> Self {
+        Self {
+            nx,
+            ny,
+            k0,
+            k1,
+            u: Vec::new(),
+            v: Vec::new(),
+            w: Vec::new(),
+        }
+    }
+
+    /// The conditions on the faces of layers `k0..k1` (and the Z-faces
+    /// `k0..=k1`), copied out of `grid`'s sparse maps.
+    ///
+    /// The maps are keyed by the global face index, and one `z` layer of each
+    /// face field is a contiguous run of those keys, so a rank's entries are one
+    /// range of the map — taken in ascending order, which is the order the
+    /// enforcement wants them in.
+    pub(crate) fn from_grid(grid: &MacGrid, (k0, k1): (usize, usize)) -> Self {
+        let mut out = Self::new(grid.nx, grid.ny, (k0, k1));
+        if k0 == k1 {
+            return out;
+        }
+        let (up, vp, cp) = (
+            u_plane(grid.nx, grid.ny),
+            v_plane(grid.nx, grid.ny),
+            cell_plane(grid.nx, grid.ny),
+        );
+        for (&ix, &bc) in grid.u_face_bc.range(k0 * up..k1 * up) {
+            out.u.push((ix - k0 * up, bc));
+        }
+        for (&ix, &bc) in grid.v_face_bc.range(k0 * vp..k1 * vp) {
+            out.v.push((ix - k0 * vp, bc));
+        }
+        for (&ix, &bc) in grid.w_face_bc.range(k0 * cp..(k1 + 1) * cp) {
+            out.w.push((ix - k0 * cp, bc));
+        }
+        out
+    }
+
+    /// Name the condition on the X-face `(i, j, k)` of this rank.
+    ///
+    /// Keeps the same entries `MacGrid` would: plain fluid and a wall at rest
+    /// are what the dense flag already says, so naming either of those removes
+    /// the entry instead of storing it.
+    ///
+    /// # Panics
+    ///
+    /// When `k` is not an owned layer, or `(i, j)` is not a face of one.
+    pub(crate) fn set_u(&mut self, i: usize, j: usize, k: usize, bc: FaceBc) {
+        assert!(i <= self.nx && j < self.ny, "({i}, {j}) is not an X-face");
+        let at = self.owned_base(k, u_plane(self.nx, self.ny)) + i + (self.nx + 1) * j;
+        Self::write(&mut self.u, at, bc);
+    }
+
+    /// See [`SlabFaceConditions::set_u`].
+    pub(crate) fn set_v(&mut self, i: usize, j: usize, k: usize, bc: FaceBc) {
+        assert!(i < self.nx && j <= self.ny, "({i}, {j}) is not a Y-face");
+        let at = self.owned_base(k, v_plane(self.nx, self.ny)) + i + self.nx * j;
+        Self::write(&mut self.v, at, bc);
+    }
+
+    /// See [`SlabFaceConditions::set_u`]. Z-faces run one past the owned
+    /// layers, so `k` may be `k1`.
+    pub(crate) fn set_w(&mut self, i: usize, j: usize, k: usize, bc: FaceBc) {
+        assert!(i < self.nx && j < self.ny, "({i}, {j}) is not a Z-face");
+        assert!(
+            k >= self.k0 && k <= self.k1 && self.k0 != self.k1,
+            "Z-face layer {k} is not held by this slab (holds {}..={})",
+            self.k0,
+            self.k1,
+        );
+        let at = (k - self.k0) * cell_plane(self.nx, self.ny) + i + self.nx * j;
+        Self::write(&mut self.w, at, bc);
+    }
+
+    /// Offset of owned layer `k` inside an array of `plane` values per layer.
+    fn owned_base(&self, k: usize, plane: usize) -> usize {
+        assert!(
+            k >= self.k0 && k < self.k1,
+            "layer {k} is not owned by this slab (owns {}..{})",
+            self.k0,
+            self.k1,
+        );
+        (k - self.k0) * plane
+    }
+
+    /// Insert, replace or remove one entry, keeping the list ascending.
+    fn write(entries: &mut Vec<(usize, FaceBc)>, at: usize, bc: FaceBc) {
+        let default_wall = FaceBc::Wall {
+            velocity: Vec3Fix::ZERO,
+        };
+        let slot = entries.partition_point(|&(other, _)| other < at);
+        let present = entries.get(slot).is_some_and(|&(other, _)| other == at);
+        if bc == FaceBc::Fluid || bc == default_wall {
+            if present {
+                entries.remove(slot);
+            }
+        } else if present {
+            entries[slot].1 = bc;
+        } else {
+            entries.insert(slot, (at, bc));
+        }
+    }
+}
+
+/// The entries of a [`SlabFaceConditions`] list that belong to one layer.
+///
+/// The list is ascending in the index and one layer is a contiguous run of
+/// indices, so the layer's entries are a sub-slice found without scanning the
+/// rest.
+fn layer_conditions(entries: &[(usize, FaceBc)], base: usize, plane: usize) -> &[(usize, FaceBc)] {
+    let lo = entries.partition_point(|&(at, _)| at < base);
+    let hi = entries.partition_point(|&(at, _)| at < base + plane);
+    &entries[lo..hi]
+}
+
+/// The condition on face `at`, for a walk whose `at` only increases.
+///
+/// `next` is the walk's position in `entries`; faces with no entry fall back to
+/// the dense solid flag exactly as `read_face_bc` does.
+#[inline]
+fn condition_at(entries: &[(usize, FaceBc)], next: &mut usize, at: usize, solid: bool) -> FaceBc {
+    while *next < entries.len() && entries[*next].0 < at {
+        *next += 1;
+    }
+    match entries.get(*next) {
+        Some(&(other, bc)) if other == at => bc,
+        _ => wall_or_fluid(solid),
+    }
+}
+
+/// Impose the face conditions on the faces one rank holds — what
+/// [`MacGrid::enforce_face_boundaries`] does, restricted to a band.
+///
+/// `below_w` is the Z-face layer `k0 − 1` *after* the rank below imposed its own
+/// conditions, or `None` for a rank whose band starts at layer 0. Supplying it
+/// is the caller's job; [`enforce_slab_face_boundaries_on_rank`] receives it
+/// over a [`PlaneChannel`].
+///
+/// Every value is written by the same expression in the same order as the
+/// monolithic enforcement, so the two agree to the bit rather than within a
+/// tolerance — which `distributed_face_enforcement_matches_the_monolithic_one`
+/// pins. The order is the reason the conditions are walked face by face instead
+/// of entry by entry: a face whose only condition is the dense solid flag has no
+/// entry, and an outflow face reads a neighbour whose own turn may be earlier or
+/// later than its own.
+///
+/// # Panics
+///
+/// [`SLAB_FACE_HALO_MISSING`] when the first Z-face this rank writes is an
+/// outflow and `below_w` is `None`. When `cond` describes a different band or a
+/// different grid from `faces`.
+pub(crate) fn enforce_slab_face_boundaries(
+    faces: &mut SlabFaces,
+    cond: &SlabFaceConditions,
+    below_w: Option<&[Fix128]>,
+) {
+    let (k0, k1) = faces.owned();
+    assert_eq!(
+        (cond.k0, cond.k1),
+        (k0, k1),
+        "the conditions describe layers {:?} and the faces {:?}",
+        (cond.k0, cond.k1),
+        (k0, k1),
+    );
+    assert_eq!(
+        (cond.nx, cond.ny),
+        (faces.nx, faces.ny),
+        "the conditions describe a different grid from the faces",
+    );
+    if k0 == k1 {
+        return; // owns nothing, so holds no face to impose anything on
+    }
+    let (nx, ny) = (faces.nx, faces.ny);
+    let u_row = nx + 1;
+
+    // X-faces, `MacGrid::enforce_face_boundaries`'s first loop over this rank's
+    // layers. An outflow X-face copies a face of the same layer, so this stays
+    // inside the band.
+    let up = u_plane(nx, ny);
+    for k in k0..k1 {
+        let base = (k - k0) * up;
+        let entries = layer_conditions(&cond.u, base, up);
+        let mut next = 0usize;
+        let (u, flags) = faces.u_layer_mut(k);
+        for j in 0..ny {
+            for i in 0..=nx {
+                let at = i + u_row * j;
+                match condition_at(entries, &mut next, base + at, flags[at].solid) {
+                    FaceBc::Fluid => {}
+                    FaceBc::Inflow { normal_velocity } => u[at] = normal_velocity,
+                    FaceBc::Outflow => {
+                        let inner = if i > 0 { i - 1 } else { i + 1 };
+                        u[at] = if inner <= nx {
+                            u[inner + u_row * j]
+                        } else {
+                            Fix128::ZERO
+                        };
+                    }
+                    _ => u[at] = Fix128::ZERO,
+                }
+            }
+        }
+    }
+
+    // Y-faces, the second loop. Also layer-local.
+    let vp = v_plane(nx, ny);
+    for k in k0..k1 {
+        let base = (k - k0) * vp;
+        let entries = layer_conditions(&cond.v, base, vp);
+        let mut next = 0usize;
+        let (v, flags) = faces.v_layer_mut(k);
+        for j in 0..=ny {
+            for i in 0..nx {
+                let at = i + nx * j;
+                match condition_at(entries, &mut next, base + at, flags[at].solid) {
+                    FaceBc::Fluid => {}
+                    FaceBc::Inflow { normal_velocity } => v[at] = normal_velocity,
+                    FaceBc::Outflow => {
+                        let inner = if j > 0 { j - 1 } else { j + 1 };
+                        v[at] = if inner <= ny {
+                            v[i + nx * inner]
+                        } else {
+                            Fix128::ZERO
+                        };
+                    }
+                    _ => v[at] = Fix128::ZERO,
+                }
+            }
+        }
+    }
+
+    // Z-faces, the third loop, over every layer the rank holds — its own top
+    // layer included, which the rank above also enforces (see the section
+    // header). This is the loop that leaves the band: the face at `k0` reads the
+    // face at `k0 − 1`.
+    let cp = cell_plane(nx, ny);
+    let mut source = Vec::new();
+    for k in k0..=k1 {
+        let base = (k - k0) * cp;
+        let entries = layer_conditions(&cond.w, base, cp);
+        // The read is set up before the layer is borrowed for writing, and only
+        // when an outflow face in this layer obliges it: the source is another
+        // layer of the same array, or the one the rank below handed over.
+        if entries.iter().any(|&(_, bc)| bc == FaceBc::Outflow) {
+            if source.is_empty() {
+                source = vec![Fix128::ZERO; cp];
+            }
+            let inner = if k > 0 { k - 1 } else { k + 1 };
+            if inner < k0 {
+                source.copy_from_slice(below_w.expect(SLAB_FACE_HALO_MISSING));
+            } else {
+                assert!(
+                    inner <= k1,
+                    "the face below Z-face layer {k} is layer {inner}, which is above the \
+                     band {k0}..={k1}: only a rank owning nothing could reach this, and one \
+                     has already returned",
+                );
+                source.copy_from_slice(faces.w_layer(inner).0);
+            }
+        }
+        let mut next = 0usize;
+        let (w, flags) = faces.w_layer_mut(k);
+        for j in 0..ny {
+            for i in 0..nx {
+                let at = i + nx * j;
+                match condition_at(entries, &mut next, base + at, flags[at].solid) {
+                    FaceBc::Fluid => {}
+                    FaceBc::Inflow { normal_velocity } => w[at] = normal_velocity,
+                    FaceBc::Outflow => w[at] = source[at],
+                    _ => w[at] = Fix128::ZERO,
+                }
+            }
+        }
+    }
+}
+
+/// Carries one `nx · ny` plane of face velocities from the rank that owns it to
+/// the rank that reads it.
+///
+/// Separate from [`SlabTransport`] because it moves a different thing at a
+/// different time: the pressure halo crosses once per colour sweep and its
+/// destination is a band the transport owns, while this crosses once per solve
+/// and its destination is a buffer the caller owns. One backend implements both
+/// over the same links ([`SlabSocketTransport`]), which is how a rank ends up
+/// with one object and two schedules rather than two connections.
+///
+/// A plane carries no header; the two ends are matched by their position in the
+/// pipeline the enforcement walks, which is the same arrangement
+/// [`SocketTransport`] relies on for the pressure halo.
+pub(crate) trait PlaneChannel {
+    /// Hand rank `dst` the plane of Z-face layer `layer`.
+    fn send_plane(&mut self, dst: usize, layer: usize, plane: &[Fix128]);
+
+    /// Take the plane of Z-face layer `layer` from rank `src` into `plane`.
+    fn recv_plane(&mut self, src: usize, layer: usize, plane: &mut [Fix128]);
+}
+
+/// [`PlaneChannel`] for ranks sharing one address space: the plane is copied
+/// through a one-layer buffer, which is the shape the wire backend has too.
+///
+/// The pipeline the enforcement walks never has two planes in flight — a rank
+/// sends only after the rank below has been received from — so one buffer is
+/// enough, and the assertions here say so rather than leaving a second send to
+/// overwrite the first unnoticed.
+pub(crate) struct LocalPlaneChannel {
+    /// The plane in flight.
+    staged: Vec<Fix128>,
+    /// Which Z-face layer `staged` holds, or `None` when nothing is in flight.
+    layer: Option<usize>,
+}
+
+impl LocalPlaneChannel {
+    /// A channel for planes of `plane` values, with nothing in flight.
+    pub(crate) fn new(plane: usize) -> Self {
+        Self {
+            staged: vec![Fix128::ZERO; plane],
+            layer: None,
+        }
+    }
+
+    /// Has every plane that was sent been received?
+    pub(crate) fn is_drained(&self) -> bool {
+        self.layer.is_none()
+    }
+}
+
+impl PlaneChannel for LocalPlaneChannel {
+    fn send_plane(&mut self, _dst: usize, layer: usize, plane: &[Fix128]) {
+        assert!(
+            self.layer.is_none(),
+            "layer {layer} was offered while layer {:?} was still in flight",
+            self.layer,
+        );
+        self.staged.copy_from_slice(plane);
+        self.layer = Some(layer);
+    }
+
+    fn recv_plane(&mut self, _src: usize, layer: usize, plane: &mut [Fix128]) {
+        let staged = self
+            .layer
+            .take()
+            .expect("a rank asked for a plane that no rank had offered");
+        assert_eq!(
+            staged, layer,
+            "a rank asked for layer {layer} and layer {staged} was in flight",
+        );
+        plane.copy_from_slice(&self.staged);
+    }
+}
+
+/// Impose the face conditions on one rank's faces, receiving the one layer the
+/// enforcement reads from across the boundary below and sending on the one layer
+/// the rank above will read.
+///
+/// The crossing happens whether or not this rank's first Z-face is an outflow:
+/// the schedule is a function of the decomposition alone, so two ranks cannot
+/// come to different conclusions about whether a message is on the wire. Ranks
+/// owning nothing take part in neither half, and the rank below a gap is the one
+/// that *owns* the layer rather than the one with the previous index, which is
+/// how a decomposition with empty ranks still forms a chain.
+///
+/// # Panics
+///
+/// When `faces` does not describe the layers the decomposition gives `my_rank`.
+pub(crate) fn enforce_slab_face_boundaries_on_rank<C: PlaneChannel>(
+    faces: &mut SlabFaces,
+    cond: &SlabFaceConditions,
+    ranks: usize,
+    my_rank: usize,
+    channel: &mut C,
+) {
+    if ranks == 0 || my_rank >= ranks {
+        return;
+    }
+    let nz = faces.nz;
+    let bounds: Vec<(usize, usize)> = (0..ranks).map(|r| slab_bounds(nz, ranks, r)).collect();
+    let (k0, k1) = bounds[my_rank];
+    assert_eq!(
+        faces.owned(),
+        (k0, k1),
+        "rank {my_rank} was handed the faces of layers {:?} but the decomposition gives it {:?}",
+        faces.owned(),
+        (k0, k1),
+    );
+    if k0 == k1 {
+        return; // owns nothing: nothing to impose, nothing to pass on
+    }
+    let plane = cell_plane(faces.nx, faces.ny);
+
+    let mut below = Vec::new();
+    if k0 > 0 {
+        let src = slab_owner(&bounds, k0 - 1)
+            .expect("the layer below an owned layer is owned by some rank");
+        below = vec![Fix128::ZERO; plane];
+        channel.recv_plane(src, k0 - 1, &mut below);
+    }
+    let below_w = if k0 > 0 { Some(&below[..]) } else { None };
+
+    enforce_slab_face_boundaries(faces, cond, below_w);
+
+    if let Some(dst) = slab_owner(&bounds, k1) {
+        let (w, _) = faces.w_layer(k1 - 1);
+        channel.send_plane(dst, k1 - 1, w);
+    }
+}
+
+/// [`enforce_slab_face_boundaries_on_rank`] for every rank of an in-process
+/// decomposition, in the order the pipeline requires.
+///
+/// Drives the rank-local function rather than restating the pipeline, so there
+/// is one description of the order and not two.
+///
+/// # Panics
+///
+/// When a plane is left in flight at the end, which would mean a rank sent one
+/// that no rank was going to read.
+pub(crate) fn enforce_slab_face_boundaries_over(
+    faces: &mut [SlabFaces],
+    cond: &[SlabFaceConditions],
+) {
+    let Some(first) = faces.first() else {
+        return;
+    };
+    let plane = cell_plane(first.nx, first.ny);
+    let ranks = faces.len();
+    assert_eq!(
+        cond.len(),
+        ranks,
+        "{} sets of conditions for {ranks} ranks",
+        cond.len(),
+    );
+    let mut channel = LocalPlaneChannel::new(plane);
+    for (r, rank_faces) in faces.iter_mut().enumerate() {
+        enforce_slab_face_boundaries_on_rank(rank_faces, &cond[r], ranks, r, &mut channel);
+    }
+    assert!(
+        channel.is_drained(),
+        "a Z-face layer was passed on to a rank that never read it",
+    );
+}
+
+/// One [`Fix128`] on the wire: `hi` then `lo`, little-endian — the encoding
+/// [`SocketTransport`] fixes, reused so that the two transports put the same
+/// bytes on the same wire.
+///
+/// `the_two_wire_encodings_agree` pins that they do, by comparing what one
+/// transport writes with what this function produces.
+#[cfg(feature = "std")]
+fn encode_plane(values: &[Fix128], wire: &mut [u8]) {
+    for (cell, chunk) in values
+        .iter()
+        .zip(wire.chunks_exact_mut(WIRE_BYTES_PER_CELL))
+    {
+        chunk[..8].copy_from_slice(&cell.hi.to_le_bytes());
+        chunk[8..].copy_from_slice(&cell.lo.to_le_bytes());
+    }
+}
+
+/// Inverse of [`encode_plane`].
+#[cfg(feature = "std")]
+fn decode_plane(wire: &[u8], values: &mut [Fix128]) {
+    for (cell, chunk) in values
+        .iter_mut()
+        .zip(wire.chunks_exact(WIRE_BYTES_PER_CELL))
+    {
+        let hi = i64::from_le_bytes(chunk[..8].try_into().expect("8 bytes of a 16-byte cell"));
+        let lo = u64::from_le_bytes(chunk[8..].try_into().expect("8 bytes of a 16-byte cell"));
+        *cell = Fix128::from_raw(hi, lo);
+    }
+}
+
+/// [`SlabTransport`] and [`PlaneChannel`] for ranks in *different address
+/// spaces*, each holding one band and nothing else.
+///
+/// # What this settles that [`LocalSlabTransport`] cannot
+///
+/// `LocalSlabTransport` holds every rank's band, so it cannot tell a rank-local
+/// driver from one that reads a neighbour's storage: both work. This one has no
+/// neighbour's storage to read, and [`SlabTransport::slab_mut`] serves its own
+/// rank alone, so a driver that asked for another rank's band aborts here
+/// instead of returning a plausible answer. It is also the first transport for
+/// which a halo layer is bytes on a wire while the band it lands in is *not* the
+/// whole field — the combination the hundred-million-cell target needs and that
+/// neither [`SocketTransport`] (whole field) nor `LocalSlabTransport` (one
+/// address space) reaches on its own.
+///
+/// `S` is any paired byte stream, because the only thing fixed here is the
+/// encoding ([`encode_plane`]).
+///
+/// # Lockstep
+///
+/// Deliveries carry no header and are matched by their position in the schedule
+/// every rank walks. A delivery this rank is not party to is a no-op, which is
+/// what keeps the positions the same; the same holds for a rank that owns
+/// nothing and therefore takes part in no delivery at all.
+#[cfg(feature = "std")]
+pub(crate) struct SlabSocketTransport<S> {
+    /// The rank this process is; the only one `slab_mut` serves.
+    my_rank: usize,
+    /// `nx · ny`, the values in one layer and so in one message.
+    plane: usize,
+    /// This rank's band: its owned layers plus its halo, and nothing else.
+    slab: SlabStorage,
+    /// `links[r]` is the stream to rank `r`; this rank's own entry is `None`.
+    links: Vec<Option<S>>,
+    /// Encode/decode scratch for one layer, sized `plane · 16`.
+    wire: Vec<u8>,
+}
+
+#[cfg(feature = "std")]
+impl<S> SlabSocketTransport<S> {
+    /// A rank holding `slab`, with `links[r]` the stream to rank `r`.
+    pub(crate) fn new(
+        my_rank: usize,
+        plane: usize,
+        slab: SlabStorage,
+        links: Vec<Option<S>>,
+    ) -> Self {
+        Self {
+            my_rank,
+            plane,
+            slab,
+            links,
+            wire: vec![0u8; plane * WIRE_BYTES_PER_CELL],
+        }
+    }
+
+    /// This rank's band, for reading back the layers it owns.
+    pub(crate) fn slab(&self) -> &SlabStorage {
+        &self.slab
+    }
+}
+
+#[cfg(feature = "std")]
+impl<S: std::io::Read + std::io::Write> SlabTransport for SlabSocketTransport<S> {
+    fn slab_mut(&mut self, rank: usize) -> &mut SlabStorage {
+        assert_eq!(
+            rank, self.my_rank,
+            "rank {} was asked for rank {rank}'s band, which is in another address space: \
+             the driver is not rank-local",
+            self.my_rank,
+        );
+        &mut self.slab
+    }
+
+    fn deliver_layer(&mut self, src: usize, dst: usize, layer: usize) {
+        if src == dst {
+            return;
+        }
+        if self.my_rank == src {
+            let from = self.slab.layer(layer).expect(DELIVERY_SOURCE_LACKS_LAYER);
+            encode_plane(from, &mut self.wire);
+            let link = self.links[dst]
+                .as_mut()
+                .expect("no stream to the rank this delivery is addressed to");
+            // A failed halo delivery leaves the ranks disagreeing about the
+            // field, which no later step can repair, so this is fatal by design.
+            link.write_all(&self.wire)
+                .expect("send a halo layer to the peer rank");
+            link.flush().expect("flush a halo layer to the peer rank");
+        } else if self.my_rank == dst {
+            let link = self.links[src]
+                .as_mut()
+                .expect("no stream from the rank this delivery comes from");
+            link.read_exact(&mut self.wire)
+                .expect("receive a halo layer from the peer rank");
+            let into = self
+                .slab
+                .layer_mut(layer)
+                .expect(DELIVERY_DESTINATION_LACKS_LAYER);
+            decode_plane(&self.wire, into);
+        }
+        // Neither end: another pair's delivery, counted but not performed.
+    }
+}
+
+#[cfg(feature = "std")]
+impl<S: std::io::Read + std::io::Write> PlaneChannel for SlabSocketTransport<S> {
+    fn send_plane(&mut self, dst: usize, layer: usize, plane: &[Fix128]) {
+        assert_eq!(
+            plane.len(),
+            self.plane,
+            "layer {layer} is {} values and a plane on this wire is {}",
+            plane.len(),
+            self.plane,
+        );
+        encode_plane(plane, &mut self.wire);
+        let link = self.links[dst]
+            .as_mut()
+            .expect("no stream to the rank this plane is addressed to");
+        link.write_all(&self.wire)
+            .expect("send a Z-face layer to the peer rank");
+        link.flush().expect("flush a Z-face layer to the peer rank");
+    }
+
+    fn recv_plane(&mut self, src: usize, layer: usize, plane: &mut [Fix128]) {
+        assert_eq!(
+            plane.len(),
+            self.plane,
+            "layer {layer} is {} values and a plane on this wire is {}",
+            plane.len(),
+            self.plane,
+        );
+        let link = self.links[src]
+            .as_mut()
+            .expect("no stream from the rank this plane comes from");
+        link.read_exact(&mut self.wire)
+            .expect("receive a Z-face layer from the peer rank");
+        decode_plane(&self.wire, plane);
+    }
+}
+
+/// The red-black pressure projection as *one rank* runs it: this rank's band,
+/// this rank's faces, and a transport that can reach no other rank's storage.
+///
+/// [`project_pressure_slab_local_over`] is the same solve driven from one
+/// process, and it asks the transport for every rank's band in turn, which a
+/// rank-local transport refuses. This is the form a distributed run takes: every
+/// rank calls it with its own `my_rank`, the sweeps happen concurrently, and the
+/// exchange between two sweeps is what puts them back in step. The schedule walk
+/// is [`exchange_slab_halos_local`], shared with the in-process driver, so there
+/// is no second sequence that could drift from the first.
+///
+/// Bit-identical to [`project_pressure_red_black_gs`] over the layers this rank
+/// owns — not within a tolerance, for the reason the in-process driver gives.
+/// `three_processes_reproduce_the_monolithic_slab_local_solve` pins it across
+/// real process boundaries.
+///
+/// # What the caller supplies
+///
+/// `faces` holds this rank's face velocities with the conditions already imposed
+/// (by [`enforce_slab_face_boundaries_on_rank`], which is the distributed form of
+/// that step). `transport` holds this rank's band, already initialised from the
+/// field the solve starts from — its halo layers included, because the first
+/// colour sweep reads them before any exchange has happened. On return the band
+/// holds the final pressure over the layers this rank owns and `faces` holds the
+/// corrected velocities over the faces it writes. Nothing gathers: no rank holds
+/// the whole field at any point, which is the difference from
+/// [`project_pressure_decomposed_on_rank`].
+///
+/// A degenerate `dx`, density or step leaves everything untouched, as the other
+/// drivers do.
+///
+/// # Panics
+///
+/// When `faces` does not describe the layers the decomposition gives `my_rank`.
+// One more parameter than `project_pressure_slab_local_over`, whose list this
+// deliberately mirrors so the two drivers stay comparable; `my_rank` is the
+// whole difference between them, as it is between the two full-length drivers.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn project_pressure_slab_local_on_rank<T: SlabTransport>(
+    faces: &mut SlabFaces,
+    dt_s: Fix128,
+    density_kg_m3: Fix128,
+    iterations: u32,
+    ranks: usize,
+    schedule: HaloSchedule,
+    my_rank: usize,
+    transport: &mut T,
+) {
+    if faces.dx.is_zero()
+        || density_kg_m3.is_zero()
+        || dt_s.is_zero()
+        || ranks == 0
+        || my_rank >= ranks
+    {
+        return;
+    }
+    let nz = faces.nz;
+    let bounds: Vec<(usize, usize)> = (0..ranks).map(|r| slab_bounds(nz, ranks, r)).collect();
+    assert_eq!(
+        faces.owned(),
+        bounds[my_rank],
+        "rank {my_rank} was handed the faces of layers {:?} but the decomposition gives it {:?}",
+        faces.owned(),
+        bounds[my_rank],
+    );
+
+    let scale = density_kg_m3 * faces.dx * faces.dx / dt_s;
+    let stencil = SlabStencil::build(faces, scale);
+
+    for _ in 0..iterations {
+        for colour in 0..2u32 {
+            sweep_slab_colour(transport.slab_mut(my_rank), faces, &stencil, colour);
+            if schedule == HaloSchedule::EverySweep {
+                exchange_slab_halos_local(transport, &bounds, nz);
+            }
+        }
+        if schedule == HaloSchedule::EveryIteration {
+            exchange_slab_halos_local(transport, &bounds, nz);
+        }
+    }
+
+    let inv_dx = Fix128::ONE / faces.dx;
+    let coeff = dt_s / density_kg_m3 * inv_dx;
+    subtract_slab_pressure_gradient(faces, transport.slab_mut(my_rank), coeff);
+}
+
 /// Legacy Jacobi implementation, kept for benchmarking (Session 3 I9, crate-internal).
 pub(crate) fn project_pressure_jacobi(
     grid: &mut MacGrid,
@@ -5682,5 +6509,1304 @@ mod tests {
              {monolithic:?}, so localising the storage has moved the cost into the index \
              arithmetic instead of leaving it in the memory system",
         );
+    }
+
+    // ========================================================================
+    // Slab-local storage across process boundaries
+    // ========================================================================
+
+    /// What a slab case puts in the grid before the ranks split it, and so which
+    /// parts of the enforcement it exercises.
+    #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+    enum SlabScene {
+        /// Divergent flow and no conditions at all: every face plain fluid,
+        /// every cell of degree six.
+        Open,
+        /// Closed box, so the Poisson mask is non-trivial, plus a non-zero
+        /// initial pressure, so the initial halo is load-bearing.
+        ClosedBox,
+        /// The conditions whose enforcement crosses a slab boundary: every
+        /// *interior* Z-face layer of odd index is an outflow, so the first
+        /// Z-face of a rank whose band starts on an odd layer copies a layer the
+        /// rank below owns. Also an X-inflow (a prescribed value, which
+        /// [`FaceFlags`] cannot carry), X-outflow (propagation inside a layer),
+        /// Y-walls set through the dense flag, and `SlipWall` on the top and
+        /// bottom Z-faces (a map entry that is neither inflow nor outflow).
+        ///
+        /// The interior outflow is the point: see
+        /// `a_z_outflow_on_the_domain_boundary_alone_needs_no_face_halo`.
+        ZOutflow,
+    }
+
+    impl SlabScene {
+        /// Name passed to a child rank through the environment.
+        fn as_str(self) -> &'static str {
+            match self {
+                Self::Open => "open",
+                Self::ClosedBox => "closed",
+                Self::ZOutflow => "zoutflow",
+            }
+        }
+
+        /// Inverse of [`Self::as_str`]; an unknown name is a harness bug.
+        fn parse(name: &str) -> Self {
+            match name {
+                "open" => Self::Open,
+                "closed" => Self::ClosedBox,
+                "zoutflow" => Self::ZOutflow,
+                other => panic!("unknown slab scene `{other}`"),
+            }
+        }
+    }
+
+    /// The field every rank of a case starts from — a pure function of `(n,
+    /// scene)`, so processes that never speak to each other still agree about
+    /// the problem.
+    fn seed_slab_scene(n: usize, scene: SlabScene) -> MacGrid {
+        let mut grid = seed_divergent_flow(n);
+        let varied_pressure = |grid: &mut MacGrid| {
+            for (c, slot) in grid.pressure.iter_mut().enumerate() {
+                *slot = Fix128::from_ratio((c % 5) as i64 - 2, 7);
+            }
+        };
+        match scene {
+            SlabScene::Open => {}
+            SlabScene::ClosedBox => {
+                grid.set_closed_box_walls();
+                varied_pressure(&mut grid);
+            }
+            SlabScene::ZOutflow => {
+                // A Z-velocity that differs from layer to layer, so an outflow
+                // face copying the wrong layer is a different number rather than
+                // the same one.
+                for k in 0..=n {
+                    for j in 0..n {
+                        for i in 0..n {
+                            let ix = grid.idx_w(i, j, k);
+                            grid.w[ix] =
+                                Fix128::from_ratio(((k * n + i + 2 * j) % 11) as i64 - 5, 4);
+                        }
+                    }
+                }
+                varied_pressure(&mut grid);
+                for j in 0..n {
+                    for i in 0..n {
+                        grid.set_w_bc(i, j, 0, FaceBc::SlipWall);
+                        grid.set_w_bc(i, j, n, FaceBc::SlipWall);
+                        for k in (1..n).filter(|k| k % 2 == 1) {
+                            grid.set_w_bc(i, j, k, FaceBc::Outflow);
+                        }
+                    }
+                }
+                for k in 0..n {
+                    for j in 0..n {
+                        grid.set_u_bc(
+                            0,
+                            j,
+                            k,
+                            FaceBc::Inflow {
+                                normal_velocity: Fix128::from_ratio(3, 4),
+                            },
+                        );
+                        grid.set_u_bc(n, j, k, FaceBc::Outflow);
+                    }
+                    for i in 0..n {
+                        grid.set_v_bc(
+                            i,
+                            0,
+                            k,
+                            FaceBc::Wall {
+                                velocity: Vec3Fix::ZERO,
+                            },
+                        );
+                        grid.set_v_bc(
+                            i,
+                            n,
+                            k,
+                            FaceBc::Wall {
+                                velocity: Vec3Fix::ZERO,
+                            },
+                        );
+                    }
+                }
+            }
+        }
+        grid
+    }
+
+    /// How many ranks of this decomposition have a first Z-face that is an
+    /// outflow reading a layer the rank below owns, under
+    /// [`SlabScene::ZOutflow`]'s rule.
+    ///
+    /// Zero would mean the crossing this stage exists to make is not being made,
+    /// so the oracles assert it is not zero rather than trusting the arithmetic
+    /// to work out.
+    fn z_outflow_crossings(nz: usize, ranks: usize) -> usize {
+        (0..ranks)
+            .map(|r| slab_bounds(nz, ranks, r))
+            .filter(|&(k0, k1)| k0 != k1 && k0 > 0 && k0 < nz && k0 % 2 == 1)
+            .count()
+    }
+
+    /// One rank's band, filled from the field the solve starts from — its halo
+    /// layers included, because the first colour sweep reads them.
+    ///
+    /// Apparatus: in a real run a rank would generate its own band, and the
+    /// initial halo would be the one exchange this does not model.
+    fn band_for_rank(
+        plane: usize,
+        nz: usize,
+        b: (usize, usize),
+        halo: usize,
+        field: &[Fix128],
+    ) -> SlabStorage {
+        let mut slab = SlabStorage::for_slab(plane, nz, b, halo);
+        let (lo, hi) = slab.resident();
+        for k in lo..hi {
+            slab.layer_mut(k)
+                .expect("a layer inside the band this slab just reported")
+                .copy_from_slice(&field[k * plane..(k + 1) * plane]);
+        }
+        slab
+    }
+
+    /// Put the ranks' faces back together into one grid, so the conditions they
+    /// imposed can be compared with the monolithic ones.
+    ///
+    /// Apparatus, not part of the decomposition — the role `assemble_slabs`
+    /// plays for the solved field.
+    fn assemble_slab_faces(template: &MacGrid, faces: &[SlabFaces]) -> MacGrid {
+        let mut out = template.clone();
+        out.u.fill(UNWRITTEN);
+        out.v.fill(UNWRITTEN);
+        out.w.fill(UNWRITTEN);
+        let (nx, ny) = (out.nx, out.ny);
+        for rank_faces in faces {
+            let (k0, k1) = rank_faces.owned();
+            for k in k0..k1 {
+                let (u, _) = rank_faces.u_layer(k);
+                for j in 0..ny {
+                    for i in 0..=nx {
+                        let ix = out.idx_u(i, j, k);
+                        out.u[ix] = u[i + (nx + 1) * j];
+                    }
+                }
+                let (v, _) = rank_faces.v_layer(k);
+                for j in 0..=ny {
+                    for i in 0..nx {
+                        let ix = out.idx_v(i, j, k);
+                        out.v[ix] = v[i + nx * j];
+                    }
+                }
+            }
+            for k in rank_faces.w_written() {
+                let (w, _) = rank_faces.w_layer(k);
+                for j in 0..ny {
+                    for i in 0..nx {
+                        let ix = out.idx_w(i, j, k);
+                        out.w[ix] = w[i + nx * j];
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// Split `base` across `ranks` slabs and impose the face conditions rank by
+    /// rank through the pipeline, in one process.
+    fn enforce_in_slabs(base: &MacGrid, ranks: usize) -> Vec<SlabFaces> {
+        let nz = base.nz;
+        let bounds: Vec<(usize, usize)> = (0..ranks).map(|r| slab_bounds(nz, ranks, r)).collect();
+        let mut faces: Vec<SlabFaces> = bounds
+            .iter()
+            .map(|&b| SlabFaces::from_grid(base, b))
+            .collect();
+        let cond: Vec<SlabFaceConditions> = bounds
+            .iter()
+            .map(|&b| SlabFaceConditions::from_grid(base, b))
+            .collect();
+        enforce_slab_face_boundaries_over(&mut faces, &cond);
+        faces
+    }
+
+    /// Imposing the face conditions rank by rank, with one Z-face layer crossing
+    /// each slab boundary, gives the field `MacGrid::enforce_face_boundaries`
+    /// gives — bit for bit, over every rank count the decomposition oracle uses.
+    ///
+    /// Exactness, not a tolerance: every value is written by the same expression
+    /// in the same order as the monolithic enforcement, so a distribution that
+    /// is right at all is right to the bit.
+    ///
+    /// The scenes are not interchangeable. `Open` has no conditions and would
+    /// pass over an enforcement that did nothing; `ClosedBox` adds walls the
+    /// *dense* flag carries; `ZOutflow` adds the three things only the sparse
+    /// conditions carry — a prescribed inflow value, an outflow, and a
+    /// `SlipWall` — and is the only one whose enforcement leaves a rank's band.
+    #[test]
+    fn distributed_face_enforcement_matches_the_monolithic_one() {
+        let mut crossings = 0usize;
+        for &(n, ranks) in &SLAB_CASES {
+            crossings += z_outflow_crossings(n, ranks);
+            for scene in [SlabScene::Open, SlabScene::ClosedBox, SlabScene::ZOutflow] {
+                let base = seed_slab_scene(n, scene);
+                let mut monolithic = base.clone();
+                monolithic.enforce_face_boundaries();
+
+                let faces = enforce_in_slabs(&base, ranks);
+                let assembled = assemble_slab_faces(&base, &faces);
+
+                assert_eq!(
+                    assembled.u, monolithic.u,
+                    "{n}³ over {ranks} ranks ({scene:?}): the X-face conditions the ranks \
+                     imposed differ from the monolithic ones",
+                );
+                assert_eq!(
+                    assembled.v, monolithic.v,
+                    "{n}³ over {ranks} ranks ({scene:?}): the Y-face conditions the ranks \
+                     imposed differ from the monolithic ones",
+                );
+                assert_eq!(
+                    assembled.w, monolithic.w,
+                    "{n}³ over {ranks} ranks ({scene:?}): the Z-face conditions the ranks \
+                     imposed differ from the monolithic ones — the layer crossing a slab \
+                     boundary is the one an outflow face reads",
+                );
+            }
+        }
+        assert!(
+            crossings > 0,
+            "no rank of any case had a first Z-face that reads across a slab boundary, so \
+             the crossing this stage adds was never exercised",
+        );
+    }
+
+    /// A rank holds one Z-face layer it does not write — the one above its last
+    /// cell, which its own divergence needs — and recomputes the conditions on
+    /// it rather than taking the neighbour's answer over a second message. The
+    /// two answers are the same one.
+    ///
+    /// This is the claim that licenses the enforcement having only an upward
+    /// crossing. Without it the rank's right-hand side would be built from a
+    /// layer nobody had imposed the conditions on.
+    #[test]
+    fn both_ranks_sharing_a_z_face_layer_enforce_it_to_the_same_value() {
+        let mut shared = 0usize;
+        for &(n, ranks) in &SLAB_CASES {
+            let base = seed_slab_scene(n, SlabScene::ZOutflow);
+            let mut monolithic = base.clone();
+            monolithic.enforce_face_boundaries();
+
+            for (r, rank_faces) in enforce_in_slabs(&base, ranks).iter().enumerate() {
+                let (k0, k1) = rank_faces.owned();
+                if k0 == k1 || k1 == n {
+                    continue; // owns nothing, or its top layer is the domain's
+                }
+                let (w, _) = rank_faces.w_layer(k1);
+                for j in 0..n {
+                    for i in 0..n {
+                        assert_eq!(
+                            w[i + n * j],
+                            monolithic.w[monolithic.idx_w(i, j, k1)],
+                            "{n}³ over {ranks} ranks: rank {r} recomputed the conditions on \
+                             Z-face layer {k1}, which rank above it writes, and got a \
+                             different value at ({i}, {j})",
+                        );
+                    }
+                }
+                shared += 1;
+            }
+        }
+        assert!(
+            shared > 0,
+            "no rank held a Z-face layer it does not write, so the recomputation this test \
+             exists to check never happened",
+        );
+    }
+
+    /// The crossing is reachable only through an *interior* Z-outflow: with the
+    /// outflow on the domain boundary alone, no rank ever reads a layer outside
+    /// its band, and the enforcement runs with nothing handed over.
+    ///
+    /// Measured, not reasoned: the reason is that the first Z-face a rank writes
+    /// is the one at `k0`, which for `k0 > 0` is an interior layer, while the
+    /// boundary faces at `0` and `nz` are each held by a rank that also holds the
+    /// layer they read. [`FaceBc::Outflow`]'s own documentation says the
+    /// condition is "only meaningful on the domain boundary", so this test and
+    /// the one below record together that the halo the distributed enforcement
+    /// carries is load-bearing only for a configuration the crate calls
+    /// meaningless — and that it is load-bearing there.
+    #[test]
+    fn a_z_outflow_on_the_domain_boundary_alone_needs_no_face_halo() {
+        // Counted, not merely observed: "no rank needed it" is indistinguishable
+        // from "no rank was asked" without the number of ranks that ran.
+        let mut ran = 0usize;
+        let mut outflow_faces = 0usize;
+        for &(n, ranks) in &SLAB_CASES {
+            let mut base = seed_divergent_flow(n);
+            for j in 0..n {
+                for i in 0..n {
+                    base.set_w_bc(i, j, 0, FaceBc::Outflow);
+                    base.set_w_bc(i, j, n, FaceBc::Outflow);
+                }
+            }
+            let mut monolithic = base.clone();
+            monolithic.enforce_face_boundaries();
+
+            let bounds: Vec<(usize, usize)> =
+                (0..ranks).map(|r| slab_bounds(n, ranks, r)).collect();
+            let mut faces: Vec<SlabFaces> = bounds
+                .iter()
+                .map(|&b| SlabFaces::from_grid(&base, b))
+                .collect();
+            for (r, rank_faces) in faces.iter_mut().enumerate() {
+                let cond = SlabFaceConditions::from_grid(&base, bounds[r]);
+                outflow_faces += cond
+                    .w
+                    .iter()
+                    .filter(|&&(_, bc)| bc == FaceBc::Outflow)
+                    .count();
+                // `None`: nothing crosses the boundary below.
+                enforce_slab_face_boundaries(rank_faces, &cond, None);
+                ran += 1;
+            }
+            let assembled = assemble_slab_faces(&base, &faces);
+            assert_eq!(
+                assembled.w, monolithic.w,
+                "{n}³ over {ranks} ranks: a Z-outflow on the domain boundary alone did not \
+                 reproduce the monolithic enforcement without a halo",
+            );
+        }
+        let expected_ranks: usize = SLAB_CASES.iter().map(|&(_, ranks)| ranks).sum();
+        assert_eq!(
+            ran, expected_ranks,
+            "only {ran} of {expected_ranks} ranks ran, so the ones that did not are not \
+             evidence of anything",
+        );
+        assert!(
+            outflow_faces > 0,
+            "the ranks held no outflow Z-face between them, so running without a halo \
+             proves nothing",
+        );
+        println!(
+            "boundary-only Z-outflow: {ran} ranks over {} cases imposed {outflow_faces} \
+             outflow Z-faces with nothing handed over",
+            SLAB_CASES.len(),
+        );
+    }
+
+    /// The other half of the pair above: put an outflow on an interior Z-face and
+    /// the enforcement aborts without the layer below, at the read, naming the
+    /// rank below as the one that has to hand it over.
+    #[test]
+    #[should_panic(expected = "which the rank below has to hand over")]
+    fn an_interior_z_outflow_is_what_makes_the_face_halo_load_bearing() {
+        let n = 8usize;
+        let base = seed_slab_scene(n, SlabScene::ZOutflow);
+        // Rank 1 of 8 owns layer 1 only, and layer 1 is an outflow under
+        // `ZOutflow`'s rule, so its first written Z-face reads layer 0.
+        let b = slab_bounds(n, 8, 1);
+        assert_eq!(
+            b,
+            (1, 2),
+            "the rank this test aims at owns a different layer"
+        );
+        let mut faces = SlabFaces::from_grid(&base, b);
+        let cond = SlabFaceConditions::from_grid(&base, b);
+        enforce_slab_face_boundaries(&mut faces, &cond, None);
+    }
+
+    /// Naming the conditions face by face, as a rank with no [`MacGrid`] must,
+    /// gives the same lists as reading them out of a grid.
+    ///
+    /// Without this the only way to build a [`SlabFaceConditions`] that anything
+    /// checks would be from a resident whole grid, which is the thing slab-local
+    /// storage exists to avoid.
+    #[test]
+    fn conditions_named_face_by_face_match_the_ones_read_from_a_grid() {
+        let n = 6usize;
+        let ranks = 3usize;
+        let base = seed_slab_scene(n, SlabScene::ZOutflow);
+        for r in 0..ranks {
+            let b = slab_bounds(n, ranks, r);
+            let from_grid = SlabFaceConditions::from_grid(&base, b);
+            let mut by_hand = SlabFaceConditions::new(n, n, b);
+            if b.0 != b.1 {
+                for k in b.0..b.1 {
+                    for j in 0..n {
+                        for i in 0..=n {
+                            by_hand.set_u(i, j, k, base.u_bc(i, j, k));
+                        }
+                    }
+                    for j in 0..=n {
+                        for i in 0..n {
+                            by_hand.set_v(i, j, k, base.v_bc(i, j, k));
+                        }
+                    }
+                }
+                for k in b.0..=b.1 {
+                    for j in 0..n {
+                        for i in 0..n {
+                            by_hand.set_w(i, j, k, base.w_bc(i, j, k));
+                        }
+                    }
+                }
+            }
+            assert_eq!(
+                from_grid.u, by_hand.u,
+                "rank {r}: the X-face conditions differ"
+            );
+            assert_eq!(
+                from_grid.v, by_hand.v,
+                "rank {r}: the Y-face conditions differ"
+            );
+            assert_eq!(
+                from_grid.w, by_hand.w,
+                "rank {r}: the Z-face conditions differ"
+            );
+            assert!(
+                !from_grid.w.is_empty() || b.0 == b.1,
+                "rank {r} read no Z-face conditions out of a scene that sets them on every \
+                 layer, so the comparison above is vacuous",
+            );
+        }
+    }
+
+    /// Records which planes a face-condition pipeline carries, and between which
+    /// ranks.
+    ///
+    /// Not a stand-in for a channel: it moves nothing, and the test that uses it
+    /// compares the sequence against one derived from the partition rather than
+    /// from a run.
+    struct PlaneRecorder {
+        plane: usize,
+        /// `(dst, layer)` per send, in order.
+        sent: Vec<(usize, usize)>,
+        /// `(src, layer)` per receive, in order.
+        received: Vec<(usize, usize)>,
+    }
+
+    impl PlaneChannel for PlaneRecorder {
+        fn send_plane(&mut self, dst: usize, layer: usize, plane: &[Fix128]) {
+            assert_eq!(
+                plane.len(),
+                self.plane,
+                "a plane of the wrong size was offered"
+            );
+            self.sent.push((dst, layer));
+        }
+
+        fn recv_plane(&mut self, src: usize, layer: usize, plane: &mut [Fix128]) {
+            assert_eq!(
+                plane.len(),
+                self.plane,
+                "a plane of the wrong size was asked for"
+            );
+            self.received.push((src, layer));
+        }
+    }
+
+    /// The face-condition pipeline carries exactly one Z-face layer across each
+    /// boundary between consecutive *non-empty* ranks, in ascending order, and
+    /// the layer it carries is the last one the sending rank writes.
+    ///
+    /// Derived from the partition, not from a solve, so it holds for
+    /// decompositions no test could afford to run — and it is what says a
+    /// decomposition with empty ranks still forms one chain rather than breaking
+    /// into pieces at the gaps.
+    #[test]
+    fn the_face_condition_pipeline_carries_one_plane_per_slab_boundary() {
+        for ranks in 1usize..=6 {
+            for nz in [ranks, 2 * ranks + 1, 3 * ranks, 1] {
+                let bounds: Vec<(usize, usize)> =
+                    (0..ranks).map(|r| slab_bounds(nz, ranks, r)).collect();
+                let busy: Vec<usize> = (0..ranks).filter(|&r| bounds[r].0 != bounds[r].1).collect();
+                let expected: Vec<(usize, usize, usize)> = busy
+                    .windows(2)
+                    .map(|pair| (pair[0], pair[1], bounds[pair[0]].1 - 1))
+                    .collect();
+
+                let plane = cell_plane(2, 2);
+                let mut recorder = PlaneRecorder {
+                    plane,
+                    sent: Vec::new(),
+                    received: Vec::new(),
+                };
+                for (r, &b) in bounds.iter().enumerate() {
+                    let mut faces = SlabFaces::new(2, 2, nz, Fix128::ONE, b);
+                    let cond = SlabFaceConditions::new(2, 2, b);
+                    enforce_slab_face_boundaries_on_rank(
+                        &mut faces,
+                        &cond,
+                        ranks,
+                        r,
+                        &mut recorder,
+                    );
+                }
+
+                assert_eq!(
+                    recorder.sent.len(),
+                    recorder.received.len(),
+                    "{nz} layers over {ranks} ranks: {} planes were offered and {} asked for",
+                    recorder.sent.len(),
+                    recorder.received.len(),
+                );
+                let walked: Vec<(usize, usize, usize)> = recorder
+                    .received
+                    .iter()
+                    .zip(&recorder.sent)
+                    .map(|(&(src, layer), &(dst, sent_layer))| {
+                        assert_eq!(
+                            layer, sent_layer,
+                            "{nz} layers over {ranks} ranks: layer {sent_layer} was offered \
+                             and layer {layer} asked for",
+                        );
+                        (src, dst, layer)
+                    })
+                    .collect();
+                assert_eq!(
+                    walked, expected,
+                    "{nz} layers over {ranks} ranks: the pipeline carried a different \
+                     sequence of planes than the partition implies",
+                );
+            }
+        }
+    }
+
+    /// The two transports put the same bytes on the wire for the same values.
+    ///
+    /// [`SlabSocketTransport`] encodes through [`encode_plane`] and
+    /// [`SocketTransport`] has the loop written out inside `deliver_layer`; this
+    /// compares one against the other instead of trusting two copies of an
+    /// encoding to stay the same. The decode is checked to be the encode's
+    /// inverse in the same place, so a symmetric change to both halves of
+    /// [`encode_plane`] / [`decode_plane`] is at least visible against the other
+    /// transport.
+    #[cfg(feature = "std")]
+    #[test]
+    fn the_two_wire_encodings_agree() {
+        use std::io::Cursor;
+
+        let plane = 5usize;
+        let values: Vec<Fix128> = (0..plane)
+            .map(|c| Fix128::from_ratio(c as i64 * 7 - 11, 3))
+            .collect();
+        let mut by_hand = vec![0u8; plane * WIRE_BYTES_PER_CELL];
+        encode_plane(&values, &mut by_hand);
+
+        let mut transport: SocketTransport<Cursor<Vec<u8>>> = SocketTransport::new(
+            0,
+            plane * 2,
+            plane,
+            vec![None, Some(Cursor::new(Vec::new()))],
+        );
+        transport.slab_mut(0)[plane..].copy_from_slice(&values);
+        transport.deliver_layer(0, 1, 1);
+        let on_the_wire = transport.links[1]
+            .as_ref()
+            .expect("the link the delivery went out on")
+            .get_ref()
+            .clone();
+
+        assert_eq!(
+            on_the_wire, by_hand,
+            "the slab transport's encoding differs from the full-length transport's, so the \
+             two cannot be peers on one wire",
+        );
+        assert!(
+            !by_hand.iter().all(|&b| b == 0),
+            "the encoding produced only zero bytes, so the comparison above is vacuous",
+        );
+
+        let mut back = vec![Fix128::ZERO; plane];
+        decode_plane(&by_hand, &mut back);
+        assert_eq!(back, values, "decoding is not the inverse of encoding");
+    }
+
+    // ---- several processes, each holding one band ---------------------------
+    //
+    // The in-process oracles above run every rank from one address space, where
+    // `LocalSlabTransport` can always reach a neighbour's band. That is enough to
+    // fix the decomposition and not enough to fix the *distribution*: a driver
+    // that quietly read another rank's storage would pass every one of them. Here
+    // each rank is a process, its band is the only one it has, and a halo layer
+    // is bytes on a loopback stream.
+    //
+    // Ranks connect as a full mesh, because the schedule addresses the rank that
+    // *owns* a layer rather than the rank with the adjacent index, and with empty
+    // ranks those are not the same. Rank 0 brokers the port table: every child
+    // binds a listener, tells rank 0 its port, and rank 0 hands the table back,
+    // after which each rank dials every lower rank and announces which rank it
+    // is. Nothing races for a fixed port and no rank has to be told the topology.
+
+    /// Which rank a re-executed test binary is.
+    #[cfg(feature = "std")]
+    const XSLAB_RANK: &str = "ALICE_PHYSICS_XSLAB_RANK";
+    /// How many ranks the decomposition has.
+    #[cfg(feature = "std")]
+    const XSLAB_RANKS: &str = "ALICE_PHYSICS_XSLAB_RANKS";
+    /// Loopback port rank 0 brokers the port table on.
+    #[cfg(feature = "std")]
+    const XSLAB_BROKER: &str = "ALICE_PHYSICS_XSLAB_BROKER";
+    /// Edge length of the cubic grid every rank seeds.
+    #[cfg(feature = "std")]
+    const XSLAB_SIZE: &str = "ALICE_PHYSICS_XSLAB_SIZE";
+    /// Which [`SlabScene`] every rank seeds.
+    #[cfg(feature = "std")]
+    const XSLAB_SCENE: &str = "ALICE_PHYSICS_XSLAB_SCENE";
+    /// Which fault, if any, every rank applies.
+    #[cfg(feature = "std")]
+    const XSLAB_FAULT: &str = "ALICE_PHYSICS_XSLAB_FAULT";
+
+    /// libtest name of the child entry point, passed to the re-executed binary as
+    /// `--exact`.
+    ///
+    /// Renaming `cross_process_slab_rank_worker` without updating this would make
+    /// libtest match nothing and exit 0, so the accept loops below report a child
+    /// that exits before connecting instead of waiting out their deadline.
+    #[cfg(feature = "std")]
+    const XSLAB_WORKER: &str = "eulerian_grid::tests::cross_process_slab_rank_worker";
+
+    /// Iterations every rank runs.
+    #[cfg(feature = "std")]
+    const XSLAB_ITERATIONS: u32 = 6;
+
+    /// A fault applied to a crossing, identically on every rank so the streams
+    /// stay in step and the run produces a wrong answer rather than a hang.
+    #[cfg(feature = "std")]
+    #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+    enum SlabCrossFault {
+        /// Carry what the schedule asks for.
+        None,
+        /// Perform no pressure halo delivery at all.
+        NoPressureHalo,
+        /// Receive the Z-face plane and then impose the conditions as though it
+        /// had been zero.
+        BlankFaceHalo,
+    }
+
+    #[cfg(feature = "std")]
+    impl SlabCrossFault {
+        /// Name passed to a child rank through the environment.
+        fn as_str(self) -> &'static str {
+            match self {
+                Self::None => "none",
+                Self::NoPressureHalo => "nohalo",
+                Self::BlankFaceHalo => "blankface",
+            }
+        }
+
+        /// Inverse of [`Self::as_str`]; an unknown name is a harness bug.
+        fn parse(name: &str) -> Self {
+            match name {
+                "none" => Self::None,
+                "nohalo" => Self::NoPressureHalo,
+                "blankface" => Self::BlankFaceHalo,
+                other => panic!("unknown slab cross-process fault `{other}`"),
+            }
+        }
+    }
+
+    /// Drops every pressure halo delivery, and changes nothing else.
+    ///
+    /// Not a stub standing in for unwritten code: the omission is the
+    /// measurement, and the test that uses it asserts the run stops agreeing
+    /// with the single-process solve. Dropped on every rank, so no stream is left
+    /// with an unread layer.
+    #[cfg(feature = "std")]
+    struct DroppedHalo<T> {
+        inner: T,
+    }
+
+    #[cfg(feature = "std")]
+    impl<T: SlabTransport> SlabTransport for DroppedHalo<T> {
+        fn slab_mut(&mut self, rank: usize) -> &mut SlabStorage {
+            self.inner.slab_mut(rank)
+        }
+
+        fn deliver_layer(&mut self, _src: usize, _dst: usize, _layer: usize) {}
+    }
+
+    /// Receives the Z-face plane the pipeline carries and hands the caller zeros
+    /// instead, and changes nothing else.
+    ///
+    /// Receiving it first is deliberate: dropping the receive would desynchronise
+    /// the stream, and a timeout says nothing about whether the plane's contents
+    /// mattered.
+    #[cfg(feature = "std")]
+    struct BlankedPlane<C> {
+        inner: C,
+        scratch: Vec<Fix128>,
+    }
+
+    #[cfg(feature = "std")]
+    impl<C: PlaneChannel> PlaneChannel for BlankedPlane<C> {
+        fn send_plane(&mut self, dst: usize, layer: usize, plane: &[Fix128]) {
+            self.inner.send_plane(dst, layer, plane);
+        }
+
+        fn recv_plane(&mut self, src: usize, layer: usize, plane: &mut [Fix128]) {
+            self.inner.recv_plane(src, layer, &mut self.scratch);
+            plane.fill(Fix128::ZERO);
+        }
+    }
+
+    /// What one rank found when it compared the layers it owns against the
+    /// single-process solve: mismatching pressure cells, mismatching face
+    /// values, the first layer that differs (or `u32::MAX`), and how many cells
+    /// it compared.
+    ///
+    /// The last field is there because a comparison of nothing satisfies every
+    /// assertion made with it; the parent adds the counts up and requires the
+    /// whole domain.
+    #[cfg(feature = "std")]
+    fn compare_band(reference: &MacGrid, faces: &SlabFaces, slab: &SlabStorage) -> [u32; 4] {
+        let (nx, ny) = (reference.nx, reference.ny);
+        let plane = cell_plane(nx, ny);
+        let (k0, k1) = faces.owned();
+        let mut bad_cells = 0u32;
+        let mut bad_faces = 0u32;
+        let mut first_bad = u32::MAX;
+        let mut compared = 0u32;
+        let mut note = |layer: usize| {
+            first_bad = first_bad.min(layer as u32);
+        };
+
+        for k in k0..k1 {
+            let mine = slab.layer(k).expect("a rank's own layer is resident");
+            let theirs = &reference.pressure[k * plane..(k + 1) * plane];
+            for (a, b) in mine.iter().zip(theirs) {
+                compared += 1;
+                if a != b {
+                    bad_cells += 1;
+                    note(k);
+                }
+            }
+            let (u, _) = faces.u_layer(k);
+            for j in 0..ny {
+                for i in 0..=nx {
+                    if u[i + (nx + 1) * j] != reference.u[reference.idx_u(i, j, k)] {
+                        bad_faces += 1;
+                        note(k);
+                    }
+                }
+            }
+            let (v, _) = faces.v_layer(k);
+            for j in 0..=ny {
+                for i in 0..nx {
+                    if v[i + nx * j] != reference.v[reference.idx_v(i, j, k)] {
+                        bad_faces += 1;
+                        note(k);
+                    }
+                }
+            }
+        }
+        for k in faces.w_written() {
+            let (w, _) = faces.w_layer(k);
+            for j in 0..ny {
+                for i in 0..nx {
+                    if w[i + nx * j] != reference.w[reference.idx_w(i, j, k)] {
+                        bad_faces += 1;
+                        note(k);
+                    }
+                }
+            }
+        }
+        [bad_cells, bad_faces, first_bad, compared]
+    }
+
+    /// Run `my_rank`'s share of the slab-local solve over `links`, where
+    /// `links[r]` is the stream to rank `r` and this rank's own entry is `None`,
+    /// and report how it compares with the single-process solve.
+    ///
+    /// Shared by every process so none can drift from the others in iteration
+    /// count, schedule, scene or fluid parameters. The rank builds its own faces
+    /// from the *unenforced* field and imposes the conditions itself: that step
+    /// is part of what is being distributed, not something the harness does for
+    /// it. The reference solve each rank computes for the comparison is apparatus
+    /// — the distributed path never holds a full-length array.
+    #[cfg(feature = "std")]
+    fn solve_slab_as_rank(
+        n: usize,
+        ranks: usize,
+        my_rank: usize,
+        scene: SlabScene,
+        fault: SlabCrossFault,
+        links: Vec<Option<std::net::TcpStream>>,
+    ) -> [u32; 4] {
+        let (dt, rho) = (xproc_dt(), xproc_rho());
+        let base = seed_slab_scene(n, scene);
+        let b = slab_bounds(n, ranks, my_rank);
+        let plane = cell_plane(n, n);
+
+        let mut faces = SlabFaces::from_grid(&base, b);
+        let cond = SlabFaceConditions::from_grid(&base, b);
+        let band = band_for_rank(plane, n, b, 1, &base.pressure);
+        let mut socket = SlabSocketTransport::new(my_rank, plane, band, links);
+
+        if fault == SlabCrossFault::BlankFaceHalo {
+            let mut channel = BlankedPlane {
+                inner: socket,
+                scratch: vec![Fix128::ZERO; plane],
+            };
+            enforce_slab_face_boundaries_on_rank(&mut faces, &cond, ranks, my_rank, &mut channel);
+            socket = channel.inner;
+        } else {
+            enforce_slab_face_boundaries_on_rank(&mut faces, &cond, ranks, my_rank, &mut socket);
+        }
+
+        if fault == SlabCrossFault::NoPressureHalo {
+            let mut dropped = DroppedHalo { inner: socket };
+            project_pressure_slab_local_on_rank(
+                &mut faces,
+                dt,
+                rho,
+                XSLAB_ITERATIONS,
+                ranks,
+                HaloSchedule::EverySweep,
+                my_rank,
+                &mut dropped,
+            );
+            socket = dropped.inner;
+        } else {
+            project_pressure_slab_local_on_rank(
+                &mut faces,
+                dt,
+                rho,
+                XSLAB_ITERATIONS,
+                ranks,
+                HaloSchedule::EverySweep,
+                my_rank,
+                &mut socket,
+            );
+        }
+
+        let mut reference = base.clone();
+        project_pressure_red_black_gs(&mut reference, dt, rho, XSLAB_ITERATIONS);
+        compare_band(&reference, &faces, socket.slab())
+    }
+
+    /// Dial every lower rank and accept every higher one, so that `links[r]` is
+    /// the stream to rank `r`.
+    ///
+    /// Dialling first cannot deadlock: every rank's listener is bound before its
+    /// port reaches the table, so a connection completes into the backlog whether
+    /// or not the peer has reached its own accept loop, and the rank number that
+    /// follows it is two bytes.
+    #[cfg(feature = "std")]
+    fn join_slab_mesh(
+        my_rank: usize,
+        ranks: usize,
+        ports: &[u16],
+        listener: &std::net::TcpListener,
+    ) -> Vec<Option<std::net::TcpStream>> {
+        use std::io::{Read, Write};
+        use std::net::TcpStream;
+
+        let mut links: Vec<Option<TcpStream>> = (0..ranks).map(|_| None).collect();
+        for lower in 0..my_rank {
+            let mut link = TcpStream::connect(("127.0.0.1", ports[lower]))
+                .unwrap_or_else(|e| panic!("rank {my_rank} dialling rank {lower}: {e}"));
+            bound_peer_link(&link);
+            link.write_all(&(my_rank as u16).to_le_bytes())
+                .expect("announce which rank is dialling");
+            link.flush().expect("flush the rank announcement");
+            links[lower] = Some(link);
+        }
+        for _ in my_rank + 1..ranks {
+            let mut link = accept_before_deadline(listener, "a higher rank");
+            let mut who = [0u8; 2];
+            link.read_exact(&mut who)
+                .expect("learn which rank dialled in");
+            let peer = usize::from(u16::from_le_bytes(who));
+            assert!(
+                peer > my_rank && peer < ranks && links[peer].is_none(),
+                "rank {my_rank} was dialled by rank {peer}, which is not a higher rank it \
+                 is still waiting for",
+            );
+            links[peer] = Some(link);
+        }
+        links
+    }
+
+    /// Ranks 1 and up of the slab-local solve, reached only when this binary has
+    /// been re-executed with [`XSLAB_RANK`] set.
+    ///
+    /// One entry point for all of them: they run the same code and differ only in
+    /// the rank they are told they are. On an ordinary `cargo test` run the
+    /// variable is absent and this returns at once — the tests below are what ask
+    /// for a child rank.
+    #[cfg(feature = "std")]
+    #[test]
+    fn cross_process_slab_rank_worker() {
+        use std::io::{Read, Write};
+        use std::net::{TcpListener, TcpStream};
+
+        let Ok(rank) = std::env::var(XSLAB_RANK) else {
+            return;
+        };
+        let my_rank: usize = rank.parse().expect("the rank is a number");
+        let ranks: usize = std::env::var(XSLAB_RANKS)
+            .expect("rank count from rank 0")
+            .parse()
+            .expect("the rank count is a number");
+        assert!(
+            my_rank > 0 && my_rank < ranks,
+            "rank {my_rank} is not a child rank of a {ranks}-rank harness",
+        );
+        let n: usize = std::env::var(XSLAB_SIZE)
+            .expect("grid size from rank 0")
+            .parse()
+            .expect("grid size is a number");
+        let broker: u16 = std::env::var(XSLAB_BROKER)
+            .expect("broker port from rank 0")
+            .parse()
+            .expect("broker port is a number");
+        let scene = SlabScene::parse(&std::env::var(XSLAB_SCENE).expect("scene from rank 0"));
+        let fault = SlabCrossFault::parse(&std::env::var(XSLAB_FAULT).expect("fault from rank 0"));
+
+        // Bound before the port is announced, so a peer that dials the moment it
+        // sees the table finds a listener rather than a refusal.
+        let listener = TcpListener::bind(("127.0.0.1", 0)).expect("bind a loopback port");
+        let my_port = listener
+            .local_addr()
+            .expect("the bound loopback address")
+            .port();
+
+        let mut to_root = TcpStream::connect(("127.0.0.1", broker))
+            .expect("connect to rank 0 on the port it brokers on");
+        bound_peer_link(&to_root);
+        let mut hello = [0u8; 4];
+        hello[..2].copy_from_slice(&(my_rank as u16).to_le_bytes());
+        hello[2..].copy_from_slice(&my_port.to_le_bytes());
+        to_root.write_all(&hello).expect("announce rank and port");
+        to_root.flush().expect("flush the announcement");
+
+        let mut table = vec![0u8; 2 * ranks];
+        to_root
+            .read_exact(&mut table)
+            .expect("learn the port of every rank from rank 0");
+        let ports: Vec<u16> = table
+            .chunks_exact(2)
+            .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+            .collect();
+
+        let links = join_slab_mesh(my_rank, ranks, &ports, &listener);
+        let report = solve_slab_as_rank(n, ranks, my_rank, scene, fault, links);
+
+        let mut bytes = [0u8; 16];
+        for (slot, value) in bytes.chunks_exact_mut(4).zip(report) {
+            slot.copy_from_slice(&value.to_le_bytes());
+        }
+        to_root.write_all(&bytes).expect("report to rank 0");
+        to_root.flush().expect("flush the report");
+    }
+
+    /// The child ranks rank 0 spawned, reaped on the way out even when an
+    /// assertion unwinds, so a failing run leaves no process holding a port.
+    #[cfg(feature = "std")]
+    struct SlabRanks {
+        kids: Vec<std::process::Child>,
+    }
+
+    #[cfg(feature = "std")]
+    impl Drop for SlabRanks {
+        fn drop(&mut self) {
+            for kid in &mut self.kids {
+                let _ = kid.kill();
+                let _ = kid.wait();
+            }
+        }
+    }
+
+    #[cfg(feature = "std")]
+    impl SlabRanks {
+        /// Accept one connection while watching every child.
+        ///
+        /// All children are polled on each turn: one that exited early would
+        /// otherwise leave this loop running to its deadline, and "timed out" is
+        /// all the run would be able to say about it.
+        fn accept(&mut self, listener: &std::net::TcpListener) -> std::net::TcpStream {
+            use std::io::ErrorKind;
+            use std::time::{Duration, Instant};
+
+            listener
+                .set_nonblocking(true)
+                .expect("poll for a child rank instead of blocking on it");
+            let deadline = Instant::now() + Duration::from_secs(60);
+            let link = loop {
+                match listener.accept() {
+                    Ok((stream, _)) => break stream,
+                    Err(e) if e.kind() == ErrorKind::WouldBlock => {}
+                    Err(e) => panic!("accepting a child rank failed: {e}"),
+                }
+                for (slot, kid) in self.kids.iter_mut().enumerate() {
+                    if let Some(status) = kid.try_wait().expect("poll a child rank") {
+                        panic!(
+                            "rank {} exited ({status}) before connecting: does \
+                             `{XSLAB_WORKER}` still name a test?",
+                            slot + 1,
+                        );
+                    }
+                }
+                assert!(
+                    Instant::now() < deadline,
+                    "a child rank did not connect within 60 s",
+                );
+                std::thread::sleep(Duration::from_millis(2));
+            };
+            link.set_nonblocking(false)
+                .expect("switch the accepted stream back to blocking");
+            bound_peer_link(&link);
+            link
+        }
+
+        /// Wait for every rank and require a clean exit.
+        fn join(&mut self) {
+            for (slot, kid) in self.kids.iter_mut().enumerate() {
+                let status = kid.wait().expect("wait for a child rank to exit");
+                assert!(status.success(), "rank {} exited with {status}", slot + 1);
+            }
+        }
+    }
+
+    /// Solve `n³` across `ranks` processes — rank 0 here, the rest re-executed —
+    /// and return every rank's comparison against the single-process solve.
+    #[cfg(feature = "std")]
+    fn slab_reports_across_processes(
+        n: usize,
+        ranks: usize,
+        scene: SlabScene,
+        fault: SlabCrossFault,
+    ) -> Vec<[u32; 4]> {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        use std::process::{Command, Stdio};
+
+        assert!(ranks >= 2, "a cross-process case needs at least two ranks");
+        let broker = TcpListener::bind(("127.0.0.1", 0)).expect("bind the broker port");
+        let broker_port = broker
+            .local_addr()
+            .expect("the bound loopback address")
+            .port();
+        // Bound before any child is spawned, for the reason the worker gives.
+        let mine = TcpListener::bind(("127.0.0.1", 0)).expect("bind rank 0's data port");
+        let my_port = mine.local_addr().expect("the bound address").port();
+        let exe = std::env::current_exe().expect("path of this test binary");
+
+        let mut kids = SlabRanks {
+            kids: (1..ranks)
+                .map(|rank| {
+                    Command::new(&exe)
+                        .args(["--exact", XSLAB_WORKER, "--test-threads=1"])
+                        .env(XSLAB_RANK, rank.to_string())
+                        .env(XSLAB_RANKS, ranks.to_string())
+                        .env(XSLAB_BROKER, broker_port.to_string())
+                        .env(XSLAB_SIZE, n.to_string())
+                        .env(XSLAB_SCENE, scene.as_str())
+                        .env(XSLAB_FAULT, fault.as_str())
+                        .stdin(Stdio::null())
+                        .stdout(Stdio::null())
+                        .stderr(Stdio::null())
+                        .spawn()
+                        .unwrap_or_else(|e| {
+                            panic!("re-execute this test binary as rank {rank}: {e}")
+                        })
+                })
+                .collect(),
+        };
+
+        // Collect every child's port, then hand the whole table back. A child
+        // cannot be told the table before every child has announced itself, which
+        // is why this is two passes and not one.
+        let mut brokered: Vec<Option<std::net::TcpStream>> = (0..ranks).map(|_| None).collect();
+        let mut ports = vec![0u16; ranks];
+        ports[0] = my_port;
+        for _ in 1..ranks {
+            let mut link = kids.accept(&broker);
+            let mut hello = [0u8; 4];
+            link.read_exact(&mut hello)
+                .expect("a child rank's announcement");
+            let rank = usize::from(u16::from_le_bytes([hello[0], hello[1]]));
+            assert!(
+                rank > 0 && rank < ranks && brokered[rank].is_none(),
+                "rank {rank} announced itself twice or is not a child rank",
+            );
+            ports[rank] = u16::from_le_bytes([hello[2], hello[3]]);
+            brokered[rank] = Some(link);
+        }
+        let table: Vec<u8> = ports.iter().flat_map(|p| p.to_le_bytes()).collect();
+        for link in brokered.iter_mut().flatten() {
+            link.write_all(&table).expect("hand a child the port table");
+            link.flush().expect("flush the port table");
+        }
+
+        let links = join_slab_mesh(0, ranks, &ports, &mine);
+        let mut reports = vec![[0u32; 4]; ranks];
+        reports[0] = solve_slab_as_rank(n, ranks, 0, scene, fault, links);
+
+        // Every rank has finished its own half of every delivery by the time rank
+        // 0 is through its schedule, so the children are on their way out; their
+        // reports are already in rank 0's receive buffers and survive the close.
+        kids.join();
+        for (rank, link) in brokered.iter_mut().enumerate() {
+            let Some(link) = link else { continue };
+            let mut bytes = [0u8; 16];
+            link.read_exact(&mut bytes)
+                .unwrap_or_else(|e| panic!("rank {rank}'s report: {e}"));
+            for (slot, chunk) in reports[rank].iter_mut().zip(bytes.chunks_exact(4)) {
+                *slot = u32::from_le_bytes(chunk.try_into().expect("4 bytes of a report"));
+            }
+        }
+        reports
+    }
+
+    /// Every rank of a `ranks`-process run agrees with the single-process solve
+    /// over the layers it owns, and between them they cover the whole domain.
+    #[cfg(feature = "std")]
+    fn assert_slab_processes_agree(n: usize, ranks: usize, scene: SlabScene) {
+        let reports = slab_reports_across_processes(n, ranks, scene, SlabCrossFault::None);
+        for (rank, report) in reports.iter().enumerate() {
+            assert_eq!(
+                *report,
+                [0, 0, u32::MAX, report[3]],
+                "{n}³ over {ranks} processes ({scene:?}): rank {rank} found {} pressure \
+                 cells and {} face values differing from the single-process solve, first at \
+                 layer {}",
+                report[0],
+                report[1],
+                report[2],
+            );
+        }
+        let compared: u32 = reports.iter().map(|report| report[3]).sum();
+        assert_eq!(
+            compared as usize,
+            n * n * n,
+            "{n}³ over {ranks} processes ({scene:?}): the ranks compared {compared} cells \
+             between them instead of the whole domain, so the agreement above is partly \
+             vacuous",
+        );
+    }
+
+    /// Three processes, each holding one band and one halo layer, reproduce the
+    /// single-process solve bit for bit — over a rank count that divides the
+    /// depth and one that does not, and over the scene whose face conditions
+    /// cross a slab boundary.
+    ///
+    /// What this settles that the in-process oracles cannot: there every rank's
+    /// band is a `Vec` in one address space, so a driver that read a neighbour's
+    /// storage would also pass. Here a neighbour's band is in another process,
+    /// every halo layer is sixteen bytes per cell on a loopback stream, and
+    /// `SlabSocketTransport::slab_mut` refuses to hand out any band but its own.
+    ///
+    /// Exactness, not a tolerance: `Fix128` addition is a group operation mod
+    /// 2¹²⁸, so a distribution that is right at all is right to the bit.
+    #[cfg(feature = "std")]
+    #[test]
+    fn three_processes_reproduce_the_monolithic_slab_local_solve() {
+        for &(n, scene) in &[
+            (9usize, SlabScene::ClosedBox),
+            (9, SlabScene::ZOutflow),
+            (8, SlabScene::ZOutflow),
+        ] {
+            if scene == SlabScene::ZOutflow {
+                assert!(
+                    z_outflow_crossings(n, 3) > 0,
+                    "{n}³ over 3 ranks has no Z-face layer crossing a slab boundary, so this \
+                     case does not exercise the face-condition pipeline",
+                );
+            }
+            assert_slab_processes_agree(n, 3, scene);
+        }
+    }
+
+    /// Four processes over three layers, so one rank owns nothing — and the rank
+    /// that owns nothing is rank 0, the one brokering the run.
+    ///
+    /// An empty rank takes part in no delivery, which means it must still walk
+    /// the whole schedule to keep its position in it, and the chain the face
+    /// conditions travel along has to skip it rather than break at it.
+    #[cfg(feature = "std")]
+    #[test]
+    fn four_processes_one_of_which_owns_nothing_reproduce_the_monolithic_slab_local_solve() {
+        let bounds: Vec<(usize, usize)> = (0..4).map(|r| slab_bounds(3, 4, r)).collect();
+        assert!(
+            bounds.iter().any(|&(k0, k1)| k0 == k1),
+            "this case was chosen because a rank owns nothing and none does: {bounds:?}",
+        );
+        assert!(
+            z_outflow_crossings(3, 4) > 0,
+            "3³ over 4 ranks has no Z-face layer crossing a slab boundary",
+        );
+        assert_slab_processes_agree(3, 4, SlabScene::ZOutflow);
+    }
+
+    /// Teeth for the two tests above, aimed at the pressure halo: drop every
+    /// delivery — on every rank, so no stream is left with an unread layer — and
+    /// the ranks must stop agreeing with the single-process solve.
+    ///
+    /// Without this, agreement could be coming from every rank seeding the same
+    /// field and the streams contributing nothing.
+    #[cfg(feature = "std")]
+    #[test]
+    fn a_cross_process_slab_run_without_the_pressure_halo_does_not_reproduce_the_solve() {
+        let reports = slab_reports_across_processes(
+            8,
+            3,
+            SlabScene::ZOutflow,
+            SlabCrossFault::NoPressureHalo,
+        );
+        assert!(
+            reports.iter().any(|r| r[0] > 0),
+            "three processes that exchanged no halo at all still reproduced the \
+             single-process pressure field, so the cross-process oracle is not measuring the \
+             exchange: {reports:?}",
+        );
+    }
+
+    /// Teeth aimed at the other crossing: receive the Z-face plane the pipeline
+    /// carries and impose the conditions as though it had been zero, and the
+    /// ranks must stop agreeing.
+    ///
+    /// This is the one thing two ranks sharing an address space cannot show: in
+    /// `distributed_face_enforcement_matches_the_monolithic_one` the plane is a
+    /// copy within one process, so the test cannot distinguish a pipeline that
+    /// carries the layer from one that happens to find it already correct.
+    #[cfg(feature = "std")]
+    #[test]
+    fn a_cross_process_slab_run_without_the_z_face_layer_does_not_reproduce_the_solve() {
+        assert!(
+            z_outflow_crossings(8, 3) > 0,
+            "8³ over 3 ranks has no Z-face layer crossing a slab boundary, so blanking it \
+             could not change anything",
+        );
+        let reports =
+            slab_reports_across_processes(8, 3, SlabScene::ZOutflow, SlabCrossFault::BlankFaceHalo);
+        assert!(
+            reports.iter().any(|r| r[0] > 0 || r[1] > 0),
+            "three processes that imposed their face conditions without the layer below \
+             still reproduced the single-process solve, so the face-condition pipeline is \
+             not measured: {reports:?}",
+        );
+    }
+
+    /// A rank-local driver asks its transport for its own band and no other, and
+    /// a transport holding one band says so when a driver asks for a neighbour's.
+    ///
+    /// The guard that makes the cross-process oracles mean what they say: without
+    /// it a driver walking every rank would read whatever `slab_mut` returned and
+    /// the run would look distributed.
+    #[cfg(feature = "std")]
+    #[test]
+    #[should_panic(expected = "the driver is not rank-local")]
+    fn a_slab_transport_refuses_to_hand_out_another_ranks_band() {
+        use std::io::Cursor;
+
+        let n = 4usize;
+        let plane = cell_plane(n, n);
+        let b = slab_bounds(n, 2, 0);
+        let band = SlabStorage::for_slab(plane, n, b, 1);
+        let links: Vec<Option<Cursor<Vec<u8>>>> = vec![None, Some(Cursor::new(Vec::new()))];
+        let mut transport = SlabSocketTransport::new(0, plane, band, links);
+        let _ = transport.slab_mut(1);
     }
 }
