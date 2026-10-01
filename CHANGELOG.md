@@ -57,6 +57,16 @@ oracle は `tests/analytic_plastic_dissipation.rs` (18 本、API 不在の red �
 超過が step の 1 次 (excess×N が N≥4 で 5.859375e-3 一定) / ε̄_p は不変で W_p は変わることの pin /
 降伏面上にあること / ΔT = β W_p / c_v / 配分のエネルギー保存 / 弾性のみなら格子が厳密に 0 / 退化入力 5 種
 変異試験は **実装変異 6/6 red + 配線変異 4/4 red、生存 0** (毎回 18 件実行を件数 gate で確認)
+### Added — 帯局所の越境 slab 経路で 1.34e8 cells を 8 プロセスに分散して検証 (test のみ、公開 API の差分なし)
+
+rank が `MacGrid` を一度も作らず scene から自分の band だけを seed し、所有層の fold を rank 0 に返す経路を `mod tests` に足した 参照解は rank 0 が子プロセスの退出後に **1 本だけ**作るので、全プロセスが全領域を常駐させる必要がない 既存の越境 harness (各 rank が参照解を自分で作って cell 単位で比較する形) は `SlabRunKind::MonolithicReference` としてそのまま残り、handshake (`open_slab_mesh` / `collect_slab_reports`) を 2 経路で共有する 報告の wire 形式は両経路で `[u64; 4]` に統一した
+公開 API の差分なし production code は無変更 (変更はすべて `mod tests` 内)
+実測 (`--release`、`ZOutflow`、6 red-black 反復、`ranks = 8`): **512³ = 134,217,728 cells が 8 プロセスで単一プロセス解と bit 一致** arm64 (Apple M2 Pro 32 GiB / 10 core) 142.87 s / peak RSS 12.35 GiB、x86_64 (Intel Xeon Gold 5315Y 44 GB / 8 core) 182.91 s / `VmHWM` 20.89 GiB 128³ (4 プロセス) / 256³ / 320³ / 384³ / 448³ も同経路で bit 一致
+⚠️ 測っていないもの: **複数ノードの MPI** (測ったのは 1 ホスト上の 8 OS プロセス、loopback TCP、場のデータに共有メモリを使わない分散メモリ) / **アーキをまたいだ fold 値の直接突合** (各機で「分散 == その機の単一プロセス解」を見たのみ)
+覆い判定の face 側を `assert!(faces > 0)` から `faces == n·u_plane(n,n) + n·v_plane(n,n) + (n+1)·cell_plane(n,n)` の厳密一致に変えた `> 0` では「ある rank が自分の face を 1 つも fold しない」「ある plane を 2 rank が fold して別の plane は誰も fold しない」が通る (cell 側は元から `n³` の厳密一致で、同じ関数の中で片方だけ緩かった)
+oracle は `eulerian_grid` の test 6 本 (band 局所の scene 構築が格子から切り出した band と一致すること / 越境の bit 一致 / 圧力 halo を落とすと一致しなくなる対照群 / Z-face 層を落とすと一致しなくなる対照群 / 大規模 run 要求の誤記を既定値で埋めずに拒否すること / fold が最下位 bit の差を分離すること) `--lib eulerian_grid` は 66 passed
+変異試験は 21 件 (実装 12 + 配線 9) のうち 20 件 red 残る 1 件は等価変異 (累積器 `cells` と `values` は独立なので、cell の走査を face の後ろへ動かしても両者に入る列が変わらず fold 値が不変 — 両版に probe を挿して生値 8 行の完全一致を実測した)
+⚠️ 既存 65 test がすべて green のまま通っていた実 gap が 2 件あり、どちらも oracle を足して red にした: (1) `fold_fix` が `Fix128` の小数語を捨てる変異 — fold の doc 自身が「低位 bit の差を捉えるためのもの」と書いているのに、halo を落とす既存 oracle は高位語も動く摂動しか作っていなかった (2) 渡された反復数を無視して定数を使う変異 — 全 case が同じ反復数を渡していたので引数が配線されていなくても通り、大規模 run は反復数を環境から取るため別の回数を解いて「一致」と報告しうる状態だった
 
 ### Added — 小ひずみ J2 弾塑性 FEM (`linear_elastic_fem::solve_elastoplastic`)
 

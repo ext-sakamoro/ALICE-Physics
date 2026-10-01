@@ -462,6 +462,111 @@ Phase 1+2+F 完了、以降は最重量の B に集中:
 - 現状は「Unreleased 反映済だが実運用検証未了」で α 判定継続
 - **v0.16.0 landing 時点で再評価**
 
+### 第 14 increment (2026-10-02、壁 4 の「HPC 並列」を実測で満たした)
+
+⚠️ **既存行は書き換えていません** 下記は追記です 第 6 increment の「残っているもの」のうち
+**「全長 buffer を維持しているので 1e8 規模には依然載らない」が本 increment で解消**しました
+
+| 話題 | commit | 到達点 |
+|---|---|---|
+| **帯局所の越境 slab** | `8e00bce` | rank が `MacGrid` を一度も作らず scene から自分の band だけを seed し、所有層の fold を rank 0 に返す経路 (`SlabRunKind::Banded`) 参照解は rank 0 が子の退出後に **1 本だけ**作るので、全プロセスが全領域を常駐させる必要がない 変更は `mod tests` 内のみで公開 API の差分なし |
+| **1.34e8 cells を 8 プロセスで** | 同 | ⚠️⚠️ **512³ = 134,217,728 cells を 8 プロセスに分散し、単一プロセス解と bit 一致** arm64 (M2 Pro 32 GiB) **142.87 s / peak 12.35 GiB** と x86_64 (Xeon Gold 5315Y 44 GB) **182.91 s / `VmHWM` 20.89 GiB** の 2 アーキで独立に確認 128³ / 256³ / 320³ / 384³ / 448³ も同経路で bit 一致 |
+| **覆い判定の強化** | 同 | face 側が `assert!(faces > 0)` だったのを **`faces == n·u_plane + n·v_plane + (n+1)·cell_plane = 3n²(n+1)` の厳密一致**に ⚠️ **`> 0` では「ある rank が自分の face を 1 つも fold しない」「ある plane を 2 rank が fold して別の plane は誰も fold しない」が通る** (cell 側は元から `n³` 厳密で、同じ関数の中で片方だけ緩かった) |
+
+#### ⚠️ 破壊試験で出た 2 件の実 gap (既存 65 test がすべて green のまま通っていた)
+
+| 変異 | なぜ素通りしたか | 足した oracle |
+|---|---|---|
+| `fold_fix` が `Fix128` の小数語 (`lo`) を捨てる | ⚠️ **fold の doc 自身が「低位 bit の差を捉えるためのもの」と書いているのに**、halo を落とす既存 oracle は**高位語も動く**摂動しか作っていなかった | `the_fold_separates_values_that_differ_in_their_lowest_bit` (最下位小数 bit / 最上位小数 bit / 整数語 の 3 通りで `assert_ne!`) |
+| 渡された反復数を無視して定数を使う | ⚠️ **全 case が同じ反復数を渡していたので、引数が配線されていなくても通る** 大規模 run は反復数を環境から取るため、512³ で別の回数を解いて「一致」と報告しうる | case 表を `(n, ranks, scene, iterations)` 4 列にして **1 と 9 を混ぜ**、「全 case が定数と同じなら fail」の guard を追加 |
+
+変異 21 件 (実装 12 + 配線 9) のうち **20 件 red** 残る 1 件は等価変異で、⚠️ **test では殺せない** — 累積器 `cells` と `values` は独立で、cell の走査を face の後ろへ動かしても**両者に入る列が変わらない** 判定は読みでなく実測 (両版に probe を挿して fold の生値 8 行が完全一致) で裏を取った
+
+#### ⚠️ 残っているもの (「測っていない」の明示)
+
+- ⚠️ **複数ノードの MPI は未測定** 測ったのは **1 ホスト上の 8 OS プロセス** (loopback TCP、場のデータに共有メモリを使わない分散メモリ) `SlabTransport` 抽象の背後なので socket 先を変えればノード越しになる形だが、**そこは測っていない** 第 6 increment の「MPI は入れていない」判断は変えていない
+- ⚠️ **アーキをまたいだ fold 値の直接突合はしていない** 各機で「分散 == その機の単一プロセス解」を確認したのみ (test が fold 値を出力しないため)
+- ⚠️ **律速は並列度でなく反復数のまま** 1 step を実用精度まで解くには GS の反復数が `O(n²)` で増えるので、越境 slab を multigrid に適用するのが次の軸 (第 6 increment の記録と同じ)
+
+### 壁 1〜4 の到達点と残件 — `origin/main = bf14216` で実測 (2026-10-02、`ys-6d`、既存行は書き換えていない)
+
+⚠️ **壁名はすべて複合語なので、語ごとに要求を分解して現況を当てる** 「壁 N を越えた / 越えていない」の 2 値で語ると、達成済の半分が見えなくなる (または未達側だけを見て「何も進んでいない」とも言える)
+
+| 壁 | 要求 A | 要求 B | 越えたか |
+|---|---|---|---|
+| **1** 幾何学的非線形・大変形 + 自己接触 | **幾何学的非線形・大変形** ✅ | **自己接触** ✅ | ✅ **2/2** |
+| **2** 高次要素 P2/P3 + 適応 remeshing | **高次要素 P2/P3** ✅ | **適応 remeshing** ✅ | ✅ **2/2** |
+| **3** 完全強連成マルチフィジックス | **完全** (連成が双方向) ✅ | ⚠️ **強連成** (monolithic) ⛔ | ⛔ **1/2** |
+| **4** 数億要素クラスの HPC 並列 | **数億要素クラス** ✅ | **HPC 並列** ✅ | ✅ **2/2** (限定つき、下表) |
+
+#### 各行の根拠 (grep / test 実行の出力、推測なし)
+
+| 要求 | 実測 |
+|---|---|
+| 壁 1 幾何学的非線形 | `src/linear_elastic_fem.rs` **4132 行** / `corotational` 42 ヒット / `hyperelastic` 38 ヒット |
+| 壁 1 自己接触 | `src/cloth.rs` に `edge_edge` **56 ヒット** `tests/analytic_self_contact.rs` **15 passed / 0 failed / 0 ignored** (頂点-面 `cb2fc36` 貫通 7 → 0、辺-辺 `6dbfbd0`〜`d097411` 貫通 22 → 0、破壊試験 13/13 red 生存 0) |
+| 壁 2 高次要素 | `src/quadratic_elastic_fem.rs` **1631 行** (`corotational` 12 / `hyperelastic` 25) / `src/cubic_elastic_fem.rs` **2285 行** (同 12 / 25) ⇒ ⚠️ **P2/P3 に非線形機構まで配線済** (`8747b62`) `analytic_quadratic_fem` 9 / `analytic_cubic_fem` 8 / `analytic_quadratic_hyperelastic` 8 / `analytic_cubic_hyperelastic` 9 すべて 0 failed 0 ignored |
+| 壁 2 適応 remeshing | `tests/refinement_conformity.rs` **498 行 / `#[ignore]` 0 件 / 4 passed 0 failed** (`the_scenes_start_conforming` / `uniform_refinement_stays_conforming` / `graded_refinement_stays_conforming` / `propagation_costs_elements_and_the_count_is_bounded`) `tests/mesh_quality.rs` 7 passed |
+| (おまけ) 壁 2 時間項 | `src/dynamic_fem.rs` **1363 行** (`8b3ecdd` 質量行列 整合/集中 + Newmark-β、破壊試験 30/30 red 生存 0) `analytic_dynamic_fem` 15 passed |
+| 壁 3 完全 (双方向) | 熱 → 機械: `ThermalExpansion` / `solve_with_eigenstrain` が residual に (`04e8259` 他) 機械 → 熱: `ElastoplasticSolution::dissipation` / `PlasticHeating` / `deposit_plastic_heat` (`bb2ffd0`) `analytic_thermoelastic` 6 / `analytic_thermoelastic_channel` 6 / `analytic_plastic_dissipation` 18 すべて 0 failed |
+| ⚠️ 壁 3 強連成 (monolithic) | `src/` の `monolithic` **4 ヒットはすべて doc comment** 逐語 `//! # Why an instrument, and not a monolithic solver` ⇒ **solver は 1 行も無い** `run_sub_iteration` (`coupled_iteration.rs`) は器具として公開済だが **production caller 0** ⇒ `solve → deposit → solve` は**副反復 0 回の陽的 partitioned 法**で収束解ではない |
+| 壁 4 数億要素クラス | 512³ = **1.34e8 cells** を越境で実走 (別途 1 プロセスで 2.62e8) |
+| 壁 4 HPC 並列 | **8 プロセスに分散して単一プロセス解と bit 一致** arm64 (M2 Pro 32 GiB) 142.87 s / peak 12.35 GiB、x86_64 (Xeon Gold 5315Y 44 GB) 182.91 s / `VmHWM` 20.89 GiB |
+
+⚠️ **repo 全体で残る `src gap` / `src bug` の `#[ignore]` は 1 件のみ** — `tests/armaly_backward_step.rs:1973` (CFD Gartling 再付着長) ⇒ **壁 1〜4 由来は 0 件** (他の `src bug: …` ヒットは過去の運用を説明する doc comment)
+
+#### ⚠️ 残件 — 「越えた」行にも限定が付く
+
+| 壁 | 残件 | 性質 |
+|---|---|---|
+| **1** | `thickness` 充足は未達 (到達点は「非貫通」まで、違反 ON 2 / OFF 3) | 次の層 |
+| **1** | ⚠️⚠️ **共通モード故障への歯が 1 層しかない** — 述語が死ぬと修復も計器も同時に盲目で、統合 15 本すべて green のまま貫通する (`0 = 清潔` 型の不変量は自分の計器の死を検出できない) 防波堤は「`OFF → 1` を assert する lib test 2 本」だけ | ⚠️ **検査体系の穴** |
+| **1** | 辺-辺分離が solver 支配の部分集合で未成立 (ON 4.556e-2 < OFF 7.093e-2 = 0.64 倍、1 未満) / 閉形式 scene が純並進で 3 次項に歯が立たない | 次の層 |
+| **2** | ⚠️ **超弾性 × 高次要素の次数分離 oracle が未実装** ⚠️ **「原理的に閉じない」ではない** (下記の訂正) | ⚠️ **src gap** |
+| **2** | 共回転接線が要素ごと (重心の `F`) で求積点ごとでない 収束する最大角度は **20° まで実測**、20° 超は「失敗」でなく「測っていない」 | 限定の明示 |
+| **2** | P3 suite **489 s** の CI 予算が未決 ⚠️ **`runtime only:` に落とすと 13 変異中 12 件の red が週次に移る** (`quality-deep.yml` は `push` trigger を持たない) | 運用判断 |
+| **2** | 塑性の `F = Fe·Fp` は「拡張」でなく新規 / 組み立てた接線行列 + 直接法分解が無い | 次の層 |
+| **3** | ⚠️ **monolithic solver (= 「強連成」) が無い** 副反復 driver も無い | ⛔ **壁の未達部** |
+| **3** | ⚠️⚠️ **連成経路の保存量が 2 段で食い違う** (下記の実測) | ⚠️ **実装の欠陥** |
+| **4** | ⚠️ **複数ノードの MPI は未測定** (測ったのは 1 ホスト上の 8 OS プロセス、loopback TCP、場のデータに共有メモリを使わない分散メモリ) | 測っていない |
+| **4** | ⚠️ **アーキをまたいだ fold 値の直接突合は未実施** (各機で「分散 == その機の単一プロセス解」を見たのみ) | 測っていない |
+| **4** | ⚠️ **律速は並列度でなく反復数** (GS は `O(n²)`) / **分散経路は `pub(crate)` なので公開 API から使えない** | 次の層 |
+
+#### ⚠️⚠️ 壁 3 の実装の欠陥 — `deposit_plastic_heat` と `diffuse` が別の量を保存する (実測 + 代数で確定)
+
+`CoupledField` は node 中心格子で、`diffuse` は 7 点ステンシル + **mirror ghost** (`T₋₁ = T₁`) の陽的 Euler
+
+| 置いた場所 | 量 | 初期 | `diffuse` 6 step 後 |
+|---|---|---|---|
+| 境界 `(0,2,2)` | 一律和 `Σ T` | 8.000000000000 | ⚠️ **6.987522125244 (−12.7%)** |
+| 同 | **lumped 重み和** `Σ T·2^−b` (b = 境界軸数) | 4.000000000000 | ✅ **4.000000000000 (完全不変)** |
+| 内部 `(2,2,2)` | 一律和 | 8.000000000000 | ⚠️ **9.757514953613 (+22.0%)** |
+| 同 | **lumped 重み和** | 8.000000000000 | ✅ **8.000000000000 (完全不変)** |
+
+一方 `deposit_plastic_heat` は doc で `Σ_cell ΔT_cell · c_v · V_cell = Σ_e β W_p,e V_e` (**一律 `V_cell`**) を主張する ⇒ ⚠️ **deposit 直後は成立するが `diffuse` を 1 回呼ぶと崩れ、体が格子境界に接する scene では角 node で最大 8 倍の過小**
+
+⚠️ **代数でも確定した** (1D の telescoping、3D は軸ごとの積): mirror ghost は node 0 の更新を `r(2T₁ − 2T₀)` にするので、重み `w₀ = 1/2` を掛けると flux 対が項ごとに相殺する ⇒ **node 中心 + mirror ghost の陽的 Euler は双対 cell (境界で半分) の体積重み和を保存する有限体積法そのもの** 任意の `n ≥ 2` / 任意 step 数 / **`dt` と `rate` に依らず** / **非等間隔 `hx≠hy≠hz` でも**成立 (安定性とは独立で、不安定でも保存する)
+
+⚠️⚠️ **「反射 ghost」には 2 流儀があり保存量が違う** — mirror `T₋₁ = T₁` (node 上で勾配 0、2 次精度) は **lumped 重み和**を保存 / copy `T₋₁ = T₀` (半 cell 外で勾配 0、1 次精度) は **一律和**を保存 ⇒ 実測 (lumped が保存) は **mirror 実装の証拠** ⇒ 修正は 2 択: **(A) deposit を lumped 重みに合わせる** (BC の 2 次精度を保つ、推奨) / **(B) ghost を copy に替えて deposit の一律 `V_cell` を正当化する** (BC が 1 次に落ちる)
+
+⚠️ **`sample` (重心での trilinear 補間) は保存作用素ではない** (補間は転置であって逆ではない) ⇒ エネルギーの帳簿は**場の側** (`Σ V_dual T`) で付け、FEM に返す `ΔT_e` は温度 (intensive) として扱う
+
+⚠️ **oracle の穴**: `tests/analytic_plastic_dissipation.rs` は **deposit 直後しか見ておらず**、example / test の scene は**格子境界に接していない** (格子 node `x=−1..7` / `y,z=−1..5`、棒は `x 0..4` / `y,z 0..2`) ⇒ **境界 node の目減りを 1 度も通っていない** ⇒ ✅ **連成経路では「各段が保存する」でなく「段をまたいで同じ量が保存する」を oracle にする** (`deposit → diffuse` を通した後の重み付き総量)
+
+#### ⚠️ 訂正 — 壁 2 の「超弾性 × 高次要素の次数分離は原理的に閉じない」は**強すぎた**
+
+旧記述 (第 7 increment): 「非線形では求積が厳密にならないので閉形式 oracle は `F` 一様に限られ、一様変形はアフィン場 = P1 の空間に入る ⇒ 『P2 では通らず P3 で通る』型の分離が原理的に作れない」
+
+⚠️ **1 行で言うと**: **超弾性の `P` は `F` の多項式なので、多項式変位場に体積力を逆算した製作解は被積分関数が多項式になり、十分次数の求積則で離散方程式を厳密に満たす** ⇒ **一様 `F` に限られるのは現行の求積則の制約であって原理ではない**
+
+Neo-Hookean は `P = μF + [K(J−1) − μ]·cof(F)` (Mooney-Rivlin も `cof` の積で多項式) `u` を p 次に取ると `F` は p−1 次、`cof F` は 2(p−1) 次、`J` は 3(p−1) 次 ⇒ 剛性被積分関数 `P·∇N` は **P2 で 4 次 / P3 で 8 次** ⇒ 体積力 `b = −Div P` を整合節点荷重で与えれば、**求積がその次数まで厳密なら Galerkin 解は `u` と一致**する (線形側と同じ論法)
+
+⇒ ⚠️ **「作れない」の本当の理由は実務上の 3 点**: (1) **現行 P3 の求積は 5 次** (dyadic 24 点則) で 8 次に足りない ⇒ solver 側の規則を上げるか、**収束率 oracle に切り替える** (製作解に対する誤差が P1 `h²` / P2 `h³` / P3 `h⁴` で落ちることを refine 2〜3 段で見る、求積が離散化誤差より高次なら足りる = 標準 MMS) (2) 体積力は `BoundaryConditions.loads` が節点荷重なので、test 側で **整合節点荷重 `f_a = ∫ b N_a dV` を閉形式で計算して渡す** (barycentric monomial 公式 `∫ λ₁^a λ₂^b λ₃^c λ₄^d = a!b!c!d!·3!/(a+b+c+d+3)!·|T|` で有理厳密、⚠️ 分母に奇数因子が出るので `Fix128` では ulp 丸め = 許容差 oracle になる) (3) `J > 0` を領域全体で保つ振幅に取る (大きいと要素反転)
+
+⚠️ **構造格子では空振りする**ので摂動格子が必須 (既知: 高次要素の厳密再現 oracle は構造格子上では低次要素も通る)
+
+⇒ **記録の語彙を「原理的に閉じない」から「製作解 + 8 次求積 (または収束率 oracle) が未実装」= `src gap` に移す**
+
 ## 判断記録 (ADR)
 
 ### ADR-001 (2026-09-12): v0.13.0 で Session 4 20 module を単一 release として ship する
