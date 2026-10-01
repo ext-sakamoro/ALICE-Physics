@@ -35,9 +35,10 @@ use std::time::Instant;
 /// Elements in the stated target ("hundreds of millions").
 const TARGET_ELEMENTS: f64 = 1.0e8;
 
-/// Bytes per Eulerian cell, derived from the four `Vec<Fix128>` a `MacGrid`
-/// keeps. The face-velocity arrays are one cell longer along their own axis, so
-/// this is a lower bound that becomes exact as the grid grows.
+/// Bytes the grid itself holds: the four `Vec<Fix128>` a `MacGrid` keeps.
+///
+/// This is what the grid costs to *build*, and it is only part of what a solve
+/// needs — see [`solve_working_set_bytes`].
 fn macgrid_bytes(nx: usize, ny: usize, nz: usize) -> usize {
     let f = size_of::<Fix128>();
     let u = (nx + 1) * ny * nz;
@@ -47,11 +48,35 @@ fn macgrid_bytes(nx: usize, ny: usize, nz: usize) -> usize {
     (u + v + w + p) * f
 }
 
+/// Bytes resident while `project_pressure` runs: the grid plus the three
+/// full-length arrays the red-black path allocates on entry.
+///
+/// Counting only the grid under-reports the peak, because
+/// `eulerian_grid::project_pressure_red_black_gs` also builds
+///
+/// - `PoissonMask::open`, a `Vec<[bool; 6]>` over the cells,
+/// - `inverse_degrees`, a `Vec<Fix128>` over the cells,
+/// - `poisson_rhs`, a `Vec<Fix128>` over the cells,
+///
+/// which together are more than a third of the total at any size. Measured on a
+/// 32 GiB machine at 464³: 5.97 GiB resident after the grid is built, 9.78 GiB
+/// at the peak of the solve — the 3.8 GiB difference is exactly these three.
+///
+/// The `bool` flags are counted at `size_of::<[bool; 6]>()` rather than at six
+/// bits, because that is what the allocation is.
+fn solve_working_set_bytes(nx: usize, ny: usize, nz: usize) -> usize {
+    let cells = nx * ny * nz;
+    macgrid_bytes(nx, ny, nz) + cells * size_of::<[bool; 6]>() + 2 * cells * size_of::<Fix128>()
+}
+
 fn probe_eulerian() {
     println!("## Eulerian cells (MacGrid + project_pressure, 1 iteration)");
     println!();
-    println!("| n (per axis) | cells | bytes | bytes/cell | project_pressure | ns/cell |");
-    println!("|---|---|---|---|---|---|");
+    println!(
+        "| n (per axis) | cells | grid bytes | solve working set | B/cell (solve) | \
+         project_pressure | ns/cell |"
+    );
+    println!("|---|---|---|---|---|---|---|");
 
     let dt = Fix128::from_f64(1.0 / 60.0);
     let density = Fix128::from_int(1000);
@@ -60,6 +85,7 @@ fn probe_eulerian() {
     for &n in &[8usize, 16, 32, 48, 64, 96, 128] {
         let cells = n * n * n;
         let bytes = macgrid_bytes(n, n, n);
+        let working_set = solve_working_set_bytes(n, n, n);
         let mut grid = MacGrid::new(n, n, n, dx);
 
         // Seed a divergent field so the solve has work to do; a zero field would
@@ -74,9 +100,10 @@ fn probe_eulerian() {
 
         let ns_per_cell = elapsed.as_secs_f64() * 1.0e9 / cells as f64;
         println!(
-            "| {n} | {cells} | {:.1} MiB | {} | {:?} | {ns_per_cell:.1} |",
+            "| {n} | {cells} | {:.1} MiB | {:.1} MiB | {} | {:?} | {ns_per_cell:.1} |",
             bytes as f64 / (1024.0 * 1024.0),
-            bytes / cells,
+            working_set as f64 / (1024.0 * 1024.0),
+            working_set / cells,
             elapsed,
         );
     }
@@ -87,12 +114,22 @@ fn probe_eulerian() {
     // its largest-measured value, which the table above is there to justify.
     let n = 128usize;
     let cells = n * n * n;
-    let bytes_per_cell = macgrid_bytes(n, n, n) / cells;
-    let target_bytes = bytes_per_cell as f64 * TARGET_ELEMENTS;
+    let gib = |b: f64| b / (1024.0 * 1024.0 * 1024.0);
+    let grid_per_cell = macgrid_bytes(n, n, n) / cells;
+    let solve_per_cell = solve_working_set_bytes(n, n, n) / cells;
     println!(
-        "Extrapolated to {TARGET_ELEMENTS:e} cells: **{:.1} GiB** of grid state alone \
-         ({bytes_per_cell} B/cell, pressure + 3 face-velocity arrays, no solver scratch).",
-        target_bytes / (1024.0 * 1024.0 * 1024.0),
+        "Extrapolated to {TARGET_ELEMENTS:e} cells: **{:.2} GiB** of grid state \
+         ({grid_per_cell} B/cell, pressure + 3 face-velocity arrays) and **{:.2} GiB** \
+         resident while the solve runs ({solve_per_cell} B/cell, the grid plus the open-face \
+         mask, the reciprocal diagonal and the right-hand side).",
+        gib(grid_per_cell as f64 * TARGET_ELEMENTS),
+        gib(solve_per_cell as f64 * TARGET_ELEMENTS),
+    );
+    println!(
+        "Per rank under the slab-local decomposition the figure is a fraction of that; it is \
+         measured directly by the ignored unit test \
+         `eulerian_grid::tests::one_rank_of_a_hundred_million_cells_fits_in_slab_local_storage`, \
+         which this example cannot reach because the slab types are crate-internal."
     );
     println!(
         "Time at the last measured ns/cell, for ONE Gauss-Seidel iteration: see the \
