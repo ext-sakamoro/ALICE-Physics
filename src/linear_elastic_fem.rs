@@ -215,6 +215,15 @@ pub enum FemError {
         /// The axis with a single node.
         axis: Axis,
     },
+    /// The thermoplastic sub-iteration did not reach a fixed point.
+    ///
+    /// Carries the monitor's own verdict, which distinguishes the cases a
+    /// caller has to act on differently: `Diverging` means the splitting is
+    /// not a contraction and no budget will fix it, `Stagnated` means it was
+    /// contracting and stopped improving, `NotConverged` means the budget ran
+    /// out while it was still improving, and `ArithmeticWrapped` means the
+    /// residual sequence showed the signature of a silent `Fix128` wrap.
+    CoupledSubIterationFailed(crate::coupled_iteration::CoupledIterationError),
 }
 
 /// Isotropic linear elastic material.
@@ -3418,12 +3427,50 @@ pub fn deposit_plastic_heat(
     heating: &PlasticHeating,
     field: &mut CoupledField,
 ) -> Result<(), FemError> {
+    deposit_increment_heat(mesh, &solution.dissipation, heating, field)
+}
+
+/// Deposit the plastic heat of **one increment** onto a scalar field.
+///
+/// Same splat, same `V_e / V_cell` scaling and same dual-weight correction as
+/// [`deposit_plastic_heat`]; the difference is only where the work comes from.
+/// [`deposit_plastic_heat`] reads a whole load path's accumulated dissipation,
+/// this reads [`ElastoplasticIncrement::plastic_work_increment`] — the work one
+/// increment added.
+///
+/// ⚠️ **This is the form a sub-iteration needs.** A coupled sweep solves a
+/// fixed-point problem in the temperature *increment* `δT`, so the heat it
+/// deposits has to be the increment's, not the path's; feeding it the
+/// accumulated dissipation would make each sweep deposit everything the body
+/// has ever dissipated and the iteration would not be a map on `δT` at all.
+///
+/// ⚠️ **It adds to `field` rather than replacing it**, exactly as
+/// [`deposit_plastic_heat`] does. A driver that calls this once per sweep must
+/// therefore deposit into a field it has [`CoupledField::clear`]ed, or the
+/// accumulation turns the fixed-point map into a time integration — which
+/// cannot converge, and whose monotone growth is indistinguishable from
+/// genuine divergence.
+///
+/// # Errors
+///
+/// [`FemError::EmptyMesh`] for a mesh with no vertices or no tetrahedra,
+/// [`FemError::SolutionElementCountDoesNotMatchMesh`] if `plastic_work` has a
+/// different length than the mesh has tetrahedra,
+/// [`FemError::DepositGridHasDegenerateAxis`] for a field with a single node on
+/// an axis, and [`FemError::DegenerateElement`] for a tetrahedron with no
+/// volume.
+pub fn deposit_increment_heat(
+    mesh: &SdfTetMesh,
+    plastic_work: &[Fix128],
+    heating: &PlasticHeating,
+    field: &mut CoupledField,
+) -> Result<(), FemError> {
     if mesh.vertices.is_empty() || mesh.tets.is_empty() {
         return Err(FemError::EmptyMesh);
     }
-    if solution.dissipation.len() != mesh.tets.len() {
+    if plastic_work.len() != mesh.tets.len() {
         return Err(FemError::SolutionElementCountDoesNotMatchMesh {
-            elements: solution.dissipation.len(),
+            elements: plastic_work.len(),
             tet_count: mesh.tets.len(),
         });
     }
@@ -3444,7 +3491,7 @@ pub fn deposit_plastic_heat(
     // whatever the caller already had in `field`.
     let mut staged = field.clone();
     staged.clear();
-    for (element, &work) in elements.iter().zip(solution.dissipation.iter()) {
+    for (element, &work) in elements.iter().zip(plastic_work.iter()) {
         if work.is_zero() {
             continue;
         }
@@ -4414,6 +4461,288 @@ impl ElastoplasticProblem {
             dissipation: state.dissipation(),
             newton_iterations: state.newton_total,
             steps: u32::try_from(steps).unwrap_or(u32::MAX),
+        }
+    }
+}
+
+// ============================================================================
+// Thermoplastic sub-iteration (two-way coupling driven to a fixed point)
+// ============================================================================
+
+/// How to couple the plastic solve and the temperature field, and when to stop.
+///
+/// The mechanical leg already reads temperature
+/// ([`ElastoplasticIncrementRequest::with_thermal`]) and the thermal leg
+/// already reads plastic work ([`deposit_increment_heat`]). This closes the
+/// loop: [`step_thermoplastic`] alternates the two until the temperature
+/// increment stops moving, so the increment it returns satisfies *both* legs
+/// rather than one leg evaluated at the other's previous guess.
+///
+/// # ⚠️ The fixed point is in the increment, not in the temperature
+///
+/// The map is on `δT`, the rise this increment adds:
+///
+/// ```text
+/// δT_{k+1} = δT_k + ω (deposit(ΔW_p(T^n + δT_k; state^n)) − δT_k)
+/// ```
+///
+/// with `(ε_p^n, ε̄_p^n, T^n)` — the committed state — held fixed for every
+/// sweep. That is the Simo–Miehe (Armero–Simo) isothermal split, and it is why
+/// [`ElastoplasticIncrement::commit`] is a separate call: the driver sweeps
+/// with [`ElastoplasticProblem::step`], which always reads the same committed
+/// state, and the caller commits once afterwards. ⚠️ **Committing inside the
+/// sweep would make each sub-iteration start from a different `ε_p`, so the
+/// iteration would no longer be a map on `δT` and converging it would not
+/// solve the coupled equations.**
+#[derive(Clone, Copy, Debug)]
+#[non_exhaustive]
+pub struct ThermoplasticCoupling {
+    heating: PlasticHeating,
+    expansion_per_k: Fix128,
+    material_reference: Fix128,
+    softening: Option<ThermalSoftening>,
+    relaxation: Fix128,
+    residual_floor_fraction: Fix128,
+    sub_iteration: crate::coupled_iteration::SubIterationConfig,
+}
+
+impl ThermoplasticCoupling {
+    /// Build a coupling, refusing a combination that cannot converge.
+    ///
+    /// `material_reference` is the absolute temperature at which `σ_y₀`, `H₀`
+    /// and `expansion_per_k` were measured; the base field handed to
+    /// [`step_thermoplastic`] holds absolute temperatures, and the rise is
+    /// taken against this reference.
+    ///
+    /// `relaxation` is the constant `ω` of the update above. `ω = 1` is the
+    /// plain (unrelaxed) sweep.
+    ///
+    /// `residual_floor_fraction` is the floor below which the residual is read
+    /// as zero, as a **fraction of the magnitude the first sweep deposits**.
+    ///
+    /// ⚠️ **It is not optional, and it cannot be an absolute number.** The
+    /// monitor's own target is relative to the first *residual*, which under
+    /// this map collapses by several decades in one sweep, so the target lands
+    /// below what the arithmetic can reproduce; the residual then wanders in
+    /// the noise, and a wander that happens to rise twice and fall once is
+    /// read by the wrap detector as a silent `Fix128` wrap. Measured on the bar
+    /// scene, the noise the residual settles into is a fixed **fraction of the
+    /// answer**, not a fixed number of ulp:
+    ///
+    /// | `c_v` (MPa/K) | converged `max δT` | noise the residual settles at | ratio |
+    /// |---|---|---|---|
+    /// | `4` | `2.71e-3` | `≈5e-14` | `1.8e-11` |
+    /// | `1` | `1.08e-2` | `≈2.2e-13` | `2.0e-11` |
+    /// | `1/4` | `4.33e-2` | `≈9e-13` | `2.1e-11` |
+    /// | `1/64` | `6.82e-1` | `≈8.4e-12` | `1.2e-11` |
+    ///
+    /// The ratio holds to within a factor of two across two and a half decades
+    /// of answer, so the floor belongs on that scale. `2⁻³⁰ ≈ 9.3e-10` leaves
+    /// about 45 times the measured noise and is still far below any temperature
+    /// a scene of interest produces.
+    ///
+    /// ⚠️ **A fraction of zero reproduces the behaviour above** and is refused.
+    ///
+    /// # Errors
+    ///
+    /// [`FemError::InvalidConfig`] if `relaxation` is outside `(0, 1]` (zero
+    /// never moves, negative walks away from the fixed point, above one
+    /// overshoots and is not what the closed-form optimum ever asks for), if
+    /// `residual_floor_fraction` is outside `(0, 1)`, or if `expansion_per_k`
+    /// is negative.
+    /// [`FemError::CoupledSubIterationFailed`] if `sub_iteration` is itself
+    /// invalid, carrying the fault the sub-iteration configuration reported.
+    pub fn try_new(
+        heating: PlasticHeating,
+        expansion_per_k: Fix128,
+        material_reference: Fix128,
+        softening: Option<ThermalSoftening>,
+        relaxation: Fix128,
+        residual_floor_fraction: Fix128,
+        sub_iteration: crate::coupled_iteration::SubIterationConfig,
+    ) -> Result<Self, FemError> {
+        if relaxation <= Fix128::ZERO || relaxation > Fix128::ONE {
+            return Err(FemError::InvalidConfig(
+                "relaxation must be in (0, 1]: zero never moves and above one overshoots",
+            ));
+        }
+        if residual_floor_fraction <= Fix128::ZERO || residual_floor_fraction >= Fix128::ONE {
+            return Err(FemError::InvalidConfig(
+                "residual_floor_fraction must be in (0, 1): zero leaves the stopping rule \
+                 relative-only, which the arithmetic cannot satisfy",
+            ));
+        }
+        if expansion_per_k.is_negative() {
+            return Err(FemError::InvalidConfig(
+                "expansion_per_k must not be negative",
+            ));
+        }
+        sub_iteration.validate().map_err(|fault| {
+            FemError::CoupledSubIterationFailed(
+                crate::coupled_iteration::CoupledIterationError::InvalidConfig { fault },
+            )
+        })?;
+        Ok(Self {
+            heating,
+            expansion_per_k,
+            material_reference,
+            softening,
+            relaxation,
+            residual_floor_fraction,
+            sub_iteration,
+        })
+    }
+
+    /// The relaxation factor `ω`.
+    #[must_use]
+    pub const fn relaxation(&self) -> Fix128 {
+        self.relaxation
+    }
+
+    /// The floor below which the residual is read as zero, as a fraction of
+    /// the magnitude the first sweep deposits.
+    #[must_use]
+    pub const fn residual_floor_fraction(&self) -> Fix128 {
+        self.residual_floor_fraction
+    }
+}
+
+/// One increment of the coupled problem, with the sweep that produced it.
+#[derive(Clone, Debug)]
+#[non_exhaustive]
+pub struct ThermoplasticIncrement {
+    /// The mechanical increment, evaluated at the converged temperature.
+    ///
+    /// Not yet committed: call [`ElastoplasticIncrement::commit`] once, after
+    /// reading whatever the caller needs from this report.
+    pub increment: ElastoplasticIncrement,
+    /// The temperature rise this increment added, `δT`, on the base grid.
+    ///
+    /// Add it to the base field to get the temperature the next increment
+    /// starts from.
+    ///
+    /// ⚠️ **This is the deposit of [`Self::increment`]'s own plastic work, so
+    /// the thermal leg holds exactly and the mechanical leg holds to within the
+    /// floor.** The sweep evaluated the mechanics at the *relaxed* iterate,
+    /// which differs from this field by at most the residual floor; of the two
+    /// legs only one can be exact in the returned pair, and this is the choice
+    /// that makes the energy ledger exact — the heat on the grid is precisely
+    /// `β` times the work the returned increment reports, with nothing lost to
+    /// the iterate the sweep happened to stop on.
+    pub temperature_increment: CoupledField,
+    /// What the sub-iteration did: sweeps, final residual, contraction ratio.
+    pub report: crate::coupled_iteration::SubIterationReport,
+}
+
+/// Drive one increment of the two-way thermoplastic coupling to a fixed point.
+///
+/// `base` holds the **absolute** temperatures the increment starts from, `T^n`.
+/// The returned [`ThermoplasticIncrement::temperature_increment`] is `δT`, so
+/// the caller advances the temperature by adding it to `base`.
+///
+/// # Errors
+///
+/// Whatever [`ElastoplasticProblem::step`] or [`deposit_increment_heat`]
+/// return, plus [`FemError::CoupledSubIterationFailed`] when the sweep does
+/// not reach a fixed point — `Diverging` if the splitting is not a contraction
+/// (relaxing harder is the remedy, not a bigger budget), `Stagnated`,
+/// `NotConverged`, or `ArithmeticWrapped`.
+pub fn step_thermoplastic(
+    problem: &ElastoplasticProblem,
+    state: &ElastoplasticState,
+    mesh: &SdfTetMesh,
+    base: &CoupledField,
+    coupling: &ThermoplasticCoupling,
+    factor: Fix128,
+) -> Result<ThermoplasticIncrement, FemError> {
+    use crate::coupled_iteration::{residual_norm_inf, ContractionMonitor, MonitorVerdict};
+
+    let mut monitor = ContractionMonitor::new(coupling.sub_iteration)
+        .map_err(FemError::CoupledSubIterationFailed)?;
+
+    // δT_0 = 0. Cloned from `base` so the grids agree by construction — there
+    // is no mismatch for a guard to catch.
+    let mut delta = base.clone();
+    delta.clear();
+    // Scratch, reallocated per sweep only in the sense of being cleared: the
+    // deposit *adds*, so a target carried across sweeps would accumulate and
+    // the map would become a time integration rather than a fixed-point map.
+    let mut target = base.clone();
+    let mut absolute = base.clone();
+    let mut difference = vec![Fix128::ZERO; base.cell_count()];
+    // Derived on the first sweep from what that sweep deposits, because the
+    // noise the residual settles into scales with the answer rather than
+    // sitting at a fixed number of ulp. A purely elastic increment deposits
+    // nothing, which leaves the floor at zero — correct, since `δT* = δT = 0`
+    // makes the residual exactly zero and the first sweep is already the fixed
+    // point.
+    let mut floor = Fix128::ZERO;
+
+    loop {
+        // T_k = T^n + δT_k
+        absolute.as_mut_slice().copy_from_slice(base.as_slice());
+        for (value, &d) in absolute.as_mut_slice().iter_mut().zip(delta.as_slice()) {
+            *value = *value + d;
+        }
+        let rise = TemperatureRise::from_absolute(&absolute, coupling.material_reference);
+        let request = ElastoplasticIncrementRequest::new(factor).with_thermal(
+            ThermalExpansion::from_rise(&rise, coupling.expansion_per_k),
+            coupling.softening,
+        );
+        let increment = problem.step(state, &request)?;
+
+        // δT* = deposit(ΔW_p). Cleared first: the deposit adds.
+        target.clear();
+        deposit_increment_heat(
+            mesh,
+            &increment.plastic_work_increment,
+            &coupling.heating,
+            &mut target,
+        )?;
+
+        for ((slot, &t), &d) in difference
+            .iter_mut()
+            .zip(target.as_slice())
+            .zip(delta.as_slice())
+        {
+            *slot = t - d;
+        }
+        let raw_residual = residual_norm_inf(&difference);
+        if monitor.sweeps() == 0 {
+            floor = coupling.residual_floor_fraction * residual_norm_inf(target.as_slice());
+        }
+        // The floor is applied before the monitor sees the number, so an
+        // increment that reproduces itself to within the arithmetic's own
+        // noise reads as an exact fixed point rather than as a budget overrun —
+        // or, worse, as the rise-rise-fall signature the wrap detector reads as
+        // a silent `Fix128` wrap.
+        let residual = if raw_residual <= floor {
+            Fix128::ZERO
+        } else {
+            raw_residual
+        };
+
+        match monitor.observe(residual) {
+            MonitorVerdict::Converged => {
+                return Ok(ThermoplasticIncrement {
+                    increment,
+                    temperature_increment: target,
+                    report: crate::coupled_iteration::SubIterationReport {
+                        sweeps: monitor.sweeps(),
+                        residual,
+                        observed_ratio: monitor.observed_ratio(),
+                    },
+                });
+            }
+            MonitorVerdict::Stop(error) => {
+                return Err(FemError::CoupledSubIterationFailed(error));
+            }
+            MonitorVerdict::Continue => {}
+        }
+
+        // δT_{k+1} = δT_k + ω (δT* − δT_k)
+        for (value, &step) in delta.as_mut_slice().iter_mut().zip(difference.iter()) {
+            *value = *value + coupling.relaxation * step;
         }
     }
 }
