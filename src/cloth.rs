@@ -45,9 +45,9 @@ pub struct ClothConfig {
     pub sdf_friction: Fix128,
     /// Cloth thickness for collision
     pub thickness: Fix128,
-    /// Enable self-collision (particle-vs-particle)
+    /// Enable self-collision (vertex-vs-face; edge-edge contact is not implemented)
     pub self_collision: bool,
-    /// Minimum distance between particles for self-collision
+    /// Contact thickness: a vertex is kept at least this far from every non-incident triangle
     pub self_collision_distance: Fix128,
 }
 
@@ -256,9 +256,13 @@ impl Cloth {
     /// Step cloth simulation
     #[inline(always)]
     pub fn step(&mut self, dt: Fix128) {
+        let frame_start = self.snapshot_for_self_contact();
         let substep_dt = dt / Fix128::from_int(self.config.substeps as i64);
         for _ in 0..self.config.substeps {
             self.substep(substep_dt);
+        }
+        if let Some(start) = frame_start {
+            self.resolve_self_contact_over_frame(&start, dt);
         }
         self.apply_frame_damping();
     }
@@ -267,12 +271,28 @@ impl Cloth {
     #[cfg(feature = "std")]
     #[inline(always)]
     pub fn step_with_sdf(&mut self, dt: Fix128, sdf_colliders: &[SdfCollider]) {
+        let frame_start = self.snapshot_for_self_contact();
         let substep_dt = dt / Fix128::from_int(self.config.substeps as i64);
         for _ in 0..self.config.substeps {
             self.substep(substep_dt);
             self.resolve_sdf_collisions(sdf_colliders);
         }
+        if let Some(start) = frame_start {
+            self.resolve_self_contact_over_frame(&start, dt);
+        }
         self.apply_frame_damping();
+    }
+
+    /// Frame-start positions, kept only when self-contact is enabled.
+    ///
+    /// `None` (rather than an unconditional clone) so that `self_collision = false`
+    /// allocates nothing and stays bit-identical to the pre-1.4.x behaviour.
+    fn snapshot_for_self_contact(&self) -> Option<Vec<Vec3Fix>> {
+        if self.config.self_collision && !self.config.self_collision_distance.is_zero() {
+            Some(self.positions.clone())
+        } else {
+            None
+        }
     }
 
     /// `config.damping` once per frame (velocity retention per `step()` call).
@@ -307,11 +327,20 @@ impl Cloth {
         }
 
         // 2. Solve constraints
+        //
+        // Self-contact candidates are collected once here rather than once per
+        // iteration: the AABB margin (2·thickness) covers how far the iterations can
+        // move a particle, and the collection is the O(V·T) part.
+        let candidates = if self.config.self_collision {
+            self.collect_vertex_face_candidates(self.config.self_collision_distance.double())
+        } else {
+            Vec::new()
+        };
         for _ in 0..self.config.iterations {
             self.solve_edge_constraints(dt);
             self.solve_bend_constraints(dt);
             if self.config.self_collision {
-                self.solve_self_collision();
+                self.solve_vertex_face_self_collision(&candidates);
             }
         }
 
@@ -460,165 +489,353 @@ impl Cloth {
         }
     }
 
-    /// Solve self-collision using spatial hash grid.
+    /// Candidate (vertex, triangle) pairs for vertex-face self-contact.
     ///
-    /// Applies a pairwise separation projection to non-adjacent particles closer
-    /// than `self_collision_distance`, using a spatial hash grid (same pattern as
-    /// fluid.rs) for O(n) neighbor search.
+    /// Built **once per substep** (not once per solver iteration) from the predicted
+    /// positions: the iterations only move particles by the constraint residual, so an
+    /// AABB inflated by `margin` covers the whole iteration sweep. A pair is kept when
+    /// the vertex lies inside the triangle's AABB grown by `margin` on every axis.
     ///
-    /// ⚠️ **This does not guarantee that the separation is achieved.** The doc used
-    /// to read "Particles closer than `self_collision_distance` are pushed apart",
-    /// which is false: in a crumpled sheet the projection moves the particles but
-    /// leaves the separation metric untouched. Measured 2026-09-29 on a 9x9 sheet
-    /// compressed to 1/8 over 60 steps with `self_collision_distance = 0.5`:
-    /// enabling self-collision changes the positions (not bit-identical) yet the
-    /// minimum non-adjacent distance is `0.197401` **either way**, and the number of
-    /// pairs below the threshold is `74` **either way**.
+    /// Excluded: vertices incident to the triangle (they are handled by the stretch and
+    /// bending constraints), and pairs in which all four participants are pinned
+    /// (`inv_mass == 0`), which can produce no correction.
     ///
-    /// The correction is also Gauss-Seidel (`positions[i]` is written in place and
-    /// read by later pairs), so the pair order is load-bearing. Both are expected to
-    /// be fixed together when vertex-face self-collision lands as a Jacobi-style
-    /// accumulation; see `tests/analytic_self_contact.rs` for the oracle and
-    /// `self_collision_moves_particles_without_improving_their_separation` for the
-    /// test that pins the present behaviour.
-    #[inline(always)]
-    fn solve_self_collision(&mut self) {
+    /// ⚠️ **Pinned vertices are kept as collision participants.** They cannot move, but a
+    /// kinematically driven vertex sweeping into a free triangle must still push that
+    /// triangle away; dropping them was the reason the old particle-particle pass never
+    /// saw the driven boundary of a crumpling sheet.
+    fn collect_vertex_face_candidates(&self, margin: Fix128) -> Vec<(u32, u32)> {
         let n = self.particle_count();
-        if n < 2 {
+        let mut out: Vec<(u32, u32)> = Vec::new();
+        for (ti, tri) in self.triangles.iter().enumerate() {
+            let (a, b, c) = (
+                self.positions[tri[0]],
+                self.positions[tri[1]],
+                self.positions[tri[2]],
+            );
+            let tri_pinned = self.inv_masses[tri[0]].is_zero()
+                && self.inv_masses[tri[1]].is_zero()
+                && self.inv_masses[tri[2]].is_zero();
+            let lo = Vec3Fix::new(
+                min3(a.x, b.x, c.x) - margin,
+                min3(a.y, b.y, c.y) - margin,
+                min3(a.z, b.z, c.z) - margin,
+            );
+            let hi = Vec3Fix::new(
+                max3(a.x, b.x, c.x) + margin,
+                max3(a.y, b.y, c.y) + margin,
+                max3(a.z, b.z, c.z) + margin,
+            );
+            for i in 0..n {
+                if i == tri[0] || i == tri[1] || i == tri[2] {
+                    continue;
+                }
+                if tri_pinned && self.inv_masses[i].is_zero() {
+                    continue; // nothing in this pair can move
+                }
+                let p = self.positions[i];
+                if p.x < lo.x || p.x > hi.x || p.y < lo.y || p.y > hi.y || p.z < lo.z || p.z > hi.z
+                {
+                    continue;
+                }
+                out.push((i as u32, ti as u32));
+            }
+        }
+        out
+    }
+
+    /// Solve vertex-face (point-triangle) self-contact, Jacobi accumulation.
+    ///
+    /// For every candidate pair the constraint is `C = |p − q| − thickness ≥ 0`, where
+    /// `q` is the closest point of the triangle to `p` and `thickness` is
+    /// `config.self_collision_distance`. With the barycentric weights `w` of `q`
+    /// (`q = w₀a + w₁b + w₂c`, `Σw = 1`, `w ≥ 0`) the gradients are `∇_p C = n`,
+    /// `∇_a C = −w₀n`, … with `n = (p − q)/|p − q|`, so the projection is
+    ///
+    /// ```text
+    /// s   = (thickness − |p − q|) / (w_p + w_a w₀² + w_b w₁² + w_c w₂²)
+    /// Δp  = +s·w_p·n,   Δa = −s·w_a·w₀·n,   Δb = −s·w_b·w₁·n,   Δc = −s·w_c·w₂·n
+    /// ```
+    ///
+    /// # Determinism
+    ///
+    /// Corrections are accumulated into a per-vertex `Δ` buffer with `+` and applied
+    /// after the whole sweep, then averaged by the number of contacts that touched the
+    /// vertex. `Fix128` addition is the exact group operation of `Z/2¹²⁸`, so the sum is
+    /// bit-identical for **any** enumeration order of the pairs
+    /// (`tests/reduction_order_independence.rs`); the pair order is not load-bearing and
+    /// does not need to be sorted. Each contact normal is computed **once** and reused
+    /// for all four gradients — `Fix128::Mul` is not associative, so a normal built by
+    /// accumulation would depend on the order it was summed in.
+    ///
+    /// Before 1.4.x this was a Gauss-Seidel particle-particle pass (`positions[i]`
+    /// written in place and read by later pairs). Point-point is subsumed: the distance
+    /// from `p` to a triangle containing `q` is never larger than `|p − q|`, and in this
+    /// mesh every pair of vertices that share a triangle is also joined by an edge, so
+    /// any non-adjacent pair closer than `thickness` is reported by at least one
+    /// vertex-face pair at the same threshold. `test_point_triangle_subsumes_point_point`
+    /// pins that inequality.
+    ///
+    /// ⚠️ **Edge-edge contact is not implemented.** Two edges can interpenetrate without
+    /// any vertex being within `thickness` of a face (the classic parallel-edge X case);
+    /// that configuration is still missed.
+    fn solve_vertex_face_self_collision(&mut self, candidates: &[(u32, u32)]) {
+        let thickness = self.config.self_collision_distance;
+        if thickness.is_zero() || candidates.is_empty() {
             return;
         }
+        let thickness_sq = thickness * thickness;
+        let n = self.particle_count();
+        let mut delta = vec![Vec3Fix::ZERO; n];
+        let mut hits = vec![0u32; n];
 
-        let min_dist = self.config.self_collision_distance;
-        let min_dist_sq = min_dist * min_dist;
-        let cell_size = min_dist * Fix128::from_int(2);
-        let inv_cell = if cell_size.is_zero() {
-            Fix128::ONE
-        } else {
-            Fix128::ONE / cell_size
-        };
-        let grid_dim: usize = 64;
-        let grid_dim_i64 = grid_dim as i64;
-        let half = grid_dim_i64 / 2;
-
-        // Build spatial hash grid (2-pass CSR)
-        let total_cells = grid_dim * grid_dim * grid_dim;
-
-        // Pass 1: count particles per cell
-        let mut cell_counts = vec![0usize; total_cells];
-        // Temporary (cell, particle) pairs to avoid re-hashing in pass 2
-        let mut cell_particle: Vec<(usize, usize)> = Vec::with_capacity(n);
-        for i in 0..n {
-            if self.inv_masses[i].is_zero() {
-                continue;
-            }
-            let p = self.positions[i];
-            let ix = ((p.x * inv_cell).hi + half).clamp(0, grid_dim_i64 - 1) as usize;
-            let iy = ((p.y * inv_cell).hi + half).clamp(0, grid_dim_i64 - 1) as usize;
-            let iz = ((p.z * inv_cell).hi + half).clamp(0, grid_dim_i64 - 1) as usize;
-            let h = ix + iy * grid_dim + iz * grid_dim * grid_dim;
-            if h < total_cells {
-                cell_counts[h] += 1;
-                cell_particle.push((h, i));
-            }
-        }
-        // Prefix sum → cell_offsets
-        let mut cell_offsets = vec![0usize; total_cells + 1];
-        for h in 0..total_cells {
-            cell_offsets[h + 1] = cell_offsets[h] + cell_counts[h];
-            cell_counts[h] = 0; // reuse as write cursor
-        }
-        // Pass 2: fill flat index buffer
-        let total_particles = cell_offsets[total_cells];
-        let mut indices = vec![0usize; total_particles];
-        for (h, i) in &cell_particle {
-            let slot = cell_offsets[*h] + cell_counts[*h];
-            indices[slot] = *i;
-            cell_counts[*h] += 1;
-        }
-
-        // Build sorted edge set for O(log n) lookup (skip connected particles)
-        let mut edge_pairs: Vec<(usize, usize)> = Vec::with_capacity(self.edge_constraints.len());
-        for c in &self.edge_constraints {
-            let (lo, hi) = if c.i0 < c.i1 {
-                (c.i0, c.i1)
-            } else {
-                (c.i1, c.i0)
+        for &(vi, ti) in candidates {
+            let vi = vi as usize;
+            let tri = self.triangles[ti as usize];
+            let p = self.positions[vi];
+            let (a, b, c) = (
+                self.positions[tri[0]],
+                self.positions[tri[1]],
+                self.positions[tri[2]],
+            );
+            let Some((q, w)) = closest_point_on_triangle(p, a, b, c) else {
+                continue; // degenerate (zero-area) triangle
             };
-            edge_pairs.push((lo, hi));
-        }
-        edge_pairs.sort_unstable();
-
-        // Check neighbors and apply separation constraints
-        for i in 0..n {
-            if self.inv_masses[i].is_zero() {
+            let diff = p - q;
+            let dist_sq = diff.length_squared();
+            if dist_sq >= thickness_sq {
                 continue;
             }
-            let p = self.positions[i];
-            let cx = ((p.x * inv_cell).hi + half).clamp(0, grid_dim_i64 - 1) as i32;
-            let cy = ((p.y * inv_cell).hi + half).clamp(0, grid_dim_i64 - 1) as i32;
-            let cz = ((p.z * inv_cell).hi + half).clamp(0, grid_dim_i64 - 1) as i32;
+            // One independent computation of the normal, reused for all four gradients.
+            let (normal, dist) = if dist_sq.is_zero() {
+                // `p` sits exactly on the triangle: no separation direction survives, so
+                // fall back to the face normal. `closest_point_on_triangle` already
+                // rejected a zero-area triangle, but the normalisation can still
+                // underflow, and a pair with no normal is a pair with no correction.
+                match (b - a).cross(c - a).try_normalize() {
+                    Some(nrm) => (nrm, Fix128::ZERO),
+                    None => continue,
+                }
+            } else {
+                let d = dist_sq.sqrt();
+                (diff * (Fix128::ONE / d), d)
+            };
 
-            for dz in -1i32..=1 {
-                for dy in -1i32..=1 {
-                    for dx in -1i32..=1 {
-                        let nx = cx + dx;
-                        let ny = cy + dy;
-                        let nz = cz + dz;
-                        if nx < 0 || ny < 0 || nz < 0 {
-                            continue;
-                        }
-                        let nx = nx as usize;
-                        let ny = ny as usize;
-                        let nz = nz as usize;
-                        if nx >= grid_dim || ny >= grid_dim || nz >= grid_dim {
-                            continue;
-                        }
+            let (wp, wa, wb, wc) = (
+                self.inv_masses[vi],
+                self.inv_masses[tri[0]],
+                self.inv_masses[tri[1]],
+                self.inv_masses[tri[2]],
+            );
+            let denom = wp + wa * w[0] * w[0] + wb * w[1] * w[1] + wc * w[2] * w[2];
+            if denom.is_zero() {
+                continue;
+            }
+            let s = (thickness - dist) / denom;
 
-                        let h = nx + ny * grid_dim + nz * grid_dim * grid_dim;
-                        let start = cell_offsets[h];
-                        let end = cell_offsets[h + 1];
-                        for &j in &indices[start..end] {
-                            if j <= i {
-                                continue; // avoid duplicate pairs
-                            }
-                            if self.inv_masses[j].is_zero() {
-                                continue;
-                            }
+            delta[vi] = delta[vi] + normal * (s * wp);
+            hits[vi] += 1;
+            for (k, &idx) in tri.iter().enumerate() {
+                let wk = self.inv_masses[idx];
+                delta[idx] = delta[idx] - normal * (s * wk * w[k]);
+                hits[idx] += 1;
+            }
+        }
 
-                            // Skip particles connected by an edge (binary search)
-                            let (lo, hi) = if i < j { (i, j) } else { (j, i) };
-                            if edge_pairs.binary_search(&(lo, hi)).is_ok() {
-                                continue;
-                            }
+        for i in 0..n {
+            if hits[i] == 0 || self.inv_masses[i].is_zero() {
+                continue;
+            }
+            self.positions[i] = self.positions[i] + delta[i] / Fix128::from_int(i64::from(hits[i]));
+        }
+    }
 
-                            let delta = self.positions[j] - self.positions[i];
-                            let dist_sq = delta.length_squared();
+    /// Number of repair passes `resolve_self_contact_over_frame` is allowed.
+    ///
+    /// Each pass shortens the offending chords (a pierced vertex is pulled back toward
+    /// where it started), so the passes are contractive and in the crumple scene the
+    /// loop reaches its fixed point well inside this budget. The cap exists so a
+    /// pathological configuration degrades into "some tunnelling survives this frame"
+    /// instead of hanging; `remaining_self_contact_crossings` makes that observable.
+    const SELF_CONTACT_PASSES: usize = 16;
 
-                            if dist_sq < min_dist_sq && !dist_sq.is_zero() {
-                                let dist = dist_sq.sqrt();
-                                let error = min_dist - dist;
-                                // Precompute reciprocals to replace per-pair divisions.
-                                let inv_dist = Fix128::ONE / dist;
-                                let normal = delta * inv_dist;
+    /// Push back every vertex whose **frame chord** pierced a non-incident triangle.
+    ///
+    /// This is the discrete-collision half of the pair (Bridson et al. 2002, *Robust
+    /// Treatment of Collisions, Contact and Friction for Cloth Animation*): the
+    /// proximity repulsion inside the substeps keeps surfaces apart while they are
+    /// close, and this pass catches what a large time step let through anyway. It runs
+    /// on the **frame**, not the substep, because the frame is the interval the caller
+    /// integrates over — a vertex that ends the frame on the far side of a triangle has
+    /// tunnelled regardless of which substep it happened in.
+    ///
+    /// For every pierce it takes the entry point `q` on the triangle, orients the face
+    /// normal `n` toward the side the chord started on, and projects the constraint
+    /// `C = n·(p − q) − thickness ≥ 0` exactly as the proximity pass does (same
+    /// gradients, same Jacobi accumulation, same averaging). Both endpoints of the chord
+    /// then lie strictly on the entry side of the triangle's plane, and a segment whose
+    /// endpoints share a side cannot cross it.
+    ///
+    /// ⚠️ This repair is a **position** projection: it can stretch an edge past what
+    /// `solve_edge_constraints` would allow, and it does not build rigid impact zones,
+    /// so a pile-up of simultaneous contacts is resolved approximately rather than
+    /// exactly. The invariant it does guarantee is the one
+    /// `remaining_self_contact_crossings` measures.
+    ///
+    /// The correction is mirrored into the velocities (`Δ/dt`), otherwise the next frame
+    /// re-integrates the velocity that caused the tunnelling and the cloth jitters
+    /// against the repair.
+    fn resolve_self_contact_over_frame(&mut self, start: &[Vec3Fix], dt: Fix128) {
+        let thickness = self.config.self_collision_distance;
+        let n = self.particle_count();
+        let inv_dt = if dt.is_zero() {
+            Fix128::ZERO
+        } else {
+            Fix128::ONE / dt
+        };
+        let mut delta = vec![Vec3Fix::ZERO; n];
+        let mut hits = vec![0u32; n];
+        let mut total = vec![Vec3Fix::ZERO; n];
 
-                                let w_sum = self.inv_masses[i] + self.inv_masses[j];
-                                if w_sum.is_zero() {
-                                    continue;
-                                }
+        for _ in 0..Self::SELF_CONTACT_PASSES {
+            delta.fill(Vec3Fix::ZERO);
+            hits.fill(0);
+            // Corrections actually accumulated this pass — not pierces detected. A pierce
+            // the projection cannot act on is not a reason to run another pass.
+            let mut found = 0usize;
 
-                                let inv_w_sum = Fix128::ONE / w_sum;
-                                let correction = normal * (error * inv_w_sum);
+            for tri in &self.triangles {
+                let (a, b, c) = (
+                    self.positions[tri[0]],
+                    self.positions[tri[1]],
+                    self.positions[tri[2]],
+                );
+                let lo = Vec3Fix::new(
+                    min3(a.x, b.x, c.x) - thickness,
+                    min3(a.y, b.y, c.y) - thickness,
+                    min3(a.z, b.z, c.z) - thickness,
+                );
+                let hi = Vec3Fix::new(
+                    max3(a.x, b.x, c.x) + thickness,
+                    max3(a.y, b.y, c.y) + thickness,
+                    max3(a.z, b.z, c.z) + thickness,
+                );
+                let Some(face) = (b - a).cross(c - a).try_normalize() else {
+                    continue; // zero-area triangle has no side to be on
+                };
 
-                                self.positions[i] =
-                                    self.positions[i] - correction * self.inv_masses[i];
-                                self.positions[j] =
-                                    self.positions[j] + correction * self.inv_masses[j];
-                            }
-                        }
+                for i in 0..n {
+                    if i == tri[0] || i == tri[1] || i == tri[2] {
+                        continue;
+                    }
+                    let p0 = start[i];
+                    let p1 = self.positions[i];
+                    // Chord AABB vs triangle AABB (cheap reject before the predicate)
+                    if min2(p0.x, p1.x) > hi.x
+                        || max2(p0.x, p1.x) < lo.x
+                        || min2(p0.y, p1.y) > hi.y
+                        || max2(p0.y, p1.y) < lo.y
+                        || min2(p0.z, p1.z) > hi.z
+                        || max2(p0.z, p1.z) < lo.z
+                    {
+                        continue;
+                    }
+                    let Some((t_scaled, det)) = segment_pierces_triangle(p0, p1, a, b, c) else {
+                        continue;
+                    };
+
+                    // Entry point, and the barycentric weights the gradients need
+                    let t = t_scaled / det;
+                    let entry = p0 + (p1 - p0) * t;
+                    let Some((q, w)) = closest_point_on_triangle(entry, a, b, c) else {
+                        continue;
+                    };
+                    // One independent computation, oriented toward the side the chord
+                    // started on (accumulating a normal would make it order-dependent).
+                    let normal = if face.dot(p0 - q) < Fix128::ZERO {
+                        -face
+                    } else {
+                        face
+                    };
+
+                    let (wp, wa, wb, wc) = (
+                        self.inv_masses[i],
+                        self.inv_masses[tri[0]],
+                        self.inv_masses[tri[1]],
+                        self.inv_masses[tri[2]],
+                    );
+                    let denom = wp + wa * w[0] * w[0] + wb * w[1] * w[1] + wc * w[2] * w[2];
+                    if denom.is_zero() {
+                        continue;
+                    }
+                    let c_val = normal.dot(p1 - q) - thickness;
+                    if c_val >= Fix128::ZERO {
+                        // The chord only grazed the plane at its start (`p0` exactly on
+                        // it), so the end is already clear and there is nothing to undo.
+                        // This does **not** count as progress: counting it would keep the
+                        // loop spinning for all `SELF_CONTACT_PASSES` with no correction.
+                        continue;
+                    }
+                    let s = c_val / denom;
+                    found += 1;
+
+                    delta[i] = delta[i] - normal * (s * wp);
+                    hits[i] += 1;
+                    for (k, &idx) in tri.iter().enumerate() {
+                        delta[idx] = delta[idx] + normal * (s * self.inv_masses[idx] * w[k]);
+                        hits[idx] += 1;
                     }
                 }
             }
+
+            if found == 0 {
+                break;
+            }
+            for i in 0..n {
+                if hits[i] == 0 || self.inv_masses[i].is_zero() {
+                    continue;
+                }
+                let applied = delta[i] / Fix128::from_int(i64::from(hits[i]));
+                self.positions[i] = self.positions[i] + applied;
+                total[i] = total[i] + applied;
+            }
         }
+
+        for (i, moved) in total.iter().enumerate() {
+            if self.inv_masses[i].is_zero() {
+                continue;
+            }
+            self.velocities[i] = self.velocities[i] + *moved * inv_dt;
+        }
+    }
+
+    /// Number of frame chords `start[i] → positions[i]` that pierce a non-incident
+    /// triangle at its current position.
+    ///
+    /// This is the invariant `step` maintains, exposed so that a caller (or a test) can
+    /// check it instead of trusting that it holds. `0` is the only value that means
+    /// "the cloth did not pass through itself over this frame"; any positive value is
+    /// the number of surviving tunnelling events, not a quality score.
+    #[must_use]
+    pub fn remaining_self_contact_crossings(&self, start: &[Vec3Fix]) -> usize {
+        let n = self.particle_count().min(start.len());
+        let mut count = 0usize;
+        for tri in &self.triangles {
+            let (a, b, c) = (
+                self.positions[tri[0]],
+                self.positions[tri[1]],
+                self.positions[tri[2]],
+            );
+            for (i, from) in start.iter().enumerate().take(n) {
+                if i == tri[0] || i == tri[1] || i == tri[2] {
+                    continue;
+                }
+                if segment_pierces_triangle(*from, self.positions[i], a, b, c).is_some() {
+                    count += 1;
+                }
+            }
+        }
+        count
     }
 
     /// Resolve SDF collisions for all particles
@@ -712,6 +929,203 @@ impl core::fmt::Debug for Cloth {
             .field("config", &self.config)
             .finish()
     }
+}
+
+/// Smaller of two `Fix128`
+fn min2(a: Fix128, b: Fix128) -> Fix128 {
+    if a < b {
+        a
+    } else {
+        b
+    }
+}
+
+/// Larger of two `Fix128`
+fn max2(a: Fix128, b: Fix128) -> Fix128 {
+    if a > b {
+        a
+    } else {
+        b
+    }
+}
+
+/// Does the segment `p0 → p1` pass through the interior of triangle `(a, b, c)`?
+///
+/// Möller–Trumbore without the division: the determinant is normalised to a positive
+/// sign and every acceptance test is then a comparison, so no rounding enters the
+/// decision. Returns `(t_scaled, det)` with the crossing parameter `t = t_scaled / det`
+/// for callers that need the entry point; `det` is strictly positive on return.
+///
+/// `None` covers three distinct rejections that a caller never needs to tell apart —
+/// parallel to the plane, outside the barycentric triangle, outside the segment's
+/// parameter range — because in all three the segment does not cross this triangle and
+/// there is nothing to repair.
+#[allow(clippy::many_single_char_names)]
+fn segment_pierces_triangle(
+    p0: Vec3Fix,
+    p1: Vec3Fix,
+    a: Vec3Fix,
+    b: Vec3Fix,
+    c: Vec3Fix,
+) -> Option<(Fix128, Fix128)> {
+    let dir = p1 - p0;
+    let e1 = b - a;
+    let e2 = c - a;
+    let h = dir.cross(e2);
+    let mut det = e1.dot(h);
+    if det.is_zero() {
+        return None; // segment parallel to the triangle's plane
+    }
+    let s = p0 - a;
+    let q = s.cross(e1);
+    let mut u = s.dot(h);
+    let mut v = dir.dot(q);
+    let mut t = e2.dot(q);
+
+    if det < Fix128::ZERO {
+        det = Fix128::ZERO - det;
+        u = Fix128::ZERO - u;
+        v = Fix128::ZERO - v;
+        t = Fix128::ZERO - t;
+    }
+    if u < Fix128::ZERO || v < Fix128::ZERO || u + v > det {
+        return None; // outside the triangle
+    }
+    if t < Fix128::ZERO || t > det {
+        return None; // outside the segment
+    }
+    Some((t, det))
+}
+
+/// Smallest of three `Fix128`
+fn min3(a: Fix128, b: Fix128, c: Fix128) -> Fix128 {
+    let m = if a < b { a } else { b };
+    if m < c {
+        m
+    } else {
+        c
+    }
+}
+
+/// Largest of three `Fix128`
+fn max3(a: Fix128, b: Fix128, c: Fix128) -> Fix128 {
+    let m = if a > b { a } else { b };
+    if m > c {
+        m
+    } else {
+        c
+    }
+}
+
+/// Closest point of triangle `(a, b, c)` to `p`, with its barycentric weights.
+///
+/// Voronoi-region form (Ericson, *Real-Time Collision Detection* §5.1.5): the seven
+/// regions (3 vertex, 3 edge, 1 face) are separated by sign tests on dot products, so
+/// only the region that actually wins performs a division.
+///
+/// Returns `(q, [w₀, w₁, w₂])` with `q = w₀a + w₁b + w₂c`, `Σw = 1` and `w ≥ 0`. The
+/// weights are what the contact gradients are built from, so they are returned rather
+/// than recomputed: `q` alone cannot distinguish "on edge `ab`" from "inside the face
+/// next to `ab`", and those two have different gradients.
+///
+/// `None` means one thing only: **this triangle cannot be projected onto in `Fix128`** —
+/// it has zero area, or an edge so short that its squared length underflows Q64.64 (the
+/// region denominators are `|ab|²`, `|ac|²`, `|bc|²` and `2·area`). The caller's action is
+/// the same in every case: skip the pair. It is deliberately not "return vertex `a`",
+/// which used to be four separate silent fallbacks returning a point that is not the
+/// closest one.
+///
+/// ⚠️ The clamping into vertex and edge regions is load-bearing: without it an
+/// unclamped face-region solve returns a point outside the triangle, and the contact is
+/// reported against a plane instead of against the triangle
+/// (`closest_point_clamps_into_the_edge_and_vertex_regions` pins each region).
+#[allow(clippy::many_single_char_names, clippy::similar_names)]
+fn closest_point_on_triangle(
+    p: Vec3Fix,
+    a: Vec3Fix,
+    b: Vec3Fix,
+    c: Vec3Fix,
+) -> Option<(Vec3Fix, [Fix128; 3])> {
+    const ZERO: Fix128 = Fix128::ZERO;
+    const ONE: Fix128 = Fix128::ONE;
+    let ab = b - a;
+    let ac = c - a;
+
+    // A zero-area triangle has no face to project onto. Rejecting it here is what makes
+    // every `den.is_zero()` below a genuine underflow guard rather than a silent answer.
+    let area2 = ab.cross(ac);
+    if area2.x.is_zero() && area2.y.is_zero() && area2.z.is_zero() {
+        return None;
+    }
+
+    // Vertex region A
+    let ap = p - a;
+    let d1 = ab.dot(ap);
+    let d2 = ac.dot(ap);
+    if d1 <= ZERO && d2 <= ZERO {
+        return Some((a, [ONE, ZERO, ZERO]));
+    }
+
+    // Vertex region B
+    let bp = p - b;
+    let d3 = ab.dot(bp);
+    let d4 = ac.dot(bp);
+    if d3 >= ZERO && d4 <= d3 {
+        return Some((b, [ZERO, ONE, ZERO]));
+    }
+
+    // Edge region AB
+    let vc = d1 * d4 - d3 * d2;
+    if vc <= ZERO && d1 >= ZERO && d3 <= ZERO {
+        let den = d1 - d3;
+        if den.is_zero() {
+            return None; // |ab|² underflowed
+        }
+        let v = d1 / den;
+        return Some((a + ab * v, [ONE - v, v, ZERO]));
+    }
+
+    // Vertex region C
+    let cp = p - c;
+    let d5 = ab.dot(cp);
+    let d6 = ac.dot(cp);
+    if d6 >= ZERO && d5 <= d6 {
+        return Some((c, [ZERO, ZERO, ONE]));
+    }
+
+    // Edge region AC
+    let vb = d5 * d2 - d1 * d6;
+    if vb <= ZERO && d2 >= ZERO && d6 <= ZERO {
+        let den = d2 - d6;
+        if den.is_zero() {
+            return None; // |ac|² underflowed
+        }
+        let w = d2 / den;
+        return Some((a + ac * w, [ONE - w, ZERO, w]));
+    }
+
+    // Edge region BC
+    let va = d3 * d6 - d5 * d4;
+    let e_b = d4 - d3;
+    let e_c = d5 - d6;
+    if va <= ZERO && e_b >= ZERO && e_c >= ZERO {
+        let den = e_b + e_c;
+        if den.is_zero() {
+            return None; // |bc|² underflowed
+        }
+        let w = e_b / den;
+        return Some((b + (c - b) * w, [ZERO, ONE - w, w]));
+    }
+
+    // Face region
+    let den = va + vb + vc;
+    if den.is_zero() {
+        return None; // 2·area underflowed
+    }
+    let inv = ONE / den;
+    let v = vb * inv;
+    let w = vc * inv;
+    Some((a + ab * v + ac * w, [ONE - v - w, v, w]))
 }
 
 /// Find shared edge between two triangles and create a bending constraint
@@ -894,6 +1308,284 @@ mod tests {
             "自己接触を有効にしても層が引き離されていない (ON {} <= OFF {})",
             gap_on.to_f32(),
             gap_off.to_f32()
+        );
+    }
+
+    // ---- vertex-face self-contact -----------------------------------
+
+    /// `closest_point_on_triangle` の 7 領域を閉形式で固定する
+    ///
+    /// 三角形は `a = (0,0,0)`, `b = (1,0,0)`, `c = (0,0,1)` (XZ 平面) 座標は全て 2 進小数
+    /// なので `Fix128` で厳密、許容差なしの等値で比較できる
+    ///
+    /// ⚠️ **重心座標も一緒に pin する** 最近接点だけを見ると「辺 `ab` の上」と「面領域で
+    /// 辺 `ab` のすぐ内側」が区別できないが、この 2 つは**勾配が違う** (前者は `c` に
+    /// 補正が行かない) 出所: 手計算
+    #[test]
+    fn closest_point_clamps_into_the_edge_and_vertex_regions() {
+        let a = Vec3Fix::from_int(0, 0, 0);
+        let b = Vec3Fix::from_int(1, 0, 0);
+        let c = Vec3Fix::from_int(0, 0, 1);
+        let h = Fix128::from_ratio(1, 2);
+        let q = Fix128::from_ratio(1, 4);
+        let two = Fix128::from_int(2);
+        let neg_h = Fix128::ZERO - h;
+        let neg_one = Fix128::from_int(-1);
+        let o = Fix128::ZERO;
+        let i = Fix128::ONE;
+
+        let cases: [(Vec3Fix, Vec3Fix, [Fix128; 3], &str); 7] = [
+            // 面領域: 垂線の足 (1/4, 0, 1/4)、w = (1/2, 1/4, 1/4)
+            (
+                Vec3Fix::new(q, h, q),
+                Vec3Fix::new(q, o, q),
+                [h, q, q],
+                "face",
+            ),
+            // 辺 ab: p は -z 側に外れる
+            (
+                Vec3Fix::new(h, h, neg_one),
+                Vec3Fix::new(h, o, o),
+                [h, h, o],
+                "edge ab",
+            ),
+            // 辺 bc (斜辺): 平面への投影は u + v = 2 > 1
+            (
+                Vec3Fix::new(i, h, i),
+                Vec3Fix::new(h, o, h),
+                [o, h, h],
+                "edge bc",
+            ),
+            // 辺 ca: p は -x 側に外れる
+            (
+                Vec3Fix::new(neg_one, h, h),
+                Vec3Fix::new(o, o, h),
+                [h, o, h],
+                "edge ca",
+            ),
+            // 頂点 a: ab·ap = ac·ap = -1/2 < 0
+            (Vec3Fix::new(neg_h, h, neg_h), a, [i, o, o], "vertex a"),
+            // 頂点 b
+            (Vec3Fix::new(two, h, neg_h), b, [o, i, o], "vertex b"),
+            // 頂点 c
+            (Vec3Fix::new(neg_h, h, two), c, [o, o, i], "vertex c"),
+        ];
+
+        for (p, expect_q, expect_w, name) in cases {
+            let Some((got_q, got_w)) = closest_point_on_triangle(p, a, b, c) else {
+                panic!("{name}: 退化していない三角形で None が返った");
+            };
+            assert_eq!(got_q, expect_q, "{name}: 最近接点");
+            assert_eq!(got_w, expect_w, "{name}: 重心座標");
+            // 重心座標と最近接点が同じ点を指していること (勾配の整合性の前提)
+            assert_eq!(
+                a * got_w[0] + b * got_w[1] + c * got_w[2],
+                expect_q,
+                "{name}: w が最近接点を再構成しない"
+            );
+        }
+
+        // 退化 (面積 0) は None `Some(a)` 等の「最近接でない点」で誤魔化さない
+        for (x, y, z, name) in [
+            (a, b, b, "b と c が同一"),
+            (a, a, a, "3 頂点が同一"),
+            (a, b, Vec3Fix::from_int(2, 0, 0), "3 頂点が同一直線上"),
+        ] {
+            assert!(
+                closest_point_on_triangle(Vec3Fix::new(q, h, q), x, y, z).is_none(),
+                "{name}: 面積 0 の三角形で Some が返った"
+            );
+        }
+    }
+
+    /// 頂点-面の判定が頂点-頂点の判定を含む (同じ閾値で取りこぼさない)
+    ///
+    /// 2 つの根拠を一緒に pin する:
+    ///
+    /// 1. 点-三角形距離 ≤ 点-頂点距離 (三角形の頂点も三角形の一部なので自明だが、
+    ///    `closest_point_on_triangle` の領域分岐が壊れるとここが破れる)
+    /// 2. `new_grid` の mesh では、**同じ三角形に属する頂点対は必ず辺拘束にもなっている**
+    ///    ので、旧 particle-particle 判定が除外していた対 (= 辺で繋がった対) と、
+    ///    新判定が除外する対 (= 三角形に属する頂点) が一致する
+    #[test]
+    fn point_triangle_subsumes_point_point() {
+        let cloth = Cloth::new_grid(
+            Vec3Fix::ZERO,
+            Fix128::from_int(2),
+            Fix128::from_int(2),
+            3,
+            3,
+            Fix128::from_ratio(1, 100),
+        );
+
+        // (2) 三角形内の頂点対は全て辺拘束にある
+        let mut edges: Vec<(usize, usize)> = cloth
+            .edge_constraints
+            .iter()
+            .map(|c| (c.i0.min(c.i1), c.i0.max(c.i1)))
+            .collect();
+        edges.sort_unstable();
+        for tri in &cloth.triangles {
+            for (x, y) in [(tri[0], tri[1]), (tri[1], tri[2]), (tri[2], tri[0])] {
+                assert!(
+                    edges.binary_search(&(x.min(y), x.max(y))).is_ok(),
+                    "三角形 {tri:?} の頂点対 ({x}, {y}) が辺拘束に無い"
+                );
+            }
+        }
+
+        // (1) どの頂点から測っても、三角形までの距離の方が近い
+        let a = Vec3Fix::from_int(0, 0, 0);
+        let b = Vec3Fix::from_int(1, 0, 0);
+        let c = Vec3Fix::from_int(0, 0, 1);
+        let probes = [
+            Vec3Fix::new(
+                Fix128::from_ratio(1, 4),
+                Fix128::from_ratio(1, 2),
+                Fix128::from_ratio(1, 4),
+            ),
+            Vec3Fix::new(
+                Fix128::from_int(3),
+                Fix128::from_int(1),
+                Fix128::from_int(-2),
+            ),
+            Vec3Fix::new(
+                Fix128::from_ratio(-3, 4),
+                Fix128::ZERO,
+                Fix128::from_ratio(7, 8),
+            ),
+            Vec3Fix::new(
+                Fix128::from_int(2),
+                Fix128::from_int(2),
+                Fix128::from_int(2),
+            ),
+        ];
+        for p in probes {
+            let (q, _) = closest_point_on_triangle(p, a, b, c).expect("退化していない");
+            let face_d2 = (p - q).length_squared();
+            for v in [a, b, c] {
+                assert!(
+                    face_d2 <= (p - v).length_squared(),
+                    "点 {p:?}: 三角形までの距離² {face_d2:?} が頂点までの距離²より大きい"
+                );
+            }
+        }
+    }
+
+    /// 接触対の列挙順が結果を変えない (Jacobi 蓄積の決定性)
+    ///
+    /// ⚠️ **これは「単一スレッドで順序が固定だから決定的」とは別の主張です** 順序が
+    /// **どうであっても**同じ、を要求している broad-phase の実装を差し替えても、
+    /// SIMD で分割しても、結果が動かないことがここで担保される
+    /// (`Fix128` の加算は `Z/2¹²⁸` の厳密な群演算、`tests/reduction_order_independence.rs`)
+    #[test]
+    fn self_contact_result_is_independent_of_the_pair_order() {
+        fn folded_cloth() -> Cloth {
+            const R: usize = 5;
+            let mut cloth = Cloth::new_grid(
+                Vec3Fix::ZERO,
+                Fix128::from_int(4),
+                Fix128::from_int(4),
+                R,
+                R,
+                Fix128::from_ratio(1, 100),
+            );
+            cloth.config.self_collision = true;
+            cloth.config.self_collision_distance = Fix128::from_ratio(3, 2);
+            for x in 0..R {
+                cloth.positions[3 * R + x] =
+                    Vec3Fix::new(cloth.positions[x].x, Fix128::ONE, Fix128::from_int(2));
+                cloth.positions[4 * R + x] =
+                    Vec3Fix::new(cloth.positions[x].x, Fix128::ONE, Fix128::ONE);
+            }
+            cloth
+        }
+
+        let mut forward = folded_cloth();
+        let mut reverse = folded_cloth();
+        let margin = forward.config.self_collision_distance.double();
+        let mut candidates = forward.collect_vertex_face_candidates(margin);
+        assert!(
+            !candidates.is_empty(),
+            "折り返した布で接触候補が 0 件 この scene は順序非依存性を試せない"
+        );
+        forward.solve_vertex_face_self_collision(&candidates);
+        candidates.reverse();
+        reverse.solve_vertex_face_self_collision(&candidates);
+
+        assert_eq!(
+            forward.positions, reverse.positions,
+            "接触対を逆順に処理すると結果が変わる = 蓄積が順序依存"
+        );
+    }
+
+    /// 1 frame で布を貫くはずの頂点が、貫かずに入射側へ戻される
+    ///
+    /// # scene (閉形式)
+    ///
+    /// 5x5 の格子を XZ 平面 (`y = 0`) に置き、**辺拘束と曲げ拘束を外して**衝突だけを見る
+    /// 粒子 0 以外は全て pin、粒子 0 は far corner の三角形の**内部**の真上
+    /// `(3.5, 2, 3.25)` に置いて `v = (0, -240, 0)` で落とす (`dt = 1/60` なので 1 frame の
+    /// 変位は `-4`) 落下線 `x + z = 6.75 < 7` は対角線 `x + z = 7` の内側なので、
+    /// 三角形 `[(3,3), (4,3), (3,4)]` の内部を通る 粒子 0 はこの三角形の頂点ではない
+    ///
+    /// 期待: 自己接触 OFF なら `y < 0` (素通り)、ON なら `y > 0` (入射側に残る) で
+    /// `remaining_self_contact_crossings` が 0
+    #[test]
+    fn a_vertex_driven_through_the_sheet_is_pushed_back_to_the_entry_side() {
+        fn scene(self_collision: bool) -> (Cloth, Vec<Vec3Fix>) {
+            let mut cloth = Cloth::new_grid(
+                Vec3Fix::ZERO,
+                Fix128::from_int(4),
+                Fix128::from_int(4),
+                5,
+                5,
+                Fix128::from_ratio(1, 100),
+            );
+            // 衝突だけを測るため、内力を外す (布としてでなく三角形集合として見る)
+            cloth.edge_constraints.clear();
+            cloth.bend_constraints.clear();
+            cloth.config.gravity = Vec3Fix::ZERO;
+            cloth.config.damping = Fix128::ONE;
+            cloth.config.self_collision = self_collision;
+            cloth.config.self_collision_distance = Fix128::from_ratio(1, 10);
+            for i in 1..cloth.particle_count() {
+                cloth.inv_masses[i] = Fix128::ZERO;
+            }
+            cloth.positions[0] = Vec3Fix::new(
+                Fix128::from_ratio(7, 2),
+                Fix128::from_int(2),
+                Fix128::from_ratio(13, 4),
+            );
+            cloth.prev_positions[0] = cloth.positions[0];
+            cloth.velocities[0] = Vec3Fix::new(Fix128::ZERO, Fix128::from_int(-240), Fix128::ZERO);
+            let start = cloth.positions.clone();
+            cloth.step(Fix128::from_ratio(1, 60));
+            (cloth, start)
+        }
+
+        let (off, start_off) = scene(false);
+        assert!(
+            off.positions[0].y < Fix128::ZERO,
+            "自己接触 OFF で粒子が布を素通りしなかった (y = {}) この scene は貫通を試せていない",
+            off.positions[0].y.to_f32()
+        );
+        assert!(
+            off.remaining_self_contact_crossings(&start_off) > 0,
+            "自己接触 OFF で貫通が検出されない"
+        );
+
+        let (on, start_on) = scene(true);
+        assert_eq!(
+            on.remaining_self_contact_crossings(&start_on),
+            0,
+            "自己接触 ON で貫通が残った (y = {})",
+            on.positions[0].y.to_f32()
+        );
+        assert!(
+            on.positions[0].y > Fix128::ZERO,
+            "自己接触 ON で粒子が布の裏側に居る (y = {}) 押し戻しの向きが入射側でない",
+            on.positions[0].y.to_f32()
         );
     }
 
