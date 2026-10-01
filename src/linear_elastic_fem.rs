@@ -57,6 +57,7 @@
 //!
 //! Author: Moroya Sakamoto
 
+use crate::coupled_field::CoupledField;
 use crate::hyperelastic::HyperelasticModel;
 use crate::math::{Fix128, Mat3Fix, PolarError, Vec3Fix};
 use crate::sdf_fem_mesh::SdfTetMesh;
@@ -159,6 +160,19 @@ pub enum FemError {
         relative_residual: Fix128,
         /// Iterations the best residual went without improving.
         without_improvement: u32,
+    },
+    /// A [`ThermalExpansion`] field does not cover every node of the mesh.
+    ///
+    /// Refused rather than tolerated because [`CoupledField::sample`] clamps a
+    /// point outside its grid onto the nearest boundary node instead of
+    /// failing: a mesh poking out of the field would be heated by the extruded
+    /// boundary value and the solve would return a plausible, wrong answer. The
+    /// element centroids are what the eigenstrain is actually sampled at, and a
+    /// centroid is a convex combination of its four nodes, so checking the
+    /// nodes is exactly the condition that keeps every sample inside the grid.
+    TemperatureFieldDoesNotCoverMesh {
+        /// Index into `SdfTetMesh::vertices` of the first node found outside.
+        vertex: u32,
     },
 }
 
@@ -286,6 +300,69 @@ impl ElasticMaterial {
         let lambda = self.youngs_modulus_mpa * nu / (one_plus * one_minus_two);
         let mu = self.youngs_modulus_mpa / (one_plus + one_plus);
         (lambda, mu)
+    }
+}
+
+/// An isotropic thermal eigenstrain, driven by a temperature field.
+///
+/// `ε_th = α ΔT · I`, with `ΔT` read from a [`CoupledField`] at each element
+/// centroid and `α` the linear expansion coefficient (K⁻¹). The constitutive
+/// law the solve then uses is
+///
+/// ```text
+/// σ = λ tr(ε − ε_th) I + 2μ (ε − ε_th)
+/// ```
+///
+/// which is the channel [`crate::coupled_field`] exists for: the temperature
+/// field reaches the **residual**, not just a post-hoc stress estimate the way
+/// [`crate::thermal_stress`] computes `σ = E α ΔT` for a fully suppressed bar.
+///
+/// # ⚠️ The field carries the rise above the stress-free reference
+///
+/// Not an absolute temperature. `ΔT = 0` everywhere must mean "no eigenstrain",
+/// and that is what [`solve`] relies on when it forwards [`None`]. A caller
+/// holding absolute temperatures has to subtract its own reference before
+/// filling the field; this type cannot do it, because the reference is a
+/// property of the configuration the mesh was built in and not of the field.
+///
+/// # Fixed-point note
+///
+/// `α` and `ΔT` are [`Fix128`], so `α ΔT` is exact only when both are dyadic
+/// (denominator a power of two). `α = 1/1000` is not, so the eigenstrain
+/// carries one truncation per multiply — about `2⁻⁶⁴` relative, which is why
+/// the analytic oracles compare against a closed form with a tolerance rather
+/// than for equality. Nothing here is compared for equality, so no operand
+/// needs to be dyadic; a caller that *does* want an exact `assert_eq!` has to
+/// choose dyadic `α` and `ΔT` and match the operation order on both sides.
+#[derive(Debug, Clone, Copy)]
+pub struct ThermalExpansion<'a> {
+    field: &'a CoupledField,
+    alpha_per_k: Fix128,
+}
+
+impl<'a> ThermalExpansion<'a> {
+    /// Pair a temperature-rise field with a linear expansion coefficient.
+    ///
+    /// No validation: every [`Fix128`] is a usable `α` (negative expansion
+    /// coefficients are real materials) and `field` is already a validated
+    /// grid. The one condition that *can* fail — the field covering the mesh —
+    /// needs the mesh, so [`solve_with_eigenstrain`] checks it and reports
+    /// [`FemError::TemperatureFieldDoesNotCoverMesh`].
+    #[must_use]
+    pub const fn new(field: &'a CoupledField, alpha_per_k: Fix128) -> Self {
+        Self { field, alpha_per_k }
+    }
+
+    /// The temperature-rise field (K above the stress-free reference).
+    #[must_use]
+    pub const fn field(&self) -> &'a CoupledField {
+        self.field
+    }
+
+    /// Linear expansion coefficient (K⁻¹).
+    #[must_use]
+    pub const fn alpha_per_k(&self) -> Fix128 {
+        self.alpha_per_k
     }
 }
 
@@ -1196,14 +1273,67 @@ where
 
 /// Solve the linear elastic boundary value problem on `mesh`.
 ///
+/// Equivalent to [`solve_with_eigenstrain`] with no eigenstrain, which is the
+/// same system as a uniform `ΔT = 0`: the thermal load and the stress
+/// correction are both zero and the arithmetic is bit-identical to the solve
+/// this function performed before the eigenstrain term existed.
+///
 /// # Errors
 ///
-/// See [`FemError`].
+/// See [`FemError`]. [`FemError::TemperatureFieldDoesNotCoverMesh`] cannot
+/// occur here, because there is no field.
 pub fn solve(
     mesh: &SdfTetMesh,
     material: &ElasticMaterial,
     boundary: &BoundaryConditions,
     config: &SolverConfig,
+) -> Result<FemSolution, FemError> {
+    solve_with_eigenstrain(mesh, material, boundary, config, None)
+}
+
+/// Solve the linear elastic boundary value problem on `mesh`, with an optional
+/// thermal eigenstrain.
+///
+/// # The eigenstrain enters the residual, not the answer
+///
+/// With `ε_th = α ΔT · I` the constitutive law becomes
+/// `σ = C : (ε − ε_th)`, so the weak form `∫ Bᵀ σ dV = f_ext` reads
+///
+/// ```text
+/// K u = f_ext + ∫ Bᵀ C ε_th dV
+///               ^^^^^^^^^^^^^^^ the thermal load, assembled element by element
+/// ```
+///
+/// and the reported stress is `C B u − C : ε_th`. Both halves are needed and
+/// each is visible on its own: with only the load the free-expansion scene gets
+/// the right displacement and a non-zero stress, and with only the correction
+/// the displacement stays put and the clamped scene passes for the wrong
+/// reason. `tests/analytic_thermoelastic.rs` pins that pair.
+///
+/// A uniform `ε_th` loads no interior degree of freedom — `Σₑ V_e ∇Nᵢ = 0`
+/// there, because `Nᵢ` vanishes on the boundary of its own support — so the
+/// load shows up only next to constrained nodes, as the reaction it physically
+/// is. That is why a fully clamped body heated uniformly has `u ≡ 0` exactly
+/// and carries the whole eigenstrain as stress.
+///
+/// # Determinism
+///
+/// The eigenstrain is built in one pass over the elements in mesh order before
+/// the iteration starts, and sampled with [`CoupledField::sample`], which is
+/// [`Fix128`] trilinear interpolation. Nothing new reaches a transcendental, so
+/// the bit-exactness the module doc claims is unchanged.
+///
+/// # Errors
+///
+/// See [`FemError`]. [`FemError::TemperatureFieldDoesNotCoverMesh`] is reported
+/// before any solving when `thermal` is `Some` and the field does not cover
+/// every node of the mesh.
+pub fn solve_with_eigenstrain(
+    mesh: &SdfTetMesh,
+    material: &ElasticMaterial,
+    boundary: &BoundaryConditions,
+    config: &SolverConfig,
+    thermal: Option<ThermalExpansion<'_>>,
 ) -> Result<FemSolution, FemError> {
     let vertex_count = mesh.vertices.len();
     if vertex_count == 0 || mesh.tets.is_empty() {
@@ -1222,6 +1352,13 @@ pub fn solve(
     let (lambda, mu) = material.lame();
     let ndof = vertex_count * 3;
 
+    // `C : ε_th` per element, or nothing at all. Built after `build_elements`,
+    // which is what validated the node indices this reads back.
+    let thermal_stress = match &thermal {
+        None => None,
+        Some(t) => Some(thermal_stresses(mesh, &elements, t, lambda, mu)?),
+    };
+
     // Dirichlet data, zero on the free degrees of freedom.
     let mut prescribed_value = vec![Fix128::ZERO; ndof];
     let mut is_free = vec![true; ndof];
@@ -1237,7 +1374,8 @@ pub fn solve(
         return Err(FemError::UnderConstrained);
     }
 
-    // b = f_ext − K u_prescribed, restricted to the free degrees of freedom.
+    // b = f_ext + ∫ Bᵀ C ε_th dV − K u_prescribed, restricted to the free
+    // degrees of freedom.
     let mut scratch = vec![Fix128::ZERO; ndof];
     apply_stiffness(&elements, &prescribed_value, lambda, mu, &mut scratch);
     let mut b = vec![Fix128::ZERO; ndof];
@@ -1245,6 +1383,20 @@ pub fn solve(
         let d = vertex as usize * 3 + axis.index();
         if is_free[d] {
             b[d] = b[d] + force;
+        }
+    }
+    if let Some(stresses) = &thermal_stress {
+        // Accumulated in mesh order, like every other element loop here. The
+        // prescribed entries this writes are discarded by the loop below —
+        // there they are the reaction, not a load.
+        for (element, &s) in elements.iter().zip(stresses.iter()) {
+            let force = element_force_from_stress(element, s);
+            for (f, &node) in force.iter().zip(element.nodes.iter()) {
+                let base = node * 3;
+                b[base] = b[base] + f[0];
+                b[base + 1] = b[base + 1] + f[1];
+                b[base + 2] = b[base + 2] + f[2];
+            }
         }
     }
     for (d, value) in b.iter_mut().enumerate() {
@@ -1283,10 +1435,20 @@ pub fn solve(
     let displacements = (0..vertex_count)
         .map(|v| [x[v * 3], x[v * 3 + 1], x[v * 3 + 2]])
         .collect();
-    let element_stress = elements
-        .iter()
-        .map(|e| element_stress(e, &x, lambda, mu))
-        .collect();
+    // σ = C B u − C : ε_th. The subtraction is what makes a free expansion
+    // stress-free; without it the mechanical part alone reports the full
+    // `(3λ + 2μ) α ΔT` on a body that is storing no energy.
+    let element_stress = match &thermal_stress {
+        None => elements
+            .iter()
+            .map(|e| element_stress(e, &x, lambda, mu))
+            .collect(),
+        Some(stresses) => elements
+            .iter()
+            .zip(stresses.iter())
+            .map(|(e, &s)| sub_stress(element_stress(e, &x, lambda, mu), s))
+            .collect(),
+    };
 
     Ok(FemSolution {
         displacements,
@@ -1739,6 +1901,87 @@ fn element_force_from_piola(element: &Element, p: Mat3Fix) -> [[Fix128; 3]; 4] {
         }
     }
     force
+}
+
+/// One quarter, exactly.
+#[inline]
+fn quarter() -> Fix128 {
+    Fix128::from_raw(0, 1 << 62)
+}
+
+/// `a − b`, component by component.
+#[inline]
+fn sub_stress(a: StressTensor, b: StressTensor) -> StressTensor {
+    StressTensor {
+        xx: a.xx - b.xx,
+        yy: a.yy - b.yy,
+        zz: a.zz - b.zz,
+        xy: a.xy - b.xy,
+        yz: a.yz - b.yz,
+        zx: a.zx - b.zx,
+    }
+}
+
+/// `C : ε_th` for every element (MPa) — the stress a fully suppressed thermal
+/// expansion carries, which is both the source of the thermal load and the
+/// correction the reported stress needs.
+///
+/// With `ε_th = α ΔT · I` the double contraction collapses to a hydrostatic
+/// tensor: `λ tr(ε_th) + 2μ (ε_th)_aa = (3λ + 2μ) α ΔT` on every normal
+/// component and zero on every shear one. `3λ + 2μ = 3K = E/(1 − 2ν)`, so this
+/// is the bulk response and nothing else.
+///
+/// `ΔT` is sampled at the element centroid, which is exact for the uniform
+/// field the analytic oracles use and first-order accurate otherwise — the same
+/// order as the P1 constant-strain element it feeds, so it adds no error term
+/// of its own kind.
+fn thermal_stresses(
+    mesh: &SdfTetMesh,
+    elements: &[Element],
+    thermal: &ThermalExpansion<'_>,
+    lambda: Fix128,
+    mu: Fix128,
+) -> Result<Vec<StressTensor>, FemError> {
+    // Coverage first, by node, so the error names a vertex of the mesh rather
+    // than a centroid nobody can look up. See the error variant for why this is
+    // a refusal and not a clamp.
+    for element in elements {
+        for &node in &element.nodes {
+            let q = mesh.vertices[node];
+            let p = Vec3Fix::new(
+                Fix128::from_f32(q[0]),
+                Fix128::from_f32(q[1]),
+                Fix128::from_f32(q[2]),
+            );
+            if !thermal.field.contains(p) {
+                return Err(FemError::TemperatureFieldDoesNotCoverMesh {
+                    vertex: u32::try_from(node).unwrap_or(u32::MAX),
+                });
+            }
+        }
+    }
+
+    let bulk_three = lambda + lambda + lambda + mu + mu;
+    let mut out = Vec::with_capacity(elements.len());
+    for element in elements {
+        let mut sum = [Fix128::ZERO; 3];
+        for &node in &element.nodes {
+            let q = mesh.vertices[node];
+            sum[0] = sum[0] + Fix128::from_f32(q[0]);
+            sum[1] = sum[1] + Fix128::from_f32(q[1]);
+            sum[2] = sum[2] + Fix128::from_f32(q[2]);
+        }
+        let centroid = Vec3Fix::new(sum[0] * quarter(), sum[1] * quarter(), sum[2] * quarter());
+        let delta_t = thermal.field.sample(centroid);
+        let normal = bulk_three * thermal.alpha_per_k * delta_t;
+        out.push(StressTensor {
+            xx: normal,
+            yy: normal,
+            zz: normal,
+            ..StressTensor::default()
+        });
+    }
+    Ok(out)
 }
 
 /// `V·Bᵀσ` — the nodal forces an element carries for a given stress (N).
