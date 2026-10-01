@@ -5205,6 +5205,62 @@ impl core::marker::Unpin for alice_physics::linear_elastic_fem::ElastoplasticCon
 impl core::marker::UnsafeUnpin for alice_physics::linear_elastic_fem::ElastoplasticConfig
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::linear_elastic_fem::ElastoplasticConfig
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::linear_elastic_fem::ElastoplasticConfig
+#[non_exhaustive] pub struct alice_physics::linear_elastic_fem::ElastoplasticIncrement
+pub alice_physics::linear_elastic_fem::ElastoplasticIncrement::field: alice_physics::linear_elastic_fem::FemSolution
+pub alice_physics::linear_elastic_fem::ElastoplasticIncrement::plastic_work_increment: alloc::vec::Vec<alice_physics::math::Fix128>
+impl alice_physics::linear_elastic_fem::ElastoplasticIncrement
+pub fn alice_physics::linear_elastic_fem::ElastoplasticIncrement::commit(self, &mut alice_physics::linear_elastic_fem::ElastoplasticState)
+pub const fn alice_physics::linear_elastic_fem::ElastoplasticIncrement::newton_iterations(&self) -> u32
+impl core::clone::Clone for alice_physics::linear_elastic_fem::ElastoplasticIncrement
+pub fn alice_physics::linear_elastic_fem::ElastoplasticIncrement::clone(&self) -> Self
+impl core::cmp::PartialEq for alice_physics::linear_elastic_fem::ElastoplasticIncrement
+pub fn alice_physics::linear_elastic_fem::ElastoplasticIncrement::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::linear_elastic_fem::ElastoplasticIncrement
+pub fn alice_physics::linear_elastic_fem::ElastoplasticIncrement::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for alice_physics::linear_elastic_fem::ElastoplasticIncrement
+impl core::marker::Freeze for alice_physics::linear_elastic_fem::ElastoplasticIncrement
+impl core::marker::Send for alice_physics::linear_elastic_fem::ElastoplasticIncrement
+impl core::marker::Sync for alice_physics::linear_elastic_fem::ElastoplasticIncrement
+impl core::marker::Unpin for alice_physics::linear_elastic_fem::ElastoplasticIncrement
+impl core::marker::UnsafeUnpin for alice_physics::linear_elastic_fem::ElastoplasticIncrement
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::linear_elastic_fem::ElastoplasticIncrement
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::linear_elastic_fem::ElastoplasticIncrement
+#[non_exhaustive] pub struct alice_physics::linear_elastic_fem::ElastoplasticIncrementRequest
+impl alice_physics::linear_elastic_fem::ElastoplasticIncrementRequest
+pub const fn alice_physics::linear_elastic_fem::ElastoplasticIncrementRequest::factor(&self) -> alice_physics::math::Fix128
+pub const fn alice_physics::linear_elastic_fem::ElastoplasticIncrementRequest::new(alice_physics::math::Fix128) -> Self
+impl core::clone::Clone for alice_physics::linear_elastic_fem::ElastoplasticIncrementRequest
+pub fn alice_physics::linear_elastic_fem::ElastoplasticIncrementRequest::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::linear_elastic_fem::ElastoplasticIncrementRequest
+impl core::cmp::PartialEq for alice_physics::linear_elastic_fem::ElastoplasticIncrementRequest
+pub fn alice_physics::linear_elastic_fem::ElastoplasticIncrementRequest::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::linear_elastic_fem::ElastoplasticIncrementRequest
+pub fn alice_physics::linear_elastic_fem::ElastoplasticIncrementRequest::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::linear_elastic_fem::ElastoplasticIncrementRequest
+impl core::marker::StructuralPartialEq for alice_physics::linear_elastic_fem::ElastoplasticIncrementRequest
+impl core::marker::Freeze for alice_physics::linear_elastic_fem::ElastoplasticIncrementRequest
+impl core::marker::Send for alice_physics::linear_elastic_fem::ElastoplasticIncrementRequest
+impl core::marker::Sync for alice_physics::linear_elastic_fem::ElastoplasticIncrementRequest
+impl core::marker::Unpin for alice_physics::linear_elastic_fem::ElastoplasticIncrementRequest
+impl core::marker::UnsafeUnpin for alice_physics::linear_elastic_fem::ElastoplasticIncrementRequest
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::linear_elastic_fem::ElastoplasticIncrementRequest
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::linear_elastic_fem::ElastoplasticIncrementRequest
+pub struct alice_physics::linear_elastic_fem::ElastoplasticProblem
+impl alice_physics::linear_elastic_fem::ElastoplasticProblem
+pub fn alice_physics::linear_elastic_fem::ElastoplasticProblem::step(&self, &alice_physics::linear_elastic_fem::ElastoplasticState, &alice_physics::linear_elastic_fem::ElastoplasticIncrementRequest) -> core::result::Result<alice_physics::linear_elastic_fem::ElastoplasticIncrement, alice_physics::linear_elastic_fem::FemError>
+pub fn alice_physics::linear_elastic_fem::ElastoplasticProblem::try_new(&alice_physics::sdf_fem_mesh::SdfTetMesh, &alice_physics::linear_elastic_fem::ElasticMaterial, &alice_physics::linear_elastic_fem::BoundaryConditions, &alice_physics::linear_elastic_fem::ElastoplasticConfig) -> core::result::Result<Self, alice_physics::linear_elastic_fem::FemError>
+pub fn alice_physics::linear_elastic_fem::ElastoplasticProblem::virgin_state(&self) -> alice_physics::linear_elastic_fem::ElastoplasticState
+impl core::clone::Clone for alice_physics::linear_elastic_fem::ElastoplasticProblem
+pub fn alice_physics::linear_elastic_fem::ElastoplasticProblem::clone(&self) -> Self
+impl core::fmt::Debug for alice_physics::linear_elastic_fem::ElastoplasticProblem
+pub fn alice_physics::linear_elastic_fem::ElastoplasticProblem::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for alice_physics::linear_elastic_fem::ElastoplasticProblem
+impl core::marker::Send for alice_physics::linear_elastic_fem::ElastoplasticProblem
+impl core::marker::Sync for alice_physics::linear_elastic_fem::ElastoplasticProblem
+impl core::marker::Unpin for alice_physics::linear_elastic_fem::ElastoplasticProblem
+impl core::marker::UnsafeUnpin for alice_physics::linear_elastic_fem::ElastoplasticProblem
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::linear_elastic_fem::ElastoplasticProblem
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::linear_elastic_fem::ElastoplasticProblem
 #[non_exhaustive] pub struct alice_physics::linear_elastic_fem::ElastoplasticSolution
 pub alice_physics::linear_elastic_fem::ElastoplasticSolution::dissipation: alloc::vec::Vec<alice_physics::math::Fix128>
 pub alice_physics::linear_elastic_fem::ElastoplasticSolution::equivalent_plastic_strain: alloc::vec::Vec<alice_physics::math::Fix128>
@@ -5226,6 +5282,26 @@ impl core::marker::Unpin for alice_physics::linear_elastic_fem::ElastoplasticSol
 impl core::marker::UnsafeUnpin for alice_physics::linear_elastic_fem::ElastoplasticSolution
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::linear_elastic_fem::ElastoplasticSolution
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::linear_elastic_fem::ElastoplasticSolution
+pub struct alice_physics::linear_elastic_fem::ElastoplasticState
+impl alice_physics::linear_elastic_fem::ElastoplasticState
+pub fn alice_physics::linear_elastic_fem::ElastoplasticState::displacements(&self) -> alloc::vec::Vec<[alice_physics::math::Fix128; 3]>
+pub fn alice_physics::linear_elastic_fem::ElastoplasticState::dissipation(&self) -> alloc::vec::Vec<alice_physics::math::Fix128>
+pub fn alice_physics::linear_elastic_fem::ElastoplasticState::equivalent_plastic_strain(&self) -> alloc::vec::Vec<alice_physics::math::Fix128>
+pub const fn alice_physics::linear_elastic_fem::ElastoplasticState::newton_iterations(&self) -> u32
+impl core::clone::Clone for alice_physics::linear_elastic_fem::ElastoplasticState
+pub fn alice_physics::linear_elastic_fem::ElastoplasticState::clone(&self) -> Self
+impl core::cmp::PartialEq for alice_physics::linear_elastic_fem::ElastoplasticState
+pub fn alice_physics::linear_elastic_fem::ElastoplasticState::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::linear_elastic_fem::ElastoplasticState
+pub fn alice_physics::linear_elastic_fem::ElastoplasticState::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for alice_physics::linear_elastic_fem::ElastoplasticState
+impl core::marker::Freeze for alice_physics::linear_elastic_fem::ElastoplasticState
+impl core::marker::Send for alice_physics::linear_elastic_fem::ElastoplasticState
+impl core::marker::Sync for alice_physics::linear_elastic_fem::ElastoplasticState
+impl core::marker::Unpin for alice_physics::linear_elastic_fem::ElastoplasticState
+impl core::marker::UnsafeUnpin for alice_physics::linear_elastic_fem::ElastoplasticState
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::linear_elastic_fem::ElastoplasticState
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::linear_elastic_fem::ElastoplasticState
 pub struct alice_physics::linear_elastic_fem::FemSolution
 pub alice_physics::linear_elastic_fem::FemSolution::displacements: alloc::vec::Vec<[alice_physics::math::Fix128; 3]>
 pub alice_physics::linear_elastic_fem::FemSolution::effective_relative_tolerance: alice_physics::math::Fix128

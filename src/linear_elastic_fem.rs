@@ -992,7 +992,7 @@ fn div3(a: [Fix128; 3], d: Fix128) -> [Fix128; 3] {
 /// The reference coordinates do not appear: they enter through `∇N` and `|V|`
 /// and nowhere else, including in the co-rotational path, whose strain
 /// `Rᵀ F − I` is built from `F = I + Σᵢ uᵢ ⊗ ∇Nᵢ`.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Element {
     nodes: [usize; 4],
     grad: [[Fix128; 3]; 4],
@@ -3491,7 +3491,7 @@ pub fn deposit_plastic_heat(
 /// Plastic state of one element: the plastic strain in Voigt order with
 /// **engineering** shear (`xx, yy, zz, γxy, γyz, γzx`, the order the strain is
 /// read in) and the equivalent plastic strain.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct PlasticState {
     strain: [Fix128; 6],
     equivalent: Fix128,
@@ -3770,49 +3770,294 @@ pub fn solve_elastoplastic(
         ));
     }
 
-    let elements = build_elements(mesh)?;
-    let (lambda, mu) = material.lame();
-    let ndof = vertex_count * 3;
-    let sigma_y = config.yield_stress_mpa;
-    let hardening = config.hardening_modulus_mpa;
+    let problem = ElastoplasticProblem::try_new(mesh, material, boundary, config)?;
+    let mut state = problem.virgin_state();
+    for &factor in load_path {
+        let increment = problem.step(&state, &ElastoplasticIncrementRequest::new(factor))?;
+        increment.commit(&mut state);
+    }
+    Ok(problem.finish(&state, load_path.len()))
+}
 
-    let mut prescribed_value = vec![Fix128::ZERO; ndof];
-    let mut is_free = vec![true; ndof];
-    for &(vertex, axis, value) in &boundary.prescribed {
-        let d = vertex as usize * 3 + axis.index();
-        is_free[d] = false;
-        prescribed_value[d] = value;
+// ============================================================================
+// Per-increment entry point
+// ============================================================================
+
+/// One load increment's request.
+///
+/// A struct rather than a bare argument so that an input added later — the
+/// temperature field a thermally softening material reads, for instance — is a
+/// new `with_*` method and not a change to [`ElastoplasticProblem::step`]'s
+/// arity. Adding a parameter to a public function is a breaking change even
+/// when the struct it configures is `#[non_exhaustive]`, because
+/// `#[non_exhaustive]` only stops literal construction.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct ElastoplasticIncrementRequest {
+    factor: Fix128,
+}
+
+impl ElastoplasticIncrementRequest {
+    /// Scale the prescribed displacements and external loads by `factor`.
+    ///
+    /// The factor is absolute, not incremental: a path of `1/8, 2/8, …, 1` is
+    /// eight equal increments reaching the full load, exactly the slice
+    /// [`solve_elastoplastic`] takes.
+    #[must_use]
+    pub const fn new(factor: Fix128) -> Self {
+        Self { factor }
     }
-    if is_free.iter().filter(|f| !**f).count() < 6 {
-        return Err(FemError::UnderConstrained);
+
+    /// The load factor this increment applies.
+    #[must_use]
+    pub const fn factor(&self) -> Fix128 {
+        self.factor
     }
-    let mut f_ext = vec![Fix128::ZERO; ndof];
-    for &(vertex, axis, force) in &boundary.loads {
-        let d = vertex as usize * 3 + axis.index();
-        if is_free[d] {
-            f_ext[d] = f_ext[d] + force;
+}
+
+/// An elastoplastic body prepared for stepping, with the mesh-dependent work
+/// done once.
+///
+/// # Why this exists
+///
+/// [`solve_elastoplastic`] walks a whole load path and hands back the end of
+/// it. A coupled solve cannot use that: a thermo-mechanical iteration has to
+/// run **the same increment** several times from the same committed state,
+/// compare what comes back, and only then commit. That needs three things the
+/// single call does not expose — a state it can hold, an increment it can
+/// repeat, and a commit it controls.
+///
+/// The element gradients, the stiffness diagonal and the preconditioner depend
+/// only on the mesh, the material and the solver configuration, so they are
+/// built here and reused by every [`Self::step`]. [`solve_elastoplastic`] is
+/// implemented on top of this type, which is what keeps the two from drifting:
+/// there is one Newton loop in this module, not two.
+#[derive(Debug, Clone)]
+pub struct ElastoplasticProblem {
+    elements: Vec<Element>,
+    lambda: Fix128,
+    mu: Fix128,
+    ndof: usize,
+    vertex_count: usize,
+    prescribed_value: Vec<Fix128>,
+    is_free: Vec<bool>,
+    f_ext: Vec<Fix128>,
+    precond: Vec<Fix128>,
+    config: ElastoplasticConfig,
+}
+
+/// Where an elastoplastic solve has got to: the committed plastic state of
+/// every element and the displacement it was reached at.
+///
+/// Built by [`ElastoplasticProblem::virgin_state`] and advanced by
+/// [`ElastoplasticIncrement::commit`]; there is no way to construct one from
+/// outside the crate, because a state whose plastic history did not come from
+/// a solve would be read as one that did.
+///
+/// The displacement is part of the state because the Newton iteration of an
+/// increment starts from the previous increment's answer; starting from zero
+/// instead would converge to the same place but count different iterations.
+/// The last field and its solver bookkeeping are carried for the same reason
+/// [`FemSolution`] carries them — they describe the last linear solve, and an
+/// increment that converges without one leaves the previous increment's
+/// numbers standing.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ElastoplasticState {
+    committed: Vec<PlasticState>,
+    u: Vec<Fix128>,
+    field: FemSolution,
+    newton_total: u32,
+}
+
+impl ElastoplasticState {
+    /// Accumulated equivalent plastic strain `ε̄_p` of every element.
+    #[must_use]
+    pub fn equivalent_plastic_strain(&self) -> Vec<Fix128> {
+        self.committed.iter().map(|s| s.equivalent).collect()
+    }
+
+    /// Accumulated plastic work `W_p` of every element, in `MPa` (`mJ/mm³`).
+    ///
+    /// This is the path integral `∫ σ : dε_p`, so it depends on how the load
+    /// path was split; see [`ElastoplasticSolution::dissipation`].
+    #[must_use]
+    pub fn dissipation(&self) -> Vec<Fix128> {
+        self.committed.iter().map(|s| s.dissipation).collect()
+    }
+
+    /// Nodal displacements reached so far.
+    #[must_use]
+    pub fn displacements(&self) -> Vec<[Fix128; 3]> {
+        self.field.displacements.clone()
+    }
+
+    /// Newton iterations (linear solves) spent since the state was virgin.
+    #[must_use]
+    pub const fn newton_iterations(&self) -> u32 {
+        self.newton_total
+    }
+}
+
+/// One increment solved but **not** committed.
+///
+/// Produced by [`ElastoplasticProblem::step`] only; the crate builds it and
+/// the caller reads it.
+///
+/// Holding the trial state back is the whole point: a coupled iteration solves
+/// this increment, reads [`Self::plastic_work_increment`], updates the
+/// temperature, and solves the increment **again from the same committed
+/// state**. Committing inside that loop would accumulate the plastic history
+/// once per sweep, which turns the fixed-point map into a time integration, so
+/// it stops converging by construction.
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+pub struct ElastoplasticIncrement {
+    /// Displacements and element stress at the end of this increment.
+    pub field: FemSolution,
+    /// Plastic work **this increment** added to each element, `ΔW_p` in `MPa`.
+    ///
+    /// Non-negative: the equivalent plastic strain is monotonic and the stress
+    /// it multiplies is a yield radius. This is the quantity a thermal solve
+    /// wants — depositing the total `W_p` would reheat the whole history on
+    /// every sweep.
+    pub plastic_work_increment: Vec<Fix128>,
+    trial: Vec<PlasticState>,
+    u: Vec<Fix128>,
+    newton_iterations: u32,
+}
+
+impl ElastoplasticIncrement {
+    /// Make this increment the new committed state.
+    ///
+    /// Call this once per increment, **after** any coupled iteration over it
+    /// has converged.
+    pub fn commit(self, state: &mut ElastoplasticState) {
+        state.committed = self.trial;
+        state.u = self.u;
+        state.field = self.field;
+        state.newton_total = state.newton_total.saturating_add(self.newton_iterations);
+    }
+
+    /// Newton iterations (linear solves) this increment took.
+    #[must_use]
+    pub const fn newton_iterations(&self) -> u32 {
+        self.newton_iterations
+    }
+}
+
+impl ElastoplasticProblem {
+    /// Prepare a body for stepping.
+    ///
+    /// # Errors
+    ///
+    /// The checks [`solve_elastoplastic`] makes on the mesh and the boundary
+    /// conditions: [`FemError::EmptyMesh`], [`FemError::VertexOutOfRange`],
+    /// [`FemError::UnderConstrained`], [`FemError::DegenerateElement`], and
+    /// [`FemError::InvalidConfig`] from the preconditioner.
+    pub fn try_new(
+        mesh: &SdfTetMesh,
+        material: &ElasticMaterial,
+        boundary: &BoundaryConditions,
+        config: &ElastoplasticConfig,
+    ) -> Result<Self, FemError> {
+        let vertex_count = mesh.vertices.len();
+        if vertex_count == 0 || mesh.tets.is_empty() {
+            return Err(FemError::EmptyMesh);
+        }
+        for &(vertex, _, _) in boundary.prescribed.iter().chain(boundary.loads.iter()) {
+            if vertex as usize >= vertex_count {
+                return Err(FemError::VertexOutOfRange {
+                    vertex,
+                    vertex_count,
+                });
+            }
+        }
+        let elements = build_elements(mesh)?;
+        let (lambda, mu) = material.lame();
+        let ndof = vertex_count * 3;
+
+        let mut prescribed_value = vec![Fix128::ZERO; ndof];
+        let mut is_free = vec![true; ndof];
+        for &(vertex, axis, value) in &boundary.prescribed {
+            let d = vertex as usize * 3 + axis.index();
+            is_free[d] = false;
+            prescribed_value[d] = value;
+        }
+        if is_free.iter().filter(|f| !**f).count() < 6 {
+            return Err(FemError::UnderConstrained);
+        }
+        let mut f_ext = vec![Fix128::ZERO; ndof];
+        for &(vertex, axis, force) in &boundary.loads {
+            let d = vertex as usize * 3 + axis.index();
+            if is_free[d] {
+                f_ext[d] = f_ext[d] + force;
+            }
+        }
+        let diag = stiffness_diagonal(&elements, lambda, mu, ndof);
+        let precond = build_preconditioner(&diag, &is_free, &config.linear)?;
+
+        Ok(Self {
+            elements,
+            lambda,
+            mu,
+            ndof,
+            vertex_count,
+            prescribed_value,
+            is_free,
+            f_ext,
+            precond,
+            config: *config,
+        })
+    }
+
+    /// The unloaded state: no displacement, no plastic strain, no work.
+    #[must_use]
+    pub fn virgin_state(&self) -> ElastoplasticState {
+        ElastoplasticState {
+            committed: vec![PlasticState::VIRGIN; self.elements.len()],
+            u: vec![Fix128::ZERO; self.ndof],
+            field: FemSolution {
+                displacements: vec![[Fix128::ZERO; 3]; self.vertex_count],
+                element_stress: Vec::new(),
+                iterations: 0,
+                relative_residual: Fix128::ZERO,
+                effective_relative_tolerance: Fix128::ZERO,
+            },
+            newton_total: 0,
         }
     }
 
-    let diag = stiffness_diagonal(&elements, lambda, mu, ndof);
-    let precond = build_preconditioner(&diag, &is_free, &config.linear)?;
+    /// Solve one load increment from `state` without committing it.
+    ///
+    /// # Errors
+    ///
+    /// [`FemError::NotConverged`] if the Newton loop runs out of iterations,
+    /// and whatever the conjugate gradient returns.
+    pub fn step(
+        &self,
+        state: &ElastoplasticState,
+        request: &ElastoplasticIncrementRequest,
+    ) -> Result<ElastoplasticIncrement, FemError> {
+        let config = &self.config;
+        let (lambda, mu) = (self.lambda, self.mu);
+        let sigma_y = config.yield_stress_mpa;
+        let hardening = config.hardening_modulus_mpa;
+        let ndof = self.ndof;
 
-    let mut committed = vec![PlasticState::VIRGIN; elements.len()];
-    let mut maps: Vec<ReturnMap> = Vec::new();
-    let mut u = vec![Fix128::ZERO; ndof];
-    let mut load = vec![Fix128::ZERO; ndof];
-    let mut residual = vec![Fix128::ZERO; ndof];
-    let mut newton_total = 0u32;
-    let mut cg_iterations = 0u32;
-    let mut relative_residual = Fix128::ZERO;
-    let mut effective_relative_tolerance = Fix128::ZERO;
+        let mut u = state.u.clone();
+        let mut load = vec![Fix128::ZERO; ndof];
+        let mut residual = vec![Fix128::ZERO; ndof];
+        let mut maps: Vec<ReturnMap> = Vec::new();
+        let mut cg_iterations = state.field.iterations;
+        let mut relative_residual = state.field.relative_residual;
+        let mut effective_relative_tolerance = state.field.effective_relative_tolerance;
+        let mut newton_iterations = 0u32;
 
-    for &factor in load_path {
         for d in 0..ndof {
-            if is_free[d] {
-                load[d] = factor * f_ext[d];
+            if self.is_free[d] {
+                load[d] = request.factor() * self.f_ext[d];
             } else {
-                u[d] = factor * prescribed_value[d];
+                u[d] = request.factor() * self.prescribed_value[d];
             }
         }
         let load_norm = max_abs(&load);
@@ -3820,17 +4065,17 @@ pub fn solve_elastoplastic(
         let mut iteration = 0u32;
         loop {
             // The return map of every element at the current iterate, from the
-            // state committed at the end of the previous step.
+            // state committed at the end of the previous increment.
             maps.clear();
             residual.copy_from_slice(&load);
-            for (element, state) in elements.iter().zip(committed.iter()) {
+            for (element, committed) in self.elements.iter().zip(state.committed.iter()) {
                 let strain = element_strain(element, &gather(element, &u));
-                let map = return_map(strain, state, lambda, mu, sigma_y, hardening);
+                let map = return_map(strain, committed, lambda, mu, sigma_y, hardening);
                 let force = element_force_from_stress(element, map.stress);
                 for (f, &node) in force.iter().zip(element.nodes.iter()) {
                     let base = node * 3;
                     for axis in 0..3 {
-                        if is_free[base + axis] {
+                        if self.is_free[base + axis] {
                             residual[base + axis] = residual[base + axis] - f[axis];
                         }
                     }
@@ -3838,7 +4083,7 @@ pub fn solve_elastoplastic(
                 maps.push(map);
             }
             for (d, value) in residual.iter_mut().enumerate() {
-                if !is_free[d] {
+                if !self.is_free[d] {
                     *value = Fix128::ZERO;
                 }
             }
@@ -3866,10 +4111,14 @@ pub fn solve_elastoplastic(
                 });
             }
 
-            let cg =
-                conjugate_gradient(&residual, &is_free, &precond, &config.linear, |p, out| {
+            let cg = conjugate_gradient(
+                &residual,
+                &self.is_free,
+                &self.precond,
+                &config.linear,
+                |p, out| {
                     out.fill(Fix128::ZERO);
-                    for (element, map) in elements.iter().zip(maps.iter()) {
+                    for (element, map) in self.elements.iter().zip(maps.iter()) {
                         let force = element_tangent_force(
                             element,
                             &gather(element, p),
@@ -3884,54 +4133,71 @@ pub fn solve_elastoplastic(
                             out[base + 2] = out[base + 2] + f[2];
                         }
                     }
-                })?;
-            for d in 0..ndof {
-                if is_free[d] {
-                    u[d] = u[d] + cg.x[d];
+                },
+            )?;
+            // Indexed by the same `d` as before, written as a zip so clippy's
+            // `needless_range_loop` does not fire: the order of the additions
+            // is what has to stay put, and `u`, `is_free` and `cg.x` are all
+            // `ndof` long.
+            for ((value, free), delta) in u.iter_mut().zip(self.is_free.iter()).zip(cg.x.iter()) {
+                if *free {
+                    *value = *value + *delta;
                 }
             }
             cg_iterations = cg.iterations;
             relative_residual = relative(cg.residual_norm, cg.b_norm);
             effective_relative_tolerance = relative(cg.target, cg.b_norm);
             iteration += 1;
-            newton_total += 1;
+            newton_iterations += 1;
         }
-        for (state, map) in committed.iter_mut().zip(maps.iter()) {
-            *state = map.state;
-        }
+
+        let plastic_work_increment = maps
+            .iter()
+            .zip(state.committed.iter())
+            .map(|(map, committed)| map.state.dissipation - committed.dissipation)
+            .collect();
+        let displacements = (0..self.vertex_count)
+            .map(|v| [u[v * 3], u[v * 3 + 1], u[v * 3 + 2]])
+            .collect();
+        let element_stress = maps.iter().map(|m| m.stress).collect();
+        Ok(ElastoplasticIncrement {
+            field: FemSolution {
+                displacements,
+                element_stress,
+                iterations: cg_iterations,
+                relative_residual,
+                effective_relative_tolerance,
+            },
+            plastic_work_increment,
+            trial: maps.iter().map(|m| m.state).collect(),
+            u,
+            newton_iterations,
+        })
     }
 
-    let displacements = (0..vertex_count)
-        .map(|v| [u[v * 3], u[v * 3 + 1], u[v * 3 + 2]])
-        .collect();
-    let element_stress = maps.iter().map(|m| m.stress).collect();
-    let plastic_strain = committed
-        .iter()
-        .map(|s| StressTensor {
-            xx: s.strain[0],
-            yy: s.strain[1],
-            zz: s.strain[2],
-            xy: half() * s.strain[3],
-            yz: half() * s.strain[4],
-            zx: half() * s.strain[5],
-        })
-        .collect();
-    let equivalent_plastic_strain = committed.iter().map(|s| s.equivalent).collect();
-    let dissipation = committed.iter().map(|s| s.dissipation).collect();
-    Ok(ElastoplasticSolution {
-        field: FemSolution {
-            displacements,
-            element_stress,
-            iterations: cg_iterations,
-            relative_residual,
-            effective_relative_tolerance,
-        },
-        plastic_strain,
-        equivalent_plastic_strain,
-        dissipation,
-        newton_iterations: newton_total,
-        steps: u32::try_from(load_path.len()).unwrap_or(u32::MAX),
-    })
+    /// Assemble what [`solve_elastoplastic`] reports from a committed state.
+    fn finish(&self, state: &ElastoplasticState, steps: usize) -> ElastoplasticSolution {
+        let plastic_strain = state
+            .committed
+            .iter()
+            .map(|s| StressTensor {
+                xx: s.strain[0],
+                yy: s.strain[1],
+                zz: s.strain[2],
+                xy: half() * s.strain[3],
+                yz: half() * s.strain[4],
+                zx: half() * s.strain[5],
+            })
+            .collect();
+        ElastoplasticSolution {
+            field: state.field.clone(),
+            plastic_strain,
+            equivalent_plastic_strain: state.equivalent_plastic_strain(),
+            dissipation: state.dissipation(),
+            newton_iterations: state.newton_total,
+            steps: u32::try_from(steps).unwrap_or(u32::MAX),
+        }
+    }
 }
 
 // ============================================================================
