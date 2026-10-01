@@ -13,6 +13,16 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added — 小ひずみ J2 弾塑性 FEM (`linear_elastic_fem::solve_elastoplastic`)
+
+P1 四面体に von Mises 降伏 + 等方硬化 (bilinear、`H = dσ_y/dε̄_p`) の弾塑性を入れた 要素ごとの塑性ひずみ `ε_p` と相当塑性ひずみ `ε̄_p` を持ち、弾性予測子 + radial return を residual に組み込み、増分荷重 (`load_path` の荷重係数列、除荷を含められる) を Newton で解く 接線は return mapping の consistent tangent (弾性剛性ではない) で、各線形系は `solve` と同じ CG を使う
+公開 API の追加は入口 1 つ (`solve_elastoplastic`) と、その signature に必要な 2 型 (`ElastoplasticConfig` / `ElastoplasticSolution`、どちらも `#[non_exhaustive]`) `FemSolution` / `CorotationalSolution` への field 追加はしていない 既存の `solve` / `solve_corotational` / 超弾性の挙動は不変
+`ElastoplasticConfig::try_new` は降伏応力が 0 以下または 2^30 MPa 超、`H` が負 (軟化は非対応) または 2^30 MPa 超、反復予算 0、許容誤差が (0, 1) の外を `FemError::InvalidConfig` で拒否する 入口は空の `load_path` と絶対値 2^20 超の荷重係数を `InvalidConfig` で拒否し、他の不正入力は `solve` と同じ variant を返す panic しない
+降伏しない荷重では `solve` と変位・応力が bit 一致する (弾性要素は同じ要素ルーチンを通る)
+⚠️ 第 1 段階の範囲: 小ひずみ小変位 / P1 のみ / bilinear 等方硬化のみ / 準静的 有限ひずみ `F = Fe·Fp` 乗算分解・移動硬化・P2 / P3・動的は未着手
+oracle は `tests/analytic_elastoplastic_fem.rs` (19 本、先に stub で 18/18 red を実測してから実装): 一軸引張の bilinear 閉形式 (1 step と 8 step で一致) / 除荷は傾き `E` で戻り残留ひずみ `3·2⁻¹⁰` が残る / 完全塑性の頭打ちと限界荷重 / `tr ε_p = 0` / 単純せん断 `τ = (√3σ_y + Hγ)/(3 + H/G)` (工学せん断とテンソルせん断の取り違えを見る) / 静水圧は降伏しない / 降伏前は `solve` と bit 一致 / 節点番号と要素順の入れ替え不変 / consistent tangent の反復数 / 不正入力
+変異試験は 42 件すべて red (数式 / 接線 / 状態の持ち越し / 荷重係数 / 全 guard) 接線の誤りは答えを変えず反復数だけを変えるので、反復数の上限 (せん断 3、片持ち梁 13、一軸 5) で検出している
+
 ### Added — FLIP / PIC の粒子経路 (`CfdSolver::step_flip`)
 
 粒子 `(位置, 速度)` を格子へ転写し、体積力 + 拡散 + 圧力射影を 1 step 回してから粒子速度を `v_p = (1−r)·G2P(u_new) + r·(v_p + G2P(u_new − u_old))` で更新し `x += v·dt` で移流する入口を追加した `p2g_normalized` の最初の production 呼出元になった (baseline の行を削除)

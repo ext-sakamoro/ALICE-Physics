@@ -11,6 +11,7 @@ Memory index pointer: `[[reference-alice-physics-v1-roadmap]]` in claude-config.
 | 課題 | commit | 到達点 |
 |---|---|---|
 | 共回転 FEM | `6896e0a` | 増分独立性 3.5e10 → **3-4 ulp** ⚠️ **0 ulp は到達不能** (不動点が存在しない) |
+| 弾塑性 FEM (J2) | 未 commit | 小ひずみ J2 + bilinear 等方硬化、`solve_elastoplastic` (consistent tangent の Newton)、oracle 19 本 + 変異 42/42 red ⚠️ 有限ひずみ `F = Fe·Fp` / 移動硬化 / P2・P3 / 動的は未着手 |
 | CFD 壁 BC | `8fec2ff` | Ghia Re=100 **4.5% → 86.2%**、解像度 sweep で 94.5% まで 1 次収束 |
 | Maxwell FDTD | `ecd8c61` | source-free Yee、⚠️ **SI は `ε₀·μ₀` が 7.7 bit で不可**、正規化単位 + `S=9/16` |
 | 多体 ABA | `1bab99b` | ⚠️ **`solve()` が `link.joint` を読まない**状態から real ABA、oracle 12 本 |
