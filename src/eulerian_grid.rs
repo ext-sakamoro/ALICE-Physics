@@ -9328,12 +9328,23 @@ mod tests {
     /// The reference is built once, here, after the children have exited — the
     /// point of the banded run being that no other process ever holds one.
     #[cfg(feature = "std")]
+    /// Returns what it compared: the per-rank folds, and the fold of the
+    /// single-process solve over the **whole** domain.
+    ///
+    /// The caller needs those to compare one machine against another. The
+    /// assertions here establish that a distributed run agrees with a
+    /// single-process run *on the same machine*, which is a different claim
+    /// from two machines agreeing with each other, and the second claim can
+    /// only be made by putting the numbers side by side. ⚠️ The whole-domain
+    /// fold is the one to compare across machines **and** across rank counts:
+    /// the per-rank folds depend on how the domain was cut, so they only line
+    /// up between runs that used the same `ranks`.
     fn assert_banded_slab_processes_agree(
         n: usize,
         ranks: usize,
         scene: SlabScene,
         iterations: u32,
-    ) {
+    ) -> (Vec<[u64; 4]>, [u64; 4]) {
         let folds =
             banded_slab_folds_across_processes(n, ranks, scene, SlabCrossFault::None, iterations);
 
@@ -9374,6 +9385,17 @@ mod tests {
              between them instead of the {want_faces} the domain has, so the velocity half of \
              the agreement above is over a subset",
         );
+        // One band covering everything: the whole-domain fold, which does not
+        // depend on how many ranks the distributed run used.
+        let whole = fold_reference_band(&reference, n, 1, 0);
+        assert_eq!(
+            whole[2],
+            (n * n * n) as u64,
+            "the whole-domain fold covered {} cells instead of {}",
+            whole[2],
+            n * n * n,
+        );
+        (folds, whole)
     }
 
     /// The band a rank builds out of the scene is the band it would have cut out
@@ -9821,12 +9843,31 @@ mod tests {
             iterations = run.iterations,
         );
         let started = std::time::Instant::now();
-        assert_banded_slab_processes_agree(run.n, run.ranks, run.scene, run.iterations);
+        let (folds, whole) =
+            assert_banded_slab_processes_agree(run.n, run.ranks, run.scene, run.iterations);
         println!(
             "  agreed in {:?} ({:.1} ns per cell per iteration, distributed and single-process \
              runs together)",
             started.elapsed(),
             started.elapsed().as_secs_f64() * 1.0e9 / (cells * run.iterations as usize) as f64,
         );
+        // ⚠️ What the assertions above establish is that *this machine's*
+        // distributed run matches *this machine's* single-process run. Two
+        // machines agreeing with each other is a separate claim, and making it
+        // needs the numbers printed so they can be put side by side. The
+        // whole-domain fold is the portable one: it does not depend on the rank
+        // count, so a 16-rank run on one machine and an 8-rank run on another
+        // are comparable through it.
+        println!(
+            "  WHOLE-DOMAIN FOLD n={} pressure={:#018x} faces={:#018x} cells={} face_values={}",
+            run.n, whole[0], whole[1], whole[2], whole[3]
+        );
+        for (rank, fold) in folds.iter().enumerate() {
+            println!(
+                "  band fold rank={rank}/{} pressure={:#018x} faces={:#018x} cells={} \
+                 face_values={}",
+                run.ranks, fold[0], fold[1], fold[2], fold[3]
+            );
+        }
     }
 }
