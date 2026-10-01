@@ -201,6 +201,20 @@ pub enum FemError {
         /// Number of tetrahedra in the mesh.
         tet_count: usize,
     },
+    /// A field handed to [`deposit_plastic_heat`] has only one node on an axis.
+    ///
+    /// ⚠️ Refused rather than deposited into, because such a grid has no
+    /// thickness on that axis to divide the heat by.
+    /// [`crate::coupled_field::CoupledField`] gives a degenerate axis a stored
+    /// cell size of one, so using `V_cell` as a volume would silently make the
+    /// ledger "per unit thickness" while the element volumes it is balanced
+    /// against are the real three-dimensional ones. The temperatures would come
+    /// out scaled by the body's true thickness on that axis — a factor the field
+    /// does not carry and the deposit cannot recover.
+    DepositGridHasDegenerateAxis {
+        /// The axis with a single node.
+        axis: Axis,
+    },
 }
 
 /// Isotropic linear elastic material.
@@ -3280,16 +3294,44 @@ pub fn plastic_temperature_rise(
 ///
 /// Each element's temperature rise is splatted at its centroid with the
 /// trilinear weights of [`CoupledField::splat`], scaled by `V_e / V_cell` so
-/// that the **energy** is what the deposit conserves:
+/// that the **energy** is what the deposit conserves, and then divided by the
+/// node's finite-volume dual weight:
 ///
 /// ```text
-/// Σ_cell ΔT_cell · c_v · V_cell  =  Σ_e β · W_p,e · V_e
+/// Σ_node 2⁻ᵇ · ΔT_node · c_v · V_cell  =  Σ_e β · W_p,e · V_e
 /// ```
 ///
-/// Scaling matters because a temperature is intensive: splatting `ΔT_e`
-/// directly would give a sliver tetrahedron and a fat one the same weight, and
-/// the total would depend on how the mesh was cut rather than on how much was
-/// dissipated.
+/// Scaling by `V_e / V_cell` matters because a temperature is intensive:
+/// splatting `ΔT_e` directly would give a sliver tetrahedron and a fat one the
+/// same weight, and the total would depend on how the mesh was cut rather than
+/// on how much was dissipated.
+///
+/// # ⚠️ `2⁻ᵇ` is the grid's weight, not a choice
+///
+/// [`CoupledField`] is **node centred**: nodes sit on `min` and `max` and the
+/// spacing is `(max − min) / (n − 1)`, so the material the field represents is
+/// exactly `[min, max]` and a node on a face owns **half** a cell, an edge node
+/// a quarter, a corner node an eighth. `b` is the number of axes on which the
+/// node sits at an end, so the dual weight is `2⁻ᵇ`, and the deposit multiplies
+/// each node by `2ᵇ` to put the right amount of energy into that smaller
+/// volume.
+///
+/// Getting this wrong is not a rounding question. [`CoupledField::diffuse`]
+/// uses a **mirror** ghost node (`T₋₁ = T₁`, zero gradient at the node), and
+/// such a scheme conserves `Σ 2⁻ᵇ T` **exactly** — measured to drift by zero
+/// over six steps while the plain sum `Σ T` moves by −12.7 % for heat on a face
+/// node and +22.0 % for heat in the interior. A deposit balanced on the plain
+/// sum would therefore disagree with the operator the field is stepped with,
+/// and a body flush with the grid boundary would lose up to a factor of eight.
+///
+/// ⚠️ The mirror ghost is load-bearing here: `tests/analytic_coupled_field.rs`
+/// pins `cos(k x)` as an exact eigenmode of the discrete operator, which only a
+/// mirror ghost gives. Replacing it with a copy ghost (`T₋₁ = T₀`) would move
+/// the conserved quantity to the plain sum and invalidate this weighting.
+///
+/// ⚠️ A body that does not reach a boundary node is unaffected: every weight
+/// that receives anything is then `1`, so the correction is the identity and
+/// the plain-sum identity holds as well.
 ///
 /// The field is **added to**, not overwritten, so a caller may accumulate
 /// several bodies or several steps before diffusing.
@@ -3321,8 +3363,10 @@ pub fn plastic_temperature_rise(
 ///
 /// [`FemError::EmptyMesh`] for a mesh with no vertices or no tetrahedra,
 /// [`FemError::SolutionElementCountDoesNotMatchMesh`] if the solution reports a
-/// different number of elements than the mesh has tetrahedra, and
-/// [`FemError::DegenerateElement`] for a tetrahedron with no volume.
+/// different number of elements than the mesh has tetrahedra,
+/// [`FemError::DepositGridHasDegenerateAxis`] for a field with a single node on
+/// an axis, and [`FemError::DegenerateElement`] for a tetrahedron with no
+/// volume.
 pub fn deposit_plastic_heat(
     mesh: &SdfTetMesh,
     solution: &ElastoplasticSolution,
@@ -3338,10 +3382,23 @@ pub fn deposit_plastic_heat(
             tet_count: mesh.tets.len(),
         });
     }
+    let (nx, ny, nz) = (field.nx(), field.ny(), field.nz());
+    for (count, axis) in [(nx, Axis::X), (ny, Axis::Y), (nz, Axis::Z)] {
+        if count < 2 {
+            return Err(FemError::DepositGridHasDegenerateAxis { axis });
+        }
+    }
     let elements = build_elements(mesh)?;
     let (hx, hy, hz) = field.cell_size();
     let cell_volume = hx * hy * hz;
     let quarter = Fix128::from_raw(0, 1 << 62);
+
+    // Splat into a zeroed copy of the grid first. The dual weight belongs to the
+    // node, not to the contribution, so the correction has to be applied once
+    // per node after every element has been deposited — and it must not touch
+    // whatever the caller already had in `field`.
+    let mut staged = field.clone();
+    staged.clear();
     for (element, &work) in elements.iter().zip(solution.dissipation.iter()) {
         if work.is_zero() {
             continue;
@@ -3358,7 +3415,30 @@ pub fn deposit_plastic_heat(
         }
         centroid = centroid * quarter;
         let rise = heating.temperature_rise(work) * element.volume / cell_volume;
-        field.splat(centroid, rise);
+        staged.splat(centroid, rise);
+    }
+
+    for iz in 0..nz {
+        for iy in 0..ny {
+            for ix in 0..nx {
+                let staged_value = staged.get(ix, iy, iz);
+                if staged_value.is_zero() {
+                    continue;
+                }
+                // `b` counts only axes that have more than one node; the guard
+                // above has already refused a degenerate one, so every axis
+                // here is a real one and both ends are distinct nodes.
+                let mut boundary_axes = 0u32;
+                for (i, n) in [(ix, nx), (iy, ny), (iz, nz)] {
+                    if i == 0 || i == n - 1 {
+                        boundary_axes += 1;
+                    }
+                }
+                let inverse_dual_weight = Fix128::from_int(1 << boundary_axes);
+                let corrected = staged_value * inverse_dual_weight;
+                field.set(ix, iy, iz, field.get(ix, iy, iz) + corrected);
+            }
+        }
     }
     Ok(())
 }

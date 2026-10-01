@@ -800,3 +800,305 @@ fn a_solution_with_no_elements_yields_an_empty_rise() {
     let rise = plastic_temperature_rise(&sol, &heating());
     assert_eq!(rise.len(), sol.field.element_stress.len());
 }
+
+// ---------------------------------------------------------------------------
+// 7. The deposit's ledger must be the one `CoupledField::diffuse` conserves
+// ---------------------------------------------------------------------------
+//
+// ⚠️ `CoupledField` is **node centred**: nodes sit on `min` and `max` and the
+// spacing is `(max − min) / (n − 1)`, so the material the field represents is
+// exactly `[min, max]` and a node on a face owns **half** a cell, an edge node a
+// quarter, a corner node an eighth. The finite-volume dual weight of a node is
+// therefore `2^−b` with `b` the number of axes on which it sits at an end.
+//
+// That weight is not a convention this crate is free to pick. `diffuse` uses a
+// seven-point stencil with a **mirror** ghost node (`T₋₁ = T₁`, zero gradient at
+// the node), and such a scheme conserves `Σ 2^−b T` exactly — measured below,
+// and measured to drift by 0 over six steps while the plain sum `Σ T` moves by
+// −12.7 % (heat on a face node) and +22.0 % (heat in the interior).
+//
+// A deposit whose own ledger is the plain sum therefore disagrees with the very
+// operator the field is going to be stepped with, and a body touching the grid
+// boundary loses up to a factor of eight. These oracles pin the deposit to the
+// dual weight instead.
+//
+// ⚠️ A degenerate axis (`n == 1`) has both ends on the same node, so counting it
+// in `b` would halve the node twice over. Its dual length is one whole cell and
+// it carries no flux, so **an axis with `n == 1` is not counted**. The deposit
+// and the ledger below have to agree on that or the oracle fails for a reason
+// that has nothing to do with the physics.
+
+/// Finite-volume dual weight of a node: `2^−b`, `b` = number of axes with more
+/// than one node on which this node sits at an end.
+///
+/// Written from the definition of a node-centred grid, not from the deposit.
+fn dual_weight(ix: usize, iy: usize, iz: usize, nx: usize, ny: usize, nz: usize) -> f64 {
+    let mut b = 0u32;
+    for (i, n) in [(ix, nx), (iy, ny), (iz, nz)] {
+        if n > 1 && (i == 0 || i == n - 1) {
+            b += 1;
+        }
+    }
+    0.5f64.powi(b as i32)
+}
+
+/// `Σ 2^−b · T`, the quantity `diffuse` conserves.
+fn lumped_sum(f: &CoupledField) -> f64 {
+    let (nx, ny, nz) = (f.nx(), f.ny(), f.nz());
+    let mut total = 0.0;
+    for iz in 0..nz {
+        for iy in 0..ny {
+            for ix in 0..nx {
+                total += f.get(ix, iy, iz).to_f64() * dual_weight(ix, iy, iz, nx, ny, nz);
+            }
+        }
+    }
+    total
+}
+
+/// The grid is exactly the bar: `[0,4] × [0,2] × [0,2]` at a cell size of 1, so
+/// every surface node of the bar **is** a boundary node of the grid.
+///
+/// ⚠️ The interior grid used by the oracles above keeps a one-cell margin, so it
+/// never puts anything on a boundary node and cannot see this at all.
+fn flush_grid() -> CoupledField {
+    CoupledField::try_new(
+        5,
+        3,
+        3,
+        (Fix128::ZERO, Fix128::ZERO, Fix128::ZERO),
+        (
+            Fix128::from_int(4),
+            Fix128::from_int(2),
+            Fix128::from_int(2),
+        ),
+    )
+    .expect("valid grid")
+}
+
+/// `Σ_e β · W_p,e · V_e`, the heat the solution says was released.
+fn released_heat(mesh: &SdfTetMesh, sol: &ElastoplasticSolution, h: &PlasticHeating) -> f64 {
+    sol.dissipation
+        .iter()
+        .enumerate()
+        .map(|(e, &w)| h.taylor_quinney().to_f64() * w.to_f64() * tet_volume(mesh, e))
+        .sum()
+}
+
+fn yielded_solution() -> (SdfTetMesh, ElastoplasticSolution) {
+    let mesh = bar_mesh();
+    let bc = bar_displacement_bc(eps_ref());
+    let sol = solve_elastoplastic(
+        &mesh,
+        &material(),
+        &bc,
+        &config(SIGMA_Y, H_PLASTIC),
+        &uniform_path(4),
+    )
+    .expect("solve succeeds");
+    (mesh, sol)
+}
+
+#[test]
+fn a_body_flush_with_the_grid_deposits_its_whole_heat_into_the_dual_ledger() {
+    let (mesh, sol) = yielded_solution();
+    let h = heating();
+    let mut field = flush_grid();
+    deposit_plastic_heat(&mesh, &sol, &h, &mut field).expect("deposit succeeds");
+
+    let (cx, cy, cz) = field.cell_size();
+    let cell_volume = (cx * cy * cz).to_f64();
+    let on_grid =
+        lumped_sum(&field) * cell_volume * h.volumetric_heat_capacity_mpa_per_k().to_f64();
+    let released = released_heat(&mesh, &sol, &h);
+
+    assert!(released > 0.0, "the scene must dissipate something");
+    let relative = (on_grid - released).abs() / released;
+    assert!(
+        relative < 1e-12,
+        "the dual ledger must hold the whole released heat: ledger {on_grid:e} vs released \
+         {released:e} (relative {relative:e}) — a deposit that writes the plain sum loses the \
+         half, quarter and eighth cells on the boundary"
+    );
+}
+
+#[test]
+fn the_deposited_heat_survives_diffusion_in_the_dual_ledger() {
+    let (mesh, sol) = yielded_solution();
+    let h = heating();
+    let mut field = flush_grid();
+    deposit_plastic_heat(&mesh, &sol, &h, &mut field).expect("deposit succeeds");
+
+    let before_dual = lumped_sum(&field);
+    let before_plain = field.sum().to_f64();
+    // Six explicit steps, well inside the stability limit for h = 1.
+    for _ in 0..6 {
+        field.diffuse(Fix128::from_ratio(1, 16), Fix128::ONE);
+    }
+    let after_dual = lumped_sum(&field);
+    let after_plain = field.sum().to_f64();
+
+    let drift = (after_dual - before_dual).abs() / before_dual;
+    assert!(
+        drift < 1e-15,
+        "diffuse must conserve the dual ledger: {before_dual:e} -> {after_dual:e} \
+         (relative {drift:e})"
+    );
+    // ⚠️ The tooth. If the plain sum did not move, the scene is not touching the
+    // boundary and neither of these tests is exercising the correction.
+    let plain_move = (after_plain - before_plain).abs() / before_plain;
+    assert!(
+        plain_move > 1e-3,
+        "the plain sum must move under diffusion, or this scene never reaches a boundary \
+         node: {before_plain:e} -> {after_plain:e} (relative {plain_move:e})"
+    );
+}
+
+#[test]
+fn a_degenerate_axis_is_refused_rather_than_silently_rescaled() {
+    // ⚠️ A single node on an axis is refused, not weighted. `CoupledField` gives
+    // a degenerate axis a stored cell size of one, so `V_cell` would make the
+    // ledger "per unit thickness" while the element volumes it is balanced
+    // against are the real three-dimensional ones.
+    //
+    // ⚠️ The balance would still *close* — both sides use the same `V_cell` — so
+    // a conservation oracle cannot see this. What comes out wrong is the
+    // temperature, scaled by the body's true thickness on that axis (here a
+    // factor of two for a 2 mm bar on a grid that can only say 1 mm). That is
+    // why this asserts the refusal rather than the balance.
+    let (mesh, sol) = yielded_solution();
+    let h = heating();
+    for (nx, ny, nz, axis) in [
+        (1usize, 3usize, 3usize, Axis::X),
+        (5, 1, 3, Axis::Y),
+        (5, 3, 1, Axis::Z),
+    ] {
+        let mut field = CoupledField::try_new(
+            nx,
+            ny,
+            nz,
+            (Fix128::ZERO, Fix128::ZERO, Fix128::ZERO),
+            (
+                Fix128::from_int(4),
+                Fix128::from_int(2),
+                Fix128::from_int(2),
+            ),
+        )
+        .expect("valid grid");
+        let got = deposit_plastic_heat(&mesh, &sol, &h, &mut field);
+        assert_eq!(
+            got,
+            Err(FemError::DepositGridHasDegenerateAxis { axis }),
+            "a single node on {axis:?} must be refused, got {got:?}"
+        );
+        assert_eq!(
+            field.sum(),
+            Fix128::ZERO,
+            "a refused deposit must not have written anything"
+        );
+    }
+}
+
+#[test]
+fn an_existing_field_is_added_to_and_not_rescaled() {
+    // ⚠️ The dual-weight correction applies to what this call deposits, never to
+    // what the caller already had. Without the staging buffer the boundary
+    // multiply would scale the pre-existing content too, so a caller
+    // accumulating two bodies would see the first one doubled at the boundary.
+    let (mesh, sol) = yielded_solution();
+    let h = heating();
+
+    let mut once = flush_grid();
+    deposit_plastic_heat(&mesh, &sol, &h, &mut once).expect("deposit succeeds");
+
+    let mut twice = flush_grid();
+    deposit_plastic_heat(&mesh, &sol, &h, &mut twice).expect("deposit succeeds");
+    deposit_plastic_heat(&mesh, &sol, &h, &mut twice).expect("second deposit succeeds");
+
+    let (nx, ny, nz) = (once.nx(), once.ny(), once.nz());
+    for iz in 0..nz {
+        for iy in 0..ny {
+            for ix in 0..nx {
+                let single = once.get(ix, iy, iz);
+                let double = twice.get(ix, iy, iz);
+                assert_eq!(
+                    double,
+                    single + single,
+                    "node ({ix},{iy},{iz}): two deposits must be exactly twice one"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn a_non_uniform_cell_still_balances() {
+    // Different spacing on each axis: the dual weight is a product over axes, so
+    // it does not depend on the spacings being equal, but the `V_cell` the
+    // ledger uses does.
+    let (mesh, sol) = yielded_solution();
+    let h = heating();
+    // Bar is 4 x 2 x 2; nodes at x 0,1,2,3,4 / y 0,1,2 / z 0,2 -> hz = 2.
+    let mut field = CoupledField::try_new(
+        5,
+        3,
+        2,
+        (Fix128::ZERO, Fix128::ZERO, Fix128::ZERO),
+        (
+            Fix128::from_int(4),
+            Fix128::from_int(2),
+            Fix128::from_int(2),
+        ),
+    )
+    .expect("valid grid");
+    deposit_plastic_heat(&mesh, &sol, &h, &mut field).expect("deposit succeeds");
+    let (cx, cy, cz) = field.cell_size();
+    assert_eq!(cz, Fix128::from_int(2), "the z spacing must really differ");
+    let on_grid = lumped_sum(&field)
+        * (cx * cy * cz).to_f64()
+        * h.volumetric_heat_capacity_mpa_per_k().to_f64();
+    let released = released_heat(&mesh, &sol, &h);
+    let relative = (on_grid - released).abs() / released;
+    assert!(
+        relative < 1e-12,
+        "a non-uniform cell must still balance: ledger {on_grid:e} vs released {released:e} \
+         (relative {relative:e})"
+    );
+}
+
+#[test]
+fn an_unstable_step_still_conserves_the_dual_ledger() {
+    // Conservation is independent of stability: the dual ledger is exact even
+    // when the explicit step is far past its limit and the field blows up.
+    let (mesh, sol) = yielded_solution();
+    let mut field = flush_grid();
+    deposit_plastic_heat(&mesh, &sol, &heating(), &mut field).expect("deposit succeeds");
+    let before = lumped_sum(&field);
+    for _ in 0..4 {
+        field.diffuse(Fix128::from_int(2), Fix128::ONE); // dt = 2, wildly unstable
+    }
+    let after = lumped_sum(&field);
+    let drift = (after - before).abs() / before.abs();
+    assert!(
+        drift < 1e-12,
+        "the ledger must not depend on stability: {before:e} -> {after:e} (relative {drift:e})"
+    );
+}
+
+#[test]
+fn an_interior_body_is_unaffected_by_the_boundary_correction() {
+    // ⚠️ Regression evidence: when nothing lands on a boundary node the dual
+    // weight is 1 everywhere that matters, so the plain-sum identity of
+    // `depositing_the_heat_conserves_the_total_energy` must still hold exactly
+    // and the two ledgers must agree.
+    let (mesh, sol) = yielded_solution();
+    let h = heating();
+    let mut field = grid(); // the one-cell-margin grid
+    deposit_plastic_heat(&mesh, &sol, &h, &mut field).expect("deposit succeeds");
+    let plain = field.sum().to_f64();
+    let dual = lumped_sum(&field);
+    assert!(
+        (plain - dual).abs() / plain < 1e-15,
+        "with a margin the two ledgers must coincide: plain {plain:e} vs dual {dual:e}"
+    );
+}

@@ -4961,6 +4961,8 @@ impl core::panic::unwind_safe::UnwindSafe for alice_physics::linear_elastic_fem:
 #[non_exhaustive] pub enum alice_physics::linear_elastic_fem::FemError
 pub alice_physics::linear_elastic_fem::FemError::DegenerateElement
 pub alice_physics::linear_elastic_fem::FemError::DegenerateElement::tet: usize
+pub alice_physics::linear_elastic_fem::FemError::DepositGridHasDegenerateAxis
+pub alice_physics::linear_elastic_fem::FemError::DepositGridHasDegenerateAxis::axis: alice_physics::linear_elastic_fem::Axis
 pub alice_physics::linear_elastic_fem::FemError::EmptyMesh
 pub alice_physics::linear_elastic_fem::FemError::InvalidConfig(&'static str)
 pub alice_physics::linear_elastic_fem::FemError::InvalidMaterial(&'static str)

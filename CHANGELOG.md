@@ -28,6 +28,38 @@ stencil と重みの式は `deposit_{u,v,w}_trilinear` の 1 箇所のまま、�
 性能 (release、粒子 8 個 / cell で実測): `p2g_normalized` は 16³ で 38 ms から 25 ms、32³ で 307 ms から 200 ms、`step_flip` は 16³ で 78 ms から 64 ms と**速くなった** (旧実装は分子と分母のために重みの scatter を 2 回行っていたが、新実装は 1 回で両方を累積する 256 ÷ 128 の除算は face あたり最大 256 step で、支配的ではない)
 ### Added — 塑性散逸の報告と、熱への変換 (`linear_elastic_fem`)
 
+⚠️ **2026-10-01 追記 (同日中の修正)**: `deposit_plastic_heat` の保存則を `CoupledField::diffuse` の不変量に合わせた
+初版は一律 `V_cell` の台帳 `Σ ΔT·c_v·V_cell` で balance させていたが、`CoupledField` は **node 中心**で
+`cell = (max−min)/(n−1)` なので、面上の node は半 cell・辺は 1/4・角は 1/8 しか持たない
+`diffuse` は mirror ghost (`T₋₁ = T₁`) の 7 点ステンシルなので **`Σ 2⁻ᵇ T` を厳密に保存**する (b = 端に接する軸数)
+
+実測 (5³ 格子 h=1、熱 8 を 1 node に置いて dt=1/16 / rate=1 で 6 step):
+
+| 置いた場所 | 一律和 `Σ T` | lumped 和 `Σ 2⁻ᵇ T` |
+|---|---|---|
+| 境界 (0,2,2) | 8.000000000000 → 6.987522125244 (−12.7%) | 4.000000000000 → 4.000000000000 (drift 0) |
+| 内部 (2,2,2) | 8.000000000000 → 9.757514953613 (+22.0%) | 8.000000000000 → 8.000000000000 (drift 0) |
+
+⇒ 初版の台帳は書き込み先の演算子が保存しない量だったので、(1) `diffuse` を 1 回呼ぶと恒等式が崩れ
+(2) 物体が格子境界に接する scene で**最大 8 倍の過小配分**になっていた
+修正後の恒等式は `Σ_node 2⁻ᵇ·ΔT_node·c_v·V_cell = Σ_e β·W_p,e·V_e`
+⚠️ **境界に接しない物体では重みが全て 1 なので挙動は不変** (内部 scene の既存 oracle は変化なし)
+
+⚠️ **退化軸 (`n = 1`) の field は `FemError::DepositGridHasDegenerateAxis` で拒否する**
+`CoupledField` は退化軸の cell size を 1 にするので、`V_cell` を体積に使うと台帳が「単位厚さ当たり」になり
+balance 相手の要素体積 (実 3D) と単位が合わない ⚠️ **恒等式自体は両辺が同じ `V_cell` を使うので閉じてしまう**ため
+保存 oracle では検出できず、誤るのは温度 (物体の真の厚さ倍) ⇒ 拒否を assert する形にした
+
+⚠️ **mirror ghost は load-bearing**: `tests/analytic_coupled_field.rs` が `cos(k x)` を離散作用素の厳密固有モードとして
+pin しており、これは mirror ghost でのみ成立する copy ghost (`T₋₁ = T₀`) に替えると保存量が一律和に移り本重み付けが壊れる
+
+追加 oracle 7 本 (先に 2 本の red を確認してから実装、計 25 本):
+物体が格子と面一の scene での台帳一致 / `diffuse` 6 step 後の台帳不変 ⚠️ **かつ一律和が動くこと (歯)** /
+不安定な `dt = 2` でも台帳不変 (保存は安定性と独立) / 非等間隔 `h` (hz = 2) でも balance /
+退化軸 3 軸それぞれの拒否 + 拒否時に 1 bit も書かないこと / 既存 field への加算が二重に scale されないこと /
+境界に接しない物体では 2 台帳が一致すること (回帰の証跡)
+変異試験は **実装変異 9/9 red + 配線変異 6/6 red、生存 0** (`--no-fail-fast` + 実行件数 25 の gate)
+
 `solve_elastoplastic` が要素ごとの塑性仕事 `W_p` を `ElastoplasticSolution::dissipation` で返すようにした
 Taylor-Quinney 変換は `PlasticHeating` (β と体積比熱 `c_v`、`try_new` で検証、`#[non_exhaustive]`)、
 温度上昇は `plastic_temperature_rise`、格子への配分は `deposit_plastic_heat`

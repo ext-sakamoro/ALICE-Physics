@@ -131,6 +131,29 @@ GS を使うには `step_multigrid(dt, 0)` `step_adaptive` は自動で multigri
 
 ⚠️ **壁 3 は閉じていない** 「完全」(全物理が在る) 側は進んだが「強連成」(monolithic) は満たさない **「壁 3 を越えた」とは書かない**
 
+#### ⚠️ 同日中の修正 — 保存則を書き込み先の不変量に合わせた
+
+初版 (`bb2ffd0`) は `deposit_plastic_heat` の台帳を一律 `V_cell` で立てていたが、**書き込み先の `diffuse` が保存するのは別の量**だった peer (`ys-6d`) の指摘 → 私が独立に再現 → `ys-1f` が代数で確定
+
+| 置いた場所 | 一律和 `Σ T` | lumped 和 `Σ 2⁻ᵇ T` |
+|---|---|---|
+| 境界 (0,2,2) | 8.000000000000 → 6.987522125244 (**−12.7%**) | 4.000000000000 → 4.000000000000 (**drift 0**) |
+| 内部 (2,2,2) | 8.000000000000 → 9.757514953613 (**+22.0%**) | 8.000000000000 → 8.000000000000 (**drift 0**) |
+
+(5³ 格子 h=1、熱 8 を 1 node、dt=1/16 / rate=1 で 6 step)
+
+⚠️ `CoupledField` は **node 中心**で `cell = (max−min)/(n−1)` なので材料領域は `[min,max]` ちょうど ⇒ 面上の node は半 cell・辺 1/4・角 1/8 `diffuse` は mirror ghost (`T₋₁ = T₁`) の 7 点ステンシルなので `Σ 2⁻ᵇ T` を厳密保存する ⇒ 一律和で台帳を立てると (1) `diffuse` 1 回で恒等式が崩れ (2) **物体が格子境界に接する scene で最大 8 倍の過小配分**
+
+✅ 修正後: `Σ_node 2⁻ᵇ·ΔT_node·c_v·V_cell = Σ_e β·W_p,e·V_e` ⚠️ **境界に接しない物体では重みが全て 1 なので挙動は不変** (回帰を oracle で明示)
+
+⚠️⚠️ **oracle の穴がこの形で露呈した** — 初版の test / example は棒が格子の内部にしかなく、**境界 node を 1 度も使っていなかった** 保存則そのものは正しく測っていた (相対 1.28e-16) のに、**測った scene が欠陥を通らなかった** ⇒ 「保存を測った」と「保存が成立する」は別
+
+⚠️ **退化軸 (`n = 1`) は拒否に回した** (`FemError::DepositGridHasDegenerateAxis`) 退化軸の cell size は 1 と定義されるので `V_cell` を体積に使うと台帳が「単位厚さ当たり」になり、要素の実 3D 体積と単位が合わない ⚠️⚠️ **恒等式は両辺が同じ `V_cell` を使うので閉じてしまう** ⇒ **保存 oracle では原理的に検出できず、誤るのは温度** (物体の真の厚さ倍) ⇒ 保存を主張せず拒否を assert する
+
+⚠️ **mirror ghost は load-bearing** `tests/analytic_coupled_field.rs` が `cos(k x)` を離散作用素の厳密固有モードとして pin しており、これは mirror でのみ成立する ⇒ **copy ghost に替える案 (B) は oracle を壊すので選べない** (この確認で A/B の選択が閉じた)
+
+⚠️ **未決で残す**: `CoupledField::diffuse` (mirror) と `ScalarField3D::diffuse` (copy) は **幾何が同一で ghost だけ違う** ので保存量が入れ替わる 揃えると `ScalarField3D` も閉形式固有モードを得るが、production consumer 5 module (`pressure` / `fracture` / `thermal` / `phase_change` / `erosion`) と `determinism_golden_f32.rs` の golden 再 pin (6 環境) が動く ⇒ **本 increment の範囲外、user 裁定待ち**
+
 #### 本 increment で測った 3 件 (実装前は未測定)
 
 | 測ったこと | 実測 |

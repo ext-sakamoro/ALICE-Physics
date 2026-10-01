@@ -210,9 +210,6 @@ unwired src/coupled_field.rs::add_assign
 unwired src/coupled_field.rs::as_slice
 unwired src/coupled_field.rs::blend_from
 unwired src/coupled_field.rs::max_value
-unwired src/coupled_field.rs::nx
-unwired src/coupled_field.rs::ny
-unwired src/coupled_field.rs::nz
 unwired src/coupled_field.rs::reconcile_mean
 unwired src/coupled_field.rs::same_grid_as
 unwired src/coupled_field.rs::scale_div
