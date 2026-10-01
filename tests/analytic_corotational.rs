@@ -31,8 +31,8 @@
 //! One mutation at a time, restored in between. ⚠️ **The whole table was
 //! re-measured when the material law was wired in**: the 2026-09-30 numbers were
 //! taken when the stress path had no branch, and a branch can move which oracle
-//! sees which mutation. The baseline is `12 passed / 0 failed / 1 ignored` here
-//! (13 tests), `21 passed` in `cargo test --lib hyperelastic` and `2 passed` in
+//! sees which mutation. The baseline is `13 passed / 0 failed / 1 ignored` here
+//! (14 tests), `21 passed` in `cargo test --lib hyperelastic` and `2 passed` in
 //! `cargo test --lib linear_elastic_fem`.
 //!
 //! ⚠️ **Run the whole mutation through one `cargo` invocation**, e.g.
@@ -54,12 +54,12 @@
 //! | `corotational_local_stress` drops the `Rᵀ` (`ε = sym(RᵀF − I)` → `sym(F − I)`) | **10** |
 //! | `solve_corotational` ignores the configured model (`law` forced to `None`) | 2: `the_neo_hookean_deviator_is_what_the_element_returns_under_that_law` and `the_material_law_moves_the_answer_and_the_answer_is_equilibrium` |
 //! | `energy_derivatives` returns `μ` instead of `μ/2` for Neo-Hookean | the same 2 |
-//! | `material_correction` returns without accumulating | 1: `the_material_law_moves_…` (`NotConverged`) |
+//! | `material_correction` returns without accumulating | 2: `the_material_law_moves_…` and `the_solve_is_equivariant_…`, both `NotConverged` |
 //! | `cauchy_stress` flips the sign of `K·(J−1)` | 1: `the_material_law_moves_…` |
 //! | `hyperelastic_stress` drops the `J` in `P = J σ F⁻ᵀ` | 1: `the_material_law_moves_…` |
 //! | `hyperelastic_stress` transposes the product (`F⁻ᵀσ` for `σF⁻ᵀ`) | 1: `the_material_law_moves_…` |
 //! | `cauchy_stress` drops the `−p_ref` that makes the reference state stress free | **0 here**, 2 in `cargo test --lib hyperelastic` |
-//! | `hyperelastic_stress` drops the `F⁻ᵀ` in `P = J σ F⁻ᵀ` | **0 here**, 2 in `cargo test --lib linear_elastic_fem` |
+//! | `hyperelastic_stress` drops the `F⁻ᵀ` in `P = J σ F⁻ᵀ` | 1 here (`the_solve_is_equivariant_…`, added 2026-10-01) + 2 in `cargo test --lib linear_elastic_fem`; **0 before those existed** |
 //!
 //! Three things that table says and the prose would not:
 //!
@@ -84,9 +84,12 @@
 //!   itself: `P = J σ F⁻ᵀ` rotates to `Q P` under a superposed `Q` where
 //!   `P = J σ` rotates to `Q P Qᵀ`. Both now live in `src/linear_elastic_fem.rs`
 //!   (`the_first_piola_kirchhoff_stress_is_objective_under_a_superposed_rotation`
-//!   and `…_is_what_the_closed_form_says`) and not here, because `P` is not on the
-//!   public surface — a test in `tests/` can see it only through where a solve
-//!   lands, which is exactly the thing that cannot see this mutation.
+//!   and `…_is_what_the_closed_form_says`), because `P` is not on the public
+//!   surface — a test in `tests/` can see it only through where a solve lands.
+//!   ⚠️ **`the_solve_is_equivariant_…` below is the companion, not the oracle**: it
+//!   does red on this mutation, but as a `RotationFailed` on the turned scene
+//!   rather than as a measured disagreement, so it cannot say *which* part of the
+//!   force was wrong. Its own comment has the four measurements.
 //!
 //! Author: Moroya Sakamoto
 
@@ -1488,5 +1491,145 @@ fn the_budget_the_twins_use_does_not_change_what_they_pin() {
     assert_eq!(
         worst_stress_ulp, 0,
         "…nor the stress the twin oracles compare against their closed forms"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// objectivity, at the level of the solve
+// ---------------------------------------------------------------------------
+
+/// `Q·R` for `Q` the quarter turn about `z` and `R` = [`THREE_FOUR_FIVE`].
+///
+/// A rotation about `z` composed with another is just another `(cos, sin)` pair,
+/// and for a quarter turn it is the same two rationals reordered and negated:
+/// `(c, s) → (−s, c)`. So the rotated scene below is not a different *kind* of
+/// scene — same mesh, same stretch, same rational boundary data.
+const QUARTER_AFTER_THREE_FOUR_FIVE: Turn = Turn {
+    name: "126.87° about z (90° after 3-4-5)",
+    cos: -3.0 / 5.0,
+    sin: 4.0 / 5.0,
+};
+
+/// `Q·p` for the same quarter turn about `z`.
+fn quarter_turn(p: [f64; 3]) -> [f64; 3] {
+    [-p[1], p[0], p[2]]
+}
+
+/// The node at the centre of the cube, which `boundary_rotated_stretch` leaves
+/// free. Checked rather than assumed, because a mesh change that moved it would
+/// otherwise load nothing.
+fn centre_node(mesh: &SdfTetMesh) -> u32 {
+    (0..u32::try_from(mesh.vertex_count()).expect("fits"))
+        .find(|&v| {
+            vert(mesh, v)
+                .iter()
+                .all(|c| (c - SIDE / 2.0).abs() < SIDE * 1e-9)
+        })
+        .expect("the 4-cell cube has a node at its centre")
+}
+
+/// **Objectivity at the level of the solve** — the companion to the two oracles
+/// in `src/linear_elastic_fem.rs`, which pin the same property on `P` directly.
+///
+/// Superposing a rigid rotation `Q` on a scene — the reference mesh untouched,
+/// the boundary positions and the load both turned by `Q` — must turn the answer
+/// by `Q` and nothing else. The internal force of a frame-indifferent law is
+/// equivariant (`f(Qx) = Q f(x)`), so the equilibrium of the turned scene is the
+/// turned equilibrium, and **no closed form is needed**: the second solve is the
+/// oracle for the first.
+///
+/// That is what makes this reachable from `tests/`, where `P` is not. It is also
+/// what the inhomogeneous-field test above cannot say on its own: `Ok` means the
+/// field balances the force the solver assembled, which a wrong `P` also does.
+///
+/// # ⚠️ Why this is a bound and not an `assert_eq!`
+///
+/// `solve_corotational` stops on a tolerance, not on an exact fixed point, and
+/// the two runs do not even take the same number of steps — **measured 181 and
+/// 192**, so the solve is not exactly equivariant and the gap is a convergence
+/// floor, not zero. That is the same reason
+/// `the_answer_does_not_depend_on_the_increment_count` is ignored. The exact
+/// statement of the same property lives in `src/linear_elastic_fem.rs`, on `P`,
+/// where no iteration is involved.
+///
+/// The threshold is **`1e-6` mm, set from the measured clean gap with ~390×
+/// headroom** — not back-computed from what any mutation produces. The measured
+/// gap is printed on every run so a later reader can re-derive that factor.
+///
+/// # ⚠️ What the mutation actually does here, and why there is no ratio
+///
+/// | mutation | worst `\|u(QS) − Q u(S)\|` |
+/// | --- | --- |
+/// | clean | **2.563e-9 mm** (node 56) |
+/// | `rotate_stress` returns `σ̃` unrotated | **2.563e-9 mm**, identical — the linear reporting path is not in this scene |
+/// | `hyperelastic_stress` drops the `F⁻ᵀ` | ⚠️ **no gap exists**: the turned scene returns `RotationFailed { tet: 25, cause: Inverted }` |
+/// | `material_correction` returns without accumulating | the **base** scene returns `NotConverged` at 512 iterations |
+///
+/// ⚠️ **So the `F⁻ᵀ` red arrives as a refusal, not as an exceeded bound.** A
+/// non-equivariant force field drives an element of the turned scene through
+/// `det F = 0`, and the solve stops before any answer can be compared. That is a
+/// stronger separation than a large ratio would be, but it means **the bound
+/// below is not the assertion the known mutation exercises** — do not read a
+/// green here as "the bound was checked against something". If a later
+/// formulation makes the turned scene converge under a wrong `P`, the bound is
+/// what catches it, which is why it is written with headroom rather than removed.
+///
+/// ⚠️ Two of the four rows red for reasons that are not this test's subject (a
+/// scene that will not converge at all), so **this test does not separate causes
+/// on its own** — it is the companion to the direct oracles on `P`, not a
+/// replacement for them.
+#[test]
+fn the_solve_is_equivariant_under_a_superposed_quarter_turn() {
+    let mesh = kuhn_cube(4, SIDE / 4.0);
+    let centre = centre_node(&mesh);
+    let neo_hookean = HyperelasticModel::NeoHookean {
+        mu_mpa: pla().lame().1,
+    };
+    let config = corotational_config_with_newton_budget(1, 512).with_hyperelastic(neo_hookean);
+
+    let solve_turned_by = |turn: Turn, load_axis: Axis| {
+        let (mut bc, _) = boundary_rotated_stretch(&mesh, turn, ISOCHORIC_U);
+        bc.add_load(centre, load_axis, fx(200.0));
+        solve_corotational(&mesh, &pla(), &bc, &config)
+    };
+
+    // `Q·(200, 0, 0) = (0, 200, 0)`, so the turned scene carries its load on y.
+    let base = solve_turned_by(THREE_FOUR_FIVE, Axis::X).expect("the base scene converges");
+    let turned = solve_turned_by(QUARTER_AFTER_THREE_FOUR_FIVE, Axis::Y)
+        .expect("the turned scene converges");
+
+    let mut worst = 0.0_f64;
+    let mut worst_node = 0_u32;
+    for v in 0..u32::try_from(mesh.vertex_count()).expect("fits") {
+        let x = vert(&mesh, v);
+        let u = base.field.displacements[v as usize];
+        // `u(QS) = Q·(X + u(S)) − X`, the turned deformed position read back as a
+        // displacement from the same reference node.
+        let want = quarter_turn([
+            x[0] + u[0].to_f64(),
+            x[1] + u[1].to_f64(),
+            x[2] + u[2].to_f64(),
+        ]);
+        let got = turned.field.displacements[v as usize];
+        for axis in 0..3 {
+            let d = (got[axis].to_f64() + x[axis] - want[axis]).abs();
+            if d > worst {
+                worst = d;
+                worst_node = v;
+            }
+        }
+    }
+
+    eprintln!(
+        "  base {} Newton steps, turned {}",
+        base.newton_iterations, turned.newton_iterations
+    );
+    eprintln!("    worst |u(QS) − Q u(S)| = {worst:.3e} mm at node {worst_node}");
+
+    assert!(
+        worst < 1e-6,
+        "the turned scene must land on the turned answer; worst component differs \
+         by {worst:.3e} mm at node {worst_node}, against a measured clean gap of \
+         2.563e-9 mm"
     );
 }
