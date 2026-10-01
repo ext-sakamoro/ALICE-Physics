@@ -446,6 +446,134 @@ fn a_heated_bar_held_in_one_axis_pushes_its_supports_with_e_alpha_delta_t_a() {
 }
 
 // ---------------------------------------------------------------------------
+// oracle 2b — a load sitting on a prescribed row
+// ---------------------------------------------------------------------------
+
+/// A load placed on a **prescribed** degree of freedom is carried by the
+/// support, so it moves the reaction and nothing else.
+///
+/// # Why this scene has to exist
+///
+/// `solve` ignores such a load — the row is not an equation — so the
+/// displacement, the stress and every oracle above are blind to whether
+/// `reactions` subtracts `f_ext` at all. Measured 2026-10-01: a mutation
+/// deleting the `f_ext` subtraction from each of the two reaction functions
+/// survived all ten of the other oracles here and all 1,921 tests in the
+/// crate, because **no other scene puts a load on a held row**.
+///
+/// # The closed form
+///
+/// The solve is bit for bit the one oracle 1 runs (the extra load lands on a
+/// row the solve discards), so the internal force is unchanged and
+///
+/// ```text
+/// Σ_{i: x=0} R_i,x = −σ A₀ − f        f the load on the held row
+/// ```
+///
+/// which is the statement that the support now has to supply the applied load
+/// as well as the bar's pull.
+#[test]
+fn a_load_on_a_prescribed_row_is_carried_by_the_support() {
+    let (n, h) = (2usize, 5.0_f32);
+    let mesh = kuhn_box(n, n, n, h);
+    let side = f64::from(h) * n as f64;
+    let area = side * side;
+    let sigma = 10.0_f64;
+    let eps = sigma / E_MPA;
+    let field = |p: [f32; 3]| -> [f64; 3] {
+        [
+            eps * f64::from(p[0]),
+            -NU * eps * f64::from(p[1]),
+            -NU * eps * f64::from(p[2]),
+        ]
+    };
+
+    let interior = node_index(n, n, 1, 1, 1);
+    let mut bare = BoundaryConditions::new();
+    for (v, p) in mesh.vertices.iter().enumerate() {
+        let v = u32::try_from(v).expect("fits");
+        if v == interior {
+            continue;
+        }
+        let u = field(*p);
+        bare.prescribe_all(v, [fx(u[0]), fx(u[1]), fx(u[2])]);
+    }
+    let held = node_index(n, n, 0, 0, 0); // a corner of the x = 0 face
+    let load = 500.0_f64;
+    let mut loaded = bare.clone();
+    loaded.add_load(held, Axis::X, fx(load));
+
+    let plain = solve(&mesh, &pla(), &bare, &SolverConfig::default()).expect("well posed");
+    let same = solve(&mesh, &pla(), &loaded, &SolverConfig::default()).expect("well posed");
+    // The load is on a held row, so the solve must not have seen it at all —
+    // bit for bit, not to a tolerance.
+    assert_eq!(
+        plain.displacements, same.displacements,
+        "a load on a prescribed row is not an equation, so it cannot move the answer"
+    );
+
+    let without = reactions(&mesh, &pla(), &bare, None, &plain).expect("matches");
+    let with = reactions(&mesh, &pla(), &loaded, None, &same).expect("matches");
+    let tol = 1e-5 * sigma * area;
+    close(
+        face_sum(&mesh, &without, 0, 0.0)[0],
+        -sigma * area,
+        tol,
+        "x = 0 face reaction without the load",
+    );
+    close(
+        face_sum(&mesh, &with, 0, 0.0)[0],
+        -sigma * area - load,
+        tol,
+        "x = 0 face reaction with a load on a held row",
+    );
+    // And the difference is exactly the load, with no other row touched.
+    for (v, (a, b)) in with.iter().zip(without.iter()).enumerate() {
+        for axis in 0..3 {
+            let want = if v == held as usize && axis == 0 {
+                -load
+            } else {
+                0.0
+            };
+            close(
+                a[axis].to_f64() - b[axis].to_f64(),
+                want,
+                1e-9,
+                &format!("node {v} axis {axis}: only the loaded row may move"),
+            );
+        }
+    }
+
+    // The same statement for the co-rotational path, on the uniform-`F` scene.
+    let (cmesh, cbc, cfield) = stretched_scene(2, 2.0);
+    let corner = 0u32; // (0, 0, 0), prescribed by `stretched_scene`
+    let mut cloaded = cbc.clone();
+    cloaded.add_load(corner, Axis::Y, fx(load));
+    let config =
+        CorotationalConfig::try_new(SolverConfig::default(), 32, fx(1e-6), 1, 64).expect("valid");
+    let solution = solution_at(&cmesh, cfield);
+    let cwithout =
+        corotational_reactions(&cmesh, &pla(), &cbc, &config, &solution).expect("has a frame");
+    let cwith =
+        corotational_reactions(&cmesh, &pla(), &cloaded, &config, &solution).expect("has a frame");
+    for (v, (a, b)) in cwith.iter().zip(cwithout.iter()).enumerate() {
+        for axis in 0..3 {
+            let want = if v == corner as usize && axis == 1 {
+                -load
+            } else {
+                0.0
+            };
+            close(
+                a[axis].to_f64() - b[axis].to_f64(),
+                want,
+                1e-9,
+                &format!("co-rotational node {v} axis {axis}: only the loaded row may move"),
+            );
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // oracle 3 — global balance against an applied load
 // ---------------------------------------------------------------------------
 
