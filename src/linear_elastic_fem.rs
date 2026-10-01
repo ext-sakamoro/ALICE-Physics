@@ -1562,6 +1562,26 @@ fn check_reaction_inputs(
 /// cubic elements: dropping the `J` from `P = J σ F⁻ᵀ` left 7 of 7 oracles green,
 /// including one asserting a closed form for `σ_xx`.
 ///
+/// # ⚠️ The shared assembly is load-bearing — do not re-derive it here
+///
+/// This goes through `apply_stiffness` and `add_eigenstrain_load` (both
+/// private), the very functions [`solve_with_eigenstrain`] builds its own
+/// system with, and **not**
+/// through a second copy of the same formulae. That sharing is what makes the
+/// closed-form oracle work: a mistake in the element integral has to *reach*
+/// this value before anything can compare it against the analytic traction.
+///
+/// ⚠️ **Re-deriving it here would delete the oracle while every test stayed
+/// green** — the mutation would simply stop flowing into the reaction, so
+/// `tests/analytic_reactions.rs` would keep passing and the error would be
+/// invisible again. No test can guard this; only the comment can. A review
+/// note asking for an independent implementation "to avoid duplication" is
+/// asking for that outcome.
+///
+/// The complement is that the *comparison* must stay independent: the oracles
+/// check `R_face = −A₀ · T e_face` from the constitutive law, never `residual
+/// ≈ 0`, which would be the assembly checking itself.
+///
 /// # ⚠️ What it does not check
 ///
 /// Nothing ties `solution` to the arguments beside it. This reports the support
@@ -2867,6 +2887,15 @@ pub fn solve_corotational(
 /// force itself, read where the solve throws it away. The `#[cfg(test)] mod
 /// tests` at the end of this file covers `P` at the element level for the same
 /// reason; this covers the integral of it.
+///
+/// # ⚠️ The shared assembly is load-bearing — do not re-derive it here
+///
+/// `subtract_internal_force` is the element loop a Newton step assembles its
+/// residual with, reached here and there through the same call. See
+/// [`reactions`] for why that sharing cannot be replaced by an independent
+/// implementation: ⚠️ **re-deriving it would silently remove the oracle, with
+/// every test still green**, because the error would no longer reach the value
+/// the closed form is compared against.
 ///
 /// # ⚠️ The frames are recomputed, not recovered
 ///
