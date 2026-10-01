@@ -15,6 +15,11 @@ Memory index pointer: `[[reference-alice-physics-v1-roadmap]]` in claude-config.
 | Maxwell FDTD | `ecd8c61` | source-free Yee、⚠️ **SI は `ε₀·μ₀` が 7.7 bit で不可**、正規化単位 + `S=9/16` |
 | 多体 ABA | `1bab99b` | ⚠️ **`solve()` が `link.joint` を読まない**状態から real ABA、oracle 12 本 |
 
+### 第 11 increment (2026-10-01、FLIP / PIC の粒子経路)
+
+`CfdSolver::step_flip` を追加し `p2g_normalized` を production から呼ばれる形にした (配線ガードの baseline から削除) oracle 18 本、変異 34 / 35 が red (残りは等価変異)
+⚠️ 粒子が領域全体を満たす場合のみ正しい 自由表面 (空気セルの Dirichlet、セル分類、粒子の再シード) / 周期境界 / multigrid の配線は未着手
+
 ### 第 10 increment (2026-10-01、multigrid 圧力解法)
 
 `project_pressure_multigrid` (Galerkin 型、W サイクル + 補正 2 倍、2 の冪のみ) と `CfdSolver::step_multigrid` を追加した 同じ精度に達する反復数は multigrid 19 / 20 / 21 cycles に対し red-black GS 167 / 602 / 2271 (n = 8 / 16 / 32)

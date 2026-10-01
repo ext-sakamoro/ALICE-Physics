@@ -180,7 +180,6 @@ unwired src/eulerian_grid.rs::enforce_solid_faces
 unwired src/eulerian_grid.rs::from_field
 unwired src/eulerian_grid.rs::no_slip_velocity
 unwired src/eulerian_grid.rs::p2g_nearest
-unwired src/eulerian_grid.rs::p2g_normalized
 unwired src/eulerian_grid.rs::project_pressure_bicgstab
 unwired src/eulerian_grid.rs::project_pressure_decomposed
 unwired src/eulerian_grid.rs::project_pressure_decomposed_on_rank

@@ -13,6 +13,16 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added — FLIP / PIC の粒子経路 (`CfdSolver::step_flip`)
+
+粒子 `(位置, 速度)` を格子へ転写し、体積力 + 拡散 + 圧力射影を 1 step 回してから粒子速度を `v_p = (1−r)·G2P(u_new) + r·(v_p + G2P(u_new − u_old))` で更新し `x += v·dt` で移流する入口を追加した `p2g_normalized` の最初の production 呼出元になった (baseline の行を削除)
+新しい公開フィールド / 公開型は足していない 公開 API の差分は `step_flip` の 1 行のみ
+⚠️ 第 1 段階の契約: 粒子が領域全体を満たす場合のみ正しい 空気セルを `p = 0` にする仕組みが圧力解法に無いので自由表面は別 feature 粒子が届かない face は 0 に clear されて流体 face として射影に入る 周期境界・multigrid の配線・level set / 温度の移流も未着手
+退化入力 (粒子 0 個 / `dt <= 0` / `dx = 0` / 0 次元の格子 / 密度 0 / `flip_ratio` が [0, 1] の外 / 粒子がすべて領域外) は grid と粒子を bit 不変のまま早期 return し panic しない 領域外の粒子は転写にも更新にも参加せず bit 不変 (`p2g_normalized` は領域の遠側を少し越えた粒子を一部受け取るので入口で除外している)
+oracle は `tests/analytic_flip.rs` (18 本、先に stub で 14/14 red を実測してから実装): 静水圧 (離散解 `p_j = ρ|g|dx(ny−j)` は連続解より `ρ|g|dx/2` 大きい、Dirichlet が ghost cell 中心にあるため) / 一様流の並進と clamp / FLIP と PIC の差 (手導出 `125/4096`) / free fall / 壁を `u_old` の前に課すこと / 拡散 / 決定論 / 退化入力
+変異試験は 35 件中 34 件が red 残り 1 件 (`particles.is_empty()` の除去) は直後の `cloud.is_empty()` が同じ早期 return をするので等価変異
+⚠️ 既定の粘性 (μ = 1e-3) では静水圧の解に `6 ny μ |g| dt / dx` (実測 6.7e-3、上限 0.015) の誤差が出る 壁際の `v*` の段差を拡散項が先に触るため
+
 ### Added — multigrid 圧力解法 (`eulerian_grid::project_pressure_multigrid`) と `CfdSolver::step_multigrid`
 
 Poisson 演算子 (`PoissonMask`) に対する幾何 multigrid の圧力射影を追加した
