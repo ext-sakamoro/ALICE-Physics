@@ -368,8 +368,6 @@ unwired src/fillet_stress.rs::kt_circular_hole_infinite_plate
 unwired src/fillet_stress.rs::kt_elliptical_hole
 unwired src/fillet_stress.rs::kt_u_notch_axial
 unwired src/fillet_stress.rs::recommended_fillet_radius_mm
-unwired src/filter.rs::ALL
-unwired src/filter.rs::ALL
 unwired src/filter.rs::DEBRIS
 unwired src/filter.rs::ENEMY
 unwired src/filter.rs::KINEMATIC
@@ -431,7 +429,6 @@ unwired src/heightfield.rs::sample_normal
 unwired src/heightfield.rs::set_height
 unwired src/heightfield.rs::signed_distance
 unwired src/hyperelastic.rs::UNITY
-unwired src/hyperelastic.rs::cauchy_stress
 unwired src/hyperelastic.rs::equibiaxial
 unwired src/hyperelastic.rs::i1
 unwired src/hyperelastic.rs::i2
@@ -507,8 +504,6 @@ unwired src/layer_adhesion.rs::fos_normal_z
 unwired src/layer_adhesion.rs::fos_shear_xy
 unwired src/layer_adhesion.rs::fos_shear_xz
 unwired src/layer_adhesion.rs::min_fos
-unwired src/linear_elastic_fem.rs::ALL
-unwired src/linear_elastic_fem.rs::CorotationalSolution
 unwired src/linear_elastic_fem.rs::DiagonalStats
 unwired src/linear_elastic_fem.rs::add_load
 unwired src/linear_elastic_fem.rs::alpha_per_k
@@ -516,7 +511,6 @@ unwired src/linear_elastic_fem.rs::default_poissons_ratio
 unwired src/linear_elastic_fem.rs::fix
 unwired src/linear_elastic_fem.rs::from_filament
 unwired src/linear_elastic_fem.rs::hydrostatic
-unwired src/linear_elastic_fem.rs::hyperelastic
 unwired src/linear_elastic_fem.rs::increments
 unwired src/linear_elastic_fem.rs::linear
 unwired src/linear_elastic_fem.rs::load_count
@@ -525,12 +519,7 @@ unwired src/linear_elastic_fem.rs::newton_iterations
 unwired src/linear_elastic_fem.rs::newton_tolerance
 unwired src/linear_elastic_fem.rs::poissons_ratio
 unwired src/linear_elastic_fem.rs::polar_iterations
-unwired src/linear_elastic_fem.rs::prescribe
-unwired src/linear_elastic_fem.rs::prescribe_all
 unwired src/linear_elastic_fem.rs::prescribed_count
-unwired src/linear_elastic_fem.rs::solve
-unwired src/linear_elastic_fem.rs::solve_corotational
-unwired src/linear_elastic_fem.rs::solve_with_eigenstrain
 unwired src/linear_elastic_fem.rs::stiffness_diagonal_stats
 unwired src/linear_elastic_fem.rs::with_hyperelastic
 unwired src/linear_elastic_fem.rs::with_poisson
@@ -556,19 +545,12 @@ unwired src/math.rs::SIMD_WIDTH
 unwired src/math.rs::add_simd
 unwired src/math.rs::atan
 unwired src/math.rs::cross_simd
-unwired src/math.rs::determinant
 unwired src/math.rs::diagonal
 unwired src/math.rs::dot_batch_4
 unwired src/math.rs::dot_simd
-unwired src/math.rs::inverse
 unwired src/math.rs::length_squared_simd
-unwired src/math.rs::max_abs_component
-unwired src/math.rs::mul_mat
-unwired src/math.rs::polar_rotation
-unwired src/math.rs::polar_rotation_steps
 unwired src/math.rs::simd_width
 unwired src/math.rs::sub_simd
-unwired src/math.rs::transpose
 unwired src/math_util.rs::cbrt_fix
 unwired src/math_util.rs::clamp_fix
 unwired src/math_util.rs::pow_int
