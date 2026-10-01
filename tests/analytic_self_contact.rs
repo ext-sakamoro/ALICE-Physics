@@ -2,46 +2,42 @@
 //!
 //! # この file が置かれている理由
 //!
-//! `src/` の自己接触は `cloth.rs` の **粒子-粒子の距離ばね 1 種だけ**です
-//! (`tri_tri` / `triangle_triangle` / `edge_edge` / `vertex_face` / `point_triangle`
-//! は `src/` 全体で 0 hit) 粒子どうしの距離だけを見る判定は、**三角形の内部を
-//! 通り抜ける頂点を原理的に見られません** — 交点が 3 頂点のどれからも検出半径より
-//! 遠ければ、何も起きないまま素通りします
+//! 2026-09-29 時点の `src/` の自己接触は `cloth.rs` の **粒子-粒子の距離ばね 1 種だけ**
+//! でした 粒子どうしの距離だけを見る判定は、**三角形の内部を通り抜ける頂点を原理的に
+//! 見られません** — 交点が 3 頂点のどれからも検出半径より遠ければ、何も起きないまま
+//! 素通りします この file はその盲点を閉形式で示し、目標 oracle を `#[ignore]` 付きの
+//! red として置くために作られました
 //!
-//! この file は `tests/analytic_large_rotation.rs` と同じ **双子構造**を取ります:
+//! **2026-10-01 に頂点-面の自己接触が landing して、目標 oracle は green になりました**
+//! (`src/cloth.rs`: substep 内の近接斥力 + frame 単位の掃過線分復元、どちらも Jacobi 蓄積)
+//! 以下は decommission の記録です — 契約どおり **どの test も削除していません**
 //!
-//! - **目標 oracle** は現在の solver で **red でなければならず**、その red が
-//!   「計器が測りたい性質に届いている」ことの証拠です 実装が入るまで `#[ignore]`
-//! - **companion guard** は現在の挙動 (= 自己接触が何もしていない) を pin します
-//!   **常にどちらか一方だけが green** であるべきです
+//! | 旧 (2026-09-29) | 新 (2026-10-01) | 変更 |
+//! |---|---|---|
+//! | `a_crumpled_cloth_does_not_pass_through_itself` (`#[ignore]`、貫通 7) | 同名、green (貫通 0) | `#[ignore]` を外した |
+//! | `self_collision_toggle_changes_nothing_in_a_scene_that_self_intersects` | `self_collision_toggle_changes_the_result_in_a_scene_that_self_intersects` | 改名 + `panic!` を `assert!(..is_some())` に反転 + 前提を `crossings_off > 0` に |
+//! | `self_collision_moves_particles_without_improving_their_separation` | `self_collision_improves_the_vertex_face_separation_it_constrains` | 改名 + 測る量を頂点-頂点 → **頂点-面**に + 半径 0.5 → 0.05 (理由は下記) |
+//! | (無し) | `the_particle_pair_minimum_is_attained_by_two_pinned_vertices` | 旧計器が何を測っていたかを pin (旧数値はここで生きる) |
+//! | (無し) | `a_thickness_far_above_the_local_edge_length_is_outside_the_model` | 使用条件 (厚 < 局所辺長の半分) を pin |
+//! | (無し) | `the_point_triangle_metric_matches_the_closed_form` | 新計器 (独立実装) 自身の契約 test |
 //!
-//! ⚠️ **反転の契約**: 頂点-面の自己接触が入ると、companion
-//! `self_collision_toggle_changes_nothing_in_a_scene_that_self_intersects` の assert は
-//! **成立しなくなります** (`pos_on == pos_off` も、前提の `crossings_on > 0` も偽になる)
+//! ⚠️ **3 本目の反転は doc が当時指定した形 (`min_d2_on > min_d2_off`) では landing
+//! できませんでした** 実測すると、**頂点-頂点の最小距離を取る対は 4 run すべて `(7, 17)`
+//! = 両方とも pin された境界粒子**で、`run_crumple` が毎 step 座標を代入している量でした
+//! (`0.038967 = (0.1396·√2)²` は `shrink(59, 60)` から決まる定数) solver が何をしても
+//! 動かないので、その不等号は構造的に成立しません ⚠️ **極値を assert する test は、
+//! 「極値を取る要素が実験条件で動くか」を件数の反 vacuous check とは別に確かめること**
+//! 詳細は `the_particle_pair_minimum_is_attained_by_two_pinned_vertices` の doc と
+//! `[[feedback_cloth_self_contact_metric_measures_the_driver]]`
 //!
-//! ⚠️ **この companion は「粒子-粒子が三角形重心の頂点を見ない」という構造的事実を
-//! pin しているのではありません** 構造的事実を pin しているのは
-//! `particle_distance_spring_cannot_see_the_closed_form_crossing` (閉形式なので恒久に真) で、
-//! companion が pin しているのは **今の実装が不活性であるという現状**です だから
-//! 「削除せず red のまま残す」は CI を恒久 red にするだけで選べません
+//! ⚠️ **構造的事実を pin しているのは
+//! `particle_distance_spring_cannot_see_the_closed_form_crossing`** (閉形式なので恒久に真)
+//! で、これは実装が入った後も残します 粒子-粒子だけに戻せば同じ盲点が戻ることの証明です
 //!
-//! **削除でなく書き換えてください** 壁 2 の `graded_refinement_leaves_hanging_faces` と
-//! 同じ decommission の形です (旧実測を doc の `# Before` に残して assert を反転させる)
-//! 具体的には 3 箇所:
+//! # 実測 (2026-09-29 = **粒子-粒子だけだった頃**、`Fix128` のみなので決定論、再実行で同値)
 //!
-//! 1. 目標 oracle `a_crumpled_cloth_does_not_pass_through_itself` の `#[ignore]` を外す
-//! 2. companion を `..._changes_the_result_in_a_scene_that_self_intersects` に改名し、
-//!    `if let Some(..) = first_difference(..) { panic! }` を
-//!    `assert!(first_difference(&pos_on, &pos_off).is_some(), ..)` に反転する
-//!    (`assert_ne!(pos_on, pos_off)` にはしないこと — 失敗時に 81 粒子 x 2 side の
-//!    `Debug` が 24 KB 出て message が埋まります、罠 `assert-eq-dumps-large-debug`)
-//! 3. companion の前提を `crossings_on > 0` から **`crossings_off > 0`** に変える
-//!    (自己接触を切れば依然として自己交差する = scene が判別に向いていることの確認)
-//!
-//! こうすれば companion は実装後も「自己接触が実際に効いている」の恒久 guard として残り、
-//! `# Before` に残した旧実測 (貫通 7 回 / ON と OFF が bit 一致) も記録として消えません
-//!
-//! # 実測 (2026-09-29、`Fix128` のみなので決定論、再実行で同値)
+//! ⚠️ 以下の表は **landing 前**の値です 現在の実装では `CRUMPLE_STEPS = 120` /
+//! 半径 0.05 で貫通は **0** になります (自己接触 OFF は 7 のまま)
 //!
 //! ⚠️ **盲点はパラメータ調整では消えません** 検出半径を閉形式の「交点-最近傍頂点
 //! `√(1/8) ≈ 0.3536`」より大きくしても貫通は残ります:
@@ -61,15 +57,10 @@
 //! | 貫通回数 (自己接触 ON) | 3 | **20** | **1** | 3 | 7 |
 //! | 貫通回数 (自己接触 OFF) | 3 | **13** | **1** | 3 | 7 |
 //!
-//! ⚠️⚠️ **`steps = 30` では companion が red になります** 上の表で on/off が割れるのは
-//! この 1 点だけで、そこでは**粒子-粒子の自己接触が実際に発動しています** (実測: 位置が
-//! bit 不一致になり `self_collision_toggle_changes_nothing_in_a_scene_that_self_intersects`
-//! が落ちる) つまり `30` は「非単調だから余裕にならない」以前に、**companion の主張自体が
-//! その step 数では偽**です 実行時間が 1/4 になるからと選んではいけません
-//!
-//! ⚠️ **`CRUMPLE_STEPS` を触る時に単調だと思わないでください** 最小は `steps = 60` の
-//! **1 回**で、companion の前提 `crossings_on > 0` が崩れる寸前です `steps = 30` は
-//! 貫通 20 回と数は多いですが、**非単調な曲線の 1 点なので「余裕が 3 倍」にはなりません**
+//! ⚠️ **`CRUMPLE_STEPS` を触る時に単調だと思わないでください** 現在 guard が要求するのは
+//! **自己接触 OFF 側**の貫通 (`crossings_off > 0`) で、上の表の OFF 行の最小は
+//! `steps = 60` の **1 回**です つまり 60 は前提が崩れる寸前で、`steps = 30` は貫通 13 回と
+//! 数は多いものの **非単調な曲線の 1 点なので「余裕が 13 倍」にはなりません**
 //! (mesher / solver が少し変われば 60 側に落ちます) **実行時間のためだけに動かさないこと**
 //!
 //! # 閉形式 (出所: 手計算、厳密有理数で検算済)
@@ -212,6 +203,8 @@ fn segment_pierces_triangle(
 /// 失敗 message が埋まり、どこが違うのかも読めません (罠 `assert-eq-dumps-large-debug`、
 /// `3f4a00e` が `tests/mesh_quality.rs` で一度潰した事象の再発)
 /// **反転して `assert_ne!` 相当になった後も、どこが動いたかを出すために要ります**
+/// (現在は `the_particle_pair_minimum_is_attained_by_two_pinned_vertices` の失敗時に、
+/// 境界でなくなった対の座標を出すのに使っています)
 fn first_difference(a: &[Vec3Fix], b: &[Vec3Fix]) -> Option<(usize, Vec3Fix, Vec3Fix)> {
     a.iter()
         .zip(b.iter())
@@ -481,7 +474,7 @@ fn ccd_coplanarity_cubic_is_constructed_exactly_and_its_root_is_bracketed() {
 }
 
 // ---------------------------------------------------------------------------
-// D. 自己交差する scene — 目標 oracle と companion の対
+// D. 自己交差する scene — 目標 oracle と、それが効いていることの guard
 // ---------------------------------------------------------------------------
 
 /// 9x9 の布の境界を中心へ縮めて座屈・crumple させる
@@ -558,108 +551,142 @@ fn run_crumple(
 const CRUMPLE_STEPS: usize = 120;
 
 /// `run_crumple` の既定の検出半径 (module doc の実測表の 0.05 の列)
+///
+/// ⚠️ **この値は「良い数字が出るから」ではなく、使用条件から選ばれています** 60 step
+/// 時点の mesh 辺長は `shrink(59, 60) = 1 − (7/8)(59/60) = 0.1396` で、0.05 はその
+/// **36%** = `src/cloth.rs` が doc に書いた「接触厚は局所辺長の半分未満」の内側です
+/// 72% (0.1) と 360% (0.5) が破綻することは
+/// `a_thickness_far_above_the_local_edge_length_is_outside_the_model` が測っています
 fn default_radius() -> Fix128 {
     Fix128::from_ratio(5, 100)
 }
 
 /// 分離の計測に使う step 数 — `CRUMPLE_STEPS` とは別に選んである
-///
-/// ⚠️ **速度でなく性質で選びました** 「ON と OFF で違反件数が一致する」は
-/// `steps = 30` では成立しません (74 対 76)  `60` と `120` では成立します
-/// (`74` 対 `74` / `82` 対 `82`) 小さい方を採って実行時間を抑えています
 const SEPARATION_STEPS: usize = 60;
 
-/// 分離の計測用の検出半径 (module doc の実測表と同じ 0.5)
-fn separation_radius() -> Fix128 {
-    Fix128::from_ratio(1, 2)
-}
-
-/// **目標 oracle** — 布は自分自身を通り抜けてはならない
+/// 点 `p` と三角形 `(a, b, c)` の最小距離² — **計測用の独立実装**
 ///
-/// ⚠️ 現在の solver では **red が正しい** 粒子-粒子の距離ばねは三角形の内部を
-/// 通る頂点を見られないので、crumple した布は自分を素通りする
-/// 頂点-面の自己接触が入ったら `#[ignore]` を外すこと
-#[test]
-#[ignore = "the red is correct: cloth.rs has only particle-particle self-collision, which \
-            cannot see a vertex passing through a triangle interior. When vertex-face \
-            self-collision lands, remove this attribute AND rewrite -- do NOT delete -- the \
-            companion `self_collision_toggle_changes_nothing_in_a_scene_that_self_intersects`: \
-            rename it to `..._changes_the_result_in_a_scene_that_self_intersects`, flip its \
-            `if let Some(..) = first_difference(..) { panic! }` into \
-            `assert!(first_difference(&pos_on, &pos_off).is_some(), ..)` -- NOT `assert_ne!`, \
-            which dumps 24 KB of `Debug` on failure -- and change its premise from \
-            `crossings_on > 0` to `crossings_off > 0`. Keep the present numbers (7 crossings, \
-            on/off bit-identical) in a `# Before` doc section. Leaving it unchanged is not an \
-            option: its assert becomes false, which would make CI permanently red"]
-fn a_crumpled_cloth_does_not_pass_through_itself() {
-    let (crossings, _) = run_crumple(true, CRUMPLE_STEPS, default_radius());
-    assert_eq!(
-        crossings, 0,
-        "自己交差する crumple scene で頂点が三角形を {crossings} 回貫いた"
-    );
-}
-
-/// **companion** — 自己交差する scene で、自己接触の on/off が結果を 1 bit も変えない
+/// `src/cloth.rs` の `closest_point_on_triangle` は Voronoi 領域を符号判定で **1 つ選ぶ**
+/// 形式ですが、こちらは **3 辺への clamp 投影 + 面内投影の 4 候補を全部計算して min を取る**
+/// 別形式です (頂点領域は辺の端点への clamp に含まれるので、7 領域が 4 候補で覆えます)
 ///
-/// ⚠️ **頂点-面の自己接触が入ると、この assert は成立しなくなります**
-/// (`pos_on == pos_off` も、前提の `crossings_on > 0` も偽になる)
-///
-/// **削除せず、書き換えてください**: 名前を
-/// `..._changes_the_result_in_a_scene_that_self_intersects` に変え、
-/// `if let Some(..) = first_difference(..) { panic! }` を
-/// `assert!(first_difference(..).is_some(), ..)` に反転し、前提を `crossings_off > 0` に
-/// する (`assert_ne!` は使わないこと、巨大な `Debug` ダンプが出ます) そうすれば実装後も
-/// 「自己接触が実際に効いている」の恒久 guard として残ります
-/// 旧実測 (貫通 7 回 / ON と OFF が bit 一致) は doc の `# Before` に残すこと
-/// 壁 2 の `graded_refinement_leaves_hanging_faces` と同じ decommission の形です
-#[test]
-fn self_collision_toggle_changes_nothing_in_a_scene_that_self_intersects() {
-    let (crossings_on, pos_on) = run_crumple(true, CRUMPLE_STEPS, default_radius());
-    let (_, pos_off) = run_crumple(false, CRUMPLE_STEPS, default_radius());
-
-    // この scene が判別に向いていることを先に確かめる (scene が自己交差しなければ
-    // bit 一致は当たり前で、何も言っていない — `feedback_oracle_scene_hits_verifier_limit`)
-    assert!(
-        crossings_on > 0,
-        "scene が自己交差していない この companion は判別に向かない scene では無意味"
-    );
-    if let Some((i, on, off)) = first_difference(&pos_on, &pos_off) {
-        panic!(
-            "自己接触の on/off で結果が変わった = 実装が入った \
-             ならば a_crumpled_cloth_does_not_pass_through_itself の #[ignore] を外すこと \
-             (最初に違う粒子 {i}: ON {} / OFF {})",
-            brief(on),
-            brief(off)
-        );
+/// ⚠️ **実装を呼ばないだけでは計器の正しさは担保されません** 独立実装は独立に誤りうるので、
+/// 閉形式が自明な 3 配置 (面 / 辺 / 頂点の各領域) との厳密一致を
+/// `the_point_triangle_metric_matches_the_closed_form` が固定します
+fn point_triangle_distance_squared(p: Vec3Fix, a: Vec3Fix, b: Vec3Fix, c: Vec3Fix) -> Fix128 {
+    fn segment_d2(p: Vec3Fix, a: Vec3Fix, b: Vec3Fix) -> Fix128 {
+        let ab = b - a;
+        let den = ab.length_squared();
+        if den.is_zero() {
+            return (p - a).length_squared();
+        }
+        let mut t = (p - a).dot(ab) / den;
+        if t < Fix128::ZERO {
+            t = Fix128::ZERO;
+        }
+        if t > Fix128::ONE {
+            t = Fix128::ONE;
+        }
+        (p - (a + ab * t)).length_squared()
     }
+
+    let mut best = segment_d2(p, a, b);
+    for d in [segment_d2(p, b, c), segment_d2(p, c, a)] {
+        if d < best {
+            best = d;
+        }
+    }
+
+    // 面内投影は重心座標が三角形の中に落ちた時だけ候補になる
+    let (e1, e2) = (b - a, c - a);
+    let (d11, d12, d22) = (e1.dot(e1), e1.dot(e2), e2.dot(e2));
+    let det = d11 * d22 - d12 * d12;
+    if !det.is_zero() {
+        let ap = p - a;
+        let (b1, b2) = (ap.dot(e1), ap.dot(e2));
+        let u = (b1 * d22 - b2 * d12) / det;
+        let v = (b2 * d11 - b1 * d12) / det;
+        if u >= Fix128::ZERO && v >= Fix128::ZERO && u + v <= Fix128::ONE {
+            let d = (p - (a + e1 * u + e2 * v)).length_squared();
+            if d < best {
+                best = d;
+            }
+        }
+    }
+    best
 }
 
-/// 非連結対 (辺で繋がっていない粒子対) の最小距離と、閾値を下回る対の数
+/// 計器の契約 test — 上の brute force が閉形式と厳密に一致する
 ///
-/// 辺集合は `triangles` から作る (`edge_constraints` は private なので同じものを再構成する)
-fn nonadjacent_separation(
+/// 三角形は section A と同じ `a = (0,0,0)`, `b = (1,0,0)`, `c = (0,0,1)` (XZ 平面)
+/// 3 領域それぞれで手計算した距離² を pin します (全て 2 進小数なので許容差なし)
+///
+/// | 領域 | 点 | 最近接点 | 距離² |
+/// |---|---|---|---|
+/// | 面 | `(1/4, 1/2, 1/4)` | `(1/4, 0, 1/4)` | `1/4` |
+/// | 辺 `bc` | `(1, 1/2, 1)` | `(1/2, 0, 1/2)` | `3/4` |
+/// | 頂点 `a` | `(-1/2, 1/2, -1/2)` | `(0, 0, 0)` | `3/4` |
+#[test]
+fn the_point_triangle_metric_matches_the_closed_form() {
+    let a = Vec3Fix::from_int(0, 0, 0);
+    let b = Vec3Fix::from_int(1, 0, 0);
+    let c = Vec3Fix::from_int(0, 0, 1);
+    let h = Fix128::from_ratio(1, 2);
+    let q = Fix128::from_ratio(1, 4);
+
+    // 面領域: 垂線の足が三角形の中 (u = v = 1/4、u + v = 1/2 < 1)
+    assert_eq!(
+        point_triangle_distance_squared(Vec3Fix::new(q, h, q), a, b, c),
+        Fix128::from_ratio(1, 4),
+        "oracle: 面への垂線 1/2 なので距離² = 1/4"
+    );
+
+    // 辺 bc 領域: 平面への投影 (1, 0, 1) は u + v = 2 > 1 で三角形の外
+    assert_eq!(
+        point_triangle_distance_squared(Vec3Fix::new(Fix128::ONE, h, Fix128::ONE), a, b, c),
+        Fix128::from_ratio(3, 4),
+        "oracle: 斜辺の中点 (1/2, 0, 1/2) までの距離² = (1/2)² x 3 = 3/4"
+    );
+
+    // 頂点 a 領域: ab·ap = ac·ap = -1/2 < 0
+    let neg_h = Fix128::ZERO - h;
+    assert_eq!(
+        point_triangle_distance_squared(Vec3Fix::new(neg_h, h, neg_h), a, b, c),
+        Fix128::from_ratio(3, 4),
+        "oracle: 頂点 a までの距離² = (1/2)² x 3 = 3/4"
+    );
+
+    // 負の control: 三角形の上に載った点は距離 0 (4 候補の min が 0 に潰れる)
+    assert_eq!(
+        point_triangle_distance_squared(Vec3Fix::new(q, Fix128::ZERO, q), a, b, c),
+        Fix128::ZERO,
+        "面上の点の距離² は 0"
+    );
+}
+
+/// 非接続な (頂点, 三角形) 対の最小距離² と、閾値を下回る対の数
+///
+/// **これが `src/cloth.rs` の自己接触が実際に拘束している量です** 頂点-頂点の距離
+/// (`nonadjacent_separation`) ではありません
+fn vertex_face_separation(
     positions: &[Vec3Fix],
     triangles: &[[usize; 3]],
     threshold: Fix128,
 ) -> (Fix128, usize) {
-    let mut edges: Vec<(usize, usize)> = Vec::new();
-    for t in triangles {
-        for (a, b) in [(t[0], t[1]), (t[1], t[2]), (t[2], t[0])] {
-            edges.push((a.min(b), a.max(b)));
-        }
-    }
-    edges.sort_unstable();
-    edges.dedup();
-
+    let t2 = threshold * threshold;
     let mut min_d2 = Fix128::from_int(1 << 20);
     let mut violations = 0usize;
-    let t2 = threshold * threshold;
-    for i in 0..positions.len() {
-        for j in (i + 1)..positions.len() {
-            if edges.binary_search(&(i, j)).is_ok() {
+    for tri in triangles {
+        for (i, p) in positions.iter().enumerate() {
+            if shares_vertex(i, *tri) {
                 continue;
             }
-            let d2 = (positions[j] - positions[i]).length_squared();
+            let d2 = point_triangle_distance_squared(
+                *p,
+                positions[tri[0]],
+                positions[tri[1]],
+                positions[tri[2]],
+            );
             if d2 < min_d2 {
                 min_d2 = d2;
             }
@@ -671,35 +698,125 @@ fn nonadjacent_separation(
     (min_d2, violations)
 }
 
-/// **現状の characterisation** — 自己接触は粒子を動かすが、分離は 1 ミリも改善しない
+/// **目標 oracle** — 布は自分自身を通り抜けてはならない
 ///
-/// ⚠️ **これは欠陥が続くことを assert する test です** 粒子-粒子の分離投影が直った
-/// 瞬間に **red になるのが正しい挙動**で、その時は削除せず不等号に書き換えてください
-/// (`min_d2_on > min_d2_off` と `violations_on < violations_off`)  旧実測は
-/// `# Before` に残すこと `#[ignore]` にしていないのは、現状では green だからです
+/// 2026-10-01 に `src/cloth.rs` へ頂点-面の自己接触が入って green になりました
+/// (substep 内の近接斥力 + frame 単位の掃過線分復元、どちらも Jacobi 蓄積)
 ///
-/// # 測っていること
+/// # Before (2026-09-29、粒子-粒子の距離ばねだけだった頃)
 ///
-/// 9x9 の布を 1/8 まで圧縮した状態で、`self_collision_distance = 0.5` に対し:
-///
-/// - `self_collision` の on/off で**最終位置は bit 不一致** = 投影は実行されている
-/// - それなのに **非連結対の最小距離も、閾値を下回る対の数も on/off で完全に同一**
-/// - しかも最小距離は閾値を大きく下回る (0.1974 vs 0.5)
-///
-/// ⚠️ 最後の点は **assert にしていません** `viol_on == viol_off > 0` が成り立つ時点で
-/// 「ON 側に閾値未満の対が在る」= 最小距離が閾値未満、は必ず従うので、assert にしても
-/// 前の assert が通る限り落ちない死んだ判定になります (破壊試験で歯が無いことを確認済)
-///
-/// つまり `solve_self_collision` は「動かしてはいるが、目的の量を一切改善していない」
-/// `src/cloth.rs` の doc はかつて "Particles closer than `self_collision_distance`
-/// are pushed apart" と書いていましたが、それはこの scene では偽です
-///
-/// 真因は未特定です (投影は反復 loop 内に 8 回/substep 置かれているので単発 pass では
-/// ない) 頂点-面の自己接触を Jacobi 型で入れる時に同じ場所を作り替えるので、
-/// 修正はそちらに畳んであります
+/// 同じ scene で **貫通 7 回** 粒子どうしの距離だけを見る判定は三角形の内部を通り抜ける
+/// 頂点を原理的に見られないので、検出半径を閉形式の「交点-最近傍頂点 `√(1/8) ≈ 0.3536`」
+/// より大きくしても貫通が残り、半径に対して単調ですらありませんでした
+/// (`0.05 → 7` / `0.25 → 5` / `0.5 → 4` / `1.0 → 5`)
+/// この構造的事実自体は `particle_distance_spring_cannot_see_the_closed_form_crossing`
+/// が閉形式で pin し続けています
 #[test]
-fn self_collision_moves_particles_without_improving_their_separation() {
-    let radius = separation_radius();
+fn a_crumpled_cloth_does_not_pass_through_itself() {
+    let (crossings, _) = run_crumple(true, CRUMPLE_STEPS, default_radius());
+    assert_eq!(
+        crossings, 0,
+        "自己交差する crumple scene で頂点が三角形を {crossings} 回貫いた"
+    );
+}
+
+/// **guard** — 自己交差する scene で、自己接触の on/off が結果を変える
+///
+/// 目標 oracle が green になったことを「自己接触が実際に効いている」の証拠にするには、
+/// **切ったら壊れる**ことを別に測る必要があります (切っても同じなら、green は scene が
+/// 自己交差しないことの言い換えでしかない)
+///
+/// # Before (2026-09-29)
+///
+/// 旧名は `self_collision_toggle_changes_nothing_in_a_scene_that_self_intersects` で、
+/// 主張は正反対でした: `pos_on` と `pos_off` が **bit 一致** し、前提は `crossings_on > 0`
+/// (貫通 7 回) 粒子-粒子の距離ばねはこの scene で一度も発火しなかったからです
+/// 実装が入って `pos_on == pos_off` も `crossings_on > 0` も偽になったので、doc の指定
+/// どおり改名 + assert 反転 + 前提を `crossings_off > 0` に差し替えました
+///
+/// ⚠️ **`assert_ne!(pos_on, pos_off)` にはしないこと** 失敗時に 81 粒子 x 2 side の
+/// `Debug` が 24 KB 出て message が埋まります (罠 `assert-eq-dumps-large-debug`)
+#[test]
+fn self_collision_toggle_changes_the_result_in_a_scene_that_self_intersects() {
+    let (_, pos_on) = run_crumple(true, CRUMPLE_STEPS, default_radius());
+    let (crossings_off, pos_off) = run_crumple(false, CRUMPLE_STEPS, default_radius());
+
+    // この scene が判別に向いていることを先に確かめる (自己接触を切っても自己交差しない
+    // scene では、on/off が違うことを示しても何も言っていない)
+    assert!(
+        crossings_off > 0,
+        "自己接触を切っても scene が自己交差しない この guard は判別に向かない scene では無意味"
+    );
+    assert!(
+        first_difference(&pos_on, &pos_off).is_some(),
+        "自己接触の on/off で位置が 1 bit も変わらない = 投影が発火していない \
+         目標 oracle の green は scene が自己交差しないことの言い換えになっている"
+    );
+}
+
+/// **guard** — 自己接触は、自分が拘束している量 (頂点-面距離) を実際に改善する
+///
+/// # 何を測っているか、なぜ量を変えたか
+///
+/// `src/cloth.rs` が拘束しているのは **非接続な (頂点, 三角形) 対の距離**です
+/// この test は `SEPARATION_STEPS = 60` 時点で、自己接触の on/off で
+/// **最小の頂点-面距離²** が改善することを assert します
+///
+/// ⚠️ **違反件数 (`threshold` 未満の対の数) は assert しません** 実測で半径に対して
+/// 単調でないからです (60 step、ON / OFF):
+///
+/// | 半径 | 0.02 | 0.03 | 0.04 | 0.05 | 0.06 | 0.08 |
+/// |---|---|---|---|---|---|---|
+/// | 違反件数 ON | 0 | **6** | 3 | 3 | 2 | 43 |
+/// | 違反件数 OFF | 1 | **2** | 3 | 4 | 5 | 11 |
+/// | 最小距離² ON | 5.82e-4 | 1.57e-4 | 1.13e-3 | 8.64e-4 | 3.05e-3 | 1.26e-4 |
+/// | 最小距離² OFF | 6.08e-5 | 6.08e-5 | 6.08e-5 | 6.08e-5 | 6.08e-5 | 6.08e-5 |
+///
+/// **件数は 0.03 で逆転し 0.04 で同点**になるので、`viol_on < viol_off` を assert すると
+/// 「差が出る半径を選んだ」だけになります (`3 < 4` は margin 1 で、些細な変更で反転する)
+/// 一方 **最小距離² は 6 半径すべてで ON が上**で、採用点の 0.05 では **14 倍**あります
+/// だから主張の本体は最小距離² 側が持ち、件数は doc の記録に留めます
+///
+/// # Before (2026-09-29、旧名 `self_collision_moves_particles_without_improving_their_separation`)
+///
+/// 旧 test は **半径 0.5** で **頂点-頂点** (非連結粒子対) の最小距離を比べ、
+/// 「投影は発火するが分離は 1 ミリも改善しない」(`min_on == min_off = 0.197401`、
+/// `viol_on == viol_off = 74`) を assert していました 実装後も **その等値は成立します**
+/// が、それは欠陥が残っているからではありません:
+///
+/// 1. ⚠️ **旧計器は solver でなく test 自身の driver を測っていました** 最小値を取る対は
+///    4 run すべて `(7, 17)` = **両方とも pin された境界粒子**で、`run_crumple` が毎 step
+///    `positions[i].x/.z` を代入している座標です `0.038967 = (0.1396·√2)²` は
+///    `shrink(59, 60)` から決まる定数で、solver が何をしても動きません
+///    この事実は `the_particle_pair_minimum_is_attained_by_two_pinned_vertices` が
+///    引き続き assert します (旧数値はそこで生き続けます)
+/// 2. ⚠️ **旧 radius 0.5 は破綻域でした** 60 step 時点の辺長 0.1396 の **360%** で、
+///    「全ての非接続対を 0.5 離す」は 8x8 の材料を 1x1 の枠に収めた状態では幾何的に
+///    充足できません 実測でも自己接触を入れると貫通が 1 → 651 に増えます
+///    (`a_thickness_far_above_the_local_edge_length_is_outside_the_model`)
+///
+/// # ⚠️ この test を消すと近接斥力段が無防備になる (2026-10-01 破壊試験で実測)
+///
+/// `src/cloth.rs` の自己接触は **2 段**です (substep 内の近接斥力 + frame 単位の掃過線分
+/// 復元) 変異を 1 つずつ入れて測った結果:
+///
+/// | 変異 | `a_crumpled_cloth_does_not_pass_through_itself` | 本 test |
+/// |---|---|---|
+/// | frame 単位の CCD 復元段を落とす | **red** | red |
+/// | **近接斥力段を落とす** | **green のまま** | **red** |
+///
+/// ⚠️ **CCD 段だけで貫通 0 には到達します** つまり目標 oracle は近接斥力段を守っていません
+/// **近接斥力段の歯は本 test だけ**です 第 3 の pin を頂点-頂点から頂点-面に測り直さなければ、
+/// 近接斥力段はどの test からも守られていない状態になっていました
+/// **「目標 oracle があるから冗長」と判断して消さないこと**
+///
+/// つまり本 test は **(a) 測る量** (頂点-頂点 → 頂点-面) と **(b) scene の半径**
+/// (0.5 → 0.05) の **2 つ**を変えています どちらも旧 test の前提が実測で偽だったことが
+/// 理由で、良い数字の出る条件へ逃げたのではありません 旧条件の数値と、それが何を
+/// 測っていたのかは上の 2 点として残してあります
+#[test]
+fn self_collision_improves_the_vertex_face_separation_it_constrains() {
+    let radius = default_radius();
     let (_, pos_on) = run_crumple(true, SEPARATION_STEPS, radius);
     let (_, pos_off) = run_crumple(false, SEPARATION_STEPS, radius);
 
@@ -712,28 +829,152 @@ fn self_collision_moves_particles_without_improving_their_separation() {
         9,
         Fix128::from_ratio(1, 100),
     );
-    let (min_on, viol_on) = nonadjacent_separation(&pos_on, &cloth.triangles, radius);
-    let (min_off, viol_off) = nonadjacent_separation(&pos_off, &cloth.triangles, radius);
+    let (min_on, viol_on) = vertex_face_separation(&pos_on, &cloth.triangles, radius);
+    let (min_off, viol_off) = vertex_face_separation(&pos_off, &cloth.triangles, radius);
 
-    // 反 vacuous: 違反が 1 件も無ければ「一致」は当たり前で何も言っていない
+    // 反 vacuous: 自己接触を切った側に違反が 1 件も無ければ、改善も何も言っていない
     assert!(
         viol_off > 0,
-        "scene に閾値違反が無い この characterisation は違反の起きない scene では無意味"
+        "自己接触 OFF でも閾値未満の頂点-面対が無い この guard は違反の起きない scene では無意味"
     );
-    // 投影は実行されている (切れば結果が変わる)
+    // 主張の本体: 最小の頂点-面距離² が 4 倍以上に開く (実測 14 倍、ON {min_on} / OFF {min_off})
     assert!(
-        first_difference(&pos_on, &pos_off).is_some(),
-        "自己接触の on/off で位置が変わらない = 投影が発火していない"
+        min_on > min_off * Fix128::from_int(4),
+        "自己接触が最小の頂点-面距離² を 4 倍に開いていない (ON {} / OFF {}、違反件数 {viol_on} / {viol_off})",
+        min_on.to_f32(),
+        min_off.to_f32()
     );
-    // それでも分離は 1 ミリも改善していない
+}
+
+/// **旧計器が何を測っていたかの pin** — 頂点-頂点の最小距離は pin された境界対が取る
+///
+/// 旧 test `self_collision_moves_particles_without_improving_their_separation` が
+/// 実装前も実装後も green だった理由です 最小値を取る対は `(7, 17)` =
+/// grid の `(row 0, col 7)` と `(row 1, col 8)` で、三角形分割で辺にならない側の対角
+/// なので「非連結」に残りますが、**両方とも `inv_mass = 0` の境界粒子**で、
+/// `run_crumple` が毎 step 座標を代入しています
+///
+/// ⚠️ **極値を assert する test は「極値を取る要素が実験条件で動くか」を別に確かめること**
+/// 件数の反 vacuous check (`viol_off > 0`) を通しても、argmin が入力側に固定されていれば
+/// 等値 assert は恒久に green です 自由度が固定された要素 (pin / 境界条件 / kinematic
+/// driver) は solver の**出力ではなく入力**なので、効果を測る母集団に混ぜてはいけません
+///
+/// 旧実測 (2026-09-29、半径 0.5): `min_d2 = 0.038967` (= `0.197401²`)、違反 74 件、
+/// 自己接触の on/off で両方とも完全一致
+#[test]
+fn the_particle_pair_minimum_is_attained_by_two_pinned_vertices() {
+    let radius = default_radius();
+    let (_, pos_on) = run_crumple(true, SEPARATION_STEPS, radius);
+    let (_, pos_off) = run_crumple(false, SEPARATION_STEPS, radius);
+
+    let cloth = Cloth::new_grid(
+        Vec3Fix::ZERO,
+        Fix128::from_int(8),
+        Fix128::from_int(8),
+        9,
+        9,
+        Fix128::from_ratio(1, 100),
+    );
+    let (min_on, _, pair_on) = nonadjacent_separation(&pos_on, &cloth.triangles, radius);
+    let (min_off, _, pair_off) = nonadjacent_separation(&pos_off, &cloth.triangles, radius);
+
+    const RES: usize = 9;
+    let is_boundary = |i: usize| {
+        let (r, c) = (i / RES, i % RES);
+        r == 0 || c == 0 || r == RES - 1 || c == RES - 1
+    };
+
+    for (pair, pos, side) in [(pair_on, &pos_on, "ON"), (pair_off, &pos_off, "OFF")] {
+        assert!(
+            is_boundary(pair.0) && is_boundary(pair.1),
+            "{side}: 頂点-頂点の最小対 {pair:?} が境界対でなくなった ({} / {}) \
+             solver が動かせる対が最小を取るようになったなら、旧計器を復活させてよい",
+            brief(pos[pair.0]),
+            brief(pos[pair.1])
+        );
+    }
+    assert_eq!(
+        pair_on, pair_off,
+        "on/off で最小対が違う = 最小対が driver 由来でなくなった"
+    );
     assert_eq!(
         min_on, min_off,
-        "最小距離が改善した = 欠陥が直った この test を不等号に書き換えること"
+        "pin された対どうしの距離が on/off で違う = driver の外の何かが境界を動かしている"
     );
-    assert_eq!(
-        viol_on, viol_off,
-        "違反件数が改善した = 欠陥が直った この test を不等号に書き換えること"
+}
+
+/// **使用条件の pin** — 接触厚が局所辺長を大きく超えると、保証そのものが成り立たない
+///
+/// `SEPARATION_STEPS = 60` 時点の mesh 辺長は `shrink(59, 60) = 0.1396` です
+/// 半径 0.5 はその **360%** で、「全ての非接続 (頂点, 三角形) 対を 0.5 離す」は
+/// 8x8 の材料を 1x1 の枠に収めた状態では幾何的に充足できません 充足不能な拘束集合を
+/// 投影し続けると補正どうしが打ち消し合って粒子が飛び、**自己接触を入れた方が貫通が増えます**
+///
+/// ⚠️ **「厚くすれば安全」は逆です** これは `src/cloth.rs` の doc が書いている使用条件
+/// (接触厚は局所辺長の半分未満) を実測で pin する test で、`ClothConfig` に実行時の
+/// guard を入れるかは別判断として Backlog にあります
+///
+/// ⚠️ **これは欠陥が続くことを assert する test です** rigid impact zone 等で破綻域まで
+/// 扱えるようになったら **red になるのが正しい挙動**で、その時は削除せず不等号を逆に
+/// 書き換えてください 旧実測 (ON 651 / OFF 1) は `# Before` として残すこと
+#[test]
+fn a_thickness_far_above_the_local_edge_length_is_outside_the_model() {
+    let out_of_range = Fix128::from_ratio(1, 2);
+    let (crossings_on, _) = run_crumple(true, SEPARATION_STEPS, out_of_range);
+    let (crossings_off, _) = run_crumple(false, SEPARATION_STEPS, out_of_range);
+
+    // 反 vacuous: OFF 側で自己交差が起きない scene なら「増えた」は何も言っていない
+    assert!(
+        crossings_off > 0,
+        "自己接触 OFF でこの scene が自己交差しない 破綻域の比較にならない"
     );
+    assert!(
+        crossings_on > crossings_off,
+        "厚 0.5 (辺長の 360%) が破綻域でなくなった (ON {crossings_on} / OFF {crossings_off}) \
+         破綻域を扱えるようになったなら不等号を逆に書き換えること"
+    );
+}
+
+/// 非連結対 (辺で繋がっていない粒子対) の最小距離²、閾値未満の対の数、**最小を取る対**
+///
+/// 辺集合は `triangles` から作る (`edge_constraints` は private なので同じものを再構成する)
+///
+/// ⚠️ 最小を取る対を返すのが本体です 値だけ返していた頃、その対が pin された境界粒子で
+/// 固定であることが 2 週間見えませんでした
+fn nonadjacent_separation(
+    positions: &[Vec3Fix],
+    triangles: &[[usize; 3]],
+    threshold: Fix128,
+) -> (Fix128, usize, (usize, usize)) {
+    let mut edges: Vec<(usize, usize)> = Vec::new();
+    for t in triangles {
+        for (a, b) in [(t[0], t[1]), (t[1], t[2]), (t[2], t[0])] {
+            edges.push((a.min(b), a.max(b)));
+        }
+    }
+    edges.sort_unstable();
+    edges.dedup();
+
+    let mut min_d2 = Fix128::from_int(1 << 20);
+    let mut argmin = (usize::MAX, usize::MAX);
+    let mut violations = 0usize;
+    let t2 = threshold * threshold;
+    for i in 0..positions.len() {
+        for j in (i + 1)..positions.len() {
+            if edges.binary_search(&(i, j)).is_ok() {
+                continue;
+            }
+            let d2 = (positions[j] - positions[i]).length_squared();
+            if d2 < min_d2 {
+                min_d2 = d2;
+                argmin = (i, j);
+            }
+            if d2 < t2 {
+                violations += 1;
+            }
+        }
+    }
+    (min_d2, violations, argmin)
 }
 
 // ---------------------------------------------------------------------------

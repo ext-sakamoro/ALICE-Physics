@@ -1414,6 +1414,7 @@ pub fn alice_physics::cloth::Cloth::new_grid(alice_physics::math::Vec3Fix, alice
 pub fn alice_physics::cloth::Cloth::particle_count(&self) -> usize
 pub fn alice_physics::cloth::Cloth::pin(&mut self, usize)
 pub fn alice_physics::cloth::Cloth::pin_top_row(&mut self, usize)
+pub fn alice_physics::cloth::Cloth::remaining_self_contact_crossings(&self, &[alice_physics::math::Vec3Fix]) -> usize
 pub fn alice_physics::cloth::Cloth::step(&mut self, alice_physics::math::Fix128)
 pub fn alice_physics::cloth::Cloth::step_with_sdf(&mut self, alice_physics::math::Fix128, &[alice_physics::sdf_collider::SdfCollider])
 impl core::fmt::Debug for alice_physics::cloth::Cloth
@@ -7833,6 +7834,7 @@ pub fn alice_physics::cloth::Cloth::new_grid(alice_physics::math::Vec3Fix, alice
 pub fn alice_physics::cloth::Cloth::particle_count(&self) -> usize
 pub fn alice_physics::cloth::Cloth::pin(&mut self, usize)
 pub fn alice_physics::cloth::Cloth::pin_top_row(&mut self, usize)
+pub fn alice_physics::cloth::Cloth::remaining_self_contact_crossings(&self, &[alice_physics::math::Vec3Fix]) -> usize
 pub fn alice_physics::cloth::Cloth::step(&mut self, alice_physics::math::Fix128)
 pub fn alice_physics::cloth::Cloth::step_with_sdf(&mut self, alice_physics::math::Fix128, &[alice_physics::sdf_collider::SdfCollider])
 impl core::fmt::Debug for alice_physics::cloth::Cloth
@@ -16262,6 +16264,7 @@ pub fn alice_physics::cloth::Cloth::new_grid(alice_physics::math::Vec3Fix, alice
 pub fn alice_physics::cloth::Cloth::particle_count(&self) -> usize
 pub fn alice_physics::cloth::Cloth::pin(&mut self, usize)
 pub fn alice_physics::cloth::Cloth::pin_top_row(&mut self, usize)
+pub fn alice_physics::cloth::Cloth::remaining_self_contact_crossings(&self, &[alice_physics::math::Vec3Fix]) -> usize
 pub fn alice_physics::cloth::Cloth::step(&mut self, alice_physics::math::Fix128)
 pub fn alice_physics::cloth::Cloth::step_with_sdf(&mut self, alice_physics::math::Fix128, &[alice_physics::sdf_collider::SdfCollider])
 impl core::fmt::Debug for alice_physics::cloth::Cloth
