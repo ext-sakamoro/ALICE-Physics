@@ -2368,6 +2368,33 @@ impl core::marker::UnsafeUnpin for alice_physics::creep_longterm::FindleyParamet
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::creep_longterm::FindleyParameters
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::creep_longterm::FindleyParameters
 pub fn alice_physics::creep_longterm::predict_strain(&alice_physics::creep_longterm::FindleyParameters, &alice_physics::filament_db::MaterialProperties, alice_physics::math::Fix128, alice_physics::math::Fix128) -> alice_physics::math::Fix128
+pub mod alice_physics::cubic_elastic_fem
+pub struct alice_physics::cubic_elastic_fem::CubicMesh
+impl alice_physics::cubic_elastic_fem::CubicMesh
+pub const fn alice_physics::cubic_elastic_fem::CubicMesh::corner_count(&self) -> usize
+pub fn alice_physics::cubic_elastic_fem::CubicMesh::edge_node_count(&self) -> usize
+pub fn alice_physics::cubic_elastic_fem::CubicMesh::edge_nodes(&self, u32, u32) -> core::option::Option<(u32, u32)>
+pub fn alice_physics::cubic_elastic_fem::CubicMesh::element_count(&self) -> usize
+pub fn alice_physics::cubic_elastic_fem::CubicMesh::element_nodes(&self, usize) -> core::option::Option<[u32; 20]>
+pub fn alice_physics::cubic_elastic_fem::CubicMesh::face_node(&self, u32, u32, u32) -> core::option::Option<u32>
+pub fn alice_physics::cubic_elastic_fem::CubicMesh::face_node_count(&self) -> usize
+pub fn alice_physics::cubic_elastic_fem::CubicMesh::from_tet_mesh(&alice_physics::sdf_fem_mesh::SdfTetMesh) -> core::result::Result<Self, alice_physics::linear_elastic_fem::FemError>
+pub const fn alice_physics::cubic_elastic_fem::CubicMesh::interior_node_positions_are_exact(&self) -> bool
+pub fn alice_physics::cubic_elastic_fem::CubicMesh::node_count(&self) -> usize
+pub fn alice_physics::cubic_elastic_fem::CubicMesh::node_position(&self, u32) -> core::option::Option<[alice_physics::math::Fix128; 3]>
+impl core::clone::Clone for alice_physics::cubic_elastic_fem::CubicMesh
+pub fn alice_physics::cubic_elastic_fem::CubicMesh::clone(&self) -> Self
+impl core::fmt::Debug for alice_physics::cubic_elastic_fem::CubicMesh
+pub fn alice_physics::cubic_elastic_fem::CubicMesh::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for alice_physics::cubic_elastic_fem::CubicMesh
+impl core::marker::Send for alice_physics::cubic_elastic_fem::CubicMesh
+impl core::marker::Sync for alice_physics::cubic_elastic_fem::CubicMesh
+impl core::marker::Unpin for alice_physics::cubic_elastic_fem::CubicMesh
+impl core::marker::UnsafeUnpin for alice_physics::cubic_elastic_fem::CubicMesh
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::cubic_elastic_fem::CubicMesh
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::cubic_elastic_fem::CubicMesh
+pub fn alice_physics::cubic_elastic_fem::shape_values(&[alice_physics::math::Fix128; 4]) -> [alice_physics::math::Fix128; 20]
+pub fn alice_physics::cubic_elastic_fem::solve_cubic(&alice_physics::cubic_elastic_fem::CubicMesh, &alice_physics::linear_elastic_fem::ElasticMaterial, &alice_physics::linear_elastic_fem::BoundaryConditions, &alice_physics::linear_elastic_fem::SolverConfig) -> core::result::Result<alice_physics::linear_elastic_fem::FemSolution, alice_physics::linear_elastic_fem::FemError>
 pub mod alice_physics::cylinder
 pub struct alice_physics::cylinder::Cylinder
 pub alice_physics::cylinder::Cylinder::center: alice_physics::math::Vec3Fix
