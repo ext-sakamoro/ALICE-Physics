@@ -2329,3 +2329,128 @@ fn the_reattachment_length_is_pinned_at_the_resolution_ci_can_afford() {
         m.worst_flux_imbalance
     );
 }
+
+// ===========================================================================
+// Diagnostic — x_1(t) for one resolution and one advection scheme
+// ===========================================================================
+
+/// Prints the lower-wall reattachment length `x_1` and the upper-wall bubble
+/// against time, so a convergence time can be read off instead of guessed.
+///
+/// It exists because the question "does `x_1` converge to Gartling's 6.10 with
+/// refinement" needs the **settled** value of each resolution, and a settled
+/// value is only known once the trace has stopped moving. Settings come from
+/// the environment, so one binary serves every resolution and scheme:
+///
+/// | variable | meaning | default |
+/// |---|---|---|
+/// | `ARM_NY` | cells across the channel (even) | `8` |
+/// | `ARM_SCHEME` | `sl` (semi-Lagrangian), `mc` (MacCormack), `bfecc` | `sl` |
+/// | `ARM_DT_RECIP` | `dt = 1 / ARM_DT_RECIP` | `32` |
+/// | `ARM_T_END` | physical end time | `16` |
+/// | `ARM_LOG_EVERY` | steps between lines | `64` |
+///
+/// The defaults run in seconds, because the `ignored-tests` job runs every
+/// `#[ignore]`d test; the long runs below are made by setting the variables:
+///
+/// ```text
+/// ARM_NY=32 ARM_SCHEME=mc ARM_DT_RECIP=64 ARM_T_END=512 ARM_LOG_EVERY=2048 \
+///   cargo test --release --test armaly_backward_step -- --ignored --nocapture x_1_time_trace
+/// ```
+///
+/// Keep the Courant number fixed when comparing resolutions: the longest
+/// inflow speed is 1.5, so `dt = 1/32` at `ny = 16` and `dt = 1/64` at
+/// `ny = 32` are both 0.75.
+///
+/// # Measured, 2026-10-01 (release, `step` projects with multigrid, Re = 800)
+///
+/// `x_1` after it stopped moving (the increment per 32 time units is below
+/// `1e-3`), against Gartling's 6.10:
+///
+/// | `ny` | semi-Lagrangian | MacCormack |
+/// |---|---|---|
+/// | 8 | 4.3921 | 7.2459 |
+/// | 16 | 4.7238 | 6.28472 (t = 1024) |
+/// | 32 | 5.31873 (t = 512) | 5.9288 (t = 512, limit about 5.929) |
+///
+/// MacCormack crosses 6.10 between `ny = 16` (+3 %) and `ny = 32` (−2.8 %); its
+/// increments shrink by 0.37 per refinement, which extrapolates to about 5.72.
+/// Semi-Lagrangian is still far from asymptotic (the increments grow,
+/// +0.33 then +0.59). Upper-wall bubble at `ny = 32` against the reference
+/// 4.85 .. 10.48 (length 5.63): MacCormack 4.72 .. 9.99 (5.27), semi-Lagrangian
+/// 4.41 .. 7.70 (3.29). Cost at `ny = 32`: 68 ms per step for the default
+/// projection and for Gauss-Seidel alike, so a 32768-step run is 38 minutes
+/// (semi-Lagrangian) or 93 minutes (MacCormack).
+#[test]
+#[ignore = "diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM_T_END / ARM_LOG_EVERY (the defaults take seconds)"]
+fn x_1_time_trace() {
+    use alice_physics::cfd_solver::AdvectionScheme;
+
+    let setting =
+        |key: &str, default: &str| std::env::var(key).unwrap_or_else(|_| default.to_string());
+    let ny: usize = setting("ARM_NY", "8")
+        .parse()
+        .expect("ARM_NY must be an integer");
+    let dt_recip: i64 = setting("ARM_DT_RECIP", "32")
+        .parse()
+        .expect("ARM_DT_RECIP must be an integer");
+    let t_end: f64 = setting("ARM_T_END", "16")
+        .parse()
+        .expect("ARM_T_END must be a number");
+    let log_every: u32 = setting("ARM_LOG_EVERY", "64")
+        .parse()
+        .expect("ARM_LOG_EVERY must be an integer");
+    let scheme_name = setting("ARM_SCHEME", "sl");
+    let scheme = match scheme_name.as_str() {
+        "sl" => AdvectionScheme::SemiLagrangian,
+        "mc" => AdvectionScheme::MacCormack,
+        "bfecc" => AdvectionScheme::Bfecc,
+        other => panic!("ARM_SCHEME must be sl, mc or bfecc, not {other:?}"),
+    };
+    assert!(
+        ny >= 4 && ny % 2 == 0,
+        "ARM_NY must be an even number of at least 4, got {ny}"
+    );
+    assert!(
+        dt_recip > 0 && log_every > 0 && t_end > 0.0,
+        "ARM_DT_RECIP, ARM_LOG_EVERY and ARM_T_END must be positive"
+    );
+
+    let length = 16.0f64;
+    let s_cells = ny / 2;
+    let dx = 1.0 / ny as f64;
+    let nx = (length / dx).round() as usize;
+    let dt = Fix128::from_ratio(1, dt_recip);
+    let steps = (t_end * dt_recip as f64) as u32;
+
+    let mut solver = backward_facing_step(s_cells, nx, 800);
+    solver.advection_scheme = scheme;
+    println!("[x_1 trace] ny={ny} nx={nx} scheme={scheme_name} dt=1/{dt_recip} steps={steps}");
+    let start = std::time::Instant::now();
+    let mut last = None;
+    for n in 1..=steps {
+        solver.step(dt);
+        if n % log_every == 0 || n == steps {
+            let t = n as f64 / dt_recip as f64;
+            let x_1 = reattachment_x(&bottom_row(&solver.grid), dx);
+            let upper: Vec<f64> = (0..=nx)
+                .map(|i| solver.grid.u(i, 2 * s_cells - 1, 0).to_f64())
+                .collect();
+            let separation = (1..=nx).find(|&i| upper[i] < 0.0).map(|i| i as f64 * dx);
+            let reattachment = reattachment_x(&upper, dx);
+            println!(
+                "[x_1 trace] ny={ny} {scheme_name} t={t:7.1} x_1={x_1:?} upper={separation:?}..{reattachment:?} \
+                 max|div|={:.2e} elapsed={:.0}s",
+                max_abs_divergence(&solver.grid),
+                start.elapsed().as_secs_f64()
+            );
+            last = x_1;
+        }
+    }
+    // A trace that never found the reattachment says nothing; fail loudly so a
+    // run that is too short for its resolution is not read as a result.
+    assert!(
+        last.is_some() || t_end < 16.0,
+        "no reattachment was found by t = {t_end}: the run is too short for ny = {ny}"
+    );
+}
