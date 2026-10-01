@@ -21,6 +21,21 @@
 //! | (無し) | `a_thickness_far_above_the_local_edge_length_is_outside_the_model` | 使用条件 (厚 < 局所辺長の半分) を pin |
 //! | (無し) | `the_point_triangle_metric_matches_the_closed_form` | 新計器 (独立実装) 自身の契約 test |
 //!
+//! **2026-10-01 に辺-辺の自己接触も landing しました** (`src/cloth.rs`:
+//! `closest_points_on_segments` + `accumulate_edge_edge_contacts`、頂点-面と**同じ**
+//! `Δ`/`hits` buffer に蓄積) 追加した 3 本:
+//!
+//! | test | 役割 |
+//! |---|---|
+//! | `the_segment_segment_metric_matches_the_closed_form` | 線分-線分距離の独立実装の契約 test (5 配置、平行と距離 0 を含む) |
+//! | `the_vertex_face_metric_cannot_see_the_closed_form_edge_edge_crossing` | ⚠️ **構造的事実**: X 字交差では頂点-面の最小距離² が `65/64` で閾値の外、辺-辺は `1/64` で内側 (閉形式なので恒久に真) |
+//! | `self_collision_improves_the_edge_edge_separation_it_constrains` | 辺-辺の段が自分の拘束量を改善することの guard (⚠️ 目標 oracle は辺-辺の段を守りません) |
+//!
+//! ⚠️ **辺-辺は近接斥力だけで、掃過 (CCD) はありません** frame 単位の復元
+//! (`resolve_self_contact_over_frame`) は頂点の掃過線分しか見ないので、1 frame の内側で
+//! 交差して `thickness` より離れて終わる辺対は復元されません `src/cloth.rs` の
+//! `ClothConfig::self_collision` の doc に逐語で書いてあります
+//!
 //! ⚠️ **3 本目の反転は doc が当時指定した形 (`min_d2_on > min_d2_off`) では landing
 //! できませんでした** 実測すると、**頂点-頂点の最小距離を取る対は 4 run すべて `(7, 17)`
 //! = 両方とも pin された境界粒子**で、`run_crumple` が毎 step 座標を代入している量でした
@@ -412,6 +427,200 @@ fn edge_edge_closest_approach_matches_the_closed_form_exactly() {
     assert!((a1 - a0).dot(b1 - b0).is_zero(), "oracle: 2 辺は直交");
     assert!((pb - pa).dot(a1 - a0).is_zero(), "oracle: 最近接方向 ⊥ A");
     assert!((pb - pa).dot(b1 - b0).is_zero(), "oracle: 最近接方向 ⊥ B");
+}
+
+/// 線分-線分の最小距離² — **計測用の独立実装**
+///
+/// `src/cloth.rs` の `closest_points_on_segments` は Ericson §5.1.9 の
+/// 「素の解を clamp → `t` を解き直す」形式ですが、こちらは **4 つの端点-線分 clamp 投影 +
+/// (両パラメータが開区間に入る時だけ) 内部解** の 5 候補を全部計算して min を取る別形式です
+///
+/// ⚠️ **実装と違い、平行な対でも答えを返します** 実装側は平行を `None` で捨てます
+/// (最小が区間になるので `(s,t)` が幾何で決まらない) が、**計測はその対も測ります** —
+/// 計器が実装の盲点に合わせて盲目になってはいけないので、
+/// `the_segment_segment_metric_matches_the_closed_form` の (d) で平行の値を pin します
+///
+/// ⚠️ 独立実装は独立に誤りうるので、閉形式が自明な 5 配置との厳密一致を同 test が固定します
+fn segment_segment_distance_squared(p1: Vec3Fix, q1: Vec3Fix, p2: Vec3Fix, q2: Vec3Fix) -> Fix128 {
+    fn point_segment_d2(p: Vec3Fix, a: Vec3Fix, b: Vec3Fix) -> Fix128 {
+        let ab = b - a;
+        let den = ab.length_squared();
+        if den.is_zero() {
+            return (p - a).length_squared();
+        }
+        let mut t = (p - a).dot(ab) / den;
+        if t < Fix128::ZERO {
+            t = Fix128::ZERO;
+        }
+        if t > Fix128::ONE {
+            t = Fix128::ONE;
+        }
+        (p - (a + ab * t)).length_squared()
+    }
+
+    let mut best = point_segment_d2(p1, p2, q2);
+    for d in [
+        point_segment_d2(q1, p2, q2),
+        point_segment_d2(p2, p1, q1),
+        point_segment_d2(q2, p1, q1),
+    ] {
+        if d < best {
+            best = d;
+        }
+    }
+
+    // 内部解は正規方程式を直接解く (clamp でなく、開区間に入ったかで採否を決める)
+    //   a·s − b·t = −c       s = (b f − c e)/(a e − b²)
+    //   b·s − e·t = −f       t = (a f − b c)/(a e − b²)
+    let (d1, d2) = (q1 - p1, q2 - p2);
+    let r = p1 - p2;
+    let (a, e, b) = (d1.dot(d1), d2.dot(d2), d1.dot(d2));
+    let den = a * e - b * b;
+    if !den.is_zero() {
+        let (c, f) = (d1.dot(r), d2.dot(r));
+        let s = (b * f - c * e) / den;
+        let t = (a * f - b * c) / den;
+        if s > Fix128::ZERO && s < Fix128::ONE && t > Fix128::ZERO && t < Fix128::ONE {
+            let d = ((p1 + d1 * s) - (p2 + d2 * t)).length_squared();
+            if d < best {
+                best = d;
+            }
+        }
+    }
+    best
+}
+
+/// 計器の契約 test — 上の独立実装が 5 配置で閉形式と厳密一致する
+///
+/// | | 線分 A | 線分 B | 最近接 | 距離² |
+/// |---|---|---|---|---|
+/// | (a) 内部-内部 | `(0,0,0)→(1,0,0)` | `(1/2,1/4,-1)→(1/2,1/4,1)` | 両中点 | `1/16` |
+/// | (b) 端点-内部 | `(0,0,0)→(1,0,0)` | `(2,1,-1)→(2,1,1)` | `(1,0,0)` と `(2,1,0)` | `2` |
+/// | (c) 端点-端点 | `(0,0,0)→(1,0,0)` | `(2,1,2)→(2,1,3)` | `(1,0,0)` と `(2,1,2)` | `6` |
+/// | (d) 平行 | `(0,0,0)→(1,0,0)` | `(0,1,0)→(1,1,0)` | 任意の対応点 | `1` |
+/// | (e) 交差 | `(-1,0,0)→(1,0,0)` | `(0,0,-1)→(0,0,1)` | 原点 | `0` |
+///
+/// (b)(c) は端点領域、(d) は実装が `None` で捨てる領域、(e) は距離 0 の退化です
+#[test]
+fn the_segment_segment_metric_matches_the_closed_form() {
+    let half = Fix128::from_ratio(1, 2);
+    let quarter = Fix128::from_ratio(1, 4);
+    let a0 = Vec3Fix::from_int(0, 0, 0);
+    let a1 = Vec3Fix::from_int(1, 0, 0);
+
+    assert_eq!(
+        segment_segment_distance_squared(
+            a0,
+            a1,
+            Vec3Fix::new(half, quarter, Fix128::from_int(-1)),
+            Vec3Fix::new(half, quarter, Fix128::ONE)
+        ),
+        Fix128::from_ratio(1, 16),
+        "oracle (a): 内部-内部、垂線 1/4 なので距離² = 1/16"
+    );
+    assert_eq!(
+        segment_segment_distance_squared(
+            a0,
+            a1,
+            Vec3Fix::from_int(2, 1, -1),
+            Vec3Fix::from_int(2, 1, 1)
+        ),
+        Fix128::from_int(2),
+        "oracle (b): 端点 (1,0,0) から (2,1,0) まで 1² + 1² = 2"
+    );
+    assert_eq!(
+        segment_segment_distance_squared(
+            a0,
+            a1,
+            Vec3Fix::from_int(2, 1, 2),
+            Vec3Fix::from_int(2, 1, 3)
+        ),
+        Fix128::from_int(6),
+        "oracle (c): 端点どうし 1² + 1² + 2² = 6"
+    );
+    assert_eq!(
+        segment_segment_distance_squared(
+            a0,
+            a1,
+            Vec3Fix::from_int(0, 1, 0),
+            Vec3Fix::from_int(1, 1, 0)
+        ),
+        Fix128::ONE,
+        "oracle (d): 平行、距離² = 1 (実装が None で捨てる領域も計器は測る)"
+    );
+    assert_eq!(
+        segment_segment_distance_squared(
+            Vec3Fix::from_int(-1, 0, 0),
+            a1,
+            Vec3Fix::from_int(0, 0, -1),
+            Vec3Fix::from_int(0, 0, 1)
+        ),
+        Fix128::ZERO,
+        "oracle (e): 原点で交差するので距離² = 0"
+    );
+}
+
+/// **構造的事実** — X 字交差は頂点-面の計器から原理的に見えない (閉形式、恒久に真)
+///
+/// ```text
+///   T0 = [0,1,2]   0 = (-1,0,0)   1 = (1,0,0)   2 = (0,-8,0)      (XY 平面)
+///   T1 = [3,4,5]   3 = (0,h,-1)   4 = (0,h,1)   5 = (0,h+8,0)     (YZ 平面)   h = 1/8
+/// ```
+///
+/// 辺 `(0,1)` と辺 `(3,4)` は上から見て直交して交差し、距離は `h = 1/8` です 一方
+/// **非接続な (頂点, 三角形) 対の最小距離² は `1 + h² = 65/64`** で、`thickness = 1/4`
+/// に対して `65/64 ≫ 1/16 = thickness²` なので頂点-面の対は 1 つも閾値に入りません
+///
+/// ⚠️ **これは「パラメータが小さいから見えない」ではありません** 検出半径を上げて
+/// `65/64` を超えさせると、同じ半径で**面内の普通の対が全部違反になる**ので使用条件の外に
+/// 出ます (`a_thickness_far_above_the_local_edge_length_is_outside_the_model` と同じ理由)
+/// 頂点-面の述語は**辺どうしの交差という事象そのものを持っていません**
+///
+/// `particle_distance_spring_cannot_see_the_closed_form_crossing` (粒子-粒子 ⊂ 頂点-面) の
+/// 1 段上の盲点で、どちらも実装が入った後も残します 辺-辺の段を外せば同じ盲点が戻ります
+#[test]
+fn the_vertex_face_metric_cannot_see_the_closed_form_edge_edge_crossing() {
+    let h = Fix128::from_ratio(1, 8);
+    let eight = Fix128::from_int(8);
+    let positions = [
+        Vec3Fix::from_int(-1, 0, 0),
+        Vec3Fix::from_int(1, 0, 0),
+        Vec3Fix::new(Fix128::ZERO, Fix128::ZERO - eight, Fix128::ZERO),
+        Vec3Fix::new(Fix128::ZERO, h, Fix128::from_int(-1)),
+        Vec3Fix::new(Fix128::ZERO, h, Fix128::ONE),
+        Vec3Fix::new(Fix128::ZERO, h + eight, Fix128::ZERO),
+    ];
+    for (i, v) in positions.iter().enumerate() {
+        assert_exact_triple_products(*v, &format!("p{i}"));
+    }
+    let triangles = [[0usize, 1, 2], [3, 4, 5]];
+    let thickness = Fix128::from_ratio(1, 4);
+
+    // 辺-辺: 交差する 2 辺の距離² は h² = 1/64 で、閾値 (1/16) の内側
+    let ee_d2 =
+        segment_segment_distance_squared(positions[0], positions[1], positions[3], positions[4]);
+    assert_eq!(
+        ee_d2,
+        Fix128::from_ratio(1, 64),
+        "oracle: 辺-辺の距離² = h² = 1/64"
+    );
+    assert!(
+        ee_d2 < thickness * thickness,
+        "この scene が辺-辺の接触になっていない"
+    );
+
+    // 頂点-面: 非接続な全対の最小距離² は 1 + h² = 65/64 で、閾値の外側
+    let (vf_min, vf_viol) = vertex_face_separation(&positions, &triangles, thickness);
+    assert_eq!(
+        vf_min,
+        Fix128::from_ratio(65, 64),
+        "oracle: 非接続な (頂点, 三角形) 対の最小距離² = 1 + h² = 65/64 \
+         (最近接は頂点 0 / 1 から辺 (3,4) の (0,h,0)、および頂点 3 / 4 から辺 (0,1) の原点)"
+    );
+    assert_eq!(
+        vf_viol, 0,
+        "頂点-面の対が閾値を下回った この scene は盲点を示していない"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -814,6 +1023,25 @@ fn self_collision_toggle_changes_the_result_in_a_scene_that_self_intersects() {
 /// (0.5 → 0.05) の **2 つ**を変えています どちらも旧 test の前提が実測で偽だったことが
 /// 理由で、良い数字の出る条件へ逃げたのではありません 旧条件の数値と、それが何を
 /// 測っていたのかは上の 2 点として残してあります
+///
+/// # 追記 2026-10-01 — 辺-辺の段が入って数値が変わりました (上の表は頂点-面だけだった頃)
+///
+/// | 半径 0.05、60 step | 頂点-面だけ | **辺-辺も (現在)** |
+/// |---|---|---|
+/// | 最小距離² ON | 8.64e-4 | **2.134e-3** |
+/// | 最小距離² OFF | 6.08e-5 | 6.08e-5 (不変) |
+/// | 違反件数 ON / OFF | 3 / 4 | **2** / 4 |
+///
+/// ⚠️ **辺-辺を足すと、頂点-面の分離も良くなります** (14 倍 → 35 倍) 直感に反しますが、
+/// 辺どうしが交差する手前で止まる分だけ頂点が面に押し付けられる状況が減るためです
+///
+/// ⚠️⚠️ **ただしそれは 2 段を 1 本の `Δ`/`hits` buffer に統合した場合だけです** 段ごとに
+/// 別 buffer で平均化した最初の配線では、同じ scene で **ON 1.79e-5 / 違反 21 件** =
+/// **自己接触 ON が OFF より悪い**状態になりました (頂点-面 5 件 + 辺-辺 1 件に触られた頂点が
+/// `(Σ_vf)/5 + (Σ_ee)/1` を受けて辺-辺が 5 倍過大評価される) **本 test がそれを捕まえた
+/// 唯一の test です** 目標 oracle の貫通数は 0 のままでした
+/// 詳細 `src/cloth.rs` の `solve_self_collision` の doc と
+/// `[[feedback_cloth_edge_edge_two_jacobi_passes_compete]]`
 #[test]
 fn self_collision_improves_the_vertex_face_separation_it_constrains() {
     let radius = default_radius();
@@ -932,6 +1160,106 @@ fn a_thickness_far_above_the_local_edge_length_is_outside_the_model() {
         crossings_on > crossings_off,
         "厚 0.5 (辺長の 360%) が破綻域でなくなった (ON {crossings_on} / OFF {crossings_off}) \
          破綻域を扱えるようになったなら不等号を逆に書き換えること"
+    );
+}
+
+/// 頂点を共有しない mesh 辺対の最小距離² と、閾値を下回る対の数
+///
+/// **これが辺-辺の段が実際に拘束している量です** 頂点-面距離 (`vertex_face_separation`) でも
+/// 頂点-頂点距離 (`nonadjacent_separation`) でもありません
+///
+/// ⚠️ 頂点を共有する対は距離 0 が構成上の事実なので母集団から外します (実装側の
+/// `collect_edge_edge_candidates` と同じ除外) ⚠️ **平行な対は外しません** 実装は平行を
+/// 捨てますが、計器が同じ盲点を持つと「捨てた分は測られない」ことになります
+fn edge_edge_separation(
+    positions: &[Vec3Fix],
+    triangles: &[[usize; 3]],
+    threshold: Fix128,
+) -> (Fix128, usize, (usize, usize)) {
+    let mut edges: Vec<(usize, usize)> = Vec::new();
+    for t in triangles {
+        for (a, b) in [(t[0], t[1]), (t[1], t[2]), (t[2], t[0])] {
+            edges.push((a.min(b), a.max(b)));
+        }
+    }
+    edges.sort_unstable();
+    edges.dedup();
+
+    let t2 = threshold * threshold;
+    let mut min_d2 = Fix128::from_int(1 << 20);
+    let mut argmin = (usize::MAX, usize::MAX);
+    let mut violations = 0usize;
+    for (i, &(a0, a1)) in edges.iter().enumerate() {
+        for &(b0, b1) in &edges[i + 1..] {
+            if a0 == b0 || a0 == b1 || a1 == b0 || a1 == b1 {
+                continue; // 頂点を共有する対は距離 0 が構成上の事実
+            }
+            let d2 = segment_segment_distance_squared(
+                positions[a0],
+                positions[a1],
+                positions[b0],
+                positions[b1],
+            );
+            if d2 < min_d2 {
+                min_d2 = d2;
+                argmin = (i, usize::MAX);
+            }
+            if d2 < t2 {
+                violations += 1;
+            }
+        }
+    }
+    (min_d2, violations, argmin)
+}
+
+/// **guard** — 辺-辺の段は、自分が拘束している量 (辺-辺距離) を実際に改善する
+///
+/// `self_collision_improves_the_vertex_face_separation_it_constrains` の辺-辺版です
+/// 頂点-面の段が入った時に「近接斥力段の歯はこの test だけ」になったのと同じ理由で、
+/// **辺-辺の段を守るのはこの test だけ**です (目標 oracle `a_crumpled_cloth_...` は
+/// 頂点の掃過線分しか見ないので、辺-辺の段を落としても green のままです)
+///
+/// # 実測 (`SEPARATION_STEPS = 60`、半径 0.05、`Fix128` のみなので再実行で同値)
+///
+/// | | 自己接触 ON | OFF |
+/// |---|---|---|
+/// | 最小の辺-辺距離² | **5.225e-3** | 1.550e-3 |
+/// | 閾値 (0.05) 未満の辺対 | **0** | 3 |
+///
+/// 件数 0 は「全ての辺対が接触厚まで離れた」= 段が約束している不変量そのものですが、
+/// ⚠️ **assert は `viol_on < viol_off` (margin 3) と `min_on > 2·min_off` (実測 3.37 倍)
+/// に置いています** 収束を等値で assert すると反復回数や substep 数の無関係な変更で
+/// 折れるので、0 は記録に留めます 件数 0 が崩れたら**弱めずに原因を調べること**
+#[test]
+fn self_collision_improves_the_edge_edge_separation_it_constrains() {
+    let radius = default_radius();
+    let (_, pos_on) = run_crumple(true, SEPARATION_STEPS, radius);
+    let (_, pos_off) = run_crumple(false, SEPARATION_STEPS, radius);
+    let cloth = Cloth::new_grid(
+        Vec3Fix::ZERO,
+        Fix128::from_int(8),
+        Fix128::from_int(8),
+        9,
+        9,
+        Fix128::from_ratio(1, 100),
+    );
+    let (min_on, viol_on, _) = edge_edge_separation(&pos_on, &cloth.triangles, radius);
+    let (min_off, viol_off, _) = edge_edge_separation(&pos_off, &cloth.triangles, radius);
+
+    // 反 vacuous: 自己接触を切った側に違反が 1 件も無ければ、改善も何も言っていない
+    assert!(
+        viol_off > 0,
+        "自己接触 OFF でも閾値未満の辺対が無い この guard は違反の起きない scene では無意味"
+    );
+    assert!(
+        viol_on < viol_off,
+        "辺-辺の段が違反件数を減らしていない (ON {viol_on} / OFF {viol_off}、実測は 0 / 3)"
+    );
+    assert!(
+        min_on > min_off * Fix128::from_int(2),
+        "辺-辺の段が最小の辺-辺距離² を 2 倍に開いていない (ON {} / OFF {}、実測 3.37 倍)",
+        min_on.to_f32(),
+        min_off.to_f32()
     );
 }
 
