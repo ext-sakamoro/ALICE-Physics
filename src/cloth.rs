@@ -632,6 +632,74 @@ impl Cloth {
         out
     }
 
+    /// Edge pairs whose **swept** AABBs overlap over the frame `start → positions`.
+    ///
+    /// The box of an edge covers both of its endpoints at both ends of the frame, so a pair
+    /// that passes through each other somewhere inside the frame is always in the result —
+    /// which is the property the frame repair needs, and the reason the proximity broad
+    /// phase (`collect_edge_edge_candidates`, current positions only) cannot be reused here:
+    /// a pair that tunnels is typically far apart at both of the instants that one looks at.
+    ///
+    /// The same two exclusions apply as in the proximity broad phase, for the same reasons:
+    /// edges sharing a vertex are at distance zero by construction, and a pair in which all
+    /// four participants are pinned can produce no correction.
+    ///
+    /// ⚠️ Built **once per frame** rather than once per repair pass. The passes only move
+    /// vertices by their own corrections, and the box already spans the whole frame, so
+    /// rebuilding it between passes narrows a set that is deliberately a superset.
+    fn collect_swept_edge_edge_candidates(&self, start: &[Vec3Fix], margin: Fix128) -> Vec<[u32; 4]> {
+        let edges = self.mesh_edges();
+        let n = self.particle_count().min(start.len());
+        let swept_box = |i: usize, j: usize| {
+            let pts = [start[i], start[j], self.positions[i], self.positions[j]];
+            let lo = Vec3Fix::new(
+                min2(min2(pts[0].x, pts[1].x), min2(pts[2].x, pts[3].x)) - margin,
+                min2(min2(pts[0].y, pts[1].y), min2(pts[2].y, pts[3].y)) - margin,
+                min2(min2(pts[0].z, pts[1].z), min2(pts[2].z, pts[3].z)) - margin,
+            );
+            let hi = Vec3Fix::new(
+                max2(max2(pts[0].x, pts[1].x), max2(pts[2].x, pts[3].x)) + margin,
+                max2(max2(pts[0].y, pts[1].y), max2(pts[2].y, pts[3].y)) + margin,
+                max2(max2(pts[0].z, pts[1].z), max2(pts[2].z, pts[3].z)) + margin,
+            );
+            (lo, hi)
+        };
+
+        let mut out: Vec<[u32; 4]> = Vec::new();
+        for (ei, e1) in edges.iter().enumerate() {
+            let (a0, a1) = (e1[0] as usize, e1[1] as usize);
+            if a0 >= n || a1 >= n {
+                continue; // no start position recorded for this edge
+            }
+            let (lo1, hi1) = swept_box(a0, a1);
+            let both_pinned_1 = self.inv_masses[a0].is_zero() && self.inv_masses[a1].is_zero();
+            for e2 in &edges[ei + 1..] {
+                let (b0, b1) = (e2[0] as usize, e2[1] as usize);
+                if b0 >= n || b1 >= n {
+                    continue;
+                }
+                if a0 == b0 || a0 == b1 || a1 == b0 || a1 == b1 {
+                    continue; // shares a vertex: distance is 0 by construction
+                }
+                if both_pinned_1 && self.inv_masses[b0].is_zero() && self.inv_masses[b1].is_zero() {
+                    continue; // nothing in this pair can move
+                }
+                let (lo2, hi2) = swept_box(b0, b1);
+                if lo2.x > hi1.x
+                    || hi2.x < lo1.x
+                    || lo2.y > hi1.y
+                    || hi2.y < lo1.y
+                    || lo2.z > hi1.z
+                    || hi2.z < lo1.z
+                {
+                    continue;
+                }
+                out.push([a0 as u32, a1 as u32, b0 as u32, b1 as u32]);
+            }
+        }
+        out
+    }
+
     /// Solve vertex-face (point-triangle) self-contact, Jacobi accumulation.
     ///
     /// For every candidate pair the constraint is `C = |p − q| − thickness ≥ 0`, where
@@ -905,6 +973,129 @@ impl Cloth {
     /// instead of hanging; `remaining_self_contact_crossings` makes that observable.
     const SELF_CONTACT_PASSES: usize = 16;
 
+    /// Push back every **edge pair** that met inside the frame, Jacobi accumulation.
+    ///
+    /// The edge-edge half of the frame repair, and the counterpart of the vertex-face half
+    /// in the body of `resolve_self_contact_over_frame`. Neither subsumes the other: two
+    /// edges can pass through each other while every vertex stays far from every face (the
+    /// X crossing), and a vertex can tunnel through the middle of a triangle without any
+    /// edge pair meeting.
+    ///
+    /// For each pair `edge_pair_frame_contact` supplies the instant they met, the side edge
+    /// `a` started the frame on, and the end-of-frame closest-point parameters. The
+    /// constraint is then the same one the proximity pass projects, with one difference
+    /// that is the whole point of this stage:
+    ///
+    /// ```text
+    /// C = n·(pₐ − p_b) − thickness ≥ 0        (n fixed from the START of the frame)
+    /// ∇_{a₀}C = (1−s)n   ∇_{a₁}C = s·n   ∇_{b₀}C = −(1−t)n   ∇_{b₁}C = −t·n
+    /// ```
+    ///
+    /// ⚠️ **`n·(pₐ − p_b)` is signed, where the proximity pass reads `|pₐ − p_b|`.** An
+    /// unsigned distance is the same whichever side the edges are on, so a pair that has
+    /// already passed through looks to the proximity pass like a pair that is merely
+    /// separating, and it pushes them further apart in the wrong direction. Reading the
+    /// gap against the starting side turns the same projection into one that brings them
+    /// back.
+    ///
+    /// # Determinism
+    ///
+    /// Corrections go into the caller's `Δ`/`hits` buffer with `+`, and `Fix128` addition
+    /// is the exact group operation of `Z/2¹²⁸`, so the result does not depend on the order
+    /// the pairs are enumerated in. The normal is computed once per pair and reused for all
+    /// four gradients, because `Fix128::Mul` is not associative.
+    ///
+    /// # What triggers it
+    ///
+    /// Only a pair that **completed a crossing**: it met inside the frame and ended it with
+    /// `gap < 0`, on the far side of where edge `a` started. This is the same trigger
+    /// `remaining_self_contact_crossings` counts, so the repair acts on exactly the events
+    /// the invariant reports, and the projection then restores the full `thickness` just as
+    /// the vertex-face half does after a pierce.
+    ///
+    /// ⚠️ **Proximity is deliberately left to the substep pass.** Triggering on
+    /// `gap < thickness` here would make this stage a second, frame-scale copy of
+    /// `accumulate_edge_edge_contacts` running for all `SELF_CONTACT_PASSES` — see the
+    /// measured regression recorded at the early-out below.
+    ///
+    /// Returns the number of pairs that produced a correction, which the caller uses to
+    /// decide whether another pass is worth running. A pair that met but ended clear on its
+    /// starting side is not progress and is not counted.
+    fn accumulate_swept_edge_edge_repairs(
+        &self,
+        candidates: &[[u32; 4]],
+        start: &[Vec3Fix],
+        thickness: Fix128,
+        delta: &mut [Vec3Fix],
+        hits: &mut [u32],
+    ) -> usize {
+        let mut corrected = 0usize;
+        for &[i0, i1, j0, j1] in candidates {
+            let (i0, i1, j0, j1) = (i0 as usize, i1 as usize, j0 as usize, j1 as usize);
+            let Some(contact) = edge_pair_frame_contact(
+                (start[i0], self.positions[i0]),
+                (start[i1], self.positions[i1]),
+                (start[j0], self.positions[j0]),
+                (start[j1], self.positions[j1]),
+                thickness,
+            ) else {
+                continue;
+            };
+            if contact.gap >= Fix128::ZERO {
+                // Met inside the frame but ended on the side it started on: a near miss,
+                // not a crossing. ⚠️ **Acting here instead would duplicate the proximity
+                // pass at frame scope and lose this stage's purpose.** Measured on the
+                // folded 5x5 scene of `test_cloth_self_collision`
+                // (`thickness = 3/2` against a grid spacing of `1`, so most in-layer edge
+                // pairs are both coplanar and within `thickness`): with the threshold at
+                // `thickness` the stage fired on the bulk of the mesh and re-applied the
+                // proximity correction for all 16 passes, and the layer gap with
+                // self-contact ON came out at 2.0035 against 2.7589 with it OFF — turning
+                // self-contact on made the layers *closer*. The vertex-face half does not
+                // have this failure mode because its trigger, `segment_pierces_triangle`,
+                // is a crossing test and not a distance test; `gap < 0` is the edge-edge
+                // statement of the same thing.
+                continue;
+            }
+            let (s, t) = (contact.s, contact.t);
+            let (u, v) = (Fix128::ONE - s, Fix128::ONE - t);
+            let (w0, w1, w2, w3) = (
+                self.inv_masses[i0],
+                self.inv_masses[i1],
+                self.inv_masses[j0],
+                self.inv_masses[j1],
+            );
+            let denom = w0 * u * u + w1 * s * s + w2 * v * v + w3 * t * t;
+            if denom.is_zero() {
+                continue;
+            }
+            // ⚠️ Restore to `gap = 0`, **not** to `gap = thickness`. The invariant this
+            // stage exists to maintain is "the cloth did not pass through itself", which is
+            // `gap ≥ 0` and is exactly what `remaining_self_contact_crossings` counts;
+            // establishing a `thickness` clearance on top of that is the substep proximity
+            // pass's job. Overshooting to `thickness` makes the correction
+            // `thickness − gap`, which for a deep tunnel is far larger than a mesh edge:
+            // measured at `gap = −1.07` against `thickness = 3/2`, a single move of 2.57.
+            // That is past the point where the constraint set is satisfiable, so particles
+            // are thrown and *new* tunnelling appears — on the 9x9 crumple scene the
+            // vertex-face count went 0 → 3 and the edge-edge violation count went from
+            // 3 (self-contact OFF) to 8 (ON), i.e. the repair made both halves worse.
+            let lambda = -contact.gap / denom;
+            let normal = contact.normal;
+
+            delta[i0] = delta[i0] + normal * (lambda * w0 * u);
+            delta[i1] = delta[i1] + normal * (lambda * w1 * s);
+            delta[j0] = delta[j0] - normal * (lambda * w2 * v);
+            delta[j1] = delta[j1] - normal * (lambda * w3 * t);
+            hits[i0] += 1;
+            hits[i1] += 1;
+            hits[j0] += 1;
+            hits[j1] += 1;
+            corrected += 1;
+        }
+        corrected
+    }
+
     /// Push back every vertex whose **frame chord** pierced a non-incident triangle.
     ///
     /// This is the discrete-collision half of the pair (Bridson et al. 2002, *Robust
@@ -942,6 +1133,7 @@ impl Cloth {
         let mut delta = vec![Vec3Fix::ZERO; n];
         let mut hits = vec![0u32; n];
         let mut total = vec![Vec3Fix::ZERO; n];
+        let edge_pairs = self.collect_swept_edge_edge_candidates(start, thickness);
 
         for _ in 0..Self::SELF_CONTACT_PASSES {
             delta.fill(Vec3Fix::ZERO);
@@ -949,6 +1141,14 @@ impl Cloth {
             // Corrections actually accumulated this pass — not pierces detected. A pierce
             // the projection cannot act on is not a reason to run another pass.
             let mut found = 0usize;
+
+            found += self.accumulate_swept_edge_edge_repairs(
+                &edge_pairs,
+                start,
+                thickness,
+                &mut delta,
+                &mut hits,
+            );
 
             for tri in &self.triangles {
                 let (a, b, c) = (
@@ -1055,13 +1255,45 @@ impl Cloth {
         }
     }
 
-    /// Number of frame chords `start[i] → positions[i]` that pierce a non-incident
-    /// triangle at its current position.
+    /// Number of surviving self-intersection events over the frame `start → positions`.
     ///
     /// This is the invariant `step` maintains, exposed so that a caller (or a test) can
     /// check it instead of trusting that it holds. `0` is the only value that means
     /// "the cloth did not pass through itself over this frame"; any positive value is
     /// the number of surviving tunnelling events, not a quality score.
+    ///
+    /// # The two kinds of event, and why both are needed
+    ///
+    /// A surface can pass through itself in two independent ways, and neither implies the
+    /// other:
+    ///
+    /// - a **frame chord** `start[i] → positions[i]` that pierces a non-incident triangle
+    ///   at its current position, counted once per (vertex, triangle) pair;
+    /// - an **edge pair** that met inside the frame and ended it on opposite sides of where
+    ///   it started, counted once per pair of non-adjacent mesh edges.
+    ///
+    /// ⚠️ Two sheets can cross in an X with every vertex far from every face, so a count
+    /// that reads only the first kind returns `0` for a cloth that visibly passes through
+    /// itself. Before 1.5.x this function counted only chords, and that is exactly the
+    /// configuration it was blind to (`an_edge_pair_that_swaps_sides_in_one_frame_is_seen_by_the_crossings_invariant`
+    /// pins the case; the measured residual on the 9x9 crumple scene was 22 edge-edge
+    /// crossings while this function reported 0).
+    ///
+    /// The two counts are summed because both are event counts of the same invariant, but
+    /// they are not interchangeable units: `3` can mean three pierced triangles, three
+    /// crossed edge pairs, or any mix.
+    ///
+    /// # Shared with the repair
+    ///
+    /// Each kind is detected with **the same predicate the repair uses** —
+    /// `segment_pierces_triangle` and `edge_pair_frame_contact` respectively, both also
+    /// called from `resolve_self_contact_over_frame`. The two cannot drift apart into a
+    /// repair that fixes one thing and a check that measures another.
+    ///
+    /// The edge-edge half is biased toward over-reporting (see `edge_pair_frame_contact`),
+    /// so a non-zero value may include a pair that came within `thickness` at a bracketed
+    /// instant without strictly passing through. It is never biased the other way: a
+    /// completed crossing is always counted.
     #[must_use]
     pub fn remaining_self_contact_crossings(&self, start: &[Vec3Fix]) -> usize {
         let n = self.particle_count().min(start.len());
@@ -1079,6 +1311,27 @@ impl Cloth {
                 if segment_pierces_triangle(*from, self.positions[i], a, b, c).is_some() {
                     count += 1;
                 }
+            }
+        }
+
+        let thickness = self.config.self_collision_distance;
+        for [i0, i1, j0, j1] in self.collect_swept_edge_edge_candidates(start, thickness) {
+            let (i0, i1, j0, j1) = (i0 as usize, i1 as usize, j0 as usize, j1 as usize);
+            let Some(contact) = edge_pair_frame_contact(
+                (start[i0], self.positions[i0]),
+                (start[i1], self.positions[i1]),
+                (start[j0], self.positions[j0]),
+                (start[j1], self.positions[j1]),
+                thickness,
+            ) else {
+                continue;
+            };
+            // Met **and** ended on the far side. A pair that met and separated again on the
+            // side it started on is not interpenetrating at the end of the frame, which is
+            // the property this function reports on; the repair still acts on it, because
+            // its threshold is `thickness` rather than zero.
+            if contact.gap < Fix128::ZERO {
+                count += 1;
             }
         }
         count
@@ -1446,6 +1699,283 @@ fn closest_points_on_segments(
         s = clamp01((b - c) / a);
     }
     Some((s, t))
+}
+
+/// Position of a linearly moving point at frame parameter `t ∈ [0, 1]`
+#[inline]
+fn at_frame_time(start: Vec3Fix, end: Vec3Fix, t: Fix128) -> Vec3Fix {
+    start + (end - start) * t
+}
+
+/// Is a closest-point parameter strictly inside its segment?
+///
+/// `closest_points_on_segments` returns the **clamped** parameter, so `0` and `1` are
+/// exactly the values it produces when the unconstrained solution fell outside the segment
+/// — the vertex and edge Voronoi regions. An unconstrained solution landing exactly on an
+/// endpoint has measure zero, so reading the clamped boundary as "outside" loses nothing
+/// real.
+#[inline]
+fn is_interior(x: Fix128) -> bool {
+    x > Fix128::ZERO && x < Fix128::ONE
+}
+
+/// How finely the coplanarity cubic is subdivided before a bracket is accepted as a root.
+///
+/// `2⁻¹²` of a frame. The bracket width only sets *where* the geometry below is sampled; it
+/// does not gate whether the pair is considered, because the convex-hull rejection is
+/// applied at every level and is exact regardless of depth.
+const COPLANARITY_SUBDIVISION_DEPTH: u32 = 12;
+
+/// Bernstein control points (scaled by 3) of the edge-edge coplanarity cubic over one frame.
+///
+/// Each argument is one vertex as `(start, end)`; the edges are `a₀→a₁` and `b₀→b₁`. With
+/// every endpoint moving linearly over `t ∈ [0, 1]`,
+///
+/// ```text
+/// f(t) = ((a₁(t) − a₀(t)) × (b₁(t) − b₀(t))) · (b₀(t) − a₀(t))
+/// ```
+///
+/// is a cubic, and `f(t) = 0` is a **necessary** condition for the two segments to touch:
+/// two segments that meet are coplanar at that instant. Every edge-edge crossing therefore
+/// passes through a root of `f` inside the frame.
+///
+/// ⚠️ Returning the **Bernstein** rather than the power coefficients is what makes the
+/// rejection usable as a conservative filter. A Bézier curve lies inside the convex hull of
+/// its control points, so *all four strictly positive (or all strictly negative) proves
+/// there is no root in the interval* — double roots included, which is the case a sign test
+/// on `f(0)`/`f(1)` alone silently misses. The power coefficients admit no such bound.
+///
+/// The ×3 keeps every value exact: `c₁ = k₀ + k₁/3` is not a dyadic rational and would round
+/// in `Fix128`, while `3c₁ = 3k₀ + k₁` is a sum of exact products. Scaling all four by the
+/// same positive constant leaves every sign — the only thing read — unchanged.
+fn coplanarity_control_points(
+    a0: (Vec3Fix, Vec3Fix),
+    a1: (Vec3Fix, Vec3Fix),
+    b0: (Vec3Fix, Vec3Fix),
+    b1: (Vec3Fix, Vec3Fix),
+) -> [Fix128; 4] {
+    // Each of the three difference vectors is affine in `t`: value at 0 and derivative.
+    let av = a1.0 - a0.0;
+    let ad = (a1.1 - a1.0) - (a0.1 - a0.0);
+    let bv = b1.0 - b0.0;
+    let bd = (b1.1 - b1.0) - (b0.1 - b0.0);
+    let cv = b0.0 - a0.0;
+    let cd = (b0.1 - b0.0) - (a0.1 - a0.0);
+
+    let p0 = av.cross(bv);
+    let p1 = av.cross(bd) + ad.cross(bv);
+    let p2 = ad.cross(bd);
+
+    let k0 = p0.dot(cv);
+    let k1 = p0.dot(cd) + p1.dot(cv);
+    let k2 = p1.dot(cd) + p2.dot(cv);
+    let k3 = p2.dot(cd);
+
+    let two = Fix128::from_int(2);
+    let three = Fix128::from_int(3);
+    [
+        three * k0,
+        three * k0 + k1,
+        three * k0 + two * k1 + k2,
+        three * (k0 + k1 + k2 + k3),
+    ]
+}
+
+/// De Casteljau split of a cubic Bézier at its midpoint.
+///
+/// Only halvings, so the subdivision stays in the dyadic rationals that `Fix128` represents
+/// exactly down to its last bit.
+fn bezier_split_half(c: [Fix128; 4]) -> ([Fix128; 4], [Fix128; 4]) {
+    let h = Fix128::from_ratio(1, 2);
+    let l1 = (c[0] + c[1]) * h;
+    let m = (c[1] + c[2]) * h;
+    let r2 = (c[2] + c[3]) * h;
+    let l2 = (l1 + m) * h;
+    let r1 = (m + r2) * h;
+    let mid = (l2 + r1) * h;
+    ([c[0], l1, l2, mid], [mid, r1, r2, c[3]])
+}
+
+/// Bracket the roots of the coplanarity cubic in `[lo, hi]`, appending their midpoints.
+///
+/// ⚠️ **Conservative in one direction on purpose**: a bracket is discarded only when the
+/// convex-hull test *proves* the cubic cannot reach zero inside it, so no crossing is ever
+/// filtered out here. The opposite error — reporting a bracket that holds no crossing — is
+/// accepted, and the geometric test in `edge_pair_frame_contact` is what removes those.
+///
+/// A cubic has at most three roots, so the four-slot buffer cannot overflow for a
+/// non-degenerate curve. It is read as a budget rather than a count: a cubic that is
+/// identically zero (two edges that stay coplanar for the whole frame) makes every bracket
+/// survive, and filling the buffer stops the descent instead of walking `2¹²` leaves.
+fn push_coplanarity_root_times(
+    c: [Fix128; 4],
+    lo: Fix128,
+    hi: Fix128,
+    depth: u32,
+    out: &mut [Fix128; 4],
+    n: &mut usize,
+) {
+    if *n == out.len() {
+        return;
+    }
+    let all_positive = c.iter().all(|v| *v > Fix128::ZERO);
+    let all_negative = c.iter().all(|v| *v < Fix128::ZERO);
+    if all_positive || all_negative {
+        return; // convex hull of the control points misses zero: no root in [lo, hi]
+    }
+    let mid = (lo + hi) * Fix128::from_ratio(1, 2);
+    if depth == 0 {
+        out[*n] = mid;
+        *n += 1;
+        return;
+    }
+    let (left, right) = bezier_split_half(c);
+    push_coplanarity_root_times(left, lo, mid, depth - 1, out, n);
+    push_coplanarity_root_times(right, mid, hi, depth - 1, out, n);
+}
+
+/// Contact data for an edge pair that met at some point inside the frame.
+///
+/// `gap` is **signed against the side edge `a` started the frame on**, which is what lets a
+/// completed crossing be told apart from a near miss: a pair that passed through each other
+/// ends with `gap < 0`, a pair that merely came close ends with `0 ≤ gap < thickness`. The
+/// proximity pass cannot express the first case, because it reads an unsigned distance.
+struct FrameEdgeContact {
+    /// Closest-point parameter on edge `a` at the end of the frame
+    s: Fix128,
+    /// Closest-point parameter on edge `b` at the end of the frame
+    t: Fix128,
+    /// Unit separation direction, oriented toward the side `a` started on
+    normal: Vec3Fix,
+    /// `normal · (a_closest − b_closest)` at the end of the frame
+    gap: Fix128,
+}
+
+/// Swept edge-edge test over one frame: did these two edges meet, and where did that leave
+/// them?
+///
+/// Each argument is one vertex as `(start, end)`. This is the **shared predicate**: the
+/// frame repair (`resolve_self_contact_over_frame`) and the invariant check
+/// (`Cloth::remaining_self_contact_crossings`) both go through it, exactly as the
+/// vertex-face side of both shares `segment_pierces_triangle`. They differ only in the
+/// threshold they then apply to `gap`, so the two can never disagree about *whether* a pair
+/// met.
+///
+/// # Which way it is conservative
+///
+/// ⚠️ **Toward false positives, in both of its two stages**, because a missed crossing is
+/// a hole in the invariant while a spurious one costs a correction that the proximity pass
+/// would have made anyway:
+///
+/// - the coplanarity stage discards a bracket only when the convex hull of the Bernstein
+///   control points proves the cubic has no root in it;
+/// - the geometric stage accepts the pair when the segments come within `thickness` at a
+///   bracketed instant, not when they are exactly incident. At a true crossing that distance
+///   is zero, so the margin only admits extra pairs.
+///
+/// Both statements hold up to `Fix128` rounding in the products — the same standard as the
+/// rest of this module, not an exact-arithmetic claim.
+///
+/// # ⚠️ Endpoint contacts are excluded, and that is not a weakening
+///
+/// The closest points must be **strictly interior** to both segments at the instant they
+/// meet. A clamped parameter means the closest approach is at a vertex, so the
+/// configuration is vertex-vertex or vertex-edge rather than edge-edge, and it is the
+/// vertex-face stage that owns it. "Which side was edge `a` on" is not even well defined
+/// there: for two coplanar neighbours in the same sheet the separation direction lies *in*
+/// the sheet, and its sign flips on any slight deformation.
+///
+/// Measured on the folded 5x5 scene of `test_cloth_self_collision`: without this condition
+/// the stage fired on in-sheet neighbours with `s = 1, t = 0` (several pairs meeting at one
+/// shared vertex, reported with identical gaps), and the layer gap with self-contact ON
+/// dropped to 1.8748 against 2.7589 with it OFF. Every pair it fired on had a clamped
+/// parameter; none were interior crossings.
+///
+/// # What it still does not see
+///
+/// A pair that crosses and crosses back inside one frame ends on the side it started on, so
+/// `gap` comes out positive and the instrument does not count it. It is also not
+/// interpenetrating at the end of the frame, which is the property `step` maintains.
+///
+/// `None` means the pair never met: either no coplanarity root survives, or no bracketed
+/// instant brings the segments within `thickness`, or the end configuration is parallel and
+/// has no isolated closest pair to state the constraint on.
+fn edge_pair_frame_contact(
+    a0: (Vec3Fix, Vec3Fix),
+    a1: (Vec3Fix, Vec3Fix),
+    b0: (Vec3Fix, Vec3Fix),
+    b1: (Vec3Fix, Vec3Fix),
+    thickness: Fix128,
+) -> Option<FrameEdgeContact> {
+    let control = coplanarity_control_points(a0, a1, b0, b1);
+    let mut times = [Fix128::ZERO; 4];
+    let mut found = 0usize;
+    push_coplanarity_root_times(
+        control,
+        Fix128::ZERO,
+        Fix128::ONE,
+        COPLANARITY_SUBDIVISION_DEPTH,
+        &mut times,
+        &mut found,
+    );
+    if found == 0 {
+        return None; // the two edges are never coplanar inside this frame
+    }
+
+    // Coplanar is not the same as touching: two edges in a common plane can still be far
+    // apart. Require that one of the bracketed instants actually brings them together.
+    let thickness_sq = thickness * thickness;
+    let mut met = false;
+    for tau in &times[..found] {
+        let pa0 = at_frame_time(a0.0, a0.1, *tau);
+        let pa1 = at_frame_time(a1.0, a1.1, *tau);
+        let pb0 = at_frame_time(b0.0, b0.1, *tau);
+        let pb1 = at_frame_time(b1.0, b1.1, *tau);
+        let Some((s, t)) = closest_points_on_segments(pa0, pa1, pb0, pb1) else {
+            continue; // degenerate or parallel at this instant
+        };
+        if !is_interior(s) || !is_interior(t) {
+            continue; // endpoint contact: not this stage's to resolve (see below)
+        }
+        let ca = pa0 + (pa1 - pa0) * s;
+        let cb = pb0 + (pb1 - pb0) * t;
+        if (ca - cb).length_squared() < thickness_sq {
+            met = true;
+            break;
+        }
+    }
+    if !met {
+        return None;
+    }
+
+    // The separation direction is read off the **start** of the frame. Reading it from the
+    // end instead would point the wrong way for exactly the pairs this stage exists for: a
+    // pair that tunnelled has its end-of-frame difference on the far side, so a correction
+    // built from it would push the two edges further through each other.
+    let start_difference = closest_points_on_segments(a0.0, a1.0, b0.0, b1.0).map(|(s, t)| {
+        let ca = a0.0 + (a1.0 - a0.0) * s;
+        let cb = b0.0 + (b1.0 - b0.0) * t;
+        ca - cb
+    });
+    let normal = match start_difference.and_then(Vec3Fix::try_normalize) {
+        Some(n) => n,
+        // The edges already met at the start of the frame (or were parallel then): fall back
+        // to their common perpendicular, the direction that separates them without rotating
+        // either one. A pair with no normal is a pair with no correction.
+        None => (a1.0 - a0.0).cross(b1.0 - b0.0).try_normalize()?,
+    };
+
+    // The constraint is stated on the end-of-frame configuration, which is what the solver
+    // is allowed to move.
+    let (s, t) = closest_points_on_segments(a0.1, a1.1, b0.1, b1.1)?;
+    let ca = a0.1 + (a1.1 - a0.1) * s;
+    let cb = b0.1 + (b1.1 - b0.1) * t;
+    Some(FrameEdgeContact {
+        s,
+        t,
+        normal,
+        gap: normal.dot(ca - cb),
+    })
 }
 
 /// Find shared edge between two triangles and create a bending constraint
@@ -2827,14 +3357,21 @@ mod tests {
     /// のに `assert_eq!` が red) `1/64` なら `substep_dt = 1/256`、1 substep の変位は
     /// `−48/256 = −3/16` で全て厳密です
     ///
-    /// # ⚠️ 頂点-面の不変量はこの貫通を 0 と報告する
+    /// # ⚠️ この test は 1.5.x で「盲点の記録」から「効果の測定」に変わりました
     ///
-    /// `remaining_self_contact_crossings` が測るのは「頂点の掃過線分が三角形を貫いたか」
-    /// なので、辺どうしの交差は **自己接触 OFF でも 0** です これが
-    /// `src/cloth.rs` に辺-辺の段が必要だった理由そのもので、本 test の反 vacuous
-    /// guard も兼ねます (0 なのは正しいからでなく、その量を見ていないから)
+    /// 旧版の `remaining_self_contact_crossings` が測るのは「頂点の掃過線分が三角形を
+    /// 貫いたか」だけだったので、辺どうしの交差は **自己接触 OFF でも 0** を返して
+    /// いました 旧 assert はその `0` を pin しており、message は
+    /// 「頂点-面の不変量が辺-辺の交差を検出した この scene は盲点を示していない」=
+    /// **検出する方が誤りである**と読める文面でした
+    ///
+    /// ⚠️ **その message は doc と逆向きで、誤っていたのは message の方です** 同 doc が
+    /// 当時から「`0` なのは正しいからでなく、その量を見ていないから」と正しく書いて
+    /// います 不変量に辺-辺が入って盲点が閉じたので、`0` を pin する理由は無くなり、
+    /// **OFF → `1` (貫通が見える) / ON → `0` (辺-辺の段が止めた)** の効果 test に
+    /// 反転させました (計器が消えるのでなく、測る対象が盲点から効果に移った形)
     #[test]
-    fn an_edge_pair_that_swaps_sides_in_one_frame_is_caught_only_by_the_edge_edge_pass() {
+    fn an_edge_pair_that_swaps_sides_in_one_frame_is_seen_by_the_crossings_invariant() {
         let half = Fix128::from_ratio(1, 2);
         let quarter = Fix128::from_ratio(1, 4);
         let dt = Fix128::from_ratio(1, 64);
@@ -2862,8 +3399,9 @@ mod tests {
             gap_off.to_f32()
         );
         assert_eq!(
-            crossings_off, 0,
-            "頂点-面の不変量が辺-辺の交差を検出した この scene は盲点を示していない"
+            crossings_off, 1,
+            "自己接触 OFF で 2 辺が入れ替わった (符号付き隙間 +1/2 → −1/4) のに \
+             不変量が辺-辺の交差を数えていない 1.5.x 以前の盲点が再発している"
         );
 
         let (gap_on, crossings_on) = run(true);
@@ -2872,7 +3410,10 @@ mod tests {
             "自己接触 ON で辺-辺の隙間が thickness = 1/4 を下回った (実測 {})",
             gap_on.to_f32()
         );
-        assert_eq!(crossings_on, 0, "自己接触 ON で頂点-面の貫通が残った");
+        assert_eq!(
+            crossings_on, 0,
+            "自己接触 ON で貫通が残った (頂点-面 / 辺-辺 の合算)"
+        );
     }
 
     /// 折り返して自己接触させた 5x5 の布 (頂点-面 / 辺-辺 の両方に候補が出る)
@@ -2896,6 +3437,7 @@ mod tests {
         }
         cloth
     }
+
 
     #[test]
     fn test_cloth_normals() {

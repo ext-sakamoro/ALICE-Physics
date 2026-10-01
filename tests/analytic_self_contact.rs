@@ -693,7 +693,7 @@ fn run_crumple(
     self_collision: bool,
     steps: usize,
     self_collision_distance: Fix128,
-) -> (usize, Vec<Vec3Fix>) {
+) -> (usize, usize, Vec<Vec3Fix>) {
     const RES: usize = 9;
     let mut cloth = Cloth::new_grid(
         Vec3Fix::ZERO,
@@ -724,6 +724,11 @@ fn run_crumple(
     let center = Fix128::from_int(4);
     let total = Fix128::from_int(steps as i64);
     let mut crossings = 0usize;
+    // The crate's own invariant, read through the public API. Kept **alongside** the
+    // independent loop below rather than replacing it: the loop is a reimplementation of
+    // the vertex-face half and is what makes a `0` from `remaining_self_contact_crossings`
+    // mean something, while the public count is the only one that also sees edge-edge.
+    let mut invariant = 0usize;
     for s in 0..steps {
         let shrink = Fix128::ONE - Fix128::from_ratio(7, 8) * Fix128::from_int(s as i64) / total;
         for (i, r) in rest.iter().enumerate() {
@@ -735,6 +740,7 @@ fn run_crumple(
         }
         let before = cloth.positions.clone();
         cloth.step(dt);
+        invariant += cloth.remaining_self_contact_crossings(&before);
         for (p, &bp) in before.iter().enumerate() {
             for tri in &cloth.triangles {
                 if shares_vertex(p, *tri) {
@@ -754,7 +760,7 @@ fn run_crumple(
             }
         }
     }
-    (crossings, cloth.positions)
+    (crossings, invariant, cloth.positions)
 }
 
 const CRUMPLE_STEPS: usize = 120;
@@ -922,10 +928,17 @@ fn vertex_face_separation(
 /// が閉形式で pin し続けています
 #[test]
 fn a_crumpled_cloth_does_not_pass_through_itself() {
-    let (crossings, _) = run_crumple(true, CRUMPLE_STEPS, default_radius());
+    let (crossings, invariant, _) = run_crumple(true, CRUMPLE_STEPS, default_radius());
     assert_eq!(
         crossings, 0,
         "自己交差する crumple scene で頂点が三角形を {crossings} 回貫いた"
+    );
+    // 1.5.x で追加 上の独立実装は頂点-面しか見ないので、辺-辺の貫通はここでしか出ません
+    // (実装前の実測: 同条件で頂点-面 0 件のまま辺-辺が 22 件残っていた)
+    assert_eq!(
+        invariant, 0,
+        "自己交差する crumple scene で自己貫通が {invariant} 件残った \
+         (頂点-面 / 辺-辺 の合算、頂点-面の独立計数は 0)"
     );
 }
 
@@ -947,8 +960,8 @@ fn a_crumpled_cloth_does_not_pass_through_itself() {
 /// `Debug` が 24 KB 出て message が埋まります (罠 `assert-eq-dumps-large-debug`)
 #[test]
 fn self_collision_toggle_changes_the_result_in_a_scene_that_self_intersects() {
-    let (_, pos_on) = run_crumple(true, CRUMPLE_STEPS, default_radius());
-    let (crossings_off, pos_off) = run_crumple(false, CRUMPLE_STEPS, default_radius());
+    let (_, _, pos_on) = run_crumple(true, CRUMPLE_STEPS, default_radius());
+    let (crossings_off, _, pos_off) = run_crumple(false, CRUMPLE_STEPS, default_radius());
 
     // この scene が判別に向いていることを先に確かめる (自己接触を切っても自己交差しない
     // scene では、on/off が違うことを示しても何も言っていない)
@@ -1045,8 +1058,8 @@ fn self_collision_toggle_changes_the_result_in_a_scene_that_self_intersects() {
 #[test]
 fn self_collision_improves_the_vertex_face_separation_it_constrains() {
     let radius = default_radius();
-    let (_, pos_on) = run_crumple(true, SEPARATION_STEPS, radius);
-    let (_, pos_off) = run_crumple(false, SEPARATION_STEPS, radius);
+    let (_, _, pos_on) = run_crumple(true, SEPARATION_STEPS, radius);
+    let (_, _, pos_off) = run_crumple(false, SEPARATION_STEPS, radius);
 
     // 三角形の位相は scene に依らないので、どちらの run から取っても同じ
     let cloth = Cloth::new_grid(
@@ -1092,8 +1105,8 @@ fn self_collision_improves_the_vertex_face_separation_it_constrains() {
 #[test]
 fn the_particle_pair_minimum_is_attained_by_two_pinned_vertices() {
     let radius = default_radius();
-    let (_, pos_on) = run_crumple(true, SEPARATION_STEPS, radius);
-    let (_, pos_off) = run_crumple(false, SEPARATION_STEPS, radius);
+    let (_, _, pos_on) = run_crumple(true, SEPARATION_STEPS, radius);
+    let (_, _, pos_off) = run_crumple(false, SEPARATION_STEPS, radius);
 
     let cloth = Cloth::new_grid(
         Vec3Fix::ZERO,
@@ -1148,8 +1161,8 @@ fn the_particle_pair_minimum_is_attained_by_two_pinned_vertices() {
 #[test]
 fn a_thickness_far_above_the_local_edge_length_is_outside_the_model() {
     let out_of_range = Fix128::from_ratio(1, 2);
-    let (crossings_on, _) = run_crumple(true, SEPARATION_STEPS, out_of_range);
-    let (crossings_off, _) = run_crumple(false, SEPARATION_STEPS, out_of_range);
+    let (crossings_on, _, _) = run_crumple(true, SEPARATION_STEPS, out_of_range);
+    let (crossings_off, _, _) = run_crumple(false, SEPARATION_STEPS, out_of_range);
 
     // 反 vacuous: OFF 側で自己交差が起きない scene なら「増えた」は何も言っていない
     assert!(
@@ -1233,8 +1246,8 @@ fn edge_edge_separation(
 #[test]
 fn self_collision_improves_the_edge_edge_separation_it_constrains() {
     let radius = default_radius();
-    let (_, pos_on) = run_crumple(true, SEPARATION_STEPS, radius);
-    let (_, pos_off) = run_crumple(false, SEPARATION_STEPS, radius);
+    let (_, _, pos_on) = run_crumple(true, SEPARATION_STEPS, radius);
+    let (_, _, pos_off) = run_crumple(false, SEPARATION_STEPS, radius);
     let cloth = Cloth::new_grid(
         Vec3Fix::ZERO,
         Fix128::from_int(8),
