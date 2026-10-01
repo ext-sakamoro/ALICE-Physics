@@ -220,7 +220,6 @@ unwired src/coupled_iteration.rs::SubIterationReport
 unwired src/coupled_iteration.rs::best_residual
 unwired src/coupled_iteration.rs::covering
 unwired src/coupled_iteration.rs::exponent
-unwired src/coupled_iteration.rs::factor
 unwired src/coupled_iteration.rs::observe
 unwired src/coupled_iteration.rs::observed_ratio
 unwired src/coupled_iteration.rs::residual_norm_inf
