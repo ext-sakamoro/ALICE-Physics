@@ -4875,6 +4875,8 @@ pub alice_physics::linear_elastic_fem::FemError::Stagnated
 pub alice_physics::linear_elastic_fem::FemError::Stagnated::iterations: u32
 pub alice_physics::linear_elastic_fem::FemError::Stagnated::relative_residual: alice_physics::math::Fix128
 pub alice_physics::linear_elastic_fem::FemError::Stagnated::without_improvement: u32
+pub alice_physics::linear_elastic_fem::FemError::TemperatureFieldDoesNotCoverMesh
+pub alice_physics::linear_elastic_fem::FemError::TemperatureFieldDoesNotCoverMesh::vertex: u32
 pub alice_physics::linear_elastic_fem::FemError::UnderConstrained
 pub alice_physics::linear_elastic_fem::FemError::VertexOutOfRange
 pub alice_physics::linear_elastic_fem::FemError::VertexOutOfRange::vertex: u32
@@ -5113,9 +5115,27 @@ impl core::marker::Unpin for alice_physics::linear_elastic_fem::StressTensor
 impl core::marker::UnsafeUnpin for alice_physics::linear_elastic_fem::StressTensor
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::linear_elastic_fem::StressTensor
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::linear_elastic_fem::StressTensor
+pub struct alice_physics::linear_elastic_fem::ThermalExpansion<'a>
+impl<'a> alice_physics::linear_elastic_fem::ThermalExpansion<'a>
+pub const fn alice_physics::linear_elastic_fem::ThermalExpansion<'a>::alpha_per_k(&self) -> alice_physics::math::Fix128
+pub const fn alice_physics::linear_elastic_fem::ThermalExpansion<'a>::field(&self) -> &'a alice_physics::coupled_field::CoupledField
+pub const fn alice_physics::linear_elastic_fem::ThermalExpansion<'a>::new(&'a alice_physics::coupled_field::CoupledField, alice_physics::math::Fix128) -> Self
+impl<'a> core::clone::Clone for alice_physics::linear_elastic_fem::ThermalExpansion<'a>
+pub fn alice_physics::linear_elastic_fem::ThermalExpansion<'a>::clone(&self) -> Self
+impl<'a> core::fmt::Debug for alice_physics::linear_elastic_fem::ThermalExpansion<'a>
+pub fn alice_physics::linear_elastic_fem::ThermalExpansion<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::marker::Copy for alice_physics::linear_elastic_fem::ThermalExpansion<'a>
+impl<'a> core::marker::Freeze for alice_physics::linear_elastic_fem::ThermalExpansion<'a>
+impl<'a> core::marker::Send for alice_physics::linear_elastic_fem::ThermalExpansion<'a>
+impl<'a> core::marker::Sync for alice_physics::linear_elastic_fem::ThermalExpansion<'a>
+impl<'a> core::marker::Unpin for alice_physics::linear_elastic_fem::ThermalExpansion<'a>
+impl<'a> core::marker::UnsafeUnpin for alice_physics::linear_elastic_fem::ThermalExpansion<'a>
+impl<'a> core::panic::unwind_safe::RefUnwindSafe for alice_physics::linear_elastic_fem::ThermalExpansion<'a>
+impl<'a> core::panic::unwind_safe::UnwindSafe for alice_physics::linear_elastic_fem::ThermalExpansion<'a>
 pub const alice_physics::linear_elastic_fem::RESIDUAL_NORM_FLOOR: alice_physics::math::Fix128
 pub fn alice_physics::linear_elastic_fem::solve(&alice_physics::sdf_fem_mesh::SdfTetMesh, &alice_physics::linear_elastic_fem::ElasticMaterial, &alice_physics::linear_elastic_fem::BoundaryConditions, &alice_physics::linear_elastic_fem::SolverConfig) -> core::result::Result<alice_physics::linear_elastic_fem::FemSolution, alice_physics::linear_elastic_fem::FemError>
 pub fn alice_physics::linear_elastic_fem::solve_corotational(&alice_physics::sdf_fem_mesh::SdfTetMesh, &alice_physics::linear_elastic_fem::ElasticMaterial, &alice_physics::linear_elastic_fem::BoundaryConditions, &alice_physics::linear_elastic_fem::CorotationalConfig) -> core::result::Result<alice_physics::linear_elastic_fem::CorotationalSolution, alice_physics::linear_elastic_fem::FemError>
+pub fn alice_physics::linear_elastic_fem::solve_with_eigenstrain(&alice_physics::sdf_fem_mesh::SdfTetMesh, &alice_physics::linear_elastic_fem::ElasticMaterial, &alice_physics::linear_elastic_fem::BoundaryConditions, &alice_physics::linear_elastic_fem::SolverConfig, core::option::Option<alice_physics::linear_elastic_fem::ThermalExpansion<'_>>) -> core::result::Result<alice_physics::linear_elastic_fem::FemSolution, alice_physics::linear_elastic_fem::FemError>
 pub fn alice_physics::linear_elastic_fem::stiffness_diagonal_stats(&alice_physics::sdf_fem_mesh::SdfTetMesh, &alice_physics::linear_elastic_fem::ElasticMaterial, &alice_physics::linear_elastic_fem::BoundaryConditions) -> core::result::Result<alice_physics::linear_elastic_fem::DiagonalStats, alice_physics::linear_elastic_fem::FemError>
 pub mod alice_physics::mass_properties
 pub struct alice_physics::mass_properties::MassProperties
