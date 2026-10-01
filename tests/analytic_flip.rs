@@ -748,12 +748,21 @@ fn all_particles_at_one_point_do_not_panic() {
     assert!(res.is_ok(), "same-point pile panicked with projection on");
 }
 
-/// Coordinates and velocities of order `i64::MAX / 4`. A huge position is
-/// outside the box (ignored); a huge velocity inside it goes through the
-/// transfer, the projection, the blend and the advection. Reported, never
-/// hidden: if this panics the assertion fails and the panic is a finding.
+/// Coordinates and velocities of order `i64::MAX / 4`. `Fix128` wraps mod 2^128
+/// instead of panicking, so "does not panic" proves nothing; the expected
+/// values are fixed instead:
+///
+/// * a particle outside the box is not touched at all (position and velocity
+///   bit for bit): it deposits nothing and the grid never reaches it
+/// * an in-domain particle with a huge velocity leaves the box within one step
+///   (|v|*dt is far above the box), so the advection clamp puts it on the
+///   corner its velocity signs point to: `+` -> the far wall (3), `-` -> 0
+/// * its velocity stays within 1e-3 relative of the input and keeps its sign.
+///   The transfer, projection and blend only redistribute a velocity of
+///   this size, a wrapped intermediate would be off by orders of magnitude
+///   (the measured drift is ~1.5e-7)
 #[test]
-fn huge_positions_and_velocities_do_not_panic() {
+fn huge_positions_and_velocities_have_pinned_results() {
     let big = int(i64::MAX / 4);
     let mut s = solver(3, 3, 3);
     let mut ps = vec![
@@ -762,16 +771,37 @@ fn huge_positions_and_velocities_do_not_panic() {
         (v3(q(3, 2), q(3, 2), q(3, 2)), v3(big, -big, big)),
         (v3(q(1, 2), q(1, 2), q(1, 2)), v3(-big, big, -big)),
     ];
+    let before = ps.clone();
     let res = catch_unwind(AssertUnwindSafe(|| {
         s.step_flip(&mut ps, q(1, 16), q(1, 2));
     }));
     assert!(res.is_ok(), "huge input made step_flip panic");
-    for &(pos, _) in &ps[2..] {
-        // In-domain particles stay in the box after the clamp.
-        assert!(pos.x >= Fix128::ZERO && pos.x <= int(3));
-        assert!(pos.y >= Fix128::ZERO && pos.y <= int(3));
-        assert!(pos.z >= Fix128::ZERO && pos.z <= int(3));
+    // Outside the box: bit-for-bit untouched.
+    assert_eq!(ps[0], before[0], "far-side particle was modified");
+    assert_eq!(ps[1], before[1], "left-of-domain particle was modified");
+    // Inside the box: clamped to the corner the velocity points at.
+    assert_eq!(ps[2].0, v3(int(3), Fix128::ZERO, int(3)));
+    assert_eq!(ps[3].0, v3(Fix128::ZERO, int(3), Fix128::ZERO));
+    // Velocity: sign kept, magnitude within 1e-3 relative of the input.
+    let tol = big.to_f64() * 1e-3;
+    for idx in [2usize, 3] {
+        let (got, want) = (ps[idx].1, before[idx].1);
+        for (c, g, w) in [
+            ("x", got.x, want.x),
+            ("y", got.y, want.y),
+            ("z", got.z, want.z),
+        ] {
+            assert_eq!(
+                g.to_f64().signum(),
+                w.to_f64().signum(),
+                "particle {idx} v.{c}: sign flipped ({g:?})"
+            );
+            assert!(
+                (g.to_f64() - w.to_f64()).abs() <= tol,
+                "particle {idx} v.{c}: {} vs input {}",
+                g.to_f64(),
+                w.to_f64()
+            );
+        }
     }
-    assert_eq!(ps[0].0, v3(big, big, big));
-    assert_eq!(ps[1].0, v3(-big, q(1, 2), q(1, 2)));
 }
