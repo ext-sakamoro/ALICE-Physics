@@ -23,6 +23,16 @@ P1 四面体に von Mises 降伏 + 等方硬化 (bilinear、`H = dσ_y/dε̄_p`)
 oracle は `tests/analytic_elastoplastic_fem.rs` (19 本、先に stub で 18/18 red を実測してから実装): 一軸引張の bilinear 閉形式 (1 step と 8 step で一致) / 除荷は傾き `E` で戻り残留ひずみ `3·2⁻¹⁰` が残る / 完全塑性の頭打ちと限界荷重 / `tr ε_p = 0` / 単純せん断 `τ = (√3σ_y + Hγ)/(3 + H/G)` (工学せん断とテンソルせん断の取り違えを見る) / 静水圧は降伏しない / 降伏前は `solve` と bit 一致 / 節点番号と要素順の入れ替え不変 / consistent tangent の反復数 / 不正入力
 変異試験は 42 件すべて red (数式 / 接線 / 状態の持ち越し / 荷重係数 / 全 guard) 接線の誤りは答えを変えず反復数だけを変えるので、反復数の上限 (せん断 3、片持ち梁 13、一軸 5) で検出している
 
+### Changed — `CfdSolver::step` の既定の圧力射影を multigrid にした (数値結果が変わる)
+
+`step` の既定の圧力射影が、全軸が 2 の冪の格子では multigrid (`project_pressure_multigrid`、6 サイクル) になった 数値結果が変わる 従来は `jacobi_iterations` 回の red-black Gauss-Seidel
+非 2 冪の格子は従来の GS のままで bit 一致する (Gartling の 96 x 8、duct の 24 x 16、golden の CFD scene 6 x 6 x 6 で実測 全桁一致) GS を使い続けたい場合は `step_multigrid(dt, 0)` (cycles = 0 は全格子で GS 射影) `jacobi_iterations` は GS の sweep 数のままで、既定の multigrid 経路は読まない 公開 API の差分なし (新しい公開項目なし)
+サイクル数 6 は、8³ / 16³ / 32³ の step 後 `max|div|` が GS 30 sweeps と同等以下になる最小値 (6 サイクル 6.3e-4 / 1.9e-3 / 2.6e-2 に対し GS 7.9e-4 / 1.4e-2 / 6.9e-1) 射影単体のコストは GS 30 sweeps と同程度 (release 32³ で GS 19.8 ms に対し 16.4 ms、debug 32³ では 111 ms に対し 153 ms)
+`step_adaptive` は内部で `step` を呼ぶので自動で multigrid になる `step_flip` の射影は GS のまま (別判断)
+測定した影響: 2 の冪格子の `armaly_backward_step::reattachment_lengthens_under_grid_refinement` (`#[ignore]`、release 約 180 s) の doc 記録値が 6 桁目以降で動く (ny = 16 の x_1 4.721966 → 4.721972、half-way 4.631712 → 4.631433) 記録値は GS 時の値を残し、multigrid 後の値を併記した assert と閾値は変えていない 他の `#[ignore]` (`flow_bc` の 2 本、`wall_bc` の cavity、Gartling の `src gap`) は値が一致するか丸め誤差の範囲
+examples のうち 2 の冪格子を使う `bfecc_advection_demo` (16 x 8 x 8) と `buckmaster_alpoge_boussinesq_r2` (64 x 64 x 4) は実行時の出力が変わる (docs に出力数値の記載なし)
+test: `tests/analytic_step_default_projection.rs` (4 本、既定 = 6 サイクル multigrid との bit 一致 / 非 2 冪各軸の GS fallback / `step_multigrid(dt, 0)` が GS / `jacobi_iterations` の意味)、変異 7 件が red `armaly_backward_step::every_cross_section_telescopes_to_the_inflow_flux` は 1 step 後の未収束の場を前提とする非空虚ガードを持つので `step_multigrid(dt, 0)` で GS を明示した (恒等式と閾値は不変) `analytic_step_multigrid` の参照構築 3 本も同様に GS を明示した
+
 ### Added — FLIP / PIC の粒子経路 (`CfdSolver::step_flip`)
 
 粒子 `(位置, 速度)` を格子へ転写し、体積力 + 拡散 + 圧力射影を 1 step 回してから粒子速度を `v_p = (1−r)·G2P(u_new) + r·(v_p + G2P(u_new − u_old))` で更新し `x += v·dt` で移流する入口を追加した `p2g_normalized` の最初の production 呼出元になった (baseline の行を削除)

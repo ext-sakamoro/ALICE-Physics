@@ -405,6 +405,20 @@
 //! because it tracks the Gauss-Seidel residual rather than the slowest mode of
 //! the flow. Steadiness has to be read off the quantity being measured.
 //!
+//! 📎 **Recording note (appended; the figures above are unchanged).** The
+//! figures above and in the `reattachment_lengthens_under_grid_refinement`
+//! table were measured with the projection at **Gauss-Seidel (60 sweeps)**.
+//! After `CfdSolver::step` defaulted to the multigrid projection (6 W-cycles,
+//! every grid extent a power of two), the same ignored test, run in a release
+//! build (about 180 s) on the 128 x 8 and 256 x 16 grids, reads `x_1 =
+//! 4.394360` (ny = 8, unchanged to 7 digits; half-way `4.394113` against
+//! `4.394114`), `x_1 = 4.721972` (ny = 16, against `4.721966`), half-way
+//! `4.631433` (ny = 16, against `4.631712`) and an upper bubble ending at
+//! `5.762585367166889` (against `5.762585465930066`). `max |div u|` is `3.04e-18`
+//! at ny = 8 and `1.02e-12` at ny = 16 (against `9.33e-14` and `4.50e-8`). No
+//! assertion reads these figures, and the pinned `x_1 = 4.3921` twin (96 x 8,
+//! not a power of two) did not move. This is a record, not a re-pin.
+//!
 //! ⚠️ **The upper bubble is missing at `ny = 8` because eight cells cannot
 //! carry the boundary layer, not because there is nothing there** — that run
 //! *is* steady (four digits in `x_1`, `max |div u| = 1.8e-13`), so its absence
@@ -876,6 +890,12 @@ fn inlet_column_has_unit_mean_and_is_gartlings_parabola_to_second_order() {
 /// separate: the identity residual stays at the arithmetic floor while the
 /// flux imbalance falls by four orders of magnitude. An oracle that only
 /// looked at the imbalance would be measuring convergence, not conservation.
+///
+/// The step is `step_multigrid(dt, 0)`, the Gauss-Seidel projection, on purpose:
+/// even though the default projection of `step` is multigrid on this 32 x 8
+/// grid, this test checks the identity on a field that is still unconverged
+/// (the non-vacuity guard below asks for a flux imbalance above 1 after one
+/// step), and the multigrid projection removes that imbalance in a single step.
 #[test]
 fn every_cross_section_telescopes_to_the_inflow_flux() {
     let (s_cells, nx) = (4usize, 32usize);
@@ -887,7 +907,7 @@ fn every_cross_section_telescopes_to_the_inflow_flux() {
     let mut imbalance_now = f64::INFINITY;
     for &steps in &[1u32, 16, 256] {
         for _ in 0..steps - done {
-            solver.step(dt);
+            solver.step_multigrid(dt, 0);
         }
         done = steps;
 
@@ -1260,6 +1280,20 @@ fn reattachment_grows_with_reynolds_number_on_the_step_field() {
 /// |---|---|---|
 /// | 8 | 4.394114 | 4.394360 |
 /// | 16 | 4.631712 | 4.721966 |
+///
+/// 📎 **Recording note (appended; the table above is unchanged).** The table
+/// is the measurement with the projection at **Gauss-Seidel (60 sweeps)**. With
+/// the `step` default now multigrid (6 W-cycles, every extent a power of two) the
+/// same test, in a release build (about 180 s), reads:
+///
+/// | `ny` | `x_1` at `t = 128` | `x_1` at `t = 256` |
+/// |---|---|---|
+/// | 8 | 4.394113 | 4.394360 |
+/// | 16 | 4.631433 | 4.721972 |
+///
+/// with the `ny = 16` upper bubble ending at `5.762585367166889` (Gauss-Seidel:
+/// `5.762585465930066`) and `max |div u|` `3.04e-18` / `1.02e-12` (Gauss-Seidel:
+/// `9.33e-14` / `4.50e-8`). Nothing asserts these figures; this is a record.
 ///
 /// (⚠️ the `ny = 8` entry at `t = 256` read `4.394400` when this table first
 /// landed, and the `2.9e-4` computed from it appeared here and in the module
