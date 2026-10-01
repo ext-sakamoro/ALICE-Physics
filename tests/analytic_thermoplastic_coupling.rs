@@ -41,15 +41,36 @@
 //!
 //! # ⚠️ What is deliberately not claimed
 //!
-//! **That under-relaxation repairs a splitting that does not contract.**
-//! Measured on these scenes it does the opposite: `ω = 1` converges in 24
-//! sweeps at `c_v = 2⁻¹⁰` where `ω = 1/2` and `ω = 1/4` exhaust a 40-sweep
-//! budget, and the ordering repeats at `c_v = 2⁻⁸` (10 / 34 / 76 sweeps).
-//! ⚠️ **No scalar contraction ratio is claimed** — `observed_ratio` is a ratio
-//! of residual magnitudes and so carries no sign, and the map acts on the whole
-//! grid, so a single eigenvalue does not predict it. Relaxation is the remedy
-//! for the added-mass form `coupled_iteration` documents; here it only costs
-//! sweeps, and the oracle below checks that it does not move the answer.
+//! **That any relaxation beats `ω = 1`.** Measured on these scenes nothing
+//! does: under-relaxation costs sweeps (10 / 34 / 76 at `ω` = 1 / ½ / ¼,
+//! `c_v = 2⁻⁸`) and so does over-relaxation (10 / 14 / 21 / 29 for `ω` = 1 /
+//! 1.112 / 1.25 / 1.367), even though the measured spectrum says the second
+//! group should win. The spectrum and why it does not decide the sweep count
+//! are below; the oracle here checks only that `ω` does not move the *answer*.
+//!
+//! ⚠️ **Under-relaxation does not repair this splitting, and over-relaxation
+//! does not help either — both measured.** The Jacobian at the fixed point was
+//! taken by finite differences over the 25 nodes the deposit writes:
+//! `λ ∈ {+0.280, −0.078}` at `c_v = 2⁻⁸` and `{+0.938, −0.401}` at
+//! `c_v = 2⁻¹⁰`. Which effect owns which sign is the physics one would guess,
+//! and switching them off one at a time confirms it: **softening is the
+//! positive eigenvalue** (hotter → weaker → more work → hotter) and
+//! **expansion is the negative one** (hotter → more eigenstrain → less elastic
+//! trial strain → less work) — with `α = 0` the negative eigenvalue vanishes
+//! (`−0.000`), with no softening law the dominant one turns negative
+//! (`−0.146`). The alternating early iterates are the negative eigenvalue in
+//! the transient; the positive one sets the tail.
+//!
+//! ⚠️ **The sweep count is not predicted by that spectrum**, because the
+//! iteration reaches the floor while still in its transient: at `c_v = 2⁻⁸` the
+//! early sweeps contract by 0.084 each against a `λ_max` of 0.280. So
+//! Richardson's equalising `ω* = 2/(2 − λ_max − λ_min)` — 1.112 and 1.367 here,
+//! both over-relaxation — is **worse** in practice: measured sweeps at
+//! `c_v = 2⁻⁸` are 10 / 14 / 21 / 29 / 45 / 174 for `ω` = 1 / 1.112 / 1.25 /
+//! 1.367 / 1.5 / 1.75, and at `c_v = 2⁻¹⁰` over-relaxation above 1.25 fails
+//! outright. `ω = 1` is the best value on every scene tried, which is why the
+//! range stops there.
+//!
 //!
 //! **That a non-contracting scene reports `Diverging`.** At `c_v = 2⁻¹⁴` the
 //! sweep settles into a **period-two cycle**: the first sweep deposits 177.7 K,
