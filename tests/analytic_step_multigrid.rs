@@ -15,7 +15,7 @@
 //!    is divergence-free
 //! 3. fallback: an extent that is not a power of two, or `cycles == 0`, cannot
 //!    be solved by the multigrid projection; the step then uses the Gauss-Seidel
-//!    projection (bit-identical to `step`) instead of silently skipping the
+//!    projection (bit-identical to `step_multigrid(dt, 0)`, and to `step` on a non-power-of-two grid) instead of silently skipping the
 //!    projection and leaving a compressible field
 //! 4. no new panic path: for every degenerate input, `step_multigrid` panics
 //!    exactly when `step` does
@@ -101,7 +101,9 @@ fn step_multigrid_is_the_step_up_to_the_projection_then_the_multigrid_projection
             let mut reference = scene(n, n, n);
             by_step.step_multigrid(dt(), cycles);
             reference.jacobi_iterations = 0;
-            reference.step(dt());
+            // cycles 0 = the Gauss-Seidel projection, zero sweeps = a no-op,
+            // whatever `step`'s default projection is
+            reference.step_multigrid(dt(), 0);
             project_pressure_multigrid(&mut reference.grid, dt(), reference.density_kg_m3, cycles);
             same_grid(&by_step.grid, &reference.grid);
             assert_eq!(by_step.step_count, reference.step_count);
@@ -116,7 +118,7 @@ fn a_converged_step_multigrid_matches_a_converged_step() {
     let mut gs = scene(n, n, n);
     gs.jacobi_iterations = 600;
     mg.step_multigrid(dt(), 24);
-    gs.step(dt());
+    gs.step_multigrid(dt(), 0);
     let scale = max_abs(&gs.grid.u)
         .max(max_abs(&gs.grid.v))
         .max(max_abs(&gs.grid.w));
@@ -175,7 +177,7 @@ fn unsupported_extents_and_zero_cycles_use_the_gauss_seidel_projection() {
         let mut mg = scene(nx, ny, nz);
         let mut gs = scene(nx, ny, nz);
         mg.step_multigrid(dt(), cycles);
-        gs.step(dt());
+        gs.step_multigrid(dt(), 0);
         same_grid(&mg.grid, &gs.grid);
         assert_eq!(
             mg.step_count, gs.step_count,
@@ -236,7 +238,7 @@ fn tolerance_measurement() {
         gs.jacobi_iterations = 600;
         let before = max_div(&mg.grid);
         mg.step_multigrid(dt(), cycles);
-        gs.step(dt());
+        gs.step_multigrid(dt(), 0);
         let scale = max_abs(&gs.grid.u)
             .max(max_abs(&gs.grid.v))
             .max(max_abs(&gs.grid.w));

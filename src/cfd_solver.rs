@@ -23,8 +23,10 @@
 //!
 //! This is a first-order operator-splitting scheme; adequate for engineering
 //! demos and validation tests. Higher-order RK3 time stepping is a future
-//! upgrade. The pressure projection is Gauss-Seidel in [`CfdSolver::step`] and
-//! multigrid in [`CfdSolver::step_multigrid`].
+//! upgrade. The pressure projection of [`CfdSolver::step`] is multigrid when
+//! every grid extent is a power of two and Gauss-Seidel (`jacobi_iterations`
+//! sweeps) otherwise; [`CfdSolver::step_multigrid`] picks the cycle count, and
+//! `step_multigrid(dt, 0)` keeps the Gauss-Seidel projection on any grid.
 
 use crate::eulerian_grid::{
     g2p_velocity, p2g_normalized, project_pressure, project_pressure_multigrid, sample_u_range,
@@ -36,6 +38,14 @@ use crate::math::{Fix128, Vec3Fix};
 use crate::multiphase::{trilinear_range, trilinear_sample, Grid3d};
 use crate::surface_tension_csf::{compute_csf_field, SIGMA_WATER_AIR};
 use crate::turbulence::{smagorinsky_eddy_viscosity, strain_rate_magnitude, SMAGORINSKY_CS};
+
+/// W-cycles of the multigrid projection [`CfdSolver::step`] runs by default.
+///
+/// Measured as the smallest count whose post-step `max|div|` is at or below
+/// that of the 30 Gauss-Seidel sweeps the default projection used to be, on
+/// 8^3, 16^3 and 32^3 grids (6 cycles: 6.3e-4 / 1.9e-3 / 2.6e-2 against
+/// 7.9e-4 / 1.4e-2 / 6.9e-1). The cost is about that of the 30 sweeps.
+const DEFAULT_MULTIGRID_CYCLES: u32 = 6;
 
 /// Selects the advection scheme applied to velocity and temperature at
 /// each solver step.
@@ -92,7 +102,9 @@ pub struct CfdSolver {
     pub beta_per_k: Fix128,
     /// Reference temperature `T_0` (K) for Boussinesq.
     pub reference_temp_k: Fix128,
-    /// Pressure-projection Jacobi iterations per step.
+    /// Gauss-Seidel sweeps per projection, used when the projection is not
+    /// multigrid (a grid extent that is not a power of two, or
+    /// `step_multigrid(dt, 0)`).
     pub jacobi_iterations: u32,
     /// Reinitialise the level set every N steps (0 = never).
     pub reinit_every_n_steps: u32,
@@ -178,6 +190,12 @@ impl CfdSolver {
 
     /// One integrated time step.
     ///
+    /// The pressure projection is [`project_pressure_multigrid`]
+    /// (6 W-cycles) when every grid extent is a power
+    /// of two, and `jacobi_iterations` Gauss-Seidel sweeps otherwise;
+    /// `jacobi_iterations` counts only those sweeps. To keep the Gauss-Seidel
+    /// projection on a power-of-two grid call `step_multigrid(dt, 0)`.
+    ///
     /// The face boundary conditions of the grid ([`crate::eulerian_grid::FaceBc`]) are imposed
     /// three times: once before advection, so nothing samples a stale value
     /// off a wall; once after the body forces, so the viscous term sees the
@@ -219,7 +237,8 @@ impl CfdSolver {
             && self.grid.nz.is_power_of_two()
     }
 
-    /// The step body shared by [`Self::step`] (`multigrid_cycles = None`) and
+    /// The step body shared by [`Self::step`] (`multigrid_cycles = None`, which
+    /// means 6 W-cycles) and
     /// [`Self::step_multigrid`].
     fn step_with_projection(&mut self, dt_s: Fix128, multigrid_cycles: Option<u32>) {
         if dt_s.is_zero() {
@@ -238,8 +257,10 @@ impl CfdSolver {
         } else {
             self.apply_molecular_diffusion(dt_s);
         }
-        match multigrid_cycles {
-            Some(cycles) if cycles > 0 && self.grid_supports_multigrid() => {
+        // `None` is the default projection: multigrid where the grid allows it
+        let cycles = multigrid_cycles.unwrap_or(DEFAULT_MULTIGRID_CYCLES);
+        match cycles {
+            cycles @ 1.. if self.grid_supports_multigrid() => {
                 project_pressure_multigrid(&mut self.grid, dt_s, self.density_kg_m3, cycles);
             }
             _ => project_pressure(

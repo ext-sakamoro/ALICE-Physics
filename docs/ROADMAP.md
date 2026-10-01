@@ -16,6 +16,12 @@ Memory index pointer: `[[reference-alice-physics-v1-roadmap]]` in claude-config.
 | Maxwell FDTD | `ecd8c61` | source-free Yee、⚠️ **SI は `ε₀·μ₀` が 7.7 bit で不可**、正規化単位 + `S=9/16` |
 | 多体 ABA | `1bab99b` | ⚠️ **`solve()` が `link.joint` を読まない**状態から real ABA、oracle 12 本 |
 
+### 第 12 increment (2026-10-01、`step` の既定の圧力射影を multigrid に)
+
+`CfdSolver::step` の既定が、全軸が 2 の冪の格子では multigrid (6 サイクル)、そうでなければ従来の GS になった 数値結果が変わるので影響を先に実測した 非 2 冪 (Gartling / duct / golden) は bit 不変、2 の冪では `reattachment_lengthens_under_grid_refinement` の記録値が 6 桁目以降で動く (doc は両方の値を併記、assert は不変)
+GS を使うには `step_multigrid(dt, 0)` `step_adaptive` は自動で multigrid になる `step_flip` は GS のまま (別判断)
+⚠️ 6 サイクルのコストは GS 30 sweeps と同程度で、得られるのは精度 (8³ / 16³ / 32³ で同等以上) 純 Neumann の平均圧力固定と `step_flip` への multigrid 配線は未着手
+
 ### 第 11 increment (2026-10-01、FLIP / PIC の粒子経路)
 
 `CfdSolver::step_flip` を追加し `p2g_normalized` を production から呼ばれる形にした (配線ガードの baseline から削除) oracle 18 本、変異 34 / 35 が red (残りは等価変異)
