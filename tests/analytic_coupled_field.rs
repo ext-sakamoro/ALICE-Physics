@@ -28,6 +28,7 @@
 use alice_physics::coupled_field::{reconcile_mean, CoupledField, CoupledScalar};
 use alice_physics::math::{Fix128, Vec3Fix};
 use alice_physics::phase_change::{PhaseChangeConfig, PhaseChangeModifier};
+use alice_physics::sim_field::ScalarField3D;
 use alice_physics::sim_modifier::PhysicsModifier;
 use alice_physics::thermal::{ThermalConfig, ThermalModifier};
 
@@ -714,4 +715,172 @@ fn reconcile_is_independent_of_participant_order() {
     assert_eq!(a1.temperature.data, a2.temperature.data);
     assert_eq!(b1.temperature.data, b2.temperature.data);
     assert_eq!(c1.temperature.data, c2.temperature.data);
+}
+
+// ---------------------------------------------------------------------------
+// What each ghost convention conserves
+//
+// The two `diffuse` implementations in the crate conserve *different* sums, and
+// the difference only shows on a field that is non-zero **on** the boundary.
+// Each test below asserts the invariant of its own convention and, as its
+// vacuity guard, that the other sum moved: a scheme that froze the field, or
+// one whose two sums happened to coincide, would fail the guard rather than
+// pass the invariant.
+//
+// The weight is derived in the `coupled_field` module docs: the mirror ghost
+// puts the boundary at the node, so an end node owns half a dual cell per end
+// axis and the three-dimensional weight is `2⁻ᵇ`; the copy ghost puts it half a
+// cell outside, so every node owns a full cell and the weight is one.
+// ---------------------------------------------------------------------------
+
+/// `2⁻ᵇ` for a node, `b` counting the axes on which it is an end.
+///
+/// A degenerate axis (`n == 1`) contributes no flux, so it is not an end for
+/// this purpose and does not halve anything.
+fn dual_weight(i: usize, n: usize) -> Fix128 {
+    if n == 1 || (i != 0 && i != n - 1) {
+        Fix128::ONE
+    } else {
+        q(1, 2)
+    }
+}
+
+/// `Σ 2⁻ᵇ Tᵢ` over a [`CoupledField`], in `Fix128` so the sum is exact.
+///
+/// Halving is exact in binary and the additions are the same `Fix128` additions
+/// `diffuse` performs, so this reference carries no error of its own and the
+/// comparison below can be `assert_eq!` rather than a tolerance.
+fn dual_weighted_sum(f: &CoupledField) -> Fix128 {
+    let mut total = Fix128::ZERO;
+    for iz in 0..f.nz() {
+        for iy in 0..f.ny() {
+            for ix in 0..f.nx() {
+                let w = dual_weight(ix, f.nx()) * dual_weight(iy, f.ny()) * dual_weight(iz, f.nz());
+                total = total + f.get(ix, iy, iz) * w;
+            }
+        }
+    }
+    total
+}
+
+/// A `n³` grid spanning `[0, 4]³`, so `h = 4 / (n − 1)` is dyadic for `n = 5`.
+fn cube_grid(n: usize) -> CoupledField {
+    CoupledField::try_new(
+        n,
+        n,
+        n,
+        (Fix128::ZERO, Fix128::ZERO, Fix128::ZERO),
+        (
+            Fix128::from_int(4),
+            Fix128::from_int(4),
+            Fix128::from_int(4),
+        ),
+    )
+    .expect("a cube of at least two nodes per axis")
+}
+
+/// `CoupledField::diffuse` holds `Σ 2⁻ᵇ T` exactly and does **not** hold `Σ T`.
+///
+/// The mirror ghost is what makes this the conserved sum, and the plain sum is
+/// the guard: if the scheme conserved both, or moved neither, one of the two
+/// assertions fails. The heat starts on a face node, which is the only place
+/// the two sums can disagree.
+#[test]
+fn the_mirror_ghost_conserves_the_dual_weighted_sum_and_not_the_plain_one() {
+    let n = 5;
+    let mut f = cube_grid(n);
+    // Dyadic amplitude on a face node: every subsequent value stays dyadic, so
+    // the exact comparison below is a statement about the scheme, not about
+    // where the rounding happened to fall.
+    f.set(0, n / 2, n / 2, Fix128::from_int(8));
+
+    let dual_before = dual_weighted_sum(&f);
+    let plain_before = f.sum();
+    assert_eq!(
+        dual_before,
+        Fix128::from_int(4),
+        "a face node owns half a cell"
+    );
+    assert_eq!(plain_before, Fix128::from_int(8));
+
+    let dt = q(1, 16);
+    for _ in 0..6 {
+        f.diffuse(dt, Fix128::ONE);
+    }
+
+    assert_eq!(
+        dual_weighted_sum(&f),
+        dual_before,
+        "the mirror ghost must hold the dual-weighted sum exactly; it moved by {} ulps",
+        ulps(dual_weighted_sum(&f), dual_before)
+    );
+    assert_ne!(
+        f.sum(),
+        plain_before,
+        "the plain sum did not move, so this scene cannot tell the two sums \
+         apart and the invariant above is vacuous"
+    );
+}
+
+/// `ScalarField3D::diffuse` holds the plain sum and does **not** hold
+/// `Σ 2⁻ᵇ T` — the mirror of the test above.
+///
+/// `f32` cannot be exact, so the invariant is bounded rather than asserted
+/// equal. The bound is derived, not fitted: one step touches each of the `n³`
+/// nodes with a handful of `mul_add`s, so the sum of a positive field carries
+/// at most a few `f32::EPSILON` of relative error per step, and `8 ε · steps`
+/// is a generous envelope for that. The guard then asks the *other* sum to move
+/// by a thousand times the same envelope, so the two cannot be confused by
+/// rounding alone (measured here: drift at 1 % of the envelope, the other sum
+/// at over three thousand times it).
+#[test]
+fn the_copy_ghost_conserves_the_plain_sum_and_not_the_dual_weighted_one() {
+    let n = 5usize;
+    let steps = 6usize;
+    let mut f = ScalarField3D::new(n, n, n, (0.0, 0.0, 0.0), (4.0, 4.0, 4.0));
+    // Non-dyadic amplitude, so the `f32` arithmetic really rounds and the bound
+    // is doing work rather than describing an exact case.
+    let amplitude = 7.3_f32;
+    f.data[n * ((n / 2) + n * (n / 2))] = amplitude;
+
+    let weights = |i: usize| if i == 0 || i == n - 1 { 0.5_f64 } else { 1.0 };
+    let sums = |g: &ScalarField3D| -> (f64, f64) {
+        let mut plain = 0.0;
+        let mut dual = 0.0;
+        for iz in 0..n {
+            for iy in 0..n {
+                for ix in 0..n {
+                    let v = f64::from(g.data[ix + n * (iy + n * iz)]);
+                    plain += v;
+                    dual += v * weights(ix) * weights(iy) * weights(iz);
+                }
+            }
+        }
+        (plain, dual)
+    };
+
+    let (plain_before, dual_before) = sums(&f);
+    assert!(plain_before > 0.0 && dual_before > 0.0);
+
+    for _ in 0..steps {
+        f.diffuse(1.0 / 64.0, 1.0);
+    }
+    let (plain_after, dual_after) = sums(&f);
+
+    let envelope = 8.0 * f64::from(f32::EPSILON) * steps as f64;
+    let plain_drift = (plain_after - plain_before).abs() / plain_before;
+    let dual_change = (dual_after - dual_before).abs() / dual_before;
+
+    assert!(
+        plain_drift <= envelope,
+        "the copy ghost must hold the plain sum to rounding: drift {plain_drift:.3e} \
+         exceeds the envelope {envelope:.3e}"
+    );
+    assert!(
+        dual_change >= 1000.0 * envelope,
+        "the dual-weighted sum moved by only {dual_change:.3e}, under a thousand \
+         envelopes ({:.3e}); this scene cannot separate the two conventions, so \
+         the invariant above is vacuous",
+        1000.0 * envelope
+    );
 }

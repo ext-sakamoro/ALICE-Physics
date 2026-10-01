@@ -13,6 +13,12 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added — 2 つの `diffuse` が別の量を保存することを doc に書き、oracle で固定した (test / doc のみ、公開 API の差分なし)
+
+`CoupledField::diffuse` は反射 ghost を **mirror** (`T₋₁ = T₁`) で置くので双対体積重み和 `Σ 2⁻ᵇ T` (`b` = その node が端になっている軸の数、境界で 1/2・辺で 1/4・角で 1/8) を厳密に保存し、`ScalarField3D::diffuse` は **copy** (`T₋₁ = T₀`) なので一律和 `Σ T` を保存する 精度の違い (2 次 / 1 次、閉形式モードの有無) は従来から module doc に書かれていたが、⚠️ **保存量が別物であることは書かれていなかった** `linear_elastic_fem::deposit_plastic_heat` がこの食い違いを踏んで一律和で恒等式を立てていたので、同じ誤りが再発しないよう量の違いを表にし、telescoping の導出と「保存は安定性と独立 (不安定な `dt` でも保存する)」を併記した 橋渡し (`copy_from_f32` / `write_to_f32`) は**両者とも node を `min + i·(max−min)/(n−1)` に置くので位置が一致し点ごと転送は厳密**、ただし**往復で保存される量が入れ替わる**ことを明記した
+oracle 2 本を `tests/analytic_coupled_field.rs` に追加 (計 11 本) どちらも**非保存側の和を歯として同じ test に同居**させている: mirror 側は `Fix128` で厳密なので保存側を `assert_eq!`、一律和が動くことを `assert_ne!` で要求 copy 側は `f32` なので包絡線 `8·f32::EPSILON·steps` で押さえ、非保存側にはその 1000 倍の変化を要求した (実測は drift が包絡線の 1 %、非保存側が 3.5e3 倍で 3 桁以上の余裕) ⚠️ **熱は面の node に置く** — 内部に置くと 2 つの和が一致して何も測らない
+破壊試験 4 変異すべて red (生存 0、mirror を copy に / copy を mirror に / 各 `diffuse` を no-op に) ⚠️ **copy 側の 2 変異を捕まえるのは新 oracle だけ**で、`ScalarField3D` の保存規約には test が 1 本も無かったことが実測で確定した
+
 ### Fixed / Changed — `p2g_normalized` が項を丸めずに厳密積を累積する (wrap と丸め増幅の解消、通常域の bit が変わる)
 
 `eulerian_grid::p2g_normalized` の face 値を `Σ wᵢ·vᵢ ÷ Σ wᵢ` の厳密な整数計算にした 各項は `weight` と `v` の raw 同士の 256 bit 厳密積 (`Fix128::mul` の 64 bit 切り捨てなし)、分子は符号付き 256 bit の和、分母は u128 の重み和で、256 ÷ 128 の除算を 1 回だけ行い 0 方向に切り捨てる 公開 signature は不変で、公開 API の追加は無い (内部は private な `FaceSink` trait と 256 bit 整数 helper)

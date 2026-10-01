@@ -36,6 +36,45 @@
 //! Laplacian and admits no closed-form mode; the two are therefore not
 //! bit-comparable at the boundary by design.
 //!
+//! # What each convention conserves
+//!
+//! The two ghosts do not merely differ in accuracy — **they conserve different
+//! quantities**, and a caller that writes a conservation law against the wrong
+//! one will see it hold at the moment it writes and drift afterwards.
+//!
+//! | `diffuse` | ghost | conserved |
+//! |---|---|---|
+//! | [`CoupledField::diffuse`] | mirror, `T₋₁ = T₁` | `Σ wᵢ Tᵢ` with `wᵢ = 2⁻ᵇ`, `b` the number of axes on which the node is an end |
+//! | `ScalarField3D::diffuse` | copy, `T₋₁ = T₀` | the plain sum `Σ Tᵢ` |
+//!
+//! Both are finite-volume schemes; what differs is the size of the dual cell
+//! at the boundary. The mirror ghost puts the boundary *at* the node, so that
+//! node owns half a cell per end axis (a quarter on an edge, an eighth at a
+//! corner); the copy ghost puts it half a cell outside, so every node owns a
+//! full cell. In one dimension the mirror makes node 0 read `r(2T₁ - 2T₀)`,
+//! which telescopes against node 1's `r(T₀ - 2T₁ + T₂)` only once node 0 is
+//! counted with weight `½`; the seven-point operator is a sum of one
+//! dimensional ones, so the three dimensional weight is the product, `2⁻ᵇ`.
+//! The invariance holds for any resolution, any step count and any `dt` and
+//! `rate` — conservation is independent of stability, so an unstable step
+//! conserves while it diverges.
+//!
+//! `linear_elastic_fem::deposit_plastic_heat` writes into a [`CoupledField`]
+//! and therefore scales each node by `2ᵇ` after splatting, so that the energy
+//! ledger it conserves is the one [`CoupledField::diffuse`] goes on
+//! conserving. `tests/analytic_coupled_field.rs` pins both rows of the table,
+//! each with the other sum as its vacuity guard, on a scene whose heat sits
+//! **on** the boundary — the difference is invisible in a field that is zero
+//! there.
+//!
+//! [`CoupledField::copy_from_f32`] and [`CoupledField::write_to_f32`] are
+//! unaffected: both
+//! grids put node `i` at `min + i·(max - min)/(n - 1)`, so equal resolutions
+//! and equal bounds mean the nodes coincide and the pointwise transfer is
+//! exact. What does not survive a round trip is the *invariant*: diffusing on
+//! one side and then transferring hands the other side a field whose conserved
+//! quantity is the other one.
+//!
 //! Author: Moroya Sakamoto
 
 use crate::math::{Fix128, Vec3Fix};
