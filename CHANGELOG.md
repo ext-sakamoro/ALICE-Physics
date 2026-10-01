@@ -41,8 +41,12 @@ oracle は `tests/analytic_multigrid.rs` (6 本、厳密解の再現 / 格子幅
 (2) `allow(dead_code)` は直前の `// ALLOW-DEAD: <12 字以上の理由>` が無ければ fail する
 (3) 検査対象が 0 件なら fail する (検査器が空振りして green になるのを防ぐ)
 既存の違反は `scripts/wiring-baseline.txt` に記録するラチェットで、新規の違反だけが fail し、解消済みの行が残っていても fail する (実測: 未配線 588 件 / dead_code 17 file)
-検査器自身の oracle は `scripts/test_wiring_guard.py` の 23 本で、変異 11 件がすべて red になることを確認した
-限界: 名前の字面一致で数えるため、同名の別 item があると配線済と誤判定する (fail-open)、未配線の item からしか呼ばれない item (推移的な未配線) は検出しない
+検査器自身の oracle は `scripts/test_wiring_guard.py` の 79 本で、変異 25 件がすべて red になることを確認した
+(4) 推移的な未配線を検出する 未配線の item の本体 (宣言から波括弧の対応までの範囲) からしか参照されない item も未配線とし、不動点反復で求める private helper も節点として扱うが報告は従来どおり `pub` / `pub(crate)` のみ 根は src 外のコード / `src/bin` / module 直下 / trait impl と trait 本体の member / `ALLOW-UNWIRED` 付き / exempt 属性付き / `fn main` / `macro_rules` 相互再帰と自己再帰だけで外から呼ばれない item は未配線になる
+(5) 名前衝突の fail-open を緩和する `let` / `for` / closure / fn 引数の束縛、`name:` のフィールド・引数、`.name` のフィールド参照、構造体の field shorthand、同じ fn 内で束縛された local 名の後続の使用を参照に数えない free fn は `.name(` のメソッド呼び出しでは配線済にならず、メソッドは `.name(` か `::name` でだけ配線済になる
+(6) Cargo workspace に対応する root の `Cargo.toml` の `[workspace] members` (glob と `exclude` 対応) を展開し、各 member の `src/` を走査する 参照は repo 全体で数えるので member 間の呼び出しは配線済になり、key は repo root からの相対パスになる 波括弧が閉じていない file は `unbalanced_braces` で fail する
+推移的な未配線の検出で baseline が 587 件から 1059 件に増えた (増えた 472 件のうち 309 件は未配線の item の本体からしか参照されない item、163 件は同名のフィールド / local に隠れていたメソッドと関数) 解消済みの行は 0 件
+限界: 名前で数えるので別 file の同名 item は区別しない、match 腕のパターン束縛と macro 内の束縛は束縛と認識しない、`impl Foo { .. }` の見出しが型名を参照するため impl を持つ struct / enum は未配線でも配線済になる、trait impl の member と `macro_rules` 内の参照は常に根として扱う
 
 ### Added — 重み正規化つき P2G (`eulerian_grid::p2g_normalized`)
 
