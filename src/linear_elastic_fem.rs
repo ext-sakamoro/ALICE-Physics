@@ -2608,10 +2608,15 @@ mod tests {
     /// argued: it fails if the sweep ever reaches a case where the dropped form
     /// would pass, which would make the oracle vacuous there.
     ///
-    /// ⚠️ **Why this cannot be a test in `tests/`.** See the module comment: `P`
-    /// is observable from outside only through where a solve lands, and the
-    /// solve checks its own assembled force for equilibrium. Dropping the `F⁻ᵀ`
-    /// moved no oracle in the crate before this one.
+    /// ⚠️ **Why this exact relation cannot live in `tests/`.** See the module
+    /// comment: `P` is observable from outside only through where a solve lands,
+    /// and the solve checks its own assembled force for equilibrium. Dropping the
+    /// `F⁻ᵀ` moved no oracle in the crate before this one.
+    /// `the_solve_is_equivariant_under_a_superposed_quarter_turn` in
+    /// `tests/analytic_corotational.rs` is the companion that states the same
+    /// property at the level of the solve — it does red on the same mutation, but
+    /// as a `RotationFailed`, and it is a bound rather than an equality because
+    /// the solve stops on a tolerance.
     #[test]
     fn the_first_piola_kirchhoff_stress_is_objective_under_a_superposed_rotation() {
         let q = quarter_turn_z();

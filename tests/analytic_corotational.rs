@@ -59,7 +59,7 @@
 //! | `hyperelastic_stress` drops the `J` in `P = J σ F⁻ᵀ` | 1: `the_material_law_moves_…` |
 //! | `hyperelastic_stress` transposes the product (`F⁻ᵀσ` for `σF⁻ᵀ`) | 1: `the_material_law_moves_…` |
 //! | `cauchy_stress` drops the `−p_ref` that makes the reference state stress free | **0 here**, 2 in `cargo test --lib hyperelastic` |
-//! | `hyperelastic_stress` drops the `F⁻ᵀ` in `P = J σ F⁻ᵀ` | 1 here (`the_solve_is_equivariant_…`, added 2026-10-01) + 2 in `cargo test --lib linear_elastic_fem`; **0 before those existed** |
+//! | `hyperelastic_stress` drops the `F⁻ᵀ` in `P = J σ F⁻ᵀ` | measured `12 passed / 1 failed / 1 ignored` here (`the_solve_is_equivariant_…`) + 2 in `cargo test --lib linear_elastic_fem`; **0 anywhere before those three existed** |
 //!
 //! Three things that table says and the prose would not:
 //!
@@ -75,11 +75,12 @@
 //!   stress by the same tensor — dropping `−p_ref` — leaves every oracle in this
 //!   file green. That one is checked in `src/hyperelastic.rs` instead, by
 //!   `cauchy_stress_vanishes_in_the_reference_state`.
-//! - ⚠️ **Dropping the `F⁻ᵀ` survives every oracle in this file**, and did survive
-//!   the whole crate until 2026-10-01. The affine scenes cannot see it for the
-//!   reason above, and on the inhomogeneous scene the solver's own equilibrium
-//!   check uses the same broken force, so it converges to a different state and
-//!   calls it equilibrium — `the_material_law_moves_…` still returns `Ok`. What
+//! - ⚠️ **Dropping the `F⁻ᵀ` survived every oracle in the crate until 2026-10-01**,
+//!   and still survives every oracle in this file except the one added that day.
+//!   The affine scenes cannot see it for the reason above, and on the
+//!   inhomogeneous scene the solver's own equilibrium check uses the same broken
+//!   force, so it converges to a different state and calls it equilibrium —
+//!   `the_material_law_moves_…` still returns `Ok`. What
 //!   catches it is an oracle the internal force cannot satisfy by agreeing with
 //!   itself: `P = J σ F⁻ᵀ` rotates to `Q P` under a superposed `Q` where
 //!   `P = J σ` rotates to `Q P Qᵀ`. Both now live in `src/linear_elastic_fem.rs`
