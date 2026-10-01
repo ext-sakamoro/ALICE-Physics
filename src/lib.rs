@@ -326,6 +326,8 @@ pub mod det_math {
     }
 }
 pub mod dynamic_bvh;
+#[cfg(feature = "std")]
+pub mod dynamic_fem;
 pub mod electromagnetic;
 pub mod ellipsoid;
 #[cfg(feature = "std")]
