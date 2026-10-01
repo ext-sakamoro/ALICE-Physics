@@ -1378,6 +1378,266 @@ fn project_pressure_decomposed_over<T: RankTransport>(
     subtract_pressure_gradient(grid, dt_s / density_kg_m3 * inv_dx);
 }
 
+/// Bring every layer to rank 0, so that one rank ends up holding the whole
+/// field even when no rank can read another's memory.
+///
+/// The order is fixed by `bounds` alone, which is what lets a transport whose
+/// ranks live in different processes perform only its own half of each delivery
+/// and still stay in step: every rank walks this same sequence.
+fn gather_slabs_to_root<T: RankTransport>(transport: &mut T, bounds: &[(usize, usize)]) {
+    for (r, &(k0, k1)) in bounds.iter().enumerate().skip(1) {
+        for layer in k0..k1 {
+            transport.deliver_layer(r, 0, layer);
+        }
+    }
+}
+
+/// One rank's half of [`project_pressure_decomposed`], for transports whose
+/// ranks do not share an address space.
+///
+/// # Why a second driver
+///
+/// [`project_pressure_decomposed_over`] drives every rank from one place: it
+/// sweeps rank 0, then rank 1, and so on, asking the transport for each slab in
+/// turn. Reaching every slab from one call stack is only possible where every
+/// slab is in this process, so that driver cannot be the one a cross-address-
+/// space backend runs under. This function is the same decomposition seen from
+/// inside a single rank: it asks for `my_rank`'s slab and never any other, and
+/// every rank runs it concurrently over its own copy of `grid`.
+///
+/// `slab_mut` keeps its signature, so the in-process tests that drive all ranks
+/// from one place keep working; what changes is which ranks a driver asks for.
+/// A transport that owns only its own slab — [`SocketTransport`] — can therefore
+/// assert that the rank it is handed is its own, and that assertion is what
+/// makes "this driver is rank-local" a checked property rather than a comment.
+///
+/// # Why the schedule is still global
+///
+/// The exchange is walked in full on every rank — every `(src, dst, layer)` of
+/// [`exchange_slab_halos`] and then of [`gather_slabs_to_root`], in the same
+/// order — and the transport performs only the half it is party to. Deliveries
+/// are thus matched by position in a sequence both ranks agree on, with no
+/// handshake and no message header, and for any one delivery exactly one rank
+/// writes while exactly one reads. Nothing in the schedule has both ranks
+/// writing at once, which is what keeps a blocking stream from deadlocking
+/// regardless of how much it will buffer.
+///
+/// # What each rank is left holding
+///
+/// Every rank must start from the same `grid` (the field is the input to the
+/// decomposition, not something a rank derives). The gather lands on rank 0, so
+/// rank 0 is the only rank that writes `grid` back; the others leave their copy
+/// untouched, which `cross_process_rank1_worker` asserts from inside the one
+/// process that is actually a non-root rank.
+///
+/// Each rank still holds a full-length buffer, for the reason
+/// [`project_pressure_decomposed`] gives: a halo that is too narrow then fails
+/// as a mismatch rather than as a deadlock. Slab-local storage is a separate
+/// change.
+// One more parameter than `project_pressure_decomposed_over`, whose list this
+// deliberately mirrors so the two drivers stay comparable; `my_rank` is the
+// whole difference between them.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn project_pressure_decomposed_on_rank<T: RankTransport>(
+    grid: &mut MacGrid,
+    dt_s: Fix128,
+    density_kg_m3: Fix128,
+    iterations: u32,
+    ranks: usize,
+    schedule: HaloSchedule,
+    my_rank: usize,
+    transport: &mut T,
+) {
+    if grid.dx.is_zero()
+        || density_kg_m3.is_zero()
+        || dt_s.is_zero()
+        || ranks == 0
+        || my_rank >= ranks
+    {
+        return;
+    }
+    grid.enforce_face_boundaries();
+    let scale = density_kg_m3 * grid.dx * grid.dx / dt_s;
+    let (nx, ny, nz) = (grid.nx, grid.ny, grid.nz);
+    let n = nx * ny * nz;
+    let plane = nx * ny;
+    let rhs = poisson_rhs(grid, scale);
+    let mask = PoissonMask::from_grid(grid);
+    let inv_deg = inverse_degrees(&mask, n);
+
+    // Same sentinel as the single-process driver: far outside the pressures this
+    // solve produces, so a read past the halo shows up as a mismatch of many
+    // units rather than one in the last place.
+    let sentinel = Fix128::from_int(1_000_000);
+    let bounds: Vec<(usize, usize)> = (0..ranks).map(|r| slab_bounds(nz, ranks, r)).collect();
+    let (k0, k1) = bounds[my_rank];
+
+    {
+        let buf = transport.slab_mut(my_rank);
+        assert_eq!(
+            buf.len(),
+            n,
+            "transport handed rank {my_rank} a slab of {} cells instead of the {n} this stage needs",
+            buf.len(),
+        );
+        buf.copy_from_slice(&grid.pressure);
+        poison_beyond_halo(buf, nz, plane, (k0, k1), sentinel);
+    }
+
+    for _ in 0..iterations {
+        for colour in 0..2u32 {
+            {
+                let buf = transport.slab_mut(my_rank);
+                for k in k0..k1 {
+                    for j in 0..ny {
+                        for i in 0..nx {
+                            if ((i + j + k) as u32 % 2) != colour {
+                                continue;
+                            }
+                            let idx = i + nx * (j + ny * k);
+                            let neighbours = mask.neighbour_sum(buf, i, j, k);
+                            buf[idx] = (neighbours - rhs[idx]) * inv_deg[idx];
+                        }
+                    }
+                }
+            }
+            if schedule == HaloSchedule::EverySweep {
+                exchange_slab_halos(transport, &bounds, nz);
+            }
+        }
+        if schedule == HaloSchedule::EveryIteration {
+            exchange_slab_halos(transport, &bounds, nz);
+        }
+    }
+
+    gather_slabs_to_root(transport, &bounds);
+
+    if my_rank == 0 {
+        {
+            let buf = transport.slab_mut(0);
+            grid.pressure.copy_from_slice(buf);
+        }
+        let inv_dx = Fix128::ONE / grid.dx;
+        subtract_pressure_gradient(grid, dt_s / density_kg_m3 * inv_dx);
+    }
+}
+
+/// Bytes one [`Fix128`] occupies on the wire: `hi` then `lo`, little-endian.
+#[cfg(feature = "std")]
+const WIRE_BYTES_PER_CELL: usize = 16;
+
+/// [`RankTransport`] for ranks in *different address spaces*: a rank holds only
+/// its own slab, and a delivery is a message over a byte stream to the peer
+/// that owns — or needs — the layer.
+///
+/// # What this backend settles that [`LocalTransport`] cannot
+///
+/// `LocalTransport` can always reach a neighbour's `Vec`, so it cannot tell a
+/// rank-local driver from one that quietly reads foreign memory: both work. This
+/// one has no foreign memory to reach, and [`RankTransport::slab_mut`] asserts
+/// that the only rank it can serve is its own, so a driver that asked for a
+/// neighbour's slab aborts here instead of returning a plausible answer. Running
+/// the solve over it from two processes is what shows the trait is implementable
+/// across a boundary an MPI backend would also have to cross.
+///
+/// # Wire format
+///
+/// `S` is any paired byte stream — `TcpStream`, `UnixStream`, a pipe — because
+/// the only thing this type fixes is the encoding: a layer is `plane` `Fix128`
+/// values, each 16 little-endian bytes (`hi`, then `lo`). The encoding is
+/// explicit rather than a memory image, so the bytes one rank writes are the
+/// bytes its peer reads on every target the crate builds for.
+///
+/// # Lockstep
+///
+/// Deliveries carry no header and are matched by their position in the schedule
+/// both ranks walk (see [`project_pressure_decomposed_on_rank`]). A delivery
+/// this rank is not party to is a no-op, which is how the two sequences stay
+/// aligned.
+#[cfg(feature = "std")]
+pub(crate) struct SocketTransport<S> {
+    /// The rank this process is; the only one [`RankTransport::slab_mut`] serves.
+    my_rank: usize,
+    /// `nx · ny`, the cells in one `z` layer and so in one message.
+    plane: usize,
+    /// This rank's full-length slab.
+    buf: Vec<Fix128>,
+    /// `links[r]` is the stream to rank `r`; this rank's own entry is `None`.
+    links: Vec<Option<S>>,
+    /// Encode/decode scratch for one layer, sized `plane · 16`.
+    wire: Vec<u8>,
+}
+
+#[cfg(feature = "std")]
+impl<S> SocketTransport<S> {
+    /// A rank holding `cells` values, with `links[r]` the stream to rank `r`.
+    pub(crate) fn new(my_rank: usize, cells: usize, plane: usize, links: Vec<Option<S>>) -> Self {
+        Self {
+            my_rank,
+            plane,
+            buf: vec![Fix128::ZERO; cells],
+            links,
+            wire: vec![0u8; plane * WIRE_BYTES_PER_CELL],
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl<S: std::io::Read + std::io::Write> RankTransport for SocketTransport<S> {
+    fn slab_mut(&mut self, rank: usize) -> &mut [Fix128] {
+        assert_eq!(
+            rank, self.my_rank,
+            "rank {} was asked for rank {rank}'s slab, which is in another address \
+             space: the driver is not rank-local",
+            self.my_rank,
+        );
+        &mut self.buf
+    }
+
+    fn deliver_layer(&mut self, src: usize, dst: usize, layer: usize) {
+        if src == dst {
+            return;
+        }
+        let base = layer * self.plane;
+
+        if self.my_rank == src {
+            for (cell, chunk) in self.buf[base..base + self.plane]
+                .iter()
+                .zip(self.wire.chunks_exact_mut(WIRE_BYTES_PER_CELL))
+            {
+                chunk[..8].copy_from_slice(&cell.hi.to_le_bytes());
+                chunk[8..].copy_from_slice(&cell.lo.to_le_bytes());
+            }
+            let link = self.links[dst]
+                .as_mut()
+                .expect("no stream to the rank this delivery is addressed to");
+            // A failed halo delivery leaves the ranks disagreeing about the
+            // field, which no later step can repair, so this is fatal by design.
+            link.write_all(&self.wire)
+                .expect("send a halo layer to the peer rank");
+            link.flush().expect("flush a halo layer to the peer rank");
+        } else if self.my_rank == dst {
+            let link = self.links[src]
+                .as_mut()
+                .expect("no stream from the rank this delivery comes from");
+            link.read_exact(&mut self.wire)
+                .expect("receive a halo layer from the peer rank");
+            for (cell, chunk) in self.buf[base..base + self.plane]
+                .iter_mut()
+                .zip(self.wire.chunks_exact(WIRE_BYTES_PER_CELL))
+            {
+                let hi =
+                    i64::from_le_bytes(chunk[..8].try_into().expect("8 bytes of a 16-byte cell"));
+                let lo =
+                    u64::from_le_bytes(chunk[8..].try_into().expect("8 bytes of a 16-byte cell"));
+                *cell = Fix128::from_raw(hi, lo);
+            }
+        }
+        // Neither end: another pair's delivery, counted but not performed, which
+        // is what keeps every rank's position in the schedule the same.
+    }
+}
+
 /// Legacy Jacobi implementation, kept for benchmarking (Session 3 I9, crate-internal).
 pub(crate) fn project_pressure_jacobi(
     grid: &mut MacGrid,
@@ -2552,6 +2812,425 @@ mod tests {
             !grids_are_bit_equal(&monolithic, &undelivered),
             "slabs that never received a halo still reproduced the monolithic \
              solve, so the transport tests above are not measuring the delivery",
+        );
+    }
+
+    // ---- A-3.2b: the same decomposition across a process boundary ----------
+    //
+    // Everything above runs the ranks inside one process, so it pins that two
+    // *implementations* of `RankTransport` agree. What it cannot pin is whether
+    // the trait can leave an address space at all: `LocalTransport` and
+    // `StagedTransport` can both reach every slab, so a driver that read a
+    // neighbour's memory directly would still pass. The tests below run rank 0
+    // here and rank 1 in a second process — this binary, re-executed — with a
+    // loopback stream as the only thing between them, and compare the result
+    // with the single-process solve.
+    //
+    // Loopback TCP rather than `UnixStream`: the CI matrix includes
+    // `windows-latest`, and `std::os::unix` would compile out there, leaving the
+    // oracle silently absent on one of the five platforms it most needs to hold
+    // on. `std::net` is the same on all of them and adds no dependency.
+
+    /// Environment variables the parent sets when it re-executes this binary as
+    /// rank 1; the presence of `XPROC_ROLE` is what tells
+    /// `cross_process_rank1_worker` that it is the child.
+    #[cfg(feature = "std")]
+    const XPROC_ROLE: &str = "ALICE_PHYSICS_XPROC_ROLE";
+    /// Loopback port rank 0 is listening on.
+    #[cfg(feature = "std")]
+    const XPROC_PORT: &str = "ALICE_PHYSICS_XPROC_PORT";
+    /// Edge length of the cubic grid both ranks seed.
+    #[cfg(feature = "std")]
+    const XPROC_SIZE: &str = "ALICE_PHYSICS_XPROC_SIZE";
+    /// Which fault, if any, to apply to the crossing on *both* ranks.
+    #[cfg(feature = "std")]
+    const XPROC_FAULT: &str = "ALICE_PHYSICS_XPROC_FAULT";
+
+    /// libtest name of the child entry point, passed to the re-executed binary
+    /// as `--exact`.
+    ///
+    /// Renaming `cross_process_rank1_worker` without updating this would make
+    /// libtest match nothing and exit 0, so the parent checks for a child that
+    /// exits before connecting and says so rather than waiting out its deadline.
+    #[cfg(feature = "std")]
+    const XPROC_WORKER: &str = "eulerian_grid::tests::cross_process_rank1_worker";
+
+    /// Iterations both ranks run; the same count the in-process oracles use.
+    #[cfg(feature = "std")]
+    const XPROC_ITERATIONS: u32 = 6;
+
+    /// Step both ranks use. Must match on the two ranks: it is part of the
+    /// problem, not of the decomposition.
+    #[cfg(feature = "std")]
+    fn xproc_dt() -> Fix128 {
+        Fix128::from_ratio(1, 100)
+    }
+
+    /// Density both ranks use.
+    #[cfg(feature = "std")]
+    fn xproc_rho() -> Fix128 {
+        Fix128::from_int(1000)
+    }
+
+    /// A fault applied to the crossing itself, identically on both ranks.
+    #[cfg(feature = "std")]
+    #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+    enum CrossFault {
+        /// Deliver what the schedule asked for.
+        None,
+        /// Deliver the layer below the requested one.
+        ShiftOneLayer,
+        /// Skip the first delivery of the run.
+        DropFirstDelivery,
+    }
+
+    #[cfg(feature = "std")]
+    impl CrossFault {
+        /// Name passed to the child through the environment.
+        fn as_str(self) -> &'static str {
+            match self {
+                Self::None => "none",
+                Self::ShiftOneLayer => "shift",
+                Self::DropFirstDelivery => "drop",
+            }
+        }
+
+        /// Inverse of [`Self::as_str`]; an unknown name is a harness bug.
+        fn parse(name: &str) -> Self {
+            match name {
+                "none" => Self::None,
+                "shift" => Self::ShiftOneLayer,
+                "drop" => Self::DropFirstDelivery,
+                other => panic!("unknown cross-process fault `{other}`"),
+            }
+        }
+    }
+
+    /// Wraps [`SocketTransport`] to damage the crossing, and nothing else.
+    ///
+    /// Both ranks apply the same fault to the same delivery, because both count
+    /// deliveries over the one global schedule. That is deliberate: a fault on
+    /// one side only would desynchronise the stream, and the run would hang
+    /// instead of producing a wrong answer — and a hang says nothing about
+    /// whether the bit-equality test has teeth.
+    ///
+    /// Not a stub standing in for unwritten code: the damage *is* the
+    /// measurement, and the tests that use it assert the two-process solve comes
+    /// out different from the single-process one.
+    #[cfg(feature = "std")]
+    struct FaultyCrossing<S> {
+        inner: SocketTransport<S>,
+        fault: CrossFault,
+        seen: usize,
+    }
+
+    #[cfg(feature = "std")]
+    impl<S: std::io::Read + std::io::Write> RankTransport for FaultyCrossing<S> {
+        fn slab_mut(&mut self, rank: usize) -> &mut [Fix128] {
+            self.inner.slab_mut(rank)
+        }
+
+        fn deliver_layer(&mut self, src: usize, dst: usize, layer: usize) {
+            let index = self.seen;
+            self.seen += 1;
+            match self.fault {
+                CrossFault::None => self.inner.deliver_layer(src, dst, layer),
+                CrossFault::ShiftOneLayer => {
+                    self.inner.deliver_layer(src, dst, layer.saturating_sub(1));
+                }
+                CrossFault::DropFirstDelivery => {
+                    if index > 0 {
+                        self.inner.deliver_layer(src, dst, layer);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Run `my_rank`'s half of the two-rank solve over `link`, the stream to the
+    /// other rank. Shared by both processes so neither can drift from the other
+    /// in step count, iteration count or fluid parameters.
+    #[cfg(feature = "std")]
+    fn solve_as_rank(
+        grid: &mut MacGrid,
+        n: usize,
+        my_rank: usize,
+        fault: CrossFault,
+        link: std::net::TcpStream,
+    ) {
+        use std::time::Duration;
+
+        // Without these, a desynchronised stream hangs the suite instead of
+        // failing it.
+        link.set_read_timeout(Some(Duration::from_secs(30)))
+            .expect("set a read timeout on the peer link");
+        link.set_write_timeout(Some(Duration::from_secs(30)))
+            .expect("set a write timeout on the peer link");
+
+        let mut links: Vec<Option<std::net::TcpStream>> = vec![None, None];
+        links[1 - my_rank] = Some(link);
+        let socket = SocketTransport::new(my_rank, n * n * n, n * n, links);
+
+        if fault == CrossFault::None {
+            let mut transport = socket;
+            project_pressure_decomposed_on_rank(
+                grid,
+                xproc_dt(),
+                xproc_rho(),
+                XPROC_ITERATIONS,
+                2,
+                HaloSchedule::EverySweep,
+                my_rank,
+                &mut transport,
+            );
+        } else {
+            let mut transport = FaultyCrossing {
+                inner: socket,
+                fault,
+                seen: 0,
+            };
+            project_pressure_decomposed_on_rank(
+                grid,
+                xproc_dt(),
+                xproc_rho(),
+                XPROC_ITERATIONS,
+                2,
+                HaloSchedule::EverySweep,
+                my_rank,
+                &mut transport,
+            );
+        }
+    }
+
+    /// Rank 1's entry point, reached only when this binary has been re-executed
+    /// with [`XPROC_ROLE`] set.
+    ///
+    /// On an ordinary `cargo test` run the variable is absent and this returns
+    /// at once: nobody has asked for rank 1, and the tests below are what ask.
+    /// It is a `#[test]` rather than a `main` because the crate publishes no
+    /// binary a test could spawn, and re-executing the test binary needs a name
+    /// libtest will dispatch to.
+    #[cfg(feature = "std")]
+    #[test]
+    fn cross_process_rank1_worker() {
+        let Ok(role) = std::env::var(XPROC_ROLE) else {
+            return;
+        };
+        assert_eq!(role, "rank1", "unknown cross-process role `{role}`");
+
+        let n: usize = std::env::var(XPROC_SIZE)
+            .expect("grid size from the parent")
+            .parse()
+            .expect("grid size is a number");
+        let port: u16 = std::env::var(XPROC_PORT)
+            .expect("loopback port from the parent")
+            .parse()
+            .expect("loopback port is a number");
+        let fault =
+            CrossFault::parse(&std::env::var(XPROC_FAULT).expect("fault mode from the parent"));
+
+        let link = std::net::TcpStream::connect(("127.0.0.1", port))
+            .expect("connect to rank 0 on the loopback port it is listening on");
+
+        let mut grid = seed_divergent_flow(n);
+        solve_as_rank(&mut grid, n, 1, fault, link);
+
+        // `a_rank_that_is_not_the_root_assembles_nothing`: the gather lands on
+        // rank 0, so a non-root rank must not have written a field of its own.
+        // Checked here because this is the only process that is rank 1.
+        assert!(
+            grid.pressure.iter().all(|p| *p == Fix128::ZERO),
+            "rank 1 assembled a pressure field into its own grid: the gather is \
+             supposed to land on rank 0 alone",
+        );
+    }
+
+    /// Solve `n³` across two processes — rank 0 here, rank 1 re-executed — and
+    /// return rank 0's grid.
+    #[cfg(feature = "std")]
+    fn pressure_field_from_two_processes(n: usize, fault: CrossFault) -> MacGrid {
+        use std::io::ErrorKind;
+        use std::net::TcpListener;
+        use std::process::{Command, Stdio};
+        use std::time::{Duration, Instant};
+
+        let listener =
+            TcpListener::bind(("127.0.0.1", 0)).expect("bind a loopback port for rank 1");
+        let port = listener
+            .local_addr()
+            .expect("the bound loopback address")
+            .port();
+        let exe = std::env::current_exe().expect("path of this test binary");
+
+        let mut child = Command::new(exe)
+            .args(["--exact", XPROC_WORKER, "--test-threads=1"])
+            .env(XPROC_ROLE, "rank1")
+            .env(XPROC_PORT, port.to_string())
+            .env(XPROC_SIZE, n.to_string())
+            .env(XPROC_FAULT, fault.as_str())
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("re-execute this test binary as rank 1");
+
+        listener
+            .set_nonblocking(true)
+            .expect("poll for rank 1 instead of blocking on it");
+        let deadline = Instant::now() + Duration::from_secs(60);
+        let link = loop {
+            match listener.accept() {
+                Ok((stream, _)) => break stream,
+                Err(e) if e.kind() == ErrorKind::WouldBlock => {}
+                Err(e) => panic!("accepting rank 1 failed: {e}"),
+            }
+            // A child that exits without connecting is not a slow child. The
+            // likeliest cause is that `XPROC_WORKER` no longer names a test, in
+            // which case libtest ran nothing and exited 0 — say so rather than
+            // sitting out the deadline and reporting a timeout.
+            if let Some(status) = child.try_wait().expect("poll rank 1") {
+                panic!(
+                    "rank 1 exited ({status}) without connecting: does \
+                     `{XPROC_WORKER}` still name a test?"
+                );
+            }
+            assert!(
+                Instant::now() < deadline,
+                "rank 1 did not connect within 60 s",
+            );
+            std::thread::sleep(Duration::from_millis(2));
+        };
+        link.set_nonblocking(false)
+            .expect("switch the accepted stream back to blocking");
+
+        let mut grid = seed_divergent_flow(n);
+        solve_as_rank(&mut grid, n, 0, fault, link);
+
+        let status = child.wait().expect("wait for rank 1 to exit");
+        assert!(status.success(), "rank 1 exited with {status}");
+        grid
+    }
+
+    /// Two processes, one loopback stream between them, and the result is the
+    /// single-process solve bit for bit — for a rank count that divides the
+    /// depth and for one that does not.
+    ///
+    /// This is what the in-process transport tests could not reach. There,
+    /// agreement between two `RankTransport` implementations is compatible with
+    /// a decomposition that only works because every slab happens to be
+    /// addressable; here rank 1's slab is in another process, every halo layer
+    /// is 16 bytes per cell on a wire, and `slab_mut` on either side refuses to
+    /// hand out the other rank's buffer.
+    ///
+    /// Exactness, not a tolerance: `Fix128` addition is a group operation mod
+    /// 2¹²⁸, so a distribution that is right at all is right to the bit.
+    #[cfg(feature = "std")]
+    #[test]
+    fn two_processes_reproduce_the_single_process_pressure_solve() {
+        for &n in &[8usize, 7] {
+            let mut monolithic = seed_divergent_flow(n);
+            project_pressure_red_black_gs(
+                &mut monolithic,
+                xproc_dt(),
+                xproc_rho(),
+                XPROC_ITERATIONS,
+            );
+
+            let distributed = pressure_field_from_two_processes(n, CrossFault::None);
+
+            assert_eq!(
+                monolithic.pressure, distributed.pressure,
+                "{n}³ over two processes produced a different pressure field \
+                 than the single-process solve",
+            );
+            assert!(
+                grids_are_bit_equal(&monolithic, &distributed),
+                "{n}³ over two processes matched on pressure but not on the \
+                 projected velocities",
+            );
+        }
+    }
+
+    /// Teeth for the test above, on the crossing itself: ship the layer below
+    /// the one the schedule asked for — on both ranks, so the stream stays in
+    /// step — and the answer must move.
+    ///
+    /// Without this, `two_processes_reproduce_the_single_process_pressure_solve`
+    /// could be passing because both processes seed the same field and the
+    /// stream contributes nothing.
+    #[cfg(feature = "std")]
+    #[test]
+    fn a_cross_process_halo_shifted_by_one_layer_does_not_reproduce_the_solve() {
+        let n = 8usize;
+        let mut monolithic = seed_divergent_flow(n);
+        project_pressure_red_black_gs(&mut monolithic, xproc_dt(), xproc_rho(), XPROC_ITERATIONS);
+
+        let shifted = pressure_field_from_two_processes(n, CrossFault::ShiftOneLayer);
+
+        assert_ne!(
+            monolithic.pressure, shifted.pressure,
+            "halos delivered one layer off still reproduced the single-process \
+             solve, so the two-process test is not measuring what crosses the \
+             boundary",
+        );
+    }
+
+    /// Teeth of the other kind: drop one delivery — the first, on both ranks —
+    /// and the answer must move. The dropped layer is a halo of rank 0, so its
+    /// sentinel survives into the next sweep.
+    ///
+    /// Dropped symmetrically on purpose: dropping only the send would leave the
+    /// receiver waiting, and a timeout would not distinguish a transport that
+    /// carries the wrong thing from one that carries nothing.
+    #[cfg(feature = "std")]
+    #[test]
+    fn a_cross_process_delivery_dropped_once_does_not_reproduce_the_solve() {
+        let n = 8usize;
+        let mut monolithic = seed_divergent_flow(n);
+        project_pressure_red_black_gs(&mut monolithic, xproc_dt(), xproc_rho(), XPROC_ITERATIONS);
+
+        let dropped = pressure_field_from_two_processes(n, CrossFault::DropFirstDelivery);
+
+        assert_ne!(
+            monolithic.pressure, dropped.pressure,
+            "a run missing one halo delivery still reproduced the single-process \
+             solve, so the two-process test is not measuring the delivery",
+        );
+    }
+
+    /// The rank-local driver on one rank is the monolithic solve: with `ranks =
+    /// 1` there is nothing to exchange and nothing to gather, so the only thing
+    /// left is the sweep.
+    ///
+    /// Pins the driver itself, separately from the stream: if this and the
+    /// two-process test fail together the sweep is at fault, and if only the
+    /// two-process one fails the crossing is.
+    #[test]
+    fn the_rank_local_driver_on_a_single_rank_matches_the_monolithic_solve() {
+        let dt = Fix128::from_ratio(1, 100);
+        let rho = Fix128::from_int(1000);
+        let n = 8usize;
+
+        let mut monolithic = seed_divergent_flow(n);
+        project_pressure_red_black_gs(&mut monolithic, dt, rho, 6);
+
+        let mut alone = seed_divergent_flow(n);
+        let mut transport = LocalTransport::new(1, n, n * n);
+        project_pressure_decomposed_on_rank(
+            &mut alone,
+            dt,
+            rho,
+            6,
+            1,
+            HaloSchedule::EverySweep,
+            0,
+            &mut transport,
+        );
+
+        assert!(
+            grids_are_bit_equal(&monolithic, &alone),
+            "the rank-local driver on a single rank did not reproduce the \
+             monolithic solve",
         );
     }
 
