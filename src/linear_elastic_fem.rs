@@ -3294,6 +3294,29 @@ pub fn plastic_temperature_rise(
 /// The field is **added to**, not overwritten, so a caller may accumulate
 /// several bodies or several steps before diffusing.
 ///
+/// # ⚠️ This closes the loop, and a closed loop is not a converged one
+///
+/// Until this function existed the thermo-mechanical coupling ran one way:
+/// a temperature field drove [`solve_with_eigenstrain`] and nothing came
+/// back. A one-way coupling is **exact in a single sweep**, so the question of
+/// whether to solve it partitioned or monolithically did not arise.
+///
+/// Depositing the dissipation back onto the field the eigenstrain reads makes
+/// the coupling **two-way**, and the obvious call sequence — solve, deposit,
+/// solve again — is an explicit partitioned scheme with **zero
+/// sub-iterations**. That is the standard staggered thermo-mechanical scheme
+/// and is usually what is wanted, because the thermal feedback on a metal is
+/// weak (`α ΔT` against `ε̄_p`). It is **not** a converged solution of the
+/// coupled system, and nothing here checks that it is close to one.
+///
+/// A caller who needs the converged answer drives the sweep under
+/// [`crate::coupled_iteration::run_sub_iteration`], which measures the
+/// contraction ratio of the splitting and refuses to call a diverging
+/// iteration converged. Its module documentation carries the measurements
+/// behind that: a partitioned scheme sub-iterated to convergence solves the
+/// same equations as a monolithic one, so the remaining difference is rate and
+/// robustness, not correctness.
+///
 /// # Errors
 ///
 /// [`FemError::EmptyMesh`] for a mesh with no vertices or no tetrahedra,
