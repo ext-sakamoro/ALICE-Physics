@@ -15,6 +15,12 @@ Memory index pointer: `[[reference-alice-physics-v1-roadmap]]` in claude-config.
 | Maxwell FDTD | `ecd8c61` | source-free Yee、⚠️ **SI は `ε₀·μ₀` が 7.7 bit で不可**、正規化単位 + `S=9/16` |
 | 多体 ABA | `1bab99b` | ⚠️ **`solve()` が `link.joint` を読まない**状態から real ABA、oracle 12 本 |
 
+### 第 8 increment (2026-10-01、P2G の重み正規化)
+
+`eulerian_grid::p2g_normalized` を追加した (`tests/analytic_p2g.rs` の oracle 4 本、変異 5 件が red)
+`p2g_trilinear` は重み総和を持たず一様速度を再現できなかったので、正規化つきの入口を別に置いた
+⚠️ `cfd_solver` の自前分配は置換していない (同じ結果になるかの実測が先)、FLIP / PIC の時間発展ループも未着手
+
 ### 第 6 increment (2026-10-01、壁 3 強連成 + 壁 4 HPC 並列)
 
 ⚠️ **既存行は書き換えていません** 下記は追記です 第 2 increment の「物理間連成 ⚠️ production caller は 0」は
