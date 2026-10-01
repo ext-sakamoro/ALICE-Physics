@@ -3234,6 +3234,660 @@ mod tests {
         );
     }
 
+    // ---- A-3.2c: three ranks, where a delivery can belong to neither end ----
+    //
+    // Two ranks cannot separate "every rank walks the whole schedule" from
+    // "each rank walks only its own deliveries": with two ranks every delivery
+    // names both of them, so `SocketTransport`'s third branch — perform
+    // nothing, because this rank is neither sender nor receiver — is never
+    // reached, and a transport that mishandled another pair's delivery would
+    // have gone unnoticed. Three ranks are the fewest that put a rank outside a
+    // delivery: rank 0 is a bystander to the halo rank 2 trades with rank 1.
+    //
+    // The topology below is read off `exchange_slab_halos` rather than assumed.
+    // A rank asks only for the layer under its first and the layer over its
+    // last, so halos couple neighbouring slabs and ranks 0 and 2 never trade
+    // one; `gather_slabs_to_root` has the opposite shape, every rank shipping
+    // its own layers to rank 0, so the 0 <-> 2 link is needed for the gather
+    // even though no halo crosses it. Both are pinned by
+    // `the_halo_exchange_couples_only_neighbouring_slabs`.
+    //
+    // Deadlock, which would make a failure say nothing: each delivery names one
+    // sender and one receiver, and all ranks walk the same sequence, so for any
+    // position exactly one end writes and one reads. A rank can only run ahead
+    // of its peers across deliveries it is not party to, and a blocked write is
+    // released by the receiver reaching that same position, so blocking only
+    // ever propagates to earlier positions — of which there are finitely many.
+    // Read and write timeouts stay in place as the backstop.
+
+    /// Records the `(src, dst, layer)` sequence a schedule walks, so the shape
+    /// of an exchange can be asserted without running a solve.
+    ///
+    /// Not a stand-in for a transport: the walkers never ask it for a slab, and
+    /// `slab_mut` says so rather than handing back a buffer that would make a
+    /// mistaken call look successful.
+    struct DeliveryRecorder {
+        calls: Vec<(usize, usize, usize)>,
+    }
+
+    impl RankTransport for DeliveryRecorder {
+        fn slab_mut(&mut self, rank: usize) -> &mut [Fix128] {
+            unreachable!("a schedule walk asked the recorder for rank {rank}'s slab")
+        }
+
+        fn deliver_layer(&mut self, src: usize, dst: usize, layer: usize) {
+            self.calls.push((src, dst, layer));
+        }
+    }
+
+    /// The halo sequence and then the gather sequence for `nz` layers split
+    /// across `ranks` slabs.
+    #[allow(clippy::type_complexity)]
+    fn recorded_schedule(
+        nz: usize,
+        ranks: usize,
+    ) -> (Vec<(usize, usize, usize)>, Vec<(usize, usize, usize)>) {
+        let bounds: Vec<(usize, usize)> = (0..ranks).map(|r| slab_bounds(nz, ranks, r)).collect();
+        let mut halo = DeliveryRecorder { calls: Vec::new() };
+        exchange_slab_halos(&mut halo, &bounds, nz);
+        let mut gather = DeliveryRecorder { calls: Vec::new() };
+        gather_slabs_to_root(&mut gather, &bounds);
+        (halo.calls, gather.calls)
+    }
+
+    /// A rank is a bystander to some delivery only once there are more than two
+    /// ranks.
+    ///
+    /// This is why the two-process harness above leaves `SocketTransport`'s
+    /// no-op branch unvisited, and why the three-process one below reaches it.
+    /// Stated over the schedule itself so it holds for every decomposition, not
+    /// only the sizes the process tests can afford to run.
+    #[test]
+    fn only_more_than_two_ranks_give_a_rank_deliveries_it_is_not_party_to() {
+        for ranks in 1usize..=6 {
+            for nz in [ranks, 2 * ranks + 1, 3 * ranks] {
+                let (halo, gather) = recorded_schedule(nz, ranks);
+                let bystanding = |r: usize| {
+                    halo.iter()
+                        .chain(gather.iter())
+                        .filter(|&&(src, dst, _)| src != r && dst != r)
+                        .count()
+                };
+                if ranks <= 2 {
+                    for r in 0..ranks {
+                        assert_eq!(
+                            bystanding(r),
+                            0,
+                            "{nz} layers over {ranks} ranks gave rank {r} a delivery it \
+                             is not party to, so the two-rank harness does exercise the \
+                             no-op branch after all",
+                        );
+                    }
+                } else {
+                    assert!(
+                        bystanding(0) > 0,
+                        "{nz} layers over {ranks} ranks left rank 0 party to every \
+                         delivery, so running it as rank 0 of a multi-process solve \
+                         would not reach the no-op branch",
+                    );
+                }
+            }
+        }
+    }
+
+    /// Halos couple neighbouring slabs only — a delivery's two ranks have no
+    /// rank owning layers between them — while every gather delivery lands on
+    /// rank 0.
+    ///
+    /// The two shapes differ, which is what decides the links a run needs: with
+    /// three ranks no halo crosses between ranks 0 and 2, yet the gather does,
+    /// so that link has to exist anyway.
+    #[test]
+    fn the_halo_exchange_couples_only_neighbouring_slabs() {
+        for ranks in 1usize..=6 {
+            for nz in [1, ranks, 2 * ranks + 1, 3 * ranks] {
+                let bounds: Vec<(usize, usize)> =
+                    (0..ranks).map(|r| slab_bounds(nz, ranks, r)).collect();
+                let (halo, gather) = recorded_schedule(nz, ranks);
+
+                for &(src, dst, _) in &halo {
+                    assert_ne!(src, dst, "a halo delivery had one rank at both ends");
+                    let (lo, hi) = (src.min(dst), src.max(dst));
+                    for (r, &(k0, k1)) in bounds.iter().enumerate().take(hi).skip(lo + 1) {
+                        assert_eq!(
+                            k0, k1,
+                            "the halo delivery {src} -> {dst} reached over rank {r}, \
+                             which owns layers {k0}..{k1}",
+                        );
+                    }
+                }
+
+                for &(src, dst, layer) in &gather {
+                    assert_eq!(dst, 0, "a gather delivery landed on rank {dst}, not root");
+                    assert_ne!(src, 0, "the root was asked to gather from itself");
+                    assert_eq!(
+                        slab_owner(&bounds, layer),
+                        Some(src),
+                        "rank {src} gathered layer {layer}, which it does not own",
+                    );
+                }
+            }
+        }
+
+        // Three slabs: the two ends never trade a halo, but the gather crosses
+        // them, so a three-rank run still needs that link.
+        let (halo, gather) = recorded_schedule(9, 3);
+        assert!(
+            halo.iter()
+                .all(|&(src, dst, _)| (src, dst) != (0, 2) && (src, dst) != (2, 0)),
+            "a halo crossed directly between the first and last of three slabs",
+        );
+        assert!(
+            gather.iter().any(|&(src, dst, _)| (src, dst) == (2, 0)),
+            "the gather never crossed from the last of three slabs to the root",
+        );
+    }
+
+    /// Environment rank 0 sets when it re-executes this binary as rank 1 or
+    /// rank 2 of a three-rank solve; the presence of `XPROC3_RANK` is what tells
+    /// `cross_process_three_rank_worker` that it is a child.
+    #[cfg(feature = "std")]
+    const XPROC3_RANK: &str = "ALICE_PHYSICS_XPROC3_RANK";
+    /// Loopback port on which rank 0 is waiting for this child.
+    #[cfg(feature = "std")]
+    const XPROC3_PORT: &str = "ALICE_PHYSICS_XPROC3_PORT";
+    /// Edge length of the cubic grid all three ranks seed.
+    #[cfg(feature = "std")]
+    const XPROC3_SIZE: &str = "ALICE_PHYSICS_XPROC3_SIZE";
+    /// How the ranks treat the deliveries they are not party to.
+    #[cfg(feature = "std")]
+    const XPROC3_FAULT: &str = "ALICE_PHYSICS_XPROC3_FAULT";
+
+    /// libtest name of the three-rank child entry point, passed to the
+    /// re-executed binary as `--exact`.
+    ///
+    /// Same hazard as `XPROC_WORKER`, and handled the same way: a filter that
+    /// matches nothing makes libtest run no test and exit 0, so a child that
+    /// exits before connecting is reported against this constant by name
+    /// instead of being waited out as a timeout.
+    #[cfg(feature = "std")]
+    const XPROC3_WORKER: &str = "eulerian_grid::tests::cross_process_three_rank_worker";
+
+    /// Iterations all three ranks run.
+    #[cfg(feature = "std")]
+    const XPROC3_ITERATIONS: u32 = 6;
+
+    /// What a rank does with a delivery it is neither the sender nor the
+    /// receiver of.
+    #[cfg(feature = "std")]
+    #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+    enum BystanderMode {
+        /// Perform nothing and move on, which is what keeps the ranks'
+        /// positions in the schedule the same.
+        Skip,
+        /// Perform it anyway, as though this rank were the sender.
+        Deliver,
+    }
+
+    #[cfg(feature = "std")]
+    impl BystanderMode {
+        /// Name passed to the children through the environment.
+        fn as_str(self) -> &'static str {
+            match self {
+                Self::Skip => "skip",
+                Self::Deliver => "deliver",
+            }
+        }
+
+        /// Inverse of [`Self::as_str`]; an unknown name is a harness bug.
+        fn parse(name: &str) -> Self {
+            match name {
+                "skip" => Self::Skip,
+                "deliver" => Self::Deliver,
+                other => panic!("unknown bystander mode `{other}`"),
+            }
+        }
+    }
+
+    /// Wraps [`SocketTransport`] so that a rank sends on the deliveries it is
+    /// not party to, and changes nothing else.
+    ///
+    /// The control for the three-process oracle. Deliveries a rank is party to
+    /// pass through untouched, so whatever the run does differently comes from
+    /// the third-party ones alone.
+    ///
+    /// # Why the damage cannot be a quiet wrong answer
+    ///
+    /// A purely local misstep on a third-party delivery would not show up at
+    /// all: such a delivery always names a layer outside this rank's halo, and
+    /// everything out there is already the sentinel, so writing to it changes
+    /// nothing a sweep reads. What the no-op branch protects is therefore not
+    /// the slab but the *alignment of the streams* — and a bystander that acts
+    /// adds an endpoint no peer is matched to, which is exactly a desynchronised
+    /// stream. Measured: the peers finish their own walk and close with those
+    /// extra layers still unread, the close becomes a reset, and the run ends in
+    /// `ConnectionReset` rather than in a wrong field. The control therefore
+    /// accepts either outcome; what it does not accept is reproducing the solve.
+    /// It cannot hang: every stream carries a 30 s timeout each way.
+    ///
+    /// Not a stub standing in for unwritten code: the extra send is the
+    /// measurement.
+    #[cfg(feature = "std")]
+    struct BystanderDelivers<S> {
+        inner: SocketTransport<S>,
+    }
+
+    #[cfg(feature = "std")]
+    impl<S: std::io::Read + std::io::Write> RankTransport for BystanderDelivers<S> {
+        fn slab_mut(&mut self, rank: usize) -> &mut [Fix128] {
+            self.inner.slab_mut(rank)
+        }
+
+        fn deliver_layer(&mut self, src: usize, dst: usize, layer: usize) {
+            let mine = self.inner.my_rank;
+            if mine == src || mine == dst {
+                self.inner.deliver_layer(src, dst, layer);
+            } else {
+                // Claim it: the inner transport then takes its sending branch
+                // and puts a layer on the wire to `dst`, where the real
+                // sender's layer now queues behind it.
+                self.inner.deliver_layer(mine, dst, layer);
+            }
+        }
+    }
+
+    /// 30 s each way, so a desynchronised stream fails the suite instead of
+    /// hanging it.
+    #[cfg(feature = "std")]
+    fn bound_peer_link(link: &std::net::TcpStream) {
+        use std::time::Duration;
+
+        link.set_read_timeout(Some(Duration::from_secs(30)))
+            .expect("set a read timeout on a peer link");
+        link.set_write_timeout(Some(Duration::from_secs(30)))
+            .expect("set a write timeout on a peer link");
+    }
+
+    /// Accept one connection, giving up after 60 s rather than hanging when the
+    /// peer rank never arrives.
+    #[cfg(feature = "std")]
+    fn accept_before_deadline(listener: &std::net::TcpListener, who: &str) -> std::net::TcpStream {
+        use std::io::ErrorKind;
+        use std::time::{Duration, Instant};
+
+        listener
+            .set_nonblocking(true)
+            .expect("poll for a peer rank instead of blocking on it");
+        let deadline = Instant::now() + Duration::from_secs(60);
+        loop {
+            match listener.accept() {
+                Ok((stream, _)) => {
+                    stream
+                        .set_nonblocking(false)
+                        .expect("switch an accepted stream back to blocking");
+                    bound_peer_link(&stream);
+                    return stream;
+                }
+                Err(e) if e.kind() == ErrorKind::WouldBlock => {}
+                Err(e) => panic!("accepting {who} failed: {e}"),
+            }
+            assert!(
+                Instant::now() < deadline,
+                "{who} did not connect within 60 s"
+            );
+            std::thread::sleep(Duration::from_millis(2));
+        }
+    }
+
+    /// The child ranks rank 0 spawned, reaped on the way out even when an
+    /// assertion unwinds, so a failing run leaves no process holding a loopback
+    /// port.
+    #[cfg(feature = "std")]
+    struct SpawnedRanks {
+        kids: Vec<std::process::Child>,
+    }
+
+    #[cfg(feature = "std")]
+    impl Drop for SpawnedRanks {
+        fn drop(&mut self) {
+            for kid in &mut self.kids {
+                let _ = kid.kill();
+                let _ = kid.wait();
+            }
+        }
+    }
+
+    #[cfg(feature = "std")]
+    impl SpawnedRanks {
+        /// Accept one rank's connection while watching *every* child.
+        ///
+        /// All children are polled on each turn, not just the one this listener
+        /// belongs to: a second child that exited early would otherwise leave
+        /// this loop running to its deadline, and "timed out" is all the run
+        /// would be able to say about it.
+        fn accept(&mut self, listener: &std::net::TcpListener, rank: usize) -> std::net::TcpStream {
+            use std::io::ErrorKind;
+            use std::time::{Duration, Instant};
+
+            listener
+                .set_nonblocking(true)
+                .expect("poll for a child rank instead of blocking on it");
+            let deadline = Instant::now() + Duration::from_secs(60);
+            let link = loop {
+                match listener.accept() {
+                    Ok((stream, _)) => break stream,
+                    Err(e) if e.kind() == ErrorKind::WouldBlock => {}
+                    Err(e) => panic!("accepting rank {rank} failed: {e}"),
+                }
+                for (slot, kid) in self.kids.iter_mut().enumerate() {
+                    if let Some(status) = kid.try_wait().expect("poll a child rank") {
+                        panic!(
+                            "rank {} exited ({status}) before rank {rank} connected: does \
+                             `{XPROC3_WORKER}` still name a test?",
+                            slot + 1,
+                        );
+                    }
+                }
+                assert!(
+                    Instant::now() < deadline,
+                    "rank {rank} did not connect within 60 s",
+                );
+                std::thread::sleep(Duration::from_millis(2));
+            };
+            link.set_nonblocking(false)
+                .expect("switch the accepted stream back to blocking");
+            bound_peer_link(&link);
+            link
+        }
+
+        /// Wait for every rank and require a clean exit.
+        fn join(&mut self) {
+            for (slot, kid) in self.kids.iter_mut().enumerate() {
+                let status = kid.wait().expect("wait for a child rank to exit");
+                assert!(status.success(), "rank {} exited with {status}", slot + 1);
+            }
+        }
+    }
+
+    /// Run `my_rank`'s half of the three-rank solve over `links`, where
+    /// `links[r]` is the stream to rank `r` and this rank's own entry is `None`.
+    ///
+    /// Shared by all three processes so none can drift from the others in
+    /// iteration count, schedule or fluid parameters.
+    #[cfg(feature = "std")]
+    fn solve_as_rank_of_three(
+        grid: &mut MacGrid,
+        n: usize,
+        my_rank: usize,
+        mode: BystanderMode,
+        links: Vec<Option<std::net::TcpStream>>,
+    ) {
+        let socket = SocketTransport::new(my_rank, n * n * n, n * n, links);
+        match mode {
+            BystanderMode::Skip => {
+                let mut transport = socket;
+                project_pressure_decomposed_on_rank(
+                    grid,
+                    xproc_dt(),
+                    xproc_rho(),
+                    XPROC3_ITERATIONS,
+                    3,
+                    HaloSchedule::EverySweep,
+                    my_rank,
+                    &mut transport,
+                );
+            }
+            BystanderMode::Deliver => {
+                let mut transport = BystanderDelivers { inner: socket };
+                project_pressure_decomposed_on_rank(
+                    grid,
+                    xproc_dt(),
+                    xproc_rho(),
+                    XPROC3_ITERATIONS,
+                    3,
+                    HaloSchedule::EverySweep,
+                    my_rank,
+                    &mut transport,
+                );
+            }
+        }
+    }
+
+    /// Rank 1 and rank 2 of the three-rank solve, reached only when this binary
+    /// has been re-executed with [`XPROC3_RANK`] set.
+    ///
+    /// One entry point for both: they run the same code and differ only in the
+    /// rank they are told they are, and in which of them hosts the link between
+    /// them. On an ordinary `cargo test` run the variable is absent and this
+    /// returns at once — the tests below are what ask for a child rank.
+    #[cfg(feature = "std")]
+    #[test]
+    fn cross_process_three_rank_worker() {
+        use std::io::{Read, Write};
+        use std::net::{TcpListener, TcpStream};
+
+        let Ok(rank) = std::env::var(XPROC3_RANK) else {
+            return;
+        };
+        let my_rank: usize = rank.parse().expect("the rank is a number");
+        assert!(
+            my_rank == 1 || my_rank == 2,
+            "rank {my_rank} is not a child rank of the three-rank harness",
+        );
+
+        let n: usize = std::env::var(XPROC3_SIZE)
+            .expect("grid size from rank 0")
+            .parse()
+            .expect("grid size is a number");
+        let port: u16 = std::env::var(XPROC3_PORT)
+            .expect("loopback port from rank 0")
+            .parse()
+            .expect("loopback port is a number");
+        let mode =
+            BystanderMode::parse(&std::env::var(XPROC3_FAULT).expect("bystander mode from rank 0"));
+
+        let mut root = TcpStream::connect(("127.0.0.1", port))
+            .expect("connect to rank 0 on the loopback port it is listening on");
+        bound_peer_link(&root);
+
+        // The link between the two children cannot be handed down by rank 0,
+        // which is not one of its ends. Rank 1 binds it and sends the port up,
+        // rank 0 passes the number on to rank 2, and rank 2 dials it: no fixed
+        // port and nothing racing to rebind one.
+        let mut links: Vec<Option<TcpStream>> = vec![None, None, None];
+        if my_rank == 1 {
+            let peer_listener =
+                TcpListener::bind(("127.0.0.1", 0)).expect("bind a loopback port for rank 2");
+            let peer_port = peer_listener
+                .local_addr()
+                .expect("the bound loopback address")
+                .port();
+            root.write_all(&peer_port.to_le_bytes())
+                .expect("tell rank 0 where rank 2 should dial");
+            root.flush().expect("flush the peer port to rank 0");
+            links[2] = Some(accept_before_deadline(&peer_listener, "rank 2"));
+            links[0] = Some(root);
+        } else {
+            let mut peer_port = [0u8; 2];
+            root.read_exact(&mut peer_port)
+                .expect("learn from rank 0 where rank 1 is listening");
+            let peer = TcpStream::connect(("127.0.0.1", u16::from_le_bytes(peer_port)))
+                .expect("connect to rank 1 on the port it is listening on");
+            bound_peer_link(&peer);
+            links[1] = Some(peer);
+            links[0] = Some(root);
+        }
+
+        let mut grid = seed_divergent_flow(n);
+        solve_as_rank_of_three(&mut grid, n, my_rank, mode, links);
+
+        // The gather lands on rank 0, so neither child may have assembled a
+        // field of its own. Checked here because these are the only processes
+        // that are not the root.
+        assert!(
+            grid.pressure.iter().all(|p| *p == Fix128::ZERO),
+            "rank {my_rank} assembled a pressure field into its own grid: the \
+             gather is supposed to land on rank 0 alone",
+        );
+    }
+
+    /// Solve `n³` across three processes — rank 0 here, ranks 1 and 2
+    /// re-executed — and return rank 0's grid.
+    #[cfg(feature = "std")]
+    fn pressure_field_from_three_processes(n: usize, mode: BystanderMode) -> MacGrid {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        use std::process::{Command, Stdio};
+
+        let listeners: Vec<TcpListener> = (1usize..=2)
+            .map(|rank| {
+                TcpListener::bind(("127.0.0.1", 0))
+                    .unwrap_or_else(|e| panic!("bind a loopback port for rank {rank}: {e}"))
+            })
+            .collect();
+        let exe = std::env::current_exe().expect("path of this test binary");
+
+        let mut ranks = SpawnedRanks {
+            kids: listeners
+                .iter()
+                .enumerate()
+                .map(|(slot, listener)| {
+                    let port = listener
+                        .local_addr()
+                        .expect("the bound loopback address")
+                        .port();
+                    Command::new(&exe)
+                        .args(["--exact", XPROC3_WORKER, "--test-threads=1"])
+                        .env(XPROC3_RANK, (slot + 1).to_string())
+                        .env(XPROC3_PORT, port.to_string())
+                        .env(XPROC3_SIZE, n.to_string())
+                        .env(XPROC3_FAULT, mode.as_str())
+                        .stdin(Stdio::null())
+                        .stdout(Stdio::null())
+                        .stderr(Stdio::null())
+                        .spawn()
+                        .unwrap_or_else(|e| {
+                            panic!("re-execute this test binary as rank {}: {e}", slot + 1)
+                        })
+                })
+                .collect(),
+        };
+
+        let mut to_rank1 = ranks.accept(&listeners[0], 1);
+        let mut to_rank2 = ranks.accept(&listeners[1], 2);
+
+        // Relay rank 1's listening port to rank 2. Rank 0 is not an end of that
+        // link and only carries the number.
+        let mut peer_port = [0u8; 2];
+        to_rank1
+            .read_exact(&mut peer_port)
+            .expect("learn from rank 1 where rank 2 should dial");
+        to_rank2
+            .write_all(&peer_port)
+            .expect("tell rank 2 where rank 1 is listening");
+        to_rank2.flush().expect("flush the peer port to rank 2");
+
+        let mut grid = seed_divergent_flow(n);
+        solve_as_rank_of_three(
+            &mut grid,
+            n,
+            0,
+            mode,
+            vec![None, Some(to_rank1), Some(to_rank2)],
+        );
+
+        ranks.join();
+        grid
+    }
+
+    /// Three processes — two loopback streams out of rank 0 and one between the
+    /// other two — reproduce the single-process solve bit for bit, for a rank
+    /// count that divides the depth and for one that does not.
+    ///
+    /// What three ranks settle that two could not: rank 0 is not party to the
+    /// halo rank 2 trades with rank 1, so `SocketTransport` reaches its third
+    /// branch — perform nothing, stay in step — for the first time here.
+    ///
+    /// Exactness, not a tolerance: `Fix128` addition is a group operation mod
+    /// 2¹²⁸, so a distribution that is right at all is right to the bit.
+    #[cfg(feature = "std")]
+    #[test]
+    fn three_processes_reproduce_the_single_process_pressure_solve() {
+        for &n in &[9usize, 8] {
+            let mut monolithic = seed_divergent_flow(n);
+            project_pressure_red_black_gs(
+                &mut monolithic,
+                xproc_dt(),
+                xproc_rho(),
+                XPROC3_ITERATIONS,
+            );
+
+            let distributed = pressure_field_from_three_processes(n, BystanderMode::Skip);
+
+            assert_eq!(
+                monolithic.pressure, distributed.pressure,
+                "{n}³ over three processes produced a different pressure field \
+                 than the single-process solve",
+            );
+            assert!(
+                grids_are_bit_equal(&monolithic, &distributed),
+                "{n}³ over three processes matched on pressure but not on the \
+                 projected velocities",
+            );
+        }
+    }
+
+    /// Teeth for the test above, aimed at the branch three ranks exist to
+    /// reach: at the same size, skipping the deliveries a rank is not party to
+    /// reproduces the single-process solve and performing them does not.
+    ///
+    /// Without this, `three_processes_reproduce_the_single_process_pressure_solve`
+    /// would show only that three ranks can agree, not that declining another
+    /// pair's delivery is what makes them agree — which is the one property two
+    /// ranks could not express at all, since with two ranks every delivery names
+    /// both of them (`only_more_than_two_ranks_give_a_rank_deliveries_it_is_not_party_to`).
+    ///
+    /// Both runs are the same grid, the same iteration count and the same
+    /// schedule, so the mode is the only difference between them. "Does not
+    /// reproduce" covers a differing field and a failed run alike, for the
+    /// reason [`BystanderDelivers`] gives: acting as a bystander desynchronises
+    /// the streams instead of merely miscomputing, and which of the two a given
+    /// platform reports is not the property being pinned.
+    #[cfg(feature = "std")]
+    #[test]
+    fn a_rank_that_performs_deliveries_it_is_not_party_to_does_not_reproduce_the_solve() {
+        let n = 6usize;
+        let mut monolithic = seed_divergent_flow(n);
+        project_pressure_red_black_gs(&mut monolithic, xproc_dt(), xproc_rho(), XPROC3_ITERATIONS);
+
+        let skipped = pressure_field_from_three_processes(n, BystanderMode::Skip);
+        assert_eq!(
+            monolithic.pressure, skipped.pressure,
+            "{n}³ over three processes did not reproduce the single-process \
+             solve, so the comparison below is not isolating the mode",
+        );
+
+        // The faulted run is expected to end in a reset rather than a wrong
+        // field, so it is run where an unwind can be read as an outcome. The
+        // panic message it prints belongs to this test passing.
+        let meddled = std::panic::catch_unwind(|| {
+            pressure_field_from_three_processes(n, BystanderMode::Deliver)
+        });
+
+        match meddled {
+            Ok(field) => assert_ne!(
+                monolithic.pressure, field.pressure,
+                "ranks that performed the deliveries they are not party to still \
+                 reproduced the single-process solve, so the three-process test \
+                 is not measuring the bystander branch",
+            ),
+            Err(_) => {
+                // The exchange came apart, which is the other way of not
+                // reproducing the solve.
+            }
+        }
+    }
+
     /// The slabs must tile the depth exactly: every layer owned once, none twice.
     #[test]
     fn slab_bounds_partition_every_layer_exactly_once() {
