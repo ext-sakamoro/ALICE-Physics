@@ -13,6 +13,54 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added — 熱歪み (eigenstrain) を FEM の residual と報告応力に入れた (`linear_elastic_fem`)
+
+温度場を解に反映させる経路を足しました `σ = C : (ε − ε_th)`、`ε_th = α ΔT I` (等方線膨張) で、
+熱荷重 `f_e = ∫ Bᵀ C ε_th dV` を右辺に加算し、報告応力から `C : ε_th` を減算します
+
+**追加のみで既存の呼び出しは変わりません**
+
+- `ThermalExpansion<'a>` — 温度場と線膨張係数の組
+- `solve_with_eigenstrain(.., Option<ThermalExpansion>)` — 新しい入口
+- `solve` は `None` を渡す wrapper に ⚠️ **signature は不変**
+- `FemError::TemperatureFieldDoesNotCoverMesh { vertex }` — ⚠️ `FemError` は `#[non_exhaustive]` なので非破壊
+
+⚠️ **これまで熱弾性 oracle 4 本は `#[ignore]` で red だった**ので、理由文を書き換えずに外して green に
+しました (`free_thermal_expansion_is_affine_and_stress_free` / `fully_constrained_heating_is_hydrostatic_compression` /
+`an_absent_temperature_rise_must_not_look_like_heating` / `cooling_is_the_signed_mirror_of_heating`)
+
+⚠️ **破壊試験 7 変異で、熱荷重と応力補正が別々に効いていることを実測しました** 熱荷重だけ 0 にすると
+自由膨張しか落ちず拘束 scene は素通りし、応力補正だけ外すと 5 本が落ちます また `3λ+2μ` を `λ+2μ` に
+しても自由膨張の `σ ≡ 0` は通ります (両半分が同じ誤った `σ_th` だと相殺するため) ⇒ **捕まえているのは
+変位の大きさ**です
+
+⚠️ **覆い判定の拒否経路は既存 oracle では 1 本も固定されていませんでした** 各 scene が自分の覆いを
+assert するので、**どの scene も拒否経路を通らない**という構造的な理由です
+`a_field_that_does_not_cover_the_mesh_is_refused` を足して潰しました
+
+### Added — 圧力解法に rank 局所 driver とプロセス間 transport を足した
+
+`RankTransport` が**アドレス空間を越えられる**ことを 2 プロセスで固定しました
+
+- `project_pressure_decomposed_on_rank` — `slab_mut(my_rank)` だけを呼び自 rank の層だけ sweep します
+- `SocketTransport<S: Read + Write>` — 任意の byte stream 上の backend 自 slab のみ保持し、
+  wire は 1 cell = `hi` → `lo` の LE 16 byte です
+- `gather_slabs_to_root` — 全層を rank 0 に集める固定順配送
+
+⚠️ **設計の核は「rank 局所」を comment でなく assert で検査される性質にしたこと**です
+`SocketTransport::slab_mut` が `assert_eq!(rank, self.my_rank)` を持つので、driver が隣の slab を
+要求したらその場で止まります ⚠️ **プロセス内実装ではこの誤りを原理的に検出できません** — 隣の `Vec` が
+実際に読めて**正しい答えが返る**ためです 実測で、driver を rank 非局所にする変異は
+**越境 oracle 3 本を red にし、既存のプロセス内 oracle 6 本すべてを green で素通り**しました
+
+交換と gather は `(src, dst, layer)` 列を**全 rank が同一順で歩き**、transport が自分の半分だけを行います
+⇒ header も handshake もなく送受が位置で対応し、どの時点でも両側が同時に送信しないので
+buffer 量に依らず deadlock しません
+
+⚠️ **残る限界**: `ranks = 2` では全 delivery が自分の当事案件なので「全 rank が schedule 全体を歩く」
+性質は測れていません また全長 buffer を維持しているので 1e8 規模には依然載りません
+
+
 ### Added — 辺-辺の自己接触と、2 段を 1 本にした Jacobi 平均 (`cloth`)
 
 頂点-面に加えて **辺-辺**の自己接触を実装しました 平行な辺が X 字に交差する配置は、頂点がどの面にも

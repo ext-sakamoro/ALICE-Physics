@@ -15,6 +15,39 @@ Memory index pointer: `[[reference-alice-physics-v1-roadmap]]` in claude-config.
 | Maxwell FDTD | `ecd8c61` | source-free Yee、⚠️ **SI は `ε₀·μ₀` が 7.7 bit で不可**、正規化単位 + `S=9/16` |
 | 多体 ABA | `1bab99b` | ⚠️ **`solve()` が `link.joint` を読まない**状態から real ABA、oracle 12 本 |
 
+### 第 6 increment (2026-10-01、壁 3 強連成 + 壁 4 HPC 並列)
+
+⚠️ **既存行は書き換えていません** 下記は追記です 第 2 increment の「物理間連成 ⚠️ production caller は 0」は
+**2 段あり、上段は解消済・下段が本 increment で解消**しました — `CoupledField` の caller は `thermal` /
+`phase_change` に付いていた一方、⚠️ **FEM の residual には入っていなかった**ので、熱弾性は解けませんでした
+
+| 話題 | commit | 到達点 |
+|---|---|---|
+| **壁 3 熱弾性連成** | `af05769` → `04e8259` `2340e65` `398017d` | ⚠️⚠️ **`src gap` 2 件 → 0** `σ = C : (ε − ε_th)` を residual と報告応力に入れ、`#[ignore]` 4 本を理由文の書き換えなしで外して **6 passed** 公開 API は追加のみ (`ThermalExpansion` / `solve_with_eigenstrain` / `FemError` の新 variant、`solve` の signature 不変、snapshot `+20 / −0`) ⚠️ **先に oracle 側の欠陥を潰した** — 旧 oracle は温度場を作って `assert_field_is_uniform` した後 **`solve` に渡していなかった**ので、実装しても red のままだった |
+| **壁 4 A-5 実測** | — | ⚠️⚠️ **1e8 剛体は単一機で不可能** `size_of::<RigidBody>()` = 640 B ⇒ **59.6 GiB** (本機 RAM 16.0 GiB の 3.7 倍) / 1 step **76.8 秒** Eulerian は 6.0 GiB だが GS 1 反復 **18.5 秒** ⇒ **分散は容量と速度の 2 つの独立した理由で要件** |
+| **壁 4 A-1 順序非依存** | `c617e30` | red-black sweep の訪問順独立を oracle 化 (自然順 / 逆順 / stride-7 置換で bit 一致 + colour 分けを外すと動く対照群) ⚠️ **スレッド並列は入れなかった** — 8 core / 128³ で rayon 2 形態がどちらも bit 一致だが**逐次 388.6 ms より遅い** (935.4 / 508.9 ms) working set 33 MiB の 7 点ステンシルは**帯域律速**で、単一 SoC に core を足しても帯域は増えない |
+| **壁 4 A-3.1 領域分割** | `6968c22` | `z` slab 分割 + halo 交換が **分割数を変えても monolithic と bit 一致** 割り切る / 割り切らない / **rank が余って何も所有しない**分割を含む ⚠️ **各 rank の halo 外を sentinel で塗り潰す**のが勘所 — 共有 buffer を素直に分割すると**他 rank の正しい値が見えて halo 幅不足でも通る** |
+| **壁 4 A-3.2a trait 化** | `e82bbb8` | halo 交換を `RankTransport` 経由に ⚠️ **既存 3 本が捕まえない変異がある**と実測 (2 つ目の実装が `src` でなく `dst` から読む形は既存 3 本すべて green で素通り) ⇒ 新旧は「層を**どう**運ぶか」と「**どの層をいつ**運ぶか」を別々に測っている |
+| **壁 4 A-3.2b 越境** | `de53740` | ⚠️⚠️ **`RankTransport` がアドレス空間を越えることを 2 プロセスで固定** `SocketTransport::slab_mut` の `assert_eq!(rank, my_rank)` で「rank 局所」が comment でなく**検査される性質**に ⚠️ **プロセス内実装では原理的に検出できない** (隣の `Vec` が読めて正しい答えが返る) 実測: driver を rank 非局所にする変異は**越境 3 本 red / 既存 6 本すべて green** |
+
+### ⚠️ 本 increment で 3 回独立に出た構造 — 層ごとに「その層でしか見えない誤り」がある
+
+| 層 | その層でしか見えない誤り | 下の層では |
+|---|---|---|
+| A-3.2a | 2 つ目の transport が `dst` から読む | 既存 3 本すべて green |
+| A-3.2b | driver が rank 局所でない | 既存 6 本すべて green |
+| 壁 3 | 覆い判定の拒否経路 | 既存 5 本すべて green (**各 scene が自分の覆いを assert するので拒否経路を通らない**) |
+
+⚠️⚠️ **下の層の oracle をいくら足しても上の層は覆えない** そして **どれも `#[ignore]` に現れず破壊試験でしか出ない**
+⇒ 成果物を「oracle を足す」でなく **「対応する変異が red になる実測」** として定義するのが要点
+
+### ⚠️ 残っているもの (「測っていない」の明示)
+
+- ⚠️ **`ranks = 2` では「全 rank が schedule 全体を歩く」性質が測れない** (2 rank では全 delivery が自分の当事案件) 3 プロセス harness が必要
+- ⚠️ **全長 buffer を維持しているので 1e8 規模には依然載らない** slab 局所の記憶域は未着手 (A-3.1 の「halo 幅の誤りが deadlock でなく**不一致**として落ちる」性質に依存しているため、代替 guard の設計が要る)
+- ⚠️ **transport 層に値 oracle が無い** 代替は破壊試験 M1-M4 で、**変異を列挙し尽くした保証は無い**
+- ⚠️ **MPI は入れていない** correctness の検証には不要 (必要なのは実プロセス境界 1 つ) で、CI に system 依存を足すため 実機が複数台揃ってから別途判断
+
 ### 第 2 increment (2026-09-30、上表の続き)
 
 | 話題 | commit | 到達点 |
