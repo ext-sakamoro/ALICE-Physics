@@ -647,7 +647,11 @@ impl Cloth {
     /// ⚠️ Built **once per frame** rather than once per repair pass. The passes only move
     /// vertices by their own corrections, and the box already spans the whole frame, so
     /// rebuilding it between passes narrows a set that is deliberately a superset.
-    fn collect_swept_edge_edge_candidates(&self, start: &[Vec3Fix], margin: Fix128) -> Vec<[u32; 4]> {
+    fn collect_swept_edge_edge_candidates(
+        &self,
+        start: &[Vec3Fix],
+        margin: Fix128,
+    ) -> Vec<[u32; 4]> {
         let edges = self.mesh_edges();
         let n = self.particle_count().min(start.len());
         let swept_box = |i: usize, j: usize| {
@@ -3441,7 +3445,6 @@ mod tests {
         );
     }
 
-
     /// ⚠️ **限界の記録** — 1 つの区間の中で通り抜けて戻った対は、不変量に出ない
     ///
     /// `remaining_self_contact_crossings` は **区間の終端** で貫通側に居るかを数えます
@@ -3544,7 +3547,6 @@ mod tests {
         }
         cloth
     }
-
 
     #[test]
     fn test_cloth_normals() {
