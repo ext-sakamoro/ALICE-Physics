@@ -3486,9 +3486,7 @@ mod tests {
         // 4. 全粒子が同一点 = 全辺が長さ 0 (`closest_points_on_segments` が None を返す側)
         let mut collapsed = x_crossing_scene(Fix128::from_ratio(1, 2), quarter);
         let start = collapsed.positions.clone();
-        for p in &mut collapsed.positions {
-            *p = Vec3Fix::ZERO;
-        }
+        collapsed.positions.fill(Vec3Fix::ZERO);
         assert_eq!(
             collapsed.remaining_self_contact_crossings(&start),
             0,
