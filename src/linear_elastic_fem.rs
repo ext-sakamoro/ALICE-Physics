@@ -1599,8 +1599,8 @@ fn check_reaction_inputs(
 /// [`FemError::DegenerateElement`], [`FemError::SolutionDoesNotMatchMesh`], and
 /// [`FemError::TemperatureFieldDoesNotCoverMesh`] when `thermal` is `Some` and
 /// the field does not cover every node.
-// ALLOW-UNWIRED: post-processing read for downstream callers and for the oracles in
-// tests/analytic_reactions.rs; the crate's own solvers do not consume their own output
+#[must_use = "the support forces are the whole point of calling this; a solve that \
+     drops them has not been checked against equilibrium at all"]
 pub fn reactions(
     mesh: &SdfTetMesh,
     material: &ElasticMaterial,
@@ -2912,8 +2912,8 @@ pub fn solve_corotational(
 ///
 /// As [`reactions`], plus [`FemError::RotationFailed`] when an element of
 /// `solution` has no polar factor.
-// ALLOW-UNWIRED: post-processing read for downstream callers and for the oracles in
-// tests/analytic_reactions.rs; the crate's own solvers do not consume their own output
+#[must_use = "the support forces are the whole point of calling this; a solve that \
+     drops them has not been checked against equilibrium at all"]
 pub fn corotational_reactions(
     mesh: &SdfTetMesh,
     material: &ElasticMaterial,
