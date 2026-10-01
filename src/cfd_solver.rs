@@ -27,8 +27,9 @@
 //! multigrid in [`CfdSolver::step_multigrid`].
 
 use crate::eulerian_grid::{
-    g2p_velocity, project_pressure, project_pressure_multigrid, sample_u_range, sample_u_trilinear,
-    sample_v_range, sample_v_trilinear, sample_w_range, sample_w_trilinear, MacGrid,
+    g2p_velocity, p2g_normalized, project_pressure, project_pressure_multigrid, sample_u_range,
+    sample_u_trilinear, sample_v_range, sample_v_trilinear, sample_w_range, sample_w_trilinear,
+    MacGrid,
 };
 use crate::interface_capture::fast_sweeping_reinit;
 use crate::math::{Fix128, Vec3Fix};
@@ -265,6 +266,149 @@ impl CfdSolver {
                 AdvectionScheme::MacCormack => self.advect_temperature_maccormack(dt_s),
                 AdvectionScheme::Bfecc => self.advect_temperature_bfecc(dt_s),
             }
+        }
+        self.step_count += 1;
+    }
+
+    /// FLIP / PIC particle step: scatter particles to the grid, apply forces
+    /// and the pressure projection, then update and advect the particles.
+    ///
+    /// `particles` is a slice of `(position_m, velocity_m_per_s)` (the type
+    /// [`crate::eulerian_grid::p2g_normalized`] takes) and `flip_ratio` is the
+    /// blend `r`: `0` is pure PIC (the particle takes the grid velocity, smooth
+    /// and dissipative), `1` is pure FLIP (the particle keeps its own velocity
+    /// and adds the grid's change, noisy and nearly non-dissipative).
+    ///
+    /// ```text
+    /// 1. clear u/v/w, p2g_normalized(particles), enforce_face_boundaries
+    /// 2. u_old = grid velocity
+    /// 3. body forces (gravity + buoyancy + CSF), enforce_face_boundaries,
+    ///    molecular or Smagorinsky diffusion, pressure projection
+    /// 4. v_p = (1 - r) G2P(u_new) + r (v_p + G2P(u_new - u_old))
+    /// 5. x_p += v_p dt, clamped to [0, N dx] on each axis
+    /// ```
+    ///
+    /// Step 3 is what [`CfdSolver::step`] runs between its advection and its
+    /// level-set stage, in the same order, so a given `gravity`,
+    /// viscosity, `use_turbulence` and `jacobi_iterations` mean the same thing
+    /// here. Velocity advection is the particles' job and is skipped. The
+    /// level set and the temperature field are **not** advected (the particles
+    /// carry the fluid; a caller that uses buoyancy or surface tension owns
+    /// those fields), and `step_count` is incremented. The projection is the
+    /// Gauss-Seidel one (`jacobi_iterations` sweeps); the multigrid projection
+    /// of [`CfdSolver::step_multigrid`] is not wired into the particle path.
+    ///
+    /// # Contract of this first stage: the particles must fill the domain
+    ///
+    /// The pressure solver has no fluid / air classification, so there is no
+    /// free surface: every cell is a fluid cell. A face no particle reaches is
+    /// cleared to zero by step 1 and then takes part in the projection as a
+    /// fluid face, which is not physical for a particle cloud with a surface
+    /// or a gap. Free surfaces (air cells as `p = 0`, cell classification,
+    /// particle reseeding) and periodic boundaries are separate features.
+    ///
+    /// # Degenerate input
+    ///
+    /// Returns with the grid, the particles and `step_count` **unchanged** (no
+    /// panic) for an empty particle list, `dt_s <= 0`, `dx = 0`, a grid with a
+    /// zero dimension, a zero density, or a `flip_ratio` outside `[0, 1]`. A
+    /// particle with any coordinate outside `[0, N dx]` takes no part in the
+    /// transfer and is left bit-identical; one on the boundary does take part.
+    // ALLOW-UNWIRED: public FLIP/PIC entry point for downstream solvers
+    pub fn step_flip(
+        &mut self,
+        particles: &mut [(Vec3Fix, Vec3Fix)],
+        dt_s: Fix128,
+        flip_ratio: Fix128,
+    ) {
+        let g = &self.grid;
+        if particles.is_empty()
+            || dt_s <= Fix128::ZERO
+            || g.dx.is_zero()
+            || g.nx == 0
+            || g.ny == 0
+            || g.nz == 0
+            || self.density_kg_m3.is_zero()
+            || flip_ratio < Fix128::ZERO
+            || flip_ratio > Fix128::ONE
+        {
+            return;
+        }
+        let hi_x = g.dx * Fix128::from_int(g.nx as i64);
+        let hi_y = g.dx * Fix128::from_int(g.ny as i64);
+        let hi_z = g.dx * Fix128::from_int(g.nz as i64);
+        let inside = |p: Vec3Fix| {
+            p.x >= Fix128::ZERO
+                && p.x <= hi_x
+                && p.y >= Fix128::ZERO
+                && p.y <= hi_y
+                && p.z >= Fix128::ZERO
+                && p.z <= hi_z
+        };
+
+        // 1. particles -> grid
+        let cloud: Vec<(Vec3Fix, Vec3Fix)> = particles
+            .iter()
+            .copied()
+            .filter(|&(p, _)| inside(p))
+            .collect();
+        if cloud.is_empty() {
+            return;
+        }
+        self.grid.u.fill(Fix128::ZERO);
+        self.grid.v.fill(Fix128::ZERO);
+        self.grid.w.fill(Fix128::ZERO);
+        p2g_normalized(&mut self.grid, &cloud);
+        self.grid.enforce_face_boundaries();
+
+        // 2. velocity as transferred
+        let u_old = self.grid.u.clone();
+        let v_old = self.grid.v.clone();
+        let w_old = self.grid.w.clone();
+
+        // 3. forces, diffusion, projection (the order `step` uses)
+        self.apply_body_forces(dt_s);
+        self.grid.enforce_face_boundaries();
+        if self.use_turbulence {
+            self.apply_turbulent_diffusion(dt_s);
+        } else {
+            self.apply_molecular_diffusion(dt_s);
+        }
+        project_pressure(
+            &mut self.grid,
+            dt_s,
+            self.density_kg_m3,
+            self.jacobi_iterations,
+        );
+
+        // 4. grid -> particles, on the change of the grid velocity
+        let mut delta = MacGrid::new(self.grid.nx, self.grid.ny, self.grid.nz, self.grid.dx);
+        for (d, (new, old)) in delta.u.iter_mut().zip(self.grid.u.iter().zip(&u_old)) {
+            *d = *new - *old;
+        }
+        for (d, (new, old)) in delta.v.iter_mut().zip(self.grid.v.iter().zip(&v_old)) {
+            *d = *new - *old;
+        }
+        for (d, (new, old)) in delta.w.iter_mut().zip(self.grid.w.iter().zip(&w_old)) {
+            *d = *new - *old;
+        }
+        let pic_weight = Fix128::ONE - flip_ratio;
+        for (pos, vel) in particles.iter_mut() {
+            if !inside(*pos) {
+                continue;
+            }
+            let pic = g2p_velocity(&self.grid, *pos);
+            let change = g2p_velocity(&delta, *pos);
+            let kept = Vec3Fix::new(vel.x + change.x, vel.y + change.y, vel.z + change.z);
+            *vel = Vec3Fix::new(
+                pic_weight * pic.x + flip_ratio * kept.x,
+                pic_weight * pic.y + flip_ratio * kept.y,
+                pic_weight * pic.z + flip_ratio * kept.z,
+            );
+            // 5. advect, keep inside the box
+            pos.x = clamp(pos.x + vel.x * dt_s, Fix128::ZERO, hi_x);
+            pos.y = clamp(pos.y + vel.y * dt_s, Fix128::ZERO, hi_y);
+            pos.z = clamp(pos.z + vel.z * dt_s, Fix128::ZERO, hi_z);
         }
         self.step_count += 1;
     }
