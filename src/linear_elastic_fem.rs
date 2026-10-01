@@ -550,6 +550,51 @@ pub struct StressTensor {
 }
 
 impl StressTensor {
+    /// `σ : C⁻¹ : σ`, the complementary energy density of this stress (MPa).
+    ///
+    /// Inverting Hooke's law gives `ε = (σ − λ/(3λ+2μ) · tr(σ) I) / 2μ`, so
+    ///
+    /// ```text
+    /// σ : C⁻¹ : σ = [ σ:σ − λ/(3λ + 2μ) · (tr σ)² ] / 2μ
+    /// ```
+    ///
+    /// with `σ:σ` counting the off-diagonals **twice**, because `xy`, `yz` and
+    /// `zx` are tensor components and each stands for two entries of the matrix.
+    ///
+    /// This is the norm [`error_indicators_squared`] measures a recovered stress
+    /// difference in, and it is the energy norm the finite element method is
+    /// optimal in, which is what makes an indicator built on it comparable across
+    /// elements of different size and stiffness.
+    ///
+    /// # Closed forms, for three states that isolate the two terms
+    ///
+    /// | state | value |
+    /// |---|---|
+    /// | uniaxial `σ_xx = s` | `s² / E` |
+    /// | pure shear `σ_xy = s` | `s² / μ = 2(1+ν) s² / E` |
+    /// | hydrostatic `σ_xx = σ_yy = σ_zz = p` | `3(1−2ν) p² / E` |
+    ///
+    /// The shear case is the only one that sees the factor of two, and the other
+    /// two are the only ones that see `λ/(3λ+2μ)`, so the three together pin both
+    /// terms. They are asserted in
+    /// `tests/analytic_adaptive_refinement.rs::the_energy_norm_matches_its_closed_forms`.
+    ///
+    /// ⚠️ Never negative for a real stress — the form is positive definite — but
+    /// `Fix128` rounding can take a value that should be zero a hair below it, so
+    /// a caller that needs a non-negative number should clamp.
+    #[must_use]
+    pub fn complementary_energy_density(&self, material: &ElasticMaterial) -> Fix128 {
+        let (lambda, mu) = material.lame();
+        let two_mu = mu + mu;
+        let bulk_share = lambda / (Fix128::from_int(3) * lambda + two_mu);
+        let double_dot = self.xx * self.xx
+            + self.yy * self.yy
+            + self.zz * self.zz
+            + (self.xy * self.xy + self.yz * self.yz + self.zx * self.zx) * Fix128::from_int(2);
+        let trace = self.xx + self.yy + self.zz;
+        (double_dot - bulk_share * trace * trace) / two_mu
+    }
+
     /// Von Mises equivalent stress (MPa).
     ///
     /// `√( ½[(σxx−σyy)² + (σyy−σzz)² + (σzz−σxx)²] + 3(σxy² + σyz² + σzx²) )`.
@@ -3892,6 +3937,381 @@ pub fn solve_elastoplastic(
 // ============================================================================
 // Tests
 // ============================================================================
+
+// ============================================================================
+// Error-driven adaptive refinement
+// ============================================================================
+
+/// Per-element squared error indicators by Zienkiewicz–Zhu stress recovery.
+///
+/// P1 strain is constant per element, so `σ_h` is a piecewise constant and has a
+/// jump across every interior face. Averaging it to the nodes with volume
+/// weights and reading it back gives a continuous `σ*`, and the size of
+/// `Δσ = σ* − σ_h` is what the element contributed to the error:
+///
+/// ```text
+/// η_e² = V_e · (Δσ : C⁻¹ : Δσ)
+///      = V_e / (2μ) · [ Δσ:Δσ − λ/(3λ + 2μ) · (tr Δσ)² ]
+/// ```
+///
+/// The energy norm is used rather than a plain Frobenius one because that is the
+/// norm the finite element method is optimal in, so the indicator is comparable
+/// across elements of different size and stiffness.
+///
+/// `Δσ` is taken at the centroid, which for the linear `σ*` is the average of
+/// its four nodal values — a one-point rule, exact for the linear part of the
+/// integrand.
+///
+/// # ⚠️ Exactly zero where the space is exact
+///
+/// When the solution lies in the P1 space the strain is uniform, every element
+/// carries the **same** `σ_h`, the volume-weighted average is that same tensor
+/// and `σ* = σ_h` identically. `η_e²` is then zero to the bit, for any material
+/// and any mesh. That is the positive control
+/// `tests/analytic_adaptive_refinement.rs::an_exact_solution_has_indicators_of_exactly_zero`
+/// — and it is also why that test is paired with a localized scene, since an
+/// indicator that returned zero unconditionally would satisfy it too.
+///
+/// Returns one value per tetrahedron, in mesh order.
+///
+/// # Errors
+///
+/// [`FemError::EmptyMesh`] for a mesh with no vertices or tetrahedra,
+/// [`FemError::SolutionDoesNotMatchMesh`] when the solution has a different node
+/// count, [`FemError::SolutionElementCountDoesNotMatchMesh`] when it reports a
+/// different element count, and [`FemError::DegenerateElement`] for a
+/// tetrahedron with no volume.
+#[must_use = "the indicators are the whole point of estimating; dropping them \
+              leaves the refinement with nothing to go on"]
+pub fn error_indicators_squared(
+    mesh: &SdfTetMesh,
+    material: &ElasticMaterial,
+    solution: &FemSolution,
+) -> Result<Vec<Fix128>, FemError> {
+    let vertex_count = mesh.vertices.len();
+    if vertex_count == 0 || mesh.tets.is_empty() {
+        return Err(FemError::EmptyMesh);
+    }
+    if solution.displacements.len() != vertex_count {
+        return Err(FemError::SolutionDoesNotMatchMesh {
+            nodes: solution.displacements.len(),
+            vertex_count,
+        });
+    }
+    if solution.element_stress.len() != mesh.tets.len() {
+        return Err(FemError::SolutionElementCountDoesNotMatchMesh {
+            elements: solution.element_stress.len(),
+            tet_count: mesh.tets.len(),
+        });
+    }
+    let elements = build_elements(mesh)?;
+
+    // Volume-weighted nodal average of the element stresses.
+    let mut weight = vec![Fix128::ZERO; vertex_count];
+    let mut recovered = vec![StressTensor::default(); vertex_count];
+    for (element, stress) in elements.iter().zip(solution.element_stress.iter()) {
+        for &node in &element.nodes {
+            weight[node] = weight[node] + element.volume;
+            let acc = &mut recovered[node];
+            acc.xx = acc.xx + stress.xx * element.volume;
+            acc.yy = acc.yy + stress.yy * element.volume;
+            acc.zz = acc.zz + stress.zz * element.volume;
+            acc.xy = acc.xy + stress.xy * element.volume;
+            acc.yz = acc.yz + stress.yz * element.volume;
+            acc.zx = acc.zx + stress.zx * element.volume;
+        }
+    }
+    for (acc, &w) in recovered.iter_mut().zip(weight.iter()) {
+        if w.is_zero() {
+            continue;
+        }
+        acc.xx = acc.xx / w;
+        acc.yy = acc.yy / w;
+        acc.zz = acc.zz / w;
+        acc.xy = acc.xy / w;
+        acc.yz = acc.yz / w;
+        acc.zx = acc.zx / w;
+    }
+
+    let quarter = Fix128::from_raw(0, 1 << 62);
+    let mut indicators = Vec::with_capacity(elements.len());
+    for (element, stress) in elements.iter().zip(solution.element_stress.iter()) {
+        // `σ*` at the centroid is the mean of the four nodal values.
+        let mut star = StressTensor::default();
+        for &node in &element.nodes {
+            let r = &recovered[node];
+            star.xx = star.xx + r.xx;
+            star.yy = star.yy + r.yy;
+            star.zz = star.zz + r.zz;
+            star.xy = star.xy + r.xy;
+            star.yz = star.yz + r.yz;
+            star.zx = star.zx + r.zx;
+        }
+        let d = StressTensor {
+            xx: star.xx * quarter - stress.xx,
+            yy: star.yy * quarter - stress.yy,
+            zz: star.zz * quarter - stress.zz,
+            xy: star.xy * quarter - stress.xy,
+            yz: star.yz * quarter - stress.yz,
+            zx: star.zx * quarter - stress.zx,
+        };
+        // ⚠️ The norm comes from `StressTensor::complementary_energy_density`
+        // rather than being written out again here, so a mutation to the norm
+        // shows up in both the indicator and its closed-form oracles.
+        let density = d.complementary_energy_density(material);
+        // The energy density of a stress difference cannot be negative; only
+        // rounding can take it below zero, and a negative indicator would break
+        // the marking that consumes it.
+        let clamped = if density.is_negative() {
+            Fix128::ZERO
+        } else {
+            density
+        };
+        indicators.push(element.volume * clamped);
+    }
+    Ok(indicators)
+}
+
+/// Dörfler (bulk) marking: the **smallest** set of elements carrying at least
+/// `bulk_fraction` of the total squared indicator.
+///
+/// Sorting the elements by indicator and taking them greedily until the running
+/// sum reaches `θ · total` gives that minimal set, which is the property that
+/// makes the refinement adaptive rather than "refine everything": dropping its
+/// smallest member must break the criterion.
+///
+/// # ⚠️ The tie-break is part of the contract
+///
+/// Equal indicators are ordered by **element index ascending**, so the chosen
+/// set is a function of the indicator values and not of the order they happen to
+/// arrive in. Without that, two meshes differing only by numbering would refine
+/// differently and the solver would stop being reproducible — which is pinned by
+/// `tests/analytic_adaptive_refinement.rs::bulk_marking_does_not_depend_on_element_order`.
+///
+/// A total of zero marks nothing and is **not** an error: an exact solution
+/// scores zero everywhere, which means there is no work to do rather than that
+/// the request was malformed.
+///
+/// # Errors
+///
+/// [`FemError::EmptyMesh`] for an empty slice,
+/// [`FemError::InvalidConfig`] when `bulk_fraction` is outside `(0, 1]` or any
+/// indicator is negative (a squared quantity cannot be).
+pub fn mark_bulk(
+    indicators_squared: &[Fix128],
+    bulk_fraction: Fix128,
+) -> Result<Vec<bool>, FemError> {
+    if indicators_squared.is_empty() {
+        return Err(FemError::EmptyMesh);
+    }
+    if bulk_fraction <= Fix128::ZERO || bulk_fraction > Fix128::ONE {
+        return Err(FemError::InvalidConfig("bulk_fraction must be in (0, 1]"));
+    }
+    if indicators_squared.iter().any(|v| v.is_negative()) {
+        return Err(FemError::InvalidConfig(
+            "a squared error indicator cannot be negative",
+        ));
+    }
+    let total = indicators_squared
+        .iter()
+        .fold(Fix128::ZERO, |acc, &v| acc + v);
+    let mut marked = vec![false; indicators_squared.len()];
+    if total.is_zero() {
+        return Ok(marked);
+    }
+    let target = total * bulk_fraction;
+    let mut order: Vec<usize> = (0..indicators_squared.len()).collect();
+    // Descending by indicator, ascending by index on a tie.
+    order.sort_by(|&a, &b| {
+        indicators_squared[b]
+            .cmp(&indicators_squared[a])
+            .then(a.cmp(&b))
+    });
+    let mut running = Fix128::ZERO;
+    for index in order {
+        if running >= target {
+            break;
+        }
+        marked[index] = true;
+        running = running + indicators_squared[index];
+    }
+    Ok(marked)
+}
+
+/// How to drive [`solve_adaptive`].
+///
+/// Fields are private and checked by [`Self::try_new`]; the struct is
+/// `#[non_exhaustive]` so a later stopping rule can be added without a breaking
+/// change.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct AdaptiveConfig {
+    linear: SolverConfig,
+    bulk_fraction: Fix128,
+    max_rounds: u32,
+    max_refine_passes: u32,
+}
+
+impl AdaptiveConfig {
+    /// Validate and build.
+    ///
+    /// `max_rounds` counts **solves**, so a budget of one solves the mesh it was
+    /// given and refines nothing. `max_refine_passes` is handed to
+    /// [`SdfTetMesh::try_refine_marked`] each round; ⚠️ propagation makes more
+    /// work than the marks alone, so it has to be larger than the number of
+    /// marked elements suggests.
+    ///
+    /// # Errors
+    ///
+    /// [`FemError::InvalidConfig`] for a zero round budget, a zero refinement
+    /// budget, or a `bulk_fraction` outside `(0, 1]`.
+    pub fn try_new(
+        linear: SolverConfig,
+        bulk_fraction: Fix128,
+        max_rounds: u32,
+        max_refine_passes: u32,
+    ) -> Result<Self, FemError> {
+        if max_rounds == 0 {
+            return Err(FemError::InvalidConfig("max_rounds must be positive"));
+        }
+        if max_refine_passes == 0 {
+            return Err(FemError::InvalidConfig(
+                "max_refine_passes must be positive",
+            ));
+        }
+        if bulk_fraction <= Fix128::ZERO || bulk_fraction > Fix128::ONE {
+            return Err(FemError::InvalidConfig("bulk_fraction must be in (0, 1]"));
+        }
+        Ok(Self {
+            linear,
+            bulk_fraction,
+            max_rounds,
+            max_refine_passes,
+        })
+    }
+
+    /// Configuration of each linear solve.
+    #[must_use]
+    pub const fn linear(&self) -> SolverConfig {
+        self.linear
+    }
+
+    /// Fraction of the total squared indicator the marked set must carry.
+    #[must_use]
+    pub const fn bulk_fraction(&self) -> Fix128 {
+        self.bulk_fraction
+    }
+
+    /// Maximum number of solves.
+    #[must_use]
+    pub const fn max_rounds(&self) -> u32 {
+        self.max_rounds
+    }
+
+    /// Pass budget handed to each refinement.
+    #[must_use]
+    pub const fn max_refine_passes(&self) -> u32 {
+        self.max_refine_passes
+    }
+}
+
+/// What an adaptive run produced.
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+pub struct AdaptiveSolution {
+    /// The final mesh, refined where the estimator asked.
+    pub mesh: SdfTetMesh,
+    /// The solution on that mesh.
+    pub field: FemSolution,
+    /// Solves performed, at least one and at most `max_rounds`.
+    pub rounds: u32,
+    /// `Σ_e η_e²` after each solve, oldest first.
+    ///
+    /// The sequence the driver acted on, so a caller can see whether the
+    /// estimate was still falling when the budget ran out.
+    pub total_indicator_history: Vec<Fix128>,
+}
+
+/// Solve, estimate, mark, refine, repeat.
+///
+/// The loop that makes refinement adaptive: each round solves the current mesh,
+/// scores it with [`error_indicators_squared`], marks a bulk set with
+/// [`mark_bulk`], and refines those elements with
+/// [`SdfTetMesh::try_refine_marked`]. It stops early when the estimate is zero —
+/// there is then nothing to refine — and otherwise after `max_rounds` solves.
+///
+/// # ⚠️ Why the boundary conditions arrive as a closure
+///
+/// Refinement appends vertices, so indices in a [`BoundaryConditions`] stay
+/// valid. That is not sufficient. A midpoint created on a clamped face is a
+/// **new** node that nothing prescribes, so the face silently becomes partially
+/// free — the same tear `tests/hanging_node_effect.rs` measures at `1.489e-1`
+/// for a linear field, caused by the boundary condition instead of by the mesh.
+///
+/// ⚠️ Propagating the conditions would only be half possible. A prescribed
+/// displacement can be inherited when both parents are prescribed on that axis
+/// (the midpoint value is their average, and `1/2` is exact in `Fix128`), but a
+/// **nodal load cannot**: a point force carries no record of the traction it
+/// stood for, so there is no correct way to split it. Rather than propagate the
+/// half that works and quietly drop the other, this asks the caller to rebuild
+/// its conditions for each mesh.
+///
+/// # Errors
+///
+/// Whatever [`solve`], [`error_indicators_squared`] or [`mark_bulk`] return, and
+/// [`FemError::InvalidConfig`] if a refinement pass runs out of budget — the
+/// message names the refinement rather than the solve, because the caller's move
+/// is to raise `max_refine_passes`.
+pub fn solve_adaptive<F>(
+    mesh: &SdfTetMesh,
+    material: &ElasticMaterial,
+    boundary_for: F,
+    adaptive: &AdaptiveConfig,
+) -> Result<AdaptiveSolution, FemError>
+where
+    F: Fn(&SdfTetMesh) -> BoundaryConditions,
+{
+    if mesh.vertices.is_empty() || mesh.tets.is_empty() {
+        return Err(FemError::EmptyMesh);
+    }
+    let mut current = mesh.clone();
+    let mut history = Vec::with_capacity(adaptive.max_rounds as usize);
+    let mut rounds = 0_u32;
+    loop {
+        let boundary = boundary_for(&current);
+        let field = solve(&current, material, &boundary, &adaptive.linear)?;
+        rounds += 1;
+        let indicators = error_indicators_squared(&current, material, &field)?;
+        let total = indicators.iter().fold(Fix128::ZERO, |acc, &v| acc + v);
+        history.push(total);
+
+        if total.is_zero() || rounds >= adaptive.max_rounds {
+            return Ok(AdaptiveSolution {
+                mesh: current,
+                field,
+                rounds,
+                total_indicator_history: history,
+            });
+        }
+        let marked = mark_bulk(&indicators, adaptive.bulk_fraction)?;
+        if !marked.iter().any(|&m| m) {
+            return Ok(AdaptiveSolution {
+                mesh: current,
+                field,
+                rounds,
+                total_indicator_history: history,
+            });
+        }
+        let mut next = current.clone();
+        next.try_refine_marked(&marked, adaptive.max_refine_passes)
+            .map_err(|_| {
+                FemError::InvalidConfig(
+                    "max_refine_passes ran out while conformity still owed splits",
+                )
+            })?;
+        current = next;
+    }
+}
 
 /// Oracles for the stress a hyperelastic element reports and for the first
 /// Piola-Kirchhoff stress it integrates.

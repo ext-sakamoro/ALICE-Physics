@@ -805,7 +805,6 @@ unwired src/sdf_destruction.rs::with_rotation
 unwired src/sdf_destruction.rs::with_smoothing
 unwired src/sdf_fem_mesh.rs::BoundaryFaceError
 unwired src/sdf_fem_mesh.rs::CUBE_FIVE_TETS
-unwired src/sdf_fem_mesh.rs::RefineError
 unwired src/sdf_fem_mesh.rs::boundary_faces
 unwired src/sdf_fem_mesh.rs::cell_parity
 unwired src/sdf_fem_mesh.rs::generate
@@ -813,7 +812,6 @@ unwired src/sdf_fem_mesh.rs::generate_marching_tets
 unwired src/sdf_fem_mesh.rs::max_edge_length
 unwired src/sdf_fem_mesh.rs::refine_by_max_edge_length
 unwired src/sdf_fem_mesh.rs::tet_count
-unwired src/sdf_fem_mesh.rs::try_refine_conforming
 unwired src/sdf_fem_mesh.rs::vertex_count
 unwired src/sdf_force.rs::apply_sdf_force_fields
 unwired src/sdf_force.rs::attract

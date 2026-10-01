@@ -18,6 +18,40 @@ were introduced during that release window.
 `CoupledField::diffuse` は反射 ghost を **mirror** (`T₋₁ = T₁`) で置くので双対体積重み和 `Σ 2⁻ᵇ T` (`b` = その node が端になっている軸の数、境界で 1/2・辺で 1/4・角で 1/8) を厳密に保存し、`ScalarField3D::diffuse` は **copy** (`T₋₁ = T₀`) なので一律和 `Σ T` を保存する 精度の違い (2 次 / 1 次、閉形式モードの有無) は従来から module doc に書かれていたが、⚠️ **保存量が別物であることは書かれていなかった** `linear_elastic_fem::deposit_plastic_heat` がこの食い違いを踏んで一律和で恒等式を立てていたので、同じ誤りが再発しないよう量の違いを表にし、telescoping の導出と「保存は安定性と独立 (不安定な `dt` でも保存する)」を併記した 橋渡し (`copy_from_f32` / `write_to_f32`) は**両者とも node を `min + i·(max−min)/(n−1)` に置くので位置が一致し点ごと転送は厳密**、ただし**往復で保存される量が入れ替わる**ことを明記した
 oracle 2 本を `tests/analytic_coupled_field.rs` に追加 (計 11 本) どちらも**非保存側の和を歯として同じ test に同居**させている: mirror 側は `Fix128` で厳密なので保存側を `assert_eq!`、一律和が動くことを `assert_ne!` で要求 copy 側は `f32` なので包絡線 `8·f32::EPSILON·steps` で押さえ、非保存側にはその 1000 倍の変化を要求した (実測は drift が包絡線の 1 %、非保存側が 3.5e3 倍で 3 桁以上の余裕) ⚠️ **熱は面の node に置く** — 内部に置くと 2 つの和が一致して何も測らない
 破壊試験 4 変異すべて red (生存 0、mirror を copy に / copy を mirror に / 各 `diffuse` を no-op に) ⚠️ **copy 側の 2 変異を捕まえるのは新 oracle だけ**で、`ScalarField3D` の保存規約には test が 1 本も無かったことが実測で確定した
+### Added — 誤差駆動の適応細分 (`linear_elastic_fem` + `sdf_fem_mesh`)
+
+解を見て細分する場所を決める経路を入れた 細分の適合性 (Rivara の伝播) は既に在ったので、入ったのは**どこを細分するか決める側**:
+
+- `StressTensor::complementary_energy_density` — `σ : C⁻¹ : σ` (推定子が使う norm、閉形式 3 件で pin)
+- `error_indicators_squared` — Zienkiewicz-Zhu 回復による要素ごとの `η_e² = V_e·(Δσ : C⁻¹ : Δσ)`
+- `mark_bulk` — Dörfler の bulk marking (最小集合、tie-break は index 昇順)
+- `SdfTetMesh::try_refine_marked` — 指名した要素を細分 (伝播は `try_refine_conforming` と同一の `edge_to_split` を共有)
+- `AdaptiveConfig` / `AdaptiveSolution` / `solve_adaptive` — solve → 推定 → mark → 細分 のループ
+- `RefineError::MarkCountDoesNotMatch`
+
+公開 API は追加のみ (snapshot **+50 / −0**)
+
+⚠️ **実測した到達点** (鋼ブロック 3x2x2 cell、面の 1 cell に 64 MPa の牽引、`θ = 1/2`):
+
+| run | tets | nodes | strain energy | 誤差 |
+|---|---|---|---|---|
+| reference (一様細分) | 2304 | 623 | 0.031673714 | — |
+| 一様 1 段 | 576 | 175 | 0.022273470 | 9.400e-3 |
+| **適応** | **292** | **98** | 0.027318884 | **4.355e-3** |
+
+⇒ **節点 44% 少なく誤差は 2.16 分の 1** 判定量は歪エネルギー `½uᵀf` で、推定子を一切使わないので推定子が自分を採点する形になっていない
+
+⚠️ **`solve_adaptive` は `BoundaryConditions` でなく closure を取る** 細分は頂点を append するので既存 index は有効だが、**拘束面に生まれた中点は誰も prescribe しないので面が部分的に自由になる** (`hanging_node_effect.rs` が線形場で 1.489e-1 の裂けとして測っている形と同じ、原因が mesh でなく境界条件) ⚠️ **拘束の伝播は半分しかできない** — 変位は両親が同軸で prescribe なら中点が平均を継げる (`1/2` は `Fix128` で厳密) が、**節点荷重は不可能** (点力は元の牽引の情報を持たないので分割に正解が無い) ⇒ 半分だけ伝播させて残りを黙って落とすより、caller に mesh ごとに作り直させる
+
+⚠️ **指標が単調減少するのは滑らかな問題に限る** 応力特異点 (点荷重 / 牽引パッチの縁 / 拘束面と自由面の接合) があると回復応力の跳びが縮まないので**総指標は増える** 実測で棄却した scene: 点荷重 `18.786 → 28.603` / 牽引パッチ `1.093 → 1.759` ⚠️ **これは推定子の欠陥ではない** (点荷重は 3 次元で解のエネルギーが無限なので極限が存在しない) ⇒ 単調減少の oracle は全境界 Dirichlet の滑らかな scene に置き、特異な scene では**誤差が落ちること**を payoff oracle が見る (実測 `0.2246 → 0.1762 → 0.1553 → 0.1177`)
+
+oracle は `tests/analytic_adaptive_refinement.rs` (21 本、API 不在の red を先に確認してから実装):
+P1 が厳密な場で `η = 0` が**許容差なしで成立** + その歯 (局所 scene で非零) / 最悪要素が荷重に接する /
+norm の閉形式 3 件 (⚠️ **一軸 `s²/E` / 純せん断 `2(1+ν)s²/E` / 静水圧 `3(1−2ν)p²/E` — せん断だけが係数 2 を見て、他 2 つだけが `λ/(3λ+2μ)` を見るので両項が覆われる**) /
+Dörfler の bulk 不等式と最小性 / 要素順に依らない / **tie は index 昇順** / **目標に厳密に届いた時に 1 要素多く取らない** /
+指名した要素が割れる / 無指名なら bit 不変 / 指名細分も適合性を保つ / 退化入力 (mark 長さ不一致 / 予算 0 / θ 範囲外 / 負の指標 / 空 mesh)
+変異試験は **実装変異 12/12 red + 配線変異 4/4 red、生存 0** (`--no-fail-fast` + 実行件数 21 の gate)
+⚠️ **初版は 4 変異が生存した** (`λ/(3λ+2μ)` 削除 / せん断を 1 回 / tie-break 反転 / 貪欲ループが 1 要素多く取る) — どれも**値を押さえる oracle が無かった**ため ⇒ norm を `complementary_energy_density` に切り出して閉形式で pin し、tie と厳密到達の 2 case を足して塞いだ
 
 ### Fixed / Changed — `p2g_normalized` が項を丸めずに厳密積を累積する (wrap と丸め増幅の解消、通常域の bit が変わる)
 
