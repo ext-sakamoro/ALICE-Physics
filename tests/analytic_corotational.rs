@@ -55,6 +55,7 @@
 //! | `solve_corotational` ignores the configured model (`law` forced to `None`) | 2: `the_neo_hookean_deviator_is_what_the_element_returns_under_that_law` and `the_material_law_moves_the_answer_and_the_answer_is_equilibrium` |
 //! | `energy_derivatives` returns `μ` instead of `μ/2` for Neo-Hookean | the same 2 |
 //! | `material_correction` returns without accumulating | 2: `the_material_law_moves_…` and `the_solve_is_equivariant_…`, both `NotConverged` |
+//! | `hyperelastic_stress` adds `+1 MPa` to `σ_xx` (a world-fixed axis) | **0 here**, 2 in `cargo test --lib linear_elastic_fem` — see `the_solve_is_equivariant_…` for why a non-objective bias is invisible to a solve |
 //! | `cauchy_stress` flips the sign of `K·(J−1)` | 1: `the_material_law_moves_…` |
 //! | `hyperelastic_stress` drops the `J` in `P = J σ F⁻ᵀ` | 1: `the_material_law_moves_…` |
 //! | `hyperelastic_stress` transposes the product (`F⁻ᵀσ` for `σF⁻ᵀ`) | 1: `the_material_law_moves_…` |
@@ -1557,25 +1558,40 @@ fn centre_node(mesh: &SdfTetMesh) -> u32 {
 /// headroom** — not back-computed from what any mutation produces. The measured
 /// gap is printed on every run so a later reader can re-derive that factor.
 ///
-/// # ⚠️ What the mutation actually does here, and why there is no ratio
+/// # ⚠️ Where the teeth are, measured — and the bound is **not** one of them
 ///
 /// | mutation | worst `\|u(QS) − Q u(S)\|` |
 /// | --- | --- |
-/// | clean | **2.563e-9 mm** (node 56) |
-/// | `rotate_stress` returns `σ̃` unrotated | **2.563e-9 mm**, identical — the linear reporting path is not in this scene |
-/// | `hyperelastic_stress` drops the `F⁻ᵀ` | ⚠️ **no gap exists**: the turned scene returns `RotationFailed { tet: 25, cause: Inverted }` |
+/// | clean | **2.563e-9 mm** (node 56), 181 / 192 Newton steps |
+/// | `rotate_stress` returns `σ̃` unrotated | **2.563e-9 mm**, unchanged — the linear reporting path is not in this scene |
+/// | `hyperelastic_stress` adds `+1 MPa` to `σ_xx`, a **world-fixed** axis (≈0.08 % of `μ`) | ⚠️ **2.563e-9 mm, unchanged** — see below |
+/// | `hyperelastic_stress` drops the `F⁻ᵀ` | ⚠️ **no gap to measure**: the turned scene returns `RotationFailed { tet: 25, cause: Inverted }` |
 /// | `material_correction` returns without accumulating | the **base** scene returns `NotConverged` at 512 iterations |
 ///
-/// ⚠️ **So the `F⁻ᵀ` red arrives as a refusal, not as an exceeded bound.** A
-/// non-equivariant force field drives an element of the turned scene through
-/// `det F = 0`, and the solve stops before any answer can be compared. That is a
-/// stronger separation than a large ratio would be, but it means **the bound
-/// below is not the assertion the known mutation exercises** — do not read a
-/// green here as "the bound was checked against something". If a later
-/// formulation makes the turned scene converge under a wrong `P`, the bound is
-/// what catches it, which is why it is written with headroom rather than removed.
+/// ⚠️⚠️ **The `1e-6` bound below is untested. Every red in that table comes from
+/// one of the two `expect`s, never from the bound.** Do not read a green here as
+/// "the threshold was checked against something".
 ///
-/// ⚠️ Two of the four rows red for reasons that are not this test's subject (a
+/// ⚠️⚠️ **Untested is not the same as dead — do not delete it.** A dead assertion
+/// is one the earlier assertions already imply, and this one is not: the `expect`s
+/// only say that both solves returned `Ok`, and a mutation can converge *and* land
+/// on a non-equivariant answer. Row 3 is the measured existence proof of that
+/// case — a non-objective stress bias that the direct oracles on `P` both red on
+/// (verified: the mutation is live) while **both scenes here still converge**. It
+/// leaves this gap unchanged only because its violation falls under the
+/// convergence floor, not because the bound could never fire. Raise the bias and
+/// the bound is what catches it.
+///
+/// ⚠️ Row 3 is also the sharpest statement of **what this test does not see**: at
+/// `+1 MPa` a world-fixed, non-objective stress is invisible here. The likely
+/// reason is the uniform-stress blind spot in its approximate form — this scene's
+/// `F` is affine on the boundary and perturbed by one loaded node, so a stress
+/// shift that is the same tensor everywhere puts nearly no force on an interior
+/// node. **That mechanism is not verified**; what is measured is the invisibility.
+/// Finding a bias large enough to converge *and* exceed `1e-6 mm` is in the
+/// Backlog, not done here.
+///
+/// ⚠️ Two of the five rows red for reasons that are not this test's subject (a
 /// scene that will not converge at all), so **this test does not separate causes
 /// on its own** — it is the companion to the direct oracles on `P`, not a
 /// replacement for them.
@@ -1627,6 +1643,9 @@ fn the_solve_is_equivariant_under_a_superposed_quarter_turn() {
     );
     eprintln!("    worst |u(QS) − Q u(S)| = {worst:.3e} mm at node {worst_node}");
 
+    // ⚠️ This bound has never fired: every mutation measured so far either leaves
+    // the gap unchanged or stops one of the two solves above. It is not implied by
+    // those `expect`s — see the table on this test — so it is untested, not dead.
     assert!(
         worst < 1e-6,
         "the turned scene must land on the turned answer; worst component differs \
