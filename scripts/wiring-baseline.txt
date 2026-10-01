@@ -209,7 +209,6 @@ unwired src/convex_mesh_builder.rs::compute_centroid
 unwired src/coupled_field.rs::add_assign
 unwired src/coupled_field.rs::as_slice
 unwired src/coupled_field.rs::blend_from
-unwired src/coupled_field.rs::cell_size
 unwired src/coupled_field.rs::max_value
 unwired src/coupled_field.rs::nx
 unwired src/coupled_field.rs::ny
@@ -829,7 +828,6 @@ unwired src/sdf_force.rs::with_affected_bodies
 unwired src/sdf_manifold.rs::deepest
 unwired src/sdf_manifold.rs::empty
 unwired src/sdf_manifold.rs::generate_sdf_manifold
-unwired src/sdf_sph.rs::cell_size
 unwired src/sdf_sph.rs::populated_cell_count
 unwired src/sim_field.rs::max_value
 unwired src/sim_modifier.rs::add_modifier
