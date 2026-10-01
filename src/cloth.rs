@@ -1259,8 +1259,33 @@ impl Cloth {
     ///
     /// This is the invariant `step` maintains, exposed so that a caller (or a test) can
     /// check it instead of trusting that it holds. `0` is the only value that means
-    /// "the cloth did not pass through itself over this frame"; any positive value is
-    /// the number of surviving tunnelling events, not a quality score.
+    /// "no part of the cloth is left on the far side of another part"; any positive value
+    /// is the number of surviving tunnelling events, not a quality score.
+    ///
+    /// # ⚠️ The invariant is stated at the **end** of the frame
+    ///
+    /// Both halves are built the same way, and the distinction matters for what `0` is
+    /// allowed to mean:
+    ///
+    /// - **detection** asks whether the two primitives met *anywhere inside* the frame —
+    ///   a chord against a triangle, and for edges the roots of the coplanarity cubic
+    ///   (`edge_pair_frame_contact`);
+    /// - **counting** then asks whether that encounter *left them on the far side at the
+    ///   end of the frame* — the chord's two endpoints straddling the triangle, and for
+    ///   edges `gap < 0` against the side the edge started on.
+    ///
+    /// ⚠️ **A pair that passes through and comes back inside one frame is therefore not
+    /// counted, by either half.** This is not a weakness introduced with the edge-edge
+    /// half: the vertex-face chord test has always had it, because a vertex that leaves
+    /// and returns ends the frame with a chord that no longer pierces anything. The older
+    /// wording here — "the cloth did not pass through itself over this frame" — claimed
+    /// the whole interval and was the inaccurate part.
+    /// `a_pair_that_crosses_and_returns_inside_one_interval_is_not_counted` pins the case.
+    ///
+    /// The practical range of that gap is small, because the **repair** does not share the
+    /// end-of-frame condition: `resolve_self_contact_over_frame` fires on the detection
+    /// stage, so an excursion is still pushed back out while it is happening. It only
+    /// escapes notice here if the repair failed to act on it at all.
     ///
     /// # The two kinds of event, and why both are needed
     ///
@@ -3413,6 +3438,88 @@ mod tests {
         assert_eq!(
             crossings_on, 0,
             "自己接触 ON で貫通が残った (頂点-面 / 辺-辺 の合算)"
+        );
+    }
+
+
+    /// ⚠️ **限界の記録** — 1 つの区間の中で通り抜けて戻った対は、不変量に出ない
+    ///
+    /// `remaining_self_contact_crossings` は **区間の終端** で貫通側に居るかを数えます
+    /// (doc の § The invariant is stated at the end of the frame) ⇒ 行って戻った対は
+    /// 終端では元の側に居るので **`0`** になります
+    ///
+    /// # scene (閉形式、`x_crossing_scene(h = 1/2, thickness = 1/4)`、自己接触 OFF)
+    ///
+    /// `T1` を `dt = 1/64` の 2 frame で往復させます (`v = ∓48`、変位 `∓3/4`)
+    ///
+    /// ```text
+    /// 符号付き隙間:  +1/2  ──frame 1──▶  −1/4  ──frame 2──▶  +1/2
+    /// frame ごとに測る:      1 件 (貫通)        1 件 (戻り)
+    /// 2 frame を 1 区間として測る:         0 件  ← 本 test が pin する限界
+    /// ```
+    ///
+    /// ⚠️ **これは辺-辺で新たに生じた弱点ではありません** 頂点-面の弦判定も同じ規約で、
+    /// 出て戻った頂点は終端で弦がどの三角形も貫きません 区間を粗く取るほど見落とす
+    /// 幅が広がるので、**呼び出し側は `step` 1 回ぶんの `start` を渡すこと**が使用条件です
+    ///
+    /// 実害が出るのは**修復が働かなかった時だけ**です 修復 (`resolve_self_contact_over_frame`)
+    /// は終端の符号でなく検出段 (coplanarity 根) で発火するので、往復の最中に押し戻します
+    #[test]
+    fn a_pair_that_crosses_and_returns_inside_one_interval_is_not_counted() {
+        let half = Fix128::from_ratio(1, 2);
+        let quarter = Fix128::from_ratio(1, 4);
+        let dt = Fix128::from_ratio(1, 64);
+        let speed = Fix128::from_int(48);
+
+        let mut cloth = x_crossing_scene(half, quarter);
+        cloth.config.self_collision = false; // 修復を止めて計器の規約だけを見る
+        let origin = cloth.positions.clone();
+        assert_eq!(
+            x_crossing_signed_gap(&cloth),
+            half,
+            "開始時の符号付き隙間が +1/2 でない"
+        );
+
+        // frame 1: T1 を −3/4 動かして 2 辺を入れ替える
+        for i in 3..6 {
+            cloth.velocities[i] = Vec3Fix::new(Fix128::ZERO, -speed, Fix128::ZERO);
+        }
+        let start1 = cloth.positions.clone();
+        cloth.step(dt);
+        assert_eq!(
+            x_crossing_signed_gap(&cloth),
+            -quarter,
+            "frame 1 で 2 辺が入れ替わっていない この scene は往復を試せていない"
+        );
+        assert_eq!(
+            cloth.remaining_self_contact_crossings(&start1),
+            1,
+            "frame 1 を単独で測った時に貫通が数えられていない"
+        );
+
+        // frame 2: 同じだけ戻す
+        for i in 3..6 {
+            cloth.velocities[i] = Vec3Fix::new(Fix128::ZERO, speed, Fix128::ZERO);
+        }
+        let start2 = cloth.positions.clone();
+        cloth.step(dt);
+        assert_eq!(
+            x_crossing_signed_gap(&cloth),
+            half,
+            "frame 2 で元の隙間 +1/2 に戻っていない 往復が閉じていない"
+        );
+        assert_eq!(
+            cloth.remaining_self_contact_crossings(&start2),
+            1,
+            "frame 2 を単独で測った時に戻りの交差が数えられていない"
+        );
+
+        // ⚠️ 2 frame を 1 区間として測ると 0 — これが記録したい限界
+        assert_eq!(
+            cloth.remaining_self_contact_crossings(&origin),
+            0,
+            "往復を 1 区間として測った時に 0 以外が返った \
+             終端の符号で数える規約が変わっている (doc § The invariant is stated at the end)"
         );
     }
 
