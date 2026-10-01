@@ -13,6 +13,16 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added — 配線ガード (`scripts/wiring_guard.py`、CI の `fmt` job と preflight)
+
+「実装したが production から呼ばれていない」を CI で止める検査器を追加した
+(1) `src/` の `pub` / `pub(crate)` な fn / struct / enum / const / trait 等が、test・doc・`use` 行を除いた production code (src / examples / benches / fuzz / bindings) から 1 度も参照されていなければ fail する 例外は直前の `// ALLOW-UNWIRED: <12 字以上の理由>`
+(2) `allow(dead_code)` は直前の `// ALLOW-DEAD: <12 字以上の理由>` が無ければ fail する
+(3) 検査対象が 0 件なら fail する (検査器が空振りして green になるのを防ぐ)
+既存の違反は `scripts/wiring-baseline.txt` に記録するラチェットで、新規の違反だけが fail し、解消済みの行が残っていても fail する (実測: 未配線 588 件 / dead_code 17 file)
+検査器自身の oracle は `scripts/test_wiring_guard.py` の 23 本で、変異 11 件がすべて red になることを確認した
+限界: 名前の字面一致で数えるため、同名の別 item があると配線済と誤判定する (fail-open)、未配線の item からしか呼ばれない item (推移的な未配線) は検出しない
+
 ### Added — 重み正規化つき P2G (`eulerian_grid::p2g_normalized`)
 
 粒子の速度を MAC 格子の face へ転写し、face ごとの重み総和で割った加重平均を書き込む入口を追加した
