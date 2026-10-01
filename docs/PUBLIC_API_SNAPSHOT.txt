@@ -2691,6 +2691,61 @@ impl core::marker::Unpin for alice_physics::dynamic_bvh::DynamicAabbTree
 impl core::marker::UnsafeUnpin for alice_physics::dynamic_bvh::DynamicAabbTree
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::dynamic_bvh::DynamicAabbTree
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::dynamic_bvh::DynamicAabbTree
+pub mod alice_physics::dynamic_fem
+pub enum alice_physics::dynamic_fem::MassLumping
+pub alice_physics::dynamic_fem::MassLumping::Consistent
+pub alice_physics::dynamic_fem::MassLumping::Lumped
+impl core::clone::Clone for alice_physics::dynamic_fem::MassLumping
+pub fn alice_physics::dynamic_fem::MassLumping::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::dynamic_fem::MassLumping
+impl core::cmp::PartialEq for alice_physics::dynamic_fem::MassLumping
+pub fn alice_physics::dynamic_fem::MassLumping::eq(&self, &Self) -> bool
+impl core::default::Default for alice_physics::dynamic_fem::MassLumping
+pub fn alice_physics::dynamic_fem::MassLumping::default() -> Self
+impl core::fmt::Debug for alice_physics::dynamic_fem::MassLumping
+pub fn alice_physics::dynamic_fem::MassLumping::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::dynamic_fem::MassLumping
+impl core::marker::StructuralPartialEq for alice_physics::dynamic_fem::MassLumping
+impl core::marker::Freeze for alice_physics::dynamic_fem::MassLumping
+impl core::marker::Send for alice_physics::dynamic_fem::MassLumping
+impl core::marker::Sync for alice_physics::dynamic_fem::MassLumping
+impl core::marker::Unpin for alice_physics::dynamic_fem::MassLumping
+impl core::marker::UnsafeUnpin for alice_physics::dynamic_fem::MassLumping
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::dynamic_fem::MassLumping
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::dynamic_fem::MassLumping
+pub struct alice_physics::dynamic_fem::DynamicsConfig
+impl alice_physics::dynamic_fem::DynamicsConfig
+pub fn alice_physics::dynamic_fem::DynamicsConfig::try_new(alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::dynamic_fem::MassLumping) -> core::result::Result<Self, alice_physics::linear_elastic_fem::FemError>
+impl core::clone::Clone for alice_physics::dynamic_fem::DynamicsConfig
+pub fn alice_physics::dynamic_fem::DynamicsConfig::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::dynamic_fem::DynamicsConfig
+impl core::cmp::PartialEq for alice_physics::dynamic_fem::DynamicsConfig
+pub fn alice_physics::dynamic_fem::DynamicsConfig::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::dynamic_fem::DynamicsConfig
+pub fn alice_physics::dynamic_fem::DynamicsConfig::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::dynamic_fem::DynamicsConfig
+impl core::marker::StructuralPartialEq for alice_physics::dynamic_fem::DynamicsConfig
+impl core::marker::Freeze for alice_physics::dynamic_fem::DynamicsConfig
+impl core::marker::Send for alice_physics::dynamic_fem::DynamicsConfig
+impl core::marker::Sync for alice_physics::dynamic_fem::DynamicsConfig
+impl core::marker::Unpin for alice_physics::dynamic_fem::DynamicsConfig
+impl core::marker::UnsafeUnpin for alice_physics::dynamic_fem::DynamicsConfig
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::dynamic_fem::DynamicsConfig
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::dynamic_fem::DynamicsConfig
+pub struct alice_physics::dynamic_fem::TransientSolver
+impl alice_physics::dynamic_fem::TransientSolver
+pub fn alice_physics::dynamic_fem::TransientSolver::accelerations(&self) -> &[alice_physics::math::Fix128]
+pub fn alice_physics::dynamic_fem::TransientSolver::displacements(&self) -> &[alice_physics::math::Fix128]
+pub fn alice_physics::dynamic_fem::TransientSolver::new(&alice_physics::sdf_fem_mesh::SdfTetMesh, &alice_physics::linear_elastic_fem::ElasticMaterial, &alice_physics::linear_elastic_fem::BoundaryConditions, &alice_physics::dynamic_fem::DynamicsConfig, &alice_physics::linear_elastic_fem::SolverConfig) -> core::result::Result<Self, alice_physics::linear_elastic_fem::FemError>
+pub fn alice_physics::dynamic_fem::TransientSolver::step(&mut self) -> core::result::Result<u32, alice_physics::linear_elastic_fem::FemError>
+pub fn alice_physics::dynamic_fem::TransientSolver::velocities(&self) -> &[alice_physics::math::Fix128]
+impl core::marker::Freeze for alice_physics::dynamic_fem::TransientSolver
+impl core::marker::Send for alice_physics::dynamic_fem::TransientSolver
+impl core::marker::Sync for alice_physics::dynamic_fem::TransientSolver
+impl core::marker::Unpin for alice_physics::dynamic_fem::TransientSolver
+impl core::marker::UnsafeUnpin for alice_physics::dynamic_fem::TransientSolver
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::dynamic_fem::TransientSolver
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::dynamic_fem::TransientSolver
 pub mod alice_physics::electromagnetic
 pub enum alice_physics::electromagnetic::EmSource
 pub alice_physics::electromagnetic::EmSource::MagneticDipole
