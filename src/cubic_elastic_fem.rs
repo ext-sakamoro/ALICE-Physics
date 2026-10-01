@@ -96,6 +96,42 @@
 //! is any caller — an oracle prescribing a closed-form field, a post-processor
 //! plotting the field — that asks where a node is.
 //!
+//! # ⚠️⚠️ Three exactness properties, and only two can be had at once
+//!
+//! | | exact thing | condition | conflicts with |
+//! |---|---|---|---|
+//! | **A** | node positions `(2a+b)/3`, `(a+b+c)/3` | every edge vector is `3 ×` dyadic | ⚠️ **B** |
+//! | **B** | `∇λ`, the only geometric quantity the integrand reads | the inverse edge matrix is dyadic (axis-aligned: legs a power of two) | ⚠️ **A**, **C** |
+//! | **C** | the oracle's teeth — a lower-order element must *fail* the same field | the lattice is **perturbed** | ⚠️ **B** |
+//!
+//! **A against B is not a measurement, it is a proof.** A needs the edge matrix
+//! to be `3D` with `D` dyadic, and then `∇λ = adj(3D)/det(3D) = adj(D)/(3·det D)`
+//! has determinant `1/(27·det D)`, which cannot be dyadic because `det D` is.
+//! Conversely dyadic `∇λ` puts the legs on powers of two and the thirds stop
+//! dividing. Pinned by construction in
+//! `the_two_exactness_properties_cannot_both_hold`.
+//!
+//! ⚠️ **This is specific to P3 among the three elements here.** The mechanism —
+//! an inexact `∇λ` rounding the product `s·∇λ` — is shared, but P1 has nodes only
+//! at the corners and P2's are at `(a+b)/2` where `1/2` *is* dyadic, so neither
+//! has any reason to want a lattice of multiples of three and the conflict never
+//! arises. The general statement is that **an element whose node placement needs
+//! a denominator with an odd factor cannot have both exact node positions and
+//! exact barycentric gradients.**
+//!
+//! Which two each test takes:
+//!
+//! | test | takes | and therefore does not measure |
+//! |---|---|---|
+//! | `dyadic_abscissae_lower_the_rounding_of_the_whole_assembly` (unit) | **B** | node positions; it uses a constant field, which needs none |
+//! | `the_shape_gradient_identity_degrades_with_the_element_geometry` (unit) | **A** | bit exactness — it *measures the loss*, 110 raw units, and fails if it ever becomes zero |
+//! | `tests/analytic_cubic_fem.rs` exactness oracles | **C** | bit exactness; they assert against the conjugate gradient's floor, not against zero |
+//!
+//! ⚠️ So **"the dyadic rule rounds less" holds only on elements with dyadic
+//! `∇λ`**, and the oracle that proves the element is a cubic one runs on a mesh
+//! where that does not hold. Neither claim covers the other, and neither is
+//! stated more widely than it was measured.
+//!
 //! Author: Moroya Sakamoto
 
 #![cfg(feature = "std")]
@@ -164,7 +200,7 @@ fn div3(a: [Fix128; 3], d: Fix128) -> [Fix128; 3] {
 
 /// One symmetric orbit of the quadrature rule.
 ///
-/// `a` and `b` are `(numerator, shift)` pairs for [`dyadic`], and `weight` is an
+/// `a` and `b` are `(numerator, shift)` pairs for `dyadic`, and `weight` is an
 /// exact `(numerator, denominator)` pair — the only constant of the rule that is
 /// not dyadic, and therefore the only one that rounds.
 struct Orbit {
@@ -558,8 +594,11 @@ impl CubicMesh {
     }
 
     /// The twenty node indices of one element: four corners, then twelve edge
-    /// nodes in [`EDGES`] order (two per edge), then four face nodes in
-    /// [`FACES`] order.
+    /// nodes two per edge in the order `(0,1) (0,2) (0,3) (1,2) (1,3) (2,3)`,
+    /// then four face nodes in the order of the corner each face is opposite.
+    ///
+    /// Within an edge the first of the two is the node two thirds of the way to
+    /// the edge's first corner in that list.
     #[must_use]
     pub fn element_nodes(&self, element: usize) -> Option<[u32; NODES_PER_ELEMENT]> {
         let e = self.elements.get(element)?;
