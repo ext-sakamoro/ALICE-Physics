@@ -189,6 +189,18 @@ pub enum FemError {
         /// Number of vertices in the mesh.
         vertex_count: usize,
     },
+    /// A solution handed to [`deposit_plastic_heat`] reports a different number
+    /// of elements than the mesh has tetrahedra.
+    ///
+    /// Refused for the same reason as [`Self::SolutionDoesNotMatchMesh`]: the
+    /// per-element dissipation is positional, so a length mismatch would
+    /// deposit one body's heat at another body's centroids.
+    SolutionElementCountDoesNotMatchMesh {
+        /// Elements the solution reports.
+        elements: usize,
+        /// Number of tetrahedra in the mesh.
+        tet_count: usize,
+    },
 }
 
 /// Isotropic linear elastic material.
@@ -3123,10 +3135,209 @@ pub struct ElastoplasticSolution {
     pub plastic_strain: Vec<StressTensor>,
     /// Accumulated equivalent plastic strain `ε̄_p` per element.
     pub equivalent_plastic_strain: Vec<Fix128>,
+    /// Accumulated plastic work per element, `W_p = Σ_k σ^{k+1} : Δε_p^k`, in
+    /// MPa (equivalently MJ/m³, since the mesh is in millimetres and the
+    /// stresses in megapascals). Zero for an element that never yielded.
+    ///
+    /// This is the energy that left the elastic store, and
+    /// [`PlasticHeating`] turns it into the temperature rise that
+    /// [`ThermalExpansion`] reads back — the return leg of the coupling whose
+    /// forward leg is [`solve_with_eigenstrain`].
+    ///
+    /// # ⚠️ It is a path integral, and `ε̄_p` is not
+    ///
+    /// Integrating the hardening law over the *discrete* path gives
+    ///
+    /// ```text
+    /// W_p = σ_y·ε̄_p + (H/2)(ε̄_p² + Σ_k Δε̄_k²)
+    /// ```
+    ///
+    /// which exceeds the continuous `σ_y ε̄_p + (H/2) ε̄_p²` by `(H/2) Σ Δε̄_k²`.
+    /// That term is `O(1/N)` in the number of plastic steps, so **two solves
+    /// that end at the same `ε̄_p` report different `W_p` when their load paths
+    /// were cut differently**. With `H = 0` the dependence disappears and
+    /// `W_p = σ_y·ε̄_p` holds for any path.
+    ///
+    /// A consequence worth stating because it bites oracles: `ε̄_p` alone
+    /// cannot validate this field. It is the same number for every step count,
+    /// so a test that reads it is structurally unable to see a wrong
+    /// integration rule here.
+    pub dissipation: Vec<Fix128>,
     /// Newton iterations (linear solves) over the whole path.
     pub newton_iterations: u32,
     /// Load steps taken, the length of the load path.
     pub steps: u32,
+}
+
+/// Conversion of plastic work into heat (Taylor–Quinney).
+///
+/// The fraction `β` of the plastic work that leaves the material as heat
+/// rather than being stored in the dislocation structure as cold work, and the
+/// **volumetric** heat capacity `c_v` that turns that heat into a temperature
+/// rise:
+///
+/// ```text
+/// ΔT = β · W_p / c_v
+/// ```
+///
+/// Fields are private and checked by [`Self::try_new`]; the struct is
+/// `#[non_exhaustive]` so a later model (a temperature-dependent `β`, say) can
+/// add settings without a breaking change, and `try_new` is the public way to
+/// build one from outside the crate.
+///
+/// # ⚠️ Units: `c_v` is volumetric, in MPa/K
+///
+/// The module works in millimetre / newton / megapascal, so `W_p` comes out in
+/// MPa = MJ/m³ — energy per unit volume. Dividing by a volumetric heat
+/// capacity in the same MJ/(m³·K) = MPa/K leaves kelvin with no conversion
+/// factor at all. For steel, `ρ c_p ≈ 7850 kg/m³ × 486 J/(kg·K) ≈ 3.82 MPa/K`.
+///
+/// Passing a *specific* heat capacity (J/(kg·K), around 486 for steel) instead
+/// is off by the density and gives a rise some 7850 times too small; the field
+/// is named for its units so the call site has to say which it means.
+///
+/// `β` is conventionally 0.9 for metals. `β = 0` is the "all cold work" limit
+/// and is accepted: it produces exactly zero rise, which is a statement about
+/// the material rather than a silent no-op.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct PlasticHeating {
+    taylor_quinney: Fix128,
+    volumetric_heat_capacity_mpa_per_k: Fix128,
+}
+
+impl PlasticHeating {
+    /// Validate and build.
+    ///
+    /// # Errors
+    ///
+    /// [`FemError::InvalidConfig`] if `taylor_quinney` is outside `[0, 1]`
+    /// (above it the heat would exceed the work, below it the material would
+    /// cool while dissipating) or if `volumetric_heat_capacity_mpa_per_k` is
+    /// not strictly positive (zero divides, negative cools).
+    pub fn try_new(
+        taylor_quinney: Fix128,
+        volumetric_heat_capacity_mpa_per_k: Fix128,
+    ) -> Result<Self, FemError> {
+        if taylor_quinney.is_negative() || taylor_quinney > Fix128::ONE {
+            return Err(FemError::InvalidConfig(
+                "taylor_quinney must be a fraction in [0, 1]",
+            ));
+        }
+        if volumetric_heat_capacity_mpa_per_k <= Fix128::ZERO {
+            return Err(FemError::InvalidConfig(
+                "volumetric_heat_capacity_mpa_per_k must be positive (MPa/K, not J/(kg K))",
+            ));
+        }
+        Ok(Self {
+            taylor_quinney,
+            volumetric_heat_capacity_mpa_per_k,
+        })
+    }
+
+    /// Fraction of plastic work released as heat.
+    #[must_use]
+    pub const fn taylor_quinney(&self) -> Fix128 {
+        self.taylor_quinney
+    }
+
+    /// Volumetric heat capacity in MPa/K.
+    #[must_use]
+    pub const fn volumetric_heat_capacity_mpa_per_k(&self) -> Fix128 {
+        self.volumetric_heat_capacity_mpa_per_k
+    }
+
+    /// `ΔT = β · W_p / c_v` for one element's dissipation.
+    #[must_use]
+    pub fn temperature_rise(&self, dissipation: Fix128) -> Fix128 {
+        self.taylor_quinney * dissipation / self.volumetric_heat_capacity_mpa_per_k
+    }
+}
+
+/// Temperature rise of every element from the plastic work it dissipated.
+///
+/// One entry per element, in mesh order, in kelvin above whatever the solve
+/// treated as the stress-free reference. Elements that stayed elastic report
+/// exactly zero.
+///
+/// This is the quantity that closes the thermo-mechanical loop:
+/// [`solve_elastoplastic`] dissipates, this converts, [`deposit_plastic_heat`]
+/// puts it on a grid, and [`solve_with_eigenstrain`] reads it back as strain.
+#[must_use = "the temperature rise is the whole output of the conversion; \
+              dropping it leaves the dissipated heat unaccounted for"]
+pub fn plastic_temperature_rise(
+    solution: &ElastoplasticSolution,
+    heating: &PlasticHeating,
+) -> Vec<Fix128> {
+    solution
+        .dissipation
+        .iter()
+        .map(|&w| heating.temperature_rise(w))
+        .collect()
+}
+
+/// Deposit the plastic heat of a completed solve onto a scalar field.
+///
+/// Each element's temperature rise is splatted at its centroid with the
+/// trilinear weights of [`CoupledField::splat`], scaled by `V_e / V_cell` so
+/// that the **energy** is what the deposit conserves:
+///
+/// ```text
+/// Σ_cell ΔT_cell · c_v · V_cell  =  Σ_e β · W_p,e · V_e
+/// ```
+///
+/// Scaling matters because a temperature is intensive: splatting `ΔT_e`
+/// directly would give a sliver tetrahedron and a fat one the same weight, and
+/// the total would depend on how the mesh was cut rather than on how much was
+/// dissipated.
+///
+/// The field is **added to**, not overwritten, so a caller may accumulate
+/// several bodies or several steps before diffusing.
+///
+/// # Errors
+///
+/// [`FemError::EmptyMesh`] for a mesh with no vertices or no tetrahedra,
+/// [`FemError::SolutionElementCountDoesNotMatchMesh`] if the solution reports a
+/// different number of elements than the mesh has tetrahedra, and
+/// [`FemError::DegenerateElement`] for a tetrahedron with no volume.
+pub fn deposit_plastic_heat(
+    mesh: &SdfTetMesh,
+    solution: &ElastoplasticSolution,
+    heating: &PlasticHeating,
+    field: &mut CoupledField,
+) -> Result<(), FemError> {
+    if mesh.vertices.is_empty() || mesh.tets.is_empty() {
+        return Err(FemError::EmptyMesh);
+    }
+    if solution.dissipation.len() != mesh.tets.len() {
+        return Err(FemError::SolutionElementCountDoesNotMatchMesh {
+            elements: solution.dissipation.len(),
+            tet_count: mesh.tets.len(),
+        });
+    }
+    let elements = build_elements(mesh)?;
+    let (hx, hy, hz) = field.cell_size();
+    let cell_volume = hx * hy * hz;
+    let quarter = Fix128::from_raw(0, 1 << 62);
+    for (element, &work) in elements.iter().zip(solution.dissipation.iter()) {
+        if work.is_zero() {
+            continue;
+        }
+        let mut centroid = Vec3Fix::ZERO;
+        for &node in &element.nodes {
+            let v = mesh.vertices[node];
+            centroid = centroid
+                + Vec3Fix::new(
+                    Fix128::from_f32(v[0]),
+                    Fix128::from_f32(v[1]),
+                    Fix128::from_f32(v[2]),
+                );
+        }
+        centroid = centroid * quarter;
+        let rise = heating.temperature_rise(work) * element.volume / cell_volume;
+        field.splat(centroid, rise);
+    }
+    Ok(())
 }
 
 /// Plastic state of one element: the plastic strain in Voigt order with
@@ -3136,12 +3347,19 @@ pub struct ElastoplasticSolution {
 struct PlasticState {
     strain: [Fix128; 6],
     equivalent: Fix128,
+    /// Accumulated plastic work `W_p = Σ σ^{n+1} : Δε_p` (MPa, i.e. MJ/m³).
+    ///
+    /// Carried in the state rather than recomputed at the end because it is a
+    /// **path** integral: the end state does not determine it. See
+    /// [`ElastoplasticSolution::dissipation`].
+    dissipation: Fix128,
 }
 
 impl PlasticState {
     const VIRGIN: Self = Self {
         strain: [Fix128::ZERO; 6],
         equivalent: Fix128::ZERO,
+        dissipation: Fix128::ZERO,
     };
 }
 
@@ -3258,6 +3476,22 @@ fn return_map(
     next.strain[4] = next.strain[4] + shear * s.yz;
     next.strain[5] = next.strain[5] + shear * s.zx;
     next.equivalent = next.equivalent + d_eq;
+    // Plastic work of this step. Writing `σ^{n+1} : Δε_p` out with
+    // `Δε_p = (3/2)Δε̄ s/q` and `s:s = (2/3)q²` collapses it to
+    // `Δε̄ (q − 3μΔε̄)`, and consistency (`Δε̄ = f/(3μ+H)`) makes that factor
+    // exactly the radius of the surface the return lands on:
+    //
+    //     q^{n+1} = q − 3μΔε̄ = σ_y + H·ε̄^{n+1}
+    //
+    // ⚠️ The right-hand form is used, not `q − 3μ·d_eq`. They agree in exact
+    // arithmetic, but under `Fix128` the left form carries the truncation of
+    // `f/(3μ+H)` multiplied back up by `3μ`, which is ~1e3 ulp per step on a
+    // steel-like shear modulus, while the right form is a single multiply off
+    // the yield parameters. The oracle
+    // `tests/analytic_plastic_dissipation.rs::the_committed_stress_sits_on_the_
+    // yield_surface` holds the two together so this choice cannot drift into a
+    // dissipation that no longer matches the stress actually reported.
+    next.dissipation = next.dissipation + d_eq * (yield_stress + hardening * next.equivalent);
     // `n = s / ‖s‖_F` with the Frobenius norm, which counts the shear twice.
     let frobenius = (s.xx * s.xx
         + s.yy * s.yy
@@ -3359,7 +3593,6 @@ fn element_tangent_force(
 /// Newton budget runs out. A load above the limit load of a perfectly plastic
 /// body has no equilibrium state and comes back as an `Err` from the linear
 /// solve or the Newton budget, never as a stress above yield.
-// ALLOW-UNWIRED: public elastoplastic entry for downstream solvers
 pub fn solve_elastoplastic(
     mesh: &SdfTetMesh,
     material: &ElasticMaterial,
@@ -3536,6 +3769,7 @@ pub fn solve_elastoplastic(
         })
         .collect();
     let equivalent_plastic_strain = committed.iter().map(|s| s.equivalent).collect();
+    let dissipation = committed.iter().map(|s| s.dissipation).collect();
     Ok(ElastoplasticSolution {
         field: FemSolution {
             displacements,
@@ -3546,6 +3780,7 @@ pub fn solve_elastoplastic(
         },
         plastic_strain,
         equivalent_plastic_strain,
+        dissipation,
         newton_iterations: newton_total,
         steps: u32::try_from(load_path.len()).unwrap_or(u32::MAX),
     })
