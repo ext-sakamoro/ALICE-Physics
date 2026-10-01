@@ -23,6 +23,23 @@
 //! robustness, not of correctness, and the thing worth building first is the
 //! measurement.
 //!
+//! ⚠️ **For a path-dependent constitutive law that equivalence is conditional,
+//! and the condition is where the fixed point is defined.** The piston above
+//! has no memory, so its fixed point can be taken over the whole load path.
+//! An elastoplastic body has memory, and the Simo–Miehe (Armero–Simo) split
+//! that makes a thermoplastic sweep well posed defines the map **per
+//! increment**, on `(ε_p^n, ε̄_p^n, T^n)` held fixed: the unknown is the
+//! *increment* `δT`, the map is
+//! `δT_{k+1} = deposit(ΔW_p(T^n + δT_k; state^n))`, and relaxation is applied
+//! to `δT`. ⚠️ **Committing the internal variables inside the sweep breaks the
+//! split** — each sub-iteration would then start from a different `ε_p`, the
+//! map would no longer be a map on `δT`, and converging it would not solve the
+//! monolithic equations. That is why
+//! [`crate::linear_elastic_fem::ElastoplasticIncrement::commit`] is a separate call
+//! from
+//! [`crate::linear_elastic_fem::ElastoplasticProblem::step`]: the driver sweeps with
+//! `step`, and commits once, after the sub-iteration has converged.
+//!
 //! # The model problem (closed-form spectral radius)
 //!
 //! A piston of mass `m` on a spring `k`, pushing an incompressible fluid
