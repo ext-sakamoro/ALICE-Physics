@@ -31,8 +31,14 @@
 //! One mutation at a time, restored in between. ⚠️ **The whole table was
 //! re-measured when the material law was wired in**: the 2026-09-30 numbers were
 //! taken when the stress path had no branch, and a branch can move which oracle
-//! sees which mutation. The baseline is now `13 passed / 0 failed / 1 ignored`
-//! here and `21 passed` in `cargo test --lib hyperelastic`.
+//! sees which mutation. The baseline is `12 passed / 0 failed / 1 ignored` here
+//! (13 tests), `21 passed` in `cargo test --lib hyperelastic` and `2 passed` in
+//! `cargo test --lib linear_elastic_fem`.
+//!
+//! ⚠️ **Run the whole mutation through one `cargo` invocation**, e.g.
+//! `cargo test --no-fail-fast --lib --test analytic_corotational`. Two mutations
+//! in the table below red only in the library target, and splitting the run puts
+//! the marker and the red in different logs, where nobody outside can pair them.
 //!
 //! ⚠️ **A mutation run must print `### MUTATION: <what was changed>` on its own
 //! line**, and the restored green must land in the same log. A destruction test
@@ -53,7 +59,7 @@
 //! | `hyperelastic_stress` drops the `J` in `P = J σ F⁻ᵀ` | 1: `the_material_law_moves_…` |
 //! | `hyperelastic_stress` transposes the product (`F⁻ᵀσ` for `σF⁻ᵀ`) | 1: `the_material_law_moves_…` |
 //! | `cauchy_stress` drops the `−p_ref` that makes the reference state stress free | **0 here**, 2 in `cargo test --lib hyperelastic` |
-//! | `hyperelastic_stress` drops the `F⁻ᵀ` in `P = J σ F⁻ᵀ` | ⚠️ **0 anywhere** |
+//! | `hyperelastic_stress` drops the `F⁻ᵀ` in `P = J σ F⁻ᵀ` | **0 here**, 2 in `cargo test --lib linear_elastic_fem` |
 //!
 //! Three things that table says and the prose would not:
 //!
@@ -69,13 +75,18 @@
 //!   stress by the same tensor — dropping `−p_ref` — leaves every oracle in this
 //!   file green. That one is checked in `src/hyperelastic.rs` instead, by
 //!   `cauchy_stress_vanishes_in_the_reference_state`.
-//! - ⚠️ **Dropping the `F⁻ᵀ` survives everything.** The affine scenes cannot see
-//!   it for the reason above, and on the inhomogeneous scene the solver's own
-//!   equilibrium check uses the same broken force, so it converges to a different
-//!   state and calls it equilibrium. Catching it needs an oracle the internal
-//!   force cannot satisfy by agreeing with itself — objectivity under a
-//!   superposed rotation is the cheap one, since `P = J σ F⁻ᵀ` rotates to `Q P`
-//!   and `P = J σ` does not. Not written; see the Backlog.
+//! - ⚠️ **Dropping the `F⁻ᵀ` survives every oracle in this file**, and did survive
+//!   the whole crate until 2026-10-01. The affine scenes cannot see it for the
+//!   reason above, and on the inhomogeneous scene the solver's own equilibrium
+//!   check uses the same broken force, so it converges to a different state and
+//!   calls it equilibrium — `the_material_law_moves_…` still returns `Ok`. What
+//!   catches it is an oracle the internal force cannot satisfy by agreeing with
+//!   itself: `P = J σ F⁻ᵀ` rotates to `Q P` under a superposed `Q` where
+//!   `P = J σ` rotates to `Q P Qᵀ`. Both now live in `src/linear_elastic_fem.rs`
+//!   (`the_first_piola_kirchhoff_stress_is_objective_under_a_superposed_rotation`
+//!   and `…_is_what_the_closed_form_says`) and not here, because `P` is not on the
+//!   public surface — a test in `tests/` can see it only through where a solve
+//!   lands, which is exactly the thing that cannot see this mutation.
 //!
 //! Author: Moroya Sakamoto
 
