@@ -1147,3 +1147,125 @@ fn degenerate_inputs_are_refused() {
         })
     );
 }
+
+/// Degenerate geometry and extreme values are refused or absorbed, never a
+/// panic.
+///
+/// The reaction functions divide by the tetrahedron determinant (through
+/// `build_elements`) and by `det F` (through the polar decomposition and the
+/// constitutive law), so every one of those paths is given an input that makes
+/// the denominator vanish or the magnitude run away. ⚠️ **A Rust test fails on
+/// a panic by itself, so this file's being green is the assertion**; the
+/// `assert_eq!`s below additionally pin *which* refusal comes back, so a guard
+/// cannot be swapped for a different one unnoticed.
+#[test]
+fn degenerate_geometry_and_extreme_values_do_not_panic() {
+    let flat_solution = |mesh: &SdfTetMesh| FemSolution {
+        displacements: vec![[Fix128::ZERO; 3]; mesh.vertex_count()],
+        element_stress: vec![StressTensor::default(); mesh.tet_count()],
+        iterations: 0,
+        relative_residual: Fix128::ZERO,
+        effective_relative_tolerance: Fix128::ZERO,
+    };
+    let mut bc = BoundaryConditions::new();
+    for v in 0..4u32 {
+        bc.prescribe_all(v, [Fix128::ZERO; 3]);
+    }
+
+    // A tetrahedron with four coplanar vertices: zero volume, so the shape
+    // function gradients are undefined and `build_elements` must refuse.
+    let mut flat = SdfTetMesh::default();
+    flat.vertices = vec![
+        [0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [1.0, 1.0, 0.0],
+    ];
+    flat.tets = vec![Tetrahedron {
+        vertices: [0, 1, 2, 3],
+    }];
+    assert_eq!(
+        reactions(&flat, &pla(), &bc, None, &flat_solution(&flat)),
+        Err(FemError::DegenerateElement { tet: 0 })
+    );
+
+    // A mesh with vertices but no tetrahedra, and one with tetrahedra naming
+    // vertices it does not have.
+    let mut no_tets = SdfTetMesh::default();
+    no_tets.vertices = vec![[0.0, 0.0, 0.0]; 4];
+    assert_eq!(
+        reactions(&no_tets, &pla(), &bc, None, &flat_solution(&no_tets)),
+        Err(FemError::EmptyMesh)
+    );
+    let mut dangling = SdfTetMesh::default();
+    dangling.vertices = vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
+    dangling.tets = vec![Tetrahedron {
+        vertices: [0, 1, 2, 7],
+    }];
+    let mut three = BoundaryConditions::new();
+    for v in 0..3u32 {
+        three.prescribe_all(v, [Fix128::ZERO; 3]);
+    }
+    assert_eq!(
+        reactions(&dangling, &pla(), &three, None, &flat_solution(&dangling)),
+        Err(FemError::VertexOutOfRange {
+            vertex: 7,
+            vertex_count: 3,
+        })
+    );
+
+    // A displacement field that turns every element inside out: the polar
+    // decomposition has no factor to return, so the co-rotational reaction
+    // refuses instead of dividing by a vanishing determinant.
+    let cube = kuhn_box(1, 1, 1, 2.0);
+    let inverted = FemSolution {
+        // −2·X on a 2 mm cube maps the body through itself: det F < 0.
+        displacements: cube
+            .vertices
+            .iter()
+            .map(|p| {
+                [
+                    fx(-2.0 * f64::from(p[0])),
+                    fx(-2.0 * f64::from(p[1])),
+                    fx(-2.0 * f64::from(p[2])),
+                ]
+            })
+            .collect(),
+        element_stress: vec![StressTensor::default(); cube.tet_count()],
+        iterations: 0,
+        relative_residual: Fix128::ZERO,
+        effective_relative_tolerance: Fix128::ZERO,
+    };
+    let mut all = BoundaryConditions::new();
+    for v in 0..u32::try_from(cube.vertex_count()).expect("fits") {
+        all.prescribe_all(v, inverted.displacements[v as usize]);
+    }
+    let config =
+        CorotationalConfig::try_new(SolverConfig::default(), 32, fx(1e-6), 1, 32).expect("valid");
+    let refusal = corotational_reactions(
+        &cube,
+        &pla(),
+        &all,
+        &config,
+        &CorotationalSolution {
+            field: inverted,
+            newton_iterations: 0,
+            increments: 1,
+        },
+    );
+    assert!(
+        matches!(refusal, Err(FemError::RotationFailed { .. })),
+        "an inverted element has no polar factor, so the frame rebuild must \
+         refuse rather than divide by it; got {refusal:?}"
+    );
+
+    // An undeformed body with no constraints at all: every row is free, so the
+    // answer is the zero vector and nothing divides by the empty mask.
+    let free = BoundaryConditions::new();
+    let quiet = reactions(&cube, &pla(), &free, None, &flat_solution(&cube))
+        .expect("no constraint is not an error for a post-processing read");
+    assert!(
+        quiet.iter().all(|n| n.iter().all(|v| *v == Fix128::ZERO)),
+        "with nothing prescribed there is no support to carry anything"
+    );
+}
