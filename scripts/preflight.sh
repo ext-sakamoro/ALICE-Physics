@@ -26,6 +26,10 @@ cargo fmt -- --check
 step "README f32 module row = src/"
 python3 scripts/f32_modules.py --check
 
+step "wiring-guard (oracle + 新規の未配線 / 理由の無い dead_code が無い)"
+python3 scripts/test_wiring_guard.py
+python3 scripts/wiring_guard.py
+
 step "clippy -D warnings (default, all targets)"
 cargo clippy --all-targets -- -D warnings
 

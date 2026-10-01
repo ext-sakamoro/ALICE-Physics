@@ -230,6 +230,13 @@ jobs:
       - name: README f32 module row matches src/
         run: python3 scripts/f32_modules.py --check
 
+      # 配線ガード: 実装したが production から呼ばれていない pub item と、理由の無い
+      # allow(dead_code) の新規追加を止める (既存分は scripts/wiring-baseline.txt)
+      - name: wiring-guard oracle (検査器自身の試験)
+        run: python3 scripts/test_wiring_guard.py
+      - name: wiring-guard (新規の未配線 / 理由の無い dead_code が無い)
+        run: python3 scripts/wiring_guard.py
+
   doc:
     name: Doc (RUSTDOCFLAGS=-Dwarnings)
     runs-on: ubuntu-latest
