@@ -13,6 +13,30 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Changed — slab halo 交換を内部 trait 経由にし、プロセス内実装を分離
+
+圧力解法の halo 交換を `RankTransport` (crate 内 trait) 経由にし、ランクが同一アドレス空間に
+並ぶ場合の実装を `LocalTransport` として分離しました **公開 API は変わりません**
+
+trait が持つのは「ランクが sweep する buffer を渡す」と「層 1 枚を src から dst へ届ける」の 2 つです
+⚠️ **隣の層がどこにあるかは backend ごとに変わる唯一の点**なので、slab の所有を transport 側に置きました
+poison / 所有権の対応 / sweep は solver 側に残しています
+
+`dyn` でなく型引数を採りました build では backend を feature で 1 つだけ選ぶので実行時に選ぶものが無く、
+反復 loop 内で単形化が効き、`no_std` に `alloc::boxed::Box` を持ち込む必要もありません
+
+oracle 2 本を追加しました
+
+- `a_second_rank_transport_reproduces_the_in_process_one_bit_for_bit` — 別の記憶配置を採る 2 つ目の
+  実装が、プロセス内実装と bit 一致する
+- `a_transport_that_never_delivers_does_not_reproduce_the_solve` — 判別力の対照群
+
+⚠️ **既存の分割 oracle 3 本では捕まらない変異があることを破壊試験で実測しました** 2 つ目の実装が
+`src` でなく `dst` から読む変異は **既存 3 本すべてを green で素通りし、新 oracle だけが red** になります
+逆に配送方向を反転する変異は既存 oracle だけが red になり、新 oracle は両実装が同じ誤った経路を使うため
+互いに一致します ⇒ **新旧は「層をどう運ぶか」と「どの層をいつ運ぶか」を別々に測っており、
+片方だけでは transport 層の片側が無被覆です**
+
 ### Added — 圧力解法の領域分割 (z slab + halo 交換) を oracle 化
 
 圧力解法を `z` 方向の連続 slab に分け、colour sweep ごとに幅 1 の halo を交換する経路を足しました
