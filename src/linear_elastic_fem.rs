@@ -47,8 +47,9 @@
 //!   so `ElasticMaterial::from_filament` fills it from a category table and
 //!   `with_poisson` overrides it.
 //! - Small strain, small displacement: no geometric nonlinearity, no contact,
-//!   no plasticity. Past yield the result is the *elastic* stress, which is
-//!   what a yield check wants as its input.
+//!   no plasticity in `solve`. Past yield the result is the *elastic* stress,
+//!   which is what a yield check wants as its input. Plasticity is
+//!   `solve_elastoplastic` (small-strain J2, P1 only).
 //! - P1 tetrahedra are stiff in bending. A beam resolved by a few elements
 //!   through the thickness under-predicts deflection; refine through the
 //!   thickness rather than along the span.
@@ -2659,6 +2660,558 @@ pub fn solve_corotational(
         },
         newton_iterations,
         increments: config.increments,
+    })
+}
+
+// ============================================================================
+// Small-strain J2 elastoplasticity
+// ============================================================================
+
+/// Largest yield stress or hardening modulus accepted, in MPa (`2³⁰`).
+///
+/// The return mapping squares stresses, and [`Fix128`] wraps on overflow
+/// instead of saturating, so a bound has to be enforced where the setting
+/// enters. `2³⁰` MPa is a thousand times any structural material.
+const PLASTIC_PARAMETER_MAX: i64 = 1 << 30;
+
+/// Largest load factor accepted in a load path, in magnitude (`2²⁰`), for the
+/// same reason as [`PLASTIC_PARAMETER_MAX`].
+const LOAD_FACTOR_MAX: i64 = 1 << 20;
+
+/// Settings for [`solve_elastoplastic`].
+///
+/// Small-strain **J2 (von Mises) plasticity with bilinear isotropic
+/// hardening**: the material yields when the von Mises stress reaches
+/// `σ_y + H·ε̄_p`, where `ε̄_p` is the accumulated equivalent plastic strain and
+/// `H = dσ_y/dε̄_p` is the *plastic* modulus. A uniaxial test therefore shows the
+/// tangent `E_t = E·H / (E + H)` past yield, and `H = 0` is perfect plasticity.
+///
+/// The fields are private and checked by [`Self::try_new`], so an out-of-range
+/// yield stress or hardening modulus cannot be constructed. The struct is
+/// `#[non_exhaustive]` so a later model (kinematic hardening, say) can add
+/// settings without a breaking change.
+///
+/// [`Default`] is "plasticity effectively off": a yield stress of `2³⁰` MPa, no
+/// hardening, 50 Newton iterations at `2⁻²⁰` relative tolerance and the default
+/// [`SolverConfig`]. It is a valid configuration that reproduces the linear
+/// elastic answer for any physical load, not a recommendation of a material.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct ElastoplasticConfig {
+    linear: SolverConfig,
+    newton_iterations: u32,
+    newton_tolerance: Fix128,
+    yield_stress_mpa: Fix128,
+    hardening_modulus_mpa: Fix128,
+}
+
+impl ElastoplasticConfig {
+    /// Validate and build.
+    ///
+    /// `linear` configures the conjugate gradient solve of each Newton
+    /// iteration. `newton_tolerance` is the fraction of the reference residual
+    /// (the larger of the step's external load and its first residual) below
+    /// which an iteration counts as converged; it should sit above
+    /// `linear.relative_tolerance`, because the linear solve is what limits how
+    /// small one iteration can make the residual.
+    ///
+    /// # Errors
+    ///
+    /// [`FemError::InvalidConfig`] for a zero Newton budget, a tolerance
+    /// outside `(0, 1)`, a yield stress that is not positive or exceeds `2³⁰`
+    /// MPa, or a hardening modulus that is negative (softening is not
+    /// supported: the tangent loses positive definiteness and the solution is
+    /// no longer unique) or exceeds `2³⁰` MPa.
+    pub fn try_new(
+        linear: SolverConfig,
+        newton_iterations: u32,
+        newton_tolerance: Fix128,
+        yield_stress_mpa: Fix128,
+        hardening_modulus_mpa: Fix128,
+    ) -> Result<Self, FemError> {
+        if newton_iterations == 0 {
+            return Err(FemError::InvalidConfig(
+                "newton_iterations must be positive",
+            ));
+        }
+        if newton_tolerance <= Fix128::ZERO || newton_tolerance >= Fix128::ONE {
+            return Err(FemError::InvalidConfig(
+                "newton_tolerance must be a fraction strictly between 0 and 1",
+            ));
+        }
+        let cap = Fix128::from_int(PLASTIC_PARAMETER_MAX);
+        if yield_stress_mpa <= Fix128::ZERO || yield_stress_mpa > cap {
+            return Err(FemError::InvalidConfig(
+                "yield_stress_mpa must be positive and at most 2^30",
+            ));
+        }
+        if hardening_modulus_mpa.is_negative() || hardening_modulus_mpa > cap {
+            return Err(FemError::InvalidConfig(
+                "hardening_modulus_mpa must be in [0, 2^30] (softening is not supported)",
+            ));
+        }
+        Ok(Self {
+            linear,
+            newton_iterations,
+            newton_tolerance,
+            yield_stress_mpa,
+            hardening_modulus_mpa,
+        })
+    }
+}
+
+impl Default for ElastoplasticConfig {
+    /// Plasticity effectively off; see the type documentation.
+    fn default() -> Self {
+        Self {
+            linear: SolverConfig::default(),
+            newton_iterations: 50,
+            newton_tolerance: Fix128::from_raw(0, 1 << 44),
+            yield_stress_mpa: Fix128::from_int(PLASTIC_PARAMETER_MAX),
+            hardening_modulus_mpa: Fix128::ZERO,
+        }
+    }
+}
+
+/// Result of [`solve_elastoplastic`], at the end of the load path.
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+pub struct ElastoplasticSolution {
+    /// Displacements and the Cauchy stress per element. `iterations`,
+    /// `relative_residual` and `effective_relative_tolerance` describe the last
+    /// conjugate gradient solve (zero if none ran).
+    pub field: FemSolution,
+    /// Plastic strain per element, **tensor** components in the
+    /// [`StressTensor`] layout (`xy` is `ε_xy`, half the engineering shear). The
+    /// J2 flow is deviatoric, so `xx + yy + zz = 0`.
+    pub plastic_strain: Vec<StressTensor>,
+    /// Accumulated equivalent plastic strain `ε̄_p` per element.
+    pub equivalent_plastic_strain: Vec<Fix128>,
+    /// Newton iterations (linear solves) over the whole path.
+    pub newton_iterations: u32,
+    /// Load steps taken, the length of the load path.
+    pub steps: u32,
+}
+
+/// Plastic state of one element: the plastic strain in Voigt order with
+/// **engineering** shear (`xx, yy, zz, γxy, γyz, γzx`, the order the strain is
+/// read in) and the equivalent plastic strain.
+#[derive(Clone, Copy)]
+struct PlasticState {
+    strain: [Fix128; 6],
+    equivalent: Fix128,
+}
+
+impl PlasticState {
+    const VIRGIN: Self = Self {
+        strain: [Fix128::ZERO; 6],
+        equivalent: Fix128::ZERO,
+    };
+}
+
+/// The consistent tangent of an element that returned to the yield surface:
+/// `C = K 1⊗1 + 2μθ I_dev − 2μθ̄ n⊗n`, stored as `1 − θ`, `θ̄` and `n`.
+#[derive(Clone, Copy)]
+struct PlasticTangent {
+    shear_loss: Fix128,
+    theta_bar: Fix128,
+    direction: StressTensor,
+}
+
+/// One element's return mapping: the stress, the state it would commit, and the
+/// tangent if the element yielded.
+#[derive(Clone, Copy)]
+struct ReturnMap {
+    stress: StressTensor,
+    state: PlasticState,
+    tangent: Option<PlasticTangent>,
+}
+
+/// Strain of an element in Voigt order with engineering shear, accumulated in
+/// the same order as `element_stress_local` so an elastic element reproduces
+/// [`solve`] to the bit.
+fn element_strain(element: &Element, u: &[[Fix128; 3]; 4]) -> [Fix128; 6] {
+    let mut exx = Fix128::ZERO;
+    let mut eyy = Fix128::ZERO;
+    let mut ezz = Fix128::ZERO;
+    let mut gxy = Fix128::ZERO;
+    let mut gyz = Fix128::ZERO;
+    let mut gzx = Fix128::ZERO;
+    for (g, node_u) in element.grad.iter().zip(u.iter()) {
+        let (ux, uy, uz) = (node_u[0], node_u[1], node_u[2]);
+        exx = exx + g[0] * ux;
+        eyy = eyy + g[1] * uy;
+        ezz = ezz + g[2] * uz;
+        gxy = gxy + g[1] * ux + g[0] * uy;
+        gyz = gyz + g[2] * uy + g[1] * uz;
+        gzx = gzx + g[2] * ux + g[0] * uz;
+    }
+    [exx, eyy, ezz, gxy, gyz, gzx]
+}
+
+/// Hooke's law on a Voigt strain with engineering shear.
+fn hooke(e: [Fix128; 6], lambda: Fix128, mu: Fix128) -> StressTensor {
+    let trace = e[0] + e[1] + e[2];
+    let two_mu = mu + mu;
+    StressTensor {
+        xx: lambda * trace + two_mu * e[0],
+        yy: lambda * trace + two_mu * e[1],
+        zz: lambda * trace + two_mu * e[2],
+        xy: mu * e[3],
+        yz: mu * e[4],
+        zx: mu * e[5],
+    }
+}
+
+/// Radial return for J2 plasticity with linear isotropic hardening.
+///
+/// With `e = ε − ε_p`, the trial stress is `σ_tr = C e` and the trial von Mises
+/// stress is `q`. Yield is `f = q − (σ_y + H ε̄_p) > 0`. The return is along the
+/// deviator: `Δε̄ = f / (3μ + H)`, `σ = σ_tr − 3μ Δε̄ · s_tr / q`,
+/// `Δε_p = (3/2) Δε̄ · s_tr / q`, `ε̄_p ← ε̄_p + Δε̄`. The pressure is untouched.
+fn return_map(
+    strain: [Fix128; 6],
+    state: &PlasticState,
+    lambda: Fix128,
+    mu: Fix128,
+    yield_stress: Fix128,
+    hardening: Fix128,
+) -> ReturnMap {
+    let mut e = strain;
+    for (value, plastic) in e.iter_mut().zip(state.strain.iter()) {
+        *value = *value - *plastic;
+    }
+    let trial = hooke(e, lambda, mu);
+    let q = trial.von_mises();
+    let f = q - (yield_stress + hardening * state.equivalent);
+    if f <= Fix128::ZERO {
+        return ReturnMap {
+            stress: trial,
+            state: *state,
+            tangent: None,
+        };
+    }
+    let three_mu = Fix128::from_int(3) * mu;
+    let d_eq = f / (three_mu + hardening);
+    let pressure = (trial.xx + trial.yy + trial.zz) / Fix128::from_int(3);
+    let s = StressTensor {
+        xx: trial.xx - pressure,
+        yy: trial.yy - pressure,
+        zz: trial.zz - pressure,
+        ..trial
+    };
+    let ratio = three_mu * d_eq / q;
+    let stress = StressTensor {
+        xx: trial.xx - ratio * s.xx,
+        yy: trial.yy - ratio * s.yy,
+        zz: trial.zz - ratio * s.zz,
+        xy: trial.xy - ratio * s.xy,
+        yz: trial.yz - ratio * s.yz,
+        zx: trial.zx - ratio * s.zx,
+    };
+    // Δε_p = (3/2) Δε̄ s/q on the normal components; the engineering shear is
+    // twice the tensor shear, so 3 Δε̄ s/q.
+    let flow = d_eq / q;
+    let normal = Fix128::from_raw(1, 1 << 63) * flow; // 3/2
+    let shear = Fix128::from_int(3) * flow;
+    let mut next = *state;
+    next.strain[0] = next.strain[0] + normal * s.xx;
+    next.strain[1] = next.strain[1] + normal * s.yy;
+    next.strain[2] = next.strain[2] + normal * s.zz;
+    next.strain[3] = next.strain[3] + shear * s.xy;
+    next.strain[4] = next.strain[4] + shear * s.yz;
+    next.strain[5] = next.strain[5] + shear * s.zx;
+    next.equivalent = next.equivalent + d_eq;
+    // `n = s / ‖s‖_F` with the Frobenius norm, which counts the shear twice.
+    let frobenius = (s.xx * s.xx
+        + s.yy * s.yy
+        + s.zz * s.zz
+        + Fix128::from_int(2) * (s.xy * s.xy + s.yz * s.yz + s.zx * s.zx))
+        .sqrt();
+    let direction = StressTensor {
+        xx: s.xx / frobenius,
+        yy: s.yy / frobenius,
+        zz: s.zz / frobenius,
+        xy: s.xy / frobenius,
+        yz: s.yz / frobenius,
+        zx: s.zx / frobenius,
+    };
+    ReturnMap {
+        stress,
+        state: next,
+        tangent: Some(PlasticTangent {
+            shear_loss: ratio,
+            theta_bar: three_mu / (three_mu + hardening) - ratio,
+            direction,
+        }),
+    }
+}
+
+/// `V·Bᵀ (C_ct ε)` — the consistent tangent of one element applied to a
+/// displacement `p`: Hooke's law for an element that stayed elastic, and
+/// `C ε − 2μ(1−θ) dev(ε) − 2μθ̄ (n:ε) n` for one that returned.
+fn element_tangent_force(
+    element: &Element,
+    p: &[[Fix128; 3]; 4],
+    tangent: Option<&PlasticTangent>,
+    lambda: Fix128,
+    mu: Fix128,
+) -> [[Fix128; 3]; 4] {
+    let Some(t) = tangent else {
+        return element_force_local(element, p, lambda, mu);
+    };
+    let e = element_strain(element, p);
+    let elastic = hooke(e, lambda, mu);
+    let two_mu = mu + mu;
+    let mean = (e[0] + e[1] + e[2]) / Fix128::from_int(3);
+    let n = t.direction;
+    // n : ε, with the engineering shear standing in for 2·ε_xy
+    let projection =
+        n.xx * e[0] + n.yy * e[1] + n.zz * e[2] + n.xy * e[3] + n.yz * e[4] + n.zx * e[5];
+    let along = two_mu * t.theta_bar * projection;
+    let loss = two_mu * t.shear_loss;
+    let stress = StressTensor {
+        xx: elastic.xx - loss * (e[0] - mean) - along * n.xx,
+        yy: elastic.yy - loss * (e[1] - mean) - along * n.yy,
+        zz: elastic.zz - loss * (e[2] - mean) - along * n.zz,
+        xy: elastic.xy - mu * t.shear_loss * e[3] - along * n.xy,
+        yz: elastic.yz - mu * t.shear_loss * e[4] - along * n.yz,
+        zx: elastic.zx - mu * t.shear_loss * e[5] - along * n.zx,
+    };
+    element_force_from_stress(element, stress)
+}
+
+/// Quasi-static small-strain J2 elastoplastic solve on P1 tetrahedra, driven
+/// along a load path.
+///
+/// `load_path` lists load factors `t₁, t₂, …`; at step `k` the prescribed
+/// displacements and the nodal loads of `boundary` are scaled by `t_k` and the
+/// equilibrium `f_int(u) = t_k f_ext` is solved by Newton's method, starting
+/// from the previous step's field. The plastic state (`ε_p`, `ε̄_p` per element)
+/// carries from step to step, which is what makes the path matter: a path that
+/// goes up and comes back down unloads elastically and leaves a residual
+/// strain. Factors may be negative or decrease. `[1.0]` is a single step.
+///
+/// # Method
+///
+/// The stress of each element is the radial return of the elastic trial stress
+/// (see `return_map`), so the internal force is `Σ V Bᵀσ` as in [`solve`]. The
+/// Newton tangent is the **consistent** (algorithmic) tangent of that return,
+/// not the elastic stiffness, so convergence is quadratic once the plastic set
+/// settles. Each linear system is solved by the conjugate gradient of [`solve`],
+/// preconditioned with the elastic stiffness diagonal.
+///
+/// An element that never yields passes through the same routines as [`solve`];
+/// a path on which nothing yields returns [`solve`]'s displacements and
+/// stresses bit for bit.
+///
+/// # Scope
+///
+/// Small strain and small displacement (no geometric nonlinearity), P1 only,
+/// bilinear isotropic hardening only, quasi-static (no rate or inertia). Not
+/// supported: softening (`H < 0` is rejected), kinematic hardening, finite-strain
+/// `F = Fe·Fp`, and the P2 / P3 elements.
+///
+/// # Determinism
+///
+/// Every operation is [`Fix128`] arithmetic in mesh order with bounded loops.
+///
+/// # Errors
+///
+/// As [`solve`], plus [`FemError::InvalidConfig`] for an empty `load_path` or a
+/// factor of magnitude above `2²⁰`, and [`FemError::NotConverged`] when the
+/// Newton budget runs out. A load above the limit load of a perfectly plastic
+/// body has no equilibrium state and comes back as an `Err` from the linear
+/// solve or the Newton budget, never as a stress above yield.
+// ALLOW-UNWIRED: public elastoplastic entry for downstream solvers
+pub fn solve_elastoplastic(
+    mesh: &SdfTetMesh,
+    material: &ElasticMaterial,
+    boundary: &BoundaryConditions,
+    config: &ElastoplasticConfig,
+    load_path: &[Fix128],
+) -> Result<ElastoplasticSolution, FemError> {
+    let vertex_count = mesh.vertices.len();
+    if vertex_count == 0 || mesh.tets.is_empty() {
+        return Err(FemError::EmptyMesh);
+    }
+    for &(vertex, _, _) in boundary.prescribed.iter().chain(boundary.loads.iter()) {
+        if vertex as usize >= vertex_count {
+            return Err(FemError::VertexOutOfRange {
+                vertex,
+                vertex_count,
+            });
+        }
+    }
+    if load_path.is_empty() {
+        return Err(FemError::InvalidConfig("load_path must not be empty"));
+    }
+    let factor_cap = Fix128::from_int(LOAD_FACTOR_MAX);
+    if load_path.iter().any(|t| t.abs() > factor_cap) {
+        return Err(FemError::InvalidConfig(
+            "load factors must have magnitude at most 2^20",
+        ));
+    }
+
+    let elements = build_elements(mesh)?;
+    let (lambda, mu) = material.lame();
+    let ndof = vertex_count * 3;
+    let sigma_y = config.yield_stress_mpa;
+    let hardening = config.hardening_modulus_mpa;
+
+    let mut prescribed_value = vec![Fix128::ZERO; ndof];
+    let mut is_free = vec![true; ndof];
+    for &(vertex, axis, value) in &boundary.prescribed {
+        let d = vertex as usize * 3 + axis.index();
+        is_free[d] = false;
+        prescribed_value[d] = value;
+    }
+    if is_free.iter().filter(|f| !**f).count() < 6 {
+        return Err(FemError::UnderConstrained);
+    }
+    let mut f_ext = vec![Fix128::ZERO; ndof];
+    for &(vertex, axis, force) in &boundary.loads {
+        let d = vertex as usize * 3 + axis.index();
+        if is_free[d] {
+            f_ext[d] = f_ext[d] + force;
+        }
+    }
+
+    let diag = stiffness_diagonal(&elements, lambda, mu, ndof);
+    let precond = build_preconditioner(&diag, &is_free, &config.linear)?;
+
+    let mut committed = vec![PlasticState::VIRGIN; elements.len()];
+    let mut maps: Vec<ReturnMap> = Vec::new();
+    let mut u = vec![Fix128::ZERO; ndof];
+    let mut load = vec![Fix128::ZERO; ndof];
+    let mut residual = vec![Fix128::ZERO; ndof];
+    let mut newton_total = 0u32;
+    let mut cg_iterations = 0u32;
+    let mut relative_residual = Fix128::ZERO;
+    let mut effective_relative_tolerance = Fix128::ZERO;
+
+    for &factor in load_path {
+        for d in 0..ndof {
+            if is_free[d] {
+                load[d] = factor * f_ext[d];
+            } else {
+                u[d] = factor * prescribed_value[d];
+            }
+        }
+        let load_norm = max_abs(&load);
+        let mut reference_norm = Fix128::ZERO;
+        let mut iteration = 0u32;
+        loop {
+            // The return map of every element at the current iterate, from the
+            // state committed at the end of the previous step.
+            maps.clear();
+            residual.copy_from_slice(&load);
+            for (element, state) in elements.iter().zip(committed.iter()) {
+                let strain = element_strain(element, &gather(element, &u));
+                let map = return_map(strain, state, lambda, mu, sigma_y, hardening);
+                let force = element_force_from_stress(element, map.stress);
+                for (f, &node) in force.iter().zip(element.nodes.iter()) {
+                    let base = node * 3;
+                    for axis in 0..3 {
+                        if is_free[base + axis] {
+                            residual[base + axis] = residual[base + axis] - f[axis];
+                        }
+                    }
+                }
+                maps.push(map);
+            }
+            for (d, value) in residual.iter_mut().enumerate() {
+                if !is_free[d] {
+                    *value = Fix128::ZERO;
+                }
+            }
+            let residual_max = max_abs(&residual);
+            if iteration == 0 {
+                reference_norm = if load_norm > residual_max {
+                    load_norm
+                } else {
+                    residual_max
+                };
+            }
+            let requested = reference_norm * config.newton_tolerance;
+            let target = if requested > RESIDUAL_NORM_FLOOR {
+                requested
+            } else {
+                RESIDUAL_NORM_FLOOR
+            };
+            if residual_max <= target {
+                break;
+            }
+            if iteration >= config.newton_iterations {
+                return Err(FemError::NotConverged {
+                    iterations: iteration,
+                    relative_residual: relative(residual_max, reference_norm),
+                });
+            }
+
+            let cg =
+                conjugate_gradient(&residual, &is_free, &precond, &config.linear, |p, out| {
+                    out.fill(Fix128::ZERO);
+                    for (element, map) in elements.iter().zip(maps.iter()) {
+                        let force = element_tangent_force(
+                            element,
+                            &gather(element, p),
+                            map.tangent.as_ref(),
+                            lambda,
+                            mu,
+                        );
+                        for (f, &node) in force.iter().zip(element.nodes.iter()) {
+                            let base = node * 3;
+                            out[base] = out[base] + f[0];
+                            out[base + 1] = out[base + 1] + f[1];
+                            out[base + 2] = out[base + 2] + f[2];
+                        }
+                    }
+                })?;
+            for d in 0..ndof {
+                if is_free[d] {
+                    u[d] = u[d] + cg.x[d];
+                }
+            }
+            cg_iterations = cg.iterations;
+            relative_residual = relative(cg.residual_norm, cg.b_norm);
+            effective_relative_tolerance = relative(cg.target, cg.b_norm);
+            iteration += 1;
+            newton_total += 1;
+        }
+        for (state, map) in committed.iter_mut().zip(maps.iter()) {
+            *state = map.state;
+        }
+    }
+
+    let displacements = (0..vertex_count)
+        .map(|v| [u[v * 3], u[v * 3 + 1], u[v * 3 + 2]])
+        .collect();
+    let element_stress = maps.iter().map(|m| m.stress).collect();
+    let plastic_strain = committed
+        .iter()
+        .map(|s| StressTensor {
+            xx: s.strain[0],
+            yy: s.strain[1],
+            zz: s.strain[2],
+            xy: half() * s.strain[3],
+            yz: half() * s.strain[4],
+            zx: half() * s.strain[5],
+        })
+        .collect();
+    let equivalent_plastic_strain = committed.iter().map(|s| s.equivalent).collect();
+    Ok(ElastoplasticSolution {
+        field: FemSolution {
+            displacements,
+            element_stress,
+            iterations: cg_iterations,
+            relative_residual,
+            effective_relative_tolerance,
+        },
+        plastic_strain,
+        equivalent_plastic_strain,
+        newton_iterations: newton_total,
+        steps: u32::try_from(load_path.len()).unwrap_or(u32::MAX),
     })
 }
 

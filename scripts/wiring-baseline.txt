@@ -532,7 +532,6 @@ unwired src/linear_elastic_fem.rs::solve
 unwired src/linear_elastic_fem.rs::solve_corotational
 unwired src/linear_elastic_fem.rs::solve_with_eigenstrain
 unwired src/linear_elastic_fem.rs::stiffness_diagonal_stats
-unwired src/linear_elastic_fem.rs::von_mises
 unwired src/linear_elastic_fem.rs::with_hyperelastic
 unwired src/linear_elastic_fem.rs::with_poisson
 unwired src/linear_elastic_fem.rs::with_preconditioner
@@ -702,7 +701,6 @@ unwired src/plane_collider.rs::project_point
 unwired src/plastic.rs::hydrostatic
 unwired src/plastic.rs::petg_room_temp
 unwired src/plastic.rs::uniaxial_x
-unwired src/plastic.rs::von_mises
 unwired src/plastic.rs::with_hardening
 unwired src/pressure.rs::apply_impact
 unwired src/pressure.rs::apply_pressure_at
