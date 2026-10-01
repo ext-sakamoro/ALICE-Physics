@@ -37,6 +37,31 @@ oracle 2 本を追加しました
 互いに一致します ⇒ **新旧は「層をどう運ぶか」と「どの層をいつ運ぶか」を別々に測っており、
 片方だけでは transport 層の片側が無被覆です**
 
+### Changed — 熱弾性 oracle の判別力を実測で固定
+
+熱弾性の oracle が ⚠️ **温度場を `solve` に渡していませんでした** 場を作って `assert_field_is_uniform`
+で確かめた後、`solve(&mesh, &pla(), &bc, &cfg)` を呼んでおり場は捨てられていました
+⚠️ **この状態では eigenstrain を実装して `#[ignore]` を外しても red のままで、原因が実装側でなく
+test 側に残ります** 理由文にも test 本体にも印がありませんでした
+
+全 solve を `solve_with_temperature` 1 関数に集約し、場を落としている箇所を 1 行に可視化しました
+実装が入る時に書き換えるのはその行だけです
+
+判別力の対照群 2 本と契約 test 1 本を追加しました
+
+- `an_absent_temperature_rise_must_not_look_like_heating` — ΔT = 50 K と ΔT = 0 K の差が
+  `1750/3` MPa 出ることを要求し、場を読まない実装を弾きます
+- `cooling_is_the_signed_mirror_of_heating` — `σ(+ΔT) + σ(−ΔT) = 0` を要求し、`|ΔT|` のような
+  偶関数を弾きます
+- `the_discriminating_measurements_are_not_inert` — ⚠️ **ignore なしで今日から走ります**
+  対照群は実装が入る日まで走らないので、対照群が使う測定関数自身が生きていることを別に固定します
+
+期待値は解析解からの 2 経路 (`−E α ΔT/(1 − 2ν)` と `−(3λ + 2μ) α ΔT`) が一致することと、
+両者が厳密有理数 `−1750/3` に等しいことを assert します 実装関数は入力としてのみ現れます
+
+⚠️ `#[ignore]` は外していません `src/linear_elastic_fem.rs` に eigenstrain 項が無い間は red が
+正しい状態です 理由文は実測した落ち方に更新しました
+
 ### Added — 圧力解法の領域分割 (z slab + halo 交換) を oracle 化
 
 圧力解法を `z` 方向の連続 slab に分け、colour sweep ごとに幅 1 の halo を交換する経路を足しました
