@@ -599,7 +599,20 @@ impl Fix128 {
     }
 }
 
-/// Fixed-point division, `floor` toward −∞ on the raw bit pattern like `Mul`.
+/// Fixed-point division, truncating toward zero on the raw bit pattern.
+///
+/// ⚠️ **Not the same direction as [`Mul`], which floors toward
+/// −∞.** This operator takes the magnitudes apart, divides them and reapplies
+/// the sign, so the result is symmetric about zero: `(-a) / b == -(a / b)`
+/// exactly. `Mul` is not — `(-a) * b` is one raw unit below `-(a * b)`
+/// whenever the product has a remainder. Measured on `a = 1/3`, `b = 1/7`.
+///
+/// The difference matters wherever the *direction* of the bias decides an
+/// outcome rather than its size: a contraction ratio read as `> 1` or `= 1`,
+/// a residual that either reaches an exact fixed point or keeps drifting, a
+/// quadrature weight that is one unit light on one side of zero and not the
+/// other. Division is the safer of the two there, because the sign cannot
+/// change which way the error leans.
 ///
 /// # Division by zero
 ///
