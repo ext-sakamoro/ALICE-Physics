@@ -1890,6 +1890,26 @@ struct FrameEdgeContact {
 /// threshold they then apply to `gap`, so the two can never disagree about *whether* a pair
 /// met.
 ///
+/// ⚠️⚠️ **The sharing is deliberate, and it has a cost: this function is a common-mode
+/// failure point.** Sharing is what stops the repair and the check from drifting into
+/// "fixes one thing, measures another" — an error in here reaches both, which is the point.
+/// But *the death of this function* also reaches both: if it stops reporting contacts, the
+/// repair never fires (so the cloth tunnels) **and** the invariant never counts (so it
+/// reports `0`). ⚠️ **An oracle that asserts "the invariant is `0`" cannot distinguish a
+/// clean cloth from a dead predicate.**
+///
+/// Measured 2026-10-01 with `return None` inserted at the top of this function
+/// (`W3-predicate-always-none`): the whole of `tests/analytic_self_contact.rs` passed,
+/// **15 passed / 0 failed**, including the target oracle
+/// `a_crumpled_cloth_does_not_pass_through_itself`.
+///
+/// ⚠️ **The only things that caught it are the two positive controls** — the lib tests
+/// `an_edge_pair_that_swaps_sides_in_one_frame_is_seen_by_the_crossings_invariant` and
+/// `a_pair_that_crosses_and_returns_inside_one_interval_is_not_counted`, both of which
+/// assert a **non-zero** count under a known-bad condition. Changing this function's
+/// contract without checking that those two still fail for the right reason removes the
+/// only evidence that it is alive.
+///
 /// # Which way it is conservative
 ///
 /// ⚠️ **Toward false positives, in both of its two stages**, because a missed crossing is
@@ -3399,6 +3419,27 @@ mod tests {
     /// います 不変量に辺-辺が入って盲点が閉じたので、`0` を pin する理由は無くなり、
     /// **OFF → `1` (貫通が見える) / ON → `0` (辺-辺の段が止めた)** の効果 test に
     /// 反転させました (計器が消えるのでなく、測る対象が盲点から効果に移った形)
+    ///
+    /// # ⚠️⚠️ `OFF → 1` を消さないこと — 共通モード故障を見る唯一の経路です
+    ///
+    /// この `OFF → 1` の assert は、**共有述語 `edge_pair_frame_contact` の共通モード
+    /// 故障を検出する唯一の経路**です 修復と計器が同じ述語を通るので、⚠️ **述語が死ぬと
+    /// 両方が同時に盲目になります** — 修復が発火しないので貫通が起きるのに、計器も
+    /// 数えないので不変量は `0` を報告します ⇒ 「`0` = 貫通なし」と読む oracle は
+    /// **原理的に検出できません**
+    ///
+    /// ⚠️ **`ON → 0` だけに弱めると、述語を殺す変異が全 test を素通りします** 実測
+    /// (2026-10-01、変異 `W3-predicate-always-none` = `edge_pair_frame_contact` の先頭に
+    /// `return None`):
+    ///
+    /// ```text
+    /// tests/analytic_self_contact.rs: 15 passed; 0 failed   ← 目標 oracle も green
+    /// 捕らえたのは本 test と a_pair_that_crosses_and_returns_inside_one_interval_is_not_counted の 2 本だけ
+    /// ```
+    ///
+    /// ⚠️ **両方とも「非 `0` を assert する陽性対照」を持つから効いています** 冗長に
+    /// 見えても消さないこと (`ON → 0` 側は対象の健全を、`OFF → 1` 側は**計器が生きて
+    /// いること**を見ており、別のものを測っています)
     #[test]
     fn an_edge_pair_that_swaps_sides_in_one_frame_is_seen_by_the_crossings_invariant() {
         let half = Fix128::from_ratio(1, 2);
@@ -3545,6 +3586,19 @@ mod tests {
     ///
     /// 実害が出るのは**修復が働かなかった時だけ**です 修復 (`resolve_self_contact_over_frame`)
     /// は終端の符号でなく検出段 (coplanarity 根) で発火するので、往復の最中に押し戻します
+    ///
+    /// # ⚠️⚠️ frame 単独の `1` を消さないこと — 共通モード故障を見る唯一の経路です
+    ///
+    /// 本 test が測る主題は「2 frame を 1 区間にすると `0`」ですが、⚠️ **その手前の
+    /// 「frame 単独なら `1` ずつ数える」2 本の assert の方が、別の役目で load-bearing
+    /// です** 共有述語 `edge_pair_frame_contact` が死ぬと修復と計器が同時に盲目になり、
+    /// 貫通しているのに不変量が `0` を報告します ⇒ **非 `0` を assert するここだけが
+    /// それを見ます**
+    ///
+    /// 実測 (2026-10-01、変異 `W3-predicate-always-none`): 統合 `analytic_self_contact.rs`
+    /// は **15 passed / 0 failed** で素通りし、捕らえたのは本 test と
+    /// `an_edge_pair_that_swaps_sides_in_one_frame_is_seen_by_the_crossings_invariant`
+    /// の 2 本だけでした ⚠️ **`0` を assert する側だけ残して簡約しないこと**
     #[test]
     fn a_pair_that_crosses_and_returns_inside_one_interval_is_not_counted() {
         let half = Fix128::from_ratio(1, 2);
