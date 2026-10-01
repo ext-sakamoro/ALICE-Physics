@@ -455,6 +455,28 @@ fn vertex_count(mesh: &SdfTetMesh) -> u32 {
 /// still converge well inside the 200,000-iteration budget — which is the
 /// "tighten or justify" the bound's own note called for, done by tightening the
 /// solver instead of relaxing the oracle.
+/// 200,000 iterations at a relative residual of `2⁻³⁴`.
+///
+/// ⚠️ **The exponent is not tuned, and a reader should not treat it as such.**
+/// [`SolverConfig`]'s own documentation puts the floor of the representation at
+/// about `2⁻³²`: the residual norm is `√(rᵀr)` and `rᵀr` cannot be smaller than
+/// `2⁻⁶⁴`, so any norm below `2⁻³²` is indistinguishable from zero. A tolerance
+/// below that floor therefore means one thing only — **iterate until the
+/// residual is exactly zero, or until the budget runs out** — and every value
+/// below it behaves identically. Measured here: `2⁻³²`, `2⁻³⁴` and `2⁻³⁸` all
+/// leave the six oracles green, so `2⁻³⁴` carries no information that `2⁻³³`
+/// would not.
+///
+/// What *is* load-bearing is being below the floor at all. At the default
+/// `2⁻³⁰` — above the floor, so the solve stops on the tolerance — the free
+/// expansion error is `9.608e-10 mm` against a `1e-9 mm` bound, 96.1% of it.
+/// The oracle bounds were left alone and the solve was tightened instead,
+/// which moved that to `4.875e-11 mm` (20.5x of margin).
+///
+/// ⚠️ `SolverConfig`'s doc also says a tolerance below the floor "would be
+/// unreachable and would turn a converged solve into `NotConverged`". That does
+/// not happen here, because on these meshes the residual does reach exactly
+/// zero. The warning is therefore conditional on the problem, not absolute.
 fn solver_config() -> SolverConfig {
     SolverConfig::try_new(200_000, Fix128::from_raw(0, 1 << 30)).expect("valid linear config")
 }
