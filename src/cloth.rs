@@ -854,6 +854,16 @@ impl Cloth {
     /// long-range pairs (0 in-surface neighbours), so it was the weighting, not spurious
     /// contacts. `self_collision_improves_the_vertex_face_separation_it_constrains` is the
     /// test that catches it.
+    ///
+    /// ⚠️ **Two guards, and they cover different things.** The single-stage entry points are
+    /// `#[cfg(test)]`, so a release build has exactly one way in and cannot average per
+    /// stage by accident. The *wiring* in `substep` is guarded only by the crumple
+    /// integration test: the mutation that replaces the one call with two
+    /// (`SPLIT-average-per-stage`) leaves `cargo test --lib cloth::` **green** — including
+    /// `the_averaging_denominator_counts_contacts_from_both_stages`, which pins this
+    /// function's contract and not its caller — and turns
+    /// `self_collision_improves_the_vertex_face_separation_it_constrains` red. Do not delete
+    /// that integration test as redundant.
     fn solve_self_collision(&mut self, vertex_face: &[(u32, u32)], edge_edge: &[[u32; 4]]) {
         let thickness = self.config.self_collision_distance;
         if thickness.is_zero() || (vertex_face.is_empty() && edge_edge.is_empty()) {
