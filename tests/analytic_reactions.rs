@@ -57,7 +57,7 @@
 // The oracle values are closed-form f64 evaluations, not simulation state.
 #![allow(clippy::disallowed_methods)]
 
-use alice_physics::coupled_field::CoupledField;
+use alice_physics::coupled_field::{CoupledField, TemperatureRise};
 use alice_physics::hyperelastic::HyperelasticModel;
 use alice_physics::linear_elastic_fem::{
     corotational_reactions, reactions, solve, solve_corotational, solve_with_eigenstrain, Axis,
@@ -396,7 +396,10 @@ fn a_heated_bar_held_in_one_axis_pushes_its_supports_with_e_alpha_delta_t_a() {
         fx(delta_t),
     )
     .expect("a 3³ grid over the box is valid");
-    let thermal = ThermalExpansion::new(&field, fx(alpha));
+    // The field is filled with `delta_t`, i.e. it already holds rises, so the
+    // reference named here is zero (the identity of `from_absolute`).
+    let rise = TemperatureRise::from_absolute(&field, Fix128::ZERO);
+    let thermal = ThermalExpansion::from_rise(&rise, fx(alpha));
 
     let out = solve_with_eigenstrain(&mesh, &pla(), &bc, &SolverConfig::default(), Some(thermal))
         .expect("the scene is well posed");

@@ -207,7 +207,6 @@ unwired src/convex_decompose.rs::decompose_sdf
 unwired src/convex_mesh_builder.rs::build_convex_hull
 unwired src/convex_mesh_builder.rs::compute_centroid
 unwired src/coupled_field.rs::add_assign
-unwired src/coupled_field.rs::as_mut_slice
 unwired src/coupled_field.rs::as_slice
 unwired src/coupled_field.rs::blend_from
 unwired src/coupled_field.rs::cell_size

@@ -2154,6 +2154,18 @@ impl core::marker::Unpin for alice_physics::coupled_field::CoupledField
 impl core::marker::UnsafeUnpin for alice_physics::coupled_field::CoupledField
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::coupled_field::CoupledField
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::coupled_field::CoupledField
+pub struct alice_physics::coupled_field::TemperatureRise
+impl alice_physics::coupled_field::TemperatureRise
+pub fn alice_physics::coupled_field::TemperatureRise::from_absolute(&alice_physics::coupled_field::CoupledField, alice_physics::math::Fix128) -> Self
+impl core::fmt::Debug for alice_physics::coupled_field::TemperatureRise
+pub fn alice_physics::coupled_field::TemperatureRise::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for alice_physics::coupled_field::TemperatureRise
+impl core::marker::Send for alice_physics::coupled_field::TemperatureRise
+impl core::marker::Sync for alice_physics::coupled_field::TemperatureRise
+impl core::marker::Unpin for alice_physics::coupled_field::TemperatureRise
+impl core::marker::UnsafeUnpin for alice_physics::coupled_field::TemperatureRise
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::coupled_field::TemperatureRise
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::coupled_field::TemperatureRise
 pub trait alice_physics::coupled_field::CoupledScalar
 pub fn alice_physics::coupled_field::CoupledScalar::adopt(&mut self, &alice_physics::coupled_field::CoupledField) -> core::result::Result<(), alice_physics::coupled_field::CoupledFieldError>
 pub fn alice_physics::coupled_field::CoupledScalar::coupled_channel(&self) -> core::result::Result<alice_physics::coupled_field::CoupledField, alice_physics::coupled_field::CoupledFieldError>
@@ -5250,6 +5262,7 @@ pub struct alice_physics::linear_elastic_fem::ThermalExpansion<'a>
 impl<'a> alice_physics::linear_elastic_fem::ThermalExpansion<'a>
 pub const fn alice_physics::linear_elastic_fem::ThermalExpansion<'a>::alpha_per_k(&self) -> alice_physics::math::Fix128
 pub const fn alice_physics::linear_elastic_fem::ThermalExpansion<'a>::field(&self) -> &'a alice_physics::coupled_field::CoupledField
+pub const fn alice_physics::linear_elastic_fem::ThermalExpansion<'a>::from_rise(&'a alice_physics::coupled_field::TemperatureRise, alice_physics::math::Fix128) -> Self
 pub const fn alice_physics::linear_elastic_fem::ThermalExpansion<'a>::new(&'a alice_physics::coupled_field::CoupledField, alice_physics::math::Fix128) -> Self
 impl<'a> core::clone::Clone for alice_physics::linear_elastic_fem::ThermalExpansion<'a>
 pub fn alice_physics::linear_elastic_fem::ThermalExpansion<'a>::clone(&self) -> Self

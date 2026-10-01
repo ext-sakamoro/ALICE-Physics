@@ -58,7 +58,7 @@
 //!
 //! Author: Moroya Sakamoto
 
-use crate::coupled_field::CoupledField;
+use crate::coupled_field::{CoupledField, TemperatureRise};
 use crate::hyperelastic::HyperelasticModel;
 use crate::math::{Fix128, Mat3Fix, PolarError, Vec3Fix};
 use crate::sdf_fem_mesh::SdfTetMesh;
@@ -340,6 +340,13 @@ impl ElasticMaterial {
 /// filling the field; this type cannot do it, because the reference is a
 /// property of the configuration the mesh was built in and not of the field.
 ///
+/// [`TemperatureRise`] is that subtraction made into a type, and
+/// [`Self::from_rise`] is the entry point that accepts it. Prefer it to
+/// [`Self::new`], which takes a bare [`CoupledField`] and therefore cannot tell
+/// a rise from an absolute temperature — the reference temperature then enters
+/// as if it were a rise, worth `E α T_ref / (1 − 2ν)` of stress (291.666667 MPa
+/// for PLA at a 25 K reference). `examples/thermoelastic_rise.rs` prints both.
+///
 /// # Fixed-point note
 ///
 /// `α` and `ΔT` are [`Fix128`], so `α ΔT` is exact only when both are dyadic
@@ -364,8 +371,34 @@ impl<'a> ThermalExpansion<'a> {
     /// needs the mesh, so [`solve_with_eigenstrain`] checks it and reports
     /// [`FemError::TemperatureFieldDoesNotCoverMesh`].
     #[must_use]
+    #[deprecated(
+        since = "1.5.0",
+        note = "a bare `&CoupledField` cannot say whether it holds rises or absolute \
+                temperatures, and an absolute one loads the reference as a rise; build a \
+                `coupled_field::TemperatureRise` with `TemperatureRise::from_absolute` and \
+                pass it to `ThermalExpansion::from_rise`"
+    )]
     pub const fn new(field: &'a CoupledField, alpha_per_k: Fix128) -> Self {
         Self { field, alpha_per_k }
+    }
+
+    /// Pair a [`TemperatureRise`] with a linear expansion coefficient.
+    ///
+    /// The eigenstrain is specified on the rise above the stress-free
+    /// reference, and [`TemperatureRise`] is the only type that records that a
+    /// reference was subtracted — see its documentation for why a temperature
+    /// and a temperature rise are different kinds of quantity and what routing
+    /// an absolute field in here costs.
+    ///
+    /// Validation is the same as [`Self::new`]: none here, because the only
+    /// failure mode (the field covering the mesh) needs the mesh and is checked
+    /// by [`solve_with_eigenstrain`].
+    #[must_use]
+    pub const fn from_rise(rise: &'a TemperatureRise, alpha_per_k: Fix128) -> Self {
+        Self {
+            field: rise.field(),
+            alpha_per_k,
+        }
     }
 
     /// The temperature-rise field (K above the stress-free reference).

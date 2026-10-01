@@ -720,6 +720,84 @@ impl CoupledField {
 }
 
 // ============================================================================
+// TemperatureRise
+// ============================================================================
+
+/// A field of temperature **rises** above a stress-free reference, in K.
+///
+/// # Why this is a separate type
+///
+/// A temperature `T` and a temperature rise `ΔT` carry the same unit and are
+/// not the same kind of thing: `T` is a point of an affine space and `ΔT` is a
+/// vector of the space that acts on it, exactly as `std::time::Instant` is to
+/// `std::time::Duration`. Two points subtract to a vector, a point plus a
+/// vector is a point, and **the sum of two points is not defined** — so the
+/// arithmetic mean of two absolute temperatures is an absolute temperature,
+/// which is why [`reconcile_mean`] resolves multiplicity without resolving the
+/// unit.
+///
+/// `linear_elastic_fem::ThermalExpansion` is specified on the vector side: its
+/// eigenstrain is `ε_th = α ΔT I`, so `ΔT = 0` everywhere has to mean "no
+/// eigenstrain". Before this type existed, the rise and the absolute
+/// temperature were both a [`CoupledField`] on the same grid under the same
+/// [`CoupledScalar::coupled_name`] of `"temperature"`, and both temperature
+/// owners (`thermal::ThermalModifier` and
+/// `phase_change::PhaseChangeModifier`) fill theirs from
+/// `ambient_temperature`, i.e. absolutely. Nothing in a `&CoupledField`
+/// records which of the two it holds, so routing an owner's field straight
+/// into the eigenstrain compiled and ran and loaded the reference temperature
+/// itself as if it were a rise. For PLA (`E = 3500` MPa, `ν = 0.35`,
+/// `α = 10⁻³` K⁻¹) clamped at a reference of 25 K that is a spurious
+/// `E α T_ref / (1 − 2ν) = 291.666667` MPa of stress.
+///
+/// # Naming the reference is the whole point
+///
+/// [`Self::from_absolute`] is the only way to build one, so a caller has to
+/// state the reference it is measuring from. A field that was *already* built
+/// as a difference passes `Fix128::ZERO`, which says in the call that its
+/// reference is zero rather than leaving the question unasked.
+///
+/// # Cost
+///
+/// The shifted field is owned, so `from_absolute` copies the grid once. The
+/// shift is eager because the consumer samples the field directly and must see
+/// rises at sample time; a lazily shifted view would have to be applied at
+/// every sample instead.
+///
+/// `Debug` but deliberately not `Clone`: nothing in the crate needs to
+/// duplicate a rise, and adding `Clone` later is a minor change while removing
+/// it would be a breaking one.
+#[derive(Debug)]
+pub struct TemperatureRise {
+    field: CoupledField,
+}
+
+impl TemperatureRise {
+    /// Subtract a stress-free reference from an absolute temperature field.
+    ///
+    /// `rise(x) = absolute(x) − reference` cell by cell. [`Fix128`]
+    /// subtraction is exact, so the result is the difference with no rounding
+    /// and the grid is carried over unchanged.
+    ///
+    /// Pass `Fix128::ZERO` when `absolute` already holds rises; that is the
+    /// identity, and writing it records in the call that the reference was
+    /// considered.
+    #[must_use]
+    pub fn from_absolute(absolute: &CoupledField, reference: Fix128) -> Self {
+        let mut field = absolute.clone();
+        for cell in field.as_mut_slice() {
+            *cell = *cell - reference;
+        }
+        Self { field }
+    }
+
+    /// The shifted field, for the consumer that samples it.
+    pub(crate) const fn field(&self) -> &CoupledField {
+        &self.field
+    }
+}
+
+// ============================================================================
 // Participants
 // ============================================================================
 
