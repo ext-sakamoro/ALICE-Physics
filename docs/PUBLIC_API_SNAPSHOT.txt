@@ -1245,6 +1245,7 @@ pub fn alice_physics::cfd_solver::CfdSolver::compute_max_dt(&self, alice_physics
 pub fn alice_physics::cfd_solver::CfdSolver::new(usize, usize, usize, alice_physics::math::Fix128) -> Self
 pub fn alice_physics::cfd_solver::CfdSolver::step(&mut self, alice_physics::math::Fix128)
 pub fn alice_physics::cfd_solver::CfdSolver::step_adaptive(&mut self, alice_physics::math::Fix128, alice_physics::math::Fix128) -> alice_physics::math::Fix128
+pub fn alice_physics::cfd_solver::CfdSolver::step_multigrid(&mut self, alice_physics::math::Fix128, u32)
 impl core::marker::Freeze for alice_physics::cfd_solver::CfdSolver
 impl core::marker::Send for alice_physics::cfd_solver::CfdSolver
 impl core::marker::Sync for alice_physics::cfd_solver::CfdSolver
@@ -2960,6 +2961,7 @@ impl core::panic::unwind_safe::UnwindSafe for alice_physics::eulerian_grid::MacG
 pub fn alice_physics::eulerian_grid::g2p_velocity(&alice_physics::eulerian_grid::MacGrid, alice_physics::math::Vec3Fix) -> alice_physics::math::Vec3Fix
 pub fn alice_physics::eulerian_grid::p2g_normalized(&mut alice_physics::eulerian_grid::MacGrid, &[(alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix)])
 pub fn alice_physics::eulerian_grid::project_pressure(&mut alice_physics::eulerian_grid::MacGrid, alice_physics::math::Fix128, alice_physics::math::Fix128, u32)
+pub fn alice_physics::eulerian_grid::project_pressure_multigrid(&mut alice_physics::eulerian_grid::MacGrid, alice_physics::math::Fix128, alice_physics::math::Fix128, u32)
 pub mod alice_physics::event
 pub enum alice_physics::event::ContactEventType
 pub alice_physics::event::ContactEventType::Begin

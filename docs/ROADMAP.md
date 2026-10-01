@@ -15,6 +15,12 @@ Memory index pointer: `[[reference-alice-physics-v1-roadmap]]` in claude-config.
 | Maxwell FDTD | `ecd8c61` | source-free Yee、⚠️ **SI は `ε₀·μ₀` が 7.7 bit で不可**、正規化単位 + `S=9/16` |
 | 多体 ABA | `1bab99b` | ⚠️ **`solve()` が `link.joint` を読まない**状態から real ABA、oracle 12 本 |
 
+### 第 10 increment (2026-10-01、multigrid 圧力解法)
+
+`project_pressure_multigrid` (Galerkin 型、W サイクル + 補正 2 倍、2 の冪のみ) と `CfdSolver::step_multigrid` を追加した 同じ精度に達する反復数は multigrid 19 / 20 / 21 cycles に対し red-black GS 167 / 602 / 2271 (n = 8 / 16 / 32)
+⚠️ `step` の既定は GS のまま (呼び出し側が `step_multigrid` を選ぶ) 純 Neumann の平均圧力固定と、自由表面は未着手
+配線ガードが `project_pressure_multigrid` の未配線を最初に捕捉し、`step_multigrid` の新設で解消した
+
 ### 第 9 increment (2026-10-01、配線ガード)
 
 `scripts/wiring_guard.py` を追加した (CI の `fmt` job + preflight、oracle 23 本、検査器の変異 11 件が red) 実装したのに production から呼ばれない pub item と、理由の無い `allow(dead_code)` の新規追加を止める

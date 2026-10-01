@@ -22,12 +22,13 @@
 //! ```
 //!
 //! This is a first-order operator-splitting scheme; adequate for engineering
-//! demos and validation tests. Higher-order (BFECC advection, RK3 time,
-//! multigrid pressure) is a future upgrade.
+//! demos and validation tests. Higher-order RK3 time stepping is a future
+//! upgrade. The pressure projection is Gauss-Seidel in [`CfdSolver::step`] and
+//! multigrid in [`CfdSolver::step_multigrid`].
 
 use crate::eulerian_grid::{
-    g2p_velocity, project_pressure, sample_u_range, sample_u_trilinear, sample_v_range,
-    sample_v_trilinear, sample_w_range, sample_w_trilinear, MacGrid,
+    g2p_velocity, project_pressure, project_pressure_multigrid, sample_u_range, sample_u_trilinear,
+    sample_v_range, sample_v_trilinear, sample_w_range, sample_w_trilinear, MacGrid,
 };
 use crate::interface_capture::fast_sweeping_reinit;
 use crate::math::{Fix128, Vec3Fix};
@@ -184,6 +185,42 @@ impl CfdSolver {
     /// with no boundary conditions set — the default — is untouched by all
     /// three.
     pub fn step(&mut self, dt_s: Fix128) {
+        self.step_with_projection(dt_s, None);
+    }
+
+    /// [`Self::step`] with the pressure projection done by
+    /// [`project_pressure_multigrid`] (`cycles` W-cycles) instead of
+    /// `jacobi_iterations` Gauss-Seidel sweeps.
+    ///
+    /// Everything else — the order, the boundary enforcement, the advection
+    /// and the level-set and temperature updates — is the shared step body, so
+    /// the two entry points differ only in the projection. The per-cycle error
+    /// reduction of the multigrid projection does not degrade as the grid is
+    /// refined, which is what the Gauss-Seidel projection cannot offer.
+    ///
+    /// # When the multigrid projection cannot run
+    ///
+    /// It needs every grid extent to be a power of two and `cycles > 0`. When
+    /// either does not hold the step projects with the Gauss-Seidel sweeps
+    /// (`jacobi_iterations`), exactly as [`Self::step`] does, rather than
+    /// skipping the projection and returning a compressible field. The
+    /// fallback is a documented behaviour, not an error: this entry point has no
+    /// error channel, as [`Self::step`] has none.
+    // ALLOW-UNWIRED: public multigrid-projected step entry for downstream solvers
+    pub fn step_multigrid(&mut self, dt_s: Fix128, cycles: u32) {
+        self.step_with_projection(dt_s, Some(cycles));
+    }
+
+    /// Whether [`project_pressure_multigrid`] can solve this grid.
+    fn grid_supports_multigrid(&self) -> bool {
+        self.grid.nx.is_power_of_two()
+            && self.grid.ny.is_power_of_two()
+            && self.grid.nz.is_power_of_two()
+    }
+
+    /// The step body shared by [`Self::step`] (`multigrid_cycles = None`) and
+    /// [`Self::step_multigrid`].
+    fn step_with_projection(&mut self, dt_s: Fix128, multigrid_cycles: Option<u32>) {
         if dt_s.is_zero() {
             return;
         }
@@ -200,12 +237,17 @@ impl CfdSolver {
         } else {
             self.apply_molecular_diffusion(dt_s);
         }
-        project_pressure(
-            &mut self.grid,
-            dt_s,
-            self.density_kg_m3,
-            self.jacobi_iterations,
-        );
+        match multigrid_cycles {
+            Some(cycles) if cycles > 0 && self.grid_supports_multigrid() => {
+                project_pressure_multigrid(&mut self.grid, dt_s, self.density_kg_m3, cycles);
+            }
+            _ => project_pressure(
+                &mut self.grid,
+                dt_s,
+                self.density_kg_m3,
+                self.jacobi_iterations,
+            ),
+        }
         if self.level_set.is_some() {
             self.advect_level_set(dt_s);
             if self.reinit_every_n_steps > 0
