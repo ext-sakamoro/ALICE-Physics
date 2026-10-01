@@ -49,11 +49,16 @@
 //! becomes correct". Every [`Source`] variant says in its own name whether the
 //! reference was subtracted.
 //!
-//! ⚠️ Nothing in the crate stops a caller from skipping the subtraction: `ΔT`
-//! and `T` are the same type on the same grid, and the owners' channel name
-//! does not distinguish them. That gap is open on
-//! `8ddb608` and is filed in the backlog rather than closed here — closing it
-//! means giving the rise its own type, which is a design change.
+//! On `8ddb608` nothing in the crate stopped a caller from skipping the
+//! subtraction: `ΔT` and `T` were the same type on the same grid, and the
+//! owners' channel name did not distinguish them. The rise now has its own
+//! type — `coupled_field::TemperatureRise`, reachable only through
+//! `TemperatureRise::from_absolute(field, reference)` — and
+//! `ThermalExpansion::from_rise` is what accepts it, so the reference has to be
+//! named in the call. The wrong-unit [`Source`] variants below still exist
+//! because this file applies the subtraction itself in [`channel_from`] and
+//! then names a zero reference; `tests/analytic_temperature_rise.rs` is where
+//! the subtraction is driven through `from_absolute` against closed forms.
 //!
 //! # Why this needed its own oracle
 //!
@@ -78,7 +83,7 @@
 // The oracle values are closed-form f64 evaluations, not simulation state.
 #![allow(clippy::disallowed_methods)]
 
-use alice_physics::coupled_field::{reconcile_mean, CoupledField, CoupledScalar};
+use alice_physics::coupled_field::{reconcile_mean, CoupledField, CoupledScalar, TemperatureRise};
 use alice_physics::linear_elastic_fem::{
     solve_with_eigenstrain, BoundaryConditions, ElasticMaterial, FemSolution, SolverConfig,
     StressTensor, ThermalExpansion,
@@ -370,12 +375,20 @@ fn solve_from(source: Source, n: usize) -> (FemSolution, f64) {
     let want_delta_t = source.delta_t_k();
     assert_channel_drives(&channel, &mesh, want_delta_t);
 
+    // `channel_from` has already applied (or deliberately skipped) the
+    // reference subtraction, so the field handed over here *is* what each
+    // [`Source`] routes in, correct unit or not. The reference named here is
+    // therefore zero: `TemperatureRise::from_absolute` is the only way into
+    // `ThermalExpansion::from_rise`, and a zero reference is its identity.
+    // Keeping the subtraction in `channel_from` is what lets the wrong-unit
+    // variants exist at all, which is the question this file answers.
+    let rise = TemperatureRise::from_absolute(&channel, Fix128::ZERO);
     let out = solve_with_eigenstrain(
         &mesh,
         &pla(),
         &bc,
         &solver_config(),
-        Some(ThermalExpansion::new(&channel, fx(ALPHA_PER_K))),
+        Some(ThermalExpansion::from_rise(&rise, fx(ALPHA_PER_K))),
     )
     .unwrap_or_else(|e| panic!("{} at n = {n}: {e:?}", source.label()));
 

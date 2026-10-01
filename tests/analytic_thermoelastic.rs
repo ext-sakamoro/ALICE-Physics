@@ -306,7 +306,7 @@
 // The oracle values are closed-form f64 evaluations, not simulation state.
 #![allow(clippy::disallowed_methods)]
 
-use alice_physics::coupled_field::CoupledField;
+use alice_physics::coupled_field::{CoupledField, TemperatureRise};
 use alice_physics::linear_elastic_fem::{
     solve_with_eigenstrain, Axis, BoundaryConditions, ElasticMaterial, FemError, FemSolution,
     SolverConfig, StressTensor, ThermalExpansion,
@@ -564,12 +564,17 @@ fn solve_with_temperature(
     load: &ThermalLoad,
 ) -> Result<FemSolution, FemError> {
     load.assert_drives(mesh);
+    // `ThermalLoad` is built as a rise throughout this file (every closed form
+    // below is written in `ΔT`), so the reference named here is zero — which is
+    // the identity of `TemperatureRise::from_absolute` and the way a field that
+    // is already a difference states that it is one.
+    let rise = TemperatureRise::from_absolute(&load.field, Fix128::ZERO);
     solve_with_eigenstrain(
         mesh,
         material,
         boundary,
         config,
-        Some(ThermalExpansion::new(&load.field, fx(ALPHA_PER_K))),
+        Some(ThermalExpansion::from_rise(&rise, fx(ALPHA_PER_K))),
     )
 }
 
@@ -867,12 +872,13 @@ fn a_field_that_does_not_cover_the_mesh_is_refused() {
     )
     .expect("5x5x5 over [0, 2]³ is a valid grid");
 
+    let rise = TemperatureRise::from_absolute(&short, Fix128::ZERO);
     let err = solve_with_eigenstrain(
         &mesh,
         &pla(),
         &bc,
         &solver_config(),
-        Some(ThermalExpansion::new(&short, fx(ALPHA_PER_K))),
+        Some(ThermalExpansion::from_rise(&rise, fx(ALPHA_PER_K))),
     )
     .expect_err("a field covering [0, 2]³ cannot drive a mesh on [0, 4]³");
 
