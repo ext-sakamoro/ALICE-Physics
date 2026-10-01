@@ -287,9 +287,6 @@ unwired src/dynamic_bvh.rs::node_count
 unwired src/dynamic_bvh.rs::proxy_count
 unwired src/dynamic_bvh.rs::update
 unwired src/dynamic_bvh.rs::user_data
-unwired src/dynamic_fem.rs::accelerations
-unwired src/dynamic_fem.rs::displacements
-unwired src/dynamic_fem.rs::velocities
 unwired src/electromagnetic.rs::lorentz_force
 unwired src/electromagnetic.rs::lorentz_force_sum
 unwired src/ellipsoid.rs::bounding_sphere_radius
@@ -505,10 +502,8 @@ unwired src/layer_adhesion.rs::fos_shear_xy
 unwired src/layer_adhesion.rs::fos_shear_xz
 unwired src/layer_adhesion.rs::min_fos
 unwired src/linear_elastic_fem.rs::DiagonalStats
-unwired src/linear_elastic_fem.rs::add_load
 unwired src/linear_elastic_fem.rs::alpha_per_k
 unwired src/linear_elastic_fem.rs::default_poissons_ratio
-unwired src/linear_elastic_fem.rs::fix
 unwired src/linear_elastic_fem.rs::from_filament
 unwired src/linear_elastic_fem.rs::hydrostatic
 unwired src/linear_elastic_fem.rs::increments
