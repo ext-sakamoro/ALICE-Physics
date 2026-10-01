@@ -177,7 +177,11 @@
 //! `ny = 8`. Both departures are measured rather than assumed — the length
 //! tables are in the doc comment of the pinned twin. The short version:
 //! `x_1` stops depending on `L` by `L = 12` (`L = 12` and `L = 16` agree to
-//! `1e-6` at `Re = 800`), and `dt = 1/16` rather than `1/32` halves the cost
+//! `1e-6` at `Re = 800`) — ⚠️ **measured at `ny = 8` under `SemiLagrangian`,
+//! where there is no upper-wall bubble, so it does not transfer to the finer
+//! meshes where one exists and reaches toward the outflow plane; see the
+//! `the_reattachment_length_matches_gartling` doc comment** — and
+//! `dt = 1/16` rather than `1/32` halves the cost
 //! while moving `x_1` by `2.3e-3`, whereas `dt = 1/8` leaves the range where
 //! the time discretisation is converging and was rejected.
 //!
@@ -1966,7 +1970,13 @@ fn the_upper_wall_readout_finds_the_bubble_of_the_reflected_step() {
 /// Gauss-Seidel alike, so a 32768-step run is **38 minutes**
 /// (`SemiLagrangian`) or **93 minutes** (`MacCormack`) — inside the
 /// `timeout-minutes: 180` on the `ignored-tests` job. The measured table (the
-/// full version is on `x_1_time_trace`):
+/// full version is on `x_1_time_trace`). ⚠️ **Read the settings before the
+/// numbers: these are at `L = 16`, which `x_1_time_trace` hard-codes, not the
+/// `L = 12` of `LIT_LENGTH` that this test runs**, and with `step`'s current
+/// multigrid projection. The `L` difference is harmless — `x_1` is measured
+/// not to depend on it (module header: `L = 12` and `L = 16` agree to `1e-6`,
+/// and `x_1 = 4.3944` for both `L = 16` and `L = 30`) — but it has to be
+/// stated, because the numbers are not from this test's scene:
 ///
 /// | `ny` | `SemiLagrangian` | `MacCormack` |
 /// |---|---|---|
@@ -1974,21 +1984,56 @@ fn the_upper_wall_readout_finds_the_bubble_of_the_reflected_step() {
 /// | 16 | 4.7238 | 6.28472 |
 /// | 32 | 5.31873 | 5.9288 |
 ///
-/// ⚠️⚠️ **That changes what the gap is.** `MacCormack` crosses Gartling's
-/// 6.10 between `ny = 16` (+3 %) and `ny = 32` (-2.8 %), and its increments
-/// shrink by 0.37 per refinement, which extrapolates to about **5.72** — a
-/// residual **6 %** below 6.10 that **refinement does not close**. A gap that
-/// survives the refinement limit is not a resolution gap; it is a difference
-/// in the problem being solved. `SemiLagrangian` is a separate matter: its
-/// increments still *grow* (+0.33 then +0.59), so it is not asymptotic at all.
+/// ⚠️⚠️ **The `MacCormack` column does not state its `dt`, and the one
+/// point re-measured does not reproduce.** Re-run on 2026-10-02 at `ny = 8`,
+/// `MacCormack`, `dt = 1/32`, `L = 16`, multigrid, `t = 512`, settled to
+/// `max|div u| = 8.7e-19` and flat over the last three samples:
+/// **`x_1 = 7.431833`**, against the `7.2459` above — a difference of `0.186`
+/// (2.6 %). The projection is not the cause (the column was measured with
+/// multigrid too). `dt` is the open candidate: holding the Courant number at
+/// 0.75 as the table's own note asks would put `ny = 8` at `dt = 1/16`, not
+/// `1/32`. ⚠️ But the module header measures the `1/16` vs `1/32` difference
+/// at `2.3e-3` for `SemiLagrangian`, two orders too small to account for
+/// `0.186`, so either `MacCormack` is far more `dt`-sensitive or the column
+/// was taken at a setting that is not written down. **Until a column states
+/// every setting it was taken at, no oracle can be built on it.**
 /// - **The time at which `ny >= 16` settles under `MacCormack`.** Only that it
 ///   has by `t = 512` at `ny = 32` (limit about 5.929) and had not by `t = 512`
 ///   at `ny = 16`.
-/// - **Which condition accounts for the remaining 6 %.** Gartling's `x_1` is
-///   sensitive to the inflow profile, the outflow condition and the upstream
-///   length, and this crate's `Outflow` is a zero-gradient extrapolation; that
-///   is a real difference, but naming it as *the* cause needs a run with each
-///   condition varied, which has not been done.
+/// - **Which condition accounts for the remaining 6 %.** ⚠️ **An earlier
+///   version of this list named the inflow profile, the outflow condition and
+///   the upstream length. All three are wrong, and reading the rest of this
+///   file is what showed it.** The setup matches Gartling on every definition
+///   that was checked against the code: **no upstream channel** (the inflow
+///   plane *is* the step plane, so there is no upstream length to vary),
+///   inflow `u(y) = 12y - 24y^2` normalised to **mean 1, peak 1.5**,
+///   `nu = 1/800` with `rho = 1` and `H = 1` so **`Re = 800` on the mean**,
+///   and **`h/H = 1/2`**. ⚠️ **The outflow condition is *not* ruled out, and
+///   an earlier version of this paragraph said it was.** The measurement it
+///   leaned on — `x_1 = 4.3944` at both `L = 16` and `L = 30` — was taken at
+///   `ny = 8` under `SemiLagrangian`, and the module header says in so many
+///   words that **`ny = 8` has no upper-wall bubble at all** because eight
+///   cells cannot carry the boundary layer. The mechanism worth suspecting is
+///   the upper bubble reaching toward the outflow plane: at `ny = 32` under
+///   `MacCormack` it ends at `9.99`, which is `2 H` short of the `L = 12`
+///   this test uses and `6 H` short of the `L = 16` the refinement table
+///   uses. A run in which the bubble does not exist cannot exercise that, so
+///   `L`-independence at `ny = 8` says nothing about `L`-independence at
+///   `ny = 32`. The entrance-length argument (`0.05 Re H = 40H` exceeds even
+///   Gartling's `L = 30`, so the outlet is undeveloped in every domain here)
+///   closes a *different* route — whether the outlet is developed — and
+///   leaves this one open. **The deciding run is `ny = 16` under
+///   `MacCormack` at `L = 16` against `L = 30`**: `ny = 16` is the coarsest
+///   mesh on which the bubble exists, and it has not been done.
+/// - **What is left.** The numerical viscosity of the advection scheme is the
+///   candidate the data points at: at one and the same `ny = 8` the three
+///   schemes read `4.39` (`SemiLagrangian`), `7.43` (`MacCormack`, measured
+///   above) and `7.27` (`Bfecc`) — a **70 %** spread with the mesh held
+///   fixed. ⚠️ A quantity that moves 70 % with the scheme and 6 % short of
+///   the reference after refinement is not telling a story about resolution,
+///   and three points on a sweep whose scheme is one of the moving parts
+///   cannot settle it. Doubting the reference value is the last resort and
+///   nothing here supports it yet.
 ///
 /// ⚠️ **The attribution moved but the classification did not.** The reason
 /// string still starts with `src gap:`, which `scripts/run_ignored.py` reads as
@@ -1999,7 +2044,7 @@ fn the_upper_wall_readout_finds_the_bubble_of_the_reflected_step() {
 /// unreachable — only if the comparison itself were judged invalid, and
 /// nothing measured so far supports that.
 #[test]
-#[ignore = "src gap: x_1 = 4.3921 against Gartling's 6.10 (72.0 %, short by 13.7 cells) and no upper-wall bubble at all, at the ny = 8 this test runs. Two attributions have been retired by measurement. Resolution: at the same ny = 8 MacCormack reads 7.2459 and BFECC 7.2736, both past 6.10 on the other side. Cost: ny = 32 is no longer unmeasured, and the 2.4 to 9.5 hours this string used to claim was an order of magnitude pessimistic - 68 ms per step, 38 to 93 minutes for a settling run. With ny = 32 in hand the refinement limit is the new fact: MacCormack goes 7.2459 / 6.28472 / 5.9288 at ny = 8 / 16 / 32, increments shrinking by 0.37, extrapolating to about 5.72 - so 6 % below 6.10 survives the limit and the gap is a difference in the problem, not in the mesh. Which condition (inflow profile, zero-gradient Outflow, upstream length) accounts for it is unmeasured. See the doc comment for both tables. Distinct from the runtime ignore on its twin: this one fails, and costs the same to run"]
+#[ignore = "src gap: x_1 = 4.3921 against Gartling's 6.10 (72.0 %, short by 13.7 cells) and no upper-wall bubble at all, at the ny = 8 this test runs. Two attributions have been retired by measurement. Resolution: at the same ny = 8 MacCormack reads 7.2459 and BFECC 7.2736, both past 6.10 on the other side. Cost: ny = 32 is no longer unmeasured, and the 2.4 to 9.5 hours this string used to claim was an order of magnitude pessimistic - 68 ms per step, 38 to 93 minutes for a settling run. With ny = 32 in hand the refinement limit is the new fact: MacCormack goes 7.2459 / 6.28472 / 5.9288 at ny = 8 / 16 / 32 (at L = 16, which is where that table was taken, not the L = 12 this test runs), increments shrinking by 0.37, extrapolating to about 5.72 - so 6 % below 6.10 survives the limit and the gap is not a mesh gap. A third attribution is retired with it: the setup matches Gartling on every definition checked against the code (no upstream channel at all, inflow 12y-24y^2 at mean 1 and peak 1.5, Re = 800 on the mean, h/H = 1/2), but the outflow is NOT ruled out - the L = 16 vs L = 30 agreement that would rule it out was measured at ny = 8 under SemiLagrangian, where the header says there is no upper-wall bubble at all, and the mechanism to suspect is that bubble reaching the outflow plane (it ends at 9.99 at ny = 32 under MacCormack, 2 H short of this test's L = 12). The deciding run, ny = 16 MacCormack at L = 16 against L = 30, has not been done. The other live candidate is the advection scheme's numerical viscosity: at one and the same ny = 8 the three schemes read 4.39 / 7.43 / 7.27, a 70 % spread with the mesh fixed. And one number does not reproduce: ny = 8 MacCormack re-measured at dt = 1/32 gives 7.431833, not 7.2459, and the column does not state its dt - so no oracle can be built on that table until it does. See the doc comment for all of it. Distinct from the runtime ignore on its twin: this one fails, and costs the same to run"]
 fn the_reattachment_length_matches_gartling() {
     let dx = 1.0 / (2 * LIT_S_CELLS) as f64;
     let m = measure_gartling_re_800();
@@ -2378,6 +2423,7 @@ fn the_reattachment_length_is_pinned_at_the_resolution_ci_can_afford() {
 /// | `ARM_DT_RECIP` | `dt = 1 / ARM_DT_RECIP` | `32` |
 /// | `ARM_T_END` | physical end time | `16` |
 /// | `ARM_LOG_EVERY` | steps between lines | `64` |
+/// | `ARM_LENGTH` | downstream length in `H` | `16` |
 ///
 /// The defaults run in seconds, because the `ignored-tests` job runs every
 /// `#[ignore]`d test; the long runs below are made by setting the variables:
@@ -2445,7 +2491,17 @@ fn x_1_time_trace() {
         "ARM_DT_RECIP, ARM_LOG_EVERY and ARM_T_END must be positive"
     );
 
-    let length = 16.0f64;
+    // Varying this is how the outflow hypothesis is tested: the upper-wall
+    // bubble reaches to 9.99 at `ny = 32`, so how far beyond it the outflow
+    // plane sits is a condition, not a constant. `16` is what the refinement
+    // table in this file's header was taken at.
+    let length: f64 = setting("ARM_LENGTH", "16")
+        .parse()
+        .expect("ARM_LENGTH must be a number");
+    assert!(
+        length > 2.0,
+        "ARM_LENGTH must leave room downstream of the step"
+    );
     let s_cells = ny / 2;
     let dx = 1.0 / ny as f64;
     let nx = (length / dx).round() as usize;
@@ -2454,7 +2510,11 @@ fn x_1_time_trace() {
 
     let mut solver = backward_facing_step(s_cells, nx, 800);
     solver.advection_scheme = scheme;
-    println!("[x_1 trace] ny={ny} nx={nx} scheme={scheme_name} dt=1/{dt_recip} steps={steps}");
+    println!(
+        "[x_1 trace] ny={ny} nx={nx} L={length} scheme={scheme_name} \
+         dt=1/{dt_recip} steps={steps} courant={:.4}",
+        1.5 * dt.to_f64() / dx
+    );
     let start = std::time::Instant::now();
     let mut last = None;
     for n in 1..=steps {
