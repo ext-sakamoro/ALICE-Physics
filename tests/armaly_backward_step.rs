@@ -1984,19 +1984,57 @@ fn the_upper_wall_readout_finds_the_bubble_of_the_reflected_step() {
 /// | 16 | 4.7238 | 6.28472 |
 /// | 32 | 5.31873 | 5.9288 |
 ///
-/// ⚠️⚠️ **The `MacCormack` column does not state its `dt`, and the one
-/// point re-measured does not reproduce.** Re-run on 2026-10-02 at `ny = 8`,
-/// `MacCormack`, `dt = 1/32`, `L = 16`, multigrid, `t = 512`, settled to
-/// `max|div u| = 8.7e-19` and flat over the last three samples:
-/// **`x_1 = 7.431833`**, against the `7.2459` above — a difference of `0.186`
-/// (2.6 %). The projection is not the cause (the column was measured with
-/// multigrid too). `dt` is the open candidate: holding the Courant number at
-/// 0.75 as the table's own note asks would put `ny = 8` at `dt = 1/16`, not
-/// `1/32`. ⚠️ But the module header measures the `1/16` vs `1/32` difference
-/// at `2.3e-3` for `SemiLagrangian`, two orders too small to account for
-/// `0.186`, so either `MacCormack` is far more `dt`-sensitive or the column
-/// was taken at a setting that is not written down. **Until a column states
-/// every setting it was taken at, no oracle can be built on it.**
+/// **Re-measured 2026-10-02, and the column reproduces at a fixed Courant
+/// number of 0.75** — which is what the table's own note asks for, and which
+/// fixes `dt = 1/16` at `ny = 8` even though only the `ny = 16` and `ny = 32`
+/// values are written out:
+///
+/// | `ny` | `dt` | re-measured | column | difference |
+/// |---|---|---|---|---|
+/// | 8 | `1/16` | `7.245648337` | `7.2459` | `3e-4` |
+/// | 16 | `1/32` | `6.284723960` | `6.28472` | `4e-6` |
+///
+/// ⚠️ **An earlier version of this paragraph said the column did not
+/// reproduce. That was my error, not the column's**: I ran `ny = 8` at
+/// `dt = 1/32`, a Courant number of 0.375, and read `x_1 = 7.431833` — a
+/// difference of `0.186` that is the `dt` and nothing else. `MacCormack` is a
+/// Lax-Wendroff-type scheme whose leading error goes as `(1 - C^2)`, so
+/// `C = 0.75 -> 0.44` against `0.375 -> 0.86` is roughly a factor of two in
+/// the error, and the module header's `2.3e-3` for the same `dt` change is a
+/// `SemiLagrangian` number that does not transfer. **What is worth keeping
+/// from the episode: the convention is stated but the `ny = 8` value of `dt`
+/// is only implied, so the table should carry a `dt` column.**
+///
+/// ⚠️⚠️ **What `t` these were read at matters, and `max|div u|` does not
+/// settle the question.** The divergence residual is what the projection has
+/// left to do; steadiness is `||du/dt||_inf`. Measured at `ny = 8`,
+/// `dt = 1/16`: at `t = 256` the reattachment had stopped moving by the usual
+/// test (`dx_1 = 5.4e-4`, under `1e-3`) and `max|div u|` was already
+/// `1.8e-13`, while `max|du/dt|` was `1.7e-3` — **three decades above a
+/// `1e-6` steadiness threshold**. `x_1` itself was still creeping: `7.2455`
+/// at `t = 256` against `7.2456` at `t = 512`.
+///
+/// The relaxation is exponential, so the distance from the discrete steady
+/// state is bounded by the tail of a geometric series: with `delta` the last
+/// increment over a window `dt_w` and `r = exp(-dt_w / tau)`, the remainder
+/// is at most `delta * r / (1 - r)`. Measured `tau` (from the increments of
+/// `x_1`, which agree with those of `max|du/dt|` to 4 % at `ny = 8`):
+/// **`18.5` at `ny = 8` and `73.0` at `ny = 16`**, against the channel's
+/// slowest physical diffusion mode `H^2 / (nu pi^2) = 81.1`. So `ny = 16`
+/// sits on the physical value (effective viscosity `1.11 nu`) while `ny = 8`
+/// is dominated by numerical viscosity (`4.4 nu`). ⚠️ **Two points do not
+/// distinguish "tau saturates at the physical value" from "tau grows as
+/// `dx^-2`", and the two readings imply very different budgets at
+/// `ny = 32` (about `t = 1000` against about `t = 2500`). A third point is
+/// what settles it, and it has not been read yet.**
+///
+/// ⚠️ **This does not undermine the refinement argument.** The discrete
+/// fixed point does not depend on how fast it is reached; the resolution
+/// dependence *is* the discretisation error, which is the thing the sweep
+/// measures. The tail bound puts `ny = 16`'s `t = 1024` value within `3.9e-6`
+/// of its own steady state — four orders inside the `6 %` under discussion.
+/// Settling to a threshold is needed for an **oracle** at the `1e-3` level,
+/// not for the statement that the limit is below `6.10`.
 /// - **The time at which `ny >= 16` settles under `MacCormack`.** Only that it
 ///   has by `t = 512` at `ny = 32` (limit about 5.929) and had not by `t = 512`
 ///   at `ny = 16`.
@@ -2044,7 +2082,7 @@ fn the_upper_wall_readout_finds_the_bubble_of_the_reflected_step() {
 /// unreachable — only if the comparison itself were judged invalid, and
 /// nothing measured so far supports that.
 #[test]
-#[ignore = "src gap: x_1 = 4.3921 against Gartling's 6.10 (72.0 %, short by 13.7 cells) and no upper-wall bubble at all, at the ny = 8 this test runs. Two attributions have been retired by measurement. Resolution: at the same ny = 8 MacCormack reads 7.2459 and BFECC 7.2736, both past 6.10 on the other side. Cost: ny = 32 is no longer unmeasured, and the 2.4 to 9.5 hours this string used to claim was an order of magnitude pessimistic - 68 ms per step, 38 to 93 minutes for a settling run. With ny = 32 in hand the refinement limit is the new fact: MacCormack goes 7.2459 / 6.28472 / 5.9288 at ny = 8 / 16 / 32 (at L = 16, which is where that table was taken, not the L = 12 this test runs), increments shrinking by 0.37, extrapolating to about 5.72 - so 6 % below 6.10 survives the limit and the gap is not a mesh gap. A third attribution is retired with it: the setup matches Gartling on every definition checked against the code (no upstream channel at all, inflow 12y-24y^2 at mean 1 and peak 1.5, Re = 800 on the mean, h/H = 1/2), but the outflow is NOT ruled out - the L = 16 vs L = 30 agreement that would rule it out was measured at ny = 8 under SemiLagrangian, where the header says there is no upper-wall bubble at all, and the mechanism to suspect is that bubble reaching the outflow plane (it ends at 9.99 at ny = 32 under MacCormack, 2 H short of this test's L = 12). The deciding run, ny = 16 MacCormack at L = 16 against L = 30, has not been done. The other live candidate is the advection scheme's numerical viscosity: at one and the same ny = 8 the three schemes read 4.39 / 7.43 / 7.27, a 70 % spread with the mesh fixed. And one number does not reproduce: ny = 8 MacCormack re-measured at dt = 1/32 gives 7.431833, not 7.2459, and the column does not state its dt - so no oracle can be built on that table until it does. See the doc comment for all of it. Distinct from the runtime ignore on its twin: this one fails, and costs the same to run"]
+#[ignore = "src gap: x_1 = 4.3921 against Gartling's 6.10 (72.0 %, short by 13.7 cells) and no upper-wall bubble at all, at the ny = 8 this test runs. Two attributions have been retired by measurement. Resolution: at the same ny = 8 MacCormack reads 7.2459 and BFECC 7.2736, both past 6.10 on the other side. Cost: ny = 32 is no longer unmeasured, and the 2.4 to 9.5 hours this string used to claim was an order of magnitude pessimistic - 68 ms per step, 38 to 93 minutes for a settling run. With ny = 32 in hand the refinement limit is the new fact: MacCormack goes 7.2459 / 6.28472 / 5.9288 at ny = 8 / 16 / 32 (at L = 16, which is where that table was taken, not the L = 12 this test runs), increments shrinking by 0.37, extrapolating to about 5.72 - so 6 % below 6.10 survives the limit and the gap is not a mesh gap. A third attribution is retired with it: the setup matches Gartling on every definition checked against the code (no upstream channel at all, inflow 12y-24y^2 at mean 1 and peak 1.5, Re = 800 on the mean, h/H = 1/2), but the outflow is NOT ruled out - the L = 16 vs L = 30 agreement that would rule it out was measured at ny = 8 under SemiLagrangian, where the header says there is no upper-wall bubble at all, and the mechanism to suspect is that bubble reaching the outflow plane (it ends at 9.99 at ny = 32 under MacCormack, 2 H short of this test's L = 12). The deciding run, ny = 16 MacCormack at L = 16 against L = 30, has not been done. The other live candidate is the advection scheme's numerical viscosity: at one and the same ny = 8 the three schemes read 4.39 / 7.43 / 7.27, a 70 % spread with the mesh fixed. The column does reproduce at a fixed Courant number of 0.75: re-measured 7.245648337 at ny = 8 dt = 1/16 against the column's 7.2459, and 6.284723960 at ny = 16 dt = 1/32 against 6.28472. An earlier version of this string said it did not, which was an error of mine - I had run ny = 8 at dt = 1/32 (Courant 0.375) and got 7.431833. What is open is settling: steadiness is ||du/dt||_inf, not the divergence residual, and at ny = 8 t = 256 the former was 1.7e-3 against a 1e-6 threshold while the latter was already 1.8e-13. The measured relaxation time is 18.5 at ny = 8 and 73.0 at ny = 16 against the physical H^2/(nu pi^2) = 81.1, and two points do not say whether it saturates there or keeps growing as dx^-2. The refinement argument survives either way (the tail bound puts ny = 16 within 3.9e-6 of its own steady state). See the doc comment for all of it. Distinct from the runtime ignore on its twin: this one fails, and costs the same to run"]
 fn the_reattachment_length_matches_gartling() {
     let dx = 1.0 / (2 * LIT_S_CELLS) as f64;
     let m = measure_gartling_re_800();
@@ -2425,6 +2463,14 @@ fn the_reattachment_length_is_pinned_at_the_resolution_ci_can_afford() {
 /// | `ARM_LOG_EVERY` | steps between lines | `64` |
 /// | `ARM_LENGTH` | downstream length in `H` | `16` |
 ///
+/// Each line carries `max|du/dt|` (the unsteadiness, non-dimensional since
+/// `U = 1`), `dx_1` (how far the reattachment moved since the previous line)
+/// and `t_settle` (the first time both fell under their thresholds with the
+/// unsteadiness still falling). ⚠️ **`max|div u|` is not a steadiness
+/// measure** - it is what the projection has left to do, and it falls whether
+/// or not the flow has stopped changing. Measured at `ny = 16`: `x_1` stable
+/// to four digits at `t = 768` while `max|div u|` fell two more decades.
+///
 /// The defaults run in seconds, because the `ignored-tests` job runs every
 /// `#[ignore]`d test; the long runs below are made by setting the variables:
 ///
@@ -2516,7 +2562,34 @@ fn x_1_time_trace() {
         1.5 * dt.to_f64() / dx
     );
     let start = std::time::Instant::now();
-    let mut last = None;
+    let mut last: Option<f64> = None;
+    // Steadiness is `||du/dt||_inf`, not the divergence residual: the latter
+    // tracks what the projection has left to do, which falls whether or not
+    // the flow has stopped changing. Measured on this scene at `ny = 16`,
+    // `x_1` was stable to four digits at `t = 768` while `max |div u|` went on
+    // falling two more decades - so the two disagree about when a run is
+    // settled, and the one that answers the question being asked is this one.
+    let faces = |g: &alice_physics::eulerian_grid::MacGrid| -> Vec<f64> {
+        let mut out = Vec::with_capacity((nx + 1) * ny * 2);
+        for j in 0..ny {
+            for i in 0..=nx {
+                out.push(g.u(i, j, 0).to_f64());
+            }
+        }
+        for j in 0..=ny {
+            for i in 0..nx {
+                out.push(g.v(i, j, 0).to_f64());
+            }
+        }
+        out
+    };
+    let mut previous = faces(&solver.grid);
+    // `t_settle` is the first logged time at which both criteria hold: the
+    // unsteadiness is under the threshold and `x_1` has stopped moving within
+    // the window. Printing it is the evidence that a run was not simply cut
+    // off at the end of its budget.
+    let mut unsteadiness_previous = f64::INFINITY;
+    let mut t_settle: Option<f64> = None;
     for n in 1..=steps {
         solver.step(dt);
         if n % log_every == 0 || n == steps {
@@ -2527,9 +2600,33 @@ fn x_1_time_trace() {
                 .collect();
             let separation = (1..=nx).find(|&i| upper[i] < 0.0).map(|i| i as f64 * dx);
             let reattachment = reattachment_x(&upper, dx);
+            // `max |u^{n+1} - u^n| / dt`, non-dimensional because `U = 1`.
+            let now = faces(&solver.grid);
+            let unsteadiness = now
+                .iter()
+                .zip(&previous)
+                .map(|(a, b)| (a - b).abs())
+                .fold(0.0, f64::max)
+                / dt.to_f64();
+            previous = now;
+            let x_1_moved: f64 = match (x_1, last) {
+                (Some(a), Some(b)) => (a - b).abs(),
+                _ => f64::INFINITY,
+            };
+            // Both criteria, and the unsteadiness still falling: a window in
+            // which it has started to rise is a transient, not a settled state.
+            if t_settle.is_none()
+                && unsteadiness <= 1.0e-6
+                && unsteadiness <= unsteadiness_previous
+                && x_1_moved < 1.0e-3
+            {
+                t_settle = Some(t);
+            }
+            unsteadiness_previous = unsteadiness;
             println!(
                 "[x_1 trace] ny={ny} {scheme_name} t={t:7.1} x_1={x_1:?} upper={separation:?}..{reattachment:?} \
-                 max|div|={:.2e} elapsed={:.0}s",
+                 max|du/dt|={unsteadiness:.3e} dx_1={x_1_moved:.2e} max|div|={:.2e} \
+                 t_settle={t_settle:?} elapsed={:.0}s",
                 max_abs_divergence(&solver.grid),
                 start.elapsed().as_secs_f64()
             );
@@ -2542,4 +2639,17 @@ fn x_1_time_trace() {
         last.is_some() || t_end < 16.0,
         "no reattachment was found by t = {t_end}: the run is too short for ny = {ny}"
     );
+    // Not an assertion: a trace is a diagnostic, and a run deliberately cut
+    // short is a legitimate use of it. But an unsettled run has to say so in
+    // its own output, or its last line reads like an answer.
+    match t_settle {
+        Some(t) => println!(
+            "[x_1 trace] settled at t = {t} (max|du/dt| <= 1e-6, falling, and \
+             x_1 moving < 1e-3 in the window)"
+        ),
+        None => println!(
+            "[x_1 trace] NOT settled by t = {t_end}: read the last x_1 as a bound, \
+             not a value"
+        ),
+    }
 }
