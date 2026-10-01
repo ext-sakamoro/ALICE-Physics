@@ -2204,6 +2204,157 @@ mod tests {
         );
     }
 
+    /// **2 本目**の線分の退化を `e.is_zero()` が拾う (`denom` の判定では拾えない領域がある)
+    ///
+    /// ⚠️ `closest_points_on_segments_rejects_degenerate_and_parallel_pairs` の (a) / (d) は
+    /// どちらも **1 本目**を退化させるので、入口の判定が `a.is_zero() || e.is_zero()` から
+    /// `a.is_zero()` に減っても green のまま通ります (変異
+    /// `EE24-only-first-segment-zero-check`)
+    ///
+    /// # ⚠️ `e.is_zero()` が死んで**いない**領域は狭い
+    ///
+    /// 2 本目が素直に長さ 0 なら `d₂ = 0` ⇒ `b = d₁·d₂ = 0` ⇒
+    /// `denom = a·e − b² = 0` なので、**平行の判定が先に拾います** ⇒ そこを突いても
+    /// `e.is_zero()` の有無は観測できません (実測: 本 test の初版はこの配置だったため
+    /// 変異が green で生き残りました)
+    ///
+    /// `e` だけが 0 になるには、`|d₂|²` が Q64.64 で underflow する一方で `b²` が
+    /// 生き残る必要があります `|d₂| = 2⁻³³` のとき `|d₂|² = 2⁻⁶⁶ → 0` で、
+    /// `b² = (|d₁|·2⁻³³)² = |d₁|²·2⁻⁶⁶ ≥ 2⁻⁶⁴` は **`|d₁| ≥ 2`** で成立します
+    /// ⇒ 1 本目を長さ 4 に取ると `denom = 16·0 − 2⁻⁶² = −2⁻⁶² ≠ 0` で平行判定を素通りします
+    ///
+    /// ⚠️ **素通りした先は panic でなく silent な誤答**です `Fix128::div` は 0 除算で
+    /// `ZERO` を返すので (`src/math.rs` の `impl Div`)、`t = (b·s + f)/e` が無言で 0 になり
+    /// `Some((s, 0))` という**もっともらしい値**が返ります
+    /// ([[feedback_degenerate_case_as_silent_wrong_answer]] と同じ型)
+    ///
+    /// # 過剰 pin の線引き
+    ///
+    /// 固定するのは **「孤立した最近接対を持たない入力は `None`」という契約だけ**で、
+    /// **どの guard が拒否するかは固定しません** ⇒ 退化の判定を `denom` 側へ寄せる /
+    /// `d₂` を先に正規化する等の実装変更は `None` を返す限り green のままです
+    /// red にするのは「もっともらしい値を返すようになった時」だけです
+    #[test]
+    fn closest_points_on_segments_rejects_a_degenerate_second_segment() {
+        let o = Vec3Fix::ZERO;
+        let x4 = Vec3Fix::from_int(4, 0, 0);
+        let up = Vec3Fix::from_int(0, 1, 0);
+        let tiny = Fix128::from_raw(0, 1 << 31); // 2⁻³³
+        assert!(
+            !tiny.is_zero() && (tiny * tiny).is_zero(),
+            "この scene の前提 (|d| ≠ 0 だが |d|² が underflow) が崩れた"
+        );
+
+        // 前提: 1 本目を長さ 4 に取ると b² が生き残り、`denom` は 0 にならない
+        // (= 平行判定では拾えない ⇒ `e.is_zero()` だけが防いでいる領域)
+        let b = Fix128::from_int(4) * tiny;
+        assert!(
+            !(b * b).is_zero(),
+            "b² まで underflow した この配置では denom = 0 なので平行判定が先に拾ってしまう"
+        );
+
+        // (a) 2 本目の長さ² だけが underflow する (1 本目は長さ 4)
+        assert!(
+            closest_points_on_segments(o, x4, up, Vec3Fix::new(tiny, Fix128::ONE, Fix128::ZERO))
+                .is_none(),
+            "2 本目の長さ² が underflow した対が受け付けられた \
+             (e = 0 のまま t = (b·s + f)/e を踏むと 0 除算が silent に 0 を返す)"
+        );
+        // (b) 2 本目が素直に長さ 0 (こちらは平行判定でも拾えるが、契約として固定する)
+        assert!(
+            closest_points_on_segments(o, x4, up, up).is_none(),
+            "2 本目が長さ 0 の線分が受け付けられた"
+        );
+        // (c) 退化の拒否は引数の順序に依らない
+        assert!(
+            closest_points_on_segments(up, Vec3Fix::new(tiny, Fix128::ONE, Fix128::ZERO), o, x4)
+                .is_none(),
+            "同じ退化対を引数順を入れ替えると受け付けられた = 判定が非対称"
+        );
+    }
+
+    /// `t` を端点に固定した後、`s` を**解き直す** (clamp したままにしない)
+    ///
+    /// ⚠️ `closest_points_on_segments_clamps_into_the_endpoint_regions` は
+    /// **解き直しの前後で `s` が一致する配置**しか持っていません (2 件目は素の `s = 1/2` を
+    /// clamp せず、`t = 0` に固定した後の `−c/a` も 1/2) ⇒ 解き直しを丸ごと落としても
+    /// green のまま通ります (変異 `EE7-no-resolve-s-after-pinning-t`)
+    ///
+    /// # 閉形式 (2 本とも `|d₁| = 1` の x 軸線分 A `(0,0,0) → (1,0,0)` に対して)
+    ///
+    /// | 枝 | 線分 B | `a, e, b` | 素の `s` | 固定後の `t` | **解き直した `s`** |
+    /// |---|---|---|---|---|---|
+    /// | `t > 1` | `(-5/2, 1/8, -5/2) → (1/2, 1/8, -3/2)` | `1, 10, 3` | `5 → 1` | `1` | `(b − c)/a = 1/2` |
+    /// | `t < 0` | `(1/4, 1/8, -5/2) → (-11/4, 1/8, -11/2)` | `1, 18, −3` | `11/4 → 1` | `0` | `−c/a = 1/4` |
+    ///
+    /// 幾何でも同じ: どちらの枝でも最近接は **B の端点**で、その端点の `x` 座標
+    /// (`1/2` と `1/4`、どちらも `[0, 1]` の内部) が `s` になります 解き直さないと
+    /// `s` は clamp された `1` に居残り、A 上の最近接点が端点 `(1,0,0)` にずれます
+    ///
+    /// # 過剰 pin の線引き
+    ///
+    /// 期待値は **Ericson の手順でなく幾何そのもの** (真の最近接点) から来ているので、
+    /// アルゴリズムを別形式 (例: 端点 clamp 4 候補 + 内部解の総当たり) に差し替えても
+    /// **正しければ同じ値になります** ⇒ 実装の自由度 (clamp の書き方 / 中間変数 / 分岐順) は
+    /// 固定していません 対照 `CTL3-closest-points-equivalent-rewrite` (同関数の等価な
+    /// 書き換え) は green であることを実測済みです
+    #[test]
+    fn closest_points_on_segments_resolves_s_again_after_pinning_t() {
+        let half = Fix128::from_ratio(1, 2);
+        let quarter = Fix128::from_ratio(1, 4);
+        let eighth = Fix128::from_ratio(1, 8);
+        let a0 = Vec3Fix::from_int(0, 0, 0);
+        let a1 = Vec3Fix::from_int(1, 0, 0);
+
+        // 枝 t > 1: B の端点 q₂ = (1/2, 1/8, -3/2) が最近接 ⇒ s = 1/2
+        let b0 = Vec3Fix::new(-Fix128::from_ratio(5, 2), eighth, -Fix128::from_ratio(5, 2));
+        let b1 = Vec3Fix::new(half, eighth, -Fix128::from_ratio(3, 2));
+        let Some((s, t)) = closest_points_on_segments(a0, a1, b0, b1) else {
+            panic!("t > 1 の枝で最近接対が得られなかった");
+        };
+        assert_eq!(
+            t,
+            Fix128::ONE,
+            "oracle: 素の t = 13/10 が端点 1 へ固定される"
+        );
+        assert_eq!(
+            s, half,
+            "oracle: t を 1 に固定した後 s は (b − c)/a = 1/2 に解き直される \
+             (clamp 後の 1 に居残ってはいけない)"
+        );
+        // 幾何の裏取り: 最近接点は B の端点 q₂、A 側はその x 座標
+        assert_eq!(
+            a0 + (a1 - a0) * s,
+            Vec3Fix::new(half, Fix128::ZERO, Fix128::ZERO)
+        );
+        assert_eq!(b0 + (b1 - b0) * t, b1);
+
+        // 枝 t < 0: B の端点 p₂ = (1/4, 1/8, -5/2) が最近接 ⇒ s = 1/4
+        let b0 = Vec3Fix::new(quarter, eighth, -Fix128::from_ratio(5, 2));
+        let b1 = Vec3Fix::new(
+            -Fix128::from_ratio(11, 4),
+            eighth,
+            -Fix128::from_ratio(11, 2),
+        );
+        let Some((s, t)) = closest_points_on_segments(a0, a1, b0, b1) else {
+            panic!("t < 0 の枝で最近接対が得られなかった");
+        };
+        assert_eq!(
+            t,
+            Fix128::ZERO,
+            "oracle: 素の t = −13/24 が端点 0 へ固定される"
+        );
+        assert_eq!(
+            s, quarter,
+            "oracle: t を 0 に固定した後 s は −c/a = 1/4 に解き直される"
+        );
+        assert_eq!(
+            a0 + (a1 - a0) * s,
+            Vec3Fix::new(quarter, Fix128::ZERO, Fix128::ZERO)
+        );
+        assert_eq!(b0 + (b1 - b0) * t, b0);
+    }
+
     /// 辺-辺の候補対が、頂点を共有する辺対を含まない (契約)
     ///
     /// ⚠️ 共有頂点の対は距離 0 が**構成上の事実**なので、残すと毎 iteration 発火して
@@ -2377,6 +2528,161 @@ mod tests {
             x_crossing_signed_gap(&cloth),
             quarter,
             "oracle: 1 回の投影で辺-辺の隙間が厳密に thickness = 1/4 になる"
+        );
+    }
+
+    /// 辺-辺の投影が `s` と `t` を**別々に**使い、逆質量で重み付けする (非対称な閉形式)
+    ///
+    /// ⚠️ `the_edge_edge_projection_restores_exactly_the_contact_thickness` の scene は
+    /// `s = t = 1/2` かつ逆質量が全て 1 なので、**`s` と `t` を取り違えても / 逆質量を
+    /// 無視して等分しても同じ答えになります** 実測でその 2 変異
+    /// (`EE18-use-s-in-place-of-t` / `EE15-ignore-inv-mass-equal-split`) を red にしていたのは
+    /// `test_cloth_self_collision` の `gap_on > gap_off` だけで、**閉形式の歯が無い**状態でした
+    /// 本 test は `s ≠ t` かつ逆質量 4 種を全て違う値にして、その層に歯を置きます
+    ///
+    /// # scene
+    ///
+    /// ```text
+    /// T0 = [0,1,2]   0 = (0,0,0)        1 = (1,0,0)        2 = (0,-8,0)
+    /// T1 = [3,4,5]   3 = (1/4,1/8,-1/2) 4 = (1/4,1/8,1/2)  5 = (1/4,1/8+8,0)
+    /// ```
+    ///
+    /// 辺 A = `(0,1)` は x 軸、辺 B = `(3,4)` は x = 1/4 を通る z 方向 ⇒ A 上の最近接は
+    /// `x = 1/4` (= `s = 1/4`)、B 上の最近接は `z = 0` (= `t = 1/2`) で **`s ≠ t`**
+    ///
+    /// 距離は y 差の `1/8` のみ `thickness = 1/4` に対し他の対は全て閾値外です
+    /// (頂点 0 → 辺 (3,4) が `1/16 + 1/64 = 5/64 > 4/64 = thickness²` で最接近、
+    /// 辺 (0,2) × (3,4) も同じ `5/64`)
+    ///
+    /// # 閉形式 (逆質量 `w₀ = 0`, `w₁ = 8`, `w₂ = 1/2`, `w₃ = 3/2`)
+    ///
+    /// ```text
+    /// u = 1 − s = 3/4   v = 1 − t = 1/2   n = (pₐ − p_b)/|pₐ − p_b| = (0,−1,0)
+    /// denom = 0·(3/4)² + 8·(1/4)² + (1/2)·(1/2)² + (3/2)·(1/2)² = 1/2 + 1/8 + 3/8 = 1
+    /// λ     = (1/4 − 1/8) / 1 = 1/8
+    /// Δ₀ = +λ·0·u·n     = 0          Δ₁ = +λ·8·s·n   = (0,−1/4,0)
+    /// Δ₃ = −λ·(1/2)·v·n = (0,1/32,0) Δ₄ = −λ·(3/2)·t·n = (0,3/32,0)
+    /// ```
+    ///
+    /// `hits` は 4 頂点とも 1 なので平均で値は変わらず、頂点 0 は `inv_mass = 0` のため
+    /// 適用時に skip されます `denom = 1` は偶然でなく重みの選び方で、全段が 2 進小数です
+    ///
+    /// # 過剰 pin の線引き
+    ///
+    /// 固定するのは `accumulate_edge_edge_contacts` の doc が宣言している **XPBD の投影式**
+    /// (`(s, t)` を固定した 1 次の勾配 + 逆質量重み) の値です 候補の列挙順 / 法線の求め方 /
+    /// 平均の実装は固定していません (本 scene は `hits = 1` なので平均の寄与が無い)
+    /// ⚠️ **拘束の定式化そのものを変えると red になります** (例: `(s, t)` の微分項を入れる)
+    /// それは近似モデルの変更なので、red は差し戻しでなく**裁定を求める合図**として正しい形です
+    /// 対照として辺-辺の外側の変異 (`CTL1-bend-constraint-gradient-sign-flipped` /
+    /// `CTL2-stretch-rest-length-doubled`) では本 test は green のままです (誤爆なしを実測)
+    #[test]
+    fn the_edge_edge_projection_weights_s_t_and_the_inverse_masses_separately() {
+        let quarter = Fix128::from_ratio(1, 4);
+        let half = Fix128::from_ratio(1, 2);
+        let eighth = Fix128::from_ratio(1, 8);
+        let eight = Fix128::from_int(8);
+
+        let scene = || {
+            let mut c = Cloth::new_grid(Vec3Fix::ZERO, Fix128::ONE, Fix128::ONE, 3, 2, Fix128::ONE);
+            assert_eq!(c.particle_count(), 6);
+            c.edge_constraints.clear();
+            c.bend_constraints.clear();
+            c.triangles = vec![[0, 1, 2], [3, 4, 5]];
+            c.config.gravity = Vec3Fix::ZERO;
+            c.config.damping = Fix128::ONE;
+            c.config.self_collision = true;
+            c.config.self_collision_distance = quarter;
+            c.positions[0] = Vec3Fix::from_int(0, 0, 0);
+            c.positions[1] = Vec3Fix::from_int(1, 0, 0);
+            c.positions[2] = Vec3Fix::new(Fix128::ZERO, -eight, Fix128::ZERO);
+            c.positions[3] = Vec3Fix::new(quarter, eighth, -half);
+            c.positions[4] = Vec3Fix::new(quarter, eighth, half);
+            c.positions[5] = Vec3Fix::new(quarter, eighth + eight, Fix128::ZERO);
+            // ⚠️ 4 つとも違う値 これが等分との差を作る
+            c.inv_masses[0] = Fix128::ZERO;
+            c.inv_masses[1] = eight;
+            c.inv_masses[3] = half;
+            c.inv_masses[4] = Fix128::from_ratio(3, 2);
+            c.prev_positions = c.positions.clone();
+            c.velocities.fill(Vec3Fix::ZERO);
+            c
+        };
+
+        // 契約: 最近接パラメータが閉形式どおり **s ≠ t** であること (scene の前提)
+        let probe = scene();
+        let Some((s, t)) = closest_points_on_segments(
+            probe.positions[0],
+            probe.positions[1],
+            probe.positions[3],
+            probe.positions[4],
+        ) else {
+            panic!("辺 (0,1) × (3,4) で最近接対が得られなかった");
+        };
+        assert_eq!(s, quarter, "oracle: s = 1/4");
+        assert_eq!(t, half, "oracle: t = 1/2");
+        assert!(
+            s != t,
+            "この scene は s = t なので s / t の取り違えを試せない"
+        );
+
+        // ⚠️ 頂点-面の段はこの scene を 1 bit も動かせない (最接近が 5/64 > 4/64)
+        let mut cloth = scene();
+        let before = cloth.positions.clone();
+        let margin = quarter.double();
+        let vf = cloth.collect_vertex_face_candidates(margin);
+        cloth.solve_vertex_face_self_collision(&vf);
+        assert_eq!(
+            cloth.positions,
+            before,
+            "頂点-面の段がこの scene を動かした (候補 {} 件) 辺-辺だけを測れていない",
+            vf.len()
+        );
+
+        // 発火するのは辺 (0,1) × (3,4) の 1 対だけ
+        let ee = cloth.collect_edge_edge_candidates(margin);
+        assert_eq!(
+            ee.iter()
+                .filter(|&&[i0, i1, j0, j1]| [i0, i1, j0, j1] == [0, 1, 3, 4])
+                .count(),
+            1,
+            "辺 (0,1) × (3,4) の対が候補に 1 件だけ入っていない (候補 {ee:?})"
+        );
+        cloth.solve_edge_edge_self_collision(&ee);
+
+        let thirty_second = Fix128::from_ratio(1, 32);
+        assert_eq!(
+            cloth.positions[0], before[0],
+            "oracle: 頂点 0 は inv_mass = 0 なので 1 bit も動かない"
+        );
+        assert_eq!(
+            cloth.positions[1],
+            Vec3Fix::new(Fix128::ONE, -quarter, Fix128::ZERO),
+            "oracle: Δ₁ = −1/4 (= λ·w₁·s、w₁ = 8 と s = 1/4 の積)"
+        );
+        assert_eq!(
+            cloth.positions[3],
+            Vec3Fix::new(quarter, eighth + thirty_second, -half),
+            "oracle: Δ₃ = +1/32 (= λ·w₂·v、w₂ = 1/2 と v = 1 − t = 1/2 の積)"
+        );
+        assert_eq!(
+            cloth.positions[4],
+            Vec3Fix::new(quarter, eighth + thirty_second * Fix128::from_int(3), half),
+            "oracle: Δ₄ = +3/32 (= λ·w₃·t、w₃ = 3/2 と t = 1/2 の積)"
+        );
+        assert_eq!(
+            cloth.positions[2], before[2],
+            "接触に参加しない頂点 2 が動いた (hits = 0 のはず)"
+        );
+        assert_eq!(
+            cloth.positions[5], before[5],
+            "接触に参加しない頂点 5 が動いた (hits = 0 のはず)"
+        );
+        // 4 つの Δ は全部違う大きさ = 重みが潰れていない (等分だと |Δ| が揃う)
+        assert!(
+            (cloth.positions[1].y - before[1].y) != (cloth.positions[3].y - before[3].y)
+                && (cloth.positions[3].y - before[3].y) != (cloth.positions[4].y - before[4].y),
+            "Δ の大きさが揃っている = 逆質量 / s / t の重みが潰れている"
         );
     }
 
