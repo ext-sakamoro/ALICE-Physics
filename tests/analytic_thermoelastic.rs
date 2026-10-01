@@ -1,18 +1,20 @@
 //! Acceptance oracles for thermoelastic coupling, written **before** the term
-//! exists.
+//! existed and now green against it.
 //!
-//! Four of the five tests here are `#[ignore]`d and all four are **red** when
-//! the attribute is removed. That is the point: they fix the acceptance
-//! criterion for wiring a temperature field into
-//! [`alice_physics::linear_elastic_fem`] while the residual still has no
-//! eigenstrain term, so the criterion cannot be written to match whatever the
-//! implementation happens to produce.
+//! Four of the five tests here were `#[ignore]`d and red until
+//! `linear_elastic_fem` gained an eigenstrain term. That is why they can be
+//! trusted: they fixed the acceptance criterion for wiring a temperature field
+//! into [`alice_physics::linear_elastic_fem`] while the residual still had no
+//! such term, so the criterion could not be written to match whatever the
+//! implementation happened to produce.
 //!
-//! The fifth, [`the_discriminating_measurements_are_not_inert`], runs today and
-//! pins the measurement helpers the other four compare through — see the
-//! controls section.
+//! The fifth, [`the_discriminating_measurements_are_not_inert`], ran from the
+//! start and pins the measurement helpers the other four compare through — see
+//! the controls section.
 //!
-//! Measured on `origin/main` at `cb2fc36`:
+//! # The two states, for anyone reading the history
+//!
+//! Before, on `origin/main` at `cb2fc36`:
 //!
 //! ```text
 //! $ git grep -cE 'eigenstrain|CoupledField|thermal|temperature' -- src/linear_elastic_fem.rs
@@ -26,28 +28,11 @@
 //! ) -> Result<FemSolution, FemError> {
 //! ```
 //!
-//! `CoupledField` exists (`src/coupled_field.rs`) and is the intended channel,
-//! but [`solve`] has no parameter that could receive it, and `ElasticMaterial`
-//! carries no expansion coefficient. Both are named in the ignore reasons.
-//!
-//! # ⚠️ The gap is on **both** sides, and the test side is one function wide
-//!
-//! The earlier revision of this file built the temperature field, asserted it
-//! was uniform, and then called `solve` **without it** — the field was dropped
-//! silently at each call site. Removing `#[ignore]` after landing the residual
-//! term would therefore still have been red, for a reason that lives in this
-//! file rather than in `src/`.
-//!
-//! Every solve here now goes through [`solve_with_temperature`], which takes the
-//! field and documents in one place that `solve` has nowhere to put it. That
-//! function is the **only** line that has to change on the test side when the
-//! term lands; nothing in the closed forms or the asserts depends on how the
-//! data arrives.
-//!
-//! # ⚠️ The measured red, so nobody has to guess whether these are broken tests
-//!
+//! `CoupledField` existed (`src/coupled_field.rs`) and was the intended
+//! channel, but `solve` had no parameter that could receive it. The red it
+//! produced, from
 //! `cargo test --features std --test analytic_thermoelastic -- --ignored
-//! --nocapture`, run on `cb2fc36`:
+//! --nocapture`:
 //!
 //! ```text
 //! test fully_constrained_heating_is_hydrostatic_compression ...
@@ -65,17 +50,31 @@
 //! test result: FAILED. 0 passed; 2 failed
 //! ```
 //!
-//! The distinction that matters: **the discrepancy equals the expected value
+//! The distinction that mattered: **the discrepancy equalled the expected value
 //! itself** — `2.000000e-1 mm = α ΔT · L` and `5.833333e2 MPa = 1750/3` — so the
-//! solve returned the identically zero state, which is the correct answer to the
-//! problem it was actually given (no load). The closed-form cross-checks, the
-//! scene-data guards and the vacuity guards all pass *before* those comparisons,
-//! and nothing panics inside the solver. That is a missing source term, not a
-//! broken test and not a solver failure.
+//! solve was returning the identically zero state, which is the correct answer
+//! to the problem it was actually given (no load). The closed-form
+//! cross-checks, the scene-data guards and the vacuity guards all passed
+//! *before* those comparisons, and nothing panicked inside the solver. That was
+//! a missing source term, not a broken test and not a solver failure.
 //!
-//! Note which assert did **not** fire: free expansion's `σ ≡ 0` passes today,
-//! because zero stress is right for zero displacement. It only becomes
-//! load-bearing once the thermal load lands — see the halfway-wiring table below.
+//! Note which assert did **not** fire then: free expansion's `σ ≡ 0`, because
+//! zero stress is right for zero displacement. It became load-bearing only once
+//! the thermal load landed — see the halfway-wiring table below.
+//!
+//! # ⚠️ The gap was on **both** sides, and the test side was one function wide
+//!
+//! An earlier revision of this file built the temperature field, asserted it was
+//! uniform, and then called `solve` **without it** — the field was dropped
+//! silently at each call site. Removing `#[ignore]` after landing the residual
+//! term would therefore still have been red, for a reason that lived in this
+//! file rather than in `src/`.
+//!
+//! Every solve here goes through [`solve_with_temperature`], which was the
+//! **only** line that changed on the test side when the term landed. Nothing in
+//! the closed forms or the asserts depends on how the data arrives, and the two
+//! controls below are what check that the forwarding is real rather than
+//! decorative.
 //!
 //! # Why a separate file
 //!
@@ -83,13 +82,13 @@
 //! `CoupledField` — trilinear interpolation, splat, diffusion, reconciliation —
 //! and its module doc scopes itself to exactly those three. It imports no solid
 //! mechanics at all. The oracles here are about the **FEM residual**: they need
-//! a tet mesh, a material, boundary conditions and a linear solve, and they are
-//! red for a reason that lives in `linear_elastic_fem.rs`, not in
+//! a tet mesh, a material, boundary conditions and a linear solve, and they were
+//! red for a reason that lived in `linear_elastic_fem.rs`, not in
 //! `coupled_field.rs`. Appending them there would make one file answer two
 //! unrelated questions and would make its "every expected value comes from a
 //! closed form of the three field operations" doc false. The tests here also
-//! share a single lifecycle — they flip from ignored to required together, on the
-//! same commit — which is easier to see in a file of their own.
+//! shared a single lifecycle — they flipped from ignored to required together,
+//! on one commit — which was easier to see in a file of their own.
 //!
 //! # ⚠️ Where every expected number comes from
 //!
@@ -142,18 +141,88 @@
 //!
 //! Cross-checked through the Lamé route, which shares no factor with the one
 //! above: `λ = Eν/((1+ν)(1−2ν)) = 1225/0.405`, `μ = E/(2(1+ν)) = 3500/2.7`, so
-//! `3λ + 2μ = 35000/3` and `−(3λ + 2μ) · (1/20) = −1750/3`. The tests assert the
-//! two routes agree **and** that both equal the exact rational `−1750/3`, so a
-//! typo in either expression is caught by the other.
+//! `3λ + 2μ = 35000/3` and `−(3λ + 2μ) · (1/20) = −1750/3`. The tests assert
+//! that the two routes agree **and** that both land within `1e-9` of `−1750/3`,
+//! so a typo in either expression is caught by the other.
 //!
-//! # ⚠️ The tolerances below are targets, not measurements
+//! ⚠️ **Within `1e-9`, not equal.** `1750/3` has denominator 3, so it is not a
+//! dyadic rational and is representable exactly in neither `f64` nor
+//! [`Fix128`]. The two routes are *measured* to land one `f64` ulp apart from
+//! the literal:
 //!
-//! A red test measures nothing about attainable precision. `1e-9 mm` and
-//! `1e-2 MPa` are chosen because both closed forms lie in the P1 space exactly,
-//! leaving only the conjugate-gradient relative residual (`2⁻³⁰`) to account
-//! for. Whoever lands the eigenstrain term **must re-measure the achieved error
-//! and record it here**, exactly as the other analytic files do, and tighten or
-//! justify the bound at that point.
+//! ```text
+//! |constrained_stress_mpa(50.0) − (−1750.0/3.0)| = 1.1368683772161603e-13
+//! ```
+//!
+//! which is exactly `2⁻⁴³ = ulp(583.33…)` (`583.33…` lies in `[2⁹, 2¹⁰)`, so
+//! its ulp is `2⁹ · 2⁻⁵²`). An earlier revision of this doc
+//! claimed the tests "assert that both equal the exact rational", and that
+//! claim is false by that ulp. It is recorded here because the overclaim was
+//! read back as an instruction — someone briefing this work took it to mean
+//! that exact equality was the goal — and chasing it is impossible rather than
+//! merely hard. What makes exactness reachable in fixed point is **not** a
+//! rational value but either a dyadic one or two sides built by the same
+//! sequence of operations so the truncations cancel; neither holds here, so
+//! every physics comparison in this file is a tolerance.
+//!
+//! # The tolerances, and what they measure
+//!
+//! `U_TOL_MM = 1e-9` and `SIGMA_TOL_MPA = 1e-2` are unchanged from the revision
+//! that wrote them as targets. They are now backed by measurement, from
+//! `cargo test --features std --test analytic_thermoelastic -- --nocapture`
+//! with the print formats widened to full `f64` precision:
+//!
+//! | scene | quantity | measured worst | bound | bound / measured |
+//! |---|---|---|---|---|
+//! | free expansion, `n = 2` | `\|u − α ΔT X\|` | `4.87473672539096e-11` mm | `1e-9` mm | 20.5× |
+//! | free expansion, `n = 4` | `\|u − α ΔT X\|` | `4.141739728957816e-11` mm | `1e-9` mm | 24.1× |
+//! | free expansion, `n = 2` | `\|σ\|` | `8.846168197962356e-8` MPa | `1e-2` MPa | 1.1e5× |
+//! | free expansion, `n = 4` | `\|σ\|` | `1.20252448110314e-7` MPa | `1e-2` MPa | 8.3e4× |
+//! | every clamped scene, both `n` | `\|u\|`, `\|σ_nn − want\|`, `\|σ_shear\|`, `\|σ(+ΔT)+σ(−ΔT)\|`, `\|gap − want_gap\|` | **`0e0`** | — | — |
+//!
+//! Two things that table is saying, and one it is not.
+//!
+//! **The clamped zeros are exact, at the resolution of the instrument.** Every
+//! clamped comparison reads `0e0`, not a small number: the `Fix128` stress
+//! converts to the *same f64 bits* as the closed form. That is expected —
+//! `u ≡ 0` makes the reported stress exactly `−C : ε_th`, the one quantity the
+//! solve computes without an iteration — but it cannot be read as "the error is
+//! below `1e-2`" by a factor of anything. ⚠️ **`to_f64()` has 53 mantissa bits
+//! against `Fix128`'s 64 fractional ones**, so the comparison cannot resolve
+//! better than one f64 ulp at 583 MPa, `1.14e-13` MPa. Any claim tighter than
+//! that needs raw-representation differencing, not these asserts.
+//!
+//! **Free expansion is the only scene with an iteration in it**, so it is the
+//! only one whose error is a real number, and that error is the conjugate
+//! gradient stopping criterion rather than the arithmetic. Measured by sweeping
+//! `SolverConfig::relative_tolerance` on the `n = 2` scene, every other input
+//! held:
+//!
+//! | relative tolerance | worst `\|u − α ΔT X\|` |
+//! |---|---|
+//! | `2⁻¹⁸` | `2.581458e-6` mm |
+//! | `2⁻²²` | `1.032934e-7` mm |
+//! | `2⁻²⁶` | `7.169030e-9` mm |
+//! | `2⁻³⁰` | `9.608051854126387e-10` mm |
+//! | **`2⁻³⁴`** | **`4.87473672539096e-11` mm** |
+//! | `2⁻³⁸` | `2.272182e-12` mm |
+//! | `2⁻⁴²` | `1.005862e-13` mm |
+//!
+//! Monotone and roughly linear across five decades with no floor in sight, which
+//! is what says the limit is the stopping criterion and not `Fix128`.
+//! ⚠️ **At `2⁻³⁰` — the value [`solver_config`] used while these tests were red
+//! — the measured error is 96.1% of the `1e-9` bound.** The bound was a target
+//! chosen to "leave only the conjugate-gradient relative residual to account
+//! for", and that guess turns out to have been right to one significant figure
+//! and to have left no margin. Rather than relax the bound, [`solver_config`]
+//! now asks for `2⁻³⁴`, which costs nothing measurable (both refinements still
+//! converge inside the same 200,000-iteration budget) and buys the 20× above.
+//!
+//! **What the table is not saying:** that `1e-2` MPa is a tight bound in
+//! absolute terms. It is not — it is `1.7e-5` relative to the 583 MPa answer,
+//! which is the number that matters for whether it has teeth. A wiring wrong by
+//! 1% would miss by 5.8 MPa, 580× the bound; the smallest error it admits
+//! without complaint is 17 ppm.
 //!
 //! # What each assert catches, if the term is wired only halfway
 //!
@@ -182,8 +251,10 @@
 //! `eulerian_grid::tests::colour_blind_gauss_seidel_drifts_from_red_black`: it
 //! asserts that the quantity the other tests vary actually changes the answer,
 //! so their licence to compare against a closed form is measured rather than
-//! assumed. **It is red today for exactly that reason** — with no term in the
-//! residual the two scenes are bit-identical.
+//! assumed. **It was red for exactly that reason before the term landed** —
+//! with nothing in the residual the two scenes were bit-identical. It now
+//! measures a gap of `5.833333333333333e2` MPa against a closed form of the
+//! same value, with `|gap − want_gap| = 0e0`.
 //!
 //! Neither oracle can pass on an all-zero state: each carries a vacuity guard
 //! asserting that the quantity it is about to compare against is far larger than
@@ -191,35 +262,37 @@
 //! a zero state *is* the right answer, and there the assert that carries the
 //! information is the gap against its `ΔT = 50 K` twin, not the zero itself.
 //!
-//! # ⚠️ Reversal condition — when to remove `#[ignore]`
+//! # What landed, against the reversal condition this file stated
 //!
-//! Remove it from **all four ignored** tests on the commit that lands all three
-//! of (the fifth test is not ignored and needs no change):
+//! The condition was that `#[ignore]` comes off all four tests on the commit
+//! that lands all three of:
 //!
-//! 1. a way to hand a temperature (or general eigenstrain) field to the solve —
-//!    a `CoupledField` parameter, or `α` plus `ΔT` on `ElasticMaterial` — plus
-//!    the one-line change in [`solve_with_temperature`] that forwards it;
-//! 2. the element load `f_e = ∫ Bᵀ C ε_th dV` in the residual assembled by
-//!    [`solve`] (and by `solve_corotational`, if it gains the same term);
-//! 3. `C : ε_th` subtracted from `FemSolution::element_stress`.
+//! 1. a way to hand a temperature (or general eigenstrain) field to the solve,
+//!    plus the one-line change in [`solve_with_temperature`] that forwards it —
+//!    landed as `linear_elastic_fem::ThermalExpansion` and
+//!    [`solve_with_eigenstrain`], with `solve` kept at its old signature and
+//!    reduced to a wrapper that passes `None`;
+//! 2. the element load `f_e = ∫ Bᵀ C ε_th dV` in the residual — landed, as an
+//!    accumulation into `b` in mesh order next to the external loads;
+//! 3. `C : ε_th` subtracted from `FemSolution::element_stress` — landed.
 //!
-//! If only some of the three land, the table above says which assert is expected
-//! to stay red; do not relax a bound to get past it. If the wiring chooses a
-//! different channel than `CoupledField`, replace [`ThermalLoad`] and leave the
-//! closed forms untouched — they do not depend on how the data arrives.
+//! `solve_corotational` did **not** get the term, and the parenthesis in the
+//! original condition 2 left that open. It is out of scope here and nothing in
+//! this file exercises it.
 //!
-//! The field here carries the temperature **rise above the stress-free reference
+//! The field carries the temperature **rise above the stress-free reference
 //! configuration**. A wiring that carries absolute temperature must also carry
-//! that reference; only the field construction changes, not the oracle. Note
-//! that the first control is what turns that sentence into a test.
+//! that reference; only the field construction changes, not the oracle. The
+//! first control is what turns that sentence into a test.
 //!
-//! ⚠️ Whoever lands the term must also check that the solve **refuses or
-//! reports** a field that does not cover the mesh: `CoupledField::sample` clamps
-//! a point outside the grid onto the nearest boundary node (documented in
-//! `coupled_field.rs`), so a mesh sticking out of the field would be heated by
-//! the extruded boundary value instead of failing. Every scene here asserts its
-//! own coverage ([`ThermalLoad::assert_drives`]) so that none of them leans on
-//! that clamp, but the guard belongs next to the caller, in the same commit.
+//! The coverage guard the condition also asked for landed in the same commit:
+//! `CoupledField::sample` clamps a point outside the grid onto the nearest
+//! boundary node (documented in `coupled_field.rs`), so a mesh sticking out of
+//! the field would be heated by the extruded boundary value instead of failing.
+//! [`solve_with_eigenstrain`] now checks every element node and returns
+//! `FemError::TemperatureFieldDoesNotCoverMesh` instead. Every scene here still
+//! asserts its own coverage ([`ThermalLoad::assert_drives`]) so that none of
+//! them leans on either behaviour.
 //!
 //! Author: Moroya Sakamoto
 
@@ -229,8 +302,8 @@
 
 use alice_physics::coupled_field::CoupledField;
 use alice_physics::linear_elastic_fem::{
-    solve, Axis, BoundaryConditions, ElasticMaterial, FemError, FemSolution, SolverConfig,
-    StressTensor,
+    solve_with_eigenstrain, Axis, BoundaryConditions, ElasticMaterial, FemError, FemSolution,
+    SolverConfig, StressTensor, ThermalExpansion,
 };
 use alice_physics::math::{Fix128, Vec3Fix};
 use alice_physics::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
@@ -365,8 +438,19 @@ fn vertex_count(mesh: &SdfTetMesh) -> u32 {
     u32::try_from(mesh.vertices.len()).expect("lattice fits u32")
 }
 
+/// The linear solve settings every scene shares.
+///
+/// The relative tolerance is `2⁻³⁴`, not the `2⁻³⁰` this file asked for while
+/// the tests were red. Free expansion is the only scene whose error is set by
+/// the iteration rather than by the arithmetic, and at `2⁻³⁰` its measured
+/// displacement error is 96.1% of [`U_TOL_MM`]; the module doc has the sweep
+/// that says the error is linear in this number with no floor nearby. `2⁻³⁴`
+/// moves the measured error to 4.9% of the bound at no cost — both refinements
+/// still converge well inside the 200,000-iteration budget — which is the
+/// "tighten or justify" the bound's own note called for, done by tightening the
+/// solver instead of relaxing the oracle.
 fn solver_config() -> SolverConfig {
-    SolverConfig::try_new(200_000, Fix128::from_raw(0, 1 << 34)).expect("valid linear config")
+    SolverConfig::try_new(200_000, Fix128::from_raw(0, 1 << 30)).expect("valid linear config")
 }
 
 // ---------------------------------------------------------------------------
@@ -434,15 +518,16 @@ impl ThermalLoad {
 
 /// ⚠️ **The one place the temperature field has to reach the solve.**
 ///
-/// On `cb2fc36` [`solve`] takes `(mesh, material, boundary, config)` and has no
-/// parameter that could receive a field, so the load is accepted here, checked
-/// against the scene, and then **dropped** — the solve sees a problem with no
-/// load at all, which is why every test in this file is `#[ignore]`d and red.
+/// On `cb2fc36` [`solve`] took `(mesh, material, boundary, config)` and had no
+/// parameter that could receive a field, so the load was accepted here, checked
+/// against the scene, and then **dropped** — the solve saw a problem with no
+/// load at all, which is why every test in this file was `#[ignore]`d and red.
 ///
-/// This is the whole test-side half of the gap. When the eigenstrain term lands,
-/// forward `load` to the solve here and nothing else in this file changes: the
-/// closed forms, the asserts and the two controls are all written against the
-/// physics rather than against the signature.
+/// It now forwards the field through [`solve_with_eigenstrain`], which is the
+/// only line that changed on the test side. Nothing in the closed forms or the
+/// asserts moved: they were written against the physics rather than against the
+/// signature, and the two controls below are what check that the forwarding is
+/// real rather than decorative.
 fn solve_with_temperature(
     mesh: &SdfTetMesh,
     material: &ElasticMaterial,
@@ -451,9 +536,13 @@ fn solve_with_temperature(
     load: &ThermalLoad,
 ) -> Result<FemSolution, FemError> {
     load.assert_drives(mesh);
-    // src gap: no eigenstrain term, and no parameter for a CoupledField.
-    let _dropped_until_the_eigenstrain_term_lands = load;
-    solve(mesh, material, boundary, config)
+    solve_with_eigenstrain(
+        mesh,
+        material,
+        boundary,
+        config,
+        Some(ThermalExpansion::new(&load.field, fx(ALPHA_PER_K))),
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -588,13 +677,15 @@ fn worst_antisymmetry_gap(a: &[StressTensor], b: &[StressTensor]) -> f64 {
 
 /// The measurement helpers above, against hand-written tensors.
 ///
-/// ⚠️ Every other test in this file is `#[ignore]`d, so until the eigenstrain
-/// term lands nothing ever executes [`worst_stress_gap`] or
+/// ⚠️ Every other test in this file was `#[ignore]`d until the eigenstrain term
+/// landed, so nothing ever executed [`worst_stress_gap`] or
 /// [`worst_antisymmetry_gap`]. A helper that returned `0.0` unconditionally
-/// would let both controls pass on the day the term arrives while measuring
-/// nothing at all — the controls would be the false green they exist to
-/// prevent. A gate that cannot run yet is a gate whose own correctness has to be
-/// pinned separately, and this is that pin: the one test here that runs today.
+/// would have let both controls pass on the day the term arrived while
+/// measuring nothing at all — the controls would have been the false green they
+/// exist to prevent. A gate that cannot run yet is a gate whose own correctness
+/// has to be pinned separately, and this was that pin: the one test here that
+/// ran before the term existed. It is kept, because the same argument applies
+/// to any future revision that re-ignores a control.
 ///
 /// The two cases that matter are the inert ones: a field compared with itself
 /// must give a gap of `0` (which is what the controls read as "the term does not
@@ -605,10 +696,12 @@ fn worst_antisymmetry_gap(a: &[StressTensor], b: &[StressTensor]) -> f64 {
 /// Every expected number is arithmetic on the literals in the test, not a closed
 /// form of any physics.
 ///
-/// # Measured on `cb2fc36`
+/// # Measured on `cb2fc36`, while the other four tests were still ignored
 ///
 /// `cargo test --features std --test analytic_thermoelastic`, one mutation at a
-/// time with the file restored in between:
+/// time with the file restored in between. The `4 ignored` in the control row
+/// is what that state looked like; the mutations and their reds do not depend
+/// on it, because this test reads hand-written tensors and never solves:
 ///
 /// | mutation | result |
 /// |---|---|
@@ -719,10 +812,6 @@ fn the_discriminating_measurements_are_not_inert() {
 /// produces the right displacement while reporting `σ = C : ε` without the
 /// eigenstrain correction passes the first and fails the second.
 #[test]
-#[ignore = "src gap on cb2fc36: linear_elastic_fem::solve has no eigenstrain term and no \
-            parameter for a temperature field (grep eigenstrain|CoupledField|thermal|temperature \
-            over src/linear_elastic_fem.rs = 0 hits), so solve_with_temperature drops the field \
-            and the solve answers an unloaded problem"]
 fn free_thermal_expansion_is_affine_and_stress_free() {
     let load = ThermalLoad::uniform(DELTA_T_K);
     let strain = alpha_delta_t(load.delta_t_k);
@@ -788,16 +877,15 @@ fn free_thermal_expansion_is_affine_and_stress_free() {
 /// state at all — including the correct answer's negation and, since
 /// `von_mises` of a pure hydrostatic state is zero, including zero stress.
 #[test]
-#[ignore = "src gap on cb2fc36: linear_elastic_fem::solve has no eigenstrain term and no \
-            parameter for a temperature field (grep eigenstrain|CoupledField|thermal|temperature \
-            over src/linear_elastic_fem.rs = 0 hits), so solve_with_temperature drops the field \
-            and the solve answers an unloaded problem"]
 fn fully_constrained_heating_is_hydrostatic_compression() {
     let load = ThermalLoad::uniform(DELTA_T_K);
     let want = constrained_stress_checked(load.delta_t_k);
     assert!(
         (want - (-1750.0 / 3.0)).abs() < 1e-9,
-        "and both must equal the exact rational −1750/3 MPa, not {want}"
+        "and both must land within 1e-9 MPa of −1750/3; {want} is {} MPa away \
+         (−1750/3 has denominator 3, so it is not dyadic and no f64 holds it \
+         exactly; the measured distance is one f64 ulp, 1.14e-13)",
+        (want - (-1750.0 / 3.0)).abs()
     );
     assert!(
         want.abs() > 100.0 * SIGMA_TOL_MPA,
@@ -858,11 +946,10 @@ fn fully_constrained_heating_is_hydrostatic_compression() {
 ///   constant against a closed form that happens to match it — they would have
 ///   no discriminating power at all.
 ///
-/// The second assert is the one that is informative today: with no term in the
-/// residual both runs are the identically zero state, so the gap is `0`.
+/// The second assert is the one that was informative while the term was
+/// missing: with nothing in the residual both runs were the identically zero
+/// state, so the gap was `0`. It now reads the full `1750/3` MPa.
 #[test]
-#[ignore = "src gap on cb2fc36: with no eigenstrain term the ΔT = 50 K and ΔT = 0 K runs are \
-            the same unloaded problem, so the measured gap is 0 MPa instead of 1750/3"]
 fn an_absent_temperature_rise_must_not_look_like_heating() {
     let hot = ThermalLoad::uniform(DELTA_T_K);
     let cold = ThermalLoad::uniform(0.0);
@@ -937,15 +1024,16 @@ fn an_absent_temperature_rise_must_not_look_like_heating() {
 /// re-asserted here: oracle 2 owns it, and a common factor wrong in both runs
 /// shows up in the cooling comparison.
 #[test]
-#[ignore = "src gap on cb2fc36: with no eigenstrain term both the heating and the cooling run \
-            are the same unloaded problem, so the cooling stress is 0 MPa instead of 1750/3"]
 fn cooling_is_the_signed_mirror_of_heating() {
     let hot = ThermalLoad::uniform(DELTA_T_K);
     let cold = ThermalLoad::uniform(-DELTA_T_K);
     let want_cold = constrained_stress_checked(cold.delta_t_k);
     assert!(
         (want_cold - 1750.0 / 3.0).abs() < 1e-9,
-        "cooling must be tension of the exact rational +1750/3 MPa, not {want_cold}"
+        "cooling must be tension within 1e-9 MPa of +1750/3; {want_cold} is {} MPa \
+         away (+1750/3 has denominator 3, so it is not dyadic and no f64 holds it \
+         exactly; the measured distance is one f64 ulp, 1.14e-13)",
+        (want_cold - 1750.0 / 3.0).abs()
     );
     assert!(
         want_cold > 100.0 * SIGMA_TOL_MPA,
