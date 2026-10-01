@@ -175,6 +175,20 @@ pub enum FemError {
         /// Index into `SdfTetMesh::vertices` of the first node found outside.
         vertex: u32,
     },
+    /// A solution handed to [`reactions`] or [`corotational_reactions`] has a
+    /// different number of nodes than the mesh.
+    ///
+    /// Refused rather than indexed, because the two really are independent
+    /// arguments: nothing ties a [`FemSolution`] to the mesh it came from, and
+    /// reading a shorter displacement array would either panic or — if the
+    /// solution is the longer one — quietly report the reactions of a different
+    /// body.
+    SolutionDoesNotMatchMesh {
+        /// Nodes the solution carries.
+        nodes: usize,
+        /// Number of vertices in the mesh.
+        vertex_count: usize,
+    },
 }
 
 /// Isotropic linear elastic material.
@@ -1389,16 +1403,9 @@ pub fn solve_with_eigenstrain(
     if let Some(stresses) = &thermal_stress {
         // Accumulated in mesh order, like every other element loop here. The
         // prescribed entries this writes are discarded by the loop below —
-        // there they are the reaction, not a load.
-        for (element, &s) in elements.iter().zip(stresses.iter()) {
-            let force = element_force_from_stress(element, s);
-            for (f, &node) in force.iter().zip(element.nodes.iter()) {
-                let base = node * 3;
-                b[base] = b[base] + f[0];
-                b[base + 1] = b[base + 1] + f[1];
-                b[base + 2] = b[base + 2] + f[2];
-            }
-        }
+        // there they are the reaction, not a load, and [`reactions`] is what
+        // reports them.
+        add_eigenstrain_load(&elements, stresses, &mut b);
     }
     for (d, value) in b.iter_mut().enumerate() {
         if is_free[d] {
@@ -1458,6 +1465,166 @@ pub fn solve_with_eigenstrain(
         relative_residual: relative(cg.residual_norm, cg.b_norm),
         effective_relative_tolerance: relative(cg.target, cg.b_norm),
     })
+}
+
+/// `out ← out + Σₑ ∫ Bᵀ (C : ε_th) dV`, accumulated element by element in mesh
+/// order.
+///
+/// The thermal load of [`solve_with_eigenstrain`], factored out so that
+/// [`reactions`] subtracts the **same** vector the solve added rather than a
+/// second copy of the same formula. A mistake in the element integral then
+/// moves both, which is what lets the reaction act as an oracle for it.
+fn add_eigenstrain_load(elements: &[Element], stresses: &[StressTensor], out: &mut [Fix128]) {
+    for (element, &s) in elements.iter().zip(stresses.iter()) {
+        let force = element_force_from_stress(element, s);
+        for (f, &node) in force.iter().zip(element.nodes.iter()) {
+            let base = node * 3;
+            out[base] = out[base] + f[0];
+            out[base + 1] = out[base + 1] + f[1];
+            out[base + 2] = out[base + 2] + f[2];
+        }
+    }
+}
+
+/// Flatten a nodal displacement array into the `3·vertex_count` layout every
+/// element loop in this module reads.
+fn flatten(displacements: &[[Fix128; 3]]) -> Vec<Fix128> {
+    let mut u = vec![Fix128::ZERO; displacements.len() * 3];
+    for (v, d) in displacements.iter().enumerate() {
+        u[v * 3] = d[0];
+        u[v * 3 + 1] = d[1];
+        u[v * 3 + 2] = d[2];
+    }
+    u
+}
+
+/// The free/prescribed mask of a boundary condition set, over `ndof` rows.
+fn free_mask(boundary: &BoundaryConditions, ndof: usize) -> Vec<bool> {
+    let mut is_free = vec![true; ndof];
+    for &(vertex, axis, _) in &boundary.prescribed {
+        is_free[vertex as usize * 3 + axis.index()] = false;
+    }
+    is_free
+}
+
+/// Shared entry checks for the two reaction functions: a usable mesh, boundary
+/// data that names vertices the mesh has, and a solution of the right length.
+fn check_reaction_inputs(
+    mesh: &SdfTetMesh,
+    boundary: &BoundaryConditions,
+    nodes: usize,
+) -> Result<usize, FemError> {
+    let vertex_count = mesh.vertices.len();
+    if vertex_count == 0 || mesh.tets.is_empty() {
+        return Err(FemError::EmptyMesh);
+    }
+    for &(vertex, _, _) in boundary.prescribed.iter().chain(boundary.loads.iter()) {
+        if vertex as usize >= vertex_count {
+            return Err(FemError::VertexOutOfRange {
+                vertex,
+                vertex_count,
+            });
+        }
+    }
+    if nodes != vertex_count {
+        return Err(FemError::SolutionDoesNotMatchMesh {
+            nodes,
+            vertex_count,
+        });
+    }
+    Ok(vertex_count)
+}
+
+/// Support forces at the prescribed degrees of freedom of a [`solve`] or
+/// [`solve_with_eigenstrain`] answer (N), indexed like `SdfTetMesh::vertices`.
+///
+/// # What it is
+///
+/// ```text
+/// R_d = f_int(u)_d − f_ext_d     on a prescribed degree of freedom
+/// R_d = 0                        on a free one
+/// ```
+///
+/// with `f_int(u) = K u − ∫ Bᵀ(C : ε_th) dV` the assembled internal force — the
+/// force the body exerts on its supports, with the sign that makes
+/// `Σ R + Σ f_ext = 0` over the whole mesh. A free row carries no reaction by
+/// construction: that row *is* the equilibrium equation the solve satisfied, so
+/// the same expression there is the residual and is zero to solver tolerance.
+///
+/// # ⚠️ Why this is not a field of [`FemSolution`]
+///
+/// It is the only quantity in this module that a displacement-driven scene
+/// cannot reveal. With `f_ext = 0` the discrete problem is `K u = 0` on the free
+/// rows, so **scaling the whole internal force by a constant leaves `u`
+/// untouched** — the answer, the reported stress and every oracle written on
+/// them are all blind to it. The reaction is linear in that same constant, so it
+/// is where such an error shows up. Measured 2026-10-01 on the quadratic and
+/// cubic elements: dropping the `J` from `P = J σ F⁻ᵀ` left 7 of 7 oracles green,
+/// including one asserting a closed form for `σ_xx`.
+///
+/// # ⚠️ What it does not check
+///
+/// Nothing ties `solution` to the arguments beside it. This reports the support
+/// forces of *this* boundary and *this* material at *that* displacement field;
+/// if the field came from a different problem the answer is the reaction of a
+/// problem nobody solved. Only the node count is checked.
+///
+/// A load placed on a prescribed degree of freedom is subtracted here even
+/// though [`solve`] ignores it — the support carries it, which is precisely what
+/// "ignored by the solve" means.
+///
+/// # Errors
+///
+/// [`FemError::EmptyMesh`], [`FemError::VertexOutOfRange`],
+/// [`FemError::DegenerateElement`], [`FemError::SolutionDoesNotMatchMesh`], and
+/// [`FemError::TemperatureFieldDoesNotCoverMesh`] when `thermal` is `Some` and
+/// the field does not cover every node.
+// ALLOW-UNWIRED: post-processing read for downstream callers and for the oracles in
+// tests/analytic_reactions.rs; the crate's own solvers do not consume their own output
+pub fn reactions(
+    mesh: &SdfTetMesh,
+    material: &ElasticMaterial,
+    boundary: &BoundaryConditions,
+    thermal: Option<ThermalExpansion<'_>>,
+    solution: &FemSolution,
+) -> Result<Vec<[Fix128; 3]>, FemError> {
+    let vertex_count = check_reaction_inputs(mesh, boundary, solution.displacements.len())?;
+    let elements = build_elements(mesh)?;
+    let (lambda, mu) = material.lame();
+    let ndof = vertex_count * 3;
+
+    let thermal_stress = match &thermal {
+        None => None,
+        Some(t) => Some(thermal_stresses(mesh, &elements, t, lambda, mu)?),
+    };
+
+    let u = flatten(&solution.displacements);
+
+    // `f_int = K u − thermal load`, through the two functions
+    // `solve_with_eigenstrain` builds its own system with.
+    let mut force = vec![Fix128::ZERO; ndof];
+    apply_stiffness(&elements, &u, lambda, mu, &mut force);
+    if let Some(stresses) = &thermal_stress {
+        let mut load = vec![Fix128::ZERO; ndof];
+        add_eigenstrain_load(&elements, stresses, &mut load);
+        for (value, taken) in force.iter_mut().zip(load.iter()) {
+            *value = *value - *taken;
+        }
+    }
+
+    for &(vertex, axis, applied) in &boundary.loads {
+        let d = vertex as usize * 3 + axis.index();
+        force[d] = force[d] - applied;
+    }
+    let is_free = free_mask(boundary, ndof);
+    for (d, value) in force.iter_mut().enumerate() {
+        if is_free[d] {
+            *value = Fix128::ZERO;
+        }
+    }
+    Ok((0..vertex_count)
+        .map(|v| [force[v * 3], force[v * 3 + 1], force[v * 3 + 2]])
+        .collect())
 }
 
 /// `‖r‖ / ‖b‖`, defined as zero when the load vector is zero (the solution is
@@ -2063,13 +2230,35 @@ fn corotational_residual(
     material: Option<(HyperelasticModel, Fix128)>,
     out: &mut [Fix128],
 ) -> Result<(), FemError> {
+    out.copy_from_slice(f_ext);
+    subtract_internal_force(assembly, u, material, out)?;
+    for (d, value) in out.iter_mut().enumerate() {
+        if !assembly.is_free[d] {
+            *value = Fix128::ZERO;
+        }
+    }
+    Ok(())
+}
+
+/// `out ← out − Σₑ f_int,ₑ(u)` over **every** row, with no constraint masking.
+///
+/// The element loop of [`corotational_residual`], split out so that
+/// [`corotational_reactions`] reads the same assembly a Newton step does rather
+/// than a second copy of it. The residual masks the prescribed rows because
+/// there is no equation to satisfy on them; the reaction is exactly what is
+/// behind that mask, so it has to be read before the mask goes on.
+fn subtract_internal_force(
+    assembly: &Assembly<'_>,
+    u: &[Fix128],
+    material: Option<(HyperelasticModel, Fix128)>,
+    out: &mut [Fix128],
+) -> Result<(), FemError> {
     let &Assembly {
         elements,
         rotations,
         lame: (lambda, mu),
-        is_free,
+        ..
     } = assembly;
-    out.copy_from_slice(f_ext);
     for (tet, (element, rotation)) in elements.iter().zip(rotations.iter()).enumerate() {
         let gradient = deformation_gradient(element, &gather(element, u));
         let (force, frame) = match &material {
@@ -2096,11 +2285,6 @@ fn corotational_residual(
             out[base] = out[base] - global[0];
             out[base + 1] = out[base + 1] - global[1];
             out[base + 2] = out[base + 2] - global[2];
-        }
-    }
-    for (d, value) in out.iter_mut().enumerate() {
-        if !is_free[d] {
-            *value = Fix128::ZERO;
         }
     }
     Ok(())
@@ -2661,6 +2845,96 @@ pub fn solve_corotational(
         newton_iterations,
         increments: config.increments,
     })
+}
+
+/// Support forces at the prescribed degrees of freedom of a
+/// [`solve_corotational`] answer (N), indexed like `SdfTetMesh::vertices`.
+///
+/// The co-rotational and hyperelastic counterpart of [`reactions`]: same
+/// definition, `R_d = f_int(u)_d − f_ext_d` on a prescribed row and zero on a
+/// free one, with `f_int` the internal force of the law `config` selects —
+/// `Σₑ R Kₑ⁰ (Rᵀx − X)` without a material model and the total-Lagrangian
+/// `Σₑ V₀ P ∇₀N` with one. It runs through `subtract_internal_force` (private),
+/// which is the element loop a Newton step assembles its residual with.
+///
+/// # ⚠️ Why this is the only way to see `P`
+///
+/// The Cauchy stress [`CorotationalSolution`] reports is computed *before* the
+/// `P = J σ F⁻ᵀ` conversion, so no error in that conversion reaches it, and a
+/// displacement-driven solve cannot see one either: it checks equilibrium with
+/// the force it assembled, so a wrong `P` that is still a gradient converges to
+/// a different field and calls it equilibrium. The reaction is the assembled
+/// force itself, read where the solve throws it away. The `#[cfg(test)] mod
+/// tests` at the end of this file covers `P` at the element level for the same
+/// reason; this covers the integral of it.
+///
+/// # ⚠️ The frames are recomputed, not recovered
+///
+/// [`CorotationalSolution`] does not carry the element frames, so they are
+/// rebuilt from `solution` with [`Mat3Fix::polar_rotation`] at
+/// `config.polar_iterations`. The stopping rule of the last increment is that
+/// the frames computed from the answer are within `FRAME_SETTLED` (private) of
+/// the ones the answer was built on, so these agree with the solve's to that
+/// much and not bit for bit. With a material model set the frames are not read
+/// at all — a hyperelastic stress is objective, so the internal force carries no
+/// frame.
+///
+/// # Errors
+///
+/// As [`reactions`], plus [`FemError::RotationFailed`] when an element of
+/// `solution` has no polar factor.
+// ALLOW-UNWIRED: post-processing read for downstream callers and for the oracles in
+// tests/analytic_reactions.rs; the crate's own solvers do not consume their own output
+pub fn corotational_reactions(
+    mesh: &SdfTetMesh,
+    material: &ElasticMaterial,
+    boundary: &BoundaryConditions,
+    config: &CorotationalConfig,
+    solution: &CorotationalSolution,
+) -> Result<Vec<[Fix128; 3]>, FemError> {
+    let vertex_count = check_reaction_inputs(mesh, boundary, solution.field.displacements.len())?;
+    let elements = build_elements(mesh)?;
+    let (lambda, mu) = material.lame();
+    // The same bulk modulus `solve_corotational` pairs the model with.
+    let law = config
+        .material
+        .map(|model| (model, lambda + (mu + mu) / Fix128::from_int(3)));
+    let ndof = vertex_count * 3;
+
+    let u = flatten(&solution.field.displacements);
+    let is_free = free_mask(boundary, ndof);
+
+    let mut rotations = Vec::with_capacity(elements.len());
+    for (tet, element) in elements.iter().enumerate() {
+        let frame = deformation_gradient(element, &gather(element, &u))
+            .polar_rotation(POLAR_DET_FLOOR, config.polar_iterations)
+            .map_err(|cause| FemError::RotationFailed { tet, cause })?;
+        rotations.push(frame);
+    }
+
+    // `out = −f_int`, then `−(out + f_ext) = f_int − f_ext`.
+    let mut out = vec![Fix128::ZERO; ndof];
+    subtract_internal_force(
+        &Assembly {
+            elements: &elements,
+            rotations: &rotations,
+            lame: (lambda, mu),
+            is_free: &is_free,
+        },
+        &u,
+        law,
+        &mut out,
+    )?;
+    for &(vertex, axis, applied) in &boundary.loads {
+        let d = vertex as usize * 3 + axis.index();
+        out[d] = out[d] + applied;
+    }
+    for (d, value) in out.iter_mut().enumerate() {
+        *value = if is_free[d] { Fix128::ZERO } else { -*value };
+    }
+    Ok((0..vertex_count)
+        .map(|v| [out[v * 3], out[v * 3 + 1], out[v * 3 + 2]])
+        .collect())
 }
 
 // ============================================================================
