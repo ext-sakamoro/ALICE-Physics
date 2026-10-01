@@ -2418,3 +2418,343 @@ pub fn solve_corotational(
         increments: config.increments,
     })
 }
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+/// Oracles for the stress a hyperelastic element reports and for the first
+/// Piola-Kirchhoff stress it integrates.
+///
+/// # Why these live here and not in `tests/`
+///
+/// [`hyperelastic_stress`] is private and `P` is not on the public surface:
+/// [`CorotationalSolution`] carries displacements and the Cauchy stress, and `P`
+/// only ever appears inside a nodal force sum. So an integration test can see `P`
+/// *only* through where a solve lands, and a solve cannot see every error in `P`:
+/// it checks equilibrium with the same force it assembled, so a wrong `P` that is
+/// still a gradient of something converges to a different field and reports it as
+/// equilibrium. Measured 2026-10-01: dropping the `F⁻ᵀ` from `P = J σ F⁻ᵀ` left
+/// `tests/analytic_corotational.rs` at `12 passed / 1 ignored` and
+/// `cargo test --lib hyperelastic` at `21 passed` — no oracle in the crate moved,
+/// including `the_material_law_moves_the_answer_and_the_answer_is_equilibrium`,
+/// which still returned `Ok` on a field assembled from the wrong `P`.
+///
+/// `src/hyperelastic.rs` already carries the same pattern for the same reason —
+/// `cauchy_stress_vanishes_in_the_reference_state` covers the `−p_ref` term,
+/// which a solve cannot see either because it shifts every element's stress by
+/// one tensor and a uniform stress puts no force on an interior node.
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::hyperelastic::cauchy_stress;
+
+    /// A matrix from its **rows**, each entry a rational `(numerator,
+    /// denominator)`, which is how the derivations in this module are written.
+    ///
+    /// ⚠️ **Every denominator used below is a power of two.** `Fix128` carries 64
+    /// fractional bits, so such an entry is exact, and so is any product of two of
+    /// them that needs fewer than 64 fractional bits — the chains here need at
+    /// most 43. That is what makes the identities in this module assertable with
+    /// `assert_eq!`: no rounding happens at all, so none of them depends on how
+    /// `Fix128` rounds or on whether its rounding is symmetric about zero.
+    fn from_rows(r: [[(i64, i64); 3]; 3]) -> Mat3Fix {
+        let e = |i: usize, j: usize| {
+            let (n, d) = r[i][j];
+            Fix128::from_ratio(n, d)
+        };
+        Mat3Fix::from_cols(
+            Vec3Fix::new(e(0, 0), e(1, 0), e(2, 0)),
+            Vec3Fix::new(e(0, 1), e(1, 1), e(2, 1)),
+            Vec3Fix::new(e(0, 2), e(1, 2), e(2, 2)),
+        )
+    }
+
+    /// `Q`, a quarter turn about `z`.
+    ///
+    /// ⚠️ **Every entry is `0` or `±1`**, so `Q·M` and `M·Qᵀ` only move entries
+    /// between slots and negate some of them. A general angle would put `cos` and
+    /// `sin` into the identity and turn an exact statement into a tolerance; a
+    /// quarter turn keeps it exact while still being the strongest case, because
+    /// it moves the `x` and `y` axes onto each other completely.
+    fn quarter_turn_z() -> Mat3Fix {
+        from_rows([
+            [(0, 1), (-1, 1), (0, 1)],
+            [(1, 1), (0, 1), (0, 1)],
+            [(0, 1), (0, 1), (1, 1)],
+        ])
+    }
+
+    /// Deformation gradients the objectivity oracle sweeps, all dyadic.
+    ///
+    /// `det` is `1`, `2` or `1/2` by construction — also powers of two, because
+    /// [`crate::hyperelastic::cauchy_stress`] divides by `J` and
+    /// [`Mat3Fix::inverse`] by `det`, and only a power of two keeps those exact.
+    ///
+    /// The last three are products of a diagonal stretch with a unit-triangular
+    /// shear, so they are unimodular, full (no zero entry outside the first), and
+    /// not symmetric — a symmetric `F` would make `σ F⁻ᵀ` and `F⁻ᵀ σ` agree too
+    /// often for the sweep to separate them.
+    fn gradients() -> [(&'static str, Mat3Fix); 5] {
+        [
+            // det = 1. The case the closed form below is written out for.
+            (
+                "diag(2, 1/2, 1) with xy shear, det 1",
+                from_rows([
+                    [(2, 1), (1, 2), (0, 1)],
+                    [(0, 1), (1, 2), (0, 1)],
+                    [(0, 1), (0, 1), (1, 1)],
+                ]),
+            ),
+            // The same with the z row doubled: det = 2, so the bulk term is live.
+            (
+                "the same with z doubled, det 2",
+                from_rows([
+                    [(2, 1), (1, 2), (0, 1)],
+                    [(0, 1), (1, 2), (0, 1)],
+                    [(0, 1), (0, 1), (2, 1)],
+                ]),
+            ),
+            // det = 1/2, the other side of the reference volume.
+            (
+                "diag(1, 1/2, 1) with xy shear, det 1/2",
+                from_rows([
+                    [(1, 1), (1, 2), (0, 1)],
+                    [(0, 1), (1, 2), (0, 1)],
+                    [(0, 1), (0, 1), (1, 1)],
+                ]),
+            ),
+            // diag(2, 1/2, 1) · upper unit-triangular shear, det = 1.
+            (
+                "upper shear after stretch, det 1",
+                from_rows([
+                    [(2, 1), (1, 1), (1, 2)],
+                    [(0, 1), (1, 2), (1, 16)],
+                    [(0, 1), (0, 1), (1, 1)],
+                ]),
+            ),
+            // The product of that with a lower unit-triangular shear after a
+            // stretch: full, unimodular, far from symmetric.
+            (
+                "upper shear after stretch times lower shear after stretch, det 1",
+                from_rows([
+                    [(37, 8), (5, 8), (1, 2)],
+                    [(17, 64), (17, 64), (1, 16)],
+                    [(1, 4), (1, 4), (1, 1)],
+                ]),
+            ),
+        ]
+    }
+
+    /// Material laws the sweep uses, with **dyadic** constants for the reason
+    /// given on [`from_rows`].
+    ///
+    /// [`HyperelasticModel::tpu_soft`] is included as it ships (`μ = 3` exactly);
+    /// `silicone_soft` and `natural_rubber` are not, because their constants are
+    /// decimal approximations (`0.1`, `−0.017`, `0.00062`) and a product with one
+    /// of those rounds. The exactness being protected is a property of the
+    /// arithmetic and not of any law, so standing in dyadic constants for decimal
+    /// ones loses no coverage: `MooneyRivlin` below exercises the same `W₂ ≠ 0`
+    /// branch as `silicone_soft`, and `Yeoh` the same deformation-dependent `W₁`
+    /// as `natural_rubber`.
+    fn models() -> [(&'static str, HyperelasticModel); 4] {
+        [
+            (
+                "Neo-Hookean μ = 1000",
+                HyperelasticModel::NeoHookean {
+                    mu_mpa: Fix128::from_int(1000),
+                },
+            ),
+            (
+                "tpu_soft (Neo-Hookean μ = 3)",
+                HyperelasticModel::tpu_soft(),
+            ),
+            (
+                "Mooney-Rivlin C₁ = 1/2, C₂ = 1/4 (the W₂ ≠ 0 branch)",
+                HyperelasticModel::MooneyRivlin {
+                    c1_mpa: Fix128::from_ratio(1, 2),
+                    c2_mpa: Fix128::from_ratio(1, 4),
+                },
+            ),
+            (
+                "Yeoh C₁ = 1/2, C₂ = −1/16, C₃ = 1/64 (W₁ depends on I₁)",
+                HyperelasticModel::Yeoh {
+                    c1_mpa: Fix128::from_ratio(1, 2),
+                    c2_mpa: Fix128::from_ratio(-1, 16),
+                    c3_mpa: Fix128::from_ratio(1, 64),
+                },
+            ),
+        ]
+    }
+
+    /// **The oracle for the `F⁻ᵀ` in `P = J σ F⁻ᵀ`.**
+    ///
+    /// Objectivity, also called frame indifference: superposing a rigid rotation
+    /// `Q` on the deformed configuration — the reference mesh untouched — sends
+    /// `F → Q F`, and then
+    ///
+    /// ```text
+    /// σ(Q F) = Q σ(F) Qᵀ                    the law is objective
+    /// P(Q F) = J σ(QF) (QF)⁻ᵀ
+    ///        = J (Q σ Qᵀ) (Q F⁻ᵀ)          since (QF)⁻ᵀ = Q F⁻ᵀ
+    ///        = Q (J σ F⁻ᵀ) = Q P(F)         Qᵀ Q = I
+    /// ```
+    ///
+    /// `P` rotates with **one** `Q` where `σ` rotates with two, and that is the
+    /// whole content of the `F⁻ᵀ`: drop it and `P̃ = J σ`, which satisfies
+    /// `P̃(QF) = Q P̃(F) Qᵀ` instead. The two agree only when `σ (Qᵀ − I) = 0`, so
+    /// the relation separates them for any `σ` that is not invariant under `Q`.
+    /// The last assertion in this test is that separation, measured rather than
+    /// argued: it fails if the sweep ever reaches a case where the dropped form
+    /// would pass, which would make the oracle vacuous there.
+    ///
+    /// ⚠️ **Why this cannot be a test in `tests/`.** See the module comment: `P`
+    /// is observable from outside only through where a solve lands, and the
+    /// solve checks its own assembled force for equilibrium. Dropping the `F⁻ᵀ`
+    /// moved no oracle in the crate before this one.
+    #[test]
+    fn the_first_piola_kirchhoff_stress_is_objective_under_a_superposed_rotation() {
+        let q = quarter_turn_z();
+        let mut separations = 0_u32;
+        for (model_name, model) in models() {
+            for bulk in [Fix128::ZERO, Fix128::from_int(1), Fix128::from_int(2048)] {
+                for (gradient_name, f) in gradients() {
+                    let what =
+                        || format!("{model_name}, K = {}, F = {gradient_name}", bulk.to_f64());
+                    let rotated = q.mul_mat(f);
+                    let det = f.determinant();
+                    assert_eq!(
+                        det,
+                        rotated.determinant(),
+                        "det Q = 1, so det QF = det F: {}",
+                        what()
+                    );
+
+                    let sigma = cauchy_stress(&model, bulk, f).expect("det F > 0");
+                    let sigma_rotated = cauchy_stress(&model, bulk, rotated).expect("det QF > 0");
+                    assert_eq!(
+                        sigma_rotated,
+                        q.mul_mat(sigma).mul_mat(q.transpose()),
+                        "the Cauchy stress must be objective: {}",
+                        what()
+                    );
+
+                    let (_, piola) = hyperelastic_stress(&model, bulk, f).expect("det F > 0");
+                    let (_, piola_rotated) =
+                        hyperelastic_stress(&model, bulk, rotated).expect("det QF > 0");
+                    assert_eq!(
+                        piola_rotated,
+                        q.mul_mat(piola),
+                        "P must rotate with one Q, which is what the F⁻ᵀ carries: {}",
+                        what()
+                    );
+
+                    // Non-vacuity: the dropped-`F⁻ᵀ` form has to fail what was
+                    // just asserted. Counted rather than required case by case,
+                    // because `σ (Qᵀ − I) = 0` is possible in principle.
+                    if sigma_rotated.scale(det) != q.mul_mat(sigma.scale(det)) {
+                        separations += 1;
+                    }
+                }
+            }
+        }
+        assert_eq!(
+            separations, 60,
+            "every case in the sweep must separate P = J σ F⁻ᵀ from P = J σ; \
+             a case that does not is one where this oracle says nothing"
+        );
+    }
+
+    /// **The closed form of `P` on one gradient**, so that the relation above is
+    /// anchored to a value and not only to itself.
+    ///
+    /// `F = [[2, 1/2, 0], [0, 1/2, 0], [0, 0, 1]]`, `det F = 1`, Neo-Hookean with
+    /// `μ = 1000` MPa, so by hand:
+    ///
+    /// ```text
+    /// B      = F Fᵀ = [[17/4, 1/4, 0], [1/4, 1/4, 0], [0, 0, 1]]
+    /// W₁     = μ/2, W₂ = 0, p_ref = 2(W₁ + 2W₂) = μ,  J = 1
+    /// σ      = (2/J)·W₁·B + (K(J−1) − p_ref)·I = μ(B − I)
+    ///        = [[3250, 250, 0], [250, −750, 0], [0, 0, 0]]
+    /// F⁻ᵀ    = [[1/2, 0, 0], [−1/2, 2, 0], [0, 0, 1]]
+    /// P      = J σ F⁻ᵀ = [[1500, 500, 0], [500, −1500, 0], [0, 0, 0]]
+    /// ```
+    ///
+    /// One check on that last line that is independent of the code: `P Fᵀ` must
+    /// come back as `J σ`, symmetric, because that product *is* the Cauchy stress
+    /// and angular momentum balance is what makes it symmetric. Together with
+    /// `P ≠ J σ` that is what the `F⁻ᵀ` has to produce.
+    ///
+    /// ⚠️ **`P` happens to be symmetric on this `F`** — measured, and the reason
+    /// the asymmetry is asserted on a different gradient below instead. Writing
+    /// `P` asymmetric here looked right and is wrong: `F` is upper triangular with
+    /// a `z` row that does nothing, so `σ` and `F⁻ᵀ` commute on the `xy` block.
+    /// A reader who assumed otherwise would conclude the wrong thing about why
+    /// [`element_force_from_piola`] cannot go through
+    /// [`element_force_from_stress`].
+    ///
+    /// ⚠️ Nothing in the crate was called to produce the numbers above; `K` is
+    /// swept to show it does not enter at `J = 1`.
+    #[test]
+    fn the_first_piola_kirchhoff_stress_is_what_the_closed_form_says() {
+        let f = from_rows([
+            [(2, 1), (1, 2), (0, 1)],
+            [(0, 1), (1, 2), (0, 1)],
+            [(0, 1), (0, 1), (1, 1)],
+        ]);
+        let want_sigma = from_rows([
+            [(3250, 1), (250, 1), (0, 1)],
+            [(250, 1), (-750, 1), (0, 1)],
+            [(0, 1), (0, 1), (0, 1)],
+        ]);
+        let want_piola = from_rows([
+            [(1500, 1), (500, 1), (0, 1)],
+            [(500, 1), (-1500, 1), (0, 1)],
+            [(0, 1), (0, 1), (0, 1)],
+        ]);
+        let model = HyperelasticModel::NeoHookean {
+            mu_mpa: Fix128::from_int(1000),
+        };
+        assert_eq!(f.determinant(), Fix128::ONE, "the derivation assumes J = 1");
+
+        for bulk in [Fix128::ZERO, Fix128::from_int(1), Fix128::from_int(2048)] {
+            let (cauchy, piola) = hyperelastic_stress(&model, bulk, f).expect("det F = 1 > 0");
+            assert_eq!(
+                cauchy_stress(&model, bulk, f).expect("det F = 1 > 0"),
+                want_sigma,
+                "σ = μ(B − I) at J = 1, K = {}",
+                bulk.to_f64()
+            );
+            assert_eq!(cauchy.xx, Fix128::from_int(3250));
+            assert_eq!(cauchy.yy, Fix128::from_int(-750));
+            assert_eq!(cauchy.zz, Fix128::ZERO);
+            assert_eq!(cauchy.xy, Fix128::from_int(250));
+            assert_eq!(cauchy.yz, Fix128::ZERO);
+            assert_eq!(cauchy.zx, Fix128::ZERO);
+            assert_eq!(piola, want_piola, "P = J σ F⁻ᵀ at K = {}", bulk.to_f64());
+            assert_eq!(
+                piola.mul_mat(f.transpose()),
+                want_sigma,
+                "P Fᵀ = J σ, symmetric, at K = {}",
+                bulk.to_f64()
+            );
+            assert_ne!(
+                piola, want_sigma,
+                "P must differ from J σ on this F, or the F⁻ᵀ is unobservable here"
+            );
+        }
+
+        // `P` is a two-point tensor, which is why `element_force_from_piola`
+        // exists beside `element_force_from_stress`. The gradient above is too
+        // special to show it (see the comment on this test), so it is asserted on
+        // the full unimodular one from the sweep.
+        let (full_name, full) = gradients()[4];
+        let (_, full_piola) = hyperelastic_stress(&model, Fix128::ZERO, full).expect("det F > 0");
+        assert_ne!(
+            full_piola,
+            full_piola.transpose(),
+            "P must not be symmetric on {full_name}, or nothing in this crate needs \
+             a force integral for a non-symmetric stress"
+        );
+    }
+}
