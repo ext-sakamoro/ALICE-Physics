@@ -13,6 +13,81 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added — 辺-辺の自己接触と、2 段を 1 本にした Jacobi 平均 (`cloth`)
+
+頂点-面に加えて **辺-辺**の自己接触を実装しました 平行な辺が X 字に交差する配置は、頂点がどの面にも
+近づかないまま貫通するため、頂点-面だけでは原理的に見えません
+
+最近接対は `closest_points_on_segments` (Ericson §5.1.9) で求め、⚠️ **`None` は「`Fix128` で孤立した
+最近接対を持たない」の 1 意**に統一しています (平行な辺対・零長辺はここで落ちます)
+
+⚠️ **両段は 1 本の `Δ` / `hits` buffer に積みます** 段ごとに平均すると、頂点-面 5 件 + 辺-辺 1 件を受けた
+頂点が `(Σvf)/5 + (Σee)/1` になり**辺-辺が 5 倍過大評価**されます 実測では crumple の最小頂点-面距離² が
+**ON 1.79e-5 / OFF 6.08e-5** = **自己接触を入れた方が悪い**状態になりました ⚠️ **目標 oracle (貫通 0) は
+green のまま**だったので、そこだけ見ていると通ります 統合後は **2.134e-3 / 違反 2 件** で、辺-辺を足す前
+(8.64e-4 / 3 件) より改善しています
+
+破壊試験 6 件のうち `SPLIT-average-per-stage` (段ごと平均に戻す) は **lib では green、統合 oracle のみ red**
+になります ⇒ この誤りは unit test 層では捕まりません
+
+残る制約を doc に逐語で書きました: **掃過 CCD は辺-辺に無い** / **平行な辺対は `None` で捨てる**
+
+### Added — `P = J σ F⁻ᵀ` の客観性 oracle (`linear_elastic_fem`)
+
+第 1 Piola-Kirchhoff 応力が重ね合わせ回転に対して `P → QP` となることを、`#[cfg(test)]` の unit test で
+4 model × 3 体積率 × 5 変形勾配 = **60 case を exact `assert_eq!`** で固定しました (公開 API は不変)
+
+⚠️ **`F⁻ᵀ` を落とす変異は、この oracle を置くまで crate 内のどの test も red にしませんでした**
+affine な scene は一様応力なのであらゆる均質構成則で厳密平衡になり、非均質 scene では
+**solver 自身の平衡 check が同じ壊れた力を使う**ため別の状態に収束して「平衡」と答えます
+⇒ **「solver が `Ok` を返した」を oracle にする形の限界**で、対称性を別に測る必要があります
+
+⚠️ **exact にするには `Q` が 90° だけでは足りません** `cauchy_stress` の `2/J` と `Mat3Fix::inverse` の
+`ONE/det` で丸めが入るため、変形勾配と材料定数を 2 進有理にし、**`det F` を 2 の冪 (1 / 2 / 1/2) に限る**
+必要があります preset の `silicone_soft` / `natural_rubber` は 10 進近似なので、dyadic な Mooney-Rivlin /
+Yeoh で同じ分岐を覆っています
+
+solve level の等変性 oracle も追加しましたが、⚠️ **その `1e-6 mm` の bound は既知のどの変異でも
+firing していません** (red は 2 つの `expect` から出ます) 先行 assert から導かれないので**死んだ assert では
+なく未検証**である旨を doc に逐語で書きました
+
+### Added — 頂点-面の自己接触 (`cloth`)
+
+substep 内の近接斥力と frame 単位の掃過線分 (CCD) 復元の 2 段 (どちらも Jacobi 蓄積、対の列挙順に依らず
+bit 一致) を実装し、旧 particle-particle の Gauss-Seidel 投影を置き換えました
+
+`Cloth::remaining_self_contact_crossings` を追加しています ⚠️ **同関数は辺-辺の交差を見ません**ので、
+「自己接触が無いことの確認」に使うと辺-辺の貫通を見落とします
+
+⚠️ `closest_point_on_triangle` の退化処理を入口 1 回に統一しました 旧実装は除算直前の guard 4 箇所が
+`Some((a, [1,0,0]))` = **最近接でない点をもっともらしく返して**おり、型も距離も有限で NaN も出ないため
+どの assert にも掛かりませんでした ⚠️ **`None` の経路は書かれていたのに到達不能**でした
+
+### Added — 共回転 FEM に超弾性構成則を配線 (`linear_elastic_fem` / `hyperelastic`)
+
+`CorotationalConfig::with_hyperelastic` で構成則を選べるようにし、要素力を総 Lagrange
+`∫ P ∇₀N dV₀` (`P = J σ F⁻ᵀ`) で組みます 残差が非線形になるので、線形則の厳密 1 step を
+`f_lin(u) − f_mat(u)` で補正する修正 Newton を採りました (不動点は材料則の平衡そのもので、
+線形作用素は step 数だけを決めます)
+
+⚠️ **材料則を設定しない経路は補正項が恒等的に 0** なので、既存 10 oracle は bit 不変で green です
+
+`hyperelastic::cauchy_stress(model, bulk_modulus_mpa, f)` を追加しました 非圧縮の `W` に
+`−p_ref(J−1) + K/2(J−1)²` を足して基準状態を無応力にしています ⚠️ **`J^(−2/3)` 正規化はしない**
+(`Fix128` に cbrt が無い) ので、偏差が非圧縮のそれと一致するのは **`J = 1` に限ります**
+
+### Changed — Gartling の gap の帰属を直交 sweep の実測に置き換え (`armaly_backward_step`)
+
+`#[ignore]` の理由文と doc が「the gap is dominated by resolution」と書いていましたが、⚠️ **誤りでした**
+`ny = 8` 固定で移流スキームだけを変えると `x_1` は **SemiLagrangian 4.3921 / MacCormack 7.2459 /
+BFECC 7.2736** と動き、**文献値 6.10 を跨いで反対側に出ます**
+
+旧記述が出た理由は、**SL の数値粘性が `O(dx²)` で解像度に連動する**ため、スキームを固定した `ny` sweep では
+**2 原因が 1 軸に縮退して**いたことです (実測 `nu_num ≈ 2.3e-2` vs `nu = 1.25e-3`、約 19 倍)
+
+直交 sweep {scheme, ny, t, sweep 数, L} の結果と、**`ny = 32` が 1 点 2.4〜9.5 時間で未測定**であることを
+doc に書きました ⚠️ **精度は未達のままなので `#[ignore]` は `src gap:` のままです** (数値・assert・CI 時間は不変)
+
 ### Changed — slab halo 交換を内部 trait 経由にし、プロセス内実装を分離
 
 圧力解法の halo 交換を `RankTransport` (crate 内 trait) 経由にし、ランクが同一アドレス空間に
@@ -617,9 +692,13 @@ rank-n 更新 `-U D⁻¹ Uᵀ` を測る oracle が「weld の腕と hinge の�
 全境界に課す 1 つの scene に、**双子の oracle** を置きました
 
 - `the_neo_hookean_deviator_is_not_what_the_element_returns` — 目標 (`#[ignore]`、反転条件を doc に逐語)
+  ⚠️ **本 entry 時点の名前です** 構成則が配線された時点で `#[ignore]` が外れ、
+  `the_neo_hookean_deviator_is_what_the_element_returns_under_that_law` に改名されています (上の Unreleased 参照)
   非圧縮 Neo-Hookean の偏差応力 `dev σ̃ = μ diag(665/216, −665/432, −665/432)` を有理数から導出
   全境界 prescribe では圧力が不定なので偏差のみ比較します (trace は比較しません)
 - `the_corotational_linear_law_is_what_the_element_returns_today` — 現状 pin (常時 green)
+  ⚠️ **本 entry 時点の名前です** 構成則の配線後も **green のまま残り** (破壊試験が突き崩す唯一の oracle のため)、
+  `the_corotational_linear_law_is_what_the_element_returns_without_a_material` に改名されています
   同 scene の共回転線形則を `< 1e-2 MPa` で固定 実測誤差 3.5e-6 MPa (最大成分 3527 MPa)
   両者の差は dev₁ で 1254.29 MPa (線形値の 46%)
 - `characterises_which_stretches_the_corotational_solve_reaches` — 現状 pin (正しさの主張ではありません)

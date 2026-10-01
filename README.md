@@ -197,7 +197,7 @@ transcendentals are shared rather than reimplemented per crate.
 | **Trigger/Sensor** | Sensor bodies that detect overlap without physics response |
 | **Character Controller** | Kinematic capsule-based move-and-slide with stair stepping and SDF terrain |
 | **Rope** | XPBD distance chain rope and cable simulation |
-| **Cloth** | XPBD triangle mesh cloth with self-collision (spatial hash grid) |
+| **Cloth** | XPBD triangle mesh cloth with vertex-face and edge-edge self-collision (Jacobi accumulation, order independent; swept-segment CCD restore on the vertex-face pass only) |
 | **Fluid** | Position-Based Fluids (PBF) with spatial hash grid |
 | **Deformable** | FEM-XPBD deformable body (tetrahedral mesh) |
 | **Vehicle** | Wheel, suspension, engine, steering, gear shifting |
@@ -1485,7 +1485,7 @@ let broken = solve_joints_breakable(&joints, &mut bodies, dt);
 **Features:**
 - Distance constraints (stretch resistance)
 - Bending constraints
-- Self-collision via spatial hash grid
+- Self-collision: vertex-face and edge-edge, accumulated in one Jacobi pass (independent of pair enumeration order); swept-segment CCD restore on the vertex-face pass only
 
 ### `fluid` - Position-Based Fluids
 
