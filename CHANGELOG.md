@@ -13,6 +13,34 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added — 弾塑性を 1 増分ずつ進める入口と、温度が降伏面を動かす経路 (`linear_elastic_fem`)
+
+強連成 (monolithic) に必要な 2 つを入れた 片方は**呼び出し側が増分の境目に立てること**、もう片方は**温度が弾性試行歪みと降伏面の両方に入ること**
+
+**増分 API** `solve_elastoplastic` の載荷 path ループの中身を公開型に切り出した `solve_elastoplastic` 自身の挙動と出力は 1 bit も変えていない (同関数が新 API で書き直されている)
+
+- `ElastoplasticProblem` — 要素 / 剛性 / 前処理 / 節点座標 / 要素重心を 1 度だけ組む
+- `ElastoplasticState` — 確定した内部変数 (`equivalent_plastic_strain` / `dissipation` / `displacements` / `newton_iterations`)
+- `ElastoplasticIncrement` — 1 増分の答え `commit` を呼ぶまで state に入らない
+- `ElastoplasticIncrementRequest` — 1 増分の入力 ⚠️ **`step` に引数を足すのは `#[non_exhaustive]` でも破壊的変更**なので (`#[non_exhaustive]` が止めるのは literal 構築だけで、`try_new` / fn の arity は公開契約として残る) 入力は struct 側に `with_*` で足す形にした
+
+⚠️ **`commit` が別呼びであることが段 3 の前提** 副反復のなかで内部変数を確定させると Simo-Miehe の等温分解が崩れる (固定点写像は増分ごとに `(ε_p^n, ε̄_p^n, T^n)` を固定した上で定義される)
+
+**熱軟化と熱歪み** `ElastoplasticIncrementRequest::with_thermal` が温度場と軟化則を受ける
+
+- `ThermalSoftening` — `σ_y(T) = σ_y₀·max(0, 1 − w_y ΔT)` / `H(T) = H₀·max(0, 1 − w_h ΔT)` `try_new` は負の係数と 1 K で parameter を消し去る大きさを拒否する `none()` は恒等
+- 熱歪み `ε_th = α ΔT I` は **return mapping の前に弾性試行歪みから引く** 節点荷重として後から足すのではない 線形弾性では同じだがここでは別物で、降伏関数が熱補正後の応力を見ないと**高温要素が低温の基準で降伏する**
+- 温度は**要素重心ごとに** `CoupledField` を sample する 覆っていない場合は `Err`
+
+⚠️ **高温側の応力が低くなるわけではない** 軟化で先に降伏して `ε̄_p` を多く積むので、硬化があると現半径 `σ_y(T) + H(T) ε̄_p` は低温要素を**上回りうる** 実測 (`examples/thermal_softening_bar.rs`、`w_y = 1/8`/K): ΔT = 1.5 の要素が 2.8458 MPa、ΔT = 2.5 の要素が 3.0454 MPa ⇒ **単調なのは法則が渡す降伏半径で、物体が落ち着く応力ではない** oracle も大域的な順序は主張せず、**重心位置ごとに 1 つの応力**という sampler 自身の言明を assert している
+
+oracle は `tests/elastoplastic_increment_api.rs` 7 本 + `tests/analytic_thermoplastic_softening.rs` 9 本 期待値はすべて 1 次元 bilinear 曲線と `α ΔT` / `σ_y(T)` の閉形式から書いており、solver を走らせて得た値は 1 つも pin していない
+
+破壊試験 **12 変異すべて red** (生存 0) 内訳は**実装変異 8 件** (熱歪みの符号 / せん断成分への誤適用 / 無視 / 軟化を別 parameter に / clamp 除去 / 符号反転 / 温度無視 / 負係数の受理) + **配線変異 4 件** (覆い判定の除去 / 軟化則の取り落とし / 温度入力の無視 / 重心を 1 つ使い回す) ⚠️ **重心の使い回しを倒すのは非一様場の oracle 1 本だけ** 他 8 本は一様場なので構造的に見えない
+
+公開 API は snapshot **+42 / −21** 削除 21 行はすべて `ElastoplasticIncrementRequest` が lifetime を得たことによる同型の置き換えと `step` の signature で、**同型は v1.4.0 に存在しない** (未 release) ので release 済の面からの削除はない 同時に `PartialEq` / `Eq` を落とした — 温度格子を借用する型なので、**別の格子を指す 2 つの request が同じ数値を持つことは呼び出し側が求める同一性ではない** (答えの側の `ElastoplasticIncrement` は比較可能で、oracle が必要とするのはそちら)
+
+
 ### Added — 2 つの `diffuse` が別の量を保存することを doc に書き、oracle で固定した (test / doc のみ、公開 API の差分なし)
 
 `CoupledField::diffuse` は反射 ghost を **mirror** (`T₋₁ = T₁`) で置くので双対体積重み和 `Σ 2⁻ᵇ T` (`b` = その node が端になっている軸の数、境界で 1/2・辺で 1/4・角で 1/8) を厳密に保存し、`ScalarField3D::diffuse` は **copy** (`T₋₁ = T₀`) なので一律和 `Σ T` を保存する 精度の違い (2 次 / 1 次、閉形式モードの有無) は従来から module doc に書かれていたが、⚠️ **保存量が別物であることは書かれていなかった** `linear_elastic_fem::deposit_plastic_heat` がこの食い違いを踏んで一律和で恒等式を立てていたので、同じ誤りが再発しないよう量の違いを表にし、telescoping の導出と「保存は安定性と独立 (不安定な `dt` でも保存する)」を併記した 橋渡し (`copy_from_f32` / `write_to_f32`) は**両者とも node を `min + i·(max−min)/(n−1)` に置くので位置が一致し点ごと転送は厳密**、ただし**往復で保存される量が入れ替わる**ことを明記した

@@ -3783,35 +3783,178 @@ pub fn solve_elastoplastic(
 // Per-increment entry point
 // ============================================================================
 
-/// One load increment's request.
+/// How a material's yield surface shrinks as it heats.
 ///
-/// A struct rather than a bare argument so that an input added later — the
-/// temperature field a thermally softening material reads, for instance — is a
-/// new `with_*` method and not a change to [`ElastoplasticProblem::step`]'s
-/// arity. Adding a parameter to a public function is a breaking change even
-/// when the struct it configures is `#[non_exhaustive]`, because
-/// `#[non_exhaustive]` only stops literal construction.
+/// `σ_y(T) = σ_y₀ · max(0, 1 − w_y · ΔT)` and `H(T) = H₀ · max(0, 1 − w_h · ΔT)`,
+/// with `ΔT` the rise above the stress-free reference the temperature field
+/// already carries. The clamp at zero is what keeps a hot element from being
+/// handed a negative yield radius, which the return mapping has no meaning
+/// for.
+///
+/// # Why this and not thermal expansion
+///
+/// Thermal expansion enters the plastic problem as the purely volumetric
+/// eigenstrain `ε_th = α ΔT I`, and J2 yielding reads only the deviator, so
+/// expansion alone cannot move the yield surface: it changes the pressure and
+/// — through equilibrium in a constrained body — the total strain, but never
+/// the yield criterion directly. Softening does, which is why a thermoplastic
+/// coupling that leaves it out stays weak however hot the body gets. Measured
+/// on a steel bar: `α ΔT` of `2.7e-6` against `ε̄_p` of `3.7e-3`, a ratio of
+/// `7.4e-4`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
-pub struct ElastoplasticIncrementRequest {
-    factor: Fix128,
+pub struct ThermalSoftening {
+    yield_per_k: Fix128,
+    hardening_per_k: Fix128,
 }
 
-impl ElastoplasticIncrementRequest {
+impl ThermalSoftening {
+    /// Softening fractions per kelvin, as `w_y` and `w_h` above.
+    ///
+    /// Zero for both is the no-softening law, and gives the same answer as
+    /// passing no law at all — `None` and `Some(ThermalSoftening::none())` are
+    /// the same solve, which `thermal_softening_off_matches_no_law_at_all`
+    /// pins.
+    ///
+    /// # Errors
+    ///
+    /// [`FemError::InvalidConfig`] for a negative fraction (a material that
+    /// *hardens* with temperature is a different law, not a negative softening)
+    /// or one above `2³⁰` per kelvin, the cap the other plastic parameters use.
+    pub fn try_new(yield_per_k: Fix128, hardening_per_k: Fix128) -> Result<Self, FemError> {
+        let cap = Fix128::from_int(PLASTIC_PARAMETER_MAX);
+        if yield_per_k.is_negative() || hardening_per_k.is_negative() {
+            return Err(FemError::InvalidConfig(
+                "thermal softening fractions must not be negative",
+            ));
+        }
+        if yield_per_k > cap || hardening_per_k > cap {
+            return Err(FemError::InvalidConfig(
+                "thermal softening fractions must be at most 2^30 per kelvin",
+            ));
+        }
+        Ok(Self {
+            yield_per_k,
+            hardening_per_k,
+        })
+    }
+
+    /// The law that softens nothing.
+    #[must_use]
+    pub const fn none() -> Self {
+        Self {
+            yield_per_k: Fix128::ZERO,
+            hardening_per_k: Fix128::ZERO,
+        }
+    }
+
+    /// Fraction of the yield stress lost per kelvin.
+    #[must_use]
+    pub const fn yield_per_k(&self) -> Fix128 {
+        self.yield_per_k
+    }
+
+    /// Fraction of the hardening modulus lost per kelvin.
+    #[must_use]
+    pub const fn hardening_per_k(&self) -> Fix128 {
+        self.hardening_per_k
+    }
+
+    /// `σ_y(T)` and `H(T)` at a temperature rise of `delta_t`.
+    fn at(&self, delta_t: Fix128, yield_stress: Fix128, hardening: Fix128) -> (Fix128, Fix128) {
+        let shrink = |fraction: Fix128, value: Fix128| -> Fix128 {
+            let scale = Fix128::ONE - fraction * delta_t;
+            if scale.is_negative() {
+                Fix128::ZERO
+            } else {
+                value * scale
+            }
+        };
+        (
+            shrink(self.yield_per_k, yield_stress),
+            shrink(self.hardening_per_k, hardening),
+        )
+    }
+}
+
+/// One load increment's request.
+///
+/// A struct rather than a bare argument so that an input added later is a new
+/// `with_*` method and not a change to [`ElastoplasticProblem::step`]'s arity.
+/// Adding a parameter to a public function is a breaking change even when the
+/// struct it configures is `#[non_exhaustive]`, because `#[non_exhaustive]`
+/// only stops literal construction.
+/// Not `PartialEq`: the request borrows a temperature grid, and two requests
+/// that point at different grids holding the same numbers are not the same
+/// request in any sense a caller would want. `ElastoplasticIncrement` — the
+/// answer — is comparable, which is what the oracles need.
+#[derive(Debug, Clone, Copy)]
+#[non_exhaustive]
+pub struct ElastoplasticIncrementRequest<'a> {
+    factor: Fix128,
+    thermal: Option<ThermalExpansion<'a>>,
+    softening: Option<ThermalSoftening>,
+}
+
+impl<'a> ElastoplasticIncrementRequest<'a> {
     /// Scale the prescribed displacements and external loads by `factor`.
     ///
     /// The factor is absolute, not incremental: a path of `1/8, 2/8, …, 1` is
     /// eight equal increments reaching the full load, exactly the slice
     /// [`solve_elastoplastic`] takes.
+    ///
+    /// No temperature: the increment is isothermal, which is the behaviour
+    /// [`solve_elastoplastic`] has always had.
     #[must_use]
     pub const fn new(factor: Fix128) -> Self {
-        Self { factor }
+        Self {
+            factor,
+            thermal: None,
+            softening: None,
+        }
+    }
+
+    /// Let the increment read a temperature field.
+    ///
+    /// `thermal` supplies the eigenstrain `ε_th = α ΔT I`, which is removed
+    /// from the elastic trial strain before the return mapping — not added as a
+    /// nodal load afterwards. The two are the same for a linear elastic solve
+    /// and are **not** the same here: the yield function has to see the
+    /// thermally corrected stress, or a hot element yields at the cold
+    /// criterion.
+    ///
+    /// `softening` is the optional `σ_y(T)` / `H(T)` law. ⚠️ `None` means **no
+    /// softening**, not "a default law": a caller who wants temperature to
+    /// weaken the material has to say so, and
+    /// `thermal_softening_off_matches_no_law_at_all` pins that `None` and
+    /// [`ThermalSoftening::none`] agree to the bit.
+    #[must_use]
+    pub const fn with_thermal(
+        mut self,
+        thermal: ThermalExpansion<'a>,
+        softening: Option<ThermalSoftening>,
+    ) -> Self {
+        self.thermal = Some(thermal);
+        self.softening = softening;
+        self
     }
 
     /// The load factor this increment applies.
     #[must_use]
     pub const fn factor(&self) -> Fix128 {
         self.factor
+    }
+
+    /// The temperature field this increment reads, if any.
+    #[must_use]
+    pub const fn thermal(&self) -> Option<ThermalExpansion<'a>> {
+        self.thermal
+    }
+
+    /// The softening law this increment applies, if any.
+    #[must_use]
+    pub const fn softening(&self) -> Option<ThermalSoftening> {
+        self.softening
     }
 }
 
@@ -3844,6 +3987,10 @@ pub struct ElastoplasticProblem {
     f_ext: Vec<Fix128>,
     precond: Vec<Fix128>,
     config: ElastoplasticConfig,
+    /// Mesh vertices in `Fix128`, for the temperature-coverage check.
+    node_positions: Vec<Vec3Fix>,
+    /// Element centroids, where a temperature field is sampled.
+    centroids: Vec<Vec3Fix>,
 }
 
 /// Where an elastoplastic solve has got to: the committed plastic state of
@@ -3996,6 +4143,28 @@ impl ElastoplasticProblem {
         let diag = stiffness_diagonal(&elements, lambda, mu, ndof);
         let precond = build_preconditioner(&diag, &is_free, &config.linear)?;
 
+        let node_positions: Vec<Vec3Fix> = mesh
+            .vertices
+            .iter()
+            .map(|q| {
+                Vec3Fix::new(
+                    Fix128::from_f32(q[0]),
+                    Fix128::from_f32(q[1]),
+                    Fix128::from_f32(q[2]),
+                )
+            })
+            .collect();
+        let centroids: Vec<Vec3Fix> = elements
+            .iter()
+            .map(|element| {
+                let mut sum = Vec3Fix::ZERO;
+                for &node in &element.nodes {
+                    sum = sum + node_positions[node];
+                }
+                sum * quarter()
+            })
+            .collect();
+
         Ok(Self {
             elements,
             lambda,
@@ -4007,6 +4176,8 @@ impl ElastoplasticProblem {
             f_ext,
             precond,
             config: *config,
+            node_positions,
+            centroids,
         })
     }
 
@@ -4044,6 +4215,38 @@ impl ElastoplasticProblem {
         let hardening = config.hardening_modulus_mpa;
         let ndof = self.ndof;
 
+        // Per element, once: the temperature rise at its centroid, the
+        // eigenstrain that rise imposes, and the yield parameters it leaves.
+        // Sampling at the centroid is exact for the uniform field the oracles
+        // use and first order otherwise — the order of the P1 constant-strain
+        // element it feeds, so it adds no error of its own kind, which is the
+        // same argument `thermal_stresses` makes for the elastic path.
+        let thermal: Option<Vec<(Fix128, Fix128, Fix128)>> = match request.thermal {
+            None => None,
+            Some(field) => {
+                for element in &self.elements {
+                    for &node in &element.nodes {
+                        if !field.field.contains(self.node_positions[node]) {
+                            return Err(FemError::TemperatureFieldDoesNotCoverMesh {
+                                vertex: u32::try_from(node).unwrap_or(u32::MAX),
+                            });
+                        }
+                    }
+                }
+                let law = request.softening.unwrap_or_else(ThermalSoftening::none);
+                Some(
+                    self.centroids
+                        .iter()
+                        .map(|&centroid| {
+                            let delta_t = field.field.sample(centroid);
+                            let (y, h) = law.at(delta_t, sigma_y, hardening);
+                            (field.alpha_per_k * delta_t, y, h)
+                        })
+                        .collect(),
+                )
+            }
+        };
+
         let mut u = state.u.clone();
         let mut load = vec![Fix128::ZERO; ndof];
         let mut residual = vec![Fix128::ZERO; ndof];
@@ -4068,9 +4271,24 @@ impl ElastoplasticProblem {
             // state committed at the end of the previous increment.
             maps.clear();
             residual.copy_from_slice(&load);
-            for (element, committed) in self.elements.iter().zip(state.committed.iter()) {
-                let strain = element_strain(element, &gather(element, &u));
-                let map = return_map(strain, committed, lambda, mu, sigma_y, hardening);
+            for (e, (element, committed)) in
+                self.elements.iter().zip(state.committed.iter()).enumerate()
+            {
+                let mut strain = element_strain(element, &gather(element, &u));
+                let (yield_here, hardening_here) = match &thermal {
+                    None => (sigma_y, hardening),
+                    Some(per_element) => {
+                        let (eigen, y, h) = per_element[e];
+                        // `ε_th = α ΔT I`: the three normal components only, so
+                        // the deviator — and therefore the yield criterion —
+                        // moves only through what equilibrium does with it.
+                        for normal in strain.iter_mut().take(3) {
+                            *normal = *normal - eigen;
+                        }
+                        (y, h)
+                    }
+                };
+                let map = return_map(strain, committed, lambda, mu, yield_here, hardening_here);
                 let force = element_force_from_stress(element, map.stress);
                 for (f, &node) in force.iter().zip(element.nodes.iter()) {
                     let base = node * 3;
