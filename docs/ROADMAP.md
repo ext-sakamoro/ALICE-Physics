@@ -29,7 +29,7 @@ Memory index pointer: `[[reference-alice-physics-v1-roadmap]]` in claude-config.
 ### 第 9 increment (2026-10-01、配線ガード)
 
 `scripts/wiring_guard.py` を追加した (CI の `fmt` job + preflight、oracle 23 本、検査器の変異 11 件が red) 実装したのに production から呼ばれない pub item と、理由の無い `allow(dead_code)` の新規追加を止める
-⚠️ 既存の未配線 588 件と dead_code 17 file は baseline に記録しただけで、**解消はしていない** (P2G の `p2g_normalized` も baseline に載っている) 推移的な未配線は検出しない
+⚠️ 既存の未配線 588 件と dead_code 17 file は baseline に記録しただけで、**解消はしていない** (P2G の `p2g_normalized` も baseline に載っている) その後、推移的な未配線の検出と名前衝突の緩和と Cargo workspace 対応を足した (oracle 79 本、変異 25 件が red、baseline は 1059 件に増加)
 
 ### 第 8 increment (2026-10-01、P2G の重み正規化)
 

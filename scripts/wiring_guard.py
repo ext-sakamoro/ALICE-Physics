@@ -5,22 +5,38 @@
     `// ALLOW-DEAD: <12 字以上の理由>` を直前に置くか baseline に載せる
 検査 B (unwired): `src/` の `pub` / `pub(crate)` な fn / struct / enum / const / static /
     trait / type / union で、test と自身の宣言と `use` 行を除いた production code
-    (src / examples / benches / fuzz / bindings 等) に 1 度も現れないものは未配線.
+    (src / examples / benches / fuzz / bindings 等) から「生きている文脈」で参照されないものは未配線.
     `// ALLOW-UNWIRED: <12 字以上の理由>` を直前に置くか baseline に載せる
+    生きている文脈とは、根 (src 外のコード / src/bin / module 直下 / trait impl と trait 本体の member /
+    `ALLOW-UNWIRED` 付き / no_mangle 等の exempt 属性付き / `fn main` / macro_rules) か、
+    根から到達できる item の本体 (宣言から波括弧の対応までの範囲) のこと
+    不動点反復で求めるので、未配線の item の本体からしか参照されない item (private helper を含む) も未配線になる
+    (報告するのは従来どおり `pub` / `pub(crate)` のみ)
+    参照と数えるのは束縛位置以外の出現: `let` / `for` / closure / fn 引数の束縛、`name:` (フィールド・引数)、
+    `.name` (フィールド参照)、構造体の field shorthand、同じ fn 内で束縛された local 名の後続の使用は数えない
+    free fn は `.name(` のメソッド呼び出しでは配線済にならず、メソッドは `.name(` か `::name` でだけ配線済になる
 検査 C: 検査対象が 0 件なら fail (検査器が空振りして green になるのを防ぐ)
+検査 D: src の波括弧が閉じていない file は unbalanced_braces で fail (本体の範囲を切れない)
+
+Cargo workspace: root の `Cargo.toml` の `[workspace] members` (glob 可、`exclude` 対応) を展開し、
+各 member の `src/` (と root 自身の `src/`) を定義の走査対象にする 参照 corpus は repo 全体なので
+member 間の呼び出しは配線済になる violation の key は repo root からの相対パス
 
 baseline (`scripts/wiring-baseline.txt`) は既存の違反を記録するラチェットで、
 新規の違反だけが fail する 解消された entry が残っていても fail (stale_baseline).
 
-限界 (fail-open 側): 名前の字面一致で数えるので、他の item / field / method と
-同名なら「配線済」と誤判定する (`new` 等) 偽陽性より偽陰性を選んでいる
+限界: 名前で数えるので、(1) 別 file の同名 item は区別しない (同名の free fn が別 module にあれば一方の呼び出しで両方配線済)
+(2) match 腕のパターン束縛や macro 内の束縛は束縛と認識しない (配線済側に倒れる)
+(3) `impl Foo { .. }` の見出しが型名を参照するので、impl を持つ struct / enum は未配線でも配線済になる
+(4) trait impl の member は常に根とみなす (dispatch 先が分からないため)
+(5) macro_rules 内の参照は常に根とみなす 偽陽性より偽陰性を選んでいる
 """
 from __future__ import annotations
 
 import argparse
 import re
 import sys
-from collections import Counter
+from bisect import bisect_left
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -137,6 +153,296 @@ def remove_cfg_test(code: str) -> str:
         code = blank_span(code, m.start(), min(k + 1, n))
 
 
+ITEM_RE = re.compile(
+    r"(?<!['\w])(fn|struct|enum|trait|union|type|static|const)\s+(?!(?:fn|unsafe|async|extern)\b)([A-Za-z_]\w*)"
+)
+IMPL_RE = re.compile(r"(?:^|(?<=[;{}\]]))\s*(?:unsafe\s+)?impl\b")
+MACRO_RE = re.compile(r"\bmacro_rules\s*!\s*([A-Za-z_]\w*)")
+ROOT_ATTRS = re.compile(r"#\s*\[\s*(?:[\w:]*::)?(?:test|bench)\b")
+STRUCT_RE = re.compile(r"[(\[{;)\]}]")
+BRACE_RE = re.compile(r"[{}]")
+LET_RE = re.compile(r"\blet\b")
+FOR_RE = re.compile(r"\bfor\b([^{};]*?)\bin\b")
+CLOSURE_RE = re.compile(r"\|([^|;{}]*)\|")
+PREV_WORD_RE = re.compile(r"([A-Za-z_]\w*)\s*$")
+HEADER_CAP = 20000
+
+
+class Node:
+    """item (fn / struct / enum / trait / impl / macro_rules ...) の宣言から本体の終わりまでの範囲."""
+
+    __slots__ = ("idx", "rel", "kind", "name", "name_pos", "start", "end", "body_start", "parent", "cls", "root", "exempt", "in_src")
+
+    def __init__(self, idx, rel, kind, name, name_pos, start, end, body_start, in_src):
+        self.idx, self.rel, self.kind, self.name, self.name_pos = idx, rel, kind, name, name_pos
+        self.start, self.end, self.body_start, self.in_src = start, end, body_start, in_src
+        self.parent = None
+        self.cls = "item"
+        self.root = False
+        self.exempt = False
+
+
+def _prev_nonspace(code: str, pos: int) -> int:
+    j = pos - 1
+    while j >= 0 and code[j] in " \t\r\n":
+        j -= 1
+    return j
+
+
+def _find_end(code: str, i: int, kind: str, match: dict[int, int]) -> tuple[int, int]:
+    """item の (end, body_start) 見つからなければ上限で打ち切る (巨大 / 壊れた file で止まらない)."""
+    n = len(code)
+    limit = min(n, i + HEADER_CAP)
+    depth = 0
+    if kind in ("const", "static", "type"):
+        for m in STRUCT_RE.finditer(code, i, limit):
+            ch = m.group()
+            if ch in "([{":
+                depth += 1
+            elif ch in ")]}":
+                if depth == 0:
+                    return m.start(), m.start()
+                depth -= 1
+            elif depth == 0:  # ';'
+                return m.end(), m.end()
+        return limit, limit
+    for m in STRUCT_RE.finditer(code, i, limit):
+        ch = m.group()
+        if ch in "([":
+            depth += 1
+        elif ch in ")]":
+            depth = max(0, depth - 1)
+        elif ch == "{" and depth == 0:
+            return match.get(m.start(), n - 1) + 1, m.start()
+        elif ch == ";" and depth == 0:
+            return m.end(), m.end()
+    return limit, limit
+
+
+def parse_nodes(code: str, rel: str, in_src: bool, first_idx: int) -> list[Node]:
+    """波括弧の対応で各 item の本体の範囲を切り出し、親子を付ける."""
+    match: dict[int, int] = {}
+    stack: list[int] = []
+    for m in BRACE_RE.finditer(code):
+        if m.group() == "{":
+            stack.append(m.start())
+        elif stack:
+            match[stack.pop()] = m.start()
+    cands: list[tuple[int, str, str | None, int]] = []  # (start, kind, name, name_pos)
+    for m in ITEM_RE.finditer(code):
+        kind = m.group(1)
+        if kind in ("const", "static", "type"):
+            j = _prev_nonspace(code, m.start())
+            if j >= 0 and code[j] in "<,":
+                continue  # `<const N: usize>` 等の generic 引数
+        cands.append((m.start(), kind, m.group(2), m.start(2)))
+    for m in IMPL_RE.finditer(code):
+        cands.append((m.end() - 4, "impl", None, -1))
+    for m in MACRO_RE.finditer(code):
+        cands.append((m.start(), "macro", m.group(1), m.start(1)))
+    cands.sort(key=lambda c: (c[0], c[1]))
+    nodes: list[Node] = []
+    for start, kind, name, name_pos in cands:
+        scan_from = name_pos if name_pos >= 0 else start + 4
+        end, body = _find_end(code, scan_from, "fn" if kind in ("impl", "macro") else kind, match)
+        if kind == "impl" and re.search(r"\bfor\b(?!\s*<)", code[start + 4 : body]):
+            kind = "impl_trait"
+        nodes.append(Node(first_idx + len(nodes), rel, kind, name, name_pos, start, end, body, in_src))
+    nodes.sort(key=lambda x: (x.start, -x.end))
+    st: list[Node] = []
+    for nd in nodes:
+        while st and st[-1].end <= nd.start:
+            st.pop()
+        nd.parent = st[-1] if st else None
+        st.append(nd)
+    return nodes
+
+
+def _bind_positions(code: str, names: set[str]) -> set[int]:
+    """let / for / closure の pattern 内で、名前を束縛している識別子の位置."""
+    pos: set[int] = set()
+    n = len(code)
+
+    def add(a: int, b: int) -> None:
+        for m in IDENT_RE.finditer(code, a, b):
+            nm = m.group()
+            if nm not in names or not (nm[0].islower() or nm[0] == "_"):
+                continue
+            pj = _prev_nonspace(code, m.start())
+            if pj >= 0 and (code[pj] == "." or (code[pj] == ":" and pj >= 1 and code[pj - 1] == ":")):
+                continue
+            k = m.end()
+            while k < n and code[k] in " \t\r\n":
+                k += 1
+            if code.startswith(("(", "::", "{", "!"), k):
+                continue
+            pos.add(m.start())
+
+    for m in LET_RE.finditer(code):
+        i = m.end()
+        depth, j, end = 0, i, min(n, i + 400)
+        stop = end
+        while j < end:
+            ch = code[j]
+            if ch in "([{":
+                depth += 1
+            elif ch in ")]}":
+                depth -= 1
+                if depth < 0:
+                    stop = j
+                    break
+            elif depth == 0:
+                if ch == ";":
+                    stop = j
+                    break
+                if ch == ":":
+                    if code.startswith("::", j):
+                        j += 2
+                        continue
+                    stop = j
+                    break
+                if ch == "=" and code[j + 1 : j + 2] not in ("=", ">") and code[j - 1 : j] not in ("<", ">", "!", "="):
+                    stop = j
+                    break
+            j += 1
+        add(i, stop)
+    for m in FOR_RE.finditer(code):
+        add(m.start(1), m.end(1))
+    for m in CLOSURE_RE.finditer(code):
+        if not m.group(1).strip():
+            continue
+        j = _prev_nonspace(code, m.start())
+        wm = PREV_WORD_RE.search(code, max(0, j - 8), j + 1) if j >= 0 else None
+        if j < 0 or code[j] in "(,={;:" or (wm and wm.group(1) in ("move", "return")):
+            add(m.start(1), m.end(1))
+    return pos
+
+
+def _is_struct_literal_field(code: str, s: int) -> bool:
+    """`Foo { a, b }` の shorthand field か (直近の未対応の `{` の直前が大文字始まりの識別子)."""
+    depth, j = 0, s - 1
+    lim = max(0, s - 5000)
+    while j >= lim:
+        ch = code[j]
+        if ch in ")]}":
+            depth += 1
+        elif ch in "([{":
+            if depth == 0:
+                if ch != "{":
+                    return False
+                m = PREV_WORD_RE.search(code, max(0, j - 80), j)
+                return bool(m) and m.group(1)[0].isupper()
+            depth -= 1
+        j -= 1
+    return False
+
+
+def _compat(node: Node, dot: bool, path: bool) -> bool:
+    """この出現の形が、その node を指しうるか (free fn は `.name(` に呼ばれない / method は `.name` か `::name`)."""
+    if node.cls == "free":
+        return not dot
+    if node.cls == "method":
+        return dot or path
+    return True
+
+
+def collect_refs(code: str, nodes: list[Node], names: set[str], decl_pos: set[int]) -> list[tuple[int, str, bool, bool]]:
+    """束縛位置を除いた参照 (文脈 node の idx / 根なら -1, 名前, `.` の後か, `::` の後か) を列挙する."""
+    n = len(code)
+    bind_pos = _bind_positions(code, names)
+    refs: list[tuple[int, str, bool, bool]] = []
+    bound: dict[tuple[int, str], int] = {}
+    st: list[Node] = []
+    ni = 0
+    for m in IDENT_RE.finditer(code):
+        name = m.group()
+        if name not in names:
+            continue
+        s, e = m.start(), m.end()
+        if s in decl_pos:
+            continue
+        while ni < len(nodes) and nodes[ni].start <= s:
+            while st and st[-1].end <= nodes[ni].start:
+                st.pop()
+            st.append(nodes[ni])
+            ni += 1
+        while st and st[-1].end <= s:
+            st.pop()
+        cur = st[-1] if st else None
+        fn = cur
+        while fn is not None and fn.kind != "fn":
+            fn = fn.parent
+        ctx = cur
+        while ctx is not None and ctx.kind in ("impl", "impl_trait"):
+            ctx = ctx.parent
+        cid = -1 if ctx is None or ctx.root else ctx.idx
+        j = _prev_nonspace(code, s)
+        pc = code[j] if j >= 0 else ""
+        dot = pc == "." and code[j - 1 : j] != "."
+        path = pc == ":" and code[j - 1 : j] == ":"
+        k = e
+        while k < n and code[k] in " \t\r\n":
+            k += 1
+        nc = code[k : k + 1]
+        call = nc == "(" or (code.startswith("::", k) and code[k + 2 : k + 12].lstrip()[:1] == "<")
+        if name[0].islower() or name[0] == "_":
+            if s in bind_pos:
+                if fn is not None:
+                    bound.setdefault((fn.idx, name), s)
+                continue
+            if nc == ":" and code[k + 1 : k + 2] != ":":
+                if fn is not None and fn.start <= s < fn.body_start:
+                    bound.setdefault((fn.idx, name), s)  # fn 引数
+                continue
+            if pc and (pc.isalnum() or pc == "_"):
+                wm = PREV_WORD_RE.search(code, max(0, j - 8), j + 1)
+                if wm and wm.group(1) in ("mut", "ref"):
+                    if fn is not None:
+                        bound.setdefault((fn.idx, name), s)
+                    continue
+            if dot and not call:
+                continue  # field access
+            if pc in ("{", ",") and nc in (",", "}") and _is_struct_literal_field(code, s):
+                continue
+            if not call and not path and not dot and fn is not None and bound.get((fn.idx, name), n + 1) < s:
+                continue  # 同じ fn 内で束縛された local の使用
+        refs.append((cid, name, dot, path))
+    return refs
+
+
+def workspace_src_dirs(root: Path) -> list[Path]:
+    """root の `src/` と、`[workspace] members` (glob 可、exclude 対応) の各 member の `src/`."""
+    dirs: list[Path] = []
+    if (root / "src").is_dir():
+        dirs.append(root / "src")
+    cargo = root / "Cargo.toml"
+    if cargo.is_file():
+        text = "\n".join(re.sub(r"#.*$", "", ln) for ln in cargo.read_text(encoding="utf-8", errors="replace").split("\n"))
+        sec = re.search(r"^\[workspace\][ \t]*$(.*?)(?=^\[|\Z)", text, re.M | re.S)
+        if sec:
+
+            def strs(key: str) -> list[str]:
+                m = re.search(rf"^\s*{key}\s*=\s*\[(.*?)\]", sec.group(1), re.M | re.S)
+                return [a or b for a, b in re.findall(r'"([^"]*)"|\'([^\']*)\'', m.group(1))] if m else []
+
+            def safe(pat: str) -> bool:
+                return bool(pat) and not pat.startswith(("/", "\\")) and ".." not in Path(pat).parts
+
+            excl = [e.rstrip("/") for e in strs("exclude") if safe(e)]
+            for pat in strs("members"):
+                if not safe(pat):
+                    continue
+                for d in sorted(root.glob(pat.rstrip("/"))):
+                    if not d.is_dir():
+                        continue
+                    rel = d.relative_to(root)
+                    if any(part in SKIP_DIRS for part in rel.parts) or any(rel.as_posix() == e or rel.match(e) for e in excl):
+                        continue
+                    if (d / "src").is_dir() and (d / "src") not in dirs:
+                        dirs.append(d / "src")
+    return dirs
+
+
 def rs_files(root: Path) -> list[Path]:
     out = []
     for p in root.rglob("*.rs"):
@@ -170,22 +476,78 @@ def check(root: Path, baseline_text: str = "") -> list[Violation]:
     base_unwired, base_dead = parse_baseline(baseline_text)
     vs: list[Violation] = []
 
-    src_dir = root / "src"
-    files = rs_files(root)
+    src_dirs = workspace_src_dirs(root)
+    files = []
     stripped: dict[Path, str] = {}
     raw: dict[Path, list[str]] = {}
-    for p in files:
-        text = p.read_text(encoding="utf-8", errors="replace")
+    for p in rs_files(root):
+        try:
+            text = p.read_text(encoding="utf-8", errors="replace")
+            code = remove_cfg_test(strip_rust(text))
+        except Exception as exc:  # 読めない / 解析できない file は明示的な違反にする
+            vs.append(Violation("unreadable", p.relative_to(root).as_posix(), f"{type(exc).__name__}: {exc}"))
+            continue
+        files.append(p)
         raw[p] = text.split("\n")
-        stripped[p] = remove_cfg_test(strip_rust(text))
+        stripped[p] = code
 
-    # 参照 corpus: use 文を除いた production code 全体
-    corpus = "\n".join(USE_RE.sub(lambda m: re.sub(r"[^\n]", " ", m.group(0)), c) for c in stripped.values())
+    def src_of(p: Path) -> Path | None:
+        for d in src_dirs:
+            if d in p.parents:
+                return d
+        return None
 
-    defs: list[tuple[str, str, int, Path]] = []  # (name, key, line, path)
+    # 参照の走査用: use 文を空白にした code (長さと改行は保つ)
+    plain = {p: USE_RE.sub(lambda m: re.sub(r"[^\n]", " ", m.group(0)), c) for p, c in stripped.items()}
+
+    # item の本体の範囲 (src 外は全部「根」の文脈)
+    nodes: list[Node] = []
+    file_nodes: dict[Path, list[Node]] = {}
+    node_at: dict[tuple[Path, int], Node] = {}
+    for p in files:
+        sd = src_of(p)
+        rel = p.relative_to(root).as_posix()
+        in_src = sd is not None and (p.relative_to(sd).parts[0] != "bin")
+        if sd is not None and plain[p].count("{") != plain[p].count("}"):
+            vs.append(Violation("unbalanced_braces", rel, "波括弧が閉じていない (本体の範囲を切り出せない)"))
+        try:
+            fn_nodes = parse_nodes(plain[p], rel, in_src, len(nodes))
+        except Exception as exc:
+            vs.append(Violation("unreadable", rel, f"{type(exc).__name__}: {exc}"))
+            fn_nodes = []
+        # parse_nodes は start 順に並べ替えるので idx を振り直す
+        for nd in fn_nodes:
+            nd.idx = len(nodes)
+            nodes.append(nd)
+            if nd.name_pos >= 0:
+                node_at[(p, nd.name_pos)] = nd
+        file_nodes[p] = fn_nodes
+        code = stripped[p]
+        nl = [m.start() for m in re.finditer("\n", code)]
+        for nd in fn_nodes:  # 親が先に来る順
+            if not in_src:
+                nd.root = True
+                continue
+            ln = bisect_left(nl, nd.start)
+            ws = nl[ln - 4] + 1 if ln - 3 > 0 else 0
+            we = nl[ln] if ln < len(nl) else len(code)
+            window = code[ws:we]
+            nd.exempt = bool(EXEMPT_ATTRS.search(window)) or (nd.parent is not None and nd.parent.exempt)
+            nd.root = (
+                nd.exempt
+                or nd.kind == "macro"
+                or (nd.kind == "fn" and nd.name == "main")
+                or bool(ROOT_ATTRS.search(window))
+                or (nd.parent is not None and nd.parent.kind in ("trait", "impl_trait"))
+                or (nd.parent is not None and nd.parent.root and nd.parent.kind in ("macro",))
+            )
+            if nd.kind == "fn":
+                nd.cls = "method" if nd.parent is not None and nd.parent.kind == "impl" else "free"
+
+    defs: list[tuple[str, str, int, Path, int]] = []  # (name, key, line, path, name_pos)
     exempt: set[str] = set()
     for p in files:
-        if src_dir not in p.parents and p.parent != src_dir:
+        if src_of(p) is None:
             continue
         code = stripped[p]
         lines = code.split("\n")
@@ -194,18 +556,45 @@ def check(root: Path, baseline_text: str = "") -> list[Violation]:
             ln = lineno(code, m.start())
             above = " ".join(lines[max(0, ln - 4) : ln + 1])
             key = f"{rel}::{m.group(2)}"
-            if EXEMPT_ATTRS.search(above):
+            nd = node_at.get((p, m.start(2)))
+            if EXEMPT_ATTRS.search(above) or (nd is not None and nd.exempt):
                 exempt.add(key)
-            defs.append((m.group(2), key, ln, p))
+            defs.append((m.group(2), key, ln, p, m.start(2)))
 
-    if not src_dir.is_dir() or not defs:
-        return [Violation("empty_scan", str(root), "検査対象の pub item が 0 件 (src/ が無いか、検査器が何も見ていない)")]
+    if not src_dirs or not defs:
+        return vs + [Violation("empty_scan", str(root), "検査対象の pub item が 0 件 (src/ が無いか、検査器が何も見ていない)")]
 
-    ident_count = Counter(IDENT_RE.findall(corpus))
-    decl_count = Counter(m.group(1) for m in DECL_RE.finditer(corpus))
+    # --- 参照の収集と到達可能性 (不動点反復) ---
+    names = {nd.name for nd in nodes if nd.in_src and nd.name}
+    refs_by_ctx: dict[int, set[tuple[str, bool, bool]]] = {}
+    refs_by_name: dict[str, list[tuple[int, bool, bool]]] = {}
+    for p in files:
+        decl_pos = {m.start(1) for m in DECL_RE.finditer(plain[p])} | {nd.name_pos for nd in file_nodes[p] if nd.name_pos >= 0}
+        for cid, name, dot, path in collect_refs(plain[p], file_nodes[p], names, decl_pos):
+            refs_by_ctx.setdefault(cid, set()).add((name, dot, path))
+            refs_by_name.setdefault(name, []).append((cid, dot, path))
+    by_name: dict[str, list[Node]] = {}
+    for nd in nodes:
+        if nd.in_src and nd.name and nd.kind != "macro":
+            by_name.setdefault(nd.name, []).append(nd)
+    static_roots = {nd.idx for nd in nodes if nd.root}
 
-    def referenced(name: str) -> bool:
-        return ident_count[name] - decl_count[name] > 0
+    def compute_live(extra_roots: set[int]) -> set[int]:
+        live = set(static_roots) | extra_roots
+        frontier = [-1] + sorted(live)
+        while frontier:
+            nxt: list[int] = []
+            for ctx in frontier:
+                for name, dot, path in refs_by_ctx.get(ctx, ()):
+                    for m in by_name.get(name, ()):
+                        if m.idx not in live and m.idx != ctx and _compat(m, dot, path):
+                            live.add(m.idx)
+                            nxt.append(m.idx)
+            frontier = nxt
+        return live
+
+    def referenced_from_dead(nd: Node) -> bool:
+        return any(c != nd.idx and _compat(nd, d, pa) for c, d, pa in refs_by_name.get(nd.name, ()))
 
     # --- markers ---
     unwired_markers: dict[str, tuple[Path, int, str]] = {}  # key -> (file, line, reason)
@@ -252,14 +641,45 @@ def check(root: Path, baseline_text: str = "") -> list[Violation]:
                     dead_markers.append((p, target, reason))
 
     # --- 検査 B: unwired ---
+    def_nodes: dict[str, list[Node]] = {}
+    for name, key, ln, p, npos in defs:
+        nd = node_at.get((p, npos))
+        if nd is not None:
+            def_nodes.setdefault(key, []).append(nd)
+    marker_nodes = {nd.idx for k in unwired_markers for nd in def_nodes.get(k, ())}
+    live_all = compute_live(marker_nodes)
+
+    def naturally_wired(key: str) -> bool:
+        """marker 自身を根にしない場合に配線済か (marker 付きの item の stale 判定用)."""
+        mine = {nd.idx for nd in def_nodes[key]}
+        if mine & static_roots:
+            return True
+        rest = marker_nodes - mine
+        outer = [(c, d, pa) for nd in def_nodes[key] for c, d, pa in refs_by_name.get(nd.name, ()) if c not in mine and _compat(nd, d, pa)]
+        if not any(c == -1 or c in live_all for c, _d, _pa in outer):
+            return False
+        if any(c == -1 for c, _d, _pa in outer):
+            return True
+        return bool(mine & compute_live(rest))
+
     current_unwired: set[str] = set()
-    for name, key, ln, p in defs:
-        if key in exempt or referenced(name):
+    for name, key, ln, p, npos in defs:
+        if key in exempt or key not in def_nodes:
+            continue
+        if key in unwired_markers:
+            if naturally_wired(key):
+                continue
+        elif any(nd.idx in live_all for nd in def_nodes[key]):
             continue
         current_unwired.add(key)
         if key in unwired_markers or key in base_unwired:
             continue
-        vs.append(Violation("unwired", key, f"{name}: production code から 1 度も参照されていない (test / doc / use のみ)"))
+        nd = def_nodes[key][0]
+        if referenced_from_dead(nd):
+            msg = f"{name}: 未配線の item の本体 (または自己再帰) からしか参照されていない"
+        else:
+            msg = f"{name}: production code から 1 度も参照されていない (test / doc / use のみ)"
+        vs.append(Violation("unwired", key, msg))
     for key, (p, ln, _r) in unwired_markers.items():
         if key not in current_unwired:
             vs.append(Violation("stale_marker", f"{key}", f"ALLOW-UNWIRED があるが配線済 ({p.name}:{ln}) マーカーを消す"))
