@@ -7505,6 +7505,51 @@ mod tests {
     /// Which fault, if any, every rank applies.
     #[cfg(feature = "std")]
     const XSLAB_FAULT: &str = "ALICE_PHYSICS_XSLAB_FAULT";
+    /// Which [`SlabRunKind`] every rank runs.
+    #[cfg(feature = "std")]
+    const XSLAB_KIND: &str = "ALICE_PHYSICS_XSLAB_KIND";
+    /// How many red-black iterations the banded run performs.
+    #[cfg(feature = "std")]
+    const XSLAB_ITERS: &str = "ALICE_PHYSICS_XSLAB_ITERS";
+
+    /// What a rank of a cross-process slab run does.
+    ///
+    /// The two differ in one thing — whether the rank holds a full-length grid —
+    /// and that one thing is what decides the size the run can reach. A
+    /// [`Self::MonolithicReference`] rank computes the single-process solve
+    /// itself and compares cell by cell, which needs the whole domain resident
+    /// in *every* process; a [`Self::Banded`] rank never builds a `MacGrid` at
+    /// all, seeds its band straight from the scene, and reports a fold of the
+    /// layers it owns for rank 0 to check against one reference it builds after
+    /// the children are gone.
+    #[cfg(feature = "std")]
+    #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+    enum SlabRunKind {
+        /// Every rank builds the single-process solve and compares against it.
+        MonolithicReference,
+        /// No rank but rank 0 ever holds a full-length array.
+        Banded,
+    }
+
+    #[cfg(feature = "std")]
+    impl SlabRunKind {
+        /// Name passed to a child rank through the environment.
+        fn as_str(self) -> &'static str {
+            match self {
+                Self::MonolithicReference => "monolithic-reference",
+                Self::Banded => "banded",
+            }
+        }
+
+        /// Inverse of [`Self::as_str`]; an unknown name is a harness bug.
+        fn parse(name: &str) -> Self {
+            match name {
+                "monolithic-reference" => Self::MonolithicReference,
+                "banded" => Self::Banded,
+                other => panic!("unknown slab run kind `{other}`"),
+            }
+        }
+    }
 
     /// libtest name of the child entry point, passed to the re-executed binary as
     /// `--exact`.
@@ -7840,10 +7885,31 @@ mod tests {
             .collect();
 
         let links = join_slab_mesh(my_rank, ranks, &ports, &listener);
-        let report = solve_slab_as_rank(n, ranks, my_rank, scene, fault, links);
 
-        let mut bytes = [0u8; 16];
-        for (slot, value) in bytes.chunks_exact_mut(4).zip(report) {
+        // One wire format for both kinds of run — the comparison counts of a
+        // monolithic-reference rank widen into it without loss, and a banded
+        // rank's folds need the width at the sizes the banded path exists for.
+        let report: [u64; 4] =
+            match SlabRunKind::parse(&std::env::var(XSLAB_KIND).expect("run kind from rank 0")) {
+                SlabRunKind::MonolithicReference => {
+                    let counts = solve_slab_as_rank(n, ranks, my_rank, scene, fault, links);
+                    let mut wide = [0u64; 4];
+                    for (slot, value) in wide.iter_mut().zip(counts) {
+                        *slot = u64::from(value);
+                    }
+                    wide
+                }
+                SlabRunKind::Banded => {
+                    let iterations: u32 = std::env::var(XSLAB_ITERS)
+                        .expect("iteration count from rank 0")
+                        .parse()
+                        .expect("the iteration count is a number");
+                    solve_slab_banded_as_rank(n, ranks, my_rank, scene, fault, iterations, links)
+                }
+            };
+
+        let mut bytes = [0u8; 32];
+        for (slot, value) in bytes.chunks_exact_mut(8).zip(report) {
             slot.copy_from_slice(&value.to_le_bytes());
         }
         to_root.write_all(&bytes).expect("report to rank 0");
@@ -7918,15 +7984,30 @@ mod tests {
         }
     }
 
-    /// Solve `n³` across `ranks` processes — rank 0 here, the rest re-executed —
-    /// and return every rank's comparison against the single-process solve.
+    /// Spawn `ranks - 1` child ranks with `env` on top of the inherited
+    /// environment, broker the port table, and join the mesh as rank 0.
+    ///
+    /// Returns the children (reaped on drop), the broker stream to each child —
+    /// which is also the stream its report arrives on — and the mesh link to
+    /// each rank, rank 0's own entry being `None`.
+    ///
+    /// One description of the handshake for every cross-process slab run: the
+    /// runs differ in what each rank computes and in nothing about how the ranks
+    /// find each other, and a second copy of this would be a second thing to
+    /// keep in step.
+    ///
+    /// The three parts come back as a tuple rather than a struct because a
+    /// struct would have to be destructured at once anyway: the links move into
+    /// the solve while the broker streams stay behind to be read afterwards.
     #[cfg(feature = "std")]
-    fn slab_reports_across_processes(
-        n: usize,
+    fn open_slab_mesh(
         ranks: usize,
-        scene: SlabScene,
-        fault: SlabCrossFault,
-    ) -> Vec<[u32; 4]> {
+        env: &[(&'static str, String)],
+    ) -> (
+        SlabRanks,
+        Vec<Option<std::net::TcpStream>>,
+        Vec<Option<std::net::TcpStream>>,
+    ) {
         use std::io::{Read, Write};
         use std::net::TcpListener;
         use std::process::{Command, Stdio};
@@ -7945,21 +8026,20 @@ mod tests {
         let mut kids = SlabRanks {
             kids: (1..ranks)
                 .map(|rank| {
-                    Command::new(&exe)
-                        .args(["--exact", XSLAB_WORKER, "--test-threads=1"])
+                    let mut cmd = Command::new(&exe);
+                    cmd.args(["--exact", XSLAB_WORKER, "--test-threads=1"])
                         .env(XSLAB_RANK, rank.to_string())
                         .env(XSLAB_RANKS, ranks.to_string())
                         .env(XSLAB_BROKER, broker_port.to_string())
-                        .env(XSLAB_SIZE, n.to_string())
-                        .env(XSLAB_SCENE, scene.as_str())
-                        .env(XSLAB_FAULT, fault.as_str())
                         .stdin(Stdio::null())
                         .stdout(Stdio::null())
-                        .stderr(Stdio::null())
-                        .spawn()
-                        .unwrap_or_else(|e| {
-                            panic!("re-execute this test binary as rank {rank}: {e}")
-                        })
+                        .stderr(Stdio::null());
+                    for &(name, ref value) in env {
+                        cmd.env(name, value);
+                    }
+                    cmd.spawn().unwrap_or_else(|e| {
+                        panic!("re-execute this test binary as rank {rank}: {e}")
+                    })
                 })
                 .collect(),
         };
@@ -7990,23 +8070,63 @@ mod tests {
         }
 
         let links = join_slab_mesh(0, ranks, &ports, &mine);
-        let mut reports = vec![[0u32; 4]; ranks];
-        reports[0] = solve_slab_as_rank(n, ranks, 0, scene, fault, links);
+        (kids, brokered, links)
+    }
 
-        // Every rank has finished its own half of every delivery by the time rank
-        // 0 is through its schedule, so the children are on their way out; their
-        // reports are already in rank 0's receive buffers and survive the close.
-        kids.join();
+    /// Read every child rank's report off the broker streams.
+    ///
+    /// Called after the children have been reaped: each rank has finished its
+    /// own half of every delivery by the time rank 0 is through its schedule, so
+    /// the reports are already in rank 0's receive buffers and survive the
+    /// close. Rank 0's own slot stays zero for its caller to fill in.
+    #[cfg(feature = "std")]
+    fn collect_slab_reports(brokered: &mut [Option<std::net::TcpStream>]) -> Vec<[u64; 4]> {
+        use std::io::Read;
+
+        let mut reports = vec![[0u64; 4]; brokered.len()];
         for (rank, link) in brokered.iter_mut().enumerate() {
             let Some(link) = link else { continue };
-            let mut bytes = [0u8; 16];
+            let mut bytes = [0u8; 32];
             link.read_exact(&mut bytes)
                 .unwrap_or_else(|e| panic!("rank {rank}'s report: {e}"));
-            for (slot, chunk) in reports[rank].iter_mut().zip(bytes.chunks_exact(4)) {
-                *slot = u32::from_le_bytes(chunk.try_into().expect("4 bytes of a report"));
+            for (slot, chunk) in reports[rank].iter_mut().zip(bytes.chunks_exact(8)) {
+                *slot = u64::from_le_bytes(chunk.try_into().expect("8 bytes of a report"));
             }
         }
         reports
+    }
+
+    /// Solve `n³` across `ranks` processes — rank 0 here, the rest re-executed —
+    /// and return every rank's comparison against the single-process solve.
+    #[cfg(feature = "std")]
+    fn slab_reports_across_processes(
+        n: usize,
+        ranks: usize,
+        scene: SlabScene,
+        fault: SlabCrossFault,
+    ) -> Vec<[u32; 4]> {
+        let (mut kids, mut brokered, links) = open_slab_mesh(
+            ranks,
+            &[
+                (XSLAB_KIND, SlabRunKind::MonolithicReference.as_str().into()),
+                (XSLAB_SIZE, n.to_string()),
+                (XSLAB_SCENE, scene.as_str().into()),
+                (XSLAB_FAULT, fault.as_str().into()),
+            ],
+        );
+        let mine = solve_slab_as_rank(n, ranks, 0, scene, fault, links);
+        kids.join();
+        let mut reports = collect_slab_reports(&mut brokered);
+        let narrow = |wide: [u64; 4]| -> [u32; 4] {
+            let mut out = [0u32; 4];
+            for (slot, value) in out.iter_mut().zip(wide) {
+                *slot = u32::try_from(value).expect("a report field of a comparison fits in u32");
+            }
+            out
+        };
+        let mut out: Vec<[u32; 4]> = reports.drain(..).map(narrow).collect();
+        out[0] = mine;
+        out
     }
 
     /// Every rank of a `ranks`-process run agrees with the single-process solve
@@ -8157,5 +8277,954 @@ mod tests {
         let links: Vec<Option<Cursor<Vec<u8>>>> = vec![None, Some(Cursor::new(Vec::new()))];
         let mut transport = SlabSocketTransport::new(0, plane, band, links);
         let _ = transport.slab_mut(1);
+    }
+
+    // ========================================================================
+    // Band-local scenes, so a cross-process run can reach the sizes the stage
+    // is about
+    // ========================================================================
+    //
+    // `solve_slab_as_rank` has every rank build the single-process solve and
+    // compare against it cell by cell. That is the strongest possible check and
+    // the reason it is what the small cases use, but it makes the run cost
+    // `ranks` full-length grids plus `ranks` solves' scratch — around 185 bytes
+    // per cell per process — so raising the size raises the cost by the rank
+    // count as well. At 512³ over eight processes that is about 198 GB, which
+    // is not a machine.
+    //
+    // The banded run below removes the full-length array from every rank: each
+    // seeds its own band straight out of the scene — a pure function of
+    // `(scene, n, global index)`, so processes that never speak agree about the
+    // problem — solves, and reports a fold of the layers it owns. Rank 0 builds
+    // *one* reference after the children have exited and folds each rank's band
+    // out of it the same way. The peak is then one band per rank while the
+    // children run, and one reference plus one band afterwards.
+    //
+    // What is given up: a fold says "these layers differ" rather than "this
+    // many cells differ, first at this layer". The small cases keep the cell-by-
+    // cell form, and the banded path is itself run at `SLAB_CASES` sizes by
+    // `the_banded_cross_process_slab_path_reproduces_the_monolithic_solve` on
+    // every `cargo test`, so the size knob changes the size and nothing else.
+    //
+    // What is *not* given up: the comparison is on the raw `Fix128` words.
+    // Folding `to_f64()` would drop 64 of the 128 bits and the ulp-level
+    // disagreement a wrong halo produces with it.
+
+    /// FNV-1a 64-bit basis.
+    const FOLD_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
+    /// FNV-1a 64-bit prime.
+    const FOLD_PRIME: u64 = 0x0000_0100_0000_01b3;
+
+    /// Fold one 64-bit word in, byte by byte (FNV-1a).
+    fn fold_word(acc: u64, word: u64) -> u64 {
+        let mut out = acc;
+        for byte in word.to_le_bytes() {
+            out = (out ^ u64::from(byte)).wrapping_mul(FOLD_PRIME);
+        }
+        out
+    }
+
+    /// Fold one `Fix128` in as its two raw words.
+    ///
+    /// The raw `Q64.64` words, not `to_f64()`: the decomposition is exact or
+    /// wrong, and a `f64` carries 53 of the 128 bits, so a fold built on it
+    /// would agree across a difference in the low fractional bits — which is
+    /// exactly the difference a halo that is one layer stale produces.
+    fn fold_fix(acc: u64, value: Fix128) -> u64 {
+        fold_word(fold_word(acc, value.hi as u64), value.lo)
+    }
+
+    /// A fold of the layers one rank owns: `[pressure fold, face-velocity fold,
+    /// pressure cells folded, face values folded]`.
+    ///
+    /// The counts are there for the same reason `compare_band`'s are: a fold of
+    /// nothing is a fixed number that two sides agree on without having looked
+    /// at anything, so rank 0 adds the counts up and requires the whole domain.
+    ///
+    /// Both sides of the comparison call *this* function — the distributed rank
+    /// on its own band, rank 0 on a band cut out of the reference — so which
+    /// cells and faces are in the fold, and the order they go in, cannot differ
+    /// between them by construction.
+    fn fold_band(faces: &SlabFaces, slab: &SlabStorage) -> [u64; 4] {
+        let (k0, k1) = faces.owned();
+        let mut cells = FOLD_BASIS;
+        let mut values = FOLD_BASIS;
+        let mut cell_count = 0u64;
+        let mut face_count = 0u64;
+        for k in k0..k1 {
+            let mine = slab.layer(k).expect("a rank's own layer is resident");
+            for &p in mine {
+                cells = fold_fix(cells, p);
+                cell_count += 1;
+            }
+            let (u, _) = faces.u_layer(k);
+            for &x in u {
+                values = fold_fix(values, x);
+                face_count += 1;
+            }
+            let (v, _) = faces.v_layer(k);
+            for &x in v {
+                values = fold_fix(values, x);
+                face_count += 1;
+            }
+        }
+        for k in faces.w_written() {
+            let (w, _) = faces.w_layer(k);
+            for &x in w {
+                values = fold_fix(values, x);
+                face_count += 1;
+            }
+        }
+        [cells, values, cell_count, face_count]
+    }
+
+    /// Values that differ in one bit — including the lowest fractional bit —
+    /// fold to different numbers.
+    ///
+    /// This is the property the whole banded comparison rests on. The folds are
+    /// all rank 0 ever sees of a distributed run, so a fold that dropped the
+    /// fractional word, or that went through `to_f64()` and lost the low 75
+    /// bits, would report a bit-exact run over a field that differs — and the
+    /// difference a halo one layer stale produces is exactly there, in the low
+    /// bits. `fold_band`'s own teeth (the halo-fault tests) cannot see this:
+    /// they perturb a field enough to move the high words too, so they stay red
+    /// even with a fold that reads nothing but `hi`.
+    #[test]
+    fn the_fold_separates_values_that_differ_in_their_lowest_bit() {
+        let base = Fix128 { hi: 3, lo: 1 << 40 };
+        for (what, other) in [
+            (
+                "the lowest fractional bit",
+                Fix128 {
+                    hi: base.hi,
+                    lo: base.lo | 1,
+                },
+            ),
+            (
+                "the highest fractional bit",
+                Fix128 {
+                    hi: base.hi,
+                    lo: base.lo | 1 << 63,
+                },
+            ),
+            (
+                "the integer word",
+                Fix128 {
+                    hi: base.hi + 1,
+                    lo: base.lo,
+                },
+            ),
+        ] {
+            assert_ne!(
+                fold_fix(FOLD_BASIS, base),
+                fold_fix(FOLD_BASIS, other),
+                "two values differing in {what} ({base:?} and {other:?}) fold to the same \
+                 number, so a distributed run that differs there would be reported as \
+                 bit-exact",
+            );
+        }
+    }
+
+    /// The X-face condition [`seed_slab_scene`] leaves on the face `(i, _, _)`
+    /// of an `n³` grid of this scene.
+    ///
+    /// A pure function of the scene and the *global* face coordinates, which is
+    /// what lets a rank with no `MacGrid` build the same conditions the grid
+    /// would report. `the_band_local_scene_matches_the_one_read_from_a_grid`
+    /// pins that it does rather than asserting it here.
+    fn scene_u_bc(n: usize, scene: SlabScene, i: usize) -> FaceBc {
+        match scene {
+            SlabScene::Open => FaceBc::Fluid,
+            SlabScene::ClosedBox if i == 0 || i == n => box_wall(n),
+            SlabScene::ClosedBox => FaceBc::Fluid,
+            SlabScene::ZOutflow if i == 0 => FaceBc::Inflow {
+                normal_velocity: Fix128::from_ratio(3, 4),
+            },
+            SlabScene::ZOutflow if i == n => FaceBc::Outflow,
+            SlabScene::ZOutflow => FaceBc::Fluid,
+        }
+    }
+
+    /// See [`scene_u_bc`].
+    fn scene_v_bc(n: usize, scene: SlabScene, j: usize) -> FaceBc {
+        match scene {
+            SlabScene::Open => FaceBc::Fluid,
+            SlabScene::ClosedBox if j == 0 || j == n => box_wall(n),
+            SlabScene::ZOutflow if j == 0 || j == n => FaceBc::Wall {
+                velocity: Vec3Fix::ZERO,
+            },
+            SlabScene::ClosedBox | SlabScene::ZOutflow => FaceBc::Fluid,
+        }
+    }
+
+    /// See [`scene_u_bc`].
+    fn scene_w_bc(n: usize, scene: SlabScene, k: usize) -> FaceBc {
+        match scene {
+            SlabScene::Open => FaceBc::Fluid,
+            SlabScene::ClosedBox if k == 0 || k == n => box_wall(n),
+            SlabScene::ClosedBox => FaceBc::Fluid,
+            SlabScene::ZOutflow if k == 0 || k == n => FaceBc::SlipWall,
+            SlabScene::ZOutflow if k % 2 == 1 => FaceBc::Outflow,
+            SlabScene::ZOutflow => FaceBc::Fluid,
+        }
+    }
+
+    /// The wall [`MacGrid::set_closed_box_walls`] uses on an `n`-cell axis.
+    ///
+    /// One cell along an axis means the caller meant a symmetry plane, and a
+    /// `SlipWall` is *not* a wall at rest, so it stays in the sparse map where a
+    /// `Wall` at rest would be dropped. Getting this wrong at `n = 1` is why the
+    /// equality oracle runs that size.
+    fn box_wall(n: usize) -> FaceBc {
+        if n == 1 {
+            FaceBc::SlipWall
+        } else {
+            FaceBc::Wall {
+                velocity: Vec3Fix::ZERO,
+            }
+        }
+    }
+
+    /// The three predicates the solve reads, derived from the condition alone.
+    ///
+    /// `MacGrid` guards two of the three with "and the sparse map is not empty",
+    /// but the map is empty only when every condition set on that axis was plain
+    /// fluid or a wall at rest, and for those two `blocks_pressure()` reduces to
+    /// `is_wall()` and `is_inflow()` is false — so the guard changes no answer
+    /// and the flags are a function of the condition.
+    fn scene_flags(bc: FaceBc) -> FaceFlags {
+        FaceFlags {
+            solid: bc.is_wall(),
+            blocks_pressure: bc.blocks_pressure(),
+            inflow: bc.is_inflow(),
+        }
+    }
+
+    /// The X-face velocity [`seed_divergent_flow`] seeds, by global face index.
+    fn scene_u_velocity(n: usize, global_face: usize) -> Fix128 {
+        Fix128::from_int((global_face % (n + 1)) as i64)
+    }
+
+    /// The Z-face velocity the scene seeds, by global face coordinates.
+    fn scene_w_velocity(n: usize, scene: SlabScene, i: usize, j: usize, k: usize) -> Fix128 {
+        match scene {
+            SlabScene::Open | SlabScene::ClosedBox => Fix128::ZERO,
+            SlabScene::ZOutflow => Fix128::from_ratio(((k * n + i + 2 * j) % 11) as i64 - 5, 4),
+        }
+    }
+
+    /// The initial pressure the scene seeds, by global cell index.
+    fn scene_pressure(scene: SlabScene, global_cell: usize) -> Fix128 {
+        match scene {
+            SlabScene::Open => Fix128::ZERO,
+            SlabScene::ClosedBox | SlabScene::ZOutflow => {
+                Fix128::from_ratio((global_cell % 5) as i64 - 2, 7)
+            }
+        }
+    }
+
+    /// One rank's faces, conditions and pressure band, built from the scene
+    /// without a `MacGrid` anywhere.
+    ///
+    /// The halo layers of the pressure band are filled too, because the first
+    /// colour sweep reads them; in a real run that layer would be the one
+    /// exchange this does not model, and seeding it from the same pure function
+    /// is what makes the initial state agree with the single-process one.
+    ///
+    /// The conditions go in ascending index order on purpose:
+    /// [`SlabFaceConditions::set_u`] and friends keep a sorted list, so an
+    /// ascending walk appends and a descending one would insert at the front
+    /// `m` times for `m` entries.
+    fn band_for_scene(
+        n: usize,
+        scene: SlabScene,
+        b: (usize, usize),
+    ) -> (SlabFaces, SlabFaceConditions, SlabStorage) {
+        let (k0, k1) = b;
+        let plane = cell_plane(n, n);
+        let mut faces = SlabFaces::new(n, n, n, Fix128::ONE, b);
+        let mut cond = SlabFaceConditions::new(n, n, b);
+        let mut band = SlabStorage::for_slab(plane, n, b, 1);
+
+        let (lo, hi) = band.resident();
+        for k in lo..hi {
+            let layer = band
+                .layer_mut(k)
+                .expect("a layer inside the band this slab just reported");
+            for (c, slot) in layer.iter_mut().enumerate() {
+                *slot = scene_pressure(scene, k * plane + c);
+            }
+        }
+        if k0 == k1 {
+            return (faces, cond, band);
+        }
+
+        for k in k0..k1 {
+            let row = k * u_plane(n, n);
+            let (u, flags) = faces.u_layer_mut(k);
+            for j in 0..n {
+                for i in 0..=n {
+                    let at = i + (n + 1) * j;
+                    u[at] = scene_u_velocity(n, row + at);
+                    flags[at] = scene_flags(scene_u_bc(n, scene, i));
+                }
+            }
+            for j in 0..n {
+                for i in 0..=n {
+                    let bc = scene_u_bc(n, scene, i);
+                    if bc != FaceBc::Fluid {
+                        cond.set_u(i, j, k, bc);
+                    }
+                }
+            }
+
+            let (v, flags) = faces.v_layer_mut(k);
+            for j in 0..=n {
+                for i in 0..n {
+                    flags[i + n * j] = scene_flags(scene_v_bc(n, scene, j));
+                }
+            }
+            debug_assert!(
+                v.iter().all(|&x| x == Fix128::ZERO),
+                "no scene seeds a Y-face velocity, so the band starts at zero like the grid",
+            );
+            for j in 0..=n {
+                for i in 0..n {
+                    let bc = scene_v_bc(n, scene, j);
+                    if bc != FaceBc::Fluid {
+                        cond.set_v(i, j, k, bc);
+                    }
+                }
+            }
+        }
+
+        for k in k0..=k1 {
+            let (w, flags) = faces.w_layer_mut(k);
+            for j in 0..n {
+                for i in 0..n {
+                    let at = i + n * j;
+                    w[at] = scene_w_velocity(n, scene, i, j, k);
+                    flags[at] = scene_flags(scene_w_bc(n, scene, k));
+                }
+            }
+            for j in 0..n {
+                for i in 0..n {
+                    let bc = scene_w_bc(n, scene, k);
+                    if bc != FaceBc::Fluid {
+                        cond.set_w(i, j, k, bc);
+                    }
+                }
+            }
+        }
+        (faces, cond, band)
+    }
+
+    /// Run `my_rank`'s share of the slab-local solve over `links` holding no
+    /// full-length array, and report a fold of the layers it owns.
+    ///
+    /// The same sequence `solve_slab_as_rank` runs — build the band from the
+    /// unenforced field, impose the conditions, project — with the reference
+    /// solve and the cell-by-cell comparison taken out, which is the whole
+    /// difference in what it costs.
+    #[cfg(feature = "std")]
+    fn solve_slab_banded_as_rank(
+        n: usize,
+        ranks: usize,
+        my_rank: usize,
+        scene: SlabScene,
+        fault: SlabCrossFault,
+        iterations: u32,
+        links: Vec<Option<std::net::TcpStream>>,
+    ) -> [u64; 4] {
+        let (dt, rho) = (xproc_dt(), xproc_rho());
+        let b = slab_bounds(n, ranks, my_rank);
+        let plane = cell_plane(n, n);
+        let (mut faces, cond, band) = band_for_scene(n, scene, b);
+        let mut socket = SlabSocketTransport::new(my_rank, plane, band, links);
+
+        if fault == SlabCrossFault::BlankFaceHalo {
+            let mut channel = BlankedPlane {
+                inner: socket,
+                scratch: vec![Fix128::ZERO; plane],
+            };
+            enforce_slab_face_boundaries_on_rank(&mut faces, &cond, ranks, my_rank, &mut channel);
+            socket = channel.inner;
+        } else {
+            enforce_slab_face_boundaries_on_rank(&mut faces, &cond, ranks, my_rank, &mut socket);
+        }
+
+        if fault == SlabCrossFault::NoPressureHalo {
+            let mut dropped = DroppedHalo { inner: socket };
+            project_pressure_slab_local_on_rank(
+                &mut faces,
+                dt,
+                rho,
+                iterations,
+                ranks,
+                HaloSchedule::EverySweep,
+                my_rank,
+                &mut dropped,
+            );
+            socket = dropped.inner;
+        } else {
+            project_pressure_slab_local_on_rank(
+                &mut faces,
+                dt,
+                rho,
+                iterations,
+                ranks,
+                HaloSchedule::EverySweep,
+                my_rank,
+                &mut socket,
+            );
+        }
+
+        fold_band(&faces, socket.slab())
+    }
+
+    /// Solve `n³` across `ranks` processes with no rank holding a full-length
+    /// array, and return every rank's fold of the layers it owns.
+    #[cfg(feature = "std")]
+    fn banded_slab_folds_across_processes(
+        n: usize,
+        ranks: usize,
+        scene: SlabScene,
+        fault: SlabCrossFault,
+        iterations: u32,
+    ) -> Vec<[u64; 4]> {
+        let (mut kids, mut brokered, links) = open_slab_mesh(
+            ranks,
+            &[
+                (XSLAB_KIND, SlabRunKind::Banded.as_str().into()),
+                (XSLAB_SIZE, n.to_string()),
+                (XSLAB_SCENE, scene.as_str().into()),
+                (XSLAB_FAULT, fault.as_str().into()),
+                (XSLAB_ITERS, iterations.to_string()),
+            ],
+        );
+        let mine = solve_slab_banded_as_rank(n, ranks, 0, scene, fault, iterations, links);
+        kids.join();
+        let mut folds = collect_slab_reports(&mut brokered);
+        folds[0] = mine;
+        folds
+    }
+
+    /// Fold the band rank `rank` owns out of an already-solved single-process
+    /// field, through the same function the rank itself used.
+    #[cfg(feature = "std")]
+    fn fold_reference_band(reference: &MacGrid, n: usize, ranks: usize, rank: usize) -> [u64; 4] {
+        let b = slab_bounds(n, ranks, rank);
+        let faces = SlabFaces::from_grid(reference, b);
+        let band = band_for_rank(cell_plane(n, n), n, b, 1, &reference.pressure);
+        fold_band(&faces, &band)
+    }
+
+    /// Every rank of a banded `ranks`-process run folds to what the
+    /// single-process solve folds to over the layers it owns, and between them
+    /// they cover the whole domain.
+    ///
+    /// The reference is built once, here, after the children have exited — the
+    /// point of the banded run being that no other process ever holds one.
+    #[cfg(feature = "std")]
+    fn assert_banded_slab_processes_agree(
+        n: usize,
+        ranks: usize,
+        scene: SlabScene,
+        iterations: u32,
+    ) {
+        let folds =
+            banded_slab_folds_across_processes(n, ranks, scene, SlabCrossFault::None, iterations);
+
+        let mut reference = seed_slab_scene(n, scene);
+        project_pressure_red_black_gs(&mut reference, xproc_dt(), xproc_rho(), iterations);
+
+        let mut cells = 0u64;
+        let mut faces = 0u64;
+        for (rank, got) in folds.iter().enumerate() {
+            let want = fold_reference_band(&reference, n, ranks, rank);
+            assert_eq!(
+                *got, want,
+                "{n}³ over {ranks} processes ({scene:?}, {iterations} iterations): rank {rank} \
+                 folded its own layers to {got:?} against {want:?} for the single-process \
+                 solve, so the distributed run is not bit-exact over them",
+            );
+            cells += got[2];
+            faces += got[3];
+        }
+        assert_eq!(
+            cells,
+            (n * n * n) as u64,
+            "{n}³ over {ranks} processes ({scene:?}): the ranks folded {cells} pressure cells \
+             between them instead of the whole domain, so the agreement above is partly vacuous",
+        );
+        // The X- and Y-face planes belong to the layer that owns the cells, so
+        // there are `n` of each; the Z-face planes sit *between* layers, so
+        // there is one more of those than there are layers, and `w_written`
+        // hands the last one to the last rank. Requiring the exact total rather
+        // than `> 0` is what makes a rank that folds none of its faces — or the
+        // same plane twice while another folds it never — a failure here
+        // instead of an agreement over a subset.
+        let want_faces =
+            (n * u_plane(n, n) + n * v_plane(n, n) + (n + 1) * cell_plane(n, n)) as u64;
+        assert_eq!(
+            faces, want_faces,
+            "{n}³ over {ranks} processes ({scene:?}): the ranks folded {faces} face values \
+             between them instead of the {want_faces} the domain has, so the velocity half of \
+             the agreement above is over a subset",
+        );
+    }
+
+    /// The band a rank builds out of the scene is the band it would have cut out
+    /// of the single-process grid — velocities, the three solve predicates, the
+    /// sparse conditions and the initial pressure, halo layers included.
+    ///
+    /// This is what lets the large run seed band by band: at `SLAB_CASES` sizes
+    /// both constructions are affordable and compared here, and above those
+    /// sizes only the band-local one is ever built. `n = 1` and `n = 2` are in
+    /// the list because that is where `MacGrid::set_closed_box_walls` switches
+    /// between a symmetry plane and a wall at rest, and only one of the two
+    /// leaves an entry in the sparse map.
+    #[test]
+    fn the_band_local_scene_matches_the_one_read_from_a_grid() {
+        let mut sparse_entries = 0usize;
+        let mut solid_faces = 0usize;
+        let mut nonzero_pressure = 0usize;
+        let mut inflow_faces = 0usize;
+        let mut cases = 0usize;
+
+        for &(n, ranks) in SLAB_CASES.iter().chain(&[(1, 2), (1, 3), (2, 2), (2, 5)]) {
+            for scene in [SlabScene::Open, SlabScene::ClosedBox, SlabScene::ZOutflow] {
+                let grid = seed_slab_scene(n, scene);
+                let plane = cell_plane(n, n);
+                for rank in 0..ranks {
+                    cases += 1;
+                    let b = slab_bounds(n, ranks, rank);
+                    let (faces, cond, band) = band_for_scene(n, scene, b);
+                    let want_faces = SlabFaces::from_grid(&grid, b);
+                    let want_cond = SlabFaceConditions::from_grid(&grid, b);
+                    let want_band = band_for_rank(plane, n, b, 1, &grid.pressure);
+                    let where_ = format!("{n}³ over {ranks} ranks ({scene:?}), rank {rank}");
+
+                    assert_eq!(faces.u, want_faces.u, "{where_}: X-face velocities");
+                    assert_eq!(faces.v, want_faces.v, "{where_}: Y-face velocities");
+                    assert_eq!(faces.w, want_faces.w, "{where_}: Z-face velocities");
+                    assert_eq!(faces.u_flags, want_faces.u_flags, "{where_}: X-face flags");
+                    assert_eq!(faces.v_flags, want_faces.v_flags, "{where_}: Y-face flags");
+                    assert_eq!(faces.w_flags, want_faces.w_flags, "{where_}: Z-face flags");
+                    assert_eq!(cond.u, want_cond.u, "{where_}: X-face conditions");
+                    assert_eq!(cond.v, want_cond.v, "{where_}: Y-face conditions");
+                    assert_eq!(cond.w, want_cond.w, "{where_}: Z-face conditions");
+
+                    let (lo, hi) = band.resident();
+                    assert_eq!(
+                        (lo, hi),
+                        want_band.resident(),
+                        "{where_}: resident pressure layers",
+                    );
+                    for k in lo..hi {
+                        assert_eq!(
+                            band.layer(k),
+                            want_band.layer(k),
+                            "{where_}: initial pressure of layer {k}",
+                        );
+                        nonzero_pressure += band
+                            .layer(k)
+                            .expect("a resident layer")
+                            .iter()
+                            .filter(|&&p| p != Fix128::ZERO)
+                            .count();
+                    }
+                    sparse_entries += cond.u.len() + cond.v.len() + cond.w.len();
+                    solid_faces += faces
+                        .u_flags
+                        .iter()
+                        .chain(&faces.v_flags)
+                        .chain(&faces.w_flags)
+                        .filter(|f| f.blocks_pressure)
+                        .count();
+                    inflow_faces += faces.u_flags.iter().filter(|f| f.inflow).count();
+                }
+            }
+        }
+
+        // A comparison of two empty bands is satisfied by any construction, so
+        // the loop has to have met each kind of thing it claims to compare.
+        assert!(cases > 0, "no case ran");
+        assert!(
+            sparse_entries > 0,
+            "every case compared an empty condition list, so the sparse half of the \
+             construction is untested",
+        );
+        assert!(
+            solid_faces > 0,
+            "no case produced a face that blocks pressure, so the flags are all defaults",
+        );
+        assert!(
+            inflow_faces > 0,
+            "no case produced an inflow face, so the one predicate the sparse map carries and \
+             the dense flag cannot is untested",
+        );
+        assert!(
+            nonzero_pressure > 0,
+            "every case started from zero pressure, so a band that forgot to seed its halo \
+             would compare equal",
+        );
+    }
+
+    /// The banded path — the one the large run uses — reproduces the
+    /// single-process solve bit for bit at the sizes a test suite can afford.
+    ///
+    /// The size knob exists so that this same code can be run at 512³ by hand;
+    /// what makes raising it meaningful is that the path itself is pinned here,
+    /// on every `cargo test`, including the rank that owns nothing and the scene
+    /// whose face conditions cross a slab boundary.
+    ///
+    /// The iteration count varies across the cases rather than being
+    /// [`XSLAB_ITERATIONS`] throughout, because the large run takes its own
+    /// count from the environment: with one count everywhere, a rank that
+    /// ignored the count it was handed and used the constant would agree here
+    /// and then solve the wrong number of sweeps at 512³.
+    #[cfg(feature = "std")]
+    #[test]
+    fn the_banded_cross_process_slab_path_reproduces_the_monolithic_solve() {
+        let cases = [
+            (9usize, 3usize, SlabScene::ClosedBox, XSLAB_ITERATIONS),
+            (8, 3, SlabScene::ZOutflow, 1),
+            (3, 4, SlabScene::ZOutflow, XSLAB_ITERATIONS + 3),
+            (6, 2, SlabScene::Open, XSLAB_ITERATIONS),
+        ];
+        assert!(
+            cases
+                .iter()
+                .any(|&(.., iterations)| iterations != XSLAB_ITERATIONS),
+            "every case runs {XSLAB_ITERATIONS} iterations, so a rank that ignored the count it \
+             was handed would pass this test",
+        );
+        for &(n, ranks, scene, iterations) in &cases {
+            if scene == SlabScene::ZOutflow {
+                assert!(
+                    z_outflow_crossings(n, ranks) > 0,
+                    "{n}³ over {ranks} ranks has no Z-face layer crossing a slab boundary, so \
+                     this case does not exercise the face-condition pipeline",
+                );
+            }
+            assert_banded_slab_processes_agree(n, ranks, scene, iterations);
+        }
+    }
+
+    /// Teeth for the test above: drop every pressure halo delivery — on every
+    /// rank, so no stream is left with an unread layer — and the folds must stop
+    /// matching.
+    ///
+    /// Without this, the folds could be agreeing because every rank seeds the
+    /// same field and the streams contribute nothing, or because `fold_band`
+    /// folds the same constant on both sides.
+    #[cfg(feature = "std")]
+    #[test]
+    fn a_banded_cross_process_slab_run_without_the_pressure_halo_does_not_reproduce_the_solve() {
+        let (n, ranks) = (8usize, 3usize);
+        let folds = banded_slab_folds_across_processes(
+            n,
+            ranks,
+            SlabScene::ZOutflow,
+            SlabCrossFault::NoPressureHalo,
+            XSLAB_ITERATIONS,
+        );
+        let mut reference = seed_slab_scene(n, SlabScene::ZOutflow);
+        project_pressure_red_black_gs(&mut reference, xproc_dt(), xproc_rho(), XSLAB_ITERATIONS);
+        let differing = folds
+            .iter()
+            .enumerate()
+            .filter(|&(rank, got)| *got != fold_reference_band(&reference, n, ranks, rank))
+            .count();
+        assert!(
+            differing > 0,
+            "{n}³ over {ranks} processes that exchanged no pressure halo at all still folded \
+             to the single-process solve, so the banded oracle is not measuring the exchange: \
+             {folds:?}",
+        );
+    }
+
+    /// Teeth aimed at the other crossing: receive the Z-face plane the pipeline
+    /// carries and impose the conditions as though it had been zero, and the
+    /// folds must stop matching.
+    #[cfg(feature = "std")]
+    #[test]
+    fn a_banded_cross_process_slab_run_without_the_z_face_layer_does_not_reproduce_the_solve() {
+        let (n, ranks) = (8usize, 3usize);
+        assert!(
+            z_outflow_crossings(n, ranks) > 0,
+            "{n}³ over {ranks} ranks has no Z-face layer crossing a slab boundary, so blanking \
+             it could not change anything",
+        );
+        let folds = banded_slab_folds_across_processes(
+            n,
+            ranks,
+            SlabScene::ZOutflow,
+            SlabCrossFault::BlankFaceHalo,
+            XSLAB_ITERATIONS,
+        );
+        let mut reference = seed_slab_scene(n, SlabScene::ZOutflow);
+        project_pressure_red_black_gs(&mut reference, xproc_dt(), xproc_rho(), XSLAB_ITERATIONS);
+        let differing = folds
+            .iter()
+            .enumerate()
+            .filter(|&(rank, got)| *got != fold_reference_band(&reference, n, ranks, rank))
+            .count();
+        assert!(
+            differing > 0,
+            "{n}³ over {ranks} processes that imposed their face conditions without the layer \
+             below still folded to the single-process solve, so the face-condition pipeline is \
+             not measured: {folds:?}",
+        );
+    }
+
+    // ========================================================================
+    // The large run: same path, size from the environment
+    // ========================================================================
+
+    /// Edge length of the large cross-process run.
+    #[cfg(feature = "std")]
+    const XSLAB_BIG_SIZE: &str = "ALICE_PHYSICS_XSLAB_BIG_SIZE";
+    /// How many processes the large run splits the domain across.
+    #[cfg(feature = "std")]
+    const XSLAB_BIG_RANKS: &str = "ALICE_PHYSICS_XSLAB_BIG_RANKS";
+    /// Which [`SlabScene`] the large run uses.
+    #[cfg(feature = "std")]
+    const XSLAB_BIG_SCENE: &str = "ALICE_PHYSICS_XSLAB_BIG_SCENE";
+    /// How many red-black iterations the large run performs.
+    #[cfg(feature = "std")]
+    const XSLAB_BIG_ITERATIONS: &str = "ALICE_PHYSICS_XSLAB_BIG_ITERATIONS";
+
+    /// What the large cross-process run was asked for.
+    #[cfg(feature = "std")]
+    #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+    struct BigSlabRun {
+        /// Edge length; the domain is `n³` cells.
+        n: usize,
+        /// Processes to split the depth across.
+        ranks: usize,
+        /// Which scene every rank seeds.
+        scene: SlabScene,
+        /// Red-black iterations, the same number on both sides.
+        iterations: u32,
+    }
+
+    /// Read a [`BigSlabRun`] out of the environment, or say why not.
+    ///
+    /// Every field is required and no field has a default. That is the whole
+    /// design of this function: a defaulted size would turn a mistyped variable
+    /// name into a run at some other size that still reports a bit-exact
+    /// agreement, and the report would name the size that was asked for rather
+    /// than the size that ran. There is nothing in the output of a smaller run
+    /// that distinguishes it from a larger one, so the only place that mistake
+    /// can be caught is here.
+    ///
+    /// `read` is a parameter rather than `std::env::var` so that the rejections
+    /// can be tested: the environment is process-global and the test binary runs
+    /// its tests in threads of one process.
+    #[cfg(feature = "std")]
+    fn parse_big_slab_run(read: &dyn Fn(&str) -> Option<String>) -> Result<BigSlabRun, String> {
+        let number = |name: &str| -> Result<usize, String> {
+            let raw = read(name).ok_or_else(|| {
+                format!(
+                    "{name} is not set: the large cross-process run takes its size from the \
+                     environment and has no default, because a default would make a mistyped \
+                     variable name look like a successful run at the size you asked for",
+                )
+            })?;
+            let value: usize = raw
+                .trim()
+                .parse()
+                .map_err(|_| format!("{name} is `{raw}`, which is not a number"))?;
+            Ok(value)
+        };
+
+        let n = number(XSLAB_BIG_SIZE)?;
+        if n == 0 {
+            return Err(format!(
+                "{XSLAB_BIG_SIZE} is 0, so there is no domain to solve"
+            ));
+        }
+        let ranks = number(XSLAB_BIG_RANKS)?;
+        if ranks < 2 {
+            return Err(format!(
+                "{XSLAB_BIG_RANKS} is {ranks}: a cross-process run needs at least two \
+                 processes, and the point of this one is more than two",
+            ));
+        }
+        let scene_name = read(XSLAB_BIG_SCENE).ok_or_else(|| {
+            format!("{XSLAB_BIG_SCENE} is not set: name `open`, `closed` or `zoutflow`")
+        })?;
+        let scene = match scene_name.trim() {
+            "open" => SlabScene::Open,
+            "closed" => SlabScene::ClosedBox,
+            "zoutflow" => SlabScene::ZOutflow,
+            other => {
+                return Err(format!(
+                    "{XSLAB_BIG_SCENE} is `{other}`, which is not `open`, `closed` or `zoutflow`",
+                ));
+            }
+        };
+        let iterations = u32::try_from(number(XSLAB_BIG_ITERATIONS)?)
+            .map_err(|_| format!("{XSLAB_BIG_ITERATIONS} does not fit in a u32"))?;
+        if iterations == 0 {
+            return Err(format!(
+                "{XSLAB_BIG_ITERATIONS} is 0, so neither side would solve anything and the two \
+                 would agree about the field they started from",
+            ));
+        }
+        Ok(BigSlabRun {
+            n,
+            ranks,
+            scene,
+            iterations,
+        })
+    }
+
+    /// A mistyped or impossible large-run request is refused by name rather than
+    /// quietly replaced with a smaller run.
+    ///
+    /// The teeth for [`parse_big_slab_run`]'s one job. Each rejection is a
+    /// separate case because a single "it returns `Err`" would be satisfied by a
+    /// function that rejects everything.
+    #[cfg(feature = "std")]
+    #[test]
+    fn a_mistyped_large_run_request_is_refused_rather_than_defaulted() {
+        let set = |pairs: &[(&str, &str)]| -> Vec<(String, String)> {
+            pairs
+                .iter()
+                .map(|&(k, v)| (k.to_owned(), v.to_owned()))
+                .collect()
+        };
+        let reader = |pairs: Vec<(String, String)>| {
+            move |name: &str| -> Option<String> {
+                pairs
+                    .iter()
+                    .find(|(k, _)| k == name)
+                    .map(|(_, v)| v.clone())
+            }
+        };
+        let good = [
+            (XSLAB_BIG_SIZE, "512"),
+            (XSLAB_BIG_RANKS, "8"),
+            (XSLAB_BIG_SCENE, "closed"),
+            (XSLAB_BIG_ITERATIONS, "6"),
+        ];
+        let with = |name: &str, value: &str| -> Vec<(String, String)> {
+            let mut pairs = set(&good);
+            for entry in &mut pairs {
+                if entry.0 == name {
+                    entry.1 = value.to_owned();
+                }
+            }
+            pairs
+        };
+        let without = |name: &str| -> Vec<(String, String)> {
+            set(&good).into_iter().filter(|(k, _)| k != name).collect()
+        };
+
+        assert_eq!(
+            parse_big_slab_run(&reader(set(&good))),
+            Ok(BigSlabRun {
+                n: 512,
+                ranks: 8,
+                scene: SlabScene::ClosedBox,
+                iterations: 6,
+            }),
+            "a complete request is accepted exactly as given",
+        );
+
+        for (what, pairs, must_name) in [
+            ("no size at all", without(XSLAB_BIG_SIZE), XSLAB_BIG_SIZE),
+            ("a size of zero", with(XSLAB_BIG_SIZE, "0"), XSLAB_BIG_SIZE),
+            (
+                "a size that is not a number",
+                with(XSLAB_BIG_SIZE, "512³"),
+                XSLAB_BIG_SIZE,
+            ),
+            ("no rank count", without(XSLAB_BIG_RANKS), XSLAB_BIG_RANKS),
+            ("a single rank", with(XSLAB_BIG_RANKS, "1"), XSLAB_BIG_RANKS),
+            ("no scene", without(XSLAB_BIG_SCENE), XSLAB_BIG_SCENE),
+            (
+                "an unknown scene",
+                with(XSLAB_BIG_SCENE, "ClosedBox"),
+                XSLAB_BIG_SCENE,
+            ),
+            (
+                "no iteration count",
+                without(XSLAB_BIG_ITERATIONS),
+                XSLAB_BIG_ITERATIONS,
+            ),
+            (
+                "zero iterations",
+                with(XSLAB_BIG_ITERATIONS, "0"),
+                XSLAB_BIG_ITERATIONS,
+            ),
+        ] {
+            let got = parse_big_slab_run(&reader(pairs));
+            let message = match got {
+                Err(message) => message,
+                Ok(run) => panic!("{what} was accepted as {run:?} instead of being refused"),
+            };
+            assert!(
+                message.contains(must_name),
+                "{what} was refused with `{message}`, which does not name {must_name}, so the \
+                 message does not say which variable to fix",
+            );
+        }
+    }
+
+    /// The large cross-process run: the banded path at whatever size the
+    /// environment asks for, folded against one single-process reference.
+    ///
+    /// Ignored by default, and it refuses to run on defaults — see
+    /// [`parse_big_slab_run`]. Run it with
+    ///
+    /// ```text
+    /// ALICE_PHYSICS_XSLAB_BIG_SIZE=512 \
+    /// ALICE_PHYSICS_XSLAB_BIG_RANKS=8 \
+    /// ALICE_PHYSICS_XSLAB_BIG_SCENE=closed \
+    /// ALICE_PHYSICS_XSLAB_BIG_ITERATIONS=6 \
+    /// cargo test --release --features std --lib -- --ignored --nocapture --test-threads=1 \
+    ///   a_large_banded_cross_process_slab_run
+    /// ```
+    ///
+    /// `--release` is not optional at these sizes, and `--test-threads=1`
+    /// because the run owns the machine's memory while it lasts.
+    ///
+    /// What it costs: while the children run, about 105 bytes per cell spread
+    /// across the ranks; once they are gone, the reference plus one band, which
+    /// is about 105 bytes per cell in rank 0 alone — 13.2 GiB at 512³. The
+    /// `scene` matters to that: `zoutflow` puts an entry in the reference grid's
+    /// sparse Z-face map for every second interior layer, which is `n³ / 2`
+    /// entries, so it costs several gigabytes more than `closed` on top.
+    #[cfg(feature = "std")]
+    #[test]
+    #[ignore = "measurement: takes its size from the environment and allocates by the \
+                gigabyte; the path it runs is pinned at test-suite sizes by \
+                the_banded_cross_process_slab_path_reproduces_the_monolithic_solve"]
+    fn a_large_banded_cross_process_slab_run_reproduces_the_monolithic_solve() {
+        let run = match parse_big_slab_run(&|name| std::env::var(name).ok()) {
+            Ok(run) => run,
+            Err(why) => panic!("{why}"),
+        };
+        let cells = run.n * run.n * run.n;
+        println!(
+            "{n}³ = {cells} cells over {ranks} processes ({scene:?}), {iterations} red-black \
+             iterations, bit-exact against the single-process solve",
+            n = run.n,
+            ranks = run.ranks,
+            scene = run.scene,
+            iterations = run.iterations,
+        );
+        let started = std::time::Instant::now();
+        assert_banded_slab_processes_agree(run.n, run.ranks, run.scene, run.iterations);
+        println!(
+            "  agreed in {:?} ({:.1} ns per cell per iteration, distributed and single-process \
+             runs together)",
+            started.elapsed(),
+            started.elapsed().as_secs_f64() * 1.0e9 / (cells * run.iterations as usize) as f64,
+        );
     }
 }
