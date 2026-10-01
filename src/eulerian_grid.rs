@@ -4050,6 +4050,8 @@ pub(crate) fn p2g_nearest(grid: &mut MacGrid, pos_m: Vec3Fix, vel_m_per_s: Vec3F
 /// face velocity. Faces no particle reaches keep their previous value.
 ///
 /// `particles` is a slice of `(position_m, velocity_m_per_s)`.
+/// A particle with any negative coordinate, or one beyond the far side, lies
+/// outside the domain and contributes nothing.
 ///
 /// `p2g_trilinear` only accumulates `weight * v` and keeps no weight sum, so
 /// it cannot produce a mean. This entry point runs it twice on scratch grids,
@@ -4065,6 +4067,14 @@ pub fn p2g_normalized(grid: &mut MacGrid, particles: &[(Vec3Fix, Vec3Fix)]) {
     let mut den = MacGrid::new(grid.nx, grid.ny, grid.nz, grid.dx);
     let one = Vec3Fix::new(Fix128::ONE, Fix128::ONE, Fix128::ONE);
     for &(pos, vel) in particles {
+        // A particle left of the domain is dropped, as one beyond the far side
+        // already is. `split` clamps a negative coordinate to face 0 with full
+        // weight, which `g2p_velocity` and the advection back-trace rely on, but
+        // here it would overwrite the corner face with the velocity of a particle
+        // that is nowhere near it.
+        if pos.x < Fix128::ZERO || pos.y < Fix128::ZERO || pos.z < Fix128::ZERO {
+            continue;
+        }
         p2g_trilinear(&mut num, pos, vel);
         p2g_trilinear(&mut den, pos, one);
     }

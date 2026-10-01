@@ -19,6 +19,7 @@ Memory index pointer: `[[reference-alice-physics-v1-roadmap]]` in claude-config.
 
 `eulerian_grid::p2g_normalized` を追加した (`tests/analytic_p2g.rs` の oracle 4 本、変異 5 件が red)
 `p2g_trilinear` は重み総和を持たず一様速度を再現できなかったので、正規化つきの入口を別に置いた
+退化入力の試験で負座標の粒子が角の face を上書きする不具合を見つけて直した (`p2g_normalized` の入口で除外、`split` の clamp は移流が依存するので不変)
 ⚠️ `cfd_solver` の自前分配は置換していない (同じ結果になるかの実測が先)、FLIP / PIC の時間発展ループも未着手
 
 ### 第 6 increment (2026-10-01、壁 3 強連成 + 壁 4 HPC 並列)
