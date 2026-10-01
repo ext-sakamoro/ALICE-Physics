@@ -197,6 +197,61 @@ fn the_result_is_bit_deterministic() {
     same_grid(&a.grid, &b.grid);
 }
 
+/// 巨大な `dt` は panic しないだけでは何も言えない (`Fix128` は wrap する)。
+/// 通常の `dt` で成立する 3 つの oracle を、巨大な `dt` (2^20 / 2^30 / 2^40) でも
+/// 同じ許容で要求する。wrap して値が壊れれば、どれも O(1) で崩れる。
+/// (1) 合成: `step_multigrid` = 射影なしの step + 多重格子射影 (bit 一致)
+/// (2) 収束した多重格子 = 収束した Gauss-Seidel (`PHYSICS_TOL_REL`、測定 3.9e-14)
+/// (3) 収束後の最大 |div| は、場の大きさに対して `DIVERGENCE_TOL` 以下
+///     (測定 1.1e-13、dt = 2^40 の場は ~5e7 まで拡散項で大きくなる (陽的拡散は
+///     dt に比例して発散する、wrap ではない) ので場の大きさで割る)。
+#[test]
+fn huge_dt_keeps_the_step_oracles() {
+    for (name, t) in [
+        ("2^20", Fix128::from_int(1 << 20)),
+        ("2^30", Fix128::from_int(1 << 30)),
+        ("2^40", Fix128::from_int(1 << 40)),
+    ] {
+        // (1) composition
+        let mut by_step = scene(8, 8, 8);
+        let mut reference = scene(8, 8, 8);
+        by_step.step_multigrid(t, 3);
+        reference.jacobi_iterations = 0;
+        reference.step_multigrid(t, 0);
+        project_pressure_multigrid(&mut reference.grid, t, reference.density_kg_m3, 3);
+        same_grid(&by_step.grid, &reference.grid);
+        assert_eq!(by_step.step_count, 1, "dt {name}");
+
+        // (2) + (3)
+        let mut mg = scene(8, 8, 8);
+        let mut gs = scene(8, 8, 8);
+        gs.jacobi_iterations = 600;
+        mg.step_multigrid(t, 24);
+        gs.step_multigrid(t, 0);
+        let scale = max_abs(&gs.grid.u)
+            .max(max_abs(&gs.grid.v))
+            .max(max_abs(&gs.grid.w));
+        assert!(scale > 1.0, "dt {name}: the field must not have vanished");
+        for (comp, a, b) in [
+            ("u", &mg.grid.u, &gs.grid.u),
+            ("v", &mg.grid.v, &gs.grid.v),
+            ("w", &mg.grid.w, &gs.grid.w),
+        ] {
+            for (i, (x, y)) in a.iter().zip(b).enumerate() {
+                assert!(
+                    (x.to_f64() - y.to_f64()).abs() <= PHYSICS_TOL_REL * scale,
+                    "dt {name}: {comp}[{i}] {x:?} vs {y:?}"
+                );
+            }
+        }
+        assert!(
+            max_div(&mg.grid) <= DIVERGENCE_TOL * scale,
+            "dt {name}: divergence {} (field scale {scale})",
+            max_div(&mg.grid)
+        );
+    }
+}
+
 #[test]
 fn degenerate_inputs_never_add_a_panic_path() {
     // `step_multigrid` must panic exactly when `step` does: whatever the step

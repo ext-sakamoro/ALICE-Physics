@@ -496,49 +496,108 @@ fn many_coincident_particles_still_give_the_exact_mean() {
     assert_eq!(g.u(2, 2, 2), Fix128::from_int(4));
 }
 
-/// `f` が panic したらその文言を返す。出力を汚さないよう hook を一時的に外す。
-fn panic_message<F: FnOnce() + std::panic::UnwindSafe>(f: F) -> Option<String> {
-    let prev = std::panic::take_hook();
-    std::panic::set_hook(Box::new(|_| {}));
-    let r = std::panic::catch_unwind(f);
-    std::panic::set_hook(prev);
-    r.err().map(|e| {
-        e.downcast_ref::<String>()
-            .cloned()
-            .or_else(|| e.downcast_ref::<&str>().map(|s| (*s).to_string()))
-            .unwrap_or_else(|| "<non-string payload>".to_string())
-    })
+/// 格子の全 face が bit 一致するか (`MacGrid` は `PartialEq` を持たない)。
+fn same_faces(a: &MacGrid, b: &MacGrid) -> bool {
+    a.u == b.u && a.v == b.v && a.w == b.w
 }
 
+/// `Fix128` の加算・乗算は mod 2^128 の wrapping なので、巨大値は panic しない
+/// ことより「どの値になるか」が仕様。領域外の位置は無視される (`p2g_normalized`
+/// の左側 skip と `split` の遠側 skip) ので、
+/// (a) 巨大位置だけの粒子は格子を 1 bit も変えない
+/// (b) 領域内の粒子と同居しても、領域内の粒子だけの結果と bit 一致する
+/// (wrap して領域内に落ちて deposit されると (a) (b) のどちらかが崩れる)。
 #[test]
-fn huge_positions_do_not_panic() {
+fn huge_positions_are_ignored_bit_for_bit() {
     let big = [
         ("i64::MAX/4", Fix128::from_int(i64::MAX / 4)),
         ("1<<40", Fix128::from_int(1 << 40)),
+        ("1<<32", Fix128::from_int(1 << 32)),
         ("-(i64::MAX/4)", Fix128::from_int(-(i64::MAX / 4))),
         ("-(1<<40)", Fix128::from_int(-(1 << 40))),
+        ("-(1<<32)", Fix128::from_int(-(1 << 32))),
     ];
+    let inside = (v3(q(5, 4), q(5, 4), q(5, 4)), vel(1, 2, 3));
+    let mut only_inside = MacGrid::new(4, 4, 4, Fix128::ONE);
+    p2g_normalized(&mut only_inside, &[inside]);
+    let empty = MacGrid::new(4, 4, 4, Fix128::ONE);
+    assert!(
+        !same_faces(&only_inside, &empty),
+        "the in-domain particle must deposit something, or (b) is vacuous"
+    );
     for (name, b) in big {
-        let r = panic_message(|| {
+        // 全成分が巨大、および 1 成分だけ巨大 (他は領域内) の両方。
+        let mid = q(5, 4);
+        for (axis, pos) in [
+            ("xyz", v3(b, b, b)),
+            ("x", v3(b, mid, mid)),
+            ("y", v3(mid, b, mid)),
+            ("z", v3(mid, mid, b)),
+        ] {
             let mut g = MacGrid::new(4, 4, 4, Fix128::ONE);
-            p2g_normalized(&mut g, &[(v3(b, b, b), vel(1, 2, 3))]);
-        });
-        assert_eq!(r, None, "position {name}: panicked");
+            let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                p2g_normalized(&mut g, &[(pos, vel(1, 2, 3))]);
+            }));
+            assert!(r.is_ok(), "position {name} on {axis}: panicked");
+            assert!(
+                same_faces(&g, &empty),
+                "position {name} on {axis}: the grid changed"
+            );
+
+            let mut g = MacGrid::new(4, 4, 4, Fix128::ONE);
+            p2g_normalized(
+                &mut g,
+                &[(pos, vel(7, 8, 9)), inside, (pos, vel(-5, 6, -7))],
+            );
+            assert!(
+                same_faces(&g, &only_inside),
+                "position {name} on {axis}: changed the in-domain particle's result"
+            );
+        }
     }
 }
 
+/// 巨大な速度は wrap しない範囲 (同じ face に載る粒子 2 個で |v|·Σw < 2^63) なら
+/// 閉形式: 正規化 P2G は到達した face に粒子速度そのものを置く。到達する face の
+/// 集合は速度 1 の粒子と同じ (速度で変わらない) ので、基準の集合を 1 で取り、
+/// 巨大速度の格子はその集合上で厳密に `b`、集合外で 0。`1<<32` は二乗が 2^64 で
+/// 0 に巻き戻る境目、`i64::MAX/4` は 2 粒子の和が 2^62 に届く上限側。
 #[test]
-fn huge_velocities_do_not_panic() {
+fn huge_velocities_reproduce_the_particle_velocity_exactly() {
     let big = [
         ("i64::MAX/4", Fix128::from_int(i64::MAX / 4)),
+        ("-(i64::MAX/4)", Fix128::from_int(-(i64::MAX / 4))),
         ("1<<40", Fix128::from_int(1 << 40)),
+        ("1<<32", Fix128::from_int(1 << 32)),
     ];
+    let pos = v3(q(5, 4), q(5, 4), q(5, 4));
+    let mut reference = MacGrid::new(4, 4, 4, Fix128::ONE);
+    p2g_normalized(&mut reference, &[(pos, vel(1, 1, 1)), (pos, vel(1, 1, 1))]);
+    let reached = |a: &[Fix128]| a.iter().filter(|x| !x.is_zero()).count();
+    assert_eq!(
+        (
+            reached(&reference.u),
+            reached(&reference.v),
+            reached(&reference.w)
+        ),
+        (8, 8, 8),
+        "the unit-velocity reference must reach 8 faces per component"
+    );
     for (name, b) in big {
-        let r = panic_message(|| {
-            let mut g = MacGrid::new(4, 4, 4, Fix128::ONE);
-            let pos = v3(q(5, 4), q(5, 4), q(5, 4));
+        let mut g = MacGrid::new(4, 4, 4, Fix128::ONE);
+        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             p2g_normalized(&mut g, &[(pos, v3(b, b, b)), (pos, v3(b, b, b))]);
-        });
-        assert_eq!(r, None, "velocity {name}: panicked");
+        }));
+        assert!(r.is_ok(), "velocity {name}: panicked");
+        for (comp, got, refv) in [
+            ("u", &g.u, &reference.u),
+            ("v", &g.v, &reference.v),
+            ("w", &g.w, &reference.w),
+        ] {
+            for (i, (x, r)) in got.iter().zip(refv).enumerate() {
+                let want = if r.is_zero() { Fix128::ZERO } else { b };
+                assert_eq!(*x, want, "velocity {name}: {comp}[{i}]");
+            }
+        }
     }
 }

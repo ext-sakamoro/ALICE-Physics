@@ -484,16 +484,7 @@ fn degenerate_inputs_do_not_panic() {
             );
         });
     }
-    // Huge dt / density: a panic is not acceptable, the result is not
-    // pinned (see `huge_values_report`).
-    no_panic("huge dt", || {
-        let mut g = noise_scene(8, 8, 8);
-        project_pressure_multigrid(&mut g, int(1 << 40), Fix128::ONE, 3);
-    });
-    no_panic("huge density", || {
-        let mut g = noise_scene(8, 8, 8);
-        project_pressure_multigrid(&mut g, Fix128::ONE, int(1 << 40), 3);
-    });
+    // Huge dt / density: the pinned result is in `huge_dt_and_density_do_not_change_the_velocity`.
     // Fully closed box: singular Poisson problem (constant null space).
     no_panic("closed box", || {
         let mut g = noise_scene(8, 8, 8);
@@ -656,4 +647,61 @@ fn smooth_scene(n: usize) -> MacGrid {
         *x = *x * scale;
     }
     g
+}
+
+/// `u <- u - (dt/rho) grad p` with `p` solving `lap p = (rho/dt) div u`, so the
+/// projected velocity does not depend on `dt` or `rho` at all: only the pressure
+/// scales (`p ~ rho/dt`). The oracle is the projection at `dt = rho = 1`.
+/// `Fix128` wraps instead of panicking, so a huge `dt` / `rho` that overflowed
+/// would produce an O(1) difference, not a panic. What is left is quantisation:
+/// `dt` large makes `p` tiny, and one pressure ulp (2^-64) times `dt/rho`
+/// reaches the velocity, so the tolerance grows with `dt` (measured 1.5e-7 at
+/// `dt = 2^40` against a bound of 6e-5); `rho` large is exact to ~1e-17, the floor 1e-15 absorbs that.
+#[test]
+fn huge_dt_and_density_do_not_change_the_velocity() {
+    let mut base = noise_scene(8, 8, 8);
+    project_pressure_multigrid(&mut base, Fix128::ONE, Fix128::ONE, 3);
+    let ulp = 5.421_010_862_427_522e-20; // 2^-64, one Fix128 fractional ulp
+    for (what, dt, rho) in [
+        ("dt=2^20", int(1 << 20), Fix128::ONE),
+        ("dt=2^40", int(1 << 40), Fix128::ONE),
+        ("rho=2^20", Fix128::ONE, int(1 << 20)),
+        ("rho=2^40", Fix128::ONE, int(1 << 40)),
+        ("dt=rho=2^40", int(1 << 40), int(1 << 40)),
+    ] {
+        let mut g = noise_scene(8, 8, 8);
+        no_panic(what, || {
+            project_pressure_multigrid(&mut g, dt, rho, 3);
+        });
+        let tol = ((dt.to_f64() / rho.to_f64()) * ulp * 100.0).max(1e-15);
+        for (comp, a, b) in [
+            ("u", &g.u, &base.u),
+            ("v", &g.v, &base.v),
+            ("w", &g.w, &base.w),
+        ] {
+            for (i, (x, y)) in a.iter().zip(b).enumerate() {
+                let d = (x.to_f64() - y.to_f64()).abs();
+                assert!(
+                    d <= tol,
+                    "{what}: {comp}[{i}] differs by {d:e} (tol {tol:e})"
+                );
+            }
+        }
+        // The pressure is the one thing that does scale: p(dt, rho) = p(1,1) rho/dt.
+        let pmax = g
+            .pressure
+            .iter()
+            .map(|x| x.to_f64().abs())
+            .fold(0.0, f64::max);
+        let pbase = base
+            .pressure
+            .iter()
+            .map(|x| x.to_f64().abs())
+            .fold(0.0, f64::max);
+        let want = pbase * rho.to_f64() / dt.to_f64();
+        assert!(
+            (pmax - want).abs() <= want * 1e-3 + tol,
+            "{what}: max|p| {pmax:e}, expected {want:e}"
+        );
+    }
 }
