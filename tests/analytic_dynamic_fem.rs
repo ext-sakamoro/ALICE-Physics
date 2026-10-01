@@ -28,7 +28,7 @@
 
 use alice_physics::dynamic_fem::{DynamicsConfig, MassLumping, TransientSolver};
 use alice_physics::linear_elastic_fem::{
-    self, Axis, BoundaryConditions, ElasticMaterial, Preconditioner, SolverConfig,
+    self, Axis, BoundaryConditions, ElasticMaterial, FemError, Preconditioner, SolverConfig,
 };
 use alice_physics::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
 use alice_physics::Fix128;
@@ -853,6 +853,129 @@ fn a_same_axis_prescribed_displacement_leaves_an_uncoupled_free_dof_exactly_at_r
             "node 3 gained velocity along x at step {n}"
         );
     }
+}
+
+// ---------------------------------------------------------------------------
+// degenerate input
+// ---------------------------------------------------------------------------
+
+/// Every degenerate input returns `Err`, and none of them panics, divides by
+/// zero or overflows on the way.
+///
+/// The cases are the ones that reach arithmetic rather than a type: a zero or
+/// negative step divides by zero two layers down, a step small enough that
+/// `4/dt²` leaves [`Fix128`] silently wraps, and a zero or negative density
+/// makes the effective operator indefinite. The assert is on the variant, not
+/// merely on `is_err`, because `InvalidConfig` and `DegenerateElement` call for
+/// different responses from a caller.
+#[test]
+fn degenerate_configurations_are_refused_rather_than_panicking() {
+    let good_dt = two_pow_neg(23);
+    let good_rho = density();
+    let cases: [(&str, Fix128, Fix128); 7] = [
+        ("dt = 0", good_rho, Fix128::ZERO),
+        ("dt < 0", good_rho, Fix128::ZERO - good_dt),
+        ("ρ = 0", Fix128::ZERO, good_dt),
+        ("ρ < 0", Fix128::ZERO - good_rho, good_dt),
+        // dt² underflows the 2⁻⁶⁴ floor entirely.
+        ("dt = 2⁻⁶⁰", good_rho, Fix128::from_raw(0, 1 << 4)),
+        // 4/dt² leaves the i64 integer part.
+        ("dt = 2⁻³⁵", good_rho, Fix128::from_raw(0, 1 << 29)),
+        ("dt = 2⁻⁴⁰", good_rho, Fix128::from_raw(0, 1 << 24)),
+    ];
+    for (label, rho, dt) in cases {
+        let got = DynamicsConfig::try_new(rho, dt, MassLumping::Consistent);
+        assert!(
+            matches!(got, Err(FemError::InvalidConfig(_))),
+            "{label}: expected InvalidConfig, got {got:?}"
+        );
+    }
+    // And the good one is still accepted, so the guards are not refusing
+    // everything.
+    assert!(
+        DynamicsConfig::try_new(good_rho, good_dt, MassLumping::Consistent).is_ok(),
+        "the valid configuration was refused, so these cases prove nothing"
+    );
+}
+
+/// Degenerate meshes and boundary data are refused by variant, not by panic.
+///
+/// A flat tetrahedron is the one that matters: its shape function gradients are
+/// `cross / det` with `det = 0`, so without the guard it divides by zero before
+/// anything else notices.
+#[test]
+fn degenerate_meshes_are_refused_rather_than_panicking() {
+    let material = uniaxial(3500);
+    let dynamics = dynamics(23, MassLumping::Consistent);
+    let config = solver_config();
+    let empty = BoundaryConditions::new();
+
+    let no_vertices = SdfTetMesh::default();
+    assert!(
+        matches!(
+            TransientSolver::new(&no_vertices, &material, &empty, &dynamics, &config),
+            Err(FemError::EmptyMesh)
+        ),
+        "an empty mesh must be refused"
+    );
+
+    let mut no_tets = SdfTetMesh::default();
+    no_tets.vertices.push([0.0, 0.0, 0.0]);
+    assert!(
+        matches!(
+            TransientSolver::new(&no_tets, &material, &empty, &dynamics, &config),
+            Err(FemError::EmptyMesh)
+        ),
+        "a mesh with vertices but no tetrahedra must be refused"
+    );
+
+    // Four coplanar points: det J = 0, so ∇N would divide by zero.
+    let mut flat = SdfTetMesh::default();
+    flat.vertices.push([0.0, 0.0, 0.0]);
+    flat.vertices.push([1.0, 0.0, 0.0]);
+    flat.vertices.push([0.0, 1.0, 0.0]);
+    flat.vertices.push([1.0, 1.0, 0.0]);
+    flat.tets.push(Tetrahedron {
+        vertices: [0, 1, 2, 3],
+    });
+    assert!(
+        matches!(
+            TransientSolver::new(&flat, &material, &empty, &dynamics, &config),
+            Err(FemError::DegenerateElement { tet: 0 })
+        ),
+        "a flat tetrahedron must be refused before ∇N divides by zero"
+    );
+
+    // A tetrahedron naming a vertex the mesh does not have.
+    let mut dangling = corner_tet();
+    dangling.tets.push(Tetrahedron {
+        vertices: [0, 1, 2, 9],
+    });
+    assert!(
+        matches!(
+            TransientSolver::new(&dangling, &material, &empty, &dynamics, &config),
+            Err(FemError::VertexOutOfRange { vertex: 9, .. })
+        ),
+        "a tetrahedron naming a missing vertex must be refused"
+    );
+
+    // A boundary condition naming a vertex the mesh does not have.
+    let mut bad_bc = BoundaryConditions::new();
+    bad_bc.add_load(42, Axis::X, Fix128::ONE);
+    assert!(
+        matches!(
+            TransientSolver::new(&corner_tet(), &material, &bad_bc, &dynamics, &config),
+            Err(FemError::VertexOutOfRange { vertex: 42, .. })
+        ),
+        "a load on a missing vertex must be refused"
+    );
+
+    // The well-formed scene still builds, so the guards are not refusing
+    // everything.
+    assert!(
+        TransientSolver::new(&corner_tet(), &material, &empty, &dynamics, &config).is_ok(),
+        "the valid mesh was refused, so these cases prove nothing"
+    );
 }
 
 // ---------------------------------------------------------------------------
