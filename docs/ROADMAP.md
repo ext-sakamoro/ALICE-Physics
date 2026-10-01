@@ -162,6 +162,59 @@ GS を使うには `step_multigrid(dt, 0)` `step_adaptive` は自動で multigri
 | `ε̄_p` だけの oracle で足りるか | ⛔ ⚠️⚠️ **原理的に不足** `ε̄_p` は step 数に依らないので**仕事の積分則の誤りを検出できない** 実際、変異 M1 (硬化を `ε̄ⁿ` で評価する 1 つずれ) は `ε̄_p` を 1 bit も動かさない |
 | `H = 0` の厳密性 | ✅ `W_p = σ_y·ε̄_p` が σ_y=2 では**全 N で 0 ulp** ⚠️ ただしこれは σ_y が 2 の冪で積が打ち切られないため 非 dyadic な σ_y=2.1 では 0 / 2 / **37** ulp (導出 bound 2 / 5 / 101) ⇒ **dyadic な定数だけで検証すると丸めの経路が一度も通らない** |
 
+### 第 15 increment (2026-10-01 夜、壁 2 の適応 remeshing を誤差駆動にした)
+
+⚠️ **既存行は書き換えていません** 下記は追記です
+
+#### ⚠️⚠️ まず記録の訂正 — 「適応 remeshing は閉じた」は適合性のことだった
+
+[[project_alice_physics_wall2_high_order_and_remeshing]] と本 ROADMAP の既存記述は `tests/refinement_conformity.rs` の `#[ignore]` 0 件を根拠に「適応 remeshing は閉じた」としていた ⚠️ **その 4 本 (`the_scenes_start_conforming` / `uniform_refinement_stays_conforming` / `graded_refinement_stays_conforming` / `propagation_costs_elements_and_the_count_is_bounded`) は全て「面の共有 = 適合性」の test で、解の誤差で駆動する適応の test は 1 本も無かった**
+
+⇒ 閉じていたのは決定 (b) Rivara の伝播 = **適応の前提** 実測で欠けていたもの 4 件: 誤差推定子 0 件 / marking 0 件 / 細分の production caller 0 件 (`tests/` のみ) / ⚠️ **細分の判定が private `edge_to_split` の辺長なので呼び出し側から要素を指名できない**
+
+⚠️ **「局所細分が適合性を保つ」(✅ 閉) と「解の誤差で駆動する適応」(⛔ 開) は別の読みで、欠けているものが違う** [[feedback_de_facto_satisfied_overstates_half_a_condition]] と同型
+
+#### 入ったもの
+
+| 話題 | 到達点 |
+|---|---|
+| **壁 2 適応 remeshing (誤差駆動)** | `StressTensor::complementary_energy_density` / `error_indicators_squared` (Zienkiewicz-Zhu) / `mark_bulk` (Dörfler) / `SdfTetMesh::try_refine_marked` / `AdaptiveConfig` / `AdaptiveSolution` / `solve_adaptive` / `RefineError::MarkCountDoesNotMatch` 公開 API は追加のみ (snapshot **+50 / −0**) 変異試験 **実装 12/12 + 配線 4/4 red、生存 0** |
+
+#### ⚠️ payoff の実測 (これが「適応」を名乗る根拠)
+
+鋼ブロック 3x2x2 cell、面の 1 cell に 64 MPa の牽引、`θ = 1/2`:
+
+| run | tets | nodes | strain energy | 誤差 |
+|---|---|---|---|---|
+| reference (一様細分) | 2304 | 623 | 0.031673714 | — |
+| 一様 1 段 | 576 | 175 | 0.022273470 | 9.400e-3 |
+| **適応** | **292** | **98** | 0.027318884 | **4.355e-3** |
+
+⇒ ✅ **節点 44% 少なく誤差は 2.16 分の 1** 判定量は歪エネルギー `½uᵀf` で推定子を一切使わないので、**推定子が自分を採点する形になっていない**
+
+#### ⚠️ 設計上の論点 2 件 (実装前は未検討だった)
+
+| 論点 | 実測 / 判断 |
+|---|---|
+| **`BoundaryConditions` は細分を越えられない** | 細分は頂点を append するので既存 index は有効 ⚠️ **だが拘束面に生まれた中点は誰も prescribe しないので面が部分的に自由になる** (`hanging_node_effect.rs` が線形場で **1.489e-1** の裂けとして測っている形と同じ、原因が mesh でなく境界条件) ⚠️ **伝播は半分しかできない** — 変位は両親が同軸 prescribe なら中点が平均を継げる (`1/2` は厳密) が **節点荷重は不可能** (点力は元の牽引の情報を持たない) ⇒ `solve_adaptive` は **closure `Fn(&SdfTetMesh) -> BoundaryConditions`** を取る |
+| **指標の単調減少は滑らかな問題に限る** | ⚠️⚠️ **応力特異点があると総指標は増える** 実測で棄却した scene: **点荷重 `18.786 → 28.603`** / **牽引パッチ `1.093 → 1.759`** ⚠️ **推定子の欠陥ではない** (点荷重は 3 次元で解のエネルギーが無限 ⇒ 極限が存在しない) ⇒ 単調減少の oracle は全境界 Dirichlet の滑らかな scene に置き (実測 `0.2246 → 0.1762 → 0.1553 → 0.1177`)、特異な scene では **誤差が落ちること**を payoff oracle が見る |
+
+#### ⚠️ 初版で 4 変異が生存した — 「値を押さえる oracle」が無かった
+
+生存したのは `λ/(3λ+2μ)` 削除 / せん断を 1 回 / tie-break 反転 / 貪欲ループが 1 要素多く取る の 4 件 ⚠️ **初版の oracle はどれも値を見ていなかった** (零か非零 / 最悪要素の位置 / 単調性) ので、**別の妥当な norm でも全部通る**
+
+塞ぎ方: norm を `complementary_energy_density` に切り出し、⚠️ **互いに別の項を露わにする 3 状態**で閉形式 pin — **一軸 `s²/E` / 純せん断 `2(1+ν)s²/E` / 静水圧 `3(1−2ν)p²/E`** (⚠️ **せん断だけが off-diagonal の係数 2 を見て、他 2 つだけが `λ/(3λ+2μ)` を見る**) + tie は index 昇順 + **目標に厳密到達する case** (4 等値 × θ=1/2、`>=` と `>` が分岐する唯一の入力) ⇒ 12/12 red
+
+#### 壁 2 の残り
+
+| 要素 | 状態 |
+|---|---|
+| 高次要素 P2 / P3 | ✅ landed (`6a84bfa` 他) |
+| 適応 remeshing (適合性) | ✅ landed (Rivara の伝播) |
+| **適応 remeshing (誤差駆動)** | ✅ **本 increment** |
+| 超弾性 × 高次要素の非一様製作解 oracle | ⛔ `src gap` (第 14 increment で `ys-6d` / `ys-1f` が「原理的に不可能」から語彙を移した) ⚠️ **既に landed した P2/P3 の検証の深さの話で、要素が無いわけではない** |
+| 適応を P2 / P3 へ | ⛔ 未着手 (`QuadraticMesh` / `CubicMesh` 側の細分が別作業) |
+
 ### 第 2 increment (2026-09-30、上表の続き)
 
 | 話題 | commit | 到達点 |

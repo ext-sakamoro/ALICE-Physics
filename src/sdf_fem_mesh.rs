@@ -77,6 +77,19 @@ pub enum RefineError {
         /// Tetrahedra that still had an edge to split.
         tets_left: usize,
     },
+    /// The mark slice handed to [`SdfTetMesh::try_refine_marked`] is not one
+    /// entry per tetrahedron.
+    ///
+    /// ⚠️ Refused rather than zipped to the shorter of the two: the marks are
+    /// positional, so a short slice would silently leave the tail of the mesh
+    /// unmarked and a long one would carry marks for elements that do not exist.
+    /// Either way the refinement would look like it had honoured the request.
+    MarkCountDoesNotMatch {
+        /// Entries in the mark slice.
+        marks: usize,
+        /// Tetrahedra in the mesh.
+        tets: usize,
+    },
 }
 
 /// Why a boundary-face extraction was refused.
@@ -314,6 +327,113 @@ impl SdfTetMesh {
         })
     }
 
+    /// Bisect the longest edge of every marked tetrahedron, propagating splits
+    /// until the mesh is conforming again.
+    ///
+    /// This is the entry point adaptivity needs: the caller has scored the
+    /// elements and chosen a set, and the mesh refines **those** rather than
+    /// everything above a length. The propagation is the same machinery
+    /// [`Self::try_refine_conforming`] uses — the same `edge_to_split` with the
+    /// same tie-break — so a tetrahedron sharing a face with a split one picks
+    /// the same edge and no hanging node survives.
+    ///
+    /// ⚠️ The marks apply on the **first pass only**. After it the marked
+    /// tetrahedra no longer exist (each became two children at different
+    /// indices), and every later pass is pure propagation. Returning the marks
+    /// to the children would refine without bound, because a child of a marked
+    /// element is not the element that was scored.
+    ///
+    /// Returns the number of passes performed; zero when nothing was marked.
+    ///
+    /// # Refinement is an append
+    ///
+    /// New vertices are pushed, never renumbered, so indices held elsewhere stay
+    /// valid. ⚠️ That is **not** enough to carry a
+    /// [`crate::linear_elastic_fem::BoundaryConditions`] across a refinement: a
+    /// midpoint created on a clamped face is a new node that nothing prescribes,
+    /// so the face becomes partially free. See
+    /// [`crate::linear_elastic_fem::solve_adaptive`], which asks its caller to
+    /// rebuild the conditions for each mesh for exactly this reason.
+    ///
+    /// # Errors
+    ///
+    /// [`RefineError::MarkCountDoesNotMatch`] when `marked` is not one entry per
+    /// tetrahedron, and [`RefineError::Unfinished`] when `max_passes` runs out
+    /// with splits still owed. ⚠️ Propagation makes more work than was asked
+    /// for, so a budget that covers the marks alone can fall short.
+    pub fn try_refine_marked(
+        &mut self,
+        marked: &[bool],
+        max_passes: u32,
+    ) -> Result<u32, RefineError> {
+        if marked.len() != self.tets.len() {
+            return Err(RefineError::MarkCountDoesNotMatch {
+                marks: marked.len(),
+                tets: self.tets.len(),
+            });
+        }
+        let marked_count = marked.iter().filter(|&&m| m).count();
+        if marked_count == 0 {
+            return Ok(0);
+        }
+        if max_passes == 0 {
+            return Err(RefineError::Unfinished {
+                passes: 0,
+                tets_left: marked_count,
+            });
+        }
+        // `-1.0` puts every edge over the limit, so `edge_to_split` returns the
+        // longest one; `f32::INFINITY` puts none over it, so it returns only an
+        // edge that already carries a midpoint. One predicate, two uses.
+        const SPLIT_LONGEST: f32 = -1.0;
+        const PROPAGATE_ONLY: f32 = f32::INFINITY;
+        let mut midpoints: HashMap<(u32, u32), u32> = HashMap::new();
+        let mut passes = 0_u32;
+        for pass in 0..max_passes {
+            passes += 1;
+            let mut changed = false;
+            let mut new_tets: Vec<Tetrahedron> = Vec::with_capacity(self.tets.len() * 2);
+            let snapshot = std::mem::take(&mut self.tets);
+            for (index, tet) in snapshot.iter().enumerate() {
+                let limit_sq = if pass == 0 && marked[index] {
+                    SPLIT_LONGEST
+                } else {
+                    PROPAGATE_ONLY
+                };
+                let Some(k) = self.edge_to_split(tet, limit_sq, &midpoints) else {
+                    new_tets.push(*tet);
+                    continue;
+                };
+                changed = true;
+                let (a, b) = tet_edges(tet.vertices)[k];
+                let mid = self.midpoint_of(a, b, &mut midpoints);
+                let (c, d) = split_edge_remaining(tet.vertices, k);
+                new_tets.push(Tetrahedron {
+                    vertices: [a, mid, c, d],
+                });
+                new_tets.push(Tetrahedron {
+                    vertices: [mid, b, c, d],
+                });
+            }
+            self.tets = new_tets;
+            if !changed {
+                return Ok(passes - 1);
+            }
+        }
+        let remaining = self
+            .tets
+            .iter()
+            .filter(|t| self.edge_to_split(t, PROPAGATE_ONLY, &midpoints).is_some())
+            .count();
+        if remaining == 0 {
+            return Ok(passes);
+        }
+        Err(RefineError::Unfinished {
+            passes,
+            tets_left: remaining,
+        })
+    }
+
     /// Which of the six edges to bisect, if any: the longest among those that are
     /// over the limit or already carry a midpoint.
     ///
@@ -397,6 +517,10 @@ impl SdfTetMesh {
         match self.try_refine_conforming(max_edge_length, max_passes) {
             Ok(passes) => passes,
             Err(RefineError::Unfinished { passes, .. }) => passes,
+            // `try_refine_conforming` takes no marks, so it cannot report a
+            // mark-count mismatch. Named rather than wildcarded so that a future
+            // variant this function really could see breaks the build here.
+            Err(RefineError::MarkCountDoesNotMatch { .. }) => 0,
         }
     }
 
