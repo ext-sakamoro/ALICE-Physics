@@ -26,6 +26,37 @@ stencil と重みの式は `deposit_{u,v,w}_trilinear` の 1 箇所のまま、�
 ⚠️ 丸めが起きていた通常域の入力では出力の bit が変わる (真の平均に近づく方向) dyadic で厳密だった既存の 17 + 18 の oracle と determinism golden は期待値を変えずに通る
 `step_flip` の定義域 (FLIP 差分が 2^62 前後、圧力右辺が 2^47 前後で wrap) は別件で、この変更では変わらない
 性能 (release、粒子 8 個 / cell で実測): `p2g_normalized` は 16³ で 38 ms から 25 ms、32³ で 307 ms から 200 ms、`step_flip` は 16³ で 78 ms から 64 ms と**速くなった** (旧実装は分子と分母のために重みの scatter を 2 回行っていたが、新実装は 1 回で両方を累積する 256 ÷ 128 の除算は face あたり最大 256 step で、支配的ではない)
+### Added — 塑性散逸の報告と、熱への変換 (`linear_elastic_fem`)
+
+`solve_elastoplastic` が要素ごとの塑性仕事 `W_p` を `ElastoplasticSolution::dissipation` で返すようにした
+Taylor-Quinney 変換は `PlasticHeating` (β と体積比熱 `c_v`、`try_new` で検証、`#[non_exhaustive]`)、
+温度上昇は `plastic_temperature_rise`、格子への配分は `deposit_plastic_heat`
+既存の `solve_with_eigenstrain` がその場を読み戻すので、散逸 → 温度上昇 → 熱歪み → 変形 の経路が閉じる
+公開 API は追加のみ (3 関数 + 1 型 + `FemError::SolutionElementCountDoesNotMatchMesh` + `ElastoplasticSolution` の 1 field、snapshot +28 / -0)
+
+⚠️ `W_p` は経路積分であり、離散形は `W_p = σ_y·ε̄_p + (H/2)(ε̄_p² + Σ Δε̄_k²)` で連続形を `(H/2) Σ Δε̄_k²` だけ上回る
+この超過は step 数の 1 次で消えるので、**同じ `ε̄_p` でも荷重経路の刻み方で `W_p` が変わる**
+実測 (σ_y=256 / H=2048 MPa、ε̄_p=3.712871e-3 固定): W_p は 1 step 0.978728 → 2 step 0.972454 → 8 step 0.966964 → 64 step 0.964905 → 512 step 0.964648、連続形 0.964611
+⚠️ `ε̄_p` は step 数に依らないため、**`ε̄_p` しか見ない oracle は仕事の積分則の誤りを原理的に検出できない**
+
+⚠️ `return_map` は `q^{n+1}` に `q − 3μΔε̄` でなく consistency 形 `σ_y + H·ε̄^{n+1}` を使う
+両者は厳密算術では同一だが、前者は `f/(3μ+H)` の打ち切りを `3μ` 倍で持ち上げるため step あたり 1e3 ulp 規模の差が出る
+両者が同じ量であることは降伏面 oracle (`the_committed_stress_sits_on_the_yield_surface`) で保持する
+
+⚠️ 配分はエネルギーを保存する (温度ではない) 要素の上昇に `V_e/V_cell` を掛けてから splat する
+実測の保存誤差は相対 1.28e-16 (格子 13.924281933 mJ / 解 13.924281933 mJ)
+
+⚠️ **これは壁 3 を閉じない** 「完全」(全物理が在る) 側は進むが「強連成」(monolithic) は満たさない
+⚠️ **一方向だった連成が双方向になるので、第 7 increment で「一方向ゆえ問わない」として閉じた partitioned / monolithic の問いが再び生きる**
+solve → deposit → solve の素直な呼び出しは**副反復 0 回の陽的 partitioned 法**であり、収束解ではない
+収束解が要るなら `coupled_iteration::run_sub_iteration` で sweep を駆動する (本件では経路を doc で示すに留め、driver は入れていない)
+
+oracle は `tests/analytic_plastic_dissipation.rs` (18 本、API 不在の red を先に確認してから実装):
+`H = 0` の `W_p = σ_y·ε̄_p` (σ_y=2 では全 N で **0 ulp**、非 dyadic な σ_y=2.1 で 0 / 2 / 37 ulp vs 導出 bound 2 / 5 / 101) /
+`H > 0` の両側閉形式 `σ_y ε̄_p + (H/2) ε̄_p² ≤ W_p ≤ σ_y ε̄_p + H ε̄_p²` (上端は N=1 で厳密に到達) /
+超過が step の 1 次 (excess×N が N≥4 で 5.859375e-3 一定) / ε̄_p は不変で W_p は変わることの pin /
+降伏面上にあること / ΔT = β W_p / c_v / 配分のエネルギー保存 / 弾性のみなら格子が厳密に 0 / 退化入力 5 種
+変異試験は **実装変異 6/6 red + 配線変異 4/4 red、生存 0** (毎回 18 件実行を件数 gate で確認)
 
 ### Added — 小ひずみ J2 弾塑性 FEM (`linear_elastic_fem::solve_elastoplastic`)
 
