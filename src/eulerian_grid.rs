@@ -1156,18 +1156,83 @@ fn poison_beyond_halo(
     }
 }
 
-/// Copy one boundary layer in each direction from the rank that owns it.
+/// Carries one `z` layer of a slab decomposition's pressure field from the
+/// rank that owns it to a rank that needs it as a halo.
+///
+/// A layer is the `plane = nx · ny` values a 7-point stencil needs from across
+/// a slab boundary, so it is also the unit a halo exchange moves: one layer,
+/// one direction, one pair of ranks.
+///
+/// # Why the slabs belong to the transport
+///
+/// The per-rank buffers are reached through [`RankTransport::slab_mut`] rather
+/// than held by the solver, because *where a neighbour's layer lives* is
+/// exactly what a backend changes. In one process every slab is a `Vec` this
+/// address space can read, so a delivery is a copy; under MPI a neighbour's
+/// slab is in another address space and a delivery is a send/receive pair. A
+/// solver that indexed its neighbour's buffer directly would be describing an
+/// interface only the in-process backend could ever implement.
+///
+/// # Why a type parameter and not `dyn RankTransport`
+///
+/// A build selects its one backend at compile time (the MPI one will arrive
+/// behind a feature, since it cannot coexist with the `no_std` build), so there
+/// is nothing to choose at run time; a type parameter keeps the exchange
+/// monomorphised inside the iteration loop and needs no `alloc::boxed::Box`,
+/// which a `dyn` receiver would drag into `no_std`.
+pub(crate) trait RankTransport {
+    /// The full-length buffer rank `rank` sweeps its owned layers into.
+    ///
+    /// Must be `nx · ny · nz` values long: this stage keeps whole buffers so a
+    /// halo that is too narrow fails as a mismatch rather than as a deadlock
+    /// (see [`project_pressure_decomposed`]).
+    fn slab_mut(&mut self, rank: usize) -> &mut [Fix128];
+
+    /// Place layer `layer`, as rank `src` currently holds it, into rank `dst`'s
+    /// copy of that layer.
+    ///
+    /// Only the named layer of `dst` may change; `src` is left alone.
+    fn deliver_layer(&mut self, src: usize, dst: usize, layer: usize);
+}
+
+/// [`RankTransport`] for ranks sharing one address space: the slabs sit side by
+/// side and a delivery is a copy between two of them.
+pub(crate) struct LocalTransport {
+    plane: usize,
+    slabs: Vec<Vec<Fix128>>,
+}
+
+impl LocalTransport {
+    /// `ranks` buffers of `nz · plane` values each; the solver fills them.
+    pub(crate) fn new(ranks: usize, nz: usize, plane: usize) -> Self {
+        Self {
+            plane,
+            slabs: vec![vec![Fix128::ZERO; nz * plane]; ranks],
+        }
+    }
+}
+
+impl RankTransport for LocalTransport {
+    fn slab_mut(&mut self, rank: usize) -> &mut [Fix128] {
+        &mut self.slabs[rank]
+    }
+
+    fn deliver_layer(&mut self, src: usize, dst: usize, layer: usize) {
+        let base = layer * self.plane;
+        // Through a temporary, which is also what a wire transport does with a
+        // message: the slabs are separate allocations, so one cannot be
+        // borrowed for reading while the other is borrowed for writing.
+        let incoming = self.slabs[src][base..base + self.plane].to_vec();
+        self.slabs[dst][base..base + self.plane].copy_from_slice(&incoming);
+    }
+}
+
+/// Deliver one boundary layer in each direction to every rank that needs one.
 ///
 /// Only halo layers are written, and owned layers are never touched, so the
 /// order the ranks are serviced in cannot matter.
-fn exchange_slab_halos(
-    local: &mut [Vec<Fix128>],
-    bounds: &[(usize, usize)],
-    nz: usize,
-    plane: usize,
-) {
-    for r in 0..bounds.len() {
-        let (k0, k1) = bounds[r];
+fn exchange_slab_halos<T: RankTransport>(transport: &mut T, bounds: &[(usize, usize)], nz: usize) {
+    for (r, &(k0, k1)) in bounds.iter().enumerate() {
         if k0 == k1 {
             continue; // empty rank: nothing owned, nothing to surround
         }
@@ -1178,9 +1243,7 @@ fn exchange_slab_halos(
             let Some(src) = slab_owner(bounds, layer) else {
                 continue;
             };
-            let base = layer * plane;
-            let incoming = local[src][base..base + plane].to_vec();
-            local[r][base..base + plane].copy_from_slice(&incoming);
+            transport.deliver_layer(src, r, layer);
         }
     }
 }
@@ -1202,10 +1265,13 @@ fn exchange_slab_halos(
 /// Each rank still holds a full-size buffer here, with everything beyond its
 /// halo poisoned, because the point of this stage is to fix the *decomposition*
 /// — which layers a rank may read, and when they must arrive — without also
-/// taking on a transport. Slab-local storage and a `RankTransport` come with the
-/// MPI backend; keeping the buffers whole is what lets the exchange schedule be
-/// tested in-process, where a wrong halo width fails as a mismatch rather than
-/// as a deadlock.
+/// committing to slab-local storage. Keeping the buffers whole is what lets the
+/// exchange schedule be tested in-process, where a wrong halo width fails as a
+/// mismatch rather than as a deadlock.
+///
+/// The halo itself goes through [`RankTransport`], here the in-process
+/// [`LocalTransport`]; [`project_pressure_decomposed_over`] takes any other
+/// implementation, which is where an MPI backend attaches.
 pub(crate) fn project_pressure_decomposed(
     grid: &mut MacGrid,
     dt_s: Fix128,
@@ -1213,6 +1279,37 @@ pub(crate) fn project_pressure_decomposed(
     iterations: u32,
     ranks: usize,
     schedule: HaloSchedule,
+) {
+    let mut transport = LocalTransport::new(ranks, grid.nz, grid.nx * grid.ny);
+    project_pressure_decomposed_over(
+        grid,
+        dt_s,
+        density_kg_m3,
+        iterations,
+        ranks,
+        schedule,
+        &mut transport,
+    );
+}
+
+/// [`project_pressure_decomposed`] over a caller-supplied [`RankTransport`].
+///
+/// The solve owns the sweep, the ownership map and the poisoning; the transport
+/// owns only the slabs and the deliveries between them. Splitting it here is
+/// what makes the seam measurable:
+/// `a_second_rank_transport_reproduces_the_in_process_one_bit_for_bit` runs the
+/// same decomposition over a second implementation and gets the same bits, and
+/// `a_transport_that_never_delivers_does_not_reproduce_the_solve` shows that
+/// agreement is carried by `deliver_layer` rather than by both runs having
+/// started from the same field.
+fn project_pressure_decomposed_over<T: RankTransport>(
+    grid: &mut MacGrid,
+    dt_s: Fix128,
+    density_kg_m3: Fix128,
+    iterations: u32,
+    ranks: usize,
+    schedule: HaloSchedule,
+    transport: &mut T,
 ) {
     if grid.dx.is_zero() || density_kg_m3.is_zero() || dt_s.is_zero() || ranks == 0 {
         return;
@@ -1230,19 +1327,22 @@ pub(crate) fn project_pressure_decomposed(
     // a mismatch of many units rather than one in the last place.
     let sentinel = Fix128::from_int(1_000_000);
     let bounds: Vec<(usize, usize)> = (0..ranks).map(|r| slab_bounds(nz, ranks, r)).collect();
-    let mut local: Vec<Vec<Fix128>> = bounds
-        .iter()
-        .map(|&b| {
-            let mut buf = grid.pressure.clone();
-            poison_beyond_halo(&mut buf, nz, plane, b, sentinel);
-            buf
-        })
-        .collect();
+    for (r, &b) in bounds.iter().enumerate() {
+        let buf = transport.slab_mut(r);
+        assert_eq!(
+            buf.len(),
+            n,
+            "transport handed rank {r} a slab of {} cells instead of the {n} this stage needs",
+            buf.len(),
+        );
+        buf.copy_from_slice(&grid.pressure);
+        poison_beyond_halo(buf, nz, plane, b, sentinel);
+    }
 
     for _ in 0..iterations {
         for colour in 0..2u32 {
             for (r, &(k0, k1)) in bounds.iter().enumerate() {
-                let buf = &mut local[r];
+                let buf = transport.slab_mut(r);
                 for k in k0..k1 {
                     for j in 0..ny {
                         for i in 0..nx {
@@ -1257,20 +1357,20 @@ pub(crate) fn project_pressure_decomposed(
                 }
             }
             if schedule == HaloSchedule::EverySweep {
-                exchange_slab_halos(&mut local, &bounds, nz, plane);
+                exchange_slab_halos(transport, &bounds, nz);
             }
         }
         if schedule == HaloSchedule::EveryIteration {
-            exchange_slab_halos(&mut local, &bounds, nz, plane);
+            exchange_slab_halos(transport, &bounds, nz);
         }
     }
 
     // Gather: every layer is owned by exactly one rank.
     for (r, &(k0, k1)) in bounds.iter().enumerate() {
+        let buf = transport.slab_mut(r);
         for k in k0..k1 {
             let base = k * plane;
-            let owned = local[r][base..base + plane].to_vec();
-            grid.pressure[base..base + plane].copy_from_slice(&owned);
+            grid.pressure[base..base + plane].copy_from_slice(&buf[base..base + plane]);
         }
     }
 
@@ -2316,6 +2416,142 @@ mod tests {
             !grids_are_bit_equal(&monolithic, &stale),
             "a halo one sweep out of date still reproduced the monolithic solve, \
              so the bit-equality test above is not actually testing the exchange",
+        );
+    }
+
+    /// A second [`RankTransport`] with a different internal shape: every slab
+    /// in one flat rank-major allocation, and a delivery staged through an
+    /// explicit mailbox — post, then collect — the way a message-passing
+    /// backend is obliged to stage one, instead of copied straight across.
+    struct StagedTransport {
+        cells: usize,
+        plane: usize,
+        flat: Vec<Fix128>,
+        mailbox: Vec<Fix128>,
+    }
+
+    impl StagedTransport {
+        fn new(ranks: usize, cells: usize, plane: usize) -> Self {
+            Self {
+                cells,
+                plane,
+                flat: vec![Fix128::ZERO; ranks * cells],
+                mailbox: vec![Fix128::ZERO; plane],
+            }
+        }
+    }
+
+    impl RankTransport for StagedTransport {
+        fn slab_mut(&mut self, rank: usize) -> &mut [Fix128] {
+            let base = rank * self.cells;
+            &mut self.flat[base..base + self.cells]
+        }
+
+        fn deliver_layer(&mut self, src: usize, dst: usize, layer: usize) {
+            let off = layer * self.plane;
+            let from = src * self.cells + off;
+            self.mailbox
+                .copy_from_slice(&self.flat[from..from + self.plane]);
+            let to = dst * self.cells + off;
+            self.flat[to..to + self.plane].copy_from_slice(&self.mailbox);
+        }
+    }
+
+    /// Control for the test below. Same storage, but a delivery never arrives.
+    ///
+    /// Not a stub standing in for unwritten code: the empty body *is* the
+    /// measurement, and the test that uses it asserts the solve comes out
+    /// wrong.
+    struct UndeliveredTransport(LocalTransport);
+
+    impl RankTransport for UndeliveredTransport {
+        fn slab_mut(&mut self, rank: usize) -> &mut [Fix128] {
+            self.0.slab_mut(rank)
+        }
+
+        fn deliver_layer(&mut self, _src: usize, _dst: usize, _layer: usize) {}
+    }
+
+    /// The transport is a seam, not an implementation detail: a second
+    /// `RankTransport` with a different internal layout and an explicit staging
+    /// step produces the same pressure field, bit for bit, as the in-process
+    /// one — which is what lets an MPI backend be substituted without
+    /// re-pinning any physics.
+    ///
+    /// Exactness rather than a tolerance, for the same reason as the
+    /// monolithic comparison: `Fix128` addition is a group operation mod 2¹²⁸,
+    /// so a transport that is right at all is right to the bit.
+    #[test]
+    fn a_second_rank_transport_reproduces_the_in_process_one_bit_for_bit() {
+        let dt = Fix128::from_ratio(1, 100);
+        let rho = Fix128::from_int(1000);
+
+        // Even splits, uneven splits, and a split with an empty rank.
+        for &(n, ranks) in &[(8usize, 2usize), (8, 4), (8, 8), (7, 3), (5, 4), (3, 4)] {
+            let base = seed_divergent_flow(n);
+
+            let mut via_local = base.clone();
+            project_pressure_decomposed(
+                &mut via_local,
+                dt,
+                rho,
+                6,
+                ranks,
+                HaloSchedule::EverySweep,
+            );
+
+            let mut via_staged = base.clone();
+            let mut staged = StagedTransport::new(ranks, n * n * n, n * n);
+            project_pressure_decomposed_over(
+                &mut via_staged,
+                dt,
+                rho,
+                6,
+                ranks,
+                HaloSchedule::EverySweep,
+                &mut staged,
+            );
+
+            assert!(
+                grids_are_bit_equal(&via_local, &via_staged),
+                "{n}³ grid over {ranks} slabs: the staged transport disagreed with \
+                 the in-process one, so the solve depends on how a layer is \
+                 carried and not only on which layer arrives when",
+            );
+        }
+    }
+
+    /// Teeth for the test above: with the deliveries removed the slabs keep the
+    /// poison in their halos, so the answer must move.
+    ///
+    /// Without this, `a_second_rank_transport_reproduces_the_in_process_one_bit_for_bit`
+    /// could be comparing two runs that agree merely because both started from
+    /// the same field, with `deliver_layer` carrying nothing.
+    #[test]
+    fn a_transport_that_never_delivers_does_not_reproduce_the_solve() {
+        let dt = Fix128::from_ratio(1, 100);
+        let rho = Fix128::from_int(1000);
+        let base = seed_divergent_flow(8);
+
+        let mut monolithic = base.clone();
+        project_pressure_red_black_gs(&mut monolithic, dt, rho, 6);
+
+        let mut undelivered = base.clone();
+        let mut transport = UndeliveredTransport(LocalTransport::new(4, 8, 8 * 8));
+        project_pressure_decomposed_over(
+            &mut undelivered,
+            dt,
+            rho,
+            6,
+            4,
+            HaloSchedule::EverySweep,
+            &mut transport,
+        );
+
+        assert!(
+            !grids_are_bit_equal(&monolithic, &undelivered),
+            "slabs that never received a halo still reproduced the monolithic \
+             solve, so the transport tests above are not measuring the delivery",
         );
     }
 
