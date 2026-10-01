@@ -1638,6 +1638,994 @@ impl<S: std::io::Read + std::io::Write> RankTransport for SocketTransport<S> {
     }
 }
 
+// ============================================================================
+// Slab-local storage: the working set one rank actually needs
+// ============================================================================
+//
+// Everything above this point gives every rank a *full-length* buffer. That is
+// deliberate for fixing the decomposition — a halo narrower than the stencil
+// then fails as a mismatch against the monolithic solve rather than as a
+// deadlock — but it also means the whole field is resident on every rank, and
+// at the hundreds-of-millions-of-cells target the field is the thing that does
+// not fit. Measured on a 464³ grid (99,897,344 cells), the red-black path
+// allocates seven full-length arrays:
+//
+//   pressure 1.49 GiB, the three face arrays 4.48 GiB, `PoissonMask::open`
+//   0.56 GiB, `inverse_degrees` 1.49 GiB, `poisson_rhs` 1.49 GiB
+//
+// which is 9.50 GiB before the per-rank slab buffer, on a 16 GiB machine.
+// Localising only the pressure leaves 8.01 GiB, so the whole working set has to
+// shrink together or none of it does.
+//
+// # Why the index is rebased, and how a halo mistake surfaces
+//
+// There are two ways to make a rank's allocation small. Keeping the global
+// index `i + nx·(j + ny·k)` and allocating less memory turns a read past the
+// halo into an out-of-bounds panic, which is the strongest possible report —
+// but it only works for the rank whose band starts at layer 0, because every
+// other band would have to be addressed from an offset, and an offset *is* a
+// rebase. So the index is rebased, and the rebase is the hazard the brief for
+// this stage names: a global layer mapped to the wrong local row reads a cell
+// that exists, and a halo one layer too narrow then returns a plausible number
+// instead of failing.
+//
+// The answer is to let exactly one type own the conversion and to make it
+// return `Option`: [`SlabStorage::layer`], [`SlabStorage::layer_mut`] and
+// [`SlabStorage::sweep_window`] are the only places a global `z` layer becomes
+// an offset, and a layer that is neither owned nor held as a halo is `None`
+// there. The sweep and the gradient subtraction ask for the layers an *open*
+// face obliges them to read, so a halo narrower than the stencil aborts at the
+// read with [`HALO_MISSING_BELOW`] / [`HALO_MISSING_ABOVE`] — at the position
+// of the mistake, with no dependence on a later value comparison.
+// `a_halo_narrower_than_the_stencil_aborts_instead_of_returning_a_number` pins
+// that, and the whole full-length path above is untouched, so the poison-based
+// oracles keep running next to this one rather than being replaced by it.
+
+/// A rank was asked for the layer below one of its owned cells and does not
+/// hold it.
+///
+/// Named once because the sweep and the gradient subtraction can both reach it,
+/// and because `#[should_panic]` matches on the text.
+pub(crate) const HALO_MISSING_BELOW: &str =
+    "slab halo too narrow: an open -z face of an owned cell reads the layer below the slab, \
+     which is not resident";
+
+/// The `+z` counterpart of [`HALO_MISSING_BELOW`].
+pub(crate) const HALO_MISSING_ABOVE: &str =
+    "slab halo too narrow: an open +z face of an owned cell reads the layer above the slab, \
+     which is not resident";
+
+/// A delivery named a layer the sending rank does not hold.
+pub(crate) const DELIVERY_SOURCE_LACKS_LAYER: &str =
+    "slab delivery: the sending rank does not hold the layer it was asked to send";
+
+/// A delivery named a layer the receiving rank has no room for — the halo it
+/// would land in was never allocated.
+pub(crate) const DELIVERY_DESTINATION_LACKS_LAYER: &str =
+    "slab delivery: the receiving rank has no room for the layer it was asked to receive, \
+     so its halo is narrower than the exchange schedule";
+
+/// Cells in one `z` layer of the cell-centred field.
+#[inline]
+fn cell_plane(nx: usize, ny: usize) -> usize {
+    nx * ny
+}
+
+/// Cells in one `z` layer of the X-face field.
+#[inline]
+fn u_plane(nx: usize, ny: usize) -> usize {
+    (nx + 1) * ny
+}
+
+/// Cells in one `z` layer of the Y-face field.
+#[inline]
+fn v_plane(nx: usize, ny: usize) -> usize {
+    nx * (ny + 1)
+}
+
+/// The `z` layers of a cell-centred field that one rank keeps, and nothing
+/// else: the layers it owns, widened by its halo.
+///
+/// The band is `lo..hi` of the global `0..nz`, stored layer-major, so a rank
+/// owning 58 of 464 layers holds 60 layers rather than 464. Global layers are
+/// turned into offsets here and nowhere else (see the section header above);
+/// every accessor reports a layer outside the band as `None` rather than
+/// clamping, wrapping or returning a neighbouring row.
+pub(crate) struct SlabStorage {
+    /// `nx · ny`.
+    plane: usize,
+    /// First resident layer.
+    lo: usize,
+    /// One past the last resident layer.
+    hi: usize,
+    /// Layers `lo..hi`, `plane` values each.
+    cells: Vec<Fix128>,
+}
+
+impl SlabStorage {
+    /// The band a rank owning `k0..k1` of `nz` layers needs with a halo of
+    /// `halo` layers, zero-initialised.
+    ///
+    /// A rank that owns nothing holds nothing: it has no cell to sweep and so
+    /// no neighbour to read.
+    pub(crate) fn for_slab(plane: usize, nz: usize, (k0, k1): (usize, usize), halo: usize) -> Self {
+        let (lo, hi) = if k0 == k1 {
+            (k0, k0)
+        } else {
+            (k0.saturating_sub(halo), (k1 + halo).min(nz))
+        };
+        Self {
+            plane,
+            lo,
+            hi,
+            cells: vec![Fix128::ZERO; (hi - lo) * plane],
+        }
+    }
+
+    /// The resident band, as `lo..hi` in global layer numbers.
+    pub(crate) fn resident(&self) -> (usize, usize) {
+        (self.lo, self.hi)
+    }
+
+    /// Layer `k`, or `None` when this rank does not hold it.
+    pub(crate) fn layer(&self, k: usize) -> Option<&[Fix128]> {
+        let row = k.checked_sub(self.lo)?;
+        let base = row.checked_mul(self.plane)?;
+        self.cells.get(base..base + self.plane)
+    }
+
+    /// Layer `k` for writing, or `None` when this rank does not hold it.
+    pub(crate) fn layer_mut(&mut self, k: usize) -> Option<&mut [Fix128]> {
+        let row = k.checked_sub(self.lo)?;
+        let base = row.checked_mul(self.plane)?;
+        self.cells.get_mut(base..base + self.plane)
+    }
+
+    /// Layer `k` for writing together with its two `z` neighbours for reading.
+    ///
+    /// A red-black sweep writes one colour and reads the opposite one, so the
+    /// centre layer is both written and read; the two neighbours are only read.
+    /// A neighbour that is not resident comes back as `None`, which is what the
+    /// sweep turns into [`HALO_MISSING_BELOW`] / [`HALO_MISSING_ABOVE`] at the
+    /// first open face that needs it.
+    ///
+    /// # Panics
+    ///
+    /// When `k` is not resident at all: a sweep may only visit layers its own
+    /// rank owns, so that is a mistake in the driver rather than in the halo
+    /// width, and the two deserve different reports.
+    pub(crate) fn sweep_window(&mut self, k: usize) -> SweepWindow<'_> {
+        let row = k.checked_sub(self.lo).filter(|r| self.lo + r < self.hi);
+        let row = row.unwrap_or_else(|| {
+            panic!(
+                "a sweep asked for layer {k}, which rank's slab does not hold (resident {}..{})",
+                self.lo, self.hi,
+            )
+        });
+        let plane = self.plane;
+        let (lower, rest) = self.cells.split_at_mut(row * plane);
+        let (centre, upper) = rest.split_at_mut(plane);
+        SweepWindow {
+            below: (row > 0).then(|| &lower[(row - 1) * plane..row * plane]),
+            centre,
+            above: (!upper.is_empty()).then(|| &upper[..plane]),
+        }
+    }
+
+    /// Bytes this rank's pressure band actually allocated.
+    pub(crate) fn bytes(&self) -> SlabBytes {
+        SlabBytes {
+            pressure: self.cells.capacity() * size_of::<Fix128>(),
+            ..SlabBytes::ZERO
+        }
+    }
+}
+
+/// One owned layer and its two `z` neighbours; see
+/// [`SlabStorage::sweep_window`].
+pub(crate) struct SweepWindow<'a> {
+    /// Layer `k − 1`, if resident.
+    below: Option<&'a [Fix128]>,
+    /// Layer `k`.
+    centre: &'a mut [Fix128],
+    /// Layer `k + 1`, if resident.
+    above: Option<&'a [Fix128]>,
+}
+
+/// What the pressure solve needs to know about one MAC face.
+///
+/// Carried per face rather than recomputed, because the conditions live in
+/// `MacGrid`'s sparse maps and a rank holding slab-local storage has no
+/// `MacGrid` to consult.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct FaceFlags {
+    /// The normal velocity is pinned to zero (`MacGrid::u_solid` and friends).
+    solid: bool,
+    /// The face carries no pressure degree of freedom
+    /// ([`MacGrid::u_blocks_pressure`]).
+    blocks_pressure: bool,
+    /// The normal velocity is prescribed, so the projection leaves it alone.
+    inflow: bool,
+}
+
+impl FaceFlags {
+    fn of_u(grid: &MacGrid, i: usize, j: usize, k: usize) -> Self {
+        Self {
+            solid: grid.u_solid[grid.idx_u(i, j, k)],
+            blocks_pressure: grid.u_blocks_pressure(i, j, k),
+            inflow: grid.u_is_inflow(i, j, k),
+        }
+    }
+    fn of_v(grid: &MacGrid, i: usize, j: usize, k: usize) -> Self {
+        Self {
+            solid: grid.v_solid[grid.idx_v(i, j, k)],
+            blocks_pressure: grid.v_blocks_pressure(i, j, k),
+            inflow: grid.v_is_inflow(i, j, k),
+        }
+    }
+    fn of_w(grid: &MacGrid, i: usize, j: usize, k: usize) -> Self {
+        Self {
+            solid: grid.w_solid[grid.idx_w(i, j, k)],
+            blocks_pressure: grid.w_blocks_pressure(i, j, k),
+            inflow: grid.w_is_inflow(i, j, k),
+        }
+    }
+}
+
+/// One rank's share of the staggered velocity field and of the face
+/// conditions, sized by the layers it owns instead of by the whole domain.
+///
+/// # Which faces a rank holds
+///
+/// X- and Y-faces belong to a single cell layer, so a rank owning `k0..k1`
+/// holds and updates those for `k0..k1`. A Z-face sits *between* two layers:
+/// the face at `k` needs the pressures at `k − 1` and `k`, so the rank owning
+/// `k0..k1` holds `k0..=k1` — one more than it owns — and updates `k0..k1`,
+/// leaving the face at `k1` to the rank that owns the layer above it. The rank
+/// whose band ends at `nz` also updates the face at `nz`, which no layer sits
+/// above. Every Z-face is therefore written exactly once across the ranks, and
+/// the extra layer each rank holds is what its own divergence needs.
+///
+/// # Precondition
+///
+/// The velocities arrive with the face conditions already imposed
+/// ([`MacGrid::enforce_face_boundaries`]). The monolithic solve calls that
+/// itself, and calling it twice is not always the same as calling it once (an
+/// outflow face copies its inward neighbour, which may itself have been
+/// rewritten), so the enforcement happens once, before the field is split.
+pub(crate) struct SlabFaces {
+    nx: usize,
+    ny: usize,
+    nz: usize,
+    dx: Fix128,
+    /// First owned layer.
+    k0: usize,
+    /// One past the last owned layer.
+    k1: usize,
+    /// X-face velocities of layers `k0..k1`, `(nx + 1) · ny` each.
+    u: Vec<Fix128>,
+    u_flags: Vec<FaceFlags>,
+    /// Y-face velocities of layers `k0..k1`, `nx · (ny + 1)` each.
+    v: Vec<Fix128>,
+    v_flags: Vec<FaceFlags>,
+    /// Z-face velocities of layers `k0..=k1`, `nx · ny` each; empty when the
+    /// rank owns nothing.
+    w: Vec<Fix128>,
+    w_flags: Vec<FaceFlags>,
+}
+
+impl SlabFaces {
+    /// Zero velocities and plain fluid faces over the layers `k0..k1`.
+    pub(crate) fn new(
+        nx: usize,
+        ny: usize,
+        nz: usize,
+        dx: Fix128,
+        (k0, k1): (usize, usize),
+    ) -> Self {
+        let owned = k1 - k0;
+        let w_layers = if owned == 0 { 0 } else { owned + 1 };
+        Self {
+            nx,
+            ny,
+            nz,
+            dx,
+            k0,
+            k1,
+            u: vec![Fix128::ZERO; owned * u_plane(nx, ny)],
+            u_flags: vec![FaceFlags::default(); owned * u_plane(nx, ny)],
+            v: vec![Fix128::ZERO; owned * v_plane(nx, ny)],
+            v_flags: vec![FaceFlags::default(); owned * v_plane(nx, ny)],
+            w: vec![Fix128::ZERO; w_layers * cell_plane(nx, ny)],
+            w_flags: vec![FaceFlags::default(); w_layers * cell_plane(nx, ny)],
+        }
+    }
+
+    /// The layers `k0..k1` of `grid`, copied out face by face.
+    ///
+    /// The whole grid is resident here by construction — this is the
+    /// constructor an in-process decomposition and the tests use. A rank with
+    /// no `MacGrid` builds the same thing through [`SlabFaces::new`] plus the
+    /// `*_layer_mut` accessors, which is what the hundred-million-cell
+    /// measurement does.
+    pub(crate) fn from_grid(grid: &MacGrid, (k0, k1): (usize, usize)) -> Self {
+        let mut faces = Self::new(grid.nx, grid.ny, grid.nz, grid.dx, (k0, k1));
+        if k0 == k1 {
+            return faces;
+        }
+        let (nx, ny) = (grid.nx, grid.ny);
+        for k in k0..k1 {
+            let row = (k - k0) * u_plane(nx, ny);
+            for j in 0..ny {
+                for i in 0..=nx {
+                    let at = row + i + (nx + 1) * j;
+                    faces.u[at] = grid.u[grid.idx_u(i, j, k)];
+                    faces.u_flags[at] = FaceFlags::of_u(grid, i, j, k);
+                }
+            }
+            let row = (k - k0) * v_plane(nx, ny);
+            for j in 0..=ny {
+                for i in 0..nx {
+                    let at = row + i + nx * j;
+                    faces.v[at] = grid.v[grid.idx_v(i, j, k)];
+                    faces.v_flags[at] = FaceFlags::of_v(grid, i, j, k);
+                }
+            }
+        }
+        for k in k0..=k1 {
+            let row = (k - k0) * cell_plane(nx, ny);
+            for j in 0..ny {
+                for i in 0..nx {
+                    let at = row + i + nx * j;
+                    faces.w[at] = grid.w[grid.idx_w(i, j, k)];
+                    faces.w_flags[at] = FaceFlags::of_w(grid, i, j, k);
+                }
+            }
+        }
+        faces
+    }
+
+    /// The owned layers, as `k0..k1`.
+    pub(crate) fn owned(&self) -> (usize, usize) {
+        (self.k0, self.k1)
+    }
+
+    /// Offset of layer `k` inside an owned-layer array of `plane` values.
+    ///
+    /// # Panics
+    ///
+    /// When `k` is not an owned layer. Unlike the pressure band there is no
+    /// halo here, so there is no legitimate caller for a layer the rank does
+    /// not own.
+    fn owned_row(&self, k: usize, plane: usize) -> usize {
+        assert!(
+            k >= self.k0 && k < self.k1,
+            "layer {k} is not owned by this slab (owns {}..{})",
+            self.k0,
+            self.k1,
+        );
+        (k - self.k0) * plane
+    }
+
+    /// Offset of Z-face layer `k`, which runs one past the owned layers.
+    fn w_row(&self, k: usize) -> usize {
+        assert!(
+            k >= self.k0 && k <= self.k1 && self.k0 != self.k1,
+            "Z-face layer {k} is not held by this slab (holds {}..={})",
+            self.k0,
+            self.k1,
+        );
+        (k - self.k0) * cell_plane(self.nx, self.ny)
+    }
+
+    fn u_layer(&self, k: usize) -> (&[Fix128], &[FaceFlags]) {
+        let plane = u_plane(self.nx, self.ny);
+        let row = self.owned_row(k, plane);
+        (&self.u[row..row + plane], &self.u_flags[row..row + plane])
+    }
+
+    fn v_layer(&self, k: usize) -> (&[Fix128], &[FaceFlags]) {
+        let plane = v_plane(self.nx, self.ny);
+        let row = self.owned_row(k, plane);
+        (&self.v[row..row + plane], &self.v_flags[row..row + plane])
+    }
+
+    fn w_layer(&self, k: usize) -> (&[Fix128], &[FaceFlags]) {
+        let plane = cell_plane(self.nx, self.ny);
+        let row = self.w_row(k);
+        (&self.w[row..row + plane], &self.w_flags[row..row + plane])
+    }
+
+    /// X-face velocities and conditions of owned layer `k`, for writing.
+    pub(crate) fn u_layer_mut(&mut self, k: usize) -> (&mut [Fix128], &mut [FaceFlags]) {
+        let plane = u_plane(self.nx, self.ny);
+        let row = self.owned_row(k, plane);
+        (
+            &mut self.u[row..row + plane],
+            &mut self.u_flags[row..row + plane],
+        )
+    }
+
+    /// Y-face velocities and conditions of owned layer `k`, for writing.
+    pub(crate) fn v_layer_mut(&mut self, k: usize) -> (&mut [Fix128], &mut [FaceFlags]) {
+        let plane = v_plane(self.nx, self.ny);
+        let row = self.owned_row(k, plane);
+        (
+            &mut self.v[row..row + plane],
+            &mut self.v_flags[row..row + plane],
+        )
+    }
+
+    /// Z-face velocities and conditions of held layer `k`, for writing.
+    pub(crate) fn w_layer_mut(&mut self, k: usize) -> (&mut [Fix128], &mut [FaceFlags]) {
+        let plane = cell_plane(self.nx, self.ny);
+        let row = self.w_row(k);
+        (
+            &mut self.w[row..row + plane],
+            &mut self.w_flags[row..row + plane],
+        )
+    }
+
+    /// The Z-face layers this rank updates: its owned layers, plus the domain's
+    /// top face when its band ends there.
+    fn w_written(&self) -> core::ops::Range<usize> {
+        if self.k0 == self.k1 {
+            return self.k0..self.k0;
+        }
+        let end = if self.k1 == self.nz {
+            self.nz + 1
+        } else {
+            self.k1
+        };
+        self.k0..end
+    }
+
+    /// Bytes this rank's face arrays actually allocated.
+    pub(crate) fn bytes(&self) -> SlabBytes {
+        let values = self.u.capacity() + self.v.capacity() + self.w.capacity();
+        let flags = self.u_flags.capacity() + self.v_flags.capacity() + self.w_flags.capacity();
+        SlabBytes {
+            faces: values * size_of::<Fix128>(),
+            face_flags: flags * size_of::<FaceFlags>(),
+            ..SlabBytes::ZERO
+        }
+    }
+}
+
+/// The per-cell data a rank's sweep reads, over its owned layers only.
+///
+/// The monolithic solve builds the same three things full-length
+/// ([`PoissonMask`], [`inverse_degrees`], [`poisson_rhs`]); together they are
+/// 3.54 of the 9.50 GiB a 464³ grid needs, so localising the pressure without
+/// localising these would not fit either.
+pub(crate) struct SlabStencil {
+    k0: usize,
+    k1: usize,
+    plane: usize,
+    /// Which of the six faces of each owned cell take part, ordered as
+    /// [`PoissonMask::open`].
+    open: Vec<[bool; 6]>,
+    /// `1 / degree`, zero for a sealed cell, as [`inverse_degrees`].
+    inv_deg: Vec<Fix128>,
+    /// `ρ dx²/dt · ∇·u`, as [`poisson_rhs`].
+    rhs: Vec<Fix128>,
+}
+
+impl SlabStencil {
+    /// Build the owned-layer stencil from this rank's faces.
+    ///
+    /// Each value is computed by the same expression the full-length path uses,
+    /// in the same order: `Fix128` multiplication is not associative, so
+    /// "equivalent" arithmetic is not good enough for a bit-exact claim.
+    ///
+    /// # Panics
+    ///
+    /// When `dx` is zero, which the drivers reject before they get here.
+    pub(crate) fn build(faces: &SlabFaces, scale: Fix128) -> Self {
+        assert!(
+            !faces.dx.is_zero(),
+            "a slab stencil needs a non-zero cell spacing",
+        );
+        let (nx, ny) = (faces.nx, faces.ny);
+        let (k0, k1) = faces.owned();
+        let plane = cell_plane(nx, ny);
+        let cells = (k1 - k0) * plane;
+        let mut open = Vec::with_capacity(cells);
+        let mut inv_deg = Vec::with_capacity(cells);
+        let mut rhs = Vec::with_capacity(cells);
+        // Row stride inside one X-face layer: the X-faces of a layer are
+        // `(nx + 1) · ny`, laid out `i + (nx + 1) · j`.
+        let u_row = nx + 1;
+
+        for k in k0..k1 {
+            let (u, u_flags) = faces.u_layer(k);
+            let (v, v_flags) = faces.v_layer(k);
+            let (w_lo, w_lo_flags) = faces.w_layer(k);
+            let (w_hi, w_hi_flags) = faces.w_layer(k + 1);
+            for j in 0..ny {
+                for i in 0..nx {
+                    let o = [
+                        !u_flags[i + u_row * j].blocks_pressure,
+                        !u_flags[i + 1 + u_row * j].blocks_pressure,
+                        !v_flags[i + nx * j].blocks_pressure,
+                        !v_flags[i + nx * (j + 1)].blocks_pressure,
+                        !w_lo_flags[i + nx * j].blocks_pressure,
+                        !w_hi_flags[i + nx * j].blocks_pressure,
+                    ];
+                    let degree = o.iter().filter(|&&face| face).count() as i64;
+                    inv_deg.push(if degree > 0 {
+                        Fix128::from_ratio(1, degree)
+                    } else {
+                        Fix128::ZERO
+                    });
+                    let du = u[i + 1 + u_row * j] - u[i + u_row * j];
+                    let dv = v[i + nx * (j + 1)] - v[i + nx * j];
+                    let dw = w_hi[i + nx * j] - w_lo[i + nx * j];
+                    rhs.push((du + dv + dw) / faces.dx * scale);
+                    open.push(o);
+                }
+            }
+        }
+
+        Self {
+            k0,
+            k1,
+            plane,
+            open,
+            inv_deg,
+            rhs,
+        }
+    }
+
+    /// Offset of owned layer `k` inside the per-cell arrays.
+    fn row(&self, k: usize) -> usize {
+        assert!(
+            k >= self.k0 && k < self.k1,
+            "layer {k} is not owned by this stencil (owns {}..{})",
+            self.k0,
+            self.k1,
+        );
+        (k - self.k0) * self.plane
+    }
+
+    /// Bytes this rank's stencil actually allocated.
+    pub(crate) fn bytes(&self) -> SlabBytes {
+        SlabBytes {
+            open: self.open.capacity() * size_of::<[bool; 6]>(),
+            inverse_degrees: self.inv_deg.capacity() * size_of::<Fix128>(),
+            rhs: self.rhs.capacity() * size_of::<Fix128>(),
+            ..SlabBytes::ZERO
+        }
+    }
+}
+
+/// What one rank's slab-local working set allocated, read back from the
+/// containers rather than recomputed from the dimensions.
+///
+/// Recomputing would be a second expression for the same thing, free to drift
+/// from the allocations it claims to describe — which is how
+/// `examples/hpc_scale_probe.rs` came to under-report the full-length path by
+/// 1.59x (it counted `MacGrid` and not the mask, the inverse degrees or the
+/// right-hand side).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct SlabBytes {
+    /// The resident pressure band.
+    pub(crate) pressure: usize,
+    /// The three face-velocity arrays.
+    pub(crate) faces: usize,
+    /// The three face-condition arrays.
+    pub(crate) face_flags: usize,
+    /// The open-face mask.
+    pub(crate) open: usize,
+    /// The reciprocal diagonal.
+    pub(crate) inverse_degrees: usize,
+    /// The Poisson right-hand side.
+    pub(crate) rhs: usize,
+}
+
+impl SlabBytes {
+    /// All fields zero; the identity of [`SlabBytes::add`].
+    pub(crate) const ZERO: Self = Self {
+        pressure: 0,
+        faces: 0,
+        face_flags: 0,
+        open: 0,
+        inverse_degrees: 0,
+        rhs: 0,
+    };
+
+    /// Field-wise sum, for adding up the parts of one rank's working set.
+    pub(crate) fn add(self, other: Self) -> Self {
+        Self {
+            pressure: self.pressure + other.pressure,
+            faces: self.faces + other.faces,
+            face_flags: self.face_flags + other.face_flags,
+            open: self.open + other.open,
+            inverse_degrees: self.inverse_degrees + other.inverse_degrees,
+            rhs: self.rhs + other.rhs,
+        }
+    }
+
+    /// Bytes in the whole working set.
+    pub(crate) fn total(self) -> usize {
+        self.pressure + self.faces + self.face_flags + self.open + self.inverse_degrees + self.rhs
+    }
+}
+
+/// [`RankTransport`]'s counterpart for ranks whose storage is slab-local.
+///
+/// # Why a second trait rather than a second implementation
+///
+/// [`RankTransport::slab_mut`] returns one contiguous `&mut [Fix128]` that both
+/// full-length drivers require to be `nx · ny · nz` values long, and index with
+/// the global cell index. A slab-local rank has no such buffer: that is the
+/// whole point. Widening `RankTransport` to admit one would change the meaning
+/// of a method four existing implementations and nine existing tests depend on,
+/// so the slab-local side gets its own trait and the full-length side keeps
+/// running unchanged beside it. The deliveries are the same `(src, dst, layer)`
+/// sequence either way, which
+/// `both_exchange_walks_deliver_the_same_layers_in_the_same_order` pins.
+pub(crate) trait SlabTransport {
+    /// Rank `rank`'s slab-local pressure band.
+    fn slab_mut(&mut self, rank: usize) -> &mut SlabStorage;
+
+    /// Place layer `layer`, as rank `src` holds it, into rank `dst`'s halo.
+    fn deliver_layer(&mut self, src: usize, dst: usize, layer: usize);
+}
+
+/// [`SlabTransport`] for ranks sharing one address space: every rank's band is
+/// a `Vec` here, and a delivery is a copy through a one-layer buffer — which is
+/// also the shape a wire transport has, so the schedule does not change when
+/// the backend does.
+pub(crate) struct LocalSlabTransport {
+    slabs: Vec<SlabStorage>,
+    /// One layer of scratch, so a delivery never borrows two slabs at once.
+    staging: Vec<Fix128>,
+}
+
+impl LocalSlabTransport {
+    /// One band per rank, each covering its owned layers widened by `halo`, and
+    /// each initialised from `field` — the field the decomposition starts from.
+    ///
+    /// The initial halo matters: the first colour sweep of a rank reads its
+    /// neighbour's boundary layer before any exchange has happened, and the
+    /// monolithic solve reads the same initial values at that point. Starting a
+    /// halo at zero instead would not be caught by a field that starts at zero,
+    /// which is why `slab_local_storage_reproduces_the_monolithic_pressure_solve`
+    /// includes a case whose initial pressure is not zero.
+    pub(crate) fn from_field(
+        bounds: &[(usize, usize)],
+        nz: usize,
+        plane: usize,
+        halo: usize,
+        field: &[Fix128],
+    ) -> Self {
+        assert_eq!(
+            field.len(),
+            nz * plane,
+            "the field a slab decomposition starts from must cover the whole domain",
+        );
+        let mut slabs = Vec::with_capacity(bounds.len());
+        for &b in bounds {
+            let mut slab = SlabStorage::for_slab(plane, nz, b, halo);
+            let (lo, hi) = slab.resident();
+            for k in lo..hi {
+                let layer = slab
+                    .layer_mut(k)
+                    .expect("a layer inside the band this slab just reported");
+                layer.copy_from_slice(&field[k * plane..(k + 1) * plane]);
+            }
+            slabs.push(slab);
+        }
+        Self {
+            slabs,
+            staging: vec![Fix128::ZERO; plane],
+        }
+    }
+
+    /// Rank `rank`'s band, for reading back the answer.
+    pub(crate) fn slab(&self, rank: usize) -> &SlabStorage {
+        &self.slabs[rank]
+    }
+
+    /// Bytes every rank's band allocated here, rank by rank.
+    pub(crate) fn bytes(&self) -> Vec<SlabBytes> {
+        self.slabs.iter().map(SlabStorage::bytes).collect()
+    }
+}
+
+impl SlabTransport for LocalSlabTransport {
+    fn slab_mut(&mut self, rank: usize) -> &mut SlabStorage {
+        &mut self.slabs[rank]
+    }
+
+    fn deliver_layer(&mut self, src: usize, dst: usize, layer: usize) {
+        if src == dst {
+            return;
+        }
+        let from = self.slabs[src]
+            .layer(layer)
+            .expect(DELIVERY_SOURCE_LACKS_LAYER);
+        self.staging.copy_from_slice(from);
+        let into = self.slabs[dst]
+            .layer_mut(layer)
+            .expect(DELIVERY_DESTINATION_LACKS_LAYER);
+        into.copy_from_slice(&self.staging);
+    }
+}
+
+/// [`exchange_slab_halos`] for a [`SlabTransport`]: the same `(src, dst, layer)`
+/// sequence, over storage that holds only a band.
+///
+/// The walk is written out again rather than shared, because sharing it would
+/// mean moving `deliver_layer` to a supertrait of [`RankTransport`] and editing
+/// every existing implementation of it. The two walks agreeing is pinned by
+/// `both_exchange_walks_deliver_the_same_layers_in_the_same_order`, which
+/// compares the recorded sequences instead of trusting that two copies of a
+/// loop stay the same.
+fn exchange_slab_halos_local<T: SlabTransport>(
+    transport: &mut T,
+    bounds: &[(usize, usize)],
+    nz: usize,
+) {
+    for (r, &(k0, k1)) in bounds.iter().enumerate() {
+        if k0 == k1 {
+            continue; // empty rank: nothing owned, nothing to surround
+        }
+        for layer in [k0.checked_sub(1), (k1 < nz).then_some(k1)]
+            .into_iter()
+            .flatten()
+        {
+            let Some(src) = slab_owner(bounds, layer) else {
+                continue;
+            };
+            transport.deliver_layer(src, r, layer);
+        }
+    }
+}
+
+/// One red-black colour sweep over the layers a rank owns, reading its band and
+/// nothing else.
+///
+/// The stencil is [`PoissonMask::neighbour_sum`]'s, in the same order and with
+/// the same guards, but addressed layer by layer: the four in-plane neighbours
+/// come out of the centre layer, and the two `z` neighbours out of the window's
+/// `below` / `above`. Those two are the only reads that can leave the band, and
+/// an open face obliges them, so a halo narrower than the stencil aborts here.
+///
+/// # Panics
+///
+/// [`HALO_MISSING_BELOW`] / [`HALO_MISSING_ABOVE`] when an open `z` face of an
+/// owned cell needs a layer the rank does not hold.
+fn sweep_slab_colour(
+    storage: &mut SlabStorage,
+    faces: &SlabFaces,
+    stencil: &SlabStencil,
+    colour: u32,
+) {
+    let (nx, ny, nz) = (faces.nx, faces.ny, faces.nz);
+    let (k0, k1) = faces.owned();
+    for k in k0..k1 {
+        let row = stencil.row(k);
+        let SweepWindow {
+            below,
+            centre,
+            above,
+        } = storage.sweep_window(k);
+        for j in 0..ny {
+            for i in 0..nx {
+                if ((i + j + k) as u32 % 2) != colour {
+                    continue;
+                }
+                let here = i + nx * j;
+                let cell = row + here;
+                let o = stencil.open[cell];
+                let mut acc = Fix128::ZERO;
+                if o[0] && i > 0 {
+                    acc = acc + centre[here - 1];
+                }
+                if o[1] && i + 1 < nx {
+                    acc = acc + centre[here + 1];
+                }
+                if o[2] && j > 0 {
+                    acc = acc + centre[here - nx];
+                }
+                if o[3] && j + 1 < ny {
+                    acc = acc + centre[here + nx];
+                }
+                if o[4] && k > 0 {
+                    acc = acc + below.expect(HALO_MISSING_BELOW)[here];
+                }
+                if o[5] && k + 1 < nz {
+                    acc = acc + above.expect(HALO_MISSING_ABOVE)[here];
+                }
+                centre[here] = (acc - stencil.rhs[cell]) * stencil.inv_deg[cell];
+            }
+        }
+    }
+}
+
+/// [`subtract_pressure_gradient`] over the faces one rank owns, reading its
+/// band and nothing else.
+///
+/// # Panics
+///
+/// [`HALO_MISSING_BELOW`] when the Z-face at the bottom of the band needs the
+/// pressure one layer below it and the rank does not hold that layer.
+fn subtract_slab_pressure_gradient(faces: &mut SlabFaces, storage: &SlabStorage, coeff: Fix128) {
+    let (nx, ny, nz) = (faces.nx, faces.ny, faces.nz);
+    let (k0, k1) = faces.owned();
+    // Row stride inside one X-face layer; see `SlabStencil::build`.
+    let u_row = nx + 1;
+
+    for k in k0..k1 {
+        let here = storage
+            .layer(k)
+            .expect("a rank's own layer, which its band holds by construction");
+        let (u, u_flags) = faces.u_layer_mut(k);
+        for j in 0..ny {
+            for i in 0..=nx {
+                let at = i + u_row * j;
+                if u_flags[at].solid {
+                    u[at] = Fix128::ZERO;
+                    continue;
+                }
+                if u_flags[at].inflow {
+                    continue;
+                }
+                let hi = if i < nx {
+                    here[i + nx * j]
+                } else {
+                    Fix128::ZERO
+                };
+                let lo = if i > 0 {
+                    here[i - 1 + nx * j]
+                } else {
+                    Fix128::ZERO
+                };
+                u[at] = u[at] - coeff * (hi - lo);
+            }
+        }
+        let (v, v_flags) = faces.v_layer_mut(k);
+        for j in 0..=ny {
+            for i in 0..nx {
+                let at = i + nx * j;
+                if v_flags[at].solid {
+                    v[at] = Fix128::ZERO;
+                    continue;
+                }
+                if v_flags[at].inflow {
+                    continue;
+                }
+                let hi = if j < ny {
+                    here[i + nx * j]
+                } else {
+                    Fix128::ZERO
+                };
+                let lo = if j > 0 {
+                    here[i + nx * (j - 1)]
+                } else {
+                    Fix128::ZERO
+                };
+                v[at] = v[at] - coeff * (hi - lo);
+            }
+        }
+    }
+
+    for k in faces.w_written() {
+        let above = if k < nz {
+            Some(
+                storage
+                    .layer(k)
+                    .expect("a rank's own layer, which its band holds by construction"),
+            )
+        } else {
+            None
+        };
+        let below = if k > 0 {
+            Some(storage.layer(k - 1).expect(HALO_MISSING_BELOW))
+        } else {
+            None
+        };
+        let (w, w_flags) = faces.w_layer_mut(k);
+        for j in 0..ny {
+            for i in 0..nx {
+                let at = i + nx * j;
+                if w_flags[at].solid {
+                    w[at] = Fix128::ZERO;
+                    continue;
+                }
+                if w_flags[at].inflow {
+                    continue;
+                }
+                let hi = above.map_or(Fix128::ZERO, |layer| layer[at]);
+                let lo = below.map_or(Fix128::ZERO, |layer| layer[at]);
+                w[at] = w[at] - coeff * (hi - lo);
+            }
+        }
+    }
+}
+
+/// The red-black pressure projection over slab-local storage: every rank holds
+/// its own layers plus one halo layer, and nothing else.
+///
+/// Bit-identical to [`project_pressure_red_black_gs`] — not within a tolerance:
+/// `Fix128` addition is a group operation mod 2¹²⁸, every value is computed by
+/// the same expression in the same order, and a correct decomposition therefore
+/// has no error to bound.
+/// `slab_local_storage_reproduces_the_monolithic_pressure_solve` pins it.
+///
+/// # What the caller supplies
+///
+/// `faces` is one [`SlabFaces`] per rank, in rank order, with the face
+/// conditions already imposed (see that type's precondition). `transport` holds
+/// one band per rank, already initialised from the field the solve starts from.
+/// On return each rank's band holds the final pressure over the layers it owns,
+/// and its `faces` hold the corrected velocities over the faces it owns; no
+/// rank holds the whole field at any point, which is the difference from
+/// [`project_pressure_decomposed_over`].
+///
+/// A degenerate `dx`, density or step leaves everything untouched, as the
+/// full-length drivers do.
+pub(crate) fn project_pressure_slab_local_over<T: SlabTransport>(
+    faces: &mut [SlabFaces],
+    dt_s: Fix128,
+    density_kg_m3: Fix128,
+    iterations: u32,
+    schedule: HaloSchedule,
+    transport: &mut T,
+) {
+    let Some(first) = faces.first() else {
+        return;
+    };
+    let (nx, ny, nz, dx) = (first.nx, first.ny, first.nz, first.dx);
+    if dx.is_zero() || density_kg_m3.is_zero() || dt_s.is_zero() {
+        return;
+    }
+    let ranks = faces.len();
+    let bounds: Vec<(usize, usize)> = (0..ranks).map(|r| slab_bounds(nz, ranks, r)).collect();
+    for (r, rank_faces) in faces.iter().enumerate() {
+        assert_eq!(
+            rank_faces.owned(),
+            bounds[r],
+            "rank {r} was handed the faces of layers {:?} but the decomposition gives it {:?}",
+            rank_faces.owned(),
+            bounds[r],
+        );
+        assert_eq!(
+            (rank_faces.nx, rank_faces.ny, rank_faces.nz),
+            (nx, ny, nz),
+            "rank {r}'s faces describe a different grid from rank 0's",
+        );
+    }
+
+    let scale = density_kg_m3 * dx * dx / dt_s;
+    let stencils: Vec<SlabStencil> = faces
+        .iter()
+        .map(|rank_faces| SlabStencil::build(rank_faces, scale))
+        .collect();
+
+    for _ in 0..iterations {
+        for colour in 0..2u32 {
+            for r in 0..ranks {
+                sweep_slab_colour(transport.slab_mut(r), &faces[r], &stencils[r], colour);
+            }
+            if schedule == HaloSchedule::EverySweep {
+                exchange_slab_halos_local(transport, &bounds, nz);
+            }
+        }
+        if schedule == HaloSchedule::EveryIteration {
+            exchange_slab_halos_local(transport, &bounds, nz);
+        }
+    }
+
+    let inv_dx = Fix128::ONE / dx;
+    let coeff = dt_s / density_kg_m3 * inv_dx;
+    for (r, rank_faces) in faces.iter_mut().enumerate() {
+        subtract_slab_pressure_gradient(rank_faces, transport.slab_mut(r), coeff);
+    }
+}
+
 /// Legacy Jacobi implementation, kept for benchmarking (Session 3 I9, crate-internal).
 pub(crate) fn project_pressure_jacobi(
     grid: &mut MacGrid,
@@ -4042,5 +5030,621 @@ mod tests {
                 assert_eq!(grid.u(4, j, k), Fix128::ZERO);
             }
         }
+    }
+
+    // ========================================================================
+    // Slab-local storage
+    // ========================================================================
+
+    /// Rank counts that divide the depth, ones that do not, and ones fine
+    /// enough to leave a rank owning nothing — the same list the full-length
+    /// decomposition oracle uses, so the two are comparable.
+    const SLAB_CASES: [(usize, usize); 9] = [
+        (8, 1),
+        (8, 2),
+        (8, 4),
+        (8, 8),
+        (7, 2),
+        (7, 3),
+        (7, 4),
+        (5, 4),
+        (3, 4),
+    ];
+
+    /// A divergent field, optionally boxed in by walls and optionally starting
+    /// from a non-zero pressure.
+    ///
+    /// The walls make the Poisson mask non-trivial (without them every face is
+    /// open and every cell has degree six, so a localised mask could be wrong
+    /// in ways nothing would notice). The initial pressure makes the *initial*
+    /// halo load-bearing: a rank's first sweep reads its neighbour's boundary
+    /// layer before any exchange has happened, and a field starting at zero
+    /// cannot tell a correctly initialised halo from one left at zero.
+    fn seed_slab_case(n: usize, walls: bool, initial_pressure: bool) -> MacGrid {
+        let mut grid = seed_divergent_flow(n);
+        if walls {
+            grid.set_closed_box_walls();
+        }
+        if initial_pressure {
+            for (c, slot) in grid.pressure.iter_mut().enumerate() {
+                *slot = Fix128::from_ratio((c % 5) as i64 - 2, 7);
+            }
+        }
+        grid
+    }
+
+    /// Far from any pressure or velocity this solve produces, so a cell or face
+    /// that no rank wrote shows up as a mismatch of many units rather than as a
+    /// plausible number left over from the template.
+    const UNWRITTEN: Fix128 = Fix128::from_int(1_000_000);
+
+    /// Put the ranks' owned layers back together into one grid, so the result
+    /// can be compared with the monolithic solve.
+    ///
+    /// Only the tests do this: the point of slab-local storage is that no rank
+    /// holds the whole field, and this function is the measurement apparatus,
+    /// not part of the decomposition.
+    fn assemble_slabs(
+        template: &MacGrid,
+        faces: &[SlabFaces],
+        transport: &LocalSlabTransport,
+    ) -> MacGrid {
+        let mut out = template.clone();
+        out.pressure.fill(UNWRITTEN);
+        out.u.fill(UNWRITTEN);
+        out.v.fill(UNWRITTEN);
+        out.w.fill(UNWRITTEN);
+        let (nx, ny) = (out.nx, out.ny);
+        let plane = cell_plane(nx, ny);
+
+        for (r, rank_faces) in faces.iter().enumerate() {
+            let (k0, k1) = rank_faces.owned();
+            for k in k0..k1 {
+                let layer = transport
+                    .slab(r)
+                    .layer(k)
+                    .expect("a rank's own layer is resident in its band");
+                out.pressure[k * plane..(k + 1) * plane].copy_from_slice(layer);
+
+                let (u, _) = rank_faces.u_layer(k);
+                for j in 0..ny {
+                    for i in 0..=nx {
+                        let ix = out.idx_u(i, j, k);
+                        out.u[ix] = u[i + (nx + 1) * j];
+                    }
+                }
+                let (v, _) = rank_faces.v_layer(k);
+                for j in 0..=ny {
+                    for i in 0..nx {
+                        let ix = out.idx_v(i, j, k);
+                        out.v[ix] = v[i + nx * j];
+                    }
+                }
+            }
+            for k in rank_faces.w_written() {
+                let (w, _) = rank_faces.w_layer(k);
+                for j in 0..ny {
+                    for i in 0..nx {
+                        let ix = out.idx_w(i, j, k);
+                        out.w[ix] = w[i + nx * j];
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// Run the slab-local projection over `ranks` slabs with a halo of `halo`
+    /// layers, and reassemble the answer.
+    fn solve_slab_local(
+        base: &MacGrid,
+        dt_s: Fix128,
+        density: Fix128,
+        iterations: u32,
+        ranks: usize,
+        halo: usize,
+        schedule: HaloSchedule,
+    ) -> MacGrid {
+        // Imposed once, before the split: the monolithic solve does it inside
+        // itself, and an outflow face copying its inward neighbour is not
+        // idempotent, so the enforcement must not happen twice.
+        let mut enforced = base.clone();
+        enforced.enforce_face_boundaries();
+
+        let nz = enforced.nz;
+        let plane = cell_plane(enforced.nx, enforced.ny);
+        let bounds: Vec<(usize, usize)> = (0..ranks).map(|r| slab_bounds(nz, ranks, r)).collect();
+        let mut faces: Vec<SlabFaces> = bounds
+            .iter()
+            .map(|&b| SlabFaces::from_grid(&enforced, b))
+            .collect();
+        let mut transport =
+            LocalSlabTransport::from_field(&bounds, nz, plane, halo, &enforced.pressure);
+
+        project_pressure_slab_local_over(
+            &mut faces,
+            dt_s,
+            density,
+            iterations,
+            schedule,
+            &mut transport,
+        );
+        assemble_slabs(base, &faces, &transport)
+    }
+
+    /// Slab-local storage — every rank holding only its own layers plus one
+    /// halo layer, with no full-length array anywhere — reproduces the
+    /// monolithic solve bit for bit.
+    ///
+    /// Exactness, not a tolerance, for the reason the full-length oracle gives:
+    /// `Fix128` addition is a group operation mod 2¹²⁸, so a decomposition that
+    /// is correct at all is correct to the bit. The variants with walls and
+    /// with a non-zero initial pressure are there because a localised mask and
+    /// a localised initial halo are two more things that can be wrong without
+    /// the plainest case noticing (see `seed_slab_case`).
+    #[test]
+    fn slab_local_storage_reproduces_the_monolithic_pressure_solve() {
+        let dt = Fix128::from_ratio(1, 100);
+        let rho = Fix128::from_int(1000);
+
+        for &(n, ranks) in &SLAB_CASES {
+            for &(walls, initial_pressure) in
+                &[(false, false), (true, false), (true, true), (false, true)]
+            {
+                let base = seed_slab_case(n, walls, initial_pressure);
+
+                let mut monolithic = base.clone();
+                project_pressure_red_black_gs(&mut monolithic, dt, rho, 6);
+
+                let assembled =
+                    solve_slab_local(&base, dt, rho, 6, ranks, 1, HaloSchedule::EverySweep);
+
+                assert!(
+                    grids_are_bit_equal(&monolithic, &assembled),
+                    "{n}³ over {ranks} slab-local ranks (walls {walls}, initial pressure \
+                     {initial_pressure}) did not reproduce the monolithic solve: either a \
+                     localised array is indexed wrongly, a face is written by the wrong rank, \
+                     or the halo arrives with the wrong contents",
+                );
+            }
+        }
+    }
+
+    /// Teeth for the test above, in the same shape the full-length path uses:
+    /// delay the exchange by one sweep and the slabs stop agreeing.
+    ///
+    /// Without this, the bit-equality above could be passing on a decomposition
+    /// that never depended on the halo arriving at all.
+    #[test]
+    fn a_stale_slab_halo_does_not_reproduce_the_monolithic_solve() {
+        let dt = Fix128::from_ratio(1, 100);
+        let rho = Fix128::from_int(1000);
+        let base = seed_slab_case(8, true, true);
+
+        let mut monolithic = base.clone();
+        project_pressure_red_black_gs(&mut monolithic, dt, rho, 6);
+
+        let stale = solve_slab_local(&base, dt, rho, 6, 4, 1, HaloSchedule::EveryIteration);
+
+        assert!(
+            !grids_are_bit_equal(&monolithic, &stale),
+            "a halo one sweep out of date still reproduced the monolithic solve, so the \
+             bit-equality test above is not actually testing the exchange",
+        );
+    }
+
+    /// The point of localising the storage: a halo narrower than the stencil is
+    /// reported at the read, by a layer that is not there, rather than by a
+    /// number that comes out wrong later.
+    ///
+    /// This is what the full-length path cannot do. There, every rank holds the
+    /// whole field, so a stencil reaching past its halo finds *something* — a
+    /// sentinel if the buffer was poisoned, and a perfectly good value if it was
+    /// not — and the mistake only surfaces when the final field is compared.
+    /// Here the layer does not exist, and [`SlabStorage`] is the one place a
+    /// global layer becomes an offset, so the read cannot land on a different
+    /// cell by accident.
+    #[test]
+    #[should_panic(expected = "slab halo too narrow")]
+    fn a_halo_narrower_than_the_stencil_aborts_instead_of_returning_a_number() {
+        let dt = Fix128::from_ratio(1, 100);
+        let rho = Fix128::from_int(1000);
+        let base = seed_slab_case(8, false, false);
+        // Halo 0: rank 1 owns layers 4..8 and its cells at layer 4 have an open
+        // `-z` face onto layer 3, which no longer exists in its band.
+        let _ = solve_slab_local(&base, dt, rho, 6, 2, 0, HaloSchedule::EverySweep);
+    }
+
+    /// The exchange is guarded at the other end too: a delivery into a rank
+    /// that has no room for the layer aborts rather than being dropped.
+    ///
+    /// The sweep reaches its own guard first in a full solve, so this exercises
+    /// the delivery path directly. Both guards matter: a transport that
+    /// silently discarded an undeliverable layer would turn a configuration
+    /// error into a wrong answer.
+    #[test]
+    #[should_panic(expected = "no room for the layer it was asked to receive")]
+    fn a_slab_delivery_into_a_rank_without_room_aborts() {
+        let nz = 8usize;
+        let plane = 4usize;
+        let bounds: Vec<(usize, usize)> = (0..2).map(|r| slab_bounds(nz, 2, r)).collect();
+        let field = vec![Fix128::ZERO; nz * plane];
+        let mut transport = LocalSlabTransport::from_field(&bounds, nz, plane, 0, &field);
+        exchange_slab_halos_local(&mut transport, &bounds, nz);
+    }
+
+    /// Records the `(src, dst, layer)` sequence a slab-local schedule walks.
+    ///
+    /// Not a stand-in for a transport: the walk never asks it for a slab, and
+    /// `slab_mut` says so rather than handing back storage that would make a
+    /// mistaken call look successful.
+    struct SlabDeliveryRecorder {
+        calls: Vec<(usize, usize, usize)>,
+    }
+
+    impl SlabTransport for SlabDeliveryRecorder {
+        fn slab_mut(&mut self, rank: usize) -> &mut SlabStorage {
+            unreachable!("a schedule walk asked the recorder for rank {rank}'s slab")
+        }
+
+        fn deliver_layer(&mut self, src: usize, dst: usize, layer: usize) {
+            self.calls.push((src, dst, layer));
+        }
+    }
+
+    /// The two exchange walks — the full-length one and the slab-local one —
+    /// deliver the same layers between the same ranks in the same order.
+    ///
+    /// They are two copies of one loop, which is the price of not moving
+    /// `deliver_layer` to a supertrait of [`RankTransport`] and editing every
+    /// existing implementation. This is what keeps the copies honest: if either
+    /// walk is changed alone, the recorded sequences stop matching.
+    #[test]
+    fn both_exchange_walks_deliver_the_same_layers_in_the_same_order() {
+        for ranks in 1usize..=6 {
+            for nz in [ranks, 2 * ranks + 1, 3 * ranks, 1] {
+                let bounds: Vec<(usize, usize)> =
+                    (0..ranks).map(|r| slab_bounds(nz, ranks, r)).collect();
+                let (full_length, _) = recorded_schedule(nz, ranks);
+                let mut local = SlabDeliveryRecorder { calls: Vec::new() };
+                exchange_slab_halos_local(&mut local, &bounds, nz);
+                assert_eq!(
+                    local.calls, full_length,
+                    "{nz} layers over {ranks} ranks: the slab-local exchange walks a \
+                     different sequence from the full-length one",
+                );
+            }
+        }
+    }
+
+    /// Every cell layer is swept by exactly one rank and every Z-face layer is
+    /// updated by exactly one rank, for every depth and rank count — including
+    /// the splits that leave a rank owning nothing.
+    ///
+    /// The Z-faces are the ones that can go wrong: a face sits *between* two
+    /// cell layers, so each rank holds one more Z-face layer than it owns and
+    /// has to leave the top one to its neighbour, except at the top of the
+    /// domain where there is no neighbour. Written over the partition rather
+    /// than inferred from a solve, so it holds for decompositions no test
+    /// could afford to run.
+    #[test]
+    fn every_face_layer_is_updated_by_exactly_one_rank() {
+        for nz in 1usize..=16 {
+            for ranks in 1usize..=20 {
+                let mut cells = vec![0usize; nz];
+                let mut z_faces = vec![0usize; nz + 1];
+                for r in 0..ranks {
+                    let b = slab_bounds(nz, ranks, r);
+                    let faces = SlabFaces::new(2, 2, nz, Fix128::ONE, b);
+                    for owned in &mut cells[b.0..b.1] {
+                        *owned += 1;
+                    }
+                    for k in faces.w_written() {
+                        z_faces[k] += 1;
+                    }
+                }
+                assert!(
+                    cells.iter().all(|&c| c == 1),
+                    "{nz} layers over {ranks} ranks: cell layers swept {cells:?} times",
+                );
+                assert!(
+                    z_faces.iter().all(|&c| c == 1),
+                    "{nz} layers over {ranks} ranks: Z-face layers updated {z_faces:?} times",
+                );
+            }
+        }
+    }
+
+    /// The byte accounting reports the containers that exist, so it cannot
+    /// drift from them the way a formula can.
+    ///
+    /// Checked against the layer counts the decomposition implies, and checked
+    /// to be non-zero: an instrument that measured nothing would otherwise
+    /// satisfy every comparison made with it.
+    #[test]
+    fn the_measured_working_set_is_the_one_the_layer_counts_imply() {
+        let n = 6usize;
+        let ranks = 3usize;
+        let grid = seed_slab_case(n, true, false);
+        let plane = cell_plane(n, n);
+        let scale = Fix128::ONE;
+
+        for r in 0..ranks {
+            let b = slab_bounds(n, ranks, r);
+            let faces = SlabFaces::from_grid(&grid, b);
+            let storage = SlabStorage::for_slab(plane, n, b, 1);
+            let stencil = SlabStencil::build(&faces, scale);
+            let bytes = storage.bytes().add(faces.bytes()).add(stencil.bytes());
+
+            let (lo, hi) = storage.resident();
+            let owned = b.1 - b.0;
+            assert_eq!(
+                bytes.pressure,
+                (hi - lo) * plane * size_of::<Fix128>(),
+                "rank {r}: the pressure band is not the resident layers",
+            );
+            assert_eq!(
+                bytes.faces,
+                (owned * (u_plane(n, n) + v_plane(n, n)) + (owned + 1) * plane)
+                    * size_of::<Fix128>(),
+                "rank {r}: the face arrays are not the owned layers plus one Z-face layer",
+            );
+            assert_eq!(
+                bytes.open,
+                owned * plane * size_of::<[bool; 6]>(),
+                "rank {r}: the mask is not the owned layers",
+            );
+            assert_eq!(bytes.rhs, owned * plane * size_of::<Fix128>());
+            assert_eq!(bytes.inverse_degrees, owned * plane * size_of::<Fix128>());
+            assert!(
+                bytes.total() > 0,
+                "rank {r} reported an empty working set, which would make every \
+                 comparison against it vacuous",
+            );
+        }
+    }
+
+    /// One rank's slab-local working set is a fraction of what the same rank
+    /// needs on the full-length path, measured on both sides from the
+    /// containers that actually get allocated.
+    ///
+    /// The full-length figure is the one the scale probe under-reported: the
+    /// grid is only four of the seven arrays, and the mask, the reciprocal
+    /// diagonal and the right-hand side are the other three.
+    #[test]
+    fn the_slab_local_working_set_is_a_fraction_of_the_full_length_one() {
+        let n = 64usize;
+        let ranks = 8usize;
+        let grid = seed_slab_case(n, true, false);
+        let cells = n * n * n;
+        let plane = cell_plane(n, n);
+
+        let mask = PoissonMask::from_grid(&grid);
+        let inv_deg = inverse_degrees(&mask, cells);
+        let rhs = poisson_rhs(&grid, Fix128::ONE);
+        let full_length_transport = LocalTransport::new(1, n, plane);
+        let full_length = (grid.u.capacity()
+            + grid.v.capacity()
+            + grid.w.capacity()
+            + grid.pressure.capacity()
+            + inv_deg.capacity()
+            + rhs.capacity()
+            + full_length_transport.slabs[0].capacity())
+            * size_of::<Fix128>()
+            + mask.open.capacity() * size_of::<[bool; 6]>();
+
+        let b = slab_bounds(n, ranks, ranks / 2);
+        let faces = SlabFaces::from_grid(&grid, b);
+        let storage = SlabStorage::for_slab(plane, n, b, 1);
+        let stencil = SlabStencil::build(&faces, Fix128::ONE);
+        let slab_local = storage
+            .bytes()
+            .add(faces.bytes())
+            .add(stencil.bytes())
+            .total();
+
+        assert!(
+            slab_local * 4 < full_length,
+            "{n}³ over {ranks} ranks: slab-local storage is {slab_local} B per rank against \
+             {full_length} B for the full-length path, which is less than the 4x the \
+             decomposition is for",
+        );
+    }
+
+    /// One rank of a hundred million cells, built and swept, with the resident
+    /// bytes read back from the containers.
+    ///
+    /// Ignored by default because it allocates over a gigabyte and runs for
+    /// tens of seconds; it is the measurement this stage exists to make, run by
+    /// hand with
+    /// `cargo test --release --features std -- --ignored --nocapture
+    /// one_rank_of_a_hundred_million_cells`.
+    ///
+    /// No peer rank, so the halo keeps its initial contents: what this measures
+    /// is residency and sweep cost at the target size. The answer is pinned
+    /// bit-exactly by `slab_local_storage_reproduces_the_monolithic_pressure_solve`
+    /// at sizes a test suite can afford.
+    #[cfg(feature = "std")]
+    #[test]
+    #[ignore = "allocates over 1 GiB and runs for tens of seconds: the 1e8-cell residency measurement"]
+    fn one_rank_of_a_hundred_million_cells_fits_in_slab_local_storage() {
+        let n = 464usize; // 464³ = 99,897,344 cells
+        let ranks = 8usize;
+        let rank = 4usize; // interior: a halo on both sides
+        let dx = Fix128::from_ratio(1, 100);
+        let dt = Fix128::from_ratio(1, 100);
+        let rho = Fix128::from_int(1000);
+        let plane = cell_plane(n, n);
+        let b = slab_bounds(n, ranks, rank);
+        let (k0, k1) = b;
+
+        let t0 = std::time::Instant::now();
+        let mut faces = SlabFaces::new(n, n, n, dx, b);
+        for k in k0..k1 {
+            let base = k * u_plane(n, n);
+            let (u, _) = faces.u_layer_mut(k);
+            for (i, slot) in u.iter_mut().enumerate() {
+                *slot = probe_u(base + i);
+            }
+        }
+        let mut storage = SlabStorage::for_slab(plane, n, b, 1);
+        let seeded = t0.elapsed();
+
+        let t1 = std::time::Instant::now();
+        let stencil = SlabStencil::build(&faces, rho * dx * dx / dt);
+        let stencil_built = t1.elapsed();
+
+        let bytes = storage.bytes().add(faces.bytes()).add(stencil.bytes());
+
+        let t2 = std::time::Instant::now();
+        for colour in 0..2u32 {
+            sweep_slab_colour(&mut storage, &faces, &stencil, colour);
+        }
+        let swept = t2.elapsed();
+
+        let owned = (k1 - k0) * plane;
+        let gib = |b: usize| b as f64 / (1024.0 * 1024.0 * 1024.0);
+        println!(
+            "rank {rank} of {ranks}, {n}³ = {} cells, owns layers {k0}..{k1} ({owned} cells)",
+            n * n * n,
+        );
+        println!(
+            "  pressure band {:.3} GiB / faces {:.3} GiB / face conditions {:.3} GiB",
+            gib(bytes.pressure),
+            gib(bytes.faces),
+            gib(bytes.face_flags),
+        );
+        println!(
+            "  mask {:.3} GiB / inverse degrees {:.3} GiB / right-hand side {:.3} GiB",
+            gib(bytes.open),
+            gib(bytes.inverse_degrees),
+            gib(bytes.rhs),
+        );
+        println!(
+            "  total per rank {:.3} GiB, times {ranks} ranks = {:.3} GiB",
+            gib(bytes.total()),
+            gib(bytes.total() * ranks),
+        );
+        println!(
+            "  seed {seeded:?} / stencil {stencil_built:?} / one iteration (both colours) \
+             {swept:?} = {:.1} ns per owned cell",
+            swept.as_secs_f64() * 1.0e9 / owned as f64,
+        );
+
+        assert!(
+            bytes.total() < 2 * 1024 * 1024 * 1024,
+            "one rank of {n}³ over {ranks} ranks needs {:.3} GiB, which is not the \
+             gigabyte-class residency the decomposition is for",
+            gib(bytes.total()),
+        );
+    }
+
+    /// The X-face velocity the probes seed, by *global* face index, so the
+    /// monolithic grid and the slab-local ranks start from the same field and
+    /// their timings are comparable.
+    fn probe_u(global_face: usize) -> Fix128 {
+        Fix128::from_f64(((global_face % 7) as f64 - 3.0) * 0.1)
+    }
+
+    /// The whole decomposition — all eight ranks, the exchange, each rank
+    /// correcting its own faces — timed against the monolithic solve on the
+    /// same machine, at the same size, from the same field.
+    ///
+    /// This is the measurement that says whether localising the storage costs
+    /// anything per cell: the slab path does more index arithmetic and reads
+    /// through one more level of slicing, and a decomposition that paid for
+    /// that in the kernel would show up here. The two solves are run one after
+    /// the other, the monolithic one dropped before the ranks are built, so a
+    /// 16 GiB machine only ever holds one of them.
+    ///
+    /// Ignored for the same reason as the test above. Run with
+    /// `cargo test --release --features std -- --ignored --nocapture
+    /// the_whole_slab_decomposition_costs`.
+    #[cfg(feature = "std")]
+    #[test]
+    #[ignore = "allocates about 2 GiB twice over: the multi-rank timing measurement"]
+    fn the_whole_slab_decomposition_costs_what_the_monolithic_solve_does_per_cell() {
+        let n = 256usize;
+        let ranks = 8usize;
+        let dx = Fix128::from_ratio(1, 100);
+        let dt = Fix128::from_ratio(1, 100);
+        let rho = Fix128::from_int(1000);
+        let plane = cell_plane(n, n);
+        let cells = n * n * n;
+        let bounds: Vec<(usize, usize)> = (0..ranks).map(|r| slab_bounds(n, ranks, r)).collect();
+        let gib = |b: usize| b as f64 / (1024.0 * 1024.0 * 1024.0);
+
+        let monolithic = {
+            let mut grid = MacGrid::new(n, n, n, dx);
+            for (i, slot) in grid.u.iter_mut().enumerate() {
+                *slot = probe_u(i);
+            }
+            let t = std::time::Instant::now();
+            project_pressure_red_black_gs(&mut grid, dt, rho, 1);
+            t.elapsed()
+        };
+
+        let t0 = std::time::Instant::now();
+        let mut faces: Vec<SlabFaces> = bounds
+            .iter()
+            .map(|&b| {
+                let mut f = SlabFaces::new(n, n, n, dx, b);
+                for k in b.0..b.1 {
+                    let base = k * u_plane(n, n);
+                    let (u, _) = f.u_layer_mut(k);
+                    for (i, slot) in u.iter_mut().enumerate() {
+                        *slot = probe_u(base + i);
+                    }
+                }
+                f
+            })
+            .collect();
+        let mut transport = LocalSlabTransport {
+            slabs: bounds
+                .iter()
+                .map(|&b| SlabStorage::for_slab(plane, n, b, 1))
+                .collect(),
+            staging: vec![Fix128::ZERO; plane],
+        };
+        let seeded = t0.elapsed();
+
+        let t1 = std::time::Instant::now();
+        project_pressure_slab_local_over(
+            &mut faces,
+            dt,
+            rho,
+            1,
+            HaloSchedule::EverySweep,
+            &mut transport,
+        );
+        let solved = t1.elapsed();
+
+        let per_rank: Vec<usize> = faces
+            .iter()
+            .zip(transport.bytes())
+            .map(|(f, storage_bytes)| {
+                storage_bytes
+                    .add(f.bytes())
+                    .add(SlabStencil::build(f, rho * dx * dx / dt).bytes())
+                    .total()
+            })
+            .collect();
+        let total: usize = per_rank.iter().sum();
+        println!(
+            "{n}³ = {cells} cells, one red-black iteration from the same field:\n  \
+             monolithic     {monolithic:?} = {:.1} ns/cell\n  \
+             {ranks} slab-local  {solved:?} = {:.1} ns/cell (seed {seeded:?})\n  \
+             working set {:.3} GiB over {ranks} ranks, largest rank {:.3} GiB",
+            monolithic.as_secs_f64() * 1.0e9 / cells as f64,
+            solved.as_secs_f64() * 1.0e9 / cells as f64,
+            gib(total),
+            gib(per_rank.iter().copied().max().unwrap_or(0)),
+        );
+        assert!(
+            solved.as_secs_f64() < 4.0 * monolithic.as_secs_f64(),
+            "the slab-local decomposition took {solved:?} against the monolithic solve's \
+             {monolithic:?}, so localising the storage has moved the cost into the index \
+             arithmetic instead of leaving it in the memory system",
+        );
     }
 }
