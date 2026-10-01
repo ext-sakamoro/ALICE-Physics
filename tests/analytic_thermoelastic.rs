@@ -1,16 +1,22 @@
 //! Acceptance oracles for thermoelastic coupling, written **before** the term
 //! existed and now green against it.
 //!
-//! Four of the five tests here were `#[ignore]`d and red until
-//! `linear_elastic_fem` gained an eigenstrain term. That is why they can be
-//! trusted: they fixed the acceptance criterion for wiring a temperature field
-//! into [`alice_physics::linear_elastic_fem`] while the residual still had no
-//! such term, so the criterion could not be written to match whatever the
+//! Four of these tests were `#[ignore]`d and red until `linear_elastic_fem`
+//! gained an eigenstrain term. That is why they can be trusted: they fixed the
+//! acceptance criterion for wiring a temperature field into
+//! [`alice_physics::linear_elastic_fem`] while the residual still had no such
+//! term, so the criterion could not be written to match whatever the
 //! implementation happened to produce.
 //!
-//! The fifth, [`the_discriminating_measurements_are_not_inert`], ran from the
-//! start and pins the measurement helpers the other four compare through — see
-//! the controls section.
+//! Two more were never ignored, and each exists because a gate that the four
+//! cannot reach needs its own pin:
+//!
+//! * [`the_discriminating_measurements_are_not_inert`] ran from the start and
+//!   pins the measurement helpers the other four compare through — see the
+//!   controls section;
+//! * [`a_field_that_does_not_cover_the_mesh_is_refused`] was added when the
+//!   term landed, because disabling the solve's coverage check left every
+//!   other test here green. See its own doc.
 //!
 //! # The two states, for anyone reading the history
 //!
@@ -793,6 +799,90 @@ fn the_discriminating_measurements_are_not_inert() {
         1200.0,
         "antisymmetry of two identical compressions — a sign-blind measure would \
          report 0 here and the second control would have no teeth",
+    );
+}
+
+// ---------------------------------------------------------------------------
+// control 0 — the coverage refusal, which no other scene can reach
+// ---------------------------------------------------------------------------
+
+/// **A field that does not cover the mesh is refused, and the refusal names a
+/// node that really is outside it.**
+///
+/// ⚠️ This test exists because of a **surviving mutant**. Disabling the
+/// coverage check in `solve_with_eigenstrain` — rewriting its condition to
+/// `if false && !thermal.field.contains(p)` — left all five other tests in this
+/// file green. Every scene here asserts its own coverage through
+/// [`ThermalLoad::assert_drives`], precisely so that none of them leans on the
+/// solve's behaviour out of bounds, and the cost of that independence is that
+/// none of them exercises the refusal either. The guard was unpinned.
+///
+/// What goes wrong without it is not a crash: `CoupledField::sample` clamps a
+/// point outside the grid onto the nearest boundary node, so the body outside
+/// the field is heated by the extruded boundary value and the solve returns a
+/// plausible, wrong stress field. Silence is the whole problem, which is why
+/// this is a refusal rather than a clamp.
+///
+/// Two halves, because an unconditional refusal would also pass the first:
+/// the under-covering field must be rejected, and the same mesh with a covering
+/// field must solve. The reported vertex index is then checked against the
+/// field bounds, so an off-by-one in the index — which would make the error
+/// message point at an innocent node — is red rather than cosmetic.
+#[test]
+fn a_field_that_does_not_cover_the_mesh_is_refused() {
+    const N: usize = 2;
+    let mesh = kuhn_cube(N, SIDE / N as f64);
+    let bc = clamped_boundary(&mesh, N);
+
+    // Half the cube in every direction, so the far nodes stick out.
+    let short = CoupledField::try_new_filled(
+        5,
+        5,
+        5,
+        (Fix128::ZERO, Fix128::ZERO, Fix128::ZERO),
+        (fx(SIDE / 2.0), fx(SIDE / 2.0), fx(SIDE / 2.0)),
+        fx(DELTA_T_K),
+    )
+    .expect("5x5x5 over [0, 2]³ is a valid grid");
+
+    let err = solve_with_eigenstrain(
+        &mesh,
+        &pla(),
+        &bc,
+        &solver_config(),
+        Some(ThermalExpansion::new(&short, fx(ALPHA_PER_K))),
+    )
+    .expect_err("a field covering [0, 2]³ cannot drive a mesh on [0, 4]³");
+
+    match err {
+        FemError::TemperatureFieldDoesNotCoverMesh { vertex } => {
+            let x = vert(&mesh, vertex);
+            let p = Vec3Fix::new(fx(x[0]), fx(x[1]), fx(x[2]));
+            assert!(
+                !short.contains(p),
+                "the refusal must name a node that is actually outside the field, \
+                 but node {vertex} at {x:?} mm lies inside [0, {}]³",
+                SIDE / 2.0
+            );
+        }
+        other => panic!(
+            "a mesh poking out of its temperature field must be refused as \
+             TemperatureFieldDoesNotCoverMesh, not {other:?}"
+        ),
+    }
+
+    // The same scene with a covering field solves, so the refusal above is a
+    // judgement about coverage and not a blanket rejection of eigenstrains.
+    let covering = ThermalLoad::uniform(DELTA_T_K);
+    let out = solve_with_temperature(&mesh, &pla(), &bc, &solver_config(), &covering)
+        .expect("the covering field is the one every other scene here uses");
+    let want = constrained_stress_checked(covering.delta_t_k);
+    let worst_normal = worst_normal_deviation(&out.element_stress, want);
+    eprintln!("  covering field still solves: worst |σ_nn − {want:.6}| = {worst_normal:.6e} MPa");
+    assert!(
+        worst_normal < SIGMA_TOL_MPA,
+        "the covering field must still give {want} MPa; worst element is \
+         {worst_normal:.6e} MPa away"
     );
 }
 
