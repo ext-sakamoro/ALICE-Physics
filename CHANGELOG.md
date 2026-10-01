@@ -23,6 +23,9 @@ oracle は `tests/analytic_p2g.rs` の 4 本 (一様速度 / 成分ごとに勾�
 変異試験 5 件 (正規化なし / 分母の取り違え / u の y stagger / v の分母 / w 未処理) がすべて red になることを実測した
 `cfd_solver` の自前分配への置換は含まない
 
+退化入力の試験 12 本を追加した (空入力 / `dx = 0` / 領域外 / 負座標 / 巨大値 / 届かない face の値の保持 / 同位置の多数粒子) 巨大な位置・速度でも panic は出なかった (debug profile のみ実測)
+試験で見つかった不具合を同時に直した: 負座標の粒子は `split` の clamp で face 0 に重み 1 で載り、角の face を粒子速度で上書きしていた `p2g_normalized` の入口で、負座標の粒子を領域外として除外する (`split` 自体は `g2p_velocity` と移流の逆追跡が clamp に依存するので変更しない)
+
 ### Added — 20 節点 P3 四面体要素 (`cubic_elastic_fem`)
 
 研究壁「高次要素 P2/P3」の P3 側です `CubicMesh` (辺 2 節点 + 面 1 節点) / `solve_cubic` / `shape_values` を追加しました
