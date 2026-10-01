@@ -1360,18 +1360,30 @@ fn self_collision_improves_the_edge_edge_separation_it_constrains() {
     assert!(
         all_on.violations < all_off.violations,
         "辺-辺の段が違反件数を減らしていない (ON {} / OFF {}、実測は 2 / 3) \
-         ⚠️ 最小距離の比で測らないこと: 貫通し切った面は「遠い」と測られる (doc の表)",
+         ⚠️ 最小距離の比で測らないこと: 貫通し切った面は「遠い」と測られる (doc の表) \
+         参考値 最小距離² ON {} / OFF {} (argmin ON {:?} pin {} / OFF {:?} pin {})",
         all_on.violations,
-        all_off.violations
+        all_off.violations,
+        all_on.min_d2.to_f32(),
+        all_off.min_d2.to_f32(),
+        all_on.argmin,
+        all_on.argmin_pinned,
+        all_off.argmin,
+        all_off.argmin_pinned
     );
 
     // ⚠️ 絶対的な不変量 比較ではありません (自己接触 OFF でも 0 なので、これが green でも
     // 「段が効いている」証拠にはならない) solver が動かせる領域に違反を残さないことだけを
     // 見ており、崩れたら弱めずに原因を調べること
     assert_eq!(
-        free_on.violations, 0,
-        "solver が支配する辺対 ({} 件) に接触厚未満が {} 件残った",
-        free_on.population, free_on.violations
+        free_on.violations,
+        0,
+        "solver が支配する辺対 ({} 件) に接触厚未満が {} 件残った \
+         (最小距離² {}、argmin {:?})",
+        free_on.population,
+        free_on.violations,
+        free_on.min_d2.to_f32(),
+        free_on.argmin
     );
 
     // ⚠️ ALL の argmin が driver 支配であることを記録として固定する これが崩れたら
