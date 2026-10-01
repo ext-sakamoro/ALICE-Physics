@@ -3445,6 +3445,86 @@ mod tests {
         );
     }
 
+    /// 退化入力で panic しないこと (辺-辺の掃過 CCD 経路)
+    ///
+    /// 対象は `remaining_self_contact_crossings` → `collect_swept_edge_edge_candidates`
+    /// → `edge_pair_frame_contact` の経路で、`start` の長さと幾何の両方を退化させます
+    /// **正とする挙動は「panic しない」** (この API は `Result` を返さないので、測れない
+    /// 入力は数えないのが契約です)
+    ///
+    /// # 歯 (この test が空振りでないことの実測)
+    ///
+    /// ⚠️ `collect_swept_edge_edge_candidates` の境界 guard `if a0 >= n || a1 >= n` を
+    /// 外すと、**`start` が粒子数より短い case 3 本が panic (index out of bounds) で red**
+    /// になります (2026-10-01 実測、変異 `F1-drop-start-bounds-guard`)
+    /// 幾何の退化側は `closest_points_on_segments` / `try_normalize` の `None` 経路が
+    /// 受けるので、そちらは既存の退化 test が歯になります
+    #[test]
+    fn the_crossings_invariant_does_not_panic_on_degenerate_input() {
+        let quarter = Fix128::from_ratio(1, 4);
+
+        // 1. start が空
+        let cloth = x_crossing_scene(Fix128::from_ratio(1, 2), quarter);
+        assert_eq!(
+            cloth.remaining_self_contact_crossings(&[]),
+            0,
+            "start が空の時は測れる対が 1 つも無いので 0"
+        );
+
+        // 2. start が粒子数より短い (1 要素 / 粒子数 − 1 要素)
+        for take in [1usize, cloth.particle_count() - 1] {
+            let short: Vec<Vec3Fix> = cloth.positions.iter().copied().take(take).collect();
+            let _ = cloth.remaining_self_contact_crossings(&short);
+        }
+
+        // 3. start が粒子数より長い (余分は無視される)
+        let mut long = cloth.positions.clone();
+        long.push(Vec3Fix::ZERO);
+        long.push(Vec3Fix::ZERO);
+        let _ = cloth.remaining_self_contact_crossings(&long);
+
+        // 4. 全粒子が同一点 = 全辺が長さ 0 (`closest_points_on_segments` が None を返す側)
+        let mut collapsed = x_crossing_scene(Fix128::from_ratio(1, 2), quarter);
+        let start = collapsed.positions.clone();
+        for p in &mut collapsed.positions {
+            *p = Vec3Fix::ZERO;
+        }
+        assert_eq!(
+            collapsed.remaining_self_contact_crossings(&start),
+            0,
+            "長さ 0 の辺しか無い時に対を数えている"
+        );
+
+        // 5. 接触厚 0 (thickness_sq が 0 になり「出会った」が成立しなくなる経路)
+        let mut zero_thickness = x_crossing_scene(Fix128::from_ratio(1, 2), quarter);
+        zero_thickness.config.self_collision_distance = Fix128::ZERO;
+        let start = zero_thickness.positions.clone();
+        assert_eq!(
+            zero_thickness.remaining_self_contact_crossings(&start),
+            0,
+            "接触厚 0 で辺-辺の交差を数えている"
+        );
+
+        // 6. start と現在位置が完全に同一 (frame 中に何も動いていない = 3 次式が定数)
+        let still = x_crossing_scene(Fix128::from_ratio(1, 2), quarter);
+        let same = still.positions.clone();
+        assert_eq!(
+            still.remaining_self_contact_crossings(&same),
+            0,
+            "静止した frame で交差を数えている"
+        );
+
+        // 7. 三角形を持たない cloth (辺集合が空、二重 loop が 0 回)
+        let mut no_tris = x_crossing_scene(Fix128::from_ratio(1, 2), quarter);
+        let start = no_tris.positions.clone();
+        no_tris.triangles.clear();
+        assert_eq!(
+            no_tris.remaining_self_contact_crossings(&start),
+            0,
+            "三角形が無いのに対を数えている"
+        );
+    }
+
     /// ⚠️ **限界の記録** — 1 つの区間の中で通り抜けて戻った対は、不変量に出ない
     ///
     /// `remaining_self_contact_crossings` は **区間の終端** で貫通側に居るかを数えます
