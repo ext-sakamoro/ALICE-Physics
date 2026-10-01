@@ -4957,6 +4957,9 @@ pub alice_physics::linear_elastic_fem::FemError::NotConverged::relative_residual
 pub alice_physics::linear_elastic_fem::FemError::RotationFailed
 pub alice_physics::linear_elastic_fem::FemError::RotationFailed::cause: alice_physics::math::PolarError
 pub alice_physics::linear_elastic_fem::FemError::RotationFailed::tet: usize
+pub alice_physics::linear_elastic_fem::FemError::SolutionDoesNotMatchMesh
+pub alice_physics::linear_elastic_fem::FemError::SolutionDoesNotMatchMesh::nodes: usize
+pub alice_physics::linear_elastic_fem::FemError::SolutionDoesNotMatchMesh::vertex_count: usize
 pub alice_physics::linear_elastic_fem::FemError::Stagnated
 pub alice_physics::linear_elastic_fem::FemError::Stagnated::iterations: u32
 pub alice_physics::linear_elastic_fem::FemError::Stagnated::relative_residual: alice_physics::math::Fix128
@@ -5260,6 +5263,8 @@ impl<'a> core::marker::UnsafeUnpin for alice_physics::linear_elastic_fem::Therma
 impl<'a> core::panic::unwind_safe::RefUnwindSafe for alice_physics::linear_elastic_fem::ThermalExpansion<'a>
 impl<'a> core::panic::unwind_safe::UnwindSafe for alice_physics::linear_elastic_fem::ThermalExpansion<'a>
 pub const alice_physics::linear_elastic_fem::RESIDUAL_NORM_FLOOR: alice_physics::math::Fix128
+pub fn alice_physics::linear_elastic_fem::corotational_reactions(&alice_physics::sdf_fem_mesh::SdfTetMesh, &alice_physics::linear_elastic_fem::ElasticMaterial, &alice_physics::linear_elastic_fem::BoundaryConditions, &alice_physics::linear_elastic_fem::CorotationalConfig, &alice_physics::linear_elastic_fem::CorotationalSolution) -> core::result::Result<alloc::vec::Vec<[alice_physics::math::Fix128; 3]>, alice_physics::linear_elastic_fem::FemError>
+pub fn alice_physics::linear_elastic_fem::reactions(&alice_physics::sdf_fem_mesh::SdfTetMesh, &alice_physics::linear_elastic_fem::ElasticMaterial, &alice_physics::linear_elastic_fem::BoundaryConditions, core::option::Option<alice_physics::linear_elastic_fem::ThermalExpansion<'_>>, &alice_physics::linear_elastic_fem::FemSolution) -> core::result::Result<alloc::vec::Vec<[alice_physics::math::Fix128; 3]>, alice_physics::linear_elastic_fem::FemError>
 pub fn alice_physics::linear_elastic_fem::solve(&alice_physics::sdf_fem_mesh::SdfTetMesh, &alice_physics::linear_elastic_fem::ElasticMaterial, &alice_physics::linear_elastic_fem::BoundaryConditions, &alice_physics::linear_elastic_fem::SolverConfig) -> core::result::Result<alice_physics::linear_elastic_fem::FemSolution, alice_physics::linear_elastic_fem::FemError>
 pub fn alice_physics::linear_elastic_fem::solve_corotational(&alice_physics::sdf_fem_mesh::SdfTetMesh, &alice_physics::linear_elastic_fem::ElasticMaterial, &alice_physics::linear_elastic_fem::BoundaryConditions, &alice_physics::linear_elastic_fem::CorotationalConfig) -> core::result::Result<alice_physics::linear_elastic_fem::CorotationalSolution, alice_physics::linear_elastic_fem::FemError>
 pub fn alice_physics::linear_elastic_fem::solve_elastoplastic(&alice_physics::sdf_fem_mesh::SdfTetMesh, &alice_physics::linear_elastic_fem::ElasticMaterial, &alice_physics::linear_elastic_fem::BoundaryConditions, &alice_physics::linear_elastic_fem::ElastoplasticConfig, &[alice_physics::math::Fix128]) -> core::result::Result<alice_physics::linear_elastic_fem::ElastoplasticSolution, alice_physics::linear_elastic_fem::FemError>
