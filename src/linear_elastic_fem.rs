@@ -4515,7 +4515,43 @@ impl ThermoplasticCoupling {
     /// taken against this reference.
     ///
     /// `relaxation` is the constant `ω` of the update above. `ω = 1` is the
-    /// plain (unrelaxed) sweep.
+    /// plain (unrelaxed) sweep, and it is the best value measured on every
+    /// scene tried — the range is capped at one for that reason and not for a
+    /// theoretical one.
+    ///
+    /// ⚠️ **Over-relaxation is worse here, and the closed-form optimum is not
+    /// the optimum.** The Jacobian of the map at its fixed point was measured
+    /// by finite differences over the 25 nodes the deposit writes, giving
+    /// `λ ∈ {+0.280, −0.078}` at `c_v = 2⁻⁸` and `{+0.938, −0.401}` at
+    /// `c_v = 2⁻¹⁰`. Richardson's equalising choice
+    /// `ω* = 2/(2 − λ_max − λ_min)` is then 1.112 and 1.367, and it asks for
+    /// **over**-relaxation. Measured sweeps say otherwise:
+    ///
+    /// | `ω` | 1 | 1.112 | 1.25 | 1.367 | 1.5 | 1.75 |
+    /// |---|---|---|---|---|---|---|
+    /// | `c_v = 2⁻⁸` | **10** | 14 | 21 | 29 | 45 | 174 |
+    /// | `c_v = 2⁻¹⁰` | **24** | 37 | 74 | — | — | — |
+    ///
+    /// (`—` is `NotConverged`, `ArithmeticWrapped` at 1.5 and `Diverging` at
+    /// 1.75; the wrap is a real one — the over-relaxed oscillation grows until
+    /// it leaves the range — not a detector misfire.)
+    ///
+    /// The reason the asymptotic rate does not decide the sweep count is that
+    /// **the iteration finishes inside its transient**: at `c_v = 2⁻⁸` the
+    /// early sweeps contract by 0.084 each while `λ_max` is 0.280, and the
+    /// residual reaches the floor before the asymptotic regime begins. Taking a
+    /// step longer than one then overshoots a strongly contracting nonlinear
+    /// map and has to come back.
+    ///
+    /// Which effect owns which eigenvalue was measured by switching them off
+    /// one at a time, and it is the physics one would guess: **softening is the
+    /// positive eigenvalue** (hotter → weaker → more plastic work → hotter) and
+    /// **expansion is the negative one** (hotter → more eigenstrain → less
+    /// elastic trial strain → less work). With `α = 0` the negative eigenvalue
+    /// vanishes (`λ₂ = −0.000`); with no softening law the dominant eigenvalue
+    /// turns negative (`−0.146`). The alternating look of the early iterates is
+    /// the negative eigenvalue showing in the transient while the positive one
+    /// sets the tail.
     ///
     /// `residual_floor_fraction` is the floor below which the residual is read
     /// as zero, as a **fraction of the magnitude the first sweep deposits**.
@@ -4541,6 +4577,29 @@ impl ThermoplasticCoupling {
     /// about 45 times the measured noise and is still far below any temperature
     /// a scene of interest produces.
     ///
+    /// **Where that noise comes from**, measured rather than assumed: it is
+    /// [`RESIDUAL_NORM_FLOOR`], the **absolute** floor on the force residual
+    /// that both the linear solve and the Newton loop clamp their targets to.
+    /// Three experiments separate it from the relative tolerances:
+    ///
+    /// | change | relative noise at `c_v = 2⁻⁸` |
+    /// |---|---|
+    /// | baseline | `1.23e-11` |
+    /// | `SolverConfig::relative_tolerance` `2⁻³⁰ → 2⁻⁴⁰` | `1.45e-11` — ⚠️ unmoved |
+    /// | `newton_tolerance` `2⁻⁴⁰ → 2⁻²⁰` (a million times looser) | `1.02e-11` — ⚠️ unmoved |
+    /// | every force in the problem `× 64` | `1.27e-13` — **97× smaller** |
+    /// | every force in the problem `× 4096` | `4.60e-15` — **2667× smaller** |
+    ///
+    /// Tightening or loosening either tolerance does nothing, while scaling the
+    /// loads scales the relative noise inversely — which is what an absolute
+    /// floor on a force residual does and what a relative tolerance cannot do.
+    /// ⚠️ It also explains why the ratio is the same at every `c_v`: the answer
+    /// `δT` grows like `1/c_v` while the force residual floor does not move.
+    /// ⚠️ A corollary worth knowing: a `newton_tolerance` below
+    /// `RESIDUAL_NORM_FLOOR / ‖f‖` **is not in effect**, because the target is
+    /// `max(relative × norm, RESIDUAL_NORM_FLOOR)` — the `2⁻⁴⁰` the oracles
+    /// pass is already clamped on this scene.
+    ///
     /// ⚠️ **A fraction of zero reproduces the behaviour above** and is refused.
     ///
     /// # Errors
@@ -4563,7 +4622,8 @@ impl ThermoplasticCoupling {
     ) -> Result<Self, FemError> {
         if relaxation <= Fix128::ZERO || relaxation > Fix128::ONE {
             return Err(FemError::InvalidConfig(
-                "relaxation must be in (0, 1]: zero never moves and above one overshoots",
+                "relaxation must be in (0, 1]: zero never moves, and over-relaxation is \
+                 measured to be monotonically worse on this map",
             ));
         }
         if residual_floor_fraction <= Fix128::ZERO || residual_floor_fraction >= Fix128::ONE {

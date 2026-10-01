@@ -1957,20 +1957,49 @@ fn the_upper_wall_readout_finds_the_bubble_of_the_reflected_step() {
 /// - **`ny = 32` and finer.** The `ny` row extrapolates to roughly `+0.03` at
 ///   `ny = 32`, which is the `dx = 1/32` tolerance itself — i.e. the boundary,
 ///   with no margin either way. ⚠️ **`L_u` has no such extrapolation**: it is
-///   absent at `ny = 8` and `4.24` at `ny = 16` against `5.63`, so nothing here
-///   says it arrives by `ny = 32`. Cost is why it is unmeasured: the `t = 512`
-///   run at `ny = 16` takes `1078 s` in release, and `ny = 32` multiplies that
-///   by four for cells, two for the Courant-halved `dt`, and again for the
-///   longer settling time and larger sweep count — `2.4` to `9.5` hours for one
-///   point, against the `timeout-minutes: 180` on the `ignored-tests` job that
-///   would have to run it.
+///   absent at `ny = 8` and `4.24` at `ny = 16` against `5.63`.
+///
+/// ⚠️ **Corrected 2026-10-02: `ny = 32` is measured, and the estimate above
+/// was an order of magnitude pessimistic.** The figure of `2.4` to `9.5` hours
+/// per point came from scaling the `ny = 16` wall clock; the measured cost is
+/// **68 ms per step** at `ny = 32`, for the default projection and for
+/// Gauss-Seidel alike, so a 32768-step run is **38 minutes**
+/// (`SemiLagrangian`) or **93 minutes** (`MacCormack`) — inside the
+/// `timeout-minutes: 180` on the `ignored-tests` job. The measured table (the
+/// full version is on `x_1_time_trace`):
+///
+/// | `ny` | `SemiLagrangian` | `MacCormack` |
+/// |---|---|---|
+/// | 8 | 4.3921 | 7.2459 |
+/// | 16 | 4.7238 | 6.28472 |
+/// | 32 | 5.31873 | 5.9288 |
+///
+/// ⚠️⚠️ **That changes what the gap is.** `MacCormack` crosses Gartling's
+/// 6.10 between `ny = 16` (+3 %) and `ny = 32` (-2.8 %), and its increments
+/// shrink by 0.37 per refinement, which extrapolates to about **5.72** — a
+/// residual **6 %** below 6.10 that **refinement does not close**. A gap that
+/// survives the refinement limit is not a resolution gap; it is a difference
+/// in the problem being solved. `SemiLagrangian` is a separate matter: its
+/// increments still *grow* (+0.33 then +0.59), so it is not asymptotic at all.
 /// - **The time at which `ny >= 16` settles under `MacCormack`.** Only that it
-///   has not by `t = 512`. The same quantity is unknown for `SemiLagrangian` at
-///   `ny = 32` and is recorded as unknown on the refinement sweep.
-/// - **Whether the pressure solver change in this commit's ancestry moves any
-///   of the above.** Every figure here predates it.
+///   has by `t = 512` at `ny = 32` (limit about 5.929) and had not by `t = 512`
+///   at `ny = 16`.
+/// - **Which condition accounts for the remaining 6 %.** Gartling's `x_1` is
+///   sensitive to the inflow profile, the outflow condition and the upstream
+///   length, and this crate's `Outflow` is a zero-gradient extrapolation; that
+///   is a real difference, but naming it as *the* cause needs a run with each
+///   condition varied, which has not been done.
+///
+/// ⚠️ **The attribution moved but the classification did not.** The reason
+/// string still starts with `src gap:`, which `scripts/run_ignored.py` reads as
+/// *a target that does not pass yet* — not as *a bug in `src/`*. That is still
+/// the right box: the remaining 6 % may well close by matching Gartling's
+/// conditions, and matching them is work in this repository. It would become
+/// `the red is correct` — the taxonomy's box for a pin on something
+/// unreachable — only if the comparison itself were judged invalid, and
+/// nothing measured so far supports that.
 #[test]
-#[ignore = "src gap: x_1 = 4.3921 against Gartling's 6.10 (72.0 %, short by 13.7 cells) and no upper-wall bubble at all. This string previously attributed the gap to resolution; an orthogonal sweep over {advection_scheme, ny, t, sweep count, L} says otherwise, because at the same ny = 8 the MacCormack scheme reads 7.2459 and BFECC 7.2736, both past 6.10 on the other side. The best measured configuration is x_1 = 6.2805 and L_u = 4.2358 against 5.63, still moving away from 6.10 at t = 512; ny = 32 is unmeasured at 2.4 to 9.5 hours per point. See the doc comment for the per-axis table. Distinct from the runtime ignore on its twin: this one fails, and costs the same to run"]
+#[ignore = "src gap: x_1 = 4.3921 against Gartling's 6.10 (72.0 %, short by 13.7 cells) and no upper-wall bubble at all, at the ny = 8 this test runs. Two attributions have been retired by measurement. Resolution: at the same ny = 8 MacCormack reads 7.2459 and BFECC 7.2736, both past 6.10 on the other side. Cost: ny = 32 is no longer unmeasured, and the 2.4 to 9.5 hours this string used to claim was an order of magnitude pessimistic - 68 ms per step, 38 to 93 minutes for a settling run. With ny = 32 in hand the refinement limit is the new fact: MacCormack goes 7.2459 / 6.28472 / 5.9288 at ny = 8 / 16 / 32, increments shrinking by 0.37, extrapolating to about 5.72 - so 6 % below 6.10 survives the limit and the gap is a difference in the problem, not in the mesh. Which condition (inflow profile, zero-gradient Outflow, upstream length) accounts for it is unmeasured. See the doc comment for both tables. Distinct from the runtime ignore on its twin: this one fails, and costs the same to run"]
 fn the_reattachment_length_matches_gartling() {
     let dx = 1.0 / (2 * LIT_S_CELLS) as f64;
     let m = measure_gartling_re_800();
