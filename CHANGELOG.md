@@ -13,6 +13,17 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added — multigrid 圧力解法 (`eulerian_grid::project_pressure_multigrid`) と `CfdSolver::step_multigrid`
+
+Poisson 演算子 (`PoissonMask`) に対する幾何 multigrid の圧力射影を追加した
+粗格子は Galerkin 型 (`A_c = R A P`、元の演算子から組む、再離散化ではない) で、smoother は red-black GS、**サイクルは W サイクル + 補正 2 倍**
+区分定数の集約では V サイクルが段数に応じて悪化することを実測した (縮小率 n=8/16/32 で V + 補正 1 倍が 0.46 / 0.73 / 0.82、補正 2 倍で 0.84 / 1.45 / 2.32 と発散、W + 補正 2 倍が 0.294 / 0.283 / 0.294 で n 非依存) 補正 2 は `8/4` から導出できる
+**同じ精度 (1e-9) に達するまでの反復数は multigrid が 19 / 20 / 21 cycles、red-black GS が 167 / 602 / 2271 iterations** (n = 8 / 16 / 32)
+格子寸法は 2 の冪のみ 解けない入力 (非 2 冪 / `dx`・`dt`・`density` が 0 / `cycles == 0`) では grid を bit 不変のまま早期 return する
+`CfdSolver::step_multigrid(dt, cycles)` が `step` と圧力射影だけを差し替えた入口で、共通の `step_with_projection` を通る **新しいフィールドは足していない** (公開フィールドの追加は API 破壊になるため) 解けない格子では GS 射影に切り替わる (射影を黙って飛ばして圧縮性の場を返さない)
+oracle は `tests/analytic_multigrid.rs` (6 本、厳密解の再現 / 格子幅非依存の縮小率 / 穿孔壁と cavity / 決定論 / bit 固定 / 退化入力) と `tests/analytic_step_multigrid.rs` (7 本、配線の合成 / 収束後の一致 / 発散なし / 退化入力で panic 経路を足さない) 変異試験は solver 側 13 / 14 件、配線側 12 / 12 件が red
+⚠️ 壁の取り扱いを粗格子が無視する変異は縮小率では検出できず bit 固定でのみ検出される (W サイクル + GS が頑健なため) 純 Neumann (全面壁) の平均圧力固定は未実装で既存 GS と同じ扱い
+
 ### Added — 配線ガード (`scripts/wiring_guard.py`、CI の `fmt` job と preflight)
 
 「実装したが production から呼ばれていない」を CI で止める検査器を追加した

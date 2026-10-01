@@ -21,3 +21,5 @@ Cargo.lock
 # Fuzz build artifacts (cargo-fuzz)
 /fuzz/target/
 mutants.out/
+
+__pycache__/
