@@ -1174,16 +1174,17 @@ fn degenerate_geometry_and_extreme_values_do_not_panic() {
 
     // A tetrahedron with four coplanar vertices: zero volume, so the shape
     // function gradients are undefined and `build_elements` must refuse.
-    let mut flat = SdfTetMesh::default();
-    flat.vertices = vec![
-        [0.0, 0.0, 0.0],
-        [1.0, 0.0, 0.0],
-        [0.0, 1.0, 0.0],
-        [1.0, 1.0, 0.0],
-    ];
-    flat.tets = vec![Tetrahedron {
-        vertices: [0, 1, 2, 3],
-    }];
+    let flat = SdfTetMesh {
+        vertices: vec![
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [1.0, 1.0, 0.0],
+        ],
+        tets: vec![Tetrahedron {
+            vertices: [0, 1, 2, 3],
+        }],
+    };
     assert_eq!(
         reactions(&flat, &pla(), &bc, None, &flat_solution(&flat)),
         Err(FemError::DegenerateElement { tet: 0 })
@@ -1191,17 +1192,20 @@ fn degenerate_geometry_and_extreme_values_do_not_panic() {
 
     // A mesh with vertices but no tetrahedra, and one with tetrahedra naming
     // vertices it does not have.
-    let mut no_tets = SdfTetMesh::default();
-    no_tets.vertices = vec![[0.0, 0.0, 0.0]; 4];
+    let no_tets = SdfTetMesh {
+        vertices: vec![[0.0, 0.0, 0.0]; 4],
+        tets: Vec::new(),
+    };
     assert_eq!(
         reactions(&no_tets, &pla(), &bc, None, &flat_solution(&no_tets)),
         Err(FemError::EmptyMesh)
     );
-    let mut dangling = SdfTetMesh::default();
-    dangling.vertices = vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
-    dangling.tets = vec![Tetrahedron {
-        vertices: [0, 1, 2, 7],
-    }];
+    let dangling = SdfTetMesh {
+        vertices: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+        tets: vec![Tetrahedron {
+            vertices: [0, 1, 2, 7],
+        }],
+    };
     let mut three = BoundaryConditions::new();
     for v in 0..3u32 {
         three.prescribe_all(v, [Fix128::ZERO; 3]);
