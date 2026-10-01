@@ -244,10 +244,7 @@ unwired src/cubic_elastic_fem.rs::element_count
 unwired src/cubic_elastic_fem.rs::element_nodes
 unwired src/cubic_elastic_fem.rs::face_node
 unwired src/cubic_elastic_fem.rs::face_node_count
-unwired src/cubic_elastic_fem.rs::from_tet_mesh
 unwired src/cubic_elastic_fem.rs::interior_node_positions_are_exact
-unwired src/cubic_elastic_fem.rs::node_count
-unwired src/cubic_elastic_fem.rs::node_position
 unwired src/cubic_elastic_fem.rs::shape_values
 unwired src/cubic_elastic_fem.rs::solve_cubic
 unwired src/cylinder.rs::inertia_diagonal
@@ -283,7 +280,6 @@ unwired src/deformable.rs::resolve_rigid_body_collisions
 unwired src/deformable.rs::step_with_sdf
 unwired src/dynamic_bvh.rs::get_aabb
 unwired src/dynamic_bvh.rs::height
-unwired src/dynamic_bvh.rs::node_count
 unwired src/dynamic_bvh.rs::proxy_count
 unwired src/dynamic_bvh.rs::update
 unwired src/dynamic_bvh.rs::user_data
@@ -506,20 +502,12 @@ unwired src/linear_elastic_fem.rs::alpha_per_k
 unwired src/linear_elastic_fem.rs::default_poissons_ratio
 unwired src/linear_elastic_fem.rs::from_filament
 unwired src/linear_elastic_fem.rs::hydrostatic
-unwired src/linear_elastic_fem.rs::increments
-unwired src/linear_elastic_fem.rs::linear
 unwired src/linear_elastic_fem.rs::load_count
-unwired src/linear_elastic_fem.rs::max_von_mises_mpa
-unwired src/linear_elastic_fem.rs::newton_iterations
-unwired src/linear_elastic_fem.rs::newton_tolerance
 unwired src/linear_elastic_fem.rs::poissons_ratio
-unwired src/linear_elastic_fem.rs::polar_iterations
 unwired src/linear_elastic_fem.rs::prescribed_count
 unwired src/linear_elastic_fem.rs::stiffness_diagonal_stats
-unwired src/linear_elastic_fem.rs::with_hyperelastic
 unwired src/linear_elastic_fem.rs::with_poisson
 unwired src/linear_elastic_fem.rs::with_preconditioner
-unwired src/linear_elastic_fem.rs::with_stagnation
 unwired src/linear_elastic_fem.rs::with_stagnation_fraction
 unwired src/linear_elastic_fem.rs::youngs_modulus_mpa
 unwired src/mass_properties.rs::box_mass_properties
@@ -540,7 +528,6 @@ unwired src/math.rs::SIMD_WIDTH
 unwired src/math.rs::add_simd
 unwired src/math.rs::atan
 unwired src/math.rs::cross_simd
-unwired src/math.rs::diagonal
 unwired src/math.rs::dot_batch_4
 unwired src/math.rs::dot_simd
 unwired src/math.rs::length_squared_simd
@@ -739,9 +726,6 @@ unwired src/quadratic_elastic_fem.rs::edge_count
 unwired src/quadratic_elastic_fem.rs::edge_node
 unwired src/quadratic_elastic_fem.rs::element_count
 unwired src/quadratic_elastic_fem.rs::element_nodes
-unwired src/quadratic_elastic_fem.rs::from_tet_mesh
-unwired src/quadratic_elastic_fem.rs::node_count
-unwired src/quadratic_elastic_fem.rs::node_position
 unwired src/quadratic_elastic_fem.rs::solve_quadratic
 unwired src/query.rs::BatchRayQuery
 unwired src/query.rs::OverlapResult
