@@ -19,7 +19,13 @@
 //! **The deposit conserves energy, not temperature.** Each element's rise is
 //! scaled by `V_e / V_cell` before it is splatted, because a temperature is
 //! intensive: without the scaling a sliver tetrahedron would warm the grid as
-//! much as a fat one.
+//! much as a fat one. The ledger that balances is the **finite-volume** one,
+//! `Σ 2⁻ᵇ ΔT · c_v · V_cell`, with `b` the number of axes on which a node sits
+//! at an end — a node-centred grid gives a face node half a cell, an edge node
+//! a quarter and a corner an eighth, and that is exactly the weight
+//! `CoupledField::diffuse` conserves. The grid below keeps a one-cell margin,
+//! so nothing lands on a boundary node and the plain sum happens to agree; a
+//! body flush with the grid would not.
 //!
 //! ```bash
 //! cargo run --example plastic_heating --features std
@@ -222,10 +228,28 @@ fn main() {
     .expect("valid grid");
     deposit_plastic_heat(&mesh, &sol, &heating, &mut field).expect("deposit succeeds");
 
+    // `Σ 2⁻ᵇ ΔT · c_v · V_cell` — the finite-volume ledger, which is what
+    // `diffuse` conserves. The grid below keeps a one-cell margin, so no node
+    // is on a boundary, every weight is 1 and this equals the plain sum.
     let (cx, cy, cz) = field.cell_size();
-    let on_grid = field.sum().to_f64()
-        * (cx * cy * cz).to_f64()
-        * heating.volumetric_heat_capacity_mpa_per_k().to_f64();
+    let (gx, gy, gz) = (field.nx(), field.ny(), field.nz());
+    let mut dual = 0.0_f64;
+    for iz in 0..gz {
+        for iy in 0..gy {
+            for ix in 0..gx {
+                let mut b = 0u32;
+                for (i, n) in [(ix, gx), (iy, gy), (iz, gz)] {
+                    if n > 1 && (i == 0 || i == n - 1) {
+                        b += 1;
+                    }
+                }
+                // `2^-b` without a libm call: `b` is at most 3.
+                dual += field.get(ix, iy, iz).to_f64() / f64::from(1u32 << b);
+            }
+        }
+    }
+    let on_grid =
+        dual * (cx * cy * cz).to_f64() * heating.volumetric_heat_capacity_mpa_per_k().to_f64();
     let in_solution: f64 = sol
         .dissipation
         .iter()
