@@ -3217,6 +3217,42 @@ pub(crate) fn p2g_nearest(grid: &mut MacGrid, pos_m: Vec3Fix, vel_m_per_s: Vec3F
     grid.w[w_hi] = grid.w[w_hi] + vel_m_per_s.z * half;
 }
 
+/// Particle-to-grid with weight normalisation: every face of `grid` that at
+/// least one particle reaches ends up holding the trilinear-weighted **mean**
+/// of the particle velocities, so a uniform particle velocity gives a uniform
+/// face velocity. Faces no particle reaches keep their previous value.
+///
+/// `particles` is a slice of `(position_m, velocity_m_per_s)`.
+///
+/// `p2g_trilinear` only accumulates `weight * v` and keeps no weight sum, so
+/// it cannot produce a mean. This entry point runs it twice on scratch grids,
+/// once with the velocities and once with unit velocity, so the second pass
+/// leaves the per-face weight sum and the quotient is the mean. Reusing the
+/// deposit routines keeps the stagger offsets and the out-of-range rule in
+/// one place.
+pub fn p2g_normalized(grid: &mut MacGrid, particles: &[(Vec3Fix, Vec3Fix)]) {
+    if grid.dx.is_zero() {
+        return;
+    }
+    let mut num = MacGrid::new(grid.nx, grid.ny, grid.nz, grid.dx);
+    let mut den = MacGrid::new(grid.nx, grid.ny, grid.nz, grid.dx);
+    let one = Vec3Fix::new(Fix128::ONE, Fix128::ONE, Fix128::ONE);
+    for &(pos, vel) in particles {
+        p2g_trilinear(&mut num, pos, vel);
+        p2g_trilinear(&mut den, pos, one);
+    }
+    let divide = |dst: &mut [Fix128], n: &[Fix128], d: &[Fix128]| {
+        for ((out, &n), &d) in dst.iter_mut().zip(n).zip(d) {
+            if !d.is_zero() {
+                *out = n / d;
+            }
+        }
+    };
+    divide(&mut grid.u, &num.u, &den.u);
+    divide(&mut grid.v, &num.v, &den.v);
+    divide(&mut grid.w, &num.w, &den.w);
+}
+
 // ============================================================================
 // Tests
 // ============================================================================

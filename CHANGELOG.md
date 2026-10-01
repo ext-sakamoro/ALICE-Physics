@@ -13,6 +13,16 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added — 重み正規化つき P2G (`eulerian_grid::p2g_normalized`)
+
+粒子の速度を MAC 格子の face へ転写し、face ごとの重み総和で割った加重平均を書き込む入口を追加した
+従来の `p2g_trilinear` は `weight * v` を足し込むだけで重み総和を持たず、一様速度を再現できなかった (solver からも呼ばれていない)
+内部では既存の deposit 関数を速度と単位速度で 2 回走らせ、stagger offset と範囲外の扱いを 1 箇所に保っている
+
+oracle は `tests/analytic_p2g.rs` の 4 本 (一様速度 / 成分ごとに勾配の異なる線形場 / 重み不等の 2 粒子 / P2G → G2P の往復) で、位置と速度を dyadic にして `assert_eq!` で厳密に検査する
+変異試験 5 件 (正規化なし / 分母の取り違え / u の y stagger / v の分母 / w 未処理) がすべて red になることを実測した
+`cfd_solver` の自前分配への置換は含まない
+
 ### Added — 20 節点 P3 四面体要素 (`cubic_elastic_fem`)
 
 研究壁「高次要素 P2/P3」の P3 側です `CubicMesh` (辺 2 節点 + 面 1 節点) / `solve_cubic` / `shape_values` を追加しました
