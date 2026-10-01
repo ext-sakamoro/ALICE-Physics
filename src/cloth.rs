@@ -45,7 +45,14 @@ pub struct ClothConfig {
     pub sdf_friction: Fix128,
     /// Cloth thickness for collision
     pub thickness: Fix128,
-    /// Enable self-collision (vertex-vs-face; edge-edge contact is not implemented)
+    /// Enable self-collision
+    ///
+    /// Covers both proximity passes — vertex-vs-face and edge-vs-edge — plus the
+    /// frame-level repair of vertex-face tunnelling. ⚠️ Edge-edge is **proximity only**:
+    /// there is no swept (continuous) edge-edge test, so a crossing that happens entirely
+    /// inside one frame and ends further apart than `self_collision_distance` is not
+    /// repaired. Two parallel (or, in `Fix128`, numerically parallel) edges are also left
+    /// to the vertex-face pass — see `closest_points_on_segments`.
     pub self_collision: bool,
     /// Contact thickness: a vertex is kept at least this far from every non-incident triangle
     pub self_collision_distance: Fix128,
@@ -331,16 +338,21 @@ impl Cloth {
         // Self-contact candidates are collected once here rather than once per
         // iteration: the AABB margin (2·thickness) covers how far the iterations can
         // move a particle, and the collection is the O(V·T) part.
-        let candidates = if self.config.self_collision {
-            self.collect_vertex_face_candidates(self.config.self_collision_distance.double())
+        let margin = self.config.self_collision_distance.double();
+        let (candidates, edge_candidates) = if self.config.self_collision {
+            (
+                self.collect_vertex_face_candidates(margin),
+                self.collect_edge_edge_candidates(margin),
+            )
         } else {
-            Vec::new()
+            (Vec::new(), Vec::new())
         };
         for _ in 0..self.config.iterations {
             self.solve_edge_constraints(dt);
             self.solve_bend_constraints(dt);
             if self.config.self_collision {
                 self.solve_vertex_face_self_collision(&candidates);
+                self.solve_edge_edge_self_collision(&edge_candidates);
             }
         }
 
@@ -544,6 +556,83 @@ impl Cloth {
         out
     }
 
+    /// Unique undirected mesh edges, as sorted `[lo, hi]` vertex pairs.
+    ///
+    /// Rebuilt from `triangles` rather than read off `edge_constraints`, because the two
+    /// are not the same set in practice: a caller (or a test) may clear the stretch
+    /// constraints to look at collision in isolation, and collision topology must not
+    /// disappear with them. The result is sorted, so the pair enumeration below is a
+    /// function of the mesh alone and not of triangle insertion order.
+    fn mesh_edges(&self) -> Vec<[u32; 2]> {
+        let mut edges: Vec<[u32; 2]> = Vec::with_capacity(self.triangles.len() * 3);
+        for tri in &self.triangles {
+            for (a, b) in [(tri[0], tri[1]), (tri[1], tri[2]), (tri[2], tri[0])] {
+                let (lo, hi) = if a < b { (a, b) } else { (b, a) };
+                edges.push([lo as u32, hi as u32]);
+            }
+        }
+        edges.sort_unstable();
+        edges.dedup();
+        edges
+    }
+
+    /// Edge pairs whose `margin`-expanded AABBs overlap, as `[i0, i1, j0, j1]`.
+    ///
+    /// Two exclusions, both load-bearing:
+    ///
+    /// - ⚠️ **Edges that share a vertex are dropped.** Their closest distance is zero by
+    ///   construction, so every one of them would report a contact at every iteration and
+    ///   the pass would do nothing but fight the stretch constraints
+    ///   (`edge_edge_candidates_never_pair_two_edges_that_share_a_vertex` pins this; the
+    ///   mutation that removes it moves the vertices of a scene whose closed form says
+    ///   they must not move).
+    /// - Pairs in which all four participants are pinned, which can produce no correction.
+    ///
+    /// Collinear and parallel pairs are *not* excluded here — they are rejected inside
+    /// `closest_points_on_segments`, which is where "no isolated closest pair" is decided.
+    /// A flat grid's row-mates are exactly that case, which is why this pass does not fire
+    /// on an undeformed sheet.
+    fn collect_edge_edge_candidates(&self, margin: Fix128) -> Vec<[u32; 4]> {
+        let edges = self.mesh_edges();
+        let mut out: Vec<[u32; 4]> = Vec::new();
+        for (ei, e1) in edges.iter().enumerate() {
+            let (a0, a1) = (e1[0] as usize, e1[1] as usize);
+            let (pa0, pa1) = (self.positions[a0], self.positions[a1]);
+            let lo1 = Vec3Fix::new(
+                min2(pa0.x, pa1.x) - margin,
+                min2(pa0.y, pa1.y) - margin,
+                min2(pa0.z, pa1.z) - margin,
+            );
+            let hi1 = Vec3Fix::new(
+                max2(pa0.x, pa1.x) + margin,
+                max2(pa0.y, pa1.y) + margin,
+                max2(pa0.z, pa1.z) + margin,
+            );
+            let both_pinned_1 = self.inv_masses[a0].is_zero() && self.inv_masses[a1].is_zero();
+            for e2 in &edges[ei + 1..] {
+                let (b0, b1) = (e2[0] as usize, e2[1] as usize);
+                if a0 == b0 || a0 == b1 || a1 == b0 || a1 == b1 {
+                    continue; // shares a vertex: distance is 0 by construction
+                }
+                if both_pinned_1 && self.inv_masses[b0].is_zero() && self.inv_masses[b1].is_zero() {
+                    continue; // nothing in this pair can move
+                }
+                let (pb0, pb1) = (self.positions[b0], self.positions[b1]);
+                if min2(pb0.x, pb1.x) > hi1.x
+                    || max2(pb0.x, pb1.x) < lo1.x
+                    || min2(pb0.y, pb1.y) > hi1.y
+                    || max2(pb0.y, pb1.y) < lo1.y
+                    || min2(pb0.z, pb1.z) > hi1.z
+                    || max2(pb0.z, pb1.z) < lo1.z
+                {
+                    continue;
+                }
+                out.push([a0 as u32, a1 as u32, b0 as u32, b1 as u32]);
+            }
+        }
+        out
+    }
+
     /// Solve vertex-face (point-triangle) self-contact, Jacobi accumulation.
     ///
     /// For every candidate pair the constraint is `C = |p − q| − thickness ≥ 0`, where
@@ -576,9 +665,10 @@ impl Cloth {
     /// vertex-face pair at the same threshold. `test_point_triangle_subsumes_point_point`
     /// pins that inequality.
     ///
-    /// ⚠️ **Edge-edge contact is not implemented.** Two edges can interpenetrate without
-    /// any vertex being within `thickness` of a face (the classic parallel-edge X case);
-    /// that configuration is still missed.
+    /// Edge-edge contact is handled by `solve_edge_edge_self_collision`, which runs in the
+    /// same iteration and accumulates into its own buffer: a vertex can be within
+    /// `thickness` of no face at all while two edges interpenetrate (the X crossing), so
+    /// neither pass subsumes the other.
     fn solve_vertex_face_self_collision(&mut self, candidates: &[(u32, u32)]) {
         let thickness = self.config.self_collision_distance;
         if thickness.is_zero() || candidates.is_empty() {
@@ -640,6 +730,115 @@ impl Cloth {
                 delta[idx] = delta[idx] - normal * (s * wk * w[k]);
                 hits[idx] += 1;
             }
+        }
+
+        for i in 0..n {
+            if hits[i] == 0 || self.inv_masses[i].is_zero() {
+                continue;
+            }
+            self.positions[i] = self.positions[i] + delta[i] / Fix128::from_int(i64::from(hits[i]));
+        }
+    }
+
+    /// Solve edge-edge (segment-segment) self-contact, Jacobi accumulation.
+    ///
+    /// This is the half of cloth self-contact that vertex-face cannot see. Two sheets can
+    /// cross so that each sheet's vertices stay far from every triangle of the other while
+    /// an edge of one passes within `thickness` of an edge of the other — the X crossing.
+    /// The vertex-face pass reports nothing there, because the closest feature pair is
+    /// (edge, edge) and neither edge's endpoints are the witnesses.
+    ///
+    /// For every candidate pair the constraint is `C = |pₐ − p_b| − thickness ≥ 0` with
+    /// `pₐ = p₁ + s(q₁ − p₁)`, `p_b = p₂ + t(q₂ − p₂)` at the closest parameters `(s, t)`.
+    /// Holding `(s, t)` fixed (the usual treatment: they are stationary, so their
+    /// derivatives do not enter `∇C` to first order) the gradients are
+    ///
+    /// ```text
+    /// ∇_{p₁}C = (1−s)n   ∇_{q₁}C = s·n   ∇_{p₂}C = −(1−t)n   ∇_{q₂}C = −t·n
+    /// n       = (pₐ − p_b)/|pₐ − p_b|
+    /// λ       = (thickness − |pₐ − p_b|) / (w₁(1−s)² + w_{q₁}s² + w₂(1−t)² + w_{q₂}t²)
+    /// Δp₁     = +λ·w₁·(1−s)·n   …   Δq₂ = −λ·w_{q₂}·t·n
+    /// ```
+    ///
+    /// # Determinism
+    ///
+    /// Same construction as the vertex-face pass: each pair's normal is computed **once**
+    /// and reused for all four gradients, corrections are summed into a per-vertex `Δ` with
+    /// `+` (the exact group operation of `Z/2¹²⁸`) and applied after the sweep, averaged by
+    /// the number of contacts that touched the vertex. The pair order is therefore not
+    /// load-bearing (`edge_edge_result_is_independent_of_the_pair_order`). No Gauss-Seidel
+    /// in-place write, so no dependence on the traversal order of the edge list.
+    ///
+    /// # What it does not cover
+    ///
+    /// ⚠️ **Proximity only — there is no swept edge-edge test.** A crossing that both
+    /// begins and ends inside one frame, with the edges more than `thickness` apart at the
+    /// end of it, is not detected; the frame-level repair
+    /// (`resolve_self_contact_over_frame`) tests vertex chords against triangles, not edge
+    /// pairs against each other. ⚠️ **Parallel pairs are skipped** by
+    /// `closest_points_on_segments`.
+    fn solve_edge_edge_self_collision(&mut self, candidates: &[[u32; 4]]) {
+        let thickness = self.config.self_collision_distance;
+        if thickness.is_zero() || candidates.is_empty() {
+            return;
+        }
+        let thickness_sq = thickness * thickness;
+        let n = self.particle_count();
+        let mut delta = vec![Vec3Fix::ZERO; n];
+        let mut hits = vec![0u32; n];
+
+        for &[i0, i1, j0, j1] in candidates {
+            let (i0, i1, j0, j1) = (i0 as usize, i1 as usize, j0 as usize, j1 as usize);
+            let (p1, q1) = (self.positions[i0], self.positions[i1]);
+            let (p2, q2) = (self.positions[j0], self.positions[j1]);
+            let Some((s, t)) = closest_points_on_segments(p1, q1, p2, q2) else {
+                continue; // degenerate or parallel: no isolated closest pair
+            };
+            let (d1, d2) = (q1 - p1, q2 - p2);
+            let pa = p1 + d1 * s;
+            let pb = p2 + d2 * t;
+            let diff = pa - pb;
+            let dist_sq = diff.length_squared();
+            if dist_sq >= thickness_sq {
+                continue;
+            }
+            // One independent computation of the normal, reused for all four gradients.
+            let (normal, dist) = if dist_sq.is_zero() {
+                // The segments meet. The direction that separates them without rotating
+                // either one is their common perpendicular; it exists because
+                // `closest_points_on_segments` already rejected the parallel case, but the
+                // normalisation can still underflow, and a pair with no normal is a pair
+                // with no correction.
+                match d1.cross(d2).try_normalize() {
+                    Some(nrm) => (nrm, Fix128::ZERO),
+                    None => continue,
+                }
+            } else {
+                let d = dist_sq.sqrt();
+                (diff * (Fix128::ONE / d), d)
+            };
+
+            let (w0, w1, w2, w3) = (
+                self.inv_masses[i0],
+                self.inv_masses[i1],
+                self.inv_masses[j0],
+                self.inv_masses[j1],
+            );
+            let (u, v) = (Fix128::ONE - s, Fix128::ONE - t);
+            let denom = w0 * u * u + w1 * s * s + w2 * v * v + w3 * t * t;
+            if denom.is_zero() {
+                continue;
+            }
+            let lambda = (thickness - dist) / denom;
+
+            delta[i0] = delta[i0] + normal * (lambda * w0 * u);
+            delta[i1] = delta[i1] + normal * (lambda * w1 * s);
+            delta[j0] = delta[j0] - normal * (lambda * w2 * v);
+            delta[j1] = delta[j1] - normal * (lambda * w3 * t);
+            hits[i0] += 1;
+            hits[i1] += 1;
+            hits[j0] += 1;
+            hits[j1] += 1;
         }
 
         for i in 0..n {
@@ -1128,6 +1327,80 @@ fn closest_point_on_triangle(
     Some((a + ab * v + ac * w, [ONE - v - w, v, w]))
 }
 
+/// Closest parameters `(s, t)` of segments `p₁→q₁` and `p₂→q₂`, both in `[0, 1]`.
+///
+/// Ericson, *Real-Time Collision Detection* §5.1.9: solve the unconstrained 2x2 system,
+/// clamp `s` into the segment, recompute `t`, and if `t` left its range pin it and resolve
+/// `s`. The clamping is what turns a line-line answer into a segment-segment one.
+///
+/// ⚠️ The clamping is load-bearing. Without it the returned point can lie off the end of
+/// the segment, and the contact is then reported between two infinite lines — in a mesh
+/// that means a correction applied to an edge that is nowhere near the other one
+/// (`closest_points_on_segments_clamps_into_the_endpoint_regions` pins each region).
+///
+/// `None` means one thing only: **this pair has no isolated closest point pair in
+/// `Fix128`**. Three inputs produce it and the caller's action is the same for all three
+/// (skip the pair):
+///
+/// - either segment has zero length, or a length whose square underflows Q64.64
+///   (`|d|² < 2⁻⁶⁴`, i.e. `|d| < 2⁻³²`) — there is no direction to parametrise along;
+/// - the two directions are parallel, so `a·e − b² = 0` and the minimum is attained on a
+///   whole interval rather than at a point. Returning an arbitrary member of that interval
+///   would make the contact gradients a function of which member was picked, not of the
+///   geometry. ⚠️ Parallel pairs are therefore **not** covered by the edge-edge pass; they
+///   are covered by vertex-face, where two parallel sheets put each sheet's vertices over
+///   the other's triangles. A flat grid's row-mates are the common instance, and this
+///   rejection is why the pass is silent on an undeformed sheet;
+/// - the same determinant underflowing to zero for a merely near-parallel pair, which is
+///   the fixed-point form of the previous case and gets the same answer.
+fn closest_points_on_segments(
+    p1: Vec3Fix,
+    q1: Vec3Fix,
+    p2: Vec3Fix,
+    q2: Vec3Fix,
+) -> Option<(Fix128, Fix128)> {
+    const ZERO: Fix128 = Fix128::ZERO;
+    const ONE: Fix128 = Fix128::ONE;
+
+    let d1 = q1 - p1;
+    let d2 = q2 - p2;
+    let a = d1.length_squared();
+    let e = d2.length_squared();
+    if a.is_zero() || e.is_zero() {
+        return None; // zero-length (or underflowed) segment
+    }
+    let b = d1.dot(d2);
+    let denom = a * e - b * b;
+    if denom.is_zero() {
+        return None; // parallel: the minimum is an interval, not a point
+    }
+
+    let r = p1 - p2;
+    let c = d1.dot(r);
+    let f = d2.dot(r);
+
+    let clamp01 = |x: Fix128| {
+        if x < ZERO {
+            ZERO
+        } else if x > ONE {
+            ONE
+        } else {
+            x
+        }
+    };
+
+    let mut s = clamp01((b * f - c * e) / denom);
+    let mut t = (b * s + f) / e;
+    if t < ZERO {
+        t = ZERO;
+        s = clamp01(-c / a);
+    } else if t > ONE {
+        t = ONE;
+        s = clamp01((b - c) / a);
+    }
+    Some((s, t))
+}
+
 /// Find shared edge between two triangles and create a bending constraint
 fn find_shared_edge(
     tri_a: &[usize; 3],
@@ -1587,6 +1860,589 @@ mod tests {
             "自己接触 ON で粒子が布の裏側に居る (y = {}) 押し戻しの向きが入射側でない",
             on.positions[0].y.to_f32()
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // 近接斥力段の強さ — 自分自身の三角形を除外していることを測る
+    //
+    // ⚠️ 2026-10-01 の破壊試験で、変異 `M3` (`collect_vertex_face_candidates` から
+    // `if i == tri[0] || ... { continue }` を外す) が **lib / 統合 oracle とも green**
+    // で生き残りました 自分自身の対では最近接点が頂点自身になり、`delta` への寄与が
+    // 同じ index で厳密に相殺するので、**位置の差として出るのは `hits` の水増しによる
+    // 平均化の弱まりだけ**です 以下 2 本はその弱まりを直接測ります
+    // (詳細 [[feedback_degenerate_case_as_silent_wrong_answer]] 同 session の Backlog 行)
+    // -----------------------------------------------------------------------
+
+    /// 候補対に「その三角形自身の頂点」が現れない (契約)
+    ///
+    /// ⚠️ **これは `collect_vertex_face_candidates` の内部条件の言い換えですが、それが
+    /// 言い換えでしか固定できない契約です** 下の閉形式 test が「水増しの量」を測り、
+    /// 本 test が「水増しが 1 件でも起きていないこと」を測ります 片方だけでは
+    /// `M3` が生き残ります (統合 scene では相殺して見えない)
+    #[test]
+    fn candidate_pairs_never_contain_a_vertex_of_their_own_triangle() {
+        let mut cloth = folded_cloth_with_contacts();
+        let margin = cloth.config.self_collision_distance.double();
+        let candidates = cloth.collect_vertex_face_candidates(margin);
+        assert!(
+            !candidates.is_empty(),
+            "折り返した布で接触候補が 0 件 この scene は契約を試せない"
+        );
+        for &(vi, ti) in &candidates {
+            let tri = cloth.triangles[ti as usize];
+            assert!(
+                vi as usize != tri[0] && vi as usize != tri[1] && vi as usize != tri[2],
+                "候補対 ({vi}, {ti}) が三角形 {tri:?} 自身の頂点を含む \
+                 自分の面に対する斥力は delta では相殺するが hits を水増しして \
+                 他の接触の補正を薄める"
+            );
+        }
+        // 自己対が混ざっていないことを件数でも押さえる (不在でなく数で判定する)
+        let self_pairs = cloth
+            .triangles
+            .iter()
+            .enumerate()
+            .map(|(ti, tri)| {
+                candidates
+                    .iter()
+                    .filter(|&&(vi, cti)| {
+                        cti as usize == ti
+                            && (vi as usize == tri[0]
+                                || vi as usize == tri[1]
+                                || vi as usize == tri[2])
+                    })
+                    .count()
+            })
+            .sum::<usize>();
+        assert_eq!(self_pairs, 0, "自己対が {self_pairs} 件混ざっている");
+        // 実際に解いても三角形の頂点が自分の面から押されない (念のため後段でも測る)
+        let before = cloth.positions.clone();
+        cloth.solve_vertex_face_self_collision(&candidates);
+        assert!(
+            before != cloth.positions,
+            "折り返した布で斥力が 1 bit も発火しない この scene は判別に向かない"
+        );
+    }
+
+    /// 近接斥力 1 回で、頂点-面の隙間が **厳密に** `thickness` になる (閉形式)
+    ///
+    /// # scene (全ての値が 2 進小数なので許容差なしの等値 assert が書ける)
+    ///
+    /// 三角形 `a = (0,0,0)`, `b = (1,0,0)`, `c = (0,0,1)` (XZ 平面)、頂点
+    /// `p = (1/4, 1/8, 1/4)` 最近接点は面領域の `q = (1/4, 0, 1/4)` で重心座標は
+    /// `(w₀, w₁, w₂) = (1/2, 1/4, 1/4)` (`tests/analytic_self_contact.rs` 節 A と同じ配置)
+    ///
+    /// 逆質量を `w_p = 1/2`, `w_a = 1`, `w_b = w_c = 2` に選ぶと分母が **厳密に 1** になる:
+    ///
+    /// ```text
+    /// denom = w_p + w_a w₀² + w_b w₁² + w_c w₂² = 1/2 + 1/4 + 2/16 + 2/16 = 1
+    /// s     = (thickness − |p−q|) / denom = (1/4 − 1/8) / 1 = 1/8
+    /// Δp    = +s·w_p·n = +1/16·n      (n = (0,1,0))
+    /// Δa    = −s·w_a·w₀·n = −1/16·n   Δb = −s·w_b·w₁·n = −1/16·n   Δc = −1/16·n
+    /// ```
+    ///
+    /// `Δa = Δb = Δc` なので三角形は XZ 平面に平行なまま `−1/16` 平行移動し、隙間は
+    /// `1/8 + 1/16 + 1/16 = 1/4 = thickness` に**なるはず**です
+    ///
+    /// # ⚠️ 変異 `M3` でこの等式が壊れる量
+    ///
+    /// 自己対 3 件が加わると `hits[a] = hits[b] = hits[c] = 1 + 4 = 5` になり
+    /// (`delta` は相殺するので値は変わらない)、三角形の移動量が `1/16` → `1/80` に
+    /// 縮んで隙間が `1/8 + 1/16 + 1/80 ≠ 1/4` になります **`delta` でなく `hits` を
+    /// 測るのが本 test の役目**です
+    #[test]
+    fn the_proximity_projection_restores_exactly_the_contact_thickness() {
+        let eighth = Fix128::from_ratio(1, 8);
+        let quarter = Fix128::from_ratio(1, 4);
+        let sixteenth = Fix128::from_ratio(1, 16);
+
+        let mut cloth = Cloth::new_grid(Vec3Fix::ZERO, Fix128::ONE, Fix128::ONE, 2, 2, Fix128::ONE);
+        cloth.edge_constraints.clear();
+        cloth.bend_constraints.clear();
+        cloth.triangles = vec![[1, 2, 3]];
+        cloth.config.self_collision = true;
+        cloth.config.self_collision_distance = quarter;
+        cloth.positions[0] = Vec3Fix::new(quarter, eighth, quarter);
+        cloth.positions[1] = Vec3Fix::from_int(0, 0, 0);
+        cloth.positions[2] = Vec3Fix::from_int(1, 0, 0);
+        cloth.positions[3] = Vec3Fix::from_int(0, 0, 1);
+        cloth.inv_masses[0] = Fix128::from_ratio(1, 2);
+        cloth.inv_masses[1] = Fix128::ONE;
+        cloth.inv_masses[2] = Fix128::from_int(2);
+        cloth.inv_masses[3] = Fix128::from_int(2);
+
+        let candidates = cloth.collect_vertex_face_candidates(quarter.double());
+        // ⚠️ `M3` を入れるとここが 4 件 ((1,0) / (2,0) / (3,0) が増える) になり red
+        assert_eq!(
+            candidates,
+            vec![(0u32, 0u32)],
+            "候補は (頂点 0, 三角形 0) の 1 件だけであるべき"
+        );
+
+        cloth.solve_vertex_face_self_collision(&candidates);
+
+        let neg_sixteenth = -sixteenth;
+        assert_eq!(
+            cloth.positions[0],
+            Vec3Fix::new(quarter, eighth + sixteenth, quarter),
+            "oracle: Δp = +1/16 (手計算、denom = 1 なので厳密)"
+        );
+        for (i, expected) in [
+            (
+                1usize,
+                Vec3Fix::new(Fix128::ZERO, neg_sixteenth, Fix128::ZERO),
+            ),
+            (2, Vec3Fix::new(Fix128::ONE, neg_sixteenth, Fix128::ZERO)),
+            (3, Vec3Fix::new(Fix128::ZERO, neg_sixteenth, Fix128::ONE)),
+        ] {
+            assert_eq!(
+                cloth.positions[i], expected,
+                "oracle: 三角形は −1/16 平行移動する (頂点 {i})"
+            );
+        }
+        // 三角形は XZ 平面に平行なままなので、隙間は y 差がそのまま距離になる
+        assert_eq!(
+            cloth.positions[0].y - cloth.positions[1].y,
+            quarter,
+            "oracle: 1 回の投影で隙間が厳密に thickness = 1/4 になる"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // 辺-辺の自己接触
+    // -----------------------------------------------------------------------
+
+    /// 辺-辺の最近接パラメータが閉形式と厳密一致する (内部点で最小を取る場合)
+    ///
+    /// 線分 A `(-1,0,0) → (1,0,0)`、線分 B `(0,1/8,-1) → (0,1/8,1)` は直交し、
+    /// 最近接は両方の**中点** `s* = t* = 1/2`、最近接点は `(0,0,0)` と `(0,1/8,0)`、
+    /// 距離² は `1/64` (手計算: `a = e = 4`, `b = 0`, `c = −2`, `f = 2`, `denom = 16`、
+    /// `s = (bf − ce)/denom = 8/16`、`t = (bs + f)/e = 2/4`)
+    #[test]
+    fn closest_points_on_segments_matches_the_closed_form_in_the_interior() {
+        let eighth = Fix128::from_ratio(1, 8);
+        let half = Fix128::from_ratio(1, 2);
+        let a0 = Vec3Fix::from_int(-1, 0, 0);
+        let a1 = Vec3Fix::from_int(1, 0, 0);
+        let b0 = Vec3Fix::new(Fix128::ZERO, eighth, Fix128::from_int(-1));
+        let b1 = Vec3Fix::new(Fix128::ZERO, eighth, Fix128::ONE);
+
+        let Some((s, t)) = closest_points_on_segments(a0, a1, b0, b1) else {
+            panic!("直交する 2 線分で最近接対が得られなかった");
+        };
+        assert_eq!(s, half, "oracle: s* = 1/2");
+        assert_eq!(t, half, "oracle: t* = 1/2");
+        let pa = a0 + (a1 - a0) * s;
+        let pb = b0 + (b1 - b0) * t;
+        assert_eq!(pa, Vec3Fix::ZERO, "oracle: 最近接点 A = (0,0,0)");
+        assert_eq!(
+            pb,
+            Vec3Fix::new(Fix128::ZERO, eighth, Fix128::ZERO),
+            "oracle: 最近接点 B = (0,1/8,0)"
+        );
+        assert_eq!(
+            (pa - pb).length_squared(),
+            Fix128::from_ratio(1, 64),
+            "oracle: 最近接距離² = 1/64"
+        );
+    }
+
+    /// `s` / `t` が区間外に出る配置で端点へ clamp される (閉形式)
+    ///
+    /// | 配置 | 閉形式の素の解 | clamp 後 |
+    /// |---|---|---|
+    /// | A `(0,0,0)→(1,0,0)` / B `(2,1,-1)→(2,1,1)` | `s = 2` | `(s, t) = (1, 1/2)` |
+    /// | A `(0,0,0)→(1,0,0)` / B `(1/2,1,2)→(1/2,1,3)` | `t = −2` | `(s, t) = (1/2, 0)` |
+    ///
+    /// ⚠️ **clamp を外すと線分でなく無限直線の答えになります** 変異 `EE1`
+    /// (`clamp01` を恒等関数にする) では 1 行目が `s = 2` を返して red
+    #[test]
+    fn closest_points_on_segments_clamps_into_the_endpoint_regions() {
+        let half = Fix128::from_ratio(1, 2);
+        let a0 = Vec3Fix::from_int(0, 0, 0);
+        let a1 = Vec3Fix::from_int(1, 0, 0);
+
+        // s が 1 を超える: 線分 B は A の先 (x = 2) にある
+        let Some((s, t)) = closest_points_on_segments(
+            a0,
+            a1,
+            Vec3Fix::from_int(2, 1, -1),
+            Vec3Fix::from_int(2, 1, 1),
+        ) else {
+            panic!("端点領域の配置で最近接対が得られなかった");
+        };
+        assert_eq!(
+            s,
+            Fix128::ONE,
+            "oracle: 素の s = 2 が端点 1 へ clamp される"
+        );
+        assert_eq!(t, half, "oracle: t = 1/2 は区間内なので動かない");
+
+        // t が 0 を下回る: 線分 B は z = 2..3 にあり A から見て手前の端点が最近接
+        let Some((s, t)) = closest_points_on_segments(
+            a0,
+            a1,
+            Vec3Fix::new(half, Fix128::ONE, Fix128::from_int(2)),
+            Vec3Fix::new(half, Fix128::ONE, Fix128::from_int(3)),
+        ) else {
+            panic!("端点領域の配置で最近接対が得られなかった");
+        };
+        assert_eq!(
+            t,
+            Fix128::ZERO,
+            "oracle: 素の t = −2 が端点 0 へ clamp される"
+        );
+        assert_eq!(s, half, "oracle: t を固定して解き直した s = 1/2");
+    }
+
+    /// 退化入力と平行入力は `None` (「もっともらしい値」を返さない契約)
+    ///
+    /// ⚠️ 退化は統合 scene では作られないので、**専用の契約 test でしか固定できません**
+    /// (同 session の `M7` 実測: 入口の退化判定を落としても crumple の統合 oracle は green
+    /// [[feedback_degenerate_case_as_silent_wrong_answer]])
+    #[test]
+    fn closest_points_on_segments_rejects_degenerate_and_parallel_pairs() {
+        let o = Vec3Fix::ZERO;
+        let x1 = Vec3Fix::from_int(1, 0, 0);
+        let half = Fix128::from_ratio(1, 2);
+
+        // (a) 片方が長さ 0
+        assert!(
+            closest_points_on_segments(
+                o,
+                o,
+                Vec3Fix::from_int(0, 1, 0),
+                Vec3Fix::from_int(1, 1, 0)
+            )
+            .is_none(),
+            "長さ 0 の線分が受け付けられた"
+        );
+        // (b) 平行 (直交する離れた 2 直線でなく、同じ向き)
+        assert!(
+            closest_points_on_segments(
+                o,
+                x1,
+                Vec3Fix::from_int(0, 1, 0),
+                Vec3Fix::from_int(1, 1, 0)
+            )
+            .is_none(),
+            "平行な 2 線分が受け付けられた 最小は区間なので (s,t) は幾何で決まらない"
+        );
+        // (c) 同一直線上 (平行の特別な場合)
+        assert!(
+            closest_points_on_segments(
+                o,
+                x1,
+                Vec3Fix::new(half, Fix128::ZERO, Fix128::ZERO),
+                Vec3Fix::new(Fix128::from_ratio(3, 2), Fix128::ZERO, Fix128::ZERO)
+            )
+            .is_none(),
+            "同一直線上の 2 線分が受け付けられた"
+        );
+        // (d) 長さ² が Q64.64 で underflow する (|d| = 2⁻³³ < 2⁻³²)
+        let tiny = Fix128::from_raw(0, 1 << 31);
+        assert!(
+            !tiny.is_zero() && (tiny * tiny).is_zero(),
+            "この scene の前提 (|d| ≠ 0 だが |d|² が underflow) が崩れた"
+        );
+        assert!(
+            closest_points_on_segments(
+                o,
+                Vec3Fix::new(tiny, Fix128::ZERO, Fix128::ZERO),
+                Vec3Fix::from_int(0, 1, 0),
+                Vec3Fix::from_int(0, 1, 1)
+            )
+            .is_none(),
+            "長さ² が underflow した線分が受け付けられた"
+        );
+    }
+
+    /// 辺-辺の候補対が、頂点を共有する辺対を含まない (契約)
+    ///
+    /// ⚠️ 共有頂点の対は距離 0 が**構成上の事実**なので、残すと毎 iteration 発火して
+    /// 伸び拘束と喧嘩するだけになります 変異 `EE2` でここが red
+    #[test]
+    fn edge_edge_candidates_never_pair_two_edges_that_share_a_vertex() {
+        let cloth = folded_cloth_with_contacts();
+        let margin = cloth.config.self_collision_distance.double();
+        let candidates = cloth.collect_edge_edge_candidates(margin);
+        assert!(
+            !candidates.is_empty(),
+            "折り返した布で辺-辺候補が 0 件 この scene は契約を試せない"
+        );
+        let shared = candidates
+            .iter()
+            .filter(|&&[i0, i1, j0, j1]| i0 == j0 || i0 == j1 || i1 == j0 || i1 == j1)
+            .count();
+        assert_eq!(shared, 0, "頂点を共有する辺対が {shared} 件混ざっている");
+
+        // 辺集合そのものが mesh から正しく作られていること (重複なし / 昇順)
+        let edges = cloth.mesh_edges();
+        let mut sorted = edges.clone();
+        sorted.sort_unstable();
+        sorted.dedup();
+        assert_eq!(edges, sorted, "mesh_edges が昇順かつ重複なしでない");
+        for e in &edges {
+            assert!(e[0] < e[1], "辺 {e:?} が [lo, hi] に正規化されていない");
+        }
+    }
+
+    /// X 字交差の scene — **どの頂点もどの面にも近づかないまま、辺どうしが交差する**
+    ///
+    /// ```text
+    ///   T0 = [0,1,2]   0 = (-1, 0, 0)   1 = (1, 0, 0)   2 = (0, -8, 0)      (XY 平面)
+    ///   T1 = [3,4,5]   3 = (0, h, -1)   4 = (0, h, 1)   5 = (0, h+8, 0)     (YZ 平面)
+    /// ```
+    ///
+    /// 辺 `(0,1)` は x 軸に沿い、辺 `(3,4)` は z 軸に沿って高さ `h` を通るので、
+    /// 2 辺は上から見て直交して交差し、距離はちょうど `h` です
+    ///
+    /// # なぜ頂点-面では見えないか (閉形式)
+    ///
+    /// `T1` は平面 `x = 0` に載り `y ≥ h` なので、頂点 0 = `(-1,0,0)` の最近接点は
+    /// 辺 `(3,4)` 上の `(0,h,0)` で距離² は `1 + h²` 頂点 1 も対称に同じ 頂点 3 / 4 も
+    /// `T0` (平面 `z = 0`、`y ≤ 0`) に対して同じ値 残る頂点 2 / 5 は `|y|` が 8 以上
+    /// 離れています **`h = 1/8`、`thickness = 1/4` では `1 + h² = 65/64 ≫ 1/16 = thickness²`
+    /// なので、頂点-面の対は 1 つも閾値に入りません**
+    fn x_crossing_scene(h: Fix128, thickness: Fix128) -> Cloth {
+        let mut cloth = Cloth::new_grid(Vec3Fix::ZERO, Fix128::ONE, Fix128::ONE, 3, 2, Fix128::ONE);
+        assert_eq!(cloth.particle_count(), 6);
+        cloth.edge_constraints.clear();
+        cloth.bend_constraints.clear();
+        cloth.triangles = vec![[0, 1, 2], [3, 4, 5]];
+        cloth.config.gravity = Vec3Fix::ZERO;
+        cloth.config.damping = Fix128::ONE;
+        cloth.config.self_collision = true;
+        cloth.config.self_collision_distance = thickness;
+        let eight = Fix128::from_int(8);
+        cloth.positions[0] = Vec3Fix::from_int(-1, 0, 0);
+        cloth.positions[1] = Vec3Fix::from_int(1, 0, 0);
+        cloth.positions[2] = Vec3Fix::new(Fix128::ZERO, -eight, Fix128::ZERO);
+        cloth.positions[3] = Vec3Fix::new(Fix128::ZERO, h, Fix128::from_int(-1));
+        cloth.positions[4] = Vec3Fix::new(Fix128::ZERO, h, Fix128::ONE);
+        cloth.positions[5] = Vec3Fix::new(Fix128::ZERO, h + eight, Fix128::ZERO);
+        cloth.prev_positions = cloth.positions.clone();
+        for v in &mut cloth.velocities {
+            *v = Vec3Fix::ZERO;
+        }
+        cloth
+    }
+
+    /// 2 辺が軸平行なままである限り、符号付き隙間は `y₃ − y₀` そのもの
+    ///
+    /// ⚠️ **実装の距離関数を呼ばずに測るための独立な量です** 辺 `(0,1)` は x 軸、
+    /// 辺 `(3,4)` は z 軸に沿い、上から見て交差しているので、`y₀ = y₁` かつ `y₃ = y₄`
+    /// である限り 2 辺の最近接距離は `|y₃ − y₀|` に等しくなります (符号は交差の有無を
+    /// 表すので捨てません) 前提の 2 つの等式は呼び出し側で assert します
+    fn x_crossing_signed_gap(cloth: &Cloth) -> Fix128 {
+        assert_eq!(
+            cloth.positions[0].y, cloth.positions[1].y,
+            "辺 (0,1) が x 軸に平行でなくなった この計器は使えない"
+        );
+        assert_eq!(
+            cloth.positions[3].y, cloth.positions[4].y,
+            "辺 (3,4) が z 軸に平行でなくなった この計器は使えない"
+        );
+        cloth.positions[3].y - cloth.positions[0].y
+    }
+
+    /// 辺-辺の投影 1 回で、辺どうしの隙間が **厳密に** `thickness` になる (閉形式)
+    ///
+    /// # 閉形式 (`h = 1/8`, `thickness = 1/4`、逆質量は全て 1)
+    ///
+    /// ```text
+    /// s = t = 1/2        n = (pₐ − p_b)/|pₐ − p_b| = (0,−1,0)
+    /// denom = 1·(1/2)² + 1·(1/2)² + 1·(1/2)² + 1·(1/2)² = 1
+    /// λ     = (1/4 − 1/8) / 1 = 1/8
+    /// Δ₀ = Δ₁ = +λ·1·(1/2)·n = (0,−1/16,0)   Δ₃ = Δ₄ = −λ·1·(1/2)·n = (0,+1/16,0)
+    /// ```
+    ///
+    /// 隙間は `1/8 + 1/16 + 1/16 = 1/4 = thickness` になり、接触に参加しない頂点 2 / 5 は
+    /// `hits = 0` なので 1 bit も動きません
+    ///
+    /// ⚠️ **この 1 本が辺-辺側の変異 3 つを全部捕まえます** `EE1` (clamp 除去) は
+    /// `s = 2` 側に飛んで Δ が変わる、`EE2` (共有頂点の除外を落とす) は T0 / T1 の
+    /// 隣接辺対が距離 0 で発火して頂点 2 / 5 まで動く、`EE3` (閾値の比較反転) は
+    /// 接触が skip されて 1 bit も動かない
+    #[test]
+    fn the_edge_edge_projection_restores_exactly_the_contact_thickness() {
+        let eighth = Fix128::from_ratio(1, 8);
+        let quarter = Fix128::from_ratio(1, 4);
+        let sixteenth = Fix128::from_ratio(1, 16);
+        let mut cloth = x_crossing_scene(eighth, quarter);
+        let before = cloth.positions.clone();
+        assert_eq!(
+            x_crossing_signed_gap(&cloth),
+            eighth,
+            "scene の初期隙間は h = 1/8"
+        );
+
+        // ⚠️ 頂点-面の段は、この scene では 1 bit も動かせない (閉形式で距離² = 65/64)
+        let margin = quarter.double();
+        let vf = cloth.collect_vertex_face_candidates(margin);
+        cloth.solve_vertex_face_self_collision(&vf);
+        assert_eq!(
+            cloth.positions,
+            before,
+            "頂点-面の段がこの scene を動かした X 字交差の盲点を示す scene になっていない \
+             (候補 {} 件)",
+            vf.len()
+        );
+
+        let ee = cloth.collect_edge_edge_candidates(margin);
+        assert_eq!(
+            ee.iter()
+                .filter(|&&[i0, i1, j0, j1]| [i0, i1, j0, j1] == [0, 1, 3, 4])
+                .count(),
+            1,
+            "辺 (0,1) × (3,4) の対が候補に 1 件だけ入っていない (候補 {ee:?})"
+        );
+        cloth.solve_edge_edge_self_collision(&ee);
+
+        let neg_sixteenth = -sixteenth;
+        assert_eq!(
+            cloth.positions[0],
+            Vec3Fix::new(Fix128::from_int(-1), neg_sixteenth, Fix128::ZERO),
+            "oracle: Δ₀ = −1/16 (denom = 1 なので厳密)"
+        );
+        assert_eq!(
+            cloth.positions[1],
+            Vec3Fix::new(Fix128::ONE, neg_sixteenth, Fix128::ZERO),
+            "oracle: Δ₁ = −1/16"
+        );
+        assert_eq!(
+            cloth.positions[3],
+            Vec3Fix::new(Fix128::ZERO, eighth + sixteenth, Fix128::from_int(-1)),
+            "oracle: Δ₃ = +1/16"
+        );
+        assert_eq!(
+            cloth.positions[4],
+            Vec3Fix::new(Fix128::ZERO, eighth + sixteenth, Fix128::ONE),
+            "oracle: Δ₄ = +1/16"
+        );
+        assert_eq!(
+            cloth.positions[2], before[2],
+            "接触に参加しない頂点 2 が動いた (hits = 0 のはず)"
+        );
+        assert_eq!(
+            cloth.positions[5], before[5],
+            "接触に参加しない頂点 5 が動いた (hits = 0 のはず)"
+        );
+        assert_eq!(
+            x_crossing_signed_gap(&cloth),
+            quarter,
+            "oracle: 1 回の投影で辺-辺の隙間が厳密に thickness = 1/4 になる"
+        );
+    }
+
+    /// 辺-辺の対の列挙順が結果を変えない (Jacobi 蓄積の決定性)
+    #[test]
+    fn edge_edge_result_is_independent_of_the_pair_order() {
+        let mut forward = folded_cloth_with_contacts();
+        let mut reverse = folded_cloth_with_contacts();
+        let margin = forward.config.self_collision_distance.double();
+        let mut candidates = forward.collect_edge_edge_candidates(margin);
+        assert!(
+            candidates.len() > 1,
+            "辺-辺候補が {} 件では順序非依存性を試せない",
+            candidates.len()
+        );
+        let before = forward.positions.clone();
+        forward.solve_edge_edge_self_collision(&candidates);
+        assert!(
+            forward.positions != before,
+            "辺-辺の斥力が 1 bit も発火しない この scene は判別に向かない"
+        );
+        candidates.reverse();
+        reverse.solve_edge_edge_self_collision(&candidates);
+        assert_eq!(
+            forward.positions, reverse.positions,
+            "辺-辺の対を逆順に処理すると結果が変わる = 蓄積が順序依存"
+        );
+    }
+
+    /// 1 frame で辺どうしが入れ替わる X 字交差が、辺-辺の段だけで止まる
+    ///
+    /// # scene
+    ///
+    /// `x_crossing_scene(h = 1/2, thickness = 1/4)` の `T1` を 1 frame で `−3/4`
+    /// 平行移動させる (`v = (0, −48, 0)`, `dt = 1/64`) 符号付き隙間は `+1/2` から
+    /// 自由落下なら `−1/4` になる = **2 辺が入れ替わる (貫通する)**
+    ///
+    /// ⚠️ **`dt = 1/64` は「60 fps を模す」よりも厳密性を優先した選択です** `1/60` は
+    /// 2 進小数でないので `Fix128::from_ratio(1, 60)` が切り捨てられ、`substep_dt = dt/4`
+    /// と `v·dt` を経た変位が閉形式から **12 ulp** ずれます (実測、`-0.25` と表示される
+    /// のに `assert_eq!` が red) `1/64` なら `substep_dt = 1/256`、1 substep の変位は
+    /// `−48/256 = −3/16` で全て厳密です
+    ///
+    /// # ⚠️ 頂点-面の不変量はこの貫通を 0 と報告する
+    ///
+    /// `remaining_self_contact_crossings` が測るのは「頂点の掃過線分が三角形を貫いたか」
+    /// なので、辺どうしの交差は **自己接触 OFF でも 0** です これが
+    /// `src/cloth.rs` に辺-辺の段が必要だった理由そのもので、本 test の反 vacuous
+    /// guard も兼ねます (0 なのは正しいからでなく、その量を見ていないから)
+    #[test]
+    fn an_edge_pair_that_swaps_sides_in_one_frame_is_caught_only_by_the_edge_edge_pass() {
+        let half = Fix128::from_ratio(1, 2);
+        let quarter = Fix128::from_ratio(1, 4);
+        let dt = Fix128::from_ratio(1, 64);
+
+        let run = |self_collision: bool| -> (Fix128, usize) {
+            let mut cloth = x_crossing_scene(half, quarter);
+            cloth.config.self_collision = self_collision;
+            // T1 を 1 frame で −3/4 平行移動 (剛体的に動かすので T1 の形は変わらない)
+            for i in 3..6 {
+                cloth.velocities[i] =
+                    Vec3Fix::new(Fix128::ZERO, Fix128::from_int(-48), Fix128::ZERO);
+            }
+            let start = cloth.positions.clone();
+            cloth.step(dt);
+            let crossings = cloth.remaining_self_contact_crossings(&start);
+            (x_crossing_signed_gap(&cloth), crossings)
+        };
+
+        let (gap_off, crossings_off) = run(false);
+        assert_eq!(
+            gap_off,
+            -quarter,
+            "自己接触 OFF で符号付き隙間が −1/4 (= 2 辺が入れ替わった) にならない \
+             この scene は貫通を試せていない (実測 {})",
+            gap_off.to_f32()
+        );
+        assert_eq!(
+            crossings_off, 0,
+            "頂点-面の不変量が辺-辺の交差を検出した この scene は盲点を示していない"
+        );
+
+        let (gap_on, crossings_on) = run(true);
+        assert!(
+            gap_on >= quarter,
+            "自己接触 ON で辺-辺の隙間が thickness = 1/4 を下回った (実測 {})",
+            gap_on.to_f32()
+        );
+        assert_eq!(crossings_on, 0, "自己接触 ON で頂点-面の貫通が残った");
+    }
+
+    /// 折り返して自己接触させた 5x5 の布 (頂点-面 / 辺-辺 の両方に候補が出る)
+    fn folded_cloth_with_contacts() -> Cloth {
+        const R: usize = 5;
+        let mut cloth = Cloth::new_grid(
+            Vec3Fix::ZERO,
+            Fix128::from_int(4),
+            Fix128::from_int(4),
+            R,
+            R,
+            Fix128::from_ratio(1, 100),
+        );
+        cloth.config.self_collision = true;
+        cloth.config.self_collision_distance = Fix128::from_ratio(3, 2);
+        for x in 0..R {
+            cloth.positions[3 * R + x] =
+                Vec3Fix::new(cloth.positions[x].x, Fix128::ONE, Fix128::from_int(2));
+            cloth.positions[4 * R + x] =
+                Vec3Fix::new(cloth.positions[x].x, Fix128::ONE, Fix128::ONE);
+        }
+        cloth
     }
 
     #[test]
