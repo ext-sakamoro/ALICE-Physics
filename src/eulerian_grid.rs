@@ -4254,7 +4254,8 @@ pub fn g2p_velocity(grid: &MacGrid, pos_m: Vec3Fix) -> Vec3Fix {
 /// using trilinear weights (Session 3 I2 upgrade). The caller must
 /// separately track per-cell weight sums if quantitative velocity means
 /// are required — this routine only accumulates weighted deposits.
-fn deposit_u_trilinear(grid: &mut MacGrid, pos_m: Vec3Fix, vx: Fix128) {
+fn deposit_u_trilinear<S: FaceSink>(sink: &mut S, pos_m: Vec3Fix, vx: Fix128) {
+    let grid = sink.shape();
     if grid.dx.is_zero() {
         return;
     }
@@ -4275,15 +4276,17 @@ fn deposit_u_trilinear(grid: &mut MacGrid, pos_m: Vec3Fix, vx: Fix128) {
         (i, j + 1, k + 1, om_u * v * w),
         (i + 1, j + 1, k + 1, u * v * w),
     ];
+    let (nx, ny, nz) = (grid.nx, grid.ny, grid.nz);
     for (ci, cj, ck, weight) in corners {
-        if ci <= grid.nx && cj < grid.ny && ck < grid.nz {
-            let ix = grid.idx_u(ci, cj, ck);
-            grid.u[ix] = grid.u[ix] + weight * vx;
+        if ci <= nx && cj < ny && ck < nz {
+            let ix = sink.shape().idx_u(ci, cj, ck);
+            sink.add_u(ix, weight, vx);
         }
     }
 }
 
-fn deposit_v_trilinear(grid: &mut MacGrid, pos_m: Vec3Fix, vy: Fix128) {
+fn deposit_v_trilinear<S: FaceSink>(sink: &mut S, pos_m: Vec3Fix, vy: Fix128) {
+    let grid = sink.shape();
     if grid.dx.is_zero() {
         return;
     }
@@ -4304,15 +4307,17 @@ fn deposit_v_trilinear(grid: &mut MacGrid, pos_m: Vec3Fix, vy: Fix128) {
         (i, j + 1, k + 1, om_u * v * w),
         (i + 1, j + 1, k + 1, u * v * w),
     ];
+    let (nx, ny, nz) = (grid.nx, grid.ny, grid.nz);
     for (ci, cj, ck, weight) in corners {
-        if ci < grid.nx && cj <= grid.ny && ck < grid.nz {
-            let ix = grid.idx_v(ci, cj, ck);
-            grid.v[ix] = grid.v[ix] + weight * vy;
+        if ci < nx && cj <= ny && ck < nz {
+            let ix = sink.shape().idx_v(ci, cj, ck);
+            sink.add_v(ix, weight, vy);
         }
     }
 }
 
-fn deposit_w_trilinear(grid: &mut MacGrid, pos_m: Vec3Fix, vz: Fix128) {
+fn deposit_w_trilinear<S: FaceSink>(sink: &mut S, pos_m: Vec3Fix, vz: Fix128) {
+    let grid = sink.shape();
     if grid.dx.is_zero() {
         return;
     }
@@ -4333,10 +4338,11 @@ fn deposit_w_trilinear(grid: &mut MacGrid, pos_m: Vec3Fix, vz: Fix128) {
         (i, j + 1, k + 1, om_u * v * w),
         (i + 1, j + 1, k + 1, u * v * w),
     ];
+    let (nx, ny, nz) = (grid.nx, grid.ny, grid.nz);
     for (ci, cj, ck, weight) in corners {
-        if ci < grid.nx && cj < grid.ny && ck <= grid.nz {
-            let ix = grid.idx_w(ci, cj, ck);
-            grid.w[ix] = grid.w[ix] + weight * vz;
+        if ci < nx && cj < ny && ck <= nz {
+            let ix = sink.shape().idx_w(ci, cj, ck);
+            sink.add_w(ix, weight, vz);
         }
     }
 }
@@ -4345,10 +4351,16 @@ fn deposit_w_trilinear(grid: &mut MacGrid, pos_m: Vec3Fix, vz: Fix128) {
 /// the 8 nearest face nodes for each of u/v/w. Session 3 I2 upgrade;
 /// the earlier `p2g_nearest` implementation is retained below for callers
 /// that need the simpler (less accurate) variant.
+// ALLOW-UNWIRED: the plain (unnormalised) scatter into a `MacGrid`; `p2g_normalized` now scatters into `WideFaces` through `scatter_trilinear`, so this wrapper is kept for the unit tests that pin the raw deposit
 pub(crate) fn p2g_trilinear(grid: &mut MacGrid, pos_m: Vec3Fix, vel_m_per_s: Vec3Fix) {
-    deposit_u_trilinear(grid, pos_m, vel_m_per_s.x);
-    deposit_v_trilinear(grid, pos_m, vel_m_per_s.y);
-    deposit_w_trilinear(grid, pos_m, vel_m_per_s.z);
+    scatter_trilinear(grid, pos_m, vel_m_per_s);
+}
+
+/// The three deposits for one particle, into any [`FaceSink`].
+fn scatter_trilinear<S: FaceSink>(sink: &mut S, pos_m: Vec3Fix, vel_m_per_s: Vec3Fix) {
+    deposit_u_trilinear(sink, pos_m, vel_m_per_s.x);
+    deposit_v_trilinear(sink, pos_m, vel_m_per_s.y);
+    deposit_w_trilinear(sink, pos_m, vel_m_per_s.z);
 }
 
 /// Particle-to-grid: scatter one particle's velocity `vel_m_per_s` at
@@ -4383,6 +4395,240 @@ pub(crate) fn p2g_nearest(grid: &mut MacGrid, pos_m: Vec3Fix, vel_m_per_s: Vec3F
     grid.w[w_hi] = grid.w[w_hi] + vel_m_per_s.z * half;
 }
 
+/// Where a trilinear deposit lands.
+///
+/// The three `deposit_*_trilinear` routines own the stencil, the weight
+/// expressions and the out-of-range rule; they hand each `(face, weight,
+/// velocity)` triple to a sink and nothing else. [`MacGrid`] is the sink the
+/// plain scatter uses (`face += weight * v`, the `Fix128` product rounded down
+/// and the sum wrapping, as it always was). [`WideFaces`] is the sink the
+/// normalised transfer uses: it keeps the exact integer product, so the
+/// numerator and the weight sum of a face come out of one stencil and cannot
+/// drift apart.
+trait FaceSink {
+    /// Dimensions and face indexing.
+    fn shape(&self) -> &MacGrid;
+    fn add_u(&mut self, ix: usize, weight: Fix128, v: Fix128);
+    fn add_v(&mut self, ix: usize, weight: Fix128, v: Fix128);
+    fn add_w(&mut self, ix: usize, weight: Fix128, v: Fix128);
+}
+
+impl FaceSink for MacGrid {
+    #[inline]
+    fn shape(&self) -> &MacGrid {
+        self
+    }
+    #[inline]
+    fn add_u(&mut self, ix: usize, weight: Fix128, v: Fix128) {
+        self.u[ix] = self.u[ix] + weight * v;
+    }
+    #[inline]
+    fn add_v(&mut self, ix: usize, weight: Fix128, v: Fix128) {
+        self.v[ix] = self.v[ix] + weight * v;
+    }
+    #[inline]
+    fn add_w(&mut self, ix: usize, weight: Fix128, v: Fix128) {
+        self.w[ix] = self.w[ix] + weight * v;
+    }
+}
+
+/// Raw two's-complement value of a `Fix128`: `(hi << 64) | lo`.
+#[inline]
+fn fix_raw(x: Fix128) -> i128 {
+    (i128::from(x.hi) << 64) | i128::from(x.lo)
+}
+
+/// Inverse of [`fix_raw`].
+#[inline]
+fn fix_from_raw(r: i128) -> Fix128 {
+    Fix128 {
+        hi: (r >> 64) as i64,
+        lo: r as u64,
+    }
+}
+
+/// Signed 256-bit integer, two's complement, wrapping. Only what the exact
+/// P2G accumulator needs: an exact `i128 × i128` product, addition, negation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct I256 {
+    hi: i128,
+    lo: u128,
+}
+
+impl I256 {
+    const ZERO: Self = Self { hi: 0, lo: 0 };
+
+    #[inline]
+    fn wrapping_add(self, o: Self) -> Self {
+        let (lo, carry) = self.lo.overflowing_add(o.lo);
+        Self {
+            hi: self.hi.wrapping_add(o.hi).wrapping_add(i128::from(carry)),
+            lo,
+        }
+    }
+
+    #[inline]
+    fn wrapping_neg(self) -> Self {
+        let lo = (!self.lo).wrapping_add(1);
+        Self {
+            hi: (!self.hi).wrapping_add(i128::from(lo == 0)),
+            lo,
+        }
+    }
+
+    /// Exact product. `|a|, |b| <= 2^127`, so `|a·b| <= 2^254` always fits.
+    fn from_product(a: i128, b: i128) -> Self {
+        let (hi, lo) = umul_128(a.unsigned_abs(), b.unsigned_abs());
+        let mag = Self { hi: hi as i128, lo };
+        if (a < 0) != (b < 0) {
+            mag.wrapping_neg()
+        } else {
+            mag
+        }
+    }
+}
+
+/// Exact unsigned `128 × 128 -> 256`, returned as `(high, low)`.
+fn umul_128(a: u128, b: u128) -> (u128, u128) {
+    const M: u128 = u64::MAX as u128;
+    let (a0, a1) = (a & M, a >> 64);
+    let (b0, b1) = (b & M, b >> 64);
+    let ll = a0 * b0;
+    let lh = a0 * b1;
+    let hl = a1 * b0;
+    let hh = a1 * b1;
+    // Each partial is < 2^128 and the middle column is < 3 * 2^64.
+    let mid = (ll >> 64) + (lh & M) + (hl & M);
+    let lo = ((mid & M) << 64) | (ll & M);
+    let hi = hh + (lh >> 64) + (hl >> 64) + (mid >> 64);
+    (hi, lo)
+}
+
+/// Restoring long division of the unsigned 256-bit `(n_hi, n_lo)` by the
+/// nonzero `d`: `(q_hi, q_lo, remainder)` with `q·d + remainder = n` and
+/// `remainder < d`. One step per bit from the top set bit down, so a face
+/// costs at most 256 steps (the same shape as the 64-step loop in
+/// `Fix128::div`).
+fn udiv_256_by_128(n_hi: u128, n_lo: u128, d: u128) -> (u128, u128, u128) {
+    debug_assert!(d != 0);
+    let top = if n_hi != 0 {
+        255 - n_hi.leading_zeros()
+    } else if n_lo != 0 {
+        127 - n_lo.leading_zeros()
+    } else {
+        return (0, 0, 0);
+    };
+    let (mut q_hi, mut q_lo, mut rem) = (0u128, 0u128, 0u128);
+    for i in (0..=top).rev() {
+        let bit = if i >= 128 {
+            (n_hi >> (i - 128)) & 1
+        } else {
+            (n_lo >> i) & 1
+        };
+        // `rem < d <= 2^128 - 1`, so the shift can carry out of 128 bits when
+        // `d >= 2^127`; the carried-out bit makes the true remainder >= d.
+        let carry = rem >> 127;
+        rem = (rem << 1) | bit;
+        if carry == 1 || rem >= d {
+            rem = rem.wrapping_sub(d);
+            if i >= 128 {
+                q_hi |= 1u128 << (i - 128);
+            } else {
+                q_lo |= 1u128 << i;
+            }
+        }
+    }
+    (q_hi, q_lo, rem)
+}
+
+/// `n / d` truncated toward zero, as the low 128 bits of the quotient (signed).
+/// The quotient of a weighted sum by its weight sum lies between the smallest
+/// and the largest velocity, so it fits `i128`; a quotient of magnitude exactly
+/// `2^127` (the negative extreme) comes back as `i128::MIN`, not a panic.
+fn div_trunc_i256_by_u128(n: I256, d: u128) -> i128 {
+    let negative = n.hi < 0;
+    let mag = if negative { n.wrapping_neg() } else { n };
+    let (_, q, _) = udiv_256_by_128(mag.hi as u128, mag.lo, d);
+    if negative {
+        (q as i128).wrapping_neg()
+    } else {
+        q as i128
+    }
+}
+
+/// Per-face exact numerator `Σ w·v` (raw `Fix128` × raw `Fix128`, scale 2^128)
+/// and weight sum `Σ w` (scale 2^64).
+#[derive(Clone, Copy)]
+struct Moments {
+    p: I256,
+    d: u128,
+}
+
+impl Moments {
+    const ZERO: Self = Self {
+        p: I256::ZERO,
+        d: 0,
+    };
+
+    #[inline]
+    fn add(&mut self, weight: Fix128, v: Fix128) {
+        let w = fix_raw(weight);
+        self.p = self.p.wrapping_add(I256::from_product(w, fix_raw(v)));
+        // A trilinear weight lies in [0, 1], so `w` is non-negative, and a
+        // sum of fewer than 2^64 of them stays below 2^128.
+        self.d = self.d.wrapping_add(w as u128);
+    }
+
+    /// `P ÷ D` truncated toward zero: the numerator has scale 2^128 and the
+    /// denominator 2^64, so the quotient is already a `Fix128` raw value.
+    #[inline]
+    fn mean(&self) -> Option<Fix128> {
+        if self.d == 0 {
+            None
+        } else {
+            Some(fix_from_raw(div_trunc_i256_by_u128(self.p, self.d)))
+        }
+    }
+}
+
+/// Exact moments for every face of a grid's shape.
+struct WideFaces {
+    shape: MacGrid,
+    u: Vec<Moments>,
+    v: Vec<Moments>,
+    w: Vec<Moments>,
+}
+
+impl WideFaces {
+    fn new(grid: &MacGrid) -> Self {
+        Self {
+            shape: MacGrid::new(grid.nx, grid.ny, grid.nz, grid.dx),
+            u: vec![Moments::ZERO; grid.u.len()],
+            v: vec![Moments::ZERO; grid.v.len()],
+            w: vec![Moments::ZERO; grid.w.len()],
+        }
+    }
+}
+
+impl FaceSink for WideFaces {
+    #[inline]
+    fn shape(&self) -> &MacGrid {
+        &self.shape
+    }
+    #[inline]
+    fn add_u(&mut self, ix: usize, weight: Fix128, v: Fix128) {
+        self.u[ix].add(weight, v);
+    }
+    #[inline]
+    fn add_v(&mut self, ix: usize, weight: Fix128, v: Fix128) {
+        self.v[ix].add(weight, v);
+    }
+    #[inline]
+    fn add_w(&mut self, ix: usize, weight: Fix128, v: Fix128) {
+        self.w[ix].add(weight, v);
+    }
+}
+
 /// Particle-to-grid with weight normalisation: every face of `grid` that at
 /// least one particle reaches ends up holding the trilinear-weighted **mean**
 /// of the particle velocities, so a uniform particle velocity gives a uniform
@@ -4392,19 +4638,29 @@ pub(crate) fn p2g_nearest(grid: &mut MacGrid, pos_m: Vec3Fix, vel_m_per_s: Vec3F
 /// A particle with any negative coordinate, or one beyond the far side, lies
 /// outside the domain and contributes nothing.
 ///
-/// `p2g_trilinear` only accumulates `weight * v` and keeps no weight sum, so
-/// it cannot produce a mean. This entry point runs it twice on scratch grids,
-/// once with the velocities and once with unit velocity, so the second pass
-/// leaves the per-face weight sum and the quotient is the mean. Reusing the
-/// deposit routines keeps the stagger offsets and the out-of-range rule in
-/// one place.
+/// # Exactness
+///
+/// The face value is `Σ wᵢ·vᵢ ÷ Σ wᵢ` with the sums and the one product per
+/// term taken as exact integers: each term is the full 256-bit product of the
+/// two raw `Fix128` values (not the `Fix128` product, which drops 64 bits), the
+/// numerator is a signed 256-bit sum, and a single 256 ÷ 128 division
+/// truncated toward zero produces the face. Consequences: a uniform velocity
+/// is reproduced bit for bit at any position and for any particle count; the
+/// face always lies between the smallest and the largest velocity that reaches
+/// it; negating every velocity negates every face; the result does not depend
+/// on the particle order; and it is within one ulp of the true mean for every
+/// weight, however small. The weights themselves are the stencil of
+/// `p2g_trilinear` (one definition, shared through a private sink trait).
+///
+/// Summing the rounded terms `wᵢ ⊗ vᵢ` and dividing by a small `Σ wᵢ`, as this
+/// function used to, amplified the per-term rounding by `1 / Σ wᵢ` (a face
+/// with weight raw 1 and velocity −1 ulp came out as −1.0), and the numerator
+/// wrapped modulo 2^128 once `Σ wᵢ·vᵢ` reached 2^63.
 pub fn p2g_normalized(grid: &mut MacGrid, particles: &[(Vec3Fix, Vec3Fix)]) {
     if grid.dx.is_zero() {
         return;
     }
-    let mut num = MacGrid::new(grid.nx, grid.ny, grid.nz, grid.dx);
-    let mut den = MacGrid::new(grid.nx, grid.ny, grid.nz, grid.dx);
-    let one = Vec3Fix::new(Fix128::ONE, Fix128::ONE, Fix128::ONE);
+    let mut acc = WideFaces::new(grid);
     for &(pos, vel) in particles {
         // A particle left of the domain is dropped, as one beyond the far side
         // already is. `split` clamps a negative coordinate to face 0 with full
@@ -4414,19 +4670,18 @@ pub fn p2g_normalized(grid: &mut MacGrid, particles: &[(Vec3Fix, Vec3Fix)]) {
         if pos.x < Fix128::ZERO || pos.y < Fix128::ZERO || pos.z < Fix128::ZERO {
             continue;
         }
-        p2g_trilinear(&mut num, pos, vel);
-        p2g_trilinear(&mut den, pos, one);
+        scatter_trilinear(&mut acc, pos, vel);
     }
-    let divide = |dst: &mut [Fix128], n: &[Fix128], d: &[Fix128]| {
-        for ((out, &n), &d) in dst.iter_mut().zip(n).zip(d) {
-            if !d.is_zero() {
-                *out = n / d;
+    let resolve = |dst: &mut [Fix128], src: &[Moments]| {
+        for (out, m) in dst.iter_mut().zip(src) {
+            if let Some(mean) = m.mean() {
+                *out = mean;
             }
         }
     };
-    divide(&mut grid.u, &num.u, &den.u);
-    divide(&mut grid.v, &num.v, &den.v);
-    divide(&mut grid.w, &num.w, &den.w);
+    resolve(&mut grid.u, &acc.u);
+    resolve(&mut grid.v, &acc.v);
+    resolve(&mut grid.w, &acc.w);
 }
 
 // ============================================================================
@@ -4571,6 +4826,353 @@ mod tests {
         let vel = Vec3Fix::new(Fix128::ONE, Fix128::ONE, Fix128::ONE);
         p2g_nearest(&mut g, pos, vel);
         assert_eq!(g.u(0, 0, 0), Fix128::ZERO);
+    }
+
+    /// Exact-accumulation helpers (`I256`, `umul_128`, `udiv_256_by_128`,
+    /// `div_trunc_i256_by_u128`). The expected values never come from the code
+    /// under test: a limb-array schoolbook product and a bit-array shift /
+    /// subtract division written independently here, the built-in `u128` /
+    /// `i128` operators, and the identity `q·d + r = n` with `r < d`.
+    mod wide_p2g {
+        use super::*;
+
+        struct Rng(u64);
+        impl Rng {
+            fn next(&mut self) -> u64 {
+                self.0 ^= self.0 << 13;
+                self.0 ^= self.0 >> 7;
+                self.0 ^= self.0 << 17;
+                self.0
+            }
+            fn u128(&mut self) -> u128 {
+                (u128::from(self.next()) << 64) | u128::from(self.next())
+            }
+            /// random value of a random bit length (0..=128)
+            fn u128_any_len(&mut self) -> u128 {
+                let bits = (self.next() % 129) as u32;
+                if bits == 0 {
+                    0
+                } else {
+                    self.u128() >> (128 - bits)
+                }
+            }
+        }
+
+        const M128: u128 = u128::MAX;
+
+        /// Schoolbook product over four 32-bit limbs, accumulated in a `[u128; 8]`
+        /// column array: a different organisation from `umul_128`'s 2 × 64.
+        fn ref_umul(a: u128, b: u128) -> (u128, u128) {
+            let la: Vec<u128> = (0..4).map(|i| (a >> (32 * i)) & 0xffff_ffff).collect();
+            let lb: Vec<u128> = (0..4).map(|i| (b >> (32 * i)) & 0xffff_ffff).collect();
+            let mut col = [0u128; 9];
+            for i in 0..4 {
+                for j in 0..4 {
+                    col[i + j] += la[i] * lb[j];
+                }
+            }
+            let mut carry = 0u128;
+            let mut limbs = [0u128; 8];
+            for k in 0..8 {
+                let t = col[k] + carry;
+                limbs[k] = t & 0xffff_ffff;
+                carry = t >> 32;
+            }
+            assert_eq!(carry, 0);
+            let lo = (0..4).fold(0u128, |acc, k| acc | (limbs[k] << (32 * k)));
+            let hi = (0..4).fold(0u128, |acc, k| acc | (limbs[k + 4] << (32 * k)));
+            (hi, lo)
+        }
+
+        /// Bit-array shift / subtract division of a 256-bit value (MSB first).
+        fn ref_udiv(n_hi: u128, n_lo: u128, d: u128) -> (u128, u128, u128) {
+            let mut bits: Vec<bool> = Vec::new();
+            for i in (0..128).rev() {
+                bits.push((n_hi >> i) & 1 == 1);
+            }
+            for i in (0..128).rev() {
+                bits.push((n_lo >> i) & 1 == 1);
+            }
+            // remainder as (carry, u128): compare against d in 129 bits
+            let mut rem: u128 = 0;
+            let mut qbits: Vec<bool> = Vec::new();
+            for b in bits {
+                let top = rem >> 127 == 1;
+                rem = (rem << 1) | u128::from(b);
+                if top || rem >= d {
+                    rem = rem.wrapping_sub(d);
+                    qbits.push(true);
+                } else {
+                    qbits.push(false);
+                }
+            }
+            let to = |s: &[bool]| s.iter().fold(0u128, |a, &b| (a << 1) | u128::from(b));
+            (to(&qbits[..128]), to(&qbits[128..]), rem)
+        }
+
+        /// 256-bit `q·d` (q is 256-bit, d 128-bit), asserting no overflow.
+        fn mul_q_d(q_hi: u128, q_lo: u128, d: u128) -> (u128, u128) {
+            let (h0, l0) = umul_128(q_lo, d);
+            let (h1, l1) = umul_128(q_hi, d);
+            assert_eq!(h1, 0, "q·d overflows 256 bits");
+            (h0.checked_add(l1).expect("q·d overflows 256 bits"), l0)
+        }
+
+        fn add_256(a: (u128, u128), b: u128) -> (u128, u128) {
+            let (lo, c) = a.1.overflowing_add(b);
+            (a.0.checked_add(u128::from(c)).expect("overflow"), lo)
+        }
+
+        fn i256_from_i128(x: i128) -> I256 {
+            I256 {
+                hi: if x < 0 { -1 } else { 0 },
+                lo: x as u128,
+            }
+        }
+
+        /// -(mag) for a 256-bit magnitude, as an `I256`.
+        fn neg_mag(h: u128, l: u128) -> I256 {
+            I256 {
+                hi: h as i128,
+                lo: l,
+            }
+            .wrapping_neg()
+        }
+
+        #[test]
+        fn umul_matches_the_limb_schoolbook_reference() {
+            let mut r = Rng(0x1357_9bdf_2468_ace0);
+            assert_eq!(umul_128(M128, M128), (M128 - 1, 1));
+            assert_eq!(umul_128(0, M128), (0, 0));
+            assert_eq!(umul_128(1, M128), (0, M128));
+            assert_eq!(umul_128(1 << 127, 2), (1, 0));
+            for _ in 0..20_000 {
+                let (a, b) = (r.u128_any_len(), r.u128_any_len());
+                assert_eq!(umul_128(a, b), ref_umul(a, b), "{a} * {b}");
+            }
+        }
+
+        #[test]
+        fn small_division_matches_the_builtin_u128_operators() {
+            let mut r = Rng(0x0bad_cafe_f00d_1234);
+            for _ in 0..20_000 {
+                let n = r.u128_any_len();
+                let d = r.u128_any_len().max(1);
+                assert_eq!(udiv_256_by_128(0, n, d), (0, n / d, n % d), "{n} / {d}");
+            }
+            assert_eq!(udiv_256_by_128(0, 0, 1), (0, 0, 0));
+            assert_eq!(udiv_256_by_128(0, 7, 1), (0, 7, 0));
+            assert_eq!(udiv_256_by_128(0, M128, 1), (0, M128, 0));
+            assert_eq!(udiv_256_by_128(0, M128, M128), (0, 1, 0));
+            assert_eq!(udiv_256_by_128(0, M128 - 1, M128), (0, 0, M128 - 1));
+        }
+
+        #[test]
+        fn wide_division_satisfies_the_division_identity_and_matches_the_reference() {
+            let mut r = Rng(0x5eed_5eed_5eed_5eed);
+            let mut big_divisor = 0;
+            for round in 0..30_000 {
+                let n_hi = match round % 4 {
+                    0 => 0,
+                    1 => r.u128_any_len(),
+                    _ => r.u128(),
+                };
+                let n_lo = r.u128_any_len();
+                let d = if round % 3 == 0 {
+                    // d >= 2^127 : unreachable through p2g, so exercised here
+                    (1u128 << 127) | r.u128_any_len()
+                } else {
+                    r.u128_any_len().max(1)
+                };
+                if d >> 127 == 1 {
+                    big_divisor += 1;
+                }
+                let (qh, ql, rem) = udiv_256_by_128(n_hi, n_lo, d);
+                assert!(rem < d, "remainder {rem} >= divisor {d}");
+                let prod = mul_q_d(qh, ql, d);
+                assert_eq!(add_256(prod, rem), (n_hi, n_lo), "q·d + r != n");
+                assert_eq!((qh, ql, rem), ref_udiv(n_hi, n_lo, d));
+            }
+            assert!(big_divisor > 5_000);
+            // 2^256 - 1 is the largest dividend
+            let (qh, ql, rem) = udiv_256_by_128(M128, M128, 1);
+            assert_eq!((qh, ql, rem), (M128, M128, 0));
+            let (qh, ql, rem) = udiv_256_by_128(M128, M128, M128);
+            // (2^256-1) / (2^128-1) = 2^128 + 1
+            assert_eq!((qh, ql, rem), (1, 1, 0));
+        }
+
+        #[test]
+        fn an_exactly_divisible_dividend_leaves_a_zero_remainder() {
+            // The `rem >= d` comparison must accept equality: a remainder equal
+            // to the divisor has to be subtracted, not left in place.
+            let mut r = Rng(0xfeed_beef_0001_0002);
+            for _ in 0..5_000 {
+                let d = r.u128_any_len().max(1);
+                let q = r.u128_any_len();
+                let (h, l) = umul_128(q, d);
+                assert_eq!(udiv_256_by_128(h, l, d), (0, q, 0), "{q} * {d}");
+            }
+        }
+
+        #[test]
+        fn i256_product_sum_and_negation() {
+            let mut r = Rng(0x7777_1111_9999_3333);
+            for _ in 0..10_000 {
+                let sh = r.next() % 60;
+                let a = (r.u128() as i128) >> (65 + sh);
+                let b = (r.u128() as i128) >> (65 + sh);
+                // |a|, |b| < 2^68, so the product fits i128 and sign-extends
+                assert_eq!(I256::from_product(a, b), i256_from_i128(a * b), "{a} * {b}");
+            }
+            // extremes: (-2^127)·(-2^127) = 2^254, (-2^127)·(2^127-1)
+            assert_eq!(
+                I256::from_product(i128::MIN, i128::MIN),
+                I256 {
+                    hi: 1 << 126,
+                    lo: 0
+                }
+            );
+            let p = I256::from_product(i128::MIN, i128::MAX);
+            // -(2^127 · (2^127 - 1)) = -(2^254 - 2^127)
+            assert_eq!(p, neg_mag((1 << 126) - 1, 1 << 127));
+            // carry across the 128-bit boundary
+            let a = I256 { hi: 0, lo: M128 };
+            let one = I256 { hi: 0, lo: 1 };
+            assert_eq!(a.wrapping_add(one), I256 { hi: 1, lo: 0 });
+            // -(2^128) has lo == 0 : the +1 of the negation carries into hi
+            assert_eq!(I256 { hi: 1, lo: 0 }.wrapping_neg(), I256 { hi: -1, lo: 0 });
+            assert_eq!(I256::ZERO.wrapping_neg(), I256::ZERO);
+            // the one value that is its own negation
+            let min = I256 {
+                hi: i128::MIN,
+                lo: 0,
+            };
+            assert_eq!(min.wrapping_neg(), min);
+            // a + (-a) = 0
+            let x = I256 {
+                hi: 12345,
+                lo: 6789,
+            };
+            assert_eq!(x.wrapping_add(x.wrapping_neg()), I256::ZERO);
+        }
+
+        /// Magnitude `q·d + r` as a signed `I256` (negative when `neg`).
+        fn build(q: u128, d: u128, r: u128, neg: bool) -> I256 {
+            let (h, l) = umul_128(q, d);
+            let (h, l) = add_256((h, l), r);
+            if neg {
+                neg_mag(h, l)
+            } else {
+                I256 {
+                    hi: h as i128,
+                    lo: l,
+                }
+            }
+        }
+
+        #[test]
+        fn signed_division_truncates_toward_zero_at_the_i128_boundaries() {
+            let max = i128::MAX as u128; // 2^127 - 1
+            let min_mag = 1u128 << 127; // |i128::MIN|
+            for &d in &[
+                1u128,
+                2,
+                3,
+                1 << 64,
+                (1 << 64) + 7,
+                1 << 127,
+                (1 << 127) + 5,
+                M128,
+            ] {
+                for r in [0, d - 1, d / 2] {
+                    // quotient 2^127 - 1, remainder up to d - 1: trunc keeps it
+                    assert_eq!(
+                        div_trunc_i256_by_u128(build(max, d, r, false), d),
+                        i128::MAX,
+                        "+max d={d} r={r}"
+                    );
+                    assert_eq!(
+                        div_trunc_i256_by_u128(build(max, d, r, true), d),
+                        -i128::MAX,
+                        "-max d={d} r={r}"
+                    );
+                    // quotient magnitude exactly 2^127 on the negative side:
+                    // i128::MIN, no panic, and the remainder is dropped
+                    assert_eq!(
+                        div_trunc_i256_by_u128(build(min_mag, d, r, true), d),
+                        i128::MIN,
+                        "-2^127 d={d} r={r}"
+                    );
+                }
+            }
+            // quotient 0 with a nonzero numerator, both signs
+            assert_eq!(div_trunc_i256_by_u128(i256_from_i128(5), 7), 0);
+            assert_eq!(div_trunc_i256_by_u128(i256_from_i128(-5), 7), 0);
+            // numerator 0, divisor 1
+            assert_eq!(div_trunc_i256_by_u128(I256::ZERO, 1), 0);
+            // numerator in i128 range: matches the builtin `/` (toward zero)
+            let mut r = Rng(0x2468_ace0_1357_9bdf);
+            for _ in 0..20_000 {
+                let n = (r.u128() as i128) >> (r.next() % 120);
+                let d = r.u128_any_len().max(1);
+                if d > i128::MAX as u128 {
+                    continue;
+                }
+                assert_eq!(
+                    div_trunc_i256_by_u128(i256_from_i128(n), d),
+                    n / d as i128,
+                    "{n} / {d}"
+                );
+            }
+            // divisor 1 on the i128 extremes
+            assert_eq!(
+                div_trunc_i256_by_u128(i256_from_i128(i128::MAX), 1),
+                i128::MAX
+            );
+            assert_eq!(
+                div_trunc_i256_by_u128(i256_from_i128(i128::MIN), 1),
+                i128::MIN
+            );
+        }
+
+        #[test]
+        fn a_numerator_beyond_2_pow_191_divides_back_to_the_velocity() {
+            // |W·V| up to 2^64 · 2^127 = 2^191 per term, and a sum of several
+            for &v in &[
+                i128::MAX,
+                i128::MIN,
+                i128::MIN + 1,
+                1i128 << 100,
+                -(1i128 << 126) - 3,
+            ] {
+                for n in 1u64..=20 {
+                    let w = 1u128 << 64;
+                    let mut p = I256::ZERO;
+                    for _ in 0..n {
+                        p = p.wrapping_add(I256::from_product(w as i128, v));
+                    }
+                    let d = u128::from(n) * w;
+                    assert_eq!(div_trunc_i256_by_u128(p, d), v, "v={v} n={n}");
+                }
+            }
+        }
+
+        #[test]
+        fn the_most_negative_numerator_is_handled_as_a_magnitude_of_2_pow_255() {
+            // I256::MIN = -2^255; |.| = 2^255 is representable as unsigned
+            let min = I256 {
+                hi: i128::MIN,
+                lo: 0,
+            };
+            // 2^255 / (2^128 - 1): q = 2^127, remainder 2^127, so the signed
+            // quotient is -2^127 = i128::MIN
+            assert_eq!(div_trunc_i256_by_u128(min, M128), i128::MIN);
+            assert_eq!(
+                udiv_256_by_128(1u128 << 127, 0, M128),
+                (0, 1u128 << 127, 1u128 << 127)
+            );
+        }
     }
 
     #[test]

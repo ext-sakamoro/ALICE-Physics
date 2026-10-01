@@ -601,3 +601,384 @@ fn huge_velocities_reproduce_the_particle_velocity_exactly() {
         }
     }
 }
+
+// ============================================================================
+// 厳密積累積 (項を丸めず 256 bit に足して 1 回だけ割る) の oracle
+//
+// 期待値は実装関数を呼んで作らない 一様場は入力そのもの、2 粒子の平均は
+// i128 の組み込み除算 (0 方向切り捨て)、凸包は入力の min / max
+// ============================================================================
+
+fn raw_of(x: Fix128) -> i128 {
+    (i128::from(x.hi) << 64) | i128::from(x.lo)
+}
+
+fn from_raw(r: i128) -> Fix128 {
+    Fix128 {
+        hi: (r >> 64) as i64,
+        lo: r as u64,
+    }
+}
+
+fn ulp(n: i64) -> Fix128 {
+    from_raw(i128::from(n))
+}
+
+struct XorShift(u64);
+
+impl XorShift {
+    fn next(&mut self) -> u64 {
+        let mut x = self.0;
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        self.0 = x;
+        x
+    }
+    /// [lo, hi) の位置 (raw の下位 64 bit が全域で動く非 dyadic)
+    fn pos(&mut self, lo: i64, hi: i64) -> Fix128 {
+        let span = (hi - lo) as u64;
+        Fix128 {
+            hi: lo + (self.next() % span) as i64,
+            lo: self.next(),
+        }
+    }
+    fn raw128(&mut self) -> i128 {
+        (i128::from(self.next()) << 64) | i128::from(self.next())
+    }
+}
+
+const SENT1: i128 = 0x1234_5678_9abc_def0_1357_9bdf_0246_8ace;
+const SENT2: i128 = -0x0fed_cba9_8765_4321_0246_8ace_1357_9bdf;
+
+fn filled(n: usize, s: i128) -> MacGrid {
+    let mut g = MacGrid::new(n, n, n, Fix128::ONE);
+    let s = from_raw(s);
+    g.u.iter_mut().for_each(|x| *x = s);
+    g.v.iter_mut().for_each(|x| *x = s);
+    g.w.iter_mut().for_each(|x| *x = s);
+    g
+}
+
+/// 粒子が届かない face は sentinel のまま 届いた face は初期値に依らず同じ値
+/// なので sentinel を 2 通りで走らせ、両方で sentinel のままの face だけを
+/// 未到達とみなす (届いたのに誤値の face は両 sentinel のどちらでもない)
+fn run_with_sentinels(n: usize, ps: &[(Vec3Fix, Vec3Fix)]) -> (MacGrid, Vec<bool>) {
+    let mut g1 = filled(n, SENT1);
+    let mut g2 = filled(n, SENT2);
+    p2g_normalized(&mut g1, ps);
+    p2g_normalized(&mut g2, ps);
+    let mut reached = Vec::new();
+    for (a, b) in [(&g1.u, &g2.u), (&g1.v, &g2.v), (&g1.w, &g2.w)] {
+        for (x, y) in a.iter().zip(b.iter()) {
+            reached.push(!(raw_of(*x) == SENT1 && raw_of(*y) == SENT2));
+        }
+    }
+    (g1, reached)
+}
+
+/// 到達した face の全部が成分ごとの `want` と bit 一致 かつ 1 face 以上届く
+fn assert_uniform(n: usize, ps: &[(Vec3Fix, Vec3Fix)], want: Vec3Fix, what: &str) {
+    let (g, reached) = run_with_sentinels(n, ps);
+    let mut hit = 0usize;
+    let mut idx = 0usize;
+    for (comp, arr, w) in [
+        ("u", &g.u, want.x),
+        ("v", &g.v, want.y),
+        ("w", &g.w, want.z),
+    ] {
+        for (i, x) in arr.iter().enumerate() {
+            if reached[idx] {
+                hit += 1;
+                assert_eq!(
+                    raw_of(*x),
+                    raw_of(w),
+                    "{what}: {comp}[{i}] raw {} != {}",
+                    raw_of(*x),
+                    raw_of(w)
+                );
+            }
+            idx += 1;
+        }
+    }
+    assert!(hit > 0, "{what}: no face reached");
+}
+
+fn x_speeds() -> Vec<(&'static str, Fix128)> {
+    vec![
+        ("i64::MAX", Fix128::from_int(i64::MAX)),
+        ("i64::MIN", Fix128::from_int(i64::MIN)),
+        (
+            "raw max",
+            Fix128 {
+                hi: i64::MAX,
+                lo: u64::MAX,
+            },
+        ),
+        ("1/3", q(1, 3)),
+        ("-7/10", q(-7, 10)),
+        ("1 ulp", ulp(1)),
+        ("-1 ulp", ulp(-1)),
+        ("2^61", Fix128::from_int(1 << 61)),
+        ("-5/2", q(-5, 2)),
+    ]
+}
+
+#[test]
+fn x1_a_uniform_velocity_is_exact_at_any_position_and_any_count() {
+    let mut rng = XorShift(0x9e37_79b9_7f4a_7c15);
+    for (name, s) in x_speeds() {
+        let input = v3(s, s, s);
+        // 同一点 n = 1..16
+        for n in 1..=16usize {
+            let p = v3(rng.pos(0, 5), rng.pos(0, 5), rng.pos(0, 5));
+            let ps: Vec<_> = (0..n).map(|_| (p, input)).collect();
+            assert_uniform(6, &ps, input, &format!("{name} same point n={n}"));
+        }
+        // 非 dyadic の乱数位置 多数
+        let ps: Vec<_> = (0..300)
+            .map(|_| (v3(rng.pos(0, 5), rng.pos(0, 5), rng.pos(0, 5)), input))
+            .collect();
+        assert_uniform(6, &ps, input, &format!("{name} scattered"));
+    }
+}
+
+#[test]
+fn x2_a_single_particle_gives_its_velocity_even_where_the_weight_is_one_ulp() {
+    // 重み raw = 2^k の face (k = 0..=56) と v = ±1, ±1000 ulp
+    for k in 0..=56u32 {
+        let e = from_raw(1i128 << k);
+        let coords = [
+            Fix128::from_int(2) + e,
+            Fix128::from_int(2) - e,
+            q(5, 2) + e,
+            q(5, 2) - e,
+        ];
+        for &vv in &[1i64, -1, 1000, -1000] {
+            let s = ulp(vv);
+            for &cx in &coords {
+                for &cy in &coords {
+                    for &cz in &coords {
+                        assert_uniform(
+                            5,
+                            &[(v3(cx, cy, cz), v3(s, -s, s))],
+                            v3(s, -s, s),
+                            &format!("k={k} v={vv} ulp"),
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn x3_the_wrap_region_returns_the_particle_velocity_on_every_reached_face() {
+    let speeds = [
+        ("2^60", Fix128::from_int(1 << 60)),
+        ("2^61", Fix128::from_int(1 << 61)),
+        ("2^62", Fix128::from_int(1 << 62)),
+        ("i64::MAX", Fix128::from_int(i64::MAX)),
+        ("i64::MIN", Fix128::from_int(i64::MIN)),
+    ];
+    // 各 face に重み 0.5 ずつ届く配置 (従来の閾値の測定と同じ)
+    let p = v3(q(5, 2), q(5, 2), q(5, 2));
+    for (name, s) in speeds {
+        for n in 1..=10usize {
+            let ps: Vec<_> = (0..n).map(|_| (p, v3(s, s, s))).collect();
+            assert_uniform(5, &ps, v3(s, s, s), &format!("{name} n={n}"));
+        }
+    }
+}
+
+#[test]
+fn x4_negating_every_velocity_negates_every_face_bit_for_bit() {
+    let mut rng = XorShift(0x2545_f491_4f6c_dd1d);
+    for round in 0..40 {
+        let n = 1 + (rng.next() % 40) as usize;
+        let mut ps = Vec::new();
+        let mut ngs = Vec::new();
+        for _ in 0..n {
+            let p = v3(rng.pos(0, 5), rng.pos(0, 5), rng.pos(0, 5));
+            // 全域の raw (i128::MIN は避ける) を、大きさもばらして
+            let sh = (rng.next() % 100) as u32;
+            let mk = |r: &mut XorShift| {
+                let x = r.raw128() >> sh;
+                if x == i128::MIN {
+                    0
+                } else {
+                    x
+                }
+            };
+            let (a, b, c) = (mk(&mut rng), mk(&mut rng), mk(&mut rng));
+            ps.push((p, v3(from_raw(a), from_raw(b), from_raw(c))));
+            ngs.push((p, v3(from_raw(-a), from_raw(-b), from_raw(-c))));
+        }
+        let mut g = MacGrid::new(6, 6, 6, Fix128::ONE);
+        let mut h = MacGrid::new(6, 6, 6, Fix128::ONE);
+        p2g_normalized(&mut g, &ps);
+        p2g_normalized(&mut h, &ngs);
+        for (comp, a, b) in [("u", &g.u, &h.u), ("v", &g.v, &h.v), ("w", &g.w, &h.w)] {
+            for (i, (x, y)) in a.iter().zip(b).enumerate() {
+                assert_eq!(
+                    raw_of(*x),
+                    -raw_of(*y),
+                    "round {round}: {comp}[{i}] not antisymmetric"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn x5_the_result_does_not_depend_on_the_particle_order() {
+    let mut rng = XorShift(0x1234_5678_dead_beef);
+    let ps: Vec<_> = (0..200)
+        .map(|_| {
+            let sh = (rng.next() % 90) as u32;
+            let c = |r: &mut XorShift| from_raw(r.raw128() >> sh);
+            (
+                v3(rng.pos(0, 5), rng.pos(0, 5), rng.pos(0, 5)),
+                v3(c(&mut rng), c(&mut rng), c(&mut rng)),
+            )
+        })
+        .collect();
+    let mut base = MacGrid::new(6, 6, 6, Fix128::ONE);
+    p2g_normalized(&mut base, &ps);
+    let mut rev = ps.clone();
+    rev.reverse();
+    let mut shuf = ps.clone();
+    for i in (1..shuf.len()).rev() {
+        let j = (rng.next() % (i as u64 + 1)) as usize;
+        shuf.swap(i, j);
+    }
+    for (name, order) in [("reverse", rev), ("shuffle", shuf)] {
+        let mut g = MacGrid::new(6, 6, 6, Fix128::ONE);
+        p2g_normalized(&mut g, &order);
+        assert_eq!(g.u, base.u, "{name}: u");
+        assert_eq!(g.v, base.v, "{name}: v");
+        assert_eq!(g.w, base.w, "{name}: w");
+    }
+}
+
+#[test]
+fn x6_every_face_stays_inside_the_min_max_of_the_particle_velocities() {
+    let mut rng = XorShift(0xabcd_ef01_2345_6789);
+    for round in 0..30 {
+        let n = 2 + (rng.next() % 60) as usize;
+        let sh = (rng.next() % 100) as u32;
+        let ps: Vec<_> = (0..n)
+            .map(|_| {
+                let c = |r: &mut XorShift| from_raw(r.raw128() >> sh);
+                (
+                    v3(rng.pos(0, 5), rng.pos(0, 5), rng.pos(0, 5)),
+                    v3(c(&mut rng), c(&mut rng), c(&mut rng)),
+                )
+            })
+            .collect();
+        let (g, reached) = run_with_sentinels(6, &ps);
+        let range = |f: fn(&Vec3Fix) -> Fix128| {
+            let all: Vec<i128> = ps.iter().map(|p| raw_of(f(&p.1))).collect();
+            (*all.iter().min().unwrap(), *all.iter().max().unwrap())
+        };
+        let ranges = [range(|v| v.x), range(|v| v.y), range(|v| v.z)];
+        let mut idx = 0;
+        for (c, arr) in [&g.u, &g.v, &g.w].into_iter().enumerate() {
+            for (i, x) in arr.iter().enumerate() {
+                if reached[idx] {
+                    let r = raw_of(*x);
+                    assert!(
+                        r >= ranges[c].0 && r <= ranges[c].1,
+                        "round {round}: comp {c} face {i} raw {r} outside [{}, {}]",
+                        ranges[c].0,
+                        ranges[c].1
+                    );
+                }
+                idx += 1;
+            }
+        }
+    }
+}
+
+#[test]
+fn x7_two_particles_give_the_exact_weighted_mean_truncated_toward_zero() {
+    // A は軸方向に 2.5 (面 2 に 1/2, 面 3 に 1/2)、B は 2.25 (3/4, 1/4)
+    // 面 2: (a/2 + 3b/4) / (5/4) = (2a + 3b) / 5
+    // 面 3: (a/2 + b/4)  / (3/4) = (2a + b) / 3
+    // 期待値は i128 の組み込み除算 (0 方向切り捨て)
+    let mut rng = XorShift(0x0f0f_1234_5678_9abc);
+    for round in 0..200 {
+        let sh = 4 + (rng.next() % 4) as u32;
+        let a = rng.raw128() >> (sh + 1);
+        let b = rng.raw128() >> (sh + 1);
+        for axis in 0..3 {
+            let pa = [q(5, 2), q(5, 2), q(5, 2)];
+            let mut pb = pa;
+            pb[axis] = q(9, 4);
+            let vel_of = |r: i128| v3(from_raw(r), from_raw(r), from_raw(r));
+            let ps = [
+                (v3(pa[0], pa[1], pa[2]), vel_of(a)),
+                (v3(pb[0], pb[1], pb[2]), vel_of(b)),
+            ];
+            let mut g = MacGrid::new(5, 5, 5, Fix128::ONE);
+            p2g_normalized(&mut g, &ps);
+            let (f2, f3) = match axis {
+                0 => (g.u(2, 2, 2), g.u(3, 2, 2)),
+                1 => (g.v(2, 2, 2), g.v(2, 3, 2)),
+                _ => (g.w(2, 2, 2), g.w(2, 2, 3)),
+            };
+            assert_eq!(
+                raw_of(f2),
+                (2 * a + 3 * b) / 5,
+                "round {round} axis {axis} face 2"
+            );
+            assert_eq!(
+                raw_of(f3),
+                (2 * a + b) / 3,
+                "round {round} axis {axis} face 3"
+            );
+        }
+    }
+}
+
+#[test]
+fn x10_degenerate_inputs_keep_their_bits_or_their_value() {
+    let mut rng = XorShift(0x77);
+    let sent = SENT1;
+    let all_sent = |g: &MacGrid| {
+        g.u.iter()
+            .chain(&g.v)
+            .chain(&g.w)
+            .all(|x| raw_of(*x) == sent)
+    };
+    let s = Fix128::from_int(i64::MAX);
+    let big = v3(s, s, s);
+    // 粒子 0 個
+    let mut g = filled(4, sent);
+    p2g_normalized(&mut g, &[]);
+    assert!(all_sent(&g));
+    // 1 軸だけ負の座標 3 通り
+    for axis in 0..3 {
+        let mut p = [q(3, 2), q(3, 2), q(3, 2)];
+        p[axis] = ulp(-1);
+        let mut g = filled(4, sent);
+        p2g_normalized(&mut g, &[(v3(p[0], p[1], p[2]), big)]);
+        assert!(all_sent(&g), "axis {axis}");
+    }
+    // 領域のはるか外
+    let mut g = filled(4, sent);
+    p2g_normalized(
+        &mut g,
+        &[(v3(Fix128::from_int(1000), q(3, 2), q(3, 2)), big)],
+    );
+    assert!(all_sent(&g));
+    // dx = 0
+    let mut g = MacGrid::new(4, 4, 4, Fix128::ZERO);
+    g.u.iter_mut().for_each(|x| *x = from_raw(sent));
+    p2g_normalized(&mut g, &[(v3(q(3, 2), q(3, 2), q(3, 2)), big)]);
+    assert!(g.u.iter().all(|x| raw_of(*x) == sent));
+    // 巨大 N の全粒子同一点 (届いた face は粒子速度そのもの)
+    let p = v3(rng.pos(1, 3), rng.pos(1, 3), rng.pos(1, 3));
+    let ps: Vec<_> = (0..20_000).map(|_| (p, big)).collect();
+    assert_uniform(4, &ps, big, "N=20000 same point");
+}

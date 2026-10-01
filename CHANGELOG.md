@@ -13,6 +13,20 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Fixed / Changed — `p2g_normalized` が項を丸めずに厳密積を累積する (wrap と丸め増幅の解消、通常域の bit が変わる)
+
+`eulerian_grid::p2g_normalized` の face 値を `Σ wᵢ·vᵢ ÷ Σ wᵢ` の厳密な整数計算にした 各項は `weight` と `v` の raw 同士の 256 bit 厳密積 (`Fix128::mul` の 64 bit 切り捨てなし)、分子は符号付き 256 bit の和、分母は u128 の重み和で、256 ÷ 128 の除算を 1 回だけ行い 0 方向に切り捨てる 公開 signature は不変で、公開 API の追加は無い (内部は private な `FaceSink` trait と 256 bit 整数 helper)
+stencil と重みの式は `deposit_{u,v,w}_trilinear` の 1 箇所のまま、累積先だけを trait で差し替えている (分子と分母は同じ重みから作られるので別々にずれない) `p2g_trilinear` と既存の呼び出しの挙動は不変
+
+実測した旧挙動 (debug、`sakamoro-ff` との相談で測定):
+- wrap: 1 face の `Σ w·v` が 2^63 に達すると mod 2^128 で wrap し、同一点の n 粒子で v=2^61 は n=8、v=2^62 は n=4、`i64::MAX` は n=3 で到達 face 全部が誤値になった
+- 丸め増幅: 項を `Fix128::mul` で丸めてから小さい Σw で割るため誤差が約 1 ulp / Σw になった 重み raw=1・v=−1 ulp で face が −1.0 (粒子は −2^-64)、v=+1 ulp で 0 (符号非対称) 通常域 (単一粒子、非 dyadic の乱数位置) でも誤差のある face が半分から全部、平均 171 から 1062 ulp、最悪 5.7e7 ulp (約 3e-12) で、face が粒子速度の [min, max] の外に出ることがあった
+
+修正後の性質 (すべて `tests/analytic_p2g.rs` の oracle で bit 一致を固定): 一様場は任意の v と位置で face = v ちょうど / 単一粒子は重み raw=1 の face でも face = 粒子速度 / 全速度の反転で face も bit 単位で反転 / 粒子順に依らない / face は到達粒子の速度の [min, max] の内側 / 2 粒子の加重平均は i128 の組み込み除算と一致
+⚠️ 丸めが起きていた通常域の入力では出力の bit が変わる (真の平均に近づく方向) dyadic で厳密だった既存の 17 + 18 の oracle と determinism golden は期待値を変えずに通る
+`step_flip` の定義域 (FLIP 差分が 2^62 前後、圧力右辺が 2^47 前後で wrap) は別件で、この変更では変わらない
+性能 (release、粒子 8 個 / cell で実測): `p2g_normalized` は 16³ で 38 ms から 25 ms、32³ で 307 ms から 200 ms、`step_flip` は 16³ で 78 ms から 64 ms と**速くなった** (旧実装は分子と分母のために重みの scatter を 2 回行っていたが、新実装は 1 回で両方を累積する 256 ÷ 128 の除算は face あたり最大 256 step で、支配的ではない)
+
 ### Added — 小ひずみ J2 弾塑性 FEM (`linear_elastic_fem::solve_elastoplastic`)
 
 P1 四面体に von Mises 降伏 + 等方硬化 (bilinear、`H = dσ_y/dε̄_p`) の弾塑性を入れた 要素ごとの塑性ひずみ `ε_p` と相当塑性ひずみ `ε̄_p` を持ち、弾性予測子 + radial return を residual に組み込み、増分荷重 (`load_path` の荷重係数列、除荷を含められる) を Newton で解く 接線は return mapping の consistent tangent (弾性剛性ではない) で、各線形系は `solve` と同じ CG を使う
