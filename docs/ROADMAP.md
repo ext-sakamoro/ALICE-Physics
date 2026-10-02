@@ -16,6 +16,10 @@ Memory index pointer: `[[reference-alice-physics-v1-roadmap]]` in claude-config.
 | Maxwell FDTD | `ecd8c61` | source-free Yee、⚠️ **SI は `ε₀·μ₀` が 7.7 bit で不可**、正規化単位 + `S=9/16` |
 | 多体 ABA | `1bab99b` | ⚠️ **`solve()` が `link.joint` を読まない**状態から real ABA、oracle 12 本 |
 
+### 第 33 increment (2026-10-03、全配線 program 第 6 件 — `PhysicsWorld` API 44 本 / `multiphase` VOF・level-set / 構造 4 module の `allow(dead_code)` 撤去)
+
+`solver.rs` の 44 本を `examples/world_api_tour.rs` + oracle 32 本で配線 (`wake_body` の範囲外 index を無視に) `multiphase::advect_vof_rigid` + `VofScheme`、`cfd_solver::LevelSetReinit` + `StepOptions::with_level_set_reinit` + `StepError::ZeroReinitCount` (既定は `step` と bit 一致) oracle 21 本 `buckling` / `creep_longterm` / `fatigue` / `plastic` の module 全体 allow を撤去し `CREEP_FROZEN_AT` を凍結 guard に、残余 9 本は負債 marker 変異 red: multiphase 27/28 (生存 1 は `sweeps` の 1 周収束)、構造 19/19、guard 2/2、数式修正 12/12 (退化入力を `Err` にして guard 撤去を red に) baseline 退役 71 行 (実配線 55、名前衝突 10、guard 判定 1、dead_code 5) ⚠️ 数式 2 件を同時に修正: `snap_through_load_n` の 2 乗則 → 3 乗則 (golden 1302 N が誤った法則を pin していた)、`stress_at_cycles` の wrap する Newton → 閉形式 + 範囲 `Err` ⚠️ 残: TGS family (`solver_tgs*`、5 268 行、`pub(crate)`、PhysicsWorld から未接続) の扱いは user 裁定待ち
+
 ### 第 32 increment (2026-10-03、壁 4 — multigrid を rank ごとの別 process で回して実測、段階 4b)
 
 段階 4a の banded driver を、rank ごとの **別 process** (この test binary を再実行、port は親が仲介、rank 同士は loopback socket) で回す harness を足した 各 process は `MacGrid` を持たず、seed の式から自分の faces だけを作り、自分が書いた field (圧力と face 速度) の order-independent な畳み込みを出力する 全 rank の畳み込みの和が単一 process の解のそれと一致する (index 重みつきなので値の位置違いも別の値になる)
