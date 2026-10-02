@@ -62,12 +62,8 @@ pub(crate) const KE_C_MU: Fix128 = Fix128 {
                             // wall-model oracle on `k = u_τ²/√C_μ`; the unit test below tolerated 1e-2)
 };
 /// k-ε turbulent Prandtl number for k (crate-internal).
-// ALLOW-DEAD: RANS transport constant awaits the k-ε / k-ω step (wiring program item 4)
-#[allow(dead_code)]
 pub(crate) const KE_SIGMA_K: Fix128 = Fix128::ONE;
 /// k-ε turbulent Prandtl number for ε (≈ 1.3, crate-internal).
-// ALLOW-DEAD: RANS transport constant awaits the k-ε / k-ω step (wiring program item 4)
-#[allow(dead_code)]
 pub(crate) const KE_SIGMA_EPS: Fix128 = Fix128 {
     hi: 1,
     lo: 0x4CCC_CCCC_CCCC_CCCD,
@@ -86,12 +82,18 @@ pub(crate) const KE_C2_EPS: Fix128 = Fix128 {
 /// k-ω model constant β* (= 0.09, crate-internal).
 pub(crate) const KW_BETA_STAR: Fix128 = KE_C_MU;
 /// k-ω model constant β (= 3/40 = 0.075, crate-internal).
-// ALLOW-DEAD: RANS transport constant awaits the k-ε / k-ω step (wiring program item 4)
-#[allow(dead_code)]
 pub(crate) const KW_BETA: Fix128 = Fix128 {
     hi: 0,
     lo: 0x1333_3333_3333_3333,
 };
+/// k-ω model constant α (= 5/9, Wilcox 1988, crate-internal): the production
+/// coefficient of the ω equation, `dω/dt = α (ω/k) P_k − β ω²`.
+pub(crate) const KW_ALPHA: Fix128 = Fix128 {
+    hi: 0,
+    lo: 0x8E38_E38E_38E3_8E38,
+};
+/// k-ω turbulent Prandtl numbers σ_k = σ_ω = 2 (Wilcox 1988, crate-internal).
+pub(crate) const KW_SIGMA: Fix128 = Fix128::from_int(2);
 
 // ============================================================================
 // Smagorinsky
@@ -103,7 +105,19 @@ pub(crate) const KW_BETA: Fix128 = Fix128 {
 /// - `strain_rate_magnitude`: `|S̄| = √(2·S_ij·S_ij)`.
 #[must_use]
 pub fn smagorinsky_eddy_viscosity(filter_width_m: Fix128, strain_rate_magnitude: Fix128) -> Fix128 {
-    let cs_delta = SMAGORINSKY_CS * filter_width_m;
+    smagorinsky_eddy_viscosity_with(SMAGORINSKY_CS, filter_width_m, strain_rate_magnitude)
+}
+
+/// [`smagorinsky_eddy_viscosity`] with the coefficient `cs` supplied, for the
+/// dynamic procedure ([`dynamic_smagorinsky_cs`]); with `SMAGORINSKY_CS` it
+/// is the static form bit for bit.
+#[must_use]
+pub(crate) fn smagorinsky_eddy_viscosity_with(
+    cs: Fix128,
+    filter_width_m: Fix128,
+    strain_rate_magnitude: Fix128,
+) -> Fix128 {
+    let cs_delta = cs * filter_width_m;
     cs_delta * cs_delta * strain_rate_magnitude
 }
 
@@ -127,9 +141,8 @@ pub fn strain_rate_magnitude(
 // k-ε
 // ============================================================================
 
-/// k-ε turbulence state at a single point (crate-internal, not yet wired to CFD solver).
-// ALLOW-DEAD: k-ε transport state awaits the RANS step (wiring program item 4)
-#[allow(dead_code)]
+/// k-ε turbulence state at a single point (crate-internal; the RANS step of
+/// `cfd_solver` holds one per cell).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub(crate) struct KEpsilonState {
     /// Turbulent kinetic energy `k` (m²/s²).
@@ -138,8 +151,6 @@ pub(crate) struct KEpsilonState {
     pub(crate) epsilon: Fix128,
 }
 
-// ALLOW-DEAD: k-ε transport awaits the RANS step (wiring program item 4)
-#[allow(dead_code)]
 impl KEpsilonState {
     /// Eddy viscosity `ν_t = C_μ · k² / ε` (m²/s).
     #[must_use]
@@ -181,7 +192,8 @@ impl KEpsilonState {
 // k-ω
 // ============================================================================
 
-/// k-ω turbulence state at a single point (crate-internal, not yet wired to CFD solver).
+/// k-ω turbulence state at a single point (crate-internal; the RANS step of
+/// `cfd_solver` converts each cell from and back to its `(k, ε)` storage).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub(crate) struct KOmegaState {
     /// Turbulent kinetic energy `k` (m²/s²).
@@ -190,8 +202,6 @@ pub(crate) struct KOmegaState {
     pub(crate) omega: Fix128,
 }
 
-// ALLOW-DEAD: k-ω transport awaits the RANS step (wiring program item 4)
-#[allow(dead_code)]
 impl KOmegaState {
     /// Eddy viscosity `ν_t = k / ω` (m²/s).
     #[must_use]
@@ -212,6 +222,41 @@ impl KOmegaState {
         };
         Self { k: state.k, omega }
     }
+
+    /// Convert back to k-ε via `ε = β* · k · ω`.
+    #[must_use]
+    pub(crate) fn to_k_epsilon(self) -> KEpsilonState {
+        KEpsilonState {
+            k: self.k,
+            epsilon: KW_BETA_STAR * self.k * self.omega,
+        }
+    }
+
+    /// One explicit Euler step of the Wilcox (1988) point model with
+    /// production `P_k` (m²/s³), no diffusion or convection:
+    ///
+    /// `dk/dt = P_k − β* k ω`, `dω/dt = α (ω/k) P_k − β ω²`
+    ///
+    /// Both use the values at the start of the step. A negative result is
+    /// clamped to zero, as the k-ε point model does; `k = 0` leaves `ω`
+    /// without a production term (the `ω/k` factor is taken as zero).
+    pub(crate) fn advance(&mut self, production_k: Fix128, dt_s: Fix128) {
+        let (k, w) = (self.k, self.omega);
+        let dk = production_k - KW_BETA_STAR * k * w;
+        let dw = if k.is_zero() {
+            Fix128::ZERO - KW_BETA * w * w
+        } else {
+            KW_ALPHA * (w / k) * production_k - KW_BETA * w * w
+        };
+        self.k = k + dk * dt_s;
+        if self.k < Fix128::ZERO {
+            self.k = Fix128::ZERO;
+        }
+        self.omega = w + dw * dt_s;
+        if self.omega < Fix128::ZERO {
+            self.omega = Fix128::ZERO;
+        }
+    }
 }
 
 // ============================================================================
@@ -231,8 +276,6 @@ impl KOmegaState {
 /// `C_s² = ⟨L·M⟩ / (2·⟨M·M⟩ + ε)` where `L` and `M` are the Leonard /
 /// mixed tensors; here we approximate the isotropic invariants.
 #[must_use]
-// ALLOW-DEAD: dynamic Smagorinsky coefficient awaits a test-filtered strain (wiring program item 4)
-#[allow(dead_code)]
 pub(crate) fn dynamic_smagorinsky_cs(strain_grid: Fix128, strain_test: Fix128) -> Fix128 {
     let min_cs = Fix128::from_ratio(5, 100);
     let max_cs = Fix128::from_ratio(25, 100);
