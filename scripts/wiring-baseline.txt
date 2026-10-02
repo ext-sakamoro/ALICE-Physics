@@ -131,8 +131,6 @@ unwired src/ccd.rs::needs_ccd
 unwired src/ccd.rs::speculative_contact
 unwired src/ccd.rs::sphere_capsule_toi
 unwired src/ccd.rs::swept_aabb
-unwired src/cfd_solver.rs::compute_max_dt
-unwired src/cfd_solver.rs::step_adaptive
 unwired src/character.rs::PushImpulse
 unwired src/character.rs::apply_gravity
 unwired src/character.rs::compute_push_impulses
@@ -279,16 +277,10 @@ unwired src/eulerian_grid.rs::bytes
 unwired src/eulerian_grid.rs::enforce_slab_face_boundaries
 unwired src/eulerian_grid.rs::enforce_slab_face_boundaries_on_rank
 unwired src/eulerian_grid.rs::enforce_slab_face_boundaries_over
-unwired src/eulerian_grid.rs::enforce_solid_faces
 unwired src/eulerian_grid.rs::is_drained
-unwired src/eulerian_grid.rs::no_slip_velocity
-unwired src/eulerian_grid.rs::p2g_nearest
 unwired src/eulerian_grid.rs::project_pressure_decomposed_on_rank
 unwired src/eulerian_grid.rs::project_pressure_slab_local_on_rank
-unwired src/eulerian_grid.rs::set_closed_box_walls
 unwired src/eulerian_grid.rs::set_u
-unwired src/eulerian_grid.rs::set_u_bc
-unwired src/eulerian_grid.rs::set_u_solid
 unwired src/eulerian_grid.rs::set_v
 unwired src/eulerian_grid.rs::set_v_solid
 unwired src/eulerian_grid.rs::set_w
