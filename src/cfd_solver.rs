@@ -29,10 +29,11 @@
 //! `step_multigrid(dt, 0)` keeps the Gauss-Seidel projection on any grid.
 
 use crate::eulerian_grid::{
-    g2p_velocity, p2g_normalized, project_pressure, project_pressure_banded,
+    g2p_velocity, p2g_normalized_with, project_pressure, project_pressure_banded,
     project_pressure_bicgstab, project_pressure_decomposed, project_pressure_jacobi,
     project_pressure_multigrid, sample_u_range, sample_u_trilinear, sample_v_range,
     sample_v_trilinear, sample_w_range, sample_w_trilinear, BicgstabStats, HaloSchedule, MacGrid,
+    ParticleScatter,
 };
 use crate::interface_capture::fast_sweeping_reinit;
 use crate::math::{Fix128, Vec3Fix};
@@ -525,14 +526,27 @@ impl CfdSolver {
     /// dt_max = cfl_target · dx / |u|_max
     /// ```
     ///
-    /// Returns `Fix128::from_int(large_value)` if the velocity field is
-    /// effectively zero (no CFL constraint), giving callers a
-    /// well-defined upper bound to compare against a scheme-specific
-    /// diffusion cap. `cfl_target` should typically be in `[0.5, 1.0]`
-    /// for semi-Lagrangian and higher for BFECC / MacCormack when
-    /// paired with a monotone clamp.
+    /// The result is capped at [`Self::MAX_DT_CAP`] (`1_000_000` s): a field
+    /// that is exactly zero has no Courant constraint, and a field so slow
+    /// that `cfl_target · dx / |u|_max` would exceed the cap is reported as
+    /// the cap rather than as that quotient. The cap is what keeps the
+    /// division inside `Fix128`: a peak of a few ulp with `dx` of order one
+    /// would otherwise wrap the quotient into a wrong, possibly negative,
+    /// time step. `cfl_target` should typically be in `[0.5, 1.0]` for
+    /// semi-Lagrangian and higher for BFECC / MacCormack when paired with a
+    /// monotone clamp.
+    ///
+    /// # Degenerate input
+    ///
+    /// `cfl_target <= 0` or `dx = 0` give **zero**: there is no positive time
+    /// step that satisfies a non-positive Courant number, and a grid without
+    /// spacing has no Courant number at all. [`Self::step_adaptive`] then
+    /// takes no step.
     #[must_use]
     pub fn compute_max_dt(&self, cfl_target: Fix128) -> Fix128 {
+        if cfl_target <= Fix128::ZERO || self.grid.dx.is_zero() {
+            return Fix128::ZERO;
+        }
         let peak = self
             .grid
             .u
@@ -547,22 +561,49 @@ impl CfdSolver {
                     acc
                 }
             });
-        if peak.is_zero() {
-            return Fix128::from_int(1_000_000);
+        let numerator = cfl_target * self.grid.dx;
+        // `cfl · dx / peak > cap` ⇔ `peak · cap < cfl · dx`. The product is
+        // checked so that a peak large enough to wrap it (which would need
+        // |u| ≳ 9e12 m/s) is read as "no cap", not as a wrapped small number.
+        let capped = match peak.checked_mul(Self::MAX_DT_CAP) {
+            None => false,
+            Some(scaled) => scaled < numerator,
+        };
+        if peak.is_zero() || capped {
+            return Self::MAX_DT_CAP;
         }
-        cfl_target * self.grid.dx / peak
+        numerator / peak
     }
+
+    /// Largest time step [`Self::compute_max_dt`] reports: `1_000_000` s.
+    pub const MAX_DT_CAP: Fix128 = Fix128 {
+        hi: 1_000_000,
+        lo: 0,
+    };
 
     /// Convenience — step with an automatically chosen `dt` from
     /// [`Self::compute_max_dt`], capped by `dt_ceiling`.
     ///
     /// Useful in engineering demos where the simulation should adapt
     /// to fast transients without the caller re-computing `dt` on each
-    /// tick. Returns the `dt` that was actually integrated.
+    /// tick. Returns the `dt` that was actually integrated, which is
+    /// `min(compute_max_dt(cfl_target), dt_ceiling)`; the step taken is
+    /// [`Self::step`] with that `dt`, bit for bit.
+    ///
+    /// # Degenerate input
+    ///
+    /// When that minimum is not positive — `dt_ceiling <= 0`, or
+    /// [`Self::compute_max_dt`] returned zero — no step is taken, the solver
+    /// is left untouched (including `step_count`) and `0` is returned. A
+    /// negative time step would integrate the fluid backwards, which is never
+    /// what an adaptive caller asked for.
     pub fn step_adaptive(&mut self, cfl_target: Fix128, dt_ceiling: Fix128) -> Fix128 {
         let mut dt = self.compute_max_dt(cfl_target);
         if dt > dt_ceiling {
             dt = dt_ceiling;
+        }
+        if dt <= Fix128::ZERO {
+            return Fix128::ZERO;
         }
         self.step(dt);
         dt
@@ -876,12 +917,36 @@ impl CfdSolver {
     /// zero dimension, a zero density, or a `flip_ratio` outside `[0, 1]`. A
     /// particle with any coordinate outside `[0, N dx]` takes no part in the
     /// transfer and is left bit-identical; one on the boundary does take part.
-    // ALLOW-UNWIRED: public FLIP/PIC entry point for downstream solvers
+    ///
+    /// The particle-to-grid transfer is the trilinear one; [`Self::step_flip_with`]
+    /// lets the caller pick the stencil.
     pub fn step_flip(
         &mut self,
         particles: &mut [(Vec3Fix, Vec3Fix)],
         dt_s: Fix128,
         flip_ratio: Fix128,
+    ) {
+        self.step_flip_with(particles, dt_s, flip_ratio, ParticleScatter::Trilinear);
+    }
+
+    /// [`Self::step_flip`] with the particle-to-grid stencil chosen by
+    /// `scatter`.
+    ///
+    /// Only step 1 changes: the transfer is
+    /// [`crate::eulerian_grid::p2g_normalized_with`] with the given
+    /// [`ParticleScatter`]. The grid-to-particle interpolation of step 4 is
+    /// trilinear for both, so with [`ParticleScatter::Nearest`] the particle
+    /// velocities are still read off a smooth field; what changes is that the
+    /// field no longer depends on where inside its cell each particle sits.
+    /// Everything else, including every refusal above, is identical, and
+    /// [`ParticleScatter::Trilinear`] reproduces [`Self::step_flip`] bit for
+    /// bit.
+    pub fn step_flip_with(
+        &mut self,
+        particles: &mut [(Vec3Fix, Vec3Fix)],
+        dt_s: Fix128,
+        flip_ratio: Fix128,
+        scatter: ParticleScatter,
     ) {
         let g = &self.grid;
         if particles.is_empty()
@@ -920,7 +985,7 @@ impl CfdSolver {
         self.grid.u.fill(Fix128::ZERO);
         self.grid.v.fill(Fix128::ZERO);
         self.grid.w.fill(Fix128::ZERO);
-        p2g_normalized(&mut self.grid, &cloud);
+        p2g_normalized_with(&mut self.grid, &cloud, scatter);
         self.grid.enforce_face_boundaries();
 
         // 2. velocity as transferred

@@ -286,10 +286,12 @@ fn wall_or_fluid(solid: bool) -> FaceBc {
 /// veto: a half-open gap is not a wall, and a [`FaceBc::SlipWall`] is asking
 /// for the zero-gradient mirror rather than a no-slip ghost.
 fn wall_between(a: Option<FaceBc>, b: Option<FaceBc>) -> Option<Vec3Fix> {
+    // `FaceBc::no_slip_velocity` is the one place that says which conditions
+    // carry a velocity for the ghost: a wall at rest or moving does, a
+    // symmetry plane does not, nothing else does.
     let side = |bc: Option<FaceBc>| match bc {
         None => Some(None),
-        Some(FaceBc::Wall { velocity }) => Some(Some(velocity)),
-        Some(_) => None,
+        Some(bc) => bc.no_slip_velocity().map(Some),
     };
     match (side(a)?, side(b)?) {
         (Some(p), Some(q)) => Some(Vec3Fix::new(
@@ -4458,51 +4460,104 @@ fn deposit_w_trilinear<S: FaceSink>(sink: &mut S, pos_m: Vec3Fix, vz: Fix128) {
 }
 
 /// Particle-to-grid: trilinear scatter of one particle's velocity across
-/// the 8 nearest face nodes for each of u/v/w. Session 3 I2 upgrade;
-/// the earlier `p2g_nearest` implementation is retained below for callers
-/// that need the simpler (less accurate) variant.
-// ALLOW-UNWIRED: the plain (unnormalised) scatter into a `MacGrid`; `p2g_normalized` now scatters into `WideFaces` through `scatter_trilinear`, so this wrapper is kept for the unit tests that pin the raw deposit
-pub(crate) fn p2g_trilinear(grid: &mut MacGrid, pos_m: Vec3Fix, vel_m_per_s: Vec3Fix) {
-    scatter_trilinear(grid, pos_m, vel_m_per_s);
-}
-
-/// The three deposits for one particle, into any [`FaceSink`].
-fn scatter_trilinear<S: FaceSink>(sink: &mut S, pos_m: Vec3Fix, vel_m_per_s: Vec3Fix) {
+/// the 8 nearest face nodes for each of u/v/w, into any [`FaceSink`].
+///
+/// Into a [`MacGrid`] this is the plain (unnormalised) deposit `face +=
+/// weight · v`; into the exact accumulator of [`p2g_normalized_with`] it is
+/// one of the two stencils a caller can choose with
+/// [`ParticleScatter::Trilinear`].
+pub(crate) fn p2g_trilinear<S: FaceSink>(sink: &mut S, pos_m: Vec3Fix, vel_m_per_s: Vec3Fix) {
     deposit_u_trilinear(sink, pos_m, vel_m_per_s.x);
     deposit_v_trilinear(sink, pos_m, vel_m_per_s.y);
     deposit_w_trilinear(sink, pos_m, vel_m_per_s.z);
 }
 
 /// Particle-to-grid: scatter one particle's velocity `vel_m_per_s` at
-/// position `pos_m` onto the closest cell centre (nearest-neighbour).
+/// position `pos_m` onto the six faces of the cell that contains it, half a
+/// weight each, into any [`FaceSink`].
 ///
-/// Trilinear scatter is the "true" P2G but requires a companion weight
-/// grid; this simplified version is sufficient for coarse PIC tests.
-pub(crate) fn p2g_nearest(grid: &mut MacGrid, pos_m: Vec3Fix, vel_m_per_s: Vec3Fix) {
-    if grid.dx.is_zero() {
+/// Into a [`MacGrid`] this is the plain deposit `face += v / 2` on both faces
+/// of the cell along each axis. Into the exact accumulator of
+/// [`p2g_normalized_with`] ([`ParticleScatter::Nearest`]) it makes every
+/// reached face the **mean of the velocities of the particles in the two
+/// cells sharing it**, wherever inside those cells the particles sit.
+///
+/// # Which cell contains the particle
+///
+/// Cell `i` along an axis is `[i dx, (i + 1) dx)`, except that a particle
+/// exactly on the far face `N dx` belongs to the last cell, so the closed
+/// box `[0, N dx]` of [`crate::cfd_solver::CfdSolver::step_flip`] is covered
+/// without a gap. A particle with a negative coordinate, or one beyond
+/// `N dx`, or one whose coordinate over `dx` does not fit `Fix128`,
+/// contributes nothing: this scatter never clamps a stray into the domain.
+pub(crate) fn p2g_nearest<S: FaceSink>(sink: &mut S, pos_m: Vec3Fix, vel_m_per_s: Vec3Fix) {
+    let shape = sink.shape();
+    if shape.dx.is_zero() {
         return;
     }
-    let inv_dx = Fix128::ONE / grid.dx;
-    let ix = (pos_m.x * inv_dx).hi.max(0) as usize;
-    let iy = (pos_m.y * inv_dx).hi.max(0) as usize;
-    let iz = (pos_m.z * inv_dx).hi.max(0) as usize;
-    if ix >= grid.nx || iy >= grid.ny || iz >= grid.nz {
+    let inv_dx = Fix128::ONE / shape.dx;
+    let (Some(ix), Some(iy), Some(iz)) = (
+        nearest_cell(pos_m.x, inv_dx, shape.nx),
+        nearest_cell(pos_m.y, inv_dx, shape.ny),
+        nearest_cell(pos_m.z, inv_dx, shape.nz),
+    ) else {
         return;
-    }
-    // Deposit x-vel onto the two neighbouring x-faces (average)
-    let u_lo = grid.idx_u(ix, iy, iz);
-    let u_hi = grid.idx_u(ix + 1, iy, iz);
+    };
     let half = Fix128::from_ratio(1, 2);
-    grid.u[u_lo] = grid.u[u_lo] + vel_m_per_s.x * half;
-    grid.u[u_hi] = grid.u[u_hi] + vel_m_per_s.x * half;
-    let v_lo = grid.idx_v(ix, iy, iz);
-    let v_hi = grid.idx_v(ix, iy + 1, iz);
-    grid.v[v_lo] = grid.v[v_lo] + vel_m_per_s.y * half;
-    grid.v[v_hi] = grid.v[v_hi] + vel_m_per_s.y * half;
-    let w_lo = grid.idx_w(ix, iy, iz);
-    let w_hi = grid.idx_w(ix, iy, iz + 1);
-    grid.w[w_lo] = grid.w[w_lo] + vel_m_per_s.z * half;
-    grid.w[w_hi] = grid.w[w_hi] + vel_m_per_s.z * half;
+    let (u_lo, u_hi) = (shape.idx_u(ix, iy, iz), shape.idx_u(ix + 1, iy, iz));
+    let (v_lo, v_hi) = (shape.idx_v(ix, iy, iz), shape.idx_v(ix, iy + 1, iz));
+    let (w_lo, w_hi) = (shape.idx_w(ix, iy, iz), shape.idx_w(ix, iy, iz + 1));
+    sink.add_u(u_lo, half, vel_m_per_s.x);
+    sink.add_u(u_hi, half, vel_m_per_s.x);
+    sink.add_v(v_lo, half, vel_m_per_s.y);
+    sink.add_v(v_hi, half, vel_m_per_s.y);
+    sink.add_w(w_lo, half, vel_m_per_s.z);
+    sink.add_w(w_hi, half, vel_m_per_s.z);
+}
+
+/// The cell index along one axis for [`p2g_nearest`]: `⌊p / dx⌋` inside
+/// `[0, N dx)`, `N − 1` exactly on the far face, `None` everywhere else
+/// (negative, beyond the far face, or `p / dx` not representable).
+fn nearest_cell(p_m: Fix128, inv_dx: Fix128, n: usize) -> Option<usize> {
+    if p_m < Fix128::ZERO || n == 0 {
+        return None;
+    }
+    let c = p_m.checked_mul(inv_dx)?;
+    if c < Fix128::ZERO {
+        return None;
+    }
+    let i = usize::try_from(c.hi).ok()?;
+    if i < n {
+        Some(i)
+    } else if i == n && c.lo == 0 {
+        Some(n - 1)
+    } else {
+        None
+    }
+}
+
+/// Which stencil [`p2g_normalized_with`] deposits each particle with.
+///
+/// Both land in the same exact accumulator and are normalised the same way,
+/// so a uniform particle velocity comes out as that value on every face a
+/// stencil reaches, and particles sitting at cell centres give bit-identical
+/// faces under both (a centred particle has the same two half weights in
+/// either). They differ once particles sit off-centre: trilinear weights a
+/// particle by its distance to each face and can reach the faces of the
+/// neighbouring cell, nearest gives every particle in a cell the same half
+/// weight on each of that cell's six faces and nothing else.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum ParticleScatter {
+    /// The 8-corner trilinear stencil (`p2g_trilinear` in this module) (the default and
+    /// what [`p2g_normalized`] uses).
+    #[default]
+    Trilinear,
+    /// The cell stencil (`p2g_nearest` in this module): a face holds the mean velocity of
+    /// the particles in the two cells sharing it, independent of where in
+    /// those cells they are. Coarser, and the choice when a transfer that does
+    /// not depend on sub-cell position is wanted.
+    Nearest,
 }
 
 /// Where a trilinear deposit lands.
@@ -4515,7 +4570,7 @@ pub(crate) fn p2g_nearest(grid: &mut MacGrid, pos_m: Vec3Fix, vel_m_per_s: Vec3F
 /// normalised transfer uses: it keeps the exact integer product, so the
 /// numerator and the weight sum of a face come out of one stencil and cannot
 /// drift apart.
-trait FaceSink {
+pub(crate) trait FaceSink {
     /// Dimensions and face indexing.
     fn shape(&self) -> &MacGrid;
     fn add_u(&mut self, ix: usize, weight: Fix128, v: Fix128);
@@ -4767,6 +4822,22 @@ impl FaceSink for WideFaces {
 /// with weight raw 1 and velocity −1 ulp came out as −1.0), and the numerator
 /// wrapped modulo 2^128 once `Σ wᵢ·vᵢ` reached 2^63.
 pub fn p2g_normalized(grid: &mut MacGrid, particles: &[(Vec3Fix, Vec3Fix)]) {
+    p2g_normalized_with(grid, particles, ParticleScatter::Trilinear);
+}
+
+/// [`p2g_normalized`] with the deposit stencil chosen by `scatter`.
+///
+/// The accumulator, the normalisation, the out-of-domain rule for negative
+/// coordinates and the "faces no particle reaches keep their value" rule are
+/// the same for both stencils; only the weights each particle lands with
+/// differ (see [`ParticleScatter`]). With [`ParticleScatter::Nearest`] a
+/// particle exactly on the far face `N dx` belongs to the last cell, matching
+/// the closed box `[0, N dx]` of [`crate::cfd_solver::CfdSolver::step_flip`].
+pub fn p2g_normalized_with(
+    grid: &mut MacGrid,
+    particles: &[(Vec3Fix, Vec3Fix)],
+    scatter: ParticleScatter,
+) {
     if grid.dx.is_zero() {
         return;
     }
@@ -4780,7 +4851,10 @@ pub fn p2g_normalized(grid: &mut MacGrid, particles: &[(Vec3Fix, Vec3Fix)]) {
         if pos.x < Fix128::ZERO || pos.y < Fix128::ZERO || pos.z < Fix128::ZERO {
             continue;
         }
-        scatter_trilinear(&mut acc, pos, vel);
+        match scatter {
+            ParticleScatter::Trilinear => p2g_trilinear(&mut acc, pos, vel),
+            ParticleScatter::Nearest => p2g_nearest(&mut acc, pos, vel),
+        }
     }
     let resolve = |dst: &mut [Fix128], src: &[Moments]| {
         for (out, m) in dst.iter_mut().zip(src) {
