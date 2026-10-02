@@ -14,7 +14,6 @@ dead_code src/solver_tgs_hooks_6dof.rs 1
 dead_code src/solver_tgs_hooks_6dof_oriented.rs 1
 dead_code src/solver_tgs_hooks_6dof_oriented_scoped.rs 1
 dead_code src/solver_tgs_hooks_6dof_scoped.rs 1
-dead_code src/turbulence.rs 3
 unwired src/acoustic_wave.rs::AIR_20C
 unwired src/acoustic_wave.rs::CONCRETE_LONGITUDINAL
 unwired src/acoustic_wave.rs::STEEL_LONGITUDINAL
@@ -295,10 +294,8 @@ unwired src/eulerian_grid.rs::set_u
 unwired src/eulerian_grid.rs::set_u_bc
 unwired src/eulerian_grid.rs::set_u_solid
 unwired src/eulerian_grid.rs::set_v
-unwired src/eulerian_grid.rs::set_v_bc
 unwired src/eulerian_grid.rs::set_v_solid
 unwired src/eulerian_grid.rs::set_w
-unwired src/eulerian_grid.rs::set_w_bc
 unwired src/eulerian_grid.rs::set_w_solid
 unwired src/eulerian_grid.rs::slab
 unwired src/eulerian_grid.rs::slab
@@ -948,23 +945,16 @@ unwired src/trimesh.rs::from_triangles
 unwired src/trimesh.rs::triangle_count
 unwired src/turbulence.rs::KE_C1_EPS
 unwired src/turbulence.rs::KE_C2_EPS
-unwired src/turbulence.rs::KE_C_MU
 unwired src/turbulence.rs::KE_SIGMA_EPS
 unwired src/turbulence.rs::KE_SIGMA_K
 unwired src/turbulence.rs::KW_BETA
 unwired src/turbulence.rs::KW_BETA_STAR
-unwired src/turbulence.rs::LOG_LAW_B
-unwired src/turbulence.rs::VON_KARMAN
-unwired src/turbulence.rs::Y_PLUS_TRANSITION
 unwired src/turbulence.rs::advance_epsilon
 unwired src/turbulence.rs::advance_k
 unwired src/turbulence.rs::dynamic_smagorinsky_cs
 unwired src/turbulence.rs::eddy_viscosity
 unwired src/turbulence.rs::eddy_viscosity
 unwired src/turbulence.rs::from_k_epsilon
-unwired src/turbulence.rs::u_plus
-unwired src/turbulence.rs::wall_k_epsilon
-unwired src/turbulence.rs::y_plus
 unwired src/vehicle.rs::grounded_wheels
 unwired src/vehicle.rs::new_default
 unwired src/vehicle.rs::shift_down
