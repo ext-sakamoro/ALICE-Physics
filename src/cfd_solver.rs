@@ -40,8 +40,9 @@ use crate::math::{Fix128, Vec3Fix};
 use crate::multiphase::{trilinear_range, trilinear_sample, Grid3d};
 use crate::surface_tension_csf::{compute_csf_field, SIGMA_WATER_AIR};
 use crate::turbulence::{
-    friction_velocity_checked, smagorinsky_eddy_viscosity, strain_rate_magnitude, wall_k_epsilon,
-    y_plus, SMAGORINSKY_CS,
+    dynamic_smagorinsky_cs, friction_velocity_checked, smagorinsky_eddy_viscosity,
+    smagorinsky_eddy_viscosity_with, strain_rate_magnitude, wall_k_epsilon, y_plus, KEpsilonState,
+    KOmegaState, KE_SIGMA_EPS, KE_SIGMA_K, KW_BETA_STAR, KW_SIGMA, SMAGORINSKY_CS,
 };
 
 /// W-cycles of the multigrid projection [`CfdSolver::step`] runs by default.
@@ -295,6 +296,21 @@ pub enum StepError {
     /// A wall model was requested on a solver whose molecular viscosity is
     /// zero: `y⁺ = y u_τ / ν` is undefined and no wall shear can be read.
     WallModelNeedsViscosity,
+    /// The [`RansState`] handed to [`CfdSolver::step_rans`] does not have
+    /// the grid's cell dimensions (or, for a prescribed eddy viscosity, its
+    /// spacing).
+    TurbulenceFieldShape,
+    /// A prescribed eddy viscosity holds a negative cell: the diffusion would
+    /// pump energy into the flow.
+    NegativeEddyViscosity,
+    /// The explicit diffusion would be unstable: the diffusion number
+    /// `(ν + max ν_t) dt / dx²` exceeds `1/6`, the limit of the
+    /// seven-point explicit Laplacian. Reduce `dt` or the field. A clamp here
+    /// would hide a blown-up field as a damped one, so the step is refused.
+    DiffusionUnstable {
+        /// The diffusion number that was measured.
+        diffusion_number: Fix128,
+    },
 }
 
 impl From<PressureSolverError> for StepError {
@@ -310,6 +326,20 @@ impl core::fmt::Display for StepError {
             Self::WallModelNeedsViscosity => {
                 write!(f, "a wall model needs a positive molecular viscosity")
             }
+            Self::TurbulenceFieldShape => {
+                write!(
+                    f,
+                    "the turbulence field does not match the grid's cell dimensions"
+                )
+            }
+            Self::NegativeEddyViscosity => {
+                write!(f, "a prescribed eddy viscosity holds a negative cell")
+            }
+            Self::DiffusionUnstable { diffusion_number } => write!(
+                f,
+                "explicit diffusion unstable: diffusion number {} exceeds 1/6",
+                diffusion_number.to_f64()
+            ),
         }
     }
 }
@@ -407,6 +437,275 @@ pub struct StepReport {
     pub bicgstab: Option<BicgstabStats>,
     /// The wall model's summary, when one was enabled.
     pub wall: Option<WallShearSummary>,
+}
+
+/// What [`CfdSolver::step_rans`] did: the shared-body reports plus the
+/// closure's summary and the eddy viscosity field it diffused with.
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub struct RansReport {
+    /// The eddy viscosity the step used, one value per cell (what a caller
+    /// snapshots next to the [`RansState`], or feeds back as a prescribed
+    /// field).
+    pub eddy_viscosity: Grid3d,
+    /// The closure's summary.
+    pub turbulence: TurbulenceSummary,
+    /// The BiCGStab verdict, when that was the pressure solver.
+    pub bicgstab: Option<BicgstabStats>,
+    /// The wall model's summary, when one was enabled.
+    pub wall: Option<WallShearSummary>,
+}
+
+/// Which turbulence closure [`CfdSolver::step_rans`] runs, carried by the
+/// [`RansState`] the caller owns.
+///
+/// Every closure produces one eddy viscosity `ν_t` per cell at the **start**
+/// of the step, from the state the step begins with, and the momentum
+/// diffusion then runs with the cell-wise `ν = ν_mol + ν_t` (interface
+/// coefficients are harmonic means, so a two-layer Couette flow has the
+/// piecewise-linear profile as its discrete fixed point). The field used is
+/// returned in [`RansReport::eddy_viscosity`], and its envelope in
+/// [`TurbulenceSummary`]. The legacy `use_turbulence` flag is a different
+/// path (one grid-wide `ν_t` from the largest diagonal strain) and is left
+/// as it was.
+///
+/// # Stability
+///
+/// The diffusion is explicit, so `(ν_mol + max ν_t) dt / dx² ≤ 1/6` is
+/// required; a step that would exceed it is refused with
+/// [`StepError::DiffusionUnstable`] before anything is touched.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum TurbulenceModel {
+    /// Static Smagorinsky: `ν_t = (C_s Δ)² |S|` per cell with the full
+    /// strain-rate magnitude at the cell centre (`C_s = 0.17`).
+    Smagorinsky,
+    /// Smagorinsky with the coefficient per cell from the ratio of the
+    /// test-filtered strain (the mean of the six neighbours' `|S|`) to the
+    /// grid strain, clamped to `[0.05, 0.25]`; under uniform strain the ratio
+    /// is exactly one and the step is bit-identical to
+    /// [`TurbulenceModel::Smagorinsky`]. This is the ratio form of
+    /// `turbulence::dynamic_smagorinsky_cs`, not the Germano least-squares
+    /// procedure.
+    DynamicSmagorinsky,
+    /// Launder–Spalding k-ε on the state's `(k, ε)`: per step, production
+    /// `P_k = ν_t |S|²`, the explicit point sources of `k` and `ε`, explicit
+    /// diffusion with `ν_mol + ν_t / σ`, then semi-Lagrangian advection, in
+    /// that order; `ν_t = C_μ k² / ε`.
+    KEpsilon,
+    /// Wilcox (1988) k-ω on the same `(k, ε)` storage: each cell is converted
+    /// to `ω = ε / (β* k)`, advanced with `dk/dt = P − β* k ω`,
+    /// `dω/dt = α (ω/k) P − β ω²` (`α = 5/9`, `β = 3/40`, `σ = 2`) and
+    /// converted back; `ν_t = k / ω`.
+    KOmega,
+    /// The eddy viscosity the state was built from
+    /// ([`RansState::prescribed`]) as given, cell by cell; nothing is
+    /// transported. The way to feed a closure computed elsewhere into the
+    /// momentum diffusion.
+    Prescribed,
+}
+
+/// The turbulence state a caller owns and hands to [`CfdSolver::step_rans`]:
+/// which closure runs and the cell-centred field it needs.
+///
+/// For [`TurbulenceModel::KEpsilon`] and [`TurbulenceModel::KOmega`] that
+/// field is `(k, ε)` — `k` the turbulent kinetic energy (m²/s²), `ε` the
+/// dissipation rate (m²/s³); the k-ω closure derives `ω = ε / (β* k)` per
+/// cell and writes `ε = β* k ω` back. For [`TurbulenceModel::Prescribed`] it
+/// is the eddy viscosity itself ([`RansState::prescribed`]). The LES
+/// closures carry no field. The state lives outside the solver so that a
+/// caller can snapshot and roll it back next to the grid; the solver's own
+/// layout is unchanged by the closures. Out-of-range reads return zero and
+/// out-of-range writes are ignored, as the MAC grid's accessors do.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RansState {
+    model: TurbulenceModel,
+    nx: usize,
+    ny: usize,
+    nz: usize,
+    k: Vec<Fix128>,
+    epsilon: Vec<Fix128>,
+    /// `ν_t` per cell for the prescribed closure; empty otherwise.
+    prescribed: Vec<Fix128>,
+    /// Spacing the prescribed field was given on.
+    prescribed_dx: Fix128,
+}
+
+impl RansState {
+    /// A state of `nx × ny × nz` cells for `model`, with `k = ε = 0`
+    /// everywhere (nothing for the LES closures to carry).
+    #[must_use]
+    pub fn new(nx: usize, ny: usize, nz: usize, model: TurbulenceModel) -> Self {
+        Self::uniform(nx, ny, nz, model, Fix128::ZERO, Fix128::ZERO)
+    }
+
+    /// A state holding `k` and `epsilon` in every cell.
+    #[must_use]
+    pub fn uniform(
+        nx: usize,
+        ny: usize,
+        nz: usize,
+        model: TurbulenceModel,
+        k: Fix128,
+        epsilon: Fix128,
+    ) -> Self {
+        let cells = nx * ny * nz;
+        Self {
+            model,
+            nx,
+            ny,
+            nz,
+            k: vec![k; cells],
+            epsilon: vec![epsilon; cells],
+            prescribed: Vec::new(),
+            prescribed_dx: Fix128::ZERO,
+        }
+    }
+
+    /// A [`TurbulenceModel::Prescribed`] state: `nu_t` is the eddy viscosity
+    /// per cell, used as given (its spacing has to match the grid's).
+    #[must_use]
+    pub fn prescribed(nu_t: Grid3d) -> Self {
+        let cells = nu_t.nx * nu_t.ny * nu_t.nz;
+        Self {
+            model: TurbulenceModel::Prescribed,
+            nx: nu_t.nx,
+            ny: nu_t.ny,
+            nz: nu_t.nz,
+            k: vec![Fix128::ZERO; cells],
+            epsilon: vec![Fix128::ZERO; cells],
+            prescribed: nu_t.data,
+            prescribed_dx: nu_t.dx,
+        }
+    }
+
+    /// The closure this state runs.
+    #[must_use]
+    pub const fn model(&self) -> TurbulenceModel {
+        self.model
+    }
+
+    /// Cell dimensions `(nx, ny, nz)`.
+    #[must_use]
+    pub const fn cell_dims(&self) -> (usize, usize, usize) {
+        (self.nx, self.ny, self.nz)
+    }
+
+    const fn idx(&self, i: usize, j: usize, k: usize) -> usize {
+        i + self.nx * (j + self.ny * k)
+    }
+
+    const fn in_range(&self, i: usize, j: usize, k: usize) -> bool {
+        i < self.nx && j < self.ny && k < self.nz
+    }
+
+    /// `k` of cell `(i, j, k)`; zero out of range.
+    #[must_use]
+    pub fn k(&self, i: usize, j: usize, k: usize) -> Fix128 {
+        if self.in_range(i, j, k) {
+            self.k[self.idx(i, j, k)]
+        } else {
+            Fix128::ZERO
+        }
+    }
+
+    /// `ε` of cell `(i, j, k)`; zero out of range.
+    #[must_use]
+    pub fn epsilon(&self, i: usize, j: usize, k: usize) -> Fix128 {
+        if self.in_range(i, j, k) {
+            self.epsilon[self.idx(i, j, k)]
+        } else {
+            Fix128::ZERO
+        }
+    }
+
+    /// Set `k` and `ε` of cell `(i, j, k)`; ignored out of range.
+    pub fn set(&mut self, i: usize, j: usize, k: usize, k_value: Fix128, epsilon: Fix128) {
+        if self.in_range(i, j, k) {
+            let ix = self.idx(i, j, k);
+            self.k[ix] = k_value;
+            self.epsilon[ix] = epsilon;
+        }
+    }
+
+    /// The eddy viscosity of cell `(i, j, k)` under this state's closure:
+    /// `C_μ k² / ε` for k-ε, `k / ω` with `ω = ε / (β* k)` for k-ω (the same
+    /// quantity up to rounding, because `β* = C_μ`), the given value for the
+    /// prescribed closure, zero for the LES closures (which read the strain
+    /// instead), and zero whenever `k` or `ε` is zero (no division by zero).
+    #[must_use]
+    pub fn eddy_viscosity(&self, i: usize, j: usize, k: usize) -> Fix128 {
+        let state = KEpsilonState {
+            k: self.k(i, j, k),
+            epsilon: self.epsilon(i, j, k),
+        };
+        match self.model {
+            TurbulenceModel::KEpsilon => state.eddy_viscosity(),
+            TurbulenceModel::KOmega => KOmegaState::from_k_epsilon(&state).eddy_viscosity(),
+            TurbulenceModel::Prescribed => {
+                if self.in_range(i, j, k) && self.prescribed.len() == self.k.len() {
+                    self.prescribed[self.idx(i, j, k)]
+                } else {
+                    Fix128::ZERO
+                }
+            }
+            _ => Fix128::ZERO,
+        }
+    }
+
+    fn cell_state(&self, c: usize) -> KEpsilonState {
+        KEpsilonState {
+            k: self.k[c],
+            epsilon: self.epsilon[c],
+        }
+    }
+}
+
+/// What the turbulence closure did over one step.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct TurbulenceSummary {
+    /// The closure that ran.
+    pub model: TurbulenceModel,
+    /// Smallest eddy viscosity over the cells (m²/s).
+    pub nu_t_min: Fix128,
+    /// Largest eddy viscosity over the cells (m²/s).
+    pub nu_t_max: Fix128,
+    /// `(ν_mol + nu_t_max) dt / dx²`, at most `1/6` for the step to run.
+    pub diffusion_number: Fix128,
+    /// Smallest / largest Smagorinsky coefficient used (the constant for the
+    /// static model, zero for the closures that have none).
+    pub cs_min: Fix128,
+    /// See `cs_min`.
+    pub cs_max: Fix128,
+    /// Largest production `P_k = ν_t |S|²` over the cells (k-ε / k-ω only,
+    /// zero otherwise).
+    pub production_max: Fix128,
+    /// Envelope of `k` after the step (k-ε / k-ω only, zero otherwise).
+    pub k_min: Fix128,
+    /// See `k_min`.
+    pub k_max: Fix128,
+    /// Envelope of `ε` after the step (k-ε / k-ω only, zero otherwise).
+    pub epsilon_min: Fix128,
+    /// See `epsilon_min`.
+    pub epsilon_max: Fix128,
+    /// Number of cells whose explicit source step would have taken `k`, `ε`
+    /// or `ω` negative and was clamped to zero. A decaying field integrated
+    /// within its stability limit reports zero here; a non-zero count means
+    /// `dt` is too large for the field.
+    pub clamped: u32,
+}
+
+/// The eddy viscosity field prepared at the start of a step, before anything
+/// is touched.
+struct TurbulenceRun {
+    model: TurbulenceModel,
+    nu_t: Vec<Fix128>,
+    nu_t_min: Fix128,
+    nu_t_max: Fix128,
+    diffusion_number: Fix128,
+    cs_min: Fix128,
+    cs_max: Fix128,
 }
 
 /// The wall sink the model applies to one face component, and the state it
@@ -677,7 +976,7 @@ impl CfdSolver {
             return;
         }
         let projection = self.default_projection(multigrid_cycles);
-        self.step_body(dt_s, projection, None);
+        self.step_body(dt_s, projection, None, None);
     }
 
     /// [`Self::step`] with the pressure projection done by the solver the
@@ -702,6 +1001,7 @@ impl CfdSolver {
             Err(StepError::WallModelNeedsViscosity) => {
                 unreachable!("no wall model was requested")
             }
+            Err(_) => unreachable!("no turbulence closure was requested"),
         }
     }
 
@@ -785,8 +1085,63 @@ impl CfdSolver {
         if options.wall_model.is_some() && self.dynamic_viscosity_pas <= Fix128::ZERO {
             return Err(StepError::WallModelNeedsViscosity);
         }
-        let (bicgstab, wall) = self.step_body(dt_s, projection, options.wall_model.as_ref());
+        let (bicgstab, wall, _) =
+            self.step_body(dt_s, projection, options.wall_model.as_ref(), None);
         Ok(StepReport { bicgstab, wall })
+    }
+
+    /// [`Self::step_with_options`] with a turbulence closure: the eddy
+    /// viscosity of `state`'s [`TurbulenceModel`] enters the momentum
+    /// diffusion cell by cell, and the transport closures advance `state`.
+    ///
+    /// The closure's field is prepared from the state the step starts with,
+    /// every refusal is checked before anything changes, and the rest is the
+    /// shared step body with the cell-wise diffusion in place of the scalar
+    /// one (see [`TurbulenceModel`] for the order of operations). `state` is
+    /// the caller's: it holds `(k, ε)` for the transport closures and is left
+    /// advanced by one step; the eddy viscosity used comes back in
+    /// [`RansReport::eddy_viscosity`].
+    ///
+    /// # Errors
+    ///
+    /// Everything [`Self::step_with_options`] refuses, plus
+    /// [`StepError::TurbulenceFieldShape`] when `state` does not match the
+    /// grid, [`StepError::NegativeEddyViscosity`] for a prescribed field with
+    /// a negative cell, and [`StepError::DiffusionUnstable`] when
+    /// `(ν_mol + max ν_t) dt / dx²` exceeds `1/6`. ⚠️ On `Err` neither the
+    /// solver nor `state` is touched.
+    pub fn step_rans(
+        &mut self,
+        dt_s: Fix128,
+        options: &StepOptions,
+        state: &mut RansState,
+    ) -> Result<RansReport, StepError> {
+        if dt_s.is_zero() {
+            return Err(PressureSolverError::ZeroTimeStep.into());
+        }
+        let projection = self.projection_for(options.pressure)?;
+        if options.wall_model.is_some() && self.dynamic_viscosity_pas <= Fix128::ZERO {
+            return Err(StepError::WallModelNeedsViscosity);
+        }
+        let run = self.prepare_turbulence(state, dt_s)?;
+        let (bicgstab, wall, turbulence) = self.step_body(
+            dt_s,
+            projection,
+            options.wall_model.as_ref(),
+            Some((&run, state)),
+        );
+        Ok(RansReport {
+            eddy_viscosity: Grid3d {
+                nx: self.grid.nx,
+                ny: self.grid.ny,
+                nz: self.grid.nz,
+                dx: self.grid.dx,
+                data: run.nu_t,
+            },
+            turbulence: turbulence.expect("a closure ran"),
+            bicgstab,
+            wall,
+        })
     }
 
     /// The step body: boundaries, advection, body forces, diffusion, the
@@ -798,7 +1153,12 @@ impl CfdSolver {
         dt_s: Fix128,
         projection: Projection,
         wall: Option<&WallModel>,
-    ) -> (Option<BicgstabStats>, Option<WallShearSummary>) {
+        turbulence: Option<(&TurbulenceRun, &mut RansState)>,
+    ) -> (
+        Option<BicgstabStats>,
+        Option<WallShearSummary>,
+        Option<TurbulenceSummary>,
+    ) {
         self.grid.enforce_face_boundaries();
         match self.advection_scheme {
             AdvectionScheme::SemiLagrangian => self.advect_velocity(dt_s),
@@ -807,10 +1167,40 @@ impl CfdSolver {
         }
         self.apply_body_forces(dt_s);
         self.grid.enforce_face_boundaries();
-        let wall_summary = if self.use_turbulence {
-            self.apply_turbulent_diffusion(dt_s, wall)
-        } else {
-            self.apply_molecular_diffusion(dt_s, wall)
+        let (wall_summary, turbulence_summary) = match turbulence {
+            Some((run, state)) => {
+                let (production_max, clamped) = self.advance_rans(state, run, dt_s);
+                let nu_mol = self.dynamic_viscosity_pas / self.density_kg_m3;
+                let ws = self.diffuse_velocity_variable(nu_mol, &run.nu_t, dt_s, wall);
+                let (k_min, k_max, epsilon_min, epsilon_max) = match run.model {
+                    TurbulenceModel::KEpsilon | TurbulenceModel::KOmega => (
+                        min_of(&state.k),
+                        max_of(&state.k),
+                        min_of(&state.epsilon),
+                        max_of(&state.epsilon),
+                    ),
+                    _ => (Fix128::ZERO, Fix128::ZERO, Fix128::ZERO, Fix128::ZERO),
+                };
+                (
+                    ws,
+                    Some(TurbulenceSummary {
+                        model: run.model,
+                        nu_t_min: run.nu_t_min,
+                        nu_t_max: run.nu_t_max,
+                        diffusion_number: run.diffusion_number,
+                        cs_min: run.cs_min,
+                        cs_max: run.cs_max,
+                        production_max,
+                        k_min,
+                        k_max,
+                        epsilon_min,
+                        epsilon_max,
+                        clamped,
+                    }),
+                )
+            }
+            None if self.use_turbulence => (self.apply_turbulent_diffusion(dt_s, wall), None),
+            None => (self.apply_molecular_diffusion(dt_s, wall), None),
         };
         let stats = match projection {
             Projection::Mg(cycles) => {
@@ -870,7 +1260,7 @@ impl CfdSolver {
             }
         }
         self.step_count += 1;
-        (stats, wall_summary)
+        (stats, wall_summary, turbulence_summary)
     }
 
     /// FLIP / PIC particle step: scatter particles to the grid, apply forces
@@ -2202,6 +2592,679 @@ fn clamp(value: Fix128, lo: Fix128, hi: Fix128) -> Fix128 {
 // ============================================================================
 // Tests
 // ============================================================================
+
+// ============================================================================
+// Turbulence closures with a cell-wise eddy viscosity
+// ============================================================================
+
+/// Smallest entry, zero for an empty slice.
+fn min_of(v: &[Fix128]) -> Fix128 {
+    v.iter()
+        .copied()
+        .reduce(|a, b| if b < a { b } else { a })
+        .unwrap_or(Fix128::ZERO)
+}
+
+/// Largest entry, zero for an empty slice.
+fn max_of(v: &[Fix128]) -> Fix128 {
+    v.iter()
+        .copied()
+        .reduce(|a, b| if b > a { b } else { a })
+        .unwrap_or(Fix128::ZERO)
+}
+
+/// Harmonic mean of two diffusivities, `2ab / (a + b)`, evaluated as
+/// `a · (2b / (a + b))` so that a small diffusivity keeps its relative
+/// precision and equal inputs return exactly themselves (`2b / 2b` is `1`).
+/// Zero if either is zero: no flux crosses an interface with a non-diffusing
+/// side.
+fn harmonic2(a: Fix128, b: Fix128) -> Fix128 {
+    if a.is_zero() || b.is_zero() {
+        return Fix128::ZERO;
+    }
+    let sum = a + b;
+    if sum.is_zero() {
+        return Fix128::ZERO;
+    }
+    a * (Fix128::from_int(2) * b / sum)
+}
+
+impl CfdSolver {
+    const fn cell_index(&self, i: usize, j: usize, k: usize) -> usize {
+        i + self.grid.nx * (j + self.grid.ny * k)
+    }
+
+    /// Cell-centred velocity components with the index clamped into the
+    /// grid, as `advect_temperature` reads them.
+    fn cell_velocity_clamped(&self, i: usize, j: usize, k: usize) -> (Fix128, Fix128, Fix128) {
+        self.grid.cell_velocity(
+            i.min(self.grid.nx - 1),
+            j.min(self.grid.ny - 1),
+            k.min(self.grid.nz - 1),
+        )
+    }
+
+    /// `|S| = √(2 S_ij S_ij)` at every cell centre, from the face
+    /// velocities: the diagonal from the face difference across the cell,
+    /// the off-diagonals from central differences of the cell-centred
+    /// velocity, one-sided on the domain edge (so a linear shear has the same
+    /// strain in every cell, edge rows included).
+    fn cell_strain(&self) -> Vec<Fix128> {
+        let (nx, ny, nz) = (self.grid.nx, self.grid.ny, self.grid.nz);
+        let dx = self.grid.dx;
+        let two = Fix128::from_int(2);
+        let half = Fix128::from_ratio(1, 2);
+        let mut out = vec![Fix128::ZERO; nx * ny * nz];
+        if dx.is_zero() {
+            return out;
+        }
+        // d(component)/d(axis) at cell (i, j, k) along one axis with `n` cells.
+        let derivative = |value: &dyn Fn(usize) -> Fix128, idx: usize, n: usize| -> Fix128 {
+            match (idx > 0, idx + 1 < n) {
+                (true, true) => (value(idx + 1) - value(idx - 1)) / (two * dx),
+                (false, true) => (value(idx + 1) - value(idx)) / dx,
+                (true, false) => (value(idx) - value(idx - 1)) / dx,
+                (false, false) => Fix128::ZERO,
+            }
+        };
+        for k in 0..nz {
+            for j in 0..ny {
+                for i in 0..nx {
+                    let s11 = (self.grid.u(i + 1, j, k) - self.grid.u(i, j, k)) / dx;
+                    let s22 = (self.grid.v(i, j + 1, k) - self.grid.v(i, j, k)) / dx;
+                    let s33 = (self.grid.w(i, j, k + 1) - self.grid.w(i, j, k)) / dx;
+                    let du_dy = derivative(&|jj| self.cell_velocity_clamped(i, jj, k).0, j, ny);
+                    let du_dz = derivative(&|kk| self.cell_velocity_clamped(i, j, kk).0, k, nz);
+                    let dv_dx = derivative(&|ii| self.cell_velocity_clamped(ii, j, k).1, i, nx);
+                    let dv_dz = derivative(&|kk| self.cell_velocity_clamped(i, j, kk).1, k, nz);
+                    let dw_dx = derivative(&|ii| self.cell_velocity_clamped(ii, j, k).2, i, nx);
+                    let dw_dy = derivative(&|jj| self.cell_velocity_clamped(i, jj, k).2, j, ny);
+                    let s12 = half * (du_dy + dv_dx);
+                    let s13 = half * (du_dz + dw_dx);
+                    let s23 = half * (dv_dz + dw_dy);
+                    out[self.cell_index(i, j, k)] =
+                        strain_rate_magnitude(s11, s22, s33, s12, s13, s23);
+                }
+            }
+        }
+        out
+    }
+
+    /// Mean of the six neighbours' values (a missing neighbour on the domain
+    /// edge counts as the cell itself): the `2Δ` test filter of the dynamic
+    /// Smagorinsky ratio. A uniform field is reproduced exactly (`6v / 6`).
+    fn neighbour_mean(&self, field: &[Fix128], i: usize, j: usize, k: usize) -> Fix128 {
+        let (nx, ny, nz) = (self.grid.nx, self.grid.ny, self.grid.nz);
+        let at = |ii: usize, jj: usize, kk: usize| field[self.cell_index(ii, jj, kk)];
+        let me = at(i, j, k);
+        let pick = |ok: bool, v: Fix128| if ok { v } else { me };
+        let sum = pick(i > 0, if i > 0 { at(i - 1, j, k) } else { me })
+            + pick(i + 1 < nx, if i + 1 < nx { at(i + 1, j, k) } else { me })
+            + pick(j > 0, if j > 0 { at(i, j - 1, k) } else { me })
+            + pick(j + 1 < ny, if j + 1 < ny { at(i, j + 1, k) } else { me })
+            + pick(k > 0, if k > 0 { at(i, j, k - 1) } else { me })
+            + pick(k + 1 < nz, if k + 1 < nz { at(i, j, k + 1) } else { me });
+        sum / Fix128::from_int(6)
+    }
+
+    /// The eddy viscosity field of `model` from the state the step starts
+    /// with, every refusal of [`StepError`] checked before anything changes.
+    fn prepare_turbulence(
+        &self,
+        state: &RansState,
+        dt_s: Fix128,
+    ) -> Result<TurbulenceRun, StepError> {
+        let (nx, ny, nz) = (self.grid.nx, self.grid.ny, self.grid.nz);
+        let cells = nx * ny * nz;
+        let dx = self.grid.dx;
+        let model = state.model();
+        if state.cell_dims() != (nx, ny, nz) || state.k.len() != cells {
+            return Err(StepError::TurbulenceFieldShape);
+        }
+        let (nu_t, cs_min, cs_max) = match model {
+            TurbulenceModel::Smagorinsky | TurbulenceModel::DynamicSmagorinsky => {
+                let strain = self.cell_strain();
+                let mut nu_t = vec![Fix128::ZERO; cells];
+                let mut cs_all = Vec::with_capacity(cells);
+                for k in 0..nz {
+                    for j in 0..ny {
+                        for i in 0..nx {
+                            let c = self.cell_index(i, j, k);
+                            let cs = match model {
+                                TurbulenceModel::DynamicSmagorinsky => dynamic_smagorinsky_cs(
+                                    strain[c],
+                                    self.neighbour_mean(&strain, i, j, k),
+                                ),
+                                _ => SMAGORINSKY_CS,
+                            };
+                            cs_all.push(cs);
+                            nu_t[c] = smagorinsky_eddy_viscosity_with(cs, dx, strain[c]);
+                        }
+                    }
+                }
+                if cells == 0 {
+                    (nu_t, SMAGORINSKY_CS, SMAGORINSKY_CS)
+                } else {
+                    (nu_t, min_of(&cs_all), max_of(&cs_all))
+                }
+            }
+            TurbulenceModel::KEpsilon | TurbulenceModel::KOmega => {
+                let mut nu_t = vec![Fix128::ZERO; cells];
+                for k in 0..nz {
+                    for j in 0..ny {
+                        for i in 0..nx {
+                            nu_t[self.cell_index(i, j, k)] = state.eddy_viscosity(i, j, k);
+                        }
+                    }
+                }
+                (nu_t, Fix128::ZERO, Fix128::ZERO)
+            }
+            TurbulenceModel::Prescribed => {
+                if state.prescribed_dx != dx || state.prescribed.len() != cells {
+                    return Err(StepError::TurbulenceFieldShape);
+                }
+                if state.prescribed.iter().any(|v| *v < Fix128::ZERO) {
+                    return Err(StepError::NegativeEddyViscosity);
+                }
+                (state.prescribed.clone(), Fix128::ZERO, Fix128::ZERO)
+            }
+        };
+        let (nu_t_min, nu_t_max) = (min_of(&nu_t), max_of(&nu_t));
+        let nu_mol = self.dynamic_viscosity_pas / self.density_kg_m3;
+        let diffusion_number = (nu_mol + nu_t_max) * dt_s / (dx * dx);
+        if diffusion_number > Fix128::from_ratio(1, 6) {
+            return Err(StepError::DiffusionUnstable { diffusion_number });
+        }
+        Ok(TurbulenceRun {
+            model,
+            nu_t,
+            nu_t_min,
+            nu_t_max,
+            diffusion_number,
+            cs_min,
+            cs_max,
+        })
+    }
+
+    /// One transport step of the k-ε / k-ω field: production from the
+    /// current strain and `run.nu_t`, the explicit point sources, explicit
+    /// diffusion with `ν_mol + ν_t / σ`, then semi-Lagrangian advection.
+    /// Returns `(largest production, cells clamped)`; the LES and prescribed
+    /// closures transport nothing and return zeros.
+    fn advance_rans(
+        &mut self,
+        state: &mut RansState,
+        run: &TurbulenceRun,
+        dt_s: Fix128,
+    ) -> (Fix128, u32) {
+        let (sigma_k, sigma_second) = match run.model {
+            TurbulenceModel::KEpsilon => (KE_SIGMA_K, KE_SIGMA_EPS),
+            TurbulenceModel::KOmega => (KW_SIGMA, KW_SIGMA),
+            _ => return (Fix128::ZERO, 0),
+        };
+        let strain = self.cell_strain();
+        let nu_mol = self.dynamic_viscosity_pas / self.density_kg_m3;
+        let mut production_max = Fix128::ZERO;
+        let mut clamped = 0u32;
+        {
+            let field = &mut *state;
+            for (c, &strain_c) in strain.iter().enumerate() {
+                let production = run.nu_t[c] * strain_c * strain_c;
+                if production > production_max {
+                    production_max = production;
+                }
+                let cell = field.cell_state(c);
+                let next = match run.model {
+                    TurbulenceModel::KEpsilon => {
+                        let mut st = cell;
+                        // Would the explicit update go negative? Counted
+                        // before the clamp inside `advance_*` hides it.
+                        if st.k + (production - st.epsilon) * dt_s < Fix128::ZERO {
+                            clamped += 1;
+                        }
+                        st.advance_k(production, dt_s);
+                        if !st.k.is_zero() {
+                            let factor = st.epsilon / st.k;
+                            let d_eps = factor
+                                * (crate::turbulence::KE_C1_EPS * production
+                                    - crate::turbulence::KE_C2_EPS * st.epsilon);
+                            if st.epsilon + d_eps * dt_s < Fix128::ZERO {
+                                clamped += 1;
+                            }
+                        }
+                        st.advance_epsilon(production, dt_s);
+                        st
+                    }
+                    _ => {
+                        let mut st = KOmegaState::from_k_epsilon(&cell);
+                        let (k, w) = (st.k, st.omega);
+                        let dk = production - KW_BETA_STAR * k * w;
+                        if k + dk * dt_s < Fix128::ZERO {
+                            clamped += 1;
+                        }
+                        let dw = if k.is_zero() {
+                            Fix128::ZERO - crate::turbulence::KW_BETA * w * w
+                        } else {
+                            crate::turbulence::KW_ALPHA * (w / k) * production
+                                - crate::turbulence::KW_BETA * w * w
+                        };
+                        if w + dw * dt_s < Fix128::ZERO {
+                            clamped += 1;
+                        }
+                        st.advance(production, dt_s);
+                        st.to_k_epsilon()
+                    }
+                };
+                field.k[c] = next.k;
+                field.epsilon[c] = next.epsilon;
+            }
+        }
+        // Diffusion of both scalars with their own turbulent Prandtl number.
+        let nu_k: Vec<Fix128> = run.nu_t.iter().map(|&t| nu_mol + t / sigma_k).collect();
+        let nu_e: Vec<Fix128> = run
+            .nu_t
+            .iter()
+            .map(|&t| nu_mol + t / sigma_second)
+            .collect();
+        let (k_next, e_next) = (
+            self.diffuse_cells(&state.k, &nu_k, dt_s),
+            self.diffuse_cells(&state.epsilon, &nu_e, dt_s),
+        );
+        let (k_adv, e_adv) = (
+            self.advect_cells(&k_next, dt_s),
+            self.advect_cells(&e_next, dt_s),
+        );
+        state.k = k_adv;
+        state.epsilon = e_adv;
+        (production_max, clamped)
+    }
+
+    /// Explicit diffusion of a cell-centred scalar with a cell-wise
+    /// diffusivity: the flux between two cells uses the harmonic mean of
+    /// their diffusivities, no flux crosses the domain edge or a solid face.
+    fn diffuse_cells(&self, field: &[Fix128], nu: &[Fix128], dt_s: Fix128) -> Vec<Fix128> {
+        let (nx, ny, nz) = (self.grid.nx, self.grid.ny, self.grid.nz);
+        let dx = self.grid.dx;
+        let mut out = field.to_vec();
+        if dx.is_zero() {
+            return out;
+        }
+        let scale = dt_s / (dx * dx);
+        for k in 0..nz {
+            for j in 0..ny {
+                for i in 0..nx {
+                    let c = self.cell_index(i, j, k);
+                    let centre = field[c];
+                    let mut flux = Fix128::ZERO;
+                    let mut add = |n: usize| {
+                        flux = flux + harmonic2(nu[c], nu[n]) * (field[n] - centre);
+                    };
+                    if i > 0 && !self.grid.is_u_solid(i, j, k) {
+                        add(self.cell_index(i - 1, j, k));
+                    }
+                    if i + 1 < nx && !self.grid.is_u_solid(i + 1, j, k) {
+                        add(self.cell_index(i + 1, j, k));
+                    }
+                    if j > 0 && !self.grid.is_v_solid(i, j, k) {
+                        add(self.cell_index(i, j - 1, k));
+                    }
+                    if j + 1 < ny && !self.grid.is_v_solid(i, j + 1, k) {
+                        add(self.cell_index(i, j + 1, k));
+                    }
+                    if k > 0 && !self.grid.is_w_solid(i, j, k) {
+                        add(self.cell_index(i, j, k - 1));
+                    }
+                    if k + 1 < nz && !self.grid.is_w_solid(i, j, k + 1) {
+                        add(self.cell_index(i, j, k + 1));
+                    }
+                    out[c] = centre + scale * flux;
+                }
+            }
+        }
+        out
+    }
+
+    /// Semi-Lagrangian advection of a cell-centred scalar by the cell-centred
+    /// velocity, as `advect_temperature` does it; a resting fluid returns the
+    /// field bit for bit.
+    fn advect_cells(&self, field: &[Fix128], dt_s: Fix128) -> Vec<Fix128> {
+        let (nx, ny, nz) = (self.grid.nx, self.grid.ny, self.grid.nz);
+        let dx = self.grid.dx;
+        if dx.is_zero() || nx == 0 || ny == 0 || nz == 0 {
+            return field.to_vec();
+        }
+        let old = Grid3d {
+            nx,
+            ny,
+            nz,
+            dx,
+            data: field.to_vec(),
+        };
+        let inv_dx = Fix128::ONE / dx;
+        let mut out = field.to_vec();
+        for k in 0..nz {
+            for j in 0..ny {
+                for i in 0..nx {
+                    let (uc, vc, wc) = self.grid.cell_velocity(i, j, k);
+                    let cx = Fix128::from_int(i as i64) - uc * dt_s * inv_dx;
+                    let cy = Fix128::from_int(j as i64) - vc * dt_s * inv_dx;
+                    let cz = Fix128::from_int(k as i64) - wc * dt_s * inv_dx;
+                    out[self.cell_index(i, j, k)] = trilinear_sample(&old, cx, cy, cz);
+                }
+            }
+        }
+        out
+    }
+
+    /// Harmonic-mean diffusivity at the edge where the stencil of a face
+    /// crosses from the cells on one side of the edge (`near`, a pair sharing
+    /// the edge's index along the stencil axis) to the cells on the other
+    /// (`far`). Each pair is averaged first (equal values give themselves
+    /// exactly), then the two sides.
+    fn edge_nu(near: (Fix128, Fix128), far: Option<(Fix128, Fix128)>) -> Fix128 {
+        let n = harmonic2(near.0, near.1);
+        match far {
+            Some(f) => harmonic2(n, harmonic2(f.0, f.1)),
+            None => n,
+        }
+    }
+
+    /// Explicit diffusion of the face velocities with a cell-wise viscosity
+    /// `ν_mol + ν_t`: `u += dt/dx² Σ_faces ν_f (u_nbr − u)`, the coefficient
+    /// across a cell being that cell's viscosity and the coefficient across an
+    /// edge the harmonic mean of the four cells around it (two on the stencil
+    /// side, two beyond; only the fluid side when the edge is on a wall). The
+    /// walls are treated exactly as in `diffuse_velocity`: the no-slip ghost
+    /// `2 u_wall − u_in`, or the wall model's sink in place of it.
+    fn diffuse_velocity_variable(
+        &mut self,
+        nu_mol: Fix128,
+        nu_t: &[Fix128],
+        dt_s: Fix128,
+        wall: Option<&WallModel>,
+    ) -> Option<WallShearSummary> {
+        let (nx, ny, nz) = (self.grid.nx, self.grid.ny, self.grid.nz);
+        let dx = self.grid.dx;
+        if dx.is_zero() || nx == 0 || ny == 0 || nz == 0 {
+            return None;
+        }
+        let scale = dt_s / (dx * dx);
+        let two = Fix128::from_int(2);
+        let sink = wall.map(|_| WallSink {
+            nu_mol,
+            density: self.density_kg_m3,
+            dynamic_viscosity: self.dynamic_viscosity_pas,
+            y_p: dx.half(),
+            dt_over_dx: dt_s / dx,
+        });
+        let mut summary = WallShearSummary::with_no_faces();
+        let mut across_wall =
+            |wall_component: Fix128, center: Fix128, extra: &mut Fix128| match &sink {
+                None => two * wall_component - center,
+                Some(model) => {
+                    *extra = *extra + model.apply(center - wall_component, &mut summary);
+                    center
+                }
+            };
+        // Cell viscosity with the index clamped: a face on the domain edge
+        // reads the one cell it has on the other side too.
+        let cell = |i: usize, j: usize, k: usize| -> Fix128 {
+            nu_mol + nu_t[i.min(nx - 1) + nx * (j.min(ny - 1) + ny * k.min(nz - 1))]
+        };
+        // The pair of cells straddling an X-face at `i` in row `(j, k)`.
+        let x_pair = |i: usize, j: usize, k: usize| -> (Fix128, Fix128) {
+            let lo = if i > 0 {
+                cell(i - 1, j, k)
+            } else {
+                cell(i, j, k)
+            };
+            let hi = if i < nx {
+                cell(i, j, k)
+            } else {
+                cell(i - 1, j, k)
+            };
+            (lo, hi)
+        };
+        let y_pair = |i: usize, j: usize, k: usize| -> (Fix128, Fix128) {
+            let lo = if j > 0 {
+                cell(i, j - 1, k)
+            } else {
+                cell(i, j, k)
+            };
+            let hi = if j < ny {
+                cell(i, j, k)
+            } else {
+                cell(i, j - 1, k)
+            };
+            (lo, hi)
+        };
+        let z_pair = |i: usize, j: usize, k: usize| -> (Fix128, Fix128) {
+            let lo = if k > 0 {
+                cell(i, j, k - 1)
+            } else {
+                cell(i, j, k)
+            };
+            let hi = if k < nz {
+                cell(i, j, k)
+            } else {
+                cell(i, j, k - 1)
+            };
+            (lo, hi)
+        };
+
+        // u faces
+        let mut u_next = self.grid.u.clone();
+        for k in 0..nz {
+            for j in 0..ny {
+                for i in 0..=nx {
+                    let center = self.grid.u(i, j, k);
+                    let mut extra = Fix128::ZERO;
+                    let mut acc = Fix128::ZERO;
+                    if i > 0 {
+                        acc = acc + cell(i - 1, j, k) * (self.grid.u(i - 1, j, k) - center);
+                    }
+                    if i < nx {
+                        acc = acc + cell(i, j, k) * (self.grid.u(i + 1, j, k) - center);
+                    }
+                    let near = x_pair(i, j, k);
+                    // y neighbours: edge at y = j dx (down) and (j + 1) dx (up)
+                    match self.grid.u_wall_across_y(i, j, k, false) {
+                        Some(w) => {
+                            let ghost = across_wall(w.x, center, &mut extra);
+                            acc = acc + Self::edge_nu(near, None) * (ghost - center);
+                        }
+                        None if j > 0 => {
+                            acc = acc
+                                + Self::edge_nu(near, Some(x_pair(i, j - 1, k)))
+                                    * (self.grid.u(i, j - 1, k) - center);
+                        }
+                        None => {}
+                    }
+                    match self.grid.u_wall_across_y(i, j, k, true) {
+                        Some(w) => {
+                            let ghost = across_wall(w.x, center, &mut extra);
+                            acc = acc + Self::edge_nu(near, None) * (ghost - center);
+                        }
+                        None if j + 1 < ny => {
+                            acc = acc
+                                + Self::edge_nu(near, Some(x_pair(i, j + 1, k)))
+                                    * (self.grid.u(i, j + 1, k) - center);
+                        }
+                        None => {}
+                    }
+                    match self.grid.u_wall_across_z(i, j, k, false) {
+                        Some(w) => {
+                            let ghost = across_wall(w.x, center, &mut extra);
+                            acc = acc + Self::edge_nu(near, None) * (ghost - center);
+                        }
+                        None if k > 0 => {
+                            acc = acc
+                                + Self::edge_nu(near, Some(x_pair(i, j, k - 1)))
+                                    * (self.grid.u(i, j, k - 1) - center);
+                        }
+                        None => {}
+                    }
+                    match self.grid.u_wall_across_z(i, j, k, true) {
+                        Some(w) => {
+                            let ghost = across_wall(w.x, center, &mut extra);
+                            acc = acc + Self::edge_nu(near, None) * (ghost - center);
+                        }
+                        None if k + 1 < nz => {
+                            acc = acc
+                                + Self::edge_nu(near, Some(x_pair(i, j, k + 1)))
+                                    * (self.grid.u(i, j, k + 1) - center);
+                        }
+                        None => {}
+                    }
+                    let ix = i + (nx + 1) * (j + ny * k);
+                    u_next[ix] = center + scale * acc + extra;
+                }
+            }
+        }
+        self.grid.u = u_next;
+
+        // v faces
+        let mut v_next = self.grid.v.clone();
+        for k in 0..nz {
+            for j in 0..=ny {
+                for i in 0..nx {
+                    let center = self.grid.v(i, j, k);
+                    let mut extra = Fix128::ZERO;
+                    let mut acc = Fix128::ZERO;
+                    if j > 0 {
+                        acc = acc + cell(i, j - 1, k) * (self.grid.v(i, j - 1, k) - center);
+                    }
+                    if j < ny {
+                        acc = acc + cell(i, j, k) * (self.grid.v(i, j + 1, k) - center);
+                    }
+                    let near = y_pair(i, j, k);
+                    match self.grid.v_wall_across_x(i, j, k, false) {
+                        Some(w) => {
+                            let ghost = across_wall(w.y, center, &mut extra);
+                            acc = acc + Self::edge_nu(near, None) * (ghost - center);
+                        }
+                        None if i > 0 => {
+                            acc = acc
+                                + Self::edge_nu(near, Some(y_pair(i - 1, j, k)))
+                                    * (self.grid.v(i - 1, j, k) - center);
+                        }
+                        None => {}
+                    }
+                    match self.grid.v_wall_across_x(i, j, k, true) {
+                        Some(w) => {
+                            let ghost = across_wall(w.y, center, &mut extra);
+                            acc = acc + Self::edge_nu(near, None) * (ghost - center);
+                        }
+                        None if i + 1 < nx => {
+                            acc = acc
+                                + Self::edge_nu(near, Some(y_pair(i + 1, j, k)))
+                                    * (self.grid.v(i + 1, j, k) - center);
+                        }
+                        None => {}
+                    }
+                    match self.grid.v_wall_across_z(i, j, k, false) {
+                        Some(w) => {
+                            let ghost = across_wall(w.y, center, &mut extra);
+                            acc = acc + Self::edge_nu(near, None) * (ghost - center);
+                        }
+                        None if k > 0 => {
+                            acc = acc
+                                + Self::edge_nu(near, Some(y_pair(i, j, k - 1)))
+                                    * (self.grid.v(i, j, k - 1) - center);
+                        }
+                        None => {}
+                    }
+                    match self.grid.v_wall_across_z(i, j, k, true) {
+                        Some(w) => {
+                            let ghost = across_wall(w.y, center, &mut extra);
+                            acc = acc + Self::edge_nu(near, None) * (ghost - center);
+                        }
+                        None if k + 1 < nz => {
+                            acc = acc
+                                + Self::edge_nu(near, Some(y_pair(i, j, k + 1)))
+                                    * (self.grid.v(i, j, k + 1) - center);
+                        }
+                        None => {}
+                    }
+                    let ix = i + nx * (j + (ny + 1) * k);
+                    v_next[ix] = center + scale * acc + extra;
+                }
+            }
+        }
+        self.grid.v = v_next;
+
+        // w faces
+        let mut w_next = self.grid.w.clone();
+        for k in 0..=nz {
+            for j in 0..ny {
+                for i in 0..nx {
+                    let center = self.grid.w(i, j, k);
+                    let mut extra = Fix128::ZERO;
+                    let mut acc = Fix128::ZERO;
+                    if k > 0 {
+                        acc = acc + cell(i, j, k - 1) * (self.grid.w(i, j, k - 1) - center);
+                    }
+                    if k < nz {
+                        acc = acc + cell(i, j, k) * (self.grid.w(i, j, k + 1) - center);
+                    }
+                    let near = z_pair(i, j, k);
+                    match self.grid.w_wall_across_x(i, j, k, false) {
+                        Some(w) => {
+                            let ghost = across_wall(w.z, center, &mut extra);
+                            acc = acc + Self::edge_nu(near, None) * (ghost - center);
+                        }
+                        None if i > 0 => {
+                            acc = acc
+                                + Self::edge_nu(near, Some(z_pair(i - 1, j, k)))
+                                    * (self.grid.w(i - 1, j, k) - center);
+                        }
+                        None => {}
+                    }
+                    match self.grid.w_wall_across_x(i, j, k, true) {
+                        Some(w) => {
+                            let ghost = across_wall(w.z, center, &mut extra);
+                            acc = acc + Self::edge_nu(near, None) * (ghost - center);
+                        }
+                        None if i + 1 < nx => {
+                            acc = acc
+                                + Self::edge_nu(near, Some(z_pair(i + 1, j, k)))
+                                    * (self.grid.w(i + 1, j, k) - center);
+                        }
+                        None => {}
+                    }
+                    match self.grid.w_wall_across_y(i, j, k, false) {
+                        Some(w) => {
+                            let ghost = across_wall(w.z, center, &mut extra);
+                            acc = acc + Self::edge_nu(near, None) * (ghost - center);
+                        }
+                        None if j > 0 => {
+                            acc = acc
+                                + Self::edge_nu(near, Some(z_pair(i, j - 1, k)))
+                                    * (self.grid.w(i, j - 1, k) - center);
+                        }
+                        None => {}
+                    }
+                    match self.grid.w_wall_across_y(i, j, k, true) {
+                        Some(w) => {
+                            let ghost = across_wall(w.z, center, &mut extra);
+                            acc = acc + Self::edge_nu(near, None) * (ghost - center);
+                        }
+                        None if j + 1 < ny => {
+                            acc = acc
+                                + Self::edge_nu(near, Some(z_pair(i, j + 1, k)))
+                                    * (self.grid.w(i, j + 1, k) - center);
+                        }
+                        None => {}
+                    }
+                    let ix = i + nx * (j + ny * k);
+                    w_next[ix] = center + scale * acc + extra;
+                }
+            }
+        }
+        self.grid.w = w_next;
+        sink.map(|_| summary)
+    }
+}
 
 #[cfg(test)]
 mod tests {
