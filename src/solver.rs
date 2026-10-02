@@ -901,6 +901,9 @@ pub struct PhysicsWorld {
     pub sdf_colliders: Vec<SdfCollider>,
     /// Default collision radius for body-vs-SDF queries
     pub sdf_collision_radius: Fix128,
+    /// Planes, height fields and triangle meshes that bodies rest on (see
+    /// [`crate::static_collider`])
+    static_colliders: Vec<crate::static_collider::StaticCollider>,
     /// Pre-colored constraint batches (computed on demand)
     constraint_batches: Vec<ConstraintBatch>,
     /// Whether batches need recomputation
@@ -1009,6 +1012,7 @@ impl PhysicsWorld {
             contact_constraints: Vec::new(),
             sdf_colliders: Vec::new(),
             sdf_collision_radius: Fix128::from_ratio(1, 2), // 0.5 default
+            static_colliders: Vec::new(),
             constraint_batches: Vec::new(),
             batches_dirty: true,
             batch_static_bodies: Vec::new(),
@@ -2149,6 +2153,9 @@ impl PhysicsWorld {
         if !self.sdf_colliders.is_empty() {
             self.resolve_sdf_collisions();
         }
+        if !self.static_colliders.is_empty() {
+            self.resolve_static_collisions();
+        }
 
         // 2. Solve constraints (sequential)
         for _ in 0..self.config.iterations {
@@ -2179,6 +2186,9 @@ impl PhysicsWorld {
         #[cfg(feature = "std")]
         if !self.sdf_colliders.is_empty() {
             self.resolve_sdf_collisions();
+        }
+        if !self.static_colliders.is_empty() {
+            self.resolve_static_collisions();
         }
 
         // 2. Solve constraints (batched)
@@ -3155,6 +3165,9 @@ impl PhysicsWorld {
         if !self.sdf_colliders.is_empty() {
             self.resolve_sdf_collisions();
         }
+        if !self.static_colliders.is_empty() {
+            self.resolve_static_collisions();
+        }
 
         // 2. Solve constraints (sequential). Distance stays CPU;
         //    contact routes through the bridge.
@@ -3320,6 +3333,60 @@ impl PhysicsWorld {
                     ) {
                         body.position = body.position + contact.normal * contact.depth;
                     }
+                }
+            }
+        }
+    }
+
+    /// Add an immovable collision surface — a plane, a height field or a triangle
+    /// mesh — and return its index. See [`crate::static_collider`].
+    pub fn add_static_collider(
+        &mut self,
+        collider: crate::static_collider::StaticCollider,
+    ) -> usize {
+        let idx = self.static_colliders.len();
+        self.static_colliders.push(collider);
+        idx
+    }
+
+    /// Remove a static collider by index, returning it, or `None` when the index
+    /// is out of range. Later colliders shift down by one.
+    pub fn remove_static_collider(
+        &mut self,
+        idx: usize,
+    ) -> Option<crate::static_collider::StaticCollider> {
+        if idx < self.static_colliders.len() {
+            Some(self.static_colliders.remove(idx))
+        } else {
+            None
+        }
+    }
+
+    /// Number of static colliders.
+    #[must_use]
+    pub fn static_collider_count(&self) -> usize {
+        self.static_colliders.len()
+    }
+
+    /// Resolve every non-static, non-sensor body's collision sphere against the
+    /// static colliders, in order, pushing it out along each contact normal.
+    ///
+    /// The sphere is the body's collision radius, or the world's default
+    /// ([`Self::set_sdf_collision_radius`]) for a body without one.
+    fn resolve_static_collisions(&mut self) {
+        let default_radius = self.sdf_collision_radius;
+        for (i, body) in self.bodies.iter_mut().enumerate() {
+            if body.is_static() || body.is_sensor {
+                continue;
+            }
+            let radius = self
+                .body_collision_radii
+                .get(i)
+                .and_then(|r| *r)
+                .unwrap_or(default_radius);
+            for collider in &self.static_colliders {
+                if let Some(contact) = collider.collide_sphere(body.position, radius) {
+                    body.position = body.position + contact.normal * contact.depth;
                 }
             }
         }
@@ -3922,6 +3989,7 @@ impl core::fmt::Debug for PhysicsWorld {
             .field("distance_constraints", &self.distance_constraints.len())
             .field("contact_constraints", &self.contact_constraints.len())
             .field("sdf_colliders", &self.sdf_colliders.len())
+            .field("static_colliders", &self.static_colliders.len())
             .field("joints", &self.joints.len())
             .field("force_fields", &self.force_fields.len())
             .finish_non_exhaustive()

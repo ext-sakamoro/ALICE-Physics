@@ -60,6 +60,10 @@ impl HeightField {
     #[inline]
     #[must_use]
     pub fn get_height(&self, gx: u32, gz: u32) -> Fix128 {
+        if self.width == 0 || self.depth == 0 {
+            // No grid points at all: nothing to clamp to.
+            return Fix128::ZERO;
+        }
         let gx = gx.min(self.width - 1);
         let gz = gz.min(self.depth - 1);
         self.heights[(gx + gz * self.width) as usize]
@@ -155,8 +159,17 @@ impl HeightField {
     }
 
     /// Sphere vs `HeightField` collision
+    ///
+    /// The sphere is clear of the surface when its centre is at least `radius`
+    /// away **along the surface normal** — the distance to the tangent plane, which
+    /// is `Δy · n_y` for a centre `Δy` above the surface point below it. (Measuring
+    /// `Δy` itself, as this used to, buries a sphere on a slope by `r·(1/cosθ − 1)`.)
+    /// A field with no grid points, or a non-positive spacing, has no surface.
     #[must_use]
     pub fn collide_sphere(&self, center: Vec3Fix, radius: Fix128) -> Option<Contact> {
+        if self.width == 0 || self.depth == 0 || self.spacing <= Fix128::ZERO {
+            return None;
+        }
         let (gx_f, gz_f) = self.world_to_grid(center);
 
         // Check if within bounds (with margin)
@@ -169,11 +182,12 @@ impl HeightField {
         }
 
         let ground_height = self.sample_height(center.x, center.z);
-        let dist = center.y - ground_height;
+        let normal = self.sample_normal(center.x, center.z);
+        // Distance from the centre to the tangent plane at the point below it.
+        let dist = (center.y - ground_height) * normal.y;
 
         if dist < radius {
             let depth = radius - dist;
-            let normal = self.sample_normal(center.x, center.z);
             let point_on_surface = Vec3Fix::new(center.x, ground_height, center.z);
 
             Some(Contact {
