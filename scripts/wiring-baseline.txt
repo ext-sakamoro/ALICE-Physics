@@ -211,7 +211,6 @@ unwired src/flow_viz.rs::generate_flow_arrows
 unwired src/flow_viz.rs::generate_streamlines
 unwired src/fluid.rs::new_block
 unwired src/fluid.rs::step_with_sdf
-unwired src/fluid_netcode.rs::capture
 unwired src/fluid_netcode.rs::changed_count
 unwired src/fluid_netcode.rs::compression_ratio
 unwired src/fluid_netcode.rs::restore
@@ -249,17 +248,6 @@ unwired src/ik_physics_bridge.rs::snap
 unwired src/interface_capture.rs::plic_normal
 unwired src/interface_capture.rs::plic_plane_offset
 unwired src/interface_capture.rs::truncated_cube_volume
-unwired src/interpolation.rs::capture
-unwired src/interpolation.rs::capture_and_push
-unwired src/interpolation.rs::empty
-unwired src/interpolation.rs::from_body
-unwired src/interpolation.rs::interpolate
-unwired src/interpolation.rs::interpolate_all
-unwired src/interpolation.rs::interpolate_position
-unwired src/interpolation.rs::interpolate_rotation
-unwired src/interpolation.rs::lerp_fix128
-unwired src/interpolation.rs::lerp_vec3
-unwired src/interpolation.rs::slerp
 unwired src/joint_extra.rs::ExtraJoint
 unwired src/joint_extra.rs::set_target
 unwired src/joint_extra.rs::solve_extra_joints
@@ -464,7 +452,6 @@ unwired src/sdf_force.rs::repel
 unwired src/sdf_force.rs::surface_flow
 unwired src/sdf_force.rs::with_affected_bodies
 unwired src/sdf_manifold.rs::deepest
-unwired src/sdf_manifold.rs::empty
 unwired src/sdf_manifold.rs::generate_sdf_manifold
 unwired src/sdf_sph.rs::populated_cell_count
 unwired src/sim_modifier.rs::add_modifier

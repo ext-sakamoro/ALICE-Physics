@@ -144,6 +144,10 @@ required-features = ["std"]
 name = "neural_ternary_controller"
 required-features = ["std", "neural"]
 
+[[example]]
+name = "substep_interpolation"
+required-features = ["std"]
+
 [[bench]]
 name = "physics_bench"
 harness = false
