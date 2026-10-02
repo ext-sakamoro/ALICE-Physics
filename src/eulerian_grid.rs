@@ -5684,6 +5684,13 @@ mod tests {
         ShiftOneLayer,
         /// Skip the first delivery of the run.
         DropFirstDelivery,
+        /// Deliver everything the schedule asked for, but through a stream that
+        /// accepts and yields **one byte per call**, so every `write_all` /
+        /// `read_exact` of a 16-byte-per-cell layer is split into `16 · plane`
+        /// partial transfers. Not a fault in the answer — the oracle on it is
+        /// bit equality — but a fault in the transport's assumptions: a
+        /// `write` / `read` that assumed a whole message per call would break.
+        ChunkedWire,
     }
 
     #[cfg(feature = "std")]
@@ -5694,6 +5701,7 @@ mod tests {
                 Self::None => "none",
                 Self::ShiftOneLayer => "shift",
                 Self::DropFirstDelivery => "drop",
+                Self::ChunkedWire => "chunked",
             }
         }
 
@@ -5703,6 +5711,7 @@ mod tests {
                 "none" => Self::None,
                 "shift" => Self::ShiftOneLayer,
                 "drop" => Self::DropFirstDelivery,
+                "chunked" => Self::ChunkedWire,
                 other => panic!("unknown cross-process fault `{other}`"),
             }
         }
@@ -5745,7 +5754,75 @@ mod tests {
                         self.inner.deliver_layer(src, dst, layer);
                     }
                 }
+                CrossFault::ChunkedWire => unreachable!(
+                    "the chunked wire is a stream wrapper, not a delivery fault; \
+                     `solve_as_rank` routes it around `FaultyCrossing`"
+                ),
             }
+        }
+    }
+
+    /// A byte stream that moves **one byte per `read` / `write` call**, and
+    /// counts the calls.
+    ///
+    /// `std::io::Read::read` and `Write::write` are allowed to transfer fewer
+    /// bytes than asked; a transport that forgot `read_exact` / `write_all`, or
+    /// that decoded a layer from a partial buffer, would be correct over a
+    /// loopback socket (which hands over whole small messages) and wrong over a
+    /// real network, where the kernel splits as it pleases. Forcing the worst
+    /// legal split on every call is the gate against that: the halo oracle
+    /// must still come out bit for bit.
+    ///
+    /// ⚠️ The counts are the teeth. A wrapper that was accidentally bypassed, or
+    /// that passed whole buffers through, would leave the oracle green with
+    /// nothing tested; `solve_as_rank` asserts that at least one whole layer's
+    /// worth of single-byte calls happened in each direction.
+    #[cfg(feature = "std")]
+    struct Chunked<S> {
+        inner: S,
+        /// `read` calls that returned at least one byte, and the bytes they
+        /// returned in total. ⚠️ Both are kept because the gate is that they
+        /// are **equal**: a wrapper that let a whole buffer through would still
+        /// count the bytes, and only the call count exposes it (measured: that
+        /// mutation survived a bytes-only threshold).
+        read_calls: usize,
+        read_bytes: usize,
+        /// Same for `write`.
+        write_calls: usize,
+        write_bytes: usize,
+    }
+
+    #[cfg(feature = "std")]
+    impl<S: std::io::Read> std::io::Read for Chunked<S> {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            if buf.is_empty() {
+                return Ok(0);
+            }
+            let n = self.inner.read(&mut buf[..1])?;
+            if n > 0 {
+                self.read_calls += 1;
+                self.read_bytes += n;
+            }
+            Ok(n)
+        }
+    }
+
+    #[cfg(feature = "std")]
+    impl<S: std::io::Write> std::io::Write for Chunked<S> {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            if buf.is_empty() {
+                return Ok(0);
+            }
+            let n = self.inner.write(&buf[..1])?;
+            if n > 0 {
+                self.write_calls += 1;
+                self.write_bytes += n;
+            }
+            Ok(n)
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            self.inner.flush()
         }
     }
 
@@ -5768,6 +5845,51 @@ mod tests {
             .expect("set a read timeout on the peer link");
         link.set_write_timeout(Some(Duration::from_secs(30)))
             .expect("set a write timeout on the peer link");
+
+        if fault == CrossFault::ChunkedWire {
+            let mut links: Vec<Option<Chunked<std::net::TcpStream>>> = vec![None, None];
+            links[1 - my_rank] = Some(Chunked {
+                inner: link,
+                read_calls: 0,
+                read_bytes: 0,
+                write_calls: 0,
+                write_bytes: 0,
+            });
+            let mut transport = SocketTransport::new(my_rank, n * n * n, n * n, links);
+            project_pressure_decomposed_on_rank(
+                grid,
+                xproc_dt(),
+                xproc_rho(),
+                XPROC_ITERATIONS,
+                2,
+                HaloSchedule::EverySweep,
+                my_rank,
+                &mut transport,
+            );
+            // Teeth: in both directions every call moved exactly one byte
+            // (calls == bytes) and at least one whole layer went through that
+            // way — otherwise the oracle above measured an ordinary socket.
+            // Measured: a wrapper that passed whole buffers through kept the
+            // byte count above a layer and was caught only by the call count.
+            let wire = transport.links[1 - my_rank]
+                .as_ref()
+                .expect("the peer link is still held by the transport");
+            let one_layer = n * n * WIRE_BYTES_PER_CELL;
+            assert!(
+                wire.read_calls == wire.read_bytes
+                    && wire.write_calls == wire.write_bytes
+                    && wire.read_bytes >= one_layer
+                    && wire.write_bytes >= one_layer,
+                "rank {my_rank}: the chunked wire saw {} reads moving {} bytes and {} \
+                 writes moving {} bytes; the gate needs calls == bytes in both \
+                 directions and at least one layer ({one_layer} bytes) each way",
+                wire.read_calls,
+                wire.read_bytes,
+                wire.write_calls,
+                wire.write_bytes
+            );
+            return;
+        }
 
         let mut links: Vec<Option<std::net::TcpStream>> = vec![None, None];
         links[1 - my_rank] = Some(link);
@@ -5998,6 +6120,44 @@ mod tests {
             "a run missing one halo delivery still reproduced the single-process \
              solve, so the two-process test is not measuring the delivery",
         );
+    }
+
+    /// The wire split into single bytes still reproduces the single-process
+    /// solve bit for bit — the gate that the transport relies on `write_all` /
+    /// `read_exact` and never on a message arriving whole.
+    ///
+    /// Over loopback TCP a layer arrives in one `read`, so the two-process
+    /// oracle above cannot tell a transport that handles partial transfers
+    /// from one that assumes they never happen. Crossing real hosts would. This
+    /// is the loopback stand-in for that crossing: the worst legal split on
+    /// every call, with `solve_as_rank` asserting on both ranks that the split
+    /// actually happened (at least one whole layer of single-byte calls each
+    /// way), so a wrapper that was bypassed could not leave this green.
+    #[cfg(feature = "std")]
+    #[test]
+    fn a_cross_process_wire_split_into_single_bytes_reproduces_the_solve() {
+        for &n in &[8usize, 7] {
+            let mut monolithic = seed_divergent_flow(n);
+            project_pressure_red_black_gs(
+                &mut monolithic,
+                xproc_dt(),
+                xproc_rho(),
+                XPROC_ITERATIONS,
+            );
+
+            let chunked = pressure_field_from_two_processes(n, CrossFault::ChunkedWire);
+
+            assert_eq!(
+                monolithic.pressure, chunked.pressure,
+                "{n}³ over a wire split into single bytes produced a different \
+                 pressure field than the single-process solve",
+            );
+            assert!(
+                grids_are_bit_equal(&monolithic, &chunked),
+                "{n}³ over a single-byte wire matched on pressure but not on the \
+                 projected velocities",
+            );
+        }
     }
 
     /// The rank-local driver on one rank is the monolithic solve: with `ranks =

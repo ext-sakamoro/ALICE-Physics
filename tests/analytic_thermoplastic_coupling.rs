@@ -799,3 +799,194 @@ fn a_budget_of_one_sweep_is_reported_as_not_converged() {
         "expected NotConverged on an exhausted budget, got {error:?}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Diagnostic — the dominant eigenvalue of the coupled map at real heat capacities
+// ---------------------------------------------------------------------------
+
+/// Volumetric heat capacities (MPa/K = MJ/m³K) the entry condition is read at,
+/// with where each number comes from. ⚠️ The PLA row is an estimate; the other
+/// two are handbook densities times handbook specific heats.
+const HEAT_CAPACITIES: [(f64, &str); 7] = [
+    (1.0 / 1024.0, "non-physical 2^-10"),
+    (1.0 / 256.0, "non-physical 2^-8 (the oracle scene above)"),
+    (1.0 / 16.0, "non-physical 2^-4"),
+    (1.0, "non-physical 1"),
+    (3.82, "steel 7850 kg/m3 x 486 J/kgK"),
+    (2.43, "aluminium 2700 kg/m3 x 900 J/kgK"),
+    (1.9, "PLA, estimate 1240 kg/m3 x 1800 J/kgK"),
+];
+
+/// `|λ_max|` above which a monolithic (Newton) assembly would be the right
+/// tool. A convenience value, not a theorem: the sweep count of the
+/// partitioned map grows as `ln(tol) / ln |λ_max|` while Newton's does not
+/// depend on `λ_max`, so the two cross somewhere below one, and 0.9 is where a
+/// 2⁻⁴⁰ tolerance already costs ~260 sweeps.
+const MONOLITHIC_ENTRY: f64 = 0.9;
+
+/// Dominant eigenvalue of `∂G/∂δT` at the fixed point of the coupled map
+/// `G(δT) = deposit(ΔW_p(T^n + δT))`, by finite differences over the nodes the
+/// deposit writes, then power iteration with a Rayleigh quotient.
+///
+/// Returns `(λ_max, support size, converged max δT)`.
+///
+/// Four choices here are load-bearing and were each found by getting them
+/// wrong first:
+/// - the map is iterated 30 times before differentiating, so the Jacobian is
+///   taken **at the fixed point** and not at `δT = 0`;
+/// - the Jacobian is formed only over the `support` (cells the deposit
+///   writes), since the rest of the 7×5×5 grid is identically zero;
+/// - the finite-difference step scales with the answer, `max δT / 64`, with a
+///   `2⁻²⁰` floor against the arithmetic — `δT` shrinks like `1/c_v`, so a fixed
+///   step at steel's `c_v` would be differentiating noise;
+/// - the Jacobian is explicit `f64`, so the sign of `λ_max` is real (a norm of
+///   the residual cannot carry a sign).
+fn dominant_eigenvalue(c_v: f64) -> (f64, usize, f64) {
+    let scene = scene(EPS_TOTAL);
+    let heating = PlasticHeating::try_new(Fix128::ONE, fx(c_v)).expect("β = 1, c_v > 0");
+    let soft = softening();
+    let base = &scene.base;
+
+    let g = |delta: &CoupledField| -> CoupledField {
+        let mut absolute = base.clone();
+        for (v, &d) in absolute.as_mut_slice().iter_mut().zip(delta.as_slice()) {
+            *v = *v + d;
+        }
+        let rise = TemperatureRise::from_absolute(&absolute, Fix128::ZERO);
+        let request = ElastoplasticIncrementRequest::new(Fix128::ONE).with_thermal(
+            ThermalExpansion::from_rise(&rise, fx(ALPHA_PER_K)),
+            Some(soft),
+        );
+        let increment = scene
+            .problem
+            .step(&scene.state, &request)
+            .expect("the bar increment solves");
+        let mut out = base.clone();
+        out.clear();
+        deposit_increment_heat(
+            &scene.mesh,
+            &increment.plastic_work_increment,
+            &heating,
+            &mut out,
+        )
+        .expect("the deposit covers the mesh");
+        out
+    };
+
+    let mut delta = base.clone();
+    delta.clear();
+    for _ in 0..30 {
+        let next = g(&delta);
+        delta.as_mut_slice().copy_from_slice(next.as_slice());
+    }
+    let g0 = g(&delta);
+    let max_dt = g0.max_value().to_f64();
+    let support: Vec<usize> = g0
+        .as_slice()
+        .iter()
+        .enumerate()
+        .filter(|(_, v)| !v.is_zero())
+        .map(|(i, _)| i)
+        .collect();
+    let n = support.len();
+    if n == 0 {
+        return (0.0, 0, max_dt);
+    }
+    let h = fx((max_dt / 64.0).max(1.0 / 1_048_576.0));
+    let mut jac = vec![0.0_f64; n * n];
+    for (col, &j) in support.iter().enumerate() {
+        let mut bumped = delta.clone();
+        let old = bumped.as_slice()[j];
+        bumped.as_mut_slice()[j] = old + h;
+        let g1 = g(&bumped);
+        for (row, &i) in support.iter().enumerate() {
+            jac[row * n + col] =
+                (g1.as_slice()[i].to_f64() - g0.as_slice()[i].to_f64()) / h.to_f64();
+        }
+    }
+    let mut v: Vec<f64> = (0..n)
+        .map(|i| if i % 3 == 0 { 1.0 } else { 0.37 })
+        .collect();
+    let mut lambda = 0.0;
+    for _ in 0..800 {
+        let w: Vec<f64> = (0..n)
+            .map(|i| (0..n).map(|k| jac[i * n + k] * v[k]).sum())
+            .collect();
+        let num: f64 = v.iter().zip(&w).map(|(a, b)| a * b).sum();
+        let den: f64 = v.iter().map(|a| a * a).sum();
+        lambda = num / den;
+        let norm = w.iter().map(|x| x * x).sum::<f64>().sqrt();
+        if norm == 0.0 {
+            break;
+        }
+        v = w.iter().map(|x| x / norm).collect();
+    }
+    (lambda, n, max_dt)
+}
+
+/// The entry condition for a monolithic assembly — `|λ_max| > 0.9` at a
+/// realistic heat capacity — is three decades away: at steel, aluminium and
+/// PLA the coupled map contracts by `< 1e-3` per sweep, and the only `c_v` that
+/// opens the entry is a non-physical `2⁻¹⁰` MPa/K.
+///
+/// This is the measurement behind the decision, recorded in
+/// `coupled_iteration`'s module doc, **not** to build a monolithic solver now.
+/// It prints the table so the numbers in that doc have an instrument behind
+/// them rather than a transcript; the assertions are the two facts the decision
+/// rests on, with the non-physical row as the positive control showing the
+/// instrument can see an entry when there is one.
+///
+/// Measured 2026-10-02 (this test):
+///
+/// | `c_v` (MPa/K) | `λ_max` | converged `max δT` (K) |
+/// |---|---|---|
+/// | `2⁻¹⁰` | `+0.9366` | 8.294 |
+/// | `2⁻⁸` | `+0.2800` | 2.583 |
+/// | `2⁻⁴` | `+0.01836` | 0.1728 |
+/// | `1` | `+0.001151` | 0.01084 |
+/// | steel `3.82` | `+3.01e-4` | 0.002839 |
+/// | aluminium `2.43` | `+4.74e-4` | 0.004463 |
+/// | PLA `1.9` (estimate) | `+6.06e-4` | 0.005708 |
+#[test]
+fn the_monolithic_entry_condition_is_three_decades_away_at_real_heat_capacities() {
+    eprintln!("  c_v (MPa/K)   material                                   lambda_max   max dT (K)  support");
+    let mut rows = Vec::with_capacity(HEAT_CAPACITIES.len());
+    for (c_v, label) in HEAT_CAPACITIES {
+        let (lambda, support, max_dt) = dominant_eigenvalue(c_v);
+        eprintln!("  {c_v:>11.6}   {label:<42} {lambda:>+10.6}   {max_dt:>10.6}   {support:>4}");
+        assert!(
+            support > 0,
+            "{label}: the deposit wrote nothing, so there is no map to differentiate"
+        );
+        rows.push((c_v, label, lambda));
+    }
+    // Positive control: the instrument sees the entry where it exists.
+    let (_, label, opened) = rows[0];
+    assert!(
+        opened > MONOLITHIC_ENTRY,
+        "{label}: expected the non-physical heat capacity to open the entry \
+         (|λ_max| > {MONOLITHIC_ENTRY}), got {opened:+.4}"
+    );
+    // The decision: every real material is at least three decades below it.
+    for &(c_v, label, lambda) in &rows[4..] {
+        assert!(
+            lambda > 0.0 && lambda < 1e-3,
+            "{label} (c_v = {c_v}): λ_max = {lambda:+.3e} is not in (0, 1e-3); the \
+             monolithic decision in `coupled_iteration` was written against this band"
+        );
+        assert!(
+            lambda < MONOLITHIC_ENTRY / 1000.0,
+            "{label}: λ_max = {lambda:+.3e} is within three decades of the entry {MONOLITHIC_ENTRY}"
+        );
+    }
+    // Monotone in c_v over the whole table: a stiffer heat sink damps the loop.
+    for pair in rows.windows(2) {
+        let ((c_a, _, l_a), (c_b, _, l_b)) = (pair[0], pair[1]);
+        if c_b > c_a {
+            assert!(
+                l_b < l_a,
+                "λ_max must fall as c_v rises: {c_a} → {l_a:+.3e}, {c_b} → {l_b:+.3e}"
+            );
+        }
+    }
+}

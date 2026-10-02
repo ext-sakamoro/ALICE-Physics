@@ -221,6 +221,61 @@
 //! `1e18` alike. The only place information disappears is the *product*, when
 //! truncation takes `a·b` to zero, which is exactly what the criterion tests.
 //! Porting any of this to floating point invalidates the criterion.
+//!
+//! # Why there is still no monolithic assembly, in numbers
+//!
+//! The thermoplastic driver ([`crate::linear_elastic_fem::step_thermoplastic`])
+//! is a partitioned map `G(δT) = deposit(ΔW_p(T^n + δT))` swept to a fixed
+//! point. A monolithic (Newton on the coupled residual) assembly would be the
+//! right tool when the map stops contracting fast enough — the sweep count of
+//! a fixed-point iteration grows as `ln(tol) / ln |λ_max|` while Newton's does
+//! not depend on `λ_max` at all, so the two cross as `|λ_max| → 1`. The entry
+//! condition this crate uses is therefore:
+//!
+//! > **`|λ_max| > 0.9` at a realistic heat capacity**, or a `Stagnated` /
+//! > period-two cycle that is *not* the `σ_y(T)` clamp, where `λ_max` is the
+//! > dominant eigenvalue of `∂G/∂δT` at the fixed point. `0.9` is a convenience
+//! > threshold (a `2⁻⁴⁰` tolerance there already costs about 260 sweeps), not a
+//! > theorem.
+//!
+//! **Measured** (`tests/analytic_thermoplastic_coupling.rs::the_monolithic_entry_condition_is_three_decades_away_at_real_heat_capacities`,
+//! finite-difference Jacobian over the deposit's support at the fixed point,
+//! power iteration; the test asserts the band and prints the table):
+//!
+//! | `c_v` (MPa/K) | material | `λ_max` | converged `max δT` (K) |
+//! |---|---|---|---|
+//! | `2⁻¹⁰` | non-physical | **`+0.9366`** | 8.294 |
+//! | `2⁻⁸` | non-physical (the oracle scene) | `+0.2800` | 2.583 |
+//! | `2⁻⁴` | non-physical | `+0.01836` | 0.1728 |
+//! | `1` | non-physical | `+0.001151` | 0.01084 |
+//! | `3.82` | **steel** (7850 kg/m³ × 486 J/kgK) | `+3.01e-4` | 0.002839 |
+//! | `2.43` | aluminium (2700 × 900) | `+4.74e-4` | 0.004463 |
+//! | `1.9` | PLA (estimate, 1240 × 1800) | `+6.06e-4` | 0.005708 |
+//!
+//! Every real material sits **three decades below** the entry; the only
+//! heat capacity that opens it is a non-physical `2⁻¹⁰` MPa/K. The sign is
+//! real (the Jacobian is explicit), and it is softening's: hotter → weaker →
+//! more plastic work → hotter. The row at `2⁻⁸` is where
+//! [`crate::linear_elastic_fem::ThermoplasticCoupling::try_new`] measured the
+//! relaxation table, and the two numbers agree.
+//!
+//! **What would open it**: thermal softening *localising* — an adiabatic shear
+//! band, where the heat stays in a thin layer and the loop gain is no longer
+//! `1/c_v` of a diffuse deposit. ⚠️ That regime needs a regularisation first
+//! (gradient or non-local plasticity) because the local continuum problem is
+//! ill-posed there; a monolithic Newton would converge faster to a
+//! mesh-dependent answer, which is not an improvement.
+//!
+//! **What is missing to build it** (counted, not assumed): a general
+//! non-symmetric Krylov solver — zero in `src/`; `project_pressure_bicgstab` is
+//! pressure-only and `pub(crate)`, and the `conjugate_gradient` in the FEM
+//! modules assumes symmetry — and a sparse direct factorisation, also zero,
+//! with `Fix128` pivot growth unmeasured. So even a Jacobian-free Newton–Krylov
+//! route starts with a new linear solver, not with the coupling.
+//!
+//! The decision, as of 2026-10-02: **not now**. Re-measure the table with the
+//! test above when a scene produces `|λ_max| > 0.9` at a handbook `c_v`, or
+//! when a `Stagnated` verdict appears that the clamp does not explain.
 
 use crate::math::Fix128;
 
