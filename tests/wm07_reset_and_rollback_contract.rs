@@ -9,7 +9,8 @@
 //! fingerprint 検査で塞がれていることを確認する
 
 use alice_physics::{
-    Fix128, FixedJoint, Joint, PhysicsConfig, PhysicsWorld, QuatFix, RigidBody, Vec3Fix,
+    Fix128, FixedJoint, Joint, PhysicsConfig, PhysicsWorld, QuatFix, RigidBody, SleepConfig,
+    Vec3Fix,
 };
 
 fn quiet_config() -> PhysicsConfig {
@@ -50,6 +51,117 @@ fn reset_world_then_same_initial_state_two_runs_bit_identical() {
     assert_eq!(
         first, second,
         "reset_world 後に同じ初期状態から N step を 2 回実行しても blob が一致しない"
+    );
+}
+
+/// `drifting_body` / `loose_sleep_config` 用の scene (`tests/wm08_state_coverage.rs::drifting_world`
+/// と同じ構成原理) — 重力ゼロ + 緩い sleep 閾値 + 閾値未満の微小運動
+/// この構成でないと `idle_frames` が軌道に出ず、reset oracle が空振りする
+/// (既定 / 静止 scene では `idle_frames` を失っても byte 一致してしまう、
+/// `project_alice_world_model_mvp_plan` §3 Phase 2 完了判定の注記)
+fn drifting_body() -> RigidBody {
+    let mut body = RigidBody::new_dynamic(Vec3Fix::from_int(0, 5, 0), Fix128::ONE);
+    body.velocity = Vec3Fix::new(Fix128::from_ratio(1, 4), Fix128::ZERO, Fix128::ZERO);
+    body
+}
+
+fn loose_sleep_config() -> SleepConfig {
+    SleepConfig {
+        linear_threshold: Fix128::from_ratio(1, 2),
+        angular_threshold: Fix128::from_ratio(1, 2),
+        frames_to_sleep: 4,
+    }
+}
+
+fn step_n(world: &mut PhysicsWorld, n: usize) {
+    let dt = Fix128::from_ratio(1, 64);
+    for _ in 0..n {
+        world.step(dt);
+    }
+}
+
+/// 対照実験 (先に示す、reset oracle 専用 scene) — `idle_frames` を 0 に戻すと
+/// step 9 で軌道が変わることを確認する ここが red なら `drifting_body` /
+/// `loose_sleep_config` の scene が悪く、下の reset oracle の「bit 一致」は
+/// idle_frames を失っても偶然一致するだけの空振りになる
+/// (`tests/wm08_state_coverage.rs::idle_frames_is_load_bearing_in_this_scene`
+/// と同じ構成だが、本 file は reset_world 専用の scene として独立に確認する)
+#[test]
+fn idle_frames_matters_in_the_reset_oracle_scene() {
+    let mut a = PhysicsWorld::new(quiet_config());
+    a.set_sleep_config(loose_sleep_config());
+    a.add_body(drifting_body());
+    let mut b = PhysicsWorld::new(quiet_config());
+    b.set_sleep_config(loose_sleep_config());
+    b.add_body(drifting_body());
+
+    step_n(&mut a, 3);
+    step_n(&mut b, 3);
+    assert_eq!(
+        a.serialize_state(),
+        b.serialize_state(),
+        "前提: 同じ scene を同じ step 数だけ進めたら blob は一致する"
+    );
+    assert!(
+        !a.is_sleeping(0) && !b.is_sleeping(0),
+        "前提: まだ眠っていない状態で比較する"
+    );
+    assert!(
+        a.islands.sleep_data[0].idle_frames > 0,
+        "前提: idle_frames が溜まっている scene でないと対照実験にならない"
+    );
+
+    b.islands.sleep_data[0].idle_frames = 0;
+    step_n(&mut a, 9);
+    step_n(&mut b, 9);
+    assert_ne!(
+        a.serialize_state(),
+        b.serialize_state(),
+        "idle_frames を失っても step 9 で軌道が変わらない — \
+         reset oracle の scene として空振り (scene を選び直す)"
+    );
+}
+
+/// 本命 — `reset_world()` は idle_frames が軌道に出る scene でも 2 回連続で
+/// bit 一致する (doctrine WM-07、`project_alice_world_model_mvp_plan` §3
+/// Phase 2 の「reset 冪等」oracle)
+///
+/// ⚠️ **reset の前に world を「汚す」** (別の drifting body を走らせて
+/// islands / sleep_data に idle_frames を蓄積させてから `reset_world` を
+/// 呼ぶ) — 既定 / 静止 scene のまま reset を呼ぶだけでは、`reset_world` が
+/// `islands` を正しく初期化していなくても (残骸が残っていても) 偶然 byte
+/// 一致してしまい、空振りになる (`reset_world_then_same_initial_state_two_runs_bit_identical`
+/// が踏んでいた盲点、本 test はそれを補う)
+#[test]
+fn reset_world_is_bit_identical_in_a_scene_where_idle_frames_matters() {
+    fn dirty_then_reset_and_run(world: &mut PhysicsWorld) -> Vec<u8> {
+        // 汚す: 別 body を走らせて idle_frames / sleep を蓄積させる
+        world.set_sleep_config(loose_sleep_config());
+        world.add_body(drifting_body());
+        step_n(world, 10);
+        assert!(
+            world.islands.sleep_data[0].idle_frames > 0 || world.is_sleeping(0),
+            "前提: reset 前に islands が汚れている (idle_frames or sleeping)"
+        );
+
+        world.reset_world();
+
+        // reset 後、同じ scene を再構築して step (sleep config は reset で
+        // 既定に戻るので呼び直す、これは reset の契約どおりで bug ではない)
+        world.set_sleep_config(loose_sleep_config());
+        world.add_body(drifting_body());
+        step_n(world, 12);
+        world.serialize_state()
+    }
+
+    let mut world = PhysicsWorld::new(quiet_config());
+    let first = dirty_then_reset_and_run(&mut world);
+    let second = dirty_then_reset_and_run(&mut world);
+
+    assert_eq!(
+        first, second,
+        "idle_frames が軌道に出る scene で reset_world 後の 2 回が bit 一致しない \
+         — reset_world が islands / sleep_data を完全に初期化していない可能性"
     );
 }
 
