@@ -13,6 +13,14 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added — `debug_render` / `sdf_destruction` / `gpu_sdf` の未配線 41 item を全配線、`eulerian_grid` の分散 primitive 14 件を負債 marker 化 (全配線 program 第 9 件)
+
+- `debug_render`: `examples/debug_render_primitives.rs` が色定数 9 + `arrow`/`axes`/`point`/`sphere`/`primitive_count`/`debug_draw_world` を駆動 oracle 17 本、変異 13/13 red ⚠️ `DebugDrawFlags::draw_aabbs`/`draw_bvh` は `debug_draw_world` から一度も参照されない死んだ flag と worker が実測 (挙動を変える修正になるため未修正、Backlog)
+- `sdf_destruction`: `examples/sdf_destruction_events.rs` が 11 item + baseline 外の `reset` を駆動 oracle 14 本、変異 14/14 red (`optimize` の cap 判定 `len <= 32` と drain 件数式が独立で中間範囲 17-31 に歯が無い穴を worker 自身が発見・閉じた)
+- `gpu_sdf`: `examples/gpu_sdf_batch_queries.rs` が 13 item + baseline 外の `query_count` を駆動 oracle 17 本、変異 18/18 red 連動で `math::SIMD_WIDTH`/`simd_width` も配線済に (既存 Backlog 行の実測訂正)
+- `eulerian_grid`: 分散圧力解法の cross-process primitive 14 件 (`SLAB_FACE_HALO_MISSING` / `enforce_slab_face_boundaries*` / `project_pressure_*_on_rank` / `SlabFaceConditions::set_u/v/w` / 4 型の `bytes()`) は examples/ から `pub(crate)` に到達不能、単一プロセス production (`DecomposedGs`/`BandedGs`) も使わない ⚠️ worker が trigger 2a で停止 (新規 pub facade は semver 判断、Backlog に過去 3 回「別 y/n」裁定あり) → user 裁定: 新規 pub は追加しない、`ALLOW-UNWIRED` debt marker 10 件で現状維持 (Backlog `eulerian-grid-cross-process-primitive-residue`) 4 件は guard の liveness 判定が `mod tests` 内の非 `#[test]` helper からの呼出も「配線済」と数えるため marker 不要、baseline のみ退役 `set_v_solid`/`set_w_solid` (pub、`MacGrid`) は `examples/sealed_box_adaptive_dt.rs` に配線 (既存 `tests/analytic_adaptive_dt.rs` に oracle あり)
+- baseline 61 行退役 (debug_render 15 + sdf_destruction 11 + gpu_sdf 13 + math 2 + eulerian_grid 20)、新規公開面 0 件
+
 ### Added — `anomaly` / `pipeline` / `privacy` / `profiling` / `maxwell_fdtd` / `sketch` / `transient_thermal` / `joint` の 8 module、未配線 171 item を全配線 (全配線 program 第 7-8 件)
 
 worker 8 本、各 module に production 入口 (`examples/<module>_*.rs`) + 閉形式 oracle + 退化入力 test を新設 `src/` 変更は `anomaly.rs` (callback 消費者 1 件) と `sketch.rs` (死蔵 helper 1 件削除 + quantile doc 修正) のみ、残り 6 module は無変更 (既存 `pub` / `pub(crate)` item に example 経由で入口を与えた)
