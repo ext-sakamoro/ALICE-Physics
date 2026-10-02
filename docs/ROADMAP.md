@@ -16,6 +16,12 @@ Memory index pointer: `[[reference-alice-physics-v1-roadmap]]` in claude-config.
 | Maxwell FDTD | `ecd8c61` | source-free Yee、⚠️ **SI は `ε₀·μ₀` が 7.7 bit で不可**、正規化単位 + `S=9/16` |
 | 多体 ABA | `1bab99b` | ⚠️ **`solve()` が `link.joint` を読まない**状態から real ABA、oracle 12 本 |
 
+### 第 22 increment (2026-10-02、壁 4 — multigrid を slab 分割に載せる、段階 1)
+
+`eulerian_grid::multigrid_decomposed` (crate 内、新規子 module) を足した `project_pressure_multigrid` を `ranks` 本の連続 `z` slab に分け、halo 層を交換して W-cycle を回す プロセス内の rank (全長 buffer、`RankTransport` / `LocalTransport` を再利用) で、**単一 process の結果と bit 一致** (grid 8³ / 16×8×4 / 4×4×16 / 8×8×1 / 16³、rank 1〜16、開放 / 壁つき、`ranks > nz` を含む) 各 level の slab 境界を 2 の冪の倍数に取るので restriction / prolongation が rank 内で閉じる 層数が rank 数を下回る level は rank 0 に集約して単一 process の `mg_vcycle` を回し、補正を所有者に返す
+oracle 5 本 (bit 一致 / halo を iteration ごとにすると不一致 / 何も届けない transport で不一致 / 単一 process が拒否する入力は不変 / layout の分割と整列) 変異 20 件中 18 red、2 件は等価変異 (1 セルの最粗 level の零化は結果を変えない / 届け先 buffer の sentinel 埋めは配送が成功する限り観測できない)
+未着手 (段階 2〜3): slab 局所記憶域 / rank ごとに 1 process の driver (`SocketTransport` 上) / FMG・warm start / 集約した粗 level の並列化 ⚠️ 実際の 1e8 規模での 1 step の時間は未測定 (23 分は見積り)
+
 ### 第 21 increment (2026-10-02、超弾性の小ひずみの極限を線形弾性に一致させる)
 
 超弾性の体積項を `κ(J−1) − p_ref/J` (エネルギーは `−p_ref ln J + κ/2 (J−1)²`) に替え、`κ = λ − offset(model)` (Neo-Hookean 0 / Mooney-Rivlin `4C₂` / Yeoh `8C₂`) を P1 / P2 / P3 の solver が共有の 1 関数から取るようにした 小ひずみの極限が線形の `(λ, μ)` に一致する (旧形は `μ/3` 硬かった) 応力にも接線にも `ln` は出ず厳密 oracle を維持 圧縮側に障壁が付く 閉形式 oracle は手で導出し直し (P2・P3 の一軸は `q` の二次式)、solver 層で荷重を `2⁻ᵏ` 倍にすると超弾性と線形の差が 4 倍ずつ縮む (実測比 0.25) 変異 20/20 red

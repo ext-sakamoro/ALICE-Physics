@@ -20,6 +20,12 @@ were introduced during that release window.
 - `eulerian_grid` tests: `CrossFault::ChunkedWire` — `Read` / `Write` を 1 call 1 byte に刻む `Chunked<S>` 越しの 2 プロセス圧力解が単一プロセスと bit 一致 (8³ / 7³) 両 rank が「call 数 == byte 数 かつ 1 層分以上」を assert ⚠️ **byte 数だけの閾値は whole buffer を通す変異を見逃した** (実測、call 数で捕まえた) 変異 4/4 red (whole buffer 通過 / read 側のみ / write 側のみ / 計数なし)
 
 文面の確定: 複数ノード分散は **1 ホスト 8 プロセス loopback TCP で bit 一致 (arm64 / x86_64 別々に、fold は cross-arch 一致)**、2 ホスト / アーキ跨ぎの 1 solve / MPI backend は未測定・未実装
+### Added — multigrid の圧力射影を `z` slab 分割で回す (壁 4、段階 1、crate 内)
+
+`eulerian_grid::multigrid_decomposed::project_pressure_multigrid_decomposed` (`pub(crate)`、公開 API は不変) を追加した 単一 process の `project_pressure_multigrid` を `ranks` 本の slab に分け、colour sweep ごとに halo 1 層を交換する プロセス内 rank (全長 buffer + 範囲外 sentinel) で、結果は **単一 process と bit 一致** 各 level の slab 境界は 2 の冪の倍数なので restriction / prolongation は rank 内で閉じる 層数が rank 数を下回る level は rank 0 に集約する
+- oracle: 5 grid 形状 × rank 1〜16 × 開放 / 壁つき (`ranks > nz` を含む) で bit 一致 / halo の delay と無配送 transport は不一致 (歯) / layout の整列 / 拒否入力は不変 変異 20 件中 18 red、2 件は等価変異
+- 未着手: slab 局所記憶域、rank ごとに 1 process の driver、FMG / warm start、集約した粗 level の並列化 1e8 規模の実時間は未測定
+
 ### Changed — 超弾性の体積項を `U(J) = −p_ref ln J + κ/2 (J−1)²` に (小ひずみの極限が線形弾性と一致する)
 
 `hyperelastic::cauchy_stress` の圧力項を `K(J−1) − p_ref` から `κ(J−1) − p_ref/J` に替えた 応力にも接線にも `ln` は出ない (エネルギーだけ) ので厳密 oracle が維持できる ⚠️ **J ≠ 1 での戻り値が変わる pub 関数の挙動変更** (J = 1 では従来と一致) 旧形は小ひずみで `A₁₁₁₁(I) = λ + 5μ/3` となり線形の `λ + 2μ` より μ/3 硬かった (`K = λ + 2μ/3` を渡していたため) Mooney-Rivlin は `4C₀₁`、Yeoh は `8C₂` ずれていた (`C₃` は小ひずみに入らない)
