@@ -13,6 +13,21 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added — `anomaly` / `pipeline` / `privacy` / `profiling` / `maxwell_fdtd` / `sketch` / `transient_thermal` / `joint` の 8 module、未配線 171 item を全配線 (全配線 program 第 7-8 件)
+
+worker 8 本、各 module に production 入口 (`examples/<module>_*.rs`) + 閉形式 oracle + 退化入力 test を新設 `src/` 変更は `anomaly.rs` (callback 消費者 1 件) と `sketch.rs` (死蔵 helper 1 件削除 + quantile doc 修正) のみ、残り 6 module は無変更 (既存 `pub` / `pub(crate)` item に example 経由で入口を与えた)
+
+- `anomaly`: 新規 `pub(crate) fn CompositeDetector::observe_with_callback<C: AnomalyCallback>(&mut self, value, timestamp, metric_id, &mut C) -> bool` (判定 → `on_anomaly` → 吸収の順) oracle 17 本、変異 48/48 red
+- `pipeline`: `examples/pipeline_events.rs` が 20 item 全部を駆動 oracle 15 本、変異 32/32 red (恒等式は `total_events + dropped_events = N`、brief の `total_events = N` は誤りと worker が訂正)
+- `privacy`: `examples/privacy_budget_and_rappor.rs` が 25 item 全部を駆動 oracle 15 本、実装変異 46/47 red (生存 1 は算術等価)、配線変異 21/26 red (生存 5 は guard の到達性、ガード限界で原理的に見えない)
+- `profiling`: `examples/profiling_stages.rs` が 16 item 全部を駆動 oracle 16 本、変異 32/32 red
+- `maxwell_fdtd`: `examples/maxwell_sources_and_absorber.rs` が 20 item (`Absorber` / Gauss 残差 / 電荷保存 / PML 理論反射率等) を駆動、既存 `tests/analytic_maxwell_fdtd.rs` のソースフリー Yee oracle は再導出せず oracle 26 本、変異 20/20 red
+- `sketch`: `examples/sketch_streams.rs` が 20 item (`CountMinSketch` / `HeavyHitters` / `DDSketch` / `HyperLogLog` / `FnvHasher`) を駆動、死蔵の `bucket_index_fast` + `fast_log2_approx` (dead_code 1 件) を削除 oracle 13 本、実装変異 31/31 red、配線変異 16/17 red (生存 1 は `DDSketch::alpha()` のクラス不変量による構造的に観測不能) ⚠️ **`DDSketch::quantile` は bucket edge を返し `α` でなく `2α/(1+α)` が正しい保証だった** (worker 実測、527/1000 quantile が旧 doc の `α` を超過) doc を実測保証に修正、oracle を `2α/(1+α)` 比較に差し替え (非破壊、挙動は変えていない、mid-point estimator への変更は 2.0.0 列として Backlog)
+- `transient_thermal`: `examples/transient_thermal_materials.rs` が 15 item を駆動、既存 `tests/engineering_oracles.rs` の cosine eigenmode 減衰 oracle は再導出せず oracle 24 本 (5 item は example + 6 stepper 内部からの 2 経路で配線、grep で確認) 実装変異 15/15 red (1 件は初版 oracle が iteration-1 で観測不能だったため独立 3-cell tridiagonal oracle を追加して閉じた)
+- `joint`: `examples/joint_limits_and_breaking.rs` が 10 item (breakable joint / limit / motor builder) を駆動 oracle 14 本、変異 25/25 red ⚠️ **`Joint::compute_force` / `solve_joints_breakable` は平面 `Mul` で anchor 分離 `2^sh` (`sh∈[32,62]`) の二乗が 0 に wrap し、`break_force` を設定しても絶対に切れない** (worker 実測、Backlog) ⚠️ **`PhysicsWorld::step` / `step_parallel` は `solve_joints_breakable` を一度も呼ばない** — breakable joint は通常の step で切れない、配線には `solve_joints_dispatch` への設計変更が要るため worker は trigger 2a で停止し提案 diff のみ報告 (user の A/B/C 裁定待ち、Backlog)
+- 配線ガードの名前衝突 (裸の識別子一致) で 5 件が baseline 上は退役したが実体は未配線: `joint_extra::with_break_force` / `rope_attach::with_break_force` / `sdf_collider::update_cache` / `sdf_destruction::reset` / `gpu_sdf::query_count` (Backlog に明記、次 worker batch 用)
+- baseline 退役 **135 行** (8 module 実配線 + dead_code 1) + 上記名前衝突 5 行、新規 pub `anomaly::CompositeDetector::observe_with_callback` 1 件 (snapshot 反映済)
+
 ### Added — `PhysicsWorld` の公開 API 44 本と `multiphase` の VOF / level-set を配線、構造 4 module の module 全体 `allow(dead_code)` を撤去 (全配線 program 第 6 件)
 
 - `examples/world_api_tour.rs` + oracle `tests/analytic_world_api.rs` 32 本 — `solver.rs` の 44 本 (`add_force` / `add_torque` / `set_velocity` / `set_rotation` / `with_*` builder / `get_body(_mut)` / `remove_body` / `remove_joint` / force field と SDF collider の追加・削除 / `set_body_filter` / `set_body_material` / sensor と trigger / contact event の drain / `wake_body` / `is_dynamic` / `is_kinematic` / `mass` / `speed` / `active_body_count` / `joint_count` / `num_batches` / GPU bridge の着脱 等) を閉形式 (`v = v₀ + (F/m)·dt`、`ω = τ/I`、`speed = |v|`、sleep → wake → active 件数) と退化入力 (範囲外 index は無視、空 world の drain は空、二重 remove は `None`) で pin
