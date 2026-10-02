@@ -13,6 +13,18 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added — `coupled_field::reconcile_weighted` と、熱塑性 driver / CG を `coupled_iteration` の部品に乗せ替え (全配線 program 第 5 件)
+
+`coupled_field` の `reconcile_mean` / `add_assign` / `scale_div` / `blend_from` / `same_grid_as` と `coupled_iteration` の `run_sub_iteration` / `residual_norm_l2_checked` 等は test からしか呼ばれていなかった 配線先は `ys-1f` と合意
+
+- `coupled_field::reconcile_weighted(participants, weights: &[u32], channel)` — 重み付き平均 `Σ wᵢ fᵢ / Σ wᵢ` を **整数倍した field の厳密和 (`add_assign`) + 除算 1 回 (`scale_div`)** で作る (丸め 1 回、参加者の順序非依存、等重みは `reconcile_mean` と bit 一致) 温度は intensive なので複数 owner の統合は各 owner の extensive 量 (熱容量 / 双対 cell 体積) で重み付けるのが物理的で、等重みはその特殊 case 重み 0 は棄権 (結果は採用する)、全員 0 / 長さ不一致 / 空は `NoParticipants`、格子不一致は参加者を触らず `Err` (`same_grid_as` を入口の判定に) ⚠️ 重みは単位 (ΔT vs 絶対温度) を解かない (Backlog 既載)
+- `step_thermoplastic` を `coupled_iteration::run_sub_iteration` に乗せ替え (閉包内の `Err` は `run_sub_iteration_fallible` が捕まえ、report の解釈より**前**に返す — residual 0 は monitor が収束と読むため) 緩和 `δT_{k+1} = δT_k + ω(δT* − δT_k)` を `CoupledField::blend_from(target, ω)` に置換 (同じ式、bit 不変: 既存 `tests/analytic_thermoplastic_coupling.rs` 12 call が回帰)
+- 共役勾配の残差 norm `dot(r, r).sqrt()` を `coupled_iteration::residual_norm_l2_checked` に (`b` の norm も) — `|r|·|r|` と `r·r` は同じ積なので忠実な範囲では bit 不変、2 乗が範囲外 / 床落ちした成分は新 variant **`FemError::ResidualNormUnfaithful { index }`** で拒否 (旧実装は wrap した数を許容差と比べていた E = 1e13 MPa + 10 mm で再現)
+- `examples/temperature_reconciliation.rs` (`ThermalModifier` と `PhaseChangeModifier` を別々に加熱 → `same_grid_as` → `reconcile_mean` / `reconcile_weighted` → 拒否)
+- oracle `tests/analytic_coupled_wiring.rs` 7 本 (重み付き平均は raw 和の整数除算と bit 一致 + 順序非依存 / 単位重みは `reconcile_mean` と bit 一致、1 参加者は恒等 / 重み 0 の棄権 / 拒否 4 経路で参加者不変 / `|r|·|r| == r·r` / 通常の梁は解け、1e13 MPa の梁は `ResidualNormUnfaithful` / `EquilibrationScale` の閉形式: `covering` = 次の 2 冪、`round_trip_bound = (2^e − 1)·2⁻⁶⁴`、down→up の損失は bound 以内で up→down は厳密、範囲外は `ScaleOutOfRange`) + `linear_elastic_fem::fallible_driver_tests` 3 本 (sweep k の `Err` は `Ok(converged)` にならない / 成功経路は `run_sub_iteration` の report と一致 / monitor の拒否は `CoupledSubIterationFailed`)
+- 破壊試験 9 本: **red 6** (重み無視 / 除算 skip / 全 0 受理 / ω 無視 / 捕捉した `Err` を捨てる / **CG の 2 箇所を同時に `dot` に戻す** → 1e13 MPa の梁が `UnderConstrained` と誤報) 単独で `dot` に戻す 2 本はもう片方の検査が同じ wrap を捕まえるので生存 (入口からは区別できない、同時変異で red) / 「重み 0 を棄権でなく 0 倍で加える」は算術的に等価 (0 を足して total に 0 を足す) / **「床を毎 sweep 導出する」は現 oracle で観測不能 = 歯なし** (Backlog 起票)
+- 配線ガード baseline 退役 19 行: 実配線 13 (`reconcile_mean` / `add_assign` / `scale_div` / `blend_from` / `same_grid_as` / `run_sub_iteration` / `residual_norm_l2_checked` / `L2_TERM_FLOOR` / `MAX_EXPONENT` (`covering` 経由) と、example が両 owner で直接呼ぶ `thermal` / `phase_change` の `apply_heat_at` `temperature_at` 4 行、名前衝突の巻き込みなし) + **負債 marker 6** (`best_residual` は `SubIterationReport` に field を足せる 2.0.0 列まで / `EquilibrationScale::{covering, exponent, scale_up, scale_down, round_trip_bound}` は CG の停止 norm を equilibrate する別 task `residual_norm_l2_equilibrated` 待ち — `ys-1f`: 消費者は monolithic でなく CG の**床側** (`RESIDUAL_NORM_FLOOR = 2⁻³⁰` の理由そのもの) にあり、床が binding な scene で `effective_relative_tolerance == relative_tolerance` になる oracle と golden 再生成の y/n を伴うので分離)
+
 ### Added — 乱流 closure を `CfdSolver::step_rans` に配線 (`TurbulenceModel` / `RansState`、k-ε / k-ω / dynamic Smagorinsky / 可変粘性拡散) (全配線 program 第 4 件)
 
 `turbulence.rs` の `KEpsilonState` / `KOmegaState` / `dynamic_smagorinsky_cs` / `KE_SIGMA_*` / `KW_BETA` は点 model と定数だけで、solver からは `use_turbulence` (格子全体の max |S| から 1 つの ν_t) しか無かった 設計は `ys-1f` と合意 (可変 ν の運動量拡散は必須 — proxy だと ν_t 場が運動量に 1 bit も届かず配線変異が恒等になる 状態は caller 所有にして `CfdSolver` の layout を変えない — pub field の追加は `constructible_struct_adds_field` で major、反力 `reactions` の先例と同じ列)
