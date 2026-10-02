@@ -482,6 +482,12 @@ pub(crate) mod solver_tgs_hooks_6dof_oriented;
 pub(crate) mod solver_tgs_hooks_6dof_oriented_scoped;
 #[cfg(feature = "std")]
 pub(crate) mod solver_tgs_hooks_6dof_scoped;
+// Adapter from `solver::RigidBody` / `ContactConstraint` to the solver_tgs*
+// family's oriented body/contact types — the production entry point for
+// `SolverBackend::Tgs` (`PhysicsWorld::step_tgs`). std-gated for the same
+// reason as the rest of `solver_tgs*` (the family uses `std::collections::HashMap`).
+#[cfg(feature = "std")]
+pub(crate) mod solver_tgs_backend;
 pub mod spatial;
 #[cfg(feature = "std")]
 pub mod thermal;
@@ -640,6 +646,7 @@ pub use soft_body_cut::{cut_cloth, cut_deformable, CutPlane, CutResult};
 pub use solver::ContactModifier;
 pub use solver::{
     BodyType, ContactConstraint, DistanceConstraint, PhysicsConfig, PhysicsWorld, RigidBody,
+    SolverBackend,
 };
 pub use spatial::SpatialGrid;
 #[cfg(feature = "std")]
@@ -794,6 +801,7 @@ pub mod prelude {
     pub use crate::solver::ContactModifier;
     pub use crate::solver::{
         BodyType, ContactConstraint, DistanceConstraint, PhysicsConfig, PhysicsWorld, RigidBody,
+        SolverBackend,
     };
     pub use crate::spatial::SpatialGrid;
     #[cfg(feature = "std")]

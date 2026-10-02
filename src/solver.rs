@@ -542,6 +542,51 @@ impl ContactConstraint {
 // XPBD Solver
 // ============================================================================
 
+/// Selects which rigid-body integrator [`PhysicsWorld::step`] dispatches to.
+///
+/// Both variants read and write the same [`RigidBody`] fields, so a world
+/// can be migrated between backends between steps without changing any
+/// other configuration. They are **not** numerically interchangeable —
+/// XPBD is position-based (Macklin/Müller) and TGS is a sub-stepping
+/// impulse-based projected Gauss-Seidel integrator (Müller et al. 2020,
+/// see the crate-internal `solver_tgs` module) — so the same scene produces different
+/// (both physically valid) trajectories under each backend. Pick one and
+/// stay on it for a given simulation; do not expect bit-identical replay
+/// across a backend switch.
+///
+/// # Known gaps of the `Tgs` path (v1.1, tracked, not silent)
+///
+/// * **Joints are not enforced.** [`DistanceConstraint`]s are only used to
+///   group bodies into solver islands (so a joint chain is still advanced
+///   as one connected group); no constraint impulse is applied to keep the
+///   anchors at `target_distance`. A joint scene under `Tgs` behaves as if
+///   the joint were absent. XPBD continues to enforce joints normally.
+/// * **Kinematic targets are not advanced.** [`RigidBody::kinematic_target`]
+///   is only consumed by the XPBD integration path; under `Tgs` a kinematic
+///   body keeps its last position/velocity.
+/// * **SDF colliders are not solved.** [`PhysicsWorld::sdf_colliders`] are
+///   skipped; only auto-detected sphere-sphere contacts (`body_collision_radii`,
+///   via [`PhysicsWorld::set_body_collision_radius`]) are handed to the TGS
+///   contact solver.
+/// * Requires the `std` feature (`solver_tgs` is `std`-gated, same as the
+///   rest of the TGS family). Selecting `Tgs` in a build without `std`
+///   is **not** silently ignored at the type level — the variant still
+///   exists — but [`PhysicsWorld::step`] falls back to running `Xpbd`
+///   for that build, since there is no TGS implementation to dispatch to.
+///   This is a documented, defined fallback (a different already-correct
+///   solver runs), not state corruption.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[non_exhaustive]
+pub enum SolverBackend {
+    /// Extended Position-Based Dynamics — the solver this crate has shipped
+    /// since 0.1.0. Default.
+    #[default]
+    Xpbd,
+    /// Sub-stepping impulse-based temporal Gauss-Seidel. See the gaps listed
+    /// on [`SolverBackend`] itself before using this in production.
+    Tgs,
+}
+
 /// XPBD physics solver configuration
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SolverConfig {
@@ -566,6 +611,13 @@ pub struct SolverConfig {
     /// stiffness (distance) and the energy-creating re-push (contact).
     /// 0.8〜0.95 が安定的。デフォルト 0.85。
     pub warm_start_factor: Fix128,
+    /// Which integrator [`PhysicsWorld::step`] dispatches to. Default
+    /// [`SolverBackend::Xpbd`] — selecting it is structurally a no-op (the
+    /// TGS dispatch branch is behind a runtime `matches!` check that is
+    /// never taken), so every existing caller that does not set this field
+    /// keeps today's `step` behavior bit-for-bit. See [`SolverBackend`] for
+    /// the `Tgs` path's documented gaps.
+    pub solver_backend: SolverBackend,
 }
 
 /// Physics configuration (alias for `SolverConfig`)
@@ -588,6 +640,7 @@ impl Default for SolverConfig {
             ),
             damping: Fix128::from_ratio(99, 100), // 0.99 velocity retention
             warm_start_factor: Fix128::from_ratio(85, 100), // 0.85
+            solver_backend: SolverBackend::Xpbd,
         }
     }
 }
@@ -909,6 +962,11 @@ pub struct PhysicsWorld {
     /// 到達不能なため、WM-01 の結論「`mul` の積が範囲外を演算側で見る」を
     /// 呼び出し側で実現した形
     overflow_detected: bool,
+    /// Warm-start impulse cache for the [`SolverBackend::Tgs`] path, persisted
+    /// across frames the same way [`Self::contact_cache`] is for XPBD.
+    /// Unused (and empty) while `config.solver_backend` is `Xpbd`.
+    #[cfg(feature = "std")]
+    tgs_impulse_cache: crate::solver_tgs::ImpulseCache,
 }
 
 /// Fold `bytes` into `hash` with FNV-1a (64-bit).
@@ -970,6 +1028,8 @@ impl PhysicsWorld {
             body_collision_radii: Vec::new(),
             body_filters: Vec::new(),
             overflow_detected: false,
+            #[cfg(feature = "std")]
+            tgs_impulse_cache: crate::solver_tgs::ImpulseCache::new(),
         }
     }
 
@@ -1852,6 +1912,17 @@ impl PhysicsWorld {
             return;
         }
 
+        // `SolverBackend::Tgs` dispatch (std-only, see `SolverBackend` doc for
+        // the no-std fallback). This `matches!` is `false` for every caller
+        // that leaves `config.solver_backend` at its `Default` (`Xpbd`), so
+        // the rest of this function — the pre-1.1 XPBD body — is reached and
+        // executed exactly as before: no new code runs on the default path.
+        #[cfg(feature = "std")]
+        if matches!(self.config.solver_backend, SolverBackend::Tgs) {
+            self.step_tgs(dt);
+            return;
+        }
+
         // Phase 0: Event frame lifecycle (contacts are cleared and re-detected
         // in every substep since 1.2.0, see `substep`)
         self.events.begin_frame();
@@ -1889,6 +1960,116 @@ impl PhysicsWorld {
         self.islands.update_sleep(&self.bodies);
 
         // Phase 5: End event frame
+        self.events.end_frame();
+    }
+
+    /// `SolverBackend::Tgs` body of [`Self::step`]. Mirrors `step`'s phase
+    /// numbering so the two are easy to diff, but is a genuinely different
+    /// algorithm: contacts are detected once per full `dt` (not re-detected
+    /// every sub-step — the TGS family owns its own sub-stepping internally
+    /// via [`crate::solver_tgs::tgs_step`]), and bodies are advanced by
+    /// per-island impulse-based Gauss-Seidel instead of XPBD position
+    /// projection. See [`SolverBackend`] for the documented gaps (joints,
+    /// kinematic targets, SDF colliders) this path does not yet cover.
+    #[cfg(feature = "std")]
+    fn step_tgs(&mut self, dt: Fix128) {
+        use crate::solver_tgs::{build_islands, DistanceRef};
+        use crate::solver_tgs_backend::{body_to_tgs, contact_to_tgs, tgs_to_body};
+        use crate::solver_tgs_hooks_6dof_oriented::Pgs6DofOrientedConfig;
+        use crate::solver_tgs_hooks_6dof_oriented_scoped::solve_oriented_islands_serial;
+
+        // Phase 0: Event frame lifecycle (mirrors `step`; TGS detects contacts
+        // once below instead of once per sub-step).
+        self.events.begin_frame();
+
+        // Phase 0.5: Rebuild island connectivity from current joints (same
+        // `IslandManager` bookkeeping `step` performs; the TGS islands used
+        // for solving below are a separate, local structure built from the
+        // same joint list via `build_islands`).
+        self.islands.resize(self.bodies.len());
+        self.islands.reset_unions();
+        for j in &self.joints {
+            let (a, b) = j.bodies();
+            if a < self.bodies.len() && b < self.bodies.len() {
+                self.islands.union(a, b);
+            }
+        }
+
+        // Phase 1: Apply force fields (identical call to `step`).
+        if !self.force_fields.is_empty() {
+            apply_force_fields(&self.force_fields, &mut self.bodies, dt);
+        }
+
+        // Phase 2: Collision detection once for the whole tick (not
+        // re-detected per sub-step — see the method doc).
+        self.clear_contacts();
+        self.detect_collisions();
+
+        // Phase 3: Convert to the TGS body/contact representation, solve
+        // every island, convert back.
+        let n = self.bodies.len();
+        let mut tgs_bodies: Vec<_> = self
+            .bodies
+            .iter()
+            .enumerate()
+            .map(|(i, b)| body_to_tgs(b, i as u64))
+            .collect();
+        let mut tgs_contacts: Vec<_> = self
+            .contact_constraints
+            .iter()
+            .enumerate()
+            .map(|(i, c)| contact_to_tgs(c, &self.bodies, i as u64))
+            .collect();
+        let joint_refs: Vec<DistanceRef<'_>> = self
+            .distance_constraints
+            .iter()
+            .map(|joint| DistanceRef { joint })
+            .collect();
+
+        // `build_islands` only errs when a contact/joint references a body
+        // index `>= n`; every index here comes from this same world's own
+        // `detect_collisions` / `add_distance_constraint`, both of which are
+        // bounds-checked against `self.bodies.len()` at insertion time, so
+        // this is unreachable in practice. Treat it as "nothing to solve"
+        // rather than panicking an FFI host.
+        let islands = build_islands(&tgs_bodies, &tgs_contacts, &joint_refs).unwrap_or_default();
+
+        let cfg = Pgs6DofOrientedConfig {
+            gravity: [
+                self.config.gravity.x,
+                self.config.gravity.y,
+                self.config.gravity.z,
+            ],
+            ..Pgs6DofOrientedConfig::default()
+        };
+        let tgs_cfg = crate::solver_tgs::TgsConfig {
+            substeps: self.config.substeps.max(1) as u32,
+            velocity_iters: self.config.iterations.max(1) as u32,
+            ..crate::solver_tgs::TgsConfig::default()
+        };
+        solve_oriented_islands_serial(
+            &mut tgs_bodies,
+            &mut tgs_contacts,
+            &islands,
+            &mut self.tgs_impulse_cache,
+            cfg,
+            &tgs_cfg,
+            dt,
+        );
+        debug_assert_eq!(tgs_bodies.len(), n);
+        for (body, state) in self.bodies.iter_mut().zip(tgs_bodies.iter()) {
+            tgs_to_body(state, body);
+        }
+
+        // Phase 3.5: Frame-level damping (identical call to `step`; TGS's own
+        // per-substep gravity/impulse integration does not apply the global
+        // `damping` factor, so this still needs to run here).
+        self.apply_frame_damping();
+
+        // Phase 4: Update sleeping (identical call to `step`).
+        self.islands.update_sleep(&self.bodies);
+
+        // Phase 5: End event frame (identical call to `step`).
         self.events.end_frame();
     }
 

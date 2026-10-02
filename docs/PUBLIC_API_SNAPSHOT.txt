@@ -8086,6 +8086,27 @@ impl core::marker::Unpin for alice_physics::heatmap::SliceAxis
 impl core::marker::UnsafeUnpin for alice_physics::heatmap::SliceAxis
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::heatmap::SliceAxis
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::heatmap::SliceAxis
+#[non_exhaustive] pub enum alice_physics::prelude::SolverBackend
+pub alice_physics::prelude::SolverBackend::Tgs
+pub alice_physics::prelude::SolverBackend::Xpbd
+impl core::clone::Clone for alice_physics::solver::SolverBackend
+pub fn alice_physics::solver::SolverBackend::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::solver::SolverBackend
+impl core::cmp::PartialEq for alice_physics::solver::SolverBackend
+pub fn alice_physics::solver::SolverBackend::eq(&self, &Self) -> bool
+impl core::default::Default for alice_physics::solver::SolverBackend
+pub fn alice_physics::solver::SolverBackend::default() -> Self
+impl core::fmt::Debug for alice_physics::solver::SolverBackend
+pub fn alice_physics::solver::SolverBackend::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::solver::SolverBackend
+impl core::marker::StructuralPartialEq for alice_physics::solver::SolverBackend
+impl core::marker::Freeze for alice_physics::solver::SolverBackend
+impl core::marker::Send for alice_physics::solver::SolverBackend
+impl core::marker::Sync for alice_physics::solver::SolverBackend
+impl core::marker::Unpin for alice_physics::solver::SolverBackend
+impl core::marker::UnsafeUnpin for alice_physics::solver::SolverBackend
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::solver::SolverBackend
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::solver::SolverBackend
 pub struct alice_physics::prelude::AABB
 pub alice_physics::prelude::AABB::max: alice_physics::math::Vec3Fix
 pub alice_physics::prelude::AABB::min: alice_physics::math::Vec3Fix
@@ -14910,6 +14931,27 @@ impl core::marker::Unpin for alice_physics::solver::BodyType
 impl core::marker::UnsafeUnpin for alice_physics::solver::BodyType
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::solver::BodyType
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::solver::BodyType
+#[non_exhaustive] pub enum alice_physics::solver::SolverBackend
+pub alice_physics::solver::SolverBackend::Tgs
+pub alice_physics::solver::SolverBackend::Xpbd
+impl core::clone::Clone for alice_physics::solver::SolverBackend
+pub fn alice_physics::solver::SolverBackend::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::solver::SolverBackend
+impl core::cmp::PartialEq for alice_physics::solver::SolverBackend
+pub fn alice_physics::solver::SolverBackend::eq(&self, &Self) -> bool
+impl core::default::Default for alice_physics::solver::SolverBackend
+pub fn alice_physics::solver::SolverBackend::default() -> Self
+impl core::fmt::Debug for alice_physics::solver::SolverBackend
+pub fn alice_physics::solver::SolverBackend::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::solver::SolverBackend
+impl core::marker::StructuralPartialEq for alice_physics::solver::SolverBackend
+impl core::marker::Freeze for alice_physics::solver::SolverBackend
+impl core::marker::Send for alice_physics::solver::SolverBackend
+impl core::marker::Sync for alice_physics::solver::SolverBackend
+impl core::marker::Unpin for alice_physics::solver::SolverBackend
+impl core::marker::UnsafeUnpin for alice_physics::solver::SolverBackend
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::solver::SolverBackend
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::solver::SolverBackend
 pub struct alice_physics::solver::BodyObservation
 pub alice_physics::solver::BodyObservation::angular_velocity: alice_physics::math::Vec3Fix
 pub alice_physics::solver::BodyObservation::body_index: usize
@@ -15153,6 +15195,7 @@ pub struct alice_physics::solver::SolverConfig
 pub alice_physics::solver::SolverConfig::damping: alice_physics::math::Fix128
 pub alice_physics::solver::SolverConfig::gravity: alice_physics::math::Vec3Fix
 pub alice_physics::solver::SolverConfig::iterations: usize
+pub alice_physics::solver::SolverConfig::solver_backend: alice_physics::solver::SolverBackend
 pub alice_physics::solver::SolverConfig::substeps: usize
 pub alice_physics::solver::SolverConfig::warm_start_factor: alice_physics::math::Fix128
 impl core::clone::Clone for alice_physics::solver::SolverConfig
@@ -16707,6 +16750,27 @@ impl core::marker::Unpin for alice_physics::heatmap::SliceAxis
 impl core::marker::UnsafeUnpin for alice_physics::heatmap::SliceAxis
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::heatmap::SliceAxis
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::heatmap::SliceAxis
+#[non_exhaustive] pub enum alice_physics::SolverBackend
+pub alice_physics::SolverBackend::Tgs
+pub alice_physics::SolverBackend::Xpbd
+impl core::clone::Clone for alice_physics::solver::SolverBackend
+pub fn alice_physics::solver::SolverBackend::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::solver::SolverBackend
+impl core::cmp::PartialEq for alice_physics::solver::SolverBackend
+pub fn alice_physics::solver::SolverBackend::eq(&self, &Self) -> bool
+impl core::default::Default for alice_physics::solver::SolverBackend
+pub fn alice_physics::solver::SolverBackend::default() -> Self
+impl core::fmt::Debug for alice_physics::solver::SolverBackend
+pub fn alice_physics::solver::SolverBackend::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::solver::SolverBackend
+impl core::marker::StructuralPartialEq for alice_physics::solver::SolverBackend
+impl core::marker::Freeze for alice_physics::solver::SolverBackend
+impl core::marker::Send for alice_physics::solver::SolverBackend
+impl core::marker::Sync for alice_physics::solver::SolverBackend
+impl core::marker::Unpin for alice_physics::solver::SolverBackend
+impl core::marker::UnsafeUnpin for alice_physics::solver::SolverBackend
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::solver::SolverBackend
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::solver::SolverBackend
 pub struct alice_physics::AABB
 pub alice_physics::AABB::max: alice_physics::math::Vec3Fix
 pub alice_physics::AABB::min: alice_physics::math::Vec3Fix
