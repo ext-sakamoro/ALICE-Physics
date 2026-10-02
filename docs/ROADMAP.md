@@ -16,6 +16,10 @@ Memory index pointer: `[[reference-alice-physics-v1-roadmap]]` in claude-config.
 | Maxwell FDTD | `ecd8c61` | source-free Yee、⚠️ **SI は `ε₀·μ₀` が 7.7 bit で不可**、正規化単位 + `S=9/16` |
 | 多体 ABA | `1bab99b` | ⚠️ **`solve()` が `link.joint` を読まない**状態から real ABA、oracle 12 本 |
 
+### 第 26 increment (2026-10-02、全配線 program 第 2 件 — 壁関数の配線と C_μ の定数修正)
+
+`turbulence::friction_velocity` (対数則の逆解、二分法 64 回固定) を新設して `CfdSolver::step_with_options` の `WallModel` から壁関数 (`y_plus` / `u_plus` / `wall_k_epsilon`) を初めて production に繋いだ 遷移点を 2 分岐の交点 11.4453 に置いて `u⁺` を連続化 oracle 8 本 (手計算 2 点で対数則を pin / 体積力 channel の力の釣合 `u_τ = √(G H/2)` 実測 0.707106781 / 底層で ghost と一致 / 1 step 閉形式 / 拒否) ⚠️ **`KE_C_MU` が 0.08995625 だった**のを oracle が検出し 0.09 に修正 (unit test の 1e-2 許容を 2⁻⁶⁰ に) baseline 退役 10 行 (全部実配線) ⚠️ 残: RANS (k-ε / k-ω の時間発展、program 第 4 件)、`dynamic_smagorinsky_cs`
+
 ### 第 25 increment (2026-10-02、全配線 program 第 1 件 — 圧力解法の選択で Jacobi / BiCGStab を配線)
 
 user 制定の最重要項目「未配線 983 件 + module 丸ごと allow 13 file の全配線、全機能の oracle + panic test」(台帳 memory `project_alice_physics_full_wiring_program`) の 1 件目 `CfdSolver::step_with_pressure_solver(dt, PressureSolver)` で red-black GS / multigrid / Jacobi / BiCGStab を名指しし、退化入力 6 種は `PressureSolverError` で拒否して solver を触らない (`step` の黙った fallback は不変) oracle 7 本 (一致の許容差は最大値原理から導出、不動点と既定選択は bit)、`BicgstabStats` を pub に、example 1 本、baseline 退役 4 行 (全部実配線)

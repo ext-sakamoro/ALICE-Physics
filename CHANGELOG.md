@@ -13,6 +13,20 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added — 壁関数を `CfdSolver` に配線 (`friction_velocity` / `WallModel` / `step_with_options`)
+
+全配線 program 第 2 件 `turbulence` の壁関数 (`y_plus` / `u_plus` / `wall_k_epsilon`) は **u_τ を消費する側しか無く生産側が無かった**ので配線できなかった (Backlog 既載) ⇒ 逆解を新設して繋いだ
+
+- `turbulence::friction_velocity(u_rel, y_p, ν) -> Result<Fix128, WallFunctionError>` — `u_rel = u_τ · u⁺(y_p u_τ / ν)` の逆解 ⚠️ **二分法は 64 回固定で収束 `break` しない** (反復回数が data 依存だと platform 間で bit が割れる、lockstep 規律) bracket `[0, max(u_rel, √(ν u_rel / y_p))]` で `y⁺ < 1` も覆う `u_rel = 0` は厳密 0
+- `Y_PLUS_TRANSITION` を `11` から **2 分岐の交点 `11.4453`** に ⚠️ 旧値 (`B ≈ 5.0` 系の流用) では `u⁺` に 0.35 の段差があり、段差の内側の速度には u_τ が存在しなかった (写像が不連続) `tests/analytic_wall_model.rs` が交点を独立に解いて定数と連続性を pin
+- `cfd_solver::StepOptions` (`new(PressureSolver).with_wall_model(WallModel::log_law())`) / `CfdSolver::step_with_options(dt, &options) -> Result<StepReport, StepError>` 壁 model は `diffuse_velocity` の壁隣接 face で no-slip ghost `2 u_wall − u_in` を **`τ_w = ρ u_τ²` の sink `−dt u_τ² sgn(u_rel) / dx`** (`y_p = dx/2`、`y⁺` は分子粘性) に置き換える 底層 (`y⁺ < 11.4453`) では `u_τ² = ν u_rel / y_p` なので sink は ghost と代数的に同一 = 解像格子で有効にしても何も変わらない `WallShearSummary` (face 数 / 静止 face 数 / `u_τ` と `y⁺` の envelope (静止 face は除外) / 壁整合の `k`, `ε` の最大) を `StepReport.wall` で返す 既定 (`None`) は従来と bit 同一 粘性 0 の solver に wall model は `StepError::WallModelNeedsViscosity` で拒否 (solver を触らない)
+- `tests/analytic_wall_model.rs` 8 本 (設計は ys-1f と合意): 対数則を**手計算 2 点** (`u⁺(100) = 16.732` / `u⁺(1000) = 22.348`、差が `ln 10/κ` で κ と B を分離) で pin してから逆解が `u_τ` を回復 (循環を切る) / 交点 `11.4453` と連続性 / 底層で ghost と 4000 step 後 1e-12 以内 / **体積力駆動 channel の力の釣合 `u_τ = √(G H / 2)`** (κ・B・遷移点に依らない外部閉形式、実測 0.707106781、不均衡の上界は運動量収支 `H·max|Δu|/dt` から導出、`y⁺ = 884`、`k = u_τ²/√C_μ`、`ε = u_τ³/(κ y_p)`、⚠️ profile 突合は `u_p + G dt` (model は body force 後の速度を読む = 分割順序) ) / 1 step の sink `−dt u_τ²/dx` と `None` 時の ghost `−2ν dt U/dx²` (両方閉形式、内部 face は bit 不変) / 拒否 3 + `Display`
+- `examples/wall_model.rs` 配線ガード baseline 退役 10 行 (turbulence 7 + dead_code 3→0 + `set_v_bc` / `set_w_bc`、全部実配線 ⚠️ summary の helper 名 `empty` / `record` が `interpolation::empty` / `sdf_manifold::empty` / `profiling::record` の負債行を巻き込んで退役させかけたので `with_no_faces` / `fold_face` に改名して回避) module 丸ごと `#![allow(dead_code)]` を外し、RANS 残件 (`KEpsilonState` / `KOmegaState` / `KE_SIGMA_*` / `KW_BETA` / `dynamic_smagorinsky_cs`) は item ごとの `ALLOW-DEAD` (program 第 4 件)
+
+### Fixed — `turbulence::KE_C_MU` が `0.08995625` だった (正 `0.09`)
+
+hex literal `0x1707_5F6F_D21F_F2E5` は 0.09 でなく 0.08995625 (−0.05 %) 既存 unit test `ke_c_mu_constant` は許容差 **1e-2** だったので素通り ⇒ 壁 model の oracle `k = u_τ²/√C_μ` (1e-6) が検出 `⌊9·2⁶⁴/100⌋ = 0x170A_3D70_A3D7_0A3D` に修正し、unit test の許容を 2⁻⁶⁰ に締めた ⚠️ 影響範囲: `KEpsilonState::eddy_viscosity` (未配線) と `wall_k_epsilon` の `k` (本 commit で初配線) `KW_BETA_STAR` (`= KE_C_MU`) も同時に正しくなる 他 8 定数は検算して一致 (`σ_ε` 1.3 / `C_ε1` 1.44 / `C_ε2` 1.92 / `β` 0.075 / `C_s` 0.17 / `κ` 0.41 / `B` 5.5)
+
 ### Added — 圧力解法の選択 `CfdSolver::step_with_pressure_solver` (Jacobi / BiCGStab を production に配線)
 
 全配線 program (2026-10-02 user 制定、台帳 memory `project_alice_physics_full_wiring_program`) の第 1 件 `eulerian_grid` の `project_pressure_jacobi` / `project_pressure_bicgstab` は crate 自身が "awaiting cfd_solver integration" と書いたまま test からしか呼ばれていなかった
