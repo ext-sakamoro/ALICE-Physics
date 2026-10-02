@@ -16,6 +16,11 @@ Memory index pointer: `[[reference-alice-physics-v1-roadmap]]` in claude-config.
 | Maxwell FDTD | `ecd8c61` | source-free Yee、⚠️ **SI は `ε₀·μ₀` が 7.7 bit で不可**、正規化単位 + `S=9/16` |
 | 多体 ABA | `1bab99b` | ⚠️ **`solve()` が `link.joint` を読まない**状態から real ABA、oracle 12 本 |
 
+### 第 25 increment (2026-10-02、全配線 program 第 1 件 — 圧力解法の選択で Jacobi / BiCGStab を配線)
+
+user 制定の最重要項目「未配線 983 件 + module 丸ごと allow 13 file の全配線、全機能の oracle + panic test」(台帳 memory `project_alice_physics_full_wiring_program`) の 1 件目 `CfdSolver::step_with_pressure_solver(dt, PressureSolver)` で red-black GS / multigrid / Jacobi / BiCGStab を名指しし、退化入力 6 種は `PressureSolverError` で拒否して solver を触らない (`step` の黙った fallback は不変) oracle 7 本 (一致の許容差は最大値原理から導出、不動点と既定選択は bit)、`BicgstabStats` を pub に、example 1 本、baseline 退役 4 行 (全部実配線)
+⚠️ 残: 分散 solver (`project_pressure_decomposed*` / `slab_local*`) は transport が `pub(crate)` のまま (公開は semver 判断で user に上げる)
+
 ### 第 24 increment (2026-10-02、World Auditor engine gap 3 点 — `reset_world()` / 型付き観測 API / rollback population fingerprint)
 
 壁 1〜4 (連続体 solver の正しさ) とは直交する軸 (symbolic World Auditor が engine に要求する「遷移関数として使える性質」、`project_alice_physics_world_auditor_engine_gaps` 参照) MVP 優先 gap 4 点のうち gap #5 (checksum) は着手時点で既存 commit `c5e314b` により解決済と判明、残り 3 点を実装

@@ -13,6 +13,16 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added — 圧力解法の選択 `CfdSolver::step_with_pressure_solver` (Jacobi / BiCGStab を production に配線)
+
+全配線 program (2026-10-02 user 制定、台帳 memory `project_alice_physics_full_wiring_program`) の第 1 件 `eulerian_grid` の `project_pressure_jacobi` / `project_pressure_bicgstab` は crate 自身が "awaiting cfd_solver integration" と書いたまま test からしか呼ばれていなかった
+
+- `PressureSolver` (`#[non_exhaustive]`): `RedBlackGs { sweeps }` / `Multigrid { cycles }` / `Jacobi { iterations }` / `BiCgStab { max_iterations, tolerance }` 各 variant が自分の意味の parameter を持つ (反復数と許容差を 1 つの引数に束ねない)
+- `CfdSolver::step_with_pressure_solver(dt, solver) -> Result<ProjectionReport, PressureSolverError>` `step` / `step_multigrid` は共通の `step_body` に分割しただけで挙動不変 (既定選択を名指しすると bit 一致、oracle) ⚠️ **退化入力は拒否して solver を 1 bit も触らない**: `dt` 0 / 密度 0 / `dx` 0 / 反復 0 / tolerance ≤ 0 / 非 2 冪格子の multigrid (`step_multigrid` の黙った fallback と対照的に、選んだ solver が走れないことを伝える)
+- `BicgstabStats` を pub に (`iterations` / `final_residual` / `converged`)、`ProjectionReport.bicgstab` で返る ⚠️ 固定反復の solver は収束を主張しない (大格子では「遅い」でなく「収束していない圧力で射影する」、Backlog 既載) BiCGStab だけが verdict を返す
+- `tests/analytic_pressure_solvers.rs` 7 本: 各 solver の発散除去 / 4 solver の一致 (最大値原理から `‖L⁻¹‖∞ ≤ n²/8` ⇒ `|Δu| ≤ (n²/4)·dx·(d_a+d_b)`、残差の恒等式 `r = scale·∇·u_after` を doc に導出、測った数字の許容差ではない) / solenoidal 場の不動点 (bit) / 既定選択と `step` の bit 一致 + Jacobi が別解 (dispatch の歯) / BiCGStab の枯渇・収束・予算非依存 (bit) / 拒否 9 経路 + `Display`
+- `examples/pressure_solvers.rs` が公開入口を配線 (4 solver + 拒否 2 件を印字) 配線ガード baseline 退役 4 行はすべて実配線 (名前衝突なし) `eulerian_grid` の module allow は「分散 solver のみ」の理由文に
+
 ### Added — World Auditor engine gap 3 点: `reset_world()` / 型付き観測 API / rollback population fingerprint
 
 `project_alice_physics_world_auditor_engine_gaps` (symbolic World Auditor を基準にした不足棚卸し) の MVP 優先 gap 3 点を実装 gap #5 (checksum が被覆と別源) は本作業着手時に既存 commit (`c5e314b`) で解決済だったため対象外
