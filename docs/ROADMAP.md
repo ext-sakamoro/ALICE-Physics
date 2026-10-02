@@ -16,6 +16,18 @@ Memory index pointer: `[[reference-alice-physics-v1-roadmap]]` in claude-config.
 | Maxwell FDTD | `ecd8c61` | source-free Yee、⚠️ **SI は `ε₀·μ₀` が 7.7 bit で不可**、正規化単位 + `S=9/16` |
 | 多体 ABA | `1bab99b` | ⚠️ **`solve()` が `link.joint` を読まない**状態から real ABA、oracle 12 本 |
 
+### 第 24 increment (2026-10-02、World Auditor engine gap 3 点 — `reset_world()` / 型付き観測 API / rollback population fingerprint)
+
+壁 1〜4 (連続体 solver の正しさ) とは直交する軸 (symbolic World Auditor が engine に要求する「遷移関数として使える性質」、`project_alice_physics_world_auditor_engine_gaps` 参照) MVP 優先 gap 4 点のうち gap #5 (checksum) は着手時点で既存 commit `c5e314b` により解決済と判明、残り 3 点を実装
+
+| 到達点 | 内容 |
+|---|---|
+| **`reset_world()`** (gap #1、WM-07) | `*self = Self::new(self.config)` 相当 oracle: 同じ初期状態から N step を 2 回で bit 一致 |
+| **型付き観測 API** (gap #6、WM-10 Physics 版) | `BodyObservation` + `observe_body` / `observe_bodies` (position / velocity / rotation / angular_velocity / sleeping / in_contact) `grounded` は一般 body に定義できないため持たない |
+| **rollback population fingerprint** (gap #3) | `deserialize_state` は body 数一致のみでは `swap_remove` + `add_body` の population 変化を検出できず (fail-fast になっていない) v3 format で world ごと 8 byte fingerprint (FNV-1a、復元対象外の量のみ) を追加、body 状態書き込み前に検査 |
+| **oracle** | `tests/wm07_reset_and_rollback_contract.rs` (5 本) — reset の bit 一致、population 一致 / 不一致の正常系・異常系、joint remap を跨ぐ rollback+replay の bit-exact 変異試験 (fingerprint 検査を外す) で red を実測 |
+| **非目標** | cloth/fluid/FEM への snapshot 被覆拡張 (gap #2/#4) / 力学への区間演算 (gap #7) / 決定論の穴の型封じ (gap #8) / 探索層・World Auditor crate 自体 (別 plan) |
+
 ### 第 23 increment (2026-10-02、壁の外側 (3) — Gartling の測定・解釈・refinement oracle)
 
 | 到達点 | 内容 |

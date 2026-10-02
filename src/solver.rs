@@ -793,6 +793,38 @@ pub trait ContactModifier: Send + Sync {
     ) -> bool;
 }
 
+/// Typed, read-only observation of a single body's law-relevant state.
+///
+/// Public入口 for [`PhysicsWorld::observe_body`] / [`PhysicsWorld::observe_bodies`]
+/// — doctrine WM-10 (Physics 版、`project_alice_physics_world_auditor_engine_gaps`
+/// gap #6) が要求する「Law が読む形の観測型」 observation 以前は blob の
+/// parse か field 直読みしかなく、公開 interface が無かった
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BodyObservation {
+    /// Body index this observation was taken from.
+    ///
+    /// ⚠️ **フレーム内でのみ安定** — [`PhysicsWorld::remove_body`] は
+    /// `swap_remove` なので、body の生成・破棄を跨いで同じ index が同じ
+    /// body を指す保証はない
+    pub body_index: usize,
+    /// Position (center of mass).
+    pub position: Vec3Fix,
+    /// Linear velocity.
+    pub velocity: Vec3Fix,
+    /// Orientation.
+    pub rotation: QuatFix,
+    /// Angular velocity.
+    pub angular_velocity: Vec3Fix,
+    /// Whether the body is currently asleep (island manager).
+    pub sleeping: bool,
+    /// Whether the body has at least one active contact this frame
+    /// (`Begin` or `Persist`, from [`crate::event::EventCollector`]).
+    ///
+    /// ⚠️ **`grounded` ではない** — 一般 body に地面接触の定義は無いため、
+    /// 「何らかの body と接触している」という弱い述語に留める
+    pub in_contact: bool,
+}
+
 /// XPBD physics world with batched constraint solving
 ///
 /// `PhysicsWorld` integrates all physics subsystems:
@@ -879,6 +911,17 @@ pub struct PhysicsWorld {
     overflow_detected: bool,
 }
 
+/// Fold `bytes` into `hash` with FNV-1a (64-bit).
+///
+/// Used by [`PhysicsWorld::population_fingerprint`]; kept as a free
+/// function (not a closure) to avoid a double-borrow of `hash`.
+fn fnv1a_fold(hash: &mut u64, bytes: &[u8]) {
+    for &b in bytes {
+        *hash ^= u64::from(b);
+        *hash = hash.wrapping_mul(0x0000_0001_0000_01b3);
+    }
+}
+
 impl PhysicsWorld {
     /// Create a new, empty physics world with the given solver configuration.
     ///
@@ -928,6 +971,42 @@ impl PhysicsWorld {
             body_filters: Vec::new(),
             overflow_detected: false,
         }
+    }
+
+    /// Reset the world to the same empty state [`Self::new`] produces,
+    /// keeping the current [`SolverConfig`].
+    ///
+    /// # World Auditor の `reset()` 契約 (WM-07)
+    ///
+    /// 「同じ初期状態から N step を 2 回実行すると bit 一致する」を成立させる
+    /// ための入口 `*self = Self::new(self.config)` と等価 (`config` は
+    /// `Copy`) — `bodies` / `joints` / `force_fields` / `islands` /
+    /// `overflow_detected` を含む **全 field が `new` と同じ既定値**に戻る
+    /// (installed hook / GPU bridge も含む、呼び出し側が明示的に残したい
+    /// 状態があれば `reset_world` の前に退避すること)
+    ///
+    /// [`Self::deserialize_state`] による rollback とは異なる経路 — rollback
+    /// は「population を caller が replay で合わせてから特定 frame の連続状態を
+    /// 復元する」契約だが、`reset_world` は「population ごと空にする」契約
+    /// 両者は **「population を目標状態まで合わせてから連続状態を復元する」**
+    /// という同じ形の特殊例 (`reset_world` は目標 population が空の場合)
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use alice_physics::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix};
+    ///
+    /// let config = PhysicsConfig::default();
+    /// let mut world = PhysicsWorld::new(config);
+    /// world.add_body(RigidBody::new_dynamic(Vec3Fix::from_int(0, 5, 0), Fix128::ONE));
+    /// assert_eq!(world.bodies.len(), 1);
+    ///
+    /// world.reset_world();
+    /// assert_eq!(world.bodies.len(), 0);
+    /// assert!(!world.overflow_detected());
+    /// ```
+    pub fn reset_world(&mut self) {
+        *self = Self::new(self.config);
     }
 
     /// v0.11.0: install a GPU solver bridge for automatic contact-solve
@@ -1269,6 +1348,50 @@ impl PhysicsWorld {
     /// Set the sleep configuration
     pub fn set_sleep_config(&mut self, config: SleepConfig) {
         self.islands.config = config;
+    }
+
+    // ── Typed Observation (World Auditor WM-10, Physics 版) ────────────
+
+    /// Observe a single body's law-relevant state.
+    ///
+    /// Returns `None` if `body_idx` is out of range (there is no body at
+    /// that index — note that [`Self::remove_body`] uses `swap_remove`, so
+    /// `body_idx` is only stable within the frame it was observed).
+    ///
+    /// ⚠️ **`grounded` は意図的に持たない** — 一般 [`RigidBody`] に地面接触の
+    /// 定義は存在せず (`character.rs` の `CharacterController::detect_ground`
+    /// は特化アルゴリズムで、全 body に適用できる基準ではない) Law / goal
+    /// 述語が「接地」を必要とする場合は `in_contact` + 接触法線
+    /// ([`EventCollector::contact_events`] の [`crate::event::ContactEvent::normal`]) から
+    /// 自前で構成する
+    #[must_use]
+    pub fn observe_body(&self, body_idx: usize) -> Option<BodyObservation> {
+        let body = self.bodies.get(body_idx)?;
+        let in_contact = self
+            .events
+            .contact_events()
+            .iter()
+            .any(|e| e.body_a == body_idx || e.body_b == body_idx);
+        Some(BodyObservation {
+            body_index: body_idx,
+            position: body.position,
+            velocity: body.velocity,
+            rotation: body.rotation,
+            angular_velocity: body.angular_velocity,
+            sleeping: self.is_sleeping(body_idx),
+            in_contact,
+        })
+    }
+
+    /// Observe every body in the world, in body index order.
+    #[must_use]
+    pub fn observe_bodies(&self) -> Vec<BodyObservation> {
+        (0..self.bodies.len())
+            .map(|i| {
+                self.observe_body(i)
+                    .expect("index came from 0..bodies.len(), always in range")
+            })
+            .collect()
     }
 
     // ── Event Access ──────────────────────────────────────────────────
@@ -3195,8 +3318,8 @@ impl PhysicsWorld {
     ///
     /// ⚠️ **flag は状態の一部**なので [`Self::serialize_state`] の被覆に
     /// 入れる必要がある (入れないと巻き戻した先で `undecided` が消える、
-    /// doctrine B-12 の指摘) — 現行 format v1 は**未収録**で、次の format
-    /// 改定 (v2) で入れる
+    /// doctrine B-12 の指摘) — **format v2 で収録済** (world ごと 1 byte、
+    /// [`Self::STATE_VERSION`] 参照)
     #[must_use]
     pub const fn overflow_detected(&self) -> bool {
         self.overflow_detected
@@ -3212,10 +3335,14 @@ impl PhysicsWorld {
     ///
     /// v1 = header 12 + body ごと 208 + body ごと sleep 5
     /// v2 = v1 + **world ごと overflow flag 1 byte** (doctrine B-12)
+    /// v3 = v2 + **world ごと population fingerprint 8 byte**
+    /// ([`Self::population_fingerprint`]、rollback の body 数不一致検査強化)
     ///
     /// 被覆を足す時はここを上げ、[`Self::deserialize_state`] で分岐する
-    /// (不一致を silent に読み替えない — 旧 version の blob は `false` で拒否)
-    pub const STATE_VERSION: u16 = 2;
+    /// (不一致を silent に読み替えない — 旧 version の blob は `false` で拒否、
+    /// v1 / v2 の blob は v3 実装に対して version 不一致で拒否される、
+    /// 既存の v1→v2 bump と同じ方針)
+    pub const STATE_VERSION: u16 = 3;
 
     /// Serialize world state (for rollback netcode).
     ///
@@ -3229,6 +3356,8 @@ impl PhysicsWorld {
     /// | `[8..12)` | body 数 u32 |
     /// | `[12..)` | body ごとに 208 byte = position 48 + velocity 48 + rotation 64 + angular_velocity 48 |
     /// | 続き | body ごとに 5 byte = [`SleepState`] u8 + `idle_frames` u32 |
+    /// | 続き | world ごと overflow flag 1 byte (v2) |
+    /// | 続き | world ごと population fingerprint u64 (v3、[`Self::population_fingerprint`]) |
     ///
     /// ⚠️ **`SleepState` + `idle_frames` を v1 で被覆に入れた** (WM-08)
     /// 旧 format は body の運動状態だけを持ち、`deserialize_state` 末尾の
@@ -3240,9 +3369,11 @@ impl PhysicsWorld {
     /// 検査しないと**新実装が旧 blob を誤って解釈する** magic 不一致 /
     /// version 不一致は `deserialize_state` が `false` を返して明示的に拒否する
     ///
-    /// 依然として保存しないもの: constraints / joints / force fields /
-    /// collision radii / filters / materials (rollback netcode では game state
-    /// から毎 frame 再構築される前提)
+    /// 依然として保存 (= 復元) しないもの: constraints / joints / force
+    /// fields / collision radii / filters / materials (rollback netcode
+    /// では game state から毎 frame 再構築される前提) ⚠️ **v3 の population
+    /// fingerprint はこれらの値を検査にのみ使う** (復元はしない) ので
+    /// 「保存しない」契約自体は変わらない
     ///
     /// ⚠️ [`crate::netcode::SimulationChecksum`] は **本 blob の全 byte から
     /// 導出**される (被覆の単一源化、B-13) ので、ここに state を足すと
@@ -3322,7 +3453,67 @@ impl PhysicsWorld {
         // 巻き戻した先で `undecided` が消えて B-12 が目的を達成しない
         data.push(u8::from(self.overflow_detected));
 
+        // population fingerprint (world ごと 8 byte、v3)
+        //
+        // ⚠️ **位置 / 速度 / 回転 / sleep は含めない** ([`Self::population_fingerprint`]
+        // 参照) — blob 自身が復元する量なので、ここに混ぜると検査が
+        // 「基準が内側」になり population 不一致を検出できなくなる
+        data.extend_from_slice(&self.population_fingerprint().to_le_bytes());
+
         data
+    }
+
+    /// FNV-1a 64-bit hash of per-body quantities [`Self::serialize_state`]
+    /// does **not** restore (shape/mass/inertia/collider/filter/material),
+    /// in body index order.
+    ///
+    /// # なぜこれが要るか (rollback body 数不一致、gap #3)
+    ///
+    /// [`Self::deserialize_state`] は body **数**の一致しか見ていない
+    /// `remove_body` は `swap_remove` なので、count が元に戻っても
+    /// index↔body の対応 (= population) が変わっていることがある —
+    /// その場合 count 一致だけでは検出できず、**別の body に誤った状態を
+    /// 書き込んで silent に通る** (fail-fast になっていない)
+    ///
+    /// ⚠️ **位置 / 速度 / 回転 / sleep を含めない** — それらは blob 自身が
+    /// 復元する量なので、ここに混ぜると「自分で組んだ量で自分を検査する」
+    /// 循環になり population 不一致を検出できなくなる (ys-1f 裏取り、
+    /// `project_alice_physics_world_auditor_engine_gaps` gap #3 追記参照)
+    #[must_use]
+    pub fn population_fingerprint(&self) -> u64 {
+        let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+        for i in 0..self.bodies.len() {
+            let body = &self.bodies[i];
+            fnv1a_fold(&mut hash, &body.inv_mass.hi.to_le_bytes());
+            fnv1a_fold(&mut hash, &body.inv_mass.lo.to_le_bytes());
+            fnv1a_fold(&mut hash, &body.inv_inertia.x.hi.to_le_bytes());
+            fnv1a_fold(&mut hash, &body.inv_inertia.x.lo.to_le_bytes());
+            fnv1a_fold(&mut hash, &body.inv_inertia.y.hi.to_le_bytes());
+            fnv1a_fold(&mut hash, &body.inv_inertia.y.lo.to_le_bytes());
+            fnv1a_fold(&mut hash, &body.inv_inertia.z.hi.to_le_bytes());
+            fnv1a_fold(&mut hash, &body.inv_inertia.z.lo.to_le_bytes());
+            fnv1a_fold(&mut hash, &[body.body_type as u8]);
+            fnv1a_fold(&mut hash, &[u8::from(body.is_sensor)]);
+            match self.body_collision_radii.get(i).copied().flatten() {
+                Some(r) => {
+                    fnv1a_fold(&mut hash, &[1u8]);
+                    fnv1a_fold(&mut hash, &r.hi.to_le_bytes());
+                    fnv1a_fold(&mut hash, &r.lo.to_le_bytes());
+                }
+                None => fnv1a_fold(&mut hash, &[0u8]),
+            }
+            let filter = self.body_filter(i);
+            fnv1a_fold(&mut hash, &filter.layer.to_le_bytes());
+            fnv1a_fold(&mut hash, &filter.mask.to_le_bytes());
+            fnv1a_fold(&mut hash, &filter.group.to_le_bytes());
+            let material = self
+                .body_materials
+                .get(i)
+                .copied()
+                .unwrap_or(crate::material::DEFAULT_MATERIAL);
+            fnv1a_fold(&mut hash, &material.to_le_bytes());
+        }
+        hash
     }
 
     /// Deserialize world state (for rollback netcode).
@@ -3330,6 +3521,21 @@ impl PhysicsWorld {
     /// Restores per-body transforms. Parallel arrays (collision radii,
     /// filters, materials, island manager) are resized to match the body
     /// count, preserving existing entries and zero-filling new ones.
+    ///
+    /// # Rollback の契約 (gap #3、2026-10-02)
+    ///
+    /// body **数**が一致していても **population** (どの body がどんな
+    /// `inv_mass` / `inv_inertia` / collider / filter / material を持つか)
+    /// が一致していなければ拒否する ([`Self::population_fingerprint`]、v3)
+    /// caller は body の生成・破棄 (`add_body` / `remove_body`) と joints /
+    /// force fields / filters / collider radii / materials の変更を、目標
+    /// frame まで決定論的に replay してから本関数を呼ぶこと ⚠️
+    /// **joints の再構築は本関数の呼び出し前に行う** — 本関数の末尾で
+    /// island を joints から作り直すため、順序が逆だと sleep の島が
+    /// 異なる形になる
+    ///
+    /// 不一致 (`false`) の場合、`self` は一切変更されない (すべての検査は
+    /// body 状態を書き込む前に完了する)
     pub fn deserialize_state(&mut self, data: &[u8]) -> bool {
         // Header 12 byte: magic 4 + version 2 + reserved 2 + count 4
         if data.len() < 12 {
@@ -3357,9 +3563,28 @@ impl PhysicsWorld {
             return false;
         }
 
-        // 長さ検査は body 数から一意に決まる (header + 運動状態 + sleep)
-        let expected = 12 + count * 208 + count * 5 + 1;
+        // 長さ検査は body 数から一意に決まる (header + 運動状態 + sleep + overflow + fingerprint)
+        let expected = 12 + count * 208 + count * 5 + 1 + 8;
         if data.len() < expected {
+            return false;
+        }
+
+        // ⚠️ **population fingerprint は body 状態を 1 byte も書く前に検査する**
+        // (v3、gap #3) count が一致していても `swap_remove` + `add_body` で
+        // population (= inv_mass / inertia / collider 等の組み合わせ) が
+        // 変わっていれば拒否する — ここで return すれば self は未変更のまま
+        let fp_offset = expected - 8;
+        let stored_fingerprint = u64::from_le_bytes([
+            data[fp_offset],
+            data[fp_offset + 1],
+            data[fp_offset + 2],
+            data[fp_offset + 3],
+            data[fp_offset + 4],
+            data[fp_offset + 5],
+            data[fp_offset + 6],
+            data[fp_offset + 7],
+        ]);
+        if stored_fingerprint != self.population_fingerprint() {
             return false;
         }
 
@@ -3571,10 +3796,13 @@ mod tests {
 
         let state = world.serialize_state();
 
-        // Deserialize into another world
+        // Deserialize into another world with the same population (same
+        // mass per body index) but different starting positions — v3 の
+        // population fingerprint は mass 等の組み合わせが一致している
+        // ことを要求する (gap #3、mass が異なれば別 population として拒否)
         let mut world2 = PhysicsWorld::new(config);
         world2.add_body(RigidBody::new(Vec3Fix::ZERO, Fix128::ONE));
-        world2.add_body(RigidBody::new(Vec3Fix::ZERO, Fix128::ONE));
+        world2.add_body(RigidBody::new(Vec3Fix::ZERO, Fix128::from_int(2)));
 
         assert!(world2.deserialize_state(&state));
 
@@ -5686,8 +5914,8 @@ mod tests {
     fn deserialize_state_roundtrip_restores_every_field_bit_exact() {
         let src = snapshot_world();
         let bytes = src.serialize_state();
-        // v2: header 12 + body ごと 208 + body ごと sleep 5 + world ごと flag 1
-        assert_eq!(bytes.len(), 12 + 2 * 208 + 2 * 5 + 1);
+        // v3: header 12 + body ごと 208 + body ごと sleep 5 + world ごと flag 1 + fingerprint 8
+        assert_eq!(bytes.len(), 12 + 2 * 208 + 2 * 5 + 1 + 8);
         let mut dst = quiet_world();
         dst.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
         dst.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
@@ -5711,14 +5939,17 @@ mod tests {
     fn deserialize_state_every_single_byte_flip_changes_some_field() {
         // 1 byte でも壊れた snapshot は必ずどれかの field に反映される (silent 無視 / 別 field 混入を検出)
         //
-        // ⚠️ v1 format は 3 領域に分かれる — **どの領域にも silent に無視される
+        // ⚠️ v3 format は 5 領域に分かれる — **どの領域にも silent に無視される
         // byte が無い**ことを領域ごとに確かめる
-        //   [0..12)                    header (magic / version / reserved) → **拒否される**
-        //   [12, 12+n*208)             body の運動状態 → 該当 body の該当 field が変わる
-        //   [12+n*208, 12+n*208+n*5)   sleep 状態 → 該当 body の sleep_data が変わる
+        //   [0..12)                              header (magic / version / reserved) → **拒否される**
+        //   [12, 12+n*208)                       body の運動状態 → 該当 body の該当 field が変わる
+        //   [12+n*208, 12+n*208+n*5)             sleep 状態 → 該当 body の sleep_data が変わる
+        //   [12+n*208+n*5, 12+n*208+n*5+1)       overflow flag (1 byte)
+        //   [12+n*208+n*5+1, ..+9)               population fingerprint (8 byte) → **拒否される**
         let src = snapshot_world();
         let bytes = src.serialize_state();
         let body_end = 12 + 2 * 208;
+        let flag_pos = bytes.len() - 9;
 
         // 領域 1: header — 1 byte 壊れたら受け付けない
         for pos in 0..12 {
@@ -5731,12 +5962,12 @@ mod tests {
             );
         }
 
-        // 領域 4: flag (末尾 1 byte) — 壊したら overflow_detected が変わる
+        // 領域 4: flag (fingerprint 直前の 1 byte) — 壊したら overflow_detected が変わる
         //
         // ⚠️ v2 で足した領域も「silent に無視される byte が無い」不変条件の
         // 対象に含める (flag は 0/1 なので 0x01 の flip で必ず値が変わる)
         {
-            let pos = bytes.len() - 1;
+            let pos = flag_pos;
             let mut bad = bytes.clone();
             bad[pos] ^= 0x01;
             let mut dst = snapshot_world();
@@ -5748,8 +5979,23 @@ mod tests {
             );
         }
 
+        // 領域 5: population fingerprint (末尾 8 byte) — 1 byte でも壊れたら
+        // 拒否する (= count は一致しているが fingerprint 不一致で fail-fast、
+        // gap #3 の population 検査そのもの)
+        for pos in bytes.len() - 8..bytes.len() {
+            let mut bad = bytes.clone();
+            bad[pos] ^= 0x01;
+            let mut dst = snapshot_world();
+            assert!(
+                !dst.deserialize_state(&bad),
+                "fingerprint byte {pos} を壊しても受け付けている"
+            );
+            // 拒否時は元の状態を保つ
+            assert_eq!(dst.bodies[0].position, src.bodies[0].position);
+        }
+
         // 領域 3: sleep — 1 byte 壊れたら sleep_data が変わる (flag の手前まで)
-        for pos in body_end..bytes.len() - 1 {
+        for pos in body_end..flag_pos {
             let mut bad = bytes.clone();
             bad[pos] ^= 0x01;
             let mut dst = snapshot_world();
@@ -5816,7 +6062,7 @@ mod tests {
         assert!(!dst.deserialize_state(&bytes[..12 + 208 + 100])); // 2 体目が途中で切れる
         assert!(
             !dst.deserialize_state(&bytes[..bytes.len() - 1]),
-            "末尾 (v2 の flag) が 1 byte 欠けても拒否する (長さ検査が body 数から一意に決まる)"
+            "末尾 (v3 の fingerprint) が 1 byte 欠けても拒否する (長さ検査が body 数から一意に決まる)"
         );
         // ⚠️ 旧 format (先頭が body 数、header なし) は magic 不一致で拒否される
         // 検査しないと **旧 blob の先頭 4 byte を magic と読んで誤解釈する**
@@ -5850,6 +6096,7 @@ mod tests {
         one.extend_from_slice(&bytes[12..12 + 208]);
         one.extend_from_slice(&bytes[12 + 2 * 208..12 + 2 * 208 + 5]);
         one.push(0); // v2: flag
+        one.extend_from_slice(&exact.population_fingerprint().to_le_bytes()); // v3: fingerprint
         assert!(exact.deserialize_state(&one));
         assert_eq!(exact.bodies[0].position, v3(1, 2, 3));
     }
@@ -6810,8 +7057,8 @@ mod tests {
     fn deserialize_state_accepts_header_only_snapshot_of_empty_world() {
         let src = quiet_world();
         let bytes = src.serialize_state();
-        // v2: body 0 体でも header 12 + flag 1
-        assert_eq!(bytes.len(), 13);
+        // v3: body 0 体でも header 12 + flag 1 + fingerprint 8
+        assert_eq!(bytes.len(), 21);
         let mut dst = quiet_world();
         assert!(dst.deserialize_state(&bytes));
         assert_eq!(dst.body_count(), 0);
@@ -6843,6 +7090,68 @@ mod tests {
         );
         assert_eq!(world.islands.sleep_data.len(), 3);
         assert_eq!(world.bodies[2].position, v3(7, 8, 9));
+    }
+
+    // ---- observe_body / observe_bodies (World Auditor WM-10 Physics 版) ----
+
+    #[test]
+    fn observe_body_returns_none_out_of_range_and_fields_for_in_range() {
+        let mut world = quiet_world();
+        let mut a = RigidBody::new_dynamic(v3(1, 2, 3), Fix128::ONE);
+        a.velocity = v3(4, 5, 6);
+        a.angular_velocity = v3(7, 8, 9);
+        world.add_body(a);
+
+        assert!(world.observe_body(1).is_none(), "範囲外 index は None");
+
+        let obs = world.observe_body(0).expect("範囲内 index は Some");
+        assert_eq!(obs.body_index, 0);
+        assert_eq!(obs.position, v3(1, 2, 3));
+        assert_eq!(obs.velocity, v3(4, 5, 6));
+        assert_eq!(obs.angular_velocity, v3(7, 8, 9));
+        assert!(!obs.sleeping);
+        assert!(!obs.in_contact, "接触していない body は in_contact = false");
+    }
+
+    #[test]
+    fn observe_bodies_returns_one_entry_per_body_in_index_order() {
+        let mut world = quiet_world();
+        world.add_body(RigidBody::new_dynamic(v3(1, 0, 0), Fix128::ONE));
+        world.add_body(RigidBody::new_dynamic(v3(2, 0, 0), Fix128::ONE));
+        world.add_body(RigidBody::new_dynamic(v3(3, 0, 0), Fix128::ONE));
+
+        let obs = world.observe_bodies();
+        assert_eq!(obs.len(), 3);
+        for (i, o) in obs.iter().enumerate() {
+            assert_eq!(o.body_index, i);
+            assert_eq!(o.position, world.bodies[i].position);
+        }
+    }
+
+    #[test]
+    fn observe_body_reports_in_contact_from_this_frame_events() {
+        // 重なった 2 球を 1 step 進めると contact event (Begin) が出る
+        // (`tests/wm07_rollback_event_parity.rs` と同じ idiom — 最初から重なっている配置)
+        let mut world = PhysicsWorld::new(PhysicsConfig {
+            gravity: Vec3Fix::ZERO,
+            ..PhysicsConfig::default()
+        });
+        let radius = Fix128::from_int(2);
+        let a = RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE);
+        world.add_body_with_radius(a, radius);
+        let b = RigidBody::new_dynamic(v3(1, 0, 0), Fix128::ONE);
+        world.add_body_with_radius(b, radius);
+        let c = RigidBody::new_dynamic(v3(100, 100, 100), Fix128::ONE);
+        world.add_body_with_radius(c, Fix128::from_ratio(1, 10));
+
+        world.step(Fix128::from_ratio(1, 60));
+
+        assert!(world.observe_body(0).unwrap().in_contact);
+        assert!(world.observe_body(1).unwrap().in_contact);
+        assert!(
+            !world.observe_body(2).unwrap().in_contact,
+            "遠くの body は接触していないはず"
+        );
     }
 
     /// `batches_are_body_disjoint` line 1646 `&&` → `||` / `a == b` → `a != b`

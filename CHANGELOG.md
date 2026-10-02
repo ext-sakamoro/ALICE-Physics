@@ -13,6 +13,14 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added — World Auditor engine gap 3 点: `reset_world()` / 型付き観測 API / rollback population fingerprint
+
+`project_alice_physics_world_auditor_engine_gaps` (symbolic World Auditor を基準にした不足棚卸し) の MVP 優先 gap 3 点を実装 gap #5 (checksum が被覆と別源) は本作業着手時に既存 commit (`c5e314b`) で解決済だったため対象外
+
+- `PhysicsWorld::reset_world()` (gap #1、WM-07) — `*self = Self::new(self.config)` と等価、population / joints / force fields / islands / overflow flag を含む全 field を既定値に戻す oracle: 同じ初期状態から N step を 2 回実行すると bit 一致 (`tests/wm07_reset_and_rollback_contract.rs`)
+- `PhysicsWorld::observe_body` / `observe_bodies` + `BodyObservation` 型 (gap #6、WM-10 の Physics 版) — Law / goal 述語が読む型付き観測 (position / velocity / rotation / angular_velocity / sleeping / in_contact) `grounded` は一般 `RigidBody` に定義できない概念 (`character.rs` の `CharacterController` 特化アルゴリズムのみ存在) なので持たず、`in_contact` 述語で代替する example: `examples/world_auditor_observation.rs`
+- `PhysicsWorld::population_fingerprint()` + `serialize_state`/`deserialize_state` format v3 (gap #3) — `deserialize_state` は従来 body **数**の一致しか見ておらず、`remove_body` (swap_remove) + `add_body` で count が元に戻っても population (inv_mass / inv_inertia / body_type / is_sensor / collider / filter / material の組合せ) が変わっていると検出できず、別の body に誤った状態を書き込んで silent に通ってしまう穴があった (fail-fast になっていない) v3 は world ごと 8 byte の population fingerprint (FNV-1a、position/velocity/rotation/sleep は含めない) を blob 末尾に追加し、body 状態を書き込む前に検査する oracle: population 一致 / 不一致の正常系・異常系 + joint が removed index を跨いで remap される経路での rollback+replay bit-exact (`tests/wm07_reset_and_rollback_contract.rs`) 既存の `deserialize_state` は population が一致している前提の call のみ受理していたが、v3 では **count が一致していても population が異なる call を明示的に拒否する**ようになった (`src/solver.rs::test_state_serialization` 等の既存 test を新しい契約に合わせて更新)
+
 ### Added — Gartling 後ろ向きステップの refinement oracle 2 本 + 文献 oracle の scene 差し替え + `manual:` 区分 (`tests/armaly_backward_step.rs`、`scripts/run_ignored.py`)
 
 壁の外側 3 件目 (CFD Gartling `Re = 800` の 6 % gap) の測定・解釈・oracle 設計 判断の根拠はすべて計器 (`x_1_time_trace` の `max|du/dt|` / `dx_1` / `t_settle`) が印字した settled 値で、Courant 0.75 固定、`L = 16` (nx が 2 冪で projection が multigrid)

@@ -856,7 +856,6 @@ unwired src/solver.rs::add_force_field
 unwired src/solver.rs::add_pre_solve_hook
 unwired src/solver.rs::add_sdf_collider
 unwired src/solver.rs::add_torque
-unwired src/solver.rs::body_filter
 unwired src/solver.rs::clear_body_collision_radius
 unwired src/solver.rs::clear_contact_modifiers
 unwired src/solver.rs::clear_pre_solve_hooks
@@ -870,7 +869,6 @@ unwired src/solver.rs::is_kinematic
 unwired src/solver.rs::joint_count
 unwired src/solver.rs::mass
 unwired src/solver.rs::num_batches
-unwired src/solver.rs::overflow_detected
 unwired src/solver.rs::remove_body
 unwired src/solver.rs::remove_force_field
 unwired src/solver.rs::remove_joint
