@@ -13,6 +13,20 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added — 乱流 closure を `CfdSolver::step_rans` に配線 (`TurbulenceModel` / `RansState`、k-ε / k-ω / dynamic Smagorinsky / 可変粘性拡散) (全配線 program 第 4 件)
+
+`turbulence.rs` の `KEpsilonState` / `KOmegaState` / `dynamic_smagorinsky_cs` / `KE_SIGMA_*` / `KW_BETA` は点 model と定数だけで、solver からは `use_turbulence` (格子全体の max |S| から 1 つの ν_t) しか無かった 設計は `ys-1f` と合意 (可変 ν の運動量拡散は必須 — proxy だと ν_t 場が運動量に 1 bit も届かず配線変異が恒等になる 状態は caller 所有にして `CfdSolver` の layout を変えない — pub field の追加は `constructible_struct_adds_field` で major、反力 `reactions` の先例と同じ列)
+
+- `TurbulenceModel` (`#[non_exhaustive]`): `Smagorinsky` (cell ごとの full strain) / `DynamicSmagorinsky` (6 近傍平均の test strain との比で `C_s ∈ [0.05, 0.25]`、一様 strain では静的と bit 一致) / `KEpsilon` (Launder–Spalding) / `KOmega` (Wilcox 1988、`α = 5/9`, `β = 3/40`, `σ = 2` を新設、`(k, ε)` 記憶域を `ω = ε/(β* k)` に換算して進めて戻す) / `Prescribed` (`RansState::prescribed(Grid3d)` の場をそのまま読む) 入口は **`CfdSolver::step_rans(dt, &StepOptions, &mut RansState) -> Result<RansReport, StepError>`** (`step` / `step_with_options` は signature も挙動も不変)
+- `RansState` (caller 所有: `model` + cell 中心の `(k, ε)`、`new` / `uniform` / `prescribed` / `set` / `k` / `epsilon` / `eddy_viscosity` / `cell_dims` / `model`) — solver の外に置くので World Auditor の snapshot / rollback の被覆に載せられ、`CfdSolver` の layout は不変
+- 1 step: ν_t 場を**step 開始時の状態**から作る → (RANS) `P_k = ν_t |S|²` → 点 source (`advance_k` / `advance_epsilon`、k-ω は `KOmegaState::advance`) → k, ε の陽的拡散 (`ν + ν_t/σ`、cell 間は調和平均、solid 面は無 flux) → semi-Lagrangian 移流 → 運動量は新設 `diffuse_velocity_variable` (`∇·(ν∇u)` の MAC 形: 面の両側 cell の ν、edge は 4 cell を「同層の対 → 層間」の順で調和平均 `a·(2b/(a+b))`、等値は exact、壁 ghost / wall model sink は従来どおり) 従来の scalar path (`step` / `use_turbulence`) は無変更で bit 互換
+- `RansReport { eddy_viscosity: Grid3d, turbulence: TurbulenceSummary, bicgstab, wall }` (`TurbulenceSummary`: ν_t 包絡、拡散数、C_s 包絡、P_max、k / ε 包絡、**`clamped` = 陽的 source が負に抜けて 0 に clamp された cell 数**)
+- 拒否 (solver も state も不変): `StepError::TurbulenceFieldShape` (state の寸法・spacing 不一致) / `NegativeEddyViscosity` / **`DiffusionUnstable { diffusion_number }`** (`(ν + max ν_t) dt/dx² > 1/6`、clamp で隠さず fail-fast)
+- `FaceBc::no_slip_velocity` 同様に `turbulence::smagorinsky_eddy_viscosity_with(cs, Δ, |S|)` を新設 (静的は `SMAGORINSKY_CS` で bit 同一)
+- oracle `tests/analytic_rans.rs` 13 本: 減衰一様乱流の閉形式 k-ε `k = k0(1+(C₂−1)ε0 t/k0)^(−1/(C₂−1))` / k-ω `ω = ω0/(1+βω0 t)`, `k = k0(1+βω0 t)^(−β*/β)` を dt 3 段で 1 次収束 (誤差比 1.7〜2.3) + **clamp 0 を assert** / 1 step の k は `k0 − ε0 dt` と bit 一致 / k-ε と k-ω の ν_t が 0.09 k²/ε の閉形式と一致 (β* ≠ C_μ は red) / dynamic C_s は一様 strain で静的と bit 一致、jet で差 / ν_t を y 方向に分けた場で速度 step が変わる (配線の歯、⚠️ x 方向の分割は `∂(ν(x)·1)/∂y = 0` で歯なし) / clamp の計数 (k=1, ε=100, dt=1 で全 cell) / **一様せん断で `P/ε → (C₂−1)/(C₁−1) = 2.0909`** (S = 8、4 s、2% 以内、`T = k/ε → √(r*/C_μ)/S` なので収束率は S 比例、C₁ に歯がある唯一の閉形式) / 対数層の代数恒等式 `ν_t = κ u_τ y`, `P = ε` (ε の停留は主張しない: `κ² ≠ σ_ε √C_μ (C₂−C₁)` で 11% 不整合) / k の拡散は界面だけを越え flux が対称 (1 ulp) / **2 層 Couette** (ν₁ = 3/8, ν₂ = 3/4、τ = 1/2、区分線形 profile を 1e-12 で再現、遷移後に運動エネルギー単調非増加) / 拒否 5 経路 + 拡散数の値 + `Display`
+- 破壊試験 **15/15 red** (配線 6: ν_t 場を格子平均の proxy に / P = 0 / `p2g` 同様に stencil 無視の dynamic C_s / k の拡散 skip / 与えられた場を 0 に / u 面の y 方向拡散を落とす、実装 9: C₁ → C₂ / β* ≠ C_μ / 界面を算術平均に / 安定判定除去 / clamp 数え漏れ / k-ω source skip / k-ω の β → β* / 負の場を受理 / 非対角 strain を落とす) 各変異で red になった test 名を記録
+- `examples/turbulence_closures.rs` (5 closure を同じ cavity で回し、report と拒否 2 件を印字) 配線ガード baseline 退役 11 行 (turbulence の RANS 群、全部実配線) ⚠️ `RansState::dims` が `maxwell_fdtd::dims` の負債行を名前衝突で巻き込むので `cell_dims` に改名して回避 `ALLOW-DEAD` 7 件を解消 (turbulence の marker 残 0) `#[non_exhaustive]` 化と state の solver への統合は 2.0.0 列の Backlog
+
 ### Added — 粒子→格子の stencil 選択 `ParticleScatter` と密閉箱 + 適応 dt の example (全配線 program 第 3 件 (c)(d))
 
 `eulerian_grid::p2g_nearest` は `pub(crate)` で unit test からしか呼ばれず、`MacGrid` の壁 setter (`set_closed_box_walls` / `set_u_solid` / `set_u_bc` / `enforce_solid_faces` / `FaceBc::no_slip_velocity`) と `CfdSolver` の `compute_max_dt` / `step_adaptive` は test と doc からしか参照されていなかった
