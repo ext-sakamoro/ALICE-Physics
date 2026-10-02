@@ -35,6 +35,7 @@
 //! Author: Moroya Sakamoto
 
 use crate::box_collider::OrientedBox;
+use crate::collider::Support;
 use crate::cone::Cone;
 use crate::cylinder::Cylinder;
 use crate::ellipsoid::Ellipsoid;
@@ -347,6 +348,77 @@ impl Shape {
             Ok((mass, inertia))
         } else {
             Err(ShapeError::MassNotRepresentable)
+        }
+    }
+}
+
+/// A [`Shape`] placed in the world: its centre of mass at `position`, turned by
+/// `rotation`. It is the convex solid the narrow-phase works on, through
+/// [`Support`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PosedShape {
+    /// The solid.
+    pub shape: Shape,
+    /// Where its centre of mass is.
+    pub position: Vec3Fix,
+    /// Its orientation.
+    pub rotation: QuatFix,
+}
+
+impl PosedShape {
+    /// Where the solid's geometric centre is: the centre of mass moved back by the
+    /// shape's centre-of-mass offset, turned like the solid.
+    fn geometric_center(&self) -> Vec3Fix {
+        self.position - self.rotation.rotate_vec(self.shape.center_of_mass_offset())
+    }
+}
+
+impl Support for PosedShape {
+    fn support(&self, direction: Vec3Fix) -> Vec3Fix {
+        let center = self.geometric_center();
+        let rotation = self.rotation;
+        match self.shape {
+            Shape::Box { half_extents } => {
+                OrientedBox::new(center, half_extents, rotation).support(direction)
+            }
+            Shape::Cylinder {
+                radius,
+                half_height,
+            } => {
+                let mut c = Cylinder::new(center, half_height, radius);
+                c.rotation = rotation;
+                c.support(direction)
+            }
+            Shape::Cone {
+                radius,
+                half_height,
+            } => {
+                let mut c = Cone::new(center, radius, half_height);
+                c.rotation = rotation;
+                c.support(direction)
+            }
+            Shape::Ellipsoid { radii } => {
+                let mut e = Ellipsoid::new(center, radii);
+                e.rotation = rotation;
+                e.support(direction)
+            }
+            Shape::Wedge {
+                width,
+                height,
+                depth,
+            } => {
+                let mut w = Wedge::new(center, width, height, depth);
+                w.rotation = rotation;
+                w.support(direction)
+            }
+            Shape::Torus {
+                major_radius,
+                minor_radius,
+            } => {
+                let mut t = Torus::new(center, major_radius, minor_radius);
+                t.rotation = rotation;
+                t.support(direction)
+            }
         }
     }
 }
