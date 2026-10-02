@@ -13,6 +13,18 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added — Gartling 後ろ向きステップの refinement oracle 2 本 + 文献 oracle の scene 差し替え + `manual:` 区分 (`tests/armaly_backward_step.rs`、`scripts/run_ignored.py`)
+
+壁の外側 3 件目 (CFD Gartling `Re = 800` の 6 % gap) の測定・解釈・oracle 設計 判断の根拠はすべて計器 (`x_1_time_trace` の `max|du/dt|` / `dx_1` / `t_settle`) が印字した settled 値で、Courant 0.75 固定、`L = 16` (nx が 2 冪で projection が multigrid)
+
+- `trace_x_1` — 診断 `x_1_time_trace` の loop を tracer に分割 (`TraceSetting` / `Trace`、settle で止まれる、増分列から緩和時間 τ と尾の上界を読む) 診断は env wrapper になり出力形式は不変
+- `judge_refinement` — 2 scheme の settled 列を判定する純関数: (1) bracket `x_1,SL(ny) < x_1,MC(ny)` (2) MC 単調減少 / SL 単調増加 (⚠️ ny=4 は漸近域外なので ny ≥ 8 を要求、実測 MC 6.166 < ny=8 の 7.246) (3) 帯の縮小 (1+2 から従う、報告のみ) (4) 3 点以上で MC 増分比 ∈ [0.25, 0.5] NaN は入口で拒否 歯は合成列の unit test 7 本
+- `the_two_schemes_bracket_the_reattachment_length_at_ny_8_and_16` (`runtime:`、実測 1934 s、green) — MC 7.245648316 (t_settle 416) / 6.284727723 (1280)、SL 4.392102491 (288) / 4.723804024 (608)、帯 2.854 → 1.561
+- `maccormack_converges_and_the_schemes_bracket_the_limit_at_ny_8_16_32` (**`manual:`**、約 4 h) — ny=32 を含む 3 点で増分比を assert MC 5.929261897 (t_settle 1088) / SL 5.318788133 (864)、増分 −0.961 → −0.355、比 0.370、帯 → 0.610 ⚠️ `ignored-tests` job の 180 分を超えるので CI では走らせない: `run_ignored.py` に **`manual:` 区分**を足した (表に載せ `--skip` で除外、手で `--exact` 実行して通すことが契約、verdict が付いたら `--skip` の失敗として red)
+- 文献 oracle `the_reattachment_length_matches_gartling` — scene を `L = 16` / multigrid / settled に差し替え (旧: twin と共有の `L = 12`、`nx = 96` は 2 冪でなく **GS 30 sweep 明示**) ⇒ red のまま `src gap:` (`x_1 = 4.392102491`、t_settle 288、気泡なし) 理由文は実測だけに書き換え (外挿は「外挿」と明記) pinned twin の scene と値は不変
+
+**解釈 (測定から言えることだけ)**: 流出面距離は原因ではない (ny=16 MC で L=16 と L=32 が全 logged t で 3.2e-8 一致、気泡あり = 機構が働ける scene) / `L = 30` の差 7.8e-5 は projection の GS fallback / τ は scheme 依存 (ny=16: MC 73.1 / SL 32.5)、MC 列は 18.5 / 73.1 / 57.2 で非単調 ⚠️ 2〜3 点から極限 τ や `dx⁻²` 則は言わない / 残る候補は advection scheme の数値粘性と壁・段差角の 1 次処理、ny=64 は未測定 (半日級)
+
 ### Added — monolithic 組立の入口条件を計器つきで記録 / 越境 wire を 1 byte 刻みにする gate
 
 - `coupled_iteration` module doc: monolithic (Newton) 組立の入口条件 (`|λ_max| > 0.9` at handbook `c_v`、または clamp 由来でない `Stagnated`)、`c_v → λ_max` の実測表、開く経路 (断熱せん断帯 → 先に正則化)、要る部品 (非対称 Krylov / 疎行列直接法、ともに `src/` に 0 件) と「今は作らない」判断

@@ -8,6 +8,7 @@ string is what tells them apart:
 |---------------------------------------------------|--------------------------------|----------|
 | `runtime:` / `runtime only:`                      | passes, but too slow for CI    | **pass** |
 | `src gap:` / `src bug:` / `the red is correct`    | does not pass yet (a target)   | **fail** |
+| `manual:`                                         | passes, but longer than the job | listed, not run |
 | anything else                                     | not yet triaged                | reported |
 
 So a single `--ignored` run cannot be read as "green or red": a `runtime:` test
@@ -19,6 +20,7 @@ and reports them differently:
 * `runtime:` fails            → `::error` and a non-zero exit (the job goes red)
 * `src gap:` passes           → `::notice` and a prominent summary section, exit 0
 * `src gap:` fails            → as documented, nothing to do
+* `manual:`                   → listed and skipped (`--skip`): run it by hand, it must pass
 * anything else               → listed with its outcome, no verdict
 * table/run mismatch          → `::warning` (the expectation table has drifted)
 
@@ -50,10 +52,12 @@ REPO = Path(__file__).resolve().parent.parent
 
 RUNTIME_PREFIXES = ("runtime:", "runtime only:")
 EXPECTED_RED_PREFIXES = ("src gap:", "src bug:", "the red is correct")
+MANUAL_PREFIXES = ("manual:",)
 
 CAT_RUNTIME = "runtime"
 CAT_EXPECTED_RED = "expected-red"
 CAT_UNTRIAGED = "untriaged"
+CAT_MANUAL = "manual"
 
 FN_RE = re.compile(r"^\s*(?:pub(?:\([^)]*\))?\s+)?(?:const\s+)?(?:async\s+)?(?:unsafe\s+)?(?:extern\s+\"[^\"]*\"\s+)?fn\s+([A-Za-z_][A-Za-z0-9_]*)")
 RESULT_RE = re.compile(r"^test\s+(\S+)\s+\.\.\.\s+(ok|FAILED|ignored)\s*$")
@@ -150,6 +154,8 @@ def classify(reason: str) -> str:
         return CAT_RUNTIME
     if low.startswith(EXPECTED_RED_PREFIXES):
         return CAT_EXPECTED_RED
+    if low.startswith(MANUAL_PREFIXES):
+        return CAT_MANUAL
     return CAT_UNTRIAGED
 
 
@@ -257,9 +263,16 @@ def build_binaries(extra: list[str]) -> list[tuple[str, str]]:
     return out
 
 
-def run_binary(label: str, exe: str) -> tuple[dict[str, str], str]:
-    """Run only the ignored tests in one binary; return outcomes and the output."""
-    proc = _run([exe, "--ignored", "--test-threads=1"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+def run_binary(label: str, exe: str, skip: list[str]) -> tuple[dict[str, str], str]:
+    """Run only the ignored tests in one binary; return outcomes and the output.
+
+    `skip` names the `manual:` tests of this binary, passed as libtest `--skip`
+    so they are neither run nor counted as missing.
+    """
+    cmd = [exe, "--ignored", "--test-threads=1"]
+    for name in skip:
+        cmd += ["--skip", name]
+    proc = _run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     outcomes: dict[str, str] = {}
     for raw in proc.stdout.splitlines():
         m = RESULT_RE.match(raw.strip())
@@ -292,7 +305,7 @@ def emit(lines: list[str]) -> None:
 
 
 def table_markdown(entries: list[dict]) -> list[str]:
-    order = {CAT_RUNTIME: 0, CAT_EXPECTED_RED: 1, CAT_UNTRIAGED: 2}
+    order = {CAT_RUNTIME: 0, CAT_EXPECTED_RED: 1, CAT_MANUAL: 2, CAT_UNTRIAGED: 3}
     lines = ["| category | test | where | reason (first 110 chars) |", "|---|---|---|---|"]
     for e in sorted(entries, key=lambda e: (order[e["category"]], e["file"], e["line"])):
         reason = e["reason"].replace("\n", " ").replace("|", "\\|")
@@ -310,7 +323,7 @@ def main() -> int:
     args = ap.parse_args()
 
     entries, notes = collect_table()
-    counts = {c: sum(1 for e in entries if e["category"] == c) for c in (CAT_RUNTIME, CAT_EXPECTED_RED, CAT_UNTRIAGED)}
+    counts = {c: sum(1 for e in entries if e["category"] == c) for c in (CAT_RUNTIME, CAT_EXPECTED_RED, CAT_MANUAL, CAT_UNTRIAGED)}
 
     header = [
         "## `#[ignore]`d tests",
@@ -318,6 +331,7 @@ def main() -> int:
         f"{len(entries)} ignored test(s): "
         f"**{counts[CAT_RUNTIME]}** `runtime:` (must pass) / "
         f"**{counts[CAT_EXPECTED_RED]}** `src gap:` family (expected to fail) / "
+        f"**{counts[CAT_MANUAL]}** `manual:` (longer than this job; listed, not run) / "
         f"**{counts[CAT_UNTRIAGED]}** untriaged (reported, no verdict)",
         "",
         *table_markdown(entries),
@@ -337,7 +351,8 @@ def main() -> int:
     for axis_label, extra in axes:
         print(f"\n===== axis: {axis_label}", flush=True)
         for label, exe in build_binaries(extra):
-            got, log = run_binary(label, exe)
+            skip = [e["name"] for e in entries if e["category"] == CAT_MANUAL and e["binary"] == label]
+            got, log = run_binary(label, exe, skip)
             for name, verdict in got.items():
                 outcomes[(label, name)] = verdict
                 logs[f"{label}::{name}"] = log
@@ -346,12 +361,16 @@ def main() -> int:
     inversions: list[dict] = []
     as_documented: list[dict] = []
     untriaged: list[dict] = []
+    manual: list[dict] = []
     missing: list[dict] = []
 
     for e in entries:
         verdict = outcomes.pop((e["binary"], e["name"]), None)
         row = dict(e, verdict=verdict)
-        if verdict is None:
+        if e["category"] == CAT_MANUAL:
+            # Skipped on purpose above; a verdict here would mean `--skip` failed.
+            (manual if verdict is None else errors).append(row)
+        elif verdict is None:
             missing.append(row)
         elif e["category"] == CAT_RUNTIME:
             (as_documented if verdict == "ok" else errors).append(row)
@@ -400,6 +419,12 @@ def main() -> int:
             log = logs.get(f"{r['binary']}::{r['name']}", "")
             report += [line for line in log.splitlines() if r["name"] in line or line.startswith(("thread ", "assertion", "  left", "  right", "test result:"))][:40]
         report += ["```", "", "</details>"]
+
+    if manual:
+        report += ["", "### manual (longer than this job — skipped here, must pass when run by hand with `--exact`)", "", "| test | where | reason |", "|---|---|---|"]
+        for r in sorted(manual, key=lambda r: r["file"]):
+            reason = r["reason"].replace("\n", " ").replace("|", "\\|")
+            report.append(f"| `{r['name']}` | `{r['file']}:{r['line']}` | {reason} |")
 
     if untriaged:
         report += ["", "### untriaged reasons (no verdict, listed for the backlog)", "", "| test | outcome | reason |", "|---|---|---|"]
