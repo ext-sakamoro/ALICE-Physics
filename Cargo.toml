@@ -134,6 +134,10 @@ required-features = ["std"]
 name = "filament_database_properties"
 required-features = ["std"]
 
+[[example]]
+name = "linear_elastic_fem_config_diagnostics"
+required-features = ["std"]
+
 [[bench]]
 name = "physics_bench"
 harness = false

@@ -312,19 +312,6 @@ unwired src/layer_adhesion.rs::fos_normal_z
 unwired src/layer_adhesion.rs::fos_shear_xy
 unwired src/layer_adhesion.rs::fos_shear_xz
 unwired src/layer_adhesion.rs::min_fos
-unwired src/linear_elastic_fem.rs::DiagonalStats
-unwired src/linear_elastic_fem.rs::alpha_per_k
-unwired src/linear_elastic_fem.rs::default_poissons_ratio
-unwired src/linear_elastic_fem.rs::from_filament
-unwired src/linear_elastic_fem.rs::hydrostatic
-unwired src/linear_elastic_fem.rs::load_count
-unwired src/linear_elastic_fem.rs::poissons_ratio
-unwired src/linear_elastic_fem.rs::prescribed_count
-unwired src/linear_elastic_fem.rs::stiffness_diagonal_stats
-unwired src/linear_elastic_fem.rs::with_poisson
-unwired src/linear_elastic_fem.rs::with_preconditioner
-unwired src/linear_elastic_fem.rs::with_stagnation_fraction
-unwired src/linear_elastic_fem.rs::youngs_modulus_mpa
 unwired src/mass_properties.rs::box_mass_properties
 unwired src/mass_properties.rs::capsule_mass_properties
 unwired src/mass_properties.rs::convex_hull_mass_properties
@@ -427,7 +414,6 @@ unwired src/plane_collider.rs::intersect_aabb
 unwired src/plane_collider.rs::intersect_sphere
 unwired src/plane_collider.rs::is_front
 unwired src/plane_collider.rs::project_point
-unwired src/plastic.rs::hydrostatic
 unwired src/plastic.rs::petg_room_temp
 unwired src/plastic.rs::uniaxial_x
 unwired src/plastic.rs::with_hardening
