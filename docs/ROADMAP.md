@@ -16,6 +16,10 @@ Memory index pointer: `[[reference-alice-physics-v1-roadmap]]` in claude-config.
 | Maxwell FDTD | `ecd8c61` | source-free Yee、⚠️ **SI は `ε₀·μ₀` が 7.7 bit で不可**、正規化単位 + `S=9/16` |
 | 多体 ABA | `1bab99b` | ⚠️ **`solve()` が `link.joint` を読まない**状態から real ABA、oracle 12 本 |
 
+### 第 36 increment (2026-10-03、全配線 program 第 9 件 — `debug_render`/`sdf_destruction`/`gpu_sdf` 未配線 41 item、`eulerian_grid` 分散 primitive 14 件を負債 marker)
+
+worker 4 本 (debug_render 13/13 red、sdf_destruction 14/14 red (worker 自身が cap/drain 境界の穴を発見・閉じた)、gpu_sdf 18/18 red、eulerian_grid は trigger 2a で停止・報告のみ) ⚠️ eulerian_grid の分散 primitive 14 件は user 裁定「新規 pub は追加しない」で `ALLOW-UNWIRED` 10 件 + baseline 退役 4 件 + `set_v_solid`/`set_w_solid` 配線 baseline 退役 61 行、新規公開面 0 ⚠️ **TGS family (`solver_tgs*`、5268 行) は user 裁定 (A) 配線する で着手中** (別 worker、進行中)
+
 ### 第 35 increment (2026-10-03、全配線 program 第 7-8 件 — `anomaly`/`pipeline`/`privacy`/`profiling`/`maxwell_fdtd`/`sketch`/`transient_thermal`/`joint` 8 module、未配線 171 item)
 
 worker 8 本、各 module に example 経由の production 入口 + oracle + 退化入力 test 変異 red: anomaly 48/48、pipeline 32/32、privacy 実装 46/47 + 配線 21/26 (生存は等価/guard 限界)、profiling 32/32、maxwell_fdtd 20/20、sketch 実装 31/31 + 配線 16/17 (生存 1 は構造的観測不能)、transient_thermal 15/15、joint 25/25 baseline 退役 135 行 + 名前衝突 5 行 (Backlog) ⚠️ `DDSketch::quantile` の doc 誤り (`α` → 正しくは `2α/(1+α)`) を修正、oracle 差替で ignore 解消 ⚠️ 残 2 件: joint の wrap-to-zero 二乗 / `solve_joints_breakable` が `PhysicsWorld::step` から未配線 (設計判断、user 裁定待ち)
