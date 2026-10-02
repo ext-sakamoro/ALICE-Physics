@@ -245,6 +245,7 @@ transcendentals are shared rather than reimplemented per crate.
 | **Ellipsoid Collider** | Three independent semi-axes with anisotropic support |
 | **Torus Collider** | Major/minor radii with Minkowski sum decomposition |
 | **Plane Collider** | Infinite plane (Hessian normal form) with sphere/AABB intersection |
+| **Static Colliders** | `PhysicsWorld::add_static_collider(StaticCollider)`: planes, height fields and triangle meshes that sphere bodies rest on (position correction along the surface normal) |
 | **Wedge Collider** | Triangular prism with 6-vertex GJK support |
 | **Shaped Bodies** | `PhysicsWorld::add_shaped_body(&Shape, density, position)`: mass, centre-of-mass inertia and bounding-sphere collision radius from a box / cylinder / cone / ellipsoid / wedge / torus |
 | **Convex Hull Builder** | Incremental convex hull from arbitrary point sets |
