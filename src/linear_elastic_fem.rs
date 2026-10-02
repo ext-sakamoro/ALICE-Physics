@@ -224,6 +224,16 @@ pub enum FemError {
     /// out while it was still improving, and `ArithmeticWrapped` means the
     /// residual sequence showed the signature of a silent `Fix128` wrap.
     CoupledSubIterationFailed(crate::coupled_iteration::CoupledIterationError),
+    /// The conjugate-gradient residual norm could not be formed faithfully:
+    /// a residual component at `index` squared past the `Fix128` range (or
+    /// its square was dropped to zero above the term floor), so the stopping
+    /// test would have read a wrapped number. See
+    /// [`crate::coupled_iteration::residual_norm_l2_checked`]. Scale the
+    /// problem (units, load) rather than the tolerance.
+    ResidualNormUnfaithful {
+        /// Index of the residual component whose square broke the norm.
+        index: u32,
+    },
 }
 
 /// Isotropic linear elastic material.
@@ -990,6 +1000,52 @@ fn dot3(a: [Fix128; 3], b: [Fix128; 3]) -> Fix128 {
     a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 }
 
+/// `√(Σ vᵢ²)` through [`crate::coupled_iteration::residual_norm_l2_checked`]:
+/// bit-identical to `dot(v, v).sqrt()` whenever that sum is faithful (the
+/// product of a value with itself does not depend on its sign), and
+/// [`FemError::ResidualNormUnfaithful`] instead of a wrapped number when it is
+/// not.
+fn checked_l2_norm(v: &[Fix128]) -> Result<Fix128, FemError> {
+    crate::coupled_iteration::residual_norm_l2_checked(v).map_err(|e| match e {
+        crate::coupled_iteration::CoupledIterationError::ArithmeticWrapped { sweeps } => {
+            FemError::ResidualNormUnfaithful { index: sweeps }
+        }
+        other => FemError::CoupledSubIterationFailed(other),
+    })
+}
+
+/// [`crate::coupled_iteration::run_sub_iteration`] for a sweep that can fail.
+///
+/// The monitor's sweep closure returns a bare residual, so a failing sweep is
+/// recorded here and reported as a zero residual to stop the monitor; the
+/// recorded failure is then returned **before** the monitor's verdict is
+/// read, because a zero residual is what the monitor calls converged.
+fn run_sub_iteration_fallible<F>(
+    config: crate::coupled_iteration::SubIterationConfig,
+    mut sweep: F,
+) -> Result<crate::coupled_iteration::SubIterationReport, FemError>
+where
+    F: FnMut(u32) -> Result<Fix128, FemError>,
+{
+    let mut failure: Option<FemError> = None;
+    let outcome = crate::coupled_iteration::run_sub_iteration(config, |index| {
+        if failure.is_some() {
+            return Fix128::ZERO;
+        }
+        match sweep(index) {
+            Ok(residual) => residual,
+            Err(e) => {
+                failure = Some(e);
+                Fix128::ZERO
+            }
+        }
+    });
+    if let Some(e) = failure {
+        return Err(e);
+    }
+    outcome.map_err(FemError::CoupledSubIterationFailed)
+}
+
 #[inline]
 fn div3(a: [Fix128; 3], d: Fix128) -> [Fix128; 3] {
     [a[0] / d, a[1] / d, a[2] / d]
@@ -1287,7 +1343,7 @@ where
     }
     let mut p = z.clone();
     let mut rz = dot(&r, &z);
-    let b_norm = dot(b, b).sqrt();
+    let b_norm = checked_l2_norm(b)?;
     // Never ask for a residual norm the representation cannot express; see
     // `RESIDUAL_NORM_FLOOR`.
     let requested = config.relative_tolerance * b_norm;
@@ -1298,7 +1354,7 @@ where
     };
 
     let mut iterations = 0u32;
-    let mut residual_norm = dot(&r, &r).sqrt();
+    let mut residual_norm = checked_l2_norm(&r)?;
     // Stagnation bookkeeping: the best residual seen and how long ago it was
     // beaten by the configured margin.
     let mut best_residual = residual_norm;
@@ -1374,7 +1430,7 @@ where
             }
         }
         rz = rz_next;
-        residual_norm = dot(&r, &r).sqrt();
+        residual_norm = checked_l2_norm(&r)?;
         iterations += 1;
 
         // Progress is measured against the best residual so far, not the
@@ -4905,10 +4961,7 @@ pub fn step_thermoplastic(
     coupling: &ThermoplasticCoupling,
     factor: Fix128,
 ) -> Result<ThermoplasticIncrement, FemError> {
-    use crate::coupled_iteration::{residual_norm_inf, ContractionMonitor, MonitorVerdict};
-
-    let mut monitor = ContractionMonitor::new(coupling.sub_iteration)
-        .map_err(FemError::CoupledSubIterationFailed)?;
+    use crate::coupled_iteration::residual_norm_inf;
 
     // δT_0 = 0. Cloned from `base` so the grids agree by construction — there
     // is no mismatch for a guard to catch.
@@ -4927,8 +4980,11 @@ pub fn step_thermoplastic(
     // makes the residual exactly zero and the first sweep is already the fixed
     // point.
     let mut floor = Fix128::ZERO;
+    let mut last: Option<ElastoplasticIncrement> = None;
 
-    loop {
+    // The sweep is the fixed-point map `δT ↦ deposit(ΔW_p(T^n + δT))`, driven
+    // by `coupled_iteration::run_sub_iteration`, which owns the stopping rule.
+    let report = run_sub_iteration_fallible(coupling.sub_iteration, |index| {
         // T_k = T^n + δT_k
         absolute.as_mut_slice().copy_from_slice(base.as_slice());
         for (value, &d) in absolute.as_mut_slice().iter_mut().zip(delta.as_slice()) {
@@ -4958,7 +5014,7 @@ pub fn step_thermoplastic(
             *slot = t - d;
         }
         let raw_residual = residual_norm_inf(&difference);
-        if monitor.sweeps() == 0 {
+        if index == 0 {
             floor = coupling.residual_floor_fraction * residual_norm_inf(target.as_slice());
         }
         // The floor is applied before the monitor sees the number, so an
@@ -4971,30 +5027,24 @@ pub fn step_thermoplastic(
         } else {
             raw_residual
         };
+        last = Some(increment);
 
-        match monitor.observe(residual) {
-            MonitorVerdict::Converged => {
-                return Ok(ThermoplasticIncrement {
-                    increment,
-                    temperature_increment: target,
-                    report: crate::coupled_iteration::SubIterationReport {
-                        sweeps: monitor.sweeps(),
-                        residual,
-                        observed_ratio: monitor.observed_ratio(),
-                    },
-                });
-            }
-            MonitorVerdict::Stop(error) => {
-                return Err(FemError::CoupledSubIterationFailed(error));
-            }
-            MonitorVerdict::Continue => {}
-        }
+        // δT_{k+1} = δT_k + ω (δT* − δT_k): the relaxation is a blend of the
+        // iterate toward the deposit, `CoupledField::blend_from` at weight ω.
+        // Applied after every sweep; the converging sweep's update is unused,
+        // because the returned increment is the deposit itself.
+        delta
+            .blend_from(&target, coupling.relaxation)
+            .expect("delta and target are clones of base, so the grids agree");
+        Ok(residual)
+    })?;
 
-        // δT_{k+1} = δT_k + ω (δT* − δT_k)
-        for (value, &step) in delta.as_mut_slice().iter_mut().zip(difference.iter()) {
-            *value = *value + coupling.relaxation * step;
-        }
-    }
+    let increment = last.expect("a report means at least one sweep ran");
+    Ok(ThermoplasticIncrement {
+        increment,
+        temperature_increment: target,
+        report,
+    })
 }
 
 // ============================================================================
@@ -5795,6 +5845,59 @@ mod tests {
             full_piola.transpose(),
             "P must not be symmetric on {full_name}, or nothing in this crate needs \
              a force integral for a non-symmetric stress"
+        );
+    }
+}
+
+#[cfg(test)]
+mod fallible_driver_tests {
+    //! The error-capturing wrapper around `coupled_iteration::run_sub_iteration`
+    //! that `step_thermoplastic` drives with: a sweep that fails at any index
+    //! surfaces as that error, never as a converged report (a zero residual is
+    //! what the monitor calls converged, which is exactly the trap).
+    use super::*;
+    use crate::coupled_iteration::{run_sub_iteration, SubIterationConfig};
+
+    fn geometric(index: u32) -> Fix128 {
+        // 1, 1/2, 1/4, …: converges under the default tolerance.
+        Fix128::from_raw(0, 1u64 << (63 - index.min(60)))
+    }
+
+    #[test]
+    fn a_failing_sweep_is_the_error_not_a_converged_report() {
+        for fail_at in [0u32, 1, 2, 3] {
+            let outcome = run_sub_iteration_fallible(SubIterationConfig::default(), |index| {
+                if index == fail_at {
+                    Err(FemError::EmptyMesh)
+                } else {
+                    Ok(geometric(index))
+                }
+            });
+            assert!(
+                matches!(outcome, Err(FemError::EmptyMesh)),
+                "failure at sweep {fail_at} must surface, got {outcome:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_succeeding_sweep_reports_exactly_what_run_sub_iteration_reports() {
+        let config = SubIterationConfig::default();
+        let direct = run_sub_iteration(config, geometric).expect("converges");
+        let wrapped =
+            run_sub_iteration_fallible(config, |index| Ok(geometric(index))).expect("converges");
+        assert_eq!(wrapped, direct);
+        assert!(wrapped.sweeps > 1, "not vacuous: more than one sweep ran");
+    }
+
+    #[test]
+    fn a_monitor_refusal_is_mapped_to_the_coupled_variant() {
+        // A residual that never shrinks runs out of budget.
+        let outcome =
+            run_sub_iteration_fallible(SubIterationConfig::default(), |_| Ok(Fix128::ONE));
+        assert!(
+            matches!(outcome, Err(FemError::CoupledSubIterationFailed(_))),
+            "{outcome:?}"
         );
     }
 }

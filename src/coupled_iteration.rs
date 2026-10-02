@@ -396,6 +396,7 @@ impl EquilibrationScale {
     ///
     /// Returns [`ConfigFault::ScaleOutOfRange`] if `magnitude` needs an
     /// exponent above [`EquilibrationScale::MAX_EXPONENT`].
+    // ALLOW-UNWIRED: wiring debt Backlog `residual_norm_l2_equilibrated` (CG の停止 norm を equilibrate する別 task), oracle tests/analytic_coupled_wiring.rs
     pub fn covering(magnitude: Fix128) -> Result<Self, ConfigFault> {
         if magnitude <= Fix128::ZERO {
             return Ok(Self::IDENTITY);
@@ -413,6 +414,7 @@ impl EquilibrationScale {
     }
 
     /// The exponent, where the factor is `2^exponent`.
+    // ALLOW-UNWIRED: wiring debt Backlog `residual_norm_l2_equilibrated` (CG の停止 norm を equilibrate する別 task), oracle tests/analytic_coupled_wiring.rs
     #[must_use]
     pub const fn exponent(self) -> u32 {
         self.exponent
@@ -426,12 +428,14 @@ impl EquilibrationScale {
 
     /// Divide by the factor. An arithmetic shift, so the only loss is the
     /// `exponent` low bits that shift off the bottom.
+    // ALLOW-UNWIRED: wiring debt Backlog `residual_norm_l2_equilibrated` (CG の停止 norm を equilibrate する別 task), oracle tests/analytic_coupled_wiring.rs
     #[must_use]
     pub const fn scale_down(self, value: Fix128) -> Fix128 {
         value.shr_bits(self.exponent)
     }
 
     /// Multiply by the factor. Exact, provided the result stays in range.
+    // ALLOW-UNWIRED: wiring debt Backlog `residual_norm_l2_equilibrated` (CG の停止 norm を equilibrate する別 task), oracle tests/analytic_coupled_wiring.rs
     #[must_use]
     pub fn scale_up(self, value: Fix128) -> Fix128 {
         value * self.factor()
@@ -447,6 +451,7 @@ impl EquilibrationScale {
     /// The other order — `scale_up` then `scale_down` — is exact whenever the
     /// intermediate stays in range, which is why a solver equilibrates its
     /// operator and right-hand side rather than its solution.
+    // ALLOW-UNWIRED: wiring debt Backlog `residual_norm_l2_equilibrated` (CG の停止 norm を equilibrate する別 task), oracle tests/analytic_coupled_wiring.rs
     #[must_use]
     pub fn round_trip_bound(self) -> Fix128 {
         if self.exponent == 0 {
@@ -781,6 +786,7 @@ impl ContractionMonitor {
     }
 
     /// Best (smallest) residual norm seen.
+    // ALLOW-UNWIRED: wiring debt Backlog 2.0.0 列 (`SubIterationReport` に field を足せるまで report に載せられない), oracle tests/analytic_added_mass_coupling.rs (best_residual)
     #[must_use]
     pub const fn best_residual(&self) -> Fix128 {
         self.best

@@ -2478,6 +2478,7 @@ pub fn alice_physics::thermal::ThermalModifier::coupled_channel(&self) -> core::
 pub fn alice_physics::thermal::ThermalModifier::coupled_name(&self) -> &'static str
 pub fn alice_physics::thermal::ThermalModifier::publish(&self, &mut alice_physics::coupled_field::CoupledField) -> core::result::Result<(), alice_physics::coupled_field::CoupledFieldError>
 pub fn alice_physics::coupled_field::reconcile_mean(&mut [&mut dyn alice_physics::coupled_field::CoupledScalar], &mut alice_physics::coupled_field::CoupledField) -> core::result::Result<(), alice_physics::coupled_field::CoupledFieldError>
+pub fn alice_physics::coupled_field::reconcile_weighted(&mut [&mut dyn alice_physics::coupled_field::CoupledScalar], &[u32], &mut alice_physics::coupled_field::CoupledField) -> core::result::Result<(), alice_physics::coupled_field::CoupledFieldError>
 pub mod alice_physics::coupled_iteration
 #[non_exhaustive] pub enum alice_physics::coupled_iteration::ConfigFault
 pub alice_physics::coupled_iteration::ConfigFault::DivergenceRatioNotAboveOne
@@ -5313,6 +5314,8 @@ pub alice_physics::linear_elastic_fem::FemError::InvalidMaterial(&'static str)
 pub alice_physics::linear_elastic_fem::FemError::NotConverged
 pub alice_physics::linear_elastic_fem::FemError::NotConverged::iterations: u32
 pub alice_physics::linear_elastic_fem::FemError::NotConverged::relative_residual: alice_physics::math::Fix128
+pub alice_physics::linear_elastic_fem::FemError::ResidualNormUnfaithful
+pub alice_physics::linear_elastic_fem::FemError::ResidualNormUnfaithful::index: u32
 pub alice_physics::linear_elastic_fem::FemError::RotationFailed
 pub alice_physics::linear_elastic_fem::FemError::RotationFailed::cause: alice_physics::math::PolarError
 pub alice_physics::linear_elastic_fem::FemError::RotationFailed::tet: usize
