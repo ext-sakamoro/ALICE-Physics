@@ -13,6 +13,19 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added — TGS family を `PhysicsWorld` の選択可能 solver backend として配線 (`SolverBackend`、全配線 program TGS 裁定 (A))
+
+`solver_tgs.rs` + hook 5 file (5268 行、74→76 unit test) は `pub(crate)` で v1.0 に privatize されたまま `PhysicsWorld` から未接続だった (Backlog 249 の反転を避けるため `pub` 復帰ではなく配線で解消、user 裁定 (A))
+
+- `#[non_exhaustive] pub enum SolverBackend { Xpbd, Tgs }` を `SolverConfig` に追加、既定は `Xpbd` で `step()` の既存経路は構造的に無変更 (分岐は他の処理の前に置き、`else` 側は旧コードのまま)
+- `src/solver_tgs_backend.rs` (新規、std-gated): `RigidBody` ↔ `Body6DofOrientedState`、`ContactConstraint` → `ContactOriented` の変換 (両ファミリーの法線符号が逆なので反転を含む)、friction 接線軸 helper
+- `step_tgs()`: 既存 `Pgs6DofOrientedHooks` + `solve_oriented_islands_serial` (実装済だが呼出元が無かった) を呼び、warm-start 用 `ImpulseCache` を frame 間で保持
+- ⚠️ **既知の gap (`SolverBackend` の rustdoc に明記、未解決)**: TGS は **joint constraint を一度も解かない** (`JointLike` は `build_islands` の島分類にのみ使用、速度・位置反復はどちらも contact のみを触る) / kinematic target は進めない / SDF collider は解かない 新しい制約ソルバーを書く設計変更になるため、配線の範囲では残した
+- oracle `tests/analytic_tgs_wiring.rs` 13 本、変異 10/10 red (`apply_frame_damping` が省略される変異は初回生存、worker が厳密値 oracle を追加して閉じた)
+- `examples/tgs_solver_backend.rs` — free fall / 静止接触 / joint (未配線の gap を実演) を両 backend で並べる
+- baseline 6 行退役 (`solver_tgs.rs::Island`/`build_islands`/`tgs_step`、`solver_tgs_hooks_6dof_oriented_scoped.rs` の 2 関数 + 名前衝突の `sleeping::Island`、実体は未配線のまま Backlog)
+- 新規公開面: `SolverBackend` (2 variant) + `SolverConfig::solver_backend`
+
 ### Added — `debug_render` / `sdf_destruction` / `gpu_sdf` の未配線 41 item を全配線、`eulerian_grid` の分散 primitive 14 件を負債 marker 化 (全配線 program 第 9 件)
 
 - `debug_render`: `examples/debug_render_primitives.rs` が色定数 9 + `arrow`/`axes`/`point`/`sphere`/`primitive_count`/`debug_draw_world` を駆動 oracle 17 本、変異 13/13 red ⚠️ `DebugDrawFlags::draw_aabbs`/`draw_bvh` は `debug_draw_world` から一度も参照されない死んだ flag と worker が実測 (挙動を変える修正になるため未修正、Backlog)

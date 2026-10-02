@@ -16,6 +16,10 @@ Memory index pointer: `[[reference-alice-physics-v1-roadmap]]` in claude-config.
 | Maxwell FDTD | `ecd8c61` | source-free Yee、⚠️ **SI は `ε₀·μ₀` が 7.7 bit で不可**、正規化単位 + `S=9/16` |
 | 多体 ABA | `1bab99b` | ⚠️ **`solve()` が `link.joint` を読まない**状態から real ABA、oracle 12 本 |
 
+### 第 37 increment (2026-10-03、全配線 program TGS 裁定 (A) — `SolverBackend` で TGS family を `PhysicsWorld` の選択可能 solver に配線)
+
+user 裁定 (A): `solver_tgs.rs` + hook 5 file (5268 行、pub(crate)、v1.0 で privatize) を `pub(crate)` のまま `#[non_exhaustive] SolverBackend { Xpbd, Tgs }` で配線 既定 `Xpbd` は構造的に無変更 既存の `Pgs6DofOrientedHooks`/`solve_oriented_islands_serial` (実装済み未呼出) を `step_tgs()` から呼ぶ oracle 13 本、変異 10/10 red baseline 6 行退役 ⚠️ **残 gap**: TGS は joint / kinematic target / SDF collider を解かない (rustdoc に明記、新 ソルバー実装が要るため今回は配線のみ)
+
 ### 第 36 increment (2026-10-03、全配線 program 第 9 件 — `debug_render`/`sdf_destruction`/`gpu_sdf` 未配線 41 item、`eulerian_grid` 分散 primitive 14 件を負債 marker)
 
 worker 4 本 (debug_render 13/13 red、sdf_destruction 14/14 red (worker 自身が cap/drain 境界の穴を発見・閉じた)、gpu_sdf 18/18 red、eulerian_grid は trigger 2a で停止・報告のみ) ⚠️ eulerian_grid の分散 primitive 14 件は user 裁定「新規 pub は追加しない」で `ALLOW-UNWIRED` 10 件 + baseline 退役 4 件 + `set_v_solid`/`set_w_solid` 配線 baseline 退役 61 行、新規公開面 0 ⚠️ **TGS family (`solver_tgs*`、5268 行) は user 裁定 (A) 配線する で着手中** (別 worker、進行中)
