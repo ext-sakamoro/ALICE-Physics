@@ -918,6 +918,68 @@ pub fn reconcile_mean(
     Ok(())
 }
 
+/// Make every participant agree on the **weighted** mean of their fields.
+///
+/// `weights[i]` is the confidence of `participants[i]`; a zero weight is a
+/// participant that abstains (it still adopts the result). The agreed field
+/// is `Σ wᵢ fᵢ / Σ wᵢ`, formed as an exact [`Fix128`] sum of the integer-scaled
+/// fields followed by one division — one truncation per cell, and the result
+/// does not depend on the order of `participants` (the sum is associative).
+/// With every weight equal it is bit-identical to [`reconcile_mean`].
+///
+/// This is the weighted merge the [`reconcile_mean`] documentation points to,
+/// as one call. It is the policy when the owners' confidence differs — a
+/// temperature is intensive, and the physical merge of two owners weights each
+/// by the extensive quantity it carries (a heat capacity, a dual-cell volume),
+/// of which the equal-weight mean is the special case. ⚠️ Weighting does not
+/// resolve what the owners' fields *mean*: an absolute temperature and a
+/// temperature rise on the same grid still merge into nonsense, and that
+/// distinction lives in [`TemperatureRise`], not here.
+///
+/// # Errors
+///
+/// [`CoupledFieldError::NoParticipants`] for an empty slice, for a `weights`
+/// slice of a different length, and when every weight is zero (then nobody
+/// takes part); otherwise a grid mismatch between any participant and
+/// `channel`. On `Err` no participant has adopted anything.
+pub fn reconcile_weighted(
+    participants: &mut [&mut dyn CoupledScalar],
+    weights: &[u32],
+    channel: &mut CoupledField,
+) -> Result<(), CoupledFieldError> {
+    let Some(first) = participants.first() else {
+        return Err(CoupledFieldError::NoParticipants);
+    };
+    if weights.len() != participants.len() || weights.iter().all(|&w| w == 0) {
+        return Err(CoupledFieldError::NoParticipants);
+    }
+    let mut staging = first.coupled_channel()?;
+    if !channel.same_grid_as(&staging) {
+        return channel.require_same_grid(&staging);
+    }
+
+    channel.clear();
+    let mut total: i64 = 0;
+    for (p, &w) in participants.iter().zip(weights) {
+        p.publish(&mut staging)?;
+        if w == 0 {
+            continue;
+        }
+        let weight = Fix128::from_int(i64::from(w));
+        for cell in staging.as_mut_slice() {
+            *cell = *cell * weight;
+        }
+        total += i64::from(w);
+        channel.add_assign(&staging)?;
+    }
+    channel.scale_div(Fix128::from_int(total));
+
+    for p in participants.iter_mut() {
+        p.adopt(channel)?;
+    }
+    Ok(())
+}
+
 // ============================================================================
 // Tests
 // ============================================================================
