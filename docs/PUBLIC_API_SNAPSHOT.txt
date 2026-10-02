@@ -11003,6 +11003,7 @@ pub fn alice_physics::solver::PhysicsWorld::add_joint(&mut self, alice_physics::
 pub fn alice_physics::solver::PhysicsWorld::add_pre_solve_hook(&mut self, alice_physics::solver::PreSolveHook)
 pub fn alice_physics::solver::PhysicsWorld::add_sdf_collider(&mut self, alice_physics::sdf_collider::SdfCollider) -> usize
 pub fn alice_physics::solver::PhysicsWorld::add_shaped_body(&mut self, &alice_physics::shape::Shape, alice_physics::math::Fix128, alice_physics::math::Vec3Fix) -> core::result::Result<usize, alice_physics::shape::ShapeError>
+pub fn alice_physics::solver::PhysicsWorld::add_static_collider(&mut self, alice_physics::static_collider::StaticCollider) -> usize
 pub fn alice_physics::solver::PhysicsWorld::begin_frame(&mut self)
 pub fn alice_physics::solver::PhysicsWorld::body_count(&self) -> usize
 pub fn alice_physics::solver::PhysicsWorld::body_filter(&self, usize) -> alice_physics::filter::CollisionFilter
@@ -11033,6 +11034,7 @@ pub fn alice_physics::solver::PhysicsWorld::remove_body(&mut self, usize) -> cor
 pub fn alice_physics::solver::PhysicsWorld::remove_force_field(&mut self, usize) -> core::option::Option<alice_physics::force::ForceFieldInstance>
 pub fn alice_physics::solver::PhysicsWorld::remove_joint(&mut self, usize) -> core::option::Option<alice_physics::joint::Joint>
 pub fn alice_physics::solver::PhysicsWorld::remove_sdf_collider(&mut self, usize) -> core::option::Option<alice_physics::sdf_collider::SdfCollider>
+pub fn alice_physics::solver::PhysicsWorld::remove_static_collider(&mut self, usize) -> core::option::Option<alice_physics::static_collider::StaticCollider>
 pub fn alice_physics::solver::PhysicsWorld::reset_world(&mut self)
 pub fn alice_physics::solver::PhysicsWorld::serialize_state(&self) -> alloc::vec::Vec<u8>
 pub fn alice_physics::solver::PhysicsWorld::set_body_collision_radius(&mut self, usize, alice_physics::math::Fix128)
@@ -11043,6 +11045,7 @@ pub fn alice_physics::solver::PhysicsWorld::set_sdf_collision_radius(&mut self, 
 pub fn alice_physics::solver::PhysicsWorld::set_sleep_config(&mut self, alice_physics::sleeping::SleepConfig)
 pub fn alice_physics::solver::PhysicsWorld::solve_contact_constraints_with_bridge<B: alice_physics::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B)
 pub fn alice_physics::solver::PhysicsWorld::solve_joints_with_bridge<B: alice_physics::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B, alice_physics::math::Fix128)
+pub fn alice_physics::solver::PhysicsWorld::static_collider_count(&self) -> usize
 pub fn alice_physics::solver::PhysicsWorld::step(&mut self, alice_physics::math::Fix128)
 pub fn alice_physics::solver::PhysicsWorld::step_parallel(&mut self, alice_physics::math::Fix128)
 pub fn alice_physics::solver::PhysicsWorld::step_with_bridge<B: alice_physics::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B, alice_physics::math::Fix128)
@@ -15072,6 +15075,7 @@ pub fn alice_physics::solver::PhysicsWorld::add_joint(&mut self, alice_physics::
 pub fn alice_physics::solver::PhysicsWorld::add_pre_solve_hook(&mut self, alice_physics::solver::PreSolveHook)
 pub fn alice_physics::solver::PhysicsWorld::add_sdf_collider(&mut self, alice_physics::sdf_collider::SdfCollider) -> usize
 pub fn alice_physics::solver::PhysicsWorld::add_shaped_body(&mut self, &alice_physics::shape::Shape, alice_physics::math::Fix128, alice_physics::math::Vec3Fix) -> core::result::Result<usize, alice_physics::shape::ShapeError>
+pub fn alice_physics::solver::PhysicsWorld::add_static_collider(&mut self, alice_physics::static_collider::StaticCollider) -> usize
 pub fn alice_physics::solver::PhysicsWorld::begin_frame(&mut self)
 pub fn alice_physics::solver::PhysicsWorld::body_count(&self) -> usize
 pub fn alice_physics::solver::PhysicsWorld::body_filter(&self, usize) -> alice_physics::filter::CollisionFilter
@@ -15102,6 +15106,7 @@ pub fn alice_physics::solver::PhysicsWorld::remove_body(&mut self, usize) -> cor
 pub fn alice_physics::solver::PhysicsWorld::remove_force_field(&mut self, usize) -> core::option::Option<alice_physics::force::ForceFieldInstance>
 pub fn alice_physics::solver::PhysicsWorld::remove_joint(&mut self, usize) -> core::option::Option<alice_physics::joint::Joint>
 pub fn alice_physics::solver::PhysicsWorld::remove_sdf_collider(&mut self, usize) -> core::option::Option<alice_physics::sdf_collider::SdfCollider>
+pub fn alice_physics::solver::PhysicsWorld::remove_static_collider(&mut self, usize) -> core::option::Option<alice_physics::static_collider::StaticCollider>
 pub fn alice_physics::solver::PhysicsWorld::reset_world(&mut self)
 pub fn alice_physics::solver::PhysicsWorld::serialize_state(&self) -> alloc::vec::Vec<u8>
 pub fn alice_physics::solver::PhysicsWorld::set_body_collision_radius(&mut self, usize, alice_physics::math::Fix128)
@@ -15112,6 +15117,7 @@ pub fn alice_physics::solver::PhysicsWorld::set_sdf_collision_radius(&mut self, 
 pub fn alice_physics::solver::PhysicsWorld::set_sleep_config(&mut self, alice_physics::sleeping::SleepConfig)
 pub fn alice_physics::solver::PhysicsWorld::solve_contact_constraints_with_bridge<B: alice_physics::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B)
 pub fn alice_physics::solver::PhysicsWorld::solve_joints_with_bridge<B: alice_physics::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B, alice_physics::math::Fix128)
+pub fn alice_physics::solver::PhysicsWorld::static_collider_count(&self) -> usize
 pub fn alice_physics::solver::PhysicsWorld::step(&mut self, alice_physics::math::Fix128)
 pub fn alice_physics::solver::PhysicsWorld::step_parallel(&mut self, alice_physics::math::Fix128)
 pub fn alice_physics::solver::PhysicsWorld::step_with_bridge<B: alice_physics::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B, alice_physics::math::Fix128)
@@ -15236,6 +15242,20 @@ impl core::marker::Unpin for alice_physics::spatial::SpatialGrid
 impl core::marker::UnsafeUnpin for alice_physics::spatial::SpatialGrid
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::spatial::SpatialGrid
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::spatial::SpatialGrid
+pub mod alice_physics::static_collider
+pub enum alice_physics::static_collider::StaticCollider
+pub alice_physics::static_collider::StaticCollider::HeightField(alice_physics::heightfield::HeightField)
+pub alice_physics::static_collider::StaticCollider::Plane(alice_physics::plane_collider::PlaneCollider)
+pub alice_physics::static_collider::StaticCollider::TriMesh(alice_physics::trimesh::TriMesh)
+impl alice_physics::static_collider::StaticCollider
+pub fn alice_physics::static_collider::StaticCollider::collide_sphere(&self, alice_physics::math::Vec3Fix, alice_physics::math::Fix128) -> core::option::Option<alice_physics::collider::Contact>
+impl core::marker::Freeze for alice_physics::static_collider::StaticCollider
+impl core::marker::Send for alice_physics::static_collider::StaticCollider
+impl core::marker::Sync for alice_physics::static_collider::StaticCollider
+impl core::marker::Unpin for alice_physics::static_collider::StaticCollider
+impl core::marker::UnsafeUnpin for alice_physics::static_collider::StaticCollider
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::static_collider::StaticCollider
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::static_collider::StaticCollider
 pub mod alice_physics::structural_solver
 pub struct alice_physics::structural_solver::StructuralHistory
 pub alice_physics::structural_solver::StructuralHistory::elapsed_hours: alice_physics::math::Fix128
@@ -19707,6 +19727,7 @@ pub fn alice_physics::solver::PhysicsWorld::add_joint(&mut self, alice_physics::
 pub fn alice_physics::solver::PhysicsWorld::add_pre_solve_hook(&mut self, alice_physics::solver::PreSolveHook)
 pub fn alice_physics::solver::PhysicsWorld::add_sdf_collider(&mut self, alice_physics::sdf_collider::SdfCollider) -> usize
 pub fn alice_physics::solver::PhysicsWorld::add_shaped_body(&mut self, &alice_physics::shape::Shape, alice_physics::math::Fix128, alice_physics::math::Vec3Fix) -> core::result::Result<usize, alice_physics::shape::ShapeError>
+pub fn alice_physics::solver::PhysicsWorld::add_static_collider(&mut self, alice_physics::static_collider::StaticCollider) -> usize
 pub fn alice_physics::solver::PhysicsWorld::begin_frame(&mut self)
 pub fn alice_physics::solver::PhysicsWorld::body_count(&self) -> usize
 pub fn alice_physics::solver::PhysicsWorld::body_filter(&self, usize) -> alice_physics::filter::CollisionFilter
@@ -19737,6 +19758,7 @@ pub fn alice_physics::solver::PhysicsWorld::remove_body(&mut self, usize) -> cor
 pub fn alice_physics::solver::PhysicsWorld::remove_force_field(&mut self, usize) -> core::option::Option<alice_physics::force::ForceFieldInstance>
 pub fn alice_physics::solver::PhysicsWorld::remove_joint(&mut self, usize) -> core::option::Option<alice_physics::joint::Joint>
 pub fn alice_physics::solver::PhysicsWorld::remove_sdf_collider(&mut self, usize) -> core::option::Option<alice_physics::sdf_collider::SdfCollider>
+pub fn alice_physics::solver::PhysicsWorld::remove_static_collider(&mut self, usize) -> core::option::Option<alice_physics::static_collider::StaticCollider>
 pub fn alice_physics::solver::PhysicsWorld::reset_world(&mut self)
 pub fn alice_physics::solver::PhysicsWorld::serialize_state(&self) -> alloc::vec::Vec<u8>
 pub fn alice_physics::solver::PhysicsWorld::set_body_collision_radius(&mut self, usize, alice_physics::math::Fix128)
@@ -19747,6 +19769,7 @@ pub fn alice_physics::solver::PhysicsWorld::set_sdf_collision_radius(&mut self, 
 pub fn alice_physics::solver::PhysicsWorld::set_sleep_config(&mut self, alice_physics::sleeping::SleepConfig)
 pub fn alice_physics::solver::PhysicsWorld::solve_contact_constraints_with_bridge<B: alice_physics::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B)
 pub fn alice_physics::solver::PhysicsWorld::solve_joints_with_bridge<B: alice_physics::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B, alice_physics::math::Fix128)
+pub fn alice_physics::solver::PhysicsWorld::static_collider_count(&self) -> usize
 pub fn alice_physics::solver::PhysicsWorld::step(&mut self, alice_physics::math::Fix128)
 pub fn alice_physics::solver::PhysicsWorld::step_parallel(&mut self, alice_physics::math::Fix128)
 pub fn alice_physics::solver::PhysicsWorld::step_with_bridge<B: alice_physics::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B, alice_physics::math::Fix128)

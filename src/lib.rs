@@ -445,6 +445,7 @@ pub mod shape;
 pub mod sim_field;
 #[cfg(feature = "std")]
 pub mod sim_modifier;
+pub mod static_collider;
 pub mod structural_solver;
 #[cfg(feature = "std")]
 pub mod support_volume;
