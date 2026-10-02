@@ -33,20 +33,29 @@
 //! the last distributed one, so the serial part does not dominate; a cheaper
 //! coarse solve is a later stage.
 //!
+//! # Storage
+//!
+//! Each rank holds, for every distributed level, its owned layers plus one halo
+//! layer of the pressure ([`SlabStorage`]), and for its owned layers only the
+//! conductances, inverse degrees, right-hand side and residual. Reading a layer
+//! outside the band is a panic with a message, not a stale value, so a halo that
+//! is too narrow shows up as the abort it is. Rank 0 additionally holds every
+//! layer of the last distributed level while it gathers the residual and while it
+//! sends the correction back.
+//!
 //! # What this stage does not do
 //!
-//! Every rank holds a full-length buffer per level, with everything beyond its
-//! halo overwritten by a sentinel, so a stencil that reaches past the halo fails
-//! as a mismatch rather than reading a value some other rank left behind. Slab
-//! local storage and a driver that runs one rank per process are separate
-//! changes, as they were for the Gauss-Seidel solve.
+//! The setup (conductances, inverse degrees, right-hand side, the agglomerated
+//! hierarchy) is still built for the whole grid and sliced per rank; a driver that
+//! runs one rank per process, and a setup built from a band, are the next stage.
 
 use super::{
-    exchange_slab_halos, gather_slabs_to_root, mg_vcycle, poison_beyond_halo, poisson_rhs,
-    slab_bounds, subtract_pressure_gradient, HaloSchedule, LocalTransport, MacGrid, MgLevel,
-    PoissonMask, RankTransport, MG_COARSE_VISITS, MG_CORRECTION_SCALE_DEN, MG_CORRECTION_SCALE_NUM,
-    MG_POST_SMOOTH, MG_PRE_SMOOTH,
+    exchange_slab_halos_local, mg_vcycle, poisson_rhs, subtract_pressure_gradient, HaloSchedule,
+    LocalSlabTransport, MacGrid, MgLevel, PoissonMask, SlabStorage, SlabTransport, SweepWindow,
+    MG_COARSE_VISITS, MG_CORRECTION_SCALE_DEN, MG_CORRECTION_SCALE_NUM, MG_POST_SMOOTH,
+    MG_PRE_SMOOTH,
 };
+use crate::eulerian_grid::slab_bounds;
 use crate::math::Fix128;
 
 #[cfg(not(feature = "std"))]
@@ -54,11 +63,14 @@ use alloc::vec;
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
-/// Far outside any pressure this solve produces; see
-/// [`super::project_pressure_decomposed`].
-fn sentinel() -> Fix128 {
-    Fix128::from_int(1_000_000)
-}
+/// Halo width a 7-point stencil needs.
+const HALO: usize = 1;
+
+const BELOW_MISSING: &str =
+    "an open z face of an owned cell needs the layer below, which this rank's band does not hold";
+const ABOVE_MISSING: &str =
+    "an open z face of an owned cell needs the layer above, which this rank's band does not hold";
+const OWNED_LAYER_MISSING: &str = "a rank's own layer is outside its own band";
 
 /// How a slab decomposition of the finest level carries down the hierarchy.
 #[derive(Debug, PartialEq, Eq)]
@@ -102,13 +114,18 @@ fn layout(nz: &[usize], ranks: usize) -> Layout {
     Layout { last, bounds }
 }
 
+/// The layers each distributed level's pressure band ended up holding, rank by
+/// rank: what `resident` reports after the solve. Tests read it to check that a
+/// rank holds its owned layers plus one halo layer and no more.
+pub(crate) type Residency = Vec<Vec<(usize, usize)>>;
+
 /// [`super::project_pressure_multigrid`] run as `ranks` contiguous `z` slabs over
-/// the in-process [`LocalTransport`].
+/// the in-process [`LocalSlabTransport`], each rank holding only its band.
 ///
 /// Same early-return contract as the single-process solve (a bit-identical grid
 /// for a non-power-of-two extent, a zero `dx` / `dt_s` / density, or
 /// `cycles == 0`), and also for `ranks == 0`.
-// ALLOW-UNWIRED: stage 1 of the distributed multigrid — the in-process driver the
+// ALLOW-UNWIRED: stage 2 of the distributed multigrid — the in-process driver the
 // oracle runs; the rank-per-process driver (stage 3) is its caller.
 pub(crate) fn project_pressure_multigrid_decomposed(
     grid: &mut MacGrid,
@@ -125,14 +142,43 @@ pub(crate) fn project_pressure_multigrid_decomposed(
         cycles,
         ranks,
         schedule,
-        |nz, plane| LocalTransport::new(ranks, nz, plane),
+        local_slab_transport,
     );
 }
 
+/// The default transport factory: a [`LocalSlabTransport`] over `bounds`, each
+/// band starting from `field` (zero when there is none).
+fn local_slab_transport(
+    bounds: &[(usize, usize)],
+    nz: usize,
+    plane: usize,
+    halo: usize,
+    field: Option<&[Fix128]>,
+) -> LocalSlabTransport {
+    match field {
+        Some(f) => LocalSlabTransport::from_field(bounds, nz, plane, halo, f),
+        None => {
+            LocalSlabTransport::from_field(bounds, nz, plane, halo, &vec![Fix128::ZERO; nz * plane])
+        }
+    }
+}
+
 /// [`project_pressure_multigrid_decomposed`] over a caller-supplied
-/// [`RankTransport`]. `make(nz, plane)` builds the transport for one field of `nz`
-/// layers of `plane` values: the solve needs one per distributed level for the
-/// pressure and two more at the last distributed level for the agglomeration.
+/// [`SlabTransport`]. `make(bounds, nz, plane, halo, field)` builds the transport
+/// for one field: a band per rank covering its `bounds` widened by `halo`, filled
+/// from `field` (zero when `None`). The solve needs one per distributed level for
+/// the pressure, and two more at the last distributed level for the agglomeration
+/// (where rank 0 holds every layer).
+///
+/// Returns the band every rank's pressure transport held, level by level.
+///
+/// # Setup is still global
+///
+/// The conductances, inverse degrees and right-hand side are built for the whole
+/// grid and each rank is handed the slice for its owned layers; what a rank keeps
+/// for the solve itself — pressure, right-hand side, residual — is band-local.
+/// Building the setup from a band, so that no rank ever sees the whole grid, goes
+/// with the rank-per-process driver.
 pub(crate) fn project_pressure_multigrid_decomposed_over<T, F>(
     grid: &mut MacGrid,
     dt_s: Fix128,
@@ -141,9 +187,10 @@ pub(crate) fn project_pressure_multigrid_decomposed_over<T, F>(
     ranks: usize,
     schedule: HaloSchedule,
     mut make: F,
-) where
-    T: RankTransport,
-    F: FnMut(usize, usize) -> T,
+) -> Residency
+where
+    T: SlabTransport,
+    F: FnMut(&[(usize, usize)], usize, usize, usize, Option<&[Fix128]>) -> T,
 {
     let pow2 = |n: usize| n.is_power_of_two();
     if cycles == 0
@@ -153,7 +200,7 @@ pub(crate) fn project_pressure_multigrid_decomposed_over<T, F>(
         || density_kg_m3.is_zero()
         || dt_s.is_zero()
     {
-        return;
+        return Vec::new();
     }
     grid.enforce_face_boundaries();
     let scale = density_kg_m3 * grid.dx * grid.dx / dt_s;
@@ -171,17 +218,48 @@ pub(crate) fn project_pressure_multigrid_decomposed_over<T, F>(
     let invs: Vec<Vec<Fix128>> = levels.iter().map(MgLevel::inverse_degrees).collect();
     let nzs: Vec<usize> = levels.iter().map(|l| l.nz).collect();
     let Layout { last, bounds } = layout(&nzs, ranks);
+    let plane = |l: usize| levels[l].nx * levels[l].ny;
+
+    // Per rank and level, only the owned layers.
+    let local: Vec<Vec<Local>> = (0..=last)
+        .map(|l| {
+            let p = plane(l);
+            bounds[l]
+                .iter()
+                .map(|&(k0, k1)| {
+                    let (a, b) = (k0 * p, k1 * p);
+                    Local {
+                        cond: levels[l].cond[a..b].to_vec(),
+                        inv: invs[l][a..b].to_vec(),
+                        rhs: if l == 0 {
+                            rhs0[a..b].to_vec()
+                        } else {
+                            vec![Fix128::ZERO; b - a]
+                        },
+                        res: vec![Fix128::ZERO; b - a],
+                    }
+                })
+                .collect()
+        })
+        .collect();
+
+    // Rank 0 holds every layer of the last level's residual and correction; the
+    // others hold only their own.
+    let root_bounds: Vec<(usize, usize)> = bounds[last]
+        .iter()
+        .enumerate()
+        .map(|(r, &b)| if r == 0 { (0, levels[last].nz) } else { b })
+        .collect();
 
     let mut solve = Decomposed {
         pressure: (0..=last)
-            .map(|l| make(levels[l].nz, levels[l].nx * levels[l].ny))
+            .map(|l| {
+                let field = (l == 0).then_some(grid.pressure.as_slice());
+                make(&bounds[l], levels[l].nz, plane(l), HALO, field)
+            })
             .collect(),
-        rhs: (0..=last)
-            .map(|l| vec![vec![Fix128::ZERO; levels[l].cells()]; ranks])
-            .collect(),
-        residual: vec![Vec::new(); ranks],
-        gather: make(levels[last].nz, levels[last].nx * levels[last].ny),
-        correction: make(levels[last].nz, levels[last].nx * levels[last].ny),
+        gather: make(&root_bounds, levels[last].nz, plane(last), 0, None),
+        correction: make(&root_bounds, levels[last].nz, plane(last), 0, None),
         coarse_p: levels[last + 1..]
             .iter()
             .map(|l| vec![Fix128::ZERO; l.cells()])
@@ -190,57 +268,92 @@ pub(crate) fn project_pressure_multigrid_decomposed_over<T, F>(
             .iter()
             .map(|l| vec![Fix128::ZERO; l.cells()])
             .collect(),
+        coarse_invs: invs[last + 1..].to_vec(),
+        local,
         levels: &levels,
-        invs: &invs,
         bounds: &bounds,
         last,
         ranks,
         schedule,
     };
 
-    let n0 = levels[0].cells();
-    let plane0 = levels[0].nx * levels[0].ny;
-    for (r, &own) in bounds[0].iter().enumerate() {
-        solve.rhs[0][r].copy_from_slice(&rhs0);
-        let buf = solve.pressure[0].slab_mut(r);
-        assert_eq!(
-            buf.len(),
-            n0,
-            "transport handed rank {r} a slab of the wrong size"
-        );
-        buf.copy_from_slice(&grid.pressure);
-        poison_beyond_halo(buf, levels[0].nz, plane0, own, sentinel());
-    }
-
     for _ in 0..cycles {
         solve.cycle(0);
     }
 
+    let plane0 = plane(0);
     for (r, &(k0, k1)) in bounds[0].iter().enumerate() {
-        let buf = solve.pressure[0].slab_mut(r);
-        grid.pressure[k0 * plane0..k1 * plane0].copy_from_slice(&buf[k0 * plane0..k1 * plane0]);
+        let storage = solve.pressure[0].slab_mut(r);
+        for k in k0..k1 {
+            grid.pressure[k * plane0..(k + 1) * plane0]
+                .copy_from_slice(storage.layer(k).expect(OWNED_LAYER_MISSING));
+        }
     }
+    let residency: Residency = solve
+        .pressure
+        .iter_mut()
+        .map(|t| (0..ranks).map(|r| t.slab_mut(r).resident()).collect())
+        .collect();
 
     let inv_dx = Fix128::ONE / grid.dx;
     subtract_pressure_gradient(grid, dt_s / density_kg_m3 * inv_dx);
+    residency
+}
+
+/// What one rank keeps for one level besides its pressure band, for its owned
+/// layers only.
+struct Local {
+    cond: Vec<[i64; 6]>,
+    inv: Vec<Fix128>,
+    rhs: Vec<Fix128>,
+    res: Vec<Fix128>,
+}
+
+/// `Σ cond·p` over the in-domain neighbours of cell `(i, j)` of layer `k`: the
+/// stencil of [`MgLevel::neighbour_sum`], addressed layer by layer. The two `z`
+/// reads are the only ones that can leave the band, and an open face obliges
+/// them, so a halo narrower than the stencil aborts here.
+fn neighbour_sum_layers(
+    level: &MgLevel,
+    f: [i64; 6],
+    (below, centre, above): (Option<&[Fix128]>, &[Fix128], Option<&[Fix128]>),
+    (i, j, k): (usize, usize, usize),
+) -> Fix128 {
+    let c = i + level.nx * j;
+    let mut acc = Fix128::ZERO;
+    if f[0] != 0 && i > 0 {
+        acc = acc + centre[c - 1] * Fix128::from_int(f[0]);
+    }
+    if f[1] != 0 && i + 1 < level.nx {
+        acc = acc + centre[c + 1] * Fix128::from_int(f[1]);
+    }
+    if f[2] != 0 && j > 0 {
+        acc = acc + centre[c - level.nx] * Fix128::from_int(f[2]);
+    }
+    if f[3] != 0 && j + 1 < level.ny {
+        acc = acc + centre[c + level.nx] * Fix128::from_int(f[3]);
+    }
+    if f[4] != 0 && k > 0 {
+        acc = acc + below.expect(BELOW_MISSING)[c] * Fix128::from_int(f[4]);
+    }
+    if f[5] != 0 && k + 1 < level.nz {
+        acc = acc + above.expect(ABOVE_MISSING)[c] * Fix128::from_int(f[5]);
+    }
+    acc
 }
 
 /// The state of one decomposed solve.
-struct Decomposed<'a, T: RankTransport> {
+struct Decomposed<'a, T: SlabTransport> {
     levels: &'a [MgLevel],
-    invs: &'a [Vec<Fix128>],
     bounds: &'a [Vec<(usize, usize)>],
     /// The last distributed level.
     last: usize,
     ranks: usize,
     schedule: HaloSchedule,
-    /// One transport per distributed level, carrying that level's pressure.
+    /// One transport per distributed level, carrying that level's pressure band.
     pressure: Vec<T>,
-    /// `rhs[l][r]`: rank `r`'s right-hand side at level `l`; only its own layers
-    /// are ever read, so it never travels.
-    rhs: Vec<Vec<Vec<Fix128>>>,
-    /// Scratch for a level's residual, one buffer per rank.
-    residual: Vec<Vec<Fix128>>,
+    /// `local[l][r]`: what rank `r` keeps for level `l`.
+    local: Vec<Vec<Local>>,
     /// The last level's residual, gathered to rank 0.
     gather: T,
     /// The coarse correction, sent from rank 0 to the owners.
@@ -248,11 +361,13 @@ struct Decomposed<'a, T: RankTransport> {
     /// Unknown and right-hand side of the agglomerated levels below `last`.
     coarse_p: Vec<Vec<Fix128>>,
     coarse_rhs: Vec<Vec<Fix128>>,
+    /// Inverse degrees of the agglomerated levels.
+    coarse_invs: Vec<Vec<Fix128>>,
 }
 
-impl<T: RankTransport> Decomposed<'_, T> {
+impl<T: SlabTransport> Decomposed<'_, T> {
     fn exchange(&mut self, l: usize) {
-        exchange_slab_halos(&mut self.pressure[l], &self.bounds[l], self.levels[l].nz);
+        exchange_slab_halos_local(&mut self.pressure[l], &self.bounds[l], self.levels[l].nz);
     }
 
     /// Red-black Gauss-Seidel on level `l`, the colour order and the halo
@@ -263,17 +378,28 @@ impl<T: RankTransport> Decomposed<'_, T> {
             for colour in 0..2usize {
                 for r in 0..self.ranks {
                     let (k0, k1) = self.bounds[l][r];
-                    let buf = self.pressure[l].slab_mut(r);
-                    let rhs = &self.rhs[l][r];
+                    let loc = &self.local[l][r];
+                    let storage = self.pressure[l].slab_mut(r);
+                    let plane = level.nx * level.ny;
                     for k in k0..k1 {
+                        let SweepWindow {
+                            below,
+                            centre,
+                            above,
+                        } = storage.sweep_window(k);
                         for j in 0..level.ny {
                             for i in 0..level.nx {
                                 if (i + j + k) % 2 != colour {
                                     continue;
                                 }
-                                let c = i + level.nx * (j + level.ny * k);
-                                let nb = level.neighbour_sum(buf, i, j, k);
-                                buf[c] = (nb - rhs[c]) * self.invs[l][c];
+                                let lc = (k - k0) * plane + i + level.nx * j;
+                                let nb = neighbour_sum_layers(
+                                    level,
+                                    loc.cond[lc],
+                                    (below, centre, above),
+                                    (i, j, k),
+                                );
+                                centre[i + level.nx * j] = (nb - loc.rhs[lc]) * loc.inv[lc];
                             }
                         }
                     }
@@ -291,34 +417,40 @@ impl<T: RankTransport> Decomposed<'_, T> {
     /// `res = rhs − A p` on every rank's own layers of level `l`.
     fn compute_residual(&mut self, l: usize) {
         let level = &self.levels[l];
+        let plane = level.nx * level.ny;
         for r in 0..self.ranks {
             let (k0, k1) = self.bounds[l][r];
-            let mut res = vec![Fix128::ZERO; level.cells()];
-            let buf = self.pressure[l].slab_mut(r);
-            let rhs = &self.rhs[l][r];
+            let storage: &SlabStorage = self.pressure[l].slab_mut(r);
+            let loc = &mut self.local[l][r];
             for k in k0..k1 {
+                let centre = storage.layer(k).expect(OWNED_LAYER_MISSING);
+                let below = k.checked_sub(1).and_then(|b| storage.layer(b));
+                let above = storage.layer(k + 1);
                 for j in 0..level.ny {
                     for i in 0..level.nx {
-                        let c = i + level.nx * (j + level.ny * k);
-                        let ap = buf[c] * Fix128::from_int(-level.degree(c))
-                            + level.neighbour_sum(buf, i, j, k);
-                        res[c] = rhs[c] - ap;
+                        let lc = (k - k0) * plane + i + level.nx * j;
+                        let f = loc.cond[lc];
+                        let degree: i64 = f.iter().sum();
+                        let ap = centre[i + level.nx * j] * Fix128::from_int(-degree)
+                            + neighbour_sum_layers(level, f, (below, centre, above), (i, j, k));
+                        loc.res[lc] = loc.rhs[lc] - ap;
                     }
                 }
             }
-            self.residual[r] = res;
         }
     }
 
-    /// Zero level `l`'s unknown on every rank: owned layers and halo are zero,
-    /// everything beyond is the sentinel again.
+    /// Zero level `l`'s unknown on every rank: owned layers and halo.
     fn zero_pressure(&mut self, l: usize) {
-        let level = &self.levels[l];
-        let plane = level.nx * level.ny;
         for r in 0..self.ranks {
-            let buf = self.pressure[l].slab_mut(r);
-            buf.fill(Fix128::ZERO);
-            poison_beyond_halo(buf, level.nz, plane, self.bounds[l][r], sentinel());
+            let storage = self.pressure[l].slab_mut(r);
+            let (lo, hi) = storage.resident();
+            for k in lo..hi {
+                storage
+                    .layer_mut(k)
+                    .expect(OWNED_LAYER_MISSING)
+                    .fill(Fix128::ZERO);
+            }
         }
     }
 
@@ -355,15 +487,19 @@ impl<T: RankTransport> Decomposed<'_, T> {
             fine.ny / coarse.ny,
             fine.nz / coarse.nz,
         );
+        let (plane_f, plane_c) = (fine.nx * fine.ny, coarse.nx * coarse.ny);
+        let (lower, upper) = self.local.split_at_mut(l + 1);
         for r in 0..self.ranks {
             let (k0, k1) = self.bounds[l][r];
-            let rc = &mut self.rhs[l + 1][r];
+            let c0 = self.bounds[l + 1][r].0;
+            let res = &lower[l][r].res;
+            let rc = &mut upper[0][r].rhs;
             rc.fill(Fix128::ZERO);
             for k in k0..k1 {
                 for j in 0..fine.ny {
                     for i in 0..fine.nx {
-                        let ci = i / fx + coarse.nx * (j / fy + coarse.ny * (k / fz));
-                        rc[ci] = rc[ci] + self.residual[r][i + fine.nx * (j + fine.ny * k)];
+                        let ci = (k / fz - c0) * plane_c + i / fx + coarse.nx * (j / fy);
+                        rc[ci] = rc[ci] + res[(k - k0) * plane_f + i + fine.nx * j];
                     }
                 }
             }
@@ -379,16 +515,19 @@ impl<T: RankTransport> Decomposed<'_, T> {
             fine.nz / coarse.nz,
         );
         let scale = Fix128::from_ratio(MG_CORRECTION_SCALE_NUM, MG_CORRECTION_SCALE_DEN);
+        let (lower, upper) = self.pressure.split_at_mut(l + 1);
         for r in 0..self.ranks {
             let (k0, k1) = self.bounds[l][r];
-            let e = self.pressure[l + 1].slab_mut(r).to_vec();
-            let p = self.pressure[l].slab_mut(r);
+            let e = upper[0].slab_mut(r);
+            let p = lower[l].slab_mut(r);
             for k in k0..k1 {
+                let ecoarse = e.layer(k / fz).expect(OWNED_LAYER_MISSING);
+                let pl = p.layer_mut(k).expect(OWNED_LAYER_MISSING);
                 for j in 0..fine.ny {
                     for i in 0..fine.nx {
-                        let ci = i / fx + coarse.nx * (j / fy + coarse.ny * (k / fz));
-                        let c = i + fine.nx * (j + fine.ny * k);
-                        p[c] = p[c] + e[ci] * scale;
+                        let ci = i / fx + coarse.nx * (j / fy);
+                        let c = i + fine.nx * j;
+                        pl[c] = pl[c] + ecoarse[ci] * scale;
                     }
                 }
             }
@@ -403,11 +542,19 @@ impl<T: RankTransport> Decomposed<'_, T> {
         let plane = level.nx * level.ny;
         for r in 0..self.ranks {
             let (k0, k1) = self.bounds[l][r];
-            let buf = self.gather.slab_mut(r);
-            buf.fill(sentinel());
-            buf[k0 * plane..k1 * plane].copy_from_slice(&self.residual[r][k0 * plane..k1 * plane]);
+            let storage = self.gather.slab_mut(r);
+            for k in k0..k1 {
+                storage
+                    .layer_mut(k)
+                    .expect(OWNED_LAYER_MISSING)
+                    .copy_from_slice(&self.local[l][r].res[(k - k0) * plane..(k - k0 + 1) * plane]);
+            }
         }
-        gather_slabs_to_root(&mut self.gather, &self.bounds[l]);
+        for (r, &(k0, k1)) in self.bounds[l].iter().enumerate().skip(1) {
+            for layer in k0..k1 {
+                self.gather.deliver_layer(r, 0, layer);
+            }
+        }
 
         let coarse = &self.levels[l + 1];
         let (fx, fy, fz) = (
@@ -415,14 +562,15 @@ impl<T: RankTransport> Decomposed<'_, T> {
             level.ny / coarse.ny,
             level.nz / coarse.nz,
         );
-        let res = self.gather.slab_mut(0).to_vec();
         let rc = &mut self.coarse_rhs[0];
         rc.fill(Fix128::ZERO);
+        let root = self.gather.slab_mut(0);
         for k in 0..level.nz {
+            let res = root.layer(k).expect(OWNED_LAYER_MISSING);
             for j in 0..level.ny {
                 for i in 0..level.nx {
                     let ci = i / fx + coarse.nx * (j / fy + coarse.ny * (k / fz));
-                    rc[ci] = rc[ci] + res[i + level.nx * (j + level.ny * k)];
+                    rc[ci] = rc[ci] + res[i + level.nx * j];
                 }
             }
         }
@@ -430,7 +578,7 @@ impl<T: RankTransport> Decomposed<'_, T> {
         for _ in 0..MG_COARSE_VISITS {
             mg_vcycle(
                 &self.levels[l + 1..],
-                &self.invs[l + 1..],
+                &self.coarse_invs,
                 &mut self.coarse_p,
                 &mut self.coarse_rhs,
             );
@@ -439,25 +587,29 @@ impl<T: RankTransport> Decomposed<'_, T> {
         let scale = Fix128::from_ratio(MG_CORRECTION_SCALE_NUM, MG_CORRECTION_SCALE_DEN);
         let out = self.correction.slab_mut(0);
         for k in 0..level.nz {
+            let layer = out.layer_mut(k).expect(OWNED_LAYER_MISSING);
             for j in 0..level.ny {
                 for i in 0..level.nx {
                     let ci = i / fx + coarse.nx * (j / fy + coarse.ny * (k / fz));
-                    out[i + level.nx * (j + level.ny * k)] = self.coarse_p[0][ci] * scale;
+                    layer[i + level.nx * j] = self.coarse_p[0][ci] * scale;
                 }
             }
         }
-        for r in 1..self.ranks {
-            let (k0, k1) = self.bounds[l][r];
+        for (r, &(k0, k1)) in self.bounds[l].iter().enumerate().skip(1) {
             for layer in k0..k1 {
                 self.correction.deliver_layer(0, r, layer);
             }
         }
         for r in 0..self.ranks {
             let (k0, k1) = self.bounds[l][r];
-            let corr = self.correction.slab_mut(r).to_vec();
+            let corr = self.correction.slab_mut(r);
             let p = self.pressure[l].slab_mut(r);
-            for c in k0 * plane..k1 * plane {
-                p[c] = p[c] + corr[c];
+            for k in k0..k1 {
+                let add = corr.layer(k).expect(OWNED_LAYER_MISSING);
+                let pl = p.layer_mut(k).expect(OWNED_LAYER_MISSING);
+                for (x, a) in pl.iter_mut().zip(add) {
+                    *x = *x + *a;
+                }
             }
         }
     }
@@ -610,10 +762,10 @@ mod tests {
     }
 
     /// A transport that accepts every delivery and moves nothing.
-    struct Mute(LocalTransport);
+    struct Mute(LocalSlabTransport);
 
-    impl RankTransport for Mute {
-        fn slab_mut(&mut self, rank: usize) -> &mut [Fix128] {
+    impl SlabTransport for Mute {
+        fn slab_mut(&mut self, rank: usize) -> &mut SlabStorage {
             self.0.slab_mut(rank)
         }
         fn deliver_layer(&mut self, _src: usize, _dst: usize, _layer: usize) {}
@@ -633,9 +785,78 @@ mod tests {
             2,
             4,
             HaloSchedule::EverySweep,
-            |nz, plane| Mute(LocalTransport::new(4, nz, plane)),
+            |bounds, nz, plane, halo, field| {
+                Mute(local_slab_transport(bounds, nz, plane, halo, field))
+            },
         );
         assert!(!bit_equal(&want, &got));
+    }
+
+    /// Teeth for the storage: a band with no halo cannot supply the layer an open
+    /// `z` face reads, and the solve aborts instead of reading something stale.
+    #[test]
+    #[should_panic(expected = "this rank's band does not hold")]
+    fn a_band_without_a_halo_aborts_instead_of_reading_a_stale_layer() {
+        let mut g = seed(8, 8, 8, Scene::Open);
+        project_pressure_multigrid_decomposed_over(
+            &mut g,
+            fx(DT.0, DT.1),
+            Fix128::from_int(RHO),
+            1,
+            2,
+            HaloSchedule::EverySweep,
+            |bounds, nz, plane, _halo, field| local_slab_transport(bounds, nz, plane, 0, field),
+        );
+    }
+
+    /// What each rank holds: owned layers plus one halo layer, clipped to the
+    /// domain, at every distributed level — and so, with more than one rank, less
+    /// than the whole level.
+    #[test]
+    fn a_rank_holds_its_owned_layers_and_one_halo_layer_and_no_more() {
+        for ((nx, ny, nz), ranks) in cases() {
+            let mut g = seed(nx, ny, nz, Scene::Walled);
+            let residency = project_pressure_multigrid_decomposed_over(
+                &mut g,
+                fx(DT.0, DT.1),
+                Fix128::from_int(RHO),
+                1,
+                ranks,
+                HaloSchedule::EverySweep,
+                local_slab_transport,
+            );
+            // the coarsening of nx, ny can end the hierarchy before nz does; the
+            // levels the solve distributes are the ones `layout` keeps
+            let mut nzs = vec![nz];
+            while nzs.len() < residency.len() {
+                let n = *nzs.last().expect("non-empty");
+                nzs.push(if n > 1 { n / 2 } else { 1 });
+            }
+            let lay = layout(&nzs, ranks);
+            for (l, per_rank) in residency.iter().enumerate() {
+                for (r, &(lo, hi)) in per_rank.iter().enumerate() {
+                    let (k0, k1) = lay.bounds[l][r];
+                    let want = if k0 == k1 {
+                        (k0, k0)
+                    } else {
+                        (k0.saturating_sub(1), (k1 + 1).min(nzs[l]))
+                    };
+                    assert_eq!(
+                        (lo, hi),
+                        want,
+                        "{nx}x{ny}x{nz} over {ranks}, level {l}, rank {r}"
+                    );
+                }
+            }
+            if ranks > 1 && nz >= ranks {
+                let held: usize = residency[0].iter().map(|&(lo, hi)| hi - lo).sum();
+                assert!(
+                    held < ranks * nz,
+                    "{nx}x{ny}x{nz} over {ranks}: every rank still holds the whole field"
+                );
+                assert!(residency[0].iter().all(|&(lo, hi)| hi - lo < nz));
+            }
+        }
     }
 
     /// A grid the single-process solve refuses is refused here, bit for bit.

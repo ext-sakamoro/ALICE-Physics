@@ -41,6 +41,12 @@ user 制定の最重要項目「未配線 983 件 + module 丸ごと allow 13 fi
 | **解釈** | 流出面距離は原因でない (ny=16 MC で L=16 vs L=32 が 3.2e-8 一致、気泡あり) / L=30 の差は projection の GS fallback / 文献 scene (`L=12`、`nx=96`、GS 30 sweep 明示) も GS で測られていた / τ は scheme 依存 (ny=16 で MC 73.1 / SL 32.5) ⚠️ 極限 τ は言わない |
 | **oracle** | bracket (ny=8/16、`runtime:`、1934 s、green) + 収束次数 (ny=8/16/32、**新区分 `manual:`**、約 4 h、手動で green) + 文献 oracle を L=16 / MG / settled scene に差し替え (red のまま `src gap:`、理由文は実測のみ) 判定は純関数 `judge_refinement`、歯は合成列 7 本 |
 | **6 % gap の現状** | ⛔ 未解消 MC の Richardson 外挿 ≈ 5.72 (比 0.370、**外挿**) で 6.10 は帯の外、残る候補は advection の数値粘性 / 壁・段差角の 1 次処理、ny=64 (半日級) は未測定 |
+### 第 23 increment (2026-10-02、壁 4 — multigrid の slab 局所記憶域、段階 2)
+
+`multigrid_decomposed` の各 rank が、全長 buffer をやめて **各 level の自分の帯 + halo 1 層だけ**を持つ形にした (`SlabStorage` / `SlabTransport` を再利用) 圧力は帯 + halo、右辺・残差・コンダクタンス・逆次数は owned 層だけ 帯の外を読むと message つきの panic (全長 buffer の sentinel に代わる歯) rank 0 だけが最後の分散 level の全層を gather / 補正返送の間だけ持つ 単一 process の結果と **bit 一致** (段階 1 と同じ 5 grid 形状 × rank 1〜16 × 開放 / 壁つき)
+oracle 7 本 (bit 一致 / halo の delay と無配送 transport は不一致 / halo 0 の帯は panic / 各 rank の保持層 = owned + halo / layout / 拒否入力は不変) 変異 25 件すべて red
+⚠️ setup (コンダクタンス・逆次数・右辺・集約した粗い階層) は依然として全 grid で作って rank ごとに slice している 帯から setup を組む処理は rank ごとに 1 process の driver と一緒に段階 3 へ 未着手: rank ごとの process driver (`SocketTransport` 上) / 1e8 規模の実測 / FMG / 集約した粗 level の並列化
+
 ### 第 22 increment (2026-10-02、壁 4 — multigrid を slab 分割に載せる、段階 1)
 
 `eulerian_grid::multigrid_decomposed` (crate 内、新規子 module) を足した `project_pressure_multigrid` を `ranks` 本の連続 `z` slab に分け、halo 層を交換して W-cycle を回す プロセス内の rank (全長 buffer、`RankTransport` / `LocalTransport` を再利用) で、**単一 process の結果と bit 一致** (grid 8³ / 16×8×4 / 4×4×16 / 8×8×1 / 16³、rank 1〜16、開放 / 壁つき、`ranks > nz` を含む) 各 level の slab 境界を 2 の冪の倍数に取るので restriction / prolongation が rank 内で閉じる 層数が rank 数を下回る level は rank 0 に集約して単一 process の `mg_vcycle` を回し、補正を所有者に返す
