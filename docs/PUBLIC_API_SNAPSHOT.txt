@@ -1226,9 +1226,15 @@ impl core::marker::UnsafeUnpin for alice_physics::cfd_solver::AdvectionScheme
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::cfd_solver::AdvectionScheme
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::cfd_solver::AdvectionScheme
 #[non_exhaustive] pub enum alice_physics::cfd_solver::PressureSolver
+pub alice_physics::cfd_solver::PressureSolver::BandedGs
+pub alice_physics::cfd_solver::PressureSolver::BandedGs::ranks: usize
+pub alice_physics::cfd_solver::PressureSolver::BandedGs::sweeps: u32
 pub alice_physics::cfd_solver::PressureSolver::BiCgStab
 pub alice_physics::cfd_solver::PressureSolver::BiCgStab::max_iterations: u32
 pub alice_physics::cfd_solver::PressureSolver::BiCgStab::tolerance: alice_physics::math::Fix128
+pub alice_physics::cfd_solver::PressureSolver::DecomposedGs
+pub alice_physics::cfd_solver::PressureSolver::DecomposedGs::ranks: usize
+pub alice_physics::cfd_solver::PressureSolver::DecomposedGs::sweeps: u32
 pub alice_physics::cfd_solver::PressureSolver::Jacobi
 pub alice_physics::cfd_solver::PressureSolver::Jacobi::iterations: u32
 pub alice_physics::cfd_solver::PressureSolver::Multigrid
@@ -1257,6 +1263,7 @@ pub alice_physics::cfd_solver::PressureSolverError::MultigridNeedsPowerOfTwoExte
 pub alice_physics::cfd_solver::PressureSolverError::NonPositiveTolerance
 pub alice_physics::cfd_solver::PressureSolverError::ZeroDensity
 pub alice_physics::cfd_solver::PressureSolverError::ZeroIterations
+pub alice_physics::cfd_solver::PressureSolverError::ZeroRanks
 pub alice_physics::cfd_solver::PressureSolverError::ZeroSpacing
 pub alice_physics::cfd_solver::PressureSolverError::ZeroTimeStep
 impl core::clone::Clone for alice_physics::cfd_solver::PressureSolverError

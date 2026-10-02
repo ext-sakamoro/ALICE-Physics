@@ -29,9 +29,10 @@
 //! `step_multigrid(dt, 0)` keeps the Gauss-Seidel projection on any grid.
 
 use crate::eulerian_grid::{
-    g2p_velocity, p2g_normalized, project_pressure, project_pressure_bicgstab,
-    project_pressure_jacobi, project_pressure_multigrid, sample_u_range, sample_u_trilinear,
-    sample_v_range, sample_v_trilinear, sample_w_range, sample_w_trilinear, BicgstabStats, MacGrid,
+    g2p_velocity, p2g_normalized, project_pressure, project_pressure_banded,
+    project_pressure_bicgstab, project_pressure_decomposed, project_pressure_jacobi,
+    project_pressure_multigrid, sample_u_range, sample_u_trilinear, sample_v_range,
+    sample_v_trilinear, sample_w_range, sample_w_trilinear, BicgstabStats, HaloSchedule, MacGrid,
 };
 use crate::interface_capture::fast_sweeping_reinit;
 use crate::math::{Fix128, Vec3Fix};
@@ -97,6 +98,8 @@ pub enum AdvectionScheme {
 /// | `Multigrid` | one W-cycle (grid-independent rate) | fixed `cycles` | nothing; refused off a power-of-two grid |
 /// | `Jacobi` | one matrix-vector product | fixed `iterations` | nothing |
 /// | `BiCgStab` | ~7 dot products + 2 operator applications | `‖r‖_∞ < tolerance` or `max_iterations` | [`BicgstabStats`] |
+/// | `DecomposedGs` | one sweep, over `ranks` `z` slabs with one halo layer each | fixed `sweeps` | nothing; bit-identical to `RedBlackGs` |
+/// | `BandedGs` | as `DecomposedGs`, every rank holding only its band | fixed `sweeps` | nothing; bit-identical to `RedBlackGs` |
 ///
 /// ⚠️ The fixed-count solvers never say whether they converged; on a large
 /// grid a short count leaves a smooth divergence of order one. `BiCgStab` is
@@ -120,6 +123,27 @@ pub enum PressureSolver {
     Jacobi {
         /// Sweeps; refused when zero.
         iterations: u32,
+    },
+    /// Red-black Gauss-Seidel over `ranks` contiguous `z` slabs that exchange
+    /// one halo layer after every colour sweep, run in this process — the
+    /// decomposition the distributed solvers use, with every rank still
+    /// holding a full-length buffer. The answer is the `RedBlackGs` one to the
+    /// bit for any `ranks`, including counts that do not divide `nz` and
+    /// counts above it (the surplus ranks own nothing).
+    DecomposedGs {
+        /// Slabs; refused when zero.
+        ranks: usize,
+        /// Sweeps; refused when zero.
+        sweeps: u32,
+    },
+    /// As `DecomposedGs`, but every rank holds only its own layers plus one
+    /// halo layer (slab-local storage): no full-length array exists during the
+    /// solve, which is the memory shape of a run that spans machines.
+    BandedGs {
+        /// Slabs; refused when zero.
+        ranks: usize,
+        /// Sweeps; refused when zero.
+        sweeps: u32,
     },
     /// Jacobi-preconditioned BiCGStab (van der Vorst 1992).
     BiCgStab {
@@ -157,6 +181,8 @@ pub enum PressureSolverError {
     },
     /// `BiCgStab` was given a tolerance that is not strictly positive.
     NonPositiveTolerance,
+    /// A slab decomposition was asked for with zero ranks.
+    ZeroRanks,
 }
 
 impl core::fmt::Display for PressureSolverError {
@@ -172,6 +198,7 @@ impl core::fmt::Display for PressureSolverError {
                 extents.0, extents.1, extents.2
             ),
             Self::NonPositiveTolerance => write!(f, "the BiCGStab tolerance must be positive"),
+            Self::ZeroRanks => write!(f, "a slab decomposition needs at least one rank"),
         }
     }
 }
@@ -422,6 +449,14 @@ enum Projection {
         max_iterations: u32,
         tolerance: Fix128,
     },
+    Decomposed {
+        ranks: usize,
+        sweeps: u32,
+    },
+    Banded {
+        ranks: usize,
+        sweeps: u32,
+    },
 }
 
 /// Complete CFD solver state.
@@ -641,9 +676,19 @@ impl CfdSolver {
             PressureSolver::RedBlackGs { sweeps: 0 }
             | PressureSolver::Multigrid { cycles: 0 }
             | PressureSolver::Jacobi { iterations: 0 }
+            | PressureSolver::DecomposedGs { sweeps: 0, .. }
+            | PressureSolver::BandedGs { sweeps: 0, .. }
             | PressureSolver::BiCgStab {
                 max_iterations: 0, ..
             } => return Err(PressureSolverError::ZeroIterations),
+            PressureSolver::DecomposedGs { ranks: 0, .. }
+            | PressureSolver::BandedGs { ranks: 0, .. } => {
+                return Err(PressureSolverError::ZeroRanks)
+            }
+            PressureSolver::DecomposedGs { ranks, sweeps } => {
+                Projection::Decomposed { ranks, sweeps }
+            }
+            PressureSolver::BandedGs { ranks, sweeps } => Projection::Banded { ranks, sweeps },
             PressureSolver::RedBlackGs { sweeps } => Projection::Gs(sweeps),
             PressureSolver::Multigrid { cycles } => {
                 if !self.grid_supports_multigrid() {
@@ -737,6 +782,21 @@ impl CfdSolver {
             }
             Projection::Jacobi(iterations) => {
                 project_pressure_jacobi(&mut self.grid, dt_s, self.density_kg_m3, iterations);
+                None
+            }
+            Projection::Decomposed { ranks, sweeps } => {
+                project_pressure_decomposed(
+                    &mut self.grid,
+                    dt_s,
+                    self.density_kg_m3,
+                    sweeps,
+                    ranks,
+                    HaloSchedule::EverySweep,
+                );
+                None
+            }
+            Projection::Banded { ranks, sweeps } => {
+                project_pressure_banded(&mut self.grid, dt_s, self.density_kg_m3, sweeps, ranks);
                 None
             }
             Projection::BiCgStab {

@@ -1639,6 +1639,95 @@ pub(crate) fn project_pressure_decomposed(
     );
 }
 
+/// The slab-local projection run in one process: every rank holds only its
+/// own `z` layers plus one halo layer, the answer is written back into `grid`.
+///
+/// This is the memory-local decomposition of
+/// [`project_pressure_slab_local_over`] (no rank ever holds the whole field)
+/// driven from one address space through [`LocalSlabTransport`] — the shape a
+/// run on one machine takes before the transport goes over a wire. Reached
+/// from `CfdSolver::step_with_pressure_solver` with
+/// `PressureSolver::BandedGs`.
+///
+/// The face conditions are imposed on the whole grid **once, before the
+/// split**: the monolithic solve imposes them inside itself, and an outflow
+/// face copying its inward neighbour is not idempotent, so they must not be
+/// imposed twice. The result is bit-identical to [`project_pressure`] with the
+/// same sweep count for every rank count, including counts that do not divide
+/// `nz` and counts larger than `nz` (a rank that owns nothing holds nothing and
+/// exchanges nothing); `tests/analytic_pressure_solvers.rs` pins that from the
+/// solver entry, and the in-module tests pin it on the storage.
+///
+/// A zero `dx`, density, step or rank count leaves the grid untouched, as the
+/// other solvers do.
+pub(crate) fn project_pressure_banded(
+    grid: &mut MacGrid,
+    dt_s: Fix128,
+    density_kg_m3: Fix128,
+    iterations: u32,
+    ranks: usize,
+) {
+    if grid.dx.is_zero() || density_kg_m3.is_zero() || dt_s.is_zero() || ranks == 0 {
+        return;
+    }
+    grid.enforce_face_boundaries();
+    let nz = grid.nz;
+    let (nx, ny) = (grid.nx, grid.ny);
+    let plane = cell_plane(nx, ny);
+    let bounds: Vec<(usize, usize)> = (0..ranks).map(|r| slab_bounds(nz, ranks, r)).collect();
+    let mut faces: Vec<SlabFaces> = bounds
+        .iter()
+        .map(|&b| SlabFaces::from_grid(grid, b))
+        .collect();
+    let mut transport = LocalSlabTransport::from_field(&bounds, nz, plane, 1, &grid.pressure);
+
+    project_pressure_slab_local_over(
+        &mut faces,
+        dt_s,
+        density_kg_m3,
+        iterations,
+        HaloSchedule::EverySweep,
+        &mut transport,
+    );
+
+    // Write each rank's owned layers back: the pressure from its band, the
+    // X / Y faces of its layers, and the Z faces it wrote (its layers plus the
+    // domain's top face when its band ends there).
+    for (r, rank_faces) in faces.iter().enumerate() {
+        let (k0, k1) = rank_faces.owned();
+        for k in k0..k1 {
+            let layer = transport
+                .slab(r)
+                .layer(k)
+                .expect("a rank's own layer is resident in its band");
+            grid.pressure[k * plane..(k + 1) * plane].copy_from_slice(layer);
+            let (u, _) = rank_faces.u_layer(k);
+            for j in 0..ny {
+                for i in 0..=nx {
+                    let ix = grid.idx_u(i, j, k);
+                    grid.u[ix] = u[i + (nx + 1) * j];
+                }
+            }
+            let (v, _) = rank_faces.v_layer(k);
+            for j in 0..=ny {
+                for i in 0..nx {
+                    let ix = grid.idx_v(i, j, k);
+                    grid.v[ix] = v[i + nx * j];
+                }
+            }
+        }
+        for k in rank_faces.w_written() {
+            let (w, _) = rank_faces.w_layer(k);
+            for j in 0..ny {
+                for i in 0..nx {
+                    let ix = grid.idx_w(i, j, k);
+                    grid.w[ix] = w[i + nx * j];
+                }
+            }
+        }
+    }
+}
+
 /// [`project_pressure_decomposed`] over a caller-supplied [`RankTransport`].
 ///
 /// The solve owns the sweep, the ownership map and the poisoning; the transport
@@ -7165,6 +7254,36 @@ mod tests {
             &mut transport,
         );
         assemble_slabs(base, &faces, &transport)
+    }
+
+    /// `project_pressure_banded` imposes the face conditions itself, so a grid
+    /// whose wall faces still carry velocity comes out as the monolithic
+    /// solve (which also imposes them inside) — bit for bit.
+    ///
+    /// The solver step enforces the faces twice before projecting, so from
+    /// `CfdSolver::step_with_pressure_solver` a banded projection that forgot
+    /// to enforce is indistinguishable; measured, that mutation survived every
+    /// solver-level oracle. This pins the function's own contract instead.
+    #[test]
+    fn the_banded_projection_imposes_the_face_conditions_itself() {
+        let dt = Fix128::from_ratio(1, 100);
+        let rho = Fix128::from_int(1000);
+        for &(n, ranks) in &SLAB_CASES {
+            let base = seed_slab_scene(n, SlabScene::ClosedBox);
+            assert!(
+                base.u.iter().any(|v| !v.is_zero()),
+                "the seed must carry velocity on the faces the walls will zero"
+            );
+            let mut monolithic = base.clone();
+            project_pressure_red_black_gs(&mut monolithic, dt, rho, 6);
+            let mut banded = base.clone();
+            project_pressure_banded(&mut banded, dt, rho, 6, ranks);
+            assert!(
+                grids_are_bit_equal(&monolithic, &banded),
+                "{n}³ over {ranks} ranks: the banded projection on an unenforced sealed box \
+                 differs from the monolithic solve",
+            );
+        }
     }
 
     /// Slab-local storage — every rank holding only its own layers plus one

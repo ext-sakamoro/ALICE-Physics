@@ -271,8 +271,6 @@ unwired src/ellipsoid.rs::with_rotation
 unwired src/erosion.rs::compute_exposure_from_normals
 unwired src/erosion.rs::erosion_at
 unwired src/erosion.rs::set_exposure_at
-unwired src/eulerian_grid.rs::HALO_MISSING_ABOVE
-unwired src/eulerian_grid.rs::HALO_MISSING_BELOW
 unwired src/eulerian_grid.rs::SLAB_FACE_HALO_MISSING
 unwired src/eulerian_grid.rs::bytes
 unwired src/eulerian_grid.rs::bytes
@@ -285,10 +283,8 @@ unwired src/eulerian_grid.rs::enforce_solid_faces
 unwired src/eulerian_grid.rs::is_drained
 unwired src/eulerian_grid.rs::no_slip_velocity
 unwired src/eulerian_grid.rs::p2g_nearest
-unwired src/eulerian_grid.rs::project_pressure_decomposed
 unwired src/eulerian_grid.rs::project_pressure_decomposed_on_rank
 unwired src/eulerian_grid.rs::project_pressure_slab_local_on_rank
-unwired src/eulerian_grid.rs::project_pressure_slab_local_over
 unwired src/eulerian_grid.rs::set_closed_box_walls
 unwired src/eulerian_grid.rs::set_u
 unwired src/eulerian_grid.rs::set_u_bc
@@ -297,11 +293,6 @@ unwired src/eulerian_grid.rs::set_v
 unwired src/eulerian_grid.rs::set_v_solid
 unwired src/eulerian_grid.rs::set_w
 unwired src/eulerian_grid.rs::set_w_solid
-unwired src/eulerian_grid.rs::slab
-unwired src/eulerian_grid.rs::slab
-unwired src/eulerian_grid.rs::u_layer_mut
-unwired src/eulerian_grid.rs::v_layer_mut
-unwired src/eulerian_grid.rs::w_layer_mut
 unwired src/event.rs::drain_contact_events
 unwired src/event.rs::drain_trigger_events
 unwired src/event.rs::has_events

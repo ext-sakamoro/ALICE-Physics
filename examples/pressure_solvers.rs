@@ -85,6 +85,39 @@ fn main() {
         }
     }
 
+    // The two slab decompositions reproduce red-black Gauss-Seidel to the bit
+    // over any rank count: three ranks here, which does not divide the eight
+    // layers evenly.
+    let mut reference = solver(8);
+    reference
+        .step_with_pressure_solver(dt, PressureSolver::RedBlackGs { sweeps: 30 })
+        .expect("Gauss-Seidel runs on any grid");
+    for (label, choice) in [
+        (
+            "decomposed GS, 3 ranks, 30 sweeps",
+            PressureSolver::DecomposedGs {
+                ranks: 3,
+                sweeps: 30,
+            },
+        ),
+        (
+            "banded GS, 3 ranks, 30 sweeps",
+            PressureSolver::BandedGs {
+                ranks: 3,
+                sweeps: 30,
+            },
+        ),
+    ] {
+        let mut s = solver(8);
+        s.step_with_pressure_solver(dt, choice)
+            .expect("8x8x8 accepts every solver");
+        let same = s.grid.pressure == reference.grid.pressure
+            && s.grid.u == reference.grid.u
+            && s.grid.v == reference.grid.v
+            && s.grid.w == reference.grid.w;
+        println!("{label:<36} bit-identical to red-black GS: {same}");
+    }
+
     // The refusals: a chosen solver that cannot run is an error, not a
     // silent fallback to another one.
     let mut narrow = solver(7);
