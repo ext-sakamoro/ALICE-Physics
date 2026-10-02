@@ -276,7 +276,6 @@ unwired src/erosion.rs::set_exposure_at
 unwired src/eulerian_grid.rs::BicgstabStats
 unwired src/eulerian_grid.rs::HALO_MISSING_ABOVE
 unwired src/eulerian_grid.rs::HALO_MISSING_BELOW
-unwired src/eulerian_grid.rs::HaloSchedule
 unwired src/eulerian_grid.rs::SLAB_FACE_HALO_MISSING
 unwired src/eulerian_grid.rs::SweepWindow
 unwired src/eulerian_grid.rs::bytes
