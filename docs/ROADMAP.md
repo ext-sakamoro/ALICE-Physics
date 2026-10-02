@@ -16,6 +16,10 @@ Memory index pointer: `[[reference-alice-physics-v1-roadmap]]` in claude-config.
 | Maxwell FDTD | `ecd8c61` | source-free Yee、⚠️ **SI は `ε₀·μ₀` が 7.7 bit で不可**、正規化単位 + `S=9/16` |
 | 多体 ABA | `1bab99b` | ⚠️ **`solve()` が `link.joint` を読まない**状態から real ABA、oracle 12 本 |
 
+### 第 30 increment (2026-10-02、全配線 program 第 4 件 — RANS k-ε / k-ω と可変粘性拡散の配線)
+
+`TurbulenceModel::{Smagorinsky, DynamicSmagorinsky, KEpsilon, KOmega, Prescribed}` を caller 所有の `RansState` に持たせて `CfdSolver::step_rans` で回し (`ys-1f` 裁定: `CfdSolver` に field を足すのは major なので状態は外に置く、反力の先例と同列)、`(k, ε)` の輸送 (production → 点 source → 調和平均の陽的拡散 → semi-Lagrangian 移流) と、新設 `diffuse_velocity_variable` (`∇·(ν∇u)` の MAC 形、edge は調和平均) で ν_t 場を運動量に届けた (`ys-1f` 相談: proxy では配線変異が恒等) 拡散数 `> 1/6` は `DiffusionUnstable` で拒否、clamp 発火は `TurbulenceSummary.clamped` で可視 oracle 13 本 (減衰閉形式 1 次収束 / 一様せん断 P/ε → 2.0909 / 2 層 Couette 1e-12 / 対数層恒等式 / 拒否) 変異 15/15 red (配線 6 + 実装 9) baseline 退役 11 行 (全部実配線) ⚠️ 残: 壁 model と RANS の壁 BC (`wall_k_epsilon` の Dirichlet) は未結合 (zero-gradient)、channel の対数則再現は CI 外の validation
+
 ### 第 29 increment (2026-10-02、壁 4 — multigrid を帯だけから組む、段階 4a)
 
 `project_pressure_multigrid_banded_on_rank` と `multigrid_slab_bounds` を足した (crate 内) rank は `MacGrid` を持たず、自分の `SlabFaces` (face 速度と条件) と圧力の帯だけを持つ 右辺・コンダクタンス・逆次数は `SlabStencil` (full-grid 経路と同じ式) から、coarse level は帯を coarsen して作る (slab 境界が各分散 level で 2 の倍数なので厳密) 帯から作れない最後の分散 level 以下の階層だけは、各 rank がその level のコンダクタンス (1 cell あたり小整数 6 個、`Fix128` として既存の transport で運ぶ) を rank 0 へ送り、rank 0 がそこから coarsen する 圧力勾配の減算は既存の `subtract_slab_pressure_gradient` 何も gather しないので、どの rank も全 field を持たない
