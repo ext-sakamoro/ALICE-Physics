@@ -10607,13 +10607,17 @@ pub fn alice_physics::solver::PhysicsWorld::is_sleeping(&self, usize) -> bool
 pub fn alice_physics::solver::PhysicsWorld::joint_count(&self) -> usize
 pub fn alice_physics::solver::PhysicsWorld::new(alice_physics::solver::SolverConfig) -> Self
 pub fn alice_physics::solver::PhysicsWorld::num_batches(&self) -> usize
+pub fn alice_physics::solver::PhysicsWorld::observe_bodies(&self) -> alloc::vec::Vec<alice_physics::solver::BodyObservation>
+pub fn alice_physics::solver::PhysicsWorld::observe_body(&self, usize) -> core::option::Option<alice_physics::solver::BodyObservation>
 pub const fn alice_physics::solver::PhysicsWorld::overflow_detected(&self) -> bool
+pub fn alice_physics::solver::PhysicsWorld::population_fingerprint(&self) -> u64
 pub fn alice_physics::solver::PhysicsWorld::raycast(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128) -> core::option::Option<(usize, alice_physics::math::Fix128)>
 pub fn alice_physics::solver::PhysicsWorld::rebuild_batches(&mut self)
 pub fn alice_physics::solver::PhysicsWorld::remove_body(&mut self, usize) -> core::option::Option<alice_physics::solver::RigidBody>
 pub fn alice_physics::solver::PhysicsWorld::remove_force_field(&mut self, usize) -> core::option::Option<alice_physics::force::ForceFieldInstance>
 pub fn alice_physics::solver::PhysicsWorld::remove_joint(&mut self, usize) -> core::option::Option<alice_physics::joint::Joint>
 pub fn alice_physics::solver::PhysicsWorld::remove_sdf_collider(&mut self, usize) -> core::option::Option<alice_physics::sdf_collider::SdfCollider>
+pub fn alice_physics::solver::PhysicsWorld::reset_world(&mut self)
 pub fn alice_physics::solver::PhysicsWorld::serialize_state(&self) -> alloc::vec::Vec<u8>
 pub fn alice_physics::solver::PhysicsWorld::set_body_collision_radius(&mut self, usize, alice_physics::math::Fix128)
 pub fn alice_physics::solver::PhysicsWorld::set_body_filter(&mut self, usize, alice_physics::filter::CollisionFilter)
@@ -14448,6 +14452,29 @@ impl core::marker::Unpin for alice_physics::solver::BodyType
 impl core::marker::UnsafeUnpin for alice_physics::solver::BodyType
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::solver::BodyType
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::solver::BodyType
+pub struct alice_physics::solver::BodyObservation
+pub alice_physics::solver::BodyObservation::angular_velocity: alice_physics::math::Vec3Fix
+pub alice_physics::solver::BodyObservation::body_index: usize
+pub alice_physics::solver::BodyObservation::in_contact: bool
+pub alice_physics::solver::BodyObservation::position: alice_physics::math::Vec3Fix
+pub alice_physics::solver::BodyObservation::rotation: alice_physics::math::QuatFix
+pub alice_physics::solver::BodyObservation::sleeping: bool
+pub alice_physics::solver::BodyObservation::velocity: alice_physics::math::Vec3Fix
+impl core::clone::Clone for alice_physics::solver::BodyObservation
+pub fn alice_physics::solver::BodyObservation::clone(&self) -> Self
+impl core::cmp::PartialEq for alice_physics::solver::BodyObservation
+pub fn alice_physics::solver::BodyObservation::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::solver::BodyObservation
+pub fn alice_physics::solver::BodyObservation::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::solver::BodyObservation
+impl core::marker::StructuralPartialEq for alice_physics::solver::BodyObservation
+impl core::marker::Freeze for alice_physics::solver::BodyObservation
+impl core::marker::Send for alice_physics::solver::BodyObservation
+impl core::marker::Sync for alice_physics::solver::BodyObservation
+impl core::marker::Unpin for alice_physics::solver::BodyObservation
+impl core::marker::UnsafeUnpin for alice_physics::solver::BodyObservation
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::solver::BodyObservation
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::solver::BodyObservation
 pub struct alice_physics::solver::ConstraintBatch
 pub alice_physics::solver::ConstraintBatch::contact_indices: alloc::vec::Vec<usize>
 pub alice_physics::solver::ConstraintBatch::distance_indices: alloc::vec::Vec<usize>
@@ -14564,13 +14591,17 @@ pub fn alice_physics::solver::PhysicsWorld::is_sleeping(&self, usize) -> bool
 pub fn alice_physics::solver::PhysicsWorld::joint_count(&self) -> usize
 pub fn alice_physics::solver::PhysicsWorld::new(alice_physics::solver::SolverConfig) -> Self
 pub fn alice_physics::solver::PhysicsWorld::num_batches(&self) -> usize
+pub fn alice_physics::solver::PhysicsWorld::observe_bodies(&self) -> alloc::vec::Vec<alice_physics::solver::BodyObservation>
+pub fn alice_physics::solver::PhysicsWorld::observe_body(&self, usize) -> core::option::Option<alice_physics::solver::BodyObservation>
 pub const fn alice_physics::solver::PhysicsWorld::overflow_detected(&self) -> bool
+pub fn alice_physics::solver::PhysicsWorld::population_fingerprint(&self) -> u64
 pub fn alice_physics::solver::PhysicsWorld::raycast(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128) -> core::option::Option<(usize, alice_physics::math::Fix128)>
 pub fn alice_physics::solver::PhysicsWorld::rebuild_batches(&mut self)
 pub fn alice_physics::solver::PhysicsWorld::remove_body(&mut self, usize) -> core::option::Option<alice_physics::solver::RigidBody>
 pub fn alice_physics::solver::PhysicsWorld::remove_force_field(&mut self, usize) -> core::option::Option<alice_physics::force::ForceFieldInstance>
 pub fn alice_physics::solver::PhysicsWorld::remove_joint(&mut self, usize) -> core::option::Option<alice_physics::joint::Joint>
 pub fn alice_physics::solver::PhysicsWorld::remove_sdf_collider(&mut self, usize) -> core::option::Option<alice_physics::sdf_collider::SdfCollider>
+pub fn alice_physics::solver::PhysicsWorld::reset_world(&mut self)
 pub fn alice_physics::solver::PhysicsWorld::serialize_state(&self) -> alloc::vec::Vec<u8>
 pub fn alice_physics::solver::PhysicsWorld::set_body_collision_radius(&mut self, usize, alice_physics::math::Fix128)
 pub fn alice_physics::solver::PhysicsWorld::set_body_filter(&mut self, usize, alice_physics::filter::CollisionFilter)
@@ -19083,13 +19114,17 @@ pub fn alice_physics::solver::PhysicsWorld::is_sleeping(&self, usize) -> bool
 pub fn alice_physics::solver::PhysicsWorld::joint_count(&self) -> usize
 pub fn alice_physics::solver::PhysicsWorld::new(alice_physics::solver::SolverConfig) -> Self
 pub fn alice_physics::solver::PhysicsWorld::num_batches(&self) -> usize
+pub fn alice_physics::solver::PhysicsWorld::observe_bodies(&self) -> alloc::vec::Vec<alice_physics::solver::BodyObservation>
+pub fn alice_physics::solver::PhysicsWorld::observe_body(&self, usize) -> core::option::Option<alice_physics::solver::BodyObservation>
 pub const fn alice_physics::solver::PhysicsWorld::overflow_detected(&self) -> bool
+pub fn alice_physics::solver::PhysicsWorld::population_fingerprint(&self) -> u64
 pub fn alice_physics::solver::PhysicsWorld::raycast(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128) -> core::option::Option<(usize, alice_physics::math::Fix128)>
 pub fn alice_physics::solver::PhysicsWorld::rebuild_batches(&mut self)
 pub fn alice_physics::solver::PhysicsWorld::remove_body(&mut self, usize) -> core::option::Option<alice_physics::solver::RigidBody>
 pub fn alice_physics::solver::PhysicsWorld::remove_force_field(&mut self, usize) -> core::option::Option<alice_physics::force::ForceFieldInstance>
 pub fn alice_physics::solver::PhysicsWorld::remove_joint(&mut self, usize) -> core::option::Option<alice_physics::joint::Joint>
 pub fn alice_physics::solver::PhysicsWorld::remove_sdf_collider(&mut self, usize) -> core::option::Option<alice_physics::sdf_collider::SdfCollider>
+pub fn alice_physics::solver::PhysicsWorld::reset_world(&mut self)
 pub fn alice_physics::solver::PhysicsWorld::serialize_state(&self) -> alloc::vec::Vec<u8>
 pub fn alice_physics::solver::PhysicsWorld::set_body_collision_radius(&mut self, usize, alice_physics::math::Fix128)
 pub fn alice_physics::solver::PhysicsWorld::set_body_filter(&mut self, usize, alice_physics::filter::CollisionFilter)

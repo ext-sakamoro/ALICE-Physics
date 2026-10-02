@@ -32,15 +32,15 @@ fn washing_world() -> PhysicsWorld {
 ///
 /// ⚠️ **「立つ前後で blob が変わる」では対照実験にならない** (2026-09-30 実測)
 /// 洗浄 step は sleep 状態も変えるので、**flag が被覆外でも blob は変わる**
-/// ⇒ 長さで見るのが精密 (v2 = header 12 + body ごと 208 + body ごと sleep 5
-/// + world ごと flag 1)
+/// ⇒ 長さで見るのが精密 (v3 = header 12 + body ごと 208 + body ごと sleep 5
+/// + world ごと flag 1 + world ごと population fingerprint 8)
 #[test]
 fn the_blob_length_includes_the_flag_byte() {
     let n = 1; // body 1 個
     let len = washing_world().serialize_state().len();
     assert_eq!(
         len,
-        12 + n * 208 + n * 5 + 1,
+        12 + n * 208 + n * 5 + 1 + 8,
         "blob の長さに flag の 1 byte が含まれていない (実測 {len})"
     );
 }
