@@ -6,7 +6,7 @@
 //! `cauchy_stress` gives `P = J σ F⁻ᵀ` with
 //!
 //! ```text
-//! P = 2(W₁ + I₁W₂) F − 2 W₂ F FᵀF + q(J) F⁻ᵀ,       q = J (K (J−1) − p_ref)
+//! P = 2(W₁ + I₁W₂) F − 2 W₂ F FᵀF + q(J) F⁻ᵀ,       q = κ J (J−1) − p_ref
 //! ```
 //!
 //! and its directional derivative along a displacement gradient `δF` is
@@ -108,7 +108,7 @@ struct ElementState {
     w2: Fix128,
     /// `q(J)`.
     q: Fix128,
-    /// `J q'(J) = J (K (2J−1) − p_ref)`.
+    /// `J q'(J) = κ J (2J−1)`.
     jq: Fix128,
 }
 
@@ -155,8 +155,8 @@ impl TangentField {
                 a1: Fix128::from_int(2) * (w1 + i1 * w2),
                 a2: Fix128::from_int(4) * (w11 + w2),
                 w2,
-                q: j * (bulk_modulus * (j - one) - p_ref),
-                jq: j * (bulk_modulus * (Fix128::from_int(2) * j - one) - p_ref),
+                q: bulk_modulus * j * (j - one) - p_ref,
+                jq: bulk_modulus * j * (Fix128::from_int(2) * j - one),
             });
         }
         Ok(Self { states })
@@ -428,7 +428,7 @@ pub(super) fn newton_step(
 /// **strictly below** `before`, as `u` moved on the free rows. `norm_at` returns
 /// the residual norm at a trial point, or `None` when the point is refused (an
 /// inverted element); a refused or non-improving trial halves the step.
-fn backtrack<F>(
+pub(super) fn backtrack<F>(
     before: Fix128,
     u: &[Fix128],
     delta: &[Fix128],
@@ -577,15 +577,12 @@ mod tests {
     }
 
     /// `p(J)` and `c(J) = J p'(J)` of the implemented Neo-Hookean law. The
-    /// stress is `P = μ F + (p(J) − μ) F⁻ᵀ` with `W = μ/2 (I₁−3) − μ(J−1) +
-    /// K/2 (J−1)²` (no isochoric split: `cauchy_stress` carries `K(J−1) − p_ref`
-    /// as one isotropic term), so `p = μ(1−J) + K J (J−1)` and
-    /// `c = J (K (2J−1) − μ)`.
+    /// stress is `P = μ F + (p(J) − μ) F⁻ᵀ` with `W = μ/2 (I₁−3) − μ ln J +
+    /// κ/2 (J−1)²`: `cauchy_stress` carries `κ(J−1) − p_ref/J` as one isotropic
+    /// term, so `p = κ J (J−1)` and `c = J p' = κ J (2J−1)`. (`ln J` appears only
+    /// in the energy; neither the stress nor its tangent has a logarithm.)
     fn p_and_c(j: f64) -> (f64, f64) {
-        (
-            MU * (1.0 - j) + BULK * j * (j - 1.0),
-            j * (BULK * (2.0 * j - 1.0) - MU),
-        )
+        (BULK * j * (j - 1.0), j * BULK * (2.0 * j - 1.0))
     }
 
     /// `P(F)` in closed form.
@@ -830,10 +827,11 @@ mod tests {
 
     #[test]
     fn at_the_reference_state_the_tangent_is_the_laws_own_small_strain_limit() {
-        // ⚠️ Not the linear law's (λ + 2μ): the law has no isochoric split, so
-        // its small-strain bulk modulus is K − μ/3 and A_1111(I) = μ + K, which
-        // is λ + 5μ/3 when K = λ + 2μ/3. Fixed here so that a tangent that
-        // quietly returned the linear stiffness would be seen.
+        // The law's small-strain limit is the linear solid with λ = κ (the
+        // Neo-Hookean offset is zero) and the model's own μ, so
+        // A_1111(I) = κ + 2μ. With the old volumetric term (`K(J−1) − p_ref`,
+        // `K = λ + 2μ/3`) it was K + μ = λ + 5μ/3, μ/3 short of the linear
+        // λ + 2μ; this is the oracle that pins the fix on the tangent.
         let u = vec![0.0; 12];
         let mut p = vec![0.0; 12];
         for (a, x) in REF.iter().enumerate() {
@@ -842,9 +840,9 @@ mod tests {
         let out = tangent(&u, &p);
         let a_1111 = out[3] / VOLUME;
         assert!(
-            (a_1111 - (MU + BULK)).abs() < 1e-7,
-            "A_1111(I) = {a_1111}, expected μ + K = {}",
-            MU + BULK
+            (a_1111 - (BULK + 2.0 * MU)).abs() < 1e-7,
+            "A_1111(I) = {a_1111}, expected κ + 2μ = {}",
+            BULK + 2.0 * MU
         );
     }
 

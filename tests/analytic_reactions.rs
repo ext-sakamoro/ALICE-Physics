@@ -154,9 +154,10 @@ fn lambda() -> f64 {
 fn mu() -> f64 {
     E_MPA / (2.0 * (1.0 + NU))
 }
-/// `K = λ + 2μ/3`, the bulk modulus `solve_corotational` pairs a model with.
+/// `κ = λ` for Neo-Hookean (offset `4W₂ + 4W₁₁ = 0`), the volumetric modulus
+/// `solve_corotational` pairs a model with.
 fn bulk() -> f64 {
-    lambda() + 2.0 * mu() / 3.0
+    lambda()
 }
 
 fn close(got: f64, want: f64, tol: f64, what: &str) {
@@ -824,14 +825,14 @@ fn solution_at(mesh: &SdfTetMesh, displacements: Vec<[Fix128; 3]>) -> Corotation
 /// # The closed form, derived here
 ///
 /// `hyperelastic::cauchy_stress` evaluates
-/// `σ = (2/J)(W₁ + I₁W₂)B − (2/J)W₂B² + [K(J−1) − p_ref]I` with
+/// `σ = (2/J)(W₁ + I₁W₂)B − (2/J)W₂B² + [κ(J−1) − p_ref/J]I` with
 /// `p_ref = 2(W₁ + 2W₂)` at the undeformed state. Neo-Hookean has
 /// `W = (μ/2)(I₁−3)`, so `W₁ = μ/2`, `W₂ = 0`, `p_ref = μ`, and
 ///
 /// ```text
-/// σ = (μ/J)·B + [K(J−1) − μ]·I            B = F Fᵀ
-/// P = J σ F⁻ᵀ = μ·B F⁻ᵀ + J[K(J−1) − μ]·F⁻ᵀ
-///             = μ F + β F⁻ᵀ,               β = J·(K(J−1) − μ)
+/// σ = (μ/J)·B + [κ(J−1) − μ/J]·I          B = F Fᵀ
+/// P = J σ F⁻ᵀ = μ·B F⁻ᵀ + [κJ(J−1) − μ]·F⁻ᵀ
+///             = μ F + β F⁻ᵀ,               β = κJ(J−1) − μ
 /// ```
 ///
 /// using `B F⁻ᵀ = F Fᵀ F⁻ᵀ = F`. With `F = R U` and `U = diag(u₁,u₂,u₃)` the
@@ -842,8 +843,9 @@ fn solution_at(mesh: &SdfTetMesh, displacements: Vec<[Fix128; 3]>) -> Corotation
 /// ```
 ///
 /// and the three columns of `P` are `P e_k = d_k · (R e_k)`. The face identity
-/// in the module doc then gives the three expected sums directly. `K` is
-/// `λ + 2μ_material/3`, which is what `solve_corotational` pairs the model with.
+/// in the module doc then gives the three expected sums directly. `κ` is
+/// `λ` here (the Neo-Hookean offset is zero), which is what `solve_corotational`
+/// pairs the model with.
 ///
 /// # ⚠️ What each face separates
 ///
@@ -862,7 +864,7 @@ fn the_hyperelastic_face_reaction_is_the_first_piola_traction() {
 
     let mu_model = mu();
     let j = STRETCH[0] * STRETCH[1] * STRETCH[2];
-    let beta = j * (bulk() * (j - 1.0) - mu_model);
+    let beta = bulk() * j * (j - 1.0) - mu_model;
     let d = [
         mu_model * STRETCH[0] + beta / STRETCH[0],
         mu_model * STRETCH[1] + beta / STRETCH[1],
@@ -939,7 +941,7 @@ fn a_solved_hyperelastic_state_reproduces_the_piola_face_reaction() {
 
     let mu_model = mu();
     let j = STRETCH[0] * STRETCH[1] * STRETCH[2];
-    let beta = j * (bulk() * (j - 1.0) - mu_model);
+    let beta = bulk() * j * (j - 1.0) - mu_model;
     let d1 = mu_model * STRETCH[0] + beta / STRETCH[0];
 
     let config = CorotationalConfig::try_new(SolverConfig::default(), 64, fx(1e-6), 2, 32)
@@ -1580,7 +1582,7 @@ fn stretched_turn_f64(p: [f64; 3]) -> [f64; 3] {
 fn piola_columns() -> ([[f64; 3]; 3], [f64; 3]) {
     let mu_model = mu();
     let j = STRETCH[0] * STRETCH[1] * STRETCH[2];
-    let beta = j * (bulk() * (j - 1.0) - mu_model);
+    let beta = bulk() * j * (j - 1.0) - mu_model;
     let d = [
         mu_model * STRETCH[0] + beta / STRETCH[0],
         mu_model * STRETCH[1] + beta / STRETCH[1],
@@ -1598,7 +1600,7 @@ fn piola_columns() -> ([[f64; 3]; 3], [f64; 3]) {
 
 /// Under the uniform `F = R U` of oracle 5, the face reaction of the
 /// hyperelastic path is `−A₀ · P e_face` with `P = μF + βF⁻ᵀ`,
-/// `β = J(K(J−1) − μ)` — the closed form derived in oracle 5, which does not
+/// `β = κJ(J−1) − μ` — the closed form derived in oracle 5, which does not
 /// depend on the element.
 ///
 /// ⚠️ This is the oracle the 2026-10-01 measurement said was missing: `det F =

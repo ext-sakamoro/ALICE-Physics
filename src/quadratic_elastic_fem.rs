@@ -65,8 +65,9 @@ use std::collections::BTreeMap;
 
 use crate::hyperelastic::HyperelasticModel;
 use crate::linear_elastic_fem::{
-    BoundaryConditions, CorotationalConfig, CorotationalSolution, ElasticMaterial, FemError,
-    FemSolution, Preconditioner, SolverConfig, StressTensor, RESIDUAL_NORM_FLOOR,
+    hyperelastic_volumetric_modulus, BoundaryConditions, CorotationalConfig, CorotationalSolution,
+    ElasticMaterial, FemError, FemSolution, Preconditioner, SolverConfig, StressTensor,
+    RESIDUAL_NORM_FLOOR,
 };
 use crate::math::{Fix128, Mat3Fix, PolarError, Vec3Fix};
 use crate::sdf_fem_mesh::SdfTetMesh;
@@ -826,7 +827,7 @@ struct MaterialLaw {
 /// `Σₑ Σ_q w_q V₀ P(F(ξ_q)) ∇₀N(ξ_q)` — the total-Lagrangian internal force.
 ///
 /// ⚠️ **The quadrature is not exact here and cannot be made so.** For
-/// Neo-Hookean `P = μF + [K(J−1) − μ]·cof F`, which is degree five in the
+/// Neo-Hookean `P = μF + [κJ(J−1) − μ]·F⁻ᵀ`, which is degree five in the
 /// entries of `F`, so with `F` linear in the barycentric coordinates the
 /// integrand `P : ∇N` is degree six against a rule exact to degree two. The one
 /// case that *is* exact is a **uniform** `F`: `P` then comes out of the integral
@@ -1357,12 +1358,10 @@ pub fn solve_quadratic_hyperelastic(
     ))?;
 
     let (lambda, mu) = material.lame();
-    // `K = λ + 2μ/3` — the bulk modulus of the same isotropic solid, which is
-    // what fixes the pressure an incompressible strain energy leaves free. The
-    // same choice `solve_corotational` makes.
+    // `κ = λ − offset(model)` — the same choice `solve_corotational` makes.
     let law = MaterialLaw {
         model,
-        bulk_modulus: lambda + (mu + mu) / Fix128::from_int(3),
+        bulk_modulus: hyperelastic_volumetric_modulus(&model, lambda)?,
     };
     let ndof = node_count * 3;
     let points = quadrature_points();
@@ -1648,7 +1647,7 @@ pub fn solve_quadratic_hyperelastic(
 /// with `f_int(u) = K u` when `law` is `None` (the small-strain internal force
 /// [`solve_quadratic`] balances) and `f_int(u) = Σₑ Σ_q w_q V₀ P ∇₀N` when it is
 /// `Some` (the total-Lagrangian internal force [`solve_quadratic_hyperelastic`]
-/// balances, with the bulk modulus `K = λ + 2μ/3` that solver pairs the model
+/// balances, with the volumetric modulus `κ = λ − offset(model)` that solver pairs the model
 /// with). The sign is the force the body exerts on its supports, so that
 /// `Σ R + Σ f_ext = 0` over the whole mesh. A free row carries no reaction by
 /// construction: that row *is* the equilibrium equation the solve satisfied.
@@ -1738,11 +1737,11 @@ pub fn reactions(
     match law {
         None => apply_stiffness(&mesh.elements, &points, weight, &u, lambda, mu, &mut force),
         Some(model) => {
-            // The same bulk modulus `solve_quadratic_hyperelastic` pairs the
+            // The same volumetric modulus `solve_quadratic_hyperelastic` pairs the
             // model with.
             let law = MaterialLaw {
                 model,
-                bulk_modulus: lambda + (mu + mu) / Fix128::from_int(3),
+                bulk_modulus: hyperelastic_volumetric_modulus(&model, lambda)?,
             };
             material_internal_force(&mesh.elements, &points, weight, &u, law, &mut force)?;
         }

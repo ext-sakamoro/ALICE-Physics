@@ -16,6 +16,11 @@ Memory index pointer: `[[reference-alice-physics-v1-roadmap]]` in claude-config.
 | Maxwell FDTD | `ecd8c61` | source-free Yee、⚠️ **SI は `ε₀·μ₀` が 7.7 bit で不可**、正規化単位 + `S=9/16` |
 | 多体 ABA | `1bab99b` | ⚠️ **`solve()` が `link.joint` を読まない**状態から real ABA、oracle 12 本 |
 
+### 第 21 increment (2026-10-02、超弾性の小ひずみの極限を線形弾性に一致させる)
+
+超弾性の体積項を `κ(J−1) − p_ref/J` (エネルギーは `−p_ref ln J + κ/2 (J−1)²`) に替え、`κ = λ − offset(model)` (Neo-Hookean 0 / Mooney-Rivlin `4C₂` / Yeoh `8C₂`) を P1 / P2 / P3 の solver が共有の 1 関数から取るようにした 小ひずみの極限が線形の `(λ, μ)` に一致する (旧形は `μ/3` 硬かった) 応力にも接線にも `ln` は出ず厳密 oracle を維持 圧縮側に障壁が付く 閉形式 oracle は手で導出し直し (P2・P3 の一軸は `q` の二次式)、solver 層で荷重を `2⁻ᵏ` 倍にすると超弾性と線形の差が 4 倍ずつ縮む (実測比 0.25) 変異 20/20 red
+⚠️ 新法則の下で修正 Newton の線形 surrogate が大伸張で要素を反転させた (+125% 等容伸張の中心荷重 scene が 5 N でも `Inverted`) ため、超弾性 law 付きの修正 Newton に残差の line search を足した 同 scene は 5〜2000 N で収束 (200 N で 27 step) 未着手: `strain_energy_density` に体積項が無く `cauchy_stress` のポテンシャルになっていない件 / モデルの μ と材料の μ の不一致検査 / consistent tangent の P2・P3・動的への接続
+
 ### 第 20 increment (2026-10-02、壁の外側 (1)(2) — monolithic の判断記録 + 1 byte 刻み wire の gate)
 
 壁 1〜4 が 8/8 で閉じた後に残る「壁の外側」3 件のうち 2 件を文面ごと閉じた (3 件目 Gartling は測定中、別 increment)
@@ -27,7 +32,7 @@ Memory index pointer: `[[reference-alice-physics-v1-roadmap]]` in claude-config.
 ### 第 19 increment (2026-10-02、共回転 FEM の超弾性に consistent tangent)
 
 `CorotationalConfig::with_consistent_tangent` を追加した (opt-in、既定は従来どおり) 閉形式の接線を matrix-free で CG に渡す全 Newton で、Neo-Hookean 200 N は 181 step から 3 step、2000 N は 758 step から 4 step (release の実測) 修正 Newton との根の差は 1e-9 mm 台、増分独立性は 6.5e-13 mm
-⚠️ Backlog の「修正 Newton は 2000 N で収束しない」は誤りで、実測では単調に収縮して 758 step で `Ok` だった (問題は速度) 超弾性の小ひずみの極限が線形と `μ/3` ずれる件 (`bulk = λ + 2μ/3`) は別件として残る P2 / P3 と動的への接続は未着手
+⚠️ Backlog の「修正 Newton は 2000 N で収束しない」は誤りで、実測では単調に収縮して 758 step で `Ok` だった (問題は速度) 超弾性の小ひずみの極限が線形と `μ/3` ずれる件は第 21 increment で解消 P2 / P3 と動的への接続は未着手
 
 ### 第 18 increment (2026-10-02、反力 `reactions()` を P2 / P3 に)
 

@@ -20,6 +20,17 @@ were introduced during that release window.
 - `eulerian_grid` tests: `CrossFault::ChunkedWire` — `Read` / `Write` を 1 call 1 byte に刻む `Chunked<S>` 越しの 2 プロセス圧力解が単一プロセスと bit 一致 (8³ / 7³) 両 rank が「call 数 == byte 数 かつ 1 層分以上」を assert ⚠️ **byte 数だけの閾値は whole buffer を通す変異を見逃した** (実測、call 数で捕まえた) 変異 4/4 red (whole buffer 通過 / read 側のみ / write 側のみ / 計数なし)
 
 文面の確定: 複数ノード分散は **1 ホスト 8 プロセス loopback TCP で bit 一致 (arm64 / x86_64 別々に、fold は cross-arch 一致)**、2 ホスト / アーキ跨ぎの 1 solve / MPI backend は未測定・未実装
+### Changed — 超弾性の体積項を `U(J) = −p_ref ln J + κ/2 (J−1)²` に (小ひずみの極限が線形弾性と一致する)
+
+`hyperelastic::cauchy_stress` の圧力項を `K(J−1) − p_ref` から `κ(J−1) − p_ref/J` に替えた 応力にも接線にも `ln` は出ない (エネルギーだけ) ので厳密 oracle が維持できる ⚠️ **J ≠ 1 での戻り値が変わる pub 関数の挙動変更** (J = 1 では従来と一致) 旧形は小ひずみで `A₁₁₁₁(I) = λ + 5μ/3` となり線形の `λ + 2μ` より μ/3 硬かった (`K = λ + 2μ/3` を渡していたため) Mooney-Rivlin は `4C₀₁`、Yeoh は `8C₂` ずれていた (`C₃` は小ひずみに入らない)
+- `hyperelastic::{small_strain_moduli, volumetric_modulus}` を追加 小ひずみの `λ_eff = κ + offset` (`offset = 4W₂ + 4W₁₁`: Neo-Hookean 0 / Mooney-Rivlin `4C₂` / Yeoh `8C₂`)、`μ_eff = 2(W₁ + W₂)` `volumetric_modulus` は `κ = λ − offset` を返し `κ < 0` は `None` (`κ ≥ 0` は凸性の十分条件で必要条件ではないので保守的に拒否)
+- P1 (`solve_corotational` / `corotational_reactions`) / P2 / P3 の超弾性 solver は `κ = λ − offset(model)` を共有の `hyperelastic_volumetric_modulus` から取る `κ < 0` は `FemError::InvalidConfig` ⚠️ モデルの `μ` と `ElasticMaterial` の `μ` の不一致は従来どおり検査しない
+- 圧縮側に障壁が付く (`F = sI`, `s → 0` で `P → −p_ref/s`) 旧形は拘束圧縮で `P₁₁ = (μ + K)(f − 1)` と頭打ちだった
+- consistent tangent は `q = κJ(J−1) − p_ref`, `Jq' = κJ(2J−1)` に追従
+- ⚠️ **修正 Newton に残差の line search を追加** (超弾性の law がある時だけ、step > 0) 新しい体積項の下で、線形 surrogate の step が大伸張で要素を反転させ `RotationFailed { Inverted }` になった (+125% 等容伸張の中心荷重 scene が **5 N でも**落ちた) 残差が厳密に下がる `α = 2⁻ᵏ` (k ≤ 16) まで step を半減し、見つからない時は反転しない最大の `α` まで戻す 同 scene は荷重 5〜2000 N で収束 (200 N で 27 step、旧法則では 181 step) 線形 law の経路は不変
+- oracle (閉形式から手で導出、出力の貼り直しではない): F = I の接線 4 成分と純膨張の傾き `2μ + 3λ` (3 モデル、`C₁₀ ≠ C₀₁ ≠ 0`、`C₂, C₃ ≠ 0`) / 圧縮の障壁 / P2・P3 の一軸の閉形式 (`σ_tt = 0` が `q` の二次式 `(2C₂ + κs²)q² + (2C₁ + 2s²C₂ − κs)q − (2C₁ + 4C₂) = 0` になる) / solver 層: 荷重を `2⁻ᵏ` 倍にすると超弾性と線形の変位差が 4 倍ずつ縮む (実測比 0.2524, 0.2517, 0.2510) 変異 20/20 red
+- P2 の回転 + 40% 伸張の scene は収束に必要な Newton 反復が 435 → 618 に増えた (budget は 600 に上げた)
+
 ### Added — 共回転 FEM の超弾性に consistent tangent (`CorotationalConfig::with_consistent_tangent`)
 
 `solve_corotational` の Newton の接線を、共回転の線形接線 (修正 Newton の surrogate) から、**実装されている応力の接線**に替える opt-in を追加した 既定は従来どおりで、既存の超弾性の解は 1 bit も変わらない (`with_hyperelastic` を使わずに指定すると `InvalidConfig` で拒否する)

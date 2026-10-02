@@ -18,8 +18,9 @@
 //!   Fix128).
 //!
 //! All models assume **incompressibility** (`J = λ₁·λ₂·λ₃ = 1`) — the usual
-//! rubber approximation. For a compressible variant subtract a `K·(J−1)²/2`
-//! bulk term; not implemented here.
+//! rubber approximation. [`cauchy_stress`] adds the compressible completion a
+//! finite element needs (a logarithmic reference term and a `κ/2·(J−1)²` bulk
+//! term); see there.
 //!
 //! # References
 //!
@@ -341,6 +342,42 @@ pub(crate) fn tangent_constants(
     (w1, w2, w11, p_ref)
 }
 
+/// `(offset, μ_eff)`: the small-strain limit of [`cauchy_stress`], read off the
+/// model at the reference state (`I₁ = 3`).
+///
+/// Linearising [`cauchy_stress`] at `F = I` gives an isotropic solid with
+///
+/// ```text
+/// μ_eff = 2 (W₁ + W₂)            λ_eff = κ + offset,   offset = 4 W₂ + 4 W₁₁
+/// ```
+///
+/// where `κ` is the volumetric modulus the stress is called with. So `offset` is
+/// what `κ` has to be shifted by to land on a Lamé constant `λ`: it is `0` for
+/// Neo-Hookean, `4 C₂` for Mooney-Rivlin and `8 C₂` for Yeoh (`C₃` multiplies
+/// `(I₁ − 3)²` and drops out at the reference state). `μ_eff` is
+/// [`small_strain_shear_modulus`]; it is returned here too so that both halves
+/// of the limit come from one place.
+#[must_use]
+pub fn small_strain_moduli(model: &HyperelasticModel) -> (Fix128, Fix128) {
+    let (w1, w2, w11, _) = tangent_constants(model, Fix128::from_int(3));
+    let four = Fix128::from_int(4);
+    (four * (w2 + w11), (w1 + w2).double())
+}
+
+/// The volumetric modulus `κ` that makes [`cauchy_stress`] agree with a linear
+/// solid of Lamé constant `lambda` for small strain: `κ = λ − offset`, with
+/// `offset` from [`small_strain_moduli`].
+///
+/// `None` when `κ < 0` (`λ < 4C₂` for Mooney-Rivlin, `λ < 8C₂` for Yeoh): the
+/// volumetric energy `U'' = p_ref/J² + κ` is then negative for large enough `J`.
+/// `κ ≥ 0` is sufficient for convexity in `J`, not necessary, so this refuses
+/// conservatively.
+#[must_use]
+pub fn volumetric_modulus(model: &HyperelasticModel, lambda: Fix128) -> Option<Fix128> {
+    let kappa = lambda - small_strain_moduli(model).0;
+    (kappa >= Fix128::ZERO).then_some(kappa)
+}
+
 /// Cauchy stress `σ` for a deformation gradient `f`, in the frame `f` is written
 /// in (MPa). `None` when `det F ≤ 0` — a reflected or collapsed element has no
 /// stress under any of these models.
@@ -354,30 +391,36 @@ pub(crate) fn tangent_constants(
 /// missing:
 ///
 /// ```text
-/// W_total(I₁, I₂, J) = W(I₁, I₂) − p_ref·(J − 1) + K/2·(J − 1)²
+/// W_total(I₁, I₂, J) = W(I₁, I₂) − p_ref·ln J + κ/2·(J − 1)²
 /// ```
 ///
-/// with `p_ref = 2(W₁ + 2W₂)` evaluated at the **undeformed** state. The linear
-/// term is what makes the reference state stress free (without it `σ(I) = p_ref·I`,
-/// a body under pressure at rest); the quadratic term is the bulk response, and
-/// `bulk_modulus_mpa` is its `K`. Differentiating,
+/// with `p_ref = 2(W₁ + 2W₂)` evaluated at the **undeformed** state. The
+/// logarithmic term is what makes the reference state stress free (without it
+/// `σ(I) = p_ref·I`, a body under pressure at rest) and puts a **barrier** on
+/// compression (`σ → −∞` as `J → 0`); the quadratic term is the bulk response,
+/// and `bulk_modulus_mpa` is its `κ`. `ln J` appears in the energy only:
+/// differentiating,
 ///
 /// ```text
-/// σ = (2/J)·[ (W₁ + I₁·W₂)·B − W₂·B² ]  +  [ K·(J − 1) − p_ref ]·I,   B = F Fᵀ
+/// σ = (2/J)·[ (W₁ + I₁·W₂)·B − W₂·B² ]  +  [ κ·(J − 1) − p_ref/J ]·I,   B = F Fᵀ
 /// ```
 ///
 /// which is the standard isotropic result `σ = (2/J)·F·(∂W/∂C)·Fᵀ`.
 ///
 /// ⚠️ **`W` is not re-normalised by `J^(−2/3)`.** The deviatoric response is
 /// therefore the incompressible one **exactly at `J = 1`** and drifts from it as
-/// `J` departs from one; `K` is what keeps `J` near one. That is a deliberate
+/// `J` departs from one; `κ` is what keeps `J` near one. That is a deliberate
 /// limitation and not an approximation that refines away: a `J^(−2/3)` split
 /// needs a cube root, which `Fix128` does not carry, and the alternative of
 /// iterating for one would put a tolerance inside a constitutive law.
 ///
 /// # Checks a caller can make
 ///
-/// - `σ(I) = 0` exactly, for every model and every `K`.
+/// - `σ(I) = 0` exactly, for every model and every `κ`.
+/// - Small strain: the stress linearises to `λ_eff = κ + offset`, `μ_eff = 2(W₁ + W₂)`
+///   ([`small_strain_moduli`]); [`volumetric_modulus`] gives the `κ` that lands on
+///   a Lamé constant `λ`. (The previous form, `K(J−1) − p_ref` with `K = λ + 2μ/3`,
+///   left the limit `μ/3` stiffer than the linear solid in the bulk.)
 /// - At `J = 1` and Neo-Hookean, `σ = μ·(B − I)`, so `dev σ = μ·dev B`.
 /// - `I₂ = ½·(I₁² − tr B²)` here. That is the same number as [`Stretch::i2`]
 ///   when `J = 1`, which is the only place the two are both defined.
@@ -402,7 +445,7 @@ pub fn cauchy_stress(
     if !w2.is_zero() {
         s = mat_sub(s, b.mul_mat(b).scale(two_over_j * w2));
     }
-    let pressure = bulk_modulus_mpa * (j - Fix128::ONE) - p_ref;
+    let pressure = bulk_modulus_mpa * (j - Fix128::ONE) - p_ref / j;
     Some(mat_add_diagonal(s, pressure))
 }
 
@@ -673,6 +716,143 @@ mod tests {
         let inverted = Mat3Fix::diagonal(Fix128::from_int(-1), Fix128::ONE, Fix128::ONE);
         assert!(cauchy_stress(&model, bulk, flat).is_none());
         assert!(cauchy_stress(&model, bulk, inverted).is_none());
+    }
+
+    // ------------------------------------------------------------------
+    // Small-strain limit: cauchy_stress must linearise to the (λ, μ) solid
+    // ------------------------------------------------------------------
+
+    fn fx(v: f64) -> Fix128 {
+        Fix128::from_f64(v)
+    }
+
+    /// The three laws, with parameters chosen so that a wrong offset formula
+    /// cannot agree with the right one: `C₁₀ ≠ C₀₁ ≠ 0` and `C₂, C₃ ≠ 0`.
+    fn laws() -> [(&'static str, HyperelasticModel); 3] {
+        [
+            (
+                "neo-hookean",
+                HyperelasticModel::NeoHookean { mu_mpa: fx(2.0) },
+            ),
+            (
+                "mooney-rivlin",
+                HyperelasticModel::MooneyRivlin {
+                    c1_mpa: fx(1.5),
+                    c2_mpa: fx(0.25),
+                },
+            ),
+            (
+                "yeoh",
+                HyperelasticModel::Yeoh {
+                    c1_mpa: fx(1.0),
+                    c2_mpa: fx(0.25),
+                    c3_mpa: fx(0.5),
+                },
+            ),
+        ]
+    }
+
+    /// First Piola-Kirchhoff stress `P = J σ F⁻ᵀ`, as f64 rows.
+    fn piola(model: &HyperelasticModel, kappa: Fix128, f: Mat3Fix) -> [[f64; 3]; 3] {
+        let sigma = cauchy_stress(model, kappa, f).expect("det F > 0");
+        let p = sigma
+            .mul_mat(f.inverse().expect("regular").transpose())
+            .scale(f.determinant());
+        [
+            [p.col0.x, p.col1.x, p.col2.x].map(Fix128::to_f64),
+            [p.col0.y, p.col1.y, p.col2.y].map(Fix128::to_f64),
+            [p.col0.z, p.col1.z, p.col2.z].map(Fix128::to_f64),
+        ]
+    }
+
+    #[test]
+    fn small_strain_moduli_read_the_offset_per_model() {
+        let got: Vec<_> = laws().iter().map(|(_, m)| small_strain_moduli(m)).collect();
+        // offset = 4 W2 + 4 W11, mu_eff = 2 (W1 + W2); C3 never enters.
+        assert_eq!(got[0], (Fix128::ZERO, fx(2.0)), "neo-hookean");
+        assert_eq!(
+            got[1],
+            (fx(1.0), fx(3.5)),
+            "mooney-rivlin: 4*C01, 2(C10+C01)"
+        );
+        assert_eq!(got[2], (fx(2.0), fx(2.0)), "yeoh: 8*C2, 2*C1");
+    }
+
+    #[test]
+    fn volumetric_modulus_is_lambda_minus_offset_and_refuses_a_negative_result() {
+        let [(_, nh), (_, mr), (_, yeoh)] = laws();
+        assert_eq!(volumetric_modulus(&nh, fx(10.0)), Some(fx(10.0)));
+        assert_eq!(volumetric_modulus(&mr, fx(10.0)), Some(fx(9.0)));
+        assert_eq!(volumetric_modulus(&yeoh, fx(10.0)), Some(fx(8.0)));
+        // kappa == 0 is allowed, kappa < 0 is refused.
+        assert_eq!(volumetric_modulus(&mr, fx(1.0)), Some(Fix128::ZERO));
+        assert_eq!(volumetric_modulus(&mr, fx(0.75)), None);
+        assert_eq!(volumetric_modulus(&yeoh, fx(1.5)), None);
+    }
+
+    /// Uniaxial strain `F = diag(1+e, 1, 1)`: `P₁₁/e → λ + 2μ`, `P₂₂/e → λ`,
+    /// each with an error that halves when `e` halves (first order in `e`).
+    /// With the old law the `P₁₁` error does not vanish: it tends to `−4μ/3`.
+    #[test]
+    fn uniaxial_strain_slope_is_the_linear_solid_for_every_model() {
+        let lambda = 8.0;
+        for (name, model) in laws() {
+            let (_, mu_eff) = small_strain_moduli(&model);
+            let kappa = volumetric_modulus(&model, fx(lambda)).expect("kappa >= 0");
+            let gaps = |e: f64| {
+                let f = Mat3Fix::diagonal(fx(1.0 + e), Fix128::ONE, Fix128::ONE);
+                let p = piola(&model, kappa, f);
+                (
+                    (p[0][0] / e - (lambda + 2.0 * mu_eff.to_f64())).abs(),
+                    (p[1][1] / e - lambda).abs(),
+                )
+            };
+            let (a1, a2) = gaps(1.0 / 64.0);
+            let (b1, b2) = gaps(1.0 / 128.0);
+            assert!(
+                a1 < 0.05 * lambda && a2 < 0.05 * lambda,
+                "{name}: gap at e=2^-6 is ({a1}, {a2})"
+            );
+            assert!(b1 < 0.6 * a1, "{name}: P11 gap {a1} -> {b1} does not halve");
+            assert!(b2 < 0.6 * a2, "{name}: P22 gap {a2} -> {b2} does not halve");
+        }
+    }
+
+    /// Pure dilation `F = (1+e) I`: slope `2μ + 3λ`. Only the volumetric mode
+    /// sees `offset`, so this is the test that tells `8·C₂` from `4·C₂`.
+    #[test]
+    fn dilation_slope_is_two_mu_plus_three_lambda_for_every_model() {
+        let lambda = 8.0;
+        for (name, model) in laws() {
+            let (_, mu_eff) = small_strain_moduli(&model);
+            let kappa = volumetric_modulus(&model, fx(lambda)).expect("kappa >= 0");
+            let want = 2.0 * mu_eff.to_f64() + 3.0 * lambda;
+            let gap = |e: f64| {
+                let s = fx(1.0 + e);
+                let p = piola(&model, kappa, Mat3Fix::diagonal(s, s, s));
+                (p[0][0] / e - want).abs()
+            };
+            let (a, b) = (gap(1.0 / 64.0), gap(1.0 / 128.0));
+            assert!(a < 0.1 * want, "{name}: dilation slope gap {a}");
+            assert!(
+                b < 0.6 * a,
+                "{name}: dilation gap {a} -> {b} does not halve"
+            );
+        }
+    }
+
+    /// Compression has a barrier: `P → −p_ref/s` as `F = sI`, `s → 0`. Without
+    /// the `p_ref/J` form the pressure term vanishes with `s` and a material
+    /// "supports" only a bounded compressive stress.
+    #[test]
+    fn uniform_compression_has_a_barrier() {
+        let model = HyperelasticModel::NeoHookean { mu_mpa: fx(2.0) };
+        let kappa = fx(40.0);
+        let at = |s: f64| piola(&model, kappa, Mat3Fix::diagonal(fx(s), fx(s), fx(s)))[0][0];
+        let (p8, p64) = (at(1.0 / 8.0), at(1.0 / 64.0));
+        assert!(p64 < p8 && p8 < 0.0, "monotone: {p8} {p64}");
+        // p_ref = mu = 2, so P ~ -2/s = -128 at s = 1/64.
+        assert!(p64 < -100.0, "no barrier: P(1/64) = {p64}");
     }
 
     #[test]

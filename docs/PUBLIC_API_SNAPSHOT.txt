@@ -4067,9 +4067,11 @@ impl core::marker::UnsafeUnpin for alice_physics::hyperelastic::Stretch
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::hyperelastic::Stretch
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::hyperelastic::Stretch
 pub fn alice_physics::hyperelastic::cauchy_stress(&alice_physics::hyperelastic::HyperelasticModel, alice_physics::math::Fix128, alice_physics::math::Mat3Fix) -> core::option::Option<alice_physics::math::Mat3Fix>
+pub fn alice_physics::hyperelastic::small_strain_moduli(&alice_physics::hyperelastic::HyperelasticModel) -> (alice_physics::math::Fix128, alice_physics::math::Fix128)
 pub fn alice_physics::hyperelastic::small_strain_shear_modulus(&alice_physics::hyperelastic::HyperelasticModel) -> alice_physics::math::Fix128
 pub fn alice_physics::hyperelastic::strain_energy_density(&alice_physics::hyperelastic::HyperelasticModel, &alice_physics::hyperelastic::Stretch) -> alice_physics::math::Fix128
 pub fn alice_physics::hyperelastic::uniaxial_cauchy_stress(&alice_physics::hyperelastic::HyperelasticModel, alice_physics::math::Fix128) -> alice_physics::math::Fix128
+pub fn alice_physics::hyperelastic::volumetric_modulus(&alice_physics::hyperelastic::HyperelasticModel, alice_physics::math::Fix128) -> core::option::Option<alice_physics::math::Fix128>
 pub mod alice_physics::ik_physics_bridge
 pub struct alice_physics::ik_physics_bridge::IkTarget
 pub alice_physics::ik_physics_bridge::IkTarget::body: usize
