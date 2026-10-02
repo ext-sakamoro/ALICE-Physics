@@ -16,6 +16,10 @@ Memory index pointer: `[[reference-alice-physics-v1-roadmap]]` in claude-config.
 | Maxwell FDTD | `ecd8c61` | source-free Yee、⚠️ **SI は `ε₀·μ₀` が 7.7 bit で不可**、正規化単位 + `S=9/16` |
 | 多体 ABA | `1bab99b` | ⚠️ **`solve()` が `link.joint` を読まない**状態から real ABA、oracle 12 本 |
 
+### 第 28 increment (2026-10-02、全配線 program 第 3 件 (c)(d) — P2G stencil の選択と密閉箱 + 適応 dt の配線)
+
+`ParticleScatter::{Trilinear, Nearest}` を `p2g_normalized_with` / `CfdSolver::step_flip_with` から選べるようにして `p2g_nearest` を production に繋ぎ (閉形式: 面は共有 2 cell の粒子速度の平均、位置非依存、far face は最後の cell、wrap する粒子は堆積しない)、`FaceBc::no_slip_velocity` を ghost の読み手に配線、密閉箱 example 1 本で `set_closed_box_walls` / `set_u_bc` / `set_u_solid` / `enforce_solid_faces` / `compute_max_dt` / `step_adaptive` を配線 ⚠️ **`compute_max_dt` は静止に近い場で商が wrap して負の dt を返し、`step_adaptive` がそれを積分していた** (1 ulp の peak、`dx = 3/2` で再現) ⇒ `checked_mul` で cap 判定、非正の dt は無 step oracle 18 本 (`tests/analytic_flip_scatter.rs` 9 + `tests/analytic_adaptive_dt.rs` 9) 変異 17/17 red (実装 11 + 配線 6) baseline 退役 8 行 (全部実配線) + marker 2 件解消 ⚠️ 残: `step_flip` の free surface / 周期境界 (別 feature)、program 第 4 件 RANS
+
 ### 第 27 increment (2026-10-02、全配線 program 第 3 件 (a)(b) — z-slab 分割をプロセス内で solver から選べる)
 
 `PressureSolver::DecomposedGs` (全域 buffer + halo) / `BandedGs` (帯局所記憶域、新設 `project_pressure_banded` が面条件 → 分割 → 帯 → 書き戻し) で壁 4 の分散圧力解法を `CfdSolver` から到達可能にした oracle: ranks 8 通り × 格子 3 種 × 開放 / 密閉箱で `RedBlackGs` と bit 一致、拒否 4 経路 変異 5/5 red + 等価変異 1 (帯局所 ↔ 素の GS は bit 一致が仕様) baseline 退役 9 行 (うち `slab` 1 行は名前衝突の巻き込み、socket 側は未配線のまま) ⚠️ 残: socket / cross-process 経路の公開は transport の semver 判断

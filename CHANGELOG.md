@@ -13,6 +13,23 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added — 粒子→格子の stencil 選択 `ParticleScatter` と密閉箱 + 適応 dt の example (全配線 program 第 3 件 (c)(d))
+
+`eulerian_grid::p2g_nearest` は `pub(crate)` で unit test からしか呼ばれず、`MacGrid` の壁 setter (`set_closed_box_walls` / `set_u_solid` / `set_u_bc` / `enforce_solid_faces` / `FaceBc::no_slip_velocity`) と `CfdSolver` の `compute_max_dt` / `step_adaptive` は test と doc からしか参照されていなかった
+
+- `eulerian_grid::ParticleScatter` (`#[non_exhaustive]`、`Default = Trilinear`): `Trilinear` は 8 隅の三線形 stencil、`Nearest` は粒子を含む cell の 6 面に重み 1/2 ずつ `p2g_normalized_with(grid, particles, scatter)` を新設し、`p2g_normalized` は `Trilinear` への委譲に `p2g_trilinear` / `p2g_nearest` は sink generic (`FaceSink`) にして両方が production から呼ばれる形に ⚠️ `Nearest` の閉形式: 面の値は**その面を共有する 2 cell の粒子速度の平均**で、cell 内のどこに粒子がいても変わらない (正規化が厳密なので `Σ ½·v ÷ Σ ½` の 1/2 が消え、`trunc(Σ v_raw / count)` に一致) 粒子が far face `N dx` 上にあれば最後の cell に属し (`step_flip` の閉箱 `[0, N dx]` と整合)、負の座標 / far face の外 / `p/dx` が `Fix128` に収まらない粒子は何も堆積しない (旧 `p2g_nearest` は far face を落とし、負は cell 0 に clamp し、`p · inv_dx` の wrap で cell 0 に堆積しえた)
+- `CfdSolver::step_flip_with(particles, dt, flip_ratio, scatter)` `step_flip` は `Trilinear` への委譲 (bit 一致、oracle) G2P 側は両 stencil とも三線形のまま
+- `FaceBc::no_slip_velocity` を no-slip ghost の読み手 `wall_between` (`*_wall_across_*` の共通部) に配線 (壁が速度を持つかの判定を 1 箇所に)
+- `CfdSolver::MAX_DT_CAP` (`1_000_000` s) を公開し `compute_max_dt` の上限を名指し可能に
+- `examples/sealed_box_adaptive_dt.rs` (蓋駆動の密閉箱 + 邪魔板: `set_closed_box_walls` → `set_u_bc` で片側を対称面に → `set_u_solid` で邪魔板 → 衝撃的初期場を `enforce_solid_faces` で掃除 → `step_adaptive` で Courant 上限 / ceiling のどちらが効いたかを印字) / `examples/flip_scatter.rs` (せん断粒子雲で `step_flip` ≡ `Trilinear` の bit 一致、`Nearest` との差、一様雲での一致を印字)
+- oracle: `tests/analytic_flip_scatter.rs` 9 本 (cell 中心の粒子で両 stencil が bit 一致 + 閉形式 / cell 内の任意位置の 3 粒子 × 12 cell で「2 cell の平均」を test 自身の帳簿から i128 で算出して bit 一致、粒子を中心に動かしても不変、三線形は別解 / 2 粒子の両 stencil の閉形式 (`3/2`, `5/2` vs `2`, `2`、三線形は隣 cell の面にも届く) / 一様速度は位置・個数に依らず bit 再現 / far face 上の粒子は最後の cell、1 ulp 外・負・`i64::MAX`・`2^62·4 = 2^64` の wrap は何も堆積しない / `step_flip_with(Trilinear)` ≡ `step_flip` と `Nearest` の差 / 一様雲で stencil 非依存 / `step_flip` の拒否 8 経路が `Nearest` でも不変 / `dx = 0`・空・0 寸法格子) `tests/analytic_adaptive_dt.rs` 9 本 (`c·dx/|peak|` の閉形式 (負の peak も) / 静止場は cap / **1 ulp の peak と `dx = 3/2` で wrap せず cap**、cap 境界の両側 `2^-20` → cap / `2^-19` → `524288` / `cfl ≤ 0`・`dx = 0` は 0 / `step_adaptive` = `min(Courant, ceiling)` で `step(dt)` と bit 一致 (3 regime) / 非正の dt は無 step + `step_count` 不変 (5 経路) / `enforce_solid_faces` は solid 面だけを 0 にし inflow / outflow 面は格納値のまま (`enforce_face_boundaries` との対照、54−2+3 面を数える) / setter の範囲外 (`usize::MAX` 含む 12 経路) は無視 + 縁の面は有効 / 邪魔板の面は毎 step 厳密 0 で、邪魔板なしなら流束が通る)
+- 破壊試験 **17/17 red** (実装 11: nearest の重み / far face 落とし / 未検査の積 / `no_slip_velocity` が壁の速度を返さない / cap 除去 / 絶対値なし / 非正 guard 除去 ×2 / Z 面 skip / 範囲外 guard 除去 / 1 cell 軸を no-slip / `solid` 無視、配線 6: `p2g_normalized_with` と `step_flip_with` が stencil を無視 / `wall_between` が全面を壁なしと読む / `step_adaptive` が ceiling で step する・`compute_max_dt` を読まない) 各変異で red になった test 名を記録 (件数 0 の変異なし)
+- 配線ガード baseline 退役 8 行 (`p2g_nearest` / `set_closed_box_walls` / `set_u_solid` / `set_u_bc` / `enforce_solid_faces` / `no_slip_velocity` / `compute_max_dt` / `step_adaptive`、全部実配線で名前衝突なし) `p2g_trilinear` / `step_flip` の `ALLOW-UNWIRED` marker 2 件を外した
+
+### Fixed — `compute_max_dt` が静止に近い場で wrap した負の dt を返し、`step_adaptive` がそれを積分していた
+
+`cfl · dx / |u|_max` を `Fix128` の除算にそのまま渡していたので、peak が数 ulp (静止直前) で `dx` が 1 程度だと商が `2^63` を超えて wrap し (`dx = 3/2`、peak 1 ulp で `hi = i64::MIN`)、`step_adaptive` はその負の dt で `step` を呼んでいた (`step` は `dt = 0` しか弾かない) `peak · cap < cfl · dx` を `checked_mul` で判定して cap を返すように (peak ≳ 9e12 m/s で積が wrap する側は「cap なし」と読む) 併せて `cfl_target ≤ 0` / `dx = 0` は 0、`step_adaptive` は `min(..) ≤ 0` で step を取らず 0 を返す `tests/analytic_adaptive_dt.rs` が旧経路を pin
+
 ### Added — 分散圧力解法のプロセス内経路を `PressureSolver` から選択可能に (`DecomposedGs` / `BandedGs`)
 
 全配線 program 第 3 件 (a)(b) 壁 4 の z-slab 分割 (`project_pressure_decomposed`、全域 buffer + halo) と帯局所記憶域 (`project_pressure_slab_local_over`、rank は自分の帯 + halo 1 層だけ) は `pub(crate)` で test からしか呼ばれていなかった
