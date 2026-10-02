@@ -16,6 +16,10 @@ Memory index pointer: `[[reference-alice-physics-v1-roadmap]]` in claude-config.
 | Maxwell FDTD | `ecd8c61` | source-free Yee、⚠️ **SI は `ε₀·μ₀` が 7.7 bit で不可**、正規化単位 + `S=9/16` |
 | 多体 ABA | `1bab99b` | ⚠️ **`solve()` が `link.joint` を読まない**状態から real ABA、oracle 12 本 |
 
+### 第 38 increment (2026-10-03、全配線 program 第 11 件 — `filament_db`/`linear_elastic_fem`/`neural`/`query` 未配線 51 item)
+
+worker 4 本、全て src 無変更 (既存 pub/pub(crate) item に example 経由の入口を追加するだけで配線) 変異 red: filament_db 15/15、linear_elastic_fem 20/20、neural 11/12 (hard_tanh 境界が等価)、query 14/15 (capsule_cast tie-break が近似等価) baseline 51 行退役 + 名前衝突 2 行 (motor/fluid_netcode の `compute`、Backlog)
+
 ### 第 37 increment (2026-10-03、全配線 program TGS 裁定 (A) — `SolverBackend` で TGS family を `PhysicsWorld` の選択可能 solver に配線)
 
 user 裁定 (A): `solver_tgs.rs` + hook 5 file (5268 行、pub(crate)、v1.0 で privatize) を `pub(crate)` のまま `#[non_exhaustive] SolverBackend { Xpbd, Tgs }` で配線 既定 `Xpbd` は構造的に無変更 既存の `Pgs6DofOrientedHooks`/`solve_oriented_islands_serial` (実装済み未呼出) を `step_tgs()` から呼ぶ oracle 13 本、変異 10/10 red baseline 6 行退役 ⚠️ **残 gap**: TGS は joint / kinematic target / SDF collider を解かない (rustdoc に明記、新 ソルバー実装が要るため今回は配線のみ)

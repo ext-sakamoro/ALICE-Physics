@@ -13,6 +13,14 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added — `filament_db` / `linear_elastic_fem` / `neural` / `query` の未配線 51 item を全配線 (全配線 program 第 11 件)
+
+- `filament_db`: `examples/filament_database_properties.rs` が 3 単位変換定数 + `by_category`/`is_fdm`/`is_sheet_metal`/anisotropic law 10 本を駆動 oracle 18 本、変異 15/15 red src 無変更
+- `linear_elastic_fem`: `examples/linear_elastic_fem_config_diagnostics.rs` が `SheetMetal` material 経路で `from_filament`/`with_poisson`/`with_preconditioner`/`with_stagnation_fraction`/`DiagonalStats`/`alpha_per_k`/`hydrostatic` 等 13 item を駆動 oracle 10 本 (新規カバー 0 件だった `alpha_per_k`/`load_count` 中心)、既存 `tests/analytic_linear_elastic_fem.rs` と重複なし、変異 20/20 red src 無変更
+- `neural` (features = `std,neural`): `examples/neural_ternary_controller.rs` が 4 活性化関数 + `fix128_ternary_matvec` + `DeterministicNetwork`/`RagdollController` 13 item を駆動 oracle 21 本、変異 11/12 red (`hard_tanh` の境界 `>`→`>=` は算術的に等価) src 無変更
+- `query`: `examples/spatial_queries.rs` が `overlap_sphere`/`overlap_aabb(_expanded)`/`overlap_*_bvh` (brute-force と bit 一致) /`sphere_cast`/`capsule_cast`/`batch_raycast`/`batch_sphere_cast` + 3 結果型 12 item を駆動 oracle 24 本、実装変異 14/15 red (`capsule_cast` の tie-break 境界は通常形状で算術的に近似等価) src 無変更
+- baseline 51 行退役 + 名前衝突 2 行 (`motor.rs::compute`、`fluid_netcode.rs::compute`、実体は未配線のまま Backlog に記録) 新規公開面 0 件
+
 ### Added — TGS family を `PhysicsWorld` の選択可能 solver backend として配線 (`SolverBackend`、全配線 program TGS 裁定 (A))
 
 `solver_tgs.rs` + hook 5 file (5268 行、74→76 unit test) は `pub(crate)` で v1.0 に privatize されたまま `PhysicsWorld` から未接続だった (Backlog 249 の反転を避けるため `pub` 復帰ではなく配線で解消、user 裁定 (A))
