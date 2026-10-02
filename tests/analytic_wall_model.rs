@@ -137,8 +137,14 @@ fn the_log_law_in_this_test_matches_the_two_hand_computed_points() {
 #[test]
 fn the_inverse_recovers_the_friction_velocity_the_pinned_profile_was_built_from() {
     let (y_p, nu) = (0.125_f64, 1e-4_f64);
+    // ⚠️ `11.2` sits between the old edge `11` and the intersection `11.4453`:
+    // the reference profile puts it in the sublayer (`u⁺ = 11.2`), a crate
+    // that still switched at `11` would put it in the log branch
+    // (`u⁺ = 11.39`), and the inverse would come back 1.7 % off. Measured:
+    // the mutation "transition back to 11" survived every other probe here.
     for (y_plus, regime) in [
         (5.0, "sublayer"),
+        (11.2, "sublayer, above the old edge"),
         (100.0, "log"),
         (1000.0, "log"),
         (3.0e4, "log"),
@@ -189,6 +195,29 @@ fn the_sublayer_edge_is_the_intersection_and_the_inverse_is_continuous_there() {
         ((below + above) * 0.5 - u_tau_edge).abs() < 1e-6 * u_tau_edge,
         "the edge maps to its own friction velocity"
     );
+    // And no jump at the *old* edge `y⁺ = 11` either: both sides are in the
+    // sublayer now, so the inverse is the closed form √(ν u_rel / y_p) on
+    // both. A crate that still switched there would jump by 0.35/11 = 3 %.
+    let u_tau_old = 11.0 * nu / y_p;
+    let u_crit_old = u_tau_old * 11.0;
+    let below = friction_velocity(fx(u_crit_old * (1.0 - 1e-6)), fx(y_p), fx(nu))
+        .expect("valid")
+        .to_f64();
+    let above = friction_velocity(fx(u_crit_old * (1.0 + 1e-6)), fx(y_p), fx(nu))
+        .expect("valid")
+        .to_f64();
+    let jump = (above - below).abs() / u_tau_old;
+    assert!(jump < 1e-5, "u_tau jumps by {jump:.3e} across y+ = 11");
+    for (u_rel, got) in [
+        (u_crit_old * (1.0 - 1e-6), below),
+        (u_crit_old * (1.0 + 1e-6), above),
+    ] {
+        let closed = (nu * u_rel / y_p).sqrt();
+        assert!(
+            (got - closed).abs() < 1e-9 * closed,
+            "sublayer closed form at u_rel = {u_rel}: {got} vs {closed}"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------
