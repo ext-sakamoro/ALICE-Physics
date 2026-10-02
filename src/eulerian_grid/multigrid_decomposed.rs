@@ -1031,6 +1031,19 @@ mod tests {
         Walled,
     }
 
+    /// The seed field's three components, as functions of the face — one
+    /// definition, so a rank that builds only its own faces gets the numbers the
+    /// whole-grid seed has.
+    fn seed_u(i: usize, j: usize, k: usize) -> Fix128 {
+        fx(((i * 3 + j + 2 * k) % 7) as i64 - 3, 4)
+    }
+    fn seed_v(i: usize, j: usize, k: usize) -> Fix128 {
+        fx(((i + j * 5 + k) % 5) as i64 - 2, 8)
+    }
+    fn seed_w(i: usize, j: usize, k: usize) -> Fix128 {
+        fx(((i + 2 * j + k * 3) % 11) as i64 - 5, 4)
+    }
+
     /// A divergent field in all three axes (so a wrong layer or axis is a
     /// different number), on an `nx × ny × nz` grid.
     fn seed(nx: usize, ny: usize, nz: usize, scene: Scene) -> MacGrid {
@@ -1039,7 +1052,7 @@ mod tests {
             for j in 0..ny {
                 for i in 0..=nx {
                     let ix = g.idx_u(i, j, k);
-                    g.u[ix] = fx(((i * 3 + j + 2 * k) % 7) as i64 - 3, 4);
+                    g.u[ix] = seed_u(i, j, k);
                 }
             }
         }
@@ -1047,7 +1060,7 @@ mod tests {
             for j in 0..=ny {
                 for i in 0..nx {
                     let ix = g.idx_v(i, j, k);
-                    g.v[ix] = fx(((i + j * 5 + k) % 5) as i64 - 2, 8);
+                    g.v[ix] = seed_v(i, j, k);
                 }
             }
         }
@@ -1055,7 +1068,7 @@ mod tests {
             for j in 0..ny {
                 for i in 0..nx {
                     let ix = g.idx_w(i, j, k);
-                    g.w[ix] = fx(((i + 2 * j + k * 3) % 11) as i64 - 5, 4);
+                    g.w[ix] = seed_w(i, j, k);
                 }
             }
         }
@@ -1695,5 +1708,428 @@ mod tests {
         // 8 layers over 3 ranks is 2 / 3 / 3 in the Gauss-Seidel split and a
         // multiple of the 2-halving unit here.
         assert!(b.iter().all(|&(k0, k1)| k0 % 2 == 0 && k1 % 2 == 0));
+    }
+
+    // ------------------------------------------------------------------
+    // One process per rank
+    // ------------------------------------------------------------------
+
+    /// An order-independent summary of the fields a solve produces: for each of
+    /// pressure, `u`, `v`, `w`, the wrapping sum over entries of `value` times
+    /// `index + 1`, once on the integer half and once on the fractional half. `Fix128`
+    /// addition is a group operation, so the per-rank summaries add up to the
+    /// whole-grid one whatever order the ranks finish in.
+    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+    struct Fold([u64; 8]);
+
+    impl Fold {
+        fn add(&mut self, field: usize, index: usize, v: Fix128) {
+            let w = index as u64 + 1;
+            self.0[2 * field] = self.0[2 * field].wrapping_add((v.hi as u64).wrapping_mul(w));
+            self.0[2 * field + 1] = self.0[2 * field + 1].wrapping_add(v.lo.wrapping_mul(w));
+        }
+
+        fn merge(&mut self, other: &Fold) {
+            for (a, b) in self.0.iter_mut().zip(other.0) {
+                *a = a.wrapping_add(b);
+            }
+        }
+    }
+
+    /// Every entry of a whole grid, in vector order.
+    fn fold_grid(g: &MacGrid) -> Fold {
+        let mut f = Fold::default();
+        for (field, values) in [&g.pressure, &g.u, &g.v, &g.w].into_iter().enumerate() {
+            for (index, &v) in values.iter().enumerate() {
+                f.add(field, index, v);
+            }
+        }
+        f
+    }
+
+    /// What one rank wrote: its owned pressure layers and the face velocities it
+    /// writes (X and Y faces of owned layers, Z faces `k0..k1`, and `nz` for the
+    /// top rank), at the indices the whole grid would give them.
+    #[cfg(feature = "std")]
+    fn fold_band(faces: &SlabFaces, pressure: &SlabStorage) -> Fold {
+        let (nx, ny, nz) = (faces.nx, faces.ny, faces.nz);
+        let (k0, k1) = faces.owned();
+        let mut f = Fold::default();
+        for k in k0..k1 {
+            for (c, &v) in pressure.layer(k).expect("owned").iter().enumerate() {
+                f.add(0, k * nx * ny + c, v);
+            }
+            for (t, &v) in faces.u_layer(k).0.iter().enumerate() {
+                f.add(1, k * (nx + 1) * ny + t, v);
+            }
+            for (t, &v) in faces.v_layer(k).0.iter().enumerate() {
+                f.add(2, k * nx * (ny + 1) + t, v);
+            }
+        }
+        let top = (k1 == nz && k1 > k0).then_some(nz);
+        for k in (k0..k1).chain(top) {
+            for (t, &v) in faces.w_layer(k).0.iter().enumerate() {
+                f.add(3, k * nx * ny + t, v);
+            }
+        }
+        f
+    }
+
+    #[cfg(feature = "std")]
+    const MGD_RANK: &str = "ALICE_PHYSICS_MGD_RANK";
+    #[cfg(feature = "std")]
+    const MGD_RANKS: &str = "ALICE_PHYSICS_MGD_RANKS";
+    #[cfg(feature = "std")]
+    const MGD_SIDE: &str = "ALICE_PHYSICS_MGD_SIDE";
+    #[cfg(feature = "std")]
+    const MGD_DEPTH: &str = "ALICE_PHYSICS_MGD_DEPTH";
+    #[cfg(feature = "std")]
+    const MGD_CYCLES: &str = "ALICE_PHYSICS_MGD_CYCLES";
+    #[cfg(feature = "std")]
+    const MGD_BROKER: &str = "ALICE_PHYSICS_MGD_BROKER";
+    #[cfg(feature = "std")]
+    const MGD_TIMEOUT: &str = "ALICE_PHYSICS_MGD_TIMEOUT_SECS";
+    #[cfg(feature = "std")]
+    const MGD_WORKER: &str =
+        "eulerian_grid::multigrid_decomposed::tests::a_banded_process_rank_worker";
+
+    #[cfg(feature = "std")]
+    fn mgd_env<V: std::str::FromStr>(name: &str) -> V {
+        std::env::var(name)
+            .unwrap_or_else(|_| panic!("{name} from the parent process"))
+            .parse()
+            .unwrap_or_else(|_| panic!("{name} is not valid"))
+    }
+
+    /// Dial every lower rank and accept every higher one, so `links[r]` is the
+    /// stream to rank `r`. Every listener is bound before its port reaches the
+    /// table, so a dial completes into the backlog whether or not the peer has
+    /// reached its accept loop.
+    #[cfg(feature = "std")]
+    fn join_mesh(
+        my_rank: usize,
+        ports: &[u16],
+        listener: &std::net::TcpListener,
+        timeout: std::time::Duration,
+    ) -> Vec<Option<std::net::TcpStream>> {
+        use std::io::{Read, Write};
+        use std::net::TcpStream;
+        let ranks = ports.len();
+        let mut links: Vec<Option<TcpStream>> = (0..ranks).map(|_| None).collect();
+        for (lower, &port) in ports.iter().enumerate().take(my_rank) {
+            let mut link = TcpStream::connect(("127.0.0.1", port)).expect("dial a lower rank");
+            link.write_all(&(my_rank as u16).to_le_bytes())
+                .expect("announce the dialling rank");
+            links[lower] = Some(link);
+        }
+        for _ in my_rank + 1..ranks {
+            let (mut link, _) = listener.accept().expect("accept a higher rank");
+            let mut who = [0u8; 2];
+            link.read_exact(&mut who).expect("learn who dialled");
+            links[usize::from(u16::from_le_bytes(who))] = Some(link);
+        }
+        for link in links.iter().flatten() {
+            link.set_nodelay(true).expect("nodelay");
+            link.set_read_timeout(Some(timeout)).expect("read timeout");
+            link.set_write_timeout(Some(timeout))
+                .expect("write timeout");
+        }
+        links
+    }
+
+    /// A rank of the process-per-rank run: reached only when this test binary has
+    /// been re-executed with `MGD_RANK` set; an ordinary `cargo test` finds it
+    /// absent and returns.
+    ///
+    /// The rank builds **its own faces** straight from the seed formulas — no
+    /// `MacGrid` exists in this process — runs the banded driver over sockets to
+    /// the other ranks, and prints one line: its solve time and the fold of what
+    /// it wrote.
+    #[cfg(feature = "std")]
+    #[test]
+    fn a_banded_process_rank_worker() {
+        use std::io::{Read, Write};
+        use std::net::{TcpListener, TcpStream};
+        use std::time::{Duration, Instant};
+
+        let Ok(rank) = std::env::var(MGD_RANK) else {
+            return;
+        };
+        let rank: usize = rank.parse().expect("the rank is a number");
+        let ranks: usize = mgd_env(MGD_RANKS);
+        let n: usize = mgd_env(MGD_SIDE);
+        let depth: usize = mgd_env(MGD_DEPTH);
+        let cycles: u32 = mgd_env(MGD_CYCLES);
+        let broker: u16 = mgd_env(MGD_BROKER);
+        let timeout = Duration::from_secs(mgd_env(MGD_TIMEOUT));
+
+        let listener = TcpListener::bind(("127.0.0.1", 0)).expect("bind a loopback port");
+        let port = listener.local_addr().expect("address").port();
+        let mut to_parent = TcpStream::connect(("127.0.0.1", broker)).expect("reach the broker");
+        let mut hello = [0u8; 4];
+        hello[..2].copy_from_slice(&(rank as u16).to_le_bytes());
+        hello[2..].copy_from_slice(&port.to_le_bytes());
+        to_parent.write_all(&hello).expect("announce rank and port");
+        let mut table = vec![0u8; 2 * ranks];
+        to_parent.read_exact(&mut table).expect("the port table");
+        let ports: Vec<u16> = table
+            .chunks_exact(2)
+            .map(|p| u16::from_le_bytes([p[0], p[1]]))
+            .collect();
+        let links = join_mesh(rank, &ports, &listener, timeout);
+
+        let bounds = multigrid_slab_bounds(n, n, depth, ranks).expect("power-of-two grid");
+        let (k0, k1) = bounds[rank];
+        let mut faces = SlabFaces::new(n, n, depth, Fix128::ONE, (k0, k1));
+        for k in k0..k1 {
+            let (u, _) = faces.u_layer_mut(k);
+            for j in 0..n {
+                for i in 0..=n {
+                    u[i + (n + 1) * j] = seed_u(i, j, k);
+                }
+            }
+            let (v, _) = faces.v_layer_mut(k);
+            for j in 0..=n {
+                for i in 0..n {
+                    v[i + n * j] = seed_v(i, j, k);
+                }
+            }
+        }
+        if k1 > k0 {
+            for k in k0..=k1 {
+                let (w, _) = faces.w_layer_mut(k);
+                for j in 0..n {
+                    for i in 0..n {
+                        w[i + n * j] = seed_w(i, j, k);
+                    }
+                }
+            }
+        }
+        let mut band = SlabStorage::for_slab(n * n, depth, (k0, k1), HALO);
+
+        let started = Instant::now();
+        project_pressure_multigrid_banded_on_rank(
+            &mut faces,
+            &mut band,
+            fx(DT.0, DT.1),
+            Fix128::from_int(RHO),
+            cycles,
+            ranks,
+            HaloSchedule::EverySweep,
+            rank,
+            socket_factory(rank, &links),
+        );
+        let secs = started.elapsed().as_secs_f64();
+        let fold = fold_band(&faces, &band);
+        let words: Vec<String> = fold.0.iter().map(|w| format!("{w:016x}")).collect();
+        println!(
+            "MGD-RESULT rank={rank} secs={secs:.3} fold={}",
+            words.join(",")
+        );
+    }
+
+    /// What a child rank reported.
+    #[cfg(feature = "std")]
+    #[derive(Debug)]
+    struct RankReport {
+        rank: usize,
+        secs: f64,
+        fold: Fold,
+        /// Peak resident set, bytes, from `/usr/bin/time -l` when asked for.
+        peak_rss: Option<u64>,
+    }
+
+    /// Solve `n³` across `ranks` re-executed processes of this test binary and
+    /// return their reports. This process only brokers the ports and reaps the
+    /// children; it holds no field.
+    #[cfg(feature = "std")]
+    fn run_processes(
+        n: usize,
+        depth: usize,
+        ranks: usize,
+        cycles: u32,
+        timeout_secs: u64,
+        measure_rss: bool,
+    ) -> Vec<RankReport> {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        use std::process::{Command, Stdio};
+
+        let broker = TcpListener::bind(("127.0.0.1", 0)).expect("bind the broker");
+        let broker_port = broker.local_addr().expect("address").port();
+        let exe = std::env::current_exe().expect("path of this test binary");
+        let kids: Vec<_> = (0..ranks)
+            .map(|rank| {
+                let mut cmd = if measure_rss {
+                    let mut c = Command::new("/usr/bin/time");
+                    c.arg("-l").arg(&exe);
+                    c
+                } else {
+                    Command::new(&exe)
+                };
+                cmd.args(["--exact", MGD_WORKER, "--test-threads=1", "--nocapture"])
+                    .env(MGD_RANK, rank.to_string())
+                    .env(MGD_RANKS, ranks.to_string())
+                    .env(MGD_SIDE, n.to_string())
+                    .env(MGD_DEPTH, depth.to_string())
+                    .env(MGD_CYCLES, cycles.to_string())
+                    .env(MGD_BROKER, broker_port.to_string())
+                    .env(MGD_TIMEOUT, timeout_secs.to_string())
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped());
+                cmd.spawn()
+                    .unwrap_or_else(|e| panic!("re-execute this test binary as rank {rank}: {e}"))
+            })
+            .collect();
+
+        let mut brokered: Vec<Option<std::net::TcpStream>> = (0..ranks).map(|_| None).collect();
+        let mut ports = vec![0u16; ranks];
+        for _ in 0..ranks {
+            let (mut link, _) = broker.accept().expect("a rank's announcement");
+            let mut hello = [0u8; 4];
+            link.read_exact(&mut hello).expect("announcement");
+            let rank = usize::from(u16::from_le_bytes([hello[0], hello[1]]));
+            ports[rank] = u16::from_le_bytes([hello[2], hello[3]]);
+            brokered[rank] = Some(link);
+        }
+        let table: Vec<u8> = ports.iter().flat_map(|p| p.to_le_bytes()).collect();
+        for link in brokered.iter_mut().flatten() {
+            link.write_all(&table).expect("hand a rank the port table");
+        }
+
+        let mut reports = Vec::new();
+        for (rank, kid) in kids.into_iter().enumerate() {
+            let out = kid.wait_with_output().expect("reap a rank");
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            assert!(
+                out.status.success(),
+                "rank {rank} failed ({}):\n{stdout}\n{stderr}",
+                out.status
+            );
+            // The harness prints `test <name> ... ` before the test's own output on
+            // the same line, so the result is found by its tag, not by line start.
+            let line = stdout
+                .lines()
+                .find_map(|l| l.find("MGD-RESULT").map(|at| &l[at..]))
+                .unwrap_or_else(|| panic!("rank {rank} printed no result:\n{stdout}\n{stderr}"));
+            let field = |key: &str| {
+                line.split_whitespace()
+                    .find_map(|w| w.strip_prefix(key))
+                    .unwrap_or_else(|| panic!("`{key}` missing from `{line}`"))
+            };
+            let mut fold = Fold::default();
+            for (slot, word) in fold.0.iter_mut().zip(field("fold=").split(',')) {
+                *slot = u64::from_str_radix(word, 16).expect("a hex word");
+            }
+            let peak_rss = stderr.lines().find_map(|l| {
+                l.trim()
+                    .strip_suffix("maximum resident set size")
+                    .and_then(|v| v.trim().parse().ok())
+            });
+            reports.push(RankReport {
+                rank,
+                secs: field("secs=").parse().expect("seconds"),
+                fold,
+                peak_rss,
+            });
+        }
+        reports
+    }
+
+    fn merged(reports: &[RankReport]) -> Fold {
+        let mut total = Fold::default();
+        for r in reports {
+            total.merge(&r.fold);
+        }
+        total
+    }
+
+    /// The oracle across real process boundaries: every rank is its own process,
+    /// holds no `MacGrid`, and all the ranks together wrote exactly what the
+    /// single-process solve writes — pressure and every face velocity, summed with
+    /// an index weight so a value in the wrong place is a different sum.
+    #[cfg(feature = "std")]
+    #[test]
+    fn ranks_in_separate_processes_reproduce_the_single_process_cycle() {
+        for &(n, ranks) in &[(16usize, 2usize), (16, 3), (32, 4)] {
+            let want = fold_grid(&solve_single(&seed(n, n, n, Scene::Open), 2));
+            let got = merged(&run_processes(n, n, ranks, 2, 120, false));
+            assert_eq!(
+                got, want,
+                "{n}³ over {ranks} processes is not the single-process answer"
+            );
+        }
+    }
+
+    /// Teeth: the same run with one more cycle is not the two-cycle answer, so the
+    /// comparison above can tell a different field from the right one.
+    #[cfg(feature = "std")]
+    #[test]
+    fn the_process_comparison_tells_a_different_cycle_count_apart() {
+        let n = 16;
+        let two = fold_grid(&solve_single(&seed(n, n, n, Scene::Open), 2));
+        let three = merged(&run_processes(n, n, 2, 3, 120, false));
+        assert_ne!(three, two);
+    }
+
+    /// Manual measurement, not part of the suite: `n³` over `ranks` processes,
+    /// timed and with each rank's peak resident set.
+    ///
+    /// ```text
+    /// ALICE_PHYSICS_MGD_N=256 ALICE_PHYSICS_MGD_DEPTH=256 ALICE_PHYSICS_MGD_RANKS=8 ALICE_PHYSICS_MGD_CYCLES=6 \
+    ///   ALICE_PHYSICS_MGD_REF=1 cargo test --release --lib \
+    ///   banded_processes_timed -- --ignored --nocapture
+    /// ```
+    ///
+    /// `ALICE_PHYSICS_MGD_REF=1` also solves the single-process reference (a whole
+    /// `MacGrid`, so only for sizes that fit) and compares.
+    #[cfg(feature = "std")]
+    #[test]
+    #[ignore = "manual measurement: set ALICE_PHYSICS_MGD_N / _RANKS / _CYCLES"]
+    fn banded_processes_timed() {
+        let get = |name: &str, default: usize| {
+            std::env::var(name)
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(default)
+        };
+        let n = get("ALICE_PHYSICS_MGD_N", 64);
+        let depth = get("ALICE_PHYSICS_MGD_DEPTH", n);
+        let ranks = get("ALICE_PHYSICS_MGD_RANKS", 4);
+        let cycles = get("ALICE_PHYSICS_MGD_CYCLES", 6) as u32;
+        let reference = std::env::var("ALICE_PHYSICS_MGD_REF").is_ok();
+        let want = reference.then(|| {
+            let started = std::time::Instant::now();
+            let f = fold_grid(&solve_single(&seed(n, n, depth, Scene::Open), cycles));
+            eprintln!(
+                "reference (single process, {cycles} cycles): {:.1} s",
+                started.elapsed().as_secs_f64()
+            );
+            f
+        });
+        let started = std::time::Instant::now();
+        let reports = run_processes(n, depth, ranks, cycles, 7200, true);
+        eprintln!(
+            "{n}x{n}x{depth} = {} cells over {ranks} processes, {cycles} cycles: wall {:.1} s",
+            n * n * depth,
+            started.elapsed().as_secs_f64()
+        );
+        for r in &reports {
+            eprintln!(
+                "  rank {}: solve {:.1} s, peak RSS {}",
+                r.rank,
+                r.secs,
+                r.peak_rss.map_or("n/a".to_string(), |b| format!(
+                    "{:.2} GiB",
+                    b as f64 / 1073741824.0
+                ))
+            );
+        }
+        if let Some(want) = want {
+            assert_eq!(merged(&reports), want, "not the single-process answer");
+            eprintln!("  bit-identical to the single-process solve");
+        }
     }
 }

@@ -16,9 +16,18 @@ Memory index pointer: `[[reference-alice-physics-v1-roadmap]]` in claude-config.
 | Maxwell FDTD | `ecd8c61` | source-free Yee、⚠️ **SI は `ε₀·μ₀` が 7.7 bit で不可**、正規化単位 + `S=9/16` |
 | 多体 ABA | `1bab99b` | ⚠️ **`solve()` が `link.joint` を読まない**状態から real ABA、oracle 12 本 |
 
+### 第 32 increment (2026-10-03、壁 4 — multigrid を rank ごとの別 process で回して実測、段階 4b)
+
+段階 4a の banded driver を、rank ごとの **別 process** (この test binary を再実行、port は親が仲介、rank 同士は loopback socket) で回す harness を足した 各 process は `MacGrid` を持たず、seed の式から自分の faces だけを作り、自分が書いた field (圧力と face 速度) の order-independent な畳み込みを出力する 全 rank の畳み込みの和が単一 process の解のそれと一致する (index 重みつきなので値の位置違いも別の値になる)
+oracle: 16³ / 2・3 process と 32³ / 4 process で単一 process と bit 一致 / cycle 数が違えば不一致 (比較が違う field を区別できる) 変異 4/4 red
+**実測 (Mac mini M2 Pro 32 GiB、release、8 process、6 cycles、開放 scene)**: 256³ (1.7e7 cell) wall **2.0 s**、peak RSS **0.58 GiB**/rank、単一 process は 7.5 s で **bit 一致を確認** 256×256×512 (3.4e7) 3.6 s、1.16 GiB/rank 512×512×256 (6.7e7) **8.2 s**、2.3 GiB/rank (計 18.4 GiB) 時間もメモリも規模にほぼ線形
+⚠️ **512³ (1.34e8 cell) は実測していない**: 1 cell あたり約 277 B で計 37 GiB となりこの機 (32 GiB) に載らない 6.7e7 の実測から線形外挿すると 6 cycles で約 16 s だが**外挿**であり、より大きい機か 1 cell あたりのメモリ削減 (コンダクタンスが `[i64; 6]` で 48 B) が要る 単一 process の見積り「1 step 約 23 分」との比較は、同じ cycle 数・同じ機での実測ではないので**参考値**
+未着手: 1 cell あたりのメモリ削減 / 複数ホスト / FMG / 集約した粗 level の並列化
+
 ### 第 31 increment (2026-10-02、全配線 program 第 5 件 — `coupled_field` / `coupled_iteration` の配線)
 
 `reconcile_weighted` (整数重みの厳密和 + 除算 1 回、順序非依存) を新設して `add_assign` / `scale_div` / `same_grid_as` を配線、`step_thermoplastic` を `run_sub_iteration` に乗せ替えて緩和を `blend_from` に、CG の残差 norm を `residual_norm_l2_checked` に (wrap は `FemError::ResidualNormUnfaithful` で拒否) oracle 7 + 3 本 変異 red 6 / 等価 3 / 歯なし 1 (床の導出 sweep、Backlog) baseline 退役 19 行 (実配線 13、負債 marker 6) ⚠️ 残: `EquilibrationScale` の消費者 = CG の停止 norm の equilibrate (床側、別 task、golden 再生成を伴う)、`best_residual` の report 化は 2.0.0 列
+
 
 ### 第 30 increment (2026-10-02、全配線 program 第 4 件 — RANS k-ε / k-ω と可変粘性拡散の配線)
 
