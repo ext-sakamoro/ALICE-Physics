@@ -16,9 +16,18 @@ Memory index pointer: `[[reference-alice-physics-v1-roadmap]]` in claude-config.
 | Maxwell FDTD | `ecd8c61` | source-free Yee、⚠️ **SI は `ε₀·μ₀` が 7.7 bit で不可**、正規化単位 + `S=9/16` |
 | 多体 ABA | `1bab99b` | ⚠️ **`solve()` が `link.joint` を読まない**状態から real ABA、oracle 12 本 |
 
+### 第 39 increment (2026-10-03、全配線 program 第 9 件 (F2) — 静的 collider: `StaticCollider` と `PhysicsWorld::add_static_collider`)
+
+`PhysicsWorld` の衝突は「球 (body ごとの衝突半径) と SDF collider」だけで、`plane_collider` / `heightfield` / `trimesh` の球衝突は呼出元が 0 件だった `StaticCollider::{Plane, HeightField, TriMesh}` と `add_static_collider` / `remove_static_collider` / `static_collider_count` を足した 球 body を substep ごとに SDF collider と同じ位置 (逐次 / batched / bridge の 3 経路すべて) で面の法線方向へ深さだけ押し出す (追加のみの公開 API) 衝突球は body の衝突半径、無ければ `set_sdf_collision_radius` の既定値 (SDF と同じ)
+⚠️ **oracle が既存の欠陥を 2 つ検出**: ① `HeightField::collide_sphere` が斜面で**垂直距離**を使っており球を `r·(1/cosθ − 1)` 埋めていた (傾き 1/2 で 0.0142 の誤差) ⇒ 法線方向の距離 (`Δy·n_y`) に ② 幅 0 の高さ場の `get_height` が `width − 1` の u32 underflow で panic (空の高さ場 / 間隔 0 は面なしとして None)
+oracle は解析解: 床 / 傾いた平面 / 斜面の高さ場 / 谷の三角形面の「法線方向に `r − d` だけ押し出される」閉形式 (1 substep の世界、重力 0) + 重力下の静止高さ + 2 平面の角 + 一次 query (`from_point_normal` の Hessian 形、双線形補間、斜面の法線、capsule / box の貫入深さ) 変異 **16/16 red** (初回 12/16、生存 4 件は per-body 半径 = 既定半径で区別できない / 境界 index / 空の `get_height` 直接呼び出し / `step_parallel` を呼ぶ test が無かった → test を足して red) + 配線変異 (example を外すと未配線に戻る)
+baseline 退役 19 行 (実配線 19、巻き込み 0): plane 7 / heightfield 7 / trimesh 5 呼出元は `examples/static_colliders.rs`
+⚠️ 既知の近似: `TriMesh::collide_aabb` は「中心への最近点が box の範囲内」を要件にするため、急な斜面で厳密な SAT より浅い貫入を見逃す (Backlog) 平面は両面 (背面に中心がある球はその側に保持される) 位置補正のみで摩擦は無い (斜面では滑る) `compound` と凸形状どうしの GJK/EPA は F3
+
 ### 第 38 increment (2026-10-03、全配線 program 第 11 件 — `filament_db`/`linear_elastic_fem`/`neural`/`query` 未配線 51 item)
 
 worker 4 本、全て src 無変更 (既存 pub/pub(crate) item に example 経由の入口を追加するだけで配線) 変異 red: filament_db 15/15、linear_elastic_fem 20/20、neural 11/12 (hard_tanh 境界が等価)、query 14/15 (capsule_cast tie-break が近似等価) baseline 51 行退役 + 名前衝突 2 行 (motor/fluid_netcode の `compute`、Backlog)
+
 
 ### 第 37 increment (2026-10-03、全配線 program TGS 裁定 (A) — `SolverBackend` で TGS family を `PhysicsWorld` の選択可能 solver に配線)
 

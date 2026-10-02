@@ -1406,6 +1406,7 @@ let broken = solve_joints_breakable(&joints, &mut bodies, dt);
 |----|------|
 | `Wedge` | 6頂点の三角柱（くさび） |
 | `Shape` | 形状つき body: `PhysicsWorld::add_shaped_body(&Shape, 密度, 位置)` が box / cylinder / cone / ellipsoid / wedge / torus の質量・重心まわりの慣性・外接球の衝突半径を設定 |
+| `StaticCollider` | 静的 collider: `PhysicsWorld::add_static_collider(StaticCollider)` が平面・高さ場・三角形メッシュに対する球 body の衝突を面法線方向の位置補正で解く |
 
 **機能:**
 - GJKサポート（6頂点の最大ドット積反復）

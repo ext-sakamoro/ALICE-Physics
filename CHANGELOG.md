@@ -13,6 +13,15 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added — 静的 collider: `StaticCollider` と `PhysicsWorld::add_static_collider` (全配線 program 第 9 件 F2)
+
+`static_collider::StaticCollider` (`Plane` / `HeightField` / `TriMesh`) と `PhysicsWorld::{add_static_collider, remove_static_collider, static_collider_count}` を追加した (追加のみ) 球 body を substep ごとに面の法線方向へ深さだけ押し出す (逐次 / batched / bridge の 3 経路) 衝突球は body の衝突半径、無ければ `set_sdf_collision_radius`
+### Fixed — 高さ場の球衝突 2 件
+
+- **`HeightField::collide_sphere` が斜面で垂直距離を使っていた** 球が斜面に `r·(1/cosθ − 1)` 埋まった (傾き 1/2 で 0.0142) 法線方向の距離に
+- 幅 0 / 奥行 0 の高さ場の `get_height` が u32 underflow で panic していた 空の高さ場と間隔 0 の高さ場は面なしとして扱う
+- oracle: 解析解 (面法線方向の押し出し) 変異 16/16 red 既知の近似: `TriMesh::collide_aabb` は急な斜面で貫入を浅く見積もる
+
 ### Added — `filament_db` / `linear_elastic_fem` / `neural` / `query` の未配線 51 item を全配線 (全配線 program 第 11 件)
 
 - `filament_db`: `examples/filament_database_properties.rs` が 3 単位変換定数 + `by_category`/`is_fdm`/`is_sheet_metal`/anisotropic law 10 本を駆動 oracle 18 本、変異 15/15 red src 無変更
@@ -20,6 +29,7 @@ were introduced during that release window.
 - `neural` (features = `std,neural`): `examples/neural_ternary_controller.rs` が 4 活性化関数 + `fix128_ternary_matvec` + `DeterministicNetwork`/`RagdollController` 13 item を駆動 oracle 21 本、変異 11/12 red (`hard_tanh` の境界 `>`→`>=` は算術的に等価) src 無変更
 - `query`: `examples/spatial_queries.rs` が `overlap_sphere`/`overlap_aabb(_expanded)`/`overlap_*_bvh` (brute-force と bit 一致) /`sphere_cast`/`capsule_cast`/`batch_raycast`/`batch_sphere_cast` + 3 結果型 12 item を駆動 oracle 24 本、実装変異 14/15 red (`capsule_cast` の tie-break 境界は通常形状で算術的に近似等価) src 無変更
 - baseline 51 行退役 + 名前衝突 2 行 (`motor.rs::compute`、`fluid_netcode.rs::compute`、実体は未配線のまま Backlog に記録) 新規公開面 0 件
+
 
 ### Added — TGS family を `PhysicsWorld` の選択可能 solver backend として配線 (`SolverBackend`、全配線 program TGS 裁定 (A))
 
