@@ -228,7 +228,6 @@ unwired src/cubic_elastic_fem.rs::face_node
 unwired src/cubic_elastic_fem.rs::face_node_count
 unwired src/cubic_elastic_fem.rs::interior_node_positions_are_exact
 unwired src/cubic_elastic_fem.rs::shape_values
-unwired src/cubic_elastic_fem.rs::solve_cubic
 unwired src/cylinder.rs::inertia_diagonal
 unwired src/cylinder.rs::volume
 unwired src/cylinder.rs::with_rotation
@@ -708,7 +707,6 @@ unwired src/quadratic_elastic_fem.rs::edge_count
 unwired src/quadratic_elastic_fem.rs::edge_node
 unwired src/quadratic_elastic_fem.rs::element_count
 unwired src/quadratic_elastic_fem.rs::element_nodes
-unwired src/quadratic_elastic_fem.rs::solve_quadratic
 unwired src/query.rs::BatchRayQuery
 unwired src/query.rs::OverlapResult
 unwired src/query.rs::ShapeCastHit

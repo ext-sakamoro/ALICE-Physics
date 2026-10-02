@@ -1629,3 +1629,139 @@ pub fn solve_quadratic_hyperelastic(
         increments: config.increments(),
     })
 }
+
+// ---------------------------------------------------------------------------
+// reactions
+// ---------------------------------------------------------------------------
+
+/// Support forces at the prescribed degrees of freedom of a [`solve_quadratic`]
+/// or [`solve_quadratic_hyperelastic`] answer (N), indexed like the nodes of
+/// `mesh`.
+///
+/// # What it is
+///
+/// ```text
+/// R_d = f_int(u)_d − f_ext_d     on a prescribed degree of freedom
+/// R_d = 0                        on a free one
+/// ```
+///
+/// with `f_int(u) = K u` when `law` is `None` (the small-strain internal force
+/// [`solve_quadratic`] balances) and `f_int(u) = Σₑ Σ_q w_q V₀ P ∇₀N` when it is
+/// `Some` (the total-Lagrangian internal force [`solve_quadratic_hyperelastic`]
+/// balances, with the bulk modulus `K = λ + 2μ/3` that solver pairs the model
+/// with). The sign is the force the body exerts on its supports, so that
+/// `Σ R + Σ f_ext = 0` over the whole mesh. A free row carries no reaction by
+/// construction: that row *is* the equilibrium equation the solve satisfied.
+///
+/// `law` has to be the one the solution was produced under. A hyperelastic
+/// answer read with `None` reports the support forces of a linear body held at
+/// the same displacement — a different problem, with a different answer.
+///
+/// # ⚠️ Why this exists for the higher-order elements in particular
+///
+/// Measured 2026-10-01 on this element and the cubic one: dropping the `J`
+/// from `P = J σ F⁻ᵀ` in `hyperelastic_stress` left **7 of 7** oracles in
+/// `tests/analytic_quadratic_hyperelastic.rs` green, including the one asserting
+/// a closed form for `σ_xx`. With `f_ext = 0` the discrete problem is
+/// `f_mat(u) = 0` on the free rows, so a uniform scale on the internal force
+/// does not move the root, and the reported stress is the Cauchy `σ` from
+/// *before* the Piola conversion. The reaction is linear in that scale, and it
+/// is the only quantity on this module's surface that is.
+///
+/// # ⚠️ The shared assembly is load-bearing — do not re-derive it here
+///
+/// This goes through `apply_stiffness` and `material_internal_force` (both
+/// private), the very functions the two solvers build their systems with, and
+/// **not** through a second copy of the same formulae. That sharing is what
+/// makes the closed-form oracle work: a mistake in the element integral has to
+/// *reach* this value before anything can compare it against the analytic
+/// traction. Re-deriving it here would delete the oracle while every test
+/// stayed green.
+///
+/// # ⚠️ What it does not check
+///
+/// Nothing ties `solution` to the arguments beside it. Only the node count is
+/// checked. A load placed on a prescribed degree of freedom is subtracted here
+/// even though the solvers ignore it — the support carries it.
+///
+/// # Errors
+///
+/// [`FemError::EmptyMesh`], [`FemError::VertexOutOfRange`] for boundary data
+/// naming a node the mesh does not have,
+/// [`FemError::SolutionDoesNotMatchMesh`] when `solution` has a different
+/// node count, and — with a law — [`FemError::RotationFailed`] with
+/// [`PolarError::Inverted`] at a quadrature point where `det F ≤ 0`, where no
+/// hyperelastic law has a stress.
+#[must_use = "the support forces are the whole point of calling this; a solve that \
+     drops them has not been checked against equilibrium at all"]
+pub fn reactions(
+    mesh: &QuadraticMesh,
+    material: &ElasticMaterial,
+    boundary: &BoundaryConditions,
+    law: Option<HyperelasticModel>,
+    solution: &FemSolution,
+) -> Result<Vec<[Fix128; 3]>, FemError> {
+    let node_count = mesh.node_count();
+    if node_count == 0 || mesh.elements.is_empty() {
+        return Err(FemError::EmptyMesh);
+    }
+    for &(node, _, _) in boundary.prescribed().iter().chain(boundary.loads().iter()) {
+        if node as usize >= node_count {
+            return Err(FemError::VertexOutOfRange {
+                vertex: node,
+                vertex_count: node_count,
+            });
+        }
+    }
+    let nodes = solution.displacements.len();
+    if nodes != node_count {
+        return Err(FemError::SolutionDoesNotMatchMesh {
+            nodes,
+            vertex_count: node_count,
+        });
+    }
+
+    let (lambda, mu) = material.lame();
+    let ndof = node_count * 3;
+    let points = quadrature_points();
+    let weight = quadrature_weight();
+
+    let mut u = vec![Fix128::ZERO; ndof];
+    for (n, d) in solution.displacements.iter().enumerate() {
+        u[n * 3] = d[0];
+        u[n * 3 + 1] = d[1];
+        u[n * 3 + 2] = d[2];
+    }
+
+    // `f_int`, through the function the matching solver balances.
+    let mut force = vec![Fix128::ZERO; ndof];
+    match law {
+        None => apply_stiffness(&mesh.elements, &points, weight, &u, lambda, mu, &mut force),
+        Some(model) => {
+            // The same bulk modulus `solve_quadratic_hyperelastic` pairs the
+            // model with.
+            let law = MaterialLaw {
+                model,
+                bulk_modulus: lambda + (mu + mu) / Fix128::from_int(3),
+            };
+            material_internal_force(&mesh.elements, &points, weight, &u, law, &mut force)?;
+        }
+    }
+
+    for &(node, axis, applied) in boundary.loads() {
+        let d = node as usize * 3 + axis.index();
+        force[d] = force[d] - applied;
+    }
+    let mut is_free = vec![true; ndof];
+    for &(node, axis, _) in boundary.prescribed() {
+        is_free[node as usize * 3 + axis.index()] = false;
+    }
+    for (d, value) in force.iter_mut().enumerate() {
+        if is_free[d] {
+            *value = Fix128::ZERO;
+        }
+    }
+    Ok((0..node_count)
+        .map(|n| [force[n * 3], force[n * 3 + 1], force[n * 3 + 2]])
+        .collect())
+}

@@ -57,14 +57,22 @@
 // The oracle values are closed-form f64 evaluations, not simulation state.
 #![allow(clippy::disallowed_methods)]
 
+use std::rc::Rc;
+
 use alice_physics::coupled_field::{CoupledField, TemperatureRise};
+use alice_physics::cubic_elastic_fem::{
+    reactions as cubic_reactions, solve_cubic, solve_cubic_hyperelastic, CubicMesh,
+};
 use alice_physics::hyperelastic::HyperelasticModel;
 use alice_physics::linear_elastic_fem::{
     corotational_reactions, reactions, solve, solve_corotational, solve_with_eigenstrain, Axis,
     BoundaryConditions, CorotationalConfig, CorotationalSolution, ElasticMaterial, FemError,
     FemSolution, SolverConfig, StressTensor, ThermalExpansion,
 };
-use alice_physics::math::Fix128;
+use alice_physics::math::{Fix128, PolarError};
+use alice_physics::quadratic_elastic_fem::{
+    reactions as quadratic_reactions, solve_quadratic, solve_quadratic_hyperelastic, QuadraticMesh,
+};
 use alice_physics::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
 
 // ---------------------------------------------------------------------------
@@ -189,15 +197,6 @@ fn total(r: &[[Fix128; 3]]) -> [f64; 3] {
     sum
 }
 
-/// Which degrees of freedom a boundary set prescribes, as a per-node mask.
-fn prescribed_mask(mesh: &SdfTetMesh, bc: &BoundaryConditions) -> Vec<[bool; 3]> {
-    let mut mask = vec![[false; 3]; mesh.vertex_count()];
-    for &(vertex, axis, _) in bc.prescribed() {
-        mask[vertex as usize][axis.index()] = true;
-    }
-    mask
-}
-
 /// Every free degree of freedom must carry exactly zero — that is the
 /// definition, not a tolerance, so it is asserted with `assert_eq!`.
 fn assert_free_rows_are_exactly_zero(
@@ -205,7 +204,21 @@ fn assert_free_rows_are_exactly_zero(
     bc: &BoundaryConditions,
     r: &[[Fix128; 3]],
 ) {
-    let mask = prescribed_mask(mesh, bc);
+    assert_free_rows_of_n_nodes_are_exactly_zero(mesh.vertex_count(), bc, r);
+}
+
+/// [`assert_free_rows_are_exactly_zero`] for a node set that is not the
+/// vertices of a tetrahedral mesh (the P2 / P3 node sets below).
+fn assert_free_rows_of_n_nodes_are_exactly_zero(
+    node_count: usize,
+    bc: &BoundaryConditions,
+    r: &[[Fix128; 3]],
+) {
+    assert_eq!(r.len(), node_count, "one reaction per node");
+    let mut mask = vec![[false; 3]; node_count];
+    for &(node, axis, _) in bc.prescribed() {
+        mask[node as usize][axis.index()] = true;
+    }
     let mut free = 0usize;
     for (v, (node, held)) in r.iter().zip(mask.iter()).enumerate() {
         for (axis, (value, is_held)) in node.iter().zip(held.iter()).enumerate() {
@@ -1275,4 +1288,543 @@ fn degenerate_geometry_and_extreme_values_do_not_panic() {
         quiet.iter().all(|n| n.iter().all(|v| *v == Fix128::ZERO)),
         "with nothing prescribed there is no support to carry anything"
     );
+}
+
+// ===========================================================================
+// P2 / P3 — the quadratic and cubic elements
+// ===========================================================================
+//
+// `quadratic_elastic_fem::reactions` and `cubic_elastic_fem::reactions` are the
+// observation the two higher-order hyperelastic solvers were missing: measured
+// 2026-10-01, dropping the `J` from `P = J σ F⁻ᵀ` in either element's
+// `hyperelastic_stress` left every oracle in
+// `tests/analytic_{quadratic,cubic}_hyperelastic.rs` green. Each oracle below
+// is written once, against the `HigherOrder` adapter, and run on both elements
+// so that a mutation in one module is attributed to that module.
+//
+// The face identity of the module doc holds unchanged. `φ = Σ_{i: x=0} N_i` is
+// `1` on the face and `0` on the opposite one whatever the element degree, and
+// the lateral contributions cancel in pairs because the Kuhn lattice is
+// invariant under translation by one cell: the restriction of `φ` to `y = 0`
+// is the restriction to `y = L` translated, with the outward normals opposite.
+// The affine fields used here are reproduced exactly by P2 and P3 (P1 ⊂ P2 ⊂
+// P3 on straight-edged tetrahedra with nodes at the midpoints / thirds), so
+// `F` is uniform and the closed forms apply.
+//
+// ⚠️ The cubic lattice spacing is a multiple of three so that the edge nodes
+// at one and two thirds are exact in `Fix128` (`CubicMesh::node_position`).
+
+/// The reactions entry point of one element family.
+type ReactFn = dyn Fn(
+    &BoundaryConditions,
+    Option<HyperelasticModel>,
+    &FemSolution,
+) -> Result<Vec<[Fix128; 3]>, FemError>;
+/// Its small-strain solver at `SolverConfig::default()`.
+type SolveLinearFn = dyn Fn(&BoundaryConditions) -> Result<FemSolution, FemError>;
+/// Its hyperelastic solver.
+type SolveHyperFn =
+    dyn Fn(&BoundaryConditions, &CorotationalConfig) -> Result<CorotationalSolution, FemError>;
+
+/// One higher-order element family behind the three entry points the oracles
+/// call.
+struct HigherOrder {
+    name: &'static str,
+    /// Side of the box `[0, side]³` the lattice spans (mm).
+    side: f64,
+    /// Reference position of every node: corners first, then the element's own.
+    positions: Vec<[f64; 3]>,
+    element_count: usize,
+    react: Box<ReactFn>,
+    solve_linear: Box<SolveLinearFn>,
+    solve_hyper: Box<SolveHyperFn>,
+}
+
+fn positions_of(count: usize, at: impl Fn(u32) -> Option<[Fix128; 3]>) -> Vec<[f64; 3]> {
+    (0..count)
+        .map(|n| {
+            let p = at(u32::try_from(n).expect("fits")).expect("every node has a position");
+            [p[0].to_f64(), p[1].to_f64(), p[2].to_f64()]
+        })
+        .collect()
+}
+
+/// The ten-node element on an `n³` Kuhn box of spacing `h`.
+fn quadratic(n: usize, h: f32) -> HigherOrder {
+    let mesh = Rc::new(
+        QuadraticMesh::from_tet_mesh(&kuhn_box(n, n, n, h)).expect("no cell is degenerate"),
+    );
+    let positions = positions_of(mesh.node_count(), |i| mesh.node_position(i));
+    let element_count = mesh.element_count();
+    let (m1, m2, m3) = (Rc::clone(&mesh), Rc::clone(&mesh), Rc::clone(&mesh));
+    HigherOrder {
+        name: "P2",
+        side: f64::from(h) * n as f64,
+        positions,
+        element_count,
+        react: Box::new(move |bc, law, sol| quadratic_reactions(&m1, &pla(), bc, law, sol)),
+        solve_linear: Box::new(move |bc| {
+            solve_quadratic(&m2, &pla(), bc, &SolverConfig::default())
+        }),
+        solve_hyper: Box::new(move |bc, cfg| solve_quadratic_hyperelastic(&m3, &pla(), bc, cfg)),
+    }
+}
+
+/// The twenty-node element on an `n³` Kuhn box of spacing `h` (a multiple of 3).
+fn cubic(n: usize, h: f32) -> HigherOrder {
+    let mesh =
+        Rc::new(CubicMesh::from_tet_mesh(&kuhn_box(n, n, n, h)).expect("no cell is degenerate"));
+    assert!(
+        mesh.interior_node_positions_are_exact(),
+        "the lattice spacing must be a multiple of three for the thirds to be exact"
+    );
+    let positions = positions_of(mesh.node_count(), |i| mesh.node_position(i));
+    let element_count = mesh.element_count();
+    let (m1, m2, m3) = (Rc::clone(&mesh), Rc::clone(&mesh), Rc::clone(&mesh));
+    HigherOrder {
+        name: "P3",
+        side: f64::from(h) * n as f64,
+        positions,
+        element_count,
+        react: Box::new(move |bc, law, sol| cubic_reactions(&m1, &pla(), bc, law, sol)),
+        solve_linear: Box::new(move |bc| solve_cubic(&m2, &pla(), bc, &SolverConfig::default())),
+        solve_hyper: Box::new(move |bc, cfg| solve_cubic_hyperelastic(&m3, &pla(), bc, cfg)),
+    }
+}
+
+/// Prescribe `field` on every node on the boundary of the box, leave the
+/// interior free, and return the exact nodal field for every node.
+fn boundary_scene(
+    el: &HigherOrder,
+    field: impl Fn([f64; 3]) -> [f64; 3],
+) -> (BoundaryConditions, Vec<[Fix128; 3]>) {
+    let mut bc = BoundaryConditions::new();
+    let mut nodal = Vec::with_capacity(el.positions.len());
+    for (n, p) in el.positions.iter().enumerate() {
+        let u = field(*p);
+        let v = [fx(u[0]), fx(u[1]), fx(u[2])];
+        nodal.push(v);
+        if p.iter().any(|&c| c <= 1e-9 || c >= el.side - 1e-9) {
+            bc.prescribe_all(u32::try_from(n).expect("fits"), v);
+        }
+    }
+    (bc, nodal)
+}
+
+/// A `FemSolution` carrying a given displacement field, so an oracle can read
+/// `reactions` at a field that is **exactly** the affine one.
+fn solution_of(el: &HigherOrder, displacements: Vec<[Fix128; 3]>) -> FemSolution {
+    FemSolution {
+        displacements,
+        element_stress: vec![StressTensor::default(); el.element_count],
+        iterations: 0,
+        relative_residual: Fix128::ZERO,
+        effective_relative_tolerance: Fix128::ZERO,
+    }
+}
+
+/// `Σ R` over every node whose reference coordinate on `axis` is `at`.
+fn face_sum_at(positions: &[[f64; 3]], r: &[[Fix128; 3]], axis: usize, at: f64) -> [f64; 3] {
+    let mut sum = [0.0_f64; 3];
+    for (p, node) in positions.iter().zip(r.iter()) {
+        if (p[axis] - at).abs() <= 1e-9 {
+            for (s, got) in sum.iter_mut().zip(node.iter()) {
+                *s += got.to_f64();
+            }
+        }
+    }
+    sum
+}
+
+/// Both faces of every axis against `−A₀ · T e_axis` on the near face and its
+/// negative on the far one, then the total against zero.
+fn assert_faces_read_the_columns(
+    el: &HigherOrder,
+    r: &[[Fix128; 3]],
+    columns: [[f64; 3]; 3],
+    tol: f64,
+    what: &str,
+) {
+    let area = el.side * el.side;
+    for (axis, col) in columns.iter().enumerate() {
+        let want = [-area * col[0], -area * col[1], -area * col[2]];
+        close3(
+            face_sum_at(&el.positions, r, axis, 0.0),
+            want,
+            tol,
+            &format!("{} {what}: near face of axis {axis}", el.name),
+        );
+        close3(
+            face_sum_at(&el.positions, r, axis, el.side),
+            [-want[0], -want[1], -want[2]],
+            tol,
+            &format!("{} {what}: far face of axis {axis}", el.name),
+        );
+    }
+    close3(
+        total(r),
+        [0.0, 0.0, 0.0],
+        tol,
+        &format!(
+            "{} {what}: no external load, so every reaction must sum to zero",
+            el.name
+        ),
+    );
+}
+
+// ---------------------------------------------------------------------------
+// oracle 7 — the small-strain traction of an affine field with shear
+// ---------------------------------------------------------------------------
+
+/// The displacement gradient of the linear scene. ⚠️ **Not symmetric**: the
+/// `xy` entry is carried on one side only, so the strain is its symmetric part
+/// and the linear law has to form that part itself.
+///
+/// ⚠️ The lateral entries are **not** `−ν a`: with them the `yy` and `zz`
+/// stresses would vanish and the `y = 0` / `z = 0` faces would read a diagonal
+/// of zero, which no scale error can move. `b ≠ c` so the two lateral faces
+/// also read different numbers.
+const G: [[f64; 3]; 3] = [
+    [2.0e-3, 1.0e-3, 0.0],
+    [0.0, -5.0e-4, 0.0],
+    [0.0, 0.0, -9.0e-4],
+];
+
+/// `u = G X`.
+fn sheared(p: [f64; 3]) -> [f64; 3] {
+    let mut u = [0.0; 3];
+    for (a, row) in G.iter().enumerate() {
+        u[a] = row[0] * p[0] + row[1] * p[1] + row[2] * p[2];
+    }
+    u
+}
+
+/// The three columns of `σ = λ tr(ε) I + 2μ ε` with `ε = sym G`.
+fn sheared_stress_columns() -> [[f64; 3]; 3] {
+    let (l, m) = (lambda(), mu());
+    let exx = G[0][0];
+    let eyy = G[1][1];
+    let ezz = G[2][2];
+    let exy = 0.5 * (G[0][1] + G[1][0]);
+    let tr = exx + eyy + ezz;
+    let sxx = l * tr + 2.0 * m * exx;
+    let syy = l * tr + 2.0 * m * eyy;
+    let szz = l * tr + 2.0 * m * ezz;
+    let sxy = 2.0 * m * exy;
+    [[sxx, sxy, 0.0], [sxy, syy, 0.0], [0.0, 0.0, szz]]
+}
+
+/// Under the affine field `u = G X`, the face reaction of the small-strain path
+/// is `−A₀ · σ e_face` with `σ = λ tr(ε) I + 2μ ε`, `ε = sym G`.
+///
+/// # The closed form
+///
+/// `G` carries `∂u_x/∂y = 10⁻³` and nothing on `∂u_y/∂x`, so `ε_xy = 5·10⁻⁴`
+/// and `σ_xy = 2μ ε_xy = μ·10⁻³`; the diagonal is Hooke on `(a, b, c)`. The
+/// `x = 0` face reads `(σ_xx, σ_xy, 0)`, the `y = 0` face `(σ_xy, σ_yy, 0)`,
+/// the `z = 0` face `(0, 0, σ_zz)`. An element integral that dropped its
+/// quadrature weight would scale all nine numbers; one that mixed up the shear
+/// row would move the off-diagonal ones.
+///
+/// Read at the exact field first, then at the field `solve_*` actually returns.
+fn linear_face_reaction_is_the_small_strain_traction(el: &HigherOrder) {
+    let (bc, field) = boundary_scene(el, sheared);
+    let columns = sheared_stress_columns();
+    let largest = columns
+        .iter()
+        .flatten()
+        .fold(0.0_f64, |m, v| m.max(v.abs()))
+        * el.side
+        * el.side;
+
+    let exact = solution_of(el, field);
+    let r = (el.react)(&bc, None, &exact).expect("the field has one entry per node");
+    assert_free_rows_of_n_nodes_are_exactly_zero(el.positions.len(), &bc, &r);
+    assert_faces_read_the_columns(el, &r, columns, 1e-5 * largest, "exact affine field");
+
+    let solved = (el.solve_linear)(&bc).expect("the affine patch test is well posed");
+    let r = (el.react)(&bc, None, &solved).expect("matches");
+    assert_faces_read_the_columns(el, &r, columns, 1e-4 * largest, "solved field");
+    eprintln!(
+        "  {} linear face reaction: σ = ({:.4}, {:.4}, {:.4}; xy {:.4}) MPa over A₀ = {} mm²",
+        el.name,
+        columns[0][0],
+        columns[1][1],
+        columns[2][2],
+        columns[0][1],
+        el.side * el.side
+    );
+}
+
+#[test]
+fn p2_linear_face_reaction_is_the_small_strain_traction() {
+    linear_face_reaction_is_the_small_strain_traction(&quadratic(2, 2.0));
+}
+
+#[test]
+fn p3_linear_face_reaction_is_the_small_strain_traction() {
+    linear_face_reaction_is_the_small_strain_traction(&cubic(2, 3.0));
+}
+
+// ---------------------------------------------------------------------------
+// oracle 8 — the first Piola-Kirchhoff traction on the higher-order elements
+// ---------------------------------------------------------------------------
+
+/// `u(X) = (R U − I) X` with the same `R` and `U` as oracle 5, for an `f64`
+/// position.
+fn stretched_turn_f64(p: [f64; 3]) -> [f64; 3] {
+    stretched_turn([p[0] as f32, p[1] as f32, p[2] as f32])
+}
+
+/// The three columns `P e_k = d_k · (R e_k)` of oracle 5's closed form.
+fn piola_columns() -> ([[f64; 3]; 3], [f64; 3]) {
+    let mu_model = mu();
+    let j = STRETCH[0] * STRETCH[1] * STRETCH[2];
+    let beta = j * (bulk() * (j - 1.0) - mu_model);
+    let d = [
+        mu_model * STRETCH[0] + beta / STRETCH[0],
+        mu_model * STRETCH[1] + beta / STRETCH[1],
+        mu_model * STRETCH[2] + beta / STRETCH[2],
+    ];
+    let r_col = [[COS, SIN, 0.0], [-SIN, COS, 0.0], [0.0, 0.0, 1.0]];
+    let mut columns = [[0.0; 3]; 3];
+    for k in 0..3 {
+        for a in 0..3 {
+            columns[k][a] = d[k] * r_col[k][a];
+        }
+    }
+    (columns, d)
+}
+
+/// Under the uniform `F = R U` of oracle 5, the face reaction of the
+/// hyperelastic path is `−A₀ · P e_face` with `P = μF + βF⁻ᵀ`,
+/// `β = J(K(J−1) − μ)` — the closed form derived in oracle 5, which does not
+/// depend on the element.
+///
+/// ⚠️ This is the oracle the 2026-10-01 measurement said was missing: `det F =
+/// 5/4`, so dropping the `J` scales every sum by `4/5`; `P ≠ Pᵀ`, so a
+/// transposed scatter moves the `y` component of the `x = 0` face by
+/// `(d₁+d₂) s A₀`; and the quadrature weight scales everything. None of the
+/// three is visible to a displacement or a Cauchy stress.
+fn hyperelastic_face_reaction_is_the_first_piola_traction(el: &HigherOrder) {
+    let (bc, field) = boundary_scene(el, stretched_turn_f64);
+    let (columns, d) = piola_columns();
+    let area = el.side * el.side;
+    let largest = d.iter().fold(0.0_f64, |m, v| m.max(v.abs())) * area;
+    let tol = 1e-5 * largest;
+
+    let law = HyperelasticModel::NeoHookean { mu_mpa: fx(mu()) };
+    let exact = solution_of(el, field);
+    let r = (el.react)(&bc, Some(law), &exact).expect("det F = 5/4 > 0 everywhere");
+    assert_free_rows_of_n_nodes_are_exactly_zero(el.positions.len(), &bc, &r);
+    assert_faces_read_the_columns(el, &r, columns, tol, "Piola traction");
+
+    let separation = (d[0] + d[1]) * SIN * area;
+    assert!(
+        separation > 100.0 * tol,
+        "{}: P must be far enough from Pᵀ for the x-face sum to tell them apart; \
+         separation {separation:.3e} N against tolerance {tol:.3e} N",
+        el.name
+    );
+
+    // The same field read without the law is a different problem with a
+    // different answer: the law argument is load-bearing, not decorative.
+    let linear = (el.react)(&bc, None, &exact).expect("the linear path has no J to fail on");
+    let x_face_law = face_sum_at(&el.positions, &r, 0, 0.0);
+    let x_face_lin = face_sum_at(&el.positions, &linear, 0, 0.0);
+    let apart = (0..3)
+        .map(|a| (x_face_law[a] - x_face_lin[a]).abs())
+        .fold(0.0_f64, f64::max);
+    assert!(
+        apart > 100.0 * tol,
+        "{}: the hyperelastic and the small-strain reading of the same field must differ \
+         (a 36.87° turn is strain to the small-strain law); got {apart:.3e} N apart",
+        el.name
+    );
+    eprintln!(
+        "  {} Piola face reaction: d = ({:.4}, {:.4}, {:.4}) MPa, P vs Pᵀ separation \
+         {separation:.3e} N, law vs linear {apart:.3e} N, tolerance {tol:.3e} N",
+        el.name, d[0], d[1], d[2]
+    );
+}
+
+#[test]
+fn p2_hyperelastic_face_reaction_is_the_first_piola_traction() {
+    hyperelastic_face_reaction_is_the_first_piola_traction(&quadratic(2, 2.0));
+}
+
+#[test]
+fn p3_hyperelastic_face_reaction_is_the_first_piola_traction() {
+    hyperelastic_face_reaction_is_the_first_piola_traction(&cubic(2, 3.0));
+}
+
+/// A real `solve_*_hyperelastic` on the same scene lands on the same reactions,
+/// so oracle 8 and the solver are measuring the same state.
+fn solved_hyperelastic_state_reproduces_the_piola_face_reaction_on(el: &HigherOrder) {
+    let (bc, _) = boundary_scene(el, stretched_turn_f64);
+    let (columns, d) = piola_columns();
+    let area = el.side * el.side;
+    let law = HyperelasticModel::NeoHookean { mu_mpa: fx(mu()) };
+    let config = CorotationalConfig::try_new(SolverConfig::default(), 64, fx(1e-6), 2, 32)
+        .expect("valid")
+        .with_hyperelastic(law);
+    let out = (el.solve_hyper)(&bc, &config).expect("the scene converges");
+    let r = (el.react)(&bc, Some(law), &out.field).expect("matches");
+
+    // Looser than the closed-form oracle: this one carries the Newton
+    // tolerance as well as the arithmetic.
+    let tol = 1e-3 * d[0].abs() * area;
+    close3(
+        face_sum_at(&el.positions, &r, 0, 0.0),
+        [
+            -area * columns[0][0],
+            -area * columns[0][1],
+            -area * columns[0][2],
+        ],
+        tol,
+        &format!("{}: x = 0 face reaction of the solved state", el.name),
+    );
+    eprintln!(
+        "  {} solved state: {} Newton steps, x-face reaction {:?} N",
+        el.name,
+        out.newton_iterations,
+        face_sum_at(&el.positions, &r, 0, 0.0)
+    );
+}
+
+#[test]
+fn p2_solved_hyperelastic_state_reproduces_the_piola_face_reaction() {
+    solved_hyperelastic_state_reproduces_the_piola_face_reaction_on(&quadratic(2, 2.0));
+}
+
+#[test]
+fn p3_solved_hyperelastic_state_reproduces_the_piola_face_reaction() {
+    solved_hyperelastic_state_reproduces_the_piola_face_reaction_on(&cubic(2, 3.0));
+}
+
+// ---------------------------------------------------------------------------
+// oracle 9 — a load on a prescribed row is carried by the support
+// ---------------------------------------------------------------------------
+
+/// Hold every boundary node at zero and put a load on one of them. The
+/// displacement is exactly zero, so `f_int = 0` exactly and the reaction is
+/// `−f_ext` on that one degree of freedom **bit for bit**, zero elsewhere.
+fn load_on_a_prescribed_row_is_carried_by_the_support_on(el: &HigherOrder) {
+    let (mut bc, zero) = boundary_scene(el, |_| [0.0; 3]);
+    let held = 0u32; // the corner at the origin, on three boundary faces
+    assert!(
+        bc.prescribed().iter().any(|&(n, _, _)| n == held),
+        "the loaded node must be a held one for this to be a reaction"
+    );
+    let load = fx(500.0);
+    bc.add_load(held, Axis::X, load);
+
+    let solved = (el.solve_linear)(&bc).expect("well posed");
+    assert!(
+        solved
+            .displacements
+            .iter()
+            .all(|d| d.iter().all(|v| v.is_zero())),
+        "{}: a load on a held row is not an equation, so nothing moves",
+        el.name
+    );
+    assert_eq!(solved.displacements, zero);
+
+    for (law, what) in [
+        (None, "linear"),
+        (
+            Some(HyperelasticModel::NeoHookean { mu_mpa: fx(mu()) }),
+            "hyperelastic",
+        ),
+    ] {
+        let r = (el.react)(&bc, law, &solved).expect("matches");
+        for (n, node) in r.iter().enumerate() {
+            let want = if n == held as usize {
+                [-load, Fix128::ZERO, Fix128::ZERO]
+            } else {
+                [Fix128::ZERO; 3]
+            };
+            assert_eq!(
+                *node, want,
+                "{} {what}: node {n} — the support carries exactly the load and nothing else",
+                el.name
+            );
+        }
+    }
+}
+
+#[test]
+fn p2_load_on_a_prescribed_row_is_carried_by_the_support() {
+    load_on_a_prescribed_row_is_carried_by_the_support_on(&quadratic(2, 2.0));
+}
+
+#[test]
+fn p3_load_on_a_prescribed_row_is_carried_by_the_support() {
+    load_on_a_prescribed_row_is_carried_by_the_support_on(&cubic(2, 3.0));
+}
+
+// ---------------------------------------------------------------------------
+// refusals on the higher-order elements
+// ---------------------------------------------------------------------------
+
+/// A solution of the wrong length, boundary data naming a node the mesh does
+/// not have, and a hyperelastic read of an inverted field are refused with
+/// the named error; the small-strain read of the same inverted field is not,
+/// because that path has no `J` to fail on.
+fn degenerate_inputs_are_refused_on(el: &HigherOrder) {
+    let count = el.positions.len();
+    let (bc, _) = boundary_scene(el, |_| [0.0; 3]);
+
+    let short = solution_of(el, vec![[Fix128::ZERO; 3]; count - 1]);
+    assert_eq!(
+        (el.react)(&bc, None, &short),
+        Err(FemError::SolutionDoesNotMatchMesh {
+            nodes: count - 1,
+            vertex_count: count,
+        }),
+        "{}: one node short",
+        el.name
+    );
+
+    let mut beyond = bc.clone();
+    let out_of_range = u32::try_from(count).expect("fits");
+    beyond.prescribe(out_of_range, Axis::Z, Fix128::ZERO);
+    let full = solution_of(el, vec![[Fix128::ZERO; 3]; count]);
+    assert_eq!(
+        (el.react)(&beyond, None, &full),
+        Err(FemError::VertexOutOfRange {
+            vertex: out_of_range,
+            vertex_count: count,
+        }),
+        "{}: boundary data past the last node",
+        el.name
+    );
+
+    // `u = −2X` turns every element inside out: `F = −I`, `det F = −1`.
+    let (bc, inverted) = boundary_scene(el, |p| [-2.0 * p[0], -2.0 * p[1], -2.0 * p[2]]);
+    let flipped = solution_of(el, inverted);
+    let law = HyperelasticModel::NeoHookean { mu_mpa: fx(mu()) };
+    assert!(
+        matches!(
+            (el.react)(&bc, Some(law), &flipped),
+            Err(FemError::RotationFailed {
+                cause: PolarError::Inverted,
+                ..
+            })
+        ),
+        "{}: no hyperelastic law has a stress at det F < 0",
+        el.name
+    );
+    let linear = (el.react)(&bc, None, &flipped).expect("the small-strain path has no J");
+    assert_eq!(linear.len(), count);
+}
+
+#[test]
+fn p2_degenerate_inputs_are_refused() {
+    degenerate_inputs_are_refused_on(&quadratic(2, 2.0));
+}
+
+#[test]
+fn p3_degenerate_inputs_are_refused() {
+    degenerate_inputs_are_refused_on(&cubic(2, 3.0));
 }
