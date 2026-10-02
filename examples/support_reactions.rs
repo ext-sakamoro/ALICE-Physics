@@ -10,11 +10,13 @@
 //! cargo run --example support_reactions --features std
 //! ```
 
+use alice_physics::cubic_elastic_fem::{self, CubicMesh};
 use alice_physics::linear_elastic_fem::{
     corotational_reactions, reactions, solve, solve_corotational, BoundaryConditions,
     CorotationalConfig, ElasticMaterial, SolverConfig,
 };
 use alice_physics::math::Fix128;
+use alice_physics::quadratic_elastic_fem::{self, QuadraticMesh};
 use alice_physics::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
 
 /// Node index within an `(n+1)³` lattice.
@@ -127,6 +129,51 @@ fn main() {
         "interior node reaction   = {:?} N (free, so exactly zero)",
         support[interior as usize].map(Fix128::to_f64)
     );
+
+    // The same problem on the ten-node and twenty-node elements. The affine
+    // field is exact on every element, so all three read the same −700 N; the
+    // boundary set has to name the edge (and face) nodes on the box surface as
+    // well, which `node_position` makes a one-line test.
+    let far = h * n as f32;
+    let on_surface = |p: [Fix128; 3]| p.iter().any(|c| c.to_f32() <= 0.0 || c.to_f32() >= far);
+    let prescribe_surface = |count: usize, at: &dyn Fn(u32) -> Option<[Fix128; 3]>| {
+        let mut bc = BoundaryConditions::new();
+        for node in 0..u32::try_from(count).expect("fits") {
+            let p = at(node).expect("in range");
+            if on_surface(p) {
+                bc.prescribe_all(
+                    node,
+                    [strain * p[0], -(nu * strain * p[1]), -(nu * strain * p[2])],
+                );
+            }
+        }
+        bc
+    };
+
+    let p2 = QuadraticMesh::from_tet_mesh(&mesh).expect("no degenerate cell");
+    let p2_bc = prescribe_surface(p2.node_count(), &|i| p2.node_position(i));
+    let p2_field =
+        quadratic_elastic_fem::solve_quadratic(&p2, &material, &p2_bc, &SolverConfig::default())
+            .expect("well posed");
+    let p2_support = quadratic_elastic_fem::reactions(&p2, &material, &p2_bc, None, &p2_field)
+        .expect("one entry per node");
+    let p2_near: f64 = (0..p2.node_count())
+        .filter(|&i| p2.node_position(i as u32).expect("in range")[0].to_f32() <= 0.0)
+        .map(|i| p2_support[i][0].to_f64())
+        .sum();
+    println!("P2 x = 0 face reaction  ΣRx = {p2_near:.3} N");
+
+    let p3 = CubicMesh::from_tet_mesh(&mesh).expect("no degenerate cell");
+    let p3_bc = prescribe_surface(p3.node_count(), &|i| p3.node_position(i));
+    let p3_field = cubic_elastic_fem::solve_cubic(&p3, &material, &p3_bc, &SolverConfig::default())
+        .expect("well posed");
+    let p3_support = cubic_elastic_fem::reactions(&p3, &material, &p3_bc, None, &p3_field)
+        .expect("one entry per node");
+    let p3_near: f64 = (0..p3.node_count())
+        .filter(|&i| p3.node_position(i as u32).expect("in range")[0].to_f32() <= 0.0)
+        .map(|i| p3_support[i][0].to_f64())
+        .sum();
+    println!("P3 x = 0 face reaction  ΣRx = {p3_near:.3} N");
 
     // The same read for the co-rotational solver, on the case that formulation
     // exists for: a rigid rotation of the boundary. `R` is extracted per
