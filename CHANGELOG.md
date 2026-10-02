@@ -13,6 +13,13 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added — monolithic 組立の入口条件を計器つきで記録 / 越境 wire を 1 byte 刻みにする gate
+
+- `coupled_iteration` module doc: monolithic (Newton) 組立の入口条件 (`|λ_max| > 0.9` at handbook `c_v`、または clamp 由来でない `Stagnated`)、`c_v → λ_max` の実測表、開く経路 (断熱せん断帯 → 先に正則化)、要る部品 (非対称 Krylov / 疎行列直接法、ともに `src/` に 0 件) と「今は作らない」判断
+- `tests/analytic_thermoplastic_coupling.rs::the_monolithic_entry_condition_is_three_decades_away_at_real_heat_capacities` — 固定点での有限差分 Jacobian (deposit の support 上、刻みは `max δT / 64`) + 冪乗法で `λ_max` を測り表を印字する 鋼 `+3.01e-4` / アルミ `+4.74e-4` / PLA (概算) `+6.06e-4`、非物理 `2⁻¹⁰` MPa/K のみ `+0.9366` 2.3 s
+- `eulerian_grid` tests: `CrossFault::ChunkedWire` — `Read` / `Write` を 1 call 1 byte に刻む `Chunked<S>` 越しの 2 プロセス圧力解が単一プロセスと bit 一致 (8³ / 7³) 両 rank が「call 数 == byte 数 かつ 1 層分以上」を assert ⚠️ **byte 数だけの閾値は whole buffer を通す変異を見逃した** (実測、call 数で捕まえた) 変異 4/4 red (whole buffer 通過 / read 側のみ / write 側のみ / 計数なし)
+
+文面の確定: 複数ノード分散は **1 ホスト 8 プロセス loopback TCP で bit 一致 (arm64 / x86_64 別々に、fold は cross-arch 一致)**、2 ホスト / アーキ跨ぎの 1 solve / MPI backend は未測定・未実装
 ### Added — 共回転 FEM の超弾性に consistent tangent (`CorotationalConfig::with_consistent_tangent`)
 
 `solve_corotational` の Newton の接線を、共回転の線形接線 (修正 Newton の surrogate) から、**実装されている応力の接線**に替える opt-in を追加した 既定は従来どおりで、既存の超弾性の解は 1 bit も変わらない (`with_hyperelastic` を使わずに指定すると `InvalidConfig` で拒否する)

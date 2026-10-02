@@ -4629,6 +4629,15 @@ impl ThermoplasticCoupling {
     /// the negative eigenvalue showing in the transient while the positive one
     /// sets the tail.
     ///
+    /// ⚠️ The two heat capacities above are **non-physical** (chosen to make
+    /// the map slow enough to study). At handbook values the same instrument
+    /// reads `λ_max = +3.01e-4` for steel, `+4.74e-4` for aluminium and
+    /// `+6.06e-4` for PLA — three decades below the `0.9` at which a
+    /// monolithic assembly would pay for itself. The table, the instrument
+    /// (`tests/analytic_thermoplastic_coupling.rs::the_monolithic_entry_condition_is_three_decades_away_at_real_heat_capacities`)
+    /// and the decision not to build one are in
+    /// [`crate::coupled_iteration`]'s module doc.
+    ///
     /// `residual_floor_fraction` is the floor below which the residual is read
     /// as zero, as a **fraction of the magnitude the first sweep deposits**.
     ///
