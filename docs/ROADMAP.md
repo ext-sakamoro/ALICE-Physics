@@ -16,6 +16,14 @@ Memory index pointer: `[[reference-alice-physics-v1-roadmap]]` in claude-config.
 | Maxwell FDTD | `ecd8c61` | source-free Yee、⚠️ **SI は `ε₀·μ₀` が 7.7 bit で不可**、正規化単位 + `S=9/16` |
 | 多体 ABA | `1bab99b` | ⚠️ **`solve()` が `link.joint` を読まない**状態から real ABA、oracle 12 本 |
 
+### 第 23 increment (2026-10-02、壁の外側 (3) — Gartling の測定・解釈・refinement oracle)
+
+| 到達点 | 内容 |
+|---|---|
+| **測定** | 計器入り (`t_settle` / τ) で settled 列を取り直した MC 7.245648316 / 6.284727723 / 5.929261897、SL 4.392102491 / 4.723804024 / 5.318788133 (ny = 8 / 16 / 32、Courant 0.75、L = 16) ⚠️ ny=4 は漸近域外 (MC 6.166 < ny=8) |
+| **解釈** | 流出面距離は原因でない (ny=16 MC で L=16 vs L=32 が 3.2e-8 一致、気泡あり) / L=30 の差は projection の GS fallback / 文献 scene (`L=12`、`nx=96`、GS 30 sweep 明示) も GS で測られていた / τ は scheme 依存 (ny=16 で MC 73.1 / SL 32.5) ⚠️ 極限 τ は言わない |
+| **oracle** | bracket (ny=8/16、`runtime:`、1934 s、green) + 収束次数 (ny=8/16/32、**新区分 `manual:`**、約 4 h、手動で green) + 文献 oracle を L=16 / MG / settled scene に差し替え (red のまま `src gap:`、理由文は実測のみ) 判定は純関数 `judge_refinement`、歯は合成列 7 本 |
+| **6 % gap の現状** | ⛔ 未解消 MC の Richardson 外挿 ≈ 5.72 (比 0.370、**外挿**) で 6.10 は帯の外、残る候補は advection の数値粘性 / 壁・段差角の 1 次処理、ny=64 (半日級) は未測定 |
 ### 第 22 increment (2026-10-02、壁 4 — multigrid を slab 分割に載せる、段階 1)
 
 `eulerian_grid::multigrid_decomposed` (crate 内、新規子 module) を足した `project_pressure_multigrid` を `ranks` 本の連続 `z` slab に分け、halo 層を交換して W-cycle を回す プロセス内の rank (全長 buffer、`RankTransport` / `LocalTransport` を再利用) で、**単一 process の結果と bit 一致** (grid 8³ / 16×8×4 / 4×4×16 / 8×8×1 / 16³、rank 1〜16、開放 / 壁つき、`ranks > nz` を含む) 各 level の slab 境界を 2 の冪の倍数に取るので restriction / prolongation が rank 内で閉じる 層数が rank 数を下回る level は rank 0 に集約して単一 process の `mg_vcycle` を回し、補正を所有者に返す
