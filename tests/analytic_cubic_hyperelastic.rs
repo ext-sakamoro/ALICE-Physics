@@ -38,16 +38,20 @@
 //! Uniaxial tension of an isotropic hyperelastic solid: `F = diag(s, t, t)` with
 //! the lateral faces traction free. Writing `q = t²`, `J = s·q`, `B = F Fᵀ`,
 //! `I₁ = s² + 2q`, and the module's own volumetric completion
-//! `σ = (2/J)[(W₁ + I₁W₂)B − W₂B²] + [K(J−1) − p_ref]·I` with
-//! `p_ref = 2(W₁ + 2W₂)` at the undeformed state, `σ_tt = 0` gives
+//! `σ = (2/J)[(W₁ + I₁W₂)B − W₂B²] + [κ(J−1) − p_ref/J]·I` with
+//! `p_ref = 2(W₁ + 2W₂)` at the undeformed state, multiplying `σ_tt = 0` by `J`
+//! gives a quadratic in `q`
 //!
 //! ```text
-//! q = [K + 2C₁ + 4C₂ − 2C₁/s − 2sC₂] / [2C₂/s + K·s]
+//! (2C₂ + κs²) q² + (2C₁ + 2s²C₂ − κs) q − (2C₁ + 4C₂) = 0
 //! ```
 //!
-//! for a model whose `(W₁, W₂)` are the constants `(C₁, C₂)` — Neo-Hookean is
+//! (`q = 1` at `s = 1`, as it must). `κ` is the volumetric modulus the solver
+//! derives from the material, `κ = λ − 4C₂`: the value that makes the stress
+//! linearise to the enclosing solid's `λ`. This is for a model whose
+//! `(W₁, W₂)` are the constants `(C₁, C₂)` — Neo-Hookean is
 //! `C₁ = μ/2, C₂ = 0`, Mooney-Rivlin is `(C₁, C₂)` as given. Four operations and
-//! one square root, so the expectation is built without calling the solver's own
+//! two square roots, so the expectation is built without calling the solver's own
 //! stress routine.
 //!
 //! ⚠️ **Why the uniform state is an exact solution of the *discrete* problem.**
@@ -86,7 +90,7 @@ use alice_physics::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
 const SIDE: f64 = 4.0;
 /// Young's modulus (MPa) and Poisson's ratio of the enclosing isotropic solid.
 ///
-/// Only the bulk modulus `K = λ + 2μ/3` of this pair reaches the hyperelastic
+/// Only the Lamé constant `λ` of this pair reaches the hyperelastic
 /// path — it is what fixes the pressure an incompressible strain energy leaves
 /// free — but the same pair also drives the linear control, which is the point
 /// of using one material for both.
@@ -133,10 +137,12 @@ fn lame_f64() -> (f64, f64) {
     (lambda, mu)
 }
 
-/// `K = λ + 2μ/3`, the bulk modulus the solver derives from the material.
-fn bulk_f64() -> f64 {
-    let (lambda, mu) = lame_f64();
-    lambda + 2.0 * mu / 3.0
+/// `κ = λ − 4C₂`, the volumetric modulus the solver derives from the material
+/// for a model with constant `(W₁, W₂) = (C₁, C₂)`: it makes the stress
+/// linearise to the enclosing solid's `λ`.
+fn bulk_f64(c2: f64) -> f64 {
+    let (lambda, _) = lame_f64();
+    lambda - 4.0 * c2
 }
 
 fn linear_config() -> SolverConfig {
@@ -173,17 +179,19 @@ fn constant_energy_derivatives(model: &HyperelasticModel) -> (f64, f64) {
 /// Lateral stretch `t` and axial Cauchy stress `σ_xx` of uniaxial tension at
 /// axial stretch `s`, derived in the module doc.
 fn uniaxial_closed_form(model: &HyperelasticModel, s: f64) -> (f64, f64) {
-    let k = bulk_f64();
     let (c1, c2) = constant_energy_derivatives(model);
-    let numerator = k + 2.0 * c1 + 4.0 * c2 - 2.0 * c1 / s - 2.0 * s * c2;
-    let denominator = 2.0 * c2 / s + k * s;
-    let q = numerator / denominator;
+    let k = bulk_f64(c2);
+    // (2C2 + k s²) q² + (2C1 + 2 s² C2 − k s) q − (2C1 + 4C2) = 0, positive root.
+    let a = 2.0 * c2 + k * s * s;
+    let b = 2.0 * c1 + 2.0 * s * s * c2 - k * s;
+    let c = 2.0 * c1 + 4.0 * c2;
+    let q = (-b + (b * b + 4.0 * a * c).sqrt()) / (2.0 * a);
     let t = q.sqrt();
     let j = s * q;
     let i1 = s * s + 2.0 * q;
     let p_ref = 2.0 * (c1 + 2.0 * c2);
     let sigma_xx =
-        (2.0 / j) * ((c1 + i1 * c2) * s * s - c2 * s * s * s * s) + k * (j - 1.0) - p_ref;
+        (2.0 / j) * ((c1 + i1 * c2) * s * s - c2 * s * s * s * s) + k * (j - 1.0) - p_ref / j;
     (t, sigma_xx)
 }
 
@@ -413,10 +421,11 @@ fn the_cubic_gradient_of_an_affine_field_is_exact() {
         Vec3Fix::new(fx(a[0][1]), fx(1.0 + a[1][1]), fx(a[2][1])),
         Vec3Fix::new(fx(a[0][2]), fx(a[1][2]), fx(1.0 + a[2][2])),
     );
-    let (lambda, mu) = lame_f64();
+    let (lambda, _) = lame_f64();
+    let kappa =
+        alice_physics::hyperelastic::volumetric_modulus(&model, fx(lambda)).expect("kappa >= 0");
     let expected =
-        alice_physics::hyperelastic::cauchy_stress(&model, fx(lambda + 2.0 * mu / 3.0), f)
-            .expect("positive det F");
+        alice_physics::hyperelastic::cauchy_stress(&model, kappa, f).expect("positive det F");
 
     let mut worst = 0.0f64;
     for s in &solution.field.element_stress {
@@ -1056,4 +1065,33 @@ fn a_configuration_without_a_law_is_refused() {
         Err(FemError::InvalidConfig(_)) => {}
         other => panic!("expected InvalidConfig, got {other:?}"),
     }
+}
+
+/// A model whose small-strain `λ` offset exceeds the material's `λ` would need a
+/// negative volumetric modulus (`κ = λ − 8C₂ < 0` for Yeoh); the solve refuses it
+/// up front instead of running a law whose volumetric energy is not convex.
+#[test]
+fn a_negative_volumetric_modulus_is_refused() {
+    let (lambda, _) = lame_f64();
+    let model = HyperelasticModel::Yeoh {
+        c1_mpa: fx(1.0),
+        c2_mpa: fx(lambda / 8.0 + 0.5),
+        c3_mpa: fx(0.0),
+    };
+    let n = 2usize;
+    let h = SIDE / n as f64;
+    let tets = kuhn_cube(n, h, JITTER);
+    let mesh = CubicMesh::from_tet_mesh(&tets).expect("well formed");
+    let positions = node_positions(&mesh);
+    let bc = uniaxial_scene(&positions, STRETCH);
+    let refused = solve_cubic_hyperelastic(&mesh, &material(), &bc, &hyperelastic_config(model));
+    assert!(
+        matches!(
+            refused,
+            Err(alice_physics::linear_elastic_fem::FemError::InvalidConfig(
+                _
+            ))
+        ),
+        "kappa < 0 must be refused: {refused:?}"
+    );
 }

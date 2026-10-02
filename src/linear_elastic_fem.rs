@@ -1981,11 +1981,14 @@ impl CorotationalConfig {
     /// is 46 % of the linear value at a 125 % principal stretch, measured by the
     /// twins in `tests/analytic_corotational.rs`.
     ///
-    /// `μ` (or `C₁`, `C₂`, `C₃`) comes from `model`; the bulk modulus that fixes
-    /// the pressure comes from the [`ElasticMaterial`] passed to
-    /// [`solve_corotational`], as `K = λ + 2μ/3`. The two are therefore allowed
-    /// to disagree, and nothing checks that they describe the same solid — that
-    /// is the caller's to keep straight.
+    /// `μ` (or `C₁`, `C₂`, `C₃`) comes from `model`; the volumetric modulus that
+    /// fixes the pressure comes from the [`ElasticMaterial`] passed to
+    /// [`solve_corotational`], as `κ = λ − offset(model)` so that the stress
+    /// linearises to that solid's `λ`. A model whose offset exceeds `λ`
+    /// (`λ < 4C₂` Mooney-Rivlin, `λ < 8C₂` Yeoh) is refused with
+    /// [`FemError::InvalidConfig`]. `μ` is not cross-checked: the model's and the
+    /// material's may disagree, and keeping them the same solid is the caller's to
+    /// do.
     ///
     /// # ⚠️ What it costs
     ///
@@ -2196,6 +2199,77 @@ fn corotational_local_stress(
         yz: mu * gyz,
         zx: mu * gzx,
     }
+}
+
+/// What the modified Newton step becomes once the residual line search has
+/// answered: the accepted point when it found one, otherwise the full step pulled
+/// back only as far as regularity needs ([`step_stays_regular`]), which is what
+/// the iteration did before it had a line search.
+fn settle_step(
+    elements: &[Element],
+    previous: &[Fix128],
+    next: &mut [Fix128],
+    accepted: Option<Vec<Fix128>>,
+) {
+    match accepted {
+        Some(moved) => next.copy_from_slice(&moved),
+        None => step_stays_regular(elements, previous, next),
+    }
+}
+
+/// Largest number of halvings [`step_stays_regular`] tries.
+const REGULARITY_BACKTRACKS: u32 = 16;
+
+/// `true` when every element of `u` has `det F` above the polar floor, i.e. the
+/// next pass can build its frames.
+fn all_elements_regular(elements: &[Element], u: &[Fix128]) -> bool {
+    elements
+        .iter()
+        .all(|e| deformation_gradient(e, &gather(e, u)).determinant() > POLAR_DET_FLOOR)
+}
+
+/// Pulls `next` back toward `previous` — `previous + 2⁻ᵏ (next − previous)` for
+/// the smallest `k ≤ 16` — until no element is inverted or degenerate.
+///
+/// `previous` must itself be regular; with it that is a state the iteration just
+/// built frames from. When even `k = 16` is not regular `next` is left at that
+/// last point, so the caller meets the refusal instead of a silent success.
+fn step_stays_regular(elements: &[Element], previous: &[Fix128], next: &mut [Fix128]) {
+    if all_elements_regular(elements, next) {
+        return;
+    }
+    let full: Vec<Fix128> = next.to_vec();
+    for k in 1..=REGULARITY_BACKTRACKS {
+        let alpha = Fix128::from_raw(0, 1u64 << (64 - k));
+        for ((n, p), f) in next.iter_mut().zip(previous.iter()).zip(full.iter()) {
+            *n = *p + (*f - *p) * alpha;
+        }
+        if all_elements_regular(elements, next) {
+            return;
+        }
+    }
+}
+
+/// The volumetric modulus `κ` a hyperelastic solve runs its model under, for a
+/// solid whose Lamé constant is `lambda`: `κ = λ − offset(model)`
+/// ([`crate::hyperelastic::volumetric_modulus`]).
+///
+/// With it the stress linearises to `λ` for every model; the previous
+/// `K = λ + 2μ/3` left `A₁₁₁₁(I) = λ + 5μ/3` against the linear `λ + 2μ`.
+/// Shared by the P1, P2 and P3 solvers so that one wrong copy cannot hide.
+///
+/// # Errors
+///
+/// [`FemError::InvalidConfig`] when `κ < 0` (`λ < 4C₂` for Mooney-Rivlin,
+/// `λ < 8C₂` for Yeoh). `κ ≥ 0` is sufficient for the volumetric energy to be
+/// convex, not necessary, so this refuses conservatively.
+pub(crate) fn hyperelastic_volumetric_modulus(
+    model: &HyperelasticModel,
+    lambda: Fix128,
+) -> Result<Fix128, FemError> {
+    crate::hyperelastic::volumetric_modulus(model, lambda).ok_or(FemError::InvalidConfig(
+        "hyperelastic model needs lambda >= 4*C2 (Mooney-Rivlin) or 8*C2 (Yeoh): volumetric modulus would be negative",
+    ))
 }
 
 /// `σ` and `P = J σ F⁻ᵀ` for one element under a hyperelastic law, or `None`
@@ -2700,14 +2774,15 @@ pub fn solve_corotational(
 
     let elements = build_elements(mesh)?;
     let (lambda, mu) = material.lame();
-    // `K = λ + 2μ/3` — the bulk modulus of the same isotropic solid, which is
-    // what fixes the pressure an incompressible strain energy leaves free. The
+    // `κ = λ − offset(model)` — the volumetric modulus that makes the stress
+    // linearise to this solid's `λ`; see `hyperelastic_volumetric_modulus`. The
     // deviatoric response comes from the model in the configuration, so the two
     // are free to describe different solids; see
     // [`CorotationalConfig::with_hyperelastic`].
     let law = config
         .material
-        .map(|model| (model, lambda + (mu + mu) / Fix128::from_int(3)));
+        .map(|model| hyperelastic_volumetric_modulus(&model, lambda).map(|k| (model, k)))
+        .transpose()?;
     if config.consistent_tangent() && law.is_none() {
         return Err(FemError::InvalidConfig(
             "consistent_tangent needs a hyperelastic law (with_hyperelastic)",
@@ -2982,13 +3057,42 @@ pub fn solve_corotational(
             cg_iterations = cg_iterations.saturating_add(cg.iterations);
             relative_residual = relative(cg.residual_norm, cg.b_norm);
             effective_relative_tolerance = relative(cg.target, cg.b_norm);
-            for (d, value) in u.iter_mut().enumerate() {
-                *value = if is_free[d] {
-                    cg.x[d]
-                } else {
-                    boundary_field[d]
+            let mut next: Vec<Fix128> = (0..ndof)
+                .map(|d| {
+                    if is_free[d] {
+                        cg.x[d]
+                    } else {
+                        boundary_field[d]
+                    }
+                })
+                .collect();
+            // ⚠️ **Globalisation for a material law.** The step is exact for the
+            // *linear* law and only a surrogate for a hyperelastic one, whose
+            // tangent leaves the surrogate as the stretch grows: a full step can
+            // land on a state with an inverted element, and the next pass then
+            // has no frame to build. `u` is a valid candidate here (its frames
+            // were just built, `step > 0`), so the step is halved toward it until
+            // every element is regular again. The linear law is untouched: its
+            // step is exact and `step_stays_regular` is never asked.
+            if law.is_some() && step > 0 {
+                let assembly = Assembly {
+                    elements: &elements,
+                    rotations: &rotations,
+                    lame: (lambda, mu),
+                    is_free: &is_free,
                 };
+                let mut probe = vec![Fix128::ZERO; ndof];
+                corotational_residual(&assembly, &u, &f_ext, law, &mut probe)?;
+                let before = max_abs(&probe);
+                let delta: Vec<Fix128> = next.iter().zip(u.iter()).map(|(n, p)| *n - *p).collect();
+                let accepted = consistent_tangent::backtrack(before, &u, &delta, &is_free, |t| {
+                    corotational_residual(&assembly, t, &f_ext, law, &mut probe)
+                        .ok()
+                        .map(|()| max_abs(&probe))
+                });
+                settle_step(&elements, &u, &mut next, accepted);
             }
+            u.copy_from_slice(&next);
             step += 1;
             newton_iterations = newton_iterations.saturating_add(1);
         }
@@ -3113,10 +3217,11 @@ pub fn corotational_reactions(
     let vertex_count = check_reaction_inputs(mesh, boundary, solution.field.displacements.len())?;
     let elements = build_elements(mesh)?;
     let (lambda, mu) = material.lame();
-    // The same bulk modulus `solve_corotational` pairs the model with.
+    // The same volumetric modulus `solve_corotational` pairs the model with.
     let law = config
         .material
-        .map(|model| (model, lambda + (mu + mu) / Fix128::from_int(3)));
+        .map(|model| hyperelastic_volumetric_modulus(&model, lambda).map(|k| (model, k)))
+        .transpose()?;
     let ndof = vertex_count * 3;
 
     let u = flatten(&solution.field.displacements);
@@ -5297,6 +5402,88 @@ mod tests {
     use super::*;
     use crate::hyperelastic::cauchy_stress;
 
+    /// One tetrahedron `(0,0,0) (1,0,0) (0,1,0) (0,0,1)`: `F_zz = 1 + u_z` of
+    /// vertex 3, and `det F = F_zz`, so regularity is a statement about one dof.
+    fn single_tet_elements() -> Vec<Element> {
+        let mesh = SdfTetMesh {
+            vertices: vec![
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [0.0, 0.0, 1.0],
+            ],
+            tets: vec![crate::sdf_fem_mesh::Tetrahedron {
+                vertices: [0, 1, 2, 3],
+            }],
+        };
+        build_elements(&mesh).expect("a regular tetrahedron")
+    }
+
+    const UZ3: usize = 11;
+
+    /// A step that inverts the element is pulled back along the segment by the
+    /// first `2⁻ᵏ` that makes it regular. `u_z = −2 + 2⁻²⁹`: `k = 1` lands on
+    /// `det F = 2⁻³⁰`, positive but **below the polar floor** (`2⁻²⁰`), so it is
+    /// refused too — a floor of zero would stop there; `k = 2` is the first
+    /// regular point, `−1/2 + 2⁻³¹`.
+    #[test]
+    fn a_step_that_inverts_an_element_is_halved_until_it_is_regular() {
+        let elements = single_tet_elements();
+        let previous = vec![Fix128::ZERO; 12];
+        let mut next = previous.clone();
+        next[UZ3] = Fix128::from_int(-2) + Fix128::from_raw(0, 1 << 35);
+        step_stays_regular(&elements, &previous, &mut next);
+        assert_eq!(
+            next[UZ3],
+            Fix128::from_ratio(-1, 2) + Fix128::from_raw(0, 1 << 33)
+        );
+        assert!(all_elements_regular(&elements, &next));
+    }
+
+    /// The line search's answer is taken as it is; without one the full step is
+    /// pulled back only for regularity.
+    #[test]
+    fn settle_step_takes_the_accepted_point_or_falls_back_to_regularity() {
+        let elements = single_tet_elements();
+        let previous = vec![Fix128::ZERO; 12];
+        let mut full = previous.clone();
+        full[UZ3] = Fix128::from_int(-2);
+        let mut accepted_point = previous.clone();
+        accepted_point[UZ3] = Fix128::from_ratio(1, 8);
+
+        let mut next = full.clone();
+        settle_step(&elements, &previous, &mut next, Some(accepted_point));
+        assert_eq!(next[UZ3], Fix128::from_ratio(1, 8));
+
+        let mut next = full;
+        settle_step(&elements, &previous, &mut next, None);
+        assert_eq!(next[UZ3], Fix128::from_ratio(-1, 2));
+    }
+
+    /// A regular step is not touched, bit for bit.
+    #[test]
+    fn a_regular_step_is_left_alone() {
+        let elements = single_tet_elements();
+        let previous = vec![Fix128::ZERO; 12];
+        let mut next = previous.clone();
+        next[UZ3] = Fix128::from_ratio(1, 4);
+        step_stays_regular(&elements, &previous, &mut next);
+        assert_eq!(next[UZ3], Fix128::from_ratio(1, 4));
+    }
+
+    /// When no `2⁻ᵏ` with `k ≤ 16` is regular the step ends at the shortest one
+    /// tried, which is still refused downstream — it is not silently accepted.
+    #[test]
+    fn a_step_that_never_becomes_regular_ends_at_the_shortest_trial() {
+        let elements = single_tet_elements();
+        let previous = vec![Fix128::ZERO; 12];
+        let mut next = previous.clone();
+        next[UZ3] = Fix128::from_int(-(1 << 20));
+        step_stays_regular(&elements, &previous, &mut next);
+        assert_eq!(next[UZ3], Fix128::from_int(-16));
+        assert!(!all_elements_regular(&elements, &next));
+    }
+
     /// A matrix from its **rows**, each entry a rational `(numerator,
     /// denominator)`, which is how the derivations in this module are written.
     ///
@@ -5527,7 +5714,7 @@ mod tests {
     /// ```text
     /// B      = F Fᵀ = [[17/4, 1/4, 0], [1/4, 1/4, 0], [0, 0, 1]]
     /// W₁     = μ/2, W₂ = 0, p_ref = 2(W₁ + 2W₂) = μ,  J = 1
-    /// σ      = (2/J)·W₁·B + (K(J−1) − p_ref)·I = μ(B − I)
+    /// σ      = (2/J)·W₁·B + (κ(J−1) − p_ref/J)·I = μ(B − I)
     ///        = [[3250, 250, 0], [250, −750, 0], [0, 0, 0]]
     /// F⁻ᵀ    = [[1/2, 0, 0], [−1/2, 2, 0], [0, 0, 1]]
     /// P      = J σ F⁻ᵀ = [[1500, 500, 0], [500, −1500, 0], [0, 0, 0]]

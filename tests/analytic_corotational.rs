@@ -1125,7 +1125,7 @@ fn the_corotational_linear_law_is_what_the_element_returns_without_a_material() 
 ///
 /// This test puts a 200 N load on the single node at the centre of the cube, with
 /// the same isochoric boundary data. The field is then inhomogeneous, the two laws
-/// disagree about it, and the iteration has to work: measured **181 Newton steps**
+/// disagree about it, and the iteration has to work: measured **27 Newton steps**
 /// against the linear law's 84.
 ///
 /// # ⚠️ What is asserted, and why `Ok` is the strong part
@@ -1142,9 +1142,9 @@ fn the_corotational_linear_law_is_what_the_element_returns_without_a_material() 
 /// Two more measurements are pinned because they are what separate "the law is in
 /// the step" from "the law is in the report":
 ///
-/// - the answer moves by `9.173e-3 mm` from the linear law's, four orders above
+/// - the answer moves by `8.658e-3 mm` from the linear law's, four orders above
 ///   the `2.3e-10 mm` the affine scene shows;
-/// - it does **not** move with the increment count — `9.356e-11 mm` between one
+/// - it does **not** move with the increment count — `1.339e-9 mm` between one
 ///   increment and two, five orders below the law gap, which says the iteration
 ///   is converging to a root rather than stopping where the path left it. ⚠️ It
 ///   is not *zero*: unlike the linear law's exact step, this one stops on a
@@ -1726,8 +1726,8 @@ fn solve_cube(
 
 /// **Oracle: the same root, in a handful of steps.** The consistent tangent
 /// changes how many steps, not where they land, so its field must be the
-/// modified iteration's. Measured: 1.6e-9 mm apart at 200 N (both stop on a
-/// `2⁻³⁰` residual), 3 steps against 181.
+/// modified iteration's. Measured: 2.3e-9 mm apart at 200 N (both stop on a
+/// `2⁻³⁰` residual), 3 steps against 27.
 #[test]
 fn the_consistent_tangent_lands_on_the_modified_newton_root_in_a_handful_of_steps() {
     let modified = solve_cube(200.0, 1, 512, neo_hookean_model(), false).expect("modified, 200 N");
@@ -1746,9 +1746,11 @@ fn the_consistent_tangent_lands_on_the_modified_newton_root_in_a_handful_of_step
         "same material, same load, different roots: {gap:.3e} mm apart"
     );
     assert!(
-        modified.newton_iterations >= 100,
-        "the premise of the comparison is that the modified iteration is slow here; it took {}",
-        modified.newton_iterations
+        modified.newton_iterations >= 4 * consistent.newton_iterations,
+        "the premise of the comparison is that the modified iteration is slower here; \
+         it took {} against {}",
+        modified.newton_iterations,
+        consistent.newton_iterations
     );
     assert!(
         consistent.newton_iterations <= 8,
@@ -1758,9 +1760,8 @@ fn the_consistent_tangent_lands_on_the_modified_newton_root_in_a_handful_of_step
 }
 
 /// **Oracle: 2000 N in a handful of steps, and independent of the increment
-/// count.** The modified iteration needs 758 steps here (budget 256 is not
-/// enough). With the consistent tangent the answer does not move when the load
-/// is applied in two increments instead of one: measured 6.5e-13 mm apart, four
+/// count.** The modified iteration needs 32 steps here. With the consistent tangent the answer does not move when the load
+/// is applied in two increments instead of one: measured 1.1e-13 mm apart, four
 /// orders tighter than the modified iteration's `1e-8` bound.
 #[test]
 fn the_consistent_tangent_reaches_2000_n_in_a_handful_of_steps_whatever_the_increments() {
@@ -1782,14 +1783,16 @@ fn the_consistent_tangent_reaches_2000_n_in_a_handful_of_steps_whatever_the_incr
         gap < 1e-9,
         "the root must not depend on the increment path: {gap:.3e} mm"
     );
-    // Characterisation of what this replaces: the modified iteration runs out of
-    // a 256-step budget at this load (it needs 758).
+    // What this replaces: the modified iteration, which needs 32 steps here
+    // (with its line search; 758 before the volumetric term was fixed, and it
+    // does not converge at all without the line search).
+    let modified =
+        solve_cube(2000.0, 1, 512, neo_hookean_model(), false).expect("modified, 2000 N");
     assert!(
-        matches!(
-            solve_cube(2000.0, 1, 256, neo_hookean_model(), false),
-            Err(alice_physics::linear_elastic_fem::FemError::NotConverged { .. })
-        ),
-        "the modified iteration is expected to need more than 256 steps at 2000 N"
+        modified.newton_iterations >= 4 * one.newton_iterations,
+        "the modified iteration took {} steps against {}",
+        modified.newton_iterations,
+        one.newton_iterations
     );
 }
 
@@ -1968,4 +1971,96 @@ fn the_consistent_tangent_reports_a_budget_it_cannot_meet() {
             "budget {budget}: {result:?}"
         );
     }
+}
+
+// ===========================================================================
+// The small-strain limit of the hyperelastic law
+// ===========================================================================
+
+/// **Oracle: the hyperelastic and the linear solve agree to second order.**
+///
+/// The law's small-strain limit is the linear solid with the model's `μ` and the
+/// material's `λ` — that is what the volumetric term `κ(J−1) − p_ref/J` with
+/// `κ = λ − offset` is for. So a load `L·2⁻ᵏ` on a bar gives displacements that
+/// differ by a gap which falls as `L²`, i.e. **by a factor of four** per halving.
+/// With the previous volumetric term (`K = λ + 2μ/3`, `A₁₁₁₁(I) = λ + 5μ/3`) the
+/// solid was `μ/3` too soft in the bulk and the gap fell only as `L`: a factor
+/// of two per halving.
+///
+/// The cube is clamped on `x = 0` and loaded on `x = SIDE` with the same total
+/// force spread over its nodes; both solves are geometrically non-linear
+/// (co-rotational), so the gap that is left is the finite-strain one.
+#[test]
+fn the_hyperelastic_solve_approaches_the_linear_one_to_second_order() {
+    let mesh = kuhn_cube(4, SIDE / 4.0);
+    let on_face = |v: u32, x: f64| (vert(&mesh, v)[0] - x).abs() < SIDE * 1e-9;
+    let nodes = u32::try_from(mesh.vertex_count()).expect("fits");
+    let face: Vec<u32> = (0..nodes).filter(|&v| on_face(v, SIDE)).collect();
+    let bc_at = |load: f64| {
+        let mut bc = BoundaryConditions::new();
+        for v in (0..nodes).filter(|&v| on_face(v, 0.0)) {
+            bc.prescribe_all(v, [Fix128::ZERO; 3]);
+        }
+        for &v in &face {
+            bc.add_load(v, Axis::X, fx(load / face.len() as f64));
+        }
+        bc
+    };
+    let gap_at = |load: f64| {
+        let bc = bc_at(load);
+        let linear = solve(
+            &mesh,
+            &pla(),
+            &bc,
+            &SolverConfig::try_new(200_000, Fix128::from_raw(0, 1 << 34)).expect("valid"),
+        )
+        .expect("the small-strain solve converges");
+        let config = corotational_config_with_newton_budget(1, 512)
+            .with_hyperelastic(neo_hookean_model())
+            .with_consistent_tangent();
+        let law = solve_corotational(&mesh, &pla(), &bc, &config)
+            .unwrap_or_else(|e| panic!("load {load}: {e:?}"));
+        field_gap(&linear.displacements, &law.field.displacements)
+    };
+    let gaps: Vec<f64> = (0..4).map(|k| gap_at(4000.0 / f64::from(1 << k))).collect();
+    eprintln!("  load 4000/2^k: |u_linear − u_hyperelastic| = {gaps:?}");
+    for pair in gaps.windows(2) {
+        assert!(
+            pair[1] < 0.35 * pair[0],
+            "halving the load must cut the gap by about four (second order); \
+             it went from {:.3e} to {:.3e}, ratio {:.3}",
+            pair[0],
+            pair[1],
+            pair[1] / pair[0]
+        );
+    }
+}
+
+/// `κ = λ − 8C₂ < 0` for Yeoh: refused up front, not run as a law whose
+/// volumetric energy is not convex. `κ = 0` exactly is allowed.
+#[test]
+fn a_negative_volumetric_modulus_is_refused() {
+    let (lambda, _) = lame();
+    let (mesh, loaded) = centre_loaded_cube(0.0);
+    let yeoh = |c2: f64| HyperelasticModel::Yeoh {
+        c1_mpa: fx(1.0),
+        c2_mpa: fx(c2),
+        c3_mpa: fx(0.0),
+    };
+    let solve_with = |model| {
+        let config = corotational_config_with_newton_budget(1, 64).with_hyperelastic(model);
+        solve_corotational(&mesh, &pla(), &loaded, &config)
+    };
+    let refused = solve_with(yeoh(lambda / 8.0 + 0.5));
+    assert!(
+        matches!(refused, Err(FemError::InvalidConfig(_))),
+        "kappa < 0 must be refused: {refused:?}"
+    );
+    // just inside the bound the law is accepted (the solve may or may not
+    // converge on this scene; what matters is that it is not refused as config)
+    let accepted = solve_with(yeoh(lambda / 8.0 - 0.5));
+    assert!(
+        !matches!(accepted, Err(FemError::InvalidConfig(_))),
+        "kappa > 0 must not be refused as a configuration: {accepted:?}"
+    );
 }
