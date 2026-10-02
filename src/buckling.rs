@@ -32,14 +32,12 @@
 //! # Integration status
 //!
 //! `analyze_column`, `ColumnBucklingReport`, and `BucklingRegime` are
-//! wired into `structural_solver.rs`. All other helpers (radius of
-//! gyration, slenderness helpers, plate/snap-through) are reserved
-//! crate-internal API — used by `analyze_column` internally but not
-//! publicly composable pending downstream integration.
-
-// Reserved buckling helpers (radius_of_gyration, slenderness, plate/snap
-// formulas) — pub(crate) but currently used only by analyze_column + tests.
-#![allow(dead_code)]
+//! wired into `structural_solver.rs`. The radius-of-gyration / slenderness
+//! helpers are crate-internal and reached through `analyze_column`.
+//! `plate_buckling_mpa` (local wall buckling of a hollow section) and
+//! `snap_through_load_n` (shallow arch / clip) have no consumer in the 1-D
+//! beam life loop; they carry an `ALLOW-UNWIRED` debt marker and their
+//! closed-form oracles live in this module's unit tests.
 
 use crate::beam_stress::{ColumnEndCondition, CrossSection};
 use crate::filament_db::MaterialProperties;
@@ -204,6 +202,12 @@ pub fn analyze_column(
 /// - `b`: plate width (short dimension).
 /// - `t`: plate thickness.
 /// - `k`: geometric factor (simply supported all edges = 4, one edge free = 0.425).
+///
+/// Returns 0 when `width_mm` is zero or when `poisson` is ±1 (the
+/// `1 − ν²` denominator vanishes); both are degenerate inputs, not plates.
+// ALLOW-DEAD: pub(crate) with no crate caller, same debt as the ALLOW-UNWIRED marker below
+// ALLOW-UNWIRED: wiring debt Backlog structural-pub-crate-residue (local wall buckling waits for a 2-D structural_solver), oracle src/buckling.rs tests::plate_buckling_matches_timoshenko_closed_form
+#[allow(dead_code)]
 #[must_use]
 pub(crate) fn plate_buckling_mpa(
     e_mpa: Fix128,
@@ -230,31 +234,73 @@ pub(crate) fn plate_buckling_mpa(
 // Snap-through buckling
 // ============================================================================
 
-/// Critical downward load for snap-through of a shallow (low-rise) arch or
-/// clip feature (Bažant & Cedolin §5).
+/// Limit (snap-through) load of a shallow two-bar truss or clip feature of
+/// rise `h`, span `L`, cross-section area `A` and Young's modulus `E`.
 ///
-/// Approximate formula for a two-hinged arch of rise `h`, half-span `L/2`,
-/// cross-section area `A`, Young's modulus `E`:
+/// The two bars of length `L₀ = √(a² + h²)`, `a = L/2`, carry the apex at
+/// height `y`; with the shallow strain `ε ≈ (y² − h²)/(2a²)` and the bar
+/// force `N = E A ε` the vertical balance at the apex is
+/// `P(y) = E A (h² − y²) y / a³`, stationary at `y = h/√3`, so
 ///
-/// `P_snap ≈ 3.72 · E · A · (h / L)²`
+/// `P_max = (2 / (3√3)) · E A · (h/a)³ = (16 / (3√3)) · E A · (h/L)³ ≈ 3.079 · E A · (h/L)³`
 ///
-/// Coefficient is empirically derived assuming h/L ≤ 0.2. For deeper arches
-/// the Roark full solution should be used.
-#[must_use]
+/// (the classical von Mises truss, Bažant & Cedolin, two-bar truss). The cube
+/// is structural: it comes from the geometric nonlinearity of the strain.
+/// ⚠️ Before 2026-10-03 this function returned `3.72 · E A · (h/L)²`, a form
+/// whose source could not be reconstructed (a square law with a constant
+/// coefficient arises for arches with bending stiffness, not for an `E A`
+/// truss); the unit test of that version pinned the wrong law as a golden
+/// value. The shallow approximation is good to `O((h/a)²)`; the exact
+/// `P(y) = 2 E A (L₀/L(y) − 1) · y/L(y)` is what the unit tests compare
+/// against.
+///
+/// A flat truss (`rise_mm == 0`) has no snap-through and returns `Ok(0)`.
+///
+/// # Errors
+///
+/// [`SnapThroughError::NonPositiveSpan`] for `span_mm ≤ 0` (the ratio
+/// `h/L` is undefined; before 2026-10-03 a zero span returned a silent
+/// `0 N`, which a caller cannot tell from a flat truss),
+/// [`SnapThroughError::NonPositiveStiffness`] for `e_mpa ≤ 0` or
+/// `section_area_mm2 ≤ 0` (no bar to buckle),
+/// [`SnapThroughError::NegativeRise`] for `rise_mm < 0` (the apex would be
+/// below the supports, so the load is a pull-through, not this formula).
+// ALLOW-DEAD: pub(crate) with no crate caller, same debt as the ALLOW-UNWIRED marker below
+// ALLOW-UNWIRED: wiring debt Backlog structural-pub-crate-residue (snap-through has no arch in the 1-D beam loop), oracle src/buckling.rs tests::snap_through_is_the_shallow_limit_of_the_exact_truss
+#[allow(dead_code)]
 pub(crate) fn snap_through_load_n(
     e_mpa: Fix128,
     section_area_mm2: Fix128,
     rise_mm: Fix128,
     span_mm: Fix128,
-) -> Fix128 {
-    if span_mm.is_zero() {
-        return Fix128::ZERO;
+) -> Result<Fix128, SnapThroughError> {
+    if span_mm <= Fix128::ZERO {
+        return Err(SnapThroughError::NonPositiveSpan);
     }
-    // 3.72 · E · A · (h/L)²
+    if e_mpa <= Fix128::ZERO || section_area_mm2 <= Fix128::ZERO {
+        return Err(SnapThroughError::NonPositiveStiffness);
+    }
+    if rise_mm < Fix128::ZERO {
+        return Err(SnapThroughError::NegativeRise);
+    }
+    // (16 / (3√3)) · E · A · (h/L)³
     let ratio = rise_mm / span_mm;
-    let ratio2 = ratio * ratio;
-    // 3.72 ≈ 372 / 100
-    Fix128::from_ratio(372, 100) * e_mpa * section_area_mm2 * ratio2
+    let ratio3 = ratio * ratio * ratio;
+    let coefficient = Fix128::from_int(16) / (Fix128::from_int(3) * Fix128::from_int(3).sqrt());
+    Ok(coefficient * e_mpa * section_area_mm2 * ratio3)
+}
+
+/// Why [`snap_through_load_n`] could not answer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+// ALLOW-DEAD: carried by snap_through_load_n, same debt (structural-pub-crate-residue)
+#[allow(dead_code)]
+pub(crate) enum SnapThroughError {
+    /// `span_mm ≤ 0`: the rise ratio `h/L` is undefined.
+    NonPositiveSpan,
+    /// `e_mpa ≤ 0` or `section_area_mm2 ≤ 0`: there is no bar.
+    NonPositiveStiffness,
+    /// `rise_mm < 0`: the apex is below the supports.
+    NegativeRise,
 }
 
 // ============================================================================
@@ -490,31 +536,179 @@ mod tests {
         ));
     }
 
+    /// Oracle: Timoshenko & Gere eq. 8.8 evaluated by hand in f64,
+    /// `σ_cr = k·π²·E / (12·(1 − ν²)) · (t/b)²` with `k = 4`, `E = 3500 MPa`,
+    /// `ν = 0.35`, `t = 1 mm`, `b = 20 mm`:
+    /// `4·π²·3500 / (12·0.8775) · 0.0025 = 32.8050 MPa`.
     #[test]
-    fn snap_through_zero_span_is_zero() {
-        let p = snap_through_load_n(
+    fn plate_buckling_matches_timoshenko_closed_form() {
+        let got = plate_buckling_mpa(
             Fix128::from_int(3500),
-            Fix128::from_int(10),
-            Fix128::from_int(2),
-            Fix128::ZERO,
-        );
-        assert_eq!(p, Fix128::ZERO);
+            Fix128::from_ratio(35, 100),
+            Fix128::from_int(1),
+            Fix128::from_int(20),
+            Fix128::from_int(4),
+        )
+        .to_f64();
+        let pi = core::f64::consts::PI;
+        let want =
+            4.0 * pi * pi * 3500.0 / (12.0 * (1.0 - 0.35 * 0.35)) * (1.0 / 20.0) * (1.0 / 20.0);
+        assert!(((got - want) / want).abs() < 1e-9, "got {got}, want {want}");
     }
 
+    /// Degenerate inputs documented on `plate_buckling_mpa`: zero width and
+    /// `ν = ±1` return 0 (early return, not a division by zero); zero
+    /// thickness and zero modulus give 0 through the formula itself.
+    #[test]
+    fn plate_buckling_degenerate_inputs_return_zero() {
+        let e = Fix128::from_int(3500);
+        let nu = Fix128::from_ratio(35, 100);
+        let one = Fix128::ONE;
+        let k = Fix128::from_int(4);
+        assert_eq!(
+            plate_buckling_mpa(e, nu, one, Fix128::ZERO, k),
+            Fix128::ZERO
+        );
+        assert_eq!(
+            plate_buckling_mpa(e, one, one, Fix128::from_int(20), k),
+            Fix128::ZERO
+        );
+        assert_eq!(
+            plate_buckling_mpa(e, Fix128::NEG_ONE, one, Fix128::from_int(20), k),
+            Fix128::ZERO
+        );
+        assert_eq!(
+            plate_buckling_mpa(e, nu, Fix128::ZERO, Fix128::from_int(20), k),
+            Fix128::ZERO
+        );
+        assert_eq!(
+            plate_buckling_mpa(Fix128::ZERO, nu, one, Fix128::from_int(20), k),
+            Fix128::ZERO
+        );
+    }
+
+    /// Degenerate inputs for `snap_through_load_n`: a flat truss (zero rise)
+    /// is `Ok(0)` (no snap-through exists), zero or negative area / modulus
+    /// are `NonPositiveStiffness`, a negative rise is `NegativeRise`, and a
+    /// zero or negative span is `NonPositiveSpan` rather than the silent
+    /// `0 N` of the pre-2026-10-03 version (which `Fix128`'s zero division
+    /// would also have produced without any guard).
+    #[test]
+    fn snap_through_degenerate_inputs() {
+        let e = Fix128::from_int(3500);
+        let a = Fix128::from_int(10);
+        let h = Fix128::from_int(2);
+        let l = Fix128::from_int(20);
+        let neg = Fix128::from_int(-1);
+        assert_eq!(snap_through_load_n(e, a, Fix128::ZERO, l), Ok(Fix128::ZERO));
+        assert_eq!(
+            snap_through_load_n(e, Fix128::ZERO, h, l),
+            Err(SnapThroughError::NonPositiveStiffness)
+        );
+        assert_eq!(
+            snap_through_load_n(Fix128::ZERO, a, h, l),
+            Err(SnapThroughError::NonPositiveStiffness)
+        );
+        assert_eq!(
+            snap_through_load_n(e, neg, h, l),
+            Err(SnapThroughError::NonPositiveStiffness)
+        );
+        assert_eq!(
+            snap_through_load_n(e, a, neg, l),
+            Err(SnapThroughError::NegativeRise)
+        );
+        assert_eq!(
+            snap_through_load_n(e, a, h, Fix128::ZERO),
+            Err(SnapThroughError::NonPositiveSpan)
+        );
+        assert_eq!(
+            snap_through_load_n(e, a, h, neg),
+            Err(SnapThroughError::NonPositiveSpan)
+        );
+    }
+
+    /// Oracle: `P_max = (16/(3√3)) · E A · (h/L)³` by hand.
+    /// E = 3500 MPa, A = 10 mm², h = 2, L = 20 (h/L = 0.1):
+    /// `3.0792014356780038 · 3500 · 10 · 0.001 = 107.772050 N`.
+    /// The earlier golden (1302 N) pinned the square law this function used
+    /// to return; it is kept here as the value that must NOT come back.
     #[test]
     fn snap_through_shallow_arch() {
-        // E=3500, A=10 mm², rise=2, span=20 → h/L=0.1
-        // P = 3.72 · 3500 · 10 · 0.01 = 1302 N
         let p = snap_through_load_n(
             Fix128::from_int(3500),
             Fix128::from_int(10),
             Fix128::from_int(2),
             Fix128::from_int(20),
+        )
+        .unwrap();
+        let want = 3.079_201_435_678_003_8_f64 * 3500.0 * 10.0 * 0.001;
+        assert!(
+            (p.to_f64() - want).abs() < 1e-9 * want,
+            "got {} N, closed form {want} N",
+            p.to_f64()
         );
         assert!(
-            approx_eq(p, Fix128::from_int(1302), Fix128::from_int(5)),
-            "got {} N",
-            p.to_f32()
+            (p.to_f64() - 1302.0).abs() > 1000.0,
+            "the square law came back"
         );
+    }
+
+    /// Exact two-bar (von Mises) truss load at apex height `y`, in the test's
+    /// own arithmetic: `P(y) = 2 E A (L₀/L(y) − 1) · y / L(y)` with
+    /// `L(y) = √(a² + y²)`, `L₀ = L(h)`, `a = L/2` (magnitude of the
+    /// compressive load).
+    fn exact_truss_load(e: f64, area: f64, h: f64, span: f64, y: f64) -> f64 {
+        let a = span / 2.0;
+        let l0 = crate::det_math::sqrt64(a * a + h * h);
+        let ly = crate::det_math::sqrt64(a * a + y * y);
+        2.0 * e * area * (l0 / ly - 1.0) * (y / ly)
+    }
+
+    /// Oracle: the shallow formula is the `h/L → 0` limit of the exact truss.
+    /// The exact limit load is found by scanning `y ∈ (0, h)`; the shallow
+    /// approximation differs by `O((h/a)²)`, so the ratio must sit within
+    /// `1 ± 8 (h/L)²` and approach 1 as `h/L` shrinks (three rises). The
+    /// stationary point of the shallow law, `y = h/√3`, is where the exact
+    /// scan peaks up to the same order of shift.
+    #[test]
+    fn snap_through_is_the_shallow_limit_of_the_exact_truss() {
+        let (e, area, span) = (3500.0_f64, 10.0_f64, 20.0_f64);
+        let mut previous_gap = f64::INFINITY;
+        for ratio in [0.1_f64, 0.05, 0.02] {
+            let h = ratio * span;
+            let steps = 2000;
+            let mut best = (0.0_f64, 0.0_f64);
+            for i in 1..steps {
+                let y = h * f64::from(i) / f64::from(steps);
+                let p = exact_truss_load(e, area, h, span, y);
+                if p > best.0 {
+                    best = (p, y);
+                }
+            }
+            let shallow = snap_through_load_n(
+                Fix128::from_f64(e),
+                Fix128::from_f64(area),
+                Fix128::from_f64(h),
+                Fix128::from_f64(span),
+            )
+            .unwrap()
+            .to_f64();
+            let gap = (shallow / best.0 - 1.0).abs();
+            assert!(gap <= 8.0 * ratio * ratio, "h/L = {ratio}: ratio gap {gap}");
+            assert!(
+                gap < previous_gap,
+                "h/L = {ratio}: the gap must shrink with the rise"
+            );
+            previous_gap = gap;
+            // The exact peak sits at `h/√3` up to the same `O((h/a)²)`
+            // relative shift (h/a = 2 h/L), plus one scan step.
+            let y_star = h / crate::det_math::sqrt64(3.0);
+            let shift = 2.0 * (2.0 * ratio) * (2.0 * ratio) * h + 2.0 * h / f64::from(steps);
+            assert!(
+                (best.1 - y_star).abs() <= shift,
+                "h/L = {ratio}: peak at {} vs h/√3 = {y_star}",
+                best.1
+            );
+        }
     }
 }

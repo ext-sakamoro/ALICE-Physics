@@ -1,12 +1,7 @@
 # wiring-guard baseline: 既存の違反 (ラチェット) 新規は fail、解消したら行を消す
 dead_code src/beam_stress.rs 1
-dead_code src/buckling.rs 1
 dead_code src/bvh.rs 2
-dead_code src/creep_longterm.rs 1
-dead_code src/fatigue.rs 1
 dead_code src/interface_capture.rs 3
-dead_code src/multiphase.rs 1
-dead_code src/plastic.rs 1
 dead_code src/sketch.rs 1
 dead_code src/solver_tgs.rs 1
 dead_code src/solver_tgs_hooks.rs 1
@@ -148,7 +143,6 @@ unwired src/cloth_fluid.rs::apply_cloth_boundary_to_fluid_with_residual
 unwired src/cloth_fluid.rs::apply_fluid_forces_to_cloth
 unwired src/cloth_fluid.rs::apply_fluid_forces_to_cloth_with_residual
 unwired src/collider.rs::GjkResult
-unwired src/collider.rs::NONE
 unwired src/collider.rs::epa
 unwired src/collider.rs::from_metric_ball
 unwired src/collider.rs::gjk
@@ -181,7 +175,6 @@ unwired src/cone.rs::apex
 unwired src/cone.rs::base_center
 unwired src/cone.rs::inertia_diagonal
 unwired src/cone.rs::volume
-unwired src/cone.rs::with_rotation
 unwired src/contact_cache.rs::apply_warm_start
 unwired src/contact_cache.rs::manifold_count
 unwired src/contact_cache.rs::point_count
@@ -198,7 +191,6 @@ unwired src/convex_decompose.rs::DecompositionResult
 unwired src/convex_decompose.rs::decompose_sdf
 unwired src/convex_mesh_builder.rs::build_convex_hull
 unwired src/convex_mesh_builder.rs::compute_centroid
-unwired src/creep_longterm.rs::CREEP_FROZEN_AT
 unwired src/creep_longterm.rs::petg_25c_moderate
 unwired src/cubic_elastic_fem.rs::corner_count
 unwired src/cubic_elastic_fem.rs::edge_node_count
@@ -211,7 +203,6 @@ unwired src/cubic_elastic_fem.rs::interior_node_positions_are_exact
 unwired src/cubic_elastic_fem.rs::shape_values
 unwired src/cylinder.rs::inertia_diagonal
 unwired src/cylinder.rs::volume
-unwired src/cylinder.rs::with_rotation
 unwired src/damping_rayleigh.rs::damping_ratio
 unwired src/damping_rayleigh.rs::fit_two_modes
 unwired src/damping_rayleigh.rs::hz_to_omega
@@ -250,7 +241,6 @@ unwired src/electromagnetic.rs::lorentz_force_sum
 unwired src/ellipsoid.rs::bounding_sphere_radius
 unwired src/ellipsoid.rs::inertia_diagonal
 unwired src/ellipsoid.rs::volume
-unwired src/ellipsoid.rs::with_rotation
 unwired src/erosion.rs::compute_exposure_from_normals
 unwired src/erosion.rs::erosion_at
 unwired src/erosion.rs::set_exposure_at
@@ -270,11 +260,7 @@ unwired src/eulerian_grid.rs::set_v
 unwired src/eulerian_grid.rs::set_v_solid
 unwired src/eulerian_grid.rs::set_w
 unwired src/eulerian_grid.rs::set_w_solid
-unwired src/event.rs::drain_contact_events
-unwired src/event.rs::drain_trigger_events
 unwired src/event.rs::has_events
-unwired src/event.rs::trigger_events
-unwired src/fatigue.rs::FatigueReport
 unwired src/fatigue.rs::aluminum_a5052
 unwired src/fatigue.rs::analyze_spectrum
 unwired src/fatigue.rs::steel_sus304
@@ -300,7 +286,6 @@ unwired src/fillet_stress.rs::recommended_fillet_radius_mm
 unwired src/filter.rs::DEBRIS
 unwired src/filter.rs::ENEMY
 unwired src/filter.rs::KINEMATIC
-unwired src/filter.rs::NONE
 unwired src/filter.rs::PLAYER
 unwired src/filter.rs::PROJECTILE
 unwired src/filter.rs::SENSOR
@@ -517,11 +502,6 @@ unwired src/multi_world.rs::transfer_body
 unwired src/multi_world.rs::transform_a_to_b
 unwired src/multi_world.rs::transform_b_to_a
 unwired src/multi_world.rs::world_count
-unwired src/multiphase.rs::advect_vof_uniform
-unwired src/multiphase.rs::advect_vof_uniform_semi_lagrangian
-unwired src/multiphase.rs::initialize_level_set_sphere
-unwired src/multiphase.rs::reinitialize_level_set
-unwired src/multiphase.rs::total_volume_vof
 unwired src/netcode.rs::advance_frame
 unwired src/netcode.rs::dt
 unwired src/netcode.rs::get_snapshot
@@ -561,7 +541,6 @@ unwired src/physics2d.rs::apply_force
 unwired src/physics2d.rs::apply_impulse_at_point
 unwired src/physics2d.rs::distance_to
 unwired src/physics2d.rs::lerp
-unwired src/physics2d.rs::remove_body
 unwired src/piezoelectric.rs::force_from_voltage
 unwired src/piezoelectric.rs::permittivity
 unwired src/piezoelectric.rs::pvdf
@@ -739,7 +718,6 @@ unwired src/sdf_destruction.rs::optimize
 unwired src/sdf_destruction.rs::reset
 unwired src/sdf_destruction.rs::sphere
 unwired src/sdf_destruction.rs::total_destruction_count
-unwired src/sdf_destruction.rs::with_rotation
 unwired src/sdf_destruction.rs::with_smoothing
 unwired src/sdf_fem_mesh.rs::BoundaryFaceError
 unwired src/sdf_fem_mesh.rs::CUBE_FIVE_TETS
@@ -791,8 +769,6 @@ unwired src/sketch.rs::registers
 unwired src/sketch.rs::top
 unwired src/sleeping.rs::Island
 unwired src/sleeping.rs::build_islands
-unwired src/sleeping.rs::sleeping_count
-unwired src/sleeping.rs::wake_body
 unwired src/smoke_fire.rs::boussinesq_buoyancy_n_per_m3
 unwired src/smoke_fire.rs::heat_release_j_per_m3_s
 unwired src/smoke_fire.rs::methane_air
@@ -803,50 +779,6 @@ unwired src/soft_body_cut.rs::CutPlane
 unwired src/soft_body_cut.rs::CutResult
 unwired src/soft_body_cut.rs::cut_cloth
 unwired src/soft_body_cut.rs::cut_deformable
-unwired src/solver.rs::active_body_count
-unwired src/solver.rs::add_contact_modifier
-unwired src/solver.rs::add_force
-unwired src/solver.rs::add_force_field
-unwired src/solver.rs::add_pre_solve_hook
-unwired src/solver.rs::add_sdf_collider
-unwired src/solver.rs::add_torque
-unwired src/solver.rs::clear_body_collision_radius
-unwired src/solver.rs::clear_contact_modifiers
-unwired src/solver.rs::clear_pre_solve_hooks
-unwired src/solver.rs::drain_contact_events
-unwired src/solver.rs::drain_trigger_events
-unwired src/solver.rs::get_body
-unwired src/solver.rs::get_body_mut
-unwired src/solver.rs::gpu_solver_bridge_installed
-unwired src/solver.rs::is_dynamic
-unwired src/solver.rs::is_kinematic
-unwired src/solver.rs::joint_count
-unwired src/solver.rs::mass
-unwired src/solver.rs::num_batches
-unwired src/solver.rs::remove_body
-unwired src/solver.rs::remove_force_field
-unwired src/solver.rs::remove_joint
-unwired src/solver.rs::remove_sdf_collider
-unwired src/solver.rs::set_angular_velocity
-unwired src/solver.rs::set_body_collision_radius
-unwired src/solver.rs::set_body_filter
-unwired src/solver.rs::set_body_material
-unwired src/solver.rs::set_gpu_solver_bridge
-unwired src/solver.rs::set_rotation
-unwired src/solver.rs::set_sdf_collision_radius
-unwired src/solver.rs::set_velocity
-unwired src/solver.rs::speed
-unwired src/solver.rs::step_with_bridge
-unwired src/solver.rs::substep_with_bridge
-unwired src/solver.rs::take_gpu_solver_bridge
-unwired src/solver.rs::trigger_events
-unwired src/solver.rs::wake_body
-unwired src/solver.rs::with_angular_damping
-unwired src/solver.rs::with_friction
-unwired src/solver.rs::with_gravity_scale
-unwired src/solver.rs::with_rotation
-unwired src/solver.rs::with_sensor
-unwired src/solver.rs::with_velocity
 unwired src/solver_tgs.rs::HasVelocity
 unwired src/solver_tgs.rs::Island
 unwired src/solver_tgs.rs::adaptive_substeps_for
@@ -871,7 +803,6 @@ unwired src/structural_solver.rs::run
 unwired src/support_volume.rs::filament_length_m
 unwired src/support_volume.rs::is_nontrivial
 unwired src/support_volume.rs::quality
-unwired src/support_volume.rs::speed
 unwired src/surface_tension_csf.rs::SIGMA_MERCURY_AIR
 unwired src/surface_tension_csf.rs::SIGMA_PLA_AIR
 unwired src/surface_tension_csf.rs::SIGMA_STEEL_ARGON
@@ -886,7 +817,6 @@ unwired src/thin_wall.rs::sample_surface_points
 unwired src/thin_wall.rs::thin_fraction
 unwired src/torus.rs::inertia_diagonal
 unwired src/torus.rs::volume
-unwired src/torus.rs::with_rotation
 unwired src/transient_thermal.rs::aluminum_6061
 unwired src/transient_thermal.rs::conductivity_at
 unwired src/transient_thermal.rs::crank_nicolson_step_1d
@@ -926,7 +856,6 @@ unwired src/wave_ship.rs::peak_omega
 unwired src/wave_ship.rs::spectrum_density
 unwired src/wedge.rs::inertia_diagonal
 unwired src/wedge.rs::volume
-unwired src/wedge.rs::with_rotation
 unwired src/wind_zone.rs::force_on
 unwired src/wind_zone.rs::force_on_particle
 unwired src/wind_zone.rs::instantaneous_wind_vector
