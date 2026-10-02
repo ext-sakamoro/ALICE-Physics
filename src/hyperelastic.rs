@@ -316,6 +316,31 @@ fn energy_derivatives(model: &HyperelasticModel, i1: Fix128) -> (Fix128, Fix128)
     }
 }
 
+/// `(W₁, W₂, W₁₁, p_ref)` at first invariant `i1`: the constants the **tangent**
+/// of [`cauchy_stress`] is built from.
+///
+/// `W₁₁ = ∂²W/∂I₁²` is zero for Neo-Hookean and Mooney-Rivlin (their `W₁` is
+/// constant) and `2C₂ + 6C₃(I₁ − 3)` for Yeoh. `p_ref` is the isotropic offset
+/// [`cauchy_stress`] subtracts so that the reference state is stress free.
+pub(crate) fn tangent_constants(
+    model: &HyperelasticModel,
+    i1: Fix128,
+) -> (Fix128, Fix128, Fix128, Fix128) {
+    let (w1, w2) = energy_derivatives(model, i1);
+    let (w1_ref, w2_ref) = energy_derivatives(model, Fix128::from_int(3));
+    let p_ref = Fix128::from_int(2) * (w1_ref + w2_ref.double());
+    let w11 = match model {
+        HyperelasticModel::Yeoh { c2_mpa, c3_mpa, .. } => {
+            Fix128::from_int(2) * *c2_mpa
+                + Fix128::from_int(6) * *c3_mpa * (i1 - Fix128::from_int(3))
+        }
+        HyperelasticModel::NeoHookean { .. } | HyperelasticModel::MooneyRivlin { .. } => {
+            Fix128::ZERO
+        }
+    };
+    (w1, w2, w11, p_ref)
+}
+
 /// Cauchy stress `σ` for a deformation gradient `f`, in the frame `f` is written
 /// in (MPa). `None` when `det F ≤ 0` — a reflected or collapsed element has no
 /// stress under any of these models.

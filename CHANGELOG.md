@@ -13,6 +13,17 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added — 共回転 FEM の超弾性に consistent tangent (`CorotationalConfig::with_consistent_tangent`)
+
+`solve_corotational` の Newton の接線を、共回転の線形接線 (修正 Newton の surrogate) から、**実装されている応力の接線**に替える opt-in を追加した 既定は従来どおりで、既存の超弾性の解は 1 bit も変わらない (`with_hyperelastic` を使わずに指定すると `InvalidConfig` で拒否する)
+接線は閉形式で、`P = 2(W₁ + I₁W₂)F − 2W₂FFᵀF + q(J)F⁻ᵀ` (`q = J(K(J−1) − p_ref)`) の `δF` 方向の微分である `dP = 2(W₁ + I₁W₂)δF + 4(W₁₁ + W₂)(F:δF)F − 2W₂(δFFᵀF + FδFᵀF + FFᵀδF) + Jq'(F⁻ᵀ:δF)F⁻ᵀ − qF⁻ᵀδFᵀF⁻ᵀ` を要素ごとに matrix-free で CG に渡す (除算を要する `F⁻ᵀ` と `q` は Newton 反復ごとに 1 回) Neo-Hookean / Mooney-Rivlin / Yeoh の 3 モデルを 1 つのコードで扱う
+Newton は毎反復で接線を更新する全 Newton で、`J > 0` を条件にした backtracking (`α = 2⁻ᵏ`、`k ≤ 16`、残差が**真に下がる**最大の α) を持つ 接線が最初の方向で正定でない (負の曲率) ときは、その step だけ共回転の線形 surrogate で解く 増分の開始状態 (step 0) は予測で反転した要素を含みうるので、従来どおり surrogate の厳密な step で処理し、step 1 から consistent tangent を使う
+**実測 (release、4 mm cube、+125% 伸張、中心節点荷重、Neo-Hookean、1 増分)**: 200 N は **181 step から 3 step** (CG 4887 回から 89 回、809 ms から 16 ms) / 2000 N は **758 step から 4 step** (CG 21220 回から 121 回、3.35 秒から 23 ms) 修正 Newton との変位差は 200 N で 1.6e-9 mm、2000 N で 1.1e-9 mm 1 増分と 2 増分の解の差は 200 N で 7.6e-11 mm、2000 N で 6.5e-13 mm (修正 Newton の既存の許容は 1e-8 mm) 5000 N は 4 step、8000 N は 5 step で解ける 12000 N 以上は要素が反転する (中心節点への点荷重の非物理的な設定)
+⚠️ **訂正**: Backlog にあった「修正 Newton は 2000 N で収束しない (収縮率 1.33 > 1)」は誤りだった 予算を 1 から 1024 まで振って `NotConverged` が返す相対残差を読むと、修正 Newton は 200 N でも 2000 N でも**単調に収縮している** (1 step あたり約 0.98) 2000 N は予算 1024 で **758 step で `Ok`** で、問題は「収束しない」でなく「遅い」だった
+oracle は `src/linear_elastic_fem/consistent_tangent.rs` の unit test 18 本と `tests/analytic_corotational.rs` の 6 本 閉形式 (`sakamoro-ff` の導出) との全成分の一致 (非対角の `δF` と `J ≠ 1` を含む) / `A_ijij = μ` と `A_ijji = (μ−p)/(f_i f_j)` で第 2・第 3 項の添字の取り違えの区別 / 差分を使わない客観性の恒等式 `A:(ΩF) = ΩP` / 残差の傾き試験 (刻みの半減で誤差が 1/4、3 モデル) / 対称性 / `truncated_cg` と `backtrack` の全分岐 / 修正 Newton と同じ根 / 増分独立性 / 退化入力で修正 Newton と同じ種類の拒否になること(新しい失敗経路を足さない) 変異試験は 19 件がすべて red
+⚠️ **既存の別件 (この変更で変わらない)**: この構成則は等容と体積の分割を持たず、小ひずみの体積弾性率が `K − μ/3` になる (`A_1111(I) = μ + K`) ので、`bulk = λ + 2μ/3` を渡すと、線形 surrogate の `λ + 2μ` と小ひずみでも `μ/3` ずれる 巨大な荷重 (1e12 N) は修正 Newton と同じく、荷重が表現可能なのに `UnderConstrained` を返す (最初の CG の方向で `pᵀKp` が wrap する)
+P2 / P3 要素、動的 (Newmark) への接続、共回転の線形法則 (`with_hyperelastic` なし) の接線は含まない
+
 ### Added — 反力 `reactions()` を P2 / P3 要素に (`quadratic_elastic_fem` / `cubic_elastic_fem`)
 
 `linear_elastic_fem::reactions` と同形の自由関数を 10 節点 / 20 節点要素に足した `reactions(mesh, material, boundary, law: Option<HyperelasticModel>, &FemSolution) -> Result<Vec<[Fix128; 3]>, FemError>` 拘束行の支持力 `R = f_int(u) − f_ext`、自由行は 0、`law` が `None` なら小ひずみ `K u`、`Some` なら全 Lagrange の `Σ w V₀ P ∇₀N` (`K = λ + 2μ/3`、solver と同じ組)

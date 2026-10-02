@@ -5098,6 +5098,7 @@ impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::linear_elastic_f
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::linear_elastic_fem::BoundaryConditions
 pub struct alice_physics::linear_elastic_fem::CorotationalConfig
 impl alice_physics::linear_elastic_fem::CorotationalConfig
+pub const fn alice_physics::linear_elastic_fem::CorotationalConfig::consistent_tangent(&self) -> bool
 pub const fn alice_physics::linear_elastic_fem::CorotationalConfig::hyperelastic(&self) -> core::option::Option<alice_physics::hyperelastic::HyperelasticModel>
 pub const fn alice_physics::linear_elastic_fem::CorotationalConfig::increments(&self) -> u32
 pub const fn alice_physics::linear_elastic_fem::CorotationalConfig::linear(&self) -> alice_physics::linear_elastic_fem::SolverConfig
@@ -5105,6 +5106,7 @@ pub const fn alice_physics::linear_elastic_fem::CorotationalConfig::newton_itera
 pub const fn alice_physics::linear_elastic_fem::CorotationalConfig::newton_tolerance(&self) -> alice_physics::math::Fix128
 pub const fn alice_physics::linear_elastic_fem::CorotationalConfig::polar_iterations(&self) -> u32
 pub fn alice_physics::linear_elastic_fem::CorotationalConfig::try_new(alice_physics::linear_elastic_fem::SolverConfig, u32, alice_physics::math::Fix128, u32, u32) -> core::result::Result<Self, alice_physics::linear_elastic_fem::FemError>
+pub const fn alice_physics::linear_elastic_fem::CorotationalConfig::with_consistent_tangent(self) -> Self
 pub const fn alice_physics::linear_elastic_fem::CorotationalConfig::with_hyperelastic(self, alice_physics::hyperelastic::HyperelasticModel) -> Self
 impl core::clone::Clone for alice_physics::linear_elastic_fem::CorotationalConfig
 pub fn alice_physics::linear_elastic_fem::CorotationalConfig::clone(&self) -> Self
