@@ -1653,3 +1653,319 @@ fn the_solve_is_equivariant_under_a_superposed_quarter_turn() {
          2.563e-9 mm"
     );
 }
+
+// ===========================================================================
+// The consistent tangent
+// ===========================================================================
+//
+// `with_consistent_tangent` replaces the co-rotational linear tangent of the
+// modified Newton iteration with the tangent of the stress that is implemented
+// (`src/linear_elastic_fem/consistent_tangent.rs`; the closed form is checked
+// against `hyperelastic_stress` in that file). What these tests pin is what the
+// solve does with it.
+//
+// ⚠️ What was claimed and what was measured. The backlog said the modified
+// iteration "does not converge at 2000 N" with a contraction rate of 1.33. It
+// does converge: reading the relative residual `NotConverged` reports for
+// budgets 1 .. 1024 shows a monotone contraction of about 0.98 per step, and
+// 2000 N is `Ok` after **758** steps (181 at 200 N). The problem is speed, and
+// that is what the consistent tangent removes: 3 steps at 200 N and 4 at 2000 N.
+
+/// The 4-cell cube of `the_material_law_moves_the_answer_…` with a point load of
+/// `load` N on its centre node, the boundary rotated and stretched.
+fn centre_loaded_cube(load: f64) -> (SdfTetMesh, BoundaryConditions) {
+    let mesh = kuhn_cube(4, SIDE / 4.0);
+    let (bc, _) = boundary_rotated_stretch(&mesh, THREE_FOUR_FIVE, ISOCHORIC_U);
+    let centre = (0..u32::try_from(mesh.vertex_count()).expect("fits"))
+        .find(|&v| {
+            vert(&mesh, v)
+                .iter()
+                .all(|c| (c - SIDE / 2.0).abs() < SIDE * 1e-9)
+        })
+        .expect("the 4-cell cube has a node at its centre");
+    let mut loaded = bc;
+    loaded.add_load(centre, Axis::X, fx(load));
+    (mesh, loaded)
+}
+
+fn neo_hookean_model() -> HyperelasticModel {
+    HyperelasticModel::NeoHookean {
+        mu_mpa: pla().lame().1,
+    }
+}
+
+/// Largest component of the difference of two displacement fields, mm.
+fn field_gap(a: &[[Fix128; 3]], b: &[[Fix128; 3]]) -> f64 {
+    let mut worst = 0.0_f64;
+    for (x, y) in a.iter().zip(b.iter()) {
+        for (cx, cy) in x.iter().zip(y.iter()) {
+            worst = worst.max((cx.to_f64() - cy.to_f64()).abs());
+        }
+    }
+    worst
+}
+
+fn solve_cube(
+    load: f64,
+    increments: u32,
+    budget: u32,
+    model: HyperelasticModel,
+    consistent: bool,
+) -> Result<
+    alice_physics::linear_elastic_fem::CorotationalSolution,
+    alice_physics::linear_elastic_fem::FemError,
+> {
+    let (mesh, loaded) = centre_loaded_cube(load);
+    let mut config =
+        corotational_config_with_newton_budget(increments, budget).with_hyperelastic(model);
+    if consistent {
+        config = config.with_consistent_tangent();
+    }
+    solve_corotational(&mesh, &pla(), &loaded, &config)
+}
+
+/// **Oracle: the same root, in a handful of steps.** The consistent tangent
+/// changes how many steps, not where they land, so its field must be the
+/// modified iteration's. Measured: 1.6e-9 mm apart at 200 N (both stop on a
+/// `2⁻³⁰` residual), 3 steps against 181.
+#[test]
+fn the_consistent_tangent_lands_on_the_modified_newton_root_in_a_handful_of_steps() {
+    let modified = solve_cube(200.0, 1, 512, neo_hookean_model(), false).expect("modified, 200 N");
+    let consistent =
+        solve_cube(200.0, 1, 64, neo_hookean_model(), true).expect("consistent, 200 N");
+    let gap = field_gap(
+        &modified.field.displacements,
+        &consistent.field.displacements,
+    );
+    eprintln!(
+        "  200 N: modified {} steps, consistent {} steps, fields {gap:.3e} mm apart",
+        modified.newton_iterations, consistent.newton_iterations
+    );
+    assert!(
+        gap < 1e-7,
+        "same material, same load, different roots: {gap:.3e} mm apart"
+    );
+    assert!(
+        modified.newton_iterations >= 100,
+        "the premise of the comparison is that the modified iteration is slow here; it took {}",
+        modified.newton_iterations
+    );
+    assert!(
+        consistent.newton_iterations <= 8,
+        "a consistent Newton iteration should need a handful of steps, took {}",
+        consistent.newton_iterations
+    );
+}
+
+/// **Oracle: 2000 N in a handful of steps, and independent of the increment
+/// count.** The modified iteration needs 758 steps here (budget 256 is not
+/// enough). With the consistent tangent the answer does not move when the load
+/// is applied in two increments instead of one: measured 6.5e-13 mm apart, four
+/// orders tighter than the modified iteration's `1e-8` bound.
+#[test]
+fn the_consistent_tangent_reaches_2000_n_in_a_handful_of_steps_whatever_the_increments() {
+    let one =
+        solve_cube(2000.0, 1, 64, neo_hookean_model(), true).expect("consistent, 1 increment");
+    let two =
+        solve_cube(2000.0, 2, 64, neo_hookean_model(), true).expect("consistent, 2 increments");
+    let gap = field_gap(&one.field.displacements, &two.field.displacements);
+    eprintln!(
+        "  2000 N: consistent {} steps (1 increment) / {} (2), {gap:.3e} mm apart",
+        one.newton_iterations, two.newton_iterations
+    );
+    assert!(
+        one.newton_iterations <= 12,
+        "took {} steps",
+        one.newton_iterations
+    );
+    assert!(
+        gap < 1e-9,
+        "the root must not depend on the increment path: {gap:.3e} mm"
+    );
+    // Characterisation of what this replaces: the modified iteration runs out of
+    // a 256-step budget at this load (it needs 758).
+    assert!(
+        matches!(
+            solve_cube(2000.0, 1, 256, neo_hookean_model(), false),
+            Err(alice_physics::linear_elastic_fem::FemError::NotConverged { .. })
+        ),
+        "the modified iteration is expected to need more than 256 steps at 2000 N"
+    );
+}
+
+/// A tangent for a law that is not there has nothing to differentiate; the
+/// request is refused rather than silently ignored.
+#[test]
+fn the_consistent_tangent_without_a_hyperelastic_law_is_refused() {
+    let (mesh, loaded) = centre_loaded_cube(200.0);
+    let config = corotational_config_with_newton_budget(1, 64).with_consistent_tangent();
+    assert!(matches!(
+        solve_corotational(&mesh, &pla(), &loaded, &config),
+        Err(alice_physics::linear_elastic_fem::FemError::InvalidConfig(
+            _
+        ))
+    ));
+}
+
+/// **Oracle: the other two laws.** Mooney-Rivlin (`W₂ ≠ 0`) and Yeoh
+/// (`W₁₁ ≠ 0`) have terms Neo-Hookean does not, and the unit tests check them
+/// against `hyperelastic_stress` on one element. Here the whole solve must agree
+/// with itself under a different increment path and with the modified iteration
+/// where that converges.
+#[test]
+fn the_consistent_tangent_solves_mooney_rivlin_and_yeoh() {
+    let mu = pla().lame().1.to_f64();
+    let models = [
+        (
+            "Mooney-Rivlin",
+            HyperelasticModel::MooneyRivlin {
+                c1_mpa: fx(mu * 0.375),
+                c2_mpa: fx(mu * 0.125),
+            },
+        ),
+        (
+            "Yeoh",
+            HyperelasticModel::Yeoh {
+                c1_mpa: fx(mu * 0.5),
+                c2_mpa: fx(mu * 0.0125),
+                c3_mpa: fx(mu * 0.000_125),
+            },
+        ),
+    ];
+    for (name, model) in models {
+        let one = solve_cube(200.0, 1, 64, model, true).unwrap_or_else(|e| panic!("{name}: {e:?}"));
+        let two = solve_cube(200.0, 2, 64, model, true).unwrap_or_else(|e| panic!("{name}: {e:?}"));
+        let gap = field_gap(&one.field.displacements, &two.field.displacements);
+        eprintln!(
+            "  {name}: {} / {} steps, increments {gap:.3e} mm apart",
+            one.newton_iterations, two.newton_iterations
+        );
+        assert!(
+            gap < 1e-8,
+            "{name}: the root depends on the increment path, {gap:.3e} mm"
+        );
+        assert!(
+            one.newton_iterations <= 12,
+            "{name}: took {} steps",
+            one.newton_iterations
+        );
+        // where the modified iteration also converges, it must land on this root
+        if let Ok(modified) = solve_cube(200.0, 1, 1024, model, false) {
+            let gap = field_gap(&one.field.displacements, &modified.field.displacements);
+            assert!(
+                gap < 1e-6,
+                "{name}: consistent and modified roots differ by {gap:.3e} mm"
+            );
+        }
+    }
+}
+
+/// **Panic oracle: no failure path the modified iteration does not have.** Every
+/// degenerate input below is refused by the modified iteration in some way; the
+/// consistent tangent must refuse it in the *same* way (same `FemError`
+/// variant), not panic, and not return a field. The inputs that are not
+/// refused — a boundary that does not move, or crushes the cube without
+/// inverting it — must agree with the modified iteration's field.
+///
+/// ⚠️ `1e12 N` comes back `UnderConstrained` from **both** paths: the load is
+/// representable (`Fix128 { hi: 10^12 }`) and the cube is constrained, so the
+/// variant is misleading — the first conjugate gradient direction's `pᵀKp`
+/// wraps. That is the modified iteration's behaviour, recorded here so the
+/// consistent path does not diverge from it; it is not asserted to be right.
+#[test]
+fn the_consistent_tangent_adds_no_failure_path_on_degenerate_input() {
+    let none = Turn {
+        name: "none",
+        cos: 1.0,
+        sin: 0.0,
+    };
+    let mesh = kuhn_cube(4, SIDE / 4.0);
+    let centre = (0..u32::try_from(mesh.vertex_count()).expect("fits"))
+        .find(|&v| {
+            vert(&mesh, v)
+                .iter()
+                .all(|c| (c - SIDE / 2.0).abs() < SIDE * 1e-9)
+        })
+        .expect("the 4-cell cube has a node at its centre");
+    let run = |turn: Turn, stretch: [f64; 3], load: f64, increments: u32, consistent: bool| {
+        let (mut bc, _) = boundary_rotated_stretch(&mesh, turn, stretch);
+        bc.add_load(centre, Axis::X, fx(load));
+        let mut config = corotational_config_with_newton_budget(increments, 1024)
+            .with_hyperelastic(neo_hookean_model());
+        if consistent {
+            config = config.with_consistent_tangent();
+        }
+        solve_corotational(&mesh, &pla(), &bc, &config)
+    };
+    let cases: [(&str, Turn, [f64; 3], f64, u32); 7] = [
+        ("crushed to 1%", none, [0.01, 0.01, 0.01], 0.0, 1),
+        (
+            "crushed to 1%, 4 increments",
+            none,
+            [0.01, 0.01, 0.01],
+            0.0,
+            4,
+        ),
+        ("reflected", none, [-1.0, 1.0, 1.0], 0.0, 1),
+        ("20 kN", THREE_FOUR_FIVE, ISOCHORIC_U, 20_000.0, 1),
+        ("1e12 N", THREE_FOUR_FIVE, ISOCHORIC_U, 1.0e12, 1),
+        ("-1e12 N", THREE_FOUR_FIVE, ISOCHORIC_U, -1.0e12, 1),
+        (
+            "identity boundary, zero load",
+            none,
+            [1.0, 1.0, 1.0],
+            0.0,
+            1,
+        ),
+    ];
+    for (name, turn, stretch, load, increments) in cases {
+        let modified = run(turn, stretch, load, increments, false);
+        let consistent = run(turn, stretch, load, increments, true);
+        match (&modified, &consistent) {
+            (Ok(m), Ok(c)) => {
+                let gap = field_gap(&m.field.displacements, &c.field.displacements);
+                assert!(
+                    gap < 1e-6,
+                    "{name}: both solve, but the fields differ by {gap:.3e} mm"
+                );
+            }
+            (Err(m), Err(c)) => assert_eq!(
+                std::mem::discriminant(m),
+                std::mem::discriminant(c),
+                "{name}: modified refuses with {m:?}, consistent with {c:?}"
+            ),
+            _ => panic!("{name}: modified {modified:?} against consistent {consistent:?}"),
+        }
+    }
+    // The ones with a definite answer are pinned by value, not by comparison.
+    let reflected = run(none, [-1.0, 1.0, 1.0], 0.0, 1, true);
+    assert!(
+        matches!(
+            reflected,
+            Err(alice_physics::linear_elastic_fem::FemError::RotationFailed { .. })
+        ),
+        "a reflected boundary has no valid deformation gradient: {reflected:?}"
+    );
+    let at_rest =
+        run(none, [1.0, 1.0, 1.0], 0.0, 1, true).expect("an undeformed cube is a solution");
+    assert!(
+        field_gap(
+            &at_rest.field.displacements,
+            &vec![[Fix128::ZERO; 3]; at_rest.field.displacements.len()]
+        ) < 1e-9,
+        "an undeformed, unloaded cube must not move"
+    );
+}
+
+/// A budget that is too small is a refusal, not a field: the consistent
+/// iteration needs 3 steps at 200 N, so 1 and 2 must report `NotConverged`.
+#[test]
+fn the_consistent_tangent_reports_a_budget_it_cannot_meet() {
+    for budget in [1u32, 2] {
+        let result = solve_cube(200.0, 1, budget, neo_hookean_model(), true);
+        assert!(
+            matches!(result, Err(alice_physics::linear_elastic_fem::FemError::NotConverged { iterations, .. }) if iterations == budget),
+            "budget {budget}: {result:?}"
+        );
+    }
+}

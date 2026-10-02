@@ -16,6 +16,11 @@ Memory index pointer: `[[reference-alice-physics-v1-roadmap]]` in claude-config.
 | Maxwell FDTD | `ecd8c61` | source-free Yee、⚠️ **SI は `ε₀·μ₀` が 7.7 bit で不可**、正規化単位 + `S=9/16` |
 | 多体 ABA | `1bab99b` | ⚠️ **`solve()` が `link.joint` を読まない**状態から real ABA、oracle 12 本 |
 
+### 第 19 increment (2026-10-02、共回転 FEM の超弾性に consistent tangent)
+
+`CorotationalConfig::with_consistent_tangent` を追加した (opt-in、既定は従来どおり) 閉形式の接線を matrix-free で CG に渡す全 Newton で、Neo-Hookean 200 N は 181 step から 3 step、2000 N は 758 step から 4 step (release の実測) 修正 Newton との根の差は 1e-9 mm 台、増分独立性は 6.5e-13 mm
+⚠️ Backlog の「修正 Newton は 2000 N で収束しない」は誤りで、実測では単調に収縮して 758 step で `Ok` だった (問題は速度) 超弾性の小ひずみの極限が線形と `μ/3` ずれる件 (`bulk = λ + 2μ/3`) は別件として残る P2 / P3 と動的への接続は未着手
+
 ### 第 18 increment (2026-10-02、反力 `reactions()` を P2 / P3 に)
 
 `quadratic_elastic_fem::reactions` / `cubic_elastic_fem::reactions` を足した (P1 と同形、`law: Option<HyperelasticModel>`) 2026-10-01 の生存変異 `A1-drop-J-in-piola` は **P2 / P3 の `hyperelastic_stress`** で出たもので、P1 の `reactions` (`00d0be2` 系) は派生先を閉じて原因側が開いたままだった oracle 10 本 (`tests/analytic_reactions.rs`、各要素 5 本)、変異 14 / 14 red (実装 8 + 配線 6)、snapshot +2 / −0、`examples/support_reactions.rs` が P1 / P2 / P3 で同じ −700 N
