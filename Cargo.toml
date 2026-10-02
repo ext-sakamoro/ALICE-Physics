@@ -130,6 +130,10 @@ required-features = ["std"]
 name = "gpu_sdf_batch_queries"
 required-features = ["std"]
 
+[[example]]
+name = "filament_database_properties"
+required-features = ["std"]
+
 [[bench]]
 name = "physics_bench"
 harness = false
