@@ -229,7 +229,6 @@ unwired src/fluid.rs::step_with_sdf
 unwired src/fluid_netcode.rs::capture
 unwired src/fluid_netcode.rs::changed_count
 unwired src/fluid_netcode.rs::compression_ratio
-unwired src/fluid_netcode.rs::compute
 unwired src/fluid_netcode.rs::restore
 unwired src/fluid_netcode.rs::size_bytes
 unwired src/fluid_netcode.rs::verify
@@ -348,7 +347,6 @@ unwired src/modal.rs::plate_natural_frequency_hz
 unwired src/modal.rs::single_dof_frequency_hz
 unwired src/modal.rs::torsional_frequency_hz
 unwired src/motor.rs::apply_motors
-unwired src/motor.rs::compute
 unwired src/motor.rs::disable
 unwired src/motor.rs::set_position_target
 unwired src/motor.rs::set_rotation_target
@@ -369,19 +367,6 @@ unwired src/netcode_prediction.rs::drop_acknowledged
 unwired src/netcode_prediction.rs::head_snapshot
 unwired src/netcode_prediction.rs::inputs
 unwired src/netcode_prediction.rs::reconcile
-unwired src/neural.rs::ControllerOutput
-unwired src/neural.rs::compute
-unwired src/neural.rs::config
-unwired src/neural.rs::fix128_hard_tanh
-unwired src/neural.rs::fix128_leaky_relu
-unwired src/neural.rs::fix128_relu
-unwired src/neural.rs::fix128_tanh_approx
-unwired src/neural.rs::fix128_ternary_matvec
-unwired src/neural.rs::forward
-unwired src/neural.rs::from_ternary_weight
-unwired src/neural.rs::from_ternary_weight_with_scale
-unwired src/neural.rs::network
-unwired src/neural.rs::num_layers
 unwired src/non_newtonian.rs::apparent_viscosity
 unwired src/non_newtonian.rs::flows_under_stress
 unwired src/non_newtonian.rs::newtonian

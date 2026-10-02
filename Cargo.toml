@@ -138,6 +138,12 @@ required-features = ["std"]
 name = "linear_elastic_fem_config_diagnostics"
 required-features = ["std"]
 
+# Production entry point for the `neural` feature's fixed-point ternary
+# controller (wiring_guard: src/neural.rs had zero production callers).
+[[example]]
+name = "neural_ternary_controller"
+required-features = ["std", "neural"]
+
 [[bench]]
 name = "physics_bench"
 harness = false
