@@ -16,6 +16,12 @@ Memory index pointer: `[[reference-alice-physics-v1-roadmap]]` in claude-config.
 | Maxwell FDTD | `ecd8c61` | source-free Yee、⚠️ **SI は `ε₀·μ₀` が 7.7 bit で不可**、正規化単位 + `S=9/16` |
 | 多体 ABA | `1bab99b` | ⚠️ **`solve()` が `link.joint` を読まない**状態から real ABA、oracle 12 本 |
 
+### 第 29 increment (2026-10-02、壁 4 — multigrid を帯だけから組む、段階 4a)
+
+`project_pressure_multigrid_banded_on_rank` と `multigrid_slab_bounds` を足した (crate 内) rank は `MacGrid` を持たず、自分の `SlabFaces` (face 速度と条件) と圧力の帯だけを持つ 右辺・コンダクタンス・逆次数は `SlabStencil` (full-grid 経路と同じ式) から、coarse level は帯を coarsen して作る (slab 境界が各分散 level で 2 の倍数なので厳密) 帯から作れない最後の分散 level 以下の階層だけは、各 rank がその level のコンダクタンス (1 cell あたり小整数 6 個、`Fix128` として既存の transport で運ぶ) を rank 0 へ送り、rank 0 がそこから coarsen する 圧力勾配の減算は既存の `subtract_slab_pressure_gradient` 何も gather しないので、どの rank も全 field を持たない
+oracle: rank を thread にして loopback socket で結んだ rank が、**単一 process と bit 一致** (5 形状 × rank 2〜8 × 開放 / 壁つき、owned 層の圧力と書いた全 face 速度) halo の遅延で不一致 / 別の分割の faces は拒否 / `multigrid_slab_bounds` は Gauss-Seidel の `slab_bounds` と別物 (2 の倍数に整列)
+⚠️ 未着手: process 分離の harness (re-exec) と 256³〜512³ の実測 (段階 4b、別の y/n) 実測はこの段階では行っていない
+
 ### 第 28 increment (2026-10-02、全配線 program 第 3 件 (c)(d) — P2G stencil の選択と密閉箱 + 適応 dt の配線)
 
 `ParticleScatter::{Trilinear, Nearest}` を `p2g_normalized_with` / `CfdSolver::step_flip_with` から選べるようにして `p2g_nearest` を production に繋ぎ (閉形式: 面は共有 2 cell の粒子速度の平均、位置非依存、far face は最後の cell、wrap する粒子は堆積しない)、`FaceBc::no_slip_velocity` を ghost の読み手に配線、密閉箱 example 1 本で `set_closed_box_walls` / `set_u_bc` / `set_u_solid` / `enforce_solid_faces` / `compute_max_dt` / `step_adaptive` を配線 ⚠️ **`compute_max_dt` は静止に近い場で商が wrap して負の dt を返し、`step_adaptive` がそれを積分していた** (1 ulp の peak、`dx = 3/2` で再現) ⇒ `checked_mul` で cap 判定、非正の dt は無 step oracle 18 本 (`tests/analytic_flip_scatter.rs` 9 + `tests/analytic_adaptive_dt.rs` 9) 変異 17/17 red (実装 11 + 配線 6) baseline 退役 8 行 (全部実配線) + marker 2 件解消 ⚠️ 残: `step_flip` の free surface / 周期境界 (別 feature)、program 第 4 件 RANS
