@@ -98,7 +98,7 @@ impl Ellipsoid {
     #[inline]
     #[must_use]
     pub fn volume(&self) -> Fix128 {
-        let pi = Fix128::from_ratio(355, 113);
+        let pi = Fix128::PI;
         let four_thirds = Fix128::from_ratio(4, 3);
         four_thirds * pi * self.radii.x * self.radii.y * self.radii.z
     }

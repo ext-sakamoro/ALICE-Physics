@@ -135,6 +135,17 @@ hex literal `0x1707_5F6F_D21F_F2E5` は 0.09 でなく 0.08995625 (−0.05 %) �
 - `eulerian_grid` tests: `CrossFault::ChunkedWire` — `Read` / `Write` を 1 call 1 byte に刻む `Chunked<S>` 越しの 2 プロセス圧力解が単一プロセスと bit 一致 (8³ / 7³) 両 rank が「call 数 == byte 数 かつ 1 層分以上」を assert ⚠️ **byte 数だけの閾値は whole buffer を通す変異を見逃した** (実測、call 数で捕まえた) 変異 4/4 red (whole buffer 通過 / read 側のみ / write 側のみ / 計数なし)
 
 文面の確定: 複数ノード分散は **1 ホスト 8 プロセス loopback TCP で bit 一致 (arm64 / x86_64 別々に、fold は cross-arch 一致)**、2 ホスト / アーキ跨ぎの 1 solve / MPI backend は未測定・未実装
+### Added — 形状つき body: `Shape` と `PhysicsWorld::add_shaped_body` (全配線 program 第 9 件 F1)
+
+`shape::{Shape, ShapeError}` と `PhysicsWorld::add_shaped_body(&Shape, density, position)` を追加した (追加のみ、既存の挙動は変えない) body は密度 × 体積の質量、重心まわりの主慣性、重心まわりの外接球を衝突半径に持つ 6 形状 (box / cylinder / cone / ellipsoid / wedge / torus)
+### Fixed — 形状の質量特性の数式 3 件
+
+- cylinder / ellipsoid / cone / torus の体積と表面積が `355/113` を π に使っていた (相対誤差 8.5e-8、torus は π² で 1.7e-7) `Fix128::PI` に
+- **円錐の慣性の係数が入れ替わっていた** `Ixx = Izz = m(3/80 r² + 3/20 h²)` を `m(3/20 r² + 3/80 h²)` (重心まわり) に (実測で 40% の誤差) 重心位置 `center_of_mass_offset` (`−half_height/2`) を追加
+- **楔の慣性が重心まわりでなかった** `Iyy = m w²/18`、`Izz = m(w²+h²)/18` を `m w²/24`、`m(w²/24 + h²/18)` に 重心位置 `center_of_mass_offset` (`−height/6`) を追加
+- ⚠️ これらの `inertia_diagonal` / `volume` を呼ぶ production 経路はこれまで無かったので、既存の挙動 (body の慣性) は変わらない 新しい `add_shaped_body` だけが使う
+- oracle: 閉形式 + 立体の数値積分 (公式を知らない) の 2 系統 変異 20/20 red
+
 ### Added — 分散 multigrid を rank ごとの別 process で回す harness と実測 (壁 4、段階 4b、test のみ)
 
 banded driver を rank ごとの別 process (test binary の再実行 + loopback socket) で回す harness を `multigrid_decomposed` の test に追加した 各 process は `MacGrid` を持たず、自分の faces だけを seed の式から作る 全 rank が書いた field の畳み込み (index 重みつき、順序非依存) の和が単一 process の解と一致する

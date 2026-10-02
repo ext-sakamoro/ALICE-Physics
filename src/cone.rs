@@ -111,7 +111,7 @@ impl Cone {
     #[inline]
     #[must_use]
     pub fn volume(&self) -> Fix128 {
-        let pi = Fix128::from_ratio(355, 113);
+        let pi = Fix128::PI;
         let two = Fix128::from_int(2);
         let three = Fix128::from_int(3);
         pi * self.radius * self.radius * two * self.half_height / three
@@ -120,21 +120,31 @@ impl Cone {
     /// Surface area: pi * r * (r + sqrt(r^2 + h^2))
     #[must_use]
     pub fn surface_area(&self) -> Fix128 {
-        let pi = Fix128::from_ratio(355, 113);
+        let pi = Fix128::PI;
         let two = Fix128::from_int(2);
         let h = two * self.half_height;
         let slant = (self.radius * self.radius + h * h).sqrt();
         pi * self.radius * (self.radius + slant)
     }
 
-    /// Compute inertia tensor (diagonal) for given mass
+    /// Offset of the centre of mass from the geometric centre, in the cone's
+    /// local frame: the centroid of a solid cone sits a quarter of the height
+    /// above the base, i.e. at `y = −half_height / 2`.
+    #[inline]
+    #[must_use]
+    pub fn center_of_mass_offset(&self) -> Vec3Fix {
+        Vec3Fix::new(Fix128::ZERO, -self.half_height.half(), Fix128::ZERO)
+    }
+
+    /// Diagonal of the inertia tensor **about the centre of mass** for a given
+    /// mass.
     ///
-    /// For a solid cone aligned along Y with height h = 2*`half_height`:
-    /// - Ixx = Izz = m * (3/80 * r^2 + 3/20 * h^2)
-    /// - Iyy = 3/10 * m * r^2
+    /// For a solid cone aligned along Y with height `h = 2·half_height`:
+    /// - `Iyy = 3/10 · m · r²`
+    /// - `Ixx = Izz = 3/20 · m · r² + 3/80 · m · h²`
     ///
-    /// Note: center of mass offset is not applied here; inertia is about
-    /// the geometric center.
+    /// The centre of mass is [`Self::center_of_mass_offset`] away from the
+    /// geometric centre; a body built from this shape is placed at that point.
     #[must_use]
     pub fn inertia_diagonal(&self, mass: Fix128) -> Vec3Fix {
         let r2 = self.radius * self.radius;
@@ -142,7 +152,7 @@ impl Cone {
         let h = two * self.half_height;
         let h2 = h * h;
 
-        let ixx = mass * (Fix128::from_ratio(3, 80) * r2 + Fix128::from_ratio(3, 20) * h2);
+        let ixx = mass * (Fix128::from_ratio(3, 20) * r2 + Fix128::from_ratio(3, 80) * h2);
         let iyy = Fix128::from_ratio(3, 10) * mass * r2;
 
         Vec3Fix::new(ixx, iyy, ixx)

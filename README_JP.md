@@ -1400,6 +1400,7 @@ let broken = solve_joints_breakable(&joints, &mut bodies, dt);
 | 型 | 説明 |
 |----|------|
 | `Wedge` | 6頂点の三角柱（くさび） |
+| `Shape` | 形状つき body: `PhysicsWorld::add_shaped_body(&Shape, 密度, 位置)` が box / cylinder / cone / ellipsoid / wedge / torus の質量・重心まわりの慣性・外接球の衝突半径を設定 |
 
 **機能:**
 - GJKサポート（6頂点の最大ドット積反復）

@@ -1078,6 +1078,37 @@ impl PhysicsWorld {
         idx
     }
 
+    /// Add a rigid body shaped like `shape`, made of material of `density`, with
+    /// its centre of mass at `position`.
+    ///
+    /// The body gets the shape's mass (`density × volume`), the shape's principal
+    /// inertia about the centre of mass (not the unit-sphere inertia
+    /// [`RigidBody::new`] assigns), and the shape's bounding sphere about the
+    /// centre of mass as its collision radius, so it takes part in the sphere
+    /// broad- and narrow-phase like any body added with
+    /// [`Self::add_body_with_radius`]. See [`crate::shape`] for the frames.
+    ///
+    /// # Errors
+    ///
+    /// [`ShapeError`](crate::shape::ShapeError) when the density is not positive,
+    /// a dimension is not, or the mass or inertia does not fit `Fix128`. Nothing is
+    /// added in that case.
+    pub fn add_shaped_body(
+        &mut self,
+        shape: &crate::shape::Shape,
+        density: Fix128,
+        position: Vec3Fix,
+    ) -> Result<usize, crate::shape::ShapeError> {
+        let (mass, inertia) = shape.mass_and_inertia(density)?;
+        let mut body = RigidBody::new_dynamic(position, mass);
+        body.inv_inertia = Vec3Fix::new(
+            Fix128::ONE / inertia.x,
+            Fix128::ONE / inertia.y,
+            Fix128::ONE / inertia.z,
+        );
+        Ok(self.add_body_with_radius(body, shape.bounding_radius()))
+    }
+
     /// Remove a body by index (swap-remove).
     ///
     /// The last body is moved to fill the gap. All constraints and joints

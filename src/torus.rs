@@ -70,7 +70,7 @@ impl Torus {
     #[inline]
     #[must_use]
     pub fn volume(&self) -> Fix128 {
-        let pi = Fix128::from_ratio(355, 113);
+        let pi = Fix128::PI;
         let two = Fix128::from_int(2);
         two * pi * pi * self.major_radius * self.minor_radius * self.minor_radius
     }
@@ -79,7 +79,7 @@ impl Torus {
     #[inline]
     #[must_use]
     pub fn surface_area(&self) -> Fix128 {
-        let pi = Fix128::from_ratio(355, 113);
+        let pi = Fix128::PI;
         let four = Fix128::from_int(4);
         four * pi * pi * self.major_radius * self.minor_radius
     }

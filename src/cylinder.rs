@@ -89,8 +89,7 @@ impl Cylinder {
     #[inline]
     #[must_use]
     pub fn volume(&self) -> Fix128 {
-        // pi ≈ 355/113 (Milü approximation, accurate to 7 digits)
-        let pi = Fix128::from_ratio(355, 113);
+        let pi = Fix128::PI;
         let two = Fix128::from_int(2);
         pi * self.radius * self.radius * two * self.half_height
     }
@@ -99,7 +98,7 @@ impl Cylinder {
     #[inline]
     #[must_use]
     pub fn surface_area(&self) -> Fix128 {
-        let pi = Fix128::from_ratio(355, 113);
+        let pi = Fix128::PI;
         let two = Fix128::from_int(2);
         two * pi * self.radius * (self.radius + two * self.half_height)
     }

@@ -16,6 +16,14 @@ Memory index pointer: `[[reference-alice-physics-v1-roadmap]]` in claude-config.
 | Maxwell FDTD | `ecd8c61` | source-free Yee、⚠️ **SI は `ε₀·μ₀` が 7.7 bit で不可**、正規化単位 + `S=9/16` |
 | 多体 ABA | `1bab99b` | ⚠️ **`solve()` が `link.joint` を読まない**状態から real ABA、oracle 12 本 |
 
+### 第 34 increment (2026-10-03、全配線 program 第 9 件 (F1) — 形状つき body: `Shape` と `PhysicsWorld::add_shaped_body`)
+
+`RigidBody::new` は質量が何でも慣性を単位球 (`m·2/5`) にしており、箱も輪も同じ torque で同じ角速度で回っていた 形状の閉形式 (`volume` / `inertia_diagonal` / `bounding_sphere_radius`) は box / cylinder / cone / ellipsoid / wedge / torus に実装されていたが呼出元が 0 件だった `Shape` (6 形状) と `PhysicsWorld::add_shaped_body(shape, density, 重心位置)` を足した body は密度 × 体積の質量、**重心まわりの主慣性**、重心まわりの外接球を衝突半径に持つ (追加のみの公開 API、`ShapeError` で退化・密度非正・桁あふれを拒否)
+⚠️ **oracle が既存の数式欠陥を 3 つ検出**: ① `355/113` (π の近似、相対誤差 8.5e-8、torus は π² で 1.7e-7) を cylinder / ellipsoid / cone / torus が使っていた (`Fix128::PI` に) ② **円錐の慣性の係数が入れ替わっていた** (`3/80 r² + 3/20 h²`、正しくは重心まわりで `3/20 r² + 3/80 h²`、実測で相対誤差 40%) 重心位置 (頂点側 `−half_height/2`) も返すようにした ③ **楔の慣性が重心まわりでなかった** (`Iyy = w²/18`、正しくは `w²/24`、`Izz` も) 重心位置 (`−height/6`) を追加
+oracle は 2 系統: 教科書の閉形式と、**立体の数値積分** (bounding box の midpoint 格子 + `inside` 述語で、体積・重心・重心まわりの慣性を定義から直接求める 公式を知らない) 外接半径は「立体の全点を含み、かつ到達される」で検査 (tall cone / tall wedge で apex 項が支配する寸法を含む) 桁を振る sweep で「wrap した質量を受け入れない」(`Fix128` は wrap する) 変異 **20/20 red** (初回 16/20、生存 4 件は apex が支配しない寸法・保護の二重化 → test を足して red) + 配線変異 (example を外すと 7 件が未配線に戻る)
+baseline 退役 13 行 (実配線 13、巻き込み 0): box / cone / cylinder / ellipsoid / torus / wedge の `volume` + `inertia_diagonal` と `ellipsoid::bounding_sphere_radius` 呼出元は `examples/shaped_bodies.rs` (6 形状に同じ torque、ω = τ·dt/I を印字)
+⚠️ 衝突検出は依然として球 (外接球) 同士: 箱同士は球同士として検出される 形状自体の narrow-phase は F3 (GJK/EPA) で 残る未配線: `box_collider::{axis_aligned, corner, corners}` / `cone::{apex, base_center}`
+
 ### 第 33 increment (2026-10-03、全配線 program 第 6 件 — `PhysicsWorld` API 44 本 / `multiphase` VOF・level-set / 構造 4 module の `allow(dead_code)` 撤去)
 
 `solver.rs` の 44 本を `examples/world_api_tour.rs` + oracle 32 本で配線 (`wake_body` の範囲外 index を無視に) `multiphase::advect_vof_rigid` + `VofScheme`、`cfd_solver::LevelSetReinit` + `StepOptions::with_level_set_reinit` + `StepError::ZeroReinitCount` (既定は `step` と bit 一致) oracle 21 本 `buckling` / `creep_longterm` / `fatigue` / `plastic` の module 全体 allow を撤去し `CREEP_FROZEN_AT` を凍結 guard に、残余 9 本は負債 marker 変異 red: multiphase 27/28 (生存 1 は `sweeps` の 1 周収束)、構造 19/19、guard 2/2、数式修正 12/12 (退化入力を `Err` にして guard 撤去を red に) baseline 退役 71 行 (実配線 55、名前衝突 10、guard 判定 1、dead_code 5) ⚠️ 数式 2 件を同時に修正: `snap_through_load_n` の 2 乗則 → 3 乗則 (golden 1302 N が誤った法則を pin していた)、`stress_at_cycles` の wrap する Newton → 閉形式 + 範囲 `Err` ⚠️ 残: TGS family (`solver_tgs*`、5 268 行、`pub(crate)`、PhysicsWorld から未接続) の扱いは user 裁定待ち
