@@ -37,7 +37,10 @@ use crate::interface_capture::fast_sweeping_reinit;
 use crate::math::{Fix128, Vec3Fix};
 use crate::multiphase::{trilinear_range, trilinear_sample, Grid3d};
 use crate::surface_tension_csf::{compute_csf_field, SIGMA_WATER_AIR};
-use crate::turbulence::{smagorinsky_eddy_viscosity, strain_rate_magnitude, SMAGORINSKY_CS};
+use crate::turbulence::{
+    friction_velocity_checked, smagorinsky_eddy_viscosity, strain_rate_magnitude, wall_k_epsilon,
+    y_plus, SMAGORINSKY_CS,
+};
 
 /// W-cycles of the multigrid projection [`CfdSolver::step`] runs by default.
 ///
@@ -185,6 +188,228 @@ pub struct ProjectionReport {
     /// The BiCGStab verdict; `None` for the fixed-count solvers, which have
     /// none to give.
     pub bicgstab: Option<BicgstabStats>,
+}
+
+/// A wall model: the viscous flux across a [`crate::eulerian_grid::FaceBc::Wall`]
+/// is taken from the universal wall profile instead of from the resolved
+/// no-slip ghost.
+///
+/// With the ghost, the shear a wall exerts on the adjacent face is
+/// `μ (u_in − u_wall) / (dx/2)` — the laminar value at the resolution the grid
+/// has, which under-predicts the shear of a turbulent boundary layer the grid
+/// does not resolve. The model instead reads the friction velocity from the
+/// log law ([`crate::turbulence::friction_velocity`]) at the first face centre
+/// (`y_p = dx/2`) and applies `τ_w = ρ u_τ²` against the direction of the
+/// relative motion. Below the sublayer edge (`y⁺ < 11.4453`) the profile is
+/// linear and the model reduces to the ghost exactly, which is what makes it
+/// safe to enable on a resolved grid.
+///
+/// Only the molecular viscosity enters `y⁺`; the Smagorinsky eddy viscosity
+/// of `use_turbulence` still acts on the interior faces.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
+pub struct WallModel {}
+
+impl WallModel {
+    /// The log-law wall model with the module constants of
+    /// [`crate::turbulence`] (`κ = 0.41`, `B = 5.5`, sublayer edge `11.4453`).
+    #[must_use]
+    pub const fn log_law() -> Self {
+        Self {}
+    }
+}
+
+/// What a step does beyond the shared body: which pressure solver, and
+/// whether a wall model replaces the no-slip ghost at the walls.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct StepOptions {
+    pressure: PressureSolver,
+    wall_model: Option<WallModel>,
+}
+
+impl StepOptions {
+    /// Project with `pressure`, no wall model.
+    #[must_use]
+    pub const fn new(pressure: PressureSolver) -> Self {
+        Self {
+            pressure,
+            wall_model: None,
+        }
+    }
+
+    /// Replace the no-slip ghost at every wall with `model`.
+    #[must_use]
+    pub const fn with_wall_model(mut self, model: WallModel) -> Self {
+        self.wall_model = Some(model);
+        self
+    }
+
+    /// The pressure solver.
+    #[must_use]
+    pub const fn pressure(&self) -> PressureSolver {
+        self.pressure
+    }
+
+    /// The wall model, if any.
+    #[must_use]
+    pub const fn wall_model(&self) -> Option<WallModel> {
+        self.wall_model
+    }
+}
+
+/// Why [`CfdSolver::step_with_options`] refused to step.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum StepError {
+    /// The pressure solver request was refused.
+    Pressure(PressureSolverError),
+    /// A wall model was requested on a solver whose molecular viscosity is
+    /// zero: `y⁺ = y u_τ / ν` is undefined and no wall shear can be read.
+    WallModelNeedsViscosity,
+}
+
+impl From<PressureSolverError> for StepError {
+    fn from(e: PressureSolverError) -> Self {
+        Self::Pressure(e)
+    }
+}
+
+impl core::fmt::Display for StepError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Pressure(e) => write!(f, "pressure solver: {e}"),
+            Self::WallModelNeedsViscosity => {
+                write!(f, "a wall model needs a positive molecular viscosity")
+            }
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for StepError {}
+
+/// What the wall model did over one step, summarised over every wall-adjacent
+/// face it touched.
+///
+/// The envelope (`min` / `max`) is taken over the faces that **move relative
+/// to their wall**; a face at rest has `u_τ = 0` exactly and is counted in
+/// `resting_faces` instead, so that a channel whose spanwise faces are all at
+/// rest still reports the one friction velocity its streamwise faces share
+/// (`u_tau_min == u_tau_max` there). `k` and `ε` are the wall-consistent
+/// values of `turbulence::wall_k_epsilon` at the first face centre —
+/// what a RANS step would take as its wall boundary condition.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct WallShearSummary {
+    /// Wall-adjacent face updates the model performed (a face next to two
+    /// walls counts twice), moving and resting alike.
+    pub faces: usize,
+    /// Of those, the faces at rest relative to their wall (`u_τ = 0`,
+    /// excluded from the envelope below).
+    pub resting_faces: usize,
+    /// Smallest friction velocity over the moving faces (m/s).
+    pub u_tau_min: Fix128,
+    /// Largest friction velocity over the moving faces (m/s).
+    pub u_tau_max: Fix128,
+    /// Smallest `y⁺` at the first face centre, over the moving faces.
+    pub y_plus_min: Fix128,
+    /// Largest `y⁺` at the first face centre, over the moving faces.
+    pub y_plus_max: Fix128,
+    /// Largest wall-consistent turbulent kinetic energy `u_τ²/√C_μ` (m²/s²).
+    pub k_max: Fix128,
+    /// Largest wall-consistent dissipation `u_τ³/(κ y_p)` (m²/s³).
+    pub epsilon_max: Fix128,
+}
+
+impl WallShearSummary {
+    fn with_no_faces() -> Self {
+        Self {
+            faces: 0,
+            resting_faces: 0,
+            u_tau_min: Fix128::ZERO,
+            u_tau_max: Fix128::ZERO,
+            y_plus_min: Fix128::ZERO,
+            y_plus_max: Fix128::ZERO,
+            k_max: Fix128::ZERO,
+            epsilon_max: Fix128::ZERO,
+        }
+    }
+
+    fn fold_face(&mut self, u_tau: Fix128, y_plus_value: Fix128, k: Fix128, epsilon: Fix128) {
+        self.faces += 1;
+        if u_tau.is_zero() {
+            self.resting_faces += 1;
+            return;
+        }
+        let moving_so_far = self.faces - self.resting_faces - 1;
+        if moving_so_far == 0 {
+            self.u_tau_min = u_tau;
+            self.u_tau_max = u_tau;
+            self.y_plus_min = y_plus_value;
+            self.y_plus_max = y_plus_value;
+        } else {
+            if u_tau < self.u_tau_min {
+                self.u_tau_min = u_tau;
+            }
+            if u_tau > self.u_tau_max {
+                self.u_tau_max = u_tau;
+            }
+            if y_plus_value < self.y_plus_min {
+                self.y_plus_min = y_plus_value;
+            }
+            if y_plus_value > self.y_plus_max {
+                self.y_plus_max = y_plus_value;
+            }
+        }
+        if k > self.k_max {
+            self.k_max = k;
+        }
+        if epsilon > self.epsilon_max {
+            self.epsilon_max = epsilon;
+        }
+    }
+}
+
+/// What [`CfdSolver::step_with_options`] did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct StepReport {
+    /// The BiCGStab verdict, when that was the pressure solver.
+    pub bicgstab: Option<BicgstabStats>,
+    /// The wall model's summary, when one was enabled.
+    pub wall: Option<WallShearSummary>,
+}
+
+/// The wall sink the model applies to one face component, and the state it
+/// reports: `(Δu, u_τ, y⁺, k, ε)`.
+///
+/// `Δu = −dt u_τ² sgn(u_rel) / dx` is the momentum the wall shear `ρ u_τ²`
+/// removes from the half cell between the wall and the face over `dt`, per
+/// unit mass; with `u_τ² = ν u_rel / y_p` (the sublayer) and `y_p = dx/2` it
+/// is `−2 ν dt u_rel / dx²`, the no-slip ghost's contribution exactly.
+struct WallSink {
+    nu_mol: Fix128,
+    density: Fix128,
+    dynamic_viscosity: Fix128,
+    y_p: Fix128,
+    dt_over_dx: Fix128,
+}
+
+impl WallSink {
+    fn apply(&self, u_rel: Fix128, summary: &mut WallShearSummary) -> Fix128 {
+        let speed = u_rel.abs();
+        let u_tau = friction_velocity_checked(speed, self.y_p, self.nu_mol);
+        let yp = y_plus(self.density, u_tau, self.y_p, self.dynamic_viscosity);
+        let (k, epsilon) = wall_k_epsilon(u_tau, self.y_p);
+        summary.fold_face(u_tau, yp, k, epsilon);
+        let magnitude = self.dt_over_dx * u_tau * u_tau;
+        if u_rel.is_negative() {
+            magnitude
+        } else {
+            -magnitude
+        }
+    }
 }
 
 /// The projection the shared step body runs, after validation.
@@ -376,42 +601,43 @@ impl CfdSolver {
             return;
         }
         let projection = self.default_projection(multigrid_cycles);
-        self.step_body(dt_s, projection);
+        self.step_body(dt_s, projection, None);
     }
 
     /// [`Self::step`] with the pressure projection done by the solver the
     /// caller names, and the inputs the fixed-count solvers would answer
-    /// silently refused instead.
-    ///
-    /// Everything but the projection is the shared step body, so a
-    /// `RedBlackGs { sweeps: jacobi_iterations }` request on a grid that is not
-    /// a power of two, or a `Multigrid { cycles: 6 }` request on one that is,
-    /// reproduces [`Self::step`] bit for bit. The other two variants reach the
-    /// Jacobi and BiCGStab solvers of [`crate::eulerian_grid`], which no other
-    /// entry point does.
+    /// silently refused instead. [`Self::step_with_options`] with
+    /// `StepOptions::new(solver)`; see there.
     ///
     /// # Errors
     ///
-    /// [`PressureSolverError`] for a zero `dt_s`, density, grid spacing or
-    /// count, a non-positive BiCGStab tolerance, or multigrid on a grid whose
-    /// extents are not all powers of two. ⚠️ On `Err` the solver is **not
-    /// stepped**: the grid and `step_count` are untouched, so a refused call
-    /// cannot be mistaken for a step that happened.
+    /// [`PressureSolverError`], as [`Self::step_with_options`] reports it.
     pub fn step_with_pressure_solver(
         &mut self,
         dt_s: Fix128,
         solver: PressureSolver,
     ) -> Result<ProjectionReport, PressureSolverError> {
-        if dt_s.is_zero() {
-            return Err(PressureSolverError::ZeroTimeStep);
+        match self.step_with_options(dt_s, &StepOptions::new(solver)) {
+            Ok(report) => Ok(ProjectionReport {
+                solver,
+                bicgstab: report.bicgstab,
+            }),
+            Err(StepError::Pressure(e)) => Err(e),
+            Err(StepError::WallModelNeedsViscosity) => {
+                unreachable!("no wall model was requested")
+            }
         }
+    }
+
+    /// Validate a pressure solver request against this solver's state.
+    fn projection_for(&self, solver: PressureSolver) -> Result<Projection, PressureSolverError> {
         if self.density_kg_m3.is_zero() {
             return Err(PressureSolverError::ZeroDensity);
         }
         if self.grid.dx.is_zero() {
             return Err(PressureSolverError::ZeroSpacing);
         }
-        let projection = match solver {
+        Ok(match solver {
             PressureSolver::RedBlackGs { sweeps: 0 }
             | PressureSolver::Multigrid { cycles: 0 }
             | PressureSolver::Jacobi { iterations: 0 }
@@ -440,16 +666,53 @@ impl CfdSolver {
                     tolerance,
                 }
             }
-        };
-        let bicgstab = self.step_body(dt_s, projection);
-        Ok(ProjectionReport { solver, bicgstab })
+        })
+    }
+
+    /// [`Self::step`] with the pressure projection and the wall treatment the
+    /// caller names in `options`, every unusable input refused up front.
+    ///
+    /// Everything but the projection and the wall flux is the shared step
+    /// body: `StepOptions::new(Multigrid { cycles: 6 })` on a power-of-two
+    /// grid, or `RedBlackGs { sweeps: jacobi_iterations }` on any other,
+    /// reproduces [`Self::step`] bit for bit. With a [`WallModel`] the
+    /// viscous flux at every [`crate::eulerian_grid::FaceBc::Wall`] comes from
+    /// the log law instead of the no-slip ghost, and the step reports the
+    /// envelope of what the model read ([`WallShearSummary`]).
+    ///
+    /// # Errors
+    ///
+    /// [`StepError::Pressure`] for the refusals of
+    /// [`Self::step_with_pressure_solver`], and
+    /// [`StepError::WallModelNeedsViscosity`] for a wall model on a solver
+    /// with zero molecular viscosity. ⚠️ On `Err` the solver is **not
+    /// stepped**: the grid and `step_count` are untouched.
+    pub fn step_with_options(
+        &mut self,
+        dt_s: Fix128,
+        options: &StepOptions,
+    ) -> Result<StepReport, StepError> {
+        if dt_s.is_zero() {
+            return Err(PressureSolverError::ZeroTimeStep.into());
+        }
+        let projection = self.projection_for(options.pressure)?;
+        if options.wall_model.is_some() && self.dynamic_viscosity_pas <= Fix128::ZERO {
+            return Err(StepError::WallModelNeedsViscosity);
+        }
+        let (bicgstab, wall) = self.step_body(dt_s, projection, options.wall_model.as_ref());
+        Ok(StepReport { bicgstab, wall })
     }
 
     /// The step body: boundaries, advection, body forces, diffusion, the
     /// projection named by `projection`, then the optional level-set and
     /// temperature updates. Returns the BiCGStab verdict when that is the
     /// solver.
-    fn step_body(&mut self, dt_s: Fix128, projection: Projection) -> Option<BicgstabStats> {
+    fn step_body(
+        &mut self,
+        dt_s: Fix128,
+        projection: Projection,
+        wall: Option<&WallModel>,
+    ) -> (Option<BicgstabStats>, Option<WallShearSummary>) {
         self.grid.enforce_face_boundaries();
         match self.advection_scheme {
             AdvectionScheme::SemiLagrangian => self.advect_velocity(dt_s),
@@ -458,11 +721,11 @@ impl CfdSolver {
         }
         self.apply_body_forces(dt_s);
         self.grid.enforce_face_boundaries();
-        if self.use_turbulence {
-            self.apply_turbulent_diffusion(dt_s);
+        let wall_summary = if self.use_turbulence {
+            self.apply_turbulent_diffusion(dt_s, wall)
         } else {
-            self.apply_molecular_diffusion(dt_s);
-        }
+            self.apply_molecular_diffusion(dt_s, wall)
+        };
         let stats = match projection {
             Projection::Mg(cycles) => {
                 project_pressure_multigrid(&mut self.grid, dt_s, self.density_kg_m3, cycles);
@@ -506,7 +769,7 @@ impl CfdSolver {
             }
         }
         self.step_count += 1;
-        stats
+        (stats, wall_summary)
     }
 
     /// FLIP / PIC particle step: scatter particles to the grid, apply forces
@@ -609,9 +872,9 @@ impl CfdSolver {
         self.apply_body_forces(dt_s);
         self.grid.enforce_face_boundaries();
         if self.use_turbulence {
-            self.apply_turbulent_diffusion(dt_s);
+            self.apply_turbulent_diffusion(dt_s, None);
         } else {
-            self.apply_molecular_diffusion(dt_s);
+            self.apply_molecular_diffusion(dt_s, None);
         }
         project_pressure(
             &mut self.grid,
@@ -737,18 +1000,26 @@ impl CfdSolver {
     }
 
     /// Molecular-only viscous diffusion via explicit Laplacian.
-    fn apply_molecular_diffusion(&mut self, dt_s: Fix128) {
+    fn apply_molecular_diffusion(
+        &mut self,
+        dt_s: Fix128,
+        wall: Option<&WallModel>,
+    ) -> Option<WallShearSummary> {
         if self.density_kg_m3.is_zero() {
-            return;
+            return None;
         }
         let nu = self.dynamic_viscosity_pas / self.density_kg_m3;
-        self.diffuse_velocity(nu, dt_s);
+        self.diffuse_velocity(nu, dt_s, wall)
     }
 
     /// Smagorinsky-augmented diffusion: `ν_eff = ν_mol + ν_t`.
-    fn apply_turbulent_diffusion(&mut self, dt_s: Fix128) {
+    fn apply_turbulent_diffusion(
+        &mut self,
+        dt_s: Fix128,
+        wall: Option<&WallModel>,
+    ) -> Option<WallShearSummary> {
         if self.density_kg_m3.is_zero() {
-            return;
+            return None;
         }
         let nu_mol = self.dynamic_viscosity_pas / self.density_kg_m3;
         // Compute strain-rate magnitude at cell centres and take max as an
@@ -776,7 +1047,7 @@ impl CfdSolver {
         }
         let nu_t = smagorinsky_eddy_viscosity(self.grid.dx, max_strain);
         let _ = SMAGORINSKY_CS; // referenced via smagorinsky_eddy_viscosity
-        self.diffuse_velocity(nu_mol + nu_t, dt_s);
+        self.diffuse_velocity(nu_mol + nu_t, dt_s, wall)
     }
 
     /// Explicit Laplacian: `u_new = u + dt·ν·∇²u`.
@@ -795,12 +1066,39 @@ impl CfdSolver {
     /// gets the same treatment as the outer box. A [`crate::eulerian_grid::FaceBc::SlipWall`]
     /// deliberately keeps the zero-gradient mirror — that is the symmetry
     /// plane a quasi-2-D run wants on its `z` faces.
-    fn diffuse_velocity(&mut self, nu: Fix128, dt_s: Fix128) {
+    fn diffuse_velocity(
+        &mut self,
+        nu: Fix128,
+        dt_s: Fix128,
+        wall: Option<&WallModel>,
+    ) -> Option<WallShearSummary> {
         if nu.is_zero() || self.grid.dx.is_zero() {
-            return;
+            return None;
         }
         let coeff = nu * dt_s / (self.grid.dx * self.grid.dx);
         let two = Fix128::from_int(2);
+        // The wall model, when enabled, reads `y⁺` with the *molecular*
+        // viscosity whatever `nu` the interior diffuses with.
+        let sink = wall.map(|_| WallSink {
+            nu_mol: self.dynamic_viscosity_pas / self.density_kg_m3,
+            density: self.density_kg_m3,
+            dynamic_viscosity: self.dynamic_viscosity_pas,
+            y_p: self.grid.dx.half(),
+            dt_over_dx: dt_s / self.grid.dx,
+        });
+        let mut summary = WallShearSummary::with_no_faces();
+        // A neighbour across a wall: the no-slip ghost `2 u_wall − u_in`
+        // without a model, or — with one — no ghost (the neighbour reads as
+        // the centre, contributing nothing to the Laplacian) and the modelled
+        // shear added as a separate sink.
+        let mut across_wall =
+            |wall_component: Fix128, center: Fix128, extra: &mut Fix128| match &sink {
+                None => two * wall_component - center,
+                Some(model) => {
+                    *extra = *extra + model.apply(center - wall_component, &mut summary);
+                    center
+                }
+            };
 
         // u faces (all nx + 1 of them; the boundary faces i = 0 / nx use a
         // zero-gradient mirror like every other boundary. Before 1.2.0 they were
@@ -812,6 +1110,7 @@ impl CfdSolver {
             for j in 0..self.grid.ny {
                 for i in 0..=self.grid.nx {
                     let center = self.grid.u(i, j, k);
+                    let mut extra = Fix128::ZERO;
                     let left = if i > 0 {
                         self.grid.u(i - 1, j, k)
                     } else {
@@ -823,29 +1122,29 @@ impl CfdSolver {
                         center
                     };
                     let down = match self.grid.u_wall_across_y(i, j, k, false) {
-                        Some(wall) => two * wall.x - center,
+                        Some(w) => across_wall(w.x, center, &mut extra),
                         None if j > 0 => self.grid.u(i, j - 1, k),
                         None => center,
                     };
                     let up = match self.grid.u_wall_across_y(i, j, k, true) {
-                        Some(wall) => two * wall.x - center,
+                        Some(w) => across_wall(w.x, center, &mut extra),
                         None if j + 1 < self.grid.ny => self.grid.u(i, j + 1, k),
                         None => center,
                     };
                     let back = match self.grid.u_wall_across_z(i, j, k, false) {
-                        Some(wall) => two * wall.x - center,
+                        Some(w) => across_wall(w.x, center, &mut extra),
                         None if k > 0 => self.grid.u(i, j, k - 1),
                         None => center,
                     };
                     let fwd = match self.grid.u_wall_across_z(i, j, k, true) {
-                        Some(wall) => two * wall.x - center,
+                        Some(w) => across_wall(w.x, center, &mut extra),
                         None if k + 1 < self.grid.nz => self.grid.u(i, j, k + 1),
                         None => center,
                     };
                     let laplacian =
                         left + right + down + up + back + fwd - center * Fix128::from_int(6);
                     let ix = i + (self.grid.nx + 1) * (j + self.grid.ny * k);
-                    u_next[ix] = center + coeff * laplacian;
+                    u_next[ix] = center + coeff * laplacian + extra;
                 }
             }
         }
@@ -857,13 +1156,14 @@ impl CfdSolver {
             for j in 0..=self.grid.ny {
                 for i in 0..self.grid.nx {
                     let center = self.grid.v(i, j, k);
+                    let mut extra = Fix128::ZERO;
                     let left = match self.grid.v_wall_across_x(i, j, k, false) {
-                        Some(wall) => two * wall.y - center,
+                        Some(w) => across_wall(w.y, center, &mut extra),
                         None if i > 0 => self.grid.v(i - 1, j, k),
                         None => center,
                     };
                     let right = match self.grid.v_wall_across_x(i, j, k, true) {
-                        Some(wall) => two * wall.y - center,
+                        Some(w) => across_wall(w.y, center, &mut extra),
                         None if i + 1 < self.grid.nx => self.grid.v(i + 1, j, k),
                         None => center,
                     };
@@ -878,19 +1178,19 @@ impl CfdSolver {
                         center
                     };
                     let back = match self.grid.v_wall_across_z(i, j, k, false) {
-                        Some(wall) => two * wall.y - center,
+                        Some(w) => across_wall(w.y, center, &mut extra),
                         None if k > 0 => self.grid.v(i, j, k - 1),
                         None => center,
                     };
                     let fwd = match self.grid.v_wall_across_z(i, j, k, true) {
-                        Some(wall) => two * wall.y - center,
+                        Some(w) => across_wall(w.y, center, &mut extra),
                         None if k + 1 < self.grid.nz => self.grid.v(i, j, k + 1),
                         None => center,
                     };
                     let laplacian =
                         left + right + down + up + back + fwd - center * Fix128::from_int(6);
                     let ix = i + self.grid.nx * (j + (self.grid.ny + 1) * k);
-                    v_next[ix] = center + coeff * laplacian;
+                    v_next[ix] = center + coeff * laplacian + extra;
                 }
             }
         }
@@ -902,23 +1202,24 @@ impl CfdSolver {
             for j in 0..self.grid.ny {
                 for i in 0..self.grid.nx {
                     let center = self.grid.w(i, j, k);
+                    let mut extra = Fix128::ZERO;
                     let left = match self.grid.w_wall_across_x(i, j, k, false) {
-                        Some(wall) => two * wall.z - center,
+                        Some(w) => across_wall(w.z, center, &mut extra),
                         None if i > 0 => self.grid.w(i - 1, j, k),
                         None => center,
                     };
                     let right = match self.grid.w_wall_across_x(i, j, k, true) {
-                        Some(wall) => two * wall.z - center,
+                        Some(w) => across_wall(w.z, center, &mut extra),
                         None if i + 1 < self.grid.nx => self.grid.w(i + 1, j, k),
                         None => center,
                     };
                     let down = match self.grid.w_wall_across_y(i, j, k, false) {
-                        Some(wall) => two * wall.z - center,
+                        Some(w) => across_wall(w.z, center, &mut extra),
                         None if j > 0 => self.grid.w(i, j - 1, k),
                         None => center,
                     };
                     let up = match self.grid.w_wall_across_y(i, j, k, true) {
-                        Some(wall) => two * wall.z - center,
+                        Some(w) => across_wall(w.z, center, &mut extra),
                         None if j + 1 < self.grid.ny => self.grid.w(i, j + 1, k),
                         None => center,
                     };
@@ -935,11 +1236,12 @@ impl CfdSolver {
                     let laplacian =
                         left + right + down + up + back + fwd - center * Fix128::from_int(6);
                     let ix = i + self.grid.nx * (j + self.grid.ny * k);
-                    w_next[ix] = center + coeff * laplacian;
+                    w_next[ix] = center + coeff * laplacian + extra;
                 }
             }
         }
         self.grid.w = w_next;
+        sink.map(|_| summary)
     }
 
     /// Semi-Lagrangian self-advection of the MAC velocity field.

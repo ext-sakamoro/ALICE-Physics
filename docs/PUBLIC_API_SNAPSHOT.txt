@@ -1264,6 +1264,8 @@ pub fn alice_physics::cfd_solver::PressureSolverError::clone(&self) -> Self
 impl core::cmp::Eq for alice_physics::cfd_solver::PressureSolverError
 impl core::cmp::PartialEq for alice_physics::cfd_solver::PressureSolverError
 pub fn alice_physics::cfd_solver::PressureSolverError::eq(&self, &Self) -> bool
+impl core::convert::From<alice_physics::cfd_solver::PressureSolverError> for alice_physics::cfd_solver::StepError
+pub fn alice_physics::cfd_solver::StepError::from(alice_physics::cfd_solver::PressureSolverError) -> Self
 impl core::error::Error for alice_physics::cfd_solver::PressureSolverError
 impl core::fmt::Debug for alice_physics::cfd_solver::PressureSolverError
 pub fn alice_physics::cfd_solver::PressureSolverError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
@@ -1278,6 +1280,30 @@ impl core::marker::Unpin for alice_physics::cfd_solver::PressureSolverError
 impl core::marker::UnsafeUnpin for alice_physics::cfd_solver::PressureSolverError
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::cfd_solver::PressureSolverError
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::cfd_solver::PressureSolverError
+#[non_exhaustive] pub enum alice_physics::cfd_solver::StepError
+pub alice_physics::cfd_solver::StepError::Pressure(alice_physics::cfd_solver::PressureSolverError)
+pub alice_physics::cfd_solver::StepError::WallModelNeedsViscosity
+impl core::clone::Clone for alice_physics::cfd_solver::StepError
+pub fn alice_physics::cfd_solver::StepError::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::cfd_solver::StepError
+impl core::cmp::PartialEq for alice_physics::cfd_solver::StepError
+pub fn alice_physics::cfd_solver::StepError::eq(&self, &Self) -> bool
+impl core::convert::From<alice_physics::cfd_solver::PressureSolverError> for alice_physics::cfd_solver::StepError
+pub fn alice_physics::cfd_solver::StepError::from(alice_physics::cfd_solver::PressureSolverError) -> Self
+impl core::error::Error for alice_physics::cfd_solver::StepError
+impl core::fmt::Debug for alice_physics::cfd_solver::StepError
+pub fn alice_physics::cfd_solver::StepError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for alice_physics::cfd_solver::StepError
+pub fn alice_physics::cfd_solver::StepError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::cfd_solver::StepError
+impl core::marker::StructuralPartialEq for alice_physics::cfd_solver::StepError
+impl core::marker::Freeze for alice_physics::cfd_solver::StepError
+impl core::marker::Send for alice_physics::cfd_solver::StepError
+impl core::marker::Sync for alice_physics::cfd_solver::StepError
+impl core::marker::Unpin for alice_physics::cfd_solver::StepError
+impl core::marker::UnsafeUnpin for alice_physics::cfd_solver::StepError
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::cfd_solver::StepError
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::cfd_solver::StepError
 pub struct alice_physics::cfd_solver::CfdSolver
 pub alice_physics::cfd_solver::CfdSolver::advection_scheme: alice_physics::cfd_solver::AdvectionScheme
 pub alice_physics::cfd_solver::CfdSolver::beta_per_k: alice_physics::math::Fix128
@@ -1300,6 +1326,7 @@ pub fn alice_physics::cfd_solver::CfdSolver::step(&mut self, alice_physics::math
 pub fn alice_physics::cfd_solver::CfdSolver::step_adaptive(&mut self, alice_physics::math::Fix128, alice_physics::math::Fix128) -> alice_physics::math::Fix128
 pub fn alice_physics::cfd_solver::CfdSolver::step_flip(&mut self, &mut [(alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix)], alice_physics::math::Fix128, alice_physics::math::Fix128)
 pub fn alice_physics::cfd_solver::CfdSolver::step_multigrid(&mut self, alice_physics::math::Fix128, u32)
+pub fn alice_physics::cfd_solver::CfdSolver::step_with_options(&mut self, alice_physics::math::Fix128, &alice_physics::cfd_solver::StepOptions) -> core::result::Result<alice_physics::cfd_solver::StepReport, alice_physics::cfd_solver::StepError>
 pub fn alice_physics::cfd_solver::CfdSolver::step_with_pressure_solver(&mut self, alice_physics::math::Fix128, alice_physics::cfd_solver::PressureSolver) -> core::result::Result<alice_physics::cfd_solver::ProjectionReport, alice_physics::cfd_solver::PressureSolverError>
 impl core::marker::Freeze for alice_physics::cfd_solver::CfdSolver
 impl core::marker::Send for alice_physics::cfd_solver::CfdSolver
@@ -1327,6 +1354,93 @@ impl core::marker::Unpin for alice_physics::cfd_solver::ProjectionReport
 impl core::marker::UnsafeUnpin for alice_physics::cfd_solver::ProjectionReport
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::cfd_solver::ProjectionReport
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::cfd_solver::ProjectionReport
+#[non_exhaustive] pub struct alice_physics::cfd_solver::StepOptions
+impl alice_physics::cfd_solver::StepOptions
+pub const fn alice_physics::cfd_solver::StepOptions::new(alice_physics::cfd_solver::PressureSolver) -> Self
+pub const fn alice_physics::cfd_solver::StepOptions::pressure(&self) -> alice_physics::cfd_solver::PressureSolver
+pub const fn alice_physics::cfd_solver::StepOptions::wall_model(&self) -> core::option::Option<alice_physics::cfd_solver::WallModel>
+pub const fn alice_physics::cfd_solver::StepOptions::with_wall_model(self, alice_physics::cfd_solver::WallModel) -> Self
+impl core::clone::Clone for alice_physics::cfd_solver::StepOptions
+pub fn alice_physics::cfd_solver::StepOptions::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::cfd_solver::StepOptions
+impl core::cmp::PartialEq for alice_physics::cfd_solver::StepOptions
+pub fn alice_physics::cfd_solver::StepOptions::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::cfd_solver::StepOptions
+pub fn alice_physics::cfd_solver::StepOptions::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::cfd_solver::StepOptions
+impl core::marker::StructuralPartialEq for alice_physics::cfd_solver::StepOptions
+impl core::marker::Freeze for alice_physics::cfd_solver::StepOptions
+impl core::marker::Send for alice_physics::cfd_solver::StepOptions
+impl core::marker::Sync for alice_physics::cfd_solver::StepOptions
+impl core::marker::Unpin for alice_physics::cfd_solver::StepOptions
+impl core::marker::UnsafeUnpin for alice_physics::cfd_solver::StepOptions
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::cfd_solver::StepOptions
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::cfd_solver::StepOptions
+#[non_exhaustive] pub struct alice_physics::cfd_solver::StepReport
+pub alice_physics::cfd_solver::StepReport::bicgstab: core::option::Option<alice_physics::eulerian_grid::BicgstabStats>
+pub alice_physics::cfd_solver::StepReport::wall: core::option::Option<alice_physics::cfd_solver::WallShearSummary>
+impl core::clone::Clone for alice_physics::cfd_solver::StepReport
+pub fn alice_physics::cfd_solver::StepReport::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::cfd_solver::StepReport
+impl core::cmp::PartialEq for alice_physics::cfd_solver::StepReport
+pub fn alice_physics::cfd_solver::StepReport::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::cfd_solver::StepReport
+pub fn alice_physics::cfd_solver::StepReport::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::cfd_solver::StepReport
+impl core::marker::StructuralPartialEq for alice_physics::cfd_solver::StepReport
+impl core::marker::Freeze for alice_physics::cfd_solver::StepReport
+impl core::marker::Send for alice_physics::cfd_solver::StepReport
+impl core::marker::Sync for alice_physics::cfd_solver::StepReport
+impl core::marker::Unpin for alice_physics::cfd_solver::StepReport
+impl core::marker::UnsafeUnpin for alice_physics::cfd_solver::StepReport
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::cfd_solver::StepReport
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::cfd_solver::StepReport
+#[non_exhaustive] pub struct alice_physics::cfd_solver::WallModel
+impl alice_physics::cfd_solver::WallModel
+pub const fn alice_physics::cfd_solver::WallModel::log_law() -> Self
+impl core::clone::Clone for alice_physics::cfd_solver::WallModel
+pub fn alice_physics::cfd_solver::WallModel::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::cfd_solver::WallModel
+impl core::cmp::PartialEq for alice_physics::cfd_solver::WallModel
+pub fn alice_physics::cfd_solver::WallModel::eq(&self, &Self) -> bool
+impl core::default::Default for alice_physics::cfd_solver::WallModel
+pub fn alice_physics::cfd_solver::WallModel::default() -> Self
+impl core::fmt::Debug for alice_physics::cfd_solver::WallModel
+pub fn alice_physics::cfd_solver::WallModel::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::cfd_solver::WallModel
+impl core::marker::StructuralPartialEq for alice_physics::cfd_solver::WallModel
+impl core::marker::Freeze for alice_physics::cfd_solver::WallModel
+impl core::marker::Send for alice_physics::cfd_solver::WallModel
+impl core::marker::Sync for alice_physics::cfd_solver::WallModel
+impl core::marker::Unpin for alice_physics::cfd_solver::WallModel
+impl core::marker::UnsafeUnpin for alice_physics::cfd_solver::WallModel
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::cfd_solver::WallModel
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::cfd_solver::WallModel
+#[non_exhaustive] pub struct alice_physics::cfd_solver::WallShearSummary
+pub alice_physics::cfd_solver::WallShearSummary::epsilon_max: alice_physics::math::Fix128
+pub alice_physics::cfd_solver::WallShearSummary::faces: usize
+pub alice_physics::cfd_solver::WallShearSummary::k_max: alice_physics::math::Fix128
+pub alice_physics::cfd_solver::WallShearSummary::resting_faces: usize
+pub alice_physics::cfd_solver::WallShearSummary::u_tau_max: alice_physics::math::Fix128
+pub alice_physics::cfd_solver::WallShearSummary::u_tau_min: alice_physics::math::Fix128
+pub alice_physics::cfd_solver::WallShearSummary::y_plus_max: alice_physics::math::Fix128
+pub alice_physics::cfd_solver::WallShearSummary::y_plus_min: alice_physics::math::Fix128
+impl core::clone::Clone for alice_physics::cfd_solver::WallShearSummary
+pub fn alice_physics::cfd_solver::WallShearSummary::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::cfd_solver::WallShearSummary
+impl core::cmp::PartialEq for alice_physics::cfd_solver::WallShearSummary
+pub fn alice_physics::cfd_solver::WallShearSummary::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::cfd_solver::WallShearSummary
+pub fn alice_physics::cfd_solver::WallShearSummary::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::cfd_solver::WallShearSummary
+impl core::marker::StructuralPartialEq for alice_physics::cfd_solver::WallShearSummary
+impl core::marker::Freeze for alice_physics::cfd_solver::WallShearSummary
+impl core::marker::Send for alice_physics::cfd_solver::WallShearSummary
+impl core::marker::Sync for alice_physics::cfd_solver::WallShearSummary
+impl core::marker::Unpin for alice_physics::cfd_solver::WallShearSummary
+impl core::marker::UnsafeUnpin for alice_physics::cfd_solver::WallShearSummary
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::cfd_solver::WallShearSummary
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::cfd_solver::WallShearSummary
 pub mod alice_physics::character
 pub struct alice_physics::character::CharacterConfig
 pub alice_physics::character::CharacterConfig::ground_probe_distance: alice_physics::math::Fix128
@@ -15312,7 +15426,32 @@ impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::trimesh::Triangl
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::trimesh::Triangle
 pub fn alice_physics::trimesh::ray_triangle(&alice_physics::raycast::Ray, &alice_physics::trimesh::Triangle, alice_physics::math::Fix128) -> core::option::Option<alice_physics::raycast::RayHit>
 pub mod alice_physics::turbulence
+#[non_exhaustive] pub enum alice_physics::turbulence::WallFunctionError
+pub alice_physics::turbulence::WallFunctionError::NegativeSpeed
+pub alice_physics::turbulence::WallFunctionError::NonPositiveViscosity
+pub alice_physics::turbulence::WallFunctionError::NonPositiveWallDistance
+impl core::clone::Clone for alice_physics::turbulence::WallFunctionError
+pub fn alice_physics::turbulence::WallFunctionError::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::turbulence::WallFunctionError
+impl core::cmp::PartialEq for alice_physics::turbulence::WallFunctionError
+pub fn alice_physics::turbulence::WallFunctionError::eq(&self, &Self) -> bool
+impl core::error::Error for alice_physics::turbulence::WallFunctionError
+impl core::fmt::Debug for alice_physics::turbulence::WallFunctionError
+pub fn alice_physics::turbulence::WallFunctionError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for alice_physics::turbulence::WallFunctionError
+pub fn alice_physics::turbulence::WallFunctionError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::turbulence::WallFunctionError
+impl core::marker::StructuralPartialEq for alice_physics::turbulence::WallFunctionError
+impl core::marker::Freeze for alice_physics::turbulence::WallFunctionError
+impl core::marker::Send for alice_physics::turbulence::WallFunctionError
+impl core::marker::Sync for alice_physics::turbulence::WallFunctionError
+impl core::marker::Unpin for alice_physics::turbulence::WallFunctionError
+impl core::marker::UnsafeUnpin for alice_physics::turbulence::WallFunctionError
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::turbulence::WallFunctionError
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::turbulence::WallFunctionError
+pub const alice_physics::turbulence::FRICTION_VELOCITY_BISECTIONS: u32
 pub const alice_physics::turbulence::SMAGORINSKY_CS: alice_physics::math::Fix128
+pub fn alice_physics::turbulence::friction_velocity(alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128) -> core::result::Result<alice_physics::math::Fix128, alice_physics::turbulence::WallFunctionError>
 pub fn alice_physics::turbulence::smagorinsky_eddy_viscosity(alice_physics::math::Fix128, alice_physics::math::Fix128) -> alice_physics::math::Fix128
 pub fn alice_physics::turbulence::strain_rate_magnitude(alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128) -> alice_physics::math::Fix128
 pub mod alice_physics::vehicle

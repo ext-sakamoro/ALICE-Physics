@@ -33,14 +33,15 @@
 //!
 //! # Integration status
 //!
-//! Only the Smagorinsky path (`smagorinsky_eddy_viscosity`,
-//! `strain_rate_magnitude`, `SMAGORINSKY_CS`) is currently wired into
-//! `cfd_solver.rs`. The k-ε / k-ω transport state, dynamic Smagorinsky
-//! coefficient, and wall functions are reserved crate-internal API
-//! awaiting downstream integration; module-level `#![allow(dead_code)]`
-//! documents this state.
-
-#![allow(dead_code)] // Reserved RANS/wall-function API — awaiting cfd_solver integration
+//! Wired into `cfd_solver.rs`: the Smagorinsky path
+//! (`smagorinsky_eddy_viscosity`, `strain_rate_magnitude`, `SMAGORINSKY_CS`)
+//! through `use_turbulence`, and the wall functions — [`friction_velocity`]
+//! (the inverse of the universal profile, which is what a wall model needs
+//! and what this module lacked until 2026-10-02), `y_plus`, `u_plus` and
+//! `wall_k_epsilon` — through `CfdSolver::step_with_options` with a
+//! `WallModel`. The k-ε / k-ω transport state and the dynamic Smagorinsky
+//! coefficient are not yet reached from a solver step; each carries its own
+//! `ALLOW-DEAD` note.
 
 use crate::math::Fix128;
 
@@ -57,11 +58,16 @@ pub const SMAGORINSKY_CS: Fix128 = Fix128 {
 /// k-ε model constants (Launder & Spalding 1974, crate-internal).
 pub(crate) const KE_C_MU: Fix128 = Fix128 {
     hi: 0,
-    lo: 0x1707_5F6F_D21F_F2E5, // ≈ 0.09
+    lo: 0x170A3D70A3D70A3D, // 0.09 to 2⁻⁶⁴ (= ⌊9·2⁶⁴/100⌋, what `from_ratio(9, 100)` yields) (the earlier literal 0x1707_5F6F_D21F_F2E5 was 0.08995625, caught by the
+                            // wall-model oracle on `k = u_τ²/√C_μ`; the unit test below tolerated 1e-2)
 };
 /// k-ε turbulent Prandtl number for k (crate-internal).
+// ALLOW-DEAD: RANS transport constant awaits the k-ε / k-ω step (wiring program item 4)
+#[allow(dead_code)]
 pub(crate) const KE_SIGMA_K: Fix128 = Fix128::ONE;
 /// k-ε turbulent Prandtl number for ε (≈ 1.3, crate-internal).
+// ALLOW-DEAD: RANS transport constant awaits the k-ε / k-ω step (wiring program item 4)
+#[allow(dead_code)]
 pub(crate) const KE_SIGMA_EPS: Fix128 = Fix128 {
     hi: 1,
     lo: 0x4CCC_CCCC_CCCC_CCCD,
@@ -80,6 +86,8 @@ pub(crate) const KE_C2_EPS: Fix128 = Fix128 {
 /// k-ω model constant β* (= 0.09, crate-internal).
 pub(crate) const KW_BETA_STAR: Fix128 = KE_C_MU;
 /// k-ω model constant β (= 3/40 = 0.075, crate-internal).
+// ALLOW-DEAD: RANS transport constant awaits the k-ε / k-ω step (wiring program item 4)
+#[allow(dead_code)]
 pub(crate) const KW_BETA: Fix128 = Fix128 {
     hi: 0,
     lo: 0x1333_3333_3333_3333,
@@ -120,6 +128,8 @@ pub fn strain_rate_magnitude(
 // ============================================================================
 
 /// k-ε turbulence state at a single point (crate-internal, not yet wired to CFD solver).
+// ALLOW-DEAD: k-ε transport state awaits the RANS step (wiring program item 4)
+#[allow(dead_code)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub(crate) struct KEpsilonState {
     /// Turbulent kinetic energy `k` (m²/s²).
@@ -128,7 +138,8 @@ pub(crate) struct KEpsilonState {
     pub(crate) epsilon: Fix128,
 }
 
-#[allow(dead_code)] // Reserved RANS state — unused pending k-ε integration into cfd_solver
+// ALLOW-DEAD: k-ε transport awaits the RANS step (wiring program item 4)
+#[allow(dead_code)]
 impl KEpsilonState {
     /// Eddy viscosity `ν_t = C_μ · k² / ε` (m²/s).
     #[must_use]
@@ -179,7 +190,8 @@ pub(crate) struct KOmegaState {
     pub(crate) omega: Fix128,
 }
 
-#[allow(dead_code)] // Reserved RANS state — unused pending k-ω integration into cfd_solver
+// ALLOW-DEAD: k-ω transport awaits the RANS step (wiring program item 4)
+#[allow(dead_code)]
 impl KOmegaState {
     /// Eddy viscosity `ν_t = k / ω` (m²/s).
     #[must_use]
@@ -219,6 +231,8 @@ impl KOmegaState {
 /// `C_s² = ⟨L·M⟩ / (2·⟨M·M⟩ + ε)` where `L` and `M` are the Leonard /
 /// mixed tensors; here we approximate the isotropic invariants.
 #[must_use]
+// ALLOW-DEAD: dynamic Smagorinsky coefficient awaits a test-filtered strain (wiring program item 4)
+#[allow(dead_code)]
 pub(crate) fn dynamic_smagorinsky_cs(strain_grid: Fix128, strain_test: Fix128) -> Fix128 {
     let min_cs = Fix128::from_ratio(5, 100);
     let max_cs = Fix128::from_ratio(25, 100);
@@ -253,8 +267,126 @@ pub(crate) const LOG_LAW_B: Fix128 = Fix128 {
     lo: 0x8000_0000_0000_0000,
 };
 
-/// y+ boundary between the viscous sublayer and the log-law region (crate-internal).
-pub(crate) const Y_PLUS_TRANSITION: Fix128 = Fix128 { hi: 11, lo: 0 };
+/// `y⁺` at which the viscous sublayer `u⁺ = y⁺` meets the log law
+/// `u⁺ = ln(y⁺)/κ + B`: the root of `y = ln(y)/0.41 + 5.5`, which is
+/// `11.445319…` (crate-internal; the fraction below is that root to 2⁻⁶⁴).
+///
+/// ⚠️ Placing the switch **at the intersection** is what makes `u⁺(y⁺)`
+/// continuous. The earlier value `11` (a figure that belongs to `B ≈ 5.0`)
+/// left a step of `0.35` between the two branches, and a step in `u⁺` makes
+/// the map `u_τ ↦ u_τ · u⁺(y u_τ/ν)` discontinuous, so a wall velocity falling
+/// inside the step has no friction velocity at all. `tests/analytic_wall_model.rs`
+/// solves for the root independently and pins both the constant and the
+/// continuity.
+pub(crate) const Y_PLUS_TRANSITION: Fix128 = Fix128 {
+    hi: 11,
+    lo: 0x72006EE534E20000, // 0.445319110 · 2⁶⁴
+};
+
+/// Bisection steps of [`friction_velocity`]: a fixed count, never a
+/// convergence `break`, so the result is bit-reproducible across platforms
+/// (the lockstep discipline — a data-dependent iteration count is one of the
+/// five ways determinism is lost). 64 halvings of a bracket of order `u_rel`
+/// bring the width below the arithmetic's resolution at any physical speed.
+pub const FRICTION_VELOCITY_BISECTIONS: u32 = 64;
+
+/// Why [`friction_velocity`] refused.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum WallFunctionError {
+    /// The wall distance is not strictly positive.
+    NonPositiveWallDistance,
+    /// The kinematic viscosity is not strictly positive: `y⁺` is undefined.
+    NonPositiveViscosity,
+    /// The tangential speed relative to the wall is negative; pass its
+    /// magnitude and keep the sign outside.
+    NegativeSpeed,
+}
+
+impl core::fmt::Display for WallFunctionError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::NonPositiveWallDistance => write!(f, "the wall distance must be positive"),
+            Self::NonPositiveViscosity => write!(f, "the kinematic viscosity must be positive"),
+            Self::NegativeSpeed => write!(f, "the speed relative to the wall must not be negative"),
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for WallFunctionError {}
+
+/// Friction velocity `u_τ` from the tangential speed `u_rel ≥ 0` at distance
+/// `y_p` from a wall, in a fluid of kinematic viscosity `ν`: the `u_τ` with
+///
+/// ```text
+/// u_rel = u_τ · u⁺(y⁺),   y⁺ = y_p · u_τ / ν
+/// ```
+///
+/// using the universal profile of `u_plus` (this module). This is the *inverse* the wall
+/// functions in this module were missing: `y_plus`, `u_plus` and
+/// `wall_k_epsilon` all consume `u_τ`, and nothing produced it, so no wall
+/// shear could be modelled from a resolved velocity.
+///
+/// The map `u_τ ↦ u_τ·u⁺(y_p u_τ/ν)` is strictly increasing and continuous
+/// (the two branches of `u⁺` meet at `Y_PLUS_TRANSITION`, `11.4453`), so the root is
+/// unique; it is found by [`FRICTION_VELOCITY_BISECTIONS`] halvings of the
+/// bracket `[0, max(u_rel, √(ν u_rel / y_p))]`. The upper end covers both
+/// regimes: in the sublayer the exact root is `√(ν u_rel / y_p)`, which
+/// exceeds `u_rel` when `y⁺ < 1`; in the log region `u⁺ > 1` so `u_τ < u_rel`.
+///
+/// `u_rel = 0` returns exactly zero (the bracket is `[0, 0]`).
+///
+/// # Errors
+///
+/// [`WallFunctionError`] for a non-positive `y_p` or `ν`, or a negative
+/// `u_rel`.
+pub fn friction_velocity(
+    u_rel: Fix128,
+    y_p: Fix128,
+    nu: Fix128,
+) -> Result<Fix128, WallFunctionError> {
+    if y_p <= Fix128::ZERO {
+        return Err(WallFunctionError::NonPositiveWallDistance);
+    }
+    if nu <= Fix128::ZERO {
+        return Err(WallFunctionError::NonPositiveViscosity);
+    }
+    if u_rel.is_negative() {
+        return Err(WallFunctionError::NegativeSpeed);
+    }
+    Ok(friction_velocity_checked(u_rel, y_p, nu))
+}
+
+/// [`friction_velocity`] after its inputs have been validated.
+pub(crate) fn friction_velocity_checked(u_rel: Fix128, y_p: Fix128, nu: Fix128) -> Fix128 {
+    if u_rel.is_zero() {
+        return Fix128::ZERO;
+    }
+    let sublayer_root = (nu * u_rel / y_p).sqrt();
+    let mut lo = Fix128::ZERO;
+    let mut hi = if sublayer_root > u_rel {
+        sublayer_root
+    } else {
+        u_rel
+    };
+    // The bracket's upper end must be at or above the root: `hi · u⁺(y⁺(hi))
+    // ≥ u_rel`. In the sublayer `u⁺ = y⁺` gives exactly `u_rel` at the
+    // sublayer root; in the log region `u⁺ ≥ y⁺*` > 1 at and above the
+    // transition. Widen once if the arithmetic put it below.
+    if hi * u_plus(y_p * hi / nu) < u_rel {
+        hi = hi.double();
+    }
+    for _ in 0..FRICTION_VELOCITY_BISECTIONS {
+        let mid = (lo + hi).half();
+        if mid * u_plus(y_p * mid / nu) < u_rel {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    (lo + hi).half()
+}
 
 /// Non-dimensional wall distance `y+ = ρ·u_τ·y / μ`.
 #[must_use]
@@ -363,11 +495,12 @@ mod tests {
 
     #[test]
     fn ke_c_mu_constant() {
-        // Should be ≈ 0.09
+        // To 2⁻⁶⁰, not to 1e-2: a tolerance of 1e-2 let a literal worth
+        // 0.08995625 through for a long time.
         assert!(approx_eq(
             KE_C_MU,
             Fix128::from_ratio(9, 100),
-            Fix128::from_ratio(1, 1000)
+            Fix128::from_raw(0, 16)
         ));
     }
 
