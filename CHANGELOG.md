@@ -64,6 +64,12 @@ hex literal `0x1707_5F6F_D21F_F2E5` は 0.09 でなく 0.08995625 (−0.05 %) �
 - `eulerian_grid` tests: `CrossFault::ChunkedWire` — `Read` / `Write` を 1 call 1 byte に刻む `Chunked<S>` 越しの 2 プロセス圧力解が単一プロセスと bit 一致 (8³ / 7³) 両 rank が「call 数 == byte 数 かつ 1 層分以上」を assert ⚠️ **byte 数だけの閾値は whole buffer を通す変異を見逃した** (実測、call 数で捕まえた) 変異 4/4 red (whole buffer 通過 / read 側のみ / write 側のみ / 計数なし)
 
 文面の確定: 複数ノード分散は **1 ホスト 8 プロセス loopback TCP で bit 一致 (arm64 / x86_64 別々に、fold は cross-arch 一致)**、2 ホスト / アーキ跨ぎの 1 solve / MPI backend は未測定・未実装
+### Added — 分散 multigrid の rank-local driver (壁 4、段階 3、crate 内)
+
+`project_pressure_multigrid_decomposed_on_rank` (`pub(crate)`) を追加した 同じ solve を、走らせる rank の集合を自分の rank だけにして回す 各 rank は自分の帯だけを持ち、配送 (halo 交換 / 残差の gather / 補正の返送 / 最終 pressure の rank 0 への集約) は全 rank が同じ順序で歩いて transport が自分の半分だけ実行する 粗い階層の解と grid への書き戻しは rank 0 だけ
+- oracle: rank を thread にして loopback socket で結んだ 2〜8 rank が単一 process と bit 一致 (4 形状 × 開放 / 壁つき) 非 root は grid を触らない 全 rank 走らせる driver に rank-local transport を渡すと panic
+- 未着手: process 分離 (re-exec) の harness、帯から組む setup、1e8 規模の実測
+
 ### Changed — 分散 multigrid の rank が自分の帯 + halo だけを持つ (壁 4、段階 2、crate 内)
 
 `multigrid_decomposed` の全長 buffer を slab 局所記憶域に替えた 各 rank は各 level の圧力を owned 層 + halo 1 層だけ、右辺・残差・コンダクタンス・逆次数を owned 層だけ持つ 帯の外を読むと panic (halo が足りないことは abort として現れる) 単一 process と bit 一致 (5 grid 形状 × rank 1〜16 × 開放 / 壁つき) 変異 25 件すべて red
