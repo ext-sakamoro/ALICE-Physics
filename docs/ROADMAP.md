@@ -16,6 +16,10 @@ Memory index pointer: `[[reference-alice-physics-v1-roadmap]]` in claude-config.
 | Maxwell FDTD | `ecd8c61` | source-free Yee、⚠️ **SI は `ε₀·μ₀` が 7.7 bit で不可**、正規化単位 + `S=9/16` |
 | 多体 ABA | `1bab99b` | ⚠️ **`solve()` が `link.joint` を読まない**状態から real ABA、oracle 12 本 |
 
+### 第 27 increment (2026-10-02、全配線 program 第 3 件 (a)(b) — z-slab 分割をプロセス内で solver から選べる)
+
+`PressureSolver::DecomposedGs` (全域 buffer + halo) / `BandedGs` (帯局所記憶域、新設 `project_pressure_banded` が面条件 → 分割 → 帯 → 書き戻し) で壁 4 の分散圧力解法を `CfdSolver` から到達可能にした oracle: ranks 8 通り × 格子 3 種 × 開放 / 密閉箱で `RedBlackGs` と bit 一致、拒否 4 経路 変異 5/5 red + 等価変異 1 (帯局所 ↔ 素の GS は bit 一致が仕様) baseline 退役 9 行 (うち `slab` 1 行は名前衝突の巻き込み、socket 側は未配線のまま) ⚠️ 残: socket / cross-process 経路の公開は transport の semver 判断
+
 ### 第 26 increment (2026-10-02、全配線 program 第 2 件 — 壁関数の配線と C_μ の定数修正)
 
 `turbulence::friction_velocity` (対数則の逆解、二分法 64 回固定) を新設して `CfdSolver::step_with_options` の `WallModel` から壁関数 (`y_plus` / `u_plus` / `wall_k_epsilon`) を初めて production に繋いだ 遷移点を 2 分岐の交点 11.4453 に置いて `u⁺` を連続化 oracle 8 本 (手計算 2 点で対数則を pin / 体積力 channel の力の釣合 `u_τ = √(G H/2)` 実測 0.707106781 / 底層で ghost と一致 / 1 step 閉形式 / 拒否) ⚠️ **`KE_C_MU` が 0.08995625 だった**のを oracle が検出し 0.09 に修正 (unit test の 1e-2 許容を 2⁻⁶⁰ に) baseline 退役 10 行 (全部実配線) ⚠️ 残: RANS (k-ε / k-ω の時間発展、program 第 4 件)、`dynamic_smagorinsky_cs`

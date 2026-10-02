@@ -13,6 +13,15 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added — 分散圧力解法のプロセス内経路を `PressureSolver` から選択可能に (`DecomposedGs` / `BandedGs`)
+
+全配線 program 第 3 件 (a)(b) 壁 4 の z-slab 分割 (`project_pressure_decomposed`、全域 buffer + halo) と帯局所記憶域 (`project_pressure_slab_local_over`、rank は自分の帯 + halo 1 層だけ) は `pub(crate)` で test からしか呼ばれていなかった
+
+- `PressureSolver::DecomposedGs { ranks, sweeps }` → `project_pressure_decomposed` (`LocalTransport`、`HaloSchedule::EverySweep` 固定 = monolithic と bit 一致する schedule) / `PressureSolver::BandedGs { ranks, sweeps }` → 新設 `project_pressure_banded` (面条件を全域で **1 度だけ**課してから `SlabFaces::from_grid` で分割、`LocalSlabTransport::from_field` (halo 1) で帯を作って回し、owned 層の圧力 / X・Y 面 / `w_written` の Z 面を書き戻す) `ranks = 0` は `PressureSolverError::ZeroRanks` ranks が `nz` を割り切らない / 超える (空 rank) 場合も受ける
+- oracle (`tests/analytic_pressure_solvers.rs` +3): ranks ∈ {1, 2, 3, 4, 5, nz, nz+1, 2nz+3} × 格子 (8³ / 7×8×8 / 8×8×6) × 開放 / 密閉箱 で両経路が `RedBlackGs` と **bit 一致** (solver 入口から) / 射影している (発散 1e-6 以下) / 拒否 4 経路 + `Display` 破壊試験 5/5 red: halo を反復ごとに (bit 不一致) / Z 面を書き戻さない / halo 幅 0 / ranks 0 の拒否除去 / 全域の面条件を課さない (⚠️ これは solver 入口の oracle をすべて素通りした — `step_body` が射影前に 2 回 enforce 済で観測不能 — ので `project_pressure_banded` 単体の契約として module test `the_banded_projection_imposes_the_face_conditions_itself` を足して red にした) ⚠️ 「帯局所を素の GS に差し替える」変異は**設計上の等価変異** (両者が bit 一致することが仕様) なので red にならない
+- baseline 退役 9 行 (`HALO_MISSING_*` / `project_pressure_decomposed` / `project_pressure_slab_local_over` / `u_v_w_layer_mut` / `slab` ×2) ⚠️ `slab` の 2 行目 (`SlabSocketTransport::slab`、`:3722`) は bare identifier の衝突で巻き込まれた退役で**未配線のまま** (socket 経路は transport が `pub(crate)`) — 台帳に残置
+- 分散 solver のうち socket / cross-process 経路 (`*_on_rank` / `enforce_slab_face_boundaries*`) は transport の公開 (semver 判断) を待つ
+
 ### Added — 壁関数を `CfdSolver` に配線 (`friction_velocity` / `WallModel` / `step_with_options`)
 
 全配線 program 第 2 件 `turbulence` の壁関数 (`y_plus` / `u_plus` / `wall_k_epsilon`) は **u_τ を消費する側しか無く生産側が無かった**ので配線できなかった (Backlog 既載) ⇒ 逆解を新設して繋いだ
