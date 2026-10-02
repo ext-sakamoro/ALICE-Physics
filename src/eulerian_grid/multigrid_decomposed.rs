@@ -50,10 +50,10 @@
 //! runs one rank per process, and a setup built from a band, are the next stage.
 
 use super::{
-    exchange_slab_halos_local, mg_vcycle, poisson_rhs, subtract_pressure_gradient, HaloSchedule,
-    LocalSlabTransport, MacGrid, MgLevel, PoissonMask, SlabStorage, SlabTransport, SweepWindow,
-    MG_COARSE_VISITS, MG_CORRECTION_SCALE_DEN, MG_CORRECTION_SCALE_NUM, MG_POST_SMOOTH,
-    MG_PRE_SMOOTH,
+    exchange_slab_halos_local, mg_vcycle, poisson_rhs, subtract_pressure_gradient,
+    subtract_slab_pressure_gradient, HaloSchedule, LocalSlabTransport, MacGrid, MgLevel,
+    PoissonMask, SlabFaces, SlabStencil, SlabStorage, SlabTransport, SweepWindow, MG_COARSE_VISITS,
+    MG_CORRECTION_SCALE_DEN, MG_CORRECTION_SCALE_NUM, MG_POST_SMOOTH, MG_PRE_SMOOTH,
 };
 use crate::eulerian_grid::slab_bounds;
 use crate::math::Fix128;
@@ -349,7 +349,7 @@ where
             })
             .collect(),
         gather: make(&root_bounds, levels[last].nz, plane(last), 0, None),
-        finish: make(&root_bounds0, levels[0].nz, plane(0), 0, None),
+        finish: Some(make(&root_bounds0, levels[0].nz, plane(0), 0, None)),
         correction: make(&root_bounds, levels[last].nz, plane(last), 0, None),
         coarse_p: levels[last + 1..]
             .iter()
@@ -383,7 +383,11 @@ where
     if !active.contains(&0) {
         return residency;
     }
-    let root = solve.finish.slab_mut(0);
+    let root = solve
+        .finish
+        .as_mut()
+        .expect("the grid path always builds the finish transport")
+        .slab_mut(0);
     for k in 0..levels[0].nz {
         grid.pressure[k * plane0..(k + 1) * plane0]
             .copy_from_slice(root.layer(k).expect(OWNED_LAYER_MISSING));
@@ -392,6 +396,271 @@ where
     let inv_dx = Fix128::ONE / grid.dx;
     subtract_pressure_gradient(grid, dt_s / density_kg_m3 * inv_dx);
     residency
+}
+
+/// The `(nx, ny, nz)` of every level of the hierarchy, finest first, down to a
+/// single cell — the shape [`MgLevel::coarsen`] produces, without its
+/// conductances.
+fn level_dims(nx: usize, ny: usize, nz: usize) -> Vec<(usize, usize, usize)> {
+    let mut dims = vec![(nx, ny, nz)];
+    while let Some(&(x, y, z)) = dims.last().filter(|&&(x, y, z)| x * y * z > 1) {
+        let half = |n: usize| if n > 1 { n / 2 } else { 1 };
+        dims.push((half(x), half(y), half(z)));
+    }
+    dims
+}
+
+/// The layers each rank owns of the finest level under the decomposition the
+/// multigrid solve uses — what the faces handed to
+/// [`project_pressure_multigrid_banded_on_rank`] have to describe.
+///
+/// These are not the Gauss-Seidel decomposition's `slab_bounds`: the finest
+/// bounds are a multiple of `2^h` so that the transfers stay rank-local (see
+/// [`layout`]). `None` when an extent is not a power of two.
+// ALLOW-UNWIRED: stage 4a of the distributed multigrid — read by the process-per-rank
+// harness (stage 4b) and by the oracle, which build each rank's faces from it.
+pub(crate) fn multigrid_slab_bounds(
+    nx: usize,
+    ny: usize,
+    nz: usize,
+    ranks: usize,
+) -> Option<Vec<(usize, usize)>> {
+    if ranks == 0 || !(nx.is_power_of_two() && ny.is_power_of_two() && nz.is_power_of_two()) {
+        return None;
+    }
+    let nzs: Vec<usize> = level_dims(nx, ny, nz).iter().map(|d| d.2).collect();
+    Some(layout(&nzs, ranks).bounds.swap_remove(0))
+}
+
+/// [`project_pressure_multigrid_decomposed_on_rank`] for a rank that holds **no
+/// `MacGrid`**: its faces and its pressure band are all it has.
+///
+/// Everything the solve needs is built from `faces` — the right-hand side, the
+/// conductances and the inverse degrees through [`SlabStencil`] (the same
+/// expressions the full-grid path uses), the coarser levels by coarsening the
+/// band, which is exact because the slab bounds are a multiple of two at every
+/// distributed level. The one thing a rank cannot build alone is the hierarchy
+/// below the last distributed level, which rank 0 solves: every rank sends it its
+/// conductances at that level (six small integers per cell, carried as `Fix128`
+/// through the same transport the residual uses) and rank 0 coarsens from there.
+///
+/// # What the caller supplies
+///
+/// `faces` describes the layers [`multigrid_slab_bounds`] gives `my_rank`, with the
+/// face conditions already imposed (the precondition of [`SlabFaces`]). `pressure`
+/// holds the starting field over the owned layers and one halo layer either side,
+/// because the first sweep reads the halo before any exchange. On return it holds
+/// the final pressure over the same layers and `faces` the corrected velocities;
+/// nothing is gathered, so no rank ever holds the whole field.
+///
+/// A degenerate `dx`, density, step, cycle count or extent leaves everything
+/// untouched, as the other drivers do.
+///
+/// # Panics
+///
+/// When `faces` does not describe the layers the decomposition gives `my_rank`, or
+/// `pressure` does not hold the band the first sweep reads.
+// ALLOW-UNWIRED: stage 4a of the distributed multigrid — the banded driver the
+// process-per-rank harness (stage 4b) calls; the oracle runs it over threads.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn project_pressure_multigrid_banded_on_rank<T, F>(
+    faces: &mut SlabFaces,
+    pressure: &mut SlabStorage,
+    dt_s: Fix128,
+    density_kg_m3: Fix128,
+    cycles: u32,
+    ranks: usize,
+    schedule: HaloSchedule,
+    my_rank: usize,
+    mut make: F,
+) where
+    T: SlabTransport,
+    F: FnMut(&[(usize, usize)], usize, usize, usize, Option<&[Fix128]>) -> T,
+{
+    let (nx, ny, nz) = (faces.nx, faces.ny, faces.nz);
+    let pow2 = |n: usize| n.is_power_of_two();
+    if cycles == 0
+        || ranks == 0
+        || my_rank >= ranks
+        || !(pow2(nx) && pow2(ny) && pow2(nz))
+        || faces.dx.is_zero()
+        || density_kg_m3.is_zero()
+        || dt_s.is_zero()
+    {
+        return;
+    }
+    let dims = level_dims(nx, ny, nz);
+    let nzs: Vec<usize> = dims.iter().map(|d| d.2).collect();
+    let Layout { last, bounds } = layout(&nzs, ranks);
+    assert_eq!(
+        faces.owned(),
+        bounds[0][my_rank],
+        "rank {my_rank} was handed the faces of layers {:?} but the multigrid decomposition gives \
+         it {:?}",
+        faces.owned(),
+        bounds[0][my_rank],
+    );
+    let plane = |l: usize| dims[l].0 * dims[l].1;
+
+    let scale = density_kg_m3 * faces.dx * faces.dx / dt_s;
+    let stencil = SlabStencil::build(faces, scale);
+
+    // The band at every distributed level: conductances by coarsening the band.
+    let mut band = vec![MgLevel {
+        nx,
+        ny,
+        nz: stencil.k1 - stencil.k0,
+        cond: stencil.open.iter().map(|o| o.map(i64::from)).collect(),
+    }];
+    for l in 0..last {
+        let coarse = band[l].coarsen();
+        band.push(coarse);
+    }
+
+    let mut local: Vec<Vec<Local>> = Vec::with_capacity(last + 1);
+    for (l, b) in band.iter().enumerate() {
+        let cells = b.cells();
+        let mut per_rank: Vec<Local> = (0..ranks)
+            .map(|_| Local {
+                cond: Vec::new(),
+                inv: Vec::new(),
+                rhs: Vec::new(),
+                res: Vec::new(),
+            })
+            .collect();
+        per_rank[my_rank] = Local {
+            cond: b.cond.clone(),
+            inv: b.inverse_degrees(),
+            rhs: if l == 0 {
+                stencil.rhs.clone()
+            } else {
+                vec![Fix128::ZERO; cells]
+            },
+            res: vec![Fix128::ZERO; cells],
+        };
+        local.push(per_rank);
+    }
+
+    // Rank 0 holds every layer of the last distributed level (residual,
+    // correction, conductances); the others hold only their own.
+    let root_bounds: Vec<(usize, usize)> = bounds[last]
+        .iter()
+        .enumerate()
+        .map(|(r, &b)| if r == 0 { (0, dims[last].2) } else { b })
+        .collect();
+
+    // The levels, with conductances only where this rank needs them: none for the
+    // distributed levels (the band has them), the whole level for rank 0 below.
+    let mut levels: Vec<MgLevel> = dims
+        .iter()
+        .map(|&(x, y, z)| MgLevel {
+            nx: x,
+            ny: y,
+            nz: z,
+            cond: Vec::new(),
+        })
+        .collect();
+    let mut cond_gather = make(&root_bounds, dims[last].2, 6 * plane(last), 0, None);
+    if last + 1 < levels.len() {
+        let (k0, k1) = bounds[last][my_rank];
+        let own = &local[last][my_rank].cond;
+        let p = plane(last);
+        let storage = cond_gather.slab_mut(my_rank);
+        for k in k0..k1 {
+            let layer = storage.layer_mut(k).expect(OWNED_LAYER_MISSING);
+            for c in 0..p {
+                for (f, &v) in own[(k - k0) * p + c].iter().enumerate() {
+                    layer[6 * c + f] = Fix128::from_int(v);
+                }
+            }
+        }
+        for (r, &(a, b)) in bounds[last].iter().enumerate().skip(1) {
+            for layer in a..b {
+                cond_gather.deliver_layer(r, 0, layer);
+            }
+        }
+        if my_rank == 0 {
+            let root = cond_gather.slab_mut(0);
+            let mut cond = Vec::with_capacity(dims[last].2 * p);
+            for k in 0..dims[last].2 {
+                let layer = root.layer(k).expect(OWNED_LAYER_MISSING);
+                for c in 0..p {
+                    let mut f = [0i64; 6];
+                    for (slot, v) in f.iter_mut().zip(&layer[6 * c..6 * c + 6]) {
+                        *slot = v.hi;
+                    }
+                    cond.push(f);
+                }
+            }
+            levels[last].cond = cond;
+            for l in last..levels.len() - 1 {
+                levels[l + 1] = levels[l].coarsen();
+            }
+        }
+    }
+    let coarse_invs: Vec<Vec<Fix128>> = if my_rank == 0 {
+        levels[last + 1..]
+            .iter()
+            .map(MgLevel::inverse_degrees)
+            .collect()
+    } else {
+        Vec::new()
+    };
+
+    let mut solve = Decomposed {
+        active: vec![my_rank],
+        finish: None,
+        pressure: (0..=last)
+            .map(|l| make(&bounds[l], dims[l].2, plane(l), HALO, None))
+            .collect(),
+        gather: make(&root_bounds, dims[last].2, plane(last), 0, None),
+        correction: make(&root_bounds, dims[last].2, plane(last), 0, None),
+        coarse_p: levels[last + 1..]
+            .iter()
+            .map(|l| vec![Fix128::ZERO; l.cells()])
+            .collect(),
+        coarse_rhs: levels[last + 1..]
+            .iter()
+            .map(|l| vec![Fix128::ZERO; l.cells()])
+            .collect(),
+        coarse_invs,
+        local,
+        levels: &levels,
+        bounds: &bounds,
+        last,
+        ranks,
+        schedule,
+    };
+
+    // The starting field: the owned layers and the halo, from the caller's band.
+    {
+        let start = solve.pressure[0].slab_mut(my_rank);
+        let (lo, hi) = start.resident();
+        for k in lo..hi {
+            start
+                .layer_mut(k)
+                .expect(OWNED_LAYER_MISSING)
+                .copy_from_slice(pressure.layer(k).expect(
+                    "the starting pressure must cover the owned layers and one halo layer",
+                ));
+        }
+    }
+
+    for _ in 0..cycles {
+        solve.cycle(0);
+    }
+
+    let inv_dx = Fix128::ONE / faces.dx;
+    let coeff = dt_s / density_kg_m3 * inv_dx;
+    let done = solve.pressure[0].slab_mut(my_rank);
+    subtract_slab_pressure_gradient(faces, done, coeff);
+    let (lo, hi) = done.resident();
+    for k in lo..hi {
+        pressure
+            .layer_mut(k)
+            .expect("the band the starting field was read from")
+            .copy_from_slice(done.layer(k).expect(OWNED_LAYER_MISSING));
+    }
 }
 
 /// What one rank keeps for one level besides its pressure band, for its owned
@@ -447,7 +716,7 @@ struct Decomposed<'a, T: SlabTransport> {
     /// The ranks this driver runs: every rank in one process, or just this one.
     active: Vec<usize>,
     /// The finished pressure, gathered to rank 0 for the gradient.
-    finish: T,
+    finish: Option<T>,
     /// One transport per distributed level, carrying that level's pressure band.
     pressure: Vec<T>,
     /// `local[l][r]`: what rank `r` keeps for level `l`.
@@ -722,10 +991,13 @@ impl<T: SlabTransport> Decomposed<'_, T> {
 
     /// Bring every rank's owned layers of the finished pressure to rank 0.
     fn finish_to_root(&mut self, bounds0: &[(usize, usize)]) {
+        let Some(finish) = self.finish.as_mut() else {
+            return;
+        };
         for &r in &self.active {
             let (k0, k1) = bounds0[r];
             let from = self.pressure[0].slab_mut(r);
-            let to = self.finish.slab_mut(r);
+            let to = finish.slab_mut(r);
             for k in k0..k1 {
                 to.layer_mut(k)
                     .expect(OWNED_LAYER_MISSING)
@@ -734,7 +1006,7 @@ impl<T: SlabTransport> Decomposed<'_, T> {
         }
         for (r, &(k0, k1)) in bounds0.iter().enumerate().skip(1) {
             for layer in k0..k1 {
-                self.finish.deliver_layer(r, 0, layer);
+                finish.deliver_layer(r, 0, layer);
             }
         }
     }
@@ -1229,5 +1501,199 @@ mod tests {
             HaloSchedule::EverySweep,
             socket_factory(0, &links),
         );
+    }
+
+    /// The result a banded rank must reproduce, read off `want` (the
+    /// single-process answer): its owned pressure layers and the face velocities
+    /// it writes — X and Y faces of owned layers, Z faces `k0..k1` (and `nz` for
+    /// the top rank).
+    #[cfg(feature = "std")]
+    fn banded_matches(
+        want: &MacGrid,
+        faces: &SlabFaces,
+        pressure: &SlabStorage,
+        what: &str,
+    ) -> Result<(), String> {
+        let (nx, ny, nz) = (want.nx, want.ny, want.nz);
+        let (k0, k1) = faces.owned();
+        for k in k0..k1 {
+            let p = pressure.layer(k).expect("owned layer");
+            if p != &want.pressure[k * nx * ny..(k + 1) * nx * ny] {
+                return Err(format!("{what}: pressure layer {k}"));
+            }
+            let (u, _) = faces.u_layer(k);
+            for j in 0..ny {
+                for i in 0..=nx {
+                    if u[i + (nx + 1) * j] != want.u[want.idx_u(i, j, k)] {
+                        return Err(format!("{what}: u({i},{j},{k})"));
+                    }
+                }
+            }
+            let (v, _) = faces.v_layer(k);
+            for j in 0..=ny {
+                for i in 0..nx {
+                    if v[i + nx * j] != want.v[want.idx_v(i, j, k)] {
+                        return Err(format!("{what}: v({i},{j},{k})"));
+                    }
+                }
+            }
+            let top = if k1 == nz && k + 1 == k1 {
+                Some(nz)
+            } else {
+                None
+            };
+            for kk in std::iter::once(k).chain(top) {
+                let (w, _) = faces.w_layer(kk);
+                for j in 0..ny {
+                    for i in 0..nx {
+                        if w[i + nx * j] != want.w[want.idx_w(i, j, kk)] {
+                            return Err(format!("{what}: w({i},{j},{kk})"));
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Run the banded driver as one thread per rank over loopback sockets and
+    /// hand back each rank's faces and pressure band.
+    #[cfg(feature = "std")]
+    fn run_banded(
+        base: &MacGrid,
+        cycles: u32,
+        ranks: usize,
+        schedule: HaloSchedule,
+    ) -> Vec<(SlabFaces, SlabStorage)> {
+        let (nx, ny, nz) = (base.nx, base.ny, base.nz);
+        let bounds = multigrid_slab_bounds(nx, ny, nz, ranks).expect("power-of-two grid");
+        // The precondition of `SlabFaces`: conditions already imposed.
+        let mut enforced = base.clone();
+        enforced.enforce_face_boundaries();
+        let mut mesh = socket_mesh(ranks);
+        std::thread::scope(|sc| {
+            let handles: Vec<_> = mesh
+                .iter_mut()
+                .enumerate()
+                .map(|(rank, links)| {
+                    let mut faces = SlabFaces::from_grid(&enforced, bounds[rank]);
+                    let mut band = SlabStorage::for_slab(nx * ny, nz, bounds[rank], HALO);
+                    let (lo, hi) = band.resident();
+                    for k in lo..hi {
+                        band.layer_mut(k)
+                            .expect("resident")
+                            .copy_from_slice(&base.pressure[k * nx * ny..(k + 1) * nx * ny]);
+                    }
+                    let links = &*links;
+                    sc.spawn(move || {
+                        project_pressure_multigrid_banded_on_rank(
+                            &mut faces,
+                            &mut band,
+                            fx(DT.0, DT.1),
+                            Fix128::from_int(RHO),
+                            cycles,
+                            ranks,
+                            schedule,
+                            rank,
+                            socket_factory(rank, links),
+                        );
+                        (faces, band)
+                    })
+                })
+                .collect();
+            handles
+                .into_iter()
+                .map(|h| h.join().expect("a rank panicked"))
+                .collect()
+        })
+    }
+
+    /// The oracle for stage 4a: a rank holding only its faces and its band, over
+    /// sockets, reproduces the single-process answer to the bit — pressure on its
+    /// owned layers and every face velocity it writes.
+    #[cfg(feature = "std")]
+    #[test]
+    fn a_rank_built_from_its_band_alone_reproduces_the_single_process_cycle() {
+        type Dims = (usize, usize, usize);
+        let cases: &[(Dims, &[usize])] = &[
+            ((8, 8, 8), &[2, 3, 4, 8]),
+            ((16, 8, 4), &[2, 4, 8]),
+            ((4, 4, 16), &[3, 5]),
+            ((8, 8, 1), &[2]),
+            ((16, 16, 16), &[4]),
+        ];
+        for scene in [Scene::Open, Scene::Walled] {
+            for &((nx, ny, nz), rank_counts) in cases {
+                for &ranks in rank_counts {
+                    let base = seed(nx, ny, nz, scene);
+                    let want = solve_single(&base, 2);
+                    assert!(!bit_equal(&base, &want));
+                    let got = run_banded(&base, 2, ranks, HaloSchedule::EverySweep);
+                    for (rank, (faces, band)) in got.iter().enumerate() {
+                        let what = format!("{nx}x{ny}x{nz} over {ranks}, {scene:?}, rank {rank}");
+                        if let Err(e) = banded_matches(&want, faces, band, &what) {
+                            panic!("{e}: not the single-process answer");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Teeth: the stale-halo schedule moves the banded answer too.
+    #[cfg(feature = "std")]
+    #[test]
+    fn a_stale_halo_does_not_reproduce_the_single_process_cycle_when_banded() {
+        let base = seed(8, 8, 8, Scene::Walled);
+        let want = solve_single(&base, 2);
+        let got = run_banded(&base, 2, 4, HaloSchedule::EveryIteration);
+        assert!(got.iter().enumerate().any(|(r, (f, b))| banded_matches(
+            &want,
+            f,
+            b,
+            &format!("rank {r}")
+        )
+        .is_err()));
+    }
+
+    /// Faces for the wrong layers are refused: the multigrid decomposition is not
+    /// the Gauss-Seidel one.
+    #[cfg(feature = "std")]
+    #[test]
+    #[should_panic(expected = "the multigrid decomposition gives")]
+    fn faces_for_another_decomposition_are_refused() {
+        let base = seed(8, 8, 8, Scene::Open);
+        let mut enforced = base.clone();
+        enforced.enforce_face_boundaries();
+        let links: Vec<Option<std::net::TcpStream>> = (0..2).map(|_| None).collect();
+        // rank 0 of 3 owns layers 0..2 under the Gauss-Seidel split of 8 layers
+        // and 0..2 under the multigrid one too, so use rank 1: 2..5 against 2..4.
+        let mut faces = SlabFaces::from_grid(&enforced, (2, 5));
+        let mut band = SlabStorage::for_slab(64, 8, (2, 5), HALO);
+        project_pressure_multigrid_banded_on_rank(
+            &mut faces,
+            &mut band,
+            fx(DT.0, DT.1),
+            Fix128::from_int(RHO),
+            1,
+            3,
+            HaloSchedule::EverySweep,
+            1,
+            socket_factory(1, &links),
+        );
+    }
+
+    /// The bounds the banded driver asks for are the layout's, and a
+    /// non-power-of-two grid has none.
+    #[test]
+    fn the_banded_bounds_are_the_layouts_and_refuse_a_non_power_of_two() {
+        assert_eq!(multigrid_slab_bounds(6, 8, 8, 2), None);
+        assert_eq!(multigrid_slab_bounds(8, 8, 8, 0), None);
+        let b = multigrid_slab_bounds(8, 8, 8, 3).expect("power of two");
+        let nzs: Vec<usize> = level_dims(8, 8, 8).iter().map(|d| d.2).collect();
+        assert_eq!(b, layout(&nzs, 3).bounds[0]);
+        // 8 layers over 3 ranks is 2 / 3 / 3 in the Gauss-Seidel split and a
+        // multiple of the 2-halving unit here.
+        assert!(b.iter().all(|&(k0, k1)| k0 % 2 == 0 && k1 % 2 == 0));
     }
 }

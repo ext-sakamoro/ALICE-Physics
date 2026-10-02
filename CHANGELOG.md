@@ -90,6 +90,13 @@ hex literal `0x1707_5F6F_D21F_F2E5` は 0.09 でなく 0.08995625 (−0.05 %) �
 - `eulerian_grid` tests: `CrossFault::ChunkedWire` — `Read` / `Write` を 1 call 1 byte に刻む `Chunked<S>` 越しの 2 プロセス圧力解が単一プロセスと bit 一致 (8³ / 7³) 両 rank が「call 数 == byte 数 かつ 1 層分以上」を assert ⚠️ **byte 数だけの閾値は whole buffer を通す変異を見逃した** (実測、call 数で捕まえた) 変異 4/4 red (whole buffer 通過 / read 側のみ / write 側のみ / 計数なし)
 
 文面の確定: 複数ノード分散は **1 ホスト 8 プロセス loopback TCP で bit 一致 (arm64 / x86_64 別々に、fold は cross-arch 一致)**、2 ホスト / アーキ跨ぎの 1 solve / MPI backend は未測定・未実装
+### Added — 分散 multigrid を帯だけから組む (壁 4、段階 4a、crate 内)
+
+`project_pressure_multigrid_banded_on_rank` / `multigrid_slab_bounds` (`pub(crate)`) を追加した rank が `MacGrid` を持たず、自分の `SlabFaces` と圧力の帯だけで multigrid を回す 右辺・コンダクタンス・逆次数は `SlabStencil` から、coarse level は帯の coarsen で作る 最後の分散 level のコンダクタンスだけ rank 0 へ送り、rank 0 が集約側の階層を組む 何も gather せず、どの rank も全 field を持たない
+- oracle: thread + loopback socket で、5 形状 × rank 2〜8 × 開放 / 壁つきが単一 process と bit 一致 (圧力と全 face 速度) halo 遅延は不一致、別の分割の faces は拒否
+- `multigrid_slab_bounds` は Gauss-Seidel の `slab_bounds` と別の分割 (finest の境界が 2 の冪の倍数) 呼び出し側が faces をこの分割で作る
+- 未着手: process 分離の harness と 256³〜512³ の実測 (段階 4b)
+
 ### Added — 分散 multigrid の rank-local driver (壁 4、段階 3、crate 内)
 
 `project_pressure_multigrid_decomposed_on_rank` (`pub(crate)`) を追加した 同じ solve を、走らせる rank の集合を自分の rank だけにして回す 各 rank は自分の帯だけを持ち、配送 (halo 交換 / 残差の gather / 補正の返送 / 最終 pressure の rank 0 への集約) は全 rank が同じ順序で歩いて transport が自分の半分だけ実行する 粗い階層の解と grid への書き戻しは rank 0 だけ
