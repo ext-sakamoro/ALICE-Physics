@@ -495,3 +495,126 @@ fn every_refusal_displays_itself() {
         .to_string()
         .contains("7x8x8"));
 }
+
+// ---------------------------------------------------------------------------
+// oracle 7 — the slab decompositions are the Gauss-Seidel solve, to the bit
+// ---------------------------------------------------------------------------
+
+/// Every rank count — dividing `nz`, not dividing it, and exceeding it so
+/// that some ranks own nothing — reproduces `RedBlackGs` bit for bit, with
+/// the full-length decomposition and with the slab-local one, on the open
+/// seed and on a sealed box (walls are part of the stencil the slabs have to
+/// mask locally).
+///
+/// Exactness, not a tolerance: the sweeps visit the same cells in the same
+/// colour order and `Fix128` addition is a group operation mod 2¹²⁸, so a
+/// decomposition that is right at all is right to the bit. The in-module
+/// tests pin this on the storage; this one pins that the *solver entry*
+/// reaches that path with the halo schedule that makes it exact.
+#[test]
+fn the_slab_decompositions_reproduce_gauss_seidel_to_the_bit_for_every_rank_count() {
+    let sweeps = 30u32;
+    for (scene, sealed) in [("open box", false), ("sealed box", true)] {
+        for &(nx, nz) in &[(N, N), (7, N), (N, 6)] {
+            let mut reference = quiet_solver(nx, N, nz);
+            if sealed {
+                reference.grid.set_closed_box_walls();
+            }
+            seed_divergent(&mut reference.grid);
+            reference
+                .step_with_pressure_solver(dt(), PressureSolver::RedBlackGs { sweeps })
+                .expect("Gauss-Seidel runs on any grid");
+            for ranks in [1usize, 2, 3, 4, 5, nz, nz + 1, 2 * nz + 3] {
+                for (name, solver) in [
+                    ("decomposed", PressureSolver::DecomposedGs { ranks, sweeps }),
+                    ("banded", PressureSolver::BandedGs { ranks, sweeps }),
+                ] {
+                    let mut s = quiet_solver(nx, N, nz);
+                    if sealed {
+                        s.grid.set_closed_box_walls();
+                    }
+                    seed_divergent(&mut s.grid);
+                    let report = s
+                        .step_with_pressure_solver(dt(), solver)
+                        .unwrap_or_else(|e| panic!("{name} ranks {ranks}: {e}"));
+                    assert!(report.bicgstab.is_none());
+                    assert!(
+                        grids_bit_equal(&reference.grid, &s.grid),
+                        "{scene} {nx}×{N}×{nz}, {name} over {ranks} ranks differs from Gauss-Seidel"
+                    );
+                    assert_eq!(s.step_count, reference.step_count);
+                }
+            }
+        }
+    }
+}
+
+/// The decompositions are not the identity: with the halo exchanged once
+/// per iteration instead of once per sweep they would differ, and a solver
+/// that skipped the projection would leave the seeded divergence. Both are
+/// pinned here through what the entry reports and leaves behind.
+#[test]
+fn the_slab_decompositions_do_project() {
+    let mut s = quiet_solver(N, N, N);
+    seed_divergent(&mut s.grid);
+    let before = max_abs_divergence(&s.grid);
+    s.step_with_pressure_solver(
+        dt(),
+        PressureSolver::BandedGs {
+            ranks: 3,
+            sweeps: 400,
+        },
+    )
+    .expect("valid");
+    let after = max_abs_divergence(&s.grid);
+    assert!(
+        after < 1e-6 * before,
+        "banded over 3 ranks left max|div u| = {after:.3e}"
+    );
+}
+
+#[test]
+fn slab_decompositions_with_zero_ranks_or_zero_sweeps_are_refused() {
+    let rho = Fix128::from_int(1000);
+    refuse(
+        N,
+        dt(),
+        rho,
+        PressureSolver::DecomposedGs {
+            ranks: 0,
+            sweeps: 10,
+        },
+        PressureSolverError::ZeroRanks,
+    );
+    refuse(
+        N,
+        dt(),
+        rho,
+        PressureSolver::BandedGs {
+            ranks: 0,
+            sweeps: 10,
+        },
+        PressureSolverError::ZeroRanks,
+    );
+    refuse(
+        N,
+        dt(),
+        rho,
+        PressureSolver::DecomposedGs {
+            ranks: 2,
+            sweeps: 0,
+        },
+        PressureSolverError::ZeroIterations,
+    );
+    refuse(
+        N,
+        dt(),
+        rho,
+        PressureSolver::BandedGs {
+            ranks: 2,
+            sweeps: 0,
+        },
+        PressureSolverError::ZeroIterations,
+    );
+    assert!(!PressureSolverError::ZeroRanks.to_string().is_empty());
+}
