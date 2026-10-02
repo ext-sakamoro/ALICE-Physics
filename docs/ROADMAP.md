@@ -16,6 +16,11 @@ Memory index pointer: `[[reference-alice-physics-v1-roadmap]]` in claude-config.
 | Maxwell FDTD | `ecd8c61` | source-free Yee、⚠️ **SI は `ε₀·μ₀` が 7.7 bit で不可**、正規化単位 + `S=9/16` |
 | 多体 ABA | `1bab99b` | ⚠️ **`solve()` が `link.joint` を読まない**状態から real ABA、oracle 12 本 |
 
+### 第 18 increment (2026-10-02、反力 `reactions()` を P2 / P3 に)
+
+`quadratic_elastic_fem::reactions` / `cubic_elastic_fem::reactions` を足した (P1 と同形、`law: Option<HyperelasticModel>`) 2026-10-01 の生存変異 `A1-drop-J-in-piola` は **P2 / P3 の `hyperelastic_stress`** で出たもので、P1 の `reactions` (`00d0be2` 系) は派生先を閉じて原因側が開いたままだった oracle 10 本 (`tests/analytic_reactions.rs`、各要素 5 本)、変異 14 / 14 red (実装 8 + 配線 6)、snapshot +2 / −0、`examples/support_reactions.rs` が P1 / P2 / P3 で同じ −700 N
+⚠️ 反力は solver と同じ private 組立を通す (別実装は oracle を消す) ⚠️ 面の恒等式は Kuhn 格子の並進対称に依る (格子でない mesh では側面の対消滅が成立しない)
+
 ### 第 12 increment (2026-10-01、`step` の既定の圧力射影を multigrid に)
 
 `CfdSolver::step` の既定が、全軸が 2 の冪の格子では multigrid (6 サイクル)、そうでなければ従来の GS になった 数値結果が変わるので影響を先に実測した 非 2 冪 (Gartling / duct / golden) は bit 不変、2 の冪では `reattachment_lengthens_under_grid_refinement` の記録値が 6 桁目以降で動く (doc は両方の値を併記、assert は不変)

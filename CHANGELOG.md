@@ -13,6 +13,20 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added — 反力 `reactions()` を P2 / P3 要素に (`quadratic_elastic_fem` / `cubic_elastic_fem`)
+
+`linear_elastic_fem::reactions` と同形の自由関数を 10 節点 / 20 節点要素に足した `reactions(mesh, material, boundary, law: Option<HyperelasticModel>, &FemSolution) -> Result<Vec<[Fix128; 3]>, FemError>` 拘束行の支持力 `R = f_int(u) − f_ext`、自由行は 0、`law` が `None` なら小ひずみ `K u`、`Some` なら全 Lagrange の `Σ w V₀ P ∇₀N` (`K = λ + 2μ/3`、solver と同じ組)
+
+⚠️ **組立は solver と同じ private 関数 (`apply_stiffness` / `material_internal_force`) を通す** 別実装にすると変異が反力に流れず oracle が消える (doc に明記)
+
+**なぜ要るか**: 2026-10-01 の実測で、P2 / P3 の `hyperelastic_stress` から `P = J σ F⁻ᵀ` の `J` を落としても `tests/analytic_{quadratic,cubic}_hyperelastic.rs` の **7 / 7 が green** のままだった (`σ_xx` の閉形式 assert を含む) 変位駆動の scene では `f_mat(u) = 0` が斉次なので内部力の一様スケールは根を動かさず、報告応力は Piola 変換の**上流**の Cauchy `σ` 反力はそのスケールに線形な唯一の公開量
+
+`tests/analytic_reactions.rs` に P2 / P3 の oracle 10 本 (各要素 5 本): せん断を含む affine 場の小ひずみ traction `−A₀ σ e_face` (3 面 × 両側 + 全体釣合、厳密場と `solve_*` の返す場の両方) / 一様 `F = R U` (`det F = 5/4`) の Piola traction `−A₀ P e_face` (`P` の 3 列を 3 面で別々に読む、`P ≠ Pᵀ` の分離 2.1e4 N (P2) / 4.7e4 N (P3) を assert、同じ場の `law = None` 読みとの差 2.6e4 / 5.9e4 N も assert) / `solve_*_hyperelastic` の返す状態が同じ反力 (Newton 2 step) / 拘束行の荷重は支持側が bit 一致で担う / 拒否 (長さ不一致 / 範囲外節点 / `det F < 0` は `RotationFailed { Inverted }`、小ひずみ側は `J` が無いので通る) 面の恒等式 `Σ_{i∈face} R_i = −A₀ T e_face` は Kuhn 格子の並進対称で側面が対消滅するので要素次数に依らない
+
+破壊試験 **14 / 14 red** (実装変異 8: `J` 脱落 / 求積重み脱落 (超弾性・小ひずみ) / Piola scatter 転置 × P2・P3、配線変異 6: `law` 無視 / 荷重の減算なし / 自由行を 0 にしない × P2・P3) 各変異はその要素の oracle だけを red にする (P2 の変異で P3 は green のまま)
+
+`examples/support_reactions.rs` で P1 / P2 / P3 が同じ単軸問題に同じ **−700 N** を読む 配線ガード baseline から `solve_quadratic` / `solve_cubic` の 2 行を退役 (example が実配線、名前衝突の巻き込みなし) 公開 API は追加のみ (snapshot **+2 / −0**)
+
 ### Added — 熱塑性の副反復 driver (`linear_elastic_fem`)
 
 力学脚 (温度が return mapping に入る) と熱脚 (塑性仕事が格子に乗る) を**固定点まで交互に回す** driver を入れた 1 回ずつ順に回すのは分割型 (partitioned) で零副反復なので、力学は前の推測の温度で評価され、どちらの脚を先に回したかで答えが変わる
