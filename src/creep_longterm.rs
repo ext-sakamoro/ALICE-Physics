@@ -40,14 +40,13 @@
 //!
 //! `FindleyParameters`, `FindleyParameters::pla_25c_moderate`, and
 //! `predict_strain` are wired into `structural_solver.rs`. The WLF
-//! subsystem (`WlfConstants` + `wlf_shift_factor` + `effective_time_at_temp`
-//! + `CREEP_FROZEN_AT`) and alternate factory (`petg_25c_moderate`) +
-//!   standalone `strain_at` are reserved crate-internal API used by
-//!   `predict_strain` internally.
-
-// Reserved WLF subsystem and alternate factories — pub(crate) but currently
-// used only via predict_strain / internal helpers / unit tests.
-#![allow(dead_code)]
+//! subsystem (`WlfConstants`, `wlf_shift_factor`, `effective_time_at_temp`,
+//! `CREEP_FROZEN_AT`) and the standalone `strain_at` are crate-internal and
+//! reached through `predict_strain`; `CREEP_FROZEN_AT` is the saturation
+//! sentinel `effective_time_at_temp` turns into "no effective time" (see its
+//! doc for the threshold). `petg_25c_moderate` has no consumer (the solver
+//! hard-codes the PLA preset) and carries an `ALLOW-UNWIRED` debt marker;
+//! its oracle is a unit test in this module.
 
 use crate::filament_db::MaterialProperties;
 use crate::math::Fix128;
@@ -89,7 +88,17 @@ impl FindleyParameters {
         }
     }
 
-    /// PETG at 25 °C (lower creep than PLA — higher Tg, crate-internal).
+    /// PETG at 25 °C: `ε₀ = 0.2 %`, `m = 1e-13 /h³`, `n = 3`
+    /// (`ε(4380 h) = 0.2 % + 1e-13 · 4380³ ≈ 1.04 %`).
+    ///
+    /// The elastic term is lower than PLA's (higher `T_g`), but `m` was not
+    /// recalibrated when the PLA preset dropped to `8.3e-14` in 1.2.0, so
+    /// this preset creeps *more* than `pla_25c_moderate` after
+    /// `t = (0.001 / 1.7e-14)^(1/3) ≈ 3887 h`. Treat it as a placeholder
+    /// fit until a PETG datasheet calibration replaces `m`.
+    // ALLOW-DEAD: pub(crate) with no crate caller, same debt as the ALLOW-UNWIRED marker below
+    // ALLOW-UNWIRED: wiring debt Backlog structural-pub-crate-residue (structural_solver::new hard-codes the PLA preset), oracle src/creep_longterm.rs tests::petg_preset_findley_matches_closed_form_at_six_months
+    #[allow(dead_code)]
     #[must_use]
     pub(crate) fn petg_25c_moderate() -> Self {
         Self {
@@ -163,6 +172,13 @@ pub(crate) fn wlf_shift_factor(temp_c: Fix128, t_ref_c: Fix128, wlf: &WlfConstan
 
 /// Effective time (hours) at temperature `t` relative to reference `t_ref`,
 /// using the WLF shift factor.
+///
+/// When the shift factor saturates at [`CREEP_FROZEN_AT`] (the `exp_fix`
+/// overflow sentinel, reached once
+/// `ln10 · C₁ · (T_ref − T) / (C₂ − (T_ref − T)) ≥ 20`, i.e.
+/// `T ≤ T_ref − 20·C₂ / (20 + C₁·ln10) ≈ T_ref − 17.16 °C` for the universal
+/// constants) creep is frozen and the effective time is exactly zero rather
+/// than `t / sentinel`.
 #[must_use]
 pub(crate) fn effective_time_at_temp(
     t_hours: Fix128,
@@ -172,6 +188,9 @@ pub(crate) fn effective_time_at_temp(
 ) -> Fix128 {
     let a_t = wlf_shift_factor(temp_c, t_ref_c, wlf);
     if a_t.is_zero() {
+        return Fix128::ZERO;
+    }
+    if a_t >= CREEP_FROZEN_AT {
         return Fix128::ZERO;
     }
     t_hours / a_t
@@ -327,6 +346,69 @@ mod tests {
         );
         // At 65°C (above Tg 60), creep should be worse
         assert!(e_hot > e_room);
+    }
+
+    /// Oracle: Findley `ε(t) = ε₀ + m·tⁿ` with the PETG preset's constants
+    /// (`ε₀ = 0.002`, `m = 1e-13`, `n = 3`) at 6 months, evaluated by hand:
+    /// `4380³ = 84 027 672 000`, `m·t³ = 0.0084027672`, total
+    /// `0.0104027672`. Routed through `predict_strain` at 25 °C, below the
+    /// PETG `T_g = 80 °C`, so no WLF shift applies. Tolerance: `m = 1e-13`
+    /// is `1 844 674.4` Fix128 ulp (`2⁻⁶⁴`), stored truncated, so the creep
+    /// term carries a relative error of `0.4 / 1.8e6 = 2.2e-7`
+    /// (`1.9e-9` absolute); `1e-8` leaves no room for a wrong constant.
+    #[test]
+    fn petg_preset_findley_matches_closed_form_at_six_months() {
+        let got = predict_strain(
+            &FindleyParameters::petg_25c_moderate(),
+            &MaterialProperties::petg(),
+            Fix128::from_int(4380),
+            Fix128::from_int(25),
+        )
+        .to_f64();
+        let want = 0.002 + 1e-13 * 84_027_672_000.0;
+        assert!((got - want).abs() < 1e-8, "got {got}, want {want}");
+    }
+
+    /// Degenerate time for the PETG preset: `strain_at` documents
+    /// `t ≤ 0 → ε₀`, so zero and negative hours return exactly `0.002`.
+    #[test]
+    fn petg_preset_degenerate_time_returns_epsilon_0() {
+        let p = FindleyParameters::petg_25c_moderate();
+        let m = MaterialProperties::petg();
+        let t25 = Fix128::from_int(25);
+        assert_eq!(
+            predict_strain(&p, &m, Fix128::ZERO, t25),
+            Fix128::from_ratio(2, 1000)
+        );
+        assert_eq!(
+            predict_strain(&p, &m, Fix128::from_int(-1), t25),
+            Fix128::from_ratio(2, 1000)
+        );
+    }
+
+    /// Oracle: the frozen threshold derived by hand from the WLF form and the
+    /// `exp_fix` saturation point. `a_T = exp(ln10 · C₁ · |ΔT| / (C₂ − |ΔT|))`
+    /// saturates once the exponent reaches 20, i.e.
+    /// `|ΔT| ≥ 20·C₂ / (20 + C₁·ln10) = 1032 / 60.158 = 17.155 °C`.
+    /// At `ΔT = −17.5 °C` the exponent is `2.302585·17.44·17.5/34.1 = 20.61`
+    /// (frozen, effective time exactly 0); at `ΔT = −17 °C` it is
+    /// `2.302585·17.44·17/34.6 = 19.729` (not frozen,
+    /// `t_eff = t · exp(−19.729)`).
+    #[test]
+    fn effective_time_is_exactly_zero_once_the_wlf_shift_saturates() {
+        let wlf = WlfConstants::universal();
+        let t = Fix128::from_int(4380);
+        let t_ref = Fix128::from_int(60);
+        let frozen = effective_time_at_temp(t, t_ref - Fix128::from_ratio(35, 2), t_ref, &wlf);
+        assert_eq!(frozen, Fix128::ZERO, "ΔT = −17.5 °C must be frozen");
+        let not_frozen = effective_time_at_temp(t, t_ref - Fix128::from_int(17), t_ref, &wlf);
+        let exponent = core::f64::consts::LN_10 * 17.44 * 17.0 / (51.6 - 17.0);
+        let want = 4380.0 * crate::det_math::exp64(-exponent);
+        let got = not_frozen.to_f64();
+        assert!(
+            got > 0.0 && ((got - want) / want).abs() < 1e-6,
+            "ΔT = −17 °C: got {got:e}, want {want:e}"
+        );
     }
 
     #[test]

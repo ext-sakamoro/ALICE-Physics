@@ -41,15 +41,14 @@
 //! # Integration status
 //!
 //! `SnCurve`, `SnCurve::from_fdm_material`, `SpectrumEntry`, and
-//! `miner_damage` are wired into `structural_solver.rs`. Alternate
-//! factory presets (`steel_sus304` / `aluminum_a5052`), `INFINITE_LIFE`,
-//! `cycles_to_failure`, `stress_at_cycles`, and `FatigueReport` +
-//! `analyze_spectrum` convenience wrapper are reserved crate-internal
-//! API awaiting downstream integration.
-
-// Reserved fatigue helpers — pub(crate) but currently used internally
-// (miner_damage → cycles_to_failure → INFINITE_LIFE) or only by tests.
-#![allow(dead_code)]
+//! `miner_damage` are wired into `structural_solver.rs`; `INFINITE_LIFE`
+//! and `cycles_to_failure` are crate-internal and reached through
+//! `miner_damage`. The metal presets (`steel_sus304` / `aluminum_a5052`),
+//! the Basquin inverse `stress_at_cycles`, and the `FatigueReport` +
+//! `analyze_spectrum` wrapper have no consumer in the beam life loop (it
+//! accumulates `miner_damage` per step and its report types are not
+//! `#[non_exhaustive]`); they carry `ALLOW-UNWIRED` debt markers and their
+//! closed-form oracles are unit tests in this module.
 
 use crate::filament_db::MaterialProperties;
 use crate::math::Fix128;
@@ -91,7 +90,11 @@ impl SnCurve {
         }
     }
 
-    /// Standard steel preset (SUS304 grade): S_e = 0.5·UTS, m = 10 (crate-internal).
+    /// Austenitic stainless steel preset (SUS304 grade): `UTS = 505 MPa`,
+    /// `S_e = 240 MPa` (`0.475 · UTS`), `N_e = 10⁷`, `m = 10`.
+    // ALLOW-DEAD: pub(crate) with no crate caller, same debt as the ALLOW-UNWIRED marker below
+    // ALLOW-UNWIRED: wiring debt Backlog structural-pub-crate-residue (no steel MaterialProperties for the solver to select it), oracle src/fatigue.rs tests::sus304_preset_basquin_life_at_300_mpa_is_1073741_cycles
+    #[allow(dead_code)]
     #[must_use]
     pub(crate) fn steel_sus304() -> Self {
         Self {
@@ -102,7 +105,11 @@ impl SnCurve {
         }
     }
 
-    /// Aluminum A5052 preset: S_e = 0.4·UTS, m = 6 (crate-internal).
+    /// Aluminum A5052 preset: `UTS = 230 MPa`, `S_e = 92 MPa` (`0.4 · UTS`),
+    /// `N_e = 5·10⁶`, `m = 6`.
+    // ALLOW-DEAD: pub(crate) with no crate caller, same debt as the ALLOW-UNWIRED marker below
+    // ALLOW-UNWIRED: wiring debt Backlog structural-pub-crate-residue (no aluminum MaterialProperties for the solver to select it), oracle src/fatigue.rs tests::a5052_preset_miner_sum_matches_hand_calculation
+    #[allow(dead_code)]
     #[must_use]
     pub(crate) fn aluminum_a5052() -> Self {
         Self {
@@ -160,51 +167,90 @@ pub(crate) fn cycles_to_failure(curve: &SnCurve, stress_mpa: Fix128) -> u64 {
     }
 }
 
+/// Smallest cycle count the Basquin inverse answers for.
+///
+/// Basquin's law is a high-cycle fit (about `10³` to `10⁷` cycles); below
+/// it the formula returns stresses above the ultimate strength that are
+/// numerically exact and physically meaningless, so the query is refused
+/// rather than clamped (a clamp would hand back a plausible number and hide
+/// that the law does not apply).
+///
+/// Provisional: the low-cycle boundary depends on the material and the
+/// stress ratio, so this single constant is a placeholder for a per-curve
+/// field of `SnCurve` (Backlog `fatigue-low-cycle-bound-per-material`).
+pub(crate) const BASQUIN_LOW_CYCLE_BOUND: u64 = 1_000;
+
+/// Why [`stress_at_cycles`] could not answer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum FatigueRangeError {
+    /// `cycles == 0` has no stress on the S–N curve.
+    ZeroCycles,
+    /// Below [`BASQUIN_LOW_CYCLE_BOUND`], outside the law's range.
+    BelowLowCycleBound {
+        /// The cycle count asked for.
+        cycles: u64,
+        /// The bound it fell under.
+        bound: u64,
+    },
+    /// The curve's exponent `m` is zero: `(N_e/N)^(1/m)` is undefined.
+    NonPositiveExponent,
+}
+
 /// Alternating stress that would produce failure at exactly `cycles`.
 ///
-/// The inverse of `cycles_to_failure`. For `cycles ≥ endurance_cycles`
-/// returns `endurance_stress_mpa`; for `cycles == 0` returns UTS.
-#[must_use]
-pub(crate) fn stress_at_cycles(curve: &SnCurve, cycles: u64) -> Fix128 {
+/// The inverse of the Basquin life `N = N_e · (S_e / S)^m`, i.e.
+/// `S = S_e · (N_e / N)^(1/m)`, evaluated as the fixed-point power
+/// `Fix128::powf_pos` (24 fractional bits of the exponent) polished by two
+/// Newton steps on `x^m = N_e/N` taken from that seed. The seed sits within
+/// `ln(N_e/N) · 2⁻²⁴` of the root, so `x^m` never leaves the range of
+/// `Fix128` (the pre-2026-10-03 version seeded with `√(N_e/N)` and wrapped
+/// `x^m` for every `N_e/N > 2^(126/m)`, returning e.g. 760 490 MPa for
+/// SUS304 at `N = 1`); the two polishes are a fixed count, not a loop to a
+/// tolerance, so there is no drift at the rounding floor.
+///
+/// For `cycles ≥ endurance_cycles` returns `endurance_stress_mpa` exactly.
+///
+/// # Errors
+///
+/// [`FatigueRangeError::ZeroCycles`] for `cycles == 0`,
+/// [`FatigueRangeError::BelowLowCycleBound`] under
+/// [`BASQUIN_LOW_CYCLE_BOUND`], [`FatigueRangeError::NonPositiveExponent`]
+/// for a curve with `fatigue_exponent_m == 0`.
+// ALLOW-DEAD: pub(crate) with no crate caller, same debt as the ALLOW-UNWIRED marker below
+// ALLOW-UNWIRED: wiring debt Backlog structural-pub-crate-residue (design-allowable query, the life loop only accumulates damage), oracle src/fatigue.rs tests::stress_at_cycles_inverts_basquin_for_sus304_and_a5052
+#[allow(dead_code)]
+pub(crate) fn stress_at_cycles(curve: &SnCurve, cycles: u64) -> Result<Fix128, FatigueRangeError> {
     if cycles == 0 {
-        return curve.ultimate_tensile_mpa;
+        return Err(FatigueRangeError::ZeroCycles);
+    }
+    if curve.fatigue_exponent_m == 0 {
+        return Err(FatigueRangeError::NonPositiveExponent);
+    }
+    if cycles < BASQUIN_LOW_CYCLE_BOUND {
+        return Err(FatigueRangeError::BelowLowCycleBound {
+            cycles,
+            bound: BASQUIN_LOW_CYCLE_BOUND,
+        });
     }
     if cycles >= curve.endurance_cycles {
-        return curve.endurance_stress_mpa;
+        return Ok(curve.endurance_stress_mpa);
     }
-    // S = S_e · (N_e / N)^(1/m)
-    // Since we cannot take fractional root cheaply, use a small Newton
-    // iteration on f(x) = x^m − (N_e / N).
     let target = Fix128::from_int(curve.endurance_cycles as i64) / Fix128::from_int(cycles as i64);
-
-    // Initial guess: geometric mean of 1 and target
-    let mut x = target.sqrt();
-    // Session 3 I12 upgrade: Newton with convergence detection (early exit
-    // when |Δx| < tolerance). Retains the 32-iter safety cap.
-    let tol = Fix128::from_ratio(1, 1_000_000);
-    for _ in 0..32 {
-        let mut xm = Fix128::ONE;
-        for _ in 0..curve.fatigue_exponent_m {
-            xm = xm * x;
-        }
-        // xm_minus_1 = x^(m-1) = xm / x
+    let m = Fix128::from_int(i64::from(curve.fatigue_exponent_m));
+    let mut x = target.powf_pos(Fix128::ONE / m);
+    for _ in 0..2 {
         let mut xm1 = Fix128::ONE;
-        for _ in 0..curve.fatigue_exponent_m - 1 {
+        for _ in 1..curve.fatigue_exponent_m {
             xm1 = xm1 * x;
         }
-        let f = xm - target;
-        let df = Fix128::from_int(curve.fatigue_exponent_m as i64) * xm1;
+        let xm = xm1 * x;
+        let df = m * xm1;
         if df.is_zero() {
             break;
         }
-        let delta = f / df;
-        x = x - delta;
-        // Early exit when Newton step drops below tolerance
-        if delta.abs() < tol {
-            break;
-        }
+        x = x - (xm - target) / df;
     }
-    curve.endurance_stress_mpa * x
+    Ok(curve.endurance_stress_mpa * x)
 }
 
 // ============================================================================
@@ -232,7 +278,10 @@ pub fn miner_damage(spectrum: &[SpectrumEntry], curve: &SnCurve) -> Fix128 {
     d
 }
 
-/// Cumulative damage report (crate-internal).
+/// Cumulative damage report for one stress spectrum (crate-internal; only
+/// constructed by `analyze_spectrum`, which carries the debt marker).
+// ALLOW-DEAD: return type of the ALLOW-UNWIRED analyze_spectrum below, never constructed by a crate caller
+#[allow(dead_code)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct FatigueReport {
     /// Total damage `D`.
@@ -240,12 +289,16 @@ pub(crate) struct FatigueReport {
     /// True iff `damage < 1` (part is expected to survive the spectrum).
     pub(crate) is_safe: bool,
     /// Safety factor `1 / D` — the multiplier by which the entire spectrum
-    /// could be repeated before failure. Reported as a large sentinel for
-    /// zero damage.
+    /// could be repeated before failure. Reported as the sentinel
+    /// `Fix128::from_int(i64::MAX >> 8)` for zero damage.
     pub(crate) safety_factor: Fix128,
 }
 
-/// Convenience wrapper that produces a full report (crate-internal).
+/// Miner's rule over the whole spectrum, packaged as a [`FatigueReport`]
+/// (`damage` is exactly [`miner_damage`], crate-internal).
+// ALLOW-DEAD: pub(crate) with no crate caller, same debt as the ALLOW-UNWIRED marker below
+// ALLOW-UNWIRED: wiring debt Backlog structural-pub-crate-residue (the life loop accumulates per-step miner_damage, a per-step is_safe is meaningless), oracle src/fatigue.rs tests::a5052_preset_miner_sum_matches_hand_calculation
+#[allow(dead_code)]
 #[must_use]
 pub(crate) fn analyze_spectrum(spectrum: &[SpectrumEntry], curve: &SnCurve) -> FatigueReport {
     let damage = miner_damage(spectrum, curve);
@@ -308,23 +361,40 @@ mod tests {
     #[test]
     fn stress_at_endurance_cycles_returns_endurance() {
         let curve = SnCurve::steel_sus304();
-        let s = stress_at_cycles(&curve, curve.endurance_cycles);
+        let s = stress_at_cycles(&curve, curve.endurance_cycles).unwrap();
         assert_eq!(s, curve.endurance_stress_mpa);
     }
 
+    /// Zero cycles has no stress on the curve: refused, not UTS (the
+    /// pre-2026-10-03 contract returned UTS, a number outside the law).
     #[test]
-    fn stress_at_zero_cycles_returns_uts() {
+    fn stress_at_zero_cycles_is_refused() {
         let curve = SnCurve::steel_sus304();
-        let s = stress_at_cycles(&curve, 0);
-        assert_eq!(s, curve.ultimate_tensile_mpa);
+        assert_eq!(
+            stress_at_cycles(&curve, 0),
+            Err(FatigueRangeError::ZeroCycles)
+        );
     }
 
+    /// Oracle: `S` decreases with `N` over the whole high-cycle range, and
+    /// the round trip `cycles_to_failure(stress_at_cycles(N))` lands within
+    /// 0.1 % of `N` (the forward map truncates to an integer).
     #[test]
-    fn stress_at_cycles_monotonic_decreasing() {
+    fn stress_at_cycles_monotonic_decreasing_and_round_trips() {
         let curve = SnCurve::aluminum_a5052();
-        let s_short = stress_at_cycles(&curve, 100);
-        let s_long = stress_at_cycles(&curve, 100_000);
-        assert!(s_short > s_long);
+        let mut previous = Fix128::from_int(1_000_000);
+        for n in [
+            1_000u64, 2_000, 5_000, 20_000, 100_000, 1_000_000, 4_000_000,
+        ] {
+            let s = stress_at_cycles(&curve, n).unwrap();
+            assert!(s < previous, "N = {n}: {s:?} not below {previous:?}");
+            previous = s;
+            let back = cycles_to_failure(&curve, s);
+            assert!(
+                back.abs_diff(n) * 1000 <= n,
+                "N = {n}: round trip gave {back}"
+            );
+        }
     }
 
     #[test]
@@ -387,6 +457,162 @@ mod tests {
         let report = analyze_spectrum(&[(stress, n_fail * 3)], &curve);
         assert!(!report.is_safe);
         assert!(report.damage > Fix128::ONE);
+    }
+
+    /// Oracle: Basquin `N = N_e · (S_e / S)^m` with the SUS304 preset at
+    /// `S = 300 MPa`: `10⁷ · 0.8¹⁰ = 10⁷ · 0.1073741824 = 1 073 741.824`,
+    /// truncated toward zero to `1 073 741` cycles. Applying exactly that
+    /// many cycles gives Miner `D = 1` (unsafe, safety factor 1); one cycle
+    /// fewer is still safe.
+    #[test]
+    fn sus304_preset_basquin_life_at_300_mpa_is_1073741_cycles() {
+        let curve = SnCurve::steel_sus304();
+        let s = Fix128::from_int(300);
+        let full = analyze_spectrum(&[(s, 1_073_741)], &curve);
+        assert_eq!(full.damage, Fix128::ONE, "D = {}", full.damage.to_f64());
+        assert!(!full.is_safe);
+        assert_eq!(full.safety_factor, Fix128::ONE);
+        let almost = analyze_spectrum(&[(s, 1_073_740)], &curve);
+        assert!(almost.is_safe);
+        assert!(almost.damage < Fix128::ONE);
+    }
+
+    /// Oracle: Miner's rule by hand for the A5052 preset
+    /// (`S_e = 92`, `N_e = 5·10⁶`, `m = 6`).
+    /// `N(120) = ⌊5·10⁶ · (23/30)⁶⌋ = ⌊5·10⁶ · 148 035 889 / 729 000 000⌋
+    ///  = 1 015 335`, `N(150) = ⌊5·10⁶ · 46⁶ / 75⁶⌋ = 266 164`.
+    /// Applying `N(120)/5 = 203 067` and `N(150)/4 = 66 541` cycles gives
+    /// `D = 0.2 + 0.25 = 0.45` and a safety factor of `1/0.45 = 2.2̅`.
+    #[test]
+    fn a5052_preset_miner_sum_matches_hand_calculation() {
+        let n120: u128 = 5_000_000 * 148_035_889 / 729_000_000;
+        let n150: u128 = 5_000_000 * 9_474_296_896 / 177_978_515_625;
+        assert_eq!((n120, n150), (1_015_335, 266_164), "hand calculation");
+        let curve = SnCurve::aluminum_a5052();
+        let report = analyze_spectrum(
+            &[
+                (Fix128::from_int(120), 203_067),
+                (Fix128::from_int(150), 66_541),
+            ],
+            &curve,
+        );
+        let d = report.damage.to_f64();
+        assert!((d - 0.45).abs() < 1e-12, "D = {d}");
+        assert!(report.is_safe);
+        let sf = report.safety_factor.to_f64();
+        assert!((sf - 1.0 / 0.45).abs() < 1e-12, "SF = {sf}");
+    }
+
+    /// Degenerate spectra documented on `analyze_spectrum` /
+    /// `cycles_to_failure`: an empty spectrum and an entry at the endurance
+    /// stress (infinite life, even with `u64::MAX` cycles) both report zero
+    /// damage, `is_safe`, and the zero-damage safety-factor sentinel
+    /// `Fix128::from_int(i64::MAX >> 8)`.
+    #[test]
+    fn analyze_spectrum_empty_and_below_endurance_report_zero_damage_sentinel() {
+        let curve = SnCurve::steel_sus304();
+        let sentinel = Fix128::from_int(i64::MAX >> 8);
+        for spectrum in [&[][..], &[(Fix128::from_int(240), u64::MAX)][..]] {
+            let report = analyze_spectrum(spectrum, &curve);
+            assert_eq!(report.damage, Fix128::ZERO);
+            assert!(report.is_safe);
+            assert_eq!(report.safety_factor, sentinel);
+        }
+    }
+
+    /// Oracle: the same Basquin inverse at small cycle counts, where the
+    /// Newton seed `x₀ = √(N_e/N)` makes `x₀^m = (N_e/N)^(m/2)` exceed the
+    /// Fix128 integer range (`2⁶³ ≈ 9.2e18`): SUS304 (`m = 10`) wraps for
+    /// `N < 1e7 / 6191 ≈ 1615`, A5052 (`m = 6`) for `N < 5e6 / 2.1e6 ≈ 2.4`.
+    /// Hand values: `240 · (10⁷)^0.1 = 240 · 5.0118723 = 1202.849 MPa`,
+    /// `92 · (5·10⁶)^(1/6) = 92 · 13.076605 = 1203.048 MPa`. Measured
+    /// 2026-10-03: `760 490.6` and `206 835.0` MPa (wrapped Newton), and
+    /// SUS304 at `N = 5000` is still `1.3e-4 MPa` off (not converged).
+    /// Oracle: the cycle counts at which the pre-2026-10-03 Newton seed
+    /// wrapped (`SUS304 N ≤ 1500`, `A5052 N ≤ 2`) now give the closed form
+    /// `S_e · (N_e/N)^(1/m)` to 1e-6 MPa where the law applies, and the
+    /// documented refusal below the low-cycle bound.
+    #[test]
+    fn stress_at_cycles_small_cycle_counts_match_basquin() {
+        let steel = SnCurve::steel_sus304();
+        for n in [1_000u64, 1_500, 2_000, 5_000] {
+            let got = stress_at_cycles(&steel, n).unwrap().to_f64();
+            let want = 240.0 * crate::det_math::powf64(1e7 / n as f64, 0.1);
+            assert!(
+                (got - want).abs() < 1e-6,
+                "SUS304 N = {n}: got {got}, want {want}"
+            );
+        }
+        assert_eq!(
+            stress_at_cycles(&steel, 1),
+            Err(FatigueRangeError::BelowLowCycleBound {
+                cycles: 1,
+                bound: 1_000
+            })
+        );
+        let alu = SnCurve::aluminum_a5052();
+        assert_eq!(
+            stress_at_cycles(&alu, 2),
+            Err(FatigueRangeError::BelowLowCycleBound {
+                cycles: 2,
+                bound: 1_000
+            })
+        );
+        let got = stress_at_cycles(&alu, 1_000).unwrap().to_f64();
+        let want = 92.0 * crate::det_math::powf64(5e3, 1.0 / 6.0);
+        assert!(
+            (got - want).abs() < 1e-6,
+            "A5052 N = 1000: got {got}, want {want}"
+        );
+    }
+
+    /// Oracle: `S = S_e · (N_e / N)^(1/m)` by hand.
+    /// SUS304 at `N = 10⁵`: `240 · 100^(0.1) = 240 · 1.5848932 = 380.3744 MPa`.
+    /// A5052 at `N = 5·10⁵`: `92 · 10^(1/6) = 92 · 1.4677993 = 135.0375 MPa`.
+    /// The Newton iteration stops at `|Δx| < 1e-6`, so the result is good
+    /// to far better than the `1e-6 MPa` asked for here.
+    #[test]
+    fn stress_at_cycles_inverts_basquin_for_sus304_and_a5052() {
+        let steel = stress_at_cycles(&SnCurve::steel_sus304(), 100_000)
+            .unwrap()
+            .to_f64();
+        let want_steel = 240.0 * crate::det_math::powf64(100.0, 0.1);
+        assert!(
+            (steel - want_steel).abs() < 1e-6,
+            "got {steel}, want {want_steel}"
+        );
+        let alu = stress_at_cycles(&SnCurve::aluminum_a5052(), 500_000)
+            .unwrap()
+            .to_f64();
+        let want_alu = 92.0 * crate::det_math::powf64(10.0, 1.0 / 6.0);
+        assert!((alu - want_alu).abs() < 1e-6, "got {alu}, want {want_alu}");
+    }
+
+    /// Degenerate cycle counts documented on `stress_at_cycles`: `0` is
+    /// refused, `N_e` and anything above (up to `u64::MAX`, which never
+    /// reaches the `as i64` conversion) return the endurance stress exactly,
+    /// and a curve with `m = 0` is refused.
+    #[test]
+    fn stress_at_cycles_degenerate_cycle_counts() {
+        let curve = SnCurve::aluminum_a5052();
+        assert_eq!(
+            stress_at_cycles(&curve, 0),
+            Err(FatigueRangeError::ZeroCycles)
+        );
+        assert_eq!(
+            stress_at_cycles(&curve, curve.endurance_cycles),
+            Ok(curve.endurance_stress_mpa)
+        );
+        assert_eq!(
+            stress_at_cycles(&curve, u64::MAX),
+            Ok(curve.endurance_stress_mpa)
+        );
+        let mut flat = SnCurve::aluminum_a5052();
+        flat.fatigue_exponent_m = 0;
+        assert_eq!(
+            stress_at_cycles(&flat, 10_000),
+            Err(FatigueRangeError::NonPositiveExponent)
+        );
     }
 
     #[test]

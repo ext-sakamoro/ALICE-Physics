@@ -1342,6 +1342,11 @@ impl PhysicsWorld {
 
     /// Wake up a body and all connected bodies in its island
     pub fn wake_body(&mut self, body_idx: usize) {
+        // An index past the last body is ignored, like every other per-body
+        // setter; the island union-find would index out of range otherwise.
+        if body_idx >= self.bodies.len() {
+            return;
+        }
         self.islands.wake_island(body_idx);
     }
 

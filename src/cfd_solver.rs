@@ -37,7 +37,7 @@ use crate::eulerian_grid::{
 };
 use crate::interface_capture::fast_sweeping_reinit;
 use crate::math::{Fix128, Vec3Fix};
-use crate::multiphase::{trilinear_range, trilinear_sample, Grid3d};
+use crate::multiphase::{reinitialize_level_set, trilinear_range, trilinear_sample, Grid3d};
 use crate::surface_tension_csf::{compute_csf_field, SIGMA_WATER_AIR};
 use crate::turbulence::{
     dynamic_smagorinsky_cs, friction_velocity_checked, smagorinsky_eddy_viscosity,
@@ -248,22 +248,56 @@ impl WallModel {
     }
 }
 
-/// What a step does beyond the shared body: which pressure solver, and
-/// whether a wall model replaces the no-slip ghost at the walls.
+/// How the level set is reinitialised on the steps where
+/// `CfdSolver::reinit_every_n_steps` says so (when a level set is present;
+/// the cadence is unchanged). Chosen per step through
+/// [`StepOptions::with_level_set_reinit`]; [`CfdSolver::step`] and
+/// [`StepOptions::new`] use `FastSweeping { sweeps: 2 }`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum LevelSetReinit {
+    /// `interface_capture::fast_sweeping_reinit` with `sweeps` sweeps: the
+    /// Zhao fast sweeping solve of the eikonal equation from the frozen
+    /// interface cells. Refused when `sweeps` is zero.
+    FastSweeping {
+        /// Sweeps; refused when zero.
+        sweeps: u32,
+    },
+    /// `multiphase::reinitialize_level_set` with `iterations` explicit
+    /// pseudo-time steps of `φ_τ = sgn(φ) (1 − |∇φ|)`, `Δτ = dx / 2`,
+    /// central differences, the outermost cell layer frozen. A signed
+    /// distance field is its fixed point to the bit; a grid with fewer than
+    /// three cells on an axis is left untouched. Refused when `iterations`
+    /// is zero.
+    PseudoTime {
+        /// Pseudo-time steps; refused when zero.
+        iterations: u32,
+    },
+}
+
+/// What [`CfdSolver::step`] reinitialises the level set with.
+const DEFAULT_LEVEL_SET_REINIT: LevelSetReinit = LevelSetReinit::FastSweeping { sweeps: 2 };
+
+/// What a step does beyond the shared body: which pressure solver, whether a
+/// wall model replaces the no-slip ghost at the walls, and how the level set
+/// is reinitialised.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct StepOptions {
     pressure: PressureSolver,
     wall_model: Option<WallModel>,
+    level_set_reinit: LevelSetReinit,
 }
 
 impl StepOptions {
-    /// Project with `pressure`, no wall model.
+    /// Project with `pressure`, no wall model, the level set reinitialised
+    /// as [`CfdSolver::step`] does (`FastSweeping { sweeps: 2 }`).
     #[must_use]
     pub const fn new(pressure: PressureSolver) -> Self {
         Self {
             pressure,
             wall_model: None,
+            level_set_reinit: DEFAULT_LEVEL_SET_REINIT,
         }
     }
 
@@ -271,6 +305,14 @@ impl StepOptions {
     #[must_use]
     pub const fn with_wall_model(mut self, model: WallModel) -> Self {
         self.wall_model = Some(model);
+        self
+    }
+
+    /// Reinitialise the level set with `reinit` on the reinitialisation
+    /// steps (`CfdSolver::reinit_every_n_steps`).
+    #[must_use]
+    pub const fn with_level_set_reinit(mut self, reinit: LevelSetReinit) -> Self {
+        self.level_set_reinit = reinit;
         self
     }
 
@@ -311,6 +353,11 @@ pub enum StepError {
         /// The diffusion number that was measured.
         diffusion_number: Fix128,
     },
+    /// The [`LevelSetReinit`] has a zero sweep / iteration count: nothing
+    /// would be reinitialised on the reinitialisation steps. Refused whether
+    /// or not a level set is present, as the zero counts of
+    /// [`PressureSolver`] are.
+    ZeroReinitCount,
 }
 
 impl From<PressureSolverError> for StepError {
@@ -340,6 +387,9 @@ impl core::fmt::Display for StepError {
                 "explicit diffusion unstable: diffusion number {} exceeds 1/6",
                 diffusion_number.to_f64()
             ),
+            Self::ZeroReinitCount => {
+                write!(f, "the level set reinitialisation count is zero")
+            }
         }
     }
 }
@@ -976,7 +1026,7 @@ impl CfdSolver {
             return;
         }
         let projection = self.default_projection(multigrid_cycles);
-        self.step_body(dt_s, projection, None, None);
+        self.step_body(dt_s, projection, None, None, DEFAULT_LEVEL_SET_REINIT);
     }
 
     /// [`Self::step`] with the pressure projection done by the solver the
@@ -1001,7 +1051,19 @@ impl CfdSolver {
             Err(StepError::WallModelNeedsViscosity) => {
                 unreachable!("no wall model was requested")
             }
-            Err(_) => unreachable!("no turbulence closure was requested"),
+            Err(_) => unreachable!(
+                "no turbulence closure was requested and the default reinitialisation count is 2"
+            ),
+        }
+    }
+
+    /// Validate the level set reinitialisation request: a zero count is
+    /// refused whether or not a level set is present.
+    fn reinit_for(reinit: LevelSetReinit) -> Result<LevelSetReinit, StepError> {
+        match reinit {
+            LevelSetReinit::FastSweeping { sweeps: 0 }
+            | LevelSetReinit::PseudoTime { iterations: 0 } => Err(StepError::ZeroReinitCount),
+            other => Ok(other),
         }
     }
 
@@ -1066,13 +1128,19 @@ impl CfdSolver {
     /// the log law instead of the no-slip ghost, and the step reports the
     /// envelope of what the model read ([`WallShearSummary`]).
     ///
+    /// The level set, when present, is reinitialised on the steps
+    /// `reinit_every_n_steps` names with the [`LevelSetReinit`] of `options`
+    /// (`StepOptions::new` carries the `FastSweeping { sweeps: 2 }` of
+    /// [`Self::step`]).
+    ///
     /// # Errors
     ///
     /// [`StepError::Pressure`] for the refusals of
-    /// [`Self::step_with_pressure_solver`], and
+    /// [`Self::step_with_pressure_solver`],
     /// [`StepError::WallModelNeedsViscosity`] for a wall model on a solver
-    /// with zero molecular viscosity. ⚠️ On `Err` the solver is **not
-    /// stepped**: the grid and `step_count` are untouched.
+    /// with zero molecular viscosity, and [`StepError::ZeroReinitCount`] for
+    /// a reinitialisation with a zero count. ⚠️ On `Err` the solver is **not
+    /// stepped**: the grid, the level set and `step_count` are untouched.
     pub fn step_with_options(
         &mut self,
         dt_s: Fix128,
@@ -1085,8 +1153,9 @@ impl CfdSolver {
         if options.wall_model.is_some() && self.dynamic_viscosity_pas <= Fix128::ZERO {
             return Err(StepError::WallModelNeedsViscosity);
         }
+        let reinit = Self::reinit_for(options.level_set_reinit)?;
         let (bicgstab, wall, _) =
-            self.step_body(dt_s, projection, options.wall_model.as_ref(), None);
+            self.step_body(dt_s, projection, options.wall_model.as_ref(), None, reinit);
         Ok(StepReport { bicgstab, wall })
     }
 
@@ -1123,12 +1192,14 @@ impl CfdSolver {
         if options.wall_model.is_some() && self.dynamic_viscosity_pas <= Fix128::ZERO {
             return Err(StepError::WallModelNeedsViscosity);
         }
+        let reinit = Self::reinit_for(options.level_set_reinit)?;
         let run = self.prepare_turbulence(state, dt_s)?;
         let (bicgstab, wall, turbulence) = self.step_body(
             dt_s,
             projection,
             options.wall_model.as_ref(),
             Some((&run, state)),
+            reinit,
         );
         Ok(RansReport {
             eddy_viscosity: Grid3d {
@@ -1145,7 +1216,8 @@ impl CfdSolver {
     }
 
     /// The step body: boundaries, advection, body forces, diffusion, the
-    /// projection named by `projection`, then the optional level-set and
+    /// projection named by `projection`, then the optional level-set
+    /// (advection, and `reinit` on the reinitialisation steps) and
     /// temperature updates. Returns the BiCGStab verdict when that is the
     /// solver.
     fn step_body(
@@ -1154,6 +1226,7 @@ impl CfdSolver {
         projection: Projection,
         wall: Option<&WallModel>,
         turbulence: Option<(&TurbulenceRun, &mut RansState)>,
+        reinit: LevelSetReinit,
     ) -> (
         Option<BicgstabStats>,
         Option<WallShearSummary>,
@@ -1248,7 +1321,12 @@ impl CfdSolver {
                 && self.step_count % u64::from(self.reinit_every_n_steps) == 0
             {
                 if let Some(ls) = self.level_set.as_mut() {
-                    fast_sweeping_reinit(ls, 2);
+                    match reinit {
+                        LevelSetReinit::FastSweeping { sweeps } => fast_sweeping_reinit(ls, sweeps),
+                        LevelSetReinit::PseudoTime { iterations } => {
+                            reinitialize_level_set(ls, iterations);
+                        }
+                    }
                 }
             }
         }

@@ -38,19 +38,20 @@
 //!
 //! # Integration status
 //!
-//! `Grid3d`, `trilinear_range`, `trilinear_sample`, `curvature_at`, and
-//! `initialize_level_set_sphere` are wired into `cfd_solver.rs` and
-//! `surface_tension_csf.rs`. The VOF advection variants
-//! (`advect_vof_uniform`, `advect_vof_uniform_semi_lagrangian`,
-//! `total_volume_vof`) and the pseudo-time `reinitialize_level_set`
-//! (superseded by `interface_capture::fast_sweeping_reinit`) are
-//! reserved crate-internal API awaiting downstream integration.
+//! `Grid3d`, `trilinear_range`, `trilinear_sample` and `curvature_at` are
+//! consumed by `cfd_solver.rs` (level-set and temperature advection) and
+//! `surface_tension_csf.rs`. [`initialize_level_set_sphere`] is how a caller
+//! seeds `CfdSolver::level_set` (`examples/vof_level_set_transport.rs`). The
+//! pseudo-time `reinitialize_level_set` (crate-internal) is the second
+//! reinitialisation scheme of the solver, selected per step through
+//! `cfd_solver::StepOptions::with_level_set_reinit`
+//! (`LevelSetReinit::PseudoTime`); the default remains
+//! `interface_capture::fast_sweeping_reinit`. The two uniform-velocity VOF
+//! schemes and `total_volume_vof` are reached through [`advect_vof_rigid`],
+//! the rigid-convection transport of a VOF field (translation test of a
+//! fraction field, the same example).
 
-// Reserved VOF advection + legacy reinitialisation — pub(crate) but currently
-// unused outside their own unit tests.
-#![allow(dead_code)]
-
-use crate::math::Fix128;
+use crate::math::{Fix128, Vec3Fix};
 
 #[cfg(not(feature = "std"))]
 use alloc::vec;
@@ -332,6 +333,60 @@ pub(crate) fn total_volume_vof(field: &Grid3d) -> Fix128 {
     sum * cell_vol
 }
 
+/// Which discretisation [`advect_vof_rigid`] transports the fraction with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum VofScheme {
+    /// First-order upwind: `f_i ← f_i − c (f_i − f_up)` per axis with the
+    /// Courant number `c = |u| dt / dx`, the upwind neighbour `f_up` taken
+    /// as `0` outside the grid (empty inflow), then clamped to `[0, 1]`.
+    /// Exact at `c = 1` (the field translates by one cell), diffusive below
+    /// it, and only the clamp bounds it above it.
+    Upwind,
+    /// Semi-Lagrangian back-trace with trilinear sampling of the previous
+    /// field, the sample point clamped to the grid (the boundary value is
+    /// extended outside it), then clamped to `[0, 1]`. Exact at integer
+    /// displacements `u dt / dx`, unconditionally stable, diffusive at
+    /// fractional ones.
+    SemiLagrangian,
+}
+
+/// Rigid convection of a VOF fraction field: every cell is carried by the
+/// same velocity `velocity_m_per_s` (m/s) for `dt_s` (s) with `scheme`, and
+/// the fluid volume `Σ f · dx³` after the step is returned.
+///
+/// This is the translation test of a fraction field: a slab of fraction `1`
+/// carried by `u` for `dt = k dx / u` lands `k` cells over with its profile
+/// intact under either scheme, and its volume is unchanged as long as it
+/// stays inside the grid (a cell carried past the last cell is lost, and the
+/// volume drops by that cell). A spatially varying velocity is the level set
+/// path of `CfdSolver` (semi-Lagrangian on the cell-centred MAC velocity),
+/// not this routine.
+///
+/// # Degenerate input
+///
+/// A zero spacing returns with the field **untouched** (no clamp is applied
+/// either) and a zero volume; a zero velocity or a zero `dt` leaves the field
+/// bit-identical under both schemes; a grid with a zero extent has no cells
+/// and returns zero. A velocity far above `dx / dt` does not panic: the
+/// upwind scheme reduces to the sign rule `f ← 1` where `f_up > f`, `0`
+/// where `f_up < f` (the clamp), and the semi-Lagrangian one samples the
+/// boundary cell the back-trace is clamped to.
+#[must_use]
+pub fn advect_vof_rigid(
+    field: &mut Grid3d,
+    scheme: VofScheme,
+    velocity_m_per_s: Vec3Fix,
+    dt_s: Fix128,
+) -> Fix128 {
+    let Vec3Fix { x, y, z } = velocity_m_per_s;
+    match scheme {
+        VofScheme::Upwind => advect_vof_uniform(field, x, y, z, dt_s),
+        VofScheme::SemiLagrangian => advect_vof_uniform_semi_lagrangian(field, x, y, z, dt_s),
+    }
+    total_volume_vof(field)
+}
+
 // ============================================================================
 // Level Set
 // ============================================================================
@@ -361,13 +416,26 @@ pub fn initialize_level_set_sphere(
     }
 }
 
-/// Level set reinitialisation via one pass of the Sussman fast marching
-/// approximation. Restores `|∇φ| ≈ 1` while preserving zero level set.
+/// Level set reinitialisation by `iterations` explicit pseudo-time steps of
+/// the Sussman–Smereka–Osher equation `φ_τ = sgn(φ) (1 − |∇φ|)` with
+/// `Δτ = dx / 2` and central differences for `|∇φ|`, the sign taken from the
+/// current field (`0` on the zero level, which therefore never moves).
+/// Restores `|∇φ| ≈ 1` while preserving the zero level set.
 ///
-/// The fast method here is a single-sweep signed-distance re-fit using the
-/// nearest-neighbour finite-difference gradient. Adequate for coarse grids
-/// (< 64³) and moderate deformation; higher accuracy needs the full FSM.
+/// Only interior cells (`1 ≤ i ≤ nx − 2`, likewise `j`, `k`) are updated;
+/// the outermost layer is frozen, so a grid with fewer than three cells on
+/// any axis has no interior and is returned untouched. A zero spacing is
+/// also a no-op (`Δτ = 0`). A field that is already a signed distance with
+/// `|∇φ| = 1` to the bit in the central differences is a fixed point to the
+/// bit. Adequate for coarse grids (< 64³) and moderate deformation; higher
+/// accuracy needs the full fast sweeping of
+/// `interface_capture::fast_sweeping_reinit`, which is the solver's default.
+/// Compiled with the `std` feature, as its consumer `cfd_solver` is.
+#[cfg(feature = "std")]
 pub(crate) fn reinitialize_level_set(field: &mut Grid3d, iterations: u32) {
+    if field.nx < 3 || field.ny < 3 || field.nz < 3 {
+        return;
+    }
     let dtau = field.dx * Fix128::from_ratio(1, 2);
     for _ in 0..iterations {
         let mut next = field.data.clone();
@@ -533,6 +601,7 @@ mod tests {
         assert_eq!(total_volume_vof(&g), Fix128::from_int(512));
     }
 
+    #[cfg(feature = "std")]
     #[test]
     fn reinitialize_level_set_smoke() {
         let mut g = Grid3d::new(7, 7, 7, Fix128::ONE, Fix128::ZERO);
@@ -548,6 +617,33 @@ mod tests {
         // Zero level should still be preserved at (5, 3, 3) approximately
         let phi_surface = g.get(5, 3, 3);
         assert!(phi_surface.abs() < Fix128::from_int(2));
+    }
+
+    /// Oracle for the interior guard: a grid with fewer than three cells on
+    /// any axis has no interior and is returned untouched, the zero-extent
+    /// grids included (without the guard `1..0 − 1` wraps and the first
+    /// interior write indexes an empty `Vec`).
+    #[cfg(feature = "std")]
+    #[test]
+    fn reinitialize_without_an_interior_is_untouched_and_does_not_panic() {
+        for (nx, ny, nz) in [
+            (0, 0, 0),
+            (0, 3, 3),
+            (3, 0, 3),
+            (3, 3, 0),
+            (2, 3, 3),
+            (3, 2, 3),
+            (3, 3, 2),
+            (1, 1, 1),
+        ] {
+            let mut g = Grid3d::new(nx, ny, nz, Fix128::ONE, Fix128::from_int(5));
+            let before = g.data.clone();
+            let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                reinitialize_level_set(&mut g, 3);
+            }));
+            assert!(res.is_ok(), "{nx}x{ny}x{nz} panicked");
+            assert_eq!(g.data, before, "{nx}x{ny}x{nz}");
+        }
     }
 
     #[test]

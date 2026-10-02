@@ -37,13 +37,16 @@
 //! # Integration status
 //!
 //! `PlasticModel`, `PlasticState`, `NortonCreep`, and `radial_return_1d`
-//! are wired into `structural_solver.rs`. `StressTensor`, `PlasticStep`,
-//! `current_yield_mpa`, and the alternate factory / accessor helpers
-//! are reserved crate-internal API awaiting downstream integration.
-
-// Reserved plasticity helpers (StressTensor, PlasticStep, alt factories) —
-// pub(crate) but currently unused outside their own unit tests.
-#![allow(dead_code)]
+//! are wired into `structural_solver.rs`. `PlasticStep`,
+//! `current_yield_mpa`, and `strain_rate_per_s` are crate-internal and
+//! reached through `radial_return_1d` / `integrate`.
+//! `PlasticModel::with_hardening` and `NortonCreep::petg_room_temp` have no
+//! consumer (the solver builds its model with `from_fdm_material` and
+//! hard-codes the PLA creep preset) and carry `ALLOW-UNWIRED` debt markers
+//! with closed-form oracles in this module's unit tests. `StressTensor` is
+//! a crate-internal duplicate of the public
+//! `linear_elastic_fem::StressTensor` with no caller; it is kept under a
+//! per-item `allow(dead_code)` until the two are consolidated.
 
 use crate::filament_db::MaterialProperties;
 use crate::math::Fix128;
@@ -55,6 +58,8 @@ use crate::math::Fix128;
 /// Symmetric 3D Cauchy stress tensor (6 independent components, in MPa).
 ///
 /// Positive normal stresses are tensile.
+// ALLOW-DEAD: duplicate of the public linear_elastic_fem::StressTensor (xx..zx, von_mises, hydrostatic); no crate caller, consolidation is an API decision
+#[allow(dead_code)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub(crate) struct StressTensor {
     /// Normal stress σ_xx.
@@ -71,6 +76,8 @@ pub(crate) struct StressTensor {
     pub(crate) syz: Fix128,
 }
 
+// ALLOW-DEAD: uniaxial_x / hydrostatic / von_mises belong to the duplicate StressTensor above; same consolidation decision
+#[allow(dead_code)]
 impl StressTensor {
     /// Uniaxial stress along X (all other components zero).
     #[must_use]
@@ -158,7 +165,10 @@ impl PlasticModel {
         }
     }
 
-    /// Override the hardening law (crate-internal).
+    /// Override the hardening law, leaving every other parameter unchanged.
+    // ALLOW-DEAD: pub(crate) with no crate caller, same debt as the ALLOW-UNWIRED marker below
+    // ALLOW-UNWIRED: wiring debt Backlog structural-pub-crate-residue (hardening_type is a pub field, the solver sets nothing but the from_fdm_material default), oracle src/plastic.rs tests::with_hardening_back_stress_matches_radial_return_closed_form
+    #[allow(dead_code)]
     #[must_use]
     pub(crate) const fn with_hardening(mut self, ht: HardeningType) -> Self {
         self.hardening_type = ht;
@@ -334,7 +344,11 @@ impl NortonCreep {
         }
     }
 
-    /// PETG at 25°C — much lower creep than PLA (higher Tg, crate-internal).
+    /// PETG at 25°C — lower creep than PLA (higher Tg):
+    /// `A = 1e-13 /(MPa³·s)`, `n = 3`, about 6.3× below the PLA calibration.
+    // ALLOW-DEAD: pub(crate) with no crate caller, same debt as the ALLOW-UNWIRED marker below
+    // ALLOW-UNWIRED: wiring debt Backlog structural-pub-crate-residue (structural_solver::new hard-codes the PLA creep preset), oracle src/plastic.rs tests::petg_norton_preset_integrates_a_sigma_cubed_dt
+    #[allow(dead_code)]
     #[must_use]
     pub(crate) fn petg_room_temp() -> Self {
         // ≈ 6× lower than the PLA calibration (1.2.0: 1e-11 was 16× *above*
@@ -576,6 +590,116 @@ mod tests {
         // Plastic strain unchanged, creep strain grew
         assert_eq!(state.equivalent_plastic_strain, ep_before);
         assert!(state.creep_strain > Fix128::ZERO);
+    }
+
+    /// Oracle: 1-D radial return by hand (Simo & Hughes eq. 2.13) for the PLA
+    /// model (`σ_y = 50`, `E = 3500`, `H = 0.05·E = 175`) and a trial of
+    /// `60 MPa`: `Δλ = (60 − 50) / (E + H) = 10/3675 = 2.7210884e-3`,
+    /// corrected stress `60 − E·Δλ = 50.476190`. The hardening law chosen
+    /// through `with_hardening` decides where `H·Δλ = 0.476190` goes:
+    /// kinematic → all into the back-stress, combined → half
+    /// (`0.238095`), isotropic → none. A second kinematic step with the same
+    /// trial sees `|60 − α₁| = 59.523810` against the unchanged radius 50:
+    /// `Δλ₂ = 9.523810/3675`, `α₂ = α₁ + 175·Δλ₂ = 0.929705`.
+    #[test]
+    fn with_hardening_back_stress_matches_radial_return_closed_form() {
+        let base = PlasticModel::from_fdm_material(&MaterialProperties::pla());
+        let (e, h) = (3500.0_f64, 175.0_f64);
+        let dl1 = 10.0 / (e + h);
+        let cases = [
+            (HardeningType::Kinematic, h * dl1),
+            (HardeningType::Combined, 0.5 * h * dl1),
+            (HardeningType::Isotropic, 0.0),
+        ];
+        for (law, want_alpha) in cases {
+            let model = base.with_hardening(law);
+            assert_eq!(model.hardening_type, law);
+            assert_eq!(model.yield_strength_mpa, base.yield_strength_mpa);
+            assert_eq!(model.hardening_modulus_mpa, base.hardening_modulus_mpa);
+            assert_eq!(model.youngs_modulus_mpa, base.youngs_modulus_mpa);
+            let mut state = PlasticState::default();
+            let step = radial_return_1d(Fix128::from_int(60), &model, &mut state);
+            assert!(step.yielded);
+            let got_alpha = state.back_stress_mpa.to_f64();
+            assert!(
+                (got_alpha - want_alpha).abs() < 1e-9,
+                "{law:?}: α = {got_alpha}, want {want_alpha}"
+            );
+            let got_ep = state.equivalent_plastic_strain.to_f64();
+            assert!((got_ep - dl1).abs() < 1e-9, "{law:?}: ε_p = {got_ep}");
+            let got_s = step.stress_mpa.to_f64();
+            assert!(
+                (got_s - (60.0 - e * dl1)).abs() < 1e-9,
+                "{law:?}: σ = {got_s}"
+            );
+        }
+        // second kinematic step: Bauschinger shift of the surface centre
+        let model = base.with_hardening(HardeningType::Kinematic);
+        let mut state = PlasticState::default();
+        let _ = radial_return_1d(Fix128::from_int(60), &model, &mut state);
+        let _ = radial_return_1d(Fix128::from_int(60), &model, &mut state);
+        let alpha1 = h * dl1;
+        let dl2 = (60.0 - alpha1 - 50.0) / (e + h);
+        let want_alpha2 = alpha1 + h * dl2;
+        let got_alpha2 = state.back_stress_mpa.to_f64();
+        assert!(
+            (got_alpha2 - want_alpha2).abs() < 1e-9,
+            "α₂ = {got_alpha2}, want {want_alpha2}"
+        );
+    }
+
+    /// Degenerate use of the builder: re-applying the model's own law is the
+    /// identity, applying a law twice equals applying it once, and
+    /// overriding back restores the original (only `hardening_type` moves).
+    #[test]
+    fn with_hardening_is_idempotent_and_reversible() {
+        let base = PlasticModel::from_fdm_material(&MaterialProperties::pla());
+        assert_eq!(base.with_hardening(HardeningType::Isotropic), base);
+        assert_eq!(
+            base.with_hardening(HardeningType::Kinematic)
+                .with_hardening(HardeningType::Kinematic),
+            base.with_hardening(HardeningType::Kinematic)
+        );
+        assert_eq!(
+            base.with_hardening(HardeningType::Combined)
+                .with_hardening(HardeningType::Isotropic),
+            base
+        );
+    }
+
+    /// Oracle: Norton `ε_c = A·σⁿ·Δt` by hand with the PETG preset
+    /// (`A = 1e-13`, `n = 3`): `σ = 20 MPa`, `Δt = 10⁶ s` →
+    /// `1e-13 · 8000 · 10⁶ = 8e-4`. The exponent is odd, so a compressive
+    /// `−20 MPa` gives `−8e-4` (signed creep). Tolerance: `A = 1e-13` is
+    /// `1 844 674.4` Fix128 ulp stored truncated (relative `2.2e-7`, i.e.
+    /// `1.8e-10` absolute here); `1e-9` leaves no room for a wrong constant.
+    #[test]
+    fn petg_norton_preset_integrates_a_sigma_cubed_dt() {
+        let creep = NortonCreep::petg_room_temp();
+        let dt = Fix128::from_int(1_000_000);
+        let mut state = PlasticState::default();
+        creep.integrate(Fix128::from_int(20), dt, &mut state);
+        let got = state.creep_strain.to_f64();
+        assert!((got - 8e-4).abs() < 1e-9, "got {got}");
+        let mut neg = PlasticState::default();
+        creep.integrate(Fix128::from_int(-20), dt, &mut neg);
+        let got_neg = neg.creep_strain.to_f64();
+        assert!((got_neg + 8e-4).abs() < 1e-9, "got {got_neg}");
+    }
+
+    /// Degenerate inputs for the PETG preset: zero stress and zero time step
+    /// leave the creep strain exactly unchanged (`ε̇ = 0` / `Δt = 0`).
+    #[test]
+    fn petg_norton_preset_degenerate_stress_or_dt_leaves_state() {
+        let creep = NortonCreep::petg_room_temp();
+        let mut state = PlasticState {
+            creep_strain: Fix128::from_ratio(1, 1000),
+            ..Default::default()
+        };
+        creep.integrate(Fix128::ZERO, Fix128::from_int(1_000_000), &mut state);
+        assert_eq!(state.creep_strain, Fix128::from_ratio(1, 1000));
+        creep.integrate(Fix128::from_int(20), Fix128::ZERO, &mut state);
+        assert_eq!(state.creep_strain, Fix128::from_ratio(1, 1000));
     }
 
     #[test]

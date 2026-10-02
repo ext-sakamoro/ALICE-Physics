@@ -1225,6 +1225,29 @@ impl core::marker::Unpin for alice_physics::cfd_solver::AdvectionScheme
 impl core::marker::UnsafeUnpin for alice_physics::cfd_solver::AdvectionScheme
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::cfd_solver::AdvectionScheme
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::cfd_solver::AdvectionScheme
+#[non_exhaustive] pub enum alice_physics::cfd_solver::LevelSetReinit
+pub alice_physics::cfd_solver::LevelSetReinit::FastSweeping
+pub alice_physics::cfd_solver::LevelSetReinit::FastSweeping::sweeps: u32
+pub alice_physics::cfd_solver::LevelSetReinit::PseudoTime
+pub alice_physics::cfd_solver::LevelSetReinit::PseudoTime::iterations: u32
+impl core::clone::Clone for alice_physics::cfd_solver::LevelSetReinit
+pub fn alice_physics::cfd_solver::LevelSetReinit::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::cfd_solver::LevelSetReinit
+impl core::cmp::PartialEq for alice_physics::cfd_solver::LevelSetReinit
+pub fn alice_physics::cfd_solver::LevelSetReinit::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::cfd_solver::LevelSetReinit
+pub fn alice_physics::cfd_solver::LevelSetReinit::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for alice_physics::cfd_solver::LevelSetReinit
+pub fn alice_physics::cfd_solver::LevelSetReinit::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for alice_physics::cfd_solver::LevelSetReinit
+impl core::marker::StructuralPartialEq for alice_physics::cfd_solver::LevelSetReinit
+impl core::marker::Freeze for alice_physics::cfd_solver::LevelSetReinit
+impl core::marker::Send for alice_physics::cfd_solver::LevelSetReinit
+impl core::marker::Sync for alice_physics::cfd_solver::LevelSetReinit
+impl core::marker::Unpin for alice_physics::cfd_solver::LevelSetReinit
+impl core::marker::UnsafeUnpin for alice_physics::cfd_solver::LevelSetReinit
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::cfd_solver::LevelSetReinit
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::cfd_solver::LevelSetReinit
 #[non_exhaustive] pub enum alice_physics::cfd_solver::PressureSolver
 pub alice_physics::cfd_solver::PressureSolver::BandedGs
 pub alice_physics::cfd_solver::PressureSolver::BandedGs::ranks: usize
@@ -1294,6 +1317,7 @@ pub alice_physics::cfd_solver::StepError::NegativeEddyViscosity
 pub alice_physics::cfd_solver::StepError::Pressure(alice_physics::cfd_solver::PressureSolverError)
 pub alice_physics::cfd_solver::StepError::TurbulenceFieldShape
 pub alice_physics::cfd_solver::StepError::WallModelNeedsViscosity
+pub alice_physics::cfd_solver::StepError::ZeroReinitCount
 impl core::clone::Clone for alice_physics::cfd_solver::StepError
 pub fn alice_physics::cfd_solver::StepError::clone(&self) -> Self
 impl core::cmp::Eq for alice_physics::cfd_solver::StepError
@@ -1439,6 +1463,7 @@ impl alice_physics::cfd_solver::StepOptions
 pub const fn alice_physics::cfd_solver::StepOptions::new(alice_physics::cfd_solver::PressureSolver) -> Self
 pub const fn alice_physics::cfd_solver::StepOptions::pressure(&self) -> alice_physics::cfd_solver::PressureSolver
 pub const fn alice_physics::cfd_solver::StepOptions::wall_model(&self) -> core::option::Option<alice_physics::cfd_solver::WallModel>
+pub const fn alice_physics::cfd_solver::StepOptions::with_level_set_reinit(self, alice_physics::cfd_solver::LevelSetReinit) -> Self
 pub const fn alice_physics::cfd_solver::StepOptions::with_wall_model(self, alice_physics::cfd_solver::WallModel) -> Self
 impl core::clone::Clone for alice_physics::cfd_solver::StepOptions
 pub fn alice_physics::cfd_solver::StepOptions::clone(&self) -> Self
@@ -6551,6 +6576,27 @@ impl core::marker::UnsafeUnpin for alice_physics::multi_world::Portal
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::multi_world::Portal
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::multi_world::Portal
 pub mod alice_physics::multiphase
+#[non_exhaustive] pub enum alice_physics::multiphase::VofScheme
+pub alice_physics::multiphase::VofScheme::SemiLagrangian
+pub alice_physics::multiphase::VofScheme::Upwind
+impl core::clone::Clone for alice_physics::multiphase::VofScheme
+pub fn alice_physics::multiphase::VofScheme::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::multiphase::VofScheme
+impl core::cmp::PartialEq for alice_physics::multiphase::VofScheme
+pub fn alice_physics::multiphase::VofScheme::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::multiphase::VofScheme
+pub fn alice_physics::multiphase::VofScheme::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for alice_physics::multiphase::VofScheme
+pub fn alice_physics::multiphase::VofScheme::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for alice_physics::multiphase::VofScheme
+impl core::marker::StructuralPartialEq for alice_physics::multiphase::VofScheme
+impl core::marker::Freeze for alice_physics::multiphase::VofScheme
+impl core::marker::Send for alice_physics::multiphase::VofScheme
+impl core::marker::Sync for alice_physics::multiphase::VofScheme
+impl core::marker::Unpin for alice_physics::multiphase::VofScheme
+impl core::marker::UnsafeUnpin for alice_physics::multiphase::VofScheme
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::multiphase::VofScheme
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::multiphase::VofScheme
 pub struct alice_physics::multiphase::Grid3d
 pub alice_physics::multiphase::Grid3d::data: alloc::vec::Vec<alice_physics::math::Fix128>
 pub alice_physics::multiphase::Grid3d::dx: alice_physics::math::Fix128
@@ -6574,6 +6620,7 @@ impl core::marker::Unpin for alice_physics::multiphase::Grid3d
 impl core::marker::UnsafeUnpin for alice_physics::multiphase::Grid3d
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::multiphase::Grid3d
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::multiphase::Grid3d
+pub fn alice_physics::multiphase::advect_vof_rigid(&mut alice_physics::multiphase::Grid3d, alice_physics::multiphase::VofScheme, alice_physics::math::Vec3Fix, alice_physics::math::Fix128) -> alice_physics::math::Fix128
 pub fn alice_physics::multiphase::curvature_at(&alice_physics::multiphase::Grid3d, usize, usize, usize) -> alice_physics::math::Fix128
 pub fn alice_physics::multiphase::initialize_level_set_sphere(&mut alice_physics::multiphase::Grid3d, alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128)
 pub fn alice_physics::multiphase::trilinear_range(&alice_physics::multiphase::Grid3d, alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128) -> (alice_physics::math::Fix128, alice_physics::math::Fix128)
