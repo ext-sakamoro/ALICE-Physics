@@ -16,6 +16,14 @@ Memory index pointer: `[[reference-alice-physics-v1-roadmap]]` in claude-config.
 | Maxwell FDTD | `ecd8c61` | source-free Yee、⚠️ **SI は `ε₀·μ₀` が 7.7 bit で不可**、正規化単位 + `S=9/16` |
 | 多体 ABA | `1bab99b` | ⚠️ **`solve()` が `link.joint` を読まない**状態から real ABA、oracle 12 本 |
 
+### 第 20 increment (2026-10-02、壁の外側 (1)(2) — monolithic の判断記録 + 1 byte 刻み wire の gate)
+
+壁 1〜4 が 8/8 で閉じた後に残る「壁の外側」3 件のうち 2 件を文面ごと閉じた (3 件目 Gartling は測定中、別 increment)
+
+| 話題 | 到達点 |
+|---|---|
+| **(1) monolithic 組立** | ⛔ **作らない (判断を数値で固定)** 入口条件 `\|λ_max\| > 0.9` (handbook `c_v`) に対し、計器 `the_monolithic_entry_condition_is_three_decades_away_at_real_heat_capacities` (固定点での有限差分 Jacobian + 冪乗法、2.3 s) が鋼 `+3.01e-4` / アルミ `+4.74e-4` / PLA `+6.06e-4`、非物理 `2⁻¹⁰` のみ `+0.9366` 開く経路 (断熱せん断帯 → 先に正則化) と要る部品 (非対称 Krylov 0 件 / 疎行列直接法 0 件) を `coupled_iteration` module doc に記録 ⚠️ 表は散文でなく test が印字する |
+| **(2) 複数ノード分散** | 文面を閉じた: **測ったのは 1 ホスト 8 プロセス loopback TCP (arm64 / x86_64 別々、fold は cross-arch bit 一致)、2 ホスト / アーキ跨ぎの 1 solve / MPI backend は未** `CrossFault::ChunkedWire` — `Read` / `Write` を 1 byte に刻む wrapper で 2 プロセス解が bit 一致、歯は「call 数 == byte 数 かつ 1 層分以上」(⚠️ byte 数だけの閾値は whole buffer 通過の変異を見逃した、実測) 変異 4/4 red deadlock は交換 schedule が全 rank で同一の直列列なので成立しない (A-3.2c の comment、0 run の code 読み) |
 ### 第 19 increment (2026-10-02、共回転 FEM の超弾性に consistent tangent)
 
 `CorotationalConfig::with_consistent_tangent` を追加した (opt-in、既定は従来どおり) 閉形式の接線を matrix-free で CG に渡す全 Newton で、Neo-Hookean 200 N は 181 step から 3 step、2000 N は 758 step から 4 step (release の実測) 修正 Newton との根の差は 1e-9 mm 台、増分独立性は 6.5e-13 mm
