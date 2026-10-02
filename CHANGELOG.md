@@ -116,6 +116,12 @@ hex literal `0x1707_5F6F_D21F_F2E5` は 0.09 でなく 0.08995625 (−0.05 %) �
 - `eulerian_grid` tests: `CrossFault::ChunkedWire` — `Read` / `Write` を 1 call 1 byte に刻む `Chunked<S>` 越しの 2 プロセス圧力解が単一プロセスと bit 一致 (8³ / 7³) 両 rank が「call 数 == byte 数 かつ 1 層分以上」を assert ⚠️ **byte 数だけの閾値は whole buffer を通す変異を見逃した** (実測、call 数で捕まえた) 変異 4/4 red (whole buffer 通過 / read 側のみ / write 側のみ / 計数なし)
 
 文面の確定: 複数ノード分散は **1 ホスト 8 プロセス loopback TCP で bit 一致 (arm64 / x86_64 別々に、fold は cross-arch 一致)**、2 ホスト / アーキ跨ぎの 1 solve / MPI backend は未測定・未実装
+### Added — 分散 multigrid を rank ごとの別 process で回す harness と実測 (壁 4、段階 4b、test のみ)
+
+banded driver を rank ごとの別 process (test binary の再実行 + loopback socket) で回す harness を `multigrid_decomposed` の test に追加した 各 process は `MacGrid` を持たず、自分の faces だけを seed の式から作る 全 rank が書いた field の畳み込み (index 重みつき、順序非依存) の和が単一 process の解と一致する
+- oracle: 16³ / 32³ × 2〜4 process が単一 process と bit 一致 / cycle 数違いで不一致 変異 4/4 red 手動の実測 test (`banded_processes_timed`、`#[ignore]`、env で規模を指定) も追加
+- 実測 (Mac mini M2 Pro 32 GiB、8 process、6 cycles): 256³ 2.0 s (単一 process 7.5 s、bit 一致) / 512×512×256 (6.7e7 cell) 8.2 s、2.3 GiB/rank 512³ は載らず未実測
+
 ### Added — 分散 multigrid を帯だけから組む (壁 4、段階 4a、crate 内)
 
 `project_pressure_multigrid_banded_on_rank` / `multigrid_slab_bounds` (`pub(crate)`) を追加した rank が `MacGrid` を持たず、自分の `SlabFaces` と圧力の帯だけで multigrid を回す 右辺・コンダクタンス・逆次数は `SlabStencil` から、coarse level は帯の coarsen で作る 最後の分散 level のコンダクタンスだけ rank 0 へ送り、rank 0 が集約側の階層を組む 何も gather せず、どの rank も全 field を持たない
