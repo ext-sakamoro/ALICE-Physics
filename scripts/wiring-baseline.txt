@@ -111,10 +111,7 @@ unwired src/cloth_fluid.rs::apply_cloth_boundary_to_fluid
 unwired src/cloth_fluid.rs::apply_cloth_boundary_to_fluid_with_residual
 unwired src/cloth_fluid.rs::apply_fluid_forces_to_cloth
 unwired src/cloth_fluid.rs::apply_fluid_forces_to_cloth_with_residual
-unwired src/collider.rs::GjkResult
-unwired src/collider.rs::epa
 unwired src/collider.rs::from_metric_ball
-unwired src/collider.rs::gjk
 unwired src/collision_mesh_gen.rs::CollisionMesh
 unwired src/collision_mesh_gen.rs::CollisionMeshConfig
 unwired src/collision_mesh_gen.rs::compute_mesh_aabb

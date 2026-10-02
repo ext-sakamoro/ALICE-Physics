@@ -2007,12 +2007,15 @@ impl alice_physics::collider::Support for alice_physics::cylinder::Cylinder
 pub fn alice_physics::cylinder::Cylinder::support(&self, alice_physics::math::Vec3Fix) -> alice_physics::math::Vec3Fix
 impl alice_physics::collider::Support for alice_physics::ellipsoid::Ellipsoid
 pub fn alice_physics::ellipsoid::Ellipsoid::support(&self, alice_physics::math::Vec3Fix) -> alice_physics::math::Vec3Fix
+impl alice_physics::collider::Support for alice_physics::shape::PosedShape
+pub fn alice_physics::shape::PosedShape::support(&self, alice_physics::math::Vec3Fix) -> alice_physics::math::Vec3Fix
 impl alice_physics::collider::Support for alice_physics::torus::Torus
 pub fn alice_physics::torus::Torus::support(&self, alice_physics::math::Vec3Fix) -> alice_physics::math::Vec3Fix
 impl alice_physics::collider::Support for alice_physics::wedge::Wedge
 pub fn alice_physics::wedge::Wedge::support(&self, alice_physics::math::Vec3Fix) -> alice_physics::math::Vec3Fix
 impl<S: alice_physics::collider::Support> alice_physics::collider::Support for alice_physics::collider::ScaledShape<S>
 pub fn alice_physics::collider::ScaledShape<S>::support(&self, alice_physics::math::Vec3Fix) -> alice_physics::math::Vec3Fix
+pub fn alice_physics::collider::contact<A: alice_physics::collider::Support, B: alice_physics::collider::Support>(&A, &B) -> core::option::Option<alice_physics::collider::Contact>
 pub fn alice_physics::collider::epa<A: alice_physics::collider::Support, B: alice_physics::collider::Support>(&A, &B, &[alice_physics::math::Vec3Fix]) -> core::option::Option<alice_physics::collider::Contact>
 pub fn alice_physics::collider::gjk<A: alice_physics::collider::Support, B: alice_physics::collider::Support>(&A, &B) -> alice_physics::collider::GjkResult
 pub mod alice_physics::collision_mesh_gen
@@ -11011,6 +11014,7 @@ pub fn alice_physics::solver::PhysicsWorld::clear_body_collision_radius(&mut sel
 pub fn alice_physics::solver::PhysicsWorld::clear_contact_modifiers(&mut self)
 pub fn alice_physics::solver::PhysicsWorld::clear_contacts(&mut self)
 pub fn alice_physics::solver::PhysicsWorld::clear_pre_solve_hooks(&mut self)
+pub fn alice_physics::solver::PhysicsWorld::colliders_overlap(&self, usize, usize) -> bool
 pub fn alice_physics::solver::PhysicsWorld::combined_material(&self, usize, usize) -> alice_physics::material::CombinedMaterial
 pub fn alice_physics::solver::PhysicsWorld::contact_events(&self) -> &[alice_physics::event::ContactEvent]
 pub fn alice_physics::solver::PhysicsWorld::deserialize_state(&mut self, &[u8]) -> bool
@@ -11040,6 +11044,7 @@ pub fn alice_physics::solver::PhysicsWorld::serialize_state(&self) -> alloc::vec
 pub fn alice_physics::solver::PhysicsWorld::set_body_collision_radius(&mut self, usize, alice_physics::math::Fix128)
 pub fn alice_physics::solver::PhysicsWorld::set_body_filter(&mut self, usize, alice_physics::filter::CollisionFilter)
 pub fn alice_physics::solver::PhysicsWorld::set_body_material(&mut self, usize, alice_physics::material::MaterialId)
+pub fn alice_physics::solver::PhysicsWorld::set_body_shape(&mut self, usize, &alice_physics::shape::Shape) -> bool
 pub fn alice_physics::solver::PhysicsWorld::set_gpu_solver_bridge(&mut self, core::option::Option<alloc::boxed::Box<(dyn alice_physics::gpu_bridge::GpuSolverBridge + core::marker::Send + core::marker::Sync)>>)
 pub fn alice_physics::solver::PhysicsWorld::set_sdf_collision_radius(&mut self, alice_physics::math::Fix128)
 pub fn alice_physics::solver::PhysicsWorld::set_sleep_config(&mut self, alice_physics::sleeping::SleepConfig)
@@ -12568,6 +12573,8 @@ impl alice_physics::collider::Support for alice_physics::cylinder::Cylinder
 pub fn alice_physics::cylinder::Cylinder::support(&self, alice_physics::math::Vec3Fix) -> alice_physics::math::Vec3Fix
 impl alice_physics::collider::Support for alice_physics::ellipsoid::Ellipsoid
 pub fn alice_physics::ellipsoid::Ellipsoid::support(&self, alice_physics::math::Vec3Fix) -> alice_physics::math::Vec3Fix
+impl alice_physics::collider::Support for alice_physics::shape::PosedShape
+pub fn alice_physics::shape::PosedShape::support(&self, alice_physics::math::Vec3Fix) -> alice_physics::math::Vec3Fix
 impl alice_physics::collider::Support for alice_physics::torus::Torus
 pub fn alice_physics::torus::Torus::support(&self, alice_physics::math::Vec3Fix) -> alice_physics::math::Vec3Fix
 impl alice_physics::collider::Support for alice_physics::wedge::Wedge
@@ -14150,6 +14157,28 @@ impl core::marker::Unpin for alice_physics::shape::ShapeError
 impl core::marker::UnsafeUnpin for alice_physics::shape::ShapeError
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::shape::ShapeError
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::shape::ShapeError
+pub struct alice_physics::shape::PosedShape
+pub alice_physics::shape::PosedShape::position: alice_physics::math::Vec3Fix
+pub alice_physics::shape::PosedShape::rotation: alice_physics::math::QuatFix
+pub alice_physics::shape::PosedShape::shape: alice_physics::shape::Shape
+impl alice_physics::collider::Support for alice_physics::shape::PosedShape
+pub fn alice_physics::shape::PosedShape::support(&self, alice_physics::math::Vec3Fix) -> alice_physics::math::Vec3Fix
+impl core::clone::Clone for alice_physics::shape::PosedShape
+pub fn alice_physics::shape::PosedShape::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::shape::PosedShape
+impl core::cmp::PartialEq for alice_physics::shape::PosedShape
+pub fn alice_physics::shape::PosedShape::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::shape::PosedShape
+pub fn alice_physics::shape::PosedShape::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::shape::PosedShape
+impl core::marker::StructuralPartialEq for alice_physics::shape::PosedShape
+impl core::marker::Freeze for alice_physics::shape::PosedShape
+impl core::marker::Send for alice_physics::shape::PosedShape
+impl core::marker::Sync for alice_physics::shape::PosedShape
+impl core::marker::Unpin for alice_physics::shape::PosedShape
+impl core::marker::UnsafeUnpin for alice_physics::shape::PosedShape
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::shape::PosedShape
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::shape::PosedShape
 pub mod alice_physics::sim_field
 pub struct alice_physics::sim_field::ScalarField3D
 pub alice_physics::sim_field::ScalarField3D::data: alloc::vec::Vec<f32>
@@ -15083,6 +15112,7 @@ pub fn alice_physics::solver::PhysicsWorld::clear_body_collision_radius(&mut sel
 pub fn alice_physics::solver::PhysicsWorld::clear_contact_modifiers(&mut self)
 pub fn alice_physics::solver::PhysicsWorld::clear_contacts(&mut self)
 pub fn alice_physics::solver::PhysicsWorld::clear_pre_solve_hooks(&mut self)
+pub fn alice_physics::solver::PhysicsWorld::colliders_overlap(&self, usize, usize) -> bool
 pub fn alice_physics::solver::PhysicsWorld::combined_material(&self, usize, usize) -> alice_physics::material::CombinedMaterial
 pub fn alice_physics::solver::PhysicsWorld::contact_events(&self) -> &[alice_physics::event::ContactEvent]
 pub fn alice_physics::solver::PhysicsWorld::deserialize_state(&mut self, &[u8]) -> bool
@@ -15112,6 +15142,7 @@ pub fn alice_physics::solver::PhysicsWorld::serialize_state(&self) -> alloc::vec
 pub fn alice_physics::solver::PhysicsWorld::set_body_collision_radius(&mut self, usize, alice_physics::math::Fix128)
 pub fn alice_physics::solver::PhysicsWorld::set_body_filter(&mut self, usize, alice_physics::filter::CollisionFilter)
 pub fn alice_physics::solver::PhysicsWorld::set_body_material(&mut self, usize, alice_physics::material::MaterialId)
+pub fn alice_physics::solver::PhysicsWorld::set_body_shape(&mut self, usize, &alice_physics::shape::Shape) -> bool
 pub fn alice_physics::solver::PhysicsWorld::set_gpu_solver_bridge(&mut self, core::option::Option<alloc::boxed::Box<(dyn alice_physics::gpu_bridge::GpuSolverBridge + core::marker::Send + core::marker::Sync)>>)
 pub fn alice_physics::solver::PhysicsWorld::set_sdf_collision_radius(&mut self, alice_physics::math::Fix128)
 pub fn alice_physics::solver::PhysicsWorld::set_sleep_config(&mut self, alice_physics::sleeping::SleepConfig)
@@ -19735,6 +19766,7 @@ pub fn alice_physics::solver::PhysicsWorld::clear_body_collision_radius(&mut sel
 pub fn alice_physics::solver::PhysicsWorld::clear_contact_modifiers(&mut self)
 pub fn alice_physics::solver::PhysicsWorld::clear_contacts(&mut self)
 pub fn alice_physics::solver::PhysicsWorld::clear_pre_solve_hooks(&mut self)
+pub fn alice_physics::solver::PhysicsWorld::colliders_overlap(&self, usize, usize) -> bool
 pub fn alice_physics::solver::PhysicsWorld::combined_material(&self, usize, usize) -> alice_physics::material::CombinedMaterial
 pub fn alice_physics::solver::PhysicsWorld::contact_events(&self) -> &[alice_physics::event::ContactEvent]
 pub fn alice_physics::solver::PhysicsWorld::deserialize_state(&mut self, &[u8]) -> bool
@@ -19764,6 +19796,7 @@ pub fn alice_physics::solver::PhysicsWorld::serialize_state(&self) -> alloc::vec
 pub fn alice_physics::solver::PhysicsWorld::set_body_collision_radius(&mut self, usize, alice_physics::math::Fix128)
 pub fn alice_physics::solver::PhysicsWorld::set_body_filter(&mut self, usize, alice_physics::filter::CollisionFilter)
 pub fn alice_physics::solver::PhysicsWorld::set_body_material(&mut self, usize, alice_physics::material::MaterialId)
+pub fn alice_physics::solver::PhysicsWorld::set_body_shape(&mut self, usize, &alice_physics::shape::Shape) -> bool
 pub fn alice_physics::solver::PhysicsWorld::set_gpu_solver_bridge(&mut self, core::option::Option<alloc::boxed::Box<(dyn alice_physics::gpu_bridge::GpuSolverBridge + core::marker::Send + core::marker::Sync)>>)
 pub fn alice_physics::solver::PhysicsWorld::set_sdf_collision_radius(&mut self, alice_physics::math::Fix128)
 pub fn alice_physics::solver::PhysicsWorld::set_sleep_config(&mut self, alice_physics::sleeping::SleepConfig)
@@ -21399,6 +21432,8 @@ impl alice_physics::collider::Support for alice_physics::cylinder::Cylinder
 pub fn alice_physics::cylinder::Cylinder::support(&self, alice_physics::math::Vec3Fix) -> alice_physics::math::Vec3Fix
 impl alice_physics::collider::Support for alice_physics::ellipsoid::Ellipsoid
 pub fn alice_physics::ellipsoid::Ellipsoid::support(&self, alice_physics::math::Vec3Fix) -> alice_physics::math::Vec3Fix
+impl alice_physics::collider::Support for alice_physics::shape::PosedShape
+pub fn alice_physics::shape::PosedShape::support(&self, alice_physics::math::Vec3Fix) -> alice_physics::math::Vec3Fix
 impl alice_physics::collider::Support for alice_physics::torus::Torus
 pub fn alice_physics::torus::Torus::support(&self, alice_physics::math::Vec3Fix) -> alice_physics::math::Vec3Fix
 impl alice_physics::collider::Support for alice_physics::wedge::Wedge

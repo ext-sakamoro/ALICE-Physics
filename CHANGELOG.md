@@ -13,6 +13,15 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added — 凸形状どうしの GJK/EPA narrow-phase (全配線 program 第 9 件 F3a)
+
+`collider::contact(a, b)` (GJK → EPA)、`shape::PosedShape`、`PhysicsWorld::{set_body_shape, colliders_overlap}` を追加した (追加のみ) `add_shaped_body` は形状を body に付け、両方の body が形状を持つ組は外接球でなく GJK/EPA の接触で決める 片方が球だけの body なら従来どおり球どうし
+### Fixed — GJK/EPA の 2 件
+
+- **`gjk` が simplex を返さず `epa` と公開 API だけでは繋がらなかった** `contact` が GJK の simplex を保持し、1〜3 点で止まった時は四面体へ補完してから EPA に渡す
+- **`epa` が反復上限で `None` を返し、曲面形状 (球・円柱・円錐・楕円体・環) の接触を必ず落としていた** 上限に達したら最近面の接触を返す (球で 5e-3 以内)
+- oracle: 分離軸判定 (15 軸) との照合、辺・角で接する箱、静的な箱に落とした箱 / 円錐 / 楔 変異 23/24 red (残り 1 件は等価)
+
 ### Added — 静的 collider: `StaticCollider` と `PhysicsWorld::add_static_collider` (全配線 program 第 9 件 F2)
 
 `static_collider::StaticCollider` (`Plane` / `HeightField` / `TriMesh`) と `PhysicsWorld::{add_static_collider, remove_static_collider, static_collider_count}` を追加した (追加のみ) 球 body を substep ごとに面の法線方向へ深さだけ押し出す (逐次 / batched / bridge の 3 経路) 衝突球は body の衝突半径、無ければ `set_sdf_collision_radius`

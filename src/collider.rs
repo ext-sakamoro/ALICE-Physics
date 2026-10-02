@@ -365,6 +365,13 @@ pub struct GjkResult {
 /// Returns true if the two shapes are intersecting.
 /// Deterministic: fixed iteration count.
 pub fn gjk<A: Support, B: Support>(a: &A, b: &B) -> GjkResult {
+    gjk_core(a, b).0
+}
+
+/// The GJK loop, also returning the simplex it stopped on: when the shapes
+/// collide, a tetrahedron around (or, for touching shapes, on) the origin that
+/// [`epa`] can expand — or a lower-dimensional simplex when the origin lies on one.
+fn gjk_core<A: Support, B: Support>(a: &A, b: &B) -> (GjkResult, Simplex) {
     const MAX_ITERATIONS: usize = 64;
 
     // Initial direction
@@ -380,38 +387,123 @@ pub fn gjk<A: Support, B: Support>(a: &A, b: &B) -> GjkResult {
     for _ in 0..MAX_ITERATIONS {
         if direction.length_squared().is_zero() {
             // Origin is on the simplex
-            return GjkResult {
-                colliding: true,
-                closest_point: Vec3Fix::ZERO,
-            };
+            return (
+                GjkResult {
+                    colliding: true,
+                    closest_point: Vec3Fix::ZERO,
+                },
+                simplex,
+            );
         }
 
         let new_point = minkowski_support(a, b, direction);
 
         // Check if we passed the origin
         if new_point.dot(direction) < Fix128::ZERO {
-            return GjkResult {
-                colliding: false,
-                closest_point: new_point,
-            };
+            return (
+                GjkResult {
+                    colliding: false,
+                    closest_point: new_point,
+                },
+                simplex,
+            );
         }
 
         simplex.push(new_point);
 
         // Update simplex and direction
         if do_simplex(&mut simplex, &mut direction) {
-            return GjkResult {
-                colliding: true,
-                closest_point: Vec3Fix::ZERO,
-            };
+            return (
+                GjkResult {
+                    colliding: true,
+                    closest_point: Vec3Fix::ZERO,
+                },
+                simplex,
+            );
         }
     }
 
     // Assume no collision if max iterations reached
-    GjkResult {
-        colliding: false,
-        closest_point: simplex.points[0],
+    let closest_point = simplex.points[0];
+    (
+        GjkResult {
+            colliding: false,
+            closest_point,
+        },
+        simplex,
+    )
+}
+
+/// Whether `p` lies off the line / plane / space spanned by `points` (so adding
+/// it raises the dimension of the simplex).
+fn raises_dimension(points: &[Vec3Fix], p: Vec3Fix) -> bool {
+    match points.len() {
+        1 => p != points[0],
+        2 => {
+            (points[1] - points[0])
+                .cross(p - points[0])
+                .length_squared()
+                > Fix128::ZERO
+        }
+        3 => {
+            (points[1] - points[0])
+                .cross(points[2] - points[0])
+                .dot(p - points[0])
+                != Fix128::ZERO
+        }
+        _ => false,
     }
+}
+
+/// The contact of two overlapping convex shapes: GJK to decide they overlap, then
+/// EPA on the simplex GJK ended with for the penetration depth and normal.
+///
+/// `None` when the shapes do not overlap, or when they only touch and the
+/// Minkowski difference is too flat to expand (the origin on its boundary with no
+/// room for a tetrahedron). The [`Contact::normal`] points from `b` to `a`, as
+/// everywhere in the crate: translating `a` by `depth · normal` separates them.
+///
+/// EPA is exact when the faces that meet at the answer are flat (boxes,
+/// cylinder caps) and approximates a curved Minkowski sum by a polytope otherwise
+/// (a few parts in a thousand for spheres at its fixed iteration count).
+///
+/// GJK may end on a point, a segment or a triangle that contains the origin; EPA
+/// needs a tetrahedron, so the simplex is completed with Minkowski-difference
+/// points in fixed directions until it spans space.
+#[must_use]
+pub fn contact<A: Support, B: Support>(a: &A, b: &B) -> Option<Contact> {
+    let (result, simplex) = gjk_core(a, b);
+    if !result.colliding {
+        return None;
+    }
+    let mut points: Vec<Vec3Fix> = simplex.points[..simplex.size].to_vec();
+    if points.is_empty() {
+        points.push(minkowski_support(a, b, Vec3Fix::UNIT_X));
+    }
+    // Fixed order, so the same pair always completes the same way.
+    let directions = [
+        Vec3Fix::UNIT_X,
+        -Vec3Fix::UNIT_X,
+        Vec3Fix::UNIT_Y,
+        -Vec3Fix::UNIT_Y,
+        Vec3Fix::UNIT_Z,
+        -Vec3Fix::UNIT_Z,
+        Vec3Fix::new(Fix128::ONE, Fix128::ONE, Fix128::ONE),
+        Vec3Fix::new(-Fix128::ONE, Fix128::ONE, -Fix128::ONE),
+    ];
+    for direction in directions {
+        if points.len() >= 4 {
+            break;
+        }
+        let p = minkowski_support(a, b, direction);
+        if raises_dimension(&points, p) {
+            points.push(p);
+        }
+    }
+    if points.len() < 4 {
+        return None;
+    }
+    epa(a, b, &points)
 }
 
 /// Process simplex and update direction toward origin
@@ -554,7 +646,9 @@ struct EpaFace {
 ///
 /// Call this after GJK returns a collision; `initial_simplex` must be a
 /// tetrahedron of Minkowski-difference points that encloses the origin.
-/// Deterministic: fixed iteration count.
+/// Deterministic: fixed iteration count. When the budget runs out before the
+/// nearest face stops moving (curved shapes), the nearest face at that point is
+/// returned rather than `None`.
 ///
 /// The returned [`Contact::normal`] points from B to A (the crate-wide
 /// contact contract): translating A by `depth · normal` separates the
@@ -655,7 +749,19 @@ pub fn epa<A: Support, B: Support>(a: &A, b: &B, initial_simplex: &[Vec3Fix]) ->
         }
     }
 
-    None
+    // The iteration budget ran out before the polytope's nearest face stopped
+    // moving — what a curved Minkowski sum (a sphere, a cylinder's rim, an
+    // ellipsoid) does at any fixed budget. The nearest face is still the best
+    // available answer, and a contact that is a few parts in a thousand shallow is
+    // worth far more to a solver than a contact that is dropped.
+    let nearest = faces.iter().min_by(|a, b| a.distance.cmp(&b.distance))?;
+    let outward = nearest.normal;
+    Some(Contact {
+        depth: nearest.distance,
+        normal: -outward,
+        point_a: a.support(outward),
+        point_b: b.support(-outward),
+    })
 }
 
 fn add_face(
@@ -700,6 +806,39 @@ fn add_face(
 
 #[cfg(test)]
 mod tests {
+    fn p(x: i64, y: i64, z: i64) -> Vec3Fix {
+        Vec3Fix::new(
+            Fix128::from_int(x),
+            Fix128::from_int(y),
+            Fix128::from_int(z),
+        )
+    }
+
+    /// `raises_dimension` says whether a point leaves the line / plane / space the
+    /// simplex spans: a repeated point, a point on the line, a point in the plane do
+    /// not; one off them does.
+    #[test]
+    fn raises_dimension_is_true_only_off_the_span() {
+        // one point: another point raises, the same point does not
+        assert!(raises_dimension(&[p(1, 2, 3)], p(1, 2, 4)));
+        assert!(!raises_dimension(&[p(1, 2, 3)], p(1, 2, 3)));
+        // a segment along x: a point on the x line (even far away) does not, one off it does
+        let line = [p(0, 0, 0), p(1, 0, 0)];
+        assert!(!raises_dimension(&line, p(5, 0, 0)));
+        assert!(!raises_dimension(&line, p(-3, 0, 0)));
+        assert!(raises_dimension(&line, p(0, 1, 0)));
+        // a triangle in z = 0: a point in the plane does not, one above or below does
+        let plane = [p(0, 0, 0), p(1, 0, 0), p(0, 1, 0)];
+        assert!(!raises_dimension(&plane, p(3, 4, 0)));
+        assert!(raises_dimension(&plane, p(0, 0, 1)));
+        assert!(raises_dimension(&plane, p(0, 0, -2)));
+        // four points already span space
+        assert!(!raises_dimension(
+            &[p(0, 0, 0), p(1, 0, 0), p(0, 1, 0), p(0, 0, 1)],
+            p(2, 2, 2)
+        ));
+    }
+
     use super::*;
 
     #[test]

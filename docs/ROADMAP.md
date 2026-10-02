@@ -16,6 +16,14 @@ Memory index pointer: `[[reference-alice-physics-v1-roadmap]]` in claude-config.
 | Maxwell FDTD | `ecd8c61` | source-free Yee、⚠️ **SI は `ε₀·μ₀` が 7.7 bit で不可**、正規化単位 + `S=9/16` |
 | 多体 ABA | `1bab99b` | ⚠️ **`solve()` が `link.joint` を読まない**状態から real ABA、oracle 12 本 |
 
+### 第 40 increment (2026-10-03、全配線 program 第 9 件 (F3a) — 凸形状どうしの GJK/EPA narrow-phase)
+
+形状つき body (F1) は衝突が外接球どうしのままだったので、箱どうしが球として検出されていた `collider::contact(a, b)` (GJK の後に EPA、追加のみ) と、`PhysicsWorld::{set_body_shape, colliders_overlap}`、`PosedShape` (姿勢つきの `Shape` を `Support` にする) を足した `add_shaped_body` は形状を body に付け、**両方の body が形状を持つ組は GJK/EPA の接触で決める** (片方でも持たなければ従来の球どうし) 接触の法線は B→A、depth は分離に要る最短の並進
+⚠️ **既存の欠陥 2 つを検出・修正**: ① `gjk` が simplex を返さず `epa` (四面体を要求) と**公開 API だけでは繋がらなかった** ⇒ `gjk_core` に分けて simplex を返し、衝突時に四面体へ補完する (辺・頂点でだけ接する box は 1 点の simplex で止まる) ② **`epa` が反復上限で `None` を返し、曲面形状 (球・円柱・円錐・楕円体・環) の接触を必ず落としていた** ⇒ 上限に達したら最近面から接触を返す (球どうしで数 1e-3 の誤差)
+oracle: 重なる箱の depth と法線を **分離軸判定 (15 軸、箱の回転軸から書き起こし)** と比較 (積み重ね / 最短軸 / 5 通りの回転) 同軸の円柱 / 球 / 同位置の箱 / 辺・角でだけ接する箱 (depth 0) / 退化 (平らな箱) / 世界: 2 箱が depth/2 ずつ離れる、外接球だけが重なる箱は接触しない、静的な箱の上に落とした箱と円錐・楔が**重心**の高さで静止 (cone: 底が重心の 1 下)、回転した body、remove 後も形状が body と一緒、event の法線と接近速度 変異 24 件中 23 red、生存 1 件は等価 (補完に使う方向の順序) + 配線変異
+baseline 退役 3 行 (`gjk` / `epa` / `GjkResult`、実配線 3、巻き込み 0) 呼出元は `contact` (solver の `detect_collisions`) と `colliders_overlap`、example は `examples/convex_contacts.rs`
+⚠️ 衝突は依然として 1 点の接触 (manifold なし): 接触点は EPA の支持点で、接触拘束は位置と質量だけで解く (回転は拘束に入らない) 残り (F3b/c): `compound` (8) / `convex_mesh_builder` (2) / `convex_decompose` (2) / `box_collider::{axis_aligned, corner, corners}` / `cone::{apex, base_center}` / `from_metric_ball`
+
 ### 第 39 increment (2026-10-03、全配線 program 第 9 件 (F2) — 静的 collider: `StaticCollider` と `PhysicsWorld::add_static_collider`)
 
 `PhysicsWorld` の衝突は「球 (body ごとの衝突半径) と SDF collider」だけで、`plane_collider` / `heightfield` / `trimesh` の球衝突は呼出元が 0 件だった `StaticCollider::{Plane, HeightField, TriMesh}` と `add_static_collider` / `remove_static_collider` / `static_collider_count` を足した 球 body を substep ごとに SDF collider と同じ位置 (逐次 / batched / bridge の 3 経路すべて) で面の法線方向へ深さだけ押し出す (追加のみの公開 API) 衝突球は body の衝突半径、無ければ `set_sdf_collision_radius` の既定値 (SDF と同じ)

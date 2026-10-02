@@ -954,6 +954,10 @@ pub struct PhysicsWorld {
     /// Per-body collision radius for automatic sphere-based collision detection.
     /// `None` means the body does not participate in auto-detection.
     body_collision_radii: Vec<Option<Fix128>>,
+    /// The convex shape a body carries as its collider, when it has one: the
+    /// narrow-phase works on it instead of the bounding sphere (see
+    /// [`crate::shape`]).
+    body_shapes: Vec<Option<crate::shape::Shape>>,
     /// Per-body collision filter (layer/mask/group)
     body_filters: Vec<CollisionFilter>,
     /// 範囲外の積を踏んだか (sticky、[`PhysicsWorld::overflow_detected`])
@@ -1030,6 +1034,7 @@ impl PhysicsWorld {
             events: EventCollector::new(),
             islands: IslandManager::new(0, SleepConfig::default()),
             body_collision_radii: Vec::new(),
+            body_shapes: Vec::new(),
             body_filters: Vec::new(),
             overflow_detected: false,
             #[cfg(feature = "std")]
@@ -1123,6 +1128,7 @@ impl PhysicsWorld {
         self.bodies.push(body);
         self.body_materials.push(crate::material::DEFAULT_MATERIAL);
         self.body_collision_radii.push(None);
+        self.body_shapes.push(None);
         self.body_filters.push(CollisionFilter::DEFAULT);
         self.islands.resize(idx + 1);
         idx
@@ -1137,6 +1143,7 @@ impl PhysicsWorld {
         self.bodies.push(body);
         self.body_materials.push(crate::material::DEFAULT_MATERIAL);
         self.body_collision_radii.push(Some(radius));
+        self.body_shapes.push(None);
         self.body_filters.push(CollisionFilter::DEFAULT);
         self.islands.resize(idx + 1);
         idx
@@ -1170,7 +1177,56 @@ impl PhysicsWorld {
             Fix128::ONE / inertia.y,
             Fix128::ONE / inertia.z,
         );
-        Ok(self.add_body_with_radius(body, shape.bounding_radius()))
+        let idx = self.add_body_with_radius(body, shape.bounding_radius());
+        self.body_shapes[idx] = Some(*shape);
+        Ok(idx)
+    }
+
+    /// Give an existing body a convex `shape` as its collider: its collision radius
+    /// becomes the shape's bounding radius about the centre of mass, and a pair of
+    /// bodies that both carry a shape is decided by the shapes ([`crate::collider::contact`])
+    /// instead of by the bounding spheres. Returns `false` for an out-of-range index.
+    ///
+    /// The body's position is taken as the shape's **centre of mass** (see
+    /// [`crate::shape`]); its mass and inertia are not changed — use
+    /// [`Self::add_shaped_body`] for a body whose mass properties come from the shape.
+    pub fn set_body_shape(&mut self, body_idx: usize, shape: &crate::shape::Shape) -> bool {
+        if body_idx >= self.bodies.len() || body_idx >= self.body_shapes.len() {
+            return false;
+        }
+        self.body_collision_radii[body_idx] = Some(shape.bounding_radius());
+        self.body_shapes[body_idx] = Some(*shape);
+        true
+    }
+
+    /// Whether the colliders of two bodies overlap: GJK on their shapes when both
+    /// carry one ([`Self::set_body_shape`], [`Self::add_shaped_body`]), otherwise the
+    /// test of their collision spheres. `false` for an index that is not a body or a
+    /// body without a collider. Touching exactly counts as overlapping for shapes
+    /// (GJK's convention) and as clear for spheres (the contact generation's).
+    #[must_use]
+    pub fn colliders_overlap(&self, a: usize, b: usize) -> bool {
+        let (Some(body_a), Some(body_b)) = (self.bodies.get(a), self.bodies.get(b)) else {
+            return false;
+        };
+        let shape = |i: usize| self.body_shapes.get(i).copied().flatten();
+        if let (Some(shape_a), Some(shape_b)) = (shape(a), shape(b)) {
+            let posed = |shape, body: &RigidBody| crate::shape::PosedShape {
+                shape,
+                position: body.position,
+                rotation: body.rotation,
+            };
+            return crate::collider::gjk(&posed(shape_a, body_a), &posed(shape_b, body_b))
+                .colliding;
+        }
+        let radius = |i: usize| self.body_collision_radii.get(i).copied().flatten();
+        match (radius(a), radius(b)) {
+            (Some(ra), Some(rb)) => {
+                let reach = ra + rb;
+                (body_a.position - body_b.position).length_squared() < reach * reach
+            }
+            _ => false,
+        }
     }
 
     /// Remove a body by index (swap-remove).
@@ -1202,6 +1258,7 @@ impl PhysicsWorld {
         let removed = self.bodies.swap_remove(idx);
         self.body_materials.swap_remove(idx);
         self.body_collision_radii.swap_remove(idx);
+        self.body_shapes.swap_remove(idx);
         self.body_filters.swap_remove(idx);
 
         // 2. Remap references from `last` -> `idx` in all remaining constraints and joints
@@ -3478,7 +3535,17 @@ impl PhysicsWorld {
             // real overlaps. Same `dist < combined_radius` decision (both sides
             // exact for |delta| < 2^31), same contact order.
             let dist_sq = delta.length_squared();
-            if dist_sq >= combined_radius * combined_radius || dist_sq.is_zero() {
+            // A pair of shaped bodies is decided by the shapes, which can overlap with
+            // coincident centres; the sphere path cannot give such a pair a normal.
+            let shapes = self
+                .body_shapes
+                .get(a)
+                .copied()
+                .flatten()
+                .zip(self.body_shapes.get(b).copied().flatten());
+            if dist_sq >= combined_radius * combined_radius
+                || (dist_sq.is_zero() && shapes.is_none())
+            {
                 continue;
             }
 
@@ -3504,6 +3571,38 @@ impl PhysicsWorld {
 
             // Skip if both sleeping
             if self.islands.is_sleeping(a) && self.islands.is_sleeping(b) {
+                continue;
+            }
+
+            // The bounding spheres overlap, which is necessary but not sufficient for
+            // two convex solids to: let the shapes decide.
+            if let Some((shape_a, shape_b)) = shapes {
+                let posed_a = crate::shape::PosedShape {
+                    shape: shape_a,
+                    position: self.bodies[a].position,
+                    rotation: self.bodies[a].rotation,
+                };
+                let posed_b = crate::shape::PosedShape {
+                    shape: shape_b,
+                    position: self.bodies[b].position,
+                    rotation: self.bodies[b].rotation,
+                };
+                if let Some(contact) = crate::collider::contact(&posed_a, &posed_b) {
+                    if contact.depth > Fix128::ZERO {
+                        let rel_vel =
+                            (self.bodies[a].velocity - self.bodies[b].velocity).dot(contact.normal);
+                        results.push(ContactInfo {
+                            body_a: a,
+                            body_b: b,
+                            contact,
+                            normal: contact.normal,
+                            point: contact.point_a,
+                            depth: contact.depth,
+                            rel_vel,
+                            is_sensor: self.bodies[a].is_sensor || self.bodies[b].is_sensor,
+                        });
+                    }
+                }
                 continue;
             }
 
@@ -3930,6 +4029,7 @@ impl PhysicsWorld {
             self.body_collision_radii.push(None);
         }
         self.body_collision_radii.truncate(n);
+        self.body_shapes.resize(n, None);
         while self.body_filters.len() < n {
             self.body_filters.push(CollisionFilter::DEFAULT);
         }
