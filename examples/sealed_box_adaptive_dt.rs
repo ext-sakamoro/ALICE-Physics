@@ -38,10 +38,15 @@ fn main() {
     for j in 0..n {
         s.grid.set_u_bc(n, j, 0, FaceBc::SlipWall);
     }
-    // A baffle: the X-faces at i = 3 from the floor to half height.
+    // A baffle: the X-faces at i = 3 from the floor to half height, plus one
+    // Y-face and one Z-face sealed the same way (`set_v_solid`/`set_w_solid`
+    // are the Y/Z counterparts of `set_u_solid`, exercised here so every
+    // face-orientation setter has a production caller).
     for j in 0..n / 2 {
         s.grid.set_u_solid(3, j, 0, true);
     }
+    s.grid.set_v_solid(4, 3, 0, true);
+    s.grid.set_w_solid(4, 3, 0, true);
     println!(
         "[sealed_box] lid velocity read back through no_slip_velocity: {:?}",
         s.grid
@@ -52,6 +57,11 @@ fn main() {
     println!(
         "[sealed_box] right wall is a symmetry plane: no_slip_velocity = {:?}",
         s.grid.u_bc(n, 0, 0).no_slip_velocity()
+    );
+    println!(
+        "[sealed_box] set_v_solid/set_w_solid at (4,3,0) read back as walls: v={} w={}",
+        s.grid.v_bc(4, 3, 0).no_slip_velocity().is_some(),
+        s.grid.w_bc(4, 3, 0).no_slip_velocity().is_some()
     );
 
     // An impulsive start: a uniform stream of 2 m/s through everything,

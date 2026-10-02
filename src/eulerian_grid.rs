@@ -1876,6 +1876,7 @@ fn gather_slabs_to_root<T: RankTransport>(transport: &mut T, bounds: &[(usize, u
 // deliberately mirrors so the two drivers stay comparable; `my_rank` is the
 // whole difference between them.
 #[allow(clippy::too_many_arguments)]
+// ALLOW-UNWIRED: wiring debt Backlog eulerian-grid-cross-process-primitive-residue (true multi-OS-process primitive, examples/ cannot reach pub(crate) and the single-process DecomposedGs/BandedGs path never needs it), oracle src/eulerian_grid.rs tests (cross-process harness)
 pub(crate) fn project_pressure_decomposed_on_rank<T: RankTransport>(
     grid: &mut MacGrid,
     dt_s: Fix128,
@@ -2250,6 +2251,7 @@ impl SlabStorage {
         }
     }
 
+    // ALLOW-UNWIRED: wiring debt Backlog eulerian-grid-cross-process-primitive-residue (true multi-OS-process primitive, examples/ cannot reach pub(crate) and the single-process DecomposedGs/BandedGs path never needs it), oracle src/eulerian_grid.rs tests (cross-process harness)
     /// Bytes this rank's pressure band actually allocated.
     pub(crate) fn bytes(&self) -> SlabBytes {
         SlabBytes {
@@ -2518,6 +2520,7 @@ impl SlabFaces {
         self.k0..end
     }
 
+    // ALLOW-UNWIRED: wiring debt Backlog eulerian-grid-cross-process-primitive-residue (true multi-OS-process primitive, examples/ cannot reach pub(crate) and the single-process DecomposedGs/BandedGs path never needs it), oracle src/eulerian_grid.rs tests (cross-process harness)
     /// Bytes this rank's face arrays actually allocated.
     pub(crate) fn bytes(&self) -> SlabBytes {
         let values = self.u.capacity() + self.v.capacity() + self.w.capacity();
@@ -2626,6 +2629,7 @@ impl SlabStencil {
         (k - self.k0) * self.plane
     }
 
+    // ALLOW-UNWIRED: wiring debt Backlog eulerian-grid-cross-process-primitive-residue (true multi-OS-process primitive, examples/ cannot reach pub(crate) and the single-process DecomposedGs/BandedGs path never needs it), oracle src/eulerian_grid.rs tests (cross-process harness)
     /// Bytes this rank's stencil actually allocated.
     pub(crate) fn bytes(&self) -> SlabBytes {
         SlabBytes {
@@ -2766,6 +2770,7 @@ impl LocalSlabTransport {
         &self.slabs[rank]
     }
 
+    // ALLOW-UNWIRED: wiring debt Backlog eulerian-grid-cross-process-primitive-residue (true multi-OS-process primitive, examples/ cannot reach pub(crate) and the single-process DecomposedGs/BandedGs path never needs it), oracle src/eulerian_grid.rs tests (cross-process harness)
     /// Bytes every rank's band allocated here, rank by rank.
     pub(crate) fn bytes(&self) -> Vec<SlabBytes> {
         self.slabs.iter().map(SlabStorage::bytes).collect()
@@ -3240,6 +3245,7 @@ impl SlabFaceConditions {
     /// # Panics
     ///
     /// When `k` is not an owned layer, or `(i, j)` is not a face of one.
+    // ALLOW-UNWIRED: wiring debt Backlog eulerian-grid-cross-process-primitive-residue (true multi-OS-process primitive, examples/ cannot reach pub(crate) and the single-process DecomposedGs/BandedGs path never needs it), oracle src/eulerian_grid.rs tests (cross-process harness)
     pub(crate) fn set_u(&mut self, i: usize, j: usize, k: usize, bc: FaceBc) {
         assert!(i <= self.nx && j < self.ny, "({i}, {j}) is not an X-face");
         let at = self.owned_base(k, u_plane(self.nx, self.ny)) + i + (self.nx + 1) * j;
@@ -3247,6 +3253,7 @@ impl SlabFaceConditions {
     }
 
     /// See [`SlabFaceConditions::set_u`].
+    // ALLOW-UNWIRED: wiring debt Backlog eulerian-grid-cross-process-primitive-residue (true multi-OS-process primitive, examples/ cannot reach pub(crate) and the single-process DecomposedGs/BandedGs path never needs it), oracle src/eulerian_grid.rs tests (cross-process harness)
     pub(crate) fn set_v(&mut self, i: usize, j: usize, k: usize, bc: FaceBc) {
         assert!(i < self.nx && j <= self.ny, "({i}, {j}) is not a Y-face");
         let at = self.owned_base(k, v_plane(self.nx, self.ny)) + i + self.nx * j;
@@ -3255,6 +3262,7 @@ impl SlabFaceConditions {
 
     /// See [`SlabFaceConditions::set_u`]. Z-faces run one past the owned
     /// layers, so `k` may be `k1`.
+    // ALLOW-UNWIRED: wiring debt Backlog eulerian-grid-cross-process-primitive-residue (true multi-OS-process primitive, examples/ cannot reach pub(crate) and the single-process DecomposedGs/BandedGs path never needs it), oracle src/eulerian_grid.rs tests (cross-process harness)
     pub(crate) fn set_w(&mut self, i: usize, j: usize, k: usize, bc: FaceBc) {
         assert!(i < self.nx && j < self.ny, "({i}, {j}) is not a Z-face");
         assert!(
@@ -3609,6 +3617,7 @@ pub(crate) fn enforce_slab_face_boundaries_on_rank<C: PlaneChannel>(
 ///
 /// When a plane is left in flight at the end, which would mean a rank sent one
 /// that no rank was going to read.
+// ALLOW-UNWIRED: wiring debt Backlog eulerian-grid-cross-process-primitive-residue (true multi-OS-process primitive, examples/ cannot reach pub(crate) and the single-process DecomposedGs/BandedGs path never needs it), oracle src/eulerian_grid.rs tests (cross-process harness)
 pub(crate) fn enforce_slab_face_boundaries_over(
     faces: &mut [SlabFaces],
     cond: &[SlabFaceConditions],
@@ -3843,6 +3852,7 @@ impl<S: std::io::Read + std::io::Write> PlaneChannel for SlabSocketTransport<S> 
 // deliberately mirrors so the two drivers stay comparable; `my_rank` is the
 // whole difference between them, as it is between the two full-length drivers.
 #[allow(clippy::too_many_arguments)]
+// ALLOW-UNWIRED: wiring debt Backlog eulerian-grid-cross-process-primitive-residue (true multi-OS-process primitive, examples/ cannot reach pub(crate) and the single-process DecomposedGs/BandedGs path never needs it), oracle src/eulerian_grid.rs tests (cross-process harness)
 pub(crate) fn project_pressure_slab_local_on_rank<T: SlabTransport>(
     faces: &mut SlabFaces,
     dt_s: Fix128,
