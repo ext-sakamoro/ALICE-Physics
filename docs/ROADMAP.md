@@ -37,6 +37,12 @@ user 制定の最重要項目「未配線 983 件 + module 丸ごと allow 13 fi
 | **oracle** | `tests/wm07_reset_and_rollback_contract.rs` (5 本) — reset の bit 一致、population 一致 / 不一致の正常系・異常系、joint remap を跨ぐ rollback+replay の bit-exact 変異試験 (fingerprint 検査を外す) で red を実測 |
 | **非目標** | cloth/fluid/FEM への snapshot 被覆拡張 (gap #2/#4) / 力学への区間演算 (gap #7) / 決定論の穴の型封じ (gap #8) / 探索層・World Auditor crate 自体 (別 plan) |
 
+### 第 24 increment (2026-10-02、壁 4 — multigrid の rank-local driver、段階 3)
+
+`project_pressure_multigrid_decomposed_on_rank` を足した (crate 内) 段階 2 の solve を「走らせる rank の集合」で回す形にし、in-process 版は全 rank、rank-local 版は自分の rank だけにした 各 rank は自分の帯だけを持ち他 rank の帯を要求しない (要求すると `SlabSocketTransport` が panic) 交換・gather・補正返送の配送は全 rank が同じ順序で歩き、transport が自分の半分だけ実行する (位置で対応づけ、header なし) 粗い階層の解は rank 0 だけが行い、grid に書き戻すのも rank 0 だけ
+oracle: rank を thread にして loopback socket で結んだ 2〜8 rank が **単一 process と bit 一致** (4 形状 × 開放 / 壁つき、`ranks > nz` を含む) 非 root は grid を触らない (face 条件の enforce 後は不変) 全 rank を走らせる driver に rank-local transport を渡すと panic 変異テストは段階 2 の 25 件 + 段階 3 の 6 件
+⚠️ 実プロセスでの実行 (re-exec) と 1e8 規模の実測は未着手 (thread は address space を分けない) setup は依然として全 grid で作る 段階 4: process ごとの harness + 帯から組む setup + 256³〜512³ の実測
+
 ### 第 23 increment (2026-10-02、壁の外側 (3) — Gartling の測定・解釈・refinement oracle)
 
 | 到達点 | 内容 |

@@ -186,6 +186,79 @@ pub(crate) fn project_pressure_multigrid_decomposed_over<T, F>(
     cycles: u32,
     ranks: usize,
     schedule: HaloSchedule,
+    make: F,
+) -> Residency
+where
+    T: SlabTransport,
+    F: FnMut(&[(usize, usize)], usize, usize, usize, Option<&[Fix128]>) -> T,
+{
+    solve_decomposed(
+        grid,
+        dt_s,
+        density_kg_m3,
+        cycles,
+        ranks,
+        schedule,
+        None,
+        make,
+    )
+}
+
+/// One rank's half of [`project_pressure_multigrid_decomposed_over`], for
+/// transports whose ranks do not share an address space.
+///
+/// The solve is the same code with the set of ranks it drives narrowed from every
+/// rank to `my_rank`: that rank sweeps, restricts and prolongs its own layers and
+/// asks its transports for its own band and no other. The exchange, the gather and
+/// the correction are still walked in full on every rank, in the same order, and
+/// the transport performs only the half it is party to; so deliveries are matched
+/// by position in a sequence every rank agrees on. Rank 0 also runs the
+/// agglomerated levels, and is the only rank that writes `grid` back.
+///
+/// Every rank must start from the same `grid`.
+// ALLOW-UNWIRED: stage 3 of the distributed multigrid — the rank-local driver a
+// process-per-rank harness calls; the oracle runs it over threads and sockets.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn project_pressure_multigrid_decomposed_on_rank<T, F>(
+    grid: &mut MacGrid,
+    dt_s: Fix128,
+    density_kg_m3: Fix128,
+    cycles: u32,
+    ranks: usize,
+    schedule: HaloSchedule,
+    my_rank: usize,
+    make: F,
+) -> Residency
+where
+    T: SlabTransport,
+    F: FnMut(&[(usize, usize)], usize, usize, usize, Option<&[Fix128]>) -> T,
+{
+    if my_rank >= ranks {
+        return Vec::new();
+    }
+    solve_decomposed(
+        grid,
+        dt_s,
+        density_kg_m3,
+        cycles,
+        ranks,
+        schedule,
+        Some(my_rank),
+        make,
+    )
+}
+
+/// The decomposed solve for the ranks it drives: every rank when `only` is
+/// `None`, otherwise just that one.
+#[allow(clippy::too_many_arguments)]
+fn solve_decomposed<T, F>(
+    grid: &mut MacGrid,
+    dt_s: Fix128,
+    density_kg_m3: Fix128,
+    cycles: u32,
+    ranks: usize,
+    schedule: HaloSchedule,
+    only: Option<usize>,
     mut make: F,
 ) -> Residency
 where
@@ -221,12 +294,22 @@ where
     let plane = |l: usize| levels[l].nx * levels[l].ny;
 
     // Per rank and level, only the owned layers.
+    let active: Vec<usize> = only.map_or_else(|| (0..ranks).collect(), |r| vec![r]);
     let local: Vec<Vec<Local>> = (0..=last)
         .map(|l| {
             let p = plane(l);
             bounds[l]
                 .iter()
-                .map(|&(k0, k1)| {
+                .enumerate()
+                .map(|(r, &(k0, k1))| {
+                    if !active.contains(&r) {
+                        return Local {
+                            cond: Vec::new(),
+                            inv: Vec::new(),
+                            rhs: Vec::new(),
+                            res: Vec::new(),
+                        };
+                    }
                     let (a, b) = (k0 * p, k1 * p);
                     Local {
                         cond: levels[l].cond[a..b].to_vec(),
@@ -251,7 +334,14 @@ where
         .map(|(r, &b)| if r == 0 { (0, levels[last].nz) } else { b })
         .collect();
 
+    let root_bounds0: Vec<(usize, usize)> = bounds[0]
+        .iter()
+        .enumerate()
+        .map(|(r, &b)| if r == 0 { (0, levels[0].nz) } else { b })
+        .collect();
+
     let mut solve = Decomposed {
+        active: active.clone(),
         pressure: (0..=last)
             .map(|l| {
                 let field = (l == 0).then_some(grid.pressure.as_slice());
@@ -259,6 +349,7 @@ where
             })
             .collect(),
         gather: make(&root_bounds, levels[last].nz, plane(last), 0, None),
+        finish: make(&root_bounds0, levels[0].nz, plane(0), 0, None),
         correction: make(&root_bounds, levels[last].nz, plane(last), 0, None),
         coarse_p: levels[last + 1..]
             .iter()
@@ -282,18 +373,21 @@ where
     }
 
     let plane0 = plane(0);
-    for (r, &(k0, k1)) in bounds[0].iter().enumerate() {
-        let storage = solve.pressure[0].slab_mut(r);
-        for k in k0..k1 {
-            grid.pressure[k * plane0..(k + 1) * plane0]
-                .copy_from_slice(storage.layer(k).expect(OWNED_LAYER_MISSING));
-        }
-    }
+    solve.finish_to_root(&bounds[0]);
     let residency: Residency = solve
         .pressure
         .iter_mut()
-        .map(|t| (0..ranks).map(|r| t.slab_mut(r).resident()).collect())
+        .map(|t| active.iter().map(|&r| t.slab_mut(r).resident()).collect())
         .collect();
+    // Only rank 0 holds the whole field and so only rank 0 can take the gradient.
+    if !active.contains(&0) {
+        return residency;
+    }
+    let root = solve.finish.slab_mut(0);
+    for k in 0..levels[0].nz {
+        grid.pressure[k * plane0..(k + 1) * plane0]
+            .copy_from_slice(root.layer(k).expect(OWNED_LAYER_MISSING));
+    }
 
     let inv_dx = Fix128::ONE / grid.dx;
     subtract_pressure_gradient(grid, dt_s / density_kg_m3 * inv_dx);
@@ -350,6 +444,10 @@ struct Decomposed<'a, T: SlabTransport> {
     last: usize,
     ranks: usize,
     schedule: HaloSchedule,
+    /// The ranks this driver runs: every rank in one process, or just this one.
+    active: Vec<usize>,
+    /// The finished pressure, gathered to rank 0 for the gradient.
+    finish: T,
     /// One transport per distributed level, carrying that level's pressure band.
     pressure: Vec<T>,
     /// `local[l][r]`: what rank `r` keeps for level `l`.
@@ -374,9 +472,10 @@ impl<T: SlabTransport> Decomposed<'_, T> {
     /// schedule of [`super::project_pressure_decomposed`].
     fn smooth(&mut self, l: usize, iterations: u32) {
         let level = &self.levels[l];
+        let active = self.active.clone();
         for _ in 0..iterations {
             for colour in 0..2usize {
-                for r in 0..self.ranks {
+                for &r in &active {
                     let (k0, k1) = self.bounds[l][r];
                     let loc = &self.local[l][r];
                     let storage = self.pressure[l].slab_mut(r);
@@ -418,7 +517,7 @@ impl<T: SlabTransport> Decomposed<'_, T> {
     fn compute_residual(&mut self, l: usize) {
         let level = &self.levels[l];
         let plane = level.nx * level.ny;
-        for r in 0..self.ranks {
+        for &r in &self.active {
             let (k0, k1) = self.bounds[l][r];
             let storage: &SlabStorage = self.pressure[l].slab_mut(r);
             let loc = &mut self.local[l][r];
@@ -442,7 +541,7 @@ impl<T: SlabTransport> Decomposed<'_, T> {
 
     /// Zero level `l`'s unknown on every rank: owned layers and halo.
     fn zero_pressure(&mut self, l: usize) {
-        for r in 0..self.ranks {
+        for &r in &self.active {
             let storage = self.pressure[l].slab_mut(r);
             let (lo, hi) = storage.resident();
             for k in lo..hi {
@@ -489,7 +588,7 @@ impl<T: SlabTransport> Decomposed<'_, T> {
         );
         let (plane_f, plane_c) = (fine.nx * fine.ny, coarse.nx * coarse.ny);
         let (lower, upper) = self.local.split_at_mut(l + 1);
-        for r in 0..self.ranks {
+        for &r in &self.active {
             let (k0, k1) = self.bounds[l][r];
             let c0 = self.bounds[l + 1][r].0;
             let res = &lower[l][r].res;
@@ -516,7 +615,7 @@ impl<T: SlabTransport> Decomposed<'_, T> {
         );
         let scale = Fix128::from_ratio(MG_CORRECTION_SCALE_NUM, MG_CORRECTION_SCALE_DEN);
         let (lower, upper) = self.pressure.split_at_mut(l + 1);
-        for r in 0..self.ranks {
+        for &r in &self.active {
             let (k0, k1) = self.bounds[l][r];
             let e = upper[0].slab_mut(r);
             let p = lower[l].slab_mut(r);
@@ -537,10 +636,15 @@ impl<T: SlabTransport> Decomposed<'_, T> {
     /// The last distributed level's coarse correction: gather the residual to
     /// rank 0, run the remaining levels there, send each owner its layers of the
     /// prolonged correction and add it.
+    ///
+    /// The two walks — every rank's layers to rank 0, then rank 0's to every rank —
+    /// are taken in full by every driver; the transport performs the half it is
+    /// party to. Only rank 0's driver forms the coarse right-hand side, solves, and
+    /// writes the correction.
     fn agglomerated_correction(&mut self, l: usize) {
         let level = &self.levels[l];
         let plane = level.nx * level.ny;
-        for r in 0..self.ranks {
+        for &r in &self.active {
             let (k0, k1) = self.bounds[l][r];
             let storage = self.gather.slab_mut(r);
             for k in k0..k1 {
@@ -556,42 +660,44 @@ impl<T: SlabTransport> Decomposed<'_, T> {
             }
         }
 
-        let coarse = &self.levels[l + 1];
-        let (fx, fy, fz) = (
-            level.nx / coarse.nx,
-            level.ny / coarse.ny,
-            level.nz / coarse.nz,
-        );
-        let rc = &mut self.coarse_rhs[0];
-        rc.fill(Fix128::ZERO);
-        let root = self.gather.slab_mut(0);
-        for k in 0..level.nz {
-            let res = root.layer(k).expect(OWNED_LAYER_MISSING);
-            for j in 0..level.ny {
-                for i in 0..level.nx {
-                    let ci = i / fx + coarse.nx * (j / fy + coarse.ny * (k / fz));
-                    rc[ci] = rc[ci] + res[i + level.nx * j];
+        if self.active.contains(&0) {
+            let coarse = &self.levels[l + 1];
+            let (fx, fy, fz) = (
+                level.nx / coarse.nx,
+                level.ny / coarse.ny,
+                level.nz / coarse.nz,
+            );
+            let rc = &mut self.coarse_rhs[0];
+            rc.fill(Fix128::ZERO);
+            let root = self.gather.slab_mut(0);
+            for k in 0..level.nz {
+                let res = root.layer(k).expect(OWNED_LAYER_MISSING);
+                for j in 0..level.ny {
+                    for i in 0..level.nx {
+                        let ci = i / fx + coarse.nx * (j / fy + coarse.ny * (k / fz));
+                        rc[ci] = rc[ci] + res[i + level.nx * j];
+                    }
                 }
             }
-        }
-        self.coarse_p[0].fill(Fix128::ZERO);
-        for _ in 0..MG_COARSE_VISITS {
-            mg_vcycle(
-                &self.levels[l + 1..],
-                &self.coarse_invs,
-                &mut self.coarse_p,
-                &mut self.coarse_rhs,
-            );
-        }
+            self.coarse_p[0].fill(Fix128::ZERO);
+            for _ in 0..MG_COARSE_VISITS {
+                mg_vcycle(
+                    &self.levels[l + 1..],
+                    &self.coarse_invs,
+                    &mut self.coarse_p,
+                    &mut self.coarse_rhs,
+                );
+            }
 
-        let scale = Fix128::from_ratio(MG_CORRECTION_SCALE_NUM, MG_CORRECTION_SCALE_DEN);
-        let out = self.correction.slab_mut(0);
-        for k in 0..level.nz {
-            let layer = out.layer_mut(k).expect(OWNED_LAYER_MISSING);
-            for j in 0..level.ny {
-                for i in 0..level.nx {
-                    let ci = i / fx + coarse.nx * (j / fy + coarse.ny * (k / fz));
-                    layer[i + level.nx * j] = self.coarse_p[0][ci] * scale;
+            let scale = Fix128::from_ratio(MG_CORRECTION_SCALE_NUM, MG_CORRECTION_SCALE_DEN);
+            let out = self.correction.slab_mut(0);
+            for k in 0..level.nz {
+                let layer = out.layer_mut(k).expect(OWNED_LAYER_MISSING);
+                for j in 0..level.ny {
+                    for i in 0..level.nx {
+                        let ci = i / fx + coarse.nx * (j / fy + coarse.ny * (k / fz));
+                        layer[i + level.nx * j] = self.coarse_p[0][ci] * scale;
+                    }
                 }
             }
         }
@@ -600,7 +706,7 @@ impl<T: SlabTransport> Decomposed<'_, T> {
                 self.correction.deliver_layer(0, r, layer);
             }
         }
-        for r in 0..self.ranks {
+        for &r in &self.active {
             let (k0, k1) = self.bounds[l][r];
             let corr = self.correction.slab_mut(r);
             let p = self.pressure[l].slab_mut(r);
@@ -610,6 +716,25 @@ impl<T: SlabTransport> Decomposed<'_, T> {
                 for (x, a) in pl.iter_mut().zip(add) {
                     *x = *x + *a;
                 }
+            }
+        }
+    }
+
+    /// Bring every rank's owned layers of the finished pressure to rank 0.
+    fn finish_to_root(&mut self, bounds0: &[(usize, usize)]) {
+        for &r in &self.active {
+            let (k0, k1) = bounds0[r];
+            let from = self.pressure[0].slab_mut(r);
+            let to = self.finish.slab_mut(r);
+            for k in k0..k1 {
+                to.layer_mut(k)
+                    .expect(OWNED_LAYER_MISSING)
+                    .copy_from_slice(from.layer(k).expect(OWNED_LAYER_MISSING));
+            }
+        }
+        for (r, &(k0, k1)) in bounds0.iter().enumerate().skip(1) {
+            for layer in k0..k1 {
+                self.finish.deliver_layer(r, 0, layer);
             }
         }
     }
@@ -953,5 +1078,156 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// Loopback streams between every pair of ranks: `links[a][b]` is rank `a`'s
+    /// end of the stream to rank `b`. Reads time out, so a schedule that
+    /// deadlocks fails instead of hanging.
+    #[cfg(feature = "std")]
+    fn socket_mesh(ranks: usize) -> Vec<Vec<Option<std::net::TcpStream>>> {
+        use std::net::{TcpListener, TcpStream};
+        use std::time::Duration;
+        let mut links: Vec<Vec<Option<TcpStream>>> = (0..ranks)
+            .map(|_| (0..ranks).map(|_| None).collect())
+            .collect();
+        let pairs = (0..ranks).flat_map(|a| (a + 1..ranks).map(move |b| (a, b)));
+        for (a, b) in pairs {
+            let listener = TcpListener::bind(("127.0.0.1", 0)).expect("bind loopback");
+            let addr = listener.local_addr().expect("address");
+            let dialled = TcpStream::connect(addr).expect("dial");
+            let (accepted, _) = listener.accept().expect("accept");
+            for end in [&dialled, &accepted] {
+                end.set_nodelay(true).expect("nodelay");
+                end.set_read_timeout(Some(Duration::from_secs(10)))
+                    .expect("timeout");
+            }
+            links[a][b] = Some(accepted);
+            links[b][a] = Some(dialled);
+        }
+        links
+    }
+
+    /// The factory a socket rank hands the solve: `(bounds, nz, plane, halo, field)`
+    /// to this rank's transport.
+    #[cfg(feature = "std")]
+    type SocketMake<'a> = Box<
+        dyn FnMut(
+                &[(usize, usize)],
+                usize,
+                usize,
+                usize,
+                Option<&[Fix128]>,
+            ) -> crate::eulerian_grid::SlabSocketTransport<std::net::TcpStream>
+            + 'a,
+    >;
+
+    /// A transport factory for rank `my_rank`: a band over `bounds[my_rank]`
+    /// filled from `field`, over a clone of each stream (every field shares the
+    /// stream to a peer; deliveries are matched by position in the schedule).
+    #[cfg(feature = "std")]
+    fn socket_factory(my_rank: usize, links: &[Option<std::net::TcpStream>]) -> SocketMake<'_> {
+        Box::new(move |bounds, nz, plane, halo, field| {
+            let mut slab = SlabStorage::for_slab(plane, nz, bounds[my_rank], halo);
+            if let Some(f) = field {
+                let (lo, hi) = slab.resident();
+                for k in lo..hi {
+                    slab.layer_mut(k)
+                        .expect("a layer inside the band")
+                        .copy_from_slice(&f[k * plane..(k + 1) * plane]);
+                }
+            }
+            let own = links
+                .iter()
+                .map(|l| l.as_ref().map(|s| s.try_clone().expect("clone stream")))
+                .collect();
+            crate::eulerian_grid::SlabSocketTransport::new(my_rank, plane, slab, own)
+        })
+    }
+
+    /// The rank-local driver, run as one thread per rank over loopback sockets,
+    /// lands on the single-process answer to the bit; rank 0 is the only one that
+    /// writes its grid back, and the others leave theirs as they found it.
+    #[cfg(feature = "std")]
+    #[test]
+    fn the_rank_local_driver_over_sockets_reproduces_the_single_process_cycle() {
+        type Dims = (usize, usize, usize);
+        let cases: &[(Dims, &[usize])] = &[
+            ((8, 8, 8), &[2, 3, 4, 8]),
+            ((16, 8, 4), &[2, 4, 8]),
+            ((4, 4, 16), &[3, 5]),
+            ((8, 8, 1), &[2]),
+        ];
+        for scene in [Scene::Open, Scene::Walled] {
+            for &((nx, ny, nz), rank_counts) in cases {
+                for &ranks in rank_counts {
+                    let base = seed(nx, ny, nz, scene);
+                    let want = solve_single(&base, 2);
+                    assert!(!bit_equal(&base, &want));
+                    let mut mesh = socket_mesh(ranks);
+                    let results: Vec<MacGrid> = std::thread::scope(|sc| {
+                        let handles: Vec<_> = mesh
+                            .iter_mut()
+                            .enumerate()
+                            .map(|(rank, links)| {
+                                let mut grid = base.clone();
+                                let links = &*links;
+                                sc.spawn(move || {
+                                    project_pressure_multigrid_decomposed_on_rank(
+                                        &mut grid,
+                                        fx(DT.0, DT.1),
+                                        Fix128::from_int(RHO),
+                                        2,
+                                        ranks,
+                                        HaloSchedule::EverySweep,
+                                        rank,
+                                        socket_factory(rank, links),
+                                    );
+                                    grid
+                                })
+                            })
+                            .collect();
+                        handles
+                            .into_iter()
+                            .map(|h| h.join().expect("a rank panicked"))
+                            .collect()
+                    });
+                    assert!(
+                        bit_equal(&want, &results[0]),
+                        "{nx}x{ny}x{nz} over {ranks} ranks, {scene:?}: rank 0 over sockets is \
+                         not the single-process answer"
+                    );
+                    // The solve enforces the face conditions on every rank's grid
+                    // before anything else; past that, a non-root rank leaves its
+                    // copy alone.
+                    let mut untouched = base.clone();
+                    untouched.enforce_face_boundaries();
+                    for (rank, grid) in results.iter().enumerate().skip(1) {
+                        assert!(
+                            bit_equal(&untouched, grid),
+                            "{nx}x{ny}x{nz} over {ranks} ranks: rank {rank} wrote its grid back"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// Teeth: a driver that runs every rank cannot be handed a transport that
+    /// holds one rank's band — the transport refuses to serve another's.
+    #[cfg(feature = "std")]
+    #[test]
+    #[should_panic(expected = "the driver is not rank-local")]
+    fn a_driver_that_runs_every_rank_is_refused_by_a_rank_local_transport() {
+        let mut g = seed(8, 8, 8, Scene::Open);
+        let links: Vec<Option<std::net::TcpStream>> = (0..2).map(|_| None).collect();
+        project_pressure_multigrid_decomposed_over(
+            &mut g,
+            fx(DT.0, DT.1),
+            Fix128::from_int(RHO),
+            1,
+            2,
+            HaloSchedule::EverySweep,
+            socket_factory(0, &links),
+        );
     }
 }
