@@ -44,11 +44,16 @@
 //!
 //! # Integration status
 //!
-//! Only the red-black Gauss-Seidel projection (`project_pressure`),
-//! trilinear sampling helpers (`sample_u/v/w_range/trilinear`), and
-//! `g2p_velocity` are currently wired into `cfd_solver.rs`. The
-//! Jacobi + BiCGStab pressure variants and P2G scatter operators
-//! are reserved crate-internal API awaiting downstream integration.
+//! `cfd_solver.rs` reaches every single-process pressure solver here:
+//! red-black Gauss-Seidel (`project_pressure`) and multigrid
+//! (`project_pressure_multigrid`) from `CfdSolver::step`, and all four —
+//! those two plus Jacobi (`project_pressure_jacobi`) and BiCGStab
+//! (`project_pressure_bicgstab`, reporting [`BicgstabStats`]) — from
+//! `CfdSolver::step_with_pressure_solver`, which is where a caller picks one
+//! and is refused instead of silently given another. `p2g_normalized` is
+//! reached from `CfdSolver::step_flip`. The distributed solvers
+//! (`project_pressure_decomposed*`, `project_pressure_slab_local*`) are still
+//! crate-internal; their transports are the open item.
 //!
 //! # Face mask — walls inside the projection
 //!
@@ -96,9 +101,10 @@
 //! net boundary flux is zero, and the relaxation will drift instead of
 //! converging.
 
-// Reserved algorithm variants (Jacobi / BiCGStab pressure, P2G scatter) are
-// pub(crate) but currently unused outside their own unit tests — awaiting
-// cfd_solver integration.
+// The distributed pressure solvers (`project_pressure_decomposed*`,
+// `project_pressure_slab_local*`) and their transports are reached from the
+// cross-process tests only; `cfd_solver` wires the single-process family.
+// ALLOW-DEAD: distributed solvers are crate-internal until their transports go public
 #![allow(dead_code)]
 
 use crate::math::{Fix128, Vec3Fix};
@@ -3794,7 +3800,11 @@ pub(crate) fn project_pressure_slab_local_on_rank<T: SlabTransport>(
     subtract_slab_pressure_gradient(faces, transport.slab_mut(my_rank), coeff);
 }
 
-/// Legacy Jacobi implementation, kept for benchmarking (Session 3 I9, crate-internal).
+/// Jacobi iteration on the masked 7-point Laplacian, then the velocity
+/// correction. Reached from `CfdSolver::step_with_pressure_solver` with
+/// [`crate::cfd_solver::PressureSolver::Jacobi`]; kept as the simplest
+/// reference solver (every cell updates from the previous sweep, so one
+/// iteration is a pure matrix-vector product).
 pub(crate) fn project_pressure_jacobi(
     grid: &mut MacGrid,
     dt_s: Fix128,
@@ -3988,15 +3998,24 @@ pub(crate) fn project_pressure_bicgstab(
     }
 }
 
-/// Diagnostic bundle returned by [`project_pressure_bicgstab`] (crate-internal).
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct BicgstabStats {
-    /// Iterations actually performed.
-    pub(crate) iterations: u32,
-    /// Final `‖r‖_∞`.
-    pub(crate) final_residual: Fix128,
+/// What the BiCGStab pressure solver did, reported through
+/// `CfdSolver::step_with_pressure_solver` so a caller can tell a projection
+/// that converged from one that ran out of iterations.
+///
+/// ⚠️ `converged == false` means the velocity field was corrected with a
+/// pressure that does **not** satisfy the Poisson equation to `tolerance`;
+/// the field is still divergence-reduced, not divergence-free. Reading only
+/// the velocities cannot tell the two apart, which is why this is returned.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct BicgstabStats {
+    /// Iterations actually performed (0 when the initial residual was already
+    /// below `tolerance`, which is the case for a solenoidal field).
+    pub iterations: u32,
+    /// Final `‖r‖_∞` of `A p = b`, in the units of `b = ρ dx²/dt · ∇·u`.
+    pub final_residual: Fix128,
     /// True if the iteration terminated below `tolerance`.
-    pub(crate) converged: bool,
+    pub converged: bool,
 }
 
 fn dot(a: &[Fix128], b: &[Fix128]) -> Fix128 {

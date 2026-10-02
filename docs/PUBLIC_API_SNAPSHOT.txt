@@ -1225,6 +1225,59 @@ impl core::marker::Unpin for alice_physics::cfd_solver::AdvectionScheme
 impl core::marker::UnsafeUnpin for alice_physics::cfd_solver::AdvectionScheme
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::cfd_solver::AdvectionScheme
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::cfd_solver::AdvectionScheme
+#[non_exhaustive] pub enum alice_physics::cfd_solver::PressureSolver
+pub alice_physics::cfd_solver::PressureSolver::BiCgStab
+pub alice_physics::cfd_solver::PressureSolver::BiCgStab::max_iterations: u32
+pub alice_physics::cfd_solver::PressureSolver::BiCgStab::tolerance: alice_physics::math::Fix128
+pub alice_physics::cfd_solver::PressureSolver::Jacobi
+pub alice_physics::cfd_solver::PressureSolver::Jacobi::iterations: u32
+pub alice_physics::cfd_solver::PressureSolver::Multigrid
+pub alice_physics::cfd_solver::PressureSolver::Multigrid::cycles: u32
+pub alice_physics::cfd_solver::PressureSolver::RedBlackGs
+pub alice_physics::cfd_solver::PressureSolver::RedBlackGs::sweeps: u32
+impl core::clone::Clone for alice_physics::cfd_solver::PressureSolver
+pub fn alice_physics::cfd_solver::PressureSolver::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::cfd_solver::PressureSolver
+impl core::cmp::PartialEq for alice_physics::cfd_solver::PressureSolver
+pub fn alice_physics::cfd_solver::PressureSolver::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::cfd_solver::PressureSolver
+pub fn alice_physics::cfd_solver::PressureSolver::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::cfd_solver::PressureSolver
+impl core::marker::StructuralPartialEq for alice_physics::cfd_solver::PressureSolver
+impl core::marker::Freeze for alice_physics::cfd_solver::PressureSolver
+impl core::marker::Send for alice_physics::cfd_solver::PressureSolver
+impl core::marker::Sync for alice_physics::cfd_solver::PressureSolver
+impl core::marker::Unpin for alice_physics::cfd_solver::PressureSolver
+impl core::marker::UnsafeUnpin for alice_physics::cfd_solver::PressureSolver
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::cfd_solver::PressureSolver
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::cfd_solver::PressureSolver
+#[non_exhaustive] pub enum alice_physics::cfd_solver::PressureSolverError
+pub alice_physics::cfd_solver::PressureSolverError::MultigridNeedsPowerOfTwoExtents
+pub alice_physics::cfd_solver::PressureSolverError::MultigridNeedsPowerOfTwoExtents::extents: (usize, usize, usize)
+pub alice_physics::cfd_solver::PressureSolverError::NonPositiveTolerance
+pub alice_physics::cfd_solver::PressureSolverError::ZeroDensity
+pub alice_physics::cfd_solver::PressureSolverError::ZeroIterations
+pub alice_physics::cfd_solver::PressureSolverError::ZeroSpacing
+pub alice_physics::cfd_solver::PressureSolverError::ZeroTimeStep
+impl core::clone::Clone for alice_physics::cfd_solver::PressureSolverError
+pub fn alice_physics::cfd_solver::PressureSolverError::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::cfd_solver::PressureSolverError
+impl core::cmp::PartialEq for alice_physics::cfd_solver::PressureSolverError
+pub fn alice_physics::cfd_solver::PressureSolverError::eq(&self, &Self) -> bool
+impl core::error::Error for alice_physics::cfd_solver::PressureSolverError
+impl core::fmt::Debug for alice_physics::cfd_solver::PressureSolverError
+pub fn alice_physics::cfd_solver::PressureSolverError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for alice_physics::cfd_solver::PressureSolverError
+pub fn alice_physics::cfd_solver::PressureSolverError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::cfd_solver::PressureSolverError
+impl core::marker::StructuralPartialEq for alice_physics::cfd_solver::PressureSolverError
+impl core::marker::Freeze for alice_physics::cfd_solver::PressureSolverError
+impl core::marker::Send for alice_physics::cfd_solver::PressureSolverError
+impl core::marker::Sync for alice_physics::cfd_solver::PressureSolverError
+impl core::marker::Unpin for alice_physics::cfd_solver::PressureSolverError
+impl core::marker::UnsafeUnpin for alice_physics::cfd_solver::PressureSolverError
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::cfd_solver::PressureSolverError
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::cfd_solver::PressureSolverError
 pub struct alice_physics::cfd_solver::CfdSolver
 pub alice_physics::cfd_solver::CfdSolver::advection_scheme: alice_physics::cfd_solver::AdvectionScheme
 pub alice_physics::cfd_solver::CfdSolver::beta_per_k: alice_physics::math::Fix128
@@ -1247,6 +1300,7 @@ pub fn alice_physics::cfd_solver::CfdSolver::step(&mut self, alice_physics::math
 pub fn alice_physics::cfd_solver::CfdSolver::step_adaptive(&mut self, alice_physics::math::Fix128, alice_physics::math::Fix128) -> alice_physics::math::Fix128
 pub fn alice_physics::cfd_solver::CfdSolver::step_flip(&mut self, &mut [(alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix)], alice_physics::math::Fix128, alice_physics::math::Fix128)
 pub fn alice_physics::cfd_solver::CfdSolver::step_multigrid(&mut self, alice_physics::math::Fix128, u32)
+pub fn alice_physics::cfd_solver::CfdSolver::step_with_pressure_solver(&mut self, alice_physics::math::Fix128, alice_physics::cfd_solver::PressureSolver) -> core::result::Result<alice_physics::cfd_solver::ProjectionReport, alice_physics::cfd_solver::PressureSolverError>
 impl core::marker::Freeze for alice_physics::cfd_solver::CfdSolver
 impl core::marker::Send for alice_physics::cfd_solver::CfdSolver
 impl core::marker::Sync for alice_physics::cfd_solver::CfdSolver
@@ -1254,6 +1308,25 @@ impl core::marker::Unpin for alice_physics::cfd_solver::CfdSolver
 impl core::marker::UnsafeUnpin for alice_physics::cfd_solver::CfdSolver
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::cfd_solver::CfdSolver
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::cfd_solver::CfdSolver
+#[non_exhaustive] pub struct alice_physics::cfd_solver::ProjectionReport
+pub alice_physics::cfd_solver::ProjectionReport::bicgstab: core::option::Option<alice_physics::eulerian_grid::BicgstabStats>
+pub alice_physics::cfd_solver::ProjectionReport::solver: alice_physics::cfd_solver::PressureSolver
+impl core::clone::Clone for alice_physics::cfd_solver::ProjectionReport
+pub fn alice_physics::cfd_solver::ProjectionReport::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::cfd_solver::ProjectionReport
+impl core::cmp::PartialEq for alice_physics::cfd_solver::ProjectionReport
+pub fn alice_physics::cfd_solver::ProjectionReport::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::cfd_solver::ProjectionReport
+pub fn alice_physics::cfd_solver::ProjectionReport::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::cfd_solver::ProjectionReport
+impl core::marker::StructuralPartialEq for alice_physics::cfd_solver::ProjectionReport
+impl core::marker::Freeze for alice_physics::cfd_solver::ProjectionReport
+impl core::marker::Send for alice_physics::cfd_solver::ProjectionReport
+impl core::marker::Sync for alice_physics::cfd_solver::ProjectionReport
+impl core::marker::Unpin for alice_physics::cfd_solver::ProjectionReport
+impl core::marker::UnsafeUnpin for alice_physics::cfd_solver::ProjectionReport
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::cfd_solver::ProjectionReport
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::cfd_solver::ProjectionReport
 pub mod alice_physics::character
 pub struct alice_physics::character::CharacterConfig
 pub alice_physics::character::CharacterConfig::ground_probe_distance: alice_physics::math::Fix128
@@ -2976,6 +3049,26 @@ impl core::marker::Unpin for alice_physics::eulerian_grid::FaceBc
 impl core::marker::UnsafeUnpin for alice_physics::eulerian_grid::FaceBc
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::eulerian_grid::FaceBc
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::eulerian_grid::FaceBc
+#[non_exhaustive] pub struct alice_physics::eulerian_grid::BicgstabStats
+pub alice_physics::eulerian_grid::BicgstabStats::converged: bool
+pub alice_physics::eulerian_grid::BicgstabStats::final_residual: alice_physics::math::Fix128
+pub alice_physics::eulerian_grid::BicgstabStats::iterations: u32
+impl core::clone::Clone for alice_physics::eulerian_grid::BicgstabStats
+pub fn alice_physics::eulerian_grid::BicgstabStats::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::eulerian_grid::BicgstabStats
+impl core::cmp::PartialEq for alice_physics::eulerian_grid::BicgstabStats
+pub fn alice_physics::eulerian_grid::BicgstabStats::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::eulerian_grid::BicgstabStats
+pub fn alice_physics::eulerian_grid::BicgstabStats::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::eulerian_grid::BicgstabStats
+impl core::marker::StructuralPartialEq for alice_physics::eulerian_grid::BicgstabStats
+impl core::marker::Freeze for alice_physics::eulerian_grid::BicgstabStats
+impl core::marker::Send for alice_physics::eulerian_grid::BicgstabStats
+impl core::marker::Sync for alice_physics::eulerian_grid::BicgstabStats
+impl core::marker::Unpin for alice_physics::eulerian_grid::BicgstabStats
+impl core::marker::UnsafeUnpin for alice_physics::eulerian_grid::BicgstabStats
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::eulerian_grid::BicgstabStats
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::eulerian_grid::BicgstabStats
 pub struct alice_physics::eulerian_grid::MacGrid
 pub alice_physics::eulerian_grid::MacGrid::dx: alice_physics::math::Fix128
 pub alice_physics::eulerian_grid::MacGrid::nx: usize
