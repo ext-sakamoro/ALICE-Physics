@@ -108,24 +108,6 @@ const POW2_NEG_LUT: [f64; 65] = [
     5.421010862427522e-20,  // 2^-64
 ];
 
-/// Fast approximate log2 using IEEE 754 bit extraction
-/// Returns floor(log2(x)) for positive x, useful for bucket indexing
-#[inline]
-fn fast_log2_approx(x: f64) -> f64 {
-    // IEEE 754 double: sign(1) | exponent(11) | mantissa(52)
-    // For positive x: log2(x) ≈ exponent - 1023 + mantissa_fraction
-    let bits = x.to_bits();
-    let exponent = ((bits >> 52) & 0x7FF) as i64;
-    let mantissa = bits & 0xFFFFFFFFFFFFF;
-
-    // exponent - 1023 gives the integer part of log2
-    // mantissa / 2^52 gives a value in [0, 1) for linear interpolation
-    let int_part = exponent - 1023;
-    let frac_part = mantissa as f64 / 4503599627370496.0; // 2^52
-
-    int_part as f64 + frac_part
-}
-
 // ============================================================================
 // Mergeable Trait - All sketches can be merged across distributed nodes
 // ============================================================================
@@ -456,18 +438,6 @@ macro_rules! impl_ddsketch {
                 idx.max(0) as usize
             }
 
-            /// Fast bucket index using IEEE 754 bit extraction (for non-critical paths)
-            /// ~10x faster than `ln()` but has ~1-2% error
-            #[inline]
-            #[allow(dead_code)]
-            fn bucket_index_fast(&self, value: f64) -> usize {
-                const LN2: f64 = core::f64::consts::LN_2;
-                let log2_gamma = self.ln_gamma / LN2;
-                let log2_value = fast_log2_approx(value);
-                let idx = (log2_value / log2_gamma).ceil() as i32 + self.offset;
-                idx.max(0) as usize
-            }
-
             #[inline]
             fn bucket_lower_bound(&self, idx: usize) -> f64 {
                 let exp = (idx as i32 - self.offset) as f64;
@@ -475,6 +445,15 @@ macro_rules! impl_ddsketch {
             }
 
             /// Estimate the value at quantile `q` (0.0–1.0).
+            ///
+            /// Returns the matched bucket's lower edge `γ^(i−1)`, not the
+            /// paper's mid-point estimator `2γ^i/(γ+1)`. The relative-error
+            /// guarantee on the mid-point is `α`; on the edge it is
+            /// `2α/(1+α)` (worst case, measured: ~1.98% at `α = 0.01`), not
+            /// `α` itself — a caller reading this doc as an `α`-accurate
+            /// quantile estimator (program 第 7 件 `sketch` worker finding,
+            /// Backlog `sketch-quantile-edge-vs-midpoint`) was getting up to
+            /// 2× the documented error.
             pub fn quantile(&self, q: f64) -> f64 {
                 if self.count == 0 {
                     return 0.0;

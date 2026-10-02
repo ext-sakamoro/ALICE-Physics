@@ -782,6 +782,43 @@ impl CompositeDetector {
         self.ewma.reset();
         self.zscore.reset();
     }
+
+    /// Judge one sample against the statistics gathered so far, report it
+    /// through `callback` when it is anomalous, then absorb it.
+    ///
+    /// The verdict and the score are taken **before** the sample is observed,
+    /// so a spike is measured against the baseline it interrupts rather than
+    /// against a baseline it has already shifted. The event carries the
+    /// combined score ([`Self::anomaly_score`], the maximum over the three
+    /// detectors), the running median of the MAD detector as `expected`
+    /// (the robust centre this module is built around), and the caller's
+    /// `timestamp` / `metric_id` unchanged. Returns the verdict.
+    ///
+    /// The first two samples of a stream are never reported (every detector
+    /// withholds a verdict below three observations), and after
+    /// [`Self::reset`] the same holds again.
+    pub fn observe_with_callback<C: AnomalyCallback>(
+        &mut self,
+        value: f64,
+        timestamp: u64,
+        metric_id: u64,
+        callback: &mut C,
+    ) -> bool {
+        let flagged = self.is_anomaly(value);
+        if flagged {
+            let score = self.anomaly_score(value);
+            let expected = self.mad.median();
+            callback.on_anomaly(AnomalyEvent {
+                value,
+                score,
+                expected,
+                timestamp,
+                metric_id,
+            });
+        }
+        self.observe(value);
+        flagged
+    }
 }
 
 impl Default for CompositeDetector {

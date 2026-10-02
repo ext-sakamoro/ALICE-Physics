@@ -367,6 +367,7 @@ pub const fn alice_physics::anomaly::CompositeDetector::count(&self) -> u64
 pub fn alice_physics::anomaly::CompositeDetector::is_anomaly(&mut self, f64) -> bool
 pub fn alice_physics::anomaly::CompositeDetector::new() -> Self
 pub fn alice_physics::anomaly::CompositeDetector::observe(&mut self, f64)
+pub fn alice_physics::anomaly::CompositeDetector::observe_with_callback<C: alice_physics::anomaly::AnomalyCallback>(&mut self, f64, u64, u64, &mut C) -> bool
 pub fn alice_physics::anomaly::CompositeDetector::reset(&mut self)
 pub fn alice_physics::anomaly::CompositeDetector::with_thresholds(f64, f64, f64, f64) -> Self
 impl core::clone::Clone for alice_physics::anomaly::CompositeDetector
@@ -8783,6 +8784,7 @@ pub const fn alice_physics::anomaly::CompositeDetector::count(&self) -> u64
 pub fn alice_physics::anomaly::CompositeDetector::is_anomaly(&mut self, f64) -> bool
 pub fn alice_physics::anomaly::CompositeDetector::new() -> Self
 pub fn alice_physics::anomaly::CompositeDetector::observe(&mut self, f64)
+pub fn alice_physics::anomaly::CompositeDetector::observe_with_callback<C: alice_physics::anomaly::AnomalyCallback>(&mut self, f64, u64, u64, &mut C) -> bool
 pub fn alice_physics::anomaly::CompositeDetector::reset(&mut self)
 pub fn alice_physics::anomaly::CompositeDetector::with_thresholds(f64, f64, f64, f64) -> Self
 impl core::clone::Clone for alice_physics::anomaly::CompositeDetector
@@ -17403,6 +17405,7 @@ pub const fn alice_physics::anomaly::CompositeDetector::count(&self) -> u64
 pub fn alice_physics::anomaly::CompositeDetector::is_anomaly(&mut self, f64) -> bool
 pub fn alice_physics::anomaly::CompositeDetector::new() -> Self
 pub fn alice_physics::anomaly::CompositeDetector::observe(&mut self, f64)
+pub fn alice_physics::anomaly::CompositeDetector::observe_with_callback<C: alice_physics::anomaly::AnomalyCallback>(&mut self, f64, u64, u64, &mut C) -> bool
 pub fn alice_physics::anomaly::CompositeDetector::reset(&mut self)
 pub fn alice_physics::anomaly::CompositeDetector::with_thresholds(f64, f64, f64, f64) -> Self
 impl core::clone::Clone for alice_physics::anomaly::CompositeDetector
