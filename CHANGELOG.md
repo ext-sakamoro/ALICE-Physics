@@ -50,6 +50,11 @@ were introduced during that release window.
 - `eulerian_grid` tests: `CrossFault::ChunkedWire` — `Read` / `Write` を 1 call 1 byte に刻む `Chunked<S>` 越しの 2 プロセス圧力解が単一プロセスと bit 一致 (8³ / 7³) 両 rank が「call 数 == byte 数 かつ 1 層分以上」を assert ⚠️ **byte 数だけの閾値は whole buffer を通す変異を見逃した** (実測、call 数で捕まえた) 変異 4/4 red (whole buffer 通過 / read 側のみ / write 側のみ / 計数なし)
 
 文面の確定: 複数ノード分散は **1 ホスト 8 プロセス loopback TCP で bit 一致 (arm64 / x86_64 別々に、fold は cross-arch 一致)**、2 ホスト / アーキ跨ぎの 1 solve / MPI backend は未測定・未実装
+### Changed — 分散 multigrid の rank が自分の帯 + halo だけを持つ (壁 4、段階 2、crate 内)
+
+`multigrid_decomposed` の全長 buffer を slab 局所記憶域に替えた 各 rank は各 level の圧力を owned 層 + halo 1 層だけ、右辺・残差・コンダクタンス・逆次数を owned 層だけ持つ 帯の外を読むと panic (halo が足りないことは abort として現れる) 単一 process と bit 一致 (5 grid 形状 × rank 1〜16 × 開放 / 壁つき) 変異 25 件すべて red
+- ⚠️ setup は依然として全 grid で作って slice している 帯から組むのは段階 3 (rank ごとの process driver) で行う
+
 ### Added — multigrid の圧力射影を `z` slab 分割で回す (壁 4、段階 1、crate 内)
 
 `eulerian_grid::multigrid_decomposed::project_pressure_multigrid_decomposed` (`pub(crate)`、公開 API は不変) を追加した 単一 process の `project_pressure_multigrid` を `ranks` 本の slab に分け、colour sweep ごとに halo 1 層を交換する プロセス内 rank (全長 buffer + 範囲外 sentinel) で、結果は **単一 process と bit 一致** 各 level の slab 境界は 2 の冪の倍数なので restriction / prolongation は rank 内で閉じる 層数が rank 数を下回る level は rank 0 に集約する
