@@ -126,6 +126,10 @@ required-features = ["std"]
 name = "buckmaster_alpoge_euler_r3"
 required-features = ["std"]
 
+[[example]]
+name = "gpu_sdf_batch_queries"
+required-features = ["std"]
+
 [[bench]]
 name = "physics_bench"
 harness = false
