@@ -29,9 +29,9 @@
 //! `step_multigrid(dt, 0)` keeps the Gauss-Seidel projection on any grid.
 
 use crate::eulerian_grid::{
-    g2p_velocity, p2g_normalized, project_pressure, project_pressure_multigrid, sample_u_range,
-    sample_u_trilinear, sample_v_range, sample_v_trilinear, sample_w_range, sample_w_trilinear,
-    MacGrid,
+    g2p_velocity, p2g_normalized, project_pressure, project_pressure_bicgstab,
+    project_pressure_jacobi, project_pressure_multigrid, sample_u_range, sample_u_trilinear,
+    sample_v_range, sample_v_trilinear, sample_w_range, sample_w_trilinear, BicgstabStats, MacGrid,
 };
 use crate::interface_capture::fast_sweeping_reinit;
 use crate::math::{Fix128, Vec3Fix};
@@ -77,6 +77,126 @@ pub enum AdvectionScheme {
     /// costs ~30% more per step. Applied to both MAC-face velocity
     /// (`advect_velocity_bfecc`) and the temperature scalar field.
     Bfecc,
+}
+
+/// Which solver [`CfdSolver::step_with_pressure_solver`] projects with.
+///
+/// All four solve the same masked 7-point Poisson problem
+/// `∇²p = (ρ/dt) ∇·u*` and apply the same velocity correction, so a
+/// converged answer from any of them is the same projected field to within
+/// the residual each one leaves (`tests/analytic_pressure_solvers.rs` bounds
+/// that difference from the residuals, not from a measured number). They
+/// differ in cost and in how convergence is reported:
+///
+/// | variant | per-iteration cost | stops | reports |
+/// |---|---|---|---|
+/// | `RedBlackGs` | one sweep | fixed `sweeps` | nothing |
+/// | `Multigrid` | one W-cycle (grid-independent rate) | fixed `cycles` | nothing; refused off a power-of-two grid |
+/// | `Jacobi` | one matrix-vector product | fixed `iterations` | nothing |
+/// | `BiCgStab` | ~7 dot products + 2 operator applications | `‖r‖_∞ < tolerance` or `max_iterations` | [`BicgstabStats`] |
+///
+/// ⚠️ The fixed-count solvers never say whether they converged; on a large
+/// grid a short count leaves a smooth divergence of order one. `BiCgStab` is
+/// the only one that returns a verdict.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum PressureSolver {
+    /// Red-black Gauss-Seidel, `sweeps` full sweeps (what [`CfdSolver::step`]
+    /// uses off a power-of-two grid, with `jacobi_iterations` sweeps).
+    RedBlackGs {
+        /// Sweeps; refused when zero.
+        sweeps: u32,
+    },
+    /// Galerkin multigrid, `cycles` W-cycles (what [`CfdSolver::step`] uses
+    /// on a power-of-two grid, with 6 cycles).
+    Multigrid {
+        /// W-cycles; refused when zero.
+        cycles: u32,
+    },
+    /// Jacobi iteration, `iterations` sweeps.
+    Jacobi {
+        /// Sweeps; refused when zero.
+        iterations: u32,
+    },
+    /// Jacobi-preconditioned BiCGStab (van der Vorst 1992).
+    BiCgStab {
+        /// Iteration budget; refused when zero.
+        max_iterations: u32,
+        /// Stop once `‖r‖_∞` is below this (in the units of
+        /// `b = ρ dx²/dt · ∇·u`); refused unless strictly positive.
+        tolerance: Fix128,
+    },
+}
+
+/// Why [`CfdSolver::step_with_pressure_solver`] refused to step.
+///
+/// Every case is an input that would otherwise be answered silently: the
+/// fixed-count solvers return the field untouched on a zero `dt`, density or
+/// count, and [`CfdSolver::step`] falls back from multigrid to Gauss-Seidel
+/// off a power-of-two grid. A caller that *chose* a solver is told instead.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum PressureSolverError {
+    /// `dt_s` is zero: nothing would be integrated.
+    ZeroTimeStep,
+    /// `density_kg_m3` is zero: the Poisson scale `ρ dx²/dt` is zero and the
+    /// velocity correction `dt/ρ` is undefined.
+    ZeroDensity,
+    /// The grid spacing is zero.
+    ZeroSpacing,
+    /// The iteration / sweep / cycle count is zero.
+    ZeroIterations,
+    /// `Multigrid` was asked for on a grid whose extents are not all powers
+    /// of two.
+    MultigridNeedsPowerOfTwoExtents {
+        /// `(nx, ny, nz)` of the grid.
+        extents: (usize, usize, usize),
+    },
+    /// `BiCgStab` was given a tolerance that is not strictly positive.
+    NonPositiveTolerance,
+}
+
+impl core::fmt::Display for PressureSolverError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::ZeroTimeStep => write!(f, "dt_s is zero"),
+            Self::ZeroDensity => write!(f, "density_kg_m3 is zero"),
+            Self::ZeroSpacing => write!(f, "the grid spacing dx is zero"),
+            Self::ZeroIterations => write!(f, "the iteration count is zero"),
+            Self::MultigridNeedsPowerOfTwoExtents { extents } => write!(
+                f,
+                "multigrid needs power-of-two extents, got {}x{}x{}",
+                extents.0, extents.1, extents.2
+            ),
+            Self::NonPositiveTolerance => write!(f, "the BiCGStab tolerance must be positive"),
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for PressureSolverError {}
+
+/// What [`CfdSolver::step_with_pressure_solver`] did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct ProjectionReport {
+    /// The solver that ran, as requested.
+    pub solver: PressureSolver,
+    /// The BiCGStab verdict; `None` for the fixed-count solvers, which have
+    /// none to give.
+    pub bicgstab: Option<BicgstabStats>,
+}
+
+/// The projection the shared step body runs, after validation.
+#[derive(Clone, Copy)]
+enum Projection {
+    Gs(u32),
+    Mg(u32),
+    Jacobi(u32),
+    BiCgStab {
+        max_iterations: u32,
+        tolerance: Fix128,
+    },
 }
 
 /// Complete CFD solver state.
@@ -237,6 +357,17 @@ impl CfdSolver {
             && self.grid.nz.is_power_of_two()
     }
 
+    /// Map the default / `step_multigrid` request onto a projection, keeping
+    /// the documented fallback of those two entry points.
+    fn default_projection(&self, multigrid_cycles: Option<u32>) -> Projection {
+        // `None` is the default projection: multigrid where the grid allows it
+        let cycles = multigrid_cycles.unwrap_or(DEFAULT_MULTIGRID_CYCLES);
+        match cycles {
+            cycles @ 1.. if self.grid_supports_multigrid() => Projection::Mg(cycles),
+            _ => Projection::Gs(self.jacobi_iterations),
+        }
+    }
+
     /// The step body shared by [`Self::step`] (`multigrid_cycles = None`, which
     /// means 6 W-cycles) and
     /// [`Self::step_multigrid`].
@@ -244,6 +375,81 @@ impl CfdSolver {
         if dt_s.is_zero() {
             return;
         }
+        let projection = self.default_projection(multigrid_cycles);
+        self.step_body(dt_s, projection);
+    }
+
+    /// [`Self::step`] with the pressure projection done by the solver the
+    /// caller names, and the inputs the fixed-count solvers would answer
+    /// silently refused instead.
+    ///
+    /// Everything but the projection is the shared step body, so a
+    /// `RedBlackGs { sweeps: jacobi_iterations }` request on a grid that is not
+    /// a power of two, or a `Multigrid { cycles: 6 }` request on one that is,
+    /// reproduces [`Self::step`] bit for bit. The other two variants reach the
+    /// Jacobi and BiCGStab solvers of [`crate::eulerian_grid`], which no other
+    /// entry point does.
+    ///
+    /// # Errors
+    ///
+    /// [`PressureSolverError`] for a zero `dt_s`, density, grid spacing or
+    /// count, a non-positive BiCGStab tolerance, or multigrid on a grid whose
+    /// extents are not all powers of two. ⚠️ On `Err` the solver is **not
+    /// stepped**: the grid and `step_count` are untouched, so a refused call
+    /// cannot be mistaken for a step that happened.
+    pub fn step_with_pressure_solver(
+        &mut self,
+        dt_s: Fix128,
+        solver: PressureSolver,
+    ) -> Result<ProjectionReport, PressureSolverError> {
+        if dt_s.is_zero() {
+            return Err(PressureSolverError::ZeroTimeStep);
+        }
+        if self.density_kg_m3.is_zero() {
+            return Err(PressureSolverError::ZeroDensity);
+        }
+        if self.grid.dx.is_zero() {
+            return Err(PressureSolverError::ZeroSpacing);
+        }
+        let projection = match solver {
+            PressureSolver::RedBlackGs { sweeps: 0 }
+            | PressureSolver::Multigrid { cycles: 0 }
+            | PressureSolver::Jacobi { iterations: 0 }
+            | PressureSolver::BiCgStab {
+                max_iterations: 0, ..
+            } => return Err(PressureSolverError::ZeroIterations),
+            PressureSolver::RedBlackGs { sweeps } => Projection::Gs(sweeps),
+            PressureSolver::Multigrid { cycles } => {
+                if !self.grid_supports_multigrid() {
+                    return Err(PressureSolverError::MultigridNeedsPowerOfTwoExtents {
+                        extents: (self.grid.nx, self.grid.ny, self.grid.nz),
+                    });
+                }
+                Projection::Mg(cycles)
+            }
+            PressureSolver::Jacobi { iterations } => Projection::Jacobi(iterations),
+            PressureSolver::BiCgStab {
+                max_iterations,
+                tolerance,
+            } => {
+                if tolerance <= Fix128::ZERO {
+                    return Err(PressureSolverError::NonPositiveTolerance);
+                }
+                Projection::BiCgStab {
+                    max_iterations,
+                    tolerance,
+                }
+            }
+        };
+        let bicgstab = self.step_body(dt_s, projection);
+        Ok(ProjectionReport { solver, bicgstab })
+    }
+
+    /// The step body: boundaries, advection, body forces, diffusion, the
+    /// projection named by `projection`, then the optional level-set and
+    /// temperature updates. Returns the BiCGStab verdict when that is the
+    /// solver.
+    fn step_body(&mut self, dt_s: Fix128, projection: Projection) -> Option<BicgstabStats> {
         self.grid.enforce_face_boundaries();
         match self.advection_scheme {
             AdvectionScheme::SemiLagrangian => self.advect_velocity(dt_s),
@@ -257,19 +463,30 @@ impl CfdSolver {
         } else {
             self.apply_molecular_diffusion(dt_s);
         }
-        // `None` is the default projection: multigrid where the grid allows it
-        let cycles = multigrid_cycles.unwrap_or(DEFAULT_MULTIGRID_CYCLES);
-        match cycles {
-            cycles @ 1.. if self.grid_supports_multigrid() => {
+        let stats = match projection {
+            Projection::Mg(cycles) => {
                 project_pressure_multigrid(&mut self.grid, dt_s, self.density_kg_m3, cycles);
+                None
             }
-            _ => project_pressure(
+            Projection::Gs(sweeps) => {
+                project_pressure(&mut self.grid, dt_s, self.density_kg_m3, sweeps);
+                None
+            }
+            Projection::Jacobi(iterations) => {
+                project_pressure_jacobi(&mut self.grid, dt_s, self.density_kg_m3, iterations);
+                None
+            }
+            Projection::BiCgStab {
+                max_iterations,
+                tolerance,
+            } => Some(project_pressure_bicgstab(
                 &mut self.grid,
                 dt_s,
                 self.density_kg_m3,
-                self.jacobi_iterations,
-            ),
-        }
+                max_iterations,
+                tolerance,
+            )),
+        };
         if self.level_set.is_some() {
             self.advect_level_set(dt_s);
             if self.reinit_every_n_steps > 0
@@ -289,6 +506,7 @@ impl CfdSolver {
             }
         }
         self.step_count += 1;
+        stats
     }
 
     /// FLIP / PIC particle step: scatter particles to the grid, apply forces

@@ -267,9 +267,10 @@
 //! mesh-dependent answer, which is not an improvement.
 //!
 //! **What is missing to build it** (counted, not assumed): a general
-//! non-symmetric Krylov solver — zero in `src/`; `project_pressure_bicgstab` is
-//! pressure-only and `pub(crate)`, and the `conjugate_gradient` in the FEM
-//! modules assumes symmetry — and a sparse direct factorisation, also zero,
+//! non-symmetric Krylov solver — zero in `src/`; `project_pressure_bicgstab`
+//! (reached from `CfdSolver::step_with_pressure_solver`) has its operator
+//! fixed to the MAC-grid 7-point Laplacian, and the `conjugate_gradient` in
+//! the FEM modules assumes symmetry — and a sparse direct factorisation, also zero,
 //! with `Fix128` pivot growth unmeasured. So even a Jacobian-free Newton–Krylov
 //! route starts with a new linear solver, not with the coupling.
 //!

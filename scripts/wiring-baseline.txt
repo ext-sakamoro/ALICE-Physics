@@ -3,7 +3,6 @@ dead_code src/beam_stress.rs 1
 dead_code src/buckling.rs 1
 dead_code src/bvh.rs 2
 dead_code src/creep_longterm.rs 1
-dead_code src/eulerian_grid.rs 1
 dead_code src/fatigue.rs 1
 dead_code src/interface_capture.rs 3
 dead_code src/multiphase.rs 1
@@ -273,7 +272,6 @@ unwired src/ellipsoid.rs::with_rotation
 unwired src/erosion.rs::compute_exposure_from_normals
 unwired src/erosion.rs::erosion_at
 unwired src/erosion.rs::set_exposure_at
-unwired src/eulerian_grid.rs::BicgstabStats
 unwired src/eulerian_grid.rs::HALO_MISSING_ABOVE
 unwired src/eulerian_grid.rs::HALO_MISSING_BELOW
 unwired src/eulerian_grid.rs::SLAB_FACE_HALO_MISSING
@@ -291,10 +289,8 @@ unwired src/eulerian_grid.rs::from_field
 unwired src/eulerian_grid.rs::is_drained
 unwired src/eulerian_grid.rs::no_slip_velocity
 unwired src/eulerian_grid.rs::p2g_nearest
-unwired src/eulerian_grid.rs::project_pressure_bicgstab
 unwired src/eulerian_grid.rs::project_pressure_decomposed
 unwired src/eulerian_grid.rs::project_pressure_decomposed_on_rank
-unwired src/eulerian_grid.rs::project_pressure_jacobi
 unwired src/eulerian_grid.rs::project_pressure_slab_local_on_rank
 unwired src/eulerian_grid.rs::project_pressure_slab_local_over
 unwired src/eulerian_grid.rs::resident
