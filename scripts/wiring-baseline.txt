@@ -17,17 +17,6 @@ unwired src/acoustic_wave.rs::stable_dt
 unwired src/aeroelasticity.rs::facchinetti_reference
 unwired src/aeroelasticity.rs::seeded
 unwired src/aeroelasticity.rs::viv_step
-unwired src/analytics_bridge.rs::contacts_p50
-unwired src/analytics_bridge.rs::contacts_p99
-unwired src/analytics_bridge.rs::energy_drift_p99
-unwired src/analytics_bridge.rs::record_collision_pair
-unwired src/analytics_bridge.rs::record_contacts
-unwired src/analytics_bridge.rs::record_energy_drift
-unwired src/analytics_bridge.rs::record_step_time
-unwired src/analytics_bridge.rs::step_time_p50
-unwired src/analytics_bridge.rs::step_time_p99
-unwired src/analytics_bridge.rs::total_steps
-unwired src/analytics_bridge.rs::unique_collision_pairs
 unwired src/animation_blend.rs::add_keyframe
 unwired src/animation_blend.rs::bone_count
 unwired src/animation_blend.rs::get_motor_targets

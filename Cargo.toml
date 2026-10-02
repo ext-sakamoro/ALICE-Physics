@@ -148,6 +148,13 @@ required-features = ["std", "neural"]
 name = "substep_interpolation"
 required-features = ["std"]
 
+# Production entry point for the `analytics` feature's ALICE-Analytics
+# profiling bridge (wiring_guard: src/analytics_bridge.rs had zero
+# production callers).
+[[example]]
+name = "analytics_bridge_telemetry"
+required-features = ["std", "analytics"]
+
 [[bench]]
 name = "physics_bench"
 harness = false
