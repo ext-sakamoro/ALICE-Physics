@@ -244,6 +244,7 @@ transcendentals are shared rather than reimplemented per crate.
 | **Torus Collider** | Major/minor radii with Minkowski sum decomposition |
 | **Plane Collider** | Infinite plane (Hessian normal form) with sphere/AABB intersection |
 | **Wedge Collider** | Triangular prism with 6-vertex GJK support |
+| **Shaped Bodies** | `PhysicsWorld::add_shaped_body(&Shape, density, position)`: mass, centre-of-mass inertia and bounding-sphere collision radius from a box / cylinder / cone / ellipsoid / wedge / torus |
 | **Convex Hull Builder** | Incremental convex hull from arbitrary point sets |
 | **2D Physics** | Complete 2D subsystem: SAT collision, XPBD solver, Circle/Polygon/Capsule/Edge shapes |
 | **Mass Properties** | Inertia tensor computation for sphere, box, cylinder, capsule, convex hull |

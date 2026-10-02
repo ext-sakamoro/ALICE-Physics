@@ -150,25 +150,42 @@ impl Wedge {
         self.width * self.height * self.depth / two
     }
 
-    /// Compute inertia tensor (diagonal) for given mass
+    /// Offset of the centre of mass from the geometric centre, in the wedge's
+    /// local frame: the centroid of the triangular cross-section is a third of
+    /// its height above the base, i.e. at `y = −height / 6`.
+    #[inline]
+    #[must_use]
+    pub fn center_of_mass_offset(&self) -> Vec3Fix {
+        Vec3Fix::new(
+            Fix128::ZERO,
+            -(self.height / Fix128::from_int(6)),
+            Fix128::ZERO,
+        )
+    }
+
+    /// Diagonal of the inertia tensor **about the centre of mass** for a given
+    /// mass.
     ///
-    /// Approximation treating the wedge as a triangular prism.
-    /// For a uniform triangular prism:
-    /// - Ixx = m/18 * (h^2) + m/12 * d^2
-    /// - Iyy = m/18 * (w^2) + m/12 * d^2
-    /// - Izz = m/18 * (w^2 + h^2)
+    /// The cross-section is an isosceles triangle of base `w` and height `h`; about
+    /// its centroid it has `h²/18` per unit mass about the horizontal axis and
+    /// `w²/24` about the vertical one. Extruding it by `d` adds `d²/12` about the
+    /// two axes in the cross-section's plane:
+    /// - `Ixx = m · (h²/18 + d²/12)`
+    /// - `Iyy = m · (w²/24 + d²/12)`
+    /// - `Izz = m · (w²/24 + h²/18)`
     #[must_use]
     pub fn inertia_diagonal(&self, mass: Fix128) -> Vec3Fix {
-        let eighteen = Fix128::from_int(18);
-        let twelve = Fix128::from_int(12);
         let w2 = self.width * self.width;
         let h2 = self.height * self.height;
         let d2 = self.depth * self.depth;
+        let twelve = Fix128::from_int(12);
+        let eighteen = Fix128::from_int(18);
+        let twenty_four = Fix128::from_int(24);
 
         Vec3Fix::new(
             mass * h2 / eighteen + mass * d2 / twelve,
-            mass * w2 / eighteen + mass * d2 / twelve,
-            mass * (w2 + h2) / eighteen,
+            mass * w2 / twenty_four + mass * d2 / twelve,
+            mass * w2 / twenty_four + mass * h2 / eighteen,
         )
     }
 }

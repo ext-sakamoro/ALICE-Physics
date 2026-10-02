@@ -100,8 +100,6 @@ unwired src/beam_stress.rs::with_min_fos
 unwired src/box_collider.rs::axis_aligned
 unwired src/box_collider.rs::corner
 unwired src/box_collider.rs::corners
-unwired src/box_collider.rs::inertia_diagonal
-unwired src/box_collider.rs::volume
 unwired src/bridging.rs::unsafe_checks
 unwired src/bridging.rs::z_delta_mm
 unwired src/buckling.rs::plate_buckling_mpa
@@ -173,8 +171,6 @@ unwired src/compressible.rs::stagnation_temp_ratio
 unwired src/compressible.rs::temperature
 unwired src/cone.rs::apex
 unwired src/cone.rs::base_center
-unwired src/cone.rs::inertia_diagonal
-unwired src/cone.rs::volume
 unwired src/contact_cache.rs::apply_warm_start
 unwired src/contact_cache.rs::manifold_count
 unwired src/contact_cache.rs::point_count
@@ -201,8 +197,6 @@ unwired src/cubic_elastic_fem.rs::face_node
 unwired src/cubic_elastic_fem.rs::face_node_count
 unwired src/cubic_elastic_fem.rs::interior_node_positions_are_exact
 unwired src/cubic_elastic_fem.rs::shape_values
-unwired src/cylinder.rs::inertia_diagonal
-unwired src/cylinder.rs::volume
 unwired src/damping_rayleigh.rs::damping_ratio
 unwired src/damping_rayleigh.rs::fit_two_modes
 unwired src/damping_rayleigh.rs::hz_to_omega
@@ -238,9 +232,6 @@ unwired src/dynamic_bvh.rs::update
 unwired src/dynamic_bvh.rs::user_data
 unwired src/electromagnetic.rs::lorentz_force
 unwired src/electromagnetic.rs::lorentz_force_sum
-unwired src/ellipsoid.rs::bounding_sphere_radius
-unwired src/ellipsoid.rs::inertia_diagonal
-unwired src/ellipsoid.rs::volume
 unwired src/erosion.rs::compute_exposure_from_normals
 unwired src/erosion.rs::erosion_at
 unwired src/erosion.rs::set_exposure_at
@@ -815,8 +806,6 @@ unwired src/thin_wall.rs::has_thin_walls
 unwired src/thin_wall.rs::measure_thickness_at
 unwired src/thin_wall.rs::sample_surface_points
 unwired src/thin_wall.rs::thin_fraction
-unwired src/torus.rs::inertia_diagonal
-unwired src/torus.rs::volume
 unwired src/transient_thermal.rs::aluminum_6061
 unwired src/transient_thermal.rs::conductivity_at
 unwired src/transient_thermal.rs::crank_nicolson_step_1d
@@ -854,8 +843,6 @@ unwired src/wave_ship.rs::froude_krylov_vertical_n
 unwired src/wave_ship.rs::north_sea
 unwired src/wave_ship.rs::peak_omega
 unwired src/wave_ship.rs::spectrum_density
-unwired src/wedge.rs::inertia_diagonal
-unwired src/wedge.rs::volume
 unwired src/wind_zone.rs::force_on
 unwired src/wind_zone.rs::force_on_particle
 unwired src/wind_zone.rs::instantaneous_wind_vector

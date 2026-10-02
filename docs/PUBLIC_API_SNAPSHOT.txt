@@ -2186,6 +2186,7 @@ impl alice_physics::cone::Cone
 pub fn alice_physics::cone::Cone::aabb(&self) -> alice_physics::collider::AABB
 pub fn alice_physics::cone::Cone::apex(&self) -> alice_physics::math::Vec3Fix
 pub fn alice_physics::cone::Cone::base_center(&self) -> alice_physics::math::Vec3Fix
+pub fn alice_physics::cone::Cone::center_of_mass_offset(&self) -> alice_physics::math::Vec3Fix
 pub fn alice_physics::cone::Cone::inertia_diagonal(&self, alice_physics::math::Fix128) -> alice_physics::math::Vec3Fix
 pub const fn alice_physics::cone::Cone::new(alice_physics::math::Vec3Fix, alice_physics::math::Fix128, alice_physics::math::Fix128) -> Self
 pub fn alice_physics::cone::Cone::surface_area(&self) -> alice_physics::math::Fix128
@@ -8834,6 +8835,7 @@ impl alice_physics::cone::Cone
 pub fn alice_physics::cone::Cone::aabb(&self) -> alice_physics::collider::AABB
 pub fn alice_physics::cone::Cone::apex(&self) -> alice_physics::math::Vec3Fix
 pub fn alice_physics::cone::Cone::base_center(&self) -> alice_physics::math::Vec3Fix
+pub fn alice_physics::cone::Cone::center_of_mass_offset(&self) -> alice_physics::math::Vec3Fix
 pub fn alice_physics::cone::Cone::inertia_diagonal(&self, alice_physics::math::Fix128) -> alice_physics::math::Vec3Fix
 pub const fn alice_physics::cone::Cone::new(alice_physics::math::Vec3Fix, alice_physics::math::Fix128, alice_physics::math::Fix128) -> Self
 pub fn alice_physics::cone::Cone::surface_area(&self) -> alice_physics::math::Fix128
@@ -10977,6 +10979,7 @@ pub fn alice_physics::solver::PhysicsWorld::add_force_field(&mut self, alice_phy
 pub fn alice_physics::solver::PhysicsWorld::add_joint(&mut self, alice_physics::joint::Joint) -> usize
 pub fn alice_physics::solver::PhysicsWorld::add_pre_solve_hook(&mut self, alice_physics::solver::PreSolveHook)
 pub fn alice_physics::solver::PhysicsWorld::add_sdf_collider(&mut self, alice_physics::sdf_collider::SdfCollider) -> usize
+pub fn alice_physics::solver::PhysicsWorld::add_shaped_body(&mut self, &alice_physics::shape::Shape, alice_physics::math::Fix128, alice_physics::math::Vec3Fix) -> core::result::Result<usize, alice_physics::shape::ShapeError>
 pub fn alice_physics::solver::PhysicsWorld::begin_frame(&mut self)
 pub fn alice_physics::solver::PhysicsWorld::body_count(&self) -> usize
 pub fn alice_physics::solver::PhysicsWorld::body_filter(&self, usize) -> alice_physics::filter::CollisionFilter
@@ -12315,6 +12318,7 @@ pub alice_physics::prelude::Wedge::rotation: alice_physics::math::QuatFix
 pub alice_physics::prelude::Wedge::width: alice_physics::math::Fix128
 impl alice_physics::wedge::Wedge
 pub fn alice_physics::wedge::Wedge::aabb(&self) -> alice_physics::collider::AABB
+pub fn alice_physics::wedge::Wedge::center_of_mass_offset(&self) -> alice_physics::math::Vec3Fix
 pub fn alice_physics::wedge::Wedge::inertia_diagonal(&self, alice_physics::math::Fix128) -> alice_physics::math::Vec3Fix
 pub const fn alice_physics::wedge::Wedge::new(alice_physics::math::Vec3Fix, alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128) -> Self
 pub fn alice_physics::wedge::Wedge::vertices(&self) -> [alice_physics::math::Vec3Fix; 6]
@@ -14058,6 +14062,68 @@ impl<'a, F> core::marker::Unpin for alice_physics::sdf_wind_field::SdfWindField<
 impl<'a, F> core::marker::UnsafeUnpin for alice_physics::sdf_wind_field::SdfWindField<'a, F> where &'a F: core::marker::UnsafeUnpin, F: ?core::marker::Sized
 impl<'a, F> core::panic::unwind_safe::RefUnwindSafe for alice_physics::sdf_wind_field::SdfWindField<'a, F> where &'a F: core::panic::unwind_safe::RefUnwindSafe, F: ?core::marker::Sized
 impl<'a, F> core::panic::unwind_safe::UnwindSafe for alice_physics::sdf_wind_field::SdfWindField<'a, F> where &'a F: core::panic::unwind_safe::UnwindSafe, F: ?core::marker::Sized
+pub mod alice_physics::shape
+pub enum alice_physics::shape::Shape
+pub alice_physics::shape::Shape::Box
+pub alice_physics::shape::Shape::Box::half_extents: alice_physics::math::Vec3Fix
+pub alice_physics::shape::Shape::Cone
+pub alice_physics::shape::Shape::Cone::half_height: alice_physics::math::Fix128
+pub alice_physics::shape::Shape::Cone::radius: alice_physics::math::Fix128
+pub alice_physics::shape::Shape::Cylinder
+pub alice_physics::shape::Shape::Cylinder::half_height: alice_physics::math::Fix128
+pub alice_physics::shape::Shape::Cylinder::radius: alice_physics::math::Fix128
+pub alice_physics::shape::Shape::Ellipsoid
+pub alice_physics::shape::Shape::Ellipsoid::radii: alice_physics::math::Vec3Fix
+pub alice_physics::shape::Shape::Torus
+pub alice_physics::shape::Shape::Torus::major_radius: alice_physics::math::Fix128
+pub alice_physics::shape::Shape::Torus::minor_radius: alice_physics::math::Fix128
+pub alice_physics::shape::Shape::Wedge
+pub alice_physics::shape::Shape::Wedge::depth: alice_physics::math::Fix128
+pub alice_physics::shape::Shape::Wedge::height: alice_physics::math::Fix128
+pub alice_physics::shape::Shape::Wedge::width: alice_physics::math::Fix128
+impl alice_physics::shape::Shape
+pub fn alice_physics::shape::Shape::bounding_radius(&self) -> alice_physics::math::Fix128
+pub fn alice_physics::shape::Shape::center_of_mass_offset(&self) -> alice_physics::math::Vec3Fix
+pub fn alice_physics::shape::Shape::inertia_diagonal(&self, alice_physics::math::Fix128) -> alice_physics::math::Vec3Fix
+pub fn alice_physics::shape::Shape::mass_and_inertia(&self, alice_physics::math::Fix128) -> core::result::Result<(alice_physics::math::Fix128, alice_physics::math::Vec3Fix), alice_physics::shape::ShapeError>
+pub fn alice_physics::shape::Shape::validate(&self) -> core::result::Result<(), alice_physics::shape::ShapeError>
+pub fn alice_physics::shape::Shape::volume(&self) -> alice_physics::math::Fix128
+impl core::clone::Clone for alice_physics::shape::Shape
+pub fn alice_physics::shape::Shape::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::shape::Shape
+impl core::cmp::PartialEq for alice_physics::shape::Shape
+pub fn alice_physics::shape::Shape::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::shape::Shape
+pub fn alice_physics::shape::Shape::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::shape::Shape
+impl core::marker::StructuralPartialEq for alice_physics::shape::Shape
+impl core::marker::Freeze for alice_physics::shape::Shape
+impl core::marker::Send for alice_physics::shape::Shape
+impl core::marker::Sync for alice_physics::shape::Shape
+impl core::marker::Unpin for alice_physics::shape::Shape
+impl core::marker::UnsafeUnpin for alice_physics::shape::Shape
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::shape::Shape
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::shape::Shape
+pub enum alice_physics::shape::ShapeError
+pub alice_physics::shape::ShapeError::DegenerateShape
+pub alice_physics::shape::ShapeError::MassNotRepresentable
+pub alice_physics::shape::ShapeError::NonPositiveDensity
+impl core::clone::Clone for alice_physics::shape::ShapeError
+pub fn alice_physics::shape::ShapeError::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::shape::ShapeError
+impl core::cmp::PartialEq for alice_physics::shape::ShapeError
+pub fn alice_physics::shape::ShapeError::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::shape::ShapeError
+pub fn alice_physics::shape::ShapeError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::shape::ShapeError
+impl core::marker::StructuralPartialEq for alice_physics::shape::ShapeError
+impl core::marker::Freeze for alice_physics::shape::ShapeError
+impl core::marker::Send for alice_physics::shape::ShapeError
+impl core::marker::Sync for alice_physics::shape::ShapeError
+impl core::marker::Unpin for alice_physics::shape::ShapeError
+impl core::marker::UnsafeUnpin for alice_physics::shape::ShapeError
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::shape::ShapeError
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::shape::ShapeError
 pub mod alice_physics::sim_field
 pub struct alice_physics::sim_field::ScalarField3D
 pub alice_physics::sim_field::ScalarField3D::data: alloc::vec::Vec<f32>
@@ -14961,6 +15027,7 @@ pub fn alice_physics::solver::PhysicsWorld::add_force_field(&mut self, alice_phy
 pub fn alice_physics::solver::PhysicsWorld::add_joint(&mut self, alice_physics::joint::Joint) -> usize
 pub fn alice_physics::solver::PhysicsWorld::add_pre_solve_hook(&mut self, alice_physics::solver::PreSolveHook)
 pub fn alice_physics::solver::PhysicsWorld::add_sdf_collider(&mut self, alice_physics::sdf_collider::SdfCollider) -> usize
+pub fn alice_physics::solver::PhysicsWorld::add_shaped_body(&mut self, &alice_physics::shape::Shape, alice_physics::math::Fix128, alice_physics::math::Vec3Fix) -> core::result::Result<usize, alice_physics::shape::ShapeError>
 pub fn alice_physics::solver::PhysicsWorld::begin_frame(&mut self)
 pub fn alice_physics::solver::PhysicsWorld::body_count(&self) -> usize
 pub fn alice_physics::solver::PhysicsWorld::body_filter(&self, usize) -> alice_physics::filter::CollisionFilter
@@ -15982,6 +16049,7 @@ pub alice_physics::wedge::Wedge::rotation: alice_physics::math::QuatFix
 pub alice_physics::wedge::Wedge::width: alice_physics::math::Fix128
 impl alice_physics::wedge::Wedge
 pub fn alice_physics::wedge::Wedge::aabb(&self) -> alice_physics::collider::AABB
+pub fn alice_physics::wedge::Wedge::center_of_mass_offset(&self) -> alice_physics::math::Vec3Fix
 pub fn alice_physics::wedge::Wedge::inertia_diagonal(&self, alice_physics::math::Fix128) -> alice_physics::math::Vec3Fix
 pub const fn alice_physics::wedge::Wedge::new(alice_physics::math::Vec3Fix, alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128) -> Self
 pub fn alice_physics::wedge::Wedge::vertices(&self) -> [alice_physics::math::Vec3Fix; 6]
@@ -16497,6 +16565,47 @@ impl core::marker::Unpin for alice_physics::sdf_force::SdfForceType
 impl core::marker::UnsafeUnpin for alice_physics::sdf_force::SdfForceType
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::sdf_force::SdfForceType
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::sdf_force::SdfForceType
+pub enum alice_physics::Shape
+pub alice_physics::Shape::Box
+pub alice_physics::Shape::Box::half_extents: alice_physics::math::Vec3Fix
+pub alice_physics::Shape::Cone
+pub alice_physics::Shape::Cone::half_height: alice_physics::math::Fix128
+pub alice_physics::Shape::Cone::radius: alice_physics::math::Fix128
+pub alice_physics::Shape::Cylinder
+pub alice_physics::Shape::Cylinder::half_height: alice_physics::math::Fix128
+pub alice_physics::Shape::Cylinder::radius: alice_physics::math::Fix128
+pub alice_physics::Shape::Ellipsoid
+pub alice_physics::Shape::Ellipsoid::radii: alice_physics::math::Vec3Fix
+pub alice_physics::Shape::Torus
+pub alice_physics::Shape::Torus::major_radius: alice_physics::math::Fix128
+pub alice_physics::Shape::Torus::minor_radius: alice_physics::math::Fix128
+pub alice_physics::Shape::Wedge
+pub alice_physics::Shape::Wedge::depth: alice_physics::math::Fix128
+pub alice_physics::Shape::Wedge::height: alice_physics::math::Fix128
+pub alice_physics::Shape::Wedge::width: alice_physics::math::Fix128
+impl alice_physics::shape::Shape
+pub fn alice_physics::shape::Shape::bounding_radius(&self) -> alice_physics::math::Fix128
+pub fn alice_physics::shape::Shape::center_of_mass_offset(&self) -> alice_physics::math::Vec3Fix
+pub fn alice_physics::shape::Shape::inertia_diagonal(&self, alice_physics::math::Fix128) -> alice_physics::math::Vec3Fix
+pub fn alice_physics::shape::Shape::mass_and_inertia(&self, alice_physics::math::Fix128) -> core::result::Result<(alice_physics::math::Fix128, alice_physics::math::Vec3Fix), alice_physics::shape::ShapeError>
+pub fn alice_physics::shape::Shape::validate(&self) -> core::result::Result<(), alice_physics::shape::ShapeError>
+pub fn alice_physics::shape::Shape::volume(&self) -> alice_physics::math::Fix128
+impl core::clone::Clone for alice_physics::shape::Shape
+pub fn alice_physics::shape::Shape::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::shape::Shape
+impl core::cmp::PartialEq for alice_physics::shape::Shape
+pub fn alice_physics::shape::Shape::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::shape::Shape
+pub fn alice_physics::shape::Shape::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::shape::Shape
+impl core::marker::StructuralPartialEq for alice_physics::shape::Shape
+impl core::marker::Freeze for alice_physics::shape::Shape
+impl core::marker::Send for alice_physics::shape::Shape
+impl core::marker::Sync for alice_physics::shape::Shape
+impl core::marker::Unpin for alice_physics::shape::Shape
+impl core::marker::UnsafeUnpin for alice_physics::shape::Shape
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::shape::Shape
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::shape::Shape
 pub enum alice_physics::Shape2D
 pub alice_physics::Shape2D::Capsule
 pub alice_physics::Shape2D::Capsule::half_length: alice_physics::math::Fix128
@@ -16519,6 +16628,26 @@ impl core::marker::Unpin for alice_physics::physics2d::Shape2D
 impl core::marker::UnsafeUnpin for alice_physics::physics2d::Shape2D
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::physics2d::Shape2D
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::physics2d::Shape2D
+pub enum alice_physics::ShapeError
+pub alice_physics::ShapeError::DegenerateShape
+pub alice_physics::ShapeError::MassNotRepresentable
+pub alice_physics::ShapeError::NonPositiveDensity
+impl core::clone::Clone for alice_physics::shape::ShapeError
+pub fn alice_physics::shape::ShapeError::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::shape::ShapeError
+impl core::cmp::PartialEq for alice_physics::shape::ShapeError
+pub fn alice_physics::shape::ShapeError::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::shape::ShapeError
+pub fn alice_physics::shape::ShapeError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::shape::ShapeError
+impl core::marker::StructuralPartialEq for alice_physics::shape::ShapeError
+impl core::marker::Freeze for alice_physics::shape::ShapeError
+impl core::marker::Send for alice_physics::shape::ShapeError
+impl core::marker::Sync for alice_physics::shape::ShapeError
+impl core::marker::Unpin for alice_physics::shape::ShapeError
+impl core::marker::UnsafeUnpin for alice_physics::shape::ShapeError
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::shape::ShapeError
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::shape::ShapeError
 pub enum alice_physics::ShapeRef
 pub alice_physics::ShapeRef::Box(alice_physics::box_collider::OrientedBox)
 pub alice_physics::ShapeRef::Capsule(alice_physics::collider::Capsule)
@@ -17326,6 +17455,7 @@ impl alice_physics::cone::Cone
 pub fn alice_physics::cone::Cone::aabb(&self) -> alice_physics::collider::AABB
 pub fn alice_physics::cone::Cone::apex(&self) -> alice_physics::math::Vec3Fix
 pub fn alice_physics::cone::Cone::base_center(&self) -> alice_physics::math::Vec3Fix
+pub fn alice_physics::cone::Cone::center_of_mass_offset(&self) -> alice_physics::math::Vec3Fix
 pub fn alice_physics::cone::Cone::inertia_diagonal(&self, alice_physics::math::Fix128) -> alice_physics::math::Vec3Fix
 pub const fn alice_physics::cone::Cone::new(alice_physics::math::Vec3Fix, alice_physics::math::Fix128, alice_physics::math::Fix128) -> Self
 pub fn alice_physics::cone::Cone::surface_area(&self) -> alice_physics::math::Fix128
@@ -19509,6 +19639,7 @@ pub fn alice_physics::solver::PhysicsWorld::add_force_field(&mut self, alice_phy
 pub fn alice_physics::solver::PhysicsWorld::add_joint(&mut self, alice_physics::joint::Joint) -> usize
 pub fn alice_physics::solver::PhysicsWorld::add_pre_solve_hook(&mut self, alice_physics::solver::PreSolveHook)
 pub fn alice_physics::solver::PhysicsWorld::add_sdf_collider(&mut self, alice_physics::sdf_collider::SdfCollider) -> usize
+pub fn alice_physics::solver::PhysicsWorld::add_shaped_body(&mut self, &alice_physics::shape::Shape, alice_physics::math::Fix128, alice_physics::math::Vec3Fix) -> core::result::Result<usize, alice_physics::shape::ShapeError>
 pub fn alice_physics::solver::PhysicsWorld::begin_frame(&mut self)
 pub fn alice_physics::solver::PhysicsWorld::body_count(&self) -> usize
 pub fn alice_physics::solver::PhysicsWorld::body_filter(&self, usize) -> alice_physics::filter::CollisionFilter
@@ -20954,6 +21085,7 @@ pub alice_physics::Wedge::rotation: alice_physics::math::QuatFix
 pub alice_physics::Wedge::width: alice_physics::math::Fix128
 impl alice_physics::wedge::Wedge
 pub fn alice_physics::wedge::Wedge::aabb(&self) -> alice_physics::collider::AABB
+pub fn alice_physics::wedge::Wedge::center_of_mass_offset(&self) -> alice_physics::math::Vec3Fix
 pub fn alice_physics::wedge::Wedge::inertia_diagonal(&self, alice_physics::math::Fix128) -> alice_physics::math::Vec3Fix
 pub const fn alice_physics::wedge::Wedge::new(alice_physics::math::Vec3Fix, alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128) -> Self
 pub fn alice_physics::wedge::Wedge::vertices(&self) -> [alice_physics::math::Vec3Fix; 6]
