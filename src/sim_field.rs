@@ -220,14 +220,17 @@ impl ScalarField3D {
     /// Splat value at world-space position with radius (additive)
     pub fn splat(&mut self, x: f32, y: f32, z: f32, value: f32, radius: f32) {
         let (gx, gy, gz) = self.world_to_grid(x, y, z);
-        let gr = radius * self.inv_cell_size.0; // Approximate radius in grid units
+        // per-axis index reach: cell sizes may differ between axes
+        let gr_x = radius * self.inv_cell_size.0;
+        let gr_y = radius * self.inv_cell_size.1;
+        let gr_z = radius * self.inv_cell_size.2;
 
-        let ix_min = ((gx - gr).floor() as i32).max(0) as usize;
-        let ix_max = ((gx + gr).ceil() as i32).min(self.nx as i32 - 1) as usize;
-        let iy_min = ((gy - gr).floor() as i32).max(0) as usize;
-        let iy_max = ((gy + gr).ceil() as i32).min(self.ny as i32 - 1) as usize;
-        let iz_min = ((gz - gr).floor() as i32).max(0) as usize;
-        let iz_max = ((gz + gr).ceil() as i32).min(self.nz as i32 - 1) as usize;
+        let ix_min = ((gx - gr_x).floor() as i32).max(0) as usize;
+        let ix_max = ((gx + gr_x).ceil() as i32).min(self.nx as i32 - 1) as usize;
+        let iy_min = ((gy - gr_y).floor() as i32).max(0) as usize;
+        let iy_max = ((gy + gr_y).ceil() as i32).min(self.ny as i32 - 1) as usize;
+        let iz_min = ((gz - gr_z).floor() as i32).max(0) as usize;
+        let iz_max = ((gz + gr_z).ceil() as i32).min(self.nz as i32 - 1) as usize;
 
         let inv_r = if radius > 1e-10 { 1.0 / radius } else { 1.0 };
         let radius_sq = radius * radius;

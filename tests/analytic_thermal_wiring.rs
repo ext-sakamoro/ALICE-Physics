@@ -244,12 +244,11 @@ fn disabled_modifier_ignores_sources() {
     assert_eq!(m.name(), "thermal");
 }
 
-/// Known defect in `ScalarField3D::splat` (src/sim_field.rs, not part of this
-/// worker's file set): the index range of all three axes is derived from
+/// Regression for `ScalarField3D::splat` (src/sim_field.rs): before the fix, the
+/// index range of all three axes was derived from
 /// `radius * inv_cell_size.0` (the x cell size), so on a grid with unequal cell sizes the
 /// y / z ranges are too small and nodes inside the radius are skipped.
 #[test]
-#[ignore = "known defect: ScalarField3D::splat uses the x cell size for the y/z index range (Backlog ALICE-Physics sim_field splat anisotropic)"]
 fn point_source_reaches_every_node_inside_its_radius_on_an_anisotropic_grid() {
     // x spacing 1, y spacing 0.25
     let mut m = ThermalModifier::new(config(), 9, (-4.0, -1.0, -4.0), (4.0, 1.0, 4.0));
@@ -259,4 +258,42 @@ fn point_source_reaches_every_node_inside_its_radius_on_an_anisotropic_grid() {
     let want = 20.0 + 10.0 * smoothstep_weight(0.75, 1.0);
     let got = m.temperature.get(4, 7, 4);
     assert!((got - want).abs() < 1e-4, "{got} vs {want}");
+}
+
+#[test]
+fn splat_reach_is_per_axis_in_x_y_and_z() {
+    // each axis takes a turn as the finest one; radius 1, 9 nodes per axis
+    for (min, max) in [
+        ((-1.0f32, -4.0f32, -4.0f32), (1.0f32, 4.0f32, 4.0f32)), // x spacing 0.25
+        ((-4.0, -1.0, -4.0), (4.0, 1.0, 4.0)),                   // y spacing 0.25
+        ((-4.0, -4.0, -1.0), (4.0, 4.0, 1.0)),                   // z spacing 0.25
+        ((-2.0, -1.0, -0.5), (2.0, 1.0, 0.5)),                   // all different
+    ] {
+        let mut m = ThermalModifier::new(config(), 9, min, max);
+        m.apply_heat_at(0.0, 0.0, 0.0, 10.0, 1.0);
+        let cell = (
+            (max.0 - min.0) / 8.0,
+            (max.1 - min.1) / 8.0,
+            (max.2 - min.2) / 8.0,
+        );
+        let mut heated = 0;
+        for iz in 0..9usize {
+            for iy in 0..9usize {
+                for ix in 0..9usize {
+                    let d = (((ix as f32 - 4.0) * cell.0).powi(2)
+                        + ((iy as f32 - 4.0) * cell.1).powi(2)
+                        + ((iz as f32 - 4.0) * cell.2).powi(2))
+                    .sqrt();
+                    let want = 20.0 + 10.0 * smoothstep_weight(d, 1.0);
+                    let got = m.temperature.get(ix, iy, iz);
+                    assert!(
+                        (got - want).abs() < 1e-4,
+                        "bounds {min:?}..{max:?} node ({ix},{iy},{iz}) d={d}: {got} vs {want}"
+                    );
+                    heated += i32::from(want > 20.0);
+                }
+            }
+        }
+        assert!(heated > 6, "heated {heated}");
+    }
 }
