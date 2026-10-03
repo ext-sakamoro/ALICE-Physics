@@ -376,7 +376,7 @@ pub(crate) fn collide_points_sdf(points: &[Vec3Fix], sdf: &SdfCollider) -> Optio
 /// Collide an AABB against an SDF.
 ///
 /// Samples 27 points of the box (corners, edge midpoints, face centres, centre;
-/// [`box_sample_points`]) and returns the deepest penetrating contact. Exact for a
+/// `box_sample_points`) and returns the deepest penetrating contact. Exact for a
 /// flat field; for a curved one the deepest point of the box can lie between the
 /// samples.
 #[cfg(feature = "std")]
