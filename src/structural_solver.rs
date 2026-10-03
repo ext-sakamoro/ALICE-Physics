@@ -127,7 +127,8 @@ impl StructuralSolver {
     /// Advance one step and return the current diagnostics.
     pub fn step(&mut self) -> StructuralReport {
         // 1. Bending stress from current beam / load
-        let beam = BeamAnalysis::new(self.section, self.load, self.material);
+        let beam = BeamAnalysis::new(self.section, self.load, self.material)
+            .with_end_condition(self.end_condition);
         let beam_report = beam.analyze();
         let sigma = beam_report.max_bending_stress_mpa;
 

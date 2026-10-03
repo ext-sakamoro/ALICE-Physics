@@ -161,7 +161,7 @@ impl CrossSection {
             } => {
                 // I = b · h³ / 12
                 let h3 = height_mm * height_mm * height_mm;
-                width_mm * h3 * Fix128::from_ratio(1, 12)
+                width_mm * h3 / Fix128::from_int(12)
             }
             Self::Circular { diameter_mm } => {
                 // I = π / 64 · d⁴
@@ -175,11 +175,11 @@ impl CrossSection {
                 wall_mm,
             } => {
                 let oh3 = outer_height_mm * outer_height_mm * outer_height_mm;
-                let outer_i = outer_width_mm * oh3 * Fix128::from_ratio(1, 12);
+                let outer_i = outer_width_mm * oh3 / Fix128::from_int(12);
                 let inner_w = outer_width_mm - wall_mm.double();
                 let inner_h = outer_height_mm - wall_mm.double();
                 let ih3 = inner_h * inner_h * inner_h;
-                let inner_i = inner_w * ih3 * Fix128::from_ratio(1, 12);
+                let inner_i = inner_w * ih3 / Fix128::from_int(12);
                 outer_i - inner_i
             }
             Self::HollowCircular {
@@ -201,11 +201,11 @@ impl CrossSection {
                 // I = b·h³/12 (bounding rectangle) - (b - t_web) · h_web³ / 12
                 // Standard I-beam formula using outer bounding box minus removed side rectangles.
                 let h3 = height_mm * height_mm * height_mm;
-                let outer_i = flange_width_mm * h3 * Fix128::from_ratio(1, 12);
+                let outer_i = flange_width_mm * h3 / Fix128::from_int(12);
                 let web_h = height_mm - flange_thickness_mm.double();
                 let wh3 = web_h * web_h * web_h;
                 let removed_w = flange_width_mm - web_thickness_mm;
-                let removed_i = removed_w * wh3 * Fix128::from_ratio(1, 12);
+                let removed_i = removed_w * wh3 / Fix128::from_int(12);
                 outer_i - removed_i
             }
         }
@@ -407,7 +407,6 @@ impl ColumnEndCondition {
 /// to slender members with slenderness ratio (KL/r) > 100 as a rule of
 /// thumb; shorter columns need Johnson's formula (not implemented here).
 #[must_use]
-#[allow(dead_code)] // Reserved standalone Euler helper — `buckling::critical_stress_mpa` is the primary path
 pub(crate) fn euler_critical_load_n(
     section: &CrossSection,
     length_mm: Fix128,
