@@ -155,7 +155,8 @@ pub struct WarpRiskReport {
 /// - `A_norm`  = area / 50 000 mm² (reference: 250×200 print bed).
 /// - `L_norm`  = max_dim / 300 mm.
 /// - `ΔT_norm` = (T_print − T_chamber) / 200 °C (typical PLA=180, ABS=185).
-/// - `k`  = 40 (empirical fit).
+/// - `k`  = 500 (empirical fit, calibrated so the documented 280×250 mm cases
+///   score `Critical`; `k = 40` would score that PLA plate only 0.066).
 #[must_use]
 pub fn analyze_warp_risk(
     footprint: &Footprint,

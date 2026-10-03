@@ -12,7 +12,9 @@
 #![allow(clippy::disallowed_methods)]
 
 use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::rope_attach::{solve_rope_attachments, RopeAttachment};
+use alice_physics::rope_attach::{
+    solve_rope_attachments, solve_rope_attachments_two_way, RopeAttachment,
+};
 use alice_physics::solver::RigidBody;
 
 fn close(a: Vec3Fix, x: f64, y: f64, z: f64) -> bool {
@@ -204,4 +206,193 @@ fn skipped_attachments_never_break_even_with_a_negative_threshold() {
     let mut p = vec![Vec3Fix::from_int(3, 4, 0)];
     assert!(solve_rope_attachments(&att, &mut p, &mut v, &[body], half()).is_empty());
     assert_eq!(p[0], Vec3Fix::from_int(3, 4, 0));
+}
+
+// ---- two-way variant -------------------------------------------------------
+//
+// gap C = |rope - anchor|, n = unit (rope - anchor), wr = 1, wb = inv_mass,
+// alpha = c/dt^2:  dx_rope = -n C wr/(wr+wb+alpha),  dx_body = +n C wb/(wr+wb+alpha)
+
+fn two_way(
+    body: RigidBody,
+    rope: Vec3Fix,
+    compliance: Fix128,
+    dt: Fix128,
+) -> (Vec3Fix, Vec3Fix, Vec<Option<usize>>) {
+    let att = [RopeAttachment::new(0, 0, Vec3Fix::ZERO).compliance(compliance)];
+    let mut p = vec![rope];
+    let mut v = vec![Vec3Fix::ZERO];
+    let mut bodies = [body];
+    let b = solve_rope_attachments_two_way(&att, &mut p, &mut v, &mut bodies, dt);
+    (p[0], bodies[0].position, b)
+}
+
+#[test]
+fn two_way_splits_the_gap_by_inverse_mass_and_conserves_momentum() {
+    // gap (3,4,0), L = 5, n = (0.6, 0.8, 0)
+    for (mass, wb) in [(1i64, 1.0f64), (2, 0.5), (4, 0.25), (10, 0.1)] {
+        let body = RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::from_int(mass));
+        let (pr, pb, b) = two_way(body, Vec3Fix::from_int(3, 4, 0), Fix128::ZERO, half());
+        assert!(b.is_empty());
+        let s = 1.0 + wb;
+        assert!(
+            close(pr, 3.0 - 3.0 / s, 4.0 - 4.0 / s, 0.0),
+            "mass {mass} rope {pr:?}"
+        );
+        assert!(
+            close(pb, 3.0 * wb / s, 4.0 * wb / s, 0.0),
+            "mass {mass} body {pb:?}"
+        );
+        // m_rope dx_rope + m_body dx_body = 0, with m_rope = 1, m_body = mass
+        let mx = (pr.x.to_f64() - 3.0) + mass as f64 * pb.x.to_f64();
+        let my = (pr.y.to_f64() - 4.0) + mass as f64 * pb.y.to_f64();
+        assert!(mx.abs() < 1e-12 && my.abs() < 1e-12, "momentum {mx} {my}");
+        // rigid: the particle and the (zero-offset) anchor coincide afterwards
+        assert!((pr - pb).length().to_f64() < 1e-12);
+    }
+}
+
+#[test]
+fn two_way_with_static_body_equals_one_way() {
+    let body = RigidBody::new_static(Vec3Fix::from_int(1, 2, 3));
+    let att =
+        [RopeAttachment::new(0, 0, Vec3Fix::from_int(0, 1, 0))
+            .compliance(Fix128::from_ratio(1, 8))];
+    let dt = Fix128::from_ratio(1, 4);
+    let start = Vec3Fix::from_int(7, -3, 2);
+    let (mut p1, mut v1) = (vec![start], vec![Vec3Fix::ZERO]);
+    let (mut p2, mut v2) = (vec![start], vec![Vec3Fix::ZERO]);
+    let mut bodies = [body];
+    let b1 = solve_rope_attachments(&att, &mut p1, &mut v1, &[body], dt);
+    let b2 = solve_rope_attachments_two_way(&att, &mut p2, &mut v2, &mut bodies, dt);
+    assert_eq!((p1, v1, b1), (p2, v2, b2));
+    assert_eq!(
+        bodies[0].position, body.position,
+        "static body is not moved"
+    );
+}
+
+#[test]
+fn two_way_compliance_shrinks_both_corrections() {
+    // alpha = c/dt^2 = 4c; mass 1 -> wb 1; share denominators 2 + alpha
+    let dt = half();
+    let mut last = f64::MAX;
+    for (c_num, c_den) in [(0i64, 1i64), (1, 4), (3, 4), (3, 1), (100, 1)] {
+        let body = RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE);
+        let (pr, pb, _) = two_way(
+            body,
+            Vec3Fix::from_int(3, 4, 0),
+            Fix128::from_ratio(c_num, c_den),
+            dt,
+        );
+        let alpha = 4.0 * c_num as f64 / c_den as f64;
+        let moved_rope = 5.0 - pr.length().to_f64();
+        let moved_body = pb.length().to_f64();
+        let d = 2.0 + alpha;
+        assert!((moved_rope - 5.0 / d).abs() < 1e-12, "alpha {alpha}");
+        assert!((moved_body - 5.0 / d).abs() < 1e-12, "alpha {alpha}");
+        assert!(moved_rope < last);
+        last = moved_rope;
+    }
+    assert!(last < 0.02, "alpha -> infinity: corrections -> 0");
+}
+
+#[test]
+fn two_way_break_skip_and_degenerate_inputs_leave_body_alone() {
+    let dt = half();
+    // break: force = (5/2) / (1/4) = 10 with a unit-mass body; threshold 9 breaks
+    let body = RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE);
+    let att = [RopeAttachment::with_break_force(
+        0,
+        0,
+        Vec3Fix::ZERO,
+        Fix128::from_int(9),
+    )];
+    let mut p = vec![Vec3Fix::from_int(3, 4, 0)];
+    let mut v = vec![Vec3Fix::ZERO];
+    let mut bodies = [body];
+    assert_eq!(
+        solve_rope_attachments_two_way(&att, &mut p, &mut v, &mut bodies, dt),
+        vec![Some(0)]
+    );
+    assert_eq!(p[0], Vec3Fix::from_int(3, 4, 0));
+    assert_eq!(bodies[0].position, Vec3Fix::ZERO);
+    // threshold 10 (== force): not broken, body moves
+    let att = [RopeAttachment::with_break_force(
+        0,
+        0,
+        Vec3Fix::ZERO,
+        Fix128::from_int(10),
+    )];
+    assert!(solve_rope_attachments_two_way(&att, &mut p, &mut v, &mut bodies, dt).is_empty());
+    assert!(bodies[0].position.length().to_f64() > 2.4);
+    // dt = 0, out-of-range indices, coincident
+    let mut bodies = [body];
+    let att = [
+        RopeAttachment::new(0, 0, Vec3Fix::ZERO),
+        RopeAttachment::new(3, 0, Vec3Fix::ZERO),
+        RopeAttachment::new(0, 5, Vec3Fix::ZERO),
+    ];
+    let mut p = vec![Vec3Fix::from_int(3, 4, 0)];
+    assert!(
+        solve_rope_attachments_two_way(&att, &mut p, &mut v, &mut bodies, Fix128::ZERO).is_empty()
+    );
+    assert_eq!(
+        (p[0], bodies[0].position),
+        (Vec3Fix::from_int(3, 4, 0), Vec3Fix::ZERO)
+    );
+    let mut p = vec![Vec3Fix::ZERO];
+    solve_rope_attachments_two_way(&att[..1], &mut p, &mut v, &mut bodies, dt);
+    assert_eq!((p[0], bodies[0].position), (Vec3Fix::ZERO, Vec3Fix::ZERO));
+    let mut p = vec![Vec3Fix::from_int(3, 4, 0)];
+    solve_rope_attachments_two_way(&att[1..], &mut p, &mut v, &mut bodies, dt);
+    assert_eq!(
+        (p[0], bodies[0].position),
+        (Vec3Fix::from_int(3, 4, 0), Vec3Fix::ZERO)
+    );
+}
+
+#[test]
+fn two_way_later_attachment_sees_the_corrected_body() {
+    // two particles on the same unit-mass body at the same local anchor (origin)
+    let att = [
+        RopeAttachment::new(0, 0, Vec3Fix::ZERO),
+        RopeAttachment::new(1, 0, Vec3Fix::ZERO),
+    ];
+    let mut p = vec![Vec3Fix::from_int(4, 0, 0), Vec3Fix::from_int(-4, 0, 0)];
+    let mut v = vec![Vec3Fix::ZERO; 2];
+    let mut bodies = [RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE)];
+    solve_rope_attachments_two_way(&att, &mut p, &mut v, &mut bodies, half());
+    // 1st: gap 4, body +2 (x = 2), rope0 = 2. 2nd: rope1 at -4, anchor at 2, gap 6 along -x:
+    // body moves 3 toward rope1 (x = -1), rope1 = -4 + 3 = -1
+    assert!(close(p[0], 2.0, 0.0, 0.0), "{:?}", p[0]);
+    assert!(close(p[1], -1.0, 0.0, 0.0), "{:?}", p[1]);
+    assert!(
+        close(bodies[0].position, -1.0, 0.0, 0.0),
+        "{:?}",
+        bodies[0].position
+    );
+}
+
+#[test]
+fn two_way_index_equal_to_length_is_out_of_range_and_break_reports_attachment_index() {
+    let dt = half();
+    let mut bodies = [RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE)];
+    let mut v = vec![Vec3Fix::ZERO; 2];
+    let start = vec![Vec3Fix::from_int(3, 4, 0), Vec3Fix::from_int(1, 0, 0)];
+    let mut p = start.clone();
+    let att = [
+        RopeAttachment::new(2, 0, Vec3Fix::ZERO), // particle == len
+        RopeAttachment::new(0, 1, Vec3Fix::ZERO), // body == len
+    ];
+    assert!(solve_rope_attachments_two_way(&att, &mut p, &mut v, &mut bodies, dt).is_empty());
+    assert_eq!((p.clone(), bodies[0].position), (start, Vec3Fix::ZERO));
+    // the breaking attachment is #2 while its body index is 0
+    let att = [
+        RopeAttachment::new(1, 0, Vec3Fix::from_int(1, 0, 0)), // coincident -> skipped
+        RopeAttachment::new(1, 0, Vec3Fix::from_int(0, 0, 0)),
+        RopeAttachment::with_break_force(0, 0, Vec3Fix::ZERO, Fix128::ZERO),
+    ];
+    let broken = solve_rope_attachments_two_way(&att, &mut p, &mut v, &mut bodies, dt);
+    assert_eq!(broken, vec![Some(2)]);
 }
