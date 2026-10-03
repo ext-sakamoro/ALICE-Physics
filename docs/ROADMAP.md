@@ -41,6 +41,11 @@ baseline 退役 5 行 (`collide_point_sdf` / `collide_capsule_sdf` / `collide_aa
 kinematic bodyが動的bodyを押すsceneで衝突検出との配線順序も確認 変異試験で両方のoracleに歯があることを確認
 公開API signature変更なし、残りgap (joint / SDFコライダー) は未着手
 
+### 第 57 increment (2026-10-03、全配線 program 第 20 件 — `character`/`wind_zone`/`heatmap`/`audio_physics`/`acoustic_wave` 未配線 29 item)
+
+並行して 5 件、全て src 無変更 変異: character 10/10、wind_zone 7/8 (equivalent mutant 1)、heatmap 7/8 (equivalent mutant 1)、audio_physics 初回 8/10 → test 覆い漏れ 2 件を追加で最終 10/10、acoustic_wave 13/13 baseline 34 行退役 (実配線 29、名前衝突の巻き込み 5 = `sdf_character.rs::apply_gravity` / `vehicle.rs::new_default` / `buoyancy_zone.rs::{force_on,signed_depth_below_surface,submerged_fraction}`、いずれも実 caller は無し)
+⚠️ 実測 (未修正、非バグ): `heatmap::generate_stress_heatmap` は raw contact triple を取る signature で `FemSolution` の per-element stress tensor を受け付けない (設計制約として記録) / `acoustic_wave::leapfrog_step` は一様 `f32::MAX` field で `2.0*current[i]` の中間 overflow により `NaN` を返す (`+inf` ではなく、`f32` overflow 下では「一様場→Laplacian=0」恒等式が成立しない、この module は `Fix128` と違い決定論/overflow 保証を持たない設計)
+
 ### 第 53 increment (2026-10-03、`thin_wall` の無限ループ + silent footgun 2 件を根本修正)
 
 既存バグの根本修正として、「設計変更が必要」として記録されていた 3 件を解消
