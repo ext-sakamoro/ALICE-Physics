@@ -30,7 +30,8 @@ pub struct ParticleEmitter {
     pub position: Vec3Fix,
     /// Emission direction (normalized)
     pub direction: Vec3Fix,
-    /// Spread angle in radians (0 = focused beam, PI = hemisphere)
+    /// Full apex angle of the emission cone in radians (0 = focused beam, PI = hemisphere);
+    /// the largest deflection from `direction` is `spread_angle / 2`, capped at PI/2
     pub spread_angle: Fix128,
     /// Number of particles emitted per second
     pub emission_rate: Fix128,
@@ -213,38 +214,31 @@ impl ParticleSystem {
         let spread = emitter.spread_angle;
 
         for _ in 0..to_emit {
+            // `max_particles` bounds the number of live particles: no emission at the cap
             if self.alive_count() >= self.max_particles {
-                // Try to recycle a dead particle
-                if !self
-                    .recycle_dead_particle(position, direction, speed, lifetime, mass, spread, rng)
-                {
-                    break; // No room
-                }
-            } else {
-                let vel = compute_emission_velocity(direction, speed, spread, rng);
+                break;
+            }
+            let vel = compute_emission_velocity(direction, speed, spread, rng);
+            // reuse a dead slot before growing the pool, so `particles.len()` stays bounded
+            if !self.recycle_dead_particle(position, vel, lifetime, mass) {
                 self.particles
                     .push(Particle::new(position, vel, lifetime, mass));
             }
         }
     }
 
-    /// Try to recycle a dead particle slot.
-    #[allow(clippy::too_many_arguments)]
+    /// Revive the first dead slot with a fresh particle; `false` when every slot is alive.
     fn recycle_dead_particle(
         &mut self,
         position: Vec3Fix,
-        direction: Vec3Fix,
-        speed: Fix128,
+        velocity: Vec3Fix,
         lifetime: Fix128,
         mass: Fix128,
-        spread: Fix128,
-        rng: &mut DeterministicRng,
     ) -> bool {
         for p in &mut self.particles {
             if !p.alive {
-                let vel = compute_emission_velocity(direction, speed, spread, rng);
                 p.position = position;
-                p.velocity = vel;
+                p.velocity = velocity;
                 p.age = Fix128::ZERO;
                 p.lifetime = lifetime;
                 p.mass = mass;
@@ -291,7 +285,15 @@ fn compute_emission_velocity(
 
     // Blend between exact direction and random direction based on spread
     // spread = 0 -> exact, spread = PI -> fully random hemisphere
-    let t = spread / Fix128::PI;
+    // `spread` is the full apex angle of the emission cone (PI = hemisphere, half-angle
+    // PI/2). d + t r with a unit random r deflects by at most asin(t), so t = sin(spread/2)
+    // makes the maximum deflection exactly spread/2; beyond PI the cone stays a hemisphere.
+    let full = if spread > Fix128::PI {
+        Fix128::PI
+    } else {
+        spread
+    };
+    let t = full.half().sin();
     let blended = Vec3Fix::new(
         direction.x + rand_dir.x * t,
         direction.y + rand_dir.y * t,
