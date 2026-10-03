@@ -122,6 +122,7 @@ fn positions_only_recording_round_trips_and_has_no_velocity() {
 }
 
 #[test]
+#[allow(clippy::needless_range_loop)] // b は scan_positions の引数と want の添字の両方に使う
 fn scan_positions_equals_per_frame_get_for_every_body_and_subrange() {
     for full in [true, false] {
         let dir = tempfile::tempdir().unwrap();
