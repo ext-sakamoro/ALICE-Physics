@@ -449,23 +449,18 @@ fn attract_large_distance_still_clamps_correctly() {
     assert_eq!(result.unwrap(), Vec3Fix::from_int(-30, 0, 0));
 }
 
-/// Degenerate + finding: at `dist ~ 4.6e18` (half of Fix128's representable
-/// magnitude), `strength(3) * dist_fix` itself overflows Fix128's range and
-/// wraps (`Mul`'s documented mod-2^128 contract, `src/math.rs`), so
-/// `min(wrapped, max_force)` is not guaranteed to pick `max_force`. This
-/// does **not** panic (Fix128 has no NaN/trap representation — wrapping
-/// arithmetic always returns *some* in-range value), but the clamp
-/// invariant that holds at ordinary magnitudes (see
-/// `attract_large_distance_still_clamps_correctly` above) does not hold
-/// here. Pinned bit-exact via the same public `Fix128` primitives the
-/// implementation uses, not asserted away with an epsilon.
-///
-/// Not fixed by this wiring pass (would require saturating/checked
-/// arithmetic in `compute_sdf_force` or in `Fix128::Mul` itself — a design
-/// change, out of scope here); reported to the parent as a real fact about
-/// existing code.
+/// Regression: at `dist ~ 4.6e18` (half of Fix128's representable
+/// magnitude), `strength(3) * dist_fix` overflows Fix128's range. `Mul`'s
+/// mod-2^128 wrap (doctrine WM-01/B-12, `src/math.rs`) used to make
+/// `min(wrapped, max_force)` pick the (small, wrong) wrapped value instead
+/// of `max_force`. `compute_sdf_force` now detects this via
+/// `Fix128::checked_mul` and substitutes `max_force` directly: any product
+/// too large to represent is certainly larger than `max_force`, so the
+/// clamp value is the correct answer. Pinned bit-exact via the same public
+/// `Fix128` primitives the implementation uses, not asserted away with an
+/// epsilon.
 #[test]
-fn attract_overflow_defeats_clamp_at_extreme_magnitude_documented_not_fixed() {
+fn attract_overflow_still_clamps_to_max_force() {
     let sphere = sphere_collider();
     let field = SdfForceField::attract(0, Fix128::from_int(3)); // max_force = 30
     let extreme_pos = Vec3Fix::new(
@@ -483,14 +478,17 @@ fn attract_overflow_defeats_clamp_at_extreme_magnitude_documented_not_fixed() {
         "Fix128 wrapping arithmetic must never panic"
     );
 
+    // Sanity: the raw (unfixed) product really does overflow at this
+    // magnitude, i.e. this test still exercises the overflow path.
     let (lx, _, _) = extreme_pos.to_f32();
     let dist_f32 = lx - 1.0; // same formula as unit_sphere()'s eval_fn at (lx, 0, 0)
     let dist_fix = Fix128::from_f32(dist_f32);
-    let wrapped_force_mag = (Fix128::from_int(3) * dist_fix.abs()).min(Fix128::from_int(30));
-    let expect = -Vec3Fix::UNIT_X * wrapped_force_mag;
-    assert_eq!(result.unwrap(), expect);
-    // The point of this test: the wrapped value is NOT the intended clamp.
-    assert_ne!(wrapped_force_mag, Fix128::from_int(30), "if this ever equals max_force, the overflow finding is stale and this test should be revisited");
+    assert!(
+        Fix128::from_int(3).checked_mul(dist_fix.abs()).is_none(),
+        "if this ever succeeds, the overflow finding is stale and this test should be revisited"
+    );
+
+    assert_eq!(result.unwrap(), -Vec3Fix::UNIT_X * Fix128::from_int(30));
 }
 
 /// Degenerate: at the same extreme magnitude, `repel`'s early

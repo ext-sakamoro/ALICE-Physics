@@ -24,6 +24,16 @@ increment 他) が**追加機材の調達待ち**であるかのように読め�
 | Maxwell FDTD | `ecd8c61` | source-free Yee、⚠️ **SI は `ε₀·μ₀` が 7.7 bit で不可**、正規化単位 + `S=9/16` |
 | 多体 ABA | `1bab99b` | ⚠️ **`solve()` が `link.joint` を読まない**状態から real ABA、oracle 12 本 |
 
+### 第 58 increment (2026-10-03、`sdf_force::Attract` の overflow が clamp を破る問題を根本修正)
+
+`compute_sdf_force` の `Attract` 分岐は `dist` が Fix128 の表現域境界付近 (`~4.6e18`) の時
+`strength * dist_fix.abs()` が mod-2^128 wrap し、`min(wrapped, max_force)` が `max_force`
+を保証しない状態だった (ROADMAP 第 45 increment で発見・記録、Backlog として保留)
+`Fix128::checked_mul` で overflow を検出し、overflow 時は `max_force` を直接返すよう修正
+(overflow する積は必ず `max_force` より大きい) 旧挙動を pin していた regression test を
+正しい挙動を pin するものに置き換え、変異試験 (fix を revert して red を確認) で歯を確認
+公開 API signature 変更なし
+
 ### 第 55 increment (2026-10-03、全配線 program 第 9b 件 — SDF collider を形状つき body の実形状で解く)
 
 SDF との衝突は body ごとに同じ半径の球 (`sdf_collision_radius`) で解かれ、形状つき body (`add_shaped_body` / `add_compound_body`) の実形状が無視されていた `resolve_sdf_collisions` が **形状・compound を持つ body はその collider で SDF と衝突させる**ようにし (持たない body は従来どおり球)、`PhysicsWorld::sdf_contacts()` (追加のみ) が `step` の押し出し対象を動かさずに列挙する 球 / 球状の楕円体 / カプセルの子は各々の球・カプセル判定、箱は 27 点 (角 8・辺の中点 12・面の中心 6・中心)、hull は頂点、他の凸形状 (円柱・円錐・楔・環・非球の楕円体) は SDF の法線の逆向きの support 点を 6 回まで追う (`convex_sdf_contact`)

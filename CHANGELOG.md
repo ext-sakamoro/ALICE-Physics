@@ -13,6 +13,19 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Fixed — `sdf_force::Attract` の overflow が clamp を破る
+
+`compute_sdf_force` の `Attract` 分岐は `(*strength * dist_fix.abs()).min(*max_force)` で
+`max_force` に clamp していたが、`dist` が Fix128 の表現域境界付近 (`~4.6e18`) の時
+`strength * dist_fix.abs()` 自体が mod-2^128 wrap し、wrap 後の値が `max_force` より
+小さくなる場合 clamp が意図通り働かなかった (通常の大距離では問題なし)
+`Fix128::checked_mul` で overflow を検出し、overflow 時は直接 `max_force` を返すよう修正
+(overflow する積は必ず `max_force` より大きいので、clamp 値を使うのが正しい)
+既存の退行 regression test (旧 `attract_overflow_defeats_clamp_at_extreme_magnitude_documented_not_fixed`)
+が旧挙動を pin していたため `attract_overflow_still_clamps_to_max_force` に置き換え、
+変異試験 (fix を revert して red を確認) で歯があることを確認済み
+公開 API signature 変更なし
+
 ### Added — `PhysicsWorld::sdf_contacts` (全配線 program 第 9b 件)
 
 `PhysicsWorld::sdf_contacts()` を追加した (追加のみ) `step` が SDF collider から押し出す body とその接触を、何も動かさずに `(body index, Contact)` で返す
