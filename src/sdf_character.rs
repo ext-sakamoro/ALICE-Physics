@@ -106,6 +106,7 @@
 //! than sticking to it, and a jump that brushes the floor keeps its
 //! upward speed.
 
+use crate::character_state::CharacterStateContext;
 use crate::sdf_collider::SdfField;
 
 /// What the ground probe found below the character.
@@ -466,6 +467,43 @@ impl SdfCharacter {
             normal: [nx, ny, nz],
             up_alignment: nx * up[0] + ny * up[1] + nz * up[2],
         })
+    }
+
+    /// Build the per-tick sensor readings for [`crate::character_state::transition`]
+    /// from the ground probe.
+    ///
+    /// `is_grounded` is "the probe found a surface" (any contact from
+    /// [`Self::ground_contact`], not the [`Self::ground_up_threshold`]
+    /// test), and `slope_radians` is the angle between the contact normal
+    /// and [`Self::up`], `acos(up_alignment)`. The state machine, not
+    /// [`Self::is_grounded`], then decides between standing and sliding with
+    /// `max_walkable_slope`, so a steep contact yields `Sliding` instead of
+    /// being reported as airborne. With no contact the slope is `0` and
+    /// `is_grounded` is `false`.
+    ///
+    /// `in_water`, `crouch_requested` and `jump_pressed` are the caller's own
+    /// inputs and are copied through.
+    #[must_use]
+    pub fn locomotion_context<F: SdfField + ?Sized>(
+        &self,
+        field: &F,
+        in_water: bool,
+        crouch_requested: bool,
+        jump_pressed: bool,
+        max_walkable_slope: f32,
+    ) -> CharacterStateContext {
+        let (is_grounded, slope_radians) = match self.ground_contact(field) {
+            Some(c) => (true, crate::det_math::acos(c.up_alignment.clamp(-1.0, 1.0))),
+            None => (false, 0.0),
+        };
+        CharacterStateContext {
+            is_grounded,
+            slope_radians,
+            in_water,
+            crouch_requested,
+            jump_pressed,
+            max_walkable_slope,
+        }
     }
 
     /// `true` when the character stands on a surface whose normal points
