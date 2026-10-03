@@ -245,15 +245,6 @@ unwired src/quadratic_elastic_fem.rs::edge_count
 unwired src/quadratic_elastic_fem.rs::edge_node
 unwired src/ragdoll.rs::child
 unwired src/ragdoll.rs::human_female
-unwired src/raycast.rs::ray_aabb
-unwired src/raycast.rs::ray_capsule
-unwired src/raycast.rs::raycast_aabbs
-unwired src/raycast.rs::raycast_all_aabbs
-unwired src/raycast.rs::raycast_all_spheres
-unwired src/raycast.rs::raycast_any_aabbs
-unwired src/raycast.rs::raycast_any_spheres
-unwired src/raycast.rs::raycast_spheres
-unwired src/raycast.rs::sweep_sphere
 unwired src/rng.rs::new_with_stream
 unwired src/rng.rs::next_bounded
 unwired src/rope.rs::add_pin

@@ -203,6 +203,15 @@ required-features = ["std"]
 name = "compound_shapes"
 required-features = ["std"]
 
+# Production entry point for the remaining `src/raycast.rs` ray queries
+# (wiring_guard: ray_aabb, ray_capsule, raycast_aabbs, raycast_all_aabbs,
+# raycast_all_spheres, raycast_any_aabbs, raycast_any_spheres,
+# raycast_spheres, sweep_sphere had zero production callers -- ray_sphere /
+# ray_plane in the same file were already wired via PhysicsWorld::raycast).
+[[example]]
+name = "spatial_raycast_queries"
+required-features = ["std"]
+
 [[bench]]
 name = "physics_bench"
 harness = false
