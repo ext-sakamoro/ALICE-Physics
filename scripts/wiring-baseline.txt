@@ -26,12 +26,6 @@ unwired src/anisotropic_friction.rs::friction_force
 unwired src/anisotropic_friction.rs::skate_ice
 unwired src/anisotropic_friction.rs::ski_snow
 unwired src/anisotropic_friction.rs::tyre_asphalt
-unwired src/audio_physics.rs::METAL
-unwired src/audio_physics.rs::RUBBER
-unwired src/audio_physics.rs::STONE
-unwired src/audio_physics.rs::get_events
-unwired src/audio_physics.rs::process_contact
-unwired src/audio_physics.rs::set_material
 unwired src/beam_stress.rs::with_end_condition
 unwired src/beam_stress.rs::with_min_fos
 unwired src/bridging.rs::unsafe_checks
