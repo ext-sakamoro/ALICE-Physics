@@ -40,11 +40,17 @@
 //! (it came out non-monotone, `4.4e-4 → 1.1e-3 → 4.6e-4`) and says nothing
 //! about element order.
 //!
-//! ⚠️ **Newton does not converge at larger amplitude.** At `A = 0.06` the P3
-//! solve and at `A = 0.08` the P2 solve (n = 3) end `NotConverged` after 80
-//! steps. That is recorded in the backlog as a separate question (modified
-//! Newton at `|∇u| ≈ 0.4`, or a real defect); the amplitude here, `A = 0.03`,
-//! is inside the range where every solve converges.
+//! ⚠️ **The modified Newton iteration does not converge at larger amplitude, and
+//! that was a defect of the iteration, not of the oracle.** At `A = 0.06` (P3)
+//! and `A = 0.08` (P2, n = 3) the default solve ends `NotConverged`, bit
+//! identically at 80 steps, at 400 steps and at 16 increments — the contraction
+//! of the iteration is above one, and the step size and budget do not touch it.
+//! The tangent has to change, and `with_consistent_tangent` now does that for
+//! P2 and P3 too, as a Newton–Krylov step whose tangent action is the central
+//! difference of the internal force. It does not move the fixed point:
+//! `rms = 7.300e-5` at `A = 0.03` is the same to four digits with and without it.
+//! Measured at `A = 0.08`, n = 3: modified `NotConverged`; Newton–Krylov P2
+//! `rms = 2.0e-4`, P3 `2.1e-5` (9.4× smaller, the same ratio as at `A = 0.03`).
 //!
 //! # The teeth
 //!
@@ -61,7 +67,7 @@
 use alice_physics::cubic_elastic_fem::{solve_cubic_hyperelastic, CubicMesh};
 use alice_physics::hyperelastic::HyperelasticModel;
 use alice_physics::linear_elastic_fem::{
-    Axis, BoundaryConditions, CorotationalConfig, ElasticMaterial, SolverConfig,
+    Axis, BoundaryConditions, CorotationalConfig, ElasticMaterial, FemError, SolverConfig,
 };
 use alice_physics::math::Fix128;
 use alice_physics::quadratic_elastic_fem::{solve_quadratic_hyperelastic, QuadraticMesh};
@@ -70,7 +76,25 @@ use alice_physics::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
 const E_MPA: f64 = 3500.0;
 const NU: f64 = 0.45;
 const SIDE: f64 = 1.0;
-const AMP: f64 = 0.03;
+// Amplitude `A` of the manufactured field, set per call by [`run`].
+//
+// A `thread_local` and not a parameter because the field is read by the
+// `f64` helpers (`exact`, the finite differences, the load integral) that
+// would otherwise all take it; each test runs on its own thread, so each sees
+// only the amplitude it set.
+thread_local! {
+    static AMPLITUDE: std::cell::Cell<f64> = const { std::cell::Cell::new(0.03) };
+}
+
+fn amp() -> f64 {
+    AMPLITUDE.with(std::cell::Cell::get)
+}
+
+/// The amplitude the ordinary oracles run at: inside the range where the
+/// modified Newton iteration converges.
+const AMP_SMALL: f64 = 0.03;
+/// Large enough that the modified iteration fails (`|∇u| ≈ 0.4`).
+const AMP_LARGE: f64 = 0.08;
 const JITTER: f64 = 0.25;
 
 fn fx(v: f64) -> Fix128 {
@@ -85,24 +109,29 @@ fn lame_f64() -> (f64, f64) {
         E_MPA / (2.0 * (1.0 + NU)),
     )
 }
-fn config() -> CorotationalConfig {
+fn config(consistent: bool) -> CorotationalConfig {
     let lin = SolverConfig::try_new(500_000, Fix128::from_raw(0, 1 << 34))
         .unwrap()
         .with_stagnation(2_000, Fix128::from_raw(0, 1 << 54))
         .unwrap();
     let (_, mu) = lame_f64();
-    CorotationalConfig::try_new(lin, 80, fx(1.0e-7), 4, 64)
+    let config = CorotationalConfig::try_new(lin, 80, fx(1.0e-7), 4, 64)
         .unwrap()
-        .with_hyperelastic(HyperelasticModel::NeoHookean { mu_mpa: fx(mu) })
+        .with_hyperelastic(HyperelasticModel::NeoHookean { mu_mpa: fx(mu) });
+    if consistent {
+        config.with_consistent_tangent()
+    } else {
+        config
+    }
 }
 
 // ---- manufactured field and the body force it demands ----
 fn exact(p: [f64; 3]) -> [f64; 3] {
     let pi = std::f64::consts::PI;
     [
-        AMP * (pi * p[1]).sin() * (1.0 + p[2]),
-        AMP * (pi * p[2]).sin() * (1.0 + p[0]),
-        AMP * (pi * p[0]).sin() * (1.0 + p[1]),
+        amp() * (pi * p[1]).sin() * (1.0 + p[2]),
+        amp() * (pi * p[2]).sin() * (1.0 + p[0]),
+        amp() * (pi * p[0]).sin() * (1.0 + p[1]),
     ]
 }
 /// 4th-order central difference of a vector function along `axis`.
@@ -425,7 +454,19 @@ fn corners_of(m: &SdfTetMesh, t: &Tetrahedron) -> [[f64; 3]; 4] {
         v(t.vertices[3]),
     ]
 }
+/// The solve at the ordinary amplitude with the modified iteration.
 fn run(order: usize, n: usize, scale: f64) -> Level {
+    try_run(order, n, scale, AMP_SMALL, false).expect("converges at the ordinary amplitude")
+}
+
+fn try_run(
+    order: usize,
+    n: usize,
+    scale: f64,
+    amplitude: f64,
+    consistent: bool,
+) -> Result<Level, FemError> {
+    AMPLITUDE.with(|a| a.set(amplitude));
     let t0 = std::time::Instant::now();
     let h = SIDE / n as f64;
     let sdf = kuhn_cube(n, h, JITTER);
@@ -433,7 +474,7 @@ fn run(order: usize, n: usize, scale: f64) -> Level {
     let (pos, bc, solve): (
         Vec<[f64; 3]>,
         BoundaryConditions,
-        Box<dyn Fn(&BoundaryConditions) -> Vec<[Fix128; 3]>>,
+        Box<dyn Fn(&BoundaryConditions) -> Result<Vec<[Fix128; 3]>, FemError>>,
     ) = match order {
         2 => {
             let m = QuadraticMesh::from_tet_mesh(&sdf).unwrap();
@@ -460,10 +501,8 @@ fn run(order: usize, n: usize, scale: f64) -> Level {
                 pos,
                 bc,
                 Box::new(move |bc| {
-                    solve_quadratic_hyperelastic(&m, &material(), bc, &config())
-                        .expect("p2")
-                        .field
-                        .displacements
+                    solve_quadratic_hyperelastic(&m, &material(), bc, &config(consistent))
+                        .map(|s| s.field.displacements)
                 }),
             )
         }
@@ -492,22 +531,20 @@ fn run(order: usize, n: usize, scale: f64) -> Level {
                 pos,
                 bc,
                 Box::new(move |bc| {
-                    solve_cubic_hyperelastic(&m, &material(), bc, &config())
-                        .expect("p3")
-                        .field
-                        .displacements
+                    solve_cubic_hyperelastic(&m, &material(), bc, &config(consistent))
+                        .map(|s| s.field.displacements)
                 }),
             )
         }
     };
-    let d = solve(&bc);
+    let d = solve(&bc)?;
     let (max_err, rms) = measure(&pos, &d);
-    Level {
+    Ok(Level {
         h,
         max_err,
         rms,
         secs: t0.elapsed().as_secs_f64(),
-    }
+    })
 }
 
 fn slope(coarse: &Level, fine: &Level) -> f64 {
@@ -588,4 +625,63 @@ fn p3_separates_from_p2_in_order_and_in_error() {
         p2.rms
     );
     assert!(s3 > 2.5, "P3 slope {s3:.2}");
+}
+
+#[test]
+fn the_modified_iteration_still_does_not_converge_at_large_amplitude() {
+    // ⚠️ Pins the *reason* the Newton–Krylov step exists. If this starts to
+    // converge the claim in the module doc is stale and the test should go.
+    let out = try_run(2, 3, 1.0, AMP_LARGE, false);
+    assert!(
+        matches!(out, Err(FemError::NotConverged { .. })),
+        "the modified iteration is expected to fail at A = {AMP_LARGE}, got {:?}",
+        out.as_ref().map(|l| l.rms)
+    );
+}
+
+#[test]
+fn the_newton_krylov_step_converges_where_the_modified_one_does_not() {
+    let level = try_run(2, 3, 1.0, AMP_LARGE, true).expect("Newton-Krylov converges");
+    eprintln!(
+        "[hyper-mms] P2 A={AMP_LARGE} newton-krylov rms {:.3e} {:.1}s",
+        level.rms, level.secs
+    );
+    assert!(
+        level.rms < 5.0e-4,
+        "the answer must still be the manufactured solution, rms {:.3e}",
+        level.rms
+    );
+}
+
+#[test]
+fn the_newton_krylov_step_does_not_move_the_fixed_point() {
+    let modified = try_run(2, 3, 1.0, AMP_SMALL, false).expect("converges");
+    let krylov = try_run(2, 3, 1.0, AMP_SMALL, true).expect("converges");
+    eprintln!(
+        "[hyper-mms] modified {:.6e}  newton-krylov {:.6e}",
+        modified.rms, krylov.rms
+    );
+    assert!(
+        (modified.rms - krylov.rms).abs() < 1.0e-8 * modified.rms.max(1.0e-12) + 1.0e-9,
+        "same equilibrium, different tangent: {:.9e} vs {:.9e}",
+        modified.rms,
+        krylov.rms
+    );
+}
+
+#[test]
+#[ignore = "runtime: about 35 s in release (P3 n = 3 at A = 0.08 with the Newton-Krylov step, plus P2 n = 3); run by run_ignored.py"]
+fn p3_separates_from_p2_at_large_amplitude() {
+    let p2 = try_run(2, 3, 1.0, AMP_LARGE, true).expect("converges");
+    let p3 = try_run(3, 3, 1.0, AMP_LARGE, true).expect("converges");
+    eprintln!(
+        "[hyper-mms] A={AMP_LARGE} P2 {:.3e} P3 {:.3e}",
+        p2.rms, p3.rms
+    );
+    assert!(
+        p3.rms * 5.0 < p2.rms,
+        "P3 must beat P2 by 5x: {:.3e} vs {:.3e}",
+        p3.rms,
+        p2.rms
+    );
 }

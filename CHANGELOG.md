@@ -67,6 +67,7 @@ kinematic bodyが動的bodyを押す scene を含む) 変異試験で機構を�
 - `quadratic_elastic_fem::solve_adaptive_quadratic` / `cubic_elastic_fem::solve_adaptive_cubic`: P2 / P3 の適応細分 driver (solve → 指標 → マーク → 細分) 細分は corner mesh を既存の `try_refine_marked` で行い高次 mesh を毎 round 構築し直す 境界条件 closure は高次 mesh を受ける (辺・面節点も拘束するため) 共有ループは `linear_elastic_fem::adaptive_refinement_loop` (公開 API は追加のみ)
 - `examples/adaptive_refinement_high_order.rs`: 上の driver の caller (wiring_guard 用、実行して指標の履歴を出す)
 - `tests/analytic_adaptive_refinement_high_order.rs`: 厳密解で 1 round 停止 / 滑らかな問題で指標が減少 / 細分が実行される (adaptive の dof あたり優位は未測定)
+- `solve_quadratic_hyperelastic` / `solve_cubic_hyperelastic` が `CorotationalConfig::with_consistent_tangent` を解釈する (Newton–Krylov、接線の作用は内力の中心差分、不動点は不変) 製作解の振幅 `A ≥ 0.06` で modified Newton が 80 / 400 step / 16 increment のどれでも `NotConverged` になっていた問題の修正 `A=0.08` で P2 / P3 とも収束 (公開 API の変更なし)
 - `scripts/wiring_guard.py`: 走査から `scratchpad` を除外
 - `docs/ROADMAP.md`: 増分番号の重複 (第 23 / 第 24) を第 51 / 第 52 に振り直し
 
