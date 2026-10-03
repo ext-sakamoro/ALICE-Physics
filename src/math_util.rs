@@ -87,20 +87,28 @@ pub fn pow_int(x: Fix128, n: i32) -> Fix128 {
 /// Deterministic cube root via Newton iteration.
 ///
 /// Returns 0 for non-positive inputs. Uses `x_{k+1} = (2·x + n/x²) / 3` with
-/// 24 iterations (Fix128 ULP-level convergence for any `n` in the safe
-/// range `[0, 2^62]`).
+/// 24 iterations. The seed is the power of two `2^e` with `e = ⌈(p − 63) / 3⌉`,
+/// where `p` is the position of the most significant set bit of the 128-bit
+/// representation of `n` (so `n < 2^(p−63)`): it is at least `∛n` and at most
+/// `2·∛n`, and Newton's method on a convex function converges monotonically
+/// from above, reaching Fix128 ULP accuracy in well under 24 iterations for
+/// every positive `n` (checked from `2^-64` up to `2^62`).
 #[must_use]
 pub fn cbrt_fix(n: Fix128) -> Fix128 {
     if n <= Fix128::ZERO {
         return Fix128::ZERO;
     }
-    // Initial guess: use bit-position estimate to seed Newton.
-    let mut x = if n >= Fix128::ONE {
-        // n >= 1 → cbrt ≥ 1 → seed with hi/2 (rough)
-        Fix128::from_int(1 + n.hi.max(1) / 2)
+    // n > 0 so `hi >= 0` and the 128-bit pattern is the unsigned value n·2^64.
+    let bits = (u128::from(n.hi as u64) << 64) | u128::from(n.lo);
+    let p = 127 - bits.leading_zeros() as i32;
+    let e = (p - 63 + 2).div_euclid(3);
+    let mut x = if e >= 0 {
+        Fix128::from_int(1_i64 << e)
     } else {
-        // n < 1 → seed slightly below 1
-        Fix128::from_ratio(5, 10)
+        Fix128 {
+            hi: 0,
+            lo: 1_u64 << (64 + e),
+        }
     };
     for _ in 0..24 {
         let x_sq = x * x;
