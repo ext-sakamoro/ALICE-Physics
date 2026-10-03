@@ -17,6 +17,7 @@ were introduced during that release window.
 
 - `tests/analytic_hyperelastic_mms_order.rs`: 非多項式の製作解 `u = A·(sin πY(1+Z), sin πZ(1+X), sin πX(1+Y))` と `b = −Div P` (Neo-Hookean、`f64` の 4 次中心差分) で P2 / P3 の離散化次数を測る P2 は傾き 2.42 (h=1/3→1/4)、P3 は同 h で P2 の 1/9.4 の誤差 (傾き 2.84) 荷重の符号反転で誤差が 47 倍になる歯つき 重い 2 本は `runtime:` 区分
 - `quadratic_elastic_fem::solve_adaptive_quadratic` / `cubic_elastic_fem::solve_adaptive_cubic`: P2 / P3 の適応細分 driver (solve → 指標 → マーク → 細分) 細分は corner mesh を既存の `try_refine_marked` で行い高次 mesh を毎 round 構築し直す 境界条件 closure は高次 mesh を受ける (辺・面節点も拘束するため) 共有ループは `linear_elastic_fem::adaptive_refinement_loop` (公開 API は追加のみ)
+- `examples/adaptive_refinement_high_order.rs`: 上の driver の caller (wiring_guard 用、実行して指標の履歴を出す)
 - `tests/analytic_adaptive_refinement_high_order.rs`: 厳密解で 1 round 停止 / 滑らかな問題で指標が減少 / 細分が実行される (adaptive の dof あたり優位は未測定)
 - `scripts/wiring_guard.py`: 走査から `scratchpad` を除外
 - `docs/ROADMAP.md`: 増分番号の重複 (第 23 / 第 24) を第 48 / 第 49 に振り直し
