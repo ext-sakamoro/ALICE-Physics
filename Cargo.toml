@@ -547,6 +547,15 @@ required-features = ["std"]
 name = "pressure_contact_deformation"
 required-features = ["std"]
 
+# Production entry point for the Peterson stress-concentration-factor
+# formulas (wiring_guard: src/fillet_stress.rs had zero production callers
+# across all 4 items: kt_circular_hole_infinite_plate, kt_elliptical_hole,
+# kt_u_notch_axial, recommended_fillet_radius_mm -- only the module's own
+# #[cfg(test)] unit tests called in, which the guard does not count).
+[[example]]
+name = "fillet_stress_concentration"
+required-features = ["std"]
+
 [[bench]]
 name = "physics_bench"
 harness = false
