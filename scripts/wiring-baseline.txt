@@ -47,11 +47,6 @@ unwired src/collision_mesh_gen.rs::CollisionMeshConfig
 unwired src/collision_mesh_gen.rs::compute_mesh_aabb
 unwired src/collision_mesh_gen.rs::generate_collision_mesh
 unwired src/collision_mesh_gen.rs::simplify_collision_mesh
-unwired src/contact_viz.rs::ContactArrow
-unwired src/contact_viz.rs::FrictionCone
-unwired src/contact_viz.rs::generate_contact_arrows
-unwired src/contact_viz.rs::generate_friction_arrows
-unwired src/contact_viz.rs::generate_friction_cones
 unwired src/convex_mesh_builder.rs::build_convex_hull
 unwired src/creep_longterm.rs::petg_25c_moderate
 unwired src/damping_rayleigh.rs::damping_ratio
