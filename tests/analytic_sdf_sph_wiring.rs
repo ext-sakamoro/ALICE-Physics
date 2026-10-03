@@ -227,3 +227,167 @@ fn hashed_step_equals_the_naive_step() {
         assert!((a.density - b.density).abs() <= 1e-3 * a.density.max(1.0));
     }
 }
+
+// ---------------------------------------------------------------------------
+// Pressure and viscosity forces (Muller 2003, symmetric form), with the
+// acceleration a_i = f_i / rho_i:
+//   a_i^p = sum_j m (p_i + p_j) / (2 rho_j rho_i) |grad W_spiky(r)| r_hat_ij
+//           (r_hat_ij from j to i: over-pressure pushes i away from j)
+//   a_i^v = mu sum_j m (v_j - v_i) / (rho_j rho_i) lap W_visc(r)
+// ---------------------------------------------------------------------------
+
+fn rho_pair(m: f64, h: f64, r: f64) -> f64 {
+    let w = |r: f64| 315.0 / (64.0 * PI * h.powi(9)) * (h * h - r * r).powi(3);
+    m * (w(0.0) + w(r))
+}
+
+fn run_pair(hashed: bool, v0: f32, v1: f32) -> (SphSolver<'static, ClosureSdf>, f64) {
+    // leak a far field so the solver can borrow it for 'static in the test
+    let f: &'static ClosureSdf = Box::leak(Box::new(far_field()));
+    let mut cfg = SphConfig::water_like();
+    cfg.gravity = [0.0; 3];
+    cfg.viscosity = 0.0;
+    cfg.rest_density = 1.0; // force over-pressure
+    let mut a = SphParticle::at_rest([0.0, 0.0, 0.0]);
+    let mut b = SphParticle::at_rest([0.02, 0.0, 0.0]);
+    a.velocity = [v0, 0.0, 0.0];
+    b.velocity = [v1, 0.0, 0.0];
+    let mut s = SphSolver::new(vec![a, b], cfg, f);
+    let dt = 1.0e-4;
+    if hashed {
+        s.step_hashed(dt);
+    } else {
+        s.step(dt);
+    }
+    (s, dt as f64)
+}
+
+#[test]
+fn over_pressure_pushes_two_particles_apart_with_the_closed_form_magnitude() {
+    let (m, h, r, k, rho0) = (0.02_f64, 0.05_f64, 0.02_f64, 20.0_f64, 1.0_f64);
+    let rho = rho_pair(m, h, r);
+    let p = k * (rho - rho0);
+    let grad = 45.0 / (PI * h.powi(6)) * (h - r).powi(2);
+    let want = m * (p + p) / (2.0 * rho * rho) * grad; // |a|, along +-x
+    for hashed in [false, true] {
+        let (s, dt) = run_pair(hashed, 0.0, 0.0);
+        let a0 = s.particles[0].velocity[0] as f64 / dt;
+        let a1 = s.particles[1].velocity[0] as f64 / dt;
+        assert!(
+            a0 < 0.0 && a1 > 0.0,
+            "hashed={hashed}: must separate, a0={a0} a1={a1}"
+        );
+        assert!(
+            ((-a0) - want).abs() <= 1e-3 * want,
+            "hashed={hashed}: |a0| {} vs {want}",
+            -a0
+        );
+        assert!(
+            (a1 - want).abs() <= 1e-3 * want,
+            "hashed={hashed}: a1 {a1} vs {want}"
+        );
+        assert!(s.particles[0].velocity[1] == 0.0 && s.particles[0].velocity[2] == 0.0);
+    }
+}
+
+#[test]
+fn pressure_and_viscosity_conserve_momentum_for_an_asymmetric_cluster() {
+    let f = far_field();
+    let mut cfg = SphConfig::water_like();
+    cfg.gravity = [0.0; 3];
+    cfg.rest_density = 1.0;
+    cfg.viscosity = 0.3;
+    let pos = [
+        [0.0, 0.0, 0.0],
+        [0.02, 0.005, 0.0],
+        [0.01, 0.025, 0.01],
+        [-0.015, 0.01, 0.02],
+        [0.03, -0.01, 0.015],
+    ];
+    let vel = [
+        [1.0, 0.0, 0.0],
+        [-0.5, 0.2, 0.0],
+        [0.0, -1.0, 0.3],
+        [0.7, 0.1, -0.2],
+        [0.0, 0.0, 0.9],
+    ];
+    for hashed in [false, true] {
+        let ps: Vec<SphParticle> = pos
+            .iter()
+            .zip(&vel)
+            .map(|(p, v)| {
+                let mut q = SphParticle::at_rest(*p);
+                q.velocity = *v;
+                q
+            })
+            .collect();
+        let mut s = SphSolver::new(ps, cfg, &f);
+        let dt = 1.0e-5;
+        if hashed {
+            s.step_hashed(dt);
+        } else {
+            s.step(dt);
+        }
+        // sum of velocity changes (uniform mass) must vanish
+        let mut sum = [0.0_f64; 3];
+        let mut mag = 0.0_f64;
+        for (q, v) in s.particles.iter().zip(&vel) {
+            for a in 0..3 {
+                let d = (q.velocity[a] - v[a]) as f64 / dt as f64;
+                sum[a] += d;
+                mag += d.abs();
+            }
+        }
+        assert!(mag > 1.0, "forces must be non-trivial: {mag}");
+        for a in 0..3 {
+            assert!(
+                sum[a].abs() < 2e-4 * mag,
+                "hashed={hashed}: momentum drift {sum:?} vs {mag}"
+            );
+        }
+    }
+}
+
+#[test]
+fn viscosity_reduces_the_relative_velocity_with_the_closed_form_magnitude() {
+    let (m, h, r, mu) = (0.02_f64, 0.05_f64, 0.02_f64, 0.5_f64);
+    let rho = rho_pair(m, h, r);
+    let lap = 45.0 / (PI * h.powi(6)) * (h - r);
+    // pressure off (rest density above the sampled density -> clamped to 0)
+    let want = mu * m * 1.0 / (rho * rho) * lap; // |a| for relative speed 1
+    for (hashed, axis) in [
+        (false, 1),
+        (true, 1),
+        (false, 0),
+        (true, 0),
+        (false, 2),
+        (true, 2),
+    ] {
+        let f: &'static ClosureSdf = Box::leak(Box::new(far_field()));
+        let mut cfg = SphConfig::water_like();
+        cfg.gravity = [0.0; 3];
+        cfg.viscosity = mu as f32;
+        let mut a = SphParticle::at_rest([0.0, 0.0, 0.0]);
+        let mut b = SphParticle::at_rest([0.02, 0.0, 0.0]);
+        a.velocity[axis] = 1.0;
+        let mut s = SphSolver::new(vec![a, b], cfg, f);
+        let dt = 1.0e-5_f32;
+        if hashed {
+            s.step_hashed(dt)
+        } else {
+            s.step(dt)
+        }
+        let da = (s.particles[0].velocity[axis] as f64 - 1.0) / dt as f64;
+        let db = s.particles[1].velocity[axis] as f64 / dt as f64;
+        assert!(
+            da < 0.0 && db > 0.0,
+            "hashed={hashed}: relative velocity must shrink: {da} {db}"
+        );
+        assert!(
+            (-da - want).abs() <= 2e-3 * want,
+            "hashed={hashed}: {} vs {want}",
+            -da
+        );
+        assert!((db - want).abs() <= 2e-3 * want);
+    }
+}

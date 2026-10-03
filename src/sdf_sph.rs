@@ -15,6 +15,11 @@
 //! of the box; production callers with more than a few hundred
 //! particles should reach for [`crate::spatial`] or the PBF solver.
 //!
+//! Pressure and viscosity are Müller's force densities in their symmetric
+//! form, divided by the particle's own density to give an acceleration
+//! (`a_i = f_i / ρ_i`), so over-pressure pushes neighbours apart and
+//! viscosity shrinks relative velocity, and both conserve momentum.
+//!
 //! Deferred to future work: surface tension, XSPH viscosity,
 //! adaptive time stepping, boundary tangential friction, and a
 //! spatial-hash acceleration structure.
@@ -187,14 +192,16 @@ impl<'a, F: SdfField + ?Sized> SphSolver<'a, F> {
                     return;
                 }
                 let r = r_sq.sqrt();
-                let pressure_scale = -m
+                let pressure_scale = m
                     * ((pi.pressure + pj.pressure) / (2.0 * pj.density.max(1.0e-6)))
-                    * spiky_grad(r, h);
+                    * spiky_grad(r, h)
+                    / pi.density.max(1.0e-6);
                 ax += pressure_scale * dx / r;
                 ay += pressure_scale * dy / r;
                 az += pressure_scale * dz / r;
-                let viscosity_scale =
-                    self.config.viscosity * m / pj.density.max(1.0e-6) * viscosity_lap(r, h);
+                let viscosity_scale = self.config.viscosity * m
+                    / (pj.density.max(1.0e-6) * pi.density.max(1.0e-6))
+                    * viscosity_lap(r, h);
                 ax += viscosity_scale * (pj.velocity[0] - pi.velocity[0]);
                 ay += viscosity_scale * (pj.velocity[1] - pi.velocity[1]);
                 az += viscosity_scale * (pj.velocity[2] - pi.velocity[2]);
@@ -262,15 +269,17 @@ impl<'a, F: SdfField + ?Sized> SphSolver<'a, F> {
                 }
                 let r = r_sq.sqrt();
                 // Pressure force: symmetric Spiky gradient.
-                let pressure_scale = -m
+                let pressure_scale = m
                     * ((pi.pressure + pj.pressure) / (2.0 * pj.density.max(1.0e-6)))
-                    * spiky_grad(r, h);
+                    * spiky_grad(r, h)
+                    / pi.density.max(1.0e-6);
                 ax += pressure_scale * dx / r;
                 ay += pressure_scale * dy / r;
                 az += pressure_scale * dz / r;
                 // Viscosity force: Laplacian of the velocity difference.
-                let viscosity_scale =
-                    self.config.viscosity * m / pj.density.max(1.0e-6) * viscosity_lap(r, h);
+                let viscosity_scale = self.config.viscosity * m
+                    / (pj.density.max(1.0e-6) * pi.density.max(1.0e-6))
+                    * viscosity_lap(r, h);
                 ax += viscosity_scale * (pj.velocity[0] - pi.velocity[0]);
                 ay += viscosity_scale * (pj.velocity[1] - pi.velocity[1]);
                 az += viscosity_scale * (pj.velocity[2] - pi.velocity[2]);
