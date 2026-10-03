@@ -381,6 +381,17 @@ required-features = ["std"]
 name = "db_bridge_roundtrip"
 required-features = ["std", "replay"]
 
+# Production entry point for `alice_physics::fluid_netcode` (wiring_guard:
+# src/fluid_netcode.rs had zero production callers across 5 items:
+# changed_count, compression_ratio, restore, size_bytes, verify — only
+# this module's own #[cfg(test)] unit tests called in, which the guard
+# does not count). Checked against `scripts/wiring_guard.py` grep: none
+# of these 5 names collide with a same-named item in another file in this
+# crate (unlike the `force_on` / `axis_aligned` collisions noted above).
+[[example]]
+name = "fluid_netcode_roundtrip"
+required-features = ["std"]
+
 [[bench]]
 name = "physics_bench"
 harness = false
