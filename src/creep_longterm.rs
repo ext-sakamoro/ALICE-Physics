@@ -10,12 +10,14 @@
 //! `ε(t) = ε_0 + m · tⁿ`
 //!
 //! - `ε_0` = instantaneous elastic strain (dimensionless)
-//! - `m`, `n` = fitting constants (n typically 0.15-0.30 for polymers)
-//! - `t` = time (hours)
+//! - `m`, `n` = fitting constants; `n` is an **integer** here (`n_int`, 1 to 4,
+//!   evaluated by repeated multiplication), unlike the fractional 0.15-0.30
+//!   exponents of the literature
 //!
-//! For 3D printed PLA at 10 MPa, 25 °C: `ε_0 ≈ 0.003`, `m ≈ 0.001`, `n ≈ 0.25`.
-//! After 6 months (4380 h) the model predicts about 1 % total strain — matches
-//! the ALICE-Bamboo docs "PLA 棚 半年で反る" incident.
+//! The PLA preset is `ε_0 = 0.003`, `m = 8.3e-14 /h³`, `n = 3`: after 6 months
+//! (4380 h) it gives `0.003 + 8.3e-14 · 4380³ ≈ 1.0 %` total strain, matching
+//! the ALICE-Bamboo docs "PLA 棚 半年で反る" incident. The fit matches at 6 months
+//! only (see [`FindleyParameters::pla_25c_moderate`]).
 //!
 //! # Time-Temperature Superposition (WLF)
 //!
@@ -66,7 +68,7 @@ pub struct FindleyParameters {
     /// Transient coefficient `m` (dimensionless, calibrated per hour^n).
     pub m: Fix128,
     /// Time exponent `n` (integer for Fix128 pow: 1, 2, 3, or 4).
-    /// n=1 → linear creep, n=2 → parabolic, n=3 → cubic. Typical polymer 3-4.
+    /// n=1 → linear creep, n=2 → parabolic, n=3 → cubic. An integer stand-in for the literature's fractional 0.15-0.30; the presets use 3.
     pub n_int: u32,
 }
 
