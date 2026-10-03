@@ -363,7 +363,7 @@ GS を使うには `step_multigrid(dt, 0)` `step_adaptive` は自動で multigri
 | 1 step を 1 秒にする並列度 | **約 400〜2000 rank 相当** ⚠️ **通信コストを無視した下限** |
 | 越境 transport の slab 版 | ✅ **landed** (`8e00bce` 帯局所の越境 slab、第 14 increment 参照) |
 | 対称な wire 形式変更 | ⛔ **原理的に不可視** (全 rank が同じ code を動かすため) ⇒ 閉じるには**別実装の peer** |
-| 4 rank 以上のプロセス実行 | ⛔ 未実施 (schedule 上は 6 rank まで確認) |
+| 4 rank 以上のプロセス実行 | ✅ **実施済み** (第 14 increment: 512³ = 1.34e8 cells を **8 プロセス**に分散し単一プロセス解と bit 一致、arm64 142.87 s / x86_64 182.91 s) ⚠️ 複数ノード (MPI) と cross-arch の 1 solve は未測定 |
 
 ### 第 13 increment (2026-10-01 夜、壁 3 の逆向き連成)
 
