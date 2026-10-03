@@ -364,7 +364,7 @@ fn zero_layer_network_forward_does_not_panic() {
 fn matvec_ignores_extra_input_columns_and_leaves_extra_output_slots_untouched() {
     // 2 x 3 weight, input longer than 3 and output longer than 2
     let w = FixedTernaryWeight::from_ternary_weight_with_scale(
-        TernaryWeight::from_ternary(&[1, 0, -1, 0, 1, 1], 2, 3),
+        TernaryWeight::from_ternary(&[1, 0, -1, 1, 1, 1], 2, 3),
         Fix128::ONE,
     );
     let input = [
@@ -377,7 +377,7 @@ fn matvec_ignores_extra_input_columns_and_leaves_extra_output_slots_untouched() 
     let mut output = [sentinel; 4];
     fix128_ternary_matvec(&input, &w, &mut output);
     assert_eq!(output[0], Fix128::from_int(5 - 11));
-    assert_eq!(output[1], Fix128::from_int(7 + 11));
+    assert_eq!(output[1], Fix128::from_int(5 + 7 + 11));
     assert_eq!(output[2], sentinel, "slot beyond out_features was written");
     assert_eq!(output[3], sentinel, "slot beyond out_features was written");
 }
