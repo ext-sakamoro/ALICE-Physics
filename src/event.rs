@@ -66,7 +66,7 @@ pub struct EventCollector {
     /// 3 ms per detection at 2700 contacts, run 8× per frame since 1.2.0)
     /// Active contact pairs this frame
     curr_pairs: BTreeSet<(usize, usize)>,
-    /// Active trigger overlaps from previous frame: (normalized pair, (trigger, other) roles as reported)
+    /// Active trigger overlaps from previous frame: (normalized pair, (trigger, other) roles of the enter frame)
     prev_triggers: Vec<((usize, usize), (usize, usize))>,
     /// Active trigger overlaps this frame (normalized pair -> roles as reported)
     curr_triggers: BTreeMap<(usize, usize), (usize, usize)>,
@@ -144,13 +144,19 @@ impl EventCollector {
         if self.curr_triggers.contains_key(&pair) {
             return;
         }
-        self.curr_triggers.insert(pair, (trigger_body, other_body));
 
-        let was_active = self
+        let prev = self
             .prev_triggers
             .binary_search_by_key(&pair, |&(k, _)| k)
-            .is_ok();
-        if !was_active {
+            .ok()
+            .map(|i| self.prev_triggers[i].1);
+        // Roles stay those of the enter frame while the overlap lasts, so the
+        // exit event names the same trigger body as the enter event even if a
+        // later frame reports the pair in the other order.
+        self.curr_triggers
+            .insert(pair, prev.unwrap_or((trigger_body, other_body)));
+
+        if prev.is_none() {
             self.trigger_events.push(TriggerEvent {
                 trigger_body,
                 other_body,

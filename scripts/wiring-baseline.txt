@@ -67,8 +67,6 @@ unwired src/quadratic_elastic_fem.rs::edge_count
 unwired src/quadratic_elastic_fem.rs::edge_node
 unwired src/ragdoll.rs::child
 unwired src/ragdoll.rs::human_female
-unwired src/rng.rs::new_with_stream
-unwired src/rng.rs::next_bounded
 unwired src/rope_attach.rs::compliance
 unwired src/rope_attach.rs::solve_rope_attachments
 unwired src/scene_io.rs::CURRENT_SCENE_VERSION

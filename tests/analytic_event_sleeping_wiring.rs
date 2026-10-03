@@ -252,3 +252,34 @@ fn trigger_enter_once_per_frame_and_not_while_overlapping() {
     e.end_frame();
     assert!(e.trigger_events().is_empty());
 }
+
+#[test]
+fn trigger_roles_are_stable_for_all_report_orders() {
+    // enter order x persist-frame order: 4 combinations; the exit event must
+    // carry exactly the roles of the enter event
+    for (t, o) in [(5usize, 2usize), (2, 5)] {
+        for (pt, po) in [(5usize, 2usize), (2, 5)] {
+            let mut e = EventCollector::new();
+            e.begin_frame();
+            e.report_trigger(t, o);
+            e.end_frame();
+            let enter = e.trigger_events()[0];
+            assert_eq!(
+                (enter.trigger_body, enter.other_body, enter.entered),
+                (t, o, true)
+            );
+            e.begin_frame();
+            e.report_trigger(pt, po);
+            e.end_frame();
+            assert!(e.trigger_events().is_empty(), "persist frame emits nothing");
+            e.begin_frame();
+            e.end_frame();
+            let exit = e.trigger_events()[0];
+            assert_eq!(
+                (exit.trigger_body, exit.other_body, exit.entered),
+                (t, o, false),
+                "enter=({t},{o}) persist=({pt},{po})"
+            );
+        }
+    }
+}
