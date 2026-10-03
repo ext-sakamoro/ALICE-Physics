@@ -13,6 +13,13 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added — `non_newtonian` / `laminate_failure` / `filter` の未配線 29 item を全配線 (全配線 program 第 14 件)
+
+- `non_newtonian`: `examples/non_newtonian_rheology.rs` が `PowerLaw`/`Carreau`/`Bingham`/`HerschelBulkley` の preset + `stress`/`viscosity`/`apparent_viscosity`/`flows_under_stress` を駆動、既存 `tests/engineering_oracles_fluid.rs` の Bingham/HB/power-law/Carreau oracle と重複しない 7 本、変異 10/10 (実装) + 1/1 (配線) red
+- `laminate_failure`: `examples/laminate_failure_criteria.rs` が `cfrp_ud`/`gfrp_ud` preset + 4 criterion (Tsai-Wu/Tsai-Hill/Hashin/Puck) + dispatcher + zero stress を駆動、既存 envelope oracle と重複しない 9 本、変異 8/8 red
+- `filter`: `examples/collision_filter_categories.rs` が 9 category 定数 + `with_group` を `PhysicsWorld::set_body_filter` 経由で駆動 (`CollisionFilter` 自体は既に `solver.rs` から配線済)、oracle 13 本、変異 23/23 red
+- 3 module とも src 無変更、baseline 31 行退役 (実配線 28 + 名前衝突 1 (`anisotropic::FailureCriterion`、実体は未配線のまま Backlog に記録) + 重複 2)
+
 ### Added — `hyperelastic` / `compressible` / `interpolation` / `articulation` の未配線 47 item を全配線 (全配線 program 第 12 件)
 
 - `hyperelastic`: `examples/hyperelastic_material_presets.rs` が material preset (natural_rubber/silicone_soft/tpu_soft) を uniaxial/equibiaxial で駆動、FEM 側 (`linear_elastic_fem` 等) の `HyperelasticModel` とは別の閉形式 preset ライブラリで重複なし oracle 18 本、変異 11/12 red (`silicone_soft` の `c2` 1 ULP 変更は `Fix128` 表現精度の床で算術的に観測不能)
