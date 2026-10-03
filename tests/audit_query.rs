@@ -548,3 +548,61 @@ fn bvh_queries_ignore_leaf_indices_beyond_the_body_slice() {
     let a = overlap_aabb_bvh(&bb, &bodies, &bvh);
     assert_eq!(a.len(), 2);
 }
+
+#[test]
+fn capsule_cast_midpoint_sample_uses_all_three_midpoint_coordinates() {
+    // capsule (-1,-2,-2)-(1,2,2): midpoint (0,0,0); ends are 2.83 from the
+    // x axis so only the midpoint ray reaches the body at (5,0,0): t = 5 - 1.
+    let hit = capsule_cast(
+        v3(-1.0, -2.0, -2.0),
+        v3(1.0, 2.0, 2.0),
+        fx(0.5),
+        Vec3Fix::UNIT_X,
+        fx(100.0),
+        &[body(5.0, 0.0, 0.0)],
+        fx(0.5),
+    )
+    .expect("hit");
+    close("t", hit.t, 4.0);
+}
+
+#[test]
+fn overlap_aabb_expanded_inflates_all_six_faces() {
+    let bb = AABB::new(v3(0.0, 0.0, 0.0), v3(1.0, 1.0, 1.0));
+    let near = [
+        body(0.5, -0.4, 0.5),
+        body(0.5, 0.5, 1.4),
+        body(1.4, 0.5, 0.5),
+        body(-0.4, 0.5, 0.5),
+        body(0.5, 1.4, 0.5),
+        body(0.5, 0.5, -0.4),
+    ];
+    assert_eq!(overlap_aabb_expanded(&bb, &near, fx(0.5)).len(), 6);
+    let far = [body(0.5, -0.6, 0.5), body(0.5, 0.5, 1.6)];
+    assert!(overlap_aabb_expanded(&bb, &far, fx(0.5)).is_empty());
+}
+
+#[test]
+#[should_panic]
+fn batch_sphere_cast_panics_when_origins_are_fewer_than_directions() {
+    let _ = batch_sphere_cast(
+        &[],
+        fx(0.5),
+        &[Vec3Fix::UNIT_X],
+        fx(1.0),
+        &[body(0.0, 0.0, 0.0)],
+        fx(1.0),
+    );
+}
+
+#[test]
+fn bvh_queries_ignore_a_leaf_index_equal_to_the_body_count() {
+    let bodies = [body(0.0, 0.0, 0.0), body(1.0, 0.0, 0.0)];
+    let bvh = build_bvh(&bodies, 0.4, Some(2));
+    assert_eq!(
+        overlap_sphere_bvh(Vec3Fix::ZERO, fx(5.0), &bodies, fx(0.4), &bvh).len(),
+        2
+    );
+    let bb = AABB::new(v3(-5.0, -5.0, -5.0), v3(5.0, 5.0, 5.0));
+    assert_eq!(overlap_aabb_bvh(&bb, &bodies, &bvh).len(), 2);
+}
