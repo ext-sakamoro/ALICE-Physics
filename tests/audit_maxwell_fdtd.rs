@@ -576,3 +576,37 @@ fn courant_below_and_above_the_limit() {
         bad.max_abs_field().to_f64()
     );
 }
+
+/// Every PEC-wall edge (low and high wall of both tangential axes) refuses a current.
+#[test]
+fn currents_are_refused_on_all_six_walls_for_every_edge_component() {
+    let mut g = YeeGrid::new(3, 3, 3, half());
+    // (component, index list that lies on a wall) with the third index interior
+    let walls: Vec<(Component, usize, usize, usize)> = vec![
+        (Component::Ex, 1, 0, 1),
+        (Component::Ex, 1, 3, 1),
+        (Component::Ex, 1, 1, 0),
+        (Component::Ex, 1, 1, 3),
+        (Component::Ey, 0, 1, 1),
+        (Component::Ey, 3, 1, 1),
+        (Component::Ey, 1, 1, 0),
+        (Component::Ey, 1, 1, 3),
+        (Component::Ez, 0, 1, 1),
+        (Component::Ez, 3, 1, 1),
+        (Component::Ez, 1, 0, 1),
+        (Component::Ez, 1, 3, 1),
+    ];
+    for (c, i, j, k) in walls {
+        assert!(
+            panics(|| g.set_current(c, i, j, k, Fix128::ONE)),
+            "{c:?}({i},{j},{k}) is a wall edge"
+        );
+    }
+    // the interior edges just inside each wall are accepted
+    g.set_current(Component::Ex, 2, 1, 1, Fix128::ONE);
+    g.set_current(Component::Ex, 1, 2, 2, Fix128::ONE);
+    g.set_current(Component::Ey, 1, 2, 2, Fix128::ONE);
+    g.set_current(Component::Ey, 2, 1, 1, Fix128::ONE);
+    g.set_current(Component::Ez, 2, 2, 2, Fix128::ONE);
+    g.set_current(Component::Ez, 1, 1, 2, Fix128::ONE);
+}
