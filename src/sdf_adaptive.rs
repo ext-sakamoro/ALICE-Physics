@@ -31,7 +31,9 @@ pub struct AdaptiveConfig {
     pub cache_threshold: f32,
     /// Maximum age (frames) before cache entry expires
     pub cache_max_age: u32,
-    /// Number of refinement samples for high-res mode
+    /// Reserved: **not read**. The high-res normal refinement uses a fixed
+    /// six-sample central difference (step 0.0005); this field is kept for
+    /// compatibility and has no effect.
     pub refinement_samples: usize,
 }
 
@@ -99,6 +101,10 @@ pub enum EvalLevel {
 // ============================================================================
 
 /// Adaptive SDF evaluation with distance-based LOD
+///
+/// The cache is kept per body index, not per SDF: evaluating one body against
+/// several colliders in the same frame returns the first collider's cached
+/// value for the others (use one evaluator per collider, or `invalidate`).
 pub struct AdaptiveSdfEvaluator {
     /// Per-body cache entries
     cache: Vec<CacheEntry>,

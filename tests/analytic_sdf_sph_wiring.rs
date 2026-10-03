@@ -368,7 +368,7 @@ fn viscosity_reduces_the_relative_velocity_with_the_closed_form_magnitude() {
         cfg.gravity = [0.0; 3];
         cfg.viscosity = mu as f32;
         let mut a = SphParticle::at_rest([0.0, 0.0, 0.0]);
-        let mut b = SphParticle::at_rest([0.02, 0.0, 0.0]);
+        let b = SphParticle::at_rest([0.02, 0.0, 0.0]);
         a.velocity[axis] = 1.0;
         let mut s = SphSolver::new(vec![a, b], cfg, f);
         let dt = 1.0e-5_f32;
