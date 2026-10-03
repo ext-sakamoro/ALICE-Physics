@@ -61,7 +61,7 @@ fn main() {
 
     let mesh = generate_collision_mesh(ball, &config);
     let (euler, volume) = describe(&mesh);
-    let ideal = 4.0 / 3.0 * std::f64::consts::PI * radius.powi(3);
+    let ideal = 4.0 / 3.0 * std::f64::consts::PI * radius * radius * radius;
     println!(
         "mesh: {} vertices, {} triangles, V - E + F = {euler} (2), volume {volume:.4} of {ideal:.4}",
         mesh.vertices.len(),

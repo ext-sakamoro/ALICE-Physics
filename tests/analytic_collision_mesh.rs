@@ -550,7 +550,7 @@ fn simplifying_an_open_mesh_keeps_its_border() {
     let (border_before, edges_before) = border_of(&m);
     let s = simplify_collision_mesh(&m, m.triangles.len() / 3);
     let (border_after, edges_after) = border_of(&s);
-    assert!(s.triangles.len() < m.triangles.len() && s.triangles.len() >= 1);
+    assert!(s.triangles.len() < m.triangles.len() && !s.triangles.is_empty());
     assert_eq!(
         border_before, border_after,
         "the border vertices did not move"
