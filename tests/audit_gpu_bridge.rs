@@ -45,7 +45,7 @@ fn every_default_method_panics_naming_itself() {
     let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let mut b = Minimal;
     let cases: Vec<(&str, Option<String>)> = vec![
-        ("send_contact_constraints", panic_text(|| b_send_cc())),
+        ("send_contact_constraints", panic_text(b_send_cc)),
         (
             "send_body_state",
             panic_text(|| Minimal.send_body_state(&[], &[])),
