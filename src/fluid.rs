@@ -155,9 +155,22 @@ impl Fluid {
         }
     }
 
-    /// Create a block of fluid particles
+    /// Create a block of fluid particles on a regular lattice
+    ///
+    /// Particles sit at `min + (i, j, k) * spacing` for every lattice point not beyond `max`
+    /// (a point exactly on `max` is included), ordered x-major (x outer loop, z inner).
+    /// An inverted box (`min > max` on some axis) yields no particles.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `spacing` is not strictly positive: a zero or negative step never leaves
+    /// the `<= max` loop and would exhaust memory.
     #[must_use]
     pub fn new_block(min: Vec3Fix, max: Vec3Fix, spacing: Fix128, config: FluidConfig) -> Self {
+        assert!(
+            spacing > Fix128::ZERO,
+            "Fluid::new_block: spacing must be strictly positive"
+        );
         let mut positions = Vec::new();
 
         let mut x = min.x;
