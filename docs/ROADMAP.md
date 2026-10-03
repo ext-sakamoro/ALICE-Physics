@@ -24,6 +24,14 @@ oracle: 重なる箱の depth と法線を **分離軸判定 (15 軸、箱の回
 baseline 退役 3 行 (`gjk` / `epa` / `GjkResult`、実配線 3、巻き込み 0) 呼出元は `contact` (solver の `detect_collisions`) と `colliders_overlap`、example は `examples/convex_contacts.rs`
 ⚠️ 衝突は依然として 1 点の接触 (manifold なし): 接触点は EPA の支持点で、接触拘束は位置と質量だけで解く (回転は拘束に入らない) 残り (F3b/c): `compound` (8) / `convex_mesh_builder` (2) / `convex_decompose` (2) / `box_collider::{axis_aligned, corner, corners}` / `cone::{apex, base_center}` / `from_metric_ball`
 
+### 第 42 increment (2026-10-03、全配線 program 第 13 件 — `analytics_bridge` 未配線 11 item、features = std,analytics)
+
+worker 1 本、src 無変更 example 1 本が percentile reader + recorder 全 11 item を駆動、oracle は自前 nearest-rank + DDSketch256 契約窓 + HyperLogLog12 線形カウント式の再実装 変異 11/11 red baseline 11 行退役
+
+### 第 41 increment (2026-10-03、全配線 program 第 12 件 — `hyperelastic`/`compressible`/`interpolation`/`articulation` 未配線 47 item)
+
+worker 4 本、全て src 無変更 変異 red: hyperelastic 11/12 (silicone_soft の c2 1 ULP が観測不能)、compressible 実装 11/12 + 配線 10/12 (2 件は module 内 sibling 経由の別経路)、interpolation 11/12 (slerp の冗長 guard)、articulation 12/13 (apply_motors の force.is_zero() が算術等価) baseline 47 行退役 + motor::set_position_target (articulation example から真の呼出)
+
 ### 第 39 increment (2026-10-03、全配線 program 第 9 件 (F2) — 静的 collider: `StaticCollider` と `PhysicsWorld::add_static_collider`)
 
 `PhysicsWorld` の衝突は「球 (body ごとの衝突半径) と SDF collider」だけで、`plane_collider` / `heightfield` / `trimesh` の球衝突は呼出元が 0 件だった `StaticCollider::{Plane, HeightField, TriMesh}` と `add_static_collider` / `remove_static_collider` / `static_collider_count` を足した 球 body を substep ごとに SDF collider と同じ位置 (逐次 / batched / bridge の 3 経路すべて) で面の法線方向へ深さだけ押し出す (追加のみの公開 API) 衝突球は body の衝突半径、無ければ `set_sdf_collision_radius` の既定値 (SDF と同じ)

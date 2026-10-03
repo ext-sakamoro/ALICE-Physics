@@ -13,6 +13,20 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added — `hyperelastic` / `compressible` / `interpolation` / `articulation` の未配線 47 item を全配線 (全配線 program 第 12 件)
+
+- `hyperelastic`: `examples/hyperelastic_material_presets.rs` が material preset (natural_rubber/silicone_soft/tpu_soft) を uniaxial/equibiaxial で駆動、FEM 側 (`linear_elastic_fem` 等) の `HyperelasticModel` とは別の閉形式 preset ライブラリで重複なし oracle 18 本、変異 11/12 red (`silicone_soft` の `c2` 1 ULP 変更は `Fix128` 表現精度の床で算術的に観測不能)
+- `compressible`: `examples/compressible_gas_dynamics.rs` が air/helium preset、`speed_of_sound`/`speed_of_sound_from_pd` の 2 経路一致、`normal_shock_jump`、stagnation 比、Riemann 不変量を駆動 oracle 19 本、実装変異 11/12 red (`density`/`temperature` の zero-guard は `Fix128::Div` の zero-divisor 契約と算術的に等価)、配線変異 10/12 red (`speed_of_sound`/`stagnation_temp_ratio` は module 内 sibling からも呼ばれる別経路)
+- `interpolation`: `examples/substep_interpolation.rs` が `capture`/`capture_and_push`/`empty`/`from_body`/`interpolate`(`_all`/`_position`/`_rotation`)/`lerp_fix128`/`lerp_vec3`/`slerp` を駆動 oracle 17 本、変異 11/12 red (`slerp` の nlerp 自前 zero-guard は `QuatFix::normalize` 側の独立 guard と冗長)
+- `articulation`: `examples/articulated_body_chain.rs` が `add_link`/`forward_kinematics`/`set_motor`/`apply_motors`/`solve`/`solve_with_mass_splitting`/`build_ragdoll` 等 + `motor::set_position_target` (真の呼出で連動配線) を駆動 oracle 15 本 (既存 `analytic_multibody_dynamics.rs` の `solve` oracle とは重複なし)、変異 12/13 red (`apply_motors` の `force.is_zero()` 片方のガードは `Fix128` 乗算の `0*x=0` 単位元で算術的に等価)
+- 4 module とも src 無変更、baseline 47 行退役、新規公開面 0 件
+
+### Added — `analytics_bridge` の未配線 11 item を全配線 (features = `std,analytics`、全配線 program 第 13 件)
+
+- `examples/analytics_bridge_telemetry.rs` が 200 step の手組み sequence で `record_step_time`/`record_contacts`/`record_energy_drift`/`record_collision_pair`/`step_time_p50`/`step_time_p99`/`contacts_p50`/`contacts_p99`/`energy_drift_p99`/`total_steps`/`unique_collision_pairs` を駆動
+- oracle 6 本、閉形式は自前 nearest-rank sort + `DDSketch256` の `±α` 契約窓 + `HyperLogLog12` の線形カウント式再実装 (実装は一度も呼ばない)、変異 11/11 red
+- src/analytics_bridge.rs 自体は無変更、baseline 11 行退役
+
 ### Added — 凸形状どうしの GJK/EPA narrow-phase (全配線 program 第 9 件 F3a)
 
 `collider::contact(a, b)` (GJK → EPA)、`shape::PosedShape`、`PhysicsWorld::{set_body_shape, colliders_overlap}` を追加した (追加のみ) `add_shaped_body` は形状を body に付け、両方の body が形状を持つ組は外接球でなく GJK/EPA の接触で決める 片方が球だけの body なら従来どおり球どうし
