@@ -666,7 +666,7 @@ mod tests {
     #[test]
     fn test_flat_cluster_is_not_split() {
         let sphere = ClosureSdf::new(
-            |x, y, z| x.hypot(y).hypot(z) - 0.5,
+            |x, y, z| (x * x + y * y + z * z).sqrt() - 0.5,
             |_, _, _| (0.0, 1.0, 0.0),
         );
         let grid = VoxelGrid::new(

@@ -9,6 +9,8 @@
 //! Author: Moroya Sakamoto
 
 #![allow(clippy::disallowed_methods)]
+// Axis loops index three parallel arrays on purpose.
+#![allow(clippy::needless_range_loop)]
 
 use alice_physics::box_collider::OrientedBox;
 use alice_physics::collider::{Support, AABB};
