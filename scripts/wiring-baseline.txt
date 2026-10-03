@@ -121,10 +121,6 @@ unwired src/sdf_manifold.rs::deepest
 unwired src/sdf_manifold.rs::generate_sdf_manifold
 unwired src/sdf_sph.rs::populated_cell_count
 unwired src/sleeping.rs::build_islands
-unwired src/soft_body_cut.rs::CutPlane
-unwired src/soft_body_cut.rs::CutResult
-unwired src/soft_body_cut.rs::cut_cloth
-unwired src/soft_body_cut.rs::cut_deformable
 unwired src/solver_tgs.rs::par_dispatch_islands
 unwired src/solver_tgs_hooks_6dof_oriented.rs::local_to_world
 unwired src/solver_tgs_hooks_6dof_oriented_scoped.rs::solve_oriented_islands_parallel

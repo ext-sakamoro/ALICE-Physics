@@ -536,6 +536,15 @@ required-features = ["std"]
 name = "vibration_wall_resonance"
 required-features = ["std"]
 
+# Production entry point for `alice_physics::soft_body_cut` (wiring_guard:
+# src/soft_body_cut.rs had zero production callers across all 4 items:
+# CutPlane, CutResult, cut_cloth, cut_deformable -- only the module's own
+# #[cfg(all(test, feature = "std"))] unit tests called in, which the guard
+# does not count).
+[[example]]
+name = "soft_body_cutting"
+required-features = ["std"]
+
 # Production entry point for alice_physics::pressure's contact-force
 # deformation API (wiring_guard: src/pressure.rs had zero production
 # callers across 4 items: apply_pressure_at, apply_impact, pressure_at,
