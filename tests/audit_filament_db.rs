@@ -227,7 +227,8 @@ fn youngs_at_angle_is_a_lower_bound_reuss_form() {
 #[test]
 fn db_container_semantics() {
     let mut db = FilamentDb::new();
-    assert!(db.is_empty() && db.len() == 0);
+    assert!(db.is_empty());
+    assert_eq!(db.len(), 0);
     assert!(db.get(0).is_none());
     assert!(db.find_by_name("PLA").is_none());
     assert!(db.by_category(MaterialCategory::Fdm).is_empty());
