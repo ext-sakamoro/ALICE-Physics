@@ -24,6 +24,10 @@ oracle: 重なる箱の depth と法線を **分離軸判定 (15 軸、箱の回
 baseline 退役 3 行 (`gjk` / `epa` / `GjkResult`、実配線 3、巻き込み 0) 呼出元は `contact` (solver の `detect_collisions`) と `colliders_overlap`、example は `examples/convex_contacts.rs`
 ⚠️ 衝突は依然として 1 点の接触 (manifold なし): 接触点は EPA の支持点で、接触拘束は位置と質量だけで解く (回転は拘束に入らない) 残り (F3b/c): `compound` (8) / `convex_mesh_builder` (2) / `convex_decompose` (2) / `box_collider::{axis_aligned, corner, corners}` / `cone::{apex, base_center}` / `from_metric_ball`
 
+### 第 46 increment (2026-10-03、全配線 program 第 16 件 — `material`/`replay`/`multi_world` 未配線 24 item)
+
+worker 3 本、全て src 無変更 変異: material 8/8、replay 7/10+3等価、multi_world 18/18 baseline 24 行退役 残り: `sdf_fem_mesh` (別 worker 進行中)
+
 ### 第 45 increment (2026-10-03、全配線 program 第 15 件 — `thin_wall` 未配線 7 item)
 
 worker 1 本、src 無変更 変異 11/11 (実装) + 7/7 (配線) red baseline 7 行退役 ⚠️ worker 実測 (未修正、Backlog): `sample_surface_points` の無限ループ (極端 AABB + f32 ULP)、`measure_thickness_at`/`for_nozzle(0.0)` の silent footgun 2 件

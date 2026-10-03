@@ -13,6 +13,13 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added — `material` / `replay` / `multi_world` の未配線 24 item を全配線 (全配線 program 第 16 件)
+
+- `material`: `examples/material_registry_presets.rs` が `register_concrete`/`register_ice`/`register_metal`/`register_rubber`/`register_wood` + `set_pair_override` + `with_combine_rules` + `with_static_friction` を駆動、oracle 9 本、変異 8/8 red
+- `replay` (features = `std,replay`): `examples/replay_recording.rs` が `record_frame`/`record_positions`/`scan_positions`/`get_position`/`get_velocity`/`frame_count`/`close`(×2) を駆動、oracle 11 本、変異 7/10 red + 3 件等価 (`scan_positions` の逆順 guard は `AliceDB::query_range` 側で既にクランプ済、`close`×2 は `StorageEngine` の `flush`/`Drop` で冗長)
+- `multi_world`: `examples/multi_world_management.rs` が `add_world`/`world_count`/`total_body_count`/`step_all`/`step_all_parallel`/`transfer_body`/`Portal::transform_a_to_b`/`transform_b_to_a` を駆動、oracle 16 本 (+2 parallel feature)、変異 18/18 red
+- 3 module とも src 無変更、baseline 24 行退役
+
 ### Added — `thin_wall` の未配線 7 item を全配線 (全配線 program 第 15 件)
 
 - `examples/thin_wall_detection.rs` が `for_nozzle`/`analyze_thickness`/`analyze_thickness_grid`/`measure_thickness_at`/`sample_surface_points`/`has_thin_walls`/`thin_fraction` を駆動
