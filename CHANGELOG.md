@@ -34,6 +34,16 @@ kinematic bodyを目標位置へ進める処理を追加、速度は位置差分
 kinematic bodyが動的bodyを押す scene を含む) 変異試験で機構を確認済み
 公開API signature変更なし (private method 1 個追加のみ)
 
+### Added — `character`/`wind_zone`/`heatmap`/`audio_physics`/`acoustic_wave` の未配線を全配線 (全配線 program 第 20 件)
+
+- `character`: `examples/character_controller.rs` が `PushImpulse`/`apply_gravity`/`compute_push_impulses`/`feet_position`/`get_platform_velocity`/`new_default` を駆動、oracle 25 本、変異 10/10 red
+- `wind_zone`: `examples/wind_zone_forces.rs` が `force_on`/`force_on_particle`/`instantaneous_wind_vector`/`light_breeze`/`storm` を駆動、oracle 18 本、変異 7/8 red
+- `heatmap`: `examples/heatmap_visualization.rs` が `Heatmap`/`HeatmapConfig`/`SliceAxis`/`generate_stress_heatmap`/`generate_temperature_heatmap`/`heatmap_to_rgba` を駆動、oracle 19 本、変異 7/8 red
+- `audio_physics`: `examples/audio_physics_events.rs` が `AudioMaterial::{METAL,RUBBER,STONE}`/`AudioGenerator::{set_material,process_contact,get_events}` を駆動、oracle 16 本、変異 10/10 red (初回 2 件生存、いずれも oracle の覆い漏れで解消、実装は無変更)
+- `acoustic_wave`: `examples/acoustic_wave_propagation.rs` が `speeds::{AIR_20C,WATER_25C,STEEL_LONGITUDINAL,CONCRETE_LONGITUDINAL}`/`leapfrog_step`/`stable_dt` を駆動、oracle 17 本、変異 13/13 red
+- baseline 34 行退役 (実配線 29、名前衝突の巻き込み 5 = `sdf_character.rs::apply_gravity`/`vehicle.rs::new_default`/`buoyancy_zone.rs::{force_on,signed_depth_below_surface,submerged_fraction}`)
+- 実測 (未修正、非バグ): `heatmap::generate_stress_heatmap` は raw contact triple の signature で `FemSolution` の per-element stress tensor を受け付けない (設計制約) / `acoustic_wave::leapfrog_step` は一様 `f32::MAX` field で中間 overflow により `NaN` を返す (`f32` overflow 下では一様場→Laplacian=0 の恒等式が成立しない)
+
 ### Fixed — `thin_wall` の無限ループ 1 件 + silent footgun 2 件を根本修正
 
 - `sample_surface_points`: grid 走査が `while coord <= max { coord += step }` の `f32` 累積加算で、`step` が座標 magnitude の ULP (≈64 @ 1e9) より小さいと no-op になり無限ループしていた (Backlog 2026-10-03) 走査を整数ステップ数ベース (`f64` で `ceil((max-min)/step)` を先に計算) に置き換え、構造的に終端を保証 既存 oracle 全 green、終端しなかった具体的 AABB (`999_999_999..1_000_000_001`, step=1) を再現する regression test を追加
