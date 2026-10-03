@@ -3651,6 +3651,82 @@ impl PhysicsWorld {
         contacts
     }
 
+    /// The normal force each contact of the last step carries, as
+    /// `(contact point, normal, force)` — the input [`crate::contact_viz`] draws.
+    ///
+    /// `dt` is the frame step passed to [`step`](Self::step). The solver applies a
+    /// separation `λ` (`cached_lambda`) along the normal in the last substep, of
+    /// length `h = dt / substeps`, which for bodies of inverse masses `wₐ, w_b` is
+    /// the displacement of a force `F` over `h`: `λ = (wₐ + w_b)·F·h²`, so
+    /// `F = λ / ((wₐ + w_b)·h²)`. A body resting under gravity then carries its
+    /// weight: `m·g`. The normal points from B to A and the force acts on A. Contacts
+    /// between two immovable bodies carry none and are left out. A body that has gone
+    /// to sleep (about a minute of rest) is not solved, so its contacts are not there
+    /// to report.
+    #[must_use]
+    pub fn contact_forces(&self, dt: Fix128) -> Vec<(Vec3Fix, Vec3Fix, Fix128)> {
+        let h2 = self.substep_dt(dt) * self.substep_dt(dt);
+        self.contact_constraints
+            .iter()
+            .filter_map(|c| self.contact_force(c, h2))
+            .collect()
+    }
+
+    /// The length `h` of one substep of a frame of `dt`.
+    fn substep_dt(&self, dt: Fix128) -> Fix128 {
+        dt / Fix128::from_int(self.config.substeps.max(1) as i64)
+    }
+
+    /// `(point, normal, force)` of one contact, or `None` when neither body can move.
+    fn contact_force(
+        &self,
+        c: &ContactConstraint,
+        h2: Fix128,
+    ) -> Option<(Vec3Fix, Vec3Fix, Fix128)> {
+        let w = self.bodies.get(c.body_a)?.inv_mass + self.bodies.get(c.body_b)?.inv_mass;
+        if w < W_SUM_EPSILON || h2.is_zero() {
+            return None;
+        }
+        Some((
+            c.contact.point_a,
+            c.contact.normal,
+            c.cached_lambda / (w * h2),
+        ))
+    }
+
+    /// Arrows for the normal forces of the last step's contacts
+    /// ([`contact_forces`](Self::contact_forces) through
+    /// [`crate::contact_viz::generate_contact_arrows`]).
+    #[must_use]
+    pub fn contact_arrows(&self, dt: Fix128) -> Vec<crate::contact_viz::ContactArrow> {
+        crate::contact_viz::generate_contact_arrows(&self.contact_forces(dt))
+    }
+
+    /// Two tangential arrows of magnitude `μ·F` for each contact of the last step,
+    /// with the friction coefficient of that contact (they differ between material
+    /// pairs).
+    #[must_use]
+    pub fn contact_friction_arrows(&self, dt: Fix128) -> Vec<crate::contact_viz::ContactArrow> {
+        let h2 = self.substep_dt(dt) * self.substep_dt(dt);
+        self.contact_constraints
+            .iter()
+            .filter_map(|c| Some((self.contact_force(c, h2)?, c.friction)))
+            .flat_map(|(force, mu)| crate::contact_viz::generate_friction_arrows(&[force], mu))
+            .collect()
+    }
+
+    /// A friction cone (half-angle `atan μ`, height the normal force) for each
+    /// contact of the last step, with that contact's friction coefficient.
+    #[must_use]
+    pub fn contact_friction_cones(&self, dt: Fix128) -> Vec<crate::contact_viz::FrictionCone> {
+        let h2 = self.substep_dt(dt) * self.substep_dt(dt);
+        self.contact_constraints
+            .iter()
+            .filter_map(|c| Some((self.contact_force(c, h2)?, c.friction)))
+            .flat_map(|(force, mu)| crate::contact_viz::generate_friction_cones(&[force], mu))
+            .collect()
+    }
+
     /// Add an immovable collision surface — a plane, a height field or a triangle
     /// mesh — and return its index. See [`crate::static_collider`].
     pub fn add_static_collider(
