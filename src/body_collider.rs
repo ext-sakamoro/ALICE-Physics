@@ -174,7 +174,7 @@ fn convex_sdf_contact(solid: &impl Support, centre: Vec3Fix, sdf: &SdfCollider) 
 }
 
 /// A box against an SDF: the deepest of the 27 points that
-/// [`collide_aabb_sdf`] samples (an axis-aligned box goes through it), turned with
+/// `collide_aabb_sdf` samples (an axis-aligned box goes through it), turned with
 /// the box. Exact for a flat field, whose deepest point of a box is a corner.
 #[cfg(feature = "std")]
 fn box_sdf_contact(b: &OrientedBox, sdf: &SdfCollider) -> Option<Contact> {
