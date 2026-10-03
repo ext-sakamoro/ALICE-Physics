@@ -174,9 +174,11 @@ impl BuoyancyZone {
             return Vec3Fix::ZERO;
         }
 
-        // V_displaced = fraction · (4/3) π r³. We approximate 4π/3 ≈ 4.18879
-        // via Fix128::from_ratio(41888, 10000).
-        let four_pi_third = Fix128::from_ratio(41888, 10000);
+        // V_displaced = fraction · (4/3) π r³. Before this fix the constant was
+        // `from_ratio(41888, 10000)` = 4.1888, 2.3e-6 above the true 4.18879020…
+        // (the comment even quoted a different value, 4.18879); it now uses the
+        // full-precision `Fix128::PI`.
+        let four_pi_third = Fix128::PI * Fix128::from_int(4) / Fix128::from_int(3);
         let radius_cubed = body_radius * body_radius * body_radius;
         let full_volume = four_pi_third * radius_cubed;
         let displaced = full_volume * submerged_fraction;
