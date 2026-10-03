@@ -2096,6 +2096,8 @@ pub fn alice_physics::compound::CompoundShape::add_convex_hull(&mut self, alice_
 pub fn alice_physics::compound::CompoundShape::add_sphere(&mut self, alice_physics::collider::Sphere, alice_physics::math::Vec3Fix, alice_physics::math::QuatFix)
 pub fn alice_physics::compound::CompoundShape::child_world_aabb(&self, usize, alice_physics::math::Vec3Fix, alice_physics::math::QuatFix) -> alice_physics::collider::AABB
 pub fn alice_physics::compound::CompoundShape::compute_aabb(&mut self) -> alice_physics::collider::AABB
+pub fn alice_physics::compound::CompoundShape::from_decomposition(&alice_physics::convex_decompose::DecompositionResult) -> Self
+pub fn alice_physics::compound::CompoundShape::from_sdf(&dyn alice_physics::sdf_collider::SdfField, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, &alice_physics::convex_decompose::DecomposeConfig) -> Self
 pub fn alice_physics::compound::CompoundShape::is_empty(&self) -> bool
 pub fn alice_physics::compound::CompoundShape::len(&self) -> usize
 pub fn alice_physics::compound::CompoundShape::mass_properties(&self, alice_physics::math::Fix128) -> alice_physics::mass_properties::MassProperties
@@ -8870,6 +8872,8 @@ pub fn alice_physics::compound::CompoundShape::add_convex_hull(&mut self, alice_
 pub fn alice_physics::compound::CompoundShape::add_sphere(&mut self, alice_physics::collider::Sphere, alice_physics::math::Vec3Fix, alice_physics::math::QuatFix)
 pub fn alice_physics::compound::CompoundShape::child_world_aabb(&self, usize, alice_physics::math::Vec3Fix, alice_physics::math::QuatFix) -> alice_physics::collider::AABB
 pub fn alice_physics::compound::CompoundShape::compute_aabb(&mut self) -> alice_physics::collider::AABB
+pub fn alice_physics::compound::CompoundShape::from_decomposition(&alice_physics::convex_decompose::DecompositionResult) -> Self
+pub fn alice_physics::compound::CompoundShape::from_sdf(&dyn alice_physics::sdf_collider::SdfField, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, &alice_physics::convex_decompose::DecomposeConfig) -> Self
 pub fn alice_physics::compound::CompoundShape::is_empty(&self) -> bool
 pub fn alice_physics::compound::CompoundShape::len(&self) -> usize
 pub fn alice_physics::compound::CompoundShape::mass_properties(&self, alice_physics::math::Fix128) -> alice_physics::mass_properties::MassProperties
@@ -17655,6 +17659,8 @@ pub fn alice_physics::compound::CompoundShape::add_convex_hull(&mut self, alice_
 pub fn alice_physics::compound::CompoundShape::add_sphere(&mut self, alice_physics::collider::Sphere, alice_physics::math::Vec3Fix, alice_physics::math::QuatFix)
 pub fn alice_physics::compound::CompoundShape::child_world_aabb(&self, usize, alice_physics::math::Vec3Fix, alice_physics::math::QuatFix) -> alice_physics::collider::AABB
 pub fn alice_physics::compound::CompoundShape::compute_aabb(&mut self) -> alice_physics::collider::AABB
+pub fn alice_physics::compound::CompoundShape::from_decomposition(&alice_physics::convex_decompose::DecompositionResult) -> Self
+pub fn alice_physics::compound::CompoundShape::from_sdf(&dyn alice_physics::sdf_collider::SdfField, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, &alice_physics::convex_decompose::DecomposeConfig) -> Self
 pub fn alice_physics::compound::CompoundShape::is_empty(&self) -> bool
 pub fn alice_physics::compound::CompoundShape::len(&self) -> usize
 pub fn alice_physics::compound::CompoundShape::mass_properties(&self, alice_physics::math::Fix128) -> alice_physics::mass_properties::MassProperties

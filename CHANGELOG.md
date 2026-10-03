@@ -32,6 +32,21 @@ were introduced during that release window.
 - `scripts/wiring_guard.py`: 走査から `scratchpad` を除外
 - `docs/ROADMAP.md`: 増分番号の重複 (第 23 / 第 24) を第 48 / 第 49 に振り直し
 
+### Added — SDF の凸分解を compound に: `CompoundShape::{from_decomposition, from_sdf}` (全配線 program 第 9 件 F3c)
+
+`CompoundShape::from_decomposition(&DecompositionResult)` と `CompoundShape::from_sdf(sdf, min, max, &DecomposeConfig)` を追加した (追加のみ) 凸片を hull の子にした compound は `add_compound_body` で凹んだ形のまま衝突する body になる
+### Fixed — `decompose_sdf` の 4 件
+
+- **`concavity_threshold` が無視され、常に `max_hulls` 個に分割されていた** (凸な球・箱も割れる) cluster の hull の中にあって SDF の外にあるセルの体積 / hull の体積が閾値を超える間だけ、予算の範囲で分割する
+- **`DecompositionResult::volumes` が bounding box の体積だった** (球で hull の 1.8 倍) hull の体積にした `min_volume` も hull の体積で判定する
+- **`max_vertices_per_hull` が `len < 2·cap` で効かず、stride が面上の点を落として箱の角を失っていた** 極値点だけを残し、上限を超える時は最遠点サンプリングで選ぶ (上限が 4 未満でも 4 点は残す)
+- **`DecompositionResult::centers` が頂点の平均で偏っていた** hull の重心にした
+- oracle: 面が格子線に乗る箱 / L 字の hull の体積を格子の閉形式 `(辺 − c)` の積と照合、球の上下限、予算の配分、閾値、compound の質量・重心 変異 22 件中 21 red (残り 1 件は等価)
+### Changed — compound の narrow-phase が broad-phase で絞る (全配線 program 第 9 件 F3d)
+
+body 全体の box (`CompoundShape::world_aabb`) が重ならない組は GJK/EPA を行わず、重なる組でも相手の box と重なる子 (`overlapping_children`) だけを渡す 結果は変わらない
+- oracle: `OrientedBox::{axis_aligned, corner, corners}` / `Cone::{apex, base_center}` / `AABB::from_metric_ball` を Rodrigues 回転と metric ball の境界の標本で照合 `overlapping_children` の接触・body の位置と回転
+
 ### Added — `prestressed` / `piezoelectric` / `rolling_contact` / `sdf_force` の未配線 28 item を全配線 (全配線 program 第 17 件)
 
 - `prestressed`: `examples/prestressed_joints_and_cables.rs` が `preload_from_torque`/`recommended_preload_n`/`bolt_load_fraction`/`bolt_peak_tension`/`separation_load_n`/`cable_pretension_n`/`tensioned_cable_stiffness_n_per_mm` を駆動、oracle 19 本、変異 7/7 (実装) + 2/5 (guard、3 件は `Fix128::Div` のゼロ除算契約と算術等価) red
