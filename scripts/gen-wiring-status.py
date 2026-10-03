@@ -5,9 +5,10 @@ Generate ALICE-Physics wiring status report.
 Scans baseline and wiring_guard output to report permitted vs new violations.
 """
 
+import re
 import subprocess
+from collections import Counter
 from pathlib import Path
-from datetime import datetime
 
 PROJECT_ROOT = Path(__file__).parent.parent
 DOCS_DIR = PROJECT_ROOT / "docs"
@@ -56,34 +57,41 @@ def run_wiring_guard():
         return f"Error running wiring_guard: {e}\n"
 
 
+# wiring_guard が stderr に出す違反の行: `<kind>: <key>: <message>` (scripts/wiring_guard.py の
+# `print(f"{v.kind}: {v.key}: {v.message}")`)  最後の `wiring-guard: N violation(s)` は集計行で
+# 違反ではない  以前はここを `wiring-guard:` で始まる行と取り違えていて、違反を 1 件も拾えず
+# 新しい違反があっても必ず「違反なし」と報告していた (2026-10-03)
+KINDS = ('dead_code', 'unwired', 'stale_baseline', 'unbalanced_braces')
+
+
 def parse_violations(output):
-    """Parse wiring_guard error output."""
-    violations = {
-        'dead_code': [],
-        'unwired': [],
-        'stale_baseline': [],
-        'unbalanced_braces': [],
-    }
-
-    # Parse violation lines (lines starting with "wiring-guard:")
+    """Parse wiring_guard error output into {kind: [line, ...]}."""
+    violations = {kind: [] for kind in KINDS}
     for line in output.split('\n'):
-        if line.startswith('wiring-guard:'):
-            if 'dead_code' in line:
-                violations['dead_code'].append(line)
-            elif 'unwired' in line:
-                violations['unwired'].append(line)
-            elif 'stale_baseline' in line:
-                violations['stale_baseline'].append(line)
-            elif 'unbalanced_braces' in line:
-                violations['unbalanced_braces'].append(line)
-
+        kind, sep, _ = line.partition(': ')
+        if sep and kind in violations:
+            violations[kind].append(line)
     return violations
+
+
+def exit_code(violations):
+    """違反があっても report は書く: 違反の gate は CI の wiring_guard step の仕事で、
+    ここで落ちると台帳が更新されず古いままになる (本末転倒)."""
+    return 0
+
+
+def per_file_counts(baseline):
+    """baseline の行数を file ごとに数える (dead_code は 1 行 = 1 file の件数集約)."""
+    counts = Counter()
+    for line in baseline['dead_code'] + baseline['unwired']:
+        m = re.search(r'(src/\S+?\.rs)', line)
+        if m:
+            counts[m.group(1)] += 1
+    return counts
 
 
 def generate_markdown_report(baseline, violations):
     """Generate markdown report combining baseline and current violations."""
-    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M')
-
     # Check if there are any NEW (non-baseline) violations
     has_new_violations = bool(violations['dead_code'] or violations['unwired'] or
                                violations['stale_baseline'] or violations['unbalanced_braces'])
@@ -99,7 +107,7 @@ def generate_markdown_report(baseline, violations):
 
     report = f"""# ALICE-Physics Wiring Status
 
-**Last updated:** {timestamp}
+_Generated from `scripts/wiring-baseline.txt` and `scripts/wiring_guard.py` (no timestamp: the file changes only when its content does)._
 
 ## Status
 
@@ -152,7 +160,14 @@ def generate_markdown_report(baseline, violations):
 Violations explicitly allowed via `scripts/wiring-baseline.txt`.
 Must resolve or remove from baseline to reduce ratchet.
 
+### By file
+
+| File | Baseline lines |
+|------|----------------|
 """
+        for name, n in sorted(per_file_counts(baseline).items(), key=lambda kv: (-kv[1], kv[0])):
+            report += f"| `{name}` | {n} |\n"
+        report += "\n"
 
         if baseline['dead_code']:
             report += f"""### Dead Code ({len(baseline['dead_code'])})
@@ -212,7 +227,7 @@ def main():
     print(f"   Baseline: {len(baseline['dead_code']) + len(baseline['unwired'])}", file=sys.stderr)
     print(f"   New violations: {len(violations['dead_code']) + len(violations['unwired']) + len(violations['stale_baseline']) + len(violations['unbalanced_braces'])}", file=sys.stderr)
 
-    return 0 if not (violations['dead_code'] or violations['unwired'] or violations['stale_baseline'] or violations['unbalanced_braces']) else 1
+    return exit_code(violations)
 
 
 if __name__ == "__main__":

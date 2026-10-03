@@ -1,17 +1,76 @@
 # ALICE-Physics Wiring Status
 
-**Last updated:** 2026-10-03 10:29
+_Generated from `scripts/wiring-baseline.txt` and `scripts/wiring_guard.py` (no timestamp: the file changes only when its content does)._
 
 ## Status
 
-🟡 **162 baseline items** — Permitted violations, ratchet in place
+🟡 **135 baseline items** — Permitted violations, ratchet in place
 
 ---
 
-## 📋 Baseline (162 permitted)
+## 📋 Baseline (135 permitted)
 
 Violations explicitly allowed via `scripts/wiring-baseline.txt`.
 Must resolve or remove from baseline to reduce ratchet.
+
+### By file
+
+| File | Baseline lines |
+|------|----------------|
+| `src/eulerian_grid.rs` | 10 |
+| `src/bvh.rs` | 5 |
+| `src/character_state.rs` | 4 |
+| `src/cloth_fluid.rs` | 4 |
+| `src/fatigue.rs` | 4 |
+| `src/interface_capture.rs` | 4 |
+| `src/motor.rs` | 4 |
+| `src/solver_tgs_hooks_6dof_scoped.rs` | 4 |
+| `src/aeroelasticity.rs` | 3 |
+| `src/beam_stress.rs` | 3 |
+| `src/deformable.rs` | 3 |
+| `src/erosion.rs` | 3 |
+| `src/fracture.rs` | 3 |
+| `src/math_util.rs` | 3 |
+| `src/metric.rs` | 3 |
+| `src/physics2d.rs` | 3 |
+| `src/plastic.rs` | 3 |
+| `src/print_orientation.rs` | 3 |
+| `src/scene_io.rs` | 3 |
+| `src/sdf_ccd.rs` | 3 |
+| `src/sdf_character.rs` | 3 |
+| `src/support_volume.rs` | 3 |
+| `src/surface_tension_csf.rs` | 3 |
+| `src/vehicle.rs` | 3 |
+| `src/bridging.rs` | 2 |
+| `src/buckling.rs` | 2 |
+| `src/buoyancy_zone.rs` | 2 |
+| `src/electromagnetic.rs` | 2 |
+| `src/ik_physics_bridge.rs` | 2 |
+| `src/particle.rs` | 2 |
+| `src/phase_change.rs` | 2 |
+| `src/quadratic_elastic_fem.rs` | 2 |
+| `src/ragdoll.rs` | 2 |
+| `src/rng.rs` | 2 |
+| `src/rope_attach.rs` | 2 |
+| `src/sdf_adaptive.rs` | 2 |
+| `src/sdf_manifold.rs` | 2 |
+| `src/solver_tgs.rs` | 2 |
+| `src/solver_tgs_hooks_6dof_oriented.rs` | 2 |
+| `src/solver_tgs_hooks_6dof_oriented_scoped.rs` | 2 |
+| `src/structural_solver.rs` | 2 |
+| `src/warp_risk.rs` | 2 |
+| `src/cloth.rs` | 1 |
+| `src/convex_mesh_builder.rs` | 1 |
+| `src/creep_longterm.rs` | 1 |
+| `src/event.rs` | 1 |
+| `src/fluid.rs` | 1 |
+| `src/mass_properties.rs` | 1 |
+| `src/sdf_sph.rs` | 1 |
+| `src/sleeping.rs` | 1 |
+| `src/solver_tgs_hooks.rs` | 1 |
+| `src/solver_tgs_hooks_6dof.rs` | 1 |
+| `src/thermal.rs` | 1 |
+| `src/thermal_stress.rs` | 1 |
 
 ### Dead Code (9)
 
@@ -27,7 +86,7 @@ dead_code src/solver_tgs_hooks_6dof_oriented_scoped.rs 1
 dead_code src/solver_tgs_hooks_6dof_scoped.rs 1
 ```
 
-### Unwired Items (153)
+### Unwired Items (126)
 
 ```
 unwired src/aeroelasticity.rs::facchinetti_reference
@@ -56,16 +115,9 @@ unwired src/cloth_fluid.rs::apply_fluid_forces_to_cloth
 unwired src/cloth_fluid.rs::apply_fluid_forces_to_cloth_with_residual
 unwired src/convex_mesh_builder.rs::build_convex_hull
 unwired src/creep_longterm.rs::petg_25c_moderate
-unwired src/damping_rayleigh.rs::damping_ratio
-unwired src/damping_rayleigh.rs::fit_two_modes
-unwired src/damping_rayleigh.rs::hz_to_omega
-unwired src/damping_rayleigh.rs::omega_to_hz
 unwired src/deformable.rs::center_of_mass
 unwired src/deformable.rs::new_cube
 unwired src/deformable.rs::resolve_rigid_body_collisions
-unwired src/dynamic_bvh.rs::height
-unwired src/dynamic_bvh.rs::proxy_count
-unwired src/dynamic_bvh.rs::user_data
 unwired src/electromagnetic.rs::lorentz_force
 unwired src/electromagnetic.rs::lorentz_force_sum
 unwired src/erosion.rs::compute_exposure_from_normals
@@ -86,10 +138,6 @@ unwired src/fatigue.rs::aluminum_a5052
 unwired src/fatigue.rs::analyze_spectrum
 unwired src/fatigue.rs::steel_sus304
 unwired src/fatigue.rs::stress_at_cycles
-unwired src/fillet_stress.rs::kt_circular_hole_infinite_plate
-unwired src/fillet_stress.rs::kt_elliptical_hole
-unwired src/fillet_stress.rs::kt_u_notch_axial
-unwired src/fillet_stress.rs::recommended_fillet_radius_mm
 unwired src/fluid.rs::new_block
 unwired src/fracture.rs::active_crack_count
 unwired src/fracture.rs::apply_stress_at
@@ -110,14 +158,6 @@ unwired src/motor.rs::apply_motors
 unwired src/motor.rs::disable
 unwired src/motor.rs::set_rotation_target
 unwired src/motor.rs::set_velocity_target
-unwired src/netcode.rs::advance_frame
-unwired src/netcode.rs::dt
-unwired src/netcode.rs::get_snapshot
-unwired src/netcode.rs::snapshot_count
-unwired src/netcode_prediction.rs::drop_acknowledged
-unwired src/netcode_prediction.rs::head_snapshot
-unwired src/netcode_prediction.rs::inputs
-unwired src/netcode_prediction.rs::reconcile
 unwired src/particle.rs::add_emitter
 unwired src/particle.rs::apply_force_field
 unwired src/phase_change.rs::Phase
@@ -128,10 +168,6 @@ unwired src/physics2d.rs::distance_to
 unwired src/plastic.rs::petg_room_temp
 unwired src/plastic.rs::uniaxial_x
 unwired src/plastic.rs::with_hardening
-unwired src/pressure.rs::apply_impact
-unwired src/pressure.rs::apply_pressure_at
-unwired src/pressure.rs::deformation_at
-unwired src/pressure.rs::pressure_at
 unwired src/print_orientation.rs::axis_x
 unwired src/print_orientation.rs::axis_y
 unwired src/print_orientation.rs::optimize_grid
@@ -158,10 +194,6 @@ unwired src/sdf_manifold.rs::deepest
 unwired src/sdf_manifold.rs::generate_sdf_manifold
 unwired src/sdf_sph.rs::populated_cell_count
 unwired src/sleeping.rs::build_islands
-unwired src/soft_body_cut.rs::CutPlane
-unwired src/soft_body_cut.rs::CutResult
-unwired src/soft_body_cut.rs::cut_cloth
-unwired src/soft_body_cut.rs::cut_deformable
 unwired src/solver_tgs.rs::par_dispatch_islands
 unwired src/solver_tgs_hooks_6dof_oriented.rs::local_to_world
 unwired src/solver_tgs_hooks_6dof_oriented_scoped.rs::solve_oriented_islands_parallel

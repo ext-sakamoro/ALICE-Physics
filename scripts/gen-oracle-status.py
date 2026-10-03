@@ -10,7 +10,6 @@ Scans tests/ for oracle tests and classifies them by implementation status:
 
 import re
 from pathlib import Path
-from datetime import datetime
 from collections import defaultdict
 
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -21,56 +20,86 @@ DOCS_DIR = PROJECT_ROOT / "docs"
 DOCS_DIR.mkdir(exist_ok=True)
 
 
+def _strip_line_comment(line):
+    """`//` 以降を落とす (コメントに書かれた #[test] / fn を数えない)."""
+    return line.split('//', 1)[0] if line.lstrip().startswith('//') else line
+
+
+def _read_attribute(lines, i):
+    """lines[i] から始まる属性 `#[...]` を、閉じる `]` まで連結して返す (行継続 `\\` も畳む).
+
+    返り値: (属性の本文, 次に読む行の index).  実物の `#[ignore = "…… \\\n ……"]` は複数行に
+    またがり、1 行ずつ読むと理由文が落ちて「pending」と誤読される.
+    """
+    buf = lines[i].strip()
+    j = i + 1
+    while buf.count('[') > buf.count(']') or buf.count('"') % 2 == 1:
+        if j >= len(lines):
+            break
+        nxt = lines[j].strip()
+        buf = (buf[:-1] if buf.endswith('\\') else buf + ' ') + nxt
+        j += 1
+    return buf, j
+
+
+def _ignore_reason(attr):
+    """`#[ignore]` / `#[ignore = "…"]` の理由 (空の ignore は 'pending')."""
+    m = re.match(r'#\[ignore\s*=\s*"(.*)"\s*\]\s*$', attr, flags=re.S)
+    return re.sub(r'\s+', ' ', m.group(1)).strip() if m else 'pending'
+
+
 def extract_test_metadata(test_file):
-    """Extract test functions and their ignore status from a test file."""
+    """Extract test functions and their ignore status from a test file.
+
+    属性は `#[test]` の前後どちらに `#[ignore]` があっても拾い、`#[test]` から `fn` までの
+    距離に上限を設けない (長い doc comment / 複数行の `#[should_panic]` を落とさない).
+    """
     tests = []
+    lines = Path(test_file).read_text(encoding='utf-8').split('\n')
 
-    with open(test_file, 'r') as f:
-        lines = f.readlines()
-
+    pending_attrs = []  # 直前までに読んだ属性 (空行・コメントでは切れない)
     i = 0
     while i < len(lines):
         line = lines[i]
-
-        # Look for #[test] or #[tokio::test]
-        if '#[test]' in line or '#[tokio::test]' in line:
-            # Check next lines for #[ignore] and fn
-            is_ignored = False
-            ignore_reason = ''
-            test_name = None
-
-            j = i + 1
-            while j < len(lines) and j < i + 10:  # Look ahead up to 10 lines
-                next_line = lines[j]
-
-                # Check for #[ignore]
-                if '#[ignore' in next_line:
-                    is_ignored = True
-                    match = re.search(r'#\[ignore\s*=\s*"([^"]*)"', next_line)
-                    if match:
-                        ignore_reason = match.group(1)
-                    else:
-                        ignore_reason = 'pending'
-
-                # Check for fn definition
-                fn_match = re.search(r'(?:async\s+)?fn\s+(\w+)\s*\(', next_line)
-                if fn_match:
-                    test_name = fn_match.group(1)
-                    break
-
-                j += 1
-
-            if test_name:
+        stripped = line.strip()
+        if stripped.startswith('//') or not stripped:
+            i += 1
+            continue
+        if stripped.startswith('#['):
+            attr, i = _read_attribute(lines, i)
+            pending_attrs.append(attr)
+            continue
+        fn_match = re.match(r'(?:pub\s+)?(?:async\s+)?fn\s+(\w+)\s*\(', stripped)
+        if fn_match:
+            is_test = any(re.match(r'#\[(?:\w+::)?test\]$', a) for a in pending_attrs)
+            ignores = [a for a in pending_attrs if a.startswith('#[ignore')]
+            if is_test:
                 tests.append({
-                    'name': test_name,
-                    'file': test_file.name,
-                    'is_ignored': is_ignored,
-                    'ignore_reason': ignore_reason,
+                    'name': fn_match.group(1),
+                    'file': Path(test_file).name,
+                    'is_ignored': bool(ignores),
+                    'ignore_reason': _ignore_reason(ignores[0]) if ignores else '',
                 })
-
+        pending_attrs = []
         i += 1
 
     return tests
+
+
+def classify_ignored(reason):
+    """`#[ignore]` の理由から 3 分類する.
+
+    - red:     意図して red のまま残している oracle (「the red is correct」/「src gap」)
+               実装側が追いつけば #[ignore] を外す  実装を足す対象であって、期待値を緩めない
+    - gated:   実行が長い / 診断表を出すだけ / 手動 (runtime / diagnostic / manual / run with --release)
+    - pending: 理由の無い bare な #[ignore]
+    """
+    r = reason.strip().lower()
+    if r == 'pending' or not r:
+        return 'pending'
+    if r.startswith('the red is correct') or r.startswith('src gap'):
+        return 'red'
+    return 'gated'
 
 
 def run_tests_and_categorize():
@@ -109,75 +138,103 @@ def run_tests_and_categorize():
     }
 
 
+def _line(test):
+    reason = test['ignore_reason']
+    if reason and reason != 'pending':
+        short = reason[:110] + ('…' if len(reason) > 110 else '')
+        return f"- `{test['test_name']}` ({test['file']}) — {short}\n"
+    return f"- `{test['test_name']}` ({test['file']})\n"
+
+
 def generate_markdown_report(categorized):
-    """Generate markdown report."""
-    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M')
+    """Generate markdown report (a pure function: no timestamp, so it changes only when the tests do)."""
+    ignored = categorized['pending']
+    by_class = {'red': [], 'gated': [], 'pending': []}
+    for t in ignored:
+        by_class[classify_ignored(t['ignore_reason'])].append(t)
+    total = sum(len(v) for v in categorized.values())
 
     report = f"""# ALICE-Physics Oracle Status
 
-**Last updated:** {timestamp}
+_Generated from `tests/*.rs` (no timestamp: the file changes only when its content does)._
 
 ## Summary
 
 | Category | Count |
 |----------|-------|
-| 🟢 Implemented | {len(categorized['implemented'])} |
-| 🟡 Partial | {len(categorized['partial'])} |
-| 🔴 Pending | {len(categorized['pending'])} |
-| **Total** | **{sum(len(v) for v in categorized.values())}** |
+| 🟢 Not ignored (run by CI) | {len(categorized['implemented'])} |
+| 🔴 Red by design | {len(by_class['red'])} |
+| ⏱ Gated (runtime / diagnostic / manual) | {len(by_class['gated'])} |
+| ⚪ Pending (bare `#[ignore]`) | {len(by_class['pending'])} |
+| **Total** | **{total}** |
+
+`Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
+CI's `cargo test` is what says whether it passes.
 
 """
 
-    if categorized['pending']:
-        report += f"""## 🔴 Pending ({len(categorized['pending'])})
+    if by_class['red']:
+        report += f"""## 🔴 Red by design ({len(by_class['red'])})
 
-Oracle tests not yet implemented (marked with `#[ignore]`).
-
-"""
-        for test in sorted(categorized['pending'], key=lambda x: x['test_name']):
-            if test['ignore_reason']:
-                # Truncate long reasons
-                reason = test['ignore_reason'][:80]
-                if len(test['ignore_reason']) > 80:
-                    reason += "…"
-                report += f"- `{test['test_name']}` ({test['file']}) — {reason}\n"
-            else:
-                report += f"- `{test['test_name']}` ({test['file']})\n"
-
-    if categorized['implemented']:
-        report += f"""
-## 🟢 Implemented ({len(categorized['implemented'])})
-
-Oracle tests with implementation complete and passing.
+Oracles kept red on purpose: the implementation is not there yet, and a companion test pins
+today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected value is never loosened.
 
 """
-        for test in sorted(categorized['implemented'], key=lambda x: x['test_name'])[:30]:
-            report += f"- `{test['test_name']}` ({test['file']})\n"
+        for t in sorted(by_class['red'], key=lambda x: x['test_name']):
+            report += _line(t)
+        report += "\n"
 
-        if len(categorized['implemented']) > 30:
-            report += f"\n... and {len(categorized['implemented']) - 30} more\n"
+    if by_class['gated']:
+        report += f"""## ⏱ Gated ({len(by_class['gated'])})
+
+Correct tests that are too slow for every push, or that print a measurement table.
+Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ignored`.
+
+"""
+        for t in sorted(by_class['gated'], key=lambda x: x['test_name']):
+            report += _line(t)
+        report += "\n"
+
+    if by_class['pending']:
+        report += f"""## ⚪ Pending ({len(by_class['pending'])})
+
+`#[ignore]` with no reason: not yet implemented, or forgotten.
+
+"""
+        for t in sorted(by_class['pending'], key=lambda x: x['test_name']):
+            report += _line(t)
+        report += "\n"
 
     if categorized['partial']:
-        report += f"""
-## 🟡 Partial ({len(categorized['partial'])})
-
-Oracle tests with incomplete or partial implementation.
+        report += f"""## 🟡 Partial ({len(categorized['partial'])})
 
 """
-        for test in sorted(categorized['partial'], key=lambda x: x['test_name']):
-            reason = test.get('reason', 'partial implementation')
-            report += f"- `{test['test_name']}` ({test['file']}) — {reason}\n"
+        for t in sorted(categorized['partial'], key=lambda x: x['test_name']):
+            report += f"- `{t['test_name']}` ({t['file']}) — {t.get('reason', 'partial implementation')}\n"
+        report += "\n"
+
+    report += f"""## 🟢 Not ignored ({len(categorized['implemented'])})
+
+Per-file counts (the test names are in `tests/`):
+
+| File | Tests |
+|------|-------|
+"""
+    per_file = defaultdict(int)
+    for t in categorized['implemented']:
+        per_file[t['file']] += 1
+    for name, n in sorted(per_file.items(), key=lambda kv: (-kv[1], kv[0])):
+        report += f"| `{name}` | {n} |\n"
 
     report += """
 ---
 
 ## How to Contribute
 
-When implementing a pending oracle:
-1. Remove `#[ignore]` from the test
+When an oracle goes green:
+1. Remove `#[ignore]` from the test (and the companion test that pins the old behaviour, if the reason says so)
 2. Implement the corresponding functionality in `src/`
 3. Run `cargo test <test_name>` to verify
-4. The oracle status will auto-update on next CI run
 
 For details: [CLAUDE.md](../CLAUDE.md)
 """
