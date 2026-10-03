@@ -150,7 +150,7 @@ user 制定の最重要項目「未配線 983 件 + module 丸ごと allow 13 fi
 | **oracle** | `tests/wm07_reset_and_rollback_contract.rs` (5 本) — reset の bit 一致、population 一致 / 不一致の正常系・異常系、joint remap を跨ぐ rollback+replay の bit-exact 変異試験 (fingerprint 検査を外す) で red を実測 |
 | **非目標** | cloth/fluid/FEM への snapshot 被覆拡張 (gap #2/#4) / 力学への区間演算 (gap #7) / 決定論の穴の型封じ (gap #8) / 探索層・World Auditor crate 自体 (別 plan) |
 
-### 第 24 increment (2026-10-02、壁 4 — multigrid の rank-local driver、段階 3)
+### 第 49 increment (2026-10-02、壁 4 — multigrid の rank-local driver、段階 3)
 
 `project_pressure_multigrid_decomposed_on_rank` を足した (crate 内) 段階 2 の solve を「走らせる rank の集合」で回す形にし、in-process 版は全 rank、rank-local 版は自分の rank だけにした 各 rank は自分の帯だけを持ち他 rank の帯を要求しない (要求すると `SlabSocketTransport` が panic) 交換・gather・補正返送の配送は全 rank が同じ順序で歩き、transport が自分の半分だけ実行する (位置で対応づけ、header なし) 粗い階層の解は rank 0 だけが行い、grid に書き戻すのも rank 0 だけ
 oracle: rank を thread にして loopback socket で結んだ 2〜8 rank が **単一 process と bit 一致** (4 形状 × 開放 / 壁つき、`ranks > nz` を含む) 非 root は grid を触らない (face 条件の enforce 後は不変) 全 rank を走らせる driver に rank-local transport を渡すと panic 変異テストは段階 2 の 25 件 + 段階 3 の 6 件
@@ -164,7 +164,7 @@ oracle: rank を thread にして loopback socket で結んだ 2〜8 rank が **
 | **解釈** | 流出面距離は原因でない (ny=16 MC で L=16 vs L=32 が 3.2e-8 一致、気泡あり) / L=30 の差は projection の GS fallback / 文献 scene (`L=12`、`nx=96`、GS 30 sweep 明示) も GS で測られていた / τ は scheme 依存 (ny=16 で MC 73.1 / SL 32.5) ⚠️ 極限 τ は言わない |
 | **oracle** | bracket (ny=8/16、`runtime:`、1934 s、green) + 収束次数 (ny=8/16/32、**新区分 `manual:`**、約 4 h、手動で green) + 文献 oracle を L=16 / MG / settled scene に差し替え (red のまま `src gap:`、理由文は実測のみ) 判定は純関数 `judge_refinement`、歯は合成列 7 本 |
 | **6 % gap の現状** | ⛔ 未解消 MC の Richardson 外挿 ≈ 5.72 (比 0.370、**外挿**) で 6.10 は帯の外、残る候補は advection の数値粘性 / 壁・段差角の 1 次処理、ny=64 (半日級) は未測定 |
-### 第 23 increment (2026-10-02、壁 4 — multigrid の slab 局所記憶域、段階 2)
+### 第 48 increment (2026-10-02、壁 4 — multigrid の slab 局所記憶域、段階 2)
 
 `multigrid_decomposed` の各 rank が、全長 buffer をやめて **各 level の自分の帯 + halo 1 層だけ**を持つ形にした (`SlabStorage` / `SlabTransport` を再利用) 圧力は帯 + halo、右辺・残差・コンダクタンス・逆次数は owned 層だけ 帯の外を読むと message つきの panic (全長 buffer の sentinel に代わる歯) rank 0 だけが最後の分散 level の全層を gather / 補正返送の間だけ持つ 単一 process の結果と **bit 一致** (段階 1 と同じ 5 grid 形状 × rank 1〜16 × 開放 / 壁つき)
 oracle 7 本 (bit 一致 / halo の delay と無配送 transport は不一致 / halo 0 の帯は panic / 各 rank の保持層 = owned + halo / layout / 拒否入力は不変) 変異 25 件すべて red
@@ -289,7 +289,7 @@ GS を使うには `step_multigrid(dt, 0)` `step_adaptive` は自動で multigri
 | 1e8 は**1 台に載る**か | ⛔ **8 rank 合計 10.42 GiB** (halo 重複で +3%) |
 | 1e8 は**使える**か | ⛔ ⚠️ **1 step 6.9〜34.4 分** (実測: 1 反復 20.62 秒 × 20〜100 反復) ⚠️ **時間は分散でしか縮まない** (スレッド並列は帯域律速で、8 core で逐次より遅い) |
 | 1 step を 1 秒にする並列度 | **約 400〜2000 rank 相当** ⚠️ **通信コストを無視した下限** |
-| 越境 transport の slab 版 | ⛔ **未実装** = 複数台で 1e8 を回す唯一の道 |
+| 越境 transport の slab 版 | ✅ **landed** (`8e00bce` 帯局所の越境 slab、第 14 increment 参照) |
 | 対称な wire 形式変更 | ⛔ **原理的に不可視** (全 rank が同じ code を動かすため) ⇒ 閉じるには**別実装の peer** |
 | 4 rank 以上のプロセス実行 | ⛔ 未実施 (schedule 上は 6 rank まで確認) |
 
