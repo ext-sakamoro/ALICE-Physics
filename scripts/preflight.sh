@@ -30,6 +30,9 @@ step "wiring-guard (oracle + 新規の未配線 / 理由の無い dead_code が�
 python3 scripts/test_wiring_guard.py
 python3 scripts/wiring_guard.py
 
+step "status generators oracle (docs/wiring-status.md / docs/oracle-status.md の生成器)"
+python3 scripts/test_gen_status.py
+
 step "clippy -D warnings (default, all targets)"
 cargo clippy --all-targets -- -D warnings
 
