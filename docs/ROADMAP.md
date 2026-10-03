@@ -24,6 +24,10 @@ oracle: 重なる箱の depth と法線を **分離軸判定 (15 軸、箱の回
 baseline 退役 3 行 (`gjk` / `epa` / `GjkResult`、実配線 3、巻き込み 0) 呼出元は `contact` (solver の `detect_collisions`) と `colliders_overlap`、example は `examples/convex_contacts.rs`
 ⚠️ 衝突は依然として 1 点の接触 (manifold なし): 接触点は EPA の支持点で、接触拘束は位置と質量だけで解く (回転は拘束に入らない) 残り (F3b/c): `compound` (8) / `convex_mesh_builder` (2) / `convex_decompose` (2) / `box_collider::{axis_aligned, corner, corners}` / `cone::{apex, base_center}` / `from_metric_ball`
 
+### 第 45 increment (2026-10-03、全配線 program 第 15 件 — `thin_wall` 未配線 7 item)
+
+worker 1 本、src 無変更 変異 11/11 (実装) + 7/7 (配線) red baseline 7 行退役 ⚠️ worker 実測 (未修正、Backlog): `sample_surface_points` の無限ループ (極端 AABB + f32 ULP)、`measure_thickness_at`/`for_nozzle(0.0)` の silent footgun 2 件
+
 ### 第 44 increment (2026-10-03、全配線 program 第 14 件 — `non_newtonian`/`laminate_failure`/`filter` 未配線 29 item)
 
 worker 3 本、全て src 無変更 変異: non_newtonian 10/10 実装 + 1/1 配線、laminate_failure 8/8、filter 23/23 (harness の mtime 偽陽性を worker 自身が検出・再検証) baseline 31 行退役 (実配線 28 + 名前衝突 1 `anisotropic::FailureCriterion` + 重複 2)
