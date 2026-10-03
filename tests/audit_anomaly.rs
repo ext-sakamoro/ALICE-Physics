@@ -540,3 +540,13 @@ fn composite_threshold_order_and_consensus() {
         (3.0, 0.1, 3.0)
     );
 }
+
+/// MAD warm-up: with fewer than 3 samples the score is 0 and the verdict false.
+#[test]
+fn mad_warm_up_score_is_zero() {
+    let mut d = MadDetector::new(3.0);
+    d.observe(1.0);
+    d.observe(2.0);
+    assert_eq!(d.anomaly_score(100.0), 0.0);
+    assert!(!d.is_anomaly(100.0));
+}
