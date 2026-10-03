@@ -56,6 +56,44 @@ leading constant に `(1 − 0.287·ln γ)` (`γ ≤ 0` は `γ = 1` 扱い) を
 加法性 `ln(ab)=ln(a)+ln(b)` / 単調性 / 退化入力) 変異試験 (正規化を外して red を確認) で
 歯があることを確認済み `north_sea()` 等の既定出力が変わる (公開 API signature は不変)
 
+### Added — `SolverBackend::Tgs` が SDF collider を解く (既知gap 3件のうち2件目を解消)
+
+`Tgs` backend は `PhysicsWorld::sdf_colliders` を一切見ず、auto-detect された
+sphere-sphere contact のみをTGSのcontact solverに渡していた (SDF collider付きのscene
+はSDFを素通りする) `step_tgs` のcollision detection (Phase 2) の直後に、既存の
+`resolve_sdf_collisions()` (XPBDの`substep`がPhase 1.5で呼ぶのと同じ関数、body.position
+への直接push-outで、impulseパイプラインを経由しないためbackendを問わず正しい) を
+1tickに1回呼ぶように追加 (TGSが内部で独自にsubstepするのと同じ理由で、contact検出と
+同様1回のみ) oracle: `tgs_body_falling_onto_sdf_ground_is_stopped_near_the_surface`
+(y=5から落下するbodyがSDF地面 (y=0) で停止、y∈(0,1)に収束) を新設、変異試験
+(呼び出しを削除してy≈-16まで貫通することを確認) で歯があることを確認済み
+(`SolverBackend` のdoc comment中「SDF colliders are not solved」gap記述を削除)
+
+### Added — `SolverBackend::Tgs` が joint を解く (既知gap 3件のうち最後の1件を解消)
+
+`Tgs` backend は `DistanceConstraint` を island 分割の grouping にしか使わず、拘束impulse
+を一切適用していなかった (joint 付き scene は joint が存在しないかのように振る舞う)
+`solver_tgs_hooks_6dof_oriented.rs` に `JointOriented` (bilateral distance joint) を新設し、
+contact と同じ `velocity_iteration` (相対速度を現在の axis に沿って厳密に0へ駆動、
+unilateral な contact と異なり符号制限なし) + `position_iteration` (Baumgarte drift
+補正) の2段で、TGSの内部substep毎にcontactと並行して解く (`solve_oriented_island_isolated`
+/ `_serial` / `_parallel` が `Island::joints` 経由でremap・solve・write-back)
+anchor offset (`r_a`/`r_b`) はcontactと異なり毎iteration現在のbody位置・姿勢から再計算
+(contactは1tick分frozen、jointはbodyがsubstep内で動き続けるため固定すると初期方向しか
+補正できない) warm-start cacheはcontactと共有 (`stable_id` の最上位bitでjoint用の
+disjointな空間を確保、衝突不可) oracle:
+`tgs_joint_scene_keeps_the_orbiter_near_target_distance` (周回運動、dist_sq≈25.051に収束)
++ `tgs_joint_already_at_target_distance_with_zero_velocity_stays_bit_exact` (既に満たされた
+拘束はimpulseを一切発生させないことをbit-exactで確認) +
+`tgs_joint_starting_violated_with_zero_velocity_is_corrected_by_position_pass`
+(初期違反+ゼロ速度、velocity_iterationだけでは1st substepで無力なことを突いて
+position_iteration独自の歯を確保) + `tgs_joint_with_coincident_anchors_does_not_panic`
+(退化入力) 既存の `tgs_joint_scene_matches_unconstrained_straight_line_exactly`
+(旧gapをpinするtest) は新しい正しい挙動のtestに置き換え 変異試験2種
+(velocity_iteration側 / position_iteration側それぞれを個別に無効化) で両方red確認済
+`SolverBackend` のdoc comment中「Joints are not enforced」gap記述を削除
+公開API signature変更なし (`JointOriented`等は全て`pub(crate)`)
+
 ### Added — `PhysicsWorld::sdf_contacts` (全配線 program 第 9b 件)
 
 `PhysicsWorld::sdf_contacts()` を追加した (追加のみ) `step` が SDF collider から押し出す body とその接触を、何も動かさずに `(body index, Contact)` で返す

@@ -353,49 +353,49 @@ fn joint_scene(cfg: PhysicsConfig) -> (PhysicsWorld, usize, usize) {
     (w, anchor, orbiter)
 }
 
-/// oracle: with zero gravity, zero contacts and (per `SolverBackend::Tgs`'s
-/// documented gap) an unenforced joint, the orbiter is under **no force at
-/// all**, so its position after `dt` is exactly `x0 + v0*dt` — computed here
-/// directly, not by calling the solver.
+/// oracle: `SolverBackend::Tgs` now enforces the joint via a bilateral
+/// velocity-level impulse (plus Baumgarte position correction for drift),
+/// solved every TGS inner sub-step alongside contacts — see
+/// `Pgs6DofOrientedHooks`'s `JointOriented` handling. The orbiter must stay
+/// close to `target_distance=5` from the (static) anchor, unlike the
+/// pre-fix behavior where the joint was a no-op and the distance grew
+/// without bound (`sqrt(25 + (10t)^2) > 5` for `t > 0`).
 #[test]
-fn tgs_joint_scene_matches_unconstrained_straight_line_exactly() {
-    // `damping = 1` (no decay) and `substeps = 1` with `dt = h` per call: the
-    // orbiter is under *no force whatsoever* (no gravity, no contacts, and
-    // — the gap under test — no joint impulse), so each call must advance
-    // position by exactly `v0 * h`, making the N-call total exactly `v0 *
-    // (N*h)` with no fixed-point rounding path to account for.
-    let h = r(1, 60);
-    let (mut w, _anchor, orbiter) = joint_scene(PhysicsConfig {
+fn tgs_joint_scene_keeps_the_orbiter_near_target_distance() {
+    let substeps = 8;
+    let dt = r(1, 60);
+    let (mut w, anchor, orbiter) = joint_scene(PhysicsConfig {
         gravity: Vec3Fix::ZERO,
         damping: Fix128::ONE,
-        substeps: 1,
+        substeps,
         solver_backend: SolverBackend::Tgs,
         ..PhysicsConfig::default()
     });
-    let x0 = w.bodies[orbiter].position;
-    let v0 = w.bodies[orbiter].velocity;
-    let frames = 30;
-    for _ in 0..frames {
-        w.step(h);
+    for _ in 0..30 {
+        w.step(dt);
     }
-    // Accumulated by repeated addition (one `+= v0 * h` per call), matching
-    // production's per-step accumulation bit-for-bit — a single `v0 * (N*h)`
-    // multiply is mathematically equal but not bit-identical under Fix128's
-    // fixed-point rounding (confirmed by an earlier failing run of this test).
-    let mut expected = x0;
-    for _ in 0..frames {
-        expected = expected + v0 * h;
-    }
-    assert_eq!(
-        w.bodies[orbiter].position, expected,
-        "TGS does not enforce the joint, so the orbiter must follow the exact free-inertial line"
+    let delta = w.bodies[orbiter].position - w.bodies[anchor].position;
+    let dist_sq = delta.dot(delta);
+    // 5^2 = 25; measured with both the velocity-level solve and the
+    // Baumgarte position correction active: dist_sq settles at ~25.051 and
+    // stays there across 60 frames. The band below is deliberately tight
+    // (not just "far from the old unconstrained ~100+") because
+    // position-correction alone (with the velocity-level solve mutated
+    // out) was measured to converge to a *different*, looser value
+    // (~25.496) for this same scene -- a wide band would pass on either,
+    // so this one is tuned from both real measurements to require the
+    // velocity-level solve specifically, not merely some enforcement.
+    assert!(
+        dist_sq > Fix128::from_int(25) && dist_sq < Fix128::from_ratio(252, 10),
+        "TGS's distance joint must keep the orbiter within a tight band of \
+         target_distance=5 (dist_sq={:?}, expected ~25.051)",
+        dist_sq
     );
 }
 
 /// Same scene under XPBD: the joint pulls the orbiter back toward
 /// `target_distance = 5` from the (static) anchor, so its distance from the
-/// anchor must stay close to 5 — unlike the TGS run above, where the
-/// distance grows without bound (`sqrt(25 + (10t)^2) > 5` for `t > 0`).
+/// anchor must stay close to 5.
 #[test]
 fn xpbd_joint_scene_keeps_the_orbiter_near_target_distance() {
     let substeps = 8;
@@ -416,31 +416,139 @@ fn xpbd_joint_scene_keeps_the_orbiter_near_target_distance() {
     assert!(
         dist_sq > Fix128::from_int(15) && dist_sq < Fix128::from_int(40),
         "XPBD's distance joint must keep the orbiter within a bounded band of \
-         target_distance=5 (dist_sq={:?}), unlike TGS's unconstrained straight line",
+         target_distance=5 (dist_sq={:?})",
         dist_sq
     );
+}
 
-    // And the *contrast*: re-run the same scene under TGS and confirm the
-    // distance has grown well past the XPBD band, demonstrating the
-    // documented backend difference rather than asserting it only in prose.
-    let (mut w_tgs, anchor_t, orbiter_t) = joint_scene(PhysicsConfig {
+/// oracle: a joint whose anchors are already *exactly* at `target_distance`
+/// with *zero* relative velocity is a satisfied constraint -- `vn = 0`
+/// exactly, so `lambda = -vn * eff_mass = 0` exactly, no impulse is ever
+/// applied, and (with no gravity, no contacts) both bodies must stay
+/// bit-exact at their initial position for every frame. This is a tighter
+/// claim than the orbiting-body band above: it pins the *absence* of any
+/// spurious correction, not just a bounded drift.
+#[test]
+fn tgs_joint_already_at_target_distance_with_zero_velocity_stays_bit_exact() {
+    let dt = r(1, 60);
+    let mut w = PhysicsWorld::new(PhysicsConfig {
         gravity: Vec3Fix::ZERO,
         damping: Fix128::ONE,
-        substeps,
+        substeps: 8,
         solver_backend: SolverBackend::Tgs,
         ..PhysicsConfig::default()
     });
-    for _ in 0..30 {
-        w_tgs.step(dt);
+    let a = w.add_body(RigidBody::new_dynamic(
+        Vec3Fix::from_int(0, 0, 0),
+        Fix128::ONE,
+    ));
+    let b = w.add_body(RigidBody::new_dynamic(
+        Vec3Fix::from_int(5, 0, 0),
+        Fix128::ONE,
+    ));
+    w.add_distance_constraint(DistanceConstraint::new(
+        a,
+        b,
+        Vec3Fix::ZERO,
+        Vec3Fix::ZERO,
+        Fix128::from_int(5),
+    ));
+    let (pos_a0, pos_b0) = (w.bodies[a].position, w.bodies[b].position);
+    for _ in 0..20 {
+        w.step(dt);
     }
-    let delta_t = w_tgs.bodies[orbiter_t].position - w_tgs.bodies[anchor_t].position;
-    let dist_sq_t = delta_t.dot(delta_t);
-    assert!(
-        dist_sq_t > Fix128::from_int(40),
-        "TGS's unenforced joint must let the orbiter drift well past the XPBD band \
-         (dist_sq_t={:?})",
-        dist_sq_t
+    assert_eq!(
+        w.bodies[a].position, pos_a0,
+        "a satisfied joint (vn=0, dist=target_distance already) must apply zero impulse to A"
     );
+    assert_eq!(
+        w.bodies[b].position, pos_b0,
+        "a satisfied joint (vn=0, dist=target_distance already) must apply zero impulse to B"
+    );
+}
+
+/// oracle: a joint that starts **violated** (`dist=6` vs `target_distance=5`)
+/// with **zero** relative velocity exercises `position_iteration`'s
+/// Baumgarte drift correction specifically -- `velocity_iteration` alone
+/// contributes nothing on the very first sub-step (`vn = 0` initially, so
+/// `lambda = -vn*eff_m = 0`), so any correction visible before the bodies
+/// have had a chance to pick up relative velocity from the joint's own
+/// impulses must have come from the position pass.
+#[test]
+fn tgs_joint_starting_violated_with_zero_velocity_is_corrected_by_position_pass() {
+    let dt = r(1, 60);
+    let mut w = PhysicsWorld::new(PhysicsConfig {
+        gravity: Vec3Fix::ZERO,
+        damping: Fix128::ONE,
+        substeps: 8,
+        solver_backend: SolverBackend::Tgs,
+        ..PhysicsConfig::default()
+    });
+    let a = w.add_body(RigidBody::new_dynamic(
+        Vec3Fix::from_int(0, 0, 0),
+        Fix128::ONE,
+    ));
+    let b = w.add_body(RigidBody::new_dynamic(
+        Vec3Fix::from_int(6, 0, 0),
+        Fix128::ONE,
+    ));
+    w.add_distance_constraint(DistanceConstraint::new(
+        a,
+        b,
+        Vec3Fix::ZERO,
+        Vec3Fix::ZERO,
+        Fix128::from_int(5),
+    ));
+    for _ in 0..30 {
+        w.step(dt);
+    }
+    let delta = w.bodies[b].position - w.bodies[a].position;
+    let dist_sq = delta.dot(delta);
+    // Measured: converges to 25.050026 within 5 frames and stays there
+    // (same discretization residual as the orbiting-body test above, both
+    // driven by the same velocity+position joint solve). A tight band
+    // around the measured value, well short of the initial 36 (dist=6).
+    assert!(
+        dist_sq > Fix128::from_int(25) && dist_sq < Fix128::from_ratio(252, 10),
+        "a joint starting violated with zero relative velocity must be pulled back near \
+         target_distance=5 by the position pass (dist_sq={:?}, expected ~25.050, started at 36)",
+        dist_sq
+    );
+}
+
+/// Degenerate: a joint whose anchors coincide (`target_distance = 0`, both
+/// bodies starting at the same point) must not panic. The axis is
+/// undefined at `dist = 0` -- `joint_geometry`'s `normalize_with_length`
+/// returns a zero vector there, and both the velocity and position passes
+/// must recognise `dist.is_zero()` and skip the joint for that iteration
+/// (same documented contract as `DistanceConstraint`'s own
+/// `distance.is_zero() => continue` in `solve_distance_constraints`).
+#[test]
+fn tgs_joint_with_coincident_anchors_does_not_panic() {
+    let dt = r(1, 60);
+    let mut w = PhysicsWorld::new(PhysicsConfig {
+        gravity: Vec3Fix::from_int(0, -10, 0),
+        damping: Fix128::ONE,
+        substeps: 8,
+        solver_backend: SolverBackend::Tgs,
+        ..PhysicsConfig::default()
+    });
+    let a = w.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
+    let b = w.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
+    w.add_distance_constraint(DistanceConstraint::new(
+        a,
+        b,
+        Vec3Fix::ZERO,
+        Vec3Fix::ZERO,
+        Fix128::ZERO,
+    ));
+    for _ in 0..10 {
+        w.step(dt);
+    }
+    // Reaching here at all is the assertion; gravity still moves both
+    // bodies downward since the degenerate joint applies no impulse.
+    assert!(w.bodies[a].position.y.is_negative());
+    assert!(w.bodies[b].position.y.is_negative());
 }
 
 // ============================================================================
@@ -607,5 +715,52 @@ fn kinematic_target_pushes_a_dynamic_body_under_tgs() {
          without ever registering a contact",
         d_start_x,
         w.bodies[d].position.x
+    );
+}
+
+// ============================================================================
+// 6. SDF collider resolution under Tgs
+// ============================================================================
+
+/// oracle: `SolverBackend::Tgs` calls `resolve_sdf_collisions` once per
+/// tick (mirroring XPBD's `substep` Phase 1.5), so a body falling toward
+/// an SDF ground plane must be stopped near the surface instead of
+/// tunnelling through it. `resolve_sdf_collisions` corrects *position*
+/// only (no velocity projection), so the body does not come fully to rest
+/// at `collision_radius` -- it settles into a slow residual sink, the same
+/// characteristic the existing XPBD test for this function tolerates with
+/// a loose bound (`y > -1.0`) rather than an exact value.
+#[test]
+fn tgs_body_falling_onto_sdf_ground_is_stopped_near_the_surface() {
+    use alice_physics::math::QuatFix;
+    use alice_physics::sdf_collider::{ClosureSdf, SdfCollider};
+
+    let dt = r(1, 60);
+    let mut w = PhysicsWorld::new(PhysicsConfig {
+        gravity: Vec3Fix::from_int(0, -10, 0),
+        damping: Fix128::ONE,
+        substeps: 8,
+        solver_backend: SolverBackend::Tgs,
+        ..PhysicsConfig::default()
+    });
+    w.set_sdf_collision_radius(r(1, 2)); // 0.5
+    let body = w.add_body(RigidBody::new_dynamic(
+        Vec3Fix::from_int(0, 5, 0),
+        Fix128::ONE,
+    ));
+    let ground = ClosureSdf::new(|_x, y, _z| y, |_x, _y, _z| (0.0, 1.0, 0.0));
+    w.add_sdf_collider(SdfCollider::new_static(
+        Box::new(ground),
+        Vec3Fix::ZERO,
+        QuatFix::IDENTITY,
+    ));
+    for _ in 0..120 {
+        w.step(dt);
+    }
+    let y = w.bodies[body].position.y;
+    assert!(
+        y > Fix128::ZERO && y < Fix128::ONE,
+        "a body falling from y=5 onto an SDF ground plane under Tgs must be stopped near the \
+         surface (y={y:?}, measured ~0.168 at frame 119), not tunnel through it"
     );
 }
