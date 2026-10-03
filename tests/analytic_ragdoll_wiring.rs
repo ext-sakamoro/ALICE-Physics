@@ -4,9 +4,9 @@
 //! `f64` from the segment-length fractions of the standing height (feet at
 //! the bottom, T-pose facing +Z). Mass per bone is `mass_kg * fraction`.
 //!
-//! NOT pinned (open Backlog entries, `RagdollBuilder`): the fractions summing
-//! to 1 (they sum to 0.958 today) and the joints keeping their bones apart
-//! (anchors are body centres today).
+//! Also pinned: the fractions sum to 1 (bodies add up to `mass_kg`), every
+//! joint's two anchors coincide at the joint's world position in the T-pose,
+//! and with gravity off the bones keep their initial spacing.
 
 #![cfg(feature = "std")]
 #![allow(clippy::disallowed_methods)]
@@ -44,7 +44,7 @@ fn presets_have_the_documented_height_mass_and_shared_fractions() {
         .map(f)
     };
     let want = [
-        0.100, 0.355, 0.081, 0.028, 0.016, 0.006, 0.100, 0.0465, 0.0145,
+        0.142, 0.355, 0.081, 0.028, 0.016, 0.006, 0.100, 0.0465, 0.0145,
     ];
     for (g, e) in fr(&m).iter().zip(want) {
         assert!((g - e).abs() < 1e-9, "{g} vs {e}");
@@ -68,7 +68,7 @@ fn check_layout(p: RagdollProportions, mass_kg: f64, h_m: f64) {
     let y_sh = y_torso + l(0.30) * 0.35;
     let y_hip = py - l(0.08) / 2.0;
     let want = [
-        (Bone::Pelvis, px, py, 0.100),
+        (Bone::Pelvis, px, py, 0.142),
         (Bone::Torso, px, y_torso, 0.355),
         (Bone::Head, px, y_head, 0.081),
         (
@@ -280,5 +280,112 @@ fn degenerate_proportions_do_not_panic() {
     // Zero height: every segment length is 0, all bones sit at the pelvis position.
     for &b in &hd.bones {
         assert_eq!(w.bodies[b].position, Vec3Fix::from_int(1, 2, 3));
+    }
+}
+
+#[test]
+fn body_masses_add_up_to_mass_kg() {
+    for (p, kg) in [
+        (RagdollProportions::human_male(), 75.0),
+        (RagdollProportions::human_female(), 62.0),
+        (RagdollProportions::child(), 30.0),
+    ] {
+        let (w, hd) = build(p, Vec3Fix::ZERO);
+        let total: f64 = hd
+            .bones
+            .iter()
+            .map(|&b| 1.0 / f(w.bodies[b].inv_mass))
+            .sum();
+        assert!((total - kg).abs() < 1e-6, "{total} vs {kg}");
+    }
+}
+
+#[test]
+fn joint_anchors_coincide_at_the_joint_position() {
+    // Closed-form joint positions (pelvis at (1, 2, 3), height 1.75 m).
+    let h = 1.75_f64;
+    let l = |x: f64| x * h;
+    let (px, py, pz) = (1.0, 2.0, 3.0);
+    let y_torso = py + (l(0.08) + l(0.30)) / 2.0;
+    let y_sh = y_torso + l(0.30) * 0.35;
+    let y_hip = py - l(0.08) / 2.0;
+    let (w, hd) = build(RagdollProportions::human_male(), Vec3Fix::from_int(1, 2, 3));
+    let want: [(f64, f64, f64); 14] = [
+        (px, py + l(0.08) / 2.0, pz),
+        (px, y_torso + l(0.30) / 2.0, pz),
+        (px - l(0.12), y_sh, pz),
+        (px - l(0.12), y_sh - l(0.18), pz),
+        (px - l(0.12), y_sh - l(0.18) - l(0.15), pz),
+        (px + l(0.12), y_sh, pz),
+        (px + l(0.12), y_sh - l(0.18), pz),
+        (px + l(0.12), y_sh - l(0.18) - l(0.15), pz),
+        (px - l(0.07), y_hip, pz),
+        (px - l(0.07), y_hip - l(0.24), pz),
+        (px - l(0.07), y_hip - l(0.24) - l(0.23), pz),
+        (px + l(0.07), y_hip, pz),
+        (px + l(0.07), y_hip - l(0.24), pz),
+        (px + l(0.07), y_hip - l(0.24) - l(0.23), pz),
+    ];
+    for (i, (jx, jy, jz)) in want.iter().enumerate() {
+        let (a, b, la, lb) = match &w.joints[hd.joints[i]] {
+            Joint::Ball(j) => (j.body_a, j.body_b, j.local_anchor_a, j.local_anchor_b),
+            Joint::Hinge(j) => (j.body_a, j.body_b, j.local_anchor_a, j.local_anchor_b),
+            other => panic!("{other:?}"),
+        };
+        for (body, anchor) in [(a, la), (b, lb)] {
+            let wp = w.bodies[body].position + anchor;
+            assert!(
+                (f(wp.x) - jx).abs() < 1e-6
+                    && (f(wp.y) - jy).abs() < 1e-6
+                    && (f(wp.z) - jz).abs() < 1e-6,
+                "joint {i}: anchor world position ({},{},{}) vs ({jx},{jy},{jz})",
+                f(wp.x),
+                f(wp.y),
+                f(wp.z)
+            );
+        }
+    }
+}
+
+#[test]
+fn bones_keep_their_spacing_without_gravity() {
+    let mut w = PhysicsWorld::new(PhysicsConfig {
+        gravity: Vec3Fix::ZERO,
+        ..PhysicsConfig::default()
+    });
+    let hd = RagdollBuilder::build(
+        &mut w,
+        RagdollProportions::human_male(),
+        Vec3Fix::from_int(0, 2, 0),
+    );
+    let pairs = [
+        (0, 1),
+        (1, 2),
+        (1, 3),
+        (3, 4),
+        (4, 5),
+        (1, 6),
+        (6, 7),
+        (7, 8),
+        (0, 9),
+        (9, 10),
+        (10, 11),
+        (0, 12),
+        (12, 13),
+        (13, 14),
+    ];
+    let dist = |w: &PhysicsWorld, a: usize, b: usize| {
+        (w.bodies[hd.bones[a]].position - w.bodies[hd.bones[b]].position)
+            .length()
+            .to_f64()
+    };
+    let d0: Vec<f64> = pairs.iter().map(|&(a, b)| dist(&w, a, b)).collect();
+    assert!(d0.iter().all(|d| *d > 0.2 && *d < 0.42), "{d0:?}");
+    for _ in 0..120 {
+        w.step(Fix128::from_ratio(1, 60));
+    }
+    for (k, &(a, b)) in pairs.iter().enumerate() {
+        let d = dist(&w, a, b);
+        assert!((d - d0[k]).abs() < 1e-3, "pair {a}-{b}: {d} vs {}", d0[k]);
     }
 }

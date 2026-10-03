@@ -33,7 +33,7 @@
 //!
 //! | Segment            | Fraction |
 //! |--------------------|----------|
-//! | Pelvis (root)      | 0.100    |
+//! | Pelvis (root)      | 0.142    |
 //! | Torso              | 0.355    |
 //! | Head + neck        | 0.081    |
 //! | Upper arm ×2       | 0.028 each|
@@ -43,7 +43,9 @@
 //! | Shank ×2           | 0.0465 each|
 //! | Foot ×2            | 0.0145 each|
 //!
-//! Fractions are approximate and callers who need higher fidelity can
+//! The fractions sum to exactly 1 (Dempster pelvis 0.142 + torso 0.355 is the
+//! Winter trunk 0.497), so the bodies add up to `mass_kg`. Fractions are
+//! approximate and callers who need higher fidelity can
 //! override the resulting `RigidBody` masses after `build`.
 
 use crate::joint::{BallJoint, HingeJoint, Joint};
@@ -128,7 +130,7 @@ impl RagdollProportions {
         Self {
             height_m: Fix128::from_ratio(175, 100),
             mass_kg: Fix128::from_int(75),
-            mass_pelvis: Fix128::from_ratio(100, 1000),
+            mass_pelvis: Fix128::from_ratio(142, 1000),
             mass_torso: Fix128::from_ratio(355, 1000),
             mass_head: Fix128::from_ratio(81, 1000),
             mass_upper_arm: Fix128::from_ratio(28, 1000),
@@ -322,104 +324,95 @@ impl RagdollBuilder {
             total_mass * proportions.mass_foot,
         ));
 
-        // Joints — anchor points are expressed in the local space of
-        // each body, taken as the body centre for the MVP.
-        let zero = Vec3Fix::ZERO;
-        let mut joints = [0_usize; 14];
-
-        joints[0] = world.add_joint(Joint::Ball(BallJoint::new(
-            bones[Bone::Pelvis.index()],
-            bones[Bone::Torso.index()],
-            zero,
-            zero,
-        )));
-        joints[1] = world.add_joint(Joint::Ball(BallJoint::new(
-            bones[Bone::Torso.index()],
-            bones[Bone::Head.index()],
-            zero,
-            zero,
-        )));
-        joints[2] = world.add_joint(Joint::Ball(BallJoint::new(
-            bones[Bone::Torso.index()],
-            bones[Bone::LeftUpperArm.index()],
-            zero,
-            zero,
-        )));
+        // Joints: each anchor is the joint's world position expressed in the
+        // local space of the body (bodies start unrotated, so it is the offset
+        // from the body centre). Both anchors of a joint therefore coincide in
+        // the T-pose and the joint keeps the bones apart instead of pulling
+        // the two body centres together.
+        let pos: [Vec3Fix; 15] = core::array::from_fn(|i| world.bodies[bones[i]].position);
+        let half = Fix128::from_ratio(1, 2);
+        let waist = Vec3Fix::new(px, y_pelvis + lengths.pelvis * half, pz);
+        let neck = Vec3Fix::new(px, y_torso + lengths.torso * half, pz);
+        let shoulder_l = Vec3Fix::new(px - lengths.shoulder_x, y_shoulder, pz);
+        let shoulder_r = Vec3Fix::new(px + lengths.shoulder_x, y_shoulder, pz);
+        let y_elbow = y_shoulder - lengths.upper_arm;
+        let y_wrist = y_elbow - lengths.forearm;
+        let hip_l = Vec3Fix::new(px - lengths.hip_x, y_hip, pz);
+        let hip_r = Vec3Fix::new(px + lengths.hip_x, y_hip, pz);
+        let y_knee = y_hip - lengths.thigh;
+        let y_ankle = y_knee - lengths.shin;
+        let at = |p: Vec3Fix, y: Fix128| Vec3Fix::new(p.x, y, p.z);
+        let ball = |a: Bone, b: Bone, j: Vec3Fix| {
+            Joint::Ball(BallJoint::new(
+                bones[a.index()],
+                bones[b.index()],
+                j - pos[a.index()],
+                j - pos[b.index()],
+            ))
+        };
         let hinge_axis = Vec3Fix::new(Fix128::ONE, Fix128::ZERO, Fix128::ZERO);
-        joints[3] = world.add_joint(Joint::Hinge(HingeJoint::new(
-            bones[Bone::LeftUpperArm.index()],
-            bones[Bone::LeftForearm.index()],
-            zero,
-            zero,
-            hinge_axis,
-            hinge_axis,
-        )));
-        joints[4] = world.add_joint(Joint::Ball(BallJoint::new(
-            bones[Bone::LeftForearm.index()],
-            bones[Bone::LeftHand.index()],
-            zero,
-            zero,
-        )));
-        joints[5] = world.add_joint(Joint::Ball(BallJoint::new(
-            bones[Bone::Torso.index()],
-            bones[Bone::RightUpperArm.index()],
-            zero,
-            zero,
-        )));
-        joints[6] = world.add_joint(Joint::Hinge(HingeJoint::new(
-            bones[Bone::RightUpperArm.index()],
-            bones[Bone::RightForearm.index()],
-            zero,
-            zero,
-            hinge_axis,
-            hinge_axis,
-        )));
-        joints[7] = world.add_joint(Joint::Ball(BallJoint::new(
-            bones[Bone::RightForearm.index()],
-            bones[Bone::RightHand.index()],
-            zero,
-            zero,
-        )));
-        joints[8] = world.add_joint(Joint::Ball(BallJoint::new(
-            bones[Bone::Pelvis.index()],
-            bones[Bone::LeftThigh.index()],
-            zero,
-            zero,
-        )));
-        joints[9] = world.add_joint(Joint::Hinge(HingeJoint::new(
-            bones[Bone::LeftThigh.index()],
-            bones[Bone::LeftShin.index()],
-            zero,
-            zero,
-            hinge_axis,
-            hinge_axis,
-        )));
-        joints[10] = world.add_joint(Joint::Ball(BallJoint::new(
-            bones[Bone::LeftShin.index()],
-            bones[Bone::LeftFoot.index()],
-            zero,
-            zero,
-        )));
-        joints[11] = world.add_joint(Joint::Ball(BallJoint::new(
-            bones[Bone::Pelvis.index()],
-            bones[Bone::RightThigh.index()],
-            zero,
-            zero,
-        )));
-        joints[12] = world.add_joint(Joint::Hinge(HingeJoint::new(
-            bones[Bone::RightThigh.index()],
-            bones[Bone::RightShin.index()],
-            zero,
-            zero,
-            hinge_axis,
-            hinge_axis,
-        )));
-        joints[13] = world.add_joint(Joint::Ball(BallJoint::new(
-            bones[Bone::RightShin.index()],
-            bones[Bone::RightFoot.index()],
-            zero,
-            zero,
-        )));
+        let hinge = |a: Bone, b: Bone, j: Vec3Fix| {
+            Joint::Hinge(HingeJoint::new(
+                bones[a.index()],
+                bones[b.index()],
+                j - pos[a.index()],
+                j - pos[b.index()],
+                hinge_axis,
+                hinge_axis,
+            ))
+        };
+        let mut joints = [0_usize; 14];
+        let table = [
+            ball(Bone::Pelvis, Bone::Torso, waist),
+            ball(Bone::Torso, Bone::Head, neck),
+            ball(Bone::Torso, Bone::LeftUpperArm, shoulder_l),
+            hinge(
+                Bone::LeftUpperArm,
+                Bone::LeftForearm,
+                at(pos[Bone::LeftUpperArm.index()], y_elbow),
+            ),
+            ball(
+                Bone::LeftForearm,
+                Bone::LeftHand,
+                at(pos[Bone::LeftForearm.index()], y_wrist),
+            ),
+            ball(Bone::Torso, Bone::RightUpperArm, shoulder_r),
+            hinge(
+                Bone::RightUpperArm,
+                Bone::RightForearm,
+                at(pos[Bone::RightUpperArm.index()], y_elbow),
+            ),
+            ball(
+                Bone::RightForearm,
+                Bone::RightHand,
+                at(pos[Bone::RightForearm.index()], y_wrist),
+            ),
+            ball(Bone::Pelvis, Bone::LeftThigh, hip_l),
+            hinge(
+                Bone::LeftThigh,
+                Bone::LeftShin,
+                at(pos[Bone::LeftThigh.index()], y_knee),
+            ),
+            ball(
+                Bone::LeftShin,
+                Bone::LeftFoot,
+                at(pos[Bone::LeftShin.index()], y_ankle),
+            ),
+            ball(Bone::Pelvis, Bone::RightThigh, hip_r),
+            hinge(
+                Bone::RightThigh,
+                Bone::RightShin,
+                at(pos[Bone::RightThigh.index()], y_knee),
+            ),
+            ball(
+                Bone::RightShin,
+                Bone::RightFoot,
+                at(pos[Bone::RightShin.index()], y_ankle),
+            ),
+        ];
+        for (slot, joint) in joints.iter_mut().zip(table) {
+            *slot = world.add_joint(joint);
+        }
 
         RagdollHandle { bones, joints }
     }
@@ -444,10 +437,11 @@ mod tests {
             + p.mass_head
             + Fix128::from_int(2) * (p.mass_upper_arm + p.mass_forearm + p.mass_hand)
             + Fix128::from_int(2) * (p.mass_thigh + p.mass_shin + p.mass_foot);
-        // Winter fractions sum to ≈ 1.023, well within a few percent.
+        // The fractions are 0.142 + 0.355 + 0.081 + 0.056 + 0.032 + 0.012 + 0.2 +
+        // 0.093 + 0.029 = 1.000 exactly; only fixed-point rounding remains.
         let diff = sum - Fix128::ONE;
         let magnitude = if diff < Fix128::ZERO { -diff } else { diff };
-        assert!(magnitude < Fix128::from_ratio(5, 100));
+        assert!(magnitude < Fix128::from_ratio(1, 1_000_000_000));
     }
 
     #[test]
