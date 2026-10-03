@@ -212,6 +212,17 @@ required-features = ["std"]
 name = "spatial_raycast_queries"
 required-features = ["std"]
 
+# Production entry point for CCD time-of-impact queries (wiring_guard:
+# src/ccd.rs had zero production callers across 8 items: needs_ccd,
+# sphere_capsule_toi, capsule_plane_toi, aabb_plane_toi, swept_aabb,
+# adaptive_toi_substeps, speculative_contact, conservative_advancement.
+# Of these, adaptive_toi_substeps is deliberately NOT wired here -- it is
+# a documented skeleton being implemented for real by a separate task;
+# this entry point covers the other 7).
+[[example]]
+name = "continuous_collision_detection"
+required-features = ["std"]
+
 [[bench]]
 name = "physics_bench"
 harness = false
