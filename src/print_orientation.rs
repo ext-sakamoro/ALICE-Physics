@@ -25,8 +25,9 @@
 //! - Continuous optimum via analytical θ = 0 solution.
 //! - Discrete grid search over Euler-angle candidates for cases where the
 //!   part cannot be freely rotated (e.g. overhang constraints).
-//! - Constraint predicate `is_orientation_valid` to reject candidates that
-//!   would create excessive overhang.
+//! - A constraint predicate rejecting candidates that would create excessive
+//!   overhang is **not provided yet** (no such function exists; the overhang
+//!   volume itself is estimated in `support_volume`).
 
 use crate::filament_db::MaterialProperties;
 use crate::math::Fix128;
@@ -240,14 +241,18 @@ pub fn optimize_analytical(load: &LoadDirection, m: &MaterialProperties) -> Orie
 /// steps of `grid_step_rad`. Useful when downstream constraints (overhang
 /// avoidance, support minimisation) preclude the analytical optimum.
 ///
-/// `grid_step_rad` typical: `π/12` (15°) → 25×25 = 625 candidates.
+/// `grid_step_rad` typical: `π/12` (15°) → 13×13 = 169 candidates (the range
+/// `[-π/2, π/2]` holds `π / step + 1` points per axis).
+/// A step that is zero or negative is replaced by [`optimize_analytical`].
 #[must_use]
 pub fn optimize_grid(
     load: &LoadDirection,
     m: &MaterialProperties,
     grid_step_rad: Fix128,
 ) -> OrientationReport {
-    if grid_step_rad.is_zero() {
+    // A zero step would not advance, and a negative step would walk away from
+    // the end of the range forever; both fall back to the analytical optimum.
+    if grid_step_rad <= Fix128::ZERO {
         return optimize_analytical(load, m);
     }
     let mut best_yield = Fix128::ZERO;
