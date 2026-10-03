@@ -10,7 +10,8 @@
 //! Interfacial surface tension `σ` becomes a body force per unit volume
 //! applied only near the interface:
 //!
-//! `f_st = σ · κ · n̂ · δ_smoothed(φ)`
+//! `f_st = −σ · κ · n̂ · δ_smoothed(φ)`  (sign for `n̂` pointing toward `φ > 0`, `κ = ∇²φ`:
+//! the force is directed to the centre of curvature)
 //!
 //! - `σ` (N/m): surface tension coefficient (water 0.072, PLA melt 0.030,
 //!   mercury 0.485).
@@ -110,7 +111,10 @@ pub fn smeared_delta(phi: Fix128, epsilon: Fix128) -> Fix128 {
 
 /// Surface-tension body force per unit volume at cell `(i, j, k)`:
 ///
-/// `f = σ · κ · n̂ · δ`
+/// `f = −σ · κ · n̂ · δ`
+///
+/// with `n̂ = ∇φ/|∇φ|` (toward `φ > 0`) and `κ = ∇²φ`, so the force points toward
+/// the centre of curvature (Young–Laplace: `p_in − p_out = 2σ/R` on a droplet).
 ///
 /// Returns `Vec3Fix::default()` outside the smeared interface band.
 #[must_use]
@@ -129,7 +133,10 @@ pub fn csf_body_force(
     }
     let kappa = curvature_at(field, i, j, k);
     let normal = interface_normal(field, i, j, k);
-    let scale = sigma_n_per_m * kappa * delta;
+    // n̂ = ∇φ/|∇φ| points toward φ > 0 (outside) and κ = ∇²φ = +2/R on a droplet,
+    // so the force that pulls toward the centre of curvature carries a minus sign
+    // (before this fix it pointed outward: Δp = p_in − p_out came out as −2σ/R).
+    let scale = -(sigma_n_per_m * kappa * delta);
     Vec3Fix::new(normal.x * scale, normal.y * scale, normal.z * scale)
 }
 
@@ -273,8 +280,9 @@ mod tests {
         );
         // Cell (8,5,5) has φ ≈ 0 → within smeared band ε=1.5
         let f = csf_body_force(&g, 8, 5, 5, SIGMA_WATER_AIR, Fix128::from_ratio(15, 10));
-        // Should have some non-zero X component (outward normal)
-        assert!(f.x.abs() > Fix128::ZERO);
+        // Surface tension pulls toward the centre of curvature: this cell is on the
+        // +x side of the sphere, so the force points to -x
+        assert!(f.x < Fix128::ZERO);
     }
 
     #[test]

@@ -112,9 +112,6 @@ unwired src/solver_tgs_hooks_6dof_scoped.rs::solve_islands_serial
 unwired src/support_volume.rs::filament_length_m
 unwired src/support_volume.rs::is_nontrivial
 unwired src/support_volume.rs::quality
-unwired src/surface_tension_csf.rs::SIGMA_MERCURY_AIR
-unwired src/surface_tension_csf.rs::SIGMA_PLA_AIR
-unwired src/surface_tension_csf.rs::SIGMA_STEEL_ARGON
 unwired src/thermal.rs::add_heat_point
 unwired src/thermal_stress.rs::yield_temperature_c
 unwired src/vehicle.rs::grounded_wheels

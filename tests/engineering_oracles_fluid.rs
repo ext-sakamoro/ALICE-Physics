@@ -886,13 +886,15 @@ fn surface_tension_csf_band_integral_matches_young_laplace() {
         let f = csf_body_force(&phi, i, 12, 12, sigma, eps);
         assert_eq!(f.y, Fix128::ZERO, "force is radial (x) on the x axis");
         assert_eq!(f.z, Fix128::ZERO);
-        jump = jump + f.x.abs() * dx;
+        jump = jump + f.x * dx;
     }
     assert!(
         csf_body_force(&phi, 17, 12, 12, sigma, eps) == Vec3Fix::ZERO,
         "no force outside the smeared band"
     );
-    let want = 2.0 * 0.072 / 0.5; // 0.288 Pa
+    // signed: the force points toward the centre of curvature (-x on the +x side), so
+    // the integral across the band is -sigma kappa, i.e. p_in - p_out = +2 sigma / R
+    let want = -2.0 * 0.072 / 0.5; // -0.288 Pa
     assert!(
         rel_err(jump.to_f64(), want) < 0.02,
         "∫ f·dn = {} vs Young–Laplace 2σ/R = {want}",
