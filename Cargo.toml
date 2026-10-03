@@ -496,6 +496,18 @@ required-features = ["std"]
 name = "sim_modifier_management"
 required-features = ["std"]
 
+# Production entry point for `src/kinematic_loop.rs`'s four-bar linkage API
+# (wiring_guard: FourBarLinkage, centre_to_centre, four_bar_linkage, and
+# try_four_bar_linkage had zero production callers -- only the module's own
+# #[cfg(test)] mod tests and tests/engineering_oracles_misc.rs called in,
+# neither of which the guard counts; `LoopClosureConstraint`'s own
+# `residual`/`apply` were already considered wired by the guard due to a
+# name-collision false positive with unrelated `.apply(`-named methods
+# elsewhere in the crate, so only these four needed a caller).
+[[example]]
+name = "kinematic_loop_four_bar"
+required-features = ["std"]
+
 # Production entry point for `alice_physics::anisotropic_friction`
 # (wiring_guard: src/anisotropic_friction.rs had zero production callers
 # across all 4 items: friction_force, skate_ice, ski_snow, tyre_asphalt --
