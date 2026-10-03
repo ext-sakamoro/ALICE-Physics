@@ -13,7 +13,7 @@ use alice_physics::math::{Fix128, Mat3Fix, PolarError, QuatFix, Vec3Fix};
 // ---------------------------------------------------------------------------------------
 
 fn raw(x: Fix128) -> i128 {
-    (((x.hi as i128) << 64) | x.lo as i128) as i128
+    ((x.hi as i128) << 64) | x.lo as i128
 }
 fn from_raw(r: i128) -> Fix128 {
     Fix128 {
@@ -440,17 +440,14 @@ fn checked_mul_cases() -> Vec<(Fix128, Fix128)> {
 #[test]
 fn checked_mul_is_sound() {
     for (a, b) in checked_mul_cases() {
-        match a.checked_mul(b) {
-            Some(v) => {
-                assert!(
-                    mul_fits(a, b),
-                    "Some for an out-of-range product {:?} * {:?}",
-                    a,
-                    b
-                );
-                assert_eq!(v, mul_ref(a, b));
-            }
-            None => {}
+        if let Some(v) = a.checked_mul(b) {
+            assert!(
+                mul_fits(a, b),
+                "Some for an out-of-range product {:?} * {:?}",
+                a,
+                b
+            );
+            assert_eq!(v, mul_ref(a, b));
         }
     }
 }
@@ -559,10 +556,7 @@ fn sqrt_is_exact_floor() {
         let r = raw(x.sqrt()) as u128;
         let xr = raw(x) as u128;
         // r^2 <= x * 2^64 < (r+1)^2 as 192-bit comparison
-        let sq = |v: u128| -> [u64; 4] {
-            let p = mul256(v as i128, v as i128);
-            p
-        };
+        let sq = |v: u128| -> [u64; 4] { mul256(v as i128, v as i128) };
         let lhs = sq(r);
         let rhs = [0u64, xr as u64, (xr >> 64) as u64, 0u64]; // x << 64
         let le = |a: [u64; 4], b: [u64; 4]| -> bool {
@@ -741,8 +735,8 @@ fn exp_ln_powf_accuracy_claims() {
     );
     // ln
     for &x in &[
-        1e-12, 1e-6, 0.001, 0.1, 0.5, 0.9, 1.0, 1.0000001, 1.5, 2.0, 2.7182818, 10.0, 12345.678,
-        1e9, 1e15,
+        1e-12, 1e-6, 0.001, 0.1, 0.5, 0.9, 1.0, 1.0000001, 1.5, 2.0, 2.7, 10.0, 12345.678, 1e9,
+        1e15,
     ] {
         let xq = f(x).to_f64(); // the value actually passed (quantised to 2^-64)
         let got = f(x).ln().to_f64();
@@ -1001,13 +995,13 @@ fn quat_normalize_and_axis_angle_rotation_rodrigues() {
     assert!(qa.x.is_zero() && qa.y.is_zero());
     // rotate_vec follows Rodrigues for several axes/angles
     for &(ax, ay, az, ang) in &[
-        (0.0, 0.0, 1.0, 1.0),
+        (0.0f64, 0.0f64, 1.0f64, 1.0f64),
         (1.0, 0.0, 0.0, -0.7),
         (1.0, 2.0, 2.0, 2.5),
         (-1.0, 1.0, 0.5, 0.3),
         (0.0, 1.0, 0.0, 3.0),
     ] {
-        let len = (ax * ax + ay * ay + az * az as f64).sqrt();
+        let len = (ax * ax + ay * ay + az * az).sqrt();
         let (kx, ky, kz) = (ax / len, ay / len, az / len);
         let r = QuatFix::from_axis_angle(v(ax, ay, az), f(ang));
         let p = (0.3, -1.2, 2.0);
@@ -1307,9 +1301,75 @@ fn polar_rotation_is_idempotent_bit_for_bit_on_general_gradients() {
 fn simd_width_is_consistent_with_the_documented_table() {
     use alice_physics::math::{simd_width, SIMD_WIDTH};
     assert_eq!(simd_width(), SIMD_WIDTH);
-    assert!(SIMD_WIDTH == 1 || SIMD_WIDTH == 4 || SIMD_WIDTH == 8);
+    assert!([1, 4, 8].contains(&SIMD_WIDTH));
     #[cfg(not(feature = "simd"))]
     assert_eq!(SIMD_WIDTH, 1);
     #[cfg(all(feature = "simd", target_arch = "aarch64"))]
     assert_eq!(SIMD_WIDTH, 4);
+}
+
+/// 0^0 is documented as ZERO (`self <= 0` returns ZERO); exp is accurate up to the saturation point;
+/// ln of an exact power of two is k * LN2 (range reduction ends exactly at 1, no series error).
+#[test]
+fn powf_zero_base_exp_near_saturation_and_ln_of_powers_of_two() {
+    assert_eq!(Fix128::ZERO.powf_pos(Fix128::ZERO), Fix128::ZERO);
+    for &x in &[41.0, 42.0, 42.5, 42.9] {
+        let got = f(x).exp().to_f64();
+        let want = x.exp();
+        assert!(
+            ((got - want) / want).abs() < 1e-5,
+            "exp({x}) = {got:e} vs {want:e}"
+        );
+    }
+    // ln(2) is the LN2 constant 0xB17217F7D1CF79AC, ln(2^k) = k * LN2 exactly
+    let ln2 = Fix128 {
+        hi: 0,
+        lo: 0xB172_17F7_D1CF_79AC,
+    };
+    for k in 1..=30i64 {
+        assert_eq!(
+            f((1u64 << k) as f64).ln(),
+            Fix128::from_int(k) * ln2,
+            "ln(2^{k})"
+        );
+    }
+    assert_eq!(f(0.5).ln(), -ln2, "ln(1/2): range reduction by doubling");
+}
+
+/// Documented settling rule: the iteration stops at a change of 4 ulp, so the result is orthogonal to a
+/// few ulp (measured 2-3).
+#[test]
+fn polar_rotation_result_is_orthogonal_to_a_few_ulp() {
+    let (c, s) = (f(0.6), f(0.8));
+    let rot = Mat3Fix::from_cols(
+        Vec3Fix::UNIT_X,
+        Vec3Fix::new(Fix128::ZERO, c, s),
+        Vec3Fix::new(Fix128::ZERO, -s, c),
+    );
+    let ms = [
+        rot.mul_mat(Mat3Fix::diagonal(f(1.5), f(0.8), f(1.1))),
+        Mat3Fix::from_cols(
+            Vec3Fix::new(f(1.0), f(0.0), f(0.0)),
+            Vec3Fix::new(f(0.4), f(1.0), f(0.0)),
+            Vec3Fix::new(f(0.0), f(0.0), f(1.0)),
+        ),
+        Mat3Fix::from_cols(
+            Vec3Fix::new(f(1.0), f(0.3), f(-0.2)),
+            Vec3Fix::new(f(0.1), f(1.2), f(0.5)),
+            Vec3Fix::new(f(-0.3), f(0.2), f(0.9)),
+        ),
+    ];
+    for m in ms {
+        let r = m.polar_rotation(Fix128::ZERO, 64).unwrap();
+        let e = r.transpose().mul_mat(r);
+        for (a, b) in [
+            (e.col0, Vec3Fix::UNIT_X),
+            (e.col1, Vec3Fix::UNIT_Y),
+            (e.col2, Vec3Fix::UNIT_Z),
+        ] {
+            for (x, y) in [(a.x, b.x), (a.y, b.y), (a.z, b.z)] {
+                assert!(dist_ulps(x, y) <= 16, "R^T R - I = {} ulp", dist_ulps(x, y));
+            }
+        }
+    }
 }
