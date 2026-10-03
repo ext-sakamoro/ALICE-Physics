@@ -47,12 +47,14 @@ pub struct ClothConfig {
     pub thickness: Fix128,
     /// Enable self-collision
     ///
-    /// Covers both proximity passes — vertex-vs-face and edge-vs-edge — plus the
-    /// frame-level repair of vertex-face tunnelling. ⚠️ Edge-edge is **proximity only**:
-    /// there is no swept (continuous) edge-edge test, so a crossing that happens entirely
-    /// inside one frame and ends further apart than `self_collision_distance` is not
-    /// repaired. Two parallel (or, in `Fix128`, numerically parallel) edges are also left
-    /// to the vertex-face pass — see `closest_points_on_segments`.
+    /// Covers the proximity passes (vertex-vs-face and edge-vs-edge) and the frame-level
+    /// repair of tunnelling: vertex chords that pierced a triangle, and edge pairs that met
+    /// inside the frame and ended on the far side of where edge `a` started (a swept test,
+    /// `resolve_self_contact_over_frame`). ⚠️ The edge-edge repair triggers only on a
+    /// **completed crossing** (`gap < 0`); a pair that met and separated again on its own
+    /// side is left to the proximity pass. Two parallel (or, in `Fix128`, numerically
+    /// parallel) edges are left to the vertex-face pass — see `closest_points_on_segments`.
+    /// `remaining_self_contact_crossings` counts the same two kinds of event.
     pub self_collision: bool,
     /// Contact thickness: a vertex is kept at least this far from every non-incident triangle
     pub self_collision_distance: Fix128,
