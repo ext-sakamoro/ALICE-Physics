@@ -1,6 +1,5 @@
 # wiring-guard baseline: 既存の違反 (ラチェット) 新規は fail、解消したら行を消す
 dead_code src/bvh.rs 2
-dead_code src/interface_capture.rs 3
 dead_code src/solver_tgs.rs 1
 dead_code src/solver_tgs_hooks.rs 1
 dead_code src/solver_tgs_hooks_6dof.rs 1
@@ -53,11 +52,7 @@ unwired src/fracture.rs::apply_stress_at
 unwired src/fracture.rs::stress_at
 unwired src/ik_physics_bridge.rs::blended
 unwired src/ik_physics_bridge.rs::snap
-unwired src/interface_capture.rs::plic_normal
-unwired src/interface_capture.rs::plic_plane_offset
-unwired src/interface_capture.rs::truncated_cube_volume
 unwired src/mass_properties.rs::cylinder_mass_properties
-unwired src/math_util.rs::cbrt_fix
 unwired src/math_util.rs::clamp_fix
 unwired src/math_util.rs::pow_int
 unwired src/metric.rs::lipschitz

@@ -30,10 +30,10 @@
 //!
 //! # Integration status
 //!
-//! Only `fast_sweeping_reinit` is currently wired into `cfd_solver.rs`.
-//! The PLIC helpers (`plic_normal`, `plic_plane_offset`,
-//! `truncated_cube_volume`) are reserved crate-internal API awaiting
-//! downstream integration; item-level `#[allow(dead_code)]` documents this.
+//! Only `fast_sweeping_reinit` is wired into `cfd_solver.rs`. The PLIC helpers
+//! (`plic_normal`, `plic_plane_offset`, `truncated_cube_volume`) are public and are
+//! exercised by `examples/plic_interface_reconstruction.rs`; no solver step consumes
+//! them yet.
 
 use crate::math::{Fix128, Vec3Fix};
 use crate::math_util::cbrt_fix;
@@ -196,10 +196,11 @@ fn solve_fsm(a: Fix128, b: Fix128, c: Fix128, dx: Fix128) -> Fix128 {
 // PLIC reconstruction
 // ============================================================================
 
-/// PLIC interface normal for a VOF cell: gradient of `f` via central diffs (crate-internal).
-#[allow(dead_code)] // Reserved PLIC helper — awaiting integration
+/// PLIC interface normal for a VOF cell: `−∇f / |∇f|` by central differences, the unit
+/// vector from the fluid (large `f`) toward the gas. The zero vector on the outermost
+/// layer of cells, for a zero spacing, and where `∇f = 0`.
 #[must_use]
-pub(crate) fn plic_normal(vof: &Grid3d, i: usize, j: usize, k: usize) -> Vec3Fix {
+pub fn plic_normal(vof: &Grid3d, i: usize, j: usize, k: usize) -> Vec3Fix {
     if i == 0 || j == 0 || k == 0 || i + 1 >= vof.nx || j + 1 >= vof.ny || k + 1 >= vof.nz {
         return Vec3Fix::default();
     }
@@ -224,17 +225,29 @@ pub(crate) fn plic_normal(vof: &Grid3d, i: usize, j: usize, k: usize) -> Vec3Fix
 ///
 /// Session 3 I4 upgrade: uses the Scardovelli-Zaleski / Rider-Kothe
 /// analytical formula (2000) for the small-volume regime via
-/// [`crate::math_util::cbrt_fix`] and falls back to a coarse bisection for
-/// the intermediate regime. Overall convergence is O(1) for the corner
-/// case (previously O(40) bisection with 4³ sub-sampling per iteration).
+/// [`crate::math_util::cbrt_fix`] and bisects the exact cut volume
+/// ([`truncated_cube_volume`]) for the intermediate regime. `normal` should be a
+/// unit vector such as [`plic_normal`] returns (the zero vector is accepted and
+/// cuts all or nothing); `f ≤ 0` / `f ≥ 1` return a plane outside the cube.
 #[must_use]
-#[allow(dead_code)] // Reserved PLIC helper — awaiting integration
-pub(crate) fn plic_plane_offset(normal: Vec3Fix, f: Fix128, dx: Fix128) -> Fix128 {
+pub fn plic_plane_offset(normal: Vec3Fix, f: Fix128, dx: Fix128) -> Fix128 {
+    let na = normal.x.abs();
+    let nb = normal.y.abs();
+    let nc = normal.z.abs();
+    // outside the cube for any normal length: |d| > Σ|n_i| dx / 2 (2 dx for a unit normal)
+    let outside = {
+        let s = (na + nb + nc) * dx;
+        if s > dx.double() {
+            s
+        } else {
+            dx.double()
+        }
+    };
     if f <= Fix128::ZERO {
-        return dx * Fix128::from_int(-2);
+        return Fix128::ZERO - outside;
     }
     if f >= Fix128::ONE {
-        return dx * Fix128::from_int(2);
+        return outside;
     }
 
     // Analytical branch (Rider & Kothe 1998, eq. 15):
@@ -242,9 +255,6 @@ pub(crate) fn plic_plane_offset(normal: Vec3Fix, f: Fix128, dx: Fix128) -> Fix12
     // sum to 1, and compute the small-V threshold `v1 = m1² / (6·m2·m3)`.
     // For target ≤ v1 (plane cuts only a corner tetrahedron):
     //   d_norm = cbrt(6·m1·m2·m3·V)
-    let na = normal.x.abs();
-    let nb = normal.y.abs();
-    let nc = normal.z.abs();
     let sum = na + nb + nc;
     if sum > Fix128::ZERO {
         // Rescale to Σm_i = 1
@@ -282,12 +292,21 @@ pub(crate) fn plic_plane_offset(normal: Vec3Fix, f: Fix128, dx: Fix128) -> Fix12
         }
     }
 
-    // Intermediate regime: bisection (fewer iterations than before since
-    // Fix128 precision is already saturated in ~20 iterations).
-    let mut lo = Fix128::ZERO - dx.double();
-    let mut hi = dx.double();
+    // Intermediate regime: bisection on the exact cut volume. The plane is inside the
+    // cube for |d| < Σ|n_i| dx / 2, so ±Σ|n_i| dx brackets the root for any normal
+    // length; 64 halvings reach Fix128 resolution.
+    let reach = {
+        let s = na + nb + nc;
+        if s > Fix128::ZERO {
+            s * dx
+        } else {
+            dx.double()
+        }
+    };
+    let mut lo = Fix128::ZERO - reach;
+    let mut hi = reach;
     let target_vol = f * dx * dx * dx;
-    for _ in 0..20 {
+    for _ in 0..64 {
         let mid = (lo + hi).half();
         let v = truncated_cube_volume(normal, mid, dx);
         if v < target_vol {
@@ -299,31 +318,97 @@ pub(crate) fn plic_plane_offset(normal: Vec3Fix, f: Fix128, dx: Fix128) -> Fix12
     (lo + hi).half()
 }
 
-/// Volume of the region `{x ∈ cube : n̂·x ≤ d}` inside a cube of side `dx`
-/// centred at the origin. Computed by trilinear sub-sampling (Monte-Carlo-
-/// free deterministic approximation via 4×4×4 grid).
+/// Volume of the region `{x ∈ cube : n·x ≤ d}` inside a cube of side `dx`
+/// centred at the origin, in closed form.
+///
+/// Only `|n_i|` matters (the cube is symmetric under `x_i → −x_i`). With
+/// `m_i = |n_i|` and `β = d/dx + Σ m_i / 2` the fraction of the unit cube is the
+/// inclusion–exclusion formula of Scardovelli & Zaleski (2000, J. Comput. Phys. 164)
+///
+/// ```text
+/// V/dx³ = 1/(k! Π m_i) · Σ_{S ⊆ {1..k}} (−1)^{|S|} · max(β − Σ_{i∈S} m_i, 0)^k
+/// ```
+///
+/// over the `k` non-zero components (an exactly zero component drops out and the
+/// formula degenerates to the 2-D / 1-D cut). A component that is non-zero but below
+/// `2⁻²⁰ · max |n_i|` is raised to that floor, which bounds the divided differences
+/// (relative volume error ≲ 1e-6 for such a nearly axis-aligned normal). Before this
+/// function was a 4×4×4 midpoint sampling, whose result jumps in steps of `dx³/64` and
+/// made [`plic_plane_offset`] return planes holding up to ~1.6 % too much / too little
+/// fluid in the intermediate regime. A zero normal cuts the whole cube iff `d ≥ 0`.
 #[must_use]
-#[allow(dead_code)] // Reserved PLIC helper — awaiting integration
-pub(crate) fn truncated_cube_volume(normal: Vec3Fix, d: Fix128, dx: Fix128) -> Fix128 {
-    let half = dx.half();
-    let subdiv = 4u32;
-    let step = dx / Fix128::from_int(subdiv as i64);
-    let sub_vol = step * step * step;
-    let mut vol = Fix128::ZERO;
-    let neg_half = Fix128::ZERO - half;
-    for kk in 0..subdiv {
-        for jj in 0..subdiv {
-            for ii in 0..subdiv {
-                let x = neg_half + step * (Fix128::from_int(ii as i64) + Fix128::from_ratio(1, 2));
-                let y = neg_half + step * (Fix128::from_int(jj as i64) + Fix128::from_ratio(1, 2));
-                let z = neg_half + step * (Fix128::from_int(kk as i64) + Fix128::from_ratio(1, 2));
-                if normal.x * x + normal.y * y + normal.z * z <= d {
-                    vol = vol + sub_vol;
-                }
-            }
+pub fn truncated_cube_volume(normal: Vec3Fix, d: Fix128, dx: Fix128) -> Fix128 {
+    let dx3 = dx * dx * dx;
+    let comps = [normal.x.abs(), normal.y.abs(), normal.z.abs()];
+    let mut a_max = Fix128::ZERO;
+    for c in comps {
+        if c > a_max {
+            a_max = c;
         }
     }
-    vol
+    if a_max.is_zero() {
+        return if d >= Fix128::ZERO { dx3 } else { Fix128::ZERO };
+    }
+    let floor = a_max / Fix128::from_int(1 << 20);
+    let mut m = [Fix128::ZERO; 3];
+    let mut k = 0usize;
+    let mut total = Fix128::ZERO;
+    for c in comps {
+        if c.is_zero() {
+            continue;
+        }
+        let v = if c < floor { floor } else { c };
+        m[k] = v;
+        k += 1;
+        total = total + v;
+    }
+    let beta = d / dx + total.half();
+    if beta <= Fix128::ZERO {
+        return Fix128::ZERO;
+    }
+    if beta >= total {
+        return dx3;
+    }
+    let mut sum = Fix128::ZERO;
+    for mask in 0u32..(1u32 << k) {
+        let mut arg = beta;
+        for (i, mi) in m.iter().enumerate().take(k) {
+            if mask & (1 << i) != 0 {
+                arg = arg - *mi;
+            }
+        }
+        if arg <= Fix128::ZERO {
+            continue;
+        }
+        let mut pow = arg;
+        for _ in 1..k {
+            pow = pow * arg;
+        }
+        if mask.count_ones() % 2 == 0 {
+            sum = sum + pow;
+        } else {
+            sum = sum - pow;
+        }
+    }
+    let mut denom = Fix128::ONE;
+    for mi in m.iter().take(k) {
+        denom = denom * *mi;
+    }
+    // k! for k = 1, 2, 3
+    let factorial = Fix128::from_int(match k {
+        1 => 1,
+        2 => 2,
+        _ => 6,
+    });
+    let fraction = sum / (factorial * denom);
+    let fraction = if fraction < Fix128::ZERO {
+        Fix128::ZERO
+    } else if fraction > Fix128::ONE {
+        Fix128::ONE
+    } else {
+        fraction
+    };
+    fraction * dx3
 }
 
 // ============================================================================
