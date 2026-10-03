@@ -24,6 +24,15 @@
 //! Single-degree-of-freedom cylinder, small displacement, subcritical
 //! Reynolds regime. Full 3-D fluid-structure coupling, mode
 //! bifurcation, and lock-in hysteresis remain future work.
+//!
+//! The body equation carries structural damping only: there is no
+//! hydrodynamic damping or added-mass term. With the reference coupling
+//! (`A = 12`) the coupled limit cycle therefore saturates far above the
+//! roughly one diameter measured in experiments (about `|y| = 52 D` and
+//! `|q| = 19` for [`VivParameters::facchinetti_reference`], identical under
+//! forward Euler and an f64 RK4 reference, so it is the model and not the
+//! integrator). The decoupled wake (`A = 0`) has the exact Van der Pol
+//! amplitude 2 and the Strouhal frequency.
 
 /// Van der Pol wake oscillator + cylinder cross-flow state.
 #[derive(Debug, Clone, Copy, PartialEq)]
