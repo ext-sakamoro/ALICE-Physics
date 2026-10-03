@@ -216,14 +216,6 @@ unwired src/mass_properties.rs::convex_hull_mass_properties
 unwired src/mass_properties.rs::cylinder_mass_properties
 unwired src/mass_properties.rs::sphere_mass_properties
 unwired src/mass_properties.rs::translate_inertia
-unwired src/material.rs::register_concrete
-unwired src/material.rs::register_ice
-unwired src/material.rs::register_metal
-unwired src/material.rs::register_rubber
-unwired src/material.rs::register_wood
-unwired src/material.rs::set_pair_override
-unwired src/material.rs::with_combine_rules
-unwired src/material.rs::with_static_friction
 unwired src/math.rs::add_simd
 unwired src/math.rs::atan
 unwired src/math.rs::cross_simd
