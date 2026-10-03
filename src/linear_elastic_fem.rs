@@ -5426,6 +5426,72 @@ where
     }
 }
 
+/// The solve / estimate / mark / refine loop shared by the higher-order
+/// adaptive drivers ([`crate::quadratic_elastic_fem::solve_adaptive_quadratic`],
+/// [`crate::cubic_elastic_fem::solve_adaptive_cubic`]).
+///
+/// `step` solves one mesh and returns the full-order solution together with the
+/// per-tetrahedron `η_e²`. Refinement is always done on the straight-edged
+/// corner mesh — `QuadraticMesh` and `CubicMesh` are *built from* an
+/// `SdfTetMesh` — so the conforming refinement of [`SdfTetMesh`] is reused as is
+/// and the high-order mesh is rebuilt from it each round.
+///
+/// Returns the final corner mesh, the last solution, the number of solves and the
+/// `Σ η_e²` history.
+pub(crate) fn adaptive_refinement_loop<S>(
+    mesh: &SdfTetMesh,
+    adaptive: &AdaptiveConfig,
+    mut step: S,
+) -> Result<(SdfTetMesh, FemSolution, u32, Vec<Fix128>), FemError>
+where
+    S: FnMut(&SdfTetMesh) -> Result<(FemSolution, Vec<Fix128>), FemError>,
+{
+    if mesh.vertices.is_empty() || mesh.tets.is_empty() {
+        return Err(FemError::EmptyMesh);
+    }
+    let mut current = mesh.clone();
+    let mut history = Vec::with_capacity(adaptive.max_rounds as usize);
+    let mut rounds = 0_u32;
+    loop {
+        let (field, indicators) = step(&current)?;
+        rounds += 1;
+        let total = indicators.iter().fold(Fix128::ZERO, |acc, &v| acc + v);
+        history.push(total);
+        if total.is_zero() || rounds >= adaptive.max_rounds {
+            return Ok((current, field, rounds, history));
+        }
+        let marked = mark_bulk(&indicators, adaptive.bulk_fraction)?;
+        if !marked.iter().any(|&m| m) {
+            return Ok((current, field, rounds, history));
+        }
+        let mut next = current.clone();
+        next.try_refine_marked(&marked, adaptive.max_refine_passes)
+            .map_err(|_| {
+                FemError::InvalidConfig(
+                    "max_refine_passes ran out while conformity still owed splits",
+                )
+            })?;
+        current = next;
+    }
+}
+
+/// `η_e²` for a higher-order solution, scored by the P1 recovery estimator on the
+/// corner mesh.
+///
+/// The high-order solution reports one centroid stress per element, which is
+/// exactly the datum [`error_indicators_squared`] recovers from, so the estimator
+/// is reused unchanged on a view of the solution that keeps only the corner
+/// displacements (corner `v` is node `v` in both `QuadraticMesh` and `CubicMesh`).
+pub(crate) fn corner_indicators_squared(
+    corner_mesh: &SdfTetMesh,
+    material: &ElasticMaterial,
+    field: &FemSolution,
+) -> Result<Vec<Fix128>, FemError> {
+    let mut view = field.clone();
+    view.displacements.truncate(corner_mesh.vertices.len());
+    error_indicators_squared(corner_mesh, material, &view)
+}
+
 /// Oracles for the stress a hyperelastic element reports and for the first
 /// Piola-Kirchhoff stress it integrates.
 ///

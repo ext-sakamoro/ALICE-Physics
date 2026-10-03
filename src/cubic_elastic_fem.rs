@@ -2141,6 +2141,69 @@ pub fn reactions(
         .collect())
 }
 
+/// What an adaptive cubic run produced.
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub struct AdaptiveCubicSolution {
+    /// The final straight-edged corner mesh, refined where the estimator asked.
+    pub mesh: SdfTetMesh,
+    /// The cubic mesh built from [`Self::mesh`] — the one `field` is indexed by.
+    pub high_order: CubicMesh,
+    /// The solution on that mesh.
+    pub field: FemSolution,
+    /// Solves performed, at least one and at most `max_rounds`.
+    pub rounds: u32,
+    /// `Σ_e η_e²` after each solve, oldest first.
+    pub total_indicator_history: Vec<Fix128>,
+}
+
+/// Solve, estimate, mark, refine, repeat — on the cubic element.
+///
+/// The cubic counterpart of [`crate::linear_elastic_fem::solve_adaptive`].
+/// Refinement is performed on the straight-edged corner mesh by
+/// [`SdfTetMesh::try_refine_marked`] and the CubicMesh is rebuilt from it each
+/// round, so the conforming guarantee of that refinement carries over unchanged.
+/// The error indicator is the P1 stress-recovery estimator applied to the
+/// element's centroid stress (see `corner_indicators_squared`).
+///
+/// ⚠️ `boundary_for` receives the **cubic mesh**, not the corner mesh: a
+/// higher-order boundary condition has to constrain the edge (and face) nodes of
+/// the clamped faces too, and only that mesh knows where they are. As in the
+/// linear driver the conditions are rebuilt per mesh, because a nodal load cannot
+/// be split between children.
+///
+/// # Errors
+///
+/// Whatever [`solve_cubic`], the estimator or `mark_bulk` return, and
+/// [`FemError::InvalidConfig`] if a refinement pass runs out of budget.
+pub fn solve_adaptive_cubic<F>(
+    mesh: &SdfTetMesh,
+    material: &ElasticMaterial,
+    boundary_for: F,
+    adaptive: &crate::linear_elastic_fem::AdaptiveConfig,
+) -> Result<AdaptiveCubicSolution, FemError>
+where
+    F: Fn(&CubicMesh) -> BoundaryConditions,
+{
+    let (corner, field, rounds, total_indicator_history) =
+        crate::linear_elastic_fem::adaptive_refinement_loop(mesh, adaptive, |current| {
+            let high_order = CubicMesh::from_tet_mesh(current)?;
+            let boundary = boundary_for(&high_order);
+            let field = solve_cubic(&high_order, material, &boundary, &adaptive.linear())?;
+            let indicators =
+                crate::linear_elastic_fem::corner_indicators_squared(current, material, &field)?;
+            Ok((field, indicators))
+        })?;
+    let high_order = CubicMesh::from_tet_mesh(&corner)?;
+    Ok(AdaptiveCubicSolution {
+        mesh: corner,
+        high_order,
+        field,
+        rounds,
+        total_indicator_history,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

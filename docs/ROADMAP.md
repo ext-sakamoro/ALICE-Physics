@@ -491,7 +491,7 @@ snapshot **+42 / −21** 削除はすべて `ElastoplasticIncrementRequest` が 
 | 適応 remeshing (適合性) | ✅ landed (Rivara の伝播) |
 | **適応 remeshing (誤差駆動)** | ✅ **本 increment** |
 | 超弾性 × 高次要素の非一様製作解 oracle | ✅ **landed (収束率 oracle + 体積力つき製作解)** `tests/analytic_hyperelastic_mms_order.rs` P2 は h=1/3→1/4 で傾き 2.42、P3 は P2 の同 h で誤差 **9.4 倍小** (傾き 2.84) ⚠️ P1 は共回転の別定式で比較対象外 ⚠️ `A ≥ 0.06` では Newton が `NotConverged` (Backlog 起票) |
-| 適応を P2 / P3 へ | ⛔ 未着手 (`QuadraticMesh` / `CubicMesh` 側の細分が別作業) |
+| 適応を P2 / P3 へ | ✅ **landed (driver)** `solve_adaptive_quadratic` / `solve_adaptive_cubic` ⚠️ 細分は新規実装なし — `QuadraticMesh` / `CubicMesh` は `SdfTetMesh` から**構築される**ので、corner mesh を既存の `try_refine_marked` で細分して毎 round 作り直す 指標は P1 の ZZ 回復を centroid 応力に適用 ⚠️ **adaptive が一様細分に dof あたりで勝つ測定は未実施** (`tests/analytic_adaptive_refinement_high_order.rs` は停止性 / 指標の減少 / 細分の実行のみ、変異「指標を 0 に」で 2/4 red) |
 
 ### 第 2 increment (2026-09-30、上表の続き)
 
