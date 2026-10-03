@@ -31,7 +31,10 @@ pub struct ManifoldConfig {
     pub samples_per_axis: usize,
     /// Sampling radius around the initial contact point
     pub sample_radius: f32,
-    /// Maximum number of contacts in the final manifold
+    /// Maximum number of contacts in the final manifold. Reducing a larger
+    /// candidate set picks at most 4 points (deepest, furthest, then the two
+    /// that maximise the contact area), so values above 4 only matter when
+    /// there are fewer candidates than that. `0` yields an empty manifold.
     pub max_contacts: usize,
     /// Minimum penetration depth to include in manifold
     pub min_depth: f32,
@@ -151,14 +154,22 @@ pub fn generate_sdf_manifold(
 
     // 3. Sample grid around contact point
     let n = config.samples_per_axis;
-    let half = n / 2;
-    let step = config.sample_radius / (half.max(1) as f32);
+    // Grid centred on the contact point: offsets run from `-sample_radius` to
+    // `+sample_radius` symmetrically for every `n` (for odd `n` this is the
+    // classic `(i - n/2) * radius / (n/2)`; an even `n` used to be shifted by
+    // half a step toward -tangent).
+    let half = (n.saturating_sub(1)) as f32 * 0.5;
+    let step = if half > 0.0 {
+        config.sample_radius / half
+    } else {
+        config.sample_radius
+    };
     let mut candidates: Vec<(Contact, f32)> = Vec::with_capacity(n * n);
 
     for i in 0..n {
         for j in 0..n {
-            let di = (i as f32 - half as f32) * step;
-            let dj = (j as f32 - half as f32) * step;
+            let di = (i as f32 - half) * step;
+            let dj = (j as f32 - half) * step;
 
             let offset = t1 * Fix128::from_f32(di) + t2 * Fix128::from_f32(dj);
             let sample_pos = center + offset;
@@ -194,6 +205,9 @@ pub fn generate_sdf_manifold(
 
     // 4. Reduce to max_contacts using area-maximizing selection
     let contacts = reduce_manifold(&candidates, config.max_contacts);
+    if contacts.is_empty() {
+        return SdfManifold::empty();
+    }
 
     // 5. Compute average normal and depth
     let mut sum_normal = Vec3Fix::ZERO;
@@ -226,6 +240,9 @@ pub fn generate_sdf_manifold(
 /// 4. Keep the point maximizing quadrilateral area
 #[cfg(feature = "std")]
 fn reduce_manifold(candidates: &[(Contact, f32)], max_contacts: usize) -> Vec<Contact> {
+    if max_contacts == 0 {
+        return Vec::new();
+    }
     if candidates.len() <= max_contacts {
         return candidates.iter().map(|(c, _)| *c).collect();
     }
@@ -294,7 +311,8 @@ fn reduce_manifold(candidates: &[(Contact, f32)], max_contacts: usize) -> Vec<Co
         let p1 = candidates[selected[1]].0.point_b;
         let p2 = candidates[selected[2]].0.point_b;
         let tri_normal = (p1 - p0).cross(p2 - p0);
-        let mut best_dist = Fix128::ZERO;
+        let tri_n2 = tri_normal.length_squared();
+        let mut best_score = Fix128::ZERO;
         let mut best_idx = candidates
             .iter()
             .enumerate()
@@ -304,10 +322,36 @@ fn reduce_manifold(candidates: &[(Contact, f32)], max_contacts: usize) -> Vec<Co
             if selected.contains(&i) {
                 continue;
             }
-            let v = c.point_b - p0;
-            let d = v.dot(tri_normal).abs();
-            if d > best_dist {
-                best_dist = d;
+            let score = if tri_n2.is_zero() {
+                // The first three points are collinear: no plane to measure
+                // an area in, so take the point furthest from them.
+                (c.point_b - p0).length_squared()
+            } else {
+                // Twice the area of the convex hull of {p0, p1, p2, c} in the
+                // triangle's plane, scaled by |n|. For a convex quadrilateral
+                // with diagonals d1, d2 it is (d1 x d2) . n; the three ways to
+                // pair the points into diagonals are tried and the largest
+                // wins (the non-convex pairings give less). When one point
+                // lies inside the triangle of the other three the hull is that
+                // triangle, so the four triangles (the original one, n . n,
+                // and the three that contain `c`) are candidates too.
+                let d = c.point_b;
+                let q1 = (p2 - p0).cross(d - p1).dot(tri_normal).abs();
+                let q2 = (d - p0).cross(p2 - p1).dot(tri_normal).abs();
+                let q3 = (p1 - p0).cross(d - p2).dot(tri_normal).abs();
+                let t1 = (p1 - p0).cross(d - p0).dot(tri_normal).abs();
+                let t2 = (p2 - p0).cross(d - p0).dot(tri_normal).abs();
+                let t3 = (p2 - p1).cross(d - p1).dot(tri_normal).abs();
+                let mut hull = tri_n2;
+                for q in [q1, q2, q3, t1, t2, t3] {
+                    if q > hull {
+                        hull = q;
+                    }
+                }
+                hull
+            };
+            if score > best_score {
+                best_score = score;
                 best_idx = i;
             }
         }
@@ -408,6 +452,79 @@ mod tests {
         let d2 = normal.dot(t2).to_f32();
         assert!(d1.abs() < 0.01, "t1 should be orthogonal to normal");
         assert!(d2.abs() < 0.01, "t2 should be orthogonal to normal");
+    }
+
+    fn cand(x: f32, y: f32, depth: f32) -> (Contact, f32) {
+        (
+            Contact {
+                depth: Fix128::from_f32(depth),
+                normal: Vec3Fix::UNIT_Y,
+                point_a: Vec3Fix::from_f32(x, y, 0.0),
+                point_b: Vec3Fix::from_f32(x, y, 0.0),
+            },
+            depth,
+        )
+    }
+
+    /// First three picks are A (deepest), B (furthest from A) and C (largest
+    /// triangle with AB); the fourth must maximise the hull area of the four.
+    /// A = (0,0), B = (8,0), C = (0,5). Each case lists a decoy first (a point
+    /// inside triangle ABC, hull area 20) so a scoring that cannot see the
+    /// candidate's hull falls back to the decoy by tie.
+    fn fourth_pick(extra: &[(f32, f32)]) -> (f32, f32) {
+        let mut c = vec![
+            cand(0.0, 0.0, 0.5),
+            cand(8.0, 0.0, 0.1),
+            cand(0.0, 5.0, 0.1),
+        ];
+        for &(x, y) in extra {
+            c.push(cand(x, y, 0.1));
+        }
+        let r = reduce_manifold(&c, 4);
+        assert_eq!(r.len(), 4);
+        let (x, y, _) = r[3].point_b.to_f32();
+        (x, y)
+    }
+
+    #[test]
+    fn reduce_fourth_point_maximises_hull_area_for_every_pairing() {
+        // quad A-B-D-C (hull 31 vs decoy 20)
+        assert_eq!(fourth_pick(&[(1.0, 1.0), (6.0, 4.0)]), (6.0, 4.0));
+        // quad B-C-D-A (D left of AC)
+        assert_eq!(fourth_pick(&[(1.0, 1.0), (-3.0, 2.0)]), (-3.0, 2.0));
+        // quad A-D-B-C (D below AB)
+        assert_eq!(fourth_pick(&[(1.0, 1.0), (3.0, -2.0)]), (3.0, -2.0));
+        // A inside triangle BCD: hull is that triangle (39.5) and beats the
+        // convex quad with D1 = (6, 3.5) (29)
+        assert_eq!(fourth_pick(&[(6.0, 3.5), (-3.0, -3.0)]), (-3.0, -3.0));
+    }
+
+    #[test]
+    fn reduce_ties_among_interior_points_go_to_the_earliest() {
+        // Both extras lie inside triangle ABC: the hull stays the triangle, so the
+        // 4th point is the first candidate (deterministic tie-break), not the one
+        // with the larger partial areas.
+        assert_eq!(fourth_pick(&[(1.0, 1.0), (2.0, 1.5)]), (1.0, 1.0));
+        assert_eq!(fourth_pick(&[(2.0, 1.5), (1.0, 1.0)]), (2.0, 1.5));
+    }
+
+    #[test]
+    fn reduce_collinear_first_three_picks_the_furthest() {
+        // A = (0,0) deepest, B = (8,0) furthest, C = (4,0) collinear: no plane,
+        // so the fourth is the point furthest from A.
+        let c = vec![
+            cand(0.0, 0.0, 0.5),
+            cand(8.0, 0.0, 0.1),
+            cand(4.0, 0.0, 0.1),
+            cand(2.0, 0.0, 0.1),
+            cand(6.0, 0.0, 0.1),
+        ];
+        let r = reduce_manifold(&c, 4);
+        assert_eq!(r.len(), 4);
+        let xs: Vec<f32> = r.iter().map(|c| c.point_b.to_f32().0).collect();
+        assert_eq!(xs[0], 0.0);
+        assert_eq!(xs[1], 8.0);
+        assert_eq!(xs[3], 6.0);
     }
 
     #[test]

@@ -54,17 +54,38 @@ fn transition_table_rows_are_independent_of_current_state() {
     // (ctx, expected) rows from the documented priority order:
     // water > (!grounded | jump) > slope > crouch > grounded.
     let rows = [
-        (ctx(true, 0.0, false, false, false), CharacterState::Grounded),
+        (
+            ctx(true, 0.0, false, false, false),
+            CharacterState::Grounded,
+        ),
         (ctx(true, 0.0, true, false, false), CharacterState::Swimming),
         (ctx(false, 0.0, true, true, true), CharacterState::Swimming),
-        (ctx(false, 0.0, false, false, false), CharacterState::Airborne),
+        (
+            ctx(false, 0.0, false, false, false),
+            CharacterState::Airborne,
+        ),
         (ctx(true, 0.0, false, true, true), CharacterState::Airborne),
-        (ctx(true, 60.0, false, false, false), CharacterState::Sliding),
+        (
+            ctx(true, 60.0, false, false, false),
+            CharacterState::Sliding,
+        ),
         (ctx(true, 60.0, false, true, false), CharacterState::Sliding),
-        (ctx(true, 60.0, false, false, true), CharacterState::Airborne),
-        (ctx(false, 60.0, false, false, false), CharacterState::Airborne),
-        (ctx(true, 30.0, false, true, false), CharacterState::Crouched),
-        (ctx(true, 30.0, false, false, false), CharacterState::Grounded),
+        (
+            ctx(true, 60.0, false, false, true),
+            CharacterState::Airborne,
+        ),
+        (
+            ctx(false, 60.0, false, false, false),
+            CharacterState::Airborne,
+        ),
+        (
+            ctx(true, 30.0, false, true, false),
+            CharacterState::Crouched,
+        ),
+        (
+            ctx(true, 30.0, false, false, false),
+            CharacterState::Grounded,
+        ),
     ];
     for (c, want) in rows {
         for cur in ALL {
@@ -78,15 +99,24 @@ fn slope_threshold_is_strict() {
     let mut c = CharacterStateContext::standing();
     c.max_walkable_slope = 0.5;
     c.slope_radians = 0.5;
-    assert_eq!(transition(CharacterState::Grounded, c), CharacterState::Grounded);
+    assert_eq!(
+        transition(CharacterState::Grounded, c),
+        CharacterState::Grounded
+    );
     c.slope_radians = 0.500_001;
-    assert_eq!(transition(CharacterState::Grounded, c), CharacterState::Sliding);
+    assert_eq!(
+        transition(CharacterState::Grounded, c),
+        CharacterState::Sliding
+    );
 }
 
 fn tilted_plane(theta: f32) -> ClosureSdf {
     // f(p) = n . p with n = (-sin t, cos t, 0): exact distance, constant normal.
     let (s, c) = (theta.sin(), theta.cos());
-    ClosureSdf::new(move |x, y, _z| -s * x + c * y, move |_x, _y, _z| (-s, c, 0.0))
+    ClosureSdf::new(
+        move |x, y, _z| -s * x + c * y,
+        move |_x, _y, _z| (-s, c, 0.0),
+    )
 }
 
 #[test]
@@ -154,15 +184,24 @@ fn locomotion_context_feeds_the_state_machine() {
     let c = air.locomotion_context(&flat, false, false, false, max);
     assert!(!c.is_grounded);
     assert_eq!(c.slope_radians, 0.0);
-    assert_eq!(transition(CharacterState::Grounded, c), CharacterState::Airborne);
+    assert_eq!(
+        transition(CharacterState::Grounded, c),
+        CharacterState::Airborne
+    );
 
     // Inputs are copied through.
     let c = ch.locomotion_context(&flat, true, true, true, 1.25);
     assert!(c.in_water && c.crouch_requested && c.jump_pressed);
     assert_eq!(c.max_walkable_slope, 1.25);
-    assert_eq!(transition(CharacterState::Grounded, c), CharacterState::Swimming);
+    assert_eq!(
+        transition(CharacterState::Grounded, c),
+        CharacterState::Swimming
+    );
     let c = ch.locomotion_context(&flat, false, true, false, max);
-    assert_eq!(transition(CharacterState::Grounded, c), CharacterState::Crouched);
+    assert_eq!(
+        transition(CharacterState::Grounded, c),
+        CharacterState::Crouched
+    );
 }
 
 #[test]
@@ -173,7 +212,10 @@ fn locomotion_context_slope_of_ceiling_like_normal_is_obtuse() {
     let c = ch.locomotion_context(&field, false, false, false, 0.7);
     assert!(c.is_grounded);
     assert!((c.slope_radians - core::f32::consts::PI).abs() < 1e-3);
-    assert_eq!(transition(CharacterState::Grounded, c), CharacterState::Sliding);
+    assert_eq!(
+        transition(CharacterState::Grounded, c),
+        CharacterState::Sliding
+    );
 }
 
 #[test]
