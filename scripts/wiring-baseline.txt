@@ -77,10 +77,6 @@ unwired src/ik_physics_bridge.rs::snap
 unwired src/interface_capture.rs::plic_normal
 unwired src/interface_capture.rs::plic_plane_offset
 unwired src/interface_capture.rs::truncated_cube_volume
-unwired src/kinematic_loop.rs::FourBarLinkage
-unwired src/kinematic_loop.rs::centre_to_centre
-unwired src/kinematic_loop.rs::four_bar_linkage
-unwired src/kinematic_loop.rs::try_four_bar_linkage
 unwired src/mass_properties.rs::cylinder_mass_properties
 unwired src/math_util.rs::cbrt_fix
 unwired src/math_util.rs::clamp_fix
