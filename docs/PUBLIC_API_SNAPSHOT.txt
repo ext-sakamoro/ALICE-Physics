@@ -2074,6 +2074,8 @@ pub struct alice_physics::compound::CompoundChild
 pub alice_physics::compound::CompoundChild::local_position: alice_physics::math::Vec3Fix
 pub alice_physics::compound::CompoundChild::local_rotation: alice_physics::math::QuatFix
 pub alice_physics::compound::CompoundChild::shape: alice_physics::compound::ShapeRef
+impl alice_physics::compound::CompoundChild
+pub fn alice_physics::compound::CompoundChild::support_world(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::QuatFix) -> alice_physics::math::Vec3Fix
 impl core::clone::Clone for alice_physics::compound::CompoundChild
 pub fn alice_physics::compound::CompoundChild::clone(&self) -> Self
 impl core::fmt::Debug for alice_physics::compound::CompoundChild
@@ -2096,6 +2098,7 @@ pub fn alice_physics::compound::CompoundShape::child_world_aabb(&self, usize, al
 pub fn alice_physics::compound::CompoundShape::compute_aabb(&mut self) -> alice_physics::collider::AABB
 pub fn alice_physics::compound::CompoundShape::is_empty(&self) -> bool
 pub fn alice_physics::compound::CompoundShape::len(&self) -> usize
+pub fn alice_physics::compound::CompoundShape::mass_properties(&self, alice_physics::math::Fix128) -> alice_physics::mass_properties::MassProperties
 pub const fn alice_physics::compound::CompoundShape::new() -> Self
 pub fn alice_physics::compound::CompoundShape::overlapping_children(&self, &alice_physics::collider::AABB, alice_physics::math::Vec3Fix, alice_physics::math::QuatFix) -> alloc::vec::Vec<usize>
 pub fn alice_physics::compound::CompoundShape::support_world(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::QuatFix) -> alice_physics::math::Vec3Fix
@@ -2403,7 +2406,22 @@ impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::convex_decompose
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::convex_decompose::DecompositionResult
 pub fn alice_physics::convex_decompose::decompose_sdf(&dyn alice_physics::sdf_collider::SdfField, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, &alice_physics::convex_decompose::DecomposeConfig) -> alice_physics::convex_decompose::DecompositionResult
 pub mod alice_physics::convex_mesh_builder
+pub struct alice_physics::convex_mesh_builder::HullMesh
+pub alice_physics::convex_mesh_builder::HullMesh::faces: alloc::vec::Vec<[usize; 3]>
+pub alice_physics::convex_mesh_builder::HullMesh::vertices: alloc::vec::Vec<alice_physics::math::Vec3Fix>
+impl core::clone::Clone for alice_physics::convex_mesh_builder::HullMesh
+pub fn alice_physics::convex_mesh_builder::HullMesh::clone(&self) -> Self
+impl core::fmt::Debug for alice_physics::convex_mesh_builder::HullMesh
+pub fn alice_physics::convex_mesh_builder::HullMesh::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for alice_physics::convex_mesh_builder::HullMesh
+impl core::marker::Send for alice_physics::convex_mesh_builder::HullMesh
+impl core::marker::Sync for alice_physics::convex_mesh_builder::HullMesh
+impl core::marker::Unpin for alice_physics::convex_mesh_builder::HullMesh
+impl core::marker::UnsafeUnpin for alice_physics::convex_mesh_builder::HullMesh
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::convex_mesh_builder::HullMesh
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::convex_mesh_builder::HullMesh
 pub fn alice_physics::convex_mesh_builder::build_convex_hull(&[alice_physics::math::Vec3Fix]) -> alice_physics::collider::ConvexHull
+pub fn alice_physics::convex_mesh_builder::build_hull_mesh(&[alice_physics::math::Vec3Fix]) -> core::option::Option<alice_physics::convex_mesh_builder::HullMesh>
 pub fn alice_physics::convex_mesh_builder::compute_centroid(&[alice_physics::math::Vec3Fix]) -> alice_physics::math::Vec3Fix
 pub mod alice_physics::coupled_field
 pub enum alice_physics::coupled_field::CoupledFieldError
@@ -5897,6 +5915,7 @@ pub fn alice_physics::mass_properties::box_mass_properties(alice_physics::math::
 pub fn alice_physics::mass_properties::capsule_mass_properties(alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128) -> alice_physics::mass_properties::MassProperties
 pub fn alice_physics::mass_properties::convex_hull_mass_properties(&[alice_physics::math::Vec3Fix], alice_physics::math::Fix128) -> alice_physics::mass_properties::MassProperties
 pub fn alice_physics::mass_properties::cylinder_mass_properties(alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128) -> alice_physics::mass_properties::MassProperties
+pub fn alice_physics::mass_properties::principal_axes(alice_physics::math::Mat3Fix) -> (alice_physics::math::Vec3Fix, alice_physics::math::Mat3Fix)
 pub fn alice_physics::mass_properties::sphere_mass_properties(alice_physics::math::Fix128, alice_physics::math::Fix128) -> alice_physics::mass_properties::MassProperties
 pub fn alice_physics::mass_properties::translate_inertia(&alice_physics::mass_properties::MassProperties, alice_physics::math::Vec3Fix) -> alice_physics::math::Mat3Fix
 pub mod alice_physics::material
@@ -8835,6 +8854,7 @@ pub fn alice_physics::compound::CompoundShape::child_world_aabb(&self, usize, al
 pub fn alice_physics::compound::CompoundShape::compute_aabb(&mut self) -> alice_physics::collider::AABB
 pub fn alice_physics::compound::CompoundShape::is_empty(&self) -> bool
 pub fn alice_physics::compound::CompoundShape::len(&self) -> usize
+pub fn alice_physics::compound::CompoundShape::mass_properties(&self, alice_physics::math::Fix128) -> alice_physics::mass_properties::MassProperties
 pub const fn alice_physics::compound::CompoundShape::new() -> Self
 pub fn alice_physics::compound::CompoundShape::overlapping_children(&self, &alice_physics::collider::AABB, alice_physics::math::Vec3Fix, alice_physics::math::QuatFix) -> alloc::vec::Vec<usize>
 pub fn alice_physics::compound::CompoundShape::support_world(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::QuatFix) -> alice_physics::math::Vec3Fix
@@ -10997,6 +11017,7 @@ pub const alice_physics::solver::PhysicsWorld::STATE_VERSION: u16
 pub fn alice_physics::solver::PhysicsWorld::active_body_count(&self) -> usize
 pub fn alice_physics::solver::PhysicsWorld::add_body(&mut self, alice_physics::solver::RigidBody) -> usize
 pub fn alice_physics::solver::PhysicsWorld::add_body_with_radius(&mut self, alice_physics::solver::RigidBody, alice_physics::math::Fix128) -> usize
+pub fn alice_physics::solver::PhysicsWorld::add_compound_body(&mut self, &alice_physics::compound::CompoundShape, alice_physics::math::Fix128, alice_physics::math::Vec3Fix) -> core::result::Result<usize, alice_physics::shape::ShapeError>
 pub fn alice_physics::solver::PhysicsWorld::add_contact(&mut self, alice_physics::solver::ContactConstraint)
 pub fn alice_physics::solver::PhysicsWorld::add_contact_modifier(&mut self, alloc::boxed::Box<dyn alice_physics::solver::ContactModifier>)
 pub fn alice_physics::solver::PhysicsWorld::add_contact_with_material(&mut self, usize, usize, alice_physics::collider::Contact)
@@ -15095,6 +15116,7 @@ pub const alice_physics::solver::PhysicsWorld::STATE_VERSION: u16
 pub fn alice_physics::solver::PhysicsWorld::active_body_count(&self) -> usize
 pub fn alice_physics::solver::PhysicsWorld::add_body(&mut self, alice_physics::solver::RigidBody) -> usize
 pub fn alice_physics::solver::PhysicsWorld::add_body_with_radius(&mut self, alice_physics::solver::RigidBody, alice_physics::math::Fix128) -> usize
+pub fn alice_physics::solver::PhysicsWorld::add_compound_body(&mut self, &alice_physics::compound::CompoundShape, alice_physics::math::Fix128, alice_physics::math::Vec3Fix) -> core::result::Result<usize, alice_physics::shape::ShapeError>
 pub fn alice_physics::solver::PhysicsWorld::add_contact(&mut self, alice_physics::solver::ContactConstraint)
 pub fn alice_physics::solver::PhysicsWorld::add_contact_modifier(&mut self, alloc::boxed::Box<dyn alice_physics::solver::ContactModifier>)
 pub fn alice_physics::solver::PhysicsWorld::add_contact_with_material(&mut self, usize, usize, alice_physics::collider::Contact)
@@ -17547,6 +17569,7 @@ pub fn alice_physics::compound::CompoundShape::child_world_aabb(&self, usize, al
 pub fn alice_physics::compound::CompoundShape::compute_aabb(&mut self) -> alice_physics::collider::AABB
 pub fn alice_physics::compound::CompoundShape::is_empty(&self) -> bool
 pub fn alice_physics::compound::CompoundShape::len(&self) -> usize
+pub fn alice_physics::compound::CompoundShape::mass_properties(&self, alice_physics::math::Fix128) -> alice_physics::mass_properties::MassProperties
 pub const fn alice_physics::compound::CompoundShape::new() -> Self
 pub fn alice_physics::compound::CompoundShape::overlapping_children(&self, &alice_physics::collider::AABB, alice_physics::math::Vec3Fix, alice_physics::math::QuatFix) -> alloc::vec::Vec<usize>
 pub fn alice_physics::compound::CompoundShape::support_world(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::QuatFix) -> alice_physics::math::Vec3Fix
@@ -19749,6 +19772,7 @@ pub const alice_physics::solver::PhysicsWorld::STATE_VERSION: u16
 pub fn alice_physics::solver::PhysicsWorld::active_body_count(&self) -> usize
 pub fn alice_physics::solver::PhysicsWorld::add_body(&mut self, alice_physics::solver::RigidBody) -> usize
 pub fn alice_physics::solver::PhysicsWorld::add_body_with_radius(&mut self, alice_physics::solver::RigidBody, alice_physics::math::Fix128) -> usize
+pub fn alice_physics::solver::PhysicsWorld::add_compound_body(&mut self, &alice_physics::compound::CompoundShape, alice_physics::math::Fix128, alice_physics::math::Vec3Fix) -> core::result::Result<usize, alice_physics::shape::ShapeError>
 pub fn alice_physics::solver::PhysicsWorld::add_contact(&mut self, alice_physics::solver::ContactConstraint)
 pub fn alice_physics::solver::PhysicsWorld::add_contact_modifier(&mut self, alloc::boxed::Box<dyn alice_physics::solver::ContactModifier>)
 pub fn alice_physics::solver::PhysicsWorld::add_contact_with_material(&mut self, usize, usize, alice_physics::collider::Contact)

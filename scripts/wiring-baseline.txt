@@ -83,11 +83,6 @@ unwired src/collision_mesh_gen.rs::CollisionMeshConfig
 unwired src/collision_mesh_gen.rs::compute_mesh_aabb
 unwired src/collision_mesh_gen.rs::generate_collision_mesh
 unwired src/collision_mesh_gen.rs::simplify_collision_mesh
-unwired src/compound.rs::add_box
-unwired src/compound.rs::add_capsule
-unwired src/compound.rs::add_convex_hull
-unwired src/compound.rs::add_sphere
-unwired src/compound.rs::child_world_aabb
 unwired src/compound.rs::compute_aabb
 unwired src/compound.rs::overlapping_children
 unwired src/compound.rs::world_aabb
@@ -108,7 +103,6 @@ unwired src/contact_viz.rs::generate_friction_cones
 unwired src/convex_decompose.rs::DecompositionResult
 unwired src/convex_decompose.rs::decompose_sdf
 unwired src/convex_mesh_builder.rs::build_convex_hull
-unwired src/convex_mesh_builder.rs::compute_centroid
 unwired src/creep_longterm.rs::petg_25c_moderate
 unwired src/cubic_elastic_fem.rs::corner_count
 unwired src/cubic_elastic_fem.rs::edge_node_count
@@ -209,12 +203,7 @@ unwired src/layer_adhesion.rs::fos_normal_z
 unwired src/layer_adhesion.rs::fos_shear_xy
 unwired src/layer_adhesion.rs::fos_shear_xz
 unwired src/layer_adhesion.rs::min_fos
-unwired src/mass_properties.rs::box_mass_properties
-unwired src/mass_properties.rs::capsule_mass_properties
-unwired src/mass_properties.rs::convex_hull_mass_properties
 unwired src/mass_properties.rs::cylinder_mass_properties
-unwired src/mass_properties.rs::sphere_mass_properties
-unwired src/mass_properties.rs::translate_inertia
 unwired src/math.rs::add_simd
 unwired src/math.rs::atan
 unwired src/math.rs::cross_simd

@@ -195,122 +195,102 @@ pub fn capsule_mass_properties(
     }
 }
 
-/// Compute mass properties of a convex hull via tetrahedron decomposition.
-///
-/// Decomposes the convex hull into tetrahedra from the centroid to each triangle
-/// face. Each tetrahedron contributes mass and inertia. The vertices are expected
-/// to form a closed convex surface (convex hull vertex soup).
-///
-/// For a simple approximation, this uses the centroid as the decomposition origin
-/// and assumes the vertices form triangle fans (an exact tiling only for a
-/// tetrahedron). Mass and centre of mass are exact for that case; the inertia is
-/// a point-mass-per-tetrahedron approximation taken about the **origin**, not
-/// about the centre of mass — shift it with `translate_inertia` if needed. For best
-/// results, pass vertices from an actual convex hull with face connectivity.
-#[must_use]
-pub fn convex_hull_mass_properties(vertices: &[Vec3Fix], density: Fix128) -> MassProperties {
-    if vertices.len() < 4 {
-        return MassProperties::ZERO;
-    }
-
-    // Compute centroid
-    let mut centroid = Vec3Fix::ZERO;
-    for v in vertices {
-        centroid = centroid + *v;
-    }
-    let n = Fix128::from_int(vertices.len() as i64);
-    centroid = centroid / n;
-
-    let mut total_mass = Fix128::ZERO;
-    let mut total_com = Vec3Fix::ZERO;
-    let mut total_inertia = Mat3Fix::ZERO;
-
-    // Form tetrahedra from centroid to consecutive vertex triples
-    let nv = vertices.len();
-    for i in 0..nv {
-        let v0 = centroid;
-        let v1 = vertices[i];
-        let v2 = vertices[(i + 1) % nv];
-        let v3 = vertices[(i + 2) % nv];
-
-        let (m, com, inertia) = tetrahedron_mass_properties(v0, v1, v2, v3, density);
-        if m.is_zero() {
-            continue;
-        }
-
-        total_com = total_com + com * m;
-        total_mass = total_mass + m;
-
-        // Accumulate inertia (already about origin)
-        total_inertia = Mat3Fix::from_cols(
-            total_inertia.col0 + inertia.col0,
-            total_inertia.col1 + inertia.col1,
-            total_inertia.col2 + inertia.col2,
-        );
-    }
-
-    if total_mass.is_zero() {
-        return MassProperties::ZERO;
-    }
-
-    let com = total_com / total_mass;
-
-    MassProperties {
-        mass: total_mass,
-        center_of_mass: com,
-        inertia_tensor: total_inertia,
-    }
+fn as_array(v: Vec3Fix) -> [Fix128; 3] {
+    [v.x, v.y, v.z]
 }
 
-/// Compute mass properties of a single tetrahedron.
+/// Compute mass properties of the convex hull of a point set.
 ///
-/// Returns (mass, center_of_mass, inertia_tensor_about_origin).
-fn tetrahedron_mass_properties(
-    v0: Vec3Fix,
-    v1: Vec3Fix,
-    v2: Vec3Fix,
-    v3: Vec3Fix,
-    density: Fix128,
-) -> (Fix128, Vec3Fix, Mat3Fix) {
-    // Edges from v0
-    let a = v1 - v0;
-    let b = v2 - v0;
-    let c = v3 - v0;
+/// The hull is built as a closed triangle mesh ([`crate::convex_mesh_builder::build_hull_mesh`]),
+/// and mass, centre of mass and inertia are the exact integrals over the solid it
+/// encloses: the solid is decomposed into the tetrahedra between the origin and each
+/// boundary triangle (signed, so any origin gives the same total), and for a
+/// tetrahedron with vertices `p₀…p₃` of volume `V`,
+///
+/// ```text
+/// ∫ x xᵀ dV = V/20 · ( Σ pₖ pₖᵀ + (Σ pₖ)(Σ pₖ)ᵀ ),    I_O = tr(C)·E − C
+/// ```
+///
+/// The result is **about the centre of mass**, like every other shape here: the
+/// tensor does not depend on where the hull is, and `center_of_mass` says where it
+/// is. [`MassProperties::ZERO`] when there is nothing solid — fewer than four
+/// points, points in one plane, or a non-positive density.
+#[must_use]
+pub fn convex_hull_mass_properties(vertices: &[Vec3Fix], density: Fix128) -> MassProperties {
+    if density <= Fix128::ZERO {
+        return MassProperties::ZERO;
+    }
+    let Some(mesh) = crate::convex_mesh_builder::build_hull_mesh(vertices) else {
+        return MassProperties::ZERO;
+    };
 
-    // Signed volume = (a . (b x c)) / 6
-    let cross = b.cross(c);
-    let det = a.dot(cross);
-    let volume = det / Fix128::from_int(6);
-    let abs_volume = volume.abs();
-
-    if abs_volume.is_zero() {
-        return (Fix128::ZERO, Vec3Fix::ZERO, Mat3Fix::ZERO);
+    let mut volume = Fix128::ZERO;
+    let mut first_moment = Vec3Fix::ZERO;
+    // ∫ x xᵀ dV, row-major.
+    let mut c = [[Fix128::ZERO; 3]; 3];
+    let twenty = Fix128::from_int(20);
+    let four = Fix128::from_int(4);
+    let six = Fix128::from_int(6);
+    for f in &mesh.faces {
+        let (a, b, d) = (
+            mesh.vertices[f[0]],
+            mesh.vertices[f[1]],
+            mesh.vertices[f[2]],
+        );
+        // Tetrahedron (origin, a, b, d): signed volume det/6.
+        let v = a.dot(b.cross(d)) / six;
+        volume = volume + v;
+        let sum = a + b + d;
+        first_moment = first_moment + sum * (v / four);
+        let pts = [as_array(a), as_array(b), as_array(d)];
+        let total = as_array(sum);
+        for r in 0..3 {
+            for col in 0..3 {
+                let mut acc = total[r] * total[col];
+                for p in &pts {
+                    acc = acc + p[r] * p[col];
+                }
+                c[r][col] = c[r][col] + acc * (v / twenty);
+            }
+        }
+    }
+    if volume <= Fix128::ZERO {
+        return MassProperties::ZERO;
     }
 
-    let mass = abs_volume * density;
-
-    // Center of mass at (v0 + v1 + v2 + v3) / 4
-    let four = Fix128::from_int(4);
-    let com = (v0 + v1 + v2 + v3) / four;
-
-    // Inertia tensor using canonical tetrahedron formulas
-    // For simplicity, approximate with point mass at CoM
-    let r = com;
-    let r2 = r.dot(r);
-    let ixx = mass * (r2 - r.x * r.x);
-    let iyy = mass * (r2 - r.y * r.y);
-    let izz = mass * (r2 - r.z * r.z);
-    let ixy = mass * (Fix128::ZERO - r.x * r.y);
-    let ixz = mass * (Fix128::ZERO - r.x * r.z);
-    let iyz = mass * (Fix128::ZERO - r.y * r.z);
-
+    let mass = volume * density;
+    let com = first_moment / volume;
+    // Inertia about the origin from the second-moment matrix, then moved to the COM.
+    let trace = (c[0][0] + c[1][1] + c[2][2]) * density;
+    let cd = |r: usize, col: usize| c[r][col] * density;
+    let origin = |r: usize, col: usize| {
+        if r == col {
+            trace - cd(r, col)
+        } else {
+            Fix128::ZERO - cd(r, col)
+        }
+    };
+    let d2 = com.dot(com);
+    let d = as_array(com);
+    let about_com = |r: usize, col: usize| {
+        let shift = if r == col {
+            d2 - d[r] * d[col]
+        } else {
+            Fix128::ZERO - d[r] * d[col]
+        };
+        origin(r, col) - mass * shift
+    };
     let inertia = Mat3Fix::from_cols(
-        Vec3Fix::new(ixx, ixy, ixz),
-        Vec3Fix::new(ixy, iyy, iyz),
-        Vec3Fix::new(ixz, iyz, izz),
+        Vec3Fix::new(about_com(0, 0), about_com(1, 0), about_com(2, 0)),
+        Vec3Fix::new(about_com(0, 1), about_com(1, 1), about_com(2, 1)),
+        Vec3Fix::new(about_com(0, 2), about_com(1, 2), about_com(2, 2)),
     );
 
-    (mass, com, inertia)
+    MassProperties {
+        mass,
+        center_of_mass: com,
+        inertia_tensor: inertia,
+    }
 }
 
 /// Translate an inertia tensor to a new reference point using the parallel axis theorem.
@@ -507,4 +487,102 @@ mod tests {
         let expected = props1.mass * Fix128::from_int(2);
         assert!(approx_eq(props2.mass, expected, eps));
     }
+}
+
+/// The principal moments and principal axes of a symmetric 3×3 tensor (an inertia
+/// tensor): `tensor = R · diag(moments) · Rᵀ`, with `R` the returned matrix whose
+/// **columns** are the axes — orthonormal and right-handed (`det R = +1`).
+///
+/// A cyclic Jacobi iteration with a fixed number of sweeps, so the answer is the
+/// same on every platform. The tensor is scaled to unit size first, so the rotation
+/// angles never overflow whatever the magnitudes, and an off-diagonal term below
+/// the resolution of the scaled arithmetic is left alone (an already diagonal
+/// tensor, or a sphere's repeated moments, gives the identity frame). The moments
+/// come back in the order of the axes; they are not sorted.
+///
+/// Only the lower triangle's symmetric part is read: `(I + Iᵀ)/2`.
+#[must_use]
+pub fn principal_axes(tensor: Mat3Fix) -> (Vec3Fix, Mat3Fix) {
+    const SWEEPS: usize = 24;
+    let t = [
+        [tensor.col0.x, tensor.col1.x, tensor.col2.x],
+        [tensor.col0.y, tensor.col1.y, tensor.col2.y],
+        [tensor.col0.z, tensor.col1.z, tensor.col2.z],
+    ];
+    let half = Fix128::from_ratio(1, 2);
+    let mut a = [[Fix128::ZERO; 3]; 3];
+    let mut scale = Fix128::ZERO;
+    for r in 0..3 {
+        for c in 0..3 {
+            a[r][c] = (t[r][c] + t[c][r]) * half;
+            if a[r][c].abs() > scale {
+                scale = a[r][c].abs();
+            }
+        }
+    }
+    if scale.is_zero() {
+        return (Vec3Fix::ZERO, Mat3Fix::IDENTITY);
+    }
+    for row in &mut a {
+        for v in row.iter_mut() {
+            *v = *v / scale;
+        }
+    }
+    let mut v = [
+        [Fix128::ONE, Fix128::ZERO, Fix128::ZERO],
+        [Fix128::ZERO, Fix128::ONE, Fix128::ZERO],
+        [Fix128::ZERO, Fix128::ZERO, Fix128::ONE],
+    ];
+    // Below this an off-diagonal term is rounding, not structure.
+    let tiny = Fix128::from_raw(0, 1 << 20);
+    for _ in 0..SWEEPS {
+        let mut rotated = false;
+        for &(p, q) in &[(0usize, 1usize), (0, 2), (1, 2)] {
+            let apq = a[p][q];
+            if apq.abs() <= tiny {
+                continue;
+            }
+            rotated = true;
+            let tau = (a[q][q] - a[p][p]) / (apq + apq);
+            let sign = if tau >= Fix128::ZERO {
+                Fix128::ONE
+            } else {
+                -Fix128::ONE
+            };
+            let t_rot = sign / (tau.abs() + (Fix128::ONE + tau * tau).sqrt());
+            let c = Fix128::ONE / (Fix128::ONE + t_rot * t_rot).sqrt();
+            let s = t_rot * c;
+            // A ← Jᵀ A J on rows/columns p and q.
+            for row in &mut a {
+                let (akp, akq) = (row[p], row[q]);
+                row[p] = c * akp - s * akq;
+                row[q] = s * akp + c * akq;
+            }
+            let (row_p, row_q) = (a[p], a[q]);
+            for k in 0..3 {
+                a[p][k] = c * row_p[k] - s * row_q[k];
+                a[q][k] = s * row_p[k] + c * row_q[k];
+            }
+            a[p][q] = Fix128::ZERO;
+            a[q][p] = Fix128::ZERO;
+            for row in &mut v {
+                let (vp, vq) = (row[p], row[q]);
+                row[p] = c * vp - s * vq;
+                row[q] = s * vp + c * vq;
+            }
+        }
+        if !rotated {
+            break;
+        }
+    }
+    let moments = Vec3Fix::new(a[0][0] * scale, a[1][1] * scale, a[2][2] * scale);
+    let mut axes = Mat3Fix::from_cols(
+        Vec3Fix::new(v[0][0], v[1][0], v[2][0]),
+        Vec3Fix::new(v[0][1], v[1][1], v[2][1]),
+        Vec3Fix::new(v[0][2], v[1][2], v[2][2]),
+    );
+    if axes.determinant() < Fix128::ZERO {
+        axes = Mat3Fix::from_cols(axes.col0, axes.col1, -axes.col2);
+    }
+    (moments, axes)
 }
