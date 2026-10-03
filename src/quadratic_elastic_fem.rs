@@ -1439,6 +1439,14 @@ pub fn solve_quadratic_hyperelastic(
     let mut relative_residual = Fix128::ZERO;
     let mut effective_relative_tolerance = Fix128::ZERO;
 
+    // Jacobi scaling for the Newton–Krylov step; the diagonal of the small-strain
+    // operator at the undeformed frames is a fixed, positive scaling.
+    let krylov_precond = preconditioner(
+        &op.diagonal(ndof),
+        &is_free,
+        config.linear().preconditioner(),
+    );
+
     for increment in 1..=config.increments() {
         // Predict the whole field, not only the boundary.
         //
@@ -1512,6 +1520,35 @@ pub fn solve_quadratic_hyperelastic(
                     iterations: step,
                     relative_residual: relative(max_abs(&residual), newton_target),
                 });
+            }
+
+            // `with_consistent_tangent`: a Newton–Krylov step whose tangent action is
+            // the central difference of the material internal force. The modified
+            // iteration below contracts by a factor that grows with the stretch and
+            // does not converge once it passes one (measured: a smooth non-affine
+            // field at `|∇u| ≈ 0.4` ends `NotConverged` at 400 steps and at 16
+            // increments alike), so the tangent is the thing that has to change.
+            // Step 0 is a prediction, not a candidate, and keeps the linear solve.
+            if config.consistent_tangent() && step > 0 {
+                if let Some(report) =
+                    crate::linear_elastic_fem::consistent_tangent::newton_krylov_step(
+                        &mut u,
+                        &f_ext,
+                        &is_free,
+                        &krylov_precond,
+                        &config.linear(),
+                        |x, out| {
+                            material_internal_force(&mesh.elements, &points, weight, x, law, out)
+                        },
+                    )?
+                {
+                    cg_iterations = cg_iterations.saturating_add(report.cg_iterations);
+                    relative_residual = report.relative_residual;
+                    effective_relative_tolerance = report.effective_relative_tolerance;
+                    step += 1;
+                    newton_iterations = newton_iterations.saturating_add(1);
+                    continue;
+                }
             }
 
             // The frames come from the current displacement and are then held

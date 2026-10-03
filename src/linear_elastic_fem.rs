@@ -1956,7 +1956,7 @@ fn max_abs(v: &[Fix128]) -> Fix128 {
     worst
 }
 
-mod consistent_tangent;
+pub(crate) mod consistent_tangent;
 
 /// Settings for [`solve_corotational`].
 ///
@@ -2088,6 +2088,15 @@ impl CorotationalConfig {
     /// The first step of every increment is the surrogate's: that state is a
     /// prediction, which at the first increment is the undeformed interior with
     /// the boundary already moved and can hold an inverted element.
+    ///
+    /// ⚠️ **`solve_quadratic_hyperelastic` and `solve_cubic_hyperelastic` honour
+    /// this flag too**, with a different tangent action: those elements have no
+    /// assembled tangent, so the action is the central difference of the material
+    /// internal force (a Newton–Krylov step, `Fix128` throughout, no libm). It
+    /// does not move the fixed point. It is what makes a smooth non-affine field at
+    /// `|∇u| ≈ 0.4` converge, where the modified iteration ends `NotConverged`
+    /// identically at 80 steps, 400 steps and 16 increments
+    /// (`tests/analytic_hyperelastic_mms_order.rs`).
     ///
     /// Without a law from [`Self::with_hyperelastic`] there is nothing to
     /// differentiate, and [`solve_corotational`] refuses the configuration with

@@ -336,7 +336,7 @@ where
 
 /// What one consistent Newton step reports back to [`super::solve_corotational`].
 #[derive(Debug)]
-pub(super) struct StepReport {
+pub(crate) struct StepReport {
     pub cg_iterations: u32,
     pub relative_residual: Fix128,
     pub effective_relative_tolerance: Fix128,
@@ -416,6 +416,125 @@ pub(super) fn newton_step(
                 relative_residual,
                 effective_relative_tolerance: effective,
             })
+        }
+        None => Err(FemError::NotConverged {
+            iterations: cg_iterations,
+            relative_residual: relative(before, solved.b_norm),
+        }),
+    }
+}
+
+/// Size of the displacement perturbation (mm) the finite-difference tangent
+/// action uses: `max|ε p| = 2⁻¹⁴`.
+///
+/// Large enough that the `Fix128` round-off of the internal force (about `2⁻⁶⁰`)
+/// divided by it stays near `2⁻⁴⁶`, small enough that the `O(ε²)` truncation of
+/// the central difference is below `2⁻²⁸` relative to the element size.
+const FD_PERTURBATION_DENOMINATOR: i64 = 1 << 14;
+
+/// One Newton–Krylov step for an element family that has no assembled tangent
+/// (`QuadraticMesh` / `CubicMesh`): solve `K_t(u) δ = r(u)` where the tangent
+/// action is the **central difference of the internal force**,
+/// `K_t p ≈ (f(u + εp) − f(u − εp)) / 2ε`, then move by the largest `α = 2⁻ᵏ` that
+/// lowers the residual.
+///
+/// ⚠️ The difference is an *inexact Newton* device and does not move the fixed
+/// point: the iteration stops where `f_ext − f(u)` is small, a condition that
+/// involves `f` only. It is also deterministic — `Fix128` throughout, no libm.
+///
+/// `internal_force(u, out)` is the material internal force; an `Err` at a
+/// perturbed point (an inverted element) zeroes that action, and at a trial
+/// point it is a refusal that shortens the step, as in [`newton_step`].
+///
+/// Returns `Ok(None)` when the tangent is not positive definite along the first
+/// direction; the caller then takes its own positive-definite surrogate step.
+///
+/// # Errors
+///
+/// [`FemError::NotConverged`] when no step length lowers the residual, and
+/// whatever `internal_force` returns at `u` itself.
+pub(crate) fn newton_krylov_step<F>(
+    u: &mut [Fix128],
+    f_ext: &[Fix128],
+    is_free: &[bool],
+    precond: &[Fix128],
+    linear: &SolverConfig,
+    mut internal_force: F,
+) -> Result<Option<StepReport>, FemError>
+where
+    F: FnMut(&[Fix128], &mut [Fix128]) -> Result<(), FemError>,
+{
+    let ndof = u.len();
+    let residual_at = |force: &[Fix128]| -> Vec<Fix128> {
+        (0..ndof)
+            .map(|d| {
+                if is_free[d] {
+                    f_ext[d] - force[d]
+                } else {
+                    Fix128::ZERO
+                }
+            })
+            .collect()
+    };
+    let mut force = vec![Fix128::ZERO; ndof];
+    internal_force(u, &mut force)?;
+    let residual = residual_at(&force);
+    let before = max_abs(&residual);
+
+    let base: Vec<Fix128> = u.to_vec();
+    let mut plus = vec![Fix128::ZERO; ndof];
+    let mut minus = vec![Fix128::ZERO; ndof];
+    let mut probe_u = vec![Fix128::ZERO; ndof];
+    let two = Fix128::from_int(2);
+    let perturbation = Fix128::from_ratio(1, FD_PERTURBATION_DENOMINATOR);
+    let solved = truncated_cg(&residual, is_free, precond, linear, |p, out| {
+        let reach = max_abs(p);
+        out.fill(Fix128::ZERO);
+        if reach.is_zero() {
+            return;
+        }
+        let eps = perturbation / reach;
+        for sign in [Fix128::ONE, -Fix128::ONE] {
+            for d in 0..ndof {
+                probe_u[d] = base[d] + sign * eps * p[d];
+            }
+            let target = if sign > Fix128::ZERO {
+                &mut plus
+            } else {
+                &mut minus
+            };
+            if internal_force(&probe_u, target).is_err() {
+                return;
+            }
+        }
+        for d in 0..ndof {
+            out[d] = (plus[d] - minus[d]) / (two * eps);
+        }
+    });
+    let (delta, cg_iterations, relative_residual, effective) = match solved.ending {
+        Ending::NegativeAtStart => return Ok(None),
+        _ => (
+            solved.x,
+            solved.iterations,
+            relative(solved.residual_norm, solved.b_norm),
+            relative(solved.target, solved.b_norm),
+        ),
+    };
+
+    let mut trial_force = vec![Fix128::ZERO; ndof];
+    let accepted = backtrack(before, u, &delta, is_free, |trial| {
+        internal_force(trial, &mut trial_force)
+            .ok()
+            .map(|()| max_abs(&residual_at(&trial_force)))
+    });
+    match accepted {
+        Some(moved) => {
+            u.copy_from_slice(&moved);
+            Ok(Some(StepReport {
+                cg_iterations,
+                relative_residual,
+                effective_relative_tolerance: effective,
+            }))
         }
         None => Err(FemError::NotConverged {
             iterations: cg_iterations,
