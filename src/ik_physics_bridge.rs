@@ -6,8 +6,9 @@
 //! bones toward IK-computed target positions. Callers who own an IK
 //! solver (e.g. `alice-kinematics::fabrik`) can post the solved
 //! per-frame chain into a `IkTargetSet` and have the physics
-//! stabiliser apply proportional position corrections that respect
-//! the underlying rigid-body inverse masses.
+//! stabiliser apply proportional position corrections (immovable bodies,
+//! `inv_mass == 0`, are held fixed; the correction is not otherwise
+//! weighted by mass).
 //!
 //! The MVP is purely kinematic: the correction is Baumgarte-style
 //! position stabilisation, not force-based tracking. Downstream
@@ -24,8 +25,9 @@ pub struct IkTarget {
     pub body: usize,
     /// Desired world-space position (m).
     pub position: Vec3Fix,
-    /// Blend factor in `[0, 1]`. `0` disables tracking, `1` snaps to
-    /// the target (subject to inverse-mass weighting).
+    /// Blend factor in `[0, 1]` (values outside are clamped). `0` disables
+    /// tracking, `1` snaps to the target. Bodies with `inv_mass == 0` are
+    /// never moved.
     pub weight: Fix128,
 }
 
@@ -56,7 +58,8 @@ impl IkTarget {
 pub struct IkTargetSet {
     /// All targets driven this frame.
     pub targets: Vec<IkTarget>,
-    /// Global compliance factor (higher = softer tracking).
+    /// Global compliance factor (higher = softer tracking). Each correction is
+    /// scaled by `1 / (1 + compliance)`; a negative value is treated as `0`.
     pub compliance: Fix128,
 }
 
@@ -76,7 +79,14 @@ impl IkTargetSet {
     /// Apply one position-stabilisation pass on every target. Static
     /// bodies (`inv_mass == 0`) are held fixed.
     pub fn apply(&self, world: &mut PhysicsWorld) {
-        let scale = Fix128::ONE / (Fix128::ONE + self.compliance);
+        // `compliance` is "higher = softer", so a negative value has no meaning:
+        // taken as written it would flip the correction (or divide by zero at -1).
+        let compliance = if self.compliance < Fix128::ZERO {
+            Fix128::ZERO
+        } else {
+            self.compliance
+        };
+        let scale = Fix128::ONE / (Fix128::ONE + compliance);
         for target in &self.targets {
             if target.body >= world.bodies.len() {
                 continue;
@@ -86,7 +96,16 @@ impl IkTargetSet {
                 continue;
             }
             let residual = target.position - body.position;
-            let correction = residual * (target.weight * scale);
+            // The blend factor is documented as `[0, 1]`; outside it the body
+            // would overshoot the target (weight > 1) or move away from it.
+            let weight = if target.weight < Fix128::ZERO {
+                Fix128::ZERO
+            } else if target.weight > Fix128::ONE {
+                Fix128::ONE
+            } else {
+                target.weight
+            };
+            let correction = residual * (weight * scale);
             world.bodies[target.body].position = body.position + correction;
         }
     }
