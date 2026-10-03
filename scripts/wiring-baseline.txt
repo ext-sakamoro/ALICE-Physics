@@ -30,7 +30,6 @@ unwired src/buoyancy_zone.rs::depth_below_surface
 unwired src/buoyancy_zone.rs::water_pool
 unwired src/bvh.rs::build_dynamic
 unwired src/bvh.rs::clear_dynamic
-unwired src/bvh.rs::get_aabb
 unwired src/bvh.rs::insert_dynamic
 unwired src/bvh.rs::query_pairs
 unwired src/character_state.rs::accepts_locomotion
@@ -51,7 +50,6 @@ unwired src/damping_rayleigh.rs::omega_to_hz
 unwired src/deformable.rs::center_of_mass
 unwired src/deformable.rs::new_cube
 unwired src/deformable.rs::resolve_rigid_body_collisions
-unwired src/dynamic_bvh.rs::get_aabb
 unwired src/dynamic_bvh.rs::height
 unwired src/dynamic_bvh.rs::proxy_count
 unwired src/dynamic_bvh.rs::user_data
