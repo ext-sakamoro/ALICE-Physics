@@ -149,8 +149,18 @@ pub fn compute_sdf_force(
             strength,
             max_force,
         } => {
-            // Force toward surface, proportional to distance
-            let force_mag = (*strength * dist_fix.abs()).min(*max_force);
+            // Force toward surface, proportional to distance.
+            //
+            // `Mul` wraps mod 2^128 on overflow (doctrine WM-01/B-12,
+            // `src/math.rs`), so at `dist` near Fix128's representable
+            // boundary the raw product can wrap to a value *smaller* than
+            // `max_force`, defeating the clamp below. `checked_mul` detects
+            // that overflow directly; since any product too large to
+            // represent is certainly larger than `max_force`, the clamp
+            // value is the correct substitute.
+            let force_mag = strength
+                .checked_mul(dist_fix.abs())
+                .map_or(*max_force, |product| product.min(*max_force));
             if dist > 0.0 {
                 // Outside: push inward (negative normal direction)
                 -normal * force_mag
