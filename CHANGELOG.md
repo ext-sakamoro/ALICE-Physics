@@ -41,6 +41,7 @@ were introduced during that release window.
 - **`DecompositionResult::volumes` が bounding box の体積だった** (球で hull の 1.8 倍) hull の体積にした `min_volume` も hull の体積で判定する
 - **`max_vertices_per_hull` が `len < 2·cap` で効かず、stride が面上の点を落として箱の角を失っていた** 極値点だけを残し、上限を超える時は最遠点サンプリングで選ぶ (上限が 4 未満でも 4 点は残す)
 - **`DecompositionResult::centers` が頂点の平均で偏っていた** hull の重心にした
+- `tests/determinism_golden_f32.rs` の `GOLDEN_ENGINEERING` を更新した (単位球 res 12 の分解が 4 個の bbox 体積つき hull から、1 個で体積 3.667 (球 4.189 の内側)・中心がほぼ原点 に変わった、意図した変更)
 - oracle: 面が格子線に乗る箱 / L 字の hull の体積を格子の閉形式 `(辺 − c)` の積と照合、球の上下限、予算の配分、閾値、compound の質量・重心 変異 22 件中 21 red (残り 1 件は等価)
 ### Changed — compound の narrow-phase が broad-phase で絞る (全配線 program 第 9 件 F3d)
 
