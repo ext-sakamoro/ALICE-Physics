@@ -241,14 +241,6 @@ unwired src/motor.rs::apply_motors
 unwired src/motor.rs::disable
 unwired src/motor.rs::set_rotation_target
 unwired src/motor.rs::set_velocity_target
-unwired src/multi_world.rs::add_world
-unwired src/multi_world.rs::step_all
-unwired src/multi_world.rs::step_all_parallel
-unwired src/multi_world.rs::total_body_count
-unwired src/multi_world.rs::transfer_body
-unwired src/multi_world.rs::transform_a_to_b
-unwired src/multi_world.rs::transform_b_to_a
-unwired src/multi_world.rs::world_count
 unwired src/netcode.rs::advance_frame
 unwired src/netcode.rs::dt
 unwired src/netcode.rs::get_snapshot

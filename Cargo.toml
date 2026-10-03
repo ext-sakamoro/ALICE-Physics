@@ -161,6 +161,14 @@ required-features = ["std", "analytics"]
 name = "replay_recording"
 required-features = ["std", "replay"]
 
+# Production entry point for `MultiWorld`/`Portal` (wiring_guard:
+# src/multi_world.rs had zero production callers across all 8 pub items:
+# add_world, step_all, step_all_parallel, total_body_count, transfer_body,
+# world_count, Portal::transform_a_to_b, Portal::transform_b_to_a).
+[[example]]
+name = "multi_world_management"
+required-features = ["std"]
+
 [[bench]]
 name = "physics_bench"
 harness = false
