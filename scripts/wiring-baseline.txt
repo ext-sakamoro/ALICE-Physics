@@ -34,8 +34,6 @@ unwired src/audio_physics.rs::process_contact
 unwired src/audio_physics.rs::set_material
 unwired src/beam_stress.rs::with_end_condition
 unwired src/beam_stress.rs::with_min_fos
-unwired src/box_collider.rs::corner
-unwired src/box_collider.rs::corners
 unwired src/bridging.rs::unsafe_checks
 unwired src/bridging.rs::z_delta_mm
 unwired src/buckling.rs::plate_buckling_mpa
@@ -66,14 +64,11 @@ unwired src/cloth_fluid.rs::apply_cloth_boundary_to_fluid
 unwired src/cloth_fluid.rs::apply_cloth_boundary_to_fluid_with_residual
 unwired src/cloth_fluid.rs::apply_fluid_forces_to_cloth
 unwired src/cloth_fluid.rs::apply_fluid_forces_to_cloth_with_residual
-unwired src/collider.rs::from_metric_ball
 unwired src/collision_mesh_gen.rs::CollisionMesh
 unwired src/collision_mesh_gen.rs::CollisionMeshConfig
 unwired src/collision_mesh_gen.rs::compute_mesh_aabb
 unwired src/collision_mesh_gen.rs::generate_collision_mesh
 unwired src/collision_mesh_gen.rs::simplify_collision_mesh
-unwired src/cone.rs::apex
-unwired src/cone.rs::base_center
 unwired src/contact_cache.rs::apply_warm_start
 unwired src/contact_cache.rs::manifold_count
 unwired src/contact_cache.rs::point_count
@@ -189,9 +184,6 @@ unwired src/math.rs::sub_simd
 unwired src/math_util.rs::cbrt_fix
 unwired src/math_util.rs::clamp_fix
 unwired src/math_util.rs::pow_int
-unwired src/metric.rs::L1
-unwired src/metric.rs::LINF
-unwired src/metric.rs::axis_extent
 unwired src/metric.rs::lipschitz
 unwired src/metric.rs::norm
 unwired src/metric.rs::weights
