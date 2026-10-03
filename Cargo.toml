@@ -138,6 +138,15 @@ required-features = ["std"]
 name = "linear_elastic_fem_config_diagnostics"
 required-features = ["std"]
 
+# Production entry point for the P3 mesh topology helpers (wiring_guard:
+# src/cubic_elastic_fem.rs had zero production callers across 9 items:
+# corner_count, edge_node_count, edge_nodes, element_count, element_nodes,
+# face_node, face_node_count, interior_node_positions_are_exact,
+# shape_values — only tests/ called in, which the guard does not count).
+[[example]]
+name = "cubic_elastic_fem_topology"
+required-features = ["std"]
+
 # Production entry point for the `neural` feature's fixed-point ternary
 # controller (wiring_guard: src/neural.rs had zero production callers).
 [[example]]
