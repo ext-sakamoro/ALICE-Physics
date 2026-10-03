@@ -1,0 +1,46 @@
+name: Wiring Status
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'src/**/*.rs'
+      - 'scripts/wiring_guard.py'
+      - 'scripts/wiring-baseline.txt'
+      - 'scripts/gen-wiring-status.py'
+
+permissions:
+  contents: write
+
+jobs:
+  generate-wiring-status:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Generate wiring status report
+        run: python3 scripts/gen-wiring-status.py
+
+      - name: Check if wiring status changed
+        id: check
+        run: |
+          if git diff --quiet docs/wiring-status.md; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit and push wiring status if changed
+        if: steps.check.outputs.changed == 'true'
+        run: |
+          git config user.name "wiring-bot"
+          git config user.email "noreply@github.com"
+          git add docs/wiring-status.md
+          git commit -m "docs: update wiring status [automated]"
+          git push origin main || true
+        continue-on-error: true
