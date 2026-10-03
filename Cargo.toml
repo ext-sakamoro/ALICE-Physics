@@ -536,6 +536,17 @@ required-features = ["std"]
 name = "vibration_wall_resonance"
 required-features = ["std"]
 
+# Production entry point for alice_physics::pressure's contact-force
+# deformation API (wiring_guard: src/pressure.rs had zero production
+# callers across 4 items: apply_pressure_at, apply_impact, pressure_at,
+# deformation_at — only src/pressure.rs's own #[cfg(test)] module called
+# in, which the guard does not count). Not to be confused with
+# examples/pressure_solvers.rs, which wires the unrelated CFD
+# pressure-projection solver in src/cfd_solver.rs.
+[[example]]
+name = "pressure_contact_deformation"
+required-features = ["std"]
+
 [[bench]]
 name = "physics_bench"
 harness = false

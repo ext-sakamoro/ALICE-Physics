@@ -103,10 +103,6 @@ unwired src/physics2d.rs::distance_to
 unwired src/plastic.rs::petg_room_temp
 unwired src/plastic.rs::uniaxial_x
 unwired src/plastic.rs::with_hardening
-unwired src/pressure.rs::apply_impact
-unwired src/pressure.rs::apply_pressure_at
-unwired src/pressure.rs::deformation_at
-unwired src/pressure.rs::pressure_at
 unwired src/print_orientation.rs::axis_x
 unwired src/print_orientation.rs::axis_y
 unwired src/print_orientation.rs::optimize_grid
