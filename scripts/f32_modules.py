@@ -41,6 +41,7 @@ BOUNDARY = {
     "fluid_netcode": "compression_ratio metric only",
     "character_state": "state-machine timers, no simulation arithmetic",
     "solver_tgs": "pub(crate) cache hit-rate metric only",
+    "solver": "TgsCacheStats::hit_rate cache hit-rate metric only (same ratio as solver_tgs, re-exposed as pub API)",
 }
 
 # Files that are not simulation modules.

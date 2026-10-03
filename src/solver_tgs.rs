@@ -868,20 +868,40 @@ where
     }
 }
 
-/// Dispatches `f` over each island in parallel via `rayon`. Islands
-/// are independent by construction (see [`build_islands`]), so no
-/// inter-island synchronisation is required. Determinism of the
-/// aggregate result is preserved as long as `f` mutates only state
-/// belonging to bodies inside the island passed to it.
+/// Dispatches `f` over each island in parallel via `rayon`, pairing each
+/// island with its own slot of caller-provided per-island state `aux`
+/// (e.g. a warm-start [`ImpulseCache`]), and collects one `R` per island
+/// **in canonical island order**.
+///
+/// Islands are independent by construction (see [`build_islands`]), so
+/// no inter-island synchronisation is required beyond each island owning
+/// its own `aux` slot. Determinism of the aggregate `Vec<R>` is preserved
+/// because `rayon`'s `par_iter().zip().map().collect()` over indexed
+/// (slice-backed) iterators always reassembles results in source order,
+/// independent of which worker thread executed which island.
+///
+/// # Panics
+/// Panics when `aux.len() != islands.len()`.
 ///
 /// Available only with the `parallel` feature.
 #[cfg(feature = "parallel")]
-pub(crate) fn par_dispatch_islands<F>(islands: &[Island], f: F)
+pub(crate) fn par_dispatch_islands<T, F, R>(islands: &[Island], aux: &mut [T], f: F) -> Vec<R>
 where
-    F: Fn(&Island) + Send + Sync,
+    F: Fn(&Island, &mut T) -> R + Send + Sync,
+    T: Send,
+    R: Send,
 {
+    assert_eq!(
+        islands.len(),
+        aux.len(),
+        "one aux slot per island is required"
+    );
     use rayon::prelude::*;
-    islands.par_iter().for_each(f);
+    islands
+        .par_iter()
+        .zip(aux.par_iter_mut())
+        .map(|(isl, a)| f(isl, a))
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -944,6 +964,31 @@ mod tests {
         let mut cache = ImpulseCache::new();
         let got = cache.take(42);
         assert_eq!(got, CachedImpulse::default());
+    }
+
+    /// Degenerate `sweep` inputs: an empty cache stays empty and does not
+    /// panic, and a cache where every entry was touched this tick (nothing
+    /// stale) is unchanged by `sweep`.
+    #[test]
+    fn impulse_cache_sweep_degenerate_empty_and_nothing_stale() {
+        let mut empty = ImpulseCache::new();
+        empty.sweep();
+        assert!(empty.is_empty(), "sweeping an empty cache stays empty");
+
+        let mut all_live = ImpulseCache::new();
+        let imp = CachedImpulse {
+            normal: Fix128::from_int(2),
+            tangent1: Fix128::ZERO,
+            tangent2: Fix128::ZERO,
+        };
+        all_live.set(1, imp);
+        all_live.set(2, imp);
+        let _ = all_live.take(1);
+        let _ = all_live.take(2);
+        all_live.sweep();
+        assert_eq!(all_live.len(), 2, "nothing stale: both entries survive");
+        assert_eq!(all_live.peek(1), imp);
+        assert_eq!(all_live.peek(2), imp);
     }
 
     #[test]
@@ -1296,10 +1341,28 @@ mod tests {
         assert_eq!(visited, vec![0, 2]);
     }
 
+    /// Degenerate inputs for `dispatch_islands`: an empty slice calls `f`
+    /// zero times, and a single-island slice calls it exactly once.
+    #[test]
+    fn dispatch_islands_degenerate_empty_and_single() {
+        let none: [Island; 0] = [];
+        let mut calls = 0u32;
+        dispatch_islands(&none, |_| calls += 1);
+        assert_eq!(calls, 0, "empty island list dispatches zero times");
+
+        let one = [Island {
+            bodies: vec![5],
+            contacts: vec![],
+            joints: vec![],
+        }];
+        let mut seen = Vec::new();
+        dispatch_islands(&one, |isl| seen.push(isl.bodies.clone()));
+        assert_eq!(seen, vec![vec![5]], "single island dispatches exactly once");
+    }
+
     #[cfg(feature = "parallel")]
     #[test]
     fn par_dispatch_islands_visits_every_island() {
-        use std::sync::atomic::{AtomicUsize, Ordering};
         let islands: Vec<Island> = (0..16)
             .map(|i| Island {
                 bodies: vec![i, i + 100],
@@ -1307,11 +1370,28 @@ mod tests {
                 joints: vec![],
             })
             .collect();
-        let counter = AtomicUsize::new(0);
-        par_dispatch_islands(&islands, |_| {
-            counter.fetch_add(1, Ordering::Relaxed);
+        let mut aux = vec![0u32; islands.len()];
+        // Map-reduce: `results[k]` is island `k`'s first body index, so a
+        // result equal to `0..16` proves both full coverage (16 entries)
+        // and canonical-order collection (no shuffling across threads).
+        let results: Vec<usize> = par_dispatch_islands(&islands, &mut aux, |isl, slot| {
+            *slot += 1;
+            isl.bodies[0]
         });
-        assert_eq!(counter.load(Ordering::Relaxed), 16);
+        assert_eq!(results, (0..16).collect::<Vec<_>>());
+        assert!(
+            aux.iter().all(|&v| v == 1),
+            "each aux slot touched exactly once"
+        );
+    }
+
+    #[cfg(feature = "parallel")]
+    #[test]
+    #[should_panic(expected = "one aux slot per island is required")]
+    fn par_dispatch_islands_panics_on_aux_length_mismatch() {
+        let islands = vec![Island::default(), Island::default()];
+        let mut aux = vec![0u32; 1];
+        let _: Vec<usize> = par_dispatch_islands(&islands, &mut aux, |_, _| 0);
     }
 
     #[test]
@@ -1900,12 +1980,11 @@ mod tests {
         assert_eq!(islands[2].joints, vec![0]);
     }
 
-    /// `par_dispatch_islands` は全 island に対して closure を 1 回ずつ呼ぶ
-    /// (`→ ()` 変異は 0 回)
+    /// `par_dispatch_islands` は全 island に対して closure を 1 回ずつ呼び、
+    /// 結果を island の canonical order で返す (`→ ()` / 順序破壊変異を検出)
     #[cfg(feature = "parallel")]
     #[test]
     fn par_dispatch_islands_runs_closure_for_each_island_exactly_once() {
-        use std::sync::Mutex;
         let islands: Vec<Island> = (0..7)
             .map(|i| Island {
                 bodies: vec![i * 2, i * 2 + 1],
@@ -1913,18 +1992,27 @@ mod tests {
                 joints: vec![],
             })
             .collect();
-        let seen = Mutex::new(Vec::new());
-        par_dispatch_islands(&islands, |isl| {
-            seen.lock().expect("no poison").push(isl.contacts[0]);
+        let mut aux = vec![0u32; islands.len()];
+        let results: Vec<usize> = par_dispatch_islands(&islands, &mut aux, |isl, slot| {
+            *slot += 1;
+            isl.contacts[0]
         });
-        let mut got = seen.into_inner().expect("no poison");
-        got.sort_unstable();
-        assert_eq!(got, (0..7).collect::<Vec<_>>());
-        // 空 slice は 0 回
-        let none = Mutex::new(0usize);
-        par_dispatch_islands(&[], |_| {
-            *none.lock().expect("no poison") += 1;
+        assert_eq!(
+            results,
+            (0..7).collect::<Vec<_>>(),
+            "order preserved, each island visited exactly once"
+        );
+        assert!(
+            aux.iter().all(|&v| v == 1),
+            "each aux slot mutated exactly once (no double-dispatch, no skip)"
+        );
+
+        // 空 slice は 0 回、空 aux + 空 result。
+        let mut none_aux: Vec<u32> = Vec::new();
+        let none: Vec<usize> = par_dispatch_islands(&[], &mut none_aux, |_, slot| {
+            *slot += 1;
+            0
         });
-        assert_eq!(none.into_inner().expect("no poison"), 0);
+        assert!(none.is_empty());
     }
 }
