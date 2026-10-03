@@ -138,11 +138,6 @@ unwired src/math_util.rs::pow_int
 unwired src/metric.rs::lipschitz
 unwired src/metric.rs::norm
 unwired src/metric.rs::weights
-unwired src/modal.rs::beam_natural_frequency_hz
-unwired src/modal.rs::lambda_squared
-unwired src/modal.rs::plate_natural_frequency_hz
-unwired src/modal.rs::single_dof_frequency_hz
-unwired src/modal.rs::torsional_frequency_hz
 unwired src/motor.rs::apply_motors
 unwired src/motor.rs::disable
 unwired src/motor.rs::set_rotation_target

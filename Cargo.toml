@@ -290,6 +290,19 @@ required-features = ["std"]
 name = "smoke_fire_combustion"
 required-features = ["std"]
 
+# Production entry point for the closed-form modal/natural-frequency
+# formulas (wiring_guard: src/modal.rs had zero production callers across
+# all 5 items: single_dof_frequency_hz, BeamBoundary::lambda_squared,
+# beam_natural_frequency_hz, plate_natural_frequency_hz,
+# torsional_frequency_hz — plate_natural_frequency_hz is also called from
+# src/vibration_wall.rs::analyze_wall_resonance, but that function itself
+# has zero production callers so the call does not count transitively;
+# only tests/engineering_oracles_solid.rs called in otherwise, which the
+# guard does not count).
+[[example]]
+name = "modal_frequency_analysis"
+required-features = ["std"]
+
 # Production entry point for `src/acoustic_wave.rs` (wiring_guard: zero
 # production callers across all 6 items: speeds::AIR_20C, speeds::WATER_25C,
 # speeds::STEEL_LONGITUDINAL, speeds::CONCRETE_LONGITUDINAL, leapfrog_step,
