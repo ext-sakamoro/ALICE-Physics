@@ -2728,6 +2728,23 @@ impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::creep_longterm::
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::creep_longterm::FindleyParameters
 pub fn alice_physics::creep_longterm::predict_strain(&alice_physics::creep_longterm::FindleyParameters, &alice_physics::filament_db::MaterialProperties, alice_physics::math::Fix128, alice_physics::math::Fix128) -> alice_physics::math::Fix128
 pub mod alice_physics::cubic_elastic_fem
+#[non_exhaustive] pub struct alice_physics::cubic_elastic_fem::AdaptiveCubicSolution
+pub alice_physics::cubic_elastic_fem::AdaptiveCubicSolution::field: alice_physics::linear_elastic_fem::FemSolution
+pub alice_physics::cubic_elastic_fem::AdaptiveCubicSolution::high_order: alice_physics::cubic_elastic_fem::CubicMesh
+pub alice_physics::cubic_elastic_fem::AdaptiveCubicSolution::mesh: alice_physics::sdf_fem_mesh::SdfTetMesh
+pub alice_physics::cubic_elastic_fem::AdaptiveCubicSolution::rounds: u32
+pub alice_physics::cubic_elastic_fem::AdaptiveCubicSolution::total_indicator_history: alloc::vec::Vec<alice_physics::math::Fix128>
+impl core::clone::Clone for alice_physics::cubic_elastic_fem::AdaptiveCubicSolution
+pub fn alice_physics::cubic_elastic_fem::AdaptiveCubicSolution::clone(&self) -> Self
+impl core::fmt::Debug for alice_physics::cubic_elastic_fem::AdaptiveCubicSolution
+pub fn alice_physics::cubic_elastic_fem::AdaptiveCubicSolution::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for alice_physics::cubic_elastic_fem::AdaptiveCubicSolution
+impl core::marker::Send for alice_physics::cubic_elastic_fem::AdaptiveCubicSolution
+impl core::marker::Sync for alice_physics::cubic_elastic_fem::AdaptiveCubicSolution
+impl core::marker::Unpin for alice_physics::cubic_elastic_fem::AdaptiveCubicSolution
+impl core::marker::UnsafeUnpin for alice_physics::cubic_elastic_fem::AdaptiveCubicSolution
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::cubic_elastic_fem::AdaptiveCubicSolution
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::cubic_elastic_fem::AdaptiveCubicSolution
 pub struct alice_physics::cubic_elastic_fem::CubicMesh
 impl alice_physics::cubic_elastic_fem::CubicMesh
 pub const fn alice_physics::cubic_elastic_fem::CubicMesh::corner_count(&self) -> usize
@@ -2754,6 +2771,7 @@ impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::cubic_elastic_fe
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::cubic_elastic_fem::CubicMesh
 pub fn alice_physics::cubic_elastic_fem::reactions(&alice_physics::cubic_elastic_fem::CubicMesh, &alice_physics::linear_elastic_fem::ElasticMaterial, &alice_physics::linear_elastic_fem::BoundaryConditions, core::option::Option<alice_physics::hyperelastic::HyperelasticModel>, &alice_physics::linear_elastic_fem::FemSolution) -> core::result::Result<alloc::vec::Vec<[alice_physics::math::Fix128; 3]>, alice_physics::linear_elastic_fem::FemError>
 pub fn alice_physics::cubic_elastic_fem::shape_values(&[alice_physics::math::Fix128; 4]) -> [alice_physics::math::Fix128; 20]
+pub fn alice_physics::cubic_elastic_fem::solve_adaptive_cubic<F>(&alice_physics::sdf_fem_mesh::SdfTetMesh, &alice_physics::linear_elastic_fem::ElasticMaterial, F, &alice_physics::linear_elastic_fem::AdaptiveConfig) -> core::result::Result<alice_physics::cubic_elastic_fem::AdaptiveCubicSolution, alice_physics::linear_elastic_fem::FemError> where F: core::ops::function::Fn(&alice_physics::cubic_elastic_fem::CubicMesh) -> alice_physics::linear_elastic_fem::BoundaryConditions
 pub fn alice_physics::cubic_elastic_fem::solve_cubic(&alice_physics::cubic_elastic_fem::CubicMesh, &alice_physics::linear_elastic_fem::ElasticMaterial, &alice_physics::linear_elastic_fem::BoundaryConditions, &alice_physics::linear_elastic_fem::SolverConfig) -> core::result::Result<alice_physics::linear_elastic_fem::FemSolution, alice_physics::linear_elastic_fem::FemError>
 pub fn alice_physics::cubic_elastic_fem::solve_cubic_hyperelastic(&alice_physics::cubic_elastic_fem::CubicMesh, &alice_physics::linear_elastic_fem::ElasticMaterial, &alice_physics::linear_elastic_fem::BoundaryConditions, &alice_physics::linear_elastic_fem::CorotationalConfig) -> core::result::Result<alice_physics::linear_elastic_fem::CorotationalSolution, alice_physics::linear_elastic_fem::FemError>
 pub mod alice_physics::cylinder
@@ -13048,6 +13066,23 @@ pub const alice_physics::profiling::STAGE_NARROWPHASE: usize
 pub const alice_physics::profiling::STAGE_SOLVER: usize
 pub const alice_physics::profiling::STAGE_TOTAL_STEP: usize
 pub mod alice_physics::quadratic_elastic_fem
+#[non_exhaustive] pub struct alice_physics::quadratic_elastic_fem::AdaptiveQuadraticSolution
+pub alice_physics::quadratic_elastic_fem::AdaptiveQuadraticSolution::field: alice_physics::linear_elastic_fem::FemSolution
+pub alice_physics::quadratic_elastic_fem::AdaptiveQuadraticSolution::high_order: alice_physics::quadratic_elastic_fem::QuadraticMesh
+pub alice_physics::quadratic_elastic_fem::AdaptiveQuadraticSolution::mesh: alice_physics::sdf_fem_mesh::SdfTetMesh
+pub alice_physics::quadratic_elastic_fem::AdaptiveQuadraticSolution::rounds: u32
+pub alice_physics::quadratic_elastic_fem::AdaptiveQuadraticSolution::total_indicator_history: alloc::vec::Vec<alice_physics::math::Fix128>
+impl core::clone::Clone for alice_physics::quadratic_elastic_fem::AdaptiveQuadraticSolution
+pub fn alice_physics::quadratic_elastic_fem::AdaptiveQuadraticSolution::clone(&self) -> Self
+impl core::fmt::Debug for alice_physics::quadratic_elastic_fem::AdaptiveQuadraticSolution
+pub fn alice_physics::quadratic_elastic_fem::AdaptiveQuadraticSolution::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for alice_physics::quadratic_elastic_fem::AdaptiveQuadraticSolution
+impl core::marker::Send for alice_physics::quadratic_elastic_fem::AdaptiveQuadraticSolution
+impl core::marker::Sync for alice_physics::quadratic_elastic_fem::AdaptiveQuadraticSolution
+impl core::marker::Unpin for alice_physics::quadratic_elastic_fem::AdaptiveQuadraticSolution
+impl core::marker::UnsafeUnpin for alice_physics::quadratic_elastic_fem::AdaptiveQuadraticSolution
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::quadratic_elastic_fem::AdaptiveQuadraticSolution
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::quadratic_elastic_fem::AdaptiveQuadraticSolution
 pub struct alice_physics::quadratic_elastic_fem::QuadraticMesh
 impl alice_physics::quadratic_elastic_fem::QuadraticMesh
 pub const fn alice_physics::quadratic_elastic_fem::QuadraticMesh::corner_count(&self) -> usize
@@ -13070,6 +13105,7 @@ impl core::marker::UnsafeUnpin for alice_physics::quadratic_elastic_fem::Quadrat
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::quadratic_elastic_fem::QuadraticMesh
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::quadratic_elastic_fem::QuadraticMesh
 pub fn alice_physics::quadratic_elastic_fem::reactions(&alice_physics::quadratic_elastic_fem::QuadraticMesh, &alice_physics::linear_elastic_fem::ElasticMaterial, &alice_physics::linear_elastic_fem::BoundaryConditions, core::option::Option<alice_physics::hyperelastic::HyperelasticModel>, &alice_physics::linear_elastic_fem::FemSolution) -> core::result::Result<alloc::vec::Vec<[alice_physics::math::Fix128; 3]>, alice_physics::linear_elastic_fem::FemError>
+pub fn alice_physics::quadratic_elastic_fem::solve_adaptive_quadratic<F>(&alice_physics::sdf_fem_mesh::SdfTetMesh, &alice_physics::linear_elastic_fem::ElasticMaterial, F, &alice_physics::linear_elastic_fem::AdaptiveConfig) -> core::result::Result<alice_physics::quadratic_elastic_fem::AdaptiveQuadraticSolution, alice_physics::linear_elastic_fem::FemError> where F: core::ops::function::Fn(&alice_physics::quadratic_elastic_fem::QuadraticMesh) -> alice_physics::linear_elastic_fem::BoundaryConditions
 pub fn alice_physics::quadratic_elastic_fem::solve_quadratic(&alice_physics::quadratic_elastic_fem::QuadraticMesh, &alice_physics::linear_elastic_fem::ElasticMaterial, &alice_physics::linear_elastic_fem::BoundaryConditions, &alice_physics::linear_elastic_fem::SolverConfig) -> core::result::Result<alice_physics::linear_elastic_fem::FemSolution, alice_physics::linear_elastic_fem::FemError>
 pub fn alice_physics::quadratic_elastic_fem::solve_quadratic_hyperelastic(&alice_physics::quadratic_elastic_fem::QuadraticMesh, &alice_physics::linear_elastic_fem::ElasticMaterial, &alice_physics::linear_elastic_fem::BoundaryConditions, &alice_physics::linear_elastic_fem::CorotationalConfig) -> core::result::Result<alice_physics::linear_elastic_fem::CorotationalSolution, alice_physics::linear_elastic_fem::FemError>
 pub mod alice_physics::query
