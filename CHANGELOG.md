@@ -13,6 +13,15 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added — `prestressed` / `piezoelectric` / `rolling_contact` / `sdf_force` の未配線 28 item を全配線 (全配線 program 第 17 件)
+
+- `prestressed`: `examples/prestressed_joints_and_cables.rs` が `preload_from_torque`/`recommended_preload_n`/`bolt_load_fraction`/`bolt_peak_tension`/`separation_load_n`/`cable_pretension_n`/`tensioned_cable_stiffness_n_per_mm` を駆動、oracle 19 本、変異 7/7 (実装) + 2/5 (guard、3 件は `Fix128::Div` のゼロ除算契約と算術等価) red
+- `piezoelectric`: `examples/piezoelectric_materials.rs` が `pzt_5a`/`quartz`/`pvdf` preset + `force_from_voltage`/`voltage_from_force`/`strain_under_stress`/`permittivity` を駆動、既存 `engineering_oracles_fluid.rs` (PZT-5A d33) と重複しない oracle 7 本、変異 11/12 red (permittivity 単独配線変異は voltage_from_force/force_from_voltage が残る限り推移的到達性で観測不能)
+- `rolling_contact`: `examples/rolling_contact_fatigue.rs` が `bearing_steel_52100`/`gear_steel_8620`/`silicon_nitride` preset + `hertzian_sphere_sphere`/`basquin_cycles_to_failure`/`rolling_contact_life_cycles` を駆動 (ball-on-ball と flat-rail/infinite-radius の両 scene)、oracle 19 本、変異 14/14 red
+- `sdf_force`: `examples/sdf_force_fields.rs` が `SdfForceField::attract`/`repel`/`contain`/`surface_flow`/`with_affected_bodies`/`compute_sdf_force`/`apply_sdf_force_fields` を駆動、oracle 18 本、変異 15/17 red + 2 件算術的に等価 (`contain` 境界 off-by-one は dist=0 で push が恒等的に 0、`apply_sdf_force_fields` の is_static skip は inv_mass=0 と同一条件の性能最適化)
+- 4 module とも src 無変更、baseline 28 行退役 (実配線 27 + 名前衝突 1 (`force.rs::with_affected_bodies`、実体は未配線のまま Backlog に記録))
+- ⚠️ worker 実測 (未修正、Backlog): rolling_contact.rs は f32 ベースで engineering module family の他 (fatigue/laminate_failure) の Fix128 決定論と不整合 / sdf_force の `attract` clamp は Fix128 の表現域境界付近 (`|dist| ~ 4.6e18`) で `strength*dist_fix` 自体が mod-2^128 wrap するため破られる (通常の大距離では問題なし)
+
 ### Added — `material` / `replay` / `multi_world` の未配線 24 item を全配線 (全配線 program 第 16 件)
 
 - `material`: `examples/material_registry_presets.rs` が `register_concrete`/`register_ice`/`register_metal`/`register_rubber`/`register_wood` + `set_pair_override` + `with_combine_rules` + `with_static_friction` を駆動、oracle 9 本、変異 8/8 red
