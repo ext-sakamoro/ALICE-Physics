@@ -76,9 +76,49 @@ pub fn build_convex_hull(points: &[Vec3Fix]) -> ConvexHull {
         "ConvexHull requires at least 4 points, got {}",
         points.len()
     );
+    let (verts, _) =
+        hull_core(points).expect("All points are coplanar — cannot build 3D convex hull");
+    // If construction resulted in fewer than 4 unique vertices, the input
+    // is degenerate. Return whatever we have (ConvexHull::new asserts >= 1).
+    ConvexHull::new(verts)
+}
 
+/// A convex hull as a closed triangle mesh: the hull's vertices and its boundary
+/// triangles, each wound so that `(b − a) × (c − a)` points **out** of the hull.
+///
+/// Where [`ConvexHull`] keeps only the vertices (all a support function needs), a
+/// mesh keeps the faces, which is what volume, centre of mass and inertia are
+/// integrals over.
+#[derive(Clone, Debug)]
+pub struct HullMesh {
+    /// The hull's vertices.
+    pub vertices: Vec<Vec3Fix>,
+    /// Boundary triangles, as indices into [`Self::vertices`].
+    pub faces: Vec<[usize; 3]>,
+}
+
+/// Build the convex hull of `points` as a closed, outward-wound triangle mesh, or
+/// `None` when there is no solid to speak of: fewer than four points, or all of
+/// them in one plane (or on one line, or one point).
+///
+/// The same incremental construction as [`build_convex_hull`], which discards the
+/// faces; a face that is a square (four coplanar corners) comes out as two
+/// triangles.
+#[must_use]
+pub fn build_hull_mesh(points: &[Vec3Fix]) -> Option<HullMesh> {
+    if points.len() < 4 {
+        return None;
+    }
+    let (_, faces_and_verts) = hull_core(points)?;
+    Some(faces_and_verts)
+}
+
+/// The construction shared by [`build_convex_hull`] and [`build_hull_mesh`]:
+/// `(vertices of the hull, the hull as a mesh)`, or `None` when the points span no
+/// volume.
+fn hull_core(points: &[Vec3Fix]) -> Option<(Vec<Vec3Fix>, HullMesh)> {
     // Step 1: Find initial tetrahedron
-    let (tet, remaining) = find_initial_tetrahedron(points);
+    let (tet, remaining) = find_initial_tetrahedron_checked(points)?;
 
     let mut hull_verts: Vec<Vec3Fix> = Vec::with_capacity(points.len());
     hull_verts.push(tet[0]);
@@ -131,15 +171,42 @@ pub fn build_convex_hull(points: &[Vec3Fix]) -> ConvexHull {
 
     let result_verts: Vec<Vec3Fix> = used.iter().map(|&i| hull_verts[i]).collect();
 
-    // If construction resulted in fewer than 4 unique vertices, the input
-    // is degenerate. Return whatever we have (ConvexHull::new asserts >= 1).
-    ConvexHull::new(result_verts)
+    // The mesh: faces re-indexed into `result_verts`, each wound to agree with the
+    // outward normal the construction oriented away from the centroid.
+    let compact = |old: usize| used.iter().position(|&u| u == old).unwrap_or(0);
+    let mesh_faces: Vec<[usize; 3]> = faces
+        .iter()
+        .map(|f| {
+            let (a, b, c) = (
+                hull_verts[f.indices[0]],
+                hull_verts[f.indices[1]],
+                hull_verts[f.indices[2]],
+            );
+            let mut idx = [
+                compact(f.indices[0]),
+                compact(f.indices[1]),
+                compact(f.indices[2]),
+            ];
+            if (b - a).cross(c - a).dot(f.normal) < Fix128::ZERO {
+                idx.swap(1, 2);
+            }
+            idx
+        })
+        .collect();
+
+    Some((
+        result_verts.clone(),
+        HullMesh {
+            vertices: result_verts,
+            faces: mesh_faces,
+        },
+    ))
 }
 
 /// Find 4 non-coplanar points to form an initial tetrahedron
 ///
 /// Returns `(tetrahedron_points, remaining_points)`.
-fn find_initial_tetrahedron(points: &[Vec3Fix]) -> ([Vec3Fix; 4], Vec<Vec3Fix>) {
+fn find_initial_tetrahedron_checked(points: &[Vec3Fix]) -> Option<([Vec3Fix; 4], Vec<Vec3Fix>)> {
     let n = points.len();
 
     // Find two points that are furthest apart (approximate)
@@ -193,10 +260,9 @@ fn find_initial_tetrahedron(points: &[Vec3Fix]) -> ([Vec3Fix; 4], Vec<Vec3Fix>) 
         }
     }
 
-    assert!(
-        !max_plane_dist.is_zero(),
-        "All points are coplanar — cannot build 3D convex hull"
-    );
+    if max_plane_dist.is_zero() {
+        return None;
+    }
 
     let tet = [points[i0], points[i1], points[i2], points[i3]];
 
@@ -207,7 +273,7 @@ fn find_initial_tetrahedron(points: &[Vec3Fix]) -> ([Vec3Fix; 4], Vec<Vec3Fix>) 
         }
     }
 
-    (tet, remaining)
+    Some((tet, remaining))
 }
 
 /// Insert a point into the convex hull, expanding it if necessary

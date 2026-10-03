@@ -18,7 +18,11 @@
 
 use crate::box_collider::OrientedBox;
 use crate::collider::{Capsule, ConvexHull, Sphere, Support, AABB};
-use crate::math::{Fix128, QuatFix, Vec3Fix};
+use crate::mass_properties::{
+    box_mass_properties, capsule_mass_properties, convex_hull_mass_properties,
+    sphere_mass_properties, translate_inertia, MassProperties,
+};
+use crate::math::{Fix128, Mat3Fix, QuatFix, Vec3Fix};
 
 #[cfg(not(feature = "std"))]
 use alloc::vec;
@@ -210,7 +214,11 @@ impl CompoundShape {
         match &child.shape {
             ShapeRef::Sphere(s) => {
                 let r = Vec3Fix::new(s.radius, s.radius, s.radius);
-                let center = world_pos + body_rot.rotate_vec(s.center);
+                // The sphere's own offset is turned by the child's rotation (composed
+                // with the body's), like every other child type's, and as
+                // `support_world` places it.
+                let child_rot = body_rot.mul(child.local_rotation);
+                let center = world_pos + child_rot.rotate_vec(s.center);
                 AABB::new(center - r, center + r)
             }
             ShapeRef::Capsule(c) => {
@@ -315,60 +323,198 @@ impl CompoundShape {
         if self.children.is_empty() {
             return body_pos;
         }
-        let mut best = Vec3Fix::ZERO;
-        let mut best_dot = Fix128::from_int(-1000000);
+        // The best so far; `None` until the first child answers, so the choice
+        // does not depend on how large the dot products are (a fixed sentinel floor
+        // returned the origin for a compound farther than it from the origin).
+        let mut best: Option<(Fix128, Vec3Fix)> = None;
 
         for child in &self.children {
-            let child_rot = body_rot.mul(child.local_rotation);
-            let child_pos = body_pos + body_rot.rotate_vec(child.local_position);
-
-            let s = match &child.shape {
-                ShapeRef::Sphere(sphere) => {
-                    let shifted = Sphere::new(
-                        child_pos + child_rot.rotate_vec(sphere.center),
-                        sphere.radius,
-                    );
-                    shifted.support(direction)
-                }
-                ShapeRef::Capsule(cap) => {
-                    let a = child_pos + child_rot.rotate_vec(cap.a);
-                    let b = child_pos + child_rot.rotate_vec(cap.b);
-                    let shifted = Capsule::new(a, b, cap.radius);
-                    shifted.support(direction)
-                }
-                ShapeRef::Box(ob) => {
-                    let shifted = OrientedBox::new(
-                        child_pos + child_rot.rotate_vec(ob.center),
-                        ob.half_extents,
-                        child_rot.mul(ob.rotation),
-                    );
-                    shifted.support(direction)
-                }
-                ShapeRef::ConvexHull(hull) => {
-                    // Transform each vertex to world space and find support
-                    let mut best_v = child_pos + child_rot.rotate_vec(hull.vertices[0]);
-                    let mut best_d = best_v.dot(direction);
-                    for &v in &hull.vertices[1..] {
-                        let wv = child_pos + child_rot.rotate_vec(v);
-                        let dd = wv.dot(direction);
-                        if dd > best_d {
-                            best_v = wv;
-                            best_d = dd;
-                        }
-                    }
-                    best_v
-                }
-            };
-
+            let s = child.support_world(direction, body_pos, body_rot);
             let d = s.dot(direction);
-            if d > best_dot {
-                best_dot = d;
-                best = s;
+            if best.is_none_or(|(best_dot, _)| d > best_dot) {
+                best = Some((d, s));
             }
         }
 
-        best
+        best.map_or(body_pos, |(_, point)| point)
     }
+
+    /// Mass, centre of mass and the inertia about it, for the compound made of
+    /// `density`, in the compound's own frame.
+    ///
+    /// Each child contributes its shape's mass properties (a capsule's along its
+    /// own axis, a box's in its own frame, a hull's by the exact integral over its
+    /// mesh), carried to where the child is, and the tensors are summed about the
+    /// common centre of mass with the parallel-axis theorem
+    /// ([`crate::mass_properties::translate_inertia`]). Overlapping children are
+    /// counted twice where they overlap: a compound is a union of solids, not a
+    /// boolean one.
+    ///
+    /// [`MassProperties::ZERO`] for an empty compound, a non-positive density, or
+    /// children with no volume.
+    #[must_use]
+    pub fn mass_properties(&self, density: Fix128) -> MassProperties {
+        if density <= Fix128::ZERO {
+            return MassProperties::ZERO;
+        }
+        // (mass, centre of mass, inertia about it), all in the compound's frame.
+        let parts: Vec<MassProperties> = self
+            .children
+            .iter()
+            .map(|child| child.mass_properties(density))
+            .collect();
+        let mass = parts.iter().fold(Fix128::ZERO, |acc, p| acc + p.mass);
+        if mass <= Fix128::ZERO {
+            return MassProperties::ZERO;
+        }
+        let first_moment = parts
+            .iter()
+            .fold(Vec3Fix::ZERO, |acc, p| acc + p.center_of_mass * p.mass);
+        let com = first_moment / mass;
+        let mut inertia = Mat3Fix::ZERO;
+        for p in &parts {
+            let about_com = translate_inertia(p, com - p.center_of_mass);
+            inertia = Mat3Fix::from_cols(
+                inertia.col0 + about_com.col0,
+                inertia.col1 + about_com.col1,
+                inertia.col2 + about_com.col2,
+            );
+        }
+        MassProperties {
+            mass,
+            center_of_mass: com,
+            inertia_tensor: inertia,
+        }
+    }
+}
+
+impl CompoundChild {
+    /// The farthest point of this child along `direction`, for a body at
+    /// `body_pos` turned by `body_rot`.
+    #[must_use]
+    pub fn support_world(
+        &self,
+        direction: Vec3Fix,
+        body_pos: Vec3Fix,
+        body_rot: QuatFix,
+    ) -> Vec3Fix {
+        let child_rot = body_rot.mul(self.local_rotation);
+        let child_pos = body_pos + body_rot.rotate_vec(self.local_position);
+        match &self.shape {
+            ShapeRef::Sphere(sphere) => {
+                let shifted = Sphere::new(
+                    child_pos + child_rot.rotate_vec(sphere.center),
+                    sphere.radius,
+                );
+                shifted.support(direction)
+            }
+            ShapeRef::Capsule(cap) => {
+                let a = child_pos + child_rot.rotate_vec(cap.a);
+                let b = child_pos + child_rot.rotate_vec(cap.b);
+                let shifted = Capsule::new(a, b, cap.radius);
+                shifted.support(direction)
+            }
+            ShapeRef::Box(ob) => {
+                let shifted = OrientedBox::new(
+                    child_pos + child_rot.rotate_vec(ob.center),
+                    ob.half_extents,
+                    child_rot.mul(ob.rotation),
+                );
+                shifted.support(direction)
+            }
+            ShapeRef::ConvexHull(hull) => {
+                // Transform each vertex to world space and find support
+                let mut best_v = child_pos + child_rot.rotate_vec(hull.vertices[0]);
+                let mut best_d = best_v.dot(direction);
+                for &v in &hull.vertices[1..] {
+                    let wv = child_pos + child_rot.rotate_vec(v);
+                    let dd = wv.dot(direction);
+                    if dd > best_d {
+                        best_v = wv;
+                        best_d = dd;
+                    }
+                }
+                best_v
+            }
+        }
+    }
+
+    /// Mass, centre of mass and the inertia about it of this child, in the
+    /// compound's frame (the child's own offset and rotation applied).
+    fn mass_properties(&self, density: Fix128) -> MassProperties {
+        let rot = self.local_rotation;
+        // The child's solid in its own frame: (props, frame rotation of the tensor).
+        let (own, frame) = match &self.shape {
+            ShapeRef::Sphere(s) => {
+                let mut p = sphere_mass_properties(s.radius, density);
+                p.center_of_mass = s.center;
+                (p, QuatFix::IDENTITY)
+            }
+            ShapeRef::Box(ob) => {
+                let mut p = box_mass_properties(ob.half_extents, density);
+                p.center_of_mass = ob.center;
+                (p, ob.rotation)
+            }
+            ShapeRef::Capsule(cap) => {
+                let axis = cap.b - cap.a;
+                let length = axis.length();
+                let middle = (cap.a + cap.b) * Fix128::from_ratio(1, 2);
+                if length.is_zero() {
+                    let mut p = sphere_mass_properties(cap.radius, density);
+                    p.center_of_mass = middle;
+                    (p, QuatFix::IDENTITY)
+                } else {
+                    // The capsule solid is Y-aligned in `capsule_mass_properties`:
+                    // `I = I⊥ (E − u uᵀ) + I∥ u uᵀ` for the axis `u`, which needs no
+                    // rotation.
+                    let p = capsule_mass_properties(cap.radius, length.half(), density);
+                    let u = axis / length;
+                    let d = p.inertia_tensor;
+                    let (i_perp, i_axis) = (d.col0.x, d.col1.y);
+                    let outer = Mat3Fix::from_cols(u * u.x, u * u.y, u * u.z);
+                    let e = Mat3Fix::IDENTITY;
+                    let diff = i_axis - i_perp;
+                    let tensor = Mat3Fix::from_cols(
+                        e.col0 * i_perp + outer.col0 * diff,
+                        e.col1 * i_perp + outer.col1 * diff,
+                        e.col2 * i_perp + outer.col2 * diff,
+                    );
+                    (
+                        MassProperties {
+                            mass: p.mass,
+                            center_of_mass: middle,
+                            inertia_tensor: tensor,
+                        },
+                        QuatFix::IDENTITY,
+                    )
+                }
+            }
+            ShapeRef::ConvexHull(hull) => (
+                convex_hull_mass_properties(&hull.vertices, density),
+                QuatFix::IDENTITY,
+            ),
+        };
+        // Into the compound's frame: the tensor turned by (child rotation ∘ frame),
+        // the centre of mass offset by the child's own turning and position.
+        let turn = rot.mul(frame);
+        let r = rotation_matrix(turn);
+        let inertia = r.mul_mat(own.inertia_tensor).mul_mat(r.transpose());
+        MassProperties {
+            mass: own.mass,
+            center_of_mass: self.local_position + rot.rotate_vec(own.center_of_mass),
+            inertia_tensor: inertia,
+        }
+    }
+}
+
+/// The rotation matrix of a unit quaternion: the images of the basis vectors as
+/// columns.
+fn rotation_matrix(q: QuatFix) -> Mat3Fix {
+    Mat3Fix::from_cols(
+        q.rotate_vec(Vec3Fix::UNIT_X),
+        q.rotate_vec(Vec3Fix::UNIT_Y),
+        q.rotate_vec(Vec3Fix::UNIT_Z),
+    )
 }
 
 impl Default for CompoundShape {

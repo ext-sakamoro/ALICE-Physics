@@ -954,10 +954,10 @@ pub struct PhysicsWorld {
     /// Per-body collision radius for automatic sphere-based collision detection.
     /// `None` means the body does not participate in auto-detection.
     body_collision_radii: Vec<Option<Fix128>>,
-    /// The convex shape a body carries as its collider, when it has one: the
-    /// narrow-phase works on it instead of the bounding sphere (see
-    /// [`crate::shape`]).
-    body_shapes: Vec<Option<crate::shape::Shape>>,
+    /// The convex collider a body carries, when it has one — one shape or a
+    /// compound of them: the narrow-phase works on it instead of the bounding
+    /// sphere (see [`crate::shape`], [`crate::compound`]).
+    body_colliders: Vec<Option<crate::body_collider::BodyCollider>>,
     /// Per-body collision filter (layer/mask/group)
     body_filters: Vec<CollisionFilter>,
     /// 範囲外の積を踏んだか (sticky、[`PhysicsWorld::overflow_detected`])
@@ -1034,7 +1034,7 @@ impl PhysicsWorld {
             events: EventCollector::new(),
             islands: IslandManager::new(0, SleepConfig::default()),
             body_collision_radii: Vec::new(),
-            body_shapes: Vec::new(),
+            body_colliders: Vec::new(),
             body_filters: Vec::new(),
             overflow_detected: false,
             #[cfg(feature = "std")]
@@ -1128,7 +1128,7 @@ impl PhysicsWorld {
         self.bodies.push(body);
         self.body_materials.push(crate::material::DEFAULT_MATERIAL);
         self.body_collision_radii.push(None);
-        self.body_shapes.push(None);
+        self.body_colliders.push(None);
         self.body_filters.push(CollisionFilter::DEFAULT);
         self.islands.resize(idx + 1);
         idx
@@ -1143,7 +1143,7 @@ impl PhysicsWorld {
         self.bodies.push(body);
         self.body_materials.push(crate::material::DEFAULT_MATERIAL);
         self.body_collision_radii.push(Some(radius));
-        self.body_shapes.push(None);
+        self.body_colliders.push(None);
         self.body_filters.push(CollisionFilter::DEFAULT);
         self.islands.resize(idx + 1);
         idx
@@ -1178,7 +1178,7 @@ impl PhysicsWorld {
             Fix128::ONE / inertia.z,
         );
         let idx = self.add_body_with_radius(body, shape.bounding_radius());
-        self.body_shapes[idx] = Some(*shape);
+        self.body_colliders[idx] = Some(crate::body_collider::BodyCollider::Shape(*shape));
         Ok(idx)
     }
 
@@ -1191,11 +1191,11 @@ impl PhysicsWorld {
     /// [`crate::shape`]); its mass and inertia are not changed — use
     /// [`Self::add_shaped_body`] for a body whose mass properties come from the shape.
     pub fn set_body_shape(&mut self, body_idx: usize, shape: &crate::shape::Shape) -> bool {
-        if body_idx >= self.bodies.len() || body_idx >= self.body_shapes.len() {
+        if body_idx >= self.bodies.len() || body_idx >= self.body_colliders.len() {
             return false;
         }
         self.body_collision_radii[body_idx] = Some(shape.bounding_radius());
-        self.body_shapes[body_idx] = Some(*shape);
+        self.body_colliders[body_idx] = Some(crate::body_collider::BodyCollider::Shape(*shape));
         true
     }
 
@@ -1209,15 +1209,14 @@ impl PhysicsWorld {
         let (Some(body_a), Some(body_b)) = (self.bodies.get(a), self.bodies.get(b)) else {
             return false;
         };
-        let shape = |i: usize| self.body_shapes.get(i).copied().flatten();
-        if let (Some(shape_a), Some(shape_b)) = (shape(a), shape(b)) {
-            let posed = |shape, body: &RigidBody| crate::shape::PosedShape {
-                shape,
-                position: body.position,
-                rotation: body.rotation,
-            };
-            return crate::collider::gjk(&posed(shape_a, body_a), &posed(shape_b, body_b))
-                .colliding;
+        let collider = |i: usize| self.body_colliders.get(i).and_then(Option::as_ref);
+        if let (Some(ca), Some(cb)) = (collider(a), collider(b)) {
+            return crate::body_collider::colliders_meet(
+                ca,
+                (body_a.position, body_a.rotation),
+                cb,
+                (body_b.position, body_b.rotation),
+            );
         }
         let radius = |i: usize| self.body_collision_radii.get(i).copied().flatten();
         match (radius(a), radius(b)) {
@@ -1227,6 +1226,77 @@ impl PhysicsWorld {
             }
             _ => false,
         }
+    }
+
+    /// Add a rigid body made of a [`CompoundShape`](crate::compound::CompoundShape):
+    /// material of `density`, the compound's centre of mass at `position`.
+    ///
+    /// The mass is the children's total and the inertia is their summed tensor about
+    /// the common centre of mass, which for an asymmetric compound has products of
+    /// inertia; the body stores the **principal** moments, so its local frame is the
+    /// principal frame, and its initial rotation is the rotation from that frame to
+    /// the compound's as authored — the compound appears in the world exactly as it
+    /// was built, translated so its centre of mass is at `position`. The body
+    /// collides as its children ([`crate::body_collider`]): a gap between two
+    /// children is not part of the body, and its collision radius is the sphere about
+    /// the centre of mass that contains them all.
+    ///
+    /// # Errors
+    ///
+    /// [`ShapeError`](crate::shape::ShapeError): `NonPositiveDensity`;
+    /// `DegenerateShape` for an empty compound or one with no volume;
+    /// `MassNotRepresentable` when the mass or a principal moment is not positive or
+    /// the sizes are too large for `Fix128`. Nothing is added in those cases.
+    pub fn add_compound_body(
+        &mut self,
+        compound: &crate::compound::CompoundShape,
+        density: Fix128,
+        position: Vec3Fix,
+    ) -> Result<usize, crate::shape::ShapeError> {
+        use crate::shape::ShapeError;
+        if density <= Fix128::ZERO {
+            return Err(ShapeError::NonPositiveDensity);
+        }
+        if compound.is_empty() {
+            return Err(ShapeError::DegenerateShape);
+        }
+        let props = compound.mass_properties(density);
+        if props.mass <= Fix128::ZERO {
+            return Err(ShapeError::DegenerateShape);
+        }
+        let (moments, axes) = crate::mass_properties::principal_axes(props.inertia_tensor);
+        if !(moments.x > Fix128::ZERO && moments.y > Fix128::ZERO && moments.z > Fix128::ZERO) {
+            return Err(ShapeError::MassNotRepresentable);
+        }
+        // The compound in the principal frame, centre of mass at the origin.
+        let frame = crate::body_collider::quat_from_rotation(axes);
+        let to_principal = frame.conjugate();
+        let mut stored = crate::compound::CompoundShape::new();
+        for child in &compound.children {
+            stored.children.push(crate::compound::CompoundChild {
+                shape: child.shape.clone(),
+                local_position: to_principal
+                    .rotate_vec(child.local_position - props.center_of_mass),
+                local_rotation: to_principal.mul(child.local_rotation),
+            });
+        }
+        let collider = crate::body_collider::BodyCollider::Compound(stored);
+        let radius = collider.bounding_radius();
+        // The largest quantity the solve forms, as an `f64`, before it is formed.
+        let estimate = props.mass.to_f64() * radius.to_f64() * radius.to_f64();
+        if !(estimate.is_finite() && estimate < (1u64 << 61) as f64) {
+            return Err(ShapeError::MassNotRepresentable);
+        }
+        let mut body = RigidBody::new_dynamic(position, props.mass);
+        body.rotation = frame;
+        body.inv_inertia = Vec3Fix::new(
+            Fix128::ONE / moments.x,
+            Fix128::ONE / moments.y,
+            Fix128::ONE / moments.z,
+        );
+        let idx = self.add_body_with_radius(body, radius);
+        self.body_colliders[idx] = Some(collider);
+        Ok(idx)
     }
 
     /// Remove a body by index (swap-remove).
@@ -1258,7 +1328,7 @@ impl PhysicsWorld {
         let removed = self.bodies.swap_remove(idx);
         self.body_materials.swap_remove(idx);
         self.body_collision_radii.swap_remove(idx);
-        self.body_shapes.swap_remove(idx);
+        self.body_colliders.swap_remove(idx);
         self.body_filters.swap_remove(idx);
 
         // 2. Remap references from `last` -> `idx` in all remaining constraints and joints
@@ -3537,14 +3607,13 @@ impl PhysicsWorld {
             let dist_sq = delta.length_squared();
             // A pair of shaped bodies is decided by the shapes, which can overlap with
             // coincident centres; the sphere path cannot give such a pair a normal.
-            let shapes = self
-                .body_shapes
+            let colliders = self
+                .body_colliders
                 .get(a)
-                .copied()
-                .flatten()
-                .zip(self.body_shapes.get(b).copied().flatten());
+                .and_then(Option::as_ref)
+                .zip(self.body_colliders.get(b).and_then(Option::as_ref));
             if dist_sq >= combined_radius * combined_radius
-                || (dist_sq.is_zero() && shapes.is_none())
+                || (dist_sq.is_zero() && colliders.is_none())
             {
                 continue;
             }
@@ -3576,18 +3645,13 @@ impl PhysicsWorld {
 
             // The bounding spheres overlap, which is necessary but not sufficient for
             // two convex solids to: let the shapes decide.
-            if let Some((shape_a, shape_b)) = shapes {
-                let posed_a = crate::shape::PosedShape {
-                    shape: shape_a,
-                    position: self.bodies[a].position,
-                    rotation: self.bodies[a].rotation,
-                };
-                let posed_b = crate::shape::PosedShape {
-                    shape: shape_b,
-                    position: self.bodies[b].position,
-                    rotation: self.bodies[b].rotation,
-                };
-                if let Some(contact) = crate::collider::contact(&posed_a, &posed_b) {
+            if let Some((collider_a, collider_b)) = colliders {
+                if let Some(contact) = crate::body_collider::contact_between(
+                    collider_a,
+                    (self.bodies[a].position, self.bodies[a].rotation),
+                    collider_b,
+                    (self.bodies[b].position, self.bodies[b].rotation),
+                ) {
                     if contact.depth > Fix128::ZERO {
                         let rel_vel =
                             (self.bodies[a].velocity - self.bodies[b].velocity).dot(contact.normal);
@@ -4029,7 +4093,7 @@ impl PhysicsWorld {
             self.body_collision_radii.push(None);
         }
         self.body_collision_radii.truncate(n);
-        self.body_shapes.resize(n, None);
+        self.body_colliders.resize(n, None);
         while self.body_filters.len() < n {
             self.body_filters.push(CollisionFilter::DEFAULT);
         }

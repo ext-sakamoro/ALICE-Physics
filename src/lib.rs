@@ -340,6 +340,7 @@ pub mod fatigue;
 pub mod ffi;
 pub mod filament_db;
 
+pub(crate) mod body_collider;
 pub mod fillet_stress;
 pub mod filter;
 #[cfg(feature = "std")]
