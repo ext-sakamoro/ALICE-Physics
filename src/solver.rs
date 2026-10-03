@@ -584,6 +584,34 @@ pub enum SolverBackend {
     Tgs,
 }
 
+/// The broad-phase [`PhysicsWorld`] uses to find the pairs of bodies whose
+/// collision spheres may touch.
+///
+/// Both kinds hand the same sorted candidate pairs to the same exact narrow-phase,
+/// so a world steps to **bit-identical** results whichever it uses; they differ in
+/// cost. Set with [`PhysicsWorld::set_broadphase`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[non_exhaustive]
+pub enum Broadphase {
+    /// A linear BVH over Morton codes, rebuilt from scratch every step. Default.
+    #[default]
+    Bvh,
+    /// A persistent dynamic AABB tree ([`crate::dynamic_bvh::DynamicAabbTree`]):
+    /// each body keeps a fattened proxy that is only re-inserted when the body
+    /// leaves it, so a world where most bodies move little pays for the few that do.
+    DynamicTree,
+}
+
+/// What the [`Broadphase::DynamicTree`] broad-phase currently holds, returned by
+/// [`PhysicsWorld::broadphase_stats`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BroadphaseStats {
+    /// Bodies with a proxy in the tree.
+    pub proxies: usize,
+    /// Height of the tree (0 when empty).
+    pub height: i32,
+}
+
 /// Snapshot of [`SolverBackend::Tgs`]'s per-frame warm-start impulse cache
 /// effectiveness, returned by [`PhysicsWorld::tgs_cache_stats`].
 ///
@@ -1009,6 +1037,12 @@ pub struct PhysicsWorld {
     /// Per-body collision radius for automatic sphere-based collision detection.
     /// `None` means the body does not participate in auto-detection.
     body_collision_radii: Vec<Option<Fix128>>,
+    /// Which broad-phase finds the candidate pairs.
+    broadphase: Broadphase,
+    /// The persistent tree of [`Broadphase::DynamicTree`] (unused otherwise).
+    broadphase_tree: crate::dynamic_bvh::DynamicAabbTree,
+    /// Body index → its proxy in `broadphase_tree`.
+    broadphase_proxies: Vec<Option<u32>>,
     /// The convex collider a body carries, when it has one — one shape or a
     /// compound of them: the narrow-phase works on it instead of the bounding
     /// sphere (see [`crate::shape`], [`crate::compound`]).
@@ -1104,6 +1138,9 @@ impl PhysicsWorld {
             events: EventCollector::new(),
             islands: IslandManager::new(0, SleepConfig::default()),
             body_collision_radii: Vec::new(),
+            broadphase: Broadphase::default(),
+            broadphase_tree: crate::dynamic_bvh::DynamicAabbTree::new(),
+            broadphase_proxies: Vec::new(),
             body_colliders: Vec::new(),
             body_filters: Vec::new(),
             overflow_detected: false,
@@ -3668,6 +3705,96 @@ impl PhysicsWorld {
         }
     }
 
+    /// Select the broad-phase. Both kinds give bit-identical simulations (see
+    /// [`Broadphase`]); switching drops the persistent tree, which is rebuilt on the
+    /// next step if [`Broadphase::DynamicTree`] is chosen.
+    pub fn set_broadphase(&mut self, kind: Broadphase) {
+        self.broadphase = kind;
+        self.broadphase_reset();
+    }
+
+    /// The broad-phase in use.
+    #[must_use]
+    pub fn broadphase(&self) -> Broadphase {
+        self.broadphase
+    }
+
+    /// What the [`Broadphase::DynamicTree`] tree holds: how many bodies have a
+    /// proxy and how tall the tree is. Both are 0 until a step has run with that
+    /// broad-phase.
+    #[must_use]
+    pub fn broadphase_stats(&self) -> BroadphaseStats {
+        BroadphaseStats {
+            proxies: self.broadphase_tree.proxy_count(),
+            height: self.broadphase_tree.height(),
+        }
+    }
+
+    /// The fattened box the [`Broadphase::DynamicTree`] tree keeps for a body, or
+    /// `None` when the body has no proxy (no collision radius, or no step yet).
+    #[must_use]
+    pub fn broadphase_proxy_aabb(&self, body_idx: usize) -> Option<AABB> {
+        let proxy = (*self.broadphase_proxies.get(body_idx)?)?;
+        if self.broadphase_tree.user_data(proxy) as usize != body_idx {
+            return None;
+        }
+        Some(self.broadphase_tree.get_aabb(proxy))
+    }
+
+    /// Forget the persistent tree: the next [`Broadphase::DynamicTree`] step
+    /// rebuilds it from the bodies. Called when the broad-phase is switched.
+    fn broadphase_reset(&mut self) {
+        self.broadphase_tree = crate::dynamic_bvh::DynamicAabbTree::new();
+        self.broadphase_proxies.clear();
+    }
+
+    /// The sorted candidate pairs of bodies whose boxes may overlap, from the
+    /// primitives (body index + tight box) of every body with a collision radius.
+    fn broadphase_pairs(&mut self, primitives: Vec<BvhPrimitive>) -> Vec<(u32, u32)> {
+        match self.broadphase {
+            Broadphase::Bvh => LinearBvh::build(primitives).find_pairs(),
+            Broadphase::DynamicTree => {
+                let n = self.bodies.len();
+                // A proxy belongs to a body *index* (its user data), and re-boxing it
+                // each step follows whichever body now has that index, so removing
+                // or restoring bodies needs no rebuild; only the proxies of indices
+                // that no longer exist have to go.
+                for proxy in self
+                    .broadphase_proxies
+                    .drain(n.min(self.broadphase_proxies.len())..)
+                {
+                    if let Some(proxy) = proxy {
+                        self.broadphase_tree.remove(proxy);
+                    }
+                }
+                self.broadphase_proxies.resize(n, None);
+                let mut present = vec![false; n];
+                for p in &primitives {
+                    let i = p.index as usize;
+                    present[i] = true;
+                    match self.broadphase_proxies[i] {
+                        Some(proxy) => {
+                            self.broadphase_tree.update(proxy, p.aabb);
+                        }
+                        None => {
+                            self.broadphase_proxies[i] =
+                                Some(self.broadphase_tree.insert(p.aabb, p.index));
+                        }
+                    }
+                }
+                // A body that lost its collision radius leaves the tree.
+                for (i, here) in present.iter().enumerate() {
+                    if !here {
+                        if let Some(proxy) = self.broadphase_proxies[i].take() {
+                            self.broadphase_tree.remove(proxy);
+                        }
+                    }
+                }
+                self.broadphase_tree.find_pairs()
+            }
+        }
+    }
+
     // ── Automatic Collision Detection ─────────────────────────────────
 
     /// Detect collisions between bodies with collision radii.
@@ -3701,8 +3828,7 @@ impl PhysicsWorld {
             return;
         }
 
-        let bvh = LinearBvh::build(primitives);
-        let pairs = bvh.find_pairs();
+        let pairs = self.broadphase_pairs(primitives);
 
         // Collect results to avoid borrow conflicts
         struct ContactInfo {
