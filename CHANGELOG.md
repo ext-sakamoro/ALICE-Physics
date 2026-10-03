@@ -13,6 +13,14 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added — `thin_wall` の未配線 7 item を全配線 (全配線 program 第 15 件)
+
+- `examples/thin_wall_detection.rs` が `for_nozzle`/`analyze_thickness`/`analyze_thickness_grid`/`measure_thickness_at`/`sample_surface_points`/`has_thin_walls`/`thin_fraction` を駆動
+- oracle 17 本、変異 11/11 (実装) + 7/7 (配線、4 item は推移的到達性で 1 subgraph として一括判定) red
+- src/thin_wall.rs 自体は無変更
+- ⚠️ worker 実測 (未修正、設計判断待ち、Backlog 記録): `sample_surface_points` は極端な AABB (1e9 mm 付近) + f32 ULP で while loop が終端しない (panic でなく無限ループ、`catch_unwind` で捕まらない) / `measure_thickness_at` は極端座標で `Some(無意味な値)` を返す / `for_nozzle(0.0)` はどんな薄肉も検出不能にする silent footgun
+- baseline 7 行退役
+
 ### Added — `non_newtonian` / `laminate_failure` / `filter` の未配線 29 item を全配線 (全配線 program 第 14 件)
 
 - `non_newtonian`: `examples/non_newtonian_rheology.rs` が `PowerLaw`/`Carreau`/`Bingham`/`HerschelBulkley` の preset + `stress`/`viscosity`/`apparent_viscosity`/`flows_under_stress` を駆動、既存 `tests/engineering_oracles_fluid.rs` の Bingham/HB/power-law/Carreau oracle と重複しない 7 本、変異 10/10 (実装) + 1/1 (配線) red
