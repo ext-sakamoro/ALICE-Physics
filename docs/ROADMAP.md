@@ -8,9 +8,8 @@ Memory index pointer: `[[reference-alice-physics-v1-roadmap]]` in claude-config.
 文中複数箇所 (「複数ノード MPI は未測定」「実機が複数台揃ってから別途判断」等、第 20
 increment 他) が**追加機材の調達待ち**であるかのように読める表現になっているが、
 対象 4 件 (複数ノード分散 / 実 GPU (Metal) / 実 GPU (CUDA) / Windows 実機 golden)
-は**追加の購入・レンタルを要するものではなく、既存環境で未実施なだけ** (機材の詳細
-は `~/claude-config/memory/devices.md` 側、本 repo には書かない) 着手判断 (優先度
-/ 誰が実行するか) は user 判断
+は**追加の購入・レンタルを要するものではなく、既存環境で未実施なだけ** 着手の優先度
+は別途判断
 
 ## 🎉 現在位置 (2026-09-30): 4 課題の第 2 increment を landing
 
@@ -27,7 +26,7 @@ increment 他) が**追加機材の調達待ち**であるかのように読め�
 
 ### 第 53 increment (2026-10-03、`thin_wall` の無限ループ + silent footgun 2 件を根本修正)
 
-user 指示「既存バグを根本修正」で、thin_wall worker (program 第 15 件、`ys-27` 起票) が「設計変更、user 裁定要」として記録していた 3 件を解消
+既存バグの根本修正として、「設計変更が必要」として記録されていた 3 件を解消
 
 - `sample_surface_points`: grid 走査の `while coord <= max { coord += step }` が `f32` 累積加算で、`step` が座標 magnitude の ULP (≈64 @ 1e9) より小さいと no-op になり無限ループしていた (`999_999_999..1_000_000_001`, step=1 で実測確認済) 走査を整数ステップ数ベースに置き換え (`f64` で `ceil((max-min)/step)` を先に計算)、f32 累積加算という機構自体を除去して構造的に終端を保証 (guard/反復上限の両案より根本的)
 - `measure_thickness_at`: 同じ ULP 機構で、極端座標で march の初期オフセットが座標を全く変化させず、物理的意味の無い `Some(start_offset_mm)` を返していた 各 step で座標が実際に変化したか (bit 一致チェック) を見て、変化していなければ `None` を返すよう修正 (既存の「None=測定不能」契約内の修正、signature 変更なし)
