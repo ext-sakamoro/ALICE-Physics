@@ -16,7 +16,6 @@ unwired src/character_state.rs::accepts_locomotion
 unwired src/character_state.rs::name
 unwired src/character_state.rs::standing
 unwired src/character_state.rs::transition
-unwired src/cloth.rs::remaining_self_contact_crossings
 unwired src/cloth_fluid.rs::apply_cloth_boundary_to_fluid
 unwired src/cloth_fluid.rs::apply_cloth_boundary_to_fluid_with_residual
 unwired src/cloth_fluid.rs::apply_fluid_forces_to_cloth
