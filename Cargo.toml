@@ -223,6 +223,23 @@ required-features = ["std"]
 name = "continuous_collision_detection"
 required-features = ["std"]
 
+# Production entry point for `Rope` pin constraints and SDF collision
+# (wiring_guard: src/rope.rs had zero production callers across 6 items:
+# add_pin, pin_start, pin_end, update_pin_targets, current_length,
+# step_with_sdf -- only tests/ called in, which the guard does not count).
+[[example]]
+name = "rope_pin_constraints"
+required-features = ["std"]
+
+# Production entry point for ContactCache's warm-start API (wiring_guard:
+# src/contact_cache.rs had zero production callers across apply_warm_start,
+# manifold_count, point_count, store_impulses, tangent_frame,
+# total_contact_points, warm_start_impulse). Deliberately NOT wired into
+# PhysicsWorld::step() -- see this example's module doc.
+[[example]]
+name = "contact_warm_start_cache"
+required-features = ["std"]
+
 # Production entry point for Arrhenius combustion / soot / Boussinesq
 # buoyancy (wiring_guard: src/smoke_fire.rs had zero production callers
 # across all 6 items: ArrheniusReaction::{methane_air, pla_air},
