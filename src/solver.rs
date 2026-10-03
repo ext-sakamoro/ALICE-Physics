@@ -1237,7 +1237,7 @@ impl PhysicsWorld {
     /// principal frame, and its initial rotation is the rotation from that frame to
     /// the compound's as authored — the compound appears in the world exactly as it
     /// was built, translated so its centre of mass is at `position`. The body
-    /// collides as its children ([`crate::body_collider`]): a gap between two
+    /// collides as its children (`body_collider`, internal): a gap between two
     /// children is not part of the body, and its collision radius is the sphere about
     /// the centre of mass that contains them all.
     ///
