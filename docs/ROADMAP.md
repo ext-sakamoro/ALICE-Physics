@@ -490,7 +490,7 @@ snapshot **+42 / −21** 削除はすべて `ElastoplasticIncrementRequest` が 
 | 高次要素 P2 / P3 | ✅ landed (`6a84bfa` 他) |
 | 適応 remeshing (適合性) | ✅ landed (Rivara の伝播) |
 | **適応 remeshing (誤差駆動)** | ✅ **本 increment** |
-| 超弾性 × 高次要素の非一様製作解 oracle | ⛔ `src gap` (第 14 increment で `ys-6d` / `ys-1f` が「原理的に不可能」から語彙を移した) ⚠️ **既に landed した P2/P3 の検証の深さの話で、要素が無いわけではない** |
+| 超弾性 × 高次要素の非一様製作解 oracle | ✅ **landed (収束率 oracle + 体積力つき製作解)** `tests/analytic_hyperelastic_mms_order.rs` P2 は h=1/3→1/4 で傾き 2.42、P3 は P2 の同 h で誤差 **9.4 倍小** (傾き 2.84) ⚠️ P1 は共回転の別定式で比較対象外 ⚠️ `A ≥ 0.06` では Newton が `NotConverged` (Backlog 起票) |
 | 適応を P2 / P3 へ | ⛔ 未着手 (`QuadraticMesh` / `CubicMesh` 側の細分が別作業) |
 
 ### 第 2 increment (2026-09-30、上表の続き)
@@ -878,7 +878,7 @@ Phase 1+2+F 完了、以降は最重量の B に集中:
 | **1** | `thickness` 充足は未達 (到達点は「非貫通」まで、違反 ON 2 / OFF 3) | 次の層 |
 | **1** | ⚠️⚠️ **共通モード故障への歯が 1 層しかない** — 述語が死ぬと修復も計器も同時に盲目で、統合 15 本すべて green のまま貫通する (`0 = 清潔` 型の不変量は自分の計器の死を検出できない) 防波堤は「`OFF → 1` を assert する lib test 2 本」だけ | ⚠️ **検査体系の穴** |
 | **1** | 辺-辺分離が solver 支配の部分集合で未成立 (ON 4.556e-2 < OFF 7.093e-2 = 0.64 倍、1 未満) / 閉形式 scene が純並進で 3 次項に歯が立たない | 次の層 |
-| **2** | ⚠️ **超弾性 × 高次要素の次数分離 oracle が未実装** ⚠️ **「原理的に閉じない」ではない** (下記の訂正) | ⚠️ **src gap** |
+| **2** | ✅ **超弾性 × 高次要素の次数分離 oracle は landed** (`tests/analytic_hyperelastic_mms_order.rs`、製作解 + 体積力 + 収束率) | 閉 |
 | **2** | 共回転接線が要素ごと (重心の `F`) で求積点ごとでない 収束する最大角度は **20° まで実測**、20° 超は「失敗」でなく「測っていない」 | 限定の明示 |
 | **2** | P3 suite **489 s** の CI 予算が未決 ⚠️ **`runtime only:` に落とすと 13 変異中 12 件の red が週次に移る** (`quality-deep.yml` は `push` trigger を持たない) | 運用判断 |
 | **2** | 塑性の `F = Fe·Fp` は「拡張」でなく新規 / 組み立てた接線行列 + 直接法分解が無い | 次の層 |
