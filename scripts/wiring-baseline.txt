@@ -92,11 +92,6 @@ unwired src/ik_physics_bridge.rs::snap
 unwired src/interface_capture.rs::plic_normal
 unwired src/interface_capture.rs::plic_plane_offset
 unwired src/interface_capture.rs::truncated_cube_volume
-unwired src/joint_extra.rs::ExtraJoint
-unwired src/joint_extra.rs::set_target
-unwired src/joint_extra.rs::solve_extra_joints
-unwired src/joint_extra.rs::total_length
-unwired src/joint_extra.rs::with_break_torque
 unwired src/kinematic_loop.rs::FourBarLinkage
 unwired src/kinematic_loop.rs::centre_to_centre
 unwired src/kinematic_loop.rs::four_bar_linkage
