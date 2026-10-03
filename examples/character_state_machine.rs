@@ -9,6 +9,8 @@
 //! cargo run --release --example character_state_machine --features std
 //! ```
 
+#![allow(clippy::disallowed_methods)]
+
 use alice_physics::character_state::{transition, CharacterState, CharacterStateContext};
 use alice_physics::sdf_character::SdfCharacter;
 use alice_physics::sdf_collider::ClosureSdf;

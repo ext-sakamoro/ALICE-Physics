@@ -10,14 +10,18 @@
 //! cargo run --release --example vehicle_drive --features std
 //! ```
 
+#![allow(clippy::disallowed_methods)]
+
 use alice_physics::math::{Fix128, Vec3Fix};
 use alice_physics::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
 use alice_physics::vehicle::{Vehicle, VehicleConfig};
 
 fn main() {
     let mass = 1000.0_f64;
-    let mut cfg = VehicleConfig::default();
-    cfg.anti_roll_stiffness = Fix128::ZERO;
+    let cfg = VehicleConfig {
+        anti_roll_stiffness: Fix128::ZERO,
+        ..VehicleConfig::default()
+    };
     let (k, rest, radius) = (50000.0_f64, 0.3_f64, 0.3_f64);
     let mut vehicle = Vehicle::new(cfg);
     let mut world = PhysicsWorld::new(PhysicsConfig::default());

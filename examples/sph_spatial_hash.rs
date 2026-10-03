@@ -9,6 +9,8 @@
 //! cargo run --release --example sph_spatial_hash --features std
 //! ```
 
+#![allow(clippy::disallowed_methods)]
+
 use alice_physics::sdf_sph::{SphParticle, SphSpatialHash};
 
 fn main() {

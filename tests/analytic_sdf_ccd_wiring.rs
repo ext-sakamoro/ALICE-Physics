@@ -55,7 +55,10 @@ fn plane_toi_matches_closed_form_and_never_overshoots() {
     )
     .expect("hit");
     let t = toi.t.to_f32();
-    assert!(t <= 0.45 + 1e-6 && t >= 0.45 - TOL / 10.0 - 1e-6, "t = {t}");
+    assert!(
+        (0.45 - TOL / 10.0 - 1e-6..=0.45 + 1e-6).contains(&t),
+        "t = {t}"
+    );
     let (nx, ny, nz) = toi.normal.to_f32();
     assert!(nx.abs() < 1e-5 && (ny - 1.0).abs() < 1e-5 && nz.abs() < 1e-5);
     // point = pos - n * dist: on the plane y = 0 (within the tolerance).
