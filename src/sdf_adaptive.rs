@@ -55,7 +55,7 @@ impl Default for AdaptiveConfig {
 struct CacheEntry {
     /// Cached distance value
     distance: f32,
-    /// Cached normal
+    /// Cached normal (world space)
     normal: (f32, f32, f32),
     /// Position where this was evaluated
     position: Vec3Fix,
@@ -173,6 +173,8 @@ impl AdaptiveSdfEvaluator {
     }
 
     /// Evaluate SDF for a body with adaptive resolution
+    ///
+    /// Returns the distance in world metres and the unit normal in world space.
     #[cfg(feature = "std")]
     pub fn evaluate(
         &mut self,
@@ -238,6 +240,17 @@ impl AdaptiveSdfEvaluator {
             }
         } else {
             normal
+        };
+
+        // The field reports a local-space normal; callers work in world space.
+        // An unrotated collider needs no transform (and keeps its value bit
+        // for bit), a rotated one needs the same rotation `sphere_trace_sdf`
+        // and the contact queries apply.
+        let final_normal = if sdf.rotation == crate::math::QuatFix::IDENTITY {
+            final_normal
+        } else {
+            sdf.local_normal_to_world(final_normal.0, final_normal.1, final_normal.2)
+                .to_f32()
         };
 
         // Update cache
