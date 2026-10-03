@@ -61,10 +61,6 @@ unwired src/fatigue.rs::aluminum_a5052
 unwired src/fatigue.rs::analyze_spectrum
 unwired src/fatigue.rs::steel_sus304
 unwired src/fatigue.rs::stress_at_cycles
-unwired src/fillet_stress.rs::kt_circular_hole_infinite_plate
-unwired src/fillet_stress.rs::kt_elliptical_hole
-unwired src/fillet_stress.rs::kt_u_notch_axial
-unwired src/fillet_stress.rs::recommended_fillet_radius_mm
 unwired src/fluid.rs::new_block
 unwired src/fracture.rs::active_crack_count
 unwired src/fracture.rs::apply_stress_at
