@@ -449,7 +449,9 @@ impl DeformableBody {
         }
     }
 
-    /// Get center of mass
+    /// Centroid of the particle positions. Every constructor gives all particles the same
+    /// mass, for which this is the centre of mass; it is **not** mass weighted if
+    /// `inv_masses` are edited to differ. Zero for a body without particles.
     #[must_use]
     pub fn center_of_mass(&self) -> Vec3Fix {
         compute_center_of_mass(&self.positions)
@@ -460,6 +462,13 @@ impl DeformableBody {
     /// Treats each rigid body as a sphere with given radius for simplicity.
     /// Applies two-way coupling: deformable particles are pushed out,
     /// and rigid bodies receive reaction impulses.
+    ///
+    /// The correction and the (perfectly inelastic) normal impulse are shared by inverse
+    /// mass, `w_p / (w_p + w_b)` to the particle and `w_b / (w_p + w_b)` to the body; a body
+    /// with zero inverse mass (static, kinematic) takes none, so a particle pressed into it
+    /// ends exactly on its surface with zero approach speed. A particle exactly at the
+    /// centre of a body has no push direction and is left untouched; pinned particles
+    /// (zero inverse mass) are skipped. `dt` only gates the call (zero is a no-op).
     pub fn resolve_rigid_body_collisions(
         &mut self,
         rigid_bodies: &mut [crate::solver::RigidBody],
@@ -494,26 +503,20 @@ impl DeformableBody {
                     let normal = delta / dist;
                     let penetration = radius - dist;
 
-                    // Push particle out
-                    let particle_mass = if self.inv_masses[i].is_zero() {
-                        Fix128::from_int(1000000)
-                    } else {
-                        Fix128::ONE / self.inv_masses[i]
-                    };
-
-                    let rb_mass = if rb.inv_mass.is_zero() {
-                        Fix128::from_int(1000000)
-                    } else {
-                        Fix128::ONE / rb.inv_mass
-                    };
-
-                    let total_mass = particle_mass + rb_mass;
-                    if total_mass.is_zero() {
+                    // Inverse-mass weights: a body with zero inverse mass (static or
+                    // kinematic) is infinitely heavy and takes no share, so the particle
+                    // is moved by the whole penetration and loses the whole approach
+                    // speed (no finite stand-in mass, which left `m_p / (m_p + 10^6)`
+                    // of the penetration and of the speed behind).
+                    let w_particle = self.inv_masses[i];
+                    let w_body = rb.inv_mass;
+                    let w_sum = w_particle + w_body;
+                    if w_sum.is_zero() {
                         continue;
                     }
 
-                    let particle_ratio = rb_mass / total_mass;
-                    let rb_ratio = particle_mass / total_mass;
+                    let particle_ratio = w_particle / w_sum;
+                    let rb_ratio = w_body / w_sum;
 
                     // Position correction
                     self.positions[i] = self.positions[i] + normal * (penetration * particle_ratio);
@@ -522,15 +525,15 @@ impl DeformableBody {
                         rb.position = rb.position - normal * (penetration * rb_ratio);
                     }
 
-                    // Velocity response
+                    // Velocity response (inelastic along the normal)
                     let rel_vel = self.velocities[i] - rb.velocity;
                     let vel_normal = rel_vel.dot(normal);
 
                     if vel_normal < Fix128::ZERO {
-                        let impulse_mag = -vel_normal * (particle_mass * rb_mass / total_mass);
+                        let impulse_mag = -vel_normal / w_sum;
                         let impulse = normal * impulse_mag;
 
-                        self.velocities[i] = self.velocities[i] + impulse * self.inv_masses[i];
+                        self.velocities[i] = self.velocities[i] + impulse * w_particle;
                         if !rb.inv_mass.is_zero() {
                             rb.velocity = rb.velocity - impulse * rb.inv_mass;
                         }
