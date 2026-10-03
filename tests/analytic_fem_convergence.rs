@@ -480,7 +480,8 @@ fn cantilever_converges_from_below() {
 /// cargo test --release --test analytic_fem_convergence -- --ignored --nocapture
 /// ```
 ///
-/// **Release, not debug.** The finest level is 25,600 tetrahedra and the
+/// **Release, not debug.** The finest level is 12,800 tetrahedra (25,600 before the
+/// slenderness was halved, see the header) and the
 /// conjugate gradient count grows roughly as `1/h` (measured: 88 / 132 / 292
 /// iterations for cells 2 / 1 / 0.5), so the work grows about sixteenfold per
 /// halving. Every arithmetic operation is a software 128-bit fixed-point
@@ -515,7 +516,7 @@ fn cantilever_converges_from_below() {
 /// Asserting the rise keeps the fact visible even though the clamp now hides its
 /// consequence.
 #[test]
-#[ignore = "4 solves; the tolerance-floor measurement"]
+#[ignore = "4 solves (finest level 12,800 tets, about 1 s in release, measured 2026-10-03); the tolerance-floor measurement"]
 fn tolerance_floor_rises_as_the_mesh_refines() {
     let cells = [2.0, 1.0, 0.5, 0.25];
     // 2^-60: below the floor at every level, so the clamp always engages and the
@@ -586,9 +587,10 @@ fn tolerance_floor_rises_as_the_mesh_refines() {
 /// cargo test --release --test analytic_fem_convergence -- --ignored --nocapture
 /// ```
 ///
-/// Four solves of 25,600 elements; budget a few minutes in release.
+/// Four solves of 12,800 elements (25,600 before the slenderness was halved);
+/// measured 2026-10-03 at about 45 s in release.
 #[test]
-#[ignore = "4 solves at 25,600 tets; the stopping-rule diagnostic"]
+#[ignore = "4 solves at 12,800 tets (about 45 s in release, measured 2026-10-03); the stopping-rule diagnostic"]
 fn finest_level_residual_floor_by_preconditioner() {
     let cell = 0.25_f64;
     for mode in [Preconditioner::None, Preconditioner::JacobiScaled] {
@@ -676,7 +678,7 @@ fn run_level_reporting(cell: f64, config: &SolverConfig) -> (String, u32, f64, (
 /// runs both. The numbers to line up are the achieved residual, the iteration
 /// count and whether the outcome is `Ok`, `Stagnated` or `NotConverged`.
 #[test]
-#[ignore = "25,600 tets at cell 0.25; the A/B partner of the test above"]
+#[ignore = "12,800 tets at cell 0.25 (about 1 s in release, measured 2026-10-03); the A/B partner of the test above"]
 fn cantilever_without_preconditioner() {
     let cells = [2.0, 1.0, 0.5, 0.25];
     let config = SolverConfig::try_new(500_000, Fix128::from_raw(0, 1 << 34))
@@ -704,7 +706,7 @@ fn cantilever_without_preconditioner() {
 }
 
 #[test]
-#[ignore = "25,600 tets at cell 0.25; run with --release, see the doc comment"]
+#[ignore = "12,800 tets at cell 0.25 (about 1 s in release, measured 2026-10-03); run with --release, see the doc comment"]
 fn cantilever_order_estimates_agree() {
     let cells = [2.0, 1.0, 0.5, 0.25];
     let config = SolverConfig::try_new(500_000, Fix128::from_raw(0, 1 << 34)).expect("valid");

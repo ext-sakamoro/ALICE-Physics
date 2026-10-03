@@ -340,7 +340,7 @@ fn work(displacements: &[[Fix128; 3]], loaded: &[(u32, f64)]) -> f64 {
 }
 
 #[test]
-#[ignore = "runtime: about 20 s in release (P2 reference at two uniform passes, a uniform coarse solve and a six-round adaptive run); run by run_ignored.py"]
+#[ignore = "runtime: about 2 s in release, measured 2026-10-03 (P2 reference at two uniform passes, a uniform coarse solve and a six-round adaptive run); run by run_ignored.py"]
 fn adaptive_quadratic_beats_uniform_per_node() {
     let base = kuhn_box(BOX[0], BOX[1], BOX[2]);
     let solve_on = |mesh: &SdfTetMesh| {

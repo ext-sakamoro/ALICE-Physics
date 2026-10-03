@@ -1352,7 +1352,7 @@ fn reattachment_grows_with_reynolds_number_on_the_step_field() {
 /// recorded measurement rather than a gate. Finding that budget is filed in
 /// the backlog.
 #[test]
-#[ignore = "runtime only: 256x16 cells for 8192 steps, release-only; the measured values are in the module header"]
+#[ignore = "runtime only: 256x16 cells for 8192 steps, release-only (about 190 s, measured 2026-10-03); the measured values are in the module header"]
 fn reattachment_lengthens_under_grid_refinement() {
     let length = 16.0f64;
     let dt = Fix128::from_ratio(1, 32);
