@@ -52,14 +52,7 @@ unwired src/bvh.rs::get_aabb
 unwired src/bvh.rs::insert_dynamic
 unwired src/bvh.rs::query_pairs
 unwired src/bvh.rs::stats
-unwired src/ccd.rs::aabb_plane_toi
 unwired src/ccd.rs::adaptive_toi_substeps
-unwired src/ccd.rs::capsule_plane_toi
-unwired src/ccd.rs::conservative_advancement
-unwired src/ccd.rs::needs_ccd
-unwired src/ccd.rs::speculative_contact
-unwired src/ccd.rs::sphere_capsule_toi
-unwired src/ccd.rs::swept_aabb
 unwired src/character.rs::PushImpulse
 unwired src/character.rs::apply_gravity
 unwired src/character.rs::compute_push_impulses
