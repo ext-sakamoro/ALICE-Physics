@@ -170,6 +170,16 @@ required-features = ["std", "neural"]
 name = "heatmap_visualization"
 required-features = ["std"]
 
+# Production entry point for `SolidSample`/`aggregate_forces`/
+# `buoyancy_force`/`drag_force`/`react_back_pressure` (wiring_guard:
+# src/fsi_advanced.rs had zero production callers across all 5 items --
+# only tests/engineering_oracles_fluid.rs and
+# tests/fsi_advanced_sub_iteration.rs called in, which the guard does not
+# count).
+[[example]]
+name = "fsi_advanced_forces"
+required-features = ["std"]
+
 [[example]]
 name = "substep_interpolation"
 required-features = ["std"]
