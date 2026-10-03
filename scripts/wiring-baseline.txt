@@ -126,11 +126,6 @@ unwired src/kinematic_loop.rs::FourBarLinkage
 unwired src/kinematic_loop.rs::centre_to_centre
 unwired src/kinematic_loop.rs::four_bar_linkage
 unwired src/kinematic_loop.rs::try_four_bar_linkage
-unwired src/laminate.rs::compute_abd
-unwired src/laminate.rs::is_symmetric
-unwired src/laminate.rs::is_symmetric_stack
-unwired src/laminate.rs::q_bar
-unwired src/laminate.rs::q_matrix
 unwired src/mass_properties.rs::cylinder_mass_properties
 unwired src/math_util.rs::cbrt_fix
 unwired src/math_util.rs::clamp_fix
