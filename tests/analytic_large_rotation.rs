@@ -14,10 +14,12 @@
 //!
 //! So this file is the oracle for the geometric-nonlinearity wall:
 //!
-//! - it **must red on the present solver**, by the amount the closed form below
-//!   predicts, and that is the evidence the oracle reaches the property;
-//! - it **must green on a co-rotational (or fully finite-strain) solver**, and
-//!   that is the evidence the implementation is right.
+//! - it **reds on the small-strain `solve`**, by the amount the closed form below
+//!   predicts (`characterises_the_small_strain_rotation_defect`), and that is the
+//!   evidence the oracle reaches the property;
+//! - it **greens on the co-rotational `solve_corotational`**
+//!   (`rigid_rotation_produces_zero_stress`), and that is the evidence the
+//!   implementation is right.
 //!
 //! Unlike a convergence study this needs no refinement sequence and no
 //! iteration: every degree of freedom is prescribed, so `solve` computes the
@@ -48,7 +50,10 @@
 // The oracle values are closed-form f64 evaluations, not simulation state.
 #![allow(clippy::disallowed_methods)]
 
-use alice_physics::linear_elastic_fem::{solve, BoundaryConditions, ElasticMaterial, SolverConfig};
+use alice_physics::linear_elastic_fem::{
+    solve, solve_corotational, BoundaryConditions, CorotationalConfig, ElasticMaterial,
+    SolverConfig,
+};
 use alice_physics::math::Fix128;
 use alice_physics::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
 
@@ -148,6 +153,36 @@ const HALF: Turn = Turn {
     sin: 0.0,
 };
 
+/// `cos = 4/5`, `sin = 3/5`, about 36.87°. The 3-4-5 triangle keeps `cos² + sin²`
+/// equal to one to the last bit of an `f64`, which is all the scene needs.
+const THREE_FOUR_FIVE: Turn = Turn {
+    name: "36.87° about z (3-4-5)",
+    cos: 0.8,
+    sin: 0.6,
+};
+
+/// `cos = -3/5`, `sin = 4/5`, about 126.87°: past a quarter turn, where a
+/// small-strain reading has already changed sign of its error's growth.
+const OBTUSE_THREE_FOUR_FIVE: Turn = Turn {
+    name: "126.87° about z (3-4-5)",
+    cos: -0.6,
+    sin: 0.8,
+};
+
+/// The co-rotational settings every test below uses. Everything is prescribed,
+/// so the conjugate gradient has no free degree of freedom to find; the Newton
+/// and polar budgets are the ones `tests/analytic_corotational.rs` uses.
+fn corotational_config(increments: u32) -> CorotationalConfig {
+    CorotationalConfig::try_new(
+        SolverConfig::try_new(200_000, Fix128::from_raw(0, 1 << 34)).expect("valid linear config"),
+        32,
+        Fix128::from_raw(0, 1 << 34),
+        increments,
+        32,
+    )
+    .expect("valid co-rotational config")
+}
+
 /// Prescribe every node to the rigid rotation `u = (R − I)·x` about the z axis
 /// through the origin, which is a corner of the box.
 fn prescribe_rigid_rotation(mesh: &SdfTetMesh, turn: Turn) -> BoundaryConditions {
@@ -206,44 +241,47 @@ fn worst_component(
 /// answer is exactly representable, so there is nothing for a looser band to
 /// buy.
 ///
-/// # Why this is `#[ignore]`d rather than deleted or left red
+/// # What this solver is, and why the small-strain twin stays
 ///
-/// **The red is correct.** It is held back only because the implementation has
-/// not caught up — not because the assertion, the tolerance or the scene is in
-/// doubt. `cargo test -- --ignored` runs it, and the commit that lands a
-/// co-rotational strain measure removes this attribute in the same diff.
+/// This runs [`solve_corotational`], whose element strain is
+/// `ε = sym(RᵀF − I)` with `R` the polar factor of `F`. For `F = R₀` the polar
+/// factor is `R₀` itself, so `ε = 0` and every component is zero to the rounding
+/// of the polar iteration, not to a modelling error. The tolerance is the same
+/// `1e-9` MPa the other rigid-motion oracle uses.
 ///
-/// ⚠️ **Do not delete it as "a test for an unimplemented feature".** Deleting it
-/// loses the measurement that the present solver is wrong by 2.47 × E, and the
-/// next reader would have to rediscover it.
+/// It was `#[ignore]`d while the only solver in the crate was the small-strain
+/// [`solve`]; the red was correct and is now the green below. ⚠️ **The
+/// companion [`characterises_the_small_strain_rotation_defect`] is kept, not
+/// deleted**: the original instruction was to delete it in the commit that lands
+/// a co-rotational formulation, but [`solve`] still ships and still has that
+/// defect, so the companion is the only test that pins what it does. Deleting it
+/// would leave the linear solver's rotation behaviour unmeasured.
 ///
-/// Ignoring it costs no coverage, because
-/// [`characterises_the_small_strain_rotation_defect`] is **not** ignored and pins
-/// the same numbers from the other side: it asserts the measured stress equals
-/// `2λ(c−1) + 2μ(c−1)` to 1e-6 MPa. Any change to the strain measure, the `B`
-/// matrix or the material law moves those numbers and reds *that* test in CI. So
-/// the pair is: this one is the goal, its companion is the guard, and exactly one
-/// of the two is green at any time.
+/// The angle list is `90°`, `180°`, `36.87°` and `126.87°`. A 1° row is left out
+/// on purpose: at 1° the small-strain error is `θ²/2 ≈ 1.5e-4` of `E`, which a
+/// `1e-9` band would still catch, but `cos`/`sin` of 1° are not exact in `f64`,
+/// so the scene would no longer carry zero stress and the band would be testing
+/// the `f64` rounding of the input.
 #[test]
-#[ignore = "the red is correct: a rigid rotation must carry no stress, and the \
-            small-strain solver cannot deliver that yet. Remove this attribute in \
-            the commit that lands a co-rotational formulation, and delete \
-            `characterises_the_small_strain_rotation_defect` in the same diff. \
-            CI coverage is not lost: that companion test is not ignored and pins \
-            the same numbers"]
 fn rigid_rotation_produces_zero_stress() {
-    for turn in [QUARTER, HALF] {
+    for turn in [QUARTER, HALF, THREE_FOUR_FIVE, OBTUSE_THREE_FOUR_FIVE] {
+        // One increment for every angle. 180° cannot use more: the prescribed
+        // displacement is interpolated linearly, so at t = 1/2 the deformation
+        // gradient is diag(0, 0, 1) and the polar factor does not exist
+        // (`RotationFailed { cause: Inverted }`, measured for 2, 4 and 8
+        // increments; recorded in the Backlog as a candidate defect).
         let mesh = kuhn_box(2, 1, 1, 3.0);
         let bc = prescribe_rigid_rotation(&mesh, turn);
-        let out = solve(&mesh, &pla(), &bc, &SolverConfig::default()).expect("fully prescribed");
+        let out = solve_corotational(&mesh, &pla(), &bc, &corotational_config(1))
+            .unwrap_or_else(|e| panic!("{}: {e:?}", turn.name));
 
-        let (worst, name, at) = worst_component(&out.element_stress);
+        let (worst, name, at) = worst_component(&out.field.element_stress);
         eprintln!(
             "  {}: worst |σ| = {:.6e} MPa (σ_{} of tet {})",
             turn.name, worst, name, at
         );
 
-        for (t, s) in out.element_stress.iter().enumerate() {
+        for (t, s) in out.field.element_stress.iter().enumerate() {
             for (n, c) in [
                 ("xx", s.xx),
                 ("yy", s.yy),
@@ -256,10 +294,9 @@ fn rigid_rotation_produces_zero_stress() {
                 assert!(
                     got.abs() <= 1e-9,
                     "{}: tet {t} σ_{n} = {got:.6e} MPa under a rigid rotation, which strains \
-                     nothing, so the stress must be zero. A small-strain tensor reads the \
+                     nothing, so the stress must be zero. The small-strain `solve` reads this \
                      rotation as a strain of cos θ − 1 per in-plane axis; see \
-                     `characterises_the_small_strain_rotation_defect` for the closed form of \
-                     exactly this number",
+                     `characterises_the_small_strain_rotation_defect`",
                     turn.name
                 );
             }
@@ -280,9 +317,10 @@ fn rigid_rotation_produces_zero_stress() {
 /// linear elasticity correctly and the gate above is failing for the one reason
 /// it is meant to.
 ///
-/// ⚠️ **Delete this test when a co-rotational formulation lands.** It pins the
-/// defect, so it must red exactly when `rigid_rotation_produces_zero_stress`
-/// greens. Keeping both would make the suite unsatisfiable.
+/// ⚠️ **This stays after the co-rotational solve landed.** It pins the defect of
+/// the small-strain [`solve`], which still ships; `rigid_rotation_produces_zero_stress`
+/// now runs [`solve_corotational`] and the two no longer contradict each other.
+/// Delete it only with the small-strain solve itself.
 #[test]
 fn characterises_the_small_strain_rotation_defect() {
     let (lambda, mu) = lame();
