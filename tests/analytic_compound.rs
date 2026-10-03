@@ -845,3 +845,118 @@ fn an_x_capsule_child_has_the_axial_moment_about_x() {
         "capsule moments",
     );
 }
+
+/// `overlapping_children` returns exactly the children whose boxes meet the target
+/// (touching counts), for a body at a position and with a turn.
+#[test]
+fn the_overlapping_children_are_those_whose_boxes_meet_the_target() {
+    let mut c = CompoundShape::new();
+    for x in [-4.0, 0.0, 4.0] {
+        c.add_box(unit_box_at([0.0; 3]), v3(x, 0.0, 0.0), QuatFix::IDENTITY);
+    }
+    let target =
+        |lo: [f64; 3], hi: [f64; 3]| AABB::new(v3(lo[0], lo[1], lo[2]), v3(hi[0], hi[1], hi[2]));
+    let at = |t: &AABB, pos: Vec3Fix, rot: QuatFix| c.overlapping_children(t, pos, rot);
+    let id = QuatFix::IDENTITY;
+
+    // The boxes are [-5,-3], [-1,1], [3,5] in x.
+    assert_eq!(
+        at(
+            &target([2.5, -1.0, -1.0], [6.0, 1.0, 1.0]),
+            Vec3Fix::ZERO,
+            id
+        ),
+        vec![2]
+    );
+    assert_eq!(
+        at(
+            &target([-0.5, -0.5, -0.5], [0.5, 0.5, 0.5]),
+            Vec3Fix::ZERO,
+            id
+        ),
+        vec![1]
+    );
+    assert_eq!(
+        at(
+            &target([-9.0, -9.0, -9.0], [9.0, 9.0, 9.0]),
+            Vec3Fix::ZERO,
+            id
+        ),
+        vec![0, 1, 2]
+    );
+    assert!(at(
+        &target([1.5, -1.0, -1.0], [2.5, 1.0, 1.0]),
+        Vec3Fix::ZERO,
+        id
+    )
+    .is_empty());
+    assert!(at(
+        &target([-1.0, 3.0, -1.0], [1.0, 4.0, 1.0]),
+        Vec3Fix::ZERO,
+        id
+    )
+    .is_empty());
+    // Touching counts: the target starts exactly where child 2 ends.
+    assert_eq!(
+        at(
+            &target([5.0, -1.0, -1.0], [6.0, 1.0, 1.0]),
+            Vec3Fix::ZERO,
+            id
+        ),
+        vec![2]
+    );
+    // Touching from the other side: the target ends exactly where child 0 begins.
+    assert_eq!(
+        at(
+            &target([-6.0, -1.0, -1.0], [-5.0, 1.0, 1.0]),
+            Vec3Fix::ZERO,
+            id
+        ),
+        vec![0]
+    );
+    // The body at x = 4: the boxes are [-1,1], [3,5], [7,9].
+    assert_eq!(
+        at(
+            &target([2.5, -1.0, -1.0], [5.5, 1.0, 1.0]),
+            v3(4.0, 0.0, 0.0),
+            id
+        ),
+        vec![1]
+    );
+    // The body turned a quarter about z: x -> y, so the boxes sit at y = -4, 0, 4.
+    assert_eq!(
+        at(
+            &target([-1.0, 3.0, -1.0], [1.0, 5.0, 1.0]),
+            Vec3Fix::ZERO,
+            quarter_z()
+        ),
+        vec![2]
+    );
+}
+
+/// A probe above a child, separated from the compound only along z, still meets
+/// it: the boxes the narrow-phase prunes with have the extent on every axis.
+#[test]
+fn a_probe_that_overlaps_along_z_only_is_not_pruned() {
+    let mut c = CompoundShape::new();
+    for x in [-4.0, 4.0] {
+        c.add_box(unit_box_at([0.0; 3]), v3(x, 0.0, 0.0), QuatFix::IDENTITY);
+    }
+    let mut world = PhysicsWorld::new(SolverConfig::default());
+    let body = world
+        .add_compound_body(&c, Fix128::from_int(1000), Vec3Fix::ZERO)
+        .expect("two boxes have volume");
+    let probe = Shape::Ellipsoid {
+        radii: v3(0.5, 0.5, 0.5),
+    };
+    // The child at x = -4 spans z in [-1, 1]; a ball of radius 0.5 at z = 1.3
+    // reaches down to 0.8, inside it. At z = 1.7 it only reaches 1.2: apart.
+    let near = world
+        .add_shaped_body(&probe, Fix128::from_int(1000), v3(-4.0, 0.0, 1.3))
+        .expect("a valid solid");
+    let far = world
+        .add_shaped_body(&probe, Fix128::from_int(1000), v3(-4.0, 0.0, 1.7))
+        .expect("a valid solid");
+    assert!(world.colliders_overlap(body, near));
+    assert!(!world.colliders_overlap(body, far));
+}

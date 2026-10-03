@@ -51,30 +51,44 @@ impl Support for Piece<'_> {
 }
 
 impl BodyCollider {
-    /// The convex pieces of this collider for a body at `position` turned by
-    /// `rotation`, each with a box that contains it.
-    fn pieces(&self, position: Vec3Fix, rotation: QuatFix) -> Vec<(Piece<'_>, AABB)> {
+    /// A box that contains the whole collider, for a body at `position` turned by
+    /// `rotation`.
+    fn world_aabb(&self, position: Vec3Fix, rotation: QuatFix) -> AABB {
         match self {
             Self::Shape(shape) => {
                 let r = shape.bounding_radius();
-                let half = Vec3Fix::new(r, r, r);
-                vec![(
-                    Piece::Shape(PosedShape {
-                        shape: *shape,
-                        position,
-                        rotation,
-                    }),
-                    AABB::from_center_half(position, half),
-                )]
+                AABB::from_center_half(position, Vec3Fix::new(r, r, r))
             }
+            Self::Compound(compound) => compound.world_aabb(position, rotation),
+        }
+    }
+
+    /// The convex pieces of this collider for a body at `position` turned by
+    /// `rotation`, each with a box that contains it. Only the pieces whose box meets
+    /// `against` are returned: a piece outside it cannot touch whatever `against`
+    /// bounds.
+    fn pieces(
+        &self,
+        position: Vec3Fix,
+        rotation: QuatFix,
+        against: &AABB,
+    ) -> Vec<(Piece<'_>, AABB)> {
+        match self {
+            Self::Shape(shape) => vec![(
+                Piece::Shape(PosedShape {
+                    shape: *shape,
+                    position,
+                    rotation,
+                }),
+                self.world_aabb(position, rotation),
+            )],
             Self::Compound(compound) => compound
-                .children
-                .iter()
-                .enumerate()
-                .map(|(i, child)| {
+                .overlapping_children(against, position, rotation)
+                .into_iter()
+                .map(|i| {
                     (
                         Piece::Child {
-                            child,
+                            child: &compound.children[i],
                             position,
                             rotation,
                         },
@@ -121,8 +135,15 @@ pub(crate) fn contact_between(
     b: &BodyCollider,
     (position_b, rotation_b): (Vec3Fix, QuatFix),
 ) -> Option<Contact> {
-    let pieces_a = a.pieces(position_a, rotation_a);
-    let pieces_b = b.pieces(position_b, rotation_b);
+    let (box_a, box_b) = (
+        a.world_aabb(position_a, rotation_a),
+        b.world_aabb(position_b, rotation_b),
+    );
+    if !box_a.intersects(&box_b) {
+        return None;
+    }
+    let pieces_a = a.pieces(position_a, rotation_a, &box_b);
+    let pieces_b = b.pieces(position_b, rotation_b, &box_a);
     let mut deepest: Option<Contact> = None;
     for (pa, box_a) in &pieces_a {
         for (pb, box_b) in &pieces_b {
@@ -146,8 +167,15 @@ pub(crate) fn colliders_meet(
     b: &BodyCollider,
     (position_b, rotation_b): (Vec3Fix, QuatFix),
 ) -> bool {
-    let pieces_a = a.pieces(position_a, rotation_a);
-    let pieces_b = b.pieces(position_b, rotation_b);
+    let (box_a, box_b) = (
+        a.world_aabb(position_a, rotation_a),
+        b.world_aabb(position_b, rotation_b),
+    );
+    if !box_a.intersects(&box_b) {
+        return false;
+    }
+    let pieces_a = a.pieces(position_a, rotation_a, &box_b);
+    let pieces_b = b.pieces(position_b, rotation_b, &box_a);
     pieces_a.iter().any(|(pa, box_a)| {
         pieces_b
             .iter()
