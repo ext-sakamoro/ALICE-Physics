@@ -56,8 +56,6 @@ unwired src/motor.rs::apply_motors
 unwired src/motor.rs::disable
 unwired src/motor.rs::set_rotation_target
 unwired src/motor.rs::set_velocity_target
-unwired src/particle.rs::add_emitter
-unwired src/particle.rs::apply_force_field
 unwired src/physics2d.rs::apply_force
 unwired src/physics2d.rs::apply_impulse_at_point
 unwired src/physics2d.rs::distance_to
