@@ -15,7 +15,10 @@ use alice_physics::sdf_collider::ClosureSdf;
 
 fn plane(theta: f32) -> ClosureSdf {
     let (s, c) = (theta.sin(), theta.cos());
-    ClosureSdf::new(move |x, y, _z| -s * x + c * y, move |_x, _y, _z| (-s, c, 0.0))
+    ClosureSdf::new(
+        move |x, y, _z| -s * x + c * y,
+        move |_x, _y, _z| (-s, c, 0.0),
+    )
 }
 
 fn main() {

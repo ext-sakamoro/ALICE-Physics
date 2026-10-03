@@ -34,7 +34,10 @@ fn main() {
     ev.begin_frame();
     for i in 0..3 {
         let (d, _) = ev.evaluate(i, pos(i), &before);
-        println!("[sdf_adaptive] frame 1 body {i}: d = {d:.3} (closed form {})", xs[i] - 1.0);
+        println!(
+            "[sdf_adaptive] frame 1 body {i}: d = {d:.3} (closed form {})",
+            xs[i] - 1.0
+        );
         assert!((d - (xs[i] - 1.0)).abs() < 1e-4);
     }
     assert_eq!(ev.stats(), (0, 3));
@@ -63,6 +66,9 @@ fn main() {
         let (d, _) = ev.evaluate(i, pos(i), &after);
         assert!((d - (xs[i] - 2.0)).abs() < 1e-4);
     }
-    println!("[sdf_adaptive] invalidate_all: all 3 re-evaluated, stats {:?}", ev.stats());
+    println!(
+        "[sdf_adaptive] invalidate_all: all 3 re-evaluated, stats {:?}",
+        ev.stats()
+    );
     assert_eq!(ev.stats(), (0, 3));
 }
