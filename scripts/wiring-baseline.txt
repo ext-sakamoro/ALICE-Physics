@@ -102,11 +102,6 @@ unwired src/fluid_netcode.rs::verify
 unwired src/fracture.rs::active_crack_count
 unwired src/fracture.rs::apply_stress_at
 unwired src/fracture.rs::stress_at
-unwired src/fsi_advanced.rs::SolidSample
-unwired src/fsi_advanced.rs::aggregate_forces
-unwired src/fsi_advanced.rs::buoyancy_force
-unwired src/fsi_advanced.rs::drag_force
-unwired src/fsi_advanced.rs::react_back_pressure
 unwired src/ik_physics_bridge.rs::blended
 unwired src/ik_physics_bridge.rs::snap
 unwired src/interface_capture.rs::plic_normal
