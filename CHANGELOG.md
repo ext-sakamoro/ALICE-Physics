@@ -13,6 +13,21 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added — 選べる broad-phase (全配線 program 第 9c 件)
+
+`Broadphase::{Bvh, DynamicTree}` と `PhysicsWorld::{set_broadphase, broadphase, broadphase_stats, broadphase_proxy_aabb}` を追加した (追加のみ) 既定は従来どおり毎 step 作り直す `Bvh` `DynamicTree` は永続の fat box の proxy を持ち、動いた body だけを再挿入する どちらも同じ整列済みの候補 pair を同じ narrow-phase に渡すので、シミュレーション結果は bit 一致する
+### Added — 接触力と可視化 (全配線 program 第 9d 件)
+
+`PhysicsWorld::{contact_forces, contact_arrows, contact_friction_arrows, contact_friction_cones}` を追加した (追加のみ) 力は XPBD の適用分離量 `λ` から `F = λ / ((wₐ + w_b)·h²)` (静止した body は `m·g`) 摩擦の矢印と円錐は接触ごとの摩擦係数を使う 約 1 分静止して sleep した body の接触は無い
+### Fixed — `collision_mesh_gen` (全配線 program 第 9e 件)
+
+- **`generate_collision_mesh` が marching cubes を名乗る扇状の近似で、頂点がセルごとに複製され、三角形分割が不正で、閉じず向きも不定だった** marching tetrahedra で作り直した 頂点は格子の辺ごとに共有し、巻きは内側から外側 ⇒ 閉じた向きつき 2-多様体 (球で `V − E + F = 2`、体積は `4πR³/3` に収束)
+- **`simplify_collision_mesh` が多様体を壊し、使われなくなった頂点を残していた** (`compute_mesh_aabb` が狂う) link 条件と反転検査つき edge collapse にし、開いた mesh の境界は動かさず、未使用頂点を除去し、閉じた mesh は 4 三角形未満にしない O(T²) を O(T log T) にした
+- **`compute_mesh_aabb` が未使用の頂点まで含めていた** 三角形が使う頂点だけにした (三角形が無い mesh は全頂点)
+- `CollisionMesh::to_static_collider` を追加した (追加のみ)
+- ⚠️ **挙動の変更**: `simplify_collision_mesh` は孤立した三角形・開いた mesh の境界の辺を collapse しない (以前は縮退させて三角形を消していた) 目標の三角形数に届かないことがある
+- oracle: 閉・向き・Euler 標数・体積・AABB の閉形式・torus の穴・星形分割の pinch・開いた mesh の境界 変異 25 件中 22 red (残り 3 件は等価)
+
 ### Fixed — `sdf_force::Attract` の overflow が clamp を破る
 
 `compute_sdf_force` の `Attract` 分岐は `(*strength * dist_fix.abs()).min(*max_force)` で

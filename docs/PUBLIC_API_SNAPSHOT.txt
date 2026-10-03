@@ -2022,6 +2022,8 @@ pub mod alice_physics::collision_mesh_gen
 pub struct alice_physics::collision_mesh_gen::CollisionMesh
 pub alice_physics::collision_mesh_gen::CollisionMesh::triangles: alloc::vec::Vec<[usize; 3]>
 pub alice_physics::collision_mesh_gen::CollisionMesh::vertices: alloc::vec::Vec<alice_physics::math::Vec3Fix>
+impl alice_physics::collision_mesh_gen::CollisionMesh
+pub fn alice_physics::collision_mesh_gen::CollisionMesh::to_static_collider(&self) -> alice_physics::static_collider::StaticCollider
 impl core::clone::Clone for alice_physics::collision_mesh_gen::CollisionMesh
 pub fn alice_physics::collision_mesh_gen::CollisionMesh::clone(&self) -> Self
 impl core::fmt::Debug for alice_physics::collision_mesh_gen::CollisionMesh
@@ -8766,6 +8768,8 @@ impl core::panic::unwind_safe::UnwindSafe for alice_physics::filter::CollisionFi
 pub struct alice_physics::prelude::CollisionMesh
 pub alice_physics::prelude::CollisionMesh::triangles: alloc::vec::Vec<[usize; 3]>
 pub alice_physics::prelude::CollisionMesh::vertices: alloc::vec::Vec<alice_physics::math::Vec3Fix>
+impl alice_physics::collision_mesh_gen::CollisionMesh
+pub fn alice_physics::collision_mesh_gen::CollisionMesh::to_static_collider(&self) -> alice_physics::static_collider::StaticCollider
 impl core::clone::Clone for alice_physics::collision_mesh_gen::CollisionMesh
 pub fn alice_physics::collision_mesh_gen::CollisionMesh::clone(&self) -> Self
 impl core::fmt::Debug for alice_physics::collision_mesh_gen::CollisionMesh
@@ -11053,13 +11057,20 @@ pub fn alice_physics::solver::PhysicsWorld::add_static_collider(&mut self, alice
 pub fn alice_physics::solver::PhysicsWorld::begin_frame(&mut self)
 pub fn alice_physics::solver::PhysicsWorld::body_count(&self) -> usize
 pub fn alice_physics::solver::PhysicsWorld::body_filter(&self, usize) -> alice_physics::filter::CollisionFilter
+pub fn alice_physics::solver::PhysicsWorld::broadphase(&self) -> alice_physics::solver::Broadphase
+pub fn alice_physics::solver::PhysicsWorld::broadphase_proxy_aabb(&self, usize) -> core::option::Option<alice_physics::collider::AABB>
+pub fn alice_physics::solver::PhysicsWorld::broadphase_stats(&self) -> alice_physics::solver::BroadphaseStats
 pub fn alice_physics::solver::PhysicsWorld::clear_body_collision_radius(&mut self, usize)
 pub fn alice_physics::solver::PhysicsWorld::clear_contact_modifiers(&mut self)
 pub fn alice_physics::solver::PhysicsWorld::clear_contacts(&mut self)
 pub fn alice_physics::solver::PhysicsWorld::clear_pre_solve_hooks(&mut self)
 pub fn alice_physics::solver::PhysicsWorld::colliders_overlap(&self, usize, usize) -> bool
 pub fn alice_physics::solver::PhysicsWorld::combined_material(&self, usize, usize) -> alice_physics::material::CombinedMaterial
+pub fn alice_physics::solver::PhysicsWorld::contact_arrows(&self, alice_physics::math::Fix128) -> alloc::vec::Vec<alice_physics::contact_viz::ContactArrow>
 pub fn alice_physics::solver::PhysicsWorld::contact_events(&self) -> &[alice_physics::event::ContactEvent]
+pub fn alice_physics::solver::PhysicsWorld::contact_forces(&self, alice_physics::math::Fix128) -> alloc::vec::Vec<(alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128)>
+pub fn alice_physics::solver::PhysicsWorld::contact_friction_arrows(&self, alice_physics::math::Fix128) -> alloc::vec::Vec<alice_physics::contact_viz::ContactArrow>
+pub fn alice_physics::solver::PhysicsWorld::contact_friction_cones(&self, alice_physics::math::Fix128) -> alloc::vec::Vec<alice_physics::contact_viz::FrictionCone>
 pub fn alice_physics::solver::PhysicsWorld::deserialize_state(&mut self, &[u8]) -> bool
 pub fn alice_physics::solver::PhysicsWorld::drain_contact_events(&mut self) -> alloc::vec::Vec<alice_physics::event::ContactEvent>
 pub fn alice_physics::solver::PhysicsWorld::drain_trigger_events(&mut self) -> alloc::vec::Vec<alice_physics::event::TriggerEvent>
@@ -11090,6 +11101,7 @@ pub fn alice_physics::solver::PhysicsWorld::set_body_collision_radius(&mut self,
 pub fn alice_physics::solver::PhysicsWorld::set_body_filter(&mut self, usize, alice_physics::filter::CollisionFilter)
 pub fn alice_physics::solver::PhysicsWorld::set_body_material(&mut self, usize, alice_physics::material::MaterialId)
 pub fn alice_physics::solver::PhysicsWorld::set_body_shape(&mut self, usize, &alice_physics::shape::Shape) -> bool
+pub fn alice_physics::solver::PhysicsWorld::set_broadphase(&mut self, alice_physics::solver::Broadphase)
 pub fn alice_physics::solver::PhysicsWorld::set_gpu_solver_bridge(&mut self, core::option::Option<alloc::boxed::Box<(dyn alice_physics::gpu_bridge::GpuSolverBridge + core::marker::Send + core::marker::Sync)>>)
 pub fn alice_physics::solver::PhysicsWorld::set_sdf_collision_radius(&mut self, alice_physics::math::Fix128)
 pub fn alice_physics::solver::PhysicsWorld::set_sleep_config(&mut self, alice_physics::sleeping::SleepConfig)
@@ -15051,6 +15063,27 @@ impl core::marker::Unpin for alice_physics::solver::BodyType
 impl core::marker::UnsafeUnpin for alice_physics::solver::BodyType
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::solver::BodyType
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::solver::BodyType
+#[non_exhaustive] pub enum alice_physics::solver::Broadphase
+pub alice_physics::solver::Broadphase::Bvh
+pub alice_physics::solver::Broadphase::DynamicTree
+impl core::clone::Clone for alice_physics::solver::Broadphase
+pub fn alice_physics::solver::Broadphase::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::solver::Broadphase
+impl core::cmp::PartialEq for alice_physics::solver::Broadphase
+pub fn alice_physics::solver::Broadphase::eq(&self, &Self) -> bool
+impl core::default::Default for alice_physics::solver::Broadphase
+pub fn alice_physics::solver::Broadphase::default() -> Self
+impl core::fmt::Debug for alice_physics::solver::Broadphase
+pub fn alice_physics::solver::Broadphase::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::solver::Broadphase
+impl core::marker::StructuralPartialEq for alice_physics::solver::Broadphase
+impl core::marker::Freeze for alice_physics::solver::Broadphase
+impl core::marker::Send for alice_physics::solver::Broadphase
+impl core::marker::Sync for alice_physics::solver::Broadphase
+impl core::marker::Unpin for alice_physics::solver::Broadphase
+impl core::marker::UnsafeUnpin for alice_physics::solver::Broadphase
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::solver::Broadphase
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::solver::Broadphase
 #[non_exhaustive] pub enum alice_physics::solver::SolverBackend
 pub alice_physics::solver::SolverBackend::Tgs
 pub alice_physics::solver::SolverBackend::Xpbd
@@ -15095,6 +15128,25 @@ impl core::marker::Unpin for alice_physics::solver::BodyObservation
 impl core::marker::UnsafeUnpin for alice_physics::solver::BodyObservation
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::solver::BodyObservation
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::solver::BodyObservation
+pub struct alice_physics::solver::BroadphaseStats
+pub alice_physics::solver::BroadphaseStats::height: i32
+pub alice_physics::solver::BroadphaseStats::proxies: usize
+impl core::clone::Clone for alice_physics::solver::BroadphaseStats
+pub fn alice_physics::solver::BroadphaseStats::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::solver::BroadphaseStats
+impl core::cmp::PartialEq for alice_physics::solver::BroadphaseStats
+pub fn alice_physics::solver::BroadphaseStats::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::solver::BroadphaseStats
+pub fn alice_physics::solver::BroadphaseStats::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::solver::BroadphaseStats
+impl core::marker::StructuralPartialEq for alice_physics::solver::BroadphaseStats
+impl core::marker::Freeze for alice_physics::solver::BroadphaseStats
+impl core::marker::Send for alice_physics::solver::BroadphaseStats
+impl core::marker::Sync for alice_physics::solver::BroadphaseStats
+impl core::marker::Unpin for alice_physics::solver::BroadphaseStats
+impl core::marker::UnsafeUnpin for alice_physics::solver::BroadphaseStats
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::solver::BroadphaseStats
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::solver::BroadphaseStats
 pub struct alice_physics::solver::ConstraintBatch
 pub alice_physics::solver::ConstraintBatch::contact_indices: alloc::vec::Vec<usize>
 pub alice_physics::solver::ConstraintBatch::distance_indices: alloc::vec::Vec<usize>
@@ -15197,13 +15249,20 @@ pub fn alice_physics::solver::PhysicsWorld::add_static_collider(&mut self, alice
 pub fn alice_physics::solver::PhysicsWorld::begin_frame(&mut self)
 pub fn alice_physics::solver::PhysicsWorld::body_count(&self) -> usize
 pub fn alice_physics::solver::PhysicsWorld::body_filter(&self, usize) -> alice_physics::filter::CollisionFilter
+pub fn alice_physics::solver::PhysicsWorld::broadphase(&self) -> alice_physics::solver::Broadphase
+pub fn alice_physics::solver::PhysicsWorld::broadphase_proxy_aabb(&self, usize) -> core::option::Option<alice_physics::collider::AABB>
+pub fn alice_physics::solver::PhysicsWorld::broadphase_stats(&self) -> alice_physics::solver::BroadphaseStats
 pub fn alice_physics::solver::PhysicsWorld::clear_body_collision_radius(&mut self, usize)
 pub fn alice_physics::solver::PhysicsWorld::clear_contact_modifiers(&mut self)
 pub fn alice_physics::solver::PhysicsWorld::clear_contacts(&mut self)
 pub fn alice_physics::solver::PhysicsWorld::clear_pre_solve_hooks(&mut self)
 pub fn alice_physics::solver::PhysicsWorld::colliders_overlap(&self, usize, usize) -> bool
 pub fn alice_physics::solver::PhysicsWorld::combined_material(&self, usize, usize) -> alice_physics::material::CombinedMaterial
+pub fn alice_physics::solver::PhysicsWorld::contact_arrows(&self, alice_physics::math::Fix128) -> alloc::vec::Vec<alice_physics::contact_viz::ContactArrow>
 pub fn alice_physics::solver::PhysicsWorld::contact_events(&self) -> &[alice_physics::event::ContactEvent]
+pub fn alice_physics::solver::PhysicsWorld::contact_forces(&self, alice_physics::math::Fix128) -> alloc::vec::Vec<(alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128)>
+pub fn alice_physics::solver::PhysicsWorld::contact_friction_arrows(&self, alice_physics::math::Fix128) -> alloc::vec::Vec<alice_physics::contact_viz::ContactArrow>
+pub fn alice_physics::solver::PhysicsWorld::contact_friction_cones(&self, alice_physics::math::Fix128) -> alloc::vec::Vec<alice_physics::contact_viz::FrictionCone>
 pub fn alice_physics::solver::PhysicsWorld::deserialize_state(&mut self, &[u8]) -> bool
 pub fn alice_physics::solver::PhysicsWorld::drain_contact_events(&mut self) -> alloc::vec::Vec<alice_physics::event::ContactEvent>
 pub fn alice_physics::solver::PhysicsWorld::drain_trigger_events(&mut self) -> alloc::vec::Vec<alice_physics::event::TriggerEvent>
@@ -15234,6 +15293,7 @@ pub fn alice_physics::solver::PhysicsWorld::set_body_collision_radius(&mut self,
 pub fn alice_physics::solver::PhysicsWorld::set_body_filter(&mut self, usize, alice_physics::filter::CollisionFilter)
 pub fn alice_physics::solver::PhysicsWorld::set_body_material(&mut self, usize, alice_physics::material::MaterialId)
 pub fn alice_physics::solver::PhysicsWorld::set_body_shape(&mut self, usize, &alice_physics::shape::Shape) -> bool
+pub fn alice_physics::solver::PhysicsWorld::set_broadphase(&mut self, alice_physics::solver::Broadphase)
 pub fn alice_physics::solver::PhysicsWorld::set_gpu_solver_bridge(&mut self, core::option::Option<alloc::boxed::Box<(dyn alice_physics::gpu_bridge::GpuSolverBridge + core::marker::Send + core::marker::Sync)>>)
 pub fn alice_physics::solver::PhysicsWorld::set_sdf_collision_radius(&mut self, alice_physics::math::Fix128)
 pub fn alice_physics::solver::PhysicsWorld::set_sleep_config(&mut self, alice_physics::sleeping::SleepConfig)
@@ -17555,6 +17615,8 @@ impl core::panic::unwind_safe::UnwindSafe for alice_physics::filter::CollisionFi
 pub struct alice_physics::CollisionMesh
 pub alice_physics::CollisionMesh::triangles: alloc::vec::Vec<[usize; 3]>
 pub alice_physics::CollisionMesh::vertices: alloc::vec::Vec<alice_physics::math::Vec3Fix>
+impl alice_physics::collision_mesh_gen::CollisionMesh
+pub fn alice_physics::collision_mesh_gen::CollisionMesh::to_static_collider(&self) -> alice_physics::static_collider::StaticCollider
 impl core::clone::Clone for alice_physics::collision_mesh_gen::CollisionMesh
 pub fn alice_physics::collision_mesh_gen::CollisionMesh::clone(&self) -> Self
 impl core::fmt::Debug for alice_physics::collision_mesh_gen::CollisionMesh
@@ -19882,13 +19944,20 @@ pub fn alice_physics::solver::PhysicsWorld::add_static_collider(&mut self, alice
 pub fn alice_physics::solver::PhysicsWorld::begin_frame(&mut self)
 pub fn alice_physics::solver::PhysicsWorld::body_count(&self) -> usize
 pub fn alice_physics::solver::PhysicsWorld::body_filter(&self, usize) -> alice_physics::filter::CollisionFilter
+pub fn alice_physics::solver::PhysicsWorld::broadphase(&self) -> alice_physics::solver::Broadphase
+pub fn alice_physics::solver::PhysicsWorld::broadphase_proxy_aabb(&self, usize) -> core::option::Option<alice_physics::collider::AABB>
+pub fn alice_physics::solver::PhysicsWorld::broadphase_stats(&self) -> alice_physics::solver::BroadphaseStats
 pub fn alice_physics::solver::PhysicsWorld::clear_body_collision_radius(&mut self, usize)
 pub fn alice_physics::solver::PhysicsWorld::clear_contact_modifiers(&mut self)
 pub fn alice_physics::solver::PhysicsWorld::clear_contacts(&mut self)
 pub fn alice_physics::solver::PhysicsWorld::clear_pre_solve_hooks(&mut self)
 pub fn alice_physics::solver::PhysicsWorld::colliders_overlap(&self, usize, usize) -> bool
 pub fn alice_physics::solver::PhysicsWorld::combined_material(&self, usize, usize) -> alice_physics::material::CombinedMaterial
+pub fn alice_physics::solver::PhysicsWorld::contact_arrows(&self, alice_physics::math::Fix128) -> alloc::vec::Vec<alice_physics::contact_viz::ContactArrow>
 pub fn alice_physics::solver::PhysicsWorld::contact_events(&self) -> &[alice_physics::event::ContactEvent]
+pub fn alice_physics::solver::PhysicsWorld::contact_forces(&self, alice_physics::math::Fix128) -> alloc::vec::Vec<(alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128)>
+pub fn alice_physics::solver::PhysicsWorld::contact_friction_arrows(&self, alice_physics::math::Fix128) -> alloc::vec::Vec<alice_physics::contact_viz::ContactArrow>
+pub fn alice_physics::solver::PhysicsWorld::contact_friction_cones(&self, alice_physics::math::Fix128) -> alloc::vec::Vec<alice_physics::contact_viz::FrictionCone>
 pub fn alice_physics::solver::PhysicsWorld::deserialize_state(&mut self, &[u8]) -> bool
 pub fn alice_physics::solver::PhysicsWorld::drain_contact_events(&mut self) -> alloc::vec::Vec<alice_physics::event::ContactEvent>
 pub fn alice_physics::solver::PhysicsWorld::drain_trigger_events(&mut self) -> alloc::vec::Vec<alice_physics::event::TriggerEvent>
@@ -19919,6 +19988,7 @@ pub fn alice_physics::solver::PhysicsWorld::set_body_collision_radius(&mut self,
 pub fn alice_physics::solver::PhysicsWorld::set_body_filter(&mut self, usize, alice_physics::filter::CollisionFilter)
 pub fn alice_physics::solver::PhysicsWorld::set_body_material(&mut self, usize, alice_physics::material::MaterialId)
 pub fn alice_physics::solver::PhysicsWorld::set_body_shape(&mut self, usize, &alice_physics::shape::Shape) -> bool
+pub fn alice_physics::solver::PhysicsWorld::set_broadphase(&mut self, alice_physics::solver::Broadphase)
 pub fn alice_physics::solver::PhysicsWorld::set_gpu_solver_bridge(&mut self, core::option::Option<alloc::boxed::Box<(dyn alice_physics::gpu_bridge::GpuSolverBridge + core::marker::Send + core::marker::Sync)>>)
 pub fn alice_physics::solver::PhysicsWorld::set_sdf_collision_radius(&mut self, alice_physics::math::Fix128)
 pub fn alice_physics::solver::PhysicsWorld::set_sleep_config(&mut self, alice_physics::sleeping::SleepConfig)
