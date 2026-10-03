@@ -39,9 +39,6 @@ unwired src/bridging.rs::z_delta_mm
 unwired src/buckling.rs::plate_buckling_mpa
 unwired src/buckling.rs::snap_through_load_n
 unwired src/buoyancy_zone.rs::depth_below_surface
-unwired src/buoyancy_zone.rs::force_on
-unwired src/buoyancy_zone.rs::signed_depth_below_surface
-unwired src/buoyancy_zone.rs::submerged_fraction
 unwired src/buoyancy_zone.rs::water_pool
 unwired src/bvh.rs::build_dynamic
 unwired src/bvh.rs::clear_dynamic
@@ -255,8 +252,3 @@ unwired src/vibration_wall.rs::analyze_wall_resonance
 unwired src/vibration_wall.rs::default_excitation_sources
 unwired src/warp_risk.rs::enclosed_abs
 unwired src/warp_risk.rs::rectangle
-unwired src/wind_zone.rs::force_on
-unwired src/wind_zone.rs::force_on_particle
-unwired src/wind_zone.rs::instantaneous_wind_vector
-unwired src/wind_zone.rs::light_breeze
-unwired src/wind_zone.rs::storm

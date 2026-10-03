@@ -289,6 +289,19 @@ required-features = ["std"]
 name = "character_controller"
 required-features = ["std"]
 
+# Production entry point for `WindZone` (wiring_guard: src/wind_zone.rs had
+# zero production callers across 5 items: force_on, force_on_particle,
+# instantaneous_wind_vector, light_breeze, storm — only this module's own
+# #[cfg(test)] unit tests called in, which the guard does not count). Note:
+# `force_on` also exists on `src/buoyancy_zone.rs`'s `BuoyancyZone`, which is
+# a distinct, still-unwired item (`wiring-baseline.txt` line 42) — the guard
+# matches bare identifiers, not qualified paths, so wiring this `force_on`
+# flips BOTH same-named items to wired (see this crate's own
+# `scripts/wiring_guard.py` docstring, limitation (1)).
+[[example]]
+name = "wind_zone_forces"
+required-features = ["std"]
+
 [[bench]]
 name = "physics_bench"
 harness = false
