@@ -317,11 +317,9 @@ fn zero_spread_does_not_consume_random_numbers() {
     assert_ne!(used2.next_u64(), fresh2.next_u64());
 }
 
-/// Known defect (Backlog ALICE-Physics particle live cap): the cap check is inverted. At
-/// `alive >= max_particles` a dead slot is *recycled*, which raises the live count past the cap
-/// (4 alive + 1 dead slot with `max_particles = 4` ends the step with 5 alive).
+/// The live cap is never exceeded even when dead slots exist (before the fix a dead slot was
+/// recycled at `alive >= max_particles`: 4 alive + 1 dead with cap 4 ended with 5 alive).
 #[test]
-#[ignore = "known defect: ParticleSystem::emit_particles recycles dead slots when alive >= max_particles (Backlog ALICE-Physics particle live cap)"]
 fn live_count_never_exceeds_the_cap_when_dead_slots_exist() {
     let mut ps = system(4, Vec3Fix::ZERO, Fix128::ONE);
     for _ in 0..4 {
@@ -352,11 +350,10 @@ fn live_count_never_exceeds_the_cap_when_dead_slots_exist() {
     assert!(ps.alive_count() <= 4, "alive {} > cap 4", ps.alive_count());
 }
 
-/// Known defect (Backlog ALICE-Physics particle): when the pool is not full, a new
+/// Dead slots are reused: when the pool is not full, a new
 /// particle is pushed even though dead slots exist, so a steady emitter below the
 /// cap grows `particles` without bound (a dead entry per emission, iterated every step).
 #[test]
-#[ignore = "known defect: ParticleSystem::emit_particles pushes instead of reusing dead slots below the cap (Backlog ALICE-Physics particle slot leak)"]
 fn steady_emission_below_the_cap_does_not_grow_the_pool() {
     let mut ps = system(64, Vec3Fix::ZERO, Fix128::ONE);
     ps.add_emitter(emitter(16, r(1, 8), Vec3Fix::UNIT_Y, 1, Fix128::ZERO)); // 1 per step, lives 2 steps
@@ -366,7 +363,7 @@ fn steady_emission_below_the_cap_does_not_grow_the_pool() {
     }
     assert!(ps.alive_count() <= 3);
     assert!(
-        ps.particles.len() <= 64,
+        ps.particles.len() <= 4,
         "pool length {}",
         ps.particles.len()
     );
@@ -418,39 +415,24 @@ fn max_deflection(spread: Fix128, n: usize) -> (f64, f64) {
     (max_angle, speed_dev)
 }
 
+/// `spread_angle` is the full apex angle of the emission cone (doc: "0 = focused beam,
+/// PI = hemisphere": a full apex angle of PI is a hemisphere), so the largest deflection
+/// from the direction is `spread / 2`: no particle goes beyond it and the cone is filled up to it.
 #[test]
-fn spread_keeps_speed_and_stays_inside_the_cone_set_by_the_blend() {
-    // implementation: v_hat = normalize(d + t r_hat), t = spread / pi, so the deflection is
-    // at most asin(t) (t < 1) and at most 90 degrees (t = 1, the documented hemisphere)
+fn spread_is_the_full_cone_angle_and_keeps_the_speed() {
+    use std::f64::consts::PI;
     for (spread, bound) in [
-        (r(1, 2), (0.5f64 / std::f64::consts::PI).asin()),
-        (Fix128::PI, std::f64::consts::FRAC_PI_2),
+        (Fix128::from_f64(PI / 6.0), PI / 12.0),
+        (Fix128::from_f64(PI / 4.0), PI / 8.0),
+        (Fix128::HALF_PI, PI / 4.0),
+        (Fix128::PI, PI / 2.0),
+        (Fix128::from_int(5), PI / 2.0), // beyond PI the cone stays a hemisphere
     ] {
-        let (angle, speed_dev) = max_deflection(spread, 2000);
-        assert!(
-            speed_dev < 1e-9,
-            "speed is initial_speed for any spread: {speed_dev}"
-        );
-        assert!(angle <= bound + 1e-6, "{angle} > {bound}");
-        assert!(
-            angle > 0.9 * bound,
-            "the cone is filled: {angle} vs {bound}"
-        );
+        let (angle, speed_dev) = max_deflection(spread, 4000);
+        assert!(speed_dev < 1e-9, "speed is initial_speed: {speed_dev}");
+        assert!(angle <= bound + 1e-6, "max deflection {angle} > {bound}");
+        assert!(angle > bound - 0.05, "cone not filled: {angle} vs {bound}");
     }
-}
-
-/// Doc says `spread_angle` is "Spread angle in radians (0 = focused beam, PI = hemisphere)".
-/// The hemisphere end is exact, the middle is not a cone angle: spread = pi/2 reaches
-/// only asin(1/2) = 30 degrees, not 90.
-#[test]
-#[ignore = "known defect: spread_angle is not the cone half-angle (Backlog ALICE-Physics particle spread_angle)"]
-fn spread_angle_is_the_cone_half_angle_in_radians() {
-    let spread = Fix128::HALF_PI;
-    let (angle, _) = max_deflection(spread, 2000);
-    assert!(
-        (angle - std::f64::consts::FRAC_PI_2).abs() < 0.05,
-        "{angle}"
-    );
 }
 
 // ------------------------------------------------------- force fields
@@ -752,4 +734,59 @@ fn emission_is_reproducible_for_a_given_seed_and_differs_across_seeds() {
     };
     assert_eq!(run(11), run(11));
     assert_ne!(run(11), run(12));
+}
+
+#[test]
+fn a_dead_slot_is_revived_with_the_emitter_state_before_the_pool_grows() {
+    let mut ps = system(4, Vec3Fix::ZERO, Fix128::ONE);
+    ps.particles.push(Particle::new(
+        Vec3Fix::from_int(9, 9, 9),
+        Vec3Fix::ZERO,
+        Fix128::from_int(100),
+        Fix128::ONE,
+    ));
+    let mut dead = Particle::new(
+        Vec3Fix::from_int(7, 7, 7),
+        Vec3Fix::from_int(5, 5, 5),
+        Fix128::from_int(1),
+        Fix128::from_int(9),
+    );
+    dead.alive = false;
+    dead.age = Fix128::from_int(5);
+    ps.particles.push(dead);
+    let e = ParticleEmitter::new(
+        Vec3Fix::from_int(4, 5, 6),
+        Vec3Fix::UNIT_X,
+        Fix128::ZERO,
+        Fix128::from_int(16),
+        Fix128::from_int(2),
+        Fix128::from_int(7),
+        Fix128::from_int(3),
+    );
+    ps.add_emitter(e);
+    let mut rng = DeterministicRng::new(1);
+    ps.step(r(DT.0, DT.1), &mut rng);
+    assert_eq!(
+        ps.particles.len(),
+        2,
+        "the dead slot is reused, the pool does not grow"
+    );
+    let p = &ps.particles[1];
+    assert!(p.alive);
+    assert_eq!(p.mass, Fix128::from_int(3));
+    assert_eq!(p.lifetime, Fix128::from_int(7));
+    assert_eq!(p.velocity, Vec3Fix::from_int(2, 0, 0));
+    assert_eq!(
+        p.age,
+        r(1, 16),
+        "age restarts at 0 and is advanced once by the same step"
+    );
+    assert_eq!(
+        p.position,
+        Vec3Fix::new(
+            Fix128::from_int(4) + r(1, 8),
+            Fix128::from_int(5),
+            Fix128::from_int(6)
+        )
+    );
 }
