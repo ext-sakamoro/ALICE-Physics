@@ -28,9 +28,6 @@ unwired src/deformable.rs::new_cube
 unwired src/deformable.rs::resolve_rigid_body_collisions
 unwired src/electromagnetic.rs::lorentz_force
 unwired src/electromagnetic.rs::lorentz_force_sum
-unwired src/erosion.rs::compute_exposure_from_normals
-unwired src/erosion.rs::erosion_at
-unwired src/erosion.rs::set_exposure_at
 unwired src/eulerian_grid.rs::bytes
 unwired src/eulerian_grid.rs::bytes
 unwired src/eulerian_grid.rs::bytes
@@ -63,8 +60,6 @@ unwired src/motor.rs::set_rotation_target
 unwired src/motor.rs::set_velocity_target
 unwired src/particle.rs::add_emitter
 unwired src/particle.rs::apply_force_field
-unwired src/phase_change.rs::Phase
-unwired src/phase_change.rs::phase_at
 unwired src/physics2d.rs::apply_force
 unwired src/physics2d.rs::apply_impulse_at_point
 unwired src/physics2d.rs::distance_to
@@ -106,7 +101,6 @@ unwired src/solver_tgs_hooks_6dof_scoped.rs::solve_islands_serial
 unwired src/support_volume.rs::filament_length_m
 unwired src/support_volume.rs::is_nontrivial
 unwired src/support_volume.rs::quality
-unwired src/thermal.rs::add_heat_point
 unwired src/thermal_stress.rs::yield_temperature_c
 unwired src/vehicle.rs::grounded_wheels
 unwired src/vehicle.rs::shift_down
