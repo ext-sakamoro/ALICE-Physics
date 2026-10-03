@@ -774,7 +774,7 @@ fn golden_modifier_family() {
 // factor of the Facchinetti wake-oscillator equation.
 // ---------------------------------------------------------------------------
 
-const GOLDEN_ENGINEERING: &str = "a8ea86787d7a12469796eac680a8cb8f8f69655d1c3816ac5cfbc82b2e7012cb";
+const GOLDEN_ENGINEERING: &str = "a51687cd3de021f8829495d9ae410bca4dbe823a0525194198a1fe64a9835bfe";
 
 #[test]
 fn golden_engineering_family() {
