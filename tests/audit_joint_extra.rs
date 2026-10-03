@@ -1,4 +1,4 @@
-//! Audit S3-1 oracles for `joint_extra` (pulley / gear / weld / rack-and-pinion / mouse).
+//! Audit oracles for `joint_extra` (pulley / gear / weld / rack-and-pinion / mouse).
 //!
 //! Existing oracles (`analytic_joint_extra_wiring`) cover the builders, the
 //! break comparisons, `total_length` for identity rotations and "dispatches

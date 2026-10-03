@@ -1,4 +1,4 @@
-//! Audit S3-1 oracles for `plane_collider::PlaneCollider`.
+//! Audit oracles for `plane_collider::PlaneCollider`.
 //!
 //! Closed forms: Hessian form `n.p = d`; signed distance `n.p - d`; sphere
 //! penetration `r - |dist|`; box penetration = deepest of the 8 corners (brute
