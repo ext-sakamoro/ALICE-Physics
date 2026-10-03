@@ -411,6 +411,19 @@ required-features = ["std"]
 name = "collision_mesh_generation"
 required-features = ["std"]
 
+# Production entry point for the ModifiedSdf builder/management API
+# (wiring_guard: src/sim_modifier.rs had zero production callers across all
+# 5 items: add_modifier, clear_modifiers, modifier_count, modifier_mut,
+# with_modifier -- only the module's own #[cfg(test)] unit tests called in,
+# which the guard does not count). This is the Vec<Box<dyn PhysicsModifier>>
+# collection API itself (push/pop/count/mutate-by-index), distinct from this
+# crate's separate, already-resolved Backlog question of whether individual
+# modifiers (thermal/phase_change/pressure/erosion/fracture) can read each
+# other's fields.
+[[example]]
+name = "sim_modifier_management"
+required-features = ["std"]
+
 [[bench]]
 name = "physics_bench"
 harness = false
