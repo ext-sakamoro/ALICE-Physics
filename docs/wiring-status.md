@@ -1,17 +1,189 @@
 # ALICE-Physics Wiring Status
 
-**Last updated:** 2026-10-03 10:15
+**Last updated:** 2026-10-03 10:29
 
 ## Status
 
-✅ **All clear** — No wiring violations detected
+🟡 **162 baseline items** — Permitted violations, ratchet in place
 
-### Checks
+---
 
-- ✅ **Dead Code Guard**: No unchecked `#[allow(dead_code)]`
-- ✅ **Unwired Items**: No unused public items
-- ✅ **Stale Baseline**: No obsolete baseline entries
-- ✅ **Brace Balance**: No unbalanced braces
+## 📋 Baseline (162 permitted)
+
+Violations explicitly allowed via `scripts/wiring-baseline.txt`.
+Must resolve or remove from baseline to reduce ratchet.
+
+### Dead Code (9)
+
+```
+dead_code src/beam_stress.rs 1
+dead_code src/bvh.rs 2
+dead_code src/interface_capture.rs 3
+dead_code src/solver_tgs.rs 1
+dead_code src/solver_tgs_hooks.rs 1
+dead_code src/solver_tgs_hooks_6dof.rs 1
+dead_code src/solver_tgs_hooks_6dof_oriented.rs 1
+dead_code src/solver_tgs_hooks_6dof_oriented_scoped.rs 1
+dead_code src/solver_tgs_hooks_6dof_scoped.rs 1
+```
+
+### Unwired Items (153)
+
+```
+unwired src/aeroelasticity.rs::facchinetti_reference
+unwired src/aeroelasticity.rs::seeded
+unwired src/aeroelasticity.rs::viv_step
+unwired src/beam_stress.rs::with_end_condition
+unwired src/beam_stress.rs::with_min_fos
+unwired src/bridging.rs::unsafe_checks
+unwired src/bridging.rs::z_delta_mm
+unwired src/buckling.rs::plate_buckling_mpa
+unwired src/buckling.rs::snap_through_load_n
+unwired src/buoyancy_zone.rs::depth_below_surface
+unwired src/buoyancy_zone.rs::water_pool
+unwired src/bvh.rs::build_dynamic
+unwired src/bvh.rs::clear_dynamic
+unwired src/bvh.rs::insert_dynamic
+unwired src/bvh.rs::query_pairs
+unwired src/character_state.rs::accepts_locomotion
+unwired src/character_state.rs::name
+unwired src/character_state.rs::standing
+unwired src/character_state.rs::transition
+unwired src/cloth.rs::remaining_self_contact_crossings
+unwired src/cloth_fluid.rs::apply_cloth_boundary_to_fluid
+unwired src/cloth_fluid.rs::apply_cloth_boundary_to_fluid_with_residual
+unwired src/cloth_fluid.rs::apply_fluid_forces_to_cloth
+unwired src/cloth_fluid.rs::apply_fluid_forces_to_cloth_with_residual
+unwired src/convex_mesh_builder.rs::build_convex_hull
+unwired src/creep_longterm.rs::petg_25c_moderate
+unwired src/damping_rayleigh.rs::damping_ratio
+unwired src/damping_rayleigh.rs::fit_two_modes
+unwired src/damping_rayleigh.rs::hz_to_omega
+unwired src/damping_rayleigh.rs::omega_to_hz
+unwired src/deformable.rs::center_of_mass
+unwired src/deformable.rs::new_cube
+unwired src/deformable.rs::resolve_rigid_body_collisions
+unwired src/dynamic_bvh.rs::height
+unwired src/dynamic_bvh.rs::proxy_count
+unwired src/dynamic_bvh.rs::user_data
+unwired src/electromagnetic.rs::lorentz_force
+unwired src/electromagnetic.rs::lorentz_force_sum
+unwired src/erosion.rs::compute_exposure_from_normals
+unwired src/erosion.rs::erosion_at
+unwired src/erosion.rs::set_exposure_at
+unwired src/eulerian_grid.rs::bytes
+unwired src/eulerian_grid.rs::bytes
+unwired src/eulerian_grid.rs::bytes
+unwired src/eulerian_grid.rs::bytes
+unwired src/eulerian_grid.rs::enforce_slab_face_boundaries_over
+unwired src/eulerian_grid.rs::project_pressure_decomposed_on_rank
+unwired src/eulerian_grid.rs::project_pressure_slab_local_on_rank
+unwired src/eulerian_grid.rs::set_u
+unwired src/eulerian_grid.rs::set_v
+unwired src/eulerian_grid.rs::set_w
+unwired src/event.rs::has_events
+unwired src/fatigue.rs::aluminum_a5052
+unwired src/fatigue.rs::analyze_spectrum
+unwired src/fatigue.rs::steel_sus304
+unwired src/fatigue.rs::stress_at_cycles
+unwired src/fillet_stress.rs::kt_circular_hole_infinite_plate
+unwired src/fillet_stress.rs::kt_elliptical_hole
+unwired src/fillet_stress.rs::kt_u_notch_axial
+unwired src/fillet_stress.rs::recommended_fillet_radius_mm
+unwired src/fluid.rs::new_block
+unwired src/fracture.rs::active_crack_count
+unwired src/fracture.rs::apply_stress_at
+unwired src/fracture.rs::stress_at
+unwired src/ik_physics_bridge.rs::blended
+unwired src/ik_physics_bridge.rs::snap
+unwired src/interface_capture.rs::plic_normal
+unwired src/interface_capture.rs::plic_plane_offset
+unwired src/interface_capture.rs::truncated_cube_volume
+unwired src/mass_properties.rs::cylinder_mass_properties
+unwired src/math_util.rs::cbrt_fix
+unwired src/math_util.rs::clamp_fix
+unwired src/math_util.rs::pow_int
+unwired src/metric.rs::lipschitz
+unwired src/metric.rs::norm
+unwired src/metric.rs::weights
+unwired src/motor.rs::apply_motors
+unwired src/motor.rs::disable
+unwired src/motor.rs::set_rotation_target
+unwired src/motor.rs::set_velocity_target
+unwired src/netcode.rs::advance_frame
+unwired src/netcode.rs::dt
+unwired src/netcode.rs::get_snapshot
+unwired src/netcode.rs::snapshot_count
+unwired src/netcode_prediction.rs::drop_acknowledged
+unwired src/netcode_prediction.rs::head_snapshot
+unwired src/netcode_prediction.rs::inputs
+unwired src/netcode_prediction.rs::reconcile
+unwired src/particle.rs::add_emitter
+unwired src/particle.rs::apply_force_field
+unwired src/phase_change.rs::Phase
+unwired src/phase_change.rs::phase_at
+unwired src/physics2d.rs::apply_force
+unwired src/physics2d.rs::apply_impulse_at_point
+unwired src/physics2d.rs::distance_to
+unwired src/plastic.rs::petg_room_temp
+unwired src/plastic.rs::uniaxial_x
+unwired src/plastic.rs::with_hardening
+unwired src/pressure.rs::apply_impact
+unwired src/pressure.rs::apply_pressure_at
+unwired src/pressure.rs::deformation_at
+unwired src/pressure.rs::pressure_at
+unwired src/print_orientation.rs::axis_x
+unwired src/print_orientation.rs::axis_y
+unwired src/print_orientation.rs::optimize_grid
+unwired src/quadratic_elastic_fem.rs::edge_count
+unwired src/quadratic_elastic_fem.rs::edge_node
+unwired src/ragdoll.rs::child
+unwired src/ragdoll.rs::human_female
+unwired src/rng.rs::new_with_stream
+unwired src/rng.rs::next_bounded
+unwired src/rope_attach.rs::compliance
+unwired src/rope_attach.rs::solve_rope_attachments
+unwired src/scene_io.rs::CURRENT_SCENE_VERSION
+unwired src/scene_io.rs::load_scene_json
+unwired src/scene_io.rs::save_scene_json
+unwired src/sdf_adaptive.rs::invalidate
+unwired src/sdf_adaptive.rs::invalidate_all
+unwired src/sdf_ccd.rs::batch_sphere_trace_sdf
+unwired src/sdf_ccd.rs::ray_march_sdf
+unwired src/sdf_ccd.rs::sphere_trace_sdf
+unwired src/sdf_character.rs::GroundContact
+unwired src/sdf_character.rs::ground_contact
+unwired src/sdf_character.rs::is_grounded
+unwired src/sdf_manifold.rs::deepest
+unwired src/sdf_manifold.rs::generate_sdf_manifold
+unwired src/sdf_sph.rs::populated_cell_count
+unwired src/sleeping.rs::build_islands
+unwired src/soft_body_cut.rs::CutPlane
+unwired src/soft_body_cut.rs::CutResult
+unwired src/soft_body_cut.rs::cut_cloth
+unwired src/soft_body_cut.rs::cut_deformable
+unwired src/solver_tgs.rs::par_dispatch_islands
+unwired src/solver_tgs_hooks_6dof_oriented.rs::local_to_world
+unwired src/solver_tgs_hooks_6dof_oriented_scoped.rs::solve_oriented_islands_parallel
+unwired src/solver_tgs_hooks_6dof_scoped.rs::solve_island_isolated
+unwired src/solver_tgs_hooks_6dof_scoped.rs::solve_islands_parallel
+unwired src/solver_tgs_hooks_6dof_scoped.rs::solve_islands_serial
+unwired src/structural_solver.rs::StructuralHistory
+unwired src/structural_solver.rs::run
+unwired src/support_volume.rs::filament_length_m
+unwired src/support_volume.rs::is_nontrivial
+unwired src/support_volume.rs::quality
+unwired src/surface_tension_csf.rs::SIGMA_MERCURY_AIR
+unwired src/surface_tension_csf.rs::SIGMA_PLA_AIR
+unwired src/surface_tension_csf.rs::SIGMA_STEEL_ARGON
+unwired src/thermal.rs::add_heat_point
+unwired src/thermal_stress.rs::yield_temperature_c
+unwired src/vehicle.rs::grounded_wheels
+unwired src/vehicle.rs::shift_down
+unwired src/vehicle.rs::shift_up
+unwired src/warp_risk.rs::enclosed_abs
+unwired src/warp_risk.rs::rectangle
+```
 
 ---
 
@@ -24,6 +196,10 @@ The wiring guard ensures that all public items in `src/` are actually called fro
 - **Stale Baseline**: Ensures baseline entries are still needed
 - **Brace Balance**: Checks syntax integrity
 
-Violations are tracked in `scripts/wiring-baseline.txt` and must be explicitly allowed.
+### Resolving Violations
+
+1. **New violations**: Either implement/wire the item, or add to `scripts/wiring-baseline.txt`
+2. **Baseline cleanup**: Remove lines from baseline as violations are resolved
+3. **Comments**: Add `// ALLOW-DEAD:` or `// ALLOW-UNWIRED:` with reason (12+ chars)
 
 For details: see `scripts/wiring_guard.py`
