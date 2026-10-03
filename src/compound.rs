@@ -157,6 +157,38 @@ impl CompoundShape {
         self.dirty = true;
     }
 
+    /// A compound of the convex pieces of a decomposed SDF: one hull child per
+    /// piece, at the origin, so the compound is in the SDF's own coordinates.
+    ///
+    /// Together the hulls are the *concave* solid the SDF describes, up to the
+    /// grid's resolution (a hull is smaller than the solid by up to a cell per
+    /// side), where a single convex hull would fill every dent.
+    #[cfg(feature = "std")]
+    #[must_use]
+    pub fn from_decomposition(result: &crate::convex_decompose::DecompositionResult) -> Self {
+        let mut compound = Self::new();
+        for hull in &result.hulls {
+            compound.add_convex_hull(hull.clone(), Vec3Fix::ZERO, QuatFix::IDENTITY);
+        }
+        compound
+    }
+
+    /// Decompose `sdf` inside `[min, max]` ([`crate::convex_decompose::decompose_sdf`])
+    /// and build the compound of its convex pieces
+    /// ([`from_decomposition`](Self::from_decomposition)).
+    #[cfg(feature = "std")]
+    #[must_use]
+    pub fn from_sdf(
+        sdf: &dyn crate::sdf_collider::SdfField,
+        min: Vec3Fix,
+        max: Vec3Fix,
+        config: &crate::convex_decompose::DecomposeConfig,
+    ) -> Self {
+        Self::from_decomposition(&crate::convex_decompose::decompose_sdf(
+            sdf, min, max, config,
+        ))
+    }
+
     /// Add a box child
     pub fn add_box(&mut self, obox: OrientedBox, position: Vec3Fix, rotation: QuatFix) {
         self.children.push(CompoundChild {
