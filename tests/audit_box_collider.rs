@@ -5,7 +5,7 @@
 //! an independent f64 Rodrigues rotation. Nothing is obtained by calling the
 //! box's own methods to produce the expected value.
 
-#![allow(clippy::disallowed_methods)]
+#![allow(clippy::disallowed_methods, clippy::needless_range_loop)]
 
 use alice_physics::box_collider::OrientedBox;
 use alice_physics::collider::Support;
@@ -59,7 +59,7 @@ fn cases() -> Vec<Case> {
         [1.0, -2.0, 3.0],
         [-0.3, 0.8, 0.5],
     ];
-    let angs = [0.0, 0.3, 0.7853981633974483, 1.2, 2.5, -1.1, 3.0];
+    let angs = [0.0, 0.3, std::f64::consts::FRAC_PI_4, 1.2, 2.5, -1.1, 3.0];
     let halves = [[1.0, 1.0, 1.0], [2.0, 0.5, 1.5], [0.25, 3.0, 0.75]];
     let centers = [[0.0, 0.0, 0.0], [3.0, -2.0, 5.0], [-10.5, 7.25, 0.125]];
     let mut out = Vec::new();

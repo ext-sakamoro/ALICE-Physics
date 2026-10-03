@@ -6,7 +6,7 @@
 //! ceiling-division workgroup count, and the closed-form unit-sphere SDF.
 
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
+#![allow(clippy::disallowed_methods, clippy::needless_range_loop)]
 
 use alice_physics::gpu_sdf::{
     batch_size, execute_batch_cpu, GpuDispatchConfig, GpuSdfBatch, GpuSdfContact,

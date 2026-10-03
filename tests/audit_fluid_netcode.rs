@@ -6,7 +6,7 @@
 //! module's own serialiser.
 
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
+#![allow(clippy::disallowed_methods, clippy::needless_range_loop)]
 
 use alice_physics::fluid_netcode::{FluidDelta, FluidSnapshot};
 use alice_physics::math::{Fix128, Vec3Fix};

@@ -5,7 +5,7 @@
 //! quadrature of the solid for the centre of mass and the inertia about it, and
 //! an independent f64 Rodrigues rotation for the oriented cases.
 
-#![allow(clippy::disallowed_methods)]
+#![allow(clippy::disallowed_methods, clippy::needless_range_loop)]
 
 use alice_physics::collider::Support;
 use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
