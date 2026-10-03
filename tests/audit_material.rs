@@ -1,6 +1,7 @@
 //! Audit oracle for `material`: combine rules, pair table, preset constants,
 //! ID assignment. Expected values come from hand arithmetic / integer rational checks.
 #![cfg(feature = "std")]
+#![allow(clippy::type_complexity)]
 
 use alice_physics::material::{CombineRule, MaterialTable, PhysicsMaterial, DEFAULT_MATERIAL};
 use alice_physics::math::Fix128;
