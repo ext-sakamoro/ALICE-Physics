@@ -1,15 +1,15 @@
 # ALICE-Physics Oracle Status
 
-**Last updated:** 2026-10-03 10:25
+**Last updated:** 2026-10-03 10:39
 
 ## Summary
 
 | Category | Count |
 |----------|-------|
-| 🟢 Implemented | 2099 |
+| 🟢 Implemented | 2143 |
 | 🟡 Partial | 0 |
 | 🔴 Pending | 27 |
-| **Total** | **2126** |
+| **Total** | **2170** |
 
 ## 🔴 Pending (27)
 
@@ -43,12 +43,14 @@ Oracle tests not yet implemented (marked with `#[ignore]`).
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / A…
 
-## 🟢 Implemented (2099)
+## 🟢 Implemented (2143)
 
 Oracle tests with implementation complete and passing.
 
+- `a_ball_meshes_to_a_closed_sphere` (analytic_collision_mesh.rs)
 - `a_body_dropped_on_a_floor_rests_one_radius_above_it` (analytic_static_collider.rs)
 - `a_body_flush_with_the_grid_deposits_its_whole_heat_into_the_dual_ledger` (analytic_plastic_dissipation.rs)
+- `a_body_rests_on_the_mesh_of_a_ball` (analytic_collision_mesh.rs)
 - `a_body_s_own_collision_radius_is_the_sphere_tested` (analytic_static_collider.rs)
 - `a_body_without_a_radius_uses_the_default_collision_radius` (analytic_static_collider.rs)
 - `a_boundary_index_past_the_end_is_refused_and_does_not_panic` (analytic_hyperelastic_degenerate.rs)
@@ -56,6 +58,7 @@ Oracle tests with implementation complete and passing.
 - `a_box_dropped_on_a_floor_box_rests_on_its_top_face` (analytic_convex_contact.rs)
 - `a_box_has_the_textbook_mass_and_inertia` (analytic_mass_properties.rs)
 - `a_box_lands_flat_on_a_ball_by_its_face_centre` (analytic_sdf_body_collider.rs)
+- `a_box_mesh_has_the_boxs_bounding_box` (analytic_collision_mesh.rs)
 - `a_box_on_a_static_box_is_lifted_by_the_whole_depth` (analytic_convex_contact.rs)
 - `a_budget_of_one_sweep_is_reported_as_not_converged` (analytic_thermoplastic_coupling.rs)
 - `a_capsule_matches_a_quadrature_of_its_solid` (analytic_mass_properties.rs)
@@ -74,11 +77,8 @@ Oracle tests with implementation complete and passing.
 - `a_cone_and_a_wedge_sit_on_the_floor_by_their_centre_of_mass` (analytic_convex_contact.rs)
 - `a_configuration_without_a_law_is_refused` (analytic_cubic_hyperelastic.rs)
 - `a_configuration_without_a_law_is_refused` (analytic_quadratic_hyperelastic.rs)
-- `a_configuration_without_a_law_is_refused_on_both_elements` (analytic_hyperelastic_degenerate.rs)
-- `a_consistent_charge_keeps_gauss_exact_and_an_inconsistent_one_is_carried` (analytic_maxwell_wiring.rs)
-- `a_contact_does_not_add_velocity_away_from_the_surface` (analytic_sdf_character_up_axis.rs)
 
-... and 2069 more
+... and 2113 more
 
 ---
 
