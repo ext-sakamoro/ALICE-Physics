@@ -16,6 +16,11 @@ Memory index pointer: `[[reference-alice-physics-v1-roadmap]]` in claude-config.
 | Maxwell FDTD | `ecd8c61` | source-free Yee、⚠️ **SI は `ε₀·μ₀` が 7.7 bit で不可**、正規化単位 + `S=9/16` |
 | 多体 ABA | `1bab99b` | ⚠️ **`solve()` が `link.joint` を読まない**状態から real ABA、oracle 12 本 |
 
+### 第 47 increment (2026-10-03、全配線 program 第 17 件 — `prestressed`/`piezoelectric`/`rolling_contact`/`sdf_force` 未配線 28 item)
+
+worker 4 本、全て src 無変更 変異: prestressed 7/7 (実装) + 2/5 (guard、3 件は Fix128::Div のゼロ除算契約と算術等価)、piezoelectric 11/12 red (permittivity 単独配線変異は voltage_from_force/force_from_voltage が残る限り推移的到達性で観測不能)、rolling_contact 14/14、sdf_force 15/17 (生存 2 件は算術的に等価、`contain` の境界 off-by-one は dist=0 で push が恒等的に 0 になる式の性質、`apply_sdf_force_fields` の is_static skip は inv_mass=0 と同一条件の性能最適化) baseline 28 行退役 (実配線 27、名前衝突の巻き込み 1 = `force.rs::with_affected_bodies`、Backlog 記録済) production entry point: `examples/prestressed_joints_and_cables.rs` / `examples/piezoelectric_materials.rs` / `examples/rolling_contact_fatigue.rs` / `examples/sdf_force_fields.rs`
+⚠️ worker 実測 (未修正、Backlog): rolling_contact.rs は f32 ベースで engineering module family の他 (fatigue/laminate_failure) の Fix128 決定論と不整合 / sdf_force の `attract` は `min(strength*|dist|, max_force)` clamp が Fix128 の表現域境界付近 (`|dist| ~ 4.6e18`) で `strength*dist_fix` 自体が mod-2^128 wrap するため `min()` が意図した値と比較できず破られる (通常の大距離 1e9 等では問題なし)
+
 ### 第 40 increment (2026-10-03、全配線 program 第 9 件 (F3a) — 凸形状どうしの GJK/EPA narrow-phase)
 
 形状つき body (F1) は衝突が外接球どうしのままだったので、箱どうしが球として検出されていた `collider::contact(a, b)` (GJK の後に EPA、追加のみ) と、`PhysicsWorld::{set_body_shape, colliders_overlap}`、`PosedShape` (姿勢つきの `Shape` を `Support` にする) を足した `add_shaped_body` は形状を body に付け、**両方の body が形状を持つ組は GJK/EPA の接触で決める** (片方でも持たなければ従来の球どうし) 接触の法線は B→A、depth は分離に要る最短の並進
