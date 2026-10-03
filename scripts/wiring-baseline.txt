@@ -8,9 +8,6 @@ dead_code src/solver_tgs_hooks_6dof.rs 1
 dead_code src/solver_tgs_hooks_6dof_oriented.rs 1
 dead_code src/solver_tgs_hooks_6dof_oriented_scoped.rs 1
 dead_code src/solver_tgs_hooks_6dof_scoped.rs 1
-unwired src/aeroelasticity.rs::facchinetti_reference
-unwired src/aeroelasticity.rs::seeded
-unwired src/aeroelasticity.rs::viv_step
 unwired src/beam_stress.rs::with_end_condition
 unwired src/beam_stress.rs::with_min_fos
 unwired src/bridging.rs::unsafe_checks
