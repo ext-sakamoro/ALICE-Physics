@@ -1764,3 +1764,66 @@ pub fn reactions(
         .map(|n| [force[n * 3], force[n * 3 + 1], force[n * 3 + 2]])
         .collect())
 }
+
+/// What an adaptive quadratic run produced.
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub struct AdaptiveQuadraticSolution {
+    /// The final straight-edged corner mesh, refined where the estimator asked.
+    pub mesh: SdfTetMesh,
+    /// The quadratic mesh built from [`Self::mesh`] — the one `field` is indexed by.
+    pub high_order: QuadraticMesh,
+    /// The solution on that mesh.
+    pub field: FemSolution,
+    /// Solves performed, at least one and at most `max_rounds`.
+    pub rounds: u32,
+    /// `Σ_e η_e²` after each solve, oldest first.
+    pub total_indicator_history: Vec<Fix128>,
+}
+
+/// Solve, estimate, mark, refine, repeat — on the quadratic element.
+///
+/// The quadratic counterpart of [`crate::linear_elastic_fem::solve_adaptive`].
+/// Refinement is performed on the straight-edged corner mesh by
+/// [`SdfTetMesh::try_refine_marked`] and the QuadraticMesh is rebuilt from it each
+/// round, so the conforming guarantee of that refinement carries over unchanged.
+/// The error indicator is the P1 stress-recovery estimator applied to the
+/// element's centroid stress (see `corner_indicators_squared`).
+///
+/// ⚠️ `boundary_for` receives the **quadratic mesh**, not the corner mesh: a
+/// higher-order boundary condition has to constrain the edge (and face) nodes of
+/// the clamped faces too, and only that mesh knows where they are. As in the
+/// linear driver the conditions are rebuilt per mesh, because a nodal load cannot
+/// be split between children.
+///
+/// # Errors
+///
+/// Whatever [`solve_quadratic`], the estimator or `mark_bulk` return, and
+/// [`FemError::InvalidConfig`] if a refinement pass runs out of budget.
+pub fn solve_adaptive_quadratic<F>(
+    mesh: &SdfTetMesh,
+    material: &ElasticMaterial,
+    boundary_for: F,
+    adaptive: &crate::linear_elastic_fem::AdaptiveConfig,
+) -> Result<AdaptiveQuadraticSolution, FemError>
+where
+    F: Fn(&QuadraticMesh) -> BoundaryConditions,
+{
+    let (corner, field, rounds, total_indicator_history) =
+        crate::linear_elastic_fem::adaptive_refinement_loop(mesh, adaptive, |current| {
+            let high_order = QuadraticMesh::from_tet_mesh(current)?;
+            let boundary = boundary_for(&high_order);
+            let field = solve_quadratic(&high_order, material, &boundary, &adaptive.linear())?;
+            let indicators =
+                crate::linear_elastic_fem::corner_indicators_squared(current, material, &field)?;
+            Ok((field, indicators))
+        })?;
+    let high_order = QuadraticMesh::from_tet_mesh(&corner)?;
+    Ok(AdaptiveQuadraticSolution {
+        mesh: corner,
+        high_order,
+        field,
+        rounds,
+        total_indicator_history,
+    })
+}
