@@ -177,6 +177,14 @@ required-features = ["std"]
 name = "piezoelectric_materials"
 required-features = ["std"]
 
+# Production entry point for SDF-driven force fields (wiring_guard:
+# src/sdf_force.rs had zero production callers across all 7 pub items:
+# apply_sdf_force_fields, attract, compute_sdf_force, contain, repel,
+# surface_flow, with_affected_bodies).
+[[example]]
+name = "sdf_force_fields"
+required-features = ["std"]
+
 [[bench]]
 name = "physics_bench"
 harness = false

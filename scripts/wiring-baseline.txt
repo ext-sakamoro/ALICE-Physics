@@ -171,7 +171,6 @@ unwired src/fluid_netcode.rs::compression_ratio
 unwired src/fluid_netcode.rs::restore
 unwired src/fluid_netcode.rs::size_bytes
 unwired src/fluid_netcode.rs::verify
-unwired src/force.rs::with_affected_bodies
 unwired src/fracture.rs::active_crack_count
 unwired src/fracture.rs::apply_stress_at
 unwired src/fracture.rs::stress_at
@@ -310,13 +309,6 @@ unwired src/sdf_collider.rs::collide_capsule_sdf
 unwired src/sdf_collider.rs::collide_point_sdf
 unwired src/sdf_collider.rs::detect_sdf_contacts
 unwired src/sdf_collider.rs::with_scale
-unwired src/sdf_force.rs::apply_sdf_force_fields
-unwired src/sdf_force.rs::attract
-unwired src/sdf_force.rs::compute_sdf_force
-unwired src/sdf_force.rs::contain
-unwired src/sdf_force.rs::repel
-unwired src/sdf_force.rs::surface_flow
-unwired src/sdf_force.rs::with_affected_bodies
 unwired src/sdf_manifold.rs::deepest
 unwired src/sdf_manifold.rs::generate_sdf_manifold
 unwired src/sdf_sph.rs::populated_cell_count
