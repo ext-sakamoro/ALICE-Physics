@@ -4529,6 +4529,9 @@ impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::ik_physics_bridg
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::ik_physics_bridge::IkTargetSet
 pub mod alice_physics::interface_capture
 pub fn alice_physics::interface_capture::fast_sweeping_reinit(&mut alice_physics::multiphase::Grid3d, u32)
+pub fn alice_physics::interface_capture::plic_normal(&alice_physics::multiphase::Grid3d, usize, usize, usize) -> alice_physics::math::Vec3Fix
+pub fn alice_physics::interface_capture::plic_plane_offset(alice_physics::math::Vec3Fix, alice_physics::math::Fix128, alice_physics::math::Fix128) -> alice_physics::math::Fix128
+pub fn alice_physics::interface_capture::truncated_cube_volume(alice_physics::math::Vec3Fix, alice_physics::math::Fix128, alice_physics::math::Fix128) -> alice_physics::math::Fix128
 pub mod alice_physics::interpolation
 pub struct alice_physics::interpolation::BodySnapshot
 pub alice_physics::interpolation::BodySnapshot::position: alice_physics::math::Vec3Fix
@@ -13539,6 +13542,7 @@ impl core::marker::UnsafeUnpin for alice_physics::rope_attach::RopeAttachment
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::rope_attach::RopeAttachment
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::rope_attach::RopeAttachment
 pub fn alice_physics::rope_attach::solve_rope_attachments(&[alice_physics::rope_attach::RopeAttachment], &mut [alice_physics::math::Vec3Fix], &mut [alice_physics::math::Vec3Fix], &[alice_physics::solver::RigidBody], alice_physics::math::Fix128) -> alloc::vec::Vec<core::option::Option<usize>>
+pub fn alice_physics::rope_attach::solve_rope_attachments_two_way(&[alice_physics::rope_attach::RopeAttachment], &mut [alice_physics::math::Vec3Fix], &mut [alice_physics::math::Vec3Fix], &mut [alice_physics::solver::RigidBody], alice_physics::math::Fix128) -> alloc::vec::Vec<core::option::Option<usize>>
 pub mod alice_physics::scene_io
 #[non_exhaustive] pub struct alice_physics::scene_io::PhysicsConfig
 pub alice_physics::scene_io::PhysicsConfig::damping: [i64; 2]
