@@ -9,8 +9,6 @@ dead_code src/solver_tgs_hooks_6dof_oriented_scoped.rs 1
 dead_code src/solver_tgs_hooks_6dof_scoped.rs 1
 unwired src/buckling.rs::plate_buckling_mpa
 unwired src/buckling.rs::snap_through_load_n
-unwired src/buoyancy_zone.rs::depth_below_surface
-unwired src/buoyancy_zone.rs::water_pool
 unwired src/bvh.rs::build_dynamic
 unwired src/bvh.rs::clear_dynamic
 unwired src/bvh.rs::insert_dynamic
