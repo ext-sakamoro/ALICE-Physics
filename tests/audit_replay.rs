@@ -282,3 +282,18 @@ fn missing_layout_file_falls_back_to_six_components_and_the_callers_body_count()
         }
     }
 }
+
+#[test]
+#[ignore = "known defect: AUD-A-S4W2-015: 記録値は Fix128 状態ではなく to_f32 の丸め (24 bit 仮数)。x = 16777217 を記録すると 16777216 で戻る (エンジン状態の厳密な再生にならない)"]
+fn recorded_position_equals_the_engine_state_for_integers_above_2_pow_24() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("r");
+    let mut world = world_with(1);
+    world.bodies[0].position = Vec3Fix::from_int(16_777_217, 0, 0);
+    let mut rec = ReplayRecorder::new(&path, 1).unwrap();
+    rec.record_frame(&world).unwrap();
+    rec.close().unwrap();
+    let player = ReplayPlayer::open(&path, 1).unwrap();
+    let (x, _, _) = player.get_position(0, 0).unwrap().unwrap();
+    assert_eq!(f64::from(x), 16_777_217.0, "read back {x}");
+}
