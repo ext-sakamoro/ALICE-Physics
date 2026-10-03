@@ -30,7 +30,7 @@ were introduced during that release window.
 - `examples/adaptive_refinement_high_order.rs`: 上の driver の caller (wiring_guard 用、実行して指標の履歴を出す)
 - `tests/analytic_adaptive_refinement_high_order.rs`: 厳密解で 1 round 停止 / 滑らかな問題で指標が減少 / 細分が実行される (adaptive の dof あたり優位は未測定)
 - `scripts/wiring_guard.py`: 走査から `scratchpad` を除外
-- `docs/ROADMAP.md`: 増分番号の重複 (第 23 / 第 24) を第 48 / 第 49 に振り直し
+- `docs/ROADMAP.md`: 増分番号の重複 (第 23 / 第 24) を第 51 / 第 52 に振り直し
 
 ### Added — SDF の凸分解を compound に: `CompoundShape::{from_decomposition, from_sdf}` (全配線 program 第 9 件 F3c)
 
