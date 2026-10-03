@@ -1,5 +1,4 @@
 # wiring-guard baseline: 既存の違反 (ラチェット) 新規は fail、解消したら行を消す
-dead_code src/beam_stress.rs 1
 dead_code src/bvh.rs 2
 dead_code src/interface_capture.rs 3
 dead_code src/solver_tgs.rs 1
@@ -8,8 +7,6 @@ dead_code src/solver_tgs_hooks_6dof.rs 1
 dead_code src/solver_tgs_hooks_6dof_oriented.rs 1
 dead_code src/solver_tgs_hooks_6dof_oriented_scoped.rs 1
 dead_code src/solver_tgs_hooks_6dof_scoped.rs 1
-unwired src/beam_stress.rs::with_end_condition
-unwired src/beam_stress.rs::with_min_fos
 unwired src/buckling.rs::plate_buckling_mpa
 unwired src/buckling.rs::snap_through_load_n
 unwired src/buoyancy_zone.rs::depth_below_surface
@@ -114,8 +111,6 @@ unwired src/solver_tgs_hooks_6dof_oriented_scoped.rs::solve_oriented_islands_par
 unwired src/solver_tgs_hooks_6dof_scoped.rs::solve_island_isolated
 unwired src/solver_tgs_hooks_6dof_scoped.rs::solve_islands_parallel
 unwired src/solver_tgs_hooks_6dof_scoped.rs::solve_islands_serial
-unwired src/structural_solver.rs::StructuralHistory
-unwired src/structural_solver.rs::run
 unwired src/support_volume.rs::filament_length_m
 unwired src/support_volume.rs::is_nontrivial
 unwired src/support_volume.rs::quality
