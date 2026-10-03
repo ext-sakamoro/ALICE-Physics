@@ -31,7 +31,8 @@ pub struct FractureConfig {
     pub fracture_toughness: f32,
     /// Crack width (SDF subtraction thickness)
     pub crack_width: f32,
-    /// Maximum number of active cracks
+    /// Maximum number of cracks (growing and finished: a finished crack stays
+    /// carved into the SDF and keeps occupying its slot)
     pub max_cracks: usize,
     /// Stress diffusion rate
     pub stress_diffusion: f32,
