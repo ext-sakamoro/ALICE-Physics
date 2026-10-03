@@ -24,9 +24,9 @@ oracle: 重なる箱の depth と法線を **分離軸判定 (15 軸、箱の回
 baseline 退役 3 行 (`gjk` / `epa` / `GjkResult`、実配線 3、巻き込み 0) 呼出元は `contact` (solver の `detect_collisions`) と `colliders_overlap`、example は `examples/convex_contacts.rs`
 ⚠️ 衝突は依然として 1 点の接触 (manifold なし): 接触点は EPA の支持点で、接触拘束は位置と質量だけで解く (回転は拘束に入らない) 残り (F3b/c): `compound` (8) / `convex_mesh_builder` (2) / `convex_decompose` (2) / `box_collider::{axis_aligned, corner, corners}` / `cone::{apex, base_center}` / `from_metric_ball`
 
-### 第 46 increment (2026-10-03、全配線 program 第 16 件 — `material`/`replay`/`multi_world` 未配線 24 item)
+### 第 46 increment (2026-10-03、全配線 program 第 16 件 — `material`/`replay`/`multi_world`/`sdf_fem_mesh` 未配線 34 item)
 
-worker 3 本、全て src 無変更 変異: material 8/8、replay 7/10+3等価、multi_world 18/18 baseline 24 行退役 残り: `sdf_fem_mesh` (別 worker 進行中)
+worker 4 本、全て src 無変更 変異: material 8/8、replay 7/10+3等価、multi_world 18/18、sdf_fem_mesh 10/10 baseline 34 行退役 ⚠️ **CI red 1 件発見・修正** (`b01848c`): full feature set clippy のみで型推論曖昧性、`collect::<BTreeSet<i64>>()` で解消 + preflight に同 feature set の clippy step を追加 (drift 恒久対処) ⚠️ sdf_fem_mesh worker 実測: `generate()`/`generate_marching_tets()` の境界判定不一致 (Backlog)
 
 ### 第 45 increment (2026-10-03、全配線 program 第 15 件 — `thin_wall` 未配線 7 item)
 
