@@ -7,8 +7,14 @@
 //!
 //! - **Wheel**: Raycast-based ground contact, slip model
 //! - **Suspension**: Spring-damper for each wheel
-//! - **Engine**: Torque curve, gear ratios
-//! - **Steering**: Ackermann geometry
+//! - **Engine**: constant torque `max_torque * throttle` times the selected
+//!   gear ratio, split over the driven wheels (no rpm-dependent torque curve;
+//!   `EngineConfig::max_rpm`, `engine_brake` and `num_gears` are not read by
+//!   [`Vehicle::update`])
+//! - **Steering**: a lateral force per steerable grounded wheel,
+//!   `|v| * 1000 * (right sin d + forward (cos d - 1))` with `d = steering *
+//!   max_steer_angle`; it is not Ackermann geometry (no inner / outer wheel
+//!   angle difference)
 //!
 //! Author: Moroya Sakamoto
 
@@ -84,13 +90,13 @@ impl Default for WheelConfig {
 pub struct EngineConfig {
     /// Maximum engine torque (Nm)
     pub max_torque: Fix128,
-    /// Maximum engine RPM
+    /// Maximum engine RPM (informational: not read by `Vehicle::update`)
     pub max_rpm: Fix128,
     /// Idle RPM
     pub idle_rpm: Fix128,
-    /// Engine braking coefficient
+    /// Engine braking coefficient (informational: not read by `Vehicle::update`)
     pub engine_brake: Fix128,
-    /// Number of gears
+    /// Number of gears (informational: the gear table is `VehicleConfig::gear_ratios`)
     pub num_gears: usize,
 }
 
@@ -227,7 +233,9 @@ pub struct Vehicle {
     pub wheel_states: Vec<WheelState>,
     /// Current gear (0 = first gear)
     pub current_gear: usize,
-    /// Current engine RPM
+    /// Engine speed indicator: `|km/h| * 100/36 * gear ratio`, floored at
+    /// `idle_rpm`. Proportional to ground speed, not a physical rpm (no wheel
+    /// radius or final drive), and it does not feed back into the torque.
     pub engine_rpm: Fix128,
     /// Throttle input (0..1)
     pub throttle: Fix128,
@@ -323,7 +331,11 @@ impl Vehicle {
             let ground_y = self.config.ground_height;
             let dist_to_ground = ray_start.y - ground_y;
 
-            if dist_to_ground < max_dist && dist_to_ground > Fix128::ZERO {
+            // A wheel centre at or below the ground (`dist_to_ground <= 0`) is the
+            // deepest compression, not the absence of contact: the suspension
+            // keeps its full force (compression clamps at 1) instead of letting
+            // a bottomed-out chassis fall through.
+            if dist_to_ground < max_dist {
                 self.wheel_states[i].grounded = true;
                 self.wheel_states[i].ground_normal = Vec3Fix::UNIT_Y;
                 self.wheel_states[i].contact_point =

@@ -88,7 +88,8 @@ fn shifting_is_clamped_to_the_gear_table() {
 
 #[test]
 fn grounded_wheels_follow_the_raycast_window() {
-    // A wheel is grounded iff 0 < (chassis y - 0.2 - ground) < rest + radius = 0.6.
+    // A wheel is grounded iff (chassis y - 0.2 - ground) < rest + radius = 0.6
+    // (a wheel centre at or below the ground is the deepest compression).
     let mut cfg = quiet_config();
     cfg.ground_height = fx(1.0);
     for (y, want) in [
@@ -97,8 +98,8 @@ fn grounded_wheels_follow_the_raycast_window() {
         (1.799, 4),
         (1.65, 4),
         (1.201, 4),
-        (1.199, 0),
-        (1.1, 0),
+        (1.199, 4),
+        (1.1, 4),
     ] {
         let mut v = Vehicle::new(cfg.clone());
         let mut c = chassis(y);
@@ -391,8 +392,8 @@ fn engine_config_default_matches_documented_values() {
 
 #[test]
 fn ground_window_edges_are_exclusive_with_exact_numbers() {
-    // Dyadic geometry: radius 0.25, rest 0.25, wheel at local y = -0.25 -> window 0 < h < 0.5,
-    // h = chassis y - 0.25.
+    // Dyadic geometry: radius 0.25, rest 0.25, wheel at local y = -0.25 -> upper edge h < 0.5,
+    // h = chassis y - 0.25; there is no lower edge.
     let mk = || {
         let mut cfg = quiet_config();
         for w in &mut cfg.wheels {
@@ -406,7 +407,7 @@ fn ground_window_edges_are_exclusive_with_exact_numbers() {
         }
         Vehicle::new(cfg)
     };
-    for (y, want) in [(0.75, 0), (0.7499, 4), (0.25, 0), (0.2501, 4)] {
+    for (y, want) in [(0.75, 0), (0.7499, 4), (0.25, 4), (0.2501, 4), (0.0, 4)] {
         let mut v = mk();
         let mut c = chassis(y);
         v.update(&mut c, fx(DT));
@@ -432,4 +433,35 @@ fn damping_uses_the_chassis_up_axis_not_world_y() {
     assert!(v.grounded_wheels() == 4);
     let want = -4.0 * (50000.0 / 3.0 - 4500.0 * 2.0) * DT / M;
     assert!((dy - want).abs() < 1e-3, "dy {dy} vs {want}");
+}
+
+#[test]
+fn wheel_below_the_ground_keeps_the_full_spring_force() {
+    // Wheel centre 0.0 / 0.05 / 0.2 / 5 m below the ground (y = 0.2 - penetration): compression
+    // clamps at 1, so the spring is k * 1 = 50000 N per wheel, never less, never more.
+    for pen in [0.0, 0.05, 0.2, 5.0] {
+        let mut v = Vehicle::new(quiet_config());
+        let mut c = chassis(0.2 - pen);
+        let (_, dy, _) = dv(&mut v, &mut c);
+        assert_eq!(v.grounded_wheels(), 4, "penetration {pen}");
+        assert!(
+            near(v.wheel_states[0].compression.to_f64(), 1.0),
+            "penetration {pen}"
+        );
+        assert!(
+            near(dy, 4.0 * 50000.0 * DT / M),
+            "penetration {pen}: dy {dy}"
+        );
+        let p = v.wheel_states[0].contact_point.to_f32();
+        assert!(p.1.abs() < 1e-6, "contact point stays on the ground plane");
+    }
+    // The bump stop still adds on top when configured.
+    let mut cfg = quiet_config();
+    for w in &mut cfg.wheels {
+        w.bump_stop_stiffness = fx(100000.0);
+    }
+    let mut v = Vehicle::new(cfg);
+    let mut c = chassis(0.2 - 0.05);
+    let (_, dy, _) = dv(&mut v, &mut c);
+    assert!(near(dy, 4.0 * 60000.0 * DT / M), "dy {dy}");
 }
