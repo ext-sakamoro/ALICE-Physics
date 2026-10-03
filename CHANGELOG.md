@@ -21,6 +21,12 @@ were introduced during that release window.
 - `articulation`: `examples/articulated_body_chain.rs` が `add_link`/`forward_kinematics`/`set_motor`/`apply_motors`/`solve`/`solve_with_mass_splitting`/`build_ragdoll` 等 + `motor::set_position_target` (真の呼出で連動配線) を駆動 oracle 15 本 (既存 `analytic_multibody_dynamics.rs` の `solve` oracle とは重複なし)、変異 12/13 red (`apply_motors` の `force.is_zero()` 片方のガードは `Fix128` 乗算の `0*x=0` 単位元で算術的に等価)
 - 4 module とも src 無変更、baseline 47 行退役、新規公開面 0 件
 
+### Added — `animation_blend` の未配線 11 item を全配線 (全配線 program 第 13 件)
+
+- `examples/animation_blend_state_machine.rs` が `add_keyframe`/`go_animated`/`go_powered`/`go_ragdoll`/`is_transitioning`/`update`/`lerp`/`set_animated`/`set_ragdoll`/`get_motor_targets`/`bone_count` を駆動
+- oracle 11 本、変異 22/22 red (`lerp` の単独配線変異は `update` 内部の sibling 呼出で推移的に配線済と検証済)
+- src/animation_blend.rs 自体は無変更、baseline 11 行退役 + 名前衝突 4 行 (`physics2d::lerp`/`dynamic_bvh::update`/`sim_modifier::update`/`vehicle::update`、実体は未配線のまま Backlog に記録)
+
 ### Added — `analytics_bridge` の未配線 11 item を全配線 (features = `std,analytics`、全配線 program 第 13 件)
 
 - `examples/analytics_bridge_telemetry.rs` が 200 step の手組み sequence で `record_step_time`/`record_contacts`/`record_energy_drift`/`record_collision_pair`/`step_time_p50`/`step_time_p99`/`contacts_p50`/`contacts_p99`/`energy_drift_p99`/`total_steps`/`unique_collision_pairs` を駆動
