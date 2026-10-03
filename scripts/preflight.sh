@@ -36,6 +36,16 @@ cargo clippy --all-targets -- -D warnings
 step "clippy -D warnings (native feature set, all targets)"
 cargo clippy --all-targets --features "$NATIVE" -- -D warnings
 
+# CI's "Clippy (full native feature set, lib + all targets)" job adds
+# neural,replay,analytics on top of $NATIVE. These sibling-bridge features
+# pull in rkyv (via alice-db) which can add a competing trait impl (e.g.
+# PartialEq<rkyv::ArchivedBTreeSet> alongside the stdlib's) that only
+# surfaces as an ambiguity error at this exact feature combination — missed
+# here before and only caught by CI (2026-10-03, program item 16,
+# tests/analytic_multi_world_wiring.rs:339 `[0,2].into_iter().collect()`).
+step "clippy -D warnings (full native feature set incl. neural/replay/analytics, all targets)"
+cargo clippy --all-targets --features "$NATIVE,neural,replay,analytics" -- -D warnings
+
 step "no_std rlib build (cdylib crate-type needs std, so rustc --crate-type rlib)"
 cargo rustc --lib --no-default-features --crate-type rlib
 
