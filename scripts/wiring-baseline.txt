@@ -48,12 +48,6 @@ unwired src/bvh.rs::clear_dynamic
 unwired src/bvh.rs::get_aabb
 unwired src/bvh.rs::insert_dynamic
 unwired src/bvh.rs::query_pairs
-unwired src/character.rs::PushImpulse
-unwired src/character.rs::apply_gravity
-unwired src/character.rs::compute_push_impulses
-unwired src/character.rs::feet_position
-unwired src/character.rs::get_platform_velocity
-unwired src/character.rs::new_default
 unwired src/character_state.rs::accepts_locomotion
 unwired src/character_state.rs::name
 unwired src/character_state.rs::standing
@@ -221,7 +215,6 @@ unwired src/sdf_ccd.rs::batch_sphere_trace_sdf
 unwired src/sdf_ccd.rs::ray_march_sdf
 unwired src/sdf_ccd.rs::sphere_trace_sdf
 unwired src/sdf_character.rs::GroundContact
-unwired src/sdf_character.rs::apply_gravity
 unwired src/sdf_character.rs::ground_contact
 unwired src/sdf_character.rs::is_grounded
 unwired src/sdf_manifold.rs::deepest
@@ -254,7 +247,6 @@ unwired src/surface_tension_csf.rs::SIGMA_STEEL_ARGON
 unwired src/thermal.rs::add_heat_point
 unwired src/thermal_stress.rs::yield_temperature_c
 unwired src/vehicle.rs::grounded_wheels
-unwired src/vehicle.rs::new_default
 unwired src/vehicle.rs::shift_down
 unwired src/vehicle.rs::shift_up
 unwired src/vibration_wall.rs::ExcitationSource
