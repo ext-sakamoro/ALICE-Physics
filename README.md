@@ -1539,8 +1539,8 @@ Every function below (plus `BatchRayQuery`/`OverlapResult`/`ShapeCastHit`) is wi
 **Features:**
 - Wheel contact with ground/terrain
 - Spring-damper suspension
-- Engine torque with gear shifting
-- Ackermann steering geometry
+- Engine torque with gear shifting (constant torque × throttle × gear ratio; no rpm curve)
+- Steering as a speed-scaled lateral force (not Ackermann geometry)
 
 ### `cone` - Cone Collider (v0.5.0)
 

@@ -13,6 +13,23 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added — 並列 worker による全配線 (全配線 program 第 21 件)
+
+- `PhysicsWorld::sdf_ccd_hits(dt, &SdfCcdConfig)` / `SdfCharacter::locomotion_context(...)` / `rope_attach::solve_rope_attachments_two_way(...)` を追加した (追加のみ) `two_way` は body 側にも逆質量比の補正を適用する (静的 body では一方向版と一致、動的 body で運動量保存) `interface_capture::{plic_normal, plic_plane_offset, truncated_cube_volume}` を `pub` にした
+- `bridging` の `analyze_print_pipeline` が橋渡し NG の span ごとに長さ・許容・高さ差の行を出す(summary 行と `is_safe` は不変)
+### Fixed — 実装が doc や物理と食い違っていた欠陥
+
+- **符号・向き**: `surface_tension_csf::csf_body_force` が外向きだった (表面張力は曲率中心向き) / `sdf_sph` の圧力力が引力で、密度で割られていなかった / `event` の trigger exit が enter の `trigger_body` と `other_body` を入れ替えていた
+- **数値**: `math_util::cbrt_fix` が 1e6 以上・1e-6 未満で収束しなかった / `beam_stress`・`mass_properties` の `from_ratio(1, 12)` 等の丸めを 1 回の除算にした (質量 12 の箱の `Ixx` が 20 − 80 ulp、FoS がちょうど 2 でも `is_safe=false` だった) / PLIC の体積を階段関数から閉形式に / `buoyancy_zone` の 4π/3 を `Fix128::PI` から導出 (相対誤差 2.3e-6) / `fluid` の poly6・spiky に 1/π を足した
+- **幾何**: `ray_march_sdf` が非単位 direction で貫通していた(単位 direction は bit 同一) / `AdaptiveSdfEvaluator` の法線が local 空間のままだった / `sdf_manifold` の 4 点縮約が面積最大でない・偶数 grid が非対称・`max_contacts=0` で 1 件返す / `IkTargetSet` の weight を [0,1]、compliance を ≥ 0 に clamp / ragdoll の joint anchor が全て body 中心で bone が潰れていた・質量分率の合計が 0.958 だった / vehicle が地面より下の車輪の suspension 力を失っていた
+- **契約・資源**: `particle` の cap 判定の反転と死んだ slot の未再利用、`spread_angle` を cone の全角に / `sim_field` の splat が y/z の範囲を x のセルサイズから導出していた / `scene_io` の JSON 読込が、値はあるが不正な場合に default に丸めていた (`Err(InvalidData)` にした、キー欠落時の default は維持) / `deformable` が静的 body に代用質量 1e6 を使っていた / `print_orientation::optimize_grid` が負の step で終了しなかった / `Fluid::new_block` が spacing ≤ 0 で OOM
+- ⚠️ **挙動の変更**: 上記は意図した修正で、`csf_body_force`・`sdf_sph`・`ragdoll`・`particle`・`vehicle`・`scene_io` の出力が変わる (golden hash は動いていない) `sph_boundary_demo` の平均密度は 376.7 → 924.8 (rest 1000) になった
+### Changed — doc を実装に合わせた
+
+- `vehicle` の「トルク曲線・Ackermann」を実装 (定トルク・速度比例の横力) に / `rope_attach::solve_rope_attachments` を「rope 側のみ補正」に / `warp_risk` の k を 500 に / `creep_longterm` の n を整数に / `AdaptiveConfig::refinement_samples` が読まれないことを明記
+- `tests/analytic_large_rotation.rs` の `rigid_rotation_produces_zero_stress` が `solve_corotational` を対象に `#[ignore]` なしで走る(相棒は `solve` の特徴づけとして残す)
+- oracle: 約 560 本 変異試験 約 900 件 (生存は全て等価)
+
 ### Added — `reconcile_checked` (全配線 program 第 9f 件)
 
 `netcode_prediction::{reconcile_checked, ReconcileError}` を追加した (追加のみ) `reconcile` は権威 tick より後の入力を全部再生するが、サーバの snapshot が ring の捨てた入力より古い時や buffer の途中の tick が欠けた時は、誤った入力を再生して誤った状態を何の兆候もなく返す `reconcile_checked` は `authoritative.tick + 1, + 2, …` が連続していなければ `ReconcileError::MissingInputs { needed, oldest }` を返し、buffer を変更しない 履歴が完全なら `reconcile` と同じ

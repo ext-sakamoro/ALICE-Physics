@@ -24,6 +24,18 @@ increment 他) が**追加機材の調達待ち**であるかのように読め�
 | Maxwell FDTD | `ecd8c61` | source-free Yee、⚠️ **SI は `ε₀·μ₀` が 7.7 bit で不可**、正規化単位 + `S=9/16` |
 | 多体 ABA | `1bab99b` | ⚠️ **`solve()` が `link.joint` を読まない**状態から real ABA、oracle 12 本 |
 
+### 第 63 increment (2026-10-03、全配線 program 第 21 件 — 並列 worker 5 本で wiring-status / oracle-status を処理)
+
+user 指示「`docs/wiring-status.md` / `docs/oracle-status.md` を worker で並列処理」を、担当 file を固定した 5 本 (構造材料 / キャラ・SDF / 流体・熱・電磁 / その他 / oracle 棚卸し) で実施した 各 worker は専用 worktree で commit まで、push・docs・公開 API snapshot は調停役が統合した baseline **78 行退役** (実配線 78、巻き込み 0) 公開 API は**追加のみ 6 関数** (`PhysicsWorld::sdf_ccd_hits` / `SdfCharacter::locomotion_context` / `interface_capture::{plic_normal, plic_plane_offset, truncated_cube_volume}` が pub 化 / `rope_attach::solve_rope_attachments_two_way`) 追加 oracle は約 560 本、変異試験は約 900 件で、生存は全て理由つきの等価変異
+⚠️ **worker が見つけて直した既存欠陥 (全て実測の後、oracle を先に書いて red → green)**:
+- **符号・向き**: `csf_body_force` が外向き (表面張力は曲率中心を向く、Young-Laplace の内外圧差 −1.96 → +1.95 / 閉形式 +1.94) / `sdf_sph` の圧力力が引力で ρ_i で割られていなかった (過圧の 2 粒子が +329 で近づく、運動量ずれ 3e4〜1.9e5、粘性の大きさ 688.9 → 1.73) / event の trigger exit が enter の trigger_body と other_body を入れ替えていた
+- **数値**: `math_util::cbrt_fix` が 1e6 以上・1e-6 未満で未収束 (n=1e9 で 29701.8、真値 1000) / `beam_stress` と `mass_properties` の `from_ratio(1, 12)` 等の丸め (質量 12 の箱の Ixx が 20 − 80 ulp、FoS がちょうど 2 でも `is_safe=false`) / PLIC の `truncated_cube_volume` が 4×4×4 標本の階段関数 (f=0.001 で体積 0) → Scardovelli–Zaleski の閉形式 (最悪誤差 3.5e-18) / `buoyancy_zone` の 4π/3 が 4.1888 (相対誤差 2.3e-6) / `fluid` の poly6・spiky に 1/π が無い (密度が π 倍)
+- **幾何**: `ray_march_sdf` が非単位 direction で貫通 / `AdaptiveSdfEvaluator` の法線が local 空間のまま / `sdf_manifold` の 4 点縮約が面積最大でない・偶数 grid が非対称・`max_contacts=0` で 1 件返す / `IkTargetSet` の weight 2 が行き過ぎ / ragdoll の joint anchor が全て body 中心で bone が 0 に潰れる・質量分率の合計 0.958 / vehicle が地面より下の車輪の suspension 力を失う
+- **契約・資源**: `particle` の cap 判定が反転し死んだ slot が再利用されない・`spread_angle` が cone 角でない / `sim_field` の splat が y/z の範囲を x のセルサイズから導出 / `scene_io` の JSON が不正値を default に丸める (body_a=-1 → 0、joint_type=257 → 1) / `deformable` が静的 body に代用質量 1e6 / `print_orientation::optimize_grid` が負の step で終了しない / `Fluid::new_block` が spacing ≤ 0 で OOM
+- **doc と実装の食い違い (doc を実装に合わせた)**: vehicle の「トルク曲線・Ackermann」/ `rope_attach` の「body も補正される」/ `warp_risk` の k / `creep_longterm` の n / `AdaptiveConfig::refinement_samples` が未使用
+`rigid_rotation_produces_zero_stress` は理由文の「共回転定式化が入った commit で外す」が `solve_corotational` で成立していたので `#[ignore]` を外して共回転 solver に向けた (期待値 1e-9 MPa は不変、相棒 test は `solve` の特徴づけとして残す) `#[ignore]` 理由文 7 件を実測で更新 oracle-status の「Pending 27」は未実装でなく、意図した red 3・実行が長い/診断用 24・理由なし 0 だった(第 20 件の生成器修正で分類)
+⚠️ **user 判断待ち (直していない・Backlog 起票済み)**: `VivParameters` への流体減衰 (field 追加は breaking) / `rope_attach` の旧関数の署名変更・非推奨化 (非破壊の `_two_way` を追加済み) / `sdf_sph` の密度拘束の λ 分母 (ρ0² で割らない、拘束が実質不活性、割ると崩壊/発散) / 180° 剛体回転が増分 ≥ 2 で `Inverted` / ragdoll・`AdaptiveConfig` の公開 field / `support_volume::estimate_region_volume` の配分規則 / Z=0 断面・E=0 の silent な安全判定 / `eulerian_grid` の公開 API / `BroadphaseHybrid`
+
 ### 第 62 increment (2026-10-03、全配線 program 第 9f 件 — rollback netcode の予測と照合)
 
 クライアント予測の照合 `netcode_prediction::reconcile` は「バッファにある権威 tick より後の入力を全部再生する」が、**再生が正しいのはそれが連続した tick `t+1, t+2, …` の時だけ**で、サーバの snapshot がバッファの ring が既に捨てた入力より古い時 (遅いサーバ・小さい容量) や、バッファの途中の tick が欠けた時は、**誤った入力を再生して誤った状態を、何の兆候もなく返す** ⇒ `reconcile_checked` と `ReconcileError::MissingInputs { needed, oldest }` (追加のみ、`#[non_exhaustive]`) を足した 履歴が完全なら `reconcile` と同じ結果で、不完全なら**バッファを変更せず**どの入力が無いかを返す (呼び側は完全な状態を要求するか容量を増やせる)
