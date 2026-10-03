@@ -1,4 +1,4 @@
-//! Audit S3-1 oracles for `sketch` (HyperLogLog / DDSketch / Count-Min / HeavyHitters).
+//! Audit oracles for `sketch` (HyperLogLog / DDSketch / Count-Min / HeavyHitters).
 //!
 //! `analytic_sketch_wiring` already carries reference tables for hashes, HLL
 //! registers, Count-Min columns and DDSketch order statistics.  This file adds

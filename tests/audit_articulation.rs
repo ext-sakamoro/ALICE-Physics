@@ -1,4 +1,4 @@
-//! Audit S3-1 oracles for `articulation` (bookkeeping, FK, motors, ragdoll, solver flags).
+//! Audit oracles for `articulation` (bookkeeping, FK, motors, ragdoll, solver flags).
 //!
 //! `analytic_multibody_dynamics` pins the Featherstone physics (14 closed
 //! forms) and `analytic_articulation_wiring` the plumbing; this file adds

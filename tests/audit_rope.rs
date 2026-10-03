@@ -1,4 +1,4 @@
-//! Audit S3-1 oracles for `rope::Rope` (XPBD distance chain).
+//! Audit oracles for `rope::Rope` (XPBD distance chain).
 //!
 //! Existing oracles (`analytic_rope_wiring`, `analytic_rope_attach_wiring`)
 //! cover pins, `current_length` and the SDF no-op paths; none checks the

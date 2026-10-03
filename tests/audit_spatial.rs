@@ -1,4 +1,4 @@
-//! Audit S3-1 oracles for `spatial::SpatialGrid` (module had no tests/ oracle).
+//! Audit oracles for `spatial::SpatialGrid` (module had no tests/ oracle).
 //!
 //! Expected values come from the documented behaviour (3x3x3 neighbourhood of
 //! uniform cells, `floor(x / cell) + dim/2` clamped to `[0, dim-1]`, stable
