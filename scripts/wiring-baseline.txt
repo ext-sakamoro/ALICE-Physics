@@ -34,7 +34,6 @@ unwired src/audio_physics.rs::process_contact
 unwired src/audio_physics.rs::set_material
 unwired src/beam_stress.rs::with_end_condition
 unwired src/beam_stress.rs::with_min_fos
-unwired src/box_collider.rs::axis_aligned
 unwired src/box_collider.rs::corner
 unwired src/box_collider.rs::corners
 unwired src/bridging.rs::unsafe_checks
@@ -83,9 +82,6 @@ unwired src/collision_mesh_gen.rs::CollisionMeshConfig
 unwired src/collision_mesh_gen.rs::compute_mesh_aabb
 unwired src/collision_mesh_gen.rs::generate_collision_mesh
 unwired src/collision_mesh_gen.rs::simplify_collision_mesh
-unwired src/compound.rs::compute_aabb
-unwired src/compound.rs::overlapping_children
-unwired src/compound.rs::world_aabb
 unwired src/cone.rs::apex
 unwired src/cone.rs::base_center
 unwired src/contact_cache.rs::apply_warm_start
