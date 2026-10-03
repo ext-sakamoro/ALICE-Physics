@@ -3,23 +3,14 @@
 Canonical roadmap for the alice-physics crate. Primary source of truth.
 Memory index pointer: `[[reference-alice-physics-v1-roadmap]]` in claude-config.
 
-## ⚠️ 実機検証の所在 (2026-10-03 訂正、追加機材は不要)
+## ⚠️ 実機検証の所在 (2026-10-03 訂正)
 
 文中複数箇所 (「複数ノード MPI は未測定」「実機が複数台揃ってから別途判断」等、第 20
 increment 他) が**追加機材の調達待ち**であるかのように読める表現になっているが、
-`~/claude-config/memory/devices.md` 実測では以下が**既に手元にある**:
-
-| 用途 | 機材 | 現状 |
-|---|---|---|
-| **複数ノード分散の実ネットワーク越し検証** | Jetson Orin Nano 8GB ×2 (ARM64、個人用途 (詳細は memory/devices.md)) | 両機とも SSH 到達可、**物理的に別筐体**なので loopback TCP でなく実ネットワーク越しの 2 ノード 1 solve が測れる、未実施 |
-| **実 GPU での GPU parity** (現状 lavapipe = software rasterizer のみ) | MacBook/Mac mini M3 (Metal 4、GPU 10 コア) | SSH 到達可、未実施 |
-| **実 GPU (CUDA) での GPU parity** | Jetson Orin Nano ×2 (NVIDIA Ampere GPU) | 同上、未実施 |
-| **Windows 実機での cross-platform golden** (現状 GitHub-hosted `windows-latest` のみ) | Windows PC (`[REDACTED: SSH host, see memory/devices.md]`、SSH 鍵認証到達可) | 未実施 |
-
-⇒ **「機材が無い」ではなく「既存機材で実行していない」** 新規購入・レンタルは不要 上記
-4 件の着手判断 (優先度 / 誰が実行するか) は user 判断 複数アーキ跨ぎの MPI backend
-選定 (OpenMPI 等のインストール) は Jetson 側で追加作業が要るが、ハードウェア自体は
-揃っている
+対象 4 件 (複数ノード分散 / 実 GPU (Metal) / 実 GPU (CUDA) / Windows 実機 golden)
+は**追加の購入・レンタルを要するものではなく、既存環境で未実施なだけ** (機材の詳細
+は `~/claude-config/memory/devices.md` 側、本 repo には書かない) 着手判断 (優先度
+/ 誰が実行するか) は user 判断
 
 ## 🎉 現在位置 (2026-09-30): 4 課題の第 2 increment を landing
 
