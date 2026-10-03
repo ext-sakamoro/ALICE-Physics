@@ -59,7 +59,6 @@ unwired src/character_state.rs::name
 unwired src/character_state.rs::standing
 unwired src/character_state.rs::transition
 unwired src/cloth.rs::remaining_self_contact_crossings
-unwired src/cloth.rs::step_with_sdf
 unwired src/cloth_fluid.rs::apply_cloth_boundary_to_fluid
 unwired src/cloth_fluid.rs::apply_cloth_boundary_to_fluid_with_residual
 unwired src/cloth_fluid.rs::apply_fluid_forces_to_cloth
@@ -69,13 +68,6 @@ unwired src/collision_mesh_gen.rs::CollisionMeshConfig
 unwired src/collision_mesh_gen.rs::compute_mesh_aabb
 unwired src/collision_mesh_gen.rs::generate_collision_mesh
 unwired src/collision_mesh_gen.rs::simplify_collision_mesh
-unwired src/contact_cache.rs::apply_warm_start
-unwired src/contact_cache.rs::manifold_count
-unwired src/contact_cache.rs::point_count
-unwired src/contact_cache.rs::store_impulses
-unwired src/contact_cache.rs::tangent_frame
-unwired src/contact_cache.rs::total_contact_points
-unwired src/contact_cache.rs::warm_start_impulse
 unwired src/contact_viz.rs::ContactArrow
 unwired src/contact_viz.rs::FrictionCone
 unwired src/contact_viz.rs::generate_contact_arrows
@@ -95,7 +87,6 @@ unwired src/db_bridge.rs::record_step
 unwired src/deformable.rs::center_of_mass
 unwired src/deformable.rs::new_cube
 unwired src/deformable.rs::resolve_rigid_body_collisions
-unwired src/deformable.rs::step_with_sdf
 unwired src/dynamic_bvh.rs::get_aabb
 unwired src/dynamic_bvh.rs::height
 unwired src/dynamic_bvh.rs::proxy_count
@@ -129,7 +120,6 @@ unwired src/flow_viz.rs::FlowVizConfig
 unwired src/flow_viz.rs::generate_flow_arrows
 unwired src/flow_viz.rs::generate_streamlines
 unwired src/fluid.rs::new_block
-unwired src/fluid.rs::step_with_sdf
 unwired src/fluid_netcode.rs::changed_count
 unwired src/fluid_netcode.rs::compression_ratio
 unwired src/fluid_netcode.rs::restore
@@ -227,12 +217,6 @@ unwired src/ragdoll.rs::child
 unwired src/ragdoll.rs::human_female
 unwired src/rng.rs::new_with_stream
 unwired src/rng.rs::next_bounded
-unwired src/rope.rs::add_pin
-unwired src/rope.rs::current_length
-unwired src/rope.rs::pin_end
-unwired src/rope.rs::pin_start
-unwired src/rope.rs::step_with_sdf
-unwired src/rope.rs::update_pin_targets
 unwired src/rope_attach.rs::compliance
 unwired src/rope_attach.rs::solve_rope_attachments
 unwired src/scene_io.rs::CURRENT_SCENE_VERSION
