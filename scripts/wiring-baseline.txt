@@ -164,13 +164,6 @@ unwired src/layer_adhesion.rs::fos_shear_xy
 unwired src/layer_adhesion.rs::fos_shear_xz
 unwired src/layer_adhesion.rs::min_fos
 unwired src/mass_properties.rs::cylinder_mass_properties
-unwired src/math.rs::add_simd
-unwired src/math.rs::atan
-unwired src/math.rs::cross_simd
-unwired src/math.rs::dot_batch_4
-unwired src/math.rs::dot_simd
-unwired src/math.rs::length_squared_simd
-unwired src/math.rs::sub_simd
 unwired src/math_util.rs::cbrt_fix
 unwired src/math_util.rs::clamp_fix
 unwired src/math_util.rs::pow_int
