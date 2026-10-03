@@ -33,7 +33,8 @@ use crate::sdf_collider::SdfCollider;
 pub struct SdfCcdConfig {
     /// Maximum sphere tracing iterations
     pub max_iterations: usize,
-    /// Contact tolerance (stop when gap < this)
+    /// Contact tolerance: `sphere_trace_sdf` stops when `gap <= tolerance`,
+    /// `ray_march_sdf` when `distance < tolerance`
     pub tolerance: f32,
     /// Minimum velocity magnitude to trigger CCD
     pub velocity_threshold: Fix128,
@@ -118,7 +119,8 @@ pub fn sphere_trace_sdf(
 
 /// Sphere trace a moving point (zero radius) against an SDF.
 ///
-/// Simpler variant for raycasting against SDF geometry.
+/// Simpler variant for raycasting against SDF geometry. `direction` need not
+/// be normalized; the returned `t` and `max_distance` are distances along it.
 #[cfg(feature = "std")]
 #[must_use]
 pub fn ray_march_sdf(
@@ -128,9 +130,20 @@ pub fn ray_march_sdf(
     sdf: &SdfCollider,
     config: &SdfCcdConfig,
 ) -> Option<TOI> {
-    if direction.length_squared().is_zero() {
+    let len_sq = direction.length_squared();
+    if len_sq.is_zero() {
         return None;
     }
+    // `t` is a distance (it is advanced by the SDF value and compared with
+    // `max_distance`), so the direction has to be a unit vector: stepping
+    // `dist` along `origin + direction * t` with `|direction| > 1` jumps
+    // `|direction| * dist` and tunnels through the surface. A unit direction
+    // (the common case) is used as given, bit for bit.
+    let direction = if len_sq == Fix128::ONE {
+        direction
+    } else {
+        direction.normalize()
+    };
     let scale = sdf.scale_f32;
     let mut t = Fix128::ZERO;
 
@@ -197,6 +210,43 @@ pub fn batch_sphere_trace_sdf(
     // Sort by earliest TOI for deterministic processing
     results.sort_by_key(|a| a.2.t);
     results
+}
+
+#[cfg(feature = "std")]
+impl crate::solver::PhysicsWorld {
+    /// Sweep the world's moving bodies against its SDF colliders.
+    ///
+    /// A body is swept as a sphere of [`PhysicsWorld::sdf_collision_radius`](crate::solver::PhysicsWorld::sdf_collision_radius)
+    /// (the radius [`PhysicsWorld::sdf_contacts`](crate::solver::PhysicsWorld::sdf_contacts) gives a body without a shape)
+    /// along `velocity * dt`; this is the continuous counterpart of the
+    /// discrete push-out in [`PhysicsWorld::step`](crate::solver::PhysicsWorld::step), to be asked before a step to
+    /// learn which fast bodies would tunnel through a thin SDF. Static bodies,
+    /// sensors and bodies slower than `config.velocity_threshold` are skipped,
+    /// and an SDF attached to the body itself is never tested against it. Hits
+    /// come back as in [`batch_sphere_trace_sdf`], earliest time of impact first.
+    ///
+    /// `dt` is the frame step.
+    #[must_use]
+    pub fn sdf_ccd_hits(&self, dt: Fix128, config: &SdfCcdConfig) -> Vec<(usize, usize, TOI)> {
+        let displacements: Vec<Vec3Fix> = self
+            .bodies
+            .iter()
+            .map(|b| {
+                if b.is_sensor {
+                    Vec3Fix::ZERO
+                } else {
+                    b.velocity * dt
+                }
+            })
+            .collect();
+        batch_sphere_trace_sdf(
+            &self.bodies,
+            &displacements,
+            self.sdf_collision_radius,
+            &self.sdf_colliders,
+            config,
+        )
+    }
 }
 
 // ============================================================================
