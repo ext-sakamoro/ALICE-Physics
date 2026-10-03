@@ -3838,10 +3838,9 @@ impl PhysicsWorld {
                 for proxy in self
                     .broadphase_proxies
                     .drain(n.min(self.broadphase_proxies.len())..)
+                    .flatten()
                 {
-                    if let Some(proxy) = proxy {
-                        self.broadphase_tree.remove(proxy);
-                    }
+                    self.broadphase_tree.remove(proxy);
                 }
                 self.broadphase_proxies.resize(n, None);
                 let mut present = vec![false; n];

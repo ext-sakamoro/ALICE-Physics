@@ -400,6 +400,10 @@ fn border_vertices(vertex_count: usize, triangles: &[[usize; 3]]) -> Vec<bool> {
     border
 }
 
+/// A candidate edge of the simplification queue: squared length, its two vertices,
+/// and the versions of those vertices when it was queued.
+type EdgeEntry = (Fix128, usize, usize, usize, usize);
+
 /// Simplify a collision mesh by reducing the triangle count.
 ///
 /// Collapses the shortest collapsible edge to its midpoint, repeatedly, until the
@@ -442,7 +446,7 @@ pub fn simplify_collision_mesh(mesh: &CollisionMesh, target_triangles: usize) ->
     // entry is valid only while both its vertices are unchanged since it was pushed
     // (`version`); a collapse changes the vertices around it and pushes fresh entries.
     let mut version = vec![0usize; vertices.len()];
-    let mut queue: BinaryHeap<Reverse<(Fix128, usize, usize, usize, usize)>> = BinaryHeap::new();
+    let mut queue: BinaryHeap<Reverse<EdgeEntry>> = BinaryHeap::new();
     let push_edges =
         |queue: &mut BinaryHeap<_>, vertices: &[Vec3Fix], version: &[usize], tri: [usize; 3]| {
             for k in 0..3 {
