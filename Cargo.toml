@@ -194,6 +194,15 @@ required-features = ["std"]
 name = "sdf_force_fields"
 required-features = ["std"]
 
+# Production entry point for `CompoundShape` (wiring_guard: src/compound.rs
+# had zero production callers across all 8 pub items: add_sphere,
+# add_capsule, add_convex_hull, add_box, compute_aabb, child_world_aabb,
+# world_aabb, overlapping_children — only tests/ called in, which the guard
+# does not count).
+[[example]]
+name = "compound_shapes"
+required-features = ["std"]
+
 [[bench]]
 name = "physics_bench"
 harness = false
