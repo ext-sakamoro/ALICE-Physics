@@ -1,15 +1,15 @@
 # ALICE-Physics Oracle Status
 
-**Last updated:** 2026-10-03 10:20
+**Last updated:** 2026-10-03 10:25
 
 ## Summary
 
 | Category | Count |
 |----------|-------|
-| 🟢 Implemented | 2077 |
+| 🟢 Implemented | 2099 |
 | 🟡 Partial | 0 |
 | 🔴 Pending | 27 |
-| **Total** | **2104** |
+| **Total** | **2126** |
 
 ## 🔴 Pending (27)
 
@@ -43,7 +43,7 @@ Oracle tests not yet implemented (marked with `#[ignore]`).
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / A…
 
-## 🟢 Implemented (2077)
+## 🟢 Implemented (2099)
 
 Oracle tests with implementation complete and passing.
 
@@ -78,7 +78,7 @@ Oracle tests with implementation complete and passing.
 - `a_consistent_charge_keeps_gauss_exact_and_an_inconsistent_one_is_carried` (analytic_maxwell_wiring.rs)
 - `a_contact_does_not_add_velocity_away_from_the_surface` (analytic_sdf_character_up_axis.rs)
 
-... and 2047 more
+... and 2069 more
 
 ---
 
