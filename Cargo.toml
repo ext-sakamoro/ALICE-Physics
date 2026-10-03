@@ -359,6 +359,18 @@ required-features = ["std"]
 name = "wind_zone_forces"
 required-features = ["std"]
 
+# Production entry point for `PhysicsMetricsSink`'s query API (wiring_guard:
+# src/db_bridge.rs had zero production callers across 5 items:
+# query_bodies, query_contacts, query_energy, record_energy, record_step —
+# only #[cfg(test)] unit tests in the same file called in, which the guard
+# does not count). `db_bridge` itself is gated behind `#[cfg(feature =
+# "replay")]` in src/lib.rs (the module uses `alice_db::AliceDB`, an
+# optional dependency only pulled in by the `replay` feature), so this
+# entry point needs both `std` and `replay`, not just `std`.
+[[example]]
+name = "db_bridge_roundtrip"
+required-features = ["std", "replay"]
+
 [[bench]]
 name = "physics_bench"
 harness = false

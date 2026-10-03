@@ -58,11 +58,6 @@ unwired src/damping_rayleigh.rs::damping_ratio
 unwired src/damping_rayleigh.rs::fit_two_modes
 unwired src/damping_rayleigh.rs::hz_to_omega
 unwired src/damping_rayleigh.rs::omega_to_hz
-unwired src/db_bridge.rs::query_bodies
-unwired src/db_bridge.rs::query_contacts
-unwired src/db_bridge.rs::query_energy
-unwired src/db_bridge.rs::record_energy
-unwired src/db_bridge.rs::record_step
 unwired src/deformable.rs::center_of_mass
 unwired src/deformable.rs::new_cube
 unwired src/deformable.rs::resolve_rigid_body_collisions
