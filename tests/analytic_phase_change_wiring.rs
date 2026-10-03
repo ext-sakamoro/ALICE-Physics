@@ -241,6 +241,26 @@ fn negative_latent_heat_is_treated_as_zero() {
         "{}",
         m.temperature_at(0.0, 0.0, 0.0)
     );
+    assert_eq!(
+        m.latent_heat.data[0], 20.0,
+        "latent buffer holds Lf (0) + Lv (20)"
+    );
+
+    // a negative vaporization heat is clamped to 0 as well: total latent = Lf = 10
+    let mut v = PhaseChangeModifier::new(
+        PhaseChangeConfig {
+            latent_heat_vaporization: -5.0,
+            ..config()
+        },
+        5,
+        (-2.0, -2.0, -2.0),
+        (2.0, 2.0, 2.0),
+    );
+    v.temperature.data.fill(400.0);
+    v.update(0.01);
+    assert_eq!(v.phase_at(0.0, 0.0, 0.0), Phase::Gas);
+    assert!((v.temperature_at(0.0, 0.0, 0.0) - 390.0).abs() < 1e-3);
+    assert_eq!(v.latent_heat.data[0], 10.0);
 }
 
 #[test]
