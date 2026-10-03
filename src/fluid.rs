@@ -11,6 +11,18 @@
 //! 4. Apply viscosity and vorticity confinement
 //! 5. Update velocities
 //!
+//! # Known limitation: the density constraint is nearly inert
+//!
+//! The constraint multiplier `lambda = -C / (sum |grad W|^2 + eps)` divides by the raw kernel
+//! gradients, whereas Macklin & Muller (2013) use `grad C = (1/rho_0) sum grad W`, so
+//! `lambda` here is `rho_0^2` times smaller than the published one. With the default
+//! `rho_0 = 1000` a block at the rest spacing perturbed to `C = +2.14` keeps its RMS radius
+//! unchanged over 20 frames: the solver mostly integrates gravity, XSPH viscosity and the
+//! cohesion / vorticity terms. Dividing by `rho_0^2` changes the behaviour a lot (a 6x6x6
+//! block collapses to 0.12x, a sparser one diverges), so it is left as is until the
+//! relaxation / epsilon are redesigned together. The kernels themselves are normalised
+//! (`integral W dV = 1`).
+//!
 //! Author: Moroya Sakamoto
 
 use crate::math::{Fix128, Vec3Fix};
@@ -86,10 +98,11 @@ fn poly6(r_sq: Fix128, h: Fix128) -> Fix128 {
         return Fix128::ZERO;
     }
     let diff = h_sq - r_sq;
-    // W = 315 / (64 * pi * h^9) * (h^2 - r^2)^3
-    // Simplified constant for deterministic computation
+    // W = 315 / (64 * pi * h^9) * (h^2 - r^2)^3, normalised so that the integral over
+    // the ball of radius h is 1 (before 1.2.x the 1/pi was omitted and every density
+    // came out pi times too large)
     let h9 = h_sq * h_sq * h_sq * h_sq * h;
-    let coeff = Fix128::from_ratio(315, 64) / h9;
+    let coeff = Fix128::from_ratio(315, 64) / (h9 * Fix128::PI);
     coeff * diff * diff * diff
 }
 
@@ -102,7 +115,7 @@ fn spiky_grad(r: Fix128, h: Fix128) -> Fix128 {
     let diff = h - r;
     // grad_W = -45 / (pi * h^6) * (h - r)^2
     let h6 = h * h * h * h * h * h;
-    let coeff = Fix128::from_ratio(45, 1) / h6;
+    let coeff = Fix128::from_ratio(45, 1) / (h6 * Fix128::PI);
     -coeff * diff * diff
 }
 
@@ -579,6 +592,63 @@ mod tests {
 
         let y = fluid.positions[0].y.to_f32();
         assert!(y < 5.0, "Particle should fall under gravity");
+    }
+
+    /// radial quadrature over the ball of radius h with the given integrand
+    fn ball_integral(h: Fix128, f: impl Fn(Fix128) -> Fix128) -> f64 {
+        let n = 4000i64;
+        let dr = h / Fix128::from_int(n);
+        let mut sum = 0.0;
+        for i in 0..n {
+            let r = dr * (Fix128::from_int(i) + Fix128::from_ratio(1, 2));
+            sum += (f(r) * Fix128::from_int(4) * Fix128::PI * r * r * dr).to_f64();
+        }
+        sum
+    }
+
+    #[test]
+    fn poly6_integrates_to_one_over_its_support() {
+        for h in [
+            Fix128::from_ratio(1, 5),
+            Fix128::from_ratio(3, 2),
+            Fix128::ONE,
+        ] {
+            let v = ball_integral(h, |r| poly6(r * r, h));
+            assert!((v - 1.0).abs() < 1e-4, "h = {}: {v}", h.to_f64());
+        }
+    }
+
+    #[test]
+    fn poly6_has_compact_support() {
+        let h = Fix128::from_ratio(1, 5);
+        for k in [10, 11, 15, 30] {
+            let r = h * Fix128::from_ratio(k, 10);
+            assert_eq!(poly6(r * r, h), Fix128::ZERO, "r = {k}/10 h");
+        }
+    }
+
+    #[test]
+    fn spiky_gradient_matches_its_closed_form() {
+        let h = Fix128::from_ratio(1, 5);
+        let hf = 0.2f64;
+        for k in 1..10 {
+            let r = h * Fix128::from_ratio(k, 10);
+            let d = hf - r.to_f64();
+            let h6 = hf * hf * hf * hf * hf * hf;
+            let want = -45.0 / (std::f64::consts::PI * h6) * d * d;
+            let got = spiky_grad(r, h).to_f64();
+            assert!(got < 0.0, "gradient points inward");
+            assert!(
+                ((got - want) / want).abs() < 1e-9,
+                "k = {k}: {got} vs {want}"
+            );
+        }
+        assert_eq!(spiky_grad(h, h), Fix128::ZERO);
+        assert_eq!(spiky_grad(h * Fix128::from_ratio(3, 2), h), Fix128::ZERO);
+        assert_eq!(spiky_grad(Fix128::ZERO, h), Fix128::ZERO);
+        // closed form: integral of |grad W| over the ball is 6 / h
+        let v = ball_integral(h, |r| -spiky_grad(r, h));
+        assert!((v - 6.0 / hf).abs() / (6.0 / hf) < 1e-3, "{v}");
     }
 
     #[test]

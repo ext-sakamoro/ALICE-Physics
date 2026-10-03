@@ -125,11 +125,8 @@ fn non_positive_spacing_is_refused_instead_of_looping_forever() {
 /// Poly6 normalisation check, independent of the crate: the density of an interior
 /// particle of a lattice at spacing `s` must equal `m * sum_j W(r_ij)` with the standard
 /// `W = 315 / (64 pi h^9) (h^2 - r^2)^3` (Muller et al. 2003; Macklin & Muller 2013 eq. 2).
-/// The implementation's kernel has no `1/pi` ("simplified constant"), so its densities are
-/// `pi` times larger and the rest-density constraint is satisfied by a lattice `pi^(1/3)`
-/// times too sparse.
+/// (Before the fix the kernel had no `1/pi`, so densities came out `pi` times too large.)
 #[test]
-#[ignore = "known defect: fluid poly6 / spiky kernels omit the 1/pi normalisation (Backlog ALICE-Physics fluid kernel normalisation)"]
 fn interior_density_matches_the_normalised_poly6_sum() {
     let h = 0.2f64;
     let s = 0.05f64;
@@ -182,4 +179,45 @@ fn interior_density_matches_the_normalised_poly6_sum() {
         "density {got} vs normalised poly6 sum {want} (ratio {})",
         got / want
     );
+}
+
+/// density of the centre particle of an `n`^3 lattice at spacing `s` (one solver iteration, no forces)
+fn centre_density(s: f64, h: f64, mass: f64, n: usize) -> f64 {
+    let cfg = FluidConfig {
+        kernel_radius: Fix128::from_f64(h),
+        particle_mass: Fix128::from_f64(mass),
+        iterations: 1,
+        substeps: 1,
+        gravity: Vec3Fix::ZERO,
+        viscosity: Fix128::ZERO,
+        vorticity_strength: Fix128::ZERO,
+        surface_tension: Fix128::ZERO,
+        ..FluidConfig::default()
+    };
+    let ext = Fix128::from_f64(s * (n as f64 - 1.0));
+    let mut f = Fluid::new_block(
+        Vec3Fix::ZERO,
+        Vec3Fix::new(ext, ext, ext),
+        Fix128::from_f64(s),
+        cfg,
+    );
+    f.step(Fix128::from_ratio(1, 60));
+    f.densities[(n / 2) * n * n + (n / 2) * n + n / 2].to_f64()
+}
+
+#[test]
+fn a_fine_lattice_recovers_mass_per_cell_volume_so_the_kernel_integrates_to_one() {
+    // rho = m sum W ~ (m / s^3) integral W dV = m / s^3 for s << h
+    let (h, s, m) = (0.2, 0.04, 0.001);
+    let rho = centre_density(s, h, m, 11);
+    let want = m / (s * s * s);
+    assert!((rho - want).abs() / want < 3e-3, "{rho} vs m/s^3 = {want}");
+}
+
+#[test]
+fn rest_spacing_of_the_default_mass_and_density_gives_the_rest_density() {
+    // default m = 0.01, rho0 = 1000: s0 = (m / rho0)^(1/3); h = 0.1 reaches 4.6 spacings
+    let s0 = (0.01f64 / 1000.0).cbrt();
+    let rho = centre_density(s0, 0.1, 0.01, 11);
+    assert!((rho - 1000.0).abs() / 1000.0 < 0.03, "density at s0: {rho}");
 }
