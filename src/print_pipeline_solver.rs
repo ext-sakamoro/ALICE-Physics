@@ -245,6 +245,17 @@ pub fn analyze_print_pipeline(
                 "{} bridge spans exceed material limit",
                 br.unsafe_count
             ));
+            // One line per offending span: its 3-D length against the limit and
+            // the height difference of its endpoints (a bridge printed on a
+            // slope is not the flat span the limit was measured for).
+            for c in br.unsafe_checks() {
+                messages.push(format!(
+                    "Bridge span {:.2} mm exceeds {:.2} mm limit (dz {:.2} mm)",
+                    c.length_mm.to_f32(),
+                    c.allowable_mm.to_f32(),
+                    c.span.z_delta_mm().to_f32()
+                ));
+            }
             is_safe = false;
         }
         Some(br)
