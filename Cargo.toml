@@ -169,6 +169,14 @@ required-features = ["std", "replay"]
 name = "multi_world_management"
 required-features = ["std"]
 
+# Production entry point for `PiezoElement` (wiring_guard: src/piezoelectric.rs
+# had zero production callers across all 7 items: pzt_5a, quartz, pvdf,
+# permittivity, force_from_voltage, voltage_from_force, strain_under_stress —
+# only tests/ called in, which the guard does not count).
+[[example]]
+name = "piezoelectric_materials"
+required-features = ["std"]
+
 [[bench]]
 name = "physics_bench"
 harness = false
