@@ -16,6 +16,15 @@ Memory index pointer: `[[reference-alice-physics-v1-roadmap]]` in claude-config.
 | Maxwell FDTD | `ecd8c61` | source-free Yee、⚠️ **SI は `ε₀·μ₀` が 7.7 bit で不可**、正規化単位 + `S=9/16` |
 | 多体 ABA | `1bab99b` | ⚠️ **`solve()` が `link.joint` を読まない**状態から real ABA、oracle 12 本 |
 
+### 第 50 increment (2026-10-03、全配線 program 第 9 件 (F3c/F3d) — SDF の凸分解と compound の broad-phase、幾何クエリ)
+
+`decompose_sdf` が `concavity_threshold` を無視して**常に `max_hulls` 個へ切っていた** (凸な球・箱も 16 個に割れる) ので、cluster の hull の中にあって SDF の外にあるセルの体積 / hull の体積を concavity とし、閾値を超える間だけ・予算の範囲で切る実装にした `CompoundShape::{from_decomposition, from_sdf}` (追加のみ) が凸片を compound にし、`add_compound_body` で**凹んだ形のまま衝突する** body になる (L 字の切り欠きに置いた probe は触れない)
+⚠️ **既存の欠陥 4 つを検出・修正**: ① `concavity_threshold` が未使用 ② **`volumes` が bounding box の体積** (球で hull の 1.8 倍、`min_volume` の判定も bbox) ⇒ hull の実体積 ③ `max_vertices_per_hull` が `len < 2·cap` で効かない (floor の stride が 1) かつ stride が走査順で面上の点を落として**箱の角を失う** (hull が 10% 縮む) ⇒ 極値点 (接する面の法線が 3 次元を張る頂点) だけを残し、上限超過は最遠点サンプリングで選ぶ ④ `centers` が頂点の平均で偏る ⇒ hull の重心 ⚠️ `build_hull_mesh` の頂点は面上・辺上の共面点を含む (9³ の殻で 164 個、真の角は 8) ので極値点の絞り込みが要る
+oracle: 面が格子線に乗る箱で境界セルの中心が面から cell/2 内側に来るので、hull の体積は **`(辺 − c)` の積** (L 字は 2 本の棒の積を足した閉形式、独立に格子から導出) 球は上限 (凸の内側) と下限 (表面から 1 セル以内) 予算が cut の両側へ分かれること (4 つの球で予算 1/2/3/4/16 → 1/2/3/4/4) 閾値が hull 体積の割合であること 8 点未満は切らないこと compound の質量・重心が 2 本の棒の和 L 字 body の切り欠きの probe 変異 22 件中 21 red、生存 1 件は等価 (空 cluster の再帰) 途中で見つけた oracle 側の誤り: 球が格子の境界に接して切れていた / 切り欠きの probe が凸包の外だった (凸包の斜辺は x + y = 3)
+F3d: `body_collider` の narrow-phase が `world_aabb` で body 全体の box を先に判定し `overlapping_children` で相手の box と重なる子だけを GJK/EPA に渡す (結果は変わらず、遠い子を省く) `OrientedBox::{axis_aligned, corner, corners}` / `Cone::{apex, base_center}` / `AABB::from_metric_ball` は Rodrigues 回転 (f64) と metric ball の境界のブルートフォースで oracle 化し example に載せた 変異 17 件中 16 red、生存 1 件は等価 (相手でなく自分の box で絞る = 絞り込みなし、性能のみ)
+baseline 退役 13 行 (`decompose_sdf` / `DecompositionResult` / `world_aabb` / `overlapping_children` / `axis_aligned` / `corner` / `corners` / `apex` / `base_center` / `from_metric_ball` + 巻き込み 3 (`metric::{L1, LINF, axis_extent}`、example が通す))、example は `examples/convex_decomposition.rs` / `examples/geometry_queries.rs`
+残り (F3e): `compound::compute_aabb` (キャッシュは誰も読まない) / `build_convex_hull` (共面点を頂点に含み coplanar で panic)
+
 ### 第 49 increment (2026-10-03、全配線 program 第 18 件 — `cubic_elastic_fem`/`compound`/`raycast`/`ccd`/`solver_tgs` 未配線)
 
 worker 5 本 (`cubic_elastic_fem` 9 item / `compound` 8 item + `box_collider::axis_aligned` / `raycast` 9 item / `ccd` 7 item / `solver_tgs` 残 9 item 中 8 item) 変異: cubic_elastic_fem 9/9、compound 13/14 (1 件は軸整列回転のみの test では不可視だった真の oracle gap、対角 120 度回転 test 追加で解消)、raycast 22/22 (初回 3 件生存、カプセル接線・t=0 境界・両キャップ命中の scene 追加で解消)、ccd 15/19 (4 件 equivalent mutant)
