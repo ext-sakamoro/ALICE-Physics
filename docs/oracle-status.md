@@ -1,20 +1,22 @@
 # ALICE-Physics Oracle Status
 
-**Last updated:** 2026-10-03 18:16
+**Last updated:** 2026-10-03 09:25
 
 ## Summary
 
 | Category | Count |
 |----------|-------|
-| 🟢 Implemented | 903 |
+| 🟢 Implemented | 1963 |
 | 🟡 Partial | 0 |
-| 🔴 Pending | 22 |
-| **Total** | **925** |
+| 🔴 Pending | 27 |
+| **Total** | **1990** |
 
-## 🔴 Pending (22)
+## 🔴 Pending (27)
 
 Oracle tests not yet implemented (marked with `#[ignore]`).
 
+- `adaptive_cubic_beats_uniform_per_node` (analytic_adaptive_refinement_high_order.rs) — runtime: about 40 s in release (P3 reference at two uniform passes, a uniform co…
+- `adaptive_quadratic_beats_uniform_per_node` (analytic_adaptive_refinement_high_order.rs) — runtime: about 20 s in release (P2 reference at two uniform passes, a uniform co…
 - `amplification_growth_is_problem_size_or_element_shape` (mesh_to_fem_stress.rs) — diagnostic: run when the amplification threshold is in question
 - `cantilever_order_estimates_agree` (analytic_fem_convergence.rs) — 25,600 tets at cell 0.25; run with --release, see the doc comment
 - `cantilever_without_preconditioner` (analytic_fem_convergence.rs) — 25,600 tets at cell 0.25; the A/B partner of the test above
@@ -29,6 +31,9 @@ Oracle tests not yet implemented (marked with `#[ignore]`).
 - `iterations_to_same_precision` (analytic_multigrid.rs) — diagnostic: cycles vs GS iterations to the same precision (use --release)
 - `maccormack_converges_and_the_schemes_bracket_the_limit_at_ny_8_16_32` (armaly_backward_step.rs) — manual: about 4 h in release (ny = 8 / 16 / 32, both schemes, each to t_settle),…
 - `mg_rate_report` (analytic_multigrid.rs) — diagnostic: multigrid rates used to fix the thresholds
+- `p2_error_decreases_with_refinement_at_better_than_second_order` (analytic_hyperelastic_mms_order.rs) — runtime: about 5 s in release, about 60 s in debug (P2 n = 2, 3, 4 with a Fix128…
+- `p3_separates_from_p2_at_large_amplitude` (analytic_hyperelastic_mms_order.rs) — runtime: about 35 s in release (P3 n = 3 at A = 0.08 with the Newton-Krylov step…
+- `p3_separates_from_p2_in_order_and_in_error` (analytic_hyperelastic_mms_order.rs) — runtime: about 30 s in release (P3 n = 2 and 3 plus P2 n = 3, Fix128 Newton on 2…
 - `reattachment_lengthens_under_grid_refinement` (armaly_backward_step.rs) — runtime only: 256x16 cells for 8192 steps, release-only; the measured values are…
 - `rigid_rotation_produces_zero_stress` (analytic_large_rotation.rs) — pending
 - `the_answer_does_not_depend_on_the_increment_count` (analytic_corotational.rs) — pending
@@ -38,42 +43,42 @@ Oracle tests not yet implemented (marked with `#[ignore]`).
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / A…
 
-## 🟢 Implemented (903)
+## 🟢 Implemented (1963)
 
 Oracle tests with implementation complete and passing.
 
+- `a_body_dropped_on_a_floor_rests_one_radius_above_it` (analytic_static_collider.rs)
 - `a_body_flush_with_the_grid_deposits_its_whole_heat_into_the_dual_ledger` (analytic_plastic_dissipation.rs)
+- `a_body_s_own_collision_radius_is_the_sphere_tested` (analytic_static_collider.rs)
+- `a_body_without_a_radius_uses_the_default_collision_radius` (analytic_static_collider.rs)
 - `a_boundary_index_past_the_end_is_refused_and_does_not_panic` (analytic_hyperelastic_degenerate.rs)
+- `a_box_beside_a_ball_reaches_in_by_its_nearest_face_centre` (analytic_sdf_body_collider.rs)
+- `a_box_dropped_on_a_floor_box_rests_on_its_top_face` (analytic_convex_contact.rs)
+- `a_box_has_the_textbook_mass_and_inertia` (analytic_mass_properties.rs)
+- `a_box_lands_flat_on_a_ball_by_its_face_centre` (analytic_sdf_body_collider.rs)
+- `a_box_on_a_static_box_is_lifted_by_the_whole_depth` (analytic_convex_contact.rs)
 - `a_budget_of_one_sweep_is_reported_as_not_converged` (analytic_thermoplastic_coupling.rs)
+- `a_capsule_matches_a_quadrature_of_its_solid` (analytic_mass_properties.rs)
 - `a_cavity_narrower_than_a_cell_leaves_no_trace` (mesh_quality.rs)
+- `a_cell_carried_past_the_last_cell_is_lost_and_the_volume_drops_by_it` (analytic_multiphase_wiring.rs)
+- `a_charge_on_the_high_wall_is_rejected` (analytic_maxwell_wiring.rs)
+- `a_charge_on_the_low_wall_is_rejected` (analytic_maxwell_wiring.rs)
+- `a_child_aabb_follows_the_body_pose` (analytic_compound.rs)
 - `a_clamped_push_lands_in_the_analytic_free_band` (analytic_sdf_character_up_axis.rs)
 - `a_closed_box_is_no_slip_except_where_it_is_one_cell_thick` (analytic_cfd_flow_bc.rs)
 - `a_closed_current_loop_creates_no_charge` (analytic_maxwell_fdtd.rs)
 - `a_collision_free_move_reports_the_sampled_distance_as_best` (analytic_sdf_character_up_axis.rs)
+- `a_compound_body_has_the_mass_and_inertia_of_its_children` (analytic_compound.rs)
+- `a_compound_collides_as_its_children_not_as_its_hull` (analytic_compound.rs)
+- `a_compound_without_volume_or_density_is_refused` (analytic_compound.rs)
+- `a_cone_and_a_wedge_sit_on_the_floor_by_their_centre_of_mass` (analytic_convex_contact.rs)
 - `a_configuration_without_a_law_is_refused` (analytic_cubic_hyperelastic.rs)
 - `a_configuration_without_a_law_is_refused` (analytic_quadratic_hyperelastic.rs)
 - `a_configuration_without_a_law_is_refused_on_both_elements` (analytic_hyperelastic_degenerate.rs)
+- `a_consistent_charge_keeps_gauss_exact_and_an_inconsistent_one_is_carried` (analytic_maxwell_wiring.rs)
 - `a_contact_does_not_add_velocity_away_from_the_surface` (analytic_sdf_character_up_axis.rs)
-- `a_contracting_splitting_stays_contracting_at_every_time_step` (analytic_added_mass_coupling.rs)
-- `a_contracting_splitting_trips_no_guard` (analytic_added_mass_coupling.rs)
-- `a_converged_step_multigrid_matches_a_converged_step` (analytic_step_multigrid.rs)
-- `a_crumpled_cloth_does_not_pass_through_itself` (analytic_self_contact.rs)
-- `a_cube_metric_clearance_is_missed_without_the_expansion_and_caught_with_it` (analytic_metric_broadphase.rs)
-- `a_current_inside_the_absorber_is_rejected` (analytic_maxwell_fdtd.rs)
-- `a_current_on_a_magnetic_face_is_rejected` (analytic_maxwell_fdtd.rs)
-- `a_current_on_a_pec_edge_is_rejected` (analytic_maxwell_fdtd.rs)
-- `a_current_that_ends_deposits_exactly_the_charge_that_left` (analytic_maxwell_fdtd.rs)
-- `a_degenerate_axis_is_refused_rather_than_silently_rescaled` (analytic_plastic_dissipation.rs)
-- `a_degenerate_grid_axis_is_refused` (analytic_thermoplastic_coupling.rs)
-- `a_degenerate_up_axis_falls_back_to_y_instead_of_producing_nan` (analytic_sdf_character_up_axis.rs)
-- `a_deposit_onto_a_mismatched_mesh_is_rejected` (analytic_plastic_dissipation.rs)
-- `a_diverging_iteration_reports_a_zero_l2_residual` (analytic_added_mass_coupling.rs)
-- `a_field_that_does_not_cover_the_mesh_is_refused` (analytic_thermoelastic.rs)
-- `a_field_that_does_not_cover_the_mesh_is_refused` (analytic_thermoplastic_coupling.rs)
-- `a_field_that_does_not_cover_the_mesh_is_refused` (analytic_thermoplastic_softening.rs)
-- `a_field_that_varies_along_the_bar_is_sampled_per_element` (analytic_thermoplastic_softening.rs)
 
-... and 873 more
+... and 1933 more
 
 ---
 
