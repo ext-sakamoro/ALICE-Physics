@@ -639,7 +639,7 @@ fn extract_u32(json: &str, key: &str) -> Result<Option<u32>, String> {
     let after_colon = rest[colon + 1..].trim_start();
     // Token: everything up to the next JSON delimiter
     let end = after_colon
-        .find(|c: char| matches!(c, ',' | '}' | ']' | '\n' | '\r'))
+        .find([',', '}', ']', '\n', '\r'])
         .unwrap_or(after_colon.len());
     let token = after_colon[..end].trim();
     token
