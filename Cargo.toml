@@ -428,6 +428,15 @@ required-features = ["std"]
 name = "collision_mesh_generation"
 required-features = ["std"]
 
+# Production entry point for `alice_physics::flow_viz` (wiring_guard:
+# src/flow_viz.rs had zero production callers across all 4 items:
+# FlowArrow, FlowVizConfig, generate_flow_arrows, generate_streamlines —
+# only the module's own #[cfg(test)] unit tests called in, which the
+# guard does not count). `flow_viz` itself is `#[cfg(feature = "std")]`.
+[[example]]
+name = "flow_visualization"
+required-features = ["std"]
+
 # Production entry point for `alice_physics::bvh::BvhNode::get_aabb`
 # (wiring_guard: src/bvh.rs listed 5 unwired items -- build_dynamic,
 # clear_dynamic, get_aabb, insert_dynamic, query_pairs -- only the
