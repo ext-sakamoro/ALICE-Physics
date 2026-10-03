@@ -284,7 +284,7 @@ fn block(min: [f32; 3], max: [f32; 3]) -> SdfCollider {
         let o = [q[0].max(0.0), q[1].max(0.0), q[2].max(0.0)];
         (o[0] * o[0] + o[1] * o[1] + o[2] * o[2]).sqrt() + q[0].max(q[1]).max(q[2]).min(0.0)
     };
-    let d2 = dist.clone();
+    let d2 = dist;
     let normal = move |x: f32, y: f32, z: f32| {
         let e = 1e-3;
         let gx = d2(x + e, y, z) - d2(x - e, y, z);
@@ -344,5 +344,290 @@ fn capsule_bottom_does_not_sink_into_a_static_body_it_lands_on() {
     assert!(
         bottom >= 0.3 - 0.011,
         "capsule bottom at y = {bottom} is inside the body (top at 0.3)"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Closed-form slide, sweep ordering, stair step, SDF hysteresis, slope config
+// ---------------------------------------------------------------------------
+
+#[test]
+fn slide_along_an_oblique_contact_matches_the_collide_and_slide_closed_form() {
+    // Static body at (3, 0, 0.3), inflated radius R = 0.6, character moves
+    // (5,0,0) from the origin. Hand derivation:
+    //   hit      x_h = 3 - sqrt(R^2 - 0.3^2) = 2.480384, n = ((x_h-3), 0, -0.3)/R
+    //   stop     x_s = x_h - skin
+    //   left     = 5 - x_s,  rem = (left, 0, 0)
+    //   slide    = rem - n (rem . n)
+    //   2nd sweep from (x_s,0,0) along slide misses the sphere (discriminant < 0)
+    //   so the final position is (x_s,0,0) + slide.
+    let (r, d, skin) = (0.6_f64, 0.3_f64, 0.01_f64);
+    let x_h = 3.0 - (r * r - d * d).sqrt();
+    let n = [(x_h - 3.0) / r, 0.0, -d / r];
+    let x_s = x_h - skin;
+    let left = 5.0 - x_s;
+    let rn = left * n[0];
+    let slide = [left - n[0] * rn, -n[1] * rn, -n[2] * rn];
+    let want = [x_s + slide[0], slide[1], slide[2]];
+    let mut c = CharacterController::new(v3(0.0, 0.0, 0.0), cfg());
+    let res = c.move_and_slide(v3(5.0, 0.0, 0.0), &[static_at(3.0, 0.0, d)], &[]);
+    let got = [
+        res.position.x.to_f64(),
+        res.position.y.to_f64(),
+        res.position.z.to_f64(),
+    ];
+    for i in 0..3 {
+        assert!(
+            (got[i] - want[i]).abs() < 1e-4,
+            "axis {i}: got {got:?} want {want:?}"
+        );
+    }
+}
+
+#[test]
+fn max_slides_one_stops_after_the_first_contact() {
+    let mut conf = cfg();
+    conf.max_slides = 1;
+    let mut c = CharacterController::new(v3(0.0, 0.0, 0.0), conf);
+    let r = c.move_and_slide(v3(5.0, 0.0, 0.0), &[static_at(3.0, 0.0, 0.3)], &[]);
+    let x_h = 3.0 - (0.36_f64 - 0.09).sqrt();
+    assert!((r.position.x.to_f64() - (x_h - 0.01)).abs() < 1e-4);
+    assert!(
+        r.position.z.to_f64().abs() < 1e-9,
+        "no slide with a one-slide budget"
+    );
+}
+
+#[test]
+fn nearer_body_wins_when_listed_first_and_far_bodies_beyond_the_displacement_do_not_block() {
+    let mut c = CharacterController::new(v3(0.0, 0.0, 0.0), cfg());
+    let near_first = [static_at(3.0, 0.0, 0.0), static_at(6.0, 0.0, 0.0)];
+    let r = c.move_and_slide(v3(8.0, 0.0, 0.0), &near_first, &[]);
+    assert!((r.position.x.to_f64() - 2.39).abs() < 1e-6);
+    // displacement 2.0 ends before the inflated surface at x = 2.4
+    let mut c = CharacterController::new(v3(0.0, 0.0, 0.0), cfg());
+    let r = c.move_and_slide(v3(2.0, 0.0, 0.0), &[static_at(3.0, 0.0, 0.0)], &[]);
+    assert!(
+        (r.position.x.to_f64() - 2.0).abs() < 1e-9,
+        "x = {}",
+        r.position.x.to_f64()
+    );
+}
+
+fn stepper(x0: f64) -> CharacterController {
+    let mut c = CharacterController::new(v3(x0, 0.0, 0.0), cfg());
+    c.grounded = true;
+    c
+}
+
+#[test]
+fn stair_step_lifts_by_step_height_and_advances_the_full_displacement_when_clear() {
+    // Body at (1,0,0). Start 0.38, move 0.9: the sweep stops at 0.39 (blocked,
+    // moved < 25 %), the stepped test point (1.29, 0.3, 0) is 0.417 from the
+    // body centre (> radius + skin = 0.31) so the step is taken.
+    let mut c = stepper(0.38);
+    let r = c.move_and_slide(v3(0.9, 0.0, 0.0), &[static_at(1.0, 0.0, 0.0)], &[]);
+    assert!(
+        (r.position.x.to_f64() - 1.29).abs() < 1e-6,
+        "x = {}",
+        r.position.x.to_f64()
+    );
+    assert!(
+        (r.position.y.to_f64() - 0.3).abs() < 1e-6,
+        "y = {}",
+        r.position.y.to_f64()
+    );
+}
+
+#[test]
+fn stair_step_needs_a_grounded_character() {
+    let mut c = stepper(0.38);
+    c.grounded = false;
+    let r = c.move_and_slide(v3(0.9, 0.0, 0.0), &[static_at(1.0, 0.0, 0.0)], &[]);
+    assert!((r.position.x.to_f64() - 0.39).abs() < 1e-6);
+    assert!(r.position.y.to_f64().abs() < 1e-9);
+}
+
+#[test]
+fn stair_step_is_refused_when_the_stepped_point_is_inside_the_body_clearance() {
+    // displacement 0.6: stepped point (0.99, 0.3, 0) is 0.3002 from the body
+    // centre, inside radius + skin = 0.31 -> blocked, no step.
+    let mut c = stepper(0.38);
+    let r = c.move_and_slide(v3(0.6, 0.0, 0.0), &[static_at(1.0, 0.0, 0.0)], &[]);
+    assert!((r.position.x.to_f64() - 0.39).abs() < 1e-6);
+    assert!(r.position.y.to_f64().abs() < 1e-9);
+    // 0.555: stepped point is 0.305 from the centre: still inside r + skin (0.31)
+    let mut c = stepper(0.38);
+    let r = c.move_and_slide(v3(0.555, 0.0, 0.0), &[static_at(1.0, 0.0, 0.0)], &[]);
+    assert!(
+        r.position.y.to_f64().abs() < 1e-9,
+        "step taken inside the skin clearance"
+    );
+}
+
+#[test]
+fn stair_step_is_not_attempted_when_the_character_moved_more_than_a_quarter() {
+    // start 0, move 0.7: stops at 0.39, moved^2 / desired^2 = 0.31 > 1/4
+    let mut c = stepper(0.0);
+    let r = c.move_and_slide(v3(0.7, 0.0, 0.0), &[static_at(1.0, 0.0, 0.0)], &[]);
+    assert!((r.position.x.to_f64() - 0.39).abs() < 1e-6);
+    assert!(
+        r.position.y.to_f64().abs() < 1e-9,
+        "step attempted at 31 % progress"
+    );
+}
+
+#[test]
+fn stair_step_is_refused_when_an_sdf_wall_occupies_the_stepped_point() {
+    // tall wall x in [1,3]; start 0.65 grounded, move +0.5: pushed back to the
+    // 0.3 clearance (x = 0.7); stepped point (1.2, 0.3, 0) is inside the wall.
+    let wall = block([1.0, -50.0, -50.0], [3.0, 50.0, 50.0]);
+    let mut c = stepper(0.65);
+    let r = c.move_and_slide(v3(0.5, 0.0, 0.0), &[], &[wall]);
+    assert!(
+        (r.position.x.to_f64() - 0.7).abs() < 1e-3,
+        "x = {}",
+        r.position.x.to_f64()
+    );
+    assert!(
+        r.position.y.to_f64().abs() < 1e-3,
+        "y = {}",
+        r.position.y.to_f64()
+    );
+}
+
+#[test]
+fn sdf_push_out_applies_below_the_radius_by_the_exact_shortfall() {
+    // bottom sample (hemisphere centre) at distance 0.28 < radius 0.3: pushed
+    // up by 0.02 -> centre y = 0.88 + 0.02 = 0.9
+    let floor = [plane_sdf(0.0, 1.0, 0.0)];
+    let mut c = CharacterController::new(v3(0.0, 0.88, 0.0), cfg());
+    c.move_and_slide(Vec3Fix::ZERO, &[], &floor);
+    assert!(
+        (c.position.y.to_f64() - 0.9).abs() < 1e-3,
+        "y = {}",
+        c.position.y.to_f64()
+    );
+}
+
+#[test]
+fn sdf_push_out_uses_the_top_hemisphere_centre_for_a_ceiling() {
+    // ceiling at y = 2 (normal pointing down). Top hemisphere centre = y + 0.6;
+    // y = 1.2 -> 1.8 -> distance 0.2 < 0.3 -> pushed down by 0.1 to y = 1.1.
+    let ceiling = [plane_sdf(0.0, -1.0, -2.0)];
+    let mut c = CharacterController::new(v3(0.0, 1.2, 0.0), cfg());
+    c.move_and_slide(Vec3Fix::ZERO, &[], &ceiling);
+    assert!(
+        (c.position.y.to_f64() - 1.1).abs() < 1e-3,
+        "y = {}",
+        c.position.y.to_f64()
+    );
+}
+
+#[test]
+fn static_body_beyond_the_probe_does_not_ground() {
+    // hemisphere centre 0.2 above the body-sphere top: farther than
+    // probe + skin = 0.11 -> airborne.
+    let bodies = [static_at(0.0, 0.0, 0.0)];
+    // feet = y - 0.6; top at 0.3; feet = 0.5 -> y = 1.1
+    let mut c = CharacterController::new(v3(0.0, 1.1, 0.0), cfg());
+    assert!(!c.move_and_slide(Vec3Fix::ZERO, &bodies, &[]).grounded);
+}
+
+#[test]
+fn max_slope_angle_is_compared_through_its_cosine() {
+    // limit 0.5 rad (28.6 deg): cos = 0.8776, sin = 0.4794. A 40 deg slope
+    // (n_y = 0.766) is steeper than the limit, a 20 deg slope (0.940) is not.
+    let mut conf = cfg();
+    conf.max_slope_angle = fx(0.5);
+    let grounded_on = |theta: f64| {
+        let (s, co) = (theta.sin() as f32, theta.cos() as f32);
+        let floor = [plane_sdf(s, co, 0.0)];
+        let y_feet = 0.35 / theta.cos();
+        let mut c = CharacterController::new(v3(0.0, y_feet + 0.6, 0.0), conf);
+        c.move_and_slide(Vec3Fix::ZERO, &[], &floor).grounded
+    };
+    assert!(grounded_on(20.0_f64.to_radians()));
+    assert!(!grounded_on(40.0_f64.to_radians()));
+}
+
+#[test]
+fn push_impulse_threshold_is_strict_at_the_exact_combined_distance() {
+    // body exactly radius + body_radius away in fixed point: not a push
+    let c = CharacterController::new(v3(0.0, 0.0, 0.0), cfg());
+    let br = fx(0.5);
+    let body = RigidBody::new(
+        Vec3Fix::new(c.config.radius + br, Fix128::ZERO, Fix128::ZERO),
+        Fix128::ONE,
+    );
+    assert!(c.compute_push_impulses(&[body], br).is_empty());
+    // one ulp inside: a push with a tiny overlap
+    let inside = RigidBody::new(
+        Vec3Fix::new(
+            c.config.radius + br - Fix128::from_raw(0, 1 << 20),
+            Fix128::ZERO,
+            Fix128::ZERO,
+        ),
+        Fix128::ONE,
+    );
+    assert_eq!(c.compute_push_impulses(&[inside], br).len(), 1);
+}
+
+#[test]
+fn result_and_controller_velocity_equal_the_displacement_argument() {
+    // pins the current contract: `velocity` is set to the displacement passed
+    // in (a per-frame distance, see AUD-A-S3W3-005 / the units note)
+    let mut c = CharacterController::new(v3(0.0, 9.0, 0.0), cfg());
+    let d = v3(0.25, -0.5, 0.125);
+    let r = c.move_and_slide(d, &[], &[]);
+    assert_eq!(c.velocity, d);
+    assert_eq!(r.velocity, d);
+}
+
+#[test]
+fn stair_snap_down_settles_the_character_on_the_ledge() {
+    // Walk a grounded character onto a 0.2 m ledge (floor y = 0 plus a block
+    // x in [1,3], top 0.2). The controller documents "Snap down to find the
+    // actual stair surface"; the capsule bottom must end within a skin of the
+    // ledge top rather than hovering one step_height above it.
+    let sdfs = [
+        plane_sdf(0.0, 1.0, 0.0),
+        block([1.0, 0.0, -5.0], [3.0, 0.2, 5.0]),
+    ];
+    let mut c = CharacterController::new(v3(0.0, 0.92, 0.0), cfg());
+    c.move_and_slide(Vec3Fix::ZERO, &[], &sdfs);
+    for _ in 0..20 {
+        c.move_and_slide(v3(0.2, 0.0, 0.0), &[], &sdfs);
+    }
+    assert!(c.position.x.to_f64() > 2.0, "ledge not climbed");
+    let hover = c.position.y.to_f64() - 0.9 - 0.2;
+    assert!(
+        hover <= 0.02,
+        "capsule bottom hovers {hover} m above the ledge top (step_height - ledge = 0.1)"
+    );
+}
+
+#[test]
+#[ignore = "known defect: AUD-A-S3W3-019: the stair snap-down ray is cast against the character's own previous feet plane (y - h/2 + r), so for a capsule with h/2 - r < step_height the step ends h/2 - r below the start (h 0.8, r 0.3: y = -0.1 from 0.0) instead of settling on the stair; unreachable with the default 1.8 m capsule where the ray never hits"]
+fn stair_step_with_a_short_capsule_does_not_lower_the_character() {
+    // Capsule height 0.8, radius 0.3 (h/2 - r = 0.1 < step_height 0.3): the
+    // step-up point is 0.3 above the start, and the "snap down to the stair
+    // surface" ray is cast against the character's own previous feet plane.
+    // A character that steps onto something must not end below where it
+    // started.
+    let mut conf = cfg();
+    conf.height = fx(0.8);
+    let mut c = CharacterController::new(v3(0.38, 0.0, 0.0), conf);
+    c.grounded = true;
+    let r = c.move_and_slide(v3(0.9, 0.0, 0.0), &[static_at(1.0, 0.0, 0.0)], &[]);
+    assert!(
+        (r.position.x.to_f64() - 1.29).abs() < 1e-6,
+        "step not taken: x = {}",
+        r.position.x.to_f64()
+    );
+    assert!(
+        r.position.y.to_f64() >= -1e-9,
+        "stepped character ended at y = {} below its start 0.0",
+        r.position.y.to_f64()
     );
 }
