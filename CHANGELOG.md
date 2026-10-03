@@ -13,6 +13,12 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added — 超弾性 × P2/P3 の次数分離 oracle (体積力つき製作解)
+
+- `tests/analytic_hyperelastic_mms_order.rs`: 非多項式の製作解 `u = A·(sin πY(1+Z), sin πZ(1+X), sin πX(1+Y))` と `b = −Div P` (Neo-Hookean、`f64` の 4 次中心差分) で P2 / P3 の離散化次数を測る P2 は傾き 2.42 (h=1/3→1/4)、P3 は同 h で P2 の 1/9.4 の誤差 (傾き 2.84) 荷重の符号反転で誤差が 47 倍になる歯つき 重い 2 本は `runtime:` 区分
+- `scripts/wiring_guard.py`: 走査から `scratchpad` を除外
+- `docs/ROADMAP.md`: 増分番号の重複 (第 23 / 第 24) を第 48 / 第 49 に振り直し
+
 ### Added — `prestressed` / `piezoelectric` / `rolling_contact` / `sdf_force` の未配線 28 item を全配線 (全配線 program 第 17 件)
 
 - `prestressed`: `examples/prestressed_joints_and_cables.rs` が `preload_from_torque`/`recommended_preload_n`/`bolt_load_fraction`/`bolt_peak_tension`/`separation_load_n`/`cable_pretension_n`/`tensioned_cable_stiffness_n_per_mm` を駆動、oracle 19 本、変異 7/7 (実装) + 2/5 (guard、3 件は `Fix128::Div` のゼロ除算契約と算術等価) red
