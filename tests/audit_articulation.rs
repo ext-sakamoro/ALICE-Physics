@@ -413,18 +413,24 @@ fn mass_splitting_ignores_static_links_in_the_ratio() {
     let scene = || {
         let b = vec![
             RigidBody::new_static(v3(0.0, 0.0, 0.0)),
-            RigidBody::new(v3(0.0, 1.0, 0.0), fx(1.0)),
-            RigidBody::new(v3(0.0, 2.0, 0.0), fx(4.0)),
+            RigidBody::new(v3(1.0, 0.0, 0.0), fx(1.0)),
+            RigidBody::new(v3(2.0, 0.0, 0.0), fx(4.0)),
         ];
         let mut a = ArticulatedBody::new(0, false);
-        let l = a.add_link(0, 1, ball(0, 1), v3(0.0, 1.0, 0.0));
-        a.add_link(l, 2, ball(1, 2), v3(0.0, 1.0, 0.0));
+        let l = a.add_link(0, 1, ball(0, 1), v3(1.0, 0.0, 0.0));
+        a.add_link(l, 2, ball(1, 2), v3(1.0, 0.0, 0.0));
         (a, b)
     };
     let (a, mut half) = scene();
     let mut s = FeatherstoneSolver::new();
     s.solve(&a, &mut half, g, dt.half());
     s.solve(&a, &mut half, g, dt.half());
+    let (a, mut full) = scene();
+    FeatherstoneSolver::new().solve(&a, &mut full, g, dt);
+    assert!(
+        full[1].position != half[1].position || full[2].position != half[2].position,
+        "scene must distinguish a split from a full step"
+    );
     let (a, mut got) = scene();
     FeatherstoneSolver::new().solve_with_mass_splitting(&a, &mut got, g, dt, fx(4.0));
     for k in 0..3 {
