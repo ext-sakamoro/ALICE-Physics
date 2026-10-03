@@ -530,3 +530,82 @@ fn switching_backend_mid_simulation_keeps_the_body_falling() {
         after_tgs
     );
 }
+
+// ============================================================================
+// 8. Kinematic targets under `Tgs` (previously a documented gap: a
+//    kinematic body kept its last position/velocity under `Tgs`, since
+//    nothing in `step_tgs` read `kinematic_target`)
+// ============================================================================
+
+/// oracle: a kinematic body set to a sequence of per-frame targets must
+/// land exactly on the final one after `n` steps, with velocity equal to
+/// the closed-form `(target - previous_position) / dt` on the *last* step
+/// — computed by hand here from the target sequence, not by calling
+/// `step`/`step_tgs`.
+#[test]
+fn kinematic_target_is_reached_under_tgs() {
+    use alice_physics::math::QuatFix;
+
+    let dt = r(1, 60);
+    let mut w = PhysicsWorld::new(tgs_cfg(0, 4));
+    let k = w.add_body(RigidBody::new_kinematic(Vec3Fix::ZERO));
+
+    // Move 1 unit per frame along +x for 5 frames: targets (1,0,0)..(5,0,0).
+    let mut expected_pos = Vec3Fix::ZERO;
+    for step in 1..=5i64 {
+        let target = Vec3Fix::from_int(step, 0, 0);
+        w.bodies[k].set_kinematic_target(target, QuatFix::IDENTITY);
+        w.step(dt);
+        expected_pos = target;
+    }
+
+    assert_eq!(w.bodies[k].position, expected_pos);
+    // Last displacement is exactly 1 unit over `dt`, i.e. velocity = 60
+    // (in the (1,0,0) direction) — the closed form for that one step.
+    let expected_last_velocity = Fix128::ONE * (Fix128::ONE / dt);
+    assert_eq!(
+        w.bodies[k].velocity,
+        Vec3Fix::new(expected_last_velocity, Fix128::ZERO, Fix128::ZERO)
+    );
+}
+
+/// oracle: a kinematic body advancing toward a stationary dynamic body must
+/// push it (the kinematic body has `inv_mass = 0`, so it is immovable by
+/// the contact solver but still transmits an impulse) — this specifically
+/// exercises `step_tgs`'s contact-detection ordering relative to the
+/// kinematic advance (Phase 1 of `step_tgs` must move the kinematic body
+/// *before* Phase 2's `detect_collisions`, or the dynamic body would never
+/// see a contact and this test would fail by the kinematic body passing
+/// straight through it).
+#[test]
+fn kinematic_target_pushes_a_dynamic_body_under_tgs() {
+    use alice_physics::math::QuatFix;
+
+    let dt = r(1, 60);
+    let mut w = PhysicsWorld::new(tgs_cfg(0, 4));
+    let k = w.add_body(RigidBody::new_kinematic(Vec3Fix::ZERO));
+    w.set_body_collision_radius(k, Fix128::ONE);
+    let d = w.add_body(RigidBody::new_dynamic(
+        Vec3Fix::from_int(3, 0, 0),
+        Fix128::ONE,
+    ));
+    w.set_body_collision_radius(d, Fix128::ONE);
+    let d_start_x = w.bodies[d].position.x;
+
+    // Advance the kinematic body toward the dynamic one, 1 unit/frame, for
+    // enough frames to close the gap (radii sum to 2, start distance 3).
+    for step in 1..=40i64 {
+        let target = Vec3Fix::from_int(step, 0, 0);
+        w.bodies[k].set_kinematic_target(target, QuatFix::IDENTITY);
+        w.step(dt);
+    }
+
+    assert!(
+        w.bodies[d].position.x > d_start_x,
+        "dynamic body must have been pushed forward by the advancing kinematic body \
+         (start={:?}, end={:?}) — if this is equal, the kinematic body passed through \
+         without ever registering a contact",
+        d_start_x,
+        w.bodies[d].position.x
+    );
+}

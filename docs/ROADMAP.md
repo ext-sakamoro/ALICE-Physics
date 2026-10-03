@@ -32,6 +32,15 @@ oracle (平らな SDF = 閉形式、曲面 = 総当たり): 回転した箱は�
 ⚠️ **残る近似**: 曲面の SDF に対し、箱の辺・面の内部や凸形状の平らな面が標本点の間で最深になりうる (回転した箱で最大 15% 浅い) 平らな SDF では全て厳密
 baseline 退役 5 行 (`collide_point_sdf` / `collide_capsule_sdf` / `collide_aabb_sdf` / `detect_sdf_contacts` / `SdfCollider::with_scale`、実配線 3 (`collide_*` は body の collider から) + example 経由 2)、example は `examples/sdf_body_collisions.rs`
 
+### 第 56 increment (2026-10-03、`SolverBackend::Tgs` でkinematic targetを処理)
+
+`Tgs` backend の既知gap 3件 (joint / kinematic target / SDFコライダー) のうち kinematic target を解消
+`kinematic_target` を設定した `Kinematic` body は `Tgs` 下で最後の位置・速度に固定されたままだった
+(`XPBD` 経路のみが処理していた) `step_tgs` の衝突検出フェーズの前にkinematic bodyを目標位置へ進める
+処理を追加、速度は位置差分から導出 (`XPBD` の既存閉形式と同じ式) oracle 5本 (単体3本 + end-to-end 2本)、
+kinematic bodyが動的bodyを押すsceneで衝突検出との配線順序も確認 変異試験で両方のoracleに歯があることを確認
+公開API signature変更なし、残りgap (joint / SDFコライダー) は未着手
+
 ### 第 53 increment (2026-10-03、`thin_wall` の無限ループ + silent footgun 2 件を根本修正)
 
 既存バグの根本修正として、「設計変更が必要」として記録されていた 3 件を解消
