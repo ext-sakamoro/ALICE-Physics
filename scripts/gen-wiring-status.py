@@ -2,19 +2,43 @@
 """
 Generate ALICE-Physics wiring status report.
 
-Runs wiring_guard.py and generates a markdown report of unwired/dead-code items.
+Scans baseline and wiring_guard output to report permitted vs new violations.
 """
 
 import subprocess
-import re
 from pathlib import Path
 from datetime import datetime
 
 PROJECT_ROOT = Path(__file__).parent.parent
 DOCS_DIR = PROJECT_ROOT / "docs"
 WIRING_GUARD = PROJECT_ROOT / "scripts" / "wiring_guard.py"
+BASELINE_FILE = PROJECT_ROOT / "scripts" / "wiring-baseline.txt"
 
 DOCS_DIR.mkdir(exist_ok=True)
+
+
+def load_baseline():
+    """Load baseline (permitted violations)."""
+    baseline = {
+        'dead_code': [],
+        'unwired': [],
+    }
+
+    if not BASELINE_FILE.exists():
+        return baseline
+
+    with open(BASELINE_FILE, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+            parts = line.split()
+            if len(parts) >= 2:
+                violation_type = parts[0]
+                if violation_type in baseline:
+                    baseline[violation_type].append(line)
+
+    return baseline
 
 
 def run_wiring_guard():
@@ -32,25 +56,18 @@ def run_wiring_guard():
         return f"Error running wiring_guard: {e}\n"
 
 
-def parse_wiring_output(output):
-    """Parse wiring_guard output into structured data."""
+def parse_violations(output):
+    """Parse wiring_guard error output."""
     violations = {
         'dead_code': [],
         'unwired': [],
         'stale_baseline': [],
         'unbalanced_braces': [],
-        'ok': False,
     }
 
-    # Check for ok status
-    if 'wiring-guard: ok' in output:
-        violations['ok'] = True
-        return violations
-
-    # Parse violations (lines starting with "wiring-guard:")
+    # Parse violation lines (lines starting with "wiring-guard:")
     for line in output.split('\n'):
         if line.startswith('wiring-guard:'):
-            # Extract violation type and file:line
             if 'dead_code' in line:
                 violations['dead_code'].append(line)
             elif 'unwired' in line:
@@ -63,28 +80,99 @@ def parse_wiring_output(output):
     return violations
 
 
-def generate_markdown_report(violations):
-    """Generate markdown report from violations."""
+def generate_markdown_report(baseline, violations):
+    """Generate markdown report combining baseline and current violations."""
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M')
 
-    if violations['ok']:
-        status_summary = "✅ **All clear** — No wiring violations detected"
-        return f"""# ALICE-Physics Wiring Status
+    # Check if there are any NEW (non-baseline) violations
+    has_new_violations = bool(violations['dead_code'] or violations['unwired'] or
+                               violations['stale_baseline'] or violations['unbalanced_braces'])
+
+    total_baseline = len(baseline['dead_code']) + len(baseline['unwired'])
+
+    if has_new_violations:
+        status = "❌ **NEW violations detected** — Must be resolved or added to baseline"
+    elif total_baseline > 0:
+        status = f"🟡 **{total_baseline} baseline items** — Permitted violations, ratchet in place"
+    else:
+        status = "✅ **All clear** — No violations"
+
+    report = f"""# ALICE-Physics Wiring Status
 
 **Last updated:** {timestamp}
 
 ## Status
 
-{status_summary}
-
-### Checks
-
-- ✅ **Dead Code Guard**: No unchecked `#[allow(dead_code)]`
-- ✅ **Unwired Items**: No unused public items
-- ✅ **Stale Baseline**: No obsolete baseline entries
-- ✅ **Brace Balance**: No unbalanced braces
+{status}
 
 ---
+
+"""
+
+    if has_new_violations:
+        if violations['dead_code']:
+            report += f"""## 🔴 NEW: Dead Code Guard ({len(violations['dead_code'])})
+
+```
+{chr(10).join(violations['dead_code'])}
+```
+
+"""
+
+        if violations['unwired']:
+            report += f"""## 🔴 NEW: Unwired Items ({len(violations['unwired'])})
+
+```
+{chr(10).join(violations['unwired'])}
+```
+
+"""
+
+        if violations['stale_baseline']:
+            report += f"""## 🔴 NEW: Stale Baseline ({len(violations['stale_baseline'])})
+
+```
+{chr(10).join(violations['stale_baseline'])}
+```
+
+"""
+
+        if violations['unbalanced_braces']:
+            report += f"""## 🔴 NEW: Syntax Errors ({len(violations['unbalanced_braces'])})
+
+```
+{chr(10).join(violations['unbalanced_braces'])}
+```
+
+"""
+
+    if total_baseline > 0:
+        report += f"""## 📋 Baseline ({total_baseline} permitted)
+
+Violations explicitly allowed via `scripts/wiring-baseline.txt`.
+Must resolve or remove from baseline to reduce ratchet.
+
+"""
+
+        if baseline['dead_code']:
+            report += f"""### Dead Code ({len(baseline['dead_code'])})
+
+```
+{chr(10).join(baseline['dead_code'])}
+```
+
+"""
+
+        if baseline['unwired']:
+            report += f"""### Unwired Items ({len(baseline['unwired'])})
+
+```
+{chr(10).join(baseline['unwired'])}
+```
+
+"""
+
+    report += """---
 
 ## What is the Wiring Guard?
 
@@ -95,102 +183,36 @@ The wiring guard ensures that all public items in `src/` are actually called fro
 - **Stale Baseline**: Ensures baseline entries are still needed
 - **Brace Balance**: Checks syntax integrity
 
-Violations are tracked in `scripts/wiring-baseline.txt` and must be explicitly allowed.
+### Resolving Violations
+
+1. **New violations**: Either implement/wire the item, or add to `scripts/wiring-baseline.txt`
+2. **Baseline cleanup**: Remove lines from baseline as violations are resolved
+3. **Comments**: Add `// ALLOW-DEAD:` or `// ALLOW-UNWIRED:` with reason (12+ chars)
 
 For details: see `scripts/wiring_guard.py`
 """
 
-    else:
-        # Build violation report
-        sections = []
-
-        if violations['dead_code']:
-            sections.append(f"""## 🔴 Dead Code Guard ({len(violations['dead_code'])})
-
-Items with `#[allow(dead_code)]` but missing reasons:
-
-```
-{chr(10).join(violations['dead_code'])}
-```
-""")
-
-        if violations['unwired']:
-            sections.append(f"""## 🔴 Unwired Items ({len(violations['unwired'])})
-
-Public items never called from production code:
-
-```
-{chr(10).join(violations['unwired'])}
-```
-""")
-
-        if violations['stale_baseline']:
-            sections.append(f"""## 🔴 Stale Baseline ({len(violations['stale_baseline'])})
-
-Baseline entries that are no longer needed:
-
-```
-{chr(10).join(violations['stale_baseline'])}
-```
-""")
-
-        if violations['unbalanced_braces']:
-            sections.append(f"""## 🔴 Syntax Errors ({len(violations['unbalanced_braces'])})
-
-Files with unbalanced braces:
-
-```
-{chr(10).join(violations['unbalanced_braces'])}
-```
-""")
-
-        return f"""# ALICE-Physics Wiring Status
-
-**Last updated:** {timestamp}
-
-## Status
-
-❌ **Violations detected** — Fix wiring issues before push
-
-{chr(10).join(sections)}
-
----
-
-## How to Fix
-
-1. **Dead Code**: Add a `// ALLOW-DEAD: <reason>` comment or remove `#[allow(dead_code)]`
-2. **Unwired**: Either call the item from production, or add `// ALLOW-UNWIRED: <reason>`
-3. **Stale Baseline**: Remove the entry from `scripts/wiring-baseline.txt`
-4. **Syntax**: Fix unbalanced braces in the named files
-
-For details: see `scripts/wiring_guard.py`
-"""
+    return report
 
 
 def main():
     import sys
 
-    print("Running wiring guard...", file=sys.stderr)
-    output = run_wiring_guard()
+    print("Scanning wiring status...", file=sys.stderr)
+    baseline = load_baseline()
+    guard_output = run_wiring_guard()
+    violations = parse_violations(guard_output)
 
-    violations = parse_wiring_output(output)
-    report = generate_markdown_report(violations)
+    report = generate_markdown_report(baseline, violations)
 
     output_file = DOCS_DIR / "wiring-status.md"
     output_file.write_text(report)
 
     print(f"✅ Generated {output_file}", file=sys.stderr)
+    print(f"   Baseline: {len(baseline['dead_code']) + len(baseline['unwired'])}", file=sys.stderr)
+    print(f"   New violations: {len(violations['dead_code']) + len(violations['unwired']) + len(violations['stale_baseline']) + len(violations['unbalanced_braces'])}", file=sys.stderr)
 
-    if violations['ok']:
-        print("   Status: OK", file=sys.stderr)
-        return 0
-    else:
-        print("   Status: VIOLATIONS", file=sys.stderr)
-        print(f"   - Dead Code: {len(violations['dead_code'])}", file=sys.stderr)
-        print(f"   - Unwired: {len(violations['unwired'])}", file=sys.stderr)
-        print(f"   - Stale Baseline: {len(violations['stale_baseline'])}", file=sys.stderr)
-        print(f"   - Syntax Errors: {len(violations['unbalanced_braces'])}", file=sys.stderr)
-        return 0
+    return 0 if not (violations['dead_code'] or violations['unwired'] or violations['stale_baseline'] or violations['unbalanced_braces']) else 1
 
 
 if __name__ == "__main__":
