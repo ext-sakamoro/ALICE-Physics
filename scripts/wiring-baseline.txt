@@ -35,7 +35,6 @@ unwired src/eulerian_grid.rs::project_pressure_slab_local_on_rank
 unwired src/eulerian_grid.rs::set_u
 unwired src/eulerian_grid.rs::set_v
 unwired src/eulerian_grid.rs::set_w
-unwired src/event.rs::has_events
 unwired src/fatigue.rs::aluminum_a5052
 unwired src/fatigue.rs::analyze_spectrum
 unwired src/fatigue.rs::steel_sus304
@@ -86,7 +85,6 @@ unwired src/sdf_character.rs::is_grounded
 unwired src/sdf_manifold.rs::deepest
 unwired src/sdf_manifold.rs::generate_sdf_manifold
 unwired src/sdf_sph.rs::populated_cell_count
-unwired src/sleeping.rs::build_islands
 unwired src/solver_tgs.rs::par_dispatch_islands
 unwired src/solver_tgs_hooks_6dof_oriented.rs::local_to_world
 unwired src/solver_tgs_hooks_6dof_oriented_scoped.rs::solve_oriented_islands_parallel
