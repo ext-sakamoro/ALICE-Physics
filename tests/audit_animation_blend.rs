@@ -1,4 +1,4 @@
-//! Audit S2-3 oracles for `alice_physics::animation_blend`.
+//! Audit oracles for `alice_physics::animation_blend`.
 //! Reference values: linear interpolation of keyframes, constant-angular-velocity SLERP about a
 //! fixed axis (closed form: rotation by `t * arc`), loop/clamp time arithmetic, and the stated
 //! transition speed (weight units per second).

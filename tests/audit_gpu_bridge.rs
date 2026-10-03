@@ -1,4 +1,4 @@
-//! Audit S2-3 oracles for `alice_physics::gpu_bridge` (trait defaults and host routing).
+//! Audit oracles for `alice_physics::gpu_bridge` (trait defaults and host routing).
 #![cfg(feature = "gpu-solver-bridge")]
 #![allow(clippy::disallowed_methods)]
 
