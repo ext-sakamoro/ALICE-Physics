@@ -14,15 +14,30 @@
 //! |---|---|
 //! | an exact (affine) solution has nothing to refine: one solve, mesh untouched | `an_exact_solution_stops_the_{quadratic,cubic}_driver_immediately` |
 //! | on a smooth problem the total indicator falls as the driver refines | `the_total_indicator_falls_for_{quadratic,cubic}` |
+//! | adaptive beats uniform refinement per node | `adaptive_{quadratic,cubic}_beats_uniform_per_node` (`runtime:`) |
 //! | the driver actually refines (more elements, more than one round) and the solution is indexed by the rebuilt high-order mesh | same tests |
 //!
-//! ⚠️ **What is *not* measured here:** that adaptive P2 / P3 beats uniform
-//! refinement per degree of freedom. The P1 driver has that test
-//! (`adaptive_refinement_beats_uniform_per_degree_of_freedom`); the higher-order
-//! one reuses the P1 recovery estimator on the centroid stress, which for an
-//! element whose true stress is linear *within* the element is a coarser signal,
-//! and its payoff has not been measured. Do not read the passing tests here as
-//! that claim.
+//! # The payoff, measured
+//!
+//! `adaptive_{quadratic,cubic}_beats_uniform_per_node` repeat the P1 payoff test
+//! (`adaptive_refinement_beats_uniform_per_degree_of_freedom`) on the same block
+//! and the same statically equivalent patch load, with Dörfler `θ = 1/2`. The
+//! measure is the strain energy and the reference is a uniformly refined solve of
+//! the same element, so the estimator does not grade itself.
+//!
+//! | element | uniform error (nodes) | adaptive error (nodes) |
+//! |---|---|---|
+//! | P2 | 4.941 (1053) | 1.961 (279) |
+//! | P3 | 8.923 (3211) | 5.973 (710) |
+//!
+//! ⚠️ **`θ = 1` is uniform refinement under another name.** A first version of the
+//! P2 test used the `config()` helper's `θ = 1`, marked every element and landed
+//! on exactly the reference mesh (`3805` nodes, error `0`) — a result that would
+//! have read as "adaptive is perfect". The reason is in the test.
+//!
+//! ⚠️ The patch load is a fixed set of four nodal forces on corner vertices, so the
+//! continuum limit has infinite energy; the comparison is between fixed discrete
+//! problems, as in the P1 test, and says nothing about convergence to a limit.
 //!
 //! ⚠️ **The boundary-condition closure receives the high-order mesh.** A
 //! higher-order condition must constrain the edge (and face) nodes of the
@@ -31,12 +46,14 @@
 
 #![allow(clippy::disallowed_methods)]
 
-use alice_physics::cubic_elastic_fem::{solve_adaptive_cubic, CubicMesh};
+use alice_physics::cubic_elastic_fem::{solve_adaptive_cubic, solve_cubic, CubicMesh};
 use alice_physics::linear_elastic_fem::{
     AdaptiveConfig, BoundaryConditions, ElasticMaterial, SolverConfig,
 };
 use alice_physics::math::Fix128;
-use alice_physics::quadratic_elastic_fem::{solve_adaptive_quadratic, QuadraticMesh};
+use alice_physics::quadratic_elastic_fem::{
+    solve_adaptive_quadratic, solve_quadratic, QuadraticMesh,
+};
 use alice_physics::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
 
 fn fx(v: f64) -> Fix128 {
@@ -79,6 +96,46 @@ fn kuhn_cube(n: usize) -> SdfTetMesh {
                     for (m, axis) in path.into_iter().enumerate() {
                         step[axis] = 1;
                         corners[m + 1] = node_index(n, i + step[0], j + step[1], k + step[2]);
+                    }
+                    mesh.tets.push(Tetrahedron { vertices: corners });
+                }
+            }
+        }
+    }
+    mesh
+}
+
+/// Kuhn 6-tet box `[0, nx] x [0, ny] x [0, nz]`, unit cells.
+fn kuhn_box(nx: usize, ny: usize, nz: usize) -> SdfTetMesh {
+    let idx = |i: usize, j: usize, k: usize| {
+        u32::try_from(i + j * (nx + 1) + k * (nx + 1) * (ny + 1)).expect("fits")
+    };
+    let mut mesh = SdfTetMesh::default();
+    for k in 0..=nz {
+        for j in 0..=ny {
+            for i in 0..=nx {
+                mesh.vertices.push([i as f32, j as f32, k as f32]);
+            }
+        }
+    }
+    const PATHS: [[usize; 3]; 6] = [
+        [0, 1, 2],
+        [0, 2, 1],
+        [1, 0, 2],
+        [1, 2, 0],
+        [2, 0, 1],
+        [2, 1, 0],
+    ];
+    for k in 0..nz {
+        for j in 0..ny {
+            for i in 0..nx {
+                for path in PATHS {
+                    let mut step = [0usize; 3];
+                    let mut corners = [0u32; 4];
+                    corners[0] = idx(i, j, k);
+                    for (m, axis) in path.into_iter().enumerate() {
+                        step[axis] = 1;
+                        corners[m + 1] = idx(i + step[0], j + step[1], k + step[2]);
                     }
                     mesh.tets.push(Tetrahedron { vertices: corners });
                 }
@@ -231,5 +288,141 @@ fn the_total_indicator_falls_for_cubic() {
     assert!(
         *h.last().expect("non-empty") < h[0],
         "the estimate must fall: {h:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// the payoff: adaptive against uniform refinement, per node
+// ---------------------------------------------------------------------------
+
+const TRACTION: f64 = 64.0;
+const BOX: [usize; 3] = [3, 2, 2];
+
+/// The block of the P1 payoff test: clamped on `x = 0`, pulled by the statically
+/// equivalent nodal load of a unit traction patch on the far face. The loaded
+/// nodes are corner vertices, whose indices survive refinement (vertices are
+/// appended), so one definition serves every mesh.
+fn patch_bc(pos: &[[f64; 3]]) -> (BoundaryConditions, Vec<(u32, f64)>) {
+    let mut bc = BoundaryConditions::new();
+    for (n, p) in pos.iter().enumerate() {
+        if p[0].abs() < 0.5 {
+            bc.prescribe_all(
+                u32::try_from(n).expect("fits"),
+                [Fix128::ZERO, Fix128::ZERO, Fix128::ZERO],
+            );
+        }
+    }
+    let (nx, ny) = (BOX[0], BOX[1]);
+    let corner = |j: usize, k: usize| {
+        u32::try_from(nx + j * (nx + 1) + k * (nx + 1) * (ny + 1)).expect("fits")
+    };
+    let loaded = vec![
+        (corner(0, 0), 1.0 / 3.0),
+        (corner(1, 1), 1.0 / 3.0),
+        (corner(1, 0), 1.0 / 6.0),
+        (corner(0, 1), 1.0 / 6.0),
+    ];
+    for &(node, share) in &loaded {
+        bc.add_load(
+            node,
+            alice_physics::linear_elastic_fem::Axis::X,
+            fx(TRACTION * share),
+        );
+    }
+    (bc, loaded)
+}
+
+fn work(displacements: &[[Fix128; 3]], loaded: &[(u32, f64)]) -> f64 {
+    0.5 * loaded
+        .iter()
+        .map(|&(n, share)| TRACTION * share * displacements[n as usize][0].to_f64())
+        .sum::<f64>()
+}
+
+#[test]
+#[ignore = "runtime: about 20 s in release (P2 reference at two uniform passes, a uniform coarse solve and a six-round adaptive run); run by run_ignored.py"]
+fn adaptive_quadratic_beats_uniform_per_node() {
+    let base = kuhn_box(BOX[0], BOX[1], BOX[2]);
+    let solve_on = |mesh: &SdfTetMesh| {
+        let m = QuadraticMesh::from_tet_mesh(mesh).expect("mesh");
+        let (bc, loaded) = patch_bc(&quad_pos(&m));
+        let f = solve_quadratic(&m, &material(), &bc, &SolverConfig::default()).expect("solve");
+        (work(&f.displacements, &loaded), m.node_count())
+    };
+    let mut reference_mesh = base.clone();
+    reference_mesh
+        .try_refine_conforming(0.6, 24)
+        .expect("refine");
+    let (reference, ref_nodes) = solve_on(&reference_mesh);
+    let mut uniform_mesh = base.clone();
+    uniform_mesh
+        .try_refine_conforming(0.95, 24)
+        .expect("refine");
+    let (uniform, uniform_nodes) = solve_on(&uniform_mesh);
+
+    // Dörfler θ = 1/2 as in the P1 payoff test. `config()` above uses θ = 1, which
+    // marks every element and is uniform refinement under another name.
+    let half = AdaptiveConfig::try_new(SolverConfig::default(), Fix128::from_ratio(1, 2), 6, 24)
+        .expect("valid");
+    let out = solve_adaptive_quadratic(&base, &material(), |m| patch_bc(&quad_pos(m)).0, &half)
+        .expect("adaptive");
+    let (_, loaded) = patch_bc(&quad_pos(&out.high_order));
+    let adaptive = work(&out.field.displacements, &loaded);
+    let adaptive_nodes = out.high_order.node_count();
+
+    let (u_err, a_err) = ((reference - uniform).abs(), (reference - adaptive).abs());
+    eprintln!(
+        "[adaptive-p2] reference {reference:.9} ({ref_nodes} nodes)\n  uniform  err {u_err:.3e} at {uniform_nodes} nodes\n  adaptive err {a_err:.3e} at {adaptive_nodes} nodes"
+    );
+    assert!(
+        adaptive_nodes <= uniform_nodes,
+        "adaptive spent more nodes: {adaptive_nodes} vs {uniform_nodes}"
+    );
+    assert!(
+        a_err < u_err,
+        "adaptive must be closer at no more cost: {a_err:.3e} vs {u_err:.3e}"
+    );
+}
+
+#[test]
+#[ignore = "runtime: about 40 s in release (P3 reference at two uniform passes, a uniform coarse solve and a six-round adaptive run); run by run_ignored.py"]
+fn adaptive_cubic_beats_uniform_per_node() {
+    let base = kuhn_box(BOX[0], BOX[1], BOX[2]);
+    let solve_on = |mesh: &SdfTetMesh| {
+        let m = CubicMesh::from_tet_mesh(mesh).expect("mesh");
+        let (bc, loaded) = patch_bc(&cubic_pos(&m));
+        let f = solve_cubic(&m, &material(), &bc, &SolverConfig::default()).expect("solve");
+        (work(&f.displacements, &loaded), m.node_count())
+    };
+    let mut reference_mesh = base.clone();
+    reference_mesh
+        .try_refine_conforming(0.6, 24)
+        .expect("refine");
+    let (reference, ref_nodes) = solve_on(&reference_mesh);
+    let mut uniform_mesh = base.clone();
+    uniform_mesh
+        .try_refine_conforming(0.95, 24)
+        .expect("refine");
+    let (uniform, uniform_nodes) = solve_on(&uniform_mesh);
+
+    let half = AdaptiveConfig::try_new(SolverConfig::default(), Fix128::from_ratio(1, 2), 6, 24)
+        .expect("valid");
+    let out = solve_adaptive_cubic(&base, &material(), |m| patch_bc(&cubic_pos(m)).0, &half)
+        .expect("adaptive");
+    let (_, loaded) = patch_bc(&cubic_pos(&out.high_order));
+    let adaptive = work(&out.field.displacements, &loaded);
+    let adaptive_nodes = out.high_order.node_count();
+
+    let (u_err, a_err) = ((reference - uniform).abs(), (reference - adaptive).abs());
+    eprintln!(
+        "[adaptive-p3] reference {reference:.9} ({ref_nodes} nodes)\n  uniform  err {u_err:.3e} at {uniform_nodes} nodes\n  adaptive err {a_err:.3e} at {adaptive_nodes} nodes"
+    );
+    assert!(
+        adaptive_nodes <= uniform_nodes,
+        "adaptive spent more nodes: {adaptive_nodes} vs {uniform_nodes}"
+    );
+    assert!(
+        a_err < u_err,
+        "adaptive must be closer at no more cost: {a_err:.3e} vs {u_err:.3e}"
     );
 }
