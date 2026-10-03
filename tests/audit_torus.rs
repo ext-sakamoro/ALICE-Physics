@@ -11,7 +11,11 @@
 //!   cross-section (`dV = (R + s cos phi) s ds dphi dtheta`);
 //! * world-space half extent along axis `i` of a rotated torus:
 //!   `R * sqrt(1 - w_i^2) + r` with `w` the world image of the symmetry axis.
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    clippy::type_complexity,
+    clippy::needless_range_loop
+)]
 
 use alice_physics::collider::Support;
 use alice_physics::math::{Fix128, QuatFix, Vec3Fix};

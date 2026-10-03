@@ -10,7 +10,11 @@
 //! * the colormap is a 5-stop linear gradient whose stop colours are taken
 //!   from the viridis table (hand-computed bytes below, tolerance one level);
 //!   its luminance rises monotonically with `t`.
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    clippy::type_complexity,
+    clippy::needless_range_loop
+)]
 
 use alice_physics::heatmap::{
     generate_stress_heatmap, generate_temperature_heatmap, heatmap_to_rgba, Heatmap, HeatmapConfig,
