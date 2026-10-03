@@ -34,10 +34,6 @@ unwired src/cloth_fluid.rs::apply_fluid_forces_to_cloth
 unwired src/cloth_fluid.rs::apply_fluid_forces_to_cloth_with_residual
 unwired src/convex_mesh_builder.rs::build_convex_hull
 unwired src/creep_longterm.rs::petg_25c_moderate
-unwired src/damping_rayleigh.rs::damping_ratio
-unwired src/damping_rayleigh.rs::fit_two_modes
-unwired src/damping_rayleigh.rs::hz_to_omega
-unwired src/damping_rayleigh.rs::omega_to_hz
 unwired src/deformable.rs::center_of_mass
 unwired src/deformable.rs::new_cube
 unwired src/deformable.rs::resolve_rigid_body_collisions

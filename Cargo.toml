@@ -556,6 +556,17 @@ required-features = ["std"]
 name = "fillet_stress_concentration"
 required-features = ["std"]
 
+# Production entry point for Rayleigh (proportional) damping fitting
+# (wiring_guard: src/damping_rayleigh.rs had zero production callers
+# across all 4 items: damping_ratio, fit_two_modes, hz_to_omega,
+# omega_to_hz -- only this module's own #[cfg(test)] unit tests called
+# in, which the guard does not count). Checked against
+# scripts/wiring_guard.py grep: none of these 4 names collide with a
+# same-named item elsewhere in this crate.
+[[example]]
+name = "damping_rayleigh_fit"
+required-features = ["std"]
+
 [[bench]]
 name = "physics_bench"
 harness = false
