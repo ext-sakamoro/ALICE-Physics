@@ -346,3 +346,55 @@ fn ddsketch128_edge_error_is_within_two_alpha_over_one_plus_alpha() {
         );
     }
 }
+
+/// The linear-counting range is `raw <= 2.5 m` (not 2 m): a register set with `raw`
+/// between `2 m` and `2.5 m` and some zero registers answers `m ln(m / zeros)`.
+#[test]
+fn hll_linear_counting_applies_up_to_two_and_a_half_m() {
+    let p = HyperLogLog10::P;
+    let m = HyperLogLog10::M;
+    let mut h = HyperLogLog10::new();
+    // 24 zero registers, 200 with rho = 1, 800 with rho = 2
+    for idx in 24..224 {
+        h.insert_hash((1u64 << 63) | idx as u64);
+    }
+    for idx in 224..m {
+        let w: u64 = 1u64 << (64 - p - 2); // lz = 1 -> rho = 2
+        h.insert_hash((w << p) | idx as u64);
+    }
+    let sum = 200.0 * 0.5 + 800.0 * 0.25 + 24.0;
+    let raw = alpha_const(m as f64) * (m * m) as f64 / sum;
+    assert!(
+        raw > 2.0 * m as f64 && raw <= 2.5 * m as f64,
+        "scene raw {raw}"
+    );
+    #[allow(clippy::disallowed_methods)]
+    let want = m as f64 * (m as f64 / 24.0).ln();
+    let got = h.cardinality();
+    assert!((got - want).abs() < 1e-9 * want, "{got} vs {want}");
+}
+
+/// A value that lands in the top bucket is binned (its answer is the bucket edge, below
+/// the maximum), not dropped.
+#[test]
+fn ddsketch_top_bucket_values_are_binned() {
+    let mut d = DDSketch128::new(0.1);
+    d.insert(1.9e8);
+    let q = d.quantile(1.0);
+    assert!(q < 1.9e8 * 0.9999 && q > 1.9e8 / 1.3, "edge answer {q}");
+}
+
+/// A full tracker does not evict on a tie: a new key with the same estimate as the
+/// smallest tracked entry is not inserted.
+#[test]
+fn heavy_hitters_do_not_evict_on_a_tie() {
+    use alice_physics::sketch::HeavyHitters5;
+    let mut hh = HeavyHitters5::new();
+    for h in 1..=5u64 {
+        hh.insert_hash(h);
+    }
+    hh.insert_hash(6);
+    let keys: Vec<u64> = hh.top().map(|e| e.hash).collect();
+    assert_eq!(keys.len(), 5);
+    assert!(!keys.contains(&6), "tie must not evict: {keys:?}");
+}
