@@ -24,6 +24,15 @@ increment 他) が**追加機材の調達待ち**であるかのように読め�
 | Maxwell FDTD | `ecd8c61` | source-free Yee、⚠️ **SI は `ε₀·μ₀` が 7.7 bit で不可**、正規化単位 + `S=9/16` |
 | 多体 ABA | `1bab99b` | ⚠️ **`solve()` が `link.joint` を読まない**状態から real ABA、oracle 12 本 |
 
+### 第 59 increment (2026-10-03、全配線 program 第 9c / 9d / 9e 件 — 選べる broad-phase、接触力、marching tetrahedra の collision mesh)
+
+**9c broad-phase**: 永続の `DynamicAabbTree` を broad-phase の選択肢にした `Broadphase::{Bvh (既定), DynamicTree}` と `PhysicsWorld::{set_broadphase, broadphase, broadphase_stats, broadphase_proxy_aabb}` (追加のみ) どちらも整列済みの候補 pair を同じ厳密 narrow-phase に渡すので**結果は bit 一致**する proxy は body index が key (user data) で、毎 step その index の body の箱で更新される ので、`remove_body` / 状態復元に全再構築は要らず、無くなった index の proxy だけを外す 動かない body は fat box (半径 + margin 0.5) の中に留まる限り再挿入されない `bvh.rs` の `BroadphaseHybrid` は doc 自身が skeleton と書く未完成品 (動的側は点問い合わせ) で配線せず baseline に残した
+**9d 接触力**: `contact_viz` を solver の接触に繋いだ `PhysicsWorld::{contact_forces, contact_arrows, contact_friction_arrows, contact_friction_cones}` (追加のみ) 力は XPBD の適用分離量 `λ` (`cached_lambda`) から `F = λ / ((wₐ + w_b)·h²)` (h = dt / substeps) 静止した body は **`m·g` を厳密に支える** (`m = 2` で 19.620 N、2 段の積み重ねで下の接触 `(m₁ + m₂)·g`、上の接触 `m₂·g`) 摩擦は接触ごとの係数 ⚠️ 約 1 分静止した body は sleep して solver に載らず、接触が無い
+**9e collision mesh**: `collision_mesh_gen` は名前が marching cubes でも**扇状の近似で、頂点がセルごとに複製され、三角形分割が正しくなく、向きも不定**だった ⇒ **marching tetrahedra で作り直し**: 6 つの四面体 (全セル同じ分割で面の対角線が揃い閉じる)・頂点は格子の辺ごとに共有 (`BTreeMap`)・内側から外側へ向く巻き ⇒ 閉じた向きつき 2-多様体 (球で `V − E + F = 2`、体積は `4πR³/3` に下から収束、`res 30` で 99.5%) `simplify_collision_mesh` は旧実装が多様体を壊し未使用頂点を残していた (AABB も狂った) ので、**link 条件と反転検査つき edge collapse** (torus で穴が保たれ Euler 標数 0)・開いた mesh の境界は動かさない・未使用頂点を除去・閉じた mesh は 4 三角形未満にしない・`BinaryHeap` で O(T log T) (旧 O(T²)、torus の test が 15 秒 → 0.1 秒) `compute_mesh_aabb` は三角形が使う頂点だけ `CollisionMesh::to_static_collider` (追加のみ) で F2 の `TriMesh` 静的 collider に繋がり、球 body が mesh の上に `R + r` で載る
+⚠️ **契約の変更**: 同時並行の第 25 件が固定していた旧 `simplify` の副作用 3 本 (`simplify_disjoint_triangles_target_zero_removes_all` ほか: 孤立した三角形を縮退させて消す) を、新しい契約 (境界の辺は collapse しない) に合わせて更新した
+oracle: 9c 8 本 (bit 一致の密な scene / 構造変更 / 切替 / 復元 / proxy の fat box の閉形式) 9d 9 本 (重さの閉形式) 9e 14 本 (閉・向き・Euler・体積・AABB の閉形式・torus・開いた mesh・星形分割の pinch) 変異: 9c 15 件中 15 red (等価だった全 reset 3 件は削除)、9d 11 件中 11 red、9e 25 件中 22 red (残り 3 件は collapse 順序の質だけに効く等価)
+baseline 退役 3 行 (`dynamic_bvh::{height, proxy_count, user_data}`) 他の行 (`bvh::get_aabb` / `collision_mesh_gen` 5 / `contact_viz` 5) は同時並行の第 24 / 25 / 28 件が example 経由で先に退役済み ⇒ 本件は**実配線** (world API / 静的 collider / 選べる broad-phase) と欠陥の根本修正の差分 example は `examples/broadphase_selection.rs` / `examples/contact_force_visualization.rs` / `examples/collision_mesh_from_sdf.rs`
+
 ### 第 58 increment (2026-10-03、`sdf_force::Attract` の overflow が clamp を破る問題を根本修正)
 
 `compute_sdf_force` の `Attract` 分岐は `dist` が Fix128 の表現域境界付近 (`~4.6e18`) の時

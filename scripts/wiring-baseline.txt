@@ -41,9 +41,6 @@ unwired src/damping_rayleigh.rs::omega_to_hz
 unwired src/deformable.rs::center_of_mass
 unwired src/deformable.rs::new_cube
 unwired src/deformable.rs::resolve_rigid_body_collisions
-unwired src/dynamic_bvh.rs::height
-unwired src/dynamic_bvh.rs::proxy_count
-unwired src/dynamic_bvh.rs::user_data
 unwired src/electromagnetic.rs::lorentz_force
 unwired src/electromagnetic.rs::lorentz_force_sum
 unwired src/erosion.rs::compute_exposure_from_normals

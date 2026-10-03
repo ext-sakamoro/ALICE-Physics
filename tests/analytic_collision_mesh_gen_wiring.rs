@@ -253,18 +253,25 @@ fn disjoint_triangles(n: usize) -> CollisionMesh {
     }
 }
 
+// Contract change (marching-tetrahedra rewrite, program item 9e): an edge collapse
+// must keep the surface a manifold and must not move the border of an open mesh.
+// Every vertex of a disjoint triangle is on the border, so none of these edges can
+// be collapsed: the mesh is returned as it is, whatever the target. (Until then a
+// collapse shrank an isolated triangle to nothing, which removed it from the mesh by
+// degenerating it, and the target was always reached.)
 #[test]
-fn simplify_disjoint_triangles_target_zero_removes_all() {
+fn simplify_disjoint_triangles_target_zero_leaves_the_border_alone() {
     let mesh = disjoint_triangles(5);
     let simplified = simplify_collision_mesh(&mesh, 0);
-    assert_eq!(simplified.triangles.len(), 0);
+    assert_eq!(simplified.triangles.len(), 5);
+    assert_eq!(simplified.vertices, mesh.vertices);
 }
 
 #[test]
-fn simplify_disjoint_triangles_target_interior_is_exact() {
+fn simplify_disjoint_triangles_target_interior_leaves_the_border_alone() {
     let mesh = disjoint_triangles(5);
     let simplified = simplify_collision_mesh(&mesh, 2);
-    assert_eq!(simplified.triangles.len(), 2);
+    assert_eq!(simplified.triangles.len(), 5);
 }
 
 #[test]
@@ -287,15 +294,12 @@ fn simplify_disjoint_triangles_target_above_len_is_noop_clone() {
     assert_eq!(simplified.triangles, mesh.triangles);
 }
 
-/// Degenerate: a single triangle. Any one of its three edges collapsing
-/// makes two of `[i0, i1, i2]`'s three indices equal (the remapped
-/// `remove` becomes `keep`), and the degenerate filter
-/// `tri[0] != tri[1] && tri[1] != tri[2] && tri[0] != tri[2]` always
-/// removes it -- true no matter which of the three edges the
-/// shortest-edge search picks, so the result is zero triangles
-/// unconditionally.
+/// Degenerate: a single triangle. All three of its vertices are on the border and
+/// each of its edges joins two border vertices, so none can be collapsed (it would
+/// pinch the border): the triangle stays, whatever the target. See the contract
+/// note above.
 #[test]
-fn simplify_single_triangle_target_zero_collapses_to_empty() {
+fn simplify_single_triangle_target_zero_stays_a_triangle() {
     let mesh = CollisionMesh {
         vertices: vec![
             Vec3Fix::from_int(0, 0, 0),
@@ -305,7 +309,7 @@ fn simplify_single_triangle_target_zero_collapses_to_empty() {
         triangles: vec![[0, 1, 2]],
     };
     let simplified = simplify_collision_mesh(&mesh, 0);
-    assert_eq!(simplified.triangles.len(), 0);
+    assert_eq!(simplified.triangles.len(), 1);
 }
 
 /// Degenerate: the empty mesh. `target_triangles: 0` meets the early
