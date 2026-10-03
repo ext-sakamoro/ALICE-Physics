@@ -13,6 +13,11 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added — `reconcile_checked` (全配線 program 第 9f 件)
+
+`netcode_prediction::{reconcile_checked, ReconcileError}` を追加した (追加のみ) `reconcile` は権威 tick より後の入力を全部再生するが、サーバの snapshot が ring の捨てた入力より古い時や buffer の途中の tick が欠けた時は、誤った入力を再生して誤った状態を何の兆候もなく返す `reconcile_checked` は `authoritative.tick + 1, + 2, …` が連続していなければ `ReconcileError::MissingInputs { needed, oldest }` を返し、buffer を変更しない 履歴が完全なら `reconcile` と同じ
+- oracle: 照合後の head は `権威 state + 後の tick の action の和`、`drop_acknowledged` の境界、ring の順序、欠けた入力の報告 変異 12 件中 12 red
+
 ### Added — 選べる broad-phase (全配線 program 第 9c 件)
 
 `Broadphase::{Bvh, DynamicTree}` と `PhysicsWorld::{set_broadphase, broadphase, broadphase_stats, broadphase_proxy_aabb}` を追加した (追加のみ) 既定は従来どおり毎 step 作り直す `Bvh` `DynamicTree` は永続の fat box の proxy を持ち、動いた body だけを再挿入する どちらも同じ整列済みの候補 pair を同じ narrow-phase に渡すので、シミュレーション結果は bit 一致する
