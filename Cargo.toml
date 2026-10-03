@@ -280,6 +280,15 @@ required-features = ["std"]
 name = "smoke_fire_combustion"
 required-features = ["std"]
 
+# Production entry point for collision-driven audio event generation
+# (wiring_guard: src/audio_physics.rs had zero production callers across
+# AudioMaterial::{METAL, RUBBER, STONE} and AudioGenerator::{set_material,
+# process_contact, get_events} -- only tests/ called in, which the guard
+# does not count).
+[[example]]
+name = "audio_physics_events"
+required-features = ["std"]
+
 # Production entry point for the kinematic character controller's
 # remaining API (wiring_guard: src/character.rs had zero production
 # callers across 6 items: PushImpulse, apply_gravity,
