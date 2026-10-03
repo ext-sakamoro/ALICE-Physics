@@ -24,6 +24,14 @@ increment 他) が**追加機材の調達待ち**であるかのように読め�
 | Maxwell FDTD | `ecd8c61` | source-free Yee、⚠️ **SI は `ε₀·μ₀` が 7.7 bit で不可**、正規化単位 + `S=9/16` |
 | 多体 ABA | `1bab99b` | ⚠️ **`solve()` が `link.joint` を読まない**状態から real ABA、oracle 12 本 |
 
+### 第 55 increment (2026-10-03、全配線 program 第 9b 件 — SDF collider を形状つき body の実形状で解く)
+
+SDF との衝突は body ごとに同じ半径の球 (`sdf_collision_radius`) で解かれ、形状つき body (`add_shaped_body` / `add_compound_body`) の実形状が無視されていた `resolve_sdf_collisions` が **形状・compound を持つ body はその collider で SDF と衝突させる**ようにし (持たない body は従来どおり球)、`PhysicsWorld::sdf_contacts()` (追加のみ) が `step` の押し出し対象を動かさずに列挙する 球 / 球状の楕円体 / カプセルの子は各々の球・カプセル判定、箱は 27 点 (角 8・辺の中点 12・面の中心 6・中心)、hull は頂点、他の凸形状 (円柱・円錐・楔・環・非球の楕円体) は SDF の法線の逆向きの support 点を 6 回まで追う (`convex_sdf_contact`)
+⚠️ **既存の欠陥 1 つを検出・修正**: **`collide_aabb_sdf` が箱の角 8 点と中心の 9 点しか見ず、面の中心が最深になる場合 (箱の面が球状の障害物に当たる) を取りこぼしていた** ⇒ 27 点
+oracle (平らな SDF = 閉形式、曲面 = 総当たり): 回転した箱は最低の角 `h − (|sin θ|·hx + cos θ·hy)`、傾いた円柱は `hh·cos θ + r·sin θ`、円錐は底、楕円体は鉛直半径 `√((a sin θ)² + (b cos θ)²)`、カプセル (上下反転も)・箱 (子と箱の回転の合成 + 中心の offset)・hull (子の回転)・球の子は各々の最低点、最も深い子が (リストの後ろにあっても) 決める 曲面は球の障害物に平らに載る箱 (面の中心、`R − y_bottom`) / 横に当たる箱 (z 方向、半幅が 0.75) / 偏心した楕円体の最近点 (総当たりと 2e-3 以内、support を追う反復が要る) / 回転した箱 (総当たりより深くならず 85% 以上) `with_scale` は面を `scale × offset` に動かす step 後に最低の角が床にちょうど載る 変異 22 件中 21 red、生存 1 件は等価 (support 点が動かなくなった時の早期終了、性能のみ)
+⚠️ **残る近似**: 曲面の SDF に対し、箱の辺・面の内部や凸形状の平らな面が標本点の間で最深になりうる (回転した箱で最大 15% 浅い) 平らな SDF では全て厳密
+baseline 退役 5 行 (`collide_point_sdf` / `collide_capsule_sdf` / `collide_aabb_sdf` / `detect_sdf_contacts` / `SdfCollider::with_scale`、実配線 3 (`collide_*` は body の collider から) + example 経由 2)、example は `examples/sdf_body_collisions.rs`
+
 ### 第 53 increment (2026-10-03、`thin_wall` の無限ループ + silent footgun 2 件を根本修正)
 
 既存バグの根本修正として、「設計変更が必要」として記録されていた 3 件を解消

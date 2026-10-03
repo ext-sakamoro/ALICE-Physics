@@ -330,10 +330,55 @@ pub fn collide_capsule_sdf(
     best
 }
 
+/// The 27 points of a box that decide its contact with a field: its 8 corners, 12
+/// edge midpoints, 6 face centres and its centre (`centre + R · (i·hx, j·hy, k·hz)`
+/// for `i, j, k ∈ {−1, 0, 1}`). A flat field is deepest at a corner; a curved one
+/// (a ball, a hill) can be deepest at a face centre or an edge midpoint.
+#[cfg(feature = "std")]
+#[must_use]
+pub(crate) fn box_sample_points(
+    center: Vec3Fix,
+    half_extents: Vec3Fix,
+    rotation: QuatFix,
+) -> [Vec3Fix; 27] {
+    let mut points = [center; 27];
+    let steps = [-Fix128::ONE, Fix128::ZERO, Fix128::ONE];
+    let mut n = 0;
+    for &i in &steps {
+        for &j in &steps {
+            for &k in &steps {
+                let local =
+                    Vec3Fix::new(half_extents.x * i, half_extents.y * j, half_extents.z * k);
+                points[n] = center + rotation.rotate_vec(local);
+                n += 1;
+            }
+        }
+    }
+    points
+}
+
+/// The deepest contact of a set of points with an SDF.
+#[cfg(feature = "std")]
+#[must_use]
+pub(crate) fn collide_points_sdf(points: &[Vec3Fix], sdf: &SdfCollider) -> Option<Contact> {
+    let mut best: Option<Contact> = None;
+    for &point in points {
+        if let Some(contact) = collide_point_sdf(point, sdf) {
+            match &best {
+                Some(prev) if prev.depth >= contact.depth => {}
+                _ => best = Some(contact),
+            }
+        }
+    }
+    best
+}
+
 /// Collide an AABB against an SDF.
 ///
-/// Samples 8 corner vertices + center (9 points total),
-/// returns the deepest penetrating contact.
+/// Samples 27 points of the box (corners, edge midpoints, face centres, centre;
+/// [`box_sample_points`]) and returns the deepest penetrating contact. Exact for a
+/// flat field; for a curved one the deepest point of the box can lie between the
+/// samples.
 #[cfg(feature = "std")]
 #[must_use]
 pub fn collide_aabb_sdf(min: Vec3Fix, max: Vec3Fix, sdf: &SdfCollider) -> Option<Contact> {
@@ -342,32 +387,12 @@ pub fn collide_aabb_sdf(min: Vec3Fix, max: Vec3Fix, sdf: &SdfCollider) -> Option
         (min.y + max.y).half(),
         (min.z + max.z).half(),
     );
-
-    // 8 corners + center
-    let corners = [
-        Vec3Fix::new(min.x, min.y, min.z),
-        Vec3Fix::new(max.x, min.y, min.z),
-        Vec3Fix::new(min.x, max.y, min.z),
-        Vec3Fix::new(max.x, max.y, min.z),
-        Vec3Fix::new(min.x, min.y, max.z),
-        Vec3Fix::new(max.x, min.y, max.z),
-        Vec3Fix::new(min.x, max.y, max.z),
-        Vec3Fix::new(max.x, max.y, max.z),
-        center,
-    ];
-
-    let mut best: Option<Contact> = None;
-
-    for &point in &corners {
-        if let Some(contact) = collide_point_sdf(point, sdf) {
-            match &best {
-                Some(prev) if prev.depth >= contact.depth => {}
-                _ => best = Some(contact),
-            }
-        }
-    }
-
-    best
+    let half = Vec3Fix::new(
+        (max.x - min.x).half(),
+        (max.y - min.y).half(),
+        (max.z - min.z).half(),
+    );
+    collide_points_sdf(&box_sample_points(center, half, QuatFix::IDENTITY), sdf)
 }
 
 /// Detect all SDF collisions for a set of bodies.

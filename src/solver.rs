@@ -1045,6 +1045,21 @@ fn fnv1a_fold(hash: &mut u64, bytes: &[u8]) {
     }
 }
 
+/// The contact of one body with one SDF collider: as its shape or compound when it
+/// has one, otherwise as a sphere of `radius` at its position.
+#[cfg(feature = "std")]
+fn sdf_contact_of(
+    collider: Option<&crate::body_collider::BodyCollider>,
+    body: &RigidBody,
+    radius: Fix128,
+    sdf: &crate::sdf_collider::SdfCollider,
+) -> Option<crate::collider::Contact> {
+    match collider {
+        Some(c) => c.sdf_contact(body.position, body.rotation, sdf),
+        None => crate::sdf_collider::collide_sphere_sdf(body.position, radius, sdf),
+    }
+}
+
 impl PhysicsWorld {
     /// Create a new, empty physics world with the given solver configuration.
     ///
@@ -3516,43 +3531,61 @@ impl PhysicsWorld {
     #[cfg(feature = "std")]
     fn resolve_sdf_collisions(&mut self) {
         let sdf_colliders = &self.sdf_colliders;
+        let colliders = &self.body_colliders;
         let collision_radius = self.sdf_collision_radius;
+
+        let push_out = |idx: usize, body: &mut RigidBody| {
+            if body.is_static() || body.is_sensor {
+                return;
+            }
+            let collider = colliders.get(idx).and_then(Option::as_ref);
+            for sdf in sdf_colliders {
+                if let Some(contact) = sdf_contact_of(collider, body, collision_radius, sdf) {
+                    body.position = body.position + contact.normal * contact.depth;
+                }
+            }
+        };
 
         #[cfg(feature = "parallel")]
         {
-            self.bodies.par_iter_mut().for_each(|body| {
-                if body.is_static() || body.is_sensor {
-                    return;
-                }
-                for sdf in sdf_colliders {
-                    if let Some(contact) = crate::sdf_collider::collide_sphere_sdf(
-                        body.position,
-                        collision_radius,
-                        sdf,
-                    ) {
-                        body.position = body.position + contact.normal * contact.depth;
-                    }
-                }
-            });
+            self.bodies
+                .par_iter_mut()
+                .enumerate()
+                .for_each(|(idx, body)| push_out(idx, body));
         }
 
         #[cfg(not(feature = "parallel"))]
         {
-            for body in &mut self.bodies {
-                if body.is_static() || body.is_sensor {
+            for (idx, body) in self.bodies.iter_mut().enumerate() {
+                push_out(idx, body);
+            }
+        }
+    }
+
+    /// The contacts of the bodies with the SDF colliders, as `(body index, contact)`:
+    /// what [`step`](Self::step) would push each body out of, without moving
+    /// anything. A body with a shape or a compound is tested as that collider, any
+    /// other body as a sphere of [`sdf_collision_radius`](Self::sdf_collision_radius);
+    /// static bodies, sensors and an SDF attached to the body itself are skipped.
+    #[cfg(feature = "std")]
+    #[must_use]
+    pub fn sdf_contacts(&self) -> Vec<(usize, crate::collider::Contact)> {
+        let mut contacts = Vec::new();
+        for (idx, body) in self.bodies.iter().enumerate() {
+            if body.is_static() || body.is_sensor {
+                continue;
+            }
+            let collider = self.body_colliders.get(idx).and_then(Option::as_ref);
+            for sdf in &self.sdf_colliders {
+                if sdf.body_index == idx {
                     continue;
                 }
-                for sdf in sdf_colliders {
-                    if let Some(contact) = crate::sdf_collider::collide_sphere_sdf(
-                        body.position,
-                        collision_radius,
-                        sdf,
-                    ) {
-                        body.position = body.position + contact.normal * contact.depth;
-                    }
+                if let Some(c) = sdf_contact_of(collider, body, self.sdf_collision_radius, sdf) {
+                    contacts.push((idx, c));
                 }
             }
         }
+        contacts
     }
 
     /// Add an immovable collision surface — a plane, a height field or a triangle
