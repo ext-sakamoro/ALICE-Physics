@@ -124,12 +124,6 @@ unwired src/fsi_advanced.rs::aggregate_forces
 unwired src/fsi_advanced.rs::buoyancy_force
 unwired src/fsi_advanced.rs::drag_force
 unwired src/fsi_advanced.rs::react_back_pressure
-unwired src/heatmap.rs::Heatmap
-unwired src/heatmap.rs::HeatmapConfig
-unwired src/heatmap.rs::SliceAxis
-unwired src/heatmap.rs::generate_stress_heatmap
-unwired src/heatmap.rs::generate_temperature_heatmap
-unwired src/heatmap.rs::heatmap_to_rgba
 unwired src/ik_physics_bridge.rs::blended
 unwired src/ik_physics_bridge.rs::snap
 unwired src/interface_capture.rs::plic_normal
