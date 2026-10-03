@@ -451,7 +451,7 @@ fn golden_thin_wall() {
 // ---------------------------------------------------------------------------
 
 const GOLDEN_SDF_COLLISION: &str =
-    "ea75865ae60f57919d58c4ad093738b50a378a5d4ca68d64e2ee3e742099d4d3";
+    "ad915a1318b4ec6e371900ae2e1212a34a943e6c43173b6ee76dfd043584de5f";
 
 #[test]
 fn golden_sdf_collision_family() {

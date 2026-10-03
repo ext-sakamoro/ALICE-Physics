@@ -22,6 +22,7 @@ were introduced during that release window.
 ### Fixed — `collide_aabb_sdf`
 
 - **箱の角 8 点と中心の 9 点しか見ず、面の中心・辺の中点が最深になる場合を取りこぼしていた** (箱の面が球状の障害物に平らに載ると、角より面の中心が深い) 角・辺の中点・面の中心・中心の 27 点にした
+- `tests/determinism_golden_f32.rs` の `GOLDEN_SDF_COLLISION` を更新した (`collide_aabb_sdf` の標本が 9 点から 27 点になり、面の中心・辺の中点が最深の場合の接触が変わる 角だけの標本に戻すと元の hash に一致することを確認、意図した変更)
 - oracle: 平らな SDF の閉形式 (回転した箱・傾いた円柱・円錐・楕円体・カプセル・hull・球の子) と曲面の総当たり (箱・偏心した楕円体) 変異 22 件中 21 red (残り 1 件は等価)
 
 ### Fixed — `thin_wall` の無限ループ 1 件 + silent footgun 2 件を根本修正
