@@ -392,6 +392,15 @@ required-features = ["std", "replay"]
 name = "fluid_netcode_roundtrip"
 required-features = ["std"]
 
+# Production entry point for `ContactArrow`/`FrictionCone`/
+# `generate_contact_arrows`/`generate_friction_arrows`/`generate_friction_cones`
+# (wiring_guard: src/contact_viz.rs had zero production callers across all 5
+# items -- only this module's own #[cfg(all(test, feature = "std"))] unit
+# tests called in, which the guard does not count).
+[[example]]
+name = "contact_visualization"
+required-features = ["std"]
+
 [[bench]]
 name = "physics_bench"
 harness = false
