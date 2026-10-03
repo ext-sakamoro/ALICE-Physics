@@ -104,15 +104,6 @@ unwired src/convex_decompose.rs::DecompositionResult
 unwired src/convex_decompose.rs::decompose_sdf
 unwired src/convex_mesh_builder.rs::build_convex_hull
 unwired src/creep_longterm.rs::petg_25c_moderate
-unwired src/cubic_elastic_fem.rs::corner_count
-unwired src/cubic_elastic_fem.rs::edge_node_count
-unwired src/cubic_elastic_fem.rs::edge_nodes
-unwired src/cubic_elastic_fem.rs::element_count
-unwired src/cubic_elastic_fem.rs::element_nodes
-unwired src/cubic_elastic_fem.rs::face_node
-unwired src/cubic_elastic_fem.rs::face_node_count
-unwired src/cubic_elastic_fem.rs::interior_node_positions_are_exact
-unwired src/cubic_elastic_fem.rs::shape_values
 unwired src/damping_rayleigh.rs::damping_ratio
 unwired src/damping_rayleigh.rs::fit_two_modes
 unwired src/damping_rayleigh.rs::hz_to_omega
@@ -254,11 +245,8 @@ unwired src/pressure.rs::pressure_at
 unwired src/print_orientation.rs::axis_x
 unwired src/print_orientation.rs::axis_y
 unwired src/print_orientation.rs::optimize_grid
-unwired src/quadratic_elastic_fem.rs::corner_count
 unwired src/quadratic_elastic_fem.rs::edge_count
 unwired src/quadratic_elastic_fem.rs::edge_node
-unwired src/quadratic_elastic_fem.rs::element_count
-unwired src/quadratic_elastic_fem.rs::element_nodes
 unwired src/ragdoll.rs::child
 unwired src/ragdoll.rs::human_female
 unwired src/raycast.rs::ray_aabb
