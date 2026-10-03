@@ -223,6 +223,17 @@ required-features = ["std"]
 name = "continuous_collision_detection"
 required-features = ["std"]
 
+# Production entry point for Arrhenius combustion / soot / Boussinesq
+# buoyancy (wiring_guard: src/smoke_fire.rs had zero production callers
+# across all 6 items: ArrheniusReaction::{methane_air, pla_air},
+# reaction_rate_kg_per_m3_s, heat_release_j_per_m3_s,
+# soot_generation_kg_per_m3_s, boussinesq_buoyancy_n_per_m3 — only
+# tests/engineering_oracles_fluid.rs (methane preset only) called in, which
+# the guard does not count).
+[[example]]
+name = "smoke_fire_combustion"
+required-features = ["std"]
+
 [[bench]]
 name = "physics_bench"
 harness = false

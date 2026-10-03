@@ -261,12 +261,6 @@ unwired src/sim_modifier.rs::modifier_count
 unwired src/sim_modifier.rs::modifier_mut
 unwired src/sim_modifier.rs::with_modifier
 unwired src/sleeping.rs::build_islands
-unwired src/smoke_fire.rs::boussinesq_buoyancy_n_per_m3
-unwired src/smoke_fire.rs::heat_release_j_per_m3_s
-unwired src/smoke_fire.rs::methane_air
-unwired src/smoke_fire.rs::pla_air
-unwired src/smoke_fire.rs::reaction_rate_kg_per_m3_s
-unwired src/smoke_fire.rs::soot_generation_kg_per_m3_s
 unwired src/soft_body_cut.rs::CutPlane
 unwired src/soft_body_cut.rs::CutResult
 unwired src/soft_body_cut.rs::cut_cloth
