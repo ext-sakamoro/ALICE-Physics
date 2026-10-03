@@ -16,6 +16,13 @@ Memory index pointer: `[[reference-alice-physics-v1-roadmap]]` in claude-config.
 | Maxwell FDTD | `ecd8c61` | source-free Yee、⚠️ **SI は `ε₀·μ₀` が 7.7 bit で不可**、正規化単位 + `S=9/16` |
 | 多体 ABA | `1bab99b` | ⚠️ **`solve()` が `link.joint` を読まない**状態から real ABA、oracle 12 本 |
 
+### 第 49 increment (2026-10-03、全配線 program 第 18 件 — `cubic_elastic_fem`/`compound`/`raycast`/`ccd`/`solver_tgs` 未配線)
+
+worker 5 本 (`cubic_elastic_fem` 9 item / `compound` 8 item + `box_collider::axis_aligned` / `raycast` 9 item / `ccd` 7 item / `solver_tgs` 残 9 item 中 8 item) 変異: cubic_elastic_fem 9/9、compound 13/14 (1 件は軸整列回転のみの test では不可視だった真の oracle gap、対角 120 度回転 test 追加で解消)、raycast 22/22 (初回 3 件生存、カプセル接線・t=0 境界・両キャップ命中の scene 追加で解消)、ccd 15/19 (4 件 equivalent mutant)
+⚠️ **`compound.rs` は他 session (F3b-1, `dafc824`〜`b9472f6`) と同時並行で配線** — rebase で両者を統合 (`add_sphere`/`add_capsule`/`add_convex_hull`/`add_box`/`child_world_aabb` は他 session が `PhysicsWorld::add_compound_body` 経由で先行配線済、本 batch は残る `compute_aabb`/`overlapping_children`/`world_aabb` を含む全 8 item + 自身の example で独立に全配線、両方が共存しても矛盾なし)
+⚠️⚠️ **`solver_tgs` 残 9 item は user 裁定「本実装」により skeleton を撤去**: `ccd::adaptive_toi_substeps` が `solver_tgs::adaptive_substeps_for_ccd` を実際に呼ぶように実装 (旧実装は `speculative_contact` の有無だけで定数を返す skeleton だった)、`solve_oriented_islands_serial`/`_parallel` を `dispatch_islands`/`par_dispatch_islands` 経由に書き換え (無挙動変更)、`step_tgs` に `ImpulseCache::sweep()` を配線、新規 `PhysicsWorld::{tgs_cache_stats, reset_tgs_cache_stats}` + `TgsCacheStats` (`#[non_exhaustive]`) で warm-start 診断を公開 API 化 (snapshot +78/−0) ⚠️ **`par_dispatch_islands` 自体は未達** — 唯一の呼出元候補 `step_tgs` が常に serial 固定で、parallel 経路に繋ぐには `ImpulseCache` の island 単位 split/merge という別の設計変更が要るため保留 (Backlog 記録)
+baseline 44 行退役 (実配線 38、名前衝突の巻き込み 6 = `quadratic_elastic_fem.rs::corner_count`/`element_count`/`element_nodes` + `bvh.rs::BvhStats`/`bvh.rs::stats`/`sdf_adaptive.rs::stats`、Backlog 記録済)
+
 ### 第 48 increment (2026-10-03、全配線 program 第 9 件 (F3b-1) — compound body と凸包の質量特性)
 
 複数の形状でできた body (亜鈴・L 字など) を作れなかった `PhysicsWorld::add_compound_body(&CompoundShape, density, position)` を足し、子の質量・重心・慣性を合成して**主軸系**に置く (重心を原点、`body.rotation` = 主軸の回転、子は重心基準に付け替え) 衝突は子ごと: 2 つの子の間の隙間は body の一部でなく、凸包の中でも触れない 子の組のうち最も深い接触が採られる (追加のみ、`CompoundShape::mass_properties` / `build_hull_mesh` / `HullMesh` / `principal_axes` / `CompoundChild::support_world`)
