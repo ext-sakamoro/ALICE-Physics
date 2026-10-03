@@ -8,12 +8,6 @@ dead_code src/solver_tgs_hooks_6dof.rs 1
 dead_code src/solver_tgs_hooks_6dof_oriented.rs 1
 dead_code src/solver_tgs_hooks_6dof_oriented_scoped.rs 1
 dead_code src/solver_tgs_hooks_6dof_scoped.rs 1
-unwired src/acoustic_wave.rs::AIR_20C
-unwired src/acoustic_wave.rs::CONCRETE_LONGITUDINAL
-unwired src/acoustic_wave.rs::STEEL_LONGITUDINAL
-unwired src/acoustic_wave.rs::WATER_25C
-unwired src/acoustic_wave.rs::leapfrog_step
-unwired src/acoustic_wave.rs::stable_dt
 unwired src/aeroelasticity.rs::facchinetti_reference
 unwired src/aeroelasticity.rs::seeded
 unwired src/aeroelasticity.rs::viv_step
