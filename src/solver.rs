@@ -561,9 +561,6 @@ impl ContactConstraint {
 ///   as one connected group); no constraint impulse is applied to keep the
 ///   anchors at `target_distance`. A joint scene under `Tgs` behaves as if
 ///   the joint were absent. XPBD continues to enforce joints normally.
-/// * **Kinematic targets are not advanced.** [`RigidBody::kinematic_target`]
-///   is only consumed by the XPBD integration path; under `Tgs` a kinematic
-///   body keeps its last position/velocity.
 /// * **SDF colliders are not solved.** [`PhysicsWorld::sdf_colliders`] are
 ///   skipped; only auto-detected sphere-sphere contacts (`body_collision_radii`,
 ///   via [`PhysicsWorld::set_body_collision_radius`]) are handed to the TGS
@@ -2167,6 +2164,32 @@ impl PhysicsWorld {
         self.events.end_frame();
     }
 
+    /// Advances every [`BodyType::Kinematic`] body with a
+    /// [`RigidBody::kinematic_target`] set, mirroring [`Self::integrate_positions`]'s
+    /// `Kinematic` branch: velocity is derived from the position delta
+    /// (`(target - position) / dt`), then position/rotation are snapped to
+    /// the target. Runs once per full `dt` here (the `Tgs` path detects
+    /// contacts once per tick, not once per sub-step, so there is no
+    /// per-sub-step granularity to match) — called before collision
+    /// detection so a moving kinematic body's contacts use its new
+    /// position, same ordering as `step`'s per-sub-step kinematic advance
+    /// relative to its per-sub-step contact handling.
+    #[cfg(feature = "std")]
+    fn advance_kinematic_targets_for_tgs(&mut self, dt: Fix128) {
+        for body in &mut self.bodies {
+            if body.body_type != BodyType::Kinematic {
+                continue;
+            }
+            body.prev_position = body.position;
+            body.prev_rotation = body.rotation;
+            if let Some((target_pos, target_rot)) = body.kinematic_target {
+                body.velocity = (target_pos - body.position) * (Fix128::ONE / dt);
+                body.position = target_pos;
+                body.rotation = target_rot;
+            }
+        }
+    }
+
     /// `SolverBackend::Tgs` body of [`Self::step`]. Mirrors `step`'s phase
     /// numbering so the two are easy to diff, but is a genuinely different
     /// algorithm: contacts are detected once per full `dt` (not re-detected
@@ -2174,7 +2197,8 @@ impl PhysicsWorld {
     /// via [`crate::solver_tgs::tgs_step`]), and bodies are advanced by
     /// per-island impulse-based Gauss-Seidel instead of XPBD position
     /// projection. See [`SolverBackend`] for the documented gaps (joints,
-    /// kinematic targets, SDF colliders) this path does not yet cover.
+    /// SDF colliders) this path does not yet cover — kinematic targets are
+    /// now handled, via [`Self::advance_kinematic_targets_for_tgs`].
     #[cfg(feature = "std")]
     fn step_tgs(&mut self, dt: Fix128) {
         use crate::solver_tgs::{build_islands, DistanceRef};
@@ -2199,10 +2223,12 @@ impl PhysicsWorld {
             }
         }
 
-        // Phase 1: Apply force fields (identical call to `step`).
+        // Phase 1: Apply force fields (identical call to `step`), then
+        // advance kinematic targets before contacts are detected below.
         if !self.force_fields.is_empty() {
             apply_force_fields(&self.force_fields, &mut self.bodies, dt);
         }
+        self.advance_kinematic_targets_for_tgs(dt);
 
         // Phase 2: Collision detection once for the whole tick (not
         // re-detected per sub-step — see the method doc).
@@ -7422,6 +7448,53 @@ mod tests {
         world.integrate_positions(r(1, 4));
         assert_eq!(world.bodies[k].velocity, v3(16, 0, 0));
         assert_eq!(world.bodies[k].position, v3(5, 2, 3));
+        assert_eq!(world.bodies[k].prev_position, v3(1, 2, 3));
+    }
+
+    /// Same closed form as the `integrate_positions` test immediately above,
+    /// but through the `Tgs`-path helper instead: velocity is
+    /// (target - position) / dt = ((5, 2, 3) - (1, 2, 3)) · 4 = (16, 0, 0),
+    /// the body lands exactly on the target, and `prev_position` keeps the
+    /// pre-advance position (mirrors `integrate_positions`' `Kinematic`
+    /// branch bit-for-bit; this is the oracle for
+    /// `advance_kinematic_targets_for_tgs` itself, not for `step_tgs`).
+    #[cfg(feature = "std")]
+    #[test]
+    fn advance_kinematic_targets_for_tgs_matches_integrate_positions_closed_form() {
+        let mut world = quiet_world();
+        let k = world.add_body(RigidBody::new_kinematic(v3(1, 2, 3)));
+        world.bodies[k].set_kinematic_target(v3(5, 2, 3), QuatFix::IDENTITY);
+        world.advance_kinematic_targets_for_tgs(r(1, 4));
+        assert_eq!(world.bodies[k].velocity, v3(16, 0, 0));
+        assert_eq!(world.bodies[k].position, v3(5, 2, 3));
+        assert_eq!(world.bodies[k].prev_position, v3(1, 2, 3));
+    }
+
+    /// A dynamic body with no target is untouched by the `Tgs`-path helper
+    /// (only `BodyType::Kinematic` bodies are visited at all).
+    #[cfg(feature = "std")]
+    #[test]
+    fn advance_kinematic_targets_for_tgs_leaves_dynamic_bodies_untouched() {
+        let mut world = quiet_world();
+        let d = world.add_body(RigidBody::new_dynamic(v3(1, 2, 3), Fix128::ONE));
+        world.bodies[d].velocity = v3(7, 8, 9);
+        world.advance_kinematic_targets_for_tgs(r(1, 4));
+        assert_eq!(world.bodies[d].position, v3(1, 2, 3));
+        assert_eq!(world.bodies[d].velocity, v3(7, 8, 9));
+    }
+
+    /// A kinematic body with no target set (`kinematic_target == None`) is
+    /// left at rest — only `prev_position`/`prev_rotation` are refreshed,
+    /// matching `integrate_positions`' `Kinematic` branch (the `if let
+    /// Some(...)` guards the actual advance in both).
+    #[cfg(feature = "std")]
+    #[test]
+    fn advance_kinematic_targets_for_tgs_without_a_target_stays_at_rest() {
+        let mut world = quiet_world();
+        let k = world.add_body(RigidBody::new_kinematic(v3(1, 2, 3)));
+        world.advance_kinematic_targets_for_tgs(r(1, 4));
+        assert_eq!(world.bodies[k].position, v3(1, 2, 3));
+        assert_eq!(world.bodies[k].velocity, Vec3Fix::ZERO);
         assert_eq!(world.bodies[k].prev_position, v3(1, 2, 3));
     }
 
