@@ -15,7 +15,7 @@ use crate::math::{Fix128, Mat3Fix, QuatFix, Vec3Fix};
 use crate::shape::{PosedShape, Shape};
 
 #[cfg(not(feature = "std"))]
-use alloc::vec::Vec;
+use alloc::{vec, vec::Vec};
 
 /// What a body collides as, beyond its collision sphere.
 #[derive(Clone, Debug)]

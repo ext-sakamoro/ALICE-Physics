@@ -25,8 +25,6 @@ use crate::mass_properties::{
 use crate::math::{Fix128, Mat3Fix, QuatFix, Vec3Fix};
 
 #[cfg(not(feature = "std"))]
-use alloc::vec;
-#[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
 /// Enumeration of supported child shape types
@@ -543,6 +541,8 @@ impl Support for TransformedCompound<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(not(feature = "std"))]
+    use alloc::vec;
 
     #[test]
     fn test_compound_basic() {
