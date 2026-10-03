@@ -223,6 +223,19 @@ required-features = ["std"]
 name = "continuous_collision_detection"
 required-features = ["std"]
 
+# Production entry point for `src/math.rs`'s remaining SIMD/transcendental
+# items (wiring_guard: atan, add_simd, sub_simd, dot_simd,
+# length_squared_simd, cross_simd, dot_batch_4 had zero production callers
+# -- only tests/ and #[cfg(test)] self-references called in). `atan` /
+# `dot_simd` / `length_squared_simd` compile on every platform; `add_simd` /
+# `sub_simd` / `cross_simd` / `dot_batch_4` are additionally gated behind
+# `#[cfg(all(feature = "simd", target_arch = "x86_64"))]` inside the file
+# itself (same gate as in src/math.rs), so this entry point compiles
+# everywhere without `required-features = ["simd"]`.
+[[example]]
+name = "math_simd_and_transcendentals"
+required-features = ["std"]
+
 # Production entry point for `Rope` pin constraints and SDF collision
 # (wiring_guard: src/rope.rs had zero production callers across 6 items:
 # add_pin, pin_start, pin_end, update_pin_targets, current_length,
