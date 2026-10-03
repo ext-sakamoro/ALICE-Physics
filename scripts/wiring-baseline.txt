@@ -284,13 +284,6 @@ unwired src/raycast.rs::raycast_spheres
 unwired src/raycast.rs::sweep_sphere
 unwired src/rng.rs::new_with_stream
 unwired src/rng.rs::next_bounded
-unwired src/rolling_contact.rs::HertzianContact
-unwired src/rolling_contact.rs::basquin_cycles_to_failure
-unwired src/rolling_contact.rs::bearing_steel_52100
-unwired src/rolling_contact.rs::gear_steel_8620
-unwired src/rolling_contact.rs::hertzian_sphere_sphere
-unwired src/rolling_contact.rs::rolling_contact_life_cycles
-unwired src/rolling_contact.rs::silicon_nitride
 unwired src/rope.rs::add_pin
 unwired src/rope.rs::current_length
 unwired src/rope.rs::pin_end
