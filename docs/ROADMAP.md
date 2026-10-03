@@ -3,6 +3,24 @@
 Canonical roadmap for the alice-physics crate. Primary source of truth.
 Memory index pointer: `[[reference-alice-physics-v1-roadmap]]` in claude-config.
 
+## ⚠️ 実機検証の所在 (2026-10-03 訂正、追加機材は不要)
+
+文中複数箇所 (「複数ノード MPI は未測定」「実機が複数台揃ってから別途判断」等、第 20
+increment 他) が**追加機材の調達待ち**であるかのように読める表現になっているが、
+`~/claude-config/memory/devices.md` 実測では以下が**既に手元にある**:
+
+| 用途 | 機材 | 現状 |
+|---|---|---|
+| **複数ノード分散の実ネットワーク越し検証** | Jetson Orin Nano 8GB ×2 (ARM64、個人用途 (詳細は memory/devices.md)) | 両機とも SSH 到達可、**物理的に別筐体**なので loopback TCP でなく実ネットワーク越しの 2 ノード 1 solve が測れる、未実施 |
+| **実 GPU での GPU parity** (現状 lavapipe = software rasterizer のみ) | MacBook/Mac mini M3 (Metal 4、GPU 10 コア) | SSH 到達可、未実施 |
+| **実 GPU (CUDA) での GPU parity** | Jetson Orin Nano ×2 (NVIDIA Ampere GPU) | 同上、未実施 |
+| **Windows 実機での cross-platform golden** (現状 GitHub-hosted `windows-latest` のみ) | Windows PC (`[REDACTED: SSH host, see memory/devices.md]`、SSH 鍵認証到達可) | 未実施 |
+
+⇒ **「機材が無い」ではなく「既存機材で実行していない」** 新規購入・レンタルは不要 上記
+4 件の着手判断 (優先度 / 誰が実行するか) は user 判断 複数アーキ跨ぎの MPI backend
+選定 (OpenMPI 等のインストール) は Jetson 側で追加作業が要るが、ハードウェア自体は
+揃っている
+
 ## 🎉 現在位置 (2026-09-30): 4 課題の第 2 increment を landing
 
 ⚠️ **番号で呼ばない** — 記録には「壁 N/4」が 2 組あり一致しません (詳細は memory
@@ -15,6 +33,16 @@ Memory index pointer: `[[reference-alice-physics-v1-roadmap]]` in claude-config.
 | CFD 壁 BC | `8fec2ff` | Ghia Re=100 **4.5% → 86.2%**、解像度 sweep で 94.5% まで 1 次収束 |
 | Maxwell FDTD | `ecd8c61` | source-free Yee、⚠️ **SI は `ε₀·μ₀` が 7.7 bit で不可**、正規化単位 + `S=9/16` |
 | 多体 ABA | `1bab99b` | ⚠️ **`solve()` が `link.joint` を読まない**状態から real ABA、oracle 12 本 |
+
+### 第 53 increment (2026-10-03、`thin_wall` の無限ループ + silent footgun 2 件を根本修正)
+
+user 指示「既存バグを根本修正」で、thin_wall worker (program 第 15 件、`ys-27` 起票) が「設計変更、user 裁定要」として記録していた 3 件を解消
+
+- `sample_surface_points`: grid 走査の `while coord <= max { coord += step }` が `f32` 累積加算で、`step` が座標 magnitude の ULP (≈64 @ 1e9) より小さいと no-op になり無限ループしていた (`999_999_999..1_000_000_001`, step=1 で実測確認済) 走査を整数ステップ数ベースに置き換え (`f64` で `ceil((max-min)/step)` を先に計算)、f32 累積加算という機構自体を除去して構造的に終端を保証 (guard/反復上限の両案より根本的)
+- `measure_thickness_at`: 同じ ULP 機構で、極端座標で march の初期オフセットが座標を全く変化させず、物理的意味の無い `Some(start_offset_mm)` を返していた 各 step で座標が実際に変化したか (bit 一致チェック) を見て、変化していなければ `None` を返すよう修正 (既存の「None=測定不能」契約内の修正、signature 変更なし)
+- `ThinWallConfig::for_nozzle`: `nozzle_mm <= 0` が `min_thickness_mm=0` を silently 生成し薄肉検出を無効化していた `assert!` で fail-fast に変更 (既存 oracle `for_nozzle_zero_diameter_current_behavior_is_never_thin` を新挙動 pin の `for_nozzle_zero_diameter_now_fails_fast` に置換)
+
+既存 oracle 16 本のうち上記 2 件 (旧挙動を pin していたもの) を新挙動に更新、新規 regression test 2 本追加 (無限ループの具体的再現 AABB / 両 footgun) 変異無し、18/18 green 公開 API signature 変更なし (`for_nozzle` は `#[panics]` doc 追加のみ)
 
 ### 第 50 increment (2026-10-03、全配線 program 第 9 件 (F3c/F3d) — SDF の凸分解と compound の broad-phase、幾何クエリ)
 

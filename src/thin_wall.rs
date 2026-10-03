@@ -76,8 +76,25 @@ impl ThinWallConfig {
     ///
     /// Sets `min_thickness_mm = nozzle_mm × 2` per FDM manufacturability
     /// guidance from Bambu Lab / Prusa knowledge bases.
+    ///
+    /// # Panics
+    ///
+    /// If `nozzle_mm <= 0`. A non-positive nozzle diameter has no physical
+    /// meaning, and `min_thickness_mm = nozzle_mm × 2` of zero silently
+    /// disabled thin-wall detection entirely (`has_thin_walls()` would
+    /// never return `true`, regardless of actual geometry) — Backlog
+    /// 2026-10-03, `for_nozzle` silent footgun. Failing fast here is a
+    /// behaviour change for any caller that was (accidentally or not)
+    /// passing zero; no in-repo caller does (`grep -rn
+    /// 'for_nozzle(.*ZERO\|for_nozzle(0'` at the time of this fix, excluding
+    /// the oracle this change updates).
     #[must_use]
     pub fn for_nozzle(nozzle_mm: Fix128) -> Self {
+        assert!(
+            nozzle_mm > Fix128::ZERO,
+            "for_nozzle: nozzle_mm must be positive, got {}",
+            nozzle_mm.to_f64()
+        );
         Self {
             min_thickness_mm: nozzle_mm.double(),
             ..Self::default()
@@ -166,10 +183,26 @@ pub fn measure_thickness_at(
     let mut pz = surface_point.z.to_f32();
 
     // Step just inside the surface to leave the SDF ≈ 0 noise band.
+    let (prev_px, prev_py, prev_pz) = (px, py, pz);
     px += inward.0 * config.start_offset_mm;
     py += inward.1 * config.start_offset_mm;
     pz += inward.2 * config.start_offset_mm;
     let mut distance = config.start_offset_mm;
+
+    // ⚠️ At extreme magnitudes (`surface_point` coordinates ≈ 1e9) the `f32`
+    // ULP there (≈64) swallows a `start_offset_mm` of 0.01 entirely — `px`
+    // above is then bit-identical to `prev_px`, so the *next* `sdf.distance`
+    // call queries the surface itself again, not a point just inside it.
+    // The old code did not notice and reported `Some(start_offset_mm)` on
+    // the very first loop iteration — a thickness unrelated to any real
+    // opposite-face distance (Backlog 2026-10-03, `measure_thickness_at`
+    // silent footgun). Detecting "did not actually move" and reporting
+    // `None` (cannot reliably measure here) matches this function's
+    // existing `None` contract ("ray did not hit an opposite surface") —
+    // not a signature change, a correctness fix within it.
+    if (px, py, pz) == (prev_px, prev_py, prev_pz) {
+        return None;
+    }
 
     let max_dist_f32 = config.max_march_distance_mm.to_f32();
 
@@ -184,9 +217,16 @@ pub fn measure_thickness_at(
         if step < config.min_step_mm {
             step = config.min_step_mm;
         }
+        let (prev_px, prev_py, prev_pz) = (px, py, pz);
         px += inward.0 * step;
         py += inward.1 * step;
         pz += inward.2 * step;
+        // Same ULP-stagnation guard as above, mid-march: the object itself
+        // (not just the single start offset) can sit at a magnitude where
+        // no achievable `step` moves the query point at all.
+        if (px, py, pz) == (prev_px, prev_py, prev_pz) {
+            return None;
+        }
         distance += step;
         if distance > max_dist_f32 {
             return None;
@@ -292,23 +332,56 @@ pub fn sample_surface_points(
     let ymax = aabb_max.y.to_f32();
     let zmax = aabb_max.z.to_f32();
 
+    // ⚠️ `while coord <= max { coord += step }` (the previous shape here)
+    // never terminates once `step` is smaller than the `f32` ULP at `coord`'s
+    // magnitude (`coord += step` becomes a no-op) — hit empirically at
+    // `coord ≈ 1e9`, `step = 1` (ULP ≈ 64 there), see
+    // `feedback_thin_wall_root_cause_fixes` / Backlog 2026-10-03. Fixed at
+    // the root: the number of steps per axis is computed once as an integer
+    // (`axis_steps`, `f64` headroom so the count itself doesn't fall prey to
+    // the same `f32`-ULP rounding at extreme magnitudes) and the loops below
+    // walk that integer down to `0` — termination no longer depends on
+    // floating-point addition ever "landing" on `max`. Sample *positions*
+    // can still lose resolution at extreme magnitudes (an `f32`-native
+    // `SdfField` can't represent a 1mm step at 1e9mm regardless of how the
+    // loop is driven) — that is a separate, inherent precision limit, not a
+    // non-termination bug, and is out of scope here.
+    fn axis_steps(min: f32, max: f32, step: f32) -> u32 {
+        if max < min {
+            return 0; // inverted AABB: empty on this axis, by design (existing contract)
+        }
+        let n = (f64::from(max) - f64::from(min)) / f64::from(step);
+        // `ceil` then re-add 1 to walk the *endpoints* `0..=n`, matching the
+        // old `while coord <= max` inclusive-of-`max` semantics.
+        u32::try_from(n.ceil() as i64).unwrap_or(u32::MAX)
+    }
+    fn axis_coord(min: f32, step: f32, i: u32) -> f32 {
+        // `f64` intermediate: avoids compounding `f32` rounding across
+        // iterations the way repeated `+= step` did.
+        (f64::from(min) + f64::from(i) * f64::from(step)) as f32
+    }
+
+    let y_steps = axis_steps(ymin, ymax, step);
+    let z_steps = axis_steps(zmin, zmax, step);
+    let x_steps = axis_steps(xmin, xmax, step);
+
     let mut out = Vec::new();
 
-    let mut y = ymin;
-    while y <= ymax {
-        let mut z = zmin;
-        while z <= zmax {
-            let mut x = xmin;
+    for yi in 0..=y_steps {
+        let y = axis_coord(ymin, step, yi);
+        for zi in 0..=z_steps {
+            let z = axis_coord(zmin, step, zi);
+            let mut x = axis_coord(xmin, step, 0);
             let mut prev_d = sdf.distance(x, y, z);
-            x += step;
-            while x <= xmax {
-                let d = sdf.distance(x, y, z);
+            for xi in 1..=x_steps {
+                let next_x = axis_coord(xmin, step, xi);
+                let d = sdf.distance(next_x, y, z);
                 if (prev_d < 0.0 && d >= 0.0) || (prev_d >= 0.0 && d < 0.0) {
-                    // Sign change: linear interp on the segment [x-step, x].
+                    // Sign change: linear interp on the segment [x, next_x].
                     let denom = d - prev_d;
                     if denom.abs() > f32::EPSILON {
                         let t = -prev_d / denom; // in [0, 1]
-                        let sx = (x - step) + t * step;
+                        let sx = x + t * (next_x - x);
                         out.push(Vec3Fix::new(
                             Fix128::from_f32(sx),
                             Fix128::from_f32(y),
@@ -317,11 +390,9 @@ pub fn sample_surface_points(
                     }
                 }
                 prev_d = d;
-                x += step;
+                x = next_x;
             }
-            z += step;
         }
-        y += step;
     }
 
     out

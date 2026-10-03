@@ -49,47 +49,49 @@
 //!   is the diameter, `10mm` — well above any FDM nozzle threshold, so
 //!   `thin_fraction = 0` and `has_thin_walls() == false`.
 //!
-//! # Degenerate input (current behaviour, not a design change)
+//! # Degenerate input
 //!
 //! * `measure_thickness_at` with a zero-length `outward_normal`: `None`
 //!   (guarded by `n_len_sq` bounds check — the module's own `#[cfg(test)]`
 //!   block already covers this; re-asserted here as a production-facing
 //!   check with a mutation-sensitive guard).
-//! * `ThinWallConfig::for_nozzle(Fix128::ZERO)`: **not refused**.
-//!   `nozzle_mm.double()` of zero is zero (`double()` is an exact bit shift),
-//!   so the config silently reports `min_thickness_mm = 0`, which means *no*
-//!   measured thickness (always `≥ 0`) can ever be flagged thin. No panic, no
-//!   `Err` — this is the current value-path behaviour and is asserted as
-//!   such, not changed (changing it would be a design decision, out of
-//!   scope for this pass).
 //! * `sample_surface_points` with `grid_step_mm = 0`: returns an empty `Vec`
 //!   immediately (explicit `if step <= 0.0 { return Vec::new(); }` in the
 //!   module) — not a panic, not an infinite loop.
 //! * `analyze_thickness_grid` / `sample_surface_points` with an *inverted*
-//!   AABB (`aabb_min` component-wise greater than `aabb_max`): the outer
-//!   `while y <= ymax` condition is false on the very first check, so the
-//!   sampling loop body never runs — empty report, `sampled_count == 0`.
+//!   AABB (`aabb_min` component-wise greater than `aabb_max`): `axis_steps`
+//!   returns `0` immediately for that axis — empty report, `sampled_count
+//!   == 0`.
 //! * `analyze_thickness` with an empty point slice: `sampled_count == 0`,
 //!   `thin_fraction() == 0` (explicit early return for `sampled_count == 0`),
 //!   `has_thin_walls() == false`.
-//! * Extreme-magnitude coordinates (`Fix128::from_int(1_000_000_000)`) do not
-//!   panic for either `measure_thickness_at` or `sample_surface_points`;
-//!   verified with `catch_unwind`. For `measure_thickness_at` specifically,
-//!   the f32 ULP at `1e9` (~64) swallows the 0.01mm inward start offset
-//!   entirely, so the very first loop iteration already sees `d >= 0.0` and
-//!   returns `Some(start_offset_mm)` — a thickness that does not correspond
-//!   to any real opposite-face distance, not `None`.
-//! * ⚠️ **Not asserted, reported instead** (would require a design decision,
-//!   out of scope): `sample_surface_points`'s grid walk advances with
-//!   `x += step` (plain `f32` addition) and never checks whether `step` is
-//!   large enough to be representable at the current magnitude. Near `x ≈
-//!   1e9` the `f32` ULP is 64, so a `grid_step_mm` smaller than that (e.g.
-//!   `1.0`) makes `x += step` a no-op — `while x <= xmax` then never
-//!   terminates. This is **not a panic** (`catch_unwind` cannot observe it)
-//!   and was hit empirically while writing
-//!   `sample_surface_points_extreme_aabb_does_not_panic` below (a
+//!
+//! ## Three root-cause fixes (2026-10-03, Backlog — previously "current
+//! behaviour, not changed, design decision out of scope")
+//!
+//! * `ThinWallConfig::for_nozzle(nozzle_mm)` with `nozzle_mm <= 0` used to
+//!   silently produce `min_thickness_mm = 0`, disabling thin-wall detection
+//!   entirely with no panic and no `Err`. It now **panics** (`for_nozzle_zero_diameter_now_fails_fast`
+//!   below) — a non-positive nozzle diameter has no physical meaning.
+//! * `measure_thickness_at` at extreme-magnitude coordinates (`Fix128::from_int(1_000_000_000)`)
+//!   used to report `Some(start_offset_mm)` — the `f32` ULP there (~64)
+//!   swallowed the 0.01mm inward start offset, so the first loop iteration
+//!   queried the surface itself, not a point inside it, and reported a
+//!   thickness unrelated to any real opposite-face distance. It now detects
+//!   "did not actually move" (bit-identical coordinates before/after the
+//!   offset or any march step) and reports `None` instead
+//!   (`measure_thickness_at_extreme_coordinates_does_not_panic` below).
+//! * `sample_surface_points`'s grid walk used to advance with `x += step`
+//!   (plain `f32` addition) with no check that `step` was representable at
+//!   the current magnitude — near `x ≈ 1e9` the `f32` ULP is 64, so a
+//!   `grid_step_mm` smaller than that (e.g. `1.0`) made `x += step` a no-op
+//!   and `while x <= xmax` never terminated (not a panic, `catch_unwind`
+//!   cannot observe it; hit empirically authoring this file, a
 //!   999_999_999..1_000_000_001 AABB with `step = 1` hung indefinitely and
-//!   had to be killed). The same risk exists for the outer `y` / `z` loops.
+//!   had to be killed). The grid walk is now driven by an integer step
+//!   count per axis instead of repeated `f32` addition, so it terminates
+//!   unconditionally (`sample_surface_points_step_smaller_than_ulp_terminates`
+//!   below reproduces the exact AABB that used to hang).
 //!
 //! Author: Moroya Sakamoto
 
@@ -168,22 +170,16 @@ fn for_nozzle_matches_double_closed_form() {
 }
 
 #[test]
-fn for_nozzle_zero_diameter_current_behavior_is_never_thin() {
-    // Not refused: double() of zero is zero, exactly.
-    let cfg = ThinWallConfig::for_nozzle(Fix128::ZERO);
-    assert_eq!(cfg.min_thickness_mm, Fix128::ZERO);
-
-    // Consequence asserted end-to-end: with min_thickness_mm == 0, even a
-    // measured thickness of 0 is NOT "< 0", so has_thin_walls() is always
-    // false regardless of how thin the geometry actually is.
-    let sdf = uniform_thin_slab_sdf();
-    let points = [Vec3Fix::from_f32(0.0, 0.0, 0.3)];
-    let report = analyze_thickness(&sdf, &points, &cfg);
-    assert_eq!(report.sampled_count, 1);
-    assert!(
-        !report.has_thin_walls(),
-        "zero nozzle diameter silently disables thin-wall detection"
-    );
+#[should_panic(expected = "nozzle_mm must be positive")]
+fn for_nozzle_zero_diameter_now_fails_fast() {
+    // 2026-10-03 root-cause fix (Backlog): a zero (or negative) nozzle
+    // diameter used to silently produce `min_thickness_mm == 0`, which
+    // disabled thin-wall detection entirely (`has_thin_walls()` always
+    // `false`, regardless of actual geometry) with no panic and no `Err`.
+    // `for_nozzle` now fails fast instead — this test is the replacement
+    // for the old `for_nozzle_zero_diameter_current_behavior_is_never_thin`,
+    // which asserted the silent-disable behaviour as "current, not changed".
+    let _ = ThinWallConfig::for_nozzle(Fix128::ZERO);
 }
 
 // ============================================================================
@@ -239,23 +235,18 @@ fn measure_thickness_at_extreme_coordinates_does_not_panic() {
         result.is_ok(),
         "extreme-magnitude surface point must not panic: {result:?}"
     );
-    // Current behaviour, empirically observed (not what one might guess by
-    // hand): at this magnitude the f32 ULP (~64) swallows the 0.01mm inward
-    // start_offset_mm entirely, so `px` after the initial inward step is
-    // bit-identical to `surface_point.x.to_f32()`. The very first loop
-    // iteration then evaluates `sdf.distance(px, ..)`, which for a point
-    // 1e9mm from a radius-5mm sphere is >= 0.0 ("outside") on the first
-    // check -- the function reports "exited through the opposite surface"
-    // immediately, returning `Some(start_offset_mm)` (~0.01mm), not `None`
-    // and not a bogus huge value. This is a thickness that does not
-    // correspond to any real geometric opposite-face distance; documented
-    // here, not changed (changing it would be a design decision about what
-    // "exited immediately" should mean, out of scope for this pass).
-    let t = result.unwrap().expect("must report Some at this magnitude");
+    // 2026-10-03 root-cause fix (Backlog): at this magnitude the f32 ULP
+    // (~64) swallows the 0.01mm inward start_offset_mm entirely, so `px`
+    // after the initial inward step used to be bit-identical to
+    // `surface_point.x.to_f32()` — the function then reported
+    // `Some(start_offset_mm)` (~0.01mm), a thickness unrelated to any real
+    // geometric opposite-face distance. `measure_thickness_at` now detects
+    // "did not actually move" and reports `None` (cannot reliably measure)
+    // instead — this replaces the old assertion that pinned the bogus
+    // `Some` as "current behaviour, not changed".
     assert!(
-        (t.to_f64() - cfg.start_offset_mm as f64).abs() < 1e-6,
-        "expected Some(start_offset_mm), got {}",
-        t.to_f64()
+        result.unwrap().is_none(),
+        "no real movement was possible at this magnitude; must report None, not a bogus Some"
     );
 }
 
@@ -398,22 +389,10 @@ fn sample_surface_points_inverted_aabb_returns_empty() {
 #[test]
 fn sample_surface_points_extreme_aabb_does_not_panic() {
     // ⚠️ Extreme *coordinate magnitude*, NOT extreme *range*, and the step
-    // must be large relative to the f32 ULP at that magnitude.
-    //
-    // Two traps found while writing this test (both left as documented
-    // current behaviour, NOT fixed — see the module doc comment at the top
-    // of this file, "degenerate input"):
-    //   1. A huge range with a small step (e.g. -1e9..1e9 step 1) is a
-    //      ~(2e9)^3-iteration triple loop and never finishes in practice.
-    //   2. Worse: even a SMALL range near a large magnitude infinite-loops
-    //      if `grid_step_mm` is smaller than the f32 ULP there. Near 1e9 the
-    //      f32 ULP is 64 (2^(29-23)); `x += 1.0_f32` when `x ~ 1e9` rounds
-    //      straight back to the same value, so `while x <= xmax` never
-    //      advances and never terminates — not a panic `catch_unwind` can
-    //      catch. (Found empirically: an aabb of 999_999_999..1_000_000_001
-    //      with step=1 hung indefinitely during authoring of this test.)
-    // To test "does not panic" for extreme coordinates without hitting trap
-    // 2, the step here (128) is comfortably above the local ULP (64).
+    // must be large relative to the f32 ULP at that magnitude. A huge range
+    // with a small step (e.g. -1e9..1e9 step 1) is a legitimately large
+    // ~(2e9)^3-iteration triple loop — a performance concern, not a
+    // correctness one, and out of scope here.
     let sdf = sphere_sdf(5.0);
     let result = catch_unwind(AssertUnwindSafe(|| {
         sample_surface_points(
@@ -426,6 +405,36 @@ fn sample_surface_points_extreme_aabb_does_not_panic() {
     assert!(
         result.is_ok(),
         "extreme-magnitude AABB must not panic: {result:?}"
+    );
+}
+
+#[test]
+fn sample_surface_points_step_smaller_than_ulp_terminates() {
+    // ⚠️ This is the exact trap found while authoring this file and fixed
+    // at the root 2026-10-03 (Backlog, `project_alice_world_model_phase4_design_confirmed`
+    // sibling fix): near `x ≈ 1e9` the `f32` ULP is 64 (`2^(29-23)`), so
+    // `x += 1.0_f32` was a no-op and `while x <= xmax` never advanced —
+    // this AABB (range 2mm, step 1mm — a 3-sample grid by any reasonable
+    // count) used to hang indefinitely. `sample_surface_points` now drives
+    // the grid walk off an integer step count instead of repeated `f32`
+    // addition, so this terminates unconditionally. A real `catch_unwind`
+    // cannot observe a hang (it only catches panics), so the actual
+    // regression guard here is this test *returning at all* — CI's own
+    // job timeout is the backstop if this ever regresses.
+    let sdf = sphere_sdf(5.0);
+    let pts = sample_surface_points(
+        &sdf,
+        Vec3Fix::from_int(999_999_999, 999_999_999, 999_999_999),
+        Vec3Fix::from_int(1_000_000_001, 1_000_000_001, 1_000_000_001),
+        Fix128::from_int(1),
+    );
+    // Far from the origin-centred radius-5 sphere, so no surface crossing —
+    // correctness here is "terminated with a well-formed (possibly empty)
+    // result", which this assertion exercises (an empty `Vec` is fine).
+    assert!(
+        pts.len() <= 27, // 3 steps per axis at most (0, 1, 2) => 3^3 upper bound
+        "unexpectedly many samples: {}",
+        pts.len()
     );
 }
 
