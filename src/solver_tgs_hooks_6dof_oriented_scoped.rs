@@ -34,7 +34,8 @@
 use crate::math::Fix128;
 use crate::solver_tgs::{dispatch_islands, tgs_step, ImpulseCache, Island, TgsConfig};
 use crate::solver_tgs_hooks_6dof_oriented::{
-    Body6DofOrientedState, ContactOriented, Pgs6DofOrientedConfig, Pgs6DofOrientedHooks,
+    Body6DofOrientedState, ContactOriented, JointOriented, Pgs6DofOrientedConfig,
+    Pgs6DofOrientedHooks,
 };
 use std::collections::HashMap;
 
@@ -56,9 +57,11 @@ use std::collections::HashMap;
 /// # Panics
 /// Panics if a contact in `island.contacts` refers to a body that is
 /// not listed in `island.bodies`.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn solve_oriented_island_isolated(
     world_bodies: &mut [Body6DofOrientedState],
     world_contacts: &mut [ContactOriented],
+    world_joints: &mut [JointOriented],
     island: &Island,
     cache: &mut ImpulseCache,
     cfg: Pgs6DofOrientedConfig,
@@ -92,10 +95,31 @@ pub(crate) fn solve_oriented_island_isolated(
         })
         .collect();
 
+    // 2.5. Local joint buffer, remapped the same way as contacts above.
+    let mut local_joints: Vec<JointOriented> = island
+        .joints
+        .iter()
+        .map(|&ji| {
+            let mut j = world_joints[ji];
+            j.body_a = *world_to_local
+                .get(&j.body_a)
+                .expect("joint body_a not in island");
+            j.body_b = *world_to_local
+                .get(&j.body_b)
+                .expect("joint body_b not in island");
+            j
+        })
+        .collect();
+
     // 3. Standard oriented hook + tgs_step against the local buffers.
     {
-        let mut hooks =
-            Pgs6DofOrientedHooks::new(&mut local_bodies, &mut local_contacts, cache, cfg);
+        let mut hooks = Pgs6DofOrientedHooks::new(
+            &mut local_bodies,
+            &mut local_contacts,
+            &mut local_joints,
+            cache,
+            cfg,
+        );
         tgs_step(&mut hooks, tgs_cfg, dt);
     }
 
@@ -118,6 +142,17 @@ pub(crate) fn solve_oriented_island_isolated(
             ..updated
         };
     }
+
+    // 5.5. Write joint accumulators back the same way.
+    for (local_i, &world_i) in island.joints.iter().enumerate() {
+        let orig = world_joints[world_i];
+        let updated = local_joints[local_i];
+        world_joints[world_i] = JointOriented {
+            body_a: orig.body_a,
+            body_b: orig.body_b,
+            ..updated
+        };
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -131,9 +166,11 @@ pub(crate) fn solve_oriented_island_isolated(
 /// order — dispatched via [`dispatch_islands`] rather than a
 /// hand-written loop so the traversal is shared with any other consumer
 /// of the `solver_tgs` island-dispatch surface.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn solve_oriented_islands_serial(
     world_bodies: &mut [Body6DofOrientedState],
     world_contacts: &mut [ContactOriented],
+    world_joints: &mut [JointOriented],
     islands: &[Island],
     cache: &mut ImpulseCache,
     cfg: Pgs6DofOrientedConfig,
@@ -144,6 +181,7 @@ pub(crate) fn solve_oriented_islands_serial(
         solve_oriented_island_isolated(
             world_bodies,
             world_contacts,
+            world_joints,
             island,
             cache,
             cfg,
@@ -175,12 +213,15 @@ type IslandUpdate = (
     Vec<usize>,
     Vec<Body6DofOrientedState>,
     Vec<(usize, ContactOriented)>,
+    Vec<(usize, JointOriented)>,
 );
 
 #[cfg(feature = "parallel")]
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn solve_oriented_islands_parallel(
     world_bodies: &mut [Body6DofOrientedState],
     world_contacts: &mut [ContactOriented],
+    world_joints: &mut [JointOriented],
     islands: &[Island],
     caches: &mut [ImpulseCache],
     cfg: Pgs6DofOrientedConfig,
@@ -191,8 +232,8 @@ pub(crate) fn solve_oriented_islands_parallel(
 
     // 1. Parallel-solve into local buffers via `par_dispatch_islands`,
     //    pairing each island with its own persisted `ImpulseCache` (the
-    //    `aux` slot). Each call produces
-    //    (world_indices, updated_local_bodies, contact_writeback[]).
+    //    `aux` slot). Each call produces (world_indices,
+    //    updated_local_bodies, contact_writeback[], joint_writeback[]).
     let updates: Vec<IslandUpdate> = par_dispatch_islands(islands, caches, |island, cache| {
         let world_indices: Vec<usize> = island.bodies.clone();
         let mut local_bodies: Vec<Body6DofOrientedState> =
@@ -216,31 +257,69 @@ pub(crate) fn solve_oriented_islands_parallel(
                 c
             })
             .collect();
+        let mut local_joints: Vec<JointOriented> = island
+            .joints
+            .iter()
+            .map(|&ji| {
+                let mut j = world_joints[ji];
+                j.body_a = *world_to_local
+                    .get(&j.body_a)
+                    .expect("joint body_a not in island");
+                j.body_b = *world_to_local
+                    .get(&j.body_b)
+                    .expect("joint body_b not in island");
+                j
+            })
+            .collect();
         {
-            let mut hooks =
-                Pgs6DofOrientedHooks::new(&mut local_bodies, &mut local_contacts, cache, cfg);
+            let mut hooks = Pgs6DofOrientedHooks::new(
+                &mut local_bodies,
+                &mut local_contacts,
+                &mut local_joints,
+                cache,
+                cfg,
+            );
             tgs_step(&mut hooks, tgs_cfg, dt);
         }
-        let writeback: Vec<(usize, ContactOriented)> = island
+        let contact_writeback: Vec<(usize, ContactOriented)> = island
             .contacts
             .iter()
             .zip(local_contacts)
             .map(|(&world_i, updated)| (world_i, updated))
             .collect();
-        (world_indices, local_bodies, writeback)
+        let joint_writeback: Vec<(usize, JointOriented)> = island
+            .joints
+            .iter()
+            .zip(local_joints)
+            .map(|(&world_i, updated)| (world_i, updated))
+            .collect();
+        (
+            world_indices,
+            local_bodies,
+            contact_writeback,
+            joint_writeback,
+        )
     });
 
     // 2. Sequential write-back stage (canonical island order preserved by
     //    `par_dispatch_islands`'s `par_iter().zip().map().collect()` over
     //    indexed slices). Because the islands are disjoint on dynamic
     //    bodies, this stage only ever writes into disjoint world indices.
-    for (world_indices, local_bodies, writeback) in updates {
+    for (world_indices, local_bodies, contact_writeback, joint_writeback) in updates {
         for (local, &world) in world_indices.iter().enumerate() {
             world_bodies[world] = local_bodies[local];
         }
-        for (world_i, updated) in writeback {
+        for (world_i, updated) in contact_writeback {
             let orig = world_contacts[world_i];
             world_contacts[world_i] = ContactOriented {
+                body_a: orig.body_a,
+                body_b: orig.body_b,
+                ..updated
+            };
+        }
+        for (world_i, updated) in joint_writeback {
+            let orig = world_joints[world_i];
+            world_joints[world_i] = JointOriented {
                 body_a: orig.body_a,
                 body_b: orig.body_b,
                 ..updated
@@ -328,9 +407,11 @@ mod tests {
         // Direct whole-world solve.
         {
             let mut cache = ImpulseCache::default();
+            let mut no_joints: Vec<JointOriented> = Vec::new();
             let mut hooks = Pgs6DofOrientedHooks::new(
                 &mut bodies_direct,
                 &mut contacts_direct,
+                &mut no_joints,
                 &mut cache,
                 cfg,
             );
@@ -343,9 +424,11 @@ mod tests {
                 .expect("valid island inputs");
             assert_eq!(islands.len(), 1, "expected exactly one island");
             let mut cache = ImpulseCache::default();
+            let mut no_joints: Vec<JointOriented> = Vec::new();
             solve_oriented_island_isolated(
                 &mut bodies_scoped,
                 &mut contacts_scoped,
+                &mut no_joints,
                 &islands[0],
                 &mut cache,
                 cfg,
@@ -388,9 +471,11 @@ mod tests {
         let dt = Fix128::from_ratio(1, 60);
 
         let mut cache_serial = ImpulseCache::default();
+        let mut no_joints_serial: Vec<JointOriented> = Vec::new();
         solve_oriented_islands_serial(
             &mut bodies_serial,
             &mut contacts_serial,
+            &mut no_joints_serial,
             &islands,
             &mut cache_serial,
             cfg,
@@ -401,9 +486,11 @@ mod tests {
         let mut caches_parallel: Vec<ImpulseCache> = (0..islands.len())
             .map(|_| ImpulseCache::default())
             .collect();
+        let mut no_joints_parallel: Vec<JointOriented> = Vec::new();
         solve_oriented_islands_parallel(
             &mut bodies_parallel,
             &mut contacts_parallel,
+            &mut no_joints_parallel,
             &islands,
             &mut caches_parallel,
             cfg,

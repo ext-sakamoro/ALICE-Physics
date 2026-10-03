@@ -27,7 +27,7 @@
 #![allow(rustdoc::broken_intra_doc_links)]
 
 use crate::math::{Fix128, QuatFix, Vec3Fix};
-use crate::solver_tgs::{BodyLike, ContactLike};
+use crate::solver_tgs::{BodyLike, ContactLike, JointLike};
 
 // ---------------------------------------------------------------------------
 // Small `[Fix128; 3]` scratch layout used by the hooks family.
@@ -209,6 +209,43 @@ impl ContactLike for ContactOriented {
     }
 }
 
+/// A bilateral distance joint for oriented bodies — a rigid "rod"
+/// constraint between a body-local anchor on each body, enforced at the
+/// velocity level (unlike [`ContactOriented`], which is a one-sided
+/// constraint clamped to a non-negative accumulated impulse, this one has
+/// no sign restriction: it pushes the anchors together *or* apart,
+/// whichever keeps `|anchor_b - anchor_a| == target_distance`).
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct JointOriented {
+    /// World-index of the first body.
+    pub(crate) body_a: usize,
+    /// World-index of the second body.
+    pub(crate) body_b: usize,
+    /// Stable identity used for warm-start indexing across frames. Must
+    /// not collide with any [`ContactOriented::stable_id`] in the same
+    /// [`ImpulseCache`] — see `step_tgs`'s conversion, which reserves the
+    /// cache's top bit for joints.
+    pub(crate) stable_id: u64,
+    /// Anchor point on body A, in body A's local frame.
+    pub(crate) local_anchor_a: Vec3,
+    /// Anchor point on body B, in body B's local frame.
+    pub(crate) local_anchor_b: Vec3,
+    /// Distance the constraint holds the two anchors at.
+    pub(crate) target_distance: Fix128,
+    /// Accumulated impulse magnitude along the joint's current axis
+    /// during the current sub-step (signed — bilateral, no clamp).
+    pub(crate) accum: Fix128,
+}
+
+impl JointLike for JointOriented {
+    fn body_a(&self) -> usize {
+        self.body_a
+    }
+    fn body_b(&self) -> usize {
+        self.body_b
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Vec3 helpers reused by the hook implementation.
 // ---------------------------------------------------------------------------
@@ -306,7 +343,11 @@ pub(crate) struct Pgs6DofOrientedHooks<'a> {
     pub(crate) bodies: &'a mut [Body6DofOrientedState],
     /// Mutable slice of oriented contacts this hook operates on.
     pub(crate) contacts: &'a mut [ContactOriented],
-    /// Warm-start impulse cache reused across frames.
+    /// Mutable slice of oriented joints this hook operates on.
+    pub(crate) joints: &'a mut [JointOriented],
+    /// Warm-start impulse cache reused across frames. Shared between
+    /// contacts and joints — see [`JointOriented::stable_id`] for how
+    /// their key spaces stay disjoint.
     pub(crate) cache: &'a mut ImpulseCache,
     /// Tunable projected Gauss-Seidel parameters for the oriented solve.
     pub(crate) cfg: Pgs6DofOrientedConfig,
@@ -314,11 +355,13 @@ pub(crate) struct Pgs6DofOrientedHooks<'a> {
 }
 
 impl<'a> Pgs6DofOrientedHooks<'a> {
-    /// Construct a new oriented hook binding the provided body / contact / cache slices with `cfg`.
+    /// Construct a new oriented hook binding the provided body / contact /
+    /// joint / cache slices with `cfg`.
     #[must_use]
     pub(crate) fn new(
         bodies: &'a mut [Body6DofOrientedState],
         contacts: &'a mut [ContactOriented],
+        joints: &'a mut [JointOriented],
         cache: &'a mut ImpulseCache,
         cfg: Pgs6DofOrientedConfig,
     ) -> Self {
@@ -326,20 +369,26 @@ impl<'a> Pgs6DofOrientedHooks<'a> {
         Self {
             bodies,
             contacts,
+            joints,
             cache,
             cfg,
             restitution_bias: vec![Fix128::ZERO; n],
         }
     }
 
-    fn apply_impulse(&mut self, c_idx: usize, impulse: Vec3) {
-        let contact = self.contacts[c_idx];
-        let (ia, ib) = (contact.body_a, contact.body_b);
+    /// Applies a linear impulse `impulse` (world frame) to body `ib` and
+    /// its negation to body `ia`, each about its own moment arm (`r_a` /
+    /// `r_b`, body-centre to the point of application, world frame).
+    /// Shared by contacts (whose `r_a`/`r_b` are frozen for the whole
+    /// tick, see [`ContactOriented`]) and joints (whose anchor offsets are
+    /// recomputed every iteration, see [`Self::joint_geometry`]) — the
+    /// impulse-application math itself does not care which.
+    fn apply_impulse_between(&mut self, ia: usize, ib: usize, r_a: Vec3, r_b: Vec3, impulse: Vec3) {
         if self.bodies[ia].is_dynamic {
             let m = self.bodies[ia].inv_mass;
             self.bodies[ia].linear_velocity =
                 v_sub(self.bodies[ia].linear_velocity, v_scale(impulse, m));
-            let j_world = v_cross(contact.r_a, impulse);
+            let j_world = v_cross(r_a, impulse);
             let dw = inv_inertia_apply(
                 self.bodies[ia].orientation,
                 self.bodies[ia].inv_inertia_local,
@@ -351,7 +400,7 @@ impl<'a> Pgs6DofOrientedHooks<'a> {
             let m = self.bodies[ib].inv_mass;
             self.bodies[ib].linear_velocity =
                 v_add(self.bodies[ib].linear_velocity, v_scale(impulse, m));
-            let j_world = v_cross(contact.r_b, impulse);
+            let j_world = v_cross(r_b, impulse);
             let dw = inv_inertia_apply(
                 self.bodies[ib].orientation,
                 self.bodies[ib].inv_inertia_local,
@@ -361,28 +410,49 @@ impl<'a> Pgs6DofOrientedHooks<'a> {
         }
     }
 
-    fn contact_rel_velocity(&self, c_idx: usize) -> Vec3 {
+    fn apply_impulse(&mut self, c_idx: usize, impulse: Vec3) {
         let contact = self.contacts[c_idx];
-        let va = self.bodies[contact.body_a].linear_velocity;
-        let wa = self.bodies[contact.body_a].angular_velocity;
-        let vb = self.bodies[contact.body_b].linear_velocity;
-        let wb = self.bodies[contact.body_b].angular_velocity;
-        v_sub(
-            v_add(vb, v_cross(wb, contact.r_b)),
-            v_add(va, v_cross(wa, contact.r_a)),
-        )
+        self.apply_impulse_between(
+            contact.body_a,
+            contact.body_b,
+            contact.r_a,
+            contact.r_b,
+            impulse,
+        );
     }
 
-    /// Effective mass along `axis` at contact `c_idx`, using the
-    /// principal-axes inertia for both bodies.
-    fn effective_mass(&self, c_idx: usize, axis: Vec3) -> Fix128 {
+    /// Relative velocity of the point of application on `ib` with respect
+    /// to the one on `ia` (`ib`'s contribution minus `ia`'s) — shared by
+    /// contacts and joints, see [`Self::apply_impulse_between`].
+    fn rel_velocity_between(&self, ia: usize, ib: usize, r_a: Vec3, r_b: Vec3) -> Vec3 {
+        let va = self.bodies[ia].linear_velocity;
+        let wa = self.bodies[ia].angular_velocity;
+        let vb = self.bodies[ib].linear_velocity;
+        let wb = self.bodies[ib].angular_velocity;
+        v_sub(v_add(vb, v_cross(wb, r_b)), v_add(va, v_cross(wa, r_a)))
+    }
+
+    fn contact_rel_velocity(&self, c_idx: usize) -> Vec3 {
         let contact = self.contacts[c_idx];
-        let (ia, ib) = (contact.body_a, contact.body_b);
+        self.rel_velocity_between(contact.body_a, contact.body_b, contact.r_a, contact.r_b)
+    }
+
+    /// Effective mass along `axis` for a pair of bodies with moment arms
+    /// `r_a` / `r_b`, using the principal-axes inertia for both — shared
+    /// by contacts and joints, see [`Self::apply_impulse_between`].
+    fn effective_mass_between(
+        &self,
+        ia: usize,
+        ib: usize,
+        r_a: Vec3,
+        r_b: Vec3,
+        axis: Vec3,
+    ) -> Fix128 {
         let inv_m = self.bodies[ia].inv_mass + self.bodies[ib].inv_mass;
         // Angular contribution for each body: (r × axis)ᵀ · I_world⁻¹ · (r × axis)
         // = dot(r × axis, inv_inertia_apply(r × axis))
-        let ra_x = v_cross(contact.r_a, axis);
-        let rb_x = v_cross(contact.r_b, axis);
+        let ra_x = v_cross(r_a, axis);
+        let rb_x = v_cross(r_b, axis);
         let ang_a = v_dot(
             ra_x,
             inv_inertia_apply(
@@ -405,6 +475,46 @@ impl<'a> Pgs6DofOrientedHooks<'a> {
         } else {
             Fix128::ONE / denom
         }
+    }
+
+    /// Effective mass along `axis` at contact `c_idx`.
+    fn effective_mass(&self, c_idx: usize, axis: Vec3) -> Fix128 {
+        let contact = self.contacts[c_idx];
+        self.effective_mass_between(
+            contact.body_a,
+            contact.body_b,
+            contact.r_a,
+            contact.r_b,
+            axis,
+        )
+    }
+
+    /// World-frame offset from body `body_idx`'s centre to a body-local
+    /// anchor point (`= R · local_anchor`), i.e. the "r" moment arm
+    /// [`Self::apply_impulse_between`] expects.
+    fn joint_anchor_r(&self, body_idx: usize, local_anchor: Vec3) -> Vec3 {
+        local_to_world_v(self.bodies[body_idx].orientation, local_anchor)
+    }
+
+    /// Current world-frame unit axis (body_a → body_b), the current
+    /// separation distance along it, and both bodies' current anchor
+    /// moment arms, for joint `j_idx`.
+    ///
+    /// Unlike a contact's `normal`/`r_a`/`r_b` (frozen once per tick,
+    /// [`ContactOriented`]), a joint's anchors are recomputed fresh every
+    /// call from the bodies' *current* position/orientation: the anchor
+    /// points keep moving as the bodies integrate across the tick's
+    /// sub-steps (e.g. an orbiting body), and freezing the axis would only
+    /// ever correct the direction the joint had at detection time.
+    fn joint_geometry(&self, j_idx: usize) -> (Vec3, Fix128, Vec3, Vec3) {
+        let joint = self.joints[j_idx];
+        let r_a = self.joint_anchor_r(joint.body_a, joint.local_anchor_a);
+        let r_b = self.joint_anchor_r(joint.body_b, joint.local_anchor_b);
+        let anchor_a = v_add(self.bodies[joint.body_a].position, r_a);
+        let anchor_b = v_add(self.bodies[joint.body_b].position, r_b);
+        let delta = v_sub(anchor_b, anchor_a);
+        let (normal, dist) = to_vec3fix(delta).normalize_with_length();
+        (from_vec3fix(normal), dist, r_a, r_b)
     }
 }
 
@@ -446,6 +556,27 @@ impl TgsHooks for Pgs6DofOrientedHooks<'_> {
                 self.contacts[i].accum_normal = Fix128::ZERO;
                 self.contacts[i].accum_tangent1 = Fix128::ZERO;
                 self.contacts[i].accum_tangent2 = Fix128::ZERO;
+            }
+        }
+        for i in 0..self.joints.len() {
+            if self.cfg.warmstart {
+                let cached = self.cache.take(self.joints[i].stable_id);
+                self.joints[i].accum = cached.normal;
+                if cached.normal != Fix128::ZERO {
+                    let (normal, dist, r_a, r_b) = self.joint_geometry(i);
+                    if !dist.is_zero() {
+                        let joint = self.joints[i];
+                        self.apply_impulse_between(
+                            joint.body_a,
+                            joint.body_b,
+                            r_a,
+                            r_b,
+                            v_scale(normal, cached.normal),
+                        );
+                    }
+                }
+            } else {
+                self.joints[i].accum = Fix128::ZERO;
             }
         }
     }
@@ -512,6 +643,34 @@ impl TgsHooks for Pgs6DofOrientedHooks<'_> {
                 self.contacts[i].accum_tangent2 = new_t2;
             }
         }
+        // Bilateral distance joints: drive the relative velocity along the
+        // joint's *current* axis to exactly zero (no restitution, no
+        // one-sided clamp -- unlike a contact's normal impulse, a joint
+        // pushes or pulls, whichever direction the current drift needs).
+        for i in 0..self.joints.len() {
+            let (normal, dist, r_a, r_b) = self.joint_geometry(i);
+            if dist.is_zero() {
+                continue; // degenerate: anchors coincide, axis undefined.
+            }
+            let joint = self.joints[i];
+            let eff_m = self.effective_mass_between(joint.body_a, joint.body_b, r_a, r_b, normal);
+            if eff_m <= Fix128::ZERO {
+                continue;
+            }
+            let rel_v = self.rel_velocity_between(joint.body_a, joint.body_b, r_a, r_b);
+            let vn = v_dot(rel_v, normal);
+            let lambda = -vn * eff_m;
+            if lambda != Fix128::ZERO {
+                self.apply_impulse_between(
+                    joint.body_a,
+                    joint.body_b,
+                    r_a,
+                    r_b,
+                    v_scale(normal, lambda),
+                );
+                self.joints[i].accum = self.joints[i].accum + lambda;
+            }
+        }
     }
 
     fn position_iteration(&mut self, _sub_dt: Fix128) {
@@ -538,6 +697,44 @@ impl TgsHooks for Pgs6DofOrientedHooks<'_> {
                     v_add(self.bodies[contact.body_b].position, v_scale(disp, m));
             }
         }
+        // Bilateral joints: Baumgarte position correction for whatever
+        // drift (either sign) is left in `dist - target_distance` beyond
+        // `slop`. `normal` points from A to B, so a positive `error`
+        // (anchors too far apart) must move A *toward* B (+normal) and B
+        // *toward* A (-normal) -- the opposite sense from the contact
+        // correction above, which pushes two overlapping bodies *apart*.
+        for i in 0..self.joints.len() {
+            let (normal, dist, r_a, r_b) = self.joint_geometry(i);
+            if dist.is_zero() {
+                continue;
+            }
+            let joint = self.joints[i];
+            let error = dist - joint.target_distance;
+            if error.abs() <= self.cfg.slop {
+                continue;
+            }
+            let eff_m = self.effective_mass_between(joint.body_a, joint.body_b, r_a, r_b, normal);
+            if eff_m <= Fix128::ZERO {
+                continue;
+            }
+            let slop_adjusted = if error.is_negative() {
+                error + self.cfg.slop
+            } else {
+                error - self.cfg.slop
+            };
+            let correction = self.cfg.baumgarte * slop_adjusted * eff_m;
+            let disp = v_scale(normal, correction);
+            if self.bodies[joint.body_a].is_dynamic {
+                let m = self.bodies[joint.body_a].inv_mass;
+                self.bodies[joint.body_a].position =
+                    v_add(self.bodies[joint.body_a].position, v_scale(disp, m));
+            }
+            if self.bodies[joint.body_b].is_dynamic {
+                let m = self.bodies[joint.body_b].inv_mass;
+                self.bodies[joint.body_b].position =
+                    v_sub(self.bodies[joint.body_b].position, v_scale(disp, m));
+            }
+        }
     }
 
     fn end_substep(&mut self, sub_dt: Fix128) {
@@ -552,6 +749,16 @@ impl TgsHooks for Pgs6DofOrientedHooks<'_> {
                     normal: contact.accum_normal,
                     tangent1: contact.accum_tangent1,
                     tangent2: contact.accum_tangent2,
+                },
+            );
+        }
+        for joint in self.joints.iter() {
+            self.cache.set(
+                joint.stable_id,
+                CachedImpulse {
+                    normal: joint.accum,
+                    tangent1: Fix128::ZERO,
+                    tangent2: Fix128::ZERO,
                 },
             );
         }
@@ -708,7 +915,8 @@ mod tests {
             warmstart: false,
             ..Pgs6DofOrientedConfig::default()
         };
-        let mut hooks = Pgs6DofOrientedHooks::new(&mut bodies, &mut contacts, &mut cache, cfg);
+        let mut hooks =
+            Pgs6DofOrientedHooks::new(&mut bodies, &mut contacts, &mut [], &mut cache, cfg);
         tgs_step(
             &mut hooks,
             &TgsConfig {
@@ -734,7 +942,8 @@ mod tests {
             warmstart: false,
             ..Pgs6DofOrientedConfig::default()
         };
-        let mut hooks = Pgs6DofOrientedHooks::new(&mut bodies, &mut contacts, &mut cache, cfg);
+        let mut hooks =
+            Pgs6DofOrientedHooks::new(&mut bodies, &mut contacts, &mut [], &mut cache, cfg);
         tgs_step(
             &mut hooks,
             &TgsConfig {
@@ -760,7 +969,8 @@ mod tests {
             warmstart: false,
             ..Pgs6DofOrientedConfig::default()
         };
-        let mut hooks = Pgs6DofOrientedHooks::new(&mut bodies, &mut contacts, &mut cache, cfg);
+        let mut hooks =
+            Pgs6DofOrientedHooks::new(&mut bodies, &mut contacts, &mut [], &mut cache, cfg);
         tgs_step(
             &mut hooks,
             &TgsConfig {
@@ -796,7 +1006,8 @@ mod tests {
             let tcfg = TgsConfig::default();
             let dt = Fix128::from_f32(1.0 / 60.0);
             {
-                let mut h = Pgs6DofOrientedHooks::new(&mut bodies, &mut contacts, &mut cache, cfg);
+                let mut h =
+                    Pgs6DofOrientedHooks::new(&mut bodies, &mut contacts, &mut [], &mut cache, cfg);
                 for _ in 0..4 {
                     tgs_step(&mut h, &tcfg, dt);
                 }

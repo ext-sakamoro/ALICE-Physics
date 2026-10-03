@@ -32,6 +32,28 @@ increment 他) が**追加機材の調達待ち**であるかのように読め�
 ⚠️ **契約の変更**: 同時並行の第 25 件が固定していた旧 `simplify` の副作用 3 本 (`simplify_disjoint_triangles_target_zero_removes_all` ほか: 孤立した三角形を縮退させて消す) を、新しい契約 (境界の辺は collapse しない) に合わせて更新した
 oracle: 9c 8 本 (bit 一致の密な scene / 構造変更 / 切替 / 復元 / proxy の fat box の閉形式) 9d 9 本 (重さの閉形式) 9e 14 本 (閉・向き・Euler・体積・AABB の閉形式・torus・開いた mesh・星形分割の pinch) 変異: 9c 15 件中 15 red (等価だった全 reset 3 件は削除)、9d 11 件中 11 red、9e 25 件中 22 red (残り 3 件は collapse 順序の質だけに効く等価)
 baseline 退役 3 行 (`dynamic_bvh::{height, proxy_count, user_data}`) 他の行 (`bvh::get_aabb` / `collision_mesh_gen` 5 / `contact_viz` 5) は同時並行の第 24 / 25 / 28 件が example 経由で先に退役済み ⇒ 本件は**実配線** (world API / 静的 collider / 選べる broad-phase) と欠陥の根本修正の差分 example は `examples/broadphase_selection.rs` / `examples/contact_force_visualization.rs` / `examples/collision_mesh_from_sdf.rs`
+### 第 61 increment (2026-10-03、`SolverBackend::Tgs` の既知gap 3件を完全解消 — SDF collider + joint)
+
+残っていた2gap (SDF collider / joint) を解消し、kinematic target (第56 increment) と
+合わせて `Tgs` backend の既知gap 3件が全て解消 **SDF collider**:
+`step_tgs` が `PhysicsWorld::sdf_colliders` を一切見ていなかった collision detection
+直後に既存 `resolve_sdf_collisions()` (position直接push-out、backend非依存) を1tickに
+1回呼ぶだけで解決 oracle: `tgs_body_falling_onto_sdf_ground_is_stopped_near_the_surface`
+**Joint**: `DistanceConstraint` が island分割のgroupingにしか使われず拘束impulseが
+一切適用されていなかった `solver_tgs_hooks_6dof_oriented.rs` に `JointOriented`
+(bilateral distance joint) を新設、contactと同じ`velocity_iteration`(相対速度を
+現在軸に沿って厳密に0へ、unilateralなcontactと異なり符号制限なし) +
+`position_iteration`(Baumgarte drift補正) の2段で、TGS内部substep毎にcontactと
+並行して解く anchor offsetはcontactと異なり毎iteration現在のbody位置・姿勢から
+再計算 (contactは1tick分frozen、jointはsubstep内でbodyが動き続けるため固定すると
+初期方向しか補正できない) warm-start cacheはcontactと共有 (`stable_id`最上位bitで
+disjointな空間を確保) oracle 4本 (周回運動の収束帯 / 既に満たされた拘束のbit-exact
+無impulse / 初期違反+ゼロ速度でposition_iteration独自の歯を確保 / 退化入力の無panic)
+既存の「joint無視」をpinしていたtestは新しい正しい挙動のtestに置き換え 変異試験
+3種 (SDF collider呼出削除 / joint velocity_iteration削除 / joint position_iteration
+削除) 全てred確認済 `SolverBackend` のdoc comment中の「Known gaps」記述を全面更新
+公開API signature変更なし (`JointOriented`等は全て`pub(crate)`)
+
 ### 第 60 increment (2026-10-03、`wave_ship::Jonswap::spectrum_density` の peak-enhancement 正規化を根本修正)
 
 `spectrum_density` の leading constant `5/16·H_s²` が DNV-RP-C205 の正規化補正

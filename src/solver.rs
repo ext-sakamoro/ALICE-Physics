@@ -554,17 +554,17 @@ impl ContactConstraint {
 /// stay on it for a given simulation; do not expect bit-identical replay
 /// across a backend switch.
 ///
-/// # Known gaps of the `Tgs` path (v1.1, tracked, not silent)
+/// # Notes on the `Tgs` path
 ///
-/// * **Joints are not enforced.** [`DistanceConstraint`]s are only used to
-///   group bodies into solver islands (so a joint chain is still advanced
-///   as one connected group); no constraint impulse is applied to keep the
-///   anchors at `target_distance`. A joint scene under `Tgs` behaves as if
-///   the joint were absent. XPBD continues to enforce joints normally.
-/// * **SDF colliders are not solved.** [`PhysicsWorld::sdf_colliders`] are
-///   skipped; only auto-detected sphere-sphere contacts (`body_collision_radii`,
-///   via [`PhysicsWorld::set_body_collision_radius`]) are handed to the TGS
-///   contact solver.
+/// [`DistanceConstraint`]s are enforced as bilateral velocity-level impulse
+/// joints (`JointOriented` in `solver_tgs_hooks_6dof_oriented`), solved
+/// every TGS inner sub-step alongside contacts, plus a Baumgarte position
+/// correction for residual drift — a genuinely different algorithm from
+/// XPBD's position-based compliance solve, so the two backends converge to
+/// slightly different equilibria for the same scene (not a bug; see
+/// `tests/analytic_tgs_wiring.rs`'s joint tests for both backends' measured
+/// bands).
+///
 /// * Requires the `std` feature (`solver_tgs` is `std`-gated, same as the
 ///   rest of the TGS family). Selecting `Tgs` in a build without `std`
 ///   is **not** silently ignored at the type level — the variant still
@@ -2233,9 +2233,10 @@ impl PhysicsWorld {
     /// every sub-step — the TGS family owns its own sub-stepping internally
     /// via [`crate::solver_tgs::tgs_step`]), and bodies are advanced by
     /// per-island impulse-based Gauss-Seidel instead of XPBD position
-    /// projection. See [`SolverBackend`] for the documented gaps (joints,
-    /// SDF colliders) this path does not yet cover — kinematic targets are
-    /// now handled, via [`Self::advance_kinematic_targets_for_tgs`].
+    /// projection. Joints, kinematic targets and SDF colliders are all
+    /// handled — see [`SolverBackend`]'s notes for the joint solve, and
+    /// [`Self::advance_kinematic_targets_for_tgs`] /
+    /// [`Self::resolve_sdf_collisions`] for the other two.
     #[cfg(feature = "std")]
     fn step_tgs(&mut self, dt: Fix128) {
         use crate::solver_tgs::{build_islands, DistanceRef};
@@ -2272,6 +2273,21 @@ impl PhysicsWorld {
         self.clear_contacts();
         self.detect_collisions();
 
+        // Phase 2.5: Resolve SDF collisions (implicit surface contacts),
+        // mirroring `substep`'s Phase 1.5. `resolve_sdf_collisions` pushes
+        // bodies directly out of SDF overlap via `body.position +=
+        // normal*depth` — it does not go through the contact-constraint /
+        // impulse pipeline at all, so it is correct regardless of which
+        // `SolverBackend` subsequently integrates velocities, and is called
+        // once here (not once per TGS inner sub-step) for the same reason
+        // `detect_collisions` above is: TGS owns its own sub-stepping
+        // internally and this path only detects/resolves once per full
+        // `dt`, same as every other per-tick (not per-substep) phase here.
+        #[cfg(feature = "std")]
+        if !self.sdf_colliders.is_empty() {
+            self.resolve_sdf_collisions();
+        }
+
         // Phase 3: Convert to the TGS body/contact representation, solve
         // every island, convert back.
         let n = self.bodies.len();
@@ -2291,6 +2307,28 @@ impl PhysicsWorld {
             .distance_constraints
             .iter()
             .map(|joint| DistanceRef { joint })
+            .collect();
+        // Joint stable IDs share `self.tgs_impulse_cache` with contact
+        // stable IDs (`i as u64` above, starting at 0) — the top bit
+        // reserves a disjoint ID space for joints so a joint can never
+        // warm-start from (or evict) a contact's cached impulse, and
+        // vice versa.
+        const JOINT_ID_TAG: u64 = 1 << 63;
+        let mut tgs_joints: Vec<crate::solver_tgs_hooks_6dof_oriented::JointOriented> = self
+            .distance_constraints
+            .iter()
+            .enumerate()
+            .map(
+                |(i, j)| crate::solver_tgs_hooks_6dof_oriented::JointOriented {
+                    body_a: j.body_a,
+                    body_b: j.body_b,
+                    stable_id: (i as u64) | JOINT_ID_TAG,
+                    local_anchor_a: [j.local_anchor_a.x, j.local_anchor_a.y, j.local_anchor_a.z],
+                    local_anchor_b: [j.local_anchor_b.x, j.local_anchor_b.y, j.local_anchor_b.z],
+                    target_distance: j.target_distance,
+                    accum: Fix128::ZERO,
+                },
+            )
             .collect();
 
         // `build_islands` only errs when a contact/joint references a body
@@ -2317,6 +2355,7 @@ impl PhysicsWorld {
         solve_oriented_islands_serial(
             &mut tgs_bodies,
             &mut tgs_contacts,
+            &mut tgs_joints,
             &islands,
             &mut self.tgs_impulse_cache,
             cfg,
