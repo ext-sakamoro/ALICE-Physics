@@ -256,13 +256,6 @@ unwired src/phase_change.rs::phase_at
 unwired src/physics2d.rs::apply_force
 unwired src/physics2d.rs::apply_impulse_at_point
 unwired src/physics2d.rs::distance_to
-unwired src/piezoelectric.rs::force_from_voltage
-unwired src/piezoelectric.rs::permittivity
-unwired src/piezoelectric.rs::pvdf
-unwired src/piezoelectric.rs::pzt_5a
-unwired src/piezoelectric.rs::quartz
-unwired src/piezoelectric.rs::strain_under_stress
-unwired src/piezoelectric.rs::voltage_from_force
 unwired src/plastic.rs::petg_room_temp
 unwired src/plastic.rs::uniaxial_x
 unwired src/plastic.rs::with_hardening
@@ -270,13 +263,6 @@ unwired src/pressure.rs::apply_impact
 unwired src/pressure.rs::apply_pressure_at
 unwired src/pressure.rs::deformation_at
 unwired src/pressure.rs::pressure_at
-unwired src/prestressed.rs::bolt_load_fraction
-unwired src/prestressed.rs::bolt_peak_tension
-unwired src/prestressed.rs::cable_pretension_n
-unwired src/prestressed.rs::preload_from_torque
-unwired src/prestressed.rs::recommended_preload_n
-unwired src/prestressed.rs::separation_load_n
-unwired src/prestressed.rs::tensioned_cable_stiffness_n_per_mm
 unwired src/print_orientation.rs::axis_x
 unwired src/print_orientation.rs::axis_y
 unwired src/print_orientation.rs::optimize_grid
