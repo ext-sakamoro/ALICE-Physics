@@ -13,6 +13,13 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Fixed — `thin_wall` の無限ループ 1 件 + silent footgun 2 件を根本修正
+
+- `sample_surface_points`: grid 走査が `while coord <= max { coord += step }` の `f32` 累積加算で、`step` が座標 magnitude の ULP (≈64 @ 1e9) より小さいと no-op になり無限ループしていた (Backlog 2026-10-03) 走査を整数ステップ数ベース (`f64` で `ceil((max-min)/step)` を先に計算) に置き換え、構造的に終端を保証 既存 oracle 全 green、終端しなかった具体的 AABB (`999_999_999..1_000_000_001`, step=1) を再現する regression test を追加
+- `measure_thickness_at`: 同じ ULP 機構で、極端座標 (1e9 mm 付近) では march の初期オフセットが座標を全く変化させず、最初の loop iteration が物理的意味の無い `Some(start_offset_mm)` (~0.01mm) を返していた march の各 step で座標が実際に変化したか (bit 一致チェック) を確認し、変化していなければ `None` (測定不能) を返すよう修正 (signature 変更なし、既存の「None=測定不能」契約内の修正)
+- `ThinWallConfig::for_nozzle(nozzle_mm)`: `nozzle_mm <= 0` が `min_thickness_mm=0` を silently 生成し、薄肉検出が常に無効化されていた (`has_thin_walls()` が常に `false`) `nozzle_mm > 0` を `assert!` で fail-fast に変更 (既存 oracle `for_nozzle_zero_diameter_current_behavior_is_never_thin` は新挙動を pin する `for_nozzle_zero_diameter_now_fails_fast` に置き換え)
+- 3 件とも worker の事前実測 (thin_wall worker、program 第 15 件) が「設計変更、user 裁定要」として記録していたもの user 指示により根本修正で解消
+
 ### Added — `cubic_elastic_fem`/`compound`/`raycast`/`ccd`/`solver_tgs` の未配線を全配線 (全配線 program 第 18 件)
 
 - `cubic_elastic_fem`: `examples/cubic_elastic_fem_topology.rs` が P3 (20 節点三次四面体) のトポロジ helper 9 個 (`corner_count`/`edge_node_count`/`edge_nodes`/`element_count`/`element_nodes`/`face_node`/`face_node_count`/`interior_node_positions_are_exact`/`shape_values`) を駆動、oracle 13 本 (単一 tet の閉形式 + 2 tet 共有面の inclusion-exclusion + shape_values の第二実装突合)、変異 9/9 red
