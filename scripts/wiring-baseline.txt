@@ -131,11 +131,6 @@ unwired src/laminate.rs::is_symmetric
 unwired src/laminate.rs::is_symmetric_stack
 unwired src/laminate.rs::q_bar
 unwired src/laminate.rs::q_matrix
-unwired src/layer_adhesion.rs::fos_normal_x
-unwired src/layer_adhesion.rs::fos_normal_z
-unwired src/layer_adhesion.rs::fos_shear_xy
-unwired src/layer_adhesion.rs::fos_shear_xz
-unwired src/layer_adhesion.rs::min_fos
 unwired src/mass_properties.rs::cylinder_mass_properties
 unwired src/math_util.rs::cbrt_fix
 unwired src/math_util.rs::clamp_fix

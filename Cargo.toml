@@ -138,6 +138,16 @@ required-features = ["std"]
 name = "linear_elastic_fem_config_diagnostics"
 required-features = ["std"]
 
+# Production entry point for the FDM layer-adhesion factor-of-safety API
+# (wiring_guard: src/layer_adhesion.rs had zero production callers across 5
+# items: fos_normal_x, fos_normal_z, fos_shear_xy, fos_shear_xz, min_fos —
+# src/print_pipeline_solver.rs builds an EffectiveStrength but only reads the
+# allowable-stress fields, and tests/engineering_oracles_misc.rs calls in,
+# which the guard does not count).
+[[example]]
+name = "layer_adhesion_fos"
+required-features = ["std"]
+
 # Production entry point for the P3 mesh topology helpers (wiring_guard:
 # src/cubic_elastic_fem.rs had zero production callers across 9 items:
 # corner_count, edge_node_count, edge_nodes, element_count, element_nodes,
