@@ -1,4 +1,4 @@
-//! Audit S2-3 oracles for `alice_physics::sdf_fem_mesh`.
+//! Audit oracles for `alice_physics::sdf_fem_mesh`.
 //! Reference values: exact volumes of half-space / box regions (polytope formulas), the
 //! topological identities of a closed surface (Euler characteristic), and brute-force
 //! recomputation of the generators' own occupancy rule. Nothing is read back from the mesh

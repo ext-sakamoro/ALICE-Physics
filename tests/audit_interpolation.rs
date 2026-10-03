@@ -1,4 +1,4 @@
-//! Audit S2-3 oracles for `alice_physics::interpolation`.
+//! Audit oracles for `alice_physics::interpolation`.
 //! Expected values are closed forms in f64 (affine blend, NLERP/SLERP angle formulas).
 #![allow(clippy::disallowed_methods)]
 

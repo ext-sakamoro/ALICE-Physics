@@ -1,4 +1,4 @@
-//! Audit S2-3 oracles for `alice_physics::wave_ship`.
+//! Audit oracles for `alice_physics::wave_ship`.
 //! Expected values are hand-evaluated closed forms in f64 (DNV-RP-C205 JONSWAP, linear
 //! superposition, Archimedes, damped SDOF), not values produced by the implementation.
 #![allow(clippy::disallowed_methods)]

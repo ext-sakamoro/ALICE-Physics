@@ -1,4 +1,4 @@
-//! Audit S2-3 oracles for `alice_physics::multiphase`.
+//! Audit oracles for `alice_physics::multiphase`.
 //! Expected values: hand-derived closed forms (translation of a slab, affine reproduction by
 //! trilinear interpolation, Laplacian of a signed-distance sphere = 2/rho).
 #![allow(clippy::disallowed_methods)]
