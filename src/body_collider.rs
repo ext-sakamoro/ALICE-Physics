@@ -9,9 +9,15 @@
 //!
 //! Author: Moroya Sakamoto
 
+use crate::box_collider::OrientedBox;
 use crate::collider::{contact, gjk, Contact, Support, AABB};
-use crate::compound::{CompoundChild, CompoundShape};
+use crate::compound::{CompoundChild, CompoundShape, ShapeRef};
 use crate::math::{Fix128, Mat3Fix, QuatFix, Vec3Fix};
+#[cfg(feature = "std")]
+use crate::sdf_collider::{
+    box_sample_points, collide_aabb_sdf, collide_capsule_sdf, collide_point_sdf,
+    collide_points_sdf, collide_sphere_sdf, SdfCollider,
+};
 use crate::shape::{PosedShape, Shape};
 
 #[cfg(not(feature = "std"))]
@@ -122,6 +128,153 @@ impl BodyCollider {
                     }
                 }
                 radius
+            }
+        }
+    }
+}
+
+/// How many times the support point is chased along the SDF's gradient.
+#[cfg(feature = "std")]
+const SDF_SUPPORT_ITERATIONS: usize = 6;
+
+/// Keeps the deeper of two optional contacts.
+#[cfg(feature = "std")]
+fn deeper(best: &mut Option<Contact>, candidate: Option<Contact>) {
+    if let Some(c) = candidate {
+        if best.is_none_or(|b| c.depth > b.depth) {
+            *best = Some(c);
+        }
+    }
+}
+
+/// A convex solid against an SDF by its support function: the point of the solid
+/// furthest *into* the field is found by repeatedly taking the support point
+/// against the field's outward normal (at the centre first, then at each support
+/// point found). That is exact for a flat field (the normal does not change, so
+/// the first support point is the deepest) and follows the surface for a curved
+/// one, where it finds a point on the solid that is locally deepest.
+#[cfg(feature = "std")]
+fn convex_sdf_contact(solid: &impl Support, centre: Vec3Fix, sdf: &SdfCollider) -> Option<Contact> {
+    let outward = |at: Vec3Fix| {
+        let (lx, ly, lz) = sdf.world_to_local(at);
+        let (nx, ny, nz) = sdf.field.normal(lx, ly, lz);
+        sdf.local_normal_to_world(nx, ny, nz)
+    };
+    let mut at = centre;
+    let mut best = None;
+    for _ in 0..SDF_SUPPORT_ITERATIONS {
+        let point = solid.support(-outward(at));
+        deeper(&mut best, collide_point_sdf(point, sdf));
+        if point == at {
+            break;
+        }
+        at = point;
+    }
+    best
+}
+
+/// A box against an SDF: the deepest of the 27 points that
+/// [`collide_aabb_sdf`] samples (an axis-aligned box goes through it), turned with
+/// the box. Exact for a flat field, whose deepest point of a box is a corner.
+#[cfg(feature = "std")]
+fn box_sdf_contact(b: &OrientedBox, sdf: &SdfCollider) -> Option<Contact> {
+    if b.rotation == QuatFix::IDENTITY {
+        let aabb = b.aabb();
+        return collide_aabb_sdf(aabb.min, aabb.max, sdf);
+    }
+    collide_points_sdf(
+        &box_sample_points(b.center, b.half_extents, b.rotation),
+        sdf,
+    )
+}
+
+/// One shape, placed in the world, against an SDF.
+#[cfg(feature = "std")]
+fn posed_sdf_contact(posed: &PosedShape, sdf: &SdfCollider) -> Option<Contact> {
+    match posed.shape {
+        Shape::Box { half_extents } => box_sdf_contact(
+            &OrientedBox::new(posed.position, half_extents, posed.rotation),
+            sdf,
+        ),
+        Shape::Ellipsoid { radii } if radii.x == radii.y && radii.y == radii.z => {
+            collide_sphere_sdf(posed.position, radii.x, sdf)
+        }
+        _ => convex_sdf_contact(posed, posed.position, sdf),
+    }
+}
+
+/// One child of a compound, placed in the world by its body's pose, against an SDF.
+#[cfg(feature = "std")]
+fn child_sdf_contact(
+    child: &CompoundChild,
+    body_position: Vec3Fix,
+    body_rotation: QuatFix,
+    sdf: &SdfCollider,
+) -> Option<Contact> {
+    let position = body_position + body_rotation.rotate_vec(child.local_position);
+    let rotation = body_rotation.mul(child.local_rotation);
+    match &child.shape {
+        ShapeRef::Sphere(s) => {
+            collide_sphere_sdf(position + rotation.rotate_vec(s.center), s.radius, sdf)
+        }
+        ShapeRef::Capsule(c) => collide_capsule_sdf(
+            position + rotation.rotate_vec(c.a),
+            position + rotation.rotate_vec(c.b),
+            c.radius,
+            sdf,
+        ),
+        ShapeRef::Box(b) => box_sdf_contact(
+            &OrientedBox::new(
+                position + rotation.rotate_vec(b.center),
+                b.half_extents,
+                rotation.mul(b.rotation),
+            ),
+            sdf,
+        ),
+        ShapeRef::ConvexHull(hull) => {
+            let world: Vec<Vec3Fix> = hull
+                .vertices
+                .iter()
+                .map(|&v| position + rotation.rotate_vec(v))
+                .collect();
+            collide_points_sdf(&world, sdf)
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl BodyCollider {
+    /// The deepest contact of this collider, for a body at `position` turned by
+    /// `rotation`, with an SDF, or `None` when no piece reaches into it. The normal
+    /// pushes the collider out of the field; `depth` is how far.
+    ///
+    /// A sphere, an ellipsoid with equal radii and a capsule child use their own
+    /// sphere / capsule tests, a box its corners and centre, a hull its vertices,
+    /// and any other convex shape its support point against the field's normal
+    /// ([`convex_sdf_contact`]). Against a flat field every one of these is exact;
+    /// against a curved one a face or an edge can reach deeper than the points
+    /// sampled.
+    pub(crate) fn sdf_contact(
+        &self,
+        position: Vec3Fix,
+        rotation: QuatFix,
+        sdf: &SdfCollider,
+    ) -> Option<Contact> {
+        match self {
+            Self::Shape(shape) => posed_sdf_contact(
+                &PosedShape {
+                    shape: *shape,
+                    position,
+                    rotation,
+                },
+                sdf,
+            ),
+            Self::Compound(compound) => {
+                let mut best = None;
+                for child in &compound.children {
+                    deeper(&mut best, child_sdf_contact(child, position, rotation, sdf));
+                }
+                best
             }
         }
     }

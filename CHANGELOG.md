@@ -13,6 +13,17 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added — `PhysicsWorld::sdf_contacts` (全配線 program 第 9b 件)
+
+`PhysicsWorld::sdf_contacts()` を追加した (追加のみ) `step` が SDF collider から押し出す body とその接触を、何も動かさずに `(body index, Contact)` で返す
+### Changed — 形状つき body は実形状で SDF と衝突する
+
+`add_shaped_body` / `add_compound_body` の body は、SDF collider に対して同じ半径の球でなくその形状・compound で衝突する (形状を持たない body は従来どおり `sdf_collision_radius` の球) 箱は 27 点、hull は頂点、カプセル・球の子は各々の判定、他の凸形状は SDF の法線の逆向きの support 点で解く 平らな SDF では厳密、曲面では標本点の間が最深になりうる
+### Fixed — `collide_aabb_sdf`
+
+- **箱の角 8 点と中心の 9 点しか見ず、面の中心・辺の中点が最深になる場合を取りこぼしていた** (箱の面が球状の障害物に平らに載ると、角より面の中心が深い) 角・辺の中点・面の中心・中心の 27 点にした
+- oracle: 平らな SDF の閉形式 (回転した箱・傾いた円柱・円錐・楕円体・カプセル・hull・球の子) と曲面の総当たり (箱・偏心した楕円体) 変異 22 件中 21 red (残り 1 件は等価)
+
 ### Fixed — `thin_wall` の無限ループ 1 件 + silent footgun 2 件を根本修正
 
 - `sample_surface_points`: grid 走査が `while coord <= max { coord += step }` の `f32` 累積加算で、`step` が座標 magnitude の ULP (≈64 @ 1e9) より小さいと no-op になり無限ループしていた (Backlog 2026-10-03) 走査を整数ステップ数ベース (`f64` で `ceil((max-min)/step)` を先に計算) に置き換え、構造的に終端を保証 既存 oracle 全 green、終端しなかった具体的 AABB (`999_999_999..1_000_000_001`, step=1) を再現する regression test を追加

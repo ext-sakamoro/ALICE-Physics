@@ -11084,6 +11084,7 @@ pub fn alice_physics::solver::PhysicsWorld::remove_sdf_collider(&mut self, usize
 pub fn alice_physics::solver::PhysicsWorld::remove_static_collider(&mut self, usize) -> core::option::Option<alice_physics::static_collider::StaticCollider>
 pub fn alice_physics::solver::PhysicsWorld::reset_tgs_cache_stats(&mut self)
 pub fn alice_physics::solver::PhysicsWorld::reset_world(&mut self)
+pub fn alice_physics::solver::PhysicsWorld::sdf_contacts(&self) -> alloc::vec::Vec<(usize, alice_physics::collider::Contact)>
 pub fn alice_physics::solver::PhysicsWorld::serialize_state(&self) -> alloc::vec::Vec<u8>
 pub fn alice_physics::solver::PhysicsWorld::set_body_collision_radius(&mut self, usize, alice_physics::math::Fix128)
 pub fn alice_physics::solver::PhysicsWorld::set_body_filter(&mut self, usize, alice_physics::filter::CollisionFilter)
@@ -15227,6 +15228,7 @@ pub fn alice_physics::solver::PhysicsWorld::remove_sdf_collider(&mut self, usize
 pub fn alice_physics::solver::PhysicsWorld::remove_static_collider(&mut self, usize) -> core::option::Option<alice_physics::static_collider::StaticCollider>
 pub fn alice_physics::solver::PhysicsWorld::reset_tgs_cache_stats(&mut self)
 pub fn alice_physics::solver::PhysicsWorld::reset_world(&mut self)
+pub fn alice_physics::solver::PhysicsWorld::sdf_contacts(&self) -> alloc::vec::Vec<(usize, alice_physics::collider::Contact)>
 pub fn alice_physics::solver::PhysicsWorld::serialize_state(&self) -> alloc::vec::Vec<u8>
 pub fn alice_physics::solver::PhysicsWorld::set_body_collision_radius(&mut self, usize, alice_physics::math::Fix128)
 pub fn alice_physics::solver::PhysicsWorld::set_body_filter(&mut self, usize, alice_physics::filter::CollisionFilter)
@@ -19911,6 +19913,7 @@ pub fn alice_physics::solver::PhysicsWorld::remove_sdf_collider(&mut self, usize
 pub fn alice_physics::solver::PhysicsWorld::remove_static_collider(&mut self, usize) -> core::option::Option<alice_physics::static_collider::StaticCollider>
 pub fn alice_physics::solver::PhysicsWorld::reset_tgs_cache_stats(&mut self)
 pub fn alice_physics::solver::PhysicsWorld::reset_world(&mut self)
+pub fn alice_physics::solver::PhysicsWorld::sdf_contacts(&self) -> alloc::vec::Vec<(usize, alice_physics::collider::Contact)>
 pub fn alice_physics::solver::PhysicsWorld::serialize_state(&self) -> alloc::vec::Vec<u8>
 pub fn alice_physics::solver::PhysicsWorld::set_body_collision_radius(&mut self, usize, alice_physics::math::Fix128)
 pub fn alice_physics::solver::PhysicsWorld::set_body_filter(&mut self, usize, alice_physics::filter::CollisionFilter)
