@@ -159,11 +159,6 @@ unwired src/sdf_character.rs::is_grounded
 unwired src/sdf_manifold.rs::deepest
 unwired src/sdf_manifold.rs::generate_sdf_manifold
 unwired src/sdf_sph.rs::populated_cell_count
-unwired src/sim_modifier.rs::add_modifier
-unwired src/sim_modifier.rs::clear_modifiers
-unwired src/sim_modifier.rs::modifier_count
-unwired src/sim_modifier.rs::modifier_mut
-unwired src/sim_modifier.rs::with_modifier
 unwired src/sleeping.rs::build_islands
 unwired src/soft_body_cut.rs::CutPlane
 unwired src/soft_body_cut.rs::CutResult
