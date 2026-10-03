@@ -26,8 +26,6 @@ unwired src/creep_longterm.rs::petg_25c_moderate
 unwired src/deformable.rs::center_of_mass
 unwired src/deformable.rs::new_cube
 unwired src/deformable.rs::resolve_rigid_body_collisions
-unwired src/electromagnetic.rs::lorentz_force
-unwired src/electromagnetic.rs::lorentz_force_sum
 unwired src/eulerian_grid.rs::bytes
 unwired src/eulerian_grid.rs::bytes
 unwired src/eulerian_grid.rs::bytes
