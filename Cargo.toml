@@ -458,6 +458,22 @@ required-features = ["std"]
 name = "bvh_leaf_aabb_roundtrip"
 required-features = ["std"]
 
+# Production entry point for `alice_physics::anisotropic`'s off-axis
+# modulus and failure-analysis API (wiring_guard: src/anisotropic.rs had
+# zero production callers across all 5 items: FailureReport, axial,
+# e_at_angle_lt, e_at_angle_lz, evaluate_failure — `grep -rn
+# "anisotropic::" src/linear_elastic_fem.rs src/hyperelastic.rs` is empty
+# and `src/laminate.rs` only imports `OrthotropicElasticity` as a struct
+# literal for its own `Ply::material` field, never calling any of these
+# five; `src/filament_db.rs` only references the module in doc comments.
+# The recently landed corotational-FEM hyperelastic wiring
+# (4170a1c/33fe8a9) did not reach this module either. Checked against
+# scripts/wiring_guard.py grep: none of these 5 names collide with a
+# same-named item in another file in this crate).
+[[example]]
+name = "anisotropic_failure_analysis"
+required-features = ["std"]
+
 # Production entry point for the ModifiedSdf builder/management API
 # (wiring_guard: src/sim_modifier.rs had zero production callers across all
 # 5 items: add_modifier, clear_modifiers, modifier_count, modifier_mut,
