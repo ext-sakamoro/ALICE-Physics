@@ -155,6 +155,12 @@ required-features = ["std"]
 name = "analytics_bridge_telemetry"
 required-features = ["std", "analytics"]
 
+# Production entry point for the `replay` feature's ALICE-DB-backed replay
+# recorder/player (wiring_guard: src/replay.rs had zero production callers).
+[[example]]
+name = "replay_recording"
+required-features = ["std", "replay"]
+
 [[bench]]
 name = "physics_bench"
 harness = false

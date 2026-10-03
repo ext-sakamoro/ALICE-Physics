@@ -304,14 +304,6 @@ unwired src/raycast.rs::raycast_any_aabbs
 unwired src/raycast.rs::raycast_any_spheres
 unwired src/raycast.rs::raycast_spheres
 unwired src/raycast.rs::sweep_sphere
-unwired src/replay.rs::close
-unwired src/replay.rs::close
-unwired src/replay.rs::frame_count
-unwired src/replay.rs::get_position
-unwired src/replay.rs::get_velocity
-unwired src/replay.rs::record_frame
-unwired src/replay.rs::record_positions
-unwired src/replay.rs::scan_positions
 unwired src/rng.rs::new_with_stream
 unwired src/rng.rs::next_bounded
 unwired src/rolling_contact.rs::HertzianContact
