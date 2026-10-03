@@ -336,7 +336,9 @@ fn transfer_body_moves_the_body_at_a_nonzero_body_id_not_body_zero() {
         .collect();
     assert_eq!(
         remaining_x,
-        [0, 2].into_iter().collect(),
+        [0, 2]
+            .into_iter()
+            .collect::<std::collections::BTreeSet<i64>>(),
         "the body at x=1 (body_id 1) must be the one that left, not body_id 0"
     );
 }
