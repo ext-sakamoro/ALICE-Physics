@@ -184,6 +184,61 @@ where
         .expect("buffer non-empty by construction")
 }
 
+/// Why [`reconcile_checked`] could not replay the buffered inputs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ReconcileError {
+    /// The input for tick `needed` is missing: replaying from the authoritative
+    /// snapshot needs every input from `authoritative.tick + 1` on, but the next one
+    /// the buffer holds is for tick `oldest` (the ring dropped the older ones, or the
+    /// buffer skipped a tick).
+    MissingInputs {
+        /// The tick whose input is missing.
+        needed: u64,
+        /// The tick of the next input the buffer does have.
+        oldest: u64,
+    },
+}
+
+/// [`reconcile`] that refuses an incomplete history.
+///
+/// [`reconcile`] replays "every buffered input after the authoritative tick", which
+/// is only the right replay when those inputs are the *consecutive* ticks
+/// `authoritative.tick + 1, + 2, …`. If the server's snapshot is older than the
+/// oldest input the ring still holds (a slow server, a small capacity), or the buffer
+/// skipped a tick, the inputs in between are missing and the replay returns a wrong
+/// state without any sign of it. This returns
+/// [`ReconcileError::MissingInputs`] instead, and leaves the buffer untouched, so the
+/// caller can ask the server for a full state or grow the buffer. With a complete
+/// history it is exactly [`reconcile`].
+///
+/// # Errors
+///
+/// [`ReconcileError::MissingInputs`] when an input between the authoritative tick
+/// and the head is not in the buffer.
+pub fn reconcile_checked<A, S, F>(
+    authoritative: Snapshot<S>,
+    buffer: &mut PredictionBuffer<A, S>,
+    step: F,
+) -> Result<Snapshot<S>, ReconcileError>
+where
+    A: Copy + Debug,
+    S: Copy + Debug,
+    F: FnMut(S, PredictedInput<A>) -> S,
+{
+    let mut needed = authoritative.tick.saturating_add(1);
+    for input in buffer.inputs.iter().filter(|i| i.tick > authoritative.tick) {
+        if input.tick != needed {
+            return Err(ReconcileError::MissingInputs {
+                needed,
+                oldest: input.tick,
+            });
+        }
+        needed = needed.saturating_add(1);
+    }
+    Ok(reconcile(authoritative, buffer, step))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -77,14 +77,6 @@ unwired src/motor.rs::apply_motors
 unwired src/motor.rs::disable
 unwired src/motor.rs::set_rotation_target
 unwired src/motor.rs::set_velocity_target
-unwired src/netcode.rs::advance_frame
-unwired src/netcode.rs::dt
-unwired src/netcode.rs::get_snapshot
-unwired src/netcode.rs::snapshot_count
-unwired src/netcode_prediction.rs::drop_acknowledged
-unwired src/netcode_prediction.rs::head_snapshot
-unwired src/netcode_prediction.rs::inputs
-unwired src/netcode_prediction.rs::reconcile
 unwired src/particle.rs::add_emitter
 unwired src/particle.rs::apply_force_field
 unwired src/phase_change.rs::Phase
