@@ -44,7 +44,10 @@ fn main() {
         let d2: f32 = (0..3).map(|a| (p.position[a] - probe[a]).powi(2)).sum();
         if d2 < h * h {
             within += 1;
-            assert!(visited[j], "particle {j} inside the kernel sphere was not visited");
+            assert!(
+                visited[j],
+                "particle {j} inside the kernel sphere was not visited"
+            );
         }
     }
     println!(

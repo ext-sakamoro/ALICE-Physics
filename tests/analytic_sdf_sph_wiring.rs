@@ -14,7 +14,9 @@
 #![allow(clippy::disallowed_methods)]
 
 use alice_physics::sdf_collider::ClosureSdf;
-use alice_physics::sdf_sph::{poly6, spiky_grad, viscosity_lap, SphConfig, SphParticle, SphSolver, SphSpatialHash};
+use alice_physics::sdf_sph::{
+    poly6, spiky_grad, viscosity_lap, SphConfig, SphParticle, SphSolver, SphSpatialHash,
+};
 
 const PI: f64 = core::f64::consts::PI;
 
@@ -33,9 +35,15 @@ fn kernels_match_closed_forms() {
         let p6 = 315.0 / (64.0 * PI * h.powi(9)) * (h * h - r * r).powi(3);
         assert!(close(poly6(r as f32, h as f32), p6, 2e-4), "poly6 r={r}");
         let sp = 45.0 / (PI * h.powi(6)) * (h - r).powi(2);
-        assert!(close(spiky_grad(r as f32, h as f32), sp, 2e-4), "spiky r={r}");
+        assert!(
+            close(spiky_grad(r as f32, h as f32), sp, 2e-4),
+            "spiky r={r}"
+        );
         let vl = 45.0 / (PI * h.powi(6)) * (h - r);
-        assert!(close(viscosity_lap(r as f32, h as f32), vl, 2e-4), "visc r={r}");
+        assert!(
+            close(viscosity_lap(r as f32, h as f32), vl, 2e-4),
+            "visc r={r}"
+        );
     }
     // Compact support: exactly zero at and beyond h.
     for r in [0.1_f32, 0.2] {
@@ -65,7 +73,11 @@ fn isolated_particle_density_and_pressure() {
     let mut s = SphSolver::new(vec![SphParticle::at_rest([0.0, 0.0, 0.0])], cfg, &f);
     s.step(0.0);
     let rho = 315.0 * cfg.particle_mass as f64 / (64.0 * PI * (cfg.kernel_radius as f64).powi(3));
-    assert!(close(s.particles[0].density, rho, 2e-4), "rho {}", s.particles[0].density);
+    assert!(
+        close(s.particles[0].density, rho, 2e-4),
+        "rho {}",
+        s.particles[0].density
+    );
     // rho = 250 < rest 1000: pressure clamps to 0.
     assert_eq!(s.particles[0].pressure, 0.0);
     // Overpressured: rest density below the sampled one -> p = k (rho - rho0).
@@ -73,7 +85,11 @@ fn isolated_particle_density_and_pressure() {
     cfg2.rest_density = 100.0;
     let mut s2 = SphSolver::new(vec![SphParticle::at_rest([0.0, 0.0, 0.0])], cfg2, &f);
     s2.step(0.0);
-    assert!(close(s2.particles[0].pressure, cfg2.gas_stiffness as f64 * (rho - 100.0), 2e-3));
+    assert!(close(
+        s2.particles[0].pressure,
+        cfg2.gas_stiffness as f64 * (rho - 100.0),
+        2e-3
+    ));
 }
 
 #[test]
@@ -84,13 +100,25 @@ fn gravity_and_boundary_repulsion_on_an_isolated_particle() {
     let cfg = SphConfig::water_like();
     let mut s = SphSolver::new(vec![SphParticle::at_rest([0.0, 0.01, 0.0])], cfg, &plane);
     s.step(0.001);
-    assert!(close(s.particles[0].velocity[1], -4.81e-3, 2e-3), "{}", s.particles[0].velocity[1]);
+    assert!(
+        close(s.particles[0].velocity[1], -4.81e-3, 2e-3),
+        "{}",
+        s.particles[0].velocity[1]
+    );
     // Position is advanced by the *new* velocity (symplectic Euler).
-    assert!(close(s.particles[0].position[1] - 0.01, -4.81e-3 * 1e-3, 5e-3));
+    assert!(close(
+        s.particles[0].position[1] - 0.01,
+        -4.81e-3 * 1e-3,
+        5e-3
+    ));
     // The hashed path applies the same boundary force.
     let mut s = SphSolver::new(vec![SphParticle::at_rest([0.0, 0.01, 0.0])], cfg, &plane);
     s.step_hashed(0.001);
-    assert!(close(s.particles[0].velocity[1], -4.81e-3, 2e-3), "{}", s.particles[0].velocity[1]);
+    assert!(
+        close(s.particles[0].velocity[1], -4.81e-3, 2e-3),
+        "{}",
+        s.particles[0].velocity[1]
+    );
     // Outside the repel range only gravity acts.
     let mut s = SphSolver::new(vec![SphParticle::at_rest([0.0, 0.5, 0.0])], cfg, &plane);
     s.step(0.001);
@@ -139,7 +167,11 @@ fn neighbourhood_covers_the_whole_kernel_sphere() {
     for i in 0..6 {
         for j in 0..6 {
             for k in 0..6 {
-                ps.push(SphParticle::at_rest([i as f32 * 0.037 - 0.1, j as f32 * 0.041 - 0.1, k as f32 * 0.029 - 0.1]));
+                ps.push(SphParticle::at_rest([
+                    i as f32 * 0.037 - 0.1,
+                    j as f32 * 0.041 - 0.1,
+                    k as f32 * 0.029 - 0.1,
+                ]));
             }
         }
     }
@@ -164,7 +196,8 @@ fn hashed_step_equals_the_naive_step() {
     for i in 0..5 {
         for j in 0..4 {
             for k in 0..5 {
-                let mut p = SphParticle::at_rest([i as f32 * 0.03, j as f32 * 0.03, k as f32 * 0.03]);
+                let mut p =
+                    SphParticle::at_rest([i as f32 * 0.03, j as f32 * 0.03, k as f32 * 0.03]);
                 p.velocity = [1.0 * (i as f32) - 2.0, 0.5 * (j as f32), 0.7 * (k as f32)];
                 ps.push(p);
             }
@@ -178,8 +211,18 @@ fn hashed_step_equals_the_naive_step() {
     }
     for (a, b) in naive.particles.iter().zip(&hashed.particles) {
         for ax in 0..3 {
-            assert!((a.position[ax] - b.position[ax]).abs() < 1e-6, "{:?} vs {:?}", a.position, b.position);
-            assert!((a.velocity[ax] - b.velocity[ax]).abs() <= 1e-3 * a.velocity[ax].abs().max(1.0), "{:?} vs {:?}", a.velocity, b.velocity);
+            assert!(
+                (a.position[ax] - b.position[ax]).abs() < 1e-6,
+                "{:?} vs {:?}",
+                a.position,
+                b.position
+            );
+            assert!(
+                (a.velocity[ax] - b.velocity[ax]).abs() <= 1e-3 * a.velocity[ax].abs().max(1.0),
+                "{:?} vs {:?}",
+                a.velocity,
+                b.velocity
+            );
         }
         assert!((a.density - b.density).abs() <= 1e-3 * a.density.max(1.0));
     }
