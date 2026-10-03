@@ -7,7 +7,12 @@
 //! and recorded in the audit ledger; they are not fixed here.
 
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    clippy::field_reassign_with_default,
+    clippy::unnecessary_map_or,
+    clippy::needless_range_loop
+)]
 
 use alice_physics::filament_db::MaterialProperties;
 use alice_physics::math::Fix128;
