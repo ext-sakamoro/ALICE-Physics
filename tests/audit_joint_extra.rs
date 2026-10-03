@@ -428,3 +428,113 @@ fn mouse_clamps_symmetrically_and_ignores_static_bodies() {
 fn arr(v: Vec3Fix) -> [f64; 3] {
     [v.x.to_f64(), v.y.to_f64(), v.z.to_f64()]
 }
+
+/// A weld whose `local_rotation` equals the actual relative rotation has no angular
+/// error: the solve leaves both orientations alone.
+#[test]
+fn weld_with_matching_local_rotation_is_inert() {
+    let mut a = body(Vec3Fix::ZERO, 1.0);
+    let mut b = body(Vec3Fix::ZERO, 1.0);
+    a.rotation = QuatFix::IDENTITY;
+    b.rotation = rz(0.3);
+    let mut bodies = vec![a, b];
+    let j = WeldJoint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO, rz(0.3));
+    assert!(j.compute_torque(&bodies).to_f64().abs() < 1e-12);
+    solve(&mut bodies, ExtraJoint::Weld(j), 0.25);
+    assert!((angle_z(bodies[0].rotation)).abs() < 1e-12);
+    assert!((angle_z(bodies[1].rotation) - 0.3).abs() < 1e-12);
+}
+
+/// Compliance softens the angular correction too: more compliance leaves more error.
+#[test]
+fn weld_compliance_softens_the_angular_correction() {
+    let left = |alpha: f64| {
+        let mut b = body(Vec3Fix::ZERO, 1.0);
+        b.rotation = rz(0.02);
+        let mut bodies = vec![stat(Vec3Fix::ZERO), b];
+        let j = WeldJoint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO, QuatFix::IDENTITY)
+            .with_compliance(fx(alpha));
+        solve(&mut bodies, ExtraJoint::Weld(j), 0.25);
+        angle_z(bodies[1].rotation).abs()
+    };
+    let (rigid, soft) = (left(0.0), left(0.5));
+    assert!(rigid < soft && soft < 0.02, "rigid {rigid}, soft {soft}");
+}
+
+/// With both bodies free, the two corrections oppose each other so the relative angle
+/// shrinks (a identity, b offset by +0.02).
+#[test]
+fn weld_with_two_free_bodies_reduces_the_relative_angle() {
+    let a = body(Vec3Fix::ZERO, 1.0);
+    let mut b = body(Vec3Fix::ZERO, 1.0);
+    b.rotation = rz(0.02);
+    let mut bodies = vec![a, b];
+    let j = WeldJoint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO, QuatFix::IDENTITY);
+    solve(&mut bodies, ExtraJoint::Weld(j), 0.25);
+    let rel = (angle_z(bodies[1].rotation) - angle_z(bodies[0].rotation)).abs();
+    assert!(rel < 0.02 * 0.9, "relative angle {rel}");
+}
+
+/// The rack displacement is signed along its axis: a rack that moved -0.5 with the pinion
+/// static is pulled back to where it started.
+#[test]
+fn rack_and_pinion_negative_rack_motion_is_pulled_back() {
+    let mut rack = body(v3(-0.5, 0.0, 0.0), 1.0);
+    rack.prev_position = Vec3Fix::ZERO;
+    let mut bodies = vec![rack, stat(Vec3Fix::ZERO)];
+    let j = RackAndPinionJoint::new(0, 1, v3(1.0, 0.0, 0.0), v3(0.0, 0.0, 1.0), fx(2.0));
+    solve(&mut bodies, ExtraJoint::RackAndPinion(j), 0.25);
+    assert!(
+        bodies[0].position.x.to_f64().abs() < 1e-12,
+        "{}",
+        bodies[0].position.x.to_f64()
+    );
+}
+
+/// Only rotation about the pinion axis counts: spin about z with the pinion axis along x
+/// is zero angular displacement, so a rack at rest is not disturbed.
+#[test]
+fn rack_and_pinion_ignores_rotation_about_other_axes() {
+    let rack = body(Vec3Fix::ZERO, 1.0);
+    let mut pinion = body(Vec3Fix::ZERO, 1.0);
+    pinion.rotation = rz(0.2);
+    let mut bodies = vec![rack, pinion];
+    let j = RackAndPinionJoint::new(0, 1, v3(1.0, 0.0, 0.0), v3(1.0, 0.0, 0.0), fx(2.0));
+    solve(&mut bodies, ExtraJoint::RackAndPinion(j), 0.25);
+    assert_eq!(bodies[0].position, Vec3Fix::ZERO);
+}
+
+/// With an inverse-inertia about the pinion axis `i = 1`, the rigid projection splits the
+/// error `lin - ratio * ang` by `w_lin + ratio^2 w_axis`: rack moved 0.4, ratio 2 ->
+/// lambda = 0.4 / (1 + 4) and the rack ends at 0.32.
+#[test]
+#[ignore = "known defect: AUD-A-S3W1-013: rack-and-pinion (and gear / weld) use |inv_inertia| (sqrt(3) for isotropic i = 1) instead of the inverse inertia about the axis, rack ends at 0.3495 instead of 0.32"]
+fn rack_and_pinion_uses_the_axis_inverse_inertia() {
+    let mut rack = body(v3(0.4, 0.0, 0.0), 1.0);
+    rack.prev_position = Vec3Fix::ZERO;
+    let pinion = body(Vec3Fix::ZERO, 1.0);
+    let mut bodies = vec![rack, pinion];
+    let j = RackAndPinionJoint::new(0, 1, v3(1.0, 0.0, 0.0), v3(0.0, 0.0, 1.0), fx(2.0));
+    solve(&mut bodies, ExtraJoint::RackAndPinion(j), 0.25);
+    assert!(
+        (bodies[0].position.x.to_f64() - 0.32).abs() < 1e-9,
+        "{}",
+        bodies[0].position.x.to_f64()
+    );
+}
+
+/// Mouse clamp: a net force between `max` and `2 max` is clamped to `max`, and the step is
+/// inversely proportional to mass.
+#[test]
+fn mouse_clamp_and_mass_scaling() {
+    let run = |mass: f64, k: f64, max: f64| {
+        let mut bodies = vec![body(Vec3Fix::ZERO, mass)];
+        let j = MouseJoint::new(0, v3(5.0, 0.0, 0.0), fx(max), fx(k), Fix128::ZERO);
+        solve(&mut bodies, ExtraJoint::Mouse(j), 0.25);
+        bodies[0].position.x.to_f64()
+    };
+    // F = 0.6 * 5 = 3 > max 2: clamps to the same step as F = 2 (k = 0.4)
+    assert!((run(1.0, 0.6, 2.0) - run(1.0, 0.4, 100.0)).abs() < 1e-12);
+    // double mass, half the step
+    assert!((run(2.0, 0.4, 100.0) * 2.0 - run(1.0, 0.4, 100.0)).abs() < 1e-12);
+}

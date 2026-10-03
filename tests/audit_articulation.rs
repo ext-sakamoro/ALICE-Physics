@@ -376,3 +376,99 @@ fn mass_splitting_triggers_at_the_ratio_boundary() {
         "scene must distinguish the two paths"
     );
 }
+
+/// `set_motor` with `link_index == link_count` is ignored (the guard is `<`, not `<=`).
+#[test]
+fn set_motor_at_link_count_is_ignored_not_a_panic() {
+    let mut a = ArticulatedBody::new(0, false);
+    a.add_link(0, 1, ball(0, 1), Vec3Fix::ZERO);
+    a.set_motor(2, PdController::default());
+    assert!(a.links.iter().all(|l| l.motor.is_none()));
+}
+
+/// The damping term uses the relative velocity *along* a->b (closing speed is negative):
+/// bodies 4 apart closing at 2 with kd = 3, target distance 4 -> F = 3 * (0 - (-2)) = 6.
+#[test]
+fn motor_damping_uses_the_signed_velocity_along_the_line() {
+    let mut bodies = vec![
+        RigidBody::new(v3(0.0, 0.0, 0.0), fx(1.0)),
+        RigidBody::new(v3(0.0, 4.0, 0.0), fx(1.0)),
+    ];
+    bodies[1].velocity = v3(0.0, -2.0, 0.0);
+    let mut a = ArticulatedBody::new(0, false);
+    a.add_link(0, 1, ball(0, 1), Vec3Fix::ZERO);
+    a.set_motor(1, motor_pos(10.0, 3.0, 100.0, 4.0));
+    a.apply_motors(&mut bodies, fx(0.5));
+    // impulse = 6 * 0.5 = 3 along +y: a gets -3, b gets -2 + 3
+    assert!((bodies[0].velocity.y.to_f64() + 3.0).abs() < 1e-12);
+    assert!((bodies[1].velocity.y.to_f64() - 1.0).abs() < 1e-12);
+}
+
+/// Static links do not count toward the mass ratio: a static root with dynamic links of
+/// mass 1 and 4 still splits at threshold 4.
+#[test]
+fn mass_splitting_ignores_static_links_in_the_ratio() {
+    let g = v3(0.0, -10.0, 0.0);
+    let dt = fx(0.25);
+    let scene = || {
+        let b = vec![
+            RigidBody::new_static(v3(0.0, 0.0, 0.0)),
+            RigidBody::new(v3(0.0, 1.0, 0.0), fx(1.0)),
+            RigidBody::new(v3(0.0, 2.0, 0.0), fx(4.0)),
+        ];
+        let mut a = ArticulatedBody::new(0, false);
+        let l = a.add_link(0, 1, ball(0, 1), v3(0.0, 1.0, 0.0));
+        a.add_link(l, 2, ball(1, 2), v3(0.0, 1.0, 0.0));
+        (a, b)
+    };
+    let (a, mut half) = scene();
+    let mut s = FeatherstoneSolver::new();
+    s.solve(&a, &mut half, g, dt.half());
+    s.solve(&a, &mut half, g, dt.half());
+    let (a, mut got) = scene();
+    FeatherstoneSolver::new().solve_with_mass_splitting(&a, &mut got, g, dt, fx(4.0));
+    for k in 0..3 {
+        assert_eq!(got[k].position, half[k].position, "body {k}");
+        assert_eq!(got[k].velocity, half[k].velocity, "body {k}");
+    }
+}
+
+/// Orientation update is `q' = dq * q` (world-frame angular velocity): a body pre-rotated
+/// 90 deg about x and spun about world z keeps its local x axis in the world xy plane.
+#[test]
+fn angular_velocity_is_applied_in_the_world_frame() {
+    let h = std::f64::consts::FRAC_1_SQRT_2;
+    let mut b = RigidBody::new(Vec3Fix::ZERO, fx(1.0));
+    b.rotation = QuatFix::new(fx(h), Fix128::ZERO, Fix128::ZERO, fx(h));
+    b.angular_velocity = v3(0.0, 0.0, 2.0);
+    let mut bodies = vec![b];
+    FeatherstoneSolver::new().solve(
+        &ArticulatedBody::new(0, false),
+        &mut bodies,
+        Vec3Fix::ZERO,
+        fx(0.25),
+    );
+    // theta = 0.5 about z; local x axis (world (1,0,0) after Rx90) -> (cos, sin, 0)
+    let ex = arr(bodies[0].rotation.rotate_vec(Vec3Fix::UNIT_X));
+    assert!(
+        (ex[0] - 0.8775825618903728).abs() < 1e-9
+            && (ex[1] - 0.479425538604203).abs() < 1e-9
+            && ex[2].abs() < 1e-9,
+        "{ex:?}"
+    );
+}
+
+/// A static (zero inverse mass) child link is not integrated, even when its parent is
+/// dynamic and gravity acts.
+#[test]
+fn static_child_links_are_not_integrated() {
+    let mut bodies = vec![
+        RigidBody::new(v3(0.0, 1.0, 0.0), fx(1.0)),
+        RigidBody::new_static(v3(0.0, 2.0, 0.0)),
+    ];
+    let mut a = ArticulatedBody::new(0, false);
+    a.add_link(0, 1, ball(0, 1), v3(0.0, 1.0, 0.0));
+    FeatherstoneSolver::new().solve(&a, &mut bodies, v3(0.0, -10.0, 0.0), fx(0.25));
+    assert_eq!(arr(bodies[1].position), [0.0, 2.0, 0.0]);
+    assert_eq!(arr(bodies[1].velocity), [0.0; 3]);
+}
