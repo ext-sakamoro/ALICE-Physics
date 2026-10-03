@@ -1,15 +1,15 @@
 # ALICE-Physics Oracle Status
 
-**Last updated:** 2026-10-03 10:56
+**Last updated:** 2026-10-03 11:02
 
 ## Summary
 
 | Category | Count |
 |----------|-------|
-| 🟢 Implemented | 2184 |
+| 🟢 Implemented | 2191 |
 | 🟡 Partial | 0 |
 | 🔴 Pending | 27 |
-| **Total** | **2211** |
+| **Total** | **2218** |
 
 ## 🔴 Pending (27)
 
@@ -43,7 +43,7 @@ Oracle tests not yet implemented (marked with `#[ignore]`).
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / A…
 
-## 🟢 Implemented (2184)
+## 🟢 Implemented (2191)
 
 Oracle tests with implementation complete and passing.
 
@@ -78,7 +78,7 @@ Oracle tests with implementation complete and passing.
 - `a_configuration_without_a_law_is_refused` (analytic_cubic_hyperelastic.rs)
 - `a_configuration_without_a_law_is_refused` (analytic_quadratic_hyperelastic.rs)
 
-... and 2154 more
+... and 2161 more
 
 ---
 
