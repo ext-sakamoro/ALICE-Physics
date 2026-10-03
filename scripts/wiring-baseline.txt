@@ -42,11 +42,6 @@ unwired src/cloth_fluid.rs::apply_cloth_boundary_to_fluid
 unwired src/cloth_fluid.rs::apply_cloth_boundary_to_fluid_with_residual
 unwired src/cloth_fluid.rs::apply_fluid_forces_to_cloth
 unwired src/cloth_fluid.rs::apply_fluid_forces_to_cloth_with_residual
-unwired src/collision_mesh_gen.rs::CollisionMesh
-unwired src/collision_mesh_gen.rs::CollisionMeshConfig
-unwired src/collision_mesh_gen.rs::compute_mesh_aabb
-unwired src/collision_mesh_gen.rs::generate_collision_mesh
-unwired src/collision_mesh_gen.rs::simplify_collision_mesh
 unwired src/convex_mesh_builder.rs::build_convex_hull
 unwired src/creep_longterm.rs::petg_25c_moderate
 unwired src/damping_rayleigh.rs::damping_ratio

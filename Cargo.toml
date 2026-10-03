@@ -401,6 +401,16 @@ required-features = ["std"]
 name = "contact_visualization"
 required-features = ["std"]
 
+# Production entry point for `alice_physics::collision_mesh_gen`
+# (wiring_guard: src/collision_mesh_gen.rs had zero production callers
+# across all 5 items: CollisionMesh, CollisionMeshConfig,
+# compute_mesh_aabb, generate_collision_mesh, simplify_collision_mesh —
+# only the module's own #[cfg(test)] unit tests called in, which the
+# guard does not count).
+[[example]]
+name = "collision_mesh_generation"
+required-features = ["std"]
+
 [[bench]]
 name = "physics_bench"
 harness = false
