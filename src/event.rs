@@ -6,11 +6,11 @@
 use crate::math::{Fix128, Vec3Fix};
 
 #[cfg(not(feature = "std"))]
-use alloc::collections::BTreeSet;
+use alloc::collections::{BTreeMap, BTreeSet};
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 #[cfg(feature = "std")]
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Type of contact event
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -66,10 +66,10 @@ pub struct EventCollector {
     /// 3 ms per detection at 2700 contacts, run 8× per frame since 1.2.0)
     /// Active contact pairs this frame
     curr_pairs: BTreeSet<(usize, usize)>,
-    /// Active trigger overlaps from previous frame
-    prev_triggers: Vec<(usize, usize)>,
-    /// Active trigger overlaps this frame
-    curr_triggers: BTreeSet<(usize, usize)>,
+    /// Active trigger overlaps from previous frame: (normalized pair, (trigger, other) roles as reported)
+    prev_triggers: Vec<((usize, usize), (usize, usize))>,
+    /// Active trigger overlaps this frame (normalized pair -> roles as reported)
+    curr_triggers: BTreeMap<(usize, usize), (usize, usize)>,
 }
 
 impl EventCollector {
@@ -82,7 +82,7 @@ impl EventCollector {
             prev_pairs: Vec::new(),
             curr_pairs: BTreeSet::new(),
             prev_triggers: Vec::new(),
-            curr_triggers: BTreeSet::new(),
+            curr_triggers: BTreeMap::new(),
         }
     }
 
@@ -97,7 +97,7 @@ impl EventCollector {
         self.curr_pairs.clear();
         self.prev_triggers.clear();
         self.prev_triggers
-            .extend(self.curr_triggers.iter().copied());
+            .extend(self.curr_triggers.iter().map(|(k, v)| (*k, *v)));
         self.curr_triggers.clear();
     }
 
@@ -141,11 +141,15 @@ impl EventCollector {
         let pair = normalize_pair(trigger_body, other_body);
         // One report per pair per frame (detection runs once per substep since
         // 1.2.0); same rule as `report_contact`.
-        if !self.curr_triggers.insert(pair) {
+        if self.curr_triggers.contains_key(&pair) {
             return;
         }
+        self.curr_triggers.insert(pair, (trigger_body, other_body));
 
-        let was_active = self.prev_triggers.binary_search(&pair).is_ok();
+        let was_active = self
+            .prev_triggers
+            .binary_search_by_key(&pair, |&(k, _)| k)
+            .is_ok();
         if !was_active {
             self.trigger_events.push(TriggerEvent {
                 trigger_body,
@@ -173,11 +177,13 @@ impl EventCollector {
         }
 
         // Trigger exit events
-        for &pair in &self.prev_triggers {
-            if !self.curr_triggers.contains(&pair) {
+        for &(pair, (trigger_body, other_body)) in &self.prev_triggers {
+            if !self.curr_triggers.contains_key(&pair) {
+                // Roles as given in the frame that reported the overlap, so
+                // the exit event names the same trigger body as the enter event.
                 self.trigger_events.push(TriggerEvent {
-                    trigger_body: pair.0,
-                    other_body: pair.1,
+                    trigger_body,
+                    other_body,
                     entered: false,
                 });
             }
