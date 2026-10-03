@@ -428,6 +428,36 @@ required-features = ["std"]
 name = "collision_mesh_generation"
 required-features = ["std"]
 
+# Production entry point for `alice_physics::bvh::BvhNode::get_aabb`
+# (wiring_guard: src/bvh.rs listed 5 unwired items -- build_dynamic,
+# clear_dynamic, get_aabb, insert_dynamic, query_pairs -- only the
+# module's own #[cfg(all(test, feature = "std"))] unit tests called in,
+# which the guard does not count).
+#
+# Only `get_aabb` is wired by this example. The other four are methods
+# on `BroadphaseHybrid` (src/bvh.rs:760), which is `pub(crate)` --
+# visible crate-wide but not to examples/tests/src-bin, which compile as
+# separate crates against the public API only. Confirmed empirically
+# (`error[E0603]: struct 'BroadphaseHybrid' is private`). Widening that
+# to `pub` is a semver-relevant API-surface decision (tracked in
+# docs/PUBLIC_API_SNAPSHOT.txt), not a purely-additive wiring change, so
+# those four stay recorded as unresolved wiring debt in
+# scripts/wiring-baseline.txt pending that decision (see the repo's own
+# precedent for the same call on the eulerian_grid cross-process
+# primitives, CHANGELOG.md). Full reasoning in
+# examples/bvh_leaf_aabb_roundtrip.rs's header comment.
+#
+# Known wiring_guard limitation (bare-identifier matching, not path):
+# `get_aabb` also exists on `DynamicAabbTree` at src/dynamic_bvh.rs:168
+# with an unrelated signature (`get_aabb(&self, proxy_id: u32)`), already
+# separately listed as `unwired src/dynamic_bvh.rs::get_aabb` in
+# scripts/wiring-baseline.txt. Calling `BvhNode::get_aabb()` here is
+# expected to also satisfy the guard's reference count for that
+# unrelated method, since it counts by method name only.
+[[example]]
+name = "bvh_leaf_aabb_roundtrip"
+required-features = ["std"]
+
 # Production entry point for the ModifiedSdf builder/management API
 # (wiring_guard: src/sim_modifier.rs had zero production callers across all
 # 5 items: add_modifier, clear_modifiers, modifier_count, modifier_mut,
