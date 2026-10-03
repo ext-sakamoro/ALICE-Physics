@@ -153,6 +153,13 @@ required-features = ["std"]
 name = "neural_ternary_controller"
 required-features = ["std", "neural"]
 
+# Production entry point for `Heatmap`/`HeatmapConfig`/`SliceAxis`/
+# `generate_stress_heatmap`/`generate_temperature_heatmap`/`heatmap_to_rgba`
+# (wiring_guard: src/heatmap.rs had zero production callers across 6 items).
+[[example]]
+name = "heatmap_visualization"
+required-features = ["std"]
+
 [[example]]
 name = "substep_interpolation"
 required-features = ["std"]
