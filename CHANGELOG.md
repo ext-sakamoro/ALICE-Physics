@@ -20,6 +20,16 @@ were introduced during that release window.
 - `ThinWallConfig::for_nozzle(nozzle_mm)`: `nozzle_mm <= 0` が `min_thickness_mm=0` を silently 生成し、薄肉検出が常に無効化されていた (`has_thin_walls()` が常に `false`) `nozzle_mm > 0` を `assert!` で fail-fast に変更 (既存 oracle `for_nozzle_zero_diameter_current_behavior_is_never_thin` は新挙動を pin する `for_nozzle_zero_diameter_now_fails_fast` に置き換え)
 - 3 件とも worker の事前実測 (thin_wall worker、program 第 15 件) が「設計変更、user 裁定要」として記録していたもの user 指示により根本修正で解消
 
+### Added — `smoke_fire`/`rope`/`contact_cache`/`math`/`wave_ship` の未配線を全配線 (全配線 program 第 19 件)
+
+- `smoke_fire`: `examples/smoke_fire_combustion.rs` が `methane_air`/`pla_air` preset + `reaction_rate_kg_per_m3_s`/`heat_release_j_per_m3_s`/`soot_generation_kg_per_m3_s`/`boussinesq_buoyancy_n_per_m3` を駆動、oracle 14 本 (既存 `engineering_oracles_fluid.rs` の methane のみカバーと重複しない部分を明示)、変異 7/8 red
+- `rope`: `examples/rope_pin_constraints.rs` が `add_pin`/`pin_start`/`pin_end`/`update_pin_targets`/`current_length`/`step_with_sdf` を駆動、oracle 21 本 (3-4-5 staircase、180度回転恒等式、plane/sphere SDF 非貫入)、変異 4/5 red
+- `contact_cache`: `examples/contact_warm_start_cache.rs` が `apply_warm_start`/`manifold_count`/`point_count`/`store_impulses`/`tangent_frame`/`total_contact_points`/`warm_start_impulse` を駆動 (既存 2026-09-30 user 裁定「CPU `step()` には復活させない」の確認済、`step()` は一切変更せず standalone example として配線)、oracle 12 本、変異 9/9 red
+- `math`: `examples/math_simd_and_transcendentals.rs` が `atan`/`add_simd`/`sub_simd`/`dot_simd`/`length_squared_simd`/`cross_simd`/`dot_batch_4` を駆動 (`dot_simd`/`length_squared_simd`/`atan` は全 platform、他 4 つは `#[cfg(all(feature="simd", target_arch="x86_64"))]`)、oracle 7 本
+- `wave_ship`: `examples/wave_ship_spectrum.rs` が `WaveComponent`/`north_sea`/`peak_omega`/`spectrum_density`/`free_surface_elevation`/`froude_krylov_vertical_n` を駆動、oracle 20 本 (JONSWAP 閉形式、深水分散、静水圧 Froude-Krylov)、変異 11/12 red
+- baseline 35 行退役 (実配線 32、名前衝突の巻き込み 3 = `cloth.rs`/`deformable.rs`/`fluid.rs` の `step_with_sdf`、Backlog 記録済)
+- worker 実測 (未修正、Backlog 記録済): `smoke_fire::reaction_rate_kg_per_m3_s` は密度/気体定数の符号無検証 (負の gas_constant で exp_fix 飽和まで到達) / `raycast::sweep_sphere` と `ccd::sphere_sphere_toi` が意味論重複 / **`wave_ship::Jonswap::spectrum_density` の正規化定数が JONSWAP peak-enhancement 補正を欠き、既定 `north_sea()` (gamma=3.3) で moment から回復する Hs が公称値の約 1.235 倍になる** (DNV-RP-C205 予測値と 0.12% 差で一致、修正は既定出力を変える semver 相当の判断につき user 裁定待ち)、同 far-tail の Fix128 解像度限界 floor noise
+
 ### Added — `cubic_elastic_fem`/`compound`/`raycast`/`ccd`/`solver_tgs` の未配線を全配線 (全配線 program 第 18 件)
 
 - `cubic_elastic_fem`: `examples/cubic_elastic_fem_topology.rs` が P3 (20 節点三次四面体) のトポロジ helper 9 個 (`corner_count`/`edge_node_count`/`edge_nodes`/`element_count`/`element_nodes`/`face_node`/`face_node_count`/`interior_node_positions_are_exact`/`shape_values`) を駆動、oracle 13 本 (単一 tet の閉形式 + 2 tet 共有面の inclusion-exclusion + shape_values の第二実装突合)、変異 9/9 red
