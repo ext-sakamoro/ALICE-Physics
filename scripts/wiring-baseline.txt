@@ -93,5 +93,3 @@ unwired src/support_volume.rs::quality
 unwired src/vehicle.rs::grounded_wheels
 unwired src/vehicle.rs::shift_down
 unwired src/vehicle.rs::shift_up
-unwired src/warp_risk.rs::enclosed_abs
-unwired src/warp_risk.rs::rectangle
