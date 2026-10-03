@@ -268,12 +268,6 @@ unwired src/vibration_wall.rs::analyze_wall_resonance
 unwired src/vibration_wall.rs::default_excitation_sources
 unwired src/warp_risk.rs::enclosed_abs
 unwired src/warp_risk.rs::rectangle
-unwired src/wave_ship.rs::WaveComponent
-unwired src/wave_ship.rs::free_surface_elevation
-unwired src/wave_ship.rs::froude_krylov_vertical_n
-unwired src/wave_ship.rs::north_sea
-unwired src/wave_ship.rs::peak_omega
-unwired src/wave_ship.rs::spectrum_density
 unwired src/wind_zone.rs::force_on
 unwired src/wind_zone.rs::force_on_particle
 unwired src/wind_zone.rs::instantaneous_wind_vector

@@ -223,6 +223,15 @@ required-features = ["std"]
 name = "continuous_collision_detection"
 required-features = ["std"]
 
+# Production entry point for the ocean wave spectrum (wiring_guard:
+# src/wave_ship.rs had zero production callers across 6 items: WaveComponent,
+# Jonswap::north_sea, Jonswap::peak_omega, Jonswap::spectrum_density,
+# free_surface_elevation, froude_krylov_vertical_n -- only tests/ called in,
+# which the guard does not count).
+[[example]]
+name = "wave_ship_spectrum"
+required-features = ["std"]
+
 # Production entry point for `src/math.rs`'s remaining SIMD/transcendental
 # items (wiring_guard: atan, add_simd, sub_simd, dot_simd,
 # length_squared_simd, cross_simd, dot_batch_4 had zero production callers
