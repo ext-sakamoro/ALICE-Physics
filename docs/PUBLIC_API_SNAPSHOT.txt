@@ -6798,6 +6798,26 @@ pub fn alice_physics::netcode::InputApplicator::apply(&self, &mut alice_physics:
 impl alice_physics::netcode::InputApplicator for alice_physics::netcode::DefaultInputApplicator
 pub fn alice_physics::netcode::DefaultInputApplicator::apply(&self, &mut alice_physics::solver::PhysicsWorld, u8, usize, &alice_physics::netcode::FrameInput, alice_physics::math::Fix128)
 pub mod alice_physics::netcode_prediction
+#[non_exhaustive] pub enum alice_physics::netcode_prediction::ReconcileError
+pub alice_physics::netcode_prediction::ReconcileError::MissingInputs
+pub alice_physics::netcode_prediction::ReconcileError::MissingInputs::needed: u64
+pub alice_physics::netcode_prediction::ReconcileError::MissingInputs::oldest: u64
+impl core::clone::Clone for alice_physics::netcode_prediction::ReconcileError
+pub fn alice_physics::netcode_prediction::ReconcileError::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::netcode_prediction::ReconcileError
+impl core::cmp::PartialEq for alice_physics::netcode_prediction::ReconcileError
+pub fn alice_physics::netcode_prediction::ReconcileError::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::netcode_prediction::ReconcileError
+pub fn alice_physics::netcode_prediction::ReconcileError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::netcode_prediction::ReconcileError
+impl core::marker::StructuralPartialEq for alice_physics::netcode_prediction::ReconcileError
+impl core::marker::Freeze for alice_physics::netcode_prediction::ReconcileError
+impl core::marker::Send for alice_physics::netcode_prediction::ReconcileError
+impl core::marker::Sync for alice_physics::netcode_prediction::ReconcileError
+impl core::marker::Unpin for alice_physics::netcode_prediction::ReconcileError
+impl core::marker::UnsafeUnpin for alice_physics::netcode_prediction::ReconcileError
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::netcode_prediction::ReconcileError
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::netcode_prediction::ReconcileError
 pub struct alice_physics::netcode_prediction::PredictedInput<A> where A: core::marker::Copy
 pub alice_physics::netcode_prediction::PredictedInput::action: A
 pub alice_physics::netcode_prediction::PredictedInput::tick: u64
@@ -6856,6 +6876,7 @@ impl<S> core::marker::UnsafeUnpin for alice_physics::netcode_prediction::Snapsho
 impl<S> core::panic::unwind_safe::RefUnwindSafe for alice_physics::netcode_prediction::Snapshot<S> where S: core::panic::unwind_safe::RefUnwindSafe
 impl<S> core::panic::unwind_safe::UnwindSafe for alice_physics::netcode_prediction::Snapshot<S> where S: core::panic::unwind_safe::UnwindSafe
 pub fn alice_physics::netcode_prediction::reconcile<A, S, F>(alice_physics::netcode_prediction::Snapshot<S>, &mut alice_physics::netcode_prediction::PredictionBuffer<A, S>, F) -> alice_physics::netcode_prediction::Snapshot<S> where A: core::marker::Copy + core::fmt::Debug, S: core::marker::Copy + core::fmt::Debug, F: core::ops::function::FnMut(S, alice_physics::netcode_prediction::PredictedInput<A>) -> S
+pub fn alice_physics::netcode_prediction::reconcile_checked<A, S, F>(alice_physics::netcode_prediction::Snapshot<S>, &mut alice_physics::netcode_prediction::PredictionBuffer<A, S>, F) -> core::result::Result<alice_physics::netcode_prediction::Snapshot<S>, alice_physics::netcode_prediction::ReconcileError> where A: core::marker::Copy + core::fmt::Debug, S: core::marker::Copy + core::fmt::Debug, F: core::ops::function::FnMut(S, alice_physics::netcode_prediction::PredictedInput<A>) -> S
 pub mod alice_physics::non_newtonian
 pub struct alice_physics::non_newtonian::Bingham
 pub alice_physics::non_newtonian::Bingham::plastic_viscosity: alice_physics::math::Fix128

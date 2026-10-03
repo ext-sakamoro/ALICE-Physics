@@ -24,6 +24,13 @@ increment 他) が**追加機材の調達待ち**であるかのように読め�
 | Maxwell FDTD | `ecd8c61` | source-free Yee、⚠️ **SI は `ε₀·μ₀` が 7.7 bit で不可**、正規化単位 + `S=9/16` |
 | 多体 ABA | `1bab99b` | ⚠️ **`solve()` が `link.joint` を読まない**状態から real ABA、oracle 12 本 |
 
+### 第 62 increment (2026-10-03、全配線 program 第 9f 件 — rollback netcode の予測と照合)
+
+クライアント予測の照合 `netcode_prediction::reconcile` は「バッファにある権威 tick より後の入力を全部再生する」が、**再生が正しいのはそれが連続した tick `t+1, t+2, …` の時だけ**で、サーバの snapshot がバッファの ring が既に捨てた入力より古い時 (遅いサーバ・小さい容量) や、バッファの途中の tick が欠けた時は、**誤った入力を再生して誤った状態を、何の兆候もなく返す** ⇒ `reconcile_checked` と `ReconcileError::MissingInputs { needed, oldest }` (追加のみ、`#[non_exhaustive]`) を足した 履歴が完全なら `reconcile` と同じ結果で、不完全なら**バッファを変更せず**どの入力が無いかを返す (呼び側は完全な状態を要求するか容量を増やせる)
+`netcode` / `netcode_prediction` の 8 item (`advance_frame` / `dt` / `get_snapshot` / `snapshot_count` / `drop_acknowledged` / `head_snapshot` / `inputs` / `reconcile`) を `examples/rollback_netcode.rs` (サーバが完全なシミュレーションを走らせ、クライアントが軽いモデルで予測し 10 tick 遅れの snapshot を照合する・遅すぎる snapshot は拒否される・snapshot → 進む → rollback → 同じ入力の再生で全 frame の checksum が一致) で配線した
+oracle 8 本 (状態は整数の和なので期待値は定義から書ける: 照合後の head は `権威 state + 後の tick の action の和`、`drop_acknowledged` は `<=` の境界、ring は古い順に捨てる、欠けた入力の報告) 変異 12 件中 12 red
+baseline 退役 8 行 (`netcode::{advance_frame, dt, get_snapshot, snapshot_count}` / `netcode_prediction::{drop_acknowledged, head_snapshot, inputs, reconcile}`)
+
 ### 第 59 increment (2026-10-03、全配線 program 第 9c / 9d / 9e 件 — 選べる broad-phase、接触力、marching tetrahedra の collision mesh)
 
 **9c broad-phase**: 永続の `DynamicAabbTree` を broad-phase の選択肢にした `Broadphase::{Bvh (既定), DynamicTree}` と `PhysicsWorld::{set_broadphase, broadphase, broadphase_stats, broadphase_proxy_aabb}` (追加のみ) どちらも整列済みの候補 pair を同じ厳密 narrow-phase に渡すので**結果は bit 一致**する proxy は body index が key (user data) で、毎 step その index の body の箱で更新される ので、`remove_body` / 状態復元に全再構築は要らず、無くなった index の proxy だけを外す 動かない body は fat box (半径 + margin 0.5) の中に留まる限り再挿入されない `bvh.rs` の `BroadphaseHybrid` は doc 自身が skeleton と書く未完成品 (動的側は点問い合わせ) で配線せず baseline に残した
