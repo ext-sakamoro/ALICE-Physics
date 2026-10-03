@@ -974,3 +974,213 @@ fn solvers_are_deterministic_and_order_of_joints_is_sequential() {
     near(p(&a[1]).0, 1.5, 1e-12, "body 1 (moved again by joint 1)");
     near(p(&a[2]).0, 1.5, 1e-12, "body 2");
 }
+
+// ---------------- second pass: oracles added for mutants the first pass let live ----------------
+
+fn neg(q: QuatFix) -> QuatFix {
+    QuatFix::new(-q.x, -q.y, -q.z, -q.w)
+}
+
+#[test]
+fn defaults_leave_every_optional_limit_unset() {
+    let o = Vec3Fix::ZERO;
+    let h = HingeJoint::new(0, 1, o, o, Vec3Fix::UNIT_Z, Vec3Fix::UNIT_Z);
+    assert_eq!(
+        (h.angle_min, h.angle_max, h.break_force),
+        (None, None, None)
+    );
+    assert_eq!(
+        (h.compliance, h.angular_compliance),
+        (Fix128::ZERO, Fix128::ZERO)
+    );
+    let s = SliderJoint::new(0, 1, Vec3Fix::UNIT_X, o, o);
+    assert_eq!(
+        (s.limit_min, s.limit_max, s.break_force),
+        (None, None, None)
+    );
+    assert_eq!(s.compliance, Fix128::ZERO);
+    let f = FixedJoint::new(0, 1, o, o, QuatFix::IDENTITY);
+    assert_eq!(
+        (f.compliance, f.angular_compliance, f.break_force),
+        (Fix128::ZERO, Fix128::ZERO, None)
+    );
+    let b = BallJoint::new(0, 1, o, o);
+    assert_eq!((b.compliance, b.break_force), (Fix128::ZERO, None));
+    let c = ConeTwistJoint::new(0, 1, o, o, Vec3Fix::UNIT_X, Vec3Fix::UNIT_X);
+    assert_eq!(
+        (c.compliance, c.angular_compliance, c.break_force),
+        (Fix128::ZERO, Fix128::ZERO, None)
+    );
+    let sp = SpringJoint::new(0, 1, o, o, fx(1.0), fx(2.0), fx(3.0));
+    assert_eq!(
+        (sp.rest_length, sp.stiffness, sp.damping, sp.break_force),
+        (fx(1.0), fx(2.0), fx(3.0), None)
+    );
+}
+
+/// q and -q are the same rotation: the fixed joint must take the shortest arc for both.
+#[test]
+fn fixed_joint_treats_q_and_minus_q_alike() {
+    for sign in [1.0, -1.0] {
+        let j = Joint::Fixed(FixedJoint::new(
+            0,
+            1,
+            Vec3Fix::ZERO,
+            Vec3Fix::ZERO,
+            QuatFix::IDENTITY,
+        ));
+        let mut b = vec![st(Vec3Fix::ZERO), dynb(Vec3Fix::ZERO, 1.0)];
+        let q = rot(Vec3Fix::UNIT_Z, 0.3);
+        b[1].rotation = if sign > 0.0 { q } else { neg(q) };
+        solve_joints(&[j], &mut b, dt());
+        // ends on identity (up to the double cover), never on the long way round
+        let r = b[1].rotation;
+        near(r.w.to_f64().abs(), 1.0, 1e-9, &format!("|w| sign {sign}"));
+        near(
+            twist(r, Vec3Fix::UNIT_Z),
+            0.0,
+            1e-9,
+            &format!("twist sign {sign}"),
+        );
+    }
+}
+
+/// The target orientation of B is A's orientation composed with the relative rotation.
+#[test]
+fn fixed_joint_target_follows_a_rotated_body_a() {
+    let rel = rot(Vec3Fix::UNIT_Z, 0.3);
+    let qa = rot(Vec3Fix::UNIT_Y, 0.5);
+    let j = Joint::Fixed(FixedJoint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO, rel));
+    let mut a = st(Vec3Fix::ZERO);
+    a.rotation = qa;
+    let mut b = vec![a, dynb(Vec3Fix::ZERO, 1.0)];
+    solve_joints(&[j], &mut b, dt());
+    let want = qa.mul(rel);
+    let r = b[1].rotation;
+    let d = r.x.to_f64() * want.x.to_f64()
+        + r.y.to_f64() * want.y.to_f64()
+        + r.z.to_f64() * want.z.to_f64()
+        + r.w.to_f64() * want.w.to_f64();
+    near(d.abs(), 1.0, 1e-9, "q_b = q_a * relative_rotation");
+}
+
+#[test]
+fn spring_damping_is_signed_by_the_relative_velocity() {
+    // approaching at 3 m/s at rest length with c = 2: the damping force is -6 and pushes B outward
+    let mut b = vec![st(Vec3Fix::ZERO), dynb(v3(2.0, 0.0, 0.0), 1.0)];
+    b[1].velocity = v3(-3.0, 0.0, 0.0);
+    solve_joints(&[spring(2.0, 5.0, 2.0)], &mut b, dt());
+    near(
+        p(&b[1]).0,
+        2.0 + 6.0 / 60.0,
+        1e-9,
+        "damping against an approach",
+    );
+    // anchors on the same point: no direction, no change
+    let mut c = vec![st(Vec3Fix::ZERO), dynb(Vec3Fix::ZERO, 1.0)];
+    solve_joints(&[spring(2.0, 5.0, 2.0)], &mut c, dt());
+    assert_eq!(c[1].position, Vec3Fix::ZERO);
+}
+
+#[test]
+fn d6_frame_a_is_carried_by_the_body_a_rotation() {
+    let mut a = st(Vec3Fix::ZERO);
+    a.rotation = rot(Vec3Fix::UNIT_Z, std::f64::consts::FRAC_PI_2); // frame x -> world y
+    let j = D6Joint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO).with_linear_motion(
+        D6Motion::Locked,
+        D6Motion::Free,
+        D6Motion::Free,
+    );
+    let mut b = vec![a, dynb(v3(2.0, 3.0, 0.0), 1.0)];
+    solve_joints(&[Joint::D6(j)], &mut b, dt());
+    let (x, y, _) = p(&b[1]);
+    near(x, 2.0, 1e-9, "world x stays");
+    near(y, 0.0, 1e-9, "body A's x axis (world y) is the locked one");
+}
+
+#[test]
+fn d6_limits_are_read_per_axis() {
+    // angular y limited to [-0.2, 0.3] while x and z limits are different
+    let j = D6Joint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO)
+        .with_angular_motion(D6Motion::Free, D6Motion::Limited, D6Motion::Free)
+        .with_angular_limits(v3(-0.9, -0.2, -0.9), v3(0.9, 0.3, 0.9));
+    for (start, want) in [(0.8, 0.3), (-0.7, -0.2), (0.1, 0.1)] {
+        let mut b = vec![st(Vec3Fix::ZERO), dynb(Vec3Fix::ZERO, 1.0)];
+        b[1].rotation = rot(Vec3Fix::UNIT_Y, start);
+        solve_joints(&[Joint::D6(j)], &mut b, dt());
+        near(
+            twist(b[1].rotation, Vec3Fix::UNIT_Y),
+            want,
+            1e-9,
+            &format!("angular y start {start}"),
+        );
+    }
+    // linear z limited to [-1, 2] while x and y limits are different
+    let j = D6Joint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO)
+        .with_linear_motion(D6Motion::Free, D6Motion::Free, D6Motion::Limited)
+        .with_linear_limits(v3(-0.5, -0.5, -1.0), v3(0.5, 0.5, 2.0));
+    for (start, want) in [(3.0, 2.0), (-2.0, -1.0), (1.5, 1.5)] {
+        let mut b = vec![st(Vec3Fix::ZERO), dynb(v3(0.0, 0.0, start), 1.0)];
+        solve_joints(&[Joint::D6(j)], &mut b, dt());
+        near(p(&b[1]).2, want, 1e-12, &format!("linear z start {start}"));
+    }
+}
+
+/// The cone constraint compares A's twist axis with B's *own* twist axis.
+#[test]
+fn cone_twist_uses_each_bodys_own_twist_axis() {
+    let j = Joint::ConeTwist(
+        ConeTwistJoint::new(
+            0,
+            1,
+            Vec3Fix::ZERO,
+            Vec3Fix::ZERO,
+            Vec3Fix::UNIT_X,
+            Vec3Fix::UNIT_Y,
+        )
+        .with_limits(fx(0.5), fx(3.0)),
+    );
+    // B's local y maps onto world x under a -90 degree turn about z: the axes coincide, no swing
+    let mut b = vec![st(Vec3Fix::ZERO), dynb(Vec3Fix::ZERO, 1.0)];
+    b[1].rotation = rot(Vec3Fix::UNIT_Z, -std::f64::consts::FRAC_PI_2);
+    let before = b[1].rotation;
+    solve_joints(&[j], &mut b, dt());
+    assert_eq!(
+        b[1].rotation, before,
+        "axes already coincide: nothing to correct"
+    );
+}
+
+/// With a dynamic pair the error is shared by inverse inertia, so a long-way-round angle
+/// (2 pi - theta for the w < 0 cover) would give each body the wrong share.
+#[test]
+fn fixed_joint_shares_the_shortest_arc_for_the_negated_quaternion() {
+    for sign in [1.0, -1.0] {
+        let j = Joint::Fixed(FixedJoint::new(
+            0,
+            1,
+            Vec3Fix::ZERO,
+            Vec3Fix::ZERO,
+            QuatFix::IDENTITY,
+        ));
+        let mut b = vec![
+            with_inertia(dynb(Vec3Fix::ZERO, 1.0), 1.0),
+            with_inertia(dynb(Vec3Fix::ZERO, 1.0), 3.0),
+        ];
+        let q = rot(Vec3Fix::UNIT_Z, 0.4);
+        b[1].rotation = if sign > 0.0 { q } else { neg(q) };
+        solve_joints(&[j], &mut b, dt());
+        near(
+            twist(b[0].rotation, Vec3Fix::UNIT_Z),
+            0.1,
+            1e-9,
+            &format!("A share, sign {sign}"),
+        );
+        near(
+            twist(b[1].rotation, Vec3Fix::UNIT_Z),
+            0.4 - 0.3,
+            1e-9,
+            &format!("B share, sign {sign}"),
+        );
+    }
+}
