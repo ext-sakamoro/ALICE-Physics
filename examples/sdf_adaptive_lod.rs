@@ -10,6 +10,8 @@
 //! cargo run --release --example sdf_adaptive_lod --features std
 //! ```
 
+#![allow(clippy::disallowed_methods, clippy::needless_range_loop)]
+
 use alice_physics::math::{QuatFix, Vec3Fix};
 use alice_physics::sdf_adaptive::{AdaptiveConfig, AdaptiveSdfEvaluator};
 use alice_physics::sdf_collider::{ClosureSdf, SdfCollider};

@@ -11,6 +11,8 @@
 //! cargo run --release --example sdf_ccd_sweep --features std
 //! ```
 
+#![allow(clippy::disallowed_methods)]
+
 use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
 use alice_physics::sdf_ccd::{ray_march_sdf, SdfCcdConfig};
 use alice_physics::sdf_collider::{ClosureSdf, SdfCollider};

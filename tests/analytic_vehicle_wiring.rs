@@ -9,7 +9,7 @@
 //! zeroed in the config (`aero_drag`, `downforce`, `anti_roll_stiffness`).
 
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
+#![allow(clippy::disallowed_methods, clippy::field_reassign_with_default)]
 
 use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
 use alice_physics::solver::RigidBody;

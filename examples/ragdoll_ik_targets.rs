@@ -9,6 +9,8 @@
 //! cargo run --release --example ragdoll_ik_targets --features std
 //! ```
 
+#![allow(clippy::disallowed_methods)]
+
 use alice_physics::ik_physics_bridge::{IkTarget, IkTargetSet};
 use alice_physics::math::{Fix128, Vec3Fix};
 use alice_physics::ragdoll::{Bone, RagdollBuilder, RagdollProportions};
