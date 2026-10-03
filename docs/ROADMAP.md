@@ -16,6 +16,14 @@ Memory index pointer: `[[reference-alice-physics-v1-roadmap]]` in claude-config.
 | Maxwell FDTD | `ecd8c61` | source-free Yee、⚠️ **SI は `ε₀·μ₀` が 7.7 bit で不可**、正規化単位 + `S=9/16` |
 | 多体 ABA | `1bab99b` | ⚠️ **`solve()` が `link.joint` を読まない**状態から real ABA、oracle 12 本 |
 
+### 第 48 increment (2026-10-03、全配線 program 第 9 件 (F3b-1) — compound body と凸包の質量特性)
+
+複数の形状でできた body (亜鈴・L 字など) を作れなかった `PhysicsWorld::add_compound_body(&CompoundShape, density, position)` を足し、子の質量・重心・慣性を合成して**主軸系**に置く (重心を原点、`body.rotation` = 主軸の回転、子は重心基準に付け替え) 衝突は子ごと: 2 つの子の間の隙間は body の一部でなく、凸包の中でも触れない 子の組のうち最も深い接触が採られる (追加のみ、`CompoundShape::mass_properties` / `build_hull_mesh` / `HullMesh` / `principal_axes` / `CompoundChild::support_world`)
+⚠️ **既存の欠陥 3 つを検出・修正**: ① **`convex_hull_mass_properties` が誤っていた** (立方体で質量 12 / 正解 24、重心がずれ、Ixx 3.5 / 正解 16) ⇒ 凸包メッシュの四面体分解による厳密積分 (∫xxᵀ dV = V/20 (Σpₖpₖᵀ + (Σpₖ)(Σpₖ)ᵀ)) に置換 ② **compound の球の子の AABB が子の回転を無視** ③ **`support_world` が -1e6 の番兵を使い、全子が遠方にあると誤った点を返した**
+oracle: 箱 / 立方体 / 非対称な楔の凸包を閉形式と求積で、compound の質量・重心・慣性を子の閉形式 (平行軸) と**和集合の求積**で、回転した子の重心、軸が x のカプセル (円柱 + 半球 2 つ)、回転した箱 (x/y の慣性の交換)、非対称な箱 (−3 / +5) の隙間 probe、最も深い子の接触 変異 36 件中 35 red、生存 1 件は等価 (質量 0 の子の除外、冗長なので削除) 途中で見つけた oracle 側の誤り: カプセルの円柱の I⊥ に r²/3 を使っていた (正しくは r²/4) 実装は正しく、**oracle の閉形式を独立に求積で確かめるまで変異の red を信用しない**
+baseline 退役 11 行 (`compound::{add_box,add_capsule,add_sphere,add_convex_hull,child_world_aabb}` / `compute_centroid` / `box`・`capsule`・`sphere`・`convex_hull_mass_properties` / `translate_inertia`、実配線 11、巻き込み 0) 呼出元は `add_compound_body`、example は `examples/compound_bodies.rs`
+残り (F3c): `compound::{compute_aabb, overlapping_children, world_aabb}` / `build_convex_hull` / `convex_decompose` / `box_collider::{axis_aligned, corner, corners}` / `cone::{apex, base_center}` / `from_metric_ball`
+
 ### 第 47 increment (2026-10-03、全配線 program 第 17 件 — `prestressed`/`piezoelectric`/`rolling_contact`/`sdf_force` 未配線 28 item)
 
 worker 4 本、全て src 無変更 変異: prestressed 7/7 (実装) + 2/5 (guard、3 件は Fix128::Div のゼロ除算契約と算術等価)、piezoelectric 11/12 red (permittivity 単独配線変異は voltage_from_force/force_from_voltage が残る限り推移的到達性で観測不能)、rolling_contact 14/14、sdf_force 15/17 (生存 2 件は算術的に等価、`contain` の境界 off-by-one は dist=0 で push が恒等的に 0 になる式の性質、`apply_sdf_force_fields` の is_static skip は inv_mass=0 と同一条件の性能最適化) baseline 28 行退役 (実配線 27、名前衝突の巻き込み 1 = `force.rs::with_affected_bodies`、Backlog 記録済) production entry point: `examples/prestressed_joints_and_cables.rs` / `examples/piezoelectric_materials.rs` / `examples/rolling_contact_fatigue.rs` / `examples/sdf_force_fields.rs`

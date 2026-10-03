@@ -22,6 +22,16 @@ were introduced during that release window.
 - 4 module とも src 無変更、baseline 28 行退役 (実配線 27 + 名前衝突 1 (`force.rs::with_affected_bodies`、実体は未配線のまま Backlog に記録))
 - ⚠️ worker 実測 (未修正、Backlog): rolling_contact.rs は f32 ベースで engineering module family の他 (fatigue/laminate_failure) の Fix128 決定論と不整合 / sdf_force の `attract` clamp は Fix128 の表現域境界付近 (`|dist| ~ 4.6e18`) で `strength*dist_fix` 自体が mod-2^128 wrap するため破られる (通常の大距離では問題なし)
 
+### Added — compound body: `PhysicsWorld::add_compound_body` (全配線 program 第 9 件 F3b-1)
+
+`add_compound_body(&CompoundShape, density, position)`、`CompoundShape::mass_properties`、`convex_mesh_builder::{build_hull_mesh, HullMesh}`、`mass_properties::principal_axes`、`CompoundChild::support_world` を追加した (追加のみ) 子の質量・重心・慣性を合成して主軸系に置き、衝突は子ごとに決める (隙間は body の一部でない) 質量 / 慣性が表せない・密度が正でない・空の compound は `ShapeError` を返す
+### Fixed — 形状の質量特性と compound の 3 件
+
+- **`convex_hull_mass_properties` が誤っていた** (立方体で質量 12 / 正解 24、重心がずれ、Ixx 3.5 / 正解 16) 凸包メッシュの四面体分解による厳密積分に置換した 退化した点集合 / 密度が正でない場合は `MassProperties::ZERO`
+- **compound の球の子の AABB が子の回転を無視していた**
+- **`CompoundShape::support_world` が -1e6 の番兵を使い、全子が遠方にあると誤った点を返していた**
+- oracle: 閉形式と求積 (凸包 / compound の和集合)、軸が x のカプセル、回転した箱、非対称な箱の隙間 probe 変異 36 件中 35 red (残り 1 件は等価)
+
 ### Added — `material` / `replay` / `multi_world` の未配線 24 item を全配線 (全配線 program 第 16 件)
 
 - `material`: `examples/material_registry_presets.rs` が `register_concrete`/`register_ice`/`register_metal`/`register_rubber`/`register_wood` + `set_pair_override` + `with_combine_rules` + `with_static_friction` を駆動、oracle 9 本、変異 8/8 red
