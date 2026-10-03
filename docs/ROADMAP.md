@@ -44,6 +44,12 @@ user 指示「既存バグを根本修正」で、thin_wall worker (program 第 
 
 既存 oracle 16 本のうち上記 2 件 (旧挙動を pin していたもの) を新挙動に更新、新規 regression test 2 本追加 (無限ループの具体的再現 AABB / 両 footgun) 変異無し、18/18 green 公開 API signature 変更なし (`for_nozzle` は `#[panics]` doc 追加のみ)
 
+### 第 54 increment (2026-10-03、全配線 program 第 19 件 — `smoke_fire`/`rope`/`contact_cache`/`math`/`wave_ship` 未配線 32 item)
+
+worker 5 本、全て src 無変更 変異: smoke_fire 7/8 (equivalent mutant 1)、rope 4/5 (equivalent mutant 1)、contact_cache 9/9、math (arm64 host 上では atan/dot_simd/length_squared_simd のみ実行可能、3/3 red、x86_64+simd gate の 4 item はこの host では compile されずクロスコンパイル確認のみ)、wave_ship 11/12 (equivalent mutant 1) baseline 35 行退役 (実配線 32、名前衝突の巻き込み 3 = `src/cloth.rs`/`src/deformable.rs`/`src/fluid.rs` の `step_with_sdf`、Backlog 記録済)
+⚠️ **contact_cache は既存 2026-09-30 user 裁定「CPU `step()` には復活させない」の確認が必須だった** — `ContactCache` の warm-start 7 item は `PhysicsWorld::step()` から一度も読まれず、実 warm-start は別機構 (`ContactConstraint::cached_lambda`) 裁定の範囲外 (`step()` を一切呼ばない standalone example) として配線
+⚠️ worker 実測 (未修正、Backlog 記録済): `smoke_fire::reaction_rate_kg_per_m3_s` は温度/気体定数のみ guard し密度の符号は無検証 (負の gas_constant で exp_fix 飽和まで到達) / `raycast::sweep_sphere` と `ccd::sphere_sphere_toi` が意味論重複 / **`wave_ship::Jonswap::spectrum_density` の正規化定数が JONSWAP peak-enhancement 補正 `(1-0.287·ln(gamma))` を欠き、既定 `north_sea()` (gamma=3.3) で moment から回復する Hs が公称値の約 1.235 倍になる** (DNV-RP-C205 予測値と 0.12% 差で一致、欠落補正が原因と確認済、修正は既定出力を変える semver 相当の判断につき user 裁定待ち) / 同 far-tail が Fix128 解像度限界で floor noise (符号バグではない)
+
 ### 第 50 increment (2026-10-03、全配線 program 第 9 件 (F3c/F3d) — SDF の凸分解と compound の broad-phase、幾何クエリ)
 
 `decompose_sdf` が `concavity_threshold` を無視して**常に `max_hulls` 個へ切っていた** (凸な球・箱も 16 個に割れる) ので、cluster の hull の中にあって SDF の外にあるセルの体積 / hull の体積を concavity とし、閾値を超える間だけ・予算の範囲で切る実装にした `CompoundShape::{from_decomposition, from_sdf}` (追加のみ) が凸片を compound にし、`add_compound_body` で**凹んだ形のまま衝突する** body になる (L 字の切り欠きに置いた probe は触れない)
