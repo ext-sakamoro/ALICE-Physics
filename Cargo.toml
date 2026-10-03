@@ -184,6 +184,23 @@ required-features = ["std"]
 name = "substep_interpolation"
 required-features = ["std"]
 
+# Production entry point for `src/joint_extra.rs`: `ExtraJoint`, `set_target`,
+# `solve_extra_joints`, `total_length`, and `with_break_torque` (wiring_guard:
+# scripts/wiring-baseline.txt lists all five as unwired -- the module's own
+# #[cfg(all(test, feature = "std"))] mod tests does not count as a production
+# caller). `WeldJoint::with_break_force` is wired here too even though the
+# guard does not ask for it: src/joint.rs defines an unrelated
+# `with_break_force` on a different set of joint types, and that one DOES
+# have a real caller (examples/joint_limits_and_breaking.rs). wiring_guard
+# matches bare identifiers across files, so joint.rs's caller silently
+# "resolved" joint_extra.rs's own with_break_force too, even though it had
+# zero real callers of its own -- a name-collision false positive recorded in
+# the project Backlog. See examples/joint_extra_wiring.rs's module doc for
+# the full closed-form derivation.
+[[example]]
+name = "joint_extra_wiring"
+required-features = ["std"]
+
 # Production entry point for the `analytics` feature's ALICE-Analytics
 # profiling bridge (wiring_guard: src/analytics_bridge.rs had zero
 # production callers).
