@@ -24,6 +24,10 @@ oracle: 重なる箱の depth と法線を **分離軸判定 (15 軸、箱の回
 baseline 退役 3 行 (`gjk` / `epa` / `GjkResult`、実配線 3、巻き込み 0) 呼出元は `contact` (solver の `detect_collisions`) と `colliders_overlap`、example は `examples/convex_contacts.rs`
 ⚠️ 衝突は依然として 1 点の接触 (manifold なし): 接触点は EPA の支持点で、接触拘束は位置と質量だけで解く (回転は拘束に入らない) 残り (F3b/c): `compound` (8) / `convex_mesh_builder` (2) / `convex_decompose` (2) / `box_collider::{axis_aligned, corner, corners}` / `cone::{apex, base_center}` / `from_metric_ball`
 
+### 第 43 increment (2026-10-03、全配線 program 第 13 件 — `animation_blend` 未配線 11 item)
+
+worker 1 本、src 無変更 example 1 本が state-machine (go_animated/go_powered/go_ragdoll/update/lerp 等) 全 11 item を駆動 変異 22/22 red (lerp 単独変異は update 内部の sibling 呼出で推移的配線を確認済) baseline 11 行退役 + 名前衝突 4 行 (physics2d::lerp / dynamic_bvh・sim_modifier・vehicle::update、Backlog 記録)
+
 ### 第 42 increment (2026-10-03、全配線 program 第 13 件 — `analytics_bridge` 未配線 11 item、features = std,analytics)
 
 worker 1 本、src 無変更 example 1 本が percentile reader + recorder 全 11 item を駆動、oracle は自前 nearest-rank + DDSketch256 契約窓 + HyperLogLog12 線形カウント式の再実装 変異 11/11 red baseline 11 行退役

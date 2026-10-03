@@ -1729,6 +1729,8 @@ Every function below (plus `BatchRayQuery`/`OverlapResult`/`ShapeCastHit`) is wi
 | `SkeletonPose` | Joint transforms for a skeleton |
 | `AnimationClip` | Keyframed animation data |
 
+Every state-machine transition (`go_animated`/`go_powered`/`go_ragdoll`/`is_transitioning`/`update`), the keyframe/pose setters (`add_keyframe`/`set_animated`/`set_ragdoll`/`get_motor_targets`/`bone_count`), and `lerp` are wired through `examples/animation_blend_state_machine.rs`, pinned by `tests/analytic_animation_blend_wiring.rs` (11).
+
 ### `audio_physics` - Physics-Based Audio
 
 | Type | Description |
