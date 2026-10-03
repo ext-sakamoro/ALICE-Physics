@@ -174,6 +174,9 @@ const MAGIC: &[u8; 6] = b"APHYS\0";
 /// Current format version.
 const CURRENT_VERSION: u32 = 1;
 
+/// Upper bound on the entries reserved up front when reading a binary scene.
+const MAX_PREALLOC: usize = 4096;
+
 /// Current `.aphys` / JSON scene format version, for [`PhysicsScene::new`].
 pub const CURRENT_SCENE_VERSION: u32 = CURRENT_VERSION;
 
@@ -367,7 +370,9 @@ fn read_scene_binary(r: &mut dyn Read) -> std::io::Result<PhysicsScene> {
     };
 
     // Bodies
-    let mut bodies = Vec::with_capacity(body_count);
+    // The counts come from the file: do not trust them for a reservation (a corrupt
+    // header must end in `UnexpectedEof`, not in a multi-gigabyte allocation).
+    let mut bodies = Vec::with_capacity(body_count.min(MAX_PREALLOC));
     for _ in 0..body_count {
         let position = read_i64_array::<6>(r)?;
         let velocity = read_i64_array::<6>(r)?;
@@ -384,7 +389,7 @@ fn read_scene_binary(r: &mut dyn Read) -> std::io::Result<PhysicsScene> {
     }
 
     // Joints
-    let mut joints = Vec::with_capacity(joint_count);
+    let mut joints = Vec::with_capacity(joint_count.min(MAX_PREALLOC));
     for _ in 0..joint_count {
         let body_a = read_u32(r)?;
         let body_b = read_u32(r)?;
@@ -532,12 +537,12 @@ fn parse_scene_json(json: &str) -> Result<PhysicsScene, String> {
         return Err("Expected JSON object".into());
     }
 
-    let version = extract_u32(json, "version").unwrap_or(CURRENT_VERSION);
+    let version = extract_u32(json, "version")?.unwrap_or(CURRENT_VERSION);
 
     // Config
     let config_str = extract_object(json, "config").unwrap_or_default();
-    let substeps = extract_u32(&config_str, "substeps").unwrap_or(8);
-    let iterations = extract_u32(&config_str, "iterations").unwrap_or(4);
+    let substeps = extract_u32(&config_str, "substeps")?.unwrap_or(8);
+    let iterations = extract_u32(&config_str, "iterations")?.unwrap_or(4);
     let gravity = extract_i64_array(&config_str, "gravity", 6)?;
     let damping = extract_i64_array(&config_str, "damping", 2)?;
 
@@ -559,7 +564,7 @@ fn parse_scene_json(json: &str) -> Result<PhysicsScene, String> {
         let velocity_v = extract_i64_array(obj, "velocity", 6)?;
         let rotation_v = extract_i64_array(obj, "rotation", 8)?;
         let mass_v = extract_i64_array(obj, "mass", 2)?;
-        let body_type = extract_u32(obj, "body_type").unwrap_or(0) as u8;
+        let body_type = extract_u8(obj, "body_type")?.unwrap_or(0);
 
         let mut position = [0i64; 6];
         let mut velocity = [0i64; 6];
@@ -584,9 +589,9 @@ fn parse_scene_json(json: &str) -> Result<PhysicsScene, String> {
     let joint_objects = split_array_objects(&joints_str);
     let mut joints = Vec::new();
     for obj in &joint_objects {
-        let body_a = extract_u32(obj, "body_a").unwrap_or(0);
-        let body_b = extract_u32(obj, "body_b").unwrap_or(0);
-        let joint_type = extract_u32(obj, "joint_type").unwrap_or(0) as u8;
+        let body_a = extract_u32(obj, "body_a")?.unwrap_or(0);
+        let body_b = extract_u32(obj, "body_b")?.unwrap_or(0);
+        let joint_type = extract_u8(obj, "joint_type")?.unwrap_or(0);
         let anchor_a_v = extract_i64_array(obj, "anchor_a", 6)?;
         let anchor_b_v = extract_i64_array(obj, "anchor_b", 6)?;
 
@@ -616,17 +621,41 @@ fn parse_scene_json(json: &str) -> Result<PhysicsScene, String> {
 // Minimal JSON extraction helpers
 // ============================================================================
 
-fn extract_u32(json: &str, key: &str) -> Option<u32> {
+/// Read an unsigned integer value for `key`.
+///
+/// `Ok(None)` when the key (or its colon) is absent, so callers can apply their documented
+/// default. A value that is present but is not a `u32` (negative, too large, not a number)
+/// is an error: silently replacing it with the default would load a different scene than
+/// the file describes.
+fn extract_u32(json: &str, key: &str) -> Result<Option<u32>, String> {
     let pattern = format!("\"{key}\"");
-    let idx = json.find(&pattern)?;
+    let Some(idx) = json.find(&pattern) else {
+        return Ok(None);
+    };
     let rest = &json[idx + pattern.len()..];
-    let colon = rest.find(':')?;
+    let Some(colon) = rest.find(':') else {
+        return Ok(None);
+    };
     let after_colon = rest[colon + 1..].trim_start();
-    // Read digits (possibly negative, but u32 so just digits)
+    // Token: everything up to the next JSON delimiter
     let end = after_colon
-        .find(|c: char| !c.is_ascii_digit() && c != '-')
+        .find(|c: char| matches!(c, ',' | '}' | ']' | '\n' | '\r'))
         .unwrap_or(after_colon.len());
-    after_colon[..end].trim().parse().ok()
+    let token = after_colon[..end].trim();
+    token
+        .parse::<u32>()
+        .map(Some)
+        .map_err(|e| format!("Invalid value for {key}: {token:?} ({e})"))
+}
+
+/// Like [`extract_u32`] for fields stored as `u8`; a value above 255 is an error, not a truncation.
+fn extract_u8(json: &str, key: &str) -> Result<Option<u8>, String> {
+    match extract_u32(json, key)? {
+        None => Ok(None),
+        Some(v) => u8::try_from(v)
+            .map(Some)
+            .map_err(|_| format!("Value for {key} does not fit in u8: {v}")),
+    }
 }
 
 fn extract_object(json: &str, key: &str) -> Option<String> {

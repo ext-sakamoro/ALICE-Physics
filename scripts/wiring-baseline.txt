@@ -64,9 +64,6 @@ unwired src/quadratic_elastic_fem.rs::edge_count
 unwired src/quadratic_elastic_fem.rs::edge_node
 unwired src/ragdoll.rs::child
 unwired src/ragdoll.rs::human_female
-unwired src/scene_io.rs::CURRENT_SCENE_VERSION
-unwired src/scene_io.rs::load_scene_json
-unwired src/scene_io.rs::save_scene_json
 unwired src/sdf_adaptive.rs::invalidate
 unwired src/sdf_adaptive.rs::invalidate_all
 unwired src/sdf_ccd.rs::batch_sphere_trace_sdf
