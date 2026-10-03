@@ -582,6 +582,43 @@ impl Fix128 {
         Self::from_int(2).powf_pos(self * LOG2_E)
     }
 
+    /// Deterministic natural log via range reduction to `[1, 2)` + atanh
+    /// series (`ln(m) = 2·atanh((m−1)/(m+1))`, 16 terms). Non-positive input
+    /// returns `ZERO` (no panic, no NaN representation in `Fix128`). Moved
+    /// here from a private `turbulence.rs` helper of the same algorithm
+    /// (canonical source: one `ln`, not one per caller module).
+    #[must_use]
+    pub fn ln(self) -> Self {
+        if self <= Self::ZERO {
+            return Self::ZERO;
+        }
+        // ln 2 = 0.693 147 180 559 945 3 (raw pair, exact to 2⁻⁶⁴)
+        const LN2: Fix128 = Fix128 {
+            hi: 0,
+            lo: 0xB172_17F7_D1CF_79AC,
+        };
+        let mut m = self;
+        let mut k: i64 = 0;
+        while m >= Self::from_int(2) {
+            m = m.half();
+            k += 1;
+        }
+        while m < Self::ONE {
+            m = m.double();
+            k -= 1;
+        }
+        let t = (m - Self::ONE) / (m + Self::ONE);
+        let t2 = t * t;
+        let mut term = t;
+        let mut sum = Self::ZERO;
+        for n in 0..16u32 {
+            let denom = Self::from_int(i64::from(2 * n + 1));
+            sum = sum + term / denom;
+            term = term * t2;
+        }
+        Self::from_int(k) * LN2 + sum.double()
+    }
+
     /// Checked division: `None` when `rhs == 0`, otherwise `Some(self / rhs)`.
     ///
     /// The `Div` operator returns `ZERO` for a zero divisor (deterministic, no

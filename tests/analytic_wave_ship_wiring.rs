@@ -46,7 +46,14 @@ fn jonswap_reference(hs: f64, omega_p: f64, gamma: f64, omega: f64) -> f64 {
     }
     let sigma = if omega <= omega_p { 0.07 } else { 0.09 };
     let r = (-(omega - omega_p).powi(2) / (2.0 * sigma * sigma * omega_p * omega_p)).exp();
-    let pm = 5.0 / 16.0 * hs * hs * omega_p.powi(4) / omega.powi(5);
+    // DNV-RP-C205 eq. 3.5.5-3.5.7 normalization, keeps H_s = 4*sqrt(m0)
+    // invariant under gamma (gamma = 1 => ln(1) = 0 => bare 5/16 of PM).
+    let normalization = if gamma <= 0.0 {
+        1.0
+    } else {
+        1.0 - 0.287 * gamma.ln()
+    };
+    let pm = 5.0 / 16.0 * normalization * hs * hs * omega_p.powi(4) / omega.powi(5);
     let cutoff = (-1.25 * (omega_p / omega).powi(4)).exp();
     let enhancement = if gamma <= 0.0 { 1.0 } else { gamma.powf(r) };
     pm * cutoff * enhancement

@@ -41,6 +41,21 @@ were introduced during that release window.
 変異試験 (fix を revert して red を確認) で歯があることを確認済み
 公開 API signature 変更なし
 
+### Fixed — `wave_ship::Jonswap::spectrum_density` の正規化定数が peak-enhancement 補正を欠く
+
+`spectrum_density` の leading constant (`5/16 · H_s²`) が JONSWAP の peak-enhancement
+補正 `(1 − 0.287·ln γ)` (DNV-RP-C205 eq. 3.5.5-3.5.7) を欠いていたため、既定の
+`Jonswap::north_sea()` (γ = 3.3) で `H_s = 4·√m₀` が回復せず、公称 `H_s` の約 1.235 倍
+(約 23.5% 過大) を返していた (γ = 1 の Pierson–Moskowitz 退行では `ln(1) = 0` で元々
+補正不要だったため、既存 m₀ 回復 test は γ = 1 のみを使い発覚していなかった)
+leading constant に `(1 − 0.287·ln γ)` (`γ ≤ 0` は `γ = 1` 扱い) を乗算して修正
+`Fix128::ln` を新設 (`turbulence.rs` の private `ln_fix` と同一アルゴリズムを canonical
+化、`u_plus` もこちらへ切替、挙動変化なし) oracle:
+`wave_ship_spectrum_recovers_hs_under_peak_enhancement` (γ = 3.3 で m₀ 数値積分から
+`H_s` 回復、相対誤差 2% 以内) + `tests/analytic_math_ln.rs` (5 test、f64::ln 参照 /
+加法性 `ln(ab)=ln(a)+ln(b)` / 単調性 / 退化入力) 変異試験 (正規化を外して red を確認) で
+歯があることを確認済み `north_sea()` 等の既定出力が変わる (公開 API signature は不変)
+
 ### Added — `PhysicsWorld::sdf_contacts` (全配線 program 第 9b 件)
 
 `PhysicsWorld::sdf_contacts()` を追加した (追加のみ) `step` が SDF collider から押し出す body とその接触を、何も動かさずに `(body index, Contact)` で返す

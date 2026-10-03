@@ -445,38 +445,6 @@ pub(crate) fn y_plus(
     density * u_tau * y_m / dynamic_viscosity_pas
 }
 
-/// Deterministic natural log via range reduction to `[1, 2)` + atanh series.
-#[must_use]
-fn ln_fix(x: Fix128) -> Fix128 {
-    if x <= Fix128::ZERO {
-        return Fix128::ZERO;
-    }
-    let ln2 = Fix128 {
-        hi: 0,
-        lo: 0xB172_17F7_D1CF_79AC,
-    };
-    let mut m = x;
-    let mut k: i64 = 0;
-    while m >= Fix128::from_int(2) {
-        m = m.half();
-        k += 1;
-    }
-    while m < Fix128::ONE {
-        m = m.double();
-        k -= 1;
-    }
-    let t = (m - Fix128::ONE) / (m + Fix128::ONE);
-    let t2 = t * t;
-    let mut term = t;
-    let mut sum = Fix128::ZERO;
-    for n in 0..16u32 {
-        let denom = Fix128::from_int(i64::from(2 * n + 1));
-        sum = sum + term / denom;
-        term = term * t2;
-    }
-    Fix128::from_int(k) * ln2 + sum.double()
-}
-
 /// Dimensionless velocity `u+ = u / u_τ` from the universal wall profile.
 /// - `y+ < 11.63` → `u+ = y+` (viscous sublayer).
 /// - Otherwise    → `u+ = (1/κ)·ln(y+) + B`  (log law).
@@ -488,7 +456,7 @@ pub(crate) fn u_plus(y_plus_val: Fix128) -> Fix128 {
     if y_plus_val < Y_PLUS_TRANSITION {
         return y_plus_val;
     }
-    let ln_yp = ln_fix(y_plus_val);
+    let ln_yp = y_plus_val.ln();
     ln_yp / VON_KARMAN + LOG_LAW_B
 }
 
