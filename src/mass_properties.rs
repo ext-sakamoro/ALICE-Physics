@@ -57,7 +57,8 @@ pub fn sphere_mass_properties(radius: Fix128, density: Fix128) -> MassProperties
     let mass = volume * density;
 
     // I = 2/5 * m * r^2
-    let i = Fix128::from_ratio(2, 5) * mass * r2;
+    // Divide last: `from_ratio(2, 5)` is rounded once and the mass keeps that error
+    let i = Fix128::from_int(2) * mass * r2 / Fix128::from_int(5);
 
     MassProperties {
         mass,
@@ -84,11 +85,12 @@ pub fn box_mass_properties(half_extents: Vec3Fix, density: Fix128) -> MassProper
     let w2 = w * w;
     let h2 = h * h;
     let d2 = d * d;
-    let factor = mass * Fix128::from_ratio(1, 12);
-
-    let ixx = factor * (h2 + d2);
-    let iyy = factor * (w2 + d2);
-    let izz = factor * (w2 + h2);
+    // I = m/12 · (…): multiply first, divide once at the end (`from_ratio(1, 12)` is not
+    // a dyadic rational, so `mass · (1/12)` carries its rounding error)
+    let twelve = Fix128::from_int(12);
+    let ixx = mass * (h2 + d2) / twelve;
+    let iyy = mass * (w2 + d2) / twelve;
+    let izz = mass * (w2 + h2) / twelve;
 
     MassProperties {
         mass,
@@ -121,7 +123,7 @@ pub fn cylinder_mass_properties(
     // Ixx = Izz = m/12 * (3*r^2 + h^2)
     let h2 = h * h;
     let three_r2 = Fix128::from_int(3) * r2;
-    let ixx = mass * Fix128::from_ratio(1, 12) * (three_r2 + h2);
+    let ixx = mass * (three_r2 + h2) / Fix128::from_int(12);
 
     MassProperties {
         mass,
@@ -158,10 +160,10 @@ pub fn capsule_mass_properties(
     // Cylinder inertia about its own center
     let h2 = h * h;
     let cyl_iyy = cyl_mass * r2 * Fix128::from_ratio(1, 2);
-    let cyl_ixx = cyl_mass * Fix128::from_ratio(1, 12) * (Fix128::from_int(3) * r2 + h2);
+    let cyl_ixx = cyl_mass * (Fix128::from_int(3) * r2 + h2) / Fix128::from_int(12);
 
     // Sphere inertia about its own center
-    let sph_i_own = Fix128::from_ratio(2, 5) * sph_mass * r2;
+    let sph_i_own = Fix128::from_int(2) * sph_mass * r2 / Fix128::from_int(5);
 
     // Sphere center offset from capsule center (along Y) for parallel axis theorem
     // Each hemisphere center is at y = +/- (half_height + 3*radius/8) from capsule center
