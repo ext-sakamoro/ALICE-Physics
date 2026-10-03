@@ -103,7 +103,14 @@ fn angle_to_z_matches_an_independent_rotation() {
         (-2.0, 0.5, -1.5),
         (0.0, 1.0, 0.0),
     ];
-    let angles = [0.0, 0.3, -0.7, 1.2, -1.5707963267948966, 1.5707963267948966];
+    let angles = [
+        0.0,
+        0.3,
+        -0.7,
+        1.2,
+        -std::f64::consts::FRAC_PI_2,
+        std::f64::consts::FRAC_PI_2,
+    ];
     for &l in &loads {
         for &tx in &angles {
             for &ty in &angles {
@@ -189,7 +196,7 @@ fn grid_optimum_equals_an_independent_brute_force() {
         ((0.3, -0.2, 0.9), 45.0),
         ((0.0, 0.0, 1.0), 20.0),
     ] {
-        let step = f64::from(step_deg) * std::f64::consts::PI / 180.0;
+        let step = step_deg * std::f64::consts::PI / 180.0;
         let r = optimize_grid(&load(l.0, l.1, l.2), &m, fx(step));
         // brute force over k * step - pi/2 (tolerating the last point at +pi/2 within rounding)
         let n = ((std::f64::consts::PI + 1e-9) / step).floor() as i32;

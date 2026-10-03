@@ -5,6 +5,7 @@
 //! `raw = 500 * 0.008 * (2.3/5) * (10000/50000) * (100/300) * (dT/200)`
 //! * enclosure (print 240, chamber 55, dT 185): raw = 0.1134667 (Low)
 //! * open air  (print 240, chamber 20, dT 220): raw = 0.1349333 (Low)
+//!
 //! and `F/mm = E[MPa] * alpha * dT` = 2300 * 0.008 * dT = 3404 (enclosure), 4048 (open).
 //!
 //! ```bash
