@@ -587,6 +587,64 @@ pub enum SolverBackend {
     Tgs,
 }
 
+/// Snapshot of [`SolverBackend::Tgs`]'s per-frame warm-start impulse cache
+/// effectiveness, returned by [`PhysicsWorld::tgs_cache_stats`].
+///
+/// Mirrors `crate::solver_tgs::ImpulseCacheStats` (which stays
+/// crate-internal along with the rest of the `solver_tgs` family, see
+/// [`SolverBackend`]'s module doc) so a host can read warm-start
+/// diagnostics without depending on any `pub(crate)` type.
+#[cfg(feature = "std")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
+pub struct TgsCacheStats {
+    /// Number of contacts whose previous-tick impulse was found in the
+    /// cache (a successful warm start).
+    pub hits: u64,
+    /// Number of contacts not found in the cache (new contact, or one
+    /// whose entry was evicted by [`PhysicsWorld::step`]'s per-tick
+    /// internal `ImpulseCache::sweep` call).
+    pub misses: u64,
+}
+
+#[cfg(feature = "std")]
+impl TgsCacheStats {
+    /// Constructs from raw hit/miss counts. Prefer
+    /// [`PhysicsWorld::tgs_cache_stats`] in production; this exists so
+    /// test/bench code can construct a specific ratio directly —
+    /// `#[non_exhaustive]` blocks the struct-literal syntax outside this
+    /// crate.
+    #[must_use]
+    pub fn new(hits: u64, misses: u64) -> Self {
+        Self { hits, misses }
+    }
+
+    /// Ratio in `[0.0, 1.0]`. Returns `0.0` when `hits + misses == 0`
+    /// (no lookups performed yet). Delegates to the internal
+    /// `ImpulseCacheStats::hit_rate` (the same `hits / (hits + misses)`
+    /// formula) rather than recomputing it here, so this public wrapper
+    /// has a real dependency on the internal type instead of merely
+    /// duplicating its arithmetic.
+    #[must_use]
+    pub fn hit_rate(&self) -> f64 {
+        crate::solver_tgs::ImpulseCacheStats {
+            hits: self.hits,
+            misses: self.misses,
+        }
+        .hit_rate()
+    }
+}
+
+#[cfg(feature = "std")]
+impl From<crate::solver_tgs::ImpulseCacheStats> for TgsCacheStats {
+    fn from(s: crate::solver_tgs::ImpulseCacheStats) -> Self {
+        Self {
+            hits: s.hits,
+            misses: s.misses,
+        }
+    }
+}
+
 /// XPBD physics solver configuration
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SolverConfig {
@@ -2187,6 +2245,15 @@ impl PhysicsWorld {
             &tgs_cfg,
             dt,
         );
+        // Every contact for this tick has now been visited (each contact's
+        // warm-start entry was `take`n in `begin_substep` and re-`set` in
+        // `end_substep` for every sub-step above) — evict any cache entry
+        // that was not touched this tick, per `ImpulseCache::sweep`'s own
+        // documented contract. Without this, a contact that stops recurring
+        // (bodies separate, then the same body pair contacts again later)
+        // would resurrect the old, stale impulse as a warm-start "hit"
+        // instead of correctly starting from zero.
+        self.tgs_impulse_cache.sweep();
         debug_assert_eq!(tgs_bodies.len(), n);
         for (body, state) in self.bodies.iter_mut().zip(tgs_bodies.iter()) {
             tgs_to_body(state, body);
@@ -2202,6 +2269,29 @@ impl PhysicsWorld {
 
         // Phase 5: End event frame (identical call to `step`).
         self.events.end_frame();
+    }
+
+    /// Warm-start hit-rate diagnostics for the [`SolverBackend::Tgs`] path's
+    /// per-contact impulse cache (see [`Self::reset_tgs_cache_stats`] to
+    /// isolate a specific measurement window, e.g. after warm-up frames).
+    ///
+    /// Always `hits: 0, misses: 0` while `config.solver_backend` is
+    /// `Xpbd` — the internal `step_tgs` (the only writer of this cache)
+    /// is never called on that path.
+    #[cfg(feature = "std")]
+    #[must_use]
+    pub fn tgs_cache_stats(&self) -> TgsCacheStats {
+        self.tgs_impulse_cache.stats().into()
+    }
+
+    /// Clears the [`Self::tgs_cache_stats`] hit/miss counters without
+    /// touching the cached impulses themselves — the same contract as the
+    /// internal `ImpulseCache::reset_stats`. Useful when a host wants to
+    /// measure hit rate over a specific window instead of the cache's
+    /// entire lifetime (e.g. after a scene's warm-up frames).
+    #[cfg(feature = "std")]
+    pub fn reset_tgs_cache_stats(&mut self) {
+        self.tgs_impulse_cache.reset_stats();
     }
 
     /// Step with batched constraint solving

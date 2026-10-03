@@ -316,25 +316,43 @@ fn slab_test(
 /// Instead of rewinding time to TOI, creates a contact constraint
 /// at the predicted collision point with a negative depth (gap).
 /// Adaptive TOI-aware sub-step count for a pair of moving bodies
-/// (Phase F 11.1 CCD 統合 skeleton).
+/// (Phase F 11.1 CCD integration).
 ///
 /// Combines the sub-stepping policy from
 /// `crate::solver_tgs::adaptive_substeps_for_ccd` (crate-internal since
-/// v0.14.0-preview.8) with the
-/// speculative contact TOI so that fast-moving pairs receive extra
-/// sub-steps proportional to their closing speed. This prevents
-/// tunneling through thin walls (see
+/// v0.14.0-preview.8) with the speculative contact TOI so that
+/// fast-moving pairs receive extra sub-steps proportional to their own
+/// speed. This prevents tunneling through thin walls (see
 /// `deterministic-physics-lockstep-discipline` skill §11.1 CCD).
 ///
-/// # Status
-/// Skeleton — the TOI-derived scaling policy is scheduled for the
-/// follow-up commit. The current implementation returns a
-/// conservative constant so downstream integrations can start
-/// compiling against the stable signature.
+/// # Behavior
+///
+/// 1. `speculative_contact` decides whether the pair is on a collision
+///    course within `dt` at all; if not, a single sub-step (`1`) is
+///    returned — no reason to pay for extra sub-stepping on a pair that
+///    is not closing.
+/// 2. Otherwise the two bodies' own velocities (L∞ norm, see
+///    `solver_tgs::HasVelocity`) are handed to
+///    `solver_tgs::adaptive_substeps_for_ccd`, with the per-sub-step
+///    travel cap set to half the *smaller* collider's radius — a body
+///    must not advance more than that in a single sub-step or it can
+///    skip clean through the other body's cross-section — clamped into
+///    `[1, max_substeps]`.
 ///
 /// # Determinism
 /// Skill §1 経路 2 — no floating-point comparison, closed-form
-/// clamp, deterministic sub-step count.
+/// clamp, deterministic sub-step count. `speculative_contact` and
+/// `solver_tgs::adaptive_substeps_for_ccd` are both pure Fix128
+/// functions of their inputs with index-ordered iteration.
+///
+/// # `no_std`
+/// `solver_tgs` (and therefore step 2 above) is `std`-gated, the same as
+/// the rest of the `solver_tgs` family (it uses `std::collections::HashMap`).
+/// In a build without the `std` feature this function keeps the
+/// pre-wiring behavior for step 2 — `max_substeps.max(1)` once a
+/// collision course is confirmed — the same documented, defined fallback
+/// shape as [`crate::solver::SolverBackend::Tgs`]'s own `no_std` note (a
+/// coarser-but-correct policy, not silently ignored or state corruption).
 #[must_use]
 // 1.0.0 で公開済の signature (crates.io)、引数 struct 化は semver major = 2.0 で実施
 #[allow(clippy::too_many_arguments)]
@@ -348,22 +366,80 @@ pub fn adaptive_toi_substeps(
     dt: Fix128,
     max_substeps: u32,
 ) -> u32 {
-    // Body of Phase F 11.1: use the existing sphere-swept
-    // `speculative_contact` as an oracle for TOI prediction. When the
-    // pair is on a collision course over `dt`, we return
-    // `max_substeps` to give the caller headroom for TOI-aware CCD
-    // handling; otherwise we return `1` so a single sub-step is used.
-    //
-    // # Determinism
-    // - `speculative_contact` is a pure Fix128 function of its inputs.
-    // - No floating-point comparison, no CORDIC / rounding on the
-    //   branch predicate.
-    // - `max_substeps` and the constant `1` are compile-time integers.
-    // - The clamp `min(max_substeps)` matches the skeleton contract.
-    match speculative_contact(pos_a, vel_a, radius_a, pos_b, vel_b, radius_b, dt) {
-        Some(_) => max_substeps.max(1),
-        None => 1,
+    // 1. Not on a collision course within `dt` at all → no extra
+    //    sub-stepping is warranted. `std`-independent.
+    if speculative_contact(pos_a, vel_a, radius_a, pos_b, vel_b, radius_b, dt).is_none() {
+        return 1;
     }
+    // 2. On a collision course: see each cfg-gated variant's own doc.
+    on_collision_course_substeps(vel_a, radius_a, vel_b, radius_b, dt, max_substeps)
+}
+
+/// Step 2 of [`adaptive_toi_substeps`] (`std` build): delegate the actual
+/// count to `solver_tgs`'s CCD-aware adaptive formula instead of blindly
+/// returning `max_substeps`. `HasVelocity` only needs each body's raw
+/// velocity vector (L∞ norm), not its full rigid-body state.
+#[cfg(feature = "std")]
+fn on_collision_course_substeps(
+    vel_a: Vec3Fix,
+    radius_a: Fix128,
+    vel_b: Vec3Fix,
+    radius_b: Fix128,
+    dt: Fix128,
+    max_substeps: u32,
+) -> u32 {
+    struct CcdVelocityBody(Vec3Fix);
+    impl crate::solver_tgs::HasVelocity for CcdVelocityBody {
+        fn velocity_l_inf(&self) -> Fix128 {
+            let ax = self.0.x.abs();
+            let ay = self.0.y.abs();
+            let az = self.0.z.abs();
+            let m = if ax > ay { ax } else { ay };
+            if az > m {
+                az
+            } else {
+                m
+            }
+        }
+    }
+
+    let bodies = [CcdVelocityBody(vel_a), CcdVelocityBody(vel_b)];
+    let smallest_radius = if radius_a < radius_b {
+        radius_a
+    } else {
+        radius_b
+    };
+    // Half the smaller collider's radius: the hard per-sub-step travel
+    // cap a fast body must respect so it cannot pass clean through the
+    // other body within one sub-step.
+    let ccd_safety_factor = Fix128::from_ratio(1, 2);
+    let cfg = crate::solver_tgs::AdaptiveSubStepConfig {
+        max_substeps: max_substeps.max(1),
+        min_substeps: 1,
+        ..crate::solver_tgs::AdaptiveSubStepConfig::default()
+    };
+    crate::solver_tgs::adaptive_substeps_for_ccd(
+        &bodies,
+        dt,
+        smallest_radius,
+        ccd_safety_factor,
+        &cfg,
+    )
+}
+
+/// Step 2 of [`adaptive_toi_substeps`] (`no_std` build): `solver_tgs` is
+/// unavailable, so this keeps the pre-wiring constant-on-collision
+/// behavior — see [`adaptive_toi_substeps`]'s `# no_std` doc.
+#[cfg(not(feature = "std"))]
+fn on_collision_course_substeps(
+    _vel_a: Vec3Fix,
+    _radius_a: Fix128,
+    _vel_b: Vec3Fix,
+    _radius_b: Fix128,
+    _dt: Fix128,
+    max_substeps: u32,
+) -> u32 {
+    max_substeps.max(1)
 }
 
 /// The solver then prevents penetration by maintaining the gap.

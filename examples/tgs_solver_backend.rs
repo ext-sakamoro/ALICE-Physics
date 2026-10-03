@@ -12,6 +12,7 @@
 //! skipped) — the joint scene below exists specifically to make that first
 //! gap visible side by side with XPBD, not to hide it.
 
+use alice_physics::ccd::adaptive_toi_substeps;
 use alice_physics::math::{Fix128, Vec3Fix};
 use alice_physics::solver::{DistanceConstraint, PhysicsConfig, PhysicsWorld, RigidBody};
 use alice_physics::SolverBackend;
@@ -173,6 +174,119 @@ fn scene_joint(backend: SolverBackend) {
     }
 }
 
+/// Scene 4: `PhysicsWorld::tgs_cache_stats` / `reset_tgs_cache_stats`.
+///
+/// A ball is held in contact with the ground for a few frames (the
+/// warm-start cache fills and starts hitting), then moved far away for a
+/// frame (the contact disappears — `step`'s per-tick
+/// `ImpulseCache::sweep` evicts the now-untouched entry), then moved back
+/// into contact (the cache has forgotten it, so the lookup is a fresh
+/// miss instead of resurrecting the old, stale impulse).
+fn scene_cache_stats() {
+    let cfg = PhysicsConfig {
+        gravity: Vec3Fix::ZERO,
+        substeps: 1,
+        solver_backend: SolverBackend::Tgs,
+        ..PhysicsConfig::default()
+    };
+    let mut w = PhysicsWorld::new(cfg);
+    let ground = w.add_body(RigidBody::new_static(Vec3Fix::ZERO));
+    w.set_body_collision_radius(ground, Fix128::ONE);
+    let ball = w.add_body(RigidBody::new_dynamic(
+        Vec3Fix::new(Fix128::ZERO, Fix128::ONE, Fix128::ZERO),
+        Fix128::ONE,
+    ));
+    w.set_body_collision_radius(ball, Fix128::ONE);
+    let dt = r(1, 60);
+    let touching = Vec3Fix::new(Fix128::ZERO, Fix128::ONE, Fix128::ZERO);
+    let far_away = Vec3Fix::new(Fix128::ZERO, Fix128::from_int(1000), Fix128::ZERO);
+
+    w.step(dt); // frame 1: first touch, a miss.
+    w.bodies[ball].position = touching;
+    w.bodies[ball].velocity = Vec3Fix::ZERO;
+    w.step(dt); // frame 2: same contact recurs, a warm-start hit.
+    let after_contact = w.tgs_cache_stats();
+
+    w.bodies[ball].position = far_away;
+    w.bodies[ball].velocity = Vec3Fix::ZERO;
+    w.step(dt); // frame 3: zero contacts this tick — `sweep` evicts the entry.
+
+    w.bodies[ball].position = touching;
+    w.bodies[ball].velocity = Vec3Fix::ZERO;
+    w.step(dt); // frame 4: same contact ID, but the cache forgot it — a miss.
+    let after_reunion = w.tgs_cache_stats();
+
+    w.reset_tgs_cache_stats();
+    let after_reset = w.tgs_cache_stats();
+
+    println!(
+        "[tgs_solver_backend cache_stats] after 2 touching frames: hits={} misses={} hit_rate={:.3}",
+        after_contact.hits,
+        after_contact.misses,
+        after_contact.hit_rate()
+    );
+    println!(
+        "[tgs_solver_backend cache_stats] after separate+reunite (sweep evicted the stale entry): hits={} misses={} hit_rate={:.3}",
+        after_reunion.hits,
+        after_reunion.misses,
+        after_reunion.hit_rate()
+    );
+    println!(
+        "[tgs_solver_backend cache_stats] after reset_tgs_cache_stats: hits={} misses={}",
+        after_reset.hits, after_reset.misses
+    );
+}
+
+/// Scene 5: `ccd::adaptive_toi_substeps` — a fast-closing pair of small
+/// colliders gets a larger sub-step count than a slow-closing pair of
+/// the same size, and a separating pair gets just one.
+fn scene_adaptive_toi_substeps() {
+    let radius = r(2, 100); // small colliders: the CCD-derived cap dominates.
+    let pos_a = Vec3Fix::ZERO;
+    let pos_b = Vec3Fix::from_int(1, 0, 0);
+    let dt = Fix128::ONE;
+    let max_substeps = 12;
+
+    let fast = adaptive_toi_substeps(
+        pos_a,
+        Vec3Fix::from_int(5, 0, 0),
+        radius,
+        pos_b,
+        Vec3Fix::ZERO,
+        radius,
+        dt,
+        max_substeps,
+    );
+    let slow = adaptive_toi_substeps(
+        pos_a,
+        Vec3Fix::new(r(1, 4), Fix128::ZERO, Fix128::ZERO),
+        Fix128::ONE,
+        Vec3Fix::new(r(21, 10), Fix128::ZERO, Fix128::ZERO),
+        Vec3Fix::ZERO,
+        Fix128::ONE,
+        dt,
+        max_substeps,
+    );
+    let separating = adaptive_toi_substeps(
+        pos_a,
+        Vec3Fix::from_int(-5, 0, 0),
+        Fix128::ONE,
+        Vec3Fix::from_int(10, 0, 0),
+        Vec3Fix::from_int(5, 0, 0),
+        Fix128::ONE,
+        dt,
+        max_substeps,
+    );
+
+    println!(
+        "[tgs_solver_backend adaptive_toi_substeps] fast-closing, tiny colliders -> {fast} substeps (max {max_substeps})"
+    );
+    println!(
+        "[tgs_solver_backend adaptive_toi_substeps] slow-closing, large colliders -> {slow} substeps"
+    );
+    println!("[tgs_solver_backend adaptive_toi_substeps] separating pair -> {separating} substep");
+}
+
 fn main() {
     println!("ALICE-Physics SolverBackend::Tgs wiring demo");
     println!("=============================================");
@@ -191,6 +305,12 @@ fn main() {
     for backend in [SolverBackend::Xpbd, SolverBackend::Tgs] {
         scene_joint(backend);
     }
+    println!();
+    println!("-- Scene 4: tgs_cache_stats / reset_tgs_cache_stats --");
+    scene_cache_stats();
+    println!();
+    println!("-- Scene 5: ccd::adaptive_toi_substeps --");
+    scene_adaptive_toi_substeps();
     println!();
     println!(
         "Done. See `SolverBackend`'s rustdoc for the Tgs path's full list of documented gaps."

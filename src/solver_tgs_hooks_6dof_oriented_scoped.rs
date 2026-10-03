@@ -32,7 +32,7 @@
 #![allow(rustdoc::broken_intra_doc_links)]
 
 use crate::math::Fix128;
-use crate::solver_tgs::{tgs_step, ImpulseCache, Island, TgsConfig};
+use crate::solver_tgs::{dispatch_islands, tgs_step, ImpulseCache, Island, TgsConfig};
 use crate::solver_tgs_hooks_6dof_oriented::{
     Body6DofOrientedState, ContactOriented, Pgs6DofOrientedConfig, Pgs6DofOrientedHooks,
 };
@@ -128,7 +128,9 @@ pub(crate) fn solve_oriented_island_isolated(
 /// sharing a single [`ImpulseCache`] across islands. Because the
 /// islands are disjoint, this is equivalent to calling
 /// [`solve_oriented_island_isolated`] once per island in canonical
-/// order.
+/// order — dispatched via [`dispatch_islands`] rather than a
+/// hand-written loop so the traversal is shared with any other consumer
+/// of the `solver_tgs` island-dispatch surface.
 pub(crate) fn solve_oriented_islands_serial(
     world_bodies: &mut [Body6DofOrientedState],
     world_contacts: &mut [ContactOriented],
@@ -138,7 +140,7 @@ pub(crate) fn solve_oriented_islands_serial(
     tgs_cfg: &TgsConfig,
     dt: Fix128,
 ) {
-    for island in islands {
+    dispatch_islands(islands, |island| {
         solve_oriented_island_isolated(
             world_bodies,
             world_contacts,
@@ -148,10 +150,10 @@ pub(crate) fn solve_oriented_islands_serial(
             tgs_cfg,
             dt,
         );
-    }
+    });
 }
 
-/// Solves every island in parallel via `rayon`.
+/// Solves every island in parallel via [`par_dispatch_islands`].
 ///
 /// Each island receives its own dedicated [`ImpulseCache`] so that
 /// there is no shared state between threads. Callers that want a
@@ -164,7 +166,8 @@ pub(crate) fn solve_oriented_islands_serial(
 /// cache split (which is a caller-visible policy choice).
 ///
 /// # Panics
-/// Panics when `caches.len() != islands.len()`.
+/// Panics when `caches.len() != islands.len()` (enforced by
+/// [`par_dispatch_islands`] itself).
 /// Per-island result of the parallel solve phase:
 /// `(world body indices, solved local bodies, contact write-back list)`.
 #[cfg(feature = "parallel")]
@@ -184,60 +187,53 @@ pub(crate) fn solve_oriented_islands_parallel(
     tgs_cfg: &TgsConfig,
     dt: Fix128,
 ) {
-    use rayon::prelude::*;
-    assert_eq!(
-        caches.len(),
-        islands.len(),
-        "one cache per island is required"
-    );
+    use crate::solver_tgs::par_dispatch_islands;
 
-    // 1. Parallel-solve into local buffers. Each thread produces
+    // 1. Parallel-solve into local buffers via `par_dispatch_islands`,
+    //    pairing each island with its own persisted `ImpulseCache` (the
+    //    `aux` slot). Each call produces
     //    (world_indices, updated_local_bodies, contact_writeback[]).
-    let updates: Vec<IslandUpdate> = islands
-        .par_iter()
-        .zip(caches.par_iter_mut())
-        .map(|(island, cache)| {
-            let world_indices: Vec<usize> = island.bodies.clone();
-            let mut local_bodies: Vec<Body6DofOrientedState> =
-                world_indices.iter().map(|&i| world_bodies[i]).collect();
-            let world_to_local: HashMap<usize, usize> = world_indices
-                .iter()
-                .enumerate()
-                .map(|(local, &world)| (world, local))
-                .collect();
-            let mut local_contacts: Vec<ContactOriented> = island
-                .contacts
-                .iter()
-                .map(|&ci| {
-                    let mut c = world_contacts[ci];
-                    c.body_a = *world_to_local
-                        .get(&c.body_a)
-                        .expect("contact body_a not in island");
-                    c.body_b = *world_to_local
-                        .get(&c.body_b)
-                        .expect("contact body_b not in island");
-                    c
-                })
-                .collect();
-            {
-                let mut hooks =
-                    Pgs6DofOrientedHooks::new(&mut local_bodies, &mut local_contacts, cache, cfg);
-                tgs_step(&mut hooks, tgs_cfg, dt);
-            }
-            let writeback: Vec<(usize, ContactOriented)> = island
-                .contacts
-                .iter()
-                .zip(local_contacts)
-                .map(|(&world_i, updated)| (world_i, updated))
-                .collect();
-            (world_indices, local_bodies, writeback)
-        })
-        .collect();
+    let updates: Vec<IslandUpdate> = par_dispatch_islands(islands, caches, |island, cache| {
+        let world_indices: Vec<usize> = island.bodies.clone();
+        let mut local_bodies: Vec<Body6DofOrientedState> =
+            world_indices.iter().map(|&i| world_bodies[i]).collect();
+        let world_to_local: HashMap<usize, usize> = world_indices
+            .iter()
+            .enumerate()
+            .map(|(local, &world)| (world, local))
+            .collect();
+        let mut local_contacts: Vec<ContactOriented> = island
+            .contacts
+            .iter()
+            .map(|&ci| {
+                let mut c = world_contacts[ci];
+                c.body_a = *world_to_local
+                    .get(&c.body_a)
+                    .expect("contact body_a not in island");
+                c.body_b = *world_to_local
+                    .get(&c.body_b)
+                    .expect("contact body_b not in island");
+                c
+            })
+            .collect();
+        {
+            let mut hooks =
+                Pgs6DofOrientedHooks::new(&mut local_bodies, &mut local_contacts, cache, cfg);
+            tgs_step(&mut hooks, tgs_cfg, dt);
+        }
+        let writeback: Vec<(usize, ContactOriented)> = island
+            .contacts
+            .iter()
+            .zip(local_contacts)
+            .map(|(&world_i, updated)| (world_i, updated))
+            .collect();
+        (world_indices, local_bodies, writeback)
+    });
 
-    // 2. Sequential write-back stage (canonical island order preserved
-    //    by rayon `par_iter` producing an ordered `Vec`). Because the
-    //    islands are disjoint on dynamic bodies, this stage only ever
-    //    writes into disjoint world indices.
+    // 2. Sequential write-back stage (canonical island order preserved by
+    //    `par_dispatch_islands`'s `par_iter().zip().map().collect()` over
+    //    indexed slices). Because the islands are disjoint on dynamic
+    //    bodies, this stage only ever writes into disjoint world indices.
     for (world_indices, local_bodies, writeback) in updates {
         for (local, &world) in world_indices.iter().enumerate() {
             world_bodies[world] = local_bodies[local];

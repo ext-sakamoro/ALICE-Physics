@@ -879,7 +879,6 @@ mod tests {
     #[test]
     fn par_dispatch_over_pgs_hooks_setup() {
         use crate::solver_tgs::{build_islands, par_dispatch_islands};
-        use std::sync::atomic::{AtomicUsize, Ordering};
 
         // Three independent stacks, no shared dynamic body, so
         // `build_islands` should hand back three disjoint islands.
@@ -898,12 +897,14 @@ mod tests {
             build_islands(&bodies, &contacts, &[] as &[NoJoint]).expect("valid island inputs");
         assert_eq!(islands.len(), 3);
 
-        let visited = AtomicUsize::new(0);
-        par_dispatch_islands(&islands, |island| {
+        let mut visited = vec![0u32; islands.len()];
+        let sizes: Vec<usize> = par_dispatch_islands(&islands, &mut visited, |island, slot| {
             assert_eq!(island.contacts.len(), 1);
             assert_eq!(island.bodies.len(), 2);
-            visited.fetch_add(1, Ordering::Relaxed);
+            *slot += 1;
+            island.bodies.len()
         });
-        assert_eq!(visited.load(Ordering::Relaxed), 3);
+        assert_eq!(sizes, vec![2, 2, 2]);
+        assert!(visited.iter().all(|&v| v == 1));
     }
 }

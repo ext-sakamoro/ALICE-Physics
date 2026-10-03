@@ -645,6 +645,8 @@ pub use sleeping::{Island, IslandManager, SleepConfig, SleepData, SleepState};
 pub use soft_body_cut::{cut_cloth, cut_deformable, CutPlane, CutResult};
 #[cfg(feature = "std")]
 pub use solver::ContactModifier;
+#[cfg(feature = "std")]
+pub use solver::TgsCacheStats;
 pub use solver::{
     BodyType, ContactConstraint, DistanceConstraint, PhysicsConfig, PhysicsWorld, RigidBody,
     SolverBackend,
@@ -800,6 +802,8 @@ pub mod prelude {
     pub use crate::soft_body_cut::{cut_cloth, cut_deformable, CutPlane, CutResult};
     #[cfg(feature = "std")]
     pub use crate::solver::ContactModifier;
+    #[cfg(feature = "std")]
+    pub use crate::solver::TgsCacheStats;
     pub use crate::solver::{
         BodyType, ContactConstraint, DistanceConstraint, PhysicsConfig, PhysicsWorld, RigidBody,
         SolverBackend,

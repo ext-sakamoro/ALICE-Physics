@@ -11078,6 +11078,7 @@ pub fn alice_physics::solver::PhysicsWorld::remove_force_field(&mut self, usize)
 pub fn alice_physics::solver::PhysicsWorld::remove_joint(&mut self, usize) -> core::option::Option<alice_physics::joint::Joint>
 pub fn alice_physics::solver::PhysicsWorld::remove_sdf_collider(&mut self, usize) -> core::option::Option<alice_physics::sdf_collider::SdfCollider>
 pub fn alice_physics::solver::PhysicsWorld::remove_static_collider(&mut self, usize) -> core::option::Option<alice_physics::static_collider::StaticCollider>
+pub fn alice_physics::solver::PhysicsWorld::reset_tgs_cache_stats(&mut self)
 pub fn alice_physics::solver::PhysicsWorld::reset_world(&mut self)
 pub fn alice_physics::solver::PhysicsWorld::serialize_state(&self) -> alloc::vec::Vec<u8>
 pub fn alice_physics::solver::PhysicsWorld::set_body_collision_radius(&mut self, usize, alice_physics::math::Fix128)
@@ -11095,6 +11096,7 @@ pub fn alice_physics::solver::PhysicsWorld::step_parallel(&mut self, alice_physi
 pub fn alice_physics::solver::PhysicsWorld::step_with_bridge<B: alice_physics::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B, alice_physics::math::Fix128)
 pub fn alice_physics::solver::PhysicsWorld::substep_with_bridge<B: alice_physics::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B, alice_physics::math::Fix128)
 pub fn alice_physics::solver::PhysicsWorld::take_gpu_solver_bridge(&mut self) -> core::option::Option<alloc::boxed::Box<(dyn alice_physics::gpu_bridge::GpuSolverBridge + core::marker::Send + core::marker::Sync)>>
+pub fn alice_physics::solver::PhysicsWorld::tgs_cache_stats(&self) -> alice_physics::solver::TgsCacheStats
 pub fn alice_physics::solver::PhysicsWorld::trigger_events(&self) -> &[alice_physics::event::TriggerEvent]
 pub fn alice_physics::solver::PhysicsWorld::wake_body(&mut self, usize)
 impl core::fmt::Debug for alice_physics::solver::PhysicsWorld
@@ -12098,6 +12100,30 @@ impl core::marker::Unpin for alice_physics::flow_viz::Streamlines
 impl core::marker::UnsafeUnpin for alice_physics::flow_viz::Streamlines
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::flow_viz::Streamlines
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::flow_viz::Streamlines
+#[non_exhaustive] pub struct alice_physics::prelude::TgsCacheStats
+pub alice_physics::prelude::TgsCacheStats::hits: u64
+pub alice_physics::prelude::TgsCacheStats::misses: u64
+impl alice_physics::solver::TgsCacheStats
+pub fn alice_physics::solver::TgsCacheStats::hit_rate(&self) -> f64
+pub fn alice_physics::solver::TgsCacheStats::new(u64, u64) -> Self
+impl core::clone::Clone for alice_physics::solver::TgsCacheStats
+pub fn alice_physics::solver::TgsCacheStats::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::solver::TgsCacheStats
+impl core::cmp::PartialEq for alice_physics::solver::TgsCacheStats
+pub fn alice_physics::solver::TgsCacheStats::eq(&self, &Self) -> bool
+impl core::default::Default for alice_physics::solver::TgsCacheStats
+pub fn alice_physics::solver::TgsCacheStats::default() -> Self
+impl core::fmt::Debug for alice_physics::solver::TgsCacheStats
+pub fn alice_physics::solver::TgsCacheStats::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::solver::TgsCacheStats
+impl core::marker::StructuralPartialEq for alice_physics::solver::TgsCacheStats
+impl core::marker::Freeze for alice_physics::solver::TgsCacheStats
+impl core::marker::Send for alice_physics::solver::TgsCacheStats
+impl core::marker::Sync for alice_physics::solver::TgsCacheStats
+impl core::marker::Unpin for alice_physics::solver::TgsCacheStats
+impl core::marker::UnsafeUnpin for alice_physics::solver::TgsCacheStats
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::solver::TgsCacheStats
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::solver::TgsCacheStats
 pub struct alice_physics::prelude::ThermalConfig
 pub alice_physics::prelude::ThermalConfig::ambient_temperature: f32
 pub alice_physics::prelude::ThermalConfig::cooling_rate: f32
@@ -15195,6 +15221,7 @@ pub fn alice_physics::solver::PhysicsWorld::remove_force_field(&mut self, usize)
 pub fn alice_physics::solver::PhysicsWorld::remove_joint(&mut self, usize) -> core::option::Option<alice_physics::joint::Joint>
 pub fn alice_physics::solver::PhysicsWorld::remove_sdf_collider(&mut self, usize) -> core::option::Option<alice_physics::sdf_collider::SdfCollider>
 pub fn alice_physics::solver::PhysicsWorld::remove_static_collider(&mut self, usize) -> core::option::Option<alice_physics::static_collider::StaticCollider>
+pub fn alice_physics::solver::PhysicsWorld::reset_tgs_cache_stats(&mut self)
 pub fn alice_physics::solver::PhysicsWorld::reset_world(&mut self)
 pub fn alice_physics::solver::PhysicsWorld::serialize_state(&self) -> alloc::vec::Vec<u8>
 pub fn alice_physics::solver::PhysicsWorld::set_body_collision_radius(&mut self, usize, alice_physics::math::Fix128)
@@ -15212,6 +15239,7 @@ pub fn alice_physics::solver::PhysicsWorld::step_parallel(&mut self, alice_physi
 pub fn alice_physics::solver::PhysicsWorld::step_with_bridge<B: alice_physics::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B, alice_physics::math::Fix128)
 pub fn alice_physics::solver::PhysicsWorld::substep_with_bridge<B: alice_physics::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B, alice_physics::math::Fix128)
 pub fn alice_physics::solver::PhysicsWorld::take_gpu_solver_bridge(&mut self) -> core::option::Option<alloc::boxed::Box<(dyn alice_physics::gpu_bridge::GpuSolverBridge + core::marker::Send + core::marker::Sync)>>
+pub fn alice_physics::solver::PhysicsWorld::tgs_cache_stats(&self) -> alice_physics::solver::TgsCacheStats
 pub fn alice_physics::solver::PhysicsWorld::trigger_events(&self) -> &[alice_physics::event::TriggerEvent]
 pub fn alice_physics::solver::PhysicsWorld::wake_body(&mut self, usize)
 impl core::fmt::Debug for alice_physics::solver::PhysicsWorld
@@ -15311,6 +15339,30 @@ impl core::marker::Unpin for alice_physics::solver::SolverConfig
 impl core::marker::UnsafeUnpin for alice_physics::solver::SolverConfig
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::solver::SolverConfig
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::solver::SolverConfig
+#[non_exhaustive] pub struct alice_physics::solver::TgsCacheStats
+pub alice_physics::solver::TgsCacheStats::hits: u64
+pub alice_physics::solver::TgsCacheStats::misses: u64
+impl alice_physics::solver::TgsCacheStats
+pub fn alice_physics::solver::TgsCacheStats::hit_rate(&self) -> f64
+pub fn alice_physics::solver::TgsCacheStats::new(u64, u64) -> Self
+impl core::clone::Clone for alice_physics::solver::TgsCacheStats
+pub fn alice_physics::solver::TgsCacheStats::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::solver::TgsCacheStats
+impl core::cmp::PartialEq for alice_physics::solver::TgsCacheStats
+pub fn alice_physics::solver::TgsCacheStats::eq(&self, &Self) -> bool
+impl core::default::Default for alice_physics::solver::TgsCacheStats
+pub fn alice_physics::solver::TgsCacheStats::default() -> Self
+impl core::fmt::Debug for alice_physics::solver::TgsCacheStats
+pub fn alice_physics::solver::TgsCacheStats::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::solver::TgsCacheStats
+impl core::marker::StructuralPartialEq for alice_physics::solver::TgsCacheStats
+impl core::marker::Freeze for alice_physics::solver::TgsCacheStats
+impl core::marker::Send for alice_physics::solver::TgsCacheStats
+impl core::marker::Sync for alice_physics::solver::TgsCacheStats
+impl core::marker::Unpin for alice_physics::solver::TgsCacheStats
+impl core::marker::UnsafeUnpin for alice_physics::solver::TgsCacheStats
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::solver::TgsCacheStats
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::solver::TgsCacheStats
 pub trait alice_physics::solver::ContactModifier: core::marker::Send + core::marker::Sync
 pub fn alice_physics::solver::ContactModifier::modify_contact(&self, usize, usize, &mut alice_physics::collider::Contact, &mut alice_physics::math::Fix128, &mut alice_physics::math::Fix128) -> bool
 pub type alice_physics::solver::PhysicsConfig = alice_physics::solver::SolverConfig
@@ -19851,6 +19903,7 @@ pub fn alice_physics::solver::PhysicsWorld::remove_force_field(&mut self, usize)
 pub fn alice_physics::solver::PhysicsWorld::remove_joint(&mut self, usize) -> core::option::Option<alice_physics::joint::Joint>
 pub fn alice_physics::solver::PhysicsWorld::remove_sdf_collider(&mut self, usize) -> core::option::Option<alice_physics::sdf_collider::SdfCollider>
 pub fn alice_physics::solver::PhysicsWorld::remove_static_collider(&mut self, usize) -> core::option::Option<alice_physics::static_collider::StaticCollider>
+pub fn alice_physics::solver::PhysicsWorld::reset_tgs_cache_stats(&mut self)
 pub fn alice_physics::solver::PhysicsWorld::reset_world(&mut self)
 pub fn alice_physics::solver::PhysicsWorld::serialize_state(&self) -> alloc::vec::Vec<u8>
 pub fn alice_physics::solver::PhysicsWorld::set_body_collision_radius(&mut self, usize, alice_physics::math::Fix128)
@@ -19868,6 +19921,7 @@ pub fn alice_physics::solver::PhysicsWorld::step_parallel(&mut self, alice_physi
 pub fn alice_physics::solver::PhysicsWorld::step_with_bridge<B: alice_physics::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B, alice_physics::math::Fix128)
 pub fn alice_physics::solver::PhysicsWorld::substep_with_bridge<B: alice_physics::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B, alice_physics::math::Fix128)
 pub fn alice_physics::solver::PhysicsWorld::take_gpu_solver_bridge(&mut self) -> core::option::Option<alloc::boxed::Box<(dyn alice_physics::gpu_bridge::GpuSolverBridge + core::marker::Send + core::marker::Sync)>>
+pub fn alice_physics::solver::PhysicsWorld::tgs_cache_stats(&self) -> alice_physics::solver::TgsCacheStats
 pub fn alice_physics::solver::PhysicsWorld::trigger_events(&self) -> &[alice_physics::event::TriggerEvent]
 pub fn alice_physics::solver::PhysicsWorld::wake_body(&mut self, usize)
 impl core::fmt::Debug for alice_physics::solver::PhysicsWorld
@@ -20925,6 +20979,30 @@ impl core::marker::Unpin for alice_physics::flow_viz::Streamlines
 impl core::marker::UnsafeUnpin for alice_physics::flow_viz::Streamlines
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::flow_viz::Streamlines
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::flow_viz::Streamlines
+#[non_exhaustive] pub struct alice_physics::TgsCacheStats
+pub alice_physics::TgsCacheStats::hits: u64
+pub alice_physics::TgsCacheStats::misses: u64
+impl alice_physics::solver::TgsCacheStats
+pub fn alice_physics::solver::TgsCacheStats::hit_rate(&self) -> f64
+pub fn alice_physics::solver::TgsCacheStats::new(u64, u64) -> Self
+impl core::clone::Clone for alice_physics::solver::TgsCacheStats
+pub fn alice_physics::solver::TgsCacheStats::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::solver::TgsCacheStats
+impl core::cmp::PartialEq for alice_physics::solver::TgsCacheStats
+pub fn alice_physics::solver::TgsCacheStats::eq(&self, &Self) -> bool
+impl core::default::Default for alice_physics::solver::TgsCacheStats
+pub fn alice_physics::solver::TgsCacheStats::default() -> Self
+impl core::fmt::Debug for alice_physics::solver::TgsCacheStats
+pub fn alice_physics::solver::TgsCacheStats::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::solver::TgsCacheStats
+impl core::marker::StructuralPartialEq for alice_physics::solver::TgsCacheStats
+impl core::marker::Freeze for alice_physics::solver::TgsCacheStats
+impl core::marker::Send for alice_physics::solver::TgsCacheStats
+impl core::marker::Sync for alice_physics::solver::TgsCacheStats
+impl core::marker::Unpin for alice_physics::solver::TgsCacheStats
+impl core::marker::UnsafeUnpin for alice_physics::solver::TgsCacheStats
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::solver::TgsCacheStats
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::solver::TgsCacheStats
 pub struct alice_physics::ThermalConfig
 pub alice_physics::ThermalConfig::ambient_temperature: f32
 pub alice_physics::ThermalConfig::cooling_rate: f32
