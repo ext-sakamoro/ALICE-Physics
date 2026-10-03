@@ -555,3 +555,86 @@ fn adaptive_toi_substeps_is_monotone_in_speed_and_clamped() {
     }
     assert_eq!(prev, 16, "the fastest case must saturate at max_substeps");
 }
+
+/// Touching at the start counts as overlapping: t = 0 whatever the velocity
+/// (pins the `c <= 0` and `gap <= 0` comparisons at exact equality).
+#[test]
+fn touching_pairs_report_an_immediate_contact_even_when_separating() {
+    let t = sphere_sphere_toi(
+        v3(0.0, 0.0, 0.0),
+        fx(1.0),
+        v3(-5.0, 0.0, 0.0),
+        v3(2.0, 0.0, 0.0),
+        fx(1.0),
+        v3(5.0, 0.0, 0.0),
+    );
+    assert_eq!(t.map(|h| f(h.t)), Some(0.0));
+    let c = speculative_contact(
+        v3(0.0, 0.0, 0.0),
+        v3(-5.0, 0.0, 0.0),
+        fx(1.0),
+        v3(2.0, 0.0, 0.0),
+        v3(5.0, 0.0, 0.0),
+        fx(1.0),
+        Fix128::ONE,
+    )
+    .expect("touching spheres are in contact");
+    assert_eq!(f(c.depth), 0.0);
+}
+
+/// Resting contact with a plane (|dist| == r, no normal velocity) is an impact at
+/// t = 0; a sphere resting *behind* the plane out of reach with zero normal
+/// velocity never hits; a resting box on the plane is an impact at t = 0.
+#[test]
+fn resting_contact_with_a_plane_is_an_immediate_impact() {
+    let n = v3(0.0, 1.0, 0.0);
+    let tangential = v3(3.0, 0.0, 0.0);
+    let h = sphere_plane_toi(v3(0.0, 1.0, 0.0), fx(1.0), tangential, n, Fix128::ZERO);
+    assert_eq!(h.map(|x| f(x.t)), Some(0.0));
+    assert!(sphere_plane_toi(v3(0.0, -5.0, 0.0), fx(1.0), tangential, n, Fix128::ZERO).is_none());
+    assert!(sphere_plane_toi(v3(0.0, 5.0, 0.0), fx(1.0), tangential, n, Fix128::ZERO).is_none());
+    let b = AABB::new(v3(-1.0, 0.0, -1.0), v3(1.0, 2.0, 1.0));
+    let h = aabb_plane_toi(&b, tangential, n, Fix128::ZERO);
+    assert_eq!(h.map(|x| f(x.t)), Some(0.0));
+}
+
+/// Exact sub-step counts when the CCD cap (half the smaller radius) dominates and
+/// nothing clamps: n = ceil(L-inf travel / cap). Negative components count by
+/// magnitude, and the smaller of two unequal radii sets the cap.
+#[test]
+fn adaptive_toi_substeps_counts_ceil_travel_over_half_the_smaller_radius() {
+    let dt = Fix128::from_ratio(1, 60);
+    let n = |va: Vec3Fix, ra: f64, rb: f64| {
+        adaptive_toi_substeps(
+            v3(0.0, 0.0, 0.0),
+            va,
+            fx(ra),
+            v3(0.05, 0.0, 0.0),
+            Vec3Fix::ZERO,
+            fx(rb),
+            dt,
+            1000,
+        )
+    };
+    // travel 6/60 = 0.1, cap 0.05 -> 2 ; travel 0.15 -> 3
+    assert_eq!(n(v3(6.0, 0.0, 0.0), 0.1, 0.1), 2);
+    assert_eq!(n(v3(9.0, 0.0, 0.0), 0.1, 0.1), 3);
+    assert_eq!(n(v3(-6.0, 0.0, 0.0), 0.1, 0.1), 2);
+    assert_eq!(n(v3(0.0, -9.0, 0.0), 0.1, 0.1), 3);
+    assert_eq!(n(v3(0.0, 0.0, -9.0), 0.1, 0.1), 3);
+    // unequal radii: the smaller (0.1) sets the cap whichever body carries it
+    assert_eq!(n(v3(6.0, 0.0, 0.0), 0.1, 1.0), 2);
+    assert_eq!(n(v3(6.0, 0.0, 0.0), 1.0, 0.1), 2);
+}
+
+/// Boxes that touch at t = 0 (face contact) report t = 0 both when closing in and
+/// when moving apart (the overlap window is the single instant t = 0).
+#[test]
+fn swept_aabb_face_contact_at_the_start_is_an_immediate_hit() {
+    let moving = AABB::new(v3(0.0, 0.0, 0.0), v3(1.0, 1.0, 1.0));
+    let toward = AABB::new(v3(1.0, 0.0, 0.0), v3(2.0, 1.0, 1.0));
+    let apart = AABB::new(v3(-1.0, 0.0, 0.0), v3(0.0, 1.0, 1.0));
+    let vel = v3(1.0, 0.0, 0.0);
+    assert_eq!(swept_aabb(&moving, vel, &toward).map(f), Some(0.0));
+    assert_eq!(swept_aabb(&moving, vel, &apart).map(f), Some(0.0));
+}
