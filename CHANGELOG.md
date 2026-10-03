@@ -13,6 +13,16 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added — `cubic_elastic_fem`/`compound`/`raycast`/`ccd`/`solver_tgs` の未配線を全配線 (全配線 program 第 18 件)
+
+- `cubic_elastic_fem`: `examples/cubic_elastic_fem_topology.rs` が P3 (20 節点三次四面体) のトポロジ helper 9 個 (`corner_count`/`edge_node_count`/`edge_nodes`/`element_count`/`element_nodes`/`face_node`/`face_node_count`/`interior_node_positions_are_exact`/`shape_values`) を駆動、oracle 13 本 (単一 tet の閉形式 + 2 tet 共有面の inclusion-exclusion + shape_values の第二実装突合)、変異 9/9 red
+- `compound`: `examples/compound_shapes.rs` が `CompoundShape` の `add_sphere`/`add_capsule`/`add_convex_hull`/`add_box`/`compute_aabb`/`child_world_aabb`/`world_aabb`/`overlapping_children` + `box_collider::axis_aligned` を駆動、oracle 24 本、変異 13/14 red (1 件は軸整列回転のみの test では不可視だった真の oracle gap、対角 120 度回転の test を追加して解消) ⚠️ 他 session (F3b-1、`dafc824`〜`b9472f6`) が同時並行で `PhysicsWorld::add_compound_body` 経由に `add_sphere`/`add_capsule`/`add_convex_hull`/`add_box`/`child_world_aabb` を配線しており、両方が独立に同じ 5 item を配線 (rebase で統合、残る `compute_aabb`/`overlapping_children`/`world_aabb` は本 batch のみ)
+- `raycast`: `examples/spatial_raycast_queries.rs` が `ray_aabb`/`ray_capsule`/`raycast_aabbs`/`raycast_all_aabbs`/`raycast_all_spheres`/`raycast_any_aabbs`/`raycast_any_spheres`/`raycast_spheres`/`sweep_sphere` を駆動 (`ray_sphere`/`ray_plane` は既配線、scope 外)、oracle 37 本、変異 22/22 red (初回 3 件生存、カプセル接線・t=0 境界・両キャップ命中の scene が oracle に無かったため追加して解消)
+- `ccd`: `examples/continuous_collision_detection.rs` が `needs_ccd`/`sphere_capsule_toi`/`capsule_plane_toi`/`aabb_plane_toi`/`swept_aabb`/`speculative_contact`/`conservative_advancement` を駆動 (`adaptive_toi_substeps` は下記 `solver_tgs` 作業で本実装化、scope 分離)、oracle 17 本、変異 15/19 red + 4 件 equivalent mutant
+- `solver_tgs`: TGS backend 配線 (`0a0b53e`) 後も残っていた汎用 dispatch/instrumentation 層 9 item 中 8 item を配線 — `ccd::adaptive_toi_substeps` の skeleton (`speculative_contact` の有無だけで定数を返していた) を撤去し `solver_tgs::adaptive_substeps_for_ccd` を実際に呼ぶ実装に差し替え、`solve_oriented_islands_serial`/`_parallel` を `dispatch_islands`/`par_dispatch_islands` 経由に書き換え (無挙動変更、bit-perfect 確認済)、`step_tgs` に `ImpulseCache::sweep()` を配線、新規 `PhysicsWorld::{tgs_cache_stats, reset_tgs_cache_stats}` + `TgsCacheStats` (`#[non_exhaustive]`) で warm-start 診断を公開 API 化 (`docs/PUBLIC_API_SNAPSHOT.txt` +78/−0) `examples/tgs_solver_backend.rs` に scene 4/5 追加、`tests/analytic_ccd_adaptive_substeps_wiring.rs` (7本) + `tests/analytic_solver_tgs_dispatch_wiring.rs` (5本) 新設 ⚠️ **`par_dispatch_islands` 自体は未達** — 唯一の呼出元候補 `step_tgs` が常に serial 固定のため、parallel 経路に繋ぐ設計変更は Backlog に記録して保留
+- baseline 44 行退役 (実配線 38、名前衝突の巻き込み 6 = `quadratic_elastic_fem.rs::corner_count`/`element_count`/`element_nodes` + `bvh.rs::BvhStats`/`bvh.rs::stats`/`sdf_adaptive.rs::stats`、Backlog 記録済)
+- worker 実測 (未修正、Backlog 記録済): `CompoundShape::dirty`/`cached_aabb` が write-only (`compute_aabb` が条件分岐なしで毎回再計算) / `raycast::sweep_sphere` は target 静止時 `ccd::sphere_sphere_toi` と同じ閉形式に帰着する意味論重複
+
 ### Added — 超弾性 × P2/P3 の次数分離 oracle (体積力つき製作解)
 
 - `tests/analytic_hyperelastic_mms_order.rs`: 非多項式の製作解 `u = A·(sin πY(1+Z), sin πZ(1+X), sin πX(1+Y))` と `b = −Div P` (Neo-Hookean、`f64` の 4 次中心差分) で P2 / P3 の離散化次数を測る P2 は傾き 2.42 (h=1/3→1/4)、P3 は同 h で P2 の 1/9.4 の誤差 (傾き 2.84) 荷重の符号反転で誤差が 47 倍になる歯つき 重い 2 本は `runtime:` 区分
