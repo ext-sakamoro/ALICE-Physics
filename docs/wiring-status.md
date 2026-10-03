@@ -4,11 +4,11 @@ _Generated from `scripts/wiring-baseline.txt` and `scripts/wiring_guard.py` (no 
 
 ## Status
 
-🟡 **135 baseline items** — Permitted violations, ratchet in place
+🟡 **47 baseline items** — Permitted violations, ratchet in place
 
 ---
 
-## 📋 Baseline (135 permitted)
+## 📋 Baseline (47 permitted)
 
 Violations explicitly allowed via `scripts/wiring-baseline.txt`.
 Must resolve or remove from baseline to reduce ratchet.
@@ -19,65 +19,25 @@ Must resolve or remove from baseline to reduce ratchet.
 |------|----------------|
 | `src/eulerian_grid.rs` | 10 |
 | `src/bvh.rs` | 5 |
-| `src/character_state.rs` | 4 |
 | `src/cloth_fluid.rs` | 4 |
 | `src/fatigue.rs` | 4 |
-| `src/interface_capture.rs` | 4 |
 | `src/motor.rs` | 4 |
 | `src/solver_tgs_hooks_6dof_scoped.rs` | 4 |
-| `src/aeroelasticity.rs` | 3 |
-| `src/beam_stress.rs` | 3 |
-| `src/deformable.rs` | 3 |
-| `src/erosion.rs` | 3 |
-| `src/fracture.rs` | 3 |
-| `src/math_util.rs` | 3 |
-| `src/metric.rs` | 3 |
-| `src/physics2d.rs` | 3 |
 | `src/plastic.rs` | 3 |
-| `src/print_orientation.rs` | 3 |
-| `src/scene_io.rs` | 3 |
-| `src/sdf_ccd.rs` | 3 |
-| `src/sdf_character.rs` | 3 |
-| `src/support_volume.rs` | 3 |
-| `src/surface_tension_csf.rs` | 3 |
-| `src/vehicle.rs` | 3 |
-| `src/bridging.rs` | 2 |
 | `src/buckling.rs` | 2 |
-| `src/buoyancy_zone.rs` | 2 |
-| `src/electromagnetic.rs` | 2 |
-| `src/ik_physics_bridge.rs` | 2 |
-| `src/particle.rs` | 2 |
-| `src/phase_change.rs` | 2 |
-| `src/quadratic_elastic_fem.rs` | 2 |
-| `src/ragdoll.rs` | 2 |
-| `src/rng.rs` | 2 |
-| `src/rope_attach.rs` | 2 |
-| `src/sdf_adaptive.rs` | 2 |
-| `src/sdf_manifold.rs` | 2 |
 | `src/solver_tgs.rs` | 2 |
 | `src/solver_tgs_hooks_6dof_oriented.rs` | 2 |
 | `src/solver_tgs_hooks_6dof_oriented_scoped.rs` | 2 |
-| `src/structural_solver.rs` | 2 |
-| `src/warp_risk.rs` | 2 |
-| `src/cloth.rs` | 1 |
 | `src/convex_mesh_builder.rs` | 1 |
 | `src/creep_longterm.rs` | 1 |
-| `src/event.rs` | 1 |
-| `src/fluid.rs` | 1 |
 | `src/mass_properties.rs` | 1 |
-| `src/sdf_sph.rs` | 1 |
-| `src/sleeping.rs` | 1 |
 | `src/solver_tgs_hooks.rs` | 1 |
 | `src/solver_tgs_hooks_6dof.rs` | 1 |
-| `src/thermal.rs` | 1 |
-| `src/thermal_stress.rs` | 1 |
 
-### Dead Code (9)
+### Dead Code (7)
 
 ```
-dead_code src/beam_stress.rs 1
 dead_code src/bvh.rs 2
-dead_code src/interface_capture.rs 3
 dead_code src/solver_tgs.rs 1
 dead_code src/solver_tgs_hooks.rs 1
 dead_code src/solver_tgs_hooks_6dof.rs 1
@@ -86,43 +46,21 @@ dead_code src/solver_tgs_hooks_6dof_oriented_scoped.rs 1
 dead_code src/solver_tgs_hooks_6dof_scoped.rs 1
 ```
 
-### Unwired Items (126)
+### Unwired Items (40)
 
 ```
-unwired src/aeroelasticity.rs::facchinetti_reference
-unwired src/aeroelasticity.rs::seeded
-unwired src/aeroelasticity.rs::viv_step
-unwired src/beam_stress.rs::with_end_condition
-unwired src/beam_stress.rs::with_min_fos
-unwired src/bridging.rs::unsafe_checks
-unwired src/bridging.rs::z_delta_mm
 unwired src/buckling.rs::plate_buckling_mpa
 unwired src/buckling.rs::snap_through_load_n
-unwired src/buoyancy_zone.rs::depth_below_surface
-unwired src/buoyancy_zone.rs::water_pool
 unwired src/bvh.rs::build_dynamic
 unwired src/bvh.rs::clear_dynamic
 unwired src/bvh.rs::insert_dynamic
 unwired src/bvh.rs::query_pairs
-unwired src/character_state.rs::accepts_locomotion
-unwired src/character_state.rs::name
-unwired src/character_state.rs::standing
-unwired src/character_state.rs::transition
-unwired src/cloth.rs::remaining_self_contact_crossings
 unwired src/cloth_fluid.rs::apply_cloth_boundary_to_fluid
 unwired src/cloth_fluid.rs::apply_cloth_boundary_to_fluid_with_residual
 unwired src/cloth_fluid.rs::apply_fluid_forces_to_cloth
 unwired src/cloth_fluid.rs::apply_fluid_forces_to_cloth_with_residual
 unwired src/convex_mesh_builder.rs::build_convex_hull
 unwired src/creep_longterm.rs::petg_25c_moderate
-unwired src/deformable.rs::center_of_mass
-unwired src/deformable.rs::new_cube
-unwired src/deformable.rs::resolve_rigid_body_collisions
-unwired src/electromagnetic.rs::lorentz_force
-unwired src/electromagnetic.rs::lorentz_force_sum
-unwired src/erosion.rs::compute_exposure_from_normals
-unwired src/erosion.rs::erosion_at
-unwired src/erosion.rs::set_exposure_at
 unwired src/eulerian_grid.rs::bytes
 unwired src/eulerian_grid.rs::bytes
 unwired src/eulerian_grid.rs::bytes
@@ -133,88 +71,24 @@ unwired src/eulerian_grid.rs::project_pressure_slab_local_on_rank
 unwired src/eulerian_grid.rs::set_u
 unwired src/eulerian_grid.rs::set_v
 unwired src/eulerian_grid.rs::set_w
-unwired src/event.rs::has_events
 unwired src/fatigue.rs::aluminum_a5052
 unwired src/fatigue.rs::analyze_spectrum
 unwired src/fatigue.rs::steel_sus304
 unwired src/fatigue.rs::stress_at_cycles
-unwired src/fluid.rs::new_block
-unwired src/fracture.rs::active_crack_count
-unwired src/fracture.rs::apply_stress_at
-unwired src/fracture.rs::stress_at
-unwired src/ik_physics_bridge.rs::blended
-unwired src/ik_physics_bridge.rs::snap
-unwired src/interface_capture.rs::plic_normal
-unwired src/interface_capture.rs::plic_plane_offset
-unwired src/interface_capture.rs::truncated_cube_volume
 unwired src/mass_properties.rs::cylinder_mass_properties
-unwired src/math_util.rs::cbrt_fix
-unwired src/math_util.rs::clamp_fix
-unwired src/math_util.rs::pow_int
-unwired src/metric.rs::lipschitz
-unwired src/metric.rs::norm
-unwired src/metric.rs::weights
 unwired src/motor.rs::apply_motors
 unwired src/motor.rs::disable
 unwired src/motor.rs::set_rotation_target
 unwired src/motor.rs::set_velocity_target
-unwired src/particle.rs::add_emitter
-unwired src/particle.rs::apply_force_field
-unwired src/phase_change.rs::Phase
-unwired src/phase_change.rs::phase_at
-unwired src/physics2d.rs::apply_force
-unwired src/physics2d.rs::apply_impulse_at_point
-unwired src/physics2d.rs::distance_to
 unwired src/plastic.rs::petg_room_temp
 unwired src/plastic.rs::uniaxial_x
 unwired src/plastic.rs::with_hardening
-unwired src/print_orientation.rs::axis_x
-unwired src/print_orientation.rs::axis_y
-unwired src/print_orientation.rs::optimize_grid
-unwired src/quadratic_elastic_fem.rs::edge_count
-unwired src/quadratic_elastic_fem.rs::edge_node
-unwired src/ragdoll.rs::child
-unwired src/ragdoll.rs::human_female
-unwired src/rng.rs::new_with_stream
-unwired src/rng.rs::next_bounded
-unwired src/rope_attach.rs::compliance
-unwired src/rope_attach.rs::solve_rope_attachments
-unwired src/scene_io.rs::CURRENT_SCENE_VERSION
-unwired src/scene_io.rs::load_scene_json
-unwired src/scene_io.rs::save_scene_json
-unwired src/sdf_adaptive.rs::invalidate
-unwired src/sdf_adaptive.rs::invalidate_all
-unwired src/sdf_ccd.rs::batch_sphere_trace_sdf
-unwired src/sdf_ccd.rs::ray_march_sdf
-unwired src/sdf_ccd.rs::sphere_trace_sdf
-unwired src/sdf_character.rs::GroundContact
-unwired src/sdf_character.rs::ground_contact
-unwired src/sdf_character.rs::is_grounded
-unwired src/sdf_manifold.rs::deepest
-unwired src/sdf_manifold.rs::generate_sdf_manifold
-unwired src/sdf_sph.rs::populated_cell_count
-unwired src/sleeping.rs::build_islands
 unwired src/solver_tgs.rs::par_dispatch_islands
 unwired src/solver_tgs_hooks_6dof_oriented.rs::local_to_world
 unwired src/solver_tgs_hooks_6dof_oriented_scoped.rs::solve_oriented_islands_parallel
 unwired src/solver_tgs_hooks_6dof_scoped.rs::solve_island_isolated
 unwired src/solver_tgs_hooks_6dof_scoped.rs::solve_islands_parallel
 unwired src/solver_tgs_hooks_6dof_scoped.rs::solve_islands_serial
-unwired src/structural_solver.rs::StructuralHistory
-unwired src/structural_solver.rs::run
-unwired src/support_volume.rs::filament_length_m
-unwired src/support_volume.rs::is_nontrivial
-unwired src/support_volume.rs::quality
-unwired src/surface_tension_csf.rs::SIGMA_MERCURY_AIR
-unwired src/surface_tension_csf.rs::SIGMA_PLA_AIR
-unwired src/surface_tension_csf.rs::SIGMA_STEEL_ARGON
-unwired src/thermal.rs::add_heat_point
-unwired src/thermal_stress.rs::yield_temperature_c
-unwired src/vehicle.rs::grounded_wheels
-unwired src/vehicle.rs::shift_down
-unwired src/vehicle.rs::shift_up
-unwired src/warp_risk.rs::enclosed_abs
-unwired src/warp_risk.rs::rectangle
 ```
 
 ---
