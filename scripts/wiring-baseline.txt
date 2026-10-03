@@ -47,9 +47,6 @@ unwired src/ik_physics_bridge.rs::snap
 unwired src/mass_properties.rs::cylinder_mass_properties
 unwired src/math_util.rs::clamp_fix
 unwired src/math_util.rs::pow_int
-unwired src/metric.rs::lipschitz
-unwired src/metric.rs::norm
-unwired src/metric.rs::weights
 unwired src/motor.rs::apply_motors
 unwired src/motor.rs::disable
 unwired src/motor.rs::set_rotation_target
