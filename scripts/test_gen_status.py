@@ -194,6 +194,7 @@ class OracleClassify(unittest.TestCase):
     def test_a_red_by_design_test_is_not_called_pending(self):
         self.assertEqual(oracle.classify_ignored("the red is correct: ..."), "red")
         self.assertEqual(oracle.classify_ignored("src gap: measured 2026-10-02"), "red")
+        self.assertEqual(oracle.classify_ignored("known defect: AUD-A-S1W1-001: sign flipped"), "red")
 
     def test_runtime_and_diagnostic_tests_are_gated(self):
         for reason in ["runtime: about 40 s in release", "diagnostic: the table behind x",

@@ -89,7 +89,7 @@ def extract_test_metadata(test_file):
 def classify_ignored(reason):
     """`#[ignore]` の理由から 3 分類する.
 
-    - red:     意図して red のまま残している oracle (「the red is correct」/「src gap」)
+    - red:     意図して red のまま残している oracle (「the red is correct」/「src gap」/「known defect: AUD-…」= 監査台帳の欠陥)
                実装側が追いつけば #[ignore] を外す  実装を足す対象であって、期待値を緩めない
     - gated:   実行が長い / 診断表を出すだけ / 手動 (runtime / diagnostic / manual / run with --release)
     - pending: 理由の無い bare な #[ignore]
@@ -97,7 +97,7 @@ def classify_ignored(reason):
     r = reason.strip().lower()
     if r == 'pending' or not r:
         return 'pending'
-    if r.startswith('the red is correct') or r.startswith('src gap'):
+    if r.startswith(('the red is correct', 'src gap', 'known defect')):
         return 'red'
     return 'gated'
 
