@@ -11,10 +11,6 @@ dead_code src/solver_tgs_hooks_6dof_scoped.rs 1
 unwired src/aeroelasticity.rs::facchinetti_reference
 unwired src/aeroelasticity.rs::seeded
 unwired src/aeroelasticity.rs::viv_step
-unwired src/anisotropic_friction.rs::friction_force
-unwired src/anisotropic_friction.rs::skate_ice
-unwired src/anisotropic_friction.rs::ski_snow
-unwired src/anisotropic_friction.rs::tyre_asphalt
 unwired src/beam_stress.rs::with_end_condition
 unwired src/beam_stress.rs::with_min_fos
 unwired src/bridging.rs::unsafe_checks

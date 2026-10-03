@@ -487,6 +487,20 @@ required-features = ["std"]
 name = "sim_modifier_management"
 required-features = ["std"]
 
+# Production entry point for `alice_physics::anisotropic_friction`
+# (wiring_guard: src/anisotropic_friction.rs had zero production callers
+# across all 4 items: friction_force, skate_ice, ski_snow, tyre_asphalt --
+# only this module's own #[cfg(test)] unit tests called in, which the guard
+# does not count). Checked against scripts/wiring_guard.py grep: none of
+# these 4 names collide with a same-named item in another file in this
+# crate (`friction_force` is specific to this module; `src/material.rs`'s
+# isotropic Coulomb model and `src/anisotropic.rs`'s off-axis
+# modulus/failure API, wired separately above as
+# `anisotropic_failure_analysis`, expose no same-named items).
+[[example]]
+name = "anisotropic_friction_presets"
+required-features = ["std"]
+
 [[bench]]
 name = "physics_bench"
 harness = false
