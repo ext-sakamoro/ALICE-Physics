@@ -501,6 +501,20 @@ required-features = ["std"]
 name = "anisotropic_friction_presets"
 required-features = ["std"]
 
+# Production entry point for thin-wall printer-resonance risk analysis
+# (wiring_guard: src/vibration_wall.rs had zero production callers across
+# all 4 items: ExcitationSource, WallResonanceReport, analyze_wall_resonance,
+# default_excitation_sources -- only tests/engineering_oracles_solid.rs
+# called in, which the guard does not count). analyze_wall_resonance itself
+# calls modal::plate_natural_frequency_hz, but that call did not count
+# toward plate_natural_frequency_hz's own wiring (see this file's
+# "modal_frequency_analysis" entry above) because analyze_wall_resonance
+# had zero production callers of its own -- this example closes that
+# chain from the vibration_wall side.
+[[example]]
+name = "vibration_wall_resonance"
+required-features = ["std"]
+
 [[bench]]
 name = "physics_bench"
 harness = false

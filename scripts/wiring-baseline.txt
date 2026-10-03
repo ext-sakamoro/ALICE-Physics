@@ -167,9 +167,5 @@ unwired src/thermal_stress.rs::yield_temperature_c
 unwired src/vehicle.rs::grounded_wheels
 unwired src/vehicle.rs::shift_down
 unwired src/vehicle.rs::shift_up
-unwired src/vibration_wall.rs::ExcitationSource
-unwired src/vibration_wall.rs::WallResonanceReport
-unwired src/vibration_wall.rs::analyze_wall_resonance
-unwired src/vibration_wall.rs::default_excitation_sources
 unwired src/warp_risk.rs::enclosed_abs
 unwired src/warp_risk.rs::rectangle
