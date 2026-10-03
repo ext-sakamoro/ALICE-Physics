@@ -6100,6 +6100,7 @@ impl alice_physics::math::Fix128
 pub fn alice_physics::math::Fix128::checked_div(self, Self) -> core::option::Option<Self>
 pub fn alice_physics::math::Fix128::checked_mul(self, Self) -> core::option::Option<Self>
 pub fn alice_physics::math::Fix128::exp(self) -> Self
+pub fn alice_physics::math::Fix128::ln(self) -> Self
 pub fn alice_physics::math::Fix128::powf_pos(self, Self) -> Self
 impl core::clone::Clone for alice_physics::math::Fix128
 pub fn alice_physics::math::Fix128::clone(&self) -> Self
@@ -9713,6 +9714,7 @@ impl alice_physics::math::Fix128
 pub fn alice_physics::math::Fix128::checked_div(self, Self) -> core::option::Option<Self>
 pub fn alice_physics::math::Fix128::checked_mul(self, Self) -> core::option::Option<Self>
 pub fn alice_physics::math::Fix128::exp(self) -> Self
+pub fn alice_physics::math::Fix128::ln(self) -> Self
 pub fn alice_physics::math::Fix128::powf_pos(self, Self) -> Self
 impl core::clone::Clone for alice_physics::math::Fix128
 pub fn alice_physics::math::Fix128::clone(&self) -> Self
@@ -18582,6 +18584,7 @@ impl alice_physics::math::Fix128
 pub fn alice_physics::math::Fix128::checked_div(self, Self) -> core::option::Option<Self>
 pub fn alice_physics::math::Fix128::checked_mul(self, Self) -> core::option::Option<Self>
 pub fn alice_physics::math::Fix128::exp(self) -> Self
+pub fn alice_physics::math::Fix128::ln(self) -> Self
 pub fn alice_physics::math::Fix128::powf_pos(self, Self) -> Self
 impl core::clone::Clone for alice_physics::math::Fix128
 pub fn alice_physics::math::Fix128::clone(&self) -> Self

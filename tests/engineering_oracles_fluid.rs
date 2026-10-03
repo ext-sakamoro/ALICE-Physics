@@ -1881,10 +1881,19 @@ fn wave_ship_spectrum_is_jonswap() {
     assert!(rel_err(wp, 2.0 * PI / 9.0) < 1e-12);
     let hs = j.significant_wave_height_m.to_f64();
     let gamma = j.gamma.to_f64();
+    // DNV-RP-C205 eq. 3.5.5-3.5.7: the leading constant carries a
+    // `(1 - 0.287*ln(gamma))` normalization that keeps H_s = 4*sqrt(m0)
+    // invariant under gamma (gamma = 1 reduces it to the bare 5/16 of
+    // Pierson-Moskowitz, since ln(1) = 0).
+    let normalization = if gamma > 0.0 {
+        1.0 - 0.287 * gamma.ln()
+    } else {
+        1.0
+    };
     let reference = |w: f64| {
         let sigma = if w <= wp { 0.07 } else { 0.09 };
         let r = (-(w - wp).powi(2) / (2.0 * sigma * sigma * wp * wp)).exp();
-        5.0 / 16.0 * hs * hs * wp.powi(4) / w.powi(5)
+        5.0 / 16.0 * normalization * hs * hs * wp.powi(4) / w.powi(5)
             * (-1.25 * (wp / w).powi(4)).exp()
             * gamma.powf(r)
     };
@@ -1932,6 +1941,30 @@ fn wave_ship_spectrum_is_jonswap() {
         hs * hs / 16.0
     );
     assert_eq!(j.spectrum_density(Fix128::ZERO), Fix128::ZERO);
+}
+
+/// `north_sea()` (γ = 3.3, the peak-enhanced JONSWAP default most callers
+/// actually use) must recover its own `H_s = 4·√m₀` just as faithfully as
+/// the γ = 1 Pierson–Moskowitz reduction does above -- before the
+/// `(1 - 0.287*ln γ)` normalization, γ = 3.3 over-reported `H_s` by ≈23.5%
+/// (`m₀` too large by the same factor, since the peak-enhancement term adds
+/// energy the un-normalized leading constant did not budget for).
+#[test]
+fn wave_ship_spectrum_recovers_hs_under_peak_enhancement() {
+    let j = Jonswap::north_sea();
+    let wp = j.peak_omega().to_f64();
+    let hs = j.significant_wave_height_m.to_f64();
+    let (mut m0, dw) = (0.0f64, wp / 400.0);
+    let mut w = dw;
+    while w < 12.0 * wp {
+        m0 += j.spectrum_density(Fix128::from_f64(w)).to_f64() * dw;
+        w += dw;
+    }
+    let recovered_hs = 4.0 * m0.sqrt();
+    assert!(
+        rel_err(recovered_hs, hs) < 0.02,
+        "north_sea() (gamma=3.3): H_s recovered from m0 = {recovered_hs}, nominal H_s = {hs}"
+    );
 }
 
 // ============================================================================

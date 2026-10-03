@@ -32,6 +32,18 @@ increment 他) が**追加機材の調達待ち**であるかのように読め�
 ⚠️ **契約の変更**: 同時並行の第 25 件が固定していた旧 `simplify` の副作用 3 本 (`simplify_disjoint_triangles_target_zero_removes_all` ほか: 孤立した三角形を縮退させて消す) を、新しい契約 (境界の辺は collapse しない) に合わせて更新した
 oracle: 9c 8 本 (bit 一致の密な scene / 構造変更 / 切替 / 復元 / proxy の fat box の閉形式) 9d 9 本 (重さの閉形式) 9e 14 本 (閉・向き・Euler・体積・AABB の閉形式・torus・開いた mesh・星形分割の pinch) 変異: 9c 15 件中 15 red (等価だった全 reset 3 件は削除)、9d 11 件中 11 red、9e 25 件中 22 red (残り 3 件は collapse 順序の質だけに効く等価)
 baseline 退役 3 行 (`dynamic_bvh::{height, proxy_count, user_data}`) 他の行 (`bvh::get_aabb` / `collision_mesh_gen` 5 / `contact_viz` 5) は同時並行の第 24 / 25 / 28 件が example 経由で先に退役済み ⇒ 本件は**実配線** (world API / 静的 collider / 選べる broad-phase) と欠陥の根本修正の差分 example は `examples/broadphase_selection.rs` / `examples/contact_force_visualization.rs` / `examples/collision_mesh_from_sdf.rs`
+### 第 60 increment (2026-10-03、`wave_ship::Jonswap::spectrum_density` の peak-enhancement 正規化を根本修正)
+
+`spectrum_density` の leading constant `5/16·H_s²` が DNV-RP-C205 の正規化補正
+`(1 − 0.287·ln γ)` を欠いていたため、既定 `north_sea()` (γ=3.3) で `H_s=4·√m₀` が
+回復せず公称値の約 1.235 倍を返していた (γ=1 の PM 退行では `ln(1)=0` で元々補正不要
+だったため、既存 m₀ 回復 test は γ=1 のみで発覚していなかった) 正規化補正を乗算
+`Fix128::ln` を新設 (`turbulence.rs` の private `ln_fix` と同一アルゴリズムを
+canonical 化、`u_plus` もこちらへ切替、挙動変化なし) oracle:
+`wave_ship_spectrum_recovers_hs_under_peak_enhancement` (m₀ 数値積分から `H_s` 回復、
+相対誤差 2% 以内) + `tests/analytic_math_ln.rs` (f64 参照 / 加法性 / 単調性 / 退化入力
+5 test) 変異試験 (正規化を外して red を確認) で歯を確認 `north_sea()` 等の既定出力が
+変わる (公開 API signature は不変、`Fix128::ln` の追加のみ)
 
 ### 第 58 increment (2026-10-03、`sdf_force::Attract` の overflow が clamp を破る問題を根本修正)
 

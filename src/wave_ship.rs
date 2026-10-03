@@ -60,16 +60,32 @@ impl Jonswap {
     }
 
     /// Spectral density `S(ω)` (m²·s / rad) at angular frequency `ω` — the
-    /// JONSWAP form (Hasselmann et al. 1973; Chakrabarti 1987 eq. 4.29):
-    /// `S(ω) = 5/16 · H_s²·ω_p⁴/ω⁵ · exp(−5/4·(ω_p/ω)⁴) · γ^r`,
-    /// `r = exp(−(ω−ω_p)²/(2·σ²·ω_p²))`, `σ = 0.07` for `ω ≤ ω_p`, `0.09` above.
+    /// JONSWAP form (Hasselmann et al. 1973; Chakrabarti 1987 eq. 4.29;
+    /// normalisation per DNV-RP-C205 eq. 3.5.5-3.5.7):
+    /// `S(ω) = A·H_s²·ω_p⁴/ω⁵ · exp(−5/4·(ω_p/ω)⁴) · γ^r`,
+    /// `A = 5/16·(1 − 0.287·ln γ)`, `r = exp(−(ω−ω_p)²/(2·σ²·ω_p²))`,
+    /// `σ = 0.07` for `ω ≤ ω_p`, `0.09` above.
     ///
-    /// `γ = 1` reduces to Pierson–Moskowitz. The spectrum peaks at `ω_p`,
-    /// vanishes for `ω → 0` and decays as `ω⁻⁵`. Before 1.2.0 the module
-    /// returned `5/16·H_s²·ω_p⁴/ω⁵·√γ` without the exponential cut-off or the
-    /// peak-enhancement shape — monotone in ω, unbounded as `ω → 0`, so the
-    /// zeroth moment diverged and `H_s` could not be recovered from it
-    /// (`tests/engineering_oracles_fluid.rs`).
+    /// The `(1 − 0.287·ln γ)` factor keeps the recovered significant wave
+    /// height `H_s = 4·√m₀` (m₀ = zeroth spectral moment) invariant under
+    /// `γ`: without it, raising the peak via `γ^r` adds energy the leading
+    /// `H_s²` term did not budget for, and the spectrum over-reports `H_s`
+    /// by the amount `γ` enhances the peak (≈ 23.5% for the `north_sea()`
+    /// default `γ = 3.3`, confirmed by numerically integrating `m₀` and
+    /// comparing `4·√m₀` against `H_s`). `γ = 1` makes `ln γ = 0`, `A = 5/16`
+    /// and the spectrum reduces to Pierson–Moskowitz exactly as before.
+    ///
+    /// `γ ≤ 0` is treated as `γ = 1` (both here and in the `γ^r`
+    /// peak-enhancement term below) rather than evaluating `ln` of a
+    /// non-positive number — `Fix128::ln` is documented to return `ZERO`
+    /// there, which would otherwise silently claim `A = 5/16` regardless of
+    /// how negative `γ` is.
+    ///
+    /// The spectrum peaks at `ω_p`, vanishes for `ω → 0` and decays as
+    /// `ω⁻⁵`. Before 1.2.0 the module returned `5/16·H_s²·ω_p⁴/ω⁵·√γ` without
+    /// the exponential cut-off or the peak-enhancement shape — monotone in
+    /// ω, unbounded as `ω → 0`, so the zeroth moment diverged and `H_s`
+    /// could not be recovered from it (`tests/engineering_oracles_fluid.rs`).
     #[must_use]
     pub fn spectrum_density(&self, omega_rad_per_s: Fix128) -> Fix128 {
         if omega_rad_per_s <= Fix128::ZERO {
@@ -86,7 +102,12 @@ impl Jonswap {
         if o5.is_zero() {
             return Fix128::ZERO;
         }
-        let pm = Fix128::from_ratio(5, 16) * hs_sq * op4 / o5;
+        let normalization = if self.gamma <= Fix128::ZERO {
+            Fix128::ONE
+        } else {
+            Fix128::ONE - Fix128::from_ratio(287, 1000) * self.gamma.ln()
+        };
+        let pm = Fix128::from_ratio(5, 16) * normalization * hs_sq * op4 / o5;
         // exp(−5/4 (ω_p/ω)⁴)
         let ratio = omega_p / omega_rad_per_s;
         let ratio4 = ratio * ratio * ratio * ratio;
