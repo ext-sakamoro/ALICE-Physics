@@ -163,9 +163,10 @@ fn temperature_solver(dx: Fix128, profile: &dyn Fn(usize) -> Fix128) -> CfdSolve
 fn boussinesq_uniform_hot_fluid_falls_slower_by_the_factor_1_minus_beta_dt() {
     // v = g_y dt (1 - beta (T - T_ref)) on every y face, boundary faces included
     let mut s = temperature_solver(int(1), &|_| int(303));
+    let beta = s.beta_per_k.to_f64(); // the default fluid's expansion coefficient
     let dt = q(1, 50);
     s.step_multigrid(dt, 0);
-    let expect = -9.81 * 0.02 * (1.0 - 0.0034 * 10.0);
+    let expect = -9.81 * 0.02 * (1.0 - beta * 10.0);
     for (ix, &v) in s.grid.v.iter().enumerate() {
         assert!(
             (v.to_f64() - expect).abs() < 1e-12,
@@ -182,12 +183,13 @@ fn boussinesq_face_force_is_the_mean_of_the_two_cells_sharing_the_face() {
     let dx = int(1);
     let g_per_m = 50.0; // K per metre
     let mut s = temperature_solver(dx, &|j| int(293) + q(50 * (2 * j as i64 + 1), 2));
+    let beta = s.beta_per_k.to_f64();
     let dt = q(1, 50);
     s.step_multigrid(dt, 0);
     let nx = s.grid.nx;
     for j in 1..s.grid.ny {
         let t_face = g_per_m * j as f64; // + 293, relative to T_ref = 293
-        let expect = -9.81 * 0.02 * (1.0 - 0.0034 * t_face);
+        let expect = -9.81 * 0.02 * (1.0 - beta * t_face);
         let got = s.grid.v[nx * (j)].to_f64(); // face (0, j, 0)
         assert!(
             (got - expect).abs() < 1e-9,

@@ -380,7 +380,6 @@ fn semi_lagrangian_stays_inside_the_initial_range_at_a_courant_number_of_five() 
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S1W4-008: `CfdSolver::new` documents `default fluid = water at 20 C` but beta_per_k = 3.4e-3 (the comment says `air`; water at 20 C is 2.07e-4), so the Boussinesq buoyancy of the default fluid is ~16x too strong for water"]
 fn the_default_fluid_is_water_with_water_s_thermal_expansion() {
     let s = CfdSolver::new(2, 2, 2, int(1));
     assert!((s.density_kg_m3.to_f64() - 998.0).abs() < 5.0);

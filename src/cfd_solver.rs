@@ -857,7 +857,7 @@ impl CfdSolver {
             dynamic_viscosity_pas: Fix128::from_ratio(1, 1000), // 1e-3 (water)
             gravity: Vec3Fix::new(Fix128::ZERO, Fix128::from_ratio(-981, 100), Fix128::ZERO),
             surface_tension_n_m: SIGMA_WATER_AIR,
-            beta_per_k: Fix128::from_ratio(34, 10_000), // air ≈ 3.4e-3
+            beta_per_k: Fix128::from_ratio(207, 1_000_000), // water at 20 C ≈ 2.07e-4
             reference_temp_k: Fix128::from_int(293),
             jacobi_iterations: 30,
             reinit_every_n_steps: 10,
@@ -1514,6 +1514,7 @@ impl CfdSolver {
     /// - The interface is smeared over `eps = 2 dx`, an integer multiple of `dx`, so the
     ///   sampled delta sums to 1 for any interface offset and the line integral of the
     ///   force across a spherical interface is `-2 sigma / R` (Young-Laplace)
+    /// - The default fluid is water at 20 C: `beta_per_k = 2.07e-4` 1/K (volumetric expansion)
     /// - Buoyancy on a v face uses the mean temperature of the two cells sharing it
     ///   (a boundary face uses its single neighbour), so a linear profile is exact
     /// - Surface tension adds `f / rho * dt` (m/s) to the faces along each axis,
