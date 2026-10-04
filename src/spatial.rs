@@ -80,9 +80,16 @@ impl SpatialGrid {
     }
 
     /// Compute the cell index for a given position.
+    ///
+    /// A grid built with `grid_dim = 0` has no cells; every position hashes
+    /// to `0`, and callers already guard `h < total_cells` (which is also
+    /// `0`) before using the result.
     #[inline(always)]
     #[must_use]
     pub fn hash(&self, pos: Vec3Fix) -> usize {
+        if self.grid_dim == 0 {
+            return 0;
+        }
         let gd = self.grid_dim as i64;
         let half = self.grid_half;
         let ix = ((pos.x * self.inv_cell_size).hi + half).clamp(0, gd - 1) as usize;
@@ -141,13 +148,15 @@ impl SpatialGrid {
         _radius_sq: Fix128,
         neighbors: &mut Vec<usize>,
     ) {
+        neighbors.clear();
+        if self.grid_dim == 0 {
+            return;
+        }
         let gd = self.grid_dim as i64;
         let half = self.grid_half;
         let cx = ((pos.x * self.inv_cell_size).hi + half).clamp(0, gd - 1) as i32;
         let cy = ((pos.y * self.inv_cell_size).hi + half).clamp(0, gd - 1) as i32;
         let cz = ((pos.z * self.inv_cell_size).hi + half).clamp(0, gd - 1) as i32;
-
-        neighbors.clear();
 
         for dz in -1..=1 {
             for dy in -1..=1 {

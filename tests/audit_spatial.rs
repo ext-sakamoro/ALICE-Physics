@@ -231,7 +231,6 @@ fn zero_cell_size_falls_back_to_unit_cells() {
 /// cells; every particle is simply dropped).  KNOWN DEFECT: `hash` calls
 /// `clamp(0, gd - 1)` with `gd - 1 = -1`, which panics (min > max).
 #[test]
-#[ignore = "known defect: AUD-A-S3W1-001: SpatialGrid::new(_, 0) then insert/hash/query panics (clamp(0, -1), min > max); no doc'd precondition"]
 fn zero_dimension_grid_does_not_panic() {
     let r = std::panic::catch_unwind(|| {
         let mut g = SpatialGrid::new(Fix128::ONE, 0);
