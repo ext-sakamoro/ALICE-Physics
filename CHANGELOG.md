@@ -54,7 +54,8 @@ were introduced during that release window.
 - `scripts/audit_refs.py`: 既知欠陥の理由文 (`#[ignore = "known defect: …"]`) に出てくる記号 (`a::b` / `name()` / バッククォートの識別子) を、SCIP 索引で定義位置に解決する マクロ生成のメソッドと型別名はソースの `fn` 定義で補う `audit_refs.py <欠陥 ID または test 名>` で各記号の `file:line` を出し、`--check` は解決できない記号が 1 件でもあれば失敗する (現在 276 件中、記号 124 個がすべて解決)
 - `// PIN: <欠陥 ID>`: 既知欠陥の現挙動を意図的に固定している test の印 `docs/oracle-status.md` に「直すと赤くなる test」の対応表を出し、`gen-oracle-status.py --check` は未解決の欠陥を指さない PIN と ID のない PIN で失敗する 3 件に付与 (`count_min_degenerate_inputs` / `deterministic_network_zero_layers_constructs_but_forward_panics` / `entry_record_overflow_panics_in_debug_and_wraps_in_release`)
 - `root: external <crate> <version>`: 根本原因が依存 crate にある既知欠陥の印 台帳は Cargo が解決した版 (Cargo.lock、無ければ `cargo metadata --all-features`、本 repo は Cargo.lock を commit しないので CI では後者) と比べ、食い違えば再確認と表示する 解決できなければ `--check` は失敗する `AUD-A-S5W1-001` (alice-db 0.2.0-beta.3 が非連続の時刻を等間隔に作り直す) に付与
-- 台帳に ID のない既知欠陥の一覧を追加 (現在 2 件)
+- 台帳に ID のない既知欠陥の一覧を追加し、該当した 2 件に ID を付与した: `draw_aabbs` / `draw_bvh` が `debug_draw_world` で読まれない件を `AUD-A-S4W3-033`、`layer_adhesion` の FoS が 0 になる件は根本原因の `Fix128::div` (範囲外の整数商を下位 64 bit に切り詰める、`checked_div` も 0 除数しか拒否しない) を `AUD-A-S1W5-030` として `tests/audit_math.rs` に直接の oracle を追加し、`layer_adhesion` 側はその下流として参照する
+- `integration-status.yml` の concurrency group を分けた (同じ group の待機中 run は、新しい run が来ると `cancel-in-progress: false` でも打ち切られ、3 本目の台帳 workflow を足したことで Wiring Status が cancel されていた)
 - `scripts/scip_reach.py --check-baseline`: テスト以外から到達されない公開 item (L0、現在 231 件) を `scripts/integration-baseline.txt` に記録し、新しい L0 と解消済みの行の残存で失敗する
 - CI に `scip` job を追加 (索引の生成、記号の解決、L0 の ratchet) 合成索引の試験と `gen-oracle-status.py --check` は test matrix (5 OS) と preflight に追加
 - `readme_sync.py` が `src/lib.rs` の Feature Flags 表も突き合わせるようにし、抜けていた `gpu-solver-bridge` の行を追加

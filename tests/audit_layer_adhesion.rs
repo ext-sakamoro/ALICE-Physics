@@ -99,7 +99,7 @@ fn min_fos_is_independent_of_self_and_uses_supplied_allowables() {
 }
 
 #[test]
-#[ignore = "known defect (既知): Fix128::div の u128->i64 cast で applied=2^-64 (x) / 2^-63 (x) の FoS が 0 になる (PLA 50MPa/2^-64 -> 0.0)"]
+#[ignore = "known defect: AUD-A-S1W5-030 (downstream: component_fos): for applied = 2^-64 or 2^-63 the quotient allowable / |applied| exceeds the Fix128 range, Fix128::div truncates it and the FoS comes back as 0 (PLA 50 MPa / 2^-64 -> 0), while applied == 0 returns the large sentinel, so 0 and 2^-64 give opposite answers"]
 fn fos_is_never_below_one_when_applied_is_below_allowable() {
     // FoS = allowable/|applied| >= 1 iff |applied| <= allowable (閉形式)
     // 極小の applied (2^-64 .. 2^-40) でも商が i64 を超える範囲で符号が反転しないこと
@@ -123,7 +123,7 @@ fn fos_is_never_below_one_when_applied_is_below_allowable() {
 }
 
 #[test]
-#[ignore = "known defect (既知 AUD-A-S1W5-028 の下流): applied = Fix128::MIN で abs() が負のまま -> FoS = -1.7e-17 (負の安全率)"]
+#[ignore = "known defect: AUD-A-S1W5-028 (downstream: component_fos): applied = Fix128::MIN keeps abs() negative, so the FoS is -1.7e-17 (a negative safety factor)"]
 fn fos_of_extreme_negative_applied_does_not_panic_and_is_positive() {
     let s = EffectiveStrength::for_material(&MaterialProperties::pla(), PrintOrientation::XYFlat);
     let fos = s.fos_normal_x(Fix128::from_raw(i64::MIN, 0));
