@@ -244,12 +244,44 @@ impl ThermalMaterial {
     }
 }
 
+/// Harmonic mean of two face-adjacent conductivities,
+/// `2 k_a k_b / (k_a + k_b)`.
+///
+/// The harmonic mean is the effective conductivity of two slabs in series, so
+/// the face flux `q = −k_face ΔT / dx` is the exact steady flux through a
+/// two-cell column. When the two values do not have the same sign (outside any
+/// calibrated range, where the fits can turn negative) the mean is undefined
+/// or unbounded, and the arithmetic mean is used instead. Either way the value
+/// is symmetric in its arguments, which is what makes the update conservative.
+fn face_conductivity(k_a: f32, k_b: f32) -> f32 {
+    if k_a > 0.0 && k_b > 0.0 {
+        2.0 * k_a * k_b / (k_a + k_b)
+    } else {
+        0.5 * (k_a + k_b)
+    }
+}
+
 /// Explicit-Euler advance of a 1-D temperature array by `dt`, with
 /// Neumann (zero-flux) boundary conditions at both ends.
 ///
-/// Uses the *local* diffusivity `α(T_i)` in each interior cell — this
-/// is what makes the update transient-material-aware. Callers who want
-/// a stable choice of `dt` should compare against [`stable_dt_1d`].
+/// Advances the conservative form `ρcp(T) ∂T/∂t = ∂/∂x(k(T) ∂T/∂x)` as a
+/// finite-volume update: each cell exchanges heat with its neighbours through
+/// the faces, with the face flux `q = −k_face ΔT / dx` and `k_face` the
+/// harmonic mean of the two adjacent cells' `k(T)`. The material is
+/// evaluated at the beginning-of-step temperatures. Callers who want a stable
+/// choice of `dt` should compare against [`stable_dt_1d`].
+///
+/// # Claims
+///
+/// - Heat is conserved: with `C_i = ρcp(T_i)` taken at the incoming
+///   temperatures, `Σ C_i (T_i' − T_i)` is zero up to `f32` rounding for any
+///   `k(T)`, `ρ(T)`, `cp(T)`, because each face flux is added to one cell and
+///   subtracted from its neighbour with the same `k_face`.
+/// - The two outer faces carry no flux (Neumann).
+/// - For uniform `k`, `ρcp` the update is `T_i + dt·α·(T_{i+1} − 2T_i +
+///   T_{i−1})/dx²`, the standard three-point stencil with `α = k/ρcp`.
+/// - A cell whose `ρcp` is not finite or not positive is left unchanged.
+/// - A slice with fewer than three samples is returned unchanged.
 ///
 /// # Panics
 ///
@@ -262,6 +294,10 @@ pub fn transient_step_1d(temperatures: &mut [f32], material: &ThermalMaterial, d
     }
     let n = temperatures.len();
     let inv_dx_squared = 1.0 / (dx * dx);
+    let k: Vec<f32> = temperatures
+        .iter()
+        .map(|&t| material.conductivity_at(t))
+        .collect();
     let mut updated = Vec::with_capacity(n);
     // Zero-flux (Neumann) faces at the outer edges of cells 0 and n−1: the
     // virtual neighbour outside the rod equals the boundary cell itself, so
@@ -273,19 +309,24 @@ pub fn transient_step_1d(temperatures: &mut [f32], material: &ThermalMaterial, d
     // decay rate from the Crank–Nicolson step on the same array; the cosine
     // eigenmode oracle (`tests/engineering_oracles.rs`) exposed the mismatch.
     for i in 0..n {
-        let left = if i == 0 {
-            temperatures[0]
+        let capacity = material.heat_capacity_at(temperatures[i]);
+        if !capacity.is_finite() || capacity <= 0.0 {
+            updated.push(temperatures[i]);
+            continue;
+        }
+        // Heat flowing in through the left / right face per unit area and
+        // time, times dx: k_face (T_neighbour − T_i). The outer faces are zero.
+        let from_left = if i == 0 {
+            0.0
         } else {
-            temperatures[i - 1]
+            face_conductivity(k[i - 1], k[i]) * (temperatures[i - 1] - temperatures[i])
         };
-        let right = if i == n - 1 {
-            temperatures[n - 1]
+        let from_right = if i == n - 1 {
+            0.0
         } else {
-            temperatures[i + 1]
+            face_conductivity(k[i], k[i + 1]) * (temperatures[i + 1] - temperatures[i])
         };
-        let alpha = material.diffusivity_at(temperatures[i]);
-        let laplacian = (right - 2.0 * temperatures[i] + left) * inv_dx_squared;
-        updated.push(temperatures[i] + dt * alpha * laplacian);
+        updated.push(temperatures[i] + dt * (from_left + from_right) * inv_dx_squared / capacity);
     }
     temperatures.copy_from_slice(&updated);
 }
