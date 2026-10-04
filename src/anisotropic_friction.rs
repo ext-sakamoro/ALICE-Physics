@@ -124,12 +124,13 @@ impl AnisotropicFriction {
             let mut shift = 0u32;
             let mut sum = None;
             for _ in 0..200 {
-                sum = vl.checked_mul(vl).zip(vt.checked_mul(vt)).and_then(
-                    |(a, b)| {
+                sum = vl
+                    .checked_mul(vl)
+                    .zip(vt.checked_mul(vt))
+                    .and_then(|(a, b)| {
                         let s = a + b;
                         (s >= a && s >= b).then_some(s)
-                    },
-                );
+                    });
                 if sum.is_some() {
                     break;
                 }

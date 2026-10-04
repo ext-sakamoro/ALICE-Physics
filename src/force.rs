@@ -190,7 +190,11 @@ pub fn compute_force(field: &ForceField, body: &RigidBody) -> Vec3Fix {
                 dist_sq
             } else {
                 let floor = (*strength / *max_force).abs();
-                if dist_sq < floor { floor } else { dist_sq }
+                if dist_sq < floor {
+                    floor
+                } else {
+                    dist_sq
+                }
             };
 
             // Inverse-square law: F = strength / r^2
