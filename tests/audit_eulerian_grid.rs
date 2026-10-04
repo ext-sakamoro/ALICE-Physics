@@ -775,7 +775,6 @@ fn g2p_reproduces_a_linear_field_with_per_component_staggering() {
 /// `1` has not been processed yet, so the same Inflow (or a wall) is read at
 /// its stale value, and a second call gives a different field.
 #[test]
-#[ignore = "known defect: AUD-A-S1W1-001: enforce_face_boundaries Outflow at index 0 reads the not-yet-enforced neighbour (x: Inflow 3/8 neighbour gives 0 instead of 3/8, second call changes the field), high end reads the enforced one"]
 fn outflow_on_the_low_layer_reads_a_stale_neighbour() {
     let inflow = FaceBc::Inflow {
         normal_velocity: q(3, 8),
