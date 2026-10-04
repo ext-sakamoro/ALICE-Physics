@@ -20,6 +20,7 @@ run: python3 scripts/run_feature_gated_tests.py [--list]
 """
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import sys
@@ -30,6 +31,9 @@ FEATURES = ("neural", "replay", "analytics", "gpu-solver-bridge")
 
 ROOT = Path(__file__).resolve().parent.parent
 FEATURE_RE = re.compile(r'feature\s*=\s*"([A-Za-z0-9_-]+)"')
+# ANSI SGR sequences: CI sets CARGO_TERM_COLOR=always, which wraps "Running" in
+# colour codes (`ESC[1mESC[92m     RunningESC[0m tests/...`); stripped before parsing
+ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 RUNNING_RE = re.compile(r"^\s*Running (?:tests[/\\])?(\S+?)\.rs\b")
 RESULT_RE = re.compile(
     r"^test result: \w+\. (\d+) passed; (\d+) failed; (\d+) ignored"
@@ -51,7 +55,7 @@ def parse(output: str) -> dict[str, tuple[int, int, int]]:
     """Per target: (passed, failed, ignored) from `cargo test` output."""
     counts: dict[str, tuple[int, int, int]] = {}
     current = None
-    for line in output.splitlines():
+    for line in ANSI_RE.sub("", output).splitlines():
         m = RUNNING_RE.match(line)
         if m:
             current = Path(m.group(1)).name
@@ -87,6 +91,20 @@ def check(picked: dict[str, set[str]], counts, features=FEATURES) -> list[str]:
     return problems
 
 
+def emit(text: str, stream) -> None:
+    """Relay the child's output. The text is UTF-8; a Windows console stream is
+    cp1252 and raised UnicodeEncodeError on it, so bytes go to the underlying
+    buffer when there is one and anything unencodable is replaced otherwise."""
+    buf = getattr(stream, "buffer", None)
+    if buf is not None:
+        stream.flush()
+        buf.write(text.encode("utf-8", errors="replace"))
+        buf.flush()
+    else:
+        enc = getattr(stream, "encoding", None) or "utf-8"
+        stream.write(text.encode(enc, errors="replace").decode(enc, errors="replace"))
+
+
 def main(argv: list[str]) -> int:
     picked = select(ROOT / "tests")
     if "--list" in argv:
@@ -97,11 +115,12 @@ def main(argv: list[str]) -> int:
     for target in picked:
         cmd += ["--test", target]
     print("+", " ".join(cmd), flush=True)
+    env = dict(os.environ, CARGO_TERM_COLOR="never")  # parse plain text (ANSI is stripped too)
     proc = subprocess.run(
-        cmd, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        cmd, cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         text=True, encoding="utf-8", errors="replace",
     )
-    sys.stdout.write(proc.stdout)
+    emit(proc.stdout, sys.stdout)
     counts = parse(proc.stdout)
     problems = check(picked, counts)
     if proc.returncode != 0 and not problems:

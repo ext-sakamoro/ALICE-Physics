@@ -65,6 +65,47 @@ class Parse(unittest.TestCase):
         self.assertEqual(g.parse(out), {"a": (3, 0, 1), "b": (2, 0, 0)})
 
 
+class CiOutput(unittest.TestCase):
+    """The forms CI produces: CARGO_TERM_COLOR=always wraps "Running" in ANSI
+    codes, Windows uses backslash paths and CRLF, and its console is cp1252."""
+
+    ESC = "\x1b"
+
+    def coloured(self, path: str, eol: str = "\n") -> str:
+        e = self.ESC
+        return (f"{e}[1m{e}[92m     Running{e}[0m {path} (target/debug/deps/x-0123){eol}"
+                f"{eol}running 3 tests{eol}"
+                f"test result: {e}[32mok{e}[0m. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out{eol}")
+
+    def test_coloured_running_lines_parse(self):
+        out = self.coloured("tests/a.rs") + self.coloured("tests\\b.rs", "\r\n")
+        self.assertEqual(g.parse(out), {"a": (3, 0, 0), "b": (3, 0, 0)})
+
+    def test_unparseable_output_is_still_red_through_the_zero_guard(self):
+        # a future cargo format the regex misses must not read as green
+        counts = g.parse("     Running-ish something else\ntest outcome: fine\n")
+        problems = g.check({"a": {"replay"}, "b": {"gpu-solver-bridge"}}, counts, FEATS)
+        self.assertTrue(any("0 tests in total" in p for p in problems), problems)
+
+    def test_emit_survives_a_cp1252_stream(self):
+        import io
+        raw = io.BytesIO()
+        stream = io.TextIOWrapper(raw, encoding="cp1252", errors="strict")
+        g.emit("ok \u2713 \u03b5 \u2192 \u5b8c\u4e86\n", stream)
+        stream.flush()
+        self.assertIn("\u2713".encode("utf-8"), raw.getvalue())
+
+    def test_emit_on_a_stream_without_a_buffer_replaces_unencodable_text(self):
+        import io
+
+        class Narrow(io.StringIO):
+            encoding = "cp1252"
+
+        s = Narrow()
+        g.emit("\u5b8c ok\n", s)
+        self.assertEqual(s.getvalue(), "? ok\n")
+
+
 class Check(unittest.TestCase):
     picked = {"a": {"replay"}, "b": {"gpu-solver-bridge"}}
 
