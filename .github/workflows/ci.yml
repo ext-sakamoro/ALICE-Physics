@@ -54,6 +54,8 @@ jobs:
         run: python scripts/test_scip_reach.py
       - name: Known-defect symbol resolution (tests)
         run: python scripts/test_audit_refs.py
+      - name: Feature-gated test runner (tests)
+        run: python scripts/test_run_feature_gated_tests.py
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -116,6 +118,14 @@ jobs:
       # them failing in the unmutated tree
       - name: Test (full native feature set, lib)
         run: cargo test --lib --features "std,simd,parallel,ffi,gpu-solver-bridge"
+
+      # Integration tests gated on neural / replay / analytics / gpu-solver-bridge:
+      # the steps above enable those features only with --lib, so a file under
+      # #![cfg(feature = "replay")] compiled to zero tests and stayed green. The
+      # script derives the file list from tests/ and fails when a selected target
+      # executes zero tests; preflight.sh calls the same script with no arguments
+      - name: Test (feature-gated integration tests, zero executed is red)
+        run: python scripts/run_feature_gated_tests.py
 
       # test, not just build: a feature whose code is only compiled is a feature
       # whose effect nobody verifies (external review 2026-09-15: the SIMD paths
