@@ -168,7 +168,8 @@ impl PdController3D {
             MotorMode::Off => Vec3Fix::ZERO,
             MotorMode::Position => {
                 // Rotation error as axis-angle
-                let error_quat = self.target_rotation.mul(current_rotation.conjugate());
+                let error_quat =
+                    shortest_arc(self.target_rotation.mul(current_rotation.conjugate()));
                 let error_axis = Vec3Fix::new(error_quat.x, error_quat.y, error_quat.z);
                 let two = Fix128::from_int(2);
                 let error_scaled =
@@ -254,6 +255,22 @@ pub fn apply_motors(motors: &[JointMotor], joints: &[Joint], bodies: &mut [Rigid
         if !body_b.inv_mass.is_zero() {
             bodies[body_b_idx].velocity = bodies[body_b_idx].velocity + impulse * body_b.inv_mass;
         }
+    }
+}
+
+/// Return the representative of `q`'s rotation with `w >= 0`.
+///
+/// `q` and `-q` describe the same rotation, but the vector part of an error
+/// quaternion flips sign with it. Taking the `w >= 0` representative makes an
+/// error derived from the vector part (`2 * xyz`) point along the shortest arc
+/// whichever sign the inputs were stored with.
+#[inline]
+#[must_use]
+pub(crate) fn shortest_arc(q: QuatFix) -> QuatFix {
+    if q.w < Fix128::ZERO {
+        QuatFix::new(-q.x, -q.y, -q.z, -q.w)
+    } else {
+        q
     }
 }
 

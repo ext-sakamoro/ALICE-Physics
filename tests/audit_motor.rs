@@ -301,7 +301,6 @@ fn rotation_error_magnitude_equals_the_angle_for_a_quarter_turn() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S5W2-003: q and -q are the same orientation but the error vector flips sign with w; a target stored with w < 0 drives the joint the long way round (the same orientation as -10 deg about z gives torque z = -0.1743 for +q and +0.1743 for -q at kp 1)"]
 fn torque_is_invariant_under_target_quaternion_sign() {
     let q = quat_axis_angle([0.0, 0.0, 1.0], -0.17453292519943295); // -10 deg, w > 0
     let neg = QuatFix::new(-q.x, -q.y, -q.z, -q.w); // same rotation
@@ -316,15 +315,14 @@ fn torque_is_invariant_under_target_quaternion_sign() {
 #[test]
 fn torque_is_invariant_under_current_quaternion_sign() {
     // same statement for the current orientation: the product target * conj(current)
-    // changes sign with current, so it must flip -> this pins the actual behaviour
+    // changes sign with current, so the error is taken from its w >= 0 representative
     let tgt = quat_axis_angle([0.0, 0.0, 1.0], 0.1);
     let cur = quat_axis_angle([0.0, 0.0, 1.0], 0.0);
     let neg_cur = QuatFix::new(-cur.x, -cur.y, -cur.z, -cur.w);
     let a = arr(pos_mode([1.0; 3], [0.0; 3], 1e6, tgt).compute_torque(cur, Vec3Fix::ZERO));
     let b = arr(pos_mode([1.0; 3], [0.0; 3], 1e6, tgt).compute_torque(neg_cur, Vec3Fix::ZERO));
-    // actual: opposite sign (same defect family as AUD-A-S5W2-003, pinned here)
     for k in 0..3 {
-        assert!((a[k] + b[k]).abs() < 1e-9, "axis {k}: {} vs {}", a[k], b[k]);
+        assert!((a[k] - b[k]).abs() < 1e-9, "axis {k}: {} vs {}", a[k], b[k]);
     }
 }
 
