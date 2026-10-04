@@ -397,7 +397,14 @@ pub fn solve_extra_joints(bodies: &mut [RigidBody], joints: &[ExtraJoint], dt: F
     }
 }
 
-/// Solve pulley joint: `len_a + ratio * len_b = total_length_at_creation`.
+/// Solve pulley joint inside [`solve_extra_joints`].
+///
+/// # Claims
+///
+/// - This is a no-op: [`PulleyJoint`] stores no rest length, so there is no
+///   target to correct toward and no body is moved.
+/// - To constrain the rope length use [`solve_pulley_to_length`], which takes the
+///   rest length explicitly.
 fn solve_pulley(joint: &PulleyJoint, bodies: &mut [RigidBody], dt: Fix128) {
     let body_a = bodies[joint.body_a];
     let body_b = bodies[joint.body_b];
@@ -491,6 +498,65 @@ fn solve_pulley(joint: &PulleyJoint, bodies: &mut [RigidBody], dt: Fix128) {
             bodies[joint.body_b].position =
                 bodies[joint.body_b].position - dir_b * (lambda * joint.ratio * w_b);
         }
+    }
+}
+
+/// Constrain the pulley rope to a maximum total length (rope cannot stretch).
+///
+/// The constraint is `C = len_a + ratio * len_b - rest_length <= 0` with
+/// `len_a = |p_a + R_a anchor_a - ground_anchor_a|` and
+/// `len_b = |p_b + R_b anchor_b - ground_anchor_b|`. One XPBD position
+/// projection is applied along the two rope directions:
+/// `lambda = C / (w_a + ratio^2 w_b + compliance / dt^2)`,
+/// `p_a -= dir_a lambda w_a`, `p_b -= ratio dir_b lambda w_b`.
+///
+/// # Claims
+///
+/// - Units: lengths in the same unit as the body positions, `dt` in seconds.
+/// - Only an excess (`C > 0`) is corrected; a slack rope (`C <= 0`) moves nothing.
+/// - Corrections are split by inverse mass; a body with `inv_mass = 0` does not move.
+/// - Positional only: the anchors' lever arms are used for the length but no
+///   rotation is applied.
+/// - If both ropes have zero length, or the generalized inverse mass is zero,
+///   nothing is moved.
+pub fn solve_pulley_to_length(
+    joint: &PulleyJoint,
+    bodies: &mut [RigidBody],
+    rest_length: Fix128,
+    dt: Fix128,
+) {
+    let body_a = bodies[joint.body_a];
+    let body_b = bodies[joint.body_b];
+
+    let world_a = body_a.position + body_a.rotation.rotate_vec(joint.anchor_a);
+    let world_b = body_b.position + body_b.rotation.rotate_vec(joint.anchor_b);
+
+    let (dir_a, len_a) = (world_a - joint.ground_anchor_a).normalize_with_length();
+    let (dir_b, len_b) = (world_b - joint.ground_anchor_b).normalize_with_length();
+
+    if len_a.is_zero() && len_b.is_zero() {
+        return;
+    }
+
+    let c = len_a + joint.ratio * len_b - rest_length;
+    if c <= Fix128::ZERO {
+        return;
+    }
+
+    let w_a = body_a.inv_mass;
+    let w_b = body_b.inv_mass;
+    let w_sum = w_a + joint.ratio * joint.ratio * w_b + joint.compliance / (dt * dt);
+    if w_sum.is_zero() {
+        return;
+    }
+    let lambda = c / w_sum;
+
+    if !w_a.is_zero() {
+        bodies[joint.body_a].position = bodies[joint.body_a].position - dir_a * (lambda * w_a);
+    }
+    if !w_b.is_zero() {
+        bodies[joint.body_b].position =
+            bodies[joint.body_b].position - dir_b * (lambda * joint.ratio * w_b);
     }
 }
 
