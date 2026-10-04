@@ -113,7 +113,6 @@ fn point_field_is_clamped_at_max_force_near_the_center() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S4W3-018: Point field within about 3e-9 of its center: strength / dist_sq overflows Fix128 and the cap is not applied: at d = 3.2e-9 the force is +8.4e18 along +x (wrong sign, away from the center) and for d <= 5.6e-10 it is 0, where the expected value is the cap (-1000 toward the center)"]
 fn point_field_near_the_center_never_flips_sign_or_drops_below_the_cap() {
     // strength / r^2 grows without bound as r -> 0; the cap must hold at every distance.
     let f = ForceField::Point {
@@ -383,7 +382,6 @@ fn magnetic_force_close_to_the_dipole_keeps_its_sign_and_grows_down_to_1e_minus_
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S4W3-019: Magnetic force has no cap and r^3 = dist_sq * dist underflows Fix128: the force grows to 6.1e18 at d = 5.6e-7 (2.4% off 1/r^3 already at 1e-6) and then collapses to exactly 0 for d <= 3.2e-7 instead of continuing to grow (or being capped like the Point field)"]
 fn magnetic_force_does_not_collapse_to_zero_very_close_to_the_dipole() {
     let f = ForceField::Magnetic {
         position: Vec3Fix::ZERO,

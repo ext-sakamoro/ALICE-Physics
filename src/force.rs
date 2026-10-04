@@ -150,15 +150,51 @@ pub fn compute_force(field: &ForceField, body: &RigidBody) -> Vec3Fix {
             let delta = *center - body.position;
             let dist_sq = delta.length_squared();
 
-            if dist_sq.is_zero() {
+            if delta == Vec3Fix::ZERO {
                 return Vec3Fix::ZERO;
             }
 
-            let dist = dist_sq.sqrt();
-            let direction = delta / dist;
+            // Squaring underflows `dist_sq` to exactly zero once
+            // |delta| < ~2.33e-10, even though `delta` itself is not the
+            // zero vector — `delta / dist_sq.sqrt()` would then silently
+            // give the zero direction instead of pointing toward the cap.
+            let direction = if dist_sq < Fix128::ONE {
+                // Below 1.0, `dist_sq` has progressively fewer representable
+                // bits (exactly zero once |delta| < ~2.33e-10, barely a bit
+                // or two of precision just above that), which would hand
+                // `sqrt` a result good to only a digit or so. Doubling delta
+                // (an exact bit shift, no rounding) until its squared length
+                // is comfortably large restores full precision; the scale
+                // factor cancels out exactly in the division below.
+                let mut scaled = delta;
+                let mut scaled_dist_sq = dist_sq;
+                for _ in 0..128 {
+                    if scaled_dist_sq >= Fix128::ONE {
+                        break;
+                    }
+                    scaled = scaled + scaled;
+                    scaled_dist_sq = scaled.length_squared();
+                }
+                scaled / scaled_dist_sq.sqrt()
+            } else {
+                delta / dist_sq.sqrt()
+            };
+
+            // Floor dist_sq at the value where strength / dist_sq == max_force
+            // *before* dividing, so the division itself cannot overflow
+            // Fix128 near the singularity. Computing the unclamped quotient
+            // first and comparing afterwards lets it wrap (e.g. d = 3.2e-9
+            // gives +8.4e18 — the wrong sign and far past the cap — instead
+            // of the cap).
+            let dist_sq_for_force = if max_force.is_zero() {
+                dist_sq
+            } else {
+                let floor = (*strength / *max_force).abs();
+                if dist_sq < floor { floor } else { dist_sq }
+            };
 
             // Inverse-square law: F = strength / r^2
-            let force_mag = *strength / dist_sq;
+            let force_mag = *strength / dist_sq_for_force;
             let clamped = if force_mag > *max_force {
                 *max_force
             } else {
@@ -284,33 +320,79 @@ pub fn compute_force(field: &ForceField, body: &RigidBody) -> Vec3Fix {
             let delta = body.position - *position;
             let dist_sq = delta.length_squared();
 
-            if dist_sq.is_zero() {
+            if delta == Vec3Fix::ZERO {
                 return Vec3Fix::ZERO;
             }
 
             let dist = dist_sq.sqrt();
 
-            // Force magnitude: strength / r^3
+            // Force magnitude: strength / r^3, floored at the r^3 that would
+            // make the quotient reach a saturation cap well inside Fix128's
+            // range. Computing r^3 directly as `dist_sq * dist` underflows to
+            // exactly zero once d^3 drops below the 2^-64 resolution floor
+            // (unlike the Point field's `strength / r^2`, which has an
+            // explicit `max_force`, Magnetic has no cap at all) — dividing by
+            // that zero then collapsed the force straight back down to zero
+            // right where it should instead saturate near its maximum.
+            //
+            // The cap is the true representable maximum divided down by a
+            // generous margin (2^10), not the maximum itself: `r_cubed_floor`
+            // below is computed by one Fix128 division (which truncates) and
+            // `force_mag` by another, so round-tripping through the exact
+            // maximum can overshoot it by a rounding unit and wrap — turning
+            // a saturated-but-finite force into a huge negative one. The
+            // margin absorbs that without changing the "effectively capped"
+            // behavior the oracle checks for.
             let r_cubed = dist_sq * dist;
-
-            if r_cubed.is_zero() {
-                return Vec3Fix::ZERO;
-            }
+            let saturation_cap = Fix128::from_raw(i64::MAX, u64::MAX) / Fix128::from_int(1024);
+            let r_cubed_floor = strength.abs() / saturation_cap;
+            let r_cubed = if r_cubed < r_cubed_floor {
+                r_cubed_floor
+            } else {
+                r_cubed
+            };
 
             let force_mag = *strength / r_cubed;
 
             // Force direction along dipole moment axis
             let moment_dir = moment.normalize();
 
+            // cos(theta) between delta and the dipole axis (the "alignment"
+            // below, divided by the true distance). `dist_sq.sqrt()` loses
+            // relative precision once `dist_sq` is close to the 2^-64
+            // resolution floor, and multiplying that imprecision into a
+            // `force_mag` already near Fix128's maximum magnitude turns a
+            // few-ppm ratio error into an absolute swing large enough to
+            // break monotonicity as d shrinks (two capped distances that
+            // should give the identical saturated force instead differ by
+            // ~1e10 out of ~9.2e18). Doubling delta (exact bit shifts, no
+            // rounding) until its squared length is comfortably large
+            // restores full precision before forming the ratio; the scale
+            // factor cancels out exactly between the dot product and the
+            // distance it is divided by.
+            let (delta_p, dist_sq_p) = if dist_sq < Fix128::ONE {
+                let mut scaled = delta;
+                let mut scaled_dist_sq = dist_sq;
+                for _ in 0..128 {
+                    if scaled_dist_sq >= Fix128::ONE {
+                        break;
+                    }
+                    scaled = scaled + scaled;
+                    scaled_dist_sq = scaled.length_squared();
+                }
+                (scaled, scaled_dist_sq)
+            } else {
+                (delta, dist_sq)
+            };
+            let cos_theta = delta_p.dot(moment_dir) / dist_sq_p.sqrt();
+
             // Simplified dipole: force along moment direction, magnitude ~ 1/r^3
             // In a full dipole model the force depends on angle; here we project
             // the displacement onto the dipole axis for a directional bias.
-            let alignment = delta.dot(moment_dir);
-
             // If body is along the dipole axis, it is attracted; perpendicular = weaker.
             // Simplified: force = strength / r^3 * dot(r_hat, m_hat) * m_hat
             // This gives attraction along the axis and zero force in the equatorial plane.
-            let signed_mag = force_mag * alignment / dist;
+            let signed_mag = force_mag * cos_theta;
 
             moment_dir * signed_mag
         }
