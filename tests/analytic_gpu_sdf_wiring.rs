@@ -532,6 +532,7 @@ fn test_batch_size_equals_simd_width() {
         "batch_size() must equal crate::math::SIMD_WIDTH by definition"
     );
     // Default feature set has no `simd` feature: scalar fallback is 1.
+    #[cfg(not(feature = "simd"))]
     assert_eq!(
         batch_size(),
         1,

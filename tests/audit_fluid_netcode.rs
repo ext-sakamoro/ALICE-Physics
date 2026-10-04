@@ -357,7 +357,6 @@ fn apply_with_a_short_velocity_base_must_not_panic() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S5W2-017: a position difference of exactly Fix128::MIN (hi = i64::MIN, lo = 0) has abs() == MIN (negative), so `abs() > threshold` is false and the change is not shipped at threshold 0; the receiver keeps the old value (extreme range only)"]
 fn a_position_jump_of_the_most_negative_representable_difference_is_shipped() {
     let mut old = sample(1);
     old.0[0].x = Fix128::ZERO;
