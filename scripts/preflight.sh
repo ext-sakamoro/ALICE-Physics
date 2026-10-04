@@ -44,6 +44,41 @@ python3 scripts/wiring_guard.py
 step "status generators oracle (docs/wiring-status.md / docs/oracle-status.md の生成器)"
 python3 scripts/test_gen_status.py
 
+# Fast static gates that failed late in practice (no_std build, public API drift)
+step "no_std rlib build (cdylib crate-type needs std, so rustc --crate-type rlib)"
+cargo rustc --lib --no-default-features --crate-type rlib
+
+step "public API snapshot (needs nightly + cargo-public-api)"
+if cargo +nightly public-api --version >/dev/null 2>&1; then
+  tmp=$(mktemp)
+  cargo +nightly public-api --features "$NATIVE" --simplified > "$tmp" 2>/dev/null
+  if ! diff -u docs/PUBLIC_API_SNAPSHOT.txt "$tmp"; then
+    echo "public API drift: regenerate docs/PUBLIC_API_SNAPSHOT.txt (diff above)" >&2
+    exit 1
+  fi
+  rm -f "$tmp"
+else
+  echo "skip: cargo +nightly public-api not installed" >&2
+fi
+
+# Cheap, failure-prone gates run first so a red shows up in minutes, not after
+# the whole test suite (2026-10-04: the L0 ratchet used to be the LAST step, so a
+# new unreached pub item cost a full cargo test run before it was reported).
+# --quick keeps its old coverage (it does not need rust-analyzer).
+if [[ $quick -eq 0 ]]; then
+  # CI job `scip`: rust-analyzer index (about a minute), known-defect symbol
+  # resolution, and the L0 ratchet (scripts/integration-baseline.txt)
+  step "SCIP checks (audit_refs --check, scip_reach --check-baseline)"
+  if command -v rust-analyzer >/dev/null && rust-analyzer --version >/dev/null 2>&1; then
+    scripts/scip_index.sh
+    python3 scripts/audit_refs.py --check
+    python3 scripts/scip_reach.py --check-baseline
+  else
+    echo "rust-analyzer not installed: rustup component add rust-analyzer" >&2
+    exit 1
+  fi
+fi
+
 step "clippy -D warnings (default, all targets)"
 cargo clippy --all-targets -- -D warnings
 
@@ -60,9 +95,6 @@ cargo clippy --all-targets --features "$NATIVE" -- -D warnings
 step "clippy -D warnings (full native feature set incl. neural/replay/analytics, all targets)"
 cargo clippy --all-targets --features "$NATIVE,neural,replay,analytics" -- -D warnings
 
-step "no_std rlib build (cdylib crate-type needs std, so rustc --crate-type rlib)"
-cargo rustc --lib --no-default-features --crate-type rlib
-
 step "wasm32-wasip1 golden tests build (dev-deps are built for the target too)"
 rustup target list --installed | grep -q wasm32-wasip1 || rustup target add wasm32-wasip1
 cargo test --test determinism_golden --target wasm32-wasip1 --no-run
@@ -71,19 +103,6 @@ cargo test --test determinism_golden_f32 --target wasm32-wasip1 --no-run
 step "rustdoc -D warnings (default + docs.rs feature set)"
 RUSTDOCFLAGS="-Dwarnings" cargo doc --lib --no-deps
 RUSTDOCFLAGS="-Dwarnings" cargo doc --lib --no-deps --features "$NATIVE"
-
-step "public API snapshot (needs nightly + cargo-public-api)"
-if cargo +nightly public-api --version >/dev/null 2>&1; then
-  tmp=$(mktemp)
-  cargo +nightly public-api --features "$NATIVE" --simplified > "$tmp" 2>/dev/null
-  if ! diff -u docs/PUBLIC_API_SNAPSHOT.txt "$tmp"; then
-    echo "public API drift: regenerate docs/PUBLIC_API_SNAPSHOT.txt (diff above)" >&2
-    exit 1
-  fi
-  rm -f "$tmp"
-else
-  echo "skip: cargo +nightly public-api not installed" >&2
-fi
 
 if [[ $quick -eq 1 ]]; then
   echo; echo "preflight --quick OK (test suites skipped)"; exit 0
@@ -100,17 +119,5 @@ cargo test --lib --features "ffi" "ffi::"
 
 step "cargo test --lib (neural / replay / analytics via crates.io siblings)"
 cargo test --lib --features "neural,replay,analytics"
-
-# CI job `scip`: rust-analyzer index (about a minute), known-defect symbol
-# resolution, and the L0 ratchet (scripts/integration-baseline.txt)
-step "SCIP checks (audit_refs --check, scip_reach --check-baseline)"
-if command -v rust-analyzer >/dev/null && rust-analyzer --version >/dev/null 2>&1; then
-  scripts/scip_index.sh
-  python3 scripts/audit_refs.py --check
-  python3 scripts/scip_reach.py --check-baseline
-else
-  echo "rust-analyzer not installed: rustup component add rust-analyzer" >&2
-  exit 1
-fi
 
 echo; echo "preflight OK"
