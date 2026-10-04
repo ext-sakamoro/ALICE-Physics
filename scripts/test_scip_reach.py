@@ -423,6 +423,48 @@ class Main(unittest.TestCase):
         self.assertIn("`src/lib.rs::via_binding` (live)", text)  # baseline says unwired, a binding reaches it
 
 
+class Unindexed(unittest.TestCase):
+    """pub items the index has no definition for (macro_rules bodies)."""
+
+    TEXT = ("pub fn used() {}\nmacro_rules! gen { ($n:ident) => { impl $n { pub fn generated(&self) {} } } }\n"
+            "trait Tr { fn run(&self); }\nimpl Tr for X { fn run(&self) {} }")
+
+    def crate(self, baseline: str | None) -> Path:
+        src = (Doc("src/lib.rs", self.TEXT)
+               .define("used().", 0, "used")
+               .define("Tr#run().", 2, "run")
+               .define("impl#[X][Tr]run().", 3, "run"))
+        d = build([src, Main.EX(), Main.FFI(), Main.FUZZ()])
+        if baseline is not None:
+            (d / "scripts").mkdir()
+            (d / "scripts" / "integration-baseline.txt").write_text(baseline, encoding="utf-8")
+        return d
+
+    def test_item_in_a_macro_body_is_listed_and_an_indexed_one_is_not(self):
+        d = self.crate(None)
+        s_ = d / "target" / "scip"
+        a = sr.analyze(d, [s_ / "native.scip", s_ / "wasm.scip", s_ / "fuzz.scip"])
+        self.assertEqual(a.unindexed, ["src/lib.rs::generated"])
+
+    def test_unlisted_unindexed_item_fails_the_check(self):
+        d = self.crate("# none\n")
+        self.assertEqual(sr.main(["--root", str(d), "--check-baseline"]), 1)
+
+    def test_listed_unindexed_item_passes_and_a_stale_one_fails(self):
+        d = self.crate("unindexed: src/lib.rs::generated\n")
+        self.assertEqual(sr.main(["--root", str(d), "--check-baseline"]), 0)
+        d = self.crate("unindexed: src/lib.rs::generated\nunindexed: src/lib.rs::gone\n")
+        self.assertEqual(sr.main(["--root", str(d), "--check-baseline"]), 1)
+
+    def test_write_baseline_records_the_unindexed_items(self):
+        d = self.crate(None)
+        (d / "scripts").mkdir()
+        self.assertEqual(sr.main(["--root", str(d), "--write-baseline"]), 0)
+        text = (d / "scripts" / "integration-baseline.txt").read_text(encoding="utf-8")
+        self.assertIn("unindexed: src/lib.rs::generated\n", text)
+        self.assertEqual(sr.main(["--root", str(d), "--check-baseline"]), 0)
+
+
 class Baseline(unittest.TestCase):
     """--check-baseline: a ratchet on L0 items, like scripts/wiring-baseline.txt."""
 
