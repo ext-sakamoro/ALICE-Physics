@@ -154,13 +154,20 @@ impl BrushTire {
                 lateral,
             }
         } else {
-            // full sliding: 1/λ = d / m (0 when 1+κ ≤ 0)
-            let inv_lam = d / m;
-            let mu_x = mu_xk + (mu_xs - mu_xk) * inv_lam;
-            let mu_y = mu_yk + (mu_ys - mu_yk) * inv_lam;
+            // full sliding: w = 1/λ = d / m (0 when 1+κ ≤ 0)
+            let w = d / m;
+            // slip-velocity direction (κ, tan α); an axis without grip drops out
+            let vx = if x_on { kappa } else { Fix128::ZERO };
+            let vy = if y_on { tan_a } else { Fix128::ZERO };
+            let (_, sx, sy) = magnitude_and_direction(vx, vy);
+            // blend stiffness-weighted (λ = 1) → slip-velocity (λ → ∞)
+            let rest = Fix128::ONE - w;
+            let (_, dx, dy) = magnitude_and_direction(w * ux + rest * sx, w * uy + rest * sy);
+            let mu_x = mu_xk + (mu_xs - mu_xk) * w;
+            let mu_y = mu_yk + (mu_ys - mu_yk) * w;
             TireForce {
-                longitudinal: fz * mu_x * ux,
-                lateral: -(fz * mu_y * uy),
+                longitudinal: fz * mu_x * dx,
+                lateral: -(fz * mu_y * dy),
             }
         }
     }
@@ -267,21 +274,29 @@ impl TireModel {
     ///   `F_x = C_κ σ_x (1 − λ + λ²/3)`, `F_y = −C_α σ_y (1 − λ + λ²/3)`;
     ///   in ellipse units `|F| = 1 − (1 − λ)³ ≤ 1`, slope at zero slip
     ///   `C_κ` / `−C_α` for every load.
-    /// - full sliding (`λ ≥ 1`): the force points along
-    ///   `u = (C_κ κ / μ_x,s, C_α tan α / μ_y,s) / |…|` (opposing the
-    ///   slide, continuous with adhesion) with the static → kinetic
-    ///   transition
+    /// - full sliding (`λ ≥ 1`), with weight `w = 1/λ ∈ [0, 1]`:
     ///
     ///   ```text
-    ///   μ_i(λ) = μ_i,k + (μ_i,s − μ_i,k) / λ        F = F_z (μ_x u_x, −μ_y u_y)
+    ///   u_s = (C_κ κ / μ_x,s, C_α tan α / μ_y,s) / |…|   stiffness-weighted (adhesion direction)
+    ///   u_v = (κ, tan α) / |…|                           against the slip velocity V(−κ, tan α)
+    ///   u   = (w u_s + (1 − w) u_v) / |…|
+    ///   μ_i = μ_i,k + (μ_i,s − μ_i,k) w
+    ///   F   = F_z (μ_x u_x, −μ_y u_y)
     ///   ```
     ///
-    ///   i.e. the full static coefficient at the adhesion limit `λ = 1`
-    ///   (force continuous there) decaying to the kinetic coefficient as the
-    ///   sliding grows. A locked or backward-spinning wheel (`1 + κ ≤ 0`) is
-    ///   the limit `λ = ∞`: pure kinetic, so `κ = −1, tan α = 0` gives
-    ///   `F_x = −μ_x,k F_z` exactly. Since `μ_i(λ) ≤ μ_i,s`, the force stays
-    ///   inside the static ellipse.
+    ///   At the adhesion limit `λ = 1` this is the static coefficient along
+    ///   the adhesion direction (force continuous there); as the sliding
+    ///   grows the coefficient decays to kinetic and the direction turns to
+    ///   the slip velocity, i.e. Coulomb friction of a fully sliding patch
+    ///   with the ellipse law of
+    ///   [`AnisotropicFriction::friction_force`] (`F_i = −F_z μ_i v̂_i`). A
+    ///   locked or backward-spinning wheel (`1 + κ ≤ 0`) is the limit
+    ///   `λ = ∞` (`w = 0`): pure kinetic against the slip velocity, so
+    ///   `κ = −1, tan α = 0` gives `F_x = −μ_x,k F_z` exactly and a steered
+    ///   locked wheel produces no force component across its slide. Since
+    ///   `μ_i ≤ μ_i,s` and `|u| = 1`, the force stays inside the static
+    ///   ellipse. `u_s` and `u_v` lie in the same quadrant, so the blend
+    ///   never cancels.
     ///
     /// Evaluated as `b = (C_κ κ μ_y,s, C_α tan α μ_x,s)`,
     /// `d = 3 F_z (1 + κ) μ_x,s μ_y,s`, `λ = |b| / d` — no division by a
@@ -419,10 +434,10 @@ mod tests {
     ///
     /// `σ = (κ, tan α)/(1+κ)`, `λ = |(C_κ σ_x/μ_xs, C_α σ_y/μ_ys)| / (3 F_z)`;
     /// adhesion (`1+κ > 0`, `λ < 1`): `F = (C_κ σ_x, −C_α σ_y)(1 − λ + λ²/3)`;
-    /// sliding: direction `u = (C_κ κ/μ_xs, C_α tan α/μ_ys)/|…|`,
-    /// `μ_i = μ_ik + (μ_is − μ_ik)/λ` (`1/λ = 0` when `1+κ ≤ 0`),
-    /// `F = F_z (μ_x u_x, −μ_y u_y)`.
-    #[allow(clippy::too_many_arguments)]
+    /// sliding: stiffness-weighted direction `u_s = (C_κ κ/μ_xs, C_α tan α/μ_ys)/|…|`,
+    /// slip-velocity direction `u_v = (κ, tan α)/|…|`, weight `w = 1/λ`
+    /// (`0` when `1+κ ≤ 0`), `u = (w u_s + (1−w) u_v)/|…|`,
+    /// `μ_i = μ_ik + (μ_is − μ_ik) w`, `F = F_z (μ_x u_x, −μ_y u_y)`.
     fn brush_ref(
         ck: f64,
         ca: f64,
@@ -434,7 +449,7 @@ mod tests {
         let (mxs, mxk) = axis(g.longitudinal_static, g.longitudinal_kinetic);
         let (mys, myk) = axis(g.transverse_static, g.transverse_kinetic);
         let one_k = 1.0 + kappa;
-        if one_k > 0.0 {
+        let w = if one_k > 0.0 {
             let sx = kappa / one_k;
             let sy = t / one_k;
             let lam = (ck * sx / mxs).hypot(ca * sy / mys) / (3.0 * fz);
@@ -442,18 +457,19 @@ mod tests {
                 let shape = 1.0 - lam + lam * lam / 3.0;
                 return (ck * sx * shape, -ca * sy * shape);
             }
-            let ax = ck * kappa / mxs;
-            let ay = ca * t / mys;
-            let m = ax.hypot(ay);
-            let mx = mxk + (mxs - mxk) / lam;
-            let my = myk + (mys - myk) / lam;
-            (fz * mx * ax / m, -fz * my * ay / m)
+            1.0 / lam
         } else {
-            let ax = ck * kappa / mxs;
-            let ay = ca * t / mys;
-            let m = ax.hypot(ay);
-            (fz * mxk * ax / m, -fz * myk * ay / m)
-        }
+            0.0
+        };
+        let (ax, ay) = (ck * kappa / mxs, ca * t / mys);
+        let ma = ax.hypot(ay);
+        let mv = kappa.hypot(t);
+        let vx = w * ax / ma + (1.0 - w) * kappa / mv;
+        let vy = w * ay / ma + (1.0 - w) * t / mv;
+        let n = vx.hypot(vy);
+        let mx = mxk + (mxs - mxk) * w;
+        let my = myk + (mys - myk) * w;
+        (fz * mx * vx / n, -fz * my * vy / n)
     }
 
     /// Pacejka pure-slip curve normalised by `D`, f64 / libm.
@@ -586,6 +602,76 @@ mod tests {
         });
         assert_eq!(f.longitudinal, -(fz * g.longitudinal_kinetic));
         assert_eq!(f.lateral, Fix128::ZERO);
+    }
+
+    #[test]
+    fn brush_locked_steered_wheel_force_opposes_the_slip_velocity() {
+        // fully sliding patch (1+κ ≤ 0): Coulomb friction against the slip
+        // velocity v_s = V(−κ, tan α) (module conventions). Isotropic grip ⇒
+        // F = −μ_k F_z v̂_s, i.e. F ∥ (κ, −tan α), |F| = μ_k F_z, for any C_κ ≠ C_α.
+        let iso = AnisotropicFriction {
+            longitudinal_static: Fix128::ONE,
+            longitudinal_kinetic: Fix128::from_ratio(3, 4),
+            transverse_static: Fix128::ONE,
+            transverse_kinetic: Fix128::from_ratio(3, 4),
+            slip_threshold_m_s: Fix128::from_ratio(1, 20),
+        };
+        let fz = 4000.0;
+        for k in [-1.0, -1.5, -40.0] {
+            for t in [-2.0, -0.3, -0.02, 0.05, 0.4, 3.0] {
+                let f = brush().force(&input(k, t, fz, iso));
+                let (x, y) = (f.longitudinal.to_f64(), f.lateral.to_f64());
+                let n = k.hypot(t);
+                let (ex, ey) = (0.75 * fz * k / n, -0.75 * fz * t / n);
+                // angle between F and −v̂_s: |cross| / (|F| |v|) < 1e-12
+                let cross = (x * ey - y * ex) / (0.75 * fz * 0.75 * fz);
+                assert!(
+                    cross.abs() < 1e-12,
+                    "angle {cross} at κ {k}, tanα {t}: ({x}, {y})"
+                );
+                assert!(x * ex + y * ey > 0.0);
+                assert!(
+                    (x.hypot(y) - 0.75 * fz).abs() < 1e-9 * fz,
+                    "|F| {}",
+                    x.hypot(y)
+                );
+            }
+        }
+        // anisotropic: friction ellipse of `AnisotropicFriction::friction_force`,
+        // F_i = −F_z μ_ik v̂_i (each component scaled by its own kinetic μ)
+        let g = AnisotropicFriction::tyre_asphalt();
+        for t in [-0.5, 0.2, 1.0] {
+            let f = brush().force(&input(-1.0, t, fz, g));
+            let n = 1.0f64.hypot(t);
+            assert!((f.longitudinal.to_f64() - -0.9 * fz / n).abs() < 1e-9 * fz);
+            assert!((f.lateral.to_f64() + 0.7 * fz * t / n).abs() < 1e-9 * fz);
+        }
+    }
+
+    #[test]
+    fn brush_sliding_direction_turns_from_stiffness_weighted_to_slip_velocity() {
+        // at λ = 1⁺ the direction equals the adhesion one (stiffness-weighted),
+        // for λ → ∞ it tends to the slip-velocity direction: angle to −v̂_s shrinks with λ
+        let iso = AnisotropicFriction {
+            longitudinal_static: Fix128::ONE,
+            longitudinal_kinetic: Fix128::ONE,
+            transverse_static: Fix128::ONE,
+            transverse_kinetic: Fix128::ONE,
+            slip_threshold_m_s: Fix128::from_ratio(1, 20),
+        };
+        let fz = 4000.0;
+        // braking towards lock (κ → −1⁺, tan α fixed): σ = (κ, tan α)/(1+κ) and λ grow
+        // without bound (with κ > 0, σ_x ≤ 1 keeps λ bounded, so that side cannot reach w → 0)
+        let t = 0.3;
+        let mut last = f64::INFINITY;
+        for k in [-0.3, -0.7, -0.95, -0.999, -0.99999] {
+            let f = brush().force(&input(k, t, fz, iso));
+            // angle between F and −v̂_s ∥ (κ, −tan α)
+            let ang = (-f.lateral.to_f64()).atan2(f.longitudinal.to_f64()) - t.atan2(k);
+            assert!(ang.abs() < last, "κ {k}: angle {ang} not shrinking");
+            last = ang.abs();
+        }
+        assert!(last < 1e-3, "{last}");
     }
 
     #[test]
@@ -846,7 +932,8 @@ mod tests {
             ..AnisotropicFriction::tyre_asphalt()
         };
         let (ca, ms, fz) = (60_000.0, 0.9, 4000.0);
-        for (k, t) in [(0.0, 0.01), (0.3, 0.01), (0.0, 0.5)] {
+        // (0.3, 0.5): sliding with κ ≠ 0 — the slide direction must also drop the gripless axis
+        for (k, t) in [(0.0, 0.01), (0.3, 0.01), (0.0, 0.5), (0.3, 0.5)] {
             let f = brush().force(&input(k, t, fz, g));
             assert!(f.longitudinal.is_zero());
             let s = t / (1.0 + k);
