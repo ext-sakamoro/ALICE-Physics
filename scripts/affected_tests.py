@@ -11,7 +11,8 @@ CI は全 test を 5 OS で走らせるので、ローカルの push 前検査�
   * 変更した tests/*.rs 自身も選ぶ
   * `determinism_golden` / `determinism_golden_f32` は常に選ぶ
   * lib の unit test は `<module>::` の filter で選ぶ
-  * `src/lib.rs` を変えた場合は module を絞れないので全 test に退避する
+  * `src/lib.rs` を変えた場合: 追加した行が `mod` / `use` / cfg / comment だけなら、追加された module を変更した module として扱う
+    (新 module の追加で全 test に退避しない) それ以外 (行の削除・式の変更) は絞れないので全 test に退避する
   * `required-features` が実行する feature に含まれない test target は選ばない (cargo が明示指定を拒むため)
   * src を変えたのに、golden 以外に 1 本も選ばれなければ失敗する (空振りで green にしない)
   * 実行した test が 0 本なら失敗する
@@ -52,6 +53,37 @@ def module_of(path: str) -> str | None:
     return p.parts[1]
 
 
+_LIB_ADD_OK = re.compile(
+    r"^\+\s*((pub(\([a-z]+\))?\s+)?(mod\s+(\w+)|use\b[^;]*|extern\s+crate\b[^;]*)\s*;?"
+    r"|#\[cfg[^\n]*\]|#!?\[[^\n]*\]|//[^\n]*|)\s*$"
+)
+# `pub use` の括弧の中身だけの行 (`SolverBackend, WorldSnapshotError,`): 再 export の増減で、挙動を変えない
+_IDENT_LIST = re.compile(r"^[-+]\s*(?:[A-Za-z_][\w:]*(?:\s+as\s+\w+)?\s*,?\s*)+$")
+_MOD_DECL = re.compile(r"^\+\s*(?:pub(?:\([a-z]+\))?\s+)?mod\s+(\w+)\s*;")
+
+
+def lib_rs_added_modules(diff_text: str) -> list[str] | None:
+    """src/lib.rs の diff が「module の宣言・再 export (括弧の中の名前の増減を含む)・属性・comment の追加だけ」なら、追加された module 名を返す.
+
+    行の削除、式 / 定数 / 関数の変更が 1 行でもあれば None (絞れない = 全 test に退避).
+    """
+    mods: list[str] = []
+    for line in diff_text.splitlines():
+        if line.startswith(("+++", "---", "@@", "diff ", "index ")):
+            continue
+        if _IDENT_LIST.match(line):
+            continue
+        if line.startswith("-"):
+            return None
+        if line.startswith("+"):
+            if not _LIB_ADD_OK.match(line):
+                return None
+            m = _MOD_DECL.match(line)
+            if m:
+                mods.append(m.group(1))
+    return sorted(set(mods))
+
+
 def required_features(cargo_toml: str) -> dict[str, set[str]]:
     """[[test]] の name -> required-features."""
     data = tomllib.loads(cargo_toml)
@@ -67,6 +99,7 @@ def select(
     tests: dict[str, str],
     req: dict[str, set[str]],
     features: set[str],
+    lib_rs_modules: list[str] | None = None,
 ) -> dict:
     """純関数 (git / cargo を呼ばない): 選択結果を返す.
 
@@ -75,9 +108,12 @@ def select(
     """
     src = [f for f in changed if f.startswith("src/") and f.endswith(".rs")]
     src_changed = bool(src)
-    if any(module_of(f) is None for f in src):
+    lib_narrowed = lib_rs_modules is not None
+    if any(module_of(f) is None and not (f == "src/lib.rs" and lib_narrowed) for f in src):
         return {"all": True, "modules": [], "targets": [], "skipped": [], "src_changed": True}
-    modules = sorted({module_of(f) for f in src})
+    modules = sorted(
+        {module_of(f) for f in src if module_of(f) is not None} | set(lib_rs_modules or [])
+    )
     targets: set[str] = set()
     for name, text in tests.items():
         if "alice_physics" not in text:
@@ -141,10 +177,19 @@ def main() -> int:
 
     changed = changed_files(a.base)
     req = required_features((ROOT / "Cargo.toml").read_text(encoding="utf-8"))
-    sel = select(changed, load_tests(), req, features)
+    lib_mods = None
+    if "src/lib.rs" in changed:
+        mb = subprocess.run(
+            ["git", "merge-base", "HEAD", a.base], cwd=ROOT, capture_output=True, text=True, check=True
+        ).stdout.strip()
+        diff = subprocess.run(
+            ["git", "diff", mb, "--", "src/lib.rs"], cwd=ROOT, capture_output=True, text=True, check=True
+        ).stdout
+        lib_mods = lib_rs_added_modules(diff)
+    sel = select(changed, load_tests(), req, features, lib_mods)
 
     if sel["all"]:
-        print("affected_tests: src/lib.rs changed -> cannot narrow, running every test", file=sys.stderr)
+        print("affected_tests: src/lib.rs changed beyond module declarations -> cannot narrow, running every test", file=sys.stderr)
         if a.list:
             print("ALL")
             return 0
