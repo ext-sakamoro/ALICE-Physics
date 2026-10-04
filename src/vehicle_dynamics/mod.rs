@@ -1983,10 +1983,15 @@ mod tests {
     }
 
     /// Rolling resistance far larger than what the slow roll can absorb
-    /// (`C_rr = 5`, 1 mm/s): it stops the car but never pushes it backwards.
+    /// (`C_rr = 5`, 1 mm/s, one wheel): it slows the car but never pushes it
+    /// backwards.
     #[test]
     fn rolling_resistance_never_reverses_the_roll() {
-        let mut v = DynamicVehicle::new(config());
+        // one wheel: with several wheels a reversal by one is undone by the
+        // next (each opposes the current velocity) and would hide here
+        let mut cfg = config();
+        cfg.base.wheels.truncate(1);
+        let mut v = DynamicVehicle::new(cfg);
         let cond = dry(Fix128::from_int(5));
         let mut body = chassis();
         let v0 = fx(1, 1000);
@@ -1995,13 +2000,13 @@ mod tests {
             w.omega = v0 / fx(3, 10);
         }
         v.update(&mut body, &flat(), &env(&cond), dt60());
-        assert!(v.wheels.iter().all(|w| !w.omega.is_zero()));
-        assert!(
-            body.velocity.z >= -fx(1, 1_000_000_000),
-            "{:?}",
-            body.velocity.z.to_f64()
-        );
-        assert!(body.velocity.z < v0);
+        let w = v.wheels[0];
+        assert!(!w.omega.is_zero());
+        // the clamp guards the contact point (an off-centre single wheel
+        // also turns the chassis)
+        let vx = point_velocity(&body, w.contact_point - body.position).dot(Vec3Fix::UNIT_Z);
+        assert!(vx >= -fx(1, 1_000_000_000), "{:?}", vx.to_f64());
+        assert!(vx < v0);
     }
 
     /// A car at rest with the brake on gets anchored wheels and no
