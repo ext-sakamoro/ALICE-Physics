@@ -1942,6 +1942,68 @@ mod tests {
         );
     }
 
+    /// Locked wheels sliding diagonally (45° to the heading, fast enough to
+    /// stay kinetic): combined slip on an isotropic road gives
+    /// `|F| = μ_k F_z` per wheel, not `μ_k F_z` per axis.
+    #[test]
+    fn combined_slip_stays_on_the_friction_circle() {
+        let mut cfg = config();
+        cfg.brakes.max_torque_front = Fix128::from_int(100_000);
+        cfg.brakes.max_torque_rear = Fix128::from_int(100_000);
+        let mut v = DynamicVehicle::new(cfg);
+        let iso = AnisotropicFriction {
+            longitudinal_static: Fix128::ONE,
+            longitudinal_kinetic: fx(8, 10),
+            transverse_static: Fix128::ONE,
+            transverse_kinetic: fx(8, 10),
+            slip_threshold_m_s: fx(5, 100),
+        };
+        let cond = RoadCondition {
+            material: iso,
+            weather: Weather::Dry,
+            rolling_resistance: Fix128::ZERO,
+        };
+        let mut body = chassis();
+        body.velocity = Vec3Fix::new(Fix128::from_int(10), Fix128::ZERO, Fix128::from_int(10));
+        v.input.brake = Fix128::ONE;
+        v.update(&mut body, &flat(), &env(&cond), dt60());
+        for (i, w) in v.wheels.iter().enumerate() {
+            assert!(w.anchor.is_none(), "wheel {i} is sliding");
+            let f = (w.longitudinal_force * w.longitudinal_force
+                + w.lateral_force * w.lateral_force)
+                .sqrt();
+            let want = fx(8, 10) * w.normal_load;
+            assert!(
+                (f - want).abs() <= want * fx(1, 1000),
+                "wheel {i}: |F| {:?} vs μ_k F_z {:?}",
+                f.to_f64(),
+                want.to_f64()
+            );
+        }
+    }
+
+    /// Rolling resistance far larger than what the slow roll can absorb
+    /// (`C_rr = 5`, 1 mm/s): it stops the car but never pushes it backwards.
+    #[test]
+    fn rolling_resistance_never_reverses_the_roll() {
+        let mut v = DynamicVehicle::new(config());
+        let cond = dry(Fix128::from_int(5));
+        let mut body = chassis();
+        let v0 = fx(1, 1000);
+        body.velocity = Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, v0);
+        for w in &mut v.wheels {
+            w.omega = v0 / fx(3, 10);
+        }
+        v.update(&mut body, &flat(), &env(&cond), dt60());
+        assert!(v.wheels.iter().all(|w| !w.omega.is_zero()));
+        assert!(
+            body.velocity.z >= -fx(1, 1_000_000_000),
+            "{:?}",
+            body.velocity.z.to_f64()
+        );
+        assert!(body.velocity.z < v0);
+    }
+
     /// A car at rest with the brake on gets anchored wheels and no
     /// horizontal motion from friction.
     #[test]
