@@ -123,7 +123,6 @@ fn fos_is_never_below_one_when_applied_is_below_allowable() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S1W5-028 (downstream: component_fos): applied = Fix128::MIN keeps abs() negative, so the FoS is -1.7e-17 (a negative safety factor)"]
 fn fos_of_extreme_negative_applied_does_not_panic_and_is_positive() {
     let s = EffectiveStrength::for_material(&MaterialProperties::pla(), PrintOrientation::XYFlat);
     let fos = s.fos_normal_x(Fix128::from_raw(i64::MIN, 0));

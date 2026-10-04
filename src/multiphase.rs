@@ -202,8 +202,14 @@ pub(crate) fn advect_vof_uniform(
 ///
 /// Used by MacCormack to clamp corrector results into the pre-advection
 /// local range (Fedkiw's monotonicity guard).
+///
+/// A grid with a zero extent has no corner values: the range is
+/// `(ZERO, ZERO)` (AUD-A-S2W3-007).
 #[must_use]
 pub fn trilinear_range(field: &Grid3d, cx: Fix128, cy: Fix128, cz: Fix128) -> (Fix128, Fix128) {
+    if field.nx == 0 || field.ny == 0 || field.nz == 0 {
+        return (Fix128::ZERO, Fix128::ZERO);
+    }
     let clamp_neg = |v: Fix128| if v.is_negative() { Fix128::ZERO } else { v };
     let cxx = clamp_neg(cx);
     let cyy = clamp_neg(cy);
@@ -242,8 +248,14 @@ pub fn trilinear_range(field: &Grid3d, cx: Fix128, cy: Fix128, cz: Fix128) -> (F
 
 /// Trilinear-interpolate a scalar `Grid3d` at continuous cell coordinates
 /// `(cx, cy, cz)`. Coordinates outside the grid clamp to boundary values.
+///
+/// A grid with a zero extent has no value to sample: the result is `ZERO`
+/// (AUD-A-S2W3-007).
 #[must_use]
 pub fn trilinear_sample(field: &Grid3d, cx: Fix128, cy: Fix128, cz: Fix128) -> Fix128 {
+    if field.nx == 0 || field.ny == 0 || field.nz == 0 {
+        return Fix128::ZERO;
+    }
     let clamp_neg = |v: Fix128| if v.is_negative() { Fix128::ZERO } else { v };
     let cxx = clamp_neg(cx);
     let cyy = clamp_neg(cy);

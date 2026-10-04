@@ -48,7 +48,6 @@ fn inf_norm_is_the_largest_magnitude_with_sign_dropped() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S3W3-010: residual_norm_inf([Fix128::MIN]) returns 0 because Fix128::abs of -2^63 wraps to itself (negative), so the max never updates; doc says faithful over the whole representable range"]
 fn inf_norm_is_faithful_over_the_whole_representable_range() {
     // Doc: "stays faithful across the whole range in which the components
     // themselves are representable". The most negative representable

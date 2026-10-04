@@ -782,7 +782,6 @@ fn exp_is_accurate_up_to_the_representable_maximum() {
 
 /// ceil / abs at the extreme of the range.
 #[test]
-#[ignore = "known defect: AUD-A-S1W5-028: Fix128::ceil panics in debug (hi + 1 overflow; wraps to i64::MIN in release) for hi == i64::MAX with a fractional part, and Fix128::abs of hi == i64::MIN, lo == 0 returns the same negative value"]
 fn ceil_and_abs_at_the_range_extremes() {
     let top = Fix128 {
         hi: i64::MAX,
