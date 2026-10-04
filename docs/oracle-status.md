@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 4069 |
+| 🟢 Not ignored (run by CI) | 4075 |
 | 🔴 Red by design | 234 |
 | ⏱ Gated (runtime / diagnostic / manual) | 24 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **4327** |
+| **Total** | **4333** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -307,7 +307,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (4069)
+## 🟢 Not ignored (4075)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -577,6 +577,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_thermoelastic.rs` | 6 |
 | `analytic_thermoelastic_channel.rs` | 6 |
 | `analytic_warp_risk_wiring.rs` | 6 |
+| `audit_contact_modifier_once.rs` | 6 |
 | `audit_filament_db.rs` | 6 |
 | `audit_multi_world.rs` | 6 |
 | `audit_profiling.rs` | 6 |
