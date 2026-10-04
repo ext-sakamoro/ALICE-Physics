@@ -201,7 +201,6 @@ fn carreau_fractional_and_integer_paths_agree_at_integer_half_exponents() {
 /// K rate^n overflows Fix128 (+-9.2e18) at rate=5e6, n=3 (1.25e20): the product wraps
 /// silently, so a thickening stress that must be positive and increasing comes out garbage.
 #[test]
-#[ignore = "known defect: AUD-A-S2W2-002: shear_thickening(1,3).stress(5e6) = 1.25e20 exceeds the Fix128 range and wraps to -4.13e18 (no saturation, no doc), below stress(1e6) = 1e18"]
 fn thickening_stress_stays_positive_and_increasing_at_high_rate() {
     let p = PowerLaw::shear_thickening(Fix128::ONE, 3);
     let lo = p.stress(Fix128::from_int(1_000_000));
