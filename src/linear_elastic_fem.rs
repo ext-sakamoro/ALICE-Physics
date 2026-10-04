@@ -253,7 +253,14 @@ impl ElasticMaterial {
     ///
     /// `E <= 0`, or `ν` outside the open interval `(-1, 0.5)` — exactly the
     /// range on which the isotropic stiffness is positive definite. `ν = 0.5`
-    /// is incompressible and makes the Lamé first parameter diverge.
+    /// is incompressible and makes the Lamé first parameter diverge. Also
+    /// rejected: a `ν` close enough to either open-interval endpoint that
+    /// [`Self::lame`]'s `λ = Eν / ((1+ν)(1−2ν))` would already overflow
+    /// `Fix128`'s representable range for the given `E` — `Fix128` is a
+    /// wrapping (not saturating) 128-bit type, so that division would
+    /// otherwise wrap silently to a small or sign-flipped value instead of
+    /// erroring (measured: `E = 1e6`, `ν = 0.5 − 2^-58` gives `λ = -3.7e18`
+    /// against a true closed form of `4.8e22`).
     pub fn new(youngs_modulus_mpa: Fix128, poissons_ratio: Fix128) -> Result<Self, FemError> {
         if youngs_modulus_mpa <= Fix128::ZERO {
             return Err(FemError::InvalidMaterial(
@@ -268,6 +275,20 @@ impl ElasticMaterial {
         if poissons_ratio >= half() {
             return Err(FemError::InvalidMaterial(
                 "Poisson's ratio must be less than 0.5 (0.5 is incompressible)",
+            ));
+        }
+        // Conservative, closed-form-independent overflow guard: estimate
+        // |lambda| as E / gap (dropping the O(1)-O(3) (1+nu) factor, which
+        // only makes the true magnitude larger) and require it to stay
+        // within a safety margin of Fix128::MAX. Multiplying by `gap`
+        // instead of dividing by it avoids any issue from `gap` itself
+        // being extremely small.
+        let safe_max = Fix128::from_raw(i64::MAX, u64::MAX) / Fix128::from_int(16);
+        let gap_hi = half() - poissons_ratio;
+        let gap_lo = poissons_ratio - Fix128::NEG_ONE;
+        if youngs_modulus_mpa >= gap_hi * safe_max || youngs_modulus_mpa >= gap_lo * safe_max {
+            return Err(FemError::InvalidMaterial(
+                "Poisson's ratio is too close to the 0.5 / -1 singularity for this Young's modulus: lame() would overflow Fix128",
             ));
         }
         Ok(Self {
