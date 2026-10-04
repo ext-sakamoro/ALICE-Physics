@@ -33,6 +33,21 @@ were introduced during that release window.
 
 - **physics2d**: `Joint2D::Mouse::stiffness` の意味が「1 反復ごとに目標へ寄せる割合 (無次元)」から「ばね定数 k (N/m)」に変わった `damping` は c (N·s/m)、`max_force` は N 質量 m の body を角振動数 ω・減衰比 ζ で引き戻すには `stiffness = m ω²`、`damping = 2 ζ m ω` (臨界減衰は `damping = 2·sqrt(k·m)`) 移行の目安: 旧値 s (割合) を substeps S・iterations I で使っていた場合、1 frame あたり `1 − (1 − s)^(S·I)` だけ寄っていたので、同程度の追従には `ω ≈ −ln((1 − s)^(S·I)) / dt` を選び、`stiffness = m ω²`、`damping = 2 m ω` を与える 旧 test は `stiffness = 0.1` / `damping = 0.01` で 5 s 後に目標へ届いていたが、新しい意味では ω = 0.32 rad/s になり 7.4 m 残る (test は k = 100、c = 20 に更新した)
 
+### Fixed — 全 module 監査で見つかった欠陥のうち 8 件 (3 回目)
+
+- **joint**: `solve_spring_joint` の補正が dt に比例し、実効剛性が k/dt になっていた XPBD の compliance 形式 (`λ = dt²F / (1 + k dt² w)`) に直し、実効剛性が dt に依存しないようにした k が大きい場合は rest length で飽和する (AUD-A-S1W6-008)
+- **solver**: Kinematic body の step 後速度が 0 になっていた 毎 substep で残りの隙間の 1/k を詰め、最終 substep で target に厳密に到達し、step 後の速度は (target − start) / dt になる (AUD-A-S1W2-002)
+- **solver / material**: `RigidBody` の friction / restitution が 3D step の接触で読まれていなかった 既定の材質 (material 0) の body は自身の値を接触に使う 材質を明示した body は従来どおり材質の値だけを使う **`RigidBody::new` / `new_dynamic` の既定は friction 0.3 → 0.5、restitution 0.5 → 0.3、`new_static` / `new_kinematic` は friction 1.0 → 0.5、restitution 0.0 → 0.3 に変わった** (既定の材質と同じ値、default 同士の接触は従来の (0.5, 0.3) のまま) (AUD-A-S1W2-008)
+- **cloth_fluid**: 陽解法の drag が過補正して速度が反転していた 相対速度を `u/(1 + c dt)` の 1 段の暗黙 Euler で更新し、符号反転せず |u| が増えない (AUD-A-S2W2-003)
+- **transient_thermal**: `transient_step_1d` / `transient_step_3d` が非保存形で熱が保存されなかった 面の熱伝導率を調和平均にした保存形に直し、均一 k では従来と一致し、不均一 k でも総熱量が保存される `determinism_golden_f32` の `golden_modifier_family` の hash が変わる (AUD-A-S2W2-015 と同型)
+- **laminate_failure**: 強度 0 以下の ply が全 criterion で FI=0 / Safe を返していた 対応する応力が非零の場合は破壊済みとして扱う (Tsai-Wu / Tsai-Hill は最大値、Hashin / Puck は Safe 以外の mode) (AUD-A-S4W2-003)
+- **print_pipeline_solver**: 熱応力と bimaterial の not safe が `PrintSafetyReport::is_safe` に反映されず、Overall が SAFE のままだった sub-report の `is_safe` (FoS 2 以上かつ Tg 近傍でない) を畳む (AUD-A-S5W1-007)
+
+### Added — 追加のみの API
+
+- `joint_extra::solve_pulley_to_length(joint, bodies, rest_length, dt)` ロープ長 `len_a + ratio·len_b` が `rest_length` を超える分を補正する 既存の `solve_pulley` は従来どおり何もしない (`PulleyJoint` の field は変えていない) (AUD-A-S3W1-011)
+- `laminate_failure::LaminateStrengths::try_new` と `InvalidStrengthError` 強度が正でない値を拒否して構築する 既存の構築経路は変えていない
+
 ### Fixed — 全 module 監査で見つかった欠陥のうち 33 件 (2 回目)
 
 - **joint**: ball / hinge / fixed / slider / cone-twist の位置拘束が並進のみを補正していたので、lever arm (一般化逆質量) と回転補正を加えた D6 の角度誤差は `local_frame_b` を基準に測るようにし、D6 の逐次補正で後続の拘束が古い値を読む問題も直した **全 joint の位置拘束の結果が変わる** (AUD-A-S1W6-006 / 010)
