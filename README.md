@@ -32,6 +32,7 @@ arithmetic costs time, and scenes with thousands of interacting bodies at
 - [Determinism](#determinism)
 - [Reset, observation and rollback](#reset-observation-and-rollback)
 - [What is included](#what-is-included)
+- [Vehicle dynamics](#vehicle-dynamics)
 - [Validation and known defects](#validation-and-known-defects)
 - [Cargo features](#cargo-features)
 - [Bindings](#bindings)
@@ -164,7 +165,7 @@ Every public module, grouped by area and with a one-line summary, is listed in [
 | Collision | GJK / EPA, linear BVH or persistent dynamic AABB tree broad-phase, box, sphere, capsule, cylinder, cone, ellipsoid, torus, wedge, convex hull, compound, triangle mesh, height field, SDF colliders |
 | Joints | ball, hinge, fixed, slider, spring, D6, cone-twist, plus pulley, gear, weld, rack-and-pinion and mouse joints; breakable joints and PD motors |
 | Soft bodies | XPBD rope and cloth (with self-collision), position-based fluids, FEM-XPBD deformables, cutting |
-| Gameplay | character controller, vehicles, ragdolls, IK bridge, client-side prediction, deterministic RNG, contact events |
+| Gameplay | character controller, vehicles (a simple model and a per-wheel dynamics model with tyres, brakes, ABS, road surfaces and weather), ragdolls, IK bridge, client-side prediction, deterministic RNG, contact events |
 | Solid mechanics | linear-elastic FEM on P1 / P2 / P3 tetrahedra, corotational large rotation, J2 plasticity, hyperelasticity, thermo-mechanical coupling, adaptive refinement, beams, buckling, fatigue, composites |
 | Fluids and fields | MAC-grid CFD with several pressure solvers, RANS / LES turbulence closures, VOF and level set, SPH, compressible flow, heat transfer, Maxwell FDTD |
 | 3D printing | material database, thin-wall and overhang checks, warp risk, layer adhesion, print orientation, a combined safety pipeline |
@@ -175,6 +176,70 @@ that exchange one halo layer, with results bit-identical to the single-process
 solve for any number of ranks. This has been measured on one host only (up to
 eight processes over loopback TCP). Runs across several hosts have not been
 done, and there is no MPI backend.
+
+## Vehicle dynamics
+
+`vehicle_dynamics::DynamicVehicle` is a car model in which each wheel acts on
+the chassis at its own contact point.
+
+- suspension and tyre forces are applied per wheel, so steering produces yaw
+  and braking or cornering shifts load between axles and sides
+- each wheel has a spin state driven by drive torque, brake torque and the
+  tyre force; brakes can lock a wheel, and ABS holds the slip ratio near a
+  target
+- tyre forces come from a brush model or a Magic Formula model, limited by a
+  friction ellipse
+- the road is a plane, a slope, a height field, a triangle mesh or an SDF;
+  grip is the road material times a weather factor (dry, wet, snow, ice),
+  with a hydroplaning loss on flooded roads
+- a locked wheel holds the car in place on a slope below the static friction
+  limit, and slides at the kinetic coefficient above it
+- engine torque curve, gearbox, engine braking, open or locked differential,
+  and aerodynamic drag and lift
+
+The older `vehicle::Vehicle` is unchanged. It drives on a flat plane at
+`ground_height` and applies the sum of all wheel forces at the centre of mass,
+so it has no per-wheel load transfer, wheel lock or tyre model. Use
+`vehicle_dynamics` when stopping distance or cornering has to follow the
+physics.
+
+```rust
+use alice_physics::vehicle_dynamics::surface::{FlatGround, RoadCondition};
+use alice_physics::vehicle_dynamics::{DynamicVehicle, DynamicVehicleConfig, Environment};
+
+let mut car = DynamicVehicle::new(DynamicVehicleConfig::passenger_car());
+let road = FlatGround { height: Fix128::ZERO };
+let condition = RoadCondition::dry_asphalt();
+let env = Environment { condition: &condition, wind: None, time: Fix128::ZERO };
+car.input.brake = Fix128::ONE;
+// every frame, before world.step(dt):
+car.update(&mut world.bodies[chassis], &road, &env, dt);
+```
+
+[`examples/vehicle_dynamics.rs`](examples/vehicle_dynamics.rs) runs this setup
+and checks locked-wheel stopping distances on dry, wet and icy roads against
+`v0² / (2 μ_k g)`, compares braking with and without ABS, and holds a car on a
+slope. The closed-form tests are in `tests/analytic_vehicle_dynamics.rs`.
+
+**Known limitations**
+
+- With locked front wheels and the steering turned, the car keeps a small yaw
+  rate (about 5e-3 rad/s in the test scene, where Coulomb sliding predicts 0):
+  the longitudinal and lateral friction are evaluated on velocities from
+  different points in the frame. The test
+  `braking_with_steering_yaws_only_with_abs` is red for this reason.
+- In full sliding, the brush model turns the force towards the sliding
+  direction; the Magic Formula model does not (it scales the pure-slip forces
+  onto the friction ellipse).
+- Wheel forces are applied as one impulse at the start of each frame. The
+  suspension is stable only while `(ω_n dt)² + 2 c dt / m_share < 4`
+  (`ω_n = √(k / m_share)`, `m_share` the mass carried by one wheel); a light
+  chassis on stiff springs at a large `dt` oscillates with growing amplitude.
+- `HeightField` itself does not apply `origin.y` and has a known normal
+  defect at the grid border. The height-field road follows the field's own
+  `sample_height` (so the road sits at the height it returns, without
+  `origin.y`) and computes its normal with one-sided differences at the
+  border, so a wheel probe is not affected by the border defect.
 
 ## Validation and known defects
 

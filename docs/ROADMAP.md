@@ -24,6 +24,24 @@ increment 他) が**追加機材の調達待ち**であるかのように読め�
 | Maxwell FDTD | `ecd8c61` | source-free Yee、⚠️ **SI は `ε₀·μ₀` が 7.7 bit で不可**、正規化単位 + `S=9/16` |
 | 多体 ABA | `1bab99b` | ⚠️ **`solve()` が `link.joint` を読まない**状態から real ABA、oracle 12 本 |
 
+### 第 64 increment (2026-10-04、輪ごとの車両運動 `vehicle_dynamics`)
+
+既存の `vehicle::Vehicle` は全車輪の力を重心にまとめて加え、接地は `ground_height` の水平面のみで、車輪のロック・タイヤモデル・荷重移動を持たない 停止距離や旋回を物理に従わせるため、`Vehicle` を変更せずに新 module `src/vehicle_dynamics/` (`mod` / `tire` / `surface` / `powertrain`) を足した (API は追加のみ) `vehicle.rs` の module doc の「Supports heightfield terrain and SDF surface driving」は実装と食い違っていたので、実装どおり (平面のみ、重心に一括、slip は未計算) に直した
+
+| 項目 | 状態 | 内容 |
+|---|---|---|
+| 輪ごとの接地点作用 | ✅ 完了 | サスペンション力とタイヤ力を各接地点に `apply_impulse_at` で加える、路面法線方向の荷重 `F_z`、横方向は射影 Gauss-Seidel で陰的に解く |
+| タイヤ力 | ✅ 完了 | brush (複合スリップ、完全滑りで力を滑り方向へ寄せる) と Magic Formula (摩擦楕円で合成) |
+| 車輪回転・ブレーキ・ABS | ✅ 完了 | 車輪ごとの `ω` (タイヤ力について半陰的、飽和時は割線勾配)、Coulomb 型ブレーキによるロック、静止摩擦アンカー、ABS (目標スリップ率への一段調整)、ハンドブレーキ |
+| 路面 | ✅ 完了 | `RoadSurface`: 平面 / 斜面 / 高さ場 / 三角形メッシュ / SDF |
+| 天候 | ✅ 完了 | 天候係数 (乾燥 1 / 湿潤 0.7 / 積雪 0.24 / 凍結 0.12) と冠水時のハイドロプレーニング低下、転がり抵抗 |
+| パワートレイン | ✅ 完了 | トルク曲線、変速機、エンジンブレーキ、オープン / ロックのデファレンシャル、空気抵抗・揚力・風 |
+| シナリオ層 (TTC・多車両・無損失 replay) | ⏳ 進行中 | |
+| OpenSCENARIO / OpenDRIVE の読み込み、FMU 書き出し | 未着手 | |
+
+oracle は `tests/analytic_vehicle_dynamics.rs` (4 輪ロックの停止距離 `v0²/(2 μ_k g)` を乾燥・湿潤・凍結で、停止後の静止、ABS、低速旋回半径 `L / tan δ`、線形 2 輪モデルの定常ヨーレート、斜面の保持と滑り 他) と `tests/vehicle_dynamics_degenerate.rs` (退化入力 9 本) 使用例は `examples/vehicle_dynamics.rs` (停止距離を閉形式と比較、ABS の有無、斜面の保持を assert)
+⚠️ 残る既知の制限: 前輪をロックしたまま操舵するとヨーレート約 4.96e-3 rad/s が残り (Coulomb 滑りの予測は 0、閾値 1e-6)、`braking_with_steering_yaws_only_with_abs` は red 縦と横の摩擦をフレーム内の異なる時点の速度で評価していることが原因で、対処は未決定 Magic Formula は完全滑りで力の向きを補正しない (brush のみ) サスペンションはフレーム先頭の撃力で結合するので `(ω_n dt)² + 2 c dt / m_share < 4` の範囲でのみ安定 `HeightField` の `origin.y` 未反映と境界法線の既知欠陥は、路面の probe 側 (`sample_height` に従う、境界では片側差分) で影響を受けないようにしている
+
 ### 第 63 increment (2026-10-03、全配線 program 第 21 件 — 並列 worker 5 本で wiring-status / oracle-status を処理)
 
 user 指示「`docs/wiring-status.md` / `docs/oracle-status.md` を worker で並列処理」を、担当 file を固定した 5 本 (構造材料 / キャラ・SDF / 流体・熱・電磁 / その他 / oracle 棚卸し) で実施した 各 worker は専用 worktree で commit まで、push・docs・公開 API snapshot は調停役が統合した baseline **78 行退役** (実配線 78、巻き込み 0) 公開 API は**追加のみ 6 関数** (`PhysicsWorld::sdf_ccd_hits` / `SdfCharacter::locomotion_context` / `interface_capture::{plic_normal, plic_plane_offset, truncated_cube_volume}` が pub 化 / `rope_attach::solve_rope_attachments_two_way`) 追加 oracle は約 560 本、変異試験は約 900 件で、生存は全て理由つきの等価変異
