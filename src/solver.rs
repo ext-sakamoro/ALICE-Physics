@@ -289,19 +289,38 @@ impl RigidBody {
         }
     }
 
+    /// World-frame `I⁻¹ τ` for a body whose `inv_inertia` is diagonal in the body frame.
+    ///
+    /// # Claims
+    /// - `τ` is a world-frame vector; the result is a world-frame vector
+    /// - computed as `R · diag(inv_inertia) · R⁻¹ τ` with `R = self.rotation`
+    /// - for an identity rotation it equals the component-wise product with `inv_inertia`
+    /// - a zero `inv_inertia` (or a zero `τ`) gives the zero vector
+    #[inline]
+    fn world_inv_inertia_apply(&self, torque: Vec3Fix) -> Vec3Fix {
+        let local = self.rotation.conjugate().rotate_vec(torque);
+        let scaled = Vec3Fix::new(
+            local.x * self.inv_inertia.x,
+            local.y * self.inv_inertia.y,
+            local.z * self.inv_inertia.z,
+        );
+        self.rotation.rotate_vec(scaled)
+    }
+
     /// Apply impulse at world-space point
+    ///
+    /// # Claims
+    /// - the linear part is `impulse * inv_mass`
+    /// - the angular part is `I_world⁻¹ ((point - position) × impulse)`, with the body-frame
+    ///   diagonal `inv_inertia` rotated by `rotation` into the world frame
+    /// - a static body is unchanged
     pub fn apply_impulse_at(&mut self, impulse: Vec3Fix, point: Vec3Fix) {
         if !self.is_static() {
             self.velocity = self.velocity + impulse * self.inv_mass;
 
             let r = point - self.position;
             let torque = r.cross(impulse);
-            self.angular_velocity = self.angular_velocity
-                + Vec3Fix::new(
-                    torque.x * self.inv_inertia.x,
-                    torque.y * self.inv_inertia.y,
-                    torque.z * self.inv_inertia.z,
-                );
+            self.angular_velocity = self.angular_velocity + self.world_inv_inertia_apply(torque);
         }
     }
 
@@ -317,15 +336,16 @@ impl RigidBody {
     }
 
     /// Apply a continuous torque
+    ///
+    /// # Claims
+    /// - `torque` is a world-frame vector; `angular_velocity += I_world⁻¹ torque * dt`
+    /// - `I_world⁻¹ = R diag(inv_inertia) R⁻¹` with `R = rotation`
+    /// - a static body is unchanged
     #[inline]
     pub fn add_torque(&mut self, torque: Vec3Fix, dt: Fix128) {
         if !self.is_static() {
-            self.angular_velocity = self.angular_velocity
-                + Vec3Fix::new(
-                    torque.x * self.inv_inertia.x * dt,
-                    torque.y * self.inv_inertia.y * dt,
-                    torque.z * self.inv_inertia.z * dt,
-                );
+            self.angular_velocity =
+                self.angular_velocity + self.world_inv_inertia_apply(torque) * dt;
         }
     }
 
@@ -3235,6 +3255,12 @@ impl PhysicsWorld {
                 if skip {
                     continue;
                 }
+                // Persist the modifiers' result: `update_velocities` reads
+                // friction / restitution from the constraint, not from locals.
+                let slot = &mut self.contact_constraints[i];
+                slot.contact = contact;
+                slot.friction = friction;
+                slot.restitution = restitution;
             }
 
             // Only resolve if penetrating
@@ -3361,6 +3387,14 @@ impl PhysicsWorld {
             }
             if skip {
                 continue;
+            }
+
+            // Persist the modifiers' result (see `solve_contact_constraints`).
+            {
+                let slot = &mut self.contact_constraints[i];
+                slot.contact = contact;
+                slot.friction = friction;
+                slot.restitution = restitution;
             }
 
             filtered.push(ContactConstraint {
