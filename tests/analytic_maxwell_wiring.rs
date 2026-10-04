@@ -845,20 +845,19 @@ fn a_full_range_sample_wraps_modulo_two_to_the_128() {
     );
 }
 
-/// `max_abs_field` over a sample at `Fix128`'s minimum reports `0`: `|MIN|`
-/// is not representable, `abs()` wraps back to `MIN`, and a negative value
-/// never wins the maximum.
-///
-/// ⚠️ Pinned as **measured** (2026-10-03) and reported as a finding: the
-/// probe's contract "largest |value|" cannot be met at that one input, and
-/// it is silent about it.
+/// `max_abs_field` over a sample at `Fix128`'s minimum reports the largest
+/// representable value: `|MIN| = 2^63` is not representable and `abs()`
+/// saturates (AUD-A-S1W5-028), so the sample is no longer dropped as it was
+/// while `abs()` wrapped back to `MIN` and a negative value never won the
+/// maximum.
 #[test]
-fn max_abs_field_drops_a_sample_at_the_fixed_point_minimum() {
+fn max_abs_field_saturates_a_sample_at_the_fixed_point_minimum() {
     let min = Fix128::from_raw(i64::MIN, 0);
-    assert_eq!(min.abs(), min, "|MIN| wraps to MIN");
+    let saturated = Fix128::from_raw(i64::MAX, u64::MAX);
+    assert_eq!(min.abs(), saturated, "|MIN| saturates to the largest value");
     let mut grid = YeeGrid::new(4, 4, 4, COURANT_3D);
     grid.set(Component::Ez, 1, 1, 1, min);
-    assert_eq!(grid.max_abs_field(), Fix128::ZERO);
+    assert_eq!(grid.max_abs_field(), saturated);
     // One ULP above the minimum is representable and is reported.
     let almost = Fix128::from_raw(i64::MIN, 1);
     grid.set(Component::Ez, 1, 1, 1, almost);

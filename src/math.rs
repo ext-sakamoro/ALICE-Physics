@@ -159,10 +159,22 @@ impl Fix128 {
     }
 
     /// Absolute value
+    ///
+    /// # Claims
+    /// - `|x|` for every value except the most negative one
+    /// - saturating: `|-2^63| = 2^63` is not representable, so `abs` of the most
+    ///   negative value (`hi == i64::MIN`, `lo == 0`) is the largest representable
+    ///   value instead of wrapping back to itself; the result is never negative
+    ///   (AUD-A-S1W5-028, AUD-A-S3W3-010, AUD-A-S5W2-017)
     #[inline]
     #[must_use]
     pub fn abs(self) -> Self {
-        if self.hi < 0 || (self.hi == 0 && self.lo == 0) {
+        if self.hi == i64::MIN && self.lo == 0 {
+            Self {
+                hi: i64::MAX,
+                lo: u64::MAX,
+            }
+        } else if self.hi < 0 || (self.hi == 0 && self.lo == 0) {
             self.neg()
         } else {
             self
@@ -191,11 +203,22 @@ impl Fix128 {
     }
 
     /// Ceiling (round toward positive infinity)
+    ///
+    /// # Claims
+    /// - an integer value is returned unchanged; otherwise the next integer up
+    /// - saturating: above `i64::MAX` (integer part `i64::MAX` with a fraction)
+    ///   the next integer is not representable, and the result is the largest
+    ///   representable value, which is still `>= self` (AUD-A-S1W5-028)
     #[inline]
     #[must_use]
     pub const fn ceil(self) -> Self {
         if self.lo == 0 {
             self
+        } else if self.hi == i64::MAX {
+            Self {
+                hi: i64::MAX,
+                lo: u64::MAX,
+            }
         } else {
             Self {
                 hi: self.hi + 1,
