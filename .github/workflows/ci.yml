@@ -27,6 +27,18 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # README.md / README_JP.md / docs/MODULES.md vs Cargo.toml and src/lib.rs
+      # (features, MSRV, dependency versions, example, module list, links).
+      # Run on every OS so a locale or path difference in the checker itself
+      # shows up here rather than as a silent pass.
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: README sync checker (tests)
+        run: python scripts/test_readme_sync.py
+      - name: README sync (docs agree with Cargo.toml and src/)
+        run: python scripts/readme_sync.py --check
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
@@ -205,7 +217,7 @@ jobs:
         run: cargo +1.85 rustc --lib --no-default-features --crate-type rlib
       # Library only: dev-dependencies (criterion / serde_derive) and the
       # sibling-crate bridge features (neural / replay / analytics) follow
-      # their own MSRV, see README "MSRV Policy".
+      # their own MSRV, see README "Minimum supported Rust version".
       - name: cargo check on MSRV (lib, core native feature set)
         run: >-
           cargo +1.85 check --lib
@@ -225,7 +237,7 @@ jobs:
       - name: Check formatting
         run: cargo fmt -- --check
 
-      # README § Determinism scope lists the f32 / f64 modules; the list is
+      # README § Determinism lists the f32 / f64 modules; the list is
       # generated from src/ and drifts silently when a module is added (1.2.0)
       - name: README f32 module row matches src/
         run: python3 scripts/f32_modules.py --check

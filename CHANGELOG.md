@@ -13,6 +13,20 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Changed — README を書き直した
+
+- `README.md` (3113 行) と `README_JP.md` (2504 行) をそれぞれ 277 行 / 258 行に再構成した 概要 / インストール / 使用例 / 決定論 / 含まれるもの / 検証と既知の不具合 / feature / バインディング / 性能 / MSRV / ビルド / 関連 crate / ライセンス の順で、英語版と日本語版は同じ節構成
+- 版ごとの追記見出し、自己採点表、モジュールごとの追加版ラベルを削除した (経緯は本 CHANGELOG にある) 冒頭の版表記 `v1.0.0 stable` は Cargo.toml (1.5.0) と食い違っていた
+- 版数は README に書かない方針にした バッジは crates.io / docs.rs / MSRV を自動表示し、インストールは `cargo add alice-physics`
+- 公開モジュール 149 個の一覧 (分野別、1 行説明、必要 feature、example へのリンク) を `docs/MODULES.md` に移した API の詳細は docs.rs に委ねる
+- README の使用例は `src/lib.rs` の crate レベル doctest と同一にした (`cargo test` でコンパイル・実行される)
+
+### Added — README と実装の突き合わせ (`scripts/readme_sync.py`)
+
+- `scripts/readme_sync.py --check` が README.md / README_JP.md / docs/MODULES.md を Cargo.toml と src/ に突き合わせる feature 表と `[features]`、MSRV 行と `rust-version`、`alice-physics = "…"` の版指定と package version、README の使用例と lib.rs の doctest、MODULES.md と `pub mod` の一覧 (過不足・重複)、相対リンク先の実在、英日の節数
+- 比較件数が 0 の検査は失敗にした (印の削除や表の改名で検査が素通りしないように)
+- `scripts/test_readme_sync.py` (19 本) が各検査をずらした入力で red になることを確かめる CI の test matrix (5 OS) と `scripts/preflight.sh` に追加
+
 ### Added — 並列 worker による全配線 (全配線 program 第 21 件)
 
 - `PhysicsWorld::sdf_ccd_hits(dt, &SdfCcdConfig)` / `SdfCharacter::locomotion_context(...)` / `rope_attach::solve_rope_attachments_two_way(...)` を追加した (追加のみ) `two_way` は body 側にも逆質量比の補正を適用する (静的 body では一方向版と一致、動的 body で運動量保存) `interface_capture::{plic_normal, plic_plane_offset, truncated_cube_volume}` を `pub` にした
