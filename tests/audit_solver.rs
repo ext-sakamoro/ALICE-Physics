@@ -171,7 +171,6 @@ fn rotated_anisotropic_body() -> RigidBody {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S1W2-001: add_torque / apply_impulse_at multiply the world-frame torque by the body-frame inv_inertia without rotating it: torque (1,0,0) on a body rotated 90 deg about z with inv_inertia (1,2,4) gives dw.x = 1, expected 2"]
 fn add_torque_uses_the_body_frame_inertia_of_a_rotated_body() {
     let mut b = rotated_anisotropic_body();
     b.add_torque(v3(1.0, 0.0, 0.0), Fix128::ONE);
@@ -181,7 +180,6 @@ fn add_torque_uses_the_body_frame_inertia_of_a_rotated_body() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S1W2-001: same root cause through apply_impulse_at: r = (0,1,0), J = (0,0,1) gives torque (1,0,0), dw.x = 1, expected 2"]
 fn apply_impulse_at_uses_the_body_frame_inertia_of_a_rotated_body() {
     let mut b = rotated_anisotropic_body();
     // r = (0,1,0), J = (0,0,1): r x J = (1*1 - 0*0, 0, 0) = (1,0,0), the same world
@@ -606,7 +604,6 @@ fn collision_scene_responds_to_the_material_friction() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S1W2-005: a ContactModifier's restitution change is discarded (CPU solve keeps it in an unused local; update_velocities reads constraint.restitution); modifier restitution 1 on a restitution-0 pair still gives vx = 0"]
 fn a_contact_modifier_can_change_the_restitution() {
     let (a, b) = collision(
         0.5,
@@ -623,7 +620,6 @@ fn a_contact_modifier_can_change_the_restitution() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S1W2-005: a ContactModifier's friction change is discarded; modifier friction 0 on a friction-9 pair still removes the tangential relative velocity"]
 fn a_contact_modifier_can_change_the_friction() {
     let (a, b) = collision(
         9.0,
