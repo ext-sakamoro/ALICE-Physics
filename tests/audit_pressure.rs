@@ -276,7 +276,6 @@ fn diffusion_step_never_produces_negative_pressure() {
 /// `PressureModifier::new` accepts resolution 0 and the first read panics
 /// (`nx - 1` underflows).
 #[test]
-#[ignore = "known defect: AUD-A-S6W1-005: PressureModifier::new(.., 0, ..) succeeds and pressure_at panics (usize underflow)"]
 fn zero_resolution_does_not_panic_on_read() {
     let r = std::panic::catch_unwind(|| {
         let m = PressureModifier::new(
