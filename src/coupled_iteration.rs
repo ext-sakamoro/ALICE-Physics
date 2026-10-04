@@ -338,12 +338,19 @@ pub fn residual_norm_l2_checked(residual: &[Fix128]) -> Result<Fix128, CoupledIt
     let mut sum = Fix128::ZERO;
     for (index, &component) in residual.iter().enumerate() {
         let magnitude = component.abs();
-        let square = magnitude * magnitude;
-        let dropped = magnitude >= L2_TERM_FLOOR && square.is_zero();
-        let next = sum + square;
-        if dropped || next < sum {
+        // `checked_mul` catches every overflow of the squaring step itself —
+        // including the window where the wrapped product is still positive
+        // (e.g. 4.5e9² wraps to ~1.9e18, which is neither zero nor a decrease
+        // of the running sum) — not just the two symptoms a plain `*` can
+        // leave behind (wrapping to zero, or making the sum decrease).
+        let Some(square) = magnitude.checked_mul(magnitude) else {
             // The saturating cast keeps the guard honest rather than wrapping
             // the very field that reports a wrap.
+            let at = u32::try_from(index).unwrap_or(u32::MAX);
+            return Err(CoupledIterationError::ArithmeticWrapped { sweeps: at });
+        };
+        let next = sum + square;
+        if next < sum {
             let at = u32::try_from(index).unwrap_or(u32::MAX);
             return Err(CoupledIterationError::ArithmeticWrapped { sweeps: at });
         }
