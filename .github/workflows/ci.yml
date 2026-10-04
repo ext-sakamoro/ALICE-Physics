@@ -38,6 +38,11 @@ jobs:
         run: python scripts/test_readme_sync.py
       - name: README sync (docs agree with Cargo.toml and src/)
         run: python scripts/readme_sync.py --check
+      # SCIP integration ledger (docs/integration-status.md): the analysis is
+      # tested on hand-built indexes here; the real index needs rust-analyzer and
+      # is built by integration-status.yml
+      - name: SCIP reach analysis (tests)
+        run: python scripts/test_scip_reach.py
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable

@@ -1,0 +1,410 @@
+#!/usr/bin/env python3
+"""Integration ledger from rust-analyzer SCIP: which `pub` items are reached, and from where.
+
+`scripts/wiring_guard.py` counts an item as wired when its *name* appears in any
+non-test code, including `examples/`. Two consequences: (1) an item that only an
+example calls passes, so a module that was never integrated into
+`PhysicsWorld::step` looks wired; (2) names are not resolved, so `impl Foo {}`
+alone wires `Foo`, and `.update(` wires every `update` in the crate.
+
+This script resolves references with rust-analyzer's SCIP output
+(`scripts/scip_index.sh`), so each reference points at one definition, and
+classifies every `pub` / `pub(crate)` item defined in `src/`:
+
+  L0  unreached       no non-test code reaches it, examples included
+  L1  example-only    reached only when examples / benches / fuzz count as roots
+  live                reached without examples: from crate-internal roots or a binding
+
+Roots without examples: the binding files (src/ffi.rs, src/python.rs,
+src/wasm.rs), module-level code that is not a `use` statement, and trait-impl
+methods of traits defined outside the crate (Display, Default, Drop, ... are
+called implicitly). A trait method that is reached also reaches every impl of
+it in the crate (SCIP `is_implementation` relationships), so calls through
+`dyn Trait` are followed.
+
+References inside comments, strings, `#[cfg(test)]` code and `use` statements
+are dropped with the same preprocessing wiring_guard.py uses, so the two
+checkers agree on what a reference is and differ only in resolution.
+
+L1 is a label, not a defect: an engineering module that users call directly is
+expected to be example-only inside this crate. Which modules must be integrated
+into the world is declared separately (later step).
+
+Usage:
+  python3 scripts/scip_reach.py [--scip target/scip] [--write docs/integration-status.md]
+Exit 1 when an index is missing, or when the analysis compared nothing
+(0 items, or 0 references from examples / bindings).
+"""
+
+from __future__ import annotations
+
+import argparse
+import re
+import sys
+from bisect import bisect_right
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from wiring_guard import USE_RE, remove_cfg_test, strip_rust  # noqa: E402
+
+ROOT_DIRS = ("examples/", "benches/", "fuzz/")
+BINDING_FILES = ("src/ffi.rs", "src/python.rs", "src/wasm.rs")
+PUB_DEF = r'\bpub(?:\([^)]*\))?\s+(?:(?:const|unsafe|async|extern(?:\s+"[^"]*")?|default)\s+)*(?:fn|struct|enum|const|static|trait|type|union)\s+'
+
+
+# --- SCIP (protobuf) decoding, stdlib only ----------------------------------
+
+def _varint(b: bytes, i: int) -> tuple[int, int]:
+    r = s = 0
+    while True:
+        c = b[i]
+        i += 1
+        r |= (c & 0x7F) << s
+        if c < 0x80:
+            return r, i
+        s += 7
+
+
+def _fields(b: bytes):
+    i, n = 0, len(b)
+    while i < n:
+        key, i = _varint(b, i)
+        f, wt = key >> 3, key & 7
+        if wt == 0:
+            v, i = _varint(b, i)
+        elif wt == 2:
+            ln, i = _varint(b, i)
+            v = b[i:i + ln]
+            i += ln
+        elif wt == 1:
+            v, i = b[i:i + 8], i + 8
+        elif wt == 5:
+            v, i = b[i:i + 4], i + 4
+        else:
+            raise ValueError(f"unsupported protobuf wire type {wt}")
+        yield f, wt, v
+
+
+def _packed(v, wt) -> list[int]:
+    if wt != 2:
+        return [v]
+    out, i = [], 0
+    while i < len(v):
+        x, i = _varint(v, i)
+        out.append(x)
+    return out
+
+
+def _span(r: list[int]) -> tuple[tuple[int, int], tuple[int, int]] | None:
+    """SCIP range: [startLine, startChar, endLine, endChar] or [line, startChar, endChar]."""
+    if len(r) == 4:
+        return (r[0], r[1]), (r[2], r[3])
+    if len(r) == 3:
+        return (r[0], r[1]), (r[0], r[2])
+    return None
+
+
+def load_scip(path: Path) -> list[dict]:
+    """Documents with occurrences and symbol relationships."""
+    docs = []
+    for f, _wt, v in _fields(path.read_bytes()):
+        if f != 2:
+            continue
+        doc = {"path": "", "occ": [], "impl": []}
+        for f2, _w2, v2 in _fields(v):
+            if f2 == 1:
+                doc["path"] = v2.decode()
+            elif f2 == 2:
+                occ = {"range": [], "symbol": "", "roles": 0, "enc": []}
+                for f3, w3, v3 in _fields(v2):
+                    if f3 == 1:
+                        occ["range"] = _packed(v3, w3)
+                    elif f3 == 2:
+                        occ["symbol"] = v3.decode()
+                    elif f3 == 3:
+                        occ["roles"] = v3
+                    elif f3 == 7:
+                        occ["enc"] = _packed(v3, w3)
+                doc["occ"].append(occ)
+            elif f2 == 3:
+                sym, targets = "", []
+                for f3, _w3, v3 in _fields(v2):
+                    if f3 == 1:
+                        sym = v3.decode()
+                    elif f3 == 4:
+                        rel_sym, is_impl = "", False
+                        for f4, _w4, v4 in _fields(v3):
+                            if f4 == 1:
+                                rel_sym = v4.decode()
+                            elif f4 == 3:
+                                is_impl = bool(v4)
+                        if is_impl and rel_sym:
+                            targets.append(rel_sym)
+                for t in targets:
+                    doc["impl"].append((sym, t))
+        docs.append(doc)
+    return docs
+
+
+# --- analysis ----------------------------------------------------------------
+
+class Analysis:
+    def __init__(self) -> None:
+        self.items: dict[str, set[str]] = {}       # key "src/x.rs::name" -> symbols
+        self.level: dict[str, str] = {}            # key -> L0 / L1 / live
+        self.example_refs = 0
+        self.binding_refs = 0
+
+
+IMPL_HEADER_RE = re.compile(r"\bimpl\b[^{;]*\{")
+
+
+def _keep_mask(text: str) -> tuple[list[str], list[str]]:
+    """Per line, the code with comments / strings / cfg(test) / use statements /
+    impl headers blanked. An `impl Foo {` header is not a use of `Foo`: it sits at
+    module level, so counting it would make every type with an impl block reached
+    (the same blind spot as the name-based guard's limit 3)."""
+    code = remove_cfg_test(strip_rust(text))
+    blank = lambda m: re.sub(r"[^\n]", " ", m.group(0))  # noqa: E731
+    code = USE_RE.sub(blank, code)
+    code = IMPL_HEADER_RE.sub(lambda m: blank(m)[:-1] + "{", code)
+    return text.split("\n"), code.split("\n")
+
+
+def _visible(code_lines: list[str], pos: tuple[int, int]) -> bool:
+    line, ch = pos
+    return line < len(code_lines) and ch < len(code_lines[line]) and not code_lines[line][ch].isspace()
+
+
+def analyze(root: Path, scip_paths: list[Path]) -> Analysis:
+    root = Path(root)
+    a = Analysis()
+    edges: dict[object, set[str]] = {}
+    roots_core: set[str] = set()
+    roots_example: set[str] = set()
+    implementers: dict[str, set[str]] = {}
+    defined: set[str] = set()
+    impl_targets: dict[str, set[str]] = {}
+    texts: dict[str, tuple[list[str], list[str]]] = {}
+    seen: set[tuple] = set()
+
+    def lines_of(rel: str) -> tuple[list[str], list[str]]:
+        if rel not in texts:
+            p = root / rel
+            texts[rel] = _keep_mask(p.read_text(encoding="utf-8", errors="replace")) if p.exists() else ([], [])
+        return texts[rel]
+
+    for sp in scip_paths:
+        for doc in load_scip(sp):
+            rel = doc["path"]
+            for sym, target in doc["impl"]:
+                implementers.setdefault(target, set()).add(sym)
+                impl_targets.setdefault(sym, set()).add(target)
+            is_src = rel.startswith("src/")
+            is_root_file = rel.startswith(ROOT_DIRS)
+            if not (is_src or is_root_file):
+                continue  # tests/ and anything else never root or carry references
+            raw, code = lines_of(rel)
+            defs = []
+            refs = []
+            for o in doc["occ"]:
+                s = o["symbol"]
+                sp_ = _span(o["range"])
+                if not s or s.startswith("local ") or sp_ is None:
+                    continue
+                if o["roles"] & 1:
+                    defined.add(s)
+                    enc = _span(o["enc"]) if o["enc"] else None
+                    if enc is not None:
+                        defs.append((enc[0], enc[1], s))
+                    if is_src and rel not in BINDING_FILES and _visible(code, sp_[0]):
+                        line = raw[sp_[0][0]] if sp_[0][0] < len(raw) else ""
+                        name = line[sp_[0][1]:sp_[1][1]]
+                        if name and re.search(PUB_DEF + re.escape(name) + r"\b", line):
+                            a.items.setdefault(f"{rel}::{name}", set()).add(s)
+                else:
+                    if is_src and not _visible(code, sp_[0]):
+                        continue
+                    refs.append((sp_[0], s))
+            # innermost enclosing definition for every reference (ranges nest)
+            defs.sort(key=lambda d: (d[0], (-d[1][0], -d[1][1])))
+            starts = [d[0] for d in defs]
+            # a reached type reaches its fields and variants (`Type#field.`, `Enum#Variant.`),
+            # so the types *they* name are reached too; methods (`...().`) are not members
+            # in this sense: using a type or trait does not call every method on it
+            open_defs: list[tuple] = []
+            for st, en, ds in defs:
+                while open_defs and open_defs[-1][1] < st:
+                    open_defs.pop()
+                if open_defs and open_defs[-1][2].endswith("#") and not ds.endswith(")."):
+                    edges.setdefault(open_defs[-1][2], set()).add(ds)
+                open_defs.append((st, en, ds))
+            for pos, s in refs:
+                key = (rel, pos, s)
+                if key in seen:
+                    continue
+                seen.add(key)
+                ctx = None
+                j = bisect_right(starts, pos) - 1
+                while j >= 0:
+                    st, en, ds = defs[j]
+                    if st <= pos <= en:
+                        ctx = ds
+                        break
+                    j -= 1
+                if is_root_file:
+                    roots_example.add(s)
+                    a.example_refs += 1
+                elif rel in BINDING_FILES:
+                    roots_core.add(s)
+                    a.binding_refs += 1
+                elif ctx is None:
+                    roots_core.add(s)  # module-level code that is not a `use`
+                else:
+                    edges.setdefault(ctx, set()).add(s)
+
+    # trait-impl methods of traits defined outside the crate are called implicitly
+    for sym, targets in impl_targets.items():
+        if any(t not in defined for t in targets):
+            roots_core.add(sym)
+
+    def reach(start: set[str]) -> set[str]:
+        live = set(start)
+        stack = list(start)
+        while stack:
+            s = stack.pop()
+            for t in edges.get(s, ()):
+                if t not in live:
+                    live.add(t)
+                    stack.append(t)
+            for t in implementers.get(s, ()):
+                if t not in live:
+                    live.add(t)
+                    stack.append(t)
+        return live
+
+    live_core = reach(roots_core)
+    live_all = reach(roots_core | roots_example)
+    for key, syms in a.items.items():
+        if syms & live_core:
+            a.level[key] = "live"
+        elif syms & live_all:
+            a.level[key] = "L1"
+        else:
+            a.level[key] = "L0"
+    return a
+
+
+def baseline_unwired(root: Path) -> set[str]:
+    p = root / "scripts" / "wiring-baseline.txt"
+    if not p.exists():
+        return set()
+    out = set()
+    for line in p.read_text(encoding="utf-8").splitlines():
+        parts = line.split()
+        if len(parts) == 2 and parts[0] == "unwired":
+            out.add(parts[1])
+    return out
+
+
+def report(a: Analysis, baseline: set[str]) -> str:
+    l0 = sorted(k for k, v in a.level.items() if v == "L0")
+    l1 = sorted(k for k, v in a.level.items() if v == "L1")
+    live = sum(1 for v in a.level.values() if v == "live")
+    missed = [k for k in l0 if k not in baseline]
+    resolved = sorted(k for k in baseline if a.level.get(k) in ("live", "L1"))
+    out = [
+        "# ALICE-Physics Integration Status",
+        "",
+        "_Generated by `scripts/scip_reach.py` from rust-analyzer SCIP indexes (`scripts/scip_index.sh`); no timestamp, the file changes only when its content does._",
+        "",
+        "Every `pub` / `pub(crate)` item defined in `src/` (binding files excluded), classified by what reaches it.",
+        "References are resolved to one definition each, so items that share a name are told apart.",
+        "",
+        "| Level | Meaning | Count |",
+        "|-------|---------|------:|",
+        f"| L0 | not reached by any non-test code, examples included | {len(l0)} |",
+        f"| L1 | reached only from `examples/` / `benches/` / `fuzz/` | {len(l1)} |",
+        f"| live | reached without examples (crate-internal roots or a binding) | {live} |",
+        f"| | **total** | **{len(a.level)}** |",
+        "",
+        "L1 is a label, not a defect: a module users call directly is example-only inside this crate.",
+        "It does mean the item is not reached from `PhysicsWorld`, another module, or a binding.",
+        "",
+        "## Compared with the wiring guard",
+        "",
+        f"`scripts/wiring-baseline.txt` lists {len(baseline)} unwired items.",
+        "",
+        f"### L0 here but not in the baseline ({len(missed)})",
+        "",
+        "The name-based guard counts these as wired; resolved references find no caller.",
+        "",
+    ]
+    out += [f"- `{k}`" for k in missed] or ["- (none)"]
+    out += [
+        "",
+        f"### In the baseline but reached here ({len(resolved)})",
+        "",
+        "The guard lists these as unwired; a resolved reference reaches them (level in brackets).",
+        "",
+    ]
+    out += [f"- `{k}` ({a.level[k]})" for k in resolved] or ["- (none)"]
+    out += ["", f"## L0 — unreached ({len(l0)})", ""]
+    out += [f"- `{k}`" for k in l0] or ["- (none)"]
+    out += [
+        "",
+        "## Limits",
+        "",
+        "- A pattern in a `match` arm counts as a reference: a type that is only matched on, never constructed, is reached.",
+        "- Code inside macro expansions is resolved as far as rust-analyzer resolves it.",
+        "- Generic code is followed through trait methods: calling `T::method` reaches every impl of that method in the crate.",
+        "- Items in `src/ffi.rs`, `src/python.rs` and `src/wasm.rs` are roots and are not listed.",
+    ]
+    out += ["", f"## L1 — example-only ({len(l1)})", ""]
+    by_file: dict[str, list[str]] = {}
+    for k in l1:
+        f, n = k.split("::", 1)
+        by_file.setdefault(f, []).append(n)
+    if not by_file:
+        out.append("- (none)")
+    for f in sorted(by_file):
+        out.append(f"- `{f}`: " + ", ".join(f"`{n}`" for n in by_file[f]))
+    out.append("")
+    return "\n".join(out)
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--root", default=str(Path(__file__).resolve().parent.parent))
+    ap.add_argument("--scip", default="target/scip")
+    ap.add_argument("--write", help="write the markdown ledger to this path")
+    args = ap.parse_args(argv)
+    root = Path(args.root)
+    sdir = Path(args.scip) if Path(args.scip).is_absolute() else root / args.scip
+    paths = [sdir / "native.scip", sdir / "wasm.scip"]
+    missing = [str(p) for p in paths if not p.exists()]
+    if missing:
+        print(f"error: SCIP index missing: {missing} (run scripts/scip_index.sh)", file=sys.stderr)
+        return 1
+    a = analyze(root, paths)
+    errors = []
+    if not a.items:
+        errors.append("0 pub items found in src/ (the analysis looked at nothing)")
+    if a.example_refs == 0:
+        errors.append("0 references from examples/benches/fuzz (index or path filter is wrong)")
+    if a.binding_refs == 0:
+        errors.append("0 references from binding files (feature-gated modules were not indexed)")
+    counts = {lv: sum(1 for v in a.level.values() if v == lv) for lv in ("L0", "L1", "live")}
+    print(f"compared: items {len(a.items)}, example refs {a.example_refs}, binding refs {a.binding_refs}, "
+          f"L0 {counts['L0']}, L1 {counts['L1']}, live {counts['live']}")
+    for e in errors:
+        print(f"error: {e}", file=sys.stderr)
+    if errors:
+        return 1
+    if args.write:
+        Path(args.write).write_text(report(a, baseline_unwired(root)), encoding="utf-8")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

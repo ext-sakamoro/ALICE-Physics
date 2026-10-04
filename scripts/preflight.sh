@@ -30,6 +30,9 @@ step "README sync (README.md / README_JP.md / docs/MODULES.md = Cargo.toml + src
 python3 scripts/test_readme_sync.py
 python3 scripts/readme_sync.py --check
 
+step "SCIP reach analysis oracle (docs/integration-status.md の解析器)"
+python3 scripts/test_scip_reach.py
+
 step "wiring-guard (oracle + 新規の未配線 / 理由の無い dead_code が無い)"
 python3 scripts/test_wiring_guard.py
 python3 scripts/wiring_guard.py

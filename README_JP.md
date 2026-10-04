@@ -172,6 +172,8 @@ golden ハッシュは変化を検出するだけなので、これらとは別�
 実装が直るまで意図的に red のまま残しているテスト (`#[ignore = "known defect: …"]`) である
 本番で数値を使う前に、該当モジュールの行を確認してほしい
 
+[`docs/integration-status.md`](docs/integration-status.md) は rust-analyzer が解決した参照から自動生成した一覧で、公開 item ごとにテスト以外から到達されているか、example からだけ到達されているかを示す
+
 参照テストのないモジュール (経験式の `warp_risk`、`layer_adhesion` など) は、引用した式を実装したものであって検証済みの予測ではない
 [`docs/MODULES.md`](docs/MODULES.md) に明記している
 
