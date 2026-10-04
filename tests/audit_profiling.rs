@@ -132,7 +132,7 @@ fn counter_advance_zero_is_identity() {
 /// Expected (closed form): a total of u64::MAX + u64::MAX must never be
 /// smaller than either term (saturate) and must not panic.
 #[test]
-#[ignore = "known defect: AUD-A-S4W1-001: ProfileEntry::record `+=` overflows (debug panic / release wrap u64::MAX+u64::MAX = u64::MAX-1)"]
+#[ignore = "known defect: AUD-A-S4W1-001: ProfileEntry::record `+=` overflows (debug panic / release wrap u64::MAX+u64::MAX = u64::MAX-1) -- escalated: tests/analytic_profiling_wiring.rs::entry_record_overflow_panics_in_debug_and_wraps_in_release pins this panic/wrap as the current behaviour and its own comment says it is pinned precisely so a change to saturating/checked arithmetic shows up as red here; switching to saturating_add is a design decision to confirm, not a silent fix"]
 fn entry_total_never_decreases_on_overflow() {
     let mut e = ProfileEntry::new("x");
     e.record(u64::MAX);
