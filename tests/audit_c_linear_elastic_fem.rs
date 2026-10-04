@@ -141,6 +141,7 @@ fn rigid_half_turn_in_an_even_number_of_increments_is_stress_free() {
 
 /// Probe for the defect above: pins what the current source returns, so a
 /// change in the failure mode is visible.
+// PIN: AUD-A-S34-030
 #[test]
 fn rigid_half_turn_in_two_increments_is_currently_refused_as_inverted() {
     let mesh = kuhn_box(1, 1, 1);
