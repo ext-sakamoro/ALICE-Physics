@@ -81,20 +81,32 @@ class Doc:
 
 
 def build(docs: list[Doc]) -> Path:
+    """Sources plus the three indexes. A Doc under fuzz/ goes to fuzz.scip with the
+    prefix removed, as rust-analyzer indexes the fuzz crate from its own root."""
     d = Path(tempfile.mkdtemp())
     for doc in docs:
         p = d / doc.path
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text("\n".join(doc.lines), encoding="utf-8")
+    crate = [doc for doc in docs if not doc.path.startswith("fuzz/")]
+    fuzz = [doc for doc in docs if doc.path.startswith("fuzz/")]
     (d / "target" / "scip").mkdir(parents=True)
-    (d / "target" / "scip" / "native.scip").write_bytes(b"".join(doc.encode() for doc in docs))
+    (d / "target" / "scip" / "native.scip").write_bytes(b"".join(doc.encode() for doc in crate))
     (d / "target" / "scip" / "wasm.scip").write_bytes(b"")
+    blob = b""
+    for doc in fuzz:
+        full = doc.path
+        doc.path = full[len("fuzz/"):]
+        blob += doc.encode()
+        doc.path = full
+    (d / "target" / "scip" / "fuzz.scip").write_bytes(blob)
     return d
 
 
 def levels(docs: list[Doc]) -> dict[str, str]:
     d = build(docs)
-    return sr.analyze(d, [d / "target/scip/native.scip", d / "target/scip/wasm.scip"]).level
+    s = d / "target" / "scip"
+    return sr.analyze(d, [s / "native.scip", s / "wasm.scip", s / "fuzz.scip"]).level
 
 
 # --- fixtures -----------------------------------------------------------------
@@ -194,6 +206,22 @@ class Levels(unittest.TestCase):
         # and from the impl symbol name alone: rust-analyzer emits no relationships,
         # so this is the case that occurs in practice
         self.assertEqual(levels([src(False), ex])["src/m.rs::inner"], "L1")
+
+    def test_fuzz_target_is_a_caller(self):
+        # the fuzz crate is indexed from fuzz/: its paths gain the prefix and its
+        # references count like an example's
+        fz = Doc("fuzz/fuzz_targets/f.rs", "fuzz_target!(|d| { unused(); });").ref("unused().", 0, "unused")
+        self.assertEqual(levels([lib_doc()])["src/lib.rs::unused"], "L0")
+        self.assertEqual(levels([lib_doc(), fz])["src/lib.rs::unused"], "L1")
+
+    def test_fuzz_references_count_whatever_the_index_order(self):
+        # fuzz references are counted against the crate's own definitions, so the
+        # fuzz index must be read after native / wasm even when passed first
+        fz = Doc("fuzz/fuzz_targets/f.rs", "fuzz_target!(|d| { used(); });").ref("used().", 0, "used")
+        d = build([lib_doc(), fz])
+        s = d / "target" / "scip"
+        a = sr.analyze(d, [s / "fuzz.scip", s / "native.scip", s / "wasm.scip"])
+        self.assertEqual(a.fuzz_refs, 1)
 
     def test_impl_link_needs_the_same_trait_and_method(self):
         text = ("pub trait Tr { fn run(&self); }\npub fn inner() {}\n"
@@ -337,31 +365,38 @@ class Main(unittest.TestCase):
     # so removing one guard turns exactly one case green-when-it-should-fail
     EX = staticmethod(lambda: Doc("examples/e.rs", "fn main() { used(); }").ref("used().", 0, "used"))
     FFI = staticmethod(lambda: Doc("src/ffi.rs", "pub extern \"C\" fn api() { used(); }").ref("used().", 0, "used"))
+    FUZZ = staticmethod(lambda: Doc("fuzz/fuzz_targets/f.rs", "fuzz_target!(|d| { used(); });").ref("used().", 0, "used"))
 
     def test_all_three_conditions_met_passes(self):
-        self.assertEqual(sr.main(["--root", str(build([lib_doc(), self.EX(), self.FFI()]))]), 0)
+        self.assertEqual(sr.main(["--root", str(build([lib_doc(), self.EX(), self.FFI(), self.FUZZ()]))]), 0)
 
     def test_no_example_references_fails(self):
-        self.assertEqual(sr.main(["--root", str(build([lib_doc(), self.FFI()]))]), 1)
+        self.assertEqual(sr.main(["--root", str(build([lib_doc(), self.FFI(), self.FUZZ()]))]), 1)
 
     def test_no_binding_references_fails(self):
-        self.assertEqual(sr.main(["--root", str(build([lib_doc(), self.EX()]))]), 1)
+        self.assertEqual(sr.main(["--root", str(build([lib_doc(), self.EX(), self.FUZZ()]))]), 1)
 
     def test_no_items_fails(self):
-        self.assertEqual(sr.main(["--root", str(build([self.EX(), self.FFI()]))]), 1)
+        self.assertEqual(sr.main(["--root", str(build([self.EX(), self.FFI(), self.FUZZ()]))]), 1)
+
+    def test_no_fuzz_reference_fails(self):
+        self.assertEqual(sr.main(["--root", str(build([lib_doc(), self.EX(), self.FFI()]))]), 1)
+        # a fuzz target that references only outside crates does not count either
+        other = Doc("fuzz/fuzz_targets/f.rs", "fn main() { other(); }").ref("other_crate/other().", 0, "other")
+        self.assertEqual(sr.main(["--root", str(build([lib_doc(), self.EX(), self.FFI(), other]))]), 1)
 
     def test_no_trait_impl_link_fails(self):
         bare = (Doc("src/lib.rs", "pub fn used() {}").define("used().", 0, "used"))
-        self.assertEqual(sr.main(["--root", str(build([bare, self.EX(), self.FFI()]))]), 1)
+        self.assertEqual(sr.main(["--root", str(build([bare, self.EX(), self.FFI(), self.FUZZ()]))]), 1)
         # the same crate with one link passes, so the guard is the only difference
         linked = (Doc("src/lib.rs", "pub fn used() {}\ntrait Tr { fn run(&self); }\nimpl Tr for X { fn run(&self) {} }")
                   .define("used().", 0, "used").define("Tr#run().", 1, "run").define("impl#[X][Tr]run().", 2, "run"))
-        self.assertEqual(sr.main(["--root", str(build([linked, self.EX(), self.FFI()]))]), 0)
+        self.assertEqual(sr.main(["--root", str(build([linked, self.EX(), self.FFI(), self.FUZZ()]))]), 0)
 
     def test_writes_ledger_and_compares_with_baseline(self):
         ex = Doc("examples/demo.rs", "fn main() { used(); }").ref("used().", 0, "used")
         ffi = Doc("src/ffi.rs", "pub extern \"C\" fn api() { via_binding(); }").ref("via_binding().", 0, "via_binding")
-        d = build([lib_doc(), ex, ffi])
+        d = build([lib_doc(), ex, ffi, Main.FUZZ()])
         (d / "scripts").mkdir()
         (d / "scripts" / "wiring-baseline.txt").write_text("unwired src/lib.rs::via_binding\n", encoding="utf-8")
         out = d / "ledger.md"
@@ -378,7 +413,7 @@ class Baseline(unittest.TestCase):
     def crate(self, baseline: str | None) -> Path:
         ex = Doc("examples/demo.rs", "fn main() { used(); }").ref("used().", 0, "used")
         ffi = Doc("src/ffi.rs", "pub extern \"C\" fn api() { via_binding(); }").ref("via_binding().", 0, "via_binding")
-        d = build([lib_doc(), ex, ffi])  # L0: unused
+        d = build([lib_doc(), ex, ffi, Main.FUZZ()])  # L0: unused
         if baseline is not None:
             (d / "scripts").mkdir()
             (d / "scripts" / "integration-baseline.txt").write_text(baseline, encoding="utf-8")
