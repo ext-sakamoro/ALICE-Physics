@@ -66,10 +66,10 @@ fn new_body_has_inverse_mass_and_unit_sphere_inverse_inertia() {
     assert_eq!(b.rotation, QuatFix::IDENTITY);
     assert_eq!(b.velocity, Vec3Fix::ZERO);
     assert!(b.is_dynamic() && !b.is_kinematic() && !b.is_static());
-    // Documented defaults (comments in the constructor): restitution 0.5, friction 0.3,
+    // Defaults: friction 0.5 and restitution 0.3 (the default material's values),
     // gravity scale 1, no extra damping.
-    assert_eq!(b.restitution, Fix128::from_ratio(5, 10));
-    assert_eq!(b.friction, Fix128::from_ratio(3, 10));
+    assert_eq!(b.restitution, Fix128::from_ratio(3, 10));
+    assert_eq!(b.friction, Fix128::from_ratio(5, 10));
     assert_eq!(b.gravity_scale, Fix128::ONE);
     assert_eq!(b.linear_damping, Fix128::ONE);
     assert_eq!(b.angular_damping, Fix128::ONE);
@@ -959,7 +959,6 @@ fn remove_body_keeps_each_survivors_filter() {
 /// (`add_contact_with_material` -> `combined_material`) and never read the body field, so a
 /// head-on pair built with restitution 1 behaves exactly like one built with restitution 0.
 #[test]
-#[ignore = "known defect: AUD-A-S1W2-008: RigidBody.restitution / friction (with_restitution, with_friction, wasm setRestitution / setFriction) are never read by the 3D solver; contacts use the material table only"]
 fn body_restitution_changes_the_bounce() {
     let run = |e: f64| {
         let mut w = PhysicsWorld::new(weightless());
@@ -982,5 +981,61 @@ fn body_restitution_changes_the_bounce() {
     assert!(
         (stick - bounce).abs() > 1.0,
         "restitution 0 -> vx {stick}, restitution 1 -> vx {bounce}: no effect"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// body friction / restitution in contacts
+// ---------------------------------------------------------------------------
+
+/// Every constructor takes the default material's friction and restitution, so a body that
+/// keeps the defaults contacts exactly as the material table says.
+#[test]
+fn body_defaults_equal_the_default_material() {
+    let w = PhysicsWorld::new(weightless());
+    let m = w.material_table.combine(0, 0);
+    for b in [
+        RigidBody::new(Vec3Fix::ZERO, Fix128::ONE),
+        RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE),
+        RigidBody::new_static(Vec3Fix::ZERO),
+        RigidBody::new_kinematic(Vec3Fix::ZERO),
+    ] {
+        assert_eq!((b.friction, b.restitution), (m.friction, m.restitution));
+    }
+}
+
+/// Two default-material bodies combine to the body values by the Average rule; the combined
+/// pair for default bodies equals the material table's, and an explicit body value moves it.
+#[test]
+fn combined_material_reads_default_material_bodies_values() {
+    let mut w = PhysicsWorld::new(weightless());
+    let a = w.add_body(RigidBody::new(Vec3Fix::ZERO, Fix128::ONE));
+    let b = w.add_body(
+        RigidBody::new(Vec3Fix::ZERO, Fix128::ONE)
+            .with_friction(fx(0.9))
+            .with_restitution(fx(0.1)),
+    );
+    assert_eq!(w.combined_material(a, a), w.material_table.combine(0, 0));
+    let c = w.combined_material(a, b);
+    close(c.friction, 0.7, 1e-12, "friction (0.5 + 0.9) / 2");
+    close(c.restitution, 0.2, 1e-12, "restitution (0.3 + 0.1) / 2");
+}
+
+/// A body with an assigned material contributes the material's values; its own fields are
+/// not read.
+#[test]
+fn combined_material_ignores_body_values_of_a_body_with_a_material() {
+    let mut w = PhysicsWorld::new(weightless());
+    let metal = w.material_table.register_metal();
+    let a = w.add_body(
+        RigidBody::new(Vec3Fix::ZERO, Fix128::ONE)
+            .with_friction(fx(0.9))
+            .with_restitution(fx(0.9)),
+    );
+    let b = w.add_body(RigidBody::new(Vec3Fix::ZERO, Fix128::ONE));
+    w.set_body_material(a, metal);
+    assert_eq!(
+        w.combined_material(a, b),
+        w.material_table.combine(metal, 0)
     );
 }

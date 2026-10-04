@@ -68,6 +68,15 @@ pub enum BodyType {
 // Rigid Body
 // ============================================================================
 
+/// Default [`RigidBody::friction`] of a body built by `new`, `new_dynamic`,
+/// `new_static` and `new_kinematic`: 0.5, the `dynamic_friction` of the default
+/// material, so a body that keeps the defaults contacts like one with no body value.
+const DEFAULT_BODY_FRICTION: Fix128 = Fix128::from_raw(0, 9_223_372_036_854_775_808);
+
+/// Default [`RigidBody::restitution`] of a body built by `new`, `new_dynamic`,
+/// `new_static` and `new_kinematic`: 0.3, the `restitution` of the default material.
+const DEFAULT_BODY_RESTITUTION: Fix128 = Fix128::from_raw(0, 5_534_023_222_112_865_484);
+
 /// Rigid body state
 ///
 /// Field layout is optimized for cache performance (Gap 1.1):
@@ -98,9 +107,15 @@ pub struct RigidBody {
     pub angular_velocity: Vec3Fix,
     /// Previous rotation (for XPBD)
     pub prev_rotation: QuatFix,
-    /// Coefficient of restitution (bounciness)
+    /// Coefficient of restitution (bounciness), default 0.3
+    ///
+    /// Read by contacts only while the body has the default material
+    /// (see [`PhysicsWorld::combined_material`]).
     pub restitution: Fix128,
-    /// Friction coefficient
+    /// Friction coefficient, default 0.5
+    ///
+    /// Read by contacts only while the body has the default material
+    /// (see [`PhysicsWorld::combined_material`]).
     pub friction: Fix128,
     /// Gravity scale multiplier (1.0 = normal, 0.0 = no gravity, 2.0 = double)
     pub gravity_scale: Fix128,
@@ -163,8 +178,8 @@ impl RigidBody {
             rotation: QuatFix::IDENTITY,
             angular_velocity: Vec3Fix::ZERO,
             prev_rotation: QuatFix::IDENTITY,
-            restitution: Fix128::from_ratio(5, 10), // 0.5 default
-            friction: Fix128::from_ratio(3, 10),    // 0.3 default
+            restitution: DEFAULT_BODY_RESTITUTION,
+            friction: DEFAULT_BODY_FRICTION,
             gravity_scale: Fix128::ONE,
             linear_damping: Fix128::ONE,
             angular_damping: Fix128::ONE,
@@ -193,8 +208,8 @@ impl RigidBody {
             rotation: QuatFix::IDENTITY,
             angular_velocity: Vec3Fix::ZERO,
             prev_rotation: QuatFix::IDENTITY,
-            restitution: Fix128::ZERO,
-            friction: Fix128::ONE,
+            restitution: DEFAULT_BODY_RESTITUTION,
+            friction: DEFAULT_BODY_FRICTION,
             gravity_scale: Fix128::ZERO,
             linear_damping: Fix128::ONE,
             angular_damping: Fix128::ONE,
@@ -242,8 +257,8 @@ impl RigidBody {
             rotation: QuatFix::IDENTITY,
             angular_velocity: Vec3Fix::ZERO,
             prev_rotation: QuatFix::IDENTITY,
-            restitution: Fix128::ZERO,
-            friction: Fix128::ONE,
+            restitution: DEFAULT_BODY_RESTITUTION,
+            friction: DEFAULT_BODY_FRICTION,
             gravity_scale: Fix128::ZERO,
             linear_damping: Fix128::ONE,
             angular_damping: Fix128::ONE,
@@ -1926,23 +1941,40 @@ impl PhysicsWorld {
     }
 
     /// Get combined material properties for a body pair
+    ///
+    /// # Claims
+    ///
+    /// - A body whose material is [`crate::material::DEFAULT_MATERIAL`] contributes
+    ///   its own [`RigidBody::friction`] and [`RigidBody::restitution`] (the
+    ///   default material is "no material assigned"); a body with any other
+    ///   material contributes that material's `dynamic_friction` / `restitution`
+    ///   and its own fields are not read.
+    /// - Bodies built with the defaults (friction 0.3, restitution 0.5) give the
+    ///   same result as before, since the default material holds the same values.
+    /// - The two contributions are combined with the materials' combine rules; a
+    ///   pair override registered for the two materials takes precedence over
+    ///   both.
+    /// - An index outside the body list counts as the default material with the
+    ///   material's own values.
     #[must_use]
     pub fn combined_material(
         &self,
         body_a: usize,
         body_b: usize,
     ) -> crate::material::CombinedMaterial {
-        let mat_a = if body_a < self.body_materials.len() {
-            self.body_materials[body_a]
-        } else {
-            crate::material::DEFAULT_MATERIAL
+        let side = |i: usize| -> (crate::material::MaterialId, Option<(Fix128, Fix128)>) {
+            let Some(&mat) = self.body_materials.get(i) else {
+                return (crate::material::DEFAULT_MATERIAL, None);
+            };
+            if mat != crate::material::DEFAULT_MATERIAL {
+                return (mat, None);
+            }
+            (mat, self.bodies.get(i).map(|b| (b.friction, b.restitution)))
         };
-        let mat_b = if body_b < self.body_materials.len() {
-            self.body_materials[body_b]
-        } else {
-            crate::material::DEFAULT_MATERIAL
-        };
-        self.material_table.combine(mat_a, mat_b)
+        let (mat_a, surface_a) = side(body_a);
+        let (mat_b, surface_b) = side(body_b);
+        self.material_table
+            .combine_with_surface(mat_a, surface_a, mat_b, surface_b)
     }
 
     /// Add distance constraint
