@@ -2,6 +2,9 @@
 # introduced. scripts/scip_reach.py --check-baseline fails on any L0 item not
 # listed here, and on any line here that is no longer L0. Shrink this file;
 # regenerate with --write-baseline only for an intended change.
+# Lines starting with "unindexed: " are pub items the SCIP index has no
+# definition for (macro_rules bodies); they have no level, the same ratchet
+# applies to them.
 src/anisotropic.rs::AnisotropicStrength::from_fdm_material
 src/anisotropic.rs::OrthotropicElasticity::from_fdm_material
 src/anomaly.rs::MadDetector::count
@@ -254,3 +257,30 @@ src/wave_ship.rs::ShipResponse
 src/wave_ship.rs::ShipResponse::advance
 src/wedge.rs::Wedge::aabb
 src/wedge.rs::Wedge::with_rotation
+unindexed: src/sketch.rs::BINS
+unindexed: src/sketch.rs::DEPTH
+unindexed: src/sketch.rs::K
+unindexed: src/sketch.rs::M
+unindexed: src/sketch.rs::P
+unindexed: src/sketch.rs::WIDTH
+unindexed: src/sketch.rs::alpha
+unindexed: src/sketch.rs::cardinality
+unindexed: src/sketch.rs::clear
+unindexed: src/sketch.rs::cms
+unindexed: src/sketch.rs::confidence
+unindexed: src/sketch.rs::count
+unindexed: src/sketch.rs::error_bound
+unindexed: src/sketch.rs::estimate
+unindexed: src/sketch.rs::estimate_bytes
+unindexed: src/sketch.rs::estimate_hash
+unindexed: src/sketch.rs::insert
+unindexed: src/sketch.rs::insert_bytes
+unindexed: src/sketch.rs::insert_hash
+unindexed: src/sketch.rs::max
+unindexed: src/sketch.rs::mean
+unindexed: src/sketch.rs::min
+unindexed: src/sketch.rs::quantile
+unindexed: src/sketch.rs::registers
+unindexed: src/sketch.rs::sum
+unindexed: src/sketch.rs::top
+unindexed: src/sketch.rs::total

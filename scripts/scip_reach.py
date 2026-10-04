@@ -164,6 +164,7 @@ class Analysis:
         self.level: dict[str, str] = {}            # key -> L0 / L1 / live
         self.example_refs = 0
         self.binding_refs = 0
+        self.unindexed: list[str] = []  # pub items in the source with no index definition
         self.fuzz_refs = 0        # references from the fuzz crate's index to this crate
         self.fuzz_docs = 0
         self.impl_links = 0       # trait-impl method -> in-crate trait method
@@ -171,6 +172,7 @@ class Analysis:
 
 
 IMPL_HEADER_RE = re.compile(r"\bimpl\b[^{;]*\{")
+PUB_NAME_RE = re.compile(PUB_DEF + r"([A-Za-z_][A-Za-z0-9_]*)")
 
 # fuzz/ is a separate crate: its index is read last, and its paths get this prefix
 FUZZ_INDEX = "fuzz.scip"
@@ -246,6 +248,23 @@ def _keep_mask(text: str) -> tuple[list[str], list[str]]:
     code = USE_RE.sub(blank, code)
     code = IMPL_HEADER_RE.sub(lambda m: blank(m)[:-1] + "{", code)
     return text.split("\n"), code.split("\n")
+
+
+def unindexed_items(root: Path, indexed: set[str]) -> list[str]:
+    """`src/x.rs::name` for every `pub` definition in the source (comments, strings,
+    cfg(test) and use statements removed) that no index definition accounts for."""
+    out = set()
+    for p in sorted((Path(root) / "src").rglob("*.rs")):
+        rel = p.relative_to(root).as_posix()
+        if rel in BINDING_FILES:
+            continue
+        _raw, code = _keep_mask(p.read_text(encoding="utf-8", errors="replace"))
+        for line in code:
+            for m in PUB_NAME_RE.finditer(line):
+                key = f"{rel}::{m.group(1)}"
+                if key not in indexed:
+                    out.add(key)
+    return sorted(out)
 
 
 def item_key(rel: str, name: str, sym: str) -> str:
@@ -368,6 +387,11 @@ def analyze(root: Path, scip_paths: list[Path]) -> Analysis:
                     roots_core.add(s)  # module-level code that is not a `use`
                 else:
                     edges.setdefault(ctx, set()).add(s)
+
+    # pub items the index does not define (in practice: items written inside a
+    # macro_rules body, which rust-analyzer does not emit definitions for). They have
+    # no level, so they are listed and ratcheted separately instead of disappearing
+    a.unindexed = unindexed_items(root, {legacy_key(k) for k in a.items})
 
     # Trait impls. An impl method runs only when (1) the trait method it implements
     # is reached, or the trait is defined outside the crate (Display, Default, Drop,
@@ -509,6 +533,10 @@ def report(a: Analysis, baseline: set[str]) -> str:
     out += [f"- `{k}` ({'/'.join(sorted({a.level[x] for x in by_legacy[k]}))})" for k in resolved] or ["- (none)"]
     out += ["", f"## L0 — unreached ({len(l0)})", ""]
     out += [f"- `{k}`" for k in l0] or ["- (none)"]
+    out += ["", f"## Not indexed ({len(a.unindexed)})", "",
+            "`pub` items in the source that the SCIP index has no definition for (items inside a "
+            "`macro_rules` body). Their reach is not checked; the baseline lists them so the set cannot grow unnoticed.", ""]
+    out += [f"- `{k}`" for k in a.unindexed] or ["- (none)"]
     out += [
         "",
         "## Limits",
@@ -565,6 +593,7 @@ def main(argv: list[str] | None = None) -> int:
     counts = {lv: sum(1 for v in a.level.values() if v == lv) for lv in ("L0", "L1", "live")}
     print(f"compared: items {len(a.items)}, example refs {a.example_refs}, binding refs {a.binding_refs}, "
           f"fuzz refs {a.fuzz_refs}, trait-impl links {a.impl_links}, external-trait impls {a.external_impls}, "
+          f"unindexed {len(a.unindexed)}, "
           f"L0 {counts['L0']}, L1 {counts['L1']}, live {counts['live']}")
     for e in errors:
         print(f"error: {e}", file=sys.stderr)
@@ -575,14 +604,24 @@ def main(argv: list[str] | None = None) -> int:
     bpath = Path(args.baseline) if Path(args.baseline).is_absolute() else root / args.baseline
     l0 = sorted(k for k, v in a.level.items() if v == "L0")
     if args.write_baseline:
-        bpath.write_text(BASELINE_HEADER + "".join(f"{k}\n" for k in l0), encoding="utf-8")
-        print(f"wrote {len(l0)} L0 entries to {bpath}")
+        bpath.write_text(BASELINE_HEADER + "".join(f"{k}\n" for k in l0)
+                         + "".join(f"{UNINDEXED}{k}\n" for k in a.unindexed), encoding="utf-8")
+        print(f"wrote {len(l0)} L0 entries and {len(a.unindexed)} unindexed entries to {bpath}")
     if args.check_baseline:
         if not bpath.exists():
             print(f"error: baseline {bpath} missing (run with --write-baseline)", file=sys.stderr)
             return 1
-        base = {ln.strip() for ln in bpath.read_text(encoding="utf-8").splitlines()
-                if ln.strip() and not ln.startswith("#")}
+        lines = {ln.strip() for ln in bpath.read_text(encoding="utf-8").splitlines()
+                 if ln.strip() and not ln.startswith("#")}
+        base = {ln for ln in lines if not ln.startswith(UNINDEXED)}
+        base_unindexed = {ln[len(UNINDEXED):] for ln in lines if ln.startswith(UNINDEXED)}
+        new_unindexed = [k for k in a.unindexed if k not in base_unindexed]
+        stale_unindexed = sorted(base_unindexed - set(a.unindexed))
+        for k in new_unindexed:
+            print(f"error: new unindexed item {k}: a pub item the SCIP index has no definition for "
+                  "(a macro_rules body?), so its reach cannot be checked", file=sys.stderr)
+        for k in stale_unindexed:
+            print(f"error: stale unindexed entry {k}: remove the line", file=sys.stderr)
         new = [k for k in l0 if k not in base]
         stale = sorted(k for k in base if a.level.get(k) != "L0")
         for k in new:
@@ -591,16 +630,21 @@ def main(argv: list[str] | None = None) -> int:
         for k in stale:
             lv = a.level.get(k, "gone")
             print(f"error: stale baseline entry {k} (now {lv}): remove the line", file=sys.stderr)
-        print(f"baseline: {len(base)} entries, new L0 {len(new)}, stale {len(stale)}")
-        if new or stale:
+        print(f"baseline: {len(base)} entries, new L0 {len(new)}, stale {len(stale)}; "
+              f"unindexed {len(base_unindexed)} entries, new {len(new_unindexed)}, stale {len(stale_unindexed)}")
+        if new or stale or new_unindexed or stale_unindexed:
             return 1
     return 0
 
 
+UNINDEXED = "unindexed: "
 BASELINE_HEADER = """# L0 items (no non-test code reaches them) that existed when the ratchet was
 # introduced. scripts/scip_reach.py --check-baseline fails on any L0 item not
 # listed here, and on any line here that is no longer L0. Shrink this file;
 # regenerate with --write-baseline only for an intended change.
+# Lines starting with "unindexed: " are pub items the SCIP index has no
+# definition for (macro_rules bodies); they have no level, the same ratchet
+# applies to them.
 """
 
 
