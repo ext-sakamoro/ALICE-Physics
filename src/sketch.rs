@@ -402,8 +402,18 @@ macro_rules! impl_ddsketch {
             }
 
             /// Insert a value into the sketch.
+            ///
+            /// NaN and ±infinity are rejected outright (not counted, not
+            /// binned, `sum` / `min` / `max` untouched): NaN would be
+            /// counted as a zero value (neither `> 0.0` nor `< 0.0`) and
+            /// poison `sum`/`mean` permanently, and ±infinity would make
+            /// `bucket_index`'s `ceil() as i32 + self.offset` overflow
+            /// (panic in debug builds, silently wrap in release).
             #[inline]
             pub fn insert(&mut self, value: f64) {
+                if !value.is_finite() {
+                    return;
+                }
                 self.count += 1;
                 self.sum += value;
 
@@ -616,9 +626,14 @@ macro_rules! impl_countmin {
             }
 
             /// Insert a pre-hashed item with the given count.
+            ///
+            /// `total` is accumulated with saturating addition: the
+            /// per-bucket counters already saturate at `u64::MAX`, so the
+            /// running total must not overflow (panic in debug builds,
+            /// silent wrap in release) when it does.
             #[inline]
             pub fn insert_hash(&mut self, hash: u64, count: u64) {
-                self.total += count;
+                self.total = self.total.saturating_add(count);
                 for row in 0..$d {
                     let col = Self::hash_for_row(hash, row);
                     self.counters[row][col] = self.counters[row][col].saturating_add(count);
@@ -698,7 +713,7 @@ macro_rules! impl_countmin {
 
         impl Mergeable for $name {
             fn merge(&mut self, other: &Self) {
-                self.total += other.total;
+                self.total = self.total.saturating_add(other.total);
                 for row in 0..$d {
                     for col in 0..$w {
                         self.counters[row][col] =
