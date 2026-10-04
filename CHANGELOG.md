@@ -165,6 +165,7 @@ were introduced during that release window.
 - `vehicle` の module doc を実装に合わせた (接地判定は水平面のみ、物理的な車両運動は `vehicle_dynamics` を使う)
 - **Behavior change:** `Fix128::abs` を最小値に、`Fix128::ceil` を `i64::MAX` を超える値に適用すると、表現できる最大値に飽和する (従来は `abs` が負のまま、`ceil` が debug で panic していた) `max_abs_field` など最大の絶対値を取る処理が最小値のサンプルを取りこぼさなくなる (AUD-A-S1W5-028 / AUD-A-S3W3-010 / AUD-A-S5W2-017)
 - **Behavior change:** `use_turbulence` を有効にした `CfdSolver::step` と `multiphase::trilinear_sample` / `trilinear_range` は、extent が 0 の格子で usize の underflow で panic せず、内点なし / `ZERO` を返す (AUD-A-S1W4-007 / AUD-A-S2W3-007)
+- **Behavior change:** shape の `support` (`Sphere` / `Capsule` / `Cone` / `Torus` / `Ellipsoid` / `Cylinder`) と `AnisotropicFriction::friction_force` が、約 2.3e-10 未満または約 3e9 を超える方向・滑り速度でも、潰れたり wrap したりせず正しい結果を返す (窓の内側の通常入力は bit 不変) (AUD-A-S2W3-001 / AUD-A-S3W3-018 / AUD-A-S4W3-001 / AUD-A-S5W2-007 / AUD-A-S5W3-002 / AUD-A-S5W3-003 / AUD-A-S6W1-007)
 
 ### Deprecated
 
