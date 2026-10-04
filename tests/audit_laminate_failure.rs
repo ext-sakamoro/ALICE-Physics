@@ -325,7 +325,6 @@ fn hashin_and_puck_agree_on_fibre_modes_and_on_matrix_tension_threshold() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S4W2-003: 強度 0 の ply が全 criterion で Safe / FI = 0 (Fix128 0 除算 = ZERO、検証なし)"]
 fn zero_strength_ply_must_not_report_safe_under_load() {
     // doc: FI >= 1 -> failed。強度 0 の層に荷重が掛かれば破壊と読むのが閉形式 (FI -> inf)
     // 実装は Fix128 の 0 除算 (= ZERO) で全 criterion が Safe / 0 を返す
@@ -354,7 +353,6 @@ fn zero_strength_ply_must_not_report_safe_under_load() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S4W2-003: S = 0 のとき tau 項が消え FI = 0 (tau = 50 MPa)"]
 fn single_zero_strength_s_must_not_drop_shear_term() {
     // S = 0 だけ 0 (入力ミス) でも τ12 = 50 MPa の項が消えて FI が過小になる
     let mut p = LaminateStrengths::cfrp_ud();
@@ -384,5 +382,63 @@ fn puck_pure_shear_above_s_is_inter_fibre_not_fibre_tension() {
     assert_eq!(
         puck_failure_mode(p, st(0.0, -50.0, 75.0)),
         FailureMode::InterFibreB
+    );
+}
+
+#[test]
+fn try_new_rejects_non_positive_strengths_and_accepts_positive_ones() {
+    let f = |v: f64| Fix128::from_f64(v);
+    let ok = LaminateStrengths::try_new(f(1500.0), f(1500.0), f(40.0), f(246.0), f(68.0))
+        .expect("positive strengths");
+    assert_eq!(ok, LaminateStrengths::cfrp_ud());
+    let e = LaminateStrengths::try_new(f(1500.0), f(1500.0), f(40.0), f(246.0), f(0.0))
+        .expect_err("s = 0");
+    assert_eq!(e.field, "s");
+    let e = LaminateStrengths::try_new(f(1500.0), f(-1.0), f(40.0), f(246.0), f(68.0))
+        .expect_err("xc < 0");
+    assert_eq!(e.field, "xc");
+}
+
+#[test]
+fn zero_transverse_or_shear_strength_is_a_failed_ply_when_that_component_is_loaded() {
+    let mut zy = LaminateStrengths::cfrp_ud();
+    zy.yt = Fix128::ZERO;
+    zy.yc = Fix128::ZERO;
+    assert_eq!(
+        hashin_failure_mode(zy, st(0.0, 50.0, 0.0)),
+        FailureMode::MatrixTension
+    );
+    assert_eq!(
+        hashin_failure_mode(zy, st(0.0, -50.0, 0.0)),
+        FailureMode::MatrixCompression
+    );
+    assert_eq!(
+        puck_failure_mode(zy, st(0.0, 50.0, 0.0)),
+        FailureMode::InterFibreA
+    );
+    assert_eq!(
+        puck_failure_mode(zy, st(0.0, -50.0, 0.0)),
+        FailureMode::InterFibreC
+    );
+    // The fibre direction is unloaded: no failure is invented for it.
+    assert_eq!(
+        hashin_failure_mode(zy, st(100.0, 0.0, 0.0)),
+        FailureMode::Safe
+    );
+
+    let mut zs = LaminateStrengths::cfrp_ud();
+    zs.s = Fix128::ZERO;
+    assert_eq!(
+        hashin_failure_mode(zs, st(0.0, 0.0, 50.0)),
+        FailureMode::MatrixTension
+    );
+    assert_eq!(
+        puck_failure_mode(zs, st(0.0, -10.0, 50.0)),
+        FailureMode::InterFibreB
+    );
+    // No shear load: a zero shear strength does not matter.
+    assert_eq!(
+        hashin_failure_mode(zs, st(100.0, 10.0, 0.0)),
+        FailureMode::Safe
     );
 }
