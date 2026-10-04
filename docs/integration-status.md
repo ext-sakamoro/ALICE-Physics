@@ -8,9 +8,9 @@ References are resolved to one definition each, so items that share a name are t
 | Level | Meaning | Count |
 |-------|---------|------:|
 | L0 | not reached by any non-test code, examples included | 231 |
-| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 1743 |
-| live | reached without examples (crate-internal roots or a binding) | 293 |
-| | **total** | **2267** |
+| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 1746 |
+| live | reached without examples (crate-internal roots or a binding) | 294 |
+| | **total** | **2271** |
 
 L1 is a label, not a defect: a module users call directly is example-only inside this crate.
 It does mean the item is not reached from `PhysicsWorld`, another module, or a binding.
@@ -465,7 +465,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - Generic code is followed through trait methods: calling `T::method` reaches every impl of that method in the crate.
 - Items in `src/ffi.rs`, `src/python.rs` and `src/wasm.rs` are roots and are not listed.
 
-## L1 — example-only (1743)
+## L1 — example-only (1746)
 
 - `src/acoustic_wave.rs`: `AIR_20C`, `CONCRETE_LONGITUDINAL`, `STEEL_LONGITUDINAL`, `WATER_25C`, `leapfrog_step`, `stable_dt`
 - `src/aeroelasticity.rs`: `VivParameters`, `VivState`, `facchinetti_reference`, `seeded`, `viv_step`
@@ -531,17 +531,17 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/hyperelastic.rs`: `HyperelasticModel`, `Stretch`, `UNITY`, `cauchy_stress`, `equibiaxial`, `i1`, `i2`, `natural_rubber`, `silicone_soft`, `small_strain_moduli`, `small_strain_shear_modulus`, `strain_energy_density`, `tangent_constants`, `tpu_soft`, `uniaxial`, `uniaxial_cauchy_stress`, `volume_ratio`, `volumetric_modulus`
 - `src/ik_physics_bridge.rs`: `IkTarget`, `IkTargetSet`, `apply`, `blended`, `new`, `push`, `snap`
 - `src/interface_capture.rs`: `fast_sweeping_reinit`, `plic_normal`, `plic_plane_offset`, `truncated_cube_volume`
-- `src/interpolation.rs`: `BodySnapshot`, `InterpolationState`, `WorldSnapshot`, `body_count`, `capture`, `capture_and_push`, `empty`, `from_body`, `interpolate`, `interpolate_all`, `interpolate_position`, `interpolate_rotation`, `is_empty`, `len`, `lerp_fix128`, `lerp_vec3`, `new`, `push`, `slerp`
+- `src/interpolation.rs`: `BodySnapshot`, `InterpolationState`, `WorldSnapshot`, `body_count`, `capture`, `capture_and_push`, `empty`, `from_body`, `interpolate`, `interpolate_all`, `interpolate_position`, `interpolate_rotation`, `is_empty`, `len`, `lerp_fix128`, `lerp_vec3`, `new`, `push`
 - `src/joint.rs`: `JointType`, `break_force`, `compute_force`, `joint_type`, `new`, `solve_joints_breakable`, `with_angular_limits`, `with_angular_motion`, `with_break_force`, `with_limits`, `with_linear_limits`, `with_linear_motion`
-- `src/joint_extra.rs`: `ExtraJoint`, `GearJoint`, `MouseJoint`, `PulleyJoint`, `RackAndPinionJoint`, `WeldJoint`, `compute_force`, `compute_torque`, `is_broken`, `new`, `set_target`, `solve_extra_joints`, `total_length`, `with_break_force`, `with_break_torque`
+- `src/joint_extra.rs`: `ExtraJoint`, `GearJoint`, `MouseJoint`, `PulleyJoint`, `RackAndPinionJoint`, `WeldJoint`, `compute_force`, `compute_torque`, `is_broken`, `new`, `set_target`, `solve_extra_joints`, `solve_pulley_to_length`, `total_length`, `with_break_force`, `with_break_torque`
 - `src/kinematic_loop.rs`: `FourBarLinkage`, `LoopClosureConstraint`, `apply`, `centre_to_centre`, `four_bar_linkage`, `residual`, `try_four_bar_linkage`
 - `src/laminate.rs`: `AbdMatrix`, `Ply`, `Sym3`, `add`, `compute_abd`, `is_symmetric`, `is_symmetric_stack`, `q_bar`, `q_matrix`, `scale`
-- `src/laminate_failure.rs`: `FailureCriterion`, `FailureMode`, `LaminateStrengths`, `StressState`, `cfrp_ud`, `failure_index`, `gfrp_ud`, `hashin_failure_mode`, `puck_failure_mode`, `tsai_hill_failure_index`, `tsai_wu_failure_index`, `zero`
+- `src/laminate_failure.rs`: `FailureCriterion`, `FailureMode`, `InvalidStrengthError`, `LaminateStrengths`, `StressState`, `cfrp_ud`, `failure_index`, `gfrp_ud`, `hashin_failure_mode`, `puck_failure_mode`, `try_new`, `tsai_hill_failure_index`, `tsai_wu_failure_index`, `zero`
 - `src/layer_adhesion.rs`: `EffectiveStrength`, `PrintOrientation`, `for_material`, `fos_normal_x`, `fos_normal_z`, `fos_shear_xy`, `fos_shear_xz`, `min_fos`
 - `src/linear_elastic_fem.rs`: `ALL`, `AdaptiveConfig`, `AdaptiveSolution`, `Axis`, `BoundaryConditions`, `CorotationalConfig`, `CorotationalSolution`, `DiagonalStats`, `ElasticMaterial`, `ElastoplasticConfig`, `ElastoplasticIncrement`, `ElastoplasticIncrementRequest`, `ElastoplasticProblem`, `ElastoplasticSolution`, `ElastoplasticState`, `FemError`, `FemSolution`, `PlasticHeating`, `Preconditioner`, `RESIDUAL_NORM_FLOOR`, `SolverConfig`, `StressTensor`, `ThermalExpansion`, `ThermalSoftening`, `ThermoplasticCoupling`, `ThermoplasticIncrement`, `adaptive_refinement_loop`, `add_load`, `alpha_per_k`, `bulk_fraction`, `commit`, `complementary_energy_density`, `consistent_tangent`, `corner_indicators_squared`, `corotational_reactions`, `default_poissons_ratio`, `deposit_increment_heat`, `deposit_plastic_heat`, `dissipation`, `equivalent_plastic_strain`, `error_indicators_squared`, `factor`, `fix`, `from_filament`, `from_rise`, `hardening_per_k`, `hydrostatic`, `hyperelastic`, `hyperelastic_volumetric_modulus`, `increments`, `index`, `lame`, `linear`, `load_count`, `loads`, `mark_bulk`, `max_iterations`, `max_refine_passes`, `max_rounds`, `max_von_mises_mpa`, `new`, `newton_iterations`, `newton_tolerance`, `none`, `plastic_temperature_rise`, `poissons_ratio`, `polar_iterations`, `preconditioner`, `prescribe`, `prescribe_all`, `prescribed`, `prescribed_count`, `reactions`, `relative_tolerance`, `relaxation`, `residual_floor_fraction`, `softening`, `solve`, `solve_adaptive`, `solve_corotational`, `solve_elastoplastic`, `solve_with_eigenstrain`, `stagnation_min_improvement`, `stagnation_min_window`, `stagnation_window_fraction`, `step`, `step_thermoplastic`, `stiffness_diagonal_stats`, `taylor_quinney`, `temperature_rise`, `thermal`, `try_new`, `virgin_state`, `volumetric_heat_capacity_mpa_per_k`, `von_mises`, `with_hyperelastic`, `with_poisson`, `with_preconditioner`, `with_stagnation`, `with_stagnation_fraction`, `with_thermal`, `yield_per_k`, `youngs_modulus_mpa`
 - `src/linear_elastic_fem/consistent_tangent.rs`: `StepReport`, `TangentField`, `apply`, `at`, `backtrack`, `newton_krylov_step`, `newton_step`
 - `src/mass_properties.rs`: `MassProperties`, `ZERO`, `box_mass_properties`, `capsule_mass_properties`, `convex_hull_mass_properties`, `principal_axes`, `sphere_mass_properties`, `translate_inertia`
-- `src/material.rs`: `register_concrete`, `register_ice`, `register_metal`, `register_rubber`, `register_wood`, `set_pair_override`, `with_combine_rules`, `with_static_friction`
+- `src/material.rs`: `combine`, `register_concrete`, `register_ice`, `register_metal`, `register_rubber`, `register_wood`, `set_pair_override`, `with_combine_rules`, `with_static_friction`
 - `src/math.rs`: `Mat3Fix`, `NEG_ONE`, `PolarError`, `SIMD_WIDTH`, `add_simd`, `atan`, `checked_div`, `cos`, `cross_simd`, `determinant`, `diagonal`, `dot_batch_4`, `dot_simd`, `exp`, `floor`, `from_cols`, `inverse`, `length_squared_simd`, `ln`, `max_abs_component`, `mul_mat`, `mul_vec`, `polar_rotation`, `polar_rotation_steps`, `powf_pos`, `simd_width`, `sin`, `sub_simd`, `transpose`, `try_normalize`
 - `src/math_util.rs`: `EXP_OVERFLOW_SENTINEL`, `cbrt_fix`, `clamp_fix`, `exp_fix`, `pow_int`
 - `src/maxwell_fdtd.rs`: `Absorber`, `COURANT_3D`, `Component`, `YeeGrid`, `cfl_limit_3d`, `charge`, `component_dims`, `courant`, `current`, `dims`, `div_b`, `div_e`, `div_j`, `gauss_residual`, `get`, `interior_node_dims`, `is_absorbing`, `loss_coefficients`, `max_abs_div_b`, `max_abs_field`, `max_abs_gauss_residual`, `new`, `new_with_absorber`, `set`, `set_charge`, `set_current`, `step`, `theoretical_pml_reflection`, `total_charge`
