@@ -127,7 +127,6 @@ fn lame_parameters_match_the_closed_form() {
 /// reports it. Measured 2026-10-04, E = 1e6, ν = 0.5 − 2^-k: k = 40 is correct
 /// (1.83e17), k = 50 gives 3.2e18 against a true 1.9e20, k = 58 gives −3.7e18.
 #[test]
-#[ignore = "known defect: AUD-A-S1W3-001: ElasticMaterial::new accepts nu near 0.5 / -1 and lame() wraps silently (E=1e6, nu=0.5-2^-58 gives lambda=-3.7e18, closed form 4.8e22)"]
 fn lame_never_returns_a_wrapped_value_inside_the_accepted_interval() {
     let e = 1.0e6;
     for k in [50_i32, 56, 58, 60] {
