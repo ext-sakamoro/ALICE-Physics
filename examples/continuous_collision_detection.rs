@@ -419,7 +419,8 @@ fn main() {
     // -gap) or a predicted breach within dt, otherwise None.
     // ==================================================================
     // Breach: A (0,0,0) vel(10,0,0) r2, B (20,0,0) static r3, dt=2.
-    // rel_pos=(20,0,0), dist=20, combined_r=5, gap=15. normal=(1,0,0).
+    // rel_pos=(20,0,0), dist=20, combined_r=5, gap=15. A->B direction (1,0,0),
+    // contact normal (B->A, crate-wide Contact convention) = (-1,0,0).
     // rel_vel=(-10,0,0), closing_speed = -(-10) = 10. predicted = 15-20=-5<0.
     // depth=5, point_a=(0,0,0)+(2,0,0)=(2,0,0), point_b=(20,0,0)-(3,0,0)=(17,0,0).
     let breach = speculative_contact(
@@ -435,6 +436,7 @@ fn main() {
     assert_eq!(breach.depth, fi(5));
     assert_eq!(breach.point_a, v3i(2, 0, 0));
     assert_eq!(breach.point_b, v3i(17, 0, 0));
+    assert_eq!(breach.normal, v3i(-1, 0, 0));
 
     // Already overlapping: A (0,0,0) r4, B (5,0,0) r4. dist=5, combined=8,
     // gap=-3 -> depth=3 regardless of velocity/dt.

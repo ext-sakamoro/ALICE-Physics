@@ -599,7 +599,8 @@ fn swept_aabb_degenerate_inputs() {
 #[test]
 fn speculative_contact_breach_and_overlap_match_closed_form() {
     // Breach: A(0,0,0) vel(10,0,0) r2, B(20,0,0) static r3, dt=2.
-    // rel_pos=(20,0,0), dist=20, combined_r=5, gap=15. normal=(1,0,0).
+    // rel_pos=(20,0,0), dist=20, combined_r=5, gap=15. A->B direction
+    // (1,0,0), so the B->A contact normal is (-1,0,0) (AUD-A-S2W2-008).
     // rel_vel=(-10,0,0), closing_speed=10. predicted=15-20=-5<0.
     // depth=5, point_a=(2,0,0), point_b=(17,0,0).
     let breach = speculative_contact(
@@ -615,7 +616,7 @@ fn speculative_contact_breach_and_overlap_match_closed_form() {
     assert_eq!(breach.depth, fi(5));
     assert_eq!(breach.point_a, v3i(2, 0, 0));
     assert_eq!(breach.point_b, v3i(17, 0, 0));
-    assert_eq!(breach.normal, v3i(1, 0, 0));
+    assert_eq!(breach.normal, v3i(-1, 0, 0));
 
     // Already overlapping: A(0,0,0) r4, B(5,0,0) r4. dist=5, combined=8,
     // gap=-3 -> depth=3 regardless of velocity/dt.
