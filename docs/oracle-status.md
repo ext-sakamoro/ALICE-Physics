@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 4298 |
+| 🟢 Not ignored (run by CI) | 4315 |
 | 🔴 Red by design | 219 |
 | ⏱ Gated (runtime / diagnostic / manual) | 24 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **4541** |
+| **Total** | **4558** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -293,7 +293,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (4298)
+## 🟢 Not ignored (4315)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -431,6 +431,7 @@ Per-file counts (the test names are in `tests/`):
 | `audit_rope.rs` | 14 |
 | `audit_sketch.rs` | 14 |
 | `audit_soft_body_cut.rs` | 14 |
+| `sleep_skip.rs` | 14 |
 | `world_snapshot_v2.rs` | 14 |
 | `analytic_anisotropic_wiring.rs` | 13 |
 | `analytic_csf_wiring.rs` | 13 |
@@ -616,6 +617,7 @@ Per-file counts (the test names are in `tests/`):
 | `audit_c_turbulence.rs` | 3 |
 | `audit_gpu_bridge.rs` | 3 |
 | `parallel_batch_coloring.rs` | 3 |
+| `sleep_skip_snapshot.rs` | 3 |
 | `wm01_flag_survives_rollback.rs` | 3 |
 | `wm08_prev_state_coverage.rs` | 3 |
 | `wm08_state_coverage.rs` | 3 |
