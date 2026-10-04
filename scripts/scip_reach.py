@@ -248,6 +248,22 @@ def _keep_mask(text: str) -> tuple[list[str], list[str]]:
     return text.split("\n"), code.split("\n")
 
 
+def item_key(rel: str, name: str, sym: str) -> str:
+    """`src/x.rs::name`, or `src/x.rs::Type::name` for an item of an impl block.
+
+    Keyed by name alone, `Triangle::closest_point` and `TriMesh::closest_point` in
+    one file were one item, reached as soon as either was: 21 keys hid an
+    unreached method behind a reached one of the same name (2026-10-04)."""
+    m = INHERENT_OR_IMPL_RE.search(sym)
+    return f"{rel}::{_trait_name(m.group(1))}::{name}" if m else f"{rel}::{name}"
+
+
+def legacy_key(key: str) -> str:
+    """`src/x.rs::Type::name` -> `src/x.rs::name`, the form wiring-baseline.txt uses."""
+    rel, _, rest = key.partition("::")
+    return f"{rel}::{rest.rsplit('::', 1)[-1]}"
+
+
 def _visible(code_lines: list[str], pos: tuple[int, int]) -> bool:
     line, ch = pos
     return line < len(code_lines) and ch < len(code_lines[line]) and not code_lines[line][ch].isspace()
@@ -308,7 +324,7 @@ def analyze(root: Path, scip_paths: list[Path]) -> Analysis:
                         line = raw[sp_[0][0]] if sp_[0][0] < len(raw) else ""
                         name = line[sp_[0][1]:sp_[1][1]]
                         if name and re.search(PUB_DEF + re.escape(name) + r"\b", line):
-                            a.items.setdefault(f"{rel}::{name}", set()).add(s)
+                            a.items.setdefault(item_key(rel, name, s), set()).add(s)
                 else:
                     if is_src and not _visible(code, sp_[0]):
                         continue
@@ -448,8 +464,13 @@ def report(a: Analysis, baseline: set[str]) -> str:
     l0 = sorted(k for k, v in a.level.items() if v == "L0")
     l1 = sorted(k for k, v in a.level.items() if v == "L1")
     live = sum(1 for v in a.level.values() if v == "live")
-    missed = [k for k in l0 if k not in baseline]
-    resolved = sorted(k for k in baseline if a.level.get(k) in ("live", "L1"))
+    # wiring-baseline.txt names items by file and name only
+    by_legacy: dict[str, list[str]] = {}
+    for k in a.level:
+        by_legacy.setdefault(legacy_key(k), []).append(k)
+    missed = [k for k in l0 if legacy_key(k) not in baseline]
+    resolved = sorted(b for b in baseline
+                      if by_legacy.get(b) and all(a.level[k] in ("live", "L1") for k in by_legacy[b]))
     out = [
         "# ALICE-Physics Integration Status",
         "",
@@ -485,7 +506,7 @@ def report(a: Analysis, baseline: set[str]) -> str:
         "The guard lists these as unwired; a resolved reference reaches them (level in brackets).",
         "",
     ]
-    out += [f"- `{k}` ({a.level[k]})" for k in resolved] or ["- (none)"]
+    out += [f"- `{k}` ({'/'.join(sorted({a.level[x] for x in by_legacy[k]}))})" for k in resolved] or ["- (none)"]
     out += ["", f"## L0 — unreached ({len(l0)})", ""]
     out += [f"- `{k}`" for k in l0] or ["- (none)"]
     out += [
@@ -494,7 +515,9 @@ def report(a: Analysis, baseline: set[str]) -> str:
         "",
         "- A pattern in a `match` arm counts as a reference: a type that is only matched on, never constructed, is reached.",
         "- Code inside macro expansions is resolved as far as rust-analyzer resolves it.",
-        "- Generic code is followed through trait methods: calling `T::method` reaches every impl of that method in the crate.",
+        "- Calls through a trait (`dyn Tr`, `T: Tr`) reach the impls of that method whose self type is reached (the type, a field, or one of its methods is live); an impl of a type nothing reaches stays unreached.",
+        "- Trait-impl links come from the impl symbol names; rust-analyzer's SCIP output has no implementation relationships.",
+        "- Methods are listed as `file::Type::method`, so same-named methods of different types in one file are told apart.",
         "- Items in `src/ffi.rs`, `src/python.rs` and `src/wasm.rs` are roots and are not listed.",
     ]
     out += ["", f"## L1 — example-only ({len(l1)})", ""]
