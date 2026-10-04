@@ -8,9 +8,9 @@ References are resolved to one definition each, so items that share a name are t
 | Level | Meaning | Count |
 |-------|---------|------:|
 | L0 | not reached by any non-test code, examples included | 231 |
-| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 1740 |
+| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 1743 |
 | live | reached without examples (crate-internal roots or a binding) | 293 |
-| | **total** | **2264** |
+| | **total** | **2267** |
 
 L1 is a label, not a defect: a module users call directly is example-only inside this crate.
 It does mean the item is not reached from `PhysicsWorld`, another module, or a binding.
@@ -465,7 +465,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - Generic code is followed through trait methods: calling `T::method` reaches every impl of that method in the crate.
 - Items in `src/ffi.rs`, `src/python.rs` and `src/wasm.rs` are roots and are not listed.
 
-## L1 — example-only (1740)
+## L1 — example-only (1743)
 
 - `src/acoustic_wave.rs`: `AIR_20C`, `CONCRETE_LONGITUDINAL`, `STEEL_LONGITUDINAL`, `WATER_25C`, `leapfrog_step`, `stable_dt`
 - `src/aeroelasticity.rs`: `VivParameters`, `VivState`, `facchinetti_reference`, `seeded`, `viv_step`
@@ -554,7 +554,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/netcode_prediction.rs`: `PredictedInput`, `PredictionBuffer`, `ReconcileError`, `Snapshot`, `drop_acknowledged`, `head_snapshot`, `inputs`, `is_empty`, `len`, `new`, `push`, `reconcile`, `reconcile_checked`
 - `src/neural.rs`: `Activation`, `ControllerConfig`, `ControllerOutput`, `DeterministicNetwork`, `FEATURES_PER_BODY`, `FixedTernaryWeight`, `RagdollController`, `compute`, `config`, `fix128_hard_tanh`, `fix128_leaky_relu`, `fix128_relu`, `fix128_tanh_approx`, `fix128_ternary_matvec`, `forward`, `from_ternary_weight`, `from_ternary_weight_with_scale`, `in_features`, `input_size`, `network`, `new`, `num_layers`, `out_features`, `output_size`, `scale`
 - `src/non_newtonian.rs`: `Bingham`, `Carreau`, `HerschelBulkley`, `PowerLaw`, `apparent_viscosity`, `flows_under_stress`, `newtonian`, `shear_thickening`, `shear_thinning`, `stress`, `viscosity`, `viscosity_with_index`
-- `src/particle.rs`: `Particle`, `ParticleEmitter`, `ParticleSystem`, `add_emitter`, `alive_count`, `apply_force_field`, `new`, `step`
+- `src/particle.rs`: `LandingEvent`, `LandingTarget`, `Particle`, `ParticleEmitter`, `ParticleSystem`, `add_emitter`, `alive_count`, `apply_force_field`, `new`, `step`, `step_with_landing`
 - `src/phase_change.rs`: `Phase`, `PhaseChangeConfig`, `PhaseChangeModifier`, `apply_heat_at`, `new`, `phase_at`, `temperature_at`
 - `src/physics2d.rs`: `BodyType2D`, `RigidBody2D`, `Shape2D`, `Vec2Fix`, `ZERO`, `apply_force`, `apply_impulse_at_point`, `cross_scalar`, `distance_to`, `dot`, `length`, `length_squared`, `new`, `new_dynamic`, `scale`
 - `src/piezoelectric.rs`: `PiezoElement`, `force_from_voltage`, `permittivity`, `pvdf`, `pzt_5a`, `quartz`, `strain_under_stress`, `voltage_from_force`
