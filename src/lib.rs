@@ -109,6 +109,7 @@
 //! - [`fluid`]: Position-Based Fluids (PBF) with spatial hash grid
 //! - [`deformable`]: FEM-XPBD deformable body simulation
 //! - [`vehicle`]: Vehicle physics (wheel, suspension, engine, steering)
+//! - [`vehicle_dynamics`]: Per-wheel vehicle dynamics (tyre models, wheel spin, brakes / ABS, road surfaces and weather, powertrain, scenario metrics and lossless replay)
 //! - [`character`]: Kinematic capsule-based character controller (move-and-slide)
 //! - [`trimesh`]: Triangle mesh collision with BVH acceleration (Moller-Trumbore)
 //! - [`heightfield`]: Height field terrain collision (bilinear interpolation)
