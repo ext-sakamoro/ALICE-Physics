@@ -253,13 +253,26 @@ impl DeterministicNetwork {
     ///
     /// # Panics
     ///
-    /// Panics if `layers.len() != activations.len()`.
+    /// Panics if `layers.len() != activations.len()`, or if the layer chain
+    /// is inconsistent: layer `i`'s `in_features()` must equal layer
+    /// `i - 1`'s `out_features()` for every `i >= 1`.
     pub fn new(layers: Vec<FixedTernaryWeight>, activations: Vec<Activation>) -> Self {
         assert_eq!(
             layers.len(),
             activations.len(),
             "layers and activations must have the same length"
         );
+        for i in 1..layers.len() {
+            assert_eq!(
+                layers[i].in_features(),
+                layers[i - 1].out_features(),
+                "layer {} expects {} inputs but layer {} produces {} outputs",
+                i,
+                layers[i].in_features(),
+                i - 1,
+                layers[i - 1].out_features(),
+            );
+        }
 
         // Build flat buffer with prefix-sum offsets
         let mut buf_offsets = Vec::with_capacity(layers.len() + 1);
@@ -280,9 +293,14 @@ impl DeterministicNetwork {
 
     /// Run forward pass (deterministic, zero allocation).
     ///
-    /// Returns a reference to the final output buffer.
+    /// Returns a reference to the final output buffer. A network with zero
+    /// layers has no output buffer and returns an empty slice rather than
+    /// indexing `buf_offsets` out of bounds.
     pub fn forward(&mut self, input: &[Fix128]) -> &[Fix128] {
         let n = self.layers.len();
+        if n == 0 {
+            return &[];
+        }
 
         // First layer: reads from external input
         {
@@ -438,30 +456,45 @@ impl RagdollController {
     }
 
     /// Extract features from rigid bodies into the input buffer.
+    ///
+    /// Writes at most `min(config.features_per_body, FEATURES_PER_BODY)`
+    /// of the 13 documented features per body (position, velocity,
+    /// rotation xyzw, angular velocity, in that order, so a smaller
+    /// `features_per_body` drops from the end); any slot of a body's
+    /// `features_per_body`-wide span beyond that (i.e. when
+    /// `features_per_body > FEATURES_PER_BODY`) is zero-filled. Always
+    /// advances by exactly `features_per_body` per body, matching the
+    /// buffer layout `RagdollController::new` sized from the same field,
+    /// so neither a smaller nor a larger value can write past a body's
+    /// span into the next one or off the end of the buffer.
     fn extract_features(&mut self, bodies: &[RigidBody]) {
         let mut idx = 0;
         let n = self.config.num_bodies.min(bodies.len());
+        let fpb = self.config.features_per_body;
 
         for body in bodies.iter().take(n) {
-            // Position (3)
-            self.input_buffer[idx] = body.position.x;
-            self.input_buffer[idx + 1] = body.position.y;
-            self.input_buffer[idx + 2] = body.position.z;
-            // Velocity (3)
-            self.input_buffer[idx + 3] = body.velocity.x;
-            self.input_buffer[idx + 4] = body.velocity.y;
-            self.input_buffer[idx + 5] = body.velocity.z;
-            // Rotation quaternion (4)
-            self.input_buffer[idx + 6] = body.rotation.x;
-            self.input_buffer[idx + 7] = body.rotation.y;
-            self.input_buffer[idx + 8] = body.rotation.z;
-            self.input_buffer[idx + 9] = body.rotation.w;
-            // Angular velocity (3)
-            self.input_buffer[idx + 10] = body.angular_velocity.x;
-            self.input_buffer[idx + 11] = body.angular_velocity.y;
-            self.input_buffer[idx + 12] = body.angular_velocity.z;
+            let features = [
+                body.position.x,
+                body.position.y,
+                body.position.z,
+                body.velocity.x,
+                body.velocity.y,
+                body.velocity.z,
+                body.rotation.x,
+                body.rotation.y,
+                body.rotation.z,
+                body.rotation.w,
+                body.angular_velocity.x,
+                body.angular_velocity.y,
+                body.angular_velocity.z,
+            ];
+            let n_write = fpb.min(features.len());
+            self.input_buffer[idx..idx + n_write].copy_from_slice(&features[..n_write]);
+            for slot in &mut self.input_buffer[idx + n_write..idx + fpb] {
+                *slot = Fix128::ZERO;
+            }
 
-            idx += self.config.features_per_body;
+            idx += fpb;
         }
 
         // Zero-fill remaining slots if bodies < num_bodies

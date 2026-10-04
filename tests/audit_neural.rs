@@ -313,7 +313,6 @@ fn controller_with_fewer_bodies_zero_fills_the_missing_slots_not_stale_data() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S3W2-005: ControllerConfig.features_per_body is documented as configurable ('default: 13') but extract_features always writes 13 slots per body; features_per_body < 13 makes the last body write past the buffer (index out of bounds panic), and no constructor check rejects it"]
 fn features_per_body_below_thirteen_does_not_panic_or_alias() {
     let n_bodies = 2usize;
     let fpb = 10usize;
@@ -337,7 +336,6 @@ fn features_per_body_below_thirteen_does_not_panic_or_alias() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S3W2-006: DeterministicNetwork::new accepts a layer chain whose in_features does not equal the previous out_features (only layers.len() == activations.len() is asserted), and forward then silently truncates / zero-pads between layers"]
 fn mismatched_layer_chain_is_rejected_at_construction() {
     let l1 = identity_layer(3, 4); // out 3
     let l2 = identity_layer(2, 5); // in 5 != 3
@@ -351,7 +349,6 @@ fn mismatched_layer_chain_is_rejected_at_construction() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S3W2-007: DeterministicNetwork::forward on a zero-layer network panics (index out of bounds on buf_offsets[1] / usize underflow of n - 1) although new(vec![], vec![]) succeeds and the doc lists only the length-mismatch panic; also input_size()/output_size() panic on it (pinned as current behaviour in analytic_neural_wiring.rs, not recorded as a defect there)"]
 fn zero_layer_network_forward_does_not_panic() {
     let mut net = DeterministicNetwork::new(vec![], vec![]);
     let r = catch_unwind(AssertUnwindSafe(|| {
