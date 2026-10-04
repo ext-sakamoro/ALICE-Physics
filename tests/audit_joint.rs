@@ -925,7 +925,6 @@ fn d6_locked_and_limited_angles() {
 /// Field doc: "Reference frame for body B". The joint frames are what zero error is measured from;
 /// local_frame_b is stored but never read by the solver.
 #[test]
-#[ignore = "known defect: AUD-A-S1W6-010 / AUD-B-S1W6-001: D6Joint.local_frame_b is never read (grep: only its definition and default): with all angles locked and B at the pose where frame_b maps onto frame_a (q_b = frame_b^-1) the solver still rotates B back to identity"]
 fn d6_local_frame_b_defines_the_zero_error_pose() {
     let mut j = D6Joint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO).with_angular_motion(
         D6Motion::Locked,
