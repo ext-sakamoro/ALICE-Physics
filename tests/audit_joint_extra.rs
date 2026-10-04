@@ -2,8 +2,7 @@
 //!
 //! Existing oracles (`analytic_joint_extra_wiring`) cover the builders, the
 //! break comparisons, `total_length` for identity rotations and "dispatches
-//! without panicking".  They pin the *current* mouse formula
-//! (`k d dt inv_mass`) and never check that `solve_pulley`, `solve_gear` or
+//! without panicking".  They never check that `solve_pulley`, `solve_gear` or
 //! `solve_rack_and_pinion` satisfy their documented constraint.  Expected
 //! values here are closed forms (mass-weighted XPBD projection, constraint
 //! residual of the documented equation), not the module's own formulas.
@@ -431,10 +430,9 @@ fn gear_with_no_motion_is_inert() {
 // ---------------------------------------------------------------------------
 
 /// Spring-damper as a position-based step: the force `F = k d` acts for `dt` on mass
-/// `m`, so the position change is `F dt^2 / m` (the existing oracle expects `F dt / m`, which is
-/// a velocity change in length units).
+/// `m`, so the position change is `F dt^2 / m` (`F dt / m` would be a velocity change in
+/// length units).
 #[test]
-#[ignore = "known defect: AUD-A-S3W1-016: solve_mouse adds impulse * inv_mass = F dt w to the *position* (a velocity-dimension quantity); expected F dt^2 w: k=10, d=1, dt=1/8, m=2 moves 0.3125 instead of 0.01953125"]
 fn mouse_spring_moves_the_body_by_f_dt_squared_over_m() {
     let mut bodies = vec![body(Vec3Fix::ZERO, 2.0)];
     let j = MouseJoint::new(0, v3(1.0, 0.0, 0.0), fx(1000.0), fx(10.0), Fix128::ZERO);
@@ -448,7 +446,6 @@ fn mouse_spring_moves_the_body_by_f_dt_squared_over_m() {
 /// Dimensional consistency: halving `dt` must scale a position-based step by 1/4
 /// (`dt^2`), not 1/2.
 #[test]
-#[ignore = "known defect: AUD-A-S3W1-016: displacement scales with dt (not dt^2); halving dt halves the move"]
 fn mouse_step_scales_with_dt_squared() {
     let mk = |dt: f64| {
         let mut bodies = vec![body(Vec3Fix::ZERO, 1.0)];

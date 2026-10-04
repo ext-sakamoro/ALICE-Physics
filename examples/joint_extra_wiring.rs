@@ -34,7 +34,7 @@
 //!   `len_a + ratio * len_b`, a single multiply-add of exact dyadic values.
 //! * **`MouseJoint::set_target` + `solve_extra_joints` (Mouse)**: from rest
 //!   (`velocity = 0`, so the damping term is exactly zero), one XPBD step
-//!   moves the body by `direction * (stiffness * distance * dt) * inv_mass`
+//!   moves the body by `direction * (stiffness * distance * dt) * dt * inv_mass`
 //!   whenever that force stays under `max_force`. With `distance`, `dt`,
 //!   `stiffness` and `inv_mass` all dyadic, the landed position is exact.
 //! * **`WeldJoint::with_break_force` (and the `with_break_torque`
@@ -213,12 +213,16 @@ fn main() {
     solve_extra_joints(&mut bodies, &mouse_joints, dt);
     // distance=8, direction=(1,0,0), spring_force = stiffness*distance = 8,
     // damping_force = 0 (velocity is 0), clamped_force = 8 (< max_force=100),
-    // impulse = direction*(8*dt) = (2,0,0), position += impulse*inv_mass(1).
+    // impulse = direction*(8*dt) = (2,0,0), position += impulse*dt*inv_mass(1)
+    // = (0.5,0,0).
     println!(
-        "[joint_extra] MouseJoint::set_target(8,0,0) + solve_extra_joints -> x={} (expect 2)",
+        "[joint_extra] MouseJoint::set_target(8,0,0) + solve_extra_joints -> x={} (expect 0.5)",
         bodies[1].position.x.to_f64()
     );
-    assert_eq!(bodies[1].position, Vec3Fix::from_int(2, 0, 0));
+    assert_eq!(
+        bodies[1].position,
+        Vec3Fix::new(Fix128::from_ratio(1, 2), Fix128::ZERO, Fix128::ZERO)
+    );
 
     // Boundary: set_target to the body's own position -> zero distance ->
     // solve_mouse's early return, no correction at all.
