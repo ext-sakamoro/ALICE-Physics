@@ -361,7 +361,7 @@ fn vortex_matches_closed_form_and_is_axis_scale_invariant() {
     }
 }
 
-/// AUD-A-S4W1-010 (known defect): when the swirl axis is parallel to the
+/// AUD-A-S4W1-010 (fixed; the text below describes the defect): when the swirl axis is parallel to the
 /// surface normal the swirl direction `axis x n` is undefined and its length
 /// is 0 in exact arithmetic (|axis x n| = sin(theta)). The code normalizes
 /// the cross product, and `normalize` only returns zero for an exactly zero
@@ -370,7 +370,6 @@ fn vortex_matches_closed_form_and_is_axis_scale_invariant() {
 /// falloff = 3.2 here) in a rounding-noise direction. The swirl magnitude
 /// does not go to 0 as the axis approaches the normal.
 #[test]
-#[ignore = "known defect: AUD-A-S4W1-010: SdfVortex with axis parallel to the normal returns |F| = strength*falloff (3.2) in a noise direction instead of ~0"]
 fn vortex_vanishes_when_axis_is_parallel_to_normal() {
     let f = Frame::new();
     let n = f.n_w();
@@ -384,14 +383,13 @@ fn vortex_vanishes_when_axis_is_parallel_to_normal() {
     assert!(norm(g) < 1e-2, "{g:?}");
 }
 
-/// AUD-A-S4W1-011 (known defect, same mechanism as AUD-A-S4W1-010): a flow
+/// AUD-A-S4W1-011 (fixed, same mechanism as AUD-A-S4W1-010): a flow
 /// direction parallel to the surface normal has no tangential component, so
 /// the force must vanish. `tangent.length().is_zero()` only catches an exactly
 /// zero projection; with the f32 normal the projection is ~1e-8 and is then
 /// normalized to a unit vector, giving |F| = strength x falloff in a noise
 /// direction.
 #[test]
-#[ignore = "known defect: AUD-A-S4W1-011: SurfaceFlow with flow_direction parallel to the normal returns |F| = strength*falloff instead of ~0"]
 fn surface_flow_vanishes_when_flow_is_parallel_to_normal() {
     let f = Frame::new();
     let n = f.n_w();
