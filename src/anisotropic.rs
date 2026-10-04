@@ -291,8 +291,19 @@ pub struct FailureReport {
     /// Meaning depends on criterion; for Tsai-Wu this is the LHS of the
     /// quadratic inequality.
     pub failure_index: Fix128,
-    /// Reserve factor = `1 / max(failure_index, ε)` — how much the loading
-    /// could scale before failure.
+    /// Reserve factor `R`: the factor by which the whole stress state can be
+    /// scaled before the criterion reaches incipient failure (index 1).
+    ///
+    /// The index is not linear in the load for every criterion, so `R` is
+    /// solved per criterion:
+    /// * Maximum stress (degree 1): `R = 1 / index`.
+    /// * Hill (degree 2): `index(R·σ) = R²·f`, so `R = 1 / √f`.
+    /// * Tsai-Wu (quadratic + linear): `index(R·σ) = a·R² + b·R`, so `R` is
+    ///   the positive root of `a·R² + b·R − 1 = 0`.
+    ///
+    /// Written as `R = 1 / max(d, ε)` with `d` the per-criterion load-linear
+    /// index above, so a state that never reaches failure along its load
+    /// path reports `1 / ε` (ε = 10⁻⁶).
     pub reserve_factor: Fix128,
     /// True iff `failure_index < 1` (no failure predicted).
     pub is_safe: bool,
@@ -305,13 +316,24 @@ pub fn evaluate_failure(
     strength: &AnisotropicStrength,
     criterion: FailureCriterion,
 ) -> FailureReport {
-    let idx = match criterion {
-        FailureCriterion::MaximumStress => max_stress_index(stress, strength),
-        FailureCriterion::Hill => hill_index(stress, strength),
-        FailureCriterion::TsaiWu => tsai_wu_index(stress, strength),
+    // `d` is the load-linear index: `1 / d` is the load factor that brings
+    // the criterion to exactly 1 (see `FailureReport::reserve_factor`).
+    let (idx, d) = match criterion {
+        FailureCriterion::MaximumStress => {
+            let i = max_stress_index(stress, strength);
+            (i, i)
+        }
+        FailureCriterion::Hill => {
+            let f = hill_index(stress, strength);
+            (f, f.sqrt())
+        }
+        FailureCriterion::TsaiWu => {
+            let (b, a) = tsai_wu_terms(stress, strength);
+            (b + a, tsai_wu_load_linear_index(a, b))
+        }
     };
     let eps = Fix128::from_ratio(1, 1_000_000);
-    let denom = if idx > eps { idx } else { eps };
+    let denom = if d > eps { d } else { eps };
     FailureReport {
         failure_index: idx,
         reserve_factor: Fix128::ONE / denom,
@@ -421,8 +443,39 @@ fn hill_index(stress: &OrthotropicStress, s: &AnisotropicStrength) -> Fix128 {
 ///
 /// Interaction terms F_LT, F_LZ, F_TZ are commonly set to
 /// `-½ · √(F_ii · F_jj)` per Hoffman (Tsai-Hoffman variant); we use that.
+#[cfg(test)]
 #[must_use]
 fn tsai_wu_index(stress: &OrthotropicStress, s: &AnisotropicStrength) -> Fix128 {
+    let (linear, quadratic) = tsai_wu_terms(stress, s);
+    linear + quadratic
+}
+
+/// Load-linear Tsai-Wu index `d = 1 / R`, where `R > 0` solves
+/// `a·R² + b·R − 1 = 0` (`a` = quadratic part, `b` = linear part of the
+/// index at the given stress, so `index(R·σ) = a·R² + b·R`).
+///
+/// With `s = √(b² + 4a)` the positive root is `R = 2 / (b + s)`, i.e.
+/// `d = (b + s) / 2`. For `b < 0` the same value is computed as
+/// `d = 2a / (s − b)` so that `b + s` is not formed by cancellation.
+/// `a ≤ 0` leaves the linear term only (`d = b`); a non-positive `d` means
+/// the load path never reaches failure and is floored by the caller.
+#[must_use]
+fn tsai_wu_load_linear_index(a: Fix128, b: Fix128) -> Fix128 {
+    if a <= Fix128::ZERO {
+        return b;
+    }
+    let s = (b * b + a.double().double()).sqrt();
+    if b >= Fix128::ZERO {
+        (b + s).half()
+    } else {
+        a.double() / (s - b)
+    }
+}
+
+/// Tsai-Wu index split into `(linear, quadratic)` parts: the linear part
+/// scales with the load factor `R`, the quadratic part with `R²`.
+#[must_use]
+fn tsai_wu_terms(stress: &OrthotropicStress, s: &AnisotropicStrength) -> (Fix128, Fix128) {
     let inv = |x: Fix128| {
         if x.is_zero() {
             Fix128::ZERO
@@ -452,10 +505,8 @@ fn tsai_wu_index(stress: &OrthotropicStress, s: &AnisotropicStrength) -> Fix128 
     let st = stress.sigma_t;
     let sz = stress.sigma_z;
 
-    f_l * sl
-        + f_t * st
-        + f_z * sz
-        + f_ll * sl * sl
+    let linear = f_l * sl + f_t * st + f_z * sz;
+    let quadratic = f_ll * sl * sl
         + f_tt * st * st
         + f_zz * sz * sz
         + f_ss_lt * stress.tau_lt * stress.tau_lt
@@ -463,7 +514,8 @@ fn tsai_wu_index(stress: &OrthotropicStress, s: &AnisotropicStrength) -> Fix128 
         + f_ss_tz * stress.tau_tz * stress.tau_tz
         + f_lt.double() * sl * st
         + f_lz.double() * sl * sz
-        + f_tz.double() * st * sz
+        + f_tz.double() * st * sz;
+    (linear, quadratic)
 }
 
 // ============================================================================
