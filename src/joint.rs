@@ -751,6 +751,11 @@ fn solve_ball_joint(joint: &BallJoint, bodies: &mut [crate::solver::RigidBody], 
 }
 
 /// Solve hinge joint: positional + angular constraint along axis
+///
+/// # Claims
+/// - `angle_min` and `angle_max` are enforced independently: `None` leaves that side unbounded
+/// - A violated side moves the relative twist angle (radians) back onto the bound, split by inverse inertia
+/// - With both `None` no angle limit is applied
 fn solve_hinge_joint(joint: &HingeJoint, bodies: &mut [crate::solver::RigidBody], dt: Fix128) {
     let body_a = bodies[joint.body_a];
     let body_b = bodies[joint.body_b];
@@ -811,7 +816,7 @@ fn solve_hinge_joint(joint: &HingeJoint, bodies: &mut [crate::solver::RigidBody]
     }
 
     // 3. Angle limits (rigid: no angular compliance, a limit is a stop)
-    if let (Some(min_angle), Some(max_angle)) = (joint.angle_min, joint.angle_max) {
+    if joint.angle_min.is_some() || joint.angle_max.is_some() {
         let body_a = bodies[joint.body_a];
         let body_b = bodies[joint.body_b];
         let world_axis_a = body_a.rotation.rotate_vec(joint.local_axis_a);
@@ -820,7 +825,7 @@ fn solve_hinge_joint(joint: &HingeJoint, bodies: &mut [crate::solver::RigidBody]
         let rel_quat = body_b.rotation.mul(body_a.rotation.conjugate());
         let angle = compute_twist_angle(rel_quat, world_axis_a);
 
-        if angle < min_angle {
+        if let Some(min_angle) = joint.angle_min.filter(|m| angle < *m) {
             let error = min_angle - angle;
             let w_ang = angular_w_sum(bodies, joint.body_a, joint.body_b, world_axis_a);
             if !w_ang.is_zero() {
@@ -833,7 +838,7 @@ fn solve_hinge_joint(joint: &HingeJoint, bodies: &mut [crate::solver::RigidBody]
                     -(error * inv_w_ang),
                 );
             }
-        } else if angle > max_angle {
+        } else if let Some(max_angle) = joint.angle_max.filter(|m| angle > *m) {
             let error = angle - max_angle;
             let w_ang = angular_w_sum(bodies, joint.body_a, joint.body_b, world_axis_a);
             if !w_ang.is_zero() {
@@ -918,6 +923,11 @@ fn solve_fixed_joint(joint: &FixedJoint, bodies: &mut [crate::solver::RigidBody]
 }
 
 /// Solve slider joint: constrain to 1-DOF translation along axis
+///
+/// # Claims
+/// - `limit_min` and `limit_max` are enforced independently: `None` leaves that side unbounded
+/// - A violated side moves the axial offset (metres) back onto the bound, split by inverse mass
+/// - With both `None` no translation limit is applied
 fn solve_slider_joint(joint: &SliderJoint, bodies: &mut [crate::solver::RigidBody], dt: Fix128) {
     let body_a = bodies[joint.body_a];
     let body_b = bodies[joint.body_b];
@@ -957,8 +967,8 @@ fn solve_slider_joint(joint: &SliderJoint, bodies: &mut [crate::solver::RigidBod
     }
 
     // Enforce translation limits
-    if let (Some(min_d), Some(max_d)) = (joint.limit_min, joint.limit_max) {
-        if along_axis < min_d {
+    if joint.limit_min.is_some() || joint.limit_max.is_some() {
+        if let Some(min_d) = joint.limit_min.filter(|m| along_axis < *m) {
             let error = min_d - along_axis;
             let w_sum = body_a.inv_mass + body_b.inv_mass;
             if !w_sum.is_zero() {
@@ -973,7 +983,7 @@ fn solve_slider_joint(joint: &SliderJoint, bodies: &mut [crate::solver::RigidBod
                         bodies[joint.body_b].position + correction * body_b.inv_mass;
                 }
             }
-        } else if along_axis > max_d {
+        } else if let Some(max_d) = joint.limit_max.filter(|m| along_axis > *m) {
             let error = along_axis - max_d;
             let w_sum = body_a.inv_mass + body_b.inv_mass;
             if !w_sum.is_zero() {

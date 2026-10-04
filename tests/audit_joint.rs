@@ -420,7 +420,6 @@ fn hinge_position_part_is_the_ball_constraint() {
 
 /// Field doc: "Minimum angle (radians, None = no limit)" - each side independently.
 #[test]
-#[ignore = "known defect: AUD-A-S1W6-007: hinge limits are applied only when BOTH angle_min and angle_max are Some; a lone angle_min (or angle_max) is silently ignored although each field documents `None = no limit` independently (same for SliderJoint.limit_min / limit_max)"]
 fn hinge_with_only_a_minimum_still_enforces_it() {
     let mut h = HingeJoint::new(
         0,
@@ -439,6 +438,47 @@ fn hinge_with_only_a_minimum_still_enforces_it() {
         -0.5,
         1e-9,
         "angle_min only",
+    );
+}
+
+#[test]
+fn hinge_with_only_a_maximum_still_enforces_it() {
+    let mut h = HingeJoint::new(
+        0,
+        1,
+        Vec3Fix::ZERO,
+        Vec3Fix::ZERO,
+        Vec3Fix::UNIT_Z,
+        Vec3Fix::UNIT_Z,
+    );
+    h.angle_max = Some(fx(0.5));
+    let mut b = vec![st(Vec3Fix::ZERO), dynb(Vec3Fix::ZERO, 1.0)];
+    b[1].rotation = rot(Vec3Fix::UNIT_Z, 0.9);
+    solve_joints(&[Joint::Hinge(h)], &mut b, dt());
+    near(
+        twist(b[1].rotation, Vec3Fix::UNIT_Z),
+        0.5,
+        1e-9,
+        "angle_max only",
+    );
+    // the unset side stays unbounded
+    let mut c = vec![st(Vec3Fix::ZERO), dynb(Vec3Fix::ZERO, 1.0)];
+    c[1].rotation = rot(Vec3Fix::UNIT_Z, -0.9);
+    let mut h2 = HingeJoint::new(
+        0,
+        1,
+        Vec3Fix::ZERO,
+        Vec3Fix::ZERO,
+        Vec3Fix::UNIT_Z,
+        Vec3Fix::UNIT_Z,
+    );
+    h2.angle_max = Some(fx(0.5));
+    solve_joints(&[Joint::Hinge(h2)], &mut c, dt());
+    near(
+        twist(c[1].rotation, Vec3Fix::UNIT_Z),
+        -0.9,
+        1e-9,
+        "angle_min unset",
     );
 }
 
@@ -554,13 +594,27 @@ fn slider_limits_clamp_both_ends_and_split_by_inverse_mass() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S1W6-007: lone SliderJoint.limit_max (limit_min None) is silently ignored, see hinge_with_only_a_minimum_still_enforces_it"]
 fn slider_with_only_a_maximum_still_enforces_it() {
     let mut s = SliderJoint::new(0, 1, Vec3Fix::UNIT_X, Vec3Fix::ZERO, Vec3Fix::ZERO);
     s.limit_max = Some(fx(2.0));
     let mut b = vec![st(Vec3Fix::ZERO), dynb(v3(5.0, 0.0, 0.0), 1.0)];
     solve_joints(&[Joint::Slider(s)], &mut b, dt());
     near(p(&b[1]).0, 2.0, 1e-9, "limit_max only");
+}
+
+#[test]
+fn slider_with_only_a_minimum_still_enforces_it() {
+    let mut s = SliderJoint::new(0, 1, Vec3Fix::UNIT_X, Vec3Fix::ZERO, Vec3Fix::ZERO);
+    s.limit_min = Some(fx(-1.0));
+    let mut b = vec![st(Vec3Fix::ZERO), dynb(v3(-4.0, 0.0, 0.0), 1.0)];
+    solve_joints(&[Joint::Slider(s)], &mut b, dt());
+    near(p(&b[1]).0, -1.0, 1e-9, "limit_min only");
+    // the unset side stays unbounded
+    let mut s2 = SliderJoint::new(0, 1, Vec3Fix::UNIT_X, Vec3Fix::ZERO, Vec3Fix::ZERO);
+    s2.limit_min = Some(fx(-1.0));
+    let mut c = vec![st(Vec3Fix::ZERO), dynb(v3(5.0, 0.0, 0.0), 1.0)];
+    solve_joints(&[Joint::Slider(s2)], &mut c, dt());
+    near(p(&c[1]).0, 5.0, 1e-9, "limit_max unset");
 }
 
 // ---------------- spring ----------------
