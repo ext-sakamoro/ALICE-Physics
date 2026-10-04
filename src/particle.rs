@@ -15,6 +15,9 @@
 use crate::force::ForceField;
 use crate::math::{Fix128, Vec3Fix};
 use crate::rng::DeterministicRng;
+use crate::sdf_collider::SdfField;
+#[cfg(feature = "std")]
+use crate::sdf_collider::{collide_point_sdf, SdfCollider};
 
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
@@ -100,6 +103,77 @@ impl Particle {
             alive: true,
         }
     }
+}
+
+/// Something a moving particle can land on, for [`ParticleSystem::step_with_landing`].
+///
+/// Each target answers one question per sample point: "is this point occupied, and if
+/// so, which way is out?".
+#[non_exhaustive]
+pub enum LandingTarget<'a> {
+    /// A world-space signed distance field (unit scale, no transform). A sample point
+    /// lands when `distance < 0`; the normal is the field's outward normal and the
+    /// reported position is the point projected back onto the surface.
+    Field(&'a dyn SdfField),
+    /// A placed SDF collider (position, rotation, scale), tested with
+    /// [`collide_point_sdf`]; the reported position is the contact's surface point.
+    #[cfg(feature = "std")]
+    Collider(&'a SdfCollider),
+    /// A non-SDF occupant (cloth particles, a voxel mask, ...): returns the outward
+    /// normal when the point is occupied, `None` when it is free. The reported
+    /// position is the sample point itself.
+    Query(&'a dyn Fn(Vec3Fix) -> Option<Vec3Fix>),
+}
+
+impl core::fmt::Debug for LandingTarget<'_> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Field(_) => f.write_str("LandingTarget::Field"),
+            #[cfg(feature = "std")]
+            Self::Collider(_) => f.write_str("LandingTarget::Collider"),
+            Self::Query(_) => f.write_str("LandingTarget::Query"),
+        }
+    }
+}
+
+impl LandingTarget<'_> {
+    /// `(surface position, outward normal)` when `point` is occupied by this target.
+    fn probe(&self, point: Vec3Fix) -> Option<(Vec3Fix, Vec3Fix)> {
+        match self {
+            Self::Field(field) => {
+                let (x, y, z) = point.to_f32();
+                let d = field.distance(x, y, z);
+                if d >= 0.0 {
+                    return None;
+                }
+                let (nx, ny, nz) = field.normal(x, y, z);
+                let normal = Vec3Fix::from_f32(nx, ny, nz).normalize();
+                Some((point + normal * Fix128::from_f32(-d), normal))
+            }
+            #[cfg(feature = "std")]
+            Self::Collider(collider) => {
+                collide_point_sdf(point, collider).map(|c| (c.point_b, c.normal))
+            }
+            Self::Query(query) => query(point).map(|normal| (point, normal)),
+        }
+    }
+}
+
+/// One particle landing on a [`LandingTarget`] during [`ParticleSystem::step_with_landing`].
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LandingEvent {
+    /// Index into [`ParticleSystem::particles`] of the particle that landed (the slot now
+    /// holds the particle re-emitted in its place)
+    pub particle: usize,
+    /// Index into the `targets` slice of the target that was hit
+    pub target: usize,
+    /// Landing position (on the surface for SDF targets, the sample point for queries)
+    pub position: Vec3Fix,
+    /// Outward surface normal at the landing position
+    pub normal: Vec3Fix,
+    /// Time from the start of the step to the first occupied sample, in `(0, dt]`
+    pub time_in_step: Fix128,
 }
 
 /// A particle system managing particles and emitters.
@@ -191,6 +265,142 @@ impl ParticleSystem {
         }
     }
 
+    /// Step like [`step`](Self::step), but stop each particle at the first
+    /// [`LandingTarget`] its path enters, report it and re-emit it from
+    /// `emitters[respawn_emitter]` (rain hitting shapes and falling again).
+    ///
+    /// The velocity update is the same as `step` (`v += g·dt`, `v *= damping`). The
+    /// straight path `x → x + v·dt` is then sampled at `n = ceil(|v·dt| / max_travel)`
+    /// evenly spaced points (`k/n` for `k = 1..=n`, the last one is exactly the position
+    /// `step` would produce), and the targets are probed at each sample in order. The
+    /// first occupied sample produces a [`LandingEvent`]; the slot is then refilled with
+    /// a fresh particle from the respawn emitter (same position / velocity law as normal
+    /// emission, drawing from `rng`), so landing never changes the number of live
+    /// particles. Particles that land are not aged or expired in that step.
+    ///
+    /// A target whose extent along the path is longer than `max_travel` cannot be
+    /// skipped, whatever `dt` is: consecutive samples are at most `max_travel` apart.
+    /// The cost is `O(|v·dt| / max_travel)` probes per particle per step. With no
+    /// targets the result is bit-identical to [`step`](Self::step).
+    ///
+    /// # Panics
+    ///
+    /// If `max_travel <= 0`, if `respawn_emitter` is not a valid emitter index, or if a
+    /// particle's step would need more than 2^20 samples (`|v·dt| / max_travel > 2^20`).
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use alice_physics::math::{Fix128, Vec3Fix};
+    /// use alice_physics::particle::{LandingTarget, ParticleEmitter, ParticleSystem};
+    /// use alice_physics::rng::DeterministicRng;
+    /// use alice_physics::sdf_collider::ClosureSdf;
+    ///
+    /// // floor y = 0
+    /// let floor = ClosureSdf::new(|_, y, _| y, |_, _, _| (0.0, 1.0, 0.0));
+    /// let mut rain = ParticleSystem::new(64, Vec3Fix::from_int(0, -10, 0));
+    /// rain.damping = Fix128::ONE;
+    /// rain.add_emitter(ParticleEmitter::new(
+    ///     Vec3Fix::from_int(0, 5, 0),
+    ///     Vec3Fix::from_int(0, -1, 0),
+    ///     Fix128::from_ratio(1, 4),
+    ///     Fix128::from_int(120),
+    ///     Fix128::ONE,
+    ///     Fix128::from_int(100),
+    ///     Fix128::ONE,
+    /// ));
+    /// let mut rng = DeterministicRng::new(7);
+    /// let targets = [LandingTarget::Field(&floor)];
+    /// let mut landed = 0;
+    /// for _ in 0..240 {
+    ///     let events = rain.step_with_landing(
+    ///         Fix128::from_ratio(1, 60),
+    ///         &mut rng,
+    ///         &targets,
+    ///         Fix128::from_ratio(1, 20),
+    ///         0,
+    ///     );
+    ///     for e in &events {
+    ///         assert!(e.normal.y > Fix128::ZERO);
+    ///     }
+    ///     landed += events.len();
+    /// }
+    /// assert!(landed > 0);
+    /// ```
+    pub fn step_with_landing(
+        &mut self,
+        dt: Fix128,
+        rng: &mut DeterministicRng,
+        targets: &[LandingTarget<'_>],
+        max_travel: Fix128,
+        respawn_emitter: usize,
+    ) -> Vec<LandingEvent> {
+        assert!(
+            max_travel > Fix128::ZERO,
+            "step_with_landing: max_travel must be positive"
+        );
+        assert!(
+            respawn_emitter < self.emitters.len(),
+            "step_with_landing: respawn_emitter {respawn_emitter} out of range ({} emitters)",
+            self.emitters.len()
+        );
+        let mut events = Vec::new();
+        if dt.is_zero() {
+            return events;
+        }
+
+        let num_emitters = self.emitters.len();
+        for ei in 0..num_emitters {
+            self.emit_particles(ei, dt, rng);
+        }
+
+        let gravity = self.gravity;
+        let damping = self.damping;
+        let respawn = &self.emitters[respawn_emitter];
+        for (index, particle) in self.particles.iter_mut().enumerate() {
+            if !particle.alive {
+                continue;
+            }
+            particle.velocity = particle.velocity + gravity * dt;
+            particle.velocity = particle.velocity * damping;
+            let start = particle.position;
+            let displacement = particle.velocity * dt;
+
+            let hit = if targets.is_empty() {
+                None
+            } else {
+                first_landing(start, displacement, dt, targets, max_travel)
+            };
+            if let Some((target, position, normal, time_in_step)) = hit {
+                events.push(LandingEvent {
+                    particle: index,
+                    target,
+                    position,
+                    normal,
+                    time_in_step,
+                });
+                particle.position = respawn.position;
+                particle.velocity = compute_emission_velocity(
+                    respawn.direction,
+                    respawn.initial_speed,
+                    respawn.spread_angle,
+                    rng,
+                );
+                particle.age = Fix128::ZERO;
+                particle.lifetime = respawn.lifetime;
+                particle.mass = respawn.particle_mass;
+                continue;
+            }
+
+            particle.position = start + particle.velocity * dt;
+            particle.age = particle.age + dt;
+            if particle.age >= particle.lifetime {
+                particle.alive = false;
+            }
+        }
+        events
+    }
+
     /// Emit particles from a specific emitter.
     fn emit_particles(&mut self, emitter_index: usize, dt: Fix128, rng: &mut DeterministicRng) {
         let emitter = &mut self.emitters[emitter_index];
@@ -267,6 +477,54 @@ impl ParticleSystem {
             particle.velocity = particle.velocity + force * inv_mass * dt;
         }
     }
+}
+
+/// Upper bound on the samples one particle may take in one
+/// [`ParticleSystem::step_with_landing`] call (`|v·dt| / max_travel`); a larger request
+/// panics instead of looping for an unbounded time.
+const MAX_LANDING_SAMPLES: usize = 1 << 20;
+
+/// First occupied sample on the segment `start → start + displacement`:
+/// `(target index, surface position, outward normal, time from step start)`.
+///
+/// Samples are at `k/n` of the segment for `k = 1..=n`, `n = ceil(|displacement| /
+/// max_travel)`, so two consecutive samples are never more than `max_travel` apart.
+fn first_landing(
+    start: Vec3Fix,
+    displacement: Vec3Fix,
+    dt: Fix128,
+    targets: &[LandingTarget<'_>],
+    max_travel: Fix128,
+) -> Option<(usize, Vec3Fix, Vec3Fix, Fix128)> {
+    let length = displacement.length();
+    let ratio = length / max_travel;
+    let whole = usize::try_from(ratio.hi).unwrap_or(usize::MAX);
+    let samples = if ratio.lo == 0 {
+        whole
+    } else {
+        whole.saturating_add(1)
+    }
+    .max(1);
+    assert!(
+        samples <= MAX_LANDING_SAMPLES,
+        "step_with_landing: |v*dt| / max_travel = {samples} samples exceeds {MAX_LANDING_SAMPLES}"
+    );
+    let n = Fix128::from_int(samples as i64);
+    for k in 1..=samples {
+        let (point, time) = if k == samples {
+            // the last sample is exactly the end point `step` would produce
+            (start + displacement, dt)
+        } else {
+            let frac = Fix128::from_int(k as i64) / n;
+            (start + displacement * frac, dt * frac)
+        };
+        for (ti, target) in targets.iter().enumerate() {
+            if let Some((position, normal)) = target.probe(point) {
+                return Some((ti, position, normal, time));
+            }
+        }
+    }
+    None
 }
 
 /// Compute emission velocity with spread.

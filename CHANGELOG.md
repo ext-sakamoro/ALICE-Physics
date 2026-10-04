@@ -13,6 +13,10 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added — 粒子の着地判定
+
+- **particle**: `ParticleSystem::step_with_landing` と `LandingTarget` / `LandingEvent` を追加した 粒子は落下中に経路上の点で当たり相手を問い合わせ、最初に占有された点で着地イベント (粒子 index・当たり相手の index・位置・外向き法線・step 内の時刻) を返し、その粒子を指定の emitter から再放出する (雨粒が形状に当たって再び降る用途) 当たり相手は world 座標の `SdfField`、配置済みの `SdfCollider` (`collide_point_sdf` 経由)、SDF でない相手向けの点の問い合わせ `Fn(Vec3Fix) -> Option<Vec3Fix>` の 3 種 経路は `max_travel` 以下の間隔で標本化するので、`max_travel` より厚い障害物は dt によらず飛び越さない 1 step の標本数が 2^20 を超える要求は panic する 当たり相手を渡さない場合は `step` と bit 一致する 既存の `step` は変更していない oracle は `tests/analytic_particle_landing.rs` (自由落下の着地時刻を半陰的 Euler の閉形式と `sqrt(2h/g)` の誤差上限 `[t* − 3dt/2, t* + dt]` に突合、厚み ε の帯を 1 step 100ε〜12345ε の移動量で落としても飛び越さない、同 seed の bit 一致、再放出による生存数の保存)、使用例は `examples/particle_rain_landing.rs`
+
 ### Fixed — 全 module 監査で見つかった欠陥のうち 33 件 (2 回目)
 
 - **joint**: ball / hinge / fixed / slider / cone-twist の位置拘束が並進のみを補正していたので、lever arm (一般化逆質量) と回転補正を加えた D6 の角度誤差は `local_frame_b` を基準に測るようにし、D6 の逐次補正で後続の拘束が古い値を読む問題も直した **全 joint の位置拘束の結果が変わる** (AUD-A-S1W6-006 / 010)
