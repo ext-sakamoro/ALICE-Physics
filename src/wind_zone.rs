@@ -130,8 +130,7 @@ impl WindZone {
     fn aerodynamic_force(&self, wind_velocity: Vec3Fix, body_velocity: Vec3Fix) -> Vec3Fix {
         let relative = wind_velocity - body_velocity;
         let half = Fix128::from_ratio(1, 2);
-        let coeff =
-            half * self.air_density_kg_m3 * self.drag_coefficient * self.reference_area_m2;
+        let coeff = half * self.air_density_kg_m3 * self.drag_coefficient * self.reference_area_m2;
         if coeff.is_zero() {
             return Vec3Fix::ZERO;
         }
