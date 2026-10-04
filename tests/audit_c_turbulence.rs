@@ -68,6 +68,7 @@ fn run(faces: &[i64]) -> (Vec<f64>, alice_physics::cfd_solver::RansReport) {
     (strain, report)
 }
 
+// PIN: AUD-A-S1W6-014 (the current ratio-proportional form of `dynamic_smagorinsky_cs`)
 #[test]
 fn dynamic_coefficient_scales_with_the_neighbour_to_cell_strain_ratio() {
     // s11 = 1, 2, 3: ratios 7/6, 1 and 17/18, all inside the clamp
@@ -92,6 +93,7 @@ fn dynamic_coefficient_scales_with_the_neighbour_to_cell_strain_ratio() {
     );
 }
 
+// PIN: AUD-A-S1W6-014 (the current ratio-proportional form of `dynamic_smagorinsky_cs`)
 #[test]
 fn dynamic_eddy_viscosity_is_cs_squared_dx_squared_times_strain_in_every_cell() {
     let faces = [0, 1, 3, 6];
@@ -107,6 +109,7 @@ fn dynamic_eddy_viscosity_is_cs_squared_dx_squared_times_strain_in_every_cell() 
     }
 }
 
+// PIN: AUD-A-S1W6-014 (the current ratio-proportional form of `dynamic_smagorinsky_cs`)
 #[test]
 fn dynamic_coefficient_clamps_at_the_upper_bound() {
     // s11 = 1, 10, 1: the edge cells see ratio (1 + 10 + 4) / 6 = 2.5
