@@ -1232,6 +1232,58 @@ mod tests {
         assert!(!v.wheels[0].abs_active);
     }
 
+    /// Locked wheel sliding backwards: the tyre sees full sliding (κ' = −1 in
+    /// the mirrored frame), so the force is `+μ_k F_z` (against the motion).
+    #[test]
+    fn locked_wheel_sliding_backwards_is_full_sliding() {
+        let mut cfg = config();
+        cfg.brakes.max_torque_front = Fix128::from_int(100_000);
+        cfg.brakes.max_torque_rear = Fix128::from_int(100_000);
+        let mut v = DynamicVehicle::new(cfg);
+        let mut body = chassis();
+        body.velocity = Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, Fix128::from_int(-20));
+        v.input.brake = Fix128::ONE;
+        let cond = dry(Fix128::ZERO);
+        v.update(&mut body, &flat(), &env(&cond), dt60());
+        let mu_k = AnisotropicFriction::tyre_asphalt().longitudinal_kinetic;
+        for (i, w) in v.wheels.iter().enumerate() {
+            assert_eq!(w.omega, Fix128::ZERO);
+            assert_eq!(w.slip_ratio, Fix128::ONE, "wheel {i}: contract κ");
+            let want = mu_k * w.normal_load;
+            assert!(
+                tol(w.longitudinal_force, want, fx(1, 1_000_000)),
+                "wheel {i}: {:?} vs μ_k F_z {want:?}",
+                w.longitudinal_force
+            );
+        }
+    }
+
+    // ---- anti-roll -----------------------------------------------------------
+
+    /// Rolled chassis, one axle pair: the more compressed wheel gains
+    /// `k_ar (c_l − c_r)` of load, the other loses it (spring `k c`, no
+    /// velocity so no damping).
+    #[test]
+    fn anti_roll_loads_the_compressed_side() {
+        let mut cfg = config();
+        cfg.base.wheels.truncate(2);
+        let k_ar = cfg.base.anti_roll_stiffness;
+        assert!(k_ar > Fix128::ZERO);
+        let mut v = DynamicVehicle::new(cfg);
+        let mut body = chassis();
+        body.position = Vec3Fix::new(Fix128::ZERO, fx(70, 100), Fix128::ZERO);
+        body.rotation = QuatFix::from_axis_angle(Vec3Fix::UNIT_Z, fx(2, 100));
+        let cond = dry(Fix128::ZERO);
+        v.update(&mut body, &flat(), &env(&cond), dt60());
+        let (l, r) = (v.wheels[0], v.wheels[1]);
+        assert!(l.compression > r.compression, "left side is lowered");
+        assert!(r.compression > Fix128::ZERO && l.compression < Fix128::ONE);
+        let k = v.config.base.wheels[0].spring_stiffness;
+        let f = k_ar * (l.compression - r.compression);
+        assert_eq!(l.normal_load, k * l.compression + f);
+        assert_eq!(r.normal_load, k * r.compression - f);
+    }
+
     // ---- ABS ------------------------------------------------------------------
 
     #[test]
@@ -1348,6 +1400,26 @@ mod tests {
 
     /// A car at rest with the brake on gets anchored wheels and no
     /// horizontal motion from friction.
+    /// Rolling at 2 m/s with a small side slip (free wheels, no anchors): the
+    /// stiff lateral tyre force at low speed would overshoot (`4 C_α tan α dt
+    /// > m v_y`); the effective-mass clamp keeps the side velocity from
+    /// reversing.
+    #[test]
+    fn lateral_friction_does_not_overshoot_at_low_speed() {
+        let mut v = DynamicVehicle::new(config());
+        let cond = dry(Fix128::ZERO);
+        let mut body = chassis();
+        let v_side = fx(5, 100);
+        body.velocity = Vec3Fix::new(v_side, Fix128::ZERO, Fix128::from_int(2));
+        for w in &mut v.wheels {
+            w.omega = Fix128::from_int(2) / fx(3, 10);
+        }
+        v.update(&mut body, &flat(), &env(&cond), dt60());
+        assert!(v.wheels.iter().all(|w| w.anchor.is_none()));
+        assert!(body.velocity.x >= Fix128::ZERO, "side velocity reversed: {:?}", body.velocity.x);
+        assert!(body.velocity.x < v_side);
+    }
+
     #[test]
     fn car_at_rest_is_held_on_flat() {
         let mut v = DynamicVehicle::new(config());
@@ -1674,53 +1746,5 @@ mod tests {
             drift.abs() <= fx(1, 1000),
             "drift along the slope over 600 frames: {drift:?} m"
         );
-    }
-}
-#[cfg(test)]
-mod dbg_tmp {
-    use super::*;
-    use crate::anisotropic_friction::AnisotropicFriction;
-    use crate::math::QuatFix;
-    use crate::solver::{PhysicsWorld, SolverConfig};
-    use surface::{InclinedPlane, Weather};
-    fn run(grade: Fix128, damping: Fix128) -> (f64, f64, f64) {
-        let theta = grade.atan();
-        let mut cfg = DynamicVehicleConfig::passenger_car();
-        cfg.ackermann = false;
-        cfg.wheel_inertia = Fix128::ONE;
-        cfg.brakes.max_torque_front = Fix128::from_int(10000);
-        cfg.brakes.max_torque_rear = Fix128::from_int(10000);
-        cfg.aero.drag_area = Fix128::ZERO;
-        let mut world = PhysicsWorld::new(SolverConfig::default());
-        world.config.damping = damping;
-        let (sn, cs) = theta.sin_cos();
-        let normal = Vec3Fix::new(Fix128::ZERO, cs, -sn);
-        let tangent = Vec3Fix::new(Fix128::ZERO, sn, cs);
-        let road = InclinedPlane { point: Vec3Fix::ZERO, normal };
-        let mut body = RigidBody::new_dynamic(normal * Fix128::from_f64(0.2 + 0.3 + 0.3 * (1.0 - 10000.0 * cs.to_f64() / 200000.0)), Fix128::from_int(1000));
-        let rot = QuatFix::from_axis_angle(Vec3Fix::UNIT_X, -theta);
-        body.rotation = rot; body.prev_rotation = rot;
-        body.inv_inertia = Vec3Fix::new(Fix128::from_f64(1.0/1500.0), Fix128::from_f64(1.0/1800.0), Fix128::from_f64(1.0/500.0));
-        let idx = world.add_body(body);
-        let cond = RoadCondition { material: AnisotropicFriction { longitudinal_static: Fix128::ONE, longitudinal_kinetic: Fix128::from_ratio(8,10), transverse_static: Fix128::ONE, transverse_kinetic: Fix128::from_ratio(8,10), slip_threshold_m_s: Fix128::from_ratio(5,100)}, weather: Weather::Dry, rolling_resistance: Fix128::ZERO };
-        let mut v = DynamicVehicle::new(cfg);
-        v.input.brake = Fix128::ONE;
-        let e = Environment { condition: &cond, wind: None, time: Fix128::ZERO, gravity: world.config.gravity };
-        let dt = Fix128::from_ratio(1,60);
-        for _ in 0..120 { v.update(&mut world.bodies[idx], &road, &e, dt); world.step(dt); }
-        let p0 = world.bodies[idx].position;
-        let (mut a, mut b) = (0.0f64, 0.0f64);
-        for k in 0..600 {
-            v.update(&mut world.bodies[idx], &road, &e, dt); world.step(dt);
-            let d = (world.bodies[idx].position - p0).dot(tangent).to_f64().abs();
-            if k < 300 { a = a.max(d) } else { b = b.max(d) }
-        }
-        (a, b, (world.bodies[idx].position - p0).dot(tangent).to_f64())
-    }
-    #[test]
-    fn dbg_hold() {
-        for d in [Fix128::ONE, Fix128::from_ratio(99,100)] {
-            std::println!("damping {:?}: {:?}", d.to_f64(), run(Fix128::from_ratio(1,2), d));
-        }
     }
 }
