@@ -944,6 +944,156 @@ fn rolling_resistance_coast_down_is_linear() {
 }
 
 // ---------------------------------------------------------------------------
+// 8b. Standing-start acceleration (rear-wheel drive)
+// ---------------------------------------------------------------------------
+
+struct Launch {
+    a: f64,
+    h: f64,
+    g: f64,
+    /// `longitudinal_force` of wheels 0..4 (front L, front R, rear L, rear R),
+    /// mean over the window.
+    fx: [f64; 4],
+    /// Largest `|F_rear_left − F_rear_right|` seen in the window.
+    lr_diff: f64,
+}
+
+/// Symmetric car (`a = b = 1.2`, rear wheels driven, open differential,
+/// first gear 3.5, flat 300 Nm curve), flat road, aero 0, `C_rr = 0`, from
+/// rest with constant `throttle` on `material`. Measured over 30 frames after
+/// 0.5 s: `a = Δv / Δt`, CG height `h`, per-wheel `longitudinal_force`.
+fn launch(throttle: f64, mat: AnisotropicFriction) -> Launch {
+    let cond = RoadCondition {
+        material: mat,
+        weather: Weather::Dry,
+        rolling_resistance: Fix128::ZERO,
+    };
+    let mut sim = flat_sim(config(1.2, 1.2), cond);
+    let g = sim.g();
+    sim.frames(120);
+    sim.veh.input.throttle = fx(throttle);
+    sim.frames(30);
+    let v0 = f(sim.body().velocity.z);
+    let (mut h, mut fxs, mut lr_diff) = (0.0, [0.0; 4], 0.0_f64);
+    for _ in 0..30 {
+        sim.frame();
+        h += f(sim.body().position.y) / 30.0;
+        for (acc, w) in fxs.iter_mut().zip(&sim.veh.wheels) {
+            *acc += f(w.longitudinal_force) / 30.0;
+        }
+        let d = f(sim.veh.wheels[2].longitudinal_force - sim.veh.wheels[3].longitudinal_force);
+        lr_diff = lr_diff.max(d.abs());
+    }
+    let a = (f(sim.body().velocity.z) - v0) / (30.0 * DT);
+    Launch {
+        a,
+        h,
+        g,
+        fx: fxs,
+        lr_diff,
+    }
+}
+
+/// Left / right driven wheels of a mirror-symmetric car under an open
+/// differential get equal torque, equal load and the same slip, so their
+/// tyre forces are equal; only Fix128 rounding of the mirrored geometry can
+/// separate them (`≈ 1e-15` relative on a few kN): `|ΔF| ≤ 1e-6 N`.
+const LR_SYMMETRY_TOL: f64 = 1e-6;
+
+/// Within grip: throttle 0.64 on the dry road (`μ_s = 1`).
+///
+/// Closed form: per driven wheel `F = T_axle / (2 r)` with
+/// `T_axle = throttle · 300 · 3.5 = 672 Nm` (flat curve, idle-floored rpm
+/// below 7000), i.e. `ΣF_drive = 2240 N`. Wheel spin-up of all four wheels
+/// (`ω̇ = a / r`) takes `I_w a / r²` each, so
+/// `a = ΣF_drive / (M + Σ I_w / r²) = 2240 / 1044.44 = 2.1447 m/s²`.
+/// This holds for any tyre model once the slip is steady (the force is set by
+/// the torque balance `F r = T − I_w ω̇`, not by the slip curve). Grip
+/// precondition: `F / F_zr,wheel = 1120 / 2851 = 0.39 < μ_s`.
+///
+/// - `a` within 1 %: constant force so no integration error; the slip
+///   transient of the launch (time constant `I_w v_floor / (r² C_κ)`, ms) is
+///   over before the window
+/// - rear left = rear right within `LR_SYMMETRY_TOL`
+/// - each driven wheel's force `(T_axle / 2 − I_w a / r) / r = 1096.2 N`
+///   within 1 %
+/// - each undriven wheel only spins itself up: `F = −I_w a / r² = −23.83 N`
+///   within 5 % (`C_rr = 0`, so the rolling-resistance share is 0; the
+///   wider band covers the one-frame lag between the reported force and the
+///   window-mean `a`)
+#[test]
+fn launch_within_grip_follows_drive_torque() {
+    let throttle = 0.64;
+    let l = launch(throttle, material(MU_S, MU_K));
+    let m_eff = M + 4.0 * I_WHEEL / (R_WHEEL * R_WHEEL);
+    let t_axle = throttle * ENGINE_TORQUE * GEARS[0];
+    let want_a = t_axle / R_WHEEL / m_eff;
+    assert!(
+        (l.a - want_a).abs() <= 0.01 * want_a,
+        "launch acceleration {} m/s², closed form {want_a}",
+        l.a
+    );
+    assert!(
+        l.lr_diff <= LR_SYMMETRY_TOL,
+        "rear left / right force differ by {} N",
+        l.lr_diff
+    );
+    let want_driven = (t_axle / 2.0 - I_WHEEL * want_a / R_WHEEL) / R_WHEEL;
+    for i in [2, 3] {
+        assert!(
+            (l.fx[i] - want_driven).abs() <= 0.01 * want_driven,
+            "driven wheel {i}: {} N, closed form {want_driven}",
+            l.fx[i]
+        );
+    }
+    let want_free = -I_WHEEL * want_a / (R_WHEEL * R_WHEEL);
+    for i in [0, 1] {
+        assert!(
+            (l.fx[i] - want_free).abs() <= 0.05 * want_free.abs(),
+            "undriven wheel {i}: {} N, spin-up only {want_free}",
+            l.fx[i]
+        );
+    }
+}
+
+/// Beyond grip: full throttle on a low-grip road (`μ_s = 0.3`, `μ_k = 0.25`).
+/// Nominal `a = 3500 / 1044.44 = 3.351 m/s²` would need more than the rear
+/// axle can transmit.
+///
+/// Upper bound (moment balance about the CG with the drive at ground level):
+/// `F_zr = M g b / L + M a h / L` and the only forward forces are the rear
+/// tyres', `M a ≤ μ_s F_zr`, hence `a ≤ μ_s g b / (L − μ_s h)`
+/// (`= 1.663 m/s²` at `h = 0.785`, `h` measured). Plus `1e-3` relative for
+/// the window measurement.
+///
+/// Also: rear left = rear right within `LR_SYMMETRY_TOL`, and the bound is
+/// below the nominal grip-free value (the test is in the limited regime).
+#[test]
+fn launch_beyond_grip_is_limited_by_rear_axle_load() {
+    let (mu_s, mu_k) = (0.3, 0.25);
+    let l = launch(1.0, material(mu_s, mu_k));
+    let (b, len) = (1.2, 2.4);
+    let bound = mu_s * l.g * b / (len - mu_s * l.h);
+    let m_eff = M + 4.0 * I_WHEEL / (R_WHEEL * R_WHEEL);
+    let nominal = ENGINE_TORQUE * GEARS[0] / R_WHEEL / m_eff;
+    assert!(
+        nominal > bound,
+        "precondition: throttle exceeds grip ({nominal} vs {bound})"
+    );
+    assert!(
+        l.a <= bound * (1.0 + 1e-3),
+        "launch acceleration {} m/s² above the rear-axle grip bound {bound}",
+        l.a
+    );
+    assert!(l.a > 0.0, "car accelerates forward ({} m/s²)", l.a);
+    assert!(
+        l.lr_diff <= LR_SYMMETRY_TOL,
+        "rear left / right force differ by {} N",
+        l.lr_diff
+    );
+}
+
+// ---------------------------------------------------------------------------
 // 9. Top speed per gear
 // ---------------------------------------------------------------------------
 
