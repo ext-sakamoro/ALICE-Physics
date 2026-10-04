@@ -389,6 +389,12 @@ required-features = ["std"]
 name = "character_controller"
 required-features = ["std"]
 
+# Production entry point for `Cloth` / `DeformableBody` / `Fluid::step_with_sdf`
+# (L0 before this example)
+[[example]]
+name = "soft_bodies_on_sdf"
+required-features = ["std"]
+
 # Production entry point for `WindZone` (wiring_guard: src/wind_zone.rs had
 # zero production callers across 5 items: force_on, force_on_particle,
 # instantaneous_wind_vector, light_breeze, storm — only this module's own
