@@ -20,6 +20,7 @@
 //! like the legacy model.
 
 pub mod powertrain;
+pub mod scenario;
 pub mod surface;
 pub mod tire;
 
