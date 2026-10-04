@@ -238,7 +238,6 @@ fn force_small_relative_velocity_is_not_lost() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S3W3-001: aerodynamic_force squares |v_rel| in Fix128 before sqrt, so v_rel > ~3.04e9 m/s overflows speed_sq and force collapses to 0 (v_rel=4e9 along +x: got 0, want +6.0e18 which is representable)"]
 fn force_huge_relative_velocity_keeps_sign_and_magnitude() {
     // v_rel = 4e9 m/s: speed_sq = 1.6e19 exceeds the I64F64 range (9.2e18).
     // The documented law has no bound, so the force must still be +x with
