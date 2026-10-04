@@ -128,6 +128,10 @@ pub struct WheelDynamicsState {
     pub brake_torque: Fix128,
     /// ABS released / modulated this wheel this frame.
     pub abs_active: bool,
+    /// Static-friction anchor: world-space road point a locked wheel's
+    /// contact is held to, `None` while rolling or sliding (see
+    /// [`DynamicVehicle::update`], "Static friction").
+    pub anchor: Option<Vec3Fix>,
 }
 
 /// Inputs from the driver (or a controller) for one frame.
@@ -313,6 +317,24 @@ fn clamp_friction(j: Fix128, slip: Fix128, m_eff: Fix128) -> Fix128 {
         -limit
     } else {
         j
+    }
+}
+
+/// `(a / ca)² + (b / cb)² ≤ 1`; a zero semi-axis admits only a zero component.
+fn within_ellipse(a: Fix128, b: Fix128, ca: Fix128, cb: Fix128) -> bool {
+    let part = |v: Fix128, c: Fix128| -> Option<Fix128> {
+        if v.is_zero() {
+            Some(Fix128::ZERO)
+        } else if c <= Fix128::ZERO {
+            None
+        } else {
+            let q = v / c;
+            Some(q * q)
+        }
+    };
+    match (part(a, ca), part(b, cb)) {
+        (Some(x), Some(y)) => x + y <= Fix128::ONE,
+        _ => false,
     }
 }
 
@@ -746,6 +768,7 @@ impl DynamicVehicle {
         for i in 0..n {
             let s = sc[i];
             if !s.loaded {
+                self.wheels[i].anchor = None;
                 continue;
             }
             let radius = self.config.base.wheels[i].radius;
@@ -754,22 +777,48 @@ impl DynamicVehicle {
             let g_x = gravity.dot(s.x_dir) * dt;
             let g_y = gravity.dot(s.y_dir) * dt;
 
-            let vc = point_velocity(chassis, s.arm);
+            let load = self.wheels[i].normal_load;
             let mx = effective_mass(chassis, s.arm, s.x_dir);
-            let jx = clamp_friction(fx[i] * dt, vc.dot(s.x_dir) + g_x - omega * radius, mx);
-            if !jx.is_zero() {
-                chassis.apply_impulse_at(s.x_dir * jx, point);
-            }
-            let vc = point_velocity(chassis, s.arm);
             let my = effective_mass(chassis, s.arm, s.y_dir);
-            let jy = clamp_friction(fy[i] * dt, vc.dot(s.y_dir) + g_y, my);
-            if !jy.is_zero() {
-                chassis.apply_impulse_at(s.y_dir * jy, point);
+
+            // static friction: hold a locked wheel's contact at its anchor
+            let mut held = None;
+            if omega.is_zero() && load > Fix128::ZERO {
+                if let Some(grip) = s.grip {
+                    let anchor = self.wheels[i].anchor.unwrap_or(point);
+                    let e = anchor - point;
+                    let vc = point_velocity(chassis, s.arm);
+                    let want_x = (e.dot(s.x_dir) / dt - vc.dot(s.x_dir) - g_x) * mx;
+                    let want_y = (e.dot(s.y_dir) / dt - vc.dot(s.y_dir) - g_y) * my;
+                    let cap_x = grip.longitudinal_static * load * dt;
+                    let cap_y = grip.transverse_static * load * dt;
+                    let brake_ok = want_x.abs() * radius <= self.wheels[i].brake_torque * dt;
+                    if brake_ok && within_ellipse(want_x, want_y, cap_x, cap_y) {
+                        held = Some((anchor, want_x, want_y));
+                    }
+                }
             }
+            let (jx, jy) = if let Some((anchor, jx, jy)) = held {
+                self.wheels[i].anchor = Some(anchor);
+                chassis.apply_impulse_at(s.x_dir * jx + s.y_dir * jy, point);
+                (jx, jy)
+            } else {
+                self.wheels[i].anchor = None;
+                let vc = point_velocity(chassis, s.arm);
+                let jx = clamp_friction(fx[i] * dt, vc.dot(s.x_dir) + g_x - omega * radius, mx);
+                if !jx.is_zero() {
+                    chassis.apply_impulse_at(s.x_dir * jx, point);
+                }
+                let vc = point_velocity(chassis, s.arm);
+                let jy = clamp_friction(fy[i] * dt, vc.dot(s.y_dir) + g_y, my);
+                if !jy.is_zero() {
+                    chassis.apply_impulse_at(s.y_dir * jy, point);
+                }
+                (jx, jy)
+            };
             self.wheels[i].longitudinal_force = jx / dt;
             self.wheels[i].lateral_force = jy / dt;
 
-            let load = self.wheels[i].normal_load;
             if !omega.is_zero() && !c_rr.is_zero() && load > Fix128::ZERO {
                 let vc = point_velocity(chassis, s.arm);
                 let vx = vc.dot(s.x_dir);
@@ -1457,6 +1506,12 @@ mod tests {
     /// `PhysicsWorld` and return the displacement of the chassis along the
     /// slope over `frames` frames after a settling phase.
     fn slope_drift(grade: Fix128, frames: usize) -> Fix128 {
+        slope_run(grade, frames, fx(99, 100)).0
+    }
+
+    /// `(drift along the slope over `frames`, up-slope velocity at the end)`
+    /// after a 120-frame settle, world damping `damping`.
+    fn slope_run(grade: Fix128, frames: usize, damping: Fix128) -> (Fix128, Fix128) {
         use crate::sleeping::SleepConfig;
         use crate::solver::{PhysicsWorld, SolverConfig};
         let theta = grade.atan();
@@ -1467,7 +1522,10 @@ mod tests {
             point: Vec3Fix::ZERO,
             normal,
         };
-        let mut world = PhysicsWorld::new(SolverConfig::default());
+        let mut world = PhysicsWorld::new(SolverConfig {
+            damping,
+            ..SolverConfig::default()
+        });
         world.set_sleep_config(SleepConfig {
             frames_to_sleep: u32::MAX,
             ..SleepConfig::default()
@@ -1499,13 +1557,19 @@ mod tests {
             world.step(dt);
         }
         assert_eq!(v.grounded_wheels(), 4);
-        (world.bodies[idx].position - start).dot(up_slope)
+        (
+            (world.bodies[idx].position - start).dot(up_slope),
+            world.bodies[idx].velocity.dot(up_slope),
+        )
     }
 
     #[test]
     fn braked_car_holds_on_slope() {
         // tan θ = 0.3 < μ (1.1 dry asphalt)
         let drift = slope_drift(fx(3, 10), 600);
+        if std::env::var("VD_DEBUG").is_ok() {
+            std::println!("drift 0.99 {:.3e} / 1.0 {:.3e}", drift.to_f64(), slope_run(fx(3, 10), 600, Fix128::ONE).0.to_f64());
+        }
         assert!(
             drift.abs() <= fx(1, 1000),
             "drift along the slope over 600 frames: {drift:?} m"
