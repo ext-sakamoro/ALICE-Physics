@@ -31,9 +31,9 @@
 use crate::eulerian_grid::{
     g2p_velocity, p2g_normalized_with, project_pressure, project_pressure_banded,
     project_pressure_bicgstab, project_pressure_decomposed, project_pressure_jacobi,
-    project_pressure_multigrid, sample_u_range, sample_u_trilinear, sample_v_range,
-    sample_v_trilinear, sample_w_range, sample_w_trilinear, BicgstabStats, HaloSchedule, MacGrid,
-    ParticleScatter,
+    project_pressure_multigrid, project_pressure_multigrid_decomposed, sample_u_range,
+    sample_u_trilinear, sample_v_range, sample_v_trilinear, sample_w_range, sample_w_trilinear,
+    BicgstabStats, HaloSchedule, MacGrid, ParticleScatter,
 };
 use crate::interface_capture::fast_sweeping_reinit;
 use crate::math::{Fix128, Vec3Fix};
@@ -102,6 +102,7 @@ pub enum AdvectionScheme {
 /// | `BiCgStab` | ~7 dot products + 2 operator applications | `‖r‖_∞ < tolerance` or `max_iterations` | [`BicgstabStats`] |
 /// | `DecomposedGs` | one sweep, over `ranks` `z` slabs with one halo layer each | fixed `sweeps` | nothing; bit-identical to `RedBlackGs` |
 /// | `BandedGs` | as `DecomposedGs`, every rank holding only its band | fixed `sweeps` | nothing; bit-identical to `RedBlackGs` |
+/// | `DecomposedMultigrid` | one W-cycle, over `ranks` `z` slabs, every rank holding only its band | fixed `cycles` | nothing; bit-identical to `Multigrid`; refused off a power-of-two grid |
 ///
 /// ⚠️ The fixed-count solvers never say whether they converged; on a large
 /// grid a short count leaves a smooth divergence of order one. `BiCgStab` is
@@ -146,6 +147,18 @@ pub enum PressureSolver {
         ranks: usize,
         /// Sweeps; refused when zero.
         sweeps: u32,
+    },
+    /// `Multigrid` run as `ranks` contiguous `z` slabs that exchange one halo
+    /// layer after every colour sweep, in this process, every rank holding only
+    /// its band of each distributed level. Levels with fewer layers than ranks
+    /// are gathered to rank 0 and solved there. The answer is the `Multigrid`
+    /// one to the bit for any `ranks`, including counts above `nz`; refused off
+    /// a power-of-two grid like `Multigrid`.
+    DecomposedMultigrid {
+        /// Slabs; refused when zero.
+        ranks: usize,
+        /// W-cycles; refused when zero.
+        cycles: u32,
     },
     /// Jacobi-preconditioned BiCGStab (van der Vorst 1992).
     BiCgStab {
@@ -807,6 +820,10 @@ enum Projection {
         ranks: usize,
         sweeps: u32,
     },
+    DecomposedMg {
+        ranks: usize,
+        cycles: u32,
+    },
 }
 
 /// Complete CFD solver state.
@@ -1081,11 +1098,13 @@ impl CfdSolver {
             | PressureSolver::Jacobi { iterations: 0 }
             | PressureSolver::DecomposedGs { sweeps: 0, .. }
             | PressureSolver::BandedGs { sweeps: 0, .. }
+            | PressureSolver::DecomposedMultigrid { cycles: 0, .. }
             | PressureSolver::BiCgStab {
                 max_iterations: 0, ..
             } => return Err(PressureSolverError::ZeroIterations),
             PressureSolver::DecomposedGs { ranks: 0, .. }
-            | PressureSolver::BandedGs { ranks: 0, .. } => {
+            | PressureSolver::BandedGs { ranks: 0, .. }
+            | PressureSolver::DecomposedMultigrid { ranks: 0, .. } => {
                 return Err(PressureSolverError::ZeroRanks)
             }
             PressureSolver::DecomposedGs { ranks, sweeps } => {
@@ -1100,6 +1119,14 @@ impl CfdSolver {
                     });
                 }
                 Projection::Mg(cycles)
+            }
+            PressureSolver::DecomposedMultigrid { ranks, cycles } => {
+                if !self.grid_supports_multigrid() {
+                    return Err(PressureSolverError::MultigridNeedsPowerOfTwoExtents {
+                        extents: (self.grid.nx, self.grid.ny, self.grid.nz),
+                    });
+                }
+                Projection::DecomposedMg { ranks, cycles }
             }
             PressureSolver::Jacobi { iterations } => Projection::Jacobi(iterations),
             PressureSolver::BiCgStab {
@@ -1301,6 +1328,17 @@ impl CfdSolver {
             }
             Projection::Banded { ranks, sweeps } => {
                 project_pressure_banded(&mut self.grid, dt_s, self.density_kg_m3, sweeps, ranks);
+                None
+            }
+            Projection::DecomposedMg { ranks, cycles } => {
+                project_pressure_multigrid_decomposed(
+                    &mut self.grid,
+                    dt_s,
+                    self.density_kg_m3,
+                    cycles,
+                    ranks,
+                    HaloSchedule::EverySweep,
+                );
                 None
             }
             Projection::BiCgStab {

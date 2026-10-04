@@ -125,8 +125,6 @@ pub(crate) type Residency = Vec<Vec<(usize, usize)>>;
 /// Same early-return contract as the single-process solve (a bit-identical grid
 /// for a non-power-of-two extent, a zero `dx` / `dt_s` / density, or
 /// `cycles == 0`), and also for `ranks == 0`.
-// ALLOW-UNWIRED: stage 2 of the distributed multigrid — the in-process driver the
-// oracle runs; the rank-per-process driver (stage 3) is its caller.
 pub(crate) fn project_pressure_multigrid_decomposed(
     grid: &mut MacGrid,
     dt_s: Fix128,

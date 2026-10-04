@@ -618,3 +618,109 @@ fn slab_decompositions_with_zero_ranks_or_zero_sweeps_are_refused() {
     );
     assert!(!PressureSolverError::ZeroRanks.to_string().is_empty());
 }
+
+// ---------------------------------------------------------------------------
+// oracle 8 — the slab-decomposed multigrid is the multigrid solve, to the bit
+// ---------------------------------------------------------------------------
+
+/// `DecomposedMultigrid` reproduces `Multigrid` bit for bit for rank counts
+/// that divide `nz`, that do not, and that exceed it (the coarse levels with
+/// fewer layers than ranks are gathered to rank 0), on the open seed and on a
+/// sealed box, on a cube and on an anisotropic power-of-two grid.
+///
+/// Exactness, not a tolerance: the colour sweeps visit the same cells in the
+/// same order, restriction and prolongation stay rank-local, and `Fix128`
+/// addition is a group operation mod 2¹²⁸.
+#[test]
+fn the_decomposed_multigrid_reproduces_multigrid_to_the_bit_for_every_rank_count() {
+    let cycles = 4u32;
+    for (scene, sealed) in [("open box", false), ("sealed box", true)] {
+        for &(nx, ny, nz) in &[(N, N, N), (4, N, 16)] {
+            let mut reference = quiet_solver(nx, ny, nz);
+            if sealed {
+                reference.grid.set_closed_box_walls();
+            }
+            seed_divergent(&mut reference.grid);
+            reference
+                .step_with_pressure_solver(dt(), PressureSolver::Multigrid { cycles })
+                .expect("multigrid runs on a power-of-two grid");
+            for ranks in [1usize, 2, 3, 4, 5, nz, nz + 1, 2 * nz + 3] {
+                let mut s = quiet_solver(nx, ny, nz);
+                if sealed {
+                    s.grid.set_closed_box_walls();
+                }
+                seed_divergent(&mut s.grid);
+                let report = s
+                    .step_with_pressure_solver(
+                        dt(),
+                        PressureSolver::DecomposedMultigrid { ranks, cycles },
+                    )
+                    .unwrap_or_else(|e| panic!("ranks {ranks}: {e}"));
+                assert!(report.bicgstab.is_none());
+                assert!(
+                    grids_bit_equal(&reference.grid, &s.grid),
+                    "{scene} {nx}×{ny}×{nz}, multigrid over {ranks} ranks differs from multigrid"
+                );
+                assert_eq!(s.step_count, reference.step_count);
+            }
+        }
+    }
+}
+
+/// The decomposed multigrid is not the identity: on the unit-divergence seed
+/// 30 cycles over 3 ranks bring `max|∇·u|` below `1e-6` of the seed, the
+/// bound oracle 1 holds every solver to.
+#[test]
+fn the_decomposed_multigrid_projects_within_the_residual_bound() {
+    let mut s = quiet_solver(N, N, N);
+    seed_divergent(&mut s.grid);
+    let before = max_abs_divergence(&s.grid);
+    s.step_with_pressure_solver(
+        dt(),
+        PressureSolver::DecomposedMultigrid {
+            ranks: 3,
+            cycles: 30,
+        },
+    )
+    .expect("valid");
+    let after = max_abs_divergence(&s.grid);
+    assert!(
+        after < 1e-6 * before,
+        "decomposed multigrid over 3 ranks left max|div u| = {after:.3e}"
+    );
+}
+
+#[test]
+fn the_decomposed_multigrid_refuses_what_multigrid_refuses_and_zero_ranks() {
+    let rho = Fix128::from_int(1000);
+    refuse(
+        N,
+        dt(),
+        rho,
+        PressureSolver::DecomposedMultigrid {
+            ranks: 0,
+            cycles: 4,
+        },
+        PressureSolverError::ZeroRanks,
+    );
+    refuse(
+        N,
+        dt(),
+        rho,
+        PressureSolver::DecomposedMultigrid {
+            ranks: 2,
+            cycles: 0,
+        },
+        PressureSolverError::ZeroIterations,
+    );
+    refuse(
+        7,
+        dt(),
+        rho,
+        PressureSolver::DecomposedMultigrid {
+            ranks: 2,
+            cycles: 4,
+        },
+        PressureSolverError::MultigridNeedsPowerOfTwoExtents { extents: (7, N, N) },
+    );
+}
