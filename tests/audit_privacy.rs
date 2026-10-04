@@ -286,7 +286,6 @@ fn estimate_proportion_recovers_the_true_rate_from_noisy_reports() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S4W3-020: RandomizedResponse::new(epsilon) sets p = e^eps / (1 + e^eps) (the flip-design value) but reports a fair coin otherwise, so the mechanism's actual epsilon is ln(1 + 2 e^eps) > eps: requested 1.0 gives 1.86, requested 2.0 gives 2.76"]
 fn randomized_response_new_epsilon_is_not_weaker_than_requested() {
     for &eps in &[0.25, 0.5, 1.0, 2.0, 4.0] {
         let p = RandomizedResponse::new(eps).p_true();
@@ -299,7 +298,6 @@ fn randomized_response_new_epsilon_is_not_weaker_than_requested() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S4W3-022: RandomizedResponse::with_probability silently raises p below 0.5 to 0.5 although p = P(truthful) can be any value in [0, 1] for the stated mechanism: with_probability(0.2) has epsilon 1.10 instead of the 0.41 requested"]
 fn with_probability_does_not_silently_weaken_privacy() {
     let rr = RandomizedResponse::with_probability(0.2, 1);
     assert!(
@@ -404,7 +402,6 @@ fn budget_sequential_composition_sums_epsilons_and_refuses_overspend() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S4W3-021: PrivacyBudget::try_spend accepts a negative epsilon: it is counted as a query, spent decreases and remaining() exceeds the maximum (spend 1.0, then -0.5 'succeeds' and remaining becomes 1.5 of a 1.0 budget), so total privacy loss can be refunded"]
 fn budget_never_lets_spent_epsilon_decrease() {
     let mut b = PrivacyBudget::new(1.0);
     assert!(b.try_spend(0.5));
@@ -464,7 +461,6 @@ fn aggregator_sum_mean_count_and_reset() {
 // ------------------------------------------------------------------ entropy
 
 #[test]
-#[ignore = "known defect: AUD-A-S4W3-029: XorShift64::from_entropy is documented as 'system entropy' but the seed is the wall-clock nanosecond count: the first output of a fresh generator is reproduced by trying the seeds in the time window around the call, so the noise of Laplace::new / RandomizedResponse::new / Rappor::new is predictable"]
 fn from_entropy_seed_is_not_recoverable_from_the_clock() {
     use std::time::{SystemTime, UNIX_EPOCH};
     let now = || {
