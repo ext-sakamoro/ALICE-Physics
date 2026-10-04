@@ -251,8 +251,12 @@ class OracleAuditLinks(unittest.TestCase):
         return [{"test_name": t["name"], "file": t["file"], "ignore_reason": t["ignore_reason"], "pins": t["pins"]}
                 for t in oracle.extract_test_metadata(fixture_tests(body))]
 
-    def links(self, body, lock=None):
-        return oracle.audit_links(self.parsed(body), lock if lock is not None else {"alice-db": {"0.2.0-beta.3"}})
+    DEFAULT_LOCK = object()
+
+    def links(self, body, lock=DEFAULT_LOCK):
+        if lock is self.DEFAULT_LOCK:
+            lock = {"alice-db": {"0.2.0-beta.3"}}
+        return oracle.audit_links(self.parsed(body), lock)
 
     def test_pin_is_read_from_the_comment_before_the_test(self):
         t = {x["test_name"]: x for x in self.parsed(self.BODY)}
@@ -277,7 +281,34 @@ class OracleAuditLinks(unittest.TestCase):
 
     def test_external_crate_missing_from_cargo_lock_is_a_problem(self):
         problems = self.links(self.BODY, lock={})[3]
-        self.assertTrue(any("alice-db" in p and "Cargo.lock" in p for p in problems), problems)
+        self.assertTrue(any("alice-db" in p and "does not contain" in p for p in problems), problems)
+
+    def test_unresolvable_versions_are_a_problem_not_a_silent_pass(self):
+        problems = self.links(self.BODY, lock=None)[3]
+        self.assertTrue(any("cannot resolve dependency versions" in p for p in problems), problems)
+
+    def test_without_cargo_lock_the_versions_come_from_cargo_metadata(self):
+        root = Path(tempfile.mkdtemp())  # no Cargo.lock, like a CI checkout of this repository
+        saved = oracle._cargo_metadata_versions
+        try:
+            oracle._cargo_metadata_versions = lambda r: {"alice-db": {"0.2.0-beta.3"}}
+            self.assertEqual(oracle.resolved_versions(root), {"alice-db": {"0.2.0-beta.3"}})
+            oracle._cargo_metadata_versions = lambda r: None
+            self.assertIsNone(oracle.resolved_versions(root))
+        finally:
+            oracle._cargo_metadata_versions = saved
+
+    def test_with_cargo_lock_the_lock_is_read(self):
+        root = Path(tempfile.mkdtemp())
+        (root / "Cargo.lock").write_text('[[package]]\nname = "alice-db"\nversion = "0.2.0-beta.9"\n', encoding="utf-8")
+        self.assertEqual(oracle.resolved_versions(root)["alice-db"], {"0.2.0-beta.9"})
+
+    def test_cargo_metadata_includes_optional_dependencies(self):
+        # the real crate: alice-db is optional (feature `replay`); without --all-features it is missing
+        v = oracle._cargo_metadata_versions(oracle.PROJECT_ROOT)
+        if v is None:
+            self.skipTest("cargo not available")
+        self.assertIn("alice-db", v)
 
     def test_report_marks_a_version_change_for_re_check(self):
         cat = {"implemented": [], "partial": [], "pending": []}
@@ -287,6 +318,7 @@ class OracleAuditLinks(unittest.TestCase):
         moved = oracle.generate_markdown_report(cat, {"alice-db": {"0.2.0-beta.4"}})
         self.assertIn("| 0.2.0-beta.3 | 0.2.0-beta.3 | ✅ same |", same)
         self.assertIn("| 0.2.0-beta.3 | 0.2.0-beta.4 | ⚠️ re-check |", moved)
+        self.assertIn("| 0.2.0-beta.3 | — | ⚠️ not resolved |", oracle.generate_markdown_report(cat, {}))
         self.assertIn("| AUD-A-S1W1-001 | `pin_ok` (t.rs) | `defect_a` (t.rs) |", same)
         self.assertIn("## ⚠️ Known defects without an id (1)", same)
 
