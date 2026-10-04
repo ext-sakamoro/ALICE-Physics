@@ -110,7 +110,38 @@ impl AnisotropicFriction {
         } else if v_trans.is_zero() {
             v_long.abs()
         } else {
-            (v_long * v_long + v_trans * v_trans).sqrt()
+            // Combined magnitude without squaring-then-summing in a way
+            // that overflows Fix128 (|v| > ~3e9 m/s: v_long^2 + v_trans^2
+            // wraps). Halve v_long/v_trans (exact bit shifts, no rounding)
+            // until their squares — and the sum — are representable, then
+            // double the resulting magnitude back up by the same count.
+            // The true slip is representable even when the bare sum of
+            // squares is not (e.g. v_long = v_trans = 1e10: slip =
+            // 1e10*sqrt(2) ~= 1.41e10, well within range, even though
+            // v_long^2 + v_trans^2 ~= 2e20 is not).
+            let mut vl = v_long;
+            let mut vt = v_trans;
+            let mut shift = 0u32;
+            let mut sum = None;
+            for _ in 0..200 {
+                sum = vl.checked_mul(vl).zip(vt.checked_mul(vt)).and_then(
+                    |(a, b)| {
+                        let s = a + b;
+                        (s >= a && s >= b).then_some(s)
+                    },
+                );
+                if sum.is_some() {
+                    break;
+                }
+                vl = vl.half();
+                vt = vt.half();
+                shift += 1;
+            }
+            let mut magnitude = sum.unwrap_or(Fix128::ZERO).sqrt();
+            for _ in 0..shift {
+                magnitude = magnitude.double();
+            }
+            magnitude
         };
         if slip.is_zero() {
             return Vec3Fix::ZERO;

@@ -223,7 +223,6 @@ fn tiny_oblique_slip_still_produces_static_friction() {
 /// so the slip magnitude wraps. Documented behaviour for Fix128 overflow, but friction_force
 /// advertises no input range.
 #[test]
-#[ignore = "known defect: AUD-A-S2W3-002: oblique slip |v| > ~3e9 m/s: v_long^2 + v_trans^2 wraps Fix128 so the direction/magnitude is wrong (on-axis is fine at 1e15)"]
 fn huge_oblique_slip_keeps_ellipse_direction() {
     let m = model();
     let e = 1.0e10;
