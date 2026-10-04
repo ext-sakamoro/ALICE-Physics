@@ -593,7 +593,7 @@ pub use netcode::{
     DeterministicSimulation, FrameInput, InputApplicator, NetcodeConfig, SimulationChecksum,
     SimulationSnapshot,
 };
-pub use particle::{Particle, ParticleEmitter, ParticleSystem};
+pub use particle::{LandingEvent, LandingTarget, Particle, ParticleEmitter, ParticleSystem};
 #[cfg(feature = "std")]
 pub use phase_change::{Phase, PhaseChangeConfig, PhaseChangeModifier};
 pub use physics2d::{
@@ -751,7 +751,9 @@ pub mod prelude {
         DeterministicSimulation, FrameInput, InputApplicator, NetcodeConfig, SimulationChecksum,
         SimulationSnapshot,
     };
-    pub use crate::particle::{Particle, ParticleEmitter, ParticleSystem};
+    pub use crate::particle::{
+        LandingEvent, LandingTarget, Particle, ParticleEmitter, ParticleSystem,
+    };
     #[cfg(feature = "std")]
     pub use crate::phase_change::{Phase, PhaseChangeConfig, PhaseChangeModifier};
     #[cfg(feature = "std")]

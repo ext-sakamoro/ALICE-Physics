@@ -107,6 +107,10 @@ name = "cloth_simulation"
 required-features = ["std"]
 
 [[example]]
+name = "particle_rain_landing"
+required-features = ["std"]
+
+[[example]]
 name = "cfd_smoke_plume"
 required-features = ["std"]
 
