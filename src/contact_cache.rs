@@ -325,12 +325,20 @@ impl ContactCache {
     }
 
     /// Find manifold for a body pair (read-only)
+    ///
+    /// `manifolds` is `pub`, so an external `clear()`/`retain()`/`truncate()`
+    /// on it can leave the private `pair_index` pointing past the end; a
+    /// stale index is treated as not-found rather than panicking.
     #[must_use]
     pub fn find(&self, pair: &BodyPairKey) -> Option<&ContactManifold> {
         // Use HashMap (O(1)) with std feature, or linear scan (O(n)) without
         #[cfg(feature = "std")]
         {
-            self.pair_index.get(pair).map(|&idx| &self.manifolds[idx])
+            self.pair_index
+                .get(pair)
+                .copied()
+                .filter(|&idx| idx < self.manifolds.len())
+                .map(|idx| &self.manifolds[idx])
         }
 
         #[cfg(not(feature = "std"))]
