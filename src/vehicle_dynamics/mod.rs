@@ -409,9 +409,9 @@ impl SpinGroup {
     /// `ω_f = ω₀ + dt T / I − Σ r λ_x / I`, then the Coulomb brake
     /// (`|ω|` reduced by `dt T_b / I`, not across 0). With ABS the brake
     /// stops at `ω_t = max v_x (1 − target) / r` over the members (current
-    /// contact velocity). Returns `(ω, applied brake torque, spin free)`;
+    /// contact velocity). Returns `(ω, applied brake torque, spin free, ABS bound)`;
     /// the spin is not free when the brake holds it at 0 or ABS holds it at
-    /// `ω_t`.
+    /// `ω_t`. The last flag says whether ABS bound.
     fn spin(
         &self,
         lam_x: &[Fix128],
@@ -420,7 +420,7 @@ impl SpinGroup {
         sc: &[WheelScratch],
         dt: Fix128,
         target_slip: Option<Fix128>,
-    ) -> (Fix128, Fix128, bool) {
+    ) -> (Fix128, Fix128, bool, bool) {
         let mut react = Fix128::ZERO;
         for &j in &self.members {
             react = react + veh.config.base.wheels[j].radius * lam_x[j];
@@ -450,7 +450,7 @@ impl SpinGroup {
                         let w = if free < w_t { free } else { w_t };
                         let applied =
                             clamp((free - w) * self.inertia / dt, Fix128::ZERO, self.brake);
-                        return (w, applied, false);
+                        return (w, applied, false, true);
                     }
                 }
             }
@@ -465,7 +465,7 @@ impl SpinGroup {
                 self.brake,
             )
         };
-        (full, applied, !held)
+        (full, applied, !held, false)
     }
 }
 
@@ -632,95 +632,103 @@ impl DynamicVehicle {
     ///    with `v_floor = slip_velocity_floor`.
     /// 5. **Spin** `I ω̇ = T_drive − T_brake − F_x r`, see below.
     /// 6. **Impulses**: `F_z n dt` at every contact point
-    ///    (`apply_impulse_at`), then, wheel by wheel on the updated chassis
-    ///    velocity, the friction impulse at the contact point: a held wheel
-    ///    (see "Static friction") gets its hold impulse. Otherwise:
-    ///    - longitudinal: `F_x dt` (tyre force at the updated spin `ω'`),
-    ///      clamped by the effective mass `m_x = 1/(m⁻¹ + (r×x)·I⁻¹(r×x))` so
-    ///      that it never reverses the slip `v_x − ω' r` it opposes (`v_x`
-    ///      at the frame start, the tyre force's evaluation point, shifted by
-    ///      the friction impulses of the wheels applied before; the normal
-    ///      impulses are excluded); then
-    ///      rolling resistance `C_rr F_z` against `v_x` on wheels with
-    ///      `ω' ≠ 0`, clamped the same way on `v_x` (it does not act on the
-    ///      spin). The longitudinal side stays semi-implicit through the wheel
-    ///      spin update below.
-    ///    - lateral, after all wheels' longitudinal impulses: implicit in the
-    ///      side-slip velocity, solved by projected Gauss-Seidel
-    ///      (`LATERAL_SWEEPS` = 8 sweeps over the free wheels). Per wheel and
-    ///      sweep one Newton step of `λ = F_y(tan α(λ)) dt` with
-    ///      `v_y(λ) = v_y + λ / m_y`: `Δλ = (F_y dt − λ) / (1 + c dt / (v̄ m_y))`,
-    ///      `c` = the small-slip cornering slope (brush `C_α`, Magic Formula
-    ///      `B_y C_y μ_y,s F_z`). Each wheel sees the side slip left by the
-    ///      others, so a stiff tyre at low speed neither overshoots nor loses
-    ///      force to a per-wheel clamp.
-    ///
-    ///    The stored `longitudinal_force` / `lateral_force` are the applied
-    ///    friction impulses divided by `dt`.
+    ///    (`apply_impulse_at`), then the friction impulses of all loaded
+    ///    wheels from one solve ("Friction solve"), then rolling resistance
+    ///    `C_rr F_z` against `v_x` on rolling free wheels, clamped by the
+    ///    effective mass `m_x = 1/(m⁻¹ + (r×x)·I⁻¹(r×x))` so that it never
+    ///    reverses `v_x` (it does not act on the spin). The stored
+    ///    `longitudinal_force` / `lateral_force` are the applied friction
+    ///    impulses divided by `dt`.
     /// 7. **Aerodynamics** at the centre of mass: `v_rel = v − w` (`w` is the
     ///    wind of `env.wind` when its shape contains the chassis position),
     ///    drag `−½ ρ C_dA |v_rel| v_rel`, lift `½ ρ C_lA |v_rel|²` along `up`.
     ///
-    /// # Wheel spin
+    /// # Wheel spin prediction
     ///
-    /// Semi-implicit in the tyre force: with `F_x(ω') ≈ F_x(ω) + C r/v̄ (ω' − ω)`
-    /// (`C = longitudinal_slope(F_z, μ_x,static)`, `v̄ = max(|v_x|, v_floor)`,
-    /// `v_x` frozen over the frame) the free spin is
-    /// `ω_f = ω + dt (T_drive − Σ F_x(ω) r) / I_eff`,
-    /// `I_eff = Σ I + dt Σ C r² / v̄`. `C` is the small-slip slope while the
-    /// tyre is in its linear range (`|C κ| ≤ μ_x,static F_z`); a saturated
-    /// tyre uses the secant slope `F_x(κ)/κ` instead (0 when not positive).
-    /// An explicit update of a saturated tyre is not used: its spin change
-    /// `dt F_x r / I` (≈ 10 rad/s per frame at 60 Hz for a passenger wheel)
-    /// flips the slip sign every frame and the wheel never returns to the
-    /// linear range. A massless wheel (`wheel_inertia ≤ 0`) always uses the
-    /// small-slip slope, i.e. it takes one Newton step per frame towards its
-    /// quasi-static balance (exact within the tyre's linear range).
-    /// Brakes are Coulomb: `ω' = ω_f` reduced in magnitude by
-    /// `dt T_brake / I_eff` without crossing zero, so a large enough torque
-    /// locks the wheel (`ω' = 0`) within one frame and never spins it
-    /// backwards. The tyre force applied to the chassis is evaluated at `ω'`.
-    /// A spin group whose `I_eff` is 0 (massless wheel off the ground) keeps
-    /// its spin.
+    /// Before the friction solve each spin group is advanced on a frozen
+    /// contact velocity, semi-implicit in the tyre force: with
+    /// `F_x(ω') ≈ F_x(ω) + C r/v̄ (ω' − ω)` (`C = longitudinal_slope(F_z,
+    /// μ_x,static)`, `v̄ = max(|v_x|, v_floor)`) the free spin is
+    /// `ω_f = ω + dt (T_drive − Σ F_x(ω) r) / I_eff`, `I_eff = Σ I + dt Σ C r² / v̄`.
+    /// `C` is the small-slip slope while the tyre is in its linear range
+    /// (`|C κ| ≤ μ_x,static F_z`); a saturated tyre uses the secant slope
+    /// `F_x(κ)/κ` instead (0 when not positive). An explicit update of a
+    /// saturated tyre is not used: its spin change `dt F_x r / I` (≈ 10 rad/s
+    /// per frame at 60 Hz for a passenger wheel) flips the slip sign every
+    /// frame and the wheel never returns to the linear range. Brakes are
+    /// Coulomb: `|ω_f|` is reduced by `dt T_brake / I_eff` without crossing
+    /// zero. This prediction decides which wheels are locked (`ω' = 0`,
+    /// static-friction candidates) and is the final spin of a massless wheel
+    /// (`wheel_inertia ≤ 0`, one Newton step towards its quasi-static balance)
+    /// and of a wheel without a friction solve (airborne, unloaded, held).
+    /// Every other spin group is re-solved inside the friction solve.
     ///
     /// Driven wheels receive `powertrain.axle_torque(throttle, mean driven ω)`:
     /// split equally with [`powertrain::Differential::Open`], or with
     /// [`powertrain::Differential::Locked`] the driven wheels form one spin
-    /// group (inertias, torques, slopes and brake torques summed, one shared
-    /// `ω`). Rear wheels (`z ≤ 0`) take the handbrake; pedal and handbrake
-    /// torques act only on wheels with `has_brake`.
+    /// group (inertias, torques and brake torques summed, one shared `ω`).
+    /// Rear wheels (`z ≤ 0`) take the handbrake; pedal and handbrake torques
+    /// act only on wheels with `has_brake`.
+    ///
+    /// # Friction solve
+    ///
+    /// Projected Gauss-Seidel over the loaded wheels (`FRICTION_SWEEPS`
+    /// sweeps, wheel index order), both tangential axes and the wheel spin
+    /// together, every quantity from the current chassis velocity:
+    ///
+    /// - **spin** of a re-solved group from its members' accumulated
+    ///   longitudinal impulses `λ_x`: `ω_f = ω₀ + (dt T_drive − Σ r λ_x) / Σ I`,
+    ///   then the Coulomb brake `|ω_f|` reduced by `dt T_brake / Σ I` without
+    ///   crossing 0; with ABS (below) the brake stops at the slip limit
+    /// - **kinetic wheel** (not held): `κ = (ω r − v_x)/v̄`, `tan α = v_y/v̄`
+    ///   from the current contact velocity, tyre force `F` of the model, one
+    ///   Newton step per axis on `λ = F dt`:
+    ///   `Δλ_x = (F_x dt − λ_x) / (1 + c_x dt (1/m_x + r²/I) / v̄)` (the
+    ///   `r²/I` term only while the spin is free, i.e. not held at 0 by the
+    ///   brake nor pinned by ABS; `c_x` = small-slip or secant slope as
+    ///   above), `Δλ_y = (F_y dt − λ_y) / (1 + c_y dt / (v̄ m_y))`
+    ///   (`c_y` = brush `C_α`, Magic Formula `B_y C_y μ_y,s F_z`); the
+    ///   accumulated `λ` is projected radially onto the static ellipse
+    ///   `(μ_x,s F_z dt, μ_y,s F_z dt)`
+    /// - **held wheel** (static candidate): `λ` is driven to the value that
+    ///   brings the contact to the anchor, `λ_d += m_d (e·d / dt − v_c·d)`,
+    ///   projected onto the same static ellipse and `|λ_x| ≤ T_brake dt / r`.
+    ///   `e` is the mean anchor offset of all held wheels (one rigid
+    ///   translation): per-wheel offsets differ by the pitch / roll the
+    ///   suspension allows, and holding every contact to its own anchor
+    ///   over-constrains the tangential motion so that the sweeps fight each
+    ///   other (measured: 1.7 mm drift in one frame on a slope)
     ///
     /// # Static friction
     ///
-    /// A loaded wheel whose updated spin is exactly `ω' = 0` (locked) is held
-    /// to an anchor `A` on the road (created at the current contact point `p`
-    /// when the wheel has none). The hold impulse per axis `d ∈ {x, y}` is
-    /// `j_d = m_d ((A − p)·d / dt − v_c·d)` (`v_c` = current contact-point
-    /// velocity), applied at `p`. The hold is created / kept while
-    /// `(j_x / (μ_x,s F_z dt))² + (j_y / (μ_y,s F_z dt))² ≤ 1` (static
-    /// coefficients of the contact's grip) and `|j_x| r ≤ T_brake dt` (the
-    /// brake can react the longitudinal part). It is released — `anchor =
-    /// None` and the tyre path above applies in the same frame, so the force
-    /// passes continuously to the sliding value — when the required impulse
-    /// leaves that limit (break-away: a slope with `tan θ > μ_s` slides and
-    /// then accelerates at `g (sin θ − μ_k cos θ)` with a locked brush tyre),
-    /// when the wheel loses contact or load, or when `ω' ≠ 0` (brake
-    /// released). Holding the position rather than the velocity is what keeps
-    /// a parked car in place: the gravity the world integrates after this
-    /// impulse moves the contact by `O(g dt²)` within a frame and the next
-    /// hold impulse returns it to `A`, so the offset stays bounded instead of
-    /// accumulating (a velocity-only clamp creeps by `≈ g sin θ dt² / 2` per
-    /// frame).
+    /// A locked loaded wheel (`ω' = 0` from the prediction, brake applied) is
+    /// a static-friction candidate when it was held in the previous frame, or
+    /// when its contact slides slower than the static budget can stop in this
+    /// frame: `(m_x v_x / (μ_x,s F_z dt))² + (m_y v_y / (μ_y,s F_z dt))² ≤ 1`.
+    /// A faster locked wheel is sliding and stays on the tyre model (so a
+    /// locked car decelerates at `μ_k g`, not `μ_s g`). The candidate set is
+    /// found by a fixed point within the frame: solve; every candidate whose
+    /// hold impulse was clipped by its limit breaks away, moves to the kinetic
+    /// set, the chassis is restored and the solve repeats; it stops when no
+    /// candidate breaks away (at most one pass per wheel plus one; a tie
+    /// therefore goes to kinetic). Surviving candidates keep / create their
+    /// anchor (`anchor = Some`), the others get `None`. Holding the position
+    /// rather than the velocity is what keeps a parked car in place: the
+    /// gravity the world integrates after the impulse moves the contact by
+    /// `O(g dt²)` within a frame and the next hold returns it, so the offset
+    /// stays bounded (a velocity-only clamp creeps by `≈ g sin θ dt² / 2` per
+    /// frame). A slope with `tan θ > μ_s` breaks away and then slides at
+    /// `g (sin θ − μ_k cos θ)`.
     ///
     /// # ABS
     ///
-    /// When `abs` is set and `forward_speed > min_speed`, a braked spin group
-    /// whose braked spin `ω'` gives some member `κ < −target_slip` has its
-    /// brake torque lowered (deterministically, in one step) to the value
-    /// that puts the group exactly at the slip limit on the linearised wheel
-    /// model: `ω_t = max_i v_x,i (1 − target_slip) / r_i`,
-    /// `T = clamp((ω_f − ω_t) I_eff / dt, 0, T_pedal)`; the members' stored
-    /// `brake_torque` is scaled by `T / T_pedal` and `abs_active` is set.
+    /// With `abs` set and `forward_speed > min_speed`, the brake of a
+    /// re-solved spin group stops lowering the spin at
+    /// `ω_t = max_i v_x,i (1 − target_slip) / r_i` (current contact velocity,
+    /// re-evaluated every sweep); below it the brake is released. The stored
+    /// `brake_torque` is the torque that realises the result,
+    /// `clamp((ω_f − ω) Σ I / dt, 0, T_pedal)` scaled per wheel, and
+    /// `abs_active` is set when the limit bound.
     ///
     /// # Degenerate inputs
     ///
@@ -958,8 +966,7 @@ impl DynamicVehicle {
         // A faster locked wheel is sliding and stays on the tyre model.
         let mut free: Vec<usize> = Vec::with_capacity(n);
         let mut hold: Vec<usize> = Vec::with_capacity(n);
-        for i in 0..n {
-            let s = sc[i];
+        for (i, &s) in sc.iter().enumerate() {
             let load = self.wheels[i].normal_load;
             let Some(grip) = s.grip.filter(|_| load > Fix128::ZERO) else {
                 self.wheels[i].anchor = None;
@@ -992,7 +999,7 @@ impl DynamicVehicle {
         let before = *chassis;
         let spin_groups = loop {
             let (groups_out, broken) =
-                self.friction_pgs(&groups, &free, &hold, &sc, &omega0, chassis, dt);
+                self.friction_pgs(&groups, (&free, &hold), &sc, &omega0, chassis, dt);
             if broken.is_empty() {
                 break groups_out;
             }
@@ -1072,20 +1079,20 @@ impl DynamicVehicle {
         };
     }
 
-    /// Kinetic friction of the free (unanchored, loaded) wheels: projected
+    /// Friction of the loaded wheels, `split = (kinetic, held)`: projected
     /// Gauss-Seidel over both axes, coupled to the wheel spin (see
     /// [`Self::update`], "Friction solve"). Returns the final spin of every
-    /// spin group that it re-solved.
+    /// spin group that it re-solved and the held wheels that broke away.
     fn friction_pgs(
         &mut self,
         groups: &[Vec<usize>],
-        free: &[usize],
-        hold: &[usize],
+        split: (&[usize], &[usize]),
         sc: &[WheelScratch],
         omega0: &[Fix128],
         chassis: &mut RigidBody,
         dt: Fix128,
     ) -> (Vec<(Vec<usize>, Fix128)>, Vec<usize>) {
+        let (free, hold) = split;
         let n = self.wheels.len();
         let floor = self.config.slip_velocity_floor;
         let inertia = self.config.wheel_inertia;
@@ -1099,6 +1106,18 @@ impl DynamicVehicle {
         let mut group_of = Vec::with_capacity(n);
         group_of.resize(n, usize::MAX);
         let mut solved: Vec<SpinGroup> = Vec::new();
+        // ABS is decided inside the solve (it follows the contact velocity
+        // of every sweep): eligible while the car moves forward faster than
+        // `min_speed`; it binds only when the braked spin would fall below
+        // the slip limit
+        let fwd = DynamicVehicle::forward_speed(chassis);
+        let target_slip = self
+            .config
+            .brakes
+            .abs
+            .filter(|a| fwd > a.min_speed)
+            .map(|a| a.target_slip);
+        let abs_eligible = target_slip.is_some();
         if !massless {
             for g in groups {
                 let any_free = g.iter().any(|&j| is_free[j]);
@@ -1112,7 +1131,7 @@ impl DynamicVehicle {
                     torque: Fix128::ZERO,
                     inertia: Fix128::ZERO,
                     brake: Fix128::ZERO,
-                    abs: self.wheels[g[0]].abs_active,
+                    abs: abs_eligible,
                 };
                 for &j in g {
                     sg.omega0 = sg.omega0 + omega0[j];
@@ -1125,7 +1144,6 @@ impl DynamicVehicle {
                 solved.push(sg);
             }
         }
-        let target_slip = self.config.brakes.abs.map(|a| a.target_slip);
 
         let mut lam_x = Vec::with_capacity(n);
         lam_x.resize(n, Fix128::ZERO);
@@ -1192,7 +1210,7 @@ impl DynamicVehicle {
                 let (omega, spin_free, group_inertia) = match group_of[i] {
                     usize::MAX => (self.wheels[i].omega, false, Fix128::ZERO),
                     gi => {
-                        let (w, _, free_spin) =
+                        let (w, _, free_spin, _) =
                             solved[gi].spin(&lam_x, self, chassis, sc, dt, target_slip);
                         (w, free_spin, solved[gi].inertia)
                     }
@@ -1252,8 +1270,9 @@ impl DynamicVehicle {
         let broken: Vec<usize> = hold.iter().copied().filter(|&i| clipped[i]).collect();
         let mut out = Vec::with_capacity(solved.len());
         for sg in &solved {
-            let (w, applied, _) = sg.spin(&lam_x, self, chassis, sc, dt, target_slip);
+            let (w, applied, _, abs_bound) = sg.spin(&lam_x, self, chassis, sc, dt, target_slip);
             for &j in &sg.members {
+                self.wheels[j].abs_active = abs_bound;
                 self.wheels[j].brake_torque = if sg.brake.is_zero() {
                     Fix128::ZERO
                 } else {
