@@ -42,6 +42,10 @@ step "README sync (README.md / README_JP.md / docs/MODULES.md = Cargo.toml + src
 python3 scripts/test_readme_sync.py
 python3 scripts/readme_sync.py --check
 
+step "docs lint (public vocabulary / CHANGELOG structure)"
+python3 scripts/test_docs_lint.py
+python3 scripts/docs_lint.py --check
+
 step "SCIP reach analysis oracle (docs/integration-status.md の解析器)"
 python3 scripts/test_scip_reach.py
 python3 scripts/test_audit_refs.py
