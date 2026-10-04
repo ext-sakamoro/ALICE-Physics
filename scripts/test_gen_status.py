@@ -225,5 +225,90 @@ class OracleClassify(unittest.TestCase):
         self.assertIn("**Total** | **4**", a)
 
 
+class OracleAuditLinks(unittest.TestCase):
+    """`// PIN: <id>`, `root: external <crate> <version>` and id-less known defects."""
+
+    BODY = """
+        #[test]
+        #[ignore = "known defect: AUD-A-S1W1-001: total wraps"]
+        fn defect_a() {}
+
+        #[test]
+        #[ignore = "known defect: AUD-A-S1W1-002: gaps respaced; root: external alice-db 0.2.0-beta.3 (uniform step)"]
+        fn defect_b() {}
+
+        #[test]
+        #[ignore = "known defect: flags never read"]
+        fn defect_without_id() {}
+
+        /// pins today's wrap on purpose
+        // PIN: AUD-A-S1W1-001
+        #[test]
+        fn pin_ok() {}
+        """
+
+    def parsed(self, body):
+        return [{"test_name": t["name"], "file": t["file"], "ignore_reason": t["ignore_reason"], "pins": t["pins"]}
+                for t in oracle.extract_test_metadata(fixture_tests(body))]
+
+    def links(self, body, lock=None):
+        return oracle.audit_links(self.parsed(body), lock if lock is not None else {"alice-db": {"0.2.0-beta.3"}})
+
+    def test_pin_is_read_from_the_comment_before_the_test(self):
+        t = {x["test_name"]: x for x in self.parsed(self.BODY)}
+        self.assertEqual(t["pin_ok"]["pins"], ["AUD-A-S1W1-001"])
+        self.assertEqual(t["defect_a"]["pins"], [])
+
+    def test_a_valid_pin_external_and_id_less_defect_are_reported_without_problems(self):
+        pins, ext, no_id, problems = self.links(self.BODY)
+        self.assertEqual([(i, t["test_name"], d["test_name"]) for i, t, d in pins], [("AUD-A-S1W1-001", "pin_ok", "defect_a")])
+        self.assertEqual([(i, c, v) for i, _t, c, v, _l in ext], [("AUD-A-S1W1-002", "alice-db", "0.2.0-beta.3")])
+        self.assertEqual([t["test_name"] for t in no_id], ["defect_without_id"])
+        self.assertEqual(problems, [])
+
+    def test_a_pin_on_a_fixed_defect_is_stale(self):
+        body = self.BODY.replace("// PIN: AUD-A-S1W1-001", "// PIN: AUD-A-S1W1-009")
+        problems = self.links(body)[3]
+        self.assertTrue(any("AUD-A-S1W1-009" in p and "stale" in p for p in problems), problems)
+
+    def test_a_pin_without_an_id_is_a_problem(self):
+        problems = self.links(self.BODY.replace("// PIN: AUD-A-S1W1-001", "// PIN: see the audit"))[3]
+        self.assertTrue(any("PIN without a defect id" in p for p in problems), problems)
+
+    def test_external_crate_missing_from_cargo_lock_is_a_problem(self):
+        problems = self.links(self.BODY, lock={})[3]
+        self.assertTrue(any("alice-db" in p and "Cargo.lock" in p for p in problems), problems)
+
+    def test_report_marks_a_version_change_for_re_check(self):
+        cat = {"implemented": [], "partial": [], "pending": []}
+        for t in self.parsed(self.BODY):
+            (cat["pending"] if t["ignore_reason"] else cat["implemented"]).append(t)
+        same = oracle.generate_markdown_report(cat, {"alice-db": {"0.2.0-beta.3"}})
+        moved = oracle.generate_markdown_report(cat, {"alice-db": {"0.2.0-beta.4"}})
+        self.assertIn("| 0.2.0-beta.3 | 0.2.0-beta.3 | ✅ same |", same)
+        self.assertIn("| 0.2.0-beta.3 | 0.2.0-beta.4 | ⚠️ re-check |", moved)
+        self.assertIn("| AUD-A-S1W1-001 | `pin_ok` (t.rs) | `defect_a` (t.rs) |", same)
+        self.assertIn("## ⚠️ Known defects without an id (1)", same)
+
+    def test_cargo_lock_versions_are_parsed(self):
+        root = Path(tempfile.mkdtemp())
+        (root / "Cargo.lock").write_text('[[package]]\nname = "alice-db"\nversion = "0.2.0-beta.3"\nsource = "x"\n\n'
+                                          '[[package]]\nname = "rayon"\nversion = "1.10.0"\n', encoding="utf-8")
+        v = oracle.cargo_lock_versions(root)
+        self.assertEqual(v["alice-db"], {"0.2.0-beta.3"})
+        self.assertEqual(v["rayon"], {"1.10.0"})
+
+    def test_check_mode_fails_on_a_stale_pin_and_passes_on_the_real_tree(self):
+        self.assertEqual(oracle.main(["--check"]), 0)  # this repository: no problems
+        body = self.BODY.replace("// PIN: AUD-A-S1W1-001", "// PIN: AUD-A-S1W1-009")
+        tests_dir = fixture_tests(body).parent
+        saved = oracle.TESTS_DIR
+        try:
+            oracle.TESTS_DIR = tests_dir
+            self.assertEqual(oracle.main(["--check"]), 1)
+        finally:
+            oracle.TESTS_DIR = saved
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

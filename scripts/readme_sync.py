@@ -8,6 +8,7 @@ docs do not follow fails CI instead of drifting:
 
   * features  the table after `<!-- readme-sync: features -->` lists exactly
               the `[features]` of Cargo.toml (minus `default`), in each README
+              and in the crate-level doc of src/lib.rs (docs.rs shows that one)
   * msrv      every line carrying `<!-- readme-sync: msrv -->` states
               `rust-version` as `**X.Y**`
   * version   any `alice-physics = "X"` / `version = "X"` dependency line is
@@ -79,7 +80,7 @@ def table_after(text: str, marker: str) -> list[str] | None:
 def first_cell_names(rows: list[str]) -> list[str]:
     names = []
     for r in rows:
-        m = re.match(r"\|\s*`([^`]+)`\s*\|", r)
+        m = re.match(r"\|\s*`([^`]+)`[^|]*\|", r)  # `std` or `std` (default)
         if m:
             names.append(m.group(1))
     return names
@@ -136,8 +137,10 @@ def check(root: str) -> tuple[list[str], dict[str, int]]:
     # features
     want = cargo_features(toml)
     n = 0
-    for rel in READMES:
-        rows = table_after(docs.get(rel, ""), "<!-- readme-sync: features -->")
+    tables = {rel: docs.get(rel, "") for rel in READMES}
+    tables["src/lib.rs"] = lib_doc(lib)
+    for rel, text in tables.items():
+        rows = table_after(text, "<!-- readme-sync: features -->")
         if rows is None:
             errors.append(f"{rel}: no `<!-- readme-sync: features -->` table")
             continue

@@ -32,6 +32,10 @@ python3 scripts/readme_sync.py --check
 
 step "SCIP reach analysis oracle (docs/integration-status.md の解析器)"
 python3 scripts/test_scip_reach.py
+python3 scripts/test_audit_refs.py
+
+step "oracle ledger links (PIN / root external)"
+python3 scripts/gen-oracle-status.py --check
 
 step "wiring-guard (oracle + 新規の未配線 / 理由の無い dead_code が無い)"
 python3 scripts/test_wiring_guard.py
@@ -96,5 +100,17 @@ cargo test --lib --features "ffi" "ffi::"
 
 step "cargo test --lib (neural / replay / analytics via crates.io siblings)"
 cargo test --lib --features "neural,replay,analytics"
+
+# CI job `scip`: rust-analyzer index (about a minute), known-defect symbol
+# resolution, and the L0 ratchet (scripts/integration-baseline.txt)
+step "SCIP checks (audit_refs --check, scip_reach --check-baseline)"
+if command -v rust-analyzer >/dev/null && rust-analyzer --version >/dev/null 2>&1; then
+  scripts/scip_index.sh
+  python3 scripts/audit_refs.py --check
+  python3 scripts/scip_reach.py --check-baseline
+else
+  echo "rust-analyzer not installed: rustup component add rust-analyzer" >&2
+  exit 1
+fi
 
 echo; echo "preflight OK"

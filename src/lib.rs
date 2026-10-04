@@ -21,6 +21,7 @@
 //!
 //! # Feature Flags
 //!
+//! <!-- readme-sync: features -->
 //! | Feature | Description |
 //! |---------|-------------|
 //! | `std` (default) | Standard library support. Disable for `no_std` (requires `alloc`). |
@@ -32,6 +33,7 @@
 //! | `ffi` | C FFI for Unity/UE5/game engine integration. |
 //! | `wasm` | WebAssembly bindings via wasm-bindgen. |
 //! | `analytics` | ALICE-Analytics simulation profiling (`DDSketch`, `HyperLogLog`). |
+//! | `gpu-solver-bridge` | `GpuSolverBridge` trait for external GPU solver backends. No cost when off. |
 //!
 //! # Example
 //!

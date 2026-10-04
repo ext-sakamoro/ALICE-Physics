@@ -160,7 +160,7 @@ fn uniformly_strided_steps_round_trip() {
 /// A series with a gap returns exactly the recorded `(step, value)` pairs
 /// and nothing for the unrecorded steps.
 #[test]
-#[ignore = "known defect: AUD-A-S5W1-001: non-contiguous steps are re-spaced uniformly by the storage layer; a query for an unrecorded step is non-empty and recorded steps come back at wrong indices, with no error"]
+#[ignore = "known defect: AUD-A-S5W1-001: non-contiguous steps are re-spaced uniformly by the storage layer; a query for an unrecorded step is non-empty and recorded steps come back at wrong indices, with no error; root: external alice-db 0.2.0-beta.3 (Segment::query_range rebuilds timestamps at a uniform step from start_time / end_time / point_count)"]
 fn gapped_series_returns_exactly_the_recorded_pairs() {
     let dir = tempfile::tempdir().unwrap();
     let sink = PhysicsMetricsSink::open(dir.path()).unwrap();

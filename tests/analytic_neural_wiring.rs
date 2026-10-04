@@ -448,6 +448,7 @@ fn deterministic_network_forward_matches_hand_derived_layers() {
     assert_eq!(out, [Fix128::ONE, Fix128::NEG_ONE]);
 }
 
+// PIN: AUD-A-S3W2-007
 #[test]
 fn deterministic_network_zero_layers_constructs_but_forward_panics() {
     let mut net = DeterministicNetwork::new(vec![], vec![]);

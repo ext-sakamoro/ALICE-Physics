@@ -34,6 +34,12 @@ ffi = ["std"]
 
 LIB = """//! Crate doc.
 //!
+//! <!-- readme-sync: features -->
+//! | Feature | Description |
+//! |---------|-------------|
+//! | `std` (default) | std |
+//! | `ffi` | ffi |
+//!
 //! ```rust
 //! let x = 1;
 //! assert_eq!(x, 1);
@@ -109,7 +115,7 @@ class Checks(unittest.TestCase):
     def test_clean_crate_passes(self):
         errs, counts = rs.check(crate())
         self.assertEqual(errs, [])
-        self.assertEqual(counts["features"], 4)
+        self.assertEqual(counts["features"], 6)
         self.assertEqual(counts["modules"], 2)
 
     def test_feature_added_to_cargo_but_not_to_readme(self):
@@ -119,6 +125,14 @@ class Checks(unittest.TestCase):
     def test_feature_removed_from_cargo_but_still_in_readme(self):
         e = errors({"Cargo.toml": CARGO.replace('ffi = ["std"]\n', "")})
         self.assertTrue(any("extra ['ffi']" in x for x in e), e)
+
+    def test_feature_missing_from_the_lib_rs_doc_table(self):
+        e = errors({"src/lib.rs": LIB.replace("//! | `ffi` | ffi |\n", "")})
+        self.assertTrue(any(x.startswith("src/lib.rs: features table") and "missing ['ffi']" in x for x in e), e)
+
+    def test_lib_rs_first_cell_may_carry_a_note(self):
+        # `std` (default): the feature name is the backticked part of the first cell
+        self.assertEqual(errors(), [])
 
     def test_features_table_marker_removed(self):
         r = README.format(example=EXAMPLE).replace("<!-- readme-sync: features -->\n", "")

@@ -32,6 +32,16 @@ were introduced during that release window.
 - README の使用例は `src/lib.rs` の crate レベル doctest と同一にした (`cargo test` でコンパイル・実行される)
 - README に「Reset, observation and rollback」節 (日本語版は「探索・計画・世界モデルのための決定論的な世界」) を追加した `reset_world` / `observe_body(s)` / `serialize_state`・`deserialize_state` と population fingerprint / `overflow_detected` / `SimulationChecksum` を表にし、保存状態が剛体に限られることを明記
 
+### Added — 既知欠陥を直す前の確認を検査器にする
+
+- `scripts/audit_refs.py`: 既知欠陥の理由文 (`#[ignore = "known defect: …"]`) に出てくる記号 (`a::b` / `name()` / バッククォートの識別子) を、SCIP 索引で定義位置に解決する マクロ生成のメソッドと型別名はソースの `fn` 定義で補う `audit_refs.py <欠陥 ID または test 名>` で各記号の `file:line` を出し、`--check` は解決できない記号が 1 件でもあれば失敗する (現在 276 件中、記号 124 個がすべて解決)
+- `// PIN: <欠陥 ID>`: 既知欠陥の現挙動を意図的に固定している test の印 `docs/oracle-status.md` に「直すと赤くなる test」の対応表を出し、`gen-oracle-status.py --check` は未解決の欠陥を指さない PIN と ID のない PIN で失敗する 3 件に付与 (`count_min_degenerate_inputs` / `deterministic_network_zero_layers_constructs_but_forward_panics` / `entry_record_overflow_panics_in_debug_and_wraps_in_release`)
+- `root: external <crate> <version>`: 根本原因が依存 crate にある既知欠陥の印 台帳は Cargo.lock の版と比べ、食い違えば再確認と表示する `AUD-A-S5W1-001` (alice-db 0.2.0-beta.3 が非連続の時刻を等間隔に作り直す) に付与
+- 台帳に ID のない既知欠陥の一覧を追加 (現在 2 件)
+- `scripts/scip_reach.py --check-baseline`: テスト以外から到達されない公開 item (L0、現在 231 件) を `scripts/integration-baseline.txt` に記録し、新しい L0 と解消済みの行の残存で失敗する
+- CI に `scip` job を追加 (索引の生成、記号の解決、L0 の ratchet) 合成索引の試験と `gen-oracle-status.py --check` は test matrix (5 OS) と preflight に追加
+- `readme_sync.py` が `src/lib.rs` の Feature Flags 表も突き合わせるようにし、抜けていた `gpu-solver-bridge` の行を追加
+
 ### Added — 解決済み参照による到達台帳 (`docs/integration-status.md`)
 
 - `scripts/scip_index.sh` が rust-analyzer の SCIP 索引を 2 回作る (`wasm` 以外の全 feature と `std,wasm`、feature-gated module を落とさないため) 解析対象は `x86_64-unknown-linux-gnu` に固定する (rust-analyzer は解析対象の `target_arch` で cfg を評価するので、固定しないと arm64 の host では x86_64 専用の SIMD 4 item が落ち、台帳が生成した host に依存した)
