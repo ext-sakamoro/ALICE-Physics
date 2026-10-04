@@ -11273,8 +11273,11 @@ pub fn alice_physics::solver::PhysicsWorld::set_broadphase(&mut self, alice_phys
 pub fn alice_physics::solver::PhysicsWorld::set_gpu_solver_bridge(&mut self, core::option::Option<alloc::boxed::Box<(dyn alice_physics::gpu_bridge::GpuSolverBridge + core::marker::Send + core::marker::Sync)>>)
 pub fn alice_physics::solver::PhysicsWorld::set_sdf_collision_radius(&mut self, alice_physics::math::Fix128)
 pub fn alice_physics::solver::PhysicsWorld::set_sleep_config(&mut self, alice_physics::sleeping::SleepConfig)
+pub fn alice_physics::solver::PhysicsWorld::set_sleep_skip(&mut self, bool)
+pub const fn alice_physics::solver::PhysicsWorld::sleep_skip(&self) -> bool
 pub fn alice_physics::solver::PhysicsWorld::solve_contact_constraints_with_bridge<B: alice_physics::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B)
 pub fn alice_physics::solver::PhysicsWorld::solve_joints_with_bridge<B: alice_physics::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B, alice_physics::math::Fix128)
+pub const fn alice_physics::solver::PhysicsWorld::stage_work(&self) -> alice_physics::solver::StageWork
 pub fn alice_physics::solver::PhysicsWorld::static_collider_count(&self) -> usize
 pub fn alice_physics::solver::PhysicsWorld::step(&mut self, alice_physics::math::Fix128)
 pub fn alice_physics::solver::PhysicsWorld::step_n(&mut self, usize, alice_physics::math::Fix128)
@@ -12235,6 +12238,39 @@ impl core::marker::Unpin for alice_physics::joint::SpringJoint
 impl core::marker::UnsafeUnpin for alice_physics::joint::SpringJoint
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::joint::SpringJoint
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::joint::SpringJoint
+#[non_exhaustive] pub struct alice_physics::prelude::StageWork
+pub alice_physics::prelude::StageWork::broadphase_pairs: u64
+pub alice_physics::prelude::StageWork::broadphase_primitives: u64
+pub alice_physics::prelude::StageWork::damping_bodies: u64
+pub alice_physics::prelude::StageWork::force_field_bodies: u64
+pub alice_physics::prelude::StageWork::integrated: u64
+pub alice_physics::prelude::StageWork::parked: u64
+pub alice_physics::prelude::StageWork::parked_sleep_updates: u64
+pub alice_physics::prelude::StageWork::resolution_bodies: u64
+pub alice_physics::prelude::StageWork::sleep_evaluated: u64
+pub alice_physics::prelude::StageWork::sleep_scanned: u64
+pub alice_physics::prelude::StageWork::tree_inserts: u64
+pub alice_physics::prelude::StageWork::tree_removes: u64
+pub alice_physics::prelude::StageWork::unparked: u64
+pub alice_physics::prelude::StageWork::velocity_bodies: u64
+impl core::clone::Clone for alice_physics::solver::StageWork
+pub fn alice_physics::solver::StageWork::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::solver::StageWork
+impl core::cmp::PartialEq for alice_physics::solver::StageWork
+pub fn alice_physics::solver::StageWork::eq(&self, &Self) -> bool
+impl core::default::Default for alice_physics::solver::StageWork
+pub fn alice_physics::solver::StageWork::default() -> Self
+impl core::fmt::Debug for alice_physics::solver::StageWork
+pub fn alice_physics::solver::StageWork::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::solver::StageWork
+impl core::marker::StructuralPartialEq for alice_physics::solver::StageWork
+impl core::marker::Freeze for alice_physics::solver::StageWork
+impl core::marker::Send for alice_physics::solver::StageWork
+impl core::marker::Sync for alice_physics::solver::StageWork
+impl core::marker::Unpin for alice_physics::solver::StageWork
+impl core::marker::UnsafeUnpin for alice_physics::solver::StageWork
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::solver::StageWork
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::solver::StageWork
 pub struct alice_physics::prelude::StepStats
 pub alice_physics::prelude::StepStats::active_bodies: u32
 pub alice_physics::prelude::StepStats::active_contacts: u32
@@ -15799,8 +15835,11 @@ pub fn alice_physics::solver::PhysicsWorld::set_broadphase(&mut self, alice_phys
 pub fn alice_physics::solver::PhysicsWorld::set_gpu_solver_bridge(&mut self, core::option::Option<alloc::boxed::Box<(dyn alice_physics::gpu_bridge::GpuSolverBridge + core::marker::Send + core::marker::Sync)>>)
 pub fn alice_physics::solver::PhysicsWorld::set_sdf_collision_radius(&mut self, alice_physics::math::Fix128)
 pub fn alice_physics::solver::PhysicsWorld::set_sleep_config(&mut self, alice_physics::sleeping::SleepConfig)
+pub fn alice_physics::solver::PhysicsWorld::set_sleep_skip(&mut self, bool)
+pub const fn alice_physics::solver::PhysicsWorld::sleep_skip(&self) -> bool
 pub fn alice_physics::solver::PhysicsWorld::solve_contact_constraints_with_bridge<B: alice_physics::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B)
 pub fn alice_physics::solver::PhysicsWorld::solve_joints_with_bridge<B: alice_physics::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B, alice_physics::math::Fix128)
+pub const fn alice_physics::solver::PhysicsWorld::stage_work(&self) -> alice_physics::solver::StageWork
 pub fn alice_physics::solver::PhysicsWorld::static_collider_count(&self) -> usize
 pub fn alice_physics::solver::PhysicsWorld::step(&mut self, alice_physics::math::Fix128)
 pub fn alice_physics::solver::PhysicsWorld::step_n(&mut self, usize, alice_physics::math::Fix128)
@@ -15921,6 +15960,39 @@ impl core::marker::Unpin for alice_physics::solver::SolverConfig
 impl core::marker::UnsafeUnpin for alice_physics::solver::SolverConfig
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::solver::SolverConfig
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::solver::SolverConfig
+#[non_exhaustive] pub struct alice_physics::solver::StageWork
+pub alice_physics::solver::StageWork::broadphase_pairs: u64
+pub alice_physics::solver::StageWork::broadphase_primitives: u64
+pub alice_physics::solver::StageWork::damping_bodies: u64
+pub alice_physics::solver::StageWork::force_field_bodies: u64
+pub alice_physics::solver::StageWork::integrated: u64
+pub alice_physics::solver::StageWork::parked: u64
+pub alice_physics::solver::StageWork::parked_sleep_updates: u64
+pub alice_physics::solver::StageWork::resolution_bodies: u64
+pub alice_physics::solver::StageWork::sleep_evaluated: u64
+pub alice_physics::solver::StageWork::sleep_scanned: u64
+pub alice_physics::solver::StageWork::tree_inserts: u64
+pub alice_physics::solver::StageWork::tree_removes: u64
+pub alice_physics::solver::StageWork::unparked: u64
+pub alice_physics::solver::StageWork::velocity_bodies: u64
+impl core::clone::Clone for alice_physics::solver::StageWork
+pub fn alice_physics::solver::StageWork::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::solver::StageWork
+impl core::cmp::PartialEq for alice_physics::solver::StageWork
+pub fn alice_physics::solver::StageWork::eq(&self, &Self) -> bool
+impl core::default::Default for alice_physics::solver::StageWork
+pub fn alice_physics::solver::StageWork::default() -> Self
+impl core::fmt::Debug for alice_physics::solver::StageWork
+pub fn alice_physics::solver::StageWork::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::solver::StageWork
+impl core::marker::StructuralPartialEq for alice_physics::solver::StageWork
+impl core::marker::Freeze for alice_physics::solver::StageWork
+impl core::marker::Send for alice_physics::solver::StageWork
+impl core::marker::Sync for alice_physics::solver::StageWork
+impl core::marker::Unpin for alice_physics::solver::StageWork
+impl core::marker::UnsafeUnpin for alice_physics::solver::StageWork
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::solver::StageWork
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::solver::StageWork
 #[non_exhaustive] pub struct alice_physics::solver::TgsCacheStats
 pub alice_physics::solver::TgsCacheStats::hits: u64
 pub alice_physics::solver::TgsCacheStats::misses: u64
@@ -21298,8 +21370,11 @@ pub fn alice_physics::solver::PhysicsWorld::set_broadphase(&mut self, alice_phys
 pub fn alice_physics::solver::PhysicsWorld::set_gpu_solver_bridge(&mut self, core::option::Option<alloc::boxed::Box<(dyn alice_physics::gpu_bridge::GpuSolverBridge + core::marker::Send + core::marker::Sync)>>)
 pub fn alice_physics::solver::PhysicsWorld::set_sdf_collision_radius(&mut self, alice_physics::math::Fix128)
 pub fn alice_physics::solver::PhysicsWorld::set_sleep_config(&mut self, alice_physics::sleeping::SleepConfig)
+pub fn alice_physics::solver::PhysicsWorld::set_sleep_skip(&mut self, bool)
+pub const fn alice_physics::solver::PhysicsWorld::sleep_skip(&self) -> bool
 pub fn alice_physics::solver::PhysicsWorld::solve_contact_constraints_with_bridge<B: alice_physics::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B)
 pub fn alice_physics::solver::PhysicsWorld::solve_joints_with_bridge<B: alice_physics::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B, alice_physics::math::Fix128)
+pub const fn alice_physics::solver::PhysicsWorld::stage_work(&self) -> alice_physics::solver::StageWork
 pub fn alice_physics::solver::PhysicsWorld::static_collider_count(&self) -> usize
 pub fn alice_physics::solver::PhysicsWorld::step(&mut self, alice_physics::math::Fix128)
 pub fn alice_physics::solver::PhysicsWorld::step_n(&mut self, usize, alice_physics::math::Fix128)
@@ -22314,6 +22389,39 @@ impl core::marker::Unpin for alice_physics::joint::SpringJoint
 impl core::marker::UnsafeUnpin for alice_physics::joint::SpringJoint
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::joint::SpringJoint
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::joint::SpringJoint
+#[non_exhaustive] pub struct alice_physics::StageWork
+pub alice_physics::StageWork::broadphase_pairs: u64
+pub alice_physics::StageWork::broadphase_primitives: u64
+pub alice_physics::StageWork::damping_bodies: u64
+pub alice_physics::StageWork::force_field_bodies: u64
+pub alice_physics::StageWork::integrated: u64
+pub alice_physics::StageWork::parked: u64
+pub alice_physics::StageWork::parked_sleep_updates: u64
+pub alice_physics::StageWork::resolution_bodies: u64
+pub alice_physics::StageWork::sleep_evaluated: u64
+pub alice_physics::StageWork::sleep_scanned: u64
+pub alice_physics::StageWork::tree_inserts: u64
+pub alice_physics::StageWork::tree_removes: u64
+pub alice_physics::StageWork::unparked: u64
+pub alice_physics::StageWork::velocity_bodies: u64
+impl core::clone::Clone for alice_physics::solver::StageWork
+pub fn alice_physics::solver::StageWork::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::solver::StageWork
+impl core::cmp::PartialEq for alice_physics::solver::StageWork
+pub fn alice_physics::solver::StageWork::eq(&self, &Self) -> bool
+impl core::default::Default for alice_physics::solver::StageWork
+pub fn alice_physics::solver::StageWork::default() -> Self
+impl core::fmt::Debug for alice_physics::solver::StageWork
+pub fn alice_physics::solver::StageWork::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::solver::StageWork
+impl core::marker::StructuralPartialEq for alice_physics::solver::StageWork
+impl core::marker::Freeze for alice_physics::solver::StageWork
+impl core::marker::Send for alice_physics::solver::StageWork
+impl core::marker::Sync for alice_physics::solver::StageWork
+impl core::marker::Unpin for alice_physics::solver::StageWork
+impl core::marker::UnsafeUnpin for alice_physics::solver::StageWork
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::solver::StageWork
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::solver::StageWork
 pub struct alice_physics::StepStats
 pub alice_physics::StepStats::active_bodies: u32
 pub alice_physics::StepStats::active_contacts: u32

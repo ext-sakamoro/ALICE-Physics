@@ -97,6 +97,8 @@ were introduced during that release window.
 - `vehicle_dynamics::powertrain::{Powertrain, TorqueCurve, Differential}`: トルク曲線・変速・エンジンブレーキ・差動 `Powertrain::from_engine_config` は `EngineConfig` の `max_rpm` / `engine_brake` / `num_gears` を読む
 - `vehicle_dynamics::scenario::{Scenario, Recording, StoppingDistanceMeter, time_to_collision, time_headway}`: 複数車両の実行、TTC と車間時間、停止距離計、`Fix128` の raw 値による無損失 replay (版付きバイト列)
 - `spherical_terrain::{SphericalHeightField, SurfaceHeight, central_gravity}` / `sdf_collider::SdfUnion` / `SdfCharacter::{apply_central_gravity, step_on_sphere}`: 球面世界の地面を方向ごとの高さで与える距離場 (傾きの上限を宣言すると基準球の外で 1-Lipschitz)、2 つの距離場の和、中心向きの一定重力、大円に沿う移動 (弧長 = 速さ × 時間、歩ける傾斜では接触を up 方向に解くので重力で斜面を下らず、skin の厚みの中で上下に揺れない) example `spherical_planet_walk`
+- `PhysicsWorld::{set_sleep_skip, sleep_skip, stage_work}` / `StageWork`: `step` の sleep skip の切り替えと、直前の step の段階ごとの作業量 (積分した body 数 / broad-phase の primitive と候補 pair 数 / sleep 判定数 など)
+- `benches/world_scale.rs`: 10k / 100k body、休止率 0 / 90 / 99 %、sleep skip 有効 / 無効の 1 step の時間
 
 ### Changed
 
@@ -169,6 +171,7 @@ were introduced during that release window.
 - **Behavior change:** `QuatFix::from_axis_angle` は零軸に対して単位元を返し、`Portal` / `Torus` / `DestructionShape` に与えた非単位の回転は、回す対象を拡大せず正規化した回転として適用される (AUD-A-S1W5-023 / AUD-A-S4W1-004 / AUD-A-S5W3-004 / AUD-A-S5W3-014)
 - **Behavior change:** `linear_elastic_fem` の solve は、形状関数の勾配 × 弾性率が `Fix128` の範囲を超える極端に細い要素を、誤った `UnderConstrained` ではなく `FemError::DegenerateElement` として報告する (AUD-A-S1W3-004)
 - **Behavior change:** `RandomizedResponse::new(epsilon)` は要求した ε の privacy loss を持つ (真実を答える確率は `1 - 2/(e^ε + 1)`、従来の `e^ε/(1 + e^ε)` より弱かった)、`with_probability` は [0, 1] の任意の確率を受け付け、`PrivacyBudget::try_spend` は負または NaN の ε を拒否し、`XorShift64::from_entropy` は時計だけを seed にしない (AUD-A-S4W3-020 / AUD-A-S4W3-021 / AUD-A-S4W3-022 / AUD-A-S4W3-029)
+- `step` (XPBD、`Broadphase::Bvh`) は休止中で静止し joint / distance 拘束に参照されない body を、積分・速度導出・static / SDF collider 解決・force field・damping・sleep 判定から外し、broad-phase は起きている body だけで BVH を組んで休止中の body は永続 tree から query する 結果は従来と bit 一致 (休止 99 % の 100k body で 1 step 1.15 s → 10.8 ms、arm64 / 10 コア) 休止中の body 1 個あたり step ごとに約 30 ns の検査が残る
 
 ### Deprecated
 
