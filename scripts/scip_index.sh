@@ -7,7 +7,7 @@
 # (`compile_error!` in src/lib.rs), so the crate is indexed twice: once with
 # every feature except `wasm`, once with `std,wasm`. scip_reach.py merges both.
 #
-# Both runs analyse one fixed target, x86_64-unknown-linux-gnu (the CI runner):
+# All runs analyse one fixed target, x86_64-unknown-linux-gnu (the CI runner):
 # rust-analyzer evaluates `cfg(target_arch = ...)` for the target it analyses,
 # so without a fixed target an arm64 host drops the x86_64-only SIMD items and
 # the ledger depends on where it was generated.
@@ -35,4 +35,13 @@ for set in native wasm; do
   rust-analyzer scip . --config-path "$out/$set.json" --output "$out/$set.scip"
   [ -s "$out/$set.scip" ] || { echo "scip_index: $out/$set.scip is empty" >&2; exit 1; }
 done
-echo "scip_index: wrote $out/native.scip $out/wasm.scip"
+
+# fuzz/ is its own crate (path dependency on this one), so the indexes above do
+# not contain it although scip_reach.py counts fuzz targets as callers. Its
+# references to this crate carry the same symbols as the crate's own index.
+# Default fuzz features (parallel), same fixed target. About 25 s.
+printf '%s\n' '{"cargo":{"target":"x86_64-unknown-linux-gnu"}}' > "$out/fuzz.json"
+rm -f "$out/fuzz.scip"
+rust-analyzer scip fuzz --config-path "$out/fuzz.json" --output "$out/fuzz.scip"
+[ -s "$out/fuzz.scip" ] || { echo "scip_index: $out/fuzz.scip is empty" >&2; exit 1; }
+echo "scip_index: wrote $out/native.scip $out/wasm.scip $out/fuzz.scip"
