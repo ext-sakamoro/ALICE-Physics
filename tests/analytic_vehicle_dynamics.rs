@@ -222,7 +222,6 @@ impl<R: RoadSurface> Sim<R> {
             condition: &self.cond,
             wind: self.wind.as_ref(),
             time: self.t,
-            gravity: self.world.config.gravity,
         };
         self.veh
             .update(&mut self.world.bodies[self.car], &self.road, &env, dt());
@@ -823,8 +822,8 @@ fn slope_sim(theta: f64) -> (Sim<InclinedPlane>, Vec3Fix) {
 /// contact, and within one frame the uncorrected downhill acceleration
 /// `g sin θ` can move the CG by at most `g sin θ dt²` before the anchor
 /// correction of the next frame (`0.447 · 10 / 3600 = 1.24e-3 m` at
-/// `tan θ = 0.5`). To be checked against the measured anchor residual at
-/// integration.
+/// `tan θ = 0.5`). Measured with the position-anchor implementation at
+/// integration: 2.4e-9 m over 600 frames (bound kept as the derived one).
 fn slope_hold_drift_bound(g: f64, theta: f64) -> f64 {
     g * theta.sin() * DT * DT
 }
@@ -1102,9 +1101,20 @@ fn braking_pitches_nose_down_through_contact_points() {
 // ---------------------------------------------------------------------------
 
 const WIND: f64 = 10.0;
-const CD: f64 = 1.0;
-const AREA: f64 = 2.0;
+/// Vehicle drag area `C_d A` (m²), `config.aero.drag_area`.
+const CDA: f64 = 0.7;
 const RHO: f64 = 1.225;
+
+/// Common configuration with body drag on: `aero.drag_area = 0.7 m²`,
+/// `aero.air_density = 1.225`. The drag force is the vehicle's,
+/// `F = −½ ρ C_d A |v − w| (v − w)` with `w` the wind velocity supplied by the
+/// `WindZone` (the zone's own `C_d` / `A` are not used by the vehicle).
+fn wind_config() -> DynamicVehicleConfig {
+    let mut c = config(1.2, 1.2);
+    c.aero.drag_area = fx(CDA);
+    c.aero.air_density = fx(RHO);
+    c
+}
 
 fn cross_wind() -> WindZone {
     WindZone {
@@ -1117,14 +1127,17 @@ fn cross_wind() -> WindZone {
         base_speed_m_s: fx(WIND),
         turbulence_amplitude: Fix128::ZERO,
         gust_frequency_hz: Fix128::ZERO,
-        drag_coefficient: fx(CD),
-        reference_area_m2: fx(AREA),
+        // Zone C_d · A = 0.15 m² ≠ vehicle C_dA = 0.7 m²: the vehicle must
+        // take its drag from `aero.drag_area`, the zone only supplies `w`.
+        drag_coefficient: fx(0.3),
+        reference_area_m2: fx(0.5),
     }
 }
 
 /// Car in the air (no tyre force) moving at `v` along `+z` in a 10 m/s wind
-/// along `+x`: one update changes the velocity by `F dt / M` with
-/// `F = ½ ρ C_d A |v_rel| v_rel`, `v_rel = (10, 0, −v)` (`WindZone` contract).
+/// along `+x`: one update changes the velocity by `F dt / M` with the
+/// vehicle drag `F = ½ ρ C_dA |v_rel| v_rel`, `v_rel = w − v = (10, 0, −v)`,
+/// `C_dA = aero.drag_area` (the zone only supplies `w`).
 /// Checked at `v = 0, 10, 20`: lateral component `∝ |v_rel| · 10`, the
 /// component along the motion `∝ −|v_rel| v`. Tolerance `1e-9` relative
 /// (Fix128 rounding).
@@ -1134,7 +1147,7 @@ fn cross_wind_force_follows_relative_velocity_squared() {
         let w = world();
         let mut sim = Sim::new(
             w,
-            config(1.2, 1.2),
+            wind_config(),
             FlatGround {
                 height: Fix128::ZERO,
             },
@@ -1150,7 +1163,6 @@ fn cross_wind_force_follows_relative_velocity_squared() {
             condition: &sim.cond,
             wind: sim.wind.as_ref(),
             time: Fix128::ZERO,
-            gravity: sim.world.config.gravity,
         };
         sim.veh
             .update(&mut sim.world.bodies[sim.car], &sim.road, &env, dt());
@@ -1158,7 +1170,7 @@ fn cross_wind_force_follows_relative_velocity_squared() {
         sim.world.step(dt());
         assert_eq!(sim.veh.grounded_wheels(), 0, "car is airborne");
         let rel = (WIND * WIND + v * v).sqrt();
-        let k = 0.5 * RHO * CD * AREA * rel * DT / M;
+        let k = 0.5 * RHO * CDA * rel * DT / M;
         let (want_x, want_z) = (k * WIND, -k * v);
         let tol = 1e-9 * k * rel + 1e-15;
         assert!(
@@ -1172,15 +1184,16 @@ fn cross_wind_force_follows_relative_velocity_squared() {
 }
 
 /// On the road at 15 m/s with the same cross wind, after 2 s the tyres carry
-/// the wind's lateral force: `Σ lateral_force = −F_x` with
-/// `F_x = ½ ρ C_d A |v_rel| (10 − v_x)` evaluated at the measured velocity
+/// the wind's lateral force: `Σ lateral_force = −F_x` with the vehicle drag
+/// `F_x = ½ ρ C_dA |v_rel| (10 − v_x)`, `v_rel = w − v`, evaluated at the
+/// measured velocity
 /// (unsteered wheels: wheel `y` axis = world `+x`). Tolerance 3 %: `a = b`
 /// and equal `C_α` make the CG force a pure side-slip load (no yaw moment);
-/// the drag part decelerates the car by `≈ 0.33 m/s²`, so the lateral
+/// the drag part decelerates the car by `≈ 0.12 m/s²`, so the lateral
 /// balance is quasi-steady (side-slip time constant `M v / (4 C_α) = 0.06 s`).
 #[test]
 fn cross_wind_on_the_road_is_carried_by_lateral_tyre_force() {
-    let mut sim = flat_sim(config(1.2, 1.2), condition(Weather::Dry, 0.0));
+    let mut sim = flat_sim(wind_config(), condition(Weather::Dry, 0.0));
     sim.wind = Some(cross_wind());
     sim.frames(120);
     sim.set_speed(15.0);
@@ -1188,7 +1201,7 @@ fn cross_wind_on_the_road_is_carried_by_lateral_tyre_force() {
     let v = sim.body().velocity;
     let rel_x = WIND - f(v.x);
     let rel = (rel_x * rel_x + f(v.y).powi(2) + f(v.z).powi(2)).sqrt();
-    let f_x = 0.5 * RHO * CD * AREA * rel * rel_x;
+    let f_x = 0.5 * RHO * CDA * rel * rel_x;
     let lateral: f64 = sim.veh.wheels.iter().map(|w| f(w.lateral_force)).sum();
     assert!(
         (lateral + f_x).abs() <= 0.03 * f_x,
