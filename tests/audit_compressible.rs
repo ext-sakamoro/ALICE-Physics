@@ -231,7 +231,6 @@ fn riemann_invariants_closed_form() {
 
 /// gamma = 1: isothermal limit, 2a/(gamma-1) is infinite; returning (u, u) hides that.
 #[test]
-#[ignore = "known defect: AUD-A-S1W5-007: riemann_invariants(gamma=1) silently returns (u,u) (J+ == J-) although 2a/(gamma-1) diverges; likewise stagnation_pressure_ratio(gamma<=1) silently returns 1"]
 fn gamma_one_degenerate_is_not_silent_identity() {
     let g = IdealGas {
         gas_constant: f(287.0),
