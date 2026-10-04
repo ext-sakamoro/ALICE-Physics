@@ -559,8 +559,18 @@ fn crank_nicolson_step_1d_with_alpha(
 /// The temperature field is stored row-major with the ordering
 /// `t[i + nx·(j + ny·k)]`. All six external faces use Neumann
 /// (zero-flux) boundary conditions, matching [`transient_step_1d`].
-/// Per-cell diffusivity `α(T)` respects the local temperature-dependent
-/// material properties, driving the standard 7-point Laplacian.
+/// Advances the conservative form `ρcp(T) ∂T/∂t = ∇·(k(T) ∇T)` as a
+/// finite-volume update with the harmonic-mean face conductivity, exactly as
+/// [`transient_step_1d`] does along each axis (same defect family as
+/// AUD-A-S2W2-015).
+///
+/// # Claims
+///
+/// - Heat is conserved: `Σ ρcp(T_i) (T_i' − T_i)` is zero up to `f32`
+///   rounding for any temperature-dependent properties.
+/// - A field that varies only along x evolves as [`transient_step_1d`] does.
+/// - The six outer faces carry no flux.
+/// - A cell whose `ρcp` is not finite or not positive is left unchanged.
 ///
 /// # Panics
 ///
@@ -582,23 +592,45 @@ pub fn transient_step_3d(
     }
     let inv_dx_squared = 1.0 / (dx * dx);
     let idx = |i: usize, j: usize, k: usize| i + nx * (j + ny * k);
+    let conductivity: Vec<f32> = t.iter().map(|&v| material.conductivity_at(v)).collect();
     let mut next: Vec<f32> = t.to_vec();
-    // Zero-flux faces on all six sides: the virtual neighbour outside the
-    // block equals the face cell itself (same convention as the 1-D steps
-    // since 1.2.0; every cell is physical).
+    // Zero-flux faces on all six sides: no heat crosses an outer face (same
+    // convention as the 1-D steps since 1.2.0; every cell is physical). Every
+    // interior face carries `k_face (T_neighbour − T_c)` with the harmonic
+    // mean `k_face`, shared by the two cells it joins.
     for k in 0..nz {
         for j in 0..ny {
             for i in 0..nx {
-                let c = t[idx(i, j, k)];
-                let xm = if i == 0 { c } else { t[idx(i - 1, j, k)] };
-                let xp = if i == nx - 1 { c } else { t[idx(i + 1, j, k)] };
-                let ym = if j == 0 { c } else { t[idx(i, j - 1, k)] };
-                let yp = if j == ny - 1 { c } else { t[idx(i, j + 1, k)] };
-                let zm = if k == 0 { c } else { t[idx(i, j, k - 1)] };
-                let zp = if k == nz - 1 { c } else { t[idx(i, j, k + 1)] };
-                let alpha = material.diffusivity_at(c);
-                let laplacian = (xp + xm + yp + ym + zp + zm - 6.0 * c) * inv_dx_squared;
-                next[idx(i, j, k)] = c + dt * alpha * laplacian;
+                let here = idx(i, j, k);
+                let c = t[here];
+                let capacity = material.heat_capacity_at(c);
+                if !capacity.is_finite() || capacity <= 0.0 {
+                    continue;
+                }
+                let mut inflow = 0.0_f32;
+                let mut face = |other: usize| {
+                    inflow +=
+                        face_conductivity(conductivity[here], conductivity[other]) * (t[other] - c);
+                };
+                if i > 0 {
+                    face(idx(i - 1, j, k));
+                }
+                if i < nx - 1 {
+                    face(idx(i + 1, j, k));
+                }
+                if j > 0 {
+                    face(idx(i, j - 1, k));
+                }
+                if j < ny - 1 {
+                    face(idx(i, j + 1, k));
+                }
+                if k > 0 {
+                    face(idx(i, j, k - 1));
+                }
+                if k < nz - 1 {
+                    face(idx(i, j, k + 1));
+                }
+                next[here] = c + dt * inflow * inv_dx_squared / capacity;
             }
         }
     }
