@@ -84,9 +84,14 @@ impl PiezoElement {
     /// applied along the poling direction.
     ///
     /// `V = d · σ · thickness / permittivity = d · F · thickness / (A · ε)`.
+    ///
+    /// Rejects `area_m2 <= 0`, `permittivity() <= 0`, and (by symmetry with
+    /// [`Self::force_from_voltage`]'s own thickness guard) `thickness_m <=
+    /// 0`: a non-positive thickness would otherwise flip the sign of the
+    /// result instead of being treated as invalid geometry.
     #[must_use]
     pub fn voltage_from_force(&self, force_n: f32) -> f32 {
-        if self.area_m2 <= 0.0 || self.permittivity() <= 0.0 {
+        if self.area_m2 <= 0.0 || self.permittivity() <= 0.0 || self.thickness_m <= 0.0 {
             return 0.0;
         }
         let stress = force_n / self.area_m2;
@@ -99,9 +104,14 @@ impl PiezoElement {
     /// The converse effect gives a free-strain `d · E` which, when
     /// the element is fully constrained, translates to a blocked
     /// force `F = E_field · d · Y · A = V · d · Y · A / thickness`.
+    ///
+    /// Rejects `thickness_m <= 0` and (by symmetry with
+    /// [`Self::voltage_from_force`]'s own area guard) `area_m2 <= 0`: a
+    /// non-positive area would otherwise flip the sign of the result
+    /// instead of being treated as invalid geometry.
     #[must_use]
     pub fn force_from_voltage(&self, voltage_v: f32) -> f32 {
-        if self.thickness_m <= 0.0 {
+        if self.thickness_m <= 0.0 || self.area_m2 <= 0.0 {
             return 0.0;
         }
         let e_field = voltage_v / self.thickness_m;
