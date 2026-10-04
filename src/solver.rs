@@ -1046,6 +1046,11 @@ pub struct PhysicsWorld {
     /// Contact modifiers (called before contact resolution, can mutate contact)
     #[cfg(feature = "std")]
     contact_modifiers: Vec<Box<dyn ContactModifier>>,
+    /// Constraints the hooks / modifiers discarded in the last
+    /// [`Self::apply_contact_filters`] pre-pass (indexed like
+    /// `contact_constraints`; an index past the end counts as kept)
+    #[cfg(feature = "std")]
+    contact_discarded: Vec<bool>,
     /// v0.11.0: installed GPU solver bridge for automatic contact-solve
     /// routing. When `Some`, every call to [`Self::step`] /
     /// [`Self::substep`] transparently routes contact-solve through the
@@ -1196,6 +1201,8 @@ impl PhysicsWorld {
             pre_solve_hooks: Vec::new(),
             #[cfg(feature = "std")]
             contact_modifiers: Vec::new(),
+            #[cfg(feature = "std")]
+            contact_discarded: Vec::new(),
             #[cfg(feature = "gpu-solver-bridge")]
             gpu_solver_bridge: None,
             joints: Vec::new(),
@@ -2022,6 +2029,8 @@ impl PhysicsWorld {
     /// if you generate contacts outside the built-in sphere / SDF detection.
     pub fn clear_contacts(&mut self) {
         self.contact_constraints.clear();
+        #[cfg(feature = "std")]
+        self.contact_discarded.clear();
         self.batches_dirty = true;
     }
 
@@ -2580,7 +2589,10 @@ impl PhysicsWorld {
             self.resolve_static_collisions();
         }
 
-        // 2. Solve constraints (sequential)
+        // 2. Solve constraints (sequential). Hooks and modifiers run once per
+        //    substep, ahead of the iteration loop.
+        #[cfg(feature = "std")]
+        self.apply_contact_filters();
         for _ in 0..self.config.iterations {
             self.solve_distance_constraints(dt);
             self.solve_contact_constraints(dt);
@@ -2961,6 +2973,75 @@ impl PhysicsWorld {
         }
     }
 
+    /// Run the pre-solve hooks and contact modifiers once over every
+    /// contact constraint and keep the result.
+    ///
+    /// The serial and bridge substeps call this ahead of their iteration
+    /// loop, so a relative change such as `friction *= 0.5` applies once per
+    /// substep (as in the parallel pre-pass) and not once per iteration.
+    ///
+    /// # Claims
+    ///
+    /// - Each hook and each modifier runs at most once per contact per call.
+    /// - Sensor contacts are skipped without calling hooks or modifiers.
+    /// - A modifier's result (contact, friction, restitution) is written back
+    ///   to the constraint, and the solver passes read that value without
+    ///   calling the modifier again.
+    /// - A contact vetoed by a hook or discarded by a modifier is left
+    ///   unmodified and is skipped by the solver passes until the next call.
+    /// - With no hooks and no modifiers the call changes nothing.
+    #[cfg(feature = "std")]
+    fn apply_contact_filters(&mut self) {
+        self.contact_discarded.clear();
+        if self.pre_solve_hooks.is_empty() && self.contact_modifiers.is_empty() {
+            return;
+        }
+        let num = self.contact_constraints.len();
+        self.contact_discarded.resize(num, false);
+        for i in 0..num {
+            let constraint = self.contact_constraints[i];
+            if self.bodies[constraint.body_a].is_sensor || self.bodies[constraint.body_b].is_sensor
+            {
+                continue;
+            }
+
+            let mut contact = constraint.contact;
+            let mut friction = constraint.friction;
+            let mut restitution = constraint.restitution;
+
+            let mut skip = false;
+            for hook in &self.pre_solve_hooks {
+                if !hook(constraint.body_a, constraint.body_b, &contact) {
+                    skip = true;
+                    break;
+                }
+            }
+            if !skip {
+                for modifier in &self.contact_modifiers {
+                    if !modifier.modify_contact(
+                        constraint.body_a,
+                        constraint.body_b,
+                        &mut contact,
+                        &mut friction,
+                        &mut restitution,
+                    ) {
+                        skip = true;
+                        break;
+                    }
+                }
+            }
+            if skip {
+                self.contact_discarded[i] = true;
+                continue;
+            }
+
+            let slot = &mut self.contact_constraints[i];
+            slot.contact = contact;
+            slot.friction = friction;
+            slot.restitution = restitution;
+        }
+    }
+
     /// Apply pre-solve hooks and contact modifiers to contact constraints.
     ///
     /// Runs sequentially before parallel dispatch. Contacts that are
@@ -3285,13 +3366,24 @@ impl PhysicsWorld {
         }
     }
 
-    /// Solve contact constraints with pre-solve hook support (Gap 2.3).
+    /// One serial contact pass (one PGS iteration) over the constraints that
+    /// [`Self::apply_contact_filters`] kept (Gap 2.3).
+    ///
+    /// # Claims
+    ///
+    /// - The pass does not call hooks or modifiers; it reads the values the
+    ///   pre-pass wrote back, so the substep's iterations all see the same
+    ///   friction, restitution and contact.
+    /// - A modifier therefore runs once per substep, not once per iteration,
+    ///   and a relative change such as `friction *= 0.5` does not compound
+    ///   with `iterations`.
+    /// - Sensor contacts and contacts discarded by the pre-pass are skipped.
     ///
     /// # v0.11.0 auto-routing
     ///
     /// If a GPU solver bridge has been installed on this world via
     /// [`Self::set_gpu_solver_bridge`], contact-solve is routed through
-    /// the bridge (via [`Self::solve_contact_constraints_with_bridge`])
+    /// the bridge (one pass, same filters as the pre-pass)
     /// instead of running the CPU inline solver below. The bridge is
     /// briefly taken out of `self` via `Option::take()` so the borrow
     /// checker sees `&mut self` for the routed call, then reinstalled
@@ -3302,7 +3394,7 @@ impl PhysicsWorld {
     fn solve_contact_constraints(&mut self, _dt: Fix128) {
         #[cfg(feature = "gpu-solver-bridge")]
         if let Some(mut bridge) = self.gpu_solver_bridge.take() {
-            self.solve_contact_constraints_with_bridge(bridge.as_mut());
+            self.solve_contact_pass_with_bridge(bridge.as_mut());
             self.gpu_solver_bridge = Some(bridge);
             return;
         }
@@ -3317,48 +3409,15 @@ impl PhysicsWorld {
                 continue;
             }
 
-            #[cfg_attr(not(feature = "std"), allow(unused_mut))]
-            let mut contact = constraint.contact;
-            #[cfg_attr(not(feature = "std"), allow(unused_variables, unused_mut))]
-            let mut friction = constraint.friction;
-            #[cfg_attr(not(feature = "std"), allow(unused_variables, unused_mut))]
-            let mut restitution = constraint.restitution;
-
-            // Pre-solve hook: allow game logic to filter contacts
+            // Discarded by the substep's hook / modifier pre-pass
             #[cfg(feature = "std")]
-            {
-                let mut skip = false;
-                for hook in &self.pre_solve_hooks {
-                    if !hook(constraint.body_a, constraint.body_b, &contact) {
-                        skip = true;
-                        break;
-                    }
-                }
-                // Contact modifiers: can mutate contact properties
-                if !skip {
-                    for modifier in &self.contact_modifiers {
-                        if !modifier.modify_contact(
-                            constraint.body_a,
-                            constraint.body_b,
-                            &mut contact,
-                            &mut friction,
-                            &mut restitution,
-                        ) {
-                            skip = true;
-                            break;
-                        }
-                    }
-                }
-                if skip {
-                    continue;
-                }
-                // Persist the modifiers' result: `update_velocities` reads
-                // friction / restitution from the constraint, not from locals.
-                let slot = &mut self.contact_constraints[i];
-                slot.contact = contact;
-                slot.friction = friction;
-                slot.restitution = restitution;
+            if self.contact_discarded.get(i).copied().unwrap_or(false) {
+                continue;
             }
+
+            // The modifiers' result was written back to the constraint by the
+            // pre-pass, so this is the value every iteration sees.
+            let contact = constraint.contact;
 
             // Only resolve if penetrating
             if contact.depth <= Fix128::ZERO {
@@ -3400,6 +3459,14 @@ impl PhysicsWorld {
     /// v0.10.0 opt-in: run one PGS contact-solve iteration via a
     /// caller-supplied [`GpuSolverBridge`](crate::gpu_bridge::GpuSolverBridge) instead of the CPU-side
     /// `solve_contact_constraints` hot loop.
+    ///
+    /// # Claims
+    ///
+    /// - Each call runs the hooks and modifiers once, writes the result back
+    ///   to the constraints, then runs one bridge pass over the survivors.
+    /// - `substep_with_bridge` runs the hooks and modifiers once per substep
+    ///   and then only the pass per iteration, so a relative modifier does
+    ///   not compound with `iterations`.
     ///
     /// # Byte-exact CPU parity
     ///
@@ -3443,7 +3510,20 @@ impl PhysicsWorld {
         &mut self,
         bridge: &mut B,
     ) {
-        // ---- Stage A: filter + mutate on CPU ----
+        self.apply_contact_filters();
+        self.solve_contact_pass_with_bridge(bridge);
+    }
+
+    /// One bridge-routed PGS pass over the constraints that
+    /// [`Self::apply_contact_filters`] kept. Does not call hooks or
+    /// modifiers, so the iteration loop of a substep sees the values the
+    /// pre-pass wrote.
+    #[cfg(feature = "gpu-solver-bridge")]
+    fn solve_contact_pass_with_bridge<B: crate::gpu_bridge::GpuSolverBridge + ?Sized>(
+        &mut self,
+        bridge: &mut B,
+    ) {
+        // ---- Stage A: select the surviving constraints ----
         let num_constraints = self.contact_constraints.len();
         let mut filtered: Vec<ContactConstraint> = Vec::with_capacity(num_constraints);
         let mut mapping: Vec<usize> = Vec::with_capacity(num_constraints);
@@ -3456,43 +3536,13 @@ impl PhysicsWorld {
             if body_a.is_sensor || body_b.is_sensor {
                 continue;
             }
-
-            let mut contact = constraint.contact;
-            let mut friction = constraint.friction;
-            let mut restitution = constraint.restitution;
-
-            let mut skip = false;
-            for hook in &self.pre_solve_hooks {
-                if !hook(constraint.body_a, constraint.body_b, &contact) {
-                    skip = true;
-                    break;
-                }
-            }
-            if !skip {
-                for modifier in &self.contact_modifiers {
-                    if !modifier.modify_contact(
-                        constraint.body_a,
-                        constraint.body_b,
-                        &mut contact,
-                        &mut friction,
-                        &mut restitution,
-                    ) {
-                        skip = true;
-                        break;
-                    }
-                }
-            }
-            if skip {
+            if self.contact_discarded.get(i).copied().unwrap_or(false) {
                 continue;
             }
 
-            // Persist the modifiers' result (see `solve_contact_constraints`).
-            {
-                let slot = &mut self.contact_constraints[i];
-                slot.contact = contact;
-                slot.friction = friction;
-                slot.restitution = restitution;
-            }
+            let contact = constraint.contact;
+            let friction = constraint.friction;
+            let restitution = constraint.restitution;
 
             filtered.push(ContactConstraint {
                 body_a: constraint.body_a,
@@ -3638,10 +3688,16 @@ impl PhysicsWorld {
         }
 
         // 2. Solve constraints (sequential). Distance stays CPU;
-        //    contact routes through the bridge.
-        for _ in 0..self.config.iterations {
+        //    contact routes through the bridge. The first iteration runs the
+        //    hooks and modifiers once and solves; later iterations only solve,
+        //    so a relative modifier does not compound with `iterations`.
+        for iteration in 0..self.config.iterations {
             self.solve_distance_constraints(dt);
-            self.solve_contact_constraints_with_bridge(bridge);
+            if iteration == 0 {
+                self.solve_contact_constraints_with_bridge(bridge);
+            } else {
+                self.solve_contact_pass_with_bridge(bridge);
+            }
         }
 
         // 3. Solve joint constraints — route through the same bridge.
@@ -6735,12 +6791,14 @@ mod tests {
         // hook が false → skip
         let mut vetoed = contact_world(Fix128::ONE, Fix128::ONE, Fix128::ONE);
         vetoed.add_pre_solve_hook(Box::new(|_a, _b, _c| false));
+        vetoed.apply_contact_filters();
         vetoed.solve_contact_constraints(r(1, 4));
         assert_eq!(vetoed.bodies[0].position, Vec3Fix::ZERO);
 
         // hook が true → 通常通り
         let mut allowed = contact_world(Fix128::ONE, Fix128::ONE, Fix128::ONE);
         allowed.add_pre_solve_hook(Box::new(|_a, _b, _c| true));
+        allowed.apply_contact_filters();
         allowed.solve_contact_constraints(r(1, 4));
         assert_eq!(
             allowed.bodies[0].position,
@@ -6764,6 +6822,7 @@ mod tests {
         }
         let mut halved = contact_world(Fix128::ONE, Fix128::ONE, Fix128::ONE);
         halved.add_contact_modifier(Box::new(Halve));
+        halved.apply_contact_filters();
         halved.solve_contact_constraints(r(1, 4));
         assert_eq!(
             halved.bodies[0].position,
@@ -6786,6 +6845,7 @@ mod tests {
         }
         let mut discarded = contact_world(Fix128::ONE, Fix128::ONE, Fix128::ONE);
         discarded.add_contact_modifier(Box::new(Discard));
+        discarded.apply_contact_filters();
         discarded.solve_contact_constraints(r(1, 4));
         assert_eq!(discarded.bodies[0].position, Vec3Fix::ZERO);
     }
@@ -7316,12 +7376,14 @@ mod tests {
         world.add_pre_solve_hook(Box::new(|_a, _b, _c| false));
         world.add_pre_solve_hook(Box::new(|_a, _b, _c| false));
         assert_eq!(world.pre_solve_hooks.len(), 2);
+        world.apply_contact_filters();
         world.solve_contact_constraints(r(1, 4));
         assert_eq!(world.bodies[0].position, Vec3Fix::ZERO);
 
         // clear 後は hook 0 個 → 通常通り λ = 1、inv_w = 1/2 → A += 1/2
         world.clear_pre_solve_hooks();
         assert!(world.pre_solve_hooks.is_empty());
+        world.apply_contact_filters();
         world.solve_contact_constraints(r(1, 4));
         assert_eq!(
             world.bodies[0].position,
@@ -7352,11 +7414,13 @@ mod tests {
         let mut world = contact_world(Fix128::ONE, Fix128::ONE, Fix128::ONE);
         world.add_contact_modifier(Box::new(Discard));
         assert_eq!(world.contact_modifiers.len(), 1);
+        world.apply_contact_filters();
         world.solve_contact_constraints(r(1, 4));
         assert_eq!(world.bodies[0].position, Vec3Fix::ZERO);
 
         world.clear_contact_modifiers();
         assert!(world.contact_modifiers.is_empty());
+        world.apply_contact_filters();
         world.solve_contact_constraints(r(1, 4));
         assert_eq!(
             world.bodies[0].position,
