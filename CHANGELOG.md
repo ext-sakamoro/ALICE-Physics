@@ -22,8 +22,9 @@ were introduced during that release window.
 - 路面 (`vehicle_dynamics::surface`): `RoadSurface` trait と平面 / 斜面 / 高さ場 / 三角形メッシュ / SDF の 5 実装 `RoadCondition` は路面材料 (`AnisotropicFriction`) × 天候係数 (乾燥 1 / 湿潤 0.7 / 積雪 0.24 / 凍結 0.12、Wong *Theory of Ground Vehicles* Table 1.3 の比) × 冠水時のハイドロプレーニング低下 (Horne の発生速度 `6.35 √p` km/h)、転がり抵抗 `C_rr`
 - パワートレイン (`vehicle_dynamics::powertrain`): トルク曲線 (線形補間、回転上限)、変速機、エンジンブレーキ、オープン / ロックのデファレンシャル `Powertrain::from_engine_config` は従来の `EngineConfig` の `max_rpm` / `engine_brake` / `num_gears` を読む
 - 空気抵抗と揚力、`WindZone` の風
+- シナリオ層 (`vehicle_dynamics::scenario`): 1 つの `PhysicsWorld` で複数の `DynamicVehicle` を入力列または frame ごとの入力関数で走らせる (処理順は index 順で固定) / 追従指標: TTC (車間 ÷ 接近速度、接近していなければ `None`) と車間時間、停止距離計 (制動開始から前進速度が 0 になるまでの水平移動量) / 無損失 replay: 初期状態と frame ごとの `DriverInput` を `Fix128` の raw 値で記録し全車の車体と全輪の状態を bit 一致で再現 (版番号付きバイト列) / 壊れた・切り詰めたバイト列や形の合わないシナリオは `ReplayError` で拒否 oracle は `tests/analytic_vehicle_scenario.rs`、使用例は `examples/vehicle_scenario.rs`
 - oracle は `tests/analytic_vehicle_dynamics.rs` (4 輪ロックの停止距離 `v0²/(2 μ_k g)` を乾燥・湿潤・凍結で、停止後の静止、ABS で車輪がロックせず最大摩擦係数の下限を守る、低速旋回半径 `L / tan δ` (平行操舵と Ackermann)、線形 2 輪モデルの定常ヨーレート、静止摩擦の限界より緩い斜面での保持と、超える斜面での `g (sin θ − μ_k cos θ)` の滑り 他) と `tests/vehicle_dynamics_degenerate.rs` (dt ≤ 0、静的な車体、車輪 0 本、接地なし等の退化入力) 使用例は `examples/vehicle_dynamics.rs`
-- 既知の制限: 前輪をロックしたまま操舵するとヨーレートが残る (試験の場面で約 4.96e-3 rad/s、閾値 1e-6) 縦と横の摩擦をフレーム内の異なる時点の速度で評価していることが原因で、`braking_with_steering_yaws_only_with_abs` は red のまま (対処は未決定) Magic Formula は完全滑りで力の向きを滑り方向へ寄せない (brush のみ) サスペンションはフレーム先頭の撃力で結合するので `(ω_n dt)² + 2 c dt / m_share < 4` の範囲でのみ安定
+- 既知の制限: 前輪をロックしたまま操舵するとヨーレートが残る (試験の場面で約 4.96e-3 rad/s、閾値 1e-6) 縦と横の摩擦をフレーム内の異なる時点の速度で評価していることが原因で、`braking_with_steering_yaws_only_with_abs` は red のまま (対処は未決定) Magic Formula は完全滑りで力の向きを滑り方向へ寄せない (brush のみ) サスペンションはフレーム先頭の撃力で結合するので `(ω_n dt)² + 2 c dt / m_share < 4` の範囲でのみ安定 静止からの発進加速が閉形式より小さい欠陥を調査中
 
 ### Changed — `vehicle` の module doc を実装に合わせた
 
