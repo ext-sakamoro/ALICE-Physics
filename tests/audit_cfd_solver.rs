@@ -698,7 +698,6 @@ fn csf_x_line_impulse_points_inward_with_the_young_laplace_magnitude_to_15_perce
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S1W4-006: the solver smears the delta over eps = 1.5 dx, a non-integer multiple of dx; the sampled delta then sums to 1.11 with the interface on a node and the Young-Laplace impulse is +11.4 % (-0.3207 vs -0.2880). eps = 1 dx and 2 dx give -0.2869 / -0.2891 (0.4 %) on the same band"]
 fn csf_x_line_impulse_matches_young_laplace_to_2_percent() {
     let (mut s, r, sigma) = drop_solver();
     let line = csf_x_line(&mut s);
@@ -710,7 +709,6 @@ fn csf_x_line_impulse_matches_young_laplace_to_2_percent() {
 }
 
 #[test]
-#[ignore = "AUD-A-S1W4-001 fixed (y and z lines now equal the x line, -0.3207); the 5 % tolerance is met only after AUD-A-S1W4-006 (eps = 1.5 dx gives +11.4 %)"]
 fn csf_y_and_z_line_impulses_equal_the_x_one_by_sphere_symmetry() {
     let (mut s, r, sigma) = drop_solver();
     s.step_multigrid(q(1, 1000), 0);
