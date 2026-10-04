@@ -294,8 +294,16 @@ impl ContactCache {
         restitution: Fix128,
     ) -> &mut ContactManifold {
         // Find existing using HashMap (O(1)) with std feature, or linear scan (O(n)) without
+        //
+        // `manifolds` is `pub`, so an external `clear()`/`retain()`/`truncate()` on it
+        // can leave `pair_index` pointing past the end; a stale index is treated as
+        // not-found (a fresh manifold is pushed) rather than panicking.
         #[cfg(feature = "std")]
-        let pos = self.pair_index.get(&pair).copied();
+        let pos = self
+            .pair_index
+            .get(&pair)
+            .copied()
+            .filter(|&idx| idx < self.manifolds.len());
 
         #[cfg(not(feature = "std"))]
         let pos = self.manifolds.iter().position(|m| m.pair == pair);
