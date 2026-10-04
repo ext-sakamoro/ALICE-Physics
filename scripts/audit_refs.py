@@ -33,7 +33,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import scip_reach  # noqa: E402
 
-ID_RE = re.compile(r"AUD-[A-Z]-S\d+W\d+-\d+")
+ID_RE = re.compile(r"AUD-[A-Z]-S\d+(?:W\d+)?-\d+")
 PATH_RE = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*)::([A-Za-z_][A-Za-z0-9_]*)\b")
 CALL_RE = re.compile(r"\b([a-z_][a-z0-9_]{2,})\(\)")
 TICK_RE = re.compile(r"`([A-Za-z_][A-Za-z0-9_]*(?:::[A-Za-z_][A-Za-z0-9_]*)*)`")

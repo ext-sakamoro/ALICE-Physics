@@ -19,7 +19,7 @@ DOCS_DIR = PROJECT_ROOT / "docs"
 
 DOCS_DIR.mkdir(exist_ok=True)
 
-DEFECT_ID_RE = re.compile(r'AUD-[A-Z]-S\d+W\d+-\d+')
+DEFECT_ID_RE = re.compile(r'AUD-[A-Z]-S\d+(?:W\d+)?-\d+')
 # `// PIN: AUD-…` before a test: it pins today's (defective) behaviour on purpose,
 # so fixing that defect turns it red. Several ids may follow, comma-separated.
 PIN_RE = re.compile(r'^\s*//[/!]?\s*PIN:\s*(.*)$')
