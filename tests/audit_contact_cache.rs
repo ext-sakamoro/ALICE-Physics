@@ -87,26 +87,26 @@ fn update_keeps_impulses_and_bumps_age_new_point_resets() {
     assert_eq!(m.points[0].age, 0);
 }
 
-/// CachedContactPoint.normal doc: "Contact normal (world space, A→B)". The stored value is
-/// `Contact::normal` (documented in collider.rs as pointing from B to A) and apply_warm_start
-/// pushes body A ALONG +normal. With the A→B reading, a positive normal impulse would push A
-/// toward B (interpenetration).
+/// CachedContactPoint.normal doc: the stored normal is `Contact::normal`, pointing from B
+/// to A (collider.rs), and apply_warm_start pushes body A ALONG +normal. With a normal stored
+/// in the documented B->A direction a positive normal impulse must separate the bodies
+/// (AUD-A-S1W5-014: the doc used to say A->B, under which the same impulse pushes them
+/// together).
 #[test]
-#[ignore = "known defect: AUD-A-S1W5-014: CachedContactPoint::normal doc says A->B but the cached value is Contact.normal (B->A) and apply_warm_start moves A along +normal; with the documented A->B convention warm start pushes the bodies together"]
-fn warm_start_normal_impulse_separates_with_documented_a_to_b_normal() {
+fn warm_start_normal_impulse_separates_with_documented_b_to_a_normal() {
     let mut cache = ContactCache::new();
     cache.warm_start_factor = Fix128::ONE;
-    // A at origin, B above it: the A->B normal is +y
-    let n_a_to_b = Vec3Fix::UNIT_Y;
+    // A at origin, B above it: the documented B->A normal is -y
+    let n_b_to_a = -Vec3Fix::UNIT_Y;
     let m = cache.get_or_create(BodyPairKey::new(0, 1), f(0.5), f(0.0));
-    m.add_or_update(&contact(n_a_to_b, 0.1), Vec3Fix::ZERO, Vec3Fix::ZERO);
+    m.add_or_update(&contact(n_b_to_a, 0.1), Vec3Fix::ZERO, Vec3Fix::ZERO);
     m.store_impulses(0, f(1.0), Fix128::ZERO, Fix128::ZERO);
     let mut bodies = [
         RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE),
         RigidBody::new_dynamic(Vec3Fix::from_int(0, 1, 0), Fix128::ONE),
     ];
     cache.apply_warm_start(&mut bodies);
-    let rel = (bodies[1].velocity - bodies[0].velocity).dot(n_a_to_b);
+    let rel = (bodies[1].velocity - bodies[0].velocity).dot(-n_b_to_a);
     assert!(
         rel > Fix128::ZERO,
         "relative velocity along A->B = {}, bodies approach",

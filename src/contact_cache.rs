@@ -35,7 +35,8 @@ pub struct CachedContactPoint {
     pub local_point_a: Vec3Fix,
     /// Contact point on body B (local space)
     pub local_point_b: Vec3Fix,
-    /// Contact normal (world space, A→B)
+    /// Contact normal (world space, pointing from B to A — the
+    /// [`crate::collider::Contact::normal`] convention it is copied from)
     pub normal: Vec3Fix,
     /// Penetration depth
     pub depth: Fix128,
@@ -105,7 +106,7 @@ pub struct ContactManifold {
     pub pair: BodyPairKey,
     /// Active contact points (up to 4 per manifold).
     pub points: Vec<CachedContactPoint>,
-    /// Shared normal direction (average of point normals)
+    /// Shared normal direction (average of point normals, pointing from B to A)
     pub normal: Vec3Fix,
     /// Friction coefficient for this pair
     pub friction: Fix128,

@@ -299,11 +299,9 @@ fn speculative_contact_covers_every_sphere_sphere_impact() {
 }
 
 /// collider::Contact documents (and the solver and EPA use) a B->A normal:
-/// translating A by depth * normal must separate the pair. For overlapping
-/// spheres speculative_contact returns the A->B normal, so the same translation
-/// pushes A deeper into B.
+/// translating A by depth * normal must separate the pair. speculative_contact
+/// must report the same B->A normal (an A->B normal would push A deeper into B).
 #[test]
-#[ignore = "known defect: AUD-A-S2W2-008: speculative_contact returns normal = (pos_b - pos_a)/dist (A->B) but collider::Contact::normal is B->A crate-wide; A=(0,0,0) B=(1,0,0) r=1,1 -> normal (+1,0,0), translating A by depth*normal moves it onto B (centre gap 0 instead of 2)"]
 fn speculative_contact_normal_follows_the_b_to_a_contract() {
     let c = speculative_contact(
         v3(0.0, 0.0, 0.0),

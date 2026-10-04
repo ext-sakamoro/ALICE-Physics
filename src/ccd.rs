@@ -443,6 +443,10 @@ fn on_collision_course_substeps(
 }
 
 /// The solver then prevents penetration by maintaining the gap.
+///
+/// The returned [`crate::collider::Contact::normal`] follows the crate-wide
+/// contact convention: it points from B to A (`(pos_a - pos_b) / dist`), so
+/// translating A by `depth * normal` separates the pair.
 #[must_use]
 pub fn speculative_contact(
     pos_a: Vec3Fix,
@@ -461,7 +465,9 @@ pub fn speculative_contact(
         return None;
     }
 
-    let normal = rel_pos / dist;
+    // Unit direction A -> B; the reported contact normal is its negation (B -> A).
+    let dir_ab = rel_pos / dist;
+    let normal = -dir_ab;
     let gap = dist - combined_r;
 
     // Already overlapping — regular contact
@@ -469,14 +475,14 @@ pub fn speculative_contact(
         return Some(crate::collider::Contact {
             depth: -gap,
             normal,
-            point_a: pos_a + normal * radius_a,
-            point_b: pos_b - normal * radius_b,
+            point_a: pos_a + dir_ab * radius_a,
+            point_b: pos_b - dir_ab * radius_b,
         });
     }
 
     // Check if closing velocity will breach the gap within dt
     let rel_vel = vel_b - vel_a;
-    let closing_speed = -rel_vel.dot(normal);
+    let closing_speed = -rel_vel.dot(dir_ab);
 
     if closing_speed <= Fix128::ZERO {
         return None; // Moving apart
@@ -489,8 +495,8 @@ pub fn speculative_contact(
         Some(crate::collider::Contact {
             depth: -predicted_gap,
             normal,
-            point_a: pos_a + normal * radius_a,
-            point_b: pos_b - normal * radius_b,
+            point_a: pos_a + dir_ab * radius_a,
+            point_b: pos_b - dir_ab * radius_b,
         })
     } else {
         None
@@ -1180,7 +1186,8 @@ mod tests {
         )
         .expect("breach");
         assert_eq!(c.depth, fi(8));
-        assert_eq!(c.normal, v3i(1, 0, 0));
+        // normal points from B to A (crate-wide Contact convention)
+        assert_eq!(c.normal, v3i(-1, 0, 0));
         assert_eq!(c.point_a, v3i(1, 0, 0));
         assert_eq!(c.point_b, v3i(9, 0, 0));
         // predicted == 0 ちょうど (dt 1) は `<` false → None
