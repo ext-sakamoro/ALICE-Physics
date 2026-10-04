@@ -47,6 +47,18 @@ fn main() {
     };
     use alice_physics::math::Fix128;
 
+    // `try_new` accepts strictly positive strengths and rejects the rest.
+    let cfrp = LaminateStrengths::cfrp_ud();
+    let rebuilt = LaminateStrengths::try_new(cfrp.xt, cfrp.xc, cfrp.yt, cfrp.yc, cfrp.s)
+        .expect("the preset strengths are strictly positive");
+    assert_eq!(rebuilt, cfrp, "try_new must reproduce the preset");
+    let rejected = LaminateStrengths::try_new(cfrp.xt, cfrp.xc, Fix128::ZERO, cfrp.yc, cfrp.s)
+        .expect_err("a zero transverse tensile strength must be rejected");
+    println!(
+        "[laminate_failure] try_new: preset accepted, zero `{}` rejected ({rejected})",
+        rejected.field
+    );
+
     let presets: [(&str, LaminateStrengths); 2] = [
         ("cfrp_ud", LaminateStrengths::cfrp_ud()),
         ("gfrp_ud", LaminateStrengths::gfrp_ud()),
