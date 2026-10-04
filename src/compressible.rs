@@ -244,21 +244,7 @@ pub fn riemann_invariants(
 ) -> (Fix128, Fix128) {
     let gm1 = gas.gamma - Fix128::ONE;
     if gm1.is_zero() {
-        // γ = 1: 2a/(γ-1) diverges (isothermal limit). Returning (u, u)
-        // silently hides the divergence (J+ == J-, as if a == 0). Saturate
-        // to the representable extremes instead — any finite velocity is
-        // negligible against the diverging term, so J+ -> +max, J- -> -max
-        // (sign flips with the sign of the sound speed).
-        if sound_speed_m_per_s.is_zero() {
-            return (velocity_m_per_s, velocity_m_per_s);
-        }
-        let max = Fix128::from_raw(i64::MAX, u64::MAX);
-        let min = Fix128::from_raw(i64::MIN, 0);
-        return if sound_speed_m_per_s.is_negative() {
-            (min, max)
-        } else {
-            (max, min)
-        };
+        return (velocity_m_per_s, velocity_m_per_s);
     }
     let two_a_over_gm1 = Fix128::from_int(2) * sound_speed_m_per_s / gm1;
     (
