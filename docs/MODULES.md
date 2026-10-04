@@ -124,6 +124,7 @@ this file or listed twice, or when a linked example or test does not exist.
 | `character` | kinematic capsule controller with move-and-slide and stair stepping | | [`character_controller`](../examples/character_controller.rs) |
 | `character_state` | locomotion state machine (idle, walk, run, jump, fall, crouch) | | [`character_state_machine`](../examples/character_state_machine.rs) |
 | `vehicle` | wheels, suspension, engine and steering | | [`vehicle_drive`](../examples/vehicle_drive.rs) |
+| `vehicle_dynamics` | per-wheel contact forces, wheel spin, brakes and ABS, brush and Magic Formula tyres, road surfaces and weather, powertrain | | [`vehicle_dynamics`](../examples/vehicle_dynamics.rs) |
 | `audio_physics` | audio parameters from impacts, sliding and rolling | | [`audio_physics_events`](../examples/audio_physics_events.rs) |
 | `anisotropic_friction` | direction-dependent friction (tyres, skis, ice blades) | | [`anisotropic_friction_presets`](../examples/anisotropic_friction_presets.rs) |
 | `buoyancy_zone` | bounded fluid volume applying buoyancy and drag | | [`buoyancy_zone_pool`](../examples/buoyancy_zone_pool.rs) |
