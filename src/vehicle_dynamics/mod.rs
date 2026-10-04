@@ -1624,6 +1624,33 @@ mod tests {
         ));
     }
 
+    /// Heavy wheels spinning at `ω r = 1 cm/s` under a car at rest: the
+    /// low-speed tyre force (`C_κ κ` with `v̄ = v_floor`) is far larger than
+    /// what it takes to bring the contact to `ω r`; the effective-mass clamp
+    /// stops the chassis there instead of overshooting.
+    #[test]
+    fn longitudinal_friction_does_not_overshoot_the_wheel_speed() {
+        let mut cfg = config();
+        cfg.wheel_inertia = Fix128::from_int(100_000);
+        let mut v = DynamicVehicle::new(cfg);
+        let cond = dry(Fix128::ZERO);
+        let mut body = chassis();
+        body.inv_inertia = Vec3Fix::ZERO;
+        let rw = fx(1, 100);
+        for w in &mut v.wheels {
+            w.omega = rw / fx(3, 10);
+        }
+        v.update(&mut body, &flat(), &env(&cond), dt60());
+        let surface = v.wheels[0].omega * fx(3, 10);
+        assert!(body.velocity.z > Fix128::ZERO);
+        assert!(
+            body.velocity.z <= surface + fx(1, 1_000_000_000),
+            "v {:?} beyond ω r {:?}",
+            body.velocity.z.to_f64(),
+            surface.to_f64()
+        );
+    }
+
     /// A car at rest with the brake on gets anchored wheels and no
     /// horizontal motion from friction.
     #[test]
