@@ -1234,7 +1234,6 @@ fn bicgstab_stop_test_is_strict() {
 /// iteration-3 residual `2.986` (1.9e-3 of `|b|`) although 196 iterations of
 /// budget remain and one more update would reach `1e-14`.
 #[test]
-#[ignore = "known defect: AUD-A-S1W1-002: BiCGStab breaks down on Fix128 underflow of t.t (tolerance below ~1e-10) and returns the iteration-3 iterate, converged=false, residual 2.986 instead of ~7e-15"]
 fn bicgstab_breakdown_keeps_a_stale_iterate() {
     let (mut s, dt) = bicgstab_scene();
     let stats = s

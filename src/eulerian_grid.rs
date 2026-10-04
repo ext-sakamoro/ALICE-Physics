@@ -4101,6 +4101,20 @@ pub(crate) fn project_pressure_bicgstab(
         mask.apply(&z_vec, &mut t_vec);
         let tt = dot(&t_vec, &t_vec);
         if tt.is_zero() {
+            // `z` is already small enough that `A z` underflows to the exact
+            // zero vector at this quantization, so `ω = (t·s)/(t·t)` would
+            // divide by zero — not a genuine BiCGStab breakdown (`t` is tiny,
+            // not exactly zero in exact arithmetic), just Fix128 running out
+            // of fractional bits to represent `t·t`. The `α y` half step is
+            // still a valid, better iterate than the one the previous
+            // iteration left behind, so take it the same way the
+            // `s_norm < tolerance` breakdown above does, and stop: the next
+            // iteration would recompute the same underflowed `z`.
+            for i in 0..n {
+                x[i] = x[i] + alpha * y_vec[i];
+            }
+            residual = s_norm;
+            converged = residual < tolerance;
             break;
         }
         omega = dot(&t_vec, &s_vec) / tt;
