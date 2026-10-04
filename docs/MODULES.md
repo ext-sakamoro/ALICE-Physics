@@ -87,6 +87,7 @@ this file or listed twice, or when a linked example or test does not exist.
 | `dynamic_bvh` | incremental AABB tree (insert / remove / update in O(log n)) | | |
 | `spatial` | spatial hash grid | | |
 | `raycast` | ray and shape casts | | [`spatial_raycast_queries`](../examples/spatial_raycast_queries.rs) |
+| `shape_raycast` | world ray queries against the geometry bodies collide as: shapes, compound children, static colliders and SDF colliders (closest / all / any, layer filter, BVH culling) | | [`shape_raycast_sensors`](../examples/shape_raycast_sensors.rs) |
 | `query` | sphere / capsule casts and overlap queries | | [`spatial_queries`](../examples/spatial_queries.rs) |
 | `ccd` | continuous collision detection (time of impact, conservative advancement, speculative contacts) | | [`continuous_collision_detection`](../examples/continuous_collision_detection.rs) |
 | `contact_cache` | persistent contact manifolds with warm starting, as an opt-in tool outside `PhysicsWorld::step` | | [`contact_warm_start_cache`](../examples/contact_warm_start_cache.rs) |
@@ -129,6 +130,7 @@ this file or listed twice, or when a linked example or test does not exist.
 | `anisotropic_friction` | direction-dependent friction (tyres, skis, ice blades) | | [`anisotropic_friction_presets`](../examples/anisotropic_friction_presets.rs) |
 | `buoyancy_zone` | bounded fluid volume applying buoyancy and drag | | [`buoyancy_zone_pool`](../examples/buoyancy_zone_pool.rs) |
 | `wind_zone` | bounded wind volume applying drag and lift | | [`wind_zone_forces`](../examples/wind_zone_forces.rs) |
+| `sensors` | simulated lidar, contact sensor and IMU with seeded Gaussian noise | | [`shape_raycast_sensors`](../examples/shape_raycast_sensors.rs) |
 
 ## SDF integration
 

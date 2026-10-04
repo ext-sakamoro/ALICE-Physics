@@ -19,6 +19,9 @@ were introduced during that release window.
 
 - `PhysicsWorld::{snapshot_world, from_world_snapshot, restore_world}` / `WorldSnapshotError` / `PhysicsWorld::{WORLD_SNAPSHOT_MAGIC, WORLD_SNAPSHOT_VERSION}`: `step` が読む全状態 (物体、拘束、ジョイント、静的・SDF collider の姿勢、形状、力場、マテリアル、フィルタ、イベント、スリープ状態、broad-phase の木、XPBD / TGS の warm-start、overflow flag) を版付きの 1 blob + checksum に保存し、新しい world または既存の world に復元する 復元後の step は元と bit 一致 SDF の場・hook・modifier・GPU bridge はコードなので保存せず、復元先の個数と一致しなければ `Err` 既存の `serialize_state` / `deserialize_state` は変更なし
 - `PhysicsWorld::step_n(n, dt)`: `step(dt)` を `n` 回 (Python の `step_n` / WASM の `stepN` はこれを呼ぶ形に変更、挙動は同じ)
+- `shape_raycast` / `PhysicsWorld::{cast_ray, cast_ray_all, cast_ray_any, ray_caster}` / `WorldRayCaster` / `RayFilter` / `RayTarget` / `WorldRayHit`: 外接球でなく実形状に当たる world 単位の ray クエリ (箱・円柱・円錐・楕円体・くさび・トーラス・compound の球 / カプセル / 箱 / 凸包・平面・高さ場・三角形メッシュ・SDF)、最近接 / 全件 / any、layer mask と除外 body・sensor・static・SDF の切り替え、BVH による候補の絞り込み
+- `sensors::{Lidar, LidarScan, ContactSensor, ContactReading, Imu, ImuReading, GaussianNoise}`: 角度格子の一括 ray による lidar、body の接触と法線力の合計を返す接触センサー、速度差分による加速度と比力・角速度を返す IMU、いずれも seed つきの正規分布ノイズを任意で付与
+- `DeterministicRng::{next_gaussian, next_gaussian_pair, next_gaussian_with}`: `Fix128` の Box–Muller による正規分布 (同じ seed で bit 一致)
 - `PhysicsWorld::reset_world` / `observe_body` / `observe_bodies` / `BodyObservation` / `population_fingerprint`: 世界を既定状態に戻す、body を型付きで観測する、rollback 先の body 構成を照合する
 - `PhysicsWorld::overflow_detected` / `Fix128::checked_mul` / `Vec3Fix::checked_scale`: 積分と速度導出で積が範囲外になったことを sticky flag で読める (`Mul` 自体の挙動は不変)
 - `SolverConfig::solver_backend` / `SolverBackend::{Xpbd, Tgs}`: TGS solver を `PhysicsWorld` の backend として選べる (既定は `Xpbd`) `Tgs` は contact・joint・kinematic target・SDF collider を解く
@@ -96,6 +99,7 @@ were introduced during that release window.
 
 ### Changed
 
+- `PhysicsWorld::raycast` と `query::batch_raycast` の doc に、body を外接球で近似し static collider と SDF collider を見ないことを明記 (挙動は不変、実形状は `PhysicsWorld::cast_ray`)
 - **Behavior change:** joint (ball / hinge / fixed / slider / cone-twist) の位置拘束が lever arm と回転補正を含むようになり、D6 の角度誤差は `local_frame_b` 基準になった 全 joint の位置拘束の結果が変わる (AUD-A-S1W6-006 / 010)
 - **Behavior change:** hinge の `angle_min` / `angle_max` と slider の `limit_min` / `limit_max` を片側だけ設定した場合も、その側の limit が効く (従来は黙って無視) (AUD-A-S1W6-007)
 - **Behavior change:** `articulation` の `apply_motors` は hinge motor で twist 角を駆動する (従来は joint の種類を見ず中心間距離を駆動) (AUD-A-S3W1-017)

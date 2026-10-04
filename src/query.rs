@@ -269,6 +269,12 @@ pub struct BatchRayQuery {
 /// Returns one result per query (closest hit or None).
 /// Each ray is treated as a zero-radius sphere cast.
 /// When `parallel` feature is enabled, queries execute in parallel via Rayon.
+///
+/// Every body is a sphere of `body_radius` (a bounding-sphere approximation): the
+/// body's own shape is not consulted. To cast against the geometry a
+/// [`PhysicsWorld`](crate::solver::PhysicsWorld) collides with, use
+/// [`PhysicsWorld::ray_caster`](crate::solver::PhysicsWorld::ray_caster) and cast
+/// each ray with the BVH built once.
 #[must_use]
 pub fn batch_raycast(
     queries: &[BatchRayQuery],

@@ -169,10 +169,10 @@ Every public module, grouped by area and with a one-line summary, is listed in [
 | Area | Highlights |
 |------|-----------|
 | Rigid bodies | XPBD solver with an optional temporal Gauss-Seidel backend, sleeping and islands, CCD, rollback-ready state serialization |
-| Collision | GJK / EPA, linear BVH or persistent dynamic AABB tree broad-phase, box, sphere, capsule, cylinder, cone, ellipsoid, torus, wedge, convex hull, compound, triangle mesh, height field, SDF colliders |
+| Collision | GJK / EPA, linear BVH or persistent dynamic AABB tree broad-phase, box, sphere, capsule, cylinder, cone, ellipsoid, torus, wedge, convex hull, compound, triangle mesh, height field, SDF colliders; world ray queries against those shapes (`PhysicsWorld::cast_ray`) |
 | Joints | ball, hinge, fixed, slider, spring, D6, cone-twist, plus pulley, gear, weld, rack-and-pinion and mouse joints; breakable joints and PD motors |
 | Soft bodies | XPBD rope and cloth (with self-collision), position-based fluids, FEM-XPBD deformables, cutting |
-| Gameplay | character controller, vehicles (a simple model and a per-wheel dynamics model with tyres, brakes, ABS, road surfaces and weather), ragdolls, IK bridge, client-side prediction, deterministic RNG, contact events |
+| Gameplay | character controller, vehicles (a simple model and a per-wheel dynamics model with tyres, brakes, ABS, road surfaces and weather), ragdolls, IK bridge, client-side prediction, deterministic RNG with Gaussian draws, contact events, simulated lidar / contact / IMU sensors |
 | Solid mechanics | linear-elastic FEM on P1 / P2 / P3 tetrahedra, corotational large rotation, J2 plasticity, hyperelasticity, thermo-mechanical coupling, adaptive refinement, beams, buckling, fatigue, composites |
 | Fluids and fields | MAC-grid CFD with several pressure solvers, RANS / LES turbulence closures, VOF and level set, SPH, compressible flow, heat transfer, Maxwell FDTD |
 | 3D printing | material database, thin-wall and overhang checks, warp risk, layer adhesion, print orientation, a combined safety pipeline |

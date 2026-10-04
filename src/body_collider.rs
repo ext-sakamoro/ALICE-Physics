@@ -59,7 +59,7 @@ impl Support for Piece<'_> {
 impl BodyCollider {
     /// A box that contains the whole collider, for a body at `position` turned by
     /// `rotation`.
-    fn world_aabb(&self, position: Vec3Fix, rotation: QuatFix) -> AABB {
+    pub(crate) fn world_aabb(&self, position: Vec3Fix, rotation: QuatFix) -> AABB {
         match self {
             Self::Shape(shape) => {
                 let r = shape.bounding_radius();

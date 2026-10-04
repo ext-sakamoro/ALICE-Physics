@@ -9594,6 +9594,9 @@ pub fn alice_physics::rng::DeterministicRng::next_bounded(&mut self, u32) -> u32
 pub fn alice_physics::rng::DeterministicRng::next_direction(&mut self) -> alice_physics::math::Vec3Fix
 pub fn alice_physics::rng::DeterministicRng::next_fix128(&mut self) -> alice_physics::math::Fix128
 pub fn alice_physics::rng::DeterministicRng::next_fix128_range(&mut self, alice_physics::math::Fix128, alice_physics::math::Fix128) -> alice_physics::math::Fix128
+pub fn alice_physics::rng::DeterministicRng::next_gaussian(&mut self) -> alice_physics::math::Fix128
+pub fn alice_physics::rng::DeterministicRng::next_gaussian_pair(&mut self) -> (alice_physics::math::Fix128, alice_physics::math::Fix128)
+pub fn alice_physics::rng::DeterministicRng::next_gaussian_with(&mut self, alice_physics::math::Fix128, alice_physics::math::Fix128) -> alice_physics::math::Fix128
 pub fn alice_physics::rng::DeterministicRng::next_u32(&mut self) -> u32
 pub fn alice_physics::rng::DeterministicRng::next_u64(&mut self) -> u64
 impl core::clone::Clone for alice_physics::rng::DeterministicRng
@@ -11288,6 +11291,11 @@ pub const alice_physics::solver::PhysicsWorld::WORLD_SNAPSHOT_VERSION: u16
 pub fn alice_physics::solver::PhysicsWorld::from_world_snapshot(&[u8]) -> core::result::Result<Self, alice_physics::WorldSnapshotError>
 pub fn alice_physics::solver::PhysicsWorld::restore_world(&mut self, &[u8]) -> core::result::Result<(), alice_physics::WorldSnapshotError>
 pub fn alice_physics::solver::PhysicsWorld::snapshot_world(&self) -> alloc::vec::Vec<u8>
+impl alice_physics::solver::PhysicsWorld
+pub fn alice_physics::solver::PhysicsWorld::cast_ray(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &alice_physics::shape_raycast::RayFilter) -> core::option::Option<alice_physics::shape_raycast::WorldRayHit>
+pub fn alice_physics::solver::PhysicsWorld::cast_ray_all(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &alice_physics::shape_raycast::RayFilter) -> alloc::vec::Vec<alice_physics::shape_raycast::WorldRayHit>
+pub fn alice_physics::solver::PhysicsWorld::cast_ray_any(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &alice_physics::shape_raycast::RayFilter) -> bool
+pub fn alice_physics::solver::PhysicsWorld::ray_caster(&self, alice_physics::shape_raycast::RayFilter) -> alice_physics::shape_raycast::WorldRayCaster<'_>
 impl alice_physics::solver::PhysicsWorld
 pub fn alice_physics::solver::PhysicsWorld::sdf_ccd_hits(&self, alice_physics::math::Fix128, &alice_physics::sdf_ccd::SdfCcdConfig) -> alloc::vec::Vec<(usize, usize, alice_physics::ccd::TOI)>
 impl core::fmt::Debug for alice_physics::solver::PhysicsWorld
@@ -13551,6 +13559,9 @@ pub fn alice_physics::rng::DeterministicRng::next_bounded(&mut self, u32) -> u32
 pub fn alice_physics::rng::DeterministicRng::next_direction(&mut self) -> alice_physics::math::Vec3Fix
 pub fn alice_physics::rng::DeterministicRng::next_fix128(&mut self) -> alice_physics::math::Fix128
 pub fn alice_physics::rng::DeterministicRng::next_fix128_range(&mut self, alice_physics::math::Fix128, alice_physics::math::Fix128) -> alice_physics::math::Fix128
+pub fn alice_physics::rng::DeterministicRng::next_gaussian(&mut self) -> alice_physics::math::Fix128
+pub fn alice_physics::rng::DeterministicRng::next_gaussian_pair(&mut self) -> (alice_physics::math::Fix128, alice_physics::math::Fix128)
+pub fn alice_physics::rng::DeterministicRng::next_gaussian_with(&mut self, alice_physics::math::Fix128, alice_physics::math::Fix128) -> alice_physics::math::Fix128
 pub fn alice_physics::rng::DeterministicRng::next_u32(&mut self) -> u32
 pub fn alice_physics::rng::DeterministicRng::next_u64(&mut self) -> u64
 impl core::clone::Clone for alice_physics::rng::DeterministicRng
@@ -14371,6 +14382,147 @@ impl<'a, F> core::marker::Unpin for alice_physics::sdf_wind_field::SdfWindField<
 impl<'a, F> core::marker::UnsafeUnpin for alice_physics::sdf_wind_field::SdfWindField<'a, F> where &'a F: core::marker::UnsafeUnpin, F: ?core::marker::Sized
 impl<'a, F> core::panic::unwind_safe::RefUnwindSafe for alice_physics::sdf_wind_field::SdfWindField<'a, F> where &'a F: core::panic::unwind_safe::RefUnwindSafe, F: ?core::marker::Sized
 impl<'a, F> core::panic::unwind_safe::UnwindSafe for alice_physics::sdf_wind_field::SdfWindField<'a, F> where &'a F: core::panic::unwind_safe::UnwindSafe, F: ?core::marker::Sized
+pub mod alice_physics::sensors
+#[non_exhaustive] pub struct alice_physics::sensors::ContactReading
+pub alice_physics::sensors::ContactReading::contact_count: usize
+pub alice_physics::sensors::ContactReading::in_contact: bool
+pub alice_physics::sensors::ContactReading::net_force: alice_physics::math::Vec3Fix
+pub alice_physics::sensors::ContactReading::normal_force: alice_physics::math::Fix128
+impl core::clone::Clone for alice_physics::sensors::ContactReading
+pub fn alice_physics::sensors::ContactReading::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::sensors::ContactReading
+impl core::cmp::PartialEq for alice_physics::sensors::ContactReading
+pub fn alice_physics::sensors::ContactReading::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::sensors::ContactReading
+pub fn alice_physics::sensors::ContactReading::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::sensors::ContactReading
+impl core::marker::StructuralPartialEq for alice_physics::sensors::ContactReading
+impl core::marker::Freeze for alice_physics::sensors::ContactReading
+impl core::marker::Send for alice_physics::sensors::ContactReading
+impl core::marker::Sync for alice_physics::sensors::ContactReading
+impl core::marker::Unpin for alice_physics::sensors::ContactReading
+impl core::marker::UnsafeUnpin for alice_physics::sensors::ContactReading
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::sensors::ContactReading
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::sensors::ContactReading
+pub struct alice_physics::sensors::ContactSensor
+pub alice_physics::sensors::ContactSensor::body: usize
+impl alice_physics::sensors::ContactSensor
+pub const fn alice_physics::sensors::ContactSensor::new(usize) -> Self
+pub fn alice_physics::sensors::ContactSensor::read(&mut self, &alice_physics::solver::PhysicsWorld, alice_physics::math::Fix128) -> alice_physics::sensors::ContactReading
+pub fn alice_physics::sensors::ContactSensor::with_noise(self, alice_physics::sensors::GaussianNoise) -> Self
+impl core::clone::Clone for alice_physics::sensors::ContactSensor
+pub fn alice_physics::sensors::ContactSensor::clone(&self) -> Self
+impl core::fmt::Debug for alice_physics::sensors::ContactSensor
+pub fn alice_physics::sensors::ContactSensor::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for alice_physics::sensors::ContactSensor
+impl core::marker::Send for alice_physics::sensors::ContactSensor
+impl core::marker::Sync for alice_physics::sensors::ContactSensor
+impl core::marker::Unpin for alice_physics::sensors::ContactSensor
+impl core::marker::UnsafeUnpin for alice_physics::sensors::ContactSensor
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::sensors::ContactSensor
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::sensors::ContactSensor
+pub struct alice_physics::sensors::GaussianNoise
+pub alice_physics::sensors::GaussianNoise::std_dev: alice_physics::math::Fix128
+impl alice_physics::sensors::GaussianNoise
+pub fn alice_physics::sensors::GaussianNoise::apply(&mut self, alice_physics::math::Fix128) -> alice_physics::math::Fix128
+pub fn alice_physics::sensors::GaussianNoise::apply_vec(&mut self, alice_physics::math::Vec3Fix) -> alice_physics::math::Vec3Fix
+pub fn alice_physics::sensors::GaussianNoise::new(alice_physics::math::Fix128, u64) -> Self
+pub fn alice_physics::sensors::GaussianNoise::sample(&mut self) -> alice_physics::math::Fix128
+impl core::clone::Clone for alice_physics::sensors::GaussianNoise
+pub fn alice_physics::sensors::GaussianNoise::clone(&self) -> Self
+impl core::fmt::Debug for alice_physics::sensors::GaussianNoise
+pub fn alice_physics::sensors::GaussianNoise::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for alice_physics::sensors::GaussianNoise
+impl core::marker::Send for alice_physics::sensors::GaussianNoise
+impl core::marker::Sync for alice_physics::sensors::GaussianNoise
+impl core::marker::Unpin for alice_physics::sensors::GaussianNoise
+impl core::marker::UnsafeUnpin for alice_physics::sensors::GaussianNoise
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::sensors::GaussianNoise
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::sensors::GaussianNoise
+pub struct alice_physics::sensors::Imu
+pub alice_physics::sensors::Imu::body: usize
+impl alice_physics::sensors::Imu
+pub fn alice_physics::sensors::Imu::new(&alice_physics::solver::PhysicsWorld, usize) -> core::option::Option<Self>
+pub fn alice_physics::sensors::Imu::sample(&mut self, &alice_physics::solver::PhysicsWorld, alice_physics::math::Fix128) -> core::option::Option<alice_physics::sensors::ImuReading>
+pub fn alice_physics::sensors::Imu::with_accel_noise(self, alice_physics::sensors::GaussianNoise) -> Self
+pub fn alice_physics::sensors::Imu::with_gyro_noise(self, alice_physics::sensors::GaussianNoise) -> Self
+impl core::clone::Clone for alice_physics::sensors::Imu
+pub fn alice_physics::sensors::Imu::clone(&self) -> Self
+impl core::fmt::Debug for alice_physics::sensors::Imu
+pub fn alice_physics::sensors::Imu::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for alice_physics::sensors::Imu
+impl core::marker::Send for alice_physics::sensors::Imu
+impl core::marker::Sync for alice_physics::sensors::Imu
+impl core::marker::Unpin for alice_physics::sensors::Imu
+impl core::marker::UnsafeUnpin for alice_physics::sensors::Imu
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::sensors::Imu
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::sensors::Imu
+#[non_exhaustive] pub struct alice_physics::sensors::ImuReading
+pub alice_physics::sensors::ImuReading::acceleration: alice_physics::math::Vec3Fix
+pub alice_physics::sensors::ImuReading::angular_velocity: alice_physics::math::Vec3Fix
+pub alice_physics::sensors::ImuReading::specific_force: alice_physics::math::Vec3Fix
+impl core::clone::Clone for alice_physics::sensors::ImuReading
+pub fn alice_physics::sensors::ImuReading::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::sensors::ImuReading
+impl core::cmp::PartialEq for alice_physics::sensors::ImuReading
+pub fn alice_physics::sensors::ImuReading::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::sensors::ImuReading
+pub fn alice_physics::sensors::ImuReading::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::sensors::ImuReading
+impl core::marker::StructuralPartialEq for alice_physics::sensors::ImuReading
+impl core::marker::Freeze for alice_physics::sensors::ImuReading
+impl core::marker::Send for alice_physics::sensors::ImuReading
+impl core::marker::Sync for alice_physics::sensors::ImuReading
+impl core::marker::Unpin for alice_physics::sensors::ImuReading
+impl core::marker::UnsafeUnpin for alice_physics::sensors::ImuReading
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::sensors::ImuReading
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::sensors::ImuReading
+pub struct alice_physics::sensors::Lidar
+pub alice_physics::sensors::Lidar::filter: alice_physics::shape_raycast::RayFilter
+pub alice_physics::sensors::Lidar::max_range: alice_physics::math::Fix128
+pub alice_physics::sensors::Lidar::position: alice_physics::math::Vec3Fix
+pub alice_physics::sensors::Lidar::rotation: alice_physics::math::QuatFix
+impl alice_physics::sensors::Lidar
+pub fn alice_physics::sensors::Lidar::directions(&self) -> alloc::vec::Vec<alice_physics::math::Vec3Fix>
+pub fn alice_physics::sensors::Lidar::new((alice_physics::math::Fix128, alice_physics::math::Fix128, usize), (alice_physics::math::Fix128, alice_physics::math::Fix128, usize), alice_physics::math::Fix128) -> Self
+pub fn alice_physics::sensors::Lidar::scan(&mut self, &alice_physics::solver::PhysicsWorld) -> alice_physics::sensors::LidarScan
+pub fn alice_physics::sensors::Lidar::scan_from_body(&mut self, &alice_physics::solver::PhysicsWorld, usize) -> core::option::Option<alice_physics::sensors::LidarScan>
+pub fn alice_physics::sensors::Lidar::with_filter(self, alice_physics::shape_raycast::RayFilter) -> Self
+pub fn alice_physics::sensors::Lidar::with_noise(self, alice_physics::sensors::GaussianNoise) -> Self
+pub fn alice_physics::sensors::Lidar::with_pose(self, alice_physics::math::Vec3Fix, alice_physics::math::QuatFix) -> Self
+impl core::clone::Clone for alice_physics::sensors::Lidar
+pub fn alice_physics::sensors::Lidar::clone(&self) -> Self
+impl core::fmt::Debug for alice_physics::sensors::Lidar
+pub fn alice_physics::sensors::Lidar::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for alice_physics::sensors::Lidar
+impl core::marker::Send for alice_physics::sensors::Lidar
+impl core::marker::Sync for alice_physics::sensors::Lidar
+impl core::marker::Unpin for alice_physics::sensors::Lidar
+impl core::marker::UnsafeUnpin for alice_physics::sensors::Lidar
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::sensors::Lidar
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::sensors::Lidar
+#[non_exhaustive] pub struct alice_physics::sensors::LidarScan
+pub alice_physics::sensors::LidarScan::azimuth_count: usize
+pub alice_physics::sensors::LidarScan::elevation_count: usize
+pub alice_physics::sensors::LidarScan::hits: alloc::vec::Vec<core::option::Option<alice_physics::shape_raycast::WorldRayHit>>
+pub alice_physics::sensors::LidarScan::ranges: alloc::vec::Vec<core::option::Option<alice_physics::math::Fix128>>
+impl alice_physics::sensors::LidarScan
+pub fn alice_physics::sensors::LidarScan::range(&self, usize, usize) -> core::option::Option<alice_physics::math::Fix128>
+impl core::clone::Clone for alice_physics::sensors::LidarScan
+pub fn alice_physics::sensors::LidarScan::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::sensors::LidarScan
+impl core::cmp::PartialEq for alice_physics::sensors::LidarScan
+pub fn alice_physics::sensors::LidarScan::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::sensors::LidarScan
+pub fn alice_physics::sensors::LidarScan::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for alice_physics::sensors::LidarScan
+impl core::marker::Freeze for alice_physics::sensors::LidarScan
+impl core::marker::Send for alice_physics::sensors::LidarScan
+impl core::marker::Sync for alice_physics::sensors::LidarScan
+impl core::marker::Unpin for alice_physics::sensors::LidarScan
+impl core::marker::UnsafeUnpin for alice_physics::sensors::LidarScan
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::sensors::LidarScan
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::sensors::LidarScan
 pub mod alice_physics::shape
 pub enum alice_physics::shape::Shape
 pub alice_physics::shape::Shape::Box
@@ -14455,6 +14607,100 @@ impl core::marker::Unpin for alice_physics::shape::PosedShape
 impl core::marker::UnsafeUnpin for alice_physics::shape::PosedShape
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::shape::PosedShape
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::shape::PosedShape
+pub mod alice_physics::shape_raycast
+#[non_exhaustive] pub enum alice_physics::shape_raycast::RayTarget
+pub alice_physics::shape_raycast::RayTarget::Body(usize)
+pub alice_physics::shape_raycast::RayTarget::Sdf(usize)
+pub alice_physics::shape_raycast::RayTarget::StaticCollider(usize)
+impl core::clone::Clone for alice_physics::shape_raycast::RayTarget
+pub fn alice_physics::shape_raycast::RayTarget::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::shape_raycast::RayTarget
+impl core::cmp::Ord for alice_physics::shape_raycast::RayTarget
+pub fn alice_physics::shape_raycast::RayTarget::cmp(&self, &Self) -> core::cmp::Ordering
+impl core::cmp::PartialEq for alice_physics::shape_raycast::RayTarget
+pub fn alice_physics::shape_raycast::RayTarget::eq(&self, &Self) -> bool
+impl core::cmp::PartialOrd for alice_physics::shape_raycast::RayTarget
+pub fn alice_physics::shape_raycast::RayTarget::partial_cmp(&self, &Self) -> core::option::Option<core::cmp::Ordering>
+impl core::fmt::Debug for alice_physics::shape_raycast::RayTarget
+pub fn alice_physics::shape_raycast::RayTarget::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for alice_physics::shape_raycast::RayTarget
+pub fn alice_physics::shape_raycast::RayTarget::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for alice_physics::shape_raycast::RayTarget
+impl core::marker::StructuralPartialEq for alice_physics::shape_raycast::RayTarget
+impl core::marker::Freeze for alice_physics::shape_raycast::RayTarget
+impl core::marker::Send for alice_physics::shape_raycast::RayTarget
+impl core::marker::Sync for alice_physics::shape_raycast::RayTarget
+impl core::marker::Unpin for alice_physics::shape_raycast::RayTarget
+impl core::marker::UnsafeUnpin for alice_physics::shape_raycast::RayTarget
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::shape_raycast::RayTarget
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::shape_raycast::RayTarget
+#[non_exhaustive] pub struct alice_physics::shape_raycast::RayFilter
+pub alice_physics::shape_raycast::RayFilter::exclude_body: core::option::Option<usize>
+pub alice_physics::shape_raycast::RayFilter::include_sdf: bool
+pub alice_physics::shape_raycast::RayFilter::include_sensors: bool
+pub alice_physics::shape_raycast::RayFilter::include_static: bool
+pub alice_physics::shape_raycast::RayFilter::layer_mask: u32
+pub alice_physics::shape_raycast::RayFilter::sdf: alice_physics::sdf_ccd::SdfCcdConfig
+impl alice_physics::shape_raycast::RayFilter
+pub const fn alice_physics::shape_raycast::RayFilter::excluding_body(self, usize) -> Self
+pub fn alice_physics::shape_raycast::RayFilter::new() -> Self
+pub const fn alice_physics::shape_raycast::RayFilter::with_layer_mask(self, u32) -> Self
+pub const fn alice_physics::shape_raycast::RayFilter::with_sdf(self, bool) -> Self
+pub const fn alice_physics::shape_raycast::RayFilter::with_sdf_config(self, alice_physics::sdf_ccd::SdfCcdConfig) -> Self
+pub const fn alice_physics::shape_raycast::RayFilter::with_sensors(self, bool) -> Self
+pub const fn alice_physics::shape_raycast::RayFilter::with_static(self, bool) -> Self
+impl core::clone::Clone for alice_physics::shape_raycast::RayFilter
+pub fn alice_physics::shape_raycast::RayFilter::clone(&self) -> Self
+impl core::cmp::PartialEq for alice_physics::shape_raycast::RayFilter
+pub fn alice_physics::shape_raycast::RayFilter::eq(&self, &Self) -> bool
+impl core::default::Default for alice_physics::shape_raycast::RayFilter
+pub fn alice_physics::shape_raycast::RayFilter::default() -> Self
+impl core::fmt::Debug for alice_physics::shape_raycast::RayFilter
+pub fn alice_physics::shape_raycast::RayFilter::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::shape_raycast::RayFilter
+impl core::marker::StructuralPartialEq for alice_physics::shape_raycast::RayFilter
+impl core::marker::Freeze for alice_physics::shape_raycast::RayFilter
+impl core::marker::Send for alice_physics::shape_raycast::RayFilter
+impl core::marker::Sync for alice_physics::shape_raycast::RayFilter
+impl core::marker::Unpin for alice_physics::shape_raycast::RayFilter
+impl core::marker::UnsafeUnpin for alice_physics::shape_raycast::RayFilter
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::shape_raycast::RayFilter
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::shape_raycast::RayFilter
+pub struct alice_physics::shape_raycast::WorldRayCaster<'w>
+impl alice_physics::shape_raycast::WorldRayCaster<'_>
+pub fn alice_physics::shape_raycast::WorldRayCaster<'_>::all(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128) -> alloc::vec::Vec<alice_physics::shape_raycast::WorldRayHit>
+pub fn alice_physics::shape_raycast::WorldRayCaster<'_>::any(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128) -> bool
+pub fn alice_physics::shape_raycast::WorldRayCaster<'_>::candidates(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128) -> alloc::vec::Vec<usize>
+pub fn alice_physics::shape_raycast::WorldRayCaster<'_>::closest(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128) -> core::option::Option<alice_physics::shape_raycast::WorldRayHit>
+impl<'w> core::marker::Freeze for alice_physics::shape_raycast::WorldRayCaster<'w>
+impl<'w> core::marker::Send for alice_physics::shape_raycast::WorldRayCaster<'w>
+impl<'w> core::marker::Sync for alice_physics::shape_raycast::WorldRayCaster<'w>
+impl<'w> core::marker::Unpin for alice_physics::shape_raycast::WorldRayCaster<'w>
+impl<'w> core::marker::UnsafeUnpin for alice_physics::shape_raycast::WorldRayCaster<'w>
+impl<'w> !core::panic::unwind_safe::RefUnwindSafe for alice_physics::shape_raycast::WorldRayCaster<'w>
+impl<'w> !core::panic::unwind_safe::UnwindSafe for alice_physics::shape_raycast::WorldRayCaster<'w>
+#[non_exhaustive] pub struct alice_physics::shape_raycast::WorldRayHit
+pub alice_physics::shape_raycast::WorldRayHit::body: core::option::Option<usize>
+pub alice_physics::shape_raycast::WorldRayHit::normal: alice_physics::math::Vec3Fix
+pub alice_physics::shape_raycast::WorldRayHit::point: alice_physics::math::Vec3Fix
+pub alice_physics::shape_raycast::WorldRayHit::t: alice_physics::math::Fix128
+pub alice_physics::shape_raycast::WorldRayHit::target: alice_physics::shape_raycast::RayTarget
+impl core::clone::Clone for alice_physics::shape_raycast::WorldRayHit
+pub fn alice_physics::shape_raycast::WorldRayHit::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::shape_raycast::WorldRayHit
+impl core::cmp::PartialEq for alice_physics::shape_raycast::WorldRayHit
+pub fn alice_physics::shape_raycast::WorldRayHit::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::shape_raycast::WorldRayHit
+pub fn alice_physics::shape_raycast::WorldRayHit::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::shape_raycast::WorldRayHit
+impl core::marker::StructuralPartialEq for alice_physics::shape_raycast::WorldRayHit
+impl core::marker::Freeze for alice_physics::shape_raycast::WorldRayHit
+impl core::marker::Send for alice_physics::shape_raycast::WorldRayHit
+impl core::marker::Sync for alice_physics::shape_raycast::WorldRayHit
+impl core::marker::Unpin for alice_physics::shape_raycast::WorldRayHit
+impl core::marker::UnsafeUnpin for alice_physics::shape_raycast::WorldRayHit
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::shape_raycast::WorldRayHit
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::shape_raycast::WorldRayHit
 pub mod alice_physics::sim_field
 pub struct alice_physics::sim_field::ScalarField3D
 pub alice_physics::sim_field::ScalarField3D::data: alloc::vec::Vec<f32>
@@ -15535,6 +15781,11 @@ pub const alice_physics::solver::PhysicsWorld::WORLD_SNAPSHOT_VERSION: u16
 pub fn alice_physics::solver::PhysicsWorld::from_world_snapshot(&[u8]) -> core::result::Result<Self, alice_physics::WorldSnapshotError>
 pub fn alice_physics::solver::PhysicsWorld::restore_world(&mut self, &[u8]) -> core::result::Result<(), alice_physics::WorldSnapshotError>
 pub fn alice_physics::solver::PhysicsWorld::snapshot_world(&self) -> alloc::vec::Vec<u8>
+impl alice_physics::solver::PhysicsWorld
+pub fn alice_physics::solver::PhysicsWorld::cast_ray(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &alice_physics::shape_raycast::RayFilter) -> core::option::Option<alice_physics::shape_raycast::WorldRayHit>
+pub fn alice_physics::solver::PhysicsWorld::cast_ray_all(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &alice_physics::shape_raycast::RayFilter) -> alloc::vec::Vec<alice_physics::shape_raycast::WorldRayHit>
+pub fn alice_physics::solver::PhysicsWorld::cast_ray_any(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &alice_physics::shape_raycast::RayFilter) -> bool
+pub fn alice_physics::solver::PhysicsWorld::ray_caster(&self, alice_physics::shape_raycast::RayFilter) -> alice_physics::shape_raycast::WorldRayCaster<'_>
 impl alice_physics::solver::PhysicsWorld
 pub fn alice_physics::solver::PhysicsWorld::sdf_ccd_hits(&self, alice_physics::math::Fix128, &alice_physics::sdf_ccd::SdfCcdConfig) -> alloc::vec::Vec<(usize, usize, alice_physics::ccd::TOI)>
 impl core::fmt::Debug for alice_physics::solver::PhysicsWorld
@@ -19286,6 +19537,9 @@ pub fn alice_physics::rng::DeterministicRng::next_bounded(&mut self, u32) -> u32
 pub fn alice_physics::rng::DeterministicRng::next_direction(&mut self) -> alice_physics::math::Vec3Fix
 pub fn alice_physics::rng::DeterministicRng::next_fix128(&mut self) -> alice_physics::math::Fix128
 pub fn alice_physics::rng::DeterministicRng::next_fix128_range(&mut self, alice_physics::math::Fix128, alice_physics::math::Fix128) -> alice_physics::math::Fix128
+pub fn alice_physics::rng::DeterministicRng::next_gaussian(&mut self) -> alice_physics::math::Fix128
+pub fn alice_physics::rng::DeterministicRng::next_gaussian_pair(&mut self) -> (alice_physics::math::Fix128, alice_physics::math::Fix128)
+pub fn alice_physics::rng::DeterministicRng::next_gaussian_with(&mut self, alice_physics::math::Fix128, alice_physics::math::Fix128) -> alice_physics::math::Fix128
 pub fn alice_physics::rng::DeterministicRng::next_u32(&mut self) -> u32
 pub fn alice_physics::rng::DeterministicRng::next_u64(&mut self) -> u64
 impl core::clone::Clone for alice_physics::rng::DeterministicRng
@@ -20998,6 +21252,11 @@ pub const alice_physics::solver::PhysicsWorld::WORLD_SNAPSHOT_VERSION: u16
 pub fn alice_physics::solver::PhysicsWorld::from_world_snapshot(&[u8]) -> core::result::Result<Self, alice_physics::WorldSnapshotError>
 pub fn alice_physics::solver::PhysicsWorld::restore_world(&mut self, &[u8]) -> core::result::Result<(), alice_physics::WorldSnapshotError>
 pub fn alice_physics::solver::PhysicsWorld::snapshot_world(&self) -> alloc::vec::Vec<u8>
+impl alice_physics::solver::PhysicsWorld
+pub fn alice_physics::solver::PhysicsWorld::cast_ray(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &alice_physics::shape_raycast::RayFilter) -> core::option::Option<alice_physics::shape_raycast::WorldRayHit>
+pub fn alice_physics::solver::PhysicsWorld::cast_ray_all(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &alice_physics::shape_raycast::RayFilter) -> alloc::vec::Vec<alice_physics::shape_raycast::WorldRayHit>
+pub fn alice_physics::solver::PhysicsWorld::cast_ray_any(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &alice_physics::shape_raycast::RayFilter) -> bool
+pub fn alice_physics::solver::PhysicsWorld::ray_caster(&self, alice_physics::shape_raycast::RayFilter) -> alice_physics::shape_raycast::WorldRayCaster<'_>
 impl alice_physics::solver::PhysicsWorld
 pub fn alice_physics::solver::PhysicsWorld::sdf_ccd_hits(&self, alice_physics::math::Fix128, &alice_physics::sdf_ccd::SdfCcdConfig) -> alloc::vec::Vec<(usize, usize, alice_physics::ccd::TOI)>
 impl core::fmt::Debug for alice_physics::solver::PhysicsWorld

@@ -1827,11 +1827,43 @@ impl PhysicsWorld {
 
     // ── Raycast on World ──────────────────────────────────────────────
 
+    /// What a ray query tests for body `i`: its collision radius and the shape or
+    /// compound it carries, or `None` when the body has no collision radius (it
+    /// takes part in no collision, so no ray sees it either).
+    pub(crate) fn ray_geometry(
+        &self,
+        i: usize,
+    ) -> Option<(Fix128, Option<&crate::body_collider::BodyCollider>)> {
+        let radius = self.body_collision_radii.get(i).copied().flatten()?;
+        Some((radius, self.body_colliders.get(i).and_then(Option::as_ref)))
+    }
+
+    /// The static colliders, in index order.
+    pub(crate) fn static_colliders_slice(&self) -> &[crate::static_collider::StaticCollider] {
+        &self.static_colliders
+    }
+
+    /// The normal force of one contact of the last step (see
+    /// [`contact_forces`](Self::contact_forces)), or `None` when neither body can move.
+    pub(crate) fn contact_constraint_force(
+        &self,
+        c: &ContactConstraint,
+        dt: Fix128,
+    ) -> Option<Fix128> {
+        let h = self.substep_dt(dt);
+        self.contact_force(c, h * h).map(|(_, _, force)| force)
+    }
+
     /// Cast a ray against all body collision spheres, returns (`body_index`, distance).
     ///
     /// Uses a BVH broad-phase to cull bodies outside the ray's bounding box,
     /// then performs exact ray-sphere intersection on candidates.
     /// Returns `None` if direction is zero or no body is hit.
+    ///
+    /// Every body is tested as its **bounding sphere** (its collision radius), even
+    /// when it carries a shape or a compound, and static colliders and SDF
+    /// colliders are not tested. [`Self::cast_ray`] tests the actual geometry (see
+    /// [`crate::shape_raycast`]).
     #[must_use]
     pub fn raycast(
         &self,

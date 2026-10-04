@@ -191,7 +191,6 @@ src/sketch.rs::HeavyHitterEntry
 src/sleeping.rs::wake_body
 src/solver.rs::begin_frame
 src/solver.rs::end_frame
-src/solver.rs::raycast
 src/solver.rs::step_parallel
 src/solver_tgs.rs::BodyRef
 src/solver_tgs.rs::ContactRef
@@ -224,8 +223,6 @@ src/support_volume.rs::speed
 src/torus.rs::aabb
 src/torus.rs::surface_area
 src/torus.rs::with_rotation
-src/trimesh.rs::ray_triangle
-src/trimesh.rs::raycast
 src/vehicle.rs::new_default
 src/wave_ship.rs::ShipResponse
 src/wave_ship.rs::advance
