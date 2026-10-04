@@ -13,8 +13,9 @@ English | [日本語](README_JP.md)
 [![License](https://img.shields.io/crates/l/alice-physics.svg)](#license)
 
 ALICE-Physics is built for cases where bit-exact replay is a requirement:
-rollback and lockstep netcode, server-side replay verification, and
-reproducible engineering or research batches. Next to the rigid-body solver it
+rollback and lockstep netcode, server-side replay verification, search and
+planning loops that need to branch and rewind a simulation, and reproducible
+engineering or research batches. Next to the rigid-body solver it
 includes a set of engineering modules (FEM, CFD, heat transfer, composites,
 3D-print checks), all held to the same cross-platform determinism.
 <!-- claim-test: golden_sim_field -->
@@ -29,6 +30,7 @@ arithmetic costs time, and scenes with thousands of interacting bodies at
 - [Installation](#installation)
 - [Example](#example)
 - [Determinism](#determinism)
+- [Reset, observation and rollback](#reset-observation-and-rollback)
 - [What is included](#what-is-included)
 - [Validation and known defects](#validation-and-known-defects)
 - [Cargo features](#cargo-features)
@@ -126,6 +128,30 @@ fast-math style flags.
 **Determinism is not correctness.** Matching bits say every peer computes the
 same numbers, not that the numbers are right. That is checked separately; see
 [Validation and known defects](#validation-and-known-defects).
+
+## Reset, observation and rollback
+
+Because a step is bit-exact, a `PhysicsWorld` can be used as a step function
+that a search or planning loop calls many times: try an action, read the
+result, rewind, try another. These APIs support that use:
+
+| API | What it gives you |
+|-----|-------------------|
+| `PhysicsWorld::reset_world()` | every field back to the state `PhysicsWorld::new` produces, so the same start and the same inputs give the same bits on a second run |
+| `observe_body` / `observe_bodies` | a typed `BodyObservation` (position, velocity, rotation, angular velocity, `sleeping`, `in_contact`) for a goal check to read, instead of parsing the state blob |
+| `serialize_state` / `deserialize_state` | save and restore a branch point; restoring is refused when the bodies in the world (mass, shape, filter, material) differ from the ones that were saved, even if the count matches |
+| `overflow_detected()` | reports when `Fix128` arithmetic left its range, so a diverged run is not mistaken for a valid one; the flag survives a rollback |
+| `netcode::SimulationChecksum` | a checksum derived from the same bytes as the saved state |
+
+[`examples/world_auditor_observation.rs`](examples/world_auditor_observation.rs)
+shows reset and observation. The contracts are pinned by the `tests/wm0*_*.rs`
+files.
+
+**Scope.** The saved state covers rigid bodies: their motion, sleep state and
+the overflow flag. Joints, force fields, collision filters and materials are
+not saved; the caller rebuilds them, as in rollback netcode. Cloth, fluids and
+FEM are not part of the saved state. The crate provides the step function, not
+a search algorithm.
 
 ## What is included
 
