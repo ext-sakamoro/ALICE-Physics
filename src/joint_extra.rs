@@ -519,7 +519,6 @@ fn solve_pulley(joint: &PulleyJoint, bodies: &mut [RigidBody], dt: Fix128) {
 ///   rotation is applied.
 /// - If both ropes have zero length, or the generalized inverse mass is zero,
 ///   nothing is moved.
-// ALLOW-UNWIRED: public API for callers that capture the rest length themselves; the ExtraJoint dispatch has no rest-length field, so the world never calls it
 pub fn solve_pulley_to_length(
     joint: &PulleyJoint,
     bodies: &mut [RigidBody],
