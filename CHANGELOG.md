@@ -96,6 +96,7 @@ were introduced during that release window.
 - `vehicle_dynamics::surface::{RoadSurface, FlatGround, InclinedPlane, HeightFieldRoad, TriMeshRoad, SdfRoad, RoadCondition, Weather}`: 路面形状 5 種と、路面材料 × 天候 (乾燥 / 湿潤 / 雪 / 氷) × hydroplaning の grip
 - `vehicle_dynamics::powertrain::{Powertrain, TorqueCurve, Differential}`: トルク曲線・変速・エンジンブレーキ・差動 `Powertrain::from_engine_config` は `EngineConfig` の `max_rpm` / `engine_brake` / `num_gears` を読む
 - `vehicle_dynamics::scenario::{Scenario, Recording, StoppingDistanceMeter, time_to_collision, time_headway}`: 複数車両の実行、TTC と車間時間、停止距離計、`Fix128` の raw 値による無損失 replay (版付きバイト列)
+- `spherical_terrain::{SphericalHeightField, SurfaceHeight, central_gravity}` / `sdf_collider::SdfUnion` / `SdfCharacter::{apply_central_gravity, step_on_sphere}`: 球面世界の地面を方向ごとの高さで与える距離場 (傾きの上限を宣言すると基準球の外で 1-Lipschitz)、2 つの距離場の和、中心向きの一定重力、大円に沿う移動 (弧長 = 速さ × 時間、歩ける傾斜では接触を up 方向に解くので重力で斜面を下らず、skin の厚みの中で上下に揺れない) example `spherical_planet_walk`
 
 ### Changed
 

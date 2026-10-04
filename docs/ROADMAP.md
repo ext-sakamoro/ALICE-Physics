@@ -24,6 +24,10 @@ increment 他) が**追加機材の調達待ち**であるかのように読め�
 | Maxwell FDTD | `ecd8c61` | source-free Yee、⚠️ **SI は `ε₀·μ₀` が 7.7 bit で不可**、正規化単位 + `S=9/16` |
 | 多体 ABA | `1bab99b` | ⚠️ **`solve()` が `link.joint` を読まない**状態から real ABA、oracle 12 本 |
 
+### 第 67 increment (2026-10-04、球面世界の部品)
+
+`spherical_terrain` を追加 (`SphericalHeightField` / `SurfaceHeight` / `central_gravity`) し、`sdf_collider::SdfUnion` と `SdfCharacter::{apply_central_gravity, step_on_sphere}` を足した 地面の高さの決め方 (どこが沈むか等) は呼び出し側が closure で渡し、crate は持たない oracle 18 本 (`tests/analytic_spherical_terrain.rs`、期待値は閉形式) 変異 23 件 (実装 14 / 配線 4 / 退化入力の guard 5) が全て red example `spherical_planet_walk` ⚠️ `ForceField::Point` は逆二乗則で `RigidBody` (Fix128) 向けのため、地表近くの一定重力と `f32` の `SdfCharacter` には別関数を置いた ⚠️ 傾きの上限で距離を縮めると、押し出し後の地面との隙間は `sqrt(1 + s²)` 倍になる (doc に明記)
+
 ### 第 66 increment (2026-10-04、実形状に当たる raycast とセンサー)
 
 `shape_raycast`: world が衝突に使う形状 (body の球・`Shape` 6 種・compound の球 / カプセル / 箱 / 凸包・平面・高さ場・三角形メッシュ・SDF) に ray を当てる 最近接 / 全件 / any、layer mask と除外 body、BVH を ray で辿って候補を絞る 既存の `PhysicsWorld::raycast` (外接球近似) は挙動を変えず doc に近似であることを明記 `sensors`: lidar (角度格子、1 scan で BVH を 1 回だけ構築)、接触センサー (法線力の合計)、IMU (速度差分の加速度、比力、body 座標の角速度) `DeterministicRng` に `Fix128` の Box–Muller 正規分布 oracle は閉形式 (形状ごとの距離・法線、壁までの lidar 距離、自由落下・等角速度、静止箱の m·g、正規分布の標本モーメント) と、外接球近似が誤って当てる / 見ない scene を形状ごとに 1 本ずつ 未対応: 高さ場の `origin.y` の扱いと境界法線は既存挙動に委譲したまま (別途判断)

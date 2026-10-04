@@ -80,6 +80,7 @@
 //! - [`ellipsoid`]: Ellipsoid collider with three independent semi-axes
 //! - [`plane_collider`]: Infinite plane collider (sphere/AABB intersection)
 //! - [`sdf_collider`]: SDF-based collision shapes (distance field surfaces)
+//! - [`spherical_terrain`]: Sphere-world ground as a radial height field, and central gravity
 //! - [`torus`]: Torus collider with major/minor radii
 //! - [`wedge`]: Wedge (triangular prism) collider with 6 vertices
 //!
@@ -497,6 +498,7 @@ pub(crate) mod solver_tgs_hooks_6dof_scoped;
 #[cfg(feature = "std")]
 pub(crate) mod solver_tgs_backend;
 pub mod spatial;
+pub mod spherical_terrain;
 #[cfg(feature = "std")]
 pub mod thermal;
 pub mod thermal_stress;

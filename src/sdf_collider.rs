@@ -111,6 +111,44 @@ impl SdfField for ClosureSdf {
     }
 }
 
+/// Union of two fields: `min(a, b)`, with the normal of whichever is nearer.
+///
+/// On a tie the first operand wins. The union of two exact distance fields
+/// is exact outside both shapes and a lower bound inside; the union of two
+/// `L`-Lipschitz fields is `L`-Lipschitz.
+///
+/// The common use is a surface made of several layers, such as ground and
+/// a water level that can stand above it: a character colliding with the
+/// union stands on whichever is higher.
+#[derive(Debug, Clone)]
+pub struct SdfUnion<A, B> {
+    a: A,
+    b: B,
+}
+
+impl<A: SdfField, B: SdfField> SdfUnion<A, B> {
+    /// The union of `a` and `b`.
+    #[must_use]
+    pub fn new(a: A, b: B) -> Self {
+        Self { a, b }
+    }
+}
+
+impl<A: SdfField, B: SdfField> SdfField for SdfUnion<A, B> {
+    #[inline]
+    fn distance(&self, x: f32, y: f32, z: f32) -> f32 {
+        self.a.distance(x, y, z).min(self.b.distance(x, y, z))
+    }
+
+    fn normal(&self, x: f32, y: f32, z: f32) -> (f32, f32, f32) {
+        if self.a.distance(x, y, z) <= self.b.distance(x, y, z) {
+            self.a.normal(x, y, z)
+        } else {
+            self.b.normal(x, y, z)
+        }
+    }
+}
+
 // ============================================================================
 // SDF Collider (world-space placement)
 // ============================================================================

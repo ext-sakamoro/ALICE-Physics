@@ -143,6 +143,7 @@ this file or listed twice, or when a linked example or test does not exist.
 | `sdf_destruction` | CSG boolean destruction | std | [`sdf_destruction_events`](../examples/sdf_destruction_events.rs) |
 | `sdf_adaptive` | distance-based level of detail for SDF evaluation | std | [`sdf_adaptive_lod`](../examples/sdf_adaptive_lod.rs) |
 | `sdf_character` | character controller swept against an SDF | | [`character_state_machine`](../examples/character_state_machine.rs) |
+| `spherical_terrain` | sphere-world ground as a radial height field, constant gravity toward a centre | | [`spherical_planet_walk`](../examples/spherical_planet_walk.rs) |
 | `sdf_sph` | SPH particle fluid with SDF boundaries | std | [`sph_boundary_demo`](../examples/sph_boundary_demo.rs) |
 | `sdf_wind_field` | wind field shaped by an SDF | | |
 | `sdf_fem_mesh` | conforming tetrahedral meshes from an SDF, with marked refinement | std | [`sdf_fem_mesh_generation`](../examples/sdf_fem_mesh_generation.rs) |
