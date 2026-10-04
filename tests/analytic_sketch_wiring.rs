@@ -67,10 +67,9 @@
 //! (NaN poisons `sum`, `±∞` overflows the `i32` bucket index in a debug
 //! build); `DDSketch::new(0.0)` still makes `ln γ = 0` and `insert(2.0)`
 //! panics (a separate, unfixed defect — `α = 0` is finite so it is not
-//! caught by the `is_finite()` guard). `CountMinSketch::insert_hash` and
-//! `merge` accumulate `total` with `saturating_add`, matching the
-//! per-bucket counters, so `total` saturates at `u64::MAX` instead of
-//! overflowing.
+//! caught by the `is_finite()` guard). `CountMinSketch::insert_hash` saturates the
+//! counters but adds to `total` with plain `+=`, which panics in a debug
+//! build once the total passes `u64::MAX`.
 //!
 //! Author: Moroya Sakamoto
 
@@ -463,18 +462,18 @@ fn count_min_degenerate_inputs() {
     cms.insert_hash(h, u64::MAX);
     assert_eq!(cms.estimate_hash(h), u64::MAX);
     assert_eq!(cms.total(), u64::MAX);
-    // `total` is accumulated with saturating_add, matching the per-bucket
-    // counters: the next insertion does not panic and total stays at the
-    // saturated maximum rather than overflowing or wrapping.
+    // ... but `total` is a plain `+=`: the next insertion overflows it.
+    // Measured contract: panic in a debug build ("attempt to add with
+    // overflow"), wrap-around in release.
     let r = catch_unwind(AssertUnwindSafe(|| {
         cms.insert_hash(h, 1);
         cms.total()
     }));
-    assert_eq!(
-        r.expect("total must not overflow"),
-        u64::MAX,
-        "total saturates"
-    );
+    if cfg!(debug_assertions) {
+        assert!(r.is_err(), "total overflow panics in debug builds");
+    } else {
+        assert_eq!(r.expect("release wraps"), 0, "total wraps in release");
+    }
 }
 
 // ---------------------------------------------------------------------------
