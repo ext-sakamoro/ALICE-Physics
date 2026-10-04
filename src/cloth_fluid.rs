@@ -118,10 +118,21 @@ pub fn apply_fluid_forces_to_cloth(
 /// `tests/analytic_added_mass_coupling.rs` on the one-degree-of-freedom piston,
 /// and are deliberately not transferred here.
 ///
-/// The applied update is byte-for-byte what [`apply_fluid_forces_to_cloth`]
-/// has always produced: each force term keeps its own multiplication by `dt`,
-/// because `Fix128` multiplication truncates and regrouping the products would
-/// change the result. Only the reported norm is new.
+/// The drag part of the applied update is one implicit Euler step on the
+/// relative velocity `u = v_cloth − v_fluid`: `u' = u / (1 + c·dt)` with
+/// `c = C_d · ρ · N`. Buoyancy and surface tension keep their explicit `F·dt`
+/// terms. The reported norm is still the force evaluated at the incoming
+/// velocity (`c·|u|` for drag), so for `c·dt > 0` the velocity change of a
+/// sweep is the reported drag force times `dt / (1 + c·dt)`, not times `dt`.
+///
+/// # Claims
+///
+/// - Drag never reverses the relative velocity and never increases its
+///   magnitude, for any `dt >= 0`, `C_d >= 0`, `ρ >= 0` (per component,
+///   `u' = u / (1 + c·dt)` has the sign of `u` and `|u'| <= |u|`).
+/// - For `c·dt -> 0` the update tends to the explicit `u − c·dt·u`.
+/// - A zero `dt`, empty inputs or no neighbour leave the velocities unchanged.
+/// - A negative `c·dt` is outside the model; the explicit step is used.
 pub fn apply_fluid_forces_to_cloth_with_residual(
     coupling: &ClothFluidCoupling,
     cloth_positions: &[Vec3Fix],
@@ -177,10 +188,19 @@ pub fn apply_fluid_forces_to_cloth_with_residual(
         // Surface tension: pulls cloth toward local fluid center
         let tension_force = avg_fluid_vel * coupling.surface_tension;
 
-        // Apply forces as velocity change (F * dt). Each term keeps its own
-        // multiplication: `Fix128` multiplication truncates, so folding the
-        // three into one product would change the result.
-        cloth_velocities[ci] = cv - drag_force * dt + buoyancy_force * dt + tension_force * dt;
+        // Drag is advanced with one implicit Euler step on the relative
+        // velocity: u' = u / (1 + c dt), i.e. u - u c dt / (1 + c dt), with
+        // c = C_d rho N. The explicit step u - c dt u overshoots (and flips
+        // the sign of u) once c dt > 1. Outside c dt >= 0 the closed form
+        // above is not defined, so the explicit step is kept there.
+        // Buoyancy and surface tension keep their explicit F * dt terms.
+        let drag_rate_dt = coupling.drag_coefficient * density_factor * dt;
+        let drag_delta = if drag_rate_dt >= Fix128::ZERO {
+            relative_vel * (drag_rate_dt / (Fix128::ONE + drag_rate_dt))
+        } else {
+            drag_force * dt
+        };
+        cloth_velocities[ci] = cv - drag_delta + buoyancy_force * dt + tension_force * dt;
 
         // Report the net interface force. Additions are exact in `Fix128`
         // (wrapping two's complement), so summing the terms here cannot

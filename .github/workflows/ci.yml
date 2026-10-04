@@ -2,7 +2,10 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # `ci/**` is a staging branch: push a batch there, let the full 5-OS suites run
+    # off the local machine, then fast-forward main to the same SHA once green
+    # (the local gate is `scripts/preflight.sh --fast`).
+    branches: [main, 'ci/**']
   pull_request:
     branches: [main]
 
@@ -38,6 +41,12 @@ jobs:
         run: python scripts/test_readme_sync.py
       - name: README sync (docs agree with Cargo.toml and src/)
         run: python scripts/readme_sync.py --check
+      # public documents: no development-process vocabulary or private names;
+      # CHANGELOG version headings and [Unreleased] categories well formed
+      - name: Docs lint (tests)
+        run: python scripts/test_docs_lint.py
+      - name: Docs lint (public documents, CHANGELOG structure)
+        run: python scripts/docs_lint.py --check
       # SCIP integration ledger (docs/integration-status.md): the analysis is
       # tested on hand-built indexes here; the real index needs rust-analyzer and
       # is built by integration-status.yml

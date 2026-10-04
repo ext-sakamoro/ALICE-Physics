@@ -6,7 +6,7 @@ edition = "2021"
 # that compiles with exactly `rust-version` (std + no_std) so the claim is verified.
 resolver = "3"
 authors = ["Moroya Sakamoto <sakamoro@alicelaw.net>"]
-description = "Deterministic 128-bit Fixed-Point Physics Engine"
+description = "Deterministic physics engine: 128-bit fixed-point rigid bodies with bit-exact, replayable results, typed observation and rollback for search and planning, plus FEM, CFD and 3D-print analysis modules"
 license = "AGPL-3.0-or-later OR LicenseRef-Commercial"
 repository = "https://github.com/ext-sakamoro/ALICE-Physics"
 homepage = "https://github.com/ext-sakamoro/ALICE-Physics"

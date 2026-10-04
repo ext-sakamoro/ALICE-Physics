@@ -232,7 +232,6 @@ fn constant_property_schemes_conserve_the_temperature_sum() {
 /// The module advances dT/dt = alpha(T) d2T/dx2 (non-divergence form), so
 /// sum(rho cp dT) = dt/dx^2 sum(k_i L_i) does not telescope when k varies.
 #[test]
-#[ignore = "known defect: AUD-A-S2W2-015: transient_step_1d advances alpha(T_i) * d2T/dx2 (non-conservative form) instead of (1/(rho cp)) d/dx(k dT/dx): for PLA with a 470 K / 300 K step sum(rho cp dT) / sum|rho cp dT| = -5.04e-2 (not zero), so zero-flux ends do not conserve heat when k, rho or cp depend on T"]
 fn explicit_step_conserves_enthalpy_with_temperature_dependent_conductivity() {
     let mat = ThermalMaterial::pla_polymer();
     let n = 40usize;
@@ -285,4 +284,76 @@ fn non_finite_diffusivity_gives_an_infinite_stable_dt() {
     assert!(m.diffusivity_at(300.0).is_infinite());
     assert!(stable_dt_1d(&[300.0; 4], &m, 1.0e-3).is_infinite());
     assert!(stable_dt_3d(&[300.0; 8], &m, 1.0e-3).is_infinite());
+}
+
+/// Same closed form as the 1-D conservation oracle: with zero-flux faces the
+/// first-order enthalpy change sum(rho cp dT) of the 3-D step must vanish when k,
+/// rho and cp depend on T, because every interior face adds to one cell exactly
+/// what it removes from its neighbour. Oracle: telescoping of the face fluxes
+/// of d/dx_a(k dT/dx_a), summed over all cells.
+#[test]
+fn explicit_3d_step_conserves_enthalpy_with_temperature_dependent_conductivity() {
+    let mat = ThermalMaterial::pla_polymer();
+    let (nx, ny, nz) = (6usize, 5usize, 4usize);
+    let init: Vec<f32> = (0..nx * ny * nz)
+        .map(|n| {
+            let i = n % nx;
+            if i < nx / 2 {
+                470.0
+            } else {
+                300.0
+            }
+        })
+        .collect();
+    let dx = 1.0e-3f32;
+    let dt = stable_dt_3d(&init, &mat, dx) * 0.5;
+    let mut t = init.clone();
+    transient_step_3d(&mut t, nx, ny, nz, &mat, dx, dt);
+    let mut net = 0.0f64;
+    let mut scale = 0.0f64;
+    for (a, b) in init.iter().zip(&t) {
+        let c = mat.heat_capacity_at(*a) as f64;
+        let d = (*b - *a) as f64;
+        net += c * d;
+        scale += c * d.abs();
+    }
+    assert!(
+        scale > 0.0,
+        "the step moved nothing, so conservation is vacuous"
+    );
+    assert!(
+        net.abs() / scale < 1e-3,
+        "sum(rho cp dT) / sum|rho cp dT| = {}",
+        net / scale
+    );
+}
+
+/// Face conductivity of the 3-D step: a hot and an ambient cell on a line along x
+/// (uniform in y and z, so the transverse faces carry no flux) exchange heat through
+/// k_f = 2 k_h k_a / (k_h + k_a), the series (harmonic) mean. Oracle: closed form
+/// from the polynomial coefficients of steel k = 60 - 0.03 T (not from the module).
+/// The arithmetic mean (k_h + k_a) / 2 differs from it by 1.3 percent for 300 / 800 K.
+#[test]
+fn explicit_3d_step_uses_the_harmonic_mean_face_conductivity() {
+    let mat = ThermalMaterial::steel_1018();
+    let (nx, ny, nz) = (5usize, 3usize, 3usize);
+    let (ambient, hot) = (300.0f64, 800.0f64);
+    let mut t = vec![ambient as f32; nx * ny * nz];
+    for k in 0..nz {
+        for j in 0..ny {
+            t[2 + nx * (j + ny * k)] = hot as f32;
+        }
+    }
+    let dx = 1.0e-3f64;
+    let dt = 0.1 * dx * dx / mat.diffusivity_at(ambient as f32) as f64;
+    transient_step_3d(&mut t, nx, ny, nz, &mat, dx as f32, dt as f32);
+    let (k_h, k_a) = (60.0 - 0.03 * hot, 60.0 - 0.03 * ambient);
+    let k_f = 2.0 * k_h * k_a / (k_h + k_a);
+    let c_a = mat.heat_capacity_at(ambient as f32) as f64;
+    let want = ambient + k_f * (hot - ambient) * dt / (dx * dx) / c_a;
+    let got = t[1] as f64;
+    assert!(
+        (got - want).abs() / (want - ambient) < 1e-3,
+        "neighbour of the hot plane: {got}, closed form {want}"
+    );
 }

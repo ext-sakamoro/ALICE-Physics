@@ -985,7 +985,24 @@ fn solve_slider_joint(joint: &SliderJoint, bodies: &mut [crate::solver::RigidBod
     }
 }
 
-/// Solve spring joint: spring force with damping
+/// Solve spring joint: spring force with damping, in XPBD compliance form
+///
+/// The spring is the constraint `C = |x_b - x_a| - rest_length` with compliance `alpha = 1/k`;
+/// the scaled compliance is `alpha_tilde = alpha / dt^2 = 1/(k dt^2)`. The damping force
+/// `c * v_n` is folded into the same constraint as the equivalent displacement error, so the
+/// total scalar force is `F = k C + c v_n` (`v_n` = relative velocity along the line, B minus A).
+/// The multiplier is `dlambda = -(k dt^2 C_eff) / (1 + k dt^2 w) = -dt^2 F / (1 + k dt^2 w)`
+/// with `w = inv_m_a + inv_m_b`; body A moves by `+w_a dlambda`-magnitude toward B and body B by
+/// the same magnitude weighted with `w_b` toward A (positions, not velocities).
+///
+/// # Claims
+/// - The position change of a body is `w_i dt^2 F / (1 + k dt^2 w)` metres, so the effective
+///   stiffness is `k` newtons per metre independent of `dt`
+/// - A stretched spring (`F > 0`) pulls the bodies together; a compressed one pushes them apart
+/// - Both bodies move along the line through the anchors, B toward A for `F > 0`
+/// - A coincident anchor pair, or two static bodies, leaves both bodies unchanged
+/// - For `k dt^2 w << 1` the change tends to the force-law value `w_i F dt^2`; for large
+///   `k dt^2 w` it saturates at the rest length (no overshoot), so the step is unconditionally stable
 fn solve_spring_joint(joint: &SpringJoint, bodies: &mut [crate::solver::RigidBody], dt: Fix128) {
     let body_a = bodies[joint.body_a];
     let body_b = bodies[joint.body_b];
@@ -1000,24 +1017,26 @@ fn solve_spring_joint(joint: &SpringJoint, bodies: &mut [crate::solver::RigidBod
         return;
     }
 
-    // Spring force: F = -k * (x - rest_length)
+    // Spring force: F = k * (x - rest_length)
     let displacement = distance - joint.rest_length;
     let spring_force = joint.stiffness * displacement;
 
-    // Damping force: F = -c * v_relative_along_normal
+    // Damping force: F = c * v_relative_along_normal
     let rel_vel = body_b.velocity - body_a.velocity;
     let vel_along_normal = rel_vel.dot(normal);
     let damping_force = joint.damping * vel_along_normal;
 
     let total_force = spring_force + damping_force;
 
-    // Convert to impulse (force * dt)
-    let impulse = normal * (total_force * dt);
-
     let w_sum = body_a.inv_mass + body_b.inv_mass;
     if w_sum.is_zero() {
         return;
     }
+
+    // dlambda = dt^2 F / (1 + k dt^2 w): XPBD with alpha_tilde = 1/(k dt^2)
+    let dt2 = dt * dt;
+    let lambda = total_force * dt2 / (Fix128::ONE + joint.stiffness * dt2 * w_sum);
+    let impulse = normal * lambda;
 
     if !body_a.inv_mass.is_zero() {
         bodies[joint.body_a].position = bodies[joint.body_a].position + impulse * body_a.inv_mass;
@@ -1932,7 +1951,8 @@ mod tests {
 
     #[test]
     fn spring_joint_force_is_stiffness_times_displacement_plus_damping() {
-        // rest 1、k 2、c 0、距離 4 → F = 2*3 = 6、impulse = n*6*dt(1/4) = 1.5 → A +1.5 (inv 1)、B -4.5 (inv 3)
+        // XPBD: lambda = dt^2 F / (1 + k dt^2 w)、dt = 1/4
+        // rest 1、k 2、c 0、距離 4、inv (1, 3): F = 6、w = 4 → lambda = (6/16)/(1 + 2/16*4) = 1/4 → A +1/4、B -3/4
         let mut bodies = pair(Vec3Fix::ZERO, 1, v3i(4, 0, 0), 3);
         let j = SpringJoint::new(
             0,
@@ -1946,13 +1966,13 @@ mod tests {
         solve_spring_joint(&j, &mut bodies, DT);
         assert_eq!(
             bodies[0].position,
-            Vec3Fix::new(Fix128::from_ratio(3, 2), Fix128::ZERO, Fix128::ZERO)
+            Vec3Fix::new(Fix128::from_ratio(1, 4), Fix128::ZERO, Fix128::ZERO)
         );
         assert_eq!(
             bodies[1].position,
-            Vec3Fix::new(Fix128::from_ratio(-1, 2), Fix128::ZERO, Fix128::ZERO)
+            Vec3Fix::new(Fix128::from_ratio(13, 4), Fix128::ZERO, Fix128::ZERO)
         );
-        // 圧縮 (距離 4 < rest 8) → 負の力で離れる: F = 2*(-4) = -8 → impulse -2 → A -2、B +2 (inv 1/1)
+        // 圧縮 (距離 4 < rest 8): F = 2*(-4) = -8、w = 2 → lambda = (-8/16)/(1 + 2/16*2) = -2/5 → A -2/5、B +2/5
         let mut comp = pair(Vec3Fix::ZERO, 1, v3i(4, 0, 0), 1);
         let jc = SpringJoint::new(
             0,
@@ -1964,21 +1984,28 @@ mod tests {
             Fix128::ZERO,
         );
         solve_spring_joint(&jc, &mut comp, DT);
-        assert_eq!(comp[0].position, v3i(-2, 0, 0));
-        assert_eq!(comp[1].position, v3i(6, 0, 0));
-        // damping: rest 4 (力 0)、c 2、B が +x に 3 で離れる → F = 2*3 = 6 → impulse 1.5 → A +1.5、B -1.5
+        assert!(near_v(
+            comp[0].position,
+            Vec3Fix::new(Fix128::from_ratio(-2, 5), Fix128::ZERO, Fix128::ZERO)
+        ));
+        assert!(near_v(
+            comp[1].position,
+            Vec3Fix::new(Fix128::from_ratio(22, 5), Fix128::ZERO, Fix128::ZERO)
+        ));
+        // damping: rest 4 (ばね力 0)、k 2、c 2、B が +x に 3 で離れる: F = 2*3 = 6、w = 2
+        // → lambda = (6/16)/(1 + 2/16*2) = 3/10 → A +3/10、B -3/10
         let mut damp = pair(Vec3Fix::ZERO, 1, v3i(4, 0, 0), 1);
         damp[1].velocity = v3i(3, 0, 0);
         let jd = SpringJoint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO, fi(4), fi(2), fi(2));
         solve_spring_joint(&jd, &mut damp, DT);
-        assert_eq!(
+        assert!(near_v(
             damp[0].position,
-            Vec3Fix::new(Fix128::from_ratio(3, 2), Fix128::ZERO, Fix128::ZERO)
-        );
-        assert_eq!(
+            Vec3Fix::new(Fix128::from_ratio(3, 10), Fix128::ZERO, Fix128::ZERO)
+        ));
+        assert!(near_v(
             damp[1].position,
-            Vec3Fix::new(Fix128::from_ratio(5, 2), Fix128::ZERO, Fix128::ZERO)
-        );
+            Vec3Fix::new(Fix128::from_ratio(37, 10), Fix128::ZERO, Fix128::ZERO)
+        ));
         // rest にあり速度 0 → 不変、一致点 → 不変
         let mut rest = pair(Vec3Fix::ZERO, 1, v3i(4, 0, 0), 1);
         solve_spring_joint(&jd, &mut rest, DT);
@@ -2536,7 +2563,7 @@ mod tests {
         assert!(
             near_v(
                 sp[1].position,
-                Vec3Fix::new(Fix128::from_ratio(5, 2), fi(-2), Fix128::ZERO)
+                Vec3Fix::new(Fix128::from_ratio(49, 17), fi(-2), Fix128::ZERO)
             ),
             "spring {:?}",
             sp[1].position
@@ -2831,12 +2858,12 @@ mod tests {
         );
         assert_eq!(
             sp[0].position,
-            Vec3Fix::new(Fix128::from_ratio(9, 2), Fix128::ZERO, Fix128::ZERO),
+            Vec3Fix::new(Fix128::from_ratio(3, 4), Fix128::ZERO, Fix128::ZERO),
             "spring A"
         );
         assert_eq!(
             sp[1].position,
-            Vec3Fix::new(Fix128::from_ratio(5, 2), Fix128::ZERO, Fix128::ZERO),
+            Vec3Fix::new(Fix128::from_ratio(15, 4), Fix128::ZERO, Fix128::ZERO),
             "spring B"
         );
     }
@@ -3116,8 +3143,9 @@ mod tests {
     /// Kills `1015:35` (`v_b − v_a` → `+`).
     ///
     /// rest 4 = distance (spring force 0), damping 2, `v_a = (1, 0, 0)`, `v_b = (3, 0, 0)`:
-    /// relative velocity along the normal is `3 − 1 = 2` → `F = 4`, impulse `4 · ¼ = 1`
-    /// → A `(1, 0, 0)`, B `(3, 0, 0)`. Mutant: `3 + 1 = 4` → impulse 2 → A `(2, 0, 0)`.
+    /// relative velocity along the normal is `3 − 1 = 2` → `F = 4`; XPBD multiplier
+    /// `λ = dt² F / (1 + k dt² w) = (4/16) / (1 + 2·(1/16)·2) = 1/5` → A `(1/5, 0, 0)`,
+    /// B `(4 − 1/5, 0, 0)`. Mutant: `3 + 1 = 4` → `F = 8` → `λ = 2/5` → A `(2/5, 0, 0)`.
     #[test]
     fn spring_damping_uses_relative_velocity_b_minus_a() {
         let j = SpringJoint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO, fi(4), fi(2), fi(2));
@@ -3125,8 +3153,22 @@ mod tests {
         b[0].velocity = v3i(1, 0, 0);
         b[1].velocity = v3i(3, 0, 0);
         solve_spring_joint(&j, &mut b, DT);
-        assert_eq!(b[0].position, v3i(1, 0, 0));
-        assert_eq!(b[1].position, v3i(3, 0, 0));
+        assert!(
+            near_v(
+                b[0].position,
+                Vec3Fix::new(Fix128::from_ratio(1, 5), Fix128::ZERO, Fix128::ZERO)
+            ),
+            "A {:?}",
+            b[0].position
+        );
+        assert!(
+            near_v(
+                b[1].position,
+                Vec3Fix::new(Fix128::from_ratio(19, 5), Fix128::ZERO, Fix128::ZERO)
+            ),
+            "B {:?}",
+            b[1].position
+        );
     }
 
     /// Kills `1115:55` (`angular_compliance / dt²` → `*`), `1115:61` (`dt * dt` → `/`, `+`),

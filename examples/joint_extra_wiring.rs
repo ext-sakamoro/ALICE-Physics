@@ -64,7 +64,7 @@
 //! Author: Moroya Sakamoto
 
 use alice_physics::joint_extra::{
-    solve_extra_joints, ExtraJoint, MouseJoint, PulleyJoint, WeldJoint,
+    solve_extra_joints, solve_pulley_to_length, ExtraJoint, MouseJoint, PulleyJoint, WeldJoint,
 };
 use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
 use alice_physics::solver::RigidBody;
@@ -120,6 +120,19 @@ fn main() {
         total.to_f64()
     );
     assert_eq!(total, Fix128::from_int(20), "total_length must be exact");
+
+    // `solve_pulley_to_length` pulls an over-long rope back toward its rest
+    // length: the rope above measures 20, the rest length is 18, so the
+    // measured total must shrink (a slack rope would not move at all).
+    let mut taut = bodies;
+    solve_pulley_to_length(&pulley, &mut taut, Fix128::from_int(18), dt);
+    let after = pulley.total_length(&taut);
+    println!(
+        "[joint_extra] solve_pulley_to_length (rest 18) total {} -> {}",
+        total.to_f64(),
+        after.to_f64()
+    );
+    assert!(after < total, "an over-long rope must be shortened");
 
     // Boundary: ratio = 0 drops the second rope out of the sum entirely.
     let zero_ratio_pulley = PulleyJoint::new(

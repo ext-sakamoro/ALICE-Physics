@@ -68,6 +68,15 @@ pub enum BodyType {
 // Rigid Body
 // ============================================================================
 
+/// Default [`RigidBody::friction`] of a body built by `new`, `new_dynamic`,
+/// `new_static` and `new_kinematic`: 0.5, the `dynamic_friction` of the default
+/// material, so a body that keeps the defaults contacts like one with no body value.
+const DEFAULT_BODY_FRICTION: Fix128 = Fix128::from_raw(0, 9_223_372_036_854_775_808);
+
+/// Default [`RigidBody::restitution`] of a body built by `new`, `new_dynamic`,
+/// `new_static` and `new_kinematic`: 0.3, the `restitution` of the default material.
+const DEFAULT_BODY_RESTITUTION: Fix128 = Fix128::from_raw(0, 5_534_023_222_112_865_484);
+
 /// Rigid body state
 ///
 /// Field layout is optimized for cache performance (Gap 1.1):
@@ -98,9 +107,15 @@ pub struct RigidBody {
     pub angular_velocity: Vec3Fix,
     /// Previous rotation (for XPBD)
     pub prev_rotation: QuatFix,
-    /// Coefficient of restitution (bounciness)
+    /// Coefficient of restitution (bounciness), default 0.3
+    ///
+    /// Read by contacts only while the body has the default material
+    /// (see [`PhysicsWorld::combined_material`]).
     pub restitution: Fix128,
-    /// Friction coefficient
+    /// Friction coefficient, default 0.5
+    ///
+    /// Read by contacts only while the body has the default material
+    /// (see [`PhysicsWorld::combined_material`]).
     pub friction: Fix128,
     /// Gravity scale multiplier (1.0 = normal, 0.0 = no gravity, 2.0 = double)
     pub gravity_scale: Fix128,
@@ -163,8 +178,8 @@ impl RigidBody {
             rotation: QuatFix::IDENTITY,
             angular_velocity: Vec3Fix::ZERO,
             prev_rotation: QuatFix::IDENTITY,
-            restitution: Fix128::from_ratio(5, 10), // 0.5 default
-            friction: Fix128::from_ratio(3, 10),    // 0.3 default
+            restitution: DEFAULT_BODY_RESTITUTION,
+            friction: DEFAULT_BODY_FRICTION,
             gravity_scale: Fix128::ONE,
             linear_damping: Fix128::ONE,
             angular_damping: Fix128::ONE,
@@ -193,8 +208,8 @@ impl RigidBody {
             rotation: QuatFix::IDENTITY,
             angular_velocity: Vec3Fix::ZERO,
             prev_rotation: QuatFix::IDENTITY,
-            restitution: Fix128::ZERO,
-            friction: Fix128::ONE,
+            restitution: DEFAULT_BODY_RESTITUTION,
+            friction: DEFAULT_BODY_FRICTION,
             gravity_scale: Fix128::ZERO,
             linear_damping: Fix128::ONE,
             angular_damping: Fix128::ONE,
@@ -242,8 +257,8 @@ impl RigidBody {
             rotation: QuatFix::IDENTITY,
             angular_velocity: Vec3Fix::ZERO,
             prev_rotation: QuatFix::IDENTITY,
-            restitution: Fix128::ZERO,
-            friction: Fix128::ONE,
+            restitution: DEFAULT_BODY_RESTITUTION,
+            friction: DEFAULT_BODY_FRICTION,
             gravity_scale: Fix128::ZERO,
             linear_damping: Fix128::ONE,
             angular_damping: Fix128::ONE,
@@ -1078,6 +1093,12 @@ pub struct PhysicsWorld {
     /// 到達不能なため、WM-01 の結論「`mul` の積が範囲外を演算側で見る」を
     /// 呼び出し側で実現した形
     overflow_detected: bool,
+    /// Substeps still to run in the current frame, counting the one being run
+    /// (0 outside a substep loop). A kinematic body with a target closes
+    /// `1 / kinematic_substeps_left` of its remaining gap in each substep, so
+    /// the velocity derived after every substep is the frame velocity
+    /// (see [`kinematic_substep_pose`]).
+    kinematic_substeps_left: usize,
     /// Warm-start impulse cache for the [`SolverBackend::Tgs`] path, persisted
     /// across frames the same way [`Self::contact_cache`] is for XPBD.
     /// Unused (and empty) while `config.solver_backend` is `Xpbd`.
@@ -1109,6 +1130,30 @@ fn sdf_contact_of(
         Some(c) => c.sdf_contact(body.position, body.rotation, sdf),
         None => crate::sdf_collider::collide_sphere_sdf(body.position, radius, sdf),
     }
+}
+
+/// Pose of a kinematic body after one substep towards its target.
+///
+/// `left` is the number of substeps left in the frame including the current
+/// one. Each substep closes `1 / left` of the remaining gap, which makes the
+/// per-substep displacement the same in every substep (the gap shrinks by
+/// `(left - 1) / left` each time), and the last substep (`left <= 1`, also the
+/// value outside a substep loop) lands on the target exactly.
+fn kinematic_substep_pose(
+    position: Vec3Fix,
+    rotation: QuatFix,
+    target_pos: Vec3Fix,
+    target_rot: QuatFix,
+    left: usize,
+) -> (Vec3Fix, QuatFix) {
+    if left <= 1 {
+        return (target_pos, target_rot);
+    }
+    let frac = Fix128::ONE / Fix128::from_int(left as i64);
+    (
+        position + (target_pos - position) * frac,
+        crate::interpolation::slerp(rotation, target_rot, frac),
+    )
 }
 
 impl PhysicsWorld {
@@ -1164,6 +1209,7 @@ impl PhysicsWorld {
             body_colliders: Vec::new(),
             body_filters: Vec::new(),
             overflow_detected: false,
+            kinematic_substeps_left: 0,
             #[cfg(feature = "std")]
             tgs_impulse_cache: crate::solver_tgs::ImpulseCache::new(),
         }
@@ -1895,23 +1941,40 @@ impl PhysicsWorld {
     }
 
     /// Get combined material properties for a body pair
+    ///
+    /// # Claims
+    ///
+    /// - A body whose material is [`crate::material::DEFAULT_MATERIAL`] contributes
+    ///   its own [`RigidBody::friction`] and [`RigidBody::restitution`] (the
+    ///   default material is "no material assigned"); a body with any other
+    ///   material contributes that material's `dynamic_friction` / `restitution`
+    ///   and its own fields are not read.
+    /// - Bodies built with the defaults (friction 0.3, restitution 0.5) give the
+    ///   same result as before, since the default material holds the same values.
+    /// - The two contributions are combined with the materials' combine rules; a
+    ///   pair override registered for the two materials takes precedence over
+    ///   both.
+    /// - An index outside the body list counts as the default material with the
+    ///   material's own values.
     #[must_use]
     pub fn combined_material(
         &self,
         body_a: usize,
         body_b: usize,
     ) -> crate::material::CombinedMaterial {
-        let mat_a = if body_a < self.body_materials.len() {
-            self.body_materials[body_a]
-        } else {
-            crate::material::DEFAULT_MATERIAL
+        let side = |i: usize| -> (crate::material::MaterialId, Option<(Fix128, Fix128)>) {
+            let Some(&mat) = self.body_materials.get(i) else {
+                return (crate::material::DEFAULT_MATERIAL, None);
+            };
+            if mat != crate::material::DEFAULT_MATERIAL {
+                return (mat, None);
+            }
+            (mat, self.bodies.get(i).map(|b| (b.friction, b.restitution)))
         };
-        let mat_b = if body_b < self.body_materials.len() {
-            self.body_materials[body_b]
-        } else {
-            crate::material::DEFAULT_MATERIAL
-        };
-        self.material_table.combine(mat_a, mat_b)
+        let (mat_a, surface_a) = side(body_a);
+        let (mat_b, surface_b) = side(body_b);
+        self.material_table
+            .combine_with_surface(mat_a, surface_a, mat_b, surface_b)
     }
 
     /// Add distance constraint
@@ -2207,9 +2270,12 @@ impl PhysicsWorld {
 
         // Phase 3: Substep loop
         let substep_dt = dt / Fix128::from_int(self.config.substeps as i64);
-        for _ in 0..self.config.substeps {
+        let n = self.config.substeps;
+        for i in 0..n {
+            self.kinematic_substeps_left = n - i;
             self.substep(substep_dt);
         }
+        self.kinematic_substeps_left = 0;
 
         // Phase 3.5: Frame-level damping (1.2.0, was per substep)
         self.apply_frame_damping();
@@ -2478,9 +2544,12 @@ impl PhysicsWorld {
         // Phase 3: Substep loop (batches are rebuilt inside each substep after
         // detection, `solve_constraints_batched` re-colours on dirty)
         let substep_dt = dt / Fix128::from_int(self.config.substeps as i64);
-        for _ in 0..self.config.substeps {
+        let n = self.config.substeps;
+        for i in 0..n {
+            self.kinematic_substeps_left = n - i;
             self.substep_batched(substep_dt);
         }
+        self.kinematic_substeps_left = 0;
 
         // Phase 3.5: Frame-level damping (1.2.0, was per substep)
         self.apply_frame_damping();
@@ -2560,6 +2629,19 @@ impl PhysicsWorld {
 
     /// Integrate positions (shared between sequential and batched)
     ///
+    /// # Claims
+    ///
+    /// - A kinematic body with a `kinematic_target` closes `1 / k` of the
+    ///   remaining gap to the target in each substep, `k` being the substeps
+    ///   left in the frame including this one, so it reaches the target
+    ///   exactly in the last substep.
+    /// - The velocity derived after every substep of that frame equals
+    ///   `(target - start) / frame_dt` in m/s, so it is that value after
+    ///   `step`, up to fixed-point rounding of the division by `k`.
+    /// - A call outside a `step` substep loop (`k = 0`) snaps to the target
+    ///   in one call, as before.
+    /// - A kinematic body without a target keeps its pose and velocity.
+    ///
     /// Sleeping dynamic bodies are skipped: only `prev_position/prev_rotation`
     /// are saved so that `update_velocities` derives zero velocity.
     #[inline]
@@ -2571,6 +2653,7 @@ impl PhysicsWorld {
         #[cfg(feature = "parallel")]
         {
             let gravity = self.config.gravity;
+            let left = self.kinematic_substeps_left;
             let sleep_data = &self.islands.sleep_data;
             self.bodies
                 .par_iter_mut()
@@ -2582,9 +2665,16 @@ impl PhysicsWorld {
                             body.prev_position = body.position;
                             body.prev_rotation = body.rotation;
                             if let Some((target_pos, target_rot)) = body.kinematic_target {
-                                body.velocity = (target_pos - body.position) * (Fix128::ONE / dt);
-                                body.position = target_pos;
-                                body.rotation = target_rot;
+                                let (p, r) = kinematic_substep_pose(
+                                    body.position,
+                                    body.rotation,
+                                    target_pos,
+                                    target_rot,
+                                    left,
+                                );
+                                body.velocity = (p - body.position) * (Fix128::ONE / dt);
+                                body.position = p;
+                                body.rotation = r;
                             }
                             return;
                         }
@@ -2640,10 +2730,17 @@ impl PhysicsWorld {
                         self.bodies[i].prev_position = self.bodies[i].position;
                         self.bodies[i].prev_rotation = self.bodies[i].rotation;
                         if let Some((target_pos, target_rot)) = self.bodies[i].kinematic_target {
+                            let (p, r) = kinematic_substep_pose(
+                                self.bodies[i].position,
+                                self.bodies[i].rotation,
+                                target_pos,
+                                target_rot,
+                                self.kinematic_substeps_left,
+                            );
                             self.bodies[i].velocity =
-                                (target_pos - self.bodies[i].position) * (Fix128::ONE / dt);
-                            self.bodies[i].position = target_pos;
-                            self.bodies[i].rotation = target_rot;
+                                (p - self.bodies[i].position) * (Fix128::ONE / dt);
+                            self.bodies[i].position = p;
+                            self.bodies[i].rotation = r;
                         }
                         continue;
                     }
@@ -3487,9 +3584,12 @@ impl PhysicsWorld {
 
         // Phase 3: Substep loop with bridge-routed contact solve
         let substep_dt = dt / Fix128::from_int(self.config.substeps as i64);
-        for _ in 0..self.config.substeps {
+        let n = self.config.substeps;
+        for i in 0..n {
+            self.kinematic_substeps_left = n - i;
             self.substep_with_bridge(bridge, substep_dt);
         }
+        self.kinematic_substeps_left = 0;
 
         // Phase 3.5: Frame-level damping (1.2.0, was per substep)
         self.apply_frame_damping();

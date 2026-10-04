@@ -43,7 +43,73 @@ pub struct LaminateStrengths {
     pub s: Fix128,
 }
 
+/// Error returned by [`LaminateStrengths::try_new`] when a strength constant is
+/// not strictly positive.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InvalidStrengthError {
+    /// Name of the offending field (`"xt"`, `"xc"`, `"yt"`, `"yc"` or `"s"`).
+    pub field: &'static str,
+}
+
+impl core::fmt::Display for InvalidStrengthError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(
+            f,
+            "laminate strength `{}` must be strictly positive",
+            self.field
+        )
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for InvalidStrengthError {}
+
+/// Failure index reported for a ply whose strength is zero or negative while the
+/// matching stress component is loaded: the largest representable value, the
+/// same saturation value `Fix128` division returns on overflow.
+const FAILED_INDEX: Fix128 = Fix128::from_raw(i64::MAX, u64::MAX);
+
 impl LaminateStrengths {
+    /// Validated constructor: every strength must be strictly positive.
+    ///
+    /// # Claims
+    ///
+    /// - Returns `Ok` only if `xt`, `xc`, `yt`, `yc` and `s` are all `> 0` (MPa).
+    /// - Returns `Err` naming the first offending field in the order
+    ///   `xt, xc, yt, yc, s` otherwise.
+    ///
+    /// # Errors
+    ///
+    /// [`InvalidStrengthError`] when any strength is zero or negative.
+    pub fn try_new(
+        xt: Fix128,
+        xc: Fix128,
+        yt: Fix128,
+        yc: Fix128,
+        s: Fix128,
+    ) -> Result<Self, InvalidStrengthError> {
+        for (field, v) in [("xt", xt), ("xc", xc), ("yt", yt), ("yc", yc), ("s", s)] {
+            if v <= Fix128::ZERO {
+                return Err(InvalidStrengthError { field });
+            }
+        }
+        Ok(Self { xt, xc, yt, yc, s })
+    }
+
+    /// Which stress components act on a non-positive strength.
+    ///
+    /// Returns `(fibre, matrix, shear)`: a component is flagged when its stress
+    /// is non-zero and a strength it is divided by is `<= 0` (closed form
+    /// `FI -> infinity`, the ply is failed).
+    fn degenerate(&self, stress: StressState) -> (bool, bool, bool) {
+        let bad = |v: Fix128| v <= Fix128::ZERO;
+        (
+            !stress.sigma_1.is_zero() && (bad(self.xt) || bad(self.xc)),
+            !stress.sigma_2.is_zero() && (bad(self.yt) || bad(self.yc)),
+            !stress.tau_12.is_zero() && bad(self.s),
+        )
+    }
+
     /// Representative uni-directional CFRP (T300 / 5208 equivalent).
     #[must_use]
     pub fn cfrp_ud() -> Self {
@@ -138,8 +204,20 @@ pub enum FailureCriterion {
 /// with `F1 = 1/Xt − 1/Xc`, `F2 = 1/Yt − 1/Yc`, `F11 = 1/(Xt · Xc)`,
 /// `F22 = 1/(Yt · Yc)`, `F66 = 1/S²`, and `F12 = -0.5 · √(F11 · F22)`
 /// (the standard geometric-mean coupling term).
+///
+/// # Claims
+///
+/// - Unit: dimensionless; stresses and strengths in MPa.
+/// - `FI >= 1` means failed, `FI < 1` means safe.
+/// - A strength `<= 0` whose stress component is non-zero returns the largest
+///   representable `Fix128` (failed), never `0`.
+/// - Zero stress on a zero strength contributes nothing (no load, no failure).
 #[must_use]
 pub fn tsai_wu_failure_index(strengths: LaminateStrengths, stress: StressState) -> Fix128 {
+    let (df, dm, ds) = strengths.degenerate(stress);
+    if df || dm || ds {
+        return FAILED_INDEX;
+    }
     let s = strengths;
     let f1 = Fix128::ONE / s.xt - Fix128::ONE / s.xc;
     let f2 = Fix128::ONE / s.yt - Fix128::ONE / s.yc;
@@ -165,8 +243,19 @@ pub fn tsai_wu_failure_index(strengths: LaminateStrengths, stress: StressState) 
 /// Tsai–Hill failure index (orthotropic von Mises).
 ///
 /// Uses `X = Xt` when `σ1 ≥ 0`, else `X = Xc`; likewise for `Y`.
+///
+/// # Claims
+///
+/// - Unit: dimensionless; stresses and strengths in MPa.
+/// - `FI >= 1` means failed, `FI < 1` means safe.
+/// - A strength `<= 0` whose stress component is non-zero returns the largest
+///   representable `Fix128` (failed), never `0`.
 #[must_use]
 pub fn tsai_hill_failure_index(strengths: LaminateStrengths, stress: StressState) -> Fix128 {
+    let (df, dm, ds) = strengths.degenerate(stress);
+    if df || dm || ds {
+        return FAILED_INDEX;
+    }
     let StressState {
         sigma_1,
         sigma_2,
@@ -192,6 +281,14 @@ pub fn tsai_hill_failure_index(strengths: LaminateStrengths, stress: StressState
 }
 
 /// Hashin failure mode classifier for the in-plane 2-D form.
+///
+/// # Claims
+///
+/// - Returns `Safe` only when no criterion reaches `FI >= 1`.
+/// - A strength `<= 0` whose stress component is non-zero is a failed ply:
+///   fibre stress picks `FibreTension` / `FibreCompression` by the sign of
+///   `sigma_1`; otherwise transverse or shear load picks `MatrixTension` /
+///   `MatrixCompression` by the sign of `sigma_2`. Never `Safe`.
 #[must_use]
 pub fn hashin_failure_mode(strengths: LaminateStrengths, stress: StressState) -> FailureMode {
     let s = strengths;
@@ -200,6 +297,21 @@ pub fn hashin_failure_mode(strengths: LaminateStrengths, stress: StressState) ->
         sigma_2,
         tau_12,
     } = stress;
+    let (df, dm, ds) = s.degenerate(stress);
+    if df {
+        return if sigma_1 >= Fix128::ZERO {
+            FailureMode::FibreTension
+        } else {
+            FailureMode::FibreCompression
+        };
+    }
+    if dm || ds {
+        return if sigma_2 >= Fix128::ZERO {
+            FailureMode::MatrixTension
+        } else {
+            FailureMode::MatrixCompression
+        };
+    }
 
     // Fibre tension: σ1 ≥ 0.
     if sigma_1 >= Fix128::ZERO {
@@ -241,6 +353,15 @@ pub fn hashin_failure_mode(strengths: LaminateStrengths, stress: StressState) ->
 /// selected by the transverse stress and shear ratio; the returned
 /// `FailureMode::InterFibreA / B / C` variants convey the physical
 /// mode class expected under progressive damage.
+///
+/// # Claims
+///
+/// - Returns `Safe` only when neither a fibre mode nor an inter-fibre mode is
+///   predicted.
+/// - A strength `<= 0` whose stress component is non-zero is a failed ply:
+///   fibre stress gives the Hashin fibre mode, `sigma_2 >= 0` gives
+///   `InterFibreA`, shear on a zero `S` with `sigma_2 < 0` gives
+///   `InterFibreB`, otherwise `InterFibreC`. Never `Safe`.
 #[must_use]
 pub fn puck_failure_mode(strengths: LaminateStrengths, stress: StressState) -> FailureMode {
     // Reuse Hashin for fibre modes.
@@ -248,6 +369,17 @@ pub fn puck_failure_mode(strengths: LaminateStrengths, stress: StressState) -> F
         hashin_failure_mode(strengths, stress)
     {
         return m;
+    }
+
+    let (_, dm, ds) = strengths.degenerate(stress);
+    if dm || ds {
+        return if stress.sigma_2 >= Fix128::ZERO {
+            FailureMode::InterFibreA
+        } else if ds {
+            FailureMode::InterFibreB
+        } else {
+            FailureMode::InterFibreC
+        };
     }
 
     let StressState {
