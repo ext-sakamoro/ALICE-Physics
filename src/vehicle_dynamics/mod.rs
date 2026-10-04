@@ -147,21 +147,13 @@ pub struct DriverInput {
     pub steering: Fix128,
 }
 
-/// Environment of one frame: road condition, optional wind, gravity, time.
+/// Environment of one frame: road condition, optional wind, time.
 #[derive(Clone, Copy, Debug)]
 pub struct Environment<'a> {
     /// Road material, weather, rolling resistance.
     pub condition: &'a RoadCondition,
     /// Wind acting on the body, if any (`WindZone::force_on`).
     pub wind: Option<&'a WindZone>,
-    /// Gravity the world will integrate during the coming step (pass
-    /// `world.config.gravity`; scaled by `chassis.gravity_scale` here).
-    ///
-    /// The vehicle applies its impulses at the start of the frame and the
-    /// world adds gravity afterwards, so static friction must already absorb
-    /// the in-plane part of `g · dt` that arrives within the frame; without it
-    /// a car held on a slope creeps by about `g sinθ dt / 2` per frame.
-    pub gravity: Vec3Fix,
     /// Simulation time (s) for gusts.
     pub time: Fix128,
 }
@@ -238,8 +230,7 @@ struct WheelScratch {
     x_dir: Vec3Fix,
     /// `normal × x_dir`.
     y_dir: Vec3Fix,
-    /// Predicted contact-point velocity along `x_dir` / `y_dir`
-    /// (start of frame + in-plane gravity · dt).
+    /// Contact-point velocity along `x_dir` / `y_dir` (start of frame).
     v_x: Fix128,
     v_y: Fix128,
     /// `max(|v_x|, v_floor)`.
@@ -466,16 +457,15 @@ impl DynamicVehicle {
     /// 5. **Spin** `I ω̇ = T_drive − T_brake − F_x r`, see below.
     /// 6. **Impulses**: `F_z up dt` at every contact point
     ///    (`apply_impulse_at`), then, wheel by wheel on the updated chassis
-    ///    velocity, the tyre impulse `(F_x x + F_y y) dt` at the contact point
-    ///    clamped per axis by the effective mass
+    ///    velocity, the friction impulse at the contact point: a held wheel
+    ///    (see "Static friction") gets its hold impulse; otherwise the tyre
+    ///    impulse `(F_x x + F_y y) dt` clamped per axis by the effective mass
     ///    `m_d = 1/(m⁻¹ + (r×d)·I⁻¹(r×d))` so that it never reverses the slip
-    ///    it opposes (`v_x − ω r` along `x`, `v_y` along `y`). The slip used by
-    ///    the clamp is the predicted end-of-frame one, i.e. it includes the
-    ///    in-plane gravity `(g·d) dt` that the world adds during the step, so
-    ///    static friction already holds against it. Then rolling resistance
-    ///    `C_rr F_z` against `v_x` on wheels with `ω ≠ 0`, clamped the same way
-    ///    on `v_x`. The stored `longitudinal_force` / `lateral_force` are the
-    ///    applied (clamped) values.
+    ///    it opposes (`v_x − ω r` along `x`, `v_y` along `y`). Then rolling
+    ///    resistance `C_rr F_z` against `v_x` on wheels with `ω ≠ 0`, clamped
+    ///    the same way on `v_x` (it does not act on the wheel spin). The
+    ///    stored `longitudinal_force` / `lateral_force` are the applied
+    ///    friction impulses divided by `dt`.
     /// 7. **Aerodynamics** at the centre of mass: `v_rel = v − w` (`w` is the
     ///    wind of `env.wind` when its shape contains the chassis position),
     ///    drag `−½ ρ C_dA |v_rel| v_rel`, lift `½ ρ C_lA |v_rel|²` along `up`.
@@ -504,6 +494,28 @@ impl DynamicVehicle {
     /// group (inertias, torques, slopes and brake torques summed, one shared
     /// `ω`). Rear wheels (`z ≤ 0`) take the handbrake; pedal and handbrake
     /// torques act only on wheels with `has_brake`.
+    ///
+    /// # Static friction
+    ///
+    /// A loaded wheel whose updated spin is exactly `ω' = 0` (locked) is held
+    /// to an anchor `A` on the road (created at the current contact point `p`
+    /// when the wheel has none). The hold impulse per axis `d ∈ {x, y}` is
+    /// `j_d = m_d ((A − p)·d / dt − v_c·d)` (`v_c` = current contact-point
+    /// velocity), applied at `p`. The hold is created / kept while
+    /// `(j_x / (μ_x,s F_z dt))² + (j_y / (μ_y,s F_z dt))² ≤ 1` (static
+    /// coefficients of the contact's grip) and `|j_x| r ≤ T_brake dt` (the
+    /// brake can react the longitudinal part). It is released — `anchor =
+    /// None` and the tyre path above applies in the same frame, so the force
+    /// passes continuously to the sliding value — when the required impulse
+    /// leaves that limit (break-away: a slope with `tan θ > μ_s` slides and
+    /// then accelerates at `g (sin θ − μ_k cos θ)` with a locked brush tyre),
+    /// when the wheel loses contact or load, or when `ω' ≠ 0` (brake
+    /// released). Holding the position rather than the velocity is what keeps
+    /// a parked car in place: the gravity the world integrates after this
+    /// impulse moves the contact by `O(g dt²)` within a frame and the next
+    /// hold impulse returns it to `A`, so the offset stays bounded instead of
+    /// accumulating (a velocity-only clamp creeps by `≈ g sin θ dt² / 2` per
+    /// frame).
     ///
     /// # ABS
     ///
@@ -541,7 +553,6 @@ impl DynamicVehicle {
         let forward = chassis.rotation.rotate_vec(Vec3Fix::UNIT_Z);
         let right = chassis.rotation.rotate_vec(Vec3Fix::UNIT_X);
         let up = chassis.rotation.rotate_vec(Vec3Fix::UNIT_Y);
-        let gravity = env.gravity * chassis.gravity_scale;
 
         let throttle = clamp(self.input.throttle, Fix128::ZERO, Fix128::ONE);
         let pedal = clamp(self.input.brake, Fix128::ZERO, Fix128::ONE);
@@ -652,11 +663,8 @@ impl DynamicVehicle {
                     s.arm = arm;
                     s.x_dir = x_dir;
                     s.y_dir = nrm.cross(x_dir);
-                    // predicted end-of-frame contact velocity: the in-plane
-                    // gravity of the coming step is already included, so the
-                    // slip the tyre sees is the one the clamp below acts on
-                    s.v_x = vc.dot(s.x_dir) + gravity.dot(s.x_dir) * dt;
-                    s.v_y = vc.dot(s.y_dir) + gravity.dot(s.y_dir) * dt;
+                    s.v_x = vc.dot(s.x_dir);
+                    s.v_y = vc.dot(s.y_dir);
                     s.denom = if s.v_x.abs() > floor {
                         s.v_x.abs()
                     } else {
@@ -774,8 +782,6 @@ impl DynamicVehicle {
             let radius = self.config.base.wheels[i].radius;
             let point = self.wheels[i].contact_point;
             let omega = self.wheels[i].omega;
-            let g_x = gravity.dot(s.x_dir) * dt;
-            let g_y = gravity.dot(s.y_dir) * dt;
 
             let load = self.wheels[i].normal_load;
             let mx = effective_mass(chassis, s.arm, s.x_dir);
@@ -788,8 +794,8 @@ impl DynamicVehicle {
                     let anchor = self.wheels[i].anchor.unwrap_or(point);
                     let e = anchor - point;
                     let vc = point_velocity(chassis, s.arm);
-                    let want_x = (e.dot(s.x_dir) / dt - vc.dot(s.x_dir) - g_x) * mx;
-                    let want_y = (e.dot(s.y_dir) / dt - vc.dot(s.y_dir) - g_y) * my;
+                    let want_x = (e.dot(s.x_dir) / dt - vc.dot(s.x_dir)) * mx;
+                    let want_y = (e.dot(s.y_dir) / dt - vc.dot(s.y_dir)) * my;
                     let cap_x = grip.longitudinal_static * load * dt;
                     let cap_y = grip.transverse_static * load * dt;
                     let brake_ok = want_x.abs() * radius <= self.wheels[i].brake_torque * dt;
@@ -805,12 +811,12 @@ impl DynamicVehicle {
             } else {
                 self.wheels[i].anchor = None;
                 let vc = point_velocity(chassis, s.arm);
-                let jx = clamp_friction(fx[i] * dt, vc.dot(s.x_dir) + g_x - omega * radius, mx);
+                let jx = clamp_friction(fx[i] * dt, vc.dot(s.x_dir) - omega * radius, mx);
                 if !jx.is_zero() {
                     chassis.apply_impulse_at(s.x_dir * jx, point);
                 }
                 let vc = point_velocity(chassis, s.arm);
-                let jy = clamp_friction(fy[i] * dt, vc.dot(s.y_dir) + g_y, my);
+                let jy = clamp_friction(fy[i] * dt, vc.dot(s.y_dir), my);
                 if !jy.is_zero() {
                     chassis.apply_impulse_at(s.y_dir * jy, point);
                 }
@@ -1030,15 +1036,10 @@ mod tests {
         }
     }
 
-    fn gravity() -> Vec3Fix {
-        Vec3Fix::new(Fix128::ZERO, Fix128::from_int(-10), Fix128::ZERO)
-    }
-
     fn env(cond: &RoadCondition) -> Environment<'_> {
         Environment {
             condition: cond,
             wind: None,
-            gravity: gravity(),
             time: Fix128::ZERO,
         }
     }
@@ -1318,18 +1319,21 @@ mod tests {
         }
     }
 
+    /// A car at rest with the brake on gets anchored wheels and no
+    /// horizontal motion from friction.
     #[test]
-    fn car_at_rest_stays_at_rest_on_flat() {
+    fn car_at_rest_is_held_on_flat() {
         let mut v = DynamicVehicle::new(config());
         let cond = dry(Fix128::ZERO);
         let mut body = chassis();
         v.input.brake = Fix128::ONE;
         v.update(&mut body, &flat(), &env(&cond), dt60());
-        assert_eq!(body.velocity.x, Fix128::ZERO);
-        assert!(body.velocity.z.abs() <= fx(1, 1_000_000_000));
         for w in &v.wheels {
             assert_eq!(w.omega, Fix128::ZERO);
+            assert_eq!(w.anchor, Some(w.contact_point));
         }
+        assert!(body.velocity.x.abs() <= fx(1, 1_000_000_000_000));
+        assert!(body.velocity.z.abs() <= fx(1, 1_000_000_000_000));
     }
 
     // ---- oracle 5: degenerate inputs -----------------------------------------
@@ -1506,17 +1510,23 @@ mod tests {
     /// `PhysicsWorld` and return the displacement of the chassis along the
     /// slope over `frames` frames after a settling phase.
     fn slope_drift(grade: Fix128, frames: usize) -> Fix128 {
-        slope_run(grade, frames, fx(99, 100)).0
+        slope_run(grade, frames, fx(99, 100), false).0
     }
 
-    /// `(drift along the slope over `frames`, up-slope velocity at the end)`
-    /// after a 120-frame settle, world damping `damping`.
-    fn slope_run(grade: Fix128, frames: usize, damping: Fix128) -> (Fix128, Fix128) {
+    /// `(drift along the car's forward axis over `frames`, forward velocity at
+    /// the end)` after a 120-frame settle, world damping `damping`; the car
+    /// faces up the slope, or down it with `facing_down`.
+    fn slope_run(
+        grade: Fix128,
+        frames: usize,
+        damping: Fix128,
+        facing_down: bool,
+    ) -> (Fix128, Fix128) {
         use crate::sleeping::SleepConfig;
         use crate::solver::{PhysicsWorld, SolverConfig};
         let theta = grade.atan();
-        // plane tilted about +x: going up the slope is +z
-        let rot = QuatFix::from_axis_angle(Vec3Fix::UNIT_X, -theta);
+        // plane tilted about +x so that the car's +z points up (or down) the slope
+        let rot = QuatFix::from_axis_angle(Vec3Fix::UNIT_X, if facing_down { theta } else { -theta });
         let normal = rot.rotate_vec(Vec3Fix::UNIT_Y);
         let road = TestPlane {
             point: Vec3Fix::ZERO,
@@ -1542,10 +1552,9 @@ mod tests {
         let e = Environment {
             condition: &cond,
             wind: None,
-            gravity: world.config.gravity,
             time: Fix128::ZERO,
         };
-        let up_slope = rot.rotate_vec(Vec3Fix::UNIT_Z);
+        let up_slope = rot.rotate_vec(Vec3Fix::UNIT_Z); // car forward
         let dt = dt60();
         for _ in 0..120 {
             v.update(&mut world.bodies[idx], &road, &e, dt);
@@ -1563,12 +1572,75 @@ mod tests {
         )
     }
 
+    /// World-driven braking from 5 m/s on flat ground: the car stops, every
+    /// wheel ends up anchored, and the next 600 frames move it by less than
+    /// 1 µm.
+    #[test]
+    fn braked_car_stops_and_stays_on_flat() {
+        use crate::sleeping::SleepConfig;
+        use crate::solver::{PhysicsWorld, SolverConfig};
+        let mut world = PhysicsWorld::new(SolverConfig::default());
+        world.set_sleep_config(SleepConfig {
+            frames_to_sleep: u32::MAX,
+            ..SleepConfig::default()
+        });
+        let mut body = chassis();
+        body.velocity = Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, Fix128::from_int(5));
+        let idx = world.add_body(body);
+        let mut v = DynamicVehicle::new(config());
+        for w in &mut v.wheels {
+            w.omega = Fix128::from_int(5) / fx(3, 10);
+        }
+        v.input.brake = Fix128::ONE;
+        let cond = dry(Fix128::ZERO);
+        let road = flat();
+        let dt = dt60();
+        for _ in 0..240 {
+            v.update(&mut world.bodies[idx], &road, &env(&cond), dt);
+            world.step(dt);
+        }
+        assert!(v.wheels.iter().all(|w| w.anchor.is_some()));
+        let start = world.bodies[idx].position;
+        for _ in 0..600 {
+            v.update(&mut world.bodies[idx], &road, &env(&cond), dt);
+            world.step(dt);
+        }
+        let d = world.bodies[idx].position - start;
+        let horiz = (d.x * d.x + d.z * d.z).sqrt();
+        if std::env::var("VD_DEBUG").is_ok() {
+            std::println!("flat drift {:.3e} m, v {:?}", horiz.to_f64(), world.bodies[idx].velocity.to_f32());
+        }
+        assert!(horiz <= fx(1, 1_000_000), "flat drift {horiz:?}");
+    }
+
+    /// `tan θ = 1.5 > μ_s = 1.1`: a locked car breaks away and accelerates at
+    /// `g (sin θ − μ_k cos θ)` (μ_k = 0.9) down the slope, within 2 %.
+    #[test]
+    fn locked_car_slides_on_steep_slope() {
+        let grade = fx(3, 2);
+        let frames = 120;
+        // facing down the slope so the locked wheel slides forward (κ = −1,
+        // the brush contract's exact full-sliding point)
+        let (_, v1) = slope_run(grade, 0, Fix128::ONE, true);
+        let (_, v2) = slope_run(grade, frames, Fix128::ONE, true);
+        let a = (v2 - v1) / (dt60() * Fix128::from_int(frames as i64));
+        let theta = grade.atan();
+        let (sn, cs) = theta.sin_cos();
+        let expect = Fix128::from_int(10) * (sn - fx(9, 10) * cs);
+        assert!(
+            (a - expect).abs() <= expect.abs() * fx(2, 100),
+            "a {:?} vs {:?}",
+            a.to_f64(),
+            expect.to_f64()
+        );
+    }
+
     #[test]
     fn braked_car_holds_on_slope() {
         // tan θ = 0.3 < μ (1.1 dry asphalt)
         let drift = slope_drift(fx(3, 10), 600);
         if std::env::var("VD_DEBUG").is_ok() {
-            std::println!("drift 0.99 {:.3e} / 1.0 {:.3e}", drift.to_f64(), slope_run(fx(3, 10), 600, Fix128::ONE).0.to_f64());
+            std::println!("drift 0.99 {:.3e} / 1.0 {:.3e}", drift.to_f64(), slope_run(fx(3, 10), 600, Fix128::ONE, false).0.to_f64());
         }
         assert!(
             drift.abs() <= fx(1, 1000),
