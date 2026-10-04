@@ -147,11 +147,27 @@ pub fn aggregate_forces(
 /// `EulerianGrid` P2G routine). Placeholder for the true immersed-boundary
 /// scatter operator; kept minimal to avoid coupling this module to any
 /// specific grid representation.
+///
+/// `samples` and `solid_force_by_sample` must be the same length: one
+/// solid force per sample. `zip`ping the two without checking that would
+/// silently drop the surplus samples when the force slice is shorter — no
+/// panic, no error, just fewer reactions deposited than solid forces
+/// computed, which quietly breaks Newton III (the deposits are supposed to
+/// sum to minus the total solid force over every sample).
+///
+/// # Panics
+///
+/// Panics if the two slices have mismatched lengths.
 pub fn react_back_pressure(
     samples: &[SolidSample],
     solid_force_by_sample: &[Vec3Fix],
     mut deposit: impl FnMut(Vec3Fix, Vec3Fix),
 ) {
+    assert_eq!(
+        samples.len(),
+        solid_force_by_sample.len(),
+        "length mismatch"
+    );
     for (s, f) in samples.iter().zip(solid_force_by_sample.iter()) {
         let reaction = Vec3Fix::new(Fix128::ZERO - f.x, Fix128::ZERO - f.y, Fix128::ZERO - f.z);
         deposit(s.position, reaction);
