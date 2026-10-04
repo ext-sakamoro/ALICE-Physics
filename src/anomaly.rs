@@ -106,8 +106,17 @@ impl StreamingMedian {
     }
 
     /// Add a new value with O(N) sorted array maintenance
+    ///
+    /// NaN is rejected and leaves the window unchanged: NaN cannot be
+    /// ordered against other values (every `<` / `>` comparison
+    /// involving it is `false`), which would otherwise corrupt the
+    /// invariant that `sorted` stays sorted, and the corruption would
+    /// outlive the NaN sample itself once it ages out of the window.
     #[inline]
     pub fn push(&mut self, value: f64) {
+        if value.is_nan() {
+            return;
+        }
         if self.count < DEFAULT_WINDOW {
             // Buffer not full: just insert into sorted array
             let insert_pos = self.binary_search_insert(value, self.count);
@@ -271,7 +280,15 @@ impl MadDetector {
     }
 
     /// Observe a new value (updates statistics)
+    ///
+    /// NaN is rejected outright: it is not stored in `recent_values` and
+    /// not pushed into `values_median`, so it never desynchronizes the
+    /// two and never reaches the deviation computation in
+    /// [`Self::update_cache`].
     pub fn observe(&mut self, value: f64) {
+        if value.is_nan() {
+            return;
+        }
         // Store in recent values
         self.recent_values[self.pos] = value;
         self.pos = (self.pos + 1) % DEFAULT_WINDOW;
@@ -450,7 +467,16 @@ impl EwmaDetector {
     }
 
     /// Observe a new value and update statistics
+    ///
+    /// NaN is rejected: it is not counted and does not touch `ewma` /
+    /// `ewma_var`, since a NaN sample would otherwise poison the running
+    /// state for the life of the detector (every subsequent comparison
+    /// against a NaN `ewma` is `false`, so the detector would silently
+    /// stop flagging anything until [`Self::reset`]).
     pub fn observe(&mut self, value: f64) {
+        if value.is_nan() {
+            return;
+        }
         self.count += 1;
 
         if !self.initialized {
@@ -593,7 +619,16 @@ impl ZScoreDetector {
     }
 
     /// Observe a new value (updates running statistics)
+    ///
+    /// NaN is rejected: it is not counted and does not touch `mean` /
+    /// `m2`, since a NaN sample would otherwise poison the running mean
+    /// permanently (every subsequent comparison against a NaN `mean` is
+    /// `false`, so the detector would silently stop flagging anything
+    /// until [`Self::reset`]).
     pub fn observe(&mut self, value: f64) {
+        if value.is_nan() {
+            return;
+        }
         self.count += 1;
         let delta = value - self.mean;
         self.mean += delta / self.count as f64;
