@@ -111,7 +111,10 @@ impl DebugPoint {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[allow(clippy::struct_excessive_bools)]
 pub struct DebugDrawFlags {
-    /// Draw body AABBs
+    /// Draw body AABBs: the box the broad-phase tests for each body (a cube
+    /// centred on the body position with half-extent equal to its collision
+    /// radius), in the body color. Bodies without a collision radius take part
+    /// in no collision and draw no box.
     pub draw_aabbs: bool,
     /// Draw body centers of mass
     pub draw_centers: bool,
@@ -311,13 +314,20 @@ pub fn debug_draw_world(
 ) {
     data.clear();
 
-    for body in &world.bodies {
+    for (i, body) in world.bodies.iter().enumerate() {
         let is_static = body.is_static();
         let body_color = if is_static {
             DebugColor::GRAY
         } else {
             DebugColor::GREEN
         };
+
+        if flags.draw_aabbs {
+            if let Some((radius, _)) = world.ray_geometry(i) {
+                let half = Vec3Fix::new(radius, radius, radius);
+                data.aabb(&AABB::from_center_half(body.position, half), body_color);
+            }
+        }
 
         if flags.draw_centers {
             data.point(body.position, body_color, Fix128::from_ratio(1, 10));

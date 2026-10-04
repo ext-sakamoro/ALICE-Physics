@@ -408,3 +408,123 @@ fn extreme_radius_and_center_do_not_panic_through_sphere() {
     );
     assert_eq!(data.lines.len(), 48);
 }
+
+// --- draw_aabbs: the broad-phase box of each body ---------------------------
+//
+// `debug_draw_world` draws, under `draw_aabbs`, the box the broad-phase tests
+// for a body: centre = body position, half-extent = collision radius on every
+// axis. The 12 edges come from `DebugDrawData::aabb` in a fixed order (bottom
+// face, top face, verticals). Expected endpoints below are written by hand
+// from that closed form.
+
+fn v(x: Fix128, y: Fix128, z: Fix128) -> Vec3Fix {
+    Vec3Fix::new(x, y, z)
+}
+
+/// The 12 edges of the box `[lo, hi]` in the order `DebugDrawData::aabb`
+/// emits them, written out corner by corner.
+fn box_edges(lo: Vec3Fix, hi: Vec3Fix) -> [(Vec3Fix, Vec3Fix); 12] {
+    let c = [
+        v(lo.x, lo.y, lo.z),
+        v(hi.x, lo.y, lo.z),
+        v(hi.x, hi.y, lo.z),
+        v(lo.x, hi.y, lo.z),
+        v(lo.x, lo.y, hi.z),
+        v(hi.x, lo.y, hi.z),
+        v(hi.x, hi.y, hi.z),
+        v(lo.x, hi.y, hi.z),
+    ];
+    [
+        (c[0], c[1]),
+        (c[1], c[2]),
+        (c[2], c[3]),
+        (c[3], c[0]),
+        (c[4], c[5]),
+        (c[5], c[6]),
+        (c[6], c[7]),
+        (c[7], c[4]),
+        (c[0], c[4]),
+        (c[1], c[5]),
+        (c[2], c[6]),
+        (c[3], c[7]),
+    ]
+}
+
+/// Dynamic body at (1, 2, 3) with radius 1/2, static body at the origin with
+/// radius 2, and a dynamic body with no collision radius.
+fn scene_with_radii() -> PhysicsWorld {
+    let mut world = PhysicsWorld::new(SolverConfig::default());
+    world.add_body_with_radius(
+        RigidBody::new_dynamic(
+            v(Fix128::ONE, Fix128::from_int(2), Fix128::from_int(3)),
+            Fix128::ONE,
+        ),
+        Fix128::from_ratio(1, 2),
+    );
+    world.add_body_with_radius(RigidBody::new_static(Vec3Fix::ZERO), Fix128::from_int(2));
+    world.add_body(RigidBody::new_dynamic(
+        v(Fix128::from_int(10), Fix128::ZERO, Fix128::ZERO),
+        Fix128::ONE,
+    ));
+    world
+}
+
+#[test]
+fn draw_aabbs_emits_the_broadphase_box_of_every_body_with_a_radius() {
+    let world = scene_with_radii();
+    let flags = DebugDrawFlags {
+        draw_aabbs: true,
+        ..all_flags_false()
+    };
+    let mut data = DebugDrawData::new();
+    debug_draw_world(&world, &flags, &mut data);
+
+    // 2 bodies with a radius x 12 edges; the third body draws nothing.
+    assert_eq!(data.lines.len(), 24);
+    assert!(data.points.is_empty());
+
+    let half = Fix128::from_ratio(1, 2);
+    let dynamic = box_edges(
+        v(half, Fix128::from_ratio(3, 2), Fix128::from_ratio(5, 2)),
+        v(
+            Fix128::from_ratio(3, 2),
+            Fix128::from_ratio(5, 2),
+            Fix128::from_ratio(7, 2),
+        ),
+    );
+    let two = Fix128::from_int(2);
+    let stat = box_edges(v(-two, -two, -two), v(two, two, two));
+    for (k, (start, end)) in dynamic.iter().enumerate() {
+        assert_eq!(data.lines[k].start, *start, "dynamic edge {k} start");
+        assert_eq!(data.lines[k].end, *end, "dynamic edge {k} end");
+        assert_eq!(data.lines[k].color, DebugColor::GREEN);
+    }
+    for (k, (start, end)) in stat.iter().enumerate() {
+        assert_eq!(data.lines[12 + k].start, *start, "static edge {k} start");
+        assert_eq!(data.lines[12 + k].end, *end, "static edge {k} end");
+        assert_eq!(data.lines[12 + k].color, DebugColor::GRAY);
+    }
+}
+
+#[test]
+fn draw_aabbs_off_emits_no_box() {
+    let world = scene_with_radii();
+    let mut data = DebugDrawData::new();
+    debug_draw_world(&world, &all_flags_false(), &mut data);
+    assert_eq!(data.primitive_count(), 0);
+
+    // Default flags draw the boxes (24 lines) plus one centre point per body;
+    // with `draw_aabbs` turned off only the 3 centre points remain.
+    let mut data = DebugDrawData::new();
+    debug_draw_world(&world, &DebugDrawFlags::default(), &mut data);
+    assert_eq!(data.lines.len(), 24);
+    assert_eq!(data.points.len(), 3);
+    let flags = DebugDrawFlags {
+        draw_aabbs: false,
+        ..DebugDrawFlags::default()
+    };
+    let mut data = DebugDrawData::new();
+    debug_draw_world(&world, &flags, &mut data);
+    assert!(data.lines.is_empty());
+    assert_eq!(data.points.len(), 3);
+}
