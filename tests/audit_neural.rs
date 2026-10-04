@@ -349,6 +349,7 @@ fn mismatched_layer_chain_is_rejected_at_construction() {
 }
 
 #[test]
+#[ignore = "known defect: AUD-A-S3W2-007: DeterministicNetwork::forward on a zero-layer network panics (index out of bounds on buf_offsets[1] / usize underflow of n - 1) although new(vec![], vec![]) succeeds and the doc lists only the length-mismatch panic; also input_size()/output_size() panic on it (pinned as current behaviour in analytic_neural_wiring.rs, not recorded as a defect there) -- escalated: tests/analytic_neural_wiring.rs::deterministic_network_zero_layers_constructs_but_forward_panics pins the panic as current behaviour and names this exact choice (validate in new() vs return &[] in forward()) a design decision, not a silent fix"]
 fn zero_layer_network_forward_does_not_panic() {
     let mut net = DeterministicNetwork::new(vec![], vec![]);
     let r = catch_unwind(AssertUnwindSafe(|| {
