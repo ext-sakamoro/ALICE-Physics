@@ -13,6 +13,23 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Fixed — 全 module 監査で見つかった欠陥のうち 33 件 (2 回目)
+
+- **joint**: ball / hinge / fixed / slider / cone-twist の位置拘束が並進のみを補正していたので、lever arm (一般化逆質量) と回転補正を加えた D6 の角度誤差は `local_frame_b` を基準に測るようにし、D6 の逐次補正で後続の拘束が古い値を読む問題も直した **全 joint の位置拘束の結果が変わる** (AUD-A-S1W6-006 / 010)
+- **articulation**: `apply_motors` が joint の種類を見ず中心間距離を駆動していたので、hinge motor は twist 角を駆動するようにした (AUD-A-S3W1-017)
+- **linear_elastic_fem**: `ElasticMaterial::new` は、ν が 0.5 / −1 の特異点に近く `lame()` の λ が `Fix128` で wrap する場合に `Err` を返す (従来は黙って wrap) (AUD-A-S1W3-001)
+- **math**: `powf_pos` の整数指数部の上限 64 を撤廃し、65 以上は二乗法にした 64 以下は従来の乗算順のままで結果は変わらない (AUD-A-S1W5-021)
+- **compressible**: γ=1 の等温極限を `riemann_invariants` / `stagnation_pressure_ratio` で扱う (AUD-A-S1W5-007)
+- **force**: Point / Magnetic の特異点近傍で overflow していた (3e-9 / 3.2e-7 以下で符号反転または 0 に崩れた) ので cap と scaling を入れた 特異点近傍の値が変わる (AUD-A-S4W3-018 / 019)
+- **coupled_iteration / creep_longterm / non_newtonian / wind_zone / anisotropic_friction**: 二乗・冪の途中で `Fix128` が wrap していたので、係数を先にスケールする・checked 演算と符号付き飽和にするなどで overflow を避けた (AUD-A-S3W3-011 / S2W1-003 / S2W2-002 / S3W3-001 / S2W3-002)
+- **eulerian_grid**: Outflow 面が index 0 のとき隣が未処理になる問題 (2 回目の pass で境界を強制) と、`t.t` が underflow したときの s の step を直した (AUD-A-S1W1-001 / 002)
+- **fluid_netcode / fsi_advanced**: position / velocity の長さが一致しない入力で velocity を黙って落とす・slice 短縮で panic していたので、`FluidSnapshot::capture` は長さ不一致で panic する (従来は黙って落としていた)、delta の compute / apply は両方の slice を検査する `react_back_pressure` も長さ不一致を拒否する (AUD-A-S5W2-013 / 015 / 016, S4W1-003)
+- **neural**: `features_per_body` を尊重し、層の次元連鎖を検査し、0 層を扱う (AUD-A-S3W2-005 / 006)
+- **sketch / anomaly**: DDSketch は非有限値を拒否する anomaly の各 detector は NaN を状態に取り込む前に拒否する (従来は NaN 1 つで以後永久に検出しなくなった) (AUD-A-S3W1-007 / 008, S4W1-012 / 014 / 015)
+- **piezoelectric / pressure**: 非正の幾何パラメータを両方向で検査する `PressureModifier` の resolution は 1 以上に clamp する (AUD-A-S6W1-010 / 005)
+- **contact_cache / spatial / raycast / trimesh / heightfield / bvh**: 古い `pair_index` での範囲外参照 (`find` / `get_or_create`)、`grid_dim = 0` の panic、`ray_aabb` の初期区間が固定 [-1e6, 1e6] だった問題、空 mesh の `closest_point` の panic、空 field の `aabb()` の panic、bvh の leaf 数飽和を妨げる `debug_assert` を直した (AUD-A-S1W5-015 / S3W1-001 / S5W1-005 / S4W2-011 / S4W3-005 / S3W2-010)
+- 差し戻して設計判断に回した項目: CountMinSketch の total の飽和加算 (AUD-A-S3W1-010)、0 層の `forward()` (AUD-A-S3W2-007)
+
 ### Fixed — 全 module 監査で見つかった欠陥のうち 7 件
 
 - **solver**: 回転した body に world 軸の torque / impulse を与えると、body 系の対角逆慣性を回さずに掛けていた (90° 回転・逆慣性 (1,2,4) の body に torque (1,0,0) を与えると dw.x が 1、正しくは 2) `R diag(inv_inertia) R^-1 τ` に直した 恒等回転では従来値と同一 (AUD-A-S1W2-001)
