@@ -342,7 +342,6 @@ fn aabb_of_axis_aligned_torus_has_exact_ring_plane_extent() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S5W3-002: support() does not tolerate a tiny direction (1e-10 scale squares to 0 in Fix128, support(1e-10,0,1e-10).x = 3.75 = R+r instead of 2.6517 = (R+r)/sqrt2 for R=3, r=0.75)"]
 fn support_is_invariant_to_tiny_direction_magnitude() {
     let t = Torus::new(Vec3Fix::ZERO, fx(R), fx(RR));
     let a = t.support(v3(1.0, 0.0, 1.0));
@@ -352,7 +351,6 @@ fn support_is_invariant_to_tiny_direction_magnitude() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S5W3-003: support() with a huge direction (|d| ~ 1e10) wraps in Fix128 squares and returns a point that is not the maximiser"]
 fn support_is_invariant_to_huge_direction_magnitude() {
     let t = Torus::new(Vec3Fix::ZERO, fx(R), fx(RR));
     let a = t.support(v3(1.0, 0.0, 1.0));

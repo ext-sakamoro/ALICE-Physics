@@ -180,7 +180,6 @@ fn support_is_invariant_to_positive_scaling_of_the_direction() {
 /// wraps on overflow, so a direction with |component| ~ 1e10 (square 1e20 >
 /// 2^63) yields a different support point than the same direction scaled down.
 #[test]
-#[ignore = "known defect: AUD-A-S6W1-007: support() is not scale invariant for |dir| >= ~3.04e9 (Fix128 square wraps): k=4e9 gives (0,1,0), k=1e10 gives (4.31,1,5.74) instead of (1.2,1,1.6)"]
 fn support_is_invariant_for_very_large_directions() {
     let c = Cylinder::new(Vec3Fix::ZERO, fx(1.0), fx(2.0));
     let d = [0.6, 0.3, 0.8];

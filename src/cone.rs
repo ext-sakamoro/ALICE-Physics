@@ -161,6 +161,9 @@ impl Cone {
 
 impl Support for Cone {
     fn support(&self, direction: Vec3Fix) -> Vec3Fix {
+        // Only the direction matters: bring its scale into range first so the
+        // squares below neither underflow nor overflow
+        let direction = direction.rescaled_direction();
         // Transform direction to local space
         let local_dir = self.rotation.conjugate().rotate_vec(direction);
 

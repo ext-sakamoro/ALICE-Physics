@@ -204,7 +204,6 @@ fn presets_have_kinetic_not_above_static_and_documented_ordering() {
 /// |v| ~ 1e-10 underflows to 0 and the force collapses to zero although the body is sliding.
 /// Closed form (static regime): F = -N (mu_l_s*0.7071, 0, mu_t_s*0.7071).
 #[test]
-#[ignore = "known defect: AUD-A-S2W3-001: oblique slip |v| < ~2.3e-10 m/s: v^2 underflows in Fix128, slip=0 -> returns zero force instead of static friction (see ledger)"]
 fn tiny_oblique_slip_still_produces_static_friction() {
     let m = model();
     let e = 1.0e-10;

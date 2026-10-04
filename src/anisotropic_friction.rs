@@ -121,6 +121,21 @@ impl AnisotropicFriction {
             // v_long^2 + v_trans^2 ~= 2e20 is not).
             let mut vl = v_long;
             let mut vt = v_trans;
+            // The other end: below |v| ~ 2.3e-10 the squares fall under one
+            // ulp and the slip would read 0 (AUD-A-S2W3-001). When the larger
+            // component is under 2^-24, double both (exact) until it is at
+            // least 1/2 — squares near 1 keep the full 2^-64 resolution — and
+            // halve the magnitude back by the same count. Above 2^-24 nothing
+            // changes.
+            let floor = Fix128::from_raw(0, 1 << 40);
+            let mut up = 0u32;
+            if vl.abs().max(vt.abs()) < floor {
+                while vl.abs().max(vt.abs()) < Fix128::from_ratio(1, 2) && up < 128 {
+                    vl = vl.double();
+                    vt = vt.double();
+                    up += 1;
+                }
+            }
             let mut shift = 0u32;
             let mut sum = None;
             for _ in 0..200 {
@@ -141,6 +156,9 @@ impl AnisotropicFriction {
             let mut magnitude = sum.unwrap_or(Fix128::ZERO).sqrt();
             for _ in 0..shift {
                 magnitude = magnitude.double();
+            }
+            for _ in 0..up {
+                magnitude = magnitude.half();
             }
             magnitude
         };

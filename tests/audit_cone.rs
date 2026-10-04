@@ -298,7 +298,6 @@ fn support_is_scale_invariant_in_the_direction() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S4W3-001: support() with |dir|~1e-12 (xz_len_sq underflows to 0) returns the apex (0,1,0) instead of the rim point (-1,-1,0)"]
 fn support_tiny_direction_still_picks_the_right_rim_point() {
     // Direction -X scaled to 1e-12: the true support is the rim point (-r, -hh, 0).
     let cone = Cone::new(Vec3Fix::ZERO, fx(1.0), fx(1.0));
