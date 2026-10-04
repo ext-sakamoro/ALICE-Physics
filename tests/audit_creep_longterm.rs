@@ -247,7 +247,6 @@ fn zero_glass_transition_means_no_wlf_shift() {
 /// a true 3.4e7 / 5.8e15). A monotone, non-negative result is required of any
 /// finite-strain model.
 #[test]
-#[ignore = "known defect: AUD-A-S2W1-003: predict_strain wraps (Fix128 overflow of t_eff^3) inside the documented WLF domain T_g..T_g+100: t=1000h T=100C gives -4.4e5, non-monotone in T"]
 fn strain_is_monotone_and_nonnegative_across_documented_wlf_domain() {
     let par = FindleyParameters::pla_25c_moderate();
     for t in [100i64, 1000, 4380] {

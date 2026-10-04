@@ -54,6 +54,16 @@ use crate::filament_db::MaterialProperties;
 use crate::math::Fix128;
 use crate::math_util::{exp_fix, EXP_OVERFLOW_SENTINEL};
 
+/// `base^n` via repeated [`Fix128::checked_mul`], or `None` the moment any
+/// intermediate product would overflow Fix128.
+fn pow_checked(base: Fix128, n: u32) -> Option<Fix128> {
+    let mut acc = Fix128::ONE;
+    for _ in 0..n {
+        acc = acc.checked_mul(base)?;
+    }
+    Some(acc)
+}
+
 // ============================================================================
 // Findley model
 // ============================================================================
@@ -116,12 +126,48 @@ impl FindleyParameters {
         if t_hours <= Fix128::ZERO {
             return self.epsilon_0;
         }
-        // t^n by repeated multiplication
-        let mut t_n = Fix128::ONE;
-        for _ in 0..self.n_int {
-            t_n = t_n * t_hours;
+        // 1) t^n by repeated multiplication, then times `m` — exact and
+        // bit-identical to the pre-1.x behavior whenever it does not
+        // overflow (the oracle tolerance is as tight as 5e-8 in that
+        // range, so this path must stay untouched).
+        if let Some(t_n) = pow_checked(t_hours, self.n_int) {
+            if let Some(creep) = self.m.checked_mul(t_n) {
+                return self.epsilon_0 + creep;
+            }
         }
-        self.epsilon_0 + self.m * t_n
+        // 2) `t_hours^n` overflows Fix128 well before `m * t_hours^n` (the
+        // actual creep contribution) does, because the calibrated `m` is
+        // many orders of magnitude below 1 (~8.3e-14 for the n=3 PLA
+        // preset) — inside the documented WLF domain T_g..T_g+100 the
+        // effective time can already be large enough to trip this.
+        // Scaling `t_hours` by `m^(1/n)` first folds that smallness in
+        // *before* the exponentiation: `(t_hours * m^(1/n))^n == m *
+        // t_hours^n` exactly in real arithmetic, so the intermediate does
+        // not leave the representable range as readily as the bare power
+        // does.
+        if self.n_int > 0 && self.m > Fix128::ZERO {
+            let root = self
+                .m
+                .powf_pos(Fix128::ONE / Fix128::from_int(i64::from(self.n_int)));
+            if let Some(scaled_t) = t_hours.checked_mul(root) {
+                if let Some(creep) = pow_checked(scaled_t, self.n_int) {
+                    return self.epsilon_0 + creep;
+                }
+            }
+        }
+        // 3) The effective time is astronomically large even after
+        // rescaling (T far enough above T_g that the WLF shift factor is
+        // minuscule) — the true creep strain genuinely exceeds Fix128's
+        // representable range. Saturate instead of wrapping: the creep
+        // term is always non-negative for t_hours > 0, so clamping at the
+        // largest representable magnitude keeps the result monotone
+        // instead of flipping sign. Returning the bare maximum (rather
+        // than adding `epsilon_0` on top of it) avoids wrapping a second
+        // time at the very ceiling it is meant to saturate at, and is
+        // still >= every value branch 1/2 can produce (those are only
+        // reached when `epsilon_0 + creep` already fits under that
+        // ceiling).
+        Fix128::from_raw(i64::MAX, u64::MAX)
     }
 }
 
