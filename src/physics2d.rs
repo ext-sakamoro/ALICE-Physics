@@ -633,6 +633,7 @@ impl PhysicsWorld2D {
             .map(|c| self.contact_normal_velocity(c))
             .collect();
         let mut lambda_n = vec![Fix128::ZERO; contacts.len()];
+        let mut joint_lambda = vec![Vec2Fix::ZERO; self.joints.len()];
 
         // 3. Solve constraints (position-based). The penetration is
         //    re-evaluated from the current positions in every iteration
@@ -649,7 +650,7 @@ impl PhysicsWorld2D {
             }
 
             // Solve joints
-            solve_joints_2d(&mut self.bodies, &self.joints, sub_dt);
+            solve_joints_2d_accumulated(&mut self.bodies, &self.joints, sub_dt, &mut joint_lambda);
         }
 
         // 4. Derive velocity from position change
@@ -1381,30 +1382,60 @@ pub enum Joint2D {
         /// Compliance (inverse stiffness). 0 = perfectly rigid.
         compliance: Fix128,
     },
-    /// Mouse joint: drags a body toward a world-space target point.
+    /// Mouse joint: drags a body toward a world-space target point with the
+    /// spring-damper `F = stiffness·(target − x) − damping·v`, `|F| <= max_force`.
+    ///
+    /// Solved inside the step as an XPBD constraint with damping (backward Euler per
+    /// substep, independent of `iterations`). For a body of mass `m`, angular frequency
+    /// `ω` and damping ratio `ζ` use `stiffness = m ω²` and `damping = 2 ζ m ω`; `ζ = 1`
+    /// is the critically damped return `x(t) = (x0 + (v0 + ω x0) t)·e^(−ωt)`. Each joint
+    /// carries its own `stiffness` / `damping`, so mouse joints of different `ω` can share
+    /// one world. `PhysicsConfig2D::damping` is applied on top (set it to 1 for the pure law).
     Mouse {
         /// Body index.
         body: usize,
         /// World-space target position.
         target: Vec2Fix,
-        /// Maximum force the joint can apply.
+        /// Maximum force the joint can apply, in N (`|F| <= max_force`); `<= 0` applies
+        /// no force.
         max_force: Fix128,
-        /// Stiffness parameter.
+        /// Spring stiffness `k`, in N/m (formerly a dimensionless fraction applied per
+        /// solver iteration, see CHANGELOG). `k = m ω²` for angular frequency `ω`.
         stiffness: Fix128,
-        /// Damping parameter.
+        /// Damping coefficient `c`, in N·s/m, acting on the body's velocity.
+        /// `c = 2·sqrt(k·m)` is critically damped (no overshoot), smaller oscillates,
+        /// larger creeps.
         damping: Fix128,
     },
 }
 
 /// Solve all 2D joints using XPBD position-level constraints.
+///
+/// One call is one solver iteration starting from zero accumulated multipliers.
+/// [`PhysicsWorld2D::step`] keeps the multipliers across the iterations of a substep, so
+/// compliant joints there do not stiffen with `iterations`.
+// ALLOW-UNWIRED: public single-iteration entry kept for callers that drive their own loop; PhysicsWorld2D::step uses solve_joints_2d_accumulated
 pub fn solve_joints_2d(bodies: &mut [RigidBody2D], joints: &[Joint2D], sub_dt: Fix128) {
+    let mut lambdas = vec![Vec2Fix::ZERO; joints.len()];
+    solve_joints_2d_accumulated(bodies, joints, sub_dt, &mut lambdas);
+}
+
+/// One XPBD iteration over `joints`, accumulating each joint's multiplier in
+/// `lambdas[i]` (Distance uses `.x`, Mouse the vector). `lambdas` is zeroed by the caller at
+/// the start of every substep.
+fn solve_joints_2d_accumulated(
+    bodies: &mut [RigidBody2D],
+    joints: &[Joint2D],
+    sub_dt: Fix128,
+    lambdas: &mut [Vec2Fix],
+) {
     let alpha = if sub_dt.is_zero() {
         Fix128::ZERO
     } else {
         Fix128::ONE / (sub_dt * sub_dt)
     };
 
-    for joint in joints {
+    for (joint, lambda) in joints.iter().zip(lambdas.iter_mut()) {
         match joint {
             Joint2D::Revolute {
                 body_a,
@@ -1440,6 +1471,7 @@ pub fn solve_joints_2d(bodies: &mut [RigidBody2D], joints: &[Joint2D], sub_dt: F
                     *target_distance,
                     *compliance,
                     alpha,
+                    &mut lambda.x,
                 );
             }
             Joint2D::Weld {
@@ -1466,9 +1498,11 @@ pub fn solve_joints_2d(bodies: &mut [RigidBody2D], joints: &[Joint2D], sub_dt: F
                 target,
                 max_force,
                 stiffness,
-                damping: _,
+                damping,
             } => {
-                solve_mouse(bodies, *body, *target, *max_force, *stiffness);
+                solve_mouse(
+                    bodies, *body, *target, *max_force, *stiffness, *damping, sub_dt, lambda,
+                );
             }
         }
     }
@@ -1536,6 +1570,7 @@ fn solve_distance(
     target_distance: Fix128,
     compliance: Fix128,
     alpha: Fix128,
+    accumulated: &mut Fix128,
 ) {
     let world_a = bodies[a].world_point(local_a);
     let world_b = bodies[b].world_point(local_b);
@@ -1567,7 +1602,10 @@ fn solve_distance(
         return;
     }
 
-    let lambda = -c / w;
+    // XPBD (Macklin 2016): the compliance term sees the multiplier accumulated over
+    // the substep, so the effective stiffness 1/compliance does not grow with iterations
+    let lambda = (-c - compliance * alpha * *accumulated) / w;
+    *accumulated = *accumulated + lambda;
     let p = n * lambda;
 
     if bodies[a].body_type == BodyType2D::Dynamic {
@@ -1620,32 +1658,54 @@ fn solve_weld(
 }
 
 /// Solve a mouse joint (pull body toward target).
+#[allow(clippy::too_many_arguments)]
 fn solve_mouse(
     bodies: &mut [RigidBody2D],
     body_idx: usize,
     target: Vec2Fix,
     max_force: Fix128,
     stiffness: Fix128,
+    damping: Fix128,
+    sub_dt: Fix128,
+    accumulated: &mut Vec2Fix,
 ) {
     let body = &bodies[body_idx];
-    if body.body_type != BodyType2D::Dynamic {
+    if body.body_type != BodyType2D::Dynamic || sub_dt.is_zero() {
         return;
     }
-
-    let delta = target - body.position;
-    let dist = delta.length();
-    if dist.is_zero() {
+    // XPBD with damping (Macklin et al. 2016, eq. 26) on the vector constraint
+    // C = x − target (gradient I), multiplied through by k h² so that k = 0 (a pure
+    // damper) needs no division:
+    //   Δλ = (−k h² C − λ − c h (x − x_prev)) / ((k h² + c h) w + 1),   x += w Δλ
+    // The force is λ / h², so |F| <= max_force is |λ| <= max_force · h².
+    let h = sub_dt;
+    let kh2 = stiffness * h * h;
+    let ch = damping * h;
+    let w = body.inv_mass;
+    let c = body.position - target;
+    let moved = body.position - body.prev_position;
+    let denom = (kh2 + ch) * w + Fix128::ONE;
+    if denom.is_zero() {
         return;
     }
-
-    // Limit correction
-    let correction = if dist > max_force {
-        delta * (max_force / dist)
+    let numer = c * (Fix128::ZERO - kh2) - *accumulated - moved * ch;
+    let mut total = *accumulated + numer / denom;
+    let limit = if max_force > Fix128::ZERO {
+        max_force * h * h
     } else {
-        delta
+        Fix128::ZERO
     };
-
-    bodies[body_idx].position = bodies[body_idx].position + correction * stiffness;
+    let len = total.length();
+    if len > limit {
+        total = if len.is_zero() {
+            Vec2Fix::ZERO
+        } else {
+            total * (limit / len)
+        };
+    }
+    let dlambda = total - *accumulated;
+    *accumulated = total;
+    bodies[body_idx].position = bodies[body_idx].position + dlambda * w;
 }
 
 impl core::fmt::Debug for PhysicsWorld2D {
@@ -2341,8 +2401,10 @@ mod tests {
             body: id,
             target,
             max_force: Fix128::from_int(100),
-            stiffness: Fix128::from_ratio(1, 10),
-            damping: Fix128::from_ratio(1, 100),
+            // k = 100 N/m and c = 20 N·s/m on a 1 kg body: omega = 10 rad/s,
+            // c = 2·sqrt(k·m) (critically damped)
+            stiffness: Fix128::from_int(100),
+            damping: Fix128::from_int(20),
         });
 
         let dt = Fix128::from_ratio(1, 60);
@@ -2352,9 +2414,11 @@ mod tests {
 
         // Body should have moved toward target
         let pos = world.bodies[id].position;
+        // critically damped from 14.14 m: 14.14·(1 + 50)·e^(−50) ≈ 1e-19 m after 5 s; with
+        // the damping ignored the frame damping alone leaves ≈ 0.86 m, so the bound is 1 cm
         let dist = pos.distance_to(target);
         assert!(
-            dist < Fix128::from_int(5),
+            dist < Fix128::from_ratio(1, 100),
             "Mouse joint should pull body toward target"
         );
     }

@@ -22,6 +22,17 @@ were introduced during that release window.
 - 新しい API は追加していない static anchor + `DistanceConstraint` (rest 0、compliance `1/(m ω²)`) + body の `linear_damping` を離散臨界値 `d = 1 + 2a² − 2a·sqrt(1 + a²)` (a = ω·dt) にすると、`substeps = 1` / `iterations = 1` / `SolverConfig::damping = 1` で 1 step の写像の固有値が `λ = 1 − a/sqrt(1 + a²)` に重なり、閉形式 `x(t) = (x0 + (v0 + ω x0) t)·e^(−ωt)` と同じ `(A + B n) λⁿ` の形になる 静止からの overshoot は 0、閉形式との差は `0.42·ω·dt·|x0|` 以下 (導出は test の doc) damping は body ごとなので ω の違う tether を 1 つの world に置ける oracle は `tests/analytic_critically_damped_tether.rs` (連続の閉形式との誤差上限、接線方向の初速を含む離散閉形式との 1e-9 一致、ω の違う 2 本の共存、bit 一致の再生)、使用例は `examples/critically_damped_tether.rs` 既定の sleep 判定 (|v| < 0.01 が 60 frame) は減衰の末尾を凍結するので、目標を動かす場合は `wake_body` が要る
 - `Joint::Spring` はこの用途に使えない: 減衰が anchor 方向の成分にしか掛からないので rest 0 では中心力になり、接線方向の速度が減衰しない また `solve_spring_joint` は `F·dt` を位置に加えるので速度変化が `F/m` になり、`stiffness` は実質 `k/h` として効く (未修正、別途判断)
 
+### Fixed — 2D の Mouse / Distance joint
+
+- **physics2d**: `Joint2D::Mouse` が `damping` を読んでいなかった (`damping: _` で捨てていた) doc どおり `F = stiffness·(target − x) − damping·v` を `|F| <= max_force` で clamp した spring-damper として、XPBD (damping 項付き、乗数を substep 内の反復で累積) で解くようにした 1 substep は後退 Euler と一致し、結果は `iterations` によらない joint ごとに k / c を持つので、ω の違う Mouse を 1 つの world に置ける `max_force` は従来「1 反復の補正距離の上限」として使われていたが、doc どおり力 (N) の上限になった (`|λ| <= max_force·h²`) signature は変更していない
+- **physics2d**: `Joint2D::Distance` が XPBD の乗数を反復間で累積していなかったので、`iterations` を増やすほど剛性が上がった (compliance 0.01・質量 2・重力 10 の吊り下げで、伸びが iterations 1 で 0.2、4 で 0.049) 乗数を substep 内で累積し、伸びは iterations 1 / 4 / 16 と substeps 1 / 4 のすべてで `α·m·g = 0.2` (誤差 1e-12 未満) になった 公開関数 `solve_joints_2d` は 1 回の呼び出しを乗数 0 からの 1 反復として扱い、従来と同じ結果を返す
+- oracle は `tests/analytic_physics2d_joints.rs` (Mouse: 臨界減衰の閉形式との誤差上限 `0.155·ω·h·|x0|`、接線方向の初速を含む離散閉形式 (後退 Euler の重根 `1/(1 + ωh)`) との 1e-9 一致、overshoot 0、ω の違う 2 本の共存、iterations 1 / 4 / 16 で不変、max_force の clamp、bit 一致の再生 / Distance: iterations と substeps によらない伸び)
+- 未対応: `Joint2D::Revolute` / `Weld` の compliance 項も乗数を累積していない (別途判断)
+
+### Changed — `Joint2D::Mouse` の `stiffness` の単位
+
+- **physics2d**: `Joint2D::Mouse::stiffness` の意味が「1 反復ごとに目標へ寄せる割合 (無次元)」から「ばね定数 k (N/m)」に変わった `damping` は c (N·s/m)、`max_force` は N 質量 m の body を角振動数 ω・減衰比 ζ で引き戻すには `stiffness = m ω²`、`damping = 2 ζ m ω` (臨界減衰は `damping = 2·sqrt(k·m)`) 移行の目安: 旧値 s (割合) を substeps S・iterations I で使っていた場合、1 frame あたり `1 − (1 − s)^(S·I)` だけ寄っていたので、同程度の追従には `ω ≈ −ln((1 − s)^(S·I)) / dt` を選び、`stiffness = m ω²`、`damping = 2 m ω` を与える 旧 test は `stiffness = 0.1` / `damping = 0.01` で 5 s 後に目標へ届いていたが、新しい意味では ω = 0.32 rad/s になり 7.4 m 残る (test は k = 100、c = 20 に更新した)
+
 ### Fixed — 全 module 監査で見つかった欠陥のうち 33 件 (2 回目)
 
 - **joint**: ball / hinge / fixed / slider / cone-twist の位置拘束が並進のみを補正していたので、lever arm (一般化逆質量) と回転補正を加えた D6 の角度誤差は `local_frame_b` を基準に測るようにし、D6 の逐次補正で後続の拘束が古い値を読む問題も直した **全 joint の位置拘束の結果が変わる** (AUD-A-S1W6-006 / 010)
