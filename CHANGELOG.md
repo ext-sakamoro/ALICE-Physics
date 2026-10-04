@@ -13,6 +13,16 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Fixed — 全 module 監査で見つかった欠陥のうち 7 件
+
+- **solver**: 回転した body に world 軸の torque / impulse を与えると、body 系の対角逆慣性を回さずに掛けていた (90° 回転・逆慣性 (1,2,4) の body に torque (1,0,0) を与えると dw.x が 1、正しくは 2) `R diag(inv_inertia) R^-1 τ` に直した 恒等回転では従来値と同一 (AUD-A-S1W2-001)
+- **solver**: `ContactModifier` が friction / restitution を書き換えても反映されなかった (CPU の solve は局所変数に格納し、`update_velocities` は constraint の原値を読んでいた) 結果を constraint へ書き戻すようにした 注意: modifier は反復ごとに適用されるため、`friction *= 0.5` のような相対変更は反復回数ぶん複合する (絶対値の代入は影響なし、parallel 経路は元からこの挙動) (AUD-A-S1W2-005)
+- **joint**: hinge の `angle_min` / `angle_max` と slider の `limit_min` / `limit_max` は、片方だけ設定すると黙って無視されていた 各側を独立に判定するようにした 片側だけ設定した scene では、これまで効かなかった limit が効く (AUD-A-S1W6-007)
+- **cfd_solver**: 表面張力 (CSF) が x 方向の面にしか適用されていなかった y / z 方向も同じ 1/2 配分で適用する (球形の液滴の線積分が x のみ -0.3207、y / z は 0 だった) (AUD-A-S1W4-001)
+- **cfd_solver**: CSF の delta 幅を 1.5 dx から 2 dx に変更した 1.5 dx は整数倍でなく、離散 delta の和が 1.11 になり Young-Laplace の圧力差が +11.4% ずれていた 変更後は -0.2891 (期待 -0.2880、誤差 0.4%) 表面張力を使う計算の結果が変わる (AUD-A-S1W4-006)
+- **cfd_solver**: Boussinesq の浮力に使う面温度を、面を共有する両側セルの平均にした (従来は片側セルの値で半セル分の偏りがあった、境界面は片側のセルを使う) (AUD-A-S1W4-002)
+- **cfd_solver**: `CfdSolver::new` の既定 `beta_per_k` を空気の値 3.4e-3 から、doc の「water at 20 °C」に合う 2.07e-4 に変更した **既定の β を使う利用者は浮力が約 1/16 になる** (AUD-A-S1W4-008)
+
 ### Changed — README を書き直した
 
 - `README.md` (3113 行) と `README_JP.md` (2504 行) をそれぞれ 277 行 / 258 行に再構成した 概要 / インストール / 使用例 / 決定論 / 含まれるもの / 検証と既知の不具合 / feature / バインディング / 性能 / MSRV / ビルド / 関連 crate / ライセンス の順で、英語版と日本語版は同じ節構成
