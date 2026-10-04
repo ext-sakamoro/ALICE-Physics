@@ -231,14 +231,25 @@ fn riemann_invariants_closed_form() {
 
 /// gamma = 1: isothermal limit, 2a/(gamma-1) is infinite; returning (u, u) hides that.
 #[test]
-#[ignore = "known defect: AUD-A-S1W5-007: riemann_invariants(gamma=1) silently returns (u,u) (J+ == J-) although 2a/(gamma-1) diverges; likewise stagnation_pressure_ratio(gamma<=1) silently returns 1"]
-fn gamma_one_degenerate_is_not_silent_identity() {
+#[ignore = "known defect: AUD-A-S1W5-007: riemann_invariants(gamma=1) silently returns (u,u) (J+ == J-) although 2a/(gamma-1) diverges"]
+fn gamma_one_riemann_invariants_are_not_a_silent_identity() {
     let g = IdealGas {
         gas_constant: f(287.0),
         gamma: Fix128::ONE,
     };
     let (jp, jm) = riemann_invariants(&g, f(10.0), f(340.0));
     assert!(jp != jm, "J+ == J- == {}", jp.to_f64());
+}
+
+/// gamma = 1 is the isothermal limit of the isentropic stagnation relation:
+/// the exponent `gamma/(gamma-1)` diverges but the limit itself is finite,
+/// `lim (1 + (gamma-1)/2 M^2)^(gamma/(gamma-1)) = exp(M^2/2)`.
+#[test]
+fn gamma_one_stagnation_pressure_ratio_is_the_isothermal_limit() {
+    let g = IdealGas {
+        gas_constant: f(287.0),
+        gamma: Fix128::ONE,
+    };
     // isothermal: p0/p = exp(M^2/2) at M=2 = e^2 = 7.389
     close(
         stagnation_pressure_ratio(&g, f(2.0)),
