@@ -152,6 +152,8 @@ pub struct Environment<'a> {
     pub wind: Option<&'a WindZone>,
     /// Simulation time (s) for gusts.
     pub time: Fix128,
+    /// Gravity of the world (`world.config.gravity`).
+    pub gravity: Vec3Fix,
 }
 
 /// Vehicle with per-wheel dynamics.
