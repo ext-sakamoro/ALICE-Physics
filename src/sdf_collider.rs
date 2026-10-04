@@ -135,11 +135,11 @@ pub struct SdfCollider {
     pub body_index: usize,
     // -- Cached invariants (derived from rotation/scale) --
     /// Inverse rotation (cached)
-    inv_rotation: QuatFix,
+    pub(crate) inv_rotation: QuatFix,
     /// Scale as f32 (cached)
     pub(crate) scale_f32: f32,
     /// Inverse scale as f32 (cached, guards against zero)
-    inv_scale_f32: f32,
+    pub(crate) inv_scale_f32: f32,
 }
 
 /// Sentinel value for static (world-fixed) SDF colliders

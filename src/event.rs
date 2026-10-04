@@ -56,20 +56,20 @@ pub struct TriggerEvent {
 /// Manages physics events for one simulation step
 pub struct EventCollector {
     /// Contact events this frame
-    contact_events: Vec<ContactEvent>,
+    pub(crate) contact_events: Vec<ContactEvent>,
     /// Trigger events this frame
-    trigger_events: Vec<TriggerEvent>,
+    pub(crate) trigger_events: Vec<TriggerEvent>,
     /// Active contact pairs from previous frame (for begin/persist/end tracking)
-    prev_pairs: Vec<(usize, usize)>,
+    pub(crate) prev_pairs: Vec<(usize, usize)>,
     /// Active contact pairs this frame (ordered set: membership tests are
     /// O(log n); the linear `Vec::contains` made `report_contact` O(pairs²) —
     /// 3 ms per detection at 2700 contacts, run 8× per frame since 1.2.0)
     /// Active contact pairs this frame
-    curr_pairs: BTreeSet<(usize, usize)>,
+    pub(crate) curr_pairs: BTreeSet<(usize, usize)>,
     /// Active trigger overlaps from previous frame: (normalized pair, (trigger, other) roles of the enter frame)
-    prev_triggers: Vec<((usize, usize), (usize, usize))>,
+    pub(crate) prev_triggers: Vec<((usize, usize), (usize, usize))>,
     /// Active trigger overlaps this frame (normalized pair -> roles as reported)
-    curr_triggers: BTreeMap<(usize, usize), (usize, usize)>,
+    pub(crate) curr_triggers: BTreeMap<(usize, usize), (usize, usize)>,
 }
 
 impl EventCollector {

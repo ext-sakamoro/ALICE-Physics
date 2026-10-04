@@ -127,7 +127,7 @@ pub struct TriMesh {
     /// Triangles
     pub triangles: Vec<Triangle>,
     /// BVH for acceleration
-    bvh: LinearBvh,
+    pub(crate) bvh: LinearBvh,
     /// Overall AABB
     pub bounds: AABB,
 }

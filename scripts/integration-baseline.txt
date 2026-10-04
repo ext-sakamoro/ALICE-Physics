@@ -108,7 +108,6 @@ src/filament_db.rs::is_empty
 src/filter.rs::ALL
 src/flow_viz.rs::is_empty
 src/fluid.rs::step_with_sdf
-src/force.rs::with_affected_bodies
 src/gpu_sdf.rs::clear
 src/heightfield.rs::aabb
 src/joint.rs::with_compliance

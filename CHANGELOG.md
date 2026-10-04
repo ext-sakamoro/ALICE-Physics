@@ -17,6 +17,8 @@ were introduced during that release window.
 
 ### Added
 
+- `PhysicsWorld::{snapshot_world, from_world_snapshot, restore_world}` / `WorldSnapshotError` / `PhysicsWorld::{WORLD_SNAPSHOT_MAGIC, WORLD_SNAPSHOT_VERSION}`: `step` が読む全状態 (物体、拘束、ジョイント、静的・SDF collider の姿勢、形状、力場、マテリアル、フィルタ、イベント、スリープ状態、broad-phase の木、XPBD / TGS の warm-start、overflow flag) を版付きの 1 blob + checksum に保存し、新しい world または既存の world に復元する 復元後の step は元と bit 一致 SDF の場・hook・modifier・GPU bridge はコードなので保存せず、復元先の個数と一致しなければ `Err` 既存の `serialize_state` / `deserialize_state` は変更なし
+- `PhysicsWorld::step_n(n, dt)`: `step(dt)` を `n` 回 (Python の `step_n` / WASM の `stepN` はこれを呼ぶ形に変更、挙動は同じ)
 - `PhysicsWorld::reset_world` / `observe_body` / `observe_bodies` / `BodyObservation` / `population_fingerprint`: 世界を既定状態に戻す、body を型付きで観測する、rollback 先の body 構成を照合する
 - `PhysicsWorld::overflow_detected` / `Fix128::checked_mul` / `Vec3Fix::checked_scale`: 積分と速度導出で積が範囲外になったことを sticky flag で読める (`Mul` 自体の挙動は不変)
 - `SolverConfig::solver_backend` / `SolverBackend::{Xpbd, Tgs}`: TGS solver を `PhysicsWorld` の backend として選べる (既定は `Xpbd`) `Tgs` は contact・joint・kinematic target・SDF collider を解く

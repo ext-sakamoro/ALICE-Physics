@@ -79,11 +79,11 @@ impl DynamicNode {
 /// Dynamic AABB Tree for incremental broadphase
 pub struct DynamicAabbTree {
     /// Node pool
-    nodes: Vec<DynamicNode>,
+    pub(crate) nodes: Vec<DynamicNode>,
     /// Free list (indices of unused nodes)
-    free_list: Vec<u32>,
+    pub(crate) free_list: Vec<u32>,
     /// Root node index
-    root: u32,
+    pub(crate) root: u32,
     /// AABB fattening margin
     pub margin: Fix128,
     /// The metric [`margin`](Self::margin) is measured in.

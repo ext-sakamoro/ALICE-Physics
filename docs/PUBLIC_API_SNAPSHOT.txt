@@ -8248,6 +8248,50 @@ impl core::marker::Unpin for alice_physics::solver::SolverBackend
 impl core::marker::UnsafeUnpin for alice_physics::solver::SolverBackend
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::solver::SolverBackend
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::solver::SolverBackend
+#[non_exhaustive] pub enum alice_physics::prelude::WorldSnapshotError
+pub alice_physics::prelude::WorldSnapshotError::BadMagic
+pub alice_physics::prelude::WorldSnapshotError::CallbackCountMismatch
+pub alice_physics::prelude::WorldSnapshotError::CallbackCountMismatch::section: &'static str
+pub alice_physics::prelude::WorldSnapshotError::CallbackCountMismatch::snapshot: usize
+pub alice_physics::prelude::WorldSnapshotError::CallbackCountMismatch::world: usize
+pub alice_physics::prelude::WorldSnapshotError::ChecksumMismatch
+pub alice_physics::prelude::WorldSnapshotError::ChecksumMismatch::computed: u64
+pub alice_physics::prelude::WorldSnapshotError::ChecksumMismatch::stored: u64
+pub alice_physics::prelude::WorldSnapshotError::DanglingIndex
+pub alice_physics::prelude::WorldSnapshotError::DanglingIndex::index: usize
+pub alice_physics::prelude::WorldSnapshotError::DanglingIndex::len: usize
+pub alice_physics::prelude::WorldSnapshotError::DanglingIndex::section: &'static str
+pub alice_physics::prelude::WorldSnapshotError::InvalidValue
+pub alice_physics::prelude::WorldSnapshotError::InvalidValue::section: &'static str
+pub alice_physics::prelude::WorldSnapshotError::ReservedNotZero
+pub alice_physics::prelude::WorldSnapshotError::SdfFieldCountMismatch
+pub alice_physics::prelude::WorldSnapshotError::SdfFieldCountMismatch::snapshot: usize
+pub alice_physics::prelude::WorldSnapshotError::SdfFieldCountMismatch::world: usize
+pub alice_physics::prelude::WorldSnapshotError::TrailingBytes
+pub alice_physics::prelude::WorldSnapshotError::TrailingBytes::extra: usize
+pub alice_physics::prelude::WorldSnapshotError::Truncated
+pub alice_physics::prelude::WorldSnapshotError::UnsupportedVersion
+pub alice_physics::prelude::WorldSnapshotError::UnsupportedVersion::found: u16
+pub alice_physics::prelude::WorldSnapshotError::UnsupportedVersion::supported: u16
+impl core::clone::Clone for alice_physics::WorldSnapshotError
+pub fn alice_physics::WorldSnapshotError::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::WorldSnapshotError
+impl core::cmp::PartialEq for alice_physics::WorldSnapshotError
+pub fn alice_physics::WorldSnapshotError::eq(&self, &Self) -> bool
+impl core::error::Error for alice_physics::WorldSnapshotError
+impl core::fmt::Debug for alice_physics::WorldSnapshotError
+pub fn alice_physics::WorldSnapshotError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for alice_physics::WorldSnapshotError
+pub fn alice_physics::WorldSnapshotError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::WorldSnapshotError
+impl core::marker::StructuralPartialEq for alice_physics::WorldSnapshotError
+impl core::marker::Freeze for alice_physics::WorldSnapshotError
+impl core::marker::Send for alice_physics::WorldSnapshotError
+impl core::marker::Sync for alice_physics::WorldSnapshotError
+impl core::marker::Unpin for alice_physics::WorldSnapshotError
+impl core::marker::UnsafeUnpin for alice_physics::WorldSnapshotError
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::WorldSnapshotError
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::WorldSnapshotError
 pub struct alice_physics::prelude::AABB
 pub alice_physics::prelude::AABB::max: alice_physics::math::Vec3Fix
 pub alice_physics::prelude::AABB::min: alice_physics::math::Vec3Fix
@@ -11230,6 +11274,7 @@ pub fn alice_physics::solver::PhysicsWorld::solve_contact_constraints_with_bridg
 pub fn alice_physics::solver::PhysicsWorld::solve_joints_with_bridge<B: alice_physics::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B, alice_physics::math::Fix128)
 pub fn alice_physics::solver::PhysicsWorld::static_collider_count(&self) -> usize
 pub fn alice_physics::solver::PhysicsWorld::step(&mut self, alice_physics::math::Fix128)
+pub fn alice_physics::solver::PhysicsWorld::step_n(&mut self, usize, alice_physics::math::Fix128)
 pub fn alice_physics::solver::PhysicsWorld::step_parallel(&mut self, alice_physics::math::Fix128)
 pub fn alice_physics::solver::PhysicsWorld::step_with_bridge<B: alice_physics::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B, alice_physics::math::Fix128)
 pub fn alice_physics::solver::PhysicsWorld::substep_with_bridge<B: alice_physics::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B, alice_physics::math::Fix128)
@@ -11237,6 +11282,12 @@ pub fn alice_physics::solver::PhysicsWorld::take_gpu_solver_bridge(&mut self) ->
 pub fn alice_physics::solver::PhysicsWorld::tgs_cache_stats(&self) -> alice_physics::solver::TgsCacheStats
 pub fn alice_physics::solver::PhysicsWorld::trigger_events(&self) -> &[alice_physics::event::TriggerEvent]
 pub fn alice_physics::solver::PhysicsWorld::wake_body(&mut self, usize)
+impl alice_physics::solver::PhysicsWorld
+pub const alice_physics::solver::PhysicsWorld::WORLD_SNAPSHOT_MAGIC: [u8; 4]
+pub const alice_physics::solver::PhysicsWorld::WORLD_SNAPSHOT_VERSION: u16
+pub fn alice_physics::solver::PhysicsWorld::from_world_snapshot(&[u8]) -> core::result::Result<Self, alice_physics::WorldSnapshotError>
+pub fn alice_physics::solver::PhysicsWorld::restore_world(&mut self, &[u8]) -> core::result::Result<(), alice_physics::WorldSnapshotError>
+pub fn alice_physics::solver::PhysicsWorld::snapshot_world(&self) -> alloc::vec::Vec<u8>
 impl alice_physics::solver::PhysicsWorld
 pub fn alice_physics::solver::PhysicsWorld::sdf_ccd_hits(&self, alice_physics::math::Fix128, &alice_physics::sdf_ccd::SdfCcdConfig) -> alloc::vec::Vec<(usize, usize, alice_physics::ccd::TOI)>
 impl core::fmt::Debug for alice_physics::solver::PhysicsWorld
@@ -15230,6 +15281,50 @@ impl core::marker::Unpin for alice_physics::solver::SolverBackend
 impl core::marker::UnsafeUnpin for alice_physics::solver::SolverBackend
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::solver::SolverBackend
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::solver::SolverBackend
+#[non_exhaustive] pub enum alice_physics::solver::WorldSnapshotError
+pub alice_physics::solver::WorldSnapshotError::BadMagic
+pub alice_physics::solver::WorldSnapshotError::CallbackCountMismatch
+pub alice_physics::solver::WorldSnapshotError::CallbackCountMismatch::section: &'static str
+pub alice_physics::solver::WorldSnapshotError::CallbackCountMismatch::snapshot: usize
+pub alice_physics::solver::WorldSnapshotError::CallbackCountMismatch::world: usize
+pub alice_physics::solver::WorldSnapshotError::ChecksumMismatch
+pub alice_physics::solver::WorldSnapshotError::ChecksumMismatch::computed: u64
+pub alice_physics::solver::WorldSnapshotError::ChecksumMismatch::stored: u64
+pub alice_physics::solver::WorldSnapshotError::DanglingIndex
+pub alice_physics::solver::WorldSnapshotError::DanglingIndex::index: usize
+pub alice_physics::solver::WorldSnapshotError::DanglingIndex::len: usize
+pub alice_physics::solver::WorldSnapshotError::DanglingIndex::section: &'static str
+pub alice_physics::solver::WorldSnapshotError::InvalidValue
+pub alice_physics::solver::WorldSnapshotError::InvalidValue::section: &'static str
+pub alice_physics::solver::WorldSnapshotError::ReservedNotZero
+pub alice_physics::solver::WorldSnapshotError::SdfFieldCountMismatch
+pub alice_physics::solver::WorldSnapshotError::SdfFieldCountMismatch::snapshot: usize
+pub alice_physics::solver::WorldSnapshotError::SdfFieldCountMismatch::world: usize
+pub alice_physics::solver::WorldSnapshotError::TrailingBytes
+pub alice_physics::solver::WorldSnapshotError::TrailingBytes::extra: usize
+pub alice_physics::solver::WorldSnapshotError::Truncated
+pub alice_physics::solver::WorldSnapshotError::UnsupportedVersion
+pub alice_physics::solver::WorldSnapshotError::UnsupportedVersion::found: u16
+pub alice_physics::solver::WorldSnapshotError::UnsupportedVersion::supported: u16
+impl core::clone::Clone for alice_physics::WorldSnapshotError
+pub fn alice_physics::WorldSnapshotError::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::WorldSnapshotError
+impl core::cmp::PartialEq for alice_physics::WorldSnapshotError
+pub fn alice_physics::WorldSnapshotError::eq(&self, &Self) -> bool
+impl core::error::Error for alice_physics::WorldSnapshotError
+impl core::fmt::Debug for alice_physics::WorldSnapshotError
+pub fn alice_physics::WorldSnapshotError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for alice_physics::WorldSnapshotError
+pub fn alice_physics::WorldSnapshotError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::WorldSnapshotError
+impl core::marker::StructuralPartialEq for alice_physics::WorldSnapshotError
+impl core::marker::Freeze for alice_physics::WorldSnapshotError
+impl core::marker::Send for alice_physics::WorldSnapshotError
+impl core::marker::Sync for alice_physics::WorldSnapshotError
+impl core::marker::Unpin for alice_physics::WorldSnapshotError
+impl core::marker::UnsafeUnpin for alice_physics::WorldSnapshotError
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::WorldSnapshotError
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::WorldSnapshotError
 pub struct alice_physics::solver::BodyObservation
 pub alice_physics::solver::BodyObservation::angular_velocity: alice_physics::math::Vec3Fix
 pub alice_physics::solver::BodyObservation::body_index: usize
@@ -15426,6 +15521,7 @@ pub fn alice_physics::solver::PhysicsWorld::solve_contact_constraints_with_bridg
 pub fn alice_physics::solver::PhysicsWorld::solve_joints_with_bridge<B: alice_physics::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B, alice_physics::math::Fix128)
 pub fn alice_physics::solver::PhysicsWorld::static_collider_count(&self) -> usize
 pub fn alice_physics::solver::PhysicsWorld::step(&mut self, alice_physics::math::Fix128)
+pub fn alice_physics::solver::PhysicsWorld::step_n(&mut self, usize, alice_physics::math::Fix128)
 pub fn alice_physics::solver::PhysicsWorld::step_parallel(&mut self, alice_physics::math::Fix128)
 pub fn alice_physics::solver::PhysicsWorld::step_with_bridge<B: alice_physics::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B, alice_physics::math::Fix128)
 pub fn alice_physics::solver::PhysicsWorld::substep_with_bridge<B: alice_physics::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B, alice_physics::math::Fix128)
@@ -15433,6 +15529,12 @@ pub fn alice_physics::solver::PhysicsWorld::take_gpu_solver_bridge(&mut self) ->
 pub fn alice_physics::solver::PhysicsWorld::tgs_cache_stats(&self) -> alice_physics::solver::TgsCacheStats
 pub fn alice_physics::solver::PhysicsWorld::trigger_events(&self) -> &[alice_physics::event::TriggerEvent]
 pub fn alice_physics::solver::PhysicsWorld::wake_body(&mut self, usize)
+impl alice_physics::solver::PhysicsWorld
+pub const alice_physics::solver::PhysicsWorld::WORLD_SNAPSHOT_MAGIC: [u8; 4]
+pub const alice_physics::solver::PhysicsWorld::WORLD_SNAPSHOT_VERSION: u16
+pub fn alice_physics::solver::PhysicsWorld::from_world_snapshot(&[u8]) -> core::result::Result<Self, alice_physics::WorldSnapshotError>
+pub fn alice_physics::solver::PhysicsWorld::restore_world(&mut self, &[u8]) -> core::result::Result<(), alice_physics::WorldSnapshotError>
+pub fn alice_physics::solver::PhysicsWorld::snapshot_world(&self) -> alloc::vec::Vec<u8>
 impl alice_physics::solver::PhysicsWorld
 pub fn alice_physics::solver::PhysicsWorld::sdf_ccd_hits(&self, alice_physics::math::Fix128, &alice_physics::sdf_ccd::SdfCcdConfig) -> alloc::vec::Vec<(usize, usize, alice_physics::ccd::TOI)>
 impl core::fmt::Debug for alice_physics::solver::PhysicsWorld
@@ -17816,6 +17918,50 @@ impl core::marker::Unpin for alice_physics::solver::SolverBackend
 impl core::marker::UnsafeUnpin for alice_physics::solver::SolverBackend
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::solver::SolverBackend
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::solver::SolverBackend
+#[non_exhaustive] pub enum alice_physics::WorldSnapshotError
+pub alice_physics::WorldSnapshotError::BadMagic
+pub alice_physics::WorldSnapshotError::CallbackCountMismatch
+pub alice_physics::WorldSnapshotError::CallbackCountMismatch::section: &'static str
+pub alice_physics::WorldSnapshotError::CallbackCountMismatch::snapshot: usize
+pub alice_physics::WorldSnapshotError::CallbackCountMismatch::world: usize
+pub alice_physics::WorldSnapshotError::ChecksumMismatch
+pub alice_physics::WorldSnapshotError::ChecksumMismatch::computed: u64
+pub alice_physics::WorldSnapshotError::ChecksumMismatch::stored: u64
+pub alice_physics::WorldSnapshotError::DanglingIndex
+pub alice_physics::WorldSnapshotError::DanglingIndex::index: usize
+pub alice_physics::WorldSnapshotError::DanglingIndex::len: usize
+pub alice_physics::WorldSnapshotError::DanglingIndex::section: &'static str
+pub alice_physics::WorldSnapshotError::InvalidValue
+pub alice_physics::WorldSnapshotError::InvalidValue::section: &'static str
+pub alice_physics::WorldSnapshotError::ReservedNotZero
+pub alice_physics::WorldSnapshotError::SdfFieldCountMismatch
+pub alice_physics::WorldSnapshotError::SdfFieldCountMismatch::snapshot: usize
+pub alice_physics::WorldSnapshotError::SdfFieldCountMismatch::world: usize
+pub alice_physics::WorldSnapshotError::TrailingBytes
+pub alice_physics::WorldSnapshotError::TrailingBytes::extra: usize
+pub alice_physics::WorldSnapshotError::Truncated
+pub alice_physics::WorldSnapshotError::UnsupportedVersion
+pub alice_physics::WorldSnapshotError::UnsupportedVersion::found: u16
+pub alice_physics::WorldSnapshotError::UnsupportedVersion::supported: u16
+impl core::clone::Clone for alice_physics::WorldSnapshotError
+pub fn alice_physics::WorldSnapshotError::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::WorldSnapshotError
+impl core::cmp::PartialEq for alice_physics::WorldSnapshotError
+pub fn alice_physics::WorldSnapshotError::eq(&self, &Self) -> bool
+impl core::error::Error for alice_physics::WorldSnapshotError
+impl core::fmt::Debug for alice_physics::WorldSnapshotError
+pub fn alice_physics::WorldSnapshotError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for alice_physics::WorldSnapshotError
+pub fn alice_physics::WorldSnapshotError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::WorldSnapshotError
+impl core::marker::StructuralPartialEq for alice_physics::WorldSnapshotError
+impl core::marker::Freeze for alice_physics::WorldSnapshotError
+impl core::marker::Send for alice_physics::WorldSnapshotError
+impl core::marker::Sync for alice_physics::WorldSnapshotError
+impl core::marker::Unpin for alice_physics::WorldSnapshotError
+impl core::marker::UnsafeUnpin for alice_physics::WorldSnapshotError
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::WorldSnapshotError
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::WorldSnapshotError
 pub struct alice_physics::AABB
 pub alice_physics::AABB::max: alice_physics::math::Vec3Fix
 pub alice_physics::AABB::min: alice_physics::math::Vec3Fix
@@ -20838,6 +20984,7 @@ pub fn alice_physics::solver::PhysicsWorld::solve_contact_constraints_with_bridg
 pub fn alice_physics::solver::PhysicsWorld::solve_joints_with_bridge<B: alice_physics::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B, alice_physics::math::Fix128)
 pub fn alice_physics::solver::PhysicsWorld::static_collider_count(&self) -> usize
 pub fn alice_physics::solver::PhysicsWorld::step(&mut self, alice_physics::math::Fix128)
+pub fn alice_physics::solver::PhysicsWorld::step_n(&mut self, usize, alice_physics::math::Fix128)
 pub fn alice_physics::solver::PhysicsWorld::step_parallel(&mut self, alice_physics::math::Fix128)
 pub fn alice_physics::solver::PhysicsWorld::step_with_bridge<B: alice_physics::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B, alice_physics::math::Fix128)
 pub fn alice_physics::solver::PhysicsWorld::substep_with_bridge<B: alice_physics::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B, alice_physics::math::Fix128)
@@ -20845,6 +20992,12 @@ pub fn alice_physics::solver::PhysicsWorld::take_gpu_solver_bridge(&mut self) ->
 pub fn alice_physics::solver::PhysicsWorld::tgs_cache_stats(&self) -> alice_physics::solver::TgsCacheStats
 pub fn alice_physics::solver::PhysicsWorld::trigger_events(&self) -> &[alice_physics::event::TriggerEvent]
 pub fn alice_physics::solver::PhysicsWorld::wake_body(&mut self, usize)
+impl alice_physics::solver::PhysicsWorld
+pub const alice_physics::solver::PhysicsWorld::WORLD_SNAPSHOT_MAGIC: [u8; 4]
+pub const alice_physics::solver::PhysicsWorld::WORLD_SNAPSHOT_VERSION: u16
+pub fn alice_physics::solver::PhysicsWorld::from_world_snapshot(&[u8]) -> core::result::Result<Self, alice_physics::WorldSnapshotError>
+pub fn alice_physics::solver::PhysicsWorld::restore_world(&mut self, &[u8]) -> core::result::Result<(), alice_physics::WorldSnapshotError>
+pub fn alice_physics::solver::PhysicsWorld::snapshot_world(&self) -> alloc::vec::Vec<u8>
 impl alice_physics::solver::PhysicsWorld
 pub fn alice_physics::solver::PhysicsWorld::sdf_ccd_hits(&self, alice_physics::math::Fix128, &alice_physics::sdf_ccd::SdfCcdConfig) -> alloc::vec::Vec<(usize, usize, alice_physics::ccd::TOI)>
 impl core::fmt::Debug for alice_physics::solver::PhysicsWorld

@@ -124,11 +124,11 @@ impl Default for PhysicsMaterial {
 
 /// Pair override entry
 #[derive(Clone, Copy, Debug, PartialEq)]
-struct PairOverride {
-    mat_a: MaterialId,
-    mat_b: MaterialId,
-    friction: Fix128,
-    restitution: Fix128,
+pub(crate) struct PairOverride {
+    pub(crate) mat_a: MaterialId,
+    pub(crate) mat_b: MaterialId,
+    pub(crate) friction: Fix128,
+    pub(crate) restitution: Fix128,
 }
 
 /// Combined material result for a contact pair
@@ -143,9 +143,9 @@ pub struct CombinedMaterial {
 /// Material pair lookup table
 pub struct MaterialTable {
     /// Registered materials (indexed by `MaterialId`)
-    materials: Vec<PhysicsMaterial>,
+    pub(crate) materials: Vec<PhysicsMaterial>,
     /// Pair-specific overrides
-    pair_overrides: Vec<PairOverride>,
+    pub(crate) pair_overrides: Vec<PairOverride>,
     /// Global friction combine rule (fallback)
     pub default_friction_combine: CombineRule,
     /// Global restitution combine rule (fallback)

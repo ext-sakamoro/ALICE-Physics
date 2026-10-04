@@ -116,12 +116,12 @@ pub(crate) struct CachedImpulse {
 /// that stale IDs do not grow the map indefinitely.
 #[derive(Debug, Default, Clone)]
 pub(crate) struct ImpulseCache {
-    entries: HashMap<u64, CachedImpulse>,
+    pub(crate) entries: HashMap<u64, CachedImpulse>,
     // Bit set of IDs touched during the current tick.
-    live: HashMap<u64, ()>,
+    pub(crate) live: HashMap<u64, ()>,
     // Warm-starting hit/miss counters (Turn D: observability).
-    hits: u64,
-    misses: u64,
+    pub(crate) hits: u64,
+    pub(crate) misses: u64,
 }
 
 /// Snapshot of [`ImpulseCache`] warm-starting effectiveness. Callers

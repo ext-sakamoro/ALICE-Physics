@@ -42,6 +42,22 @@ increment 他) が**追加機材の調達待ち**であるかのように読め�
 oracle は `tests/analytic_vehicle_dynamics.rs` (4 輪ロックの停止距離 `v0²/(2 μ_k g)` を乾燥・湿潤・凍結で、停止後の静止、ABS、低速旋回半径 `L / tan δ`、線形 2 輪モデルの定常ヨーレート、斜面の保持と滑り 他) と `tests/vehicle_dynamics_degenerate.rs` (退化入力 9 本) 使用例は `examples/vehicle_dynamics.rs` (停止距離を閉形式と比較、ABS の有無、斜面の保持を assert) シナリオ層の oracle は `tests/analytic_vehicle_scenario.rs`、使用例は `examples/vehicle_scenario.rs` (2 台の追従、TTC による制動、記録の bit 一致再生)
 残る既知の制限: Magic Formula は完全滑りで力の向きを補正しない (brush のみ) サスペンションはフレーム先頭の撃力で結合するので `(ω_n dt)² + 2 c dt / m_share < 4` の範囲でのみ安定 `HeightField` の `origin.y` 未反映と境界法線の既知欠陥は、路面の probe 側 (`sample_height` に従う、境界では片側差分) で影響を受けないようにしている
 
+### 第 65 increment (2026-10-04、全世界 snapshot と native `step_n`)
+
+`serialize_state` は剛体の運動状態・sleep・overflow flag だけを持ち、joints / force fields / filters / materials などは呼び出し側が再構築する前提だった 分岐探索・rollback・永続化の共通の前提として、`step` が読む全状態を 1 blob にする `snapshot_world` / `from_world_snapshot` / `restore_world` を追加した (既存 API は不変、別 magic `APWS` の別系列)
+
+| 分類 | `PhysicsWorld` の field |
+|---|---|
+| 保存 (25 項目) | `config` / `bodies` / `distance_constraints` / `contact_constraints` / SDF collider の姿勢と cache / `sdf_collision_radius` / `static_colliders` (三角形 mesh の BVH を含む) / `constraint_batches` / `batches_dirty` / `batch_static_bodies` / `contact_cache` の manifolds と設定 / `material_table` / `body_materials` / `joints` / `force_fields` / `events` / `islands` の `sleep_data` と `config` / `body_collision_radii` / `broadphase` / `broadphase_tree` / `broadphase_proxies` / `body_colliders` / `body_filters` / `overflow_detected` / `tgs_impulse_cache` の entries と hit・miss 数 |
+| 再構築 (4 項目) | `islands` の union-find (joints から) / `contact_cache` の pair index (manifolds から) / `tgs_impulse_cache` の live 集合 (step の外では常に空) / `kinematic_substeps_left` (step の外では常に 0) |
+| 対象外 (4 項目) | SDF の場 / pre-solve hook / contact modifier / GPU bridge (コードなので保存できない、復元先が同数を持つことを検査して不一致は `Err`) |
+
+既知の差: union-find は joints から作り直すので、最後の step の後に `remove_joint` してから次の step より前に `wake_body` を呼ぶと、元の world と島の範囲が異なる (`sleeping` の union-find に変更なしで読める複製手段が無い) motor / character controller / cloth / fluid / FEM / 車両は `PhysicsWorld` の field ではないので呼び出し側が保存する
+
+検証: field ごとの比較器 (encoder を通らない) で、XPBD / TGS × BVH / dynamic tree × (k, m) 5 組の round trip が復元直後と以後の全 step で一致 退化入力は切り詰め / magic / 版 / reserved / 末尾 byte / checksum / 未知 tag / 巨大件数 / 参照先の無い joint をそれぞれ別の `Err` で返し、復元先を変更しない `step_n(n)` は `step` の n 回と bit 一致、n = 0 と dt ≤ 0 は不変
+
+変異試験: 実装変異 18 件 red (checksum / magic / 版 / reserved / 末尾 / 参照検査 / 件数上限 / 読み書きの取り違え 等) + 配線変異 40 件 red (保存項目の復元を 1 つずつ外す 35 + 再構築経路を外す 2 + 個数検査を外す 2 + `step_n` 1) live 集合と `kinematic_substeps_left` は step の外で常に空 / 0 なので、再構築を外す変異は等価になる (試験の対照で空であることを assert している)
+
 ### 第 63 increment (2026-10-03、全配線 program 第 21 件 — 並列 worker 5 本で wiring-status / oracle-status を処理)
 
 user 指示「`docs/wiring-status.md` / `docs/oracle-status.md` を worker で並列処理」を、担当 file を固定した 5 本 (構造材料 / キャラ・SDF / 流体・熱・電磁 / その他 / oracle 棚卸し) で実施した 各 worker は専用 worktree で commit まで、push・docs・公開 API snapshot は調停役が統合した baseline **78 行退役** (実配線 78、巻き込み 0) 公開 API は**追加のみ 6 関数** (`PhysicsWorld::sdf_ccd_hits` / `SdfCharacter::locomotion_context` / `interface_capture::{plic_normal, plic_plane_offset, truncated_cube_volume}` が pub 化 / `rope_attach::solve_rope_attachments_two_way`) 追加 oracle は約 560 本、変異試験は約 900 件で、生存は全て理由つきの等価変異

@@ -87,6 +87,7 @@ assert!(pos.y < Fix128::from_int(10), "Body fell under gravity");
 | [`basic_physics`](examples/basic_physics.rs) | ワールドの作成、物体の追加、ステップ |
 | [`world_api_tour`](examples/world_api_tour.rs) | `PhysicsWorld` の setter・クエリ・イベント取得をひと通り |
 | [`rollback_netcode`](examples/rollback_netcode.rs) | スナップショット、ロールバック、チェックサム照合 |
+| [`world_snapshot_branching`](examples/world_snapshot_branching.rs) | 世界全体のスナップショット、そこからの分岐、SDF コライダーを持つ世界の復元 |
 | [`joint_limits_and_breaking`](examples/joint_limits_and_breaking.rs) | ジョイントの種類、リミット、モーター、破断 |
 | [`cloth_simulation`](examples/cloth_simulation.rs) | XPBD の布 |
 | [`cfd_smoke_plume`](examples/cfd_smoke_plume.rs) | 統合 CFD ソルバー |
@@ -131,15 +132,17 @@ cargo run --release --example rollback_netcode
 | `PhysicsWorld::reset_world()` | 全フィールドを `PhysicsWorld::new` 直後の状態に戻す 同じ初期状態と同じ入力なら 2 回目もビット一致する |
 | `observe_body` / `observe_bodies` | 型付きの `BodyObservation` (位置、速度、回転、角速度、`sleeping`、`in_contact`) を返す ゴール判定が状態 blob を解析せずに読める |
 | `serialize_state` / `deserialize_state` | 分岐点の保存と復元 物体の数が同じでも中身 (質量、形状、フィルタ、マテリアル) が保存時と違えば復元を拒否する |
+| `snapshot_world` / `from_world_snapshot` / `restore_world` | 世界全体 (物体、ジョイント、拘束、コライダー、力場、マテリアル、フィルタ、イベント、スリープ状態、broad-phase の木、warm-start のキャッシュ、オーバーフローフラグ) を版番号とチェックサム付きの 1 つの blob に保存し、新しい世界または既存の世界に復元する 復元後のステップは元の世界とビット一致する 不正な blob は理由を示す `WorldSnapshotError` で拒否する |
+| `step_n(n, dt)` | `step(dt)` を `n` 回実行する Python の `step_n` と WASM の `stepN` も同じ関数を呼ぶ |
 | `overflow_detected()` | `Fix128` の演算が範囲を外れたことを報告し、発散した実行を正しい結果と取り違えないようにする フラグはロールバック後も残る |
 | `netcode::SimulationChecksum` | 保存する状態と同じバイト列から求めるチェックサム |
 
 [`examples/world_auditor_observation.rs`](examples/world_auditor_observation.rs) でリセットと観測の使い方を示している
 契約は `tests/wm0*_*.rs` で固定している
 
-**範囲** 保存する状態は剛体 (運動状態、スリープ状態、オーバーフローフラグ) に限られる
-ジョイント、力場、衝突フィルタ、マテリアルは保存せず、ロールバック型ネットコードと同様に呼び出し側が組み立て直す
-布、流体、FEM は保存する状態に含まれない
+**範囲** `serialize_state` が保存するのは剛体 (運動状態、スリープ状態、オーバーフローフラグ) だけで、ジョイント、力場、衝突フィルタ、マテリアルはロールバック型ネットコードと同様に呼び出し側が組み立て直す
+`snapshot_world` は `PhysicsWorld` の全フィールドを保存する ただしデータでなくコードであるもの (SDF の場、pre-solve hook、contact modifier、GPU bridge) は復元先の世界にあるものを使い、その数が一致しなければ拒否する フィールドごとの分類表は `PhysicsWorld::snapshot_world` の doc にある
+モーター、キャラクターコントローラー、布、流体、FEM、車両は `PhysicsWorld` のフィールドではないので呼び出し側が保存する
 本 crate が提供するのは遷移関数で、探索アルゴリズムそのものは含まない
 
 ## 含まれるもの

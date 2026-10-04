@@ -48,6 +48,9 @@ use alloc::vec::Vec;
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
+mod world_snapshot;
+pub use world_snapshot::WorldSnapshotError;
+
 // ============================================================================
 // Body Type
 // ============================================================================
@@ -2285,6 +2288,35 @@ impl PhysicsWorld {
 
         // Phase 5: End event frame
         self.events.end_frame();
+    }
+
+    /// Run [`Self::step`] `n` times with the same `dt`.
+    ///
+    /// The native counterpart of the Python `step_n` and WASM `stepN`
+    /// bindings, which call this: the result is bit-identical to calling
+    /// `step(dt)` `n` times in a loop, `n = 0` leaves the world unchanged, and
+    /// a non-positive `dt` leaves it unchanged for every `n` (as `step` does).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use alice_physics::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix};
+    ///
+    /// let mut a = PhysicsWorld::new(PhysicsConfig::default());
+    /// a.add_body(RigidBody::new_dynamic(Vec3Fix::from_int(0, 5, 0), Fix128::ONE));
+    /// let mut b = PhysicsWorld::from_world_snapshot(&a.snapshot_world()).unwrap();
+    ///
+    /// let dt = Fix128::from_ratio(1, 60);
+    /// a.step_n(3, dt);
+    /// for _ in 0..3 {
+    ///     b.step(dt);
+    /// }
+    /// assert_eq!(a.bodies[0].position, b.bodies[0].position);
+    /// ```
+    pub fn step_n(&mut self, n: usize, dt: Fix128) {
+        for _ in 0..n {
+            self.step(dt);
+        }
     }
 
     /// Advances every [`BodyType::Kinematic`] body with a
