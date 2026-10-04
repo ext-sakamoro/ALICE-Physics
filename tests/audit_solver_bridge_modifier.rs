@@ -116,7 +116,10 @@ fn bridge_solve_stores_the_modified_friction_and_restitution_in_the_constraint()
     w.solve_contact_constraints_with_bridge(&mut bridge);
     assert_eq!(bridge.calls, 1, "the contact must reach the bridge");
     assert_eq!(w.contact_constraints[0].friction, Fix128::from_ratio(1, 8));
-    assert_eq!(w.contact_constraints[0].restitution, Fix128::from_ratio(3, 4));
+    assert_eq!(
+        w.contact_constraints[0].restitution,
+        Fix128::from_ratio(3, 4)
+    );
 }
 
 #[test]
