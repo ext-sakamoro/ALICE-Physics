@@ -11,6 +11,7 @@
 //! All constraints use XPBD-style position-level corrections with compliance.
 
 use crate::math::{Fix128, QuatFix, Vec3Fix};
+use crate::motor::shortest_arc;
 use crate::solver::RigidBody;
 
 // ============================================================================
@@ -646,7 +647,7 @@ fn solve_weld(joint: &WeldJoint, bodies: &mut [RigidBody], dt: Fix128) {
 
     // 2. Rotational constraint: maintain relative rotation
     let target_rot_b = body_a.rotation.mul(joint.local_rotation);
-    let rot_error = body_b.rotation.mul(target_rot_b.conjugate());
+    let rot_error = shortest_arc(body_b.rotation.mul(target_rot_b.conjugate()));
     let error_vec = Vec3Fix::new(rot_error.x, rot_error.y, rot_error.z);
     let (correction_axis, error_mag) = error_vec.normalize_with_length();
 
@@ -789,10 +790,12 @@ fn extract_angle(q: QuatFix) -> Fix128 {
 ///
 /// Projects the quaternion's imaginary part onto the given (unit) axis to isolate
 /// the twist component and returns `2 * (xyz . axis)`, the small-angle form of
-/// `2 * atan2(xyz . axis, w)`. A rotation in the negative sense about `axis`
-/// returns a negative angle.
+/// `2 * atan2(xyz . axis, w)`, read from the `w >= 0` representative so `q` and
+/// `-q` give the same angle. A rotation in the negative sense about `axis` returns
+/// a negative angle.
 #[must_use]
 fn extract_angle_around_axis(q: QuatFix, axis: Vec3Fix) -> Fix128 {
+    let q = shortest_arc(q);
     let qv = Vec3Fix::new(q.x, q.y, q.z);
     let twist = qv.dot(axis);
     if twist * twist < ANGLE_EPSILON_SQ {

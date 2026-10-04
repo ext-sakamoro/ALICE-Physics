@@ -242,7 +242,6 @@ fn weld_compute_torque_is_sin_half_angle_and_double_cover_invariant() {
 /// A weld must reduce the angular error whichever sign of the quaternion represents
 /// the orientation (`q` and `-q` are the same rotation).
 #[test]
-#[ignore = "known defect: AUD-A-S3W1-012: solve_weld takes error_vec = rot_error.xyz without making w >= 0; for the negated quaternion the correction axis flips and the angular error grows (0.0998 -> 0.379 after 3 solves) instead of shrinking"]
 fn weld_angular_correction_is_independent_of_quaternion_sign() {
     for neg in [false, true] {
         let mut b = body(Vec3Fix::ZERO, 1.0);
@@ -359,6 +358,35 @@ fn rack_and_pinion_constraint_is_signed() {
     );
     // and the consistent step is not disturbed
     assert!((lin + 0.4).abs() < 1e-3);
+}
+
+/// `q` and `-q` are the same pinion orientation, so the angle read (and therefore the
+/// correction) must not depend on the sign the rotation is stored with
+/// (AUD-A-S3W1-012 root: quaternion double cover).
+#[test]
+fn rack_and_pinion_reads_the_same_angle_for_a_negated_pinion_quaternion() {
+    let run = |neg: bool| {
+        let mut rack = body(v3(0.4, 0.0, 0.0), 1.0);
+        rack.prev_position = Vec3Fix::ZERO;
+        let mut pinion = body(Vec3Fix::ZERO, 1.0);
+        let q = rz(0.1);
+        pinion.rotation = if neg {
+            QuatFix::new(-q.x, -q.y, -q.z, -q.w)
+        } else {
+            q
+        };
+        let mut bodies = vec![rack, pinion];
+        let j = RackAndPinionJoint::new(0, 1, v3(1.0, 0.0, 0.0), v3(0.0, 0.0, 1.0), fx(2.0));
+        solve(&mut bodies, ExtraJoint::RackAndPinion(j), 0.25);
+        bodies[0].position.x.to_f64()
+    };
+    let (pos, neg) = (run(false), run(true));
+    // error 0.4 - 2 * 2 sin(0.05) moves the rack back, by the same amount for both signs
+    assert!(pos < 0.4, "rack {pos}");
+    assert!(
+        (pos - neg).abs() < 1e-12,
+        "+q moves rack to {pos}, -q to {neg}"
+    );
 }
 
 // ---------------------------------------------------------------------------
