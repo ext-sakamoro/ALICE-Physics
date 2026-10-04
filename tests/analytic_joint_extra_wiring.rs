@@ -13,7 +13,8 @@
 //!   ratio * len_b` is then a single exact multiply-add.
 //! * **`MouseJoint::set_target` / `solve_extra_joints` (Mouse variant)**: from
 //!   rest (`velocity = 0`), one XPBD step moves the body by `direction *
-//!   (stiffness * distance * dt) * inv_mass`, clamped to `max_force`.
+//!   (stiffness * distance * dt) * dt * inv_mass` (force times `dt^2` over
+//!   mass), with the force clamped to `max_force`.
 //! * **`WeldJoint::with_break_force`**: `compute_force` is a plain vector
 //!   `.length()` (no division), so an axis-aligned separation is exact. The
 //!   break test is strict (`separation > break_force`). When the weld holds
@@ -243,8 +244,11 @@ fn set_target_then_solve_moves_body_by_exact_spring_impulse() {
     solve_extra_joints(&mut bodies, &joints, dt);
     // distance=8, direction=(1,0,0), spring_force=stiffness*distance=8,
     // damping_force=0 (v=0), clamped_force=8 (< max_force=100),
-    // impulse=(8*dt,0,0)=(2,0,0), position += impulse*inv_mass(1).
-    assert_eq!(bodies[1].position, Vec3Fix::from_int(2, 0, 0));
+    // impulse=(8*dt,0,0)=(2,0,0), position += impulse*dt*inv_mass(1) = (0.5,0,0).
+    assert_eq!(
+        bodies[1].position,
+        Vec3Fix::new(Fix128::from_ratio(1, 2), Fix128::ZERO, Fix128::ZERO)
+    );
 }
 
 #[test]
@@ -285,7 +289,7 @@ fn set_target_to_current_position_zero_distance_no_correction() {
 fn solve_extra_joints_clamps_to_max_force() {
     let dt = q(1, 4);
     // Far target, tiny max_force: the raw spring force would be huge, but the
-    // applied impulse must be bounded by max_force*dt*inv_mass exactly.
+    // applied step must be bounded by max_force*dt*dt*inv_mass exactly.
     // max_force = 1/128 is dyadic (a power-of-two denominator), so the clamp
     // product `max_force * dt` is an exact bit shift with no rounding, unlike
     // a non-dyadic fraction such as 1/100 (whose Fix128 encoding is already
@@ -308,10 +312,11 @@ fn solve_extra_joints_clamps_to_max_force() {
     let joints = [ExtraJoint::Mouse(mj)];
     let mut bodies = pair();
     solve_extra_joints(&mut bodies, &joints, dt);
-    // clamped_force = max_force = 1/128, impulse = (1/128 * 1/4, 0, 0) = (1/512, 0, 0)
+    // clamped_force = max_force = 1/128, impulse = (1/128 * 1/4, 0, 0) = (1/512, 0, 0),
+    // position += impulse * dt * inv_mass = (1/2048, 0, 0)
     assert_eq!(
         bodies[1].position,
-        Vec3Fix::new(q(1, 512), Fix128::ZERO, Fix128::ZERO)
+        Vec3Fix::new(q(1, 2048), Fix128::ZERO, Fix128::ZERO)
     );
 }
 

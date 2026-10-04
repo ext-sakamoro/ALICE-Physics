@@ -761,9 +761,10 @@ fn solve_mouse(joint: &MouseJoint, bodies: &mut [RigidBody], dt: Fix128) {
         total_force
     };
 
-    // Apply as position correction (impulse * dt * inv_mass)
+    // Apply as a position-based step: the force acting for `dt` on inverse mass
+    // `w` changes the position by `F dt^2 w` (`F dt w` would be a velocity change)
     let impulse = direction * (clamped_force * dt);
-    bodies[joint.body].position = bodies[joint.body].position + impulse * body.inv_mass;
+    bodies[joint.body].position = bodies[joint.body].position + impulse * (dt * body.inv_mass);
 }
 
 // ============================================================================
