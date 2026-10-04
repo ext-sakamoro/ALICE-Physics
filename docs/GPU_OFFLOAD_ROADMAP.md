@@ -64,7 +64,7 @@ Per-unit costs at every scale:
 
 3. **Narrow-phase was not measured** because the bench does not attach explicit colliders. RigidBody defaults to a sphere-like surrogate that either short-circuits or lands in the same fast-path as no-collider bodies. A follow-up bench with attached `Collider` instances is required to measure this stage before making decisions about GPU narrow-phase.
 
-4. **Sleeping optimisation is already effective** — the sleeping variant has essentially the same cost as the falling variant at all sizes, meaning the sleep fast-path is not saving significant work in a workload that never actually accumulates idle frames. This is expected: sleeping helps mixed active/idle workloads, not "everyone active" workloads.
+4. *(Superseded 2026-10-04: `step` now leaves parked sleeping bodies out of every stage, see `benches/world_scale.rs` and the README "Sleeping bodies" table; the measurement below predates it.)* **Sleeping optimisation is already effective** — the sleeping variant has essentially the same cost as the falling variant at all sizes, meaning the sleep fast-path is not saving significant work in a workload that never actually accumulates idle frames. This is expected: sleeping helps mixed active/idle workloads, not "everyone active" workloads.
 
 5. **CCD was not measured**. Enabling CCD selectively per body (`world.enable_ccd(id)`) adds continuous swept collision to a subset only; it will only appear in profiles when high-velocity projectiles exist in the workload.
 

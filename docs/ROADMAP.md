@@ -24,6 +24,13 @@ increment 他) が**追加機材の調達待ち**であるかのように読め�
 | Maxwell FDTD | `ecd8c61` | source-free Yee、⚠️ **SI は `ε₀·μ₀` が 7.7 bit で不可**、正規化単位 + `S=9/16` |
 | 多体 ABA | `1bab99b` | ⚠️ **`solve()` が `link.joint` を読まない**状態から real ABA、oracle 12 本 |
 
+### 第 68 increment (2026-10-04、休止中の body を `step` の全段階から外す)
+
+休止中で静止した body も、起きている body と同じ費用 (broad-phase の BVH を毎 substep 全 body で組み直す、積分・速度導出・sleep 判定も全 body) を払っていた 100k body / 休止 99 % で 1 step 1.15 s、内訳は broad-phase の候補 pair 生成が 9 割
+⇒ 休止中で静止し joint / distance 拘束に参照されない body を step 開始時に除外し、broad-phase は起きている body の BVH + 休止中 body の永続 `DynamicAabbTree` への query にした (候補 pair は従来と同じ sorted 順) 接触で起きた body はその substep から全段階に戻る 同じ 100k / 99 % で **10.8 ms** (arm64 / 10 コア、他プロセス稼働中)
+oracle は `tests/sleep_skip.rs`: (1) 段階ごとの作業量 (`StageWork`) が起きている body 数だけで決まり、休止中 99 000 と 9 000 で一致 (2) sleep skip 無効の twin と全 body 状態 / sleep data / snapshot / 接触 event が毎 step bit 一致 (接触・joint・force field・瞬間移動・角速度書き込み・collider 追加・body 削除) (3) 退化入力 (0 body / 1 body / 全休止 / 休止中 body の削除) 変異は実装 11 件 + 配線 7 件が全て red golden は不変
+残り: 休止中の body 1 個あたり step ごとに約 30 ns (公開 field `bodies` の書き換え検出と `idle_frames` の加算) `step_parallel` / `step_with_bridge` / TGS backend / `Broadphase::DynamicTree` は従来どおり全 body を見る
+
 ### 第 67 increment (2026-10-04、球面世界の部品)
 
 `spherical_terrain` を追加 (`SphericalHeightField` / `SurfaceHeight` / `central_gravity`) し、`sdf_collider::SdfUnion` と `SdfCharacter::{apply_central_gravity, step_on_sphere}` を足した 地面の高さの決め方 (どこが沈むか等) は呼び出し側が closure で渡し、crate は持たない oracle 18 本 (`tests/analytic_spherical_terrain.rs`、期待値は閉形式) 変異 23 件 (実装 14 / 配線 4 / 退化入力の guard 5) が全て red example `spherical_planet_walk` ⚠️ `ForceField::Point` は逆二乗則で `RigidBody` (Fix128) 向けのため、地表近くの一定重力と `f32` の `SdfCharacter` には別関数を置いた ⚠️ 傾きの上限で距離を縮めると、押し出し後の地面との隙間は `sqrt(1 + s²)` 倍になる (doc に明記)

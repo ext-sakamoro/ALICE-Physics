@@ -321,6 +321,34 @@ re-run the benchmark on your target before quoting them.
 | 10 bodies × 60 steps, default config | 398 µs |
 | 1000 overlapping spheres, first frame | 65 ms |
 
+### Sleeping bodies
+
+`step` leaves a sleeping body out of every stage while it is at rest and not
+attached to a joint or distance constraint (`PhysicsWorld::set_sleep_skip`, on
+by default; the results are bit-identical with it off). Its contacts with
+awake bodies are found through a persistent tree of the sleeping bodies, so the
+broad-phase is built over the awake bodies only. `PhysicsWorld::stage_work`
+reports the work of the last step per stage.
+
+Measured with `cargo bench --bench world_scale` (criterion, release profile,
+one `step` of 8 substeps) on arm64 / 10 cores / 32 GiB, with other processes
+running (expect ±15 %). Spheres of radius 0.5 on a 2 m grid; the awake ones
+drift above the sleeping ones and never touch them.
+<!-- perf-measured: 2026-10-04 benches/world_scale.rs -->
+
+| Bodies | Asleep | Skip on | Skip off |
+|-------:|-------:|--------:|---------:|
+| 10 000 | 0 % | 113 ms | 122 ms |
+| 10 000 | 90 % | 9.7 ms | 96 ms |
+| 10 000 | 99 % | 0.88 ms | 121 ms |
+| 100 000 | 0 % | 1.31 s | 1.24 s |
+| 100 000 | 90 % | 105 ms | 1.31 s |
+| 100 000 | 99 % | 10.8 ms | 1.15 s |
+
+A sleeping body still costs about 30 ns per step: a check that it was not
+edited between steps (`bodies` is a public field) and its `idle_frames` count,
+which the state snapshot carries.
+
 ## Minimum supported Rust version
 
 Minimum supported Rust version: **1.85** (the `rust-version` in `Cargo.toml`). <!-- readme-sync: msrv -->
@@ -337,6 +365,7 @@ cargo build --release
 cargo test
 cargo test --features "simd,parallel,ffi,gpu-solver-bridge"
 cargo bench --bench physics_bench
+cargo bench --bench world_scale
 ```
 
 `wasm` and `ffi` cannot be enabled together, so `--all-features` does not

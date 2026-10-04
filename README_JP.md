@@ -267,6 +267,27 @@ cargo build --release --features ffi
 | 10 物体 × 60 ステップ、既定設定 | 398 µs |
 | 重なった球 1000 個、最初のフレーム | 65 ms |
 
+### 休止中の物体
+
+`step` は、休止中で静止しており joint や distance 拘束に繋がっていない物体を、全ての段階から外す (`PhysicsWorld::set_sleep_skip`、既定で有効、無効にしても結果は bit 一致)
+起きている物体との接触は休止中の物体を収めた永続的な木から探すので、broad-phase は起きている物体だけで組む
+`PhysicsWorld::stage_work` が直前の step の段階ごとの作業量を返す
+
+`cargo bench --bench world_scale` (criterion、release プロファイル、8 substep の `step` 1 回) を arm64 / 10 コア / 32 GiB で、他のプロセスが動いている状態で測定した値 (±15 % 程度の揺れを見込んでほしい)
+半径 0.5 の球を 2 m 間隔の格子に置き、起きている球は休止中の球の上方を漂って接触しない
+<!-- perf-measured: 2026-10-04 benches/world_scale.rs -->
+
+| 物体数 | 休止中 | skip 有効 | skip 無効 |
+|-------:|-------:|----------:|----------:|
+| 10 000 | 0 % | 113 ms | 122 ms |
+| 10 000 | 90 % | 9.7 ms | 96 ms |
+| 10 000 | 99 % | 0.88 ms | 121 ms |
+| 100 000 | 0 % | 1.31 s | 1.24 s |
+| 100 000 | 90 % | 105 ms | 1.31 s |
+| 100 000 | 99 % | 10.8 ms | 1.15 s |
+
+休止中の物体 1 個あたり、step ごとに約 30 ns が残る (step 間に書き換えられていないかの検査 (`bodies` は公開 field) と、状態 snapshot に含まれる `idle_frames` の加算)
+
 ## 最小サポート Rust バージョン
 
 最小サポート Rust バージョン: **1.85** (`Cargo.toml` の `rust-version`) <!-- readme-sync: msrv -->
@@ -282,6 +303,7 @@ cargo build --release
 cargo test
 cargo test --features "simd,parallel,ffi,gpu-solver-bridge"
 cargo bench --bench physics_bench
+cargo bench --bench world_scale
 ```
 
 `wasm` と `ffi` は同時に有効にできないので `--all-features` はビルドできない
