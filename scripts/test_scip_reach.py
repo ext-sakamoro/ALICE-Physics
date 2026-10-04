@@ -152,14 +152,30 @@ class Levels(unittest.TestCase):
                .define("m/impl#[A]update().", 2, "update")
                .define("m/impl#[B]update().", 3, "update"))
         ex = Doc("examples/e.rs", "fn main() { a.update(); }").ref("m/impl#[A]update().", 0, "update")
+        lv = levels([src, ex])
+        # one key per impl type: reaching A::update must not hide that B::update is
+        # unreached (keyed by name alone, the pair was one item and read as reached)
+        self.assertEqual(lv["src/m.rs::A::update"], "L1")
+        self.assertEqual(lv["src/m.rs::B::update"], "L0")
+        self.assertNotIn("src/m.rs::update", lv)
+
+    def test_ledger_compares_with_the_wiring_baseline_by_file_and_name(self):
+        # wiring-baseline.txt has no type in its keys: `src/m.rs::update` there
+        # stands for both methods, and counts as reached only if both are
+        text = "pub struct A;\npub struct B;\nimpl A { pub fn update(&self) {} }\nimpl B { pub fn update(&self) {} }"
+        src = (Doc("src/m.rs", text)
+               .define("m/impl#[A]update().", 2, "update")
+               .define("m/impl#[B]update().", 3, "update"))
+        ex = Doc("examples/e.rs", "fn main() { a.update(); }").ref("m/impl#[A]update().", 0, "update")
         d = build([src, ex])
-        a = sr.analyze(d, [d / "target/scip/native.scip", d / "target/scip/wasm.scip"])
-        self.assertEqual(a.items["src/m.rs::update"], {P + "m/impl#[A]update().", P + "m/impl#[B]update()."})
-        # the key is reached through A; the B symbol alone would be L0
-        self.assertEqual(a.level["src/m.rs::update"], "L1")
-        only_b = Doc("examples/e.rs", "fn main() { b.update(); }").ref("m/impl#[B]update().", 0, "update")
-        src2 = Doc("src/m.rs", text).define("m/impl#[A]update().", 2, "update")
-        self.assertEqual(levels([src2, only_b])["src/m.rs::update"], "L0")
+        s_ = d / "target" / "scip"
+        a = sr.analyze(d, [s_ / "native.scip", s_ / "wasm.scip", s_ / "fuzz.scip"])
+        text_out = sr.report(a, {"src/m.rs::update"})
+        # B::update is unreached and its file::name is in the wiring baseline, so it is
+        # not "L0 here but not in the baseline"
+        self.assertIn("### L0 here but not in the baseline (0)", text_out)
+        self.assertIn("### In the baseline but reached here (0)", text_out)
+        self.assertIn("- `src/m.rs::B::update`", text_out.split("## L0 — unreached")[1])
 
     def test_impl_header_is_not_a_use_of_the_type(self):
         text = "pub struct Foo;\nimpl Foo {\n    fn x(&self) {}\n}"
