@@ -319,6 +319,8 @@ fn evaluate_failure_reserve_factor_floors_below_epsilon() {
 /// result are never pinned anywhere. With sigma_T = sigma_Z = 0 and no
 /// shear: d_tz = 0, d_zl = -1, d_lt = 1, so
 /// `f = F*0 + G*(-1)^2 + H*1^2 = G + H = 13/128 + 19/128 = 32/128 = 1/4`.
+/// Hill is homogeneous of degree 2 in the stresses, so the load factor
+/// that reaches index 1 is `1/sqrt(f) = 2` (AUD-A-S1W6-003).
 #[test]
 fn hill_sub_threshold_failure_report_fields_exact() {
     let s = AnisotropicStrength {
@@ -341,8 +343,8 @@ fn hill_sub_threshold_failure_report_fields_exact() {
     );
     assert_eq!(
         r.reserve_factor,
-        Fix128::from_int(4),
-        "reserve_factor = 1/(1/4) = 4"
+        Fix128::from_int(2),
+        "reserve_factor = 1/sqrt(1/4) = 2"
     );
     assert!(r.is_safe, "failure_index 1/4 < 1 must report safe");
 }
@@ -363,6 +365,9 @@ fn hill_sub_threshold_failure_report_fields_exact() {
 /// `F_L = 1/X_Lt - 1/X_Lc = 1/4 - 1/16 = 3/16`,
 /// `F_LL = 1/(X_Lt*X_Lc) = 1/64`, `sigma_L = 8`:
 /// `f = (3/16)*8 + (1/64)*64 = 3/2 + 1 = 5/2`.
+/// The reserve factor `R` solves `a R^2 + b R = 1` with the quadratic part
+/// `a = 1` and the linear part `b = 3/2`: `R = 2/(b + sqrt(b^2 + 4a)) =
+/// 2/(3/2 + 5/2) = 1/2`, i.e. `sigma_L = 4 = X_Lt` (AUD-A-S1W6-004).
 #[test]
 fn tsai_wu_over_threshold_failure_report_fields_exact() {
     let s = AnisotropicStrength {
@@ -385,8 +390,8 @@ fn tsai_wu_over_threshold_failure_report_fields_exact() {
     );
     assert_eq!(
         r.reserve_factor,
-        Fix128::from_ratio(2, 5),
-        "reserve_factor = 1/(5/2) = 2/5"
+        Fix128::from_ratio(1, 2),
+        "reserve_factor = positive root of R^2 + (3/2) R - 1 = 0 = 1/2"
     );
     assert!(
         !r.is_safe,

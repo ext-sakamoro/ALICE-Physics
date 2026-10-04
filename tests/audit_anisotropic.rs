@@ -393,7 +393,6 @@ fn reserve_factor_scales_max_stress_to_incipient_failure() {
 /// Hill is homogeneous of degree 2 in the stresses: a load factor R gives index R^2 f, so the
 /// factor that reaches failure is 1/sqrt(f), not 1/f.
 #[test]
-#[ignore = "known defect: AUD-A-S1W6-003: Hill reserve_factor = 1/f although f scales as R^2: stress (X/2,0,0) gives f=0.25, reserve 4, but x4 loading has index 16 (true margin 2)"]
 fn reserve_factor_scales_hill_to_incipient_failure() {
     let a = composite();
     let s = st(0.0, 20.0, 0.0, 0.0, 0.0, 0.0); // f = 0.25
@@ -406,7 +405,6 @@ fn reserve_factor_scales_hill_to_incipient_failure() {
 
 /// Tsai-Wu with linear terms: R solves a R^2 + b R = 1 (not R = 1/(a+b)).
 #[test]
-#[ignore = "known defect: AUD-A-S1W6-004: Tsai-Wu reserve_factor = 1/index although the index is quadratic+linear in load: sigma_T = X_Tt/2 = 20 gives index 0.45 and reserve 2.22, but x2.22 loading has index 1.136 (the true margin is 2.0)"]
 fn reserve_factor_scales_tsai_wu_to_incipient_failure() {
     let a = composite();
     let s = st(0.0, 20.0, 0.0, 0.0, 0.0, 0.0);
@@ -415,6 +413,38 @@ fn reserve_factor_scales_tsai_wu_to_incipient_failure() {
     let scaled = st(0.0, 20.0 * k, 0.0, 0.0, 0.0, 0.0);
     let got = idx(&scaled, &a, FailureCriterion::TsaiWu);
     assert!((got - 1.0).abs() < 1e-6, "reserve {k}: scaled index {got}");
+}
+
+/// Tsai-Wu with a negative linear part (compression on an axis whose compressive
+/// strength exceeds the tensile one). X_Lt = 4, X_Lc = 16, sigma_L = -8:
+/// b = (1/4 - 1/16)(-8) = -3/2, a = 64/64 = 1, so R^2 - (3/2) R - 1 = 0 gives
+/// R = 2 and the scaled state sigma_L = -16 = -X_Lc sits exactly on the envelope.
+#[test]
+fn reserve_factor_tsai_wu_with_negative_linear_part_is_exact() {
+    let s = AnisotropicStrength {
+        x_l_tension_mpa: Fix128::from_int(4),
+        x_l_compression_mpa: Fix128::from_int(16),
+        x_t_tension_mpa: Fix128::from_int(8),
+        x_t_compression_mpa: Fix128::from_int(32),
+        x_z_tension_mpa: Fix128::from_int(16),
+        x_z_compression_mpa: Fix128::from_int(64),
+        s_lt_mpa: Fix128::from_int(8),
+        s_lz_mpa: Fix128::from_int(16),
+        s_tz_mpa: Fix128::from_int(32),
+    };
+    let r = evaluate_failure(
+        &OrthotropicStress::axial(Fix128::from_int(-8), Fix128::ZERO, Fix128::ZERO),
+        &s,
+        FailureCriterion::TsaiWu,
+    );
+    assert_eq!(r.failure_index, Fix128::from_ratio(-1, 2));
+    assert_eq!(r.reserve_factor, Fix128::from_int(2));
+    let at = evaluate_failure(
+        &OrthotropicStress::axial(Fix128::from_int(-16), Fix128::ZERO, Fix128::ZERO),
+        &s,
+        FailureCriterion::TsaiWu,
+    );
+    assert_eq!(at.failure_index, Fix128::ONE);
 }
 
 /// A zero allowable means "no strength in that direction": any stress there must fail.
