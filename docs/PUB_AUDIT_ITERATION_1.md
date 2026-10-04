@@ -15,7 +15,7 @@ to have accidental `pub` exposure of internal helpers.
 
 | Module | `pub` count | Verdict |
 |--------|------------:|---------|
-| `netcode_prediction` | 4 | ✅ **Keep as-is** — `PredictedInput`, `Snapshot`, `PredictionBuffer` (+ methods) and `reconcile` fn form a minimal, documented public surface. Every item is directly consumable by downstream game code (Yoin / SBR / ALICE-Bamboo). No accidental pub exposure. |
+| `netcode_prediction` | 4 | ✅ **Keep as-is** — `PredictedInput`, `Snapshot`, `PredictionBuffer` (+ methods) and `reconcile` fn form a minimal, documented public surface. Every item is directly consumable by downstream game code (ALICE-Bamboo and others). No accidental pub exposure. |
 | `character_state` | 6 | ✅ **Keep as-is** — `CharacterState` enum + `CharacterStateContext` struct + `transition` fn form the intended FSM interface. All items documented, no impl helpers leaked. |
 | `character` | 11 | ✅ **Keep as-is** — `CharacterConfig`, `PushImpulse`, `MoveResult`, `CharacterController` struct + methods (constructors + `move_and_slide` + `compute_push_impulses` + `apply_gravity`) form the canonical character controller API. All items match the public documentation contract. |
 | `sdf_character` | 5 | ✅ **Keep as-is** — `MoveOutcome`, `SdfCharacter` struct + `new`, `move_and_slide`, `is_grounded` methods. Minimal, clean SDF-boundary character controller. |
@@ -56,7 +56,7 @@ Approach for each audit target:
 2. For each item, ask:
    - Is this item documented in the crate-level prelude?
    - Does at least one example in `examples/` use it?
-   - Does downstream `ALICE-Bamboo` / `ALICE-Anima` / `SBR` code reference it?
+   - Does downstream `ALICE-Bamboo` / other downstream code reference it?
 3. If **none of the three**, mark as `pub(crate)` candidate.
 4. Apply changes in small commits (one module per commit) so bisection is
    easy if downstream breaks.
@@ -70,7 +70,7 @@ Before applying `pub(crate)` reductions in Iteration 2+, run:
 
 ```bash
 # Search downstream repos for actual usage patterns
-rg 'alice_physics::' ~/ALICE-Bamboo ~/ALICE-Anima ~/Yoin 2>/dev/null | grep -v '/target/'
+rg 'alice_physics::' ~/ALICE-Bamboo 2>/dev/null | grep -v '/target/'
 ```
 
 Items referenced by downstream code must **not** be reduced without a

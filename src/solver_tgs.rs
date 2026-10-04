@@ -38,7 +38,7 @@
 //! The whole `solver_tgs` family is `pub(crate)`. It exists as a parallel
 //! generic TGS integrator with hooks-based extension points that historically
 //! were public. As no downstream ever adopted the extension mechanism
-//! (survey: 0 refs across `ALICE-Bamboo`, `ALICE-Anima`, `Yoin`, `ALICE-LOL`,
+//! (survey: 0 refs across `ALICE-Bamboo`, `ALICE-LOL`,
 //! `ALICE-Kinematics`, `text-to-print-ios`), v1.0 API surface freeze
 //! (Item B) chose Option C: pub(crate) the entire subsystem. It can be
 //! re-exposed via a semver-minor bump if concrete demand emerges.

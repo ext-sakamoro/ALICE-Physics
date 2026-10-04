@@ -148,7 +148,7 @@ The pattern suggests remaining iterations (P4 structural, P5 I/O) may or may not
 
 ```bash
 rg -n 'alice_physics::(eulerian_grid|multiphase|interface_capture|turbulence)::' \
-    ~/ALICE-Bamboo ~/ALICE-Anima ~/Yoin ~/ALICE-LOL ~/ALICE-Kinematics ~/text-to-print-ios \
+    ~/ALICE-Bamboo ~/ALICE-LOL ~/ALICE-Kinematics ~/text-to-print-ios \
     2>/dev/null | grep -v '/target/'
 ```
 

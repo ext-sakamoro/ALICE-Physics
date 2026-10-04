@@ -14,7 +14,6 @@ the listed items requires a semver-major bump on `alice-physics`.
 | **[ALICE-TRT](https://github.com/ext-sakamoro/ALICE-TRT)** | Trait impl | `GpuSolverBridge` | `v0.12.0` (extended, current) |
 | **[ALICE-SDF](https://github.com/Project-ALICE/ALICE-SDF)** | Trait impl | `SdfField` | `v0.14` (current) |
 | **[ALICE-Bamboo](https://github.com/ext-sakamoro/ALICE-Bamboo)** | Concrete-type consumption | `beam_stress`, `filament_db`, `warp_risk`, `thermal_stress`, `layer_adhesion` modules | `v0.14` (current) |
-| **[ALICE-Anima](https://github.com/ext-sakamoro/ALICE-Anima)** | Concrete-type consumption | `PhysicsWorld`, `RigidBody`, math prelude | `v0.14` (current) |
 | **[ALICE-Kinematics](https://github.com/Project-ALICE/ALICE-Kinematics)** | Reserved (future) | 8-byte Intent-packet bridge (L1 Physical Intent) | Post-1.0 (deferred) |
 
 ## 1. ALICE-TRT contract — `GpuSolverBridge`
@@ -124,38 +123,7 @@ alice-physics = "1"
 alice-physics = "1"
 ```
 
-## 4. ALICE-Anima contract — concrete types (physics_sim.rs entry)
-
-**Files**: `src/solver.rs`, `src/math.rs`
-
-### Frozen types (Anima `anima-core/src/physics_sim.rs` import list)
-
-| From `alice-physics` | Anima usage |
-|----------------------|--------------|
-| `PhysicsWorld` (struct) | Owned by `Anima::physics_sim` module |
-| `PhysicsConfig` (type alias for `SolverConfig`) | Passed to `PhysicsWorld::new_with_config` |
-| `RigidBody` (struct) | Sphere-based habitat body representation |
-| `Fix128`, `Vec3Fix` (math prelude) | Universal deterministic types |
-
-### Frozen methods on `PhysicsWorld`
-- `new(config: PhysicsConfig) -> Self`
-- `add_body(&mut self, body: RigidBody) -> usize`
-- `step(&mut self, dt: Fix128)`
-- `config` field (pub, exposed as `world.config.gravity` etc. by Anima)
-- Body access via numeric IDs (e.g. `bodies_mut()` etc. — check the specific method Anima uses).
-
-### Migration notes
-- Anima uses `alice_physics::PhysicsWorld` as the physics kernel of its `physics_sim` module (Landing sub-phase 1b-β).
-- `PhysicsWorld` is not `#[non_exhaustive]` (would break Anima's pattern of directly setting `world.config.gravity`).
-
-### Version pinning
-```toml
-# ALICE-Anima Cargo.toml
-[dependencies]
-alice-physics = "1"
-```
-
-## 5. ALICE-Kinematics contract — reserved (post-1.0)
+## 4. ALICE-Kinematics contract — reserved (post-1.0)
 
 **Status**: no current alice-physics dependency (`rg 'alice_physics::' ~/ALICE-Kinematics` returns 0 hits).
 

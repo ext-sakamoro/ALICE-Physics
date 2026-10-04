@@ -16,7 +16,7 @@ prelude-exported field-visibility hedges.
 Commit `ee3efb0`. Reduces 6 modules × 60+ items × auto-impl entries from the public surface.
 
 **Rationale**:
-- Zero downstream adoption of the extension mechanism (survey across `ALICE-Bamboo`, `ALICE-Anima`, `Yoin`, `ALICE-LOL`, `ALICE-Kinematics`, `text-to-print-ios` returned 0 refs at every audit iteration).
+- Zero downstream adoption of the extension mechanism (survey across `ALICE-Bamboo`, `ALICE-LOL`, `ALICE-Kinematics`, `text-to-print-ios` returned 0 refs at every audit iteration).
 - Zero intra-crate compile-time dependency (only a rustdoc reference in `ccd.rs`).
 - Zero example usage.
 - Committing a 60+ item generic hooks-based TGS integrator to v1.0 API stability without a single caller commits us to non-breaking evolution of an untested API.

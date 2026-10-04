@@ -697,7 +697,7 @@ snapshot **+42 / −21** 削除はすべて `ElastoplasticIncrementRequest` が 
 | E: Determinism CI 6-env matrix | ✅ | 6 platform (macOS ARM/x86 + Linux ARM/x86 + Windows + WASM) × 31 test (9 golden hash + 22 semantic invariant)、bit-exact 一致確認済 |
 | F: Fuzz coverage 8/8 | ✅ | fuzz_step / collision / deterministic_roundtrip / joint / cfd / ccd / trimesh / structural |
 | G: MSRV policy | ✅ | `rust-version = "1.70.0"` + README EN Serde-style policy (1.2.0 で 1.85 に訂正: 1.70 宣言は未検証で偽だった、CI msrv job が実 compile) |
-| H: Ecosystem contracts freeze | ✅ | [`ECOSYSTEM_CONTRACTS.md`](ECOSYSTEM_CONTRACTS.md) に 5 partner (TRT / SDF / Bamboo / Anima / Kinematics) frozen API |
+| H: Ecosystem contracts freeze | ✅ | [`ECOSYSTEM_CONTRACTS.md`](ECOSYSTEM_CONTRACTS.md) に 4 partner (TRT / SDF / Bamboo / Kinematics) frozen API |
 | I: Migration guide | ✅ | [`MIGRATION_0.x_TO_1.0.md`](MIGRATION_0.x_TO_1.0.md) per-module 削除項目 + `#[non_exhaustive]` 影響 + 5 step checklist |
 | J: crates.io publish | ✅ | preview.4-8 → **1.0.0 stable** promoted |
 
@@ -817,7 +817,7 @@ Preview 4 wave が landed 済み、残作業:
 ### ✅ v0.16.0 (superseded — Item E determinism CI + Item H ecosystem contracts landed within audit campaign, promoted directly to 1.0.0)
 
 - **✅ E. Determinism CI 6 環境 matrix 完了 (2026-09-14)** — Phase 1 + Phase 2 landing 済 [`docs/DETERMINISM_GOLDEN_TESTS.md`](DETERMINISM_GOLDEN_TESTS.md) + `tests/determinism_golden.rs` に 8 fixture (rigid body 3 + Phase 2 で joint/cloth/fluid/SDF CCD/trimesh 5 追加) + `.github/workflows/ci.yml` に 6 platform matrix (macos-latest / macos-15-intel / ubuntu-latest / **ubuntu-24.04-arm** / windows-latest + 独立 `wasm-test` job で `wasm32-wasip1` + wasmtime) Mac aarch64 と wasm32-wasip1 で 8 fixture 全 hash bit-exact 一致確認済
-- **✅ H. Ecosystem 契約 freeze 完了 (2026-09-14)** — [`docs/ECOSYSTEM_CONTRACTS.md`](ECOSYSTEM_CONTRACTS.md) 起草済 (~215 行、5 partner の frozen API 一覧: TRT `GpuSolverBridge` / SDF `SdfField` / Bamboo concrete-type / Anima concrete-type / Kinematics reserved-post-1.0) + Freeze semantics (semver-minor 可否) + CI enforcement + partner responsibilities
+- **✅ H. Ecosystem 契約 freeze 完了 (2026-09-14)** — [`docs/ECOSYSTEM_CONTRACTS.md`](ECOSYSTEM_CONTRACTS.md) 起草済 (~215 行、4 partner の frozen API 一覧: TRT `GpuSolverBridge` / SDF `SdfField` / Bamboo concrete-type / Kinematics reserved-post-1.0) + Freeze semantics (semver-minor 可否) + CI enforcement + partner responsibilities
 - ~~**J-2. bridge feature 削除 preview commit**~~ ✅ **v0.14.0-preview.4 で前倒し実施済** (詳細は [`docs/CRATES_IO_PUBLISH_INVESTIGATION.md`](CRATES_IO_PUBLISH_INVESTIGATION.md) の追記 section 参照)
 
 ### ✅ v0.14.0-preview.4 crates.io publish 完了 (J-3 landed 2026-09-13)
@@ -891,7 +891,7 @@ Phase 1+2+F 完了、以降は最重量の B に集中:
 
 - **✅ I. Migration guide 執筆完了 (2026-09-14)** — [`docs/MIGRATION_0.x_TO_1.0.md`](MIGRATION_0.x_TO_1.0.md) 起草済 (~340 行、per-module 削除項目テーブル + `#[non_exhaustive]` 影響 + Cargo.toml migration + 6-environment determinism promise + post-1.0 stability guarantees + 再曝露リクエスト手順)
 - rc.1 / rc.2 の crates.io pre-release publish と 4 週間 feedback 期間は **実施せず** — 「決定 (revised): γ (直行)」で `0.14.0-preview.8` → `1.0.0` を直接 bump (実運用 downstream 0 の状態で RC を出しても feedback が得られないため)
-- 実 downstream (ALICE-Bamboo / ALICE-Anima / SBR ゲーム側) の 1.0 対応は 1.0.x patch line で受ける
+- 実 downstream (ALICE-Bamboo 等) の 1.0 対応は 1.0.x patch line で受ける
 
 ### ✅ v1.0.0 stable (2026-09-14 crates.io published)
 
@@ -1093,16 +1093,15 @@ Neo-Hookean は `P = μF + [K(J−1) − μ]·cof(F)` (Mooney-Rivlin も `cof` �
 - **γ (直行)**: Cargo.toml `0.13.0 → 1.0.0` に bump、README も 1.0 表記に、Session 4 module も全部「v1.0.0 included」に格上げ → reject: 実運用ドッグフーディング未実施、public API surface freeze 未完
 - **β (RC 短縮)**: 現在の main を `v1.0.0-rc.1` として freeze publish、feedback 経て v1.0.0 → reject: Unreleased backlog は既に v0.13.0 で吸収済だが、新 module (client_prediction 等) の実運用検証がない状態で RC 出すと feedback の意味が薄い
 
-**根拠 (当初)**: 「downstream crate が今から `alice-physics = "1"` で pin して 6 ヶ月 breaking change なしを我々が保証できるか?」 = 現状 n 判定 (実運用検証未了)、ALICE-Bamboo と ALICE-Anima の実運用で 3 ヶ月連続 breaking change なしを先に達成することが 1.0 コミットの根拠になる (semver 契約は約束ではなく実績の追認)
+**根拠 (当初)**: 「downstream crate が今から `alice-physics = "1"` で pin して 6 ヶ月 breaking change なしを我々が保証できるか?」 = 現状 n 判定 (実運用検証未了)、ALICE-Bamboo の実運用で 3 ヶ月連続 breaking change なしを先に達成することが 1.0 コミットの根拠になる (semver 契約は約束ではなく実績の追認)
 
 ### ADR-003 revision (2026-09-14): γ 直行に変更
 
 **背景**: 2026-09-13 の集中 session で B / C / D / E / F / G / H / I / J の全 9 v1.0 Items を landing 完了 6 iteration の audit campaign 中、以下 6 sibling repo に対して毎 iter downstream survey 実施 (`rg 'alice_physics::'`):
 - ALICE-Bamboo (実運用)
-- ALICE-Anima (実運用)
 - ALICE-TRT (`impl GpuSolverBridge for TrtSolverAdapter` 実装済)
 - ALICE-SDF (`impl SdfField for CompiledSdfField` 実装済)
-- ALICE-LOL / Yoin / text-to-print-ios (使用)
+- ALICE-LOL / text-to-print-ios (使用)
 
 **測定結果**: 6 iteration + Final iteration で downstream breakage **累計 0 件**、`#[non_exhaustive]` + `solver_tgs*` pub(crate) 化含む全 API 変更で "無し実装" への降格のみ、既存 downstream 呼び出しは全て残 pub items 経由で温存
 
@@ -1128,7 +1127,7 @@ Neo-Hookean は `P = μF + [K(J−1) − μ]·cof(F)` (Mooney-Rivlin も `cof` �
 
 ## 一番効くマイルストーン (α timeline の根拠)
 
-**「ALICE-Bamboo と ALICE-Anima の実運用で 3 ヶ月連続 breaking change なし」を先に達成する** — B-I の作業を進めながらも、実 downstream での使用実績が 1.0 コミットの根拠になる semver 契約は約束ではなく実績の追認
+**「ALICE-Bamboo の実運用で 3 ヶ月連続 breaking change なし」を先に達成する** — B-I の作業を進めながらも、実 downstream での使用実績が 1.0 コミットの根拠になる semver 契約は約束ではなく実績の追認
 
 ## 関連
 
