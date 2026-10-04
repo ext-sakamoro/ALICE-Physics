@@ -297,7 +297,7 @@ impl RigidBody {
     /// - for an identity rotation it equals the component-wise product with `inv_inertia`
     /// - a zero `inv_inertia` (or a zero `τ`) gives the zero vector
     #[inline]
-    fn world_inv_inertia_apply(&self, torque: Vec3Fix) -> Vec3Fix {
+    pub(crate) fn world_inv_inertia_apply(&self, torque: Vec3Fix) -> Vec3Fix {
         let local = self.rotation.conjugate().rotate_vec(torque);
         let scaled = Vec3Fix::new(
             local.x * self.inv_inertia.x,

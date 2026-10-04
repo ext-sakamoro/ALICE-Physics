@@ -718,9 +718,11 @@ fn solve_ball_joint(joint: &BallJoint, bodies: &mut [crate::solver::RigidBody], 
     let body_a = bodies[joint.body_a];
     let body_b = bodies[joint.body_b];
 
-    // World-space anchor positions
-    let anchor_a = body_a.position + body_a.rotation.rotate_vec(joint.local_anchor_a);
-    let anchor_b = body_b.position + body_b.rotation.rotate_vec(joint.local_anchor_b);
+    // World-space anchor positions and lever arms (COM → anchor)
+    let r_a = body_a.rotation.rotate_vec(joint.local_anchor_a);
+    let r_b = body_b.rotation.rotate_vec(joint.local_anchor_b);
+    let anchor_a = body_a.position + r_a;
+    let anchor_b = body_b.position + r_b;
 
     let delta = anchor_b - anchor_a;
     let (normal, distance) = delta.normalize_with_length();
@@ -730,24 +732,14 @@ fn solve_ball_joint(joint: &BallJoint, bodies: &mut [crate::solver::RigidBody], 
     }
 
     let compliance_term = joint.compliance / (dt * dt);
-    let w_sum = body_a.inv_mass + body_b.inv_mass + compliance_term;
+    let w_sum = point_w_sum(bodies, joint.body_a, joint.body_b, r_a, r_b, normal) + compliance_term;
 
     if w_sum.is_zero() {
         return;
     }
 
-    let inv_w_sum = Fix128::ONE / w_sum;
-    let lambda = distance * inv_w_sum;
-    let correction = normal * lambda;
-
-    if !body_a.inv_mass.is_zero() {
-        bodies[joint.body_a].position =
-            bodies[joint.body_a].position + correction * body_a.inv_mass;
-    }
-    if !body_b.inv_mass.is_zero() {
-        bodies[joint.body_b].position =
-            bodies[joint.body_b].position - correction * body_b.inv_mass;
-    }
+    let lambda = distance / w_sum;
+    apply_point_correction(bodies, joint.body_a, joint.body_b, r_a, r_b, normal, lambda);
 }
 
 /// Solve hinge joint: positional + angular constraint along axis
@@ -761,33 +753,28 @@ fn solve_hinge_joint(joint: &HingeJoint, bodies: &mut [crate::solver::RigidBody]
     let body_b = bodies[joint.body_b];
 
     // 1. Positional constraint (same as ball joint)
-    let anchor_a = body_a.position + body_a.rotation.rotate_vec(joint.local_anchor_a);
-    let anchor_b = body_b.position + body_b.rotation.rotate_vec(joint.local_anchor_b);
+    let r_a = body_a.rotation.rotate_vec(joint.local_anchor_a);
+    let r_b = body_b.rotation.rotate_vec(joint.local_anchor_b);
+    let anchor_a = body_a.position + r_a;
+    let anchor_b = body_b.position + r_b;
 
     let delta = anchor_b - anchor_a;
     let (normal, distance) = delta.normalize_with_length();
 
     if !distance.is_zero() {
         let compliance_term = joint.compliance / (dt * dt);
-        let w_sum = body_a.inv_mass + body_b.inv_mass + compliance_term;
+        let w_sum =
+            point_w_sum(bodies, joint.body_a, joint.body_b, r_a, r_b, normal) + compliance_term;
 
         if !w_sum.is_zero() {
-            let inv_w_sum = Fix128::ONE / w_sum;
-            let lambda = distance * inv_w_sum;
-            let correction = normal * lambda;
-
-            if !body_a.inv_mass.is_zero() {
-                bodies[joint.body_a].position =
-                    bodies[joint.body_a].position + correction * body_a.inv_mass;
-            }
-            if !body_b.inv_mass.is_zero() {
-                bodies[joint.body_b].position =
-                    bodies[joint.body_b].position - correction * body_b.inv_mass;
-            }
+            let lambda = distance / w_sum;
+            apply_point_correction(bodies, joint.body_a, joint.body_b, r_a, r_b, normal, lambda);
         }
     }
 
     // 2. Angular constraint: align axes
+    let body_a = bodies[joint.body_a];
+    let body_b = bodies[joint.body_b];
     let world_axis_a = body_a.rotation.rotate_vec(joint.local_axis_a);
     let world_axis_b = body_b.rotation.rotate_vec(joint.local_axis_b);
 
@@ -861,33 +848,28 @@ fn solve_fixed_joint(joint: &FixedJoint, bodies: &mut [crate::solver::RigidBody]
     let body_b = bodies[joint.body_b];
 
     // 1. Positional constraint
-    let anchor_a = body_a.position + body_a.rotation.rotate_vec(joint.local_anchor_a);
-    let anchor_b = body_b.position + body_b.rotation.rotate_vec(joint.local_anchor_b);
+    let r_a = body_a.rotation.rotate_vec(joint.local_anchor_a);
+    let r_b = body_b.rotation.rotate_vec(joint.local_anchor_b);
+    let anchor_a = body_a.position + r_a;
+    let anchor_b = body_b.position + r_b;
 
     let delta = anchor_b - anchor_a;
     let (normal, distance) = delta.normalize_with_length();
 
     if !distance.is_zero() {
         let compliance_term = joint.compliance / (dt * dt);
-        let w_sum = body_a.inv_mass + body_b.inv_mass + compliance_term;
+        let w_sum =
+            point_w_sum(bodies, joint.body_a, joint.body_b, r_a, r_b, normal) + compliance_term;
 
         if !w_sum.is_zero() {
-            let inv_w_sum = Fix128::ONE / w_sum;
-            let lambda = distance * inv_w_sum;
-            let correction = normal * lambda;
-
-            if !body_a.inv_mass.is_zero() {
-                bodies[joint.body_a].position =
-                    bodies[joint.body_a].position + correction * body_a.inv_mass;
-            }
-            if !body_b.inv_mass.is_zero() {
-                bodies[joint.body_b].position =
-                    bodies[joint.body_b].position - correction * body_b.inv_mass;
-            }
+            let lambda = distance / w_sum;
+            apply_point_correction(bodies, joint.body_a, joint.body_b, r_a, r_b, normal, lambda);
         }
     }
 
     // 2. Rotational constraint: maintain relative rotation
+    let body_a = bodies[joint.body_a];
+    let body_b = bodies[joint.body_b];
     let target_rot_b = body_a.rotation.mul(joint.relative_rotation);
     let rot_error = body_b.rotation.mul(target_rot_b.conjugate());
 
@@ -934,8 +916,10 @@ fn solve_slider_joint(joint: &SliderJoint, bodies: &mut [crate::solver::RigidBod
 
     let world_axis = body_a.rotation.rotate_vec(joint.local_axis).normalize();
 
-    let anchor_a = body_a.position + body_a.rotation.rotate_vec(joint.local_anchor_a);
-    let anchor_b = body_b.position + body_b.rotation.rotate_vec(joint.local_anchor_b);
+    let r_a = body_a.rotation.rotate_vec(joint.local_anchor_a);
+    let r_b = body_b.rotation.rotate_vec(joint.local_anchor_b);
+    let anchor_a = body_a.position + r_a;
+    let anchor_b = body_b.position + r_b;
 
     let delta = anchor_b - anchor_a;
 
@@ -948,21 +932,20 @@ fn solve_slider_joint(joint: &SliderJoint, bodies: &mut [crate::solver::RigidBod
 
     if !perp_dist.is_zero() {
         let compliance_term = joint.compliance / (dt * dt);
-        let w_sum = body_a.inv_mass + body_b.inv_mass + compliance_term;
+        let w_sum = point_w_sum(bodies, joint.body_a, joint.body_b, r_a, r_b, perp_normal)
+            + compliance_term;
 
         if !w_sum.is_zero() {
-            let inv_w_sum = Fix128::ONE / w_sum;
-            let lambda = perp_dist * inv_w_sum;
-            let correction = perp_normal * lambda;
-
-            if !body_a.inv_mass.is_zero() {
-                bodies[joint.body_a].position =
-                    bodies[joint.body_a].position + correction * body_a.inv_mass;
-            }
-            if !body_b.inv_mass.is_zero() {
-                bodies[joint.body_b].position =
-                    bodies[joint.body_b].position - correction * body_b.inv_mass;
-            }
+            let lambda = perp_dist / w_sum;
+            apply_point_correction(
+                bodies,
+                joint.body_a,
+                joint.body_b,
+                r_a,
+                r_b,
+                perp_normal,
+                lambda,
+            );
         }
     }
 
@@ -1050,9 +1033,13 @@ fn solve_d6_joint(joint: &D6Joint, bodies: &mut [crate::solver::RigidBody], dt: 
     let body_a = bodies[joint.body_a];
     let body_b = bodies[joint.body_b];
 
-    // World-space anchors
-    let anchor_a = body_a.position + body_a.rotation.rotate_vec(joint.local_anchor_a);
-    let anchor_b = body_b.position + body_b.rotation.rotate_vec(joint.local_anchor_b);
+    // World-space anchors and lever arms (orientation-only, stay valid
+    // across the sequential per-axis corrections below even as position
+    // changes between them — see `point_w_sum`)
+    let r_a = body_a.rotation.rotate_vec(joint.local_anchor_a);
+    let r_b = body_b.rotation.rotate_vec(joint.local_anchor_b);
+    let anchor_a = body_a.position + r_a;
+    let anchor_b = body_b.position + r_b;
     let delta = anchor_b - anchor_a;
 
     // Get local frame axes in world space
@@ -1062,61 +1049,51 @@ fn solve_d6_joint(joint: &D6Joint, bodies: &mut [crate::solver::RigidBody], dt: 
     let axis_z = frame_a.rotate_vec(Vec3Fix::UNIT_Z);
 
     let compliance_term = joint.compliance / (dt * dt);
-    let w_sum = body_a.inv_mass + body_b.inv_mass + compliance_term;
 
-    if !w_sum.is_zero() {
-        let inv_w_sum = Fix128::ONE / w_sum;
+    // Linear constraints per axis
+    let axes = [
+        (
+            joint.linear_x,
+            axis_x,
+            joint.linear_limit_min.x,
+            joint.linear_limit_max.x,
+        ),
+        (
+            joint.linear_y,
+            axis_y,
+            joint.linear_limit_min.y,
+            joint.linear_limit_max.y,
+        ),
+        (
+            joint.linear_z,
+            axis_z,
+            joint.linear_limit_min.z,
+            joint.linear_limit_max.z,
+        ),
+    ];
 
-        // Linear constraints per axis
-        let axes = [
-            (
-                joint.linear_x,
-                axis_x,
-                joint.linear_limit_min.x,
-                joint.linear_limit_max.x,
-            ),
-            (
-                joint.linear_y,
-                axis_y,
-                joint.linear_limit_min.y,
-                joint.linear_limit_max.y,
-            ),
-            (
-                joint.linear_z,
-                axis_z,
-                joint.linear_limit_min.z,
-                joint.linear_limit_max.z,
-            ),
-        ];
-
-        for &(motion, axis, limit_min, limit_max) in &axes {
-            let proj = delta.dot(axis);
-            let error = match motion {
-                D6Motion::Locked => proj,
-                D6Motion::Limited => {
-                    if proj < limit_min {
-                        proj - limit_min
-                    } else if proj > limit_max {
-                        proj - limit_max
-                    } else {
-                        Fix128::ZERO
-                    }
+    for &(motion, axis, limit_min, limit_max) in &axes {
+        let proj = delta.dot(axis);
+        let error = match motion {
+            D6Motion::Locked => proj,
+            D6Motion::Limited => {
+                if proj < limit_min {
+                    proj - limit_min
+                } else if proj > limit_max {
+                    proj - limit_max
+                } else {
+                    Fix128::ZERO
                 }
-                D6Motion::Free => Fix128::ZERO,
-            };
+            }
+            D6Motion::Free => Fix128::ZERO,
+        };
 
-            if !error.is_zero() {
-                let lambda = error * inv_w_sum;
-                let correction = axis * lambda;
-
-                if !body_a.inv_mass.is_zero() {
-                    bodies[joint.body_a].position =
-                        bodies[joint.body_a].position + correction * body_a.inv_mass;
-                }
-                if !body_b.inv_mass.is_zero() {
-                    bodies[joint.body_b].position =
-                        bodies[joint.body_b].position - correction * body_b.inv_mass;
-                }
+        if !error.is_zero() {
+            let w_sum =
+                point_w_sum(bodies, joint.body_a, joint.body_b, r_a, r_b, axis) + compliance_term;
+            if !w_sum.is_zero() {
+                let lambda = error / w_sum;
+                apply_point_correction(bodies, joint.body_a, joint.body_b, r_a, r_b, axis, lambda);
             }
         }
     }
@@ -1124,7 +1101,9 @@ fn solve_d6_joint(joint: &D6Joint, bodies: &mut [crate::solver::RigidBody], dt: 
     // Angular constraints per axis (w is axis-dependent: n · I⁻¹ n)
     let angular_compliance = joint.angular_compliance / (dt * dt);
     {
-        let rel_quat = body_b.rotation.mul(body_a.rotation.conjugate());
+        let rel_quat = bodies[joint.body_b]
+            .rotation
+            .mul(bodies[joint.body_a].rotation.conjugate());
 
         let ang_axes = [
             (
@@ -1191,32 +1170,27 @@ fn solve_cone_twist_joint(
     let body_b = bodies[joint.body_b];
 
     // 1. Positional constraint (same as ball joint)
-    let anchor_a = body_a.position + body_a.rotation.rotate_vec(joint.local_anchor_a);
-    let anchor_b = body_b.position + body_b.rotation.rotate_vec(joint.local_anchor_b);
+    let r_a = body_a.rotation.rotate_vec(joint.local_anchor_a);
+    let r_b = body_b.rotation.rotate_vec(joint.local_anchor_b);
+    let anchor_a = body_a.position + r_a;
+    let anchor_b = body_b.position + r_b;
     let delta = anchor_b - anchor_a;
     let (normal, distance) = delta.normalize_with_length();
 
     if !distance.is_zero() {
         let compliance_term = joint.compliance / (dt * dt);
-        let w_sum = body_a.inv_mass + body_b.inv_mass + compliance_term;
+        let w_sum =
+            point_w_sum(bodies, joint.body_a, joint.body_b, r_a, r_b, normal) + compliance_term;
 
         if !w_sum.is_zero() {
-            let inv_w_sum = Fix128::ONE / w_sum;
-            let lambda = distance * inv_w_sum;
-            let correction = normal * lambda;
-
-            if !body_a.inv_mass.is_zero() {
-                bodies[joint.body_a].position =
-                    bodies[joint.body_a].position + correction * body_a.inv_mass;
-            }
-            if !body_b.inv_mass.is_zero() {
-                bodies[joint.body_b].position =
-                    bodies[joint.body_b].position - correction * body_b.inv_mass;
-            }
+            let lambda = distance / w_sum;
+            apply_point_correction(bodies, joint.body_a, joint.body_b, r_a, r_b, normal, lambda);
         }
     }
 
     // 2. Cone constraint
+    let body_a = bodies[joint.body_a];
+    let body_b = bodies[joint.body_b];
     let world_axis_a = body_a.rotation.rotate_vec(joint.twist_axis_a).normalize();
     let world_axis_b = body_b.rotation.rotate_vec(joint.twist_axis_b).normalize();
 
@@ -1340,6 +1314,92 @@ fn rotate_by_angle(q: QuatFix, axis: Vec3Fix, theta: Fix128) -> QuatFix {
         return q;
     }
     QuatFix::from_axis_angle(axis, theta).mul(q).normalize()
+}
+
+/// Lever-arm term of the XPBD generalised inverse mass for a point
+/// constraint corrected along `normal`: `(r × n)^T I⁻¹ (r × n)`, where `r`
+/// is the world-space vector from the body's centre of mass to the anchor
+/// point (Macklin, Müller & Chentanez 2016, "XPBD", §3.4). Zero for a
+/// static body or when the anchor sits exactly on the centre of mass.
+fn point_angular_w(body: &crate::solver::RigidBody, r: Vec3Fix, normal: Vec3Fix) -> Fix128 {
+    angular_inverse_mass(body, r.cross(normal))
+}
+
+/// Generalised inverse mass `w_a + w_b` of a point (anchor-to-anchor)
+/// constraint corrected along `normal`: the plain `inv_mass` of each body
+/// plus its lever-arm term `point_angular_w`. This is the `w` XPBD uses
+/// before the compliance term is added (`λ = C / (w_a + w_b + α̃)`). `r_a`
+/// / `r_b` are the world-space vectors from each body's centre of mass to
+/// its anchor (`rotation.rotate_vec(local_anchor)`), taken at the *start*
+/// of the joint's solve: the lever arm depends only on orientation, not on
+/// position, so it stays correct even when the caller applies several
+/// corrections to the same bodies before the orientation itself changes
+/// (e.g. the D6 joint's per-axis linear loop).
+fn point_w_sum(
+    bodies: &[crate::solver::RigidBody],
+    idx_a: usize,
+    idx_b: usize,
+    r_a: Vec3Fix,
+    r_b: Vec3Fix,
+    normal: Vec3Fix,
+) -> Fix128 {
+    bodies[idx_a].inv_mass
+        + bodies[idx_b].inv_mass
+        + point_angular_w(&bodies[idx_a], r_a, normal)
+        + point_angular_w(&bodies[idx_b], r_b, normal)
+}
+
+/// Apply one body's share of the rotation half of a point-constraint
+/// correction: the angular displacement `I⁻¹ (r × n) · λ` decomposed into
+/// an axis and an exact angle, applied with `rotate_by_angle`. `λ` carries
+/// the sign (positive for body A, negative for body B, matching the
+/// translation convention below) so a static or infinite-inertia body
+/// (whose `world_inv_inertia_apply` is the zero vector) is left untouched.
+fn apply_point_rotation(
+    bodies: &mut [crate::solver::RigidBody],
+    idx: usize,
+    r: Vec3Fix,
+    normal: Vec3Fix,
+    lambda: Fix128,
+) {
+    let body = bodies[idx];
+    if body.inv_mass.is_zero() {
+        return;
+    }
+    let omega = body.world_inv_inertia_apply(r.cross(normal)) * lambda;
+    let (axis, angle) = omega.normalize_with_length();
+    if !angle.is_zero() {
+        bodies[idx].rotation = rotate_by_angle(bodies[idx].rotation, axis, angle);
+    }
+}
+
+/// Apply the XPBD point-constraint correction `λ` along `normal` to both
+/// bodies, splitting it between translation (`± inv_m · λ · n`, the
+/// pre-1.3.0 behaviour) and rotation (`± I⁻¹ (r × n) · λ`) by the lever arm
+/// `r_a` / `r_b` (anchor minus centre of mass, see `point_w_sum` for why
+/// these are passed in rather than recomputed from position). An anchor on
+/// the centre of mass (`r = 0`) reduces exactly to the translation-only
+/// update every positional joint used before.
+fn apply_point_correction(
+    bodies: &mut [crate::solver::RigidBody],
+    idx_a: usize,
+    idx_b: usize,
+    r_a: Vec3Fix,
+    r_b: Vec3Fix,
+    normal: Vec3Fix,
+    lambda: Fix128,
+) {
+    let body_a = bodies[idx_a];
+    let body_b = bodies[idx_b];
+
+    if !body_a.inv_mass.is_zero() {
+        bodies[idx_a].position = body_a.position + normal * (lambda * body_a.inv_mass);
+    }
+    if !body_b.inv_mass.is_zero() {
+        bodies[idx_b].position = body_b.position - normal * (lambda * body_b.inv_mass);
+    }
+    apply_point_rotation(bodies, idx_a, r_a, normal, lambda);
+    apply_point_rotation(bodies, idx_b, r_b, normal, -lambda);
 }
 
 /// Signed twist angle of `q` about `axis` in `(−π, π]`: the swing–twist
@@ -1599,8 +1659,10 @@ mod tests {
         assert_eq!(bodies[0].position, Vec3Fix::ZERO);
         assert_eq!(bodies[1].position, v3i(-1, 0, 0));
         // B 側 anchor (0,2,0): B の world anchor が A anchor に重なる位置 = (-1,-2,0)
+        // (inv_inertia を 0 にして lever arm のトルク分配を切り、純粋な translation だけを見る)
         let mut bodies2 = pair(Vec3Fix::ZERO, 0, v3i(3, 0, 0), 1);
         bodies2[0].rotation = QuatFix::new(Fix128::ZERO, Fix128::ZERO, Fix128::ONE, Fix128::ZERO);
+        bodies2[1].inv_inertia = Vec3Fix::ZERO;
         let j2 = BallJoint::new(0, 1, v3i(1, 0, 0), v3i(0, 2, 0));
         solve_ball_joint(&j2, &mut bodies2, DT);
         assert!(
@@ -2228,9 +2290,14 @@ mod tests {
 
     /// A: static at origin、z 軸 180° 回転、anchor (1,0,0) → world anchor (-1,0,0)
     /// B: inv 1 at (3,-2,0)、anchor (0,2,0) → world anchor (3,0,0)  ⇒ gap 4 (x 方向)
+    /// B の `inv_inertia` は 0 (この test group は「anchor が body の回転で正しく
+    /// rotate されるか」だけを見るので、lever arm によるトルク分配 (別途
+    /// `ball_offset_anchor_splits_the_correction_between_translation_and_rotation`
+    /// が検証) を 0 にして、anchor 一致までの純粋な translation を単独で見る)
     fn anchored_pair() -> Vec<RigidBody> {
         let mut b = pair(Vec3Fix::ZERO, 0, v3i(3, -2, 0), 1);
         b[0].rotation = QuatFix::new(Fix128::ZERO, Fix128::ZERO, Fix128::ONE, Fix128::ZERO);
+        b[1].inv_inertia = Vec3Fix::ZERO;
         b
     }
 

@@ -294,7 +294,6 @@ fn ball_anchor_uses_the_body_rotation() {
 /// B: m = 1, I^-1 = 2, anchor r = (-0.5,0,0), error d along +y: w = 1 + 0.25 * 2 = 1.5, so the
 /// centre of mass moves d / 1.5 and the body rotates.
 #[test]
-#[ignore = "known defect: AUD-A-S1W6-006: ball/hinge/fixed/slider/cone-twist/D6 positional corrections use w = inv_m_a + inv_m_b with no lever arm and apply translation only: an anchor offset 0.5 from the COM moves the COM by the full 0.01 (expected 0.01/1.5 = 0.00667) and the body does not rotate"]
 fn ball_offset_anchor_splits_the_correction_between_translation_and_rotation() {
     let d = 0.01;
     let mut b = vec![
