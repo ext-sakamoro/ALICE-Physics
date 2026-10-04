@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 4207 |
+| 🟢 Not ignored (run by CI) | 4289 |
 | 🔴 Red by design | 228 |
 | ⏱ Gated (runtime / diagnostic / manual) | 24 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **4459** |
+| **Total** | **4541** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -98,6 +98,7 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `froude_krylov_is_not_negative_when_the_keel_is_out_of_the_water` (audit_wave_ship.rs) — known defect: AUD-A-S2W3-004: froude_krylov_vertical_n returns negative force (rho g A (d+eta) = -2.4e5 N at d…
 - `gamma_one_riemann_invariants_are_not_a_silent_identity` (audit_compressible.rs) — known defect: AUD-A-S1W5-007: riemann_invariants(gamma=1) silently returns (u,u) (J+ == J-) although 2a/(gamma…
 - `gapped_series_returns_exactly_the_recorded_pairs` (audit_db_bridge.rs) — known defect: AUD-A-S5W1-001: non-contiguous steps are re-spaced uniformly by the storage layer; a query for a…
+- `gear_ratio_two_closes_the_signed_residual` (audit_c_joint_extra.rs) — known defect: AUD-A-S34-011: same root as AUD-A-S3W1-015 for ratio 2: `solve_gear` rotates gear a by +lambda w…
 - `gear_solver_reduces_the_signed_angle_residual` (audit_joint_extra.rs) — known defect: AUD-A-S3W1-015: solve_gear rotates a by +lambda w_a and b by -lambda ratio w_b, so angle_a + rat…
 - `grid_pipeline_detects_thin_plate_parallel_to_scan_axis` (audit_thin_wall.rs) — known defect: AUD-A-S2W1-004: analyze_thickness_grid only scans X-lines; a 0.4 mm z-thin plate parallel to X i…
 - `huge_stress_must_not_wrap_to_safe` (audit_laminate_failure.rs) — known defect: AUD-A-S4W2-004: sigma1 = 3.2e9 MPa で sigma1^2 が 2^63 を超え wrap、Tsai-Hill FI = -3.6e12 (負)
@@ -155,6 +156,7 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `projectile_centre_does_not_depend_on_the_length_of_the_direction` (audit_sdf_destruction.rs) — known defect: AUD-A-S5W3-011: destruction_from_projectile places the centre at entry + direction * depth/2 wit…
 - `projectile_direction_near_the_pole_is_not_snapped_to_it` (audit_sdf_destruction.rs) — known defect: AUD-A-S5W3-012: a direction within about 2.6 degrees of +Y or -Y is snapped to the pole (dot > 0…
 - `puck_pure_shear_above_s_is_inter_fibre_not_fibre_tension` (audit_laminate_failure.rs) — known defect: AUD-A-S4W2-005: sigma1 = 0, sigma2 = -50, tau = 75 (> S) の puck が FibreTension を返す (Hashin の fib…
+- `pulley_ratio_two_conserves_the_rope_length` (audit_c_joint_extra.rs) — known defect: AUD-A-S34-012: same root as AUD-A-S3W1-011 for ratio 2: `solve_pulley` uses `error = Fix128::ZER…
 - `quat_from_axis_angle_zero_axis_is_a_unit_quaternion` (audit_math.rs) — known defect: AUD-A-S1W5-023: QuatFix::from_axis_angle with a zero axis returns (0,0,0,cos(angle/2)), a non-un…
 - `rack_and_pinion_constraint_is_signed` (audit_joint_extra.rs) — known defect: AUD-A-S3W1-014: extract_angle_around_axis returns |projection| * 2 (unsigned), so a pinion rotat…
 - `rack_and_pinion_uses_the_axis_inverse_inertia` (audit_joint_extra.rs) — known defect: AUD-A-S3W1-013: rack-and-pinion (and gear / weld) use |inv_inertia| (sqrt(3) for isotropic i = 1…
@@ -181,10 +183,12 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `residual_stress_accounts_for_unequal_layer_thickness` (audit_bimaterial.rs) — known defect: AUD-A-S4W3-010: thermal_residual_stress_mpa ignores layer thickness (equal-thickness formula) al…
 - `restore_rejects_a_snapshot_whose_buffer_no_longer_matches_its_checksum` (audit_fluid_netcode.rs) — known defect: AUD-A-S5W2-014: restore() does not check the snapshot checksum, so a snapshot whose buffer was a…
 - `result_velocity_has_no_component_into_the_wall_after_a_head_on_slide` (audit_character.rs) — known defect: AUD-A-S3W3-005: MoveResult.velocity doc says velocity after sliding but move_and_slide always re…
+- `rigid_half_turn_in_an_even_number_of_increments_is_stress_free` (audit_c_linear_elastic_fem.rs) — known defect: AUD-A-S34-030: `solve_corotational` applies a rigid 180 degree rotation in an even number of inc…
 - `rigid_weld_closes_a_small_angular_error_in_one_projection` (audit_joint_extra.rs) — known defect: AUD-A-S3W1-013: solve_weld's angular effective inverse mass is |inv_inertia| (vector norm, sqrt(…
 - `rotation_error_magnitude_equals_the_angle_for_a_quarter_turn` (audit_motor.rs) — known defect: AUD-A-S5W2-002: the in-code comment calls the position error \"axis-angle\" but the controller u…
 - `sampled_points_stay_inside_the_aabb` (audit_thin_wall.rs) — known defect: AUD-A-S2W1-006: sample_surface_points returns points beyond aabb_max (ceil in axis_steps): x=5 >…
 - `scaled_shape_with_negative_scale_is_still_a_support_function` (audit_collider.rs) — known defect: AUD-A-S3W3-017: ScaledShape::support returns scale * inner.support(d) with no sign handling, so …
+- `self_referential_ball_joint_with_distinct_anchors_is_a_free_body` (audit_c_joint.rs) — known defect: AUD-A-S34-010: `solve_ball_joint` with `BallJoint(a, a)` and distinct local anchors (1,0,0) / (-…
 - `separating_normal_velocity_is_not_reversed_by_the_contact` (audit_rope.rs) — known defect: AUD-A-S3W1-004: resolve_sdf_collisions sets v_n' = -0.1 v_n unconditionally, reversing a separat…
 - `separation_load_for_c_above_one_is_not_negative` (audit_prestressed.rs) — known defect: AUD-A-S1W6-001: separation_load_n(1000, C=1.2) returns -5000 (negative load, no clamp/guard for …
 - `shoulder_bending_at_d_over_d_two_matches_documented_table` (audit_fillet_stress.rs) — known defect: AUD-A-S1W5-001: kt_shaft_shoulder_bending at D/d=2 returns 1.1x the module's own D/d=2 table (r/…
@@ -197,7 +201,6 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `solve_cubic_never_reports_ok_for_a_body_nothing_holds` (audit_cubic_elastic_fem.rs) — known defect: AUD-A-S2W1-008: solve_cubic returns Ok (u ~ 1e11 mm, relative_residual 0) for a body with no con…
 - `speculative_contact_normal_follows_the_b_to_a_contract` (audit_ccd.rs) — known defect: AUD-A-S2W2-008: speculative_contact returns normal = (pos_b - pos_a)/dist (A->B) but collider::C…
 - `speculative_contact_reports_coincident_overlapping_spheres` (audit_ccd.rs) — known defect: AUD-A-S2W2-009: speculative_contact returns None for coincident centres (dist == 0 guard) althou…
-- `sphere_and_capsule_support_handle_a_tiny_direction` (audit_collider.rs) — known defect: AUD-A-S3W3-018: Sphere::support and Capsule::support use Vec3Fix::normalize, which returns zero …
 - `sphere_capsule_toi_sliding_approach_hits_at_the_right_time` (audit_ccd.rs) — known defect: AUD-A-S2W2-011: sphere_capsule_toi freezes the closest axis point at the start position (treats …
 - `sphere_cast_from_inside_reports_a_surface_facing_the_ray` (audit_query.rs) — known defect: AUD-A-S3W3-013: sphere_cast from an origin already inside the inflated body sphere returns the f…
 - `stagnation_pressure_ratio_is_monotone_and_positive_at_large_mach` (audit_compressible.rs) — known defect: AUD-A-S1W5-008: stagnation_pressure_ratio wraps silently when p0/p exceeds the Fix128 range (M=1…
@@ -206,17 +209,15 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `static_failure_at_ultimate_strength_is_one_cycle` (audit_fatigue.rs) — known defect: AUD-A-S4W2-006: ultimate_tensile_mpa は寿命計算で一切使われない。PLA 曲線で S = UTS の寿命は N_e (0.3)^5 = 2430 cycle…
 - `step_height_limit_blocks_obstacles_taller_than_step_height` (audit_character.rs) — known defect: AUD-A-S3W3-008: stair step check samples only the capsule centre at test_pos so step_height = 0.…
 - `step_with_options_refuses_or_bounds_an_unstable_explicit_diffusion_number` (audit_cfd_solver.rs) — known defect: AUD-A-S1W4-005: step / step_with_options accept nu dt / dx^2 = 0.6 > 1/6 and the checkerboard mo…
+- `strain_far_above_tg_does_not_collapse_to_the_elastic_strain` (audit_c_creep_longterm.rs) — known defect: AUD-A-S34-031: `predict_strain` returns `epsilon_0` (no creep) once `ln10 * log10 a_T <= -40`, m…
+- `strain_is_monotone_in_temperature_across_the_shift_factor_underflow` (audit_c_creep_longterm.rs) — known defect: AUD-A-S34-031: strain drops from 0.2061 at `T_g + 13100` to 0.001 at `T_g + 13200` (`m = 2^-60`,…
 - `streamline_tracing_is_scale_covariant` (audit_flow_viz.rs) — known defect: AUD-A-S4W1-006: influence radius hard-coded to 1.0; uniform flow with 2.5 m particle spacing yie…
 - `stress_map_is_covariant_under_uniform_scaling_of_the_scene` (audit_heatmap.rs) — known defect: AUD-A-S5W3-006: the stress kernel radius is a hard-coded 2.0 world units (not in HeatmapConfig),…
 - `sub_unit_objects_keep_the_broad_phase_selective` (audit_bvh.rs) — known defect: AUD-A-S3W2-013: node boxes are quantised to whole world units (floor/ceil to i32), so a scene wh…
 - `support_huge_direction_does_not_wrap` (audit_cone.rs) — known defect: AUD-A-S4W3-002: support() with |dir|=5e9 (xz_len_sq wraps in Fix128) returns x=1.953 instead of …
-- `support_is_invariant_for_very_large_directions` (audit_cylinder.rs) — known defect: AUD-A-S6W1-007: support() is not scale invariant for |dir| >= ~3.04e9 (Fix128 square wraps): k=4…
-- `support_is_invariant_to_huge_direction_magnitude` (audit_torus.rs) — known defect: AUD-A-S5W3-003: support() with a huge direction (|d| ~ 1e10) wraps in Fix128 squares and returns…
-- `support_is_invariant_to_tiny_direction_magnitude` (audit_torus.rs) — known defect: AUD-A-S5W3-002: support() does not tolerate a tiny direction (1e-10 scale squares to 0 in Fix128…
-- `support_of_a_tiny_direction_is_still_the_extreme_point` (audit_ellipsoid.rs) — known defect: AUD-A-S5W2-007: a small but valid support direction underflows to zero in length(); direction (0…
-- `support_tiny_direction_still_picks_the_right_rim_point` (audit_cone.rs) — known defect: AUD-A-S4W3-001: support() with |dir|~1e-12 (xz_len_sq underflows to 0) returns the apex (0,1,0) …
 - `surface_flow_vanishes_when_flow_is_parallel_to_normal` (audit_sdf_force.rs) — known defect: AUD-A-S4W1-011: SurfaceFlow with flow_direction parallel to the normal returns |F| = strength*fa…
 - `surface_tension_pulls_the_cloth_toward_the_fluid_centre` (audit_cloth_fluid.rs) — known defect: AUD-A-S2W2-005: surface_tension term is mean_fluid_velocity * k (zero for resting fluid), not a …
+- `symmetric_stack_b_is_exactly_zero_as_documented` (audit_c_laminate.rs) — known defect: AUD-A-S34-050: `compute_abd` returns B = -(n/2) * 2^-64 in every entry for a mirrored stack of n…
 - `symmetric_stack_has_exactly_zero_b` (audit_laminate.rs) — known defect: AUD-A-S1W5-009: compute_abd leaves B != 0 (rounding residue b11 = -2^-64 (raw hi=-1,lo=u64::MAX-…
 - `tangential_loss_per_frame_is_independent_of_the_substep_count` (audit_rope.rs) — known defect: AUD-A-S3W1-005: sdf_friction is a per-contact velocity retention (1-mu) applied each substep and…
 - `tanh_approx_is_bounded_by_one_and_monotone` (audit_neural.rs) — known defect: AUD-A-S3W2-004: fix128_tanh_approx (Activation::TanhApprox, doc 'smooth bounded output') returns…
@@ -224,7 +225,6 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `the_answer_does_not_depend_on_the_increment_count` (analytic_corotational.rs) — the red is correct: bit-identical displacements across increment counts need an exact fixed point of the frame…
 - `the_clamped_counter_of_k_omega_counts_cells_as_documented` (audit_cfd_solver_rans.rs) — known defect: AUD-A-S1W4-010: `TurbulenceSummary::clamped` is documented as the `Number of cells` whose k, eps…
 - `the_reattachment_length_matches_gartling` (armaly_backward_step.rs) — src gap: measured 2026-10-02 on this scene (ny = 8, default SemiLagrangian, L = 16 so nx = 128 is a power of t…
-- `tiny_oblique_slip_still_produces_static_friction` (audit_anisotropic_friction.rs) — known defect: AUD-A-S2W3-001: oblique slip |v| < ~2.3e-10 m/s: v^2 underflows in Fix128, slip=0 -> returns zer…
 - `to_f64_is_relatively_accurate_for_small_negative_values` (audit_math.rs) — known defect: AUD-A-S1W5-025: Fix128::to_f64 computes hi + lo/2^64 in f64, so a small negative value loses its…
 - `torque_is_invariant_under_target_quaternion_sign` (audit_motor.rs) — known defect: AUD-A-S5W2-003: q and -q are the same orientation but the error vector flips sign with w; a targ…
 - `total_dispatches_counts_unique_sdf_ids` (audit_gpu_sdf.rs) — known defect: AUD-A-S5W2-011: GpuSdfMultiDispatch docs say one dispatch per unique sdf_id, but add_batch never…
@@ -249,7 +249,7 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `zero_max_velocity_saturates_volume_instead_of_silencing` (audit_audio_physics.rs) — known defect: AUD-A-S3W2-008: with config.max_velocity = 0 every speed is 'above max velocity' (doc: velocitie…
 - `zero_strength_with_nonzero_stress_is_not_safe` (audit_anisotropic.rs) — known defect: AUD-A-S1W6-005: a zero strength is treated as unlimited (max-stress skips the component, Hill/Ts…
 
-## 📌 Pins: tests that turn red when a known defect is fixed (3)
+## 📌 Pins: tests that turn red when a known defect is fixed (4)
 
 Tests marked `// PIN: <defect id>` assert today's defective behaviour on purpose. Fixing the
 defect makes them red; update them in the same change, after checking that the new behaviour
@@ -257,6 +257,7 @@ is the intended one.
 
 | Defect | Pin test | Defect test |
 |--------|----------|-------------|
+| AUD-A-S34-030 | `rigid_half_turn_in_two_increments_is_currently_refused_as_inverted` (audit_c_linear_elastic_fem.rs) | `rigid_half_turn_in_an_even_number_of_increments_is_stress_free` (audit_c_linear_elastic_fem.rs) |
 | AUD-A-S3W1-010 | `count_min_degenerate_inputs` (analytic_sketch_wiring.rs) | `countmin_total_does_not_overflow_when_counters_saturate` (audit_sketch.rs) |
 | AUD-A-S3W2-007 | `deterministic_network_zero_layers_constructs_but_forward_panics` (analytic_neural_wiring.rs) | `zero_layer_network_forward_does_not_panic` (audit_neural.rs) |
 | AUD-A-S4W1-001 | `entry_record_overflow_panics_in_debug_and_wraps_in_release` (analytic_profiling_wiring.rs) | `entry_total_never_decreases_on_overflow` (audit_profiling.rs) |
@@ -301,7 +302,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (4207)
+## 🟢 Not ignored (4289)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -337,9 +338,9 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_query_wiring.rs` | 24 |
 | `analytic_transient_thermal_wiring.rs` | 24 |
 | `audit_character.rs` | 24 |
+| `audit_collider.rs` | 24 |
 | `analytic_compound.rs` | 23 |
 | `analytic_convex_contact.rs` | 23 |
-| `audit_collider.rs` | 23 |
 | `analytic_reactions.rs` | 22 |
 | `audit_fluid_netcode.rs` | 22 |
 | `audit_force.rs` | 22 |
@@ -365,6 +366,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_tgs_wiring.rs` | 19 |
 | `audit_joint_extra.rs` | 19 |
 | `audit_pipeline.rs` | 19 |
+| `audit_torus.rs` | 19 |
 | `analytic_filament_db_wiring.rs` | 18 |
 | `analytic_flip.rs` | 18 |
 | `analytic_hyperelastic_wiring.rs` | 18 |
@@ -390,7 +392,6 @@ Per-file counts (the test names are in `tests/`):
 | `audit_cubic_elastic_fem.rs` | 17 |
 | `audit_neural.rs` | 17 |
 | `audit_thin_wall.rs` | 17 |
-| `audit_torus.rs` | 17 |
 | `analytic_audio_physics_wiring.rs` | 16 |
 | `analytic_damping_rayleigh_wiring.rs` | 16 |
 | `analytic_fracture_wiring.rs` | 16 |
@@ -402,6 +403,7 @@ Per-file counts (the test names are in `tests/`):
 | `armaly_backward_step.rs` | 16 |
 | `audit_audio_physics.rs` | 16 |
 | `audit_bimaterial.rs` | 16 |
+| `audit_cone.rs` | 16 |
 | `audit_interpolation.rs` | 16 |
 | `audit_maxwell_fdtd.rs` | 16 |
 | `audit_sim_modifier.rs` | 16 |
@@ -416,7 +418,6 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_thermoplastic_coupling.rs` | 15 |
 | `audit_anisotropic.rs` | 15 |
 | `audit_ccd.rs` | 15 |
-| `audit_cone.rs` | 15 |
 | `audit_sdf_destruction.rs` | 15 |
 | `analytic_collision_mesh.rs` | 14 |
 | `analytic_convex_decompose.rs` | 14 |
@@ -455,6 +456,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_sketch_wiring.rs` | 13 |
 | `audit_box_collider.rs` | 13 |
 | `audit_dynamic_fem.rs` | 13 |
+| `audit_ellipsoid.rs` | 13 |
 | `audit_flow_viz.rs` | 13 |
 | `audit_gpu_sdf.rs` | 13 |
 | `audit_sdf_fem_mesh.rs` | 13 |
@@ -470,7 +472,6 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_deformable_wiring.rs` | 12 |
 | `analytic_layer_adhesion_wiring.rs` | 12 |
 | `audit_cloth_fluid.rs` | 12 |
-| `audit_ellipsoid.rs` | 12 |
 | `audit_material.rs` | 12 |
 | `audit_plastic.rs` | 12 |
 | `audit_turbulence.rs` | 12 |
@@ -486,7 +487,9 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_temperature_rise.rs` | 11 |
 | `analytic_vibration_wall_wiring.rs` | 11 |
 | `audit_analytics_bridge.rs` | 11 |
+| `audit_anisotropic_friction.rs` | 11 |
 | `audit_creep_longterm.rs` | 11 |
+| `audit_cylinder.rs` | 11 |
 | `audit_debug_render.rs` | 11 |
 | `audit_laminate.rs` | 11 |
 | `audit_piezoelectric.rs` | 11 |
@@ -504,10 +507,8 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_physics2d_wiring.rs` | 10 |
 | `analytic_pressure_solvers.rs` | 10 |
 | `analytic_sdf_sph_wiring.rs` | 10 |
-| `audit_anisotropic_friction.rs` | 10 |
 | `audit_buckling.rs` | 10 |
 | `audit_compressible.rs` | 10 |
-| `audit_cylinder.rs` | 10 |
 | `audit_db_bridge.rs` | 10 |
 | `audit_transient_thermal.rs` | 10 |
 | `coupling_channel_inventory.rs` | 10 |
@@ -524,6 +525,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_quadratic_hyperelastic.rs` | 9 |
 | `analytic_ragdoll_wiring.rs` | 9 |
 | `analytic_thermoplastic_softening.rs` | 9 |
+| `audit_c_trimesh.rs` | 9 |
 | `audit_contact_cache.rs` | 9 |
 | `audit_fatigue.rs` | 9 |
 | `audit_heatmap.rs` | 9 |
@@ -547,6 +549,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_thermal_stress_wiring.rs` | 8 |
 | `analytic_wall_model.rs` | 8 |
 | `audit_acoustic_wave.rs` | 8 |
+| `audit_c_cfd_solver.rs` | 8 |
 | `audit_error.rs` | 8 |
 | `audit_filter.rs` | 8 |
 | `audit_kinematic_loop.rs` | 8 |
@@ -594,12 +597,19 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_math_ln.rs` | 5 |
 | `analytic_quadratic_mesh_edges_wiring.rs` | 5 |
 | `analytic_solver_tgs_dispatch_wiring.rs` | 5 |
+| `audit_c_buckling.rs` | 5 |
+| `audit_c_collider.rs` | 5 |
+| `audit_c_force.rs` | 5 |
+| `audit_solver_bridge_modifier.rs` | 5 |
 | `engineering_oracles.rs` | 5 |
 | `mms_linear_elastic.rs` | 5 |
 | `reduction_order_independence.rs` | 5 |
 | `analytic_adaptive_refinement_high_order.rs` | 4 |
 | `analytic_critically_damped_tether.rs` | 4 |
 | `analytic_step_default_projection.rs` | 4 |
+| `audit_c_laminate.rs` | 4 |
+| `audit_c_linear_elastic_fem.rs` | 4 |
+| `audit_c_plane_collider.rs` | 4 |
 | `locking_p1.rs` | 4 |
 | `p2_oracle_design.rs` | 4 |
 | `p2_quadrature_fix128.rs` | 4 |
@@ -607,15 +617,26 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_boundary_faces.rs` | 3 |
 | `analytic_large_rotation.rs` | 3 |
 | `audit_bvh_alloc.rs` | 3 |
+| `audit_c_coupled_field.rs` | 3 |
+| `audit_c_hyperelastic.rs` | 3 |
+| `audit_c_joint_extra.rs` | 3 |
+| `audit_c_laminate_failure.rs` | 3 |
+| `audit_c_math.rs` | 3 |
+| `audit_c_turbulence.rs` | 3 |
 | `audit_gpu_bridge.rs` | 3 |
 | `parallel_batch_coloring.rs` | 3 |
 | `wm01_flag_survives_rollback.rs` | 3 |
 | `wm08_prev_state_coverage.rs` | 3 |
 | `wm08_state_coverage.rs` | 3 |
+| `audit_c_fatigue.rs` | 2 |
+| `audit_c_joint.rs` | 2 |
+| `audit_c_replay.rs` | 2 |
 | `audit_neural_alloc.rs` | 2 |
 | `mesh_to_fem_stress.rs` | 2 |
 | `wm07_rollback_event_parity.rs` | 2 |
 | `analytic_fem_convergence.rs` | 1 |
+| `audit_c_creep_longterm.rs` | 1 |
+| `audit_c_plastic.rs` | 1 |
 
 ---
 

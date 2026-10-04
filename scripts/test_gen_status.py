@@ -190,6 +190,16 @@ class OracleParse(unittest.TestCase):
         self.assertEqual(set(t), {"real"})
 
 
+class DefectIdFormat(unittest.TestCase):
+    def test_an_id_with_a_worker_part_and_one_without_are_both_defect_ids(self):
+        self.assertTrue(oracle.DEFECT_ID_RE.fullmatch("AUD-A-S1W6-014"))
+        self.assertTrue(oracle.DEFECT_ID_RE.fullmatch("AUD-A-S34-030"))
+
+    def test_a_malformed_id_is_not_a_defect_id(self):
+        self.assertIsNone(oracle.DEFECT_ID_RE.fullmatch("AUD-A-S-030"))
+        self.assertIsNone(oracle.DEFECT_ID_RE.fullmatch("AUD-A-S34W-030"))
+
+
 class OracleClassify(unittest.TestCase):
     def test_a_red_by_design_test_is_not_called_pending(self):
         self.assertEqual(oracle.classify_ignored("the red is correct: ..."), "red")
