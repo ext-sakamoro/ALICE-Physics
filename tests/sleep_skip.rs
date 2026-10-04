@@ -395,10 +395,28 @@ fn edits_between_steps_are_seen() {
     let mut t = Twins::new(|| row_with_projectile(10, 3));
     t.step(8, "settle");
     assert!(t.parked > 0);
-    // Teleport a sleeping body onto another sleeping one (both stay asleep:
-    // sleeping pairs are not resolved), then onto the projectile's path.
-    t.both(|w| w.bodies[5].set_position(Vec3Fix::from_int(12, 0, 0)));
+    // Teleport a sleeping body (`set_position` keeps `prev == position`, so only
+    // the position itself tells) into the awake projectile: the contact must
+    // be found at the new place and wake it.
+    t.both(|w| {
+        w.wake_body(0);
+        w.bodies[5].set_position(Vec3Fix::new(
+            Fix128::from_int(9),
+            Fix128::ZERO,
+            Fix128::from_ratio(-54, 10),
+        ));
+    });
+    let unparked_before = t.unparked;
     t.step(3, "teleport");
+    assert!(
+        t.unparked > unparked_before,
+        "the teleported body was woken by the contact"
+    );
+    // Spin a sleeping body through the setter without waking it: the next step
+    // resets its angular velocity to the at-rest one.
+    t.both(|w| w.bodies[8].set_angular_velocity(Vec3Fix::from_int(0, 3, 0)));
+    t.step(2, "spin without wake");
+    assert!(t.sleeping(8), "spin alone does not wake");
     // Write the position field directly (prev stays behind).
     t.both(|w| w.bodies[6].position = Vec3Fix::from_int(15, 1, 0));
     t.step(3, "direct write");
