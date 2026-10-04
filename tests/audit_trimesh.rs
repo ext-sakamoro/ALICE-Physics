@@ -626,7 +626,6 @@ fn mesh_closest_point_is_correct_for_queries_far_from_the_mesh() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S4W2-011: 空メッシュの closest_point が triangles[0] で index out of bounds panic (src/trimesh.rs:227)"]
 fn mesh_closest_point_on_an_empty_mesh_does_not_panic() {
     let m = TriMesh::from_triangles(Vec::new());
     let res = std::panic::catch_unwind(|| m.closest_point(Vec3Fix::ZERO));

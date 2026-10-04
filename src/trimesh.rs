@@ -214,8 +214,15 @@ impl TriMesh {
     }
 
     /// Closest point on mesh to a given point
+    ///
+    /// An empty mesh (no triangles) has no closest point to report: returns
+    /// the query point itself with index 0.
     #[must_use]
     pub fn closest_point(&self, point: Vec3Fix) -> (Vec3Fix, usize) {
+        if self.triangles.is_empty() {
+            return (point, 0);
+        }
+
         // Query BVH with a large AABB centered on point
         let half = Fix128::from_int(1000);
         let query = AABB::new(
