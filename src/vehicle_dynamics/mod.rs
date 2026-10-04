@@ -1541,6 +1541,55 @@ mod tests {
         assert!(body.velocity.x < v_side);
     }
 
+    /// Implicit lateral friction: rolling at 0.3 m/s (slip floor regime)
+    /// with side velocity `v_y = 1 mm/s` on a chassis with no rotational
+    /// freedom (`m_y = m` at every contact). The solve must land on the
+    /// backward-Euler fixed point `m (v' − v) = Σ F_y(tan α(v')) dt`, about
+    /// `v' ≈ v / (1 + 4 C_α dt / (v̄ m)) = v / 9`; a per-wheel clamp instead
+    /// lets the first wheel cancel `v_y` alone (`v' = 0`).
+    #[test]
+    fn lateral_friction_lands_on_the_implicit_fixed_point() {
+        let mut v = DynamicVehicle::new(config());
+        let cond = dry(Fix128::ZERO);
+        let mut body = chassis();
+        body.inv_inertia = Vec3Fix::ZERO;
+        let vy0 = fx(1, 1000);
+        let vz = fx(3, 10);
+        body.velocity = Vec3Fix::new(vy0, Fix128::ZERO, vz);
+        for w in &mut v.wheels {
+            w.omega = vz / fx(3, 10);
+        }
+        let dt = dt60();
+        v.update(&mut body, &flat(), &env(&cond), dt);
+        let vy1 = body.velocity.x;
+        let m = Fix128::from_int(1000);
+        let applied: Fix128 = v
+            .wheels
+            .iter()
+            .fold(Fix128::ZERO, |a, w| a + w.lateral_force);
+        assert!(tol(m * (vy1 - vy0) / dt, applied, fx(1, 1_000_000)));
+        let den = v.config.slip_velocity_floor;
+        let mut want = Fix128::ZERO;
+        for w in &v.wheels {
+            let f = tyre_force(
+                &v.config.tire,
+                w.slip_ratio,
+                vy1 / den,
+                vz,
+                w.normal_load,
+                AnisotropicFriction::tyre_asphalt(),
+            );
+            want = want + f.lateral;
+        }
+        assert!(
+            (applied - want).abs() <= want.abs() * fx(1, 100),
+            "applied {:?} vs F_y(v') {:?}",
+            applied.to_f64(),
+            want.to_f64()
+        );
+        assert!(vy1 > vy0 / Fix128::from_int(12) && vy1 < vy0 / Fix128::from_int(7));
+    }
+
     /// A car at rest with the brake on gets anchored wheels and no
     /// horizontal motion from friction.
     #[test]
