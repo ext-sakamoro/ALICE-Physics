@@ -293,14 +293,9 @@ impl DeterministicNetwork {
 
     /// Run forward pass (deterministic, zero allocation).
     ///
-    /// Returns a reference to the final output buffer. A network with zero
-    /// layers has no output buffer and returns an empty slice rather than
-    /// indexing `buf_offsets` out of bounds.
+    /// Returns a reference to the final output buffer.
     pub fn forward(&mut self, input: &[Fix128]) -> &[Fix128] {
         let n = self.layers.len();
-        if n == 0 {
-            return &[];
-        }
 
         // First layer: reads from external input
         {
