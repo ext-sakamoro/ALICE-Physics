@@ -17,7 +17,7 @@
 
 use crate::collider::Contact;
 use crate::math::{Fix128, QuatFix, Vec3Fix};
-use crate::sdf_collider::SdfField;
+use crate::sdf_collider::{fd_normal_step, SdfField};
 use core::fmt;
 
 #[cfg(not(feature = "std"))]
@@ -310,7 +310,7 @@ impl SdfField for DestructibleSdf {
 
     fn normal(&self, x: f32, y: f32, z: f32) -> (f32, f32, f32) {
         // Central difference gradient on the destructed SDF
-        let eps = NORMAL_EPS;
+        let eps = fd_normal_step(NORMAL_EPS, x, y, z);
         let dx = self.distance(x + eps, y, z) - self.distance(x - eps, y, z);
         let dy = self.distance(x, y + eps, z) - self.distance(x, y - eps, z);
         let dz = self.distance(x, y, z + eps) - self.distance(x, y, z - eps);

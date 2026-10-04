@@ -247,11 +247,24 @@ fn normal_of_an_unmodified_chain_is_the_original_outward_normal() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S5W3-008: the normal's finite-difference step is the absolute constant 0.001, so far from the origin the f32 step is lost (unit sphere at (1e4,5e3,0): normal (1,0,0) instead of (0.894,0.447,0); at (1e5,0,0) it is (0,1,0))"]
 fn normal_is_accurate_far_from_the_origin() {
     let chain =
         ModifiedSdf::new(Box::new(unit_sphere())).with_modifier(Box::new(Affine::new(1.0, 0.0)));
     let n = chain.normal(1.0e4, 5.0e3, 0.0);
+    let s5 = 5.0_f32.sqrt();
+    assert!(
+        (n.0 - 2.0 / s5).abs() < 1e-2 && (n.1 - 1.0 / s5).abs() < 1e-2 && n.2.abs() < 1e-2,
+        "{n:?}"
+    );
+}
+
+/// Same scene through `SingleModifiedSdf::normal`, which has its own
+/// finite-difference normal (AUD-A-S5W3-008): unit sphere seen from
+/// (1e4, 5e3, 0), exact normal (2, 1, 0) / sqrt(5).
+#[test]
+fn single_modifier_normal_is_accurate_far_from_the_origin() {
+    let single = SingleModifiedSdf::new(Box::new(unit_sphere()), Affine::new(1.0, 0.0));
+    let n = single.normal(1.0e4, 5.0e3, 0.0);
     let s5 = 5.0_f32.sqrt();
     assert!(
         (n.0 - 2.0 / s5).abs() < 1e-2 && (n.1 - 1.0 / s5).abs() < 1e-2 && n.2.abs() < 1e-2,

@@ -426,7 +426,6 @@ fn normal_points_toward_the_crater_centre_inside_a_carved_region() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S5W3-013: DestructibleSdf::normal uses the absolute finite-difference step 0.001 in f32, so far from the origin the step is lost (unit sphere at (1e4,5e3,0): normal (1,0,0) instead of (0.894,0.447,0))"]
 fn normal_is_accurate_far_from_the_origin() {
     let d = DestructibleSdf::new(Box::new(unit_sphere()));
     let n = d.normal(1.0e4, 5.0e3, 0.0);
