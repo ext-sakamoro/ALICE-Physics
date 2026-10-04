@@ -126,6 +126,27 @@ impl SdfForceField {
 // Force Computation
 // ============================================================================
 
+/// Direction residuals relative to `|dir| |normal|` at or below 1e-4 count as
+/// parallel to the SDF normal (the sine of the angle between them is at most
+/// 1e-4).
+///
+/// The normal comes from an f32 SDF (`SdfField::normal`), whose direction is
+/// only resolved to roughly 1e-7 (analytic) to 1e-4 (f32 finite differences).
+/// Below that angle the perpendicular residual (`dir x n`, or `dir - (dir.n) n`)
+/// is rounding noise, and normalizing it would turn a vanishing quantity into
+/// a full-strength force in an arbitrary direction (AUD-A-S4W1-010,
+/// AUD-A-S4W1-011).
+/// `true` when `residual` (the part of `dir` that is not along `normal`) is
+/// too small, relative to `|dir| |normal|`, to define a direction.
+#[cfg(feature = "std")]
+#[inline]
+fn is_parallel_to_normal(residual: Vec3Fix, dir: Vec3Fix, normal: Vec3Fix) -> bool {
+    // (1e-4)^2 = 1 / 1e8
+    let eps_sq = Fix128::from_ratio(1, 100_000_000);
+    let bound = eps_sq * dir.length_squared() * normal.length_squared();
+    residual.length_squared() <= bound
+}
+
 /// Compute SDF-driven force on a body.
 ///
 /// Evaluates the SDF at the body's position and computes force
@@ -210,10 +231,10 @@ pub fn compute_sdf_force(
             // Project flow direction onto surface tangent plane
             let dot = flow_direction.dot(normal);
             let tangent = *flow_direction - normal * dot;
-            let tangent_len = tangent.length();
-            if tangent_len.is_zero() {
+            if is_parallel_to_normal(tangent, *flow_direction, normal) {
                 return Vec3Fix::ZERO;
             }
+            let tangent_len = tangent.length();
             let tangent_norm = tangent / tangent_len;
 
             // Falloff with distance from surface
@@ -231,8 +252,13 @@ pub fn compute_sdf_force(
                 return Vec3Fix::ZERO;
             }
 
-            // Tangent direction: cross(axis, gradient)
-            let tangent = axis.cross(normal).normalize();
+            // Tangent direction: cross(axis, gradient). Undefined when the
+            // axis is (numerically) parallel to the normal: no swirl there.
+            let cross = axis.cross(normal);
+            if is_parallel_to_normal(cross, *axis, normal) {
+                return Vec3Fix::ZERO;
+            }
+            let tangent = cross.normalize();
 
             let falloff = Fix128::ONE - dist_abs / *influence_distance;
             tangent * (*strength * falloff)
