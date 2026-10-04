@@ -6,7 +6,7 @@
 //! textbook closed form (Carslaw & Jaeger for heat conduction, Basquin /
 //! Miner for fatigue) with the tolerance of the discretisation stated in the
 //! assertion. Modules without an oracle are listed as `validation: none` in
-//! README § Determinism scope; this file grows one module at a time.
+//! README § Determinism; this file grows one module at a time.
 
 #![cfg(feature = "std")]
 // The oracle values are closed-form f64 evaluations, not simulation state.

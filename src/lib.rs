@@ -11,7 +11,7 @@
 //!   <!-- claim-test: test_multi_step_bit_exact -->
 //!   Grid / engineering modules on `f32` / `f64` are bit-exact via `det_math`
 //!   (correctly-rounded software transcendental functions); see README
-//!   "Determinism scope" for the per-module table.
+//!   "Determinism" for the per-module table.
 //!   <!-- claim-test: determinism_freefall -->
 //! - **128-bit Fixed-Point**: I64F64 format with CORDIC trigonometry
 //! - **XPBD Solver**: Extended Position Based Dynamics for stable constraints

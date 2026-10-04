@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """List the modules whose public API carries `f32` / `f64` values.
 
-README § Determinism scope has a row "`f32` / `f64` field modules (N: …)"
+README § Determinism has a row "`f32` / `f64` field modules (N: …)"
 that must match the source. This script is the source of truth for that
 row: it scans every `src/*.rs` (test modules stripped), keeps the modules
 where a `pub` item signature or a struct field mentions `f32` / `f64`
