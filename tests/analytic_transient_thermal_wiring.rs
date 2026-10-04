@@ -447,8 +447,9 @@ fn explicit_step_1d_linear_profile_is_fixed_on_interior_cells_and_ends_move_by_r
     assert_eq!(t[n - 1], before[0] + 0.5);
 }
 
-/// With a preset the update uses the *local* α: `α(T_hot)` at the hot cell,
-/// `α(T_ambient)` at its neighbours.
+/// With a preset the update is the conservative finite-volume form: the face
+/// between the hot and an ambient cell carries `k_f = 2 k_h k_a / (k_h + k_a)`
+/// (harmonic mean), and each cell divides by its own `ρ c_p`.
 #[test]
 fn explicit_step_1d_with_steel_uses_the_local_diffusivity() {
     let m = ThermalMaterial::steel_1018();
@@ -463,23 +464,26 @@ fn explicit_step_1d_with_steel_uses_the_local_diffusivity() {
         ambient as f32,
     ];
     transient_step_1d(&mut t, &m, dx as f32, dt as f32);
-    let r_hot = hand_alpha(&m, hot) * dt / (dx * dx);
+    let (k_hot, k_amb) = (hand(&m.conductivity, hot), hand(&m.conductivity, ambient));
+    let c_hot = hand(&m.density, hot) * hand(&m.specific_heat, hot);
+    let c_amb = hand(&m.density, ambient) * hand(&m.specific_heat, ambient);
+    let k_face = 2.0 * k_hot * k_amb / (k_hot + k_amb);
     let r_amb = hand_alpha(&m, ambient) * dt / (dx * dx);
     assert!((r_amb - 0.2).abs() < 1e-12);
-    assert!(r_hot < r_amb, "steel α falls with T: {r_hot} vs {r_amb}");
+    let flux = k_face * amp * dt / (dx * dx);
     assert_rel(
         t[2],
-        hot - 2.0 * r_hot * amp,
+        hot - 2.0 * flux / c_hot,
         1e-5,
-        "hot cell −2 α(T_hot) dt A / dx²",
+        "hot cell −2 k_f A dt / (ρc_p dx²)",
     );
     assert_rel(
         t[1],
-        ambient + r_amb * amp,
+        ambient + flux / c_amb,
         1e-5,
-        "left neighbour +α(T_amb) dt A / dx²",
+        "left neighbour +k_f A dt / (ρc_p dx²)",
     );
-    assert_rel(t[3], ambient + r_amb * amp, 1e-5, "right neighbour");
+    assert_rel(t[3], ambient + flux / c_amb, 1e-5, "right neighbour");
     assert_eq!(
         t[0], ambient as f32,
         "cells not adjacent to the hot node are untouched"
@@ -965,13 +969,14 @@ fn zero_density_or_specific_heat_gives_zero_diffusivity_and_identity_steps() {
 /// does overflow to `−∞` (probed: `ρ(MAX) ≈ −9.6408790e37`,
 /// `ρ·c_p(MAX) = −∞`), which `diffusivity_at`'s `!denom.is_finite()` guard
 /// catches, giving `α(MAX) = 0`. With `α = 0` the explicit update's
-/// `dt · α · laplacian` term is `0.0 · (−∞)` (the laplacian itself overflows
-/// to `−∞` on a uniform `f32::MAX` field, since `2.0 · T` overflows before
-/// the subtraction), which is `NaN`, so the explicit and Crank–Nicolson
-/// steps both return `NaN` even though every property access along the way
-/// stayed finite or cleanly infinite.
+/// `dt · α · laplacian` term of the former non-conservative explicit update
+/// was `0.0 · (−∞)` (the laplacian itself overflows to `−∞` on a uniform
+/// `f32::MAX` field, since `2.0 · T` overflows before the subtraction), which
+/// is `NaN`. The explicit step is now a face-flux update with no `2.0 · T`
+/// term and skips a cell whose `ρ c_p` is not finite and positive, so it
+/// leaves the field unchanged; the Crank–Nicolson step still returns `NaN`.
 #[test]
-fn extreme_temperature_does_not_panic_but_the_explicit_step_returns_nan() {
+fn extreme_temperature_does_not_panic_the_explicit_step_is_unchanged_and_cn_returns_nan() {
     let m = ThermalMaterial::steel_1018();
     let t = f32::MAX;
     let msg = panic_message(|| {
@@ -1001,7 +1006,7 @@ fn extreme_temperature_does_not_panic_but_the_explicit_step_returns_nan() {
         let mut field = [t; 3];
         transient_step_1d(&mut field, &m, 1e-3, 1e-3);
         assert!(
-            field.iter().all(|v| v.is_nan()),
+            field.iter().all(|v| *v == t),
             "explicit step at f32::MAX: {field:?}"
         );
         let mut field = [t; 3];
