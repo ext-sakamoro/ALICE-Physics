@@ -306,7 +306,7 @@ fn ddsketch_relative_error_holds_above_the_last_bucket() {
 
 /// Count-Min counters saturate (`saturating_add`), so `total` should not overflow either.
 #[test]
-#[ignore = "known defect: AUD-A-S3W1-010: CountMinSketch::insert_hash(_, u64::MAX) twice: counters saturate but `total += count` overflows (panic in debug, wrap in release); merge has the same plain add on total"]
+#[ignore = "known defect: AUD-A-S3W1-010: CountMinSketch::insert_hash(_, u64::MAX) twice: counters saturate but `total += count` overflows (panic in debug, wrap in release); merge has the same plain add on total -- escalated: tests/analytic_sketch_wiring.rs::count_min_degenerate_inputs pins this panic/wrap as a 'measured contract'; switching to saturating_add is a design decision to confirm, not a silent fix"]
 fn countmin_total_does_not_overflow_when_counters_saturate() {
     let r = catch_unwind(AssertUnwindSafe(|| {
         let mut c = CountMinSketch::new();

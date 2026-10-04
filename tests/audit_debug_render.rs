@@ -395,7 +395,7 @@ fn draw_joints_also_draws_the_world_joint_list() {
 }
 
 #[test]
-#[ignore = "known defect: tracked as the unwired draw_aabbs / draw_bvh flags: debug_draw_world never reads draw_aabbs or draw_bvh, so enabling them draws nothing (AABB wireframe exists as DebugDrawData::aabb)"]
+#[ignore = "known defect: tracked as the unwired draw_aabbs / draw_bvh flags: debug_draw_world never reads draw_aabbs or draw_bvh, so enabling them draws nothing (AABB wireframe exists as DebugDrawData::aabb) -- escalated: this oracle does not call PhysicsWorld::step() first, so the only in-scope source of a real box (PhysicsWorld::broadphase_proxy_aabb) is still empty; the per-body collision radius and BVH node boxes live in private fields of src/solver.rs and src/dynamic_bvh.rs (outside this item's file-exclusive scope), so a correct fix needs new pub API there, and a scope-respecting fallback (e.g. a degenerate box at body.position) has no single well-defined convention -- design decision"]
 fn draw_aabbs_flag_draws_something() {
     let mut w = PhysicsWorld::new(SolverConfig::default());
     let mut b = RigidBody::new_dynamic(v3(0.0, 2.0, 0.0), Fix128::ONE);
