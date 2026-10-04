@@ -314,11 +314,12 @@ is the intended one.
 ## 🌐 Root cause outside this repository (1)
 
 Known defects whose reason says `root: external <crate> <version>`: the fix belongs in that
-dependency. When Cargo.lock resolves a different version, re-check whether the defect remains.
+dependency. When Cargo resolves a different version (Cargo.lock, or `cargo metadata --all-features`
+when the lock is not committed), re-check whether the defect remains.
 
-| Defect | Test | Crate | Reason says | Cargo.lock | Status |
-|--------|------|-------|-------------|------------|--------|
-| AUD-A-S5W1-001 | `gapped_series_returns_exactly_the_recorded_pairs` (audit_db_bridge.rs) | `alice-db` | 0.2.0-beta.3 | — | ⚠️ not in Cargo.lock |
+| Defect | Test | Crate | Reason says | Resolved | Status |
+|--------|------|-------|-------------|----------|--------|
+| AUD-A-S5W1-001 | `gapped_series_returns_exactly_the_recorded_pairs` (audit_db_bridge.rs) | `alice-db` | 0.2.0-beta.3 | 0.2.0-beta.3 | ✅ same |
 
 ## ⚠️ Known defects without an id (2)
 

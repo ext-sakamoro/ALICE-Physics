@@ -135,13 +135,47 @@ def cargo_lock_versions(root=PROJECT_ROOT):
     return out
 
 
+def _cargo_metadata_versions(root):
+    """crate name -> versions from `cargo metadata --all-features`, or None if cargo fails.
+
+    `--all-features`: the default resolve leaves out optional dependencies, and a
+    root cause is often in one (alice-db only enters through `replay`).
+    """
+    import json
+    import subprocess
+    cmd = ['cargo', 'metadata', '--format-version', '1', '--all-features',
+           '--manifest-path', str(Path(root) / 'Cargo.toml')]
+    try:
+        out = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', check=True).stdout
+        packages = json.loads(out)['packages']
+    except (OSError, subprocess.CalledProcessError, ValueError, KeyError):
+        return None
+    versions = defaultdict(set)
+    for pkg in packages:
+        versions[pkg['name']].add(pkg['version'])
+    return versions
+
+
+def resolved_versions(root=PROJECT_ROOT):
+    """Dependency versions as Cargo resolves them, or None when they cannot be determined.
+
+    Cargo.lock is read when it exists. This repository ignores it (a library), so a CI
+    checkout has none: then `cargo metadata` resolves the graph, which is the version CI
+    tests against.
+    """
+    if (Path(root) / 'Cargo.lock').exists():
+        return cargo_lock_versions(root)
+    return _cargo_metadata_versions(root)
+
+
 def audit_links(tests, lock_versions):
     """Pins, external root causes and id-less known defects, with their problems.
 
     Returns (pins, externals, no_id, problems). `problems` are what `--check` fails on:
     a PIN with no id, a PIN whose id is not an open known defect (fixed, or a typo:
     the pinned behaviour is no longer a defect, so the pin is stale), and an external
-    root cause naming a crate that Cargo.lock does not resolve.
+    root cause naming a crate the dependency resolution does not contain (or any external
+    root cause at all when the versions could not be resolved: `lock_versions` is None).
     """
     open_defects = {}
     for t in tests:
@@ -168,10 +202,14 @@ def audit_links(tests, lock_versions):
             m = EXTERNAL_RE.search(r)
             if m:
                 crate, ver = m.group(1), m.group(2)
-                locked = sorted(lock_versions.get(crate, ()))
+                locked = sorted((lock_versions or {}).get(crate, ()))
                 externals.append((DEFECT_ID_RE.search(r).group(0) if DEFECT_ID_RE.search(r) else '', t, crate, ver, locked))
-                if not locked:
-                    problems.append(f"external root cause names {crate}, which Cargo.lock does not resolve ({t['file']}::{t['test_name']})")
+                if lock_versions is None:
+                    problems.append(f"cannot resolve dependency versions (no Cargo.lock and `cargo metadata` failed) "
+                                    f"to check {crate} ({t['file']}::{t['test_name']})")
+                elif not locked:
+                    problems.append(f"external root cause names {crate}, which the dependency resolution does not "
+                                    f"contain ({t['file']}::{t['test_name']})")
     return pins, externals, no_id, problems
 
 
@@ -223,7 +261,7 @@ def _line(test):
 def generate_markdown_report(categorized, lock_versions=None):
     """Generate markdown report (a pure function: no timestamp, so it changes only when the tests do)."""
     all_tests = categorized['implemented'] + categorized['partial'] + categorized['pending']
-    pins, externals, no_id, _problems = audit_links(all_tests, lock_versions or {})
+    pins, externals, no_id, _problems = audit_links(all_tests, lock_versions)
     ignored = categorized['pending']
     by_class = {'red': [], 'gated': [], 'pending': []}
     for t in ignored:
@@ -279,14 +317,15 @@ is the intended one.
     report += f"""## 🌐 Root cause outside this repository ({len(externals)})
 
 Known defects whose reason says `root: external <crate> <version>`: the fix belongs in that
-dependency. When Cargo.lock resolves a different version, re-check whether the defect remains.
+dependency. When Cargo resolves a different version (Cargo.lock, or `cargo metadata --all-features`
+when the lock is not committed), re-check whether the defect remains.
 
 """
     if externals:
-        report += "| Defect | Test | Crate | Reason says | Cargo.lock | Status |\n|--------|------|-------|-------------|------------|--------|\n"
+        report += "| Defect | Test | Crate | Reason says | Resolved | Status |\n|--------|------|-------|-------------|----------|--------|\n"
         for i, t, crate, ver, locked in sorted(externals, key=lambda x: (x[0], x[1]['test_name'])):
             lk = ", ".join(locked) or "—"
-            st = "✅ same" if ver in locked else ("⚠️ re-check" if locked else "⚠️ not in Cargo.lock")
+            st = "✅ same" if ver in locked else ("⚠️ re-check" if locked else "⚠️ not resolved")
             report += f"| {i} | `{t['test_name']}` ({t['file']}) | `{crate}` | {ver} | {lk} | {st} |\n"
     else:
         report += "- (none)\n"
@@ -366,12 +405,12 @@ def main(argv=None):
     import sys
     ap = argparse.ArgumentParser(description="ALICE-Physics oracle status report")
     ap.add_argument('--check', action='store_true',
-                    help='do not write; fail on a stale or id-less PIN, or an external cause not in Cargo.lock')
+                    help='do not write; fail on a stale or id-less PIN, or an external cause Cargo does not resolve')
     args = ap.parse_args(argv)
     print("Scanning ALICE-Physics oracle tests...", file=sys.stderr)
 
     categorized = run_tests_and_categorize()
-    lock = cargo_lock_versions()
+    lock = resolved_versions()
     if args.check:
         all_tests = categorized['implemented'] + categorized['partial'] + categorized['pending']
         pins, externals, no_id, problems = audit_links(all_tests, lock)

@@ -45,15 +45,18 @@ jobs:
         run: python scripts/test_scip_reach.py
       - name: Known-defect symbol resolution (tests)
         run: python scripts/test_audit_refs.py
-      # PIN markers must name an open known defect; external root causes must
-      # name a crate Cargo.lock resolves (docs/oracle-status.md lists both)
-      - name: Oracle ledger links (PIN / root external)
-        run: python scripts/gen-oracle-status.py --check
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
+
+      # PIN markers must name an open known defect; external root causes must
+      # name a crate Cargo resolves (docs/oracle-status.md lists both). After the
+      # toolchain: Cargo.lock is not committed, so the versions come from
+      # `cargo metadata --all-features`.
+      - name: Oracle ledger links (PIN / root external)
+        run: python scripts/gen-oracle-status.py --check
 
       # `crate-type` includes cdylib/staticlib (FFI consumers, 1.2.0); a no_std
       # cdylib needs a panic_handler + allocator, so the no_std *library* build is
