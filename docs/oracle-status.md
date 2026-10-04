@@ -6,8 +6,8 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 4289 |
-| 🔴 Red by design | 228 |
+| 🟢 Not ignored (run by CI) | 4298 |
+| 🔴 Red by design | 219 |
 | ⏱ Gated (runtime / diagnostic / manual) | 24 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
 | **Total** | **4541** |
@@ -15,12 +15,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
 
-## 🔴 Red by design (228)
+## 🔴 Red by design (219)
 
 Oracles kept red on purpose: the implementation is not there yet, and a companion test pins
 today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected value is never loosened.
 
-- `a_sliver_with_a_fixed_base_is_not_reported_as_under_constrained` (audit_linear_elastic_fem.rs) — known defect: AUD-A-S1W3-004: a sliver tet (apex height 1e-8, base fixed) returns UnderConstrained although 9 …
 - `a_zero_dt_update_does_not_cancel_a_return_to_animation` (audit_animation_blend.rs) — known defect: AUD-A-S2W3-011: mirror case, go_animated() from full ragdoll then update(dt = 0) flips mode to R…
 - `a_zero_dt_update_does_not_cancel_a_started_transition` (audit_animation_blend.rs) — known defect: AUD-A-S2W3-011: go_ragdoll() then update(dt = 0) (or transition_speed 0) flips mode Blend -> Ani…
 - `aabb_half_extent_along_symmetry_axis_is_minor_radius` (audit_torus.rs) — known defect: AUD-A-S5W3-001: Torus::aabb is not tight along the symmetry axis (R=5, r=1, identity: Y half ext…
@@ -37,7 +36,6 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `boundary_residual_covers_accumulated_pushes` (audit_cloth_fluid.rs) — known defect: AUD-A-S2W2-004: boundary residual under-reports accumulated pushes (two same-direction pushes of…
 - `boundary_residual_is_the_norm_of_the_net_velocity_change` (audit_cloth_fluid.rs) — known defect: AUD-A-S2W2-004: boundary residual reports the largest single-pair correction component, not the …
 - `box_contact_points_are_depth_apart_along_the_normal_in_every_branch` (audit_plane_collider.rs) — known defect: AUD-A-S3W1-002: intersect_aabb fully-behind branch returns point_b = project(centre) not project…
-- `budget_never_lets_spent_epsilon_decrease` (audit_privacy.rs) — known defect: AUD-A-S4W3-021: PrivacyBudget::try_spend accepts a negative epsilon: it is counted as a query, s…
 - `buoyancy_uses_gravity_magnitude` (audit_fsi_advanced.rs) — known defect: AUD-A-S4W1-002: buoyancy_force doc says rho*V*|g| but g=-10 gives F_y=-10000 (downward); no abs
 - `capsule_bottom_does_not_sink_into_a_static_body_it_lands_on` (audit_character.rs) — known defect: AUD-A-S3W3-009: sweep_against_bodies casts a point-sphere from the capsule centre, so landing on…
 - `capsule_cast_misses_nothing_along_the_segment` (audit_query.rs) — known defect: AUD-A-S3W3-014: capsule_cast casts only 3 spheres (both ends + midpoint) so a body above the qua…
@@ -92,7 +90,6 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `first_draw_of_a_small_seed_is_not_an_extreme_outlier` (audit_privacy.rs) — known defect: AUD-A-S4W3-030: XorShift64::new does not scramble the seed, so the first draws of a small seed a…
 - `fit_two_modes_never_returns_negative_damping_coefficients` (audit_damping_rayleigh.rs) — known defect: AUD-A-S2W2-001: fit_two_modes returns beta=-2.083e-5 for (100 rad/s, z=0.05) and (500 rad/s, z=0…
 - `fos_is_never_below_one_when_applied_is_below_allowable` (audit_layer_adhesion.rs) — known defect: AUD-A-S1W5-030 (downstream: component_fos): for applied = 2^-64 or 2^-63 the quotient allowable …
-- `from_entropy_seed_is_not_recoverable_from_the_clock` (audit_privacy.rs) — known defect: AUD-A-S4W3-029: XorShift64::from_entropy is documented as 'system entropy' but the seed is the w…
 - `from_f64_non_finite_and_out_of_range_are_not_silently_plausible` (audit_math.rs) — known defect: AUD-A-S1W5-018: Fix128::from_f64(NaN) returns ZERO silently, from_f64(+/-inf) and from_f64(-1e30…
 - `froude_krylov_doc_excess_over_mean_is_zero_at_mean_level` (audit_wave_ship.rs) — known defect: AUD-A-S2W3-005: doc says result is buoyancy in excess of the mean, but eta = 0 returns the full …
 - `froude_krylov_is_not_negative_when_the_keel_is_out_of_the_water` (audit_wave_ship.rs) — known defect: AUD-A-S2W3-004: froude_krylov_vertical_n returns negative force (rho g A (d+eta) = -2.4e5 N at d…
@@ -128,9 +125,7 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `negative_max_torque_must_not_reverse_the_torque` (audit_motor.rs) — known defect: AUD-A-S5W2-004: negative max_torque is not rejected; `mag > max` is always true and torque * (ma…
 - `negative_minor_radius_is_rejected_or_still_maximises` (audit_torus.rs) — known defect: AUD-A-S5W3-005: Torus::new accepts a negative minor radius; support(+X) with R=5, r=-1 returns x…
 - `negative_threshold_does_not_flag_the_centre` (audit_anomaly.rs) — known defect: AUD-A-S4W1-016: negative threshold_k flags the median itself (deviation 0 > negative threshold)
-- `non_unit_rotation_does_not_resize_the_crater` (audit_sdf_destruction.rs) — known defect: AUD-A-S5W3-014: DestructionShape accepts a non-unit rotation and scales the local frame by |q|^2…
 - `non_unit_rotation_does_not_scale_the_support_point` (audit_cylinder.rs) — known defect: AUD-A-S6W1-009: rotation quaternion (0,0,0,2) gives support (4,4,0) instead of (1,1,0), 4x too f…
-- `non_unit_rotation_does_not_scale_the_torus` (audit_torus.rs) — known defect: AUD-A-S5W3-004: Torus accepts a non-unit orientation and then scales support points by |q|^2 (q …
 - `non_unit_rotation_must_not_scale_the_box` (audit_box_collider.rs) — known defect: AUD-A-S5W2-018: the orientation quaternion is not normalised or checked, so a non-unit rotation …
 - `non_unit_rotation_must_not_scale_the_ellipsoid` (audit_ellipsoid.rs) — known defect: AUD-A-S5W2-019: the orientation quaternion is not normalised or checked, so a non-unit rotation …
 - `non_unit_rotation_must_not_scale_the_wedge` (audit_wedge.rs) — known defect: AUD-A-S5W2-020: the orientation quaternion is not normalised or checked, so a non-unit rotation …
@@ -152,16 +147,13 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `plate_with_negative_dimension_is_rejected_like_the_beam_with_negative_length` (audit_modal.rs) — known defect: AUD-A-S3W2-002: plate_natural_frequency_hz treats negative thickness / side as its absolute valu…
 - `point_slightly_outside_surface_is_not_reported_as_a_hairline_wall` (audit_thin_wall.rs) — known defect: AUD-A-S2W1-005: measure_thickness_at returns Some(0.01) for a surface point 0.011 mm outside the…
 - `polar_rotation_is_idempotent_bit_for_bit_on_general_gradients` (audit_math.rs) — known defect: AUD-A-S1W5-027: polar_rotation is not idempotent for general (non-diagonal) gradients: 105 of 20…
-- `portal_with_non_unit_rotation_is_not_a_scaling` (audit_multi_world.rs) — known defect: AUD-A-S4W1-004: Portal::new keeps a non-unit rotation; transform_a_to_b(1,2,3) with q=(0,0,0,2) …
 - `projectile_centre_does_not_depend_on_the_length_of_the_direction` (audit_sdf_destruction.rs) — known defect: AUD-A-S5W3-011: destruction_from_projectile places the centre at entry + direction * depth/2 wit…
 - `projectile_direction_near_the_pole_is_not_snapped_to_it` (audit_sdf_destruction.rs) — known defect: AUD-A-S5W3-012: a direction within about 2.6 degrees of +Y or -Y is snapped to the pole (dot > 0…
 - `puck_pure_shear_above_s_is_inter_fibre_not_fibre_tension` (audit_laminate_failure.rs) — known defect: AUD-A-S4W2-005: sigma1 = 0, sigma2 = -50, tau = 75 (> S) の puck が FibreTension を返す (Hashin の fib…
 - `pulley_ratio_two_conserves_the_rope_length` (audit_c_joint_extra.rs) — known defect: AUD-A-S34-012: same root as AUD-A-S3W1-011 for ratio 2: `solve_pulley` uses `error = Fix128::ZER…
-- `quat_from_axis_angle_zero_axis_is_a_unit_quaternion` (audit_math.rs) — known defect: AUD-A-S1W5-023: QuatFix::from_axis_angle with a zero axis returns (0,0,0,cos(angle/2)), a non-un…
 - `rack_and_pinion_constraint_is_signed` (audit_joint_extra.rs) — known defect: AUD-A-S3W1-014: extract_angle_around_axis returns |projection| * 2 (unsigned), so a pinion rotat…
 - `rack_and_pinion_uses_the_axis_inverse_inertia` (audit_joint_extra.rs) — known defect: AUD-A-S3W1-013: rack-and-pinion (and gear / weld) use |inv_inertia| (sqrt(3) for isotropic i = 1…
 - `ragdoll_joint_anchors_coincide_at_build_time` (audit_articulation.rs) — known defect: AUD-A-S3W1-018: build_ragdoll spine / chest / head / leg joints put anchor_a at +1 (or -1) on th…
-- `randomized_response_new_epsilon_is_not_weaker_than_requested` (audit_privacy.rs) — known defect: AUD-A-S4W3-020: RandomizedResponse::new(epsilon) sets p = e^eps / (1 + e^eps) (the flip-design v…
 - `rappor_default_params_epsilon_is_about_two` (audit_privacy.rs) — known defect: AUD-A-S4W3-023: Rappor::default_params documents 'approximately epsilon = 2' but with f = 0.5, p…
 - `ray_capsule_along_axis_hits_near_cap` (audit_raycast.rs) — known defect: AUD-A-S5W1-003: ray_capsule returns None for a ray parallel to the capsule axis (a_coeff == 0 ea…
 - `ray_capsule_parallel_offset_inside_radius_hits_cap` (audit_raycast.rs) — known defect: AUD-A-S5W1-003: ray_capsule returns None for a ray parallel to the capsule axis (a_coeff == 0 ea…
@@ -241,7 +233,6 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `warm_start_normal_impulse_separates_with_documented_a_to_b_normal` (audit_contact_cache.rs) — known defect: AUD-A-S1W5-014: CachedContactPoint::normal doc says A->B but the cached value is Contact.normal …
 - `weld_angular_correction_is_independent_of_quaternion_sign` (audit_joint_extra.rs) — known defect: AUD-A-S3W1-012: solve_weld takes error_vec = rot_error.xyz without making w >= 0; for the negate…
 - `weld_angular_correction_is_split_by_inverse_inertia` (audit_joint_extra.rs) — known defect: AUD-A-S3W1-013: apply_angular_correction rotates both bodies by the same angle regardless of inv…
-- `with_probability_does_not_silently_weaken_privacy` (audit_privacy.rs) — known defect: AUD-A-S4W3-022: RandomizedResponse::with_probability silently raises p below 0.5 to 0.5 although…
 - `youngs_at_angle_is_a_lower_bound_reuss_form` (audit_filament_db.rs) — known defect: AUD-A-S1W5-012: youngs_at_angle doc says 'Reuss-like lower bound' but E_xy cos2 + E_z sin2 is th…
 - `zero_decay_scale_still_blocks_wind_inside_the_obstacle` (audit_sdf_wind_field.rs) — known defect: AUD-A-S6W1-001: decay_scale_m = 0 returns full base wind (10 m/s) inside the obstacle (d = -1) w…
 - `zero_layer_network_forward_does_not_panic` (audit_neural.rs) — known defect: AUD-A-S3W2-007: DeterministicNetwork::forward on a zero-layer network panics (index out of bound…
@@ -302,7 +293,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (4289)
+## 🟢 Not ignored (4298)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -319,7 +310,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_world_api.rs` | 35 |
 | `audit_coupled_iteration.rs` | 34 |
 | `engineering_oracles_solid.rs` | 34 |
-| `audit_math.rs` | 28 |
+| `audit_math.rs` | 29 |
 | `audit_raycast.rs` | 28 |
 | `audit_trimesh.rs` | 28 |
 | `analytic_static_collider.rs` | 27 |
@@ -341,10 +332,10 @@ Per-file counts (the test names are in `tests/`):
 | `audit_collider.rs` | 24 |
 | `analytic_compound.rs` | 23 |
 | `analytic_convex_contact.rs` | 23 |
+| `audit_linear_elastic_fem.rs` | 23 |
 | `analytic_reactions.rs` | 22 |
 | `audit_fluid_netcode.rs` | 22 |
 | `audit_force.rs` | 22 |
-| `audit_linear_elastic_fem.rs` | 22 |
 | `determinism_semantic.rs` | 22 |
 | `analytic_adaptive_refinement.rs` | 21 |
 | `analytic_corotational.rs` | 21 |
@@ -357,6 +348,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_joint_extra_wiring.rs` | 20 |
 | `analytic_wave_ship_wiring.rs` | 20 |
 | `audit_print_pipeline_solver.rs` | 20 |
+| `audit_torus.rs` | 20 |
 | `analytic_compressible_wiring.rs` | 19 |
 | `analytic_elastoplastic_fem.rs` | 19 |
 | `analytic_heatmap_wiring.rs` | 19 |
@@ -366,7 +358,6 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_tgs_wiring.rs` | 19 |
 | `audit_joint_extra.rs` | 19 |
 | `audit_pipeline.rs` | 19 |
-| `audit_torus.rs` | 19 |
 | `analytic_filament_db_wiring.rs` | 18 |
 | `analytic_flip.rs` | 18 |
 | `analytic_hyperelastic_wiring.rs` | 18 |
@@ -378,6 +369,7 @@ Per-file counts (the test names are in `tests/`):
 | `audit_bvh.rs` | 18 |
 | `audit_eulerian_grid.rs` | 18 |
 | `audit_hyperelastic.rs` | 18 |
+| `audit_privacy.rs` | 18 |
 | `audit_wave_ship.rs` | 18 |
 | `analytic_acoustic_wave_wiring.rs` | 17 |
 | `analytic_anomaly_wiring.rs` | 17 |
@@ -406,6 +398,7 @@ Per-file counts (the test names are in `tests/`):
 | `audit_cone.rs` | 16 |
 | `audit_interpolation.rs` | 16 |
 | `audit_maxwell_fdtd.rs` | 16 |
+| `audit_sdf_destruction.rs` | 16 |
 | `audit_sim_modifier.rs` | 16 |
 | `analytic_articulation_wiring.rs` | 15 |
 | `analytic_dynamic_fem.rs` | 15 |
@@ -418,7 +411,6 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_thermoplastic_coupling.rs` | 15 |
 | `audit_anisotropic.rs` | 15 |
 | `audit_ccd.rs` | 15 |
-| `audit_sdf_destruction.rs` | 15 |
 | `analytic_collision_mesh.rs` | 14 |
 | `analytic_convex_decompose.rs` | 14 |
 | `analytic_joint_wiring.rs` | 14 |
@@ -436,7 +428,6 @@ Per-file counts (the test names are in `tests/`):
 | `audit_laminate_failure.rs` | 14 |
 | `audit_modal.rs` | 14 |
 | `audit_multiphase.rs` | 14 |
-| `audit_privacy.rs` | 14 |
 | `audit_rope.rs` | 14 |
 | `audit_sketch.rs` | 14 |
 | `audit_soft_body_cut.rs` | 14 |
@@ -568,6 +559,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_soft_body_cut_wiring.rs` | 7 |
 | `audit_damping_rayleigh.rs` | 7 |
 | `audit_fillet_stress.rs` | 7 |
+| `audit_multi_world.rs` | 7 |
 | `elastoplastic_increment_api.rs` | 7 |
 | `fsi_advanced_sub_iteration.rs` | 7 |
 | `mesh_quality.rs` | 7 |
@@ -584,7 +576,6 @@ Per-file counts (the test names are in `tests/`):
 | `audit_contact_modifier_once.rs` | 6 |
 | `audit_filament_db.rs` | 6 |
 | `audit_layer_adhesion.rs` | 6 |
-| `audit_multi_world.rs` | 6 |
 | `audit_profiling.rs` | 6 |
 | `cloth_fluid_sub_iteration.rs` | 6 |
 | `hanging_node_effect.rs` | 6 |
