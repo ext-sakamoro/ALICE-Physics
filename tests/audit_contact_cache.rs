@@ -212,6 +212,33 @@ fn find_after_direct_manifolds_mutation_does_not_panic() {
     );
 }
 
+/// Same stale-index exposure as `find`, on the other accessor the defect named:
+/// `get_or_create` indexes `manifolds[idx]` straight from the private pair index.
+/// A stale index must be treated as not-found (a fresh manifold is pushed) and the
+/// index must self-heal, so the pair is found again afterwards.
+#[test]
+fn get_or_create_after_direct_manifolds_mutation_does_not_panic() {
+    let mut cache = ContactCache::new();
+    let key = BodyPairKey::new(0, 1);
+    cache.get_or_create(key, f(0.5), f(0.1));
+    cache.manifolds.clear();
+    let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let m = cache.get_or_create(key, f(0.25), f(0.75));
+        (m.pair, m.friction, m.restitution)
+    }));
+    assert_eq!(
+        r.ok(),
+        Some((key, f(0.25), f(0.75))),
+        "get_or_create() panicked or returned a stale manifold"
+    );
+    // the stale entry was replaced, not left dangling
+    assert_eq!(cache.manifolds.len(), 1);
+    assert!(
+        cache.find(&key).is_some(),
+        "pair index did not self-heal after the stale entry was replaced"
+    );
+}
+
 #[test]
 fn frame_lifecycle_expiry_boundary_and_update_resets_staleness() {
     let mut cache = ContactCache::new();
