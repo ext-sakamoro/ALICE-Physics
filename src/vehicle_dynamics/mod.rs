@@ -181,12 +181,15 @@ impl DynamicVehicleConfig {
     /// drive): brush tyres ([`tire::BrushTire::passenger_car`]), 220 kPa,
     /// front / rear brakes 2500 / 1500 Nm per wheel, handbrake 1500 Nm per
     /// rear wheel, no ABS, powertrain from the legacy engine config and gear
-    /// table ([`Powertrain::from_engine_config`]), Ackermann steering,
+    /// table ([`Powertrain::from_engine_config`]), Ackermann steering on the
+    /// front axle (the legacy default gives the rear wheels `max_steer_angle`
+    /// 0.5 as well, which would steer them in phase; it is set to 0 here),
     /// wheel inertia 1.2 kg m², air density 1.225 kg/m³, `C_d A` 0.66 m²,
     /// `C_l A` 0, slip velocity floor 0.5 m/s.
     #[must_use]
     pub fn passenger_car() -> Self {
-        let base = VehicleConfig::default();
+        let mut base = VehicleConfig::default();
+        rear_wheels_unsteered(&mut base);
         let powertrain = Powertrain::from_engine_config(&base.engine, &base.gear_ratios);
         Self {
             base,
@@ -207,6 +210,15 @@ impl DynamicVehicleConfig {
             },
             ackermann: true,
             slip_velocity_floor: Fix128::from_ratio(1, 2),
+        }
+    }
+}
+
+/// Set `max_steer_angle = 0` on every rear wheel (`z ≤ 0`).
+fn rear_wheels_unsteered(base: &mut VehicleConfig) {
+    for w in &mut base.wheels {
+        if w.local_position.z <= Fix128::ZERO {
+            w.max_steer_angle = Fix128::ZERO;
         }
     }
 }
@@ -882,5 +894,602 @@ impl DynamicVehicle {
     #[must_use]
     pub fn grounded_wheels(&self) -> usize {
         self.wheels.iter().filter(|w| w.grounded).count()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::anisotropic_friction::AnisotropicFriction;
+    use crate::math::QuatFix;
+    use surface::{GroundHit, Weather};
+    use tire::BrushTire;
+
+    fn fx(n: i64, d: i64) -> Fix128 {
+        Fix128::from_ratio(n, d)
+    }
+
+    fn dt60() -> Fix128 {
+        fx(1, 60)
+    }
+
+    fn tol(a: Fix128, b: Fix128, eps: Fix128) -> bool {
+        (a - b).abs() <= eps
+    }
+
+    fn vtol(a: Vec3Fix, b: Vec3Fix, eps: Fix128) -> bool {
+        tol(a.x, b.x, eps) && tol(a.y, b.y, eps) && tol(a.z, b.z, eps)
+    }
+
+    /// Road that is never hit.
+    struct NoRoad;
+    impl RoadSurface for NoRoad {
+        fn probe(&self, _: Vec3Fix, _: Vec3Fix, _: Fix128) -> Option<GroundHit> {
+            None
+        }
+    }
+
+    /// Infinite plane (test-local so these unit tests do not depend on `surface`).
+    struct TestPlane {
+        point: Vec3Fix,
+        normal: Vec3Fix,
+    }
+    impl RoadSurface for TestPlane {
+        fn probe(&self, origin: Vec3Fix, dir: Vec3Fix, max_dist: Fix128) -> Option<GroundHit> {
+            let h = (origin - self.point).dot(self.normal);
+            if h <= Fix128::ZERO {
+                return Some(GroundHit {
+                    distance: Fix128::ZERO,
+                    point: origin - self.normal * h,
+                    normal: self.normal,
+                });
+            }
+            let den = dir.dot(self.normal);
+            if den >= Fix128::ZERO {
+                return None;
+            }
+            let t = -(h / den);
+            if t > max_dist {
+                return None;
+            }
+            Some(GroundHit {
+                distance: t,
+                point: origin + dir * t,
+                normal: self.normal,
+            })
+        }
+    }
+
+    fn flat() -> TestPlane {
+        TestPlane {
+            point: Vec3Fix::ZERO,
+            normal: Vec3Fix::UNIT_Y,
+        }
+    }
+
+    fn dry(rolling: Fix128) -> RoadCondition {
+        RoadCondition {
+            material: AnisotropicFriction::tyre_asphalt(),
+            weather: Weather::Dry,
+            rolling_resistance: rolling,
+        }
+    }
+
+    fn gravity() -> Vec3Fix {
+        Vec3Fix::new(Fix128::ZERO, Fix128::from_int(-10), Fix128::ZERO)
+    }
+
+    fn env(cond: &RoadCondition) -> Environment<'_> {
+        Environment {
+            condition: cond,
+            wind: None,
+            gravity: gravity(),
+            time: Fix128::ZERO,
+        }
+    }
+
+    /// Passenger layout with explicit tyre numbers and no aero, so these tests
+    /// do not rely on the presets of other files.
+    fn config() -> DynamicVehicleConfig {
+        let mut base = VehicleConfig::default();
+        rear_wheels_unsteered(&mut base);
+        let powertrain = Powertrain::from_engine_config(&base.engine, &base.gear_ratios);
+        DynamicVehicleConfig {
+            base,
+            wheel_inertia: fx(12, 10),
+            tire: TireModel::Brush(BrushTire {
+                longitudinal_stiffness: Fix128::from_int(80_000),
+                cornering_stiffness: Fix128::from_int(60_000),
+            }),
+            tyre_pressure_kpa: Fix128::from_int(220),
+            brakes: BrakeSystem {
+                max_torque_front: Fix128::from_int(2500),
+                max_torque_rear: Fix128::from_int(1500),
+                handbrake_torque: Fix128::from_int(1500),
+                abs: None,
+            },
+            powertrain,
+            aero: AeroConfig {
+                air_density: fx(1225, 1000),
+                drag_area: Fix128::ZERO,
+                lift_area: Fix128::ZERO,
+            },
+            ackermann: true,
+            slip_velocity_floor: fx(1, 2),
+        }
+    }
+
+    /// Chassis of 1000 kg near its static ride height on `flat()`
+    /// (`c = mg/4k = 0.05`, centre at `0.2 + r + rest (1 − c)`).
+    fn chassis() -> RigidBody {
+        RigidBody::new(
+            Vec3Fix::new(Fix128::ZERO, fx(785, 1000), Fix128::ZERO),
+            Fix128::from_int(1000),
+        )
+    }
+
+    // ---- oracle 1: tyre force acts at the contact point --------------------
+
+    /// One wheel sliding sideways: the change of angular velocity equals
+    /// `I⁻¹ (r × F) dt` with `F` the sum of the applied suspension and tyre
+    /// forces and `r` the contact arm; the linear change equals `F dt / m`.
+    #[test]
+    fn contact_force_gives_arm_torque() {
+        let mut cfg = config();
+        cfg.base.wheels.truncate(1);
+        cfg.base.anti_roll_stiffness = Fix128::ZERO;
+        let mut v = DynamicVehicle::new(cfg);
+        let mut body = RigidBody::new(
+            Vec3Fix::new(Fix128::ZERO, fx(65, 100), Fix128::ZERO),
+            Fix128::from_int(1000),
+        );
+        body.velocity = Vec3Fix::new(Fix128::ONE, Fix128::ZERO, Fix128::ZERO);
+        let cond = dry(Fix128::ZERO);
+        let before = body;
+        let dt = dt60();
+        v.update(&mut body, &flat(), &env(&cond), dt);
+        let w = v.wheels[0];
+        assert!(w.grounded);
+        assert!(
+            w.lateral_force < -Fix128::from_int(100),
+            "a sideways slide must give a lateral force against it: {:?}",
+            w.lateral_force
+        );
+        let (s, c) = w.steer_angle.sin_cos();
+        let heading = Vec3Fix::UNIT_Z * c + Vec3Fix::UNIT_X * s;
+        let x_dir = (heading - w.contact_normal * heading.dot(w.contact_normal)).normalize();
+        let y_dir = w.contact_normal.cross(x_dir);
+        let f = Vec3Fix::UNIT_Y * w.normal_load + x_dir * w.longitudinal_force + y_dir * w.lateral_force;
+        let arm = w.contact_point - before.position;
+        let torque = arm.cross(f * dt);
+        let expect_w = Vec3Fix::new(
+            torque.x * before.inv_inertia.x,
+            torque.y * before.inv_inertia.y,
+            torque.z * before.inv_inertia.z,
+        );
+        let eps = fx(1, 1_000_000_000);
+        assert!(
+            vtol(body.angular_velocity, expect_w, eps),
+            "Δω {:?} vs I⁻¹(r×F)dt {:?}",
+            body.angular_velocity,
+            expect_w
+        );
+        assert!(expect_w.y.abs() > fx(1, 100), "yaw must be excited: {expect_w:?}");
+        let expect_v = before.velocity + f * dt * before.inv_mass;
+        assert!(vtol(body.velocity, expect_v, eps));
+    }
+
+    // ---- oracle 2: Coulomb brake --------------------------------------------
+
+    #[test]
+    fn brake_reduces_spin_without_reversal() {
+        let mut cfg = config();
+        cfg.brakes.max_torque_front = Fix128::from_int(36);
+        let mut v = DynamicVehicle::new(cfg);
+        v.wheels[0].omega = Fix128::from_int(10);
+        v.wheels[1].omega = Fix128::from_int(-10);
+        v.input.brake = Fix128::ONE;
+        let mut body = chassis();
+        let cond = dry(Fix128::ZERO);
+        let dt = dt60();
+        v.update(&mut body, &NoRoad, &env(&cond), dt);
+        let i = fx(12, 10);
+        let step = dt * Fix128::from_int(36) / i;
+        assert_eq!(v.wheels[0].omega, Fix128::from_int(10) - step);
+        assert_eq!(v.wheels[1].omega, Fix128::from_int(-10) + step);
+        assert_eq!(v.wheels[0].brake_torque, Fix128::from_int(36));
+    }
+
+    #[test]
+    fn large_brake_locks_in_one_frame_and_holds() {
+        let mut cfg = config();
+        cfg.brakes.max_torque_front = Fix128::from_int(100_000);
+        let mut v = DynamicVehicle::new(cfg);
+        v.wheels[0].omega = Fix128::from_int(60);
+        v.wheels[1].omega = Fix128::from_int(-60);
+        v.input.brake = Fix128::ONE;
+        let mut body = chassis();
+        let cond = dry(Fix128::ZERO);
+        for _ in 0..3 {
+            v.update(&mut body, &NoRoad, &env(&cond), dt60());
+            assert_eq!(v.wheels[0].omega, Fix128::ZERO);
+            assert_eq!(v.wheels[1].omega, Fix128::ZERO);
+        }
+    }
+
+    /// On the road at 20 m/s a front wheel braked with a huge torque is locked
+    /// in the same frame (the tyre force is evaluated at the locked spin, i.e.
+    /// full sliding, κ = −1).
+    #[test]
+    fn grounded_wheel_locks_and_slides() {
+        let mut cfg = config();
+        cfg.brakes.max_torque_front = Fix128::from_int(100_000);
+        cfg.brakes.max_torque_rear = Fix128::ZERO;
+        let mut v = DynamicVehicle::new(cfg);
+        let mut body = chassis();
+        body.velocity = Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, Fix128::from_int(20));
+        for w in &mut v.wheels {
+            w.omega = Fix128::from_int(20) / fx(3, 10);
+        }
+        v.input.brake = Fix128::ONE;
+        let cond = dry(Fix128::ZERO);
+        v.update(&mut body, &flat(), &env(&cond), dt60());
+        assert_eq!(v.wheels[0].omega, Fix128::ZERO);
+        assert!(tol(v.wheels[0].slip_ratio, Fix128::NEG_ONE, fx(1, 1_000_000)));
+        assert!(v.wheels[0].longitudinal_force < Fix128::ZERO);
+        assert!(!v.wheels[0].abs_active);
+    }
+
+    // ---- ABS ------------------------------------------------------------------
+
+    #[test]
+    fn abs_holds_target_slip() {
+        let mut cfg = config();
+        cfg.brakes.max_torque_front = Fix128::from_int(100_000);
+        cfg.brakes.max_torque_rear = Fix128::from_int(100_000);
+        let target = fx(12, 100);
+        cfg.brakes.abs = Some(AbsConfig {
+            target_slip: target,
+            min_speed: Fix128::ONE,
+        });
+        let mut v = DynamicVehicle::new(cfg);
+        let mut body = chassis();
+        body.velocity = Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, Fix128::from_int(20));
+        for w in &mut v.wheels {
+            w.omega = Fix128::from_int(20) / fx(3, 10);
+        }
+        v.input.brake = Fix128::ONE;
+        let cond = dry(Fix128::ZERO);
+        v.update(&mut body, &flat(), &env(&cond), dt60());
+        for (i, w) in v.wheels.iter().enumerate() {
+            assert!(w.abs_active, "wheel {i}");
+            assert!(w.omega > Fix128::ZERO, "wheel {i} locked under ABS");
+            assert!(
+                tol(w.slip_ratio, -target, fx(1, 1_000_000)),
+                "wheel {i}: κ {:?}",
+                w.slip_ratio
+            );
+            assert!(w.brake_torque < Fix128::from_int(100_000));
+            assert!(w.brake_torque > Fix128::ZERO);
+        }
+    }
+
+    #[test]
+    fn abs_inactive_below_min_speed() {
+        let mut cfg = config();
+        cfg.brakes.max_torque_front = Fix128::from_int(100_000);
+        cfg.brakes.abs = Some(AbsConfig {
+            target_slip: fx(12, 100),
+            min_speed: Fix128::from_int(30),
+        });
+        let mut v = DynamicVehicle::new(cfg);
+        let mut body = chassis();
+        body.velocity = Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, Fix128::from_int(20));
+        for w in &mut v.wheels {
+            w.omega = Fix128::from_int(20) / fx(3, 10);
+        }
+        v.input.brake = Fix128::ONE;
+        let cond = dry(Fix128::ZERO);
+        v.update(&mut body, &flat(), &env(&cond), dt60());
+        assert!(!v.wheels[0].abs_active);
+        assert_eq!(v.wheels[0].omega, Fix128::ZERO);
+    }
+
+    // ---- oracle 3: Ackermann ----------------------------------------------------
+
+    #[test]
+    fn ackermann_matches_closed_form() {
+        let v = DynamicVehicle::new(config());
+        let w = &v.config.base.wheels;
+        let l = w[0].local_position.z - w[2].local_position.z;
+        let half_t = (w[1].local_position.x - w[0].local_position.x).half();
+        let eps = fx(1, 1_000_000_000_000);
+        for s in [fx(1, 2), fx(-1, 2), fx(1, 10), Fix128::ONE] {
+            let d0 = s * w[0].max_steer_angle;
+            let (sn, cs) = d0.sin_cos();
+            let r = l / (sn / cs);
+            let a = v.steer_angles(s);
+            // right wheel (+x) is inner for a right turn (s > 0, R > 0)
+            let right = (l / (r - half_t)).atan();
+            let left = (l / (r + half_t)).atan();
+            assert!(tol(a[1], right, eps), "s={s:?}: {:?} vs {right:?}", a[1]);
+            assert!(tol(a[0], left, eps), "s={s:?}: {:?} vs {left:?}", a[0]);
+            assert!(a[if s > Fix128::ZERO { 1 } else { 0 }].abs() > d0.abs());
+            assert_eq!(a[2], Fix128::ZERO);
+            assert_eq!(a[3], Fix128::ZERO);
+        }
+        assert!(v.steer_angles(Fix128::ZERO).iter().all(|a| a.is_zero()));
+    }
+
+    #[test]
+    fn parallel_steer_without_ackermann() {
+        let mut cfg = config();
+        cfg.ackermann = false;
+        let v = DynamicVehicle::new(cfg);
+        let a = v.steer_angles(fx(1, 2));
+        let d0 = fx(1, 2) * v.config.base.wheels[0].max_steer_angle;
+        assert_eq!(a[0], d0);
+        assert_eq!(a[1], d0);
+    }
+
+    // ---- oracle 4: effective-mass clamp ---------------------------------------
+
+    /// A slowly rolling car with locked wheels on flat ground: friction stops
+    /// it but never pushes it backwards.
+    #[test]
+    fn friction_never_reverses_contact_velocity() {
+        let mut cfg = config();
+        cfg.brakes.max_torque_rear = Fix128::from_int(100_000);
+        cfg.brakes.max_torque_front = Fix128::from_int(100_000);
+        let mut v = DynamicVehicle::new(cfg);
+        let cond = dry(Fix128::ZERO);
+        for v0 in [fx(1, 100), fx(1, 10), Fix128::ONE] {
+            let mut body = chassis();
+            body.velocity = Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, v0);
+            v.input.brake = Fix128::ONE;
+            v.update(&mut body, &flat(), &env(&cond), dt60());
+            let after = DynamicVehicle::forward_speed(&body);
+            assert!(after >= -fx(1, 1_000_000_000), "v0={v0:?} reversed to {after:?}");
+            assert!(after <= v0);
+        }
+    }
+
+    #[test]
+    fn car_at_rest_stays_at_rest_on_flat() {
+        let mut v = DynamicVehicle::new(config());
+        let cond = dry(Fix128::ZERO);
+        let mut body = chassis();
+        v.input.brake = Fix128::ONE;
+        v.update(&mut body, &flat(), &env(&cond), dt60());
+        assert_eq!(body.velocity.x, Fix128::ZERO);
+        assert!(body.velocity.z.abs() <= fx(1, 1_000_000_000));
+        for w in &v.wheels {
+            assert_eq!(w.omega, Fix128::ZERO);
+        }
+    }
+
+    // ---- oracle 5: degenerate inputs -----------------------------------------
+
+    #[test]
+    fn zero_dt_changes_nothing() {
+        let mut v = DynamicVehicle::new(config());
+        v.wheels[0].omega = Fix128::from_int(5);
+        v.input.throttle = Fix128::ONE;
+        let snapshot = v.wheels.clone();
+        let mut body = chassis();
+        body.velocity = Vec3Fix::new(Fix128::ONE, Fix128::ONE, Fix128::ONE);
+        let before = body;
+        let cond = dry(Fix128::ZERO);
+        v.update(&mut body, &flat(), &env(&cond), Fix128::ZERO);
+        v.update(&mut body, &flat(), &env(&cond), -dt60());
+        assert_eq!(body, before);
+        assert_eq!(v.wheels, snapshot);
+    }
+
+    #[test]
+    fn static_chassis_changes_nothing() {
+        let mut v = DynamicVehicle::new(config());
+        v.input.throttle = Fix128::ONE;
+        let snapshot = v.wheels.clone();
+        let mut body = RigidBody::new_static(Vec3Fix::new(Fix128::ZERO, fx(785, 1000), Fix128::ZERO));
+        let before = body;
+        let cond = dry(Fix128::ZERO);
+        v.update(&mut body, &flat(), &env(&cond), dt60());
+        assert_eq!(body, before);
+        assert_eq!(v.wheels, snapshot);
+    }
+
+    /// No wheels: only aerodynamics, `Δv = −½ρ C_dA |v| v dt / m`, rpm at idle.
+    #[test]
+    fn no_wheels_applies_only_aero() {
+        let mut cfg = config();
+        cfg.base.wheels.clear();
+        cfg.aero.drag_area = fx(66, 100);
+        let mut v = DynamicVehicle::new(cfg);
+        assert_eq!(v.grounded_wheels(), 0);
+        let mut body = chassis();
+        let vel = Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, Fix128::from_int(30));
+        body.velocity = vel;
+        let cond = dry(Fix128::ZERO);
+        let dt = dt60();
+        v.update(&mut body, &flat(), &env(&cond), dt);
+        let k = fx(1225, 1000).half() * fx(66, 100) * Fix128::from_int(30);
+        let expect = vel + vel * (-k) * dt * body.inv_mass;
+        assert!(vtol(body.velocity, expect, fx(1, 1_000_000_000)));
+        assert_eq!(body.angular_velocity, Vec3Fix::ZERO);
+        assert_eq!(v.engine_rpm, v.config.powertrain.idle_rpm);
+    }
+
+    /// Wind inside its zone: drag acts on `v − w`; outside, on `v`.
+    #[test]
+    fn wind_sets_relative_air_speed() {
+        use crate::buoyancy_zone::ZoneShape;
+        let mut cfg = config();
+        cfg.base.wheels.clear();
+        cfg.aero.drag_area = Fix128::ONE;
+        cfg.aero.lift_area = -Fix128::ONE;
+        let zone = WindZone::light_breeze(ZoneShape::Sphere {
+            centre: Vec3Fix::ZERO,
+            radius: Fix128::from_int(10),
+        });
+        let cond = dry(Fix128::ZERO);
+        let mut e = env(&cond);
+        e.wind = Some(&zone);
+        let mut v = DynamicVehicle::new(cfg);
+        let mut body = chassis();
+        let dt = dt60();
+        v.update(&mut body, &NoRoad, &e, dt);
+        // car at rest, wind 3 m/s along +x (t = 0): v_rel = (−3, 0, 0)
+        let w = zone.instantaneous_wind_vector(Fix128::ZERO);
+        let v_rel = -w;
+        let sp = v_rel.length();
+        let half_rho = fx(1225, 1000).half();
+        let f = v_rel * (-(half_rho * sp)) + Vec3Fix::UNIT_Y * (-(half_rho * sp * sp));
+        assert!(vtol(body.velocity, f * dt * body.inv_mass, fx(1, 1_000_000_000)));
+        assert!(body.velocity.x > Fix128::ZERO, "wind must push along +x");
+        assert!(body.velocity.y < Fix128::ZERO, "negative lift area is downforce");
+
+        let mut far = chassis();
+        far.position = Vec3Fix::new(Fix128::from_int(100), Fix128::ZERO, Fix128::ZERO);
+        v.update(&mut far, &NoRoad, &e, dt);
+        assert_eq!(far.velocity, Vec3Fix::ZERO);
+    }
+
+    /// `wheel_inertia = 0`: an airborne wheel keeps its spin; on the road a
+    /// massless wheel jumps to its quasi-static balance (free rolling with no
+    /// torque: `ω r = v_x`).
+    #[test]
+    fn massless_wheel() {
+        let mut cfg = config();
+        cfg.wheel_inertia = Fix128::ZERO;
+        let mut v = DynamicVehicle::new(cfg);
+        v.wheels[0].omega = Fix128::from_int(7);
+        v.input.brake = Fix128::ONE;
+        let mut body = chassis();
+        let cond = dry(Fix128::ZERO);
+        v.update(&mut body, &NoRoad, &env(&cond), dt60());
+        assert_eq!(v.wheels[0].omega, Fix128::from_int(7));
+
+        v.input.brake = Fix128::ZERO;
+        let mut body = chassis();
+        body.velocity = Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, Fix128::from_int(10));
+        v.update(&mut body, &flat(), &env(&cond), dt60());
+        let target = Fix128::from_int(10) / fx(3, 10);
+        assert!(
+            tol(v.wheels[0].omega, target, fx(1, 1000)),
+            "{:?} vs {target:?}",
+            v.wheels[0].omega
+        );
+    }
+
+    /// All wheels airborne: no contact, no impulse (aero 0), spin follows
+    /// drive / brake only.
+    #[test]
+    fn airborne_applies_nothing() {
+        let mut v = DynamicVehicle::new(config());
+        v.input.throttle = Fix128::ONE;
+        let mut body = chassis();
+        body.velocity = Vec3Fix::new(Fix128::ONE, Fix128::ZERO, Fix128::from_int(3));
+        let before = body;
+        let cond = dry(Fix128::ZERO);
+        v.update(&mut body, &NoRoad, &env(&cond), dt60());
+        assert_eq!(body, before);
+        assert_eq!(v.grounded_wheels(), 0);
+        assert!(v.wheels.iter().all(|w| w.normal_load.is_zero() && w.longitudinal_force.is_zero()));
+        // rear wheels are driven: positive drive torque spins them up
+        assert!(v.wheels[2].omega > Fix128::ZERO);
+        assert_eq!(v.wheels[2].omega, v.wheels[3].omega);
+        assert_eq!(v.wheels[0].omega, Fix128::ZERO);
+    }
+
+    #[test]
+    fn locked_differential_shares_spin() {
+        let mut cfg = config();
+        cfg.powertrain.differential = powertrain::Differential::Locked;
+        let mut v = DynamicVehicle::new(cfg);
+        v.wheels[2].omega = Fix128::from_int(10);
+        v.wheels[3].omega = Fix128::from_int(20);
+        v.input.throttle = Fix128::ONE;
+        let mut body = chassis();
+        let cond = dry(Fix128::ZERO);
+        v.update(&mut body, &NoRoad, &env(&cond), dt60());
+        assert_eq!(v.wheels[2].omega, v.wheels[3].omega);
+        let axle = v.config.powertrain.axle_torque(Fix128::ONE, Fix128::from_int(15));
+        let expect = Fix128::from_int(15) + dt60() * axle / (fx(12, 10) + fx(12, 10));
+        assert_eq!(v.wheels[2].omega, expect);
+    }
+
+    #[test]
+    fn open_differential_splits_torque() {
+        let mut v = DynamicVehicle::new(config());
+        v.input.throttle = Fix128::ONE;
+        let mut body = chassis();
+        let cond = dry(Fix128::ZERO);
+        v.update(&mut body, &NoRoad, &env(&cond), dt60());
+        let axle = v.config.powertrain.axle_torque(Fix128::ONE, Fix128::ZERO);
+        let expect = dt60() * (axle / Fix128::from_int(2)) / fx(12, 10);
+        assert_eq!(v.wheels[2].omega, expect);
+        assert_eq!(v.engine_rpm, v.config.powertrain.engine_rpm(expect));
+    }
+
+    // ---- static hold on a slope (frame-level gravity coupling) ---------------
+
+    /// Run a braked car on a plane inclined by `atan(grade)` in a
+    /// `PhysicsWorld` and return the displacement of the chassis along the
+    /// slope over `frames` frames after a settling phase.
+    fn slope_drift(grade: Fix128, frames: usize) -> Fix128 {
+        use crate::sleeping::SleepConfig;
+        use crate::solver::{PhysicsWorld, SolverConfig};
+        let theta = grade.atan();
+        // plane tilted about +x: going up the slope is +z
+        let rot = QuatFix::from_axis_angle(Vec3Fix::UNIT_X, -theta);
+        let normal = rot.rotate_vec(Vec3Fix::UNIT_Y);
+        let road = TestPlane {
+            point: Vec3Fix::ZERO,
+            normal,
+        };
+        let mut world = PhysicsWorld::new(SolverConfig::default());
+        world.set_sleep_config(SleepConfig {
+            frames_to_sleep: u32::MAX,
+            ..SleepConfig::default()
+        });
+        let mut body = chassis();
+        body.position = normal * fx(785, 1000);
+        body.rotation = rot;
+        body.prev_position = body.position;
+        body.prev_rotation = rot;
+        let idx = world.add_body(body);
+        let mut v = DynamicVehicle::new(config());
+        v.input.brake = Fix128::ONE;
+        let cond = dry(Fix128::ZERO);
+        let e = Environment {
+            condition: &cond,
+            wind: None,
+            gravity: world.config.gravity,
+            time: Fix128::ZERO,
+        };
+        let up_slope = rot.rotate_vec(Vec3Fix::UNIT_Z);
+        let dt = dt60();
+        for _ in 0..120 {
+            v.update(&mut world.bodies[idx], &road, &e, dt);
+            world.step(dt);
+        }
+        let start = world.bodies[idx].position;
+        for _ in 0..frames {
+            v.update(&mut world.bodies[idx], &road, &e, dt);
+            world.step(dt);
+        }
+        assert_eq!(v.grounded_wheels(), 4);
+        (world.bodies[idx].position - start).dot(up_slope)
+    }
+
+    #[test]
+    fn braked_car_holds_on_slope() {
+        // tan θ = 0.3 < μ (1.1 dry asphalt)
+        let drift = slope_drift(fx(3, 10), 600);
+        assert!(
+            drift.abs() <= fx(1, 1000),
+            "drift along the slope over 600 frames: {drift:?} m"
+        );
     }
 }
