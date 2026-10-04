@@ -204,7 +204,6 @@ fn rack_and_pinion_static_rack_turns_the_pinion_back() {
 /// `C = 0.1`, `lambda = C / (1 + 4) = 0.02`, `d_theta_a = -0.02`, `d_theta_b = -0.04`,
 /// so after one solve `theta_a + 2 theta_b = 0` (to second order).
 #[test]
-#[ignore = "known defect: AUD-A-S34-011: same root as AUD-A-S3W1-015 for ratio 2: `solve_gear` rotates gear a by +lambda w_a (the sign that grows C) and the read angle is unsigned; measured theta_a 0.1200 (want 0.08) and theta_b -0.0400 after one solve, residual 0.0400 instead of 0"]
 fn gear_ratio_two_closes_the_signed_residual() {
     let mut a = spinner(Vec3Fix::ZERO, 1.0);
     a.rotation = rz(0.1);

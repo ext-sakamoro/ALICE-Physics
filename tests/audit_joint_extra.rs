@@ -342,7 +342,6 @@ fn rack_and_pinion_consistent_motion_is_untouched() {
 /// The documented constraint `linear = ratio * angular` is signed: a pinion turning
 /// the other way must pair with a rack moving the other way.
 #[test]
-#[ignore = "known defect: AUD-A-S3W1-014: extract_angle_around_axis returns |projection| * 2 (unsigned), so a pinion rotated by -0.2 reads +0.2; with rack lin = -0.4 and ratio 2 the solver sees error -0.8 instead of 0 and moves both bodies (measured lin -0.299 vs ratio*ang -1.092)"]
 fn rack_and_pinion_constraint_is_signed() {
     let mut rack = body(v3(-0.4, 0.0, 0.0), 1.0);
     rack.prev_position = Vec3Fix::ZERO;
@@ -369,7 +368,6 @@ fn rack_and_pinion_constraint_is_signed() {
 /// `angle_a + ratio * angle_b = constant`: a solve must reduce the signed
 /// residual `angle_a + ratio * angle_b` (per-step rotation about z) to well below its start (half).
 #[test]
-#[ignore = "known defect: AUD-A-S3W1-015: solve_gear rotates a by +lambda w_a and b by -lambda ratio w_b, so angle_a + ratio*angle_b changes by lambda (w_a - ratio^2 w_b) instead of -lambda (w_a + ratio^2 w_b); measured residual 0.1 -> 0.1 (ratio 1, equal w), the angle read is unsigned (2|xyz|), and joint_a / joint_b hinge indices and axes are never used (z axis fixed)"]
 fn gear_solver_reduces_the_signed_angle_residual() {
     for (ang_a, ang_b) in [(0.1, 0.0), (0.0, 0.1), (-0.1, 0.0), (0.1, 0.05)] {
         let mut a = body(Vec3Fix::ZERO, 1.0);
