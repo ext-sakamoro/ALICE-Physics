@@ -94,7 +94,7 @@ were introduced during that release window.
 - **Behavior change:** `articulation` の `apply_motors` は hinge motor で twist 角を駆動する (従来は joint の種類を見ず中心間距離を駆動) (AUD-A-S3W1-017)
 - **Behavior change:** `articulation::FeatherstoneSolver::solve` を world frame の Featherstone ABA に書き直した (従来はスケールした自由落下を返していた、`gravity_scale` は読まない)
 - **Behavior change:** 回転した body に world 軸の torque / impulse を与えた時の角速度変化を `R diag(inv_inertia) R⁻¹ τ` にした 恒等回転では従来値と同一 (AUD-A-S1W2-001)
-- **Behavior change:** `ContactModifier` が書き換えた friction / restitution が CPU の solve に反映される 反復ごとに適用されるので `friction *= 0.5` のような相対変更は反復回数ぶん複合する (AUD-A-S1W2-005)
+- **Behavior change:** `ContactModifier` が書き換えた friction / restitution が接触に反映され、`ContactModifier` と pre-solve hook は反復ごとではなく substep ごとに 1 回だけ呼ばれる (従来は friction / restitution の変更が CPU の solve に反映されず、反映後も反復回数ぶん複合していた) `friction *= 0.5` のような相対変更も反復回数に依らない 絶対値の代入は影響しない `gpu-solver-bridge` 経由の直列経路も同じ (AUD-A-S1W2-005 / AUD-A-S34-001)
 - **Behavior change:** `ElasticMaterial::new` は ν が 0.5 / −1 に近く `lame()` の λ が `Fix128` で wrap する場合に `Err` を返す (従来は黙って wrap) (AUD-A-S1W3-001)
 - **Behavior change:** `force` の Point / Magnetic に特異点近傍の cap と scaling を入れた 特異点近傍の値が変わる (AUD-A-S4W3-018 / 019)
 - **Behavior change:** `FluidSnapshot::capture` は position / velocity の長さ不一致で panic する (従来は黙って velocity を落とした)、delta の compute / apply と `react_back_pressure` も長さ不一致を拒否する (AUD-A-S5W2-013 / 015 / 016, S4W1-003)
