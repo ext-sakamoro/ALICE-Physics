@@ -532,25 +532,59 @@ impl Fix128 {
     /// 2⁻⁶⁴ absolute resolution).
     /// `self ≤ 0` or a negative exponent returns `ZERO` (no NaN; callers that
     /// need those cases handle them explicitly).
+    ///
+    /// # Integer part of the exponent
+    ///
+    /// Exponents whose integer part is at most 64 use left-to-right repeated
+    /// multiplication; above 64 the integer part uses exponentiation by
+    /// squaring. The seam exists to keep results **bit-identical to 1.5.0 and
+    /// earlier wherever those versions were already correct**: fixed-point
+    /// multiplication truncates and is therefore not associative, so the two
+    /// orders differ in the low bits for a base that is not exactly
+    /// representable. Before 1.6.0 the integer part was silently capped at 64
+    /// (`1.01^100` returned `1.01^64` = 1.89 rather than 2.705), so only the
+    /// `n ≤ 64` range has bits worth preserving; above it the result was wrong
+    /// and the faster O(log n) order is used instead of an O(n) loop.
     #[must_use]
     pub fn powf_pos(self, exponent: Self) -> Self {
         if self <= Self::ZERO || exponent.is_negative() {
             return Self::ZERO;
         }
-        // Integer part via exponentiation by squaring (`exponent.hi` ≥ 0 here,
-        // checked above): O(log n) multiplications instead of O(n), so there is
-        // no need to cap `n` to keep this fast — the full documented exponent
-        // range is honored.
-        let mut n = exponent.hi as u64;
+        // Integer part (`exponent.hi` ≥ 0 here, checked above). Two
+        // multiplication orders on purpose, split at 64:
+        //
+        // - `n ≤ 64` — left-to-right repeated multiplication, the order
+        //   this function has always used. Fixed-point multiplication
+        //   truncates, so it is **not associative**: reassociating the
+        //   product changes the low bits (measured: up to 18 raw units for
+        //   a non-dyadic base at `n ≤ 64`, and exactly zero for a base that
+        //   is representable without truncation, such as the 2 that
+        //   [`Fix128::exp`] passes). Bit-exact reproducibility across
+        //   versions is a headline property of this crate, so the order is
+        //   preserved over the whole range where it was already correct.
+        // - `n > 64` — exponentiation by squaring. This range used to be
+        //   silently capped (`exponent.hi.min(64)`), so `1.01^100` returned
+        //   `1.01^64` = 1.89 instead of 2.705: a plainly wrong value that no
+        //   caller can have a legitimate dependency on, which leaves the
+        //   order free here. Squaring keeps it O(log n), so a large exponent
+        //   cannot turn into an unbounded loop.
+        let n = exponent.hi as u64;
         let mut r = Self::ONE;
-        let mut base = self;
-        while n > 0 {
-            if n & 1 != 0 {
-                r = r * base;
+        if n <= 64 {
+            for _ in 0..n {
+                r = r * self;
             }
-            n >>= 1;
-            if n > 0 {
-                base = base * base;
+        } else {
+            let mut n = n;
+            let mut base = self;
+            while n > 0 {
+                if n & 1 != 0 {
+                    r = r * base;
+                }
+                n >>= 1;
+                if n > 0 {
+                    base = base * base;
+                }
             }
         }
         let mut frac_bits = exponent.lo;
