@@ -377,8 +377,16 @@ fn tyre_lateral_slope(
     }
 }
 
-/// Gauss-Seidel sweeps of the kinetic friction solve.
-const FRICTION_SWEEPS: usize = 8;
+/// Gauss-Seidel sweeps of the friction solve.
+///
+/// The residual of a symmetric case that must give exactly zero yaw
+/// (four locked wheels sliding on an isotropic road with the front wheels
+/// steered, `tests/analytic_vehicle_dynamics.rs`) falls geometrically with
+/// the sweep count: max yaw rate 1.2e-5 rad/s at 8 sweeps, 1.3e-9 at 16,
+/// 2.4e-13 at 24. Alternating the wheel order between sweeps does not
+/// change it (1.3e-5 at 8), so the residual is convergence, not ordering
+/// bias.
+const FRICTION_SWEEPS: usize = 16;
 
 /// A spin group re-solved inside the friction solve.
 #[derive(Clone, Debug)]
@@ -1124,6 +1132,20 @@ impl DynamicVehicle {
         let mut lam_y = lam_x.clone();
         let mut clipped = Vec::with_capacity(n);
         clipped.resize(n, false);
+        // position error of the held contacts as one rigid translation (the
+        // mean anchor offset): per-wheel offsets differ by the pitch / roll
+        // the suspension allows, and holding each contact to its own anchor
+        // over-constrains the tangential motion so the solve fights itself
+        let mut e_sum = Vec3Fix::ZERO;
+        for &i in hold {
+            let point = self.wheels[i].contact_point;
+            e_sum = e_sum + (self.wheels[i].anchor.unwrap_or(point) - point);
+        }
+        let e_mean = if hold.is_empty() {
+            Vec3Fix::ZERO
+        } else {
+            e_sum / Fix128::from_int(hold.len() as i64)
+        };
         for _ in 0..FRICTION_SWEEPS {
             for &i in hold {
                 let s = sc[i];
@@ -1131,8 +1153,7 @@ impl DynamicVehicle {
                 let load = self.wheels[i].normal_load;
                 let r = self.config.base.wheels[i].radius;
                 let point = self.wheels[i].contact_point;
-                let anchor = self.wheels[i].anchor.unwrap_or(point);
-                let e = anchor - point;
+                let e = e_mean;
                 let vc = point_velocity(chassis, s.arm);
                 let mx = effective_mass(chassis, s.arm, s.x_dir);
                 let my = effective_mass(chassis, s.arm, s.y_dir);
