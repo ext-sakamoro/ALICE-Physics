@@ -6976,6 +6976,41 @@ impl core::marker::UnsafeUnpin for alice_physics::non_newtonian::PowerLaw
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::non_newtonian::PowerLaw
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::non_newtonian::PowerLaw
 pub mod alice_physics::particle
+#[non_exhaustive] pub enum alice_physics::particle::LandingTarget<'a>
+pub alice_physics::particle::LandingTarget::Collider(&'a alice_physics::sdf_collider::SdfCollider)
+pub alice_physics::particle::LandingTarget::Field(&'a dyn alice_physics::sdf_collider::SdfField)
+pub alice_physics::particle::LandingTarget::Query(&'a dyn core::ops::function::Fn(alice_physics::math::Vec3Fix) -> core::option::Option<alice_physics::math::Vec3Fix>)
+impl core::fmt::Debug for alice_physics::particle::LandingTarget<'_>
+pub fn alice_physics::particle::LandingTarget<'_>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::marker::Freeze for alice_physics::particle::LandingTarget<'a>
+impl<'a> !core::marker::Send for alice_physics::particle::LandingTarget<'a>
+impl<'a> !core::marker::Sync for alice_physics::particle::LandingTarget<'a>
+impl<'a> core::marker::Unpin for alice_physics::particle::LandingTarget<'a>
+impl<'a> core::marker::UnsafeUnpin for alice_physics::particle::LandingTarget<'a>
+impl<'a> !core::panic::unwind_safe::RefUnwindSafe for alice_physics::particle::LandingTarget<'a>
+impl<'a> !core::panic::unwind_safe::UnwindSafe for alice_physics::particle::LandingTarget<'a>
+#[non_exhaustive] pub struct alice_physics::particle::LandingEvent
+pub alice_physics::particle::LandingEvent::normal: alice_physics::math::Vec3Fix
+pub alice_physics::particle::LandingEvent::particle: usize
+pub alice_physics::particle::LandingEvent::position: alice_physics::math::Vec3Fix
+pub alice_physics::particle::LandingEvent::target: usize
+pub alice_physics::particle::LandingEvent::time_in_step: alice_physics::math::Fix128
+impl core::clone::Clone for alice_physics::particle::LandingEvent
+pub fn alice_physics::particle::LandingEvent::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::particle::LandingEvent
+impl core::cmp::PartialEq for alice_physics::particle::LandingEvent
+pub fn alice_physics::particle::LandingEvent::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::particle::LandingEvent
+pub fn alice_physics::particle::LandingEvent::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::particle::LandingEvent
+impl core::marker::StructuralPartialEq for alice_physics::particle::LandingEvent
+impl core::marker::Freeze for alice_physics::particle::LandingEvent
+impl core::marker::Send for alice_physics::particle::LandingEvent
+impl core::marker::Sync for alice_physics::particle::LandingEvent
+impl core::marker::Unpin for alice_physics::particle::LandingEvent
+impl core::marker::UnsafeUnpin for alice_physics::particle::LandingEvent
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::particle::LandingEvent
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::particle::LandingEvent
 pub struct alice_physics::particle::Particle
 pub alice_physics::particle::Particle::age: alice_physics::math::Fix128
 pub alice_physics::particle::Particle::alive: bool
@@ -7029,6 +7064,7 @@ pub fn alice_physics::particle::ParticleSystem::alive_count(&self) -> usize
 pub fn alice_physics::particle::ParticleSystem::apply_force_field(&mut self, &alice_physics::force::ForceField)
 pub fn alice_physics::particle::ParticleSystem::new(usize, alice_physics::math::Vec3Fix) -> Self
 pub fn alice_physics::particle::ParticleSystem::step(&mut self, alice_physics::math::Fix128, &mut alice_physics::rng::DeterministicRng)
+pub fn alice_physics::particle::ParticleSystem::step_with_landing(&mut self, alice_physics::math::Fix128, &mut alice_physics::rng::DeterministicRng, &[alice_physics::particle::LandingTarget<'_>], alice_physics::math::Fix128, usize) -> alloc::vec::Vec<alice_physics::particle::LandingEvent>
 impl core::fmt::Debug for alice_physics::particle::ParticleSystem
 pub fn alice_physics::particle::ParticleSystem::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for alice_physics::particle::ParticleSystem
@@ -7967,6 +8003,19 @@ impl core::marker::Unpin for alice_physics::joint::JointType
 impl core::marker::UnsafeUnpin for alice_physics::joint::JointType
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::joint::JointType
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::joint::JointType
+#[non_exhaustive] pub enum alice_physics::prelude::LandingTarget<'a>
+pub alice_physics::prelude::LandingTarget::Collider(&'a alice_physics::sdf_collider::SdfCollider)
+pub alice_physics::prelude::LandingTarget::Field(&'a dyn alice_physics::sdf_collider::SdfField)
+pub alice_physics::prelude::LandingTarget::Query(&'a dyn core::ops::function::Fn(alice_physics::math::Vec3Fix) -> core::option::Option<alice_physics::math::Vec3Fix>)
+impl core::fmt::Debug for alice_physics::particle::LandingTarget<'_>
+pub fn alice_physics::particle::LandingTarget<'_>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::marker::Freeze for alice_physics::particle::LandingTarget<'a>
+impl<'a> !core::marker::Send for alice_physics::particle::LandingTarget<'a>
+impl<'a> !core::marker::Sync for alice_physics::particle::LandingTarget<'a>
+impl<'a> core::marker::Unpin for alice_physics::particle::LandingTarget<'a>
+impl<'a> core::marker::UnsafeUnpin for alice_physics::particle::LandingTarget<'a>
+impl<'a> !core::panic::unwind_safe::RefUnwindSafe for alice_physics::particle::LandingTarget<'a>
+impl<'a> !core::panic::unwind_safe::UnwindSafe for alice_physics::particle::LandingTarget<'a>
 pub enum alice_physics::prelude::MetricType
 pub alice_physics::prelude::MetricType::Counter
 pub alice_physics::prelude::MetricType::Gauge
@@ -10410,6 +10459,28 @@ impl core::marker::Unpin for alice_physics::motor::JointMotor
 impl core::marker::UnsafeUnpin for alice_physics::motor::JointMotor
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::motor::JointMotor
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::motor::JointMotor
+#[non_exhaustive] pub struct alice_physics::prelude::LandingEvent
+pub alice_physics::prelude::LandingEvent::normal: alice_physics::math::Vec3Fix
+pub alice_physics::prelude::LandingEvent::particle: usize
+pub alice_physics::prelude::LandingEvent::position: alice_physics::math::Vec3Fix
+pub alice_physics::prelude::LandingEvent::target: usize
+pub alice_physics::prelude::LandingEvent::time_in_step: alice_physics::math::Fix128
+impl core::clone::Clone for alice_physics::particle::LandingEvent
+pub fn alice_physics::particle::LandingEvent::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::particle::LandingEvent
+impl core::cmp::PartialEq for alice_physics::particle::LandingEvent
+pub fn alice_physics::particle::LandingEvent::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::particle::LandingEvent
+pub fn alice_physics::particle::LandingEvent::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::particle::LandingEvent
+impl core::marker::StructuralPartialEq for alice_physics::particle::LandingEvent
+impl core::marker::Freeze for alice_physics::particle::LandingEvent
+impl core::marker::Send for alice_physics::particle::LandingEvent
+impl core::marker::Sync for alice_physics::particle::LandingEvent
+impl core::marker::Unpin for alice_physics::particle::LandingEvent
+impl core::marker::UnsafeUnpin for alice_physics::particle::LandingEvent
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::particle::LandingEvent
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::particle::LandingEvent
 pub struct alice_physics::prelude::LaplaceNoise
 impl alice_physics::privacy::LaplaceNoise
 pub fn alice_physics::privacy::LaplaceNoise::new(f64, f64) -> Self
@@ -10878,6 +10949,7 @@ pub fn alice_physics::particle::ParticleSystem::alive_count(&self) -> usize
 pub fn alice_physics::particle::ParticleSystem::apply_force_field(&mut self, &alice_physics::force::ForceField)
 pub fn alice_physics::particle::ParticleSystem::new(usize, alice_physics::math::Vec3Fix) -> Self
 pub fn alice_physics::particle::ParticleSystem::step(&mut self, alice_physics::math::Fix128, &mut alice_physics::rng::DeterministicRng)
+pub fn alice_physics::particle::ParticleSystem::step_with_landing(&mut self, alice_physics::math::Fix128, &mut alice_physics::rng::DeterministicRng, &[alice_physics::particle::LandingTarget<'_>], alice_physics::math::Fix128, usize) -> alloc::vec::Vec<alice_physics::particle::LandingEvent>
 impl core::fmt::Debug for alice_physics::particle::ParticleSystem
 pub fn alice_physics::particle::ParticleSystem::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for alice_physics::particle::ParticleSystem
@@ -16738,6 +16810,19 @@ impl core::marker::Unpin for alice_physics::joint::JointType
 impl core::marker::UnsafeUnpin for alice_physics::joint::JointType
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::joint::JointType
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::joint::JointType
+#[non_exhaustive] pub enum alice_physics::LandingTarget<'a>
+pub alice_physics::LandingTarget::Collider(&'a alice_physics::sdf_collider::SdfCollider)
+pub alice_physics::LandingTarget::Field(&'a dyn alice_physics::sdf_collider::SdfField)
+pub alice_physics::LandingTarget::Query(&'a dyn core::ops::function::Fn(alice_physics::math::Vec3Fix) -> core::option::Option<alice_physics::math::Vec3Fix>)
+impl core::fmt::Debug for alice_physics::particle::LandingTarget<'_>
+pub fn alice_physics::particle::LandingTarget<'_>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::marker::Freeze for alice_physics::particle::LandingTarget<'a>
+impl<'a> !core::marker::Send for alice_physics::particle::LandingTarget<'a>
+impl<'a> !core::marker::Sync for alice_physics::particle::LandingTarget<'a>
+impl<'a> core::marker::Unpin for alice_physics::particle::LandingTarget<'a>
+impl<'a> core::marker::UnsafeUnpin for alice_physics::particle::LandingTarget<'a>
+impl<'a> !core::panic::unwind_safe::RefUnwindSafe for alice_physics::particle::LandingTarget<'a>
+impl<'a> !core::panic::unwind_safe::UnwindSafe for alice_physics::particle::LandingTarget<'a>
 pub enum alice_physics::MetricType
 pub alice_physics::MetricType::Counter
 pub alice_physics::MetricType::Gauge
@@ -19286,6 +19371,28 @@ impl core::marker::Unpin for alice_physics::motor::JointMotor
 impl core::marker::UnsafeUnpin for alice_physics::motor::JointMotor
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::motor::JointMotor
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::motor::JointMotor
+#[non_exhaustive] pub struct alice_physics::LandingEvent
+pub alice_physics::LandingEvent::normal: alice_physics::math::Vec3Fix
+pub alice_physics::LandingEvent::particle: usize
+pub alice_physics::LandingEvent::position: alice_physics::math::Vec3Fix
+pub alice_physics::LandingEvent::target: usize
+pub alice_physics::LandingEvent::time_in_step: alice_physics::math::Fix128
+impl core::clone::Clone for alice_physics::particle::LandingEvent
+pub fn alice_physics::particle::LandingEvent::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::particle::LandingEvent
+impl core::cmp::PartialEq for alice_physics::particle::LandingEvent
+pub fn alice_physics::particle::LandingEvent::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::particle::LandingEvent
+pub fn alice_physics::particle::LandingEvent::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::particle::LandingEvent
+impl core::marker::StructuralPartialEq for alice_physics::particle::LandingEvent
+impl core::marker::Freeze for alice_physics::particle::LandingEvent
+impl core::marker::Send for alice_physics::particle::LandingEvent
+impl core::marker::Sync for alice_physics::particle::LandingEvent
+impl core::marker::Unpin for alice_physics::particle::LandingEvent
+impl core::marker::UnsafeUnpin for alice_physics::particle::LandingEvent
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::particle::LandingEvent
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::particle::LandingEvent
 pub struct alice_physics::LaplaceNoise
 impl alice_physics::privacy::LaplaceNoise
 pub fn alice_physics::privacy::LaplaceNoise::new(f64, f64) -> Self
@@ -19754,6 +19861,7 @@ pub fn alice_physics::particle::ParticleSystem::alive_count(&self) -> usize
 pub fn alice_physics::particle::ParticleSystem::apply_force_field(&mut self, &alice_physics::force::ForceField)
 pub fn alice_physics::particle::ParticleSystem::new(usize, alice_physics::math::Vec3Fix) -> Self
 pub fn alice_physics::particle::ParticleSystem::step(&mut self, alice_physics::math::Fix128, &mut alice_physics::rng::DeterministicRng)
+pub fn alice_physics::particle::ParticleSystem::step_with_landing(&mut self, alice_physics::math::Fix128, &mut alice_physics::rng::DeterministicRng, &[alice_physics::particle::LandingTarget<'_>], alice_physics::math::Fix128, usize) -> alloc::vec::Vec<alice_physics::particle::LandingEvent>
 impl core::fmt::Debug for alice_physics::particle::ParticleSystem
 pub fn alice_physics::particle::ParticleSystem::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for alice_physics::particle::ParticleSystem
