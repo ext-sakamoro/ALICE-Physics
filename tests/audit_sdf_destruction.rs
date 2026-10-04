@@ -438,7 +438,6 @@ fn normal_is_accurate_far_from_the_origin() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S5W3-014: DestructionShape accepts a non-unit rotation and scales the local frame by |q|^2: q = (0,0,0,2) turns a radius-1 crater into radius 0.25 (point 0.5 from the centre is not carved)"]
 fn non_unit_rotation_does_not_resize_the_crater() {
     let q = QuatFix::new(Fix128::ZERO, Fix128::ZERO, Fix128::ZERO, fx(2.0));
     let mut d = DestructibleSdf::new(Box::new(deep()));
