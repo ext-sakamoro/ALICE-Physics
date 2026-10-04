@@ -188,6 +188,10 @@ lists every test by status. It includes the **known defects**: tests that are
 kept red on purpose (`#[ignore = "known defect: …"]`) until the implementation
 is fixed. Read that list before relying on a module for production numbers.
 
+[`docs/integration-status.md`](docs/integration-status.md) is generated from
+rust-analyzer's resolved references and shows, for every public item, whether
+anything outside the tests reaches it, and whether only an example does.
+
 Modules without a reference test, such as `warp_risk` and `layer_adhesion`
 (empirical fits), implement the cited equation but are not validated
 predictions. [`docs/MODULES.md`](docs/MODULES.md) marks them.

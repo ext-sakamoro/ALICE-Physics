@@ -1,0 +1,79 @@
+name: Integration Status
+
+# docs/integration-status.md: every pub item in src/ classified by what reaches it
+# (L0 unreached / L1 example-only / live), from rust-analyzer SCIP indexes with
+# resolved references. Complements docs/wiring-status.md, whose name-based guard
+# counts an example-only caller as wired and cannot tell same-named items apart.
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'src/**/*.rs'
+      - 'examples/**/*.rs'
+      - 'benches/**/*.rs'
+      - 'fuzz/**/*.rs'
+      - 'Cargo.toml'
+      - 'scripts/scip_index.sh'
+      - 'scripts/scip_reach.py'
+      - 'scripts/wiring_guard.py'
+      - 'scripts/wiring-baseline.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: status-docs-main
+  cancel-in-progress: false
+
+jobs:
+  generate-integration-status:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      # pyo3's build script (python feature) needs an interpreter; 3.11 for tomllib
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      # rust-toolchain.toml pins the toolchain; rust-analyzer comes from the same pin
+      - name: Install rust-analyzer
+        run: |
+          rustup show active-toolchain
+          rustup component add rust-analyzer
+          rust-analyzer --version
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Analysis tests
+        run: python3 scripts/test_scip_reach.py
+
+      - name: Generate and publish integration status
+        run: |
+          git config user.name "integration-bot"
+          git config user.email "noreply@github.com"
+          # Same pattern as wiring-status.yml: regenerate on the tip right before
+          # pushing, and start over when another push got in first.
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git checkout --detach --force origin/main
+            scripts/scip_index.sh
+            python3 scripts/scip_reach.py --write docs/integration-status.md
+            if git diff --quiet docs/integration-status.md; then
+              echo "docs/integration-status.md is already up to date"
+              exit 0
+            fi
+            git add docs/integration-status.md
+            git commit -m "docs: update integration status [automated]"
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            sleep $((attempt * 3))
+          done
+          echo "::error::docs/integration-status.md を main へ push できなかった (5 回): 台帳が古いまま残る"
+          exit 1

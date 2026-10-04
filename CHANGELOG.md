@@ -22,6 +22,13 @@ were introduced during that release window.
 - README の使用例は `src/lib.rs` の crate レベル doctest と同一にした (`cargo test` でコンパイル・実行される)
 - README に「Reset, observation and rollback」節 (日本語版は「探索・計画・世界モデルのための決定論的な世界」) を追加した `reset_world` / `observe_body(s)` / `serialize_state`・`deserialize_state` と population fingerprint / `overflow_detected` / `SimulationChecksum` を表にし、保存状態が剛体に限られることを明記
 
+### Added — 解決済み参照による到達台帳 (`docs/integration-status.md`)
+
+- `scripts/scip_index.sh` が rust-analyzer の SCIP 索引を 2 回作る (`wasm` 以外の全 feature と `std,wasm`、feature-gated module を落とさないため)
+- `scripts/scip_reach.py` が `src/` の pub item 2258 件を L0 (テスト以外から未到達) / L1 (example からのみ) / live に分類する 参照を定義 1 つに解決するので同名の別 item を区別し、`impl Foo {}` の見出しは参照に数えない trait 越しの呼び出しは実装へ、到達した型はそのフィールドの型へ辿る
+- 名前で数える配線 guard (`scripts/wiring_guard.py`) との差を台帳に出す guard の baseline の未配線 40 件はすべて L0 で一致し、guard が配線済とみなしていた L0 が 194 件ある (例: `SdfCharacter::move_and_slide` / `step`、`PhysicsWorld2D`、`Wedge::with_rotation`)
+- `scripts/test_scip_reach.py` (18 本、合成 SCIP で rust-analyzer 不要) を CI の test matrix (5 OS) と preflight に追加、台帳は `integration-status.yml` が main への push ごとに再生成する
+
 ### Added — README と実装の突き合わせ (`scripts/readme_sync.py`)
 
 - `scripts/readme_sync.py --check` が README.md / README_JP.md / docs/MODULES.md を Cargo.toml と src/ に突き合わせる feature 表と `[features]`、MSRV 行と `rust-version`、`alice-physics = "…"` の版指定と package version、README の使用例と lib.rs の doctest、MODULES.md と `pub mod` の一覧 (過不足・重複)、相対リンク先の実在、英日の節数
