@@ -41,7 +41,7 @@ Usage:
   python3 scripts/scip_reach.py --check-baseline     # ratchet: no new L0, no stale entry
   python3 scripts/scip_reach.py --write-baseline     # after an intended change
 Exit 1 when an index is missing, when the analysis compared nothing
-(0 items, 0 references from examples / bindings, or 0 trait-impl links), or, with --check-baseline,
+(0 items, 0 references from examples / bindings / the fuzz crate, or 0 trait-impl links), or, with --check-baseline,
 when an L0 item is not in scripts/integration-baseline.txt (a new public item
 that nothing reaches) or a baseline entry is no longer L0 (remove the line).
 """
@@ -164,11 +164,17 @@ class Analysis:
         self.level: dict[str, str] = {}            # key -> L0 / L1 / live
         self.example_refs = 0
         self.binding_refs = 0
+        self.fuzz_refs = 0        # references from the fuzz crate's index to this crate
+        self.fuzz_docs = 0
         self.impl_links = 0       # trait-impl method -> in-crate trait method
         self.external_impls = 0   # trait-impl methods of traits defined outside the crate
 
 
 IMPL_HEADER_RE = re.compile(r"\bimpl\b[^{;]*\{")
+
+# fuzz/ is a separate crate: its index is read last, and its paths get this prefix
+FUZZ_INDEX = "fuzz.scip"
+FUZZ_PREFIX = "fuzz/"
 
 # rust-analyzer names a trait-impl method `<module>/impl#[<Type>][<Trait>]<method>().`
 # The type part may itself contain brackets (`[T; 3]`), so the greedy first group
@@ -256,6 +262,7 @@ def analyze(root: Path, scip_paths: list[Path]) -> Analysis:
     implementers: dict[str, set[str]] = {}
     defined: set[str] = set()
     impl_targets: dict[str, set[str]] = {}
+    src_defined: set[str] = set()
     texts: dict[str, tuple[list[str], list[str]]] = {}
     seen: set[tuple] = set()
 
@@ -265,9 +272,16 @@ def analyze(root: Path, scip_paths: list[Path]) -> Analysis:
             texts[rel] = _keep_mask(p.read_text(encoding="utf-8", errors="replace")) if p.exists() else ([], [])
         return texts[rel]
 
+    # the fuzz index last: its references are counted against src_defined
+    scip_paths = sorted(scip_paths, key=lambda sp: Path(sp).name == FUZZ_INDEX)
     for sp in scip_paths:
+        # the fuzz crate is indexed from fuzz/, so its paths are relative to it
+        prefix = FUZZ_PREFIX if Path(sp).name == FUZZ_INDEX else ""
         for doc in load_scip(sp):
+            doc["path"] = prefix + doc["path"]
             rel = doc["path"]
+            if prefix:
+                a.fuzz_docs += 1
             for sym, target in doc["impl"]:
                 implementers.setdefault(target, set()).add(sym)
                 impl_targets.setdefault(sym, set()).add(target)
@@ -285,6 +299,8 @@ def analyze(root: Path, scip_paths: list[Path]) -> Analysis:
                     continue
                 if o["roles"] & 1:
                     defined.add(s)
+                    if is_src:
+                        src_defined.add(s)
                     enc = _span(o["enc"]) if o["enc"] else None
                     if enc is not None:
                         defs.append((enc[0], enc[1], s))
@@ -325,7 +341,10 @@ def analyze(root: Path, scip_paths: list[Path]) -> Analysis:
                     j -= 1
                 if is_root_file:
                     roots_example.add(s)
-                    a.example_refs += 1
+                    if not prefix:
+                        a.example_refs += 1  # the fuzz crate has its own guard below
+                    elif s in src_defined:
+                        a.fuzz_refs += 1  # libfuzzer-sys / arbitrary / std do not count
                 elif rel in BINDING_FILES:
                     roots_core.add(s)
                     a.binding_refs += 1
@@ -502,7 +521,7 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
     root = Path(args.root)
     sdir = Path(args.scip) if Path(args.scip).is_absolute() else root / args.scip
-    paths = [sdir / "native.scip", sdir / "wasm.scip"]
+    paths = [sdir / "native.scip", sdir / "wasm.scip", sdir / FUZZ_INDEX]
     missing = [str(p) for p in paths if not p.exists()]
     if missing:
         print(f"error: SCIP index missing: {missing} (run scripts/scip_index.sh)", file=sys.stderr)
@@ -512,14 +531,17 @@ def main(argv: list[str] | None = None) -> int:
     if not a.items:
         errors.append("0 pub items found in src/ (the analysis looked at nothing)")
     if a.example_refs == 0:
-        errors.append("0 references from examples/benches/fuzz (index or path filter is wrong)")
+        errors.append("0 references from examples/benches (index or path filter is wrong)")
     if a.binding_refs == 0:
         errors.append("0 references from binding files (feature-gated modules were not indexed)")
+    if a.fuzz_docs == 0 or a.fuzz_refs == 0:
+        errors.append(f"fuzz index: {a.fuzz_docs} documents, {a.fuzz_refs} references to the crate "
+                      "(fuzz targets would not count as callers)")
     if a.impl_links == 0:
         errors.append("0 trait-impl links resolved (calls through a trait would never reach an impl)")
     counts = {lv: sum(1 for v in a.level.values() if v == lv) for lv in ("L0", "L1", "live")}
     print(f"compared: items {len(a.items)}, example refs {a.example_refs}, binding refs {a.binding_refs}, "
-          f"trait-impl links {a.impl_links}, external-trait impls {a.external_impls}, "
+          f"fuzz refs {a.fuzz_refs}, trait-impl links {a.impl_links}, external-trait impls {a.external_impls}, "
           f"L0 {counts['L0']}, L1 {counts['L1']}, live {counts['live']}")
     for e in errors:
         print(f"error: {e}", file=sys.stderr)
