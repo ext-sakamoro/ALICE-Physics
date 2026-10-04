@@ -108,7 +108,8 @@ pub struct WheelDynamicsState {
     pub contact_normal: Vec3Fix,
     /// Suspension compression ratio (0 extended .. 1 bottomed out).
     pub compression: Fix128,
-    /// Normal load `F_z` (N), suspension + anti-roll, clamped at 0.
+    /// Normal load `F_z` (N): road-normal component of the strut force
+    /// (suspension + anti-roll), clamped at 0.
     pub normal_load: Fix128,
     /// Steering angle of this wheel (rad).
     pub steer_angle: Fix128,
@@ -156,10 +157,6 @@ pub struct Environment<'a> {
     pub wind: Option<&'a WindZone>,
     /// Simulation time (s) for gusts.
     pub time: Fix128,
-    /// Gravity of the world (`world.config.gravity`). Not read by
-    /// [`DynamicVehicle::update`]: static friction holds the contact by
-    /// position (anchor), which does not need the in-frame gravity.
-    pub gravity: Vec3Fix,
 }
 
 /// Vehicle with per-wheel dynamics.
@@ -351,6 +348,38 @@ fn tyre_force(
     }
 }
 
+/// Gauss-Seidel sweeps of the implicit lateral friction solve.
+const LATERAL_SWEEPS: usize = 8;
+
+/// One Newton step of the implicit friction impulse `λ = F(s(λ)) dt` for a
+/// tyre with slope `c = −∂F/∂(slip velocity) ≥ 0` acting on effective mass
+/// `m`: `Δλ = residual / (1 + c dt / m)`. With `m = 0` (immovable contact)
+/// the step is 0.
+fn newton_step(residual: Fix128, c: Fix128, dt: Fix128, m: Fix128) -> Fix128 {
+    if m <= Fix128::ZERO {
+        return Fix128::ZERO;
+    }
+    residual / (Fix128::ONE + c * dt / m)
+}
+
+/// Small-slip lateral slope `−∂F_y/∂tan α` (N per unit `tan α`):
+/// brush `C_α`, Magic Formula `B_y C_y μ_y,s F_z`; clamped at 0.
+fn tyre_lateral_slope(
+    model: &TireModel,
+    load: Fix128,
+    grip: crate::anisotropic_friction::AnisotropicFriction,
+) -> Fix128 {
+    let c = match model {
+        TireModel::Brush(b) => b.cornering_stiffness,
+        TireModel::MagicFormula(m) => m.b_y * m.c_y * grip.transverse_static * load,
+    };
+    if c > Fix128::ZERO {
+        c
+    } else {
+        Fix128::ZERO
+    }
+}
+
 /// `(a / ca)² + (b / cb)² ≤ 1`; a zero semi-axis admits only a zero component.
 fn within_ellipse(a: Fix128, b: Fix128, ca: Fix128, cb: Fix128) -> bool {
     let part = |v: Fix128, c: Fix128| -> Option<Fix128> {
@@ -490,21 +519,36 @@ impl DynamicVehicle {
     ///    The legacy model pushes the compressed side *down*; that sign is
     ///    harmless at the centre of mass but would be a negative roll
     ///    stiffness when applied at the contact points, so it is not copied.
-    ///    `F_z = max(0, suspension + anti-roll)`.
+    ///    The strut force `S` (suspension + anti-roll) acts along `up`; a
+    ///    ray contact can only push along the road normal `n`, so the contact
+    ///    carries `F_z = max(0, S (up·n))` and the in-plane remainder is left
+    ///    to tyre friction.
     /// 4. **Wheel frame**: heading `forward cos δ + right sin δ` projected onto
     ///    the contact plane = `x`, `y = n × x`; slip per [`tire`] conventions
     ///    with `v_floor = slip_velocity_floor`.
     /// 5. **Spin** `I ω̇ = T_drive − T_brake − F_x r`, see below.
-    /// 6. **Impulses**: `F_z up dt` at every contact point
+    /// 6. **Impulses**: `F_z n dt` at every contact point
     ///    (`apply_impulse_at`), then, wheel by wheel on the updated chassis
     ///    velocity, the friction impulse at the contact point: a held wheel
-    ///    (see "Static friction") gets its hold impulse; otherwise the tyre
-    ///    impulse `(F_x x + F_y y) dt` clamped per axis by the effective mass
-    ///    `m_d = 1/(m⁻¹ + (r×d)·I⁻¹(r×d))` so that it never reverses the slip
-    ///    it opposes (`v_x − ω r` along `x`, `v_y` along `y`). Then rolling
-    ///    resistance `C_rr F_z` against `v_x` on wheels with `ω ≠ 0`, clamped
-    ///    the same way on `v_x` (it does not act on the wheel spin). The
-    ///    stored `longitudinal_force` / `lateral_force` are the applied
+    ///    (see "Static friction") gets its hold impulse. Otherwise:
+    ///    - longitudinal: `F_x dt` (tyre force at the updated spin `ω'`),
+    ///      clamped by the effective mass `m_x = 1/(m⁻¹ + (r×x)·I⁻¹(r×x))` so
+    ///      that it never reverses the slip `v_x − ω' r` it opposes; then
+    ///      rolling resistance `C_rr F_z` against `v_x` on wheels with
+    ///      `ω' ≠ 0`, clamped the same way on `v_x` (it does not act on the
+    ///      spin). The longitudinal side stays semi-implicit through the wheel
+    ///      spin update below.
+    ///    - lateral, after all wheels' longitudinal impulses: implicit in the
+    ///      side-slip velocity, solved by projected Gauss-Seidel
+    ///      (`LATERAL_SWEEPS` = 8 sweeps over the free wheels). Per wheel and
+    ///      sweep one Newton step of `λ = F_y(tan α(λ)) dt` with
+    ///      `v_y(λ) = v_y + λ / m_y`: `Δλ = (F_y dt − λ) / (1 + c dt / (v̄ m_y))`,
+    ///      `c` = the small-slip cornering slope (brush `C_α`, Magic Formula
+    ///      `B_y C_y μ_y,s F_z`). Each wheel sees the side slip left by the
+    ///      others, so a stiff tyre at low speed neither overshoots nor loses
+    ///      force to a per-wheel clamp.
+    ///
+    ///    The stored `longitudinal_force` / `lateral_force` are the applied
     ///    friction impulses divided by `dt`.
     /// 7. **Aerodynamics** at the centre of mass: `v_rel = v − w` (`w` is the
     ///    wind of `env.wind` when its shape contains the chassis position),
@@ -664,6 +708,9 @@ impl DynamicVehicle {
             }
         }
         for (st, &f) in self.wheels.iter_mut().zip(&susp) {
+            // the strut force acts along `up`; the contact transmits its
+            // component along the road normal
+            let f = f * up.dot(st.contact_normal);
             st.normal_load = if st.grounded && f > Fix128::ZERO {
                 f
             } else {
@@ -806,10 +853,12 @@ impl DynamicVehicle {
         for i in 0..n {
             let st = self.wheels[i];
             if st.grounded && st.normal_load > Fix128::ZERO {
-                chassis.apply_impulse_at(up * (st.normal_load * dt), st.contact_point);
+                chassis
+                    .apply_impulse_at(st.contact_normal * (st.normal_load * dt), st.contact_point);
             }
         }
         let c_rr = env.condition.rolling_resistance;
+        let mut free: Vec<usize> = Vec::with_capacity(n);
         for i in 0..n {
             let s = sc[i];
             if !s.loaded {
@@ -852,12 +901,8 @@ impl DynamicVehicle {
                 if !jx.is_zero() {
                     chassis.apply_impulse_at(s.x_dir * jx, point);
                 }
-                let vc = point_velocity(chassis, s.arm);
-                let jy = clamp_friction(fy[i] * dt, vc.dot(s.y_dir), my);
-                if !jy.is_zero() {
-                    chassis.apply_impulse_at(s.y_dir * jy, point);
-                }
-                (jx, jy)
+                free.push(i);
+                (jx, Fix128::ZERO)
             };
             self.wheels[i].longitudinal_force = jx / dt;
             self.wheels[i].lateral_force = jy / dt;
@@ -878,6 +923,45 @@ impl DynamicVehicle {
                     chassis.apply_impulse_at(s.x_dir * j, point);
                 }
             }
+        }
+
+        // lateral tyre force, implicit in the side-slip velocity:
+        // projected Gauss-Seidel over the free wheels, one Newton step of
+        // `λ = F_y(v_y(λ)) dt` per wheel and sweep (`v_y(λ) = v_y + λ / m_y`)
+        let _ = fy;
+        let mut lam_y = Vec::with_capacity(n);
+        lam_y.resize(n, Fix128::ZERO);
+        for _ in 0..LATERAL_SWEEPS {
+            for &i in &free {
+                let s = sc[i];
+                let Some(grip) = s.grip else { continue };
+                let load = self.wheels[i].normal_load;
+                if load <= Fix128::ZERO {
+                    continue;
+                }
+                let point = self.wheels[i].contact_point;
+                let v_y = point_velocity(chassis, s.arm).dot(s.y_dir);
+                let tan_a = v_y / s.denom;
+                let f = tyre_force(
+                    &self.config.tire,
+                    self.wheels[i].slip_ratio,
+                    tan_a,
+                    s.v_x,
+                    load,
+                    grip,
+                );
+                let my = effective_mass(chassis, s.arm, s.y_dir);
+                let c = tyre_lateral_slope(&self.config.tire, load, grip) / s.denom;
+                let d = newton_step(f.lateral * dt - lam_y[i], c, dt, my);
+                if !d.is_zero() {
+                    lam_y[i] = lam_y[i] + d;
+                    chassis.apply_impulse_at(s.y_dir * d, point);
+                }
+                self.wheels[i].slip_tan_alpha = tan_a;
+            }
+        }
+        for &i in &free {
+            self.wheels[i].lateral_force = lam_y[i] / dt;
         }
 
         // --- 7: aerodynamics and wind -------------------------------------------
@@ -1084,7 +1168,6 @@ mod tests {
             condition: cond,
             wind: None,
             time: Fix128::ZERO,
-            gravity: Vec3Fix::new(Fix128::ZERO, Fix128::from_int(-10), Fix128::ZERO),
         }
     }
 
@@ -1286,9 +1369,10 @@ mod tests {
 
     // ---- anti-roll -----------------------------------------------------------
 
-    /// Rolled chassis, one axle pair: the more compressed wheel gains
-    /// `k_ar (c_l − c_r)` of load, the other loses it (spring `k c`, no
-    /// velocity so no damping).
+    /// Rolled chassis (roll φ), one axle pair: the more compressed wheel
+    /// gains `k_ar (c_l − c_r)` of strut force, the other loses it (spring
+    /// `k c`, no velocity so no damping); the load is the road-normal
+    /// component, `F_z = strut · cos φ`.
     #[test]
     fn anti_roll_loads_the_compressed_side() {
         let mut cfg = config();
@@ -1306,8 +1390,14 @@ mod tests {
         assert!(r.compression > Fix128::ZERO && l.compression < Fix128::ONE);
         let k = v.config.base.wheels[0].spring_stiffness;
         let f = k_ar * (l.compression - r.compression);
-        assert_eq!(l.normal_load, k * l.compression + f);
-        assert_eq!(r.normal_load, k * r.compression - f);
+        // the contact carries the road-normal component of the strut force
+        let cos = body
+            .rotation
+            .rotate_vec(Vec3Fix::UNIT_Y)
+            .dot(Vec3Fix::UNIT_Y);
+        assert!(cos < Fix128::ONE);
+        assert_eq!(l.normal_load, (k * l.compression + f) * cos);
+        assert_eq!(r.normal_load, (k * r.compression - f) * cos);
     }
 
     // ---- ABS ------------------------------------------------------------------
@@ -1700,7 +1790,6 @@ mod tests {
             condition: &cond,
             wind: None,
             time: Fix128::ZERO,
-            gravity: Vec3Fix::new(Fix128::ZERO, Fix128::from_int(-10), Fix128::ZERO),
         };
         let up_slope = rot.rotate_vec(Vec3Fix::UNIT_Z); // car forward
         let dt = dt60();
