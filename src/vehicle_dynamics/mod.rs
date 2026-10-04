@@ -156,7 +156,9 @@ pub struct Environment<'a> {
     pub wind: Option<&'a WindZone>,
     /// Simulation time (s) for gusts.
     pub time: Fix128,
-    /// Gravity of the world (`world.config.gravity`).
+    /// Gravity of the world (`world.config.gravity`). Not read by
+    /// [`DynamicVehicle::update`]: static friction holds the contact by
+    /// position (anchor), which does not need the in-frame gravity.
     pub gravity: Vec3Fix,
 }
 
@@ -1043,6 +1045,7 @@ mod tests {
             condition: cond,
             wind: None,
             time: Fix128::ZERO,
+            gravity: Vec3Fix::new(Fix128::ZERO, Fix128::from_int(-10), Fix128::ZERO),
         }
     }
 
@@ -1555,6 +1558,7 @@ mod tests {
             condition: &cond,
             wind: None,
             time: Fix128::ZERO,
+            gravity: Vec3Fix::new(Fix128::ZERO, Fix128::from_int(-10), Fix128::ZERO),
         };
         let up_slope = rot.rotate_vec(Vec3Fix::UNIT_Z); // car forward
         let dt = dt60();
