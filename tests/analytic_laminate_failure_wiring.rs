@@ -327,14 +327,14 @@ fn tsai_wu_biaxial_cross_term_matches_the_documented_closed_form_gfrp() {
 }
 
 // ============================================================================
-// Section 6: degenerate input — all-zero strengths. Every F_ij divides by
-// Fix128::ZERO, which returns ZERO per Fix128::Div's documented contract
-// (not a panic, not NaN), so every criterion silently reports "safe"
-// regardless of stress magnitude.
+// Section 6: degenerate input — all-zero strengths. A ply with zero strength
+// under non-zero load has FI -> infinity in closed form, so it is reported
+// as failed: the largest representable Fix128 for the Tsai indices and a
+// non-Safe mode for Hashin / Puck (FI marker 1 from the dispatcher). No panic.
 // ============================================================================
 
 #[test]
-fn zero_strengths_silently_report_safe_at_any_stress_magnitude() {
+fn zero_strengths_report_failed_at_any_nonzero_stress() {
     let zero_strengths = LaminateStrengths {
         xt: Fix128::ZERO,
         xc: Fix128::ZERO,
@@ -342,33 +342,37 @@ fn zero_strengths_silently_report_safe_at_any_stress_magnitude() {
         yc: Fix128::ZERO,
         s: Fix128::ZERO,
     };
-    // Large, not just nonzero: the degenerate path has no dependence on
-    // stress magnitude at all because every F_ij is already zero.
+    // Large, not just nonzero: the verdict does not depend on stress magnitude.
+    let failed = Fix128::from_raw(i64::MAX, u64::MAX);
     let loaded = stress(1.0e6, -5.0e5, 3.0e5);
 
     let tsai_wu = catch_unwind(AssertUnwindSafe(|| {
         tsai_wu_failure_index(zero_strengths, loaded)
     }))
     .expect("tsai_wu_failure_index must not panic on zero strengths");
-    assert_eq!(tsai_wu, Fix128::ZERO, "Tsai-Wu with zero strengths");
+    assert_eq!(tsai_wu, failed, "Tsai-Wu with zero strengths");
 
     let tsai_hill = catch_unwind(AssertUnwindSafe(|| {
         tsai_hill_failure_index(zero_strengths, loaded)
     }))
     .expect("tsai_hill_failure_index must not panic on zero strengths");
-    assert_eq!(tsai_hill, Fix128::ZERO, "Tsai-Hill with zero strengths");
+    assert_eq!(tsai_hill, failed, "Tsai-Hill with zero strengths");
 
     let hashin = catch_unwind(AssertUnwindSafe(|| {
         hashin_failure_mode(zero_strengths, loaded)
     }))
     .expect("hashin_failure_mode must not panic on zero strengths");
-    assert_eq!(hashin, FailureMode::Safe, "Hashin with zero strengths");
+    assert_eq!(
+        hashin,
+        FailureMode::FibreTension,
+        "Hashin with zero strengths"
+    );
 
     let puck = catch_unwind(AssertUnwindSafe(|| {
         puck_failure_mode(zero_strengths, loaded)
     }))
     .expect("puck_failure_mode must not panic on zero strengths");
-    assert_eq!(puck, FailureMode::Safe, "Puck with zero strengths");
+    assert_eq!(puck, FailureMode::FibreTension, "Puck with zero strengths");
 
     for criterion in [
         FailureCriterion::TsaiWu,
@@ -380,11 +384,11 @@ fn zero_strengths_silently_report_safe_at_any_stress_magnitude() {
             failure_index(criterion, zero_strengths, loaded)
         }))
         .expect("failure_index must not panic on zero strengths");
-        assert_eq!(
-            got,
-            Fix128::ZERO,
-            "{criterion:?} dispatcher with zero strengths"
-        );
+        let want = match criterion {
+            FailureCriterion::TsaiWu | FailureCriterion::TsaiHill => failed,
+            FailureCriterion::Hashin | FailureCriterion::Puck => Fix128::ONE,
+        };
+        assert_eq!(got, want, "{criterion:?} dispatcher with zero strengths");
     }
 }
 
