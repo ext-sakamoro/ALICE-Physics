@@ -131,9 +131,17 @@ pub fn stagnation_temp_ratio(gas: &IdealGas, mach: Fix128) -> Fix128 {
 /// `M = 1` and 34 % at `M = 2` for air (`tests/engineering_oracles_fluid.rs`).
 #[must_use]
 pub fn stagnation_pressure_ratio(gas: &IdealGas, mach: Fix128) -> Fix128 {
-    let base = stagnation_temp_ratio(gas, mach);
     let gm1 = gas.gamma - Fix128::ONE;
-    if gm1 <= Fix128::ZERO || base <= Fix128::ZERO {
+    if gm1.is_zero() {
+        // γ = 1 (isothermal limit): the general formula's exponent γ/(γ-1)
+        // diverges, but the limit itself is finite —
+        // lim_{γ→1} (1 + (γ-1)/2·M²)^(γ/(γ-1)) = exp(M²/2) — so compute that
+        // directly instead of silently returning 1.
+        let half = Fix128::from_ratio(1, 2);
+        return (half * mach * mach).exp();
+    }
+    let base = stagnation_temp_ratio(gas, mach);
+    if gm1 < Fix128::ZERO || base <= Fix128::ZERO {
         return Fix128::ONE;
     }
     base.powf_pos(gas.gamma / gm1)
@@ -236,7 +244,21 @@ pub fn riemann_invariants(
 ) -> (Fix128, Fix128) {
     let gm1 = gas.gamma - Fix128::ONE;
     if gm1.is_zero() {
-        return (velocity_m_per_s, velocity_m_per_s);
+        // γ = 1: 2a/(γ-1) diverges (isothermal limit). Returning (u, u)
+        // silently hides the divergence (J+ == J-, as if a == 0). Saturate
+        // to the representable extremes instead — any finite velocity is
+        // negligible against the diverging term, so J+ -> +max, J- -> -max
+        // (sign flips with the sign of the sound speed).
+        if sound_speed_m_per_s.is_zero() {
+            return (velocity_m_per_s, velocity_m_per_s);
+        }
+        let max = Fix128::from_raw(i64::MAX, u64::MAX);
+        let min = Fix128::from_raw(i64::MIN, 0);
+        return if sound_speed_m_per_s.is_negative() {
+            (min, max)
+        } else {
+            (max, min)
+        };
     }
     let two_a_over_gm1 = Fix128::from_int(2) * sound_speed_m_per_s / gm1;
     (
