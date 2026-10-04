@@ -172,6 +172,15 @@ were introduced during that release window.
 - **Behavior change:** `linear_elastic_fem` の solve は、形状関数の勾配 × 弾性率が `Fix128` の範囲を超える極端に細い要素を、誤った `UnderConstrained` ではなく `FemError::DegenerateElement` として報告する (AUD-A-S1W3-004)
 - **Behavior change:** `RandomizedResponse::new(epsilon)` は要求した ε の privacy loss を持つ (真実を答える確率は `1 - 2/(e^ε + 1)`、従来の `e^ε/(1 + e^ε)` より弱かった)、`with_probability` は [0, 1] の任意の確率を受け付け、`PrivacyBudget::try_spend` は負または NaN の ε を拒否し、`XorShift64::from_entropy` は時計だけを seed にしない (AUD-A-S4W3-020 / AUD-A-S4W3-021 / AUD-A-S4W3-022 / AUD-A-S4W3-029)
 - `step` (XPBD、`Broadphase::Bvh`) は休止中で静止し joint / distance 拘束に参照されない body を、積分・速度導出・static / SDF collider 解決・force field・damping・sleep 判定から外し、broad-phase は起きている body だけで BVH を組んで休止中の body は永続 tree から query する 結果は従来と bit 一致 (休止 99 % の 100k body で 1 step 1.15 s → 10.8 ms、arm64 / 10 コア) 休止中の body 1 個あたり step ごとに約 30 ns の検査が残る
+- **Behavior change:** `evaluate_failure` の `FailureReport::reserve_factor` が、破壊に至る真の荷重係数になる (`FailureCriterion::Hill` は `1/sqrt(f)`、`FailureCriterion::TsaiWu` は `a R^2 + b R - 1 = 0` の正の根、従来は `1/index`) (AUD-A-S1W6-003 / AUD-A-S1W6-004)
+- **Behavior change:** `speculative_contact` が返す `Contact::normal` は B から A への向きになる (crate 全体の規約に揃える) `CachedContactPoint::normal` と `ContactManifold::normal` の doc も B → A とした (AUD-A-S2W2-008 / AUD-A-S1W5-014)
+- **Behavior change:** `solve_extra_joints` は `ExtraJoint::Gear` と `ExtraJoint::RackAndPinion` を符号付きの角度で拘束し、gear の補正は `angle_a + ratio*angle_b` を減らす向きになる (従来は増やしていた) (AUD-A-S3W1-014 / AUD-A-S3W1-015 / AUD-A-S34-011)
+- **Behavior change:** `PdController3D::compute_torque` と `solve_extra_joints` の weld は、`q` と `-q` で同じ補正を最短弧に沿って与える (AUD-A-S3W1-012 / AUD-A-S5W2-003)
+- **Behavior change:** `solve_extra_joints` は `ExtraJoint::Mouse` の body を `F*dt^2*inv_mass` だけ動かす (従来は `F*dt*inv_mass`) (AUD-A-S3W1-016)
+- **Behavior change:** `sphere_cast` と `CharacterController::move_and_slide` は、body の内側から始まる cast を初期の重なりとして扱う (深くなる向きは `t = 0` で外向き法線の hit、出る向きは hit なし、従来は遠い側の出口を返していた) (AUD-A-S3W3-007 / AUD-A-S3W3-013)
+- **Behavior change:** `SdfForceType::SdfVortex` と `SdfForceType::SurfaceFlow` は、軸または流れの向きが SDF の法線に `sin θ ≤ 1e-4` まで平行な場合に力ゼロを返す (従来は丸め誤差の向きに全強度の力を出していた) (AUD-A-S4W1-010 / AUD-A-S4W1-011)
+- **Behavior change:** `PhysicsTelemetry::record_collision_pair` と `MetricEvent::unique` を処理する `MetricSlot::process` は、`HyperLogLog::insert_hash` の前に splitmix64 で鍵を混ぜる 異なる 4950 対の推定が約 100 から約 4950 になる (AUD-A-S5W1-006 / AUD-A-S5W3-017)
+- **Behavior change:** `ModifiedSdf::normal` / `SingleModifiedSdf::normal` / `DestructibleSdf::normal` は、座標の大きさが 10 を超える所で差分の幅を座標の大きさに比例させる (AUD-A-S5W3-008 / AUD-A-S5W3-013)
 
 ### Deprecated
 
