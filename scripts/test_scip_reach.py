@@ -102,7 +102,9 @@ def levels(docs: list[Doc]) -> dict[str, str]:
 LIB = """pub fn used() {}
 pub fn unused() {}
 pub fn helper() {}
-pub fn via_binding() { helper(); }"""
+pub fn via_binding() { helper(); }
+trait Tr { fn run(&self); }
+impl Tr for X { fn run(&self) {} }"""
 
 
 def lib_doc() -> Doc:
@@ -111,7 +113,11 @@ def lib_doc() -> Doc:
             .define("unused().", 1, "unused")
             .define("helper().", 2, "helper")
             .define("via_binding().", 3, "via_binding")
-            .ref("helper().", 3, "helper"))
+            .ref("helper().", 3, "helper")
+            # a private trait and its impl: no pub item, one trait-impl link (the
+            # Main guards need one), so the levels above are unchanged
+            .define("Tr#run().", 4, "run")
+            .define("impl#[X][Tr]run().", 5, "run"))
 
 
 class Levels(unittest.TestCase):
@@ -183,9 +189,119 @@ class Levels(unittest.TestCase):
             return d.implements("m/impl#[X][Tr]run().", "m/Tr#run().") if with_relationship else d
 
         ex = Doc("examples/e.rs", "fn main() { go(&x); }").ref("m/go().", 0, "go")
-        # go -> Tr::run -> (is_implementation) X::run -> inner
+        # go -> Tr::run -> X::run -> inner, through the SCIP relationship when present
         self.assertEqual(levels([src(True), ex])["src/m.rs::inner"], "L1")
-        self.assertEqual(levels([src(False), ex])["src/m.rs::inner"], "L0")
+        # and from the impl symbol name alone: rust-analyzer emits no relationships,
+        # so this is the case that occurs in practice
+        self.assertEqual(levels([src(False), ex])["src/m.rs::inner"], "L1")
+
+    def test_impl_link_needs_the_same_trait_and_method(self):
+        text = ("pub trait Tr { fn run(&self); }\npub fn inner() {}\n"
+                "impl Other for X { fn run(&self) { inner(); } }\npub fn go(t: &dyn Tr) { t.run(); }\n"
+                "impl Tr for Y { fn stop(&self) { inner(); } }")
+        src = (Doc("src/m.rs", text)
+               .define("m/Tr#run().", 0, "run")
+               .define("m/Other#run().", 0, "Tr")       # an in-crate trait of another name
+               .define("m/inner().", 1, "inner")
+               .define("m/impl#[X][Other]run().", 2, "run")
+               .ref("m/inner().", 2, "inner")
+               .define("m/go().", 3, "go")
+               .ref("m/Tr#run().", 3, "run")
+               .define("m/impl#[Y][Tr]stop().", 4, "stop")
+               .ref("m/inner().", 4, "inner"))
+        ex = Doc("examples/e.rs", "fn main() { go(&x); }").ref("m/go().", 0, "go")
+        # Other::run and Tr::stop are not Tr::run: reaching Tr::run reaches neither
+        self.assertEqual(levels([src, ex])["src/m.rs::inner"], "L0")
+
+    def test_trait_name_with_path_and_generics_is_matched(self):
+        text = ("pub trait Conv<T> { fn conv(&self); }\npub fn inner() {}\n"
+                "impl Conv<u8> for X { fn conv(&self) { inner(); } }\npub fn go(t: &dyn Conv<u8>) { t.conv(); }")
+        src = (Doc("src/m.rs", text)
+               .define("m/Conv#conv().", 0, "conv")
+               .define("m/inner().", 1, "inner")
+               .define("m/impl#[X][`crate::m::Conv<u8>`]conv().", 2, "conv")
+               .ref("m/inner().", 2, "inner")
+               .define("m/go().", 3, "go")
+               .ref("m/Conv#conv().", 3, "conv"))
+        ex = Doc("examples/e.rs", "fn main() { go(&x); }").ref("m/go().", 0, "go")
+        self.assertEqual(levels([src, ex])["src/m.rs::inner"], "L1")
+
+    def test_impl_of_external_trait_is_a_root_without_a_relationship(self):
+        text = "pub fn helper() {}\npub struct X;\nimpl Drop for X {\n    fn drop(&mut self) { helper(); }\n}"
+        src = (Doc("src/m.rs", text)
+               .define("m/helper().", 0, "helper")
+               .define("m/impl#[X][Drop]drop().", 3, "drop", 3)
+               .ref("m/helper().", 3, "helper"))
+        self.assertEqual(levels([src])["src/m.rs::helper"], "live")
+
+    def test_impl_of_a_type_nothing_reaches_is_not_reached(self):
+        # rapid type analysis: reaching Tr::run reaches Y::run (Y is used) but not
+        # X::run (no value of X exists), so only what Y::run calls is reached
+        text = ("pub trait Tr { fn run(&self); }\npub fn via_x() {}\npub fn via_y() {}\n"
+                "pub struct X;\npub struct Y;\n"
+                "impl Tr for X { fn run(&self) { via_x(); } }\nimpl Tr for Y { fn run(&self) { via_y(); } }\n"
+                "pub fn go() { let y = Y; y.run(); }")
+        src = (Doc("src/m.rs", text)
+               .define("m/Tr#run().", 0, "run")
+               .define("m/via_x().", 1, "via_x")
+               .define("m/via_y().", 2, "via_y")
+               .define("m/X#", 3, "X")
+               .define("m/Y#", 4, "Y")
+               .define("m/impl#[X][Tr]run().", 5, "run")
+               .ref("m/via_x().", 5, "via_x")
+               .define("m/impl#[Y][Tr]run().", 6, "run")
+               .ref("m/via_y().", 6, "via_y")
+               .define("m/go().", 7, "go")
+               .ref("m/Y#", 7, "Y")
+               .ref("m/Tr#run().", 7, "run"))
+        ex = Doc("examples/e.rs", "fn main() { go(); }").ref("m/go().", 0, "go")
+        lv = levels([src, ex])
+        self.assertEqual(lv["src/m.rs::via_y"], "L1")
+        self.assertEqual(lv["src/m.rs::via_x"], "L0")
+
+    def test_type_built_only_through_its_constructor_is_reached(self):
+        # `Y::new()` is the only use of Y: the call names `impl#[Y]new().`, not `Y#`
+        text = ("pub trait Tr { fn run(&self); }\npub fn via_y() {}\npub struct Y;\n"
+                "impl Y { pub fn new() -> Y { Y } }\nimpl Tr for Y { fn run(&self) { via_y(); } }\n"
+                "pub fn go(t: &dyn Tr) { t.run(); }\npub fn make() { go(&Y::new()); }")
+        src = (Doc("src/m.rs", text)
+               .define("m/Tr#run().", 0, "run")
+               .define("m/via_y().", 1, "via_y")
+               .define("m/Y#", 2, "Y")
+               .define("m/impl#[Y]new().", 3, "new")
+               .define("m/impl#[Y][Tr]run().", 4, "run")
+               .ref("m/via_y().", 4, "via_y")
+               .define("m/go().", 5, "go")
+               .ref("m/Tr#run().", 5, "run")
+               .define("m/make().", 6, "make")
+               .ref("m/go().", 6, "go")
+               .ref("m/impl#[Y]new().", 6, "new"))
+        ex = Doc("examples/e.rs", "fn main() { make(); }").ref("m/make().", 0, "make")
+        self.assertEqual(levels([src, ex])["src/m.rs::via_y"], "L1")
+
+    def test_external_trait_impl_waits_for_its_type(self):
+        # `impl Drop for X` runs only if an X exists: unreached X -> not a root
+        text = "pub fn helper() {}\npub struct X;\nimpl Drop for X {\n    fn drop(&mut self) { helper(); }\n}\npub fn make() { let _x = X; }"
+
+        def src(made_by_example: bool) -> list[Doc]:
+            d = (Doc("src/m.rs", text)
+                 .define("m/helper().", 0, "helper")
+                 .define("m/X#", 1, "X")
+                 .define("m/impl#[X][Drop]drop().", 3, "drop", 3)
+                 .ref("m/helper().", 3, "helper")
+                 .define("m/make().", 5, "make")
+                 .ref("m/X#", 5, "X"))
+            ex = Doc("examples/e.rs", "fn main() { make(); }").ref("m/make().", 0, "make")
+            return [d, ex] if made_by_example else [d]
+        self.assertEqual(levels(src(False))["src/m.rs::helper"], "L0")
+        self.assertEqual(levels(src(True))["src/m.rs::helper"], "L1")
+
+    def test_trait_name_helper(self):
+        self.assertEqual(sr._trait_name("TgsHooks"), "TgsHooks")
+        self.assertEqual(sr._trait_name("`From<crate::solver_tgs::ImpulseCacheStats>`"), "From")
+        self.assertEqual(sr._trait_name("`core::ops::Add<Self>`"), "Add")
+        m = sr.IMPL_METHOD_RE.search(P + "m/impl#[`[Fix128; 3]`][`Add<Self>`]add().")
+        self.assertEqual((m.group(2), m.group(3)), ("`Add<Self>`", "add"))
 
     def test_impl_of_external_trait_is_a_root(self):
         text = "pub fn helper() {}\npub struct X;\nimpl Drop for X {\n    fn drop(&mut self) { helper(); }\n}"
@@ -233,6 +349,14 @@ class Main(unittest.TestCase):
 
     def test_no_items_fails(self):
         self.assertEqual(sr.main(["--root", str(build([self.EX(), self.FFI()]))]), 1)
+
+    def test_no_trait_impl_link_fails(self):
+        bare = (Doc("src/lib.rs", "pub fn used() {}").define("used().", 0, "used"))
+        self.assertEqual(sr.main(["--root", str(build([bare, self.EX(), self.FFI()]))]), 1)
+        # the same crate with one link passes, so the guard is the only difference
+        linked = (Doc("src/lib.rs", "pub fn used() {}\ntrait Tr { fn run(&self); }\nimpl Tr for X { fn run(&self) {} }")
+                  .define("used().", 0, "used").define("Tr#run().", 1, "run").define("impl#[X][Tr]run().", 2, "run"))
+        self.assertEqual(sr.main(["--root", str(build([linked, self.EX(), self.FFI()]))]), 0)
 
     def test_writes_ledger_and_compares_with_baseline(self):
         ex = Doc("examples/demo.rs", "fn main() { used(); }").ref("used().", 0, "used")

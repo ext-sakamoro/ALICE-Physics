@@ -19,8 +19,14 @@ Roots without examples: the binding files (src/ffi.rs, src/python.rs,
 src/wasm.rs), module-level code that is not a `use` statement, and trait-impl
 methods of traits defined outside the crate (Display, Default, Drop, ... are
 called implicitly). A trait method that is reached also reaches every impl of
-it in the crate (SCIP `is_implementation` relationships), so calls through
-`dyn Trait` are followed.
+it in the crate, so calls through `dyn Trait` and generic bounds are followed.
+
+The trait-impl links come from the impl symbol names (`impl#[X][Tr]run().`
+implements `Tr#run().`), because rust-analyzer's SCIP output carries no
+`is_implementation` relationships (measured with rust-analyzer 1.98.1: 0
+relationships of any kind in 88580 symbol infos). Relationships are still read
+when present. Until 2026-10-04 they were the only source, so no impl body was
+ever reached and their callees were reported as L0.
 
 References inside comments, strings, `#[cfg(test)]` code and `use` statements
 are dropped with the same preprocessing wiring_guard.py uses, so the two
@@ -35,7 +41,7 @@ Usage:
   python3 scripts/scip_reach.py --check-baseline     # ratchet: no new L0, no stale entry
   python3 scripts/scip_reach.py --write-baseline     # after an intended change
 Exit 1 when an index is missing, when the analysis compared nothing
-(0 items, or 0 references from examples / bindings), or, with --check-baseline,
+(0 items, 0 references from examples / bindings, or 0 trait-impl links), or, with --check-baseline,
 when an L0 item is not in scripts/integration-baseline.txt (a new public item
 that nothing reaches) or a baseline entry is no longer L0 (remove the line).
 """
@@ -158,9 +164,70 @@ class Analysis:
         self.level: dict[str, str] = {}            # key -> L0 / L1 / live
         self.example_refs = 0
         self.binding_refs = 0
+        self.impl_links = 0       # trait-impl method -> in-crate trait method
+        self.external_impls = 0   # trait-impl methods of traits defined outside the crate
 
 
 IMPL_HEADER_RE = re.compile(r"\bimpl\b[^{;]*\{")
+
+# rust-analyzer names a trait-impl method `<module>/impl#[<Type>][<Trait>]<method>().`
+# The type part may itself contain brackets (`[T; 3]`), so the greedy first group
+# backs off to the last `][` before the method. The trait part is bare (`TgsHooks`)
+# or backticked with generics and a path (`` `From<crate::x::Y>` ``).
+IMPL_METHOD_RE = re.compile(r"impl#\[(.*)\]\[([^\[\]]+)\]([A-Za-z_][A-Za-z0-9_]*)\(\)\.$")
+# a type (struct / enum / union / trait) definition: `<module>/<Name>#`
+TYPE_DEF_RE = re.compile(r"(?:^|[/ ])([A-Za-z_][A-Za-z0-9_]*)#$")
+# a symbol that names a type: the type itself or one of its fields / variants
+TYPE_OR_MEMBER_RE = re.compile(r"(?:^|[/ ])([A-Za-z_][A-Za-z0-9_]*)#(?:[A-Za-z_][A-Za-z0-9_]*\.)?$")
+# a method of an inherent or trait impl: `impl#[<Type>]m().` / `impl#[<Type>][<Trait>]m().`
+INHERENT_OR_IMPL_RE = re.compile(r"impl#\[([^\]]*(?:\[[^\]]*\][^\]]*)*)\]")
+# a method defined inside a trait or type body: `<module>/<Name>#<method>().`, or
+# `<Name>#<method>().` right after the package version for an item at the crate root
+MEMBER_METHOD_RE = re.compile(r"(?:^|[/ ])([A-Za-z_][A-Za-z0-9_]*)#([A-Za-z_][A-Za-z0-9_]*)\(\)\.$")
+
+
+def _trait_name(raw: str) -> str:
+    """`TgsHooks` / `` `From<crate::a::B>` `` / `` `core::ops::Add<Self>` `` -> bare trait name."""
+    name = raw.strip("`").split("<", 1)[0]
+    return name.rsplit("::", 1)[-1]
+
+
+def link_trait_impls(defined: set[str]) -> tuple[dict[str, set[str]], set[str]]:
+    """Trait-impl methods recovered from symbol names.
+
+    rust-analyzer's SCIP output carries no `is_implementation` relationships
+    (rust-analyzer 1.98.1 emits none of any kind), so a call through a trait never
+    reached the impl bodies. The impl symbol names its trait, so the link is rebuilt
+    here: `impl#[X][Tr]run().` implements every in-crate `.../Tr#run().`. Returns
+    (trait method -> impl methods, impl methods of traits not defined in the crate).
+
+    Matching is by trait *name*: two in-crate traits with the same name and method
+    would both receive the impl, which can only make more items reached (never fewer).
+    A trait counts as external only when no in-crate symbol carries its name, so an
+    impl of an in-crate trait never becomes a root by a missed match.
+    """
+    members: dict[tuple[str, str], set[str]] = {}
+    impls: list[tuple[str, str, str]] = []
+    for s in defined:
+        m = IMPL_METHOD_RE.search(s)
+        if m:
+            impls.append((s, _trait_name(m.group(2)), m.group(3)))
+            continue
+        m = MEMBER_METHOD_RE.search(s)
+        if m and not m.group(1).startswith("impl"):
+            members.setdefault((m.group(1), m.group(2)), set()).add(s)
+    in_crate = {name for name, _ in members}
+    linked: dict[str, set[str]] = {}
+    external: set[str] = set()
+    for sym, trait, method in impls:
+        targets = members.get((trait, method))
+        if targets:
+            for t in targets:
+                linked.setdefault(t, set()).add(sym)
+        elif trait not in in_crate:
+            external.add(sym)
+        # an in-crate trait without that method links nowhere and is no root
+    return linked, external
 
 
 def _keep_mask(text: str) -> tuple[list[str], list[str]]:
@@ -267,25 +334,72 @@ def analyze(root: Path, scip_paths: list[Path]) -> Analysis:
                 else:
                     edges.setdefault(ctx, set()).add(s)
 
-    # trait-impl methods of traits defined outside the crate are called implicitly
-    for sym, targets in impl_targets.items():
-        if any(t not in defined for t in targets):
-            roots_core.add(sym)
+    # Trait impls. An impl method runs only when (1) the trait method it implements
+    # is reached, or the trait is defined outside the crate (Display, Default, Drop,
+    # ... are called implicitly), and (2) a value of its self type exists, which is
+    # approximated as "the type, or any member of it, is reached" (rapid type
+    # analysis). Without (2) a reached trait method would reach every impl in the
+    # crate, including impls of types nothing constructs, and every external-trait
+    # impl would be a root (measured: 6 superseded TGS hook types and 2 unused
+    # physics2d types became reached that way).
+    external: set[str] = {s for s, ts in impl_targets.items() if any(t not in defined for t in ts)}
+    a.impl_links = sum(len(v) for v in implementers.values())
+    linked, ext_by_name = link_trait_impls(defined)
+    for trait_method, impl_methods in linked.items():
+        implementers.setdefault(trait_method, set()).update(impl_methods)
+        a.impl_links += len(impl_methods)
+    external |= ext_by_name
+    a.external_impls = len(external)
+    type_defs: dict[str, list[str]] = {}
+    for d in defined:
+        m = TYPE_DEF_RE.search(d)
+        if m:
+            type_defs.setdefault(m.group(1), []).append(d)
+
+    def self_type(impl_sym: str) -> str | None:
+        """Name of an impl method's self type, or None when it is not a crate type
+        (`impl Tr for f32`, `impl Tr for Vec<T>`): values of those always exist."""
+        m = IMPL_METHOD_RE.search(impl_sym)
+        name = _trait_name(m.group(1)) if m else ""
+        return name if name in type_defs else None
+
+    def type_of(sym: str) -> str | None:
+        """The crate type a live symbol shows to exist: `X#` (named), `X#field.`
+        (accessed), `impl#[X]new().` / `impl#[X][Tr]m().` (called)."""
+        m = INHERENT_OR_IMPL_RE.search(sym)
+        if m:
+            return _trait_name(m.group(1))
+        m = TYPE_OR_MEMBER_RE.search(sym)
+        return m.group(1) if m else None
 
     def reach(start: set[str]) -> set[str]:
         live = set(start)
         stack = list(start)
-        while stack:
-            s = stack.pop()
-            for t in edges.get(s, ()):
-                if t not in live:
+        pending = set(external)  # waiting for their self type
+        while True:
+            while stack:
+                s = stack.pop()
+                for t in edges.get(s, ()):
+                    if t not in live:
+                        live.add(t)
+                        stack.append(t)
+                for t in implementers.get(s, ()):
+                    if t not in live:
+                        pending.add(t)
+            reached_types = {ty for ty in map(type_of, live) if ty}
+            ready = set()
+            for t in pending:
+                if t in live:
+                    ready.add(t)
+                    continue
+                ty = self_type(t)
+                if ty is None or ty in reached_types:
+                    ready.add(t)
                     live.add(t)
                     stack.append(t)
-            for t in implementers.get(s, ()):
-                if t not in live:
-                    live.add(t)
-                    stack.append(t)
-        return live
+            pending -= ready
+            if not stack:
+                return live
 
     live_core = reach(roots_core)
     live_all = reach(roots_core | roots_example)
@@ -401,8 +515,11 @@ def main(argv: list[str] | None = None) -> int:
         errors.append("0 references from examples/benches/fuzz (index or path filter is wrong)")
     if a.binding_refs == 0:
         errors.append("0 references from binding files (feature-gated modules were not indexed)")
+    if a.impl_links == 0:
+        errors.append("0 trait-impl links resolved (calls through a trait would never reach an impl)")
     counts = {lv: sum(1 for v in a.level.values() if v == lv) for lv in ("L0", "L1", "live")}
     print(f"compared: items {len(a.items)}, example refs {a.example_refs}, binding refs {a.binding_refs}, "
+          f"trait-impl links {a.impl_links}, external-trait impls {a.external_impls}, "
           f"L0 {counts['L0']}, L1 {counts['L1']}, live {counts['live']}")
     for e in errors:
         print(f"error: {e}", file=sys.stderr)
