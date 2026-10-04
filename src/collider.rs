@@ -85,7 +85,8 @@ impl Sphere {
 impl Support for Sphere {
     #[inline(always)]
     fn support(&self, direction: Vec3Fix) -> Vec3Fix {
-        let dir_norm = direction.normalize();
+        // a tiny direction would normalize to zero (AUD-A-S3W3-018)
+        let dir_norm = direction.rescaled_direction().normalize();
         self.center + dir_norm * self.radius
     }
 }
@@ -276,6 +277,7 @@ impl Capsule {
 impl Support for Capsule {
     #[inline(always)]
     fn support(&self, direction: Vec3Fix) -> Vec3Fix {
+        let direction = direction.rescaled_direction();
         let da = self.a.dot(direction);
         let db = self.b.dot(direction);
         let base = if da > db { self.a } else { self.b };

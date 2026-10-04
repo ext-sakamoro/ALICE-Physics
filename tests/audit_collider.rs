@@ -625,7 +625,6 @@ fn scaled_shape_with_negative_scale_is_still_a_support_function() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S3W3-018: Sphere::support and Capsule::support use Vec3Fix::normalize, which returns zero for |d| < 2.3e-10, so a tiny direction yields the centre / segment point instead of centre + r d/|d| (sphere support for (1e-11,0,0): (0,0,0), want (1,0,0)); violates the Support trait contract"]
 fn sphere_and_capsule_support_handle_a_tiny_direction() {
     // The trait takes any non-zero direction. A direction of 1e-11 is far
     // below 2.3e-10 where `normalize` returns zero, so the support collapses

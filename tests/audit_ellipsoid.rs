@@ -364,7 +364,6 @@ fn support_of_a_zero_direction_is_a_surface_point() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S5W2-007: a small but valid support direction underflows to zero in length(); direction (0, 1e-11, 0) on radii (1,2,3) returns the degenerate +X point (1,0,0) instead of the +Y pole (0,2,0)"]
 fn support_of_a_tiny_direction_is_still_the_extreme_point() {
     let e = Ellipsoid::new(Vec3Fix::ZERO, v3(1.0, 2.0, 3.0));
     let p = arr(e.support(v3(0.0, 1e-11, 0.0)));

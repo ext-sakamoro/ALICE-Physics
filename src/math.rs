@@ -1180,6 +1180,38 @@ impl Vec3Fix {
         self.length_squared().sqrt()
     }
 
+    /// The same direction with its largest component brought into `[2^-24, 2^24]`,
+    /// for functions that use only the direction of their argument (shape
+    /// support mappings).
+    ///
+    /// # Claims
+    /// - a direction whose largest component is already in `[2^-24, 2^24]`, or
+    ///   the zero vector, is returned unchanged (bit for bit)
+    /// - otherwise every component is shifted by the same number of bits so the
+    ///   largest lies in `[1, 2)`: an exact power-of-two scaling, so the direction
+    ///   is unchanged and squares of the components neither underflow below
+    ///   `2^-64` (`|d| < ~2.3e-10`) nor overflow the integer range (`|d| > ~3e9`)
+    ///   (AUD-A-S3W3-018, AUD-A-S4W3-001, AUD-A-S5W2-007, AUD-A-S5W3-002,
+    ///   AUD-A-S4W3-002, AUD-A-S5W3-003, AUD-A-S6W1-007)
+    #[must_use]
+    pub(crate) fn rescaled_direction(self) -> Self {
+        let raw = |f: Fix128| ((f.hi as i128) << 64) | (f.lo as i128);
+        let back = |r: i128| Fix128::from_raw((r >> 64) as i64, r as u64);
+        let (x, y, z) = (raw(self.x), raw(self.y), raw(self.z));
+        let m = x.unsigned_abs().max(y.unsigned_abs()).max(z.unsigned_abs());
+        if m == 0 {
+            return self;
+        }
+        // bit 64 is 1.0; keep [2^-24, 2^24] = bits 40..=88 untouched
+        let msb = 127 - m.leading_zeros() as i32;
+        if (40..=88).contains(&msb) {
+            return self;
+        }
+        let shift = 64 - msb;
+        let scale = |r: i128| if shift > 0 { r << shift } else { r >> (-shift) };
+        Vec3Fix::new(back(scale(x)), back(scale(y)), back(scale(z)))
+    }
+
     /// Normalize to unit length.
     ///
     /// Returns `Self::ZERO` for zero-length vectors. Use [`Self::try_normalize`]
@@ -2102,6 +2134,53 @@ impl core::ops::Mul<Self> for Mat3Fix {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `rescaled_direction`: untouched inside `[2^-24, 2^24]`, an exact
+    /// power-of-two scaling to a largest component in `[1, 2)` outside it.
+    #[test]
+    fn rescaled_direction_keeps_the_window_and_scales_exactly_outside_it() {
+        let v = |x: i64, y: i64, z: i64| {
+            Vec3Fix::new(
+                Fix128::from_int(x),
+                Fix128::from_int(y),
+                Fix128::from_int(z),
+            )
+        };
+        // inside the window: bit for bit the same, at both ends and in between
+        for d in [
+            v(3, -4, 5),
+            Vec3Fix::new(Fix128::from_raw(0, 1 << 40), Fix128::ZERO, Fix128::ZERO), // 2^-24
+            Vec3Fix::new(Fix128::from_raw(1 << 24, 0), Fix128::ZERO, Fix128::ZERO), // 2^24
+            Vec3Fix::new(Fix128::from_ratio(1, 1_000_000), Fix128::ZERO, Fix128::ZERO),
+        ] {
+            assert_eq!(d.rescaled_direction(), d);
+        }
+        assert_eq!(Vec3Fix::ZERO.rescaled_direction(), Vec3Fix::ZERO);
+        // tiny: (3, -4, 1) * 2^-40 -> (3, -4, 1) / 4, exact (largest 1.0 in [1, 2))
+        let tiny = Vec3Fix::new(
+            Fix128::from_raw(0, 3 << 24),
+            -Fix128::from_raw(0, 4 << 24),
+            Fix128::from_raw(0, 1 << 24),
+        );
+        assert_eq!(
+            tiny.rescaled_direction(),
+            Vec3Fix::new(
+                Fix128::from_ratio(3, 4),
+                -Fix128::ONE,
+                Fix128::from_ratio(1, 4)
+            )
+        );
+        // huge: (2^40, 2^39, 0) -> (1, 1/2, 0), exact
+        let huge = Vec3Fix::new(
+            Fix128::from_raw(1 << 40, 0),
+            Fix128::from_raw(1 << 39, 0),
+            Fix128::ZERO,
+        );
+        assert_eq!(
+            huge.rescaled_direction(),
+            Vec3Fix::new(Fix128::ONE, Fix128::from_ratio(1, 2), Fix128::ZERO)
+        );
+    }
 
     #[test]
     #[allow(clippy::disallowed_methods)] // f64::powf is the oracle
