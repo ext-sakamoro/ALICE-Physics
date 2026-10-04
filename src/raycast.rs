@@ -113,6 +113,48 @@ pub fn ray_sphere(ray: &Ray, sphere: &Sphere, max_t: Fix128) -> Option<RayHit> {
     None
 }
 
+/// Swept-sphere contact against a (Minkowski-expanded) sphere.
+///
+/// Same closed form as [`ray_sphere`] for an origin outside the sphere (the
+/// near root is the first contact). When the origin already lies inside or on
+/// the sphere the cast starts in an initial overlap, and the far root (the
+/// exit point) is never reported as a contact:
+///
+/// - moving deeper (`oc . d < 0`): a contact at `t = 0` at the origin, with
+///   the normal pointing from the sphere centre to the origin (`-d` when the
+///   origin is the centre), so the normal opposes the cast direction;
+/// - moving outward or tangentially (`oc . d >= 0`): no contact, the cast is
+///   leaving the overlap.
+///
+/// Shared by [`crate::query::sphere_cast`] and the character controller so
+/// both resolve the initial-overlap case the same way.
+#[inline]
+#[must_use]
+pub(crate) fn sweep_ray_sphere(ray: &Ray, sphere: &Sphere, max_t: Fix128) -> Option<RayHit> {
+    let oc = ray.origin - sphere.center;
+    let c = oc.dot(oc) - sphere.radius * sphere.radius;
+    if c > Fix128::ZERO {
+        // Outside: c > 0 means both roots share a sign, so ray_sphere can
+        // only return the near root here.
+        return ray_sphere(ray, sphere, max_t);
+    }
+    let b = oc.dot(ray.direction);
+    if b >= Fix128::ZERO {
+        return None;
+    }
+    let normal = if oc.length_squared().is_zero() {
+        -ray.direction
+    } else {
+        oc.normalize()
+    };
+    Some(RayHit {
+        t: Fix128::ZERO,
+        point: ray.origin,
+        normal,
+        body_index: 0,
+    })
+}
+
 /// Ray-AABB intersection (slab method)
 ///
 /// Returns (`t_min`, `t_max`) interval or None if no hit.

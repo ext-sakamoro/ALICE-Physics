@@ -172,7 +172,6 @@ fn sphere_cast_behind_the_origin_is_not_a_hit() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S3W3-013: sphere_cast from an origin already inside the inflated body sphere returns the far (exit) intersection t = 1.0 with normal +x pointing along the cast (ray_sphere far-hit fallback) instead of an initial-overlap report; also what makes character move_and_slide stick (AUD-A-S3W3-007)"]
 fn sphere_cast_from_inside_reports_a_surface_facing_the_ray() {
     // Origin 0.5 from the body centre, combined radius 1.5: the cast sphere
     // already overlaps. A first-contact report must have a normal that opposes
