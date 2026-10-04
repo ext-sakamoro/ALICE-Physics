@@ -34,7 +34,7 @@ were introduced during that release window.
 
 ### Added — 解決済み参照による到達台帳 (`docs/integration-status.md`)
 
-- `scripts/scip_index.sh` が rust-analyzer の SCIP 索引を 2 回作る (`wasm` 以外の全 feature と `std,wasm`、feature-gated module を落とさないため)
+- `scripts/scip_index.sh` が rust-analyzer の SCIP 索引を 2 回作る (`wasm` 以外の全 feature と `std,wasm`、feature-gated module を落とさないため) 解析対象は `x86_64-unknown-linux-gnu` に固定する (rust-analyzer は解析対象の `target_arch` で cfg を評価するので、固定しないと arm64 の host では x86_64 専用の SIMD 4 item が落ち、台帳が生成した host に依存した)
 - `scripts/scip_reach.py` が `src/` の pub item 2258 件を L0 (テスト以外から未到達) / L1 (example からのみ) / live に分類する 参照を定義 1 つに解決するので同名の別 item を区別し、`impl Foo {}` の見出しは参照に数えない trait 越しの呼び出しは実装へ、到達した型はそのフィールドの型へ辿る
 - 名前で数える配線 guard (`scripts/wiring_guard.py`) との差を台帳に出す guard の baseline の未配線 40 件はすべて L0 で一致し、guard が配線済とみなしていた L0 が 194 件ある (例: `SdfCharacter::move_and_slide` / `step`、`PhysicsWorld2D`、`Wedge::with_rotation`)
 - `scripts/test_scip_reach.py` (18 本、合成 SCIP で rust-analyzer 不要) を CI の test matrix (5 OS) と preflight に追加、台帳は `integration-status.yml` が main への push ごとに再生成する
