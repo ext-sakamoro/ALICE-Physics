@@ -5057,6 +5057,7 @@ impl core::marker::UnsafeUnpin for alice_physics::joint_extra::WeldJoint
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::joint_extra::WeldJoint
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::joint_extra::WeldJoint
 pub fn alice_physics::joint_extra::solve_extra_joints(&mut [alice_physics::solver::RigidBody], &[alice_physics::joint_extra::ExtraJoint], alice_physics::math::Fix128)
+pub fn alice_physics::joint_extra::solve_pulley_to_length(&alice_physics::joint_extra::PulleyJoint, &mut [alice_physics::solver::RigidBody], alice_physics::math::Fix128, alice_physics::math::Fix128)
 pub mod alice_physics::kinematic_loop
 pub struct alice_physics::kinematic_loop::FourBarLinkage
 pub alice_physics::kinematic_loop::FourBarLinkage::closure: alice_physics::kinematic_loop::LoopClosureConstraint
@@ -5234,6 +5235,27 @@ impl core::marker::Unpin for alice_physics::laminate_failure::FailureMode
 impl core::marker::UnsafeUnpin for alice_physics::laminate_failure::FailureMode
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::laminate_failure::FailureMode
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::laminate_failure::FailureMode
+pub struct alice_physics::laminate_failure::InvalidStrengthError
+pub alice_physics::laminate_failure::InvalidStrengthError::field: &'static str
+impl core::clone::Clone for alice_physics::laminate_failure::InvalidStrengthError
+pub fn alice_physics::laminate_failure::InvalidStrengthError::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::laminate_failure::InvalidStrengthError
+impl core::cmp::PartialEq for alice_physics::laminate_failure::InvalidStrengthError
+pub fn alice_physics::laminate_failure::InvalidStrengthError::eq(&self, &Self) -> bool
+impl core::error::Error for alice_physics::laminate_failure::InvalidStrengthError
+impl core::fmt::Debug for alice_physics::laminate_failure::InvalidStrengthError
+pub fn alice_physics::laminate_failure::InvalidStrengthError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for alice_physics::laminate_failure::InvalidStrengthError
+pub fn alice_physics::laminate_failure::InvalidStrengthError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::laminate_failure::InvalidStrengthError
+impl core::marker::StructuralPartialEq for alice_physics::laminate_failure::InvalidStrengthError
+impl core::marker::Freeze for alice_physics::laminate_failure::InvalidStrengthError
+impl core::marker::Send for alice_physics::laminate_failure::InvalidStrengthError
+impl core::marker::Sync for alice_physics::laminate_failure::InvalidStrengthError
+impl core::marker::Unpin for alice_physics::laminate_failure::InvalidStrengthError
+impl core::marker::UnsafeUnpin for alice_physics::laminate_failure::InvalidStrengthError
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::laminate_failure::InvalidStrengthError
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::laminate_failure::InvalidStrengthError
 pub struct alice_physics::laminate_failure::LaminateStrengths
 pub alice_physics::laminate_failure::LaminateStrengths::s: alice_physics::math::Fix128
 pub alice_physics::laminate_failure::LaminateStrengths::xc: alice_physics::math::Fix128
@@ -5243,6 +5265,7 @@ pub alice_physics::laminate_failure::LaminateStrengths::yt: alice_physics::math:
 impl alice_physics::laminate_failure::LaminateStrengths
 pub fn alice_physics::laminate_failure::LaminateStrengths::cfrp_ud() -> Self
 pub fn alice_physics::laminate_failure::LaminateStrengths::gfrp_ud() -> Self
+pub fn alice_physics::laminate_failure::LaminateStrengths::try_new(alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128) -> core::result::Result<Self, alice_physics::laminate_failure::InvalidStrengthError>
 impl core::clone::Clone for alice_physics::laminate_failure::LaminateStrengths
 pub fn alice_physics::laminate_failure::LaminateStrengths::clone(&self) -> Self
 impl core::cmp::Eq for alice_physics::laminate_failure::LaminateStrengths
