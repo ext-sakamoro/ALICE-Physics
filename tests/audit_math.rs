@@ -800,7 +800,6 @@ fn ceil_and_abs_at_the_range_extremes() {
 
 /// powf_pos: integer part of the exponent is capped at 64 (`exponent.hi.min(64)`).
 #[test]
-#[ignore = "known defect: AUD-A-S1W5-021: powf_pos silently caps the integer part of the exponent at 64: 1.01^100 returns 1.01^64 (1.89) instead of 2.705"]
 fn powf_pos_large_integer_exponent() {
     let got = f(1.01).powf_pos(f(100.0)).to_f64();
     assert!(

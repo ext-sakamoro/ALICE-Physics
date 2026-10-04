@@ -537,10 +537,21 @@ impl Fix128 {
         if self <= Self::ZERO || exponent.is_negative() {
             return Self::ZERO;
         }
-        let n = exponent.hi.min(64) as u32;
+        // Integer part via exponentiation by squaring (`exponent.hi` ≥ 0 here,
+        // checked above): O(log n) multiplications instead of O(n), so there is
+        // no need to cap `n` to keep this fast — the full documented exponent
+        // range is honored.
+        let mut n = exponent.hi as u64;
         let mut r = Self::ONE;
-        for _ in 0..n {
-            r = r * self;
+        let mut base = self;
+        while n > 0 {
+            if n & 1 != 0 {
+                r = r * base;
+            }
+            n >>= 1;
+            if n > 0 {
+                base = base * base;
+            }
         }
         let mut frac_bits = exponent.lo;
         let mut root = self;
