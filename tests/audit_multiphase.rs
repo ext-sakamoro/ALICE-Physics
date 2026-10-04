@@ -149,7 +149,6 @@ fn trilinear_range_brackets_the_sample_and_matches_the_corner_extrema() {
 /// Zero-extent grids: the sibling routines document "no cells, returns zero" and are guarded;
 /// the public samplers subtract 1 from the extent (usize) and panic in debug builds.
 #[test]
-#[ignore = "known defect: AUD-A-S2W3-007: trilinear_sample / trilinear_range on a zero-extent grid panic with usize underflow in debug (release wraps to ZERO); advect_vof_rigid and reinitialize guard the same case"]
 fn samplers_on_a_zero_extent_grid_return_zero_instead_of_panicking() {
     let g = Grid3d::new(0, 3, 3, Fix128::ONE, Fix128::ONE);
     let a = catch_unwind(AssertUnwindSafe(|| {
