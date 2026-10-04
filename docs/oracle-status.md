@@ -6,8 +6,8 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 3990 |
-| 🔴 Red by design | 278 |
+| 🟢 Not ignored (run by CI) | 3994 |
+| 🔴 Red by design | 274 |
 | ⏱ Gated (runtime / diagnostic / manual) | 24 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
 | **Total** | **4292** |
@@ -15,7 +15,7 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
 
-## 🔴 Red by design (278)
+## 🔴 Red by design (274)
 
 Oracles kept red on purpose: the implementation is not there yet, and a companion test pins
 today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected value is never loosened.
@@ -99,7 +99,6 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `entry_name_truncated_inside_a_multibyte_character_is_not_lost` (audit_pipeline.rs) — known defect: AUD-A-S5W3-018: MetricEntry::new truncates the name at byte 64 even inside a multi-byte characte…
 - `entry_total_never_decreases_on_overflow` (audit_profiling.rs) — known defect: AUD-A-S4W1-001: ProfileEntry::record `+=` overflows (debug panic / release wrap u64::MAX+u64::MA…
 - `escape_index_above_the_24_bit_field_is_not_silently_truncated` (audit_bvh.rs) — known defect: AUD-A-S3W2-011: the escape index is stored in 24 bits and ESCAPE_NONE (u32::MAX) is masked to 0x…
-- `ewma_survives_a_nan_sample` (audit_anomaly.rs) — known defect: AUD-A-S4W1-014: EwmaDetector never flags again after one NaN sample (ewma = NaN permanently)
 - `exp_is_accurate_up_to_the_representable_maximum` (audit_math.rs) — known defect: AUD-A-S1W5-020: Fix128::exp saturates from x >= 43.0 (hi >= 43) but e^43 = 4.73e18 .. e^43.66 = …
 - `explicit_step_conserves_enthalpy_with_temperature_dependent_conductivity` (audit_transient_thermal.rs) — known defect: AUD-A-S2W2-015: transient_step_1d advances alpha(T_i) * d2T/dx2 (non-conservative form) instead …
 - `explosion_fractional_power_follows_the_documented_formula` (audit_force.rs) — known defect: AUD-A-S4W3-015: Explosion documents the falloff as (1 - dist/radius)^falloff_power but truncates…
@@ -139,7 +138,6 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `lateral_margin_is_the_same_on_both_sides` (audit_heightfield.rs) — known defect: AUD-A-S4W3-004: collide_sphere margin is 2 cells before the origin but 3 cells past the last ver…
 - `lattice_cell_count_is_robust_to_f32_rounding_of_the_quotient` (audit_sdf_fem_mesh.rs) — known defect: AUD-A-S2W3-010: nx = trunc((max-min)/cell) in f32 drops the last layer when the quotient is 1 ul…
 - `leaf_constructor_saturates_the_primitive_count_at_255_as_documented` (audit_bvh.rs) — known defect: AUD-A-S3W2-010: BvhNode::leaf documents that count is saturated to 255 (it clamps), but a debug_…
-- `mad_survives_a_nan_sample` (audit_anomaly.rs) — known defect: AUD-A-S4W1-012: MadDetector median/MAD wrong after a NaN sample has left the window
 - `magnetic_force_does_not_collapse_to_zero_very_close_to_the_dipole` (audit_force.rs) — known defect: AUD-A-S4W3-019: Magnetic force has no cap and r^3 = dist_sq * dist underflows Fix128: the force …
 - `magnetic_force_on_the_axis_pulls_toward_the_dipole_as_the_code_comment_says` (audit_force.rs) — known defect: AUD-A-S4W3-017: the Magnetic code comment says a body on the dipole axis 'is attracted', but wit…
 - `mark_bulk_carries_at_least_theta_times_total_even_at_ulp_scale` (audit_linear_elastic_fem.rs) — known defect: AUD-A-S1W3-002: mark_bulk truncates total*theta, so at ulp-scale indicators the marked set carri…
@@ -250,7 +248,6 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `step_height_limit_blocks_obstacles_taller_than_step_height` (audit_character.rs) — known defect: AUD-A-S3W3-008: stair step check samples only the capsule centre at test_pos so step_height = 0.…
 - `step_with_options_refuses_or_bounds_an_unstable_explicit_diffusion_number` (audit_cfd_solver.rs) — known defect: AUD-A-S1W4-005: step / step_with_options accept nu dt / dx^2 = 0.6 > 1/6 and the checkerboard mo…
 - `strain_is_monotone_and_nonnegative_across_documented_wlf_domain` (audit_creep_longterm.rs) — known defect: AUD-A-S2W1-003: predict_strain wraps (Fix128 overflow of t_eff^3) inside the documented WLF doma…
-- `streaming_median_recovers_after_a_nan_leaves_the_window` (audit_anomaly.rs) — known defect: AUD-A-S4W1-012: one NaN push permanently corrupts StreamingMedian (median wrong after the NaN le…
 - `streamline_tracing_is_scale_covariant` (audit_flow_viz.rs) — known defect: AUD-A-S4W1-006: influence radius hard-coded to 1.0; uniform flow with 2.5 m particle spacing yie…
 - `stress_map_is_covariant_under_uniform_scaling_of_the_scene` (audit_heatmap.rs) — known defect: AUD-A-S5W3-006: the stress kernel radius is a hard-coded 2.0 world units (not in HeatmapConfig),…
 - `sub_unit_objects_keep_the_broad_phase_selective` (audit_bvh.rs) — known defect: AUD-A-S3W2-013: node boxes are quantised to whole world units (floor/ceil to i32), so a scene wh…
@@ -297,7 +294,6 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `zero_resolution_does_not_panic_on_read` (audit_pressure.rs) — known defect: AUD-A-S6W1-005: PressureModifier::new(.., 0, ..) succeeds and pressure_at panics (usize underflo…
 - `zero_strength_ply_must_not_report_safe_under_load` (audit_laminate_failure.rs) — known defect: AUD-A-S4W2-003: 強度 0 の ply が全 criterion で Safe / FI = 0 (Fix128 0 除算 = ZERO、検証なし)
 - `zero_strength_with_nonzero_stress_is_not_safe` (audit_anisotropic.rs) — known defect: AUD-A-S1W6-005: a zero strength is treated as unlimited (max-stress skips the component, Hill/Ts…
-- `zscore_survives_a_nan_sample` (audit_anomaly.rs) — known defect: AUD-A-S4W1-015: ZScoreDetector never flags again after one NaN sample (mean = NaN permanently)
 
 ## 📌 Pins: tests that turn red when a known defect is fixed (3)
 
@@ -359,7 +355,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (3990)
+## 🟢 Not ignored (3994)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -437,6 +433,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_interpolation_wiring.rs` | 17 |
 | `analytic_modal_wiring.rs` | 17 |
 | `analytic_phase_change_wiring.rs` | 17 |
+| `audit_anomaly.rs` | 17 |
 | `audit_bvh.rs` | 17 |
 | `audit_coupled_field.rs` | 17 |
 | `audit_cubic_elastic_fem.rs` | 17 |
@@ -499,7 +496,6 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_sdf_ccd_wiring.rs` | 13 |
 | `analytic_sim_modifier_wiring.rs` | 13 |
 | `analytic_sketch_wiring.rs` | 13 |
-| `audit_anomaly.rs` | 13 |
 | `audit_articulation.rs` | 13 |
 | `audit_box_collider.rs` | 13 |
 | `audit_dynamic_fem.rs` | 13 |

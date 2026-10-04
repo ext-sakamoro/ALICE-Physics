@@ -113,7 +113,6 @@ fn streaming_median_empty_clear_and_constants() {
 /// further finite samples the window holds only finite values and the median
 /// must be their median.
 #[test]
-#[ignore = "known defect: AUD-A-S4W1-012: one NaN push permanently corrupts StreamingMedian (median wrong after the NaN left the window)"]
 fn streaming_median_recovers_after_a_nan_leaves_the_window() {
     let mut r = Rng(12345);
     let mut m = StreamingMedian::new();
@@ -387,7 +386,6 @@ fn zscore_verdict_rules() {
 /// baseline of ~10 is flagged after 300 finite samples regardless of one
 /// earlier NaN.
 #[test]
-#[ignore = "known defect: AUD-A-S4W1-014: EwmaDetector never flags again after one NaN sample (ewma = NaN permanently)"]
 fn ewma_survives_a_nan_sample() {
     let mut e = EwmaDetector::new(0.1, 3.0);
     let mut r = Rng(5);
@@ -402,7 +400,6 @@ fn ewma_survives_a_nan_sample() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S4W1-015: ZScoreDetector never flags again after one NaN sample (mean = NaN permanently)"]
 fn zscore_survives_a_nan_sample() {
     let mut z = ZScoreDetector::new(3.0);
     let mut r = Rng(5);
@@ -420,7 +417,6 @@ fn zscore_survives_a_nan_sample() {
 /// AUD-A-S4W1-012): after the NaN has left the 100-sample window the MAD
 /// verdict must again be the clean one.
 #[test]
-#[ignore = "known defect: AUD-A-S4W1-012: MadDetector median/MAD wrong after a NaN sample has left the window"]
 fn mad_survives_a_nan_sample() {
     let mut d = MadDetector::new(3.0);
     let mut r = Rng(9);
