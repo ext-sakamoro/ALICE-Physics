@@ -1033,13 +1033,11 @@ fn solve_d6_joint(joint: &D6Joint, bodies: &mut [crate::solver::RigidBody], dt: 
     let body_a = bodies[joint.body_a];
     let body_b = bodies[joint.body_b];
 
-    // World-space anchors and lever arms (orientation-only, stay valid
-    // across the sequential per-axis corrections below even as position
-    // changes between them — see `point_w_sum`)
-    let r_a = body_a.rotation.rotate_vec(joint.local_anchor_a);
-    let r_b = body_b.rotation.rotate_vec(joint.local_anchor_b);
-    let anchor_a = body_a.position + r_a;
-    let anchor_b = body_b.position + r_b;
+    // World-space anchors (position gap used for `proj` below is computed
+    // once up front and reused across the sequential per-axis corrections,
+    // same pre-existing Gauss-Seidel approximation as before this fix)
+    let anchor_a = body_a.position + body_a.rotation.rotate_vec(joint.local_anchor_a);
+    let anchor_b = body_b.position + body_b.rotation.rotate_vec(joint.local_anchor_b);
     let delta = anchor_b - anchor_a;
 
     // Get local frame axes in world space
@@ -1089,6 +1087,16 @@ fn solve_d6_joint(joint: &D6Joint, bodies: &mut [crate::solver::RigidBody], dt: 
         };
 
         if !error.is_zero() {
+            // Lever arms are recomputed from each body's CURRENT rotation on every
+            // iteration: an earlier axis in this same loop can rotate a body (the
+            // lever-arm split this fix adds), and the arm is orientation-only, so a
+            // value cached before the loop would go stale as soon as that happens.
+            let r_a = bodies[joint.body_a]
+                .rotation
+                .rotate_vec(joint.local_anchor_a);
+            let r_b = bodies[joint.body_b]
+                .rotation
+                .rotate_vec(joint.local_anchor_b);
             let w_sum =
                 point_w_sum(bodies, joint.body_a, joint.body_b, r_a, r_b, axis) + compliance_term;
             if !w_sum.is_zero() {
@@ -1663,18 +1671,41 @@ mod tests {
         solve_ball_joint(&j, &mut bodies, DT);
         assert_eq!(bodies[0].position, Vec3Fix::ZERO);
         assert_eq!(bodies[1].position, v3i(-1, 0, 0));
-        // B 側 anchor (0,2,0): B の world anchor が A anchor に重なる位置 = (-1,-2,0)
-        // (inv_inertia を 0 にして lever arm のトルク分配を切り、純粋な translation だけを見る)
+        // B 側 anchor (0,2,0) (B の inv_inertia は pair() 既定の (1,1,1)、lever arm 非 0):
+        // world anchor_a = (-1,0,0) (上と同じ、A static), world anchor_b = (3,0,0)+(0,2,0) = (3,2,0)
+        // delta = (4,2,0), distance = sqrt(20), normal = (4,2,0)/sqrt(20)
+        // r_b = (0,2,0) (B の rotation は identity なので local anchor そのもの)
+        // r_b × normal = (0, 0, -8/sqrt(20)) → point_angular_w = (8/sqrt(20))^2 * 1 = 64/20 = 16/5
+        // w_sum = inv_mass_a(0) + inv_mass_b(1) + 0 (A static) + 16/5 = 21/5
+        // lambda = distance / w_sum = sqrt(20) / (21/5) = 10 sqrt(5) / 21 (sqrt(20) = 2 sqrt(5))
+        // translation: normal * lambda = (4/sqrt(20), 2/sqrt(20), 0) * 10 sqrt(5)/21
+        //   = (20/21, 10/21, 0) (sqrt(5) cancels) → B.position -= that → (3 - 20/21, -10/21, 0)
+        //   = (43/21, -10/21, 0)
+        // rotation (apply_point_rotation(.., r_b, normal, -lambda)):
+        //   omega = world_inv_inertia_apply(r_b × normal) * (-lambda)
+        //         = (0,0,-8/sqrt(20)) * (-10 sqrt(5)/21) = (0, 0, 80 sqrt(5) / (2 sqrt(5) * 21))
+        //         = (0, 0, 40/21) → signed twist about +Z = 40/21 (positive, nonzero: the lever
+        //   arm now produces a rotation, where the pre-fix code left B unrotated)
         let mut bodies2 = pair(Vec3Fix::ZERO, 0, v3i(3, 0, 0), 1);
         bodies2[0].rotation = QuatFix::new(Fix128::ZERO, Fix128::ZERO, Fix128::ONE, Fix128::ZERO);
-        bodies2[1].inv_inertia = Vec3Fix::ZERO;
         let j2 = BallJoint::new(0, 1, v3i(1, 0, 0), v3i(0, 2, 0));
         solve_ball_joint(&j2, &mut bodies2, DT);
         assert!(
-            near_v(bodies2[1].position, v3i(-1, -2, 0)),
+            near_v(
+                bodies2[1].position,
+                Vec3Fix::new(
+                    Fix128::from_ratio(43, 21),
+                    Fix128::from_ratio(-10, 21),
+                    Fix128::ZERO
+                )
+            ),
             "{:?}",
             bodies2[1].position
         );
+        assert!(near(
+            compute_twist_angle(bodies2[1].rotation, Vec3Fix::UNIT_Z),
+            Fix128::from_ratio(40, 21)
+        ));
     }
 
     #[test]
@@ -1981,6 +2012,54 @@ mod tests {
         let mut flipped = pair(Vec3Fix::ZERO, 0, v3i(4, 0, 0), 1);
         solve_d6_joint(&jf, &mut flipped, DT);
         assert_eq!(flipped[1].position, Vec3Fix::ZERO);
+    }
+
+    /// With a nonzero lever arm, a Locked x axis followed by a Locked y axis is no
+    /// longer two independent 1-D projections: the x-step's lever-arm rotation (part
+    /// of this fix) changes where B's anchor sits before the y-step solves, so the
+    /// y-step's lever arm must be recomputed from B's CURRENT rotation, not a value
+    /// cached from before the loop.
+    ///
+    /// A static at origin (anchor 0, irrelevant). B at (4,3,0), inv_mass 1,
+    /// inv_inertia (1,1,1), anchor (0,2,0). delta = (4,5,0) (cached once, as before
+    /// this fix). x-step: r_b=(0,2,0), r_b×axis_x=(0,0,-2), w=1+4=5, lambda=4/5 ⇒
+    /// B.x = 4 - 4/5 = 16/5, and B rotates by theta = 8/5 about z (same closed form as
+    /// `every_joint_positional_part_uses_rotated_local_anchors`'s ball case).
+    /// y-step (fresh r_b): r_b_fresh = Rz(theta).rotate((0,2,0)) = (-2 sin(theta),
+    /// 2 cos(theta), 0); r_b_fresh × axis_y = (0,0,-2 sin(theta)); w = 1 + 4 sin(theta)^2;
+    /// lambda_y = 5 / w ⇒ B.y = 3 - lambda_y. (A stale r_b=(0,2,0) would instead give
+    /// r_b×axis_y = 0, w = 1, lambda_y = 5, B.y = -2 — a full, unmoderated jump.)
+    #[test]
+    fn d6_joint_second_locked_axis_uses_the_rotation_from_the_first() {
+        let mut j = D6Joint::new(0, 1, Vec3Fix::ZERO, v3i(0, 2, 0));
+        j.linear_x = D6Motion::Locked;
+        j.linear_y = D6Motion::Locked;
+        let mut bodies = pair(Vec3Fix::ZERO, 0, v3i(4, 3, 0), 1);
+        solve_d6_joint(&j, &mut bodies, DT);
+
+        // sin/cos via Fix128's own CORDIC (not the bug under test: these are generic
+        // trig primitives, not solve_d6_joint) so the expected value is bit-exact
+        // comparable, and deterministic cross-platform (see clippy::disallowed_methods).
+        let theta = Fix128::from_ratio(8, 5);
+        let sin_theta = theta.sin();
+        let want_y = Fix128::from_int(3)
+            - Fix128::from_int(5) / (Fix128::ONE + Fix128::from_int(4) * sin_theta * sin_theta);
+        assert!(
+            near(bodies[1].position.x, Fix128::from_ratio(16, 5)),
+            "x {:?}",
+            bodies[1].position.x
+        );
+        assert!(
+            near(bodies[1].position.y, want_y),
+            "y {:?} (want {want_y:?})",
+            bodies[1].position.y
+        );
+        // the stale (pre-fix-refinement) value a cached r_b would have produced
+        assert!(
+            !near(bodies[1].position.y, Fix128::from_int(-2)),
+            "y landed on the stale-cache value: {:?}",
+            bodies[1].position.y
+        );
     }
 
     #[test]
@@ -2295,14 +2374,9 @@ mod tests {
 
     /// A: static at origin、z 軸 180° 回転、anchor (1,0,0) → world anchor (-1,0,0)
     /// B: inv 1 at (3,-2,0)、anchor (0,2,0) → world anchor (3,0,0)  ⇒ gap 4 (x 方向)
-    /// B の `inv_inertia` は 0 (この test group は「anchor が body の回転で正しく
-    /// rotate されるか」だけを見るので、lever arm によるトルク分配 (別途
-    /// `ball_offset_anchor_splits_the_correction_between_translation_and_rotation`
-    /// が検証) を 0 にして、anchor 一致までの純粋な translation を単独で見る)
     fn anchored_pair() -> Vec<RigidBody> {
         let mut b = pair(Vec3Fix::ZERO, 0, v3i(3, -2, 0), 1);
         b[0].rotation = QuatFix::new(Fix128::ZERO, Fix128::ZERO, Fix128::ONE, Fix128::ZERO);
-        b[1].inv_inertia = Vec3Fix::ZERO;
         b
     }
 
@@ -2319,20 +2393,57 @@ mod tests {
 
     #[test]
     fn every_joint_positional_part_uses_rotated_local_anchors() {
-        // 全 joint で B は (3,-2,0) → (-1,-2,0) に 4 移動 (world anchor が A の (-1,0,0) に重なる)
-        let expect = v3i(-1, -2, 0);
+        // Shared geometry for ball/hinge/fixed/cone-twist/d6 below: world anchor_a =
+        // (-1,0,0) (A static, 180° about z), world anchor_b = (3,-2,0)+(0,2,0) = (3,0,0)
+        // (B_ANCHOR's rotate is identity) ⇒ delta = (4,0,0), distance = 4 (no sqrt: the
+        // y components cancel exactly), normal = (1,0,0).
+        // r_b = (0,2,0) (B's local anchor, B's rotation starts identity).
+        // r_b × normal = (0,2,0) × (1,0,0) = (0,0,-2) ⇒ point_angular_w =
+        // (-2)^2 * inv_inertia.z(1) = 4. w_sum = inv_m_a(0) + inv_m_b(1) + 0(A static) + 4 = 5.
+        // lambda = distance / w_sum = 4/5. translation: normal * lambda * inv_m_b = (4/5,0,0)
+        // ⇒ B.position -= that = (3 - 4/5, -2, 0) = (11/5, -2, 0).
+        // rotation: apply_point_rotation(.., r_b, normal, -lambda): omega =
+        // world_inv_inertia_apply((0,0,-2)) * (-4/5) = (0,0,-2) * (-4/5) = (0,0,8/5)
+        // ⇒ signed twist about +z = 8/5 (nonzero: this is exactly the lever-arm rotation
+        // the pre-fix code never produced).
+        let want_pos = Vec3Fix::new(
+            Fix128::from_ratio(11, 5),
+            -Fix128::from_int(2),
+            Fix128::ZERO,
+        );
+        let want_twist = Fix128::from_ratio(8, 5);
+
         let mut b = anchored_pair();
         solve_ball_joint(&BallJoint::new(0, 1, A_ANCHOR, B_ANCHOR), &mut b, DT);
-        assert!(near_v(b[1].position, expect), "ball {:?}", b[1].position);
+        assert!(near_v(b[1].position, want_pos), "ball {:?}", b[1].position);
+        assert!(near(
+            compute_twist_angle(b[1].rotation, Vec3Fix::UNIT_Z),
+            want_twist
+        ));
+
+        // hinge's axis-alignment step (its own step 2) is a no-op here: rotating UNIT_Z
+        // by a rotation that is itself about Z leaves UNIT_Z unchanged, for both bodies,
+        // so world_axis_a == world_axis_b after step 1 and the cross product is zero.
         let mut h = anchored_pair();
         solve_hinge_joint(
             &HingeJoint::new(0, 1, A_ANCHOR, B_ANCHOR, Vec3Fix::UNIT_Z, Vec3Fix::UNIT_Z),
             &mut h,
             DT,
         );
-        assert!(near_v(h[1].position, expect), "hinge {:?}", h[1].position);
+        assert!(near_v(h[1].position, want_pos), "hinge {:?}", h[1].position);
+        assert!(near(
+            compute_twist_angle(h[1].rotation, Vec3Fix::UNIT_Z),
+            want_twist
+        ));
+
+        // fixed's position is identical to ball/hinge (step 1 is the same point
+        // constraint), but its own step 2 ("maintain relative rotation") then measures
+        // B against target_rot_b = A.rotation * relative_rotation = Rz(pi) * Rz(-pi) =
+        // identity exactly, so rot_error = B.rotation = Rz(8/5) (the step-1 result above).
+        // angular_inverse_mass(B, UNIT_Z) is exactly 1 (inv_inertia.z = 1, and Z is
+        // invariant under a rotation about Z), so this step's lambda = 8/5 exactly
+        // cancels the step-1 rotation: B ends up back at identity, same as pre-fix.
         let mut f = anchored_pair();
-        // fixed は相対回転も見るので target を A の回転 (180°) に合わせる
         solve_fixed_joint(
             &FixedJoint::new(
                 0,
@@ -2344,24 +2455,59 @@ mod tests {
             &mut f,
             DT,
         );
-        assert!(near_v(f[1].position, expect), "fixed {:?}", f[1].position);
+        assert!(near_v(f[1].position, want_pos), "fixed {:?}", f[1].position);
+        assert_eq!(
+            f[1].rotation,
+            QuatFix::IDENTITY,
+            "fixed rotation {:?}",
+            f[1].rotation
+        );
+
+        // cone-twist's cone/twist steps are no-ops here too: world_axis_a == world_axis_b
+        // (both UNIT_Z, same reasoning as hinge) makes cone_angle exactly 0 (<= the
+        // default pi/2 limit), and the resulting twist_angle (8/5 - pi) is within the
+        // default pi twist_limit.
         let mut ct = anchored_pair();
         solve_cone_twist_joint(
             &ConeTwistJoint::new(0, 1, A_ANCHOR, B_ANCHOR, Vec3Fix::UNIT_Z, Vec3Fix::UNIT_Z),
             &mut ct,
             DT,
         );
-        assert!(near_v(ct[1].position, expect), "cone {:?}", ct[1].position);
-        // d6 全軸 Locked: frame は A の回転に従う (180° で x,y 反転) が locked の結果は同じ
+        assert!(
+            near_v(ct[1].position, want_pos),
+            "cone {:?}",
+            ct[1].position
+        );
+        assert!(near(
+            compute_twist_angle(ct[1].rotation, Vec3Fix::UNIT_Z),
+            want_twist
+        ));
+
+        // d6 locked on all 3 linear axes: axis_x = frame_a.rotate(UNIT_X) = (-1,0,0) (A's
+        // 180° frame), and the x-step alone reproduces the ball-joint computation above
+        // (same delta, same lever arm) since delta's y/z components are both exactly 0
+        // (anchor_b.y = -2+2 = 0 = anchor_a.y, anchor_b.z = anchor_a.z = 0), so the y and
+        // z steps see error == 0 and are no-ops; angular is all Free (default), so no
+        // angular correction either.
         let mut d6j = D6Joint::new(0, 1, A_ANCHOR, B_ANCHOR);
         d6j.linear_x = D6Motion::Locked;
         d6j.linear_y = D6Motion::Locked;
         d6j.linear_z = D6Motion::Locked;
         let mut d = anchored_pair();
         solve_d6_joint(&d6j, &mut d, DT);
-        assert!(near_v(d[1].position, expect), "d6 {:?}", d[1].position);
+        assert!(near_v(d[1].position, want_pos), "d6 {:?}", d[1].position);
+        assert!(near(
+            compute_twist_angle(d[1].rotation, Vec3Fix::UNIT_Z),
+            want_twist
+        ));
         // slider (軸 x、A 回転で world 軸 -x): perp は y 成分 0 なので along のみ → 移動なし、
         // B anchor を (0,3,0) にして perp 1 を作る → B の y が -1 動く
+        //
+        // Unlike the 5 cases above, this sub-case is unaffected by the lever-arm fix:
+        // r_b = (0,3,0) and the correction direction perp_normal = (0,1,0) are parallel,
+        // so r_b x perp_normal = 0 and point_angular_w is exactly 0 (a lever arm aligned
+        // with the correction direction produces no torque) — translation-only is still
+        // the exact answer here, same as before this fix.
         let mut sl = anchored_pair();
         solve_slider_joint(
             &SliderJoint::new(0, 1, Vec3Fix::UNIT_X, A_ANCHOR, v3i(0, 3, 0)),
