@@ -129,21 +129,36 @@ impl WindZone {
 
     fn aerodynamic_force(&self, wind_velocity: Vec3Fix, body_velocity: Vec3Fix) -> Vec3Fix {
         let relative = wind_velocity - body_velocity;
-        let speed_sq = relative.length_squared();
-        if speed_sq.is_zero() {
+        let half = Fix128::from_ratio(1, 2);
+        let coeff =
+            half * self.air_density_kg_m3 * self.drag_coefficient * self.reference_area_m2;
+        if coeff.is_zero() {
             return Vec3Fix::ZERO;
         }
-        let speed = speed_sq.sqrt();
-        let half = Fix128::from_ratio(1, 2);
-        let magnitude = half
-            * self.air_density_kg_m3
-            * self.drag_coefficient
-            * self.reference_area_m2
-            * speed
-            * speed;
-        // Direction of the aerodynamic force is aligned with the
-        // relative velocity.
-        relative * (magnitude / speed)
+        // `relative.length_squared()` (|v_rel|^2) overflows Fix128 once
+        // |v_rel| exceeds ~3.04e9, well before the coefficient-weighted
+        // magnitude — the quantity that actually needs to stay
+        // representable — does (e.g. |v_rel| = 4e9 gives a finite,
+        // representable 6.0e18 N once scaled by `coeff`, but the bare
+        // |v_rel|^2 = 1.6e19 does not fit). Scale the velocity by
+        // `sqrt(coeff)` *before* squaring instead of squaring first and
+        // scaling down afterward: `(k * relative).length_squared() == coeff
+        // * |v_rel|^2` exactly (k = sqrt(coeff)), without ever materializing
+        // the bare |v_rel|^2.
+        let k = coeff.sqrt();
+        let scaled = relative * k;
+        let scaled_speed_sq = scaled.length_squared();
+        if scaled_speed_sq.is_zero() {
+            return Vec3Fix::ZERO;
+        }
+        let scaled_speed = scaled_speed_sq.sqrt();
+        // magnitude / speed == coeff * speed == k * scaled_speed (both
+        // `k` and `scaled_speed` carry one factor of the coefficient /
+        // velocity scaling respectively, so their product recovers
+        // coeff * |v_rel| without ever computing |v_rel| or |v_rel|^2 bare).
+        // Direction of the aerodynamic force is aligned with the relative
+        // velocity.
+        relative * (k * scaled_speed)
     }
 }
 
