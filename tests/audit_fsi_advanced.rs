@@ -352,7 +352,6 @@ fn react_back_pressure_total_is_minus_solid_total() {
 /// quietly broken. Expected: either every sample is served or the call fails
 /// loudly.
 #[test]
-#[ignore = "known defect: AUD-A-S4W1-003: react_back_pressure silently truncates when forces.len() < samples.len() (3 samples, 2 forces -> 2 deposits, no panic)"]
 fn react_back_pressure_does_not_silently_truncate() {
     let sc = scene();
     let forces = [v3(1.0, 0.0, 0.0), v3(2.0, 0.0, 0.0)];
