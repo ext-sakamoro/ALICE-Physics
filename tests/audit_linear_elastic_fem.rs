@@ -932,7 +932,6 @@ fn stagnation_fires_at_the_window_not_one_after() {
 /// degrees of freedom are fixed (the gradients are `~1/h`, their squares leave
 /// the `Fix128` range and the curvature test reads a non-positive value).
 #[test]
-#[ignore = "known defect: AUD-A-S1W3-004: a sliver tet (apex height 1e-8, base fixed) returns UnderConstrained although 9 dofs are fixed; gradients ~1/h overflow Fix128 in the curvature test, no DegenerateElement/overflow error"]
 fn a_sliver_with_a_fixed_base_is_not_reported_as_under_constrained() {
     for h in [1.0e-6_f32, 1.0e-8, 1.0e-10] {
         let mut mesh = corner_tet();

@@ -109,7 +109,9 @@ pub enum FemError {
         vertex_count: usize,
     },
     /// A tetrahedron has zero volume, so its shape function gradients are
-    /// undefined.
+    /// undefined, or it is so thin that its gradients (of order `1/h`) times
+    /// the material modulus exceed the `Fix128` range, so its stiffness cannot
+    /// be formed (AUD-A-S1W3-004).
     DegenerateElement {
         /// Index into `SdfTetMesh::tets`.
         tet: usize,
@@ -1091,6 +1093,36 @@ struct Element {
 /// gradients of `N₁, N₂, N₃`, and `∇N₀ = −(∇N₁+∇N₂+∇N₃)` because the four
 /// shape functions sum to one everywhere. The volume uses `|det J| / 6`, so a
 /// tetrahedron wound the other way contributes the same stiffness.
+/// Refuses an element whose stiffness terms cannot be formed in `Fix128`.
+///
+/// A sliver of height `h` has shape function gradients of order `1/h`, and
+/// the stiffness and curvature terms multiply two of them with the modulus
+/// `λ + 2μ`. Past the integer range (`2^63`) that product wraps, the curvature
+/// test reads a wrapped value, and the solve reported `UnderConstrained`
+/// although the element was constrained. Such an element is reported as
+/// `DegenerateElement` instead (AUD-A-S1W3-004): `max|∇N|² · (λ + 2μ)`
+/// must be representable.
+fn check_element_scale(elements: &[Element], lambda: Fix128, mu: Fix128) -> Result<(), FemError> {
+    let modulus = (lambda + mu + mu).abs();
+    for (t, e) in elements.iter().enumerate() {
+        let gmax = e
+            .grad
+            .iter()
+            .flat_map(|g| g.iter())
+            .map(|c| c.abs())
+            .max()
+            .unwrap_or(Fix128::ZERO);
+        let fits = gmax
+            .checked_mul(gmax)
+            .and_then(|g2| g2.checked_mul(modulus))
+            .is_some();
+        if !fits {
+            return Err(FemError::DegenerateElement { tet: t });
+        }
+    }
+    Ok(())
+}
+
 fn build_elements(mesh: &SdfTetMesh) -> Result<Vec<Element>, FemError> {
     let vertex_count = mesh.vertices.len();
     let six = Fix128::from_int(6);
@@ -1555,6 +1587,7 @@ pub fn solve_with_eigenstrain(
 
     let elements = build_elements(mesh)?;
     let (lambda, mu) = material.lame();
+    check_element_scale(&elements, lambda, mu)?;
     let ndof = vertex_count * 3;
 
     // `C : ε_th` per element, or nothing at all. Built after `build_elements`,
@@ -1801,6 +1834,7 @@ pub fn reactions(
     let vertex_count = check_reaction_inputs(mesh, boundary, solution.displacements.len())?;
     let elements = build_elements(mesh)?;
     let (lambda, mu) = material.lame();
+    check_element_scale(&elements, lambda, mu)?;
     let ndof = vertex_count * 3;
 
     let thermal_stress = match &thermal {
@@ -1876,6 +1910,7 @@ pub fn stiffness_diagonal_stats(
     }
     let elements = build_elements(mesh)?;
     let (lambda, mu) = material.lame();
+    check_element_scale(&elements, lambda, mu)?;
     let ndof = vertex_count * 3;
     let mut is_free = vec![true; ndof];
     for &(vertex, axis, _) in &boundary.prescribed {
@@ -2860,6 +2895,7 @@ pub fn solve_corotational(
 
     let elements = build_elements(mesh)?;
     let (lambda, mu) = material.lame();
+    check_element_scale(&elements, lambda, mu)?;
     // `κ = λ − offset(model)` — the volumetric modulus that makes the stress
     // linearise to this solid's `λ`; see `hyperelastic_volumetric_modulus`. The
     // deviatoric response comes from the model in the configuration, so the two
@@ -3303,6 +3339,7 @@ pub fn corotational_reactions(
     let vertex_count = check_reaction_inputs(mesh, boundary, solution.field.displacements.len())?;
     let elements = build_elements(mesh)?;
     let (lambda, mu) = material.lame();
+    check_element_scale(&elements, lambda, mu)?;
     // The same volumetric modulus `solve_corotational` pairs the model with.
     let law = config
         .material
@@ -4435,6 +4472,7 @@ impl ElastoplasticProblem {
         }
         let elements = build_elements(mesh)?;
         let (lambda, mu) = material.lame();
+        check_element_scale(&elements, lambda, mu)?;
         let ndof = vertex_count * 3;
 
         let mut prescribed_value = vec![Fix128::ZERO; ndof];
