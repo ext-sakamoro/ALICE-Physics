@@ -113,7 +113,6 @@ fn l2_accepts_a_component_exactly_at_the_floor_and_the_largest_safe_one() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S3W3-011: residual_norm_l2_checked misses a square that wraps to a positive value: component 4.5e9 (square 2.0e19) returns Ok(1.34e9) instead of ArithmeticWrapped, window 2^32..~5.2e9 where the wrapped square is positive"]
 fn l2_refuses_every_component_whose_square_leaves_the_representable_range() {
     // Doc: "reports the loss instead of returning a plausible number". Squares
     // of 4.5e9 and 5.0e9 exceed 2^63 (9.22e18) and wrap modulo 2^64; for
