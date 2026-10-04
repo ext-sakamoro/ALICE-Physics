@@ -1499,6 +1499,11 @@ impl QuatFix {
         let half_angle = angle.half();
         let (sin_ha, cos_ha) = half_angle.sin_cos();
         let axis_norm = axis.normalize();
+        // no axis, no rotation: (0, 0, 0, cos) is not a unit quaternion and
+        // would scale whatever it rotates by cos^2 (AUD-A-S1W5-023)
+        if axis_norm == Vec3Fix::ZERO {
+            return Self::IDENTITY;
+        }
 
         Self {
             x: axis_norm.x * sin_ha,
@@ -1544,6 +1549,23 @@ impl QuatFix {
     #[must_use]
     pub fn length(self) -> Fix128 {
         self.length_squared().sqrt()
+    }
+
+    /// This rotation as a unit quaternion, for code that applies a stored
+    /// rotation: a quaternion whose squared length is within `2^-32` of one
+    /// is returned unchanged (bit for bit), any other is normalized, and the
+    /// zero quaternion becomes the identity.
+    ///
+    /// `q v q*` scales by `|q|^2`, so applying a non-unit quaternion resizes
+    /// what it rotates (AUD-A-S4W1-004, AUD-A-S5W3-004, AUD-A-S5W3-014).
+    #[must_use]
+    pub(crate) fn unit_rotation(self) -> Self {
+        let tol = Fix128::from_raw(0, 1 << 32);
+        if (self.length_squared() - Fix128::ONE).abs() <= tol {
+            self
+        } else {
+            self.normalize()
+        }
     }
 
     /// Normalize to unit quaternion (reciprocal: 1 division + 4 multiplications)
@@ -2180,6 +2202,28 @@ mod tests {
             huge.rescaled_direction(),
             Vec3Fix::new(Fix128::ONE, Fix128::from_ratio(1, 2), Fix128::ZERO)
         );
+    }
+
+    /// `unit_rotation`: a unit quaternion (as produced by `from_axis_angle`,
+    /// not exactly of length one) is kept bit for bit, a non-unit one is
+    /// normalized, the zero quaternion is the identity.
+    #[test]
+    fn unit_rotation_keeps_unit_inputs_and_normalizes_the_rest() {
+        let q = QuatFix::from_axis_angle(
+            Vec3Fix::new(Fix128::ONE, Fix128::from_int(2), Fix128::from_int(3)),
+            Fix128::from_ratio(7, 10),
+        );
+        assert_eq!(q.unit_rotation(), q);
+        assert_eq!(QuatFix::IDENTITY.unit_rotation(), QuatFix::IDENTITY);
+        let two = QuatFix::new(
+            Fix128::ZERO,
+            Fix128::ZERO,
+            Fix128::ZERO,
+            Fix128::from_int(2),
+        );
+        assert_eq!(two.unit_rotation(), QuatFix::IDENTITY);
+        let zero = QuatFix::new(Fix128::ZERO, Fix128::ZERO, Fix128::ZERO, Fix128::ZERO);
+        assert_eq!(zero.unit_rotation(), QuatFix::IDENTITY);
     }
 
     #[test]

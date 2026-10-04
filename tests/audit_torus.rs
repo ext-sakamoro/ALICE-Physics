@@ -360,7 +360,6 @@ fn support_is_invariant_to_huge_direction_magnitude() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S5W3-004: Torus accepts a non-unit orientation and then scales support points by |q|^2 (q = (0,0,0,2): support(+X) = (24, 0, 0) instead of (R+r, 0, 0) = (6, 0, 0))"]
 fn non_unit_rotation_does_not_scale_the_torus() {
     let q = QuatFix::new(Fix128::ZERO, Fix128::ZERO, Fix128::ZERO, fx(2.0));
     let t = Torus::with_rotation(Vec3Fix::ZERO, fx(5.0), fx(1.0), q);

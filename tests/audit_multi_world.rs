@@ -68,7 +68,6 @@ fn portal_preserves_distances() {
 /// A->B->A returns |q|^4 v = 16 v. Neither a normalization nor a rejection
 /// is present, so a mis-scaled quaternion silently scales the world.
 #[test]
-#[ignore = "known defect: AUD-A-S4W1-004: Portal::new keeps a non-unit rotation; transform_a_to_b(1,2,3) with q=(0,0,0,2) returns 4*(1,2,3)+t, not (1,2,3)+t"]
 fn portal_with_non_unit_rotation_is_not_a_scaling() {
     let q2 = QuatFix::new(
         Fix128::ZERO,

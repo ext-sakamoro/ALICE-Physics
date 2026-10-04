@@ -175,8 +175,10 @@ impl DestructionShape {
         let dy = wy - self.center.y.to_f32();
         let dz = wz - self.center.z.to_f32();
 
+        // a non-unit rotation would resize the crater (AUD-A-S5W3-014)
         let local = self
             .rotation
+            .unit_rotation()
             .conjugate()
             .rotate_vec(Vec3Fix::from_f32(dx, dy, dz));
         let (lx, ly, lz) = local.to_f32();

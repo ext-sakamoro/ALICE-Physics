@@ -1045,7 +1045,6 @@ fn quat_normalize_and_axis_angle_rotation_rodrigues() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S1W5-023: QuatFix::from_axis_angle with a zero axis returns (0,0,0,cos(angle/2)), a non-unit quaternion (|q| = cos(0.5) = 0.878 for angle 1) instead of identity / an error; rotate_vec then scales vectors by |q|^2"]
 fn quat_from_axis_angle_zero_axis_is_a_unit_quaternion() {
     let r = QuatFix::from_axis_angle(Vec3Fix::ZERO, f(1.0));
     assert!(

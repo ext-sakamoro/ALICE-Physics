@@ -91,7 +91,7 @@ impl Torus {
 
         // Local Y axis in world space (symmetry axis)
         let local_y = Vec3Fix::new(Fix128::ZERO, Fix128::ONE, Fix128::ZERO);
-        let world_y = self.rotation.rotate_vec(local_y);
+        let world_y = self.rotation.unit_rotation().rotate_vec(local_y);
 
         // Along the symmetry axis, extent is minor_radius
         let axis_extent = Vec3Fix::new(
@@ -147,8 +147,10 @@ impl Support for Torus {
         // Only the direction matters: bring its scale into range first so the
         // squares below neither underflow nor overflow
         let direction = direction.rescaled_direction();
+        // a stored non-unit rotation would scale the torus (AUD-A-S5W3-004)
+        let rotation = self.rotation.unit_rotation();
         // Transform direction to local space
-        let local_dir = self.rotation.conjugate().rotate_vec(direction);
+        let local_dir = rotation.conjugate().rotate_vec(direction);
 
         // A torus is the Minkowski sum of a circle (major radius R in XZ
         // plane) and a sphere (minor radius r). Therefore:
@@ -188,7 +190,7 @@ impl Support for Torus {
         let local_support = ring_point + sphere_offset;
 
         // Transform back to world space
-        self.center + self.rotation.rotate_vec(local_support)
+        self.center + rotation.rotate_vec(local_support)
     }
 }
 

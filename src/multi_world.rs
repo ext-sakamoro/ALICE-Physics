@@ -174,14 +174,15 @@ impl Portal {
     #[must_use]
     pub fn transform_a_to_b(&self, position: Vec3Fix) -> Vec3Fix {
         let (translation, rotation) = &self.transform;
-        rotation.rotate_vec(position) + *translation
+        // a non-unit rotation would scale the position (AUD-A-S4W1-004)
+        rotation.unit_rotation().rotate_vec(position) + *translation
     }
 
     /// Transform a position from world B coordinates to world A coordinates.
     #[must_use]
     pub fn transform_b_to_a(&self, position: Vec3Fix) -> Vec3Fix {
         let (translation, rotation) = &self.transform;
-        let inv_rot = rotation.conjugate();
+        let inv_rot = rotation.unit_rotation().conjugate();
         inv_rot.rotate_vec(position - *translation)
     }
 }
