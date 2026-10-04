@@ -212,6 +212,12 @@ impl HeightField {
     /// Get world-space AABB of the height field
     #[must_use]
     pub fn aabb(&self) -> crate::collider::AABB {
+        if self.heights.is_empty() {
+            // No grid points at all: degenerate point AABB at the origin,
+            // matching get_height/sample_height/collide_sphere's treatment
+            // of an empty field as having no surface.
+            return crate::collider::AABB::new(self.origin, self.origin);
+        }
         let mut min_h = self.heights[0];
         let mut max_h = self.heights[0];
         for &h in &self.heights[1..] {
