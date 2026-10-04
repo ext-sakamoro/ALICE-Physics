@@ -23,8 +23,14 @@ on:
 permissions:
   contents: write
 
+# Not status-docs-main: a concurrency group holds one running and one pending
+# run, and a newer pending run cancels the older one even with
+# cancel-in-progress: false. wiring-status and oracle-status already share
+# that group on the same push, so a third workflow there got Wiring Status
+# cancelled. The publish loop below re-generates on the tip and retries on a
+# non-fast-forward push, so it does not need to be serialised with them.
 concurrency:
-  group: status-docs-main
+  group: integration-status-main
   cancel-in-progress: false
 
 jobs:

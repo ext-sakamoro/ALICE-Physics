@@ -1372,3 +1372,53 @@ fn polar_rotation_result_is_orthogonal_to_a_few_ulp() {
         }
     }
 }
+
+/// A quotient whose true value does not fit in `Fix128`.
+///
+/// The `Div` impl computes the integer part as a `u128` and stores it with
+/// `quot_hi as i64`, keeping only the low 64 bits: `1 / 2^-64 = 2^64` and
+/// `50 / 2^-64 = 50 * 2^64` both come back as exactly `0`. `checked_div` only
+/// rejects a zero divisor (its doc says it is bit-identical to `/` otherwise),
+/// so it returns the same truncated value. The `Div` doc covers division by
+/// zero and the rounding direction, not overflow.
+///
+/// Oracle, independent of the remedy (saturate, or report an error): when the
+/// true quotient exceeds the representable range, a returned value keeps the
+/// sign of the true quotient and is at least 1 in magnitude; `checked_div` may
+/// instead return `None`. Found downstream as a zero safety factor in
+/// `layer_adhesion` (`fos_is_never_below_one_when_applied_is_below_allowable`).
+#[test]
+#[ignore = "known defect: AUD-A-S1W5-030: Fix128::div truncates an out-of-range integer quotient to its low 64 bits, so 1 / 2^-64 and 50 / 2^-64 return exactly 0, and Fix128::checked_div only rejects a zero divisor, so it returns the same truncated value; the Div doc covers division by zero and rounding but not overflow"]
+fn out_of_range_quotient_keeps_its_sign_and_magnitude() {
+    let tiny = ulp(); // 2^-64
+    let half = Fix128 { hi: 0, lo: 1 << 63 };
+    let top = Fix128 {
+        hi: i64::MAX,
+        lo: 0,
+    };
+    // (dividend, divisor, true quotient is positive)
+    let cases = [
+        (Fix128::ONE, tiny, true),            // 2^64
+        (Fix128::from_int(50), tiny, true),   // 50 * 2^64
+        (-Fix128::from_int(50), tiny, false), // -50 * 2^64
+        (Fix128::from_int(50), -tiny, false), // -50 * 2^64
+        (top, half, true),                    // (2^63 - 1) * 2
+    ];
+    for (a, b, positive) in cases {
+        let q = a / b;
+        let ok = |v: Fix128| {
+            if positive {
+                v >= Fix128::ONE
+            } else {
+                v <= -Fix128::ONE
+            }
+        };
+        assert!(ok(q), "{a:?} / {b:?} = {q:?}: the true quotient is out of range, the result lost its magnitude or sign");
+        if let Some(c) = a.checked_div(b) {
+            assert!(
+                ok(c),
+                "checked_div({a:?}, {b:?}) = Some({c:?}) for an out-of-range quotient"
+            );
+        }
+    }
+}

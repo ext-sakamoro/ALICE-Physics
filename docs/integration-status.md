@@ -8,8 +8,8 @@ References are resolved to one definition each, so items that share a name are t
 | Level | Meaning | Count |
 |-------|---------|------:|
 | L0 | not reached by any non-test code, examples included | 231 |
-| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 1741 |
-| live | reached without examples (crate-internal roots or a binding) | 292 |
+| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 1740 |
+| live | reached without examples (crate-internal roots or a binding) | 293 |
 | | **total** | **2264** |
 
 L1 is a label, not a defect: a module users call directly is example-only inside this crate.
@@ -465,7 +465,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - Generic code is followed through trait methods: calling `T::method` reaches every impl of that method in the crate.
 - Items in `src/ffi.rs`, `src/python.rs` and `src/wasm.rs` are roots and are not listed.
 
-## L1 — example-only (1741)
+## L1 — example-only (1740)
 
 - `src/acoustic_wave.rs`: `AIR_20C`, `CONCRETE_LONGITUDINAL`, `STEEL_LONGITUDINAL`, `WATER_25C`, `leapfrog_step`, `stable_dt`
 - `src/aeroelasticity.rs`: `VivParameters`, `VivState`, `facchinetti_reference`, `seeded`, `viv_step`
@@ -542,7 +542,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/linear_elastic_fem/consistent_tangent.rs`: `StepReport`, `TangentField`, `apply`, `at`, `backtrack`, `newton_krylov_step`, `newton_step`
 - `src/mass_properties.rs`: `MassProperties`, `ZERO`, `box_mass_properties`, `capsule_mass_properties`, `convex_hull_mass_properties`, `principal_axes`, `sphere_mass_properties`, `translate_inertia`
 - `src/material.rs`: `register_concrete`, `register_ice`, `register_metal`, `register_rubber`, `register_wood`, `set_pair_override`, `with_combine_rules`, `with_static_friction`
-- `src/math.rs`: `Mat3Fix`, `NEG_ONE`, `PolarError`, `SIMD_WIDTH`, `add_simd`, `atan`, `checked_div`, `cos`, `cross_simd`, `determinant`, `diagonal`, `dot_batch_4`, `dot_simd`, `exp`, `floor`, `from_cols`, `from_raw`, `inverse`, `length_squared_simd`, `ln`, `max_abs_component`, `mul_mat`, `mul_vec`, `polar_rotation`, `polar_rotation_steps`, `powf_pos`, `simd_width`, `sin`, `sub_simd`, `transpose`, `try_normalize`
+- `src/math.rs`: `Mat3Fix`, `NEG_ONE`, `PolarError`, `SIMD_WIDTH`, `add_simd`, `atan`, `checked_div`, `cos`, `cross_simd`, `determinant`, `diagonal`, `dot_batch_4`, `dot_simd`, `exp`, `floor`, `from_cols`, `inverse`, `length_squared_simd`, `ln`, `max_abs_component`, `mul_mat`, `mul_vec`, `polar_rotation`, `polar_rotation_steps`, `powf_pos`, `simd_width`, `sin`, `sub_simd`, `transpose`, `try_normalize`
 - `src/math_util.rs`: `EXP_OVERFLOW_SENTINEL`, `cbrt_fix`, `clamp_fix`, `exp_fix`, `pow_int`
 - `src/maxwell_fdtd.rs`: `Absorber`, `COURANT_3D`, `Component`, `YeeGrid`, `cfl_limit_3d`, `charge`, `component_dims`, `courant`, `current`, `dims`, `div_b`, `div_e`, `div_j`, `gauss_residual`, `get`, `interior_node_dims`, `is_absorbing`, `loss_coefficients`, `max_abs_div_b`, `max_abs_field`, `max_abs_gauss_residual`, `new`, `new_with_absorber`, `set`, `set_charge`, `set_current`, `step`, `theoretical_pml_reflection`, `total_charge`
 - `src/metric.rs`: `L1`, `LINF`, `MetricError`, `axis_extent`, `lipschitz`, `new`, `norm`, `weights`
