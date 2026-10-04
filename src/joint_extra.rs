@@ -570,6 +570,7 @@ fn solve_gear(joint: &GearJoint, bodies: &mut [RigidBody], dt: Fix128) {
     let rel_quat_a = body_a.rotation.mul(body_a.prev_rotation.conjugate());
     let rel_quat_b = body_b.rotation.mul(body_b.prev_rotation.conjugate());
 
+    // Signed twists about z, the axis the correction below rotates about
     let angle_a = extract_angle(rel_quat_a);
     let angle_b = extract_angle(rel_quat_b);
 
@@ -592,10 +593,11 @@ fn solve_gear(joint: &GearJoint, bodies: &mut [RigidBody], dt: Fix128) {
     let inv_w = Fix128::ONE / w_sum;
     let lambda = error * inv_w;
 
-    // Apply angular corrections around the Z axis (simplified)
+    // Apply angular corrections around the Z axis (simplified).
+    // grad C = (1, ratio), so d_angle_a = -lambda w_a and d_angle_b = -lambda ratio w_b.
     if !body_a.inv_mass.is_zero() {
         let half_lambda = (lambda * w_a).half();
-        let dq = QuatFix::new(Fix128::ZERO, Fix128::ZERO, half_lambda, Fix128::ONE);
+        let dq = QuatFix::new(Fix128::ZERO, Fix128::ZERO, -half_lambda, Fix128::ONE);
         bodies[joint.body_a].rotation = dq.mul(bodies[joint.body_a].rotation).normalize();
     }
     if !body_b.inv_mass.is_zero() {
@@ -774,41 +776,29 @@ const ANGLE_EPSILON_SQ: Fix128 = Fix128 {
     lo: 0x0000_0000_0001_0000,
 };
 
-/// Extract a scalar rotation angle from a quaternion (total rotation magnitude).
+/// Extract the signed rotation angle about the z axis from a quaternion.
 ///
-/// Uses the small-angle approximation `angle ~ 2 * |xyz|` when the xyz component
-/// is small, avoiding CORDIC precision issues with subunit inputs.
+/// This is the axis [`solve_gear`] applies its correction about, so reading and
+/// writing use the same sign convention. See [`extract_angle_around_axis`].
 #[must_use]
 fn extract_angle(q: QuatFix) -> Fix128 {
-    let xyz = Vec3Fix::new(q.x, q.y, q.z);
-    let xyz_len_sq = xyz.length_squared();
-    if xyz_len_sq < ANGLE_EPSILON_SQ {
-        return Fix128::ZERO;
-    }
-    // angle = 2 * |xyz| is the small-angle approximation for unit quaternions.
-    // For larger angles (|xyz| > 0.1), use: angle = 2 * asin(|xyz|).
-    // Since asin is not available, we use: angle ~ 2 * |xyz| / |q| which is
-    // exact for unit quaternions when angle is small, and a reasonable
-    // approximation otherwise (error < 5% for angles up to pi/2).
-    // For the gear/rack joints, frame-to-frame deltas are small enough.
-    let xyz_len = xyz_len_sq.sqrt();
-    xyz_len.double()
+    extract_angle_around_axis(q, Vec3Fix::UNIT_Z)
 }
 
-/// Extract the rotation angle around a specific axis from a quaternion.
+/// Extract the signed rotation angle around a specific axis from a quaternion.
 ///
-/// Projects the quaternion's imaginary part onto the given axis to isolate
-/// the twist component, then extracts the angle.
+/// Projects the quaternion's imaginary part onto the given (unit) axis to isolate
+/// the twist component and returns `2 * (xyz . axis)`, the small-angle form of
+/// `2 * atan2(xyz . axis, w)`. A rotation in the negative sense about `axis`
+/// returns a negative angle.
 #[must_use]
 fn extract_angle_around_axis(q: QuatFix, axis: Vec3Fix) -> Fix128 {
     let qv = Vec3Fix::new(q.x, q.y, q.z);
-    let proj = axis * qv.dot(axis);
-    let proj_len_sq = proj.length_squared();
-    if proj_len_sq < ANGLE_EPSILON_SQ {
+    let twist = qv.dot(axis);
+    if twist * twist < ANGLE_EPSILON_SQ {
         return Fix128::ZERO;
     }
-    let proj_len = proj_len_sq.sqrt();
-    proj_len.double()
+    twist.double()
 }
 
 /// Apply angular correction to two bodies (utility).
