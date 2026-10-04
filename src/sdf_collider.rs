@@ -149,6 +149,24 @@ impl<A: SdfField, B: SdfField> SdfField for SdfUnion<A, B> {
     }
 }
 
+/// Central-difference step for an f32 SDF normal at `(x, y, z)`.
+///
+/// `base_eps` is used as is near the origin. An absolute step stops resolving
+/// far from it: once `base_eps` falls below the f32 spacing of the
+/// coordinates, `x + eps` rounds back to `x` and the difference is zero or
+/// noise (AUD-A-S5W3-008, AUD-A-S5W3-013). The step therefore grows in
+/// proportion to the largest coordinate magnitude, `1e-4 * max(|x|, |y|, |z|)`
+/// (at least about 840 f32 ulps of that coordinate), whenever that exceeds
+/// `base_eps`.
+/// The same step is used on all three axes so the gradient direction is not
+/// skewed.
+#[inline]
+#[must_use]
+pub(crate) fn fd_normal_step(base_eps: f32, x: f32, y: f32, z: f32) -> f32 {
+    let scale = x.abs().max(y.abs()).max(z.abs());
+    base_eps.max(1.0e-4 * scale)
+}
+
 // ============================================================================
 // SDF Collider (world-space placement)
 // ============================================================================

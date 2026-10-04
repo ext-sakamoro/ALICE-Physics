@@ -39,7 +39,7 @@
 //!
 //! Author: Moroya Sakamoto
 
-use crate::sdf_collider::SdfField;
+use crate::sdf_collider::{fd_normal_step, SdfField};
 
 #[cfg(not(feature = "std"))]
 use alloc::boxed::Box;
@@ -157,7 +157,7 @@ impl SdfField for ModifiedSdf {
 
     #[inline]
     fn normal(&self, x: f32, y: f32, z: f32) -> (f32, f32, f32) {
-        let e = self.normal_eps;
+        let e = fd_normal_step(self.normal_eps, x, y, z);
         let dx = self.eval_distance(x + e, y, z) - self.eval_distance(x - e, y, z);
         let dy = self.eval_distance(x, y + e, z) - self.eval_distance(x, y - e, z);
         let dz = self.eval_distance(x, y, z + e) - self.eval_distance(x, y, z - e);
@@ -221,7 +221,7 @@ impl<M: PhysicsModifier> SdfField for SingleModifiedSdf<M> {
 
     #[inline]
     fn normal(&self, x: f32, y: f32, z: f32) -> (f32, f32, f32) {
-        let e = self.normal_eps;
+        let e = fd_normal_step(self.normal_eps, x, y, z);
         let dx = self.eval_distance(x + e, y, z) - self.eval_distance(x - e, y, z);
         let dy = self.eval_distance(x, y + e, z) - self.eval_distance(x, y - e, z);
         let dz = self.eval_distance(x, y, z + e) - self.eval_distance(x, y, z - e);
