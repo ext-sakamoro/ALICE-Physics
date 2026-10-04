@@ -97,6 +97,44 @@ class Select(unittest.TestCase):
         )
 
 
+class LibRs(unittest.TestCase):
+    ADD = (
+        "diff --git a/src/lib.rs b/src/lib.rs\n--- a/src/lib.rs\n+++ b/src/lib.rs\n@@ -1,2 +1,6 @@\n"
+        " pub mod solver;\n"
+        '+#[cfg(feature = "std")]\n+pub mod vehicle_dynamics;\n+pub mod sensors;\n+pub use sensors::Lidar;\n+// docs\n'
+    )
+
+    def test_only_added_module_declarations_return_the_module_names(self):
+        self.assertEqual(at.lib_rs_added_modules(self.ADD), ["sensors", "vehicle_dynamics"])
+
+    def test_a_removed_line_cannot_be_narrowed(self):
+        self.assertIsNone(at.lib_rs_added_modules(self.ADD + "-pub mod old;\n"))
+
+    def test_a_reexport_list_edit_is_narrowable(self):
+        d = self.ADD + "-    SolverBackend,\n+    SolverBackend, WorldSnapshotError,\n"
+        self.assertEqual(at.lib_rs_added_modules(d), ["sensors", "vehicle_dynamics"])
+
+    def test_a_removed_module_declaration_is_not_a_reexport_edit(self):
+        self.assertIsNone(at.lib_rs_added_modules(self.ADD + "-pub mod old;\n"))
+
+    def test_an_added_expression_cannot_be_narrowed(self):
+        self.assertIsNone(at.lib_rs_added_modules(self.ADD + "+pub const X: u32 = 1;\n"))
+
+    def test_a_narrowed_lib_rs_selects_the_added_modules_tests_instead_of_everything(self):
+        r = at.select(["src/lib.rs", "src/pressure.rs"], TESTS, REQ, {"std"}, ["pressure"])
+        self.assertFalse(r["all"])
+        self.assertIn("audit_pressure", r["targets"])
+
+    def test_a_new_module_alone_selects_tests_that_name_it(self):
+        r = at.select(["src/lib.rs"], TESTS, REQ, {"std"}, ["pressure"])
+        self.assertFalse(r["all"])
+        self.assertEqual(r["modules"], ["pressure"])
+        self.assertIn("audit_pressure", r["targets"])
+
+    def test_without_the_lib_rs_diff_it_still_falls_back_to_everything(self):
+        self.assertTrue(at.select(["src/lib.rs"], TESTS, REQ, {"std"}, None)["all"])
+
+
 class Counting(unittest.TestCase):
     def test_passed_counts_are_summed_over_binaries(self):
         out = (
