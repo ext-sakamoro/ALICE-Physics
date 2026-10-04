@@ -150,7 +150,6 @@ impl Sim {
             condition: &self.cond,
             wind: None,
             time: Fix128::ZERO,
-            gravity: self.world.config.gravity,
         };
         self.veh
             .update(&mut self.world.bodies[self.car], &self.road, &env, step);
@@ -230,7 +229,17 @@ fn zero_dt_changes_nothing() {
 }
 
 /// Free-fall closed form for the world step with damping 1:
-/// `v_y(N) = −g N dt`. Tolerance `1e-12` (Fix128 rounding of `dt = 1/60`).
+/// `v_y(N) = −g N dt`, horizontal velocity constant.
+///
+/// The update itself must leave the velocity bit-identical (no contact, no
+/// force). Across `world.step` the velocity is rebuilt from positions each
+/// substep, `v = (x − x_prev) / h` with `h = dt / S`, so Fix128 rounding
+/// (fraction `ε = 2⁻⁶⁴`) enters as: `h` and `1/h` are rounded (relative
+/// `ε / h` each) and `x` is rounded (absolute `ε`, i.e. `ε / h` in velocity).
+/// Over `n = 60 S` substeps:
+/// `|Δv| ≤ n ε (2 |v| + 2) / h` (2.7e-13 m/s at `|v| = 10`, `S = 8`; measured
+/// 2e-14 horizontally). The vertical check adds the same bound to the
+/// `f64` evaluation of `g N dt`.
 fn assert_free_fall(sim: &mut Sim, label: &str) {
     let g = sim.g();
     let v0 = sim.body().velocity;
@@ -244,22 +253,29 @@ fn assert_free_fall(sim: &mut Sim, label: &str) {
         );
         sim.world.step(dt());
     }
+    let substeps = sim.world.config.substeps as f64;
+    let h = DT / substeps;
+    let eps = 2.0_f64.powi(-64);
+    let n = 60.0 * substeps;
+    let rounding = |v: f64| n * eps * (2.0 * v.abs() + 2.0) / h;
     let want = f(v0.y) - g * 60.0 * DT;
     let got = f(sim.body().velocity.y);
+    let tol_y = rounding(want) + 1e-12;
     assert!(
-        (got - want).abs() <= 1e-12,
-        "{label}: v_y {got}, free fall {want}"
+        (got - want).abs() <= tol_y,
+        "{label}: v_y {got}, free fall {want} ± {tol_y}"
     );
-    assert_eq!(
-        sim.body().velocity.x,
-        v0.x,
-        "{label}: horizontal velocity changed"
-    );
-    assert_eq!(
-        sim.body().velocity.z,
-        v0.z,
-        "{label}: horizontal velocity changed"
-    );
+    for (axis, got, want) in [
+        ("x", sim.body().velocity.x, v0.x),
+        ("z", sim.body().velocity.z, v0.z),
+    ] {
+        let (got, want) = (f(got), f(want));
+        let tol = rounding(want);
+        assert!(
+            (got - want).abs() <= tol,
+            "{label}: v_{axis} {got} changed from {want} beyond the step rounding {tol}"
+        );
+    }
 }
 
 /// No wheels: no contact, no force (aero 0, no wind) whatever the inputs, so
