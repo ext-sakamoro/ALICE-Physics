@@ -956,10 +956,9 @@ impl DynamicVehicle {
                 groups.push([i].to_vec());
             }
         }
-        let fwd_speed = chassis.velocity.dot(forward);
         let omega0: Vec<Fix128> = self.wheels.iter().map(|w| w.omega).collect();
         for g in &groups {
-            self.solve_spin_group(g, &sc, dt, fwd_speed);
+            self.solve_spin_group(g, &sc, dt);
         }
 
         // --- 6: impulses at the contact points --------------------------------
@@ -1304,13 +1303,7 @@ impl DynamicVehicle {
     }
 
     /// Spin update of one group of wheels sharing `ω` (see [`Self::update`]).
-    fn solve_spin_group(
-        &mut self,
-        members: &[usize],
-        sc: &[WheelScratch],
-        dt: Fix128,
-        fwd: Fix128,
-    ) {
+    fn solve_spin_group(&mut self, members: &[usize], sc: &[WheelScratch], dt: Fix128) {
         if members.is_empty() {
             return;
         }
@@ -1343,40 +1336,13 @@ impl DynamicVehicle {
             return;
         }
         let omega_free = omega + dt * torque / i_eff;
-        let mut applied = brake;
-        let mut new_omega = coulomb(omega_free, dt * brake / i_eff);
-        let mut abs_on = false;
-        if let Some(abs) = self.config.brakes.abs {
-            if brake > Fix128::ZERO && fwd > abs.min_speed {
-                let mut target: Option<Fix128> = None;
-                for &i in members {
-                    let s = sc[i];
-                    let r = self.config.base.wheels[i].radius;
-                    if s.loaded && s.v_x > Fix128::ZERO && r > Fix128::ZERO {
-                        let w = s.v_x * (Fix128::ONE - abs.target_slip) / r;
-                        target = Some(match target {
-                            Some(t) if t >= w => t,
-                            _ => w,
-                        });
-                    }
-                }
-                if let Some(w_t) = target {
-                    if new_omega < w_t {
-                        applied = clamp((omega_free - w_t) * i_eff / dt, Fix128::ZERO, brake);
-                        new_omega = coulomb(omega_free, dt * applied / i_eff);
-                        abs_on = true;
-                    }
-                }
-            }
-        }
+        // ABS is decided in the friction solve, which follows the contact
+        // velocity; the prediction brakes with the full pedal torque
+        let new_omega = coulomb(omega_free, dt * brake / i_eff);
         for &i in members {
             self.wheels[i].omega = new_omega;
-            self.wheels[i].abs_active = abs_on;
-            self.wheels[i].brake_torque = if brake.is_zero() {
-                Fix128::ZERO
-            } else {
-                sc[i].brake * applied / brake
-            };
+            self.wheels[i].abs_active = false;
+            self.wheels[i].brake_torque = sc[i].brake;
         }
     }
 
