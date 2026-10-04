@@ -560,11 +560,15 @@ impl DynamicVehicle {
     /// (`C = longitudinal_slope(F_z, μ_x,static)`, `v̄ = max(|v_x|, v_floor)`,
     /// `v_x` frozen over the frame) the free spin is
     /// `ω_f = ω + dt (T_drive − Σ F_x(ω) r) / I_eff`,
-    /// `I_eff = Σ I + dt Σ C r² / v̄`. The slope is used only while the tyre is
-    /// in its linear range (`|C κ| ≤ μ_x,static F_z`); a saturated tyre is
-    /// integrated explicitly (slope 0). A massless wheel (`wheel_inertia ≤ 0`)
-    /// always uses the slope, i.e. it takes one Newton step per frame towards
-    /// its quasi-static balance (exact within the tyre's linear range).
+    /// `I_eff = Σ I + dt Σ C r² / v̄`. `C` is the small-slip slope while the
+    /// tyre is in its linear range (`|C κ| ≤ μ_x,static F_z`); a saturated
+    /// tyre uses the secant slope `F_x(κ)/κ` instead (0 when not positive).
+    /// An explicit update of a saturated tyre is not used: its spin change
+    /// `dt F_x r / I` (≈ 10 rad/s per frame at 60 Hz for a passenger wheel)
+    /// flips the slip sign every frame and the wheel never returns to the
+    /// linear range. A massless wheel (`wheel_inertia ≤ 0`) always uses the
+    /// small-slip slope, i.e. it takes one Newton step per frame towards its
+    /// quasi-static balance (exact within the tyre's linear range).
     /// Brakes are Coulomb: `ω' = ω_f` reduced in magnitude by
     /// `dt T_brake / I_eff` without crossing zero, so a large enough torque
     /// locks the wheel (`ω' = 0`) within one frame and never spins it
@@ -774,6 +778,12 @@ impl DynamicVehicle {
                         let c = self.config.tire.longitudinal_slope(st.normal_load, mu);
                         if massless || (c * kappa).abs() <= mu * st.normal_load {
                             s.slope = c;
+                        } else if !kappa.is_zero() {
+                            // saturated: secant slope F_x(κ)/κ (≥ 0, ≤ C)
+                            let secant = f.longitudinal / kappa;
+                            if secant > Fix128::ZERO {
+                                s.slope = secant;
+                            }
                         }
                     }
                 }
