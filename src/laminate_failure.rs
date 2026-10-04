@@ -61,6 +61,7 @@ impl core::fmt::Display for InvalidStrengthError {
     }
 }
 
+#[cfg(feature = "std")]
 impl std::error::Error for InvalidStrengthError {}
 
 /// Failure index reported for a ply whose strength is zero or negative while the
