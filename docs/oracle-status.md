@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 4027 |
+| 🟢 Not ignored (run by CI) | 4048 |
 | 🔴 Red by design | 244 |
 | ⏱ Gated (runtime / diagnostic / manual) | 24 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **4295** |
+| **Total** | **4316** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -317,7 +317,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (4027)
+## 🟢 Not ignored (4048)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -509,6 +509,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_db_bridge_wiring.rs` | 10 |
 | `analytic_fsi_advanced_wiring.rs` | 10 |
 | `analytic_linear_elastic_fem_wiring_additional.rs` | 10 |
+| `analytic_particle_landing.rs` | 10 |
 | `analytic_physics2d_wiring.rs` | 10 |
 | `analytic_pressure_solvers.rs` | 10 |
 | `analytic_sdf_sph_wiring.rs` | 10 |
@@ -566,6 +567,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_hyperelastic_degenerate.rs` | 7 |
 | `analytic_multigrid.rs` | 7 |
 | `analytic_non_newtonian_wiring.rs` | 7 |
+| `analytic_physics2d_joints.rs` | 7 |
 | `analytic_piezoelectric_wiring.rs` | 7 |
 | `analytic_rng_wiring.rs` | 7 |
 | `analytic_soft_body_cut_wiring.rs` | 7 |
@@ -604,6 +606,7 @@ Per-file counts (the test names are in `tests/`):
 | `mms_linear_elastic.rs` | 5 |
 | `reduction_order_independence.rs` | 5 |
 | `analytic_adaptive_refinement_high_order.rs` | 4 |
+| `analytic_critically_damped_tether.rs` | 4 |
 | `analytic_step_default_projection.rs` | 4 |
 | `locking_p1.rs` | 4 |
 | `p2_oracle_design.rs` | 4 |
