@@ -148,6 +148,7 @@ were introduced during that release window.
 - **Behavior change:** kinematic body の step 後の速度は (target − start) / dt になる (従来は 0) (AUD-A-S1W2-002)
 - **Behavior change:** `transient_thermal::transient_step_1d` / `transient_step_3d` を面の調和平均による保存形にした 不均一な k でも総熱量が保存され、golden hash `golden_modifier_family` が変わる
 - CHANGELOG を Keep a Changelog 1.1 の形にした `[Unreleased]` は分類ごとに 1 行の箇条、既定値や出力が変わるものは `**Behavior change:**`、公開済みの版に比較 link
+- `Cargo.toml` の `description` を実装に合わせた (128-bit 固定小数点は剛体のコア、FEM / CFD などは `f32` / `f64` を `det_math` で決定論にしている)
 - CI: `scripts/docs_lint.py --check` を追加 公開文書 (README / README_JP / docs/MODULES.md / CHANGELOG) の開発運用の語と非公開の名前、CHANGELOG の版見出しの重複・順序・Cargo.toml との整合、`[Unreleased]` の分類見出しの重複と絵文字を検査する
 
 ### Deprecated
