@@ -6,16 +6,16 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 3994 |
-| 🔴 Red by design | 274 |
+| 🟢 Not ignored (run by CI) | 3998 |
+| 🔴 Red by design | 271 |
 | ⏱ Gated (runtime / diagnostic / manual) | 24 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **4292** |
+| **Total** | **4293** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
 
-## 🔴 Red by design (274)
+## 🔴 Red by design (271)
 
 Oracles kept red on purpose: the implementation is not there yet, and a companion test pins
 today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected value is never loosened.
@@ -69,13 +69,10 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `contact_concentric_sphere_pair_reports_the_radius_sum` (audit_collider.rs) — known defect: AUD-A-S3W3-016: EPA depth for near-concentric spheres is 5.5 percent shallow (concentric r 1.0 +…
 - `contact_upload_keeps_slot_alignment_with_a_sensor_in_slot_zero` (audit_gpu_bridge.rs) — known defect: AUD-A-S2W3-003: send_contact_constraints doc says indices line up with contact_constraints slots…
 - `contain_is_force_free_inside_as_documented` (audit_sdf_force.rs) — known defect: AUD-A-S4W1-009: SdfForceType::Contain doc says zero force inside; code returns -damping*velocity…
-- `countmin_total_does_not_overflow_when_counters_saturate` (audit_sketch.rs) — known defect: AUD-A-S3W1-010: CountMinSketch::insert_hash(_, u64::MAX) twice: counters saturate but `total += …
 - `covering_is_the_smallest_power_of_two_at_or_above_a_fractional_magnitude` (audit_coupled_iteration.rs) — known defect: AUD-A-S3W3-012: EquilibrationScale::covering(0.3) returns factor 1 (exponent is u32), so the doc…
 - `critical_load_does_not_depend_on_how_the_rectangle_is_labelled` (audit_buckling.rs) — known defect: AUD-A-S2W2-006: analyze_column uses I about the horizontal axis (b h^3/12), not the weak axis mi…
 - `curvature_is_invariant_under_scaling_of_phi` (audit_multiphase.rs) — known defect: AUD-A-S2W3-009: curvature_at documents a 1/|grad phi| scaling but returns the bare Laplacian / d…
 - `d6_local_frame_b_defines_the_zero_error_pose` (audit_joint.rs) — known defect: AUD-A-S1W6-010 / AUD-B-S1W6-001: D6Joint.local_frame_b is never read (grep: only its definition …
-- `ddsketch_infinite_input_does_not_panic` (audit_sketch.rs) — known defect: AUD-A-S3W1-008: DDSketch::insert(+-inf) panics with integer overflow in debug builds (wraps in r…
-- `ddsketch_nan_input_does_not_poison_the_sketch` (audit_sketch.rs) — known defect: AUD-A-S3W1-007: DDSketch::insert(NaN) is counted in the zero block and makes sum()/mean() NaN pe…
 - `ddsketch_quantile_zero_is_inside_the_data_range` (audit_sketch.rs) — known defect: AUD-A-S3W1-006: DDSketch::quantile(0.0) (rank 0) returns the outermost negative bucket edge, -2.…
 - `ddsketch_relative_error_holds_above_the_last_bucket` (audit_sketch.rs) — known defect: AUD-A-S3W1-009: values above the top bin (gamma^(3 BINS/4) = 2e13 at alpha 0.01) are dropped fro…
 - `ddsketch_relative_error_holds_below_the_first_bucket` (audit_sketch.rs) — known defect: AUD-A-S3W1-009: values below gamma^-(BINS/4) (3.6e-5 at alpha 0.01, DDSketch2048) are clamped in…
@@ -355,7 +352,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (3994)
+## 🟢 Not ignored (3998)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -454,6 +451,7 @@ Per-file counts (the test names are in `tests/`):
 | `audit_interpolation.rs` | 16 |
 | `audit_maxwell_fdtd.rs` | 16 |
 | `audit_sim_modifier.rs` | 16 |
+| `audit_sketch.rs` | 16 |
 | `analytic_articulation_wiring.rs` | 15 |
 | `analytic_dynamic_fem.rs` | 15 |
 | `analytic_multibody_dynamics.rs` | 15 |
@@ -516,7 +514,6 @@ Per-file counts (the test names are in `tests/`):
 | `audit_ellipsoid.rs` | 12 |
 | `audit_material.rs` | 12 |
 | `audit_plastic.rs` | 12 |
-| `audit_sketch.rs` | 12 |
 | `audit_spatial.rs` | 12 |
 | `audit_turbulence.rs` | 12 |
 | `audit_wind_zone.rs` | 12 |

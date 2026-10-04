@@ -61,12 +61,16 @@
 //! keys (their digest is `fmix64(offset basis)`). `quantile(0.0)` (and any
 //! `q` whose rank rounds to `0`, including negative and NaN) returns the
 //! lower edge of the outermost negative bucket, `−γ^{BINS − offset − 2}`,
-//! not the minimum; `q > 1` returns `max`. `insert(NaN)` lands in the zero
-//! block; `insert(±∞)` overflows the `i32` bucket index and panics in a
-//! debug build; `DDSketch::new(0.0)` makes `ln γ = 0` and `insert(2.0)`
-//! panics the same way. `CountMinSketch::insert_hash` saturates the
-//! counters but adds to `total` with plain `+=`, which panics in a debug
-//! build once the total passes `u64::MAX`.
+//! not the minimum; `q > 1` returns `max`. `insert(NaN)` and `insert(±∞)`
+//! are rejected outright (not counted, not binned, `sum`/`min`/`max`
+//! untouched) since both would otherwise corrupt the running state
+//! (NaN poisons `sum`, `±∞` overflows the `i32` bucket index in a debug
+//! build); `DDSketch::new(0.0)` still makes `ln γ = 0` and `insert(2.0)`
+//! panics (a separate, unfixed defect — `α = 0` is finite so it is not
+//! caught by the `is_finite()` guard). `CountMinSketch::insert_hash` and
+//! `merge` accumulate `total` with `saturating_add`, matching the
+//! per-bucket counters, so `total` saturates at `u64::MAX` instead of
+//! overflowing.
 //!
 //! Author: Moroya Sakamoto
 
@@ -459,18 +463,18 @@ fn count_min_degenerate_inputs() {
     cms.insert_hash(h, u64::MAX);
     assert_eq!(cms.estimate_hash(h), u64::MAX);
     assert_eq!(cms.total(), u64::MAX);
-    // ... but `total` is a plain `+=`: the next insertion overflows it.
-    // Measured contract: panic in a debug build ("attempt to add with
-    // overflow"), wrap-around in release.
+    // `total` is accumulated with saturating_add, matching the per-bucket
+    // counters: the next insertion does not panic and total stays at the
+    // saturated maximum rather than overflowing or wrapping.
     let r = catch_unwind(AssertUnwindSafe(|| {
         cms.insert_hash(h, 1);
         cms.total()
     }));
-    if cfg!(debug_assertions) {
-        assert!(r.is_err(), "total overflow panics in debug builds");
-    } else {
-        assert_eq!(r.expect("release wraps"), 0, "total wraps in release");
-    }
+    assert_eq!(
+        r.expect("total must not overflow"),
+        u64::MAX,
+        "total saturates"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -756,12 +760,13 @@ fn ddsketch_degenerate_inputs() {
     let qmin = sketch.quantile(0.001);
     assert!(qmin <= 1.0 && qmin >= 1.0 / g, "quantile(0.001) = {qmin}");
 
-    // NaN is counted in the zero block.
+    // NaN is rejected outright: not counted, not binned, sum/min/max untouched.
     let mut nan = DDSketch::new(ALPHA);
     nan.insert(f64::NAN);
-    assert_eq!(nan.count(), 1);
-    assert_eq!(nan.quantile(1.0), 0.0, "NaN lands in the zero block");
+    assert_eq!(nan.count(), 0, "NaN is rejected, not counted");
+    assert_eq!(nan.quantile(1.0), 0.0, "empty sketch quantile");
     assert_eq!(nan.min(), f64::INFINITY, "NaN never becomes min");
+    assert_eq!(nan.sum(), 0.0, "NaN does not poison sum");
 
     // Tiny and huge finite values: below γ^{−offset} the index clamps to bin 0
     // (edge γ^{−offset−1}); above γ^{BINS−offset} the value is counted but not
@@ -780,19 +785,16 @@ fn ddsketch_degenerate_inputs() {
     assert_eq!(huge.quantile(1.0), 1e300, "huge: falls through to max");
     assert_eq!(huge.quantile(0.5), 1e300);
 
-    // ±∞: ln(∞)/ln γ = ∞, `ceil() as i32` saturates and `+ offset`
-    // overflows — measured: panic in a debug build.
+    // ±∞ is rejected outright (same `is_finite()` guard as NaN), so the
+    // `ln(∞)/ln γ = ∞, ceil() as i32 saturates and + offset overflows`
+    // path in `bucket_index` is never reached: no panic, not counted.
     for v in [f64::INFINITY, f64::NEG_INFINITY] {
         let r = catch_unwind(AssertUnwindSafe(|| {
             let mut s = DDSketch::new(ALPHA);
             s.insert(v);
             s.count()
         }));
-        if cfg!(debug_assertions) {
-            assert!(r.is_err(), "insert({v}) panics in debug builds");
-        } else {
-            assert_eq!(r.expect("release wraps"), 1);
-        }
+        assert_eq!(r.expect("insert(±inf) must not panic"), 0);
     }
 
     // α = 0: γ = 1, ln γ = 0; any value above 1 divides by zero into the
