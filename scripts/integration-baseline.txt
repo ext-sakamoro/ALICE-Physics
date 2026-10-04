@@ -27,7 +27,6 @@ src/cloth_fluid.rs::apply_fluid_forces_to_cloth_with_residual
 src/collider.rs::ScaledShape
 src/compound.rs::TransformedCompound
 src/compound.rs::aabb
-src/compound.rs::support_world
 src/compressible.rs::pressure
 src/cone.rs::aabb
 src/cone.rs::surface_area
@@ -39,7 +38,6 @@ src/contact_cache.rs::is_empty
 src/convex_mesh_builder.rs::build_convex_hull
 src/coupled_field.rs::add
 src/coupled_field.rs::clamp
-src/coupled_field.rs::copy_from_f32
 src/coupled_field.rs::decay
 src/coupled_field.rs::decay_toward
 src/coupled_field.rs::diffuse
@@ -47,7 +45,6 @@ src/coupled_field.rs::gradient
 src/coupled_field.rs::max
 src/coupled_field.rs::min
 src/coupled_field.rs::sum
-src/coupled_field.rs::write_to_f32
 src/coupled_iteration.rs::EquilibrationScale
 src/coupled_iteration.rs::IDENTITY
 src/coupled_iteration.rs::MAX_EXPONENT
@@ -68,8 +65,6 @@ src/dynamic_bvh.rs::node_count
 src/dynamic_bvh.rs::query
 src/ellipsoid.rs::aabb
 src/ellipsoid.rs::with_rotation
-src/eulerian_grid.rs::DELIVERY_DESTINATION_LACKS_LAYER
-src/eulerian_grid.rs::DELIVERY_SOURCE_LACKS_LAYER
 src/eulerian_grid.rs::LocalPlaneChannel
 src/eulerian_grid.rs::PlaneChannel
 src/eulerian_grid.rs::SLAB_FACE_HALO_MISSING
@@ -127,7 +122,6 @@ src/motor.rs::compute_torque
 src/motor.rs::disable
 src/motor.rs::set_rotation_target
 src/motor.rs::set_velocity_target
-src/netcode.rs::has_action
 src/physics2d.rs::Contact2D
 src/physics2d.rs::Joint2D
 src/physics2d.rs::ONE
@@ -182,7 +176,6 @@ src/sdf_wind_field.rs::SdfWindField
 src/sdf_wind_field.rs::new
 src/sdf_wind_field.rs::sample
 src/sim_field.rs::VectorField3D
-src/sim_field.rs::clamp
 src/sim_field.rs::clear
 src/sim_field.rs::contains
 src/sim_field.rs::max_value
@@ -201,8 +194,6 @@ src/solver_tgs.rs::is_empty
 src/solver_tgs.rs::len
 src/solver_tgs.rs::par_dispatch_islands
 src/solver_tgs.rs::peek
-src/solver_tgs.rs::set
-src/solver_tgs.rs::take
 src/solver_tgs_hooks.rs::PgsConfig
 src/solver_tgs_hooks.rs::PgsHooks
 src/solver_tgs_hooks.rs::SimpleBodyState
@@ -212,11 +203,7 @@ src/solver_tgs_hooks_6dof.rs::Contact6Dof
 src/solver_tgs_hooks_6dof.rs::Pgs6DofConfig
 src/solver_tgs_hooks_6dof.rs::Pgs6DofHooks
 src/solver_tgs_hooks_6dof.rs::new
-src/solver_tgs_hooks_6dof_oriented.rs::advance
-src/solver_tgs_hooks_6dof_oriented.rs::from_vec3fix
-src/solver_tgs_hooks_6dof_oriented.rs::integrate_orientation
 src/solver_tgs_hooks_6dof_oriented.rs::local_to_world
-src/solver_tgs_hooks_6dof_oriented.rs::to_vec3fix
 src/solver_tgs_hooks_6dof_oriented_scoped.rs::solve_oriented_islands_parallel
 src/solver_tgs_hooks_6dof_scoped.rs::solve_island_isolated
 src/solver_tgs_hooks_6dof_scoped.rs::solve_islands_parallel
@@ -231,5 +218,4 @@ src/vehicle.rs::new_default
 src/wave_ship.rs::ShipResponse
 src/wave_ship.rs::advance
 src/wedge.rs::aabb
-src/wedge.rs::vertices
 src/wedge.rs::with_rotation
