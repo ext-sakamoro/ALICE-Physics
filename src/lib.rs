@@ -501,6 +501,7 @@ pub mod transient_thermal;
 pub mod trimesh;
 pub mod turbulence;
 pub mod vehicle;
+pub mod vehicle_dynamics;
 #[cfg(feature = "wasm")]
 mod wasm;
 pub mod wedge;
