@@ -2297,13 +2297,6 @@ mod tests {
         }
         let d = world.bodies[idx].position - start;
         let horiz = (d.x * d.x + d.z * d.z).sqrt();
-        if std::env::var("VD_DEBUG").is_ok() {
-            std::println!(
-                "flat drift {:.3e} m, v {:?}",
-                horiz.to_f64(),
-                world.bodies[idx].velocity.to_f32()
-            );
-        }
         assert!(horiz <= fx(1, 1_000_000), "flat drift {horiz:?}");
     }
 
@@ -2333,13 +2326,8 @@ mod tests {
     fn braked_car_holds_on_slope() {
         // tan θ = 0.3 < μ (1.1 dry asphalt)
         let drift = slope_drift(fx(3, 10), 600);
-        if std::env::var("VD_DEBUG").is_ok() {
-            std::println!(
-                "drift 0.99 {:.3e} / 1.0 {:.3e}",
-                drift.to_f64(),
-                slope_run(fx(3, 10), 600, Fix128::ONE, false).0.to_f64()
-            );
-        }
+        let drift_undamped = slope_run(fx(3, 10), 600, Fix128::ONE, false).0;
+        assert!(drift_undamped.abs() <= fx(1, 1000), "{drift_undamped:?}");
         assert!(
             drift.abs() <= fx(1, 1000),
             "drift along the slope over 600 frames: {drift:?} m"
