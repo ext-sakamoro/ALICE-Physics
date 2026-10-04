@@ -2,7 +2,10 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # `ci/**` is a staging branch: push a batch there, let the full 5-OS suites run
+    # off the local machine, then fast-forward main to the same SHA once green
+    # (the local gate is `scripts/preflight.sh --fast`).
+    branches: [main, 'ci/**']
   pull_request:
     branches: [main]
 
