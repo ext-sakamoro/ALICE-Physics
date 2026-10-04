@@ -199,7 +199,6 @@ fn tangent_frame_is_orthonormal_and_right_handed_for_many_normals() {
 /// `ContactCache::manifolds` is a public Vec shadowed by a private pair index. Clearing the Vec
 /// directly (it is `pub`) leaves the index pointing past the end and `find` panics.
 #[test]
-#[ignore = "known defect: AUD-A-S1W5-015: ContactCache.manifolds is pub but find()/get_or_create() trust a private pair_index; after `cache.manifolds.clear()` find() panics (index out of bounds) instead of returning None"]
 fn find_after_direct_manifolds_mutation_does_not_panic() {
     let mut cache = ContactCache::new();
     let key = BodyPairKey::new(0, 1);
