@@ -187,7 +187,6 @@ fn closest_and_all_agree_on_equidistant_aabbs() {
 
 /// A box farther than 1e6 away is hit when `max_t` allows it.
 #[test]
-#[ignore = "known defect: AUD-A-S5W1-005: ray_aabb_interval initialises the slab interval to a hard-coded [-1e6, 1e6], so a box whose entry t exceeds 1e6 is silently missed even for a larger max_t"]
 fn ray_aabb_beyond_one_million_units_hits() {
     let b = AABB::new(v(-1.0, -1.0, -1.0), v(1.0, 1.0, 1.0));
     let ray = Ray::new(v(-2_000_000.0, 0.0, 0.0), v(1.0, 0.0, 0.0));
@@ -198,7 +197,6 @@ fn ray_aabb_beyond_one_million_units_hits() {
 /// Origin inside a very large box (half-extent 2e6): the exit is at the
 /// real box face, not at the 1e6 clamp.
 #[test]
-#[ignore = "known defect: AUD-A-S5W1-005: ray_aabb_interval initialises the slab interval to a hard-coded [-1e6, 1e6]; the exit t of a box larger than 1e6 is clamped"]
 fn ray_aabb_exit_of_box_larger_than_one_million_units() {
     let b = AABB::new(v(-2_000_000.0, -1.0, -1.0), v(2_000_000.0, 1.0, 1.0));
     let ray = Ray::new(v(0.0, 0.0, 0.0), v(1.0, 0.0, 0.0));
