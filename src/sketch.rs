@@ -108,6 +108,23 @@ const POW2_NEG_LUT: [f64; 65] = [
     5.421010862427522e-20,  // 2^-64
 ];
 
+/// splitmix64 output for the input `x`: `x + 0x9E37_79B9_7F4A_7C15`, then the
+/// splitmix64 finaliser (xor-shift / multiply, Stafford variant 13).
+///
+/// A bijection on `u64` that spreads structured keys (small integers, packed
+/// id pairs, values whose low bits are zero) over all 64 bits. `HyperLogLog`
+/// takes its register index from the low `P` bits of an already-mixed hash,
+/// so raw structured keys must pass through this before `insert_hash`
+/// (AUD-A-S5W1-006, AUD-A-S5W3-017).
+#[inline]
+#[must_use]
+pub(crate) const fn splitmix64(x: u64) -> u64 {
+    let mut z = x.wrapping_add(0x9E37_79B9_7F4A_7C15);
+    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    z ^ (z >> 31)
+}
+
 // ============================================================================
 // Mergeable Trait - All sketches can be merged across distributed nodes
 // ============================================================================

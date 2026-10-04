@@ -63,10 +63,13 @@ impl PhysicsTelemetry {
 
     /// Record a collision pair observation (for unique pair counting).
     ///
-    /// `pair_hash` should be a deterministic hash of the two body IDs
-    /// (e.g. `min(a,b) << 32 | max(a,b)`).
+    /// `pair_hash` should be a deterministic key of the two body IDs
+    /// (e.g. `min(a,b) << 32 | max(a,b)`). It is mixed with splitmix64
+    /// before it reaches the `HyperLogLog`, so structured keys such as that
+    /// packing need no hashing by the caller.
     pub fn record_collision_pair(&mut self, pair_hash: u64) {
-        self.collision_pairs.insert_hash(pair_hash);
+        self.collision_pairs
+            .insert_hash(crate::sketch::splitmix64(pair_hash));
     }
 
     /// Estimated p50 step time.
