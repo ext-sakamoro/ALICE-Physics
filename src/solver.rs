@@ -740,6 +740,9 @@ struct ParkState {
     awake: Vec<usize>,
     cache: Vec<Option<ParkCache>>,
     proxies: Vec<Option<u32>>,
+    /// Number of `Some` in `proxies` (`DynamicAabbTree::proxy_count` walks
+    /// every node, which would put the parked bodies back into each substep).
+    proxy_live: usize,
     tree: crate::dynamic_bvh::DynamicAabbTree,
     key: Option<ParkKey>,
     /// Scratch: body referenced by a joint or a distance constraint.
@@ -753,7 +756,7 @@ struct ParkState {
 impl ParkState {
     /// [`Self::clear`], counting the dropped proxies as tree removals.
     fn clear_counted(&mut self, stats: &mut StageWork) {
-        stats.tree_removes += self.proxies.iter().flatten().count() as u64;
+        stats.tree_removes += self.proxy_live as u64;
         self.clear();
     }
 
@@ -761,6 +764,7 @@ impl ParkState {
     fn clear(&mut self) {
         self.tree = crate::dynamic_bvh::DynamicAabbTree::new();
         self.proxies.clear();
+        self.proxy_live = 0;
         self.cache.clear();
         self.parked.clear();
         self.parked_list.clear();
@@ -773,6 +777,7 @@ impl ParkState {
     fn remove_proxy(&mut self, i: usize, stats: &mut StageWork) {
         if let Some(proxy) = self.proxies.get_mut(i).and_then(Option::take) {
             self.tree.remove(proxy);
+            self.proxy_live -= 1;
             stats.tree_removes += 1;
         }
     }
@@ -2707,6 +2712,7 @@ impl PhysicsWorld {
                         let half = Vec3Fix::new(r, r, r);
                         let aabb = AABB::from_center_half(self.bodies[i].position, half);
                         self.park.proxies[i] = Some(self.park.tree.insert(aabb, i as u32));
+                        self.park.proxy_live += 1;
                         self.stage_work.tree_inserts += 1;
                     }
                 }
@@ -4753,7 +4759,7 @@ impl PhysicsWorld {
         self.stage_work.broadphase_primitives += primitives.len() as u64;
 
         let parked_with_radius = if self.park.active {
-            self.park.tree.proxy_count()
+            self.park.proxy_live
         } else {
             0
         };
@@ -8437,6 +8443,55 @@ mod tests {
             world.bodies[body].position,
             Vec3Fix::new(r(1, 8), Fix128::ZERO, Fix128::ZERO)
         );
+    }
+
+    /// The live-proxy count the broad-phase reads every substep equals the
+    /// number of proxies in the parked-body tree through parking, a contact
+    /// unpark, a manual wake, a removal and turning the skip off.
+    #[test]
+    fn park_proxy_live_count_tracks_the_tree() {
+        let mut w = PhysicsWorld::new(PhysicsConfig {
+            gravity: Vec3Fix::ZERO,
+            ..PhysicsConfig::default()
+        });
+        let r = Fix128::from_ratio(1, 2);
+        for i in 0..20 {
+            w.add_body_with_radius(
+                RigidBody::new_dynamic(Vec3Fix::from_int(i * 3, 0, 0), Fix128::ONE),
+                r,
+            );
+            w.islands.sleep_data[i as usize].state = SleepState::Sleeping;
+        }
+        let check = |w: &PhysicsWorld, ctx: &str| {
+            assert_eq!(w.park.proxy_live, w.park.tree.proxy_count(), "{ctx}");
+            assert_eq!(
+                w.park.proxy_live,
+                w.park.proxies.iter().flatten().count(),
+                "{ctx}"
+            );
+        };
+        w.step(Fix128::from_ratio(1, 60));
+        check(&w, "parked");
+        assert_eq!(w.park.proxy_live, 20);
+        // Awake body 0 moved into body 1: the contact unparks it.
+        w.wake_body(0);
+        w.bodies[0].set_position(Vec3Fix::new(
+            Fix128::from_ratio(22, 10),
+            Fix128::ZERO,
+            Fix128::ZERO,
+        ));
+        w.step(Fix128::from_ratio(1, 60));
+        check(&w, "contact");
+        assert!(w.stage_work().unparked > 0);
+        w.wake_body(7);
+        w.step(Fix128::from_ratio(1, 60));
+        check(&w, "manual wake");
+        w.remove_body(3);
+        w.step(Fix128::from_ratio(1, 60));
+        check(&w, "remove");
+        w.set_sleep_skip(false);
+        check(&w, "off");
+        assert_eq!(w.park.proxy_live, 0);
     }
 
     /// `is_sleeping` → `false` / `true` and `wake_body` → `()`: after one step
