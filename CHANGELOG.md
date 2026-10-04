@@ -166,6 +166,9 @@ were introduced during that release window.
 - **Behavior change:** `Fix128::abs` を最小値に、`Fix128::ceil` を `i64::MAX` を超える値に適用すると、表現できる最大値に飽和する (従来は `abs` が負のまま、`ceil` が debug で panic していた) `max_abs_field` など最大の絶対値を取る処理が最小値のサンプルを取りこぼさなくなる (AUD-A-S1W5-028 / AUD-A-S3W3-010 / AUD-A-S5W2-017)
 - **Behavior change:** `use_turbulence` を有効にした `CfdSolver::step` と `multiphase::trilinear_sample` / `trilinear_range` は、extent が 0 の格子で usize の underflow で panic せず、内点なし / `ZERO` を返す (AUD-A-S1W4-007 / AUD-A-S2W3-007)
 - **Behavior change:** shape の `support` (`Sphere` / `Capsule` / `Cone` / `Torus` / `Ellipsoid` / `Cylinder`) と `AnisotropicFriction::friction_force` が、約 2.3e-10 未満または約 3e9 を超える方向・滑り速度でも、潰れたり wrap したりせず正しい結果を返す (窓の内側の通常入力は bit 不変) (AUD-A-S2W3-001 / AUD-A-S3W3-018 / AUD-A-S4W3-001 / AUD-A-S5W2-007 / AUD-A-S5W3-002 / AUD-A-S5W3-003 / AUD-A-S6W1-007)
+- **Behavior change:** `QuatFix::from_axis_angle` は零軸に対して単位元を返し、`Portal` / `Torus` / `DestructionShape` に与えた非単位の回転は、回す対象を拡大せず正規化した回転として適用される (AUD-A-S1W5-023 / AUD-A-S4W1-004 / AUD-A-S5W3-004 / AUD-A-S5W3-014)
+- **Behavior change:** `linear_elastic_fem` の solve は、形状関数の勾配 × 弾性率が `Fix128` の範囲を超える極端に細い要素を、誤った `UnderConstrained` ではなく `FemError::DegenerateElement` として報告する (AUD-A-S1W3-004)
+- **Behavior change:** `RandomizedResponse::new(epsilon)` は要求した ε の privacy loss を持つ (真実を答える確率は `1 - 2/(e^ε + 1)`、従来の `e^ε/(1 + e^ε)` より弱かった)、`with_probability` は [0, 1] の任意の確率を受け付け、`PrivacyBudget::try_spend` は負または NaN の ε を拒否し、`XorShift64::from_entropy` は時計だけを seed にしない (AUD-A-S4W3-020 / AUD-A-S4W3-021 / AUD-A-S4W3-022 / AUD-A-S4W3-029)
 
 ### Deprecated
 
