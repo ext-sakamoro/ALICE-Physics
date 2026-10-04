@@ -1509,6 +1509,10 @@ impl CfdSolver {
     }
 
     /// Step 1: Add body forces (gravity + buoyancy + surface tension).
+    ///
+    /// # Claims
+    /// - Surface tension adds `f / rho * dt` (m/s) to the faces along each axis,
+    ///   split 1/2 to each of the two faces of a cell, for x, y and z alike
     fn apply_body_forces(&mut self, dt_s: Fix128) {
         let g = self.gravity;
         // Uniform gravity to each face
@@ -1564,12 +1568,13 @@ impl CfdSolver {
 
         // Continuum surface force from level set
         if let Some(ls) = self.level_set.as_ref() {
-            let (fx, _fy, _fz) = compute_csf_field(
+            let (fx, fy, fz) = compute_csf_field(
                 ls,
                 self.surface_tension_n_m,
                 self.grid.dx * Fix128::from_ratio(15, 10),
             );
-            // Apply to u faces (approximate; treats fx as cell-centered)
+            // Apply each cell-centred component to the two faces of the cell along
+            // its own axis (1/2 each), so the three components act alike
             for k in 0..self.grid.nz {
                 for j in 0..self.grid.ny {
                     for i in 0..self.grid.nx {
@@ -1585,6 +1590,28 @@ impl CfdSolver {
                         if ix_hi < self.grid.u.len() {
                             self.grid.u[ix_hi] = self.grid.u[ix_hi]
                                 + force * dt_s * Fix128::from_ratio(1, 2) / self.density_kg_m3;
+                        }
+                        // v faces (j, j + 1) take fy
+                        let half_y =
+                            fy[cell_idx] * dt_s * Fix128::from_ratio(1, 2) / self.density_kg_m3;
+                        let vy_lo = i + self.grid.nx * (j + (self.grid.ny + 1) * k);
+                        let vy_hi = i + self.grid.nx * ((j + 1) + (self.grid.ny + 1) * k);
+                        if vy_lo < self.grid.v.len() {
+                            self.grid.v[vy_lo] = self.grid.v[vy_lo] + half_y;
+                        }
+                        if vy_hi < self.grid.v.len() {
+                            self.grid.v[vy_hi] = self.grid.v[vy_hi] + half_y;
+                        }
+                        // w faces (k, k + 1) take fz
+                        let half_z =
+                            fz[cell_idx] * dt_s * Fix128::from_ratio(1, 2) / self.density_kg_m3;
+                        let wz_lo = i + self.grid.nx * (j + self.grid.ny * k);
+                        let wz_hi = i + self.grid.nx * (j + self.grid.ny * (k + 1));
+                        if wz_lo < self.grid.w.len() {
+                            self.grid.w[wz_lo] = self.grid.w[wz_lo] + half_z;
+                        }
+                        if wz_hi < self.grid.w.len() {
+                            self.grid.w[wz_hi] = self.grid.w[wz_hi] + half_z;
                         }
                     }
                 }

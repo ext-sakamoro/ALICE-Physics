@@ -710,7 +710,7 @@ fn csf_x_line_impulse_matches_young_laplace_to_2_percent() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S1W4-001 (cfd_solver.rs:1567): CSF is applied through fx only; the y and z line integrals are 0 instead of -2 sigma / R"]
+#[ignore = "AUD-A-S1W4-001 fixed (y and z lines now equal the x line, -0.3207); the 5 % tolerance is met only after AUD-A-S1W4-006 (eps = 1.5 dx gives +11.4 %)"]
 fn csf_y_and_z_line_impulses_equal_the_x_one_by_sphere_symmetry() {
     let (mut s, r, sigma) = drop_solver();
     s.step_multigrid(q(1, 1000), 0);
