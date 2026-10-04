@@ -141,7 +141,6 @@ fn result_velocity_has_no_component_into_the_wall_after_a_head_on_slide() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S3W3-007: starting inside the inflated body sphere the ray_sphere far hit (exit) is treated as an obstacle with outward normal, the slide cancels the remainder and the character sticks at x = 0.59 forever instead of walking away"]
 fn character_overlapping_a_static_body_can_walk_away() {
     // Start 0.5 m from a static body (inside the 0.6 inflated sphere) and
     // walk directly away at 0.1 m per frame for 30 frames: the character

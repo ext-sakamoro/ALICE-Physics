@@ -290,11 +290,12 @@ fn sphere_cast_picks_the_closest_of_multiple_bodies() {
     );
 }
 
-/// Ray that starts inside a body (distance 1 < combined_radius 2) resolves
-/// to the *exit* point, not TOI=0: oc=(-1,0,0) b=-1 c=1-4=-3 disc=4 sqrt=2.
-/// Near root t=1-2=-1 is rejected (t<0); far root t=1+2=3 is taken.
+/// Ray that starts inside a body (distance 1 < combined_radius 2) and moves
+/// deeper is an initial overlap: oc=(-1,0,0) b=oc.d=-1<0 c=1-4=-3<0, so the
+/// contact is at t=0 at the origin with normal oc/|oc|=(-1,0,0), opposing the
+/// cast. The exit root t=1+2=3 is never a contact (AUD-A-S3W3-013).
 #[test]
-fn sphere_cast_from_inside_a_body_returns_the_exit_point() {
+fn sphere_cast_from_inside_a_body_moving_deeper_reports_contact_at_t0() {
     let bodies = vec![body_at(5, 0, 0)];
     let hit = sphere_cast(
         Vec3Fix::from_int(4, 0, 0),
@@ -304,9 +305,29 @@ fn sphere_cast_from_inside_a_body_returns_the_exit_point() {
         &bodies,
         Fix128::ONE,
     )
-    .expect("interior origin still reports the exit point");
-    assert_eq!(hit.t, Fix128::from_int(3), "exit point, not TOI=0");
-    assert_eq!(hit.point, Vec3Fix::from_int(7, 0, 0));
+    .expect("interior origin moving deeper reports the initial overlap");
+    assert_eq!(hit.t, Fix128::ZERO, "initial overlap, not the exit t=3");
+    assert_eq!(hit.point, Vec3Fix::from_int(4, 0, 0));
+    assert_eq!(
+        hit.normal,
+        Vec3Fix::new(-Fix128::ONE, Fix128::ZERO, Fix128::ZERO)
+    );
+}
+
+/// The same interior origin moving away from the centre (b=+1>=0) is leaving
+/// the overlap: no contact (AUD-A-S3W3-013).
+#[test]
+fn sphere_cast_from_inside_a_body_moving_out_reports_no_contact() {
+    let bodies = vec![body_at(5, 0, 0)];
+    let hit = sphere_cast(
+        Vec3Fix::from_int(4, 0, 0),
+        Fix128::ONE,
+        -Vec3Fix::UNIT_X,
+        Fix128::from_int(100),
+        &bodies,
+        Fix128::ONE,
+    );
+    assert!(hit.is_none(), "leaving the overlap is not a contact");
 }
 
 /// Zero-radius sphere cast must equal a plain raycast: combined_radius

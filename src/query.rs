@@ -14,7 +14,7 @@
 
 use crate::collider::{Sphere, AABB};
 use crate::math::{Fix128, Vec3Fix};
-use crate::raycast::{ray_sphere, Ray};
+use crate::raycast::{sweep_ray_sphere, Ray};
 use crate::solver::RigidBody;
 
 #[cfg(not(feature = "std"))]
@@ -83,7 +83,7 @@ pub fn sphere_cast(
         // Expand the body sphere by the cast sphere radius (Minkowski sum)
         let expanded = Sphere::new(body.position, body_radius + radius);
 
-        if let Some(hit) = ray_sphere(&ray, &expanded, best_t) {
+        if let Some(hit) = sweep_ray_sphere(&ray, &expanded, best_t) {
             best_t = hit.t;
             closest = Some(ShapeCastHit {
                 t: hit.t,

@@ -17,7 +17,7 @@
 
 use crate::collider::Sphere;
 use crate::math::{Fix128, Vec3Fix};
-use crate::raycast::{ray_plane, ray_sphere, Ray, RayHit};
+use crate::raycast::{ray_plane, ray_sphere, sweep_ray_sphere, Ray, RayHit};
 use crate::sdf_collider::SdfCollider;
 use crate::solver::RigidBody;
 
@@ -304,7 +304,7 @@ impl CharacterController {
             let body_sphere = Sphere::new(body.position, self.config.radius);
             let expanded = Sphere::new(body_sphere.center, body_sphere.radius + char_sphere.radius);
 
-            if let Some(mut hit) = ray_sphere(&ray, &expanded, best_t) {
+            if let Some(mut hit) = sweep_ray_sphere(&ray, &expanded, best_t) {
                 hit.body_index = i;
                 best_t = hit.t;
                 closest = Some(hit);
