@@ -853,7 +853,6 @@ fn a_zero_extent_grid_with_temperature_steps_without_panic() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S1W4-007: use_turbulence on a zero-extent grid evaluates `1..self.grid.nz - 1` with nz - 1 wrapped (release: 5 s timeout = hang, debug: overflow panic); CfdSolver::new(0,0,0,..) is accepted"]
 fn a_zero_extent_grid_with_use_turbulence_steps_without_panic() {
     assert!(zero_extent_step(true, false, false));
 }

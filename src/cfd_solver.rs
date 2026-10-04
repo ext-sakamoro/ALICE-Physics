@@ -1653,9 +1653,11 @@ impl CfdSolver {
         // Compute strain-rate magnitude at cell centres and take max as an
         // upper-bound proxy for the SGS eddy viscosity (simplification).
         let mut max_strain = Fix128::ZERO;
-        for k in 1..self.grid.nz - 1 {
-            for j in 1..self.grid.ny - 1 {
-                for i in 1..self.grid.nx - 1 {
+        // interior cells only; a grid narrower than 3 cells along an axis has none
+        // (saturating, so a zero extent is an empty range, AUD-A-S1W4-007)
+        for k in 1..self.grid.nz.saturating_sub(1) {
+            for j in 1..self.grid.ny.saturating_sub(1) {
+                for i in 1..self.grid.nx.saturating_sub(1) {
                     let s11 = (self.grid.u(i + 1, j, k) - self.grid.u(i, j, k)) / self.grid.dx;
                     let s22 = (self.grid.v(i, j + 1, k) - self.grid.v(i, j, k)) / self.grid.dx;
                     let s33 = (self.grid.w(i, j, k + 1) - self.grid.w(i, j, k)) / self.grid.dx;
