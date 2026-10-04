@@ -6,7 +6,7 @@ audit pass targets the P1 module category flagged in `PUB_AUDIT_ITERATION_1.md`:
 
 **Date**: 2026-09-13
 **Base**: alice-physics v0.14.0-preview.7 (commit `f1b4209`)
-**Method**: identical to Iteration 1 — per-module `grep -nE "^pub (fn|struct|enum|const|trait|type)"`, cross-module usage grep in `src/`, downstream survey across `~/ALICE-Bamboo` `~/ALICE-Anima` `~/Yoin` `~/ALICE-LOL` `~/ALICE-Kinematics` `~/text-to-print-ios`, and example usage grep in `examples/`.
+**Method**: identical to Iteration 1 — per-module `grep -nE "^pub (fn|struct|enum|const|trait|type)"`, cross-module usage grep in `src/`, downstream survey across `~/ALICE-Bamboo` `~/ALICE-LOL` `~/ALICE-Kinematics` `~/text-to-print-ios`, and example usage grep in `examples/`.
 
 ## Roadmap adjustment vs Iteration 1 plan
 
@@ -110,7 +110,7 @@ Iteration 2 delivers (1) and surfaces (2) for explicit user decision.
 
 ```bash
 rg -n 'alice_physics::(solver|solver_tgs|solver_tgs_hooks|contact_cache|dynamic_bvh)' \
-    ~/ALICE-Bamboo ~/ALICE-Anima ~/Yoin ~/ALICE-LOL ~/ALICE-Kinematics ~/text-to-print-ios \
+    ~/ALICE-Bamboo ~/ALICE-LOL ~/ALICE-Kinematics ~/text-to-print-ios \
     2>/dev/null | grep -v '/target/'
 ```
 

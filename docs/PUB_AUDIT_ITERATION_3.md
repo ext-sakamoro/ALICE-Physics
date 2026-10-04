@@ -6,7 +6,7 @@ audit pass targets the P2 module category flagged in `PUB_AUDIT_ITERATION_2.md`:
 
 **Date**: 2026-09-13
 **Base**: alice-physics post-`06b0619` (CI drift cleanup landed)
-**Method**: identical to Iterations 1 + 2 — per-module `grep -nE "^pub (fn|struct|enum|const|trait|type)"`, cross-module usage grep in `src/`, downstream survey across `~/ALICE-Bamboo` `~/ALICE-Anima` `~/Yoin` `~/ALICE-LOL` `~/ALICE-Kinematics` `~/text-to-print-ios`, and example usage grep in `examples/`.
+**Method**: identical to Iterations 1 + 2 — per-module `grep -nE "^pub (fn|struct|enum|const|trait|type)"`, cross-module usage grep in `src/`, downstream survey across `~/ALICE-Bamboo` `~/ALICE-LOL` `~/ALICE-Kinematics` `~/text-to-print-ios`, and example usage grep in `examples/`.
 
 ## Roadmap adjustment vs Iteration 2 plan
 
@@ -101,7 +101,7 @@ Iteration 3's low-yield/high-signal ratio (108 items → 8 downgrades, 7.4%) sug
 
 ```bash
 rg -n 'alice_physics::(math|bvh|spatial)::[a-zA-Z_]' \
-    ~/ALICE-Bamboo ~/ALICE-Anima ~/Yoin ~/ALICE-LOL ~/ALICE-Kinematics ~/text-to-print-ios \
+    ~/ALICE-Bamboo ~/ALICE-LOL ~/ALICE-Kinematics ~/text-to-print-ios \
     2>/dev/null | grep -v '/target/'
 ```
 

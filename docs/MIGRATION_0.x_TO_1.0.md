@@ -2,7 +2,7 @@
 
 This guide catalogues the API changes between the `0.14.x` preview line and the upcoming stable `1.0` release, together with concrete migration steps for downstream crates.
 
-**Target audience**: consumers of `alice-physics` (currently `ALICE-Bamboo`, `ALICE-Anima`, `ALICE-LOL`, `Yoin`, `ALICE-Kinematics`, `text-to-print-ios`, plus any future crates.io users).
+**Target audience**: consumers of `alice-physics` (currently `ALICE-Bamboo`, `ALICE-LOL`, `ALICE-Kinematics`, `text-to-print-ios`, plus any future crates.io users).
 
 **Version scope**:
 - **From**: any `0.14.0-preview.X` (`0.14.0-preview.4` published to crates.io first, current `0.14.0-preview.8`+).

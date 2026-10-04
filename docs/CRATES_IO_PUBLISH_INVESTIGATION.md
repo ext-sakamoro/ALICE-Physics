@@ -146,7 +146,7 @@ ROADMAP.md OQ2 で挙げた 3 案:
 2. `[dependencies]` から `alice-ml` / `alice-db` / `alice-analytics` の 3 行を削除
 3. `src/lib.rs` の bridge module 宣言に `#[cfg(feature = "neural")]` 等の gate 追加 (もし未 gate なら)
 4. CHANGELOG に「temporarily removed for crates.io v0.14.x publish, restoration in v0.14.y once siblings publish」 note
-5. Downstream (SBR ゲーム / ALICE-Bamboo) は継続して `git`/`path` dep 経由で feature 有効化可能
+5. Downstream (ALICE-Bamboo 等) は継続して `git`/`path` dep 経由で feature 有効化可能
 6. `cargo publish --dry-run` → 次段の issue (recovery) → 段階 fix
 
 **block**: なし (ALICE-SDF v1.7.7 で実証済のパターン、pre-experience あり)
