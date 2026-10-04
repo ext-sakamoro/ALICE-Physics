@@ -363,18 +363,18 @@ fn with_angular_damping_scales_frame_end_angular_velocity() {
 }
 
 /// Oracle: `with_friction` documents "set friction coefficient" — a field
-/// write, exact round trip. `PhysicsWorld` takes contact friction from the
-/// material table (`add_contact_with_material` → `combined_material`), not
-/// from this field, so the pair's combined friction is the default
-/// `(0.5 + 0.5) / 2` whatever the body field says.
+/// write, exact round trip. A body with the default material contributes its
+/// own friction to the contact: the pair's combined friction is the Average
+/// of `0.25` (body a) and `0.5` (default, body b), i.e. `0.375`; restitution
+/// stays the default `(0.3 + 0.3) / 2`.
 #[test]
-fn with_friction_sets_the_body_field_but_contacts_use_the_material_table() {
+fn with_friction_sets_the_body_field_and_contacts_average_it_with_the_other_body() {
     let mut world = PhysicsWorld::new(weightless());
     let (a, b) = overlapping_pair(&mut world);
     world.bodies[a] = world.bodies[a].with_friction(r(1, 4));
     assert_eq!(world.bodies[a].friction, r(1, 4));
     let combined = world.combined_material(a, b);
-    assert_eq!(combined.friction, (r(5, 10) + r(5, 10)).half());
+    assert_eq!(combined.friction, (r(1, 4) + r(5, 10)).half());
     assert_eq!(combined.restitution, (r(3, 10) + r(3, 10)).half());
 }
 

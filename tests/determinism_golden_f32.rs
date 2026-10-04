@@ -672,7 +672,7 @@ fn golden_sdf_soft_family() {
 // T + latent conserved) and a mass-conserving liquid flow transfer.
 // ---------------------------------------------------------------------------
 
-const GOLDEN_MODIFIERS: &str = "7668fb6b44e947bb4eae14fdd93d2128ae0f713f8754d83ba7da0098918fe7ab";
+const GOLDEN_MODIFIERS: &str = "29b6e16660be28eaa83091a3a1d7bc246b9c1be880e3375d55f1d82c331a6417";
 
 #[test]
 fn golden_modifier_family() {

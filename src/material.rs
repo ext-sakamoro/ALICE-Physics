@@ -219,10 +219,33 @@ impl MaterialTable {
     /// Combine materials for a contact pair
     #[must_use]
     pub fn combine(&self, mat_a: MaterialId, mat_b: MaterialId) -> CombinedMaterial {
-        let (a, b) = if mat_a <= mat_b {
-            (mat_a, mat_b)
+        self.combine_with_surface(mat_a, None, mat_b, None)
+    }
+
+    /// Combine materials for a contact pair where either side may carry its
+    /// own surface coefficients `(friction, restitution)` that stand in for the
+    /// material's `dynamic_friction` / `restitution`.
+    ///
+    /// # Claims
+    ///
+    /// - With `None` on both sides the result equals `combine`, bit for bit.
+    /// - A pair override registered for `(mat_a, mat_b)` wins over the surface
+    ///   coefficients (it is the most specific entry).
+    /// - Otherwise the friction / restitution rule is chosen from the two materials
+    ///   exactly as in `combine` and applied to the two effective values:
+    ///   `Some((f, e))` for a side, the material's own value for a `None` side.
+    #[must_use]
+    pub(crate) fn combine_with_surface(
+        &self,
+        mat_a: MaterialId,
+        surface_a: Option<(Fix128, Fix128)>,
+        mat_b: MaterialId,
+        surface_b: Option<(Fix128, Fix128)>,
+    ) -> CombinedMaterial {
+        let (a, b, surface_a, surface_b) = if mat_a <= mat_b {
+            (mat_a, mat_b, surface_a, surface_b)
         } else {
-            (mat_b, mat_a)
+            (mat_b, mat_a, surface_b, surface_a)
         };
 
         // Check pair overrides first
@@ -246,9 +269,11 @@ impl MaterialTable {
         let restitution_rule =
             combine_rule_priority(mat_a.restitution_combine, mat_b.restitution_combine);
 
+        let (fa, ra) = surface_a.unwrap_or((mat_a.dynamic_friction, mat_a.restitution));
+        let (fb, rb) = surface_b.unwrap_or((mat_b.dynamic_friction, mat_b.restitution));
         CombinedMaterial {
-            friction: friction_rule.apply(mat_a.dynamic_friction, mat_b.dynamic_friction),
-            restitution: restitution_rule.apply(mat_a.restitution, mat_b.restitution),
+            friction: friction_rule.apply(fa, fb),
+            restitution: restitution_rule.apply(ra, rb),
         }
     }
 

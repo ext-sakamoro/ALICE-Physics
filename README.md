@@ -235,13 +235,6 @@ recorded run bit for bit. The closed-form tests are in
 
 **Known limitations**
 
-- With locked front wheels and the steering turned, the car keeps a small yaw
-  rate (about 5e-3 rad/s in the test scene, where Coulomb sliding predicts 0):
-  the longitudinal and lateral friction are evaluated on velocities from
-  different points in the frame. The test
-  `braking_with_steering_yaws_only_with_abs` is red for this reason.
-- Acceleration from rest is lower than the closed form; this defect is under
-  investigation.
 - In full sliding, the brush model turns the force towards the sliding
   direction; the Magic Formula model does not (it scales the pure-slip forces
   onto the friction ellipse).

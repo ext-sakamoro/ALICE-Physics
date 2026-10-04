@@ -630,18 +630,29 @@ fn spring(rest: f64, k: f64, c: f64) -> Joint {
     ))
 }
 
+/// XPBD spring step: each body moves by `w_i dt^2 F / (1 + k dt^2 w)` along the line, `w = w_a + w_b`.
+fn xpbd_step(w_i: f64, w: f64, f: f64, k: f64, dt: f64) -> f64 {
+    w_i * dt * dt * f / (1.0 + k * dt * dt * w)
+}
+
 #[test]
-fn spring_displacement_is_force_times_dt_times_inverse_mass_toward_rest() {
-    // stretched by 1 (distance 3, rest 2), k = 12, mass 2: B moves -k x dt / m toward A
+fn spring_displacement_is_xpbd_force_times_dt_squared_over_stiffened_mass() {
+    let h = 1.0 / 60.0;
+    // stretched by 1 (distance 3, rest 2), k = 12, mass 2 (w = 1/2): F = 12, B moves toward A
     let mut b = vec![st(Vec3Fix::ZERO), dynb(v3(3.0, 0.0, 0.0), 2.0)];
     solve_joints(&[spring(2.0, 12.0, 0.0)], &mut b, dt());
-    near(p(&b[1]).0, 3.0 - 12.0 * 1.0 / 60.0 / 2.0, 1e-9, "stretched");
-    // compressed (distance 1, rest 2): pushed away
+    near(
+        p(&b[1]).0,
+        3.0 - xpbd_step(0.5, 0.5, 12.0, 12.0, h),
+        1e-9,
+        "stretched",
+    );
+    // compressed (distance 1, rest 2): F = -12, pushed away
     let mut c = vec![st(Vec3Fix::ZERO), dynb(v3(1.0, 0.0, 0.0), 2.0)];
     solve_joints(&[spring(2.0, 12.0, 0.0)], &mut c, dt());
     near(
         p(&c[1]).0,
-        1.0 + 12.0 * 1.0 / 60.0 / 2.0,
+        1.0 - xpbd_step(0.5, 0.5, -12.0, 12.0, h),
         1e-9,
         "compressed",
     );
@@ -653,40 +664,56 @@ fn spring_displacement_is_force_times_dt_times_inverse_mass_toward_rest() {
 
 #[test]
 fn spring_damping_opposes_the_relative_velocity_along_the_line() {
-    // at rest length, B moving away at 3 m/s with c = 2: damping force = c v = 6 pulls B back
+    let h = 1.0 / 60.0;
+    // at rest length, B moving away at 3 m/s with c = 2: damping force c v = 6 pulls B back
     let mut b = vec![st(Vec3Fix::ZERO), dynb(v3(2.0, 0.0, 0.0), 1.0)];
     b[1].velocity = v3(3.0, 0.0, 0.0);
     solve_joints(&[spring(2.0, 5.0, 2.0)], &mut b, dt());
-    near(p(&b[1]).0, 2.0 - 6.0 / 60.0, 1e-9, "damping");
-    // dynamic pair: split by inverse mass 1 : 1/3, force = k x
+    near(
+        p(&b[1]).0,
+        2.0 - xpbd_step(1.0, 1.0, 6.0, 5.0, h),
+        1e-9,
+        "damping",
+    );
+    // dynamic pair: split by inverse mass 1 : 1/3 (w = 4/3), force = k x = 12
     let mut c = vec![dynb(Vec3Fix::ZERO, 1.0), dynb(v3(4.0, 0.0, 0.0), 3.0)];
     solve_joints(&[spring(2.0, 6.0, 0.0)], &mut c, dt());
+    let w = 1.0 + 1.0 / 3.0;
     near(
         p(&c[0]).0,
-        6.0 * 2.0 / 60.0,
+        xpbd_step(1.0, w, 12.0, 6.0, h),
         1e-9,
-        "A moves toward B by F dt / m_a",
+        "A moves toward B by w_a dt^2 F / (1 + k dt^2 w)",
     );
     near(
         p(&c[1]).0,
-        4.0 - 6.0 * 2.0 / 60.0 / 3.0,
+        4.0 - xpbd_step(1.0 / 3.0, w, 12.0, 6.0, h),
         1e-9,
-        "B moves toward A by F dt / m_b",
+        "B moves toward A by w_b dt^2 F / (1 + k dt^2 w)",
     );
 }
 
-/// A force-law spring changes a position by F dt^2 / m (acceleration integrated twice). The
-/// correction here scales with dt, so the effective stiffness depends on the time step.
+/// A spring of stiffness k has a dt-independent effective stiffness: the XPBD compliance form
+/// (alpha = 1/k, alpha_tilde = alpha / dt^2) moves a unit-mass body against a static anchor by
+/// dx = k x dt^2 / (1 + k dt^2) for stretch x, which tends to F dt^2 / m for small k dt^2 and so
+/// scales by 4 when dt halves.
 #[test]
-#[ignore = "known defect: AUD-A-S1W6-008: solve_spring_joint adds `F*dt*inv_mass` to the POSITION (a velocity-sized quantity): the correction scales with dt, not dt^2 (halving dt halves it instead of quartering it), so the spring's effective stiffness is k/dt in force units"]
 fn spring_correction_scales_with_dt_squared() {
+    let k = 12.0;
     let run = |dt: f64| {
         let mut b = vec![st(Vec3Fix::ZERO), dynb(v3(3.0, 0.0, 0.0), 1.0)];
-        solve_joints(&[spring(2.0, 12.0, 0.0)], &mut b, fx(dt));
+        solve_joints(&[spring(2.0, k, 0.0)], &mut b, fx(dt));
         3.0 - b[1].position.x.to_f64()
     };
+    let closed = |dt: f64| k * 1.0 * dt * dt / (1.0 + k * dt * dt);
+    for dt in [1.0 / 60.0, 1.0 / 120.0] {
+        near(run(dt), closed(dt), 1e-9, "XPBD closed form");
+    }
     let ratio = run(1.0 / 60.0) / run(1.0 / 120.0);
-    near(ratio, 4.0, 1e-6, "dx(dt)/dx(dt/2)");
+    assert!(
+        (ratio - 4.0).abs() < 4.0 * 1e-2,
+        "dx(dt)/dx(dt/2) = {ratio}, expected ~4 (correction ~ dt^2)"
+    );
 }
 
 // ---------------- compute_force / breakable ----------------
@@ -1124,7 +1151,7 @@ fn spring_damping_is_signed_by_the_relative_velocity() {
     solve_joints(&[spring(2.0, 5.0, 2.0)], &mut b, dt());
     near(
         p(&b[1]).0,
-        2.0 + 6.0 / 60.0,
+        2.0 + 1.0 * (1.0 / 60.0) * (1.0 / 60.0) * 6.0 / (1.0 + 5.0 * (1.0 / 60.0) * (1.0 / 60.0)),
         1e-9,
         "damping against an approach",
     );
