@@ -43,75 +43,12 @@
 //! `PlasticModel::with_hardening` and `NortonCreep::petg_room_temp` have no
 //! consumer (the solver builds its model with `from_fdm_material` and
 //! hard-codes the PLA creep preset) and carry `ALLOW-UNWIRED` debt markers
-//! with closed-form oracles in this module's unit tests. `StressTensor` is
-//! a crate-internal duplicate of the public
-//! `linear_elastic_fem::StressTensor` with no caller; it is kept under a
-//! per-item `allow(dead_code)` until the two are consolidated.
+//! with closed-form oracles in this module's unit tests. Stress tensors
+//! (von Mises, hydrostatic part) live in the public
+//! `linear_elastic_fem::StressTensor`.
 
 use crate::filament_db::MaterialProperties;
 use crate::math::Fix128;
-
-// ============================================================================
-// Stress tensor
-// ============================================================================
-
-/// Symmetric 3D Cauchy stress tensor (6 independent components, in MPa).
-///
-/// Positive normal stresses are tensile.
-// ALLOW-DEAD: duplicate of the public linear_elastic_fem::StressTensor (xx..zx, von_mises, hydrostatic); no crate caller, consolidation is an API decision
-#[allow(dead_code)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-pub(crate) struct StressTensor {
-    /// Normal stress σ_xx.
-    pub(crate) sxx: Fix128,
-    /// Normal stress σ_yy.
-    pub(crate) syy: Fix128,
-    /// Normal stress σ_zz.
-    pub(crate) szz: Fix128,
-    /// Shear stress τ_xy.
-    pub(crate) sxy: Fix128,
-    /// Shear stress τ_xz.
-    pub(crate) sxz: Fix128,
-    /// Shear stress τ_yz.
-    pub(crate) syz: Fix128,
-}
-
-// ALLOW-DEAD: uniaxial_x / hydrostatic / von_mises belong to the duplicate StressTensor above; same consolidation decision
-#[allow(dead_code)]
-impl StressTensor {
-    /// Uniaxial stress along X (all other components zero).
-    #[must_use]
-    pub(crate) const fn uniaxial_x(sigma: Fix128) -> Self {
-        Self {
-            sxx: sigma,
-            syy: Fix128::ZERO,
-            szz: Fix128::ZERO,
-            sxy: Fix128::ZERO,
-            sxz: Fix128::ZERO,
-            syz: Fix128::ZERO,
-        }
-    }
-
-    /// Hydrostatic (spherical) part σ_H = ⅓·tr(σ).
-    #[must_use]
-    pub(crate) fn hydrostatic(&self) -> Fix128 {
-        (self.sxx + self.syy + self.szz) * Fix128::from_ratio(1, 3)
-    }
-
-    /// von Mises equivalent stress:
-    /// `σ_eq = √( ½ · ((σ_xx − σ_yy)² + (σ_yy − σ_zz)² + (σ_zz − σ_xx)²)
-    ///           + 3·(τ_xy² + τ_xz² + τ_yz²) )`
-    #[must_use]
-    pub(crate) fn von_mises(&self) -> Fix128 {
-        let d1 = self.sxx - self.syy;
-        let d2 = self.syy - self.szz;
-        let d3 = self.szz - self.sxx;
-        let normal_part = (d1 * d1 + d2 * d2 + d3 * d3) * Fix128::from_ratio(1, 2);
-        let shear_part =
-            (self.sxy * self.sxy + self.sxz * self.sxz + self.syz * self.syz) * Fix128::from_int(3);
-        (normal_part + shear_part).sqrt()
-    }
-}
 
 // ============================================================================
 // Hardening
@@ -393,63 +330,6 @@ mod tests {
     }
 
     #[test]
-    fn von_mises_uniaxial_equals_sigma() {
-        let s = StressTensor::uniaxial_x(Fix128::from_int(100));
-        let vm = s.von_mises();
-        assert!(approx_eq(
-            vm,
-            Fix128::from_int(100),
-            Fix128::from_ratio(1, 100)
-        ));
-    }
-
-    #[test]
-    fn von_mises_pure_shear() {
-        let s = StressTensor {
-            sxy: Fix128::from_int(50),
-            ..Default::default()
-        };
-        // Pure shear τ → σ_eq = √3 · τ
-        let vm = s.von_mises();
-        let expected = Fix128::from_int(50) * Fix128::from_int(3).sqrt();
-        assert!(
-            approx_eq(vm, expected, Fix128::from_ratio(1, 100)),
-            "got {}, expected {}",
-            vm.to_f32(),
-            expected.to_f32()
-        );
-    }
-
-    #[test]
-    fn von_mises_hydrostatic_is_zero() {
-        let s = StressTensor {
-            sxx: Fix128::from_int(100),
-            syy: Fix128::from_int(100),
-            szz: Fix128::from_int(100),
-            ..Default::default()
-        };
-        // Pure hydrostatic → no distortion → σ_eq = 0
-        let vm = s.von_mises();
-        assert!(vm < Fix128::from_ratio(1, 100));
-    }
-
-    #[test]
-    fn hydrostatic_average_of_normals() {
-        let s = StressTensor {
-            sxx: Fix128::from_int(30),
-            syy: Fix128::from_int(60),
-            szz: Fix128::from_int(90),
-            ..Default::default()
-        };
-        // (30+60+90)/3 = 60 but 1/3 is non-terminating in binary; allow ULP.
-        assert!(approx_eq(
-            s.hydrostatic(),
-            Fix128::from_int(60),
-            Fix128::from_ratio(1, 1000)
-        ));
-    }
-
-    #[test]
     fn elastic_stress_below_yield() {
         let model = PlasticModel::from_fdm_material(&MaterialProperties::pla());
         let mut state = PlasticState::default();
@@ -700,18 +580,5 @@ mod tests {
         assert_eq!(state.creep_strain, Fix128::from_ratio(1, 1000));
         creep.integrate(Fix128::from_int(20), Fix128::ZERO, &mut state);
         assert_eq!(state.creep_strain, Fix128::from_ratio(1, 1000));
-    }
-
-    #[test]
-    fn uniaxial_von_mises_matches_beam_stress() {
-        // Sanity check: a uniaxial stress state via StressTensor gives the same
-        // magnitude as feeding it directly to a plasticity check.
-        let stress = StressTensor::uniaxial_x(Fix128::from_int(45));
-        let vm = stress.von_mises();
-        let model = PlasticModel::from_fdm_material(&MaterialProperties::pla());
-        let mut state = PlasticState::default();
-        // 45 MPa < 50 MPa yield → elastic
-        let step = radial_return_1d(vm, &model, &mut state);
-        assert!(!step.yielded);
     }
 }
