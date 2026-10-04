@@ -49,15 +49,24 @@ impl XorShift64 {
     }
 
     /// Create from system entropy (uses address as seed if no std)
+    ///
+    /// The seed is the wall-clock time hashed with the standard library's
+    /// randomly keyed hasher (its keys come from the operating system), so it
+    /// cannot be recovered by trying the clock values around the call
+    /// (AUD-A-S4W3-029).
     #[cfg(feature = "std")]
     #[must_use]
     pub fn from_entropy() -> Self {
+        use std::collections::hash_map::RandomState;
+        use std::hash::{BuildHasher, Hasher};
         use std::time::{SystemTime, UNIX_EPOCH};
-        let seed = SystemTime::now()
+        let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_nanos() as u64)
             .unwrap_or(0x853c49e6748fea9b);
-        Self::new(seed)
+        let mut h = RandomState::new().build_hasher();
+        h.write_u64(nanos);
+        Self::new(h.finish())
     }
 
     #[cfg(not(feature = "std"))]
@@ -199,9 +208,12 @@ impl RandomizedResponse {
     /// Higher epsilon = more accuracy, less privacy
     #[must_use]
     pub fn new(epsilon: f64) -> Self {
-        // p = e^ε / (1 + e^ε)
+        // Truthful with probability p, otherwise a fair coin: the report
+        // probabilities are (1 + p) / 2 and (1 - p) / 2, so ε = ln((1 + p) / (1 - p))
+        // and p = (e^ε - 1) / (e^ε + 1), written as 1 - 2 / (e^ε + 1) so a large
+        // ε gives 1 rather than ∞/∞ (AUD-A-S4W3-020). A negative ε clamps to 0.
         let exp_eps = crate::det_math::exp64(epsilon);
-        let p_true = exp_eps / (1.0 + exp_eps);
+        let p_true = (1.0 - 2.0 / (exp_eps + 1.0)).clamp(0.0, 1.0);
         Self {
             p_true,
             rng: XorShift64::from_entropy(),
@@ -212,7 +224,9 @@ impl RandomizedResponse {
     #[must_use]
     pub fn with_probability(p_true: f64, seed: u64) -> Self {
         Self {
-            p_true: p_true.clamp(0.5, 1.0),
+            // any p in [0, 1] is a valid mechanism (p < 1/2 is more private,
+            // not invalid), so only the range is enforced (AUD-A-S4W3-022)
+            p_true: p_true.clamp(0.0, 1.0),
             rng: XorShift64::new(seed),
         }
     }
@@ -407,6 +421,10 @@ impl PrivacyBudget {
     ///
     /// Returns true if budget allows, false if would exceed.
     pub fn try_spend(&mut self, epsilon: f64) -> bool {
+        // a negative (or NaN) spend would give budget back (AUD-A-S4W3-021)
+        if epsilon.is_nan() || epsilon < 0.0 {
+            return false;
+        }
         if self.total_epsilon + epsilon <= self.max_epsilon {
             self.total_epsilon += epsilon;
             self.query_count += 1;

@@ -214,8 +214,16 @@ fn budget_degenerate_inputs() {
     assert_eq!(bits(b.remaining()), bits(1.0));
     assert!(!b.is_exhausted());
 
-    // Spend larger than the budget / +∞ / NaN: refused, state frozen bit for bit.
-    for eps in [1.5, f64::INFINITY, f64::NAN, f64::MAX] {
+    // Spend larger than the budget / +∞ / NaN / negative: refused, state frozen
+    // bit for bit (a negative spend would give budget back, AUD-A-S4W3-021).
+    for eps in [
+        1.5,
+        f64::INFINITY,
+        f64::NAN,
+        f64::MAX,
+        -0.5,
+        f64::NEG_INFINITY,
+    ] {
         let before = (
             bits(b.spent()),
             bits(b.remaining()),
@@ -231,13 +239,6 @@ fn budget_degenerate_inputs() {
         );
         assert_eq!(before, after, "eps={eps}");
     }
-
-    // Negative spend: accepted, remaining grows past ε_max (pinned, undocumented).
-    assert!(b.try_spend(-0.5));
-    assert_eq!(bits(b.spent()), bits(-0.5));
-    assert_eq!(bits(b.remaining()), bits(1.5));
-    assert_eq!(b.query_count(), 2);
-    assert!(!b.is_exhausted());
 
     // Negative ε_max: exhausted, remaining clamped to 0, every positive spend refused.
     let mut n = PrivacyBudget::new(-1.0);
@@ -630,25 +631,39 @@ fn aggregator_degenerate_inputs() {
 // Randomized response
 // ---------------------------------------------------------------------------
 
-/// `p_true = e^ε/(e^ε + 1)` (exactly ½ at ε = 0), `with_probability` clamps
-/// to `[½, 1]`.
+/// Truthful with probability `p`, otherwise a fair coin: `ε = ln((1+p)/(1−p))`,
+/// so `p_true = (e^ε − 1)/(e^ε + 1) = 1 − 2/(e^ε + 1)` (exactly 0 at ε = 0,
+/// a negative ε clamps to 0), and `with_probability` clamps to `[0, 1]`
+/// (AUD-A-S4W3-020, AUD-A-S4W3-022).
 #[test]
 fn randomized_response_p_true_closed_form() {
-    for &eps in &[0.0, 0.5, 1.0, 2.0, 1.098_612_288_668_11, 10.0, -0.5] {
+    for &eps in &[0.5, 1.0, 2.0, 1.098_612_288_668_11, 10.0] {
         let e = exp64(eps);
-        let expected = e / (e + 1.0);
+        let expected = 1.0 - 2.0 / (e + 1.0);
         let rr = RandomizedResponse::new(eps);
         assert_eq!(bits(rr.p_true()), bits(expected), "eps={eps}");
+        // the mechanism's own epsilon is the one requested
+        let p = rr.p_true();
+        let ratio = (1.0 + p) / (1.0 - p);
+        assert!(
+            (ratio / e - 1.0).abs() < 1e-9,
+            "eps={eps}: (1+p)/(1-p) = {ratio}, e^eps = {e}"
+        );
     }
     assert_eq!(
         bits(RandomizedResponse::new(0.0).p_true()),
-        bits(0.5),
-        "ε = 0 → exactly ½"
+        bits(0.0),
+        "ε = 0 → always the coin"
     );
-    // ε = ln 3 → p = 3/4 to 13 ulp of the deterministic exp (e^ε ≈ 3).
+    assert_eq!(
+        bits(RandomizedResponse::new(-0.5).p_true()),
+        bits(0.0),
+        "ε < 0 clamps to 0"
+    );
+    // ε = ln 3 → p = 1/2 to a few ulp of the deterministic exp (e^ε ≈ 3).
     let p = RandomizedResponse::new(1.098_612_288_668_109_7).p_true();
-    assert!((p - 0.75).abs() < 1e-14, "p={p}");
-    // p = 1 only in the limit: ε = 40 gives p within 1e-17 of 1 but ≤ 1.
+    assert!((p - 0.5).abs() < 1e-14, "p={p}");
+    // p = 1 only in the limit: ε = 40 gives p within 1e-16 of 1 but ≤ 1.
     let near_one = RandomizedResponse::new(40.0).p_true();
     assert!(near_one <= 1.0 && near_one > 1.0 - 1e-16, "p={near_one}");
 
@@ -656,9 +671,9 @@ fn randomized_response_p_true_closed_form() {
         (0.75, 0.75),
         (0.5, 0.5),
         (1.0, 1.0),
-        (0.3, 0.5),
+        (0.3, 0.3),
         (1.5, 1.0),
-        (-2.0, 0.5),
+        (-2.0, 0.0),
         (0.9, 0.9),
     ] {
         let rr = RandomizedResponse::with_probability(p, 1);
@@ -833,7 +848,8 @@ fn randomized_response_degenerate_inputs() {
         bits(1.0)
     );
 
-    // new(ε): no clamp. ε = +1000 → e^ε = ∞ → ∞/∞ = NaN; ε = −1000 → 0/(1) = 0; ε = NaN → NaN.
+    // new(ε) = 1 − 2/(e^ε + 1), clamped to [0, 1]: ε = +1000 → e^ε = ∞ → 1;
+    // ε = −1000 → 1 − 2 = −1 → 0; ε = NaN → NaN; ε = ∞ → 1.
     let r = catch_unwind(AssertUnwindSafe(|| {
         (
             RandomizedResponse::new(1000.0).p_true(),
@@ -843,17 +859,10 @@ fn randomized_response_degenerate_inputs() {
         )
     }));
     let (big, small, nan, inf) = r.expect("extreme ε must not panic");
-    assert!(
-        big.is_nan(),
-        "ε = 1000 → p_true = NaN (pinned, undocumented): {big}"
-    );
-    assert_eq!(
-        bits(small),
-        bits(0.0),
-        "ε = −1000 → p_true = 0 (below ½, not clamped)"
-    );
+    assert_eq!(bits(big), bits(1.0), "ε = 1000 → p_true = 1: {big}");
+    assert_eq!(bits(small), bits(0.0), "ε = −1000 → p_true = 0 (clamped)");
     assert!(nan.is_nan());
-    assert!(inf.is_nan());
+    assert_eq!(bits(inf), bits(1.0), "ε = ∞ → p_true = 1");
     // With p_true = NaN every report is the second draw (a coin): `new()` is
     // entropy-seeded, so the seeded path with `with_probability(NaN)` is used
     // (NaN survives `f64::clamp`, pinned) and predicted from the seed.
