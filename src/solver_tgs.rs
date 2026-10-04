@@ -193,13 +193,6 @@ impl ImpulseCache {
         self.misses = 0;
     }
 
-    /// Retrieves without marking as alive (peek). Useful for
-    /// diagnostics; regular solvers should call [`Self::take`].
-    #[must_use]
-    pub(crate) fn peek(&self, contact_id: u64) -> CachedImpulse {
-        self.entries.get(&contact_id).copied().unwrap_or_default()
-    }
-
     /// Stores the applied impulse for `contact_id`. The entry is kept
     /// only as long as some subsequent [`Self::take`] call touches it
     /// before the next [`Self::sweep`]; setter calls do not implicitly
@@ -221,18 +214,6 @@ impl ImpulseCache {
     #[must_use]
     pub(crate) fn len(&self) -> usize {
         self.entries.len()
-    }
-
-    /// `true` when no impulses are cached.
-    #[must_use]
-    pub(crate) fn is_empty(&self) -> bool {
-        self.entries.is_empty()
-    }
-
-    /// Drops all cached impulses.
-    pub(crate) fn clear(&mut self) {
-        self.entries.clear();
-        self.live.clear();
     }
 }
 
@@ -293,18 +274,6 @@ impl UnionFind {
             self.rank[ri] += 1;
         }
         true
-    }
-
-    /// Number of elements in the forest.
-    #[must_use]
-    pub(crate) fn len(&self) -> usize {
-        self.parent.len()
-    }
-
-    /// `true` when the forest is empty.
-    #[must_use]
-    pub(crate) fn is_empty(&self) -> bool {
-        self.parent.is_empty()
     }
 }
 
@@ -789,52 +758,12 @@ pub(crate) fn tgs_step<H: TgsHooks>(hooks: &mut H, cfg: &TgsConfig, dt: Fix128) 
 // Adapter to the existing solver types
 // ---------------------------------------------------------------------------
 //
-// The wrappers below let this module operate on the crate's concrete
-// [`RigidBody`], [`ContactConstraint`] and [`DistanceConstraint`]
-// without a hard coupling to their internal layout. Stable IDs are
-// externally injected so that callers control warm-start persistence
-// (typically a `HashMap<BodyHandle, u64>` maintained by the world).
+// The wrapper below lets this module operate on the crate's concrete
+// [`DistanceConstraint`] without a hard coupling to its internal layout.
+// The world adapts bodies and contacts with its own `body_to_tgs` /
+// `contact_to_tgs` wrappers in `solver.rs`.
 
-use crate::solver::{BodyType, ContactConstraint, DistanceConstraint, RigidBody};
-
-/// Borrowed view of a [`RigidBody`] paired with an externally-provided
-/// stable identifier. Frame-to-frame persistence of the ID is the
-/// caller's responsibility.
-pub(crate) struct BodyRef<'a> {
-    /// Reference to the underlying rigid body state.
-    pub(crate) body: &'a RigidBody,
-    /// Stable identifier used for warm-start indexing across frames.
-    pub(crate) id: u64,
-}
-
-impl BodyLike for BodyRef<'_> {
-    fn stable_id(&self) -> u64 {
-        self.id
-    }
-    fn is_dynamic(&self) -> bool {
-        matches!(self.body.body_type, BodyType::Dynamic)
-    }
-}
-
-/// Borrowed view of a [`ContactConstraint`] plus its stable ID.
-pub(crate) struct ContactRef<'a> {
-    /// Reference to the underlying contact constraint state.
-    pub(crate) contact: &'a ContactConstraint,
-    /// Stable identifier used for warm-start indexing across frames.
-    pub(crate) id: u64,
-}
-
-impl ContactLike for ContactRef<'_> {
-    fn body_a(&self) -> usize {
-        self.contact.body_a
-    }
-    fn body_b(&self) -> usize {
-        self.contact.body_b
-    }
-    fn stable_id(&self) -> u64 {
-        self.id
-    }
-}
+use crate::solver::DistanceConstraint;
 
 /// Borrowed view of a [`DistanceConstraint`] as a bilateral joint.
 pub(crate) struct DistanceRef<'a> {
@@ -973,7 +902,10 @@ mod tests {
     fn impulse_cache_sweep_degenerate_empty_and_nothing_stale() {
         let mut empty = ImpulseCache::new();
         empty.sweep();
-        assert!(empty.is_empty(), "sweeping an empty cache stays empty");
+        assert!(
+            empty.entries.is_empty(),
+            "sweeping an empty cache stays empty"
+        );
 
         let mut all_live = ImpulseCache::new();
         let imp = CachedImpulse {
@@ -986,9 +918,13 @@ mod tests {
         let _ = all_live.take(1);
         let _ = all_live.take(2);
         all_live.sweep();
-        assert_eq!(all_live.len(), 2, "nothing stale: both entries survive");
-        assert_eq!(all_live.peek(1), imp);
-        assert_eq!(all_live.peek(2), imp);
+        assert_eq!(
+            all_live.entries.len(),
+            2,
+            "nothing stale: both entries survive"
+        );
+        assert_eq!(all_live.stored(1), imp);
+        assert_eq!(all_live.stored(2), imp);
     }
 
     #[test]
@@ -1001,7 +937,7 @@ mod tests {
         };
         cache.set(7, imp);
         assert_eq!(cache.take(7), imp);
-        assert_eq!(cache.len(), 1);
+        assert_eq!(cache.entries.len(), 1);
     }
 
     #[test]
@@ -1012,7 +948,7 @@ mod tests {
         // Touch only #1 this tick.
         let _ = cache.take(1);
         cache.sweep();
-        assert_eq!(cache.len(), 1);
+        assert_eq!(cache.entries.len(), 1);
         assert!(cache.entries_contains(1));
         assert!(!cache.entries_contains(2));
     }
@@ -1021,6 +957,11 @@ mod tests {
     impl ImpulseCache {
         fn entries_contains(&self, id: u64) -> bool {
             self.entries.contains_key(&id)
+        }
+
+        /// Stored impulse without marking it alive (default when absent).
+        fn stored(&self, id: u64) -> CachedImpulse {
+            self.entries.get(&id).copied().unwrap_or_default()
         }
     }
 
@@ -1283,41 +1224,6 @@ mod tests {
 
     // --- Adapter --------------------------------------------------------
 
-    #[test]
-    fn body_ref_reports_dynamic_state() {
-        let body = RigidBody {
-            body_type: BodyType::Dynamic,
-            ..Default::default()
-        };
-        let dyn_ref = BodyRef {
-            body: &body,
-            id: 42,
-        };
-        assert!(dyn_ref.is_dynamic());
-        assert_eq!(dyn_ref.stable_id(), 42);
-
-        let sbody = RigidBody {
-            body_type: BodyType::Static,
-            ..Default::default()
-        };
-        let stat_ref = BodyRef {
-            body: &sbody,
-            id: 7,
-        };
-        assert!(!stat_ref.is_dynamic());
-
-        let kbody = RigidBody {
-            body_type: BodyType::Kinematic,
-            ..Default::default()
-        };
-        let kin_ref = BodyRef {
-            body: &kbody,
-            id: 3,
-        };
-        // kinematic bodies are treated as separators, same as static
-        assert!(!kin_ref.is_dynamic());
-    }
-
     // --- Dispatch -------------------------------------------------------
 
     #[test]
@@ -1420,9 +1326,6 @@ mod tests {
     #[test]
     fn union_find_union_reports_merge_and_uses_rank() {
         let mut uf = UnionFind::new(6);
-        assert_eq!(uf.len(), 6);
-        assert!(!uf.is_empty());
-        assert!(UnionFind::new(0).is_empty());
         assert!(uf.union(0, 1), "初回 merge は true");
         assert!(!uf.union(0, 1), "同一集合は false");
         assert!(!uf.union(1, 0));
@@ -1458,8 +1361,7 @@ mod tests {
     #[test]
     fn impulse_cache_counts_hits_and_misses_and_reports_hit_rate() {
         let mut c = ImpulseCache::new();
-        assert!(c.is_empty());
-        assert_eq!(c.len(), 0);
+        assert!(c.entries.is_empty());
         // 未登録 → miss、default
         assert_eq!(c.take(7), CachedImpulse::default());
         let s = c.stats();
@@ -1471,13 +1373,7 @@ mod tests {
             tangent2: Fix128::from_ratio(1, 2),
         };
         c.set(7, imp);
-        assert_eq!(c.len(), 1);
-        assert_eq!(c.peek(7), imp);
-        assert_eq!(
-            c.peek(8),
-            CachedImpulse::default(),
-            "peek は counter を動かさない"
-        );
+        assert_eq!(c.entries.len(), 1);
         assert_eq!(c.take(7), imp);
         assert_eq!(c.take(7), imp);
         assert_eq!(c.take(9), CachedImpulse::default());
@@ -1496,20 +1392,16 @@ mod tests {
         c.set(200, imp);
         let _ = c.take(100);
         c.sweep();
-        assert_eq!(c.peek(100), imp);
-        assert_eq!(c.peek(200), CachedImpulse::default());
+        assert_eq!(c.stored(100), imp);
+        assert_eq!(c.stored(200), CachedImpulse::default());
         assert_eq!(
-            c.peek(7),
+            c.stored(7),
             imp,
             "7 is live in this tick (taken before sweep)"
         );
         // 次 tick: 何も take せず sweep → 全 entry が落ちる (live は sweep で clear 済)
         c.sweep();
-        assert!(c.is_empty());
-        c.set(1, imp);
-        c.clear();
-        assert!(c.is_empty());
-        assert_eq!(c.peek(100), CachedImpulse::default());
+        assert!(c.entries.is_empty());
     }
 
     #[test]
@@ -1720,29 +1612,6 @@ mod tests {
 
     // ---- mutation-score tests batch 7 (2026-09-15、cargo-mutants missed 分) ----
 
-    /// `ImpulseCache::is_empty` は entry ありで false (`→ true` 変異を検出)
-    #[test]
-    fn impulse_cache_is_empty_is_false_when_populated() {
-        let mut c = ImpulseCache::new();
-        assert!(c.is_empty());
-        c.set(
-            3,
-            CachedImpulse {
-                normal: Fix128::ONE,
-                tangent1: Fix128::ZERO,
-                tangent2: Fix128::ZERO,
-            },
-        );
-        assert!(!c.is_empty());
-        assert_eq!(c.len(), 1);
-        // take で live 化 → sweep 後も残り、非空のまま
-        let _ = c.take(3);
-        c.sweep();
-        assert!(!c.is_empty());
-        c.clear();
-        assert!(c.is_empty());
-    }
-
     /// union by rank の `rank[ri] > rank[rj]` 分岐: ri が深い時は rj を ri の下に
     /// 吊るし rank は増えない (`<` 変異だと同 rank 分岐に落ちて rank が 2 になる)
     #[test]
@@ -1913,46 +1782,11 @@ mod tests {
         assert_eq!(islands[1].joints, vec![1]);
     }
 
-    /// adapter accessor が下層 constraint の index / 注入 id をそのまま返す
-    /// (`→ 0` / `→ 1` 変異を index 2 / 3、id 5 で検出)
+    /// adapter accessor が下層 constraint の index をそのまま返す
+    /// (`→ 0` / `→ 1` 変異を index 2 / 3 / 6 / 8 で検出)
     #[test]
     fn adapter_refs_forward_body_indices_and_ids() {
-        use crate::collider::Contact;
         use crate::math::Vec3Fix;
-        let contact = ContactConstraint::new(
-            2,
-            3,
-            Contact {
-                depth: Fix128::ZERO,
-                normal: Vec3Fix::UNIT_Y,
-                point_a: Vec3Fix::ZERO,
-                point_b: Vec3Fix::ZERO,
-            },
-        );
-        let cref = ContactRef {
-            contact: &contact,
-            id: 5,
-        };
-        assert_eq!(ContactLike::body_a(&cref), 2);
-        assert_eq!(ContactLike::body_b(&cref), 3);
-        assert_eq!(ContactLike::stable_id(&cref), 5);
-        let swapped = ContactConstraint::new(
-            7,
-            4,
-            Contact {
-                depth: Fix128::ZERO,
-                normal: Vec3Fix::UNIT_Y,
-                point_a: Vec3Fix::ZERO,
-                point_b: Vec3Fix::ZERO,
-            },
-        );
-        let sref = ContactRef {
-            contact: &swapped,
-            id: 9,
-        };
-        assert_eq!(ContactLike::body_a(&sref), 7);
-        assert_eq!(ContactLike::body_b(&sref), 4);
-        assert_eq!(ContactLike::stable_id(&sref), 9);
         let joint = DistanceConstraint::new(2, 3, Vec3Fix::ZERO, Vec3Fix::ZERO, Fix128::ONE);
         let jref = DistanceRef { joint: &joint };
         assert_eq!(JointLike::body_a(&jref), 2);
@@ -1962,18 +1796,14 @@ mod tests {
         assert_eq!(JointLike::body_a(&jref2), 6);
         assert_eq!(JointLike::body_b(&jref2), 8);
         // build_islands 経由でも index が正しく伝わる (body 2-3 が結合)
-        let bodies: Vec<RigidBody> = (0..4)
-            .map(|_| RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE))
-            .collect();
-        let brefs: Vec<BodyRef<'_>> = bodies
-            .iter()
-            .enumerate()
-            .map(|(i, b)| BodyRef {
-                body: b,
-                id: i as u64,
+        let bodies: Vec<MockBody> = (0..4)
+            .map(|i| MockBody {
+                id: i,
+                dynamic: true,
             })
             .collect();
-        let islands = build_islands(&brefs, &[cref], &[jref]).expect("valid");
+        let contact = MockContact { id: 5, a: 2, b: 3 };
+        let islands = build_islands(&bodies, &[contact], &[jref]).expect("valid");
         assert_eq!(islands.len(), 3);
         assert_eq!(islands[2].bodies, vec![2, 3]);
         assert_eq!(islands[2].contacts, vec![0]);
