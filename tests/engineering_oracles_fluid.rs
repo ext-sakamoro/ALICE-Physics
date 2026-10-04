@@ -2160,8 +2160,8 @@ fn multiphase_trilinear_sample_is_exact_on_affine_fields() {
 /// without a mass, the "surface tension" term is the mean fluid velocity
 /// times a factor, and the coupling is one-way. Pinned invariants: no
 /// neighbours → no change; equal velocities → no drag (Galilean); the
-/// drag alone is a linear relaxation `v ← v (1 − C_d ρ N dt)` per step
-/// (explicit Euler of `v̇ = −c v`, the Stokes-drag form); buoyancy is
+/// drag alone is a linear relaxation `v ← v / (1 + C_d ρ N dt)` per step
+/// (implicit Euler of `v̇ = −c v`, the Stokes-drag form); buoyancy is
 /// vertical and proportional to the neighbour count.
 #[test]
 fn cloth_fluid_linear_drag_relaxation_and_symmetries() {
@@ -2179,8 +2179,9 @@ fn cloth_fluid_linear_drag_relaxation_and_symmetries() {
     let dt = Fix128::from_ratio(1, 100);
     let rho = Fix128::from_int(10);
     let mut vel = [Vec3Fix::from_int(8, 0, 0)];
-    // factor per step: 1 − C_d ρ N dt = 1 − 0.5·10·2·0.01 = 0.9
-    let factor = Fix128::ONE - Fix128::from_ratio(1, 2) * rho * Fix128::from_int(2) * dt;
+    // factor per step: 1 / (1 + C_d ρ N dt) = 1 / (1 + 0.5·10·2·0.01) = 1 / 1.1
+    let x = Fix128::from_ratio(1, 2) * rho * Fix128::from_int(2) * dt;
+    let factor = Fix128::ONE / (Fix128::ONE + x);
     let mut want = vel[0];
     for _ in 0..5 {
         apply_fluid_forces_to_cloth(

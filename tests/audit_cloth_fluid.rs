@@ -32,7 +32,7 @@ fn close(a: Fix128, b: Fix128, tol: f64) -> bool {
 
 /// The interaction radius is 0.5 and strict: a fluid particle at 0.49 counts,
 /// at 0.51 and at exactly 0.5 does not. Counted through the drag factor
-/// 1 - C_d rho N dt (only the in-range particles contribute to N).
+/// 1 / (1 + C_d rho N dt) (only the in-range particles contribute to N).
 #[test]
 fn neighbour_radius_is_half_a_metre_and_strict() {
     let c = drag_only(Fix128::ONE);
@@ -49,7 +49,7 @@ fn neighbour_radius_is_half_a_metre_and_strict() {
             Fix128::ONE,
             dt,
         );
-        let want = 8.0 * (1.0 - n / 16.0);
+        let want = 8.0 / (1.0 + n / 16.0);
         assert!(
             close(vel[0].x, Fix128::from_f64(want), 1e-12),
             "dist {} want {want} got {}",
@@ -60,7 +60,7 @@ fn neighbour_radius_is_half_a_metre_and_strict() {
 }
 
 /// Drag acts on the relative velocity to the *mean* neighbour velocity:
-/// dv = -C_d rho N (v_c - mean(v_f)) dt, N = 2 here.
+/// relative velocity u' = u / (1 + C_d rho N dt) (one implicit Euler step), N = 2 here.
 #[test]
 fn drag_uses_the_mean_neighbour_velocity_and_scales_with_count() {
     let c = drag_only(fx(1, 2));
@@ -78,8 +78,10 @@ fn drag_uses_the_mean_neighbour_velocity_and_scales_with_count() {
         rho,
         dt,
     );
-    // mean fluid velocity (3,1,0); relative (-2,0,1); factor C_d rho N dt = 0.5*3*2/8 = 3/8
-    let want = [1.0 + 2.0 * 0.375, 1.0, 1.0 - 1.0 * 0.375];
+    // mean fluid velocity (3,1,0); relative (-2,0,1); x = C_d rho N dt = 0.5*3*2/8 = 3/8,
+    // applied fraction x / (1 + x) = 3/11
+    let f = 3.0 / 11.0;
+    let want = [1.0 + 2.0 * f, 1.0, 1.0 - 1.0 * f];
     assert!(close(vel[0].x, Fix128::from_f64(want[0]), 1e-12));
     assert!(close(vel[0].y, Fix128::from_f64(want[1]), 1e-12));
     assert!(close(vel[0].z, Fix128::from_f64(want[2]), 1e-12));
@@ -101,7 +103,8 @@ fn cloth_particles_are_coupled_independently() {
         Fix128::ONE,
         fx(1, 4),
     );
-    assert_eq!(vel[0].x, Fix128::from_int(3));
+    // x = 1 * 1 * 1 * 1/4: u' = 4 / 1.25 = 3.2
+    assert!(close(vel[0].x, Fix128::from_f64(3.2), 1e-12));
     assert_eq!(vel[1].x, Fix128::from_int(4));
 }
 
@@ -326,7 +329,6 @@ fn surface_tension_pulls_the_cloth_toward_the_fluid_centre() {
 /// the cloth velocity past the fluid velocity (|v| grows), e.g. default drag 0.5
 /// in water (rho 1000) at dt = 1/60 and one neighbour: factor 1 - 8.33 = -7.33.
 #[test]
-#[ignore = "known defect: AUD-A-S2W2-003: drag is explicit Euler with no clamp; C_d=0.5, rho=1000, N=1, dt=1/60 gives v: 10 -> -73.3 (relative speed grows 7.3x)"]
 fn drag_never_overshoots_the_fluid_velocity() {
     let c = drag_only(fx(1, 2));
     let mut vel = [Vec3Fix::from_int(10, 0, 0)];

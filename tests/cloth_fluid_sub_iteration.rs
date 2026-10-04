@@ -349,10 +349,16 @@ fn each_force_term_keeps_its_own_multiplication_by_the_step() {
     let mut distinguishing_scenes = 0u32;
 
     for (cloth_velocity, fluid_velocity, fluid_density) in scene_set() {
-        let (drag, buoyancy, tension) =
+        let (_, buoyancy, tension) =
             expected_terms(&coupling, cloth_velocity, fluid_velocity, fluid_density);
-        let term_by_term = cloth_velocity - drag * dt + buoyancy * dt + tension * dt;
-        let folded = cloth_velocity + (buoyancy + tension - drag) * dt;
+        // Drag is one implicit Euler step on the relative velocity, so its
+        // applied fraction is x / (1 + x) with x = C_d rho N dt (N = 1 here);
+        // buoyancy and tension keep one product each.
+        let x = coupling.drag_coefficient * fluid_density * dt;
+        let relative = cloth_velocity - fluid_velocity;
+        let drag_delta = relative * (x / (Fix128::ONE + x));
+        let term_by_term = cloth_velocity - drag_delta + buoyancy * dt + tension * dt;
+        let folded = cloth_velocity + (buoyancy + tension) * dt - drag_delta;
         if term_by_term != folded {
             distinguishing_scenes += 1;
         }
