@@ -13,6 +13,22 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added — 輪ごとの車両運動 (`vehicle_dynamics`)
+
+- **vehicle_dynamics**: 新 module `DynamicVehicle` / `DynamicVehicleConfig` を追加した 既存の `vehicle::Vehicle` は変更していない `DynamicVehicle::update` を毎 frame `PhysicsWorld::step` の前に呼ぶ 既定値は `DynamicVehicleConfig::passenger_car()` (従来の車輪配置、前輪 Ackermann、brush タイヤ、従来のエンジン表から作る powertrain)
+- 接地点での作用: 各車輪のサスペンション力とタイヤ力をその接地点に `apply_impulse_at` で加えるので、操舵でヨーが生じ、制動・旋回で前後・左右に荷重が移る 横方向の摩擦は射影 Gauss-Seidel で陰的に解く
+- 車輪の回転: 車輪ごとに回転 `ω` を持ち、駆動トルク・ブレーキトルク・タイヤの縦力で更新する (タイヤ力について半陰的) ブレーキは Coulomb 型で車輪をロックでき、逆回転させない ロックした車輪は路面上の点に保持され (静止摩擦)、必要な撃力が摩擦楕円を超えると滑りに移る `AbsConfig` (目標スリップ率と作動下限速度) で ABS を有効にする ハンドブレーキは後輪に掛かる
+- タイヤ (`vehicle_dynamics::tire`): brush (Fiala 型、複合スリップ) と Magic Formula (純スリップ曲線を摩擦楕円で合成) の 2 モデル、`passenger_car()` の既定値付き
+- 路面 (`vehicle_dynamics::surface`): `RoadSurface` trait と平面 / 斜面 / 高さ場 / 三角形メッシュ / SDF の 5 実装 `RoadCondition` は路面材料 (`AnisotropicFriction`) × 天候係数 (乾燥 1 / 湿潤 0.7 / 積雪 0.24 / 凍結 0.12、Wong *Theory of Ground Vehicles* Table 1.3 の比) × 冠水時のハイドロプレーニング低下 (Horne の発生速度 `6.35 √p` km/h)、転がり抵抗 `C_rr`
+- パワートレイン (`vehicle_dynamics::powertrain`): トルク曲線 (線形補間、回転上限)、変速機、エンジンブレーキ、オープン / ロックのデファレンシャル `Powertrain::from_engine_config` は従来の `EngineConfig` の `max_rpm` / `engine_brake` / `num_gears` を読む
+- 空気抵抗と揚力、`WindZone` の風
+- oracle は `tests/analytic_vehicle_dynamics.rs` (4 輪ロックの停止距離 `v0²/(2 μ_k g)` を乾燥・湿潤・凍結で、停止後の静止、ABS で車輪がロックせず最大摩擦係数の下限を守る、低速旋回半径 `L / tan δ` (平行操舵と Ackermann)、線形 2 輪モデルの定常ヨーレート、静止摩擦の限界より緩い斜面での保持と、超える斜面での `g (sin θ − μ_k cos θ)` の滑り 他) と `tests/vehicle_dynamics_degenerate.rs` (dt ≤ 0、静的な車体、車輪 0 本、接地なし等の退化入力) 使用例は `examples/vehicle_dynamics.rs`
+- 既知の制限: 前輪をロックしたまま操舵するとヨーレートが残る (試験の場面で約 4.96e-3 rad/s、閾値 1e-6) 縦と横の摩擦をフレーム内の異なる時点の速度で評価していることが原因で、`braking_with_steering_yaws_only_with_abs` は red のまま (対処は未決定) Magic Formula は完全滑りで力の向きを滑り方向へ寄せない (brush のみ) サスペンションはフレーム先頭の撃力で結合するので `(ω_n dt)² + 2 c dt / m_share < 4` の範囲でのみ安定
+
+### Changed — `vehicle` の module doc を実装に合わせた
+
+- **vehicle**: module doc の「Supports heightfield terrain and SDF surface driving」は実装と食い違っていた (接地判定は `ground_height` の水平面のみ) 実装どおり、平面のみであること、全車輪の力を重心にまとめて加えること、`lateral_slip` / `longitudinal_slip` は計算されないことを書き、物理的な車両運動には `vehicle_dynamics` を使う旨を加えた コードは変更していない
+
 ### Added — 粒子の着地判定
 
 - **particle**: `ParticleSystem::step_with_landing` と `LandingTarget` / `LandingEvent` を追加した 粒子は落下中に経路上の点で当たり相手を問い合わせ、最初に占有された点で着地イベント (粒子 index・当たり相手の index・位置・外向き法線・step 内の時刻) を返し、その粒子を指定の emitter から再放出する (雨粒が形状に当たって再び降る用途) 当たり相手は world 座標の `SdfField`、配置済みの `SdfCollider` (`collide_point_sdf` 経由)、SDF でない相手向けの点の問い合わせ `Fn(Vec3Fix) -> Option<Vec3Fix>` の 3 種 経路は `max_travel` 以下の間隔で標本化するので、`max_travel` より厚い障害物は dt によらず飛び越さない 1 step の標本数が 2^20 を超える要求は panic する 当たり相手を渡さない場合は `step` と bit 一致する 既存の `step` は変更していない oracle は `tests/analytic_particle_landing.rs` (自由落下の着地時刻を半陰的 Euler の閉形式と `sqrt(2h/g)` の誤差上限 `[t* − 3dt/2, t* + dt]` に突合、厚み ε の帯を 1 step 100ε〜12345ε の移動量で落としても飛び越さない、同 seed の bit 一致、再放出による生存数の保存)、使用例は `examples/particle_rain_landing.rs`

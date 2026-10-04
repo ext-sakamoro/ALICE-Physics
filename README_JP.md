@@ -27,6 +27,7 @@ Rust 向けの決定論的物理エンジン
 - [決定論](#決定論)
 - [探索・計画・世界モデルのための決定論的な世界](#探索計画世界モデルのための決定論的な世界)
 - [含まれるもの](#含まれるもの)
+- [車両運動](#車両運動)
 - [検証と既知の不具合](#検証と既知の不具合)
 - [Cargo feature](#cargo-feature)
 - [バインディング](#バインディング)
@@ -152,7 +153,7 @@ API の詳細は [docs.rs](https://docs.rs/alice-physics) を参照
 | 衝突 | GJK / EPA、線形 BVH または永続的な動的 AABB 木のブロードフェーズ、箱・球・カプセル・円柱・円錐・楕円体・トーラス・くさび・凸包・複合形状・三角形メッシュ・高さ場・SDF コライダー |
 | ジョイント | ボール、ヒンジ、固定、スライダー、ばね、D6、コーンツイストと、プーリー、ギア、溶接、ラックアンドピニオン、マウス 破断とPD モーター |
 | 柔軟体 | XPBD のロープと布 (自己衝突あり)、位置ベース流体、FEM-XPBD 変形体、切断 |
-| ゲーム用途 | キャラクターコントローラー、車両、ラグドール、IK 連携、クライアント側予測、決定論的乱数、接触イベント |
+| ゲーム用途 | キャラクターコントローラー、車両 (簡易モデルと、タイヤ・ブレーキ・ABS・路面・天候を持つ輪ごとの車両運動モデル)、ラグドール、IK 連携、クライアント側予測、決定論的乱数、接触イベント |
 | 固体力学 | P1 / P2 / P3 四面体の線形弾性 FEM、共回転による大回転、J2 塑性、超弾性、熱-構造連成、適応細分化、梁、座屈、疲労、複合材 |
 | 流体と場 | 複数の圧力ソルバーを持つ MAC 格子 CFD、RANS / LES 乱流モデル、VOF とレベルセット、SPH、圧縮性流れ、伝熱、Maxwell FDTD |
 | 3D プリント | 材料データベース、薄肉・オーバーハング検査、反り、層間接着、造形向き、それらをまとめた安全性パイプライン |
@@ -161,6 +162,47 @@ API の詳細は [docs.rs](https://docs.rs/alice-physics) を参照
 **領域分割** CFD の圧力投影は `z` 方向のスラブに分けて 1 層のハローを交換しながら実行でき、ランク数によらず単一プロセスの解とビット一致する
 測定は 1 台のホスト内のみ (ループバック TCP で最大 8 プロセス)
 複数ホストにまたがる実行は行っておらず、MPI バックエンドもない
+
+## 車両運動
+
+`vehicle_dynamics::DynamicVehicle` は、各車輪がそれぞれの接地点で車体に力を加える車両モデル
+
+- サスペンションとタイヤの力を車輪ごとに加えるので、操舵でヨーが生じ、制動や旋回で前後・左右に荷重が移る
+- 各車輪は回転状態を持ち、駆動トルク、ブレーキトルク、タイヤ力で回転が変わる ブレーキで車輪をロックでき、ABS はスリップ率を目標値付近に保つ
+- タイヤ力は brush モデルまたは Magic Formula モデルで求め、摩擦楕円で制限する
+- 路面は平面、斜面、高さ場、三角形メッシュ、SDF のいずれか グリップは路面材料に天候係数 (乾燥・湿潤・積雪・凍結) を掛けたもので、冠水路ではハイドロプレーニングによる低下が加わる
+- ロックした車輪は静止摩擦の限界より緩い斜面で車を止めたまま保持し、限界を超えると動摩擦係数で滑る
+- エンジンのトルク曲線、変速機、エンジンブレーキ、オープンまたはロックのデファレンシャル、空気抵抗と揚力
+
+従来の `vehicle::Vehicle` は変更していない
+こちらは `ground_height` の平面上だけを走り、全車輪の力の合計を重心に加えるので、車輪ごとの荷重移動、車輪のロック、タイヤモデルを持たない
+停止距離や旋回を物理に従わせる必要がある場合は `vehicle_dynamics` を使う
+
+```rust
+use alice_physics::vehicle_dynamics::surface::{FlatGround, RoadCondition};
+use alice_physics::vehicle_dynamics::{DynamicVehicle, DynamicVehicleConfig, Environment};
+
+let mut car = DynamicVehicle::new(DynamicVehicleConfig::passenger_car());
+let road = FlatGround { height: Fix128::ZERO };
+let condition = RoadCondition::dry_asphalt();
+let env = Environment { condition: &condition, wind: None, time: Fix128::ZERO };
+car.input.brake = Fix128::ONE;
+// 毎フレーム、world.step(dt) の前に:
+car.update(&mut world.bodies[chassis], &road, &env, dt);
+```
+
+[`examples/vehicle_dynamics.rs`](examples/vehicle_dynamics.rs) はこの構成を実行し、乾燥・湿潤・凍結路で 4 輪をロックした停止距離を `v0² / (2 μ_k g)` と比較し、ABS の有無で制動を比べ、斜面で車を保持する
+閉形式との比較テストは `tests/analytic_vehicle_dynamics.rs` にある
+
+**既知の制限**
+
+- 前輪をロックしたまま操舵すると小さなヨーレートが残る (テストの場面で約 5e-3 rad/s、Coulomb 滑りの予測は 0)
+  縦方向と横方向の摩擦を、フレーム内の異なる時点の速度で評価していることが原因で、テスト `braking_with_steering_yaws_only_with_abs` はこの理由で red のまま
+- 完全滑りのとき、brush モデルは力の向きを滑り方向へ寄せるが、Magic Formula モデルは寄せない (純スリップの力を摩擦楕円上へ縮めるだけ)
+- 車輪の力はフレーム先頭で 1 回の撃力として加える
+  サスペンションが安定なのは `(ω_n dt)² + 2 c dt / m_share < 4` (`ω_n = √(k / m_share)`、`m_share` は 1 輪が受け持つ質量) の範囲だけで、軽い車体に硬いばねを大きな `dt` で使うと振幅が増大する
+- `HeightField` 自体は `origin.y` を反映せず、格子の境界で法線に既知の不具合がある
+  高さ場の路面は高さ場自身の `sample_height` に従い (路面の高さはその戻り値で、`origin.y` は加わらない)、境界では片側差分で法線を求めるので、車輪の探査は境界の不具合の影響を受けない
 
 ## 検証と既知の不具合
 

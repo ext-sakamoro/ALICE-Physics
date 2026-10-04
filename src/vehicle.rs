@@ -1,11 +1,19 @@
 //! Vehicle Physics
 //!
 //! Wheel + suspension + engine model for ground vehicles.
-//! Supports heightfield terrain and SDF surface driving.
+//!
+//! The ground is the horizontal plane `y = VehicleConfig::ground_height`;
+//! height fields, triangle meshes and SDF surfaces are not read. All wheel
+//! forces are summed and applied at the centre of mass as one impulse, so
+//! the wheels do not produce yaw or load transfer by themselves. For
+//! stopping distances, cornering, wheel spin, ABS, tyre models, road
+//! surfaces or weather, use [`crate::vehicle_dynamics`].
 //!
 //! # Components
 //!
-//! - **Wheel**: Raycast-based ground contact, slip model
+//! - **Wheel**: vertical contact test against the ground plane; the spin
+//!   follows the forward speed (`v / r`) and `lateral_slip` /
+//!   `longitudinal_slip` are not computed (they stay 0)
 //! - **Suspension**: Spring-damper for each wheel
 //! - **Engine**: constant torque `max_torque * throttle` times the selected
 //!   gear ratio, split over the driven wheels (no rpm-dependent torque curve;
