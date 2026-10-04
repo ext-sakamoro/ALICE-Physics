@@ -653,7 +653,7 @@ pub use solver::ContactModifier;
 pub use solver::TgsCacheStats;
 pub use solver::{
     BodyType, ContactConstraint, DistanceConstraint, PhysicsConfig, PhysicsWorld, RigidBody,
-    SolverBackend,
+    SolverBackend, WorldSnapshotError,
 };
 pub use spatial::SpatialGrid;
 #[cfg(feature = "std")]
@@ -812,7 +812,7 @@ pub mod prelude {
     pub use crate::solver::TgsCacheStats;
     pub use crate::solver::{
         BodyType, ContactConstraint, DistanceConstraint, PhysicsConfig, PhysicsWorld, RigidBody,
-        SolverBackend,
+        SolverBackend, WorldSnapshotError,
     };
     pub use crate::spatial::SpatialGrid;
     #[cfg(feature = "std")]

@@ -111,9 +111,9 @@ pub struct CompoundShape {
     /// Child shapes with their local transforms
     pub children: Vec<CompoundChild>,
     /// Cached world-space AABB (recomputed on transform)
-    cached_aabb: AABB,
+    pub(crate) cached_aabb: AABB,
     /// Whether the cached AABB needs recomputation
-    dirty: bool,
+    pub(crate) dirty: bool,
 }
 
 impl CompoundShape {

@@ -137,10 +137,7 @@ impl WasmPhysicsWorld {
     /// Step the simulation N times with fixed dt (batch stepping).
     #[wasm_bindgen(js_name = "stepN")]
     pub fn step_n(&mut self, dt: f64, steps: u32) {
-        let dt_fix = Fix128::from_f64(dt);
-        for _ in 0..steps {
-            self.inner.step(dt_fix);
-        }
+        self.inner.step_n(steps as usize, Fix128::from_f64(dt));
     }
 
     // ========================================================================

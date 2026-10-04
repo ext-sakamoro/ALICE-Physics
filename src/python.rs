@@ -78,9 +78,7 @@ impl PyPhysicsWorld {
     fn step_n(&mut self, py: Python<'_>, dt: f64, steps: usize) {
         let dt_fix = Fix128::from_f64(dt);
         py.detach(|| {
-            for _ in 0..steps {
-                self.inner.step(dt_fix);
-            }
+            self.inner.step_n(steps, dt_fix);
         });
     }
 
