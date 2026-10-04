@@ -20,6 +20,7 @@ were introduced during that release window.
 - 版数は README に書かない方針にした バッジは crates.io / docs.rs / MSRV を自動表示し、インストールは `cargo add alice-physics`
 - 公開モジュール 149 個の一覧 (分野別、1 行説明、必要 feature、example へのリンク) を `docs/MODULES.md` に移した API の詳細は docs.rs に委ねる
 - README の使用例は `src/lib.rs` の crate レベル doctest と同一にした (`cargo test` でコンパイル・実行される)
+- README に「Reset, observation and rollback」節 (日本語版は「探索・計画・世界モデルのための決定論的な世界」) を追加した `reset_world` / `observe_body(s)` / `serialize_state`・`deserialize_state` と population fingerprint / `overflow_detected` / `SimulationChecksum` を表にし、保存状態が剛体に限られることを明記
 
 ### Added — README と実装の突き合わせ (`scripts/readme_sync.py`)
 
