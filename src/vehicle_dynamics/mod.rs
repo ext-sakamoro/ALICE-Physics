@@ -330,7 +330,11 @@ fn tyre_force(
     grip: crate::anisotropic_friction::AnisotropicFriction,
 ) -> tire::TireForce {
     let mirror = v_x < Fix128::ZERO;
-    let (k, t) = if mirror { (-kappa, -tan_a) } else { (kappa, tan_a) };
+    let (k, t) = if mirror {
+        (-kappa, -tan_a)
+    } else {
+        (kappa, tan_a)
+    };
     let f = model.force(&tire::TireInput {
         slip_ratio: k,
         slip_tan_alpha: t,
@@ -598,11 +602,11 @@ impl DynamicVehicle {
 
         // --- 1-3: contact, suspension, anti-roll -------------------------
         let mut susp = Vec::with_capacity(n);
-        for i in 0..n {
+        for (i, &steer_i) in steer.iter().enumerate() {
             let wc = self.config.base.wheels[i];
             let attach = chassis.position + chassis.rotation.rotate_vec(wc.local_position);
             let st = &mut self.wheels[i];
-            st.steer_angle = steer[i];
+            st.steer_angle = steer_i;
             st.abs_active = false;
             st.brake_torque = Fix128::ZERO;
             st.longitudinal_force = Fix128::ZERO;
@@ -659,10 +663,9 @@ impl DynamicVehicle {
                 }
             }
         }
-        for i in 0..n {
-            let st = &mut self.wheels[i];
-            st.normal_load = if st.grounded && susp[i] > Fix128::ZERO {
-                susp[i]
+        for (st, &f) in self.wheels.iter_mut().zip(&susp) {
+            st.normal_load = if st.grounded && f > Fix128::ZERO {
+                f
             } else {
                 Fix128::ZERO
             };
@@ -711,7 +714,14 @@ impl DynamicVehicle {
                     s.grip = Some(grip);
                     if st.normal_load > Fix128::ZERO {
                         let kappa = (st.omega * wc.radius - s.v_x) / s.denom;
-                        let f = tyre_force(&self.config.tire, kappa, s.v_y / s.denom, s.v_x, st.normal_load, grip);
+                        let f = tyre_force(
+                            &self.config.tire,
+                            kappa,
+                            s.v_y / s.denom,
+                            s.v_x,
+                            st.normal_load,
+                            grip,
+                        );
                         s.fx_start = f.longitudinal;
                         let mu = grip.longitudinal_static;
                         let c = self.config.tire.longitudinal_slope(st.normal_load, mu);
@@ -725,7 +735,9 @@ impl DynamicVehicle {
         }
 
         // --- 5: drive torque and spin groups -----------------------------
-        let driven: Vec<usize> = (0..n).filter(|&i| self.config.base.wheels[i].driven).collect();
+        let driven: Vec<usize> = (0..n)
+            .filter(|&i| self.config.base.wheels[i].driven)
+            .collect();
         if !driven.is_empty() {
             let mut sum = Fix128::ZERO;
             for &i in &driven {
@@ -767,9 +779,8 @@ impl DynamicVehicle {
         // --- tyre force at the updated spin ---------------------------------
         let mut fx = Vec::with_capacity(n);
         let mut fy = Vec::with_capacity(n);
-        for i in 0..n {
+        for (i, &s) in sc.iter().enumerate() {
             let wc = self.config.base.wheels[i];
-            let s = sc[i];
             let st = &mut self.wheels[i];
             st.spin_angle = st.spin_angle + st.omega * dt;
             let Some(grip) = s.grip else {
@@ -899,7 +910,13 @@ impl DynamicVehicle {
     }
 
     /// Spin update of one group of wheels sharing `ω` (see [`Self::update`]).
-    fn solve_spin_group(&mut self, members: &[usize], sc: &[WheelScratch], dt: Fix128, fwd: Fix128) {
+    fn solve_spin_group(
+        &mut self,
+        members: &[usize],
+        sc: &[WheelScratch],
+        dt: Fix128,
+        fwd: Fix128,
+    ) {
         if members.is_empty() {
             return;
         }
@@ -1151,7 +1168,9 @@ mod tests {
         let heading = Vec3Fix::UNIT_Z * c + Vec3Fix::UNIT_X * s;
         let x_dir = (heading - w.contact_normal * heading.dot(w.contact_normal)).normalize();
         let y_dir = w.contact_normal.cross(x_dir);
-        let f = Vec3Fix::UNIT_Y * w.normal_load + x_dir * w.longitudinal_force + y_dir * w.lateral_force;
+        let f = Vec3Fix::UNIT_Y * w.normal_load
+            + x_dir * w.longitudinal_force
+            + y_dir * w.lateral_force;
         let arm = w.contact_point - before.position;
         let torque = arm.cross(f * dt);
         let expect_w = Vec3Fix::new(
@@ -1166,7 +1185,10 @@ mod tests {
             body.angular_velocity,
             expect_w
         );
-        assert!(expect_w.y.abs() > fx(1, 100), "yaw must be excited: {expect_w:?}");
+        assert!(
+            expect_w.y.abs() > fx(1, 100),
+            "yaw must be excited: {expect_w:?}"
+        );
         let expect_v = before.velocity + f * dt * before.inv_mass;
         assert!(vtol(body.velocity, expect_v, eps));
     }
@@ -1227,7 +1249,11 @@ mod tests {
         let cond = dry(Fix128::ZERO);
         v.update(&mut body, &flat(), &env(&cond), dt60());
         assert_eq!(v.wheels[0].omega, Fix128::ZERO);
-        assert!(tol(v.wheels[0].slip_ratio, Fix128::NEG_ONE, fx(1, 1_000_000)));
+        assert!(tol(
+            v.wheels[0].slip_ratio,
+            Fix128::NEG_ONE,
+            fx(1, 1_000_000)
+        ));
         assert!(v.wheels[0].longitudinal_force < Fix128::ZERO);
         assert!(!v.wheels[0].abs_active);
     }
@@ -1393,17 +1419,18 @@ mod tests {
             v.input.brake = Fix128::ONE;
             v.update(&mut body, &flat(), &env(&cond), dt60());
             let after = DynamicVehicle::forward_speed(&body);
-            assert!(after >= -fx(1, 1_000_000_000), "v0={v0:?} reversed to {after:?}");
+            assert!(
+                after >= -fx(1, 1_000_000_000),
+                "v0={v0:?} reversed to {after:?}"
+            );
             assert!(after <= v0);
         }
     }
 
-    /// A car at rest with the brake on gets anchored wheels and no
-    /// horizontal motion from friction.
     /// Rolling at 2 m/s with a small side slip (free wheels, no anchors): the
-    /// stiff lateral tyre force at low speed would overshoot (`4 C_α tan α dt
-    /// > m v_y`); the effective-mass clamp keeps the side velocity from
-    /// reversing.
+    /// stiff lateral tyre force at low speed would overshoot
+    /// (`4 C_α tan α dt` exceeds `m v_y`); the effective-mass clamp keeps the
+    /// side velocity from reversing.
     #[test]
     fn lateral_friction_does_not_overshoot_at_low_speed() {
         let mut v = DynamicVehicle::new(config());
@@ -1416,10 +1443,16 @@ mod tests {
         }
         v.update(&mut body, &flat(), &env(&cond), dt60());
         assert!(v.wheels.iter().all(|w| w.anchor.is_none()));
-        assert!(body.velocity.x >= Fix128::ZERO, "side velocity reversed: {:?}", body.velocity.x);
+        assert!(
+            body.velocity.x >= Fix128::ZERO,
+            "side velocity reversed: {:?}",
+            body.velocity.x
+        );
         assert!(body.velocity.x < v_side);
     }
 
+    /// A car at rest with the brake on gets anchored wheels and no
+    /// horizontal motion from friction.
     #[test]
     fn car_at_rest_is_held_on_flat() {
         let mut v = DynamicVehicle::new(config());
@@ -1458,7 +1491,8 @@ mod tests {
         let mut v = DynamicVehicle::new(config());
         v.input.throttle = Fix128::ONE;
         let snapshot = v.wheels.clone();
-        let mut body = RigidBody::new_static(Vec3Fix::new(Fix128::ZERO, fx(785, 1000), Fix128::ZERO));
+        let mut body =
+            RigidBody::new_static(Vec3Fix::new(Fix128::ZERO, fx(785, 1000), Fix128::ZERO));
         let before = body;
         let cond = dry(Fix128::ZERO);
         v.update(&mut body, &flat(), &env(&cond), dt60());
@@ -1512,9 +1546,16 @@ mod tests {
         let sp = v_rel.length();
         let half_rho = fx(1225, 1000).half();
         let f = v_rel * (-(half_rho * sp)) + Vec3Fix::UNIT_Y * (-(half_rho * sp * sp));
-        assert!(vtol(body.velocity, f * dt * body.inv_mass, fx(1, 1_000_000_000)));
+        assert!(vtol(
+            body.velocity,
+            f * dt * body.inv_mass,
+            fx(1, 1_000_000_000)
+        ));
         assert!(body.velocity.x > Fix128::ZERO, "wind must push along +x");
-        assert!(body.velocity.y < Fix128::ZERO, "negative lift area is downforce");
+        assert!(
+            body.velocity.y < Fix128::ZERO,
+            "negative lift area is downforce"
+        );
 
         let mut far = chassis();
         far.position = Vec3Fix::new(Fix128::from_int(100), Fix128::ZERO, Fix128::ZERO);
@@ -1566,7 +1607,10 @@ mod tests {
         v.update(&mut body, &NoRoad, &env(&cond), dt60());
         assert_eq!(body, before);
         assert_eq!(v.grounded_wheels(), 0);
-        assert!(v.wheels.iter().all(|w| w.normal_load.is_zero() && w.longitudinal_force.is_zero()));
+        assert!(v
+            .wheels
+            .iter()
+            .all(|w| w.normal_load.is_zero() && w.longitudinal_force.is_zero()));
         // rear wheels are driven: positive drive torque spins them up
         assert!(v.wheels[2].omega > Fix128::ZERO);
         assert_eq!(v.wheels[2].omega, v.wheels[3].omega);
@@ -1585,7 +1629,10 @@ mod tests {
         let cond = dry(Fix128::ZERO);
         v.update(&mut body, &NoRoad, &env(&cond), dt60());
         assert_eq!(v.wheels[2].omega, v.wheels[3].omega);
-        let axle = v.config.powertrain.axle_torque(Fix128::ONE, Fix128::from_int(15));
+        let axle = v
+            .config
+            .powertrain
+            .axle_torque(Fix128::ONE, Fix128::from_int(15));
         let expect = Fix128::from_int(15) + dt60() * axle / (fx(12, 10) + fx(12, 10));
         assert_eq!(v.wheels[2].omega, expect);
     }
@@ -1625,7 +1672,8 @@ mod tests {
         use crate::solver::{PhysicsWorld, SolverConfig};
         let theta = grade.atan();
         // plane tilted about +x so that the car's +z points up (or down) the slope
-        let rot = QuatFix::from_axis_angle(Vec3Fix::UNIT_X, if facing_down { theta } else { -theta });
+        let rot =
+            QuatFix::from_axis_angle(Vec3Fix::UNIT_X, if facing_down { theta } else { -theta });
         let normal = rot.rotate_vec(Vec3Fix::UNIT_Y);
         let road = TestPlane {
             point: Vec3Fix::ZERO,
@@ -1708,7 +1756,11 @@ mod tests {
         let d = world.bodies[idx].position - start;
         let horiz = (d.x * d.x + d.z * d.z).sqrt();
         if std::env::var("VD_DEBUG").is_ok() {
-            std::println!("flat drift {:.3e} m, v {:?}", horiz.to_f64(), world.bodies[idx].velocity.to_f32());
+            std::println!(
+                "flat drift {:.3e} m, v {:?}",
+                horiz.to_f64(),
+                world.bodies[idx].velocity.to_f32()
+            );
         }
         assert!(horiz <= fx(1, 1_000_000), "flat drift {horiz:?}");
     }
@@ -1740,7 +1792,11 @@ mod tests {
         // tan θ = 0.3 < μ (1.1 dry asphalt)
         let drift = slope_drift(fx(3, 10), 600);
         if std::env::var("VD_DEBUG").is_ok() {
-            std::println!("drift 0.99 {:.3e} / 1.0 {:.3e}", drift.to_f64(), slope_run(fx(3, 10), 600, Fix128::ONE, false).0.to_f64());
+            std::println!(
+                "drift 0.99 {:.3e} / 1.0 {:.3e}",
+                drift.to_f64(),
+                slope_run(fx(3, 10), 600, Fix128::ONE, false).0.to_f64()
+            );
         }
         assert!(
             drift.abs() <= fx(1, 1000),
