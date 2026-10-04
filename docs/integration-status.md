@@ -8,9 +8,9 @@ References are resolved to one definition each, so items that share a name are t
 | Level | Meaning | Count |
 |-------|---------|------:|
 | L0 | not reached by any non-test code, examples included | 241 |
-| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2001 |
+| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2005 |
 | live | reached without examples (crate-internal roots or a binding) | 348 |
-| | **total** | **2590** |
+| | **total** | **2594** |
 
 L1 is a label, not a defect: a module users call directly is example-only inside this crate.
 It does mean the item is not reached from `PhysicsWorld`, another module, or a binding.
@@ -516,7 +516,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - Methods are listed as `file::Type::method`, so same-named methods of different types in one file are told apart.
 - Items in `src/ffi.rs`, `src/python.rs` and `src/wasm.rs` are roots and are not listed.
 
-## L1 — example-only (2001)
+## L1 — example-only (2005)
 
 - `src/acoustic_wave.rs`: `AIR_20C`, `CONCRETE_LONGITUDINAL`, `STEEL_LONGITUDINAL`, `WATER_25C`, `leapfrog_step`, `stable_dt`
 - `src/aeroelasticity.rs`: `VivParameters`, `VivParameters::facchinetti_reference`, `VivState`, `VivState::seeded`, `viv_step`
@@ -598,7 +598,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/maxwell_fdtd.rs`: `Absorber`, `COURANT_3D`, `Component`, `YeeGrid`, `YeeGrid::charge`, `YeeGrid::component_dims`, `YeeGrid::courant`, `YeeGrid::current`, `YeeGrid::dims`, `YeeGrid::div_b`, `YeeGrid::div_e`, `YeeGrid::div_j`, `YeeGrid::gauss_residual`, `YeeGrid::get`, `YeeGrid::interior_node_dims`, `YeeGrid::is_absorbing`, `YeeGrid::max_abs_div_b`, `YeeGrid::max_abs_field`, `YeeGrid::max_abs_gauss_residual`, `YeeGrid::new`, `YeeGrid::new_with_absorber`, `YeeGrid::set`, `YeeGrid::set_charge`, `YeeGrid::set_current`, `YeeGrid::step`, `YeeGrid::total_charge`, `cfl_limit_3d`, `loss_coefficients`, `theoretical_pml_reflection`
 - `src/metric.rs`: `MetricError`, `MetricWeights::L1`, `MetricWeights::LINF`, `MetricWeights::axis_extent`, `MetricWeights::lipschitz`, `MetricWeights::new`, `MetricWeights::norm`, `MetricWeights::weights`
 - `src/modal.rs`: `BeamBoundary`, `BeamBoundary::lambda_squared`, `beam_natural_frequency_hz`, `plate_natural_frequency_hz`, `single_dof_frequency_hz`, `torsional_frequency_hz`
-- `src/motor.rs`: `MotorMode`, `PdController`, `PdController::compute`, `PdController::new`, `PdController::set_position_target`
+- `src/motor.rs`: `MotorMode`, `PdController`, `PdController::compute`, `PdController::new`, `PdController::set_position_target`, `shortest_arc`
 - `src/multi_world.rs`: `MultiWorld`, `MultiWorld::add_world`, `MultiWorld::new`, `MultiWorld::step_all`, `MultiWorld::step_all_parallel`, `MultiWorld::total_body_count`, `MultiWorld::transfer_body`, `MultiWorld::world_count`, `Portal`, `Portal::new`, `Portal::transform_a_to_b`, `Portal::transform_b_to_a`
 - `src/multiphase.rs`: `Grid3d`, `Grid3d::get`, `Grid3d::idx`, `Grid3d::new`, `Grid3d::set`, `Grid3d::total`, `VofScheme`, `advect_vof_rigid`, `advect_vof_uniform`, `advect_vof_uniform_semi_lagrangian`, `curvature_at`, `initialize_level_set_sphere`, `reinitialize_level_set`, `total_volume_vof`, `trilinear_range`, `trilinear_sample`
 - `src/netcode.rs`: `DeterministicSimulation::advance_frame`, `DeterministicSimulation::dt`, `DeterministicSimulation::get_snapshot`, `DeterministicSimulation::snapshot_count`
@@ -621,7 +621,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/quadratic_elastic_fem.rs`: `AdaptiveQuadraticSolution`, `QuadraticMesh`, `QuadraticMesh::corner_count`, `QuadraticMesh::edge_count`, `QuadraticMesh::edge_node`, `QuadraticMesh::element_count`, `QuadraticMesh::from_tet_mesh`, `QuadraticMesh::node_count`, `QuadraticMesh::node_position`, `reactions`, `solve_adaptive_quadratic`, `solve_quadratic`, `solve_quadratic_hyperelastic`
 - `src/query.rs`: `BatchRayQuery`, `OverlapResult`, `ShapeCastHit`, `batch_raycast`, `batch_sphere_cast`, `capsule_cast`, `overlap_aabb`, `overlap_aabb_bvh`, `overlap_aabb_expanded`, `overlap_sphere`, `overlap_sphere_bvh`, `sphere_cast`
 - `src/ragdoll.rs`: `Bone`, `Bone::index`, `RagdollBuilder`, `RagdollBuilder::build`, `RagdollHandle`, `RagdollHandle::body`, `RagdollProportions`, `RagdollProportions::child`, `RagdollProportions::human_female`, `RagdollProportions::human_male`
-- `src/raycast.rs`: `ray_aabb`, `ray_capsule`, `ray_plane`, `raycast_aabbs`, `raycast_all_aabbs`, `raycast_all_spheres`, `raycast_any_aabbs`, `raycast_any_spheres`, `raycast_spheres`, `sweep_sphere`
+- `src/raycast.rs`: `ray_aabb`, `ray_capsule`, `ray_plane`, `raycast_aabbs`, `raycast_all_aabbs`, `raycast_all_spheres`, `raycast_any_aabbs`, `raycast_any_spheres`, `raycast_spheres`, `sweep_ray_sphere`, `sweep_sphere`
 - `src/replay.rs`: `ReplayPlayer`, `ReplayPlayer::close`, `ReplayPlayer::get_position`, `ReplayPlayer::get_velocity`, `ReplayPlayer::open`, `ReplayPlayer::scan_positions`, `ReplayRecorder`, `ReplayRecorder::close`, `ReplayRecorder::frame_count`, `ReplayRecorder::new`, `ReplayRecorder::record_frame`, `ReplayRecorder::record_positions`
 - `src/rng.rs`: `DeterministicRng`, `DeterministicRng::new`, `DeterministicRng::new_with_stream`, `DeterministicRng::next_bounded`, `DeterministicRng::next_direction`, `DeterministicRng::next_fix128`, `DeterministicRng::next_fix128_range`, `DeterministicRng::next_gaussian`, `DeterministicRng::next_gaussian_pair`, `DeterministicRng::next_gaussian_with`, `DeterministicRng::next_u32`, `DeterministicRng::next_u64`
 - `src/rolling_contact.rs`: `HertzianContact`, `basquin_cycles_to_failure`, `bearing_steel_52100`, `gear_steel_8620`, `hertzian_sphere_sphere`, `rolling_contact_life_cycles`, `silicon_nitride`
@@ -631,7 +631,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/sdf_adaptive.rs`: `AdaptiveConfig`, `AdaptiveSdfEvaluator`, `AdaptiveSdfEvaluator::begin_frame`, `AdaptiveSdfEvaluator::evaluate`, `AdaptiveSdfEvaluator::invalidate`, `AdaptiveSdfEvaluator::invalidate_all`, `AdaptiveSdfEvaluator::new`, `AdaptiveSdfEvaluator::stats`, `EvalLevel`
 - `src/sdf_ccd.rs`: `PhysicsWorld::sdf_ccd_hits`, `SdfCcdConfig`, `batch_sphere_trace_sdf`, `ray_march_sdf`, `sphere_trace_sdf`
 - `src/sdf_character.rs`: `GroundContact`, `MoveOutcome`, `MoveOutcome::resolved_position`, `SdfCharacter`, `SdfCharacter::apply_central_gravity`, `SdfCharacter::apply_gravity`, `SdfCharacter::ground_contact`, `SdfCharacter::is_grounded`, `SdfCharacter::locomotion_context`, `SdfCharacter::move_and_slide`, `SdfCharacter::new`, `SdfCharacter::step`, `SdfCharacter::step_on_sphere`
-- `src/sdf_collider.rs`: `ClosureSdf`, `ClosureSdf::new`, `SDF_STATIC`, `SdfCollider::new_static`, `SdfCollider::with_scale`, `SdfUnion`, `SdfUnion::new`, `detect_sdf_contacts`
+- `src/sdf_collider.rs`: `ClosureSdf`, `ClosureSdf::new`, `SDF_STATIC`, `SdfCollider::new_static`, `SdfCollider::with_scale`, `SdfUnion`, `SdfUnion::new`, `detect_sdf_contacts`, `fd_normal_step`
 - `src/sdf_destruction.rs`: `DestructibleSdf`, `DestructibleSdf::apply_destruction`, `DestructibleSdf::destruction_count`, `DestructibleSdf::new`, `DestructibleSdf::optimize`, `DestructibleSdf::reset`, `DestructibleSdf::total_destruction_count`, `DestructionShape`, `DestructionShape::cube`, `DestructionShape::cylinder`, `DestructionShape::sphere`, `DestructionShape::with_rotation`, `DestructionShape::with_smoothing`, `DestructionType`, `destruction_from_explosion`, `destruction_from_impact`, `destruction_from_projectile`
 - `src/sdf_fem_mesh.rs`: `BoundaryFaceError`, `CUBE_FIVE_TETS`, `RefineError`, `SdfTetMesh`, `SdfTetMesh::boundary_faces`, `SdfTetMesh::max_edge_length`, `SdfTetMesh::refine_by_max_edge_length`, `SdfTetMesh::tet_count`, `SdfTetMesh::try_refine_conforming`, `SdfTetMesh::try_refine_marked`, `SdfTetMesh::vertex_count`, `Tetrahedron`, `cell_parity`, `generate`, `generate_marching_tets`
 - `src/sdf_force.rs`: `SdfForceField`, `SdfForceField::attract`, `SdfForceField::contain`, `SdfForceField::new`, `SdfForceField::repel`, `SdfForceField::surface_flow`, `SdfForceField::with_affected_bodies`, `SdfForceType`, `apply_sdf_force_fields`, `compute_sdf_force`
@@ -642,7 +642,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/shape_raycast.rs`: `LocalHit`, `PhysicsWorld::cast_ray`, `PhysicsWorld::cast_ray_all`, `PhysicsWorld::cast_ray_any`, `PhysicsWorld::ray_caster`, `RayFilter`, `RayFilter::excluding_body`, `RayFilter::new`, `RayFilter::with_layer_mask`, `RayFilter::with_sdf`, `RayFilter::with_sdf_config`, `RayFilter::with_sensors`, `RayFilter::with_static`, `RayTarget`, `WorldRayCaster`, `WorldRayCaster::all`, `WorldRayCaster::any`, `WorldRayCaster::candidates`, `WorldRayCaster::closest`, `WorldRayHit`
 - `src/sim_field.rs`: `ScalarField3D`, `ScalarField3D::add`, `ScalarField3D::cell_count`, `ScalarField3D::clamp`, `ScalarField3D::decay`, `ScalarField3D::decay_toward`, `ScalarField3D::diffuse`, `ScalarField3D::get`, `ScalarField3D::gradient`, `ScalarField3D::index`, `ScalarField3D::new`, `ScalarField3D::new_filled`, `ScalarField3D::sample`, `ScalarField3D::set`, `ScalarField3D::splat`
 - `src/sim_modifier.rs`: `ModifiedSdf`, `ModifiedSdf::add_modifier`, `ModifiedSdf::clear_modifiers`, `ModifiedSdf::modifier_count`, `ModifiedSdf::modifier_mut`, `ModifiedSdf::new`, `ModifiedSdf::with_modifier`, `PhysicsModifier`
-- `src/sketch.rs`: `CountMinSketch`, `DDSketch`, `FnvHasher`, `FnvHasher::hash_bytes`, `FnvHasher::hash_u128`, `FnvHasher::hash_u64`, `FnvHasher::new`, `HeavyHitters`, `HyperLogLog`, `Mergeable`
+- `src/sketch.rs`: `CountMinSketch`, `DDSketch`, `FnvHasher`, `FnvHasher::hash_bytes`, `FnvHasher::hash_u128`, `FnvHasher::hash_u64`, `FnvHasher::new`, `HeavyHitters`, `HyperLogLog`, `Mergeable`, `splitmix64`
 - `src/sleeping.rs`: `Island`, `IslandManager::build_islands`, `IslandManager::sleeping_count`
 - `src/smoke_fire.rs`: `ArrheniusReaction`, `ArrheniusReaction::methane_air`, `ArrheniusReaction::pla_air`, `boussinesq_buoyancy_n_per_m3`, `heat_release_j_per_m3_s`, `reaction_rate_kg_per_m3_s`, `soot_generation_kg_per_m3_s`
 - `src/soft_body_cut.rs`: `CutPlane`, `CutResult`, `cut_cloth`, `cut_deformable`
