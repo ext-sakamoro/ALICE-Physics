@@ -19,8 +19,14 @@ Roots without examples: the binding files (src/ffi.rs, src/python.rs,
 src/wasm.rs), module-level code that is not a `use` statement, and trait-impl
 methods of traits defined outside the crate (Display, Default, Drop, ... are
 called implicitly). A trait method that is reached also reaches every impl of
-it in the crate (SCIP `is_implementation` relationships), so calls through
-`dyn Trait` are followed.
+it in the crate, so calls through `dyn Trait` and generic bounds are followed.
+
+The trait-impl links come from the impl symbol names (`impl#[X][Tr]run().`
+implements `Tr#run().`), because rust-analyzer's SCIP output carries no
+`is_implementation` relationships (measured with rust-analyzer 1.98.1: 0
+relationships of any kind in 88580 symbol infos). Relationships are still read
+when present. Until 2026-10-04 they were the only source, so no impl body was
+ever reached and their callees were reported as L0.
 
 References inside comments, strings, `#[cfg(test)]` code and `use` statements
 are dropped with the same preprocessing wiring_guard.py uses, so the two
@@ -35,7 +41,7 @@ Usage:
   python3 scripts/scip_reach.py --check-baseline     # ratchet: no new L0, no stale entry
   python3 scripts/scip_reach.py --write-baseline     # after an intended change
 Exit 1 when an index is missing, when the analysis compared nothing
-(0 items, or 0 references from examples / bindings), or, with --check-baseline,
+(0 items, 0 references from examples / bindings / the fuzz crate, or 0 trait-impl links), or, with --check-baseline,
 when an L0 item is not in scripts/integration-baseline.txt (a new public item
 that nothing reaches) or a baseline entry is no longer L0 (remove the line).
 """
@@ -158,9 +164,78 @@ class Analysis:
         self.level: dict[str, str] = {}            # key -> L0 / L1 / live
         self.example_refs = 0
         self.binding_refs = 0
+        self.unindexed: list[str] = []  # pub items in the source with no index definition
+        self.fuzz_refs = 0        # references from the fuzz crate's index to this crate
+        self.fuzz_docs = 0
+        self.impl_links = 0       # trait-impl method -> in-crate trait method
+        self.external_impls = 0   # trait-impl methods of traits defined outside the crate
 
 
 IMPL_HEADER_RE = re.compile(r"\bimpl\b[^{;]*\{")
+PUB_NAME_RE = re.compile(PUB_DEF + r"([A-Za-z_][A-Za-z0-9_]*)")
+
+# fuzz/ is a separate crate: its index is read last, and its paths get this prefix
+FUZZ_INDEX = "fuzz.scip"
+FUZZ_PREFIX = "fuzz/"
+
+# rust-analyzer names a trait-impl method `<module>/impl#[<Type>][<Trait>]<method>().`
+# The type part may itself contain brackets (`[T; 3]`), so the greedy first group
+# backs off to the last `][` before the method. The trait part is bare (`TgsHooks`)
+# or backticked with generics and a path (`` `From<crate::x::Y>` ``).
+IMPL_METHOD_RE = re.compile(r"impl#\[(.*)\]\[([^\[\]]+)\]([A-Za-z_][A-Za-z0-9_]*)\(\)\.$")
+# a type (struct / enum / union / trait) definition: `<module>/<Name>#`
+TYPE_DEF_RE = re.compile(r"(?:^|[/ ])([A-Za-z_][A-Za-z0-9_]*)#$")
+# a symbol that names a type: the type itself or one of its fields / variants
+TYPE_OR_MEMBER_RE = re.compile(r"(?:^|[/ ])([A-Za-z_][A-Za-z0-9_]*)#(?:[A-Za-z_][A-Za-z0-9_]*\.)?$")
+# a method of an inherent or trait impl: `impl#[<Type>]m().` / `impl#[<Type>][<Trait>]m().`
+INHERENT_OR_IMPL_RE = re.compile(r"impl#\[([^\]]*(?:\[[^\]]*\][^\]]*)*)\]")
+# a method defined inside a trait or type body: `<module>/<Name>#<method>().`, or
+# `<Name>#<method>().` right after the package version for an item at the crate root
+MEMBER_METHOD_RE = re.compile(r"(?:^|[/ ])([A-Za-z_][A-Za-z0-9_]*)#([A-Za-z_][A-Za-z0-9_]*)\(\)\.$")
+
+
+def _trait_name(raw: str) -> str:
+    """`TgsHooks` / `` `From<crate::a::B>` `` / `` `core::ops::Add<Self>` `` -> bare trait name."""
+    name = raw.strip("`").split("<", 1)[0]
+    return name.rsplit("::", 1)[-1]
+
+
+def link_trait_impls(defined: set[str]) -> tuple[dict[str, set[str]], set[str]]:
+    """Trait-impl methods recovered from symbol names.
+
+    rust-analyzer's SCIP output carries no `is_implementation` relationships
+    (rust-analyzer 1.98.1 emits none of any kind), so a call through a trait never
+    reached the impl bodies. The impl symbol names its trait, so the link is rebuilt
+    here: `impl#[X][Tr]run().` implements every in-crate `.../Tr#run().`. Returns
+    (trait method -> impl methods, impl methods of traits not defined in the crate).
+
+    Matching is by trait *name*: two in-crate traits with the same name and method
+    would both receive the impl, which can only make more items reached (never fewer).
+    A trait counts as external only when no in-crate symbol carries its name, so an
+    impl of an in-crate trait never becomes a root by a missed match.
+    """
+    members: dict[tuple[str, str], set[str]] = {}
+    impls: list[tuple[str, str, str]] = []
+    for s in defined:
+        m = IMPL_METHOD_RE.search(s)
+        if m:
+            impls.append((s, _trait_name(m.group(2)), m.group(3)))
+            continue
+        m = MEMBER_METHOD_RE.search(s)
+        if m and not m.group(1).startswith("impl"):
+            members.setdefault((m.group(1), m.group(2)), set()).add(s)
+    in_crate = {name for name, _ in members}
+    linked: dict[str, set[str]] = {}
+    external: set[str] = set()
+    for sym, trait, method in impls:
+        targets = members.get((trait, method))
+        if targets:
+            for t in targets:
+                linked.setdefault(t, set()).add(sym)
+        elif trait not in in_crate:
+            external.add(sym)
+        # an in-crate trait without that method links nowhere and is no root
+    return linked, external
 
 
 def _keep_mask(text: str) -> tuple[list[str], list[str]]:
@@ -173,6 +248,39 @@ def _keep_mask(text: str) -> tuple[list[str], list[str]]:
     code = USE_RE.sub(blank, code)
     code = IMPL_HEADER_RE.sub(lambda m: blank(m)[:-1] + "{", code)
     return text.split("\n"), code.split("\n")
+
+
+def unindexed_items(root: Path, indexed: set[str]) -> list[str]:
+    """`src/x.rs::name` for every `pub` definition in the source (comments, strings,
+    cfg(test) and use statements removed) that no index definition accounts for."""
+    out = set()
+    for p in sorted((Path(root) / "src").rglob("*.rs")):
+        rel = p.relative_to(root).as_posix()
+        if rel in BINDING_FILES:
+            continue
+        _raw, code = _keep_mask(p.read_text(encoding="utf-8", errors="replace"))
+        for line in code:
+            for m in PUB_NAME_RE.finditer(line):
+                key = f"{rel}::{m.group(1)}"
+                if key not in indexed:
+                    out.add(key)
+    return sorted(out)
+
+
+def item_key(rel: str, name: str, sym: str) -> str:
+    """`src/x.rs::name`, or `src/x.rs::Type::name` for an item of an impl block.
+
+    Keyed by name alone, `Triangle::closest_point` and `TriMesh::closest_point` in
+    one file were one item, reached as soon as either was: 21 keys hid an
+    unreached method behind a reached one of the same name (2026-10-04)."""
+    m = INHERENT_OR_IMPL_RE.search(sym)
+    return f"{rel}::{_trait_name(m.group(1))}::{name}" if m else f"{rel}::{name}"
+
+
+def legacy_key(key: str) -> str:
+    """`src/x.rs::Type::name` -> `src/x.rs::name`, the form wiring-baseline.txt uses."""
+    rel, _, rest = key.partition("::")
+    return f"{rel}::{rest.rsplit('::', 1)[-1]}"
 
 
 def _visible(code_lines: list[str], pos: tuple[int, int]) -> bool:
@@ -189,6 +297,7 @@ def analyze(root: Path, scip_paths: list[Path]) -> Analysis:
     implementers: dict[str, set[str]] = {}
     defined: set[str] = set()
     impl_targets: dict[str, set[str]] = {}
+    src_defined: set[str] = set()
     texts: dict[str, tuple[list[str], list[str]]] = {}
     seen: set[tuple] = set()
 
@@ -198,9 +307,16 @@ def analyze(root: Path, scip_paths: list[Path]) -> Analysis:
             texts[rel] = _keep_mask(p.read_text(encoding="utf-8", errors="replace")) if p.exists() else ([], [])
         return texts[rel]
 
+    # the fuzz index last: its references are counted against src_defined
+    scip_paths = sorted(scip_paths, key=lambda sp: Path(sp).name == FUZZ_INDEX)
     for sp in scip_paths:
+        # the fuzz crate is indexed from fuzz/, so its paths are relative to it
+        prefix = FUZZ_PREFIX if Path(sp).name == FUZZ_INDEX else ""
         for doc in load_scip(sp):
+            doc["path"] = prefix + doc["path"]
             rel = doc["path"]
+            if prefix:
+                a.fuzz_docs += 1
             for sym, target in doc["impl"]:
                 implementers.setdefault(target, set()).add(sym)
                 impl_targets.setdefault(sym, set()).add(target)
@@ -218,6 +334,8 @@ def analyze(root: Path, scip_paths: list[Path]) -> Analysis:
                     continue
                 if o["roles"] & 1:
                     defined.add(s)
+                    if is_src:
+                        src_defined.add(s)
                     enc = _span(o["enc"]) if o["enc"] else None
                     if enc is not None:
                         defs.append((enc[0], enc[1], s))
@@ -225,7 +343,7 @@ def analyze(root: Path, scip_paths: list[Path]) -> Analysis:
                         line = raw[sp_[0][0]] if sp_[0][0] < len(raw) else ""
                         name = line[sp_[0][1]:sp_[1][1]]
                         if name and re.search(PUB_DEF + re.escape(name) + r"\b", line):
-                            a.items.setdefault(f"{rel}::{name}", set()).add(s)
+                            a.items.setdefault(item_key(rel, name, s), set()).add(s)
                 else:
                     if is_src and not _visible(code, sp_[0]):
                         continue
@@ -258,7 +376,10 @@ def analyze(root: Path, scip_paths: list[Path]) -> Analysis:
                     j -= 1
                 if is_root_file:
                     roots_example.add(s)
-                    a.example_refs += 1
+                    if not prefix:
+                        a.example_refs += 1  # the fuzz crate has its own guard below
+                    elif s in src_defined:
+                        a.fuzz_refs += 1  # libfuzzer-sys / arbitrary / std do not count
                 elif rel in BINDING_FILES:
                     roots_core.add(s)
                     a.binding_refs += 1
@@ -267,25 +388,77 @@ def analyze(root: Path, scip_paths: list[Path]) -> Analysis:
                 else:
                     edges.setdefault(ctx, set()).add(s)
 
-    # trait-impl methods of traits defined outside the crate are called implicitly
-    for sym, targets in impl_targets.items():
-        if any(t not in defined for t in targets):
-            roots_core.add(sym)
+    # pub items the index does not define (in practice: items written inside a
+    # macro_rules body, which rust-analyzer does not emit definitions for). They have
+    # no level, so they are listed and ratcheted separately instead of disappearing
+    a.unindexed = unindexed_items(root, {legacy_key(k) for k in a.items})
+
+    # Trait impls. An impl method runs only when (1) the trait method it implements
+    # is reached, or the trait is defined outside the crate (Display, Default, Drop,
+    # ... are called implicitly), and (2) a value of its self type exists, which is
+    # approximated as "the type, or any member of it, is reached" (rapid type
+    # analysis). Without (2) a reached trait method would reach every impl in the
+    # crate, including impls of types nothing constructs, and every external-trait
+    # impl would be a root (measured: 6 superseded TGS hook types and 2 unused
+    # physics2d types became reached that way).
+    external: set[str] = {s for s, ts in impl_targets.items() if any(t not in defined for t in ts)}
+    a.impl_links = sum(len(v) for v in implementers.values())
+    linked, ext_by_name = link_trait_impls(defined)
+    for trait_method, impl_methods in linked.items():
+        implementers.setdefault(trait_method, set()).update(impl_methods)
+        a.impl_links += len(impl_methods)
+    external |= ext_by_name
+    a.external_impls = len(external)
+    type_defs: dict[str, list[str]] = {}
+    for d in defined:
+        m = TYPE_DEF_RE.search(d)
+        if m:
+            type_defs.setdefault(m.group(1), []).append(d)
+
+    def self_type(impl_sym: str) -> str | None:
+        """Name of an impl method's self type, or None when it is not a crate type
+        (`impl Tr for f32`, `impl Tr for Vec<T>`): values of those always exist."""
+        m = IMPL_METHOD_RE.search(impl_sym)
+        name = _trait_name(m.group(1)) if m else ""
+        return name if name in type_defs else None
+
+    def type_of(sym: str) -> str | None:
+        """The crate type a live symbol shows to exist: `X#` (named), `X#field.`
+        (accessed), `impl#[X]new().` / `impl#[X][Tr]m().` (called)."""
+        m = INHERENT_OR_IMPL_RE.search(sym)
+        if m:
+            return _trait_name(m.group(1))
+        m = TYPE_OR_MEMBER_RE.search(sym)
+        return m.group(1) if m else None
 
     def reach(start: set[str]) -> set[str]:
         live = set(start)
         stack = list(start)
-        while stack:
-            s = stack.pop()
-            for t in edges.get(s, ()):
-                if t not in live:
+        pending = set(external)  # waiting for their self type
+        while True:
+            while stack:
+                s = stack.pop()
+                for t in edges.get(s, ()):
+                    if t not in live:
+                        live.add(t)
+                        stack.append(t)
+                for t in implementers.get(s, ()):
+                    if t not in live:
+                        pending.add(t)
+            reached_types = {ty for ty in map(type_of, live) if ty}
+            ready = set()
+            for t in pending:
+                if t in live:
+                    ready.add(t)
+                    continue
+                ty = self_type(t)
+                if ty is None or ty in reached_types:
+                    ready.add(t)
                     live.add(t)
                     stack.append(t)
-            for t in implementers.get(s, ()):
-                if t not in live:
-                    live.add(t)
-                    stack.append(t)
-        return live
+            pending -= ready
+            if not stack:
+                return live
 
     live_core = reach(roots_core)
     live_all = reach(roots_core | roots_example)
@@ -315,8 +488,13 @@ def report(a: Analysis, baseline: set[str]) -> str:
     l0 = sorted(k for k, v in a.level.items() if v == "L0")
     l1 = sorted(k for k, v in a.level.items() if v == "L1")
     live = sum(1 for v in a.level.values() if v == "live")
-    missed = [k for k in l0 if k not in baseline]
-    resolved = sorted(k for k in baseline if a.level.get(k) in ("live", "L1"))
+    # wiring-baseline.txt names items by file and name only
+    by_legacy: dict[str, list[str]] = {}
+    for k in a.level:
+        by_legacy.setdefault(legacy_key(k), []).append(k)
+    missed = [k for k in l0 if legacy_key(k) not in baseline]
+    resolved = sorted(b for b in baseline
+                      if by_legacy.get(b) and all(a.level[k] in ("live", "L1") for k in by_legacy[b]))
     out = [
         "# ALICE-Physics Integration Status",
         "",
@@ -352,16 +530,22 @@ def report(a: Analysis, baseline: set[str]) -> str:
         "The guard lists these as unwired; a resolved reference reaches them (level in brackets).",
         "",
     ]
-    out += [f"- `{k}` ({a.level[k]})" for k in resolved] or ["- (none)"]
+    out += [f"- `{k}` ({'/'.join(sorted({a.level[x] for x in by_legacy[k]}))})" for k in resolved] or ["- (none)"]
     out += ["", f"## L0 — unreached ({len(l0)})", ""]
     out += [f"- `{k}`" for k in l0] or ["- (none)"]
+    out += ["", f"## Not indexed ({len(a.unindexed)})", "",
+            "`pub` items in the source that the SCIP index has no definition for (items inside a "
+            "`macro_rules` body). Their reach is not checked; the baseline lists them so the set cannot grow unnoticed.", ""]
+    out += [f"- `{k}`" for k in a.unindexed] or ["- (none)"]
     out += [
         "",
         "## Limits",
         "",
         "- A pattern in a `match` arm counts as a reference: a type that is only matched on, never constructed, is reached.",
         "- Code inside macro expansions is resolved as far as rust-analyzer resolves it.",
-        "- Generic code is followed through trait methods: calling `T::method` reaches every impl of that method in the crate.",
+        "- Calls through a trait (`dyn Tr`, `T: Tr`) reach the impls of that method whose self type is reached (the type, a field, or one of its methods is live); an impl of a type nothing reaches stays unreached.",
+        "- Trait-impl links come from the impl symbol names; rust-analyzer's SCIP output has no implementation relationships.",
+        "- Methods are listed as `file::Type::method`, so same-named methods of different types in one file are told apart.",
         "- Items in `src/ffi.rs`, `src/python.rs` and `src/wasm.rs` are roots and are not listed.",
     ]
     out += ["", f"## L1 — example-only ({len(l1)})", ""]
@@ -388,7 +572,7 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
     root = Path(args.root)
     sdir = Path(args.scip) if Path(args.scip).is_absolute() else root / args.scip
-    paths = [sdir / "native.scip", sdir / "wasm.scip"]
+    paths = [sdir / "native.scip", sdir / "wasm.scip", sdir / FUZZ_INDEX]
     missing = [str(p) for p in paths if not p.exists()]
     if missing:
         print(f"error: SCIP index missing: {missing} (run scripts/scip_index.sh)", file=sys.stderr)
@@ -398,11 +582,18 @@ def main(argv: list[str] | None = None) -> int:
     if not a.items:
         errors.append("0 pub items found in src/ (the analysis looked at nothing)")
     if a.example_refs == 0:
-        errors.append("0 references from examples/benches/fuzz (index or path filter is wrong)")
+        errors.append("0 references from examples/benches (index or path filter is wrong)")
     if a.binding_refs == 0:
         errors.append("0 references from binding files (feature-gated modules were not indexed)")
+    if a.fuzz_docs == 0 or a.fuzz_refs == 0:
+        errors.append(f"fuzz index: {a.fuzz_docs} documents, {a.fuzz_refs} references to the crate "
+                      "(fuzz targets would not count as callers)")
+    if a.impl_links == 0:
+        errors.append("0 trait-impl links resolved (calls through a trait would never reach an impl)")
     counts = {lv: sum(1 for v in a.level.values() if v == lv) for lv in ("L0", "L1", "live")}
     print(f"compared: items {len(a.items)}, example refs {a.example_refs}, binding refs {a.binding_refs}, "
+          f"fuzz refs {a.fuzz_refs}, trait-impl links {a.impl_links}, external-trait impls {a.external_impls}, "
+          f"unindexed {len(a.unindexed)}, "
           f"L0 {counts['L0']}, L1 {counts['L1']}, live {counts['live']}")
     for e in errors:
         print(f"error: {e}", file=sys.stderr)
@@ -413,14 +604,24 @@ def main(argv: list[str] | None = None) -> int:
     bpath = Path(args.baseline) if Path(args.baseline).is_absolute() else root / args.baseline
     l0 = sorted(k for k, v in a.level.items() if v == "L0")
     if args.write_baseline:
-        bpath.write_text(BASELINE_HEADER + "".join(f"{k}\n" for k in l0), encoding="utf-8")
-        print(f"wrote {len(l0)} L0 entries to {bpath}")
+        bpath.write_text(BASELINE_HEADER + "".join(f"{k}\n" for k in l0)
+                         + "".join(f"{UNINDEXED}{k}\n" for k in a.unindexed), encoding="utf-8")
+        print(f"wrote {len(l0)} L0 entries and {len(a.unindexed)} unindexed entries to {bpath}")
     if args.check_baseline:
         if not bpath.exists():
             print(f"error: baseline {bpath} missing (run with --write-baseline)", file=sys.stderr)
             return 1
-        base = {ln.strip() for ln in bpath.read_text(encoding="utf-8").splitlines()
-                if ln.strip() and not ln.startswith("#")}
+        lines = {ln.strip() for ln in bpath.read_text(encoding="utf-8").splitlines()
+                 if ln.strip() and not ln.startswith("#")}
+        base = {ln for ln in lines if not ln.startswith(UNINDEXED)}
+        base_unindexed = {ln[len(UNINDEXED):] for ln in lines if ln.startswith(UNINDEXED)}
+        new_unindexed = [k for k in a.unindexed if k not in base_unindexed]
+        stale_unindexed = sorted(base_unindexed - set(a.unindexed))
+        for k in new_unindexed:
+            print(f"error: new unindexed item {k}: a pub item the SCIP index has no definition for "
+                  "(a macro_rules body?), so its reach cannot be checked", file=sys.stderr)
+        for k in stale_unindexed:
+            print(f"error: stale unindexed entry {k}: remove the line", file=sys.stderr)
         new = [k for k in l0 if k not in base]
         stale = sorted(k for k in base if a.level.get(k) != "L0")
         for k in new:
@@ -429,16 +630,21 @@ def main(argv: list[str] | None = None) -> int:
         for k in stale:
             lv = a.level.get(k, "gone")
             print(f"error: stale baseline entry {k} (now {lv}): remove the line", file=sys.stderr)
-        print(f"baseline: {len(base)} entries, new L0 {len(new)}, stale {len(stale)}")
-        if new or stale:
+        print(f"baseline: {len(base)} entries, new L0 {len(new)}, stale {len(stale)}; "
+              f"unindexed {len(base_unindexed)} entries, new {len(new_unindexed)}, stale {len(stale_unindexed)}")
+        if new or stale or new_unindexed or stale_unindexed:
             return 1
     return 0
 
 
+UNINDEXED = "unindexed: "
 BASELINE_HEADER = """# L0 items (no non-test code reaches them) that existed when the ratchet was
 # introduced. scripts/scip_reach.py --check-baseline fails on any L0 item not
 # listed here, and on any line here that is no longer L0. Shrink this file;
 # regenerate with --write-baseline only for an intended change.
+# Lines starting with "unindexed: " are pub items the SCIP index has no
+# definition for (macro_rules bodies); they have no level, the same ratchet
+# applies to them.
 """
 
 

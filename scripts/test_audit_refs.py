@@ -85,6 +85,37 @@ class Resolve(unittest.TestCase):
         code, out, err = run([src_doc(), t], "--check")
         self.assertEqual(code, 0, err)
 
+    def test_a_shortened_type_name_does_not_resolve_to_an_unrelated_function(self):
+        # `Laplace` matches no type exactly and `LaplaceNoise` (privacy.rs) has no `new`
+        # in this fixture: a `fn new` elsewhere in the crate must not count
+        other = (Doc("src/privacy.rs", "pub struct LaplaceNoise;")
+                 .define("privacy/LaplaceNoise#", 0, "LaplaceNoise"))
+        unrelated = (Doc("src/blend.rs", "pub struct Blend;\nimpl Blend { pub fn new() -> Self { Blend } }")
+                     .define("blend/Blend#", 0, "Blend")
+                     .define("blend/impl#[Blend]new().", 1, "new"))
+        t = test_file("AUD-A-S4W3-029: the noise of Laplace::new is predictable")
+        code, _, err = run([src_doc(), other, unrelated, t], "--check")
+        self.assertEqual(code, 1, err)
+        self.assertIn("Laplace::new", err)
+
+    def test_a_shortened_type_name_resolves_to_the_definition_it_abbreviates(self):
+        # two `new`s in the file: only LaplaceNoise's is the one the prose names
+        noise = (Doc("src/privacy.rs", "pub struct LaplaceNoise;\nimpl LaplaceNoise { pub fn new() -> Self { LaplaceNoise } }\n"
+                                       "pub struct Rr;\nimpl Rr { pub fn new() -> Self { Rr } }")
+                 .define("privacy/LaplaceNoise#", 0, "LaplaceNoise")
+                 .define("privacy/impl#[LaplaceNoise]new().", 1, "new")
+                 .define("privacy/Rr#", 2, "Rr")
+                 .define("privacy/impl#[Rr]new().", 3, "new"))
+        unrelated = (Doc("src/blend.rs", "pub struct Blend;\nimpl Blend { pub fn new() -> Self { Blend } }")
+                     .define("blend/Blend#", 0, "Blend")
+                     .define("blend/impl#[Blend]new().", 1, "new"))
+        t = test_file("AUD-A-S4W3-029: the noise of Laplace::new is predictable")
+        code, out, _ = run([src_doc(), noise, unrelated, t], "AUD-A-S4W3-029")
+        self.assertEqual(code, 0)
+        self.assertIn("src/privacy.rs:2", out)
+        self.assertNotIn("src/privacy.rs:4", out)  # Rr::new
+        self.assertNotIn("src/blend.rs", out)
+
     def test_lookup_by_id_prints_definition_locations(self):
         t = test_file("AUD-A-S4W3-008: DebugDrawData::aabb exists")
         code, out, _ = run([src_doc(), t], "AUD-A-S4W3-008")
