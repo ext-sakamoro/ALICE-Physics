@@ -40,20 +40,22 @@ pub struct FluidSnapshot {
 impl FluidSnapshot {
     /// Create snapshot from fluid particle data
     ///
-    /// `positions` and `velocities` are expected to describe the same
-    /// particle set and so have the same length. When they differ,
-    /// `particle_count` is the *larger* of the two, not `positions.len()`:
-    /// using the position count alone made `restore` deserialize only that
-    /// many velocities, silently dropping the surplus (data loss with no
-    /// error) while [`FluidSnapshot::verify`] still reported a match.
-    /// Recording the larger count instead means the shorter array's own
-    /// byte buffer is too small for it, so `restore` refuses the snapshot
-    /// outright through the length check [`deserialize_vec3_array`] already
-    /// performs, the same way it refuses a `particle_count` tampered to
-    /// exceed either buffer.
+    /// `positions` and `velocities` must describe the same particle set and
+    /// so have the same length: `particle_count` is one count for both
+    /// arrays, and [`FluidSnapshot::restore`] deserializes that many of
+    /// each. Accepting a mismatch meant taking `positions.len()` as the
+    /// count for both, so a longer velocity array had its surplus silently
+    /// dropped on restore — data loss with no error, while
+    /// [`FluidSnapshot::verify`] still reported a match because it compares
+    /// checksums over the bytes rather than reading `particle_count`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the two slices have mismatched lengths.
     #[must_use]
     pub fn capture(positions: &[Vec3Fix], velocities: &[Vec3Fix], frame: u64) -> Self {
-        let n = positions.len().max(velocities.len());
+        assert_eq!(positions.len(), velocities.len(), "length mismatch");
+        let n = positions.len();
         let pos_data = serialize_vec3_array(positions);
         let vel_data = serialize_vec3_array(velocities);
 
