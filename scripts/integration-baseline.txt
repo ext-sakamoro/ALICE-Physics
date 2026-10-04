@@ -24,7 +24,6 @@ src/bvh.rs::LinearBvh::query_callback
 src/bvh.rs::LinearBvh::stats
 src/cfd_solver.rs::CfdSolver::step_multigrid
 src/cfd_solver.rs::RansState::set
-src/cloth.rs::Cloth::step_with_sdf
 src/cloth_fluid.rs::ClothFluidCoupling
 src/cloth_fluid.rs::apply_cloth_boundary_to_fluid
 src/cloth_fluid.rs::apply_cloth_boundary_to_fluid_with_residual
@@ -69,7 +68,6 @@ src/cylinder.rs::Cylinder::aabb
 src/cylinder.rs::Cylinder::surface_area
 src/cylinder.rs::Cylinder::with_rotation
 src/debug_render.rs::DebugDrawData::aabb
-src/deformable.rs::DeformableBody::step_with_sdf
 src/dynamic_bvh.rs::DynamicAabbTree::node_count
 src/dynamic_bvh.rs::DynamicAabbTree::query
 src/ellipsoid.rs::Ellipsoid::aabb
@@ -122,7 +120,6 @@ src/filter.rs::ALL
 src/filter.rs::CollisionFilter::ALL
 src/filter.rs::DEFAULT
 src/flow_viz.rs::Streamlines::is_empty
-src/fluid.rs::Fluid::step_with_sdf
 src/gpu_sdf.rs::GpuSdfBatch::clear
 src/heightfield.rs::HeightField::aabb
 src/joint.rs::BallJoint::with_compliance
