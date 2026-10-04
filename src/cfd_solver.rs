@@ -1511,6 +1511,9 @@ impl CfdSolver {
     /// Step 1: Add body forces (gravity + buoyancy + surface tension).
     ///
     /// # Claims
+    /// - The interface is smeared over `eps = 2 dx`, an integer multiple of `dx`, so the
+    ///   sampled delta sums to 1 for any interface offset and the line integral of the
+    ///   force across a spherical interface is `-2 sigma / R` (Young-Laplace)
     /// - Surface tension adds `f / rho * dt` (m/s) to the faces along each axis,
     ///   split 1/2 to each of the two faces of a cell, for x, y and z alike
     fn apply_body_forces(&mut self, dt_s: Fix128) {
@@ -1571,7 +1574,7 @@ impl CfdSolver {
             let (fx, fy, fz) = compute_csf_field(
                 ls,
                 self.surface_tension_n_m,
-                self.grid.dx * Fix128::from_ratio(15, 10),
+                self.grid.dx * Fix128::from_int(2),
             );
             // Apply each cell-centred component to the two faces of the cell along
             // its own axis (1/2 each), so the three components act alike
