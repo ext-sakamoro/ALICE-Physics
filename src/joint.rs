@@ -1421,7 +1421,7 @@ fn apply_point_correction(
 /// `w ≥ 0` cover. Before 1.2.0 this returned `2 · atan2(|proj|, w) ≥ 0`, so
 /// a rotation of −1 rad measured as +1 and every angle limit pushed
 /// negative rotations the wrong way.
-fn compute_twist_angle(q: QuatFix, axis: Vec3Fix) -> Fix128 {
+pub(crate) fn compute_twist_angle(q: QuatFix, axis: Vec3Fix) -> Fix128 {
     let qv = Vec3Fix::new(q.x, q.y, q.z);
     let s = qv.dot(axis);
     let proj = axis * s;
