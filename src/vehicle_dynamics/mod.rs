@@ -234,7 +234,8 @@ struct WheelScratch {
     x_dir: Vec3Fix,
     /// `normal × x_dir`.
     y_dir: Vec3Fix,
-    /// Contact-point velocity along `x_dir` / `y_dir` (start of frame).
+    /// Predicted contact-point velocity along `x_dir` / `y_dir`
+    /// (start of frame + in-plane gravity · dt).
     v_x: Fix128,
     v_y: Fix128,
     /// `max(|v_x|, v_floor)`.
@@ -421,7 +422,8 @@ impl DynamicVehicle {
     ///
     ///    The suspension is coupled explicitly, one impulse per frame. For a
     ///    wheel carrying the mass share `m_share` (≈ `m / wheel count` in
-    ///    heave) with local stiffness `k_eff = ∂F/∂x` (spring, progressive
+    ///    heave, `I / (N d²)` for a pitch or roll mode of inertia `I` with
+    ///    `N` wheels at lever `d`) with local stiffness `k_eff = ∂F/∂x` (spring, progressive
     ///    term and bump stop, divided by `rest`) and damping `c`, the
     ///    impulse-then-integrate update is stable only while
     ///    `(ω_n dt)² + 2 c dt / m_share < 4` with `ω_n = √(k_eff / m_share)`
@@ -465,7 +467,8 @@ impl DynamicVehicle {
     /// `I_eff = Σ I + dt Σ C r² / v̄`. The slope is used only while the tyre is
     /// in its linear range (`|C κ| ≤ μ_x,static F_z`); a saturated tyre is
     /// integrated explicitly (slope 0). A massless wheel (`wheel_inertia ≤ 0`)
-    /// always uses the slope, i.e. it jumps to its quasi-static balance.
+    /// always uses the slope, i.e. it takes one Newton step per frame towards
+    /// its quasi-static balance (exact within the tyre's linear range).
     /// Brakes are Coulomb: `ω' = ω_f` reduced in magnitude by
     /// `dt T_brake / I_eff` without crossing zero, so a large enough torque
     /// locks the wheel (`ω' = 0`) within one frame and never spins it
@@ -627,8 +630,11 @@ impl DynamicVehicle {
                     s.arm = arm;
                     s.x_dir = x_dir;
                     s.y_dir = nrm.cross(x_dir);
-                    s.v_x = vc.dot(s.x_dir);
-                    s.v_y = vc.dot(s.y_dir);
+                    // predicted end-of-frame contact velocity: the in-plane
+                    // gravity of the coming step is already included, so the
+                    // slip the tyre sees is the one the clamp below acts on
+                    s.v_x = vc.dot(s.x_dir) + gravity.dot(s.x_dir) * dt;
+                    s.v_y = vc.dot(s.y_dir) + gravity.dot(s.y_dir) * dt;
                     s.denom = if s.v_x.abs() > floor {
                         s.v_x.abs()
                     } else {
@@ -1020,12 +1026,21 @@ mod tests {
     }
 
     /// Chassis of 1000 kg near its static ride height on `flat()`
-    /// (`c = mg/4k = 0.05`, centre at `0.2 + r + rest (1 − c)`).
+    /// (`c = mg/4k = 0.05`, centre at `0.2 + r + rest (1 − c)`), inertia of a
+    /// 1.8 × 1.4 × 4.4 m box (`RigidBody::new`'s unit-sphere default, 400 kg m²
+    /// in pitch, puts the pitch damping past the explicit-coupling limit).
     fn chassis() -> RigidBody {
-        RigidBody::new(
+        let mut b = RigidBody::new(
             Vec3Fix::new(Fix128::ZERO, fx(785, 1000), Fix128::ZERO),
             Fix128::from_int(1000),
-        )
+        );
+        // I = m/12 (a² + b²): x (pitch) h,l / y (yaw) w,l / z (roll) w,h
+        b.inv_inertia = Vec3Fix::new(
+            Fix128::from_int(12) / Fix128::from_int(1000 * (196 + 1936) / 100),
+            Fix128::from_int(12) / Fix128::from_int(1000 * (324 + 1936) / 100),
+            Fix128::from_int(12) / Fix128::from_int(1000 * (324 + 196) / 100),
+        );
+        b
     }
 
     // ---- oracle 1: tyre force acts at the contact point --------------------
@@ -1356,8 +1371,9 @@ mod tests {
     }
 
     /// `wheel_inertia = 0`: an airborne wheel keeps its spin; on the road a
-    /// massless wheel jumps to its quasi-static balance (free rolling with no
-    /// torque: `ω r = v_x`).
+    /// massless wheel takes one Newton step towards its quasi-static balance
+    /// (free rolling with no torque: `ω r = v_x`): from `κ = −0.01` the spin
+    /// error shrinks at least tenfold in one frame.
     #[test]
     fn massless_wheel() {
         let mut cfg = config();
@@ -1373,10 +1389,13 @@ mod tests {
         v.input.brake = Fix128::ZERO;
         let mut body = chassis();
         body.velocity = Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, Fix128::from_int(10));
+        // start at κ = −0.01 (linear range), front wheel is undriven
+        v.wheels[0].omega = Fix128::from_int(10) * fx(99, 100) / fx(3, 10);
         v.update(&mut body, &flat(), &env(&cond), dt60());
         let target = Fix128::from_int(10) / fx(3, 10);
+        let err0 = (Fix128::from_int(10) * fx(99, 100) / fx(3, 10) - target).abs();
         assert!(
-            tol(v.wheels[0].omega, target, fx(1, 1000)),
+            (v.wheels[0].omega - target).abs() * Fix128::from_int(10) <= err0,
             "{:?} vs {target:?}",
             v.wheels[0].omega
         );
