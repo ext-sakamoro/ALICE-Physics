@@ -318,7 +318,7 @@ dependency. When Cargo.lock resolves a different version, re-check whether the d
 
 | Defect | Test | Crate | Reason says | Cargo.lock | Status |
 |--------|------|-------|-------------|------------|--------|
-| AUD-A-S5W1-001 | `gapped_series_returns_exactly_the_recorded_pairs` (audit_db_bridge.rs) | `alice-db` | 0.2.0-beta.3 | 0.2.0-beta.3 | ✅ same |
+| AUD-A-S5W1-001 | `gapped_series_returns_exactly_the_recorded_pairs` (audit_db_bridge.rs) | `alice-db` | 0.2.0-beta.3 | — | ⚠️ not in Cargo.lock |
 
 ## ⚠️ Known defects without an id (2)
 
