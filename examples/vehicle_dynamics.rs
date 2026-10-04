@@ -18,6 +18,11 @@
 //!   exceed the peak coefficient, so `s ≥ v0² / (2 μ_s g) − v0 dt`
 //! - locked wheels on a slope with `tan θ < μ_s`: the car stays put; the
 //!   drift along the slope never exceeds `g sin θ dt²` and does not grow
+//! - the same locked-wheel stop on a height field, a triangle mesh and an SDF
+//!   road (each a horizontal surface): same closed form and tolerance
+//! - full throttle against the rev limit `n_max`: the car settles at
+//!   `v = n_max · 2π / 60 / R · r` for the total ratio `R` of the gear, and
+//!   shifting up raises that speed
 //!
 //! Aerodynamic drag and rolling resistance are switched off and the world's
 //! per-frame velocity damping is set to 1 so that only tyre friction slows
@@ -29,10 +34,16 @@
 
 #![allow(clippy::disallowed_methods)]
 
+use alice_physics::heightfield::HeightField;
 use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics::sdf_collider::ClosureSdf;
 use alice_physics::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics::trimesh::{TriMesh, Triangle};
+use alice_physics::vehicle::EngineConfig;
+use alice_physics::vehicle_dynamics::powertrain::Powertrain;
 use alice_physics::vehicle_dynamics::surface::{
-    FlatGround, InclinedPlane, RoadCondition, RoadSurface, Weather,
+    FlatGround, HeightFieldRoad, InclinedPlane, RoadCondition, RoadSurface, SdfRoad, TriMeshRoad,
+    Weather,
 };
 use alice_physics::vehicle_dynamics::tire::{MagicFormulaTire, TireInput, TireModel};
 use alice_physics::vehicle_dynamics::{
@@ -166,14 +177,19 @@ fn ride_height(cfg: &DynamicVehicleConfig, g_n: f64) -> f64 {
     -w.local_position.y.to_f64() + r + rest * (1.0 - MASS * g_n / (4.0 * k))
 }
 
-fn flat_sim(cfg: DynamicVehicleConfig, condition: RoadCondition) -> Sim<FlatGround> {
+/// Car at rest on a horizontal road whose surface is at `ground_y`, at its
+/// closed-form ride height, after 2 s of settling.
+fn level_sim<R: RoadSurface>(
+    cfg: DynamicVehicleConfig,
+    road: R,
+    ground_y: f64,
+    condition: RoadCondition,
+) -> Sim<R> {
     let g = PhysicsConfig::default().gravity.length().to_f64();
-    let y0 = ride_height(&cfg, g);
+    let y0 = ground_y + ride_height(&cfg, g);
     let mut sim = Sim::new(
         cfg,
-        FlatGround {
-            height: Fix128::ZERO,
-        },
+        road,
         condition,
         Vec3Fix::new(Fix128::ZERO, fx(y0), Fix128::ZERO),
         QuatFix::IDENTITY,
@@ -182,8 +198,37 @@ fn flat_sim(cfg: DynamicVehicleConfig, condition: RoadCondition) -> Sim<FlatGrou
     sim
 }
 
+fn flat_sim(cfg: DynamicVehicleConfig, condition: RoadCondition) -> Sim<FlatGround> {
+    level_sim(
+        cfg,
+        FlatGround {
+            height: Fix128::ZERO,
+        },
+        0.0,
+        condition,
+    )
+}
+
 /// All four wheels locked from `V0`; returns the stopping distance.
 fn locked_stop(name: &str, weather: Weather) -> f64 {
+    locked_stop_on(
+        name,
+        FlatGround {
+            height: Fix128::ZERO,
+        },
+        0.0,
+        weather,
+    )
+}
+
+/// All four wheels locked from `V0` on a horizontal `road` whose surface is at
+/// `ground_y`; returns the stopping distance (asserted against the closed form).
+fn locked_stop_on<R: RoadSurface>(
+    name: &str,
+    road_surface: R,
+    ground_y: f64,
+    weather: Weather,
+) -> f64 {
     let mut cfg = car_config();
     cfg.brakes.max_torque_front = fx(LOCK_TORQUE);
     cfg.brakes.max_torque_rear = fx(LOCK_TORQUE);
@@ -196,7 +241,12 @@ fn locked_stop(name: &str, weather: Weather) -> f64 {
     let r = cfg.base.wheels[0].radius.to_f64();
     let i_w = cfg.wheel_inertia.to_f64();
     let v_floor = cfg.slip_velocity_floor.to_f64();
-    let mut sim = flat_sim(cfg, condition);
+    let mut sim = level_sim(cfg, road_surface, ground_y, condition);
+    assert_eq!(
+        sim.vehicle.grounded_wheels(),
+        4,
+        "{name}: settled on the road"
+    );
     let g = sim.g();
     // Lock-onset precondition of the tolerance: the wheel stops within one frame.
     let t_lock = i_w * (V0 / r) / (LOCK_TORQUE - mu_s * MASS * g * r);
@@ -211,7 +261,7 @@ fn locked_stop(name: &str, weather: Weather) -> f64 {
     let want = V0 * V0 / (2.0 * mu_k * g);
     let tol = 2.0 * V0 * DT + v_floor * v_floor / (mu_k * g);
     println!(
-        "[vehicle_dynamics] locked {name:<4} mu_k {mu_k:.3}: s = {s:8.3} m \
+        "[vehicle_dynamics] locked {name:<11} mu_k {mu_k:.3}: s = {s:8.3} m \
          (closed form {want:8.3} ± {tol:.3}), final speed {:.1e} m/s",
         sim.forward_speed()
     );
@@ -339,6 +389,105 @@ fn tyre_curves() {
     assert_eq!(locked.longitudinal, -(grip.longitudinal_kinetic * fx(fz)));
 }
 
+/// Locked-wheel stop on the three geometry-backed roads (height field,
+/// triangle mesh, SDF), each a horizontal surface covering the stopping path:
+/// the same closed form `v0² / (2 μ_k g)` as on `FlatGround` must hold.
+fn stops_on_road_geometries() {
+    // Height field 9 × 41 points, 1 m spacing, x ∈ [−4, 4], z ∈ [−5, 35], all
+    // heights 0.5. The road follows `sample_height`, which is read here.
+    let field = HeightField::flat(
+        9,
+        41,
+        Fix128::ONE,
+        Vec3Fix::new(fx(-4.0), Fix128::ZERO, fx(-5.0)),
+        fx(0.5),
+    );
+    let field_y = field.sample_height(Fix128::ZERO, Fix128::ZERO).to_f64();
+    locked_stop_on(
+        "heightfield",
+        HeightFieldRoad { field: &field },
+        field_y,
+        Weather::Dry,
+    );
+
+    // Two triangles covering x ∈ [−5, 5], z ∈ [−5, 40] at y = 0, wound
+    // counter-clockwise seen from above (outward normal up).
+    let y = Fix128::ZERO;
+    let a = Vec3Fix::new(fx(-5.0), y, fx(-5.0));
+    let b = Vec3Fix::new(fx(-5.0), y, fx(40.0));
+    let c = Vec3Fix::new(fx(5.0), y, fx(40.0));
+    let d = Vec3Fix::new(fx(5.0), y, fx(-5.0));
+    let mesh = TriMesh::from_triangles(vec![Triangle::new(a, b, c), Triangle::new(a, c, d)]);
+    locked_stop_on("trimesh", TriMeshRoad { mesh: &mesh }, 0.0, Weather::Dry);
+
+    // SDF of the half-space below y = 0: distance y, normal +y.
+    let plane = ClosureSdf::new(|_, y, _| y, |_, _, _| (0.0, 1.0, 0.0));
+    locked_stop_on(
+        "sdf",
+        SdfRoad {
+            field: &plane,
+            tolerance: Fix128::from_ratio(1, 10_000),
+            max_steps: 64,
+        },
+        0.0,
+        Weather::Dry,
+    );
+}
+
+/// Rev-limited speed per gear. With the powertrain built from an engine whose
+/// limit is `n_max` rpm, full throttle drives the wheels until the crank reaches
+/// `n_max`, i.e. wheel spin `ω = n_max · 2π / 60 / R` (`R` the total ratio), and
+/// with no resistance the car runs at `v = ω r`. Shifting up lowers `R`, so the
+/// limit speed rises by the ratio of the gears.
+///
+/// Tolerance 2 %: the drive stops at the limit but the wheel can overshoot it
+/// by one frame of spin-up, and the chassis lags the wheel by the small
+/// rolling slip that the remaining drive force needs.
+fn gears_raise_the_rev_limited_speed() {
+    let mut cfg = car_config();
+    let engine = EngineConfig {
+        max_rpm: fx(2000.0),
+        ..cfg.base.engine
+    };
+    cfg.powertrain = Powertrain::from_engine_config(&engine, &cfg.base.gear_ratios);
+    let r = cfg.base.wheels[0].radius.to_f64();
+    let n_max = engine.max_rpm.to_f64();
+    let mut sim = flat_sim(cfg, road(Weather::Dry));
+    sim.vehicle.input.throttle = Fix128::ONE;
+    let mut last = 0.0;
+    for gear in 0..2 {
+        let pt = &sim.vehicle.config.powertrain;
+        assert_eq!(pt.current_gear, gear);
+        let ratio = pt.total_ratio().to_f64();
+        let want = n_max * 2.0 * std::f64::consts::PI / 60.0 / ratio * r;
+        sim.frames(900);
+        let v = sim.forward_speed();
+        println!(
+            "[vehicle_dynamics] gear {} ratio {ratio}: speed {v:.3} m/s at the rev limit \
+             (closed form {want:.3})",
+            gear + 1
+        );
+        assert!(
+            (v - want).abs() <= 0.02 * want,
+            "gear {}: {v} m/s, closed form {want}",
+            gear + 1
+        );
+        assert!(v > last, "a higher gear runs faster at the rev limit");
+        last = v;
+        sim.vehicle.config.powertrain.shift_up();
+    }
+    let pt = &mut sim.vehicle.config.powertrain;
+    let top = pt.gear_ratios.len() - 1;
+    for _ in 0..10 {
+        pt.shift_up();
+    }
+    assert_eq!(pt.current_gear, top, "shift_up stops at the top gear");
+    for _ in 0..10 {
+        pt.shift_down();
+    }
+    assert_eq!(pt.current_gear, 0, "shift_down stops at first gear");
+}
+
 fn main() {
     tyre_curves();
 
@@ -350,6 +499,7 @@ fn main() {
         },
     );
     let ice = locked_stop("ice", Weather::Ice);
+    stops_on_road_geometries();
     assert!(dry < wet && wet < ice, "less grip, longer stop");
 
     let abs = AbsConfig {
@@ -376,4 +526,5 @@ fn main() {
     assert!(s_abs >= lower, "no tyre exceeds the peak coefficient");
 
     parked_on_slope();
+    gears_raise_the_rev_limited_speed();
 }
