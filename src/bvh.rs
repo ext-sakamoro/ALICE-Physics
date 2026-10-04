@@ -144,7 +144,6 @@ impl BvhNode {
     #[must_use]
     pub fn leaf(aabb: &AABB, first_prim: u32, count: u32, escape_idx: u32) -> Self {
         let clamped = count.min(Self::MAX_PRIMS_PER_LEAF);
-        debug_assert!(count <= Self::MAX_PRIMS_PER_LEAF);
         Self {
             aabb_min: aabb_to_i32_min(aabb),
             first_child_or_prim: first_prim,

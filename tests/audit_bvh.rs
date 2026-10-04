@@ -683,7 +683,6 @@ fn refit_keeps_the_world_bounds_field_in_sync_with_the_primitives() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S3W2-010: BvhNode::leaf documents that count is saturated to 255 (it clamps), but a debug_assert!(count <= 255) fires first, so in a debug build the documented saturation is a panic and only a release build saturates (profile-dependent behaviour); build() never produces a leaf above 4, so only direct callers of the pub constructor see it"]
 fn leaf_constructor_saturates_the_primitive_count_at_255_as_documented() {
     let aabb = AABB::new(Vec3Fix::ZERO, Vec3Fix::from_int(1, 1, 1));
     let n = BvhNode::leaf(&aabb, 0, 300, 7);
