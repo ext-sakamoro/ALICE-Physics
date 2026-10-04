@@ -650,6 +650,166 @@ pub struct BroadphaseStats {
     pub height: i32,
 }
 
+/// How much work the last [`PhysicsWorld::step`] did, stage by stage.
+///
+/// Every counter is a number of items a stage visited, summed over the substeps
+/// of that one call (reset when `step` starts). They count work, not time, so a
+/// test can assert on them without measuring a clock. `step_parallel`,
+/// `step_with_bridge`, the TGS backend and the public substep API add to the
+/// same counters but do not reset them.
+///
+/// With the sleep skip on ([`PhysicsWorld::set_sleep_skip`], the default) a
+/// sleeping body that is at rest and not attached to a joint or distance
+/// constraint is *parked*: every stage below except `sleep_scanned` and
+/// `parked_sleep_updates` leaves it out, and the broad-phase finds its contacts
+/// through a persistent tree instead of rebuilding it. The counters then depend
+/// on the awake bodies only, except those two, which stay one per sleeping body
+/// per step (a check that the parked state was not edited between steps, and
+/// the `idle_frames` count the snapshot carries).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct StageWork {
+    /// Bodies examined at the start of the step to decide which are parked.
+    pub sleep_scanned: u64,
+    /// Bodies parked for this step (not counting ones woken during it).
+    pub parked: u64,
+    /// Parked bodies woken by a contact during the step.
+    pub unparked: u64,
+    /// Bodies the force fields were applied to.
+    pub force_field_bodies: u64,
+    /// Bodies visited by position integration.
+    pub integrated: u64,
+    /// Bodies put into the per-substep broad-phase BVH.
+    pub broadphase_primitives: u64,
+    /// Candidate pairs the broad-phase handed to the narrow-phase.
+    pub broadphase_pairs: u64,
+    /// Bodies tested against the static and SDF colliders.
+    pub resolution_bodies: u64,
+    /// Bodies whose velocity was derived from their position change.
+    pub velocity_bodies: u64,
+    /// Bodies visited by the frame damping.
+    pub damping_bodies: u64,
+    /// Bodies whose sleep state was evaluated from their velocity.
+    pub sleep_evaluated: u64,
+    /// Parked bodies whose sleep bookkeeping was advanced without evaluation.
+    pub parked_sleep_updates: u64,
+    /// Proxies inserted into the parked-body tree.
+    pub tree_inserts: u64,
+    /// Proxies removed from the parked-body tree.
+    pub tree_removes: u64,
+}
+
+/// What a parked body looked like when it was last found at rest, so the next
+/// step can tell with a few compares that nothing has edited it since.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct ParkCache {
+    position: Vec3Fix,
+    rotation: QuatFix,
+    /// The angular velocity the velocity derivation gives a body whose rotation
+    /// did not change (not always exactly zero: `x·(−y)` and `−(x·y)` can differ
+    /// by one ulp in fixed point).
+    angular_velocity: Vec3Fix,
+    radius: Option<Fix128>,
+    /// Recorded for a `BodyType::Static` body (only position and radius matter).
+    static_kind: bool,
+}
+
+/// Everything a parked body's "a step changes nothing but `idle_frames`" verdict
+/// depends on besides its own state. Any change drops every [`ParkCache`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ParkKey {
+    substep_dt: Fix128,
+    sleep: SleepConfig,
+    generation: u64,
+    sdf_radius: Fix128,
+    /// Pose, scale, attachment and field address of each SDF collider (the
+    /// `sdf_colliders` field is public, so it is compared every step).
+    sdf: Vec<(Vec3Fix, QuatFix, Fix128, usize, usize)>,
+}
+
+/// Book-keeping of the sleep skip (see [`StageWork`]).
+#[derive(Default)]
+struct ParkState {
+    /// Parking is in effect for the step being run.
+    active: bool,
+    /// Per body: parked for the rest of the current step.
+    parked: Vec<bool>,
+    /// The bodies parked at the start of the step, ascending.
+    parked_list: Vec<usize>,
+    /// The bodies that are not parked, ascending; the stages iterate these.
+    awake: Vec<usize>,
+    cache: Vec<Option<ParkCache>>,
+    proxies: Vec<Option<u32>>,
+    tree: crate::dynamic_bvh::DynamicAabbTree,
+    key: Option<ParkKey>,
+    /// Scratch: body referenced by a joint or a distance constraint.
+    constrained: Vec<bool>,
+    /// The substep being run is the first of the step.
+    first_substep: bool,
+    /// The full `dt` of the step (force fields act on it).
+    frame_dt: Fix128,
+}
+
+impl ParkState {
+    /// [`Self::clear`], counting the dropped proxies as tree removals.
+    fn clear_counted(&mut self, stats: &mut StageWork) {
+        stats.tree_removes += self.proxies.iter().flatten().count() as u64;
+        self.clear();
+    }
+
+    /// Drop the parked-body tree and every cache.
+    fn clear(&mut self) {
+        self.tree = crate::dynamic_bvh::DynamicAabbTree::new();
+        self.proxies.clear();
+        self.cache.clear();
+        self.parked.clear();
+        self.parked_list.clear();
+        self.awake.clear();
+        self.key = None;
+        self.active = false;
+    }
+
+    /// Remove body `i`'s proxy from the tree, if it has one.
+    fn remove_proxy(&mut self, i: usize, stats: &mut StageWork) {
+        if let Some(proxy) = self.proxies.get_mut(i).and_then(Option::take) {
+            self.tree.remove(proxy);
+            stats.tree_removes += 1;
+        }
+    }
+
+    /// Body `i` was woken during the step: from now on every stage sees it.
+    fn unpark(&mut self, i: usize, stats: &mut StageWork) {
+        if !self.active || !self.parked.get(i).copied().unwrap_or(false) {
+            return;
+        }
+        self.parked[i] = false;
+        self.remove_proxy(i, stats);
+        if let Err(pos) = self.awake.binary_search(&i) {
+            self.awake.insert(pos, i);
+        }
+        stats.unparked += 1;
+    }
+
+    /// Whether body `i` is parked in the current step.
+    #[inline]
+    fn is_parked(&self, i: usize) -> bool {
+        self.active && self.parked.get(i).copied().unwrap_or(false)
+    }
+}
+
+/// Angular velocity derived from a rotation change, exactly as the velocity
+/// update computes it: `2·(q·p⁻¹).xyz / dt` with the sign of `w` folded in.
+#[inline]
+fn angular_from_rotations(rotation: QuatFix, prev_rotation: QuatFix, inv_dt: Fix128) -> Vec3Fix {
+    let dq = rotation.mul(prev_rotation.conjugate());
+    let two_inv_dt = inv_dt + inv_dt;
+    if dq.w < Fix128::ZERO {
+        Vec3Fix::new(-dq.x * two_inv_dt, -dq.y * two_inv_dt, -dq.z * two_inv_dt)
+    } else {
+        Vec3Fix::new(dq.x * two_inv_dt, dq.y * two_inv_dt, dq.z * two_inv_dt)
+    }
+}
+
 /// Snapshot of [`SolverBackend::Tgs`]'s per-frame warm-start impulse cache
 /// effectiveness, returned by [`PhysicsWorld::tgs_cache_stats`].
 ///
@@ -1112,6 +1272,15 @@ pub struct PhysicsWorld {
     /// Unused (and empty) while `config.solver_backend` is `Xpbd`.
     #[cfg(feature = "std")]
     tgs_impulse_cache: crate::solver_tgs::ImpulseCache,
+    /// Skip parked sleeping bodies in `step` (see [`StageWork`]).
+    sleep_skip: bool,
+    /// Parked bodies, their tree and caches.
+    park: ParkState,
+    /// Bumped by every change that can invalidate a parked body's verdict but is
+    /// not visible in its own state (shapes, radii, static colliders, removal).
+    park_generation: u64,
+    /// Work counters of the last `step`.
+    stage_work: StageWork,
 }
 
 /// Fold `bytes` into `hash` with FNV-1a (64-bit).
@@ -1222,6 +1391,10 @@ impl PhysicsWorld {
             kinematic_substeps_left: 0,
             #[cfg(feature = "std")]
             tgs_impulse_cache: crate::solver_tgs::ImpulseCache::new(),
+            sleep_skip: true,
+            park: ParkState::default(),
+            park_generation: 0,
+            stage_work: StageWork::default(),
         }
     }
 
@@ -1377,6 +1550,7 @@ impl PhysicsWorld {
         if body_idx >= self.bodies.len() || body_idx >= self.body_colliders.len() {
             return false;
         }
+        self.park_generation = self.park_generation.wrapping_add(1);
         self.body_collision_radii[body_idx] = Some(shape.bounding_radius());
         self.body_colliders[body_idx] = Some(crate::body_collider::BodyCollider::Shape(*shape));
         true
@@ -1545,6 +1719,7 @@ impl PhysicsWorld {
             }
         }
 
+        self.park_generation = self.park_generation.wrapping_add(1);
         self.batches_dirty = true;
         Some(removed)
     }
@@ -1709,6 +1884,7 @@ impl PhysicsWorld {
     /// Set collision radius for a body (enables automatic sphere collision detection)
     pub fn set_body_collision_radius(&mut self, body_idx: usize, radius: Fix128) {
         if body_idx < self.body_collision_radii.len() {
+            self.park_generation = self.park_generation.wrapping_add(1);
             self.body_collision_radii[body_idx] = Some(radius);
         }
     }
@@ -1716,6 +1892,7 @@ impl PhysicsWorld {
     /// Remove collision radius (disable automatic collision detection for this body)
     pub fn clear_body_collision_radius(&mut self, body_idx: usize) {
         if body_idx < self.body_collision_radii.len() {
+            self.park_generation = self.park_generation.wrapping_add(1);
             self.body_collision_radii[body_idx] = None;
         }
     }
@@ -1758,6 +1935,37 @@ impl PhysicsWorld {
     /// Set the sleep configuration
     pub fn set_sleep_config(&mut self, config: SleepConfig) {
         self.islands.config = config;
+    }
+
+    /// Turn the sleep skip of [`Self::step`] on (the default) or off.
+    ///
+    /// With it on, a sleeping body at rest that no joint or distance constraint
+    /// references is left out of every stage of the step, and its contacts are
+    /// found through a persistent tree of such bodies instead of rebuilding the
+    /// broad-phase over it (see [`StageWork`]). The simulation is bit-identical
+    /// either way: the skip only drops work whose result is already known (a body
+    /// at rest stays where it is, with the velocity it already has). Turning it off
+    /// drops the tree; it is rebuilt on the next step with the skip on.
+    ///
+    /// Only `step` with the XPBD backend and [`Broadphase::Bvh`] skips; the other
+    /// entry points and broad-phases visit every body as before.
+    pub fn set_sleep_skip(&mut self, enabled: bool) {
+        self.sleep_skip = enabled;
+        if !enabled {
+            self.park.clear();
+        }
+    }
+
+    /// Whether the sleep skip of [`Self::step`] is on (see [`Self::set_sleep_skip`]).
+    #[must_use]
+    pub const fn sleep_skip(&self) -> bool {
+        self.sleep_skip
+    }
+
+    /// Work counters of the last [`Self::step`] (see [`StageWork`]).
+    #[must_use]
+    pub const fn stage_work(&self) -> StageWork {
+        self.stage_work
     }
 
     // ── Typed Observation (World Auditor WM-10, Physics 版) ────────────
@@ -2276,6 +2484,7 @@ impl PhysicsWorld {
         if dt <= Fix128::ZERO {
             return;
         }
+        self.stage_work = StageWork::default();
 
         // `SolverBackend::Tgs` dispatch (std-only, see `SolverBackend` doc for
         // the no-std fallback). This `matches!` is `false` for every caller
@@ -2302,9 +2511,29 @@ impl PhysicsWorld {
             }
         }
 
+        let substep_dt = dt / Fix128::from_int(self.config.substeps as i64);
+
+        // Phase 0.75: Park the sleeping bodies at rest (sleep skip). Every
+        // stage below iterates `park.awake` while `park.active` is set.
+        self.park_begin(dt, substep_dt);
+
         // Phase 1: Apply force fields
         if !self.force_fields.is_empty() {
-            apply_force_fields(&self.force_fields, &mut self.bodies, dt);
+            if self.park.active {
+                for k in 0..self.park.awake.len() {
+                    let i = self.park.awake[k];
+                    let body = &mut self.bodies[i];
+                    if body.is_static() {
+                        continue;
+                    }
+                    self.stage_work.force_field_bodies += 1;
+                    body.velocity =
+                        crate::force::force_field_velocity(&self.force_fields, i, body, dt);
+                }
+            } else {
+                self.stage_work.force_field_bodies += self.bodies.len() as u64;
+                apply_force_fields(&self.force_fields, &mut self.bodies, dt);
+            }
         }
 
         // Phase 2 (collision detection) moved into the substep — Small Steps
@@ -2313,19 +2542,21 @@ impl PhysicsWorld {
         // 5 m/s head-on collision into 700 m/s (1.2.0, R4-2).
 
         // Phase 3: Substep loop
-        let substep_dt = dt / Fix128::from_int(self.config.substeps as i64);
         let n = self.config.substeps;
         for i in 0..n {
             self.kinematic_substeps_left = n - i;
+            self.park.first_substep = i == 0;
             self.substep(substep_dt);
         }
         self.kinematic_substeps_left = 0;
+        self.park.first_substep = false;
 
         // Phase 3.5: Frame-level damping (1.2.0, was per substep)
         self.apply_frame_damping();
 
         // Phase 4: Update sleeping
-        self.islands.update_sleep(&self.bodies);
+        self.update_sleep_states();
+        self.park.active = false;
 
         // Phase 5: End event frame
         self.events.end_frame();
@@ -2358,6 +2589,266 @@ impl PhysicsWorld {
         for _ in 0..n {
             self.step(dt);
         }
+    }
+
+    /// Phase 4 of [`Self::step`]: [`IslandManager::update_sleep`] over the bodies
+    /// that are not parked, and for a parked body the same outcome without the
+    /// evaluation (its velocity is the at-rest one its cache recorded as idle).
+    fn update_sleep_states(&mut self) {
+        if !self.park.active {
+            self.stage_work.sleep_evaluated += self.bodies.len() as u64;
+            self.islands.update_sleep(&self.bodies);
+            return;
+        }
+        for k in 0..self.park.awake.len() {
+            let i = self.park.awake[k];
+            self.stage_work.sleep_evaluated += 1;
+            self.islands.update_sleep_body(i, &self.bodies[i]);
+        }
+        for k in 0..self.park.parked_list.len() {
+            let i = self.park.parked_list[k];
+            if !self.park.parked[i] {
+                continue; // woken during the step: evaluated above
+            }
+            self.stage_work.parked_sleep_updates += 1;
+            self.islands
+                .update_sleep_idle(i, self.bodies[i].is_static());
+        }
+    }
+
+    /// Decide which bodies are parked for this step (sleep skip, see
+    /// [`StageWork`]) and bring the parked-body tree up to date.
+    ///
+    /// A body is parked when the step would change nothing about it but its
+    /// `idle_frames`: it is asleep, not kinematic, not referenced by a joint or a
+    /// distance constraint, and — for a dynamic body — `prev == position`,
+    /// `prev_rotation == rotation`, a zero velocity, the angular velocity the
+    /// derivation gives an unchanged rotation, an idle verdict on that velocity,
+    /// and no static / SDF collider touching it. A contact with an awake body
+    /// wakes it during the step like any sleeping body ([`ParkState::unpark`]).
+    fn park_begin(&mut self, dt: Fix128, substep_dt: Fix128) {
+        self.park.active = false;
+        let n = self.bodies.len();
+        if !self.sleep_skip || self.broadphase != Broadphase::Bvh || n == 0 {
+            if !self.park.proxies.is_empty() || self.park.key.is_some() {
+                self.park.clear_counted(&mut self.stage_work);
+            }
+            return;
+        }
+        // A zero velocity must be idle, otherwise every sleeping body wakes this
+        // step and there is nothing to skip.
+        let cfg = self.islands.config;
+        if !(Vec3Fix::ZERO.length() < cfg.linear_threshold) {
+            self.park.clear_counted(&mut self.stage_work);
+            return;
+        }
+
+        let key = ParkKey {
+            substep_dt,
+            sleep: cfg,
+            generation: self.park_generation,
+            sdf_radius: self.sdf_collision_radius,
+            sdf: self
+                .sdf_colliders
+                .iter()
+                .map(|c| {
+                    (
+                        c.position,
+                        c.rotation,
+                        c.scale,
+                        c.body_index,
+                        core::ptr::from_ref::<dyn crate::sdf_collider::SdfField>(c.field.as_ref())
+                            .cast::<u8>() as usize,
+                    )
+                })
+                .collect(),
+        };
+        // Fewer bodies than last time: indices may now name other bodies.
+        if self.park.key.as_ref() != Some(&key) || n < self.park.parked.len() {
+            self.park.clear_counted(&mut self.stage_work);
+            self.park.key = Some(key);
+        }
+
+        self.park.parked.resize(n, false);
+        self.park.cache.resize(n, None);
+        self.park.proxies.resize(n, None);
+        self.park.constrained.clear();
+        self.park.constrained.resize(n, false);
+        for j in &self.joints {
+            let (a, b) = j.bodies();
+            for x in [a, b] {
+                if x < n {
+                    self.park.constrained[x] = true;
+                }
+            }
+        }
+        for c in &self.distance_constraints {
+            for x in [c.body_a, c.body_b] {
+                if x < n {
+                    self.park.constrained[x] = true;
+                }
+            }
+        }
+
+        self.park.frame_dt = dt;
+        self.park.awake.clear();
+        self.park.parked_list.clear();
+        let inv_dt = Fix128::ONE / substep_dt;
+        for i in 0..n {
+            self.stage_work.sleep_scanned += 1;
+            let (ok, recached) = self.park_check(i, inv_dt);
+            self.park.parked[i] = ok;
+            let radius = self.body_collision_radii.get(i).and_then(|r| *r);
+            match (ok, radius) {
+                (true, Some(r)) => {
+                    self.park.parked_list.push(i);
+                    if recached || self.park.proxies[i].is_none() {
+                        self.park.remove_proxy(i, &mut self.stage_work);
+                        let half = Vec3Fix::new(r, r, r);
+                        let aabb = AABB::from_center_half(self.bodies[i].position, half);
+                        self.park.proxies[i] = Some(self.park.tree.insert(aabb, i as u32));
+                        self.stage_work.tree_inserts += 1;
+                    }
+                }
+                (true, None) => {
+                    self.park.parked_list.push(i);
+                    self.park.remove_proxy(i, &mut self.stage_work);
+                }
+                (false, _) => {
+                    self.park.awake.push(i);
+                    self.park.remove_proxy(i, &mut self.stage_work);
+                }
+            }
+        }
+        self.stage_work.parked = self.park.parked_list.len() as u64;
+        self.park.active = true;
+    }
+
+    /// `(parked, cache rewritten)` for body `i` (see [`Self::park_begin`]).
+    fn park_check(&mut self, i: usize, inv_dt: Fix128) -> (bool, bool) {
+        if !self.islands.is_sleeping(i) || self.park.constrained[i] {
+            return (false, false);
+        }
+        let body = &self.bodies[i];
+        let radius = self.body_collision_radii.get(i).and_then(|r| *r);
+        match body.body_type {
+            BodyType::Kinematic => (false, false),
+            BodyType::Static => {
+                if !body.is_static() {
+                    return (false, false);
+                }
+                let c = ParkCache {
+                    position: body.position,
+                    rotation: body.rotation,
+                    angular_velocity: Vec3Fix::ZERO,
+                    radius,
+                    static_kind: true,
+                };
+                match self.park.cache[i] {
+                    Some(old)
+                        if old.static_kind
+                            && old.position == c.position
+                            && old.radius == radius =>
+                    {
+                        (true, false)
+                    }
+                    _ => {
+                        self.park.cache[i] = Some(c);
+                        (true, true)
+                    }
+                }
+            }
+            BodyType::Dynamic => {
+                if body.prev_position != body.position
+                    || body.prev_rotation != body.rotation
+                    || body.velocity != Vec3Fix::ZERO
+                {
+                    return (false, false);
+                }
+                if let Some(c) = self.park.cache[i] {
+                    if !c.static_kind
+                        && c.position == body.position
+                        && c.rotation == body.rotation
+                        && c.radius == radius
+                    {
+                        return (body.angular_velocity == c.angular_velocity, false);
+                    }
+                }
+                let omega = angular_from_rotations(body.rotation, body.rotation, inv_dt);
+                if body.angular_velocity != omega
+                    || !(omega.length() < self.islands.config.angular_threshold)
+                    || !self.resolution_clear(i)
+                {
+                    self.park.cache[i] = None;
+                    return (false, false);
+                }
+                self.park.cache[i] = Some(ParkCache {
+                    position: body.position,
+                    rotation: body.rotation,
+                    angular_velocity: omega,
+                    radius,
+                    static_kind: false,
+                });
+                (true, true)
+            }
+        }
+    }
+
+    /// No static or SDF collider would move body `i` where it is now (the
+    /// resolution passes test every collider at the same position when none
+    /// returns a contact).
+    fn resolution_clear(&self, i: usize) -> bool {
+        let body = &self.bodies[i];
+        if body.is_static() || body.is_sensor {
+            return true; // both resolution passes skip it
+        }
+        let radius = self
+            .body_collision_radii
+            .get(i)
+            .and_then(|r| *r)
+            .unwrap_or(self.sdf_collision_radius);
+        for collider in &self.static_colliders {
+            if collider.collide_sphere(body.position, radius).is_some() {
+                return false;
+            }
+        }
+        #[cfg(feature = "std")]
+        {
+            let collider = self.body_colliders.get(i).and_then(Option::as_ref);
+            for sdf in &self.sdf_colliders {
+                if sdf_contact_of(collider, body, self.sdf_collision_radius, sdf).is_some() {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
+    /// How many bodies a stage visits: the unparked ones while parking is in
+    /// effect, otherwise all of them (pair with [`Self::stage_body`]).
+    #[inline]
+    fn stage_count(&self) -> usize {
+        if self.park.active {
+            self.park.awake.len()
+        } else {
+            self.bodies.len()
+        }
+    }
+
+    /// The `k`-th body a stage visits (see [`Self::stage_count`]).
+    #[inline]
+    fn stage_body(&self, k: usize) -> usize {
+        if self.park.active {
+            self.park.awake[k]
+        } else {
+            k
+        }
+    }
+
+    /// Number of bodies that are not parked (all of them without parking).
+    #[cfg(feature = "parallel")]
+    fn unparked_count(&self) -> u64 {
+        self.stage_count() as u64
     }
 
     /// Advances every [`BodyType::Kinematic`] body with a
@@ -2731,10 +3222,19 @@ impl PhysicsWorld {
             let gravity = self.config.gravity;
             let left = self.kinematic_substeps_left;
             let sleep_data = &self.islands.sleep_data;
+            let parked: &[bool] = if self.park.active {
+                &self.park.parked
+            } else {
+                &[]
+            };
+            self.stage_work.integrated += self.unparked_count();
             self.bodies
                 .par_iter_mut()
                 .enumerate()
                 .for_each(|(i, body)| {
+                    if parked.get(i).copied().unwrap_or(false) {
+                        return;
+                    }
                     match body.body_type {
                         BodyType::Static => return,
                         BodyType::Kinematic => {
@@ -2799,7 +3299,10 @@ impl PhysicsWorld {
 
         #[cfg(not(feature = "parallel"))]
         {
-            for i in 0..self.bodies.len() {
+            let count = self.stage_count();
+            for k in 0..count {
+                let i = self.stage_body(k);
+                self.stage_work.integrated += 1;
                 match self.bodies[i].body_type {
                     BodyType::Static => continue,
                     BodyType::Kinematic => {
@@ -2899,7 +3402,10 @@ impl PhysicsWorld {
     /// `update_velocities`. Static / kinematic / sleeping bodies are skipped.
     fn apply_frame_damping(&mut self) {
         let damping = self.config.damping;
-        for i in 0..self.bodies.len() {
+        let count = self.stage_count();
+        for k in 0..count {
+            let i = self.stage_body(k);
+            self.stage_work.damping_bodies += 1;
             if self.bodies[i].body_type != BodyType::Dynamic || self.islands.is_sleeping(i) {
                 continue;
             }
@@ -2922,34 +3428,41 @@ impl PhysicsWorld {
         // --- Phase 1: Derive velocities from position/rotation changes ---
         #[cfg(feature = "parallel")]
         {
-            self.bodies.par_iter_mut().for_each(|body| {
-                if body.body_type == BodyType::Static {
-                    return;
-                }
-                // ⚠️ 速度導出も範囲外を検出する (WM-01 経路 2)
-                // 範囲外なら速度を更新しない (0 に上書きされるのを防ぐ)
-                match (body.position - body.prev_position).checked_scale(inv_dt) {
-                    Some(v) => body.velocity = v,
-                    None => overflow.store(true, core::sync::atomic::Ordering::Relaxed),
-                }
-                // Angular velocity from rotation change:
-                // delta_q = rotation * prev_rotation^-1
-                // angular_velocity = 2 * delta_q.xyz / dt  (when delta_q.w > 0)
-                let dq = body.rotation.mul(body.prev_rotation.conjugate());
-                let two_inv_dt = inv_dt + inv_dt;
-                if dq.w < Fix128::ZERO {
+            let parked: &[bool] = if self.park.active {
+                &self.park.parked
+            } else {
+                &[]
+            };
+            self.stage_work.velocity_bodies += self.unparked_count();
+            self.bodies
+                .par_iter_mut()
+                .enumerate()
+                .for_each(|(i, body)| {
+                    if body.body_type == BodyType::Static || parked.get(i).copied().unwrap_or(false)
+                    {
+                        return;
+                    }
+                    // ⚠️ 速度導出も範囲外を検出する (WM-01 経路 2)
+                    // 範囲外なら速度を更新しない (0 に上書きされるのを防ぐ)
+                    match (body.position - body.prev_position).checked_scale(inv_dt) {
+                        Some(v) => body.velocity = v,
+                        None => overflow.store(true, core::sync::atomic::Ordering::Relaxed),
+                    }
+                    // Angular velocity from rotation change:
+                    // delta_q = rotation * prev_rotation^-1
+                    // angular_velocity = 2 * delta_q.xyz / dt  (when delta_q.w > 0)
                     body.angular_velocity =
-                        Vec3Fix::new(-dq.x * two_inv_dt, -dq.y * two_inv_dt, -dq.z * two_inv_dt);
-                } else {
-                    body.angular_velocity =
-                        Vec3Fix::new(dq.x * two_inv_dt, dq.y * two_inv_dt, dq.z * two_inv_dt);
-                }
-            });
+                        angular_from_rotations(body.rotation, body.prev_rotation, inv_dt);
+                });
         }
 
         #[cfg(not(feature = "parallel"))]
         {
-            for body in &mut self.bodies {
+            let count = self.stage_count();
+            for k in 0..count {
+                let i = self.stage_body(k);
+                self.stage_work.velocity_bodies += 1;
+                let body = &mut self.bodies[i];
                 if body.body_type == BodyType::Static {
                     continue;
                 }
@@ -2960,15 +3473,8 @@ impl PhysicsWorld {
                     None => overflow.store(true, core::sync::atomic::Ordering::Relaxed),
                 }
                 // Angular velocity from rotation change
-                let dq = body.rotation.mul(body.prev_rotation.conjugate());
-                let two_inv_dt = inv_dt + inv_dt;
-                if dq.w < Fix128::ZERO {
-                    body.angular_velocity =
-                        Vec3Fix::new(-dq.x * two_inv_dt, -dq.y * two_inv_dt, -dq.z * two_inv_dt);
-                } else {
-                    body.angular_velocity =
-                        Vec3Fix::new(dq.x * two_inv_dt, dq.y * two_inv_dt, dq.z * two_inv_dt);
-                }
+                body.angular_velocity =
+                    angular_from_rotations(body.rotation, body.prev_rotation, inv_dt);
             }
         }
 
@@ -3904,16 +4410,37 @@ impl PhysicsWorld {
 
         #[cfg(feature = "parallel")]
         {
+            let parked: &[bool] = if self.park.active {
+                &self.park.parked
+            } else {
+                &[]
+            };
+            self.stage_work.resolution_bodies += self.unparked_count();
             self.bodies
                 .par_iter_mut()
                 .enumerate()
-                .for_each(|(idx, body)| push_out(idx, body));
+                .for_each(|(idx, body)| {
+                    if !parked.get(idx).copied().unwrap_or(false) {
+                        push_out(idx, body);
+                    }
+                });
         }
 
         #[cfg(not(feature = "parallel"))]
         {
-            for (idx, body) in self.bodies.iter_mut().enumerate() {
-                push_out(idx, body);
+            let count = if self.park.active {
+                self.park.awake.len()
+            } else {
+                self.bodies.len()
+            };
+            for k in 0..count {
+                let idx = if self.park.active {
+                    self.park.awake[k]
+                } else {
+                    k
+                };
+                self.stage_work.resolution_bodies += 1;
+                push_out(idx, &mut self.bodies[idx]);
             }
         }
     }
@@ -4027,6 +4554,7 @@ impl PhysicsWorld {
         collider: crate::static_collider::StaticCollider,
     ) -> usize {
         let idx = self.static_colliders.len();
+        self.park_generation = self.park_generation.wrapping_add(1);
         self.static_colliders.push(collider);
         idx
     }
@@ -4038,6 +4566,7 @@ impl PhysicsWorld {
         idx: usize,
     ) -> Option<crate::static_collider::StaticCollider> {
         if idx < self.static_colliders.len() {
+            self.park_generation = self.park_generation.wrapping_add(1);
             Some(self.static_colliders.remove(idx))
         } else {
             None
@@ -4057,7 +4586,11 @@ impl PhysicsWorld {
     /// ([`Self::set_sdf_collision_radius`]) for a body without one.
     fn resolve_static_collisions(&mut self) {
         let default_radius = self.sdf_collision_radius;
-        for (i, body) in self.bodies.iter_mut().enumerate() {
+        let count = self.stage_count();
+        for k in 0..count {
+            let i = self.stage_body(k);
+            self.stage_work.resolution_bodies += 1;
+            let body = &mut self.bodies[i];
             if body.is_static() || body.is_sensor {
                 continue;
             }
@@ -4078,6 +4611,7 @@ impl PhysicsWorld {
     /// [`Broadphase`]); switching drops the persistent tree, which is rebuilt on the
     /// next step if [`Broadphase::DynamicTree`] is chosen.
     pub fn set_broadphase(&mut self, kind: Broadphase) {
+        self.park_generation = self.park_generation.wrapping_add(1);
         self.broadphase = kind;
         self.broadphase_reset();
     }
@@ -4163,6 +4697,28 @@ impl PhysicsWorld {
         }
     }
 
+    /// The sorted candidate pairs while parking is in effect: the pairs among the
+    /// unparked `primitives` from a [`LinearBvh`] over them, plus every parked
+    /// body whose proxy overlaps one of them, from `park.tree`. Pairs of two
+    /// parked bodies are left out; the narrow-phase drops pairs of two sleeping
+    /// bodies anyway, so the contacts and their order are those of
+    /// [`Self::broadphase_pairs`] over every body.
+    fn parked_broadphase_pairs(&mut self, primitives: Vec<BvhPrimitive>) -> Vec<(u32, u32)> {
+        let mut pairs = Vec::new();
+        for p in &primitives {
+            let i = p.index;
+            self.park.tree.query_callback(&p.aabb, |j| {
+                pairs.push(if i < j { (i, j) } else { (j, i) });
+            });
+        }
+        if primitives.len() >= 2 {
+            pairs.extend(LinearBvh::build(primitives).find_pairs());
+        }
+        pairs.sort_unstable();
+        pairs.dedup();
+        pairs
+    }
+
     // ── Automatic Collision Detection ─────────────────────────────────
 
     /// Detect collisions between bodies with collision radii.
@@ -4177,9 +4733,12 @@ impl PhysicsWorld {
             return;
         }
 
-        // Build BVH from bodies that have collision radii
+        // Build BVH from bodies that have collision radii (the unparked ones while
+        // parking is in effect: parked bodies sit in `park.tree`)
         let mut primitives = Vec::new();
-        for i in 0..n {
+        let count = self.stage_count();
+        for k in 0..count {
+            let i = self.stage_body(k);
             if let Some(radius) = self.body_collision_radii.get(i).and_then(|r| *r) {
                 let pos = self.bodies[i].position;
                 let half = Vec3Fix::new(radius, radius, radius);
@@ -4191,12 +4750,39 @@ impl PhysicsWorld {
                 });
             }
         }
+        self.stage_work.broadphase_primitives += primitives.len() as u64;
 
-        if primitives.len() < 2 {
+        let parked_with_radius = if self.park.active {
+            self.park.tree.proxy_count()
+        } else {
+            0
+        };
+        if primitives.len() + parked_with_radius < 2 {
             return;
         }
 
-        let pairs = self.broadphase_pairs(primitives);
+        let pairs = if self.park.active {
+            self.parked_broadphase_pairs(primitives)
+        } else {
+            self.broadphase_pairs(primitives)
+        };
+        self.stage_work.broadphase_pairs += pairs.len() as u64;
+
+        // Velocity of a body as the pre-skip step saw it here: a parked body
+        // still carries the force-field kick of phase 1 in the first substep
+        // (the velocity derivation zeroes it at the end of that substep).
+        let velocity_of = |i: usize| -> Vec3Fix {
+            let body = &self.bodies[i];
+            if self.park.first_substep
+                && !self.force_fields.is_empty()
+                && self.park.is_parked(i)
+                && !body.is_static()
+            {
+                crate::force::force_field_velocity(&self.force_fields, i, body, self.park.frame_dt)
+            } else {
+                body.velocity
+            }
+        };
 
         // Collect results to avoid borrow conflicts
         struct ContactInfo {
@@ -4296,8 +4882,7 @@ impl PhysicsWorld {
                     (self.bodies[b].position, self.bodies[b].rotation),
                 ) {
                     if contact.depth > Fix128::ZERO {
-                        let rel_vel =
-                            (self.bodies[a].velocity - self.bodies[b].velocity).dot(contact.normal);
+                        let rel_vel = (velocity_of(a) - velocity_of(b)).dot(contact.normal);
                         results.push(ContactInfo {
                             body_a: a,
                             body_b: b,
@@ -4320,7 +4905,7 @@ impl PhysicsWorld {
                 let point_a = self.bodies[a].position - normal * radius_a;
                 let point_b = self.bodies[b].position + normal * radius_b;
                 // Approach speed along the normal: negative while closing.
-                let rel_vel = (self.bodies[a].velocity - self.bodies[b].velocity).dot(normal);
+                let rel_vel = (velocity_of(a) - velocity_of(b)).dot(normal);
                 let is_sensor = self.bodies[a].is_sensor || self.bodies[b].is_sensor;
 
                 let contact = Contact {
@@ -4360,11 +4945,19 @@ impl PhysicsWorld {
             // resting contact on every detection, so a stack could never fall
             // asleep, and `wake_island` walks all bodies — O(contacts × bodies)
             // per detection (3.7 ms of a 6 ms step at 2700 contacts / 1000 bodies).
-            if self.islands.is_sleeping(info.body_a) {
-                self.islands.wake_island(info.body_a);
-            }
-            if self.islands.is_sleeping(info.body_b) {
-                self.islands.wake_island(info.body_b);
+            for x in [info.body_a, info.body_b] {
+                if !self.islands.is_sleeping(x) {
+                    continue;
+                }
+                if self.park.is_parked(x) {
+                    // Parked bodies are on no joint, so their island is
+                    // themselves: same outcome as `wake_island`, without its
+                    // walk over every body.
+                    self.islands.wake_body(x);
+                    self.park.unpark(x, &mut self.stage_work);
+                } else {
+                    self.islands.wake_island(x);
+                }
             }
 
             if info.is_sensor {

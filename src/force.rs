@@ -410,19 +410,31 @@ pub fn apply_force_fields(fields: &[ForceFieldInstance], bodies: &mut [RigidBody
             continue;
         }
 
-        let mut total_force = Vec3Fix::ZERO;
-
-        for field_inst in fields {
-            if !field_inst.affects(body_idx) {
-                continue;
-            }
-            total_force = total_force + compute_force(&field_inst.field, body);
-        }
-
-        // F = ma, a = F * inv_mass, v += a * dt
-        let acceleration = total_force * body.inv_mass;
-        body.velocity = body.velocity + acceleration * dt;
+        body.velocity = force_field_velocity(fields, body_idx, body, dt);
     }
+}
+
+/// The velocity [`apply_force_fields`] gives body `body_idx` (`body` itself is
+/// not changed): `v + (Σ F · inv_mass) · dt` over the fields that affect it.
+#[must_use]
+pub(crate) fn force_field_velocity(
+    fields: &[ForceFieldInstance],
+    body_idx: usize,
+    body: &RigidBody,
+    dt: Fix128,
+) -> Vec3Fix {
+    let mut total_force = Vec3Fix::ZERO;
+
+    for field_inst in fields {
+        if !field_inst.affects(body_idx) {
+            continue;
+        }
+        total_force = total_force + compute_force(&field_inst.field, body);
+    }
+
+    // F = ma, a = F * inv_mass, v += a * dt
+    let acceleration = total_force * body.inv_mass;
+    body.velocity + acceleration * dt
 }
 
 #[cfg(all(test, feature = "std"))]

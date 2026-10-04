@@ -206,28 +206,47 @@ impl IslandManager {
             if i >= self.sleep_data.len() {
                 break;
             }
+            self.update_sleep_body(i, body);
+        }
+    }
 
-            // Static bodies are always "sleeping"
-            if body.is_static() {
-                self.sleep_data[i].state = SleepState::Sleeping;
-                continue;
-            }
+    /// [`Self::update_sleep`] for one body (`i` must be in range).
+    pub(crate) fn update_sleep_body(&mut self, i: usize, body: &RigidBody) {
+        // Static bodies are always "sleeping"
+        if body.is_static() {
+            self.sleep_data[i].state = SleepState::Sleeping;
+            return;
+        }
 
-            let linear_speed = body.velocity.length();
-            let angular_speed = body.angular_velocity.length();
+        let linear_speed = body.velocity.length();
+        let angular_speed = body.angular_velocity.length();
 
-            let is_idle = linear_speed < self.config.linear_threshold
-                && angular_speed < self.config.angular_threshold;
+        let is_idle = linear_speed < self.config.linear_threshold
+            && angular_speed < self.config.angular_threshold;
 
-            if is_idle {
-                self.sleep_data[i].idle_frames += 1;
-                if self.sleep_data[i].idle_frames >= self.config.frames_to_sleep {
-                    self.sleep_data[i].state = SleepState::Sleeping;
-                }
-            } else {
-                self.sleep_data[i].state = SleepState::Awake;
-                self.sleep_data[i].idle_frames = 0;
-            }
+        if is_idle {
+            self.mark_idle(i);
+        } else {
+            self.sleep_data[i].state = SleepState::Awake;
+            self.sleep_data[i].idle_frames = 0;
+        }
+    }
+
+    /// [`Self::update_sleep_body`] for a body already known to be idle (or
+    /// static when `is_static`), without looking at its velocity.
+    pub(crate) fn update_sleep_idle(&mut self, i: usize, is_static: bool) {
+        if is_static {
+            self.sleep_data[i].state = SleepState::Sleeping;
+        } else {
+            self.mark_idle(i);
+        }
+    }
+
+    #[inline]
+    fn mark_idle(&mut self, i: usize) {
+        self.sleep_data[i].idle_frames += 1;
+        if self.sleep_data[i].idle_frames >= self.config.frames_to_sleep {
+            self.sleep_data[i].state = SleepState::Sleeping;
         }
     }
 
