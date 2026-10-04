@@ -1590,6 +1590,40 @@ mod tests {
         assert!(vy1 > vy0 / Fix128::from_int(12) && vy1 < vy0 / Fix128::from_int(7));
     }
 
+    /// Pitched chassis on a frictionless road: the contacts push only along
+    /// the road normal, so the impulse is `Σ F_z n dt` (no horizontal part
+    /// although the strut axis `up` is tilted), and `F_z = strut · (up·n)`.
+    #[test]
+    fn suspension_pushes_along_the_road_normal() {
+        let mut v = DynamicVehicle::new(config());
+        let zero = AnisotropicFriction {
+            longitudinal_static: Fix128::ZERO,
+            longitudinal_kinetic: Fix128::ZERO,
+            transverse_static: Fix128::ZERO,
+            transverse_kinetic: Fix128::ZERO,
+            slip_threshold_m_s: fx(5, 100),
+        };
+        let cond = RoadCondition {
+            material: zero,
+            weather: Weather::Dry,
+            rolling_resistance: Fix128::ZERO,
+        };
+        let mut body = chassis();
+        body.inv_inertia = Vec3Fix::ZERO;
+        body.rotation = QuatFix::from_axis_angle(Vec3Fix::UNIT_X, fx(5, 100));
+        let dt = dt60();
+        v.update(&mut body, &flat(), &env(&cond), dt);
+        let total: Fix128 = v.wheels.iter().fold(Fix128::ZERO, |a, w| a + w.normal_load);
+        assert!(total > Fix128::from_int(1000));
+        assert_eq!(body.velocity.x, Fix128::ZERO);
+        assert_eq!(body.velocity.z, Fix128::ZERO);
+        assert!(tol(
+            body.velocity.y,
+            total * dt / Fix128::from_int(1000),
+            fx(1, 1_000_000_000)
+        ));
+    }
+
     /// A car at rest with the brake on gets anchored wheels and no
     /// horizontal motion from friction.
     #[test]
