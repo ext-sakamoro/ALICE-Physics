@@ -49,6 +49,7 @@ python3 scripts/docs_lint.py --check
 step "SCIP reach analysis oracle (docs/integration-status.md の解析器)"
 python3 scripts/test_scip_reach.py
 python3 scripts/test_audit_refs.py
+python3 scripts/test_run_feature_gated_tests.py
 
 step "oracle ledger links (PIN / root external)"
 python3 scripts/gen-oracle-status.py --check
@@ -144,5 +145,8 @@ cargo test --lib --features "ffi" "ffi::"
 
 step "cargo test --lib (neural / replay / analytics via crates.io siblings)"
 cargo test --lib --features "neural,replay,analytics"
+
+step "feature-gated integration tests (same script and arguments as ci.yml)"
+python3 scripts/run_feature_gated_tests.py
 
 echo; echo "preflight OK"

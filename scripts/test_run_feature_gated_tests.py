@@ -1,0 +1,109 @@
+#!/usr/bin/env python3
+"""scripts/run_feature_gated_tests.py の oracle.
+
+検査器の空振り (比較件数 0 で green) を最も危ない形として固定する:
+(1) 全 target が 1 本以上走れば green (2) gate が開かず 0 本の target が 1 つでも
+あれば red (3) 結果行が無い target は red (4) 選択 0 件 / 実行合計 0 は red
+(5) 一覧の feature が 1 file も選ばなければ red (6) 失敗があれば red
+(7) file 単位と item 単位の gate の両方を選び、無関係な feature は選ばない
+期待値は fixture の構造から決まり、cargo は呼ばない
+
+run: python3 scripts/test_run_feature_gated_tests.py
+"""
+from __future__ import annotations
+
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import run_feature_gated_tests as g  # noqa: E402
+
+FEATS = ("replay", "gpu-solver-bridge")
+
+
+def tests_dir(files: dict[str, str]) -> Path:
+    root = Path(tempfile.mkdtemp(prefix="gated-fixture-"))
+    for name, body in files.items():
+        (root / name).write_text(body, encoding="utf-8")
+    return root
+
+
+def output(blocks: list[tuple[str, int, int, int]]) -> str:
+    lines = []
+    for name, p, f, i in blocks:
+        lines.append(f"     Running tests/{name}.rs (target/debug/deps/{name}-0123abcd)")
+        lines.append("")
+        lines.append(f"running {p + f + i} tests")
+        lines.append(
+            f"test result: {'ok' if f == 0 else 'FAILED'}. {p} passed; {f} failed; "
+            f"{i} ignored; 0 measured; 0 filtered out; finished in 0.00s"
+        )
+    return "\n".join(lines)
+
+
+class Select(unittest.TestCase):
+    def test_file_and_item_gates_are_selected_and_others_are_not(self):
+        d = tests_dir({
+            "a.rs": '#![cfg(all(feature = "std", feature = "replay"))]\n',
+            "b.rs": 'mod m {\n#[cfg(feature = "gpu-solver-bridge")]\nfn x() {}\n}\n',
+            "c.rs": '#![cfg(feature = "std")]\n',
+            "d.rs": '#[cfg(feature = "parallel")]\nfn y() {}\n',
+        })
+        self.assertEqual(
+            g.select(d, FEATS), {"a": {"replay"}, "b": {"gpu-solver-bridge"}}
+        )
+
+
+class Parse(unittest.TestCase):
+    def test_counts_per_target_including_windows_paths(self):
+        out = output([("a", 3, 0, 1)]) + "\n" + (
+            "     Running tests\\b.rs (target\\debug\\deps\\b-ff.exe)\n"
+            "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out\n"
+        )
+        self.assertEqual(g.parse(out), {"a": (3, 0, 1), "b": (2, 0, 0)})
+
+
+class Check(unittest.TestCase):
+    picked = {"a": {"replay"}, "b": {"gpu-solver-bridge"}}
+
+    def test_green_when_every_target_executes(self):
+        counts = g.parse(output([("a", 3, 0, 1), ("b", 1, 0, 0)]))
+        self.assertEqual(g.check(self.picked, counts, FEATS), [])
+
+    def test_red_when_one_target_executes_zero(self):
+        counts = g.parse(output([("a", 3, 0, 0), ("b", 0, 0, 2)]))
+        problems = g.check(self.picked, counts, FEATS)
+        self.assertTrue(any("b: executed 0" in p for p in problems), problems)
+
+    def test_red_when_a_target_has_no_result_line(self):
+        counts = g.parse(output([("a", 3, 0, 0)]))
+        problems = g.check(self.picked, counts, FEATS)
+        self.assertTrue(any("b: no test result" in p for p in problems), problems)
+
+    def test_red_when_nothing_is_selected(self):
+        problems = g.check({}, {}, FEATS)
+        self.assertTrue(any("no test file" in p for p in problems), problems)
+
+    def test_red_when_the_total_is_zero(self):
+        counts = g.parse(output([("a", 0, 0, 1), ("b", 0, 0, 1)]))
+        problems = g.check(self.picked, counts, FEATS)
+        self.assertTrue(any("0 tests in total" in p for p in problems), problems)
+
+    def test_red_when_a_listed_feature_selects_no_file(self):
+        counts = g.parse(output([("a", 1, 0, 0)]))
+        problems = g.check({"a": {"replay"}}, counts, FEATS)
+        self.assertTrue(
+            any("'gpu-solver-bridge' selects no test file" in p for p in problems),
+            problems,
+        )
+
+    def test_red_when_a_test_fails(self):
+        counts = g.parse(output([("a", 2, 1, 0), ("b", 1, 0, 0)]))
+        problems = g.check(self.picked, counts, FEATS)
+        self.assertTrue(any("a: 1 failed" in p for p in problems), problems)
+
+
+if __name__ == "__main__":
+    unittest.main()
