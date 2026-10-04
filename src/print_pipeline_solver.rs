@@ -181,6 +181,15 @@ fn pick_material(name: &str) -> MaterialProperties {
 }
 
 /// Run the full print-safety pipeline for a given footprint and material.
+///
+/// # Claims
+///
+/// - `PrintSafetyReport::is_safe` is `false` if any of these holds: warp risk is
+///   High or Critical, the thermal-stress report is not safe (factor of safety
+///   below 2 or operating temperature within 20 C of Tg), the beam report is not
+///   safe, any bridge span is unsafe, or the bimaterial report is not safe
+///   (factor of safety below 2).
+/// - Otherwise it is `true`; `print()` then shows "Overall: SAFE".
 #[must_use]
 pub fn analyze_print_pipeline(
     footprint: Footprint,
@@ -224,6 +233,9 @@ pub fn analyze_print_pipeline(
     );
     if thermal_stress.near_glass_transition {
         messages.push("Operating temperature near Tg".to_string());
+    }
+    if !thermal_stress.is_safe {
+        is_safe = false;
     }
 
     // 5. Beam analysis
@@ -292,6 +304,7 @@ pub fn analyze_print_pipeline(
                 "Bimaterial FoS {:.1}",
                 report.factor_of_safety.to_f32()
             ));
+            is_safe = false;
         }
         report
     });

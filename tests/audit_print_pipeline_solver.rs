@@ -334,7 +334,6 @@ fn bimaterial_receives_thicknesses_in_order_and_cooldown_range() {
 /// A part whose thermal-stress verdict is "not safe" (operating temperature
 /// inside the glass-transition window) must not be reported as safe overall.
 #[test]
-#[ignore = "known defect: AUD-A-S5W1-007: ThermalStressReport::is_safe == false (near Tg or FoS < 2) only adds a message; PrintSafetyReport::is_safe stays true and print() shows Overall: SAFE (beam and bridging failures do clear it)."]
 fn failing_thermal_verdict_clears_the_safe_flag() {
     let pla = MaterialProperties::pla();
     let tg = pla.glass_transition_c.to_f64() as i64;
@@ -445,7 +444,6 @@ fn failing_bimaterial_adds_message_and_benign_one_does_not() {
 /// A failing bimaterial verdict must make the part unsafe, as a failing
 /// beam or bridge does.
 #[test]
-#[ignore = "known defect: AUD-A-S5W1-007: a bimaterial report with is_safe == false only pushes a message; PrintSafetyReport::is_safe stays true (beam and bridging failures clear it)"]
 fn failing_bimaterial_clears_the_safe_flag() {
     let inputs = PrintPipelineInputs {
         secondary_material: Some(("ABS", r(1), r(1))),
