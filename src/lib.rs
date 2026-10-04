@@ -100,6 +100,8 @@
 //!
 //! ## Queries
 //! - [`raycast`]: Ray casting against spheres, AABBs, capsules, planes
+//! - [`shape_raycast`]: World ray queries against the geometry bodies collide as (shapes, compounds, static colliders, SDF)
+//! - [`sensors`]: Simulated lidar, contact sensor and IMU with deterministic Gaussian noise
 //! - [`query`]: Shape cast (sphere, capsule) and overlap queries (sphere, AABB)
 //! - [`ccd`]: Continuous collision detection (TOI, conservative advancement, speculative)
 //!
@@ -443,7 +445,9 @@ pub mod sdf_manifold;
 #[cfg(feature = "std")]
 pub mod sdf_sph;
 pub mod sdf_wind_field;
+pub mod sensors;
 pub mod shape;
+pub mod shape_raycast;
 #[cfg(feature = "std")]
 pub mod sim_field;
 #[cfg(feature = "std")]
