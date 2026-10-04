@@ -1071,6 +1071,7 @@ pub fn project_pressure(grid: &mut MacGrid, dt_s: Fix128, density_kg_m3: Fix128,
 }
 
 mod multigrid_decomposed;
+pub(crate) use multigrid_decomposed::project_pressure_multigrid_decomposed;
 
 /// Number of red-black Gauss-Seidel iterations before restriction.
 const MG_PRE_SMOOTH: u32 = 1;
