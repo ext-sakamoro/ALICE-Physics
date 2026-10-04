@@ -21,8 +21,9 @@
 //!   `record_step_time`; `record_contacts` / `record_energy_drift` /
 //!   `record_collision_pair` must not touch it.
 //! * **`unique_collision_pairs`** (`HyperLogLog12`, `p = 12`, `m = 4096`):
-//!   `record_collision_pair(pair_hash)` calls `insert_hash(pair_hash)`
-//!   *verbatim* — no FNV mixing, no canonicalization of `(a, b)` vs.
+//!   `record_collision_pair(pair_hash)` calls
+//!   `insert_hash(splitmix64(pair_hash))` (splitmix64: golden-gamma add +
+//!   finaliser, AUD-A-S5W1-006) — no canonicalization of `(a, b)` vs.
 //!   `(b, a)`. `insert_hash` sets register `j = hash & 4095` to
 //!   `max(current, rho)` where `rho` is `1 +` the count of leading zero bits
 //!   of `hash >> 12` (or `64 - 12 + 1` when that shift is `0`). Cardinality
@@ -30,8 +31,8 @@
 //!   to linear counting (`m * ln(m / zeros)`) when the raw estimate is
 //!   `<= 2.5 * m` and at least one register is still `0` — exactly the
 //!   regime every scene below sits in. This test rebuilds the 4096-register
-//!   array independently (`ref_registers`) from the literal `pair_hash`
-//!   values it feeds the module, the same way
+//!   array independently (`ref_registers`) from the `pair_hash` values it
+//!   feeds the module, mixed with its own `splitmix64`, the same way
 //!   `tests/analytic_sketch_wiring.rs` holds `alice_physics::sketch`'s own
 //!   `HyperLogLog` to its reference registers, and evaluates the published
 //!   formula with `alice_physics::det_math::ln64` (never `f64::ln`, and
@@ -96,14 +97,25 @@ fn assert_within_contract(actual: f64, v: f64, what: &str) {
     );
 }
 
+/// splitmix64 output for `x` (golden-gamma add + finaliser), written out
+/// here independently of the crate.
+fn splitmix64(x: u64) -> u64 {
+    let mut z = x.wrapping_add(0x9E37_79B9_7F4A_7C15);
+    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    z ^ (z >> 31)
+}
+
 /// Reference `HyperLogLog12` (`p = 12`, `m = 4096`) register array, built
-/// from the *literal* `pair_hash` values fed to `record_collision_pair` —
-/// `insert_hash` performs no mixing, so this is exact, not approximate.
+/// from the `pair_hash` values fed to `record_collision_pair`, each mixed
+/// with `splitmix64` exactly as the module does, so this is exact, not
+/// approximate.
 fn ref_registers(hashes: &[u64]) -> [u8; 4096] {
     const P: u32 = 12;
     const M: u64 = 4096;
     let mut regs = [0u8; 4096];
     for &h in hashes {
+        let h = splitmix64(h);
         let idx = (h & (M - 1)) as usize;
         let w = h >> P;
         let rho: u8 = if w == 0 {

@@ -321,8 +321,10 @@ fn histogram_buckets_by_hand_with_gamma_three() {
 
 #[test]
 fn unique_counts_a_multiset_by_its_set_with_linear_counting() {
-    // Item hashes 1..=k occupy registers 1..=k (index = low 10 bits), so the
-    // linear-counting branch sees exactly k non-zero registers.
+    // Item hashes 1..=k, mixed with splitmix64 before insert, land in k
+    // distinct registers (checked: the k = 1..=5 estimates below equal the
+    // k-register closed form), so the linear-counting branch sees exactly k
+    // non-zero registers.
     let h = 9u64;
     let m = 1024.0;
     for k in 1..=5u64 {
@@ -745,8 +747,8 @@ fn unique_item_hashes_above_2_pow_53_collapse_through_f64() {
     let m = 1024.0;
     let one_item = m * ln_m_over_m_minus_k(m, 1.0);
     let two_items = m * ln_m_over_m_minus_k(m, 2.0);
-    // Exactly representable: 2^52 and 2^52 + 1 stay distinct and land in
-    // registers 0 and 1 (index = low 10 bits).
+    // Exactly representable: 2^52 and 2^52 + 1 stay distinct and, after
+    // splitmix64 mixing, land in two distinct registers.
     let mut fine = pipeline::<4, 8>();
     fine.submit(MetricEvent::unique(h, 1 << 52));
     fine.submit(MetricEvent::unique(h, (1 << 52) + 1));

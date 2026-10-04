@@ -205,7 +205,6 @@ fn unique_pairs_for_well_mixed_hashes_is_accurate() {
 /// gives a usable estimate of the number of distinct colliding pairs:
 /// 100 bodies, all 4950 pairs.
 #[test]
-#[ignore = "known defect: AUD-A-S5W1-006: record_collision_pair feeds the documented `min << 32 | max` packing straight into HyperLogLog::insert_hash, which expects an already-mixed 64-bit hash; real body-id pairs collapse onto at most 100 registers and the estimate is ~100 instead of 4950"]
 fn documented_pair_packing_gives_usable_cardinality() {
     let mut t = PhysicsTelemetry::new();
     for a in 0..100u64 {

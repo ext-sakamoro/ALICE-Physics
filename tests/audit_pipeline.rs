@@ -18,6 +18,16 @@ use alice_physics::pipeline::{
 use alice_physics::sketch::{FnvHasher, Mergeable};
 use std::collections::VecDeque;
 
+/// splitmix64 output for `x` (golden-gamma add + finaliser), the mixing
+/// `MetricSlot::process` applies to a `Unique` item hash before
+/// `HyperLogLog::insert_hash`.
+fn splitmix64(x: u64) -> u64 {
+    let mut z = x.wrapping_add(0x9E37_79B9_7F4A_7C15);
+    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    z ^ (z >> 31)
+}
+
 fn lcg(s: &mut u64) -> u64 {
     *s = s
         .wrapping_mul(6364136223846793005)
@@ -270,7 +280,6 @@ fn pipeline_colliding_metric_names_do_not_corrupt_each_other() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S5W3-017: a Unique event stores the item hash as f64 and casts back to u64, which zeroes the low 11 bits of a 64-bit hash; HyperLogLog picks its register from the low 10 bits, so every item lands in register 0 (4000 distinct FNV hashes: direct insert estimates 4055, through the pipeline 54)"]
 fn pipeline_unique_events_count_distinct_64_bit_hashes() {
     let n = 4000u64;
     let mut direct = alice_physics::sketch::HyperLogLog10::new();
@@ -418,7 +427,7 @@ fn slot_merge_unions_the_unique_sets() {
         b.process(&MetricEvent::unique(1, i));
     }
     for i in 0..1000u64 {
-        want.insert_hash(i);
+        want.insert_hash(splitmix64(i));
     }
     let alone = a.hll.cardinality();
     a.merge(&b);
@@ -433,7 +442,7 @@ fn snapshot_cardinality_comes_from_the_unique_set() {
     let mut want = alice_physics::sketch::HyperLogLog10::new();
     for i in 0..300u64 {
         slot.process(&MetricEvent::unique(1, i));
-        want.insert_hash(i);
+        want.insert_hash(splitmix64(i));
     }
     let snap = MetricSnapshot::from(&slot);
     assert_eq!(snap.cardinality, want.cardinality());

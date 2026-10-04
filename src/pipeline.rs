@@ -23,7 +23,7 @@
 //! assert!(pipeline.total_events() >= 3);
 //! ```
 
-use crate::sketch::{DDSketch256, HyperLogLog10, Mergeable};
+use crate::sketch::{splitmix64, DDSketch256, HyperLogLog10, Mergeable};
 
 // ============================================================================
 // Ring Buffer for Hot Metrics
@@ -276,7 +276,9 @@ impl MetricSlot {
                 self.ddsketch.insert(event.value);
             }
             MetricType::Unique => {
-                self.hll.insert_hash(event.value as u64);
+                // The f64 round trip keeps only the top 53 significant bits
+                // of the item hash; mix before the register index is taken.
+                self.hll.insert_hash(splitmix64(event.value as u64));
             }
         }
     }
