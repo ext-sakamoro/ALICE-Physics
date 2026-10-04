@@ -581,3 +581,40 @@ fn removing_a_sleeping_body_unparks_the_rest() {
     assert_eq!(s.tree_removes, 50, "their proxies left the tree");
     assert_eq!(s.integrated, 49 * substeps());
 }
+
+/// The bench world (`benches/world_scale.rs`): weightless, undamped, the awake
+/// bodies drift upward above a sleeping grid. Same with and without the skip.
+#[test]
+fn bench_world_is_bit_identical() {
+    let build = || {
+        let config = PhysicsConfig {
+            gravity: Vec3Fix::ZERO,
+            damping: Fix128::ONE,
+            ..PhysicsConfig::default()
+        };
+        let mut w = PhysicsWorld::new(config);
+        let n = 500usize;
+        let awake = 5usize;
+        let side = (n as f64).sqrt().ceil() as i64;
+        for i in 0..n {
+            let x = (i as i64 % side) * 2;
+            let z = (i as i64 / side) * 2;
+            let y = if i < awake { 100 } else { 0 };
+            let mut body = RigidBody::new_dynamic(Vec3Fix::from_int(x, y, z), Fix128::ONE);
+            if i < awake {
+                body.velocity = Vec3Fix::from_int(0, 1, 0);
+            }
+            w.add_body_with_radius(body, half());
+        }
+        for i in awake..n {
+            w.islands.sleep_data[i].state = SleepState::Sleeping;
+            w.islands.sleep_data[i].idle_frames = 100;
+        }
+        w
+    };
+    let mut t = Twins::new(build);
+    t.step(120, "drift");
+    assert!(t.parked > 0);
+    let awake = (0..5).filter(|&i| !t.sleeping(i)).count();
+    assert_eq!(awake, 5, "the drifting bodies stay awake");
+}
