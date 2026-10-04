@@ -1099,11 +1099,16 @@ fn solve_d6_joint(joint: &D6Joint, bodies: &mut [crate::solver::RigidBody], dt: 
     }
 
     // Angular constraints per axis (w is axis-dependent: n · I⁻¹ n)
+    //
+    // Zero error is where each body's *frame* (body rotation composed with
+    // its `local_frame_*`) lines up with the other's, not where the raw
+    // body rotations coincide: `rel_quat` is frame_b_world ⊗ frame_a_world⁻¹
+    // so a non-identity `local_frame_b` shifts the pose B is pulled toward.
     let angular_compliance = joint.angular_compliance / (dt * dt);
     {
-        let rel_quat = bodies[joint.body_b]
-            .rotation
-            .mul(bodies[joint.body_a].rotation.conjugate());
+        let frame_a_now = bodies[joint.body_a].rotation.mul(joint.local_frame_a);
+        let frame_b_now = bodies[joint.body_b].rotation.mul(joint.local_frame_b);
+        let rel_quat = frame_b_now.mul(frame_a_now.conjugate());
 
         let ang_axes = [
             (
