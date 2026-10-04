@@ -216,7 +216,6 @@ fn nonpositive_guards_return_zero() {
 /// sign), and `force_from_voltage` rejects `thickness <= 0` but accepts a
 /// negative area (the force flips sign).
 #[test]
-#[ignore = "known defect: AUD-A-S6W1-010: voltage_from_force(thickness<0) and force_from_voltage(area<0) return sign-flipped nonzero values; the opposite-direction parameter is guarded"]
 fn negative_geometry_is_rejected_in_both_directions() {
     let base = PiezoElement::pzt_5a(1.0e-4, 2.0e-3);
     let mut e = base;
