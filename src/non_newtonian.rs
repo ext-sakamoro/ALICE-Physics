@@ -99,17 +99,33 @@ impl PowerLaw {
         if shear_rate_per_s <= Fix128::ZERO {
             return Fix128::ZERO;
         }
-        // Integer power
-        let mut p = Fix128::ONE;
-        for _ in 0..self.n_int {
-            p = p * shear_rate_per_s;
-        }
         if self.thinning {
             // τ = K · γ̇^(1/n)
             let inv_n = Fix128::ONE / Fix128::from_int(i64::from(self.n_int));
-            self.k * shear_rate_per_s.powf_pos(inv_n)
+            return self.k * shear_rate_per_s.powf_pos(inv_n);
+        }
+        if self.k.is_zero() {
+            return Fix128::ZERO;
+        }
+        // Integer power γ̇^n, then × K — but γ̇^n alone can exceed Fix128's
+        // range well before (or without) K · γ̇^n doing so (K=1, n=3,
+        // γ̇=5e6: γ̇^3 = 1.25e20 wraps to a negative value with no cap and
+        // no documented bound). Use checked arithmetic and saturate at the
+        // representable maximum — signed to match K — instead of silently
+        // wrapping: stress must stay monotone increasing in shear rate and
+        // keep K's sign.
+        let mut p = Some(Fix128::ONE);
+        for _ in 0..self.n_int {
+            p = p.and_then(|acc| acc.checked_mul(shear_rate_per_s));
+        }
+        if let Some(stress) = p.and_then(|p| self.k.checked_mul(p)) {
+            return stress;
+        }
+        let max = Fix128::from_raw(i64::MAX, u64::MAX);
+        if self.k.is_negative() {
+            -max
         } else {
-            self.k * p
+            max
         }
     }
 
