@@ -176,7 +176,6 @@ fn boussinesq_uniform_hot_fluid_falls_slower_by_the_factor_1_minus_beta_dt() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S1W4-002: Boussinesq reads the cell below the face (jj = j - 1) instead of the mean of the two cells sharing it; a linear T profile gives a half-cell bias G dx/2 in every interior face (j = 1: 50 % of the buoyancy term)"]
 fn boussinesq_face_force_is_the_mean_of_the_two_cells_sharing_the_face() {
     // T(cell j) = 293 + G (j + 1/2) dx, so the face j sits at T = 293 + G j dx exactly
     // (the mean of the two cells is exact for a linear profile)

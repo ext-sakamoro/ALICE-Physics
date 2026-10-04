@@ -1514,6 +1514,8 @@ impl CfdSolver {
     /// - The interface is smeared over `eps = 2 dx`, an integer multiple of `dx`, so the
     ///   sampled delta sums to 1 for any interface offset and the line integral of the
     ///   force across a spherical interface is `-2 sigma / R` (Young-Laplace)
+    /// - Buoyancy on a v face uses the mean temperature of the two cells sharing it
+    ///   (a boundary face uses its single neighbour), so a linear profile is exact
     /// - Surface tension adds `f / rho * dt` (m/s) to the faces along each axis,
     ///   split 1/2 to each of the two faces of a cell, for x, y and z alike
     fn apply_body_forces(&mut self, dt_s: Fix128) {
@@ -1555,9 +1557,11 @@ impl CfdSolver {
             for k in 0..self.grid.nz {
                 for j in 0..=self.grid.ny {
                     for i in 0..self.grid.nx {
-                        // Sample cell-centre temperature
-                        let jj = if j == 0 { 0 } else { j - 1 };
-                        let t = temp.get(i, jj, k);
+                        // Face temperature: mean of the two cells sharing the face
+                        // (boundary faces have one neighbour and take its value)
+                        let t_below = temp.get(i, if j == 0 { 0 } else { j - 1 }, k);
+                        let t_above = temp.get(i, if j == self.grid.ny { j - 1 } else { j }, k);
+                        let t = (t_below + t_above) * Fix128::from_ratio(1, 2);
                         let dt_temp = t - self.reference_temp_k;
                         let f = self.density_kg_m3 * self.beta_per_k * dt_temp * self.gravity.y;
                         let ix = i + self.grid.nx * (j + (self.grid.ny + 1) * k);
