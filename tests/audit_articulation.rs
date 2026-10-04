@@ -277,7 +277,6 @@ fn motor_off_zero_force_and_static_partner() {
 /// A motor on a hinge link should drive the hinge angle: a velocity-mode motor with a
 /// target of 1 rad/s makes the child spin about the hinge axis.
 #[test]
-#[ignore = "known defect: AUD-A-S3W1-017: apply_motors uses the distance between the two body centres as the joint coordinate for every joint type; a hinge/ball motor changes linear velocity along the bone and never the angular velocity (angular_velocity stays 0 here)"]
 fn hinge_motor_drives_the_hinge_angle() {
     let mut bodies = vec![
         RigidBody::new(v3(0.0, 0.0, 0.0), fx(1.0)),

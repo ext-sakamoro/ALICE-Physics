@@ -158,6 +158,16 @@ impl ArticulatedBody {
     }
 
     /// Apply motors on all links
+    ///
+    /// # Claims
+    /// - A `Joint::Hinge` link's generalised coordinate is the relative twist angle
+    ///   about the hinge axis (`crate::joint::compute_twist_angle`), the same
+    ///   quantity `solve_hinge_joint`'s own angle-limit step reads, and the motor
+    ///   drives the bodies' `angular_velocity`, not their linear `velocity`.
+    /// - Every other joint type keeps the centre-to-centre distance as its
+    ///   generalised coordinate (unchanged from before this method gained the
+    ///   hinge case above), since only the hinge's single rotational DOF has an
+    ///   established angle convention already defined elsewhere in this crate.
     pub fn apply_motors(&self, bodies: &mut [RigidBody], dt: Fix128) {
         for link in &self.links {
             if let (Some(joint), Some(motor)) = (&link.joint, &link.motor) {
@@ -168,6 +178,29 @@ impl ArticulatedBody {
                 let (body_a_idx, body_b_idx) = joint.bodies();
                 let body_a = bodies[body_a_idx];
                 let body_b = bodies[body_b_idx];
+
+                if let Joint::Hinge(hinge) = joint {
+                    let axis = body_a.rotation.rotate_vec(hinge.local_axis_a);
+                    let rel_quat = body_b.rotation.mul(body_a.rotation.conjugate());
+                    let current_pos = crate::joint::compute_twist_angle(rel_quat, axis);
+                    let current_vel = (body_b.angular_velocity - body_a.angular_velocity).dot(axis);
+
+                    let torque = motor.compute(current_pos, current_vel);
+                    if torque.is_zero() {
+                        continue;
+                    }
+
+                    let angular_impulse = axis * (torque * dt);
+                    if !body_a.inv_mass.is_zero() {
+                        bodies[body_a_idx].angular_velocity = bodies[body_a_idx].angular_velocity
+                            - body_a.world_inv_inertia_apply(angular_impulse);
+                    }
+                    if !body_b.inv_mass.is_zero() {
+                        bodies[body_b_idx].angular_velocity = bodies[body_b_idx].angular_velocity
+                            + body_b.world_inv_inertia_apply(angular_impulse);
+                    }
+                    continue;
+                }
 
                 let delta = body_b.position - body_a.position;
                 let current_pos = delta.length();
