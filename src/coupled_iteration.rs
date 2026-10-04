@@ -338,6 +338,15 @@ pub fn residual_norm_l2_checked(residual: &[Fix128]) -> Result<Fix128, CoupledIt
     let mut sum = Fix128::ZERO;
     for (index, &component) in residual.iter().enumerate() {
         let magnitude = component.abs();
+        // Components below `L2_TERM_FLOOR` square to zero by design (their
+        // product is below the 2⁻⁶⁴ resolution) and so add nothing to the
+        // sum: accept them without going through the overflow check. The
+        // `is_negative` guard is load-bearing — `abs()` of the most
+        // negative value stays negative, and that component must still
+        // reach the check below, which refuses it.
+        if !magnitude.is_negative() && magnitude < L2_TERM_FLOOR {
+            continue;
+        }
         // `checked_mul` catches every overflow of the squaring step itself —
         // including the window where the wrapped product is still positive
         // (e.g. 4.5e9² wraps to ~1.9e18, which is neither zero nor a decrease
