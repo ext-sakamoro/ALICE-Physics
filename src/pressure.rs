@@ -71,6 +71,13 @@ pub struct PressureModifier {
 
 impl PressureModifier {
     /// Create a new pressure modifier
+    ///
+    /// `resolution` is clamped to a minimum of 1: `ScalarField3D` computes
+    /// its cell size from `resolution - 1` and clamps grid reads to
+    /// `resolution - 1`, both of which underflow `usize` for a resolution
+    /// of 0. Clamping here keeps that invariant instead of deferring a
+    /// panic to the first call to [`Self::pressure_at`] /
+    /// [`Self::deformation_at`].
     #[must_use]
     pub fn new(
         config: PressureConfig,
@@ -78,6 +85,7 @@ impl PressureModifier {
         min: (f32, f32, f32),
         max: (f32, f32, f32),
     ) -> Self {
+        let resolution = resolution.max(1);
         Self {
             config,
             pressure: ScalarField3D::new(resolution, resolution, resolution, min, max),
