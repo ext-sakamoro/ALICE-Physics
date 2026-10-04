@@ -617,6 +617,10 @@ harness = false
 name = "stage_breakdown_collider"
 harness = false
 
+[[bench]]
+name = "world_scale"
+harness = false
+
 [profile.release]
 opt-level = 3
 lto = "fat"
