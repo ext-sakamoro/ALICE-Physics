@@ -119,7 +119,7 @@ pub fn ray_sphere(ray: &Ray, sphere: &Sphere, max_t: Fix128) -> Option<RayHit> {
 #[inline]
 #[must_use]
 pub fn ray_aabb(ray: &Ray, aabb: &AABB, max_t: Fix128) -> Option<RayHit> {
-    let (t_min, t_max) = ray_aabb_interval(ray, aabb)?;
+    let (t_min, t_max) = ray_aabb_interval(ray, aabb, max_t)?;
 
     if t_min > max_t || t_max < Fix128::ZERO {
         return None;
@@ -144,10 +144,14 @@ pub fn ray_aabb(ray: &Ray, aabb: &AABB, max_t: Fix128) -> Option<RayHit> {
 }
 
 /// Ray-AABB interval computation (returns (`t_min`, `t_max`))
+///
+/// The slab interval is seeded from the caller's own `max_t` (and its
+/// negation) rather than a fixed constant, so a box whose entry/exit `t`
+/// exceeds a hard-coded bound is not silently missed or clamped.
 #[inline]
-fn ray_aabb_interval(ray: &Ray, aabb: &AABB) -> Option<(Fix128, Fix128)> {
-    let mut t_min = Fix128::from_int(-1000000);
-    let mut t_max = Fix128::from_int(1000000);
+fn ray_aabb_interval(ray: &Ray, aabb: &AABB, max_t: Fix128) -> Option<(Fix128, Fix128)> {
+    let mut t_min = -max_t;
+    let mut t_max = max_t;
 
     // X slab
     if !ray.direction.x.is_zero() {
