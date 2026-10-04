@@ -196,6 +196,15 @@ the chassis at its own contact point.
   limit, and slides at the kinetic coefficient above it
 - engine torque curve, gearbox, engine braking, open or locked differential,
   and aerodynamic drag and lift
+- `vehicle_dynamics::scenario` — run several `DynamicVehicle`s in one
+  `PhysicsWorld` from input tracks or a per-frame control function (fixed
+  index order); following metrics: time to collision (`gap / closing speed`,
+  `None` when not closing) and time headway; a stopping-distance meter
+  (horizontal path from brake-on until forward speed reaches zero); lossless
+  replay — initial state plus per-frame `DriverInput`s stored as raw `Fix128`
+  reproduce every chassis and wheel state bit for bit, with a versioned byte
+  encoding; malformed / truncated recordings and mismatched scenarios are
+  rejected with a typed `ReplayError`
 
 The older `vehicle::Vehicle` is unchanged. It drives on a flat plane at
 `ground_height` and applies the sum of all wheel forces at the centre of mass,
@@ -219,7 +228,10 @@ car.update(&mut world.bodies[chassis], &road, &env, dt);
 [`examples/vehicle_dynamics.rs`](examples/vehicle_dynamics.rs) runs this setup
 and checks locked-wheel stopping distances on dry, wet and icy roads against
 `v0² / (2 μ_k g)`, compares braking with and without ABS, and holds a car on a
-slope. The closed-form tests are in `tests/analytic_vehicle_dynamics.rs`.
+slope. [`examples/vehicle_scenario.rs`](examples/vehicle_scenario.rs) runs two
+cars in one lane, brakes the follower on time to collision, and replays the
+recorded run bit for bit. The closed-form tests are in
+`tests/analytic_vehicle_dynamics.rs` and `tests/analytic_vehicle_scenario.rs`.
 
 **Known limitations**
 
@@ -228,6 +240,8 @@ slope. The closed-form tests are in `tests/analytic_vehicle_dynamics.rs`.
   the longitudinal and lateral friction are evaluated on velocities from
   different points in the frame. The test
   `braking_with_steering_yaws_only_with_abs` is red for this reason.
+- Acceleration from rest is lower than the closed form; this defect is under
+  investigation.
 - In full sliding, the brush model turns the force towards the sliding
   direction; the Magic Formula model does not (it scales the pure-slip forces
   onto the friction ellipse).

@@ -173,6 +173,7 @@ API の詳細は [docs.rs](https://docs.rs/alice-physics) を参照
 - 路面は平面、斜面、高さ場、三角形メッシュ、SDF のいずれか グリップは路面材料に天候係数 (乾燥・湿潤・積雪・凍結) を掛けたもので、冠水路ではハイドロプレーニングによる低下が加わる
 - ロックした車輪は静止摩擦の限界より緩い斜面で車を止めたまま保持し、限界を超えると動摩擦係数で滑る
 - エンジンのトルク曲線、変速機、エンジンブレーキ、オープンまたはロックのデファレンシャル、空気抵抗と揚力
+- `vehicle_dynamics::scenario`: 1 つの `PhysicsWorld` で複数の `DynamicVehicle` を入力列または frame ごとの入力関数で走らせる (処理順は index 順で固定) / 追従指標: TTC (車間 ÷ 接近速度、接近していなければ `None`) と車間時間、停止距離計 / 無損失 replay: 初期状態と frame ごとの `DriverInput` を `Fix128` の raw 値で記録し全車の車体と全輪の状態を bit 一致で再現 (版番号付きバイト列) / 壊れた・切り詰めたバイト列や形の合わないシナリオは `ReplayError` で拒否
 
 従来の `vehicle::Vehicle` は変更していない
 こちらは `ground_height` の平面上だけを走り、全車輪の力の合計を重心に加えるので、車輪ごとの荷重移動、車輪のロック、タイヤモデルを持たない
@@ -192,12 +193,14 @@ car.update(&mut world.bodies[chassis], &road, &env, dt);
 ```
 
 [`examples/vehicle_dynamics.rs`](examples/vehicle_dynamics.rs) はこの構成を実行し、乾燥・湿潤・凍結路で 4 輪をロックした停止距離を `v0² / (2 μ_k g)` と比較し、ABS の有無で制動を比べ、斜面で車を保持する
-閉形式との比較テストは `tests/analytic_vehicle_dynamics.rs` にある
+[`examples/vehicle_scenario.rs`](examples/vehicle_scenario.rs) は同じ車線に 2 台を走らせ、TTC で後続車を制動し、記録した走行を bit 一致で再生する
+閉形式との比較テストは `tests/analytic_vehicle_dynamics.rs` と `tests/analytic_vehicle_scenario.rs` にある
 
 **既知の制限**
 
 - 前輪をロックしたまま操舵すると小さなヨーレートが残る (テストの場面で約 5e-3 rad/s、Coulomb 滑りの予測は 0)
   縦方向と横方向の摩擦を、フレーム内の異なる時点の速度で評価していることが原因で、テスト `braking_with_steering_yaws_only_with_abs` はこの理由で red のまま
+- 静止からの発進加速が閉形式より小さい欠陥を調査中
 - 完全滑りのとき、brush モデルは力の向きを滑り方向へ寄せるが、Magic Formula モデルは寄せない (純スリップの力を摩擦楕円上へ縮めるだけ)
 - 車輪の力はフレーム先頭で 1 回の撃力として加える
   サスペンションが安定なのは `(ω_n dt)² + 2 c dt / m_share < 4` (`ω_n = √(k / m_share)`、`m_share` は 1 輪が受け持つ質量) の範囲だけで、軽い車体に硬いばねを大きな `dt` で使うと振幅が増大する

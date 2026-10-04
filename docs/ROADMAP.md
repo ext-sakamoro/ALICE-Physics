@@ -36,11 +36,11 @@ increment 他) が**追加機材の調達待ち**であるかのように読め�
 | 路面 | ✅ 完了 | `RoadSurface`: 平面 / 斜面 / 高さ場 / 三角形メッシュ / SDF |
 | 天候 | ✅ 完了 | 天候係数 (乾燥 1 / 湿潤 0.7 / 積雪 0.24 / 凍結 0.12) と冠水時のハイドロプレーニング低下、転がり抵抗 |
 | パワートレイン | ✅ 完了 | トルク曲線、変速機、エンジンブレーキ、オープン / ロックのデファレンシャル、空気抵抗・揚力・風 |
-| シナリオ層 (TTC・多車両・無損失 replay) | ⏳ 進行中 | |
+| シナリオ層 (TTC・多車両・無損失 replay) | ✅ 完了 | `vehicle_dynamics::scenario`: 複数の `DynamicVehicle` を 1 つの `PhysicsWorld` で入力列または frame ごとの入力関数で走らせる (index 順で固定)、TTC (接近していなければ `None`) と車間時間、停止距離計、初期状態 + frame ごとの `DriverInput` を `Fix128` の raw 値で記録する bit 一致の replay (版番号付きバイト列、不正な入力は `ReplayError`) |
 | OpenSCENARIO / OpenDRIVE の読み込み、FMU 書き出し | 未着手 | |
 
-oracle は `tests/analytic_vehicle_dynamics.rs` (4 輪ロックの停止距離 `v0²/(2 μ_k g)` を乾燥・湿潤・凍結で、停止後の静止、ABS、低速旋回半径 `L / tan δ`、線形 2 輪モデルの定常ヨーレート、斜面の保持と滑り 他) と `tests/vehicle_dynamics_degenerate.rs` (退化入力 9 本) 使用例は `examples/vehicle_dynamics.rs` (停止距離を閉形式と比較、ABS の有無、斜面の保持を assert)
-⚠️ 残る既知の制限: 前輪をロックしたまま操舵するとヨーレート約 4.96e-3 rad/s が残り (Coulomb 滑りの予測は 0、閾値 1e-6)、`braking_with_steering_yaws_only_with_abs` は red 縦と横の摩擦をフレーム内の異なる時点の速度で評価していることが原因で、対処は未決定 Magic Formula は完全滑りで力の向きを補正しない (brush のみ) サスペンションはフレーム先頭の撃力で結合するので `(ω_n dt)² + 2 c dt / m_share < 4` の範囲でのみ安定 `HeightField` の `origin.y` 未反映と境界法線の既知欠陥は、路面の probe 側 (`sample_height` に従う、境界では片側差分) で影響を受けないようにしている
+oracle は `tests/analytic_vehicle_dynamics.rs` (4 輪ロックの停止距離 `v0²/(2 μ_k g)` を乾燥・湿潤・凍結で、停止後の静止、ABS、低速旋回半径 `L / tan δ`、線形 2 輪モデルの定常ヨーレート、斜面の保持と滑り 他) と `tests/vehicle_dynamics_degenerate.rs` (退化入力 9 本) 使用例は `examples/vehicle_dynamics.rs` (停止距離を閉形式と比較、ABS の有無、斜面の保持を assert) シナリオ層の oracle は `tests/analytic_vehicle_scenario.rs`、使用例は `examples/vehicle_scenario.rs` (2 台の追従、TTC による制動、記録の bit 一致再生)
+⚠️ 残る既知の制限: 前輪をロックしたまま操舵するとヨーレート約 4.96e-3 rad/s が残り (Coulomb 滑りの予測は 0、閾値 1e-6)、`braking_with_steering_yaws_only_with_abs` は red 縦と横の摩擦をフレーム内の異なる時点の速度で評価していることが原因で、対処は未決定 Magic Formula は完全滑りで力の向きを補正しない (brush のみ) サスペンションはフレーム先頭の撃力で結合するので `(ω_n dt)² + 2 c dt / m_share < 4` の範囲でのみ安定 静止からの発進加速が閉形式より小さい欠陥を調査中 `HeightField` の `origin.y` 未反映と境界法線の既知欠陥は、路面の probe 側 (`sample_height` に従う、境界では片側差分) で影響を受けないようにしている
 
 ### 第 63 increment (2026-10-03、全配線 program 第 21 件 — 並列 worker 5 本で wiring-status / oracle-status を処理)
 
