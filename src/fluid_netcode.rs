@@ -39,9 +39,21 @@ pub struct FluidSnapshot {
 
 impl FluidSnapshot {
     /// Create snapshot from fluid particle data
+    ///
+    /// `positions` and `velocities` are expected to describe the same
+    /// particle set and so have the same length. When they differ,
+    /// `particle_count` is the *larger* of the two, not `positions.len()`:
+    /// using the position count alone made `restore` deserialize only that
+    /// many velocities, silently dropping the surplus (data loss with no
+    /// error) while [`FluidSnapshot::verify`] still reported a match.
+    /// Recording the larger count instead means the shorter array's own
+    /// byte buffer is too small for it, so `restore` refuses the snapshot
+    /// outright through the length check [`deserialize_vec3_array`] already
+    /// performs, the same way it refuses a `particle_count` tampered to
+    /// exceed either buffer.
     #[must_use]
     pub fn capture(positions: &[Vec3Fix], velocities: &[Vec3Fix], frame: u64) -> Self {
-        let n = positions.len();
+        let n = positions.len().max(velocities.len());
         let pos_data = serialize_vec3_array(positions);
         let vel_data = serialize_vec3_array(velocities);
 
@@ -130,7 +142,16 @@ impl FluidDelta {
         let exceeds =
             |d: Vec3Fix| d.x.abs() > threshold || d.y.abs() > threshold || d.z.abs() > threshold;
 
-        for i in 0..new_positions.len().min(old_positions.len()) {
+        // The common prefix of all four slices, not just the two position
+        // ones: indexing `new_velocities`/`old_velocities` with a bound
+        // taken from the position arrays alone panics (index out of bounds)
+        // the moment a velocity slice is the shorter one.
+        let n = new_positions
+            .len()
+            .min(old_positions.len())
+            .min(new_velocities.len())
+            .min(old_velocities.len());
+        for i in 0..n {
             let pos_diff = new_positions[i] - old_positions[i];
             let vel_diff = new_velocities[i] - old_velocities[i];
 
@@ -156,10 +177,16 @@ impl FluidDelta {
     }
 
     /// Apply delta to base state
+    ///
+    /// Both base slices are bounds-checked before either one is written: a
+    /// `base_velocities` shorter than `base_positions` used to panic on the
+    /// velocity write after `base_positions[i]` had already been
+    /// overwritten, leaving the pair in a half-updated state for whichever
+    /// particle triggered it.
     pub fn apply(&self, base_positions: &mut [Vec3Fix], base_velocities: &mut [Vec3Fix]) {
         for (idx, &particle_idx) in self.changed_indices.iter().enumerate() {
             let i = particle_idx as usize;
-            if i < base_positions.len() {
+            if i < base_positions.len() && i < base_velocities.len() {
                 base_positions[i] = self.positions[idx];
                 base_velocities[i] = self.velocities[idx];
             }

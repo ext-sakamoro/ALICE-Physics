@@ -189,7 +189,6 @@ fn checksum_distinguishes_where_the_position_stream_ends() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S5W2-013: capture accepts position and velocity slices of different length; with fewer positions than velocities the surplus velocities are silently dropped on restore (capture(&[a], &[b, c]).restore() returns one velocity) while verify() still passes"]
 fn capture_with_mismatched_lengths_must_not_silently_lose_velocities() {
     let a = v3(1.0, 0.0, 0.0);
     let b = v3(2.0, 0.0, 0.0);
@@ -331,7 +330,6 @@ fn compression_ratio_is_changed_over_total() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S5W2-015: FluidDelta::compute indexes velocities with the position-array bound and panics (index out of bounds) when the velocity slices are shorter than the position slices instead of treating the particle sets as the common prefix"]
 fn compute_with_shorter_velocity_slices_must_not_panic() {
     let old = sample(3);
     let new = sample(3);
@@ -342,7 +340,6 @@ fn compute_with_shorter_velocity_slices_must_not_panic() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S5W2-016: apply() bounds-checks only base_positions; a base_velocities slice shorter than base_positions panics (index out of bounds) after the positions were already overwritten"]
 fn apply_with_a_short_velocity_base_must_not_panic() {
     let old = sample(3);
     let mut new = old.clone();
