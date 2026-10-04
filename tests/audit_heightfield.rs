@@ -384,7 +384,6 @@ fn aabb_spans_the_grid_and_the_height_range() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S4W3-005: aabb() on a field with no grid points panics (heights[0] index out of bounds) although get_height / sample_height / collide_sphere all treat the empty field as having no surface"]
 fn aabb_of_an_empty_field_does_not_panic() {
     let f = HeightField::new(Vec::new(), 0, 0, Fix128::ONE, Vec3Fix::ZERO);
     let r = catch_unwind(AssertUnwindSafe(|| f.aabb()));
