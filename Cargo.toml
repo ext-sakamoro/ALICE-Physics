@@ -111,6 +111,10 @@ name = "particle_rain_landing"
 required-features = ["std"]
 
 [[example]]
+name = "critically_damped_tether"
+required-features = ["std"]
+
+[[example]]
 name = "cfd_smoke_plume"
 required-features = ["std"]
 

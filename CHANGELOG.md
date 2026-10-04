@@ -17,6 +17,11 @@ were introduced during that release window.
 
 - **particle**: `ParticleSystem::step_with_landing` と `LandingTarget` / `LandingEvent` を追加した 粒子は落下中に経路上の点で当たり相手を問い合わせ、最初に占有された点で着地イベント (粒子 index・当たり相手の index・位置・外向き法線・step 内の時刻) を返し、その粒子を指定の emitter から再放出する (雨粒が形状に当たって再び降る用途) 当たり相手は world 座標の `SdfField`、配置済みの `SdfCollider` (`collide_point_sdf` 経由)、SDF でない相手向けの点の問い合わせ `Fn(Vec3Fix) -> Option<Vec3Fix>` の 3 種 経路は `max_travel` 以下の間隔で標本化するので、`max_travel` より厚い障害物は dt によらず飛び越さない 1 step の標本数が 2^20 を超える要求は panic する 当たり相手を渡さない場合は `step` と bit 一致する 既存の `step` は変更していない oracle は `tests/analytic_particle_landing.rs` (自由落下の着地時刻を半陰的 Euler の閉形式と `sqrt(2h/g)` の誤差上限 `[t* − 3dt/2, t* + dt]` に突合、厚み ε の帯を 1 step 100ε〜12345ε の移動量で落としても飛び越さない、同 seed の bit 一致、再放出による生存数の保存)、使用例は `examples/particle_rain_landing.rs`
 
+### Added — 臨界減衰で目標へ引き戻す tether (3D) の使い方を example と oracle で固定
+
+- 新しい API は追加していない static anchor + `DistanceConstraint` (rest 0、compliance `1/(m ω²)`) + body の `linear_damping` を離散臨界値 `d = 1 + 2a² − 2a·sqrt(1 + a²)` (a = ω·dt) にすると、`substeps = 1` / `iterations = 1` / `SolverConfig::damping = 1` で 1 step の写像の固有値が `λ = 1 − a/sqrt(1 + a²)` に重なり、閉形式 `x(t) = (x0 + (v0 + ω x0) t)·e^(−ωt)` と同じ `(A + B n) λⁿ` の形になる 静止からの overshoot は 0、閉形式との差は `0.42·ω·dt·|x0|` 以下 (導出は test の doc) damping は body ごとなので ω の違う tether を 1 つの world に置ける oracle は `tests/analytic_critically_damped_tether.rs` (連続の閉形式との誤差上限、接線方向の初速を含む離散閉形式との 1e-9 一致、ω の違う 2 本の共存、bit 一致の再生)、使用例は `examples/critically_damped_tether.rs` 既定の sleep 判定 (|v| < 0.01 が 60 frame) は減衰の末尾を凍結するので、目標を動かす場合は `wake_body` が要る
+- `Joint::Spring` はこの用途に使えない: 減衰が anchor 方向の成分にしか掛からないので rest 0 では中心力になり、接線方向の速度が減衰しない また `solve_spring_joint` は `F·dt` を位置に加えるので速度変化が `F/m` になり、`stiffness` は実質 `k/h` として効く (未修正、別途判断)
+
 ### Fixed — 全 module 監査で見つかった欠陥のうち 33 件 (2 回目)
 
 - **joint**: ball / hinge / fixed / slider / cone-twist の位置拘束が並進のみを補正していたので、lever arm (一般化逆質量) と回転補正を加えた D6 の角度誤差は `local_frame_b` を基準に測るようにし、D6 の逐次補正で後続の拘束が古い値を読む問題も直した **全 joint の位置拘束の結果が変わる** (AUD-A-S1W6-006 / 010)
