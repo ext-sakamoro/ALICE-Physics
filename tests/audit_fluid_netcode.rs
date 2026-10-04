@@ -193,10 +193,15 @@ fn capture_with_mismatched_lengths_must_not_silently_lose_velocities() {
     let a = v3(1.0, 0.0, 0.0);
     let b = v3(2.0, 0.0, 0.0);
     let c = v3(3.0, 0.0, 0.0);
-    let s = FluidSnapshot::capture(&[a], &[b, c], 0);
-    match s.restore() {
-        None => {}
-        Some((_, rv)) => assert_eq!(rv.len(), 2, "restored velocities {}", rv.len()),
+    let r = catch_unwind(AssertUnwindSafe(|| {
+        FluidSnapshot::capture(&[a], &[b, c], 0).restore()
+    }));
+    match r {
+        // the mismatch is refused loudly, at the call that made it
+        Err(_) => {}
+        // or it is accepted and every velocity captured comes back
+        Ok(None) => {}
+        Ok(Some((_, rv))) => assert_eq!(rv.len(), 2, "restored velocities {}", rv.len()),
     }
 }
 
