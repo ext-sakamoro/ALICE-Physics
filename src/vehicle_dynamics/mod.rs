@@ -377,16 +377,29 @@ fn tyre_lateral_slope(
     }
 }
 
-/// Gauss-Seidel sweeps of the friction solve.
+/// Maximum Gauss-Seidel sweeps of the friction solve; the solve stops
+/// earlier once no impulse changes by more than [`friction_tolerance`].
 ///
-/// The residual of a symmetric case that must give exactly zero yaw
-/// (four locked wheels sliding on an isotropic road with the front wheels
-/// steered, `tests/analytic_vehicle_dynamics.rs`) falls geometrically with
-/// the sweep count: max yaw rate 1.2e-5 rad/s at 8 sweeps, 1.3e-9 at 16,
-/// 2.4e-13 at 24. Alternating the wheel order between sweeps does not
-/// change it (1.3e-5 at 8), so the residual is convergence, not ordering
-/// bias.
-const FRICTION_SWEEPS: usize = 16;
+/// Symmetric scenes must come out symmetric: four locked wheels sliding on
+/// an isotropic road with the front wheels steered must give zero yaw, and
+/// the two driven wheels of a mirror-symmetric car launching under an open
+/// differential must carry equal force (`tests/analytic_vehicle_dynamics.rs`).
+/// Gauss-Seidel (wheel index order) solves one side first, so the
+/// unconverged residual shows up as asymmetry. Measured: max yaw rate
+/// 1.2e-5 rad/s at 8 sweeps, 1.3e-9 at 16, 2.4e-13 at 24; launch left /
+/// right force difference 1.3e-5 N at 32 sweeps, below 1e-6 N at 64 (the
+/// saturated launch converges slowest: the ellipse projection makes the
+/// sweep non-smooth). Alternating the order between sweeps does not speed
+/// this up (1.2e-4 N at 16) and lets a light wheel of a car held on a slope
+/// take its static limit first and break away (1.7 mm drift in one frame),
+/// so the order stays fixed.
+const FRICTION_SWEEPS: usize = 64;
+
+/// Convergence threshold of the friction solve: largest impulse change of a
+/// sweep, `1e-12` N s (a force change of `6e-11` N at 60 Hz).
+fn friction_tolerance() -> Fix128 {
+    Fix128::from_ratio(1, 1_000_000_000_000)
+}
 
 /// A spin group re-solved inside the friction solve.
 #[derive(Clone, Debug)]
@@ -1165,6 +1178,7 @@ impl DynamicVehicle {
             e_sum / Fix128::from_int(hold.len() as i64)
         };
         for _ in 0..FRICTION_SWEEPS {
+            let mut largest = Fix128::ZERO;
             for &i in hold {
                 let s = sc[i];
                 let Some(grip) = s.grip else { continue };
@@ -1191,6 +1205,7 @@ impl DynamicVehicle {
                 nx = clamp(nx, -brake_cap, brake_cap);
                 clipped[i] = nx != want_x || ny != want_y;
                 let (ddx, ddy) = (nx - lam_x[i], ny - lam_y[i]);
+                largest = largest.max(ddx.abs()).max(ddy.abs());
                 lam_x[i] = nx;
                 lam_y[i] = ny;
                 if !(ddx.is_zero() && ddy.is_zero()) {
@@ -1256,11 +1271,15 @@ impl DynamicVehicle {
                     grip.transverse_static * load * dt,
                 );
                 let (ddx, ddy) = (nx - lam_x[i], ny - lam_y[i]);
+                largest = largest.max(ddx.abs()).max(ddy.abs());
                 lam_x[i] = nx;
                 lam_y[i] = ny;
                 if !(ddx.is_zero() && ddy.is_zero()) {
                     chassis.apply_impulse_at(s.x_dir * ddx + s.y_dir * ddy, point);
                 }
+            }
+            if largest <= friction_tolerance() {
+                break;
             }
         }
         for &i in free.iter().chain(hold) {
