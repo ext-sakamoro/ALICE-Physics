@@ -315,6 +315,38 @@ fn clamp_friction(j: Fix128, slip: Fix128, m_eff: Fix128) -> Fix128 {
     }
 }
 
+/// Tyre force for slip `(κ, tan α)` at contact-point forward velocity `v_x`.
+/// The tyre models are written for forward travel (the brush theoretical slip
+/// `σ = κ / (1 + κ)` treats `κ = +1` as driving), so for `v_x < 0` the wheel
+/// frame is mirrored (`x, y → −x, −y`): the model is evaluated at
+/// `(−κ, −tan α)` and the force negated. A wheel locked while sliding
+/// backwards thus sees `κ' = −1`, full sliding.
+fn tyre_force(
+    model: &TireModel,
+    kappa: Fix128,
+    tan_a: Fix128,
+    v_x: Fix128,
+    load: Fix128,
+    grip: crate::anisotropic_friction::AnisotropicFriction,
+) -> tire::TireForce {
+    let mirror = v_x < Fix128::ZERO;
+    let (k, t) = if mirror { (-kappa, -tan_a) } else { (kappa, tan_a) };
+    let f = model.force(&tire::TireInput {
+        slip_ratio: k,
+        slip_tan_alpha: t,
+        normal_load: load,
+        grip,
+    });
+    if mirror {
+        tire::TireForce {
+            longitudinal: -f.longitudinal,
+            lateral: -f.lateral,
+        }
+    } else {
+        f
+    }
+}
+
 /// `(a / ca)² + (b / cb)² ≤ 1`; a zero semi-axis admits only a zero component.
 fn within_ellipse(a: Fix128, b: Fix128, ca: Fix128, cb: Fix128) -> bool {
     let part = |v: Fix128, c: Fix128| -> Option<Fix128> {
@@ -679,12 +711,7 @@ impl DynamicVehicle {
                     s.grip = Some(grip);
                     if st.normal_load > Fix128::ZERO {
                         let kappa = (st.omega * wc.radius - s.v_x) / s.denom;
-                        let f = self.config.tire.force(&tire::TireInput {
-                            slip_ratio: kappa,
-                            slip_tan_alpha: s.v_y / s.denom,
-                            normal_load: st.normal_load,
-                            grip,
-                        });
+                        let f = tyre_force(&self.config.tire, kappa, s.v_y / s.denom, s.v_x, st.normal_load, grip);
                         s.fx_start = f.longitudinal;
                         let mu = grip.longitudinal_static;
                         let c = self.config.tire.longitudinal_slope(st.normal_load, mu);
@@ -755,12 +782,7 @@ impl DynamicVehicle {
             st.slip_ratio = kappa;
             st.slip_tan_alpha = tan_a;
             if st.normal_load > Fix128::ZERO {
-                let f = self.config.tire.force(&tire::TireInput {
-                    slip_ratio: kappa,
-                    slip_tan_alpha: tan_a,
-                    normal_load: st.normal_load,
-                    grip,
-                });
+                let f = tyre_force(&self.config.tire, kappa, tan_a, s.v_x, st.normal_load, grip);
                 fx.push(f.longitudinal);
                 fy.push(f.lateral);
             } else {
@@ -1652,5 +1674,53 @@ mod tests {
             drift.abs() <= fx(1, 1000),
             "drift along the slope over 600 frames: {drift:?} m"
         );
+    }
+}
+#[cfg(test)]
+mod dbg_tmp {
+    use super::*;
+    use crate::anisotropic_friction::AnisotropicFriction;
+    use crate::math::QuatFix;
+    use crate::solver::{PhysicsWorld, SolverConfig};
+    use surface::{InclinedPlane, Weather};
+    fn run(grade: Fix128, damping: Fix128) -> (f64, f64, f64) {
+        let theta = grade.atan();
+        let mut cfg = DynamicVehicleConfig::passenger_car();
+        cfg.ackermann = false;
+        cfg.wheel_inertia = Fix128::ONE;
+        cfg.brakes.max_torque_front = Fix128::from_int(10000);
+        cfg.brakes.max_torque_rear = Fix128::from_int(10000);
+        cfg.aero.drag_area = Fix128::ZERO;
+        let mut world = PhysicsWorld::new(SolverConfig::default());
+        world.config.damping = damping;
+        let (sn, cs) = theta.sin_cos();
+        let normal = Vec3Fix::new(Fix128::ZERO, cs, -sn);
+        let tangent = Vec3Fix::new(Fix128::ZERO, sn, cs);
+        let road = InclinedPlane { point: Vec3Fix::ZERO, normal };
+        let mut body = RigidBody::new_dynamic(normal * Fix128::from_f64(0.2 + 0.3 + 0.3 * (1.0 - 10000.0 * cs.to_f64() / 200000.0)), Fix128::from_int(1000));
+        let rot = QuatFix::from_axis_angle(Vec3Fix::UNIT_X, -theta);
+        body.rotation = rot; body.prev_rotation = rot;
+        body.inv_inertia = Vec3Fix::new(Fix128::from_f64(1.0/1500.0), Fix128::from_f64(1.0/1800.0), Fix128::from_f64(1.0/500.0));
+        let idx = world.add_body(body);
+        let cond = RoadCondition { material: AnisotropicFriction { longitudinal_static: Fix128::ONE, longitudinal_kinetic: Fix128::from_ratio(8,10), transverse_static: Fix128::ONE, transverse_kinetic: Fix128::from_ratio(8,10), slip_threshold_m_s: Fix128::from_ratio(5,100)}, weather: Weather::Dry, rolling_resistance: Fix128::ZERO };
+        let mut v = DynamicVehicle::new(cfg);
+        v.input.brake = Fix128::ONE;
+        let e = Environment { condition: &cond, wind: None, time: Fix128::ZERO, gravity: world.config.gravity };
+        let dt = Fix128::from_ratio(1,60);
+        for _ in 0..120 { v.update(&mut world.bodies[idx], &road, &e, dt); world.step(dt); }
+        let p0 = world.bodies[idx].position;
+        let (mut a, mut b) = (0.0f64, 0.0f64);
+        for k in 0..600 {
+            v.update(&mut world.bodies[idx], &road, &e, dt); world.step(dt);
+            let d = (world.bodies[idx].position - p0).dot(tangent).to_f64().abs();
+            if k < 300 { a = a.max(d) } else { b = b.max(d) }
+        }
+        (a, b, (world.bodies[idx].position - p0).dot(tangent).to_f64())
+    }
+    #[test]
+    fn dbg_hold() {
+        for d in [Fix128::ONE, Fix128::from_ratio(99,100)] {
+            std::println!("damping {:?}: {:?}", d.to_f64(), run(Fix128::from_ratio(1,2), d));
+        }
     }
 }
