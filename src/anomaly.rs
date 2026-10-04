@@ -283,8 +283,8 @@ impl MadDetector {
     ///
     /// NaN is rejected outright: it is not stored in `recent_values` and
     /// not pushed into `values_median`, so it never desynchronizes the
-    /// two and never reaches the deviation computation in
-    /// [`Self::update_cache`].
+    /// two and never reaches the deviation computation in this type's
+    /// private `update_cache` step.
     pub fn observe(&mut self, value: f64) {
         if value.is_nan() {
             return;
