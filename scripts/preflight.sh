@@ -7,12 +7,24 @@
 # locally (workflow YAML parse, wasm32 dev-dep build, no_std `vec!`); this
 # file is the checklist so that cannot repeat.
 #
-# usage: scripts/preflight.sh [--quick]   (--quick skips the slow test suites)
+# usage: scripts/preflight.sh [--quick | --fast]
+#   (none)   every static gate + the full test suites (what CI runs on 5 OS)
+#   --fast   every static gate (incl. the SCIP / L0 ratchet) + only the tests that
+#            reference the modules changed since origin/main + the determinism goldens
+#            -- the local push gate; CI runs the full suites (2026-10-04: no full-suite
+#            run ever found anything the static gates had not, and it costs tens of minutes)
+#   --quick  every static gate, no test at all
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 quick=0
-[[ "${1:-}" == "--quick" ]] && quick=1
+fast=0
+case "${1:-}" in
+  --quick) quick=1 ;;
+  --fast) fast=1 ;;
+  "") ;;
+  *) echo "usage: scripts/preflight.sh [--quick | --fast]" >&2; exit 2 ;;
+esac
 NATIVE='std,simd,parallel,ffi,gpu-solver-bridge'
 
 step() { printf '\n\033[1;34m== %s\033[0m\n' "$*"; }
@@ -44,6 +56,9 @@ python3 scripts/wiring_guard.py
 step "status generators oracle (docs/wiring-status.md / docs/oracle-status.md の生成器)"
 python3 scripts/test_gen_status.py
 
+step "affected-test selector oracle (preflight --fast)"
+python3 scripts/test_affected_tests.py
+
 # Fast static gates that failed late in practice (no_std build, public API drift)
 step "no_std rlib build (cdylib crate-type needs std, so rustc --crate-type rlib)"
 cargo rustc --lib --no-default-features --crate-type rlib
@@ -64,19 +79,19 @@ fi
 # Cheap, failure-prone gates run first so a red shows up in minutes, not after
 # the whole test suite (2026-10-04: the L0 ratchet used to be the LAST step, so a
 # new unreached pub item cost a full cargo test run before it was reported).
-# --quick keeps its old coverage (it does not need rust-analyzer).
-if [[ $quick -eq 0 ]]; then
-  # CI job `scip`: rust-analyzer index (about a minute), known-defect symbol
-  # resolution, and the L0 ratchet (scripts/integration-baseline.txt)
-  step "SCIP checks (audit_refs --check, scip_reach --check-baseline)"
-  if command -v rust-analyzer >/dev/null && rust-analyzer --version >/dev/null 2>&1; then
-    scripts/scip_index.sh
-    python3 scripts/audit_refs.py --check
-    python3 scripts/scip_reach.py --check-baseline
-  else
-    echo "rust-analyzer not installed: rustup component add rust-analyzer" >&2
-    exit 1
-  fi
+# CI job `scip`: rust-analyzer index (about a minute), known-defect symbol
+# resolution, and the L0 ratchet (scripts/integration-baseline.txt).
+# Without rust-analyzer, --quick / --fast warn and skip; the full run fails.
+step "SCIP checks (audit_refs --check, scip_reach --check-baseline)"
+if command -v rust-analyzer >/dev/null && rust-analyzer --version >/dev/null 2>&1; then
+  scripts/scip_index.sh
+  python3 scripts/audit_refs.py --check
+  python3 scripts/scip_reach.py --check-baseline
+elif [[ $quick -eq 1 || $fast -eq 1 ]]; then
+  echo "skip: rust-analyzer not installed (rustup component add rust-analyzer); CI runs this check" >&2
+else
+  echo "rust-analyzer not installed: rustup component add rust-analyzer" >&2
+  exit 1
 fi
 
 step "clippy -D warnings (default, all targets)"
@@ -106,6 +121,12 @@ RUSTDOCFLAGS="-Dwarnings" cargo doc --lib --no-deps --features "$NATIVE"
 
 if [[ $quick -eq 1 ]]; then
   echo; echo "preflight --quick OK (test suites skipped)"; exit 0
+fi
+
+if [[ $fast -eq 1 ]]; then
+  step "affected tests (modules changed since origin/main + determinism goldens)"
+  python3 scripts/affected_tests.py --features "$NATIVE" --run
+  echo; echo "preflight --fast OK (static gates + affected tests; the full suites run in CI)"; exit 0
 fi
 
 step "cargo test (default features, all targets)"
