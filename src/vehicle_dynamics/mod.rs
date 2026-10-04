@@ -533,7 +533,10 @@ impl DynamicVehicle {
     ///    (see "Static friction") gets its hold impulse. Otherwise:
     ///    - longitudinal: `F_x dt` (tyre force at the updated spin `ω'`),
     ///      clamped by the effective mass `m_x = 1/(m⁻¹ + (r×x)·I⁻¹(r×x))` so
-    ///      that it never reverses the slip `v_x − ω' r` it opposes; then
+    ///      that it never reverses the slip `v_x − ω' r` it opposes (`v_x`
+    ///      at the frame start, the tyre force's evaluation point, shifted by
+    ///      the friction impulses of the wheels applied before; the normal
+    ///      impulses are excluded); then
     ///      rolling resistance `C_rr F_z` against `v_x` on wheels with
     ///      `ω' ≠ 0`, clamped the same way on `v_x` (it does not act on the
     ///      spin). The longitudinal side stays semi-implicit through the wheel
@@ -867,6 +870,7 @@ impl DynamicVehicle {
                     .apply_impulse_at(st.contact_normal * (st.normal_load * dt), st.contact_point);
             }
         }
+        let after_normal = *chassis;
         let c_rr = env.condition.rolling_resistance;
         let mut free: Vec<usize> = Vec::with_capacity(n);
         for i in 0..n {
@@ -906,8 +910,14 @@ impl DynamicVehicle {
                 (jx, jy)
             } else {
                 self.wheels[i].anchor = None;
+                // slip opposed by the clamp: the frame-start one (the same
+                // evaluation point as the tyre force `fx[i]`) plus what the
+                // friction impulses of the wheels before this one changed.
+                // The normal impulses applied just before are left out: their
+                // pitch transient would flip a near-zero slip.
                 let vc = point_velocity(chassis, s.arm);
-                let jx = clamp_friction(fx[i] * dt, vc.dot(s.x_dir) - omega * radius, mx);
+                let shift = (vc - point_velocity(&after_normal, s.arm)).dot(s.x_dir);
+                let jx = clamp_friction(fx[i] * dt, s.v_x + shift - omega * radius, mx);
                 if !jx.is_zero() {
                     chassis.apply_impulse_at(s.x_dir * jx, point);
                 }
