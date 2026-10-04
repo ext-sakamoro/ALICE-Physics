@@ -217,10 +217,9 @@ fn kinematic_body_reaches_its_target_in_one_step() {
 /// `set_kinematic_target` doc: "Velocity is automatically computed from the position
 /// change." The target is 1 m away and reached within dt = 1/64 s, so the body moved at
 /// 64 m/s over the frame and `velocity` after the step should read (64, 0, 0).
-/// Under XPBD the body jumps in the first substep and the other 7 substeps see
-/// position == target, so `update_velocities` leaves velocity 0.
+/// The body closes the gap in equal parts over the substeps, so the velocity derived after
+/// the last substep is the frame velocity, and the body ends on the target.
 #[test]
-#[ignore = "known defect: AUD-A-S1W2-002: kinematic body velocity after step() is 0, not (target - position) / dt (the velocity is derived in substep 1 then overwritten to 0 by substeps 2..8)"]
 fn kinematic_velocity_after_a_step_is_the_displacement_over_dt() {
     let mut w = PhysicsWorld::new(weightless());
     let k = w.add_body(RigidBody::new_kinematic(Vec3Fix::ZERO));
@@ -234,6 +233,24 @@ fn kinematic_velocity_after_a_step_is_the_displacement_over_dt() {
         1e-6,
         "kinematic vx",
     );
+}
+
+/// The same distribution holds for the rotation: a target rotated by 0.5 rad about z within
+/// dt = 1/64 gives an angular velocity of 32 rad/s about z after the step (to NLERP and small-angle accuracy,
+/// 1e-2 relative), and the body ends exactly on the target pose.
+#[test]
+fn kinematic_pose_after_a_step_is_the_target_and_angular_velocity_matches() {
+    let mut w = PhysicsWorld::new(weightless());
+    let k = w.add_body(RigidBody::new_kinematic(Vec3Fix::ZERO));
+    let rot = QuatFix::from_axis_angle(v3(0.0, 0.0, 1.0), fx(0.5));
+    w.get_body_mut(k)
+        .unwrap()
+        .set_kinematic_target(v3(1.0, 0.0, 0.0), rot);
+    w.step(dt());
+    let b = w.get_body(k).unwrap();
+    assert_eq!(b.position, v3(1.0, 0.0, 0.0));
+    assert_eq!(b.rotation, rot);
+    close(b.angular_velocity.z, 32.0, 32.0 * 1e-2, "kinematic wz");
 }
 
 // ---------------------------------------------------------------------------
