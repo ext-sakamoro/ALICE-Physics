@@ -7,10 +7,10 @@ References are resolved to one definition each, so items that share a name are t
 
 | Level | Meaning | Count |
 |-------|---------|------:|
-| L0 | not reached by any non-test code, examples included | 252 |
-| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 1834 |
-| live | reached without examples (crate-internal roots or a binding) | 337 |
-| | **total** | **2423** |
+| L0 | not reached by any non-test code, examples included | 242 |
+| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 1998 |
+| live | reached without examples (crate-internal roots or a binding) | 341 |
+| | **total** | **2581** |
 
 L1 is a label, not a defect: a module users call directly is example-only inside this crate.
 It does mean the item is not reached from `PhysicsWorld`, another module, or a binding.
@@ -19,7 +19,7 @@ It does mean the item is not reached from `PhysicsWorld`, another module, or a b
 
 `scripts/wiring-baseline.txt` lists 37 unwired items.
 
-### L0 here but not in the baseline (212)
+### L0 here but not in the baseline (202)
 
 The name-based guard counts these as wired; resolved references find no caller.
 
@@ -36,7 +36,6 @@ The name-based guard counts these as wired; resolved references find no caller.
 - `src/bvh.rs::LinearBvh::stats`
 - `src/cfd_solver.rs::CfdSolver::step_multigrid`
 - `src/cfd_solver.rs::RansState::set`
-- `src/cloth.rs::Cloth::step_with_sdf`
 - `src/cloth_fluid.rs::ClothFluidCoupling`
 - `src/collider.rs::ScaledShape`
 - `src/collider.rs::ScaledShape::new`
@@ -75,7 +74,6 @@ The name-based guard counts these as wired; resolved references find no caller.
 - `src/cylinder.rs::Cylinder::surface_area`
 - `src/cylinder.rs::Cylinder::with_rotation`
 - `src/debug_render.rs::DebugDrawData::aabb`
-- `src/deformable.rs::DeformableBody::step_with_sdf`
 - `src/dynamic_bvh.rs::DynamicAabbTree::node_count`
 - `src/dynamic_bvh.rs::DynamicAabbTree::query`
 - `src/ellipsoid.rs::Ellipsoid::aabb`
@@ -114,8 +112,6 @@ The name-based guard counts these as wired; resolved references find no caller.
 - `src/filter.rs::CollisionFilter::ALL`
 - `src/filter.rs::DEFAULT`
 - `src/flow_viz.rs::Streamlines::is_empty`
-- `src/fluid.rs::Fluid::step_with_sdf`
-- `src/force.rs::ForceFieldInstance::with_affected_bodies`
 - `src/gpu_sdf.rs::GpuSdfBatch::clear`
 - `src/heightfield.rs::HeightField::aabb`
 - `src/joint.rs::BallJoint::with_compliance`
@@ -179,11 +175,6 @@ The name-based guard counts these as wired; resolved references find no caller.
 - `src/replay.rs::ReplayRecorder::flush`
 - `src/scene_io.rs::PhysicsConfig::new`
 - `src/sdf_adaptive.rs::AdaptiveSdfEvaluator::resize`
-- `src/sdf_character.rs::MoveOutcome`
-- `src/sdf_character.rs::MoveOutcome::resolved_position`
-- `src/sdf_character.rs::SdfCharacter::apply_gravity`
-- `src/sdf_character.rs::SdfCharacter::move_and_slide`
-- `src/sdf_character.rs::SdfCharacter::step`
 - `src/sdf_collider.rs::SdfCollider::new_dynamic`
 - `src/sdf_collider.rs::SdfCollider::update_cache`
 - `src/sdf_manifold.rs::SdfManifold::is_empty`
@@ -207,7 +198,6 @@ The name-based guard counts these as wired; resolved references find no caller.
 - `src/sleeping.rs::IslandManager::wake_body`
 - `src/solver.rs::PhysicsWorld::begin_frame`
 - `src/solver.rs::PhysicsWorld::end_frame`
-- `src/solver.rs::PhysicsWorld::raycast`
 - `src/solver.rs::TgsCacheStats::new`
 - `src/solver_tgs.rs::BodyRef`
 - `src/solver_tgs.rs::ContactRef`
@@ -242,7 +232,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 
 - (none)
 
-## L0 — unreached (252)
+## L0 — unreached (242)
 
 - `src/anisotropic.rs::AnisotropicStrength::from_fdm_material`
 - `src/anisotropic.rs::OrthotropicElasticity::from_fdm_material`
@@ -263,7 +253,6 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/bvh.rs::LinearBvh::stats`
 - `src/cfd_solver.rs::CfdSolver::step_multigrid`
 - `src/cfd_solver.rs::RansState::set`
-- `src/cloth.rs::Cloth::step_with_sdf`
 - `src/cloth_fluid.rs::ClothFluidCoupling`
 - `src/cloth_fluid.rs::apply_cloth_boundary_to_fluid`
 - `src/cloth_fluid.rs::apply_cloth_boundary_to_fluid_with_residual`
@@ -308,7 +297,6 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/cylinder.rs::Cylinder::surface_area`
 - `src/cylinder.rs::Cylinder::with_rotation`
 - `src/debug_render.rs::DebugDrawData::aabb`
-- `src/deformable.rs::DeformableBody::step_with_sdf`
 - `src/dynamic_bvh.rs::DynamicAabbTree::node_count`
 - `src/dynamic_bvh.rs::DynamicAabbTree::query`
 - `src/ellipsoid.rs::Ellipsoid::aabb`
@@ -361,8 +349,6 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/filter.rs::CollisionFilter::ALL`
 - `src/filter.rs::DEFAULT`
 - `src/flow_viz.rs::Streamlines::is_empty`
-- `src/fluid.rs::Fluid::step_with_sdf`
-- `src/force.rs::ForceFieldInstance::with_affected_bodies`
 - `src/gpu_sdf.rs::GpuSdfBatch::clear`
 - `src/heightfield.rs::HeightField::aabb`
 - `src/joint.rs::BallJoint::with_compliance`
@@ -434,11 +420,6 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/replay.rs::ReplayRecorder::flush`
 - `src/scene_io.rs::PhysicsConfig::new`
 - `src/sdf_adaptive.rs::AdaptiveSdfEvaluator::resize`
-- `src/sdf_character.rs::MoveOutcome`
-- `src/sdf_character.rs::MoveOutcome::resolved_position`
-- `src/sdf_character.rs::SdfCharacter::apply_gravity`
-- `src/sdf_character.rs::SdfCharacter::move_and_slide`
-- `src/sdf_character.rs::SdfCharacter::step`
 - `src/sdf_collider.rs::SdfCollider::new_dynamic`
 - `src/sdf_collider.rs::SdfCollider::update_cache`
 - `src/sdf_manifold.rs::SdfManifold::is_empty`
@@ -462,7 +443,6 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/sleeping.rs::IslandManager::wake_body`
 - `src/solver.rs::PhysicsWorld::begin_frame`
 - `src/solver.rs::PhysicsWorld::end_frame`
-- `src/solver.rs::PhysicsWorld::raycast`
 - `src/solver.rs::TgsCacheStats::new`
 - `src/solver_tgs.rs::BodyRef`
 - `src/solver_tgs.rs::ContactRef`
@@ -538,7 +518,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - Methods are listed as `file::Type::method`, so same-named methods of different types in one file are told apart.
 - Items in `src/ffi.rs`, `src/python.rs` and `src/wasm.rs` are roots and are not listed.
 
-## L1 — example-only (1834)
+## L1 — example-only (1998)
 
 - `src/acoustic_wave.rs`: `AIR_20C`, `CONCRETE_LONGITUDINAL`, `STEEL_LONGITUDINAL`, `WATER_25C`, `leapfrog_step`, `stable_dt`
 - `src/aeroelasticity.rs`: `VivParameters`, `VivParameters::facchinetti_reference`, `VivState`, `VivState::seeded`, `viv_step`
@@ -561,7 +541,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/cfd_solver.rs`: `AdvectionScheme`, `CfdSolver`, `CfdSolver::MAX_DT_CAP`, `CfdSolver::compute_max_dt`, `CfdSolver::new`, `CfdSolver::step`, `CfdSolver::step_adaptive`, `CfdSolver::step_flip`, `CfdSolver::step_flip_with`, `CfdSolver::step_rans`, `CfdSolver::step_with_options`, `CfdSolver::step_with_pressure_solver`, `LevelSetReinit`, `PressureSolver`, `PressureSolverError`, `ProjectionReport`, `RansReport`, `RansState`, `RansState::cell_dims`, `RansState::eddy_viscosity`, `RansState::epsilon`, `RansState::k`, `RansState::model`, `RansState::new`, `RansState::prescribed`, `RansState::uniform`, `StepError`, `StepOptions`, `StepOptions::new`, `StepOptions::pressure`, `StepOptions::wall_model`, `StepOptions::with_level_set_reinit`, `StepOptions::with_wall_model`, `StepReport`, `TurbulenceModel`, `TurbulenceSummary`, `WallModel`, `WallModel::log_law`, `WallShearSummary`
 - `src/character.rs`: `CharacterConfig`, `CharacterController`, `CharacterController::apply_gravity`, `CharacterController::compute_push_impulses`, `CharacterController::feet_position`, `CharacterController::get_platform_velocity`, `CharacterController::move_and_slide`, `CharacterController::new`, `CharacterController::new_default`, `MoveResult`, `PushImpulse`
 - `src/character_state.rs`: `CharacterState`, `CharacterState::accepts_locomotion`, `CharacterState::name`, `CharacterStateContext`, `CharacterStateContext::standing`, `transition`
-- `src/cloth.rs`: `Cloth`, `Cloth::compute_normals`, `Cloth::new_grid`, `Cloth::particle_count`, `Cloth::pin`, `Cloth::pin_top_row`, `Cloth::remaining_self_contact_crossings`, `Cloth::step`, `ClothConfig`
+- `src/cloth.rs`: `Cloth`, `Cloth::compute_normals`, `Cloth::new_grid`, `Cloth::particle_count`, `Cloth::pin`, `Cloth::pin_top_row`, `Cloth::remaining_self_contact_crossings`, `Cloth::step`, `Cloth::step_with_sdf`, `ClothConfig`
 - `src/collider.rs`: `AABB::from_metric_ball`, `ConvexHull::new`, `gjk`
 - `src/collision_mesh_gen.rs`: `CollisionMesh`, `CollisionMesh::to_static_collider`, `CollisionMeshConfig`, `compute_mesh_aabb`, `generate_collision_mesh`, `simplify_collision_mesh`
 - `src/compound.rs`: `CompoundShape::add_box`, `CompoundShape::add_capsule`, `CompoundShape::add_convex_hull`, `CompoundShape::add_sphere`, `CompoundShape::compute_aabb`, `CompoundShape::from_decomposition`, `CompoundShape::from_sdf`, `CompoundShape::is_empty`, `CompoundShape::len`, `CompoundShape::mass_properties`
@@ -579,7 +559,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/damping_rayleigh.rs`: `RayleighCoefficients`, `RayleighCoefficients::damping_ratio`, `RayleighCoefficients::fit_two_modes`, `hz_to_omega`, `omega_to_hz`
 - `src/db_bridge.rs`: `PhysicsMetricsSink`, `PhysicsMetricsSink::flush`, `PhysicsMetricsSink::open`, `PhysicsMetricsSink::query_bodies`, `PhysicsMetricsSink::query_contacts`, `PhysicsMetricsSink::query_energy`, `PhysicsMetricsSink::record_energy`, `PhysicsMetricsSink::record_step`
 - `src/debug_render.rs`: `DebugColor`, `DebugColor::BLUE`, `DebugColor::CYAN`, `DebugColor::GRAY`, `DebugColor::GREEN`, `DebugColor::MAGENTA`, `DebugColor::ORANGE`, `DebugColor::RED`, `DebugColor::WHITE`, `DebugColor::YELLOW`, `DebugColor::new`, `DebugDrawData`, `DebugDrawData::arrow`, `DebugDrawData::axes`, `DebugDrawData::clear`, `DebugDrawData::line`, `DebugDrawData::new`, `DebugDrawData::point`, `DebugDrawData::primitive_count`, `DebugDrawData::sphere`, `DebugDrawFlags`, `DebugLine`, `DebugLine::new`, `DebugPoint`, `DebugPoint::new`, `debug_draw_world`
-- `src/deformable.rs`: `DeformableBody`, `DeformableBody::center_of_mass`, `DeformableBody::new`, `DeformableBody::new_cube`, `DeformableBody::particle_count`, `DeformableBody::resolve_rigid_body_collisions`, `DeformableBody::step`, `DeformableConfig`
+- `src/deformable.rs`: `DeformableBody`, `DeformableBody::center_of_mass`, `DeformableBody::new`, `DeformableBody::new_cube`, `DeformableBody::particle_count`, `DeformableBody::resolve_rigid_body_collisions`, `DeformableBody::step`, `DeformableBody::step_with_sdf`, `DeformableConfig`
 - `src/dynamic_bvh.rs`: `DynamicAabbTree::get_aabb`, `DynamicAabbTree::height`, `DynamicAabbTree::proxy_count`, `DynamicAabbTree::user_data`
 - `src/dynamic_fem.rs`: `DynamicsConfig`, `DynamicsConfig::try_new`, `MassLumping`, `TransientSolver`, `TransientSolver::accelerations`, `TransientSolver::displacements`, `TransientSolver::new`, `TransientSolver::step`, `TransientSolver::velocities`
 - `src/electromagnetic.rs`: `ChargedBody`, `ChargedBody::new`, `EmSource`, `EmSource::sample`, `lorentz_force`, `lorentz_force_sum`
@@ -592,9 +572,9 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/fillet_stress.rs`: `kt_circular_hole_infinite_plate`, `kt_elliptical_hole`, `kt_shaft_shoulder_bending`, `kt_u_notch_axial`, `recommended_fillet_radius_mm`
 - `src/filter.rs`: `CollisionFilter::NONE`, `CollisionFilter::new`, `CollisionFilter::with_group`, `DEBRIS`, `ENEMY`, `KINEMATIC`, `PLAYER`, `PROJECTILE`, `SENSOR`, `STATIC`, `TRIGGER`, `VEHICLE`
 - `src/flow_viz.rs`: `FlowArrow`, `FlowVizConfig`, `Streamlines`, `Streamlines::len`, `Streamlines::line`, `generate_flow_arrows`, `generate_streamlines`
-- `src/fluid.rs`: `Fluid`, `Fluid::new`, `Fluid::new_block`, `Fluid::particle_count`, `Fluid::step`, `FluidConfig`
+- `src/fluid.rs`: `Fluid`, `Fluid::new`, `Fluid::new_block`, `Fluid::particle_count`, `Fluid::step`, `Fluid::step_with_sdf`, `FluidConfig`
 - `src/fluid_netcode.rs`: `FluidDelta`, `FluidDelta::apply`, `FluidDelta::changed_count`, `FluidDelta::compression_ratio`, `FluidDelta::compute`, `FluidSnapshot`, `FluidSnapshot::capture`, `FluidSnapshot::restore`, `FluidSnapshot::size_bytes`, `FluidSnapshot::verify`
-- `src/force.rs`: `ForceFieldInstance::new`
+- `src/force.rs`: `ForceFieldInstance::new`, `ForceFieldInstance::with_affected_bodies`
 - `src/fracture.rs`: `Crack`, `FractureConfig`, `FractureModifier`, `FractureModifier::active_crack_count`, `FractureModifier::apply_stress_at`, `FractureModifier::new`, `FractureModifier::stress_at`
 - `src/fsi_advanced.rs`: `SolidSample`, `aggregate_forces`, `buoyancy_force`, `drag_force`, `react_back_pressure`
 - `src/gpu_bridge.rs`: `DiffFixture`, `GpuDivergence`
@@ -645,30 +625,34 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/ragdoll.rs`: `Bone`, `Bone::index`, `RagdollBuilder`, `RagdollBuilder::build`, `RagdollHandle`, `RagdollHandle::body`, `RagdollProportions`, `RagdollProportions::child`, `RagdollProportions::human_female`, `RagdollProportions::human_male`
 - `src/raycast.rs`: `ray_aabb`, `ray_capsule`, `ray_plane`, `raycast_aabbs`, `raycast_all_aabbs`, `raycast_all_spheres`, `raycast_any_aabbs`, `raycast_any_spheres`, `raycast_spheres`, `sweep_sphere`
 - `src/replay.rs`: `ReplayPlayer`, `ReplayPlayer::close`, `ReplayPlayer::get_position`, `ReplayPlayer::get_velocity`, `ReplayPlayer::open`, `ReplayPlayer::scan_positions`, `ReplayRecorder`, `ReplayRecorder::close`, `ReplayRecorder::frame_count`, `ReplayRecorder::new`, `ReplayRecorder::record_frame`, `ReplayRecorder::record_positions`
-- `src/rng.rs`: `DeterministicRng`, `DeterministicRng::new`, `DeterministicRng::new_with_stream`, `DeterministicRng::next_bounded`, `DeterministicRng::next_direction`, `DeterministicRng::next_fix128`, `DeterministicRng::next_fix128_range`, `DeterministicRng::next_u32`, `DeterministicRng::next_u64`
+- `src/rng.rs`: `DeterministicRng`, `DeterministicRng::new`, `DeterministicRng::new_with_stream`, `DeterministicRng::next_bounded`, `DeterministicRng::next_direction`, `DeterministicRng::next_fix128`, `DeterministicRng::next_fix128_range`, `DeterministicRng::next_gaussian`, `DeterministicRng::next_gaussian_pair`, `DeterministicRng::next_gaussian_with`, `DeterministicRng::next_u32`, `DeterministicRng::next_u64`
 - `src/rolling_contact.rs`: `HertzianContact`, `basquin_cycles_to_failure`, `bearing_steel_52100`, `gear_steel_8620`, `hertzian_sphere_sphere`, `rolling_contact_life_cycles`, `silicon_nitride`
 - `src/rope.rs`: `PinConstraint`, `Rope`, `Rope::add_pin`, `Rope::current_length`, `Rope::new`, `Rope::particle_count`, `Rope::pin_end`, `Rope::pin_start`, `Rope::segment_count`, `Rope::step`, `Rope::step_with_sdf`, `Rope::update_pin_targets`, `RopeConfig`
 - `src/rope_attach.rs`: `RopeAttachment`, `RopeAttachment::compliance`, `RopeAttachment::new`, `RopeAttachment::with_break_force`, `solve_rope_attachments`, `solve_rope_attachments_two_way`
 - `src/scene_io.rs`: `CURRENT_SCENE_VERSION`, `PhysicsConfig`, `PhysicsScene`, `PhysicsScene::new`, `SerializedBody`, `SerializedJoint`, `load_scene`, `load_scene_json`, `save_scene`, `save_scene_json`
 - `src/sdf_adaptive.rs`: `AdaptiveConfig`, `AdaptiveSdfEvaluator`, `AdaptiveSdfEvaluator::begin_frame`, `AdaptiveSdfEvaluator::evaluate`, `AdaptiveSdfEvaluator::invalidate`, `AdaptiveSdfEvaluator::invalidate_all`, `AdaptiveSdfEvaluator::new`, `AdaptiveSdfEvaluator::stats`, `EvalLevel`
 - `src/sdf_ccd.rs`: `PhysicsWorld::sdf_ccd_hits`, `SdfCcdConfig`, `batch_sphere_trace_sdf`, `ray_march_sdf`, `sphere_trace_sdf`
-- `src/sdf_character.rs`: `GroundContact`, `SdfCharacter`, `SdfCharacter::ground_contact`, `SdfCharacter::is_grounded`, `SdfCharacter::locomotion_context`, `SdfCharacter::new`
-- `src/sdf_collider.rs`: `ClosureSdf`, `ClosureSdf::new`, `SDF_STATIC`, `SdfCollider::new_static`, `SdfCollider::with_scale`, `detect_sdf_contacts`
+- `src/sdf_character.rs`: `GroundContact`, `MoveOutcome`, `MoveOutcome::resolved_position`, `SdfCharacter`, `SdfCharacter::apply_central_gravity`, `SdfCharacter::apply_gravity`, `SdfCharacter::ground_contact`, `SdfCharacter::is_grounded`, `SdfCharacter::locomotion_context`, `SdfCharacter::move_and_slide`, `SdfCharacter::new`, `SdfCharacter::step`, `SdfCharacter::step_on_sphere`
+- `src/sdf_collider.rs`: `ClosureSdf`, `ClosureSdf::new`, `SDF_STATIC`, `SdfCollider::new_static`, `SdfCollider::with_scale`, `SdfUnion`, `SdfUnion::new`, `detect_sdf_contacts`
 - `src/sdf_destruction.rs`: `DestructibleSdf`, `DestructibleSdf::apply_destruction`, `DestructibleSdf::destruction_count`, `DestructibleSdf::new`, `DestructibleSdf::optimize`, `DestructibleSdf::reset`, `DestructibleSdf::total_destruction_count`, `DestructionShape`, `DestructionShape::cube`, `DestructionShape::cylinder`, `DestructionShape::sphere`, `DestructionShape::with_rotation`, `DestructionShape::with_smoothing`, `DestructionType`, `destruction_from_explosion`, `destruction_from_impact`, `destruction_from_projectile`
 - `src/sdf_fem_mesh.rs`: `BoundaryFaceError`, `CUBE_FIVE_TETS`, `RefineError`, `SdfTetMesh`, `SdfTetMesh::boundary_faces`, `SdfTetMesh::max_edge_length`, `SdfTetMesh::refine_by_max_edge_length`, `SdfTetMesh::tet_count`, `SdfTetMesh::try_refine_conforming`, `SdfTetMesh::try_refine_marked`, `SdfTetMesh::vertex_count`, `Tetrahedron`, `cell_parity`, `generate`, `generate_marching_tets`
 - `src/sdf_force.rs`: `SdfForceField`, `SdfForceField::attract`, `SdfForceField::contain`, `SdfForceField::new`, `SdfForceField::repel`, `SdfForceField::surface_flow`, `SdfForceField::with_affected_bodies`, `SdfForceType`, `apply_sdf_force_fields`, `compute_sdf_force`
 - `src/sdf_manifold.rs`: `ManifoldConfig`, `SdfManifold`, `SdfManifold::deepest`, `SdfManifold::empty`, `SdfManifold::len`, `generate_sdf_manifold`
 - `src/sdf_sph.rs`: `SphConfig`, `SphConfig::water_like`, `SphParticle`, `SphParticle::at_rest`, `SphSolver`, `SphSolver::new`, `SphSolver::step`, `SphSolver::step_hashed`, `SphSpatialHash`, `SphSpatialHash::build`, `SphSpatialHash::cell_size`, `SphSpatialHash::for_each_neighbour`, `SphSpatialHash::populated_cell_count`, `poly6`, `spiky_grad`, `viscosity_lap`
+- `src/sensors.rs`: `ContactReading`, `ContactSensor`, `ContactSensor::new`, `ContactSensor::read`, `ContactSensor::with_noise`, `GaussianNoise`, `GaussianNoise::apply`, `GaussianNoise::apply_vec`, `GaussianNoise::new`, `GaussianNoise::sample`, `Imu`, `Imu::new`, `Imu::sample`, `Imu::with_accel_noise`, `Imu::with_gyro_noise`, `ImuReading`, `Lidar`, `Lidar::directions`, `Lidar::new`, `Lidar::scan`, `Lidar::scan_from_body`, `Lidar::with_filter`, `Lidar::with_noise`, `Lidar::with_pose`, `LidarScan`, `LidarScan::range`
 - `src/shape.rs`: `Shape::inertia_diagonal`, `Shape::mass_and_inertia`, `Shape::validate`, `Shape::volume`, `ShapeError`
+- `src/shape_raycast.rs`: `LocalHit`, `PhysicsWorld::cast_ray`, `PhysicsWorld::cast_ray_all`, `PhysicsWorld::cast_ray_any`, `PhysicsWorld::ray_caster`, `RayFilter`, `RayFilter::excluding_body`, `RayFilter::new`, `RayFilter::with_layer_mask`, `RayFilter::with_sdf`, `RayFilter::with_sdf_config`, `RayFilter::with_sensors`, `RayFilter::with_static`, `RayTarget`, `WorldRayCaster`, `WorldRayCaster::all`, `WorldRayCaster::any`, `WorldRayCaster::candidates`, `WorldRayCaster::closest`, `WorldRayHit`
 - `src/sim_field.rs`: `ScalarField3D`, `ScalarField3D::add`, `ScalarField3D::cell_count`, `ScalarField3D::clamp`, `ScalarField3D::decay`, `ScalarField3D::decay_toward`, `ScalarField3D::diffuse`, `ScalarField3D::get`, `ScalarField3D::gradient`, `ScalarField3D::index`, `ScalarField3D::new`, `ScalarField3D::new_filled`, `ScalarField3D::sample`, `ScalarField3D::set`, `ScalarField3D::splat`
 - `src/sim_modifier.rs`: `ModifiedSdf`, `ModifiedSdf::add_modifier`, `ModifiedSdf::clear_modifiers`, `ModifiedSdf::modifier_count`, `ModifiedSdf::modifier_mut`, `ModifiedSdf::new`, `ModifiedSdf::with_modifier`, `PhysicsModifier`
 - `src/sketch.rs`: `CountMinSketch`, `DDSketch`, `FnvHasher`, `FnvHasher::hash_bytes`, `FnvHasher::hash_u128`, `FnvHasher::hash_u64`, `FnvHasher::new`, `HeavyHitters`, `HyperLogLog`, `Mergeable`
 - `src/sleeping.rs`: `Island`, `IslandManager::build_islands`, `IslandManager::sleeping_count`
 - `src/smoke_fire.rs`: `ArrheniusReaction`, `ArrheniusReaction::methane_air`, `ArrheniusReaction::pla_air`, `boussinesq_buoyancy_n_per_m3`, `heat_release_j_per_m3_s`, `reaction_rate_kg_per_m3_s`, `soot_generation_kg_per_m3_s`
 - `src/soft_body_cut.rs`: `CutPlane`, `CutResult`, `cut_cloth`, `cut_deformable`
-- `src/solver.rs`: `BodyObservation`, `BroadphaseStats`, `ContactConstraint::new`, `DistanceConstraint::new`, `DistanceConstraint::with_compliance`, `PhysicsWorld::active_body_count`, `PhysicsWorld::add_body_with_radius`, `PhysicsWorld::add_compound_body`, `PhysicsWorld::add_contact_modifier`, `PhysicsWorld::add_distance_constraint`, `PhysicsWorld::add_force_field`, `PhysicsWorld::add_joint`, `PhysicsWorld::add_pre_solve_hook`, `PhysicsWorld::add_sdf_collider`, `PhysicsWorld::add_shaped_body`, `PhysicsWorld::add_static_collider`, `PhysicsWorld::batches_are_body_disjoint`, `PhysicsWorld::body_count`, `PhysicsWorld::broadphase`, `PhysicsWorld::broadphase_proxy_aabb`, `PhysicsWorld::broadphase_stats`, `PhysicsWorld::clear_body_collision_radius`, `PhysicsWorld::clear_contact_modifiers`, `PhysicsWorld::clear_pre_solve_hooks`, `PhysicsWorld::colliders_overlap`, `PhysicsWorld::contact_arrows`, `PhysicsWorld::contact_events`, `PhysicsWorld::contact_forces`, `PhysicsWorld::contact_friction_arrows`, `PhysicsWorld::contact_friction_cones`, `PhysicsWorld::drain_contact_events`, `PhysicsWorld::drain_trigger_events`, `PhysicsWorld::get_body`, `PhysicsWorld::get_body_mut`, `PhysicsWorld::gpu_solver_bridge_installed`, `PhysicsWorld::is_sleeping`, `PhysicsWorld::joint_count`, `PhysicsWorld::num_batches`, `PhysicsWorld::observe_bodies`, `PhysicsWorld::observe_body`, `PhysicsWorld::overflow_detected`, `PhysicsWorld::rebuild_batches`, `PhysicsWorld::remove_body`, `PhysicsWorld::remove_force_field`, `PhysicsWorld::remove_joint`, `PhysicsWorld::remove_sdf_collider`, `PhysicsWorld::remove_static_collider`, `PhysicsWorld::reset_tgs_cache_stats`, `PhysicsWorld::reset_world`, `PhysicsWorld::sdf_contacts`, `PhysicsWorld::set_body_collision_radius`, `PhysicsWorld::set_body_filter`, `PhysicsWorld::set_body_material`, `PhysicsWorld::set_body_shape`, `PhysicsWorld::set_broadphase`, `PhysicsWorld::set_gpu_solver_bridge`, `PhysicsWorld::set_sdf_collision_radius`, `PhysicsWorld::set_sleep_config`, `PhysicsWorld::solve_contact_constraints_with_bridge`, `PhysicsWorld::static_collider_count`, `PhysicsWorld::step_parallel`, `PhysicsWorld::step_with_bridge`, `PhysicsWorld::substep_with_bridge`, `PhysicsWorld::take_gpu_solver_bridge`, `PhysicsWorld::tgs_cache_stats`, `PhysicsWorld::trigger_events`, `PhysicsWorld::wake_body`, `RigidBody::add_force`, `RigidBody::add_torque`, `RigidBody::is_kinematic`, `RigidBody::mass`, `RigidBody::set_angular_velocity`, `RigidBody::set_position`, `RigidBody::set_rotation`, `RigidBody::set_velocity`, `RigidBody::speed`, `RigidBody::with_angular_damping`, `RigidBody::with_friction`, `RigidBody::with_gravity_scale`, `RigidBody::with_linear_damping`, `RigidBody::with_restitution`, `RigidBody::with_rotation`, `RigidBody::with_sensor`, `RigidBody::with_velocity`, `TgsCacheStats`, `TgsCacheStats::hit_rate`
+- `src/solver.rs`: `BodyObservation`, `BroadphaseStats`, `ContactConstraint::new`, `DistanceConstraint::new`, `DistanceConstraint::with_compliance`, `PhysicsWorld::active_body_count`, `PhysicsWorld::add_body_with_radius`, `PhysicsWorld::add_compound_body`, `PhysicsWorld::add_contact_modifier`, `PhysicsWorld::add_distance_constraint`, `PhysicsWorld::add_force_field`, `PhysicsWorld::add_joint`, `PhysicsWorld::add_pre_solve_hook`, `PhysicsWorld::add_sdf_collider`, `PhysicsWorld::add_shaped_body`, `PhysicsWorld::add_static_collider`, `PhysicsWorld::batches_are_body_disjoint`, `PhysicsWorld::body_count`, `PhysicsWorld::broadphase`, `PhysicsWorld::broadphase_proxy_aabb`, `PhysicsWorld::broadphase_stats`, `PhysicsWorld::clear_body_collision_radius`, `PhysicsWorld::clear_contact_modifiers`, `PhysicsWorld::clear_pre_solve_hooks`, `PhysicsWorld::colliders_overlap`, `PhysicsWorld::contact_arrows`, `PhysicsWorld::contact_constraint_force`, `PhysicsWorld::contact_events`, `PhysicsWorld::contact_forces`, `PhysicsWorld::contact_friction_arrows`, `PhysicsWorld::contact_friction_cones`, `PhysicsWorld::drain_contact_events`, `PhysicsWorld::drain_trigger_events`, `PhysicsWorld::get_body`, `PhysicsWorld::get_body_mut`, `PhysicsWorld::gpu_solver_bridge_installed`, `PhysicsWorld::is_sleeping`, `PhysicsWorld::joint_count`, `PhysicsWorld::num_batches`, `PhysicsWorld::observe_bodies`, `PhysicsWorld::observe_body`, `PhysicsWorld::overflow_detected`, `PhysicsWorld::ray_geometry`, `PhysicsWorld::raycast`, `PhysicsWorld::rebuild_batches`, `PhysicsWorld::remove_body`, `PhysicsWorld::remove_force_field`, `PhysicsWorld::remove_joint`, `PhysicsWorld::remove_sdf_collider`, `PhysicsWorld::remove_static_collider`, `PhysicsWorld::reset_tgs_cache_stats`, `PhysicsWorld::reset_world`, `PhysicsWorld::sdf_contacts`, `PhysicsWorld::set_body_collision_radius`, `PhysicsWorld::set_body_filter`, `PhysicsWorld::set_body_material`, `PhysicsWorld::set_body_shape`, `PhysicsWorld::set_broadphase`, `PhysicsWorld::set_gpu_solver_bridge`, `PhysicsWorld::set_sdf_collision_radius`, `PhysicsWorld::set_sleep_config`, `PhysicsWorld::solve_contact_constraints_with_bridge`, `PhysicsWorld::static_collider_count`, `PhysicsWorld::static_colliders_slice`, `PhysicsWorld::step_parallel`, `PhysicsWorld::step_with_bridge`, `PhysicsWorld::substep_with_bridge`, `PhysicsWorld::take_gpu_solver_bridge`, `PhysicsWorld::tgs_cache_stats`, `PhysicsWorld::trigger_events`, `PhysicsWorld::wake_body`, `RigidBody::add_force`, `RigidBody::add_torque`, `RigidBody::is_kinematic`, `RigidBody::mass`, `RigidBody::set_angular_velocity`, `RigidBody::set_position`, `RigidBody::set_rotation`, `RigidBody::set_velocity`, `RigidBody::speed`, `RigidBody::with_angular_damping`, `RigidBody::with_friction`, `RigidBody::with_gravity_scale`, `RigidBody::with_linear_damping`, `RigidBody::with_restitution`, `RigidBody::with_rotation`, `RigidBody::with_sensor`, `RigidBody::with_velocity`, `TgsCacheStats`, `TgsCacheStats::hit_rate`
+- `src/solver/world_snapshot.rs`: `PhysicsWorld::WORLD_SNAPSHOT_MAGIC`, `PhysicsWorld::WORLD_SNAPSHOT_VERSION`, `PhysicsWorld::from_world_snapshot`, `PhysicsWorld::restore_world`, `PhysicsWorld::snapshot_world`, `WorldSnapshotError`
 - `src/solver_tgs.rs`: `AdaptiveSubStepConfig`, `HasVelocity`, `ImpulseCache::reset_stats`, `ImpulseCache::stats`, `ImpulseCacheStats`, `ImpulseCacheStats::hit_rate`, `adaptive_substeps_for`, `adaptive_substeps_for_ccd`
 - `src/spatial.rs`: `SpatialGrid`, `SpatialGrid::build`, `SpatialGrid::clear`, `SpatialGrid::hash`, `SpatialGrid::insert`, `SpatialGrid::new`, `SpatialGrid::query_neighbors_into`
+- `src/spherical_terrain.rs`: `SphericalHeightField`, `SphericalHeightField::center`, `SphericalHeightField::new`, `SphericalHeightField::radial_height`, `SphericalHeightField::radius`, `SphericalHeightField::surface_radius`, `SphericalHeightField::with_max_slope`, `SphericalHeightField::with_normal_step`, `central_gravity`
 - `src/structural_solver.rs`: `StructuralHistory`, `StructuralReport`, `StructuralSolver`, `StructuralSolver::new`, `StructuralSolver::run`, `StructuralSolver::step`
 - `src/support_volume.rs`: `OverhangRegion`, `SupportConfig`, `SupportConfig::quality`, `SupportVolumeReport`, `SupportVolumeReport::filament_length_m`, `SupportVolumeReport::is_nontrivial`, `estimate_region_volume`, `estimate_support_volume`
 - `src/surface_tension_csf.rs`: `SIGMA_MERCURY_AIR`, `SIGMA_PLA_AIR`, `SIGMA_STEEL_ARGON`, `SIGMA_WATER_AIR`, `compute_csf_field`, `csf_body_force`, `interface_normal`, `smeared_delta`
@@ -680,6 +664,11 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/trimesh.rs`: `TriMesh::closest_point`, `TriMesh::collide_aabb`, `TriMesh::collide_capsule`, `TriMesh::from_indexed`, `TriMesh::from_triangles`, `TriMesh::raycast`, `TriMesh::triangle_count`, `Triangle::aabb`, `Triangle::new`, `ray_triangle`
 - `src/turbulence.rs`: `FRICTION_VELOCITY_BISECTIONS`, `KE_C1_EPS`, `KE_C2_EPS`, `KE_C_MU`, `KE_SIGMA_EPS`, `KE_SIGMA_K`, `KEpsilonState`, `KEpsilonState::advance_epsilon`, `KEpsilonState::advance_k`, `KEpsilonState::eddy_viscosity`, `KOmegaState`, `KOmegaState::advance`, `KOmegaState::eddy_viscosity`, `KOmegaState::from_k_epsilon`, `KOmegaState::to_k_epsilon`, `KW_ALPHA`, `KW_BETA`, `KW_BETA_STAR`, `KW_SIGMA`, `LOG_LAW_B`, `SMAGORINSKY_CS`, `VON_KARMAN`, `WallFunctionError`, `Y_PLUS_TRANSITION`, `dynamic_smagorinsky_cs`, `friction_velocity`, `friction_velocity_checked`, `smagorinsky_eddy_viscosity`, `smagorinsky_eddy_viscosity_with`, `strain_rate_magnitude`, `u_plus`, `wall_k_epsilon`, `y_plus`
 - `src/vehicle.rs`: `EngineConfig`, `Vehicle`, `Vehicle::grounded_wheels`, `Vehicle::new`, `Vehicle::shift_down`, `Vehicle::shift_up`, `Vehicle::update`, `VehicleConfig`, `WheelConfig`, `WheelState`
+- `src/vehicle_dynamics/mod.rs`: `AbsConfig`, `AeroConfig`, `BrakeSystem`, `DriverInput`, `DynamicVehicle`, `DynamicVehicle::forward_speed`, `DynamicVehicle::grounded_wheels`, `DynamicVehicle::new`, `DynamicVehicle::update`, `DynamicVehicleConfig`, `DynamicVehicleConfig::passenger_car`, `Environment`, `WheelDynamicsState`
+- `src/vehicle_dynamics/powertrain.rs`: `Differential`, `Powertrain`, `Powertrain::axle_torque`, `Powertrain::engine_rpm`, `Powertrain::from_engine_config`, `Powertrain::shift_down`, `Powertrain::shift_up`, `Powertrain::total_ratio`, `TorqueCurve`, `TorqueCurve::torque_at`
+- `src/vehicle_dynamics/scenario.rs`: `RECORDING_MAGIC`, `RECORDING_VERSION`, `Recording`, `Recording::dt`, `Recording::frame_count`, `Recording::from_bytes`, `Recording::input_mut`, `Recording::inputs`, `Recording::replay`, `Recording::restore`, `Recording::to_bytes`, `Recording::vehicle_count`, `Recording::vehicles`, `ReplayError`, `Scenario`, `Scenario::add_vehicle`, `Scenario::chassis`, `Scenario::is_recording`, `Scenario::new`, `Scenario::run_tracks`, `Scenario::start_recording`, `Scenario::step`, `Scenario::step_with`, `Scenario::stop_recording`, `ScenarioVehicle`, `StoppingDistanceMeter`, `StoppingDistanceMeter::distance`, `StoppingDistanceMeter::frames_to_stop`, `StoppingDistanceMeter::is_stopped`, `StoppingDistanceMeter::new`, `StoppingDistanceMeter::sample`, `StoppingDistanceMeter::travelled`, `VehicleSnapshot`, `longitudinal_state`, `time_headway`, `time_to_collision`, `up_from_gravity`
+- `src/vehicle_dynamics/surface.rs`: `FlatGround`, `GroundHit`, `HYDROPLANING_MIN_DEPTH_MM`, `HeightFieldRoad`, `InclinedPlane`, `RoadCondition`, `RoadCondition::dry_asphalt`, `RoadCondition::grip`, `RoadCondition::weather_factor`, `RoadSurface`, `SdfRoad`, `TriMeshRoad`, `Weather`, `hydroplaning_onset_speed`
+- `src/vehicle_dynamics/tire.rs`: `BrushTire`, `BrushTire::passenger_car`, `MagicFormulaTire`, `MagicFormulaTire::passenger_car`, `TireForce`, `TireInput`, `TireModel`, `TireModel::force`, `TireModel::longitudinal_slope`
 - `src/vibration_wall.rs`: `ExcitationSource`, `WallResonanceReport`, `analyze_wall_resonance`, `default_excitation_sources`
 - `src/warp_risk.rs`: `EnvConditions`, `EnvConditions::enclosed_abs`, `EnvConditions::open_air_pla`, `Footprint`, `Footprint::rectangle`, `WarpRiskCategory`, `WarpRiskReport`, `analyze_warp_risk`
 - `src/wave_ship.rs`: `Jonswap`, `Jonswap::north_sea`, `Jonswap::peak_omega`, `Jonswap::spectrum_density`, `WaveComponent`, `free_surface_elevation`, `froude_krylov_vertical_n`
