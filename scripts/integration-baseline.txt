@@ -194,11 +194,6 @@ src/replay.rs::ReplayPlayer::body_count
 src/replay.rs::ReplayRecorder::flush
 src/scene_io.rs::PhysicsConfig::new
 src/sdf_adaptive.rs::AdaptiveSdfEvaluator::resize
-src/sdf_character.rs::MoveOutcome
-src/sdf_character.rs::MoveOutcome::resolved_position
-src/sdf_character.rs::SdfCharacter::apply_gravity
-src/sdf_character.rs::SdfCharacter::move_and_slide
-src/sdf_character.rs::SdfCharacter::step
 src/sdf_collider.rs::SdfCollider::new_dynamic
 src/sdf_collider.rs::SdfCollider::update_cache
 src/sdf_manifold.rs::SdfManifold::is_empty

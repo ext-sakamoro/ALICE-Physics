@@ -393,6 +393,10 @@ required-features = ["std"]
 # (L0 before this example)
 [[example]]
 name = "soft_bodies_on_sdf"
+# Production entry point for `SdfCharacter::step` / `move_and_slide` /
+# `apply_gravity` and `MoveOutcome::resolved_position` (L0 before this example)
+[[example]]
+name = "sdf_character_terrain"
 required-features = ["std"]
 
 # Production entry point for `WindZone` (wiring_guard: src/wind_zone.rs had
