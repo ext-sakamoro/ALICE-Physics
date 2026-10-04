@@ -274,6 +274,29 @@ impl SdfCharacter {
         field: &F,
         displacement: [f32; 3],
     ) -> MoveOutcome {
+        self.resolve(field, displacement, false).0
+    }
+
+    /// [`Self::move_and_slide`], optionally resolving walkable contacts
+    /// along [`Self::up`].
+    ///
+    /// With `walkable_along_up`, a contact whose normal `n` satisfies
+    /// `n·up ≥ ground_up_threshold` is pushed along `up` by
+    /// `(radius − d + skin_width) / (n·up)` instead of along `n` — the
+    /// distance that clears a plane with normal `n` when moving along `up`.
+    /// Standing on a walkable slope then produces no sideways push, so
+    /// gravity does not walk the character downhill; steeper contacts keep
+    /// the normal push and slide.
+    fn resolve<F: SdfField + ?Sized>(
+        &self,
+        field: &F,
+        displacement: [f32; 3],
+        walkable_along_up: bool,
+    ) -> (MoveOutcome, [f32; 3]) {
+        // Sum of the pushes as applied (direction × magnitude), kept apart
+        // from `pos`: differencing two positions of magnitude `|p|` loses
+        // the direction of a push much smaller than `ulp(|p|)`.
+        let mut pushed = [0.0_f32; 3];
         let mut pos = [
             self.position[0] + displacement[0],
             self.position[1] + displacement[1],
@@ -285,6 +308,11 @@ impl SdfCharacter {
         // normalization entirely in that case keeps the default path free
         // of the `sqrt` as well as of the substitution.
         let guard_up = if self.min_up_alignment.is_finite() {
+            Some(self.up_unit())
+        } else {
+            None
+        };
+        let walk_up = if walkable_along_up {
             Some(self.up_unit())
         } else {
             None
@@ -313,10 +341,21 @@ impl SdfCharacter {
             // `max_push` is `INFINITY` by default, and `min` with
             // `INFINITY` returns the left operand unchanged, so an exact
             // distance field keeps the original arithmetic bit for bit.
-            let push = (self.radius - d + self.skin_width).min(self.max_push);
+            let mut push = self.radius - d + self.skin_width;
+            if let Some(up) = walk_up {
+                let along = nx * up[0] + ny * up[1] + nz * up[2];
+                if along >= self.ground_up_threshold && along > 0.0 {
+                    push /= along;
+                    [nx, ny, nz] = up;
+                }
+            }
+            let push = push.min(self.max_push);
             pos[0] += nx * push;
             pos[1] += ny * push;
             pos[2] += nz * push;
+            pushed[0] += nx * push;
+            pushed[1] += ny * push;
+            pushed[2] += nz * push;
             iterations += 1;
         }
         if !converged {
@@ -331,13 +370,16 @@ impl SdfCharacter {
                 best_position = pos;
             }
         }
-        MoveOutcome {
-            position: pos,
-            converged,
-            iterations,
-            best_position,
-            best_distance,
-        }
+        (
+            MoveOutcome {
+                position: pos,
+                converged,
+                iterations,
+                best_position,
+                best_distance,
+            },
+            pushed,
+        )
     }
 
     /// Integrate an acceleration into [`Self::velocity`] (`v += a·dt`).
@@ -378,6 +420,140 @@ impl SdfCharacter {
         dt: f32,
         control: [f32; 3],
     ) -> MoveOutcome {
+        self.step_resolved(field, dt, control, false)
+    }
+
+    /// Integrate an acceleration of constant magnitude `g` toward `center`
+    /// into [`Self::velocity`] — the gravity of a sphere world, see
+    /// [`crate::spherical_terrain::central_gravity`].
+    pub fn apply_central_gravity(&mut self, center: [f32; 3], g: f32, dt: f32) {
+        let a = crate::spherical_terrain::central_gravity(center, g, self.position);
+        self.apply_gravity(a, dt);
+    }
+
+    /// Advance one frame on a sphere world centred at `center`.
+    ///
+    /// 1. [`Self::up`] becomes the radial direction `(p − c) / |p − c|`.
+    /// 2. The tangential part of `tangent_velocity` moves the character
+    ///    along the great circle: the angle travelled is `|v_t|·dt / r`, so
+    ///    the arc length is exactly `|v_t|·dt` and the distance from the
+    ///    centre is unchanged. A straight step of the same length would
+    ///    leave the sphere and shorten the arc to `r·atan(|v_t|·dt / r)`.
+    ///    The radial part of `tangent_velocity` is ignored.
+    /// 3. [`Self::velocity`] is carried along by the same rotation, so a
+    ///    radial velocity (a jump, a fall) stays radial at the new position.
+    /// 4. As [`Self::step`] with no `control`, except that a walkable
+    ///    contact (`n·up ≥ ground_up_threshold`) is resolved along `up`:
+    ///    a character standing on a walkable slope does not creep downhill
+    ///    under gravity, and walking onto a rising slope lifts it.
+    ///
+    /// 5. Standing on walkable ground within `skin_width` of it and not
+    ///    moving away, the character is held at the top of the skin band
+    ///    (no bobbing when one frame's fall is shorter than the skin).
+    ///
+    /// A character at the centre itself has no up axis; the arc move is
+    /// skipped and steps 4 and 5 still run.
+    pub fn step_on_sphere<F: SdfField + ?Sized>(
+        &mut self,
+        field: &F,
+        center: [f32; 3],
+        dt: f32,
+        tangent_velocity: [f32; 3],
+    ) -> MoveOutcome {
+        let rel = [
+            self.position[0] - center[0],
+            self.position[1] - center[1],
+            self.position[2] - center[2],
+        ];
+        let r = crate::det_math::sqrt(rel[0] * rel[0] + rel[1] * rel[1] + rel[2] * rel[2]);
+        if r > 0.0 && r.is_finite() {
+            let up = [rel[0] / r, rel[1] / r, rel[2] / r];
+            self.up = up;
+            let radial = tangent_velocity[0] * up[0]
+                + tangent_velocity[1] * up[1]
+                + tangent_velocity[2] * up[2];
+            let vt = [
+                tangent_velocity[0] - up[0] * radial,
+                tangent_velocity[1] - up[1] * radial,
+                tangent_velocity[2] - up[2] * radial,
+            ];
+            let speed = crate::det_math::sqrt(vt[0] * vt[0] + vt[1] * vt[1] + vt[2] * vt[2]);
+            let angle = speed * dt / r;
+            if angle > 0.0 && angle.is_finite() {
+                let t = [vt[0] / speed, vt[1] / speed, vt[2] / speed];
+                let (sin, cos) = crate::det_math::sin_cos(angle);
+                let new_up = [
+                    up[0] * cos + t[0] * sin,
+                    up[1] * cos + t[1] * sin,
+                    up[2] * cos + t[2] * sin,
+                ];
+                let new_t = [
+                    t[0] * cos - up[0] * sin,
+                    t[1] * cos - up[1] * sin,
+                    t[2] * cos - up[2] * sin,
+                ];
+                self.position = [
+                    center[0] + new_up[0] * r,
+                    center[1] + new_up[1] * r,
+                    center[2] + new_up[2] * r,
+                ];
+                // Rotate the velocity by the same angle about up × t: the
+                // components along up and t turn with the frame, the one
+                // along the axis is unchanged.
+                let v = self.velocity;
+                let v_up = v[0] * up[0] + v[1] * up[1] + v[2] * up[2];
+                let v_t = v[0] * t[0] + v[1] * t[1] + v[2] * t[2];
+                for i in 0..3 {
+                    let axis_part = v[i] - up[i] * v_up - t[i] * v_t;
+                    self.velocity[i] = axis_part + new_up[i] * v_up + new_t[i] * v_t;
+                }
+                self.up = new_up;
+            }
+        }
+        let outcome = self.step_resolved(field, dt, [0.0; 3], true);
+        self.snap_to_walkable_ground(field);
+        outcome
+    }
+
+    /// Ground snap for [`Self::step_on_sphere`].
+    ///
+    /// A resolution leaves the character `skin_width` clear of the surface,
+    /// and the next frame's fall only counts as contact once it eats through
+    /// that skin. When one frame's fall is shorter than the skin, the
+    /// character free-falls across it every few frames and bobs by up to
+    /// `skin_width`. Standing on walkable ground (`n·up ≥ ground_up_threshold`)
+    /// inside the skin band and not moving away from it, the character is
+    /// lifted back to the top of the band and its velocity toward the ground
+    /// is removed, so it rests at one height. A character moving away (a
+    /// jump) is left alone, and the snap only ever lifts.
+    fn snap_to_walkable_ground<F: SdfField + ?Sized>(&mut self, field: &F) {
+        let [x, y, z] = self.position;
+        let d = field.distance(x, y, z);
+        let band = self.radius + self.skin_width;
+        if d >= band || d.is_nan() {
+            return;
+        }
+        let up = self.up_unit();
+        let (nx, ny, nz) = field.normal(x, y, z);
+        let along = nx * up[0] + ny * up[1] + nz * up[2];
+        let v_up = self.velocity[0] * up[0] + self.velocity[1] * up[1] + self.velocity[2] * up[2];
+        if along >= self.ground_up_threshold && along > 0.0 && v_up <= 0.0 {
+            let lift = (band - d) / along;
+            for ((p, v), u) in self.position.iter_mut().zip(&mut self.velocity).zip(up) {
+                *p += u * lift;
+                *v -= u * v_up;
+            }
+        }
+    }
+
+    /// Body of [`Self::step`] and [`Self::step_on_sphere`].
+    fn step_resolved<F: SdfField + ?Sized>(
+        &mut self,
+        field: &F,
+        dt: f32,
+        control: [f32; 3],
+        walkable_along_up: bool,
+    ) -> MoveOutcome {
         let displacement = [
             self.velocity[0] * dt + control[0],
             self.velocity[1] * dt + control[1],
@@ -388,15 +564,23 @@ impl SdfCharacter {
             self.position[1] + displacement[1],
             self.position[2] + displacement[2],
         ];
-        let outcome = self.move_and_slide(field, displacement);
+        let (outcome, pushed) = self.resolve(field, displacement, walkable_along_up);
         let adopted = outcome.resolved_position();
         self.position = adopted;
 
-        let correction = [
-            adopted[0] - unresolved[0],
-            adopted[1] - unresolved[1],
-            adopted[2] - unresolved[2],
-        ];
+        // `step` keeps the position difference (its historical arithmetic);
+        // the sphere step uses the exact sum of pushes when the resolution
+        // converged, because on a planet `|p|` is large and the per-frame
+        // push is small, so the difference has lost the contact direction.
+        let correction = if walkable_along_up && outcome.converged {
+            pushed
+        } else {
+            [
+                adopted[0] - unresolved[0],
+                adopted[1] - unresolved[1],
+                adopted[2] - unresolved[2],
+            ]
+        };
         let len = crate::det_math::sqrt(
             correction[0] * correction[0]
                 + correction[1] * correction[1]

@@ -12813,6 +12813,14 @@ impl alice_physics::sdf_collider::SdfField for alice_physics::sim_modifier::Modi
 pub fn alice_physics::sim_modifier::ModifiedSdf::distance(&self, f32, f32, f32) -> f32
 pub fn alice_physics::sim_modifier::ModifiedSdf::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
 pub fn alice_physics::sim_modifier::ModifiedSdf::normal(&self, f32, f32, f32) -> (f32, f32, f32)
+impl<A: alice_physics::sdf_collider::SdfField, B: alice_physics::sdf_collider::SdfField> alice_physics::sdf_collider::SdfField for alice_physics::sdf_collider::SdfUnion<A, B>
+pub fn alice_physics::sdf_collider::SdfUnion<A, B>::distance(&self, f32, f32, f32) -> f32
+pub fn alice_physics::sdf_collider::SdfUnion<A, B>::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
+pub fn alice_physics::sdf_collider::SdfUnion<A, B>::normal(&self, f32, f32, f32) -> (f32, f32, f32)
+impl<H: alice_physics::spherical_terrain::SurfaceHeight> alice_physics::sdf_collider::SdfField for alice_physics::spherical_terrain::SphericalHeightField<H>
+pub fn alice_physics::spherical_terrain::SphericalHeightField<H>::distance(&self, f32, f32, f32) -> f32
+pub fn alice_physics::spherical_terrain::SphericalHeightField<H>::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
+pub fn alice_physics::spherical_terrain::SphericalHeightField<H>::normal(&self, f32, f32, f32) -> (f32, f32, f32)
 impl<M: alice_physics::sim_modifier::PhysicsModifier> alice_physics::sdf_collider::SdfField for alice_physics::sim_modifier::SingleModifiedSdf<M>
 pub fn alice_physics::sim_modifier::SingleModifiedSdf<M>::distance(&self, f32, f32, f32) -> f32
 pub fn alice_physics::sim_modifier::SingleModifiedSdf<M>::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
@@ -13941,6 +13949,7 @@ pub alice_physics::sdf_character::SdfCharacter::skin_width: f32
 pub alice_physics::sdf_character::SdfCharacter::up: [f32; 3]
 pub alice_physics::sdf_character::SdfCharacter::velocity: [f32; 3]
 impl alice_physics::sdf_character::SdfCharacter
+pub fn alice_physics::sdf_character::SdfCharacter::apply_central_gravity(&mut self, [f32; 3], f32, f32)
 pub fn alice_physics::sdf_character::SdfCharacter::apply_gravity(&mut self, [f32; 3], f32)
 pub fn alice_physics::sdf_character::SdfCharacter::ground_contact<F: alice_physics::sdf_collider::SdfField + ?core::marker::Sized>(&self, &F) -> core::option::Option<alice_physics::sdf_character::GroundContact>
 pub fn alice_physics::sdf_character::SdfCharacter::is_grounded<F: alice_physics::sdf_collider::SdfField + ?core::marker::Sized>(&self, &F) -> bool
@@ -13948,6 +13957,7 @@ pub fn alice_physics::sdf_character::SdfCharacter::locomotion_context<F: alice_p
 pub fn alice_physics::sdf_character::SdfCharacter::move_and_slide<F: alice_physics::sdf_collider::SdfField + ?core::marker::Sized>(&self, &F, [f32; 3]) -> alice_physics::sdf_character::MoveOutcome
 pub fn alice_physics::sdf_character::SdfCharacter::new([f32; 3], f32, f32) -> Self
 pub fn alice_physics::sdf_character::SdfCharacter::step<F: alice_physics::sdf_collider::SdfField + ?core::marker::Sized>(&mut self, &F, f32, [f32; 3]) -> alice_physics::sdf_character::MoveOutcome
+pub fn alice_physics::sdf_character::SdfCharacter::step_on_sphere<F: alice_physics::sdf_collider::SdfField + ?core::marker::Sized>(&mut self, &F, [f32; 3], f32, [f32; 3]) -> alice_physics::sdf_character::MoveOutcome
 impl core::clone::Clone for alice_physics::sdf_character::SdfCharacter
 pub fn alice_physics::sdf_character::SdfCharacter::clone(&self) -> Self
 impl core::cmp::PartialEq for alice_physics::sdf_character::SdfCharacter
@@ -13998,6 +14008,24 @@ impl core::marker::Unpin for alice_physics::sdf_collider::SdfCollider
 impl core::marker::UnsafeUnpin for alice_physics::sdf_collider::SdfCollider
 impl !core::panic::unwind_safe::RefUnwindSafe for alice_physics::sdf_collider::SdfCollider
 impl !core::panic::unwind_safe::UnwindSafe for alice_physics::sdf_collider::SdfCollider
+pub struct alice_physics::sdf_collider::SdfUnion<A, B>
+impl<A: alice_physics::sdf_collider::SdfField, B: alice_physics::sdf_collider::SdfField> alice_physics::sdf_collider::SdfUnion<A, B>
+pub fn alice_physics::sdf_collider::SdfUnion<A, B>::new(A, B) -> Self
+impl<A: alice_physics::sdf_collider::SdfField, B: alice_physics::sdf_collider::SdfField> alice_physics::sdf_collider::SdfField for alice_physics::sdf_collider::SdfUnion<A, B>
+pub fn alice_physics::sdf_collider::SdfUnion<A, B>::distance(&self, f32, f32, f32) -> f32
+pub fn alice_physics::sdf_collider::SdfUnion<A, B>::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
+pub fn alice_physics::sdf_collider::SdfUnion<A, B>::normal(&self, f32, f32, f32) -> (f32, f32, f32)
+impl<A: core::clone::Clone, B: core::clone::Clone> core::clone::Clone for alice_physics::sdf_collider::SdfUnion<A, B>
+pub fn alice_physics::sdf_collider::SdfUnion<A, B>::clone(&self) -> Self
+impl<A: core::fmt::Debug, B: core::fmt::Debug> core::fmt::Debug for alice_physics::sdf_collider::SdfUnion<A, B>
+pub fn alice_physics::sdf_collider::SdfUnion<A, B>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<A, B> core::marker::Freeze for alice_physics::sdf_collider::SdfUnion<A, B> where A: core::marker::Freeze, B: core::marker::Freeze
+impl<A, B> core::marker::Send for alice_physics::sdf_collider::SdfUnion<A, B> where A: core::marker::Send, B: core::marker::Send
+impl<A, B> core::marker::Sync for alice_physics::sdf_collider::SdfUnion<A, B> where A: core::marker::Sync, B: core::marker::Sync
+impl<A, B> core::marker::Unpin for alice_physics::sdf_collider::SdfUnion<A, B> where A: core::marker::Unpin, B: core::marker::Unpin
+impl<A, B> core::marker::UnsafeUnpin for alice_physics::sdf_collider::SdfUnion<A, B> where A: core::marker::UnsafeUnpin, B: core::marker::UnsafeUnpin
+impl<A, B> core::panic::unwind_safe::RefUnwindSafe for alice_physics::sdf_collider::SdfUnion<A, B> where A: core::panic::unwind_safe::RefUnwindSafe, B: core::panic::unwind_safe::RefUnwindSafe
+impl<A, B> core::panic::unwind_safe::UnwindSafe for alice_physics::sdf_collider::SdfUnion<A, B> where A: core::panic::unwind_safe::UnwindSafe, B: core::panic::unwind_safe::UnwindSafe
 pub const alice_physics::sdf_collider::SDF_STATIC: usize
 pub trait alice_physics::sdf_collider::SdfField: core::marker::Send + core::marker::Sync
 pub fn alice_physics::sdf_collider::SdfField::distance(&self, f32, f32, f32) -> f32
@@ -14015,6 +14043,14 @@ impl alice_physics::sdf_collider::SdfField for alice_physics::sim_modifier::Modi
 pub fn alice_physics::sim_modifier::ModifiedSdf::distance(&self, f32, f32, f32) -> f32
 pub fn alice_physics::sim_modifier::ModifiedSdf::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
 pub fn alice_physics::sim_modifier::ModifiedSdf::normal(&self, f32, f32, f32) -> (f32, f32, f32)
+impl<A: alice_physics::sdf_collider::SdfField, B: alice_physics::sdf_collider::SdfField> alice_physics::sdf_collider::SdfField for alice_physics::sdf_collider::SdfUnion<A, B>
+pub fn alice_physics::sdf_collider::SdfUnion<A, B>::distance(&self, f32, f32, f32) -> f32
+pub fn alice_physics::sdf_collider::SdfUnion<A, B>::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
+pub fn alice_physics::sdf_collider::SdfUnion<A, B>::normal(&self, f32, f32, f32) -> (f32, f32, f32)
+impl<H: alice_physics::spherical_terrain::SurfaceHeight> alice_physics::sdf_collider::SdfField for alice_physics::spherical_terrain::SphericalHeightField<H>
+pub fn alice_physics::spherical_terrain::SphericalHeightField<H>::distance(&self, f32, f32, f32) -> f32
+pub fn alice_physics::spherical_terrain::SphericalHeightField<H>::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
+pub fn alice_physics::spherical_terrain::SphericalHeightField<H>::normal(&self, f32, f32, f32) -> (f32, f32, f32)
 impl<M: alice_physics::sim_modifier::PhysicsModifier> alice_physics::sdf_collider::SdfField for alice_physics::sim_modifier::SingleModifiedSdf<M>
 pub fn alice_physics::sim_modifier::SingleModifiedSdf<M>::distance(&self, f32, f32, f32) -> f32
 pub fn alice_physics::sim_modifier::SingleModifiedSdf<M>::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
@@ -15929,6 +15965,34 @@ impl core::marker::Unpin for alice_physics::spatial::SpatialGrid
 impl core::marker::UnsafeUnpin for alice_physics::spatial::SpatialGrid
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::spatial::SpatialGrid
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::spatial::SpatialGrid
+pub mod alice_physics::spherical_terrain
+pub struct alice_physics::spherical_terrain::SphericalHeightField<H: alice_physics::spherical_terrain::SurfaceHeight>
+impl<H: alice_physics::spherical_terrain::SurfaceHeight> alice_physics::spherical_terrain::SphericalHeightField<H>
+pub fn alice_physics::spherical_terrain::SphericalHeightField<H>::center(&self) -> [f32; 3]
+pub fn alice_physics::spherical_terrain::SphericalHeightField<H>::new([f32; 3], f32, H) -> Self
+pub fn alice_physics::spherical_terrain::SphericalHeightField<H>::radial_height(&self, [f32; 3]) -> f32
+pub fn alice_physics::spherical_terrain::SphericalHeightField<H>::radius(&self) -> f32
+pub fn alice_physics::spherical_terrain::SphericalHeightField<H>::surface_radius(&self, [f32; 3]) -> f32
+pub fn alice_physics::spherical_terrain::SphericalHeightField<H>::with_max_slope(self, f32) -> Self
+pub fn alice_physics::spherical_terrain::SphericalHeightField<H>::with_normal_step(self, f32) -> Self
+impl<H: alice_physics::spherical_terrain::SurfaceHeight> alice_physics::sdf_collider::SdfField for alice_physics::spherical_terrain::SphericalHeightField<H>
+pub fn alice_physics::spherical_terrain::SphericalHeightField<H>::distance(&self, f32, f32, f32) -> f32
+pub fn alice_physics::spherical_terrain::SphericalHeightField<H>::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
+pub fn alice_physics::spherical_terrain::SphericalHeightField<H>::normal(&self, f32, f32, f32) -> (f32, f32, f32)
+impl<H: alice_physics::spherical_terrain::SurfaceHeight> core::fmt::Debug for alice_physics::spherical_terrain::SphericalHeightField<H>
+pub fn alice_physics::spherical_terrain::SphericalHeightField<H>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<H> core::marker::Freeze for alice_physics::spherical_terrain::SphericalHeightField<H> where H: core::marker::Freeze
+impl<H> core::marker::Send for alice_physics::spherical_terrain::SphericalHeightField<H>
+impl<H> core::marker::Sync for alice_physics::spherical_terrain::SphericalHeightField<H>
+impl<H> core::marker::Unpin for alice_physics::spherical_terrain::SphericalHeightField<H> where H: core::marker::Unpin
+impl<H> core::marker::UnsafeUnpin for alice_physics::spherical_terrain::SphericalHeightField<H> where H: core::marker::UnsafeUnpin
+impl<H> core::panic::unwind_safe::RefUnwindSafe for alice_physics::spherical_terrain::SphericalHeightField<H> where H: core::panic::unwind_safe::RefUnwindSafe
+impl<H> core::panic::unwind_safe::UnwindSafe for alice_physics::spherical_terrain::SphericalHeightField<H> where H: core::panic::unwind_safe::UnwindSafe
+pub trait alice_physics::spherical_terrain::SurfaceHeight: core::marker::Send + core::marker::Sync
+pub fn alice_physics::spherical_terrain::SurfaceHeight::height(&self, [f32; 3]) -> f32
+impl<F: core::ops::function::Fn([f32; 3]) -> f32 + core::marker::Send + core::marker::Sync> alice_physics::spherical_terrain::SurfaceHeight for F
+pub fn F::height(&self, [f32; 3]) -> f32
+pub fn alice_physics::spherical_terrain::central_gravity([f32; 3], f32, [f32; 3]) -> [f32; 3]
 pub mod alice_physics::static_collider
 pub enum alice_physics::static_collider::StaticCollider
 pub alice_physics::static_collider::StaticCollider::HeightField(alice_physics::heightfield::HeightField)
@@ -22881,6 +22945,14 @@ impl alice_physics::sdf_collider::SdfField for alice_physics::sim_modifier::Modi
 pub fn alice_physics::sim_modifier::ModifiedSdf::distance(&self, f32, f32, f32) -> f32
 pub fn alice_physics::sim_modifier::ModifiedSdf::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
 pub fn alice_physics::sim_modifier::ModifiedSdf::normal(&self, f32, f32, f32) -> (f32, f32, f32)
+impl<A: alice_physics::sdf_collider::SdfField, B: alice_physics::sdf_collider::SdfField> alice_physics::sdf_collider::SdfField for alice_physics::sdf_collider::SdfUnion<A, B>
+pub fn alice_physics::sdf_collider::SdfUnion<A, B>::distance(&self, f32, f32, f32) -> f32
+pub fn alice_physics::sdf_collider::SdfUnion<A, B>::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
+pub fn alice_physics::sdf_collider::SdfUnion<A, B>::normal(&self, f32, f32, f32) -> (f32, f32, f32)
+impl<H: alice_physics::spherical_terrain::SurfaceHeight> alice_physics::sdf_collider::SdfField for alice_physics::spherical_terrain::SphericalHeightField<H>
+pub fn alice_physics::spherical_terrain::SphericalHeightField<H>::distance(&self, f32, f32, f32) -> f32
+pub fn alice_physics::spherical_terrain::SphericalHeightField<H>::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
+pub fn alice_physics::spherical_terrain::SphericalHeightField<H>::normal(&self, f32, f32, f32) -> (f32, f32, f32)
 impl<M: alice_physics::sim_modifier::PhysicsModifier> alice_physics::sdf_collider::SdfField for alice_physics::sim_modifier::SingleModifiedSdf<M>
 pub fn alice_physics::sim_modifier::SingleModifiedSdf<M>::distance(&self, f32, f32, f32) -> f32
 pub fn alice_physics::sim_modifier::SingleModifiedSdf<M>::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
