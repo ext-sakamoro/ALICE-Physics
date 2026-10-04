@@ -11,8 +11,8 @@
 #![allow(clippy::disallowed_methods)]
 
 use alice_physics::joint_extra::{
-    solve_extra_joints, ExtraJoint, GearJoint, MouseJoint, PulleyJoint, RackAndPinionJoint,
-    WeldJoint,
+    solve_extra_joints, solve_pulley_to_length, ExtraJoint, GearJoint, MouseJoint, PulleyJoint,
+    RackAndPinionJoint, WeldJoint,
 };
 use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
 use alice_physics::solver::RigidBody;
@@ -82,7 +82,6 @@ fn pulley_total_length_uses_the_rotated_local_anchors() {
 /// The documented constraint `len_a + ratio * len_b = total_length` must hold after
 /// solving: a rope pulled out of its rest configuration is drawn back.
 #[test]
-#[ignore = "known defect: AUD-A-S3W1-011: solve_pulley hard-codes `error = Fix128::ZERO` (no rest length is stored), so solve_extra_joints never moves a pulley body; total_length stays 11 instead of returning to the rest value 10"]
 fn pulley_solver_restores_the_total_rope_length() {
     let ground_a = v3(-1.0, 10.0, 0.0);
     let ground_b = v3(1.0, 10.0, 0.0);
@@ -99,10 +98,70 @@ fn pulley_solver_restores_the_total_rope_length() {
     let rest = j.total_length(&bodies).to_f64(); // 10
     bodies[0].position = v3(-1.0, 4.0, 0.0); // pulled down by 1: total 11
     for _ in 0..50 {
-        solve(&mut bodies, ExtraJoint::Pulley(j), 1.0 / 16.0);
+        solve_pulley_to_length(&j, &mut bodies, fx(rest), fx(1.0 / 16.0));
     }
     let t = j.total_length(&bodies).to_f64();
     assert!((t - rest).abs() < 1e-6, "total length {t}, rest {rest}");
+}
+
+/// Ratio 2, unit masses: `C = 1`, `w = 1 + 4`, one projection moves a by
+/// `lambda w_a = 0.2` and b by `ratio lambda w_b = 0.4` along their ropes, which
+/// lands exactly on the rest length 15.
+#[test]
+fn pulley_to_length_uses_the_ratio_in_the_gradient_and_effective_mass() {
+    let mut bodies = vec![body(v3(-1.0, 5.0, 0.0), 1.0), body(v3(1.0, 5.0, 0.0), 1.0)];
+    let j = PulleyJoint::new(
+        0,
+        1,
+        Vec3Fix::ZERO,
+        Vec3Fix::ZERO,
+        v3(-1.0, 10.0, 0.0),
+        v3(1.0, 10.0, 0.0),
+        fx(2.0),
+    );
+    assert!((j.total_length(&bodies).to_f64() - 15.0).abs() < 1e-9);
+    bodies[0].position = v3(-1.0, 4.0, 0.0); // total 16
+    solve_pulley_to_length(&j, &mut bodies, fx(15.0), fx(1.0 / 16.0));
+    assert!((bodies[0].position.y.to_f64() - 4.2).abs() < 1e-9);
+    assert!((bodies[1].position.y.to_f64() - 5.4).abs() < 1e-9);
+    assert!((j.total_length(&bodies).to_f64() - 15.0).abs() < 1e-9);
+}
+
+/// A slack rope (`C <= 0`) is left alone.
+#[test]
+fn pulley_to_length_does_not_pull_a_slack_rope() {
+    let mut bodies = vec![body(v3(-1.0, 5.0, 0.0), 1.0), body(v3(1.0, 5.0, 0.0), 1.0)];
+    let j = PulleyJoint::new(
+        0,
+        1,
+        Vec3Fix::ZERO,
+        Vec3Fix::ZERO,
+        v3(-1.0, 10.0, 0.0),
+        v3(1.0, 10.0, 0.0),
+        fx(1.0),
+    );
+    let before = bodies.clone();
+    solve_pulley_to_length(&j, &mut bodies, fx(12.0), fx(1.0 / 16.0));
+    assert_eq!(bodies[0].position, before[0].position);
+    assert_eq!(bodies[1].position, before[1].position);
+}
+
+/// `solve_extra_joints` keeps the pulley a no-op (no rest length stored).
+#[test]
+fn pulley_via_solve_extra_joints_stays_a_no_op() {
+    let mut bodies = vec![body(v3(-1.0, 4.0, 0.0), 1.0), body(v3(1.0, 5.0, 0.0), 1.0)];
+    let j = PulleyJoint::new(
+        0,
+        1,
+        Vec3Fix::ZERO,
+        Vec3Fix::ZERO,
+        v3(-1.0, 10.0, 0.0),
+        v3(1.0, 10.0, 0.0),
+        fx(1.0),
+    );
+    let before = bodies.clone();
+    solve(&mut bodies, ExtraJoint::Pulley(j), 1.0 / 16.0);
+    assert_eq!(bodies[0].position, before[0].position);
 }
 
 // ---------------------------------------------------------------------------
