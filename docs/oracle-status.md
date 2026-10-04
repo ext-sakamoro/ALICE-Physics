@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 4081 |
+| 🟢 Not ignored (run by CI) | 4207 |
 | 🔴 Red by design | 228 |
 | ⏱ Gated (runtime / diagnostic / manual) | 24 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **4333** |
+| **Total** | **4459** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -301,7 +301,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (4081)
+## 🟢 Not ignored (4207)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -313,6 +313,7 @@ Per-file counts (the test names are in `tests/`):
 | `engineering_oracles_fluid.rs` | 40 |
 | `analytic_maxwell_fdtd.rs` | 38 |
 | `analytic_raycast_wiring.rs` | 37 |
+| `analytic_shape_raycast.rs` | 36 |
 | `analytic_sdf_character_up_axis.rs` | 35 |
 | `analytic_world_api.rs` | 35 |
 | `audit_coupled_iteration.rs` | 34 |
@@ -349,6 +350,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_multiphase_wiring.rs` | 21 |
 | `analytic_neural_wiring.rs` | 21 |
 | `analytic_rope_wiring.rs` | 21 |
+| `analytic_vehicle_dynamics.rs` | 21 |
 | `analytic_buoyancy_zone_wiring.rs` | 20 |
 | `analytic_fluid_netcode_wiring.rs` | 20 |
 | `analytic_joint_extra_wiring.rs` | 20 |
@@ -368,6 +370,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_hyperelastic_wiring.rs` | 18 |
 | `analytic_multi_world_wiring.rs` | 18 |
 | `analytic_sdf_force_wiring.rs` | 18 |
+| `analytic_spherical_terrain.rs` | 18 |
 | `analytic_thin_wall_wiring.rs` | 18 |
 | `analytic_wind_zone_wiring.rs` | 18 |
 | `audit_bvh.rs` | 18 |
@@ -422,8 +425,10 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_sdf_destruction_wiring.rs` | 14 |
 | `analytic_sdf_fem_mesh_wiring.rs` | 14 |
 | `analytic_sdf_manifold_wiring.rs` | 14 |
+| `analytic_sensors.rs` | 14 |
 | `analytic_smoke_fire_wiring.rs` | 14 |
 | `analytic_thermal_wiring.rs` | 14 |
+| `analytic_vehicle_scenario.rs` | 14 |
 | `audit_animation_blend.rs` | 14 |
 | `audit_articulation.rs` | 14 |
 | `audit_fsi_advanced.rs` | 14 |
@@ -434,6 +439,7 @@ Per-file counts (the test names are in `tests/`):
 | `audit_rope.rs` | 14 |
 | `audit_sketch.rs` | 14 |
 | `audit_soft_body_cut.rs` | 14 |
+| `world_snapshot_v2.rs` | 14 |
 | `analytic_anisotropic_wiring.rs` | 13 |
 | `analytic_csf_wiring.rs` | 13 |
 | `analytic_cubic_elastic_fem_wiring.rs` | 13 |
@@ -526,6 +532,7 @@ Per-file counts (the test names are in `tests/`):
 | `audit_sdf_wind_field.rs` | 9 |
 | `audit_vibration_wall.rs` | 9 |
 | `determinism_golden.rs` | 9 |
+| `vehicle_dynamics_degenerate.rs` | 9 |
 | `analytic_added_mass_coupling.rs` | 8 |
 | `analytic_broadphase.rs` | 8 |
 | `analytic_cubic_fem.rs` | 8 |
