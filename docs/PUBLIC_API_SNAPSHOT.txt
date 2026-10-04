@@ -16235,6 +16235,684 @@ impl core::marker::Unpin for alice_physics::vehicle::WheelState
 impl core::marker::UnsafeUnpin for alice_physics::vehicle::WheelState
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::vehicle::WheelState
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::vehicle::WheelState
+pub mod alice_physics::vehicle_dynamics
+pub mod alice_physics::vehicle_dynamics::powertrain
+pub enum alice_physics::vehicle_dynamics::powertrain::Differential
+pub alice_physics::vehicle_dynamics::powertrain::Differential::Locked
+pub alice_physics::vehicle_dynamics::powertrain::Differential::Open
+impl core::clone::Clone for alice_physics::vehicle_dynamics::powertrain::Differential
+pub fn alice_physics::vehicle_dynamics::powertrain::Differential::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::vehicle_dynamics::powertrain::Differential
+impl core::cmp::PartialEq for alice_physics::vehicle_dynamics::powertrain::Differential
+pub fn alice_physics::vehicle_dynamics::powertrain::Differential::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::vehicle_dynamics::powertrain::Differential
+pub fn alice_physics::vehicle_dynamics::powertrain::Differential::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::vehicle_dynamics::powertrain::Differential
+impl core::marker::StructuralPartialEq for alice_physics::vehicle_dynamics::powertrain::Differential
+impl core::marker::Freeze for alice_physics::vehicle_dynamics::powertrain::Differential
+impl core::marker::Send for alice_physics::vehicle_dynamics::powertrain::Differential
+impl core::marker::Sync for alice_physics::vehicle_dynamics::powertrain::Differential
+impl core::marker::Unpin for alice_physics::vehicle_dynamics::powertrain::Differential
+impl core::marker::UnsafeUnpin for alice_physics::vehicle_dynamics::powertrain::Differential
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::vehicle_dynamics::powertrain::Differential
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::vehicle_dynamics::powertrain::Differential
+pub struct alice_physics::vehicle_dynamics::powertrain::Powertrain
+pub alice_physics::vehicle_dynamics::powertrain::Powertrain::current_gear: usize
+pub alice_physics::vehicle_dynamics::powertrain::Powertrain::curve: alice_physics::vehicle_dynamics::powertrain::TorqueCurve
+pub alice_physics::vehicle_dynamics::powertrain::Powertrain::differential: alice_physics::vehicle_dynamics::powertrain::Differential
+pub alice_physics::vehicle_dynamics::powertrain::Powertrain::engine_brake_per_rpm: alice_physics::math::Fix128
+pub alice_physics::vehicle_dynamics::powertrain::Powertrain::final_drive: alice_physics::math::Fix128
+pub alice_physics::vehicle_dynamics::powertrain::Powertrain::gear_ratios: alloc::vec::Vec<alice_physics::math::Fix128>
+pub alice_physics::vehicle_dynamics::powertrain::Powertrain::idle_rpm: alice_physics::math::Fix128
+pub alice_physics::vehicle_dynamics::powertrain::Powertrain::max_rpm: alice_physics::math::Fix128
+impl alice_physics::vehicle_dynamics::powertrain::Powertrain
+pub fn alice_physics::vehicle_dynamics::powertrain::Powertrain::axle_torque(&self, alice_physics::math::Fix128, alice_physics::math::Fix128) -> alice_physics::math::Fix128
+pub fn alice_physics::vehicle_dynamics::powertrain::Powertrain::engine_rpm(&self, alice_physics::math::Fix128) -> alice_physics::math::Fix128
+pub fn alice_physics::vehicle_dynamics::powertrain::Powertrain::from_engine_config(&alice_physics::vehicle::EngineConfig, &[alice_physics::math::Fix128]) -> Self
+pub fn alice_physics::vehicle_dynamics::powertrain::Powertrain::shift_down(&mut self)
+pub fn alice_physics::vehicle_dynamics::powertrain::Powertrain::shift_up(&mut self)
+pub fn alice_physics::vehicle_dynamics::powertrain::Powertrain::total_ratio(&self) -> alice_physics::math::Fix128
+impl core::clone::Clone for alice_physics::vehicle_dynamics::powertrain::Powertrain
+pub fn alice_physics::vehicle_dynamics::powertrain::Powertrain::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::vehicle_dynamics::powertrain::Powertrain
+impl core::cmp::PartialEq for alice_physics::vehicle_dynamics::powertrain::Powertrain
+pub fn alice_physics::vehicle_dynamics::powertrain::Powertrain::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::vehicle_dynamics::powertrain::Powertrain
+pub fn alice_physics::vehicle_dynamics::powertrain::Powertrain::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for alice_physics::vehicle_dynamics::powertrain::Powertrain
+impl core::marker::Freeze for alice_physics::vehicle_dynamics::powertrain::Powertrain
+impl core::marker::Send for alice_physics::vehicle_dynamics::powertrain::Powertrain
+impl core::marker::Sync for alice_physics::vehicle_dynamics::powertrain::Powertrain
+impl core::marker::Unpin for alice_physics::vehicle_dynamics::powertrain::Powertrain
+impl core::marker::UnsafeUnpin for alice_physics::vehicle_dynamics::powertrain::Powertrain
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::vehicle_dynamics::powertrain::Powertrain
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::vehicle_dynamics::powertrain::Powertrain
+pub struct alice_physics::vehicle_dynamics::powertrain::TorqueCurve
+pub alice_physics::vehicle_dynamics::powertrain::TorqueCurve::points: alloc::vec::Vec<(alice_physics::math::Fix128, alice_physics::math::Fix128)>
+impl alice_physics::vehicle_dynamics::powertrain::TorqueCurve
+pub fn alice_physics::vehicle_dynamics::powertrain::TorqueCurve::torque_at(&self, alice_physics::math::Fix128, alice_physics::math::Fix128) -> alice_physics::math::Fix128
+impl core::clone::Clone for alice_physics::vehicle_dynamics::powertrain::TorqueCurve
+pub fn alice_physics::vehicle_dynamics::powertrain::TorqueCurve::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::vehicle_dynamics::powertrain::TorqueCurve
+impl core::cmp::PartialEq for alice_physics::vehicle_dynamics::powertrain::TorqueCurve
+pub fn alice_physics::vehicle_dynamics::powertrain::TorqueCurve::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::vehicle_dynamics::powertrain::TorqueCurve
+pub fn alice_physics::vehicle_dynamics::powertrain::TorqueCurve::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for alice_physics::vehicle_dynamics::powertrain::TorqueCurve
+impl core::marker::Freeze for alice_physics::vehicle_dynamics::powertrain::TorqueCurve
+impl core::marker::Send for alice_physics::vehicle_dynamics::powertrain::TorqueCurve
+impl core::marker::Sync for alice_physics::vehicle_dynamics::powertrain::TorqueCurve
+impl core::marker::Unpin for alice_physics::vehicle_dynamics::powertrain::TorqueCurve
+impl core::marker::UnsafeUnpin for alice_physics::vehicle_dynamics::powertrain::TorqueCurve
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::vehicle_dynamics::powertrain::TorqueCurve
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::vehicle_dynamics::powertrain::TorqueCurve
+pub mod alice_physics::vehicle_dynamics::scenario
+pub enum alice_physics::vehicle_dynamics::scenario::ReplayError
+pub alice_physics::vehicle_dynamics::scenario::ReplayError::BadMagic
+pub alice_physics::vehicle_dynamics::scenario::ReplayError::BodyMismatch
+pub alice_physics::vehicle_dynamics::scenario::ReplayError::BodyMismatch::recorded: usize
+pub alice_physics::vehicle_dynamics::scenario::ReplayError::BodyMismatch::scenario: usize
+pub alice_physics::vehicle_dynamics::scenario::ReplayError::BodyMismatch::vehicle: usize
+pub alice_physics::vehicle_dynamics::scenario::ReplayError::InvalidFlag
+pub alice_physics::vehicle_dynamics::scenario::ReplayError::Oversized
+pub alice_physics::vehicle_dynamics::scenario::ReplayError::TrailingBytes
+pub alice_physics::vehicle_dynamics::scenario::ReplayError::Truncated
+pub alice_physics::vehicle_dynamics::scenario::ReplayError::UnsupportedVersion(u16)
+pub alice_physics::vehicle_dynamics::scenario::ReplayError::VehicleCountMismatch
+pub alice_physics::vehicle_dynamics::scenario::ReplayError::VehicleCountMismatch::recorded: usize
+pub alice_physics::vehicle_dynamics::scenario::ReplayError::VehicleCountMismatch::scenario: usize
+pub alice_physics::vehicle_dynamics::scenario::ReplayError::WheelCountMismatch
+pub alice_physics::vehicle_dynamics::scenario::ReplayError::WheelCountMismatch::recorded: usize
+pub alice_physics::vehicle_dynamics::scenario::ReplayError::WheelCountMismatch::scenario: usize
+pub alice_physics::vehicle_dynamics::scenario::ReplayError::WheelCountMismatch::vehicle: usize
+pub alice_physics::vehicle_dynamics::scenario::ReplayError::WorldStateRejected
+impl core::clone::Clone for alice_physics::vehicle_dynamics::scenario::ReplayError
+pub fn alice_physics::vehicle_dynamics::scenario::ReplayError::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::vehicle_dynamics::scenario::ReplayError
+impl core::cmp::PartialEq for alice_physics::vehicle_dynamics::scenario::ReplayError
+pub fn alice_physics::vehicle_dynamics::scenario::ReplayError::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::vehicle_dynamics::scenario::ReplayError
+pub fn alice_physics::vehicle_dynamics::scenario::ReplayError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::vehicle_dynamics::scenario::ReplayError
+impl core::marker::StructuralPartialEq for alice_physics::vehicle_dynamics::scenario::ReplayError
+impl core::marker::Freeze for alice_physics::vehicle_dynamics::scenario::ReplayError
+impl core::marker::Send for alice_physics::vehicle_dynamics::scenario::ReplayError
+impl core::marker::Sync for alice_physics::vehicle_dynamics::scenario::ReplayError
+impl core::marker::Unpin for alice_physics::vehicle_dynamics::scenario::ReplayError
+impl core::marker::UnsafeUnpin for alice_physics::vehicle_dynamics::scenario::ReplayError
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::vehicle_dynamics::scenario::ReplayError
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::vehicle_dynamics::scenario::ReplayError
+pub struct alice_physics::vehicle_dynamics::scenario::Recording
+impl alice_physics::vehicle_dynamics::scenario::Recording
+pub fn alice_physics::vehicle_dynamics::scenario::Recording::dt(&self) -> alice_physics::math::Fix128
+pub fn alice_physics::vehicle_dynamics::scenario::Recording::frame_count(&self) -> usize
+pub fn alice_physics::vehicle_dynamics::scenario::Recording::from_bytes(&[u8]) -> core::result::Result<Self, alice_physics::vehicle_dynamics::scenario::ReplayError>
+pub fn alice_physics::vehicle_dynamics::scenario::Recording::input_mut(&mut self, usize, usize) -> core::option::Option<&mut alice_physics::vehicle_dynamics::DriverInput>
+pub fn alice_physics::vehicle_dynamics::scenario::Recording::inputs(&self, usize) -> core::option::Option<&[alice_physics::vehicle_dynamics::DriverInput]>
+pub fn alice_physics::vehicle_dynamics::scenario::Recording::replay<R: alice_physics::vehicle_dynamics::surface::RoadSurface>(&self, &mut alice_physics::vehicle_dynamics::scenario::Scenario<R>) -> core::result::Result<(), alice_physics::vehicle_dynamics::scenario::ReplayError>
+pub fn alice_physics::vehicle_dynamics::scenario::Recording::restore<R: alice_physics::vehicle_dynamics::surface::RoadSurface>(&self, &mut alice_physics::vehicle_dynamics::scenario::Scenario<R>) -> core::result::Result<(), alice_physics::vehicle_dynamics::scenario::ReplayError>
+pub fn alice_physics::vehicle_dynamics::scenario::Recording::to_bytes(&self) -> alloc::vec::Vec<u8>
+pub fn alice_physics::vehicle_dynamics::scenario::Recording::vehicle_count(&self) -> usize
+pub fn alice_physics::vehicle_dynamics::scenario::Recording::vehicles(&self) -> &[alice_physics::vehicle_dynamics::scenario::VehicleSnapshot]
+impl core::clone::Clone for alice_physics::vehicle_dynamics::scenario::Recording
+pub fn alice_physics::vehicle_dynamics::scenario::Recording::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::vehicle_dynamics::scenario::Recording
+impl core::cmp::PartialEq for alice_physics::vehicle_dynamics::scenario::Recording
+pub fn alice_physics::vehicle_dynamics::scenario::Recording::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::vehicle_dynamics::scenario::Recording
+pub fn alice_physics::vehicle_dynamics::scenario::Recording::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for alice_physics::vehicle_dynamics::scenario::Recording
+impl core::marker::Freeze for alice_physics::vehicle_dynamics::scenario::Recording
+impl core::marker::Send for alice_physics::vehicle_dynamics::scenario::Recording
+impl core::marker::Sync for alice_physics::vehicle_dynamics::scenario::Recording
+impl core::marker::Unpin for alice_physics::vehicle_dynamics::scenario::Recording
+impl core::marker::UnsafeUnpin for alice_physics::vehicle_dynamics::scenario::Recording
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::vehicle_dynamics::scenario::Recording
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::vehicle_dynamics::scenario::Recording
+pub struct alice_physics::vehicle_dynamics::scenario::Scenario<R: alice_physics::vehicle_dynamics::surface::RoadSurface>
+pub alice_physics::vehicle_dynamics::scenario::Scenario::condition: alice_physics::vehicle_dynamics::surface::RoadCondition
+pub alice_physics::vehicle_dynamics::scenario::Scenario::dt: alice_physics::math::Fix128
+pub alice_physics::vehicle_dynamics::scenario::Scenario::frame: u64
+pub alice_physics::vehicle_dynamics::scenario::Scenario::road: R
+pub alice_physics::vehicle_dynamics::scenario::Scenario::time: alice_physics::math::Fix128
+pub alice_physics::vehicle_dynamics::scenario::Scenario::vehicles: alloc::vec::Vec<alice_physics::vehicle_dynamics::scenario::ScenarioVehicle>
+pub alice_physics::vehicle_dynamics::scenario::Scenario::wind: core::option::Option<alice_physics::wind_zone::WindZone>
+pub alice_physics::vehicle_dynamics::scenario::Scenario::world: alice_physics::solver::PhysicsWorld
+impl<R: alice_physics::vehicle_dynamics::surface::RoadSurface> alice_physics::vehicle_dynamics::scenario::Scenario<R>
+pub fn alice_physics::vehicle_dynamics::scenario::Scenario<R>::add_vehicle(&mut self, alice_physics::vehicle_dynamics::DynamicVehicle, alice_physics::solver::RigidBody) -> usize
+pub fn alice_physics::vehicle_dynamics::scenario::Scenario<R>::chassis(&self, usize) -> core::option::Option<&alice_physics::solver::RigidBody>
+pub fn alice_physics::vehicle_dynamics::scenario::Scenario<R>::is_recording(&self) -> bool
+pub fn alice_physics::vehicle_dynamics::scenario::Scenario<R>::new(alice_physics::solver::PhysicsWorld, R, alice_physics::vehicle_dynamics::surface::RoadCondition, alice_physics::math::Fix128) -> Self
+pub fn alice_physics::vehicle_dynamics::scenario::Scenario<R>::run_tracks(&mut self, &[&[alice_physics::vehicle_dynamics::DriverInput]], usize)
+pub fn alice_physics::vehicle_dynamics::scenario::Scenario<R>::start_recording(&mut self)
+pub fn alice_physics::vehicle_dynamics::scenario::Scenario<R>::step(&mut self, &[alice_physics::vehicle_dynamics::DriverInput])
+pub fn alice_physics::vehicle_dynamics::scenario::Scenario<R>::step_with<F>(&mut self, usize, F) where F: core::ops::function::FnMut(u64, usize, &alice_physics::vehicle_dynamics::DynamicVehicle, &alice_physics::solver::RigidBody) -> alice_physics::vehicle_dynamics::DriverInput
+pub fn alice_physics::vehicle_dynamics::scenario::Scenario<R>::stop_recording(&mut self) -> core::option::Option<alice_physics::vehicle_dynamics::scenario::Recording>
+impl<R> core::marker::Freeze for alice_physics::vehicle_dynamics::scenario::Scenario<R> where R: core::marker::Freeze
+impl<R> core::marker::Send for alice_physics::vehicle_dynamics::scenario::Scenario<R> where R: core::marker::Send
+impl<R> core::marker::Sync for alice_physics::vehicle_dynamics::scenario::Scenario<R> where R: core::marker::Sync
+impl<R> core::marker::Unpin for alice_physics::vehicle_dynamics::scenario::Scenario<R> where R: core::marker::Unpin
+impl<R> core::marker::UnsafeUnpin for alice_physics::vehicle_dynamics::scenario::Scenario<R> where R: core::marker::UnsafeUnpin
+impl<R> !core::panic::unwind_safe::RefUnwindSafe for alice_physics::vehicle_dynamics::scenario::Scenario<R>
+impl<R> !core::panic::unwind_safe::UnwindSafe for alice_physics::vehicle_dynamics::scenario::Scenario<R>
+pub struct alice_physics::vehicle_dynamics::scenario::ScenarioVehicle
+pub alice_physics::vehicle_dynamics::scenario::ScenarioVehicle::body: usize
+pub alice_physics::vehicle_dynamics::scenario::ScenarioVehicle::vehicle: alice_physics::vehicle_dynamics::DynamicVehicle
+impl core::clone::Clone for alice_physics::vehicle_dynamics::scenario::ScenarioVehicle
+pub fn alice_physics::vehicle_dynamics::scenario::ScenarioVehicle::clone(&self) -> Self
+impl core::fmt::Debug for alice_physics::vehicle_dynamics::scenario::ScenarioVehicle
+pub fn alice_physics::vehicle_dynamics::scenario::ScenarioVehicle::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for alice_physics::vehicle_dynamics::scenario::ScenarioVehicle
+impl core::marker::Send for alice_physics::vehicle_dynamics::scenario::ScenarioVehicle
+impl core::marker::Sync for alice_physics::vehicle_dynamics::scenario::ScenarioVehicle
+impl core::marker::Unpin for alice_physics::vehicle_dynamics::scenario::ScenarioVehicle
+impl core::marker::UnsafeUnpin for alice_physics::vehicle_dynamics::scenario::ScenarioVehicle
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::vehicle_dynamics::scenario::ScenarioVehicle
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::vehicle_dynamics::scenario::ScenarioVehicle
+pub struct alice_physics::vehicle_dynamics::scenario::StoppingDistanceMeter
+impl alice_physics::vehicle_dynamics::scenario::StoppingDistanceMeter
+pub fn alice_physics::vehicle_dynamics::scenario::StoppingDistanceMeter::distance(&self) -> core::option::Option<alice_physics::math::Fix128>
+pub fn alice_physics::vehicle_dynamics::scenario::StoppingDistanceMeter::frames_to_stop(&self) -> core::option::Option<u64>
+pub fn alice_physics::vehicle_dynamics::scenario::StoppingDistanceMeter::is_stopped(&self) -> bool
+pub fn alice_physics::vehicle_dynamics::scenario::StoppingDistanceMeter::new(&alice_physics::solver::RigidBody, alice_physics::math::Vec3Fix, alice_physics::math::Fix128) -> Self
+pub fn alice_physics::vehicle_dynamics::scenario::StoppingDistanceMeter::sample(&mut self, &alice_physics::solver::RigidBody) -> bool
+pub fn alice_physics::vehicle_dynamics::scenario::StoppingDistanceMeter::travelled(&self) -> alice_physics::math::Fix128
+impl core::clone::Clone for alice_physics::vehicle_dynamics::scenario::StoppingDistanceMeter
+pub fn alice_physics::vehicle_dynamics::scenario::StoppingDistanceMeter::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::vehicle_dynamics::scenario::StoppingDistanceMeter
+impl core::cmp::PartialEq for alice_physics::vehicle_dynamics::scenario::StoppingDistanceMeter
+pub fn alice_physics::vehicle_dynamics::scenario::StoppingDistanceMeter::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::vehicle_dynamics::scenario::StoppingDistanceMeter
+pub fn alice_physics::vehicle_dynamics::scenario::StoppingDistanceMeter::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::vehicle_dynamics::scenario::StoppingDistanceMeter
+impl core::marker::StructuralPartialEq for alice_physics::vehicle_dynamics::scenario::StoppingDistanceMeter
+impl core::marker::Freeze for alice_physics::vehicle_dynamics::scenario::StoppingDistanceMeter
+impl core::marker::Send for alice_physics::vehicle_dynamics::scenario::StoppingDistanceMeter
+impl core::marker::Sync for alice_physics::vehicle_dynamics::scenario::StoppingDistanceMeter
+impl core::marker::Unpin for alice_physics::vehicle_dynamics::scenario::StoppingDistanceMeter
+impl core::marker::UnsafeUnpin for alice_physics::vehicle_dynamics::scenario::StoppingDistanceMeter
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::vehicle_dynamics::scenario::StoppingDistanceMeter
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::vehicle_dynamics::scenario::StoppingDistanceMeter
+pub struct alice_physics::vehicle_dynamics::scenario::VehicleSnapshot
+pub alice_physics::vehicle_dynamics::scenario::VehicleSnapshot::body: usize
+pub alice_physics::vehicle_dynamics::scenario::VehicleSnapshot::current_gear: usize
+pub alice_physics::vehicle_dynamics::scenario::VehicleSnapshot::engine_rpm: alice_physics::math::Fix128
+pub alice_physics::vehicle_dynamics::scenario::VehicleSnapshot::input: alice_physics::vehicle_dynamics::DriverInput
+pub alice_physics::vehicle_dynamics::scenario::VehicleSnapshot::wheels: alloc::vec::Vec<alice_physics::vehicle_dynamics::WheelDynamicsState>
+impl core::clone::Clone for alice_physics::vehicle_dynamics::scenario::VehicleSnapshot
+pub fn alice_physics::vehicle_dynamics::scenario::VehicleSnapshot::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::vehicle_dynamics::scenario::VehicleSnapshot
+impl core::cmp::PartialEq for alice_physics::vehicle_dynamics::scenario::VehicleSnapshot
+pub fn alice_physics::vehicle_dynamics::scenario::VehicleSnapshot::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::vehicle_dynamics::scenario::VehicleSnapshot
+pub fn alice_physics::vehicle_dynamics::scenario::VehicleSnapshot::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for alice_physics::vehicle_dynamics::scenario::VehicleSnapshot
+impl core::marker::Freeze for alice_physics::vehicle_dynamics::scenario::VehicleSnapshot
+impl core::marker::Send for alice_physics::vehicle_dynamics::scenario::VehicleSnapshot
+impl core::marker::Sync for alice_physics::vehicle_dynamics::scenario::VehicleSnapshot
+impl core::marker::Unpin for alice_physics::vehicle_dynamics::scenario::VehicleSnapshot
+impl core::marker::UnsafeUnpin for alice_physics::vehicle_dynamics::scenario::VehicleSnapshot
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::vehicle_dynamics::scenario::VehicleSnapshot
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::vehicle_dynamics::scenario::VehicleSnapshot
+pub const alice_physics::vehicle_dynamics::scenario::RECORDING_MAGIC: [u8; 4]
+pub const alice_physics::vehicle_dynamics::scenario::RECORDING_VERSION: u16
+pub fn alice_physics::vehicle_dynamics::scenario::longitudinal_state(&alice_physics::solver::RigidBody, &alice_physics::solver::RigidBody, alice_physics::math::Vec3Fix, alice_physics::math::Fix128) -> (alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128)
+pub fn alice_physics::vehicle_dynamics::scenario::time_headway(alice_physics::math::Fix128, alice_physics::math::Fix128) -> core::option::Option<alice_physics::math::Fix128>
+pub fn alice_physics::vehicle_dynamics::scenario::time_to_collision(alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128) -> core::option::Option<alice_physics::math::Fix128>
+pub fn alice_physics::vehicle_dynamics::scenario::up_from_gravity(alice_physics::math::Vec3Fix) -> core::option::Option<alice_physics::math::Vec3Fix>
+pub mod alice_physics::vehicle_dynamics::surface
+pub enum alice_physics::vehicle_dynamics::surface::Weather
+pub alice_physics::vehicle_dynamics::surface::Weather::Dry
+pub alice_physics::vehicle_dynamics::surface::Weather::Ice
+pub alice_physics::vehicle_dynamics::surface::Weather::Snow
+pub alice_physics::vehicle_dynamics::surface::Weather::Wet
+pub alice_physics::vehicle_dynamics::surface::Weather::Wet::water_depth_mm: alice_physics::math::Fix128
+impl core::clone::Clone for alice_physics::vehicle_dynamics::surface::Weather
+pub fn alice_physics::vehicle_dynamics::surface::Weather::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::vehicle_dynamics::surface::Weather
+impl core::cmp::PartialEq for alice_physics::vehicle_dynamics::surface::Weather
+pub fn alice_physics::vehicle_dynamics::surface::Weather::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::vehicle_dynamics::surface::Weather
+pub fn alice_physics::vehicle_dynamics::surface::Weather::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::vehicle_dynamics::surface::Weather
+impl core::marker::StructuralPartialEq for alice_physics::vehicle_dynamics::surface::Weather
+impl core::marker::Freeze for alice_physics::vehicle_dynamics::surface::Weather
+impl core::marker::Send for alice_physics::vehicle_dynamics::surface::Weather
+impl core::marker::Sync for alice_physics::vehicle_dynamics::surface::Weather
+impl core::marker::Unpin for alice_physics::vehicle_dynamics::surface::Weather
+impl core::marker::UnsafeUnpin for alice_physics::vehicle_dynamics::surface::Weather
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::vehicle_dynamics::surface::Weather
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::vehicle_dynamics::surface::Weather
+pub struct alice_physics::vehicle_dynamics::surface::FlatGround
+pub alice_physics::vehicle_dynamics::surface::FlatGround::height: alice_physics::math::Fix128
+impl alice_physics::vehicle_dynamics::surface::RoadSurface for alice_physics::vehicle_dynamics::surface::FlatGround
+pub fn alice_physics::vehicle_dynamics::surface::FlatGround::probe(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128) -> core::option::Option<alice_physics::vehicle_dynamics::surface::GroundHit>
+impl core::clone::Clone for alice_physics::vehicle_dynamics::surface::FlatGround
+pub fn alice_physics::vehicle_dynamics::surface::FlatGround::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::vehicle_dynamics::surface::FlatGround
+impl core::cmp::PartialEq for alice_physics::vehicle_dynamics::surface::FlatGround
+pub fn alice_physics::vehicle_dynamics::surface::FlatGround::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::vehicle_dynamics::surface::FlatGround
+pub fn alice_physics::vehicle_dynamics::surface::FlatGround::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::vehicle_dynamics::surface::FlatGround
+impl core::marker::StructuralPartialEq for alice_physics::vehicle_dynamics::surface::FlatGround
+impl core::marker::Freeze for alice_physics::vehicle_dynamics::surface::FlatGround
+impl core::marker::Send for alice_physics::vehicle_dynamics::surface::FlatGround
+impl core::marker::Sync for alice_physics::vehicle_dynamics::surface::FlatGround
+impl core::marker::Unpin for alice_physics::vehicle_dynamics::surface::FlatGround
+impl core::marker::UnsafeUnpin for alice_physics::vehicle_dynamics::surface::FlatGround
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::vehicle_dynamics::surface::FlatGround
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::vehicle_dynamics::surface::FlatGround
+pub struct alice_physics::vehicle_dynamics::surface::GroundHit
+pub alice_physics::vehicle_dynamics::surface::GroundHit::distance: alice_physics::math::Fix128
+pub alice_physics::vehicle_dynamics::surface::GroundHit::normal: alice_physics::math::Vec3Fix
+pub alice_physics::vehicle_dynamics::surface::GroundHit::point: alice_physics::math::Vec3Fix
+impl core::clone::Clone for alice_physics::vehicle_dynamics::surface::GroundHit
+pub fn alice_physics::vehicle_dynamics::surface::GroundHit::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::vehicle_dynamics::surface::GroundHit
+impl core::cmp::PartialEq for alice_physics::vehicle_dynamics::surface::GroundHit
+pub fn alice_physics::vehicle_dynamics::surface::GroundHit::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::vehicle_dynamics::surface::GroundHit
+pub fn alice_physics::vehicle_dynamics::surface::GroundHit::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::vehicle_dynamics::surface::GroundHit
+impl core::marker::StructuralPartialEq for alice_physics::vehicle_dynamics::surface::GroundHit
+impl core::marker::Freeze for alice_physics::vehicle_dynamics::surface::GroundHit
+impl core::marker::Send for alice_physics::vehicle_dynamics::surface::GroundHit
+impl core::marker::Sync for alice_physics::vehicle_dynamics::surface::GroundHit
+impl core::marker::Unpin for alice_physics::vehicle_dynamics::surface::GroundHit
+impl core::marker::UnsafeUnpin for alice_physics::vehicle_dynamics::surface::GroundHit
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::vehicle_dynamics::surface::GroundHit
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::vehicle_dynamics::surface::GroundHit
+pub struct alice_physics::vehicle_dynamics::surface::HeightFieldRoad<'a>
+pub alice_physics::vehicle_dynamics::surface::HeightFieldRoad::field: &'a alice_physics::heightfield::HeightField
+impl alice_physics::vehicle_dynamics::surface::RoadSurface for alice_physics::vehicle_dynamics::surface::HeightFieldRoad<'_>
+pub fn alice_physics::vehicle_dynamics::surface::HeightFieldRoad<'_>::probe(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128) -> core::option::Option<alice_physics::vehicle_dynamics::surface::GroundHit>
+impl<'a> core::clone::Clone for alice_physics::vehicle_dynamics::surface::HeightFieldRoad<'a>
+pub fn alice_physics::vehicle_dynamics::surface::HeightFieldRoad<'a>::clone(&self) -> Self
+impl<'a> core::fmt::Debug for alice_physics::vehicle_dynamics::surface::HeightFieldRoad<'a>
+pub fn alice_physics::vehicle_dynamics::surface::HeightFieldRoad<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::marker::Copy for alice_physics::vehicle_dynamics::surface::HeightFieldRoad<'a>
+impl<'a> core::marker::Freeze for alice_physics::vehicle_dynamics::surface::HeightFieldRoad<'a>
+impl<'a> core::marker::Send for alice_physics::vehicle_dynamics::surface::HeightFieldRoad<'a>
+impl<'a> core::marker::Sync for alice_physics::vehicle_dynamics::surface::HeightFieldRoad<'a>
+impl<'a> core::marker::Unpin for alice_physics::vehicle_dynamics::surface::HeightFieldRoad<'a>
+impl<'a> core::marker::UnsafeUnpin for alice_physics::vehicle_dynamics::surface::HeightFieldRoad<'a>
+impl<'a> core::panic::unwind_safe::RefUnwindSafe for alice_physics::vehicle_dynamics::surface::HeightFieldRoad<'a>
+impl<'a> core::panic::unwind_safe::UnwindSafe for alice_physics::vehicle_dynamics::surface::HeightFieldRoad<'a>
+pub struct alice_physics::vehicle_dynamics::surface::InclinedPlane
+pub alice_physics::vehicle_dynamics::surface::InclinedPlane::normal: alice_physics::math::Vec3Fix
+pub alice_physics::vehicle_dynamics::surface::InclinedPlane::point: alice_physics::math::Vec3Fix
+impl alice_physics::vehicle_dynamics::surface::RoadSurface for alice_physics::vehicle_dynamics::surface::InclinedPlane
+pub fn alice_physics::vehicle_dynamics::surface::InclinedPlane::probe(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128) -> core::option::Option<alice_physics::vehicle_dynamics::surface::GroundHit>
+impl core::clone::Clone for alice_physics::vehicle_dynamics::surface::InclinedPlane
+pub fn alice_physics::vehicle_dynamics::surface::InclinedPlane::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::vehicle_dynamics::surface::InclinedPlane
+impl core::cmp::PartialEq for alice_physics::vehicle_dynamics::surface::InclinedPlane
+pub fn alice_physics::vehicle_dynamics::surface::InclinedPlane::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::vehicle_dynamics::surface::InclinedPlane
+pub fn alice_physics::vehicle_dynamics::surface::InclinedPlane::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::vehicle_dynamics::surface::InclinedPlane
+impl core::marker::StructuralPartialEq for alice_physics::vehicle_dynamics::surface::InclinedPlane
+impl core::marker::Freeze for alice_physics::vehicle_dynamics::surface::InclinedPlane
+impl core::marker::Send for alice_physics::vehicle_dynamics::surface::InclinedPlane
+impl core::marker::Sync for alice_physics::vehicle_dynamics::surface::InclinedPlane
+impl core::marker::Unpin for alice_physics::vehicle_dynamics::surface::InclinedPlane
+impl core::marker::UnsafeUnpin for alice_physics::vehicle_dynamics::surface::InclinedPlane
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::vehicle_dynamics::surface::InclinedPlane
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::vehicle_dynamics::surface::InclinedPlane
+pub struct alice_physics::vehicle_dynamics::surface::RoadCondition
+pub alice_physics::vehicle_dynamics::surface::RoadCondition::material: alice_physics::anisotropic_friction::AnisotropicFriction
+pub alice_physics::vehicle_dynamics::surface::RoadCondition::rolling_resistance: alice_physics::math::Fix128
+pub alice_physics::vehicle_dynamics::surface::RoadCondition::weather: alice_physics::vehicle_dynamics::surface::Weather
+impl alice_physics::vehicle_dynamics::surface::RoadCondition
+pub fn alice_physics::vehicle_dynamics::surface::RoadCondition::dry_asphalt() -> Self
+pub fn alice_physics::vehicle_dynamics::surface::RoadCondition::grip(&self, alice_physics::math::Fix128, alice_physics::math::Fix128) -> alice_physics::anisotropic_friction::AnisotropicFriction
+pub fn alice_physics::vehicle_dynamics::surface::RoadCondition::weather_factor(&self) -> alice_physics::math::Fix128
+impl core::clone::Clone for alice_physics::vehicle_dynamics::surface::RoadCondition
+pub fn alice_physics::vehicle_dynamics::surface::RoadCondition::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::vehicle_dynamics::surface::RoadCondition
+impl core::cmp::PartialEq for alice_physics::vehicle_dynamics::surface::RoadCondition
+pub fn alice_physics::vehicle_dynamics::surface::RoadCondition::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::vehicle_dynamics::surface::RoadCondition
+pub fn alice_physics::vehicle_dynamics::surface::RoadCondition::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::vehicle_dynamics::surface::RoadCondition
+impl core::marker::StructuralPartialEq for alice_physics::vehicle_dynamics::surface::RoadCondition
+impl core::marker::Freeze for alice_physics::vehicle_dynamics::surface::RoadCondition
+impl core::marker::Send for alice_physics::vehicle_dynamics::surface::RoadCondition
+impl core::marker::Sync for alice_physics::vehicle_dynamics::surface::RoadCondition
+impl core::marker::Unpin for alice_physics::vehicle_dynamics::surface::RoadCondition
+impl core::marker::UnsafeUnpin for alice_physics::vehicle_dynamics::surface::RoadCondition
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::vehicle_dynamics::surface::RoadCondition
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::vehicle_dynamics::surface::RoadCondition
+pub struct alice_physics::vehicle_dynamics::surface::SdfRoad<'a>
+pub alice_physics::vehicle_dynamics::surface::SdfRoad::field: &'a dyn alice_physics::sdf_collider::SdfField
+pub alice_physics::vehicle_dynamics::surface::SdfRoad::max_steps: u32
+pub alice_physics::vehicle_dynamics::surface::SdfRoad::tolerance: alice_physics::math::Fix128
+impl alice_physics::vehicle_dynamics::surface::RoadSurface for alice_physics::vehicle_dynamics::surface::SdfRoad<'_>
+pub fn alice_physics::vehicle_dynamics::surface::SdfRoad<'_>::probe(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128) -> core::option::Option<alice_physics::vehicle_dynamics::surface::GroundHit>
+impl<'a> core::marker::Freeze for alice_physics::vehicle_dynamics::surface::SdfRoad<'a>
+impl<'a> core::marker::Send for alice_physics::vehicle_dynamics::surface::SdfRoad<'a>
+impl<'a> core::marker::Sync for alice_physics::vehicle_dynamics::surface::SdfRoad<'a>
+impl<'a> core::marker::Unpin for alice_physics::vehicle_dynamics::surface::SdfRoad<'a>
+impl<'a> core::marker::UnsafeUnpin for alice_physics::vehicle_dynamics::surface::SdfRoad<'a>
+impl<'a> !core::panic::unwind_safe::RefUnwindSafe for alice_physics::vehicle_dynamics::surface::SdfRoad<'a>
+impl<'a> !core::panic::unwind_safe::UnwindSafe for alice_physics::vehicle_dynamics::surface::SdfRoad<'a>
+pub struct alice_physics::vehicle_dynamics::surface::TriMeshRoad<'a>
+pub alice_physics::vehicle_dynamics::surface::TriMeshRoad::mesh: &'a alice_physics::trimesh::TriMesh
+impl alice_physics::vehicle_dynamics::surface::RoadSurface for alice_physics::vehicle_dynamics::surface::TriMeshRoad<'_>
+pub fn alice_physics::vehicle_dynamics::surface::TriMeshRoad<'_>::probe(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128) -> core::option::Option<alice_physics::vehicle_dynamics::surface::GroundHit>
+impl<'a> core::clone::Clone for alice_physics::vehicle_dynamics::surface::TriMeshRoad<'a>
+pub fn alice_physics::vehicle_dynamics::surface::TriMeshRoad<'a>::clone(&self) -> Self
+impl<'a> core::marker::Copy for alice_physics::vehicle_dynamics::surface::TriMeshRoad<'a>
+impl<'a> core::marker::Freeze for alice_physics::vehicle_dynamics::surface::TriMeshRoad<'a>
+impl<'a> core::marker::Send for alice_physics::vehicle_dynamics::surface::TriMeshRoad<'a>
+impl<'a> core::marker::Sync for alice_physics::vehicle_dynamics::surface::TriMeshRoad<'a>
+impl<'a> core::marker::Unpin for alice_physics::vehicle_dynamics::surface::TriMeshRoad<'a>
+impl<'a> core::marker::UnsafeUnpin for alice_physics::vehicle_dynamics::surface::TriMeshRoad<'a>
+impl<'a> core::panic::unwind_safe::RefUnwindSafe for alice_physics::vehicle_dynamics::surface::TriMeshRoad<'a>
+impl<'a> core::panic::unwind_safe::UnwindSafe for alice_physics::vehicle_dynamics::surface::TriMeshRoad<'a>
+pub const alice_physics::vehicle_dynamics::surface::HYDROPLANING_MIN_DEPTH_MM: alice_physics::math::Fix128
+pub trait alice_physics::vehicle_dynamics::surface::RoadSurface
+pub fn alice_physics::vehicle_dynamics::surface::RoadSurface::probe(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128) -> core::option::Option<alice_physics::vehicle_dynamics::surface::GroundHit>
+impl alice_physics::vehicle_dynamics::surface::RoadSurface for alice_physics::vehicle_dynamics::surface::FlatGround
+pub fn alice_physics::vehicle_dynamics::surface::FlatGround::probe(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128) -> core::option::Option<alice_physics::vehicle_dynamics::surface::GroundHit>
+impl alice_physics::vehicle_dynamics::surface::RoadSurface for alice_physics::vehicle_dynamics::surface::HeightFieldRoad<'_>
+pub fn alice_physics::vehicle_dynamics::surface::HeightFieldRoad<'_>::probe(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128) -> core::option::Option<alice_physics::vehicle_dynamics::surface::GroundHit>
+impl alice_physics::vehicle_dynamics::surface::RoadSurface for alice_physics::vehicle_dynamics::surface::InclinedPlane
+pub fn alice_physics::vehicle_dynamics::surface::InclinedPlane::probe(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128) -> core::option::Option<alice_physics::vehicle_dynamics::surface::GroundHit>
+impl alice_physics::vehicle_dynamics::surface::RoadSurface for alice_physics::vehicle_dynamics::surface::SdfRoad<'_>
+pub fn alice_physics::vehicle_dynamics::surface::SdfRoad<'_>::probe(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128) -> core::option::Option<alice_physics::vehicle_dynamics::surface::GroundHit>
+impl alice_physics::vehicle_dynamics::surface::RoadSurface for alice_physics::vehicle_dynamics::surface::TriMeshRoad<'_>
+pub fn alice_physics::vehicle_dynamics::surface::TriMeshRoad<'_>::probe(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128) -> core::option::Option<alice_physics::vehicle_dynamics::surface::GroundHit>
+pub fn alice_physics::vehicle_dynamics::surface::hydroplaning_onset_speed(alice_physics::math::Fix128) -> alice_physics::math::Fix128
+pub mod alice_physics::vehicle_dynamics::tire
+pub enum alice_physics::vehicle_dynamics::tire::TireModel
+pub alice_physics::vehicle_dynamics::tire::TireModel::Brush(alice_physics::vehicle_dynamics::tire::BrushTire)
+pub alice_physics::vehicle_dynamics::tire::TireModel::MagicFormula(alice_physics::vehicle_dynamics::tire::MagicFormulaTire)
+impl alice_physics::vehicle_dynamics::tire::TireModel
+pub fn alice_physics::vehicle_dynamics::tire::TireModel::force(&self, &alice_physics::vehicle_dynamics::tire::TireInput) -> alice_physics::vehicle_dynamics::tire::TireForce
+pub fn alice_physics::vehicle_dynamics::tire::TireModel::longitudinal_slope(&self, alice_physics::math::Fix128, alice_physics::math::Fix128) -> alice_physics::math::Fix128
+impl core::clone::Clone for alice_physics::vehicle_dynamics::tire::TireModel
+pub fn alice_physics::vehicle_dynamics::tire::TireModel::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::vehicle_dynamics::tire::TireModel
+impl core::cmp::PartialEq for alice_physics::vehicle_dynamics::tire::TireModel
+pub fn alice_physics::vehicle_dynamics::tire::TireModel::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::vehicle_dynamics::tire::TireModel
+pub fn alice_physics::vehicle_dynamics::tire::TireModel::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::vehicle_dynamics::tire::TireModel
+impl core::marker::StructuralPartialEq for alice_physics::vehicle_dynamics::tire::TireModel
+impl core::marker::Freeze for alice_physics::vehicle_dynamics::tire::TireModel
+impl core::marker::Send for alice_physics::vehicle_dynamics::tire::TireModel
+impl core::marker::Sync for alice_physics::vehicle_dynamics::tire::TireModel
+impl core::marker::Unpin for alice_physics::vehicle_dynamics::tire::TireModel
+impl core::marker::UnsafeUnpin for alice_physics::vehicle_dynamics::tire::TireModel
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::vehicle_dynamics::tire::TireModel
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::vehicle_dynamics::tire::TireModel
+pub struct alice_physics::vehicle_dynamics::tire::BrushTire
+pub alice_physics::vehicle_dynamics::tire::BrushTire::cornering_stiffness: alice_physics::math::Fix128
+pub alice_physics::vehicle_dynamics::tire::BrushTire::longitudinal_stiffness: alice_physics::math::Fix128
+impl alice_physics::vehicle_dynamics::tire::BrushTire
+pub fn alice_physics::vehicle_dynamics::tire::BrushTire::passenger_car() -> Self
+impl core::clone::Clone for alice_physics::vehicle_dynamics::tire::BrushTire
+pub fn alice_physics::vehicle_dynamics::tire::BrushTire::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::vehicle_dynamics::tire::BrushTire
+impl core::cmp::PartialEq for alice_physics::vehicle_dynamics::tire::BrushTire
+pub fn alice_physics::vehicle_dynamics::tire::BrushTire::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::vehicle_dynamics::tire::BrushTire
+pub fn alice_physics::vehicle_dynamics::tire::BrushTire::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::vehicle_dynamics::tire::BrushTire
+impl core::marker::StructuralPartialEq for alice_physics::vehicle_dynamics::tire::BrushTire
+impl core::marker::Freeze for alice_physics::vehicle_dynamics::tire::BrushTire
+impl core::marker::Send for alice_physics::vehicle_dynamics::tire::BrushTire
+impl core::marker::Sync for alice_physics::vehicle_dynamics::tire::BrushTire
+impl core::marker::Unpin for alice_physics::vehicle_dynamics::tire::BrushTire
+impl core::marker::UnsafeUnpin for alice_physics::vehicle_dynamics::tire::BrushTire
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::vehicle_dynamics::tire::BrushTire
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::vehicle_dynamics::tire::BrushTire
+pub struct alice_physics::vehicle_dynamics::tire::MagicFormulaTire
+pub alice_physics::vehicle_dynamics::tire::MagicFormulaTire::b_x: alice_physics::math::Fix128
+pub alice_physics::vehicle_dynamics::tire::MagicFormulaTire::b_y: alice_physics::math::Fix128
+pub alice_physics::vehicle_dynamics::tire::MagicFormulaTire::c_x: alice_physics::math::Fix128
+pub alice_physics::vehicle_dynamics::tire::MagicFormulaTire::c_y: alice_physics::math::Fix128
+pub alice_physics::vehicle_dynamics::tire::MagicFormulaTire::e_x: alice_physics::math::Fix128
+pub alice_physics::vehicle_dynamics::tire::MagicFormulaTire::e_y: alice_physics::math::Fix128
+impl alice_physics::vehicle_dynamics::tire::MagicFormulaTire
+pub fn alice_physics::vehicle_dynamics::tire::MagicFormulaTire::passenger_car() -> Self
+impl core::clone::Clone for alice_physics::vehicle_dynamics::tire::MagicFormulaTire
+pub fn alice_physics::vehicle_dynamics::tire::MagicFormulaTire::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::vehicle_dynamics::tire::MagicFormulaTire
+impl core::cmp::PartialEq for alice_physics::vehicle_dynamics::tire::MagicFormulaTire
+pub fn alice_physics::vehicle_dynamics::tire::MagicFormulaTire::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::vehicle_dynamics::tire::MagicFormulaTire
+pub fn alice_physics::vehicle_dynamics::tire::MagicFormulaTire::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::vehicle_dynamics::tire::MagicFormulaTire
+impl core::marker::StructuralPartialEq for alice_physics::vehicle_dynamics::tire::MagicFormulaTire
+impl core::marker::Freeze for alice_physics::vehicle_dynamics::tire::MagicFormulaTire
+impl core::marker::Send for alice_physics::vehicle_dynamics::tire::MagicFormulaTire
+impl core::marker::Sync for alice_physics::vehicle_dynamics::tire::MagicFormulaTire
+impl core::marker::Unpin for alice_physics::vehicle_dynamics::tire::MagicFormulaTire
+impl core::marker::UnsafeUnpin for alice_physics::vehicle_dynamics::tire::MagicFormulaTire
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::vehicle_dynamics::tire::MagicFormulaTire
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::vehicle_dynamics::tire::MagicFormulaTire
+pub struct alice_physics::vehicle_dynamics::tire::TireForce
+pub alice_physics::vehicle_dynamics::tire::TireForce::lateral: alice_physics::math::Fix128
+pub alice_physics::vehicle_dynamics::tire::TireForce::longitudinal: alice_physics::math::Fix128
+impl core::clone::Clone for alice_physics::vehicle_dynamics::tire::TireForce
+pub fn alice_physics::vehicle_dynamics::tire::TireForce::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::vehicle_dynamics::tire::TireForce
+impl core::cmp::PartialEq for alice_physics::vehicle_dynamics::tire::TireForce
+pub fn alice_physics::vehicle_dynamics::tire::TireForce::eq(&self, &Self) -> bool
+impl core::default::Default for alice_physics::vehicle_dynamics::tire::TireForce
+pub fn alice_physics::vehicle_dynamics::tire::TireForce::default() -> Self
+impl core::fmt::Debug for alice_physics::vehicle_dynamics::tire::TireForce
+pub fn alice_physics::vehicle_dynamics::tire::TireForce::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::vehicle_dynamics::tire::TireForce
+impl core::marker::StructuralPartialEq for alice_physics::vehicle_dynamics::tire::TireForce
+impl core::marker::Freeze for alice_physics::vehicle_dynamics::tire::TireForce
+impl core::marker::Send for alice_physics::vehicle_dynamics::tire::TireForce
+impl core::marker::Sync for alice_physics::vehicle_dynamics::tire::TireForce
+impl core::marker::Unpin for alice_physics::vehicle_dynamics::tire::TireForce
+impl core::marker::UnsafeUnpin for alice_physics::vehicle_dynamics::tire::TireForce
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::vehicle_dynamics::tire::TireForce
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::vehicle_dynamics::tire::TireForce
+pub struct alice_physics::vehicle_dynamics::tire::TireInput
+pub alice_physics::vehicle_dynamics::tire::TireInput::grip: alice_physics::anisotropic_friction::AnisotropicFriction
+pub alice_physics::vehicle_dynamics::tire::TireInput::normal_load: alice_physics::math::Fix128
+pub alice_physics::vehicle_dynamics::tire::TireInput::slip_ratio: alice_physics::math::Fix128
+pub alice_physics::vehicle_dynamics::tire::TireInput::slip_tan_alpha: alice_physics::math::Fix128
+impl core::clone::Clone for alice_physics::vehicle_dynamics::tire::TireInput
+pub fn alice_physics::vehicle_dynamics::tire::TireInput::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::vehicle_dynamics::tire::TireInput
+impl core::cmp::PartialEq for alice_physics::vehicle_dynamics::tire::TireInput
+pub fn alice_physics::vehicle_dynamics::tire::TireInput::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::vehicle_dynamics::tire::TireInput
+pub fn alice_physics::vehicle_dynamics::tire::TireInput::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::vehicle_dynamics::tire::TireInput
+impl core::marker::StructuralPartialEq for alice_physics::vehicle_dynamics::tire::TireInput
+impl core::marker::Freeze for alice_physics::vehicle_dynamics::tire::TireInput
+impl core::marker::Send for alice_physics::vehicle_dynamics::tire::TireInput
+impl core::marker::Sync for alice_physics::vehicle_dynamics::tire::TireInput
+impl core::marker::Unpin for alice_physics::vehicle_dynamics::tire::TireInput
+impl core::marker::UnsafeUnpin for alice_physics::vehicle_dynamics::tire::TireInput
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::vehicle_dynamics::tire::TireInput
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::vehicle_dynamics::tire::TireInput
+pub struct alice_physics::vehicle_dynamics::AbsConfig
+pub alice_physics::vehicle_dynamics::AbsConfig::min_speed: alice_physics::math::Fix128
+pub alice_physics::vehicle_dynamics::AbsConfig::target_slip: alice_physics::math::Fix128
+impl core::clone::Clone for alice_physics::vehicle_dynamics::AbsConfig
+pub fn alice_physics::vehicle_dynamics::AbsConfig::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::vehicle_dynamics::AbsConfig
+impl core::cmp::PartialEq for alice_physics::vehicle_dynamics::AbsConfig
+pub fn alice_physics::vehicle_dynamics::AbsConfig::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::vehicle_dynamics::AbsConfig
+pub fn alice_physics::vehicle_dynamics::AbsConfig::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::vehicle_dynamics::AbsConfig
+impl core::marker::StructuralPartialEq for alice_physics::vehicle_dynamics::AbsConfig
+impl core::marker::Freeze for alice_physics::vehicle_dynamics::AbsConfig
+impl core::marker::Send for alice_physics::vehicle_dynamics::AbsConfig
+impl core::marker::Sync for alice_physics::vehicle_dynamics::AbsConfig
+impl core::marker::Unpin for alice_physics::vehicle_dynamics::AbsConfig
+impl core::marker::UnsafeUnpin for alice_physics::vehicle_dynamics::AbsConfig
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::vehicle_dynamics::AbsConfig
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::vehicle_dynamics::AbsConfig
+pub struct alice_physics::vehicle_dynamics::AeroConfig
+pub alice_physics::vehicle_dynamics::AeroConfig::air_density: alice_physics::math::Fix128
+pub alice_physics::vehicle_dynamics::AeroConfig::drag_area: alice_physics::math::Fix128
+pub alice_physics::vehicle_dynamics::AeroConfig::lift_area: alice_physics::math::Fix128
+impl core::clone::Clone for alice_physics::vehicle_dynamics::AeroConfig
+pub fn alice_physics::vehicle_dynamics::AeroConfig::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::vehicle_dynamics::AeroConfig
+impl core::cmp::PartialEq for alice_physics::vehicle_dynamics::AeroConfig
+pub fn alice_physics::vehicle_dynamics::AeroConfig::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::vehicle_dynamics::AeroConfig
+pub fn alice_physics::vehicle_dynamics::AeroConfig::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::vehicle_dynamics::AeroConfig
+impl core::marker::StructuralPartialEq for alice_physics::vehicle_dynamics::AeroConfig
+impl core::marker::Freeze for alice_physics::vehicle_dynamics::AeroConfig
+impl core::marker::Send for alice_physics::vehicle_dynamics::AeroConfig
+impl core::marker::Sync for alice_physics::vehicle_dynamics::AeroConfig
+impl core::marker::Unpin for alice_physics::vehicle_dynamics::AeroConfig
+impl core::marker::UnsafeUnpin for alice_physics::vehicle_dynamics::AeroConfig
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::vehicle_dynamics::AeroConfig
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::vehicle_dynamics::AeroConfig
+pub struct alice_physics::vehicle_dynamics::BrakeSystem
+pub alice_physics::vehicle_dynamics::BrakeSystem::abs: core::option::Option<alice_physics::vehicle_dynamics::AbsConfig>
+pub alice_physics::vehicle_dynamics::BrakeSystem::handbrake_torque: alice_physics::math::Fix128
+pub alice_physics::vehicle_dynamics::BrakeSystem::max_torque_front: alice_physics::math::Fix128
+pub alice_physics::vehicle_dynamics::BrakeSystem::max_torque_rear: alice_physics::math::Fix128
+impl core::clone::Clone for alice_physics::vehicle_dynamics::BrakeSystem
+pub fn alice_physics::vehicle_dynamics::BrakeSystem::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::vehicle_dynamics::BrakeSystem
+impl core::cmp::PartialEq for alice_physics::vehicle_dynamics::BrakeSystem
+pub fn alice_physics::vehicle_dynamics::BrakeSystem::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::vehicle_dynamics::BrakeSystem
+pub fn alice_physics::vehicle_dynamics::BrakeSystem::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::vehicle_dynamics::BrakeSystem
+impl core::marker::StructuralPartialEq for alice_physics::vehicle_dynamics::BrakeSystem
+impl core::marker::Freeze for alice_physics::vehicle_dynamics::BrakeSystem
+impl core::marker::Send for alice_physics::vehicle_dynamics::BrakeSystem
+impl core::marker::Sync for alice_physics::vehicle_dynamics::BrakeSystem
+impl core::marker::Unpin for alice_physics::vehicle_dynamics::BrakeSystem
+impl core::marker::UnsafeUnpin for alice_physics::vehicle_dynamics::BrakeSystem
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::vehicle_dynamics::BrakeSystem
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::vehicle_dynamics::BrakeSystem
+pub struct alice_physics::vehicle_dynamics::DriverInput
+pub alice_physics::vehicle_dynamics::DriverInput::brake: alice_physics::math::Fix128
+pub alice_physics::vehicle_dynamics::DriverInput::handbrake: alice_physics::math::Fix128
+pub alice_physics::vehicle_dynamics::DriverInput::steering: alice_physics::math::Fix128
+pub alice_physics::vehicle_dynamics::DriverInput::throttle: alice_physics::math::Fix128
+impl core::clone::Clone for alice_physics::vehicle_dynamics::DriverInput
+pub fn alice_physics::vehicle_dynamics::DriverInput::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::vehicle_dynamics::DriverInput
+impl core::cmp::PartialEq for alice_physics::vehicle_dynamics::DriverInput
+pub fn alice_physics::vehicle_dynamics::DriverInput::eq(&self, &Self) -> bool
+impl core::default::Default for alice_physics::vehicle_dynamics::DriverInput
+pub fn alice_physics::vehicle_dynamics::DriverInput::default() -> Self
+impl core::fmt::Debug for alice_physics::vehicle_dynamics::DriverInput
+pub fn alice_physics::vehicle_dynamics::DriverInput::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::vehicle_dynamics::DriverInput
+impl core::marker::StructuralPartialEq for alice_physics::vehicle_dynamics::DriverInput
+impl core::marker::Freeze for alice_physics::vehicle_dynamics::DriverInput
+impl core::marker::Send for alice_physics::vehicle_dynamics::DriverInput
+impl core::marker::Sync for alice_physics::vehicle_dynamics::DriverInput
+impl core::marker::Unpin for alice_physics::vehicle_dynamics::DriverInput
+impl core::marker::UnsafeUnpin for alice_physics::vehicle_dynamics::DriverInput
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::vehicle_dynamics::DriverInput
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::vehicle_dynamics::DriverInput
+pub struct alice_physics::vehicle_dynamics::DynamicVehicle
+pub alice_physics::vehicle_dynamics::DynamicVehicle::config: alice_physics::vehicle_dynamics::DynamicVehicleConfig
+pub alice_physics::vehicle_dynamics::DynamicVehicle::engine_rpm: alice_physics::math::Fix128
+pub alice_physics::vehicle_dynamics::DynamicVehicle::input: alice_physics::vehicle_dynamics::DriverInput
+pub alice_physics::vehicle_dynamics::DynamicVehicle::wheels: alloc::vec::Vec<alice_physics::vehicle_dynamics::WheelDynamicsState>
+impl alice_physics::vehicle_dynamics::DynamicVehicle
+pub fn alice_physics::vehicle_dynamics::DynamicVehicle::forward_speed(&alice_physics::solver::RigidBody) -> alice_physics::math::Fix128
+pub fn alice_physics::vehicle_dynamics::DynamicVehicle::grounded_wheels(&self) -> usize
+pub fn alice_physics::vehicle_dynamics::DynamicVehicle::new(alice_physics::vehicle_dynamics::DynamicVehicleConfig) -> Self
+pub fn alice_physics::vehicle_dynamics::DynamicVehicle::update(&mut self, &mut alice_physics::solver::RigidBody, &dyn alice_physics::vehicle_dynamics::surface::RoadSurface, &alice_physics::vehicle_dynamics::Environment<'_>, alice_physics::math::Fix128)
+impl core::clone::Clone for alice_physics::vehicle_dynamics::DynamicVehicle
+pub fn alice_physics::vehicle_dynamics::DynamicVehicle::clone(&self) -> Self
+impl core::fmt::Debug for alice_physics::vehicle_dynamics::DynamicVehicle
+pub fn alice_physics::vehicle_dynamics::DynamicVehicle::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for alice_physics::vehicle_dynamics::DynamicVehicle
+impl core::marker::Send for alice_physics::vehicle_dynamics::DynamicVehicle
+impl core::marker::Sync for alice_physics::vehicle_dynamics::DynamicVehicle
+impl core::marker::Unpin for alice_physics::vehicle_dynamics::DynamicVehicle
+impl core::marker::UnsafeUnpin for alice_physics::vehicle_dynamics::DynamicVehicle
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::vehicle_dynamics::DynamicVehicle
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::vehicle_dynamics::DynamicVehicle
+pub struct alice_physics::vehicle_dynamics::DynamicVehicleConfig
+pub alice_physics::vehicle_dynamics::DynamicVehicleConfig::ackermann: bool
+pub alice_physics::vehicle_dynamics::DynamicVehicleConfig::aero: alice_physics::vehicle_dynamics::AeroConfig
+pub alice_physics::vehicle_dynamics::DynamicVehicleConfig::base: alice_physics::vehicle::VehicleConfig
+pub alice_physics::vehicle_dynamics::DynamicVehicleConfig::brakes: alice_physics::vehicle_dynamics::BrakeSystem
+pub alice_physics::vehicle_dynamics::DynamicVehicleConfig::powertrain: alice_physics::vehicle_dynamics::powertrain::Powertrain
+pub alice_physics::vehicle_dynamics::DynamicVehicleConfig::slip_velocity_floor: alice_physics::math::Fix128
+pub alice_physics::vehicle_dynamics::DynamicVehicleConfig::tire: alice_physics::vehicle_dynamics::tire::TireModel
+pub alice_physics::vehicle_dynamics::DynamicVehicleConfig::tyre_pressure_kpa: alice_physics::math::Fix128
+pub alice_physics::vehicle_dynamics::DynamicVehicleConfig::wheel_inertia: alice_physics::math::Fix128
+impl alice_physics::vehicle_dynamics::DynamicVehicleConfig
+pub fn alice_physics::vehicle_dynamics::DynamicVehicleConfig::passenger_car() -> Self
+impl core::clone::Clone for alice_physics::vehicle_dynamics::DynamicVehicleConfig
+pub fn alice_physics::vehicle_dynamics::DynamicVehicleConfig::clone(&self) -> Self
+impl core::fmt::Debug for alice_physics::vehicle_dynamics::DynamicVehicleConfig
+pub fn alice_physics::vehicle_dynamics::DynamicVehicleConfig::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for alice_physics::vehicle_dynamics::DynamicVehicleConfig
+impl core::marker::Send for alice_physics::vehicle_dynamics::DynamicVehicleConfig
+impl core::marker::Sync for alice_physics::vehicle_dynamics::DynamicVehicleConfig
+impl core::marker::Unpin for alice_physics::vehicle_dynamics::DynamicVehicleConfig
+impl core::marker::UnsafeUnpin for alice_physics::vehicle_dynamics::DynamicVehicleConfig
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::vehicle_dynamics::DynamicVehicleConfig
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::vehicle_dynamics::DynamicVehicleConfig
+pub struct alice_physics::vehicle_dynamics::Environment<'a>
+pub alice_physics::vehicle_dynamics::Environment::condition: &'a alice_physics::vehicle_dynamics::surface::RoadCondition
+pub alice_physics::vehicle_dynamics::Environment::time: alice_physics::math::Fix128
+pub alice_physics::vehicle_dynamics::Environment::wind: core::option::Option<&'a alice_physics::wind_zone::WindZone>
+impl<'a> core::clone::Clone for alice_physics::vehicle_dynamics::Environment<'a>
+pub fn alice_physics::vehicle_dynamics::Environment<'a>::clone(&self) -> Self
+impl<'a> core::fmt::Debug for alice_physics::vehicle_dynamics::Environment<'a>
+pub fn alice_physics::vehicle_dynamics::Environment<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::marker::Copy for alice_physics::vehicle_dynamics::Environment<'a>
+impl<'a> core::marker::Freeze for alice_physics::vehicle_dynamics::Environment<'a>
+impl<'a> core::marker::Send for alice_physics::vehicle_dynamics::Environment<'a>
+impl<'a> core::marker::Sync for alice_physics::vehicle_dynamics::Environment<'a>
+impl<'a> core::marker::Unpin for alice_physics::vehicle_dynamics::Environment<'a>
+impl<'a> core::marker::UnsafeUnpin for alice_physics::vehicle_dynamics::Environment<'a>
+impl<'a> core::panic::unwind_safe::RefUnwindSafe for alice_physics::vehicle_dynamics::Environment<'a>
+impl<'a> core::panic::unwind_safe::UnwindSafe for alice_physics::vehicle_dynamics::Environment<'a>
+pub struct alice_physics::vehicle_dynamics::WheelDynamicsState
+pub alice_physics::vehicle_dynamics::WheelDynamicsState::abs_active: bool
+pub alice_physics::vehicle_dynamics::WheelDynamicsState::anchor: core::option::Option<alice_physics::math::Vec3Fix>
+pub alice_physics::vehicle_dynamics::WheelDynamicsState::brake_torque: alice_physics::math::Fix128
+pub alice_physics::vehicle_dynamics::WheelDynamicsState::compression: alice_physics::math::Fix128
+pub alice_physics::vehicle_dynamics::WheelDynamicsState::contact_normal: alice_physics::math::Vec3Fix
+pub alice_physics::vehicle_dynamics::WheelDynamicsState::contact_point: alice_physics::math::Vec3Fix
+pub alice_physics::vehicle_dynamics::WheelDynamicsState::grounded: bool
+pub alice_physics::vehicle_dynamics::WheelDynamicsState::lateral_force: alice_physics::math::Fix128
+pub alice_physics::vehicle_dynamics::WheelDynamicsState::longitudinal_force: alice_physics::math::Fix128
+pub alice_physics::vehicle_dynamics::WheelDynamicsState::normal_load: alice_physics::math::Fix128
+pub alice_physics::vehicle_dynamics::WheelDynamicsState::omega: alice_physics::math::Fix128
+pub alice_physics::vehicle_dynamics::WheelDynamicsState::slip_ratio: alice_physics::math::Fix128
+pub alice_physics::vehicle_dynamics::WheelDynamicsState::slip_tan_alpha: alice_physics::math::Fix128
+pub alice_physics::vehicle_dynamics::WheelDynamicsState::spin_angle: alice_physics::math::Fix128
+pub alice_physics::vehicle_dynamics::WheelDynamicsState::steer_angle: alice_physics::math::Fix128
+impl core::clone::Clone for alice_physics::vehicle_dynamics::WheelDynamicsState
+pub fn alice_physics::vehicle_dynamics::WheelDynamicsState::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::vehicle_dynamics::WheelDynamicsState
+impl core::cmp::PartialEq for alice_physics::vehicle_dynamics::WheelDynamicsState
+pub fn alice_physics::vehicle_dynamics::WheelDynamicsState::eq(&self, &Self) -> bool
+impl core::default::Default for alice_physics::vehicle_dynamics::WheelDynamicsState
+pub fn alice_physics::vehicle_dynamics::WheelDynamicsState::default() -> Self
+impl core::fmt::Debug for alice_physics::vehicle_dynamics::WheelDynamicsState
+pub fn alice_physics::vehicle_dynamics::WheelDynamicsState::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::vehicle_dynamics::WheelDynamicsState
+impl core::marker::StructuralPartialEq for alice_physics::vehicle_dynamics::WheelDynamicsState
+impl core::marker::Freeze for alice_physics::vehicle_dynamics::WheelDynamicsState
+impl core::marker::Send for alice_physics::vehicle_dynamics::WheelDynamicsState
+impl core::marker::Sync for alice_physics::vehicle_dynamics::WheelDynamicsState
+impl core::marker::Unpin for alice_physics::vehicle_dynamics::WheelDynamicsState
+impl core::marker::UnsafeUnpin for alice_physics::vehicle_dynamics::WheelDynamicsState
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::vehicle_dynamics::WheelDynamicsState
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::vehicle_dynamics::WheelDynamicsState
 pub mod alice_physics::vibration_wall
 pub struct alice_physics::vibration_wall::ExcitationSource
 pub alice_physics::vibration_wall::ExcitationSource::frequency_hz: alice_physics::math::Fix128
