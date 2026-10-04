@@ -637,18 +637,34 @@ impl MacGrid {
     /// advection and before the viscous term, so a wall never feeds a
     /// stale value into either.
     pub fn enforce_face_boundaries(&mut self) {
+        // Two passes per axis: an `Outflow` face copies the face one cell
+        // inside the domain, and that neighbour has to carry its own
+        // condition's *enforced* value before the copy happens, regardless
+        // of which end of the axis the outflow face sits on. A single
+        // ascending pass gets this right at the high end (its inner
+        // neighbour has a lower index, already visited) but wrong at the low
+        // end (its inner neighbour has a higher index, not yet visited) — so
+        // every non-outflow condition is imposed first, then every outflow
+        // face reads an already-settled neighbour no matter which end it is.
         for k in 0..self.nz {
             for j in 0..self.ny {
                 for i in 0..=self.nx {
                     let ix = self.idx_u(i, j, k);
                     match self.u_bc(i, j, k) {
-                        FaceBc::Fluid => {}
+                        FaceBc::Fluid | FaceBc::Outflow => {}
                         FaceBc::Inflow { normal_velocity } => self.u[ix] = normal_velocity,
-                        FaceBc::Outflow => {
-                            let inner = if i > 0 { i - 1 } else { i + 1 };
-                            self.u[ix] = self.u(inner, j, k);
-                        }
                         _ => self.u[ix] = Fix128::ZERO,
+                    }
+                }
+            }
+        }
+        for k in 0..self.nz {
+            for j in 0..self.ny {
+                for i in 0..=self.nx {
+                    if matches!(self.u_bc(i, j, k), FaceBc::Outflow) {
+                        let inner = if i > 0 { i - 1 } else { i + 1 };
+                        let ix = self.idx_u(i, j, k);
+                        self.u[ix] = self.u(inner, j, k);
                     }
                 }
             }
@@ -658,13 +674,20 @@ impl MacGrid {
                 for i in 0..self.nx {
                     let ix = self.idx_v(i, j, k);
                     match self.v_bc(i, j, k) {
-                        FaceBc::Fluid => {}
+                        FaceBc::Fluid | FaceBc::Outflow => {}
                         FaceBc::Inflow { normal_velocity } => self.v[ix] = normal_velocity,
-                        FaceBc::Outflow => {
-                            let inner = if j > 0 { j - 1 } else { j + 1 };
-                            self.v[ix] = self.v(i, inner, k);
-                        }
                         _ => self.v[ix] = Fix128::ZERO,
+                    }
+                }
+            }
+        }
+        for k in 0..self.nz {
+            for j in 0..=self.ny {
+                for i in 0..self.nx {
+                    if matches!(self.v_bc(i, j, k), FaceBc::Outflow) {
+                        let inner = if j > 0 { j - 1 } else { j + 1 };
+                        let ix = self.idx_v(i, j, k);
+                        self.v[ix] = self.v(i, inner, k);
                     }
                 }
             }
@@ -674,13 +697,20 @@ impl MacGrid {
                 for i in 0..self.nx {
                     let ix = self.idx_w(i, j, k);
                     match self.w_bc(i, j, k) {
-                        FaceBc::Fluid => {}
+                        FaceBc::Fluid | FaceBc::Outflow => {}
                         FaceBc::Inflow { normal_velocity } => self.w[ix] = normal_velocity,
-                        FaceBc::Outflow => {
-                            let inner = if k > 0 { k - 1 } else { k + 1 };
-                            self.w[ix] = self.w(i, j, inner);
-                        }
                         _ => self.w[ix] = Fix128::ZERO,
+                    }
+                }
+            }
+        }
+        for k in 0..=self.nz {
+            for j in 0..self.ny {
+                for i in 0..self.nx {
+                    if matches!(self.w_bc(i, j, k), FaceBc::Outflow) {
+                        let inner = if k > 0 { k - 1 } else { k + 1 };
+                        let ix = self.idx_w(i, j, k);
+                        self.w[ix] = self.w(i, j, inner);
                     }
                 }
             }
