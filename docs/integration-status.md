@@ -7,10 +7,10 @@ References are resolved to one definition each, so items that share a name are t
 
 | Level | Meaning | Count |
 |-------|---------|------:|
-| L0 | not reached by any non-test code, examples included | 231 |
-| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 1746 |
-| live | reached without examples (crate-internal roots or a binding) | 294 |
-| | **total** | **2271** |
+| L0 | not reached by any non-test code, examples included | 252 |
+| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 1834 |
+| live | reached without examples (crate-internal roots or a binding) | 337 |
+| | **total** | **2423** |
 
 L1 is a label, not a defect: a module users call directly is example-only inside this crate.
 It does mean the item is not reached from `PhysicsWorld`, another module, or a binding.
@@ -19,79 +19,86 @@ It does mean the item is not reached from `PhysicsWorld`, another module, or a b
 
 `scripts/wiring-baseline.txt` lists 37 unwired items.
 
-### L0 here but not in the baseline (194)
+### L0 here but not in the baseline (212)
 
 The name-based guard counts these as wired; resolved references find no caller.
 
-- `src/anisotropic.rs::from_fdm_material`
-- `src/box_collider.rs::surface_area`
+- `src/anisotropic.rs::AnisotropicStrength::from_fdm_material`
+- `src/anisotropic.rs::OrthotropicElasticity::from_fdm_material`
+- `src/anomaly.rs::MadDetector::count`
+- `src/anomaly.rs::StreamingMedian::count`
+- `src/box_collider.rs::OrientedBox::surface_area`
 - `src/buckling.rs::SnapThroughError`
 - `src/bvh.rs::BroadphaseHybrid`
+- `src/bvh.rs::BroadphaseHybrid::new`
 - `src/bvh.rs::BvhStats`
-- `src/bvh.rs::new`
-- `src/bvh.rs::query_callback`
-- `src/bvh.rs::stats`
-- `src/cfd_solver.rs::set`
-- `src/cfd_solver.rs::step_multigrid`
-- `src/cloth.rs::step_with_sdf`
+- `src/bvh.rs::LinearBvh::query_callback`
+- `src/bvh.rs::LinearBvh::stats`
+- `src/cfd_solver.rs::CfdSolver::step_multigrid`
+- `src/cfd_solver.rs::RansState::set`
+- `src/cloth.rs::Cloth::step_with_sdf`
 - `src/cloth_fluid.rs::ClothFluidCoupling`
 - `src/collider.rs::ScaledShape`
+- `src/collider.rs::ScaledShape::new`
+- `src/compound.rs::CompoundShape::support_world`
+- `src/compound.rs::ShapeRef::aabb`
 - `src/compound.rs::TransformedCompound`
-- `src/compound.rs::aabb`
-- `src/compound.rs::support_world`
-- `src/compressible.rs::pressure`
-- `src/cone.rs::aabb`
-- `src/cone.rs::surface_area`
-- `src/cone.rs::with_rotation`
-- `src/contact_cache.rs::begin_frame`
-- `src/contact_cache.rs::clear`
-- `src/contact_cache.rs::end_frame`
-- `src/contact_cache.rs::is_empty`
-- `src/coupled_field.rs::add`
-- `src/coupled_field.rs::clamp`
-- `src/coupled_field.rs::copy_from_f32`
-- `src/coupled_field.rs::decay`
-- `src/coupled_field.rs::decay_toward`
-- `src/coupled_field.rs::diffuse`
-- `src/coupled_field.rs::gradient`
-- `src/coupled_field.rs::max`
-- `src/coupled_field.rs::min`
-- `src/coupled_field.rs::sum`
-- `src/coupled_field.rs::write_to_f32`
+- `src/compressible.rs::IdealGas::pressure`
+- `src/cone.rs::Cone::aabb`
+- `src/cone.rs::Cone::surface_area`
+- `src/cone.rs::Cone::with_rotation`
+- `src/contact_cache.rs::ContactCache::begin_frame`
+- `src/contact_cache.rs::ContactCache::clear`
+- `src/contact_cache.rs::ContactCache::end_frame`
+- `src/contact_cache.rs::ContactManifold::clear`
+- `src/contact_cache.rs::ContactManifold::is_empty`
+- `src/coupled_field.rs::CoupledField::add`
+- `src/coupled_field.rs::CoupledField::clamp`
+- `src/coupled_field.rs::CoupledField::decay`
+- `src/coupled_field.rs::CoupledField::decay_toward`
+- `src/coupled_field.rs::CoupledField::diffuse`
+- `src/coupled_field.rs::CoupledField::gradient`
+- `src/coupled_field.rs::CoupledField::max`
+- `src/coupled_field.rs::CoupledField::min`
+- `src/coupled_field.rs::CoupledField::sum`
+- `src/coupled_iteration.rs::ContractionMonitor::best_residual`
 - `src/coupled_iteration.rs::EquilibrationScale`
-- `src/coupled_iteration.rs::IDENTITY`
-- `src/coupled_iteration.rs::MAX_EXPONENT`
-- `src/coupled_iteration.rs::best_residual`
-- `src/coupled_iteration.rs::covering`
-- `src/coupled_iteration.rs::exponent`
-- `src/coupled_iteration.rs::factor`
-- `src/coupled_iteration.rs::round_trip_bound`
-- `src/coupled_iteration.rs::scale_down`
-- `src/coupled_iteration.rs::scale_up`
-- `src/cylinder.rs::aabb`
-- `src/cylinder.rs::surface_area`
-- `src/cylinder.rs::with_rotation`
-- `src/debug_render.rs::aabb`
-- `src/deformable.rs::step_with_sdf`
-- `src/dynamic_bvh.rs::node_count`
-- `src/dynamic_bvh.rs::query`
-- `src/ellipsoid.rs::aabb`
-- `src/ellipsoid.rs::with_rotation`
-- `src/eulerian_grid.rs::DELIVERY_DESTINATION_LACKS_LAYER`
-- `src/eulerian_grid.rs::DELIVERY_SOURCE_LACKS_LAYER`
+- `src/coupled_iteration.rs::EquilibrationScale::IDENTITY`
+- `src/coupled_iteration.rs::EquilibrationScale::MAX_EXPONENT`
+- `src/coupled_iteration.rs::EquilibrationScale::covering`
+- `src/coupled_iteration.rs::EquilibrationScale::exponent`
+- `src/coupled_iteration.rs::EquilibrationScale::factor`
+- `src/coupled_iteration.rs::EquilibrationScale::round_trip_bound`
+- `src/coupled_iteration.rs::EquilibrationScale::scale_down`
+- `src/coupled_iteration.rs::EquilibrationScale::scale_up`
+- `src/cylinder.rs::Cylinder::aabb`
+- `src/cylinder.rs::Cylinder::surface_area`
+- `src/cylinder.rs::Cylinder::with_rotation`
+- `src/debug_render.rs::DebugDrawData::aabb`
+- `src/deformable.rs::DeformableBody::step_with_sdf`
+- `src/dynamic_bvh.rs::DynamicAabbTree::node_count`
+- `src/dynamic_bvh.rs::DynamicAabbTree::query`
+- `src/ellipsoid.rs::Ellipsoid::aabb`
+- `src/ellipsoid.rs::Ellipsoid::with_rotation`
 - `src/eulerian_grid.rs::LocalPlaneChannel`
+- `src/eulerian_grid.rs::LocalPlaneChannel::is_drained`
+- `src/eulerian_grid.rs::LocalPlaneChannel::new`
 - `src/eulerian_grid.rs::PlaneChannel`
 - `src/eulerian_grid.rs::SLAB_FACE_HALO_MISSING`
 - `src/eulerian_grid.rs::SlabBytes`
+- `src/eulerian_grid.rs::SlabBytes::ZERO`
+- `src/eulerian_grid.rs::SlabBytes::add`
+- `src/eulerian_grid.rs::SlabBytes::total`
 - `src/eulerian_grid.rs::SlabFaceConditions`
+- `src/eulerian_grid.rs::SlabFaceConditions::from_grid`
+- `src/eulerian_grid.rs::SlabFaceConditions::new`
 - `src/eulerian_grid.rs::SlabSocketTransport`
+- `src/eulerian_grid.rs::SlabSocketTransport::new`
+- `src/eulerian_grid.rs::SlabSocketTransport::slab`
 - `src/eulerian_grid.rs::SocketTransport`
-- `src/eulerian_grid.rs::ZERO`
-- `src/eulerian_grid.rs::add`
+- `src/eulerian_grid.rs::SocketTransport::new`
 - `src/eulerian_grid.rs::enforce_slab_face_boundaries`
 - `src/eulerian_grid.rs::enforce_slab_face_boundaries_on_rank`
-- `src/eulerian_grid.rs::is_drained`
-- `src/eulerian_grid.rs::total`
 - `src/eulerian_grid/multigrid_decomposed.rs::Residency`
 - `src/eulerian_grid/multigrid_decomposed.rs::multigrid_slab_bounds`
 - `src/eulerian_grid/multigrid_decomposed.rs::project_pressure_multigrid_banded_on_rank`
@@ -101,97 +108,115 @@ The name-based guard counts these as wired; resolved references find no caller.
 - `src/fatigue.rs::BASQUIN_LOW_CYCLE_BOUND`
 - `src/fatigue.rs::FatigueRangeError`
 - `src/fatigue.rs::FatigueReport`
-- `src/filament_db.rs::get`
-- `src/filament_db.rs::is_empty`
+- `src/filament_db.rs::FilamentDb::get`
+- `src/filament_db.rs::FilamentDb::is_empty`
 - `src/filter.rs::ALL`
-- `src/flow_viz.rs::is_empty`
-- `src/fluid.rs::step_with_sdf`
-- `src/force.rs::with_affected_bodies`
-- `src/gpu_sdf.rs::clear`
-- `src/heightfield.rs::aabb`
-- `src/joint.rs::with_compliance`
-- `src/joint_extra.rs::with_compliance`
-- `src/linear_elastic_fem.rs::displacements`
-- `src/linear_elastic_fem.rs::field`
-- `src/linear_elastic_fem.rs::with_consistent_tangent`
-- `src/material.rs::is_empty`
-- `src/material.rs::len`
-- `src/math.rs::ceil`
+- `src/filter.rs::CollisionFilter::ALL`
+- `src/filter.rs::DEFAULT`
+- `src/flow_viz.rs::Streamlines::is_empty`
+- `src/fluid.rs::Fluid::step_with_sdf`
+- `src/force.rs::ForceFieldInstance::with_affected_bodies`
+- `src/gpu_sdf.rs::GpuSdfBatch::clear`
+- `src/heightfield.rs::HeightField::aabb`
+- `src/joint.rs::BallJoint::with_compliance`
+- `src/joint.rs::HingeJoint::with_compliance`
+- `src/joint_extra.rs::GearJoint::new`
+- `src/joint_extra.rs::GearJoint::with_compliance`
+- `src/joint_extra.rs::PulleyJoint::with_compliance`
+- `src/joint_extra.rs::RackAndPinionJoint::new`
+- `src/joint_extra.rs::RackAndPinionJoint::with_compliance`
+- `src/joint_extra.rs::WeldJoint::with_compliance`
+- `src/linear_elastic_fem.rs::CorotationalConfig::with_consistent_tangent`
+- `src/linear_elastic_fem.rs::ElastoplasticState::displacements`
+- `src/linear_elastic_fem.rs::ElastoplasticState::newton_iterations`
+- `src/linear_elastic_fem.rs::ThermalExpansion::field`
+- `src/linear_elastic_fem.rs::ThermalExpansion::new`
+- `src/material.rs::MaterialTable::is_empty`
+- `src/material.rs::MaterialTable::len`
+- `src/math.rs::Fix128::ceil`
 - `src/motor.rs::JointMotor`
+- `src/motor.rs::JointMotor::new`
 - `src/motor.rs::PdController3D`
-- `src/motor.rs::compute_torque`
-- `src/netcode.rs::has_action`
+- `src/motor.rs::PdController3D::compute_torque`
+- `src/motor.rs::PdController3D::new`
 - `src/physics2d.rs::Contact2D`
 - `src/physics2d.rs::Joint2D`
-- `src/physics2d.rs::ONE`
 - `src/physics2d.rs::PhysicsConfig2D`
 - `src/physics2d.rs::PhysicsWorld2D`
-- `src/physics2d.rs::UNIT_X`
-- `src/physics2d.rs::UNIT_Y`
-- `src/physics2d.rs::add_body`
-- `src/physics2d.rs::add_joint`
-- `src/physics2d.rs::apply_impulse`
-- `src/physics2d.rs::check_collision_2d`
-- `src/physics2d.rs::from_int`
-- `src/physics2d.rs::is_static_or_kinematic`
-- `src/physics2d.rs::lerp`
-- `src/physics2d.rs::new_kinematic`
-- `src/physics2d.rs::new_static`
-- `src/physics2d.rs::normalize`
-- `src/physics2d.rs::perpendicular`
-- `src/physics2d.rs::remove_body`
-- `src/physics2d.rs::rotate`
+- `src/physics2d.rs::PhysicsWorld2D::add_body`
+- `src/physics2d.rs::PhysicsWorld2D::add_joint`
+- `src/physics2d.rs::PhysicsWorld2D::check_collision_2d`
+- `src/physics2d.rs::PhysicsWorld2D::new`
+- `src/physics2d.rs::PhysicsWorld2D::remove_body`
+- `src/physics2d.rs::PhysicsWorld2D::step`
+- `src/physics2d.rs::RigidBody2D::apply_impulse`
+- `src/physics2d.rs::RigidBody2D::is_static_or_kinematic`
+- `src/physics2d.rs::RigidBody2D::new_kinematic`
+- `src/physics2d.rs::RigidBody2D::new_static`
+- `src/physics2d.rs::RigidBody2D::world_point`
+- `src/physics2d.rs::Vec2Fix::ONE`
+- `src/physics2d.rs::Vec2Fix::UNIT_X`
+- `src/physics2d.rs::Vec2Fix::UNIT_Y`
+- `src/physics2d.rs::Vec2Fix::from_int`
+- `src/physics2d.rs::Vec2Fix::lerp`
+- `src/physics2d.rs::Vec2Fix::normalize`
+- `src/physics2d.rs::Vec2Fix::perpendicular`
+- `src/physics2d.rs::Vec2Fix::rotate`
 - `src/physics2d.rs::solve_joints_2d`
-- `src/physics2d.rs::step`
-- `src/physics2d.rs::world_point`
-- `src/pipeline.rs::count`
-- `src/pipeline.rs::is_empty`
-- `src/plane_collider.rs::new`
+- `src/pipeline.rs::MetricRegistry::count`
+- `src/pipeline.rs::RingBuffer::is_empty`
+- `src/plane_collider.rs::PlaneCollider::new`
 - `src/plastic.rs::StressTensor`
-- `src/plastic.rs::hydrostatic`
-- `src/plastic.rs::von_mises`
-- `src/print_orientation.rs::length`
-- `src/print_orientation.rs::length_squared`
-- `src/privacy.rs::count`
-- `src/privacy.rs::scale`
-- `src/quadratic_elastic_fem.rs::element_nodes`
-- `src/replay.rs::body_count`
-- `src/replay.rs::flush`
-- `src/scene_io.rs::load_scene`
-- `src/scene_io.rs::save_scene`
-- `src/sdf_adaptive.rs::resize`
+- `src/plastic.rs::StressTensor::hydrostatic`
+- `src/plastic.rs::StressTensor::von_mises`
+- `src/print_orientation.rs::LoadDirection::length`
+- `src/print_orientation.rs::LoadDirection::length_squared`
+- `src/privacy.rs::LaplaceNoise::new`
+- `src/privacy.rs::LaplaceNoise::scale`
+- `src/privacy.rs::PrivateAggregator::count`
+- `src/quadratic_elastic_fem.rs::QuadraticMesh::element_nodes`
+- `src/replay.rs::ReplayPlayer::body_count`
+- `src/replay.rs::ReplayRecorder::flush`
+- `src/scene_io.rs::PhysicsConfig::new`
+- `src/sdf_adaptive.rs::AdaptiveSdfEvaluator::resize`
 - `src/sdf_character.rs::MoveOutcome`
-- `src/sdf_character.rs::apply_gravity`
-- `src/sdf_character.rs::move_and_slide`
-- `src/sdf_character.rs::resolved_position`
-- `src/sdf_character.rs::step`
-- `src/sdf_collider.rs::new_dynamic`
-- `src/sdf_collider.rs::update_cache`
-- `src/sdf_manifold.rs::is_empty`
+- `src/sdf_character.rs::MoveOutcome::resolved_position`
+- `src/sdf_character.rs::SdfCharacter::apply_gravity`
+- `src/sdf_character.rs::SdfCharacter::move_and_slide`
+- `src/sdf_character.rs::SdfCharacter::step`
+- `src/sdf_collider.rs::SdfCollider::new_dynamic`
+- `src/sdf_collider.rs::SdfCollider::update_cache`
+- `src/sdf_manifold.rs::SdfManifold::is_empty`
 - `src/sdf_wind_field.rs::SdfWindField`
-- `src/sdf_wind_field.rs::new`
-- `src/sdf_wind_field.rs::sample`
+- `src/sdf_wind_field.rs::SdfWindField::new`
+- `src/sdf_wind_field.rs::SdfWindField::sample`
+- `src/sim_field.rs::ScalarField3D::clear`
+- `src/sim_field.rs::ScalarField3D::contains`
+- `src/sim_field.rs::ScalarField3D::max_value`
 - `src/sim_field.rs::VectorField3D`
-- `src/sim_field.rs::clamp`
-- `src/sim_field.rs::clear`
-- `src/sim_field.rs::contains`
-- `src/sim_field.rs::max_value`
+- `src/sim_field.rs::VectorField3D::clear`
+- `src/sim_field.rs::VectorField3D::decay`
+- `src/sim_field.rs::VectorField3D::new`
+- `src/sim_field.rs::VectorField3D::sample`
+- `src/sim_field.rs::VectorField3D::splat`
+- `src/sim_modifier.rs::ModifiedSdf::update`
 - `src/sim_modifier.rs::SingleModifiedSdf`
-- `src/sim_modifier.rs::update`
+- `src/sim_modifier.rs::SingleModifiedSdf::new`
+- `src/sim_modifier.rs::SingleModifiedSdf::update`
 - `src/sketch.rs::HeavyHitterEntry`
-- `src/sleeping.rs::wake_body`
-- `src/solver.rs::begin_frame`
-- `src/solver.rs::end_frame`
-- `src/solver.rs::raycast`
-- `src/solver.rs::step_parallel`
+- `src/sleeping.rs::IslandManager::wake_body`
+- `src/solver.rs::PhysicsWorld::begin_frame`
+- `src/solver.rs::PhysicsWorld::end_frame`
+- `src/solver.rs::PhysicsWorld::raycast`
+- `src/solver.rs::TgsCacheStats::new`
 - `src/solver_tgs.rs::BodyRef`
 - `src/solver_tgs.rs::ContactRef`
-- `src/solver_tgs.rs::clear`
-- `src/solver_tgs.rs::is_empty`
-- `src/solver_tgs.rs::len`
-- `src/solver_tgs.rs::peek`
-- `src/solver_tgs.rs::set`
-- `src/solver_tgs.rs::take`
+- `src/solver_tgs.rs::ImpulseCache::clear`
+- `src/solver_tgs.rs::ImpulseCache::is_empty`
+- `src/solver_tgs.rs::ImpulseCache::len`
+- `src/solver_tgs.rs::ImpulseCache::peek`
+- `src/solver_tgs.rs::UnionFind::is_empty`
+- `src/solver_tgs.rs::UnionFind::len`
 - `src/solver_tgs_hooks.rs::PgsConfig`
 - `src/solver_tgs_hooks.rs::PgsHooks`
 - `src/solver_tgs_hooks.rs::SimpleBodyState`
@@ -200,23 +225,16 @@ The name-based guard counts these as wired; resolved references find no caller.
 - `src/solver_tgs_hooks_6dof.rs::Contact6Dof`
 - `src/solver_tgs_hooks_6dof.rs::Pgs6DofConfig`
 - `src/solver_tgs_hooks_6dof.rs::Pgs6DofHooks`
-- `src/solver_tgs_hooks_6dof.rs::new`
-- `src/solver_tgs_hooks_6dof_oriented.rs::advance`
-- `src/solver_tgs_hooks_6dof_oriented.rs::from_vec3fix`
-- `src/solver_tgs_hooks_6dof_oriented.rs::integrate_orientation`
-- `src/solver_tgs_hooks_6dof_oriented.rs::to_vec3fix`
-- `src/support_volume.rs::speed`
-- `src/torus.rs::aabb`
-- `src/torus.rs::surface_area`
-- `src/torus.rs::with_rotation`
-- `src/trimesh.rs::ray_triangle`
-- `src/trimesh.rs::raycast`
-- `src/vehicle.rs::new_default`
+- `src/solver_tgs_hooks_6dof.rs::Pgs6DofHooks::new`
+- `src/support_volume.rs::SupportConfig::speed`
+- `src/torus.rs::Torus::aabb`
+- `src/torus.rs::Torus::surface_area`
+- `src/torus.rs::Torus::with_rotation`
+- `src/vehicle.rs::Vehicle::new_default`
 - `src/wave_ship.rs::ShipResponse`
-- `src/wave_ship.rs::advance`
-- `src/wedge.rs::aabb`
-- `src/wedge.rs::vertices`
-- `src/wedge.rs::with_rotation`
+- `src/wave_ship.rs::ShipResponse::advance`
+- `src/wedge.rs::Wedge::aabb`
+- `src/wedge.rs::Wedge::with_rotation`
 
 ### In the baseline but reached here (0)
 
@@ -224,96 +242,106 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 
 - (none)
 
-## L0 — unreached (231)
+## L0 — unreached (252)
 
-- `src/anisotropic.rs::from_fdm_material`
-- `src/box_collider.rs::surface_area`
+- `src/anisotropic.rs::AnisotropicStrength::from_fdm_material`
+- `src/anisotropic.rs::OrthotropicElasticity::from_fdm_material`
+- `src/anomaly.rs::MadDetector::count`
+- `src/anomaly.rs::StreamingMedian::count`
+- `src/box_collider.rs::OrientedBox::surface_area`
 - `src/buckling.rs::SnapThroughError`
 - `src/buckling.rs::plate_buckling_mpa`
 - `src/buckling.rs::snap_through_load_n`
 - `src/bvh.rs::BroadphaseHybrid`
+- `src/bvh.rs::BroadphaseHybrid::build_dynamic`
+- `src/bvh.rs::BroadphaseHybrid::clear_dynamic`
+- `src/bvh.rs::BroadphaseHybrid::insert_dynamic`
+- `src/bvh.rs::BroadphaseHybrid::new`
+- `src/bvh.rs::BroadphaseHybrid::query_pairs`
 - `src/bvh.rs::BvhStats`
-- `src/bvh.rs::build_dynamic`
-- `src/bvh.rs::clear_dynamic`
-- `src/bvh.rs::insert_dynamic`
-- `src/bvh.rs::new`
-- `src/bvh.rs::query_callback`
-- `src/bvh.rs::query_pairs`
-- `src/bvh.rs::stats`
-- `src/cfd_solver.rs::set`
-- `src/cfd_solver.rs::step_multigrid`
-- `src/cloth.rs::step_with_sdf`
+- `src/bvh.rs::LinearBvh::query_callback`
+- `src/bvh.rs::LinearBvh::stats`
+- `src/cfd_solver.rs::CfdSolver::step_multigrid`
+- `src/cfd_solver.rs::RansState::set`
+- `src/cloth.rs::Cloth::step_with_sdf`
 - `src/cloth_fluid.rs::ClothFluidCoupling`
 - `src/cloth_fluid.rs::apply_cloth_boundary_to_fluid`
 - `src/cloth_fluid.rs::apply_cloth_boundary_to_fluid_with_residual`
 - `src/cloth_fluid.rs::apply_fluid_forces_to_cloth`
 - `src/cloth_fluid.rs::apply_fluid_forces_to_cloth_with_residual`
 - `src/collider.rs::ScaledShape`
+- `src/collider.rs::ScaledShape::new`
+- `src/compound.rs::CompoundShape::support_world`
+- `src/compound.rs::ShapeRef::aabb`
 - `src/compound.rs::TransformedCompound`
-- `src/compound.rs::aabb`
-- `src/compound.rs::support_world`
-- `src/compressible.rs::pressure`
-- `src/cone.rs::aabb`
-- `src/cone.rs::surface_area`
-- `src/cone.rs::with_rotation`
-- `src/contact_cache.rs::begin_frame`
-- `src/contact_cache.rs::clear`
-- `src/contact_cache.rs::end_frame`
-- `src/contact_cache.rs::is_empty`
+- `src/compressible.rs::IdealGas::pressure`
+- `src/cone.rs::Cone::aabb`
+- `src/cone.rs::Cone::surface_area`
+- `src/cone.rs::Cone::with_rotation`
+- `src/contact_cache.rs::ContactCache::begin_frame`
+- `src/contact_cache.rs::ContactCache::clear`
+- `src/contact_cache.rs::ContactCache::end_frame`
+- `src/contact_cache.rs::ContactManifold::clear`
+- `src/contact_cache.rs::ContactManifold::is_empty`
 - `src/convex_mesh_builder.rs::build_convex_hull`
-- `src/coupled_field.rs::add`
-- `src/coupled_field.rs::clamp`
-- `src/coupled_field.rs::copy_from_f32`
-- `src/coupled_field.rs::decay`
-- `src/coupled_field.rs::decay_toward`
-- `src/coupled_field.rs::diffuse`
-- `src/coupled_field.rs::gradient`
-- `src/coupled_field.rs::max`
-- `src/coupled_field.rs::min`
-- `src/coupled_field.rs::sum`
-- `src/coupled_field.rs::write_to_f32`
+- `src/coupled_field.rs::CoupledField::add`
+- `src/coupled_field.rs::CoupledField::clamp`
+- `src/coupled_field.rs::CoupledField::decay`
+- `src/coupled_field.rs::CoupledField::decay_toward`
+- `src/coupled_field.rs::CoupledField::diffuse`
+- `src/coupled_field.rs::CoupledField::gradient`
+- `src/coupled_field.rs::CoupledField::max`
+- `src/coupled_field.rs::CoupledField::min`
+- `src/coupled_field.rs::CoupledField::sum`
+- `src/coupled_iteration.rs::ContractionMonitor::best_residual`
 - `src/coupled_iteration.rs::EquilibrationScale`
-- `src/coupled_iteration.rs::IDENTITY`
-- `src/coupled_iteration.rs::MAX_EXPONENT`
-- `src/coupled_iteration.rs::best_residual`
-- `src/coupled_iteration.rs::covering`
-- `src/coupled_iteration.rs::exponent`
-- `src/coupled_iteration.rs::factor`
-- `src/coupled_iteration.rs::round_trip_bound`
-- `src/coupled_iteration.rs::scale_down`
-- `src/coupled_iteration.rs::scale_up`
-- `src/creep_longterm.rs::petg_25c_moderate`
-- `src/cylinder.rs::aabb`
-- `src/cylinder.rs::surface_area`
-- `src/cylinder.rs::with_rotation`
-- `src/debug_render.rs::aabb`
-- `src/deformable.rs::step_with_sdf`
-- `src/dynamic_bvh.rs::node_count`
-- `src/dynamic_bvh.rs::query`
-- `src/ellipsoid.rs::aabb`
-- `src/ellipsoid.rs::with_rotation`
-- `src/eulerian_grid.rs::DELIVERY_DESTINATION_LACKS_LAYER`
-- `src/eulerian_grid.rs::DELIVERY_SOURCE_LACKS_LAYER`
+- `src/coupled_iteration.rs::EquilibrationScale::IDENTITY`
+- `src/coupled_iteration.rs::EquilibrationScale::MAX_EXPONENT`
+- `src/coupled_iteration.rs::EquilibrationScale::covering`
+- `src/coupled_iteration.rs::EquilibrationScale::exponent`
+- `src/coupled_iteration.rs::EquilibrationScale::factor`
+- `src/coupled_iteration.rs::EquilibrationScale::round_trip_bound`
+- `src/coupled_iteration.rs::EquilibrationScale::scale_down`
+- `src/coupled_iteration.rs::EquilibrationScale::scale_up`
+- `src/creep_longterm.rs::FindleyParameters::petg_25c_moderate`
+- `src/cylinder.rs::Cylinder::aabb`
+- `src/cylinder.rs::Cylinder::surface_area`
+- `src/cylinder.rs::Cylinder::with_rotation`
+- `src/debug_render.rs::DebugDrawData::aabb`
+- `src/deformable.rs::DeformableBody::step_with_sdf`
+- `src/dynamic_bvh.rs::DynamicAabbTree::node_count`
+- `src/dynamic_bvh.rs::DynamicAabbTree::query`
+- `src/ellipsoid.rs::Ellipsoid::aabb`
+- `src/ellipsoid.rs::Ellipsoid::with_rotation`
 - `src/eulerian_grid.rs::LocalPlaneChannel`
+- `src/eulerian_grid.rs::LocalPlaneChannel::is_drained`
+- `src/eulerian_grid.rs::LocalPlaneChannel::new`
+- `src/eulerian_grid.rs::LocalSlabTransport::bytes`
 - `src/eulerian_grid.rs::PlaneChannel`
 - `src/eulerian_grid.rs::SLAB_FACE_HALO_MISSING`
 - `src/eulerian_grid.rs::SlabBytes`
+- `src/eulerian_grid.rs::SlabBytes::ZERO`
+- `src/eulerian_grid.rs::SlabBytes::add`
+- `src/eulerian_grid.rs::SlabBytes::total`
 - `src/eulerian_grid.rs::SlabFaceConditions`
+- `src/eulerian_grid.rs::SlabFaceConditions::from_grid`
+- `src/eulerian_grid.rs::SlabFaceConditions::new`
+- `src/eulerian_grid.rs::SlabFaceConditions::set_u`
+- `src/eulerian_grid.rs::SlabFaceConditions::set_v`
+- `src/eulerian_grid.rs::SlabFaceConditions::set_w`
+- `src/eulerian_grid.rs::SlabFaces::bytes`
 - `src/eulerian_grid.rs::SlabSocketTransport`
+- `src/eulerian_grid.rs::SlabSocketTransport::new`
+- `src/eulerian_grid.rs::SlabSocketTransport::slab`
+- `src/eulerian_grid.rs::SlabStencil::bytes`
+- `src/eulerian_grid.rs::SlabStorage::bytes`
 - `src/eulerian_grid.rs::SocketTransport`
-- `src/eulerian_grid.rs::ZERO`
-- `src/eulerian_grid.rs::add`
-- `src/eulerian_grid.rs::bytes`
+- `src/eulerian_grid.rs::SocketTransport::new`
 - `src/eulerian_grid.rs::enforce_slab_face_boundaries`
 - `src/eulerian_grid.rs::enforce_slab_face_boundaries_on_rank`
 - `src/eulerian_grid.rs::enforce_slab_face_boundaries_over`
-- `src/eulerian_grid.rs::is_drained`
 - `src/eulerian_grid.rs::project_pressure_decomposed_on_rank`
 - `src/eulerian_grid.rs::project_pressure_slab_local_on_rank`
-- `src/eulerian_grid.rs::set_u`
-- `src/eulerian_grid.rs::set_v`
-- `src/eulerian_grid.rs::set_w`
-- `src/eulerian_grid.rs::total`
 - `src/eulerian_grid/multigrid_decomposed.rs::Residency`
 - `src/eulerian_grid/multigrid_decomposed.rs::multigrid_slab_bounds`
 - `src/eulerian_grid/multigrid_decomposed.rs::project_pressure_multigrid_banded_on_rank`
@@ -323,110 +351,128 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/fatigue.rs::BASQUIN_LOW_CYCLE_BOUND`
 - `src/fatigue.rs::FatigueRangeError`
 - `src/fatigue.rs::FatigueReport`
-- `src/fatigue.rs::aluminum_a5052`
+- `src/fatigue.rs::SnCurve::aluminum_a5052`
+- `src/fatigue.rs::SnCurve::steel_sus304`
 - `src/fatigue.rs::analyze_spectrum`
-- `src/fatigue.rs::steel_sus304`
 - `src/fatigue.rs::stress_at_cycles`
-- `src/filament_db.rs::get`
-- `src/filament_db.rs::is_empty`
+- `src/filament_db.rs::FilamentDb::get`
+- `src/filament_db.rs::FilamentDb::is_empty`
 - `src/filter.rs::ALL`
-- `src/flow_viz.rs::is_empty`
-- `src/fluid.rs::step_with_sdf`
-- `src/force.rs::with_affected_bodies`
-- `src/gpu_sdf.rs::clear`
-- `src/heightfield.rs::aabb`
-- `src/joint.rs::with_compliance`
-- `src/joint_extra.rs::with_compliance`
-- `src/linear_elastic_fem.rs::displacements`
-- `src/linear_elastic_fem.rs::field`
-- `src/linear_elastic_fem.rs::with_consistent_tangent`
+- `src/filter.rs::CollisionFilter::ALL`
+- `src/filter.rs::DEFAULT`
+- `src/flow_viz.rs::Streamlines::is_empty`
+- `src/fluid.rs::Fluid::step_with_sdf`
+- `src/force.rs::ForceFieldInstance::with_affected_bodies`
+- `src/gpu_sdf.rs::GpuSdfBatch::clear`
+- `src/heightfield.rs::HeightField::aabb`
+- `src/joint.rs::BallJoint::with_compliance`
+- `src/joint.rs::HingeJoint::with_compliance`
+- `src/joint_extra.rs::GearJoint::new`
+- `src/joint_extra.rs::GearJoint::with_compliance`
+- `src/joint_extra.rs::PulleyJoint::with_compliance`
+- `src/joint_extra.rs::RackAndPinionJoint::new`
+- `src/joint_extra.rs::RackAndPinionJoint::with_compliance`
+- `src/joint_extra.rs::WeldJoint::with_compliance`
+- `src/linear_elastic_fem.rs::CorotationalConfig::with_consistent_tangent`
+- `src/linear_elastic_fem.rs::ElastoplasticState::displacements`
+- `src/linear_elastic_fem.rs::ElastoplasticState::newton_iterations`
+- `src/linear_elastic_fem.rs::ThermalExpansion::field`
+- `src/linear_elastic_fem.rs::ThermalExpansion::new`
 - `src/mass_properties.rs::cylinder_mass_properties`
-- `src/material.rs::is_empty`
-- `src/material.rs::len`
-- `src/math.rs::ceil`
+- `src/material.rs::MaterialTable::is_empty`
+- `src/material.rs::MaterialTable::len`
+- `src/math.rs::Fix128::ceil`
 - `src/motor.rs::JointMotor`
+- `src/motor.rs::JointMotor::new`
 - `src/motor.rs::PdController3D`
+- `src/motor.rs::PdController3D::compute_torque`
+- `src/motor.rs::PdController3D::new`
+- `src/motor.rs::PdController3D::set_rotation_target`
+- `src/motor.rs::PdController::disable`
+- `src/motor.rs::PdController::set_velocity_target`
 - `src/motor.rs::apply_motors`
-- `src/motor.rs::compute_torque`
-- `src/motor.rs::disable`
-- `src/motor.rs::set_rotation_target`
-- `src/motor.rs::set_velocity_target`
-- `src/netcode.rs::has_action`
 - `src/physics2d.rs::Contact2D`
 - `src/physics2d.rs::Joint2D`
-- `src/physics2d.rs::ONE`
 - `src/physics2d.rs::PhysicsConfig2D`
 - `src/physics2d.rs::PhysicsWorld2D`
-- `src/physics2d.rs::UNIT_X`
-- `src/physics2d.rs::UNIT_Y`
-- `src/physics2d.rs::add_body`
-- `src/physics2d.rs::add_joint`
-- `src/physics2d.rs::apply_impulse`
-- `src/physics2d.rs::check_collision_2d`
-- `src/physics2d.rs::from_int`
-- `src/physics2d.rs::is_static_or_kinematic`
-- `src/physics2d.rs::lerp`
-- `src/physics2d.rs::new_kinematic`
-- `src/physics2d.rs::new_static`
-- `src/physics2d.rs::normalize`
-- `src/physics2d.rs::perpendicular`
-- `src/physics2d.rs::remove_body`
-- `src/physics2d.rs::rotate`
+- `src/physics2d.rs::PhysicsWorld2D::add_body`
+- `src/physics2d.rs::PhysicsWorld2D::add_joint`
+- `src/physics2d.rs::PhysicsWorld2D::check_collision_2d`
+- `src/physics2d.rs::PhysicsWorld2D::new`
+- `src/physics2d.rs::PhysicsWorld2D::remove_body`
+- `src/physics2d.rs::PhysicsWorld2D::step`
+- `src/physics2d.rs::RigidBody2D::apply_impulse`
+- `src/physics2d.rs::RigidBody2D::is_static_or_kinematic`
+- `src/physics2d.rs::RigidBody2D::new_kinematic`
+- `src/physics2d.rs::RigidBody2D::new_static`
+- `src/physics2d.rs::RigidBody2D::world_point`
+- `src/physics2d.rs::Vec2Fix::ONE`
+- `src/physics2d.rs::Vec2Fix::UNIT_X`
+- `src/physics2d.rs::Vec2Fix::UNIT_Y`
+- `src/physics2d.rs::Vec2Fix::from_int`
+- `src/physics2d.rs::Vec2Fix::lerp`
+- `src/physics2d.rs::Vec2Fix::normalize`
+- `src/physics2d.rs::Vec2Fix::perpendicular`
+- `src/physics2d.rs::Vec2Fix::rotate`
 - `src/physics2d.rs::solve_joints_2d`
-- `src/physics2d.rs::step`
-- `src/physics2d.rs::world_point`
-- `src/pipeline.rs::count`
-- `src/pipeline.rs::is_empty`
-- `src/plane_collider.rs::new`
+- `src/pipeline.rs::MetricRegistry::count`
+- `src/pipeline.rs::RingBuffer::is_empty`
+- `src/plane_collider.rs::PlaneCollider::new`
+- `src/plastic.rs::NortonCreep::petg_room_temp`
+- `src/plastic.rs::PlasticModel::with_hardening`
 - `src/plastic.rs::StressTensor`
-- `src/plastic.rs::hydrostatic`
-- `src/plastic.rs::petg_room_temp`
-- `src/plastic.rs::uniaxial_x`
-- `src/plastic.rs::von_mises`
-- `src/plastic.rs::with_hardening`
-- `src/print_orientation.rs::length`
-- `src/print_orientation.rs::length_squared`
-- `src/privacy.rs::count`
-- `src/privacy.rs::scale`
-- `src/quadratic_elastic_fem.rs::element_nodes`
-- `src/replay.rs::body_count`
-- `src/replay.rs::flush`
-- `src/scene_io.rs::load_scene`
-- `src/scene_io.rs::save_scene`
-- `src/sdf_adaptive.rs::resize`
+- `src/plastic.rs::StressTensor::hydrostatic`
+- `src/plastic.rs::StressTensor::uniaxial_x`
+- `src/plastic.rs::StressTensor::von_mises`
+- `src/print_orientation.rs::LoadDirection::length`
+- `src/print_orientation.rs::LoadDirection::length_squared`
+- `src/privacy.rs::LaplaceNoise::new`
+- `src/privacy.rs::LaplaceNoise::scale`
+- `src/privacy.rs::PrivateAggregator::count`
+- `src/quadratic_elastic_fem.rs::QuadraticMesh::element_nodes`
+- `src/replay.rs::ReplayPlayer::body_count`
+- `src/replay.rs::ReplayRecorder::flush`
+- `src/scene_io.rs::PhysicsConfig::new`
+- `src/sdf_adaptive.rs::AdaptiveSdfEvaluator::resize`
 - `src/sdf_character.rs::MoveOutcome`
-- `src/sdf_character.rs::apply_gravity`
-- `src/sdf_character.rs::move_and_slide`
-- `src/sdf_character.rs::resolved_position`
-- `src/sdf_character.rs::step`
-- `src/sdf_collider.rs::new_dynamic`
-- `src/sdf_collider.rs::update_cache`
-- `src/sdf_manifold.rs::is_empty`
+- `src/sdf_character.rs::MoveOutcome::resolved_position`
+- `src/sdf_character.rs::SdfCharacter::apply_gravity`
+- `src/sdf_character.rs::SdfCharacter::move_and_slide`
+- `src/sdf_character.rs::SdfCharacter::step`
+- `src/sdf_collider.rs::SdfCollider::new_dynamic`
+- `src/sdf_collider.rs::SdfCollider::update_cache`
+- `src/sdf_manifold.rs::SdfManifold::is_empty`
 - `src/sdf_wind_field.rs::SdfWindField`
-- `src/sdf_wind_field.rs::new`
-- `src/sdf_wind_field.rs::sample`
+- `src/sdf_wind_field.rs::SdfWindField::new`
+- `src/sdf_wind_field.rs::SdfWindField::sample`
+- `src/sim_field.rs::ScalarField3D::clear`
+- `src/sim_field.rs::ScalarField3D::contains`
+- `src/sim_field.rs::ScalarField3D::max_value`
 - `src/sim_field.rs::VectorField3D`
-- `src/sim_field.rs::clamp`
-- `src/sim_field.rs::clear`
-- `src/sim_field.rs::contains`
-- `src/sim_field.rs::max_value`
+- `src/sim_field.rs::VectorField3D::clear`
+- `src/sim_field.rs::VectorField3D::decay`
+- `src/sim_field.rs::VectorField3D::new`
+- `src/sim_field.rs::VectorField3D::sample`
+- `src/sim_field.rs::VectorField3D::splat`
+- `src/sim_modifier.rs::ModifiedSdf::update`
 - `src/sim_modifier.rs::SingleModifiedSdf`
-- `src/sim_modifier.rs::update`
+- `src/sim_modifier.rs::SingleModifiedSdf::new`
+- `src/sim_modifier.rs::SingleModifiedSdf::update`
 - `src/sketch.rs::HeavyHitterEntry`
-- `src/sleeping.rs::wake_body`
-- `src/solver.rs::begin_frame`
-- `src/solver.rs::end_frame`
-- `src/solver.rs::raycast`
-- `src/solver.rs::step_parallel`
+- `src/sleeping.rs::IslandManager::wake_body`
+- `src/solver.rs::PhysicsWorld::begin_frame`
+- `src/solver.rs::PhysicsWorld::end_frame`
+- `src/solver.rs::PhysicsWorld::raycast`
+- `src/solver.rs::TgsCacheStats::new`
 - `src/solver_tgs.rs::BodyRef`
 - `src/solver_tgs.rs::ContactRef`
-- `src/solver_tgs.rs::clear`
-- `src/solver_tgs.rs::is_empty`
-- `src/solver_tgs.rs::len`
+- `src/solver_tgs.rs::ImpulseCache::clear`
+- `src/solver_tgs.rs::ImpulseCache::is_empty`
+- `src/solver_tgs.rs::ImpulseCache::len`
+- `src/solver_tgs.rs::ImpulseCache::peek`
+- `src/solver_tgs.rs::UnionFind::is_empty`
+- `src/solver_tgs.rs::UnionFind::len`
 - `src/solver_tgs.rs::par_dispatch_islands`
-- `src/solver_tgs.rs::peek`
-- `src/solver_tgs.rs::set`
-- `src/solver_tgs.rs::take`
 - `src/solver_tgs_hooks.rs::PgsConfig`
 - `src/solver_tgs_hooks.rs::PgsHooks`
 - `src/solver_tgs_hooks.rs::SimpleBodyState`
@@ -435,180 +481,207 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/solver_tgs_hooks_6dof.rs::Contact6Dof`
 - `src/solver_tgs_hooks_6dof.rs::Pgs6DofConfig`
 - `src/solver_tgs_hooks_6dof.rs::Pgs6DofHooks`
-- `src/solver_tgs_hooks_6dof.rs::new`
-- `src/solver_tgs_hooks_6dof_oriented.rs::advance`
-- `src/solver_tgs_hooks_6dof_oriented.rs::from_vec3fix`
-- `src/solver_tgs_hooks_6dof_oriented.rs::integrate_orientation`
-- `src/solver_tgs_hooks_6dof_oriented.rs::local_to_world`
-- `src/solver_tgs_hooks_6dof_oriented.rs::to_vec3fix`
+- `src/solver_tgs_hooks_6dof.rs::Pgs6DofHooks::new`
+- `src/solver_tgs_hooks_6dof_oriented.rs::Body6DofOrientedState::local_to_world`
 - `src/solver_tgs_hooks_6dof_oriented_scoped.rs::solve_oriented_islands_parallel`
 - `src/solver_tgs_hooks_6dof_scoped.rs::solve_island_isolated`
 - `src/solver_tgs_hooks_6dof_scoped.rs::solve_islands_parallel`
 - `src/solver_tgs_hooks_6dof_scoped.rs::solve_islands_serial`
-- `src/support_volume.rs::speed`
-- `src/torus.rs::aabb`
-- `src/torus.rs::surface_area`
-- `src/torus.rs::with_rotation`
-- `src/trimesh.rs::ray_triangle`
-- `src/trimesh.rs::raycast`
-- `src/vehicle.rs::new_default`
+- `src/support_volume.rs::SupportConfig::speed`
+- `src/torus.rs::Torus::aabb`
+- `src/torus.rs::Torus::surface_area`
+- `src/torus.rs::Torus::with_rotation`
+- `src/vehicle.rs::Vehicle::new_default`
 - `src/wave_ship.rs::ShipResponse`
-- `src/wave_ship.rs::advance`
-- `src/wedge.rs::aabb`
-- `src/wedge.rs::vertices`
-- `src/wedge.rs::with_rotation`
+- `src/wave_ship.rs::ShipResponse::advance`
+- `src/wedge.rs::Wedge::aabb`
+- `src/wedge.rs::Wedge::with_rotation`
+
+## Not indexed (27)
+
+`pub` items in the source that the SCIP index has no definition for (items inside a `macro_rules` body). Their reach is not checked; the baseline lists them so the set cannot grow unnoticed.
+
+- `src/sketch.rs::BINS`
+- `src/sketch.rs::DEPTH`
+- `src/sketch.rs::K`
+- `src/sketch.rs::M`
+- `src/sketch.rs::P`
+- `src/sketch.rs::WIDTH`
+- `src/sketch.rs::alpha`
+- `src/sketch.rs::cardinality`
+- `src/sketch.rs::clear`
+- `src/sketch.rs::cms`
+- `src/sketch.rs::confidence`
+- `src/sketch.rs::count`
+- `src/sketch.rs::error_bound`
+- `src/sketch.rs::estimate`
+- `src/sketch.rs::estimate_bytes`
+- `src/sketch.rs::estimate_hash`
+- `src/sketch.rs::insert`
+- `src/sketch.rs::insert_bytes`
+- `src/sketch.rs::insert_hash`
+- `src/sketch.rs::max`
+- `src/sketch.rs::mean`
+- `src/sketch.rs::min`
+- `src/sketch.rs::quantile`
+- `src/sketch.rs::registers`
+- `src/sketch.rs::sum`
+- `src/sketch.rs::top`
+- `src/sketch.rs::total`
 
 ## Limits
 
 - A pattern in a `match` arm counts as a reference: a type that is only matched on, never constructed, is reached.
 - Code inside macro expansions is resolved as far as rust-analyzer resolves it.
-- Generic code is followed through trait methods: calling `T::method` reaches every impl of that method in the crate.
+- Calls through a trait (`dyn Tr`, `T: Tr`) reach the impls of that method whose self type is reached (the type, a field, or one of its methods is live); an impl of a type nothing reaches stays unreached.
+- Trait-impl links come from the impl symbol names; rust-analyzer's SCIP output has no implementation relationships.
+- Methods are listed as `file::Type::method`, so same-named methods of different types in one file are told apart.
 - Items in `src/ffi.rs`, `src/python.rs` and `src/wasm.rs` are roots and are not listed.
 
-## L1 — example-only (1746)
+## L1 — example-only (1834)
 
 - `src/acoustic_wave.rs`: `AIR_20C`, `CONCRETE_LONGITUDINAL`, `STEEL_LONGITUDINAL`, `WATER_25C`, `leapfrog_step`, `stable_dt`
-- `src/aeroelasticity.rs`: `VivParameters`, `VivState`, `facchinetti_reference`, `seeded`, `viv_step`
-- `src/analytics_bridge.rs`: `ALPHA`, `PhysicsTelemetry`, `contacts_p50`, `contacts_p99`, `energy_drift_p99`, `new`, `record_collision_pair`, `record_contacts`, `record_energy_drift`, `record_step_time`, `step_time_p50`, `step_time_p99`, `total_steps`, `unique_collision_pairs`
-- `src/animation_blend.rs`: `AnimationBlender`, `AnimationClip`, `BlendMode`, `BonePose`, `Keyframe`, `SkeletonPose`, `add_keyframe`, `bone_count`, `get_motor_targets`, `go_animated`, `go_powered`, `go_ragdoll`, `is_transitioning`, `lerp`, `new`, `num_bones`, `sample`, `set_animated`, `set_ragdoll`, `update`
-- `src/anisotropic.rs`: `AnisotropicStrength`, `FailureCriterion`, `FailureReport`, `OrthotropicElasticity`, `OrthotropicStress`, `axial`, `e_at_angle_lt`, `e_at_angle_lz`, `evaluate_failure`
-- `src/anisotropic_friction.rs`: `AnisotropicFriction`, `friction_force`, `skate_ice`, `ski_snow`, `tyre_asphalt`
-- `src/anomaly.rs`: `AnomalyCallback`, `AnomalyEvent`, `CompositeDetector`, `DEFAULT_WINDOW`, `EwmaDetector`, `MadDetector`, `StreamingMedian`, `WINDOW`, `ZScoreDetector`, `alpha`, `anomaly_score`, `clear`, `count`, `ewma`, `is_anomaly`, `is_full`, `mad`, `mean`, `median`, `new`, `observe`, `observe_with_callback`, `push`, `reset`, `set_alpha`, `set_threshold_k`, `std_dev`, `threshold_k`, `variance`, `with_thresholds`, `z_score`
-- `src/articulation.rs`: `ArticulatedBody`, `FeatherstoneSolver`, `LINK_ROOT`, `Link`, `add_link`, `apply_motors`, `body_indices`, `build_ragdoll`, `dof_count`, `forward_kinematics`, `joints`, `link_count`, `new`, `set_motor`, `solve`, `solve_with_mass_splitting`
-- `src/audio_physics.rs`: `AudioConfig`, `AudioEvent`, `AudioEventType`, `AudioGenerator`, `AudioMaterial`, `METAL`, `MaterialType`, `RUBBER`, `STONE`, `WOOD`, `begin_frame`, `get_events`, `new`, `process_contact`, `set_material`
-- `src/beam_stress.rs`: `BeamAnalysis`, `BeamReport`, `ColumnEndCondition`, `CrossSection`, `LoadCase`, `analyze`, `area_mm2`, `euler_critical_load_n`, `k_factor`, `length_mm`, `max_bending_moment_nmm`, `max_c_mm`, `max_deflection_mm`, `new`, `second_moment_of_area_mm4`, `section_modulus_mm3`, `with_end_condition`, `with_min_fos`
-- `src/bimaterial.rs`: `BimaterialReport`, `BimaterialSide`, `analyze_bimaterial`, `effective_modulus_reuss_mpa`, `effective_modulus_voigt_mpa`, `from_material`, `interfacial_bond_strength_mpa`, `published_cte_per_c`, `thermal_residual_stress_mpa`
-- `src/body_collider.rs`: `bounding_radius`, `colliders_meet`, `quat_from_rotation`
-- `src/box_collider.rs`: `axis_aligned`, `corner`, `corners`, `inertia_diagonal`, `volume`
-- `src/bridging.rs`: `BridgeCheck`, `BridgeSpan`, `BridgingReport`, `analyze_bridges`, `check_span`, `has_unsafe`, `length_mm`, `unsafe_checks`, `z_delta_mm`
+- `src/aeroelasticity.rs`: `VivParameters`, `VivParameters::facchinetti_reference`, `VivState`, `VivState::seeded`, `viv_step`
+- `src/analytics_bridge.rs`: `PhysicsTelemetry`, `PhysicsTelemetry::ALPHA`, `PhysicsTelemetry::contacts_p50`, `PhysicsTelemetry::contacts_p99`, `PhysicsTelemetry::energy_drift_p99`, `PhysicsTelemetry::new`, `PhysicsTelemetry::record_collision_pair`, `PhysicsTelemetry::record_contacts`, `PhysicsTelemetry::record_energy_drift`, `PhysicsTelemetry::record_step_time`, `PhysicsTelemetry::step_time_p50`, `PhysicsTelemetry::step_time_p99`, `PhysicsTelemetry::total_steps`, `PhysicsTelemetry::unique_collision_pairs`
+- `src/animation_blend.rs`: `AnimationBlender`, `AnimationBlender::get_motor_targets`, `AnimationBlender::go_animated`, `AnimationBlender::go_powered`, `AnimationBlender::go_ragdoll`, `AnimationBlender::is_transitioning`, `AnimationBlender::new`, `AnimationBlender::set_animated`, `AnimationBlender::set_ragdoll`, `AnimationBlender::update`, `AnimationClip`, `AnimationClip::add_keyframe`, `AnimationClip::new`, `AnimationClip::num_bones`, `AnimationClip::sample`, `BlendMode`, `BonePose`, `Keyframe`, `SkeletonPose`, `SkeletonPose::bone_count`, `SkeletonPose::lerp`, `SkeletonPose::new`
+- `src/anisotropic.rs`: `AnisotropicStrength`, `FailureCriterion`, `FailureReport`, `OrthotropicElasticity`, `OrthotropicElasticity::e_at_angle_lt`, `OrthotropicElasticity::e_at_angle_lz`, `OrthotropicStress`, `OrthotropicStress::axial`, `evaluate_failure`
+- `src/anisotropic_friction.rs`: `AnisotropicFriction`, `AnisotropicFriction::friction_force`, `AnisotropicFriction::skate_ice`, `AnisotropicFriction::ski_snow`, `AnisotropicFriction::tyre_asphalt`
+- `src/anomaly.rs`: `AnomalyCallback`, `AnomalyEvent`, `CompositeDetector`, `CompositeDetector::anomaly_score`, `CompositeDetector::count`, `CompositeDetector::is_anomaly`, `CompositeDetector::new`, `CompositeDetector::observe`, `CompositeDetector::observe_with_callback`, `CompositeDetector::reset`, `CompositeDetector::with_thresholds`, `DEFAULT_WINDOW`, `EwmaDetector`, `EwmaDetector::alpha`, `EwmaDetector::anomaly_score`, `EwmaDetector::count`, `EwmaDetector::ewma`, `EwmaDetector::is_anomaly`, `EwmaDetector::new`, `EwmaDetector::observe`, `EwmaDetector::reset`, `EwmaDetector::set_alpha`, `EwmaDetector::set_threshold_k`, `EwmaDetector::std_dev`, `EwmaDetector::threshold_k`, `MadDetector`, `MadDetector::anomaly_score`, `MadDetector::clear`, `MadDetector::is_anomaly`, `MadDetector::mad`, `MadDetector::median`, `MadDetector::new`, `MadDetector::observe`, `MadDetector::set_threshold_k`, `MadDetector::threshold_k`, `StreamingMedian`, `StreamingMedian::WINDOW`, `StreamingMedian::clear`, `StreamingMedian::is_full`, `StreamingMedian::median`, `StreamingMedian::new`, `StreamingMedian::push`, `ZScoreDetector`, `ZScoreDetector::count`, `ZScoreDetector::is_anomaly`, `ZScoreDetector::mean`, `ZScoreDetector::new`, `ZScoreDetector::observe`, `ZScoreDetector::reset`, `ZScoreDetector::std_dev`, `ZScoreDetector::variance`, `ZScoreDetector::z_score`
+- `src/articulation.rs`: `ArticulatedBody`, `ArticulatedBody::add_link`, `ArticulatedBody::apply_motors`, `ArticulatedBody::body_indices`, `ArticulatedBody::dof_count`, `ArticulatedBody::forward_kinematics`, `ArticulatedBody::joints`, `ArticulatedBody::link_count`, `ArticulatedBody::new`, `ArticulatedBody::set_motor`, `FeatherstoneSolver`, `FeatherstoneSolver::new`, `FeatherstoneSolver::solve`, `FeatherstoneSolver::solve_with_mass_splitting`, `LINK_ROOT`, `Link`, `build_ragdoll`
+- `src/audio_physics.rs`: `AudioConfig`, `AudioEvent`, `AudioEventType`, `AudioGenerator`, `AudioGenerator::begin_frame`, `AudioGenerator::get_events`, `AudioGenerator::new`, `AudioGenerator::process_contact`, `AudioGenerator::set_material`, `AudioMaterial`, `AudioMaterial::METAL`, `AudioMaterial::RUBBER`, `AudioMaterial::STONE`, `AudioMaterial::WOOD`, `MaterialType`
+- `src/beam_stress.rs`: `BeamAnalysis`, `BeamAnalysis::analyze`, `BeamAnalysis::new`, `BeamAnalysis::with_end_condition`, `BeamAnalysis::with_min_fos`, `BeamReport`, `ColumnEndCondition`, `ColumnEndCondition::k_factor`, `CrossSection`, `CrossSection::area_mm2`, `CrossSection::max_c_mm`, `CrossSection::second_moment_of_area_mm4`, `CrossSection::section_modulus_mm3`, `LoadCase`, `LoadCase::length_mm`, `LoadCase::max_bending_moment_nmm`, `LoadCase::max_deflection_mm`, `euler_critical_load_n`
+- `src/bimaterial.rs`: `BimaterialReport`, `BimaterialSide`, `BimaterialSide::from_material`, `analyze_bimaterial`, `effective_modulus_reuss_mpa`, `effective_modulus_voigt_mpa`, `interfacial_bond_strength_mpa`, `published_cte_per_c`, `thermal_residual_stress_mpa`
+- `src/body_collider.rs`: `BodyCollider::bounding_radius`, `colliders_meet`, `quat_from_rotation`
+- `src/box_collider.rs`: `OrientedBox::axis_aligned`, `OrientedBox::corner`, `OrientedBox::corners`, `OrientedBox::inertia_diagonal`, `OrientedBox::volume`
+- `src/bridging.rs`: `BridgeCheck`, `BridgeSpan`, `BridgeSpan::length_mm`, `BridgeSpan::z_delta_mm`, `BridgingReport`, `BridgingReport::has_unsafe`, `BridgingReport::unsafe_checks`, `analyze_bridges`, `check_span`
 - `src/buckling.rs`: `BucklingRegime`, `ColumnBucklingReport`, `analyze_column`, `critical_stress_mpa`, `radius_of_gyration_mm`, `slenderness_ratio`, `transition_slenderness`
-- `src/buoyancy_zone.rs`: `BuoyancyZone`, `ZoneShape`, `contains`, `depth_below_surface`, `force_on`, `signed_depth_below_surface`, `submerged_fraction`, `water_pool`
-- `src/bvh.rs`: `get_aabb`, `refit_leaves`
+- `src/buoyancy_zone.rs`: `BuoyancyZone`, `BuoyancyZone::force_on`, `BuoyancyZone::submerged_fraction`, `BuoyancyZone::water_pool`, `ZoneShape`, `ZoneShape::contains`, `ZoneShape::depth_below_surface`, `ZoneShape::signed_depth_below_surface`
+- `src/bvh.rs`: `BvhNode::get_aabb`, `LinearBvh::refit_leaves`
 - `src/ccd.rs`: `CcdConfig`, `TOI`, `aabb_plane_toi`, `adaptive_toi_substeps`, `capsule_plane_toi`, `conservative_advancement`, `needs_ccd`, `speculative_contact`, `sphere_capsule_toi`, `sphere_plane_toi`, `sphere_sphere_toi`, `swept_aabb`
-- `src/cfd_solver.rs`: `AdvectionScheme`, `CfdSolver`, `LevelSetReinit`, `MAX_DT_CAP`, `PressureSolver`, `PressureSolverError`, `ProjectionReport`, `RansReport`, `RansState`, `StepError`, `StepOptions`, `StepReport`, `TurbulenceModel`, `TurbulenceSummary`, `WallModel`, `WallShearSummary`, `cell_dims`, `compute_max_dt`, `eddy_viscosity`, `epsilon`, `k`, `log_law`, `model`, `new`, `prescribed`, `pressure`, `step`, `step_adaptive`, `step_flip`, `step_flip_with`, `step_rans`, `step_with_options`, `step_with_pressure_solver`, `uniform`, `wall_model`, `with_level_set_reinit`, `with_wall_model`
-- `src/character.rs`: `CharacterConfig`, `CharacterController`, `MoveResult`, `PushImpulse`, `apply_gravity`, `compute_push_impulses`, `feet_position`, `get_platform_velocity`, `move_and_slide`, `new`, `new_default`
-- `src/character_state.rs`: `CharacterState`, `CharacterStateContext`, `accepts_locomotion`, `name`, `standing`, `transition`
-- `src/cloth.rs`: `Cloth`, `ClothConfig`, `compute_normals`, `new_grid`, `particle_count`, `pin`, `pin_top_row`, `remaining_self_contact_crossings`, `step`
-- `src/collider.rs`: `from_metric_ball`, `gjk`
-- `src/collision_mesh_gen.rs`: `CollisionMesh`, `CollisionMeshConfig`, `compute_mesh_aabb`, `generate_collision_mesh`, `simplify_collision_mesh`, `to_static_collider`
-- `src/compound.rs`: `add_box`, `add_capsule`, `add_convex_hull`, `add_sphere`, `compute_aabb`, `from_decomposition`, `from_sdf`, `is_empty`, `len`, `mass_properties`, `new`
-- `src/compressible.rs`: `IdealGas`, `ShockJump`, `air`, `density`, `helium`, `mach_number`, `normal_shock_jump`, `riemann_invariants`, `speed_of_sound`, `speed_of_sound_from_pd`, `stagnation_pressure_ratio`, `stagnation_temp_ratio`, `temperature`
-- `src/cone.rs`: `Cone`, `apex`, `base_center`, `center_of_mass_offset`, `inertia_diagonal`, `new`, `volume`
-- `src/contact_cache.rs`: `apply_warm_start`, `find`, `manifold_count`, `point_count`, `store_impulses`, `tangent_frame`, `total_contact_points`, `warm_start_impulse`
+- `src/cfd_solver.rs`: `AdvectionScheme`, `CfdSolver`, `CfdSolver::MAX_DT_CAP`, `CfdSolver::compute_max_dt`, `CfdSolver::new`, `CfdSolver::step`, `CfdSolver::step_adaptive`, `CfdSolver::step_flip`, `CfdSolver::step_flip_with`, `CfdSolver::step_rans`, `CfdSolver::step_with_options`, `CfdSolver::step_with_pressure_solver`, `LevelSetReinit`, `PressureSolver`, `PressureSolverError`, `ProjectionReport`, `RansReport`, `RansState`, `RansState::cell_dims`, `RansState::eddy_viscosity`, `RansState::epsilon`, `RansState::k`, `RansState::model`, `RansState::new`, `RansState::prescribed`, `RansState::uniform`, `StepError`, `StepOptions`, `StepOptions::new`, `StepOptions::pressure`, `StepOptions::wall_model`, `StepOptions::with_level_set_reinit`, `StepOptions::with_wall_model`, `StepReport`, `TurbulenceModel`, `TurbulenceSummary`, `WallModel`, `WallModel::log_law`, `WallShearSummary`
+- `src/character.rs`: `CharacterConfig`, `CharacterController`, `CharacterController::apply_gravity`, `CharacterController::compute_push_impulses`, `CharacterController::feet_position`, `CharacterController::get_platform_velocity`, `CharacterController::move_and_slide`, `CharacterController::new`, `CharacterController::new_default`, `MoveResult`, `PushImpulse`
+- `src/character_state.rs`: `CharacterState`, `CharacterState::accepts_locomotion`, `CharacterState::name`, `CharacterStateContext`, `CharacterStateContext::standing`, `transition`
+- `src/cloth.rs`: `Cloth`, `Cloth::compute_normals`, `Cloth::new_grid`, `Cloth::particle_count`, `Cloth::pin`, `Cloth::pin_top_row`, `Cloth::remaining_self_contact_crossings`, `Cloth::step`, `ClothConfig`
+- `src/collider.rs`: `AABB::from_metric_ball`, `ConvexHull::new`, `gjk`
+- `src/collision_mesh_gen.rs`: `CollisionMesh`, `CollisionMesh::to_static_collider`, `CollisionMeshConfig`, `compute_mesh_aabb`, `generate_collision_mesh`, `simplify_collision_mesh`
+- `src/compound.rs`: `CompoundShape::add_box`, `CompoundShape::add_capsule`, `CompoundShape::add_convex_hull`, `CompoundShape::add_sphere`, `CompoundShape::compute_aabb`, `CompoundShape::from_decomposition`, `CompoundShape::from_sdf`, `CompoundShape::is_empty`, `CompoundShape::len`, `CompoundShape::mass_properties`
+- `src/compressible.rs`: `IdealGas`, `IdealGas::air`, `IdealGas::density`, `IdealGas::helium`, `IdealGas::mach_number`, `IdealGas::speed_of_sound`, `IdealGas::speed_of_sound_from_pd`, `IdealGas::temperature`, `ShockJump`, `normal_shock_jump`, `riemann_invariants`, `stagnation_pressure_ratio`, `stagnation_temp_ratio`
+- `src/cone.rs`: `Cone::apex`, `Cone::base_center`, `Cone::inertia_diagonal`, `Cone::volume`
+- `src/contact_cache.rs`: `ContactCache::apply_warm_start`, `ContactCache::find`, `ContactCache::manifold_count`, `ContactCache::total_contact_points`, `ContactManifold::point_count`, `ContactManifold::store_impulses`, `ContactManifold::warm_start_impulse`, `tangent_frame`
 - `src/contact_viz.rs`: `ContactArrow`, `FrictionCone`, `generate_contact_arrows`, `generate_friction_arrows`, `generate_friction_cones`
 - `src/convex_decompose.rs`: `DecomposeConfig`, `DecompositionResult`, `decompose_sdf`
 - `src/convex_mesh_builder.rs`: `HullMesh`, `build_hull_mesh`, `compute_centroid`
-- `src/coupled_field.rs`: `CoupledField`, `CoupledFieldError`, `CoupledScalar`, `TemperatureRise`, `add_assign`, `as_mut_slice`, `as_slice`, `blend_from`, `cell_count`, `cell_size`, `clear`, `contains`, `field`, `fill`, `from_absolute`, `get`, `index`, `max_value`, `nx`, `ny`, `nz`, `reconcile_mean`, `reconcile_weighted`, `same_grid_as`, `sample`, `scale_div`, `set`, `splat`, `try_matching`, `try_new`, `try_new_filled`
-- `src/coupled_iteration.rs`: `ConfigFault`, `ContractionMonitor`, `CoupledIterationError`, `L2_TERM_FLOOR`, `MonitorVerdict`, `SubIterationConfig`, `SubIterationReport`, `new`, `observe`, `observed_ratio`, `residual_norm_inf`, `residual_norm_l2_checked`, `run_sub_iteration`, `sweeps`, `validate`
-- `src/creep_longterm.rs`: `CREEP_FROZEN_AT`, `FindleyParameters`, `WlfConstants`, `effective_time_at_temp`, `pla_25c_moderate`, `predict_strain`, `strain_at`, `universal`, `wlf_shift_factor`
-- `src/cubic_elastic_fem.rs`: `AdaptiveCubicSolution`, `CubicMesh`, `corner_count`, `edge_node_count`, `edge_nodes`, `element_count`, `element_nodes`, `face_node`, `face_node_count`, `from_tet_mesh`, `interior_node_positions_are_exact`, `node_count`, `node_position`, `reactions`, `shape_values`, `solve_adaptive_cubic`, `solve_cubic`, `solve_cubic_hyperelastic`
-- `src/cylinder.rs`: `Cylinder`, `inertia_diagonal`, `new`, `volume`
-- `src/damping_rayleigh.rs`: `RayleighCoefficients`, `damping_ratio`, `fit_two_modes`, `hz_to_omega`, `omega_to_hz`
-- `src/db_bridge.rs`: `PhysicsMetricsSink`, `flush`, `open`, `query_bodies`, `query_contacts`, `query_energy`, `record_energy`, `record_step`
-- `src/debug_render.rs`: `BLUE`, `CYAN`, `DebugColor`, `DebugDrawData`, `DebugDrawFlags`, `DebugLine`, `DebugPoint`, `GRAY`, `GREEN`, `MAGENTA`, `ORANGE`, `RED`, `WHITE`, `YELLOW`, `arrow`, `axes`, `clear`, `debug_draw_world`, `line`, `new`, `point`, `primitive_count`, `sphere`
-- `src/deformable.rs`: `DeformableBody`, `DeformableConfig`, `center_of_mass`, `new`, `new_cube`, `particle_count`, `resolve_rigid_body_collisions`, `step`
-- `src/dynamic_bvh.rs`: `get_aabb`, `height`, `proxy_count`, `user_data`
-- `src/dynamic_fem.rs`: `DynamicsConfig`, `MassLumping`, `TransientSolver`, `accelerations`, `displacements`, `new`, `step`, `try_new`, `velocities`
-- `src/electromagnetic.rs`: `ChargedBody`, `EmSource`, `lorentz_force`, `lorentz_force_sum`, `new`, `sample`
-- `src/ellipsoid.rs`: `inertia_diagonal`, `volume`
-- `src/erosion.rs`: `EXPOSURE_DECAY_PER_S`, `ErosionConfig`, `ErosionModifier`, `ErosionType`, `WATER_PREFACTOR`, `compute_exposure_from_normals`, `erosion_at`, `new`, `set_exposure_at`
-- `src/eulerian_grid.rs`: `BicgstabStats`, `FaceBc`, `FaceFlags`, `FaceSink`, `HALO_MISSING_ABOVE`, `HALO_MISSING_BELOW`, `HaloSchedule`, `LocalSlabTransport`, `LocalTransport`, `MacGrid`, `ParticleScatter`, `RankTransport`, `SlabFaces`, `SlabStencil`, `SlabStorage`, `SlabTransport`, `SweepWindow`, `blocks_pressure`, `build`, `cell_velocity`, `divergence`, `enforce_face_boundaries`, `enforce_solid_faces`, `for_slab`, `from_field`, `from_grid`, `g2p_velocity`, `idx_u`, `idx_v`, `idx_w`, `is_inflow`, `is_u_solid`, `is_v_solid`, `is_w_solid`, `is_wall`, `layer`, `layer_mut`, `new`, `no_slip_velocity`, `owned`, `p2g_nearest`, `p2g_normalized`, `p2g_normalized_with`, `p2g_trilinear`, `pressure`, `project_pressure`, `project_pressure_banded`, `project_pressure_bicgstab`, `project_pressure_decomposed`, `project_pressure_jacobi`, `project_pressure_multigrid`, `project_pressure_red_black_gs`, `project_pressure_slab_local_over`, `resident`, `sample_u_range`, `sample_u_trilinear`, `sample_v_range`, `sample_v_trilinear`, `sample_w_range`, `sample_w_trilinear`, `set_closed_box_walls`, `set_u_bc`, `set_u_solid`, `set_v_bc`, `set_v_solid`, `set_w_bc`, `set_w_solid`, `slab`, `sweep_window`, `u`, `u_bc`, `u_blocks_pressure`, `u_layer_mut`, `u_wall_across_y`, `u_wall_across_z`, `v`, `v_bc`, `v_blocks_pressure`, `v_layer_mut`, `v_wall_across_x`, `v_wall_across_z`, `w`, `w_bc`, `w_blocks_pressure`, `w_layer_mut`, `w_wall_across_x`, `w_wall_across_y`
-- `src/event.rs`: `contact_events`, `drain_contact_events`, `drain_trigger_events`, `has_events`, `trigger_events`
-- `src/fatigue.rs`: `INFINITE_LIFE`, `SnCurve`, `SpectrumEntry`, `cycles_to_failure`, `from_fdm_material`, `miner_damage`
-- `src/filament_db.rs`: `FilamentDb`, `FilamentId`, `GPA_TO_PA`, `G_CM3_TO_KG_M3`, `MPA_TO_PA`, `MaterialCategory`, `MaterialProperties`, `a5052`, `abs`, `by_category`, `cf_nylon`, `density_si`, `find_by_name`, `is_fdm`, `is_sheet_metal`, `iter`, `len`, `new`, `nylon`, `pc`, `peek`, `petg`, `pla`, `register`, `sus304`, `tensile_z`, `tpu`, `with_defaults`, `yield_at_angle`, `yield_pa`, `yield_z`, `youngs_at_angle`, `youngs_pa`, `youngs_z`
+- `src/coupled_field.rs`: `CoupledField`, `CoupledField::add_assign`, `CoupledField::as_mut_slice`, `CoupledField::as_slice`, `CoupledField::blend_from`, `CoupledField::cell_count`, `CoupledField::cell_size`, `CoupledField::clear`, `CoupledField::contains`, `CoupledField::copy_from_f32`, `CoupledField::fill`, `CoupledField::get`, `CoupledField::index`, `CoupledField::max_value`, `CoupledField::nx`, `CoupledField::ny`, `CoupledField::nz`, `CoupledField::same_grid_as`, `CoupledField::sample`, `CoupledField::scale_div`, `CoupledField::set`, `CoupledField::splat`, `CoupledField::try_matching`, `CoupledField::try_new`, `CoupledField::try_new_filled`, `CoupledField::write_to_f32`, `CoupledFieldError`, `CoupledScalar`, `TemperatureRise`, `TemperatureRise::field`, `TemperatureRise::from_absolute`, `reconcile_mean`, `reconcile_weighted`
+- `src/coupled_iteration.rs`: `ConfigFault`, `ContractionMonitor`, `ContractionMonitor::new`, `ContractionMonitor::observe`, `ContractionMonitor::observed_ratio`, `ContractionMonitor::sweeps`, `CoupledIterationError`, `L2_TERM_FLOOR`, `MonitorVerdict`, `SubIterationConfig`, `SubIterationConfig::new`, `SubIterationConfig::validate`, `SubIterationReport`, `residual_norm_inf`, `residual_norm_l2_checked`, `run_sub_iteration`
+- `src/creep_longterm.rs`: `CREEP_FROZEN_AT`, `FindleyParameters`, `FindleyParameters::pla_25c_moderate`, `FindleyParameters::strain_at`, `WlfConstants`, `WlfConstants::universal`, `effective_time_at_temp`, `predict_strain`, `wlf_shift_factor`
+- `src/cubic_elastic_fem.rs`: `AdaptiveCubicSolution`, `CubicMesh`, `CubicMesh::corner_count`, `CubicMesh::edge_node_count`, `CubicMesh::edge_nodes`, `CubicMesh::element_count`, `CubicMesh::element_nodes`, `CubicMesh::face_node`, `CubicMesh::face_node_count`, `CubicMesh::from_tet_mesh`, `CubicMesh::interior_node_positions_are_exact`, `CubicMesh::node_count`, `CubicMesh::node_position`, `reactions`, `shape_values`, `solve_adaptive_cubic`, `solve_cubic`, `solve_cubic_hyperelastic`
+- `src/cylinder.rs`: `Cylinder::inertia_diagonal`, `Cylinder::volume`
+- `src/damping_rayleigh.rs`: `RayleighCoefficients`, `RayleighCoefficients::damping_ratio`, `RayleighCoefficients::fit_two_modes`, `hz_to_omega`, `omega_to_hz`
+- `src/db_bridge.rs`: `PhysicsMetricsSink`, `PhysicsMetricsSink::flush`, `PhysicsMetricsSink::open`, `PhysicsMetricsSink::query_bodies`, `PhysicsMetricsSink::query_contacts`, `PhysicsMetricsSink::query_energy`, `PhysicsMetricsSink::record_energy`, `PhysicsMetricsSink::record_step`
+- `src/debug_render.rs`: `DebugColor`, `DebugColor::BLUE`, `DebugColor::CYAN`, `DebugColor::GRAY`, `DebugColor::GREEN`, `DebugColor::MAGENTA`, `DebugColor::ORANGE`, `DebugColor::RED`, `DebugColor::WHITE`, `DebugColor::YELLOW`, `DebugColor::new`, `DebugDrawData`, `DebugDrawData::arrow`, `DebugDrawData::axes`, `DebugDrawData::clear`, `DebugDrawData::line`, `DebugDrawData::new`, `DebugDrawData::point`, `DebugDrawData::primitive_count`, `DebugDrawData::sphere`, `DebugDrawFlags`, `DebugLine`, `DebugLine::new`, `DebugPoint`, `DebugPoint::new`, `debug_draw_world`
+- `src/deformable.rs`: `DeformableBody`, `DeformableBody::center_of_mass`, `DeformableBody::new`, `DeformableBody::new_cube`, `DeformableBody::particle_count`, `DeformableBody::resolve_rigid_body_collisions`, `DeformableBody::step`, `DeformableConfig`
+- `src/dynamic_bvh.rs`: `DynamicAabbTree::get_aabb`, `DynamicAabbTree::height`, `DynamicAabbTree::proxy_count`, `DynamicAabbTree::user_data`
+- `src/dynamic_fem.rs`: `DynamicsConfig`, `DynamicsConfig::try_new`, `MassLumping`, `TransientSolver`, `TransientSolver::accelerations`, `TransientSolver::displacements`, `TransientSolver::new`, `TransientSolver::step`, `TransientSolver::velocities`
+- `src/electromagnetic.rs`: `ChargedBody`, `ChargedBody::new`, `EmSource`, `EmSource::sample`, `lorentz_force`, `lorentz_force_sum`
+- `src/ellipsoid.rs`: `Ellipsoid::inertia_diagonal`, `Ellipsoid::volume`
+- `src/erosion.rs`: `EXPOSURE_DECAY_PER_S`, `ErosionConfig`, `ErosionModifier`, `ErosionModifier::compute_exposure_from_normals`, `ErosionModifier::erosion_at`, `ErosionModifier::new`, `ErosionModifier::set_exposure_at`, `ErosionType`, `WATER_PREFACTOR`
+- `src/eulerian_grid.rs`: `BicgstabStats`, `DELIVERY_DESTINATION_LACKS_LAYER`, `DELIVERY_SOURCE_LACKS_LAYER`, `FaceBc`, `FaceBc::blocks_pressure`, `FaceBc::is_inflow`, `FaceBc::is_wall`, `FaceBc::no_slip_velocity`, `FaceFlags`, `FaceSink`, `HALO_MISSING_ABOVE`, `HALO_MISSING_BELOW`, `HaloSchedule`, `LocalSlabTransport`, `LocalSlabTransport::from_field`, `LocalSlabTransport::slab`, `LocalTransport`, `LocalTransport::new`, `MacGrid`, `MacGrid::cell_velocity`, `MacGrid::divergence`, `MacGrid::enforce_face_boundaries`, `MacGrid::enforce_solid_faces`, `MacGrid::idx_u`, `MacGrid::idx_v`, `MacGrid::idx_w`, `MacGrid::is_u_solid`, `MacGrid::is_v_solid`, `MacGrid::is_w_solid`, `MacGrid::new`, `MacGrid::pressure`, `MacGrid::set_closed_box_walls`, `MacGrid::set_u_bc`, `MacGrid::set_u_solid`, `MacGrid::set_v_bc`, `MacGrid::set_v_solid`, `MacGrid::set_w_bc`, `MacGrid::set_w_solid`, `MacGrid::u`, `MacGrid::u_bc`, `MacGrid::u_blocks_pressure`, `MacGrid::u_wall_across_y`, `MacGrid::u_wall_across_z`, `MacGrid::v`, `MacGrid::v_bc`, `MacGrid::v_blocks_pressure`, `MacGrid::v_wall_across_x`, `MacGrid::v_wall_across_z`, `MacGrid::w`, `MacGrid::w_bc`, `MacGrid::w_blocks_pressure`, `MacGrid::w_wall_across_x`, `MacGrid::w_wall_across_y`, `ParticleScatter`, `RankTransport`, `SlabFaces`, `SlabFaces::from_grid`, `SlabFaces::new`, `SlabFaces::owned`, `SlabFaces::u_layer_mut`, `SlabFaces::v_layer_mut`, `SlabFaces::w_layer_mut`, `SlabStencil`, `SlabStencil::build`, `SlabStorage`, `SlabStorage::for_slab`, `SlabStorage::layer`, `SlabStorage::layer_mut`, `SlabStorage::resident`, `SlabStorage::sweep_window`, `SlabTransport`, `SweepWindow`, `g2p_velocity`, `p2g_nearest`, `p2g_normalized`, `p2g_normalized_with`, `p2g_trilinear`, `project_pressure`, `project_pressure_banded`, `project_pressure_bicgstab`, `project_pressure_decomposed`, `project_pressure_jacobi`, `project_pressure_multigrid`, `project_pressure_red_black_gs`, `project_pressure_slab_local_over`, `sample_u_range`, `sample_u_trilinear`, `sample_v_range`, `sample_v_trilinear`, `sample_w_range`, `sample_w_trilinear`
+- `src/event.rs`: `EventCollector::contact_events`, `EventCollector::drain_contact_events`, `EventCollector::drain_trigger_events`, `EventCollector::has_events`, `EventCollector::trigger_events`
+- `src/fatigue.rs`: `INFINITE_LIFE`, `SnCurve`, `SnCurve::from_fdm_material`, `SpectrumEntry`, `cycles_to_failure`, `miner_damage`
+- `src/filament_db.rs`: `FilamentDb`, `FilamentDb::by_category`, `FilamentDb::find_by_name`, `FilamentDb::iter`, `FilamentDb::len`, `FilamentDb::new`, `FilamentDb::register`, `FilamentDb::with_defaults`, `FilamentId`, `GPA_TO_PA`, `G_CM3_TO_KG_M3`, `MPA_TO_PA`, `MaterialCategory`, `MaterialProperties`, `MaterialProperties::a5052`, `MaterialProperties::abs`, `MaterialProperties::cf_nylon`, `MaterialProperties::density_si`, `MaterialProperties::is_fdm`, `MaterialProperties::is_sheet_metal`, `MaterialProperties::nylon`, `MaterialProperties::pc`, `MaterialProperties::peek`, `MaterialProperties::petg`, `MaterialProperties::pla`, `MaterialProperties::sus304`, `MaterialProperties::tensile_z`, `MaterialProperties::tpu`, `MaterialProperties::yield_at_angle`, `MaterialProperties::yield_pa`, `MaterialProperties::yield_z`, `MaterialProperties::youngs_at_angle`, `MaterialProperties::youngs_pa`, `MaterialProperties::youngs_z`
 - `src/fillet_stress.rs`: `kt_circular_hole_infinite_plate`, `kt_elliptical_hole`, `kt_shaft_shoulder_bending`, `kt_u_notch_axial`, `recommended_fillet_radius_mm`
-- `src/filter.rs`: `DEBRIS`, `ENEMY`, `KINEMATIC`, `NONE`, `PLAYER`, `PROJECTILE`, `SENSOR`, `STATIC`, `TRIGGER`, `VEHICLE`, `new`, `with_group`
-- `src/flow_viz.rs`: `FlowArrow`, `FlowVizConfig`, `Streamlines`, `generate_flow_arrows`, `generate_streamlines`, `len`, `line`
-- `src/fluid.rs`: `Fluid`, `FluidConfig`, `new`, `new_block`, `particle_count`, `step`
-- `src/fluid_netcode.rs`: `FluidDelta`, `FluidSnapshot`, `apply`, `capture`, `changed_count`, `compression_ratio`, `compute`, `restore`, `size_bytes`, `verify`
-- `src/force.rs`: `new`
-- `src/fracture.rs`: `Crack`, `FractureConfig`, `FractureModifier`, `active_crack_count`, `apply_stress_at`, `new`, `stress_at`
+- `src/filter.rs`: `CollisionFilter::NONE`, `CollisionFilter::new`, `CollisionFilter::with_group`, `DEBRIS`, `ENEMY`, `KINEMATIC`, `PLAYER`, `PROJECTILE`, `SENSOR`, `STATIC`, `TRIGGER`, `VEHICLE`
+- `src/flow_viz.rs`: `FlowArrow`, `FlowVizConfig`, `Streamlines`, `Streamlines::len`, `Streamlines::line`, `generate_flow_arrows`, `generate_streamlines`
+- `src/fluid.rs`: `Fluid`, `Fluid::new`, `Fluid::new_block`, `Fluid::particle_count`, `Fluid::step`, `FluidConfig`
+- `src/fluid_netcode.rs`: `FluidDelta`, `FluidDelta::apply`, `FluidDelta::changed_count`, `FluidDelta::compression_ratio`, `FluidDelta::compute`, `FluidSnapshot`, `FluidSnapshot::capture`, `FluidSnapshot::restore`, `FluidSnapshot::size_bytes`, `FluidSnapshot::verify`
+- `src/force.rs`: `ForceFieldInstance::new`
+- `src/fracture.rs`: `Crack`, `FractureConfig`, `FractureModifier`, `FractureModifier::active_crack_count`, `FractureModifier::apply_stress_at`, `FractureModifier::new`, `FractureModifier::stress_at`
 - `src/fsi_advanced.rs`: `SolidSample`, `aggregate_forces`, `buoyancy_force`, `drag_force`, `react_back_pressure`
 - `src/gpu_bridge.rs`: `DiffFixture`, `GpuDivergence`
-- `src/gpu_sdf.rs`: `GpuDispatchConfig`, `GpuSdfBatch`, `GpuSdfContact`, `GpuSdfInstancedBatch`, `GpuSdfMultiDispatch`, `SDF_EVAL_WGSL`, `add_batch`, `add_query`, `batch_size`, `execute_batch_cpu`, `extract_contacts`, `new`, `num_workgroups`, `prepare_output`, `query_bytes`, `query_count`, `result_bytes_mut`, `total_dispatches`, `total_queries`
+- `src/gpu_sdf.rs`: `GpuDispatchConfig`, `GpuSdfBatch`, `GpuSdfBatch::add_query`, `GpuSdfBatch::extract_contacts`, `GpuSdfBatch::new`, `GpuSdfBatch::num_workgroups`, `GpuSdfBatch::prepare_output`, `GpuSdfBatch::query_bytes`, `GpuSdfBatch::query_count`, `GpuSdfBatch::result_bytes_mut`, `GpuSdfContact`, `GpuSdfInstancedBatch`, `GpuSdfMultiDispatch`, `GpuSdfMultiDispatch::add_batch`, `GpuSdfMultiDispatch::new`, `GpuSdfMultiDispatch::total_dispatches`, `GpuSdfMultiDispatch::total_queries`, `SDF_EVAL_WGSL`, `batch_size`, `execute_batch_cpu`
 - `src/heatmap.rs`: `Heatmap`, `HeatmapConfig`, `SliceAxis`, `generate_stress_heatmap`, `generate_temperature_heatmap`, `heatmap_to_rgba`
-- `src/heightfield.rs`: `flat`, `new`, `set_height`, `signed_distance`
-- `src/hyperelastic.rs`: `HyperelasticModel`, `Stretch`, `UNITY`, `cauchy_stress`, `equibiaxial`, `i1`, `i2`, `natural_rubber`, `silicone_soft`, `small_strain_moduli`, `small_strain_shear_modulus`, `strain_energy_density`, `tangent_constants`, `tpu_soft`, `uniaxial`, `uniaxial_cauchy_stress`, `volume_ratio`, `volumetric_modulus`
-- `src/ik_physics_bridge.rs`: `IkTarget`, `IkTargetSet`, `apply`, `blended`, `new`, `push`, `snap`
+- `src/heightfield.rs`: `HeightField::flat`, `HeightField::new`, `HeightField::set_height`, `HeightField::signed_distance`
+- `src/hyperelastic.rs`: `HyperelasticModel`, `HyperelasticModel::natural_rubber`, `HyperelasticModel::silicone_soft`, `HyperelasticModel::tpu_soft`, `Stretch`, `Stretch::UNITY`, `Stretch::equibiaxial`, `Stretch::i1`, `Stretch::i2`, `Stretch::uniaxial`, `Stretch::volume_ratio`, `cauchy_stress`, `small_strain_moduli`, `small_strain_shear_modulus`, `strain_energy_density`, `tangent_constants`, `uniaxial_cauchy_stress`, `volumetric_modulus`
+- `src/ik_physics_bridge.rs`: `IkTarget`, `IkTarget::blended`, `IkTarget::snap`, `IkTargetSet`, `IkTargetSet::apply`, `IkTargetSet::new`, `IkTargetSet::push`
 - `src/interface_capture.rs`: `fast_sweeping_reinit`, `plic_normal`, `plic_plane_offset`, `truncated_cube_volume`
-- `src/interpolation.rs`: `BodySnapshot`, `InterpolationState`, `WorldSnapshot`, `body_count`, `capture`, `capture_and_push`, `empty`, `from_body`, `interpolate`, `interpolate_all`, `interpolate_position`, `interpolate_rotation`, `is_empty`, `len`, `lerp_fix128`, `lerp_vec3`, `new`, `push`
-- `src/joint.rs`: `JointType`, `break_force`, `compute_force`, `joint_type`, `new`, `solve_joints_breakable`, `with_angular_limits`, `with_angular_motion`, `with_break_force`, `with_limits`, `with_linear_limits`, `with_linear_motion`
-- `src/joint_extra.rs`: `ExtraJoint`, `GearJoint`, `MouseJoint`, `PulleyJoint`, `RackAndPinionJoint`, `WeldJoint`, `compute_force`, `compute_torque`, `is_broken`, `new`, `set_target`, `solve_extra_joints`, `solve_pulley_to_length`, `total_length`, `with_break_force`, `with_break_torque`
-- `src/kinematic_loop.rs`: `FourBarLinkage`, `LoopClosureConstraint`, `apply`, `centre_to_centre`, `four_bar_linkage`, `residual`, `try_four_bar_linkage`
-- `src/laminate.rs`: `AbdMatrix`, `Ply`, `Sym3`, `add`, `compute_abd`, `is_symmetric`, `is_symmetric_stack`, `q_bar`, `q_matrix`, `scale`
-- `src/laminate_failure.rs`: `FailureCriterion`, `FailureMode`, `InvalidStrengthError`, `LaminateStrengths`, `StressState`, `cfrp_ud`, `failure_index`, `gfrp_ud`, `hashin_failure_mode`, `puck_failure_mode`, `try_new`, `tsai_hill_failure_index`, `tsai_wu_failure_index`, `zero`
-- `src/layer_adhesion.rs`: `EffectiveStrength`, `PrintOrientation`, `for_material`, `fos_normal_x`, `fos_normal_z`, `fos_shear_xy`, `fos_shear_xz`, `min_fos`
-- `src/linear_elastic_fem.rs`: `ALL`, `AdaptiveConfig`, `AdaptiveSolution`, `Axis`, `BoundaryConditions`, `CorotationalConfig`, `CorotationalSolution`, `DiagonalStats`, `ElasticMaterial`, `ElastoplasticConfig`, `ElastoplasticIncrement`, `ElastoplasticIncrementRequest`, `ElastoplasticProblem`, `ElastoplasticSolution`, `ElastoplasticState`, `FemError`, `FemSolution`, `PlasticHeating`, `Preconditioner`, `RESIDUAL_NORM_FLOOR`, `SolverConfig`, `StressTensor`, `ThermalExpansion`, `ThermalSoftening`, `ThermoplasticCoupling`, `ThermoplasticIncrement`, `adaptive_refinement_loop`, `add_load`, `alpha_per_k`, `bulk_fraction`, `commit`, `complementary_energy_density`, `consistent_tangent`, `corner_indicators_squared`, `corotational_reactions`, `default_poissons_ratio`, `deposit_increment_heat`, `deposit_plastic_heat`, `dissipation`, `equivalent_plastic_strain`, `error_indicators_squared`, `factor`, `fix`, `from_filament`, `from_rise`, `hardening_per_k`, `hydrostatic`, `hyperelastic`, `hyperelastic_volumetric_modulus`, `increments`, `index`, `lame`, `linear`, `load_count`, `loads`, `mark_bulk`, `max_iterations`, `max_refine_passes`, `max_rounds`, `max_von_mises_mpa`, `new`, `newton_iterations`, `newton_tolerance`, `none`, `plastic_temperature_rise`, `poissons_ratio`, `polar_iterations`, `preconditioner`, `prescribe`, `prescribe_all`, `prescribed`, `prescribed_count`, `reactions`, `relative_tolerance`, `relaxation`, `residual_floor_fraction`, `softening`, `solve`, `solve_adaptive`, `solve_corotational`, `solve_elastoplastic`, `solve_with_eigenstrain`, `stagnation_min_improvement`, `stagnation_min_window`, `stagnation_window_fraction`, `step`, `step_thermoplastic`, `stiffness_diagonal_stats`, `taylor_quinney`, `temperature_rise`, `thermal`, `try_new`, `virgin_state`, `volumetric_heat_capacity_mpa_per_k`, `von_mises`, `with_hyperelastic`, `with_poisson`, `with_preconditioner`, `with_stagnation`, `with_stagnation_fraction`, `with_thermal`, `yield_per_k`, `youngs_modulus_mpa`
-- `src/linear_elastic_fem/consistent_tangent.rs`: `StepReport`, `TangentField`, `apply`, `at`, `backtrack`, `newton_krylov_step`, `newton_step`
-- `src/mass_properties.rs`: `MassProperties`, `ZERO`, `box_mass_properties`, `capsule_mass_properties`, `convex_hull_mass_properties`, `principal_axes`, `sphere_mass_properties`, `translate_inertia`
-- `src/material.rs`: `combine`, `register_concrete`, `register_ice`, `register_metal`, `register_rubber`, `register_wood`, `set_pair_override`, `with_combine_rules`, `with_static_friction`
-- `src/math.rs`: `Mat3Fix`, `NEG_ONE`, `PolarError`, `SIMD_WIDTH`, `add_simd`, `atan`, `checked_div`, `cos`, `cross_simd`, `determinant`, `diagonal`, `dot_batch_4`, `dot_simd`, `exp`, `floor`, `from_cols`, `inverse`, `length_squared_simd`, `ln`, `max_abs_component`, `mul_mat`, `mul_vec`, `polar_rotation`, `polar_rotation_steps`, `powf_pos`, `simd_width`, `sin`, `sub_simd`, `transpose`, `try_normalize`
+- `src/interpolation.rs`: `BodySnapshot`, `BodySnapshot::from_body`, `InterpolationState`, `InterpolationState::body_count`, `InterpolationState::capture_and_push`, `InterpolationState::empty`, `InterpolationState::interpolate`, `InterpolationState::interpolate_all`, `InterpolationState::interpolate_position`, `InterpolationState::interpolate_rotation`, `InterpolationState::new`, `InterpolationState::push`, `WorldSnapshot`, `WorldSnapshot::capture`, `WorldSnapshot::is_empty`, `WorldSnapshot::len`, `lerp_fix128`, `lerp_vec3`
+- `src/joint.rs`: `BallJoint::new`, `BallJoint::with_break_force`, `ConeTwistJoint::new`, `ConeTwistJoint::with_break_force`, `ConeTwistJoint::with_limits`, `D6Joint::new`, `D6Joint::with_angular_limits`, `D6Joint::with_angular_motion`, `D6Joint::with_break_force`, `D6Joint::with_linear_limits`, `D6Joint::with_linear_motion`, `FixedJoint::new`, `FixedJoint::with_break_force`, `HingeJoint::new`, `HingeJoint::with_break_force`, `HingeJoint::with_limits`, `Joint::break_force`, `Joint::compute_force`, `Joint::joint_type`, `JointType`, `SliderJoint::new`, `SliderJoint::with_break_force`, `SliderJoint::with_limits`, `SpringJoint::new`, `SpringJoint::with_break_force`, `solve_joints_breakable`
+- `src/joint_extra.rs`: `ExtraJoint`, `GearJoint`, `MouseJoint`, `MouseJoint::new`, `MouseJoint::set_target`, `PulleyJoint`, `PulleyJoint::new`, `PulleyJoint::total_length`, `RackAndPinionJoint`, `WeldJoint`, `WeldJoint::compute_force`, `WeldJoint::compute_torque`, `WeldJoint::is_broken`, `WeldJoint::new`, `WeldJoint::with_break_force`, `WeldJoint::with_break_torque`, `solve_extra_joints`, `solve_pulley_to_length`
+- `src/kinematic_loop.rs`: `FourBarLinkage`, `LoopClosureConstraint`, `LoopClosureConstraint::apply`, `LoopClosureConstraint::centre_to_centre`, `LoopClosureConstraint::residual`, `four_bar_linkage`, `try_four_bar_linkage`
+- `src/laminate.rs`: `AbdMatrix`, `AbdMatrix::is_symmetric`, `Ply`, `Ply::q_bar`, `Ply::q_matrix`, `Sym3`, `Sym3::add`, `Sym3::scale`, `compute_abd`, `is_symmetric_stack`
+- `src/laminate_failure.rs`: `FailureCriterion`, `FailureMode`, `InvalidStrengthError`, `LaminateStrengths`, `LaminateStrengths::cfrp_ud`, `LaminateStrengths::gfrp_ud`, `LaminateStrengths::try_new`, `StressState`, `StressState::zero`, `failure_index`, `hashin_failure_mode`, `puck_failure_mode`, `tsai_hill_failure_index`, `tsai_wu_failure_index`
+- `src/layer_adhesion.rs`: `EffectiveStrength`, `EffectiveStrength::for_material`, `EffectiveStrength::fos_normal_x`, `EffectiveStrength::fos_normal_z`, `EffectiveStrength::fos_shear_xy`, `EffectiveStrength::fos_shear_xz`, `EffectiveStrength::min_fos`, `PrintOrientation`
+- `src/linear_elastic_fem.rs`: `AdaptiveConfig`, `AdaptiveConfig::bulk_fraction`, `AdaptiveConfig::linear`, `AdaptiveConfig::max_refine_passes`, `AdaptiveConfig::max_rounds`, `AdaptiveConfig::try_new`, `AdaptiveSolution`, `Axis`, `Axis::ALL`, `Axis::index`, `BoundaryConditions`, `BoundaryConditions::add_load`, `BoundaryConditions::fix`, `BoundaryConditions::load_count`, `BoundaryConditions::loads`, `BoundaryConditions::new`, `BoundaryConditions::prescribe`, `BoundaryConditions::prescribe_all`, `BoundaryConditions::prescribed`, `BoundaryConditions::prescribed_count`, `CorotationalConfig`, `CorotationalConfig::consistent_tangent`, `CorotationalConfig::hyperelastic`, `CorotationalConfig::increments`, `CorotationalConfig::linear`, `CorotationalConfig::newton_iterations`, `CorotationalConfig::newton_tolerance`, `CorotationalConfig::polar_iterations`, `CorotationalConfig::try_new`, `CorotationalConfig::with_hyperelastic`, `CorotationalSolution`, `DiagonalStats`, `ElasticMaterial`, `ElasticMaterial::default_poissons_ratio`, `ElasticMaterial::from_filament`, `ElasticMaterial::lame`, `ElasticMaterial::new`, `ElasticMaterial::poissons_ratio`, `ElasticMaterial::with_poisson`, `ElasticMaterial::youngs_modulus_mpa`, `ElastoplasticConfig`, `ElastoplasticConfig::try_new`, `ElastoplasticIncrement`, `ElastoplasticIncrement::commit`, `ElastoplasticIncrement::newton_iterations`, `ElastoplasticIncrementRequest`, `ElastoplasticIncrementRequest::factor`, `ElastoplasticIncrementRequest::new`, `ElastoplasticIncrementRequest::softening`, `ElastoplasticIncrementRequest::thermal`, `ElastoplasticIncrementRequest::with_thermal`, `ElastoplasticProblem`, `ElastoplasticProblem::step`, `ElastoplasticProblem::try_new`, `ElastoplasticProblem::virgin_state`, `ElastoplasticSolution`, `ElastoplasticState`, `ElastoplasticState::dissipation`, `ElastoplasticState::equivalent_plastic_strain`, `FemError`, `FemSolution`, `FemSolution::max_von_mises_mpa`, `PlasticHeating`, `PlasticHeating::taylor_quinney`, `PlasticHeating::temperature_rise`, `PlasticHeating::try_new`, `PlasticHeating::volumetric_heat_capacity_mpa_per_k`, `RESIDUAL_NORM_FLOOR`, `SolverConfig`, `SolverConfig::max_iterations`, `SolverConfig::preconditioner`, `SolverConfig::relative_tolerance`, `SolverConfig::stagnation_min_improvement`, `SolverConfig::stagnation_min_window`, `SolverConfig::stagnation_window_fraction`, `SolverConfig::try_new`, `SolverConfig::with_preconditioner`, `SolverConfig::with_stagnation`, `SolverConfig::with_stagnation_fraction`, `StressTensor`, `StressTensor::complementary_energy_density`, `StressTensor::hydrostatic`, `StressTensor::von_mises`, `ThermalExpansion`, `ThermalExpansion::alpha_per_k`, `ThermalExpansion::from_rise`, `ThermalSoftening`, `ThermalSoftening::hardening_per_k`, `ThermalSoftening::none`, `ThermalSoftening::try_new`, `ThermalSoftening::yield_per_k`, `ThermoplasticCoupling`, `ThermoplasticCoupling::relaxation`, `ThermoplasticCoupling::residual_floor_fraction`, `ThermoplasticCoupling::try_new`, `ThermoplasticIncrement`, `adaptive_refinement_loop`, `corner_indicators_squared`, `corotational_reactions`, `deposit_increment_heat`, `deposit_plastic_heat`, `error_indicators_squared`, `hyperelastic_volumetric_modulus`, `mark_bulk`, `plastic_temperature_rise`, `reactions`, `solve`, `solve_adaptive`, `solve_corotational`, `solve_elastoplastic`, `solve_with_eigenstrain`, `step_thermoplastic`, `stiffness_diagonal_stats`
+- `src/linear_elastic_fem/consistent_tangent.rs`: `StepReport`, `TangentField`, `TangentField::apply`, `TangentField::at`, `backtrack`, `newton_krylov_step`, `newton_step`
+- `src/mass_properties.rs`: `MassProperties`, `MassProperties::ZERO`, `box_mass_properties`, `capsule_mass_properties`, `convex_hull_mass_properties`, `principal_axes`, `sphere_mass_properties`, `translate_inertia`
+- `src/material.rs`: `MaterialTable::combine`, `MaterialTable::register_concrete`, `MaterialTable::register_ice`, `MaterialTable::register_metal`, `MaterialTable::register_rubber`, `MaterialTable::register_wood`, `MaterialTable::set_pair_override`, `PhysicsMaterial::with_combine_rules`, `PhysicsMaterial::with_static_friction`
+- `src/math.rs`: `Fix128::NEG_ONE`, `Fix128::add_simd`, `Fix128::atan`, `Fix128::checked_div`, `Fix128::cos`, `Fix128::exp`, `Fix128::floor`, `Fix128::ln`, `Fix128::powf_pos`, `Fix128::sin`, `Fix128::sub_simd`, `Mat3Fix`, `Mat3Fix::IDENTITY`, `Mat3Fix::ZERO`, `Mat3Fix::determinant`, `Mat3Fix::diagonal`, `Mat3Fix::from_cols`, `Mat3Fix::inverse`, `Mat3Fix::max_abs_component`, `Mat3Fix::mul_mat`, `Mat3Fix::mul_vec`, `Mat3Fix::polar_rotation`, `Mat3Fix::polar_rotation_steps`, `Mat3Fix::scale`, `Mat3Fix::transpose`, `PolarError`, `SIMD_WIDTH`, `Vec3Fix::cross_simd`, `Vec3Fix::dot_batch_4`, `Vec3Fix::dot_simd`, `Vec3Fix::length_squared_simd`, `Vec3Fix::try_normalize`, `simd_width`
 - `src/math_util.rs`: `EXP_OVERFLOW_SENTINEL`, `cbrt_fix`, `clamp_fix`, `exp_fix`, `pow_int`
-- `src/maxwell_fdtd.rs`: `Absorber`, `COURANT_3D`, `Component`, `YeeGrid`, `cfl_limit_3d`, `charge`, `component_dims`, `courant`, `current`, `dims`, `div_b`, `div_e`, `div_j`, `gauss_residual`, `get`, `interior_node_dims`, `is_absorbing`, `loss_coefficients`, `max_abs_div_b`, `max_abs_field`, `max_abs_gauss_residual`, `new`, `new_with_absorber`, `set`, `set_charge`, `set_current`, `step`, `theoretical_pml_reflection`, `total_charge`
-- `src/metric.rs`: `L1`, `LINF`, `MetricError`, `axis_extent`, `lipschitz`, `new`, `norm`, `weights`
-- `src/modal.rs`: `BeamBoundary`, `beam_natural_frequency_hz`, `lambda_squared`, `plate_natural_frequency_hz`, `single_dof_frequency_hz`, `torsional_frequency_hz`
-- `src/motor.rs`: `MotorMode`, `PdController`, `compute`, `new`, `set_position_target`
-- `src/multi_world.rs`: `MultiWorld`, `Portal`, `add_world`, `new`, `step_all`, `step_all_parallel`, `total_body_count`, `transfer_body`, `transform_a_to_b`, `transform_b_to_a`, `world_count`
-- `src/multiphase.rs`: `Grid3d`, `VofScheme`, `advect_vof_rigid`, `advect_vof_uniform`, `advect_vof_uniform_semi_lagrangian`, `curvature_at`, `get`, `idx`, `initialize_level_set_sphere`, `new`, `reinitialize_level_set`, `set`, `total`, `total_volume_vof`, `trilinear_range`, `trilinear_sample`
-- `src/netcode.rs`: `advance_frame`, `dt`, `get_snapshot`, `snapshot_count`
-- `src/netcode_prediction.rs`: `PredictedInput`, `PredictionBuffer`, `ReconcileError`, `Snapshot`, `drop_acknowledged`, `head_snapshot`, `inputs`, `is_empty`, `len`, `new`, `push`, `reconcile`, `reconcile_checked`
-- `src/neural.rs`: `Activation`, `ControllerConfig`, `ControllerOutput`, `DeterministicNetwork`, `FEATURES_PER_BODY`, `FixedTernaryWeight`, `RagdollController`, `compute`, `config`, `fix128_hard_tanh`, `fix128_leaky_relu`, `fix128_relu`, `fix128_tanh_approx`, `fix128_ternary_matvec`, `forward`, `from_ternary_weight`, `from_ternary_weight_with_scale`, `in_features`, `input_size`, `network`, `new`, `num_layers`, `out_features`, `output_size`, `scale`
-- `src/non_newtonian.rs`: `Bingham`, `Carreau`, `HerschelBulkley`, `PowerLaw`, `apparent_viscosity`, `flows_under_stress`, `newtonian`, `shear_thickening`, `shear_thinning`, `stress`, `viscosity`, `viscosity_with_index`
-- `src/particle.rs`: `LandingEvent`, `LandingTarget`, `Particle`, `ParticleEmitter`, `ParticleSystem`, `add_emitter`, `alive_count`, `apply_force_field`, `new`, `step`, `step_with_landing`
-- `src/phase_change.rs`: `Phase`, `PhaseChangeConfig`, `PhaseChangeModifier`, `apply_heat_at`, `new`, `phase_at`, `temperature_at`
-- `src/physics2d.rs`: `BodyType2D`, `RigidBody2D`, `Shape2D`, `Vec2Fix`, `ZERO`, `apply_force`, `apply_impulse_at_point`, `cross_scalar`, `distance_to`, `dot`, `length`, `length_squared`, `new`, `new_dynamic`, `scale`
-- `src/piezoelectric.rs`: `PiezoElement`, `force_from_voltage`, `permittivity`, `pvdf`, `pzt_5a`, `quartz`, `strain_under_stress`, `voltage_from_force`
-- `src/pipeline.rs`: `MetricEntry`, `MetricEvent`, `MetricPipeline`, `MetricRegistry`, `MetricSlot`, `MetricSnapshot`, `MetricType`, `RingBuffer`, `capacity`, `clear`, `counter`, `dropped`, `dropped_events`, `flush`, `gauge`, `get_slot`, `get_slot_mut`, `histogram`, `is_full`, `iter`, `iter_slots`, `len`, `lookup`, `lookup_by_hash`, `name_str`, `new`, `pop`, `process`, `push`, `queue_len`, `register`, `reset`, `submit`, `total_events`, `unique`, `with_timestamp`
-- `src/plane_collider.rs`: `flip`, `from_point_normal`, `intersect_aabb`, `is_front`
-- `src/plastic.rs`: `HardeningType`, `NortonCreep`, `PlasticModel`, `PlasticState`, `PlasticStep`, `current_yield_mpa`, `from_fdm_material`, `integrate`, `pla_room_temp`, `radial_return_1d`, `strain_rate_per_s`
-- `src/pressure.rs`: `PressureConfig`, `PressureModifier`, `apply_impact`, `apply_pressure_at`, `deformation_at`, `new`, `pressure_at`
+- `src/maxwell_fdtd.rs`: `Absorber`, `COURANT_3D`, `Component`, `YeeGrid`, `YeeGrid::charge`, `YeeGrid::component_dims`, `YeeGrid::courant`, `YeeGrid::current`, `YeeGrid::dims`, `YeeGrid::div_b`, `YeeGrid::div_e`, `YeeGrid::div_j`, `YeeGrid::gauss_residual`, `YeeGrid::get`, `YeeGrid::interior_node_dims`, `YeeGrid::is_absorbing`, `YeeGrid::max_abs_div_b`, `YeeGrid::max_abs_field`, `YeeGrid::max_abs_gauss_residual`, `YeeGrid::new`, `YeeGrid::new_with_absorber`, `YeeGrid::set`, `YeeGrid::set_charge`, `YeeGrid::set_current`, `YeeGrid::step`, `YeeGrid::total_charge`, `cfl_limit_3d`, `loss_coefficients`, `theoretical_pml_reflection`
+- `src/metric.rs`: `MetricError`, `MetricWeights::L1`, `MetricWeights::LINF`, `MetricWeights::axis_extent`, `MetricWeights::lipschitz`, `MetricWeights::new`, `MetricWeights::norm`, `MetricWeights::weights`
+- `src/modal.rs`: `BeamBoundary`, `BeamBoundary::lambda_squared`, `beam_natural_frequency_hz`, `plate_natural_frequency_hz`, `single_dof_frequency_hz`, `torsional_frequency_hz`
+- `src/motor.rs`: `MotorMode`, `PdController`, `PdController::compute`, `PdController::new`, `PdController::set_position_target`
+- `src/multi_world.rs`: `MultiWorld`, `MultiWorld::add_world`, `MultiWorld::new`, `MultiWorld::step_all`, `MultiWorld::step_all_parallel`, `MultiWorld::total_body_count`, `MultiWorld::transfer_body`, `MultiWorld::world_count`, `Portal`, `Portal::new`, `Portal::transform_a_to_b`, `Portal::transform_b_to_a`
+- `src/multiphase.rs`: `Grid3d`, `Grid3d::get`, `Grid3d::idx`, `Grid3d::new`, `Grid3d::set`, `Grid3d::total`, `VofScheme`, `advect_vof_rigid`, `advect_vof_uniform`, `advect_vof_uniform_semi_lagrangian`, `curvature_at`, `initialize_level_set_sphere`, `reinitialize_level_set`, `total_volume_vof`, `trilinear_range`, `trilinear_sample`
+- `src/netcode.rs`: `DeterministicSimulation::advance_frame`, `DeterministicSimulation::dt`, `DeterministicSimulation::get_snapshot`, `DeterministicSimulation::snapshot_count`
+- `src/netcode_prediction.rs`: `PredictedInput`, `PredictionBuffer`, `PredictionBuffer::drop_acknowledged`, `PredictionBuffer::head_snapshot`, `PredictionBuffer::inputs`, `PredictionBuffer::is_empty`, `PredictionBuffer::len`, `PredictionBuffer::new`, `PredictionBuffer::push`, `ReconcileError`, `Snapshot`, `reconcile`, `reconcile_checked`
+- `src/neural.rs`: `Activation`, `ControllerConfig`, `ControllerOutput`, `DeterministicNetwork`, `DeterministicNetwork::forward`, `DeterministicNetwork::input_size`, `DeterministicNetwork::new`, `DeterministicNetwork::num_layers`, `DeterministicNetwork::output_size`, `FEATURES_PER_BODY`, `FixedTernaryWeight`, `FixedTernaryWeight::from_ternary_weight`, `FixedTernaryWeight::from_ternary_weight_with_scale`, `FixedTernaryWeight::in_features`, `FixedTernaryWeight::out_features`, `FixedTernaryWeight::scale`, `RagdollController`, `RagdollController::compute`, `RagdollController::config`, `RagdollController::network`, `RagdollController::new`, `fix128_hard_tanh`, `fix128_leaky_relu`, `fix128_relu`, `fix128_tanh_approx`, `fix128_ternary_matvec`
+- `src/non_newtonian.rs`: `Bingham`, `Bingham::flows_under_stress`, `Bingham::stress`, `Carreau`, `Carreau::viscosity`, `Carreau::viscosity_with_index`, `HerschelBulkley`, `HerschelBulkley::stress`, `PowerLaw`, `PowerLaw::apparent_viscosity`, `PowerLaw::newtonian`, `PowerLaw::shear_thickening`, `PowerLaw::shear_thinning`, `PowerLaw::stress`
+- `src/particle.rs`: `LandingEvent`, `LandingTarget`, `Particle`, `Particle::new`, `ParticleEmitter`, `ParticleEmitter::new`, `ParticleSystem`, `ParticleSystem::add_emitter`, `ParticleSystem::alive_count`, `ParticleSystem::apply_force_field`, `ParticleSystem::new`, `ParticleSystem::step`, `ParticleSystem::step_with_landing`
+- `src/phase_change.rs`: `Phase`, `PhaseChangeConfig`, `PhaseChangeModifier`, `PhaseChangeModifier::apply_heat_at`, `PhaseChangeModifier::new`, `PhaseChangeModifier::phase_at`, `PhaseChangeModifier::temperature_at`
+- `src/physics2d.rs`: `BodyType2D`, `RigidBody2D`, `RigidBody2D::apply_force`, `RigidBody2D::apply_impulse_at_point`, `RigidBody2D::new_dynamic`, `Shape2D`, `Vec2Fix`, `Vec2Fix::ZERO`, `Vec2Fix::cross_scalar`, `Vec2Fix::distance_to`, `Vec2Fix::dot`, `Vec2Fix::length`, `Vec2Fix::length_squared`, `Vec2Fix::new`, `Vec2Fix::scale`
+- `src/piezoelectric.rs`: `PiezoElement`, `PiezoElement::force_from_voltage`, `PiezoElement::permittivity`, `PiezoElement::pvdf`, `PiezoElement::pzt_5a`, `PiezoElement::quartz`, `PiezoElement::strain_under_stress`, `PiezoElement::voltage_from_force`
+- `src/pipeline.rs`: `MetricEntry`, `MetricEntry::name_str`, `MetricEntry::new`, `MetricEvent`, `MetricEvent::counter`, `MetricEvent::gauge`, `MetricEvent::histogram`, `MetricEvent::unique`, `MetricEvent::with_timestamp`, `MetricPipeline`, `MetricPipeline::dropped_events`, `MetricPipeline::flush`, `MetricPipeline::get_slot`, `MetricPipeline::get_slot_mut`, `MetricPipeline::iter_slots`, `MetricPipeline::new`, `MetricPipeline::queue_len`, `MetricPipeline::reset`, `MetricPipeline::submit`, `MetricPipeline::total_events`, `MetricRegistry`, `MetricRegistry::iter`, `MetricRegistry::lookup`, `MetricRegistry::lookup_by_hash`, `MetricRegistry::new`, `MetricRegistry::register`, `MetricSlot`, `MetricSlot::new`, `MetricSlot::process`, `MetricSlot::reset`, `MetricSnapshot`, `MetricType`, `RingBuffer`, `RingBuffer::capacity`, `RingBuffer::clear`, `RingBuffer::dropped`, `RingBuffer::is_full`, `RingBuffer::len`, `RingBuffer::new`, `RingBuffer::pop`, `RingBuffer::push`
+- `src/plane_collider.rs`: `PlaneCollider::flip`, `PlaneCollider::from_point_normal`, `PlaneCollider::intersect_aabb`, `PlaneCollider::is_front`
+- `src/plastic.rs`: `HardeningType`, `NortonCreep`, `NortonCreep::integrate`, `NortonCreep::pla_room_temp`, `NortonCreep::strain_rate_per_s`, `PlasticModel`, `PlasticModel::from_fdm_material`, `PlasticState`, `PlasticStep`, `current_yield_mpa`, `radial_return_1d`
+- `src/pressure.rs`: `PressureConfig`, `PressureModifier`, `PressureModifier::apply_impact`, `PressureModifier::apply_pressure_at`, `PressureModifier::deformation_at`, `PressureModifier::new`, `PressureModifier::pressure_at`
 - `src/prestressed.rs`: `bolt_load_fraction`, `bolt_peak_tension`, `cable_pretension_n`, `preload_from_torque`, `recommended_preload_n`, `separation_load_n`, `tensioned_cable_stiffness_n_per_mm`
-- `src/print_orientation.rs`: `IDENTITY`, `LoadDirection`, `OrientationCandidate`, `OrientationReport`, `angle_to_z_axis`, `axis_x`, `axis_y`, `axis_z`, `effective_yield_at_angle`, `optimize_analytical`, `optimize_grid`
-- `src/print_pipeline_solver.rs`: `PrintPipelineInputs`, `PrintSafetyReport`, `analyze_print_pipeline`, `print`
-- `src/privacy.rs`: `BITS`, `LaplaceNoise`, `PrivacyBudget`, `PrivateAggregator`, `RAPPOR_BITS`, `RandomizedResponse`, `Rappor`, `XorShift64`, `add`, `default_params`, `estimate_mean`, `estimate_proportion`, `estimate_sum`, `from_entropy`, `is_exhausted`, `new`, `next_bool`, `next_f64`, `next_f64_range`, `next_u64`, `p_true`, `params`, `privatize`, `privatize_bit`, `privatize_int`, `query_count`, `remaining`, `reset`, `sample`, `spent`, `standard_error`, `try_spend`, `with_probability`, `with_seed`
-- `src/profiling.rs`: `PhysicsProfiler`, `ProfileEntry`, `STAGE_BROADPHASE`, `STAGE_CCD`, `STAGE_CONTACT_CACHE`, `STAGE_INTEGRATION`, `STAGE_NARROWPHASE`, `STAGE_SOLVER`, `STAGE_TOTAL_STEP`, `StepStats`, `TickCounter`, `advance`, `average_ticks`, `begin_frame`, `elapsed`, `get`, `last_ticks`, `new`, `now`, `record`, `reset`, `start`, `summary`
-- `src/quadratic_elastic_fem.rs`: `AdaptiveQuadraticSolution`, `QuadraticMesh`, `corner_count`, `edge_count`, `edge_node`, `element_count`, `from_tet_mesh`, `node_count`, `node_position`, `reactions`, `solve_adaptive_quadratic`, `solve_quadratic`, `solve_quadratic_hyperelastic`
+- `src/print_orientation.rs`: `LoadDirection`, `LoadDirection::axis_x`, `LoadDirection::axis_y`, `LoadDirection::axis_z`, `OrientationCandidate`, `OrientationCandidate::IDENTITY`, `OrientationReport`, `angle_to_z_axis`, `effective_yield_at_angle`, `optimize_analytical`, `optimize_grid`
+- `src/print_pipeline_solver.rs`: `PrintPipelineInputs`, `PrintSafetyReport`, `PrintSafetyReport::print`, `analyze_print_pipeline`
+- `src/privacy.rs`: `LaplaceNoise`, `LaplaceNoise::privatize`, `LaplaceNoise::privatize_int`, `LaplaceNoise::sample`, `LaplaceNoise::with_seed`, `PrivacyBudget`, `PrivacyBudget::is_exhausted`, `PrivacyBudget::new`, `PrivacyBudget::query_count`, `PrivacyBudget::remaining`, `PrivacyBudget::reset`, `PrivacyBudget::spent`, `PrivacyBudget::try_spend`, `PrivateAggregator`, `PrivateAggregator::add`, `PrivateAggregator::estimate_mean`, `PrivateAggregator::estimate_sum`, `PrivateAggregator::new`, `PrivateAggregator::reset`, `PrivateAggregator::standard_error`, `RAPPOR_BITS`, `RandomizedResponse`, `RandomizedResponse::estimate_proportion`, `RandomizedResponse::new`, `RandomizedResponse::p_true`, `RandomizedResponse::privatize`, `RandomizedResponse::privatize_bit`, `RandomizedResponse::with_probability`, `Rappor`, `Rappor::BITS`, `Rappor::default_params`, `Rappor::new`, `Rappor::params`, `Rappor::privatize`, `XorShift64`, `XorShift64::next_bool`, `XorShift64::next_f64`, `XorShift64::next_f64_range`, `XorShift64::next_u64`
+- `src/profiling.rs`: `PhysicsProfiler`, `PhysicsProfiler::average_ticks`, `PhysicsProfiler::begin_frame`, `PhysicsProfiler::get`, `PhysicsProfiler::last_ticks`, `PhysicsProfiler::new`, `PhysicsProfiler::record`, `PhysicsProfiler::reset`, `PhysicsProfiler::summary`, `ProfileEntry`, `ProfileEntry::average_ticks`, `ProfileEntry::new`, `ProfileEntry::record`, `ProfileEntry::reset`, `STAGE_BROADPHASE`, `STAGE_CCD`, `STAGE_CONTACT_CACHE`, `STAGE_INTEGRATION`, `STAGE_NARROWPHASE`, `STAGE_SOLVER`, `STAGE_TOTAL_STEP`, `StepStats`, `TickCounter`, `TickCounter::advance`, `TickCounter::elapsed`, `TickCounter::new`, `TickCounter::now`, `TickCounter::start`
+- `src/quadratic_elastic_fem.rs`: `AdaptiveQuadraticSolution`, `QuadraticMesh`, `QuadraticMesh::corner_count`, `QuadraticMesh::edge_count`, `QuadraticMesh::edge_node`, `QuadraticMesh::element_count`, `QuadraticMesh::from_tet_mesh`, `QuadraticMesh::node_count`, `QuadraticMesh::node_position`, `reactions`, `solve_adaptive_quadratic`, `solve_quadratic`, `solve_quadratic_hyperelastic`
 - `src/query.rs`: `BatchRayQuery`, `OverlapResult`, `ShapeCastHit`, `batch_raycast`, `batch_sphere_cast`, `capsule_cast`, `overlap_aabb`, `overlap_aabb_bvh`, `overlap_aabb_expanded`, `overlap_sphere`, `overlap_sphere_bvh`, `sphere_cast`
-- `src/ragdoll.rs`: `Bone`, `RagdollBuilder`, `RagdollHandle`, `RagdollProportions`, `body`, `build`, `child`, `human_female`, `human_male`, `index`
+- `src/ragdoll.rs`: `Bone`, `Bone::index`, `RagdollBuilder`, `RagdollBuilder::build`, `RagdollHandle`, `RagdollHandle::body`, `RagdollProportions`, `RagdollProportions::child`, `RagdollProportions::human_female`, `RagdollProportions::human_male`
 - `src/raycast.rs`: `ray_aabb`, `ray_capsule`, `ray_plane`, `raycast_aabbs`, `raycast_all_aabbs`, `raycast_all_spheres`, `raycast_any_aabbs`, `raycast_any_spheres`, `raycast_spheres`, `sweep_sphere`
-- `src/replay.rs`: `ReplayPlayer`, `ReplayRecorder`, `close`, `frame_count`, `get_position`, `get_velocity`, `new`, `open`, `record_frame`, `record_positions`, `scan_positions`
-- `src/rng.rs`: `DeterministicRng`, `new`, `new_with_stream`, `next_bounded`, `next_direction`, `next_fix128`, `next_fix128_range`, `next_u32`, `next_u64`
+- `src/replay.rs`: `ReplayPlayer`, `ReplayPlayer::close`, `ReplayPlayer::get_position`, `ReplayPlayer::get_velocity`, `ReplayPlayer::open`, `ReplayPlayer::scan_positions`, `ReplayRecorder`, `ReplayRecorder::close`, `ReplayRecorder::frame_count`, `ReplayRecorder::new`, `ReplayRecorder::record_frame`, `ReplayRecorder::record_positions`
+- `src/rng.rs`: `DeterministicRng`, `DeterministicRng::new`, `DeterministicRng::new_with_stream`, `DeterministicRng::next_bounded`, `DeterministicRng::next_direction`, `DeterministicRng::next_fix128`, `DeterministicRng::next_fix128_range`, `DeterministicRng::next_u32`, `DeterministicRng::next_u64`
 - `src/rolling_contact.rs`: `HertzianContact`, `basquin_cycles_to_failure`, `bearing_steel_52100`, `gear_steel_8620`, `hertzian_sphere_sphere`, `rolling_contact_life_cycles`, `silicon_nitride`
-- `src/rope.rs`: `PinConstraint`, `Rope`, `RopeConfig`, `add_pin`, `current_length`, `new`, `particle_count`, `pin_end`, `pin_start`, `segment_count`, `step`, `step_with_sdf`, `update_pin_targets`
-- `src/rope_attach.rs`: `RopeAttachment`, `compliance`, `new`, `solve_rope_attachments`, `solve_rope_attachments_two_way`, `with_break_force`
-- `src/scene_io.rs`: `CURRENT_SCENE_VERSION`, `PhysicsConfig`, `PhysicsScene`, `SerializedBody`, `SerializedJoint`, `load_scene_json`, `new`, `save_scene_json`
-- `src/sdf_adaptive.rs`: `AdaptiveConfig`, `AdaptiveSdfEvaluator`, `EvalLevel`, `begin_frame`, `evaluate`, `invalidate`, `invalidate_all`, `new`, `stats`
-- `src/sdf_ccd.rs`: `SdfCcdConfig`, `batch_sphere_trace_sdf`, `ray_march_sdf`, `sdf_ccd_hits`, `sphere_trace_sdf`
-- `src/sdf_character.rs`: `GroundContact`, `SdfCharacter`, `ground_contact`, `is_grounded`, `locomotion_context`, `new`
-- `src/sdf_collider.rs`: `ClosureSdf`, `SDF_STATIC`, `detect_sdf_contacts`, `new`, `new_static`, `with_scale`
-- `src/sdf_destruction.rs`: `DestructibleSdf`, `DestructionShape`, `DestructionType`, `apply_destruction`, `cube`, `cylinder`, `destruction_count`, `destruction_from_explosion`, `destruction_from_impact`, `destruction_from_projectile`, `new`, `optimize`, `reset`, `sphere`, `total_destruction_count`, `with_rotation`, `with_smoothing`
-- `src/sdf_fem_mesh.rs`: `BoundaryFaceError`, `CUBE_FIVE_TETS`, `RefineError`, `SdfTetMesh`, `Tetrahedron`, `boundary_faces`, `cell_parity`, `generate`, `generate_marching_tets`, `max_edge_length`, `refine_by_max_edge_length`, `tet_count`, `try_refine_conforming`, `try_refine_marked`, `vertex_count`
-- `src/sdf_force.rs`: `SdfForceField`, `SdfForceType`, `apply_sdf_force_fields`, `attract`, `compute_sdf_force`, `contain`, `new`, `repel`, `surface_flow`, `with_affected_bodies`
-- `src/sdf_manifold.rs`: `ManifoldConfig`, `SdfManifold`, `deepest`, `empty`, `generate_sdf_manifold`, `len`
-- `src/sdf_sph.rs`: `SphConfig`, `SphParticle`, `SphSolver`, `SphSpatialHash`, `at_rest`, `build`, `cell_size`, `for_each_neighbour`, `new`, `poly6`, `populated_cell_count`, `spiky_grad`, `step`, `step_hashed`, `viscosity_lap`, `water_like`
-- `src/shape.rs`: `ShapeError`, `center_of_mass_offset`, `inertia_diagonal`, `mass_and_inertia`, `validate`, `volume`
-- `src/sim_field.rs`: `ScalarField3D`, `add`, `cell_count`, `decay`, `decay_toward`, `diffuse`, `get`, `gradient`, `index`, `new`, `new_filled`, `sample`, `set`, `splat`
-- `src/sim_modifier.rs`: `ModifiedSdf`, `PhysicsModifier`, `add_modifier`, `clear_modifiers`, `modifier_count`, `modifier_mut`, `new`, `with_modifier`
-- `src/sketch.rs`: `CountMinSketch`, `DDSketch`, `FnvHasher`, `HeavyHitters`, `HyperLogLog`, `Mergeable`, `hash_bytes`, `hash_u128`, `hash_u64`, `new`
-- `src/sleeping.rs`: `Island`, `build_islands`, `sleeping_count`
-- `src/smoke_fire.rs`: `ArrheniusReaction`, `boussinesq_buoyancy_n_per_m3`, `heat_release_j_per_m3_s`, `methane_air`, `pla_air`, `reaction_rate_kg_per_m3_s`, `soot_generation_kg_per_m3_s`
+- `src/rope.rs`: `PinConstraint`, `Rope`, `Rope::add_pin`, `Rope::current_length`, `Rope::new`, `Rope::particle_count`, `Rope::pin_end`, `Rope::pin_start`, `Rope::segment_count`, `Rope::step`, `Rope::step_with_sdf`, `Rope::update_pin_targets`, `RopeConfig`
+- `src/rope_attach.rs`: `RopeAttachment`, `RopeAttachment::compliance`, `RopeAttachment::new`, `RopeAttachment::with_break_force`, `solve_rope_attachments`, `solve_rope_attachments_two_way`
+- `src/scene_io.rs`: `CURRENT_SCENE_VERSION`, `PhysicsConfig`, `PhysicsScene`, `PhysicsScene::new`, `SerializedBody`, `SerializedJoint`, `load_scene`, `load_scene_json`, `save_scene`, `save_scene_json`
+- `src/sdf_adaptive.rs`: `AdaptiveConfig`, `AdaptiveSdfEvaluator`, `AdaptiveSdfEvaluator::begin_frame`, `AdaptiveSdfEvaluator::evaluate`, `AdaptiveSdfEvaluator::invalidate`, `AdaptiveSdfEvaluator::invalidate_all`, `AdaptiveSdfEvaluator::new`, `AdaptiveSdfEvaluator::stats`, `EvalLevel`
+- `src/sdf_ccd.rs`: `PhysicsWorld::sdf_ccd_hits`, `SdfCcdConfig`, `batch_sphere_trace_sdf`, `ray_march_sdf`, `sphere_trace_sdf`
+- `src/sdf_character.rs`: `GroundContact`, `SdfCharacter`, `SdfCharacter::ground_contact`, `SdfCharacter::is_grounded`, `SdfCharacter::locomotion_context`, `SdfCharacter::new`
+- `src/sdf_collider.rs`: `ClosureSdf`, `ClosureSdf::new`, `SDF_STATIC`, `SdfCollider::new_static`, `SdfCollider::with_scale`, `detect_sdf_contacts`
+- `src/sdf_destruction.rs`: `DestructibleSdf`, `DestructibleSdf::apply_destruction`, `DestructibleSdf::destruction_count`, `DestructibleSdf::new`, `DestructibleSdf::optimize`, `DestructibleSdf::reset`, `DestructibleSdf::total_destruction_count`, `DestructionShape`, `DestructionShape::cube`, `DestructionShape::cylinder`, `DestructionShape::sphere`, `DestructionShape::with_rotation`, `DestructionShape::with_smoothing`, `DestructionType`, `destruction_from_explosion`, `destruction_from_impact`, `destruction_from_projectile`
+- `src/sdf_fem_mesh.rs`: `BoundaryFaceError`, `CUBE_FIVE_TETS`, `RefineError`, `SdfTetMesh`, `SdfTetMesh::boundary_faces`, `SdfTetMesh::max_edge_length`, `SdfTetMesh::refine_by_max_edge_length`, `SdfTetMesh::tet_count`, `SdfTetMesh::try_refine_conforming`, `SdfTetMesh::try_refine_marked`, `SdfTetMesh::vertex_count`, `Tetrahedron`, `cell_parity`, `generate`, `generate_marching_tets`
+- `src/sdf_force.rs`: `SdfForceField`, `SdfForceField::attract`, `SdfForceField::contain`, `SdfForceField::new`, `SdfForceField::repel`, `SdfForceField::surface_flow`, `SdfForceField::with_affected_bodies`, `SdfForceType`, `apply_sdf_force_fields`, `compute_sdf_force`
+- `src/sdf_manifold.rs`: `ManifoldConfig`, `SdfManifold`, `SdfManifold::deepest`, `SdfManifold::empty`, `SdfManifold::len`, `generate_sdf_manifold`
+- `src/sdf_sph.rs`: `SphConfig`, `SphConfig::water_like`, `SphParticle`, `SphParticle::at_rest`, `SphSolver`, `SphSolver::new`, `SphSolver::step`, `SphSolver::step_hashed`, `SphSpatialHash`, `SphSpatialHash::build`, `SphSpatialHash::cell_size`, `SphSpatialHash::for_each_neighbour`, `SphSpatialHash::populated_cell_count`, `poly6`, `spiky_grad`, `viscosity_lap`
+- `src/shape.rs`: `Shape::inertia_diagonal`, `Shape::mass_and_inertia`, `Shape::validate`, `Shape::volume`, `ShapeError`
+- `src/sim_field.rs`: `ScalarField3D`, `ScalarField3D::add`, `ScalarField3D::cell_count`, `ScalarField3D::clamp`, `ScalarField3D::decay`, `ScalarField3D::decay_toward`, `ScalarField3D::diffuse`, `ScalarField3D::get`, `ScalarField3D::gradient`, `ScalarField3D::index`, `ScalarField3D::new`, `ScalarField3D::new_filled`, `ScalarField3D::sample`, `ScalarField3D::set`, `ScalarField3D::splat`
+- `src/sim_modifier.rs`: `ModifiedSdf`, `ModifiedSdf::add_modifier`, `ModifiedSdf::clear_modifiers`, `ModifiedSdf::modifier_count`, `ModifiedSdf::modifier_mut`, `ModifiedSdf::new`, `ModifiedSdf::with_modifier`, `PhysicsModifier`
+- `src/sketch.rs`: `CountMinSketch`, `DDSketch`, `FnvHasher`, `FnvHasher::hash_bytes`, `FnvHasher::hash_u128`, `FnvHasher::hash_u64`, `FnvHasher::new`, `HeavyHitters`, `HyperLogLog`, `Mergeable`
+- `src/sleeping.rs`: `Island`, `IslandManager::build_islands`, `IslandManager::sleeping_count`
+- `src/smoke_fire.rs`: `ArrheniusReaction`, `ArrheniusReaction::methane_air`, `ArrheniusReaction::pla_air`, `boussinesq_buoyancy_n_per_m3`, `heat_release_j_per_m3_s`, `reaction_rate_kg_per_m3_s`, `soot_generation_kg_per_m3_s`
 - `src/soft_body_cut.rs`: `CutPlane`, `CutResult`, `cut_cloth`, `cut_deformable`
-- `src/solver.rs`: `BodyObservation`, `BroadphaseStats`, `TgsCacheStats`, `active_body_count`, `add_body_with_radius`, `add_compound_body`, `add_contact_modifier`, `add_distance_constraint`, `add_force`, `add_force_field`, `add_joint`, `add_pre_solve_hook`, `add_sdf_collider`, `add_shaped_body`, `add_static_collider`, `add_torque`, `batches_are_body_disjoint`, `body_count`, `broadphase`, `broadphase_proxy_aabb`, `broadphase_stats`, `clear_body_collision_radius`, `clear_contact_modifiers`, `clear_pre_solve_hooks`, `colliders_overlap`, `contact_arrows`, `contact_events`, `contact_forces`, `contact_friction_arrows`, `contact_friction_cones`, `drain_contact_events`, `drain_trigger_events`, `get_body`, `get_body_mut`, `gpu_solver_bridge_installed`, `hit_rate`, `is_kinematic`, `is_sleeping`, `joint_count`, `mass`, `num_batches`, `observe_bodies`, `observe_body`, `overflow_detected`, `rebuild_batches`, `remove_body`, `remove_force_field`, `remove_joint`, `remove_sdf_collider`, `remove_static_collider`, `reset_tgs_cache_stats`, `reset_world`, `sdf_contacts`, `set_angular_velocity`, `set_body_collision_radius`, `set_body_filter`, `set_body_material`, `set_body_shape`, `set_broadphase`, `set_gpu_solver_bridge`, `set_position`, `set_rotation`, `set_sdf_collision_radius`, `set_sleep_config`, `set_velocity`, `speed`, `static_collider_count`, `step_with_bridge`, `substep_with_bridge`, `take_gpu_solver_bridge`, `tgs_cache_stats`, `trigger_events`, `wake_body`, `with_angular_damping`, `with_compliance`, `with_friction`, `with_gravity_scale`, `with_linear_damping`, `with_restitution`, `with_rotation`, `with_sensor`, `with_velocity`
-- `src/solver_tgs.rs`: `AdaptiveSubStepConfig`, `HasVelocity`, `ImpulseCacheStats`, `adaptive_substeps_for`, `adaptive_substeps_for_ccd`, `hit_rate`, `reset_stats`, `stats`
-- `src/spatial.rs`: `SpatialGrid`, `build`, `clear`, `hash`, `insert`, `new`, `query_neighbors_into`
-- `src/structural_solver.rs`: `StructuralHistory`, `StructuralReport`, `StructuralSolver`, `new`, `run`, `step`
-- `src/support_volume.rs`: `OverhangRegion`, `SupportConfig`, `SupportVolumeReport`, `estimate_region_volume`, `estimate_support_volume`, `filament_length_m`, `is_nontrivial`, `quality`
+- `src/solver.rs`: `BodyObservation`, `BroadphaseStats`, `ContactConstraint::new`, `DistanceConstraint::new`, `DistanceConstraint::with_compliance`, `PhysicsWorld::active_body_count`, `PhysicsWorld::add_body_with_radius`, `PhysicsWorld::add_compound_body`, `PhysicsWorld::add_contact_modifier`, `PhysicsWorld::add_distance_constraint`, `PhysicsWorld::add_force_field`, `PhysicsWorld::add_joint`, `PhysicsWorld::add_pre_solve_hook`, `PhysicsWorld::add_sdf_collider`, `PhysicsWorld::add_shaped_body`, `PhysicsWorld::add_static_collider`, `PhysicsWorld::batches_are_body_disjoint`, `PhysicsWorld::body_count`, `PhysicsWorld::broadphase`, `PhysicsWorld::broadphase_proxy_aabb`, `PhysicsWorld::broadphase_stats`, `PhysicsWorld::clear_body_collision_radius`, `PhysicsWorld::clear_contact_modifiers`, `PhysicsWorld::clear_pre_solve_hooks`, `PhysicsWorld::colliders_overlap`, `PhysicsWorld::contact_arrows`, `PhysicsWorld::contact_events`, `PhysicsWorld::contact_forces`, `PhysicsWorld::contact_friction_arrows`, `PhysicsWorld::contact_friction_cones`, `PhysicsWorld::drain_contact_events`, `PhysicsWorld::drain_trigger_events`, `PhysicsWorld::get_body`, `PhysicsWorld::get_body_mut`, `PhysicsWorld::gpu_solver_bridge_installed`, `PhysicsWorld::is_sleeping`, `PhysicsWorld::joint_count`, `PhysicsWorld::num_batches`, `PhysicsWorld::observe_bodies`, `PhysicsWorld::observe_body`, `PhysicsWorld::overflow_detected`, `PhysicsWorld::rebuild_batches`, `PhysicsWorld::remove_body`, `PhysicsWorld::remove_force_field`, `PhysicsWorld::remove_joint`, `PhysicsWorld::remove_sdf_collider`, `PhysicsWorld::remove_static_collider`, `PhysicsWorld::reset_tgs_cache_stats`, `PhysicsWorld::reset_world`, `PhysicsWorld::sdf_contacts`, `PhysicsWorld::set_body_collision_radius`, `PhysicsWorld::set_body_filter`, `PhysicsWorld::set_body_material`, `PhysicsWorld::set_body_shape`, `PhysicsWorld::set_broadphase`, `PhysicsWorld::set_gpu_solver_bridge`, `PhysicsWorld::set_sdf_collision_radius`, `PhysicsWorld::set_sleep_config`, `PhysicsWorld::solve_contact_constraints_with_bridge`, `PhysicsWorld::static_collider_count`, `PhysicsWorld::step_parallel`, `PhysicsWorld::step_with_bridge`, `PhysicsWorld::substep_with_bridge`, `PhysicsWorld::take_gpu_solver_bridge`, `PhysicsWorld::tgs_cache_stats`, `PhysicsWorld::trigger_events`, `PhysicsWorld::wake_body`, `RigidBody::add_force`, `RigidBody::add_torque`, `RigidBody::is_kinematic`, `RigidBody::mass`, `RigidBody::set_angular_velocity`, `RigidBody::set_position`, `RigidBody::set_rotation`, `RigidBody::set_velocity`, `RigidBody::speed`, `RigidBody::with_angular_damping`, `RigidBody::with_friction`, `RigidBody::with_gravity_scale`, `RigidBody::with_linear_damping`, `RigidBody::with_restitution`, `RigidBody::with_rotation`, `RigidBody::with_sensor`, `RigidBody::with_velocity`, `TgsCacheStats`, `TgsCacheStats::hit_rate`
+- `src/solver_tgs.rs`: `AdaptiveSubStepConfig`, `HasVelocity`, `ImpulseCache::reset_stats`, `ImpulseCache::stats`, `ImpulseCacheStats`, `ImpulseCacheStats::hit_rate`, `adaptive_substeps_for`, `adaptive_substeps_for_ccd`
+- `src/spatial.rs`: `SpatialGrid`, `SpatialGrid::build`, `SpatialGrid::clear`, `SpatialGrid::hash`, `SpatialGrid::insert`, `SpatialGrid::new`, `SpatialGrid::query_neighbors_into`
+- `src/structural_solver.rs`: `StructuralHistory`, `StructuralReport`, `StructuralSolver`, `StructuralSolver::new`, `StructuralSolver::run`, `StructuralSolver::step`
+- `src/support_volume.rs`: `OverhangRegion`, `SupportConfig`, `SupportConfig::quality`, `SupportVolumeReport`, `SupportVolumeReport::filament_length_m`, `SupportVolumeReport::is_nontrivial`, `estimate_region_volume`, `estimate_support_volume`
 - `src/surface_tension_csf.rs`: `SIGMA_MERCURY_AIR`, `SIGMA_PLA_AIR`, `SIGMA_STEEL_ARGON`, `SIGMA_WATER_AIR`, `compute_csf_field`, `csf_body_force`, `interface_normal`, `smeared_delta`
-- `src/thermal.rs`: `HeatSource`, `ThermalConfig`, `ThermalModifier`, `add_heat_point`, `apply_heat_at`, `new`, `temperature_at`
+- `src/thermal.rs`: `HeatSource`, `ThermalConfig`, `ThermalModifier`, `ThermalModifier::add_heat_point`, `ThermalModifier::apply_heat_at`, `ThermalModifier::new`, `ThermalModifier::temperature_at`
 - `src/thermal_stress.rs`: `ThermalStressReport`, `analyze_thermal_stress`, `yield_temperature_c`
-- `src/thin_wall.rs`: `ThinRegion`, `ThinWallConfig`, `ThinWallReport`, `analyze_thickness`, `analyze_thickness_grid`, `for_nozzle`, `has_thin_walls`, `measure_thickness_at`, `sample_surface_points`, `thin_fraction`
-- `src/torus.rs`: `Torus`, `inertia_diagonal`, `new`, `volume`
-- `src/transient_thermal.rs`: `TemperatureDependence`, `ThermalMaterial`, `aluminum_6061`, `conductivity_at`, `crank_nicolson_step_1d`, `crank_nicolson_step_1d_nonlinear`, `density_at`, `diffusivity_at`, `evaluate`, `heat_capacity_at`, `pla_polymer`, `specific_heat_at`, `stable_dt_1d`, `stable_dt_3d`, `steel_1018`, `titanium_ti6al4v`, `transient_step_1d`, `transient_step_3d`
-- `src/trimesh.rs`: `aabb`, `collide_aabb`, `collide_capsule`, `from_indexed`, `from_triangles`, `new`, `triangle_count`
-- `src/turbulence.rs`: `FRICTION_VELOCITY_BISECTIONS`, `KE_C1_EPS`, `KE_C2_EPS`, `KE_C_MU`, `KE_SIGMA_EPS`, `KE_SIGMA_K`, `KEpsilonState`, `KOmegaState`, `KW_ALPHA`, `KW_BETA`, `KW_BETA_STAR`, `KW_SIGMA`, `LOG_LAW_B`, `SMAGORINSKY_CS`, `VON_KARMAN`, `WallFunctionError`, `Y_PLUS_TRANSITION`, `advance`, `advance_epsilon`, `advance_k`, `dynamic_smagorinsky_cs`, `eddy_viscosity`, `friction_velocity`, `friction_velocity_checked`, `from_k_epsilon`, `smagorinsky_eddy_viscosity`, `smagorinsky_eddy_viscosity_with`, `strain_rate_magnitude`, `to_k_epsilon`, `u_plus`, `wall_k_epsilon`, `y_plus`
-- `src/vehicle.rs`: `EngineConfig`, `Vehicle`, `VehicleConfig`, `WheelConfig`, `WheelState`, `grounded_wheels`, `new`, `shift_down`, `shift_up`, `update`
+- `src/thin_wall.rs`: `ThinRegion`, `ThinWallConfig`, `ThinWallConfig::for_nozzle`, `ThinWallReport`, `ThinWallReport::has_thin_walls`, `ThinWallReport::thin_fraction`, `analyze_thickness`, `analyze_thickness_grid`, `measure_thickness_at`, `sample_surface_points`
+- `src/torus.rs`: `Torus::inertia_diagonal`, `Torus::volume`
+- `src/transient_thermal.rs`: `TemperatureDependence`, `TemperatureDependence::evaluate`, `ThermalMaterial`, `ThermalMaterial::aluminum_6061`, `ThermalMaterial::conductivity_at`, `ThermalMaterial::density_at`, `ThermalMaterial::diffusivity_at`, `ThermalMaterial::heat_capacity_at`, `ThermalMaterial::pla_polymer`, `ThermalMaterial::specific_heat_at`, `ThermalMaterial::steel_1018`, `ThermalMaterial::titanium_ti6al4v`, `crank_nicolson_step_1d`, `crank_nicolson_step_1d_nonlinear`, `stable_dt_1d`, `stable_dt_3d`, `transient_step_1d`, `transient_step_3d`
+- `src/trimesh.rs`: `TriMesh::closest_point`, `TriMesh::collide_aabb`, `TriMesh::collide_capsule`, `TriMesh::from_indexed`, `TriMesh::from_triangles`, `TriMesh::raycast`, `TriMesh::triangle_count`, `Triangle::aabb`, `Triangle::new`, `ray_triangle`
+- `src/turbulence.rs`: `FRICTION_VELOCITY_BISECTIONS`, `KE_C1_EPS`, `KE_C2_EPS`, `KE_C_MU`, `KE_SIGMA_EPS`, `KE_SIGMA_K`, `KEpsilonState`, `KEpsilonState::advance_epsilon`, `KEpsilonState::advance_k`, `KEpsilonState::eddy_viscosity`, `KOmegaState`, `KOmegaState::advance`, `KOmegaState::eddy_viscosity`, `KOmegaState::from_k_epsilon`, `KOmegaState::to_k_epsilon`, `KW_ALPHA`, `KW_BETA`, `KW_BETA_STAR`, `KW_SIGMA`, `LOG_LAW_B`, `SMAGORINSKY_CS`, `VON_KARMAN`, `WallFunctionError`, `Y_PLUS_TRANSITION`, `dynamic_smagorinsky_cs`, `friction_velocity`, `friction_velocity_checked`, `smagorinsky_eddy_viscosity`, `smagorinsky_eddy_viscosity_with`, `strain_rate_magnitude`, `u_plus`, `wall_k_epsilon`, `y_plus`
+- `src/vehicle.rs`: `EngineConfig`, `Vehicle`, `Vehicle::grounded_wheels`, `Vehicle::new`, `Vehicle::shift_down`, `Vehicle::shift_up`, `Vehicle::update`, `VehicleConfig`, `WheelConfig`, `WheelState`
 - `src/vibration_wall.rs`: `ExcitationSource`, `WallResonanceReport`, `analyze_wall_resonance`, `default_excitation_sources`
-- `src/warp_risk.rs`: `EnvConditions`, `Footprint`, `WarpRiskCategory`, `WarpRiskReport`, `analyze_warp_risk`, `enclosed_abs`, `open_air_pla`, `rectangle`
-- `src/wave_ship.rs`: `Jonswap`, `WaveComponent`, `free_surface_elevation`, `froude_krylov_vertical_n`, `north_sea`, `peak_omega`, `spectrum_density`
-- `src/wedge.rs`: `Wedge`, `center_of_mass_offset`, `inertia_diagonal`, `new`, `volume`
-- `src/wind_zone.rs`: `WindZone`, `force_on`, `force_on_particle`, `instantaneous_wind_vector`, `light_breeze`, `storm`
+- `src/warp_risk.rs`: `EnvConditions`, `EnvConditions::enclosed_abs`, `EnvConditions::open_air_pla`, `Footprint`, `Footprint::rectangle`, `WarpRiskCategory`, `WarpRiskReport`, `analyze_warp_risk`
+- `src/wave_ship.rs`: `Jonswap`, `Jonswap::north_sea`, `Jonswap::peak_omega`, `Jonswap::spectrum_density`, `WaveComponent`, `free_surface_elevation`, `froude_krylov_vertical_n`
+- `src/wedge.rs`: `Wedge::inertia_diagonal`, `Wedge::volume`
+- `src/wind_zone.rs`: `WindZone`, `WindZone::force_on`, `WindZone::force_on_particle`, `WindZone::instantaneous_wind_vector`, `WindZone::light_breeze`, `WindZone::storm`
