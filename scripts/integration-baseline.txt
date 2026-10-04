@@ -211,7 +211,6 @@ src/sim_modifier.rs::SingleModifiedSdf
 src/sim_modifier.rs::SingleModifiedSdf::new
 src/sim_modifier.rs::SingleModifiedSdf::update
 src/sketch.rs::HeavyHitterEntry
-src/sleeping.rs::IslandManager::wake_body
 src/solver.rs::PhysicsWorld::begin_frame
 src/solver.rs::PhysicsWorld::end_frame
 src/solver.rs::TgsCacheStats::new
