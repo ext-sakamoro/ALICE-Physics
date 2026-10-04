@@ -32,8 +32,12 @@ into the world is declared separately (later step).
 
 Usage:
   python3 scripts/scip_reach.py [--scip target/scip] [--write docs/integration-status.md]
-Exit 1 when an index is missing, or when the analysis compared nothing
-(0 items, or 0 references from examples / bindings).
+  python3 scripts/scip_reach.py --check-baseline     # ratchet: no new L0, no stale entry
+  python3 scripts/scip_reach.py --write-baseline     # after an intended change
+Exit 1 when an index is missing, when the analysis compared nothing
+(0 items, or 0 references from examples / bindings), or, with --check-baseline,
+when an L0 item is not in scripts/integration-baseline.txt (a new public item
+that nothing reaches) or a baseline entry is no longer L0 (remove the line).
 """
 
 from __future__ import annotations
@@ -378,6 +382,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--root", default=str(Path(__file__).resolve().parent.parent))
     ap.add_argument("--scip", default="target/scip")
     ap.add_argument("--write", help="write the markdown ledger to this path")
+    ap.add_argument("--baseline", default="scripts/integration-baseline.txt")
+    ap.add_argument("--check-baseline", action="store_true", help="fail on new L0 items or stale baseline entries")
+    ap.add_argument("--write-baseline", action="store_true", help="record the current L0 items as the baseline")
     args = ap.parse_args(argv)
     root = Path(args.root)
     sdir = Path(args.scip) if Path(args.scip).is_absolute() else root / args.scip
@@ -403,7 +410,36 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     if args.write:
         Path(args.write).write_text(report(a, baseline_unwired(root)), encoding="utf-8")
+    bpath = Path(args.baseline) if Path(args.baseline).is_absolute() else root / args.baseline
+    l0 = sorted(k for k, v in a.level.items() if v == "L0")
+    if args.write_baseline:
+        bpath.write_text(BASELINE_HEADER + "".join(f"{k}\n" for k in l0), encoding="utf-8")
+        print(f"wrote {len(l0)} L0 entries to {bpath}")
+    if args.check_baseline:
+        if not bpath.exists():
+            print(f"error: baseline {bpath} missing (run with --write-baseline)", file=sys.stderr)
+            return 1
+        base = {ln.strip() for ln in bpath.read_text(encoding="utf-8").splitlines()
+                if ln.strip() and not ln.startswith("#")}
+        new = [k for k in l0 if k not in base]
+        stale = sorted(k for k in base if a.level.get(k) != "L0")
+        for k in new:
+            print(f"error: new L0 item {k}: no non-test code reaches it (add a caller or an example, "
+                  "or remove it)", file=sys.stderr)
+        for k in stale:
+            lv = a.level.get(k, "gone")
+            print(f"error: stale baseline entry {k} (now {lv}): remove the line", file=sys.stderr)
+        print(f"baseline: {len(base)} entries, new L0 {len(new)}, stale {len(stale)}")
+        if new or stale:
+            return 1
     return 0
+
+
+BASELINE_HEADER = """# L0 items (no non-test code reaches them) that existed when the ratchet was
+# introduced. scripts/scip_reach.py --check-baseline fails on any L0 item not
+# listed here, and on any line here that is no longer L0. Shrink this file;
+# regenerate with --write-baseline only for an intended change.
+"""
 
 
 if __name__ == "__main__":

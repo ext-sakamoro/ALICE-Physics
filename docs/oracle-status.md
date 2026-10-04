@@ -299,6 +299,35 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `zero_strength_with_nonzero_stress_is_not_safe` (audit_anisotropic.rs) — known defect: AUD-A-S1W6-005: a zero strength is treated as unlimited (max-stress skips the component, Hill/Ts…
 - `zscore_survives_a_nan_sample` (audit_anomaly.rs) — known defect: AUD-A-S4W1-015: ZScoreDetector never flags again after one NaN sample (mean = NaN permanently)
 
+## 📌 Pins: tests that turn red when a known defect is fixed (3)
+
+Tests marked `// PIN: <defect id>` assert today's defective behaviour on purpose. Fixing the
+defect makes them red; update them in the same change, after checking that the new behaviour
+is the intended one.
+
+| Defect | Pin test | Defect test |
+|--------|----------|-------------|
+| AUD-A-S3W1-010 | `count_min_degenerate_inputs` (analytic_sketch_wiring.rs) | `countmin_total_does_not_overflow_when_counters_saturate` (audit_sketch.rs) |
+| AUD-A-S3W2-007 | `deterministic_network_zero_layers_constructs_but_forward_panics` (analytic_neural_wiring.rs) | `zero_layer_network_forward_does_not_panic` (audit_neural.rs) |
+| AUD-A-S4W1-001 | `entry_record_overflow_panics_in_debug_and_wraps_in_release` (analytic_profiling_wiring.rs) | `entry_total_never_decreases_on_overflow` (audit_profiling.rs) |
+
+## 🌐 Root cause outside this repository (1)
+
+Known defects whose reason says `root: external <crate> <version>`: the fix belongs in that
+dependency. When Cargo.lock resolves a different version, re-check whether the defect remains.
+
+| Defect | Test | Crate | Reason says | Cargo.lock | Status |
+|--------|------|-------|-------------|------------|--------|
+| AUD-A-S5W1-001 | `gapped_series_returns_exactly_the_recorded_pairs` (audit_db_bridge.rs) | `alice-db` | 0.2.0-beta.3 | 0.2.0-beta.3 | ✅ same |
+
+## ⚠️ Known defects without an id (2)
+
+A known-defect reason should start with `AUD-…` so pins, external causes and
+`scripts/audit_refs.py` can refer to it.
+
+- `draw_aabbs_flag_draws_something` (audit_debug_render.rs) — known defect: tracked as the unwired draw_aabbs / draw_bvh flags: debug_draw_world never reads draw_aabbs or d…
+- `fos_is_never_below_one_when_applied_is_below_allowable` (audit_layer_adhesion.rs) — known defect (既知): Fix128::div の u128->i64 cast で applied=2^-64 (x) / 2^-63 (x) の FoS が 0 になる (PLA 50MPa/2^-64…
+
 ## ⏱ Gated (24)
 
 Correct tests that are too slow for every push, or that print a measurement table.

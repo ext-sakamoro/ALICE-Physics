@@ -43,6 +43,12 @@ jobs:
       # is built by integration-status.yml
       - name: SCIP reach analysis (tests)
         run: python scripts/test_scip_reach.py
+      - name: Known-defect symbol resolution (tests)
+        run: python scripts/test_audit_refs.py
+      # PIN markers must name an open known defect; external root causes must
+      # name a crate Cargo.lock resolves (docs/oracle-status.md lists both)
+      - name: Oracle ledger links (PIN / root external)
+        run: python scripts/gen-oracle-status.py --check
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -110,6 +116,29 @@ jobs:
   # 実行 SHA-256 hash が native platform (macOS ARM baseline) と bit-exact
   # 一致することを検証 Fix128 は純粋整数演算のため cross-platform bit-exact、
   # SDF 経路の f32 も IEEE 754 basic ops (+/-/*/sqrt) が platform 非依存
+  # rust-analyzer SCIP index of the crate: every symbol a known-defect reason
+  # names must exist (scripts/audit_refs.py), and no public item may become
+  # unreached by non-test code without updating scripts/integration-baseline.txt
+  scip:
+    name: SCIP checks (defect references, L0 ratchet)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Install rust-analyzer
+        run: |
+          rustup show active-toolchain
+          rustup component add rust-analyzer
+      - uses: Swatinem/rust-cache@v2
+      - name: Build SCIP indexes
+        run: scripts/scip_index.sh
+      - name: Every symbol named by a known-defect reason exists
+        run: python3 scripts/audit_refs.py --check
+      - name: No new L0 item, no stale baseline entry
+        run: python3 scripts/scip_reach.py --check-baseline
+
   sibling-features:
     name: Test (neural / replay / analytics via crates.io siblings)
     runs-on: ubuntu-latest

@@ -248,5 +248,41 @@ class Main(unittest.TestCase):
         self.assertIn("`src/lib.rs::via_binding` (live)", text)  # baseline says unwired, a binding reaches it
 
 
+class Baseline(unittest.TestCase):
+    """--check-baseline: a ratchet on L0 items, like scripts/wiring-baseline.txt."""
+
+    def crate(self, baseline: str | None) -> Path:
+        ex = Doc("examples/demo.rs", "fn main() { used(); }").ref("used().", 0, "used")
+        ffi = Doc("src/ffi.rs", "pub extern \"C\" fn api() { via_binding(); }").ref("via_binding().", 0, "via_binding")
+        d = build([lib_doc(), ex, ffi])  # L0: unused
+        if baseline is not None:
+            (d / "scripts").mkdir()
+            (d / "scripts" / "integration-baseline.txt").write_text(baseline, encoding="utf-8")
+        return d
+
+    def check(self, baseline):
+        return sr.main(["--root", str(self.crate(baseline)), "--check-baseline"])
+
+    def test_baseline_listing_every_l0_passes(self):
+        self.assertEqual(self.check("# header\nsrc/lib.rs::unused\n"), 0)
+
+    def test_a_new_l0_item_fails(self):
+        self.assertEqual(self.check("# nothing recorded\n"), 1)
+
+    def test_a_stale_entry_fails(self):
+        self.assertEqual(self.check("src/lib.rs::unused\nsrc/lib.rs::used\n"), 1)  # used is L1 now
+
+    def test_missing_baseline_fails(self):
+        self.assertEqual(self.check(None), 1)
+
+    def test_write_baseline_then_check_round_trips(self):
+        d = self.crate(None)
+        (d / "scripts").mkdir()
+        self.assertEqual(sr.main(["--root", str(d), "--write-baseline"]), 0)
+        text = (d / "scripts" / "integration-baseline.txt").read_text(encoding="utf-8")
+        self.assertIn("src/lib.rs::unused\n", text)
+        self.assertEqual(sr.main(["--root", str(d), "--check-baseline"]), 0)
+
+
 if __name__ == "__main__":
     unittest.main()

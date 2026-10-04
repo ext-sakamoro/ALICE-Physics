@@ -205,6 +205,7 @@ fn entry_reset_is_new_and_idempotent() {
 /// Tick overflow: `u64::MAX` recorded twice. With debug assertions the `+=`
 /// panics; in release it wraps to `u64::MAX − 1`. Pinned per profile so that
 /// a change to saturating / checked arithmetic shows up as red here.
+// PIN: AUD-A-S4W1-001
 #[test]
 fn entry_record_overflow_panics_in_debug_and_wraps_in_release() {
     let mut e = ProfileEntry::new("x");
