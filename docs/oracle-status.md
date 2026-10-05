@@ -6,16 +6,16 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 4346 |
-| 🔴 Red by design | 200 |
+| 🟢 Not ignored (run by CI) | 4350 |
+| 🔴 Red by design | 198 |
 | ⏱ Gated (runtime / diagnostic / manual) | 24 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **4570** |
+| **Total** | **4572** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
 
-## 🔴 Red by design (200)
+## 🔴 Red by design (198)
 
 Oracles kept red on purpose: the implementation is not there yet, and a companion test pins
 today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected value is never loosened.
@@ -153,8 +153,6 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `recorded_position_equals_the_engine_state_for_integers_above_2_pow_24` (audit_replay.rs) — known defect: AUD-A-S4W2-015: 記録値は Fix128 状態ではなく to_f32 の丸め (24 bit 仮数)。x = 16777217 を記録すると 16777216 で戻る (エンジン…
 - `refinement_keeps_every_element_positively_wound` (audit_sdf_fem_mesh.rs) — known defect: AUD-A-S2W3-012: try_refine_conforming / try_refine_marked emit children with mixed winding (372 …
 - `refit_keeps_the_world_bounds_field_in_sync_with_the_primitives` (audit_bvh.rs) — known defect: AUD-A-S3W2-009: LinearBvh::refit_leaves refreshes every node box but leaves the public `bounds` …
-- `register_beyond_u16_range_still_returns_an_id_that_finds_the_material` (audit_material.rs) — known defect: AUD-A-S1W6-002: register() returns `len as u16`; the 65537th material (index 65536) gets id 0 an…
-- `register_ids_never_alias_after_u16_range` (audit_filament_db.rs) — known defect: AUD-A-S1W5-013: FilamentDb::register uses `len() as u16`; after 65536 materials ids wrap (65537t…
 - `reinit_every_two_steps_reinitialises_at_the_end_of_the_second_step` (audit_cfd_solver.rs) — known defect: AUD-A-S1W4-004: reinit_every_n_steps = N first reinitialises on step N + 1 (the test is step_cou…
 - `remove_body_keeps_the_contact_history_of_the_survivors` (audit_solver.rs) — known defect: AUD-A-S1W2-004: remove_body does not remap the event pair history; the surviving pair re-reports…
 - `repeated_impacts_never_exceed_max_deformation_before_update` (audit_pressure.rs) — known defect: AUD-A-S6W1-003: two apply_impact calls at one node give deformation 2.0 with max_deformation 1.0…
@@ -274,7 +272,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (4346)
+## 🟢 Not ignored (4350)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -408,6 +406,7 @@ Per-file counts (the test names are in `tests/`):
 | `audit_articulation.rs` | 14 |
 | `audit_fsi_advanced.rs` | 14 |
 | `audit_laminate_failure.rs` | 14 |
+| `audit_material.rs` | 14 |
 | `audit_modal.rs` | 14 |
 | `audit_multiphase.rs` | 14 |
 | `audit_rope.rs` | 14 |
@@ -447,7 +446,6 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_layer_adhesion_wiring.rs` | 12 |
 | `audit_analytics_bridge.rs` | 12 |
 | `audit_cloth_fluid.rs` | 12 |
-| `audit_material.rs` | 12 |
 | `audit_plastic.rs` | 12 |
 | `audit_turbulence.rs` | 12 |
 | `analytic_animation_blend_wiring.rs` | 11 |
@@ -524,6 +522,7 @@ Per-file counts (the test names are in `tests/`):
 | `audit_acoustic_wave.rs` | 8 |
 | `audit_c_cfd_solver.rs` | 8 |
 | `audit_error.rs` | 8 |
+| `audit_filament_db.rs` | 8 |
 | `audit_filter.rs` | 8 |
 | `audit_kinematic_loop.rs` | 8 |
 | `audit_prestressed.rs` | 8 |
@@ -556,7 +555,6 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_thermoelastic_channel.rs` | 6 |
 | `analytic_warp_risk_wiring.rs` | 6 |
 | `audit_contact_modifier_once.rs` | 6 |
-| `audit_filament_db.rs` | 6 |
 | `audit_layer_adhesion.rs` | 6 |
 | `audit_profiling.rs` | 6 |
 | `cloth_fluid_sub_iteration.rs` | 6 |

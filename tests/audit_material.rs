@@ -79,26 +79,77 @@ fn register_returns_sequential_ids_and_ignores_the_material_own_id() {
     assert_eq!(t.len(), 3);
 }
 
-/// Doc: "Register a material, returns its ID". After 65536 materials the u16 id wraps.
-#[test]
-#[ignore = "known defect: AUD-A-S1W6-002: register() returns `len as u16`; the 65537th material (index 65536) gets id 0 and get(0) returns the default material, not the registered one"]
-fn register_beyond_u16_range_still_returns_an_id_that_finds_the_material() {
+/// Number of distinct `MaterialId = u16` values: the closed form the capacity
+/// boundary is derived from (AUD-A-S1W6-002).
+const MATERIAL_ID_COUNT: usize = u16::MAX as usize + 1;
+
+/// Friction tag that identifies the material registered with id `i`.
+fn tag(i: usize) -> Fix128 {
+    Fix128::from_int(i as i64)
+}
+
+/// Fill a fresh table up to the last free id. `new()` holds the default material at
+/// id 0, so `MATERIAL_ID_COUNT - 1` further registrations fit, and registration `k`
+/// (1-based) must get id `k` because ids are handed out in order and never reused.
+fn full_table() -> MaterialTable {
     let mut t = MaterialTable::new();
-    let mark = Fix128::from_int(12345);
-    let mut last = 0u16;
-    for i in 1..=65_536usize {
-        let m = PhysicsMaterial::new(
-            0,
-            if i == 65_536 { mark } else { Fix128::ZERO },
-            Fix128::ZERO,
-        );
-        last = t.register(m);
+    for i in 1..MATERIAL_ID_COUNT {
+        let id = t
+            .try_register(PhysicsMaterial::new(0, tag(i), Fix128::ZERO))
+            .unwrap_or_else(|e| {
+                panic!("registration {i} of {} failed: {e}", MATERIAL_ID_COUNT - 1)
+            });
+        assert_eq!(usize::from(id), i, "registration {i} got id {id}");
     }
+    assert_eq!(t.len(), MATERIAL_ID_COUNT);
+    t
+}
+
+/// AUD-A-S1W6-002: with `u16` ids the table holds at most 65,536 materials (the
+/// default at id 0 plus 65,535 registered). The first registration past that is
+/// refused instead of handing out a wrapped id, and every earlier id still finds
+/// the material registered under it.
+#[test]
+fn material_table_try_register_refuses_past_the_u16_id_range() {
+    let mut t = full_table();
+    let overflow = t.try_register(PhysicsMaterial::new(0, Fix128::from_int(-1), Fix128::ZERO));
     assert_eq!(
-        t.get(last).dynamic_friction,
-        mark,
-        "id {last} does not find the material registered as #65536"
+        overflow,
+        Err(alice_physics::PhysicsError::CapacityExceeded {
+            resource: "materials",
+            limit: MATERIAL_ID_COUNT,
+        })
     );
+    assert_eq!(
+        t.len(),
+        MATERIAL_ID_COUNT,
+        "a refused registration must not grow the table"
+    );
+    // The default material at id 0 is untouched by the refused registration.
+    assert_eq!(*t.get(DEFAULT_MATERIAL), PhysicsMaterial::default());
+    for i in 1..MATERIAL_ID_COUNT {
+        let id = i as u16;
+        let m = t.get(id);
+        assert_eq!(
+            m.id, id,
+            "id {id} reads back a material carrying id {}",
+            m.id
+        );
+        assert_eq!(
+            m.dynamic_friction,
+            tag(i),
+            "id {id} does not find its material"
+        );
+    }
+}
+
+/// AUD-A-S1W6-002: `register` panics on the registration that has no free id
+/// instead of silently returning a wrapped id that aliases another material.
+#[test]
+#[should_panic(expected = "MaterialTable::register")]
+fn register_panics_when_every_material_id_is_in_use() {
+    let mut t = full_table();
+    let _ = t.register(PhysicsMaterial::new(0, Fix128::from_int(-1), Fix128::ZERO));
 }
 
 #[test]

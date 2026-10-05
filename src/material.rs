@@ -10,6 +10,7 @@
 //! - **Pair Overrides**: Custom friction/restitution for specific material pairs
 //! - **Default Materials**: Predefined materials (Metal, Wood, Rubber, Ice, etc.)
 
+use crate::error::PhysicsError;
 use crate::math::Fix128;
 
 #[cfg(not(feature = "std"))]
@@ -20,6 +21,9 @@ pub type MaterialId = u16;
 
 /// Default material ID
 pub const DEFAULT_MATERIAL: MaterialId = 0;
+
+/// Number of distinct `MaterialId` values (`u16::MAX as usize + 1`).
+const MATERIAL_ID_CAPACITY: usize = MaterialId::MAX as usize + 1;
 
 /// Combine rule for friction/restitution when two materials interact
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -168,12 +172,49 @@ impl MaterialTable {
     }
 
     /// Register a material, returns its ID
+    ///
+    /// The material's `id` field is overwritten with the assigned ID.
+    ///
+    /// # Panics
+    ///
+    /// Panics when the table already holds `u16::MAX as usize + 1` (65,536)
+    /// materials, i.e. every `MaterialId` is in use (the default material
+    /// created by [`MaterialTable::new`] occupies ID 0, so at most 65,535
+    /// materials can be added after construction). Use
+    /// [`MaterialTable::try_register`] to handle that case without panicking.
     pub fn register(&mut self, material: PhysicsMaterial) -> MaterialId {
-        let id = self.materials.len() as MaterialId;
+        match self.try_register(material) {
+            Ok(id) => id,
+            Err(e) => panic!("MaterialTable::register: {e}; every MaterialId is in use"),
+        }
+    }
+
+    /// Register a material, returns its ID, or an error when every
+    /// `MaterialId` is already in use.
+    ///
+    /// IDs are assigned in registration order, so a table can hold at most
+    /// `u16::MAX as usize + 1` (65,536) materials, including the default
+    /// material at ID 0. A successful call never reuses or overwrites an
+    /// existing ID.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PhysicsError::CapacityExceeded`] with `limit = 65_536` when
+    /// the table already holds 65,536 materials. The table is left unchanged.
+    pub fn try_register(&mut self, material: PhysicsMaterial) -> Result<MaterialId, PhysicsError> {
+        let len = self.materials.len();
+        if len >= MATERIAL_ID_CAPACITY {
+            return Err(PhysicsError::CapacityExceeded {
+                resource: "materials",
+                limit: MATERIAL_ID_CAPACITY,
+            });
+        }
+        // `len < 65_536`, so the cast is exact.
+        let id = len as MaterialId;
         let mut mat = material;
         mat.id = id;
         self.materials.push(mat);
-        id
+        Ok(id)
     }
 
     /// Get material by ID
