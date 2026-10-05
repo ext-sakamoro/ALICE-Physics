@@ -157,7 +157,7 @@ fn every_category_is_reachable_with_its_own_recommendation() {
 }
 
 #[test]
-fn documented_incident_is_critical_and_the_enclosure_helps() {
+fn documented_case_is_critical_and_the_enclosure_helps() {
     // module doc: 280 x 250 mm PLA plate on the open printer -> Critical, score > 0.75
     let plate = Footprint::rectangle(fx(280), fx(250));
     let r = analyze_warp_risk(

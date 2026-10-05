@@ -249,7 +249,7 @@ mod tests {
 
     #[test]
     fn large_abs_part_open_air_is_critical() {
-        // Large ABS part on open printer — Critical case (docs incident)
+        // Large ABS part on open printer — Critical case (documented case)
         let f = Footprint::rectangle(Fix128::from_int(280), Fix128::from_int(250));
         // Use ABS shrinkage 0.8% and Ambient 20°C
         let env = EnvConditions {
