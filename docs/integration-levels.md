@@ -15,8 +15,8 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | step | runs when `PhysicsWorld` steps | 19 |
 | world API | used through another `PhysicsWorld` method | 7 |
 | binding | reached only from the C ABI, Python or WebAssembly bindings | 2 |
-| standalone | a Rust API that only examples call | 123 |
-| unused | no caller outside tests | 3 |
+| standalone | a Rust API that only examples call | 125 |
+| unused | no caller outside tests | 1 |
 
 | Module | Level | Items: step / world API / binding / standalone / unused | Reached from bindings |
 |--------|-------|----------------------------------------------------------|-----------------------|
@@ -61,7 +61,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `beam_stress` | standalone | 0 / 0 / 0 / 18 / 0 | — |
 | `bimaterial` | standalone | 0 / 0 / 0 / 9 / 0 | — |
 | `bridging` | standalone | 0 / 0 / 0 / 9 / 0 | — |
-| `buckling` | standalone | 0 / 0 / 0 / 7 / 3 | — |
+| `buckling` | standalone | 0 / 0 / 0 / 10 / 0 | — |
 | `buoyancy_zone` | standalone | 0 / 0 / 0 / 8 / 0 | — |
 | `ccd` | standalone | 0 / 0 / 0 / 12 / 0 | — |
 | `cfd_solver` | standalone | 0 / 0 / 0 / 39 / 2 | — |
@@ -84,6 +84,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `electromagnetic` | standalone | 0 / 0 / 0 / 6 / 0 | — |
 | `erosion` | standalone | 0 / 0 / 0 / 9 / 0 | — |
 | `eulerian_grid` | standalone | 0 / 0 / 0 / 94 / 32 | — |
+| `fatigue` | standalone | 0 / 0 / 0 / 14 / 0 | — |
 | `filament_db` | standalone | 0 / 0 / 0 / 37 / 0 | — |
 | `fillet_stress` | standalone | 0 / 0 / 0 / 5 / 0 | — |
 | `filter` | standalone (step 3 of 18 items) | 3 / 0 / 0 / 15 / 0 | C ABI, Python, WebAssembly |
@@ -118,6 +119,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `non_newtonian` | standalone | 0 / 0 / 0 / 14 / 0 | — |
 | `particle` | standalone | 0 / 0 / 0 / 13 / 0 | — |
 | `phase_change` | standalone | 0 / 0 / 0 / 7 / 0 | — |
+| `physics2d` | standalone | 0 / 0 / 0 / 39 / 0 | — |
 | `piezoelectric` | standalone | 0 / 0 / 0 / 8 / 0 | — |
 | `pipeline` | standalone | 0 / 0 / 0 / 43 / 0 | — |
 | `plastic` | standalone | 0 / 0 / 0 / 11 / 2 | — |
@@ -137,7 +139,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `rope` | standalone | 0 / 0 / 0 / 13 / 0 | — |
 | `rope_attach` | standalone | 0 / 0 / 0 / 6 / 0 | — |
 | `rotor` | standalone | 0 / 0 / 0 / 15 / 0 | — |
-| `scene_io` | standalone | 0 / 0 / 0 / 10 / 1 | — |
+| `scene_io` | standalone | 0 / 0 / 0 / 11 / 0 | — |
 | `sdf_adaptive` | standalone | 0 / 0 / 0 / 10 / 0 | — |
 | `sdf_ccd` | standalone | 0 / 0 / 0 / 6 / 0 | — |
 | `sdf_character` | standalone | 0 / 0 / 0 / 13 / 0 | — |
@@ -156,8 +158,8 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `soft_body_cut` | standalone | 0 / 0 / 0 / 4 / 0 | — |
 | `spatial` | standalone | 0 / 0 / 0 / 7 / 0 | — |
 | `spherical_terrain` | standalone (step 1 of 10 items) | 1 / 0 / 0 / 9 / 0 | C ABI, Python, WebAssembly |
-| `structural_solver` | standalone | 0 / 0 / 0 / 8 / 0 | — |
-| `support_volume` | standalone | 0 / 0 / 0 / 8 / 1 | — |
+| `structural_solver` | standalone | 0 / 0 / 0 / 13 / 0 | — |
+| `support_volume` | standalone | 0 / 0 / 0 / 9 / 0 | — |
 | `surface_tension_csf` | standalone | 0 / 0 / 0 / 8 / 0 | — |
 | `thermal` | standalone | 0 / 0 / 0 / 7 / 0 | — |
 | `thermal_stress` | standalone | 0 / 0 / 0 / 3 / 0 | — |
@@ -165,15 +167,13 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `transient_thermal` | standalone | 0 / 0 / 0 / 18 / 0 | — |
 | `trimesh` | standalone (step 6, binding 3 of 16 items) | 6 / 0 / 3 / 7 / 0 | C ABI, Python, WebAssembly |
 | `turbulence` | standalone | 0 / 0 / 0 / 33 / 0 | — |
-| `vehicle` | standalone | 0 / 0 / 0 / 10 / 1 | — |
+| `vehicle` | standalone | 0 / 0 / 0 / 11 / 0 | — |
 | `vehicle_dynamics` | standalone | 0 / 0 / 0 / 83 / 0 | — |
 | `vibration_wall` | standalone | 0 / 0 / 0 / 4 / 0 | — |
 | `warp_risk` | standalone | 0 / 0 / 0 / 8 / 0 | — |
 | `wave_ship` | standalone | 0 / 0 / 0 / 9 / 0 | — |
 | `wind_zone` | standalone | 0 / 0 / 0 / 6 / 0 | — |
-| `fatigue` | unused (standalone 6 of 13 items) | 0 / 0 / 0 / 6 / 7 | — |
 | `motor` | unused (standalone 6 of 15 items) | 0 / 0 / 0 / 6 / 9 | — |
-| `physics2d` | unused (standalone 15 of 39 items) | 0 / 0 / 0 / 15 / 24 | — |
 
 ### C ABI (`--features ffi`)
 
