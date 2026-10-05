@@ -52,6 +52,7 @@ pub struct SupportConfig {
     pub layer_height_mm: Fix128,
     /// Filament diameter (mm). 1.75 for Bambu/Prusa, 2.85 for Ultimaker legacy.
     pub filament_diameter_mm: Fix128,
+    // LIMITATION(COV-AM-061): Extrusion throughput used for coarse time estimation (mm³ per minute).
     /// Extrusion throughput used for coarse time estimation (mm³ per minute).
     ///
     /// A typical Bambu X1C prints at ~24 mm³/s = 1440 mm³/min. Adjust down for

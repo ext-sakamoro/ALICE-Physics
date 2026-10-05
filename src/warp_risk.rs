@@ -145,6 +145,7 @@ pub struct WarpRiskReport {
 
 /// Compute the warping risk score.
 ///
+// LIMITATION(COV-AM-035): Score formula (empirical, fit to typical FDM outcomes):
 /// Score formula (empirical, fit to typical FDM outcomes):
 ///
 /// `score = clamp01(k · α · E_norm · A_norm · L_norm · ΔT_norm)`
@@ -201,6 +202,7 @@ pub fn analyze_warp_risk(
         WarpRiskCategory::Critical => "High failure risk: split into smaller parts, switch material to PLA, or use a heated chamber (>= 50 C).",
     };
 
+    // LIMITATION(COV-AM-036): Engineering figure: F/mm ≈ E · α · ΔT · h (h taken as 1mm reference)
     // Engineering figure: F/mm ≈ E · α · ΔT · h (h taken as 1mm reference)
     let e_mpa = e_gpa * Fix128::from_int(1000);
     let warp_force_per_mm = e_mpa * alpha * dt;
