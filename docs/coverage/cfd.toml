@@ -1,0 +1,1218 @@
+# Incompressible flow and turbulence (CFD) coverage of ALICE-Physics, against an
+# external reference frame.
+#
+# What this table is: every capability that the standard textbooks
+# (Ferziger-Peric, Computational Methods for Fluid Dynamics; Pope, Turbulent
+# Flows; Versteeg-Malalasekera), reference implementations (OpenFOAM, Fluent
+# solvers and models) and standard benchmarks (Ghia lid-driven cavity, Armaly
+# backward-facing step, Taylor-Green vortex, Poiseuille / Couette, cylinder wake
+# Strouhal number, de Vahl Davis natural convection) expect of an incompressible
+# CFD code, one [[item]] per capability, with what the crate has today. The rows
+# are written by hand: the axes and the items come from the reference frame, not
+# from the modules that exist, so a missing capability is visible instead of
+# absent. Closed-form modules (non_newtonian, lift_drag, smoke_fire,
+# aeroelasticity, compressible) are not counted as solver capabilities; they are
+# cited in `evidence` where they are the nearest thing.
+#
+# Boundary with the other tables (one capability goes in one table only):
+#   - compressible flow and shocks: the shock table
+#   - multiphase, free surface, level set / VOF, surface tension: the multiphase
+#     table (FLIP here is the single-phase transfer; its free surface is there)
+#   - fluid-structure interaction and aeroelasticity: the coupling table
+#   - atmosphere and wind fields: the environment table
+#
+# status (exactly one of):
+#   implemented+oracle     implemented, and at least one non-ignored test checks
+#                          it against an independent reference
+#   implemented-no-oracle  implemented, no such test
+#   partial                implemented with a restriction that the source states;
+#                          `limitation` quotes it, and the source carries a
+#                          `LIMITATION(<id>)` comment at that place
+#   missing                not implemented
+#   out-of-scope           not a capability of this field (reason in `evidence`)
+#
+# This axis is separate from the test ignore reasons (`known defect: ...`,
+# `src gap: ...`, `diagnostic`, `runtime`). A capability that exists with a
+# recorded defect keeps its status and cites the known-defect test in
+# `evidence`; it is not `missing`.
+#
+# keys: id (COV-CFD-NNN) / axis / item / source (book, chapter, paper or
+# reference-implementation feature; no quoted text) / status / evidence
+# (`src/...rs:line`, `tests/...rs::test_fn`) / oracle_candidate / limitation
+# (verbatim quote of the source, required for `partial`).
+#
+# Reference values marked "参照値要確認" are to be checked against the original
+# publication before any test uses them. Lines marked "(推測)" were judged from
+# a search that found nothing and are to be confirmed.
+#
+# Checked by scripts/coverage_check.py (tests: scripts/test_coverage_check.py).
+
+[[item]]
+id = "COV-CFD-001"
+axis = "discretisation"
+item = "staggered (MAC) grid, finite-difference / finite-volume on a uniform Cartesian mesh"
+source = "Ferziger-Peric, Computational Methods for Fluid Dynamics ch.7 (staggered arrangement); Harlow-Welch 1965"
+status = "implemented+oracle"
+evidence = "src/eulerian_grid.rs:314 MacGrid / tests/engineering_oracles_fluid.rs::eulerian_grid_projection_removes_divergence_including_the_rim / tests/audit_eulerian_grid.rs::divergence_and_cell_velocity_of_a_linear_field"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CFD-002"
+axis = "discretisation"
+item = "collocated arrangement with Rhie-Chow interpolation"
+source = "Ferziger-Peric, Computational Methods for Fluid Dynamics ch.8; OpenFOAM / Fluent (collocated finite volume)"
+status = "missing"
+evidence = "src/eulerian_grid.rs:18 は collocated を避ける理由として言及するのみ、collocated 格子と Rhie-Chow は無い"
+oracle_candidate = "均一流と静水圧で checkerboard が出ないこと"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-003"
+axis = "discretisation"
+item = "unstructured / polyhedral finite-volume mesh"
+source = "OpenFOAM fvMesh; Fluent; Versteeg-Malalasekera, An Introduction to Computational Fluid Dynamics ch.11"
+status = "missing"
+evidence = "格子は等間隔直交格子のみ (src/eulerian_grid.rs:314)"
+oracle_candidate = "非直交 2 セルの面フラックスの閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-004"
+axis = "discretisation"
+item = "non-uniform (stretched) Cartesian spacing"
+source = "Ferziger-Peric, Computational Methods for Fluid Dynamics ch.3 (non-uniform grids); OpenFOAM blockMesh grading"
+status = "missing"
+evidence = "MacGrid は 1 つの dx だけを持つ (src/eulerian_grid.rs:354)"
+oracle_candidate = "伸長格子の Poiseuille で 2 次精度"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-005"
+axis = "discretisation"
+item = "body-fitted curvilinear (structured, non-orthogonal) grid"
+source = "Ferziger-Peric, Computational Methods for Fluid Dynamics ch.8"
+status = "missing"
+evidence = "曲線座標の格子は無い"
+oracle_candidate = "円環 Couette (Taylor-Couette) の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-006"
+axis = "discretisation"
+item = "adaptive mesh refinement"
+source = "Berger-Colella 1989; OpenFOAM dynamicRefineFvMesh; Basilisk"
+status = "missing"
+evidence = "格子は固定解像度のみ"
+oracle_candidate = "細分化境界を越える一様流が不変"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-007"
+axis = "discretisation"
+item = "high-order spatial discretisation (compact finite difference / spectral)"
+source = "Pope, Turbulent Flows ch.13 (DNS, spectral); Lele 1992"
+status = "missing"
+evidence = "空間 2 次 (MAC の中心差分) のみ"
+oracle_candidate = "周期箱の単一 Fourier モード減衰で 4 次以上の収束"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-008"
+axis = "discretisation"
+item = "quasi-two-dimensional run on a walled slab"
+source = "Ferziger-Peric, Computational Methods for Fluid Dynamics (2-D test problems)"
+status = "implemented+oracle"
+evidence = "tests/analytic_cfd_wall_bc.rs::walled_slab_projection_is_independent_of_the_layer_count"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CFD-009"
+axis = "discretisation"
+item = "interior obstacle by blocked faces (staircase)"
+source = "Ferziger-Peric, Computational Methods for Fluid Dynamics ch.7; Harlow-Welch 1965"
+status = "implemented+oracle"
+evidence = "src/eulerian_grid.rs:551 / tests/analytic_adaptive_dt.rs::an_interior_solid_face_carries_no_flux_after_a_step"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CFD-010"
+axis = "discretisation"
+item = "immersed boundary / cut-cell for curved bodies"
+source = "Peskin 2002; Mittal-Iaccarino 2005; Fluent / STAR-CCM+ immersed boundary"
+status = "missing"
+evidence = "eulerian_grid / cfd_solver は SDF を参照しない (grep 0 件)、物体は面の遮断 (階段近似) のみ"
+oracle_candidate = "円柱まわりの Stokes 流の抗力 (閉形式) で階段近似との差"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-011"
+axis = "pressure-velocity coupling"
+item = "projection (Chorin fractional-step) method"
+source = "Ferziger-Peric, Computational Methods for Fluid Dynamics ch.7.3; Chorin 1968"
+status = "implemented+oracle"
+evidence = "src/eulerian_grid.rs:1069 / tests/engineering_oracles_fluid.rs::eulerian_grid_projection_is_identity_on_a_solenoidal_field / tests/analytic_pressure_solvers.rs::every_solver_removes_the_seeded_divergence"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CFD-012"
+axis = "pressure-velocity coupling"
+item = "incremental / rotational pressure-correction projection"
+source = "Van Kan 1986; Guermond-Minev-Shen 2006"
+status = "missing"
+evidence = "非増分の射影のみ (前ステップの圧力を予測子に使わない) (推測)"
+oracle_candidate = "Taylor-Green 渦で圧力の時間精度 2 次"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-013"
+axis = "pressure-velocity coupling"
+item = "SIMPLE / SIMPLEC"
+source = "Versteeg-Malalasekera, An Introduction to Computational Fluid Dynamics ch.6; Patankar 1980; OpenFOAM simpleFoam"
+status = "missing"
+evidence = "定常の segregated 解法は無い"
+oracle_candidate = "lid-driven cavity の定常解を射影法の長時間解と突合"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-014"
+axis = "pressure-velocity coupling"
+item = "PISO"
+source = "Versteeg-Malalasekera, An Introduction to Computational Fluid Dynamics ch.6; Issa 1986; OpenFOAM pisoFoam"
+status = "missing"
+evidence = ""
+oracle_candidate = "Taylor-Green 渦の減衰率"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-015"
+axis = "pressure-velocity coupling"
+item = "PIMPLE / outer non-linear iterations per time step"
+source = "OpenFOAM pimpleFoam"
+status = "missing"
+evidence = "1 ステップ 1 回の分離のみ"
+oracle_candidate = "大 CFL での Couette 起動"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-016"
+axis = "pressure-velocity coupling"
+item = "coupled (monolithic) pressure-velocity solve"
+source = "Fluent pressure-based coupled solver; Ferziger-Peric, Computational Methods for Fluid Dynamics ch.7"
+status = "missing"
+evidence = ""
+oracle_candidate = "Stokes 流の鞍点系の閉形式解"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-017"
+axis = "advection"
+item = "semi-Lagrangian advection"
+source = "Staniforth-Cote 1991; Stam 1999"
+status = "implemented+oracle"
+evidence = "src/cfd_solver.rs:72 / tests/audit_cfd_solver.rs::semi_lagrangian_translates_a_linear_field_exactly"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CFD-018"
+axis = "advection"
+item = "MacCormack predictor-corrector (with a monotone clamp)"
+source = "Selle et al. 2008 (semi-Lagrangian MacCormack)"
+status = "implemented+oracle"
+evidence = "src/cfd_solver.rs:2074 / tests/audit_cfd_solver.rs::maccormack_self_advection_of_a_linear_field_matches_the_second_order_closed_form (enum の doc は limiter 無しと書くが実装は clamp する: tests/audit_cfd_solver.rs::maccormack_does_not_overshoot_a_step_profile_although_its_doc_says_unlimited)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CFD-019"
+axis = "advection"
+item = "BFECC"
+source = "Kim et al. 2005 (BFECC)"
+status = "implemented+oracle"
+evidence = "src/cfd_solver.rs:2369 / tests/audit_cfd_solver.rs::bfecc_self_advection_of_a_linear_field_matches_the_closed_form"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CFD-020"
+axis = "advection"
+item = "first-order upwind (flux form)"
+source = "Versteeg-Malalasekera, An Introduction to Computational Fluid Dynamics ch.5; Ferziger-Peric, Computational Methods for Fluid Dynamics ch.4"
+status = "missing"
+evidence = "flux 形の移流は無い (semi-Lagrangian 系のみ)"
+oracle_candidate = "1D 線形移流の数値拡散係数 u dx / 2"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-021"
+axis = "advection"
+item = "central differencing (flux form)"
+source = "Versteeg-Malalasekera, An Introduction to Computational Fluid Dynamics ch.5"
+status = "missing"
+evidence = ""
+oracle_candidate = "セル Peclet 数 2 を越えると振動する閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-022"
+axis = "advection"
+item = "QUICK"
+source = "Versteeg-Malalasekera, An Introduction to Computational Fluid Dynamics ch.5; Leonard 1979"
+status = "missing"
+evidence = ""
+oracle_candidate = "滑らかな分布の移流で 3 次"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-023"
+axis = "advection"
+item = "TVD flux limiters (minmod / van Leer / superbee)"
+source = "Versteeg-Malalasekera, An Introduction to Computational Fluid Dynamics ch.5; OpenFOAM limitedLinear / vanLeer"
+status = "missing"
+evidence = "flux limiter は無い (MacCormack の clamp は semi-Lagrangian の値の上下限で TVD ではない)"
+oracle_candidate = "段差分布の移流で全変動が増えない"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-024"
+axis = "advection"
+item = "WENO / high-order upwind"
+source = "Jiang-Shu 1996"
+status = "missing"
+evidence = ""
+oracle_candidate = "滑らかな分布で 5 次"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-025"
+axis = "advection"
+item = "conservative (flux-form) momentum advection"
+source = "Ferziger-Peric, Computational Methods for Fluid Dynamics ch.7"
+status = "missing"
+evidence = "移流は再標本化 (semi-Lagrangian 系) で、運動量の保存形ではない (推測)"
+oracle_candidate = "周期箱で全運動量が丸め誤差まで保存"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-026"
+axis = "time integration"
+item = "first-order fractional-step time stepping"
+source = "Ferziger-Peric, Computational Methods for Fluid Dynamics ch.6-7"
+status = "partial"
+evidence = "src/cfd_solver.rs:25 / tests/engineering_oracles_fluid.rs::cfd_solver_shear_mode_decays_at_the_viscous_rate"
+oracle_candidate = "時間刻みを半分にした時の誤差比 2"
+limitation = "src/cfd_solver.rs:25 'This is a first-order operator-splitting scheme; adequate for engineering demos and validation tests. Higher-order RK3 time stepping is a future upgrade.'"
+
+[[item]]
+id = "COV-CFD-027"
+axis = "time integration"
+item = "higher-order explicit time integration (RK2 / RK3)"
+source = "Ferziger-Peric, Computational Methods for Fluid Dynamics ch.6; Williamson 1980 (low-storage RK3)"
+status = "missing"
+evidence = "src/cfd_solver.rs:25 が future upgrade と明記"
+oracle_candidate = "単一モード減衰で時間 2 次以上"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-028"
+axis = "time integration"
+item = "implicit viscous term (backward Euler / Crank-Nicolson)"
+source = "Ferziger-Peric, Computational Methods for Fluid Dynamics ch.6; Versteeg-Malalasekera, An Introduction to Computational Fluid Dynamics ch.8"
+status = "missing"
+evidence = "粘性項は陽的 Laplacian のみ (src/cfd_solver.rs:1792)"
+oracle_candidate = "拡散数 1/6 超で安定に減衰するモード"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-029"
+axis = "time integration"
+item = "second-order implicit time integration (BDF2 / CN-AB2)"
+source = "Ferziger-Peric, Computational Methods for Fluid Dynamics ch.6; OpenFOAM backward"
+status = "missing"
+evidence = ""
+oracle_candidate = "単一モード減衰で時間 2 次"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-030"
+axis = "time integration"
+item = "CFL-limited adaptive time step"
+source = "Ferziger-Peric, Computational Methods for Fluid Dynamics ch.6 (stability)"
+status = "implemented+oracle"
+evidence = "src/cfd_solver.rs:1004 / tests/analytic_adaptive_dt.rs::step_adaptive_takes_the_smaller_of_cfl_and_ceiling_and_steps_exactly_like_step"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CFD-031"
+axis = "time integration"
+item = "explicit-diffusion stability limit enforced"
+source = "Ferziger-Peric, Computational Methods for Fluid Dynamics ch.6"
+status = "implemented+oracle"
+evidence = "tests/audit_cfd_solver_rans.rs::the_stability_bound_is_inclusive_at_exactly_one_sixth (step_rans) / step と step_with_options は未検査で known defect: tests/audit_cfd_solver.rs::step_with_options_refuses_or_bounds_an_unstable_explicit_diffusion_number"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CFD-032"
+axis = "time integration"
+item = "steady-state solution (pseudo-transient continuation to a residual)"
+source = "Versteeg-Malalasekera, An Introduction to Computational Fluid Dynamics ch.6; OpenFOAM simpleFoam"
+status = "missing"
+evidence = "定常解は長時間の時間発展でしか得られない"
+oracle_candidate = "lid-driven cavity の定常残差の単調減少"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-033"
+axis = "time integration"
+item = "dual time stepping / local time stepping"
+source = "Jameson 1991"
+status = "missing"
+evidence = ""
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CFD-034"
+axis = "boundary condition"
+item = "no-slip stationary wall"
+source = "Ferziger-Peric, Computational Methods for Fluid Dynamics ch.7; Versteeg-Malalasekera, An Introduction to Computational Fluid Dynamics ch.9"
+status = "implemented+oracle"
+evidence = "src/eulerian_grid.rs:155 / tests/analytic_cfd_flow_bc.rs::no_slip_channel_reaches_the_poiseuille_parabola"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CFD-035"
+axis = "boundary condition"
+item = "moving wall (tangential velocity)"
+source = "Ferziger-Peric, Computational Methods for Fluid Dynamics ch.7; Ghia et al. 1982 (lid)"
+status = "implemented+oracle"
+evidence = "tests/analytic_cfd_flow_bc.rs::plane_couette_profile_is_an_exact_fixed_point / tests/analytic_cfd_wall_bc.rs::lid_driven_cavity_return_flow_matches_ghia_1982"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CFD-036"
+axis = "boundary condition"
+item = "free-slip wall / symmetry plane"
+source = "Versteeg-Malalasekera, An Introduction to Computational Fluid Dynamics ch.9; OpenFOAM symmetryPlane"
+status = "implemented+oracle"
+evidence = "src/eulerian_grid.rs:167 / tests/analytic_cfd_flow_bc.rs::a_symmetry_plane_under_the_lid_leaves_the_flow_uniform"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CFD-037"
+axis = "boundary condition"
+item = "velocity inlet (prescribed normal velocity, any profile)"
+source = "Versteeg-Malalasekera, An Introduction to Computational Fluid Dynamics ch.9; OpenFOAM fixedValue"
+status = "implemented+oracle"
+evidence = "src/eulerian_grid.rs:172 / tests/analytic_cfd_flow_bc.rs::duct_carries_its_inflow_through_to_the_outflow / tests/armaly_backward_step.rs::inlet_column_has_unit_mean_and_is_gartlings_parabola_to_second_order"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CFD-038"
+axis = "boundary condition"
+item = "pressure outlet with zero-gradient velocity"
+source = "Versteeg-Malalasekera, An Introduction to Computational Fluid Dynamics ch.9; OpenFOAM zeroGradient + fixedValue p"
+status = "implemented+oracle"
+evidence = "src/eulerian_grid.rs:193 / tests/analytic_cfd_flow_bc.rs::outflow_extrapolation_is_a_better_iterate_than_a_bare_open_face (下側の層は古い隣接値を読む: tests/audit_eulerian_grid.rs::outflow_on_the_low_layer_reads_a_stale_neighbour)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CFD-039"
+axis = "boundary condition"
+item = "convective (advective) outflow"
+source = "Orlanski 1976; OpenFOAM advective"
+status = "missing"
+evidence = "src/eulerian_grid.rs:137 が次の候補として名指しするのみ"
+oracle_candidate = "流出境界を通過する渦の反射率"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-040"
+axis = "boundary condition"
+item = "periodic boundaries"
+source = "Ferziger-Peric, Computational Methods for Fluid Dynamics ch.7; OpenFOAM cyclic"
+status = "missing"
+evidence = "src/eulerian_grid.rs:137 / src/cfd_solver.rs:1472"
+oracle_candidate = "Taylor-Green 渦 (周期箱)"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-041"
+axis = "boundary condition"
+item = "pressure inlet / total-pressure inlet"
+source = "OpenFOAM totalPressure; Fluent pressure-inlet"
+status = "missing"
+evidence = "流入は速度指定のみ"
+oracle_candidate = "2 圧力端の Poiseuille 流量 (閉形式)"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-042"
+axis = "boundary condition"
+item = "turbulent inflow generation (synthetic eddies / recycling)"
+source = "Pope, Turbulent Flows ch.13; Jarrin et al. 2006"
+status = "missing"
+evidence = ""
+oracle_candidate = "入口の Reynolds 応力の再現"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-043"
+axis = "turbulence"
+item = "Smagorinsky LES"
+source = "Pope, Turbulent Flows ch.13.4; Smagorinsky 1963"
+status = "implemented+oracle"
+evidence = "src/turbulence.rs:109 / tests/engineering_oracles_fluid.rs::turbulence_smagorinsky_simple_shear_closed_form / tests/audit_cfd_solver_rans.rs::smagorinsky_on_a_linear_shear_reports_the_closed_form_eddy_viscosity"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CFD-044"
+axis = "turbulence"
+item = "dynamic Smagorinsky (Germano-Lilly)"
+source = "Pope, Turbulent Flows ch.13.6; Germano et al. 1991; Lilly 1992"
+status = "partial"
+evidence = "src/cfd_solver.rs:557 / tests/analytic_rans.rs::dynamic_smagorinsky_is_the_static_one_under_uniform_strain_and_differs_otherwise"
+oracle_candidate = "Germano 恒等式の最小二乗係数と一様せん断で一致"
+limitation = "src/cfd_solver.rs:557 'This is the ratio form of `turbulence::dynamic_smagorinsky_cs`, not the Germano least-squares procedure.'"
+
+[[item]]
+id = "COV-CFD-045"
+axis = "turbulence"
+item = "WALE / Vreman / sigma LES models"
+source = "Nicoud-Ducros 1999; Vreman 2004; OpenFOAM WALE"
+status = "missing"
+evidence = ""
+oracle_candidate = "純回転で ν_t = 0 (WALE)"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-046"
+axis = "turbulence"
+item = "standard k-epsilon"
+source = "Pope, Turbulent Flows ch.10.4; Launder-Spalding 1974"
+status = "implemented+oracle"
+evidence = "src/cfd_solver.rs:591 / tests/analytic_rans.rs::k_epsilon_decay_follows_the_closed_form_to_first_order (点源の時間離散は known defect: tests/audit_cfd_solver_rans.rs::k_epsilon_point_source_is_one_explicit_euler_step_from_the_start_of_the_step_state)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CFD-047"
+axis = "turbulence"
+item = "RNG / realizable k-epsilon"
+source = "Yakhot-Orszag 1986; Shih et al. 1995; Fluent"
+status = "missing"
+evidence = ""
+oracle_candidate = "一様せん断の P/ε 比"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-048"
+axis = "turbulence"
+item = "k-omega (Wilcox 1988)"
+source = "Pope, Turbulent Flows ch.10.5; Wilcox 1988"
+status = "implemented+oracle"
+evidence = "src/cfd_solver.rs:601 / tests/analytic_rans.rs::k_omega_decay_follows_the_closed_form_to_first_order"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CFD-049"
+axis = "turbulence"
+item = "k-omega SST (Menter)"
+source = "Menter 1994; OpenFOAM kOmegaSST; Fluent"
+status = "missing"
+evidence = ""
+oracle_candidate = "平板境界層の摩擦係数"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-050"
+axis = "turbulence"
+item = "Spalart-Allmaras"
+source = "Spalart-Allmaras 1992; OpenFOAM SpalartAllmaras"
+status = "missing"
+evidence = ""
+oracle_candidate = "対数層での ν~ = κ u_τ y"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-051"
+axis = "turbulence"
+item = "low-Reynolds-number near-wall treatment (damping functions / two-layer)"
+source = "Pope, Turbulent Flows ch.11.7; Launder-Sharma 1974"
+status = "missing"
+evidence = "src/cfd_solver.rs:586 が「low-Reynolds-number wall treatment は無い」と明記"
+oracle_candidate = "粘性底層での k ∝ y² の漸近"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-052"
+axis = "turbulence"
+item = "standard wall functions for k and epsilon (log law)"
+source = "Pope, Turbulent Flows ch.11.7; Launder-Spalding 1974; OpenFOAM kqRWallFunction / epsilonWallFunction"
+status = "partial"
+evidence = "src/cfd_solver.rs:581 / tests/analytic_rans_wall_function.rs::wall_cells_carry_the_launder_spalding_values_after_one_step / tests/analytic_rans_wall_function.rs::couette_flow_carries_the_log_layer_k_and_epsilon_off_the_wall"
+oracle_candidate = "上壁側の勾配の符号を見る交差せん断の場面 (Couette では上下対称で区別できない)"
+limitation = "src/cfd_solver.rs:581 'only that interface and that cell are replaced; from the third cell on the ordinary discretisation stands, and a cell with walls in reach on both sides (a three-cell gap) keeps the finite difference.'"
+
+[[item]]
+id = "COV-CFD-053"
+axis = "turbulence"
+item = "log-law wall model for the momentum wall shear"
+source = "Pope, Turbulent Flows ch.7.1, ch.13.6 (wall-modelled LES)"
+status = "implemented+oracle"
+evidence = "src/cfd_solver.rs:256 / tests/analytic_wall_model.rs::the_steady_channel_balances_the_body_force_against_the_modelled_wall_shear / tests/analytic_wall_model.rs::below_the_sublayer_edge_the_wall_model_reproduces_the_no_slip_ghost"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CFD-054"
+axis = "turbulence"
+item = "user-prescribed eddy-viscosity field"
+source = "OpenFOAM nut field input"
+status = "implemented+oracle"
+evidence = "src/cfd_solver.rs:606 / tests/analytic_rans.rs::a_non_uniform_eddy_viscosity_changes_the_velocity_step"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CFD-055"
+axis = "turbulence"
+item = "DES / DDES / IDDES"
+source = "Spalart et al. 1997, 2006; OpenFOAM SpalartAllmarasDDES"
+status = "missing"
+evidence = ""
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CFD-056"
+axis = "turbulence"
+item = "Reynolds-stress transport model"
+source = "Pope, Turbulent Flows ch.11; Launder-Reece-Rodi 1975"
+status = "missing"
+evidence = ""
+oracle_candidate = "一様せん断の Reynolds 応力の非等方比"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-057"
+axis = "turbulence"
+item = "laminar-turbulent transition model (gamma-Re_theta)"
+source = "Langtry-Menter 2009; Fluent / STAR-CCM+"
+status = "missing"
+evidence = ""
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CFD-058"
+axis = "turbulence"
+item = "turbulent scalar flux (turbulent Prandtl number for heat)"
+source = "Pope, Turbulent Flows ch.10; Fluent energy + turbulence"
+status = "missing"
+evidence = "温度の拡散項が無いので乱流熱流束も無い (k, ε の拡散にだけ乱流 Prandtl 数がある)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CFD-059"
+axis = "physics"
+item = "uniform gravity body force and hydrostatic pressure"
+source = "Ferziger-Peric, Computational Methods for Fluid Dynamics ch.1"
+status = "implemented+oracle"
+evidence = "src/cfd_solver.rs:1615 / tests/audit_c_cfd_solver.rs::free_fall_follows_the_gravity_vector_along_every_axis / tests/audit_cfd_solver.rs::hydrostatic_column_in_a_closed_box_has_dp_equal_rho_g_dx"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CFD-060"
+axis = "physics"
+item = "Boussinesq buoyancy"
+source = "Ferziger-Peric, Computational Methods for Fluid Dynamics ch.10; OpenFOAM buoyantBoussinesqPimpleFoam"
+status = "implemented+oracle"
+evidence = "src/cfd_solver.rs:1660 (浮力は v 面に gravity.y でのみ入る) / tests/audit_cfd_solver.rs::boussinesq_uniform_hot_fluid_falls_slower_by_the_factor_1_minus_beta_dt"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CFD-061"
+axis = "physics"
+item = "energy equation: temperature advection"
+source = "Ferziger-Peric, Computational Methods for Fluid Dynamics ch.1"
+status = "implemented+oracle"
+evidence = "src/cfd_solver.rs:2721 / tests/audit_cfd_solver.rs::bfecc_temperature_on_a_cubic_is_exact / tests/audit_cfd_solver.rs::maccormack_temperature_on_a_cubic_matches_the_documented_formulas"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CFD-062"
+axis = "physics"
+item = "energy equation: thermal conduction in the fluid"
+source = "Ferziger-Peric, Computational Methods for Fluid Dynamics ch.1; Versteeg-Malalasekera, An Introduction to Computational Fluid Dynamics ch.2"
+status = "missing"
+evidence = "cfd_solver の温度は移流だけで拡散項が無い (diffus* の grep は速度と k, ε のみ)"
+oracle_candidate = "静止流体の 1D 熱伝導 (erfc)"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-063"
+axis = "physics"
+item = "generalised-Newtonian viscosity (power law / Carreau / Bingham) in the momentum equation"
+source = "Bird-Stewart-Lightfoot ch.8; OpenFOAM generalisedNewtonian"
+status = "missing"
+evidence = "src/non_newtonian.rs は構成則の閉形式のみで cfd_solver から参照されない (tests/engineering_oracles_fluid.rs::non_newtonian_carreau_limits_and_midpoint は閉形式の oracle)"
+oracle_candidate = "べき乗則流体の平行平板流速分布 (閉形式)"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-064"
+axis = "physics"
+item = "viscoelastic fluid (Oldroyd-B / Giesekus)"
+source = "Bird-Armstrong-Hassager; OpenFOAM rheoTool"
+status = "missing"
+evidence = ""
+oracle_candidate = "Oldroyd-B の平行平板起動流"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-065"
+axis = "physics"
+item = "variable-density / low-Mach (non-Boussinesq) flow"
+source = "Ferziger-Peric, Computational Methods for Fluid Dynamics ch.11"
+status = "missing"
+evidence = "密度は一定 (density_kg_m3 は 1 つ)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CFD-066"
+axis = "physics"
+item = "passive scalar / species transport with diffusion"
+source = "Versteeg-Malalasekera, An Introduction to Computational Fluid Dynamics ch.5; OpenFOAM scalarTransportFoam"
+status = "missing"
+evidence = "src/smoke_fire.rs は反応速度と浮力の閉形式のみで輸送方程式は無い"
+oracle_candidate = "1D 移流拡散の誤差関数解"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-067"
+axis = "physics"
+item = "rotating reference frame (Coriolis / centrifugal, MRF)"
+source = "OpenFOAM SRFSimpleFoam / MRF; Fluent"
+status = "missing"
+evidence = ""
+oracle_candidate = "剛体回転する流体が回転系で静止"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-068"
+axis = "physics"
+item = "porous media (Darcy-Forchheimer momentum source)"
+source = "OpenFOAM explicitPorositySource; Fluent porous zone"
+status = "missing"
+evidence = ""
+oracle_candidate = "Darcy 流の圧力降下"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-069"
+axis = "pressure solver"
+item = "Jacobi iteration"
+source = "Saad, Iterative Methods ch.4"
+status = "implemented+oracle"
+evidence = "src/eulerian_grid.rs:3940 / tests/analytic_pressure_solvers.rs::every_solver_removes_the_seeded_divergence"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CFD-070"
+axis = "pressure solver"
+item = "red-black Gauss-Seidel"
+source = "Saad ch.4; Ferziger-Peric, Computational Methods for Fluid Dynamics ch.5"
+status = "implemented+oracle"
+evidence = "src/eulerian_grid.rs:1069 / tests/audit_eulerian_grid.rs::project_pressure_removes_a_gradient_field_and_recovers_its_potential"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CFD-071"
+axis = "pressure solver"
+item = "geometric multigrid"
+source = "Ferziger-Peric, Computational Methods for Fluid Dynamics ch.5.6; Trottenberg et al., Multigrid"
+status = "partial"
+evidence = "src/eulerian_grid.rs:1365 / tests/analytic_multigrid.rs::contraction_rate_is_grid_independent / tests/analytic_multigrid.rs::exact_solution_is_reproduced"
+oracle_candidate = "2 のべきでない格子での W サイクル収束率"
+limitation = "src/cfd_solver.rs:102 'nothing; refused off a power-of-two grid'"
+
+[[item]]
+id = "COV-CFD-072"
+axis = "pressure solver"
+item = "algebraic multigrid"
+source = "OpenFOAM GAMG; hypre BoomerAMG"
+status = "missing"
+evidence = ""
+oracle_candidate = "非一様マスクでの格子非依存収束率"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-073"
+axis = "pressure solver"
+item = "BiCGStab Krylov"
+source = "van der Vorst 1992; Saad ch.7"
+status = "implemented+oracle"
+evidence = "src/eulerian_grid.rs:4005 / tests/audit_eulerian_grid.rs::bicgstab_residual_history_matches_the_textbook_recurrence"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CFD-074"
+axis = "pressure solver"
+item = "preconditioned conjugate gradient (PCG / ICCG)"
+source = "Saad ch.9; OpenFOAM PCG + DIC"
+status = "missing"
+evidence = "圧力 Poisson に CG は無い (src/linear_solver.rs の汎用 Krylov は cfd_solver から参照されない)"
+oracle_candidate = "既知解の Poisson で残差の単調減少"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-075"
+axis = "pressure solver"
+item = "residual-based convergence verdict of the pressure solve"
+source = "Ferziger-Peric, Computational Methods for Fluid Dynamics ch.5.7"
+status = "partial"
+evidence = "src/cfd_solver.rs:110 / tests/audit_cfd_solver_rans.rs::the_pressure_report_names_the_solver_that_ran_and_only_bicgstab_reports_a_verdict"
+oracle_candidate = "固定回数の解法でも残差を返し、粗い回数で未収束を報告"
+limitation = "src/cfd_solver.rs:110 'The fixed-count solvers never say whether they converged; on a large grid a short count leaves a smooth divergence of order one.'"
+
+[[item]]
+id = "COV-CFD-076"
+axis = "pressure solver"
+item = "domain-decomposed parallel pressure solve"
+source = "PETSc DMDA; OpenFOAM decomposePar"
+status = "implemented+oracle"
+evidence = "src/eulerian_grid.rs:1655 / tests/analytic_pressure_solvers.rs::the_slab_decompositions_reproduce_gauss_seidel_to_the_bit_for_every_rank_count"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CFD-077"
+axis = "pressure solver"
+item = "FFT-based fast Poisson solver"
+source = "Schumann-Sweet 1988; spectral DNS codes"
+status = "missing"
+evidence = ""
+oracle_candidate = "周期箱で 1 回の直接解"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-078"
+axis = "particle method"
+item = "SPH smoothing kernels (Poly6 / Spiky)"
+source = "Muller-Charypar-Gross 2003; Monaghan 2005"
+status = "implemented+oracle"
+evidence = "src/sdf_sph.rs:308 / tests/engineering_oracles_fluid.rs::sdf_sph_poly6_integrates_to_one / tests/engineering_oracles_fluid.rs::sdf_sph_spiky_gradient_matches_closed_form_and_integrates_to_kernel_peak"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CFD-079"
+axis = "particle method"
+item = "SPH density summation"
+source = "Monaghan 2005"
+status = "implemented+oracle"
+evidence = "tests/engineering_oracles_fluid.rs::sdf_sph_lattice_density_recovers_rest_density"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CFD-080"
+axis = "particle method"
+item = "weakly compressible SPH pressure (linear equation of state)"
+source = "Muller-Charypar-Gross 2003"
+status = "implemented+oracle"
+evidence = "src/sdf_sph.rs:66 / tests/analytic_sdf_sph_wiring.rs::over_pressure_pushes_two_particles_apart_with_the_closed_form_magnitude"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CFD-081"
+axis = "particle method"
+item = "Tait equation of state (WCSPH)"
+source = "Monaghan 1994; Becker-Teschner 2007"
+status = "missing"
+evidence = "状態方程式は線形 p = k (ρ − ρ0) のみ"
+oracle_candidate = "静水圧タンクの圧力分布"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-082"
+axis = "particle method"
+item = "SPH viscosity (Laplacian form)"
+source = "Muller-Charypar-Gross 2003"
+status = "implemented+oracle"
+evidence = "tests/analytic_sdf_sph_wiring.rs::viscosity_reduces_the_relative_velocity_with_the_closed_form_magnitude"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CFD-083"
+axis = "particle method"
+item = "SPH artificial viscosity (Monaghan)"
+source = "Monaghan 1992"
+status = "missing"
+evidence = ""
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CFD-084"
+axis = "particle method"
+item = "SPH wall boundary by SDF repulsion"
+source = "Monaghan 1994 (repulsive boundary)"
+status = "implemented+oracle"
+evidence = "tests/analytic_sdf_sph_wiring.rs::gravity_and_boundary_repulsion_on_an_isolated_particle"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CFD-085"
+axis = "particle method"
+item = "SPH boundary particles (dummy / ghost)"
+source = "Adami-Hu-Adams 2012"
+status = "missing"
+evidence = ""
+oracle_candidate = "静水圧タンク"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-086"
+axis = "particle method"
+item = "SPH neighbour search (spatial hash)"
+source = "Ihmsen et al. 2014 (survey)"
+status = "implemented+oracle"
+evidence = "src/sdf_sph.rs:338 / tests/analytic_sdf_sph_wiring.rs::hashed_step_equals_the_naive_step"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CFD-087"
+axis = "particle method"
+item = "incompressible SPH (PCISPH / IISPH / DFSPH)"
+source = "Solenthaler 2009; Ihmsen 2014; Bender-Koschier 2015"
+status = "missing"
+evidence = ""
+oracle_candidate = "静水圧タンクの密度誤差 < 0.1%"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-088"
+axis = "particle method"
+item = "position-based fluids (density constraint)"
+source = "Macklin-Muller 2013"
+status = "partial"
+evidence = "src/fluid.rs:15 / tests/analytic_fluid_block_wiring.rs::interior_density_matches_the_normalised_poly6_sum"
+oracle_candidate = "λ を ρ0² で割った式との突合と静止ブロックの密度誤差"
+limitation = "src/fluid.rs:15 'Known limitation: the density constraint is nearly inert'"
+
+[[item]]
+id = "COV-CFD-089"
+axis = "particle method"
+item = "delta-SPH density diffusion / particle shifting"
+source = "Antuono et al. 2010; Lind et al. 2012"
+status = "missing"
+evidence = ""
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CFD-090"
+axis = "particle method"
+item = "SPH adaptive time step"
+source = "Monaghan 1992 (CFL + force criterion)"
+status = "missing"
+evidence = "src/sdf_sph.rs:23 が future work と明記"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CFD-091"
+axis = "particle method"
+item = "FLIP / PIC hybrid particle-grid transfer"
+source = "Brackbill-Ruppel 1986; Zhu-Bridson 2005"
+status = "implemented+oracle"
+evidence = "src/cfd_solver.rs:1484 / tests/analytic_flip.rs::flip_keeps_the_particle_velocity_and_pic_takes_the_smoothed_grid_value / tests/analytic_flip.rs::hydrostatic_column_pressure_and_particles_at_rest"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CFD-092"
+axis = "particle method"
+item = "APIC / PolyPIC"
+source = "Jiang et al. 2015"
+status = "missing"
+evidence = ""
+oracle_candidate = "剛体回転の角運動量保存"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-093"
+axis = "output"
+item = "wall shear stress"
+source = "Pope, Turbulent Flows ch.7"
+status = "implemented+oracle"
+evidence = "src/cfd_solver.rs:430 / tests/audit_cfd_solver.rs::wall_summary_envelope_separates_a_fast_and_a_slow_wall_and_counts_every_face"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CFD-094"
+axis = "output"
+item = "force (drag / lift) on a body integrated from the flow field"
+source = "OpenFOAM forces / forceCoeffs"
+status = "missing"
+evidence = "流れ場からの力の積分は無い (src/lift_drag.rs は係数の閉形式)"
+oracle_candidate = "Stokes 抗力 3πμdU"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-095"
+axis = "output"
+item = "vorticity / Q-criterion field"
+source = "Pope, Turbulent Flows ch.2"
+status = "missing"
+evidence = ""
+oracle_candidate = "剛体回転で渦度 2Ω"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-096"
+axis = "output"
+item = "streamlines of the grid velocity field"
+source = "ParaView StreamTracer"
+status = "missing"
+evidence = "src/flow_viz.rs は粒子の速度からの描画用 (格子場は未対応) (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CFD-097"
+axis = "benchmark"
+item = "plane Poiseuille flow"
+source = "Ferziger-Peric, Computational Methods for Fluid Dynamics ch.1; White, Viscous Fluid Flow"
+status = "implemented+oracle"
+evidence = "tests/analytic_cfd_flow_bc.rs::no_slip_channel_reaches_the_poiseuille_parabola"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CFD-098"
+axis = "benchmark"
+item = "plane Couette flow (steady and start-up)"
+source = "White, Viscous Fluid Flow"
+status = "implemented+oracle"
+evidence = "tests/analytic_cfd_flow_bc.rs::plane_couette_profile_is_an_exact_fixed_point / tests/analytic_cfd_flow_bc.rs::couette_converges_to_the_linear_profile_from_rest"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CFD-099"
+axis = "benchmark"
+item = "lid-driven cavity (Ghia et al. 1982)"
+source = "Ghia-Ghia-Shin 1982"
+status = "implemented+oracle"
+evidence = "tests/analytic_cfd_wall_bc.rs::lid_driven_cavity_return_flow_matches_ghia_1982"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CFD-100"
+axis = "benchmark"
+item = "backward-facing step reattachment (Armaly 1983 / Gartling 1990)"
+source = "Armaly et al. 1983; Gartling 1990"
+status = "implemented-no-oracle"
+evidence = "場面と判定器はある (tests/armaly_backward_step.rs::the_reattachment_length_is_pinned_at_the_resolution_ci_can_afford は値の固定) が参照値との突合は src gap: tests/armaly_backward_step.rs::the_reattachment_length_matches_gartling"
+oracle_candidate = "参照値要確認 (ny を上げた時の再付着長)"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-101"
+axis = "benchmark"
+item = "viscous decay of a single shear mode"
+source = "White, Viscous Fluid Flow (unsteady parallel flow)"
+status = "implemented+oracle"
+evidence = "tests/engineering_oracles_fluid.rs::cfd_solver_shear_mode_decays_at_the_viscous_rate"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CFD-102"
+axis = "benchmark"
+item = "Taylor-Green vortex decay"
+source = "Taylor-Green 1937"
+status = "missing"
+evidence = "周期境界が無い (COV-CFD-040)"
+oracle_candidate = "2D 渦の運動エネルギー減衰 exp(-4νk²t)"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-103"
+axis = "benchmark"
+item = "Kovasznay flow"
+source = "Kovasznay 1948"
+status = "missing"
+evidence = ""
+oracle_candidate = "閉形式の速度場との L2 誤差"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-104"
+axis = "benchmark"
+item = "circular cylinder wake Strouhal number"
+source = "Williamson 1996"
+status = "missing"
+evidence = "円柱は階段近似でしか置けない src/aeroelasticity.rs は St の閉形式"
+oracle_candidate = "参照値要確認 (Re 100 の St)"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-105"
+axis = "benchmark"
+item = "differentially heated cavity (de Vahl Davis 1983)"
+source = "de Vahl Davis 1983"
+status = "missing"
+evidence = "流体内の熱伝導が無い (COV-CFD-062)"
+oracle_candidate = "参照値要確認 (Nu)"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-106"
+axis = "benchmark"
+item = "Rayleigh-Benard onset"
+source = "Chandrasekhar 1961"
+status = "missing"
+evidence = ""
+oracle_candidate = "参照値要確認 (臨界 Ra)"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-107"
+axis = "benchmark"
+item = "Stokes first problem (impulsively started plate)"
+source = "White, Viscous Fluid Flow"
+status = "missing"
+evidence = "既存の移動壁で場面は組める"
+oracle_candidate = "erfc の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-108"
+axis = "benchmark"
+item = "Womersley pulsatile channel flow"
+source = "Womersley 1955"
+status = "missing"
+evidence = "既存の gravity を毎ステップ変えれば振動圧力勾配になる"
+oracle_candidate = "閉形式の位相遅れと振幅"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-109"
+axis = "benchmark"
+item = "Blasius flat-plate boundary layer"
+source = "Schlichting, Boundary-Layer Theory"
+status = "missing"
+evidence = "既存の流入・壁・流出で場面は組める"
+oracle_candidate = "参照値要確認 (排除厚さ)"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-110"
+axis = "benchmark"
+item = "Hagen-Poiseuille flow in a square duct"
+source = "White, Viscous Fluid Flow (duct series solution)"
+status = "missing"
+evidence = "既存の壁で 3D の場面は組める"
+oracle_candidate = "矩形管の級数解の流量"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-111"
+axis = "benchmark"
+item = "three-dimensional lid-driven cavity"
+source = "Albensoeder-Kuhlmann 2005"
+status = "missing"
+evidence = ""
+oracle_candidate = "参照値要確認"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-112"
+axis = "benchmark"
+item = "turbulent channel (Moser-Kim-Mansour DNS)"
+source = "Pope, Turbulent Flows ch.7; Moser-Kim-Mansour 1999"
+status = "missing"
+evidence = ""
+oracle_candidate = "参照値要確認 (平均流速分布)"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-113"
+axis = "benchmark"
+item = "decaying homogeneous isotropic turbulence (Comte-Bellot-Corrsin)"
+source = "Pope, Turbulent Flows ch.6; Comte-Bellot-Corrsin 1971"
+status = "missing"
+evidence = "周期境界が無い (COV-CFD-040)"
+oracle_candidate = "参照値要確認 (エネルギースペクトル)"
+limitation = ""
+
+[[item]]
+id = "COV-CFD-114"
+axis = "benchmark"
+item = "log-law velocity off the wall in a RANS Couette flow"
+source = "Pope, Turbulent Flows ch.7.1"
+status = "implemented+oracle"
+evidence = "tests/analytic_rans_wall_function.rs::couette_flow_has_the_log_law_velocity_step_off_the_wall"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CFD-115"
+axis = "benchmark"
+item = "observed order of spatial accuracy (grid convergence)"
+source = "Roache, Verification and Validation; ASME V&V 20"
+status = "implemented-no-oracle"
+evidence = "tests/analytic_cfd_flow_bc.rs::channel_error_is_second_order_in_the_cell_size は runtime ignore のみ (CI で走らない)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CFD-116"
+axis = "benchmark"
+item = "method of manufactured solutions"
+source = "Roache 2002; Salari-Knupp 2000"
+status = "missing"
+evidence = "体積力の場を与える API が無い (gravity は一様)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CFD-117"
+axis = "benchmark"
+item = "SPH Poiseuille flow"
+source = "Morris-Fox-Zhu 1997"
+status = "missing"
+evidence = ""
+oracle_candidate = "級数解の過渡流速"
+limitation = ""
