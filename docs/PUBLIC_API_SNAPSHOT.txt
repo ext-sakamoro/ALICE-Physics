@@ -5182,6 +5182,104 @@ impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::joint_extra::Wel
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::joint_extra::WeldJoint
 pub fn alice_physics::joint_extra::solve_extra_joints(&mut [alice_physics::solver::RigidBody], &[alice_physics::joint_extra::ExtraJoint], alice_physics::math::Fix128)
 pub fn alice_physics::joint_extra::solve_pulley_to_length(&alice_physics::joint_extra::PulleyJoint, &mut [alice_physics::solver::RigidBody], alice_physics::math::Fix128, alice_physics::math::Fix128)
+pub mod alice_physics::kepler
+#[non_exhaustive] pub enum alice_physics::kepler::KeplerError
+pub alice_physics::kepler::KeplerError::EccentricityOutOfRange
+pub alice_physics::kepler::KeplerError::InclinationOutOfRange
+pub alice_physics::kepler::KeplerError::NonPositiveEquatorialRadius
+pub alice_physics::kepler::KeplerError::NonPositiveGravitationalParameter
+pub alice_physics::kepler::KeplerError::NonPositiveRadius
+pub alice_physics::kepler::KeplerError::NonPositiveSemiMajorAxis
+pub alice_physics::kepler::KeplerError::NotConverged
+pub alice_physics::kepler::KeplerError::NotElliptic
+pub alice_physics::kepler::KeplerError::RadialTrajectory
+pub alice_physics::kepler::KeplerError::RadiusUnreachable
+pub alice_physics::kepler::KeplerError::ZeroPosition
+impl core::clone::Clone for alice_physics::kepler::KeplerError
+pub fn alice_physics::kepler::KeplerError::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::kepler::KeplerError
+impl core::cmp::PartialEq for alice_physics::kepler::KeplerError
+pub fn alice_physics::kepler::KeplerError::eq(&self, &Self) -> bool
+impl core::error::Error for alice_physics::kepler::KeplerError
+impl core::fmt::Debug for alice_physics::kepler::KeplerError
+pub fn alice_physics::kepler::KeplerError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for alice_physics::kepler::KeplerError
+pub fn alice_physics::kepler::KeplerError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::kepler::KeplerError
+impl core::marker::StructuralPartialEq for alice_physics::kepler::KeplerError
+impl core::marker::Freeze for alice_physics::kepler::KeplerError
+impl core::marker::Send for alice_physics::kepler::KeplerError
+impl core::marker::Sync for alice_physics::kepler::KeplerError
+impl core::marker::Unpin for alice_physics::kepler::KeplerError
+impl core::marker::UnsafeUnpin for alice_physics::kepler::KeplerError
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::kepler::KeplerError
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::kepler::KeplerError
+pub struct alice_physics::kepler::OrbitalElements
+pub alice_physics::kepler::OrbitalElements::arg_periapsis: alice_physics::math::Fix128
+pub alice_physics::kepler::OrbitalElements::eccentricity: alice_physics::math::Fix128
+pub alice_physics::kepler::OrbitalElements::inclination: alice_physics::math::Fix128
+pub alice_physics::kepler::OrbitalElements::raan: alice_physics::math::Fix128
+pub alice_physics::kepler::OrbitalElements::semi_major_axis: alice_physics::math::Fix128
+pub alice_physics::kepler::OrbitalElements::true_anomaly: alice_physics::math::Fix128
+impl alice_physics::kepler::OrbitalElements
+pub fn alice_physics::kepler::OrbitalElements::from_state(&alice_physics::kepler::StateVector, alice_physics::math::Fix128) -> core::result::Result<Self, alice_physics::kepler::KeplerError>
+pub fn alice_physics::kepler::OrbitalElements::mean_anomaly(&self) -> core::result::Result<alice_physics::math::Fix128, alice_physics::kepler::KeplerError>
+pub fn alice_physics::kepler::OrbitalElements::new(alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128) -> core::result::Result<Self, alice_physics::kepler::KeplerError>
+pub fn alice_physics::kepler::OrbitalElements::period(&self, alice_physics::math::Fix128) -> core::result::Result<alice_physics::math::Fix128, alice_physics::kepler::KeplerError>
+pub fn alice_physics::kepler::OrbitalElements::propagate(&self, alice_physics::math::Fix128, alice_physics::math::Fix128) -> core::result::Result<Self, alice_physics::kepler::KeplerError>
+pub fn alice_physics::kepler::OrbitalElements::semi_latus_rectum(&self) -> alice_physics::math::Fix128
+pub fn alice_physics::kepler::OrbitalElements::state_at(&self, alice_physics::math::Fix128, alice_physics::math::Fix128) -> core::result::Result<alice_physics::kepler::StateVector, alice_physics::kepler::KeplerError>
+pub fn alice_physics::kepler::OrbitalElements::to_state(&self, alice_physics::math::Fix128) -> core::result::Result<alice_physics::kepler::StateVector, alice_physics::kepler::KeplerError>
+impl core::clone::Clone for alice_physics::kepler::OrbitalElements
+pub fn alice_physics::kepler::OrbitalElements::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::kepler::OrbitalElements
+impl core::cmp::PartialEq for alice_physics::kepler::OrbitalElements
+pub fn alice_physics::kepler::OrbitalElements::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::kepler::OrbitalElements
+pub fn alice_physics::kepler::OrbitalElements::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::kepler::OrbitalElements
+impl core::marker::StructuralPartialEq for alice_physics::kepler::OrbitalElements
+impl core::marker::Freeze for alice_physics::kepler::OrbitalElements
+impl core::marker::Send for alice_physics::kepler::OrbitalElements
+impl core::marker::Sync for alice_physics::kepler::OrbitalElements
+impl core::marker::Unpin for alice_physics::kepler::OrbitalElements
+impl core::marker::UnsafeUnpin for alice_physics::kepler::OrbitalElements
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::kepler::OrbitalElements
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::kepler::OrbitalElements
+pub struct alice_physics::kepler::StateVector
+pub alice_physics::kepler::StateVector::position: alice_physics::math::Vec3Fix
+pub alice_physics::kepler::StateVector::velocity: alice_physics::math::Vec3Fix
+impl core::clone::Clone for alice_physics::kepler::StateVector
+pub fn alice_physics::kepler::StateVector::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::kepler::StateVector
+impl core::cmp::PartialEq for alice_physics::kepler::StateVector
+pub fn alice_physics::kepler::StateVector::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::kepler::StateVector
+pub fn alice_physics::kepler::StateVector::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::kepler::StateVector
+impl core::marker::StructuralPartialEq for alice_physics::kepler::StateVector
+impl core::marker::Freeze for alice_physics::kepler::StateVector
+impl core::marker::Send for alice_physics::kepler::StateVector
+impl core::marker::Sync for alice_physics::kepler::StateVector
+impl core::marker::Unpin for alice_physics::kepler::StateVector
+impl core::marker::UnsafeUnpin for alice_physics::kepler::StateVector
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::kepler::StateVector
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::kepler::StateVector
+pub const alice_physics::kepler::DEGENERACY_TOLERANCE: alice_physics::math::Fix128
+pub const alice_physics::kepler::KEPLER_MAX_ITERATIONS: u32
+pub const alice_physics::kepler::KEPLER_TOLERANCE: alice_physics::math::Fix128
+pub fn alice_physics::kepler::eccentric_from_true_anomaly(alice_physics::math::Fix128, alice_physics::math::Fix128) -> core::result::Result<alice_physics::math::Fix128, alice_physics::kepler::KeplerError>
+pub fn alice_physics::kepler::j2_arg_periapsis_rate(alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128) -> core::result::Result<alice_physics::math::Fix128, alice_physics::kepler::KeplerError>
+pub fn alice_physics::kepler::j2_raan_rate(alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128) -> core::result::Result<alice_physics::math::Fix128, alice_physics::kepler::KeplerError>
+pub fn alice_physics::kepler::mean_from_true_anomaly(alice_physics::math::Fix128, alice_physics::math::Fix128) -> core::result::Result<alice_physics::math::Fix128, alice_physics::kepler::KeplerError>
+pub fn alice_physics::kepler::mean_motion(alice_physics::math::Fix128, alice_physics::math::Fix128) -> core::result::Result<alice_physics::math::Fix128, alice_physics::kepler::KeplerError>
+pub fn alice_physics::kepler::orbital_period(alice_physics::math::Fix128, alice_physics::math::Fix128) -> core::result::Result<alice_physics::math::Fix128, alice_physics::kepler::KeplerError>
+pub fn alice_physics::kepler::solve_kepler(alice_physics::math::Fix128, alice_physics::math::Fix128) -> core::result::Result<alice_physics::math::Fix128, alice_physics::kepler::KeplerError>
+pub fn alice_physics::kepler::specific_angular_momentum(alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128) -> core::result::Result<alice_physics::math::Fix128, alice_physics::kepler::KeplerError>
+pub fn alice_physics::kepler::specific_orbital_energy(alice_physics::math::Fix128, alice_physics::math::Fix128) -> core::result::Result<alice_physics::math::Fix128, alice_physics::kepler::KeplerError>
+pub fn alice_physics::kepler::true_from_eccentric_anomaly(alice_physics::math::Fix128, alice_physics::math::Fix128) -> core::result::Result<alice_physics::math::Fix128, alice_physics::kepler::KeplerError>
+pub fn alice_physics::kepler::true_from_mean_anomaly(alice_physics::math::Fix128, alice_physics::math::Fix128) -> core::result::Result<alice_physics::math::Fix128, alice_physics::kepler::KeplerError>
+pub fn alice_physics::kepler::vis_viva_speed(alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128) -> core::result::Result<alice_physics::math::Fix128, alice_physics::kepler::KeplerError>
 pub mod alice_physics::kinematic_loop
 pub struct alice_physics::kinematic_loop::FourBarLinkage
 pub alice_physics::kinematic_loop::FourBarLinkage::closure: alice_physics::kinematic_loop::LoopClosureConstraint
@@ -6950,6 +7048,75 @@ pub fn alice_physics::multiphase::curvature_at(&alice_physics::multiphase::Grid3
 pub fn alice_physics::multiphase::initialize_level_set_sphere(&mut alice_physics::multiphase::Grid3d, alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128)
 pub fn alice_physics::multiphase::trilinear_range(&alice_physics::multiphase::Grid3d, alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128) -> (alice_physics::math::Fix128, alice_physics::math::Fix128)
 pub fn alice_physics::multiphase::trilinear_sample(&alice_physics::multiphase::Grid3d, alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128) -> alice_physics::math::Fix128
+pub mod alice_physics::nbody
+#[non_exhaustive] pub enum alice_physics::nbody::NBodyError
+pub alice_physics::nbody::NBodyError::LengthMismatch
+pub alice_physics::nbody::NBodyError::NegativeMass
+pub alice_physics::nbody::NBodyError::NegativeSoftening
+pub alice_physics::nbody::NBodyError::NonPositiveGravitationalConstant
+impl core::clone::Clone for alice_physics::nbody::NBodyError
+pub fn alice_physics::nbody::NBodyError::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::nbody::NBodyError
+impl core::cmp::PartialEq for alice_physics::nbody::NBodyError
+pub fn alice_physics::nbody::NBodyError::eq(&self, &Self) -> bool
+impl core::error::Error for alice_physics::nbody::NBodyError
+impl core::fmt::Debug for alice_physics::nbody::NBodyError
+pub fn alice_physics::nbody::NBodyError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for alice_physics::nbody::NBodyError
+pub fn alice_physics::nbody::NBodyError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::nbody::NBodyError
+impl core::marker::StructuralPartialEq for alice_physics::nbody::NBodyError
+impl core::marker::Freeze for alice_physics::nbody::NBodyError
+impl core::marker::Send for alice_physics::nbody::NBodyError
+impl core::marker::Sync for alice_physics::nbody::NBodyError
+impl core::marker::Unpin for alice_physics::nbody::NBodyError
+impl core::marker::UnsafeUnpin for alice_physics::nbody::NBodyError
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::nbody::NBodyError
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::nbody::NBodyError
+pub struct alice_physics::nbody::DirectSum
+impl alice_physics::nbody::DirectSum
+pub fn alice_physics::nbody::DirectSum::accelerations(&self, &[alice_physics::math::Vec3Fix], &[alice_physics::math::Fix128], &mut alloc::vec::Vec<alice_physics::math::Vec3Fix>) -> core::result::Result<(), alice_physics::nbody::NBodyError>
+pub fn alice_physics::nbody::DirectSum::gravitational_constant(&self) -> alice_physics::math::Fix128
+pub fn alice_physics::nbody::DirectSum::kick_bodies(&self, &mut [alice_physics::solver::RigidBody], alice_physics::math::Fix128)
+pub fn alice_physics::nbody::DirectSum::new(alice_physics::math::Fix128, alice_physics::math::Fix128) -> core::result::Result<Self, alice_physics::nbody::NBodyError>
+pub fn alice_physics::nbody::DirectSum::potential_energy(&self, &[alice_physics::math::Vec3Fix], &[alice_physics::math::Fix128]) -> core::result::Result<alice_physics::math::Fix128, alice_physics::nbody::NBodyError>
+pub fn alice_physics::nbody::DirectSum::softening(&self) -> alice_physics::math::Fix128
+pub fn alice_physics::nbody::DirectSum::step_world(&self, &mut alice_physics::solver::PhysicsWorld, alice_physics::math::Fix128)
+impl core::clone::Clone for alice_physics::nbody::DirectSum
+pub fn alice_physics::nbody::DirectSum::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::nbody::DirectSum
+impl core::cmp::PartialEq for alice_physics::nbody::DirectSum
+pub fn alice_physics::nbody::DirectSum::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::nbody::DirectSum
+pub fn alice_physics::nbody::DirectSum::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::nbody::DirectSum
+impl core::marker::StructuralPartialEq for alice_physics::nbody::DirectSum
+impl core::marker::Freeze for alice_physics::nbody::DirectSum
+impl core::marker::Send for alice_physics::nbody::DirectSum
+impl core::marker::Sync for alice_physics::nbody::DirectSum
+impl core::marker::Unpin for alice_physics::nbody::DirectSum
+impl core::marker::UnsafeUnpin for alice_physics::nbody::DirectSum
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::nbody::DirectSum
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::nbody::DirectSum
+pub struct alice_physics::nbody::VelocityVerlet
+impl alice_physics::nbody::VelocityVerlet
+pub fn alice_physics::nbody::VelocityVerlet::new() -> Self
+pub fn alice_physics::nbody::VelocityVerlet::step(&mut self, &alice_physics::nbody::DirectSum, &mut [alice_physics::math::Vec3Fix], &mut [alice_physics::math::Vec3Fix], &[alice_physics::math::Fix128], alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::nbody::NBodyError>
+impl core::clone::Clone for alice_physics::nbody::VelocityVerlet
+pub fn alice_physics::nbody::VelocityVerlet::clone(&self) -> Self
+impl core::default::Default for alice_physics::nbody::VelocityVerlet
+pub fn alice_physics::nbody::VelocityVerlet::default() -> Self
+impl core::fmt::Debug for alice_physics::nbody::VelocityVerlet
+pub fn alice_physics::nbody::VelocityVerlet::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for alice_physics::nbody::VelocityVerlet
+impl core::marker::Send for alice_physics::nbody::VelocityVerlet
+impl core::marker::Sync for alice_physics::nbody::VelocityVerlet
+impl core::marker::Unpin for alice_physics::nbody::VelocityVerlet
+impl core::marker::UnsafeUnpin for alice_physics::nbody::VelocityVerlet
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::nbody::VelocityVerlet
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::nbody::VelocityVerlet
+pub fn alice_physics::nbody::kinetic_energy(&[alice_physics::math::Vec3Fix], &[alice_physics::math::Fix128]) -> core::result::Result<alice_physics::math::Fix128, alice_physics::nbody::NBodyError>
+pub fn alice_physics::nbody::total_momentum(&[alice_physics::math::Vec3Fix], &[alice_physics::math::Fix128]) -> core::result::Result<alice_physics::math::Vec3Fix, alice_physics::nbody::NBodyError>
 pub mod alice_physics::netcode
 pub struct alice_physics::netcode::DefaultInputApplicator
 pub alice_physics::netcode::DefaultInputApplicator::jump_impulse: alice_physics::math::Fix128

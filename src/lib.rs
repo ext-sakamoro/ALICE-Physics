@@ -372,6 +372,7 @@ pub mod interface_capture;
 pub mod interpolation;
 pub mod joint;
 pub mod joint_extra;
+pub mod kepler;
 pub mod kinematic_loop;
 #[cfg(feature = "std")]
 pub mod laminate;
@@ -397,6 +398,7 @@ pub mod modal;
 pub mod motor;
 pub mod multi_world;
 pub mod multiphase;
+pub mod nbody;
 pub mod netcode;
 #[cfg(feature = "std")]
 pub mod netcode_prediction;

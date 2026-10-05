@@ -160,6 +160,7 @@ API の詳細は [docs.rs](https://docs.rs/alice-physics) を参照
 | 固体力学 | P1 / P2 / P3 四面体の線形弾性 FEM、共回転による大回転、J2 塑性、超弾性、熱-構造連成、適応細分化、梁、座屈、疲労、複合材 |
 | 流体と場 | 複数の圧力ソルバーを持つ MAC 格子 CFD、RANS / LES 乱流モデル、VOF とレベルセット、SPH、圧縮性流れ、伝熱、Maxwell FDTD |
 | 空力 | 標準大気 (ISA 1976、20 km まで)、失速を含む翼の揚力と抗力、ロータの推力とトルク |
+| 軌道と重力 | Kepler 方程式、軌道要素と状態ベクトルの変換、時間伝播、vis-viva、J2 による昇交点の移動、N 体の相互重力 (直接和) と leapfrog 積分、`PhysicsWorld` の body にも適用できる |
 | 3D プリント | 材料データベース、薄肉・オーバーハング検査、反り、層間接着、造形向き、それらをまとめた安全性パイプライン |
 | 2D | 独立した 2D XPBD エンジン (専用の形状とジョイント) |
 
@@ -175,7 +176,7 @@ API の詳細は [docs.rs](https://docs.rs/alice-physics) を参照
 | step: `PhysicsWorld` の step で実行される | 19 |
 | world API: `PhysicsWorld` の他のメソッドから使われる | 7 |
 | binding: C ABI・Python・WebAssembly のバインディングから使われる | 2 |
-| standalone: 利用者が直接呼ぶ Rust API で、`PhysicsWorld` は呼ばない | 123 |
+| standalone: 利用者が直接呼ぶ Rust API で、`PhysicsWorld` は呼ばない | 125 |
 | unused: テスト以外に呼び出し元がない | 3 |
 
 ## 車両運動

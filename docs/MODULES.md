@@ -31,6 +31,7 @@ this file or listed twice, or when a linked example or test does not exist.
 - [Solid mechanics and FEM](#solid-mechanics-and-fem)
 - [Fluids and waves](#fluids-and-waves)
 - [Electromagnetics](#electromagnetics)
+- [Orbital mechanics](#orbital-mechanics)
 - [3D printing](#3d-printing)
 - [2D physics](#2d-physics)
 - [Visualization](#visualization)
@@ -227,6 +228,13 @@ this file or listed twice, or when a linked example or test does not exist.
 | `electromagnetic` | Lorentz force on charged rigid bodies |  | [`em_lorentz_cyclotron`](../examples/em_lorentz_cyclotron.rs) | standalone |
 | `maxwell_fdtd` | Maxwell solver on a Yee lattice with sources and a PML absorber |  | [`maxwell_sources_and_absorber`](../examples/maxwell_sources_and_absorber.rs) | standalone |
 | `piezoelectric` | piezoelectric force and voltage coupling | std | [`piezoelectric_materials`](../examples/piezoelectric_materials.rs) | standalone |
+
+## Orbital mechanics
+
+| Module | Summary | Feature | Example | Integration |
+|--------|---------|---------|---------|-------------|
+| `kepler` | two-body problem: Kepler's equation, orbital elements and state vectors, propagation, vis-viva, J2 node and periapsis drift |  | [`orbit_two_body`](../examples/orbit_two_body.rs) | standalone |
+| `nbody` | direct-sum mutual gravity with Plummer softening and a velocity-Verlet integrator, also on `PhysicsWorld` bodies |  | [`nbody_figure_eight`](../examples/nbody_figure_eight.rs) | standalone |
 
 ## 3D printing
 
