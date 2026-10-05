@@ -245,12 +245,13 @@ fn world_hover_holds_altitude() {
 }
 
 #[test]
-#[ignore = "src gap: 回転の積分で角速度が ω³h/12 の率で失われる (substep 内の四元数更新、h は substep 幅)"]
+#[ignore = "src gap: 回転の積分で角速度が substep ごとに ω ← (2/h) sin(ωh/2) と目減りする (率 ω³h/24、h は substep 幅)"]
 fn world_reaction_torque_spin_rate_matches_free_rotation() {
     // Physical expectation: the reaction torque −Q ŷ spins a sphere-inertia
     // body (I = 0.4 m) at ω_y(t) = −Q t / I. Measured today after 10 s:
     // −3.7386 vs −3.75 rad/s (0.30 % low); with 1 substep the loss grows
-    // to 24 % at 15 rad/s, consistent with dω/dt = τ/I − ω³h/12.
+    // to 24 % at 15 rad/s, reproduced by the per-substep map ω ← (2/h) sin(ωh/2),
+    // i.e. dω/dt = τ/I − ω³h/24.
     let (b, _, q) = run_hover(600);
     rel_close(
         "ω_y",
@@ -292,7 +293,7 @@ fn world_hover_characterization_of_the_current_discretization() {
 #[test]
 fn world_reaction_torque_spins_the_body_backwards() {
     // Sign and first-frame magnitude of the reaction torque through the
-    // world: after one frame ω_y = −Q dt / I (the ω³h/12 loss is ~1e-10
+    // world: after one frame ω_y = −Q dt / I (the ω³h/24 loss is ~1e-10
     // relative at this speed, far below 1e-8). Over 10 s the body keeps
     // spinning left-handed about +y only (the thrust axis stays vertical).
     let (b1, _, q) = run_hover(1);
