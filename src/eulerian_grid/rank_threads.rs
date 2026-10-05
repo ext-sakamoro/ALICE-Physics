@@ -202,6 +202,26 @@ where
 /// duration of the call, so a rank count far above `nz` buys nothing but
 /// overhead. It needs a target with threads.
 ///
+/// # Design
+///
+/// - One public entry point, everything else crate-internal. The transports,
+///   slab bounds and per-rank solves stay `pub(crate)` so their shape can still
+///   change when the rank transport is generalised; callers depend only on
+///   "same answer as the single-process solver, for any rank count".
+/// - Ranks talk only through byte messages on the same transports the
+///   multi-process path uses (here over private in-memory links), and a rank
+///   that asks for another rank's slab aborts. A rank therefore cannot read
+///   state it would not have in a separate process, which is what makes the
+///   bit identity a statement about the distributed algorithm and not about
+///   shared memory.
+/// - The solver is chosen through the existing [`PressureSolver`] enum
+///   (`#[non_exhaustive]`), so a new decomposed solver is an added variant, not
+///   a new function.
+/// - Face conditions are applied to the whole grid before the split, as
+///   `project_pressure_banded` does; the slab-local face step is not
+///   used yet because its ordering differs from the single-process code next
+///   to a low-end outflow face.
+///
 /// # Errors
 ///
 /// The inputs [`crate::cfd_solver::CfdSolver::step_with_pressure_solver`] refuses,
