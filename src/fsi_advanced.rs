@@ -144,6 +144,7 @@ pub fn aggregate_forces(
 /// Deposit the reaction force `-F_solid` into a fluid grid at the position
 /// of `sample`. The caller supplies a mutable closure that maps a world
 /// position + force back into whatever data structure it uses (usually the
+// LIMITATION(COV-COUPLE-011): Placeholder for the true immersed-boundary scatter operator; kept minimal to avoid coupling this module to any specific grid representation.
 /// `EulerianGrid` P2G routine). Placeholder for the true immersed-boundary
 /// scatter operator; kept minimal to avoid coupling this module to any
 /// specific grid representation.
