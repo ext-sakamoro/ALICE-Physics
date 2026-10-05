@@ -207,6 +207,31 @@ jobs:
       - name: Test (lib, neural + replay + analytics)
         run: cargo test --lib --features "neural,replay,analytics"
 
+  js-binding:
+    # the wasm-bindgen package called from JavaScript (Node), as an application would
+    name: Test (WebAssembly binding from JavaScript)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Rust toolchain (with wasm32-unknown-unknown)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Ensure wasm32-unknown-unknown rust-std is installed
+        run: rustup target add wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: wasm-js
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install wasm-pack
+        uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack
+      - name: Build the package and run tests/js (zero executed is red)
+        run: bash scripts/run_js_binding_tests.sh
+
   wasm-test:
     name: Test (wasm32-wasip1 via wasmtime)
     runs-on: ubuntu-latest

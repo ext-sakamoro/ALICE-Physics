@@ -158,6 +158,11 @@ step "cargo test --lib (wasm module) + cargo check (python)"
 cargo test --lib --features "wasm" "wasm::"
 cargo check --lib --features "python"
 
+step "WebAssembly binding from JavaScript (wasm-pack + node; CI job js-binding)"
+command -v wasm-pack >/dev/null && command -v node >/dev/null \
+  || { echo "wasm-pack and node are needed (cargo install wasm-pack; node 18+)" >&2; exit 1; }
+bash scripts/run_js_binding_tests.sh
+
 step "cargo test --lib (neural / replay / analytics via crates.io siblings)"
 cargo test --lib --features "neural,replay,analytics"
 

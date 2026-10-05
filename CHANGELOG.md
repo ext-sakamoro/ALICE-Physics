@@ -156,6 +156,7 @@ were introduced during that release window.
 - `maxwell_fdtd` に cell ごとの等方材料を追加 (`Material { eps_r, mu_r, sigma }` / `MaterialMap` / `MaterialError` / `YeeGrid::with_materials` / `effective_material` / `div_d`) E 辺は ε・σ の算術平均、H 面は μ の調和平均で、更新式は Taflove 3 章の係数を使う 材料なし・全て真空の map・PML と真空の map は変更前と bit 一致
 - `scripts/land.py`: ローカルの commit を main に取り込む script commit の検査 (author・公開語彙・`src/` 変更時の CHANGELOG 行)、`--fast` preflight、CI・scripts・Cargo・bindings に触れる変更は `ci/<id>` branch の CI を待つ、最新の main へ rebase (生成物の衝突は main 側を取って再生成)、生成物の再生成と検査、main が動いたら再試行 `.gitattributes` で `CHANGELOG.md` を union merge にした
 - `SdfCollider::{set_pose, sync_to_body}` / `sdf_collider::sync_dynamic_sdf_colliders`: 動く SDF collider が body の姿勢に追従する
+- `tests/js/bindings.test.mjs` と `scripts/run_js_binding_tests.sh`: wasm-pack で作った package を Node から呼び、静的平面・高さ場への着地 (半径の高さで止まる)、ball ジョイントの腕の長さ、同じ呼び出しで bit 一致、不正な値の拒否を検査 CI に job `js-binding` を追加
 
 ### Changed
 
