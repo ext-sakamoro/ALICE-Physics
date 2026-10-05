@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 4607 |
+| 🟢 Not ignored (run by CI) | 4618 |
 | 🔴 Red by design | 208 |
 | ⏱ Gated (runtime / diagnostic / manual) | 25 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **4840** |
+| **Total** | **4851** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -283,7 +283,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (4607)
+## 🟢 Not ignored (4618)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -532,6 +532,7 @@ Per-file counts (the test names are in `tests/`):
 | `vehicle_dynamics_degenerate.rs` | 9 |
 | `analytic_added_mass_coupling.rs` | 8 |
 | `analytic_broadphase.rs` | 8 |
+| `analytic_contact_event_normals.rs` | 8 |
 | `analytic_cubic_fem.rs` | 8 |
 | `analytic_fillet_stress_wiring.rs` | 8 |
 | `analytic_fluid_block_wiring.rs` | 8 |
@@ -620,6 +621,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_boundary_faces.rs` | 3 |
 | `analytic_contact_filter_parallel_once.rs` | 3 |
 | `analytic_contact_filter_velocity_pass.rs` | 3 |
+| `analytic_joint_compliance_xpbd.rs` | 3 |
 | `analytic_large_rotation.rs` | 3 |
 | `analytic_restitution_phase.rs` | 3 |
 | `analytic_shape_with_rotation_wiring.rs` | 3 |
