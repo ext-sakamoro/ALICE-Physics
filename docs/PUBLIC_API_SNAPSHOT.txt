@@ -3718,6 +3718,7 @@ pub fn alice_physics::filament_db::FilamentDb::iter(&self) -> core::slice::iter:
 pub fn alice_physics::filament_db::FilamentDb::len(&self) -> usize
 pub const fn alice_physics::filament_db::FilamentDb::new() -> Self
 pub fn alice_physics::filament_db::FilamentDb::register(&mut self, alice_physics::filament_db::MaterialProperties) -> alice_physics::filament_db::FilamentId
+pub fn alice_physics::filament_db::FilamentDb::try_register(&mut self, alice_physics::filament_db::MaterialProperties) -> core::result::Result<alice_physics::filament_db::FilamentId, alice_physics::error::PhysicsError>
 pub fn alice_physics::filament_db::FilamentDb::with_defaults() -> Self
 impl core::clone::Clone for alice_physics::filament_db::FilamentDb
 pub fn alice_physics::filament_db::FilamentDb::clone(&self) -> Self
@@ -6030,6 +6031,7 @@ pub fn alice_physics::material::MaterialTable::register_metal(&mut self) -> alic
 pub fn alice_physics::material::MaterialTable::register_rubber(&mut self) -> alice_physics::material::MaterialId
 pub fn alice_physics::material::MaterialTable::register_wood(&mut self) -> alice_physics::material::MaterialId
 pub fn alice_physics::material::MaterialTable::set_pair_override(&mut self, alice_physics::material::MaterialId, alice_physics::material::MaterialId, alice_physics::math::Fix128, alice_physics::math::Fix128)
+pub fn alice_physics::material::MaterialTable::try_register(&mut self, alice_physics::material::PhysicsMaterial) -> core::result::Result<alice_physics::material::MaterialId, alice_physics::error::PhysicsError>
 impl core::default::Default for alice_physics::material::MaterialTable
 pub fn alice_physics::material::MaterialTable::default() -> Self
 impl core::marker::Freeze for alice_physics::material::MaterialTable
@@ -10712,6 +10714,7 @@ pub fn alice_physics::material::MaterialTable::register_metal(&mut self) -> alic
 pub fn alice_physics::material::MaterialTable::register_rubber(&mut self) -> alice_physics::material::MaterialId
 pub fn alice_physics::material::MaterialTable::register_wood(&mut self) -> alice_physics::material::MaterialId
 pub fn alice_physics::material::MaterialTable::set_pair_override(&mut self, alice_physics::material::MaterialId, alice_physics::material::MaterialId, alice_physics::math::Fix128, alice_physics::math::Fix128)
+pub fn alice_physics::material::MaterialTable::try_register(&mut self, alice_physics::material::PhysicsMaterial) -> core::result::Result<alice_physics::material::MaterialId, alice_physics::error::PhysicsError>
 impl core::default::Default for alice_physics::material::MaterialTable
 pub fn alice_physics::material::MaterialTable::default() -> Self
 impl core::marker::Freeze for alice_physics::material::MaterialTable
@@ -20791,6 +20794,7 @@ pub fn alice_physics::material::MaterialTable::register_metal(&mut self) -> alic
 pub fn alice_physics::material::MaterialTable::register_rubber(&mut self) -> alice_physics::material::MaterialId
 pub fn alice_physics::material::MaterialTable::register_wood(&mut self) -> alice_physics::material::MaterialId
 pub fn alice_physics::material::MaterialTable::set_pair_override(&mut self, alice_physics::material::MaterialId, alice_physics::material::MaterialId, alice_physics::math::Fix128, alice_physics::math::Fix128)
+pub fn alice_physics::material::MaterialTable::try_register(&mut self, alice_physics::material::PhysicsMaterial) -> core::result::Result<alice_physics::material::MaterialId, alice_physics::error::PhysicsError>
 impl core::default::Default for alice_physics::material::MaterialTable
 pub fn alice_physics::material::MaterialTable::default() -> Self
 impl core::marker::Freeze for alice_physics::material::MaterialTable

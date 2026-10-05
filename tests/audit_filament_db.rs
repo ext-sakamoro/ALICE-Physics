@@ -271,22 +271,72 @@ fn db_container_semantics() {
     );
 }
 
-/// `register` returns `FilamentId = u16` computed by `len() as u16`: the 65_537th
-/// material gets id 0 and `get(id)` returns the FIRST material instead.
-#[test]
-#[ignore = "known defect: AUD-A-S1W5-013: FilamentDb::register uses `len() as u16`; after 65536 materials ids wrap (65537th gets id 0) and get(id) returns another material"]
-fn register_ids_never_alias_after_u16_range() {
+/// Number of distinct `FilamentId = u16` values: the closed form the capacity
+/// boundary is derived from (AUD-A-S1W5-013).
+const FILAMENT_ID_COUNT: usize = u16::MAX as usize + 1;
+
+/// Fill an empty database up to the last free id. Ids start at 0 and are handed out
+/// in order, so registration `i` (0-based) must get id `i`. Each material carries
+/// its own index in `print_temp_c` so a lookup can be checked against it.
+fn full_db() -> FilamentDb {
     let mut db = FilamentDb::new();
-    let mut last = 0;
-    for i in 0..65_537usize {
+    for i in 0..FILAMENT_ID_COUNT {
         let mut m = MaterialProperties::pla();
-        m.name = if i == 65_536 { "LAST" } else { "x" };
-        last = db.register(m);
+        m.print_temp_c = Fix128::from_int(i as i64);
+        let id = db
+            .try_register(m)
+            .unwrap_or_else(|e| panic!("registration {i} of {FILAMENT_ID_COUNT} failed: {e}"));
+        assert_eq!(usize::from(id), i, "registration {i} got id {id}");
     }
-    let got = db.get(last).unwrap();
+    assert_eq!(db.len(), FILAMENT_ID_COUNT);
+    db
+}
+
+/// AUD-A-S1W5-013: with `u16` ids the database holds at most 65,536 materials.
+/// Registration 65,537 is refused instead of wrapping to id 0, and every earlier
+/// id still finds the material registered under it.
+#[test]
+fn filament_db_try_register_refuses_past_the_u16_id_range() {
+    let mut db = full_db();
+    let mut last = MaterialProperties::pla();
+    last.name = "LAST";
     assert_eq!(
-        got.name, "LAST",
-        "register returned id {last}, get(id) = {}",
-        got.name
+        db.try_register(last),
+        Err(alice_physics::PhysicsError::CapacityExceeded {
+            resource: "filament materials",
+            limit: FILAMENT_ID_COUNT,
+        })
     );
+    assert_eq!(
+        db.len(),
+        FILAMENT_ID_COUNT,
+        "a refused registration must not grow the database"
+    );
+    assert!(
+        db.find_by_name("LAST").is_none(),
+        "the refused material must not be stored"
+    );
+    for i in 0..FILAMENT_ID_COUNT {
+        let id = i as u16;
+        let m = db.get(id).unwrap_or_else(|| panic!("id {id} is missing"));
+        assert_eq!(
+            m.id, id,
+            "id {id} reads back a material carrying id {}",
+            m.id
+        );
+        assert_eq!(
+            m.print_temp_c,
+            Fix128::from_int(i as i64),
+            "id {id} does not find its material"
+        );
+    }
+}
+
+/// AUD-A-S1W5-013: `register` panics on registration 65,537 instead of silently
+/// returning a wrapped id that aliases the first material.
+#[test]
+#[should_panic(expected = "FilamentDb::register")]
+fn register_panics_when_every_filament_id_is_in_use() {
+    let mut db = full_db();
+    let _ = db.register(MaterialProperties::pla());
 }

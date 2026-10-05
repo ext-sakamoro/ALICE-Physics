@@ -35,6 +35,7 @@
 //! - ASM Metals Handbook Volume 2 (nonferrous alloys, SUS304 / A5052)
 //! - Ashby & Jones "Engineering Materials" 5th ed.
 
+use crate::error::PhysicsError;
 use crate::math::Fix128;
 
 #[cfg(not(feature = "std"))]
@@ -88,6 +89,9 @@ pub enum MaterialCategory {
 
 /// Material ID (matches `material::MaterialId` type for cross-reference).
 pub type FilamentId = u16;
+
+/// Number of distinct `FilamentId` values (`u16::MAX as usize + 1`).
+const FILAMENT_ID_CAPACITY: usize = FilamentId::MAX as usize + 1;
 
 /// Mechanical + thermal properties for a 3D printing or sheet metal material.
 ///
@@ -485,11 +489,49 @@ impl FilamentDb {
     }
 
     /// Register a material and return its assigned ID.
-    pub fn register(&mut self, mut material: MaterialProperties) -> FilamentId {
-        let id = self.materials.len() as FilamentId;
+    ///
+    /// The material's `id` field is overwritten with the assigned ID.
+    ///
+    /// # Panics
+    ///
+    /// Panics when the database already holds `u16::MAX as usize + 1`
+    /// (65,536) materials, i.e. every `FilamentId` is in use. Use
+    /// [`FilamentDb::try_register`] to handle that case without panicking.
+    pub fn register(&mut self, material: MaterialProperties) -> FilamentId {
+        match self.try_register(material) {
+            Ok(id) => id,
+            Err(e) => panic!("FilamentDb::register: {e}; every FilamentId is in use"),
+        }
+    }
+
+    /// Register a material and return its assigned ID, or an error when every
+    /// `FilamentId` is already in use.
+    ///
+    /// IDs are assigned in registration order starting at 0, so a database can
+    /// hold at most `u16::MAX as usize + 1` (65,536) materials. A successful
+    /// call never reuses or overwrites an existing ID.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PhysicsError::CapacityExceeded`] with `limit = 65_536` when
+    /// the database already holds 65,536 materials. The database is left
+    /// unchanged.
+    pub fn try_register(
+        &mut self,
+        mut material: MaterialProperties,
+    ) -> Result<FilamentId, PhysicsError> {
+        let len = self.materials.len();
+        if len >= FILAMENT_ID_CAPACITY {
+            return Err(PhysicsError::CapacityExceeded {
+                resource: "filament materials",
+                limit: FILAMENT_ID_CAPACITY,
+            });
+        }
+        // `len < 65_536`, so the cast is exact.
+        let id = len as FilamentId;
         material.id = id;
         self.materials.push(material);
-        id
+        Ok(id)
     }
 
     /// Lookup by ID. Returns `None` if the ID is out of range.
