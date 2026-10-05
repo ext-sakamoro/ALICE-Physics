@@ -219,6 +219,7 @@ pub fn solve_rope_attachments(
 ///
 /// so that `m_rope * dx_rope + m_body * dx_body = 0` for a rigid (`alpha = 0`)
 /// dynamic attachment (momentum is conserved). Only the body **position** is
+// LIMITATION(COV-SOFT-032): translation of the centre of mass; the anchor offset's torque is not applied
 /// changed (translation of the centre of mass; the anchor offset's torque is not
 /// applied) and the body velocity is left to the solver to derive from
 /// `prev_position`. Static / kinematic bodies have `inv_mass = 0` and are not moved,

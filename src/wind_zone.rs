@@ -17,6 +17,7 @@
 //! `wind_velocity(t) = base_direction · base_speed
 //!                     + turbulence · sin(2π · gust_frequency · t)`.
 //!
+// LIMITATION(COV-SOFT-072): The MVP evaluates the aerodynamic force in the body's centre and ignores surface-orientation dependence
 //! The MVP evaluates the aerodynamic force in the body's centre and
 //! ignores surface-orientation dependence; full projected-area
 //! integration and streamwise-turbulence spectral models are future

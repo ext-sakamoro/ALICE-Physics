@@ -370,6 +370,7 @@ impl Cloth {
     /// Compute approximate wind force on a particle
     #[inline(always)]
     const fn compute_wind_force(&self, _particle_idx: usize) -> Vec3Fix {
+        // LIMITATION(COV-SOFT-071): Simplified: uniform wind force
         // Simplified: uniform wind force
         self.wind
     }
@@ -1119,6 +1120,7 @@ impl Cloth {
     /// then lie strictly on the entry side of the triangle's plane, and a segment whose
     /// endpoints share a side cannot cross it.
     ///
+    // LIMITATION(COV-SOFT-062): This repair is a **position** projection: it can stretch an edge past what `solve_edge_constraints` would allow, and it does not build rigid impact zones, so a pile-up of simultaneous contacts is resolved approximately rather than exactly.
     /// ⚠️ This repair is a **position** projection: it can stretch an edge past what
     /// `solve_edge_constraints` would allow, and it does not build rigid impact zones,
     /// so a pile-up of simultaneous contacts is resolved approximately rather than
