@@ -177,7 +177,12 @@ impl SdfField for ModifiedSdf {
 // SingleModifiedSdf (lightweight single-modifier wrapper)
 // ============================================================================
 
-/// Lightweight SDF wrapper for a single modifier (avoids Vec overhead)
+/// Lightweight SDF wrapper for a single modifier (avoids Vec overhead).
+///
+/// Evaluates as a [`ModifiedSdf`] holding that one modifier: the distance is
+/// `modifier.modify_distance(p, original(p))` while
+/// [`PhysicsModifier::is_active`] is true and `original(p)` otherwise, and
+/// [`Self::update`] advances the modifier whether or not it is active.
 pub struct SingleModifiedSdf<M: PhysicsModifier> {
     /// Original SDF
     pub original: Box<dyn SdfField>,
@@ -202,10 +207,16 @@ impl<M: PhysicsModifier> SingleModifiedSdf<M> {
         self.modifier.update(dt);
     }
 
+    /// The original distance, passed through the modifier when it is active
+    /// (an inactive modifier is skipped, as in [`ModifiedSdf`]).
     #[inline]
     fn eval_distance(&self, x: f32, y: f32, z: f32) -> f32 {
         let d = self.original.distance(x, y, z);
-        self.modifier.modify_distance(x, y, z, d)
+        if self.modifier.is_active() {
+            self.modifier.modify_distance(x, y, z, d)
+        } else {
+            d
+        }
     }
 }
 

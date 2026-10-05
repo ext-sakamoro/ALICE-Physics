@@ -151,7 +151,6 @@ fn inactive_modifier_is_skipped_by_the_chain() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S5W3-007: SingleModifiedSdf ignores PhysicsModifier::is_active (an inactive +100 modifier still shifts the distance 3 -> 103; the chain wrapper returns 3)"]
 fn inactive_modifier_is_skipped_by_the_single_wrapper() {
     let mut m = Affine::new(1.0, 100.0);
     m.active = false;
