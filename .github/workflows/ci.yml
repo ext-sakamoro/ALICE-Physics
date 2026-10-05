@@ -48,10 +48,12 @@ jobs:
       - name: Docs lint (public documents, CHANGELOG structure)
         run: python scripts/docs_lint.py --check
       # coverage tables (docs/coverage/*.toml, hand-written): every cited test and
-      # source line exists, oracles are not ignored, partial items and the
+      # source symbol exists, oracles are not ignored, partial items and the
       # LIMITATION(<id>) comments in src/ point at each other
       - name: Coverage tables (tests)
         run: python scripts/test_coverage_check.py
+      - name: Coverage reference converter (tests)
+        run: python scripts/test_coverage_refs_to_symbols.py
       - name: Coverage tables (docs/coverage vs src/ and tests/)
         run: python scripts/coverage_check.py
       # SCIP integration ledger (docs/integration-status.md): the analysis is
