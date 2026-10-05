@@ -335,24 +335,23 @@ fn a_box_dropped_on_a_floor_box_rests_on_its_top_face() {
     );
 }
 
-/// A shaped body against a plain sphere body still collides, as spheres (the
-/// shape's bounding sphere), exactly as before shapes had a narrow-phase.
+/// A shaped body against a plain sphere body collides as its shape: the ball of
+/// radius 2 at x = 2.5 reaches 0.5 past the unit box's face at x = 1 (its
+/// bounding sphere, radius √3, would give 1.232). The box has mass 8 (density 1,
+/// volume 8) and the ball mass 1: each moves in inverse proportion to its mass,
+/// the box `depth/9` and the ball `8·depth/9`.
 #[test]
-fn a_shaped_body_against_a_plain_sphere_body_collides_as_spheres() {
+fn a_shaped_body_against_a_plain_sphere_body_collides_at_its_face() {
     let mut w = PhysicsWorld::new(config());
     let shaped = w
         .add_shaped_body(&unit_box(), fx(1.0), v3(0.0, 0.0, 0.0))
         .expect("valid");
     let ball = w.add_body_with_radius(
-        RigidBody::new_dynamic(v3(3.0, 0.0, 0.0), Fix128::ONE),
+        RigidBody::new_dynamic(v3(2.5, 0.0, 0.0), Fix128::ONE),
         fx(2.0),
     );
     w.step(fx(1.0 / 60.0));
-    // Bounding radius of the unit box is √3; the sphere sum is √3 + 2 = 3.732, the
-    // distance 3, so the depth is 0.732. The box has mass 8 (density 1, volume 8)
-    // and the ball mass 1: each moves in inverse proportion to its mass, the box
-    // `depth/9` and the ball `8·depth/9`.
-    let depth = 3f64.sqrt() + 2.0 - 3.0;
+    let depth = 0.5;
     let ps = arr(w.get_body(shaped).expect("shaped").position);
     let pb = arr(w.get_body(ball).expect("ball").position);
     assert!(
@@ -361,7 +360,7 @@ fn a_shaped_body_against_a_plain_sphere_body_collides_as_spheres() {
         ps[0]
     );
     assert!(
-        (pb[0] - (3.0 + 8.0 * depth / 9.0)).abs() < 1e-9,
+        (pb[0] - (2.5 + 8.0 * depth / 9.0)).abs() < 1e-9,
         "ball ends at x = {}",
         pb[0]
     );
@@ -582,10 +581,11 @@ fn boxes_touching_at_an_edge_or_a_corner_report_zero_depth() {
     }
 }
 
-/// `colliders_overlap` decides by the shapes when both bodies have one, by the
-/// collision spheres otherwise, and says `false` for what is not a collider.
+/// `colliders_overlap` decides by the shapes when either body has one (against a
+/// plain body, the shape and that body's collision sphere), by the collision
+/// spheres when neither has, and says `false` for what is not a collider.
 #[test]
-fn colliders_overlap_asks_the_shapes_when_it_can_and_the_spheres_when_it_cannot() {
+fn colliders_overlap_asks_the_shapes_whenever_one_is_involved() {
     let mut w = PhysicsWorld::new(config());
     let a = w
         .add_shaped_body(&unit_box(), fx(1.0), v3(2.2, 2.2, 0.0))
@@ -597,15 +597,22 @@ fn colliders_overlap_asks_the_shapes_when_it_can_and_the_spheres_when_it_cannot(
     assert!(!w.colliders_overlap(a, b) && !w.colliders_overlap(b, a));
     w.get_body_mut(a).expect("a").position = v3(1.8, 1.8, 0.0);
     assert!(w.colliders_overlap(a, b) && w.colliders_overlap(b, a));
-    // A sphere-only body: the sphere test, from its radius and the shaped body's
-    // bounding radius (1 + √3 = 2.732 reach).
+    // A sphere-only body against the box: GJK on the box and the ball of radius 1,
+    // which reach each other at x = 1 + 1 = 2 (the bounding sphere would reach
+    // 1 + √3 = 2.732).
     let ball = w.add_body_with_radius(
-        RigidBody::new_dynamic(v3(2.5, 0.0, 0.0), Fix128::ONE),
+        RigidBody::new_dynamic(v3(1.9, 0.0, 0.0), Fix128::ONE),
         fx(1.0),
     );
-    assert!(w.colliders_overlap(ball, b), "2.5 < 1 + √3");
-    w.get_body_mut(ball).expect("ball").position = v3(2.8, 0.0, 0.0);
-    assert!(!w.colliders_overlap(ball, b), "2.8 > 1 + √3");
+    assert!(
+        w.colliders_overlap(ball, b) && w.colliders_overlap(b, ball),
+        "1.9 < 2"
+    );
+    w.get_body_mut(ball).expect("ball").position = v3(2.1, 0.0, 0.0);
+    assert!(
+        !w.colliders_overlap(ball, b) && !w.colliders_overlap(b, ball),
+        "2.1 > 2"
+    );
     // No collider, or no body: false.
     let bare = w.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
     assert!(!w.colliders_overlap(bare, b));
