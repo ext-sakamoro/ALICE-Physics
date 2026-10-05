@@ -3545,6 +3545,258 @@ impl core::marker::Unpin for alice_physics::error::PhysicsError
 impl core::marker::UnsafeUnpin for alice_physics::error::PhysicsError
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::error::PhysicsError
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::error::PhysicsError
+pub mod alice_physics::euler_fv
+pub enum alice_physics::euler_fv::Boundary
+pub alice_physics::euler_fv::Boundary::Periodic
+pub alice_physics::euler_fv::Boundary::ReflectiveWall
+pub alice_physics::euler_fv::Boundary::Transmissive
+impl core::clone::Clone for alice_physics::euler_fv::Boundary
+pub fn alice_physics::euler_fv::Boundary::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::euler_fv::Boundary
+impl core::cmp::PartialEq for alice_physics::euler_fv::Boundary
+pub fn alice_physics::euler_fv::Boundary::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::euler_fv::Boundary
+pub fn alice_physics::euler_fv::Boundary::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::euler_fv::Boundary
+impl core::marker::StructuralPartialEq for alice_physics::euler_fv::Boundary
+impl core::marker::Freeze for alice_physics::euler_fv::Boundary
+impl core::marker::Send for alice_physics::euler_fv::Boundary
+impl core::marker::Sync for alice_physics::euler_fv::Boundary
+impl core::marker::Unpin for alice_physics::euler_fv::Boundary
+impl core::marker::UnsafeUnpin for alice_physics::euler_fv::Boundary
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::euler_fv::Boundary
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::euler_fv::Boundary
+pub enum alice_physics::euler_fv::EulerError
+pub alice_physics::euler_fv::EulerError::CflOutOfRange
+pub alice_physics::euler_fv::EulerError::GammaNotAboveOne
+pub alice_physics::euler_fv::EulerError::NoCells
+pub alice_physics::euler_fv::EulerError::NonPositiveDensity
+pub alice_physics::euler_fv::EulerError::NonPositiveDensity::cell: usize
+pub alice_physics::euler_fv::EulerError::NonPositivePressure
+pub alice_physics::euler_fv::EulerError::NonPositivePressure::cell: usize
+pub alice_physics::euler_fv::EulerError::NonPositiveSpacing
+pub alice_physics::euler_fv::EulerError::NonPositiveTimeStep
+pub alice_physics::euler_fv::EulerError::PeriodicMismatch
+pub alice_physics::euler_fv::EulerError::RiemannNotConverged
+pub alice_physics::euler_fv::EulerError::VacuumGenerated
+impl core::clone::Clone for alice_physics::euler_fv::EulerError
+pub fn alice_physics::euler_fv::EulerError::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::euler_fv::EulerError
+impl core::cmp::PartialEq for alice_physics::euler_fv::EulerError
+pub fn alice_physics::euler_fv::EulerError::eq(&self, &Self) -> bool
+impl core::error::Error for alice_physics::euler_fv::EulerError
+impl core::fmt::Debug for alice_physics::euler_fv::EulerError
+pub fn alice_physics::euler_fv::EulerError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for alice_physics::euler_fv::EulerError
+pub fn alice_physics::euler_fv::EulerError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::euler_fv::EulerError
+impl core::marker::StructuralPartialEq for alice_physics::euler_fv::EulerError
+impl core::marker::Freeze for alice_physics::euler_fv::EulerError
+impl core::marker::Send for alice_physics::euler_fv::EulerError
+impl core::marker::Sync for alice_physics::euler_fv::EulerError
+impl core::marker::Unpin for alice_physics::euler_fv::EulerError
+impl core::marker::UnsafeUnpin for alice_physics::euler_fv::EulerError
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::euler_fv::EulerError
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::euler_fv::EulerError
+pub enum alice_physics::euler_fv::Limiter
+pub alice_physics::euler_fv::Limiter::Minmod
+pub alice_physics::euler_fv::Limiter::VanLeer
+impl core::clone::Clone for alice_physics::euler_fv::Limiter
+pub fn alice_physics::euler_fv::Limiter::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::euler_fv::Limiter
+impl core::cmp::PartialEq for alice_physics::euler_fv::Limiter
+pub fn alice_physics::euler_fv::Limiter::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::euler_fv::Limiter
+pub fn alice_physics::euler_fv::Limiter::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::euler_fv::Limiter
+impl core::marker::StructuralPartialEq for alice_physics::euler_fv::Limiter
+impl core::marker::Freeze for alice_physics::euler_fv::Limiter
+impl core::marker::Send for alice_physics::euler_fv::Limiter
+impl core::marker::Sync for alice_physics::euler_fv::Limiter
+impl core::marker::Unpin for alice_physics::euler_fv::Limiter
+impl core::marker::UnsafeUnpin for alice_physics::euler_fv::Limiter
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::euler_fv::Limiter
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::euler_fv::Limiter
+pub enum alice_physics::euler_fv::Reconstruction
+pub alice_physics::euler_fv::Reconstruction::FirstOrder
+pub alice_physics::euler_fv::Reconstruction::Muscl(alice_physics::euler_fv::Limiter)
+impl core::clone::Clone for alice_physics::euler_fv::Reconstruction
+pub fn alice_physics::euler_fv::Reconstruction::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::euler_fv::Reconstruction
+impl core::cmp::PartialEq for alice_physics::euler_fv::Reconstruction
+pub fn alice_physics::euler_fv::Reconstruction::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::euler_fv::Reconstruction
+pub fn alice_physics::euler_fv::Reconstruction::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::euler_fv::Reconstruction
+impl core::marker::StructuralPartialEq for alice_physics::euler_fv::Reconstruction
+impl core::marker::Freeze for alice_physics::euler_fv::Reconstruction
+impl core::marker::Send for alice_physics::euler_fv::Reconstruction
+impl core::marker::Sync for alice_physics::euler_fv::Reconstruction
+impl core::marker::Unpin for alice_physics::euler_fv::Reconstruction
+impl core::marker::UnsafeUnpin for alice_physics::euler_fv::Reconstruction
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::euler_fv::Reconstruction
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::euler_fv::Reconstruction
+pub enum alice_physics::euler_fv::RiemannSolver
+pub alice_physics::euler_fv::RiemannSolver::Exact
+pub alice_physics::euler_fv::RiemannSolver::Hllc
+impl core::clone::Clone for alice_physics::euler_fv::RiemannSolver
+pub fn alice_physics::euler_fv::RiemannSolver::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::euler_fv::RiemannSolver
+impl core::cmp::PartialEq for alice_physics::euler_fv::RiemannSolver
+pub fn alice_physics::euler_fv::RiemannSolver::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::euler_fv::RiemannSolver
+pub fn alice_physics::euler_fv::RiemannSolver::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::euler_fv::RiemannSolver
+impl core::marker::StructuralPartialEq for alice_physics::euler_fv::RiemannSolver
+impl core::marker::Freeze for alice_physics::euler_fv::RiemannSolver
+impl core::marker::Send for alice_physics::euler_fv::RiemannSolver
+impl core::marker::Sync for alice_physics::euler_fv::RiemannSolver
+impl core::marker::Unpin for alice_physics::euler_fv::RiemannSolver
+impl core::marker::UnsafeUnpin for alice_physics::euler_fv::RiemannSolver
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::euler_fv::RiemannSolver
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::euler_fv::RiemannSolver
+pub enum alice_physics::euler_fv::TimeIntegrator
+pub alice_physics::euler_fv::TimeIntegrator::ForwardEuler
+pub alice_physics::euler_fv::TimeIntegrator::SspRk2
+impl core::clone::Clone for alice_physics::euler_fv::TimeIntegrator
+pub fn alice_physics::euler_fv::TimeIntegrator::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::euler_fv::TimeIntegrator
+impl core::cmp::PartialEq for alice_physics::euler_fv::TimeIntegrator
+pub fn alice_physics::euler_fv::TimeIntegrator::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::euler_fv::TimeIntegrator
+pub fn alice_physics::euler_fv::TimeIntegrator::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::euler_fv::TimeIntegrator
+impl core::marker::StructuralPartialEq for alice_physics::euler_fv::TimeIntegrator
+impl core::marker::Freeze for alice_physics::euler_fv::TimeIntegrator
+impl core::marker::Send for alice_physics::euler_fv::TimeIntegrator
+impl core::marker::Sync for alice_physics::euler_fv::TimeIntegrator
+impl core::marker::Unpin for alice_physics::euler_fv::TimeIntegrator
+impl core::marker::UnsafeUnpin for alice_physics::euler_fv::TimeIntegrator
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::euler_fv::TimeIntegrator
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::euler_fv::TimeIntegrator
+pub struct alice_physics::euler_fv::Conserved
+pub alice_physics::euler_fv::Conserved::energy: alice_physics::math::Fix128
+pub alice_physics::euler_fv::Conserved::mom: alice_physics::math::Fix128
+pub alice_physics::euler_fv::Conserved::rho: alice_physics::math::Fix128
+impl alice_physics::euler_fv::Conserved
+pub fn alice_physics::euler_fv::Conserved::from_primitive(alice_physics::math::Fix128, &alice_physics::euler_fv::Primitive) -> Self
+pub fn alice_physics::euler_fv::Conserved::to_primitive(&self, alice_physics::math::Fix128) -> core::result::Result<alice_physics::euler_fv::Primitive, alice_physics::euler_fv::EulerError>
+impl core::clone::Clone for alice_physics::euler_fv::Conserved
+pub fn alice_physics::euler_fv::Conserved::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::euler_fv::Conserved
+impl core::cmp::PartialEq for alice_physics::euler_fv::Conserved
+pub fn alice_physics::euler_fv::Conserved::eq(&self, &Self) -> bool
+impl core::default::Default for alice_physics::euler_fv::Conserved
+pub fn alice_physics::euler_fv::Conserved::default() -> Self
+impl core::fmt::Debug for alice_physics::euler_fv::Conserved
+pub fn alice_physics::euler_fv::Conserved::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::euler_fv::Conserved
+impl core::marker::StructuralPartialEq for alice_physics::euler_fv::Conserved
+impl core::marker::Freeze for alice_physics::euler_fv::Conserved
+impl core::marker::Send for alice_physics::euler_fv::Conserved
+impl core::marker::Sync for alice_physics::euler_fv::Conserved
+impl core::marker::Unpin for alice_physics::euler_fv::Conserved
+impl core::marker::UnsafeUnpin for alice_physics::euler_fv::Conserved
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::euler_fv::Conserved
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::euler_fv::Conserved
+pub struct alice_physics::euler_fv::EulerConfig
+pub alice_physics::euler_fv::EulerConfig::cfl: alice_physics::math::Fix128
+pub alice_physics::euler_fv::EulerConfig::gamma: alice_physics::math::Fix128
+pub alice_physics::euler_fv::EulerConfig::left: alice_physics::euler_fv::Boundary
+pub alice_physics::euler_fv::EulerConfig::reconstruction: alice_physics::euler_fv::Reconstruction
+pub alice_physics::euler_fv::EulerConfig::right: alice_physics::euler_fv::Boundary
+pub alice_physics::euler_fv::EulerConfig::solver: alice_physics::euler_fv::RiemannSolver
+pub alice_physics::euler_fv::EulerConfig::time: alice_physics::euler_fv::TimeIntegrator
+impl alice_physics::euler_fv::EulerConfig
+pub fn alice_physics::euler_fv::EulerConfig::godunov(alice_physics::math::Fix128) -> Self
+pub fn alice_physics::euler_fv::EulerConfig::muscl(alice_physics::math::Fix128, alice_physics::euler_fv::RiemannSolver, alice_physics::euler_fv::Limiter) -> Self
+impl core::clone::Clone for alice_physics::euler_fv::EulerConfig
+pub fn alice_physics::euler_fv::EulerConfig::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::euler_fv::EulerConfig
+impl core::cmp::PartialEq for alice_physics::euler_fv::EulerConfig
+pub fn alice_physics::euler_fv::EulerConfig::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::euler_fv::EulerConfig
+pub fn alice_physics::euler_fv::EulerConfig::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::euler_fv::EulerConfig
+impl core::marker::StructuralPartialEq for alice_physics::euler_fv::EulerConfig
+impl core::marker::Freeze for alice_physics::euler_fv::EulerConfig
+impl core::marker::Send for alice_physics::euler_fv::EulerConfig
+impl core::marker::Sync for alice_physics::euler_fv::EulerConfig
+impl core::marker::Unpin for alice_physics::euler_fv::EulerConfig
+impl core::marker::UnsafeUnpin for alice_physics::euler_fv::EulerConfig
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::euler_fv::EulerConfig
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::euler_fv::EulerConfig
+pub struct alice_physics::euler_fv::EulerFv1d
+impl alice_physics::euler_fv::EulerFv1d
+pub fn alice_physics::euler_fv::EulerFv1d::advance_to(&mut self, alice_physics::math::Fix128) -> core::result::Result<usize, alice_physics::euler_fv::EulerError>
+pub fn alice_physics::euler_fv::EulerFv1d::cells(&self) -> &[alice_physics::euler_fv::Conserved]
+pub fn alice_physics::euler_fv::EulerFv1d::cfl_time_step(&self) -> core::result::Result<alice_physics::math::Fix128, alice_physics::euler_fv::EulerError>
+pub fn alice_physics::euler_fv::EulerFv1d::config(&self) -> &alice_physics::euler_fv::EulerConfig
+pub fn alice_physics::euler_fv::EulerFv1d::dx(&self) -> alice_physics::math::Fix128
+pub fn alice_physics::euler_fv::EulerFv1d::max_wave_speed(&self) -> alice_physics::math::Fix128
+pub fn alice_physics::euler_fv::EulerFv1d::new(alice_physics::euler_fv::EulerConfig, alice_physics::math::Fix128, &[alice_physics::euler_fv::Primitive]) -> core::result::Result<Self, alice_physics::euler_fv::EulerError>
+pub fn alice_physics::euler_fv::EulerFv1d::primitives(&self) -> alloc::vec::Vec<alice_physics::euler_fv::Primitive>
+pub fn alice_physics::euler_fv::EulerFv1d::step(&mut self) -> core::result::Result<alice_physics::math::Fix128, alice_physics::euler_fv::EulerError>
+pub fn alice_physics::euler_fv::EulerFv1d::step_with_dt(&mut self, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::euler_fv::EulerError>
+pub fn alice_physics::euler_fv::EulerFv1d::time(&self) -> alice_physics::math::Fix128
+pub fn alice_physics::euler_fv::EulerFv1d::totals(&self) -> alice_physics::euler_fv::Conserved
+impl core::clone::Clone for alice_physics::euler_fv::EulerFv1d
+pub fn alice_physics::euler_fv::EulerFv1d::clone(&self) -> Self
+impl core::fmt::Debug for alice_physics::euler_fv::EulerFv1d
+pub fn alice_physics::euler_fv::EulerFv1d::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for alice_physics::euler_fv::EulerFv1d
+impl core::marker::Send for alice_physics::euler_fv::EulerFv1d
+impl core::marker::Sync for alice_physics::euler_fv::EulerFv1d
+impl core::marker::Unpin for alice_physics::euler_fv::EulerFv1d
+impl core::marker::UnsafeUnpin for alice_physics::euler_fv::EulerFv1d
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::euler_fv::EulerFv1d
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::euler_fv::EulerFv1d
+pub struct alice_physics::euler_fv::Primitive
+pub alice_physics::euler_fv::Primitive::p: alice_physics::math::Fix128
+pub alice_physics::euler_fv::Primitive::rho: alice_physics::math::Fix128
+pub alice_physics::euler_fv::Primitive::u: alice_physics::math::Fix128
+impl core::clone::Clone for alice_physics::euler_fv::Primitive
+pub fn alice_physics::euler_fv::Primitive::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::euler_fv::Primitive
+impl core::cmp::PartialEq for alice_physics::euler_fv::Primitive
+pub fn alice_physics::euler_fv::Primitive::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::euler_fv::Primitive
+pub fn alice_physics::euler_fv::Primitive::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::euler_fv::Primitive
+impl core::marker::StructuralPartialEq for alice_physics::euler_fv::Primitive
+impl core::marker::Freeze for alice_physics::euler_fv::Primitive
+impl core::marker::Send for alice_physics::euler_fv::Primitive
+impl core::marker::Sync for alice_physics::euler_fv::Primitive
+impl core::marker::Unpin for alice_physics::euler_fv::Primitive
+impl core::marker::UnsafeUnpin for alice_physics::euler_fv::Primitive
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::euler_fv::Primitive
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::euler_fv::Primitive
+pub struct alice_physics::euler_fv::StarState
+pub alice_physics::euler_fv::StarState::iterations: u32
+pub alice_physics::euler_fv::StarState::p: alice_physics::math::Fix128
+pub alice_physics::euler_fv::StarState::u: alice_physics::math::Fix128
+impl alice_physics::euler_fv::StarState
+pub fn alice_physics::euler_fv::StarState::sample(&self, alice_physics::math::Fix128, &alice_physics::euler_fv::Primitive, &alice_physics::euler_fv::Primitive, alice_physics::math::Fix128) -> alice_physics::euler_fv::Primitive
+impl core::clone::Clone for alice_physics::euler_fv::StarState
+pub fn alice_physics::euler_fv::StarState::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::euler_fv::StarState
+impl core::cmp::PartialEq for alice_physics::euler_fv::StarState
+pub fn alice_physics::euler_fv::StarState::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::euler_fv::StarState
+pub fn alice_physics::euler_fv::StarState::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::euler_fv::StarState
+impl core::marker::StructuralPartialEq for alice_physics::euler_fv::StarState
+impl core::marker::Freeze for alice_physics::euler_fv::StarState
+impl core::marker::Send for alice_physics::euler_fv::StarState
+impl core::marker::Sync for alice_physics::euler_fv::StarState
+impl core::marker::Unpin for alice_physics::euler_fv::StarState
+impl core::marker::UnsafeUnpin for alice_physics::euler_fv::StarState
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::euler_fv::StarState
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::euler_fv::StarState
+pub const alice_physics::euler_fv::MAX_NEWTON_ITERATIONS: u32
+pub fn alice_physics::euler_fv::exact_riemann(alice_physics::math::Fix128, &alice_physics::euler_fv::Primitive, &alice_physics::euler_fv::Primitive) -> core::result::Result<alice_physics::euler_fv::StarState, alice_physics::euler_fv::EulerError>
+pub fn alice_physics::euler_fv::numerical_flux(alice_physics::euler_fv::RiemannSolver, alice_physics::math::Fix128, &alice_physics::euler_fv::Primitive, &alice_physics::euler_fv::Primitive) -> core::result::Result<alice_physics::euler_fv::Conserved, alice_physics::euler_fv::EulerError>
+pub fn alice_physics::euler_fv::physical_flux(alice_physics::math::Fix128, &alice_physics::euler_fv::Primitive) -> alice_physics::euler_fv::Conserved
 pub mod alice_physics::eulerian_grid
 #[non_exhaustive] pub enum alice_physics::eulerian_grid::FaceBc
 pub alice_physics::eulerian_grid::FaceBc::Fluid

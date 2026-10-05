@@ -158,7 +158,7 @@ API の詳細は [docs.rs](https://docs.rs/alice-physics) を参照
 | 柔軟体 | XPBD のロープと布 (自己衝突あり)、位置ベース流体、FEM-XPBD 変形体、切断 |
 | ゲーム用途 | キャラクターコントローラー、車両 (簡易モデルと、タイヤ・ブレーキ・ABS・路面・天候を持つ輪ごとの車両運動モデル)、ラグドール、IK 連携、クライアント側予測、決定論的乱数 (正規分布を含む)、接触イベント、模擬センサー (lidar / 接触 / IMU) |
 | 固体力学 | P1 / P2 / P3 四面体の線形弾性 FEM、共回転による大回転、J2 塑性、超弾性、熱-構造連成、適応細分化、梁、座屈、疲労、複合材 |
-| 流体と場 | 複数の圧力ソルバーを持つ MAC 格子 CFD、RANS / LES 乱流モデル、VOF とレベルセット、SPH、圧縮性流れ、伝熱、材料分布つき Maxwell FDTD |
+| 流体と場 | 複数の圧力ソルバーを持つ MAC 格子 CFD、RANS / LES 乱流モデル、VOF とレベルセット、SPH、圧縮性流れと衝撃波を扱う 1 次元有限体積法 (厳密 Riemann / HLLC、MUSCL)、伝熱、材料分布つき Maxwell FDTD |
 | 空力 | 標準大気 (ISA 1976、20 km まで)、失速を含む翼の揚力と抗力、ロータの推力とトルク |
 | 分子動力学 | Lennard-Jones・Morse・Coulomb・遮蔽 Coulomb の対ポテンシャル (カットオフとシフト)、周期境界のセルリスト (最小像規約) を使う速度 Verlet |
 | 群衆 | 歩行者の social force model: 駆動項、視野角で重みづけた反発、接触時の体圧と滑り摩擦、壁 |
@@ -177,7 +177,7 @@ API の詳細は [docs.rs](https://docs.rs/alice-physics) を参照
 | step: `PhysicsWorld` の step で実行される | 19 |
 | world API: `PhysicsWorld` の他のメソッドから使われる | 7 |
 | binding: C ABI・Python・WebAssembly のバインディングから使われる | 2 |
-| standalone: 利用者が直接呼ぶ Rust API で、`PhysicsWorld` は呼ばない | 131 |
+| standalone: 利用者が直接呼ぶ Rust API で、`PhysicsWorld` は呼ばない | 132 |
 | unused: テスト以外に呼び出し元がない | 1 |
 
 ## 車両運動

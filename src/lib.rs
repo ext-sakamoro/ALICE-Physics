@@ -342,6 +342,7 @@ pub mod ellipsoid;
 #[cfg(feature = "std")]
 pub mod erosion;
 pub mod error;
+pub mod euler_fv;
 pub mod eulerian_grid;
 pub mod event;
 pub mod fatigue;

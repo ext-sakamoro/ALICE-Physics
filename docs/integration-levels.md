@@ -15,7 +15,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | step | runs when `PhysicsWorld` steps | 19 |
 | world API | used through another `PhysicsWorld` method | 7 |
 | binding | reached only from the C ABI, Python or WebAssembly bindings | 2 |
-| standalone | a Rust API that only examples call | 131 |
+| standalone | a Rust API that only examples call | 132 |
 | unused | no caller outside tests | 1 |
 
 | Module | Level | Items: step / world API / binding / standalone / unused | Reached from bindings |
@@ -84,6 +84,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `dynamic_fem` | standalone | 0 / 0 / 0 / 9 / 0 | — |
 | `electromagnetic` | standalone | 0 / 0 / 0 / 6 / 0 | — |
 | `erosion` | standalone | 0 / 0 / 0 / 9 / 0 | — |
+| `euler_fv` | standalone | 0 / 0 / 0 / 32 / 0 | — |
 | `eulerian_grid` | standalone | 0 / 0 / 0 / 94 / 32 | — |
 | `fatigue` | standalone | 0 / 0 / 0 / 14 / 0 | — |
 | `filament_db` | standalone | 0 / 0 / 0 / 37 / 0 | — |

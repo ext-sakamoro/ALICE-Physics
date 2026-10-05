@@ -214,6 +214,7 @@ this file or listed twice, or when a linked example or test does not exist.
 | `interface_capture` | fast-sweeping level set and PLIC interface reconstruction |  | [`plic_interface_reconstruction`](../examples/plic_interface_reconstruction.rs) | standalone |
 | `surface_tension_csf` | continuum surface force |  | [`csf_surface_tension_presets`](../examples/csf_surface_tension_presets.rs) | standalone |
 | `compressible` | ideal gas, normal shocks, Riemann invariants |  | [`compressible_gas_dynamics`](../examples/compressible_gas_dynamics.rs) | standalone |
+| `euler_fv` | 1D compressible Euler finite volume: exact Riemann (Godunov) and HLLC fluxes, MUSCL with minmod / van Leer, SSP-RK2, CFL step, transmissive / reflective / periodic ends |  | [`euler_sod_shock_tube`](../examples/euler_sod_shock_tube.rs) | standalone |
 | `non_newtonian` | power-law, Carreau, Bingham and Herschel-Bulkley fluids |  | [`non_newtonian_rheology`](../examples/non_newtonian_rheology.rs) | standalone |
 | `turbulence` | Smagorinsky LES, k-ε, k-ω and wall functions |  | [`wall_model`](../examples/wall_model.rs) | standalone |
 | `fsi_advanced` | fluid-structure coupling for deformables and articulations | std | [`fsi_advanced_forces`](../examples/fsi_advanced_forces.rs) | standalone |
