@@ -480,6 +480,13 @@ impl SdfCollider {
     }
 
     /// Create a new SDF collider attached to a rigid body.
+    ///
+    /// The field's local origin is the body's position and its local axes are
+    /// the body's axes. The collider starts at the world origin with no
+    /// rotation and does not follow the body by itself: the body's pose is
+    /// copied in by [`Self::sync_to_body`] (or [`sync_dynamic_sdf_colliders`]
+    /// for a whole set), which has to run after the body moves and before the
+    /// collider is queried.
     #[must_use]
     pub fn new_dynamic(field: Box<dyn SdfField>, body_index: usize) -> Self {
         Self {
@@ -505,11 +512,45 @@ impl SdfCollider {
     }
 
     /// Recompute cached fields after changing position/rotation externally.
+    ///
+    /// The queries read the cached inverse rotation and scale, so a collider
+    /// whose `rotation` or `scale` field was written directly keeps answering
+    /// for the old orientation and scale until this is called.
+    /// [`Self::set_pose`] and [`Self::sync_to_body`] call it themselves.
     pub fn update_cache(&mut self) {
         self.inv_rotation = self.rotation.conjugate();
         let s = self.scale.to_f32();
         self.scale_f32 = s;
         self.inv_scale_f32 = if s.abs() < 1e-10 { 1.0 } else { 1.0 / s };
+    }
+
+    /// Place the collider at `position` with orientation `rotation` (a unit
+    /// quaternion) and refresh the cached inverse rotation, so every query
+    /// that follows evaluates the field in the new placement. The scale is
+    /// kept.
+    pub fn set_pose(&mut self, position: Vec3Fix, rotation: QuatFix) {
+        self.position = position;
+        self.rotation = rotation;
+        self.update_cache();
+    }
+
+    /// Copy the pose of the body this collider is attached to:
+    /// `set_pose(bodies[body_index].position, bodies[body_index].rotation)`.
+    ///
+    /// Returns `true` when the pose was copied. A static collider
+    /// ([`SDF_STATIC`]) or a `body_index` outside `bodies` is left untouched
+    /// and gives `false`.
+    pub fn sync_to_body(&mut self, bodies: &[crate::solver::RigidBody]) -> bool {
+        if self.body_index == SDF_STATIC {
+            return false;
+        }
+        match bodies.get(self.body_index) {
+            Some(body) => {
+                self.set_pose(body.position, body.rotation);
+                true
+            }
+            None => false,
+        }
     }
 
     /// Transform world-space point to SDF local space (f32).
@@ -541,6 +582,26 @@ impl SdfCollider {
             inv_scale_f32: self.inv_scale_f32,
         }
     }
+}
+
+/// Move every dynamic collider of `colliders` to the current pose of the
+/// body it is attached to ([`SdfCollider::sync_to_body`]); static colliders
+/// are not touched. Returns how many colliders were moved.
+///
+/// The queries below take the collider as it is stored, so a set that holds
+/// colliders made by [`SdfCollider::new_dynamic`] has to be synced after the
+/// bodies move and before it is queried.
+pub fn sync_dynamic_sdf_colliders(
+    colliders: &mut [SdfCollider],
+    bodies: &[crate::solver::RigidBody],
+) -> usize {
+    let mut moved = 0;
+    for collider in colliders {
+        if collider.sync_to_body(bodies) {
+            moved += 1;
+        }
+    }
+    moved
 }
 
 // ============================================================================
@@ -757,7 +818,10 @@ pub fn collide_aabb_sdf(min: Vec3Fix, max: Vec3Fix, sdf: &SdfCollider) -> Option
 /// Detect all SDF collisions for a set of bodies.
 ///
 /// For each body, tests against all SDF colliders and returns contacts.
-/// Bodies with `inv_mass == 0` (static) are skipped.
+/// Bodies with `inv_mass == 0` (static) are skipped, and so is the collider
+/// attached to the body itself. Each collider is queried at its stored pose;
+/// call [`sync_dynamic_sdf_colliders`] first when the set holds dynamic
+/// colliders.
 #[cfg(feature = "std")]
 #[must_use]
 pub fn detect_sdf_contacts(
