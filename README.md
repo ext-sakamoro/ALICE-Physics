@@ -197,8 +197,8 @@ items are actually called from; calls from `examples/` do not count. CI measures
 | step: runs when `PhysicsWorld` steps | 19 |
 | world API: used through another `PhysicsWorld` method | 7 |
 | binding: reached from the C ABI, Python or WebAssembly bindings | 2 |
-| standalone: a Rust API you call yourself; `PhysicsWorld` does not call it | 123 |
-| unused: no caller outside tests | 3 |
+| standalone: a Rust API you call yourself; `PhysicsWorld` does not call it | 125 |
+| unused: no caller outside tests | 1 |
 
 ## Vehicle dynamics
 
