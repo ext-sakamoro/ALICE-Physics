@@ -10,7 +10,7 @@ audit pass targets the P2 module category flagged in `PUB_AUDIT_ITERATION_2.md`:
 
 ## Roadmap adjustment vs Iteration 2 plan
 
-Iteration 2 listed `broadphase*` as a target under P2. **No such module exists** in the crate as a top-level `pub mod` — the actual broadphase-adjacent code lives in `bvh` (Linear BVH + `BroadphaseHybrid` skeleton) and `spatial` (hash grid). This audit covers the real 3 modules; `docs/ROADMAP.md` Iteration 4+ targets have been updated accordingly.
+Iteration 2 listed `broadphase*` as a target under P2. **No such module exists** in the crate as a top-level `pub mod` — the actual broadphase-adjacent code lives in `bvh` (Linear BVH + `BroadphaseHybrid`, a skeleton at the time, since completed and wired as `Broadphase::Hybrid`) and `spatial` (hash grid). This audit covers the real 3 modules; `docs/ROADMAP.md` Iteration 4+ targets have been updated accordingly.
 
 ## Findings summary
 
@@ -45,7 +45,7 @@ Iteration 2 listed `broadphase*` as a target under P2. **No such module exists**
 | `point_to_morton` fn (line 49) | `pub` | `pub(crate)` | `bvh.rs`-internal helper, 1 intra-module use only |
 | `ESCAPE_NONE` const (line 100) | `pub` | `pub(crate)` | BVH traversal sentinel, zero external use |
 | `BvhNode::MAX_PRIMS_PER_LEAF` const (line 132) | `pub` | `pub(crate)` | Inherent const on `BvhNode` (prelude type), zero external use; `leaf` fn's rustdoc reference to `Self::MAX_PRIMS_PER_LEAF` converted to plain "255" text |
-| `BroadphaseHybrid` struct + impl (line 748+) | `pub` | `pub(crate)` | Skeleton stability-stub API; only exercised by unit tests within `bvh.rs`. `#[allow(dead_code)]` added on struct + impl block as intentional stub |
+| `BroadphaseHybrid` struct + impl (line 748+) | `pub` | `pub(crate)` | Skeleton stability-stub API at the time; only exercised by unit tests within `bvh.rs`. Since completed and wired as `Broadphase::Hybrid` (the `#[allow(dead_code)]` is gone) |
 
 **Snapshot delta**: 22 lines removed (BroadphaseHybrid struct + 2 fields + 5 impl methods + 7 auto-impls + MAX_PRIMS_PER_LEAF ×3 occurrences + ESCAPE_NONE + morton_code + point_to_morton).
 
@@ -54,7 +54,7 @@ Iteration 2 listed `broadphase*` as a target under P2. **No such module exists**
 
 ### `spatial` (no changes)
 
-All 7 pub items are either in the prelude (`SpatialGrid` type) or are inherent methods of a prelude-exported type (`SpatialGrid::new`, `hash`, `insert`, `build`, `query_neighbors_into`, `clear`). Additionally, `SpatialGrid` is used across 2 internal modules (`bvh.rs` for `BroadphaseHybrid`'s dynamic grid slot, `fluid.rs` for SPH neighbor search). Keep all pub — this is a well-scoped public API.
+All 7 pub items are either in the prelude (`SpatialGrid` type) or are inherent methods of a prelude-exported type (`SpatialGrid::new`, `hash`, `insert`, `build`, `query_neighbors_into`, `clear`). Additionally, `SpatialGrid` is used across 2 internal modules (`bvh.rs` for `BroadphaseHybrid`'s dynamic grid slot at the time — the completed hybrid keeps its own sparse grid — and `fluid.rs` for SPH neighbor search). Keep all pub — this is a well-scoped public API.
 
 ### Combined snapshot impact
 

@@ -1469,6 +1469,7 @@ impl PhysicsWorld {
     /// | `islands` (union-find `parent` / `rank`) | rebuilt | `IslandManager::new` plus a union of every joint's bodies, the same as the start of every `step` |
     /// | `body_collision_radii` / `body_filters` | saved | as stored, including their own lengths |
     /// | `broadphase` / `broadphase_tree` / `broadphase_proxies` | saved | the persistent tree node by node (pair order follows the tree layout) |
+    /// | `broadphase_hybrid` | rebuilt | empty; its pairs are a pure function of the bodies staged each substep, so a fresh one gives the same pairs |
     /// | `body_colliders` | saved | shape or compound, including the compound's cached AABB and dirty flag |
     /// | `overflow_detected` | saved | sticky flag |
     /// | `kinematic_substeps_left` | rebuilt | always 0 outside `step` (reset at the end of every step), and a snapshot is only taken between steps |
@@ -1628,6 +1629,7 @@ impl PhysicsWorld {
         w.u8(match self.broadphase {
             Broadphase::Bvh => 0,
             Broadphase::DynamicTree => 1,
+            Broadphase::Hybrid => 2,
         });
         w_tree(&mut w, &self.broadphase_tree);
         w.usize(self.broadphase_proxies.len());
@@ -1793,6 +1795,7 @@ impl PhysicsWorld {
         self.broadphase = d.broadphase;
         self.broadphase_tree = d.broadphase_tree;
         self.broadphase_proxies = d.broadphase_proxies;
+        self.broadphase_hybrid = crate::bvh::BroadphaseHybrid::new();
         self.body_colliders = d.body_colliders;
         self.body_filters = d.body_filters;
         self.overflow_detected = d.overflow_detected;
@@ -2026,6 +2029,7 @@ fn decode_payload(r: &mut R<'_>) -> Res<Decoded> {
     let broadphase = match r.u8()? {
         0 => Broadphase::Bvh,
         1 => Broadphase::DynamicTree,
+        2 => Broadphase::Hybrid,
         _ => return Err(invalid("broadphase")),
     };
     let broadphase_tree = r_tree(r)?;
