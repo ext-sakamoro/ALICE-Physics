@@ -1045,7 +1045,6 @@ impl CfdSolver {
     /// skipping the projection and returning a compressible field. The
     /// fallback is a documented behaviour, not an error: this entry point has no
     /// error channel, as [`Self::step`] has none.
-    // ALLOW-UNWIRED: public multigrid-projected step entry for downstream solvers
     pub fn step_multigrid(&mut self, dt_s: Fix128, cycles: u32) {
         self.step_with_projection(dt_s, Some(cycles));
     }
