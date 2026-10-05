@@ -109,7 +109,12 @@ def item_spans(lines: list[str], name: str) -> list[tuple[int, int]]:
 # Partial items whose LIMITATION comment cannot be placed in the source yet,
 # with the reason. Each entry must name a partial item that has no comment;
 # a stale entry fails.
-MARKER_EXEMPT: dict[str, str] = {}
+MARKER_EXEMPT: dict[str, str] = {
+    "COV-RIGID-058": "印を置く file を別の変更が書き換え中、その取り込み後に印を入れて外す",
+    "COV-RIGID-068": "印を置く file を別の変更が書き換え中、その取り込み後に印を入れて外す",
+    "COV-RIGID-080": "印を置く file を別の変更が書き換え中、その取り込み後に印を入れて外す",
+    "COV-RIGID-083": "印を置く file を別の変更が書き換え中、その取り込み後に印を入れて外す",
+}
 
 
 def _load_test_parser():
@@ -401,7 +406,7 @@ def status_text(items: list[tuple[str, dict]]) -> str:
     return "\n".join(out) + "\n"
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None, exempt: dict[str, str] | None = None) -> int:
     try:
         sys.stdout.reconfigure(errors="backslashreplace")
         sys.stderr.reconfigure(errors="backslashreplace")
@@ -411,7 +416,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--root", default=str(HERE.parent))
     ap.add_argument("--write-status", action="store_true", help=f"regenerate {STATUS_DOC}")
     args = ap.parse_args(argv)
-    c = Checker(Path(args.root), write_status=args.write_status)
+    root = Path(args.root)
+    # MARKER_EXEMPT names items of this repository; another tree is checked without it
+    if exempt is None and root.resolve() != HERE.parent.resolve():
+        exempt = {}
+    c = Checker(root, exempt=exempt, write_status=args.write_status)
     items, markers = c.run()
     if c.errors:
         for e in c.errors:
