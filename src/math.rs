@@ -434,6 +434,7 @@ impl Sub for Fix128 {
 ///   saturation and no panic, in debug builds too (every intermediate uses
 ///   `wrapping_*`). Callers that need range safety must check operands
 ///   beforehand; the engine's own hot paths keep magnitudes far below the
+// LIMITATION(COV-NUM-076): There is no saturation and no panic, in debug builds too
 ///   limit.
 /// - **Truncation**: fractional bits below 2^-64 are dropped, which is a
 ///   floor toward −∞ on the two's-complement bit pattern (e.g.

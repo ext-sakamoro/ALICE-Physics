@@ -17,6 +17,7 @@
 //! |---|---|
 //! | [`LinearOperator`] | `y = A x`, matrix-free |
 //! | [`Preconditioner`] | `z = M⁻¹ r`, applied on the **right** |
+// LIMITATION(COV-NUM-021): the preconditioner is applied on the **right** only
 //! | [`DenseMatrix`] / [`FnOperator`] | adapters (a small dense matrix, a closure) |
 //! | [`gmres`] | restarted GMRES(m): modified Gram–Schmidt Arnoldi + Givens rotations |
 //! | [`bicgstab`] | van der Vorst `BiCGStab` |
@@ -40,6 +41,7 @@
 //! only stops the representation from discarding precision the operands
 //! actually carry. The rescaling is *per vector*: it cannot rescue entries of
 //! one vector that are `2³²` times smaller than that vector's largest entry,
+// LIMITATION(COV-NUM-077): it cannot rescue entries of one vector that are `2³²` times smaller than that vector's largest entry
 //! which is exactly the block-coupling problem below.
 //!
 //! The sum of products is order-independent bit for bit: each product is
@@ -97,8 +99,10 @@
 //! rounding of a modified Gram–Schmidt pass of a few hundred vectors; a system
 //! whose condition number exceeds about `2⁴⁰` is reported as breakdown rather
 //! than solved to digits the representation does not hold.
+// LIMITATION(COV-NUM-080): a system whose condition number exceeds about `2⁴⁰` is reported as breakdown rather than solved to digits the representation does not hold.
 //!
 //! The initial guess is always zero.
+// LIMITATION(COV-NUM-017): The initial guess is always zero.
 
 #[cfg(not(feature = "std"))]
 use alloc::vec;
