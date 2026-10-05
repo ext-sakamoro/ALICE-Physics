@@ -1,0 +1,14 @@
+# C ABI functions a consumer deliberately does not declare or call, one per line:
+#   <consumer> <function> <reason>
+# consumers: c-header, bindings-header, unity, unreal
+# scripts/integration_levels.py --check fails for a missing function not listed
+# here, and for a listed function the consumer now uses.
+
+unreal alice_physics_world_create the component always creates its world with alice_physics_world_create_with_config (substeps and gravity from its properties)
+unreal alice_physics_body_get_info AliceBodyInfo has no Blueprint struct; C++ code in a project calls the C ABI directly
+unreal alice_physics_body_get_position_fix128_raw Blueprint has no 128-bit integer type; determinism checks call the C ABI from C++
+unreal alice_physics_world_get_positions_batch raw double buffers are not a Blueprint type; C++ code calls the C ABI directly
+unreal alice_physics_world_get_velocities_batch raw double buffers are not a Blueprint type; C++ code calls the C ABI directly
+unreal alice_physics_world_set_velocities_batch raw double buffers are not a Blueprint type; C++ code calls the C ABI directly
+unreal alice_physics_body_apply_impulses_batch raw double buffers are not a Blueprint type; C++ code calls the C ABI directly
+unreal alice_physics_world_set_gravity the component's gravity axis mapping in BeginPlay does not match ToAlice yet; a setter would repeat it

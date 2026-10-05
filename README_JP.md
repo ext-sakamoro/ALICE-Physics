@@ -166,6 +166,17 @@ API の詳細は [docs.rs](https://docs.rs/alice-physics) を参照
 測定は 1 台のホスト内のみ (ループバック TCP で最大 8 プロセス)
 複数ホストにまたがる実行は行っておらず、MPI バックエンドもない
 
+すべてのモジュールが `PhysicsWorld` に組み込まれているわけではない 下の表は、公開モジュールをその item が実際にどこから呼ばれているかで数えたもの (`examples/` からの呼び出しは数えない) CI が `scripts/integration_levels.py` で測る モジュールごとの区分は [`docs/MODULES.md`](docs/MODULES.md) の Integration 列、詳細は [`docs/integration-levels.md`](docs/integration-levels.md) (英語) にある
+
+<!-- integration-levels: summary -->
+| 使われ方 | モジュール数 |
+|----------|-------------:|
+| step: `PhysicsWorld` の step で実行される | 19 |
+| world API: `PhysicsWorld` の他のメソッドから使われる | 7 |
+| binding: C ABI・Python・WebAssembly のバインディングから使われる | 2 |
+| standalone: 利用者が直接呼ぶ Rust API で、`PhysicsWorld` は呼ばない | 120 |
+| unused: テスト以外に呼び出し元がない | 3 |
+
 ## 車両運動
 
 `vehicle_dynamics::DynamicVehicle` は、各車輪がそれぞれの接地点で車体に力を加える車両モデル
@@ -244,9 +255,11 @@ golden ハッシュは変化を検出するだけなので、これらとは別�
 |------|------|------|
 | C / C++ | [`include/alice_physics.h`](include/alice_physics.h) | `--features ffi` `cdylib` と `staticlib` を生成 |
 | Unity (C#) | [`bindings/AlicePhysics.cs`](bindings/AlicePhysics.cs) | C ABI への P/Invoke |
-| Unreal Engine 5 | [`unreal-plugin/`](unreal-plugin/README.md) | C ABI を包むプラグイン |
-| Python | `src/python.rs` | `--features python` `PhysicsWorld` と `DeterministicSimulation` クラス、NumPy の一括 API |
-| WebAssembly | [`web/`](web/) | `--features wasm` `wasm-pack` でビルドする Three.js ビューア |
+| Unreal Engine 5 | [`unreal-plugin/`](unreal-plugin/README.md) | C ABI の一部を包む Blueprint コンポーネント |
+| Python | `src/python.rs` | `--features python` `PhysicsWorld` (body・衝突半径と形状・静的コライダー・ジョイント) と `DeterministicSimulation` クラス、NumPy の一括 API |
+| WebAssembly | [`web/`](web/) | `--features wasm` `WasmPhysicsWorld` (body・衝突半径と形状・静的コライダー・ジョイント) と `wasm-pack` でビルドする Three.js ビューア |
+
+バインディングが覆うのはシーンを組んで進めるのに要る範囲 (body・衝突半径と形状・静的コライダー・ジョイント・撃力・状態の直列化) で、全モジュールではない 上の表の standalone のモジュールは Rust からのみ使える C ABI と各利用側の対応は CI が `scripts/integration_levels.py` で検査する C ヘッダ・`bindings/AlicePhysics.h`・Unity のバインディングは公開関数をすべて宣言し、Unreal Engine のコンポーネントはその一部を包む 包まない関数とその理由は [`docs/integration-levels.md`](docs/integration-levels.md) (英語) にある
 
 ```sh
 cargo build --release --features ffi

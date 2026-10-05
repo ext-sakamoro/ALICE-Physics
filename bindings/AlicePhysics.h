@@ -25,6 +25,18 @@ struct AliceVec3 {
     double z;
 };
 
+// Raw Fix128 bits (integer part hi, fraction lo) for byte-for-byte checks
+struct AliceFix128Raw {
+    int64_t hi;
+    uint64_t lo;
+};
+
+struct AliceVec3Fix128Raw {
+    AliceFix128Raw x;
+    AliceFix128Raw y;
+    AliceFix128Raw z;
+};
+
 // C-compatible quaternion
 struct AliceQuat {
     double x;
@@ -84,6 +96,7 @@ uint8_t  alice_physics_body_set_velocity(AlicePhysicsWorldHandle world, uint32_t
 uint8_t  alice_physics_body_get_rotation(const AlicePhysicsWorldHandle world, uint32_t body_id, AliceQuat* out);
 uint8_t  alice_physics_body_set_restitution(AlicePhysicsWorldHandle world, uint32_t body_id, double restitution);
 uint8_t  alice_physics_body_set_friction(AlicePhysicsWorldHandle world, uint32_t body_id, double friction);
+uint8_t  alice_physics_body_get_position_fix128_raw(const AlicePhysicsWorldHandle world, uint32_t body_id, AliceVec3Fix128Raw* out);
 
 // --- Impulses ---
 uint8_t  alice_physics_body_apply_impulse(AlicePhysicsWorldHandle world, uint32_t body_id, AliceVec3 impulse);
@@ -129,6 +142,11 @@ uint32_t alice_physics_joint_count(const AlicePhysicsWorldHandle world);
 
 // --- Version ---
 const char* alice_physics_version();
+
+// --- Panic isolation: most recent caught panic message (take semantics) ---
+char*    alice_physics_last_error(void);
+void     alice_physics_clear_last_error(void);
+void     alice_physics_string_free(char* s);
 
 } // extern "C"
 

@@ -288,11 +288,18 @@ def _visible(code_lines: list[str], pos: tuple[int, int]) -> bool:
     return line < len(code_lines) and ch < len(code_lines[line]) and not code_lines[line][ch].isspace()
 
 
-def analyze(root: Path, scip_paths: list[Path]) -> Analysis:
+def analyze(root: Path, scip_paths: list[Path], keep_graph: bool = False) -> Analysis:
+    """Classify every pub item. With `keep_graph=True` the result also carries the
+    reachability function and the root sets (`a.reach`, `a.roots_binding`,
+    `a.roots_by_binding` per binding file, `a.roots_example`, `a.roots_core`) so callers can ask what a different set of
+    roots reaches (scripts/integration_levels.py). The default leaves the result
+    exactly as before: levels, counts and baseline keys do not depend on the flag."""
     root = Path(root)
     a = Analysis()
     edges: dict[object, set[str]] = {}
     roots_core: set[str] = set()
+    roots_binding: set[str] = set()  # also in roots_core; kept apart only for keep_graph
+    roots_by_binding: dict[str, set[str]] = {}
     roots_example: set[str] = set()
     implementers: dict[str, set[str]] = {}
     defined: set[str] = set()
@@ -382,6 +389,8 @@ def analyze(root: Path, scip_paths: list[Path]) -> Analysis:
                         a.fuzz_refs += 1  # libfuzzer-sys / arbitrary / std do not count
                 elif rel in BINDING_FILES:
                     roots_core.add(s)
+                    roots_binding.add(s)
+                    roots_by_binding.setdefault(rel, set()).add(s)
                     a.binding_refs += 1
                 elif ctx is None:
                     roots_core.add(s)  # module-level code that is not a `use`
@@ -469,6 +478,12 @@ def analyze(root: Path, scip_paths: list[Path]) -> Analysis:
             a.level[key] = "L1"
         else:
             a.level[key] = "L0"
+    if keep_graph:
+        a.reach = reach
+        a.roots_core = set(roots_core)
+        a.roots_binding = set(roots_binding)
+        a.roots_by_binding = {k: set(v) for k, v in roots_by_binding.items()}
+        a.roots_example = set(roots_example)
     return a
 
 

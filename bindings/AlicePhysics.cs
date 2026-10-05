@@ -72,6 +72,23 @@ namespace AlicePhysics
         public static readonly AliceQuat Identity = new AliceQuat(0, 0, 0, 1);
     }
 
+    /// <summary>Raw Fix128 bits (integer part hi, fraction lo) for byte-for-byte checks.</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct AliceFix128Raw
+    {
+        public long hi;
+        public ulong lo;
+    }
+
+    /// <summary>Raw Fix128 3-vector.</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct AliceVec3Fix128Raw
+    {
+        public AliceFix128Raw x;
+        public AliceFix128Raw y;
+        public AliceFix128Raw z;
+    }
+
     /// <summary>
     /// Collision shape. kind: 0 box (half extents a, b, c), 1 cylinder (radius a,
     /// half height b), 2 cone (radius a, half height b), 3 ellipsoid (radii a, b, c),
@@ -140,6 +157,12 @@ namespace AlicePhysics
         [DllImport(DLL)] public static extern byte alice_physics_body_get_rotation(IntPtr world, uint bodyId, out AliceQuat rotation);
         [DllImport(DLL)] public static extern byte alice_physics_body_set_restitution(IntPtr world, uint bodyId, double restitution);
         [DllImport(DLL)] public static extern byte alice_physics_body_set_friction(IntPtr world, uint bodyId, double friction);
+        [DllImport(DLL)] public static extern byte alice_physics_body_get_position_fix128_raw(IntPtr world, uint bodyId, out AliceVec3Fix128Raw position);
+        [DllImport(DLL)] public static extern byte alice_physics_world_step_n(IntPtr world, double dt, uint steps);
+        [DllImport(DLL)] public static extern byte alice_physics_world_get_positions_batch(IntPtr world, double[] output, uint outCapacity);
+        [DllImport(DLL)] public static extern byte alice_physics_world_get_velocities_batch(IntPtr world, double[] output, uint outCapacity);
+        [DllImport(DLL)] public static extern byte alice_physics_world_set_velocities_batch(IntPtr world, double[] data, uint count);
+        [DllImport(DLL)] public static extern byte alice_physics_body_apply_impulses_batch(IntPtr world, double[] data, uint count);
         [DllImport(DLL)] public static extern byte alice_physics_body_apply_impulse(IntPtr world, uint bodyId, AliceVec3 impulse);
         [DllImport(DLL)] public static extern byte alice_physics_body_apply_impulse_at(IntPtr world, uint bodyId, AliceVec3 impulse, AliceVec3 point);
 

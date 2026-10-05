@@ -51,6 +51,10 @@ python3 scripts/test_scip_reach.py
 python3 scripts/test_audit_refs.py
 python3 scripts/test_run_feature_gated_tests.py
 
+step "integration levels oracle + C ABI coverage (docs/integration-levels.md)"
+python3 scripts/test_integration_levels.py
+python3 scripts/integration_levels.py --no-index --check
+
 step "oracle ledger links (PIN / root external)"
 python3 scripts/gen-oracle-status.py --check
 
@@ -92,6 +96,7 @@ if command -v rust-analyzer >/dev/null && rust-analyzer --version >/dev/null 2>&
   scripts/scip_index.sh
   python3 scripts/audit_refs.py --check
   python3 scripts/scip_reach.py --check-baseline
+  python3 scripts/integration_levels.py --check
 elif [[ $quick -eq 1 || $fast -eq 1 ]]; then
   echo "skip: rust-analyzer not installed (rustup component add rust-analyzer); CI runs this check" >&2
 else

@@ -56,6 +56,13 @@ jobs:
         run: python scripts/test_audit_refs.py
       - name: Feature-gated test runner (tests)
         run: python scripts/test_run_feature_gated_tests.py
+      # how each module and each C ABI consumer is integrated
+      # (docs/integration-levels.md): the analysis on hand-built indexes, and the
+      # C ABI coverage, which needs no index (the module part runs in the scip job)
+      - name: Integration levels (tests)
+        run: python scripts/test_integration_levels.py
+      - name: C ABI declared by every consumer or listed with a reason
+        run: python scripts/integration_levels.py --no-index --check
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -169,6 +176,8 @@ jobs:
         run: python3 scripts/audit_refs.py --check
       - name: No new L0 item, no stale baseline entry
         run: python3 scripts/scip_reach.py --check-baseline
+      - name: Integration levels ledger, README and MODULES.md figures up to date
+        run: python3 scripts/integration_levels.py --check
 
   sibling-features:
     name: Test (neural / replay / analytics via crates.io siblings)

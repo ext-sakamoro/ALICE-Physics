@@ -501,5 +501,45 @@ class Baseline(unittest.TestCase):
         self.assertEqual(sr.main(["--root", str(d), "--check-baseline"]), 0)
 
 
+class KeepGraph(unittest.TestCase):
+    """analyze(keep_graph=True): the same levels, plus the reach function and roots."""
+
+    def docs(self):
+        ex = Doc("examples/demo.rs", "fn main() { used(); }").ref("used().", 0, "used")
+        ffi = Doc("src/ffi.rs", "pub extern \"C\" fn api() { via_binding(); }").ref("via_binding().", 0, "via_binding")
+        return [lib_doc(), ex, ffi]
+
+    def run_analyze(self, keep):
+        d = build(self.docs())
+        s = d / "target" / "scip"
+        return sr.analyze(d, [s / "native.scip", s / "wasm.scip", s / "fuzz.scip"], keep_graph=keep) if keep is not None \
+            else sr.analyze(d, [s / "native.scip", s / "wasm.scip", s / "fuzz.scip"])
+
+    def test_without_the_keyword_nothing_changes(self):
+        plain, kept = self.run_analyze(None), self.run_analyze(True)
+        self.assertEqual(plain.level, kept.level)
+        self.assertEqual((plain.example_refs, plain.binding_refs), (kept.example_refs, kept.binding_refs))
+        self.assertFalse(hasattr(plain, "reach"))
+        self.assertFalse(hasattr(self.run_analyze(False), "reach"))
+
+    def test_graph_and_roots_are_kept(self):
+        a = self.run_analyze(True)
+        P = "rust-analyzer cargo demo 0.1.0 "
+        self.assertIn(P + "via_binding().", a.roots_binding)
+        self.assertNotIn(P + "used().", a.roots_binding)
+        self.assertIn(P + "used().", a.roots_example)
+        self.assertTrue(a.roots_binding <= a.roots_core)
+        self.assertEqual(set(a.roots_by_binding), {"src/ffi.rs"})
+        self.assertEqual(a.roots_by_binding["src/ffi.rs"], a.roots_binding)
+
+    def test_reach_answers_for_other_roots(self):
+        a = self.run_analyze(True)
+        P = "rust-analyzer cargo demo 0.1.0 "
+        from_binding = a.reach(a.roots_binding)
+        self.assertIn(P + "helper().", from_binding)       # via_binding -> helper
+        self.assertNotIn(P + "used().", from_binding)      # only an example calls it
+        self.assertEqual(a.reach({P + "used()."}), {P + "used()."})
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -102,6 +102,8 @@ were introduced during that release window.
 - C ABI (`--features ffi`): `alice_physics_body_{set,clear}_collision_radius` / `alice_physics_body_add_shaped` / `alice_physics_body_set_shape` (`AlicePhysicsShape`: box・cylinder・cone・ellipsoid・wedge・torus) / `alice_physics_static_{add_plane,add_heightfield,add_trimesh,remove,count}` / `alice_physics_joint_{add_ball,add_hinge,add_fixed,add_slider,add_spring,remove,count}` `include/alice_physics.h`・`bindings/AlicePhysics.h`・Unity の `bindings/AlicePhysics.cs` に宣言
 - WebAssembly (`--features wasm`) と Python (`--features python`) の `PhysicsWorld` に同じ集合 (衝突半径・形状・静的コライダー・ジョイント) を追加 不正な値 (有限でない・正でない大きさ、範囲外の body、同じ body 同士のジョイント、壊れたメッシュ) は 3 つのバインディングとも同じ規則で拒否する (C は `0` / `UINT32_MAX`、WebAssembly は `false` / `undefined`、Python は `ValueError` / `IndexError`)
 - `AliceVec3` / `AliceQuat` (C ABI の値型) に `Clone` / `Copy` / `Debug` / `PartialEq`
+- `docs/integration-levels.md` (`scripts/integration_levels.py`): 公開モジュールを item が実際にどこから呼ばれるか (step / world API / binding / standalone / unused、`examples/` からの呼び出しは数えない) で区分した一覧と、C ABI の各関数を C ヘッダ・`bindings/AlicePhysics.h`・Unity・Unreal Engine プラグインが宣言 / 呼び出しているかの表 README の要約表と `docs/MODULES.md` の Integration 列は CI がこの計測と突き合わせる 利用側が宣言しない関数は `scripts/abi-consumer-gaps.txt` に理由付きで載っていなければ CI が失敗する
+- Unreal Engine プラグインの `UAlicePhysicsWorldComponent` に衝突半径・形状・静的コライダー (平面・高さ場・三角形メッシュ)・ジョイント (ball・hinge・fixed・slider・spring)・body の位置 / 速度 / 反発 / 摩擦の設定・センサー body・`StepSimulationN`・`SetWorldSubsteps`・エラー文字列と版の取得を追加 (UE のビルド環境が無いため型検査は代替ヘッダで行った)
 
 ### Changed
 
@@ -231,6 +233,7 @@ were introduced during that release window.
 - `print_pipeline_solver` で熱応力と bimaterial の not safe が `PrintSafetyReport::is_safe` に反映されていなかった (AUD-A-S5W1-007)
 - `SolverBackend::Tgs` の warm-start キャッシュが接触と距離拘束を vector 内の位置で引いていたため、接触の増減・`PhysicsWorld::remove_body`・`distance_constraints` の途中削除の後に別の接触・拘束の撃力で warm start していた 鍵を body ごとの安定 ID (削除を跨いで不変) と同じ対の中の序数に変更し、接触は安定 ID の小さい body から大きい body へ向きを揃える
 - `SolverBackend::Tgs` が `PhysicsWorld::add_joint` のジョイントと `PhysicsWorld::add_static_collider` の静的コライダーを無視していた (TGS では距離拘束しか解いていなかった) `step_tgs` で `solve_joints_dispatch` と `resolve_static_collisions` を呼ぶ 位置補正は速度にも反映する (静的接触は面に向かう速度を除き、ジョイントは `Δx / dt` と回転変化の角速度を加える)
+- C ヘッダ `include/alice_physics.h` が `alice_physics_world_step_n` の戻り値を `void` と宣言していた (実装は `uint8_t`) また `alice_physics_body_get_position_fix128_raw` を `include/alice_physics.h` と `bindings/AlicePhysics.h` が、`alice_physics_last_error` / `alice_physics_clear_last_error` / `alice_physics_string_free` を `bindings/AlicePhysics.h` が、`alice_physics_world_step_n` と 4 つの一括 API と `alice_physics_body_get_position_fix128_raw` を Unity の `bindings/AlicePhysics.cs` が宣言していなかった
 
 ## [1.4.0] - 2026-09-17
 
