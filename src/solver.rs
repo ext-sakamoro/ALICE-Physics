@@ -3606,6 +3606,14 @@ impl PhysicsWorld {
                         None => overflow.store(true, core::sync::atomic::Ordering::Relaxed),
                     }
 
+                    // Gyroscopic term ω × Iω (implicit, see `crate::gyroscopic`)
+                    body.angular_velocity = crate::gyroscopic::gyroscopic_omega(
+                        body.angular_velocity,
+                        body.rotation,
+                        body.inv_inertia,
+                        dt,
+                    );
+
                     // Predict rotation (single sqrt via normalize_with_length)
                     let (axis, ang_speed) = body.angular_velocity.normalize_with_length();
                     if !ang_speed.is_zero() {
@@ -3671,6 +3679,14 @@ impl PhysicsWorld {
                     Some(d) => self.bodies[i].position = self.bodies[i].position + d,
                     None => self.overflow_detected = true,
                 }
+
+                // Gyroscopic term ω × Iω (implicit, see `crate::gyroscopic`)
+                self.bodies[i].angular_velocity = crate::gyroscopic::gyroscopic_omega(
+                    self.bodies[i].angular_velocity,
+                    self.bodies[i].rotation,
+                    self.bodies[i].inv_inertia,
+                    dt,
+                );
 
                 // Predict rotation (single sqrt via normalize_with_length)
                 let (axis, ang_speed) = self.bodies[i].angular_velocity.normalize_with_length();
