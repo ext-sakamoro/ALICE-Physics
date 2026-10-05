@@ -410,6 +410,7 @@ impl DeformableBody {
         // Current center of mass
         let current_center = compute_center_of_mass(&self.positions);
 
+        // LIMITATION(COV-SOFT-017): Simplified shape matching: blend toward rest shape
         // Simplified shape matching: blend toward rest shape
         for i in 0..self.particle_count() {
             if self.inv_masses[i].is_zero() {
@@ -459,6 +460,7 @@ impl DeformableBody {
 
     /// Resolve collisions between deformable body particles and rigid bodies
     ///
+    // LIMITATION(COV-SOFT-059): Treats each rigid body as a sphere with given radius for simplicity.
     /// Treats each rigid body as a sphere with given radius for simplicity.
     /// Applies two-way coupling: deformable particles are pushed out,
     /// and rigid bodies receive reaction impulses.
