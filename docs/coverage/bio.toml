@@ -1,0 +1,1428 @@
+# Biomechanics coverage of ALICE-Physics, against an external reference frame.
+# 実装が無い分野の範囲宣言
+#
+# What this table is: a declaration of the field's extent for a field the crate
+# does not implement yet (musculoskeletal mechanics, locomotion, soft tissue,
+# bone, blood flow, the heart, cells and molecules, impact injury). It lists
+# every capability that the standard texts (Fung, Biomechanics: Mechanical
+# Properties of Living Tissues and Biomechanics: Circulation; Zajac 1989 on
+# Hill-type muscle; Winter, Biomechanics and Motor Control of Human Movement;
+# Humphrey, Cardiovascular Solid Mechanics; Keener-Sneyd, Mathematical
+# Physiology; Boal, Mechanics of the Cell), reference implementations (OpenSim,
+# FEBio, AnyBody, SimVascular) and standard benchmarks (Hill's force-velocity
+# relation, isometric twitch and tetanus, the Windkessel pressure waveform,
+# energy recovery of inverted-pendulum walking, the head injury criterion, the
+# Hodgkin-Huxley action potential, the Womersley profile) expect of a
+# biomechanics code, one [[item]] per capability. Nearly every row is missing:
+# the table fixes the scope before biological laws are moved into this crate
+# from another crate, so that each law has a place decided in advance. The rows
+# are written by hand: the axes and the items come from the reference frame,
+# not from the modules that exist.
+#
+# The few rows that are not missing are compositions of existing parts with
+# physiological inputs (blood viscosity through the Carreau law, hovering power
+# through actuator-disk momentum theory, a long bone as a hollow circular beam,
+# soft tissue fitted with an isotropic rubber-like law); they are
+# implemented-no-oracle because no test checks them against biological data.
+#
+# Boundary with the other tables (one capability goes in one table only):
+#   - rigid multibody articulation, ragdolls, character controllers, joint
+#     motors and robot inverse dynamics: the rigid-body and multibody tables
+#     (COV-RIGID-030 joint motors, 032 joint reaction output, 042 recursive
+#     Newton-Euler, 111 / 115 pendulums; COV-MBD-093 anthropometric segment
+#     masses, 094 / 097 ragdoll joints and tree, 096 segment inertia from radii
+#     of gyration, 100 powered ragdoll, 075-078 inverse kinematics, 111 the
+#     locomotion state machine, 117 rotor momentum theory). Here the biological
+#     models on top of them: muscle and tendon laws, muscle-driven dynamics,
+#     gait analysis, the mechanics of animal locomotion.
+#   - numerical flow solvers: the CFD table (COV-CFD-097 plane Poiseuille,
+#     108 Womersley channel flow, 110 Hagen-Poiseuille duct, 063 generalised-
+#     Newtonian viscosity in the momentum equation, 066 species transport).
+#     Here the closed-form and lumped models of the circulation (Poiseuille
+#     resistance, Womersley number and profile, Windkessel, pulse wave speed,
+#     1-D network models as a model class) and blood as a material.
+#   - finite-element solution of hyperelastic and viscoelastic solids: the FEM
+#     table (COV-FEM-027-030 isotropic hyperelastic laws, 042 Prony
+#     viscoelasticity, 025 / 026 anisotropic elasticity). Here the constitutive
+#     laws of living tissue (Fung, Holzapfel-Gasser-Ogden, QLV, biphasic,
+#     growth and remodelling) and their tissue-level tests.
+#   - closed-form strength of materials (beams, pressure vessels, creep): the
+#     structures table (COV-STRUCT-009 beams, 030 thin-walled vessels, 064
+#     Findley creep). Here their use for bone and vessels.
+#   - material data (parameter sets of tissues, fluids and bone): the
+#     materials table. Here only the laws that consume them.
+#   - fluid-structure interaction as a coupled solve: the coupling table.
+#   - heat conduction solvers: the thermal table; the Pennes bioheat source
+#     term is a row here.
+#   - generic ODE integrators (needed by the excitable-cell models): the
+#     numerical-methods table (COV-NUM-045 / 049 / 051).
+#   - neural-network or learned controllers that output joint torques
+#     (src/neural.rs): the deterministic inference is COV-ENGINE-127, the
+#     control law belongs to the sensing and control table.
+#   - crowd dynamics of pedestrians: the particle table (social force).
+#
+# Search notes: the words "Hill" (src/laminate_failure.rs Tsai-Hill failure,
+# "downhill" in the character controllers), "bone" (animation skeleton bones),
+# "vessel" (ships), "Froude" (Froude-Krylov wave force), "growth" (error and
+# wave growth), "oscillator" (wake oscillator, piezo harvester) and
+# "swimming" (a character state) match other meanings only; rows below that
+# say "src 0 件" were checked word by word.
+#
+# status (exactly one of):
+#   implemented+oracle     implemented, and at least one non-ignored test checks
+#                          it against an independent reference
+#   implemented-no-oracle  implemented, no such test
+#   partial                implemented with a restriction that the source states;
+#                          `limitation` quotes it, and the source carries a
+#                          `LIMITATION(<id>)` comment at that place
+#   missing                not implemented
+#   out-of-scope           not a capability of this field (reason in `evidence`)
+#
+# This axis is separate from the test ignore reasons (`known defect: ...`,
+# `src gap: ...`, `diagnostic`, `runtime`).
+#
+# keys: id (COV-BIO-NNN) / axis / item / source (book, chapter, paper or
+# reference-implementation feature; no quoted text) / status / evidence
+# (`src/...rs:line`, `tests/...rs::test_fn`) / oracle_candidate / limitation
+# (verbatim quote of the source, required for `partial`).
+#
+# Reference values marked "参照値要確認" are to be checked against the original
+# publication before any test uses them. Lines marked "(推測)" were judged from
+# a search that found nothing and are to be confirmed. Ids of other tables cited
+# in `evidence` (COV-RIGID-*, COV-MBD-*, COV-CFD-*, COV-FEM-*, COV-STRUCT-*,
+# COV-NUM-*, COV-PART-*, COV-THERM-*, COV-ENV-*, COV-SOFT-*,
+# COV-ENGINE-*) are those of the tables as
+# written at the time of this table.
+#
+# Checked by scripts/coverage_check.py (tests: scripts/test_coverage_check.py).
+
+
+[[item]]
+id = "COV-BIO-001"
+axis = "muscle"
+item = "Hill-type muscle: active force-length relation of the contractile element"
+source = "Zajac 1989; Gordon-Huxley-Julian 1966; OpenSim Millard2012EquilibriumMuscle"
+status = "missing"
+evidence = "無い (推測: muscle / sarcomere で src 0 件)"
+oracle_candidate = "最適長で 1、両端で 0 に落ちる曲線を Gordon らの点列 (参照値要確認) と突合"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-002"
+axis = "muscle"
+item = "Hill force-velocity relation (concentric hyperbola, eccentric branch)"
+source = "Hill 1938; Zajac 1989; OpenSim Thelen2003Muscle"
+status = "missing"
+evidence = "無い (推測: Hill で当たるのは src/laminate_failure.rs の Tsai-Hill 破壊基準だけ)"
+oracle_candidate = "(F + a)(v + b) = (F0 + a) b の双曲線を任意点で突合、v = 0 で F0、v_max で 0"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-003"
+axis = "muscle"
+item = "passive parallel elastic element of muscle (exponential force-length)"
+source = "Zajac 1989; Thelen 2003"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "最適長以下で 0、伸長で指数的に増える閉形式との突合"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-004"
+axis = "muscle"
+item = "pennation angle and its change at constant muscle thickness"
+source = "Zajac 1989; Otten 1988"
+status = "missing"
+evidence = "無い (推測: pennation で src 0 件)"
+oracle_candidate = "厚さ一定の幾何で cos(α) l_M = 一定 の関係を任意長で突合"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-005"
+axis = "muscle"
+item = "muscle-tendon unit equilibrium (contractile element in series with a compliant tendon, solved for fibre length)"
+source = "Zajac 1989; Millard et al. 2013"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "剛い腱の極限で筋線維長 = 筋腱長 − 腱静止長、柔らかい腱で力の釣り合いが残差 0"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-006"
+axis = "muscle"
+item = "activation dynamics (first-order excitation to activation with separate activation and deactivation time constants)"
+source = "Zajac 1989; Thelen 2003; He et al. 1991"
+status = "missing"
+evidence = "無い (推測: activation で当たるのは src/neural.rs の NN 活性化関数・src/creep_longterm.rs・src/smoke_fire.rs の別語義だけ) 汎用 ODE も無い (COV-NUM-045)"
+oracle_candidate = "ステップ入力の応答が時定数 τ_act / τ_deact の指数に一致"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-007"
+axis = "muscle"
+item = "twitch and tetanic summation (force response to an impulse train)"
+source = "Winter ch.10; Keener-Sneyd ch.15"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "刺激頻度を上げると単収縮が加算され強縮に飽和する (比の参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-008"
+axis = "muscle"
+item = "cross-bridge (Huxley 1957) muscle model and its distribution-moment approximation (Zahalak)"
+source = "Huxley 1957; Zahalak 1981"
+status = "missing"
+evidence = "無い (推測: cross-bridge / myosin で src 0 件)"
+oracle_candidate = "定常短縮で Hill の双曲線に近づくこと (Huxley 1957 の導出)"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-009"
+axis = "muscle"
+item = "muscle fatigue and recovery (three-compartment or metabolic models)"
+source = "Xia-Frey Law 2008"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "一定負荷の持続時間 (endurance) 曲線の形 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-010"
+axis = "muscle"
+item = "muscle energetics (heat of shortening, metabolic cost of contraction)"
+source = "Hill 1938; Umberger et al. 2003"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "短縮熱 a·Δx の比例関係と、仕事 + 熱 = 代謝量の収支"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-011"
+axis = "muscle"
+item = "EMG-driven excitation (filtered EMG to muscle excitation, electromechanical delay)"
+source = "Lloyd-Besier 2003; Winter ch.10"
+status = "missing"
+evidence = "無い (推測: EMG で src 0 件)"
+oracle_candidate = "整流 + 低域 filter の応答と遅れ時間の突合"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-012"
+axis = "muscle"
+item = "muscle as an actuator of the multibody model (force along a path applied to the bodies it crosses)"
+source = "OpenSim Muscle / PathActuator; AnyBody"
+status = "missing"
+evidence = "無い 関節に直接トルクを掛ける部品はある (src/motor.rs:214、COV-RIGID-030) が、筋の経路に沿う力を 2 体に掛ける部品は無い"
+oracle_candidate = "両端に等大逆向きの力、経路の moment arm 分だけ関節トルクが立つこと"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-013"
+axis = "tendon-ligament"
+item = "tendon force-strain with toe region and linear region"
+source = "Zajac 1989; Butler et al. 1978"
+status = "missing"
+evidence = "無い (推測: tendon / ligament で src 0 件)"
+oracle_candidate = "toe 領域の指数と線形領域の傾きが連続につながる閉形式との突合"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-014"
+axis = "tendon-ligament"
+item = "tendon and ligament viscoelasticity (creep, stress relaxation, hysteresis)"
+source = "Fung ch.7; Woo et al. 1993"
+status = "missing"
+evidence = "無い 汎用の一軸クリープ閉形式は src/creep_longterm.rs:76 (高分子の Findley、COV-STRUCT-064) だけ"
+oracle_candidate = "応力緩和曲線が QLV の閉形式と一致 (行 COV-BIO-052 と同じ式)"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-015"
+axis = "tendon-ligament"
+item = "ligament as a slack-then-taut nonlinear spring between bones (zero force below slack length)"
+source = "Blankevoort 1991; OpenSim Ligament"
+status = "missing"
+evidence = "無い ばね関節 src/joint.rs:282 は両方向に効く線形ばねで、緩み長以下で 0 になる片側ばねは無い (片側の距離拘束も無い COV-RIGID-025)"
+oracle_candidate = "緩み長以下で力 0、それ以上で非線形に立ち上がる"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-016"
+axis = "tendon-ligament"
+item = "muscle and tendon path wrapping over bones (via points, cylinders, ellipsoids) and moment arms"
+source = "Delp 1990; OpenSim WrapObject"
+status = "missing"
+evidence = "無い (推測: wrapping で当たるのは整数の wrap だけ)"
+oracle_candidate = "円柱 wrap の moment arm = 半径 (接している範囲) の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-017"
+axis = "tendon-ligament"
+item = "moment arm by the tendon-excursion method (dL/dθ)"
+source = "An et al. 1984; Delp 1990"
+status = "missing"
+evidence = "無い (推測: moment arm で当たるのは src/solver_tgs_hooks_6dof_oriented.rs の拘束の腕の別語義)"
+oracle_candidate = "経路長の角度微分と幾何の垂線長が一致"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-018"
+axis = "musculoskeletal"
+item = "anthropometric scaling of a generic musculoskeletal model to a subject (segment lengths, masses, muscle optimal lengths)"
+source = "Winter ch.4; OpenSim Scale tool"
+status = "missing"
+evidence = "体節質量の比は ragdoll の preset にある (src/ragdoll.rs:101、COV-MBD-093) が、筋の長さや慣性を被験者に合わせる scaling は無い"
+oracle_candidate = "体節長を 2 倍にした時の慣性と筋長の倍率の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-019"
+axis = "musculoskeletal"
+item = "joint kinematics from motion-capture markers (weighted least-squares inverse kinematics)"
+source = "OpenSim Inverse Kinematics; Lu-O'Connor 1999"
+status = "missing"
+evidence = "無い (数値 IK は COV-MBD-076 が missing、marker 誤差の最小化も無い)"
+oracle_candidate = "既知の姿勢から作った marker を入れて関節角が復元されること"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-020"
+axis = "musculoskeletal"
+item = "inverse dynamics of gait from kinematics and ground reaction forces (net joint moments and powers)"
+source = "Winter ch.5; OpenSim Inverse Dynamics"
+status = "missing"
+evidence = "無い 再帰 Newton-Euler も無い (COV-RIGID-042)"
+oracle_candidate = "Winter の歩行データ (参照値要確認) の関節モーメント、または合成運動の前向き計算との往復"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-021"
+axis = "musculoskeletal"
+item = "joint contact force including muscle forces (net moment plus muscle co-contraction)"
+source = "Winter ch.5; Bergmann 2001 (instrumented implants)"
+status = "missing"
+evidence = "関節の拘束反力の出力はある (COV-RIGID-032) が、筋力を含めた関節接触力は無い"
+oracle_candidate = "1 筋 1 関節の静的釣り合いで接触力 = 外力 + 筋力"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-022"
+axis = "musculoskeletal"
+item = "static optimisation of muscle forces (minimise sum of activations to a power subject to joint moments)"
+source = "Crowninshield-Brand 1981; OpenSim Static Optimization"
+status = "missing"
+evidence = "無い (推測: 最適化で当たるのは build orientation の探索だけ)"
+oracle_candidate = "冗長 2 筋 1 関節で解析解 (p = 2 で断面積比例の分担)"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-023"
+axis = "musculoskeletal"
+item = "computed muscle control / forward dynamic tracking of a measured motion"
+source = "Thelen-Anderson 2006; OpenSim CMC"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "目標軌道との追従誤差が閾値内、筋力が非負"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-024"
+axis = "musculoskeletal"
+item = "muscle-driven forward dynamic simulation (excitations to motion)"
+source = "Zajac 1989; OpenSim Forward Dynamics"
+status = "missing"
+evidence = "無い ABA は関節トルクを入力に取らない (COV-MBD-080、src/articulation.rs:1021)"
+oracle_candidate = "単関節 1 筋の等尺性収縮で関節トルク = 筋力 × moment arm"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-025"
+axis = "musculoskeletal"
+item = "load sharing between agonists and antagonists (co-contraction and joint stiffness)"
+source = "Hogan 1984"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "同時収縮で正味モーメント 0 のまま関節剛性が上がる閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-026"
+axis = "musculoskeletal"
+item = "lumbar spine compression in lifting (static biomechanical model)"
+source = "Chaffin; NIOSH lifting equation"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "静的釣り合いの L5/S1 圧縮力 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-027"
+axis = "locomotion"
+item = "inverted-pendulum model of walking (stance leg as a rigid strut, centre-of-mass vaulting)"
+source = "Cavagna et al. 1977; Kuo 2007"
+status = "missing"
+evidence = "無い (推測: inverted pendulum で当たるのは src/articulation.rs の test 説明文だけ) 剛体の世界で 1 歩分は組めるが、接地切替の事象が無い"
+oracle_candidate = "立脚中の重心の高さと速度が倒立振子の閉形式に一致"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-028"
+axis = "locomotion"
+item = "energy recovery between kinetic and potential energy in walking"
+source = "Cavagna et al. 1977"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "倒立振子歩行の回収率 (参照値要確認、行 COV-BIO-123)"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-029"
+axis = "locomotion"
+item = "step-to-step transition cost (collision and push-off of the dynamic walking model)"
+source = "Kuo-Donelan-Ruina 2005"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "踵接地の衝突で失う速度の割合が段差角 2α の閉形式に一致"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-030"
+axis = "locomotion"
+item = "passive dynamic walker down a slope (rimless wheel, compass gait)"
+source = "McGeer 1990; Garcia et al. 1998"
+status = "missing"
+evidence = "無い (推測: passive dynamic / McGeer で src 0 件)"
+oracle_candidate = "rimless wheel の定常速度の閉形式、compass gait の周期解"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-031"
+axis = "locomotion"
+item = "spring-loaded inverted pendulum (SLIP) model of running and hopping"
+source = "Blickhan 1989; McMahon-Cheng 1990"
+status = "missing"
+evidence = "無い ばね関節はある (src/joint.rs:282) が、接地・離地の切替と脚角の再設定が無い"
+oracle_candidate = "接地中の脚ばねの最大圧縮とエネルギー保存、周期解の存在"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-032"
+axis = "locomotion"
+item = "Froude number and dynamic similarity of gait (walk-run transition near Fr of order 0.5)"
+source = "Alexander 1989"
+status = "missing"
+evidence = "無い (推測: Froude で当たるのは src/wave_ship.rs の Froude-Krylov 力だけ)"
+oracle_candidate = "Fr = v² / (g L) の閉形式と遷移値 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-033"
+axis = "locomotion"
+item = "preferred step frequency from the swing leg as a physical pendulum"
+source = "Kuo 2001; Winter ch.4"
+status = "missing"
+evidence = "振り子の周期は剛体の世界で確かめられる (COV-RIGID-111) が、体節の慣性半径が無い (COV-MBD-096) ので脚の振り子として組めない"
+oracle_candidate = "物理振子の周期 2π sqrt(I / (m g d))"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-034"
+axis = "locomotion"
+item = "central pattern generator (coupled nonlinear oscillators producing rhythmic joint commands)"
+source = "Ijspeert 2008; Matsuoka 1985"
+status = "missing"
+evidence = "無い (推測: CPG / central pattern で src 0 件)"
+oracle_candidate = "2 振動子の位相差が結合で固定点に引き込まれること"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-035"
+axis = "locomotion"
+item = "zero-moment point and capture point for balance"
+source = "Vukobratovic 2004; Pratt et al. 2006"
+status = "missing"
+evidence = "無い (推測: zero moment で当たるのは src/articulation.rs の別語義だけ)"
+oracle_candidate = "線形倒立振子で capture point x + v/ω に踏めば停止すること"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-036"
+axis = "locomotion"
+item = "metabolic cost of transport and its speed dependence"
+source = "Tucker 1975; Alexander 2003"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "最小 COT の速度が存在する U 字曲線 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-037"
+axis = "locomotion"
+item = "muscle-driven predictive gait simulation (optimal control of a musculoskeletal model)"
+source = "Anderson-Pandy 2001; OpenSim Moco"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "対称な歩行周期が得られ、COT が測定値の範囲 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-038"
+axis = "swimming-flying"
+item = "resistive force theory for slender swimmers at low Reynolds number"
+source = "Gray-Hancock 1955; Lighthill 1976"
+status = "missing"
+evidence = "無い (推測: resistive force / Lighthill で src 0 件)"
+oracle_candidate = "正弦波の鞭毛の推進速度の閉形式 (Taylor の泳ぐシート)"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-039"
+axis = "swimming-flying"
+item = "scallop theorem and reciprocal motion at zero Reynolds number"
+source = "Purcell 1977"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "往復運動の正味変位が 0 (Stokes 流れの時間可逆性)"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-040"
+axis = "swimming-flying"
+item = "Lighthill elongated-body theory of fish swimming (reactive thrust from the trailing-edge motion)"
+source = "Lighthill 1960, 1971"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "尾端の横速度と波速の比から推力の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-041"
+axis = "swimming-flying"
+item = "Strouhal number of flapping propulsion (efficient range for swimmers and flyers)"
+source = "Triantafyllou 1993; Taylor-Nudds-Thomas 2003"
+status = "missing"
+evidence = "無い Strouhal で当たるのは渦励振の src/aeroelasticity.rs:116 だけ (流体構造連成の表)"
+oracle_candidate = "St = f A / U の閉形式と効率の高い範囲 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-042"
+axis = "swimming-flying"
+item = "quasi-steady blade-element model of flapping wings (translational, rotational and added-mass forces)"
+source = "Dickinson-Lehmann-Sane 1999; Sane-Dickinson 2002"
+status = "missing"
+evidence = "無い 定常の翼面力は src/lift_drag.rs:205 にあるが、羽ばたきの迎角・回転・付加質量の項が無い"
+oracle_candidate = "一定迎角の並進成分が定常揚力と一致し、回転項が回転速度に比例"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-043"
+axis = "swimming-flying"
+item = "leading-edge vortex lift enhancement and delayed stall in insect flight"
+source = "Ellington et al. 1996"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "定常の失速角を超えても揚力係数が保たれる (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-044"
+axis = "swimming-flying"
+item = "induced power of hovering animals by actuator-disk momentum theory (stroke-plane disk)"
+source = "Weis-Fogh 1973; Ellington 1984; Pennycuick"
+status = "implemented-no-oracle"
+evidence = "src/rotor.rs:343 と src/rotor.rs:321 に体重と羽ばたき面の円盤面積を渡せば組める 運動量理論そのものの突合は COV-MBD-117 にあるが、動物のデータとの突合は無い"
+oracle_candidate = "ハチドリ等の体重・翼長から誘導パワーを出し文献値と突合 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-045"
+axis = "swimming-flying"
+item = "power curve of forward flapping flight (induced, profile and parasite power; minimum-power speed)"
+source = "Pennycuick 1968, 2008"
+status = "missing"
+evidence = "無い 抗力極曲線は COV-ENV-053 にあるが、羽ばたき飛行の power curve は無い"
+oracle_candidate = "U 字の power curve の最小点と最大航続速度の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-046"
+axis = "swimming-flying"
+item = "drag on a swimming body across Reynolds number (viscous and pressure drag, gliding decay)"
+source = "Vogel, Life in Moving Fluids"
+status = "missing"
+evidence = "無い 剛体の 2 乗抗力の終端速度は COV-ENV-115 だが、生体の形状と Re 依存の抗力は無い"
+oracle_candidate = "滑走の速度減衰が抗力則の閉形式に一致"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-047"
+axis = "soft-tissue"
+item = "soft tissue fitted with an isotropic rubber-like hyperelastic law (neo-Hookean, Mooney-Rivlin, Yeoh)"
+source = "Fung ch.7; FEBio neo-Hookean / Mooney-Rivlin material"
+status = "implemented-no-oracle"
+evidence = "閉形式の歪みエネルギーと一軸応力は src/hyperelastic.rs:134 にあり、組織の定数を渡せば組める (preset はゴム・TPU・シリコーンだけ) 組織のデータとの突合は無い FE の経路は COV-FEM-027-029、Ogden は FE でも閉形式でも無い (COV-FEM-030)"
+oracle_candidate = "脳・肝臓などの一軸試験の点列 (参照値要確認) への fit 残差"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-048"
+axis = "soft-tissue"
+item = "Fung exponential strain energy (orthotropic quadratic form in the exponent)"
+source = "Fung ch.7; Fung-Fronek-Patitucci 1979; FEBio Fung orthotropic"
+status = "missing"
+evidence = "無い (推測: Fung / exponential strain energy で src 0 件)"
+oracle_candidate = "等二軸の応力-伸び比を閉形式の微分と突合"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-049"
+axis = "soft-tissue"
+item = "Holzapfel-Gasser-Ogden fibre-reinforced model (neo-Hookean matrix plus exponential fibre families, fibre dispersion)"
+source = "Holzapfel-Gasser-Ogden 2000; Gasser et al. 2006; FEBio HGO"
+status = "missing"
+evidence = "無い (推測: Holzapfel で src 0 件)"
+oracle_candidate = "繊維方向の一軸で繊維項が伸長時のみ効き、圧縮では 0 になること"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-050"
+axis = "soft-tissue"
+item = "transversely isotropic hyperelasticity for muscle, tendon and ligament (Weiss)"
+source = "Weiss-Maker-Govindjee 1996"
+status = "missing"
+evidence = "無い 異方性は FE でも無い (COV-FEM-025 / 026)"
+oracle_candidate = "繊維方向と直交方向の一軸応答の比"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-051"
+axis = "soft-tissue"
+item = "passive myocardium (Holzapfel-Ogden 2009 orthotropic model, Guccione)"
+source = "Holzapfel-Ogden 2009; Guccione et al. 1991"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "せん断試験 6 方向の応答 (Dokos のデータ、参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-052"
+axis = "soft-tissue"
+item = "quasi-linear viscoelasticity (QLV: reduced relaxation function times instantaneous elastic response)"
+source = "Fung ch.7"
+status = "missing"
+evidence = "無い (推測: quasi-linear / relaxation function で src 0 件) 汎用 Prony も FE に無い (COV-FEM-042)"
+oracle_candidate = "ステップ伸長の応力緩和が G(t) × σe(λ) の閉形式に一致"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-053"
+axis = "soft-tissue"
+item = "nonlinear viscoelasticity of tissue (Prony series on a hyperelastic base, visco-hyperelastic)"
+source = "Puso-Weiss 1998; FEBio viscoelastic"
+status = "missing"
+evidence = "無い (Prony は FE でも無い COV-FEM-042、ヒステリシスは COV-FEM-046)"
+oracle_candidate = "定常負荷サイクルのヒステリシス面積と散逸の一致"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-054"
+axis = "soft-tissue"
+item = "biphasic (mixture) theory of cartilage (solid matrix plus interstitial fluid)"
+source = "Mow et al. 1980; FEBio biphasic"
+status = "missing"
+evidence = "無い (推測: biphasic / poroelast で src 0 件) 多孔質の流れは CFD でも無い (COV-CFD-068)"
+oracle_candidate = "閉じ込め圧縮の creep の閉形式 (Mow 1980)"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-055"
+axis = "soft-tissue"
+item = "poroelasticity (Biot consolidation) for tissue and bone"
+source = "Biot 1941; Cowin 1999"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "Terzaghi の 1-D 圧密の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-056"
+axis = "soft-tissue"
+item = "triphasic and multiphasic swelling (osmotic pressure from fixed charge density)"
+source = "Lai-Hou-Mow 1991; FEBio multiphasic"
+status = "missing"
+evidence = "無い (推測: osmo で src 0 件)"
+oracle_candidate = "Donnan 浸透圧の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-057"
+axis = "soft-tissue"
+item = "nearly incompressible tissue (volumetric-deviatoric split with a penalty or mixed formulation)"
+source = "Holzapfel, Nonlinear Solid Mechanics ch.6; FEBio"
+status = "missing"
+evidence = "無い 体積弾性率の閉形式は src/hyperelastic.rs にあるが組織の非圧縮性の扱いは無い (FE の体積 locking の記録は COV-FEM-125)"
+oracle_candidate = "J → 1 の極限で応力が有界、体積変化が penalty に反比例"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-058"
+axis = "soft-tissue"
+item = "volumetric growth (multiplicative split F = Fe Fg)"
+source = "Rodriguez-Hoger-McCulloch 1994; Ambrosi et al. 2011"
+status = "missing"
+evidence = "無い (推測: growth で当たるのは誤差や波の成長の別語義だけ)"
+oracle_candidate = "拘束なしの一様成長で応力 0、拘束付きで残留応力が立つ"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-059"
+axis = "soft-tissue"
+item = "stress-driven remodelling of tissue (fibre reorientation, collagen turnover)"
+source = "Humphrey-Rajagopal 2002; Driessen et al. 2004"
+status = "missing"
+evidence = "無い (推測: remodel で当たるのは src/vehicle_dynamics の別語義だけ)"
+oracle_candidate = "主応力方向に繊維が回転し定常で一致"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-060"
+axis = "soft-tissue"
+item = "residual stress in arteries (opening angle of a cut ring)"
+source = "Chuong-Fung 1986; Humphrey ch.7"
+status = "missing"
+evidence = "無い (推測: opening angle で src 0 件)"
+oracle_candidate = "開き角から閉じた輪の残留応力分布 (閉形式)"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-061"
+axis = "soft-tissue"
+item = "active stress of contracting tissue added to the passive stress (active stress / active strain approaches)"
+source = "Ambrosi-Pezzuto 2012; Nash-Panfilov 2004"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "等尺性の一軸で能動応力が活性化に比例して加わる"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-062"
+axis = "soft-tissue"
+item = "damage and failure of soft tissue (fibre rupture, Mullins-type softening)"
+source = "Gasser 2011; Balzani 2006"
+status = "missing"
+evidence = "無い 連続体損傷は FRACT と FEM でも無い (COV-FEM-044 / 046)"
+oracle_candidate = "繊維の損傷変数が単調増加し、再負荷で軟化"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-063"
+axis = "bone"
+item = "Wolff's law and strain-adaptive bone remodelling (mechanostat set points)"
+source = "Wolff 1892; Frost 1987 mechanostat"
+status = "missing"
+evidence = "無い (推測: Wolff / remodel で該当 0 件)"
+oracle_candidate = "負荷が lazy zone 内なら密度不変、超えると増加する閉形式の応答"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-064"
+axis = "bone"
+item = "strain-energy-density driven density remodelling (Huiskes, Carter, Beaupre)"
+source = "Huiskes et al. 1987; Beaupre-Orr-Carter 1990"
+status = "missing"
+evidence = "無い (推測: Huiskes / Carter で src 0 件)"
+oracle_candidate = "1 要素で定常密度が刺激の基準値で決まる閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-065"
+axis = "bone"
+item = "density-modulus power law of bone (E proportional to density cubed or squared)"
+source = "Carter-Hayes 1977; Morgan et al. 2003"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "べき乗則の閉形式 (係数は参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-066"
+axis = "bone"
+item = "anisotropic (transversely isotropic / orthotropic) elasticity of cortical and trabecular bone"
+source = "Cowin, Bone Mechanics Handbook; Reilly-Burstein 1975"
+status = "missing"
+evidence = "無い 異方性は FE に無い (COV-FEM-025 / 026)"
+oracle_candidate = "長軸と横方向の一軸剛性の比"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-067"
+axis = "bone"
+item = "fabric tensor of trabecular architecture and its link to the elastic tensor"
+source = "Cowin 1985; Zysset 2003"
+status = "missing"
+evidence = "無い (推測: trabecul / fabric で src 0 件)"
+oracle_candidate = "等方 fabric で等方剛性に戻ること"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-068"
+axis = "bone"
+item = "long bone bending and torsion as a hollow circular beam"
+source = "Fung ch.12; Currey, Bones"
+status = "implemented-no-oracle"
+evidence = "中空円断面は src/beam_stress.rs:83 (COV-STRUCT-009 の梁) にあり、骨の外径・内径を渡せば組める 骨の異方性と曲がった形状は無い"
+oracle_candidate = "大腿骨の外径・内径で 3 点曲げの破断荷重を文献値と突合 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-069"
+axis = "bone"
+item = "bone fracture risk (factor of risk, strain-based failure criteria)"
+source = "Hayes et al. 1991; Bayraktar et al. 2004"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "負荷 / 強度の比が 1 を越える条件の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-070"
+axis = "bone"
+item = "bone fatigue and microdamage accumulation (stress fracture)"
+source = "Carter-Caler 1985; Taylor 1998"
+status = "missing"
+evidence = "無い 汎用の S-N と Miner は STRUCT にある (COV-STRUCT-049) が骨のデータと microdamage は無い"
+oracle_candidate = "Miner 和で破断周期を予測し文献値と突合 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-071"
+axis = "bone"
+item = "bone-implant load transfer and stress shielding"
+source = "Huiskes 1992"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "剛い implant と骨の並列ばねで骨の分担率の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-072"
+axis = "blood-flow"
+item = "Poiseuille law for vessel flow resistance (R = 8 mu L / (pi r^4)) and resistances in series and parallel"
+source = "Fung, Biomechanics: Circulation ch.3; Caro et al."
+status = "missing"
+evidence = "閉形式は無い (推測: Poiseuille / Hagen で src 0 件) 平板 Poiseuille の数値解は COV-CFD-097、円管 / 正方形管の数値解は COV-CFD-110"
+oracle_candidate = "r⁴ 則と直列・並列合成の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-073"
+axis = "blood-flow"
+item = "Womersley number and the oscillatory velocity profile in a rigid tube (Bessel-function solution)"
+source = "Womersley 1955; Fung, Circulation ch.3"
+status = "missing"
+evidence = "無い 数値の Womersley 流れも CFD に無い (COV-CFD-108)"
+oracle_candidate = "α → 0 で Poiseuille の準定常、α 大で栓流に近づく閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-074"
+axis = "blood-flow"
+item = "two-element Windkessel model of the arterial tree (compliance and peripheral resistance)"
+source = "Frank 1899; Westerhof-Lankhaar-Westerhof 2009"
+status = "missing"
+evidence = "無い (推測: windkessel で src 0 件) 汎用 ODE も無い (COV-NUM-045)"
+oracle_candidate = "拡張期の圧力が時定数 RC の指数で減衰"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-075"
+axis = "blood-flow"
+item = "three- and four-element Windkessel (characteristic impedance, inertance)"
+source = "Westerhof 1971; Stergiopulos 1999"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "入力インピーダンスの高周波極限が特性インピーダンスに一致"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-076"
+axis = "blood-flow"
+item = "lumped-parameter model of the closed circulation (heart chambers, valves, systemic and pulmonary beds)"
+source = "Ursino 1998; Heldt 2002"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "1 周期の流量保存 (左右心拍出量の一致) と収縮期圧の範囲"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-077"
+axis = "blood-flow"
+item = "pulse wave velocity of an elastic tube (Moens-Korteweg)"
+source = "Moens 1878; Korteweg 1878; Fung, Circulation ch.3"
+status = "missing"
+evidence = "無い (推測: Moens / pulse wave で src 0 件)"
+oracle_candidate = "c = sqrt(E h / (2 ρ r)) の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-078"
+axis = "blood-flow"
+item = "one-dimensional blood flow in a network of compliant vessels (area-flow equations, junctions, reflections)"
+source = "Formaggia-Lamponi-Quarteroni 2003; Alastruey 2012"
+status = "missing"
+evidence = "無い (推測) 分岐での反射係数・接合条件も無い"
+oracle_candidate = "単一管の波速が Moens-Korteweg と一致、分岐の反射係数の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-079"
+axis = "blood-flow"
+item = "shear-thinning blood viscosity with physiological Carreau parameters"
+source = "Cho-Kensey 1991; Bird-Stewart-Lightfoot ch.8"
+status = "implemented-no-oracle"
+evidence = "src/non_newtonian.rs:172 に血液の定数 (分数の流動指数) を渡せば組める (module doc は用途に blood を挙げる) 血液データとの突合は無い 運動量方程式への組み込みは COV-CFD-063 で missing"
+oracle_candidate = "Cho-Kensey の定数で低・高せん断の粘度を文献値と突合 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-080"
+axis = "blood-flow"
+item = "Casson yield-stress model of blood and the hematocrit dependence of viscosity"
+source = "Casson 1959; Merrill 1969"
+status = "missing"
+evidence = "無い (推測: Casson で src 0 件) 降伏応力の Bingham / Herschel-Bulkley はある (src/non_newtonian.rs) が Casson の平方根則は無い"
+oracle_candidate = "sqrt(τ) = sqrt(τ_y) + sqrt(μ γ̇) の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-081"
+axis = "blood-flow"
+item = "Fahraeus-Lindqvist effect (apparent viscosity in small tubes)"
+source = "Fahraeus-Lindqvist 1931; Pries et al. 1992"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "管径に対する見かけ粘度の経験式 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-082"
+axis = "blood-flow"
+item = "vessel wall mechanics: Laplace law, distensibility and compliance of an artery"
+source = "Humphrey ch.7; Fung, Circulation ch.3"
+status = "missing"
+evidence = "無い 薄肉圧力容器の閉形式も無い (COV-STRUCT-030)"
+oracle_candidate = "薄肉円筒の周方向応力 σ = P r / h と体積コンプライアンスの閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-083"
+axis = "blood-flow"
+item = "wall shear stress and oscillatory shear index from a flow field"
+source = "Ku et al. 1985; He-Ku 1996"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "Poiseuille 流れの壁せん断 4 μ Q / (π r³) と一致"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-084"
+axis = "blood-flow"
+item = "pressure drop across a stenosis (Young-Tsai)"
+source = "Young-Tsai 1973"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "粘性項と剥離損失項の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-085"
+axis = "blood-flow"
+item = "heart valve as a lumped element (orifice pressure-flow relation, Bernoulli)"
+source = "Mynard et al. 2012"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "ΔP = 4 v² (簡易 Bernoulli、単位は mmHg と m/s) の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-086"
+axis = "heart"
+item = "FitzHugh-Nagumo excitable-cell model"
+source = "FitzHugh 1961; Nagumo 1962; Keener-Sneyd ch.5"
+status = "missing"
+evidence = "無い (推測: FitzHugh / Nagumo で src 0 件) 汎用 ODE も無い (COV-NUM-045 / 049)"
+oracle_candidate = "閾値以下の摂動は減衰、以上で活動電位、一定入力で limit cycle"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-087"
+axis = "heart"
+item = "Hodgkin-Huxley membrane model (sodium, potassium and leak currents with gating variables)"
+source = "Hodgkin-Huxley 1952; Keener-Sneyd ch.5"
+status = "missing"
+evidence = "無い (推測: Hodgkin で src 0 件)"
+oracle_candidate = "活動電位の頂点電位と閾値 (参照値要確認、行 COV-BIO-125)"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-088"
+axis = "heart"
+item = "cardiac ionic models (Beeler-Reuter, Luo-Rudy, ten Tusscher, Aliev-Panfilov phenomenological)"
+source = "Aliev-Panfilov 1996; ten Tusscher et al. 2004"
+status = "missing"
+evidence = "無い (推測: Aliev で src 0 件)"
+oracle_candidate = "活動電位持続時間と復元曲線 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-089"
+axis = "heart"
+item = "cable equation for a fibre (length and time constants, propagation)"
+source = "Keener-Sneyd ch.4"
+status = "missing"
+evidence = "無い (推測: cable equation で src 0 件) 1-D の拡散 solver は熱にある (src/transient_thermal.rs:290) が反応項と膜の式は無い"
+oracle_candidate = "定常の電位分布が長さ定数 λ の指数に一致"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-090"
+axis = "heart"
+item = "monodomain reaction-diffusion of the cardiac action potential in tissue"
+source = "Keener-Sneyd ch.12; Niederer et al. 2011"
+status = "missing"
+evidence = "無い (推測: monodomain / reaction-diffusion で src 0 件)"
+oracle_candidate = "平面波の伝播速度の格子収束 (Niederer の N-version ベンチ、行 COV-BIO-127)"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-091"
+axis = "heart"
+item = "bidomain model (intra- and extracellular potentials) and extracellular stimulation"
+source = "Henriquez 1993; Keener-Sneyd ch.12"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "等異方比で monodomain に帰着すること"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-092"
+axis = "heart"
+item = "active tension of myocardium (calcium-driven models, Hunter-McCulloch-ter Keurs, Niederer-Hunter-Smith)"
+source = "Hunter-McCulloch-ter Keurs 1998; Niederer et al. 2006"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "等尺性で張力が Ca 濃度の Hill 型曲線に従う (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-093"
+axis = "heart"
+item = "time-varying elastance model of the ventricle and the pressure-volume loop"
+source = "Suga-Sagawa 1974"
+status = "missing"
+evidence = "無い (推測: elastance で src 0 件)"
+oracle_candidate = "E(t) の最大値で end-systolic PV 関係が直線になる"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-094"
+axis = "heart"
+item = "Frank-Starling mechanism (stroke volume rises with preload)"
+source = "Katz 2002; Keener-Sneyd ch.15"
+status = "missing"
+evidence = "無い (推測: Starling で src 0 件)"
+oracle_candidate = "前負荷を上げると一回拍出量が単調増加"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-095"
+axis = "heart"
+item = "electromechanics of the heart (action potential to active tension to deformation, with mechano-electric feedback)"
+source = "Nash-Panfilov 2004; Land et al. 2015 benchmark"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "Land et al. の心室ベンチの変位 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-096"
+axis = "cell-molecular"
+item = "Helfrich bending energy of lipid membranes (bending and Gaussian moduli, spontaneous curvature)"
+source = "Helfrich 1973; Boal, Mechanics of the Cell ch.5"
+status = "missing"
+evidence = "無い (推測: Helfrich / membrane で src 0 件) 布の二面角曲げは別系統 (COV-SOFT-005)"
+oracle_candidate = "球殻の曲げエネルギーが半径に依らず 8πκ (+ 4πκ̄) になること"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-097"
+axis = "cell-molecular"
+item = "vesicle and red blood cell shapes (area- and volume-constrained energy minimisers, discocyte)"
+source = "Seifert 1997; Deuling-Helfrich 1976"
+status = "missing"
+evidence = "無い (推測: vesicle / red blood で src 0 件)"
+oracle_candidate = "減少体積に対する形の相図 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-098"
+axis = "cell-molecular"
+item = "micropipette aspiration and membrane tension (Laplace relation of the aspirated tongue)"
+source = "Evans-Rawicz 1990"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "吸引圧と張力の閉形式 ΔP = 2 T (1/R_p − 1/R_c)"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-099"
+axis = "cell-molecular"
+item = "polymer chain elasticity: freely jointed chain and worm-like chain force-extension"
+source = "Marko-Siggia 1995; Boal ch.2"
+status = "missing"
+evidence = "無い (推測: worm-like / freely jointed で src 0 件)"
+oracle_candidate = "WLC の Marko-Siggia 補間式との突合"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-100"
+axis = "cell-molecular"
+item = "cytoskeletal network mechanics (semiflexible filament networks, tensegrity models)"
+source = "Ingber 2003; MacKintosh 1995"
+status = "missing"
+evidence = "無い (推測: cytoskelet / tensegrity で src 0 件)"
+oracle_candidate = "tensegrity の prestress と剛性の比例関係"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-101"
+axis = "cell-molecular"
+item = "molecular motors: force-velocity of kinesin and myosin, Brownian ratchet"
+source = "Howard, Mechanics of Motor Proteins; Peskin-Odell-Oster 1993"
+status = "missing"
+evidence = "無い (推測: kinesin / myosin / ratchet で src 0 件) 過減衰 Langevin も無い (COV-PART-035)"
+oracle_candidate = "負荷 0 で最大速度、停止力で速度 0 の閉形式 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-102"
+axis = "cell-molecular"
+item = "Stokes-Einstein diffusion and Stokes drag of cells and particles at low Reynolds number"
+source = "Berg, Random Walks in Biology"
+status = "missing"
+evidence = "無い (推測: Stokes-Einstein / Stokes drag で src 0 件) 粒子の拡散解析も無い (COV-PART-103)"
+oracle_candidate = "D = k_B T / (6 π μ a) と平均二乗変位 6 D t の突合"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-103"
+axis = "cell-molecular"
+item = "cell adhesion bond kinetics under force (Bell model, catch bonds)"
+source = "Bell 1978; Evans-Ritchie 1997"
+status = "missing"
+evidence = "無い (推測: Bell で src 0 件)"
+oracle_candidate = "解離速度 k = k0 exp(F x_b / k_B T) と破断力の負荷速度依存"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-104"
+axis = "cell-molecular"
+item = "osmotic volume regulation of a cell (Boyle-van't Hoff relation)"
+source = "Keener-Sneyd ch.2"
+status = "missing"
+evidence = "無い (推測: osmo で src 0 件、van't で当たるのは無関係な語)"
+oracle_candidate = "体積が外液浸透圧の逆数に線形 (Boyle-van't Hoff)"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-105"
+axis = "cell-molecular"
+item = "whole-cell mechanical models (cortical shell with liquid drop, viscoelastic solid; AFM indentation by Hertz)"
+source = "Lim et al. 2006"
+status = "missing"
+evidence = "無い Hertz 接触の閉形式は構造の表にある (COV-STRUCT-098) が細胞の押し込み試験の扱いは無い"
+oracle_candidate = "AFM の Hertz fit で弾性率が復元されること"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-106"
+axis = "impact-injury"
+item = "head injury criterion HIC15 / HIC36 from a resultant acceleration history"
+source = "NHTSA FMVSS 208; Versace 1971"
+status = "missing"
+evidence = "無い (推測: HIC / head injury で src 0 件) 加速度の時系列は IMU から取れる (src/sensors.rs:352) が窓の最大化の計算が無い"
+oracle_candidate = "半正弦パルスの HIC 閉形式と一致 (行 COV-BIO-124)"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-107"
+axis = "impact-injury"
+item = "Gadd severity index"
+source = "Gadd 1966"
+status = "missing"
+evidence = "無い (推測: Gadd で src 0 件)"
+oracle_candidate = "矩形パルスで SI = a^2.5 T の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-108"
+axis = "impact-injury"
+item = "Wayne State tolerance curve for head acceleration"
+source = "Lissner 1960; Patrick 1965"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "曲線上の点の再現 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-109"
+axis = "impact-injury"
+item = "rotational brain injury metrics (BrIC, angular acceleration limits)"
+source = "Takhounts et al. 2013"
+status = "missing"
+evidence = "無い (推測: concuss で src 0 件)"
+oracle_candidate = "BrIC の閉形式 (角速度の重み付き和)"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-110"
+axis = "impact-injury"
+item = "neck injury criteria (Nij, NIC)"
+source = "Eppinger 1999 (NHTSA); Bostrom 1996"
+status = "missing"
+evidence = "無い (推測: Nij で src 0 件)"
+oracle_candidate = "軸力と曲げモーメントの正規化和の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-111"
+axis = "impact-injury"
+item = "thoracic injury criteria (chest deflection, viscous criterion VC)"
+source = "Lau-Viano 1986"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "VC = V(t) C(t) の最大値の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-112"
+axis = "impact-injury"
+item = "fall and impact of the human body (impact velocity, peak force with a compliant surface)"
+source = "Robinovitch 1991"
+status = "missing"
+evidence = "無い 自由落下と衝突は剛体の世界で組めるが、体と床の柔らかさのモデルが無い"
+oracle_candidate = "質量-ばね接触のピーク力 v sqrt(k m) の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-113"
+axis = "impact-injury"
+item = "protective padding and helmets (foam crushing, energy absorption)"
+source = "Gibson-Ashby, Cellular Solids; Mills 2007"
+status = "missing"
+evidence = "無い (推測: helmet / foam で src 0 件)"
+oracle_candidate = "foam の plateau 応力 × 圧縮量 = 吸収エネルギー"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-114"
+axis = "impact-injury"
+item = "crash test dummy and human body models (multibody occupant models, Hybrid III-like)"
+source = "MADYMO; Hybrid III"
+status = "missing"
+evidence = "無い ragdoll はある (src/ragdoll.rs:222、COV-MBD-093) が、ダミーの関節特性・計測点は無い"
+oracle_candidate = "ダミーの頭部加速度の時系列から HIC を出す端から端までの経路"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-115"
+axis = "bioheat-transport"
+item = "Pennes bioheat equation (blood perfusion and metabolic heat sources)"
+source = "Pennes 1948; Diller"
+status = "missing"
+evidence = "無い (推測: Pennes / perfusion で src 0 件) 熱伝導 solver に体積発熱の源項も無い (COV-THERM-039)"
+oracle_candidate = "1-D 定常の灌流付き熱伝導の閉形式 (cosh の形)"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-116"
+axis = "bioheat-transport"
+item = "thermal damage of tissue (Arrhenius damage integral, CEM43 thermal dose)"
+source = "Henriques 1947; Sapareto-Dewey 1984"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "一定温度での Arrhenius 積分の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-117"
+axis = "bioheat-transport"
+item = "diffusion and convection of solutes in tissue (drug delivery, oxygen transport, Krogh cylinder)"
+source = "Krogh 1919; Truskey, Transport Phenomena in Biological Systems"
+status = "missing"
+evidence = "無い 種の輸送も CFD に無い (COV-CFD-066)"
+oracle_candidate = "Krogh 円柱の酸素分布の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-118"
+axis = "benchmark"
+item = "Hill force-velocity curve of an isolated muscle (frog sartorius)"
+source = "Hill 1938"
+status = "missing"
+evidence = "無い (行 COV-BIO-002 が前提)"
+oracle_candidate = "a/F0、b/v_max の比 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-119"
+axis = "benchmark"
+item = "isometric twitch and tetanus of a Hill-type muscle with activation dynamics"
+source = "Zajac 1989; OpenSim muscle examples"
+status = "missing"
+evidence = "無い (行 COV-BIO-006 と COV-BIO-001 が前提)"
+oracle_candidate = "単収縮のピーク時間と強縮/単収縮比 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-120"
+axis = "benchmark"
+item = "single-joint arm with flexor and extensor muscles (OpenSim arm26-like elbow flexion)"
+source = "OpenSim example arm26"
+status = "missing"
+evidence = "無い (行 COV-BIO-012 が前提)"
+oracle_candidate = "肘の到達角度と筋力の時系列 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-121"
+axis = "benchmark"
+item = "Windkessel aortic pressure waveform for a prescribed ejection flow"
+source = "Westerhof-Lankhaar-Westerhof 2009"
+status = "missing"
+evidence = "無い (行 COV-BIO-074 が前提)"
+oracle_candidate = "収縮期/拡張期圧と拡張期の減衰時定数 RC (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-122"
+axis = "benchmark"
+item = "Womersley profile in a rigid tube for a sinusoidal pressure gradient"
+source = "Womersley 1955"
+status = "missing"
+evidence = "無い (行 COV-BIO-073 が前提、数値解の側は COV-CFD-108)"
+oracle_candidate = "Bessel 関数の閉形式と全時刻で突合"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-123"
+axis = "benchmark"
+item = "energy recovery of inverted-pendulum walking at the optimal speed"
+source = "Cavagna et al. 1977"
+status = "missing"
+evidence = "無い (行 COV-BIO-027 が前提)"
+oracle_candidate = "最適速度付近の回収率 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-124"
+axis = "benchmark"
+item = "HIC of a half-sine acceleration pulse (closed-form reference)"
+source = "NHTSA FMVSS 208"
+status = "missing"
+evidence = "無い (行 COV-BIO-106 が前提)"
+oracle_candidate = "半正弦パルスの HIC の解析値と窓長依存"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-125"
+axis = "benchmark"
+item = "Hodgkin-Huxley action potential (squid giant axon) under a current step"
+source = "Hodgkin-Huxley 1952"
+status = "missing"
+evidence = "無い (行 COV-BIO-087 が前提)"
+oracle_candidate = "頂点電位・閾値・不応期 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-126"
+axis = "benchmark"
+item = "FitzHugh-Nagumo limit cycle and excitability threshold"
+source = "FitzHugh 1961"
+status = "missing"
+evidence = "無い (行 COV-BIO-086 が前提)"
+oracle_candidate = "limit cycle の周期と、閾値の上下で応答が分かれること"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-127"
+axis = "benchmark"
+item = "N-version cardiac electrophysiology benchmark (activation time in a slab)"
+source = "Niederer et al. 2011"
+status = "missing"
+evidence = "無い (行 COV-BIO-090 が前提)"
+oracle_candidate = "対角点の活性化時刻の格子収束 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-128"
+axis = "benchmark"
+item = "equibiaxial and uniaxial test of a Fung / HGO tissue sample"
+source = "FEBio verification suite; Holzapfel 2000"
+status = "missing"
+evidence = "無い (行 COV-BIO-048 と COV-BIO-049 が前提)"
+oracle_candidate = "閉形式の応力-伸び比を FE と突合 (FE の経路は FEM の表)"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-129"
+axis = "benchmark"
+item = "confined compression creep of cartilage (biphasic)"
+source = "Mow et al. 1980; FEBio verification suite"
+status = "missing"
+evidence = "無い (行 COV-BIO-054 が前提)"
+oracle_candidate = "creep 変位の級数解との突合"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-130"
+axis = "benchmark"
+item = "stress relaxation of a ligament after a ramp (QLV)"
+source = "Fung ch.7; Abramowitch-Woo 2004"
+status = "missing"
+evidence = "無い (行 COV-BIO-052 が前提)"
+oracle_candidate = "QLV 閉形式との突合"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-131"
+axis = "benchmark"
+item = "bending energy of a spherical vesicle (8 pi kappa)"
+source = "Helfrich 1973"
+status = "missing"
+evidence = "無い (行 COV-BIO-096 が前提)"
+oracle_candidate = "半径に依らず 8πκ の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-132"
+axis = "benchmark"
+item = "periodic hopping of a SLIP model (stance time and peak force)"
+source = "Blickhan 1989"
+status = "missing"
+evidence = "無い (行 COV-BIO-031 が前提)"
+oracle_candidate = "接地時間 ≈ π sqrt(m/k) 近似との突合 (近似の範囲は参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-133"
+axis = "benchmark"
+item = "pulse wave propagation in a uniform elastic tube"
+source = "Alastruey et al. 2011 (1-D benchmark)"
+status = "missing"
+evidence = "無い (行 COV-BIO-078 と COV-BIO-077 が前提)"
+oracle_candidate = "波速が Moens-Korteweg と一致、反射なしの伝播"
+limitation = ""
