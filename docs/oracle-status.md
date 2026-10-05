@@ -6,8 +6,8 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 4350 |
-| 🔴 Red by design | 198 |
+| 🟢 Not ignored (run by CI) | 4351 |
+| 🔴 Red by design | 197 |
 | ⏱ Gated (runtime / diagnostic / manual) | 24 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
 | **Total** | **4572** |
@@ -15,7 +15,7 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
 
-## 🔴 Red by design (198)
+## 🔴 Red by design (197)
 
 Oracles kept red on purpose: the implementation is not there yet, and a companion test pins
 today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected value is never loosened.
@@ -85,7 +85,6 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `explosion_fractional_power_follows_the_documented_formula` (audit_force.rs) — known defect: AUD-A-S4W3-015: Explosion documents the falloff as (1 - dist/radius)^falloff_power but truncates…
 - `explosion_with_a_huge_power_returns_promptly` (audit_force.rs) — known defect: AUD-A-S4W3-016: Explosion evaluates (1 - d/R)^n by an n-iteration loop on the truncated exponent…
 - `feet_position_is_the_capsule_bottom` (audit_character.rs) — known defect: AUD-A-S3W3-003: feet_position doc says capsule bottom but returns the lower hemisphere centre (c…
-- `first_draw_of_a_small_seed_is_not_an_extreme_outlier` (audit_privacy.rs) — known defect: AUD-A-S4W3-030: XorShift64::new does not scramble the seed, so the first draws of a small seed a…
 - `fit_two_modes_never_returns_negative_damping_coefficients` (audit_damping_rayleigh.rs) — known defect: AUD-A-S2W2-001: fit_two_modes returns beta=-2.083e-5 for (100 rad/s, z=0.05) and (500 rad/s, z=0…
 - `fos_is_never_below_one_when_applied_is_below_allowable` (audit_layer_adhesion.rs) — known defect: AUD-A-S1W5-030 (downstream: component_fos): for applied = 2^-64 or 2^-63 the quotient allowable …
 - `from_f64_non_finite_and_out_of_range_are_not_silently_plausible` (audit_math.rs) — known defect: AUD-A-S1W5-018: Fix128::from_f64(NaN) returns ZERO silently, from_f64(+/-inf) and from_f64(-1e30…
@@ -272,7 +271,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (4350)
+## 🟢 Not ignored (4351)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -338,6 +337,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_prestressed_wiring.rs` | 19 |
 | `analytic_rolling_contact_wiring.rs` | 19 |
 | `analytic_tgs_wiring.rs` | 19 |
+| `audit_privacy.rs` | 19 |
 | `analytic_filament_db_wiring.rs` | 18 |
 | `analytic_flip.rs` | 18 |
 | `analytic_hyperelastic_wiring.rs` | 18 |
@@ -350,7 +350,6 @@ Per-file counts (the test names are in `tests/`):
 | `audit_bvh.rs` | 18 |
 | `audit_eulerian_grid.rs` | 18 |
 | `audit_hyperelastic.rs` | 18 |
-| `audit_privacy.rs` | 18 |
 | `audit_sim_modifier.rs` | 18 |
 | `audit_wave_ship.rs` | 18 |
 | `analytic_acoustic_wave_wiring.rs` | 17 |
