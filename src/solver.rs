@@ -603,6 +603,9 @@ impl ContactConstraint {
 /// `tests/analytic_tgs_wiring.rs`'s joint tests for both backends' measured
 /// bands).
 ///
+/// Pre-solve hooks and contact modifiers run once over the
+/// tick's contacts before the solve (`tests/analytic_tgs_backend_coverage.rs`).
+///
 /// * Requires the `std` feature (`solver_tgs` is `std`-gated, same as the
 ///   rest of the TGS family). Selecting `Tgs` in a build without `std`
 ///   is **not** silently ignored at the type level — the variant still
@@ -2889,8 +2892,9 @@ impl PhysicsWorld {
     /// every sub-step — the TGS family owns its own sub-stepping internally
     /// via [`crate::solver_tgs::tgs_step`]), and bodies are advanced by
     /// per-island impulse-based Gauss-Seidel instead of XPBD position
-    /// projection. Joints, kinematic targets and SDF colliders are all
-    /// handled — see [`SolverBackend`]'s notes for the joint solve, and
+    /// projection. Distance joints, contact filters, kinematic targets and
+    /// SDF colliders are handled — see [`SolverBackend`]'s notes for the
+    /// distance-joint and filter handling, and
     /// [`Self::advance_kinematic_targets_for_tgs`] /
     /// [`Self::resolve_sdf_collisions`] for the other two.
     #[cfg(feature = "std")]
@@ -2944,6 +2948,13 @@ impl PhysicsWorld {
             self.resolve_sdf_collisions();
         }
 
+        // Phase 2.7: Pre-solve hooks and contact modifiers, once over the
+        // tick's contact set (the same pre-pass `substep` runs over each
+        // substep's set). A modifier's result is written back to the
+        // constraint and read by `contact_to_tgs` below; a vetoed contact is
+        // left out of the TGS contact list.
+        self.apply_contact_filters();
+
         // Phase 3: Convert to the TGS body/contact representation, solve
         // every island, convert back.
         let n = self.bodies.len();
@@ -2953,10 +2964,17 @@ impl PhysicsWorld {
             .enumerate()
             .map(|(i, b)| body_to_tgs(b, i as u64))
             .collect();
+        // The contact's index in `contact_constraints` stays its stable ID
+        // whether or not earlier contacts were filtered out, so filtering
+        // never shifts another contact's warm-start entry. Contacts vetoed by
+        // a hook or a modifier are not solved, as in the XPBD contact solve.
+        // (Sensor pairs never reach `contact_constraints`: detection reports
+        // them as triggers instead.)
         let mut tgs_contacts: Vec<_> = self
             .contact_constraints
             .iter()
             .enumerate()
+            .filter(|&(i, _)| !self.contact_discarded.get(i).copied().unwrap_or(false))
             .map(|(i, c)| contact_to_tgs(c, &self.bodies, i as u64))
             .collect();
         let joint_refs: Vec<DistanceRef<'_>> = self
