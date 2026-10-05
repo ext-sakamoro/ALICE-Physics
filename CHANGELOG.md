@@ -17,6 +17,7 @@ were introduced during that release window.
 
 ### Added
 
+- `docs/coverage/num.toml`: 数値の基盤の網羅表に 9 項目を追加 (COV-NUM-093〜101: 複素・実入力・多次元の FFT、Monte Carlo 推定と分散低減、行列指数関数の Padé + scaling and squaring と CRAM、対称三重対角の固有値と n x n 対称固有値、ブロック構造の適応格子細分化) 他分野の表が数値の基盤側に置くとしていた部品で行が無かったもの 既存の行と id は変更なし
 - `docs/coverage/cfd.toml`: 非圧縮流体・乱流 (CFD) の網羅表 (Ferziger–Perić / Pope / Versteeg–Malalasekera、OpenFOAM / Fluent のソルバ・モデル、Ghia / Armaly / Taylor–Green 等の標準ベンチマークの範囲に対する 117 項目、軸は離散化 / 圧力-速度連成 / 移流 / 時間積分 / 境界条件 / 乱流 / 物理 / 圧力ソルバ / 粒子法 / 出力 / ベンチマーク) partial 6 項目の制限は `src/cfd_solver.rs` と `src/fluid.rs` に `LIMITATION(COV-CFD-NNN)` コメントで対応付け (挙動の変更なし)
 - `docs/coverage/multiphase.toml`: 多相流・自由表面の網羅表 (界面捕獲 VOF / level set / PLIC、表面張力、二相の運動量、粒子法の自由表面、界面の相変化条件、非ニュートン相、気泡・液滴、平均化モデル、燃焼の流れ、標準ベンチマークに対する 86 項目) partial 3 項目の制限を `src/multiphase.rs` の `LIMITATION(<id>)` コメントで示す (挙動変更なし)
 - `docs/coverage/part.toml`: 粒子法 (分子動力学・SPH の流体以外・MPM・DEM・効果粒子・群衆) の網羅表 (Allen–Tildesley / Frenkel–Smit / Monaghan 2005 / Jiang 他 MPM / Cundall–Strack 1979 / Helbing–Molnár 1995、LAMMPS の pair / bond / fix / compute と LIGGGHTS の粒状体モデル、LJ 状態方程式・安息角・ボトルネック流量 等の標準ベンチマークの範囲に対する 119 項目、軸は対ポテンシャル / 多体・結合項 / cutoff / 長距離 / 時間積分 / 熱浴・圧力浴 / 拘束 / 近傍探索と境界 / SPH / MPM / DEM / 効果粒子 / 群衆 / 解析 / ベンチマーク) partial 3 項目の制限は `src/molecular_dynamics.rs` と `src/spatial.rs` に `LIMITATION(COV-PART-NNN)` コメントで対応付け (挙動の変更なし)

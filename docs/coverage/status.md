@@ -9,12 +9,12 @@ crate has today.
 | `docs/coverage/cfd.toml` | 117 | 39 | 2 | 6 | 70 | 0 |
 | `docs/coverage/fem.toml` | 133 | 36 | 0 | 6 | 88 | 3 |
 | `docs/coverage/multiphase.toml` | 86 | 11 | 2 | 3 | 70 | 0 |
-| `docs/coverage/num.toml` | 92 | 22 | 0 | 5 | 64 | 1 |
+| `docs/coverage/num.toml` | 101 | 22 | 1 | 5 | 72 | 1 |
 | `docs/coverage/part.toml` | 119 | 26 | 2 | 3 | 88 | 0 |
 | `docs/coverage/soft.toml` | 90 | 21 | 4 | 6 | 59 | 0 |
 | `docs/coverage/struct.toml` | 134 | 33 | 0 | 10 | 91 | 0 |
 | `docs/coverage/therm.toml` | 102 | 17 | 0 | 3 | 82 | 0 |
-| **total** | 873 | 205 | 10 | 42 | 612 | 4 |
+| **total** | 882 | 205 | 11 | 42 | 620 | 4 |
 
 ## `docs/coverage/cfd.toml`
 
@@ -78,14 +78,18 @@ crate has today.
 | benchmark | 9 | 3 | 0 | 0 | 6 | 0 |
 | coupling | 7 | 3 | 0 | 0 | 4 | 0 |
 | distributed | 6 | 0 | 0 | 0 | 6 | 0 |
-| eigen | 7 | 2 | 0 | 0 | 5 | 0 |
+| eigen | 9 | 2 | 0 | 0 | 7 | 0 |
 | krylov | 10 | 4 | 0 | 1 | 5 | 0 |
 | linear_direct | 7 | 1 | 0 | 0 | 6 | 0 |
+| matrix_function | 2 | 0 | 0 | 0 | 2 | 0 |
+| mesh_adaptivity | 1 | 0 | 0 | 0 | 1 | 0 |
 | nonlinear | 9 | 0 | 0 | 0 | 9 | 0 |
 | preconditioner | 10 | 2 | 0 | 1 | 7 | 0 |
 | representation | 12 | 7 | 0 | 3 | 1 | 1 |
 | stationary | 1 | 0 | 0 | 0 | 1 | 0 |
+| stochastic | 2 | 0 | 1 | 0 | 1 | 0 |
 | time_integration | 14 | 0 | 0 | 0 | 14 | 0 |
+| transform | 2 | 0 | 0 | 0 | 2 | 0 |
 
 ## `docs/coverage/part.toml`
 

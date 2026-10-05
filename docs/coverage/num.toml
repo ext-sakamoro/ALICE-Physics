@@ -24,6 +24,23 @@
 #   * Closed-form results (e.g. the 3x3 polar decomposition, the 3x3 symmetric
 #     eigen-decomposition of an inertia tensor) are small dense kernels of the
 #     math layer and are counted here.
+#   * Transforms (FFT), Monte Carlo estimators, matrix functions (exp(A),
+#     CRAM), tridiagonal / dense symmetric eigensolvers and block-structured
+#     mesh refinement are general components counted here; the field tables
+#     (acoustics, CFD, quantum, nuclear, plasma, relativity) keep their uses.
+#     A row whose general component can be put together from existing public
+#     parts (e.g. the deterministic random number generator plus a running
+#     mean / variance) is `implemented-no-oracle` until a test checks the
+#     combination against an independent reference.
+#
+# Search notes: "fft" / "dft" match the deformation-gradient variable names in
+# src/linear_elastic_fem/consistent_tangent.rs; "Fourier" matches the replay
+# compression description of an external crate; "Pade" matches the tanh
+# approximation in src/neural.rs; "bisection" matches scalar root finding
+# (Kepler, wall friction velocity, height-field probe); "tridiagonal" matches
+# the Thomas linear solve; "refine" matches the tetrahedral longest-edge
+# bisection of the FE mesher; "eigen" matches the thermal eigenstrain of the
+# FE solver. None of these is the capability of the row it was searched for.
 #
 # status (exactly one of):
 #   implemented+oracle     a general component exists, and at least one
@@ -974,4 +991,94 @@ source = "More-Garbow-Hillstrom 1981; Knoll-Keyes 2004 (Bratu)"
 status = "missing"
 evidence = "汎用 Newton が無い (COV-NUM-029)"
 oracle_candidate = "Bratu の臨界パラメータ lambda_c (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-093"
+axis = "transform"
+item = "complex discrete Fourier transform, 1-D (radix-2 / mixed-radix FFT, forward and inverse)"
+source = "Cooley-Tukey 1965; Press et al., Numerical Recipes ch.12; FFTW"
+status = "missing"
+evidence = "無い (推測: fft / dft / fourier で src を検索、当たるのは src/linear_elastic_fem/consistent_tangent.rs:102 の行列変数名 F Fᵀ と src/replay.rs:4 の外部 crate の圧縮方式の説明だけ) 前提の複素数の型も無い (src/math.rs:51 は実数の Q64.64 のみ、複素数の行は量子力学の表)"
+oracle_candidate = "O(n^2) の直接和と突合、逆変換で元に戻る (Fix128 で bit 一致か誤差上界)、Parseval、純音で単一ビン"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-094"
+axis = "transform"
+item = "real-input FFT and multi-dimensional FFT (2-D / 3-D, periodic grids)"
+source = "Press et al., Numerical Recipes ch.12; FFTW r2c / plan_dft_3d"
+status = "missing"
+evidence = "無い (COV-NUM-093 と同じ検索) 周期格子の FFT Poisson は COV-CFD-077 (missing)"
+oracle_candidate = "実入力の Hermite 対称性、多次元は 1-D の積と突合、周期箱の単一 Fourier モード"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-095"
+axis = "stochastic"
+item = "plain Monte Carlo estimate of an integral / expectation with its sample variance and standard error"
+source = "Robert-Casella, Monte Carlo Statistical Methods ch.3; Owen, Monte Carlo theory, methods and examples ch.2"
+status = "implemented-no-oracle"
+evidence = "推定量の API は無いが部品の組合せで成り立つ: 標本は src/rng.rs:22 の DeterministicRng (src/rng.rs:82 next_fix128 一様 [0, 1)、src/rng.rs:140 next_gaussian_pair、tests/analytic_rng_wiring.rs::bounded_is_uniform_chi_square)、平均と標本分散は src/anomaly.rs:598 の ZScoreDetector (Welford、src/anomaly.rs:628 observe / src/anomaly.rs:642 variance、std feature、tests/audit_anomaly.rs::zscore_matches_two_pass_mean_variance) 標本は Fix128、統計量は f64 推定量そのものを独立な参照と突合する test は無い"
+oracle_candidate = "∫_0^1 x^2 dx = 1/3 を N 標本で推定し、誤差が標準誤差の数倍に収まることと標準誤差が 1/sqrt(N) で減ることを seed 固定で確認"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-096"
+axis = "stochastic"
+item = "variance reduction: importance sampling with weights, antithetic variates, control variates, stratified sampling"
+source = "Owen, Monte Carlo theory, methods and examples ch.8-9; Lux-Koblinger, Monte Carlo Particle Transport Methods"
+status = "missing"
+evidence = "無い (推測: importance / antithetic / control variate / stratif で src 0 件) 一様と正規以外の分布から引く部品も無い (src/rng.rs) 原子核の表の MC 輸送の分散低減行はこの部品の用途"
+oracle_candidate = "指数関数の積分で重点サンプリングの分散比が閉形式と一致、antithetic で単調関数の分散が減ること"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-097"
+axis = "matrix_function"
+item = "dense matrix exponential exp(A) (Pade approximation with scaling and squaring)"
+source = "Moler-Van Loan 2003 (Nineteen dubious ways); Higham 2005; scipy.linalg.expm"
+status = "missing"
+evidence = "無い (推測: expm / matrix exp で src 0 件) Pade で当たるのは src/neural.rs:174 の tanh の有理近似、src/math.rs:632 の exp はスカラー"
+oracle_candidate = "2x2 回転生成子の exp が cos / sin の回転行列、冪零行列で有限和と一致、対角行列で要素ごとの exp"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-098"
+axis = "matrix_function"
+item = "Chebyshev rational approximation (CRAM) for exp(A) v with eigenvalues on the negative real axis"
+source = "Pusa-Leppanen 2010 (CRAM); Pusa 2016; ORIGEN / OpenMC depletion"
+status = "missing"
+evidence = "無い (推測: CRAM / Chebyshev rational で src 0 件) 硬い崩壊連鎖での使い方は原子核の表の行"
+oracle_candidate = "2 段崩壊連鎖の Bateman 閉形式と突合、崩壊定数の比が極端な連鎖で負の数密度が出ないこと (係数は参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-099"
+axis = "eigen"
+item = "symmetric tridiagonal eigenproblem (Sturm-sequence bisection, inverse iteration for eigenvectors, implicit QL)"
+source = "Golub-Van Loan ch.8.4-8.5; Wilkinson-Reinsch Handbook (tql2 / bisect); LAPACK stebz / stein / steqr"
+status = "missing"
+evidence = "無い (推測: sturm / tql / implicit QL で src 0 件) bisection で当たるのはスカラーの根探索 (src/kepler.rs:64、src/turbulence.rs:336、COV-NUM-037)、tridiagonal で当たるのは src/transient_thermal.rs:420 の Thomas 法 (連立 1 次方程式、COV-NUM-004) 一般の逆反復は COV-NUM-040"
+oracle_candidate = "1D Laplacian (2, -1) の固有値 2 - 2 cos(k pi / (n + 1)) と固有ベクトル sin(j k pi / (n + 1)) の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-100"
+axis = "eigen"
+item = "dense symmetric n x n eigen-decomposition (cyclic Jacobi, Householder tridiagonalisation + QL / QR)"
+source = "Golub-Van Loan ch.8.3, 8.5; LAPACK syev / syevd"
+status = "missing"
+evidence = "3x3 に限った cyclic Jacobi だけ (src/mass_properties.rs:507 principal_axes、COV-NUM-038) n x n の汎用部品は無い (推測: householder / tridiagonalis で src 0 件) 非対称と SVD は COV-NUM-044"
+oracle_candidate = "n = 3 で principal_axes と突合、1D Laplacian の閉形式、直交性 Q^T Q = I と A Q = Q Λ の残差"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-101"
+axis = "mesh_adaptivity"
+item = "block-structured adaptive mesh refinement hierarchy as a general component (Berger-Oliger / Berger-Colella: tagging, regridding, coarse-fine interpolation, refluxing, subcycling in time)"
+source = "Berger-Oliger 1984; Berger-Colella 1989; AMReX; Chombo; p4est"
+status = "missing"
+evidence = "格子の階層は無い (推測: AMR / octree / quadtree / Berger で src 0 件、COV-CFD-006 は「格子は固定解像度のみ」で missing) 四面体の最長辺二分割は src/sdf_fem_mesh.rs:517 refine_by_max_edge_length / src/sdf_fem_mesh.rs:365 try_refine_marked で固体 FE の h 適応 (COV-FEM-112) 専用、構造格子の階層ではない"
+oracle_candidate = "細分化境界を越える一様流が不変、粗密境界の refluxing で保存量の総和が bit 一致で保たれる"
 limitation = ""
