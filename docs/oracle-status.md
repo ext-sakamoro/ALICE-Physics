@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 4557 |
+| 🟢 Not ignored (run by CI) | 4566 |
 | 🔴 Red by design | 208 |
 | ⏱ Gated (runtime / diagnostic / manual) | 25 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **4790** |
+| **Total** | **4799** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -283,7 +283,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (4557)
+## 🟢 Not ignored (4566)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -516,6 +516,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_quadratic_fem.rs` | 9 |
 | `analytic_quadratic_hyperelastic.rs` | 9 |
 | `analytic_ragdoll_wiring.rs` | 9 |
+| `analytic_rans_wall_function.rs` | 9 |
 | `analytic_structural_creep_per_material.rs` | 9 |
 | `analytic_thermoplastic_softening.rs` | 9 |
 | `audit_c_trimesh.rs` | 9 |
