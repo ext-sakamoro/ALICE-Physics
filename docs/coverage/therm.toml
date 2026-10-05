@@ -648,7 +648,7 @@ axis = "convection (closed form)"
 item = "conjugate heat transfer (solid conduction coupled to a fluid temperature at an interface)"
 source = "Abaqus heat transfer / COMSOL Heat Transfer Module conjugate heat transfer; OpenFOAM chtMultiRegionFoam"
 status = "missing"
-evidence = "流体の温度 (src/cfd_solver.rs:870) と固体の熱伝導は互いを読まない (tests/coupling_channel_inventory.rs::fluid_temperature_moves_the_fluid_and_not_the_thermal_field)"
+evidence = "流体の温度 (src/cfd_solver.rs::CfdSolver) と固体の熱伝導は互いを読まない (tests/coupling_channel_inventory.rs::fluid_temperature_moves_the_fluid_and_not_the_thermal_field)"
 oracle_candidate = "流体と固体の 2 層の定常 (界面の熱流束連続)"
 limitation = ""
 
