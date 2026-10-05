@@ -102,6 +102,7 @@ were introduced during that release window.
 - C ABI (`--features ffi`): `alice_physics_body_{set,clear}_collision_radius` / `alice_physics_body_add_shaped` / `alice_physics_body_set_shape` (`AlicePhysicsShape`: box・cylinder・cone・ellipsoid・wedge・torus) / `alice_physics_static_{add_plane,add_heightfield,add_trimesh,remove,count}` / `alice_physics_joint_{add_ball,add_hinge,add_fixed,add_slider,add_spring,remove,count}` `include/alice_physics.h`・`bindings/AlicePhysics.h`・Unity の `bindings/AlicePhysics.cs` に宣言
 - WebAssembly (`--features wasm`) と Python (`--features python`) の `PhysicsWorld` に同じ集合 (衝突半径・形状・静的コライダー・ジョイント) を追加 不正な値 (有限でない・正でない大きさ、範囲外の body、同じ body 同士のジョイント、壊れたメッシュ) は 3 つのバインディングとも同じ規則で拒否する (C は `0` / `UINT32_MAX`、WebAssembly は `false` / `undefined`、Python は `ValueError` / `IndexError`)
 - `AliceVec3` / `AliceQuat` (C ABI の値型) に `Clone` / `Copy` / `Debug` / `PartialEq`
+- `sdf_ccd::sphere_trace_sdf_field` / `sdf_collider::{collide_point_sdf_field, collide_sphere_sdf_field, SdfQuery, ClosureSdfQuery, SdfFrame}` / `SdfCollider::frame`: `SdfCollider` (`Box<dyn SdfField>`、`'static + Send + Sync`) を作らずに、借用した場 (局所変数を捕捉する closure 等) で sphere trace と点・球の判定ができる 姿勢は `SdfFrame` で渡す `SdfField` は変更なし (全実装が blanket impl で `SdfQuery` になる) 既存の `sphere_trace_sdf` / `collide_point_sdf` / `collide_sphere_sdf` は新関数に委譲し、結果は bit 一致
 
 ### Changed
 

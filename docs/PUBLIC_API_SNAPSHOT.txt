@@ -11967,6 +11967,7 @@ pub alice_physics::prelude::SdfCollider::position: alice_physics::math::Vec3Fix
 pub alice_physics::prelude::SdfCollider::rotation: alice_physics::math::QuatFix
 pub alice_physics::prelude::SdfCollider::scale: alice_physics::math::Fix128
 impl alice_physics::sdf_collider::SdfCollider
+pub fn alice_physics::sdf_collider::SdfCollider::frame(&self) -> alice_physics::sdf_collider::SdfFrame
 pub fn alice_physics::sdf_collider::SdfCollider::new_dynamic(alloc::boxed::Box<dyn alice_physics::sdf_collider::SdfField>, usize) -> Self
 pub fn alice_physics::sdf_collider::SdfCollider::new_static(alloc::boxed::Box<dyn alice_physics::sdf_collider::SdfField>, alice_physics::math::Vec3Fix, alice_physics::math::QuatFix) -> Self
 pub fn alice_physics::sdf_collider::SdfCollider::update_cache(&mut self)
@@ -13987,6 +13988,7 @@ impl core::panic::unwind_safe::UnwindSafe for alice_physics::sdf_ccd::SdfCcdConf
 pub fn alice_physics::sdf_ccd::batch_sphere_trace_sdf(&[alice_physics::solver::RigidBody], &[alice_physics::math::Vec3Fix], alice_physics::math::Fix128, &[alice_physics::sdf_collider::SdfCollider], &alice_physics::sdf_ccd::SdfCcdConfig) -> alloc::vec::Vec<(usize, usize, alice_physics::ccd::TOI)>
 pub fn alice_physics::sdf_ccd::ray_march_sdf(alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &alice_physics::sdf_collider::SdfCollider, &alice_physics::sdf_ccd::SdfCcdConfig) -> core::option::Option<alice_physics::ccd::TOI>
 pub fn alice_physics::sdf_ccd::sphere_trace_sdf(alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &alice_physics::sdf_collider::SdfCollider, &alice_physics::sdf_ccd::SdfCcdConfig) -> core::option::Option<alice_physics::ccd::TOI>
+pub fn alice_physics::sdf_ccd::sphere_trace_sdf_field<F: alice_physics::sdf_collider::SdfQuery + ?core::marker::Sized>(alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &F, &alice_physics::sdf_collider::SdfFrame, &alice_physics::sdf_ccd::SdfCcdConfig) -> core::option::Option<alice_physics::ccd::TOI>
 pub mod alice_physics::sdf_character
 pub struct alice_physics::sdf_character::GroundContact
 pub alice_physics::sdf_character::GroundContact::distance: f32
@@ -14084,6 +14086,24 @@ impl core::marker::Unpin for alice_physics::sdf_collider::ClosureSdf
 impl core::marker::UnsafeUnpin for alice_physics::sdf_collider::ClosureSdf
 impl !core::panic::unwind_safe::RefUnwindSafe for alice_physics::sdf_collider::ClosureSdf
 impl !core::panic::unwind_safe::UnwindSafe for alice_physics::sdf_collider::ClosureSdf
+pub struct alice_physics::sdf_collider::ClosureSdfQuery<D, N>
+impl<D, N> alice_physics::sdf_collider::ClosureSdfQuery<D, N> where D: core::ops::function::Fn(f32, f32, f32) -> f32, N: core::ops::function::Fn(f32, f32, f32) -> (f32, f32, f32)
+pub fn alice_physics::sdf_collider::ClosureSdfQuery<D, N>::new(D, N) -> Self
+impl<D, N> alice_physics::sdf_collider::SdfQuery for alice_physics::sdf_collider::ClosureSdfQuery<D, N> where D: core::ops::function::Fn(f32, f32, f32) -> f32, N: core::ops::function::Fn(f32, f32, f32) -> (f32, f32, f32)
+pub fn alice_physics::sdf_collider::ClosureSdfQuery<D, N>::query_distance(&self, f32, f32, f32) -> f32
+pub fn alice_physics::sdf_collider::ClosureSdfQuery<D, N>::query_normal(&self, f32, f32, f32) -> (f32, f32, f32)
+impl<D: core::clone::Clone, N: core::clone::Clone> core::clone::Clone for alice_physics::sdf_collider::ClosureSdfQuery<D, N>
+pub fn alice_physics::sdf_collider::ClosureSdfQuery<D, N>::clone(&self) -> Self
+impl<D: core::fmt::Debug, N: core::fmt::Debug> core::fmt::Debug for alice_physics::sdf_collider::ClosureSdfQuery<D, N>
+pub fn alice_physics::sdf_collider::ClosureSdfQuery<D, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<D: core::marker::Copy, N: core::marker::Copy> core::marker::Copy for alice_physics::sdf_collider::ClosureSdfQuery<D, N>
+impl<D, N> core::marker::Freeze for alice_physics::sdf_collider::ClosureSdfQuery<D, N> where D: core::marker::Freeze, N: core::marker::Freeze
+impl<D, N> core::marker::Send for alice_physics::sdf_collider::ClosureSdfQuery<D, N> where D: core::marker::Send, N: core::marker::Send
+impl<D, N> core::marker::Sync for alice_physics::sdf_collider::ClosureSdfQuery<D, N> where D: core::marker::Sync, N: core::marker::Sync
+impl<D, N> core::marker::Unpin for alice_physics::sdf_collider::ClosureSdfQuery<D, N> where D: core::marker::Unpin, N: core::marker::Unpin
+impl<D, N> core::marker::UnsafeUnpin for alice_physics::sdf_collider::ClosureSdfQuery<D, N> where D: core::marker::UnsafeUnpin, N: core::marker::UnsafeUnpin
+impl<D, N> core::panic::unwind_safe::RefUnwindSafe for alice_physics::sdf_collider::ClosureSdfQuery<D, N> where D: core::panic::unwind_safe::RefUnwindSafe, N: core::panic::unwind_safe::RefUnwindSafe
+impl<D, N> core::panic::unwind_safe::UnwindSafe for alice_physics::sdf_collider::ClosureSdfQuery<D, N> where D: core::panic::unwind_safe::UnwindSafe, N: core::panic::unwind_safe::UnwindSafe
 pub struct alice_physics::sdf_collider::SdfCollider
 pub alice_physics::sdf_collider::SdfCollider::body_index: usize
 pub alice_physics::sdf_collider::SdfCollider::field: alloc::boxed::Box<dyn alice_physics::sdf_collider::SdfField>
@@ -14091,6 +14111,7 @@ pub alice_physics::sdf_collider::SdfCollider::position: alice_physics::math::Vec
 pub alice_physics::sdf_collider::SdfCollider::rotation: alice_physics::math::QuatFix
 pub alice_physics::sdf_collider::SdfCollider::scale: alice_physics::math::Fix128
 impl alice_physics::sdf_collider::SdfCollider
+pub fn alice_physics::sdf_collider::SdfCollider::frame(&self) -> alice_physics::sdf_collider::SdfFrame
 pub fn alice_physics::sdf_collider::SdfCollider::new_dynamic(alloc::boxed::Box<dyn alice_physics::sdf_collider::SdfField>, usize) -> Self
 pub fn alice_physics::sdf_collider::SdfCollider::new_static(alloc::boxed::Box<dyn alice_physics::sdf_collider::SdfField>, alice_physics::math::Vec3Fix, alice_physics::math::QuatFix) -> Self
 pub fn alice_physics::sdf_collider::SdfCollider::update_cache(&mut self)
@@ -14102,6 +14123,26 @@ impl core::marker::Unpin for alice_physics::sdf_collider::SdfCollider
 impl core::marker::UnsafeUnpin for alice_physics::sdf_collider::SdfCollider
 impl !core::panic::unwind_safe::RefUnwindSafe for alice_physics::sdf_collider::SdfCollider
 impl !core::panic::unwind_safe::UnwindSafe for alice_physics::sdf_collider::SdfCollider
+pub struct alice_physics::sdf_collider::SdfFrame
+impl alice_physics::sdf_collider::SdfFrame
+pub const alice_physics::sdf_collider::SdfFrame::IDENTITY: Self
+pub fn alice_physics::sdf_collider::SdfFrame::new(alice_physics::math::Vec3Fix, alice_physics::math::QuatFix, alice_physics::math::Fix128) -> Self
+pub fn alice_physics::sdf_collider::SdfFrame::scale_f32(&self) -> f32
+impl core::clone::Clone for alice_physics::sdf_collider::SdfFrame
+pub fn alice_physics::sdf_collider::SdfFrame::clone(&self) -> Self
+impl core::cmp::PartialEq for alice_physics::sdf_collider::SdfFrame
+pub fn alice_physics::sdf_collider::SdfFrame::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::sdf_collider::SdfFrame
+pub fn alice_physics::sdf_collider::SdfFrame::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::sdf_collider::SdfFrame
+impl core::marker::StructuralPartialEq for alice_physics::sdf_collider::SdfFrame
+impl core::marker::Freeze for alice_physics::sdf_collider::SdfFrame
+impl core::marker::Send for alice_physics::sdf_collider::SdfFrame
+impl core::marker::Sync for alice_physics::sdf_collider::SdfFrame
+impl core::marker::Unpin for alice_physics::sdf_collider::SdfFrame
+impl core::marker::UnsafeUnpin for alice_physics::sdf_collider::SdfFrame
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::sdf_collider::SdfFrame
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::sdf_collider::SdfFrame
 pub struct alice_physics::sdf_collider::SdfUnion<A, B>
 impl<A: alice_physics::sdf_collider::SdfField, B: alice_physics::sdf_collider::SdfField> alice_physics::sdf_collider::SdfUnion<A, B>
 pub fn alice_physics::sdf_collider::SdfUnion<A, B>::new(A, B) -> Self
@@ -14149,10 +14190,21 @@ impl<M: alice_physics::sim_modifier::PhysicsModifier> alice_physics::sdf_collide
 pub fn alice_physics::sim_modifier::SingleModifiedSdf<M>::distance(&self, f32, f32, f32) -> f32
 pub fn alice_physics::sim_modifier::SingleModifiedSdf<M>::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
 pub fn alice_physics::sim_modifier::SingleModifiedSdf<M>::normal(&self, f32, f32, f32) -> (f32, f32, f32)
+pub trait alice_physics::sdf_collider::SdfQuery
+pub fn alice_physics::sdf_collider::SdfQuery::query_distance(&self, f32, f32, f32) -> f32
+pub fn alice_physics::sdf_collider::SdfQuery::query_normal(&self, f32, f32, f32) -> (f32, f32, f32)
+impl<D, N> alice_physics::sdf_collider::SdfQuery for alice_physics::sdf_collider::ClosureSdfQuery<D, N> where D: core::ops::function::Fn(f32, f32, f32) -> f32, N: core::ops::function::Fn(f32, f32, f32) -> (f32, f32, f32)
+pub fn alice_physics::sdf_collider::ClosureSdfQuery<D, N>::query_distance(&self, f32, f32, f32) -> f32
+pub fn alice_physics::sdf_collider::ClosureSdfQuery<D, N>::query_normal(&self, f32, f32, f32) -> (f32, f32, f32)
+impl<T: alice_physics::sdf_collider::SdfField + ?core::marker::Sized> alice_physics::sdf_collider::SdfQuery for T
+pub fn T::query_distance(&self, f32, f32, f32) -> f32
+pub fn T::query_normal(&self, f32, f32, f32) -> (f32, f32, f32)
 pub fn alice_physics::sdf_collider::collide_aabb_sdf(alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, &alice_physics::sdf_collider::SdfCollider) -> core::option::Option<alice_physics::collider::Contact>
 pub fn alice_physics::sdf_collider::collide_capsule_sdf(alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &alice_physics::sdf_collider::SdfCollider) -> core::option::Option<alice_physics::collider::Contact>
 pub fn alice_physics::sdf_collider::collide_point_sdf(alice_physics::math::Vec3Fix, &alice_physics::sdf_collider::SdfCollider) -> core::option::Option<alice_physics::collider::Contact>
+pub fn alice_physics::sdf_collider::collide_point_sdf_field<F: alice_physics::sdf_collider::SdfQuery + ?core::marker::Sized>(alice_physics::math::Vec3Fix, &F, &alice_physics::sdf_collider::SdfFrame) -> core::option::Option<alice_physics::collider::Contact>
 pub fn alice_physics::sdf_collider::collide_sphere_sdf(alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &alice_physics::sdf_collider::SdfCollider) -> core::option::Option<alice_physics::collider::Contact>
+pub fn alice_physics::sdf_collider::collide_sphere_sdf_field<F: alice_physics::sdf_collider::SdfQuery + ?core::marker::Sized>(alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &F, &alice_physics::sdf_collider::SdfFrame) -> core::option::Option<alice_physics::collider::Contact>
 pub fn alice_physics::sdf_collider::detect_sdf_contacts(&[alice_physics::solver::RigidBody], &[alice_physics::sdf_collider::SdfCollider], alice_physics::math::Fix128) -> alloc::vec::Vec<(usize, alice_physics::collider::Contact)>
 pub mod alice_physics::sdf_destruction
 pub enum alice_physics::sdf_destruction::DestructionType
@@ -22121,6 +22173,7 @@ pub alice_physics::SdfCollider::position: alice_physics::math::Vec3Fix
 pub alice_physics::SdfCollider::rotation: alice_physics::math::QuatFix
 pub alice_physics::SdfCollider::scale: alice_physics::math::Fix128
 impl alice_physics::sdf_collider::SdfCollider
+pub fn alice_physics::sdf_collider::SdfCollider::frame(&self) -> alice_physics::sdf_collider::SdfFrame
 pub fn alice_physics::sdf_collider::SdfCollider::new_dynamic(alloc::boxed::Box<dyn alice_physics::sdf_collider::SdfField>, usize) -> Self
 pub fn alice_physics::sdf_collider::SdfCollider::new_static(alloc::boxed::Box<dyn alice_physics::sdf_collider::SdfField>, alice_physics::math::Vec3Fix, alice_physics::math::QuatFix) -> Self
 pub fn alice_physics::sdf_collider::SdfCollider::update_cache(&mut self)
