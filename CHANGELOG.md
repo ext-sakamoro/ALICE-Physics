@@ -18,6 +18,7 @@ were introduced during that release window.
 ### Added
 
 - `docs/coverage/cfd.toml`: 非圧縮流体・乱流 (CFD) の網羅表 (Ferziger–Perić / Pope / Versteeg–Malalasekera、OpenFOAM / Fluent のソルバ・モデル、Ghia / Armaly / Taylor–Green 等の標準ベンチマークの範囲に対する 117 項目、軸は離散化 / 圧力-速度連成 / 移流 / 時間積分 / 境界条件 / 乱流 / 物理 / 圧力ソルバ / 粒子法 / 出力 / ベンチマーク) partial 6 項目の制限は `src/cfd_solver.rs` と `src/fluid.rs` に `LIMITATION(COV-CFD-NNN)` コメントで対応付け (挙動の変更なし)
+- `docs/coverage/multiphase.toml`: 多相流・自由表面の網羅表 (界面捕獲 VOF / level set / PLIC、表面張力、二相の運動量、粒子法の自由表面、界面の相変化条件、非ニュートン相、気泡・液滴、平均化モデル、燃焼の流れ、標準ベンチマークに対する 86 項目) partial 3 項目の制限を `src/multiphase.rs` の `LIMITATION(<id>)` コメントで示す (挙動変更なし)
 - `docs/coverage/fem.toml` / `scripts/coverage_check.py`: 固体 FEM の網羅表 (教科書・参照実装・標準ベンチマークの範囲に対する 133 項目、状態は implemented+oracle / implemented-no-oracle / partial / missing / out-of-scope) と、その検査器 (引用した test と src 行の実在、oracle が ignore されていないこと、partial と src の `LIMITATION(<id>)` コメントの双方向対応、比較 0 件で fail) preflight と CI の test job (全 OS) で実行
 - `docs/coverage/num.toml`: 数値の基盤 (線形・非線形ソルバ、固有値、時間積分、連成の枠組み、分散並列、数値の表現) の網羅表 92 項目 (Saad / Hairer-Wanner / Knoll-Keyes、PETSc KSP / PC / SNES / TS、SUNDIALS、MOOSE、preCICE の範囲に対する汎用部品の状態、分野内に埋め込まれた同種実装は根拠に引くだけで数えない) partial 5 項目の制限を `src/linear_solver.rs` と `src/math.rs` に `LIMITATION(COV-NUM-NNN)` コメントで示す (挙動の変更なし)
 - `docs/coverage/struct.toml`: 構造の閉形式・材料強度の網羅表 (梁・断面・ねじり・板殻と圧力容器・座屈・疲労・クリープ・積層板・応力集中・接触応力・振動・接合・熱応力・寿命評価の合成、134 項目) partial 10 項目の制限は src に `LIMITATION(COV-STRUCT-NNN)` コメントで示す
