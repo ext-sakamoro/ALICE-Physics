@@ -1414,7 +1414,6 @@ pub enum Joint2D {
 /// One call is one solver iteration starting from zero accumulated multipliers.
 /// [`PhysicsWorld2D::step`] keeps the multipliers across the iterations of a substep, so
 /// compliant joints there do not stiffen with `iterations`.
-// ALLOW-UNWIRED: public single-iteration entry kept for callers that drive their own loop; PhysicsWorld2D::step uses solve_joints_2d_accumulated
 pub fn solve_joints_2d(bodies: &mut [RigidBody2D], joints: &[Joint2D], sub_dt: Fix128) {
     let mut lambdas = vec![Vec2Fix::ZERO; joints.len()];
     solve_joints_2d_accumulated(bodies, joints, sub_dt, &mut lambdas);
