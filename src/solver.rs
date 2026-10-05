@@ -3752,6 +3752,15 @@ impl PhysicsWorld {
                 continue;
             }
 
+            // A contact the substep's hook / modifier pre-pass discarded gets
+            // no velocity response either (the position pass skipped it).
+            // Kept contacts read the friction / restitution the pre-pass
+            // wrote back, so a modifier's values apply here too.
+            #[cfg(feature = "std")]
+            if self.contact_discarded.get(i).copied().unwrap_or(false) {
+                continue;
+            }
+
             let w_sum = body_a.inv_mass + body_b.inv_mass;
             if w_sum < W_SUM_EPSILON {
                 continue;
@@ -3883,6 +3892,9 @@ impl PhysicsWorld {
     #[cfg(all(feature = "parallel", feature = "std"))]
     fn pre_process_contacts(&mut self) {
         let num = self.contact_constraints.len();
+        if self.contact_discarded.len() < num {
+            self.contact_discarded.resize(num, false);
+        }
         for i in 0..num {
             let constraint = &mut self.contact_constraints[i];
             let body_a_idx = constraint.body_a;
@@ -3910,8 +3922,10 @@ impl PhysicsWorld {
                 }
             }
             if skip {
-                // Mark as non-penetrating so the solver skips it
+                // Mark as non-penetrating so the solver skips it, and as
+                // discarded so `update_velocities` skips it too
                 constraint.contact.depth = Fix128::ZERO;
+                self.contact_discarded[i] = true;
             }
         }
     }
