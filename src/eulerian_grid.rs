@@ -53,9 +53,12 @@
 //! and is refused instead of silently given another. `p2g_normalized` is
 //! reached from `CfdSolver::step_flip`. The rank-local drivers of the slab
 //! decompositions (`project_pressure_decomposed_on_rank`,
-//! `project_pressure_slab_local_on_rank`, the banded multigrid one) are reached
-//! from [`project_pressure_distributed`], which runs one rank per thread over
-//! the byte-stream transports; the transports themselves stay crate-internal.
+//! `project_pressure_slab_local_on_rank`, the banded multigrid one) and the
+//! rank-local face-condition step (`enforce_slab_face_boundaries_on_rank`) are
+//! reached from [`project_pressure_distributed`], which runs one rank per thread
+//! over the byte-stream transports; the transports themselves stay
+//! crate-internal. [`project_pressure_distributed_with_report`] also returns the
+//! bytes each rank's slab-local working set allocated.
 //!
 //! # Face mask — walls inside the projection
 //!
@@ -1079,7 +1082,10 @@ pub(crate) use multigrid_decomposed::project_pressure_multigrid_decomposed;
 #[cfg(feature = "std")]
 mod rank_threads;
 #[cfg(feature = "std")]
-pub use rank_threads::project_pressure_distributed;
+pub use rank_threads::{
+    project_pressure_distributed, project_pressure_distributed_with_report,
+    DistributedProjectionReport,
+};
 
 /// Number of red-black Gauss-Seidel iterations before restriction.
 const MG_PRE_SMOOTH: u32 = 1;
@@ -1690,10 +1696,10 @@ pub(crate) fn project_pressure_decomposed(
 /// from `CfdSolver::step_with_pressure_solver` with
 /// `PressureSolver::BandedGs`.
 ///
-/// The face conditions are imposed on the whole grid **once, before the
-/// split**: the monolithic solve imposes them inside itself, and an outflow
-/// face copying its inward neighbour is not idempotent, so they must not be
-/// imposed twice. The result is bit-identical to [`project_pressure`] with the
+/// The face conditions are imposed **after the split, rank by rank**
+/// ([`enforce_slab_face_boundaries_over`]), with one Z-face layer handed up
+/// across each slab boundary, and exactly once: an outflow face copying its
+/// inward neighbour is not idempotent. The result is bit-identical to [`project_pressure`] with the
 /// same sweep count for every rank count, including counts that do not divide
 /// `nz` and counts larger than `nz` (a rank that owns nothing holds nothing and
 /// exchanges nothing); `tests/analytic_pressure_solvers.rs` pins that from the
@@ -1711,7 +1717,6 @@ pub(crate) fn project_pressure_banded(
     if grid.dx.is_zero() || density_kg_m3.is_zero() || dt_s.is_zero() || ranks == 0 {
         return;
     }
-    grid.enforce_face_boundaries();
     let nz = grid.nz;
     let (nx, ny) = (grid.nx, grid.ny);
     let plane = cell_plane(nx, ny);
@@ -1720,6 +1725,11 @@ pub(crate) fn project_pressure_banded(
         .iter()
         .map(|&b| SlabFaces::from_grid(grid, b))
         .collect();
+    let conditions: Vec<SlabFaceConditions> = bounds
+        .iter()
+        .map(|&b| SlabFaceConditions::from_grid(grid, b))
+        .collect();
+    enforce_slab_face_boundaries_over(&mut faces, &conditions);
     let mut transport = LocalSlabTransport::from_field(&bounds, nz, plane, 1, &grid.pressure);
 
     project_pressure_slab_local_over(
@@ -2296,7 +2306,6 @@ impl SlabStorage {
         }
     }
 
-    // ALLOW-UNWIRED: wiring debt eulerian-grid-cross-process-primitive-residue (true multi-OS-process primitive, examples/ cannot reach pub(crate) and the single-process DecomposedGs/BandedGs path never needs it), oracle src/eulerian_grid.rs tests (cross-process harness)
     /// Bytes this rank's pressure band actually allocated.
     pub(crate) fn bytes(&self) -> SlabBytes {
         SlabBytes {
@@ -2373,11 +2382,13 @@ impl FaceFlags {
 ///
 /// # Precondition
 ///
-/// The velocities arrive with the face conditions already imposed
-/// ([`MacGrid::enforce_face_boundaries`]). The monolithic solve calls that
-/// itself, and calling it twice is not always the same as calling it once (an
-/// outflow face copies its inward neighbour, which may itself have been
-/// rewritten), so the enforcement happens once, before the field is split.
+/// The solve receives the velocities with the face conditions already imposed,
+/// once: by [`enforce_slab_face_boundaries`] on the split faces (what the drivers
+/// do), or by [`MacGrid::enforce_face_boundaries`] before the split. The two give
+/// the same faces to the bit. The monolithic solve imposes the conditions inside
+/// itself, and imposing them twice is not always the same as imposing them once
+/// (an outflow face copies its inward neighbour, which may itself have been
+/// rewritten).
 pub(crate) struct SlabFaces {
     nx: usize,
     ny: usize,
@@ -2565,7 +2576,6 @@ impl SlabFaces {
         self.k0..end
     }
 
-    // ALLOW-UNWIRED: wiring debt eulerian-grid-cross-process-primitive-residue (true multi-OS-process primitive, examples/ cannot reach pub(crate) and the single-process DecomposedGs/BandedGs path never needs it), oracle src/eulerian_grid.rs tests (cross-process harness)
     /// Bytes this rank's face arrays actually allocated.
     pub(crate) fn bytes(&self) -> SlabBytes {
         let values = self.u.capacity() + self.v.capacity() + self.w.capacity();
@@ -2674,7 +2684,6 @@ impl SlabStencil {
         (k - self.k0) * self.plane
     }
 
-    // ALLOW-UNWIRED: wiring debt eulerian-grid-cross-process-primitive-residue (true multi-OS-process primitive, examples/ cannot reach pub(crate) and the single-process DecomposedGs/BandedGs path never needs it), oracle src/eulerian_grid.rs tests (cross-process harness)
     /// Bytes this rank's stencil actually allocated.
     pub(crate) fn bytes(&self) -> SlabBytes {
         SlabBytes {
@@ -2813,12 +2822,6 @@ impl LocalSlabTransport {
     /// Rank `rank`'s band, for reading back the answer.
     pub(crate) fn slab(&self, rank: usize) -> &SlabStorage {
         &self.slabs[rank]
-    }
-
-    // ALLOW-UNWIRED: wiring debt eulerian-grid-cross-process-primitive-residue (true multi-OS-process primitive, examples/ cannot reach pub(crate) and the single-process DecomposedGs/BandedGs path never needs it), oracle src/eulerian_grid.rs tests (cross-process harness)
-    /// Bytes every rank's band allocated here, rank by rank.
-    pub(crate) fn bytes(&self) -> Vec<SlabBytes> {
-        self.slabs.iter().map(SlabStorage::bytes).collect()
     }
 }
 
@@ -3214,8 +3217,8 @@ pub(crate) const SLAB_FACE_HALO_MISSING: &str =
 /// [`MacGrid::enforce_face_boundaries`] reads its conditions through.
 ///
 /// Keyed by the index inside the rank's own face array and kept ascending in it,
-/// which is the order [`enforce_slab_face_boundaries`] walks the faces in and
-/// the order the monolithic enforcement walks the whole domain in. That order is
+/// which is the order [`enforce_slab_face_boundaries`] walks the outflow faces in
+/// and the order the monolithic enforcement walks them in. That order is
 /// load-bearing: an outflow face reads a neighbour that may itself be an outflow
 /// face, and whether the neighbour has already been rewritten is part of the
 /// answer.
@@ -3259,24 +3262,29 @@ impl SlabFaceConditions {
     /// face field is a contiguous run of those keys, so a rank's entries are one
     /// range of the map — taken in ascending order, which is the order the
     /// enforcement wants them in.
+    ///
+    /// Each entry is named through [`SlabFaceConditions::set_u`] and its
+    /// siblings, the constructor a rank without a grid uses, so the two ways of
+    /// building the conditions keep the same entries by construction rather
+    /// than by two copies of the rule agreeing.
     pub(crate) fn from_grid(grid: &MacGrid, (k0, k1): (usize, usize)) -> Self {
-        let mut out = Self::new(grid.nx, grid.ny, (k0, k1));
+        let (nx, ny) = (grid.nx, grid.ny);
+        let mut out = Self::new(nx, ny, (k0, k1));
         if k0 == k1 {
             return out;
         }
-        let (up, vp, cp) = (
-            u_plane(grid.nx, grid.ny),
-            v_plane(grid.nx, grid.ny),
-            cell_plane(grid.nx, grid.ny),
-        );
+        let (up, vp, cp) = (u_plane(nx, ny), v_plane(nx, ny), cell_plane(nx, ny));
         for (&ix, &bc) in grid.u_face_bc.range(k0 * up..k1 * up) {
-            out.u.push((ix - k0 * up, bc));
+            let at = ix % up;
+            out.set_u(at % (nx + 1), at / (nx + 1), ix / up, bc);
         }
         for (&ix, &bc) in grid.v_face_bc.range(k0 * vp..k1 * vp) {
-            out.v.push((ix - k0 * vp, bc));
+            let at = ix % vp;
+            out.set_v(at % nx, at / nx, ix / vp, bc);
         }
         for (&ix, &bc) in grid.w_face_bc.range(k0 * cp..(k1 + 1) * cp) {
-            out.w.push((ix - k0 * cp, bc));
+            let at = ix % cp;
+            out.set_w(at % nx, at / nx, ix / cp, bc);
         }
         out
     }
@@ -3290,7 +3298,6 @@ impl SlabFaceConditions {
     /// # Panics
     ///
     /// When `k` is not an owned layer, or `(i, j)` is not a face of one.
-    // ALLOW-UNWIRED: wiring debt eulerian-grid-cross-process-primitive-residue (true multi-OS-process primitive, examples/ cannot reach pub(crate) and the single-process DecomposedGs/BandedGs path never needs it), oracle src/eulerian_grid.rs tests (cross-process harness)
     pub(crate) fn set_u(&mut self, i: usize, j: usize, k: usize, bc: FaceBc) {
         assert!(i <= self.nx && j < self.ny, "({i}, {j}) is not an X-face");
         let at = self.owned_base(k, u_plane(self.nx, self.ny)) + i + (self.nx + 1) * j;
@@ -3298,7 +3305,6 @@ impl SlabFaceConditions {
     }
 
     /// See [`SlabFaceConditions::set_u`].
-    // ALLOW-UNWIRED: wiring debt eulerian-grid-cross-process-primitive-residue (true multi-OS-process primitive, examples/ cannot reach pub(crate) and the single-process DecomposedGs/BandedGs path never needs it), oracle src/eulerian_grid.rs tests (cross-process harness)
     pub(crate) fn set_v(&mut self, i: usize, j: usize, k: usize, bc: FaceBc) {
         assert!(i < self.nx && j <= self.ny, "({i}, {j}) is not a Y-face");
         let at = self.owned_base(k, v_plane(self.nx, self.ny)) + i + self.nx * j;
@@ -3307,7 +3313,6 @@ impl SlabFaceConditions {
 
     /// See [`SlabFaceConditions::set_u`]. Z-faces run one past the owned
     /// layers, so `k` may be `k1`.
-    // ALLOW-UNWIRED: wiring debt eulerian-grid-cross-process-primitive-residue (true multi-OS-process primitive, examples/ cannot reach pub(crate) and the single-process DecomposedGs/BandedGs path never needs it), oracle src/eulerian_grid.rs tests (cross-process harness)
     pub(crate) fn set_w(&mut self, i: usize, j: usize, k: usize, bc: FaceBc) {
         assert!(i < self.nx && j < self.ny, "({i}, {j}) is not a Z-face");
         assert!(
@@ -3387,10 +3392,12 @@ fn condition_at(entries: &[(usize, FaceBc)], next: &mut usize, at: usize, solid:
 /// Every value is written by the same expression in the same order as the
 /// monolithic enforcement, so the two agree to the bit rather than within a
 /// tolerance — which `distributed_face_enforcement_matches_the_monolithic_one`
-/// pins. The order is the reason the conditions are walked face by face instead
-/// of entry by entry: a face whose only condition is the dense solid flag has no
-/// entry, and an outflow face reads a neighbour whose own turn may be earlier or
-/// later than its own.
+/// and `low_end_outflow_next_to_inflow_or_wall_matches_the_monolithic_enforcement`
+/// pin. Each axis takes two passes, as the monolithic enforcement does: the
+/// first walks the faces one by one, because a face whose only condition is the
+/// dense solid flag has no entry; the second walks the outflow entries, each of
+/// which reads an inward neighbour whose own condition the first pass has
+/// already imposed, at either end of the axis.
 ///
 /// # Panics
 ///
@@ -3421,67 +3428,99 @@ pub(crate) fn enforce_slab_face_boundaries(
     let (nx, ny) = (faces.nx, faces.ny);
     let u_row = nx + 1;
 
-    // X-faces, `MacGrid::enforce_face_boundaries`'s first loop over this rank's
-    // layers. An outflow X-face copies a face of the same layer, so this stays
-    // inside the band.
+    // Each axis in two passes, as `MacGrid::enforce_face_boundaries` does: every
+    // condition that is not an outflow first, then every outflow face, which
+    // reads a neighbour whose own condition has already been imposed whichever
+    // end of the axis it sits on. A single pass would read the inward neighbour
+    // of an outflow at the low end before that neighbour's turn.
+
+    // X-faces. An outflow X-face copies a face of the same layer, so both passes
+    // stay inside the band, and running them layer by layer reads and writes
+    // exactly what the monolithic passes over the whole domain do.
     let up = u_plane(nx, ny);
     for k in k0..k1 {
         let base = (k - k0) * up;
         let entries = layer_conditions(&cond.u, base, up);
-        let mut next = 0usize;
         let (u, flags) = faces.u_layer_mut(k);
+        let mut next = 0usize;
         for j in 0..ny {
             for i in 0..=nx {
                 let at = i + u_row * j;
                 match condition_at(entries, &mut next, base + at, flags[at].solid) {
-                    FaceBc::Fluid => {}
+                    FaceBc::Fluid | FaceBc::Outflow => {}
                     FaceBc::Inflow { normal_velocity } => u[at] = normal_velocity,
-                    FaceBc::Outflow => {
-                        let inner = if i > 0 { i - 1 } else { i + 1 };
-                        u[at] = if inner <= nx {
-                            u[inner + u_row * j]
-                        } else {
-                            Fix128::ZERO
-                        };
-                    }
                     _ => u[at] = Fix128::ZERO,
                 }
             }
         }
-    }
-
-    // Y-faces, the second loop. Also layer-local.
-    let vp = v_plane(nx, ny);
-    for k in k0..k1 {
-        let base = (k - k0) * vp;
-        let entries = layer_conditions(&cond.v, base, vp);
-        let mut next = 0usize;
-        let (v, flags) = faces.v_layer_mut(k);
-        for j in 0..=ny {
-            for i in 0..nx {
-                let at = i + nx * j;
-                match condition_at(entries, &mut next, base + at, flags[at].solid) {
-                    FaceBc::Fluid => {}
-                    FaceBc::Inflow { normal_velocity } => v[at] = normal_velocity,
-                    FaceBc::Outflow => {
-                        let inner = if j > 0 { j - 1 } else { j + 1 };
-                        v[at] = if inner <= ny {
-                            v[i + nx * inner]
-                        } else {
-                            Fix128::ZERO
-                        };
-                    }
-                    _ => v[at] = Fix128::ZERO,
-                }
+        for &(entry, bc) in entries {
+            if bc == FaceBc::Outflow {
+                let at = entry - base;
+                let (i, j) = (at % u_row, at / u_row);
+                let inner = if i > 0 { i - 1 } else { i + 1 };
+                u[at] = if inner <= nx {
+                    u[inner + u_row * j]
+                } else {
+                    Fix128::ZERO
+                };
             }
         }
     }
 
-    // Z-faces, the third loop, over every layer the rank holds — its own top
-    // layer included, which the rank above also enforces (see the section
-    // header). This is the loop that leaves the band: the face at `k0` reads the
-    // face at `k0 − 1`.
+    // Y-faces. Also layer-local.
+    let vp = v_plane(nx, ny);
+    for k in k0..k1 {
+        let base = (k - k0) * vp;
+        let entries = layer_conditions(&cond.v, base, vp);
+        let (v, flags) = faces.v_layer_mut(k);
+        let mut next = 0usize;
+        for j in 0..=ny {
+            for i in 0..nx {
+                let at = i + nx * j;
+                match condition_at(entries, &mut next, base + at, flags[at].solid) {
+                    FaceBc::Fluid | FaceBc::Outflow => {}
+                    FaceBc::Inflow { normal_velocity } => v[at] = normal_velocity,
+                    _ => v[at] = Fix128::ZERO,
+                }
+            }
+        }
+        for &(entry, bc) in entries {
+            if bc == FaceBc::Outflow {
+                let at = entry - base;
+                let (i, j) = (at % nx, at / nx);
+                let inner = if j > 0 { j - 1 } else { j + 1 };
+                v[at] = if inner <= ny {
+                    v[i + nx * inner]
+                } else {
+                    Fix128::ZERO
+                };
+            }
+        }
+    }
+
+    // Z-faces, over every layer the rank holds — its own top layer included,
+    // which the rank above also enforces (see the section header). The first
+    // pass is layer-local. The second is the one that leaves the band: the
+    // outflow faces of layer `k0` read layer `k0 − 1`, which the rank below has
+    // finished both passes on before handing it over, exactly the state the
+    // monolithic second pass reads it in.
     let cp = cell_plane(nx, ny);
+    for k in k0..=k1 {
+        let base = (k - k0) * cp;
+        let entries = layer_conditions(&cond.w, base, cp);
+        let (w, flags) = faces.w_layer_mut(k);
+        let mut next = 0usize;
+        for j in 0..ny {
+            for i in 0..nx {
+                let at = i + nx * j;
+                match condition_at(entries, &mut next, base + at, flags[at].solid) {
+                    FaceBc::Fluid | FaceBc::Outflow => {}
+                    FaceBc::Inflow { normal_velocity } => w[at] = normal_velocity,
+                    _ => w[at] = Fix128::ZERO,
+                }
+            }
+        }
+    }
     let mut source = Vec::new();
     for k in k0..=k1 {
         let base = (k - k0) * cp;
@@ -3489,34 +3528,29 @@ pub(crate) fn enforce_slab_face_boundaries(
         // The read is set up before the layer is borrowed for writing, and only
         // when an outflow face in this layer obliges it: the source is another
         // layer of the same array, or the one the rank below handed over.
-        if entries.iter().any(|&(_, bc)| bc == FaceBc::Outflow) {
-            if source.is_empty() {
-                source = vec![Fix128::ZERO; cp];
-            }
-            let inner = if k > 0 { k - 1 } else { k + 1 };
-            if inner < k0 {
-                source.copy_from_slice(below_w.expect(SLAB_FACE_HALO_MISSING));
-            } else {
-                assert!(
-                    inner <= k1,
-                    "the face below Z-face layer {k} is layer {inner}, which is above the \
-                     band {k0}..={k1}: only a rank owning nothing could reach this, and one \
-                     has already returned",
-                );
-                source.copy_from_slice(faces.w_layer(inner).0);
-            }
+        if !entries.iter().any(|&(_, bc)| bc == FaceBc::Outflow) {
+            continue;
         }
-        let mut next = 0usize;
-        let (w, flags) = faces.w_layer_mut(k);
-        for j in 0..ny {
-            for i in 0..nx {
-                let at = i + nx * j;
-                match condition_at(entries, &mut next, base + at, flags[at].solid) {
-                    FaceBc::Fluid => {}
-                    FaceBc::Inflow { normal_velocity } => w[at] = normal_velocity,
-                    FaceBc::Outflow => w[at] = source[at],
-                    _ => w[at] = Fix128::ZERO,
-                }
+        if source.is_empty() {
+            source = vec![Fix128::ZERO; cp];
+        }
+        let inner = if k > 0 { k - 1 } else { k + 1 };
+        if inner < k0 {
+            source.copy_from_slice(below_w.expect(SLAB_FACE_HALO_MISSING));
+        } else {
+            assert!(
+                inner <= k1,
+                "the face below Z-face layer {k} is layer {inner}, which is above the \
+                 band {k0}..={k1}: only a rank owning nothing could reach this, and one \
+                 has already returned",
+            );
+            source.copy_from_slice(faces.w_layer(inner).0);
+        }
+        let (w, _) = faces.w_layer_mut(k);
+        for &(entry, bc) in entries {
+            if bc == FaceBc::Outflow {
+                let at = entry - base;
+                w[at] = source[at];
             }
         }
     }
@@ -3622,6 +3656,24 @@ pub(crate) fn enforce_slab_face_boundaries_on_rank<C: PlaneChannel>(
     }
     let nz = faces.nz;
     let bounds: Vec<(usize, usize)> = (0..ranks).map(|r| slab_bounds(nz, ranks, r)).collect();
+    enforce_slab_face_boundaries_in_chain(faces, cond, &bounds, my_rank, channel);
+}
+
+/// [`enforce_slab_face_boundaries_on_rank`] for any contiguous decomposition:
+/// `bounds[r]` are the layers rank `r` owns, ascending and covering `0..nz`, some
+/// possibly empty. The multigrid decomposition is one whose bounds are not
+/// [`slab_bounds`]'s.
+///
+/// # Panics
+///
+/// When `faces` does not describe `bounds[my_rank]`.
+fn enforce_slab_face_boundaries_in_chain<C: PlaneChannel>(
+    faces: &mut SlabFaces,
+    cond: &SlabFaceConditions,
+    bounds: &[(usize, usize)],
+    my_rank: usize,
+    channel: &mut C,
+) {
     let (k0, k1) = bounds[my_rank];
     assert_eq!(
         faces.owned(),
@@ -3637,7 +3689,7 @@ pub(crate) fn enforce_slab_face_boundaries_on_rank<C: PlaneChannel>(
 
     let mut below = Vec::new();
     if k0 > 0 {
-        let src = slab_owner(&bounds, k0 - 1)
+        let src = slab_owner(bounds, k0 - 1)
             .expect("the layer below an owned layer is owned by some rank");
         below = vec![Fix128::ZERO; plane];
         channel.recv_plane(src, k0 - 1, &mut below);
@@ -3646,7 +3698,7 @@ pub(crate) fn enforce_slab_face_boundaries_on_rank<C: PlaneChannel>(
 
     enforce_slab_face_boundaries(faces, cond, below_w);
 
-    if let Some(dst) = slab_owner(&bounds, k1) {
+    if let Some(dst) = slab_owner(bounds, k1) {
         let (w, _) = faces.w_layer(k1 - 1);
         channel.send_plane(dst, k1 - 1, w);
     }
@@ -3662,7 +3714,6 @@ pub(crate) fn enforce_slab_face_boundaries_on_rank<C: PlaneChannel>(
 ///
 /// When a plane is left in flight at the end, which would mean a rank sent one
 /// that no rank was going to read.
-// ALLOW-UNWIRED: wiring debt eulerian-grid-cross-process-primitive-residue (true multi-OS-process primitive, examples/ cannot reach pub(crate) and the single-process DecomposedGs/BandedGs path never needs it), oracle src/eulerian_grid.rs tests (cross-process harness)
 pub(crate) fn enforce_slab_face_boundaries_over(
     faces: &mut [SlabFaces],
     cond: &[SlabFaceConditions],
@@ -3890,6 +3941,11 @@ impl<S: std::io::Read + std::io::Write> PlaneChannel for SlabSocketTransport<S> 
 /// A degenerate `dx`, density or step leaves everything untouched, as the other
 /// drivers do.
 ///
+/// Returns what the per-cell stencil this rank built for the solve allocated
+/// ([`SlabStencil::bytes`]) — the one part of the rank's working set that lives
+/// only inside this call — and [`SlabBytes::ZERO`] when it returned before
+/// building one.
+///
 /// # Panics
 ///
 /// When `faces` does not describe the layers the decomposition gives `my_rank`.
@@ -3906,14 +3962,14 @@ pub(crate) fn project_pressure_slab_local_on_rank<T: SlabTransport>(
     schedule: HaloSchedule,
     my_rank: usize,
     transport: &mut T,
-) {
+) -> SlabBytes {
     if faces.dx.is_zero()
         || density_kg_m3.is_zero()
         || dt_s.is_zero()
         || ranks == 0
         || my_rank >= ranks
     {
-        return;
+        return SlabBytes::ZERO;
     }
     let nz = faces.nz;
     let bounds: Vec<(usize, usize)> = (0..ranks).map(|r| slab_bounds(nz, ranks, r)).collect();
@@ -3943,6 +3999,7 @@ pub(crate) fn project_pressure_slab_local_on_rank<T: SlabTransport>(
     let inv_dx = Fix128::ONE / faces.dx;
     let coeff = dt_s / density_kg_m3 * inv_dx;
     subtract_slab_pressure_gradient(faces, transport.slab_mut(my_rank), coeff);
+    stencil.bytes()
 }
 
 /// Jacobi iteration on the masked 7-point Laplacian, then the velocity
@@ -7877,9 +7934,11 @@ mod tests {
 
         let per_rank: Vec<usize> = faces
             .iter()
-            .zip(transport.bytes())
-            .map(|(f, storage_bytes)| {
-                storage_bytes
+            .enumerate()
+            .map(|(r, f)| {
+                transport
+                    .slab(r)
+                    .bytes()
                     .add(f.bytes())
                     .add(SlabStencil::build(f, rho * dx * dx / dt).bytes())
                     .total()
@@ -8306,6 +8365,134 @@ mod tests {
         let mut faces = SlabFaces::from_grid(&base, b);
         let cond = SlabFaceConditions::from_grid(&base, b);
         enforce_slab_face_boundaries(&mut faces, &cond, None);
+    }
+
+    /// A field whose every face carries a different value, with an outflow on
+    /// the low face of every axis and, on the face one cell inward, a condition
+    /// that rewrites the value there: an inflow or a wall at rest on X, a moving
+    /// wall or a symmetry plane on Y, an inflow or a wall at rest on Z.
+    ///
+    /// The low end is the side a single ascending pass gets wrong: the outflow
+    /// face comes first and copies its inward neighbour before that neighbour's
+    /// own condition has been imposed. The high-end outflows are there so the
+    /// side that a single pass gets right is in the same scene.
+    fn seed_low_end_outflow(n: usize) -> MacGrid {
+        let mut grid = seed_divergent_flow(n);
+        for (c, slot) in grid.u.iter_mut().enumerate() {
+            *slot = Fix128::from_ratio(((c * 7) % 13) as i64 - 6, 4);
+        }
+        for (c, slot) in grid.v.iter_mut().enumerate() {
+            *slot = Fix128::from_ratio(((c * 5) % 11) as i64 - 5, 4);
+        }
+        for (c, slot) in grid.w.iter_mut().enumerate() {
+            *slot = Fix128::from_ratio(((c * 3) % 17) as i64 - 8, 4);
+        }
+        let rest = FaceBc::Wall {
+            velocity: Vec3Fix::ZERO,
+        };
+        for k in 0..n {
+            for j in 0..n {
+                grid.set_u_bc(0, j, k, FaceBc::Outflow);
+                let inward = if j % 2 == 0 {
+                    FaceBc::Inflow {
+                        normal_velocity: Fix128::from_ratio(3, 4),
+                    }
+                } else {
+                    rest
+                };
+                grid.set_u_bc(1, j, k, inward);
+                grid.set_u_bc(n, j, k, FaceBc::Outflow);
+            }
+            for i in 0..n {
+                grid.set_v_bc(i, 0, k, FaceBc::Outflow);
+                let inward = if i % 2 == 0 {
+                    FaceBc::Wall {
+                        velocity: Vec3Fix::new(
+                            Fix128::from_ratio(1, 2),
+                            Fix128::ZERO,
+                            Fix128::ZERO,
+                        ),
+                    }
+                } else {
+                    FaceBc::SlipWall
+                };
+                grid.set_v_bc(i, 1, k, inward);
+                grid.set_v_bc(i, n, k, FaceBc::Outflow);
+            }
+        }
+        for j in 0..n {
+            for i in 0..n {
+                grid.set_w_bc(i, j, 0, FaceBc::Outflow);
+                let inward = if (i + j) % 2 == 0 {
+                    FaceBc::Inflow {
+                        normal_velocity: Fix128::from_ratio(-5, 8),
+                    }
+                } else {
+                    rest
+                };
+                grid.set_w_bc(i, j, 1, inward);
+                grid.set_w_bc(i, j, n, FaceBc::Outflow);
+            }
+        }
+        grid
+    }
+
+    /// An outflow face at the low end of an axis, next to an inflow or a wall,
+    /// gets the value `MacGrid::enforce_face_boundaries` gives it when the
+    /// conditions are imposed rank by rank — on every axis and every rank count.
+    ///
+    /// The single-process enforcement imposes every non-outflow condition
+    /// before any outflow face reads its inward neighbour. A one-pass walk
+    /// reads the inward neighbour of a low-end outflow before that neighbour
+    /// has been rewritten, which is a different number in this scene on every
+    /// low-end face (counted, so a scene that stopped exercising it fails here
+    /// rather than passing).
+    #[test]
+    fn low_end_outflow_next_to_inflow_or_wall_matches_the_monolithic_enforcement() {
+        let mut exercised = 0usize;
+        let mut rows = Vec::new();
+        let mut differing = 0usize;
+        for &(n, ranks) in &SLAB_CASES {
+            if n < 2 {
+                continue;
+            }
+            let base = seed_low_end_outflow(n);
+            let mut monolithic = base.clone();
+            monolithic.enforce_face_boundaries();
+            // Every low-end face must be one whose enforced value differs from
+            // the value its inward neighbour had before enforcement, or the
+            // order would be unobservable here.
+            for k in 0..n {
+                for j in 0..n {
+                    if base.u(1, j, k) != monolithic.u(1, j, k) {
+                        exercised += 1;
+                    }
+                }
+            }
+            let assembled = assemble_slab_faces(&base, &enforce_in_slabs(&base, ranks));
+            let count =
+                |a: &[Fix128], b: &[Fix128]| a.iter().zip(b).filter(|(x, y)| x != y).count();
+            let (du, dv, dw) = (
+                count(&assembled.u, &monolithic.u),
+                count(&assembled.v, &monolithic.v),
+                count(&assembled.w, &monolithic.w),
+            );
+            differing += du + dv + dw;
+            rows.push(format!("| {n}³ | {ranks} | {du} | {dv} | {dw} |"));
+        }
+        println!(
+            "faces differing from the monolithic enforcement:\n| grid | ranks | X | Y | Z |\n|---|---|---|---|---|\n{}",
+            rows.join("\n"),
+        );
+        assert!(
+            exercised > 0,
+            "no low-end inward neighbour changed under enforcement, so the order is not tested",
+        );
+        assert_eq!(
+            differing, 0,
+            "the slab-local enforcement disagrees with the monolithic one next to a low-end \
+             outflow face",
+        );
     }
 
     /// Naming the conditions face by face, as a rank with no [`MacGrid`] must,

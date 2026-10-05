@@ -30,12 +30,24 @@
 //! 4. **Refusals.** Zero ranks, a zero count, a zero `dt` / density / spacing,
 //!    multigrid off a power-of-two grid and a solver that is not a slab
 //!    decomposition each return the named error and leave the grid untouched.
+//! 5. **Low-end outflows.** An outflow face at the low end of every axis, next
+//!    to an inflow or a wall, through every solver and rank count: the ranks
+//!    impose the face conditions on their own faces, and the order they do it in
+//!    has to be the single-process one for oracle 1 to hold. Teeth: the
+//!    reference's inward neighbours change under enforcement on every low-end
+//!    face, so reading them before or after is a different field.
+//! 6. **Working set.** [`project_pressure_distributed_with_report`] reports, per
+//!    rank, the bytes the documented closed form gives from the rank's slab
+//!    (`DistributedProjectionReport`'s table: 19 per held face, 16 per band cell,
+//!    38 per owned cell), the total is their sum, and a rank of a many-rank run
+//!    holds a fraction of what a single rank holds.
 
 #![cfg(feature = "std")]
 
 use alice_physics::cfd_solver::{PressureSolver, PressureSolverError};
 use alice_physics::eulerian_grid::{
-    project_pressure, project_pressure_distributed, project_pressure_multigrid, FaceBc, MacGrid,
+    project_pressure, project_pressure_distributed, project_pressure_distributed_with_report,
+    project_pressure_multigrid, FaceBc, MacGrid,
 };
 use alice_physics::math::{Fix128, Vec3Fix};
 
@@ -69,6 +81,10 @@ enum Scene {
     /// outflow faces at the low end of `z` and the high end of `x`, some of
     /// which sit next to the inflow and the walls.
     Mixed,
+    /// An outflow on the low face of every axis, and on the face one cell
+    /// inward an inflow or a wall at rest (X), a moving wall or a symmetry plane
+    /// (Y), an inflow or a wall at rest (Z); outflows on the high faces too.
+    LowEnd,
 }
 
 fn seeded(nx: usize, ny: usize, nz: usize, scene: Scene) -> MacGrid {
@@ -135,6 +151,55 @@ fn seeded(nx: usize, ny: usize, nz: usize, scene: Scene) -> MacGrid {
                 velocity: Vec3Fix::ZERO,
             },
         );
+    }
+    if let Scene::LowEnd = scene {
+        let rest = FaceBc::Wall {
+            velocity: Vec3Fix::ZERO,
+        };
+        for k in 0..nz {
+            for j in 0..ny {
+                g.set_u_bc(0, j, k, FaceBc::Outflow);
+                let inward = if (j + k) % 2 == 0 {
+                    FaceBc::Inflow {
+                        normal_velocity: Fix128::from_ratio(3, 4),
+                    }
+                } else {
+                    rest
+                };
+                g.set_u_bc(1, j, k, inward);
+                g.set_u_bc(nx, j, k, FaceBc::Outflow);
+            }
+            for i in 0..nx {
+                g.set_v_bc(i, 0, k, FaceBc::Outflow);
+                let inward = if (i + k) % 2 == 0 {
+                    FaceBc::Wall {
+                        velocity: Vec3Fix::new(
+                            Fix128::from_ratio(1, 2),
+                            Fix128::ZERO,
+                            Fix128::ZERO,
+                        ),
+                    }
+                } else {
+                    FaceBc::SlipWall
+                };
+                g.set_v_bc(i, 1, k, inward);
+                g.set_v_bc(i, ny, k, FaceBc::Outflow);
+            }
+        }
+        for j in 0..ny {
+            for i in 0..nx {
+                g.set_w_bc(i, j, 0, FaceBc::Outflow);
+                let inward = if (i + j) % 2 == 0 {
+                    FaceBc::Inflow {
+                        normal_velocity: Fix128::from_ratio(-5, 8),
+                    }
+                } else {
+                    rest
+                };
+                g.set_w_bc(i, j, 1, inward);
+                g.set_w_bc(i, j, nz, FaceBc::Outflow);
+            }
+        }
     }
     g
 }
@@ -517,5 +582,222 @@ fn degenerate_requests_are_refused_and_leave_the_grid_untouched() {
         let got = project_pressure_distributed(&mut g, dt_s, density, solver);
         assert_eq!(got, Err(want), "{solver:?}");
         assert!(bits_eq(&g, &grid), "{solver:?} touched the grid on refusal");
+    }
+}
+
+/// Oracle 5: outflow faces at the low end of every axis, next to inflow and wall
+/// faces, through all three decomposed solvers and every rank count — counts
+/// that divide `nz`, counts that do not, and counts above it.
+#[test]
+fn low_end_outflows_next_to_inflow_or_walls_stay_bit_identical() {
+    // Teeth: on every low-end face the inward neighbour's value changes when the
+    // conditions are imposed, so an outflow that copied it before its own
+    // condition was imposed would be a different number.
+    let probe = seeded(8, 8, 8, Scene::LowEnd);
+    let mut enforced = probe.clone();
+    enforced.enforce_face_boundaries();
+    let (nx, ny, nz) = (8usize, 8usize, 8usize);
+    let mut changed = [0usize; 3];
+    for k in 0..nz {
+        for j in 0..ny {
+            let ix = 1 + (nx + 1) * (j + ny * k);
+            changed[0] += usize::from(probe.u[ix] != enforced.u[ix]);
+        }
+        for i in 0..nx {
+            let ix = i + nx * (1 + (ny + 1) * k);
+            changed[1] += usize::from(probe.v[ix] != enforced.v[ix]);
+        }
+    }
+    for j in 0..ny {
+        for i in 0..nx {
+            let ix = i + nx * (j + ny);
+            changed[2] += usize::from(probe.w[ix] != enforced.w[ix]);
+        }
+    }
+    assert!(
+        changed.iter().all(|&c| c > nx * ny / 2),
+        "the inward neighbours of the low-end outflows must change under enforcement on \
+         every axis: {changed:?}",
+    );
+
+    const SWEEPS: u32 = 3;
+    for (nx, ny, nz) in [(8, 8, 8), (6, 5, 12)] {
+        let base = seeded(nx, ny, nz, Scene::LowEnd);
+        let want = single_gs(&base, SWEEPS);
+        assert!(!bits_eq(&want, &single_gs(&base, SWEEPS + 1)));
+        for ranks in [1, 2, 3, 4, 5, 8, nz + 7] {
+            for solver in [
+                PressureSolver::DecomposedGs {
+                    ranks,
+                    sweeps: SWEEPS,
+                },
+                PressureSolver::BandedGs {
+                    ranks,
+                    sweeps: SWEEPS,
+                },
+            ] {
+                let got = distributed(&base, solver);
+                assert!(
+                    bits_eq(&got, &want),
+                    "{nx}x{ny}x{nz} LowEnd {solver:?}: {}",
+                    first_difference(&got, &want),
+                );
+            }
+        }
+    }
+
+    const CYCLES: u32 = 2;
+    for ((nx, ny, nz), rank_counts) in [
+        ((16, 16, 16), &[1usize, 2, 3, 4, 8, 20][..]),
+        ((8, 4, 32), &[2, 5, 8][..]),
+    ] {
+        let base = seeded(nx, ny, nz, Scene::LowEnd);
+        let want = single_mg(&base, CYCLES);
+        assert!(!bits_eq(&want, &single_mg(&base, CYCLES + 1)));
+        for &ranks in rank_counts {
+            let solver = PressureSolver::DecomposedMultigrid {
+                ranks,
+                cycles: CYCLES,
+            };
+            let got = distributed(&base, solver);
+            assert!(
+                bits_eq(&got, &want),
+                "{nx}x{ny}x{nz} LowEnd {solver:?}: {}",
+                first_difference(&got, &want),
+            );
+        }
+    }
+}
+
+/// The closed form of one rank's working set, from the table on
+/// `DistributedProjectionReport`: a rank owning layers `k0..k1` of an
+/// `nx × ny × nz` grid holds the X- and Y-faces of those layers and the Z-faces
+/// `k0..=k1` (16 + 3 bytes each), a pressure band of its layers widened by one
+/// halo layer each side within the grid (16 bytes a cell), and per owned cell the
+/// open-face mask (6), the inverse degree (16) and the right-hand side (16).
+fn closed_form_rank_bytes(nx: usize, ny: usize, nz: usize, (k0, k1): (usize, usize)) -> usize {
+    if k0 == k1 {
+        return 0;
+    }
+    let layers = k1 - k0;
+    let faces = layers * (nx + 1) * ny + layers * nx * (ny + 1) + (layers + 1) * nx * ny;
+    let band_layers = (k1 + 1).min(nz) - k0.saturating_sub(1);
+    let cells = layers * nx * ny;
+    faces * (16 + 3) + band_layers * nx * ny * 16 + cells * (6 + 16 + 16)
+}
+
+/// Equal slabs, `rank · nz / ranks`: the Gauss-Seidel decomposition for every
+/// count, and the multigrid one for a power-of-two count on a power-of-two grid
+/// (where every level down to the last distributed one splits evenly).
+fn even_bounds(nz: usize, ranks: usize, rank: usize) -> (usize, usize) {
+    (rank * nz / ranks, (rank + 1) * nz / ranks)
+}
+
+fn report(
+    base: &MacGrid,
+    solver: PressureSolver,
+) -> alice_physics::eulerian_grid::DistributedProjectionReport {
+    let mut g = base.clone();
+    let got = project_pressure_distributed_with_report(&mut g, dt(), rho(), solver)
+        .expect("a valid request");
+    let mut plain = base.clone();
+    project_pressure_distributed(&mut plain, dt(), rho(), solver).expect("a valid request");
+    assert!(
+        bits_eq(&g, &plain),
+        "{solver:?}: the reporting call must give the same answer as the plain one",
+    );
+    got
+}
+
+/// Oracle 6: the per-rank working set is the closed form of the rank's slab, the
+/// total is the sum, and a rank of an 8-rank run holds a fraction of what the
+/// single rank of a 1-rank run holds.
+#[test]
+fn each_rank_reports_the_working_set_of_its_slab() {
+    for (nx, ny, nz) in [(6, 5, 12), (8, 8, 8)] {
+        let base = seeded(nx, ny, nz, Scene::Mixed);
+        for ranks in [1, 2, 3, 5, 8, nz + 7] {
+            let got = report(&base, PressureSolver::BandedGs { ranks, sweeps: 2 });
+            let want: Vec<usize> = (0..ranks)
+                .map(|r| closed_form_rank_bytes(nx, ny, nz, even_bounds(nz, ranks, r)))
+                .collect();
+            assert_eq!(got.rank_bytes, want, "{nx}x{ny}x{nz} BandedGs over {ranks}");
+            assert_eq!(got.total_bytes(), Some(want.iter().sum()));
+            assert_eq!(got.max_rank_bytes(), want.iter().copied().max());
+        }
+    }
+    for (nx, ny, nz) in [(16, 16, 16), (8, 4, 32)] {
+        let base = seeded(nx, ny, nz, Scene::Mixed);
+        for ranks in [1, 2, 4, 8] {
+            let got = report(
+                &base,
+                PressureSolver::DecomposedMultigrid { ranks, cycles: 1 },
+            );
+            let want: Vec<usize> = (0..ranks)
+                .map(|r| closed_form_rank_bytes(nx, ny, nz, even_bounds(nz, ranks, r)))
+                .collect();
+            assert_eq!(
+                got.rank_bytes, want,
+                "{nx}x{ny}x{nz} DecomposedMultigrid over {ranks}",
+            );
+            assert_eq!(got.total_bytes(), Some(want.iter().sum()));
+        }
+    }
+
+    // A slab, not the grid: 8 ranks of a 32-layer grid each hold 4 layers plus
+    // halo, under a quarter of the one rank that holds all 32.
+    let base = seeded(16, 16, 32, Scene::Open);
+    let gs = |ranks| PressureSolver::BandedGs { ranks, sweeps: 1 };
+    let whole = report(&base, gs(1)).max_rank_bytes().expect("one rank");
+    let banded = report(&base, gs(8)).max_rank_bytes().expect("eight ranks");
+    assert!(
+        banded * 4 < whole,
+        "a rank of 8 holds {banded} bytes against {whole} for the whole grid",
+    );
+
+    // Ranks that each copy the whole grid hold no slab, and say so.
+    let copies = report(
+        &base,
+        PressureSolver::DecomposedGs {
+            ranks: 3,
+            sweeps: 1,
+        },
+    );
+    assert!(copies.rank_bytes.is_empty());
+    assert_eq!(copies.max_rank_bytes(), None);
+    assert_eq!(copies.total_bytes(), None);
+}
+
+/// The reporting entry refuses what the plain one refuses, leaving the grid as
+/// it was.
+#[test]
+fn the_reporting_entry_refuses_what_the_plain_one_refuses() {
+    let base = seeded(8, 8, 12, Scene::Mixed);
+    for (solver, want) in [
+        (
+            PressureSolver::BandedGs {
+                ranks: 0,
+                sweeps: 1,
+            },
+            PressureSolverError::ZeroRanks,
+        ),
+        (
+            PressureSolver::DecomposedMultigrid {
+                ranks: 2,
+                cycles: 1,
+            },
+            PressureSolverError::MultigridNeedsPowerOfTwoExtents {
+                extents: (8, 8, 12),
+            },
+        ),
+        (
+            PressureSolver::RedBlackGs { sweeps: 1 },
+            PressureSolverError::NotDecomposed,
+        ),
+    ] {
+        let mut g = base.clone();
+        let got = project_pressure_distributed_with_report(&mut g, dt(), rho(), solver);
+        assert_eq!(got, Err(want), "{solver:?}");
+        assert!(bits_eq(&g, &base), "{solver:?} touched the grid on refusal");
     }
 }
