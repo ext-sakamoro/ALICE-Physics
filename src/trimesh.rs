@@ -256,12 +256,12 @@ impl TriMesh {
             center - Vec3Fix::new(radius, radius, radius),
             center + Vec3Fix::new(radius, radius, radius),
         );
-        let candidates = self.bvh.query(&query);
-
         let mut deepest: Option<Contact> = None;
         let mut max_depth = Fix128::ZERO;
 
-        for tri_idx in candidates {
+        // Candidates are visited in the same order `LinearBvh::query` would
+        // return them, without collecting them into a `Vec` first.
+        self.bvh.query_callback(&query, |tri_idx| {
             let tri = &self.triangles[tri_idx as usize];
             let cp = tri.closest_point(center);
             let delta = center - cp;
@@ -287,7 +287,7 @@ impl TriMesh {
                     });
                 }
             }
-        }
+        });
 
         deepest
     }
@@ -766,5 +766,140 @@ mod tests {
                 Fix128::from_int(100)
             )
             .is_none());
+    }
+
+    /// `collide_sphere` as it was written before it switched to
+    /// `LinearBvh::query_callback`: collect the candidates with `query`, then
+    /// walk them in that order. Kept here as the reference the allocation-free
+    /// version must reproduce to the bit.
+    fn collide_sphere_via_query(
+        mesh: &TriMesh,
+        center: Vec3Fix,
+        radius: Fix128,
+    ) -> Option<Contact> {
+        let query = AABB::new(
+            center - Vec3Fix::new(radius, radius, radius),
+            center + Vec3Fix::new(radius, radius, radius),
+        );
+        let mut deepest: Option<Contact> = None;
+        let mut max_depth = Fix128::ZERO;
+        for tri_idx in mesh.bvh.query(&query) {
+            let tri = &mesh.triangles[tri_idx as usize];
+            let cp = tri.closest_point(center);
+            let delta = center - cp;
+            let dist_sq = delta.length_squared();
+            if dist_sq < radius * radius {
+                let dist = dist_sq.sqrt();
+                let depth = radius - dist;
+                if depth > max_depth {
+                    max_depth = depth;
+                    let normal = if dist.is_zero() {
+                        tri.unit_normal()
+                    } else {
+                        delta / dist
+                    };
+                    deepest = Some(Contact {
+                        depth,
+                        normal,
+                        point_a: center - normal * radius,
+                        point_b: cp,
+                    });
+                }
+            }
+        }
+        deepest
+    }
+
+    fn contacts_bit_equal(a: Option<Contact>, b: Option<Contact>) -> bool {
+        match (a, b) {
+            (None, None) => true,
+            (Some(a), Some(b)) => {
+                a.depth == b.depth
+                    && a.normal == b.normal
+                    && a.point_a == b.point_a
+                    && a.point_b == b.point_b
+            }
+            _ => false,
+        }
+    }
+
+    /// A bumpy 8x8 terrain (128 triangles, several BVH leaves) plus two
+    /// horizontal triangles at y = +1/2 and y = -1/2 over the same footprint,
+    /// so a sphere at the origin touches both at exactly the same depth and the
+    /// winner is decided by visiting order alone.
+    fn terrain_with_tied_pair() -> TriMesh {
+        let n = 8i64;
+        let mut vertices = Vec::new();
+        for z in 0..=n {
+            for x in 0..=n {
+                let y = Fix128::from_ratio((x * 7 + z * 3) % 5, 8);
+                vertices.push(Vec3Fix::new(
+                    Fix128::from_int(x + 10),
+                    y,
+                    Fix128::from_int(z),
+                ));
+            }
+        }
+        let mut triangles = Vec::new();
+        let w = (n + 1) as usize;
+        for z in 0..n as usize {
+            for x in 0..n as usize {
+                let a = vertices[z * w + x];
+                let b = vertices[z * w + x + 1];
+                let c = vertices[(z + 1) * w + x];
+                let d = vertices[(z + 1) * w + x + 1];
+                triangles.push(Triangle::new(a, c, b));
+                triangles.push(Triangle::new(b, c, d));
+            }
+        }
+        let half = Fix128::from_ratio(1, 2);
+        let two = Fix128::from_int(2);
+        for y in [half, -half] {
+            triangles.push(Triangle::new(
+                Vec3Fix::new(-two, y, -two),
+                Vec3Fix::new(-two, y, two),
+                Vec3Fix::new(two, y, -two),
+            ));
+        }
+        TriMesh::from_triangles(triangles)
+    }
+
+    #[test]
+    fn collide_sphere_matches_the_collect_then_walk_reference_to_the_bit() {
+        let mesh = terrain_with_tied_pair();
+        // Every candidate order matters for the tie: both slabs are hit at
+        // depth 1/4 by a sphere of radius 3/4 at the origin.
+        let tie = mesh.collide_sphere(Vec3Fix::ZERO, Fix128::from_ratio(3, 4));
+        let tie_ref = collide_sphere_via_query(&mesh, Vec3Fix::ZERO, Fix128::from_ratio(3, 4));
+        assert!(tie.is_some());
+        assert!(
+            contacts_bit_equal(tie, tie_ref),
+            "tie: {tie:?} vs {tie_ref:?}"
+        );
+        assert_eq!(tie.map(|c| c.depth), Some(Fix128::from_ratio(1, 4)));
+
+        let mut hits = 0usize;
+        for zi in -1..=18i64 {
+            for xi in -6..=38i64 {
+                for yi in [-1i64, 0, 1, 3] {
+                    let center = Vec3Fix::new(
+                        Fix128::from_ratio(xi, 2),
+                        Fix128::from_ratio(yi, 4),
+                        Fix128::from_ratio(zi, 2),
+                    );
+                    for radius in [Fix128::from_ratio(1, 4), Fix128::from_ratio(3, 4)] {
+                        let got = mesh.collide_sphere(center, radius);
+                        let want = collide_sphere_via_query(&mesh, center, radius);
+                        assert!(
+                            contacts_bit_equal(got, want),
+                            "center {center:?} radius {radius:?}: {got:?} vs {want:?}"
+                        );
+                        hits += usize::from(got.is_some());
+                    }
+                }
+            }
+        }
+        // The sweep must actually exercise contacts, not compare None to None.
+        assert!(hits > 100, "only {hits} contacts in the sweep");
     }
 }
