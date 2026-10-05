@@ -42,7 +42,7 @@
 //! reached through `radial_return_1d` / `integrate`.
 //! `PlasticModel::with_hardening` and `NortonCreep::petg_room_temp` have no
 //! consumer (the solver builds its model with `from_fdm_material` and
-//! hard-codes the PLA creep preset) and carry `ALLOW-UNWIRED` debt markers
+//! installs the PLA creep preset for PLA only) and carry `ALLOW-UNWIRED` debt markers
 //! with closed-form oracles in this module's unit tests. Stress tensors
 //! (von Mises, hydrostatic part) live in the public
 //! `linear_elastic_fem::StressTensor`.
@@ -284,7 +284,7 @@ impl NortonCreep {
     /// PETG at 25°C — lower creep than PLA (higher Tg):
     /// `A = 1e-13 /(MPa³·s)`, `n = 3`, about 6.3× below the PLA calibration.
     // ALLOW-DEAD: pub(crate) with no crate caller, same debt as the ALLOW-UNWIRED marker below
-    // ALLOW-UNWIRED: wiring debt Backlog structural-pub-crate-residue (structural_solver::new hard-codes the PLA creep preset), oracle src/plastic.rs tests::petg_norton_preset_integrates_a_sigma_cubed_dt
+    // ALLOW-UNWIRED: wiring debt structural-pub-crate-residue (structural_solver::new installs the PLA creep preset for PLA only; this PETG fit is uncalibrated), oracle src/plastic.rs tests::petg_norton_preset_integrates_a_sigma_cubed_dt
     #[allow(dead_code)]
     #[must_use]
     pub(crate) fn petg_room_temp() -> Self {

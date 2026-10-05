@@ -16154,9 +16154,11 @@ pub alice_physics::structural_solver::StructuralSolver::sn_curve: alice_physics:
 pub alice_physics::structural_solver::StructuralSolver::state: alice_physics::plastic::PlasticState
 pub alice_physics::structural_solver::StructuralSolver::step_count: u64
 impl alice_physics::structural_solver::StructuralSolver
+pub fn alice_physics::structural_solver::StructuralSolver::creep_modelled(&self) -> bool
 pub fn alice_physics::structural_solver::StructuralSolver::new(alice_physics::beam_stress::CrossSection, alice_physics::beam_stress::LoadCase, alice_physics::filament_db::MaterialProperties) -> Self
 pub fn alice_physics::structural_solver::StructuralSolver::run(&mut self, u64) -> alice_physics::structural_solver::StructuralHistory
 pub fn alice_physics::structural_solver::StructuralSolver::step(&mut self) -> alice_physics::structural_solver::StructuralReport
+pub fn alice_physics::structural_solver::StructuralSolver::with_creep(self, alice_physics::creep_longterm::FindleyParameters, alice_physics::plastic::NortonCreep) -> Self
 impl core::clone::Clone for alice_physics::structural_solver::StructuralSolver
 pub fn alice_physics::structural_solver::StructuralSolver::clone(&self) -> Self
 impl core::fmt::Debug for alice_physics::structural_solver::StructuralSolver
