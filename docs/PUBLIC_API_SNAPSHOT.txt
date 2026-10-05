@@ -1356,6 +1356,7 @@ impl core::panic::unwind_safe::UnwindSafe for alice_physics::cfd_solver::Pressur
 pub alice_physics::cfd_solver::PressureSolverError::MultigridNeedsPowerOfTwoExtents
 pub alice_physics::cfd_solver::PressureSolverError::MultigridNeedsPowerOfTwoExtents::extents: (usize, usize, usize)
 pub alice_physics::cfd_solver::PressureSolverError::NonPositiveTolerance
+pub alice_physics::cfd_solver::PressureSolverError::NotDecomposed
 pub alice_physics::cfd_solver::PressureSolverError::ZeroDensity
 pub alice_physics::cfd_solver::PressureSolverError::ZeroIterations
 pub alice_physics::cfd_solver::PressureSolverError::ZeroRanks
@@ -3513,6 +3514,7 @@ pub fn alice_physics::eulerian_grid::g2p_velocity(&alice_physics::eulerian_grid:
 pub fn alice_physics::eulerian_grid::p2g_normalized(&mut alice_physics::eulerian_grid::MacGrid, &[(alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix)])
 pub fn alice_physics::eulerian_grid::p2g_normalized_with(&mut alice_physics::eulerian_grid::MacGrid, &[(alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix)], alice_physics::eulerian_grid::ParticleScatter)
 pub fn alice_physics::eulerian_grid::project_pressure(&mut alice_physics::eulerian_grid::MacGrid, alice_physics::math::Fix128, alice_physics::math::Fix128, u32)
+pub fn alice_physics::eulerian_grid::project_pressure_distributed(&mut alice_physics::eulerian_grid::MacGrid, alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::cfd_solver::PressureSolver) -> core::result::Result<(), alice_physics::cfd_solver::PressureSolverError>
 pub fn alice_physics::eulerian_grid::project_pressure_multigrid(&mut alice_physics::eulerian_grid::MacGrid, alice_physics::math::Fix128, alice_physics::math::Fix128, u32)
 pub mod alice_physics::event
 pub enum alice_physics::event::ContactEventType
