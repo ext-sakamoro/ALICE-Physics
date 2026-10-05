@@ -1481,6 +1481,7 @@ impl PhysicsWorld {
     /// | `pre_solve_hooks` / `contact_modifiers` (std) | not covered | closures / trait objects; the count is recorded and must match ([`WorldSnapshotError::CallbackCountMismatch`]) |
     /// | `gpu_solver_bridge` (feature `gpu-solver-bridge`) | not covered | trait object; "installed or not" is recorded and must match |
     /// | `joints` | saved | all seven kinds, every field |
+    /// | `joint_motors` / `joint_motors_3d` | not covered | the restore target keeps its own motors (add them with [`PhysicsWorld::add_joint_motor`] / [`PhysicsWorld::add_joint_motor_3d`] before restoring), as the format predates them; a motor's gains and targets that change between frames are saved next to the snapshot |
     /// | `force_fields` | saved | field, `affected_bodies`, `enabled` |
     /// | `events` | saved | this frame's events and the previous / current pair and trigger sets that decide begin / persist / end |
     /// | `islands` (`sleep_data`, `config`) | saved | |
@@ -1494,10 +1495,10 @@ impl PhysicsWorld {
     /// | `tgs_impulse_cache` (std) | saved | entries sorted by id, hit / miss counters; the live set is rebuilt empty (the `sweep` at the end of every step empties it) |
     ///
     /// Not in the table because they are not [`PhysicsWorld`] fields:
-    /// [`crate::motor::JointMotor`] / [`crate::motor::PdController`] and
-    /// [`crate::character::CharacterController`] are owned by the caller and are
-    /// applied from outside `step`, and cloth / fluid / FEM / vehicle state lives
-    /// in its own types. Save them next to the world snapshot.
+    /// motors the caller applies itself with [`crate::motor::apply_motors`]
+    /// and [`crate::character::CharacterController`] are owned by the caller and
+    /// are applied from outside `step`, and cloth / fluid / FEM / vehicle state
+    /// lives in its own types. Save them next to the world snapshot.
     ///
     // LIMITATION(COV-ENGINE-012): Known difference: the union-find of `islands` is rebuilt from the joints.
     /// Known difference: the union-find of `islands` is rebuilt from the joints. After a

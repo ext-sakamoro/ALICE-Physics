@@ -211,6 +211,28 @@ impl PdController3D {
 }
 
 /// Apply all joint motors for one timestep
+///
+/// [`crate::PhysicsWorld::step`] calls this once per substep (with the substep
+/// `dt`) for the motors added with [`crate::PhysicsWorld::add_joint_motor`],
+/// ahead of the substep's position integration, so the motor acts as an
+/// external force / torque that the constraint solve then sees.
+///
+/// # Claims
+/// - The controller output is a force (or torque) `F`, clamped to
+///   `±max_force` by [`PdController::compute`]; the motor applies the impulse
+///   `F * dt` with equal and opposite halves on the joint's two bodies, so the
+///   pair's momentum (angular momentum for a hinge) is unchanged by it.
+/// - A `Joint::Hinge` motor's generalised coordinate is the relative twist
+///   angle about the hinge axis (`crate::joint::compute_twist_angle` of
+///   `rotation_b * rotation_a⁻¹` about body A's world hinge axis) and its rate
+///   is `(ω_b - ω_a) · axis`; the impulse goes to the bodies'
+///   `angular_velocity` through their world inverse inertia, as in
+///   [`crate::articulation::ArticulatedBody::apply_motors`].
+/// - Every other joint type keeps the centre-to-centre distance as its
+///   generalised coordinate and drives the bodies' linear `velocity` along the
+///   centre line (scaled by `inv_mass`).
+/// - A motor that is `Off`, names a joint index past the end of `joints`, or
+///   whose joint names a body past the end of `bodies` does nothing.
 pub fn apply_motors(motors: &[JointMotor], joints: &[Joint], bodies: &mut [RigidBody], dt: Fix128) {
     for motor in motors {
         if motor.controller.mode == MotorMode::Off {
@@ -221,7 +243,8 @@ pub fn apply_motors(motors: &[JointMotor], joints: &[Joint], bodies: &mut [Rigid
             continue;
         }
 
-        let (body_a_idx, body_b_idx) = joints[motor.joint_index].bodies();
+        let joint = &joints[motor.joint_index];
+        let (body_a_idx, body_b_idx) = joint.bodies();
 
         if body_a_idx >= bodies.len() || body_b_idx >= bodies.len() {
             continue;
@@ -230,6 +253,22 @@ pub fn apply_motors(motors: &[JointMotor], joints: &[Joint], bodies: &mut [Rigid
         // Compute current state along joint axis
         let body_a = bodies[body_a_idx];
         let body_b = bodies[body_b_idx];
+
+        if let Joint::Hinge(hinge) = joint {
+            let axis = body_a.rotation.rotate_vec(hinge.local_axis_a);
+            let rel_quat = body_b.rotation.mul(body_a.rotation.conjugate());
+            let current_pos = crate::joint::compute_twist_angle(rel_quat, axis);
+            let current_vel = (body_b.angular_velocity - body_a.angular_velocity).dot(axis);
+
+            let torque = motor.controller.compute(current_pos, current_vel);
+            if torque.is_zero() {
+                continue;
+            }
+
+            let angular_impulse = axis * (torque * dt);
+            apply_angular_pair(bodies, body_a_idx, body_b_idx, angular_impulse);
+            continue;
+        }
 
         let delta = body_b.position - body_a.position;
         let current_pos = delta.length();
@@ -255,6 +294,68 @@ pub fn apply_motors(motors: &[JointMotor], joints: &[Joint], bodies: &mut [Rigid
         if !body_b.inv_mass.is_zero() {
             bodies[body_b_idx].velocity = bodies[body_b_idx].velocity + impulse * body_b.inv_mass;
         }
+    }
+}
+
+/// Apply 3-axis rotation motors (`(joint index, controller)` pairs) for one
+/// timestep.
+///
+/// The world's counterpart of [`apply_motors`] for [`PdController3D`]:
+/// [`crate::PhysicsWorld::step`] calls it once per substep for the motors
+/// added with [`crate::PhysicsWorld::add_joint_motor_3d`].
+///
+/// # Claims
+/// - The controlled rotation is the joint's relative rotation
+///   `rotation_b * rotation_a⁻¹` and the controlled rate `ω_b - ω_a` (both in
+///   world frame, the convention of the hinge case of [`apply_motors`]); with a
+///   static body A at the identity this is body B's own world rotation.
+/// - The torque `τ` of [`PdController3D::compute_torque`] is applied as the
+///   angular impulse `τ dt`: `+I_b⁻¹ τ dt` on body B and `-I_a⁻¹ τ dt` on body
+///   A (world inverse inertia), skipping a body with zero `inv_mass`.
+/// - `Off` motors and out-of-range joint / body indices do nothing.
+pub(crate) fn apply_motors_3d(
+    motors: &[(usize, PdController3D)],
+    joints: &[Joint],
+    bodies: &mut [RigidBody],
+    dt: Fix128,
+) {
+    for (joint_index, controller) in motors {
+        if controller.mode == MotorMode::Off || *joint_index >= joints.len() {
+            continue;
+        }
+        let (body_a_idx, body_b_idx) = joints[*joint_index].bodies();
+        if body_a_idx >= bodies.len() || body_b_idx >= bodies.len() {
+            continue;
+        }
+        let body_a = bodies[body_a_idx];
+        let body_b = bodies[body_b_idx];
+        let rel_quat = body_b.rotation.mul(body_a.rotation.conjugate());
+        let rel_omega = body_b.angular_velocity - body_a.angular_velocity;
+        let torque = controller.compute_torque(rel_quat, rel_omega);
+        if torque == Vec3Fix::ZERO {
+            continue;
+        }
+        apply_angular_pair(bodies, body_a_idx, body_b_idx, torque * dt);
+    }
+}
+
+/// Add `angular_impulse` to body B and subtract it from body A, each through
+/// its world inverse inertia (a body with zero `inv_mass` is left alone).
+fn apply_angular_pair(
+    bodies: &mut [RigidBody],
+    body_a_idx: usize,
+    body_b_idx: usize,
+    angular_impulse: Vec3Fix,
+) {
+    let body_a = bodies[body_a_idx];
+    let body_b = bodies[body_b_idx];
+    if !body_a.inv_mass.is_zero() {
+        bodies[body_a_idx].angular_velocity =
+            body_a.angular_velocity - body_a.world_inv_inertia_apply(angular_impulse);
+    }
+    if !body_b.inv_mass.is_zero() {
+        bodies[body_b_idx].angular_velocity =
+            bodies[body_b_idx].angular_velocity + body_b.world_inv_inertia_apply(angular_impulse);
     }
 }
 
