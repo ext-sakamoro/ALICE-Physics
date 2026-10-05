@@ -10,15 +10,12 @@ on:
       - 'scripts/gen-wiring-status.py'
 
 permissions:
-  contents: write
+  contents: read
 
-# wiring-status と oracle-status は同じ push で起動して同じ main へ push する
-# 1 つの group に直列化する (2026-10-03 実測: 並走すると遅い方が必ず
-# `! [rejected] main -> main (fetch first)` で落ち、`|| true` に隠されて台帳が古いまま残った)
-# cancel-in-progress は false: 走行中の run は最後まで走らせ、待ちは最新の 1 本だけ残る
+# the check only reads the tree, so runs can be cancelled by a newer push
 concurrency:
   group: status-docs-main
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   generate-wiring-status:
@@ -33,26 +30,13 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Generate and publish wiring status
+      # The ledger is regenerated and committed when a change lands
+      # (scripts/land.py); this workflow only checks that the committed copy
+      # matches the tree. It does not commit: a bot commit would add an author.
+      - name: Check docs/wiring-status.md is up to date
         run: |
-          git config user.name "wiring-bot"
-          git config user.email "noreply@github.com"
-          # 台帳は main の先端の状態の写し: push する直前の先端で生成し直し、先に他の push が
-          # 入っていたら (non-fast-forward) 取り直してもう一度生成する  rebase で古い版を載せない
-          for attempt in 1 2 3 4 5; do
-            git fetch origin main
-            git checkout --detach --force origin/main
-            python3 scripts/gen-wiring-status.py
-            if git diff --quiet docs/wiring-status.md; then
-              echo "docs/wiring-status.md is already up to date"
-              exit 0
-            fi
-            git add docs/wiring-status.md
-            git commit -m "docs: update wiring status [automated]"
-            if git push origin HEAD:main; then
-              exit 0
-            fi
-            sleep $((attempt * 3))
-          done
-          echo "::error::docs/wiring-status.md を main へ push できなかった (5 回): 台帳が古いまま残る"
-          exit 1
+          python3 scripts/gen-wiring-status.py
+          if ! git diff --exit-code docs/wiring-status.md; then
+            echo "::error::docs/wiring-status.md is stale: regenerate it (scripts/land.py does) and commit it with the change"
+            exit 1
+          fi

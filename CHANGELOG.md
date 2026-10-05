@@ -209,6 +209,7 @@ were introduced during that release window.
 - **Behavior change:** 摩擦円錐の内側にある接触は、位置の段階の静止摩擦で止まる (従来は斜面で 1 秒に数 mm ずれた)
 - **Behavior change:** `StructuralSolver` の疲労損傷は material ごとの S-N 曲線で計算される (SUS304 / A5052 は金属の曲線、他の material は従来のまま) 疲労・座屈を選ぶ API を追加した (`with_sn_curve` / `fatigue_strength_mpa` / `fatigue_spectrum_report` / `plate_buckling_mpa` / `snap_through_load_n`)
 - `scripts/docs_lint.py` が非公開名の照合を README / MODULES / CHANGELOG から、全 tracked file のパスと本文 (生成物・コメント・workflow・script を含む) に広げた
+- integration-status / oracle-status / wiring-status の workflow は台帳を commit せず、push された tree で作り直して差分があれば失敗するだけにした (台帳の再生成は `scripts/land.py` が取り込み時に行う)
 
 ### Deprecated
 
