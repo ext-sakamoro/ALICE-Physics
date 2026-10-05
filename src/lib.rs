@@ -487,6 +487,8 @@ pub mod sleeping;
 pub mod smoke_fire;
 pub mod soft_body_cut;
 pub mod solver;
+// Implicit gyroscopic term `ω × Iω`, shared by the XPBD and TGS integrators.
+pub(crate) mod gyroscopic;
 // solver_tgs* family: pub(crate) since v0.14.0-preview.8 (v1.0 Item B
 // Option C — TGS extension mechanism with zero downstream adoption is
 // hidden from the public surface; re-expose via semver-minor bump if

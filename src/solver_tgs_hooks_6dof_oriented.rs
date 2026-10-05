@@ -524,6 +524,13 @@ impl TgsHooks for Pgs6DofOrientedHooks<'_> {
         for body in self.bodies.iter_mut() {
             if body.is_dynamic {
                 body.linear_velocity = v_add(body.linear_velocity, dv);
+                // Gyroscopic term ω × Iω (implicit, see `crate::gyroscopic`)
+                body.angular_velocity = from_vec3fix(crate::gyroscopic::gyroscopic_omega(
+                    to_vec3fix(body.angular_velocity),
+                    body.orientation,
+                    to_vec3fix(body.inv_inertia_local),
+                    sub_dt,
+                ));
             }
         }
         for i in 0..self.contacts.len() {
