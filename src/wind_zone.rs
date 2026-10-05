@@ -17,6 +17,7 @@
 //! `wind_velocity(t) = base_direction · base_speed
 //!                     + turbulence · sin(2π · gust_frequency · t)`.
 //!
+// LIMITATION(COV-ENV-103): The MVP evaluates the aerodynamic force in the body's centre and ignores surface-orientation dependence
 //! The MVP evaluates the aerodynamic force in the body's centre and
 //! ignores surface-orientation dependence; full projected-area
 //! integration and streamwise-turbulence spectral models are future
@@ -89,6 +90,7 @@ impl WindZone {
     /// Instantaneous wind velocity vector at simulation time `t_s`.
     ///
     /// The base direction is scaled by `base_speed_m_s`, then the
+    // LIMITATION(COV-ENV-032): the turbulence gust `turbulence · sin(2π · f · t)` is added along the same direction
     /// turbulence gust `turbulence · sin(2π · f · t)` is added along
     /// the same direction. Callers who need cross-wind gusts can
     /// override this via [`WindZone::instantaneous_wind_vector`] after
