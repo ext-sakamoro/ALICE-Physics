@@ -177,6 +177,7 @@ Every public module, grouped by area and with a one-line summary, is listed in [
 | Fluids and fields | MAC-grid CFD with several pressure solvers, RANS / LES turbulence closures, VOF and level set, SPH, compressible flow, heat transfer, Maxwell FDTD |
 | Aerodynamics | standard atmosphere (ISA 1976, up to 20 km), wing lift and drag with stall, rotor thrust and torque |
 | Molecular dynamics | Lennard-Jones, Morse, Coulomb and screened Coulomb pair potentials with cutoff and shift, velocity Verlet with a periodic cell list (minimum image) |
+| Crowds | social force model of pedestrian motion: driving term, repulsion weighted by the view angle, body force and sliding friction in contact, walls |
 | 3D printing | material database, thin-wall and overhang checks, warp risk, layer adhesion, print orientation, a combined safety pipeline |
 | 2D | a separate 2D XPBD engine with its own shapes and joints |
 

@@ -274,6 +274,7 @@ pub mod convex_mesh_builder;
 pub mod coupled_field;
 pub mod coupled_iteration;
 pub mod creep_longterm;
+pub mod crowd_force;
 pub mod cubic_elastic_fem;
 pub mod cylinder;
 pub mod damping_rayleigh;
