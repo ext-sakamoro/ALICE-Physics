@@ -256,6 +256,10 @@ pub enum Shape2D {
         half_length: Fix128,
     },
     /// Line segment (edge) from start to end.
+    ///
+    /// Zero thickness and two-sided: it collides with circles, capsules and
+    /// polygons from either side, but not with other edges (two segments
+    /// enclose no area, so parallel edges never overlap).
     Edge {
         /// Start point in local space.
         start: Vec2Fix,
@@ -879,7 +883,20 @@ impl PhysicsWorld2D {
                     c
                 })
             }
-            _ => None,
+            // Two zero-thickness segments enclose no area: parallel edges never
+            // overlap (a falling edge passes a parallel one between substeps)
+            // and crossing edges have no orientation-independent penetration,
+            // so edges deliberately do not collide with each other.
+            (Shape2D::Edge { .. }, Shape2D::Edge { .. }) => None,
+            (
+                Shape2D::Capsule { .. } | Shape2D::Edge { .. } | Shape2D::Polygon { .. },
+                Shape2D::Capsule { .. } | Shape2D::Edge { .. } | Shape2D::Polygon { .. },
+            ) => match (rounded_core(body_a), rounded_core(body_b)) {
+                (Some((core_a, ra)), Some((core_b, rb))) => {
+                    rounded_core_vs_rounded_core(&core_a, ra, &core_b, rb)
+                }
+                _ => None,
+            },
         };
 
         result.map(|mut c| {
@@ -1273,6 +1290,231 @@ fn closest_point_on_segment(seg_a: Vec2Fix, seg_b: Vec2Fix, point: Vec2Fix) -> V
         t
     };
     seg_a + ab * t_clamped
+}
+
+/// World-space core and radius of a capsule, edge or convex polygon: the shape
+/// is the core (a segment, or a CCW convex polygon) inflated by the radius.
+///
+/// A capsule is its local-X segment `[-half_length, +half_length]` inflated by
+/// its radius, an edge its segment with radius 0 (zero thickness, two-sided),
+/// a polygon its vertices with radius 0. Circles are handled by the dedicated
+/// pair functions and return `None`, as do polygons with fewer than 3 vertices.
+fn rounded_core(body: &RigidBody2D) -> Option<(Vec<Vec2Fix>, Fix128)> {
+    match &body.shape {
+        Shape2D::Capsule {
+            radius,
+            half_length,
+        } => Some((
+            vec![
+                body.world_point(Vec2Fix::new(-*half_length, Fix128::ZERO)),
+                body.world_point(Vec2Fix::new(*half_length, Fix128::ZERO)),
+            ],
+            *radius,
+        )),
+        Shape2D::Edge { start, end } => Some((
+            vec![body.world_point(*start), body.world_point(*end)],
+            Fix128::ZERO,
+        )),
+        Shape2D::Polygon { vertices } if vertices.len() >= 3 => {
+            Some((transform_vertices(body, vertices), Fix128::ZERO))
+        }
+        _ => None,
+    }
+}
+
+/// Edges `(p, q)` of a core: one for a segment, `n` (closing) for a polygon.
+fn core_edges(core: &[Vec2Fix]) -> Vec<(Vec2Fix, Vec2Fix)> {
+    if core.len() == 2 {
+        return vec![(core[0], core[1])];
+    }
+    (0..core.len())
+        .map(|i| (core[i], core[(i + 1) % core.len()]))
+        .collect()
+}
+
+/// Contact between two rounded convex shapes, each a core (segment or convex
+/// polygon) inflated by a radius. The normal points from A toward B and the
+/// depth is the exact penetration of the inflated shapes:
+///
+/// * cores disjoint: `depth = r_a + r_b - dist(core_a, core_b)` along the
+///   direction between the closest points (no contact when negative);
+/// * cores overlapping: `depth = r_a + r_b + PD(core_a, core_b)`, where the
+///   core penetration `PD` is the smallest SAT overlap over the edge normals of
+///   both cores (the face normals of their Minkowski difference).
+///
+/// The contact point lies in the middle of the overlap region: along the
+/// normal halfway between A's surface and B's surface, along the tangent at
+/// the centre of the shared extent of the two supporting features (so a
+/// segment lying flat on a face gets the midpoint of the touching interval).
+fn rounded_core_vs_rounded_core(
+    core_a: &[Vec2Fix],
+    radius_a: Fix128,
+    core_b: &[Vec2Fix],
+    radius_b: Fix128,
+) -> Option<Contact2D> {
+    let edges_a = core_edges(core_a);
+    let edges_b = core_edges(core_b);
+    let radius_sum = radius_a + radius_b;
+
+    // Closest points of the cores (on their boundaries).
+    let mut closest: Option<(Fix128, Vec2Fix, Vec2Fix)> = None;
+    for &(pa, qa) in &edges_a {
+        for &(pb, qb) in &edges_b {
+            let (ca, cb) = closest_points_segment_segment(pa, qa, pb, qb);
+            let dist_sq = (cb - ca).length_squared();
+            if closest.is_none_or(|(d, _, _)| dist_sq < d) {
+                closest = Some((dist_sq, ca, cb));
+            }
+        }
+    }
+    let (dist_sq, ca, cb) = closest?;
+
+    // SAT over the edge normals of both cores plus the closest-point direction.
+    // The edge normals are the face normals of the Minkowski difference, so the
+    // smallest overlap over them is the core penetration; the closest-point
+    // direction separates disjoint cores even when a core is degenerate (a
+    // point, or collinear segments), where the edge normals alone are
+    // incomplete. Any extra axis only adds overlaps that are >= the true one.
+    let mut axes: Vec<Vec2Fix> = edges_a
+        .iter()
+        .chain(edges_b.iter())
+        .map(|&(p, q)| (q - p).perpendicular().normalize())
+        .collect();
+    axes.push((cb - ca).normalize());
+    let mut separated = false;
+    let mut best: Option<(Fix128, Vec2Fix)> = None;
+    for axis in axes {
+        if axis == Vec2Fix::ZERO {
+            continue;
+        }
+        let (min_a, max_a) = project_polygon(core_a, axis);
+        let (min_b, max_b) = project_polygon(core_b, axis);
+        if max_a < min_b || max_b < min_a {
+            separated = true;
+            break;
+        }
+        // overlap removed by moving B along +axis, resp. along -axis
+        for (overlap, dir) in [(max_a - min_b, axis), (max_b - min_a, -axis)] {
+            if best.is_none_or(|(d, _)| overlap < d) {
+                best = Some((overlap, dir));
+            }
+        }
+    }
+
+    let (normal, depth) = if separated {
+        if dist_sq > radius_sum * radius_sum {
+            return None;
+        }
+        let dist = dist_sq.sqrt();
+        if dist.is_zero() {
+            return None;
+        }
+        ((cb - ca) / dist, radius_sum - dist)
+    } else {
+        match best {
+            Some((overlap, dir)) => (dir, overlap + radius_sum),
+            // both cores are the same point: no direction is preferred
+            None => (Vec2Fix::UNIT_Y, radius_sum),
+        }
+    };
+    if depth.is_negative() {
+        return None;
+    }
+
+    Some(Contact2D {
+        point: overlap_midpoint(core_a, radius_a, core_b, radius_b, normal),
+        normal,
+        depth,
+        body_a: 0,
+        body_b: 0,
+    })
+}
+
+/// Middle of the overlap region of two rounded cores along `normal` (A -> B).
+fn overlap_midpoint(
+    core_a: &[Vec2Fix],
+    radius_a: Fix128,
+    core_b: &[Vec2Fix],
+    radius_b: Fix128,
+    normal: Vec2Fix,
+) -> Vec2Fix {
+    // vertices within `eps` of the extreme projection form the supporting
+    // feature (one vertex, or the two ends of an edge parallel to the tangent)
+    let eps = Fix128::from_ratio(1, 1 << 30);
+    let tangent = normal.perpendicular();
+    let (_, top_a) = project_polygon(core_a, normal);
+    let (bottom_b, _) = project_polygon(core_b, normal);
+    let extent = |core: &[Vec2Fix], on_feature: &dyn Fn(Fix128) -> bool| {
+        let mut lo: Option<Fix128> = None;
+        let mut hi: Option<Fix128> = None;
+        for v in core {
+            if on_feature(v.dot(normal)) {
+                let t = v.dot(tangent);
+                lo = Some(lo.map_or(t, |l| if t < l { t } else { l }));
+                hi = Some(hi.map_or(t, |h| if t > h { t } else { h }));
+            }
+        }
+        (lo.unwrap_or(Fix128::ZERO), hi.unwrap_or(Fix128::ZERO))
+    };
+    let (lo_a, hi_a) = extent(core_a, &|d| d >= top_a - eps);
+    let (lo_b, hi_b) = extent(core_b, &|d| d <= bottom_b + eps);
+    let lo = if lo_a > lo_b { lo_a } else { lo_b };
+    let hi = if hi_a < hi_b { hi_a } else { hi_b };
+    let along_tangent = (lo + hi).half();
+    let along_normal = ((top_a + radius_a) + (bottom_b - radius_b)).half();
+    tangent * along_tangent + normal * along_normal
+}
+
+/// Closest points between segments `p1 q1` and `p2 q2` (Ericson, Real-Time
+/// Collision Detection §5.1.9), handling zero-length segments.
+fn closest_points_segment_segment(
+    p1: Vec2Fix,
+    q1: Vec2Fix,
+    p2: Vec2Fix,
+    q2: Vec2Fix,
+) -> (Vec2Fix, Vec2Fix) {
+    let clamp01 = |x: Fix128| {
+        if x.is_negative() {
+            Fix128::ZERO
+        } else if x > Fix128::ONE {
+            Fix128::ONE
+        } else {
+            x
+        }
+    };
+    let d1 = q1 - p1;
+    let d2 = q2 - p2;
+    let r = p1 - p2;
+    let a = d1.length_squared();
+    let e = d2.length_squared();
+    let f = d2.dot(r);
+    let (s, t) = if a.is_zero() && e.is_zero() {
+        (Fix128::ZERO, Fix128::ZERO)
+    } else if a.is_zero() {
+        (Fix128::ZERO, clamp01(f / e))
+    } else {
+        let c = d1.dot(r);
+        if e.is_zero() {
+            (clamp01(-c / a), Fix128::ZERO)
+        } else {
+            let b = d1.dot(d2);
+            let denom = a * e - b * b;
+            let s = if denom.is_zero() {
+                Fix128::ZERO
+            } else {
+                clamp01((b * f - c * e) / denom)
+            };
+            let t = (b * s + f) / e;
+            if t.is_negative() {
+                (clamp01(-c / a), Fix128::ZERO)
+            } else if t > Fix128::ONE {
+                (clamp01((b - c) / a), Fix128::ONE)
+            } else {
+                (s, t)
+            }
+        }
+    };
+    (p1 + d1 * s, p2 + d2 * t)
 }
 
 // ============================================================================
