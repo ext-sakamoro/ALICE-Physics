@@ -17,7 +17,7 @@
 //!
 //! Author: Moroya Sakamoto
 
-use crate::collider::{Support, AABB};
+use crate::collider::{hypot3, Support, AABB};
 use crate::math::{Fix128, QuatFix, Vec3Fix};
 
 /// Cone collider
@@ -81,30 +81,34 @@ impl Cone {
         self.center + self.rotation.rotate_vec(local_base)
     }
 
-    /// Compute world-space AABB enclosing this cone
+    /// The smallest world-axis box enclosing this cone.
+    ///
+    /// The cone is the hull of its apex `c + a` and its base disc about `c − a`,
+    /// with `a = R·(0, h, 0)`; the disc reaches `s_i = √(u_i² + w_i²)` along world
+    /// axis `i` (`u = R·(r, 0, 0)`, `w = R·(0, 0, r)`; for a unit rotation
+    /// `r·√(1 − â_i²)`). Per axis the box is
+    /// `[min(a_i, −a_i − s_i), max(a_i, −a_i + s_i)]` about `c`, which is not
+    /// symmetric about `c` unless the axis lies in the world plane normal to `i`.
     #[must_use]
     pub fn aabb(&self) -> AABB {
-        // Local Y axis in world space
-        let local_y = Vec3Fix::new(Fix128::ZERO, Fix128::ONE, Fix128::ZERO);
-        let world_y = self.rotation.rotate_vec(local_y);
-
-        // Axis extent covers both apex and base
-        let axis_extent = Vec3Fix::new(
-            (world_y.x * self.half_height).abs(),
-            (world_y.y * self.half_height).abs(),
-            (world_y.z * self.half_height).abs(),
-        );
-
-        // Conservative radial extent (base circle)
-        let radial_extent = Vec3Fix::new(self.radius, self.radius, self.radius);
-
-        let total = Vec3Fix::new(
-            axis_extent.x + radial_extent.x,
-            axis_extent.y + radial_extent.y,
-            axis_extent.z + radial_extent.z,
-        );
-
-        AABB::new(self.center - total, self.center + total)
+        let r = self.rotation;
+        let u = r.rotate_vec(Vec3Fix::new(self.radius, Fix128::ZERO, Fix128::ZERO));
+        let a = r.rotate_vec(Vec3Fix::new(Fix128::ZERO, self.half_height, Fix128::ZERO));
+        let w = r.rotate_vec(Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, self.radius));
+        let axis = |ai: Fix128, ui: Fix128, wi: Fix128| -> (Fix128, Fix128) {
+            let s = hypot3(ui, wi, Fix128::ZERO);
+            let (base_lo, base_hi) = (-ai - s, -ai + s);
+            let lo = if ai < base_lo { ai } else { base_lo };
+            let hi = if ai > base_hi { ai } else { base_hi };
+            (lo, hi)
+        };
+        let (lx, hx) = axis(a.x, u.x, w.x);
+        let (ly, hy) = axis(a.y, u.y, w.y);
+        let (lz, hz) = axis(a.z, u.z, w.z);
+        AABB::new(
+            self.center + Vec3Fix::new(lx, ly, lz),
+            self.center + Vec3Fix::new(hx, hy, hz),
+        )
     }
 
     /// Volume of the cone: (1/3) * pi * r^2 * h where h = 2 * `half_height`
@@ -272,11 +276,11 @@ mod tests {
             Fix128::from_int(3),
         );
         let aabb = cone.aabb();
-        // Y-up: axis_extent=(0,3,0), radial=(2,2,2), total=(2,5,2)
+        // Y-up: apex at y = +3, base disc of radius 2 at y = -3
         assert_eq!(aabb.min.x.hi, 3); // 5 - 2
         assert_eq!(aabb.max.x.hi, 7); // 5 + 2
-        assert_eq!(aabb.min.y.hi, -5); // 0 - 5
-        assert_eq!(aabb.max.y.hi, 5); // 0 + 5
+        assert_eq!(aabb.min.y.hi, -3); // base
+        assert_eq!(aabb.max.y.hi, 3); // apex
     }
 
     #[test]

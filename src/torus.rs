@@ -16,7 +16,7 @@
 //!
 //! Author: Moroya Sakamoto
 
-use crate::collider::{Support, AABB};
+use crate::collider::{hypot3, Support, AABB};
 use crate::math::{Fix128, QuatFix, Vec3Fix};
 
 /// Torus collider
@@ -84,44 +84,23 @@ impl Torus {
         four * pi * pi * self.major_radius * self.minor_radius
     }
 
-    /// Compute world-space AABB enclosing this torus
+    /// The smallest world-axis box enclosing this torus.
+    ///
+    /// The torus is its ring (radius `R` in the plane spanned by
+    /// `u = R̂·(R, 0, 0)` and `w = R̂·(0, 0, R)`) swept by a ball of radius `r`:
+    /// the half-extent on world axis `i` is `√(u_i² + w_i²) + r` (for a unit
+    /// rotation with symmetry axis `â`, `R·√(1 − â_i²) + r`).
     #[must_use]
     pub fn aabb(&self) -> AABB {
-        let outer = self.major_radius + self.minor_radius;
-
-        // Local Y axis in world space (symmetry axis)
-        let local_y = Vec3Fix::new(Fix128::ZERO, Fix128::ONE, Fix128::ZERO);
-        let world_y = self.rotation.unit_rotation().rotate_vec(local_y);
-
-        // Along the symmetry axis, extent is minor_radius
-        let axis_extent = Vec3Fix::new(
-            (world_y.x * self.minor_radius).abs(),
-            (world_y.y * self.minor_radius).abs(),
-            (world_y.z * self.minor_radius).abs(),
-        );
-
-        // In the ring plane, extent is major + minor
-        // Conservative: use outer on all axes and add axis extent
-        let radial_extent = Vec3Fix::new(outer, outer, outer);
-
+        // a stored non-unit rotation would scale the ring (as in `support`)
+        let q = self.rotation.unit_rotation();
+        let u = q.rotate_vec(Vec3Fix::new(self.major_radius, Fix128::ZERO, Fix128::ZERO));
+        let w = q.rotate_vec(Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, self.major_radius));
         let total = Vec3Fix::new(
-            if axis_extent.x > radial_extent.x {
-                axis_extent.x
-            } else {
-                radial_extent.x
-            },
-            if axis_extent.y > radial_extent.y {
-                axis_extent.y
-            } else {
-                radial_extent.y
-            },
-            if axis_extent.z > radial_extent.z {
-                axis_extent.z
-            } else {
-                radial_extent.z
-            },
+            hypot3(u.x, w.x, Fix128::ZERO) + self.minor_radius,
+            hypot3(u.y, w.y, Fix128::ZERO) + self.minor_radius,
+            hypot3(u.z, w.z, Fix128::ZERO) + self.minor_radius,
         );
-
         AABB::new(self.center - total, self.center + total)
     }
 

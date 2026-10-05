@@ -35,7 +35,7 @@
 //! Author: Moroya Sakamoto
 
 use crate::box_collider::OrientedBox;
-use crate::collider::Support;
+use crate::collider::{Support, AABB};
 use crate::cone::Cone;
 use crate::cylinder::Cylinder;
 use crate::ellipsoid::Ellipsoid;
@@ -371,6 +371,39 @@ impl PosedShape {
     fn geometric_center(&self) -> Vec3Fix {
         self.position - self.rotation.rotate_vec(self.shape.center_of_mass_offset())
     }
+
+    /// The smallest world-axis box that contains the posed solid: each shape's own
+    /// closed-form box ([`OrientedBox::aabb`], [`Cylinder::aabb`], [`Cone::aabb`],
+    /// [`Ellipsoid::aabb`], [`Wedge::aabb`], [`Torus::aabb`]) about the geometric
+    /// centre, turned like the solid. It is never larger than the cube of
+    /// [`Shape::bounding_radius`] about the centre of mass, and is smaller for any
+    /// solid that is not round in every direction.
+    #[must_use]
+    pub(crate) fn world_aabb(&self) -> AABB {
+        let center = self.geometric_center();
+        let rotation = self.rotation;
+        match self.shape {
+            Shape::Box { half_extents } => OrientedBox::new(center, half_extents, rotation).aabb(),
+            Shape::Cylinder {
+                radius,
+                half_height,
+            } => Cylinder::with_rotation(center, half_height, radius, rotation).aabb(),
+            Shape::Cone {
+                radius,
+                half_height,
+            } => Cone::with_rotation(center, radius, half_height, rotation).aabb(),
+            Shape::Ellipsoid { radii } => Ellipsoid::with_rotation(center, radii, rotation).aabb(),
+            Shape::Wedge {
+                width,
+                height,
+                depth,
+            } => Wedge::with_rotation(center, width, height, depth, rotation).aabb(),
+            Shape::Torus {
+                major_radius,
+                minor_radius,
+            } => Torus::with_rotation(center, major_radius, minor_radius, rotation).aabb(),
+        }
+    }
 }
 
 impl Support for PosedShape {
@@ -388,11 +421,7 @@ impl Support for PosedShape {
             Shape::Cone {
                 radius,
                 half_height,
-            } => {
-                let mut c = Cone::new(center, radius, half_height);
-                c.rotation = rotation;
-                c.support(direction)
-            }
+            } => Cone::with_rotation(center, radius, half_height, rotation).support(direction),
             Shape::Ellipsoid { radii } => {
                 Ellipsoid::with_rotation(center, radii, rotation).support(direction)
             }
@@ -400,11 +429,7 @@ impl Support for PosedShape {
                 width,
                 height,
                 depth,
-            } => {
-                let mut w = Wedge::new(center, width, height, depth);
-                w.rotation = rotation;
-                w.support(direction)
-            }
+            } => Wedge::with_rotation(center, width, height, depth, rotation).support(direction),
             Shape::Torus {
                 major_radius,
                 minor_radius,
