@@ -34,6 +34,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # arithmetic on simulation state (reason per entry).
 BOUNDARY = {
     "ffi": "C ABI takes/returns f32 for the host, converts to Fix128",
+    "binding_api": "checks the f64 arguments of the C / WebAssembly / Python bindings and converts them to Fix128",
     "pipeline": "print pipeline I/O (mm / °C values passed through)",
     "analytics_bridge": "alice-analytics sketches take f64 samples (I/O)",
     "db_bridge": "alice-db pass-through I/O, no arithmetic",
