@@ -134,7 +134,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `rolling_contact` | standalone | 0 / 0 / 0 / 7 / 0 | — |
 | `rope` | standalone | 0 / 0 / 0 / 13 / 0 | — |
 | `rope_attach` | standalone | 0 / 0 / 0 / 6 / 0 | — |
-| `scene_io` | standalone | 0 / 0 / 0 / 10 / 1 | — |
+| `scene_io` | standalone | 0 / 0 / 0 / 11 / 0 | — |
 | `sdf_adaptive` | standalone | 0 / 0 / 0 / 10 / 0 | — |
 | `sdf_ccd` | standalone | 0 / 0 / 0 / 6 / 0 | — |
 | `sdf_character` | standalone | 0 / 0 / 0 / 13 / 0 | — |
@@ -154,7 +154,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `spatial` | standalone | 0 / 0 / 0 / 7 / 0 | — |
 | `spherical_terrain` | standalone (step 1 of 10 items) | 1 / 0 / 0 / 9 / 0 | C ABI, Python, WebAssembly |
 | `structural_solver` | standalone | 0 / 0 / 0 / 8 / 0 | — |
-| `support_volume` | standalone | 0 / 0 / 0 / 8 / 1 | — |
+| `support_volume` | standalone | 0 / 0 / 0 / 9 / 0 | — |
 | `surface_tension_csf` | standalone | 0 / 0 / 0 / 8 / 0 | — |
 | `thermal` | standalone | 0 / 0 / 0 / 7 / 0 | — |
 | `thermal_stress` | standalone | 0 / 0 / 0 / 3 / 0 | — |
@@ -162,7 +162,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `transient_thermal` | standalone | 0 / 0 / 0 / 18 / 0 | — |
 | `trimesh` | standalone (step 6, binding 3 of 16 items) | 6 / 0 / 3 / 7 / 0 | C ABI, Python, WebAssembly |
 | `turbulence` | standalone | 0 / 0 / 0 / 33 / 0 | — |
-| `vehicle` | standalone | 0 / 0 / 0 / 10 / 1 | — |
+| `vehicle` | standalone | 0 / 0 / 0 / 11 / 0 | — |
 | `vehicle_dynamics` | standalone | 0 / 0 / 0 / 83 / 0 | — |
 | `vibration_wall` | standalone | 0 / 0 / 0 / 4 / 0 | — |
 | `warp_risk` | standalone | 0 / 0 / 0 / 8 / 0 | — |
