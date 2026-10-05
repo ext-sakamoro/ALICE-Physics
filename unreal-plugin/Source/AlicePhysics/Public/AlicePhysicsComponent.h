@@ -192,6 +192,10 @@ public:
     UFUNCTION(BlueprintCallable, Category = "ALICE Physics")
     void StepSimulationN(float DeltaTime, int32 Steps);
 
+    /** Set the gravity of the running world (UE axes, cm/s^2). */
+    UFUNCTION(BlueprintCallable, Category = "ALICE Physics")
+    bool SetWorldGravity(FVector NewGravity);
+
     /** Set the substep count of the running world. */
     UFUNCTION(BlueprintCallable, Category = "ALICE Physics")
     bool SetWorldSubsteps(int32 NewSubsteps);
@@ -229,6 +233,8 @@ private:
     static AliceVec3 DirToAlice(const FVector& V);
     /** Rotation: the quaternion's vector part permuted like DirToAlice. */
     static AliceQuat QuatToAlice(const FQuat& Q);
+    /** Inverse of QuatToAlice. */
+    static FQuat QuatFromAlice(const AliceQuat& Q);
     /** Kind + SizeCm (see AddShapedBody) to the C ABI shape. */
     static AlicePhysicsShape ShapeToAlice(int32 Kind, const FVector& SizeCm);
     static int32 IndexOrMinusOne(uint32_t Index);

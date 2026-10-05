@@ -181,7 +181,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | C header | 50 / 50 | — |
 | bindings header | 50 / 50 | — |
 | Unity C# | 50 / 50 | — |
-| Unreal Engine plugin | 42 / 50 | `alice_physics_body_apply_impulses_batch`, `alice_physics_body_get_info`, `alice_physics_body_get_position_fix128_raw`, `alice_physics_world_create`, `alice_physics_world_get_positions_batch`, `alice_physics_world_get_velocities_batch`, `alice_physics_world_set_gravity`, `alice_physics_world_set_velocities_batch` |
+| Unreal Engine plugin | 43 / 50 | `alice_physics_body_apply_impulses_batch`, `alice_physics_body_get_info`, `alice_physics_body_get_position_fix128_raw`, `alice_physics_world_create`, `alice_physics_world_get_positions_batch`, `alice_physics_world_get_velocities_batch`, `alice_physics_world_set_velocities_batch` |
 
 Why the missing functions are not wrapped (`scripts/abi-consumer-gaps.txt`):
 
@@ -193,5 +193,4 @@ Why the missing functions are not wrapped (`scripts/abi-consumer-gaps.txt`):
 | Unreal Engine plugin | `alice_physics_world_create` | the component always creates its world with alice_physics_world_create_with_config (substeps and gravity from its properties) |
 | Unreal Engine plugin | `alice_physics_world_get_positions_batch` | raw double buffers are not a Blueprint type; C++ code calls the C ABI directly |
 | Unreal Engine plugin | `alice_physics_world_get_velocities_batch` | raw double buffers are not a Blueprint type; C++ code calls the C ABI directly |
-| Unreal Engine plugin | `alice_physics_world_set_gravity` | the component's gravity axis mapping in BeginPlay does not match ToAlice yet; a setter would repeat it |
 | Unreal Engine plugin | `alice_physics_world_set_velocities_batch` | raw double buffers are not a Blueprint type; C++ code calls the C ABI directly |
