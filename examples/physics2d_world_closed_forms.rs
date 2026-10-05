@@ -10,10 +10,14 @@
 //!    `x = x_0 + v t` with no gravity, a static body never moves.
 //! 3. **`check_collision_2d`**: two unit circles 3/2 apart overlap by `depth = 1/2`
 //!    along `n = (1, 0)` with the contact point at `x_a + n (r_a − depth / 2)`; a unit
-//!    circle 3/4 above a static box top overlaps by `1/4`; separated pairs give `None`.
-//! 4. **Resting contact**: a unit circle dropped onto a static circle of radius 10
-//!    (top at `y = 0`) settles with its centre one radius above the top and (almost)
-//!    zero velocity.
+//!    circle 3/4 above a static box top overlaps by `1/4` along `n = (0, −1)` from the
+//!    circle (body_a) to the box (body_b), and along `(0, 1)` in the swapped order;
+//!    separated pairs give `None`.
+//! 4. **Resting contact**: a unit circle dropped onto a static box (top at `y = 0`)
+//!    settles with its centre one radius above the top and zero velocity. At rest each
+//!    substep sinks the circle by `|g| h²` (`1.7e-4` with the default config) and the
+//!    position projection removes the whole overlap, so the rest height is exact up to
+//!    fixed-point rounding; the check allows `1e-9`.
 //! 5. **Pendulums**: a `Joint2D::Distance` rod (point bob) swings with the
 //!    small-angle period `T = 2π √(L / g)`; a `Joint2D::Revolute` pin at distance `L`
 //!    from a disc's centre swings as a physical pendulum,
@@ -183,7 +187,16 @@ fn collision_queries() {
     close(up.depth, 0.25, "circle-box depth");
     close(down.depth, 0.25, "box-circle depth");
     close(up.normal.x, 0.0, "circle-box normal is vertical");
-    close(up.normal.y.abs(), 1.0, "circle-box normal is unit");
+    close(
+        up.normal.y,
+        -1.0,
+        "circle-box normal points from the circle to the box",
+    );
+    close(
+        down.normal.y,
+        1.0,
+        "box-circle normal points from the box to the circle",
+    );
     assert_eq!(
         up.normal, -down.normal,
         "swapping the pair flips the normal"
@@ -197,14 +210,11 @@ fn collision_queries() {
 
 fn resting_contact() {
     let mut world = PhysicsWorld2D::new(PhysicsConfig2D::default());
-    // A static circle, not a box: the circle-polygon contact normal currently points
-    // from the polygon to the circle (against the `Contact2D::normal` doc, "from
-    // body_a toward body_b") in both pair orders, so a circle stepped onto a static
-    // polygon is pushed through it. Only the orientation-free facts of that pair
-    // (depth, |n| = 1, sign flip on swap) are asserted in `collision_queries`.
+    // static box with its top at y = 0
+    let floor_pos = Vec2Fix::new(Fix128::ZERO, Fix128::from_ratio(-1, 2));
     let floor = world.add_body(RigidBody2D::new_static(
-        Vec2Fix::from_int(0, -10),
-        circle(Fix128::from_int(10)),
+        floor_pos,
+        box_shape(Fix128::from_int(4), Fix128::from_ratio(1, 2)),
     ));
     let ball = world.add_body(RigidBody2D::new_dynamic(
         Vec2Fix::new(Fix128::ZERO, Fix128::from_ratio(3, 2)),
@@ -218,12 +228,11 @@ fn resting_contact() {
     let b = &world.bodies[ball];
     let (y, v) = (b.position.y.to_f64(), b.velocity.length().to_f64());
     // equilibrium: centre one radius above the floor top (y = 0)
-    assert!((y - 1.0).abs() < 0.02, "resting height = radius (got {y})");
-    assert!(v < 0.05, "resting speed ≈ 0 (got {v})");
+    assert!((y - 1.0).abs() < 1e-9, "resting height = radius (got {y})");
+    assert!(v < 1e-9, "resting speed = 0 (got {v})");
     assert!(b.position.x.to_f64().abs() < 1e-9, "no sideways drift");
     assert_eq!(
-        world.bodies[floor].position,
-        Vec2Fix::from_int(0, -10),
+        world.bodies[floor].position, floor_pos,
         "static floor unmoved"
     );
     println!("resting contact: y = {y:.5} (expect 1), |v| = {v:.2e}");
