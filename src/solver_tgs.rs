@@ -456,8 +456,7 @@ impl Default for TgsConfig {
 /// Determinism: the computation is a pure function of `bodies + dt +
 /// cfg`, uses only Fix128 arithmetic (no floating-point comparisons),
 /// and iterates in canonical index order — safe under lockstep /
-/// rollback netcode (see the `deterministic-physics-lockstep-discipline`
-/// skill §11.1 CCD control).
+/// rollback netcode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct AdaptiveSubStepConfig {
     /// Upper bound on translation per sub-step (world units per
@@ -484,7 +483,7 @@ impl Default for AdaptiveSubStepConfig {
 /// [`adaptive_substeps_for`]. The L∞ (max absolute per-axis
 /// component) norm is used instead of L2 to avoid Fix128 square roots
 /// and keep the closed-form deterministic across CORDIC LUT
-/// tolerances (see skill §1 path 2). Return `Fix128::ZERO` for
+/// tolerances. Return `Fix128::ZERO` for
 /// static / sleeping bodies so they do not contribute to `v_max`.
 pub(crate) trait HasVelocity {
     /// L∞ velocity in world units per second.
@@ -499,7 +498,7 @@ pub(crate) trait HasVelocity {
 /// state, no floating-point comparisons). Iteration is index-ordered
 /// so that different scheduling policies never observe a different
 /// `v_max` when the same bodies are present — safe under rayon
-/// dispatch (see skill §1 path 5).
+/// dispatch.
 #[must_use]
 pub(crate) fn adaptive_substeps_for<B: HasVelocity>(
     bodies: &[B],
@@ -536,8 +535,7 @@ pub(crate) fn adaptive_substeps_for<B: HasVelocity>(
 /// `max_translation_per_step` to a fraction of the smallest collider
 /// radius so that fast bodies never advance more than
 /// `radius * safety_factor` per sub-step. Combined with speculative
-/// contacts + TOI, this prevents tunneling through thin walls (see
-/// `deterministic-physics-lockstep-discipline` skill §11.1 CCD).
+/// contacts + TOI, this prevents tunneling through thin walls.
 ///
 /// The effective per-step cap is the minimum of
 /// `cfg.max_translation_per_step` and
@@ -734,8 +732,7 @@ pub(crate) trait TgsHooks {
 /// `cfg.warmstart` is `true`).
 ///
 /// `cfg.substeps == 0` is a no-op (nothing to integrate); before 1.2.0 it
-/// panicked, which is an input-driven panic in a lockstep solver
-/// (karikari-review §3-1).
+/// panicked, which is an input-driven panic in a lockstep solver.
 pub(crate) fn tgs_step<H: TgsHooks>(hooks: &mut H, cfg: &TgsConfig, dt: Fix128) {
     if cfg.substeps == 0 {
         return;

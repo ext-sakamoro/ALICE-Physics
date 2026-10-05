@@ -54,7 +54,7 @@ def words(*alts: str) -> str:
 
 
 FORBIDDEN = [
-    ("agent process", re.compile(words(r"workers?", r"subagents?", r"multi[- ]?agents?")
+    ("agent process", re.compile(words(r"workers?", r"subagents?", r"multi[- ]?agents?", r"skills?")
                                  # `git worktree add` is a command, not a description of how the work was done
                                  + r"|(?<!git )" + words(r"worktrees?")
                                  + r"|ワーカー|マルチエージェント|エージェント|調停役|並走\s*session|他\s*session|session\s*名")),
@@ -63,7 +63,9 @@ FORBIDDEN = [
     # names of private notes: `[[snake_case]]` links and the note-file prefixes
     ("internal note", re.compile(r"\[\[[a-z0-9]+_[a-z0-9_]+\]\]"
                                  r"|(?<![A-Za-z0-9_])(?:feedback|discipline|success|handoff)_[a-z0-9_]{4,}"
-                                 r"|(?<![A-Za-z0-9_])(?:project|reference)_alice_[a-z0-9_]+")),
+                                 r"|(?<![A-Za-z0-9_])(?:project|reference)_alice_[a-z0-9_]+"
+                                 # numbered entries of an internal pitfall catalogue / CI template
+                                 r"|罠\s*#\s*\d+|canonical\s+(?:CI\s+)?template")),
     ("instruction source", re.compile(r"user\s*(?:指示|裁定|指摘|判断)")),
     ("device", re.compile(words(r"Jetson", r"Mac\s?mini", r"MacBook") + r"|Raspberry\s*Pi|EAC-4000|reCamera")),
     ("private address", re.compile(r"\b100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d{1,3}\.\d{1,3}\b|\b192\.168\.\d{1,3}\.\d{1,3}\b|\b10\.\d{1,3}\.\d{1,3}\.\d{1,3}\b")),
@@ -103,6 +105,10 @@ PRIVATE_NAME_HASHES = {
     "c857d09db23e6822e3600bc06ad8d58f92ed62bc8efd81c753f77048662cb97d",
     "b5cf43ae07a7364e0c0ca9e838f01f278fc6a71c207a6f8c3de8d908608b2db1",
     "28e174396028f226b3bead259d19749205378d9204ce12fd9b1918ab6032a15d",
+    # internal review / rule names
+    "d44eb131a9fc729aae3aed377733d242c0796290775259142e0bd8d26e1e3132",
+    "9330fafbe2c0a50b50ab63cbc545e79f87b76394b7efa9b6f1dc90f4ce76bfb1",
+    "3834bde4d50c16031f0b0c9ff9371cd8aaa10155dbbf964f199a5b965e369925",
 }
 TOKEN_RE = re.compile(r"[A-Za-z0-9_\-\u3040-\u30ff\u4e00-\u9fff]+")
 

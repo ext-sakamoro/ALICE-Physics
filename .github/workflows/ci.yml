@@ -281,7 +281,7 @@ jobs:
   # (resolver = "3" makes the fresh resolution MSRV-aware, Cargo.lock is not
   # committed for this library) for the default, no_std and full native feature
   # sets. Bump `rust-version` and the
-  # `@<version>` below in the same commit (karikari §3-1 #53 / template 罠 #27).
+  # `@<version>` below in the same commit.
   # The pre-1.2.0 job regenerated the lockfile with stable and checked only the
   # std feature set, so the "1.70.0" claim was never actually compiled.
   msrv:
@@ -368,7 +368,7 @@ jobs:
           reporter: github-check
 
   feature-powerset:
-    # 2026-09-15 追加 (karikari-review §13 / CI template 手順 4.6): feature 組合せの compile 網羅
+    # 2026-09-15 追加: feature 組合せの compile 網羅
     # depth 2 = 単体 + 2 個組合せ (19 通り、Mac 実測 green)
     # - wasm は `std` 必須 (`compile_error!`) なので powerset から外し、std,wasm を別 step で check
     # - python (pyo3 build) / neural / replay / analytics (sibling crate 実体必要) は除外

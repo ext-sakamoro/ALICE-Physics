@@ -355,8 +355,7 @@ impl LinearBvh {
     /// # Determinism
     /// The refit is a pure function of `new_aabbs_by_prim_index` and
     /// the retained tree structure; nodes are visited in flat-array
-    /// index order (bottom-up), matching the discipline required by
-    /// `deterministic-physics-lockstep-discipline` skill §1 経路 5.
+    /// index order (bottom-up), so the traversal order is deterministic.
     ///
     /// # Status
     /// Skeleton API committed as part of Turn D next-step
@@ -402,8 +401,8 @@ impl LinearBvh {
         //
         // The union is computed directly in the i32 quantised domain
         // so no `i32 → Fix128 → i32` inverse-quantisation is required,
-        // keeping the refit bit-exact and division-free (skill §1
-        // 経路 2 — no CORDIC / rounding involved).
+        // keeping the refit bit-exact and division-free (no CORDIC /
+        // rounding involved).
         let node_count = self.nodes.len();
         for i in (0..node_count).rev() {
             let prim_count = (self.nodes[i].prim_count_escape >> 24) & 0xFF;
@@ -732,7 +731,7 @@ pub struct BvhStats {
 // ---------------------------------------------------------------------------
 
 /// Hybrid broadphase that layers a hash grid for dynamic bodies over
-/// a BVH for static geometry (Turn D 本命 next-step, skill §11 5' 案).
+/// a BVH for static geometry.
 ///
 /// # Rationale
 /// Dynamic bodies churn AABBs every frame, so paying `O(N log N)` for
@@ -745,8 +744,7 @@ pub struct BvhStats {
 /// # Determinism
 /// Both layers must be iterated in canonical index order — hash grid
 /// buckets are drained ordered by `body_id`, BVH walks use the flat
-/// node array in stackless traversal order. See
-/// `deterministic-physics-lockstep-discipline` skill §1 経路 5.
+/// node array in stackless traversal order.
 ///
 /// # Status
 /// Skeleton API committed as part of Turn D next-step to freeze the
@@ -821,7 +819,7 @@ impl BroadphaseHybrid {
     ///   window in `dx / dy / dz` nested-loop order.
     /// - Both traversals are pure functions of the inputs, so the
     ///   emitted callback sequence is bit-exact under lockstep /
-    ///   rollback dispatch (skill §1 経路 5).
+    ///   rollback dispatch.
     pub fn query_pairs<F>(&self, q_aabb: &AABB, mut callback: F)
     where
         F: FnMut(u32),

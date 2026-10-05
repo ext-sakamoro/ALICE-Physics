@@ -137,7 +137,7 @@ Gate 3 formalises that a real caller cares about the measured workload. This is 
 
 #### Prerequisites for Phase 3 design
 
-Before kernel work starts, `deterministic-physics-lockstep-discipline` §11.4 must be revisited: GPU BVH construction must preserve the escape-pointer forward-monotonic invariant (position-independent placeholder + build-time `debug_assert!` + traversal cycle guard). The CPU BVH's July 2026 correctness fix (ALICE-Physics `dede78c`) is the canonical reference implementation for how the GPU port must behave.
+Before kernel work starts, the BVH determinism rules must be revisited: GPU BVH construction must preserve the escape-pointer forward-monotonic invariant (position-independent placeholder + build-time `debug_assert!` + traversal cycle guard). The CPU BVH's July 2026 correctness fix (ALICE-Physics `dede78c`) is the canonical reference implementation for how the GPU port must behave.
 
 #### Notes for ALICE-TRT release cadence
 
@@ -146,7 +146,7 @@ Before kernel work starts, `deterministic-physics-lockstep-discipline` §11.4 mu
 
 ## Determinism guardrails
 
-All Phase 1 and Phase 2 work must continue to observe the five determinism-breaking routes catalogued in `deterministic-physics-lockstep-discipline`:
+All Phase 1 and Phase 2 work must continue to observe the five determinism-breaking routes:
 
 1. Broad-phase precision — remain fully in Fix128 space.
 2. CORDIC / sqrt — Newton-Raphson with fixed iteration count, no early-exit.

@@ -5,7 +5,7 @@
 #
 # ALICE-Physics 自体は AGPL-3.0 だが、target crate なので license check 対象外
 # sibling stubs (alice-ml/alice-db/alice-analytics) は alice-stubs action で
-# "MIT OR Apache-2.0" で生成される (canonical 罠 #2 予防)
+# "MIT OR Apache-2.0" で生成される
 
 [graph]
 all-features = false

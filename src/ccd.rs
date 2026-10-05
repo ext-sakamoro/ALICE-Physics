@@ -339,7 +339,7 @@ fn slab_test(
 ///    `[1, max_substeps]`.
 ///
 /// # Determinism
-/// Skill §1 経路 2 — no floating-point comparison, closed-form
+/// No floating-point comparison, closed-form
 /// clamp, deterministic sub-step count. `speculative_contact` and
 /// `solver_tgs::adaptive_substeps_for_ccd` are both pure Fix128
 /// functions of their inputs with index-ordered iteration.

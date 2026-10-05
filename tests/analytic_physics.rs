@@ -12,7 +12,7 @@
 //! quantity is defined for it, and additionally asserts that *precision*
 //! parameters (`substeps`, `iterations`) do not change the physical result.
 //!
-//! Rule (karikari-review §4 Path P / deterministic-physics-lockstep-discipline):
+//! Rule:
 //! a simulation crate ships an analytic oracle for every physical law it
 //! claims, and the oracle runs on `Config::default()`.
 

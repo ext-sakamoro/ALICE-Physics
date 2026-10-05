@@ -1,4 +1,4 @@
-# quality-deep — 週次 / 手動の深い品質検査 (karikari-review §13 crate 厳密評価の CI 層、2026-09-15 制定)
+# quality-deep — 週次 / 手動の深い品質検査 (crate 厳密評価の CI 層、2026-09-15 制定)
 #
 # いずれも PR gate ではなく週次 + workflow_dispatch (時間がかかる / ノイズがある):
 # - mutants : cargo-mutants (test が bug を検出できるかの逆検査)  PR では --in-diff で差分のみ
@@ -6,7 +6,7 @@
 # - bench   : criterion 回帰 (main baseline vs HEAD、critcmp)  GH runner のノイズがあるため informational
 # - ignored : `#[ignore]` test を実際に走らせて理由文の主張と突き合わせる (2026-09-30 追加)
 #
-# 罠 #22 (continue-on-error は compile error も green に潰す) に従い continue-on-error は使わない
+# continue-on-error は compile error も green に潰すので使わない
 # informational job は結果を Job Summary に書いて exit 0 (失敗は summary で読む)
 name: Quality Deep
 
@@ -190,7 +190,7 @@ jobs:
       # loom explores every interleaving of the threads that write one colour
       # batch; a colouring that put two constraints sharing a dynamic body into
       # the same batch shows up as an unsynchronised access (the invariant the
-      # raw-pointer slice wrappers rely on, karikari-review §13 loom 規約)
+      # raw-pointer slice wrappers rely on)
       - name: loom model tests
         run: cargo test --lib --features parallel loom_ -- --nocapture
         env:

@@ -69,7 +69,7 @@ jobs:
         run: cargo install cargo-fuzz --locked
 
       # build は blocking: compile error を continue-on-error で隠さない
-      # (canonical 罠 #22 2026-09-15 まで job-level continue-on-error だったため
+      # (2026-09-15 まで job-level continue-on-error だったため
       #  fuzz_deterministic_roundtrip の E0639 が 2 日間 green 表示で silent だった)
       - name: Build fuzz target
         run: |

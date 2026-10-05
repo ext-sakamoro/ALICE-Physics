@@ -20,9 +20,7 @@
 //! CPU-side solver for a supplied [`DiffFixture`]. When the backend
 //! diverges (e.g. GPU vendor-specific rounding, subgroup reduce
 //! ordering) it must surface the mismatch via [`GpuDivergence`]. See
-//! the private
-//! `deterministic-physics-lockstep-discipline` skill §1 経路 3
-//! (SIMD / subgroup reduce ordering) and §1 経路 5 (traversal
+//! determinism routes 3 (SIMD / subgroup reduce ordering) and 5 (traversal
 //! ordering) for the reference reasoning.
 
 use crate::math::Fix128;
@@ -90,7 +88,7 @@ pub trait GpuSolverBridge {
 
     /// Run `iters` PGS iterations against the currently uploaded
     /// island using the given time step. Iterations must run in
-    /// index-ordered dispatch to satisfy the skill §1 経路 5 contract.
+    /// index-ordered dispatch (deterministic traversal order).
     fn dispatch_iterations(&mut self, iters: u32, dt: Fix128);
 
     /// Read back the post-solve positions and velocities from the

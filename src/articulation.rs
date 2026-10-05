@@ -746,7 +746,7 @@ fn spatial_to_rows(m: SpatialMat) -> [[Fix128; MAX_JOINT_DOF]; MAX_JOINT_DOF] {
 /// broken by the lowest row index; `Fix128` comparison is an exact integer
 /// comparison, so the pivot sequence depends only on the input bits. Every
 /// arithmetic step is `Fix128`, so the routine is bit-identical on every
-/// platform (skill §1 経路 2 — no transcendental, no float).
+/// platform (no transcendental, no float).
 fn invert_small(
     mat: &[[Fix128; MAX_JOINT_DOF]; MAX_JOINT_DOF],
     n: usize,
@@ -1045,13 +1045,12 @@ impl FeatherstoneSolver {
     /// ratio (heavier / lighter) exceeds `mass_ratio_split_threshold`
     /// are decomposed into two separately solved constraints so that
     /// PGS iteration count no longer has to fight the ill-conditioning
-    /// of extreme mass ratios (see
-    /// `deterministic-physics-lockstep-discipline` skill §11.2).
+    /// of extreme mass ratios.
     ///
     /// # Determinism
     /// The Mass Splitting policy will canonicalise pivot order via
     /// `sort_by_key(mass) + index tie-break` and process the split
-    /// pairs in flat-array index order, matching skill §1 経路 5.
+    /// pairs in flat-array index order (deterministic traversal order).
     /// The current forwarding path inherits [`Self::solve`]'s
     /// determinism guarantee unchanged.
     ///
@@ -1082,10 +1081,10 @@ impl FeatherstoneSolver {
         //
         // # Determinism
         // - The min / max reciprocal mass scan iterates over
-        //   `artic.links` in index order (skill §1 経路 5).
+        //   `artic.links` in index order.
         // - The ratio comparison uses Fix128 multiplication rather
         //   than division so the branch decision is bit-exact across
-        //   platforms (skill §1 経路 2 — no CORDIC / rounding).
+        //   platforms (no CORDIC / rounding).
         // - `dt.half()` is a Fix128 arithmetic shift, itself bit-exact.
         // - Sub-stepping is a straight recursion into the existing
         //   `solve`, whose determinism guarantees carry through.

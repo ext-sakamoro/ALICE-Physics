@@ -602,8 +602,7 @@ pub struct AliceVec3Fix128Raw {
 /// Get body position as the raw Fix128 hi/lo pair (Phase F 11.3
 /// byte-for-byte determinism contract). Unity/UE5 hosts assert on
 /// the exact `(hi, lo)` pair to guarantee that every solver step
-/// produces identical state on every platform (see
-/// `deterministic-physics-lockstep-discipline` skill §11.3).
+/// produces identical state on every platform.
 ///
 /// Returns 1 on success, 0 on invalid pointer or body index.
 ///
@@ -1678,9 +1677,7 @@ mod tests {
     /// Unity/UE5 binding tests must reproduce the same
     /// `(x, y, z)` final position to within these brackets. Once
     /// the Fix128 output is pinned in a follow-up, the tolerances
-    /// will be replaced with byte-for-byte assertions (see
-    /// `deterministic-physics-lockstep-discipline` skill §11.3 FFI
-    /// contract test).
+    /// will be replaced with byte-for-byte assertions.
     #[test]
     fn ffi_contract_gravity_fall_deterministic() {
         // SAFETY: All FFI pointers are created and destroyed within

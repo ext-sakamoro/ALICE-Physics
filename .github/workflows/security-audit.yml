@@ -1,6 +1,5 @@
 name: Security & Hygiene
 
-# canonical CI template
 # ALICE-SDF v1.7.7 (commit 52d26f9) を base に ALICE-Physics 用に調整
 #
 # 目的:
@@ -171,7 +170,7 @@ jobs:
       # 必要 file が漏れる — これらは repo / workspace に file がある限り
       # cargo build も cargo test も clippy も preflight も全部通り、
       # crates.io から取得した利用者だけが compile 不能になる
-      # (2026-09-28 ALICE-LOL lol.gbnf、canonical template 罠 #51)
+      # (2026-09-28 ALICE-LOL lol.gbnf)
       #
       # semver-checks は baseline を build するので結果的に検出するが、
       # (a) 壊れた版を publish した後にしか分からない

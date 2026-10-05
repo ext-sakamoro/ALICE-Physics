@@ -1336,7 +1336,7 @@ partner. Combine both crates for the 20-module coverage.
 
 ### Infrastructure
 
-- CI: canonical CI template rollout (ALICE-SDF v1.7.7 base, Tier 1)
+- CI: standard CI workflow rollout (ALICE-SDF v1.7.7 base, Tier 1)
 - CI: security-audit hotfix — `audit --ignore` + stub-guard regex refine
 - no-std: 12 module に `alloc::vec` / `format` 追加 + `physics_bench`
   std gate 適用

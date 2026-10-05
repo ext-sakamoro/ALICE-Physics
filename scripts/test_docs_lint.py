@@ -215,6 +215,23 @@ class DevelopmentVocabulary(unittest.TestCase):
             e = errors({"src/a.rs": text + "\n"})
             self.assertTrue(any("internal note" in x or "internal tracker" in x for x in e), (text, e))
 
+    def test_internal_rule_and_template_references(self):
+        for text, label in (("/// (see skill §1 経路 5)", "agent process"),
+                            ("# 罠 #22 に従う", "internal note"),
+                            ("# canonical CI template", "internal note")):
+            e = errors({"src/a.rs": text + "\n"})
+            self.assertTrue(any(label in x for x in e), (text, e))
+
+    def test_internal_rule_names_are_matched_by_hash(self):
+        import hashlib
+        saved = dl.PRIVATE_NAME_HASHES
+        try:
+            dl.PRIVATE_NAME_HASHES = saved | {hashlib.sha256(b"zorb-quux-rules").hexdigest()}
+            e = errors({"src/a.rs": "/// (`zorb-quux-rules` §11.2)\n"})
+        finally:
+            dl.PRIVATE_NAME_HASHES = saved
+        self.assertTrue(any("private or internal name" in x for x in e), e)
+
     def test_the_files_that_define_the_vocabulary_are_exempt(self):
         e = errors({"scripts/test_land.py": "msg = 'found by the worker'\n"})
         self.assertEqual(e, [])
