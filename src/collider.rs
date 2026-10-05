@@ -289,8 +289,14 @@ impl Support for Capsule {
 
 /// Uniformly scaled shape wrapper
 ///
-/// Wraps any `Support`-implementing shape with a uniform scale factor.
-/// The support function scales the inner shape's support point.
+/// Wraps any `Support`-implementing shape with a uniform scale factor. The
+/// scale is about the world origin, not about the inner shape's centre: a
+/// sphere centred at `c` with radius `r` scaled by `s > 0` is the sphere
+/// centred at `s·c` with radius `s·r`.
+///
+/// The support in `d` is `s · inner.support(d)` for `s >= 0`. A negative
+/// scale mirrors the shape through the origin, whose furthest point in `d`
+/// is `s · inner.support(-d)`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ScaledShape<S> {
     /// Inner shape
@@ -309,7 +315,13 @@ impl<S> ScaledShape<S> {
 impl<S: Support> Support for ScaledShape<S> {
     #[inline(always)]
     fn support(&self, direction: Vec3Fix) -> Vec3Fix {
-        self.shape.support(direction) * self.scale
+        // s·x maximises <s·x, d> = <x, s·d>: for s < 0 that is the inner
+        // point furthest in -d (AUD-A-S3W3-017)
+        if self.scale.is_negative() {
+            self.shape.support(-direction) * self.scale
+        } else {
+            self.shape.support(direction) * self.scale
+        }
     }
 }
 
