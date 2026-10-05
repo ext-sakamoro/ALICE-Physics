@@ -33,6 +33,7 @@
 //! Values are [`Fix128`] (64 integer bits), so every intermediate product must
 //! stay below about `9.2·10¹⁸`. The widest products are `|r × v|²` and
 //! `|r|·|v|²` in [`OrbitalElements::from_state`]. For Earth orbits use km and s
+// LIMITATION(COV-ORBIT-011): SI metres overflow `|h|²` already in low Earth orbit
 //! (`μ ≈ 3.986·10⁵ km³/s²`, `|h|² ≈ 3·10⁹`) or canonical units (`μ = 1`); SI
 //! metres overflow `|h|²` already in low Earth orbit (`≈ 2.8·10²¹ m⁴/s²`).
 //! [`orbital_period`] and [`specific_angular_momentum`] are written as

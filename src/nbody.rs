@@ -28,6 +28,7 @@
 //! so the softened system conserves energy too. With `ε = 0` a pair of
 //! bodies at exactly the same position has no direction; that pair is
 //! skipped (contributes no acceleration and no potential) instead of
+// LIMITATION(COV-ORBIT-041): Close encounters with `ε = 0` are otherwise exact and need a `dt` that resolves them.
 //! producing an infinite value. Close encounters with `ε = 0` are otherwise
 //! exact and need a `dt` that resolves them.
 //!
@@ -199,6 +200,7 @@ impl DirectSum {
     }
 
     /// Add `aᵢ·dt` to the velocity of every **dynamic** body of `bodies`
+    // LIMITATION(COV-ORBIT-032): Static and kinematic bodies neither feel nor exert the attraction (they have no finite mass)
     /// (`inv_mass > 0`, mass `1/inv_mass`). Static and kinematic bodies
     /// neither feel nor exert the attraction (they have no finite mass); to
     /// pull bodies toward a fixed centre use
