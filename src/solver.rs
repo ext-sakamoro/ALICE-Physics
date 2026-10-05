@@ -3444,7 +3444,10 @@ impl PhysicsWorld {
             self.resolve_static_collisions(false);
         }
 
-        // 2. Solve constraints (batched)
+        // 2. Solve constraints (batched). Hooks and modifiers run once per
+        //    substep, ahead of the iteration loop, as in `substep`.
+        #[cfg(feature = "std")]
+        self.apply_contact_filters();
         for _ in 0..self.config.iterations {
             self.solve_constraints_batched(dt);
         }
@@ -3818,9 +3821,10 @@ impl PhysicsWorld {
     /// Run the pre-solve hooks and contact modifiers once over every
     /// contact constraint and keep the result.
     ///
-    /// The serial and bridge substeps call this ahead of their iteration
-    /// loop, so a relative change such as `friction *= 0.5` applies once per
-    /// substep (as in the parallel pre-pass) and not once per iteration.
+    /// The serial, bridge and batched (`step_parallel`) substeps call this
+    /// ahead of their iteration loop, so a relative change such as
+    /// `friction *= 0.5` applies once per substep and not once per
+    /// iteration, and every path calls each hook the same number of times.
     ///
     /// # Claims
     ///
@@ -3830,7 +3834,8 @@ impl PhysicsWorld {
     ///   to the constraint, and the solver passes read that value without
     ///   calling the modifier again.
     /// - A contact vetoed by a hook or discarded by a modifier is left
-    ///   unmodified and is skipped by the solver passes until the next call.
+    ///   unmodified and is skipped by the solver passes (position and
+    ///   velocity) until the next call.
     /// - With no hooks and no modifiers the call changes nothing.
     #[cfg(feature = "std")]
     fn apply_contact_filters(&mut self) {
@@ -3884,52 +3889,6 @@ impl PhysicsWorld {
         }
     }
 
-    /// Apply pre-solve hooks and contact modifiers to contact constraints.
-    ///
-    /// Runs sequentially before parallel dispatch. Contacts that are
-    /// filtered out have their depth set to zero, causing the parallel
-    /// solver to skip them via its existing early-return check.
-    #[cfg(all(feature = "parallel", feature = "std"))]
-    fn pre_process_contacts(&mut self) {
-        let num = self.contact_constraints.len();
-        if self.contact_discarded.len() < num {
-            self.contact_discarded.resize(num, false);
-        }
-        for i in 0..num {
-            let constraint = &mut self.contact_constraints[i];
-            let body_a_idx = constraint.body_a;
-            let body_b_idx = constraint.body_b;
-
-            let mut skip = false;
-            for hook in &self.pre_solve_hooks {
-                if !hook(body_a_idx, body_b_idx, &constraint.contact) {
-                    skip = true;
-                    break;
-                }
-            }
-            if !skip {
-                for modifier in &self.contact_modifiers {
-                    if !modifier.modify_contact(
-                        body_a_idx,
-                        body_b_idx,
-                        &mut constraint.contact,
-                        &mut constraint.friction,
-                        &mut constraint.restitution,
-                    ) {
-                        skip = true;
-                        break;
-                    }
-                }
-            }
-            if skip {
-                // Mark as non-penetrating so the solver skips it, and as
-                // discarded so `update_velocities` skips it too
-                constraint.contact.depth = Fix128::ZERO;
-                self.contact_discarded[i] = true;
-            }
-        }
-    }
-
     /// Solve constraints in batched parallel mode via Rayon.
     ///
     /// Within each colored batch, constraints share no body indices
@@ -3938,16 +3897,12 @@ impl PhysicsWorld {
     /// Between batches, a synchronization barrier ensures that
     /// earlier batch results are visible to later batches.
     ///
-    /// Pre-solve hooks and contact modifiers are applied in a sequential
-    /// pre-pass before parallel dispatch begins.
+    /// Pre-solve hooks and contact modifiers are not called here: the
+    /// substep runs [`Self::apply_contact_filters`] once before its
+    /// iterations, and this pass skips the contacts it discarded and reads
+    /// the values it wrote back.
     #[cfg(feature = "parallel")]
     fn solve_constraints_batched(&mut self, dt: Fix128) {
-        // Apply contact modifiers before parallel dispatch
-        #[cfg(feature = "std")]
-        if !self.pre_solve_hooks.is_empty() || !self.contact_modifiers.is_empty() {
-            self.pre_process_contacts();
-        }
-
         // The coloring excluded bodies that were static when `rebuild_batches`
         // ran. If any body changed static-ness since (e.g. the user edited
         // `inv_mass` through `bodies` after the rebuild) the snapshot no longer
@@ -3975,6 +3930,12 @@ impl PhysicsWorld {
             len: self.distance_constraints.len(),
         };
         let static_bodies: &[bool] = &self.batch_static_bodies;
+        // Contacts the substep's hook / modifier pre-pass discarded (an index
+        // past the end counts as kept)
+        #[cfg(feature = "std")]
+        let discarded: &[bool] = &self.contact_discarded;
+        #[cfg(not(feature = "std"))]
+        let discarded: &[bool] = &[];
 
         for batch_idx in 0..num_batches {
             // Phase 1: Distance constraints — parallel within batch
@@ -4006,6 +3967,9 @@ impl PhysicsWorld {
                 };
                 let indices = &self.constraint_batches[batch_idx].contact_indices;
                 indices.par_iter().for_each(|&idx| {
+                    if discarded.get(idx).copied().unwrap_or(false) {
+                        return;
+                    }
                     // SAFETY: Same invariant as Phase 1 — disjoint dynamic
                     // bodies per batch, static bodies shared read-only,
                     // each constraint index in exactly one batch.
