@@ -1,0 +1,970 @@
+# Sensing, state estimation and control (SENSE) coverage of ALICE-Physics,
+# against an external reference frame.
+#
+# What this table is: every capability that the standard texts (Thrun-Burgard-Fox,
+# Probabilistic Robotics; Groves, Principles of GNSS, Inertial, and Multisensor
+# Integrated Navigation; Astrom-Murray, Feedback Systems; IEEE Std 952 for gyro
+# noise and the Allan variance), reference implementations (the sensor and
+# control features of Gazebo, Isaac Sim, CARLA and MuJoCo) and standard
+# benchmarks (lidar range accuracy and angular resolution, IMU Allan variance,
+# the steady-state gain of a 1-D Kalman filter, LQR of an inverted pendulum, the
+# step response of a PID loop) expect of the physics side of sensing and control,
+# one [[item]] per capability, with what the crate has today. The rows are
+# written by hand: the axes and the items come from the reference frame, not from
+# the modules that exist, so a missing capability is visible instead of absent.
+#
+# Boundary with the other tables (one capability goes in one table only):
+#   - intersection of rays and shapes with collision geometry (raycast, shape
+#     cast, query filters) and trigger / sensor volumes: the rigid-body table
+#     (COV-RIGID-089, 096-100); here the sensors built on it
+#   - equations of motion of vehicles and robots, actuators, joint motors and
+#     the control laws tied to them (single-axis PD drive COV-RIGID-030;
+#     joint-space PD, computed-torque, operational-space / impedance control,
+#     PID with anti-windup and trajectory generation COV-MBD-084 to 088; driver
+#     model, traction and stability control, multirotor allocation): the
+#     rigid-body and multibody tables; here the control laws and estimators
+#     that do not depend on a particular mechanism
+#   - radiometry of light at the sensor (camera exposure, lens distortion and
+#     depth of field, lidar return intensity): the optics table; here the
+#     geometry of the measurement
+#   - the standard atmosphere and magnetic / electric fields themselves: the
+#     environment and electromagnetics tables; here the sensors reading them
+#   - determinism and network synchronisation of the simulation: the engine
+#     table; training of neural controllers belongs to the machine-learning
+#     crate, only inference is counted here
+#
+# status (exactly one of):
+#   implemented+oracle     implemented, and at least one non-ignored test checks
+#                          it against an independent reference
+#   implemented-no-oracle  implemented, no such test
+#   partial                implemented with a restriction that the source states;
+#                          `limitation` quotes it, and the source carries a
+#                          `LIMITATION(<id>)` comment at that place
+#   missing                not implemented
+#   out-of-scope           not a capability of this field (reason in `evidence`)
+#
+# This axis is separate from the test ignore reasons (`known defect: ...`,
+# `src gap: ...`, `diagnostic`, `runtime`). A capability that exists with a
+# recorded defect keeps its status and cites the known-defect test in
+# `evidence`; it is not `missing`.
+#
+# keys: id (COV-SENSE-NNN) / axis / item / source (book, chapter, paper,
+# standard or reference-implementation feature; no quoted text) / status /
+# evidence (`src/...rs:line`, `tests/...rs::test_fn`) / oracle_candidate /
+# limitation (verbatim quote of the source, required for `partial`).
+#
+# Reference values marked "参照値要確認" are to be checked against the original
+# publication before any test uses them. Lines marked "(推測)" were judged from
+# a search that found nothing and are to be confirmed.
+#
+# Checked by scripts/coverage_check.py (tests: scripts/test_coverage_check.py).
+
+[[item]]
+id = "COV-SENSE-001"
+axis = "noise"
+item = "additive zero-mean white Gaussian noise on a reading, seeded and bit-reproducible"
+source = "Groves, Principles of GNSS, Inertial, and Multisensor Integrated Navigation ch.4 (sensor error models); Gazebo / Isaac Sim / CARLA / MuJoCo sensor plugins (gaussian noise)"
+status = "implemented+oracle"
+evidence = "src/sensors.rs:69 src/rng.rs:140 (Box-Muller in Fix128、9.4 σ を超える裾は出ない: 確率 4e-21) tests/analytic_sensors.rs::gaussian_moments_match_the_standard_normal tests/analytic_sensors.rs::gaussian_matches_f64_box_muller tests/analytic_sensors.rs::gaussian_is_bit_reproducible"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-002"
+axis = "noise"
+item = "independent noise streams per sensor (seed / stream id) and a fixed number of draws per reading"
+source = "Gazebo / Isaac Sim / CARLA / MuJoCo sensor plugins (per-sensor noise seed)"
+status = "implemented+oracle"
+evidence = "src/rng.rs:47 src/sensors.rs:54 tests/analytic_rng_wiring.rs::streams_differ_but_are_reproducible tests/analytic_sensors.rs::imu_noise_is_seeded tests/analytic_sensors.rs::lidar_is_bit_reproducible_and_noise_has_the_stated_statistics"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-003"
+axis = "noise"
+item = "constant bias (turn-on bias) per axis"
+source = "Groves, Principles of GNSS, Inertial, and Multisensor Integrated Navigation ch.4.4 (accelerometer and gyro biases); IEEE Std 1293 / 952 error terms"
+status = "missing"
+evidence = "雑音は src/sensors.rs:69 の零平均白色だけ (bias を持つ型が無い)"
+oracle_candidate = "bias を足した IMU を静止させ、平均が bias に一致"
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-004"
+axis = "noise"
+item = "bias random walk (rate random walk) and first-order Gauss-Markov bias"
+source = "Groves, Principles of GNSS, Inertial, and Multisensor Integrated Navigation ch.4.4; IEEE Std 952 (fiber-optic gyro test procedure, Allan variance) (rate random walk)"
+status = "missing"
+evidence = "無い (推測: random walk / Gauss-Markov で src 0 件)"
+oracle_candidate = "Allan 偏差の傾き +1/2 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-005"
+axis = "noise"
+item = "bias instability (flicker noise) and coloured noise"
+source = "IEEE Std 952 (fiber-optic gyro test procedure, Allan variance) (bias instability, flat region of the Allan deviation)"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "Allan 偏差の平坦部"
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-006"
+axis = "noise"
+item = "scale-factor error, cross-coupling and axis misalignment"
+source = "Groves, Principles of GNSS, Inertial, and Multisensor Integrated Navigation ch.4.4 (scale factor and cross-coupling errors)"
+status = "missing"
+evidence = "読み値は src/sensors.rs:405 で真値 + 白色雑音のみ"
+oracle_candidate = "既知の誤差行列を掛けた読み値の逆算"
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-007"
+axis = "noise"
+item = "quantisation of a reading to a resolution / bit depth (ADC, encoder ticks, range resolution)"
+source = "Groves, Principles of GNSS, Inertial, and Multisensor Integrated Navigation ch.4.4 (quantisation); Astrom-Murray, Feedback Systems ch.8 (sampled-data effects)"
+status = "missing"
+evidence = "無い (推測: quantiz で src/sensors.rs 0 件)"
+oracle_candidate = "量子化雑音の分散 Δ²/12"
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-008"
+axis = "noise"
+item = "sensor range limits and saturation of the reading (accelerometer / gyro full scale)"
+source = "Groves, Principles of GNSS, Inertial, and Multisensor Integrated Navigation ch.4.4"
+status = "missing"
+evidence = "lidar の距離だけ [0, max_range] に clamp (src/sensors.rs:202)、IMU の full scale は無い"
+oracle_candidate = "full scale を超える加速度で読み値が飽和"
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-009"
+axis = "noise"
+item = "measurement latency (a reading delayed by a fixed time or number of steps)"
+source = "Gazebo / Isaac Sim / CARLA / MuJoCo sensor plugins (update delay); Astrom-Murray, Feedback Systems ch.10 (time delay)"
+status = "missing"
+evidence = "読み値は呼び出し時点の world から計算 (src/sensors.rs:225)"
+oracle_candidate = "遅延 N step の読み値が N step 前の真値と一致"
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-010"
+axis = "noise"
+item = "sensor update rate independent of the physics step (sample-and-hold between updates)"
+source = "Gazebo / Isaac Sim / CARLA / MuJoCo sensor plugins (update_rate)"
+status = "missing"
+evidence = "読み値は呼んだ step ごと、更新周期を持つ型が無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-011"
+axis = "noise"
+item = "dropouts and outliers injected into a measurement stream (missing returns, spikes)"
+source = "Thrun-Burgard-Fox, Probabilistic Robotics ch.6.3 (beam model: max-range and random measurements)"
+status = "missing"
+evidence = "lidar の欠測は幾何の no return だけ (推測: 確率的な欠測・外れ値は src 0 件)"
+oracle_candidate = "beam model の 4 成分混合の分布"
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-012"
+axis = "noise"
+item = "Allan variance / deviation of a simulated rate or acceleration series"
+source = "IEEE Std 952 (fiber-optic gyro test procedure, Allan variance) Annex C (Allan variance)"
+status = "missing"
+evidence = "無い (推測: allan で src 0 件)"
+oracle_candidate = "白色雑音の Allan 偏差 σ/√τ (傾き −1/2)"
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-013"
+axis = "range"
+item = "scanning range finder over an azimuth x elevation grid (evenly spaced angles, scan order)"
+source = "Thrun-Burgard-Fox, Probabilistic Robotics ch.6.3 (range finders); Gazebo / Isaac Sim / CARLA / MuJoCo sensor plugins (ray / gpu_lidar sensor)"
+status = "implemented+oracle"
+evidence = "src/sensors.rs:122 tests/analytic_sensors.rs::lidar_ranges_to_a_wall_match_closed_form tests/analytic_sensors.rs::lidar_with_an_empty_grid_scans_nothing"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-014"
+axis = "range"
+item = "maximum range and no-return for rays that hit nothing; nearest surface wins"
+source = "Thrun-Burgard-Fox, Probabilistic Robotics ch.6.3 (max-range readings)"
+status = "implemented+oracle"
+evidence = "src/sensors.rs:128 tests/analytic_sensors.rs::lidar_sees_the_nearest_surface_and_respects_max_range"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-015"
+axis = "range"
+item = "sensor mounted on a moving body (pose relative to the body, the carrier excluded from the rays)"
+source = "Gazebo / Isaac Sim / CARLA / MuJoCo sensor plugins (sensor attached to a link)"
+status = "implemented+oracle"
+evidence = "src/sensors.rs:231 tests/analytic_sensors.rs::lidar_on_a_body_uses_the_body_pose_and_ignores_the_body"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-016"
+axis = "range"
+item = "range noise per ray (Gaussian, clamped to the measurable interval)"
+source = "Thrun-Burgard-Fox, Probabilistic Robotics ch.6.3 (measurement noise p_hit)"
+status = "implemented+oracle"
+evidence = "src/sensors.rs:205 tests/analytic_sensors.rs::lidar_is_bit_reproducible_and_noise_has_the_stated_statistics"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-017"
+axis = "range"
+item = "per-ray hit detail (point, surface normal, body) alongside the range"
+source = "Gazebo / Isaac Sim / CARLA / MuJoCo sensor plugins (ray sensor with entity / normal output)"
+status = "implemented+oracle"
+evidence = "src/shape_raycast.rs:894 (光線と形状の交差そのものは COV-RIGID-096 / 097) tests/analytic_sensors.rs::lidar_on_a_body_uses_the_body_pose_and_ignores_the_body"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-018"
+axis = "range"
+item = "arbitrary scan pattern (per-channel elevation table, non-uniform or rotating patterns of real units)"
+source = "Velodyne / Ouster channel tables; CARLA lidar (channels, upper / lower fov)"
+status = "missing"
+evidence = "角度は等間隔の格子だけ (src/sensors.rs:105)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-019"
+axis = "range"
+item = "scan timing and motion distortion (each ray at its own time within a rotating sweep)"
+source = "CARLA lidar (rotation_frequency); Isaac Sim rotary lidar"
+status = "missing"
+evidence = "1 回の scan は 1 つの world 状態から全 ray を投げる (src/sensors.rs:239)"
+oracle_candidate = "回転中の sweep で動く壁の歪み量"
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-020"
+axis = "range"
+item = "beam divergence and footprint (cone instead of a line, mixed pixels at edges)"
+source = "Thrun-Burgard-Fox, Probabilistic Robotics ch.6.3; Gazebo gpu_lidar"
+status = "missing"
+evidence = "ray は線 (推測: divergence / footprint で src 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-021"
+axis = "range"
+item = "multiple returns per beam (first / last / strongest)"
+source = "Velodyne dual return; CARLA semantic lidar"
+status = "missing"
+evidence = "ray は closest の 1 つだけ (src/shape_raycast.rs:1241)、all は使っていない"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-022"
+axis = "range"
+item = "depth camera: pinhole projection to a per-pixel range / depth image"
+source = "Gazebo / Isaac Sim / CARLA / MuJoCo sensor plugins (depth camera); Hartley-Zisserman ch.6 (pinhole camera)"
+status = "missing"
+evidence = "per-pixel の投影は無い (投げる部品 src/shape_raycast.rs:1020 はある) レンズ歪み・放射量は optics 表"
+oracle_candidate = "平面までの depth = d / cos(画素の角)"
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-023"
+axis = "range"
+item = "stereo / structured-light depth with disparity noise growing as z^2"
+source = "Hartley-Zisserman ch.11; Isaac Sim stereo camera"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "depth 誤差 ∝ z² / (f b)"
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-024"
+axis = "range"
+item = "ultrasonic / sonar range sensor (cone of acceptance, specular miss)"
+source = "Thrun-Burgard-Fox, Probabilistic Robotics ch.6.3 (sonar); Gazebo sonar"
+status = "missing"
+evidence = "無い (推測: sonar / ultrasonic で src 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-025"
+axis = "range"
+item = "radar: range and range rate (Doppler) of the nearest targets"
+source = "CARLA radar sensor (depth, velocity, azimuth, altitude)"
+status = "missing"
+evidence = "無い (推測: radar で src 0 件)"
+oracle_candidate = "視線方向速度 = 相対速度の射影"
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-026"
+axis = "inertial"
+item = "accelerometer: specific force (acceleration minus gravity) in the body frame"
+source = "Groves, Principles of GNSS, Inertial, and Multisensor Integrated Navigation ch.4.1 (accelerometers, specific force)"
+status = "implemented+oracle"
+evidence = "src/sensors.rs:354 tests/analytic_sensors.rs::imu_in_free_fall_reads_g_and_zero_specific_force tests/analytic_sensors.rs::imu_at_rest_reads_minus_gravity_in_the_body_frame"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-027"
+axis = "inertial"
+item = "gyroscope: angular velocity in the body frame"
+source = "Groves, Principles of GNSS, Inertial, and Multisensor Integrated Navigation ch.4.2 (gyroscopes)"
+status = "implemented+oracle"
+evidence = "src/sensors.rs:370 (XPBD は substep の回転から ω を復元するので O((ω·h)²) 相対で読み値もずれる) tests/analytic_sensors.rs::imu_gyro_reads_angular_velocity_in_the_body_frame"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-028"
+axis = "inertial"
+item = "white noise on accelerometer and gyro axes"
+source = "Groves, Principles of GNSS, Inertial, and Multisensor Integrated Navigation ch.4.4"
+status = "implemented+oracle"
+evidence = "src/sensors.rs:390 src/sensors.rs:397 tests/analytic_sensors.rs::imu_noise_is_seeded"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-029"
+axis = "inertial"
+item = "reading rejected for a missing body or a non-positive step"
+source = ""
+status = "implemented+oracle"
+evidence = "tests/analytic_sensors.rs::imu_degenerate_input"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-030"
+axis = "inertial"
+item = "IMU mounted away from the centre of mass (lever arm: centripetal and Euler terms)"
+source = "Groves, Principles of GNSS, Inertial, and Multisensor Integrated Navigation ch.2.5 (lever arm)"
+status = "missing"
+evidence = "IMU は body の重心の速度差分 (src/sensors.rs:410)、取付位置を持たない"
+oracle_candidate = "回転円盤上の IMU が ω² r を読む"
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-031"
+axis = "inertial"
+item = "Earth rotation rate and Coriolis / transport-rate terms in the sensed rates"
+source = "Groves, Principles of GNSS, Inertial, and Multisensor Integrated Navigation ch.2.4 / ch.5 (navigation frames)"
+status = "missing"
+evidence = "world は非回転の慣性系 (推測: earth rate で src 0 件)"
+oracle_candidate = "静止 gyro が 15.04 deg/h × sin(緯度) を読む (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-032"
+axis = "inertial"
+item = "IMU output at its own rate integrated over several physics steps (delta-velocity, delta-angle, coning / sculling)"
+source = "Groves, Principles of GNSS, Inertial, and Multisensor Integrated Navigation ch.5.5 (coning and sculling)"
+status = "missing"
+evidence = "読み値は 1 step の平均加速度 (src/sensors.rs:38)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-033"
+axis = "inertial"
+item = "high-frequency vibration and aliasing of a mounted IMU"
+source = "Groves ch.4.4 (vibration-induced errors)"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-034"
+axis = "contact-force"
+item = "contact sensor: touch flag, contact count and normal force on a body"
+source = "Gazebo / Isaac Sim / CARLA / MuJoCo sensor plugins (contact sensor, force-torque)"
+status = "partial"
+evidence = "src/sensors.rs:280 tests/analytic_sensors.rs::contact_sensor_reads_the_weight_of_a_resting_box (箱どうしの接触だけ test、静的 collider との接触は読めない)"
+oracle_candidate = "静的 collider 上の箱が重さを読む"
+limitation = "src/sensors.rs:30 'A contact with a static collider ([`crate::static_collider`]) is resolved by projection, not by a contact constraint'"
+
+[[item]]
+id = "COV-SENSE-035"
+axis = "contact-force"
+item = "contact reading of a body at rest after it has gone to sleep"
+source = "Gazebo / Isaac Sim / CARLA / MuJoCo sensor plugins (contact sensor on resting objects)"
+status = "partial"
+evidence = "src/sensors.rs:289 (sleep で接触が消える)"
+oracle_candidate = "sleep 後も重さ m g を読む"
+limitation = "src/sensors.rs:34 'A body that has gone to sleep has no contacts to report.'"
+
+[[item]]
+id = "COV-SENSE-036"
+axis = "contact-force"
+item = "noise on the normal-force reading (clamped at zero)"
+source = "Gazebo / Isaac Sim / CARLA / MuJoCo sensor plugins"
+status = "implemented+oracle"
+evidence = "src/sensors.rs:308 tests/analytic_sensors.rs::contact_sensor_reads_the_weight_of_a_resting_box"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-037"
+axis = "contact-force"
+item = "six-axis force / torque sensor at a joint (constraint reaction)"
+source = "MuJoCo force / torque sensors; Gazebo force_torque"
+status = "missing"
+evidence = "関節の反力を返す API が無い (接触だけ src/solver.rs:4875)"
+oracle_candidate = "吊り下げた質量で F = m g、偏心で τ = m g d"
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-038"
+axis = "contact-force"
+item = "tactile array / pressure distribution over a contact patch"
+source = "MuJoCo touch grid; Isaac Sim contact sensor arrays"
+status = "missing"
+evidence = "接触は点と力の和だけ (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-039"
+axis = "contact-force"
+item = "net contact torque about the body (wrench, not only force)"
+source = "Gazebo / Isaac Sim / CARLA / MuJoCo sensor plugins (force_torque)"
+status = "missing"
+evidence = "ContactReading は力の和だけ (src/sensors.rs:297)、摩擦力も含まない"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-040"
+axis = "proprio-nav"
+item = "joint encoder: joint angle / position reading (with tick quantisation)"
+source = "MuJoCo jointpos sensor; Gazebo joint_state"
+status = "missing"
+evidence = "関節角の計算は crate 内部だけ (src/joint.rs:1443)"
+oracle_candidate = "hinge の角度を読み、tick 量子化で ±Δ/2"
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-041"
+axis = "proprio-nav"
+item = "joint velocity sensor"
+source = "MuJoCo jointvel"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-042"
+axis = "proprio-nav"
+item = "wheel-speed sensor and wheel odometry"
+source = "Thrun-Burgard-Fox, Probabilistic Robotics ch.5.4 (odometry motion model)"
+status = "missing"
+evidence = "車輪の回転速度は状態として読める (src/vehicle_dynamics/mod.rs:118) が、パルス化した読み値と odometry は無い"
+oracle_candidate = "定常円旋回で odometry の軌跡誤差"
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-043"
+axis = "proprio-nav"
+item = "GNSS position / velocity with noise, update rate and latency"
+source = "Groves, Principles of GNSS, Inertial, and Multisensor Integrated Navigation ch.8-9; CARLA gnss sensor"
+status = "missing"
+evidence = "無い (推測: gnss / gps で src 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-044"
+axis = "proprio-nav"
+item = "magnetometer (field in the body frame, hard / soft iron)"
+source = "Groves, Principles of GNSS, Inertial, and Multisensor Integrated Navigation ch.6.1 (magnetic heading)"
+status = "missing"
+evidence = "閉形式の場は src/electromagnetic.rs:69 にあるが、body frame で読むセンサは無い"
+oracle_candidate = "一様場の中で回る body の読み値が R^T B"
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-045"
+axis = "proprio-nav"
+item = "barometric altimeter (pressure reading and its altitude)"
+source = "Groves, Principles of GNSS, Inertial, and Multisensor Integrated Navigation ch.6.2 (baro altimeter)"
+status = "missing"
+evidence = "大気の気圧は src/atmosphere.rs:188 (標準大気の閉形式は環境表) にあるが、センサは無い"
+oracle_candidate = "ISA の気圧から高度を逆算"
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-046"
+axis = "proprio-nav"
+item = "body velocity / pose ground-truth sensor (frame-transformed state readout)"
+source = "MuJoCo framepos / framelinvel; Gazebo p3d"
+status = "implemented-no-oracle"
+evidence = "RigidBody の position / velocity / rotation は pub で、body frame への変換は QuatFix::conjugate で組める (専用の型と test は無い)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-047"
+axis = "estimation"
+item = "first-order low-pass / exponential smoothing of a reading"
+source = "Astrom-Murray, Feedback Systems ch.8; Oppenheim-Schafer (IIR)"
+status = "missing"
+evidence = "EWMA は外れ値検出の内部統計だけ (src/anomaly.rs:436)、Fix128 の汎用 filter は無い"
+oracle_candidate = "1 次 IIR の階段応答 1 − (1−α)^n"
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-048"
+axis = "estimation"
+item = "complementary filter (gyro + accelerometer attitude)"
+source = "Groves, Principles of GNSS, Inertial, and Multisensor Integrated Navigation ch.14; Mahony 2008"
+status = "missing"
+evidence = "無い (推測: complementary で src 0 件)"
+oracle_candidate = "静止 IMU で傾きが収束"
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-049"
+axis = "estimation"
+item = "Madgwick / Mahony orientation filters"
+source = "Madgwick 2010; Mahony-Hamel-Pflimlin 2008"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-050"
+axis = "estimation"
+item = "linear Kalman filter (predict / update, discrete time)"
+source = "Thrun-Burgard-Fox, Probabilistic Robotics ch.3.2; Groves, Principles of GNSS, Inertial, and Multisensor Integrated Navigation ch.3.2"
+status = "missing"
+evidence = "無い (推測: kalman で src 0 件)"
+oracle_candidate = "1 次元等速モデルの定常ゲインを Riccati の閉形式と突合"
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-051"
+axis = "estimation"
+item = "extended Kalman filter"
+source = "Thrun-Burgard-Fox, Probabilistic Robotics ch.3.3"
+status = "missing"
+evidence = "無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-052"
+axis = "estimation"
+item = "unscented Kalman filter"
+source = "Thrun-Burgard-Fox, Probabilistic Robotics ch.3.4"
+status = "missing"
+evidence = "無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-053"
+axis = "estimation"
+item = "particle filter (sampling, weighting, resampling)"
+source = "Thrun-Burgard-Fox, Probabilistic Robotics ch.4.3"
+status = "missing"
+evidence = "乱数 (src/rng.rs:140) はあるが filter は無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-054"
+axis = "estimation"
+item = "strapdown inertial navigation (attitude, velocity and position integration from IMU readings)"
+source = "Groves, Principles of GNSS, Inertial, and Multisensor Integrated Navigation ch.5"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "雑音なし IMU から軌跡を再構成"
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-055"
+axis = "estimation"
+item = "loosely coupled GNSS / INS fusion"
+source = "Groves, Principles of GNSS, Inertial, and Multisensor Integrated Navigation ch.14"
+status = "missing"
+evidence = "無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-056"
+axis = "estimation"
+item = "Luenberger observer / state observer"
+source = "Astrom-Murray, Feedback Systems ch.7"
+status = "missing"
+evidence = "無い (推測: observer で src 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-057"
+axis = "estimation"
+item = "fixed-interval smoother (RTS)"
+source = "Groves, Principles of GNSS, Inertial, and Multisensor Integrated Navigation ch.3.2.6"
+status = "missing"
+evidence = "無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-058"
+axis = "estimation"
+item = "robust outlier rejection on a scalar measurement stream (median / MAD, EWMA, z-score)"
+source = "Hampel filter; Rousseeuw-Croux (MAD)"
+status = "implemented+oracle"
+evidence = "src/anomaly.rs:238 src/anomaly.rs:436 (f64、innovation に掛ける配線は無い) tests/audit_anomaly.rs::mad_matches_brute_force_median_mad_verdict_and_score tests/audit_anomaly.rs::ewma_step_response_matches_closed_form tests/audit_anomaly.rs::values_that_fill_the_window_are_not_anomalous_when_mad_is_zero (known defect)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-059"
+axis = "estimation"
+item = "innovation (chi-square) gating inside an estimator"
+source = "Groves, Principles of GNSS, Inertial, and Multisensor Integrated Navigation ch.17 (fault detection)"
+status = "missing"
+evidence = "estimator が無いので無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-060"
+axis = "estimation"
+item = "scan matching (ICP) between two range scans"
+source = "Besl-McKay 1992; Thrun-Burgard-Fox, Probabilistic Robotics ch.7"
+status = "missing"
+evidence = "無い (推測: icp で src 0 件)"
+oracle_candidate = "既知の剛体変換を回復"
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-061"
+axis = "estimation"
+item = "occupancy grid mapping from range scans"
+source = "Thrun-Burgard-Fox, Probabilistic Robotics ch.9"
+status = "missing"
+evidence = "無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-062"
+axis = "estimation"
+item = "SLAM interface: ground-truth trajectory and landmark readout for evaluating an external SLAM"
+source = "Thrun-Burgard-Fox, Probabilistic Robotics ch.10; KITTI / TUM RGB-D evaluation"
+status = "missing"
+evidence = "無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-063"
+axis = "estimation"
+item = "bit-reproducible estimator state across platforms"
+source = ""
+status = "missing"
+evidence = "estimator が無いので無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-064"
+axis = "control"
+item = "attitude PD law on the quaternion error (per-axis gains, torque magnitude limit)"
+source = "Astrom-Murray, Feedback Systems ch.10; Wie, Space Vehicle Dynamics and Control ch.7"
+status = "implemented+oracle"
+evidence = "src/motor.rs:124 tests/audit_motor.rs::small_rotation_error_gives_per_axis_gain_times_angle_axis tests/audit_motor.rs::torque_is_invariant_under_target_quaternion_sign tests/audit_motor.rs::rotation_error_magnitude_equals_the_angle_for_a_quarter_turn (known defect)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-065"
+axis = "control"
+item = "full state feedback with pole placement"
+source = "Astrom-Murray, Feedback Systems ch.6"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-066"
+axis = "control"
+item = "LQR (continuous / discrete algebraic Riccati equation)"
+source = "Astrom-Murray, Feedback Systems ch.6.3"
+status = "missing"
+evidence = "無い (推測: lqr / riccati で src 0 件)"
+oracle_candidate = "倒立振子の LQR"
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-067"
+axis = "control"
+item = "LQG (LQR with a Kalman estimator)"
+source = "Astrom-Murray, Feedback Systems ch.7.5"
+status = "missing"
+evidence = "無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-068"
+axis = "control"
+item = "model predictive control (receding horizon, constraints)"
+source = "Rawlings-Mayne-Diehl, Model Predictive Control"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-069"
+axis = "control"
+item = "discretisation of a continuous controller (ZOH, Tustin)"
+source = "Astrom-Murray, Feedback Systems ch.8; Franklin-Powell-Workman, Digital Control"
+status = "missing"
+evidence = "無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-070"
+axis = "control"
+item = "controller running at its own rate with the command held between updates"
+source = "Franklin-Powell-Workman ch.4 (sample and hold)"
+status = "missing"
+evidence = "無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-071"
+axis = "control"
+item = "transfer functions, frequency response, gain and phase margins"
+source = "Astrom-Murray, Feedback Systems ch.9-10"
+status = "missing"
+evidence = "無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-072"
+axis = "control"
+item = "controllability and observability tests"
+source = "Astrom-Murray, Feedback Systems ch.6-7"
+status = "missing"
+evidence = "無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-073"
+axis = "control"
+item = "gain scheduling"
+source = "Astrom-Murray, Feedback Systems ch.6.4"
+status = "missing"
+evidence = "無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-074"
+axis = "control"
+item = "sliding-mode control"
+source = "Utkin, Sliding Modes in Control and Optimization"
+status = "missing"
+evidence = "無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-075"
+axis = "control"
+item = "deterministic neural-network controller inference (fixed point, ternary weights)"
+source = "ALICE-ML ternary networks; deterministic inference for lockstep games"
+status = "implemented+oracle"
+evidence = "src/neural.rs:239 src/neural.rs:411 tests/analytic_neural_wiring.rs::deterministic_network_forward_matches_hand_derived_layers tests/analytic_neural_wiring.rs::ragdoll_controller_accessors_and_compute_match_hand_derived_torque tests/audit_neural.rs::feature_layout_is_position_velocity_rotation_xyzw_angular_velocity_per_body tests/audit_neural_alloc.rs::forward_performs_no_heap_allocation_after_construction tests/audit_neural.rs::tanh_approx_is_bounded_by_one_and_monotone (known defect) tests/audit_neural.rs::zero_layer_network_forward_does_not_panic (known defect)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-076"
+axis = "control"
+item = "neural controller with general real-valued (non-ternary) weights"
+source = "MuJoCo / Isaac Gym policy inference"
+status = "missing"
+evidence = "重みは {-1, 0, +1} だけ (src/neural.rs:3)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-077"
+axis = "control"
+item = "neural controller closed with the world (observe, apply torques, step) as one API"
+source = "Isaac Gym / MuJoCo control loop"
+status = "missing"
+evidence = "RagdollController は目標トルクを返すだけで world に掛けない (src/neural.rs:504)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-078"
+axis = "sysid"
+item = "least-squares parameter identification from recorded motion (mass, inertia, friction)"
+source = "Ljung, System Identification ch.7; Khalil-Dombre ch.12"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "既知慣性の body を加振して回収"
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-079"
+axis = "sysid"
+item = "recursive least squares"
+source = "Ljung ch.11"
+status = "missing"
+evidence = "無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-080"
+axis = "sysid"
+item = "frequency-response identification (sine sweep / chirp excitation)"
+source = "Ljung ch.6"
+status = "missing"
+evidence = "無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-081"
+axis = "benchmark"
+item = "lidar range accuracy against a plane (5 / (cos e cos a))"
+source = "Thrun-Burgard-Fox, Probabilistic Robotics ch.6.3"
+status = "implemented+oracle"
+evidence = "tests/analytic_sensors.rs::lidar_ranges_to_a_wall_match_closed_form"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-082"
+axis = "benchmark"
+item = "lidar angular resolution (resolve two targets separated by one grid step)"
+source = "lidar datasheet angular resolution"
+status = "missing"
+evidence = "距離の突合だけで、隣接 2 物体の分離は test が無い"
+oracle_candidate = "1 格子間隔離れた 2 本の柱を別 return で返す"
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-083"
+axis = "benchmark"
+item = "IMU static and free-fall readings (+g at rest, 0 in free fall)"
+source = "Groves, Principles of GNSS, Inertial, and Multisensor Integrated Navigation ch.4.1"
+status = "implemented+oracle"
+evidence = "tests/analytic_sensors.rs::imu_at_rest_reads_minus_gravity_in_the_body_frame tests/analytic_sensors.rs::imu_in_free_fall_reads_g_and_zero_specific_force"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-084"
+axis = "benchmark"
+item = "Allan deviation of a simulated gyro (white noise slope -1/2, random walk +1/2)"
+source = "IEEE Std 952 (fiber-optic gyro test procedure, Allan variance)"
+status = "missing"
+evidence = "Allan の計算も bias も無い"
+oracle_candidate = "白色雑音のみなら σ_A(τ) = σ √(dt/τ)"
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-085"
+axis = "benchmark"
+item = "contact sensor reads the weight of a resting body"
+source = "Gazebo / Isaac Sim / CARLA / MuJoCo sensor plugins"
+status = "implemented+oracle"
+evidence = "tests/analytic_sensors.rs::contact_sensor_reads_the_weight_of_a_resting_box"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-086"
+axis = "benchmark"
+item = "1-D Kalman filter steady-state gain against the scalar Riccati solution"
+source = "Thrun-Burgard-Fox, Probabilistic Robotics ch.3.2"
+status = "missing"
+evidence = "Kalman が無い"
+oracle_candidate = "定常ゲイン K = P/(P+R) の閉形式 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-087"
+axis = "benchmark"
+item = "LQR stabilisation of an inverted pendulum on a cart"
+source = "Astrom-Murray, Feedback Systems ch.6 example"
+status = "missing"
+evidence = "LQR が無い (cart と振子は world で組める)"
+oracle_candidate = "線形化した閉ループ極と時間応答"
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-088"
+axis = "benchmark"
+item = "PID step response (overshoot, settling time) of a mass"
+source = "Astrom-Murray, Feedback Systems ch.11"
+status = "missing"
+evidence = "積分付きの PID は COV-MBD-087 で missing"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-089"
+axis = "benchmark"
+item = "PD-controlled mass step response against the second-order closed form (zeta, omega_n, overshoot)"
+source = "Astrom-Murray, Feedback Systems ch.5.3"
+status = "implemented-no-oracle"
+evidence = "src/motor.rs:214 の PD を質量に掛ければ組めるが、2 次系の閉形式と突合する test は無い (単軸 PD 則自体は COV-RIGID-030)"
+oracle_candidate = "overshoot = exp(−ζπ/√(1−ζ²))"
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-090"
+axis = "benchmark"
+item = "attitude PD slew of a free body to a target orientation"
+source = "Wie ch.7"
+status = "missing"
+evidence = "PD 則の単体 test はあるが、world で body を目標姿勢へ回す test は無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SENSE-091"
+axis = "benchmark"
+item = "bit-identical sensor streams from the same scene and seed"
+source = "lockstep determinism"
+status = "implemented+oracle"
+evidence = "tests/analytic_sensors.rs::lidar_is_bit_reproducible_and_noise_has_the_stated_statistics tests/analytic_sensors.rs::gaussian_is_bit_reproducible"
+oracle_candidate = ""
+limitation = ""

@@ -26,9 +26,11 @@
 //!
 //! [`ContactSensor`] reads the contact constraints of the last step that involve
 //! its body (the solver keeps those of the last substep) and the normal force of
+// LIMITATION(COV-SENSE-034): the contact sensor does not report contacts with static colliders (resolved by projection, no contact constraint)
 //! each, as [`PhysicsWorld::contact_forces`] computes it. A contact with a static
 //! collider ([`crate::static_collider`]) is resolved by projection, not by a
 //! contact constraint, and a sensor body makes no constraints: neither is
+// LIMITATION(COV-SENSE-035): a sleeping body reads no contact even while it rests on another body
 //! reported. A body that has gone to sleep has no contacts to report.
 //!
 //! # IMU
