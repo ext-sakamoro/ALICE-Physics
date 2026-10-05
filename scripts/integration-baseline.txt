@@ -5,29 +5,13 @@
 # Lines starting with "unindexed: " are pub items the SCIP index has no
 # definition for (macro_rules bodies); they have no level, the same ratchet
 # applies to them.
-src/box_collider.rs::OrientedBox::surface_area
-src/bvh.rs::BroadphaseHybrid
-src/bvh.rs::BroadphaseHybrid::build_dynamic
-src/bvh.rs::BroadphaseHybrid::clear_dynamic
-src/bvh.rs::BroadphaseHybrid::insert_dynamic
-src/bvh.rs::BroadphaseHybrid::new
-src/bvh.rs::BroadphaseHybrid::query_pairs
 src/cfd_solver.rs::CfdSolver::step_multigrid
 src/cfd_solver.rs::RansState::set
 src/collider.rs::ScaledShape
 src/collider.rs::ScaledShape::new
-src/compound.rs::CompoundShape::support_world
-src/compound.rs::ShapeRef::aabb
-src/compound.rs::TransformedCompound
-src/cone.rs::Cone::aabb
-src/cone.rs::Cone::surface_area
-src/cone.rs::Cone::with_rotation
 src/coupled_iteration.rs::ContractionMonitor::best_residual
 src/coupled_iteration.rs::EquilibrationScale::round_trip_bound
 src/creep_longterm.rs::FindleyParameters::petg_25c_moderate
-src/cylinder.rs::Cylinder::aabb
-src/cylinder.rs::Cylinder::surface_area
-src/ellipsoid.rs::Ellipsoid::aabb
 src/eulerian_grid.rs::LocalPlaneChannel
 src/eulerian_grid.rs::LocalPlaneChannel::is_drained
 src/eulerian_grid.rs::LocalPlaneChannel::new
@@ -92,10 +76,6 @@ src/solver_tgs_hooks_6dof_oriented_scoped.rs::solve_oriented_islands_parallel
 src/solver_tgs_hooks_6dof_scoped.rs::solve_island_isolated
 src/solver_tgs_hooks_6dof_scoped.rs::solve_islands_parallel
 src/solver_tgs_hooks_6dof_scoped.rs::solve_islands_serial
-src/torus.rs::Torus::aabb
-src/torus.rs::Torus::surface_area
-src/wedge.rs::Wedge::aabb
-src/wedge.rs::Wedge::with_rotation
 unindexed: src/sketch.rs::BINS
 unindexed: src/sketch.rs::DEPTH
 unindexed: src/sketch.rs::K
