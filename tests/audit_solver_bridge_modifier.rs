@@ -35,7 +35,10 @@ fn v3(x: f64, y: f64, z: f64) -> Vec3Fix {
     Vec3Fix::new(fx(x), fx(y), fx(z))
 }
 
-/// Returns what it receives: lambdas and positions come back unchanged.
+/// Returns the positions it receives unchanged and reports the normal
+/// multiplier one CPU contact iteration from `λ = 0` would accumulate,
+/// `λ = depth`: the velocity pass caps friction by `μ λ / h`, so a bridge that
+/// reported no normal multiplier would give no friction at all.
 #[derive(Default)]
 struct PassThrough {
     calls: usize,
@@ -53,7 +56,11 @@ impl GpuSolverBridge for PassThrough {
     fn dispatch_contact_solve_iteration(&mut self, _w: Fix128) {
         self.calls += 1;
     }
-    fn recv_contact_constraints(&self, _c: &mut [ContactConstraint]) {}
+    fn recv_contact_constraints(&self, c: &mut [ContactConstraint]) {
+        for constraint in c {
+            constraint.cached_lambda = constraint.contact.depth;
+        }
+    }
     fn recv_body_positions(&self, _p: &mut [[Fix128; 3]]) {}
 }
 

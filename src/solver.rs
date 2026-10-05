@@ -3835,8 +3835,17 @@ impl PhysicsWorld {
             if tangent_speed_sq > Fix128::ZERO {
                 let tangent_speed = tangent_speed_sq.sqrt();
                 let friction = constraint.friction;
-                // Coulomb friction: clamp tangential impulse to friction * normal impulse
-                let max_friction_impulse = friction * vn2.abs();
+                // Coulomb friction (Müller, Macklin, Chentanez, Jeschke, Kim,
+                // "Detailed Rigid Body Simulation with Extended Position Based
+                // Dynamics", SCA 2020, eq. (30)): the tangential correction
+                // is capped by `h μ |f_n| w = μ λ_n / h` in relative velocity.
+                // `cached_lambda` is this substep's accumulated normal
+                // separation from the position solve (the paper's multiplier
+                // times `w_sum`), so the cap is `μ λ / h`. The normal
+                // velocity after the solve (`vn2`) is not the normal force:
+                // it is about 0 for a resting contact, which removed the
+                // friction of sliding and resting bodies.
+                let max_friction_impulse = friction * constraint.cached_lambda * inv_dt;
                 let applied = if tangent_speed < max_friction_impulse {
                     tangent_speed
                 } else {
@@ -6793,13 +6802,15 @@ mod tests {
         let a = world.add_body(RigidBody::new_dynamic(v3(0, 0, 0), Fix128::ONE));
         let b = world.add_body(RigidBody::new_static(v3(1, 0, 0))); // inv_mass 0 → w_sum = 1
         push_contact(&mut world, a, b, r(1, 2), Fix128::ZERO);
+        // 位置解の法線 λ = 1 → Coulomb 上限 μ λ / dt = 0.5 * 1 * 4 = 2
+        world.contact_constraints[0].cached_lambda = Fix128::ONE;
         freeze_positions(&mut world);
-        // 法線成分は正 (離れる) にして restitution を素通りさせ、vn2 = +4 を Coulomb 上限の元にする
+        // 法線成分は正 (離れる) にして restitution を素通りさせる
         give_velocity(&mut world, a, v3(4, 3, 0));
 
         world.update_velocities(r(1, 4));
 
-        // tangent_speed = 3、max = 0.5 * 4 = 2 → clamp 2、A.y -= 2 * 1 → 1、x は不変
+        // tangent_speed = 3、max = 2 → clamp 2、A.y -= 2 * 1 → 1、x は不変
         assert_eq!(
             world.bodies[a].velocity,
             Vec3Fix::new(Fix128::from_int(4), Fix128::ONE, Fix128::ZERO)
@@ -6812,7 +6823,9 @@ mod tests {
         let mut world = quiet_world();
         let a = world.add_body(RigidBody::new_dynamic(v3(0, 0, 0), Fix128::ONE));
         let b = world.add_body(RigidBody::new_static(v3(1, 0, 0)));
-        push_contact(&mut world, a, b, Fix128::ONE, Fix128::ZERO); // μ = 1 → max = |vn2| = 4
+        push_contact(&mut world, a, b, Fix128::ONE, Fix128::ZERO);
+        // μ = 1、λ = 1 → max = μ λ / dt = 4
+        world.contact_constraints[0].cached_lambda = Fix128::ONE;
         freeze_positions(&mut world);
         give_velocity(&mut world, a, v3(4, 0, 3));
 
@@ -6830,7 +6843,9 @@ mod tests {
         let mut world = quiet_world();
         let a = world.add_body(RigidBody::new_dynamic(v3(0, 0, 0), Fix128::ONE));
         let b = world.add_body(RigidBody::new_static(v3(1, 0, 0)));
-        push_contact(&mut world, a, b, Fix128::ONE, Fix128::ZERO); // max = |vn2| = 3
+        push_contact(&mut world, a, b, Fix128::ONE, Fix128::ZERO);
+        // μ = 1、λ = 3/4 → max = μ λ / dt = 3
+        world.contact_constraints[0].cached_lambda = r(3, 4);
         freeze_positions(&mut world);
         // tangent_speed == max (3 == 3): `<` は false → max 側 (値は同じ 3 だが `<=`/`>` 変異で経路が変わる)
         give_velocity(&mut world, a, v3(3, 3, 0));
@@ -8987,6 +9002,8 @@ mod tests {
         let mut c = ContactConstraint::new(a, b, contact);
         c.friction = r(1, 2);
         c.restitution = r(1, 2);
+        // 位置解の法線 λ = 1/4 → Coulomb 上限 μ λ / dt = 1/2 * 1/4 * 4 = 1/2
+        c.cached_lambda = r(1, 4);
         world.contact_constraints.push(c);
         freeze_positions(&mut world);
         give_velocity(&mut world, a, v3(3, -4, 0));
