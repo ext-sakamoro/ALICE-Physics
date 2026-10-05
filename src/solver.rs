@@ -1056,6 +1056,53 @@ impl BodySlicePtr {
     }
 }
 
+/// Static friction of a contact at the position level (Müller, Macklin,
+/// Chentanez, Jeschke, Kim, "Detailed Rigid Body Simulation with Extended
+/// Position Based Dynamics", SCA 2020, eq. (26)).
+///
+/// `disp_a` / `disp_b` are the displacements of the two bodies since the
+/// start of the substep (`position − prev_position`), `lambda` the contact's
+/// accumulated normal separation this substep (`cached_lambda`) and `mu` its
+/// friction coefficient. The relative tangential displacement
+/// `Δp_t = (Δx_a − Δx_b)` minus its normal part is cancelled when
+/// `|Δp_t| < μ λ` (both are distances: the paper compares the multipliers
+/// `λ_t < μ_s λ_n`, which share the factor `1 / (w_a + w_b)`), split by
+/// inverse mass like the normal correction. Returns the corrections to
+/// subtract from `a` and add to `b`, or `None` when the contact slides (or
+/// has no tangential motion / no normal multiplier). Contact points are
+/// taken at the body centres: the contact solve is translational only.
+///
+/// `mu` is the contact's friction (`ContactConstraint::friction`, after the
+/// contact modifiers); the combined material carries one coefficient, so the
+/// static and the kinetic coefficients are equal.
+#[allow(clippy::too_many_arguments)]
+#[inline]
+fn static_friction_correction(
+    disp_a: Vec3Fix,
+    disp_b: Vec3Fix,
+    normal: Vec3Fix,
+    inv_mass_a: Fix128,
+    inv_mass_b: Fix128,
+    inv_w_sum: Fix128,
+    mu: Fix128,
+    lambda: Fix128,
+) -> Option<(Vec3Fix, Vec3Fix)> {
+    let limit = mu * lambda;
+    if limit <= Fix128::ZERO {
+        return None;
+    }
+    let dp = disp_a - disp_b;
+    let dp_t = dp - normal * dp.dot(normal);
+    let len_sq = dp_t.length_squared();
+    if len_sq.is_zero() || len_sq >= limit * limit {
+        return None;
+    }
+    Some((
+        dp_t * (inv_mass_a * inv_w_sum),
+        dp_t * (inv_mass_b * inv_w_sum),
+    ))
+}
+
 /// Body access handed to the parallel pair solvers.
 ///
 /// Dynamic bodies are borrowed exclusively and receive position writes;
@@ -4110,13 +4157,13 @@ impl PhysicsWorld {
         mut body_b: BodyRef<'_>,
         constraint: &mut ContactConstraint,
     ) {
-        let (pos_a, inv_mass_a, sensor_a) = {
+        let (pos_a, prev_a, inv_mass_a, sensor_a) = {
             let a = body_a.get();
-            (a.position, a.inv_mass, a.is_sensor)
+            (a.position, a.prev_position, a.inv_mass, a.is_sensor)
         };
-        let (pos_b, inv_mass_b, sensor_b) = {
+        let (pos_b, prev_b, inv_mass_b, sensor_b) = {
             let b = body_b.get();
-            (b.position, b.inv_mass, b.is_sensor)
+            (b.position, b.prev_position, b.inv_mass, b.is_sensor)
         };
 
         // Skip physics response for sensor/trigger bodies
@@ -4145,27 +4192,38 @@ impl PhysicsWorld {
         let inv_w_sum = Fix128::ONE / w_sum;
         let lambda = constraint.cached_lambda;
         let dlambda = contact.depth - lambda;
-        if dlambda <= Fix128::ZERO {
-            return;
+        let (mut pos_a, mut pos_b) = (pos_a, pos_b);
+        if dlambda > Fix128::ZERO {
+            constraint.cached_lambda = lambda + dlambda;
+
+            let correction = contact.normal * dlambda;
+            let correction_a = correction * (inv_mass_a * inv_w_sum);
+            let correction_b = correction * (inv_mass_b * inv_w_sum);
+
+            // Branchless: inv_mass == ZERO for static bodies, correction_x will be ZERO.
+            pos_a = select_vec3(!inv_mass_a.is_zero(), pos_a + correction_a, pos_a);
+            pos_b = select_vec3(!inv_mass_b.is_zero(), pos_b - correction_b, pos_b);
         }
-        constraint.cached_lambda = lambda + dlambda;
 
-        let correction = contact.normal * dlambda;
-        let correction_a = correction * (inv_mass_a * inv_w_sum);
-        let correction_b = correction * (inv_mass_b * inv_w_sum);
+        // Static friction (Müller et al. 2020, eq. (26)), see
+        // `static_friction_correction`.
+        if let Some((fa, fb)) = static_friction_correction(
+            pos_a - prev_a,
+            pos_b - prev_b,
+            contact.normal,
+            inv_mass_a,
+            inv_mass_b,
+            inv_w_sum,
+            constraint.friction,
+            constraint.cached_lambda,
+        ) {
+            pos_a = select_vec3(!inv_mass_a.is_zero(), pos_a - fa, pos_a);
+            pos_b = select_vec3(!inv_mass_b.is_zero(), pos_b + fb, pos_b);
+        }
 
-        // Branchless: inv_mass == ZERO for static bodies, correction_x will be ZERO.
         // `set_position` is a no-op for `BodyRef::Static`.
-        body_a.set_position(select_vec3(
-            !inv_mass_a.is_zero(),
-            pos_a + correction_a,
-            pos_a,
-        ));
-        body_b.set_position(select_vec3(
-            !inv_mass_b.is_zero(),
-            pos_b - correction_b,
-            pos_b,
-        ));
+        body_a.set_position(pos_a);
+        body_b.set_position(pos_b);
     }
 
     /// Solve distance constraints (sequential) with warm-starting (Gap 3.1).
@@ -4293,26 +4351,55 @@ impl PhysicsWorld {
             let inv_w_sum = Fix128::ONE / w_sum;
             let lambda = constraint.cached_lambda;
             let dlambda = contact.depth - lambda;
-            if dlambda <= Fix128::ZERO {
-                continue;
+            if dlambda > Fix128::ZERO {
+                self.contact_constraints[i].cached_lambda = lambda + dlambda;
+
+                let correction = contact.normal * dlambda;
+                let correction_a = correction * (body_a.inv_mass * inv_w_sum);
+                let correction_b = correction * (body_b.inv_mass * inv_w_sum);
+
+                // Branchless: inv_mass == ZERO for static bodies, correction_x will be ZERO.
+                self.bodies[constraint.body_a].position = select_vec3(
+                    !body_a.inv_mass.is_zero(),
+                    self.bodies[constraint.body_a].position + correction_a,
+                    self.bodies[constraint.body_a].position,
+                );
+                self.bodies[constraint.body_b].position = select_vec3(
+                    !body_b.inv_mass.is_zero(),
+                    self.bodies[constraint.body_b].position - correction_b,
+                    self.bodies[constraint.body_b].position,
+                );
             }
-            self.contact_constraints[i].cached_lambda = lambda + dlambda;
 
-            let correction = contact.normal * dlambda;
-            let correction_a = correction * (body_a.inv_mass * inv_w_sum);
-            let correction_b = correction * (body_b.inv_mass * inv_w_sum);
+            // Static friction (Müller et al. 2020, eq. (26)), see
+            // `static_friction_correction`.
+            self.apply_static_friction(i, inv_w_sum);
+        }
+    }
 
-            // Branchless: inv_mass == ZERO for static bodies, correction_x will be ZERO.
-            self.bodies[constraint.body_a].position = select_vec3(
-                !body_a.inv_mass.is_zero(),
-                self.bodies[constraint.body_a].position + correction_a,
-                self.bodies[constraint.body_a].position,
-            );
-            self.bodies[constraint.body_b].position = select_vec3(
-                !body_b.inv_mass.is_zero(),
-                self.bodies[constraint.body_b].position - correction_b,
-                self.bodies[constraint.body_b].position,
-            );
+    /// Position-level static friction of contact `i` against the current
+    /// body positions, shared by the serial and bridge contact passes (the
+    /// batched pass calls [`static_friction_correction`] on its pair
+    /// references). The caller has already skipped sensor, discarded and
+    /// non-penetrating contacts.
+    fn apply_static_friction(&mut self, i: usize, inv_w_sum: Fix128) {
+        let constraint = self.contact_constraints[i];
+        let a = self.bodies[constraint.body_a];
+        let b = self.bodies[constraint.body_b];
+        if let Some((fa, fb)) = static_friction_correction(
+            a.position - a.prev_position,
+            b.position - b.prev_position,
+            constraint.contact.normal,
+            a.inv_mass,
+            b.inv_mass,
+            inv_w_sum,
+            constraint.friction,
+            constraint.cached_lambda,
+        ) {
+            self.bodies[constraint.body_a].position =
+                select_vec3(!a.inv_mass.is_zero(), a.position - fa, a.position);
+            self.bodies[constraint.body_b].position =
+                select_vec3(!b.inv_mass.is_zero(), b.position + fb, b.position);
         }
     }
 
@@ -4444,6 +4531,18 @@ impl PhysicsWorld {
         }
         for (i, pos) in updated_positions.iter().enumerate() {
             self.bodies[i].position = Vec3Fix::new(pos[0], pos[1], pos[2]);
+        }
+
+        // Static friction (Müller et al. 2020, eq. (26)) on the CPU after
+        // the bridge's normal pass, over the same filtered contacts (the
+        // bridge contract carries only the normal multiplier).
+        for &orig_slot in &mapping {
+            let c = self.contact_constraints[orig_slot];
+            let w_sum = self.bodies[c.body_a].inv_mass + self.bodies[c.body_b].inv_mass;
+            if c.contact.depth <= Fix128::ZERO || w_sum < W_SUM_EPSILON {
+                continue;
+            }
+            self.apply_static_friction(orig_slot, Fix128::ONE / w_sum);
         }
     }
 
