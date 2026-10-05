@@ -1259,6 +1259,9 @@ pub alice_physics::cfd_solver::PressureSolver::BiCgStab::tolerance: alice_physic
 pub alice_physics::cfd_solver::PressureSolver::DecomposedGs
 pub alice_physics::cfd_solver::PressureSolver::DecomposedGs::ranks: usize
 pub alice_physics::cfd_solver::PressureSolver::DecomposedGs::sweeps: u32
+pub alice_physics::cfd_solver::PressureSolver::DecomposedMultigrid
+pub alice_physics::cfd_solver::PressureSolver::DecomposedMultigrid::cycles: u32
+pub alice_physics::cfd_solver::PressureSolver::DecomposedMultigrid::ranks: usize
 pub alice_physics::cfd_solver::PressureSolver::Jacobi
 pub alice_physics::cfd_solver::PressureSolver::Jacobi::iterations: u32
 pub alice_physics::cfd_solver::PressureSolver::Multigrid
