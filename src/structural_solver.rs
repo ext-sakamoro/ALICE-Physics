@@ -24,11 +24,32 @@
 //! every report has `creep_strain == 0`. `with_creep` supplies parameters
 //! for any material. Before this change every material received the PLA
 //! creep presets.
+//!
+//! Fatigue: `new` selects the S-N curve with `SnCurve::for_material`, i.e.
+//! the SUS304 / A5052 metal presets for the crate's `MaterialProperties::sus304()`
+//! / `a5052()` (sheet-metal category and preset name) and
+//! `SnCurve::from_fdm_material` for every other material. `with_sn_curve`
+//! overrides it. The per-step Miner damage, [`StructuralSolver::fatigue_strength_mpa`]
+//! (Basquin inverse) and [`StructuralSolver::fatigue_spectrum_report`] all use
+//! the selected curve. Before this change the two metal presets also got the
+//! polymer rule of thumb (`S_e = 0.3 UTS`, `N_e = 10^6`, `m = 5`).
+//!
+//! Buckling: the column check in `step` uses `end_condition` (`K`) and the
+//! material's Young's modulus. Local plate buckling and snap-through are
+//! queries on the solver ([`StructuralSolver::plate_buckling_mpa`],
+//! [`StructuralSolver::snap_through_load_n`]) evaluated with the solver's
+//! material; they do not trip a failure in `step`.
 
 use crate::beam_stress::{BeamAnalysis, ColumnEndCondition, CrossSection, LoadCase};
-use crate::buckling::{analyze_column, BucklingRegime, ColumnBucklingReport};
+use crate::buckling::{
+    analyze_column, plate_buckling_mpa, snap_through_load_n, BucklingRegime, ColumnBucklingReport,
+    SnapThroughError,
+};
 use crate::creep_longterm::{predict_strain, FindleyParameters};
-use crate::fatigue::{miner_damage, SnCurve, SpectrumEntry};
+use crate::fatigue::{
+    analyze_spectrum, miner_damage, stress_at_cycles, FatigueRangeError, FatigueReport, SnCurve,
+    SpectrumEntry,
+};
 use crate::filament_db::{MaterialCategory, MaterialProperties};
 use crate::math::Fix128;
 use crate::plastic::{radial_return_1d, NortonCreep, PlasticModel, PlasticState};
@@ -145,6 +166,10 @@ impl StructuralSolver {
     /// not modelled (zero coefficients, [`Self::creep_modelled`] is `false`,
     /// reported creep strain is exactly zero) until [`Self::with_creep`]
     /// supplies parameters.
+    ///
+    /// Fatigue: the S-N curve is [`SnCurve::for_material`] (SUS304 / A5052
+    /// metal presets for those preset materials, the FDM rule of thumb for
+    /// every other material) until [`Self::with_sn_curve`] replaces it.
     #[must_use]
     pub fn new(section: CrossSection, load: LoadCase, material: MaterialProperties) -> Self {
         let (creep_params, norton_creep) = if has_pla_creep_calibration(&material) {
@@ -163,7 +188,7 @@ impl StructuralSolver {
             end_condition: ColumnEndCondition::PinPin,
             material,
             plastic_model: PlasticModel::from_fdm_material(&material),
-            sn_curve: SnCurve::from_fdm_material(&material),
+            sn_curve: SnCurve::for_material(&material),
             creep_params,
             norton_creep,
             operating_temp_c: Fix128::from_int(25),
@@ -184,6 +209,88 @@ impl StructuralSolver {
         self.creep_params = findley;
         self.norton_creep = norton;
         self
+    }
+
+    /// Replace the S-N curve used by the per-step Miner damage,
+    /// [`Self::fatigue_strength_mpa`] and [`Self::fatigue_spectrum_report`].
+    #[must_use]
+    pub fn with_sn_curve(mut self, curve: SnCurve) -> Self {
+        self.sn_curve = curve;
+        self
+    }
+
+    /// Alternating stress (MPa) at which the solver's S-N curve predicts
+    /// failure after exactly `cycles`: the Basquin inverse
+    /// `S = S_e · (N_e / N)^(1/m)`, and `S_e` for `cycles ≥ N_e`.
+    ///
+    /// # Errors
+    ///
+    /// [`FatigueRangeError::ZeroCycles`] for `cycles == 0`,
+    /// [`FatigueRangeError::BelowLowCycleBound`] under 1 000 cycles (outside
+    /// the Basquin range), [`FatigueRangeError::NonPositiveExponent`] for a
+    /// curve with `fatigue_exponent_m == 0`.
+    pub fn fatigue_strength_mpa(&self, cycles: u64) -> Result<Fix128, FatigueRangeError> {
+        stress_at_cycles(&self.sn_curve, cycles)
+    }
+
+    /// Miner's rule `D = Σ nᵢ / N(Sᵢ)` of a variable-amplitude spectrum on
+    /// the solver's S-N curve, with `is_safe = D < 1` and the safety factor
+    /// `1 / D`. Independent of the solver's accumulated per-step damage.
+    #[must_use]
+    pub fn fatigue_spectrum_report(&self, spectrum: &[SpectrumEntry]) -> FatigueReport {
+        analyze_spectrum(spectrum, &self.sn_curve)
+    }
+
+    /// Local plate buckling stress (MPa) of a wall of `thickness_mm` and
+    /// width `width_mm` made of the solver's material (Timoshenko):
+    /// `σ_cr = k · π² E / (12 (1 − ν²)) · (t / b)²`, `E` = the material's
+    /// Young's modulus. `edge_factor_k` is 4 for a wall simply supported on
+    /// all edges, 0.425 with one free edge; `poisson` is supplied by the
+    /// caller because `MaterialProperties` carries no Poisson ratio. Returns 0
+    /// for `width_mm == 0` or `poisson == ±1`.
+    #[must_use]
+    pub fn plate_buckling_mpa(
+        &self,
+        thickness_mm: Fix128,
+        width_mm: Fix128,
+        poisson: Fix128,
+        edge_factor_k: Fix128,
+    ) -> Fix128 {
+        plate_buckling_mpa(
+            self.youngs_modulus_mpa(),
+            poisson,
+            thickness_mm,
+            width_mm,
+            edge_factor_k,
+        )
+    }
+
+    /// Snap-through (limit) load (N) of a shallow two-bar truss of rise
+    /// `rise_mm` and span `span_mm` whose bars have the solver's
+    /// cross-section and material: `P = (16 / (3√3)) · E A (h / L)³`.
+    ///
+    /// # Errors
+    ///
+    /// [`SnapThroughError::NonPositiveSpan`] for `span_mm ≤ 0`,
+    /// [`SnapThroughError::NonPositiveStiffness`] for a non-positive modulus
+    /// or section area, [`SnapThroughError::NegativeRise`] for `rise_mm < 0`.
+    pub fn snap_through_load_n(
+        &self,
+        rise_mm: Fix128,
+        span_mm: Fix128,
+    ) -> Result<Fix128, SnapThroughError> {
+        snap_through_load_n(
+            self.youngs_modulus_mpa(),
+            self.section.area_mm2(),
+            rise_mm,
+            span_mm,
+        )
+    }
+
+    /// Young's modulus of the material in MPa, the unit `analyze_column`
+    /// uses.
+    fn youngs_modulus_mpa(&self) -> Fix128 {
+        self.material.youngs_modulus_gpa * Fix128::from_int(1000)
     }
 
     /// Whether creep is modelled for this solver. `false` means both creep
