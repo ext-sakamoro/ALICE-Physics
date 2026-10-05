@@ -268,6 +268,9 @@ impl crate::solver::PhysicsWorld {
     /// sensors and bodies slower than `config.velocity_threshold` are skipped,
     /// and an SDF attached to the body itself is never tested against it. Hits
     /// come back as in [`batch_sphere_trace_sdf`], earliest time of impact first.
+    /// An SDF attached to a body is swept at the pose it was given when it was
+    /// added or at the end of the last step (see
+    /// [`PhysicsWorld::sdf_contacts`](crate::solver::PhysicsWorld::sdf_contacts)).
     ///
     /// `dt` is the frame step.
     #[must_use]
