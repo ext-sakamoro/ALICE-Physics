@@ -101,6 +101,7 @@ pub fn sphere_cast(
 ///
 /// Approximates capsule-vs-sphere as two sphere casts
 /// (top and bottom hemispheres) and returns the closest hit.
+// LIMITATION(COV-RIGID-098): Approximates capsule-vs-sphere as two sphere casts (top and bottom hemispheres) and returns the closest hit.
 ///
 /// # Panics
 ///
@@ -164,6 +165,7 @@ pub fn capsule_cast(
 // ============================================================================
 
 /// Find all bodies whose bounding sphere overlaps with the given sphere.
+// LIMITATION(COV-RIGID-100): Find all bodies whose bounding sphere overlaps with the given sphere.
 ///
 /// `body_radius` is the assumed radius for each body.
 #[inline]

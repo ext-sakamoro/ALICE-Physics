@@ -1,0 +1,1210 @@
+# Rigid-body, constraint and contact coverage of ALICE-Physics, against an
+# external reference frame.
+#
+# What this table is: every capability that the standard texts (Featherstone,
+# Rigid Body Dynamics Algorithms; Erleben et al., Physics-Based Animation;
+# Ericson, Real-Time Collision Detection), reference engines (Bullet, PhysX,
+# MuJoCo, Box2D, Rapier) and standard benchmarks expect of a rigid-body engine,
+# one [[item]] per capability, with what the crate has today. The rows are
+# written by hand: the axes and the items come from the reference frame, not
+# from the modules that exist, so a missing capability is visible instead of
+# absent.
+#
+# Boundary with the other tables (one capability lives in one table only):
+#   - vehicles, ragdolls and character controllers belong to the multibody (MBD)
+#     table; the joints and the articulated-body solver they are built from are
+#     here
+#   - cloth, ropes and soft bodies belong to the SOFT table; a rope between two
+#     rigid bodies as a single unilateral constraint is here
+#   - generating collision shapes from an SDF (meshing, convex decomposition)
+#     and colliding against an SDF are here; the SDF numerics themselves are not
+#   - closed-form contact mechanics (Hertz stress, fatigue) is not a rigid-body
+#     solver capability and is marked out-of-scope
+# Functions that exist but are not called by the world step say so in
+# `evidence`.
+#
+# status (exactly one of):
+#   implemented+oracle     implemented, and at least one non-ignored test
+#                          checks it against an independent reference
+#   implemented-no-oracle  implemented, no such test
+#   partial                implemented with a restriction that the source states;
+#                          `limitation` quotes it, and the source carries a
+#                          `LIMITATION(<id>)` comment at that place
+#   missing                not implemented
+#   out-of-scope           not a rigid-body capability (reason in `evidence`)
+#
+# This axis is separate from the test ignore reasons (`known defect: ...`,
+# `src gap: ...`, `diagnostic`, `runtime`). A capability that exists with a
+# recorded defect keeps its status and cites the known-defect test in
+# `evidence`; it is not `missing`.
+#
+# keys: id (COV-RIGID-NNN) / axis / item / source (book, chapter, paper or
+# reference-engine feature; no quoted text) / status / evidence
+# (`src/...rs:line`, `tests/...rs::test_fn`) / oracle_candidate / limitation
+# (verbatim quote of the source, required for `partial`). "(推測)" marks a row
+# whose status rests on a search that may have missed a synonym.
+#
+# Reference values marked "参照値要確認" are to be checked against the original
+# publication before any test uses them.
+#
+# Checked by scripts/coverage_check.py (tests: scripts/test_coverage_check.py).
+
+[[item]]
+id = "COV-RIGID-001"
+axis = "dynamics"
+item = "Newton-Euler 6-DOF state (position, unit quaternion, v, ω, principal inertia turned to world)"
+source = "Erleben et al., Physics-Based Animation ch.7; Bullet btRigidBody; PhysX PxRigidDynamic"
+status = "implemented+oracle"
+evidence = "src/solver.rs:318 (world_inv_inertia_apply) tests/audit_solver.rs::add_torque_uses_the_body_frame_inertia_of_a_rotated_body tests/analytic_physics.rs::projectile_follows_parabola"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-002"
+axis = "dynamics"
+item = "semi-implicit (symplectic) Euler with substeps"
+source = "Erleben et al., Physics-Based Animation ch.7; Box2D v3 soft step; MuJoCo integrators"
+status = "implemented+oracle"
+evidence = "tests/analytic_physics.rs::free_fall_matches_analytic_and_is_substep_independent tests/analytic_tgs_wiring.rs::free_fall_matches_semi_implicit_euler_exactly_on_both_backends"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-003"
+axis = "dynamics"
+item = "quaternion orientation integration"
+source = "Erleben et al., Physics-Based Animation ch.7; Rapier integration_parameters"
+status = "implemented+oracle"
+evidence = "src/solver.rs:3534 (integrate_positions, from_axis_angle) tests/analytic_physics.rs::torque_free_rotation_angle_equals_omega_t"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-004"
+axis = "dynamics"
+item = "free rotation keeps |ω| exactly, external torque applied inside the substep"
+source = "Featherstone ch.2; Müller et al. 2020 (Detailed Rigid Body Simulation with XPBD) §3.5"
+status = "missing"
+evidence = "角速度を毎 substep 回転の差分 2·dq.xyz/h から復元するので |ω| が減衰する (src gap の oracle 3 本: analytic_rotation_integration.rs、ignore 中) 実装としては未対応"
+oracle_candidate = "tests の src gap 3 本を ignore 解除 (τ t / I、ω0 の保存、substep 非依存)"
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-005"
+axis = "dynamics"
+item = "gyroscopic term ω × (I ω) (explicit)"
+source = "Featherstone, Rigid Body Dynamics Algorithms ch.2; Erleben et al., Physics-Based Animation ch.7; Bullet BT_ENABLE_GYROSCOPIC_FORCE_EXPLICIT"
+status = "missing"
+evidence = "src/solver.rs:3534 integrate_positions に ω×Iω の項が無い (src/ 全体で gyro の grep 0 件、sensors.rs の IMU 読み値のみ)"
+oracle_candidate = "非対称慣性の自由回転で角運動量 L = R I ω の保存、運動エネルギー保存"
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-006"
+axis = "dynamics"
+item = "implicit gyroscopic integration (stable for large ω)"
+source = "Catto, GDC 2015 'Numerical Methods' (implicit gyroscopic); Bullet BT_ENABLE_GYROSCOPIC_FORCE_IMPLICIT_BODY"
+status = "missing"
+evidence = "無い (行 COV-RIGID-005 と同じく gyro の実装が無い)"
+oracle_candidate = "Dzhanibekov (中間軸) の反転周期 参照値要確認"
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-007"
+axis = "dynamics"
+item = "mass / centre of mass / inertia of primitive solids"
+source = "Erleben et al., Physics-Based Animation ch.7; PhysX PxMassProperties"
+status = "implemented+oracle"
+evidence = "src/shape.rs (Box / Cylinder / Cone / Ellipsoid / Wedge / Torus) tests/analytic_shape.rs::every_shape_matches_a_quadrature_of_its_solid tests/analytic_mass_properties_exactness.rs::a_sphere_has_two_fifths_m_r_squared"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-008"
+axis = "dynamics"
+item = "mass properties of convex hulls and compounds, parallel-axis theorem, principal axes"
+source = "Mirtich 1996 (Fast and accurate computation of polyhedral mass properties); PhysX PxMassProperties"
+status = "implemented+oracle"
+evidence = "src/mass_properties.rs:305 tests/analytic_mass_properties.rs::translate_inertia_applies_the_parallel_axis_theorem tests/analytic_compound.rs::a_mixed_compound_matches_a_quadrature_of_its_union tests/analytic_compound.rs::the_principal_axes_diagonalise_a_symmetric_tensor"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-009"
+axis = "dynamics"
+item = "linear and angular damping"
+source = "Bullet btRigidBody damping; PhysX linearDamping / angularDamping"
+status = "implemented+oracle"
+evidence = "tests/analytic_physics.rs::terminal_velocity_under_frame_damping_matches_closed_form tests/analytic_world_api.rs::with_angular_damping_scales_frame_end_angular_velocity"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-010"
+axis = "dynamics"
+item = "per-body gravity scale"
+source = "Box2D gravityScale; Rapier gravity_scale"
+status = "implemented+oracle"
+evidence = "src/solver.rs:124 tests/analytic_world_api.rs::with_gravity_scale_scales_free_fall_and_zero_rests"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-011"
+axis = "dynamics"
+item = "forces, torques and impulses at a point"
+source = "Bullet applyImpulse / applyForce; PhysX addForceAtPos"
+status = "implemented+oracle"
+evidence = "src/solver.rs:335 tests/audit_solver.rs::apply_impulse_at_gives_linear_and_angular_response tests/analytic_world_api.rs::add_force_delta_v_is_f_dt_over_m_and_one_frame_moves_v_dt"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-012"
+axis = "dynamics"
+item = "kinematic bodies driven to a target pose"
+source = "PhysX setKinematicTarget; Rapier kinematic position-based"
+status = "implemented+oracle"
+evidence = "src/solver.rs:136 tests/analytic_physics.rs::kinematic_body_reaches_target_exactly tests/analytic_tgs_wiring.rs::kinematic_target_pushes_a_dynamic_body_under_tgs"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-013"
+axis = "dynamics"
+item = "static (immovable) bodies"
+source = "Box2D static body; PhysX PxRigidStatic"
+status = "implemented+oracle"
+evidence = "tests/audit_solver.rs::impulses_do_not_move_immovable_bodies tests/analytic_world_api.rs::static_body_leaves_active_body_count_after_the_first_step"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-014"
+axis = "dynamics"
+item = "cross-platform bit-exact stepping"
+source = "Rapier enhanced-determinism; Box2D v3 cross-platform determinism"
+status = "implemented+oracle"
+evidence = "固定小数 Fix128 tests/determinism_golden.rs::determinism_cascade tests/determinism_golden.rs::determinism_joint_pendulum"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-015"
+axis = "dynamics"
+item = "momentum conservation in two-body impact"
+source = "Erleben et al., Physics-Based Animation ch.6"
+status = "implemented+oracle"
+evidence = "tests/analytic_physics.rs::head_on_collision_conserves_momentum tests/analytic_restitution_phase.rs::the_impact_conserves_momentum_at_every_phase"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-016"
+axis = "joint"
+item = "ball (spherical) joint"
+source = "Bullet btPoint2PointConstraint; PhysX PxSphericalJoint; MuJoCo ball"
+status = "implemented+oracle"
+evidence = "src/joint.rs:43 tests/audit_joint.rs::ball_dynamic_pair_splits_the_correction_by_inverse_mass tests/analytic_tgs_joints_in_substep.rs::pendulums_of_every_pivoting_joint_keep_the_closed_form_period_and_stay_attached tests/audit_c_joint.rs::self_referential_ball_joint_with_distinct_anchors_is_a_free_body (known defect)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-017"
+axis = "joint"
+item = "hinge (revolute) joint with angle limits"
+source = "Bullet btHingeConstraint; PhysX PxRevoluteJoint; Box2D revolute"
+status = "implemented+oracle"
+evidence = "src/joint.rs:90 tests/analytic_physics.rs::hinge_limits_are_signed_and_reached_in_one_solve tests/analytic_tgs_joints_in_substep.rs::a_hinge_keeps_the_bob_in_its_plane"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-018"
+axis = "joint"
+item = "slider (prismatic) joint with limits"
+source = "Bullet btSliderConstraint; PhysX PxPrismaticJoint; Box2D prismatic"
+status = "implemented+oracle"
+evidence = "src/joint.rs:219 tests/audit_joint.rs::slider_limits_clamp_both_ends_and_split_by_inverse_mass tests/analytic_tgs_joints_in_substep.rs::a_slider_keeps_the_motion_on_its_axis"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-019"
+axis = "joint"
+item = "fixed (weld) joint"
+source = "PhysX PxFixedJoint; Box2D weld"
+status = "implemented+oracle"
+evidence = "src/joint.rs:167 tests/audit_joint.rs::fixed_locks_position_and_relative_rotation tests/analytic_tgs_joints_in_substep.rs::a_fixed_joint_holds_the_relative_pose 別実装 src/joint_extra.rs:158 WeldJoint の角度補正は known defect (tests/audit_joint_extra.rs::rigid_weld_closes_a_small_angular_error_in_one_projection)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-020"
+axis = "joint"
+item = "cone-twist joint (swing cone + twist limits)"
+source = "Bullet btConeTwistConstraint; PhysX PxSphericalJoint limitCone"
+status = "implemented+oracle"
+evidence = "src/joint.rs:466 tests/audit_joint.rs::cone_limit_clamps_the_swing_to_exactly_the_limit tests/audit_joint.rs::twist_limit_clamps_both_signs"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-021"
+axis = "joint"
+item = "generic 6-DOF joint (per-axis locked / free / limited)"
+source = "Bullet btGeneric6DofSpring2Constraint; PhysX PxD6Joint"
+status = "implemented+oracle"
+evidence = "src/joint.rs:351 tests/audit_joint.rs::d6_locked_axes_close_exactly_those_axes tests/audit_joint.rs::d6_limited_axis_clamps_to_the_limit"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-022"
+axis = "joint"
+item = "universal / planar / cylindrical joints"
+source = "Bullet btUniversalConstraint; MuJoCo joint types; Featherstone ch.4 joint models"
+status = "implemented-no-oracle"
+evidence = "専用の型は無い D6 (src/joint.rs:351) の軸ごとの Free / Locked の組合せで表せる (推測) その組合せを直接確かめる test は無い"
+oracle_candidate = "universal: 2 回転軸自由の振り子が第 3 軸回りに回らない"
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-023"
+axis = "joint"
+item = "rigid distance constraint (rod)"
+source = "Box2D distance joint; Bullet btPoint2Point with offset"
+status = "implemented+oracle"
+evidence = "src/solver.rs:493 tests/analytic_physics.rs::rigid_pendulum_small_angle_period tests/analytic_tgs_wiring.rs::xpbd_joint_scene_keeps_the_orbiter_near_target_distance"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-024"
+axis = "joint"
+item = "spring joint (stiffness and damping) / soft distance"
+source = "Box2D distance spring; PhysX PxDistanceJoint spring"
+status = "implemented+oracle"
+evidence = "src/joint.rs:282 tests/analytic_physics.rs::compliant_constraint_oscillates_at_natural_period tests/analytic_tgs_joints_in_substep.rs::a_spring_joint_oscillates_with_the_harmonic_period"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-025"
+axis = "joint"
+item = "rope joint (maximum distance only, unilateral) between two bodies"
+source = "Box2D rope / max length; PhysX PxDistanceJoint maxDistance"
+status = "missing"
+evidence = "2 体間の片側距離拘束は無い 片側の挙動は src/joint_extra.rs:517 の滑車 (total length) のみ ロープの離散化は軟体側"
+oracle_candidate = "張った時は剛体振り子の周期、緩んだ時は自由落下"
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-026"
+axis = "joint"
+item = "gear joint"
+source = "Bullet btGearConstraint; PhysX PxGearJoint; Box2D gear"
+status = "implemented+oracle"
+evidence = "src/joint_extra.rs:104 tests/audit_c_joint_extra.rs::gear_ratio_two_closes_the_signed_residual"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-027"
+axis = "joint"
+item = "rack-and-pinion joint"
+source = "PhysX PxRackAndPinionJoint"
+status = "implemented+oracle"
+evidence = "src/joint_extra.rs:270 tests/audit_c_joint_extra.rs::rack_and_pinion_static_rack_turns_the_pinion_back tests/audit_joint_extra.rs::rack_and_pinion_uses_the_axis_inverse_inertia (known defect)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-028"
+axis = "joint"
+item = "pulley joint"
+source = "Box2D pulley"
+status = "implemented+oracle"
+evidence = "src/joint_extra.rs:27 tests/audit_joint_extra.rs::pulley_solver_restores_the_total_rope_length tests/audit_c_joint_extra.rs::pulley_ratio_two_conserves_the_rope_length (known defect)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-029"
+axis = "joint"
+item = "mouse / target-following joint"
+source = "Box2D mouse joint"
+status = "implemented+oracle"
+evidence = "src/joint_extra.rs:323 tests/audit_joint_extra.rs::mouse_spring_moves_the_body_by_f_dt_squared_over_m"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-030"
+axis = "joint"
+item = "joint motors (velocity / position PD drive with force limit)"
+source = "PhysX PxD6Joint drive; Bullet motors; MuJoCo actuators"
+status = "implemented+oracle"
+evidence = "src/motor.rs:104 tests/audit_motor.rs::position_mode_is_kp_error_plus_kd_velocity_error tests/audit_articulation.rs::hinge_motor_drives_the_hinge_angle tests/audit_motor.rs::negative_max_force_must_not_produce_force_at_zero_error (known defect)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-031"
+axis = "joint"
+item = "breakable joints (force / torque threshold)"
+source = "PhysX setBreakForce; Bullet breaking impulse threshold"
+status = "implemented+oracle"
+evidence = "src/joint.rs:676 tests/analytic_joint_wiring.rs::solve_joints_breakable_ramp_breaks_exactly_at_k_star tests/analytic_joint_extra_wiring.rs::with_break_torque_breaks_above_and_holds_below_sin_pi_over_6"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-032"
+axis = "joint"
+item = "joint reaction force / torque output"
+source = "PhysX getConstraintForce; Bullet joint feedback"
+status = "implemented+oracle"
+evidence = "src/joint.rs:602 tests/audit_joint.rs::compute_force_closed_forms_per_variant tests/audit_joint.rs::compute_force_is_a_force_not_a_separation (known defect: 力でなく距離を返す)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-033"
+axis = "joint"
+item = "soft constraints (compliance)"
+source = "Müller et al. 2020 XPBD compliance; Box2D v3 soft step"
+status = "implemented+oracle"
+evidence = "tests/audit_joint.rs::ball_compliance_leaves_the_documented_fraction_of_the_error tests/analytic_physics.rs::compliant_constraint_static_extension_is_iteration_independent"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-034"
+axis = "joint"
+item = "closed kinematic loops"
+source = "Featherstone ch.8 (closed loop systems); MuJoCo equality constraints"
+status = "implemented+oracle"
+evidence = "src/kinematic_loop.rs tests/engineering_oracles_misc.rs::kinematic_loop_rigid_pass_closes_exactly_and_preserves_centre_of_mass"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-035"
+axis = "solver"
+item = "XPBD position-based solver (substeps, compliance)"
+source = "Müller, Macklin, Chentanez, Jeschke, Kim, SCA 2020; Macklin et al. 2016"
+status = "implemented+oracle"
+evidence = "src/solver.rs:2622 tests/analytic_physics.rs::compliant_constraint_static_extension_is_iteration_independent tests/analytic_tgs_wiring.rs::resting_contact_settles_and_stays_settled_under_xpbd"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-036"
+axis = "solver"
+item = "TGS (sub-stepped impulse Gauss-Seidel)"
+source = "PhysX TGS; Box2D v3 soft step; Macklin et al. 2019 (Small steps)"
+status = "implemented+oracle"
+evidence = "src/solver.rs:3113 tests/analytic_tgs_wiring.rs::resting_contact_settles_and_stays_settled_under_tgs tests/tgs_joints_static_colliders.rs::a_ball_jointed_pendulum_keeps_its_length_and_does_not_gain_energy_under_tgs"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-037"
+axis = "solver"
+item = "PGS / sequential impulses (single step, accumulated impulse clamping)"
+source = "Catto, GDC 2005-2006 (Sequential Impulses); Bullet btSequentialImpulseConstraintSolver"
+status = "missing"
+evidence = "単一 step の PGS backend は無い (SolverBackend は Xpbd / Tgs のみ、src/solver.rs:623) TGS の substep=1 で代用できるかは未確認 (推測)"
+oracle_candidate = "2 体衝突の反発・摩擦の閉形式 (既存 oracle の流用)"
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-038"
+axis = "solver"
+item = "direct solvers (LCP: Dantzig / Lemke; sparse LDL for joint chains)"
+source = "Erleben et al., Physics-Based Animation ch.6-7; Bullet btDantzigSolver / btLemkeSolver; Baraff 1996 (Linear-time dynamics using Lagrange multipliers)"
+status = "missing"
+evidence = "無い (直接法 grep: Dantzig / Lemke / LDL 0 件、src/linear_solver は Krylov で剛体拘束には未接続)"
+oracle_candidate = "鎖の静止張力を 1 回の solve で厳密"
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-039"
+axis = "solver"
+item = "Featherstone articulated-body algorithm (reduced coordinates)"
+source = "Featherstone, Rigid Body Dynamics Algorithms ch.7; MuJoCo; Bullet btMultiBody"
+status = "implemented+oracle"
+evidence = "src/articulation.rs:988 tests/analytic_multibody_dynamics.rs::compound_pendulum_matches_its_closed_form_angular_acceleration tests/analytic_multibody_dynamics.rs::centrifugal_coupling_to_a_rotating_parent_matches_its_closed_form"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-040"
+axis = "solver"
+item = "joint limits and compliance in reduced coordinates"
+source = "Featherstone, Rigid Body Dynamics Algorithms ch.7-8; Bullet btMultiBodyJointLimitConstraint"
+status = "partial"
+evidence = "src/articulation.rs:881 ABA の運動部分空間は limit と compliance を含まない (到達後の片側拘束が無い)"
+oracle_candidate = "hinge limit に当たる振り子が limit を越えない"
+limitation = "src/articulation.rs:881 'limits are not part of the subspace: a limit is a unilateral constraint that only binds at the stop, and forward dynamics away from the stop is the unlimited joint. Compliance is likewise ignored'"
+
+[[item]]
+id = "COV-RIGID-041"
+axis = "solver"
+item = "composite rigid body algorithm (joint-space mass matrix)"
+source = "Featherstone, Rigid Body Dynamics Algorithms ch.6"
+status = "missing"
+evidence = "無い (CRBA grep 0 件)"
+oracle_candidate = "ABA と同じ加速度を H q̈ = τ − C から得る"
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-042"
+axis = "solver"
+item = "recursive Newton-Euler inverse dynamics"
+source = "Featherstone, Rigid Body Dynamics Algorithms ch.5"
+status = "missing"
+evidence = "無い (RNEA / inverse dynamics grep 0 件)"
+oracle_candidate = "静止姿勢の保持トルク = 重力トルクの閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-043"
+axis = "solver"
+item = "position error correction (Baumgarte / split position pass)"
+source = "Baumgarte 1972; Catto split impulses; PhysX TGS position iterations"
+status = "implemented+oracle"
+evidence = "tests/analytic_tgs_wiring.rs::tgs_joint_starting_violated_with_zero_velocity_is_corrected_by_position_pass"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-044"
+axis = "solver"
+item = "simulation islands"
+source = "Erleben et al., Physics-Based Animation ch.6; Box2D islands"
+status = "implemented+oracle"
+evidence = "src/sleeping.rs:103 tests/analytic_event_sleeping_wiring.rs::build_islands_equals_connected_components tests/analytic_event_sleeping_wiring.rs::world_joints_define_islands"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-045"
+axis = "solver"
+item = "constraint graph colouring for parallel solve"
+source = "PhysX / Box2D v3 graph colouring"
+status = "implemented+oracle"
+evidence = "src/solver.rs:2424 tests/analytic_world_api.rs::num_batches_counts_the_greedy_colours tests/parallel_batch_coloring.rs::static_hub_collapses_to_a_single_batch"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-046"
+axis = "solver"
+item = "mass splitting for large mass ratios"
+source = "Tonge, Benevolenski, Voroshilov 2012 (Mass splitting for jitter-free parallel rigid body simulation)"
+status = "implemented+oracle"
+evidence = "articulation の XPBD 経路のみ src/articulation.rs:1065 tests/analytic_articulation_wiring.rs::solve_with_mass_splitting_two_half_steps_differ_from_one_full_step_by_exactly_one_quarter_g_dt2 world の接触には無い FeatherstoneSolver 側は solve に転送するだけ (src/articulation.rs:1044)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-047"
+axis = "solver"
+item = "shock propagation for stacks"
+source = "Guendelman, Bridson, Fedkiw 2003"
+status = "missing"
+evidence = "無い (shock propagation grep 0 件)"
+oracle_candidate = "ピラミッド積みの最下段の接触力 = 上の総重量"
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-048"
+axis = "broadphase"
+item = "linear BVH broadphase (rebuilt each step)"
+source = "Ericson, Real-Time Collision Detection ch.6; Karras 2012 (LBVH)"
+status = "implemented+oracle"
+evidence = "src/bvh.rs:257 tests/analytic_broadphase.rs::the_two_broadphases_step_a_dense_scene_identically"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-049"
+axis = "broadphase"
+item = "dynamic AABB tree with fattened proxies"
+source = "Ericson, Real-Time Collision Detection ch.6; Box2D b2DynamicTree; Bullet btDbvt"
+status = "implemented+oracle"
+evidence = "src/dynamic_bvh.rs:80 tests/analytic_broadphase.rs::a_proxy_is_fattened_by_the_margin_and_follows_a_body_that_leaves_it tests/analytic_broadphase.rs::switching_the_broadphase_mid_run_changes_nothing"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-050"
+axis = "broadphase"
+item = "sweep and prune"
+source = "Ericson, Real-Time Collision Detection ch.7; Bullet btAxisSweep3; PhysX SAP"
+status = "missing"
+evidence = "無い (sweep and prune grep 0 件)"
+oracle_candidate = "brute force の候補対集合と一致"
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-051"
+axis = "broadphase"
+item = "uniform grid / spatial hash broadphase for rigid bodies"
+source = "Ericson, Real-Time Collision Detection ch.7"
+status = "missing"
+evidence = "src/spatial.rs は粒子の近傍探索で world の broadphase ではない src/bvh.rs:759 の hash grid × BVH は crate 内部で world に未配線"
+oracle_candidate = "brute force の候補対集合と一致"
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-052"
+axis = "broadphase"
+item = "collision filtering (layer / mask)"
+source = "Box2D filter; Bullet collision groups; PhysX filter shader"
+status = "implemented+oracle"
+evidence = "src/filter.rs:23 tests/analytic_world_api.rs::set_body_filter_prevents_the_contact tests/analytic_shape_raycast.rs::filter_removes_what_it_names"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-053"
+axis = "narrowphase"
+item = "sphere-sphere contact"
+source = "Ericson, Real-Time Collision Detection ch.4"
+status = "implemented+oracle"
+evidence = "tests/audit_collider.rs::contact_sphere_pairs_match_closed_form_depth_normal_and_points tests/analytic_convex_contact.rs::spheres_overlap_by_the_sum_of_radii_minus_the_distance"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-054"
+axis = "narrowphase"
+item = "GJK intersection test for convex shapes"
+source = "Ericson, Real-Time Collision Detection ch.9; Gilbert-Johnson-Keerthi 1988"
+status = "implemented+oracle"
+evidence = "src/collider.rs:369 tests/audit_collider.rs::gjk_box_pairs_agree_with_the_separating_axis_test tests/audit_collider.rs::gjk_capsule_pairs_agree_with_segment_distance"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-055"
+axis = "narrowphase"
+item = "EPA penetration depth and normal"
+source = "van den Bergen 2001"
+status = "implemented+oracle"
+evidence = "src/collider.rs:662 tests/audit_c_collider.rs::epa_box_normal_points_from_b_to_a_with_exact_depth_and_face_points tests/audit_collider.rs::contact_concentric_sphere_pair_reports_the_radius_sum (known defect)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-056"
+axis = "narrowphase"
+item = "GJK distance and witness points between separated convex shapes"
+source = "Ericson, Real-Time Collision Detection ch.9; Bullet btGjkPairDetector closest points"
+status = "implemented-no-oracle"
+evidence = "src/collider.rs:358 GjkResult は colliding と Minkowski 差の最近点を返す 離れた 2 形状の距離・witness 点を照合する test は無い (推測)"
+oracle_candidate = "離れた 2 球 / 2 箱の距離閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-057"
+axis = "narrowphase"
+item = "shaped body pairs (box, cylinder, cone, ellipsoid, wedge) in the world step"
+source = "Bullet / PhysX convex-convex; Rapier shape pairs"
+status = "implemented+oracle"
+evidence = "src/solver.rs:5280 tests/analytic_convex_contact.rs::rotated_boxes_agree_with_the_separating_axis_test tests/analytic_convex_contact.rs::a_box_dropped_on_a_floor_box_rests_on_its_top_face"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-058"
+axis = "narrowphase"
+item = "shaped body against a plain (radius-only) body"
+source = "Ericson, Real-Time Collision Detection ch.5"
+status = "partial"
+evidence = "片方だけが形状を持つ対は両方の外接球で判定される src/solver.rs:1693 tests/analytic_convex_contact.rs::a_shaped_body_against_a_plain_sphere_body_collides_as_spheres"
+oracle_candidate = "箱と球の接触深さが球と箱表面の距離閉形式"
+limitation = "src/solver.rs:1693 'GJK on their shapes when both carry one ([`Self::set_body_shape`], [`Self::add_shaped_body`]), otherwise the test of their collision spheres.'"
+
+[[item]]
+id = "COV-RIGID-059"
+axis = "narrowphase"
+item = "capsule and convex-hull bodies"
+source = "Bullet btCapsuleShape / btConvexHullShape; PhysX PxCapsuleGeometry / PxConvexMeshGeometry"
+status = "implemented+oracle"
+evidence = "Shape には無く compound の子として持つ src/compound.rs:110 tests/analytic_compound.rs::a_compound_collides_as_its_children_not_as_its_hull tests/analytic_compound.rs::capsule_and_hull_children_have_their_extents"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-060"
+axis = "narrowphase"
+item = "compound shapes"
+source = "Bullet btCompoundShape; PhysX multiple shapes per actor"
+status = "implemented+oracle"
+evidence = "src/solver.rs:1741 tests/analytic_compound.rs::the_deepest_child_contact_decides tests/analytic_compound.rs::a_compound_body_has_the_mass_and_inertia_of_its_children"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-061"
+axis = "narrowphase"
+item = "non-convex bodies by convex decomposition"
+source = "V-HACD; Bullet HACD"
+status = "implemented+oracle"
+evidence = "src/convex_decompose.rs:233 tests/analytic_convex_decompose.rs::the_body_of_an_l_collides_as_an_l_not_as_its_hull"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-062"
+axis = "narrowphase"
+item = "torus body collision that respects the hole"
+source = "Ericson, Real-Time Collision Detection ch.5"
+status = "missing"
+evidence = "torus の support (src/torus.rs:146) を GJK に渡すので凸包 (穴を埋めた形) で判定される (推測) 穴を通る物体の test は無い"
+oracle_candidate = "穴の中心を通る小球が接触しない"
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-063"
+axis = "narrowphase"
+item = "multi-point contact manifold for convex pairs (face clipping)"
+source = "Ericson, Real-Time Collision Detection ch.5; Bullet btPersistentManifold; Box2D b2Manifold"
+status = "missing"
+evidence = "convex 対は最深 1 点のみ (src/body_collider.rs:283) 多点 manifold の生成は SDF 側のみ (行 COV-RIGID-069)"
+oracle_candidate = "箱を床に置いた時の 4 隅の接触点と各点の荷重 = mg/4"
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-064"
+axis = "narrowphase"
+item = "persistent contact manifold (feature matching across frames)"
+source = "Bullet btPersistentManifold; Box2D contact ids"
+status = "implemented-no-oracle"
+evidence = "src/contact_cache.rs:261 world の add_contact (src/solver.rs:2377) で更新されるが接触解法は 1 点ずつ tests/audit_contact_cache.rs::update_keeps_impulses_and_bumps_age_new_point_resets は規約の検査で収束改善の照合は無い"
+oracle_candidate = "積み箱の反復回数あたり残差が cache 有りで減る"
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-065"
+axis = "narrowphase"
+item = "dynamic bodies against plane / height field / triangle mesh"
+source = "Bullet btStaticPlaneShape / btHeightfieldTerrainShape / btBvhTriangleMeshShape; PhysX PxHeightField / PxTriangleMesh"
+status = "partial"
+evidence = "静的形状とは各 body の衝突球で判定される 箱・円柱などの形状は使われない tests/analytic_static_collider.rs::a_body_dropped_on_a_floor_rests_one_radius_above_it"
+oracle_candidate = "箱を傾けて床に落とした時の最下点の深さ"
+limitation = "src/static_collider.rs:5 'world resolves each non-static, non-sensor body's collision sphere against every collider after the substep's collision detection'"
+
+[[item]]
+id = "COV-RIGID-066"
+axis = "narrowphase"
+item = "triangle mesh / height field primitive tests (sphere, capsule, box)"
+source = "Ericson, Real-Time Collision Detection ch.5"
+status = "implemented+oracle"
+evidence = "world から呼ばれるのは球のみ (行 COV-RIGID-065) tests/audit_c_trimesh.rs::collide_capsule_depth_normal_and_points_match_the_closed_form tests/audit_heightfield.rs::sphere_depth_is_radius_minus_the_tangent_plane_distance tests/audit_heightfield.rs::origin_y_offsets_the_surface (known defect)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-067"
+axis = "narrowphase"
+item = "SDF collider against sphere bodies"
+source = "ALICE-SDF bridge; Macklin et al. 2020 (Local optimization for robust SDF collision)"
+status = "implemented+oracle"
+evidence = "src/sdf_collider.rs:371 tests/analytic_world_api.rs::add_sdf_collider_pushes_out_by_substeps_times_penetration tests/analytic_tgs_wiring.rs::tgs_body_falling_onto_sdf_ground_is_stopped_near_the_surface"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-068"
+axis = "narrowphase"
+item = "SDF collider against shaped / compound bodies"
+source = "Macklin et al. 2020 (Local optimization for robust SDF collision)"
+status = "partial"
+evidence = "box は角と中心、hull は頂点、他の凸形状は field 法線に対する support 点で標本化 tests/analytic_sdf_body_collider.rs::a_turned_box_on_a_ball_is_within_the_sampling_error"
+oracle_candidate = "曲がった field に面で接する箱の深さ (標本点の間)"
+limitation = "src/body_collider.rs:255 'against a curved one a face or an edge can reach deeper than the points sampled.'"
+
+[[item]]
+id = "COV-RIGID-069"
+axis = "narrowphase"
+item = "SDF multi-point contact manifold"
+source = "Macklin et al. 2020; ALICE-SDF manifold"
+status = "implemented+oracle"
+evidence = "src/sdf_manifold.rs:133 tests/analytic_sdf_manifold_wiring.rs::flat_ground_manifold_has_closed_form_contacts world の step からは呼ばれない (src/solver.rs に sdf_manifold の参照 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-070"
+axis = "narrowphase"
+item = "collision mesh generation from an SDF"
+source = "Lorensen-Cline 1987 (marching cubes); Garland-Heckbert 1997 (QEM simplification)"
+status = "implemented+oracle"
+evidence = "src/collision_mesh_gen.rs:136 tests/analytic_collision_mesh.rs::the_normals_point_outward_and_the_volume_converges tests/analytic_collision_mesh.rs::simplifying_a_torus_keeps_its_hole"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-071"
+axis = "ccd"
+item = "time-of-impact primitives (sphere-sphere, sphere-plane, swept AABB, capsule)"
+source = "Ericson, Real-Time Collision Detection ch.5"
+status = "implemented+oracle"
+evidence = "src/ccd.rs:61 tests/audit_ccd.rs::sphere_sphere_toi_satisfies_the_touching_condition_on_random_scenes tests/audit_ccd.rs::sphere_plane_toi_matches_brute_force_on_both_sides tests/audit_ccd.rs::sphere_capsule_toi_sliding_approach_hits_at_the_right_time (known defect)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-072"
+axis = "ccd"
+item = "conservative advancement"
+source = "Mirtich 1996; Zhang et al. 2006 (C2A)"
+status = "implemented+oracle"
+evidence = "src/ccd.rs:178 tests/audit_ccd.rs::conservative_advancement_head_on_stops_within_tolerance_before_contact tests/audit_ccd.rs::conservative_advancement_does_not_give_up_on_a_shallow_approach (known defect)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-073"
+axis = "ccd"
+item = "speculative contacts"
+source = "Catto, GDC 2013 (Continuous collision); Box2D v3 speculative"
+status = "implemented+oracle"
+evidence = "src/ccd.rs:451 tests/audit_ccd.rs::speculative_contact_covers_every_sphere_sphere_impact 関数のみで world の step には無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-074"
+axis = "ccd"
+item = "continuous collision in the world step (no tunnelling of fast bodies)"
+source = "Box2D bullet bodies / TOI sub-stepping; PhysX eENABLE_CCD; Bullet ccdMotionThreshold"
+status = "missing"
+evidence = "src/ccd.rs の関数は src/solver.rs から呼ばれない (ccd:: の参照 0 件) world の接触は各 substep の離散判定のみ"
+oracle_candidate = "薄い壁に高速で当たる球が貫通しない (壁厚 < v·dt)"
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-075"
+axis = "ccd"
+item = "rotational CCD (swept convex with rotation)"
+source = "Redon et al. 2002; Box2D b2TimeOfImpact"
+status = "missing"
+evidence = "無い (回転を含む sweep の grep 0 件)"
+oracle_candidate = "回転しながら隙間を抜ける棒の TOI"
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-076"
+axis = "ccd"
+item = "sphere tracing CCD against SDF"
+source = "Hart 1996 (sphere tracing)"
+status = "implemented+oracle"
+evidence = "src/sdf_ccd.rs:112 tests/analytic_sdf_ccd_wiring.rs::plane_toi_matches_closed_form_and_never_overshoots tests/analytic_sdf_ccd_wiring.rs::oblique_sphere_toi_matches_quadratic"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-077"
+axis = "contact"
+item = "restitution with a bounce-velocity threshold"
+source = "Erleben et al., Physics-Based Animation ch.6; Box2D restitution threshold"
+status = "implemented+oracle"
+evidence = "src/solver.rs:3817 tests/analytic_restitution_phase.rs::the_separation_speed_is_e_times_the_approach_speed_at_every_phase tests/analytic_restitution_phase.rs::approaches_below_the_restitution_threshold_do_not_bounce"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-078"
+axis = "contact"
+item = "Coulomb kinetic friction"
+source = "Erleben et al., Physics-Based Animation ch.6; Stewart-Trinkle 1996"
+status = "implemented+oracle"
+evidence = "tests/analytic_contact_friction_cap.rs::a_sliding_ball_decelerates_at_mu_g tests/analytic_contact_friction_cap.rs::a_ball_on_a_slope_above_the_friction_angle_slides_at_the_kinetic_rate"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-079"
+axis = "contact"
+item = "static friction (stick below the friction cone)"
+source = "Müller et al. 2020 eq.(26); PhysX static friction"
+status = "implemented+oracle"
+evidence = "src/solver.rs:1080 tests/analytic_contact_static_friction.rs::a_push_below_mu_m_g_holds_and_above_it_slides tests/analytic_contact_static_friction.rs::a_ball_on_a_slope_below_the_friction_angle_stays_put"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-080"
+axis = "contact"
+item = "separate static and kinetic friction coefficients"
+source = "PhysX staticFriction / dynamicFriction; Bullet"
+status = "partial"
+evidence = "PhysicsMaterial は static_friction を持つ (src/material.rs:70) が combine に入らない tests/audit_material.rs::static_friction_does_not_enter_combine"
+oracle_candidate = "μs > μk の斜面で停止角と滑走加速度が別の μ に従う"
+limitation = "src/solver.rs:1076 'the combined material carries one coefficient, so the static and the kinetic coefficients are equal.'"
+
+[[item]]
+id = "COV-RIGID-081"
+axis = "contact"
+item = "isotropic friction cone"
+source = "Erleben et al., Physics-Based Animation ch.6 (friction cone vs pyramid)"
+status = "implemented+oracle"
+evidence = "src/solver.rs:1080 (|Δp_t| < μλ) tests/analytic_contact_forces.rs::a_friction_cone_has_half_angle_atan_mu_and_the_force_as_height"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-082"
+axis = "contact"
+item = "anisotropic friction"
+source = "Bullet anisotropic friction; PhysX anisotropic; Zmitrowicz 1981"
+status = "implemented+oracle"
+evidence = "src/anisotropic_friction.rs tests/analytic_anisotropic_friction_wiring.rs::tyre_asphalt_matches_friction_ellipse_at_0_45_90_degrees 法則の関数で world の接触解法には入らない (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-083"
+axis = "contact"
+item = "contact at the contact point (torque from contact and friction forces)"
+source = "Erleben et al., Physics-Based Animation ch.6; Müller et al. 2020 §3.4"
+status = "partial"
+evidence = "XPBD の接触は重心で並進のみ TGS backend は腕の長さ r_a を使う (src/solver_tgs_backend.rs:120) が回転応答を確かめる test は無い"
+oracle_candidate = "斜面を転がる球の加速度 5/7 g sinθ、角で支えた箱の転倒"
+limitation = "src/solver.rs:1072 'Contact points are taken at the body centres: the contact solve is translational only.'"
+
+[[item]]
+id = "COV-RIGID-084"
+axis = "contact"
+item = "rolling friction"
+source = "PhysX / Bullet rolling friction; MuJoCo condim 6"
+status = "missing"
+evidence = "無い (rolling friction grep 0 件、src/rolling_contact.rs は Hertz 応力と寿命の閉形式)"
+oracle_candidate = "転がり抵抗係数 c_rr で減速する球 a = c_rr g"
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-085"
+axis = "contact"
+item = "torsional (spinning) friction"
+source = "Bullet spinningFriction; MuJoCo condim 4"
+status = "missing"
+evidence = "無い (torsional / spinning friction grep 0 件)"
+oracle_candidate = "床で鉛直軸回りに回る円板の減速"
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-086"
+axis = "contact"
+item = "material table and combine rules"
+source = "PhysX PxCombineMode; Rapier CoefficientCombineRule"
+status = "implemented+oracle"
+evidence = "src/material.rs:30 tests/audit_material.rs::combine_rules_on_dyadic_values_are_exact tests/audit_solver.rs::collision_scene_responds_to_the_material_restitution"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-087"
+axis = "contact"
+item = "warm starting of contact and joint impulses"
+source = "Catto, GDC 2006; Box2D warm starting"
+status = "implemented-no-oracle"
+evidence = "TGS backend のみ (impulse cache、tests/tgs_stable_cache_keys.rs::a_pendulum_keeps_its_impulse_across_remove_body はキーの安定性の検査) XPBD は位置の乗数を持ち越さない (src/solver.rs:936) 収束の改善を照合する test は無い"
+oracle_candidate = "10 段積みの反復回数あたり残差が warm start 有りで減る"
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-088"
+axis = "contact"
+item = "contact events (begin / persist / end)"
+source = "Box2D contact events; PhysX onContact"
+status = "implemented+oracle"
+evidence = "src/event.rs:17 tests/analytic_event_sleeping_wiring.rs::contact_lifecycle_begin_persist_end_then_silence"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-089"
+axis = "contact"
+item = "trigger / sensor volumes"
+source = "Box2D sensors; PhysX eTRIGGER_SHAPE"
+status = "implemented+oracle"
+evidence = "src/solver.rs:132 tests/analytic_event_sleeping_wiring.rs::trigger_enter_once_per_frame_and_not_while_overlapping tests/analytic_world_api.rs::with_sensor_reports_trigger_events_enter_once_then_exit"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-090"
+axis = "contact"
+item = "contact modification and pre-solve hooks"
+source = "PhysX contact modification; Box2D pre-solve"
+status = "implemented+oracle"
+evidence = "src/solver.rs:1947 tests/analytic_contact_friction_cap.rs::an_absolute_friction_modifier_sets_the_sliding_deceleration tests/analytic_tgs_backend_coverage.rs::a_rejecting_hook_lets_the_body_fall_through"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-091"
+axis = "contact"
+item = "contact force output"
+source = "PhysX contact report impulses; Bullet getAppliedImpulse"
+status = "implemented+oracle"
+evidence = "src/solver.rs:4876 tests/analytic_contact_forces.rs::a_resting_body_carries_its_weight"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-092"
+axis = "contact"
+item = "soft contact (contact stiffness / damping, contact offset)"
+source = "MuJoCo solref / solimp; PhysX contactOffset / restOffset"
+status = "missing"
+evidence = "無い (接触の compliance / offset の設定項目 grep 0 件) (推測)"
+oracle_candidate = "剛性 k の接触で静止した球のめり込み mg/k"
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-093"
+axis = "sleep"
+item = "sleeping by velocity threshold held for a time"
+source = "Box2D sleep; PhysX sleepThreshold"
+status = "implemented+oracle"
+evidence = "src/sleeping.rs:74 tests/analytic_physics.rs::resting_body_on_static_support_stays_put_and_sleeps"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-094"
+axis = "sleep"
+item = "island wake-up through contacts and joints"
+source = "Box2D island wake; Bullet activation state"
+status = "implemented+oracle"
+evidence = "tests/sleep_skip.rs::joint_partner_drags_sleeping_body_awake tests/sleep_skip.rs::contact_with_awake_body_wakes_a_parked_one_bit_identically"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-095"
+axis = "sleep"
+item = "sleeping bodies skipped without changing the result"
+source = "Box2D v3 solver sets"
+status = "implemented+oracle"
+evidence = "tests/sleep_skip.rs::natural_pile_under_gravity_is_bit_identical tests/sleep_skip.rs::stage_work_depends_on_awake_bodies_not_on_sleeping_ones"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-096"
+axis = "query"
+item = "raycast against the real collision geometry"
+source = "Ericson, Real-Time Collision Detection ch.5; PhysX raycast; Rapier cast_ray"
+status = "implemented+oracle"
+evidence = "src/shape_raycast.rs:1020 tests/analytic_shape_raycast.rs::box_matches_closed_form tests/analytic_shape_raycast.rs::trimesh_matches_closed_form"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-097"
+axis = "query"
+item = "closest / all / any hit modes and query filters"
+source = "PhysX PxQueryFilterData; Box2D ray callback"
+status = "implemented+oracle"
+evidence = "tests/analytic_shape_raycast.rs::closest_all_any_agree tests/analytic_shape_raycast.rs::filter_removes_what_it_names"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-098"
+axis = "query"
+item = "shape cast (sphere / capsule sweep) against bodies"
+source = "Ericson, Real-Time Collision Detection ch.5; PhysX sweep; Rapier cast_shape"
+status = "partial"
+evidence = "物体は外接球として扱われ、capsule は複数の球 cast で近似 tests/audit_query.rs::sphere_cast_oblique_hit_matches_quadratic_solution tests/audit_query.rs::capsule_cast_misses_nothing_along_the_segment (known defect)"
+oracle_candidate = "capsule の側面に当たる cast の TOI 閉形式"
+limitation = "src/query.rs:102 'Approximates capsule-vs-sphere as two sphere casts (top and bottom hemispheres) and returns the closest hit.'"
+
+[[item]]
+id = "COV-RIGID-099"
+axis = "query"
+item = "convex shape cast against the real body shapes (GJK ray cast / conservative advancement)"
+source = "van den Bergen 2004 (GJK ray cast); Rapier cast_shape"
+status = "missing"
+evidence = "無い 形状どうしの sweep は無く、shape cast は外接球のみ (行 COV-RIGID-098)"
+oracle_candidate = "回転した箱へ箱を sweep した TOI"
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-100"
+axis = "query"
+item = "overlap query (bodies overlapping a sphere / box)"
+source = "PhysX overlap; Box2D query AABB"
+status = "partial"
+evidence = "物体は外接球として扱われる tests/audit_query.rs::overlap_sphere_matches_brute_force_set_and_depth tests/audit_query.rs::overlap_aabb_expanded_does_not_report_spheres_that_miss_the_corner (known defect)"
+oracle_candidate = "箱の角の隙間に置いた球が重ならない"
+limitation = "src/query.rs:167 'Find all bodies whose bounding sphere overlaps with the given sphere.'"
+
+[[item]]
+id = "COV-RIGID-101"
+axis = "query"
+item = "closest point on static geometry"
+source = "Rapier project_point; Bullet closest point queries"
+status = "implemented+oracle"
+evidence = "src/trimesh.rs:221 tests/audit_c_trimesh.rs::mesh_closest_point_projects_and_clamps"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-102"
+axis = "query"
+item = "point / distance query against dynamic body shapes"
+source = "Rapier intersections_with_point / project_point; PhysX computePenetration"
+status = "missing"
+evidence = "無い 動的形状への点・距離問い合わせ API は無い (推測)"
+oracle_candidate = "箱の外の点から箱表面までの距離閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-103"
+axis = "2d"
+item = "2D rigid bodies with circle / polygon / capsule / edge shapes (SAT)"
+source = "Box2D; Catto 2D shapes"
+status = "implemented+oracle"
+evidence = "src/physics2d.rs:240 src/physics2d.rs::test_polygon_vs_polygon_collision tests/engineering_oracles_misc.rs::physics2d_head_on_collision_obeys_newton_restitution tests/engineering_oracles_misc.rs::physics2d_sliding_friction_decelerates_at_mu_g"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-104"
+axis = "2d"
+item = "2D joints (revolute, distance, weld, mouse)"
+source = "Box2D joints"
+status = "implemented+oracle"
+evidence = "src/physics2d.rs:1341 tests/analytic_physics2d_joints.rs::mouse_from_rest_tracks_the_critically_damped_closed_form tests/analytic_physics2d_joints.rs::distance_joint_stiffness_does_not_depend_on_the_iteration_count"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-105"
+axis = "benchmark"
+item = "Newton's cradle"
+source = "Erleben et al. ch.6 (impulse propagation); Bullet / PhysX demos"
+status = "missing"
+evidence = "test 無し 既存の球・反発・距離拘束だけで組める"
+oracle_candidate = "e=1 で端の 1 球だけが同じ速度で離れる (参照値要確認: 同時衝突の扱いは解法依存)"
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-106"
+axis = "benchmark"
+item = "pyramid stack stays at rest"
+source = "Box2D benchmark (pyramid); Catto GDC"
+status = "missing"
+evidence = "test 無し 2 段積みは行 COV-RIGID-107 tests/analytic_contact_forces.rs::in_a_stack_each_contact_carries_the_weight_above"
+oracle_candidate = "段数 n のピラミッドが N step 後も崩れない (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-107"
+axis = "benchmark"
+item = "two-body stack contact forces"
+source = "Erleben et al. ch.6"
+status = "implemented+oracle"
+evidence = "tests/analytic_contact_forces.rs::in_a_stack_each_contact_carries_the_weight_above"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-108"
+axis = "benchmark"
+item = "chain with mass ratio 1:1000"
+source = "Box2D benchmark (large mass ratio); Tonge et al. 2012"
+status = "missing"
+evidence = "test 無し 既存の距離拘束と TGS / XPBD だけで組める"
+oracle_candidate = "重い錘を吊る軽い鎖の伸び (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-109"
+axis = "benchmark"
+item = "static friction on an incline"
+source = "Erleben et al. ch.6"
+status = "implemented+oracle"
+evidence = "tests/analytic_contact_static_friction.rs::a_ball_on_a_slope_below_the_friction_angle_stays_put tests/analytic_contact_friction_cap.rs::a_ball_on_a_slope_above_the_friction_angle_slides_at_the_kinetic_rate"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-110"
+axis = "benchmark"
+item = "rotating T-handle (Dzhanibekov intermediate-axis flip)"
+source = "Featherstone ch.2; Catto GDC 2015"
+status = "missing"
+evidence = "ジャイロ項が無い (行 COV-RIGID-005) ので再現しない"
+oracle_candidate = "中間軸回りの回転が周期的に反転する 周期の参照値要確認"
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-111"
+axis = "benchmark"
+item = "small-angle pendulum period"
+source = "Erleben et al. ch.7"
+status = "implemented+oracle"
+evidence = "tests/analytic_physics.rs::rigid_pendulum_small_angle_period tests/analytic_tgs_joints_in_substep.rs::pendulums_of_every_pivoting_joint_keep_the_closed_form_period_and_stay_attached"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-112"
+axis = "benchmark"
+item = "ballistic projectile"
+source = "closed form"
+status = "implemented+oracle"
+evidence = "tests/analytic_physics.rs::projectile_follows_parabola"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-113"
+axis = "benchmark"
+item = "ball / cylinder rolling down an incline (a = 5/7 g sinθ, 2/3 g sinθ)"
+source = "Erleben et al. ch.6"
+status = "missing"
+evidence = "接触が並進のみ (行 COV-RIGID-083) なので転がりが生じない"
+oracle_candidate = "a = 5/7 g sinθ (球)、2/3 g sinθ (円柱)"
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-114"
+axis = "benchmark"
+item = "box tipping over an edge"
+source = "Erleben et al. ch.6"
+status = "missing"
+evidence = "test 無し 接触の回転応答が要る (行 COV-RIGID-083)"
+oracle_candidate = "重心が支持辺を越えた時だけ倒れる"
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-115"
+axis = "benchmark"
+item = "double pendulum (reduced coordinates)"
+source = "Featherstone ch.7"
+status = "implemented+oracle"
+evidence = "tests/analytic_multibody_dynamics.rs::double_pendulum_rank_reduction_matches_its_closed_form"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-116"
+axis = "benchmark"
+item = "Hertz contact stress"
+source = "Johnson, Contact Mechanics ch.4"
+status = "out-of-scope"
+evidence = "閉形式の応力・寿命 (src/rolling_contact.rs) で剛体の接触解法の機能ではない tests/engineering_oracles_misc.rs::rolling_contact_hertz_sphere_sphere_matches_johnson"
+oracle_candidate = ""
+limitation = ""

@@ -4,6 +4,7 @@
 //! rest on. It is the counterpart of the SDF colliders for explicit geometry: the
 //! world resolves each non-static, non-sensor body's collision sphere against
 //! every collider after the substep's collision detection, pushing the body out
+// LIMITATION(COV-RIGID-065): world resolves each non-static, non-sensor body's collision sphere against every collider after the substep's collision detection
 //! along the contact normal by the penetration depth — the correction the
 //! position-based solver turns into a velocity.
 //!

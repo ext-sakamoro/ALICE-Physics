@@ -883,6 +883,7 @@ const fn local_anchors(joint: &Joint) -> (Vec3Fix, Vec3Fix) {
 /// only binds at the stop, and forward dynamics away from the stop is the
 /// unlimited joint. Compliance is likewise ignored — a compliant joint is still
 /// this joint kinematically.
+// LIMITATION(COV-RIGID-040): Joint limits are not part of the subspace: a limit is a unilateral constraint that only binds at the stop, and forward dynamics away from the stop is the unlimited joint. Compliance is likewise ignored
 fn subspace_for(joint: &Joint, bodies: &[RigidBody], parent_body: usize) -> MotionSubspace {
     let (body_a, body_b) = joint.bodies();
     let (anchor_a, anchor_b) = local_anchors(joint);
