@@ -18,6 +18,7 @@
 //!   − c_quad · v · |v|
 //! ```
 //!
+// LIMITATION(COV-COUPLE-066): where `V_displaced` is estimated from a spherical body proxy of radius `body_radius`; the exact submerged volume of an arbitrary mesh is out of scope for this module and remains future work.
 //! where `V_displaced` is estimated from a spherical body proxy of
 //! radius `body_radius`; the exact submerged volume of an arbitrary
 //! mesh is out of scope for this module and remains future work.

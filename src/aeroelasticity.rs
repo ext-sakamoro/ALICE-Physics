@@ -21,6 +21,7 @@
 //!
 //! # Scope
 //!
+// LIMITATION(COV-COUPLE-020): Single-degree-of-freedom cylinder, small displacement, subcritical Reynolds regime.
 //! Single-degree-of-freedom cylinder, small displacement, subcritical
 //! Reynolds regime. Full 3-D fluid-structure coupling, mode
 //! bifurcation, and lock-in hysteresis remain future work.

@@ -1,0 +1,1091 @@
+# Multiphysics coupling (COUPLE) coverage of ALICE-Physics, against an external
+# reference frame.
+#
+# What this table is: every capability that the standard texts (Hou-Wang-Layton
+# 2012 FSI review; Bisplinghoff-Ashley-Halfman, Aeroelasticity; Dowell, A Modern
+# Course in Aeroelasticity; Nowacki, Thermoelasticity; IEEE Std 176
+# piezoelectricity), reference implementations (preCICE coupling schemes,
+# acceleration and mapping; MOOSE MultiApp / Transfers; OpenFOAM solids4Foam;
+# the FMI 2.0 standard) and standard benchmarks (Turek-Hron FSI1-3, two-degree-
+# of-freedom airfoil flutter, cylinder VIV lock-in, Danilovskaya thermal shock,
+# piezoelectric cantilever harvester, added-mass piston) expect of a code that
+# couples physics, one [[item]] per capability, with what the crate has today.
+# The rows are written by hand: the axes and the items come from the reference
+# frame, not from the modules that exist, so a missing capability is visible
+# instead of absent. A row here is a combination of physics (who reads what from
+# whom, and how the combined problem is solved); each single physics is counted
+# in its own table.
+#
+# Boundary with the other tables (one capability goes in one table only):
+#   - generic coupling numerics (the sub-iteration driver and its divergence /
+#     wrap detection, constant / Aitken relaxation, IQN-ILS, monolithic Newton,
+#     JFNK, Krylov, block equilibration, sample / splat transfer on a grid, the
+#     added-mass piston as a numerical benchmark): num.toml (COV-NUM-059 to 065,
+#     078, 079, 090, 091). Rows here cite those ids where a coupling would use
+#     them.
+#   - the thermal side of thermo-mechanical coupling (which temperature reaches
+#     the mechanics, heat from plastic work, the two-way thermoplastic fixed
+#     point, reconciling two temperature owners, Joule and thermoelastic heat
+#     sources, conjugate heat transfer): therm.toml (COV-THERM-041, 042, 046,
+#     058, 083 to 088). The mechanical side (FE thermal eigenstrain,
+#     temperature-dependent FE material): fem.toml (COV-FEM-045, 096, 097).
+#     Closed-form thermal stress (E alpha dT): struct.toml (COV-STRUCT-128).
+#   - single-phase flow and the force integral on a body from a resolved flow:
+#     cfd.toml (COV-CFD-094); dispersed particles one- or two-way coupled to a
+#     flow (Euler-Lagrange): multiphase.toml (COV-MULTIPHASE-067, 068);
+#     multiphase interfaces: multiphase.toml.
+#   - aerodynamic forces evaluated on cloth and rope themselves (wind zone,
+#     triangle drag) and rod-body attachment: soft.toml.
+#   - vibro-acoustic coupling: acous.toml (COV-ACOUS-074). Vehicle aerodynamics
+#     and DC motor models: mbd.toml.
+#   - the electromagnetic field solvers themselves: the electromagnetics table.
+#     The force they exert on bodies (Lorentz, Maxwell stress), piezoelectricity,
+#     electrostatic actuation and magnetostriction are here.
+#   - rigid bodies acted on by a fluid (buoyancy, Froude-Krylov, lift and drag of
+#     a lifting surface, Morison) are here; the rigid-body dynamics is rigid.toml.
+#
+# status (exactly one of):
+#   implemented+oracle     implemented, and at least one non-ignored test checks
+#                          it against an independent reference
+#   implemented-no-oracle  implemented, no such test
+#   partial                implemented with a restriction that the source states;
+#                          `limitation` quotes it, and the source carries a
+#                          `LIMITATION(<id>)` comment at that place
+#   missing                not implemented
+#   out-of-scope           not a capability of this field (reason in `evidence`)
+#
+# This axis is separate from the test ignore reasons (`known defect: ...`,
+# `src gap: ...`, `diagnostic`, `runtime`). A capability that exists with a
+# recorded defect keeps its status and cites the known-defect test in
+# `evidence`; it is not `missing`.
+#
+# keys: id (COV-COUPLE-NNN) / axis / item / source (book, chapter, paper,
+# standard or reference-implementation feature; no quoted text) / status /
+# evidence (`src/...rs:line`, `tests/...rs::test_fn`) / oracle_candidate /
+# limitation (verbatim quote of the source, required for `partial`).
+#
+# Reference values marked "参照値要確認" are to be checked against the original
+# publication before any test uses them. Lines marked "(推測)" were judged from
+# a search that found nothing and are to be confirmed.
+#
+# Checked by scripts/coverage_check.py (tests: scripts/test_coverage_check.py).
+
+[[item]]
+id = "COV-COUPLE-001"
+axis = "fsi-formulation"
+item = "partitioned Dirichlet-Neumann FSI on a resolved flow (structure motion as a moving wall of the fluid, fluid traction as the load of the structure)"
+source = "Hou-Wang-Layton 2012 (Commun. Comput. Phys. 12) sec.3; preCICE coupling schemes; OpenFOAM solids4Foam"
+status = "missing"
+evidence = "流れの solver に動く固体境界が無い (src/eulerian_grid.rs:144 の FaceBc は軸平行な格子面の Wall / SlipWall / Inflow / Outflow のみ、cfd_solver は固体を格子に置けない) 固体側の荷重は src/fsi_advanced.rs:1 の閉形式抗力・浮力だけ"
+oracle_candidate = "Turek-Hron FSI1 (COV-COUPLE-088) の定常変位"
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-002"
+axis = "fsi-formulation"
+item = "loosely coupled (explicit staggered, one exchange per step) FSI between a flow solver and a structural solver"
+source = "Farhat-Lesoinne 2000 (CMAME 182); Felippa-Park-Farhat 2001 (CMAME 190)"
+status = "missing"
+evidence = "流れ solver と構造 solver の組が無い (COV-COUPLE-001) src/coupled_iteration.rs:1 の doc は crate の連成を「sub-iteration 0 回の陽的分離型」と書くが、その対象は閉形式の力関数 (cloth_fluid / fsi_advanced) の合成"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-003"
+axis = "fsi-formulation"
+item = "strongly coupled partitioned FSI (sub-iterations to convergence inside each step)"
+source = "Küttler-Wall 2008 (Comput. Mech. 43); preCICE implicit coupling"
+status = "missing"
+evidence = "汎用の sub-iteration driver はある (src/coupled_iteration.rs:932、COV-NUM-059) が、それを回す流れ-構造の組が無い (COV-COUPLE-001)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-004"
+axis = "fsi-formulation"
+item = "monolithic FSI (fluid, structure and interface in one Newton system)"
+source = "Hron-Turek 2006 (Lecture Notes in Comput. Sci. Eng. 53); Heil 2004 (CMAME 193)"
+status = "missing"
+evidence = "汎用の monolithic Newton も無い (COV-NUM-064) src/coupled_iteration.rs:225 以降に入口条件と見送りの判断"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-005"
+axis = "fsi-formulation"
+item = "added-mass-robust interface conditions (Robin-Neumann / Robin-Robin, interface artificial compressibility)"
+source = "Badia-Nobile-Vergara 2008 (J. Comput. Phys. 227); Fernández-Gerbeau-Grandmont 2007"
+status = "missing"
+evidence = "無い added-mass 不安定の閉形式 (ピストン) の突合は COV-NUM-090 (tests/analytic_added_mass_coupling.rs::the_contraction_ratio_matches_the_closed_form)"
+oracle_candidate = "ピストン模型で Robin 係数を m_f/A にすると m_f/m > 1 でも収束すること"
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-006"
+axis = "fsi-formulation"
+item = "interface acceleration of an FSI sub-iteration (Aitken relaxation, IQN-ILS on the interface displacement)"
+source = "Küttler-Wall 2008; Degroote-Bathe-Vierendeels 2009 (Comput. Struct. 87); preCICE acceleration"
+status = "missing"
+evidence = "汎用の Aitken / IQN-ILS が無い (COV-NUM-062 / 063) src/coupled_iteration.rs:141 が「緩和しない sweep」を前提と明記"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-007"
+axis = "fsi-formulation"
+item = "interface predictor (extrapolation of the interface displacement from previous steps)"
+source = "Piperno-Farhat 2001 (CMAME 190); Förster-Wall-Ramm 2007 (CMAME 196)"
+status = "missing"
+evidence = "無い (推測: extrapolat / predictor で連成 module に 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-008"
+axis = "fsi-formulation"
+item = "interface energy balance of a partitioned scheme (power through the interface, artificial energy of the splitting)"
+source = "Piperno-Farhat 2001; Farhat-Lesoinne 2000"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "閉じた系の全エネルギー収支を step ごとに出力して分離誤差を測る"
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-009"
+axis = "fsi-formulation"
+item = "contraction of the velocity-closed drag-reaction loop of the sample-point coupling"
+source = "Küttler-Wall 2008 (fixed-point view of partitioned coupling)"
+status = "implemented+oracle"
+evidence = "src/fsi_advanced.rs:64 / src/fsi_advanced.rs:162 / tests/fsi_advanced_sub_iteration.rs::the_contraction_ratio_matches_the_closed_form / tests/fsi_advanced_sub_iteration.rs::a_gain_past_the_threshold_is_reported_as_diverging 流れ側は test 内の 1 変数 (gain) で、module の抗力則と合成した harness の性質"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-010"
+axis = "fsi-interface"
+item = "fluid loads on a solid from a sampled flow (quadratic drag, buoyancy, net force and torque over sample points)"
+source = "Morison et al. 1950 (drag term); Bao et al. 2017 (J. Comput. Phys. 347) sample-point coupling"
+status = "implemented+oracle"
+evidence = "src/fsi_advanced.rs:64 / src/fsi_advanced.rs:96 / src/fsi_advanced.rs:112 / tests/audit_fsi_advanced.rs::drag_matches_closed_form_over_speed_sweep / tests/audit_fsi_advanced.rs::aggregate_matches_independent_sum_and_torque / tests/audit_fsi_advanced.rs::buoyancy_uses_gravity_magnitude (known defect AUD-A-S4W1-002)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-011"
+axis = "fsi-interface"
+item = "two-way reaction: the solid force deposited back into the fluid (equal and opposite at the sample points)"
+source = "Peskin 2002 (Acta Numerica 11) force spreading"
+status = "partial"
+evidence = "src/fsi_advanced.rs:162 / tests/audit_fsi_advanced.rs::react_back_pressure_total_is_minus_solid_total / tests/audit_fsi_advanced.rs::react_back_pressure_does_not_silently_truncate 置き先は呼び手の closure (src/fsi_advanced.rs:20 の行で既定は one-way)"
+oracle_candidate = ""
+limitation = "src/fsi_advanced.rs:148 'Placeholder for the true immersed-boundary scatter operator; kept minimal to avoid coupling this module to any specific grid representation.'"
+
+[[item]]
+id = "COV-COUPLE-012"
+axis = "fsi-interface"
+item = "immersed boundary method (regularised delta interpolation of the flow velocity and spreading of the force, Peskin)"
+source = "Peskin 2002 (Acta Numerica 11); Mittal-Iaccarino 2005 (Annu. Rev. Fluid Mech. 37)"
+status = "missing"
+evidence = "src/fsi_advanced.rs:148 が自身を IB の散布演算子の代用と書く 補間核・散布核は無い"
+oracle_candidate = "格子上の 1 点力を散布して補間し直した時の保存 (Σ 散布 = 力、補間核の和 = 1)"
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-013"
+axis = "fsi-interface"
+item = "direct-forcing / ghost-cell immersed boundary for a rigid or moving solid in a fixed grid"
+source = "Fadlun et al. 2000 (J. Comput. Phys. 161); Mohd-Yusof 1997"
+status = "missing"
+evidence = "流れの格子に物体を置けない (src/eulerian_grid.rs:144 の境界は軸平行の面のみ)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-014"
+axis = "fsi-interface"
+item = "fictitious domain / distributed Lagrange multiplier for a solid inside the fluid"
+source = "Glowinski-Pan-Hesla-Joseph 1999 (Int. J. Multiphase Flow 25)"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-015"
+axis = "fsi-interface"
+item = "arbitrary Lagrangian-Eulerian flow on a moving mesh (mesh velocity in the convective term, geometric conservation law)"
+source = "Donea-Huerta-Ponthot-Rodríguez-Ferran 2004 (Encyclopedia of Comput. Mech. ch.14); OpenFOAM dynamicMotionSolverFvMesh"
+status = "missing"
+evidence = "流れ solver は固定の一様 MAC 格子のみ (src/cfd_solver.rs:1)"
+oracle_candidate = "一様流を動く格子で保つ (GCL)"
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-016"
+axis = "fsi-interface"
+item = "fluid mesh motion following the interface (Laplacian / pseudo-elastic smoothing, remeshing)"
+source = "Stein-Tezduyar-Benney 2003 (J. Appl. Mech. 70); OpenFOAM displacementLaplacian"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-017"
+axis = "fsi-interface"
+item = "interface traction from the resolved flow (pressure and viscous stress integrated on the wetted surface of a deforming solid)"
+source = "Hou-Wang-Layton 2012 sec.2; Turek-Hron 2006 force definition"
+status = "missing"
+evidence = "流れ場から物体の力を積分する機能が無い (COV-CFD-094) fsi_advanced の荷重は閉形式の抗力係数"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-018"
+axis = "fsi-interface"
+item = "fluid loads on deformable and articulated bodies (sample points generated from the body's nodes or links)"
+source = "Bao et al. 2017; Featherstone 2008 (link-wise loads)"
+status = "missing"
+evidence = "src/fsi_advanced.rs:4 の行で deformable / articulation への拡張を名乗るが、DeformableBody や ArticulatedBody から SolidSample を作る code は src に無い (SolidSample の参照は src/fsi_advanced.rs:47 の module 内だけ)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-019"
+axis = "fsi-interface"
+item = "FSI of thin structures (flags, membranes, shells) with both sides wetted"
+source = "Tian et al. 2014 (J. Comput. Phys. 258); Zhu-Peskin 2002 flag"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-020"
+axis = "aeroelasticity"
+item = "vortex-induced vibration by a wake oscillator coupled to a spring-mounted cylinder (Van der Pol wake, Facchinetti)"
+source = "Facchinetti-de Langre-Biolley 2004 (J. Fluids Struct. 19); Blevins, Flow-Induced Vibration ch.3"
+status = "partial"
+evidence = "src/aeroelasticity.rs:117 / src/aeroelasticity.rs:67 / tests/analytic_aeroelasticity_wiring.rs::coupled_limit_cycle_matches_rk4_reference / tests/analytic_aeroelasticity_wiring.rs::coupling_pulls_the_shedding_frequency_off_the_strouhal_line / tests/analytic_aeroelasticity_wiring.rs::body_response_peaks_at_resonance_with_the_transfer_function_gain"
+oracle_candidate = ""
+limitation = "src/aeroelasticity.rs:25 'Single-degree-of-freedom cylinder, small displacement, subcritical Reynolds regime.'"
+
+[[item]]
+id = "COV-COUPLE-021"
+axis = "aeroelasticity"
+item = "fluid damping and added mass in the body equation of a wake-oscillator VIV model (amplitude of order one diameter)"
+source = "Facchinetti et al. 2004 eq.1 (stall term γ/μ); Khalak-Williamson 1999 (J. Fluids Struct. 13)"
+status = "missing"
+evidence = "src/aeroelasticity.rs:29 'The body equation carries structural damping only: there is no hydrodynamic damping or added-mass term.' (reference の連成で |y| = 52 D に飽和)"
+oracle_candidate = "lock-in での振幅が 1 D 程度に収まること (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-022"
+axis = "aeroelasticity"
+item = "lock-in range and hysteresis of the VIV response over reduced velocity"
+source = "Feng 1968; Khalak-Williamson 1999; Williamson-Govardhan 2004 (Annu. Rev. Fluid Mech. 36)"
+status = "missing"
+evidence = "src/aeroelasticity.rs:26 'Full 3-D fluid-structure coupling, mode bifurcation, and lock-in hysteresis remain future work.'"
+oracle_candidate = "換算流速を上げ下げした時の振幅の分岐 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-023"
+axis = "aeroelasticity"
+item = "two-degree-of-freedom VIV (in-line and cross-flow) and higher modes of a flexible cylinder"
+source = "Jauvtis-Williamson 2004 (J. Fluid Mech. 509); Blevins ch.3"
+status = "missing"
+evidence = "VIV は cross-flow の 1 自由度のみ (src/aeroelasticity.rs:25)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-024"
+axis = "aeroelasticity"
+item = "quasi-steady aerodynamics of a pitch-plunge typical section"
+source = "Bisplinghoff-Ashley-Halfman, Aeroelasticity ch.5; Dowell, A Modern Course in Aeroelasticity ch.3"
+status = "missing"
+evidence = "翼型の弾性支持と空力の連成は無い src/lift_drag.rs:1 は剛体の翼面の準定常力で、弾性自由度を持たない"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-025"
+axis = "aeroelasticity"
+item = "unsteady thin-airfoil aerodynamics (Theodorsen function C(k))"
+source = "Theodorsen 1935 (NACA Report 496); Bisplinghoff et al. ch.5"
+status = "missing"
+evidence = "無い (推測: theodorsen で 0 件)"
+oracle_candidate = "C(k) の実部・虚部を Bessel 関数の閉形式と突合"
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-026"
+axis = "aeroelasticity"
+item = "indicial lift (Wagner step response, Küssner gust response) in the time domain"
+source = "Wagner 1925; Küssner 1936; Leishman, Principles of Helicopter Aerodynamics ch.8"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-027"
+axis = "aeroelasticity"
+item = "bending-torsion flutter of a typical section (flutter speed and frequency by the p-k / k method)"
+source = "Bisplinghoff et al. ch.9; Dowell ch.3; Hodges-Pierce, Introduction to Structural Dynamics and Aeroelasticity ch.5"
+status = "missing"
+evidence = "無い (推測: flutter で 0 件)"
+oracle_candidate = "2 自由度翼型のフラッター速度 (COV-COUPLE-094)"
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-028"
+axis = "aeroelasticity"
+item = "static divergence of a lifting surface (divergence dynamic pressure q_D = K_α / (e S C_Lα))"
+source = "Bisplinghoff et al. ch.8; Hodges-Pierce ch.4"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "閉形式の発散動圧と、動圧を上げた時の静的ねじれの発散"
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-029"
+axis = "aeroelasticity"
+item = "control-surface reversal speed"
+source = "Bisplinghoff et al. ch.8; Hodges-Pierce ch.4"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-030"
+axis = "aeroelasticity"
+item = "galloping of a bluff section (Den Hartog criterion, quasi-steady)"
+source = "Den Hartog, Mechanical Vibrations ch.7; Blevins ch.4"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "Den Hartog 判定の符号と臨界風速 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-031"
+axis = "aeroelasticity"
+item = "panel flutter (piston theory)"
+source = "Dowell 1975, Aeroelasticity of Plates and Shells; Ashley-Zartarian 1956 piston theory"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-032"
+axis = "aeroelasticity"
+item = "flutter of a flexible wing (beam modes with strip theory or a doublet-lattice / vortex-lattice aerodynamic model)"
+source = "Albano-Rodden 1969 doublet lattice; MSC Nastran SOL 145; Goland 1945 wing"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "Goland wing のフラッター速度 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-033"
+axis = "aeroelasticity"
+item = "buffeting and gust response of an elastic structure (spectral, Davenport)"
+source = "Davenport 1962; Simiu-Scanlan, Wind Effects on Structures ch.6"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-034"
+axis = "thermo-mechanical"
+item = "sequential (one-way) thermal-stress analysis: a temperature field from the thermal solvers drives the FE eigenstrain through the coupling channel"
+source = "Boley-Weiner, Theory of Thermal Stresses ch.1; Code_Aster / Abaqus sequentially coupled thermal-stress"
+status = "implemented+oracle"
+evidence = "src/coupled_field.rs:810 / src/linear_elastic_fem.rs:428 / tests/analytic_thermoelastic_channel.rs::the_reconciled_rise_gives_the_mean_of_the_two_owners_stresses / tests/analytic_thermoelastic_channel.rs::the_eigenstrain_reads_exactly_the_field_that_reached_the_channel FE の温度ひずみ自体は COV-FEM-096、温度の基準は COV-THERM-083"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-035"
+axis = "thermo-mechanical"
+item = "sequential thermal-stress from the engineering conduction solver (transient temperature handed to the FE solve at each output time)"
+source = "Code_Aster / Abaqus sequentially coupled thermal-stress; Boley-Weiner ch.1"
+status = "missing"
+evidence = "src/transient_thermal.rs:1 の温度は CoupledField / ScalarField3D に出す経路が無い (transient_thermal.rs の CoupledField 参照 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-036"
+axis = "thermo-mechanical"
+item = "fully coupled thermoelasticity (thermal strain in the momentum balance and the dilatation rate in the heat equation, solved together)"
+source = "Nowacki, Thermoelasticity ch.1-2; Biot 1956 (J. Appl. Phys. 27); Carter-Booker 1989"
+status = "missing"
+evidence = "熱方程式側の体積変化の項が無い (COV-THERM-046) 熱塑性の 2 方向連成 (COV-THERM-084) は塑性仕事の発熱と軟化の連成で、熱弾性の連成項ではない"
+oracle_candidate = "Danilovskaya 問題 (COV-COUPLE-096)"
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-037"
+axis = "thermo-mechanical"
+item = "unconditionally stable staggered thermo-mechanical split (isothermal / adiabatic operator split)"
+source = "Armero-Simo 1992 (IJNME 35); Simo-Miehe 1992 (CMAME 98)"
+status = "missing"
+evidence = "熱塑性の driver は increment ごとの δT の固定点として定義 (src/coupled_iteration.rs:1 の module doc、src/linear_elastic_fem.rs:5024) 熱弾性の等温 / 断熱分割の安定性を扱う実装は無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-038"
+axis = "thermo-mechanical"
+item = "monolithic thermo-mechanical Newton (coupled tangent ∂r_u/∂T and ∂r_T/∂u)"
+source = "Simo-Miehe 1992; Abaqus fully coupled temperature-displacement"
+status = "missing"
+evidence = "src/coupled_iteration.rs:225 以降に入口条件 (|λ_max| > 0.9) と「今は作らない」の判断 汎用の monolithic Newton は COV-NUM-064"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-039"
+axis = "thermo-mechanical"
+item = "thermal fluid-structure interaction (conjugate heat transfer together with structural deformation)"
+source = "Birken et al. 2010 (IJNME 82); preCICE conjugate heat transfer tutorials"
+status = "missing"
+evidence = "共役熱伝達 (COV-THERM-058) と FSI (COV-COUPLE-001) の両方が無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-040"
+axis = "electromechanical"
+item = "lumped piezoelectric element (direct effect V from force, converse effect blocked force and free strain from voltage, d33 1-D)"
+source = "IEEE Std 176-1987 (d, g constants); Ikeda, Fundamentals of Piezoelectricity ch.2"
+status = "implemented+oracle"
+evidence = "src/piezoelectric.rs:93 / src/piezoelectric.rs:113 / tests/audit_piezoelectric.rs::direct_effect_matches_closed_form_for_all_presets / tests/audit_piezoelectric.rs::converse_effect_blocked_force_matches_closed_form / tests/audit_piezoelectric.rs::blocked_force_over_area_gives_the_free_strain_d_times_field"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-041"
+axis = "electromechanical"
+item = "full piezoelectric constitutive tensors (stress-charge / strain-charge forms with c^E, e or d, ε^S)"
+source = "IEEE Std 176-1987 sec.3-4; ANSYS / COMSOL piezoelectric material"
+status = "missing"
+evidence = "src/piezoelectric.rs:1 は 1 方向の係数 d と ε_r だけを持つ"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-042"
+axis = "electromechanical"
+item = "two-way electromechanical stiffening (coupling factor k², open- versus short-circuit stiffness and resonance)"
+source = "IEEE Std 176-1987 sec.5; Ikeda ch.3"
+status = "missing"
+evidence = "正効果と逆効果は独立の式で、電気の境界条件が機械の剛性に戻らない (src/piezoelectric.rs:93 / src/piezoelectric.rs:113)"
+oracle_candidate = "開放と短絡の共振周波数比 √(1/(1-k²))"
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-043"
+axis = "electromechanical"
+item = "coupled piezoelectric finite elements (displacement and electric potential degrees of freedom)"
+source = "Allik-Hughes 1970 (IJNME 2); Code_Aster / Abaqus piezoelectric elements"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-044"
+axis = "electromechanical"
+item = "piezoelectric element with an external circuit (resistive load, charge and current, energy harvesting)"
+source = "Erturk-Inman, Piezoelectric Energy Harvesting ch.3"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "片持ち bimorph の出力電圧 (COV-COUPLE-097)"
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-045"
+axis = "electromechanical"
+item = "magnetostriction (Joule effect, Villari effect)"
+source = "Engdahl, Handbook of Giant Magnetostrictive Materials ch.1; COMSOL magnetostriction"
+status = "missing"
+evidence = "無い (推測: magnetostric で 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-046"
+axis = "electromechanical"
+item = "electrostatic actuation (parallel-plate force, pull-in instability)"
+source = "Senturia, Microsystem Design ch.6; Pelesko-Bernstein, Modeling MEMS and NEMS ch.2"
+status = "missing"
+evidence = "無い (推測: pull-in で 0 件)"
+oracle_candidate = "pull-in 電圧 V_PI = √(8 k g³ / (27 ε A)) と変位 g/3 の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-047"
+axis = "electromechanical"
+item = "Lorentz force from prescribed fields on charged rigid bodies (one-way, F = q(E + v × B))"
+source = "Jackson, Classical Electrodynamics ch.12; Griffiths, Introduction to Electrodynamics ch.5"
+status = "implemented+oracle"
+evidence = "src/electromagnetic.rs:106 / tests/analytic_electromagnetic_wiring.rs::cyclotron_orbit_has_the_gyro_radius_m_v_over_q_b / tests/analytic_electromagnetic_wiring.rs::magnetic_force_is_perpendicular_to_velocity_and_vanishes_when_parallel"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-048"
+axis = "electromechanical"
+item = "Lorentz force on bodies from a solved electromagnetic field (field solver to mechanics)"
+source = "Taflove-Hagness, Computational Electrodynamics ch.3 (Yee); COMSOL Particle Tracing / AC-DC force calculation"
+status = "missing"
+evidence = "src/maxwell_fdtd.rs:4 の行で electromagnetic の場は prescribed と明記、FDTD の場から body の力を作る経路は無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-049"
+axis = "electromechanical"
+item = "motional EMF and eddy-current forces (magnetic braking, two-way between conductor motion and induced current)"
+source = "Griffiths ch.7; Lammeraner-Štafl, Eddy Currents"
+status = "missing"
+evidence = "src/electromagnetic.rs:12 'Full Maxwell equations, magnetic-hysteresis, and Faraday-induced EMF closures are out of scope.'"
+oracle_candidate = "磁場中を落ちる導体板の終端速度の閉形式 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-050"
+axis = "electromechanical"
+item = "electromagnetic force on a body by the Maxwell stress tensor or virtual work"
+source = "Jackson ch.6; COMSOL AC/DC force calculation"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-051"
+axis = "electromechanical"
+item = "electro-thermal coupling (Joule heating with temperature-dependent conductivity, two-way)"
+source = "COMSOL Joule Heating multiphysics; Carslaw-Jaeger ch.2 (heat source)"
+status = "missing"
+evidence = "Joule の熱源自体が無い (COV-THERM-042) src/maxwell_fdtd.rs:191 '... no magnetic conductivity, and no bidirectional coupling to the thermal or piezoelectric solvers.'"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-052"
+axis = "electromechanical"
+item = "magnetohydrodynamics (Lorentz body force in the momentum equation, induction of the magnetic field)"
+source = "Davidson, An Introduction to Magnetohydrodynamics ch.5; OpenFOAM mhdFoam"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "Hartmann 流れ (COV-COUPLE-098)"
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-053"
+axis = "electromechanical"
+item = "electro-thermo-mechanical actuation (electrothermal actuator, Joule heating to thermal strain)"
+source = "Senturia ch.11; COMSOL thermal actuator"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-054"
+axis = "particle-fluid"
+item = "unresolved CFD-DEM (DEM granular contact with a porosity-weighted flow and interphase drag)"
+source = "Tsuji-Kawaguchi-Tanaka 1993 (Powder Technol. 77); Zhu et al. 2007 (Chem. Eng. Sci. 62); CFDEMcoupling"
+status = "missing"
+evidence = "無い (推測: porosity / Ergun で 0 件) 希薄な分散粒子の one-way / two-way は COV-MULTIPHASE-067 / 068"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-055"
+axis = "particle-fluid"
+item = "dense-suspension drag laws (Ergun, Wen-Yu, Di Felice voidage correction)"
+source = "Ergun 1952; Wen-Yu 1966; Di Felice 1994 (Int. J. Multiphase Flow 20)"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-056"
+axis = "particle-fluid"
+item = "particle-resolved simulation (each particle a moving boundary of the flow)"
+source = "Uhlmann 2005 (J. Comput. Phys. 209); Glowinski et al. 1999"
+status = "missing"
+evidence = "流れの格子に動く物体を置けない (COV-COUPLE-013)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-057"
+axis = "particle-fluid"
+item = "two-way coupling of a particle fluid (SPH / PBF) with rigid bodies (boundary particles, pressure force on the body)"
+source = "Akinci et al. 2012 (ACM TOG 31); Monaghan 2005 (Rep. Prog. Phys. 68)"
+status = "missing"
+evidence = "src/sdf_sph.rs:1 と src/fluid.rs:1 の境界は SDF からの反発だけで、反力を剛体に返さない (推測: 両 file の RigidBody 参照 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-058"
+axis = "particle-fluid"
+item = "two-way coupling of a grid / FLIP fluid with rigid bodies (variational or pressure-projection coupling)"
+source = "Batty-Bertails-Bridson 2007 (ACM TOG 26); Bridson, Fluid Simulation for Computer Graphics ch.10"
+status = "missing"
+evidence = "src/eulerian_grid.rs:144 の境界は軸平行の面のみで、剛体が格子に入らない"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-059"
+axis = "cloth-soft-fluid"
+item = "drag and buoyancy of nearby fluid particles on cloth particles (implicit relative-velocity drag)"
+source = "Müller et al. 2004 (SCA, particle-based fluid-solid interaction); Bridson ch.10"
+status = "implemented+oracle"
+evidence = "src/cloth_fluid.rs:136 / tests/audit_cloth_fluid.rs::drag_uses_the_mean_neighbour_velocity_and_scales_with_count / tests/audit_cloth_fluid.rs::drag_never_overshoots_the_fluid_velocity / tests/audit_cloth_fluid.rs::reported_force_does_not_vanish_at_zero_step (known defect AUD-A-S2W2-017)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-060"
+axis = "cloth-soft-fluid"
+item = "cloth as a repelling boundary for fluid particles (push along the cloth normal)"
+source = "Müller et al. 2004; Akinci et al. 2012 boundary handling"
+status = "implemented+oracle"
+evidence = "src/cloth_fluid.rs:265 / tests/audit_cloth_fluid.rs::boundary_push_matches_strength_times_overlap_over_distance / tests/audit_cloth_fluid.rs::boundary_push_follows_the_supplied_normal / tests/audit_cloth_fluid.rs::boundary_residual_is_the_norm_of_the_net_velocity_change (known defect AUD-A-S2W2-004)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-061"
+axis = "cloth-soft-fluid"
+item = "two-way cloth-fluid momentum exchange (the cloth velocity enters the fluid side, equal and opposite interface force)"
+source = "Müller et al. 2004; Hou-Wang-Layton 2012"
+status = "missing"
+evidence = "src/cloth_fluid.rs:1 は two-way を名乗るが cloth → fluid は cloth の位置と法線しか読まない tests/cloth_fluid_sub_iteration.rs::the_cloth_to_fluid_direction_ignores_the_cloth_velocity / tests/cloth_fluid_sub_iteration.rs::the_cloth_iterate_is_bit_identical_from_the_first_sweep"
+oracle_candidate = "布と流体の運動量の和が step で保存されること"
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-062"
+axis = "cloth-soft-fluid"
+item = "interface adhesion / surface tension between cloth and fluid particles"
+source = "Akinci-Akinci-Teschner 2013 (ACM TOG 32) adhesion"
+status = "implemented-no-oracle"
+evidence = "src/cloth_fluid.rs:27 / tests/audit_cloth_fluid.rs::surface_tension_pulls_the_cloth_toward_the_fluid_centre (known defect AUD-A-S2W2-005) 項は実装されているが、独立な参照と突合して走る test は無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-063"
+axis = "cloth-soft-fluid"
+item = "wetting of cloth (absorption of fluid, change of mass and stiffness)"
+source = "Fei et al. 2018 (ACM TOG 37, liquid-cloth interaction)"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-064"
+axis = "cloth-soft-fluid"
+item = "cloth or flag in a grid flow (two-way with the Navier-Stokes solver)"
+source = "Zhu-Peskin 2002 (J. Comput. Phys. 179) flapping filament; Tian et al. 2014"
+status = "missing"
+evidence = "流れ solver に布を置く経路が無い (COV-COUPLE-001) 風による布の外力は SOFT 表 (COV-SOFT-071 / 072)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-065"
+axis = "cloth-soft-fluid"
+item = "soft body (XPBD / FE deformable) immersed in a flow, two-way"
+source = "Bao et al. 2017; Macklin et al. 2014 (ACM TOG 33, unified particles)"
+status = "missing"
+evidence = "deformable から流れ側への連成は無い (COV-COUPLE-018)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-066"
+axis = "rigid-fluid"
+item = "buoyancy and drag on rigid bodies in a bounded fluid zone (Archimedes force with a submerged fraction, linear and quadratic drag)"
+source = "Archimedes; Newman, Marine Hydrodynamics ch.6; Unity / Godot buoyancy components"
+status = "partial"
+evidence = "src/buoyancy_zone.rs:172 / tests/analytic_buoyancy_zone_wiring.rs::buoyancy_is_archimedes_with_full_precision_four_thirds_pi / tests/analytic_buoyancy_zone_wiring.rs::light_body_settles_at_the_depth_archimedes_predicts src/force.rs:42 の半空間の Buoyancy は深さ比例の力 (体積を見ない)"
+oracle_candidate = ""
+limitation = "src/buoyancy_zone.rs:22 'where `V_displaced` is estimated from a spherical body proxy of radius `body_radius`; the exact submerged volume of an arbitrary mesh is out of scope for this module and remains future work.'"
+
+[[item]]
+id = "COV-COUPLE-067"
+axis = "rigid-fluid"
+item = "exact submerged volume and centre of buoyancy of arbitrary shapes (mesh clipping against the free surface)"
+source = "Kerner 2015 (Water interaction model for boats in video games); Newman ch.6"
+status = "missing"
+evidence = "src/buoyancy_zone.rs:22 の行が任意 mesh の没水体積を future work と明記"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-068"
+axis = "rigid-fluid"
+item = "hydrostatic righting moment and metacentric stability of a floating body"
+source = "Rawson-Tupper, Basic Ship Theory ch.4; Newman ch.6"
+status = "missing"
+evidence = "浮力は重心に掛かりトルクを生まない (src/buoyancy_zone.rs:172)"
+oracle_candidate = "箱型浮体の GM と小角の復原モーメント GM·Δ·sinθ"
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-069"
+axis = "rigid-fluid"
+item = "Froude-Krylov vertical wave force on a floating body"
+source = "Faltinsen, Sea Loads on Ships and Offshore Structures ch.3; Journée-Massie, Offshore Hydromechanics ch.6"
+status = "implemented+oracle"
+evidence = "src/wave_ship.rs:176 / tests/audit_wave_ship.rs::froude_krylov_equals_displaced_weight_at_mean_level / tests/audit_wave_ship.rs::froude_krylov_is_not_negative_when_the_keel_is_out_of_the_water (known defect AUD-A-S2W3-004)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-070"
+axis = "rigid-fluid"
+item = "floating-body response in waves (heave and pitch equations of motion)"
+source = "Faltinsen ch.5; Journée-Massie ch.6"
+status = "partial"
+evidence = "src/wave_ship.rs:1 / tests/audit_wave_ship.rs::damped_oscillator_matches_closed_form / tests/audit_wave_ship.rs::pitch_step_matches_hand_computation_and_is_decoupled_from_heave"
+oracle_candidate = ""
+limitation = "src/wave_ship.rs:206 'Simplified: uses independent SDOF for each DOF (heave/pitch decoupled).'"
+
+[[item]]
+id = "COV-COUPLE-071"
+axis = "rigid-fluid"
+item = "radiation and diffraction (frequency-dependent added mass and radiation damping, Cummins equation)"
+source = "Cummins 1962; Newman ch.6; WAMIT / NEMOH"
+status = "missing"
+evidence = "無い (推測: radiation damping / added mass で 0 件)"
+oracle_candidate = "浮体の自由減衰で周期と減衰率 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-072"
+axis = "rigid-fluid"
+item = "Morison equation for slender members (inertia and drag in oscillatory flow)"
+source = "Morison et al. 1950; Sarpkaya-Isaacson, Mechanics of Wave Forces on Offshore Structures ch.3"
+status = "missing"
+evidence = "抗力項は src/fsi_advanced.rs:64 にあるが、付加質量を含む慣性項が無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-073"
+axis = "rigid-fluid"
+item = "quasi-steady lift and drag of a lifting surface on a rigid body (lifting-line slope, stall, flat-plate post-stall)"
+source = "Anderson, Fundamentals of Aerodynamics ch.4-5; Stevens-Lewis, Aircraft Control and Simulation ch.2"
+status = "implemented+oracle"
+evidence = "src/lift_drag.rs:1 / tests/analytic_lift_drag.rs::finite_wing_slope_follows_lifting_line / tests/analytic_lift_drag.rs::world_glider_settles_on_the_closed_form_glide_path"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-074"
+axis = "rigid-fluid"
+item = "Magnus force and spin damping of a rotating body"
+source = "Seifert 2012 (Prog. Aerosp. Sci. 55); Mehta 1985 (Annu. Rev. Fluid Mech. 17)"
+status = "missing"
+evidence = "無い (推測: magnus で 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-075"
+axis = "rigid-fluid"
+item = "two-way rigid body and resolved flow (the body moves the flow, the flow's pressure and shear move the body)"
+source = "Uhlmann 2005; Batty et al. 2007; OpenFOAM sixDoFRigidBodyMotion"
+status = "missing"
+evidence = "流れの格子に剛体が入らない (COV-COUPLE-058) 剛体の力は閉形式 (buoyancy_zone / lift_drag / fsi_advanced) のみ"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-076"
+axis = "framework"
+item = "different time steps in the coupled solvers (subcycling, multirate exchange)"
+source = "Gear-Wells 1984 (BIT 24) multirate; preCICE subcycling"
+status = "missing"
+evidence = "無い (推測: subcycl / multirate で 0 件) src/aeroelasticity.rs:117 の doc は sub-cycle を呼び手に任せる"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-077"
+axis = "framework"
+item = "time interpolation of exchanged data inside a coupling window (waveform iteration)"
+source = "Lelarasmee-Ruehli-Sangiovanni-Vincentelli 1982; Rüth et al. 2021 (IJNME 122) preCICE waveform"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-078"
+axis = "framework"
+item = "interface data mapping between non-matching surface meshes (nearest neighbour, nearest projection, radial basis functions)"
+source = "de Boer-van Zuijlen-Bijl 2007 (CMAME 196); preCICE mapping methods"
+status = "missing"
+evidence = "格子上の sample / splat は src/coupled_field.rs:432 / src/coupled_field.rs:489 (COV-NUM-065) にあるが、非適合の表面 mesh 間の写像は無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-079"
+axis = "framework"
+item = "consistent mapping of displacements paired with conservative mapping of forces on an FSI interface"
+source = "Farhat-Lesoinne-Le Tallec 1998 (CMAME 157); preCICE consistent / conservative"
+status = "missing"
+evidence = "格子の場では sample と splat が随伴 (tests/analytic_coupled_field.rs::splat_is_the_adjoint_of_sample、COV-NUM-065) だが、FSI の界面の変位・力に使う経路は無い (COV-COUPLE-001)"
+oracle_candidate = "界面の仕事 Σ f·u が写像の前後で一致すること"
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-080"
+axis = "framework"
+item = "sequential operator splitting of SDF-layer physics modifiers through the shared distance (order dependence of the chain)"
+source = "Strang 1968 (SIAM J. Numer. Anal. 5) splitting; Keyes et al. 2013 (IJHPCA 27) multiphysics survey"
+status = "implemented-no-oracle"
+evidence = "src/sim_modifier.rs:54 / tests/coupling_channel_inventory.rs::chain_order_matters_materially_only_because_of_fracture / tests/coupling_channel_inventory.rs::physics_modifier_offers_no_channel_for_another_physics_state 分割誤差を独立な参照と突合する test は無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-081"
+axis = "framework"
+item = "declarative coupling configuration (participants, exchanged fields, scheme and acceleration chosen by configuration)"
+source = "preCICE configuration; MOOSE MultiApp / Transfers"
+status = "missing"
+evidence = "無い 連成はすべて呼び手の code で組む"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-082"
+axis = "co-simulation"
+item = "FMI 2.0 co-simulation export (FMU with doStep, get / set of inputs and outputs)"
+source = "FMI 2.0 Standard, chapter 4 (Co-Simulation)"
+status = "missing"
+evidence = "無い (推測: fmi で 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-083"
+axis = "co-simulation"
+item = "FMI 2.0 model exchange (continuous states and derivatives for an external integrator)"
+source = "FMI 2.0 Standard, chapter 3 (Model Exchange)"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-084"
+axis = "co-simulation"
+item = "importing and stepping an external FMU or external participant from inside the crate"
+source = "FMI 2.0 master algorithms; MOOSE MultiApp"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-085"
+axis = "co-simulation"
+item = "save and restore of a participant's state for a rolled-back (iterative) co-simulation step"
+source = "FMI 2.0 fmi2GetFMUstate / fmi2SetFMUstate"
+status = "implemented+oracle"
+evidence = "src/solver/world_snapshot.rs:1500 / src/solver/world_snapshot.rs:1715 / tests/world_snapshot_v2.rs::restored_world_matches_the_original_after_every_later_step 剛体 world のみ (流れ・FE の solver の状態は対象外)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-086"
+axis = "co-simulation"
+item = "host-driven stepping through a C ABI (step, exchange of body state and impulses, serialised state)"
+source = "FMI 2.0 Standard ch.2 (C API conventions); preCICE adapter interface"
+status = "implemented-no-oracle"
+evidence = "src/ffi.rs:270 / src/ffi.rs:906 連成相手と組んで突合する test は無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-087"
+axis = "co-simulation"
+item = "adapter to an external coupling library (preCICE or a MOOSE MultiApp)"
+source = "preCICE adapter API; MOOSE MultiApp"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-088"
+axis = "benchmark"
+item = "Turek-Hron FSI1 (steady flexible flap behind a cylinder)"
+source = "Turek-Hron 2006 (Lecture Notes in Comput. Sci. Eng. 53)"
+status = "missing"
+evidence = "FSI の solver が無い (COV-COUPLE-001)"
+oracle_candidate = "flap 先端の変位と抗力・揚力 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-089"
+axis = "benchmark"
+item = "Turek-Hron FSI2 (large self-excited flap oscillation)"
+source = "Turek-Hron 2006"
+status = "missing"
+evidence = "COV-COUPLE-001 に同じ"
+oracle_candidate = "振幅と周波数 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-090"
+axis = "benchmark"
+item = "Turek-Hron FSI3 (higher Reynolds number, strong added mass)"
+source = "Turek-Hron 2006"
+status = "missing"
+evidence = "COV-COUPLE-001 に同じ"
+oracle_candidate = "振幅と周波数 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-091"
+axis = "benchmark"
+item = "lid-driven cavity with a flexible bottom (Mok / Wall)"
+source = "Mok 2001 (PhD thesis, Univ. Stuttgart); Wall 1999"
+status = "missing"
+evidence = "COV-COUPLE-001 に同じ"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-092"
+axis = "benchmark"
+item = "pressure wave in a flexible tube (3-D, strong added mass)"
+source = "Formaggia-Gerbeau-Nobile-Quarteroni 2001 (CMAME 191)"
+status = "missing"
+evidence = "COV-COUPLE-001 に同じ"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-093"
+axis = "benchmark"
+item = "dam break against an elastic gate (free surface FSI)"
+source = "Antoci-Gallati-Sibilla 2007 (Comput. Struct. 85)"
+status = "missing"
+evidence = "COV-COUPLE-001 と自由表面 (COV-MULTIPHASE) が無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-094"
+axis = "benchmark"
+item = "two-degree-of-freedom airfoil flutter speed"
+source = "Hodges-Pierce ch.5; Bisplinghoff et al. ch.9"
+status = "missing"
+evidence = "COV-COUPLE-027 に同じ"
+oracle_candidate = "フラッター速度と周波数 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-095"
+axis = "benchmark"
+item = "spring-mounted cylinder VIV amplitude and frequency over reduced velocity"
+source = "Khalak-Williamson 1999; Feng 1968"
+status = "missing"
+evidence = "wake oscillator はあるが流体減衰が無く振幅が 52 D に飽和 (COV-COUPLE-021)"
+oracle_candidate = "lock-in 帯の振幅 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-096"
+axis = "benchmark"
+item = "Danilovskaya thermal shock of a half-space (coupled thermoelastic wave)"
+source = "Danilovskaya 1950; Nowacki ch.2"
+status = "missing"
+evidence = "COV-COUPLE-036 に同じ"
+oracle_candidate = "応力波の到達時刻と振幅の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-097"
+axis = "benchmark"
+item = "piezoelectric cantilever bimorph harvester output voltage"
+source = "Erturk-Inman 2009 (Smart Mater. Struct. 18)"
+status = "missing"
+evidence = "COV-COUPLE-044 と COV-COUPLE-043 に同じ"
+oracle_candidate = "共振時の出力電圧 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-098"
+axis = "benchmark"
+item = "Hartmann flow (channel flow in a transverse magnetic field)"
+source = "Hartmann 1937; Davidson ch.5"
+status = "missing"
+evidence = "COV-COUPLE-052 に同じ"
+oracle_candidate = "Hartmann 数での速度分布の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-099"
+axis = "benchmark"
+item = "electrostatic parallel-plate pull-in voltage"
+source = "Senturia ch.6"
+status = "missing"
+evidence = "COV-COUPLE-046 に同じ"
+oracle_candidate = "V_PI の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-100"
+axis = "benchmark"
+item = "sphere settling in a resolved viscous flow (terminal velocity, wall effect)"
+source = "ten Cate et al. 2002 (Phys. Fluids 14); Stokes drag"
+status = "missing"
+evidence = "COV-COUPLE-056 に同じ"
+oracle_candidate = "Stokes 域の終端速度"
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-101"
+axis = "benchmark"
+item = "minimum fluidisation velocity of a packed bed (CFD-DEM)"
+source = "Ergun 1952; Kunii-Levenspiel, Fluidization Engineering ch.3"
+status = "missing"
+evidence = "COV-COUPLE-054 に同じ"
+oracle_candidate = "Ergun 式との一致"
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-102"
+axis = "benchmark"
+item = "free heave decay of a floating body (natural period and radiation damping)"
+source = "Journée-Massie ch.6; Newman ch.6"
+status = "missing"
+evidence = "放射減衰が無い (COV-COUPLE-071)"
+oracle_candidate = ""
+limitation = ""
