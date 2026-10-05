@@ -192,6 +192,7 @@ were introduced during that release window.
 - **Behavior change:** `MaterialTable::register` / `FilamentDb::register` は 65,536 個の u16 id を使い切った後の呼び出しで panic する (従来は折り返した id を返し既存の entry と重なっていた) 容量超過を Err で受けるには新設の `try_register` (`PhysicsError::CapacityExceeded`) を使う (AUD-A-S1W6-002 / AUD-A-S1W5-013)
 - **Behavior change:** `XorShift64::new` が seed を splitmix64 で撹拌するようになった 同じ seed でも `XorShift64` と seed 付きの `LaplaceNoise` / `RandomizedResponse` は別の系列を出し、近い seed どうしの先頭 draw は相関しない (AUD-A-S4W3-030)
 - **Behavior change:** `StructuralSolver::new` は PLA の preset の時だけ PLA のクリープを入れる 他の材料では報告されるクリープが厳密に 0 になり `creep_modelled()` は false を返す PLA の結果は変わらない 係数を与えるには新設の `with_creep` を使う
+- **Behavior change:** TGS backend を選んだ場合、pre-solve hook と contact modifier が効くようになる veto された組には impulse が入らず、modifier で変えた摩擦と反発が使われる
 
 ### Deprecated
 
