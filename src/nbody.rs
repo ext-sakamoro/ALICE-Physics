@@ -316,6 +316,13 @@ pub fn total_momentum(velocities: &[Vec3Fix], masses: &[Fix128]) -> Result<Vec3F
 /// of a step is kept and reused at the start of the next one (one `O(N²)`
 /// evaluation per step) as long as the positions, masses and law are those
 /// it was computed for; anything else is detected and recomputed.
+///
+/// Not the same type as [`crate::molecular_dynamics::VelocityVerlet`]: this
+/// one does not own the system (the caller passes positions, velocities and
+/// masses to every `step`; it keeps only the acceleration cache), while that
+/// one is `VelocityVerlet<P: PairPotential>` and owns a periodic particle
+/// system that it steps. Neither is re-exported at the crate root; a
+/// re-export must use a distinct alias.
 #[derive(Clone, Debug, Default)]
 pub struct VelocityVerlet {
     acc: Vec<Vec3Fix>,

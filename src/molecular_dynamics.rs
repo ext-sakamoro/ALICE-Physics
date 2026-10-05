@@ -408,6 +408,13 @@ pub fn pair_forces_cell_list<P: PairPotential>(
 
 /// A periodic system of point particles under a truncated pair potential,
 /// advanced by velocity Verlet (NVE).
+///
+/// Not the same type as [`crate::nbody::VelocityVerlet`]: that one is an
+/// integrator that does not own the system (the caller passes positions,
+/// velocities and masses to every `step`), while this one is
+/// `VelocityVerlet<P: PairPotential>` and owns the particles, the periodic
+/// box and the potential, and steps them. Neither is re-exported at the
+/// crate root; a re-export must use a distinct alias.
 #[derive(Debug, Clone)]
 pub struct VelocityVerlet<P> {
     potential: Truncated<P>,
