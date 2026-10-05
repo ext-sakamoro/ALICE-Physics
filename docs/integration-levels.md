@@ -44,7 +44,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `cylinder` | world API (step 2 of 7 items) | 2 / 3 / 0 / 0 / 2 | C ABI, Python, WebAssembly |
 | `mass_properties` | world API | 0 / 8 / 0 / 1 / 0 | — |
 | `shape` | world API (step 4 of 9 items) | 4 / 5 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
-| `solver` | world API (step 28 of 141 items) | 28 / 78 / 7 / 27 / 1 | C ABI, Python, WebAssembly |
+| `solver` | world API (step 28 of 141 items) | 28 / 78 / 7 / 28 / 0 | C ABI, Python, WebAssembly |
 | `torus` | world API (step 2 of 7 items) | 2 / 3 / 0 / 0 / 2 | C ABI, Python, WebAssembly |
 | `ffi` | binding | 0 / 0 / 0 / 0 / 0 | — |
 | `netcode` | binding | 0 / 0 / 25 / 4 / 0 | Python |
@@ -128,7 +128,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `physics2d` | standalone | 0 / 0 / 0 / 39 / 0 | — |
 | `piezoelectric` | standalone | 0 / 0 / 0 / 8 / 0 | — |
 | `pipeline` | standalone | 0 / 0 / 0 / 43 / 0 | — |
-| `plastic` | standalone | 0 / 0 / 0 / 11 / 2 | — |
+| `plastic` | standalone | 0 / 0 / 0 / 12 / 1 | — |
 | `pressure` | standalone | 0 / 0 / 0 / 7 / 0 | — |
 | `prestressed` | standalone | 0 / 0 / 0 / 7 / 0 | — |
 | `print_orientation` | standalone | 0 / 0 / 0 / 13 / 0 | — |
