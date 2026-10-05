@@ -33,6 +33,7 @@ were introduced during that release window.
 - `PhysicsWorld::sdf_contacts`: `step` が SDF collider から押し出す body と接触を、状態を変えずに返す
 - `PhysicsWorld::sdf_ccd_hits` / `SdfCharacter::locomotion_context` / `rope_attach::solve_rope_attachments_two_way` (body 側にも逆質量比で補正する双方向版)
 - `interface_capture::{plic_normal, plic_plane_offset, truncated_cube_volume}` を `pub` にした
+- `plastic::PlasticModel::with_hardening` を `pub` にした (`StructuralSolver::plastic_model` に移動硬化・複合硬化のモデルを入れられる、例 `plastic_hardening_bauschinger` は荷重反転で等方硬化と移動硬化の逆降伏点の差 `2·H·Δλ₁` を閉形式で確認する)
 - `shape::{Shape, ShapeError}` / `PhysicsWorld::add_shaped_body`: box / cylinder / cone / ellipsoid / wedge / torus を密度から質量と慣性を持つ body にする (各形状に `center_of_mass_offset` を追加)
 - `collider::contact` (GJK → EPA) / `shape::PosedShape` / `PhysicsWorld::{set_body_shape, colliders_overlap}`: 形状を持つ body どうしを外接球でなく凸形状の接触で判定する
 - `PhysicsWorld::add_compound_body` / `CompoundShape::mass_properties` / `CompoundChild::support_world` / `convex_mesh_builder::{build_hull_mesh, HullMesh}` / `mass_properties::principal_axes`: 子形状を合成した compound body

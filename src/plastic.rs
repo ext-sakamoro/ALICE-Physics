@@ -40,10 +40,13 @@
 //! are wired into `structural_solver.rs`. `PlasticStep`,
 //! `current_yield_mpa`, and `strain_rate_per_s` are crate-internal and
 //! reached through `radial_return_1d` / `integrate`.
-//! `PlasticModel::with_hardening` and `NortonCreep::petg_room_temp` have no
-//! consumer (the solver builds its model with `from_fdm_material` and
-//! installs the PLA creep preset for PLA only) and carry `ALLOW-UNWIRED` debt markers
-//! with closed-form oracles in this module's unit tests. Stress tensors
+//! `PlasticModel::with_hardening` is the public way to pick the hardening law
+//! of a model installed on `StructuralSolver::plastic_model` (the solver's
+//! default is the isotropic `from_fdm_material`; see
+//! `examples/plastic_hardening_bauschinger.rs`). `NortonCreep::petg_room_temp`
+//! has no consumer (the solver installs the PLA creep preset for PLA only) and
+//! carries an `ALLOW-UNWIRED` debt marker with a closed-form oracle in this
+//! module's unit tests. Stress tensors
 //! (von Mises, hydrostatic part) live in the public
 //! `linear_elastic_fem::StressTensor`.
 
@@ -103,11 +106,12 @@ impl PlasticModel {
     }
 
     /// Override the hardening law, leaving every other parameter unchanged.
-    // ALLOW-DEAD: pub(crate) with no crate caller, same debt as the ALLOW-UNWIRED marker below
-    // ALLOW-UNWIRED: wiring debt Backlog structural-pub-crate-residue (hardening_type is a pub field, the solver sets nothing but the from_fdm_material default), oracle src/plastic.rs tests::with_hardening_back_stress_matches_radial_return_closed_form
-    #[allow(dead_code)]
+    ///
+    /// Install the result on [`crate::structural_solver::StructuralSolver::plastic_model`]
+    /// to run a load history under kinematic or combined hardening (the
+    /// solver's own default is the isotropic [`Self::from_fdm_material`]).
     #[must_use]
-    pub(crate) const fn with_hardening(mut self, ht: HardeningType) -> Self {
+    pub const fn with_hardening(mut self, ht: HardeningType) -> Self {
         self.hardening_type = ht;
         self
     }
