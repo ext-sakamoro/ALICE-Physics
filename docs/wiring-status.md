@@ -4,11 +4,11 @@ _Generated from `scripts/wiring-baseline.txt` and `scripts/wiring_guard.py` (no 
 
 ## Status
 
-🟡 **34 baseline items** — Permitted violations, ratchet in place
+🟡 **32 baseline items** — Permitted violations, ratchet in place
 
 ---
 
-## 📋 Baseline (34 permitted)
+## 📋 Baseline (32 permitted)
 
 Violations explicitly allowed via `scripts/wiring-baseline.txt`.
 Must resolve or remove from baseline to reduce ratchet.
@@ -17,7 +17,7 @@ Must resolve or remove from baseline to reduce ratchet.
 
 | File | Baseline lines |
 |------|----------------|
-| `src/eulerian_grid.rs` | 10 |
+| `src/eulerian_grid.rs` | 8 |
 | `src/bvh.rs` | 5 |
 | `src/motor.rs` | 4 |
 | `src/solver_tgs_hooks_6dof_scoped.rs` | 4 |
@@ -41,7 +41,7 @@ dead_code src/solver_tgs_hooks_6dof_oriented_scoped.rs 1
 dead_code src/solver_tgs_hooks_6dof_scoped.rs 1
 ```
 
-### Unwired Items (27)
+### Unwired Items (25)
 
 ```
 unwired src/bvh.rs::build_dynamic
@@ -54,8 +54,6 @@ unwired src/eulerian_grid.rs::bytes
 unwired src/eulerian_grid.rs::bytes
 unwired src/eulerian_grid.rs::bytes
 unwired src/eulerian_grid.rs::enforce_slab_face_boundaries_over
-unwired src/eulerian_grid.rs::project_pressure_decomposed_on_rank
-unwired src/eulerian_grid.rs::project_pressure_slab_local_on_rank
 unwired src/eulerian_grid.rs::set_u
 unwired src/eulerian_grid.rs::set_v
 unwired src/eulerian_grid.rs::set_w
