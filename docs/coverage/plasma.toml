@@ -1,0 +1,1533 @@
+# Plasma physics and magnetohydrodynamics (PLASMA) coverage of ALICE-Physics,
+# against an external reference frame.
+# 実装が無い分野の範囲宣言
+#
+# What this table is: a declaration of the field's extent for a field the crate
+# does not implement yet (collections of charged particles, kinetic and fluid
+# plasma models, magnetohydrodynamics, plasma equilibrium and stability, and the
+# plasmas of fusion, space and industry). It lists every capability that the
+# standard texts (Chen, Introduction to Plasma Physics and Controlled Fusion;
+# Birdsall-Langdon, Plasma Physics via Computer Simulation; Goedbloed-Poedts,
+# Principles of Magnetohydrodynamics), reference implementations (Athena++,
+# PLUTO, WarpX, OSIRIS) and standard benchmarks (two-stream instability growth,
+# Landau damping, the Orszag-Tang vortex, the Brio-Wu shock tube, Alfven wave
+# propagation, the cyclotron period) expect of a plasma code, one [[item]] per
+# capability. Nearly every row is missing: the table fixes the scope before
+# plasma models are added, so that each law has a place decided in advance. The
+# rows are written by hand: the axes and the items come from the reference
+# frame, not from the modules that exist.
+#
+# The few rows that are not missing are compositions of existing parts with
+# plasma inputs (a Yukawa one-component plasma through the screened Coulomb
+# pair potential and the periodic velocity-Verlet integrator; a charged body
+# gyrating or drifting in a uniform field through the Lorentz force applied to
+# a rigid body of the world); they are implemented-no-oracle because no test
+# checks the composed path against a plasma reference.
+#
+# Boundary with the other tables (one capability goes in one table only):
+#   - Maxwell field solvers (the Yee FDTD update with a current source, charge
+#     continuity, divergence diagnostics), the single-particle pusher (Boris,
+#     relativistic pushers, guiding-centre integration), field interpolation
+#     from the Yee lattice to particles, charge-conserving current deposition,
+#     closed-form fields of charges and dipoles, Drude / Debye / gyrotropic
+#     dispersive media: the electromagnetics table (COV-EM-010, 064 to 066,
+#     071, 078 to 082, 090; 044, 045, 049). Here the plasma models built on
+#     them: the particle-in-cell cycle, electrostatic charge assignment and
+#     field gather, collisions, kinetic and fluid models, and the closed-form
+#     orbit theory (drift velocities, mirror, adiabatic invariants).
+#   - forces of fields on bodies and the Lorentz body force added to an
+#     incompressible flow solver (low magnetic Reynolds number MHD, Hartmann
+#     flow): the coupling table (COV-COUPLE-047 to 050, 052, 098). Here MHD as
+#     a plasma model: the ideal / resistive / Hall MHD systems of conservation
+#     laws, their waves, their numerics (the divergence constraint on B, MHD
+#     Riemann solvers) and their benchmarks.
+#   - the numerical methods of compressible gas dynamics (exact and approximate
+#     Riemann solvers, reconstruction, limiters for the Euler equations): the
+#     shock and compressible-flow table (no table yet). Here only the
+#     MHD-specific solvers.
+#   - pair potentials between charges and the molecular-dynamics integrator
+#     (Coulomb, Yukawa, Ewald, PPPM, velocity Verlet, cell lists, thermostats,
+#     g(r)): the particle table (COV-PART-003, 004, 026, 027, 030, 038 to 046,
+#     050, 055, 102). Here the strongly coupled plasma as a use of them.
+#   - the FLIP / PIC transfer of an incompressible fluid (src/eulerian_grid.rs):
+#     the CFD table (COV-CFD-091); it moves velocity, not charge.
+#   - gravity of celestial bodies, orbits and thrust trajectories: the orbit
+#     table (COV-ORBIT-069, 070 low-thrust transfer, 075 disturbance torques).
+#     Here the plasma physics of thrusters and of space environments.
+#   - generic linear solvers, Poisson multigrid and ODE integrators: the
+#     numerical-methods table (COV-NUM-047, 086).
+#   - electrochemistry and combustion chemistry: the chemistry table
+#     (COV-CHEM-085).
+#
+# Search notes: the words "ion" (the ending of every "-ion" word: position,
+# rotation, function, million), "gyro" (the gyroscope of src/sensors.rs and
+# gyroscopic terms), "Debye" (Debye dispersive media in the scope note of
+# src/maxwell_fdtd.rs and the Debye-Hueckel form of the Yukawa potential),
+# "PIC" / "Particle-In-Cell" (the FLIP / PIC fluid transfer of
+# src/eulerian_grid.rs), "Lorentz" (the Lorentz force, the Lorentz-Berthelot
+# mixing rule, Lorentz dispersive media), "hall" (shallow), "pinch"
+# (src/collision_mesh_gen.rs), "kink" (src/laminate_failure.rs), "confinement"
+# (vorticity confinement in src/fluid.rs), "reconnect" (src/dynamic_bvh.rs),
+# "fusion" (diffusion), "induction" (the induction-motor toy named in
+# src/electromagnetic.rs), "Boltzmann" (the k_B of the molecular-dynamics
+# temperature) and "drift" / "mirror" / "beta" (energy drift, mirrored
+# boundaries, Newmark and Rayleigh coefficients) match other meanings only;
+# rows below that say "src 0 件" were checked word by word.
+#
+# status (exactly one of):
+#   implemented+oracle     implemented, and at least one non-ignored test checks
+#                          it against an independent reference
+#   implemented-no-oracle  implemented, no such test
+#   partial                implemented with a restriction that the source states;
+#                          `limitation` quotes it, and the source carries a
+#                          `LIMITATION(<id>)` comment at that place
+#   missing                not implemented
+#   out-of-scope           not a capability of this field (reason in `evidence`)
+#
+# This axis is separate from the test ignore reasons (`known defect: ...`,
+# `src gap: ...`, `diagnostic`, `runtime`).
+#
+# keys: id (COV-PLASMA-NNN) / axis / item / source (book, chapter, paper or
+# reference-implementation feature; no quoted text) / status / evidence
+# (`src/...rs:line`, `tests/...rs::test_fn`) / oracle_candidate / limitation
+# (verbatim quote of the source, required for `partial`).
+#
+# Reference values marked "参照値要確認" are to be checked against the original
+# publication before any test uses them. Lines marked "(推測)" were judged from
+# a search that found nothing and are to be confirmed. Ids of other tables cited
+# in `evidence` (COV-EM-*, COV-COUPLE-*, COV-PART-*, COV-CFD-*, COV-NUM-*,
+# COV-ORBIT-*, COV-CHEM-*) are those of the tables as written at the time of
+# this table.
+#
+# Checked by scripts/coverage_check.py (tests: scripts/test_coverage_check.py).
+
+
+[[item]]
+id = "COV-PLASMA-001"
+axis = "parameters"
+item = "Debye length from density and temperature (electron, ion, combined)"
+source = "Chen, Introduction to Plasma Physics and Controlled Fusion ch.1"
+status = "missing"
+evidence = "無い (推測: Debye で当たるのは src/pair_potential.rs:381 の Yukawa (遮蔽長 λ を呼び手が渡す、COV-PART-004) と src/maxwell_fdtd.rs:191 の Debye 分散媒質の語だけで、n と T から λ_D を出す関数は src 0 件)"
+oracle_candidate = "λ_D = sqrt(ε0 k T / (n e²)) を任意の n, T で突合、ion を含む 1/λ² = Σ 1/λ_s²"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-002"
+axis = "parameters"
+item = "plasma parameter (particles in a Debye sphere) and the coupling parameter Gamma"
+source = "Chen, Introduction to Plasma Physics and Controlled Fusion ch.1; Ichimaru, Statistical Plasma Physics"
+status = "missing"
+evidence = "無い (推測: plasma parameter / coupling で src 0 件)"
+oracle_candidate = "N_D = (4π/3) n λ_D³ と Γ = q²/(4π ε0 a k T)、a = (3/(4π n))^{1/3} の閉形式突合、Γ N_D の関係"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-003"
+axis = "parameters"
+item = "electron and ion plasma frequencies"
+source = "Chen, Introduction to Plasma Physics and Controlled Fusion ch.4"
+status = "missing"
+evidence = "無い (推測: plasma frequency で src 0 件)"
+oracle_candidate = "ω_pe = sqrt(n e² / (ε0 m_e)) を任意の n で突合"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-004"
+axis = "parameters"
+item = "cyclotron (gyro) frequency of electrons and ions"
+source = "Chen, Introduction to Plasma Physics and Controlled Fusion ch.2"
+status = "missing"
+evidence = "無い (推測: cyclotron / gyrofrequency で src 0 件、gyro で当たるのは src/sensors.rs の gyroscope だけ tests/analytic_electromagnetic_wiring.rs::cyclotron_orbit_has_the_gyro_radius_m_v_over_q_b は test 内で ω = qB/m を手書き)"
+oracle_candidate = "ω_c = |q| B / m を任意の q, B, m で突合"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-005"
+axis = "parameters"
+item = "Larmor (gyro) radius from the perpendicular velocity or the temperature"
+source = "Chen, Introduction to Plasma Physics and Controlled Fusion ch.2"
+status = "missing"
+evidence = "無い (推測: larmor / gyroradius で src 0 件、r = m v / (q B) は tests/analytic_electromagnetic_wiring.rs::cyclotron_orbit_has_the_gyro_radius_m_v_over_q_b の comment にだけある)"
+oracle_candidate = "r_L = m v⊥ / (|q| B)、熱的 Larmor 半径 sqrt(k T m)/(|q| B) の突合"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-006"
+axis = "parameters"
+item = "thermal speeds and the Maxwellian velocity distribution moments"
+source = "Chen, Introduction to Plasma Physics and Controlled Fusion ch.1, ch.7"
+status = "missing"
+evidence = "無い (推測: thermal speed / maxwellian で src 0 件、MD の初速分布も無い COV-PART-046)"
+oracle_candidate = "v_th = sqrt(k T / m) (定義の違い sqrt(2kT/m) を明示)、Maxwellian の平均速さ sqrt(8kT/(π m)) の突合"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-007"
+axis = "parameters"
+item = "Coulomb logarithm"
+source = "NRL Plasma Formulary; Spitzer, Physics of Fully Ionized Gases"
+status = "missing"
+evidence = "無い (推測: coulomb log で src 0 件)"
+oracle_candidate = "ln Λ = ln(12π n λ_D³) を任意の n, T で突合 (公式集の領域別の式は参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-008"
+axis = "parameters"
+item = "Coulomb collision frequencies (electron-ion, electron-electron, ion-ion) and mean free path"
+source = "Chen, Introduction to Plasma Physics and Controlled Fusion ch.5; NRL Plasma Formulary"
+status = "missing"
+evidence = "無い (推測: collision frequency / mean free path で src 0 件)"
+oracle_candidate = "ν_ei ∝ n ln Λ / T^{3/2} の依存性と公式集の係数 (参照値要確認)、λ_mfp = v_th / ν"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-009"
+axis = "parameters"
+item = "Spitzer resistivity of a fully ionised plasma"
+source = "Chen, Introduction to Plasma Physics and Controlled Fusion ch.5; Spitzer-Harm 1953"
+status = "missing"
+evidence = "無い (推測: spitzer / resistiv で src 0 件)"
+oracle_candidate = "η ∝ Z ln Λ / T_e^{3/2} の依存性と係数 (参照値要確認)、密度に依らないこと"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-010"
+axis = "parameters"
+item = "plasma beta (thermal to magnetic pressure)"
+source = "Chen, Introduction to Plasma Physics and Controlled Fusion ch.3"
+status = "missing"
+evidence = "無い (推測: magnetic pressure で src 0 件、beta で当たるのは Newmark / Rayleigh の係数だけ)"
+oracle_candidate = "β = 2 μ0 n k T / B² の突合"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-011"
+axis = "parameters"
+item = "Alfven speed and magnetosonic speed"
+source = "Chen, Introduction to Plasma Physics and Controlled Fusion ch.4; Goedbloed-Poedts, Principles of Magnetohydrodynamics"
+status = "missing"
+evidence = "無い (推測: alfv / magnetosonic で src 0 件)"
+oracle_candidate = "v_A = B / sqrt(μ0 ρ)、c_f² = (c_s² + v_A²) の垂直伝播の閉形式突合"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-012"
+axis = "parameters"
+item = "ion sound speed (with electron temperature, Bohm speed)"
+source = "Chen, Introduction to Plasma Physics and Controlled Fusion ch.4"
+status = "missing"
+evidence = "無い (推測: ion acoustic で src 0 件、理想気体の音速 COV-ACOUS-011 は中性気体)"
+oracle_candidate = "c_s = sqrt((Z k T_e + γ_i k T_i) / M) の突合"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-013"
+axis = "parameters"
+item = "inertial lengths (electron and ion skin depth)"
+source = "NRL Plasma Formulary; Goldston-Rutherford, Introduction to Plasma Physics"
+status = "missing"
+evidence = "無い (推測: skin depth / inertial length で src 0 件)"
+oracle_candidate = "d_e = c / ω_pe、d_i = c / ω_pi の突合"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-014"
+axis = "parameters"
+item = "magnetic Reynolds number and Lundquist number"
+source = "Goedbloed-Poedts, Principles of Magnetohydrodynamics"
+status = "missing"
+evidence = "無い (推測: lundquist / magnetic reynolds で src 0 件)"
+oracle_candidate = "R_m = μ0 σ U L、S = μ0 L v_A / η の突合"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-015"
+axis = "parameters"
+item = "Hall parameter (gyrofrequency over collision frequency) and magnetisation of species"
+source = "Braginskii 1965; NRL Plasma Formulary"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "ω_c τ の閉形式、>1 で磁化と判定"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-016"
+axis = "parameters"
+item = "Saha ionisation equilibrium"
+source = "Chen, Introduction to Plasma Physics and Controlled Fusion ch.1; Zel'dovich-Raizer"
+status = "missing"
+evidence = "無い (推測: saha / ionis / ioniz で src 0 件)"
+oracle_candidate = "n_i n_e / n_0 の Saha 式を任意の T で突合、水素の 50% 電離温度 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-017"
+axis = "parameters"
+item = "quasi-neutrality and the criteria for an ionised gas to be a plasma"
+source = "Chen, Introduction to Plasma Physics and Controlled Fusion ch.1"
+status = "missing"
+evidence = "無い (推測: quasi neutral で src 0 件)"
+oracle_candidate = "L >> λ_D、N_D >> 1、ω τ > 1 の 3 条件を判定する関数の突合"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-018"
+axis = "parameters"
+item = "radiation losses: bremsstrahlung, line and cyclotron radiation"
+source = "Bekefi, Radiation Processes in Plasmas; NRL Plasma Formulary"
+status = "missing"
+evidence = "無い (推測: bremsstrahl で src 0 件)"
+oracle_candidate = "制動放射のパワー密度 ∝ Z² n_e n_i sqrt(T_e) の依存性と係数 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-019"
+axis = "single-particle"
+item = "gyration of a charged particle in a uniform B (closed-form orbit)"
+source = "Chen, Introduction to Plasma Physics and Controlled Fusion ch.2"
+status = "missing"
+evidence = "閉形式の軌道関数は無い 数値の pusher は EM 側 (COV-EM-078 missing) 力の評価は src/electromagnetic.rs:106 (COV-COUPLE-047)"
+oracle_candidate = "位置 x(t) の閉形式 (中心・半径・位相) を任意の初期条件で突合"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-020"
+axis = "single-particle"
+item = "E x B drift velocity"
+source = "Chen, Introduction to Plasma Physics and Controlled Fusion ch.2"
+status = "missing"
+evidence = "無い (推測: drift で当たるのは energy drift の別語義だけ)"
+oracle_candidate = "v_E = E × B / B² の閉形式、電荷と質量に依らないこと"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-021"
+axis = "single-particle"
+item = "grad-B and curvature drifts"
+source = "Chen, Introduction to Plasma Physics and Controlled Fusion ch.2"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "v_∇B = (m v⊥²/(2 q B)) B × ∇B / B²、v_R の閉形式、真空場で両者の和の式"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-022"
+axis = "single-particle"
+item = "polarisation drift in a time-varying electric field"
+source = "Chen, Introduction to Plasma Physics and Controlled Fusion ch.2"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "v_p = (m / (q B²)) dE⊥/dt の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-023"
+axis = "single-particle"
+item = "drift under a general force F (gravitational drift)"
+source = "Chen, Introduction to Plasma Physics and Controlled Fusion ch.2"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "v_F = F × B / (q B²) の閉形式、電荷の符号で向きが反転"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-024"
+axis = "single-particle"
+item = "magnetic moment as the first adiabatic invariant"
+source = "Chen, Introduction to Plasma Physics and Controlled Fusion ch.2"
+status = "missing"
+evidence = "無い (推測: adiabatic invariant で src 0 件)"
+oracle_candidate = "ゆっくり強まる B で μ = m v⊥² / (2B) が保たれる (pusher との組合せで突合)"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-025"
+axis = "single-particle"
+item = "magnetic mirror: mirror force, reflection condition and loss cone"
+source = "Chen, Introduction to Plasma Physics and Controlled Fusion ch.2"
+status = "missing"
+evidence = "無い (推測: mirror で当たるのは鏡映境界の別語義だけ)"
+oracle_candidate = "sin² θ_m = B_0 / B_max の閉形式、loss cone の内外で反射 / 通過"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-026"
+axis = "single-particle"
+item = "longitudinal (J) and flux (Phi) adiabatic invariants, bounce and drift periods"
+source = "Chen, Introduction to Plasma Physics and Controlled Fusion ch.2; Northrop, The Adiabatic Motion of Charged Particles"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "dipole 場の bounce 周期の近似式 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-027"
+axis = "single-particle"
+item = "motion of a charged body in prescribed uniform E and B through the rigid-body world (Lorentz force applied each step)"
+source = "Chen ch.2; WarpX / OSIRIS test-particle mode"
+status = "implemented-no-oracle"
+evidence = "部品は揃う: src/electromagnetic.rs:106 (lorentz_force) を毎 frame 評価し src/solver.rs:350 (RigidBody::add_force) で world に渡す world の経路を突合する test は無い (tests/analytic_electromagnetic_wiring.rs::cyclotron_orbit_has_the_gyro_radius_m_v_over_q_b は test 内の局所積分) (推測: 外力は frame 先頭で 1 回与えられるので速度に比例する力では |v| が保たれない見込み)"
+oracle_candidate = "重力 0 の world で一様 B の周回の半径・周期・|v| の保存を閉形式と突合、時間刻みに対する誤差次数も"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-028"
+axis = "particle-in-cell"
+item = "electrostatic PIC cycle in 1-D (assign charge, solve Poisson, gather E, push)"
+source = "Birdsall-Langdon, Plasma Physics via Computer Simulation Part One"
+status = "missing"
+evidence = "無い (推測: particle in cell で当たるのは src/eulerian_grid.rs の流体の FLIP / PIC 転送 (COV-CFD-091) と src/maxwell_fdtd.rs:122 の条件の言及だけ)"
+oracle_candidate = "冷たいプラズマ振動の周波数 ω_pe と 2 流束不安定の成長率 (行 benchmark) を突合"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-029"
+axis = "particle-in-cell"
+item = "electrostatic PIC in 2-D and 3-D"
+source = "Birdsall-Langdon, Plasma Physics via Computer Simulation"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "Langmuir 振動の等方性、Debye 遮蔽ポテンシャルの再現"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-030"
+axis = "particle-in-cell"
+item = "charge assignment and force interpolation by shape functions (NGP, CIC, TSC, higher order)"
+source = "Birdsall-Langdon, Plasma Physics via Computer Simulation ch.8 (weighting)"
+status = "missing"
+evidence = "無い (推測: 粒子から格子への電荷配分は src 0 件、流体の速度の splat は COV-NUM 側)"
+oracle_candidate = "総電荷の保存、同じ shape 関数で配分と補間をすると自己力が 0"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-031"
+axis = "particle-in-cell"
+item = "electrostatic field solve on the grid for PIC (periodic FFT or Poisson with conductors)"
+source = "Birdsall-Langdon, Plasma Physics via Computer Simulation; Hockney-Eastwood, Computer Simulation Using Particles"
+status = "missing"
+evidence = "電位の Poisson 解法は無い (COV-EM-071 missing、COV-NUM-086 missing)"
+oracle_candidate = "正弦波電荷密度に対する電位の閉形式と、格子の有限差分の Green 関数の突合"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-032"
+axis = "particle-in-cell"
+item = "electromagnetic PIC cycle (Yee field advance, particle push, current deposition, field gather)"
+source = "WarpX / OSIRIS / VPIC documentation; Birdsall-Langdon Part Two"
+status = "missing"
+evidence = "部品のうち場の更新だけある (src/maxwell_fdtd.rs の J 源と電荷連続、COV-EM-010 I+O) pusher・格子からの補間・電荷保存の電流配分は EM 側で missing (COV-EM-078, 081, 082) 環として組む関数は無い"
+oracle_candidate = "電荷保存配分なら ∇·E − ρ が step で不変 (COV-EM-090 の診断で突合)、Weibel 不安定の成長率"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-033"
+axis = "particle-in-cell"
+item = "momentum-conserving vs energy-conserving schemes and the finite-grid instability"
+source = "Birdsall-Langdon, Plasma Physics via Computer Simulation ch.8, ch.10"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "Δx > λ_D で有限格子加熱が出ること、エネルギー保存型で抑えられることを長時間の全エネルギーで比較"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-034"
+axis = "particle-in-cell"
+item = "macro-particles with weights and Maxwellian loading (random and quiet start)"
+source = "Birdsall-Langdon, Plasma Physics via Computer Simulation ch.16"
+status = "missing"
+evidence = "無い (推測: 初速分布の生成は MD 側も missing COV-PART-046)"
+oracle_candidate = "生成した速度の 2 次・4 次 moment を Maxwellian と突合、quiet start で初期雑音が減る"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-035"
+axis = "particle-in-cell"
+item = "particle boundary conditions (periodic, absorbing wall, reflecting wall, injection of a flux)"
+source = "Birdsall-Langdon, Plasma Physics via Computer Simulation"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "壁で吸収された電荷の勘定、片側 Maxwellian flux の注入率 n v_th / sqrt(2π)"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-036"
+axis = "particle-in-cell"
+item = "binary Coulomb collisions (Takizuka-Abe, Nanbu)"
+source = "Takizuka-Abe 1977; Nanbu 1997"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "異なる温度の 2 種の温度緩和率を Spitzer の式と突合 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-037"
+axis = "particle-in-cell"
+item = "Monte Carlo collisions with neutrals (null-collision method, ionisation, excitation)"
+source = "Vahedi-Surendra 1995; Birdsall 1991 PIC-MCC"
+status = "missing"
+evidence = "無い (推測: monte carlo で src 0 件)"
+oracle_candidate = "一定の断面積で衝突頻度 n σ v を統計的に突合"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-038"
+axis = "particle-in-cell"
+item = "secondary electron emission and sputtering at walls"
+source = "Vaughan 1989; Furman-Pivi"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "収率曲線の閉形式 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-039"
+axis = "particle-in-cell"
+item = "current and charge smoothing (digital filters) and their compensation"
+source = "Birdsall-Langdon, Plasma Physics via Computer Simulation Appendix C; WarpX filters"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "binomial filter の伝達関数 cos²(k Δx / 2) の突合"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-040"
+axis = "particle-in-cell"
+item = "implicit and energy-conserving PIC (implicit moment, Chen-Chacon)"
+source = "Brackbill-Forslund 1982; Chen-Chacon-Barnes 2011"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "Δt ω_pe > 1 で安定、全エネルギーの保存を機械精度で突合"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-041"
+axis = "particle-in-cell"
+item = "delta-f and gyrokinetic PIC"
+source = "Parker-Lee 1993; Lee 1983"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "線形 ITG / drift wave の成長率 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-042"
+axis = "particle-in-cell"
+item = "hybrid PIC (kinetic ions, fluid electrons)"
+source = "Winske-Omidi; Lipatov, The Hybrid Multiscale Simulation Technology"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "ion beam 不安定の成長率 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-043"
+axis = "particle-in-cell"
+item = "moving window and boosted frame (laser-plasma, wakefield)"
+source = "WarpX / OSIRIS moving window; Vay 2007"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "線形 wake の振幅と波長 2π c / ω_pe の突合"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-044"
+axis = "particle-in-cell"
+item = "particle sorting, load balancing and parallel PIC"
+source = "WarpX / VPIC documentation"
+status = "missing"
+evidence = "無い (推測: 粒子の分散並列は無い、流体格子の分散は eulerian_grid の圧力専用 COV-NUM 側)"
+oracle_candidate = "並列分割数を変えても結果が bit 一致 (決定論の crate として)"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-045"
+axis = "kinetic"
+item = "Vlasov-Poisson solver in 1D1V (semi-Lagrangian or spectral)"
+source = "Cheng-Knorr 1976; Filbet-Sonnendrücker 2003"
+status = "missing"
+evidence = "無い (推測: vlasov で src 0 件)"
+oracle_candidate = "線形 Landau 減衰率、L1 ノルムと質量の保存"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-046"
+axis = "kinetic"
+item = "Vlasov-Maxwell solver (continuum electromagnetic kinetics)"
+source = "Gkeyll documentation; Juno et al. 2018"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "Weibel 不安定の成長率 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-047"
+axis = "kinetic"
+item = "Fokker-Planck collision operator (Rosenbluth potentials)"
+source = "Rosenbluth-MacDonald-Judd 1957; Helander-Sigmar, Collisional Transport in Magnetized Plasmas"
+status = "missing"
+evidence = "無い (推測: fokker で src 0 件)"
+oracle_candidate = "Maxwellian が定常解、質量・運動量・エネルギーの保存、H 定理"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-048"
+axis = "kinetic"
+item = "Landau collision operator"
+source = "Landau 1936; Helander-Sigmar"
+status = "missing"
+evidence = "無い (推測: landau で src 0 件)"
+oracle_candidate = "保存則と Maxwellian への緩和率"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-049"
+axis = "kinetic"
+item = "model collision operators (BGK / Krook, Lenard-Bernstein, Dougherty)"
+source = "Bhatnagar-Gross-Krook 1954; Lenard-Bernstein 1958"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "BGK で分布が exp(−ν t) で Maxwellian に近づく閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-050"
+axis = "kinetic"
+item = "plasma dispersion function Z(zeta) and the kinetic dispersion relation of Langmuir waves"
+source = "Fried-Conte 1961; Chen ch.7"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "Z の級数・漸近展開と数表 (参照値要確認)、k λ_D に対する Landau 減衰率"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-051"
+axis = "kinetic"
+item = "Landau damping theory (linear damping rate)"
+source = "Chen, Introduction to Plasma Physics and Controlled Fusion ch.7"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "弱減衰の近似式 γ ≈ −sqrt(π/8) ω_pe / (k λ_D)³ exp(...) と分散関係の数値根の突合 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-052"
+axis = "kinetic"
+item = "nonlinear Landau damping, particle trapping and BGK modes"
+source = "O'Neil 1965; Bernstein-Greene-Kruskal 1957"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "捕捉周期 2π / ω_B で振幅が振動、ω_B = sqrt(e k E / m)"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-053"
+axis = "kinetic"
+item = "quasilinear theory (plateau formation)"
+source = "Vedenov-Velikhov-Sagdeev; Drummond-Pines 1962"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "bump-on-tail 不安定の後に速度分布が平坦化"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-054"
+axis = "kinetic"
+item = "drift-kinetic and gyrokinetic equations"
+source = "Brizard-Hahm 2007; Frieman-Chen 1982"
+status = "missing"
+evidence = "無い (推測: gyrokinetic で src 0 件)"
+oracle_candidate = "Rosenbluth-Hinton の zonal flow 残差 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-055"
+axis = "kinetic"
+item = "Bernstein waves (electron and ion) in a magnetised Maxwellian plasma"
+source = "Chen, Introduction to Plasma Physics and Controlled Fusion ch.7; Stix, Waves in Plasmas"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "ω ≈ n ω_c 近傍の分散曲線 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-056"
+axis = "kinetic"
+item = "Boltzmann (adiabatic) electron response and the Debye shielding of a test charge"
+source = "Chen, Introduction to Plasma Physics and Controlled Fusion ch.1"
+status = "missing"
+evidence = "遮蔽ポテンシャルの形 (Yukawa) は src/pair_potential.rs:381 (COV-PART-004) にあるが、Poisson-Boltzmann から遮蔽を作る解法は無い"
+oracle_candidate = "線形化 Poisson-Boltzmann の解が φ = q exp(−r/λ_D) / (4π ε0 r) になること"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-057"
+axis = "fluid"
+item = "two-fluid (electron and ion) equations with the Maxwell or Poisson field"
+source = "Chen, Introduction to Plasma Physics and Controlled Fusion ch.3"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "Langmuir 波と ion acoustic 波の線形分散関係"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-058"
+axis = "fluid"
+item = "generalised Ohm's law (resistive, Hall, electron pressure, electron inertia terms)"
+source = "Goedbloed-Poedts, Principles of Magnetohydrodynamics; Braginskii 1965"
+status = "missing"
+evidence = "無い (推測: ohm で src 0 件)"
+oracle_candidate = "各項の大きさの順序 (d_i / L、ρ_e / L) と極限での縮退"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-059"
+axis = "fluid"
+item = "ideal MHD equations in conservative form (mass, momentum, energy, induction)"
+source = "Goedbloed-Poedts, Principles of Magnetohydrodynamics; Athena++ / PLUTO MHD modules"
+status = "missing"
+evidence = "無い (推測: magnetohydro / MHD で src 0 件、COV-COUPLE-052 も missing)"
+oracle_candidate = "1-D 線形波の固有速度 (Alfvén, 速 / 遅磁気音波) と保存量の bit 収支"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-060"
+axis = "fluid"
+item = "resistive MHD (magnetic diffusion)"
+source = "Goedbloed-Poedts, Principles of Magnetohydrodynamics"
+status = "missing"
+evidence = "無い (推測: resistiv で src 0 件)"
+oracle_candidate = "磁場の拡散 B(x,t) の Gauss 解 (参照値は閉形式)"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-061"
+axis = "fluid"
+item = "Hall MHD and whistler dispersion"
+source = "Huba, Hall MHD; Athena++ / PLUTO Hall MHD"
+status = "missing"
+evidence = "無い (推測: hall で当たるのは shallow の部分一致だけ)"
+oracle_candidate = "whistler の分散関係 ω = k² d_i v_A cos θ の短波長極限"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-062"
+axis = "fluid"
+item = "extended MHD (two-temperature, anisotropic pressure CGL, Braginskii viscosity and heat flux)"
+source = "Chew-Goldberger-Low 1956; Braginskii 1965"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "CGL の二重断熱不変量の保存、Braginskii の平行熱流束係数 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-063"
+axis = "fluid"
+item = "relativistic MHD"
+source = "Komissarov 1999; PLUTO RMHD module"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "相対論的 Brio-Wu 型衝撃波管 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-064"
+axis = "fluid"
+item = "anisotropic thermal conduction along field lines"
+source = "Sharma-Hammett 2007; Athena++ anisotropic conduction"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "斜めの磁場に沿う熱パルスの拡散で直交方向の数値拡散を測る (Sharma-Hammett の環状試験)"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-065"
+axis = "fluid"
+item = "equation of state and ionisation for MHD (ideal gas with variable ionisation, radiative cooling)"
+source = "PLUTO cooling modules; Athena++ EOS"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "Saha 平衡の内部エネルギーと理想気体の極限"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-066"
+axis = "waves"
+item = "Langmuir (electron plasma) waves and the Bohm-Gross dispersion"
+source = "Chen, Introduction to Plasma Physics and Controlled Fusion ch.4"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "ω² = ω_pe² + 3 k² v_th² の突合"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-067"
+axis = "waves"
+item = "ion acoustic waves"
+source = "Chen, Introduction to Plasma Physics and Controlled Fusion ch.4"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "ω = k c_s / sqrt(1 + k² λ_D²) の突合"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-068"
+axis = "waves"
+item = "electromagnetic waves in an unmagnetised plasma (cutoff at the plasma frequency)"
+source = "Chen, Introduction to Plasma Physics and Controlled Fusion ch.4"
+status = "missing"
+evidence = "Maxwell の場の解法側の Drude 媒質は missing (COV-EM-045)、閉形式の分散関係も無い"
+oracle_candidate = "ω² = ω_pe² + c² k²、ω < ω_pe で減衰する反射"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-069"
+axis = "waves"
+item = "cold magnetised plasma waves (R, L, O, X modes, Appleton-Hartree, Stix CMA diagram)"
+source = "Stix, Waves in Plasmas; Chen ch.4"
+status = "missing"
+evidence = "ジャイロトロピック媒質は EM 側で missing (COV-EM-049)、閉形式の Stix パラメータも無い"
+oracle_candidate = "S, D, P の閉形式と R / L cutoff ω_R, ω_L の突合"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-070"
+axis = "waves"
+item = "upper and lower hybrid resonances"
+source = "Chen, Introduction to Plasma Physics and Controlled Fusion ch.4"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "ω_UH² = ω_pe² + ω_ce² の突合"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-071"
+axis = "waves"
+item = "whistler waves"
+source = "Chen, Introduction to Plasma Physics and Controlled Fusion ch.4"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "低周波極限の群速度と周波数分散 (whistler の音の下降)"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-072"
+axis = "waves"
+item = "shear Alfven waves"
+source = "Chen, Introduction to Plasma Physics and Controlled Fusion ch.4; Goedbloed-Poedts, Principles of Magnetohydrodynamics"
+status = "missing"
+evidence = "無い (推測: alfv で src 0 件)"
+oracle_candidate = "ω = k∥ v_A の突合"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-073"
+axis = "waves"
+item = "fast and slow magnetosonic waves (Friedrichs diagram)"
+source = "Goedbloed-Poedts, Principles of Magnetohydrodynamics"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "任意の伝播角で c_f, c_s の閉形式と群速度の Friedrichs 図"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-074"
+axis = "waves"
+item = "two-stream and beam-plasma instabilities (linear growth rate)"
+source = "Chen, Introduction to Plasma Physics and Controlled Fusion ch.6"
+status = "missing"
+evidence = "無い (推測: two stream で src 0 件)"
+oracle_candidate = "対称な 2 冷ビームの分散関係の最大成長率 γ_max = ω_pe / (2√2) (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-075"
+axis = "waves"
+item = "Buneman instability"
+source = "Buneman 1958"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "最大成長率 ∝ (m_e/m_i)^{1/3} ω_pe の係数 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-076"
+axis = "waves"
+item = "Weibel (current filamentation) instability"
+source = "Weibel 1959"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "温度異方性に対する成長率 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-077"
+axis = "waves"
+item = "ion acoustic shocks and solitons (KdV)"
+source = "Chen, Introduction to Plasma Physics and Controlled Fusion ch.8"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "KdV の soliton 速度と振幅の関係"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-078"
+axis = "waves"
+item = "parametric instabilities and ponderomotive force"
+source = "Chen, Introduction to Plasma Physics and Controlled Fusion ch.8"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "ponderomotive 力 −(ω_p² / ω²) ∇⟨ε0 E²⟩/2 の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-079"
+axis = "mhd-numerics"
+item = "constrained transport on a staggered grid (div B = 0 to round-off)"
+source = "Evans-Hawley 1988; Gardiner-Stone 2005; Athena++"
+status = "missing"
+evidence = "無い (推測: constrained transport で src 0 件) Yee 格子の ∇·B は FDTD 側の性質 (COV-EM-090)"
+oracle_candidate = "任意の初期 B で ∇·B が step を通して bit で不変"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-080"
+axis = "mhd-numerics"
+item = "divergence cleaning (hyperbolic GLM, projection)"
+source = "Dedner et al. 2002; Brackbill-Barnes 1980"
+status = "missing"
+evidence = "無い (推測: divergence clean で src 0 件、流体の圧力投影は速度用)"
+oracle_candidate = "人工的に入れた ∇·B 誤差が速さ c_h で運ばれて減衰"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-081"
+axis = "mhd-numerics"
+item = "Powell eight-wave source terms"
+source = "Powell et al. 1999"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "∇·B ≠ 0 の誤差が流れとともに移流されることの確認"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-082"
+axis = "mhd-numerics"
+item = "MHD approximate Riemann solvers (Roe, HLL, HLLC, HLLD)"
+source = "Miyoshi-Kusano 2005; Brio-Wu 1988; PLUTO / Athena++ Riemann solvers"
+status = "missing"
+evidence = "無い (推測: hlld / roe で src 0 件、気体力学の Riemann ソルバは衝撃・圧縮性流体の表 (表なし))"
+oracle_candidate = "孤立した接触不連続・回転不連続を数値拡散なしで保持 (HLLD)"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-083"
+axis = "mhd-numerics"
+item = "MHD eigensystem and characteristic variables (degeneracies, eigenvector normalisation)"
+source = "Roe-Balsara 1996; Ryu-Jones 1995"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "固有値の順序と Roe-Balsara 正規化の縮退点での有限性"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-084"
+axis = "mhd-numerics"
+item = "high-order reconstruction and time integration for MHD (PLM, PPM, WENO, SSP-RK, CTU)"
+source = "Stone et al. 2008; PLUTO"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "円偏光 Alfvén 波の収束次数 (行 benchmark)"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-085"
+axis = "mhd-numerics"
+item = "positivity preservation (pressure and density floors, entropy fixes)"
+source = "Balsara-Spicer 1999; Athena++ floors"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "低 β の爆発波で負圧が出ない"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-086"
+axis = "mhd-numerics"
+item = "operator splitting or implicit treatment of resistivity and Hall terms (super time-stepping)"
+source = "Alexiades et al. 1996 (STS); PLUTO STS"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "拡散の陽解法安定限界を超える Δt で磁場拡散の閉形式に一致"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-087"
+axis = "mhd-numerics"
+item = "adaptive mesh refinement for MHD with div B preserved across levels"
+source = "Balsara 2001; Athena++ AMR"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "細分界面で ∇·B = 0 を保つ prolongation"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-088"
+axis = "mhd-numerics"
+item = "magnetic field line tracing and flux-function diagnostics"
+source = "Athena++ / PLUTO analysis tools"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "dipole 場の磁力線 r = L sin² θ の閉形式に沿う追跡"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-089"
+axis = "reconnection"
+item = "Sweet-Parker reconnection rate"
+source = "Goedbloed-Poedts, Principles of Magnetohydrodynamics; Priest-Forbes, Magnetic Reconnection"
+status = "missing"
+evidence = "無い (推測: reconnect で当たるのは src/dynamic_bvh.rs の木の再接続だけ)"
+oracle_candidate = "速度 ∝ S^{−1/2} の scaling"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-090"
+axis = "reconnection"
+item = "Petschek reconnection"
+source = "Priest-Forbes"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "最大速度 π / (8 ln S) の scaling (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-091"
+axis = "reconnection"
+item = "tearing mode instability growth rate"
+source = "Furth-Killeen-Rosenbluth 1963"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "Harris 電流層の成長率 ∝ S^{−3/5} の scaling (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-092"
+axis = "reconnection"
+item = "collisionless (Hall) reconnection and the GEM challenge"
+source = "Birn et al. 2001 (GEM challenge)"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "再接続磁束の時間変化 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-093"
+axis = "reconnection"
+item = "plasmoid instability in long current sheets"
+source = "Loureiro et al. 2007; Bhattacharjee et al. 2009"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "臨界 Lundquist 数 ~1e4 以上で plasmoid が出る (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-094"
+axis = "equilibrium-stability"
+item = "MHD force balance J x B = grad p and magnetic pressure / tension"
+source = "Chen, Introduction to Plasma Physics and Controlled Fusion ch.5; Goedbloed-Poedts, Principles of Magnetohydrodynamics"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "円柱平衡の圧力分布 (Bennett 等) を閉形式で突合"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-095"
+axis = "equilibrium-stability"
+item = "Grad-Shafranov equation solver (free and fixed boundary)"
+source = "Grad-Rubin 1958; Shafranov 1966; Jardin, Computational Methods in Plasma Physics"
+status = "missing"
+evidence = "無い (推測: grad shafranov で src 0 件)"
+oracle_candidate = "Solov'ev の解析平衡との突合 (行 benchmark)"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-096"
+axis = "equilibrium-stability"
+item = "Z-pinch (Bennett relation), theta-pinch and screw pinch equilibria"
+source = "Chen, Introduction to Plasma Physics and Controlled Fusion ch.6; Bennett 1934"
+status = "missing"
+evidence = "無い (推測: pinch で当たるのは src/collision_mesh_gen.rs の別語義だけ)"
+oracle_candidate = "Bennett の関係 μ0 I² / (8π) = N k (T_e + T_i)"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-097"
+axis = "equilibrium-stability"
+item = "force-free fields and Taylor relaxation"
+source = "Taylor 1974; Woltjer 1958"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "Lundquist の Bessel 関数解 B_z = B0 J0(α r)、B_θ = B0 J1(α r)"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-098"
+axis = "equilibrium-stability"
+item = "MHD energy principle (delta W) and normal-mode stability analysis"
+source = "Bernstein et al. 1958; Freidberg, Ideal MHD"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "円柱 kink の δW の符号と Kruskal-Shafranov 条件"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-099"
+axis = "equilibrium-stability"
+item = "kink and sausage instabilities (Kruskal-Shafranov limit)"
+source = "Chen, Introduction to Plasma Physics and Controlled Fusion ch.6; Freidberg"
+status = "missing"
+evidence = "無い (推測: kink で当たるのは src/laminate_failure.rs の kink band だけ)"
+oracle_candidate = "安全係数 q > 1 で安定、m = 0 sausage の成長率 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-100"
+axis = "equilibrium-stability"
+item = "magnetic Rayleigh-Taylor and interchange instabilities"
+source = "Chen, Introduction to Plasma Physics and Controlled Fusion ch.6"
+status = "missing"
+evidence = "無い (推測: rayleigh taylor で src 0 件)"
+oracle_candidate = "磁場の張力による短波長の安定化 k > k_c の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-101"
+axis = "equilibrium-stability"
+item = "magnetised Kelvin-Helmholtz instability"
+source = "Chandrasekhar, Hydrodynamic and Hydromagnetic Stability"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "流れに平行な磁場による安定化条件 ΔU² < 2 v_A² (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-102"
+axis = "equilibrium-stability"
+item = "ballooning and tearing-type resistive instabilities in toroidal geometry"
+source = "Freidberg; Connor-Hastie-Taylor 1978"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "s-α 図の安定境界 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-103"
+axis = "fusion"
+item = "tokamak geometry, safety factor q and magnetic surfaces"
+source = "Wesson, Tokamaks; Freidberg, Plasma Physics and Fusion Energy"
+status = "missing"
+evidence = "無い (推測: tokamak で src 0 件、safety factor で当たるのは構造の安全率と数値の余裕係数だけ)"
+oracle_candidate = "大アスペクト比円形断面の q = r B_φ / (R B_θ)"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-104"
+axis = "fusion"
+item = "fusion reaction rates (D-T, D-D, D-He3 reactivity) and power density"
+source = "Bosch-Hale 1992; NRL Plasma Formulary"
+status = "missing"
+evidence = "無い (推測: fusion で当たるのは diffusion の部分一致だけ)"
+oracle_candidate = "Bosch-Hale の ⟨σv⟩ fit を数表と突合 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-105"
+axis = "fusion"
+item = "Lawson criterion, triple product and ignition / Q"
+source = "Chen, Introduction to Plasma Physics and Controlled Fusion ch.9; Lawson 1957"
+status = "missing"
+evidence = "無い (推測: lawson で src 0 件)"
+oracle_candidate = "n T τ_E の点火条件 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-106"
+axis = "fusion"
+item = "energy confinement time scalings (ITER89-P, IPB98(y,2))"
+source = "ITER Physics Basis 1999"
+status = "missing"
+evidence = "無い (推測: confinement で当たるのは src/fluid.rs の vorticity confinement だけ)"
+oracle_candidate = "scaling 式の指数 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-107"
+axis = "fusion"
+item = "neoclassical transport (banana regime, bootstrap current)"
+source = "Helander-Sigmar; Hinton-Hazeltine 1976"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "banana 幅と trapped fraction ~ sqrt(ε) の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-108"
+axis = "fusion"
+item = "inertial confinement implosion physics (ablation, Rayleigh-Taylor growth in implosions)"
+source = "Atzeni-Meyer-ter-Vehn, The Physics of Inertial Fusion"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "ablative RT 成長率 Takabe 式 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-109"
+axis = "space"
+item = "solar wind (Parker model)"
+source = "Parker 1958; Kivelson-Russell, Introduction to Space Physics"
+status = "missing"
+evidence = "無い (推測: solar wind で src 0 件)"
+oracle_candidate = "等温 Parker 解の臨界点 r_c = G M / (2 c_s²) と遷音速解"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-110"
+axis = "space"
+item = "planetary magnetosphere: dipole field, magnetopause standoff, bow shock"
+source = "Kivelson-Russell; Chapman-Ferraro"
+status = "missing"
+evidence = "dipole の閉形式の場はある (COV-EM-065、src/electromagnetic.rs の MagneticDipole) が、太陽風との圧力釣り合いや磁気圏の模型は無い (magnetospher で src 0 件)"
+oracle_candidate = "standoff 距離 R_mp ∝ (B0² / (2 μ0 ρ v²))^{1/6} の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-111"
+axis = "space"
+item = "radiation belts: bounce, drift and loss cone of trapped particles in a dipole"
+source = "Schulz-Lanzerotti, Particle Diffusion in the Radiation Belts"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "L 殻ごとの赤道 loss cone 角の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-112"
+axis = "space"
+item = "ionosphere: Chapman production layer and plasma-frequency profile"
+source = "Chapman 1931; Kelley, The Earth's Ionosphere"
+status = "missing"
+evidence = "無い (推測: ionosph で src 0 件)"
+oracle_candidate = "Chapman 層の生成率の高度分布と最大高度の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-113"
+axis = "space"
+item = "spacecraft charging and plasma wakes"
+source = "Garrett 1981; NASA SPENVIS / NASCAP"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "浮遊電位の電流釣り合い (Langmuir の軌道限界理論)"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-114"
+axis = "industrial"
+item = "plasma sheath: Bohm criterion, floating potential and Child-Langmuir space-charge-limited current"
+source = "Chen, Introduction to Plasma Physics and Controlled Fusion ch.8; Lieberman-Lichtenberg, Principles of Plasma Discharges"
+status = "missing"
+evidence = "無い (推測: sheath / langmuir で src 0 件)"
+oracle_candidate = "J = (4 ε0/9) sqrt(2e/M) V^{3/2} / d² の Child-Langmuir 則と Bohm 速度"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-115"
+axis = "industrial"
+item = "Langmuir probe current-voltage characteristic"
+source = "Lieberman-Lichtenberg; Hutchinson, Principles of Plasma Diagnostics"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "電子遅延領域の傾きから T_e が戻ること"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-116"
+axis = "industrial"
+item = "gas breakdown (Paschen curve, Townsend coefficients)"
+source = "Raizer, Gas Discharge Physics; Lieberman-Lichtenberg"
+status = "missing"
+evidence = "無い (推測: paschen / townsend で src 0 件)"
+oracle_candidate = "Paschen の最小値の位置 (pd)_min の閉形式 (係数は参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-117"
+axis = "industrial"
+item = "glow, arc and RF discharges (CCP, ICP) global models"
+source = "Lieberman-Lichtenberg global model"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "粒子・パワー収支の global model で T_e が圧力と大きさだけで決まる"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-118"
+axis = "industrial"
+item = "plasma-surface processing (etching, deposition, ion energy distributions)"
+source = "Lieberman-Lichtenberg; Graves, plasma etching reviews"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "衝突なし sheath の ion エネルギー分布 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-119"
+axis = "propulsion"
+item = "gridded ion thruster (space-charge-limited extraction, thrust and specific impulse)"
+source = "Goebel-Katz, Fundamentals of Electric Propulsion"
+status = "missing"
+evidence = "無い (推測: thruster / specific impulse で src 0 件) 推力の軌道への作用は COV-ORBIT-069 / 070"
+oracle_candidate = "Child-Langmuir の限界電流から推力 T = I sqrt(2 M V / e) の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-120"
+axis = "propulsion"
+item = "Hall thruster physics (anomalous transport, ionisation zone)"
+source = "Goebel-Katz; Boeuf 2017"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "1-D 準中性流体模型の放電電流振動 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-121"
+axis = "propulsion"
+item = "magnetoplasmadynamic and pulsed plasma thrusters"
+source = "Jahn, Physics of Electric Propulsion"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "自己磁場推力 T = μ0 I² / (4π) (ln(r_a/r_c) + 3/4) (Maecker の式、参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-122"
+axis = "strongly-coupled"
+item = "Yukawa one-component plasma (dusty / strongly coupled plasma) by molecular dynamics"
+source = "Hamaguchi-Farouki-Dubin 1997; Ichimaru"
+status = "implemented-no-oracle"
+evidence = "部品は揃う: src/pair_potential.rs:381 (Yukawa、COV-PART-004 I+O) + src/pair_potential.rs:470 (Truncated の cutoff) + src/molecular_dynamics.rs:419 (周期箱の velocity Verlet、COV-PART-030) + src/molecular_dynamics.rs:142 (PeriodicBox) 同種粒子 1 種なら potential 1 個で組める plasma の量 (Γ, κ) で突合する test は無い"
+oracle_candidate = "Γ と κ = a / λ_D の点で g(r) と内部エネルギー (Hamaguchi らの値、参照値要確認)、融解線"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-123"
+axis = "strongly-coupled"
+item = "Coulomb one-component plasma with long-range summation (Ewald / PPPM)"
+source = "Brush-Sahlin-Teller 1966; Hockney-Eastwood"
+status = "missing"
+evidence = "長距離和が無い (COV-PART-026 / 027 missing、src/pair_potential.rs の module doc が Ewald / PPPM は無いと書く)"
+oracle_candidate = "Madelung 定数 (bcc / fcc の値は参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-124"
+axis = "benchmark"
+item = "cold plasma (Langmuir) oscillation at omega_pe"
+source = "Birdsall-Langdon, Plasma Physics via Computer Simulation Part One"
+status = "missing"
+evidence = "PIC も流体模型も無い (行 particle-in-cell / fluid)"
+oracle_candidate = "変位させた電子層が周期 2π / ω_pe で振動"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-125"
+axis = "benchmark"
+item = "two-stream instability growth rate"
+source = "Birdsall-Langdon, Plasma Physics via Computer Simulation Part One; Chen ch.6"
+status = "missing"
+evidence = "同上"
+oracle_candidate = "線形段の指数成長率を分散関係の根と突合 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-126"
+axis = "benchmark"
+item = "linear Landau damping rate"
+source = "Cheng-Knorr 1976; Filbet-Sonnendrücker 2003"
+status = "missing"
+evidence = "同上 (行 kinetic)"
+oracle_candidate = "k λ_D = 0.5 の減衰率 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-127"
+axis = "benchmark"
+item = "nonlinear Landau damping and recurrence"
+source = "Cheng-Knorr 1976"
+status = "missing"
+evidence = "同上"
+oracle_candidate = "減衰後の再成長 (参照値要確認)、再帰時間 T_R = 2π / (k Δv)"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-128"
+axis = "benchmark"
+item = "Debye shielding of a test charge in a thermal plasma"
+source = "Chen, Introduction to Plasma Physics and Controlled Fusion ch.1"
+status = "missing"
+evidence = "同上"
+oracle_candidate = "試験電荷周りの平均電位が exp(−r/λ_D)/r に従う"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-129"
+axis = "benchmark"
+item = "ion acoustic wave dispersion"
+source = "Chen, Introduction to Plasma Physics and Controlled Fusion ch.4"
+status = "missing"
+evidence = "同上"
+oracle_candidate = "測った ω(k) を ω = k c_s / sqrt(1 + k² λ_D²) と突合"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-130"
+axis = "benchmark"
+item = "cyclotron period and gyro-radius of a test particle"
+source = "WarpX / OSIRIS test-particle checks; Chen ch.2"
+status = "implemented-no-oracle"
+evidence = "行 single-particle の world 経路で組める (src/electromagnetic.rs:106 + src/solver.rs:350) world の経路を突合する test は無い tests/analytic_electromagnetic_wiring.rs::cyclotron_orbit_has_the_gyro_radius_m_v_over_q_b は test 内の局所積分で、crate の時間積分を通らない"
+oracle_candidate = "周期 2π m / (|q| B)、直径 2 m v / (|q| B)、|v| の保存を時間刻みの列で突合"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-131"
+axis = "benchmark"
+item = "E x B drift of a test particle"
+source = "Chen ch.2"
+status = "implemented-no-oracle"
+evidence = "行 cyclotron と同じ組合せで組める (src/electromagnetic.rs:106 + src/solver.rs:350) 突合する test は無い"
+oracle_candidate = "1 周期平均の速度が E × B / B²、電荷・質量を変えても不変"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-132"
+axis = "benchmark"
+item = "circularly polarised Alfven wave (convergence order of an MHD code)"
+source = "Toth 2000; Stone et al. 2008"
+status = "missing"
+evidence = "MHD 解法が無い (行 fluid)"
+oracle_candidate = "1 周期後の L1 誤差の収束次数"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-133"
+axis = "benchmark"
+item = "Brio-Wu MHD shock tube"
+source = "Brio-Wu 1988"
+status = "missing"
+evidence = "同上"
+oracle_candidate = "高解像度の参照解との L1 差 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-134"
+axis = "benchmark"
+item = "Ryu-Jones MHD Riemann problems"
+source = "Ryu-Jones 1995"
+status = "missing"
+evidence = "同上"
+oracle_candidate = "厳密解との突合 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-135"
+axis = "benchmark"
+item = "Orszag-Tang vortex"
+source = "Orszag-Tang 1979"
+status = "missing"
+evidence = "同上"
+oracle_candidate = "時刻ごとの圧力分布の参照解 (参照値要確認)、∇·B の監視"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-136"
+axis = "benchmark"
+item = "magnetic field loop advection (div B and numerical diffusion of B)"
+source = "Gardiner-Stone 2005"
+status = "missing"
+evidence = "同上"
+oracle_candidate = "磁気エネルギーの減衰率と ∇·B (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-137"
+axis = "benchmark"
+item = "MHD rotor and magnetised blast wave"
+source = "Balsara-Spicer 1999"
+status = "missing"
+evidence = "同上"
+oracle_candidate = "参照解の等高線 (参照値要確認)、負圧が出ない"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-138"
+axis = "benchmark"
+item = "Harris current sheet and the GEM reconnection challenge"
+source = "Birn et al. 2001"
+status = "missing"
+evidence = "同上 (行 reconnection)"
+oracle_candidate = "再接続磁束の時間変化 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-139"
+axis = "benchmark"
+item = "Solov'ev analytic tokamak equilibrium"
+source = "Solov'ev 1968; Cerfon-Freidberg 2010"
+status = "missing"
+evidence = "Grad-Shafranov 解法が無い (行 equilibrium-stability)"
+oracle_candidate = "解析解の磁束関数 ψ との誤差の収束次数"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-140"
+axis = "benchmark"
+item = "Hartmann-type magnetised channel flow as an MHD solver check"
+source = "Hartmann 1937"
+status = "missing"
+evidence = "非圧縮流への Lorentz 体積力としての Hartmann 流は COUPLE 側 (COV-COUPLE-098 missing) ここは圧縮性 MHD の解法で回す場合 (推測)"
+oracle_candidate = "速度分布 cosh(Ha y / L) の閉形式との突合"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-141"
+axis = "benchmark"
+item = "Child-Langmuir space-charge-limited diode"
+source = "Child 1911; Langmuir 1913"
+status = "missing"
+evidence = "PIC が無い (行 particle-in-cell)"
+oracle_candidate = "定常電流が J = (4 ε0/9) sqrt(2e/m) V^{3/2}/d² に一致"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-142"
+axis = "benchmark"
+item = "Weibel instability growth in an electromagnetic PIC"
+source = "Weibel 1959; OSIRIS / WarpX examples"
+status = "missing"
+evidence = "電磁 PIC が無い"
+oracle_candidate = "線形成長率 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PLASMA-143"
+axis = "benchmark"
+item = "laser wakefield (linear wake amplitude and wavelength)"
+source = "Esarey-Schroeder-Leemans 2009; WarpX examples"
+status = "missing"
+evidence = "同上"
+oracle_candidate = "線形 wake の波長 2π c / ω_pe と振幅 (参照値要確認)"
+limitation = ""
