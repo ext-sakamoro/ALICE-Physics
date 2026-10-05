@@ -227,6 +227,7 @@ were introduced during that release window.
 - `laminate_failure` が強度 0 以下の ply に対して全 criterion で FI = 0 / Safe を返していた (AUD-A-S4W2-003)
 - `print_pipeline_solver` で熱応力と bimaterial の not safe が `PrintSafetyReport::is_safe` に反映されていなかった (AUD-A-S5W1-007)
 - `SolverBackend::Tgs` の warm-start キャッシュが接触と距離拘束を vector 内の位置で引いていたため、接触の増減・`PhysicsWorld::remove_body`・`distance_constraints` の途中削除の後に別の接触・拘束の撃力で warm start していた 鍵を body ごとの安定 ID (削除を跨いで不変) と同じ対の中の序数に変更し、接触は安定 ID の小さい body から大きい body へ向きを揃える
+- `SolverBackend::Tgs` が `PhysicsWorld::add_joint` のジョイントと `PhysicsWorld::add_static_collider` の静的コライダーを無視していた (TGS では距離拘束しか解いていなかった) `step_tgs` で `solve_joints_dispatch` と `resolve_static_collisions` を呼ぶ 位置補正は速度にも反映する (静的接触は面に向かう速度を除き、ジョイントは `Δx / dt` と回転変化の角速度を加える)
 
 ## [1.4.0] - 2026-09-17
 
