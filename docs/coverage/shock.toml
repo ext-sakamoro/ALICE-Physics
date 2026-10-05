@@ -1,0 +1,1225 @@
+# Compressible flow and shocks (SHOCK) coverage of ALICE-Physics, against an
+# external reference frame.
+#
+# What this table is: every capability that the standard textbooks (Toro,
+# Riemann Solvers and Numerical Methods for Fluid Dynamics 3rd ed.; LeVeque,
+# Finite Volume Methods for Hyperbolic Problems; Anderson, Modern Compressible
+# Flow 3rd ed.; Benson's review of Lagrangian and Eulerian hydrocodes),
+# reference implementations (Athena++, Clawpack, LS-DYNA ALE, CTH) and standard
+# benchmarks (Sod, Lax, 123 and Toro Tests 1-5, Shu-Osher, the Woodward-Colella
+# blast waves, Sedov-Taylor, 2-D Riemann problems of Lax-Liu, double Mach
+# reflection, Noh) expect of a compressible-flow and shock code, one [[item]]
+# per capability, with what the crate has today. The rows are written by hand:
+# the axes and the items come from the reference frame, not from the modules
+# that exist, so a missing capability is visible instead of absent.
+#
+# The two modules at the centre: src/euler_fv.rs (the 1-D finite-volume solver:
+# exact and HLLC Riemann solvers, MUSCL, SSP-RK2, three boundary kinds) and
+# src/compressible.rs (closed forms: ideal-gas relations, the normal-shock jump,
+# stagnation ratios, Riemann invariants). Closed forms and the discrete solver
+# are kept on separate rows (axis `closed-form` versus the solver axes).
+#
+# Boundary with the other tables (one capability goes in one table only):
+#   - incompressible flow, its upwind / TVD advection, AMR and unstructured
+#     meshes: the CFD table (cfd.toml); rows here are for the compressible
+#     solver and cite the CFD ids where the two meet
+#   - compressible MHD and its Riemann solvers (HLLD, Brio-Wu, Ryu-Jones): the
+#     plasma table (COV-PLASMA-082, -133, -134)
+#   - reaction kinetics and the thermochemistry of a detonation (CJ velocity
+#     and state, ZND structure in closed form, TNT equivalence): the chemistry
+#     table (COV-CHEM-063, -064, -066); the flow solution of detonation and blast
+#     waves is here
+#   - the speed of sound (COV-ACOUS-011) and linear and weakly nonlinear
+#     acoustics (Burgers, Westervelt: COV-ACOUS-008, -009) are in the acoustics
+#     table; shocks in the full Euler equations are here
+#   - the ideal-gas law p = rho R T as a closed form: the chemistry table
+#     (COV-CHEM-001); here only its use as the closure of the solver
+#   - generic time integrators and operator splitting: the numerics table
+#     (COV-NUM-056); the scheme-specific SSP-RK and CFL rows are here
+#   - elastic-plastic impact in solids (Johnson-Cook strength and failure, spall,
+#     explicit central-difference FE): the FEM, materials and fracture tables;
+#     here the fluid hydrocode and the equations of state of gases, liquids and
+#     detonation products (Mie-Grüneisen, JWL)
+#   - SPH artificial viscosity and the Tait equation of state for SPH: the CFD
+#     table (COV-CFD-081, -083)
+#   - the game explosion force field (src/force.rs) is a radial impulse, not a
+#     blast wave, and is not counted
+#
+# status (exactly one of):
+#   implemented+oracle     implemented, and at least one non-ignored test checks
+#                          it against an independent reference
+#   implemented-no-oracle  implemented, no such test (benchmark rows: the scene
+#                          can be built from existing features, but no test does)
+#   partial                implemented with a restriction that the source states;
+#                          `limitation` quotes it, and the source carries a
+#                          `LIMITATION(<id>)` comment at that place
+#   missing                not implemented
+#   out-of-scope           not a capability of this field (reason in `evidence`)
+#
+# This axis is separate from the test ignore reasons (`known defect: ...`,
+# `src gap: ...`, `diagnostic`, `runtime`). A capability that exists with a
+# recorded defect keeps its status and cites the known-defect test in
+# `evidence`; it is not `missing`.
+#
+# keys: id (COV-SHOCK-NNN) / axis / item / source (book, chapter, paper or
+# reference-implementation feature; no quoted text) / status / evidence
+# (`src/...rs:line`, `tests/...rs::test_fn`) / oracle_candidate / limitation
+# (verbatim quote of the source, required for `partial`).
+#
+# Chapter numbers are from the reference editions named above and have not been
+# checked against the originals. Reference values marked "参照値要確認" are to be
+# checked against the original publication before any test uses them. Lines
+# marked "(推測)" were judged from a search that found nothing and are to be
+# confirmed.
+#
+# Checked by scripts/coverage_check.py (tests: scripts/test_coverage_check.py).
+
+[[item]]
+id = "COV-SHOCK-001"
+axis = "governing"
+item = "1-D compressible Euler equations in conservation form (mass, momentum, total energy)"
+source = "Toro, Riemann Solvers and Numerical Methods for Fluid Dynamics 3rd ed. ch.3; LeVeque, Finite Volume Methods for Hyperbolic Problems ch.14; Athena++ / Clawpack euler"
+status = "implemented+oracle"
+evidence = "src/euler_fv.rs:1 / src/euler_fv.rs:916 EulerFv1d / tests/analytic_euler_fv.rs::stationary_shock_matches_normal_shock_jump / tests/analytic_euler_fv.rs::uniform_state_is_a_fixed_point"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-002"
+axis = "governing"
+item = "2-D / 3-D compressible Euler equations"
+source = "Toro, Riemann Solvers and Numerical Methods for Fluid Dynamics 3rd ed. ch.16; LeVeque, Finite Volume Methods for Hyperbolic Problems ch.18-19; Athena++ / Clawpack / CTH"
+status = "missing"
+evidence = "src/euler_fv.rs:1 は 1 次元のみ (state は (ρ, ρu, E) の 3 成分)"
+oracle_candidate = "2-D の x 方向 1-D 問題が EulerFv1d と bit 一致"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-003"
+axis = "governing"
+item = "compressible Navier-Stokes (viscous stress and heat conduction in the energy equation)"
+source = "LeVeque, Finite Volume Methods for Hyperbolic Problems ch.3 (diffusion terms); Anderson, Modern Compressible Flow ch.15-16; Fluent density-based solver"
+status = "missing"
+evidence = "src/euler_fv.rs:1 は inviscid の Euler のみ、粘性・熱伝導項は無い (非圧縮の粘性は cfd.toml 側)"
+oracle_candidate = "粘性衝撃層の厚み (Becker の 1-D 衝撃構造、参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-004"
+axis = "governing"
+item = "quasi-1-D Euler with a variable cross-section A(x) (nozzle source term)"
+source = "Toro, Riemann Solvers and Numerical Methods for Fluid Dynamics 3rd ed. ch.15 (source terms); Anderson, Modern Compressible Flow 3rd ed. ch.5"
+status = "missing"
+evidence = "src/euler_fv.rs:1 の flux は面積を持たない (A = 一定)"
+oracle_candidate = "収束-拡大ノズルの定常解を等エントロピー面積-Mach 関係と突合"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-005"
+axis = "governing"
+item = "1-D cylindrical / spherical symmetry (geometric source terms)"
+source = "Toro, Riemann Solvers and Numerical Methods for Fluid Dynamics 3rd ed. ch.17.1 (spherically symmetric problems); LeVeque, Finite Volume Methods for Hyperbolic Problems ch.18.9"
+status = "missing"
+evidence = "src/euler_fv.rs:1 は平板 1-D のみ"
+oracle_candidate = "Sedov-Taylor 自己相似解 (球対称)"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-006"
+axis = "governing"
+item = "Euler equations with body force and energy source terms (gravity, heat addition), well-balanced hydrostatic states"
+source = "Toro, Riemann Solvers and Numerical Methods for Fluid Dynamics 3rd ed. ch.15; LeVeque, Finite Volume Methods for Hyperbolic Problems ch.17"
+status = "missing"
+evidence = "src/euler_fv.rs:916 の更新は flux 差分のみで source 項を持たない"
+oracle_candidate = "重力下の等温静水圧平衡が固定点 (well-balanced)"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-007"
+axis = "governing"
+item = "multi-component / multi-material compressible flow (species mass fractions, interface between gases of different gamma)"
+source = "Toro, Riemann Solvers and Numerical Methods for Fluid Dynamics 3rd ed. (passive scalars in the Riemann problem); Abgrall-Karni 2001; Allaire-Clerc-Kokh 2002 five-equation model"
+status = "missing"
+evidence = "EulerConfig.gamma は 1 つ (src/euler_fv.rs:916)、成分の輸送方程式は無い"
+oracle_candidate = "γ の異なる 2 気体の接触面で p, u が保たれる (Abgrall の圧力振動問題)"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-008"
+axis = "governing"
+item = "reactive Euler equations (progress variable or species with heat release)"
+source = "Toro, Riemann Solvers and Numerical Methods for Fluid Dynamics 3rd ed. ch.15; Fickett-Davis, Detonation; Clawpack reactive Euler"
+status = "missing"
+evidence = "src/euler_fv.rs:1 に反応項は無い 熱化学 (CJ 速度・ZND 構造の閉形式) は COV-CHEM-063 / COV-CHEM-064 側"
+oracle_candidate = "1-step Arrhenius の 1-D 爆轟で CJ 速度に収束"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-009"
+axis = "riemann"
+item = "exact Riemann solver for the ideal gas (pressure function, Newton iteration, complete wave pattern sampling)"
+source = "Toro, Riemann Solvers and Numerical Methods for Fluid Dynamics 3rd ed. ch.4 (§4.2-4.5, program §4.9)"
+status = "implemented+oracle"
+evidence = "src/euler_fv.rs:570 / tests/analytic_euler_fv.rs::star_state_matches_f64_reference / tests/analytic_euler_fv.rs::sampled_solution_matches_f64_reference / tests/analytic_euler_fv.rs::reference_matches_toro_table_4_2 (Table 4.2 の値は参照値要確認、主根拠は独立な f64 実装)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-010"
+axis = "riemann"
+item = "vacuum in the Riemann solution (vacuum generation, vacuum left / right states)"
+source = "Toro, Riemann Solvers and Numerical Methods for Fluid Dynamics 3rd ed. §4.6"
+status = "missing"
+evidence = "src/euler_fv.rs:59 'region that this solver does not represent' src/euler_fv.rs:182 EulerError::VacuumGenerated で返す (検出は tests/analytic_euler_fv.rs::vacuum_generation_is_an_error)"
+oracle_candidate = "Toro §4.6 の真空生成解 (2 本の膨張波の端の速度)"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-011"
+axis = "riemann"
+item = "approximate-state Riemann solvers as interface fluxes (PVRS, TRRS, TSRS, adaptive ANRS)"
+source = "Toro, Riemann Solvers and Numerical Methods for Fluid Dynamics 3rd ed. ch.9"
+status = "missing"
+evidence = "src/euler_fv.rs:529 の PVRS / TRRS / TSRS は厳密解法の Newton 初期値としてのみ使う (flux 選択肢は src/euler_fv.rs:718 の Exact / Hllc の 2 つ)"
+oracle_candidate = "Toro Test 1-5 で ANRS flux の L1 誤差が Exact と同程度"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-012"
+axis = "riemann"
+item = "HLL (two-wave) flux"
+source = "Toro, Riemann Solvers and Numerical Methods for Fluid Dynamics 3rd ed. §10.3; Harten-Lax-van Leer 1983"
+status = "missing"
+evidence = "src/euler_fv.rs:718 は Exact / Hllc のみ"
+oracle_candidate = "孤立接触不連続が HLL では拡散し HLLC では保たれる"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-013"
+axis = "riemann"
+item = "HLLC flux with Einfeldt wave-speed bounds"
+source = "Toro, Riemann Solvers and Numerical Methods for Fluid Dynamics 3rd ed. §10.4, §10.5.1; Batten et al. 1997"
+status = "implemented+oracle"
+evidence = "src/euler_fv.rs:758 / tests/analytic_euler_fv.rs::hllc_flux_matches_f64_formula / tests/analytic_euler_fv.rs::numerical_flux_is_consistent / tests/analytic_euler_fv.rs::muscl_sod_beats_first_order"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-014"
+axis = "riemann"
+item = "selectable wave-speed estimates for HLL-type fluxes (Davis, pressure-based PVRS, Einfeldt)"
+source = "Toro, Riemann Solvers and Numerical Methods for Fluid Dynamics 3rd ed. §10.5"
+status = "missing"
+evidence = "Einfeldt のみ src/euler_fv.rs:70 は pressure-based 推定を壁で S_L ≥ 0 になる理由で採らないと記す"
+oracle_candidate = "高 Mach の壁衝突で pressure-based 推定の質量 flux が 0 にならないことの再現"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-015"
+axis = "riemann"
+item = "Roe flux with entropy fix (Harten-Hyman)"
+source = "Toro, Riemann Solvers and Numerical Methods for Fluid Dynamics 3rd ed. ch.11; LeVeque, Finite Volume Methods for Hyperbolic Problems §15.3"
+status = "missing"
+evidence = "Roe 平均は src/euler_fv.rs:758 の波速の上下限にだけ使う"
+oracle_candidate = "Toro Test 1 (遷音速膨張波) で entropy fix 無しの膨張衝撃波が出て fix 有りで消える"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-016"
+axis = "riemann"
+item = "Rusanov / local Lax-Friedrichs flux"
+source = "LeVeque, Finite Volume Methods for Hyperbolic Problems §12.5; Toro, Riemann Solvers and Numerical Methods for Fluid Dynamics 3rd ed. ch.5"
+status = "missing"
+evidence = "src/euler_fv.rs:718 は Exact / Hllc のみ"
+oracle_candidate = "Sod の L1 誤差が HLLC より大きく 1 次収束"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-017"
+axis = "riemann"
+item = "Osher-Solomon flux"
+source = "Toro, Riemann Solvers and Numerical Methods for Fluid Dynamics 3rd ed. ch.12"
+status = "missing"
+evidence = "src/euler_fv.rs:718 は Exact / Hllc のみ"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-018"
+axis = "riemann"
+item = "AUSM family (AUSM+, AUSM+-up) for all speeds"
+source = "Liou 1996 / 2006; Fluent / STAR-CCM+ (AUSM flux)"
+status = "missing"
+evidence = "src/euler_fv.rs:718 は Exact / Hllc のみ (grep AUSM 0 件)"
+oracle_candidate = "低 Mach の音波・接触面の散逸が Mach 数に比例しない"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-019"
+axis = "riemann"
+item = "flux vector splitting (Steger-Warming, van Leer)"
+source = "Toro, Riemann Solvers and Numerical Methods for Fluid Dynamics 3rd ed. ch.8"
+status = "missing"
+evidence = "grep: Steger / splitting 0 件 (euler_fv)"
+oracle_candidate = "Sod で FVS の L1 誤差"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-020"
+axis = "riemann"
+item = "centred schemes (Lax-Friedrichs, Lax-Wendroff, FORCE)"
+source = "Toro, Riemann Solvers and Numerical Methods for Fluid Dynamics 3rd ed. ch.5, ch.7; LeVeque, Finite Volume Methods for Hyperbolic Problems ch.4"
+status = "missing"
+evidence = "src/euler_fv.rs:718 は upwind の 2 つのみ (cfd_solver の MacCormack は非圧縮の semi-Lagrangian 移流で、src/cfd_solver.rs:69 が衝撃波には向かないと記す)"
+oracle_candidate = "線形移流で Lax-Wendroff が 2 次・振動あり"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-021"
+axis = "riemann"
+item = "carbuncle / odd-even decoupling cures (rotated or hybrid HLLC-HLL)"
+source = "Quirk 1994; Nishikawa-Kitamura 2008"
+status = "missing"
+evidence = "多次元が無い (行 COV-SHOCK-002) ので現れない"
+oracle_candidate = "Quirk の奇偶 decoupling 問題"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-022"
+axis = "riemann"
+item = "low-Mach preconditioning of the compressible flux"
+source = "Turkel 1987; Guillard-Viozat 1999"
+status = "missing"
+evidence = "src/euler_fv.rs:718 に低 Mach 補正は無い"
+oracle_candidate = "M → 0 で圧力変動が O(M²) に収まる"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-023"
+axis = "reconstruction"
+item = "first-order Godunov (piecewise constant)"
+source = "Toro, Riemann Solvers and Numerical Methods for Fluid Dynamics 3rd ed. ch.6"
+status = "implemented+oracle"
+evidence = "src/euler_fv.rs:820 Reconstruction::FirstOrder / tests/analytic_euler_fv.rs::godunov_sod_l1_converges_below_first_order"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-024"
+axis = "reconstruction"
+item = "MUSCL piecewise-linear reconstruction in primitive variables with the minmod limiter"
+source = "van Leer 1979; Toro, Riemann Solvers and Numerical Methods for Fluid Dynamics 3rd ed. ch.13-14"
+status = "implemented+oracle"
+evidence = "src/euler_fv.rs:820 / src/euler_fv.rs:924 / tests/analytic_euler_fv.rs::muscl_sod_beats_first_order / tests/analytic_euler_fv.rs::muscl_ssprk2_is_second_order_on_smooth_wave"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-025"
+axis = "reconstruction"
+item = "van Leer limiter"
+source = "van Leer 1974; Toro, Riemann Solvers and Numerical Methods for Fluid Dynamics 3rd ed. §13.8"
+status = "implemented+oracle"
+evidence = "src/euler_fv.rs:811 Limiter::VanLeer / tests/analytic_euler_fv.rs::muscl_sod_beats_first_order (van Leer が minmod より L1 小を assert)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-026"
+axis = "reconstruction"
+item = "other TVD limiters (superbee, monotonised central, van Albada)"
+source = "Toro, Riemann Solvers and Numerical Methods for Fluid Dynamics 3rd ed. §13.8; LeVeque, Finite Volume Methods for Hyperbolic Problems §6.12"
+status = "missing"
+evidence = "src/euler_fv.rs:811 は Minmod / VanLeer の 2 つのみ"
+oracle_candidate = "Sod の接触面の幅が superbee で最小"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-027"
+axis = "reconstruction"
+item = "reconstruction in characteristic or conserved variables"
+source = "Toro, Riemann Solvers and Numerical Methods for Fluid Dynamics 3rd ed. §14.4; LeVeque, Finite Volume Methods for Hyperbolic Problems §6.13"
+status = "missing"
+evidence = "src/euler_fv.rs:820 は primitive 変数 (ρ, u, p) のみ"
+oracle_candidate = "Shu-Osher 問題で特性変数の振動が小さい"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-028"
+axis = "reconstruction"
+item = "MUSCL-Hancock (half-step predictor, single-stage second order)"
+source = "Toro, Riemann Solvers and Numerical Methods for Fluid Dynamics 3rd ed. §14.4.1"
+status = "missing"
+evidence = "時間 2 次は SSP-RK2 のみ src/euler_fv.rs:92 'is not a stable pairing for all CFL numbers' (MUSCL + forward Euler)、multiphase の src/multiphase.rs:25 は level set の話で別系統"
+oracle_candidate = "smooth wave で 2 次収束"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-029"
+axis = "reconstruction"
+item = "piecewise parabolic method (PPM)"
+source = "Colella-Woodward 1984; Athena++ PPM"
+status = "missing"
+evidence = "src/euler_fv.rs:820 は FirstOrder / Muscl のみ"
+oracle_candidate = "smooth wave で 3 次"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-030"
+axis = "reconstruction"
+item = "ENO / WENO reconstruction (WENO5-JS, WENO-Z)"
+source = "Jiang-Shu 1996; Borges et al. 2008; Shu 1998 lecture notes"
+status = "missing"
+evidence = "src/euler_fv.rs:820 は FirstOrder / Muscl のみ (grep WENO 0 件)"
+oracle_candidate = "smooth wave で 5 次、Shu-Osher 問題"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-031"
+axis = "reconstruction"
+item = "total-variation-diminishing behaviour of the limited scheme"
+source = "Harten 1983; Toro, Riemann Solvers and Numerical Methods for Fluid Dynamics 3rd ed. ch.13"
+status = "implemented-no-oracle"
+evidence = "src/euler_fv.rs:924 minmod / van Leer は隣接値の間に収める (module doc) TV(Uⁿ⁺¹) ≤ TV(Uⁿ) を測る test は無い"
+oracle_candidate = "Sod の密度の全変動が step ごとに非増加 (単調な初期値)"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-032"
+axis = "reconstruction"
+item = "discontinuous Galerkin / spectral-difference high-order methods"
+source = "Cockburn-Shu 1998; Hesthaven-Warburton, Nodal DG"
+status = "missing"
+evidence = "有限体積のみ"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-033"
+axis = "time"
+item = "forward Euler (single stage, first order)"
+source = "Toro, Riemann Solvers and Numerical Methods for Fluid Dynamics 3rd ed. ch.6"
+status = "implemented+oracle"
+evidence = "src/euler_fv.rs:829 TimeIntegrator::ForwardEuler / tests/analytic_euler_fv.rs::godunov_sod_l1_converges_below_first_order"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-034"
+axis = "time"
+item = "two-stage SSP Runge-Kutta (second order) in flux-difference form"
+source = "Shu-Osher 1988; Gottlieb-Shu 1998"
+status = "implemented+oracle"
+evidence = "src/euler_fv.rs:829 TimeIntegrator::SspRk2 / tests/analytic_euler_fv.rs::muscl_ssprk2_is_second_order_on_smooth_wave / tests/analytic_euler_fv.rs::periodic_totals_are_conserved_bit_for_bit"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-035"
+axis = "time"
+item = "three-stage SSP Runge-Kutta (third order) and higher"
+source = "Shu-Osher 1988; Gottlieb-Shu-Tadmor 2001"
+status = "missing"
+evidence = "src/euler_fv.rs:829 は ForwardEuler / SspRk2 のみ"
+oracle_candidate = "WENO と組んで smooth wave で 3 次"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-036"
+axis = "time"
+item = "CFL-limited time step from the maximum wave speed, landing exactly on the output time"
+source = "Toro, Riemann Solvers and Numerical Methods for Fluid Dynamics 3rd ed. §6.3.2"
+status = "implemented+oracle"
+evidence = "src/euler_fv.rs:1048 / src/euler_fv.rs:1108 / tests/analytic_euler_fv.rs::step_uses_the_cfl_time_step / tests/analytic_euler_fv.rs::fixed_dt_path_matches_cfl_path / tests/analytic_euler_fv.rs::godunov_sod_l1_converges_below_first_order (time == t を assert)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-037"
+axis = "time"
+item = "ADER / Cauchy-Kovalevskaya high-order time integration"
+source = "Toro-Titarev ADER schemes (2002-2005)"
+status = "missing"
+evidence = "src/euler_fv.rs:829 は ForwardEuler / SspRk2 のみ"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-038"
+axis = "time"
+item = "implicit or dual-time stepping for steady compressible flow"
+source = "Jameson 1991; Fluent density-based implicit"
+status = "missing"
+evidence = "陽解法のみ (src/euler_fv.rs:829)"
+oracle_candidate = "定常の垂直衝撃を大 CFL で収束"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-039"
+axis = "time"
+item = "local time stepping / subcycling with AMR"
+source = "Berger-Colella 1989"
+status = "missing"
+evidence = "全セル共通の Δt (src/euler_fv.rs:1048)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-040"
+axis = "boundary"
+item = "transmissive (zero-order extrapolation) boundary"
+source = "Toro, Riemann Solvers and Numerical Methods for Fluid Dynamics 3rd ed. §6.3.3"
+status = "implemented+oracle"
+evidence = "src/euler_fv.rs:838 Boundary::Transmissive / src/euler_fv.rs:1130 / tests/analytic_euler_fv.rs::godunov_sod_l1_converges_below_first_order / tests/analytic_euler_fv.rs::lax_and_123_problems_run_with_every_scheme"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-041"
+axis = "boundary"
+item = "reflecting solid wall (mirror ghost cells)"
+source = "Toro, Riemann Solvers and Numerical Methods for Fluid Dynamics 3rd ed. §6.3.3"
+status = "implemented+oracle"
+evidence = "src/euler_fv.rs:838 Boundary::ReflectiveWall / tests/analytic_euler_fv.rs::reflective_wall_reproduces_reflected_shock_pressure / tests/analytic_euler_fv.rs::closed_box_conserves_mass_and_energy_bit_for_bit / tests/analytic_euler_fv.rs::rest_state_in_closed_box_is_a_fixed_point"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-042"
+axis = "boundary"
+item = "periodic boundary"
+source = "LeVeque, Finite Volume Methods for Hyperbolic Problems §7.1"
+status = "implemented+oracle"
+evidence = "src/euler_fv.rs:838 Boundary::Periodic / tests/analytic_euler_fv.rs::periodic_totals_are_conserved_bit_for_bit / tests/analytic_euler_fv.rs::muscl_ssprk2_is_second_order_on_smooth_wave"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-043"
+axis = "boundary"
+item = "prescribed inflow / outflow states (supersonic inflow, subsonic pressure outlet)"
+source = "LeVeque, Finite Volume Methods for Hyperbolic Problems §7.2; Athena++ user boundary; Fluent pressure-far-field"
+status = "missing"
+evidence = "src/euler_fv.rs:838 は Transmissive / ReflectiveWall / Periodic のみ"
+oracle_candidate = "定常の超音速流入が固定点、亜音速出口で指定圧力に収束"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-044"
+axis = "boundary"
+item = "characteristic non-reflecting boundaries (Thompson, Poinsot-Lele NSCBC)"
+source = "Thompson 1987; Poinsot-Lele 1992"
+status = "missing"
+evidence = "src/euler_fv.rs:838 の Transmissive は 0 次外挿 (特性に基づく扱いは無い)"
+oracle_candidate = "流出する音響パルスの反射率"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-045"
+axis = "boundary"
+item = "moving wall / piston boundary"
+source = "Toro, Riemann Solvers and Numerical Methods for Fluid Dynamics 3rd ed. §6.3.3; Anderson, Modern Compressible Flow 3rd ed. ch.7 (piston-driven shock)"
+status = "missing"
+evidence = "src/euler_fv.rs:838 の壁は静止のみ"
+oracle_candidate = "等速ピストンが作る衝撃の速度を閉形式と突合"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-046"
+axis = "boundary"
+item = "embedded solid boundaries (cut cell, immersed boundary, ghost fluid)"
+source = "Berger-Helzel 2012; Fedkiw et al. 1999 ghost fluid"
+status = "missing"
+evidence = "領域の両端のみ"
+oracle_candidate = "2-D 円柱まわりの超音速流の離脱衝撃距離"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-047"
+axis = "eos"
+item = "ideal gas with constant gamma as the closure of the conservative solver"
+source = "Toro, Riemann Solvers and Numerical Methods for Fluid Dynamics 3rd ed. §3.1; Anderson, Modern Compressible Flow 3rd ed. ch.1"
+status = "implemented+oracle"
+evidence = "src/euler_fv.rs:8 / src/euler_fv.rs:390 / tests/analytic_euler_fv.rs::conserved_primitive_round_trip / tests/analytic_euler_fv.rs::degenerate_inputs_have_explicit_results (γ ≤ 1 を拒否) 状態方程式 p = ρRT の閉形式は COV-CHEM-001"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-048"
+axis = "eos"
+item = "thermally perfect gas (temperature-dependent c_p, variable gamma)"
+source = "Anderson, Modern Compressible Flow 3rd ed. ch.11; Athena++ general EOS"
+status = "missing"
+evidence = "src/euler_fv.rs:8 'ideal gas, constant γ'"
+oracle_candidate = "高温空気の衝撃後温度が一定 γ と分かれる"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-049"
+axis = "eos"
+item = "stiffened gas equation of state"
+source = "Harlow-Amsden 1971; Saurel-Abgrall 1999"
+status = "missing"
+evidence = "src/euler_fv.rs:8 理想気体のみ"
+oracle_candidate = "水の衝撃管 (stiffened gas の厳密 Riemann 解)"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-050"
+axis = "eos"
+item = "Tait equation of state for liquids in the conservative solver"
+source = "Tait; Ivings-Causon-Toro 1998"
+status = "missing"
+evidence = "src/euler_fv.rs:8 理想気体のみ (SPH の Tait は COV-CFD-081 側)"
+oracle_candidate = "水中衝撃の Hugoniot"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-051"
+axis = "eos"
+item = "Mie-Grüneisen equation of state with a linear us-up Hugoniot"
+source = "Meyers, Dynamic Behavior of Materials ch.4; LS-DYNA *EOS_GRUNEISEN; CTH"
+status = "missing"
+evidence = "grep: Grüneisen / Gruneisen 0 件"
+oracle_candidate = "平板衝突の Hugoniot 圧力 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-052"
+axis = "eos"
+item = "JWL equation of state for detonation products"
+source = "Lee-Hornig-Kury 1968; LS-DYNA *EOS_JWL"
+status = "missing"
+evidence = "grep: JWL 0 件"
+oracle_candidate = "JWL の等エントロピー膨張曲線の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-053"
+axis = "eos"
+item = "general / tabulated equation of state and a Riemann solver for it (real gas, SESAME-type tables)"
+source = "Colella-Glaz 1985; Toro, Riemann Solvers and Numerical Methods for Fluid Dynamics 3rd ed. ch.4 remarks; CTH SESAME"
+status = "missing"
+evidence = "src/euler_fv.rs:570 は理想気体の閉形式 (Peng-Robinson 等の実在気体の熱力学は COV-CHEM-011 側)"
+oracle_candidate = "van der Waals 気体の Riemann 問題 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-054"
+axis = "closed-form"
+item = "isentropic relations and stagnation temperature ratio T0/T"
+source = "Anderson, Modern Compressible Flow 3rd ed. ch.3 (eq. 3.28)"
+status = "implemented+oracle"
+evidence = "src/compressible.rs:119 / tests/audit_compressible.rs::stagnation_ratios_closed_form / tests/engineering_oracles_fluid.rs::compressible_isentropic_stagnation_relations / tests/analytic_compressible_wiring.rs::stagnation_ratios_at_m_zero_are_exactly_one"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-055"
+axis = "closed-form"
+item = "isentropic stagnation pressure ratio p0/p"
+source = "Anderson, Modern Compressible Flow 3rd ed. ch.3 (eq. 3.30)"
+status = "implemented+oracle"
+evidence = "src/compressible.rs:133 / tests/analytic_compressible_wiring.rs::stagnation_pressure_ratio_matches_hand_derived_powf_at_nonzero_mach / tests/audit_compressible.rs::gamma_one_stagnation_pressure_ratio_is_the_isothermal_limit / tests/audit_compressible.rs::stagnation_pressure_ratio_is_monotone_and_positive_at_large_mach (known defect AUD-A-S1W5-008) 指数は Fix128::powf_pos (指数の小数部 24 bit) で精度は未監査"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-056"
+axis = "closed-form"
+item = "normal shock Rankine-Hugoniot jump (density, pressure, temperature ratios, downstream Mach)"
+source = "Anderson, Modern Compressible Flow 3rd ed. ch.3 (eqs. 3.51-3.57, Table A.2)"
+status = "implemented+oracle"
+evidence = "src/compressible.rs:181 / tests/engineering_oracles_fluid.rs::compressible_normal_shock_matches_anderson_table_a2 / tests/audit_compressible.rs::normal_shock_air_mach_two_table_values / tests/analytic_compressible_wiring.rs::normal_shock_jump_matches_hand_derived_rankine_hugoniot_at_m1_2_5 / src/compressible.rs::strong_shock_asymptotic_density_ratio"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-057"
+axis = "closed-form"
+item = "total pressure loss and entropy rise across a normal shock (p02/p01, Δs)"
+source = "Anderson, Modern Compressible Flow 3rd ed. ch.3 (Table A.2 p02/p01)"
+status = "missing"
+evidence = "src/compressible.rs:167 ShockJump は ρ, p, T の比と M2 のみ"
+oracle_candidate = "Anderson Table A.2 の p02/p01 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-058"
+axis = "closed-form"
+item = "moving normal shock and shock-tube relations (shock Mach from the pressure ratio, induced velocity)"
+source = "Anderson, Modern Compressible Flow 3rd ed. ch.7"
+status = "missing"
+evidence = "閉形式の API は無い (src/euler_fv.rs:570 の Newton 反復は同じ解を数値的に与える)"
+oracle_candidate = "p4/p1 から衝撃 Mach を閉形式で求め exact_riemann と突合"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-059"
+axis = "closed-form"
+item = "reflected normal shock from a closed end"
+source = "Anderson, Modern Compressible Flow 3rd ed. ch.7 (reflected shock waves)"
+status = "missing"
+evidence = "閉形式の API は無い (test 側の tests/analytic_euler_fv.rs::reflective_wall_reproduces_reflected_shock_pressure は対称 Riemann 問題の星状態を参照に使う)"
+oracle_candidate = "反射衝撃の圧力比の閉形式と FV の壁圧力"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-060"
+axis = "closed-form"
+item = "oblique shock theta-beta-M relation (weak and strong solutions, detachment)"
+source = "Anderson, Modern Compressible Flow 3rd ed. ch.4"
+status = "missing"
+evidence = "grep: oblique / theta-beta 0 件 (src/ccd.rs の oblique は衝突の話)"
+oracle_candidate = "Anderson Table/Chart の β (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-061"
+axis = "closed-form"
+item = "Prandtl-Meyer expansion function"
+source = "Anderson, Modern Compressible Flow 3rd ed. ch.4"
+status = "missing"
+evidence = "grep: Prandtl-Meyer 0 件"
+oracle_candidate = "ν(M) の閉形式 (M=2, γ=1.4 で 26.38° 参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-062"
+axis = "closed-form"
+item = "area-Mach relation and quasi-1-D nozzle flow (choking, mass flow rate, exit conditions)"
+source = "Anderson, Modern Compressible Flow 3rd ed. ch.5"
+status = "missing"
+evidence = "grep: area-Mach / choked 0 件 (src/thin_wall.rs の nozzle は 3D プリンタの吐出口)"
+oracle_candidate = "A/A* (M) の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-063"
+axis = "closed-form"
+item = "normal shock inside a nozzle and back-pressure flow regimes"
+source = "Anderson, Modern Compressible Flow 3rd ed. ch.5"
+status = "missing"
+evidence = "ノズル流れが無い (行 COV-SHOCK-062)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-064"
+axis = "closed-form"
+item = "Fanno and Rayleigh flow"
+source = "Anderson, Modern Compressible Flow 3rd ed. ch.3 (§3.8-3.9)"
+status = "missing"
+evidence = "grep: Fanno / Rayleigh flow 0 件"
+oracle_candidate = "Fanno の 4fL*/D (M) の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-065"
+axis = "closed-form"
+item = "conical shock (Taylor-Maccoll)"
+source = "Anderson, Modern Compressible Flow 3rd ed. ch.10"
+status = "missing"
+evidence = "grep: Taylor-Maccoll 0 件"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-066"
+axis = "closed-form"
+item = "Riemann invariants of 1-D isentropic flow"
+source = "Anderson, Modern Compressible Flow 3rd ed. ch.7; Toro, Riemann Solvers and Numerical Methods for Fluid Dynamics 3rd ed. §3.1"
+status = "implemented+oracle"
+evidence = "src/compressible.rs:240 / tests/audit_compressible.rs::riemann_invariants_closed_form / tests/analytic_compressible_wiring.rs::riemann_invariants_are_exact_for_gamma_2 / tests/audit_compressible.rs::gamma_one_riemann_invariants_are_not_a_silent_identity (known defect AUD-A-S1W5-007)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-067"
+axis = "closed-form"
+item = "shock polars and shock-reflection criteria (regular / Mach reflection, von Neumann and detachment criteria)"
+source = "Ben-Dor, Shock Wave Reflection Phenomena"
+status = "missing"
+evidence = "oblique shock が無い (行 COV-SHOCK-060)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-068"
+axis = "closed-form"
+item = "Hugoniot curve (shock adiabat) for a general equation of state"
+source = "Zel'dovich-Raizer, Physics of Shock Waves ch.1"
+status = "missing"
+evidence = "src/compressible.rs:181 は理想気体の Mach 数表示のみ"
+oracle_candidate = "理想気体で p-v Hugoniot が normal_shock_jump と一致"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-069"
+axis = "detonation"
+item = "1-D detonation computed by the flow solver (CJ speed emerging from the reactive Euler solution)"
+source = "Fickett-Davis, Detonation; Clawpack reactive Euler; Liska-Wendroff 2003"
+status = "missing"
+evidence = "反応 Euler が無い (行 COV-SHOCK-008) CJ の閉形式は COV-CHEM-063"
+oracle_candidate = "CJ 速度に格子収束"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-070"
+axis = "detonation"
+item = "ZND structure resolved by the flow solver (von Neumann spike, induction zone)"
+source = "Fickett-Davis, Detonation ch.5"
+status = "missing"
+evidence = "反応 Euler が無い ZND 構造の閉形式・ODE は COV-CHEM-064"
+oracle_candidate = "von Neumann spike の圧力"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-071"
+axis = "detonation"
+item = "programmed burn and detonation shock dynamics for high explosives (with JWL products)"
+source = "LS-DYNA *MAT_HIGH_EXPLOSIVE_BURN; Bdzil-Stewart DSD"
+status = "missing"
+evidence = "grep: programmed burn 0 件 JWL も無い (行 COV-SHOCK-052)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-072"
+axis = "detonation"
+item = "stiff reaction source in the hydrocode (fractional step, Strang splitting with the flux update)"
+source = "Toro, Riemann Solvers and Numerical Methods for Fluid Dynamics 3rd ed. ch.15; LeVeque, Finite Volume Methods for Hyperbolic Problems ch.17"
+status = "missing"
+evidence = "source 項が無い 汎用の operator splitting は COV-NUM-056、化学の splitting は COV-CHEM-039"
+oracle_candidate = "1-D 爆轟で Strang の 2 次"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-073"
+axis = "detonation"
+item = "blast wave from a localised energy or high-pressure release (point explosion, burst sphere)"
+source = "Sedov 1959; Taylor 1950; Brode 1955"
+status = "missing"
+evidence = "src/force.rs:67 はゲームの径方向 impulse で流体の爆風ではない (TNT 換算・Kingery-Bulmash の閉形式は COV-CHEM-066)"
+oracle_candidate = "球対称の Sedov-Taylor 解"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-074"
+axis = "multi-dimensional"
+item = "dimensional splitting (Strang) of 1-D sweeps"
+source = "Toro, Riemann Solvers and Numerical Methods for Fluid Dynamics 3rd ed. §16.2; Strang 1968"
+status = "missing"
+evidence = "1 次元のみ (行 COV-SHOCK-002)"
+oracle_candidate = "2-D の 1-D 問題が 1-D 解と bit 一致"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-075"
+axis = "multi-dimensional"
+item = "unsplit finite volume (corner transport upwind, CTU)"
+source = "Colella 1990; LeVeque, Finite Volume Methods for Hyperbolic Problems ch.20"
+status = "missing"
+evidence = "1 次元のみ"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-076"
+axis = "multi-dimensional"
+item = "curvilinear structured meshes"
+source = "Hirsch, Numerical Computation of Internal and External Flows ch.6"
+status = "missing"
+evidence = "等間隔の 1-D 格子のみ (src/euler_fv.rs:11)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-077"
+axis = "multi-dimensional"
+item = "unstructured finite-volume meshes for compressible flow"
+source = "Barth-Jespersen 1989; Fluent / SU2"
+status = "missing"
+evidence = "等間隔の 1-D 格子のみ (非圧縮の非構造格子は COV-CFD-003)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-078"
+axis = "multi-dimensional"
+item = "block-structured adaptive mesh refinement for shocks"
+source = "Berger-Colella 1989; AMReX / Athena++ / Clawpack AMRClaw"
+status = "missing"
+evidence = "等間隔の 1-D 格子のみ (非圧縮の AMR は COV-CFD-006)"
+oracle_candidate = "Sod の衝撃位置で refine、L1 誤差が一様格子同等"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-079"
+axis = "positivity-entropy"
+item = "positivity of density and pressure (positively conservative flux, bounded reconstruction, invalid stages rejected)"
+source = "Einfeldt et al. 1991; Batten et al. 1997"
+status = "partial"
+evidence = "src/euler_fv.rs:758 (Einfeldt 上下限で positively conservative) / src/euler_fv.rs:924 / tests/analytic_euler_fv.rs::oversized_dt_reports_positivity_error_and_keeps_state / tests/analytic_euler_fv.rs::vacuum_initial_value_is_reported_and_state_is_unchanged"
+oracle_candidate = ""
+limitation = "src/euler_fv.rs:106 'A stage that would leave `ρ ≤ 0` or `p ≤ 0` in a cell returns [`EulerError::NonPositiveDensity`] / [`EulerError::NonPositivePressure`] with the cell index, and the state is not changed'"
+
+[[item]]
+id = "COV-SHOCK-080"
+axis = "positivity-entropy"
+item = "positivity-preserving limiter or fallback (Zhang-Shu scaling, first-order fallback per cell)"
+source = "Zhang-Shu 2010; Hu-Adams-Shu 2013"
+status = "missing"
+evidence = "src/euler_fv.rs:106 正値性を崩す stage は error で返し、補正・fallback は無い"
+oracle_candidate = "Leblanc / 123 問題を大 CFL で error 無しに完走"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-081"
+axis = "positivity-entropy"
+item = "entropy-satisfying flux at a transonic rarefaction (no expansion shock)"
+source = "Toro, Riemann Solvers and Numerical Methods for Fluid Dynamics 3rd ed. §6.3, ch.11 (entropy fix); LeVeque, Finite Volume Methods for Hyperbolic Problems §12.2"
+status = "implemented-no-oracle"
+evidence = "src/euler_fv.rs:570 / src/euler_fv.rs:758 は構造上 entropy 条件を満たす 遷音速膨張波を含む問題 (Toro Test 1 の改変 Sod) を FV で回す test は無い (Sod と 123 は遷音速点を持たない)"
+oracle_candidate = "Toro Test 1 (u_L = 0.75) の膨張波の中に段差が出ない (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-082"
+axis = "positivity-entropy"
+item = "discrete conservation of mass, momentum and energy"
+source = "LeVeque, Finite Volume Methods for Hyperbolic Problems §4.1"
+status = "implemented+oracle"
+evidence = "src/euler_fv.rs:1017 / tests/analytic_euler_fv.rs::periodic_totals_are_conserved_bit_for_bit / tests/analytic_euler_fv.rs::closed_box_conserves_mass_and_energy_bit_for_bit"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-083"
+axis = "positivity-entropy"
+item = "mirror symmetry of the discrete solution"
+source = "Liska-Wendroff 2003 (symmetry tests)"
+status = "implemented+oracle"
+evidence = "src/euler_fv.rs:946 / tests/analytic_euler_fv.rs::mirrored_initial_value_gives_mirrored_solution_bit_for_bit"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-084"
+axis = "positivity-entropy"
+item = "contact discontinuity with uniform velocity and pressure kept free of oscillations"
+source = "Toro, Riemann Solvers and Numerical Methods for Fluid Dynamics 3rd ed. §10.4 (HLLC contact); Abgrall 1996"
+status = "implemented+oracle"
+evidence = "src/euler_fv.rs:758 / tests/analytic_euler_fv.rs::contact_discontinuity_keeps_u_and_p"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-085"
+axis = "positivity-entropy"
+item = "entropy-stable / entropy-conservative fluxes (Tadmor, Ismail-Roe)"
+source = "Tadmor 2003; Ismail-Roe 2009"
+status = "missing"
+evidence = "src/euler_fv.rs:718 は Exact / Hllc のみ"
+oracle_candidate = "離散エントロピーの単調性"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-086"
+axis = "positivity-entropy"
+item = "input validation with explicit errors (gamma, CFL, cell width, empty grid, periodic pairing)"
+source = "Athena++ / Clawpack input checks"
+status = "implemented+oracle"
+evidence = "src/euler_fv.rs:154 / src/euler_fv.rs:961 / tests/analytic_euler_fv.rs::degenerate_inputs_have_explicit_results / tests/analytic_euler_fv.rs::riemann_rejects_invalid_states / tests/analytic_euler_fv.rs::single_cell_is_valid"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-087"
+axis = "positivity-entropy"
+item = "dynamic range of the state variables (SI units, near-vacuum pressures)"
+source = "Q64.64 fixed point (Fix128) number format"
+status = "partial"
+evidence = "src/euler_fv.rs:35 無次元化を推奨 / tests/analytic_euler_fv.rs::vacuum_initial_value_is_reported_and_state_is_unchanged"
+oracle_candidate = "SI の衝撃管 (p ≈ 1e5 Pa) と無次元版の解の相対差"
+limitation = "src/euler_fv.rs:35 'a strong rarefaction drives `p` towards 0, where an SI value would keep only the bits above `2⁻⁶⁴` (a pressure of `10⁻¹⁰ Pa` keeps ≈ 31)'"
+
+[[item]]
+id = "COV-SHOCK-088"
+axis = "positivity-entropy"
+item = "transcendental functions of the exact solver (x^e) to about 1e-17, integer-only"
+source = "Toro, Riemann Solvers and Numerical Methods for Fluid Dynamics 3rd ed. §4.3 (pressure function); deterministic fixed point"
+status = "implemented+oracle"
+evidence = "src/euler_fv.rs:325 / src/euler_fv.rs::ln_and_exp_are_accurate (Fix128::powf_pos は指数を 24 bit に切るので使わない)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-089"
+axis = "ale-hydrocode"
+item = "1-D Lagrangian hydrodynamics in mass coordinates (staggered velocity, cell-centred thermodynamics)"
+source = "von Neumann-Richtmyer 1950; Benson, Computational methods in Lagrangian and Eulerian hydrocodes (CMAME 1992); Caramana-Shashkov"
+status = "missing"
+evidence = "Euler (固定格子) の FV のみ (src/euler_fv.rs:1)"
+oracle_candidate = "Sod の Lagrange 解が exact_riemann と一致"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-090"
+axis = "ale-hydrocode"
+item = "von Neumann-Richtmyer artificial viscosity (quadratic and linear terms)"
+source = "von Neumann-Richtmyer 1950; Benson, Computational methods in Lagrangian and Eulerian hydrocodes (CMAME 1992)"
+status = "missing"
+evidence = "grep: artificial viscosity 0 件 (SPH の人工粘性は COV-CFD-083 側)"
+oracle_candidate = "衝撃の幅が 3-4 セルに収まる"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-091"
+axis = "ale-hydrocode"
+item = "tensor / edge artificial viscosity and hourglass control in multi-D Lagrangian hydro"
+source = "Caramana-Shashkov-Whalen 1998; LS-DYNA hourglass control"
+status = "missing"
+evidence = "Lagrange hydro が無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-092"
+axis = "ale-hydrocode"
+item = "arbitrary Lagrangian-Eulerian remap (mesh relaxation and conservative remap)"
+source = "Benson, Computational methods in Lagrangian and Eulerian hydrocodes (CMAME 1992); LS-DYNA ALE; Margolin-Shashkov"
+status = "missing"
+evidence = "Lagrange hydro が無い (非圧縮の移動格子 ALE は COV-COUPLE-015)"
+oracle_candidate = "一様流の remap が固定点、保存量の和が不変"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-093"
+axis = "ale-hydrocode"
+item = "multi-material cells and interface reconstruction in ALE / Eulerian hydrocodes (mixed-cell pressure closure)"
+source = "Benson 2002 volume of fluid in hydrocodes; CTH"
+status = "missing"
+evidence = "多材料が無い (行 COV-SHOCK-007)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-094"
+axis = "ale-hydrocode"
+item = "Eulerian multi-material hydrocode for impact and explosive loading"
+source = "CTH; LS-DYNA MM-ALE"
+status = "missing"
+evidence = "1-D 単一気体の Euler FV のみ"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-095"
+axis = "output"
+item = "shock detection / sensor (pressure-jump, Ducros sensor) and shock position output"
+source = "Ducros et al. 1999; Lovely-Haimes 1999"
+status = "missing"
+evidence = "grep: shock sensor 0 件 (primitives の出力のみ)"
+oracle_candidate = "Sod の衝撃位置を exact 解と突合"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-096"
+axis = "output"
+item = "derived fields (Mach number, entropy, numerical schlieren)"
+source = "Athena++ / Clawpack output"
+status = "missing"
+evidence = "src/euler_fv.rs:916 は Conserved / Primitive の出力のみ"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-097"
+axis = "benchmark"
+item = "Sod shock tube (L1 error against the exact solution, convergence rate)"
+source = "Sod 1978; Toro, Riemann Solvers and Numerical Methods for Fluid Dynamics 3rd ed. §6.4"
+status = "implemented+oracle"
+evidence = "tests/analytic_euler_fv.rs::godunov_sod_l1_converges_below_first_order / tests/analytic_euler_fv.rs::muscl_sod_beats_first_order"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-098"
+axis = "benchmark"
+item = "Lax shock tube"
+source = "Lax 1954; Liska-Wendroff 2003"
+status = "implemented+oracle"
+evidence = "tests/analytic_euler_fv.rs::lax_and_123_problems_run_with_every_scheme"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-099"
+axis = "benchmark"
+item = "123 problem (two strong rarefactions, near vacuum)"
+source = "Einfeldt et al. 1991; Toro, Riemann Solvers and Numerical Methods for Fluid Dynamics 3rd ed. Test 2"
+status = "implemented+oracle"
+evidence = "tests/analytic_euler_fv.rs::lax_and_123_problems_run_with_every_scheme"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-100"
+axis = "benchmark"
+item = "Toro Tests 1-5 exact Riemann solutions"
+source = "Toro, Riemann Solvers and Numerical Methods for Fluid Dynamics 3rd ed. §4.3.3 Table 4.1-4.2"
+status = "implemented+oracle"
+evidence = "tests/analytic_euler_fv.rs::star_state_matches_f64_reference / tests/analytic_euler_fv.rs::sampled_solution_matches_f64_reference / tests/analytic_euler_fv.rs::reference_matches_toro_table_4_2 (Table 4.2 は参照値要確認)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-101"
+axis = "benchmark"
+item = "Toro Tests 3-5 (strong shocks, shock collision) run through the finite-volume schemes"
+source = "Toro, Riemann Solvers and Numerical Methods for Fluid Dynamics 3rd ed. §6.4, §10.8"
+status = "implemented-no-oracle"
+evidence = "EulerFv1d と transmissive 境界で組める 現 test は exact 解法だけを Test 3-5 で突合し、FV では回していない"
+oracle_candidate = "Test 3-5 の FV 解の L1 誤差と正値性 (exact_riemann の解と突合)"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-102"
+axis = "benchmark"
+item = "smooth density wave advection (order of accuracy)"
+source = "Liska-Wendroff 2003"
+status = "implemented+oracle"
+evidence = "tests/analytic_euler_fv.rs::muscl_ssprk2_is_second_order_on_smooth_wave"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-103"
+axis = "benchmark"
+item = "stationary normal shock held on the grid"
+source = "Anderson, Modern Compressible Flow 3rd ed. ch.3; Toro, Riemann Solvers and Numerical Methods for Fluid Dynamics 3rd ed. ch.6"
+status = "implemented+oracle"
+evidence = "tests/analytic_euler_fv.rs::stationary_shock_matches_normal_shock_jump"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-104"
+axis = "benchmark"
+item = "shock reflection from a solid wall"
+source = "Toro, Riemann Solvers and Numerical Methods for Fluid Dynamics 3rd ed. §6.3.3"
+status = "implemented+oracle"
+evidence = "tests/analytic_euler_fv.rs::reflective_wall_reproduces_reflected_shock_pressure"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-105"
+axis = "benchmark"
+item = "Shu-Osher shock / entropy-wave interaction"
+source = "Shu-Osher 1989"
+status = "implemented-no-oracle"
+evidence = "既存の EulerFv1d (MUSCL + SSP-RK2 + transmissive) で組める 場面・test は無い"
+oracle_candidate = "細格子解との突合 (参照解は自前の細格子、参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-106"
+axis = "benchmark"
+item = "Woodward-Colella interacting blast waves"
+source = "Woodward-Colella 1984"
+status = "implemented-no-oracle"
+evidence = "既存の EulerFv1d (両端 ReflectiveWall) で組める 場面・test は無い"
+oracle_candidate = "総質量・総エネルギーの保存と細格子解の密度ピーク (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-107"
+axis = "benchmark"
+item = "planar Noh problem (wall heating)"
+source = "Noh 1987"
+status = "implemented-no-oracle"
+evidence = "反射壁へ衝突する一様流として既存の EulerFv1d で組める 場面・test は無い"
+oracle_candidate = "平板 Noh の閉形式 (衝撃後密度 4、γ=5/3、参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-108"
+axis = "benchmark"
+item = "Leblanc shock tube (extreme density and pressure ratios)"
+source = "Loubère-Shashkov 2005; Liska-Wendroff 2003"
+status = "implemented-no-oracle"
+evidence = "既存の EulerFv1d で組める (ただし行 COV-SHOCK-087 の精度の制約に掛かりうる) 場面・test は無い"
+oracle_candidate = "exact_riemann の解と突合、正値性 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-109"
+axis = "benchmark"
+item = "Sedov-Taylor point blast"
+source = "Sedov 1959; Kamm-Timmes 2007"
+status = "missing"
+evidence = "球対称・多次元が無い (行 COV-SHOCK-005 / 002)"
+oracle_candidate = "自己相似解の衝撃半径 R ∝ t^(2/5)"
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-110"
+axis = "benchmark"
+item = "2-D Riemann problems (Lax-Liu configurations)"
+source = "Lax-Liu 1998; Kurganov-Tadmor 2002"
+status = "missing"
+evidence = "2-D が無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-111"
+axis = "benchmark"
+item = "double Mach reflection"
+source = "Woodward-Colella 1984"
+status = "missing"
+evidence = "2-D が無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-112"
+axis = "benchmark"
+item = "Mach 3 forward-facing step"
+source = "Woodward-Colella 1984"
+status = "missing"
+evidence = "2-D と物体境界が無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-113"
+axis = "benchmark"
+item = "isentropic vortex advection (multi-D order of accuracy)"
+source = "Shu 1998; Yee et al. 1999"
+status = "missing"
+evidence = "2-D が無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-114"
+axis = "benchmark"
+item = "water-air shock tube and gas-liquid interface problems"
+source = "Saurel-Abgrall 1999"
+status = "missing"
+evidence = "stiffened gas と多材料が無い (行 COV-SHOCK-049 / 007)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-SHOCK-115"
+axis = "benchmark"
+item = "compressible Richtmyer-Meshkov / Rayleigh-Taylor / Kelvin-Helmholtz instabilities"
+source = "Liska-Wendroff 2003; Athena++ test suite"
+status = "missing"
+evidence = "多次元・重力 source が無い"
+oracle_candidate = ""
+limitation = ""
