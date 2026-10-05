@@ -85,6 +85,8 @@ impl PlaneCollider {
     ///
     /// Returns a `CollisionResult` with the contact point, normal, and depth.
     /// If the sphere does not intersect, returns `CollisionResult::NONE`.
+    /// The normal points from the plane toward the sphere centre (B→A with
+    /// A = sphere, B = plane): `point_a` is on the sphere, `point_b` on the plane.
     #[must_use]
     pub fn intersect_sphere(
         &self,
@@ -119,6 +121,8 @@ impl PlaneCollider {
     ///
     /// Returns a `CollisionResult` if any part of the AABB is below the plane.
     /// The penetration depth is the maximum penetration of any AABB corner.
+    /// The normal is the plane normal (B→A with A = box, B = plane):
+    /// translating the box by `depth · normal` moves it to the front side.
     #[must_use]
     pub fn intersect_aabb(&self, aabb: &AABB) -> CollisionResult {
         // Find the AABB vertex most in the negative normal direction (n-vertex)
