@@ -183,6 +183,8 @@ were introduced during that release window.
 - **Behavior change:** `ModifiedSdf::normal` / `SingleModifiedSdf::normal` / `DestructibleSdf::normal` は、座標の大きさが 10 を超える所で差分の幅を座標の大きさに比例させる (AUD-A-S5W3-008 / AUD-A-S5W3-013)
 - **Behavior change:** `debug_draw_world` は `draw_aabbs` (既定 true) に従って body の AABB を描画するようになった (従来は flag を読んでいなかった) (AUD-A-S4W3-033 の一部)
 - **Behavior change:** `PressureSolver::DecomposedMultigrid { ranks, cycles }` を追加 `project_pressure_multigrid_decomposed` へ振り分ける (additive)
+- **Behavior change:** `MaterialTable::register` / `FilamentDb::register` は 65,536 個の u16 id を使い切った後の呼び出しで panic する (従来は折り返した id を返し既存の entry と重なっていた) 容量超過を Err で受けるには新設の `try_register` (`PhysicsError::CapacityExceeded`) を使う (AUD-A-S1W6-002 / AUD-A-S1W5-013)
+- **Behavior change:** `XorShift64::new` が seed を splitmix64 で撹拌するようになった 同じ seed でも `XorShift64` と seed 付きの `LaplaceNoise` / `RandomizedResponse` は別の系列を出し、近い seed どうしの先頭 draw は相関しない (AUD-A-S4W3-030)
 
 ### Deprecated
 
