@@ -3,7 +3,8 @@
 //! normal impulse of that substep's position solve (Müller, Macklin,
 //! Chentanez, Jeschke, Kim, "Detailed Rigid Body Simulation with Extended
 //! Position Based Dynamics", SCA 2020, eq. (30)), so a sliding body
-//! decelerates at `μ g` and a body on a slope below the friction angle holds.
+//! decelerates at `μ g` and a body on a slope above the friction angle
+//! slides at the kinetic rate.
 //!
 //! Every scene runs through `PhysicsWorld::step` and, with the `parallel`
 //! feature, `PhysicsWorld::step_parallel`, with `PhysicsConfig::default()`
@@ -17,7 +18,8 @@
 //!   `v(t) = (v₀ + μg/β) e^{−βt} − μg/β` while `v > 0`;
 //! * a body on a slope of angle `θ` with `tan θ > μ`, from rest:
 //!   `a = g (sin θ − μ cos θ)` and `x(t) = (a/β) t − (a/β²)(1 − e^{−βt})`;
-//!   with `tan θ < μ` the static friction holds it (`a = 0`).
+//!   holding below the friction angle is covered by
+//!   `tests/analytic_contact_static_friction.rs`.
 //!
 //! The slope is modelled by tilting the gravity by `θ` against a level ground,
 //! which is the same problem in the ground's frame.
@@ -209,35 +211,6 @@ fn a_relative_friction_modifier_halves_the_sliding_deceleration() {
         assert!(
             (v - want).abs() < SLIDE_TOL,
             "{path:?}: v = {v:.5}, closed form {want:.5}"
-        );
-    }
-}
-
-/// On a slope with `tan θ = 0.3 < μ = 0.5` the ball starting at rest is
-/// held: the tangential pull of a substep, `g sin θ h`, is below the cap
-/// `μ g cos θ h` and is removed whole, so the velocity at the end of every
-/// frame is 0 (tolerance `1e-12 m/s`, fixed-point rounding).
-///
-/// The friction acts on velocities only (the position-level static friction
-/// of Müller et al. 2020 is not implemented), so the position still advances
-/// by the predicted step of each substep, `g sin θ h²`, before the velocity
-/// pass removes the speed: a creep of exactly `g sin θ h² · substeps` per
-/// frame (`≈ 9.8e-5 m`, `≈ 6e-3 m` over one second, against `≈ 1.2 m` for a
-/// free slide). The assert pins that bound (`+1 %` for the surface tilt).
-#[test]
-fn a_ball_on_a_slope_below_the_friction_angle_holds() {
-    let (g, _) = g_and_beta();
-    let theta = 0.3f64.atan();
-    let config = PhysicsConfig::default();
-    let h = DT / config.substeps as f64;
-    let frames = 60;
-    let creep = g * theta.sin() * h * h * (config.substeps * frames) as f64;
-    for path in paths() {
-        let (x, v) = run(0.5, theta, 0.0, frames, None, path);
-        assert!(v.abs() < 1e-12, "{path:?}: v = {v:.3e}");
-        assert!(
-            x >= 0.0 && x < 1.01 * creep,
-            "{path:?}: x = {x:.6}, creep bound {creep:.6}"
         );
     }
 }
