@@ -16,8 +16,6 @@ unwired src/eulerian_grid.rs::bytes
 unwired src/eulerian_grid.rs::bytes
 unwired src/eulerian_grid.rs::bytes
 unwired src/eulerian_grid.rs::enforce_slab_face_boundaries_over
-unwired src/eulerian_grid.rs::project_pressure_decomposed_on_rank
-unwired src/eulerian_grid.rs::project_pressure_slab_local_on_rank
 unwired src/eulerian_grid.rs::set_u
 unwired src/eulerian_grid.rs::set_v
 unwired src/eulerian_grid.rs::set_w
