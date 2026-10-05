@@ -7,24 +7,23 @@ References are resolved to one definition each, so items that share a name are t
 
 | Level | Meaning | Count |
 |-------|---------|------:|
-| L0 | not reached by any non-test code, examples included | 145 |
-| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2093 |
+| L0 | not reached by any non-test code, examples included | 108 |
+| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2136 |
 | live | reached without examples (crate-internal roots or a binding) | 423 |
-| | **total** | **2661** |
+| | **total** | **2667** |
 
 L1 is a label, not a defect: a module users call directly is example-only inside this crate.
 It does mean the item is not reached from `PhysicsWorld`, another module, or a binding.
 
 ## Compared with the wiring guard
 
-`scripts/wiring-baseline.txt` lists 30 unwired items.
+`scripts/wiring-baseline.txt` lists 24 unwired items.
 
-### L0 here but not in the baseline (112)
+### L0 here but not in the baseline (81)
 
 The name-based guard counts these as wired; resolved references find no caller.
 
 - `src/box_collider.rs::OrientedBox::surface_area`
-- `src/buckling.rs::SnapThroughError`
 - `src/bvh.rs::BroadphaseHybrid`
 - `src/bvh.rs::BroadphaseHybrid::new`
 - `src/cfd_solver.rs::CfdSolver::step_multigrid`
@@ -72,9 +71,6 @@ The name-based guard counts these as wired; resolved references find no caller.
 - `src/eulerian_grid/multigrid_decomposed.rs::multigrid_slab_bounds`
 - `src/eulerian_grid/multigrid_decomposed.rs::project_pressure_multigrid_banded_on_rank`
 - `src/eulerian_grid/multigrid_decomposed.rs::project_pressure_multigrid_decomposed_on_rank`
-- `src/fatigue.rs::BASQUIN_LOW_CYCLE_BOUND`
-- `src/fatigue.rs::FatigueRangeError`
-- `src/fatigue.rs::FatigueReport`
 - `src/joint.rs::BallJoint::with_compliance`
 - `src/joint.rs::HingeJoint::with_compliance`
 - `src/linear_elastic_fem.rs::ThermalExpansion::new`
@@ -83,33 +79,8 @@ The name-based guard counts these as wired; resolved references find no caller.
 - `src/motor.rs::PdController3D`
 - `src/motor.rs::PdController3D::compute_torque`
 - `src/motor.rs::PdController3D::new`
-- `src/physics2d.rs::Contact2D`
-- `src/physics2d.rs::Joint2D`
-- `src/physics2d.rs::PhysicsConfig2D`
-- `src/physics2d.rs::PhysicsWorld2D`
-- `src/physics2d.rs::PhysicsWorld2D::add_body`
-- `src/physics2d.rs::PhysicsWorld2D::add_joint`
-- `src/physics2d.rs::PhysicsWorld2D::check_collision_2d`
-- `src/physics2d.rs::PhysicsWorld2D::new`
-- `src/physics2d.rs::PhysicsWorld2D::remove_body`
-- `src/physics2d.rs::PhysicsWorld2D::step`
-- `src/physics2d.rs::RigidBody2D::apply_impulse`
-- `src/physics2d.rs::RigidBody2D::is_static_or_kinematic`
-- `src/physics2d.rs::RigidBody2D::new_kinematic`
-- `src/physics2d.rs::RigidBody2D::new_static`
-- `src/physics2d.rs::RigidBody2D::world_point`
-- `src/physics2d.rs::Vec2Fix::ONE`
-- `src/physics2d.rs::Vec2Fix::UNIT_X`
-- `src/physics2d.rs::Vec2Fix::UNIT_Y`
-- `src/physics2d.rs::Vec2Fix::from_int`
-- `src/physics2d.rs::Vec2Fix::lerp`
-- `src/physics2d.rs::Vec2Fix::normalize`
-- `src/physics2d.rs::Vec2Fix::perpendicular`
-- `src/physics2d.rs::Vec2Fix::rotate`
-- `src/physics2d.rs::solve_joints_2d`
 - `src/replay.rs::ReplayPlayer::body_count`
 - `src/replay.rs::ReplayRecorder::flush`
-- `src/scene_io.rs::PhysicsConfig::new`
 - `src/sdf_collider.rs::SdfCollider::new_dynamic`
 - `src/sdf_collider.rs::SdfCollider::update_cache`
 - `src/sim_modifier.rs::SingleModifiedSdf`
@@ -129,10 +100,8 @@ The name-based guard counts these as wired; resolved references find no caller.
 - `src/solver_tgs_hooks_6dof.rs::Pgs6DofConfig`
 - `src/solver_tgs_hooks_6dof.rs::Pgs6DofHooks`
 - `src/solver_tgs_hooks_6dof.rs::Pgs6DofHooks::new`
-- `src/support_volume.rs::SupportConfig::speed`
 - `src/torus.rs::Torus::aabb`
 - `src/torus.rs::Torus::surface_area`
-- `src/vehicle.rs::Vehicle::new_default`
 - `src/wedge.rs::Wedge::aabb`
 - `src/wedge.rs::Wedge::with_rotation`
 
@@ -142,12 +111,9 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 
 - (none)
 
-## L0 — unreached (145)
+## L0 — unreached (108)
 
 - `src/box_collider.rs::OrientedBox::surface_area`
-- `src/buckling.rs::SnapThroughError`
-- `src/buckling.rs::plate_buckling_mpa`
-- `src/buckling.rs::snap_through_load_n`
 - `src/bvh.rs::BroadphaseHybrid`
 - `src/bvh.rs::BroadphaseHybrid::build_dynamic`
 - `src/bvh.rs::BroadphaseHybrid::clear_dynamic`
@@ -210,13 +176,6 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/eulerian_grid/multigrid_decomposed.rs::multigrid_slab_bounds`
 - `src/eulerian_grid/multigrid_decomposed.rs::project_pressure_multigrid_banded_on_rank`
 - `src/eulerian_grid/multigrid_decomposed.rs::project_pressure_multigrid_decomposed_on_rank`
-- `src/fatigue.rs::BASQUIN_LOW_CYCLE_BOUND`
-- `src/fatigue.rs::FatigueRangeError`
-- `src/fatigue.rs::FatigueReport`
-- `src/fatigue.rs::SnCurve::aluminum_a5052`
-- `src/fatigue.rs::SnCurve::steel_sus304`
-- `src/fatigue.rs::analyze_spectrum`
-- `src/fatigue.rs::stress_at_cycles`
 - `src/joint.rs::BallJoint::with_compliance`
 - `src/joint.rs::HingeJoint::with_compliance`
 - `src/linear_elastic_fem.rs::ThermalExpansion::new`
@@ -229,35 +188,10 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/motor.rs::PdController::disable`
 - `src/motor.rs::PdController::set_velocity_target`
 - `src/motor.rs::apply_motors`
-- `src/physics2d.rs::Contact2D`
-- `src/physics2d.rs::Joint2D`
-- `src/physics2d.rs::PhysicsConfig2D`
-- `src/physics2d.rs::PhysicsWorld2D`
-- `src/physics2d.rs::PhysicsWorld2D::add_body`
-- `src/physics2d.rs::PhysicsWorld2D::add_joint`
-- `src/physics2d.rs::PhysicsWorld2D::check_collision_2d`
-- `src/physics2d.rs::PhysicsWorld2D::new`
-- `src/physics2d.rs::PhysicsWorld2D::remove_body`
-- `src/physics2d.rs::PhysicsWorld2D::step`
-- `src/physics2d.rs::RigidBody2D::apply_impulse`
-- `src/physics2d.rs::RigidBody2D::is_static_or_kinematic`
-- `src/physics2d.rs::RigidBody2D::new_kinematic`
-- `src/physics2d.rs::RigidBody2D::new_static`
-- `src/physics2d.rs::RigidBody2D::world_point`
-- `src/physics2d.rs::Vec2Fix::ONE`
-- `src/physics2d.rs::Vec2Fix::UNIT_X`
-- `src/physics2d.rs::Vec2Fix::UNIT_Y`
-- `src/physics2d.rs::Vec2Fix::from_int`
-- `src/physics2d.rs::Vec2Fix::lerp`
-- `src/physics2d.rs::Vec2Fix::normalize`
-- `src/physics2d.rs::Vec2Fix::perpendicular`
-- `src/physics2d.rs::Vec2Fix::rotate`
-- `src/physics2d.rs::solve_joints_2d`
 - `src/plastic.rs::NortonCreep::petg_room_temp`
 - `src/plastic.rs::PlasticModel::with_hardening`
 - `src/replay.rs::ReplayPlayer::body_count`
 - `src/replay.rs::ReplayRecorder::flush`
-- `src/scene_io.rs::PhysicsConfig::new`
 - `src/sdf_collider.rs::SdfCollider::new_dynamic`
 - `src/sdf_collider.rs::SdfCollider::update_cache`
 - `src/sim_modifier.rs::SingleModifiedSdf`
@@ -283,10 +217,8 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/solver_tgs_hooks_6dof_scoped.rs::solve_island_isolated`
 - `src/solver_tgs_hooks_6dof_scoped.rs::solve_islands_parallel`
 - `src/solver_tgs_hooks_6dof_scoped.rs::solve_islands_serial`
-- `src/support_volume.rs::SupportConfig::speed`
 - `src/torus.rs::Torus::aabb`
 - `src/torus.rs::Torus::surface_area`
-- `src/vehicle.rs::Vehicle::new_default`
 - `src/wedge.rs::Wedge::aabb`
 - `src/wedge.rs::Wedge::with_rotation`
 
@@ -331,7 +263,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - Methods are listed as `file::Type::method`, so same-named methods of different types in one file are told apart.
 - Items in `src/ffi.rs`, `src/python.rs` and `src/wasm.rs` are roots and are not listed.
 
-## L1 — example-only (2093)
+## L1 — example-only (2136)
 
 - `src/acoustic_wave.rs`: `AIR_20C`, `CONCRETE_LONGITUDINAL`, `STEEL_LONGITUDINAL`, `WATER_25C`, `leapfrog_step`, `stable_dt`
 - `src/aeroelasticity.rs`: `VivParameters`, `VivParameters::facchinetti_reference`, `VivState`, `VivState::seeded`, `viv_step`
@@ -348,7 +280,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/body_collider.rs`: `BodyCollider::bounding_radius`, `colliders_meet`, `quat_from_rotation`
 - `src/box_collider.rs`: `OrientedBox::axis_aligned`, `OrientedBox::corner`, `OrientedBox::corners`
 - `src/bridging.rs`: `BridgeCheck`, `BridgeSpan`, `BridgeSpan::length_mm`, `BridgeSpan::z_delta_mm`, `BridgingReport`, `BridgingReport::has_unsafe`, `BridgingReport::unsafe_checks`, `analyze_bridges`, `check_span`
-- `src/buckling.rs`: `BucklingRegime`, `ColumnBucklingReport`, `analyze_column`, `critical_stress_mpa`, `radius_of_gyration_mm`, `slenderness_ratio`, `transition_slenderness`
+- `src/buckling.rs`: `BucklingRegime`, `ColumnBucklingReport`, `SnapThroughError`, `analyze_column`, `critical_stress_mpa`, `plate_buckling_mpa`, `radius_of_gyration_mm`, `slenderness_ratio`, `snap_through_load_n`, `transition_slenderness`
 - `src/buoyancy_zone.rs`: `BuoyancyZone`, `BuoyancyZone::force_on`, `BuoyancyZone::submerged_fraction`, `BuoyancyZone::water_pool`, `ZoneShape`, `ZoneShape::contains`, `ZoneShape::depth_below_surface`, `ZoneShape::signed_depth_below_surface`
 - `src/bvh.rs`: `BvhNode::get_aabb`, `BvhStats`, `LinearBvh::query`, `LinearBvh::refit_leaves`, `LinearBvh::stats`
 - `src/ccd.rs`: `CcdConfig`, `TOI`, `aabb_plane_toi`, `adaptive_toi_substeps`, `capsule_plane_toi`, `conservative_advancement`, `needs_ccd`, `speculative_contact`, `sphere_capsule_toi`, `sphere_plane_toi`, `sphere_sphere_toi`, `swept_aabb`
@@ -381,7 +313,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/eulerian_grid.rs`: `BicgstabStats`, `DELIVERY_DESTINATION_LACKS_LAYER`, `DELIVERY_SOURCE_LACKS_LAYER`, `FaceBc`, `FaceBc::blocks_pressure`, `FaceBc::is_inflow`, `FaceBc::is_wall`, `FaceBc::no_slip_velocity`, `FaceFlags`, `FaceSink`, `HALO_MISSING_ABOVE`, `HALO_MISSING_BELOW`, `HaloSchedule`, `LocalSlabTransport`, `LocalSlabTransport::from_field`, `LocalSlabTransport::slab`, `LocalTransport`, `LocalTransport::new`, `MacGrid`, `MacGrid::cell_velocity`, `MacGrid::divergence`, `MacGrid::enforce_face_boundaries`, `MacGrid::enforce_solid_faces`, `MacGrid::idx_u`, `MacGrid::idx_v`, `MacGrid::idx_w`, `MacGrid::is_u_solid`, `MacGrid::is_v_solid`, `MacGrid::is_w_solid`, `MacGrid::new`, `MacGrid::pressure`, `MacGrid::set_closed_box_walls`, `MacGrid::set_u_bc`, `MacGrid::set_u_solid`, `MacGrid::set_v_bc`, `MacGrid::set_v_solid`, `MacGrid::set_w_bc`, `MacGrid::set_w_solid`, `MacGrid::u`, `MacGrid::u_bc`, `MacGrid::u_blocks_pressure`, `MacGrid::u_wall_across_y`, `MacGrid::u_wall_across_z`, `MacGrid::v`, `MacGrid::v_bc`, `MacGrid::v_blocks_pressure`, `MacGrid::v_wall_across_x`, `MacGrid::v_wall_across_z`, `MacGrid::w`, `MacGrid::w_bc`, `MacGrid::w_blocks_pressure`, `MacGrid::w_wall_across_x`, `MacGrid::w_wall_across_y`, `ParticleScatter`, `RankTransport`, `SlabFaces`, `SlabFaces::from_grid`, `SlabFaces::new`, `SlabFaces::owned`, `SlabFaces::u_layer_mut`, `SlabFaces::v_layer_mut`, `SlabFaces::w_layer_mut`, `SlabStencil`, `SlabStencil::build`, `SlabStorage`, `SlabStorage::for_slab`, `SlabStorage::layer`, `SlabStorage::layer_mut`, `SlabStorage::resident`, `SlabStorage::sweep_window`, `SlabTransport`, `SweepWindow`, `g2p_velocity`, `p2g_nearest`, `p2g_normalized`, `p2g_normalized_with`, `p2g_trilinear`, `project_pressure`, `project_pressure_banded`, `project_pressure_bicgstab`, `project_pressure_decomposed`, `project_pressure_jacobi`, `project_pressure_multigrid`, `project_pressure_red_black_gs`, `project_pressure_slab_local_over`, `sample_u_range`, `sample_u_trilinear`, `sample_v_range`, `sample_v_trilinear`, `sample_w_range`, `sample_w_trilinear`
 - `src/eulerian_grid/multigrid_decomposed.rs`: `Residency`, `project_pressure_multigrid_decomposed`, `project_pressure_multigrid_decomposed_over`
 - `src/event.rs`: `EventCollector::contact_events`, `EventCollector::drain_contact_events`, `EventCollector::drain_trigger_events`, `EventCollector::has_events`, `EventCollector::trigger_events`
-- `src/fatigue.rs`: `INFINITE_LIFE`, `SnCurve`, `SnCurve::from_fdm_material`, `SpectrumEntry`, `cycles_to_failure`, `miner_damage`
+- `src/fatigue.rs`: `BASQUIN_LOW_CYCLE_BOUND`, `FatigueRangeError`, `FatigueReport`, `INFINITE_LIFE`, `SnCurve`, `SnCurve::aluminum_a5052`, `SnCurve::for_material`, `SnCurve::from_fdm_material`, `SnCurve::steel_sus304`, `SpectrumEntry`, `analyze_spectrum`, `cycles_to_failure`, `miner_damage`, `stress_at_cycles`
 - `src/filament_db.rs`: `FilamentDb`, `FilamentDb::by_category`, `FilamentDb::find_by_name`, `FilamentDb::get`, `FilamentDb::is_empty`, `FilamentDb::iter`, `FilamentDb::len`, `FilamentDb::new`, `FilamentDb::register`, `FilamentDb::try_register`, `FilamentDb::with_defaults`, `FilamentId`, `GPA_TO_PA`, `G_CM3_TO_KG_M3`, `MPA_TO_PA`, `MaterialCategory`, `MaterialProperties`, `MaterialProperties::a5052`, `MaterialProperties::abs`, `MaterialProperties::cf_nylon`, `MaterialProperties::density_si`, `MaterialProperties::is_fdm`, `MaterialProperties::is_sheet_metal`, `MaterialProperties::nylon`, `MaterialProperties::pc`, `MaterialProperties::peek`, `MaterialProperties::petg`, `MaterialProperties::pla`, `MaterialProperties::sus304`, `MaterialProperties::tensile_z`, `MaterialProperties::tpu`, `MaterialProperties::yield_at_angle`, `MaterialProperties::yield_pa`, `MaterialProperties::yield_z`, `MaterialProperties::youngs_at_angle`, `MaterialProperties::youngs_pa`, `MaterialProperties::youngs_z`
 - `src/fillet_stress.rs`: `kt_circular_hole_infinite_plate`, `kt_elliptical_hole`, `kt_shaft_shoulder_bending`, `kt_u_notch_axial`, `recommended_fillet_radius_mm`
 - `src/filter.rs`: `ALL`, `CollisionFilter::ALL`, `CollisionFilter::NONE`, `CollisionFilter::new`, `CollisionFilter::with_group`, `DEBRIS`, `DEFAULT`, `ENEMY`, `KINEMATIC`, `PLAYER`, `PROJECTILE`, `SENSOR`, `STATIC`, `TRIGGER`, `VEHICLE`
@@ -424,7 +356,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/non_newtonian.rs`: `Bingham`, `Bingham::flows_under_stress`, `Bingham::stress`, `Carreau`, `Carreau::viscosity`, `Carreau::viscosity_with_index`, `HerschelBulkley`, `HerschelBulkley::stress`, `PowerLaw`, `PowerLaw::apparent_viscosity`, `PowerLaw::newtonian`, `PowerLaw::shear_thickening`, `PowerLaw::shear_thinning`, `PowerLaw::stress`
 - `src/particle.rs`: `LandingEvent`, `LandingTarget`, `Particle`, `Particle::new`, `ParticleEmitter`, `ParticleEmitter::new`, `ParticleSystem`, `ParticleSystem::add_emitter`, `ParticleSystem::alive_count`, `ParticleSystem::apply_force_field`, `ParticleSystem::new`, `ParticleSystem::step`, `ParticleSystem::step_with_landing`
 - `src/phase_change.rs`: `Phase`, `PhaseChangeConfig`, `PhaseChangeModifier`, `PhaseChangeModifier::apply_heat_at`, `PhaseChangeModifier::new`, `PhaseChangeModifier::phase_at`, `PhaseChangeModifier::temperature_at`
-- `src/physics2d.rs`: `BodyType2D`, `RigidBody2D`, `RigidBody2D::apply_force`, `RigidBody2D::apply_impulse_at_point`, `RigidBody2D::new_dynamic`, `Shape2D`, `Vec2Fix`, `Vec2Fix::ZERO`, `Vec2Fix::cross_scalar`, `Vec2Fix::distance_to`, `Vec2Fix::dot`, `Vec2Fix::length`, `Vec2Fix::length_squared`, `Vec2Fix::new`, `Vec2Fix::scale`
+- `src/physics2d.rs`: `BodyType2D`, `Contact2D`, `Joint2D`, `PhysicsConfig2D`, `PhysicsWorld2D`, `PhysicsWorld2D::add_body`, `PhysicsWorld2D::add_joint`, `PhysicsWorld2D::check_collision_2d`, `PhysicsWorld2D::new`, `PhysicsWorld2D::remove_body`, `PhysicsWorld2D::step`, `RigidBody2D`, `RigidBody2D::apply_force`, `RigidBody2D::apply_impulse`, `RigidBody2D::apply_impulse_at_point`, `RigidBody2D::is_static_or_kinematic`, `RigidBody2D::new_dynamic`, `RigidBody2D::new_kinematic`, `RigidBody2D::new_static`, `RigidBody2D::world_point`, `Shape2D`, `Vec2Fix`, `Vec2Fix::ONE`, `Vec2Fix::UNIT_X`, `Vec2Fix::UNIT_Y`, `Vec2Fix::ZERO`, `Vec2Fix::cross_scalar`, `Vec2Fix::distance_to`, `Vec2Fix::dot`, `Vec2Fix::from_int`, `Vec2Fix::length`, `Vec2Fix::length_squared`, `Vec2Fix::lerp`, `Vec2Fix::new`, `Vec2Fix::normalize`, `Vec2Fix::perpendicular`, `Vec2Fix::rotate`, `Vec2Fix::scale`, `solve_joints_2d`
 - `src/piezoelectric.rs`: `PiezoElement`, `PiezoElement::force_from_voltage`, `PiezoElement::permittivity`, `PiezoElement::pvdf`, `PiezoElement::pzt_5a`, `PiezoElement::quartz`, `PiezoElement::strain_under_stress`, `PiezoElement::voltage_from_force`
 - `src/pipeline.rs`: `MetricEntry`, `MetricEntry::name_str`, `MetricEntry::new`, `MetricEvent`, `MetricEvent::counter`, `MetricEvent::gauge`, `MetricEvent::histogram`, `MetricEvent::unique`, `MetricEvent::with_timestamp`, `MetricPipeline`, `MetricPipeline::dropped_events`, `MetricPipeline::flush`, `MetricPipeline::get_slot`, `MetricPipeline::get_slot_mut`, `MetricPipeline::iter_slots`, `MetricPipeline::new`, `MetricPipeline::queue_len`, `MetricPipeline::reset`, `MetricPipeline::submit`, `MetricPipeline::total_events`, `MetricRegistry`, `MetricRegistry::count`, `MetricRegistry::iter`, `MetricRegistry::lookup`, `MetricRegistry::lookup_by_hash`, `MetricRegistry::new`, `MetricRegistry::register`, `MetricSlot`, `MetricSlot::new`, `MetricSlot::process`, `MetricSlot::reset`, `MetricSnapshot`, `MetricType`, `RingBuffer`, `RingBuffer::capacity`, `RingBuffer::clear`, `RingBuffer::dropped`, `RingBuffer::is_empty`, `RingBuffer::is_full`, `RingBuffer::len`, `RingBuffer::new`, `RingBuffer::pop`, `RingBuffer::push`
 - `src/plane_collider.rs`: `PlaneCollider::flip`, `PlaneCollider::from_point_normal`, `PlaneCollider::intersect_aabb`, `PlaneCollider::is_front`
@@ -445,7 +377,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/rope.rs`: `PinConstraint`, `Rope`, `Rope::add_pin`, `Rope::current_length`, `Rope::new`, `Rope::particle_count`, `Rope::pin_end`, `Rope::pin_start`, `Rope::segment_count`, `Rope::step`, `Rope::step_with_sdf`, `Rope::update_pin_targets`, `RopeConfig`
 - `src/rope_attach.rs`: `RopeAttachment`, `RopeAttachment::compliance`, `RopeAttachment::new`, `RopeAttachment::with_break_force`, `solve_rope_attachments`, `solve_rope_attachments_two_way`
 - `src/rotor.rs`: `Rotor`, `Rotor::apply`, `Rotor::disk_area_m2`, `Rotor::load`, `Rotor::new`, `Rotor::params`, `Rotor::shaft_torque_nm`, `Rotor::speed_for_thrust`, `Rotor::thrust_n`, `RotorError`, `RotorLoad`, `RotorParams`, `RotorSpin`, `hover_induced_velocity_m_s`, `ideal_hover_power_w`
-- `src/scene_io.rs`: `CURRENT_SCENE_VERSION`, `PhysicsConfig`, `PhysicsScene`, `PhysicsScene::new`, `SerializedBody`, `SerializedJoint`, `load_scene`, `load_scene_json`, `save_scene`, `save_scene_json`
+- `src/scene_io.rs`: `CURRENT_SCENE_VERSION`, `PhysicsConfig`, `PhysicsConfig::new`, `PhysicsScene`, `PhysicsScene::new`, `SerializedBody`, `SerializedJoint`, `load_scene`, `load_scene_json`, `save_scene`, `save_scene_json`
 - `src/sdf_adaptive.rs`: `AdaptiveConfig`, `AdaptiveSdfEvaluator`, `AdaptiveSdfEvaluator::begin_frame`, `AdaptiveSdfEvaluator::evaluate`, `AdaptiveSdfEvaluator::invalidate`, `AdaptiveSdfEvaluator::invalidate_all`, `AdaptiveSdfEvaluator::new`, `AdaptiveSdfEvaluator::resize`, `AdaptiveSdfEvaluator::stats`, `EvalLevel`
 - `src/sdf_ccd.rs`: `PhysicsWorld::sdf_ccd_hits`, `SdfCcdConfig`, `batch_sphere_trace_sdf`, `ray_march_sdf`, `sphere_trace_sdf`, `sphere_trace_sdf_field`
 - `src/sdf_character.rs`: `GroundContact`, `MoveOutcome`, `MoveOutcome::resolved_position`, `SdfCharacter`, `SdfCharacter::apply_central_gravity`, `SdfCharacter::apply_gravity`, `SdfCharacter::ground_contact`, `SdfCharacter::is_grounded`, `SdfCharacter::locomotion_context`, `SdfCharacter::move_and_slide`, `SdfCharacter::new`, `SdfCharacter::step`, `SdfCharacter::step_on_sphere`
@@ -469,8 +401,8 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/solver_tgs.rs`: `AdaptiveSubStepConfig`, `HasVelocity`, `ImpulseCache::reset_stats`, `ImpulseCache::stats`, `ImpulseCacheStats`, `ImpulseCacheStats::hit_rate`, `adaptive_substeps_for`, `adaptive_substeps_for_ccd`
 - `src/spatial.rs`: `SpatialGrid`, `SpatialGrid::build`, `SpatialGrid::clear`, `SpatialGrid::hash`, `SpatialGrid::insert`, `SpatialGrid::new`, `SpatialGrid::query_neighbors_into`
 - `src/spherical_terrain.rs`: `SphericalHeightField`, `SphericalHeightField::center`, `SphericalHeightField::new`, `SphericalHeightField::radial_height`, `SphericalHeightField::radius`, `SphericalHeightField::surface_radius`, `SphericalHeightField::with_max_slope`, `SphericalHeightField::with_normal_step`, `central_gravity`
-- `src/structural_solver.rs`: `StructuralHistory`, `StructuralReport`, `StructuralSolver`, `StructuralSolver::creep_modelled`, `StructuralSolver::new`, `StructuralSolver::run`, `StructuralSolver::step`, `StructuralSolver::with_creep`
-- `src/support_volume.rs`: `OverhangRegion`, `SupportConfig`, `SupportConfig::quality`, `SupportVolumeReport`, `SupportVolumeReport::filament_length_m`, `SupportVolumeReport::is_nontrivial`, `estimate_region_volume`, `estimate_support_volume`
+- `src/structural_solver.rs`: `StructuralHistory`, `StructuralReport`, `StructuralSolver`, `StructuralSolver::creep_modelled`, `StructuralSolver::fatigue_spectrum_report`, `StructuralSolver::fatigue_strength_mpa`, `StructuralSolver::new`, `StructuralSolver::plate_buckling_mpa`, `StructuralSolver::run`, `StructuralSolver::snap_through_load_n`, `StructuralSolver::step`, `StructuralSolver::with_creep`, `StructuralSolver::with_sn_curve`
+- `src/support_volume.rs`: `OverhangRegion`, `SupportConfig`, `SupportConfig::quality`, `SupportConfig::speed`, `SupportVolumeReport`, `SupportVolumeReport::filament_length_m`, `SupportVolumeReport::is_nontrivial`, `estimate_region_volume`, `estimate_support_volume`
 - `src/surface_tension_csf.rs`: `SIGMA_MERCURY_AIR`, `SIGMA_PLA_AIR`, `SIGMA_STEEL_ARGON`, `SIGMA_WATER_AIR`, `compute_csf_field`, `csf_body_force`, `interface_normal`, `smeared_delta`
 - `src/thermal.rs`: `HeatSource`, `ThermalConfig`, `ThermalModifier`, `ThermalModifier::add_heat_point`, `ThermalModifier::apply_heat_at`, `ThermalModifier::new`, `ThermalModifier::temperature_at`
 - `src/thermal_stress.rs`: `ThermalStressReport`, `analyze_thermal_stress`, `yield_temperature_c`
@@ -478,7 +410,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/transient_thermal.rs`: `TemperatureDependence`, `TemperatureDependence::evaluate`, `ThermalMaterial`, `ThermalMaterial::aluminum_6061`, `ThermalMaterial::conductivity_at`, `ThermalMaterial::density_at`, `ThermalMaterial::diffusivity_at`, `ThermalMaterial::heat_capacity_at`, `ThermalMaterial::pla_polymer`, `ThermalMaterial::specific_heat_at`, `ThermalMaterial::steel_1018`, `ThermalMaterial::titanium_ti6al4v`, `crank_nicolson_step_1d`, `crank_nicolson_step_1d_nonlinear`, `stable_dt_1d`, `stable_dt_3d`, `transient_step_1d`, `transient_step_3d`
 - `src/trimesh.rs`: `TriMesh::closest_point`, `TriMesh::collide_aabb`, `TriMesh::collide_capsule`, `TriMesh::from_triangles`, `TriMesh::raycast`, `TriMesh::triangle_count`, `ray_triangle`
 - `src/turbulence.rs`: `FRICTION_VELOCITY_BISECTIONS`, `KE_C1_EPS`, `KE_C2_EPS`, `KE_C_MU`, `KE_SIGMA_EPS`, `KE_SIGMA_K`, `KEpsilonState`, `KEpsilonState::advance_epsilon`, `KEpsilonState::advance_k`, `KEpsilonState::eddy_viscosity`, `KOmegaState`, `KOmegaState::advance`, `KOmegaState::eddy_viscosity`, `KOmegaState::from_k_epsilon`, `KOmegaState::to_k_epsilon`, `KW_ALPHA`, `KW_BETA`, `KW_BETA_STAR`, `KW_SIGMA`, `LOG_LAW_B`, `SMAGORINSKY_CS`, `VON_KARMAN`, `WallFunctionError`, `Y_PLUS_TRANSITION`, `dynamic_smagorinsky_cs`, `friction_velocity`, `friction_velocity_checked`, `smagorinsky_eddy_viscosity`, `smagorinsky_eddy_viscosity_with`, `strain_rate_magnitude`, `u_plus`, `wall_k_epsilon`, `y_plus`
-- `src/vehicle.rs`: `EngineConfig`, `Vehicle`, `Vehicle::grounded_wheels`, `Vehicle::new`, `Vehicle::shift_down`, `Vehicle::shift_up`, `Vehicle::update`, `VehicleConfig`, `WheelConfig`, `WheelState`
+- `src/vehicle.rs`: `EngineConfig`, `Vehicle`, `Vehicle::grounded_wheels`, `Vehicle::new`, `Vehicle::new_default`, `Vehicle::shift_down`, `Vehicle::shift_up`, `Vehicle::update`, `VehicleConfig`, `WheelConfig`, `WheelState`
 - `src/vehicle_dynamics/mod.rs`: `AbsConfig`, `AeroConfig`, `BrakeSystem`, `DriverInput`, `DynamicVehicle`, `DynamicVehicle::forward_speed`, `DynamicVehicle::grounded_wheels`, `DynamicVehicle::new`, `DynamicVehicle::update`, `DynamicVehicleConfig`, `DynamicVehicleConfig::passenger_car`, `Environment`, `WheelDynamicsState`
 - `src/vehicle_dynamics/powertrain.rs`: `Differential`, `Powertrain`, `Powertrain::axle_torque`, `Powertrain::engine_rpm`, `Powertrain::from_engine_config`, `Powertrain::shift_down`, `Powertrain::shift_up`, `Powertrain::total_ratio`, `TorqueCurve`, `TorqueCurve::torque_at`
 - `src/vehicle_dynamics/scenario.rs`: `RECORDING_MAGIC`, `RECORDING_VERSION`, `Recording`, `Recording::dt`, `Recording::frame_count`, `Recording::from_bytes`, `Recording::input_mut`, `Recording::inputs`, `Recording::replay`, `Recording::restore`, `Recording::to_bytes`, `Recording::vehicle_count`, `Recording::vehicles`, `ReplayError`, `Scenario`, `Scenario::add_vehicle`, `Scenario::chassis`, `Scenario::is_recording`, `Scenario::new`, `Scenario::run_tracks`, `Scenario::start_recording`, `Scenario::step`, `Scenario::step_with`, `Scenario::stop_recording`, `ScenarioVehicle`, `StoppingDistanceMeter`, `StoppingDistanceMeter::distance`, `StoppingDistanceMeter::frames_to_stop`, `StoppingDistanceMeter::is_stopped`, `StoppingDistanceMeter::new`, `StoppingDistanceMeter::sample`, `StoppingDistanceMeter::travelled`, `VehicleSnapshot`, `longitudinal_state`, `time_headway`, `time_to_collision`, `up_from_gravity`
