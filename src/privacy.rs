@@ -31,6 +31,7 @@
 
 /// Simple xorshift64 PRNG for fast random numbers
 ///
+// LIMITATION(COV-ENGINE-101): Not cryptographically secure, but fast and sufficient for noise injection.
 /// Not cryptographically secure, but fast and sufficient for noise injection.
 #[derive(Clone, Debug)]
 pub struct XorShift64 {

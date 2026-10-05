@@ -393,6 +393,7 @@ impl WasmPhysicsWorld {
 
     /// Cast a ray from (ox,oy,oz) in direction (dx,dy,dz).
     ///
+    // LIMITATION(COV-ENGINE-070): Tests against all bodies as spheres of `body_radius`.
     /// Tests against all bodies as spheres of `body_radius`.
     /// Returns `[t, hit_x, hit_y, hit_z, normal_x, normal_y, normal_z, body_index]`
     /// or empty array if no hit.
