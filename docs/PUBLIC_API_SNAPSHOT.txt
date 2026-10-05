@@ -6493,6 +6493,342 @@ pub fn alice_physics::linear_elastic_fem::solve_elastoplastic(&alice_physics::sd
 pub fn alice_physics::linear_elastic_fem::solve_with_eigenstrain(&alice_physics::sdf_fem_mesh::SdfTetMesh, &alice_physics::linear_elastic_fem::ElasticMaterial, &alice_physics::linear_elastic_fem::BoundaryConditions, &alice_physics::linear_elastic_fem::SolverConfig, core::option::Option<alice_physics::linear_elastic_fem::ThermalExpansion<'_>>) -> core::result::Result<alice_physics::linear_elastic_fem::FemSolution, alice_physics::linear_elastic_fem::FemError>
 pub fn alice_physics::linear_elastic_fem::step_thermoplastic(&alice_physics::linear_elastic_fem::ElastoplasticProblem, &alice_physics::linear_elastic_fem::ElastoplasticState, &alice_physics::sdf_fem_mesh::SdfTetMesh, &alice_physics::coupled_field::CoupledField, &alice_physics::linear_elastic_fem::ThermoplasticCoupling, alice_physics::math::Fix128) -> core::result::Result<alice_physics::linear_elastic_fem::ThermoplasticIncrement, alice_physics::linear_elastic_fem::FemError>
 pub fn alice_physics::linear_elastic_fem::stiffness_diagonal_stats(&alice_physics::sdf_fem_mesh::SdfTetMesh, &alice_physics::linear_elastic_fem::ElasticMaterial, &alice_physics::linear_elastic_fem::BoundaryConditions) -> core::result::Result<alice_physics::linear_elastic_fem::DiagonalStats, alice_physics::linear_elastic_fem::FemError>
+pub mod alice_physics::linear_solver
+pub enum alice_physics::linear_solver::BlockScale
+pub alice_physics::linear_solver::BlockScale::Down(alice_physics::coupled_iteration::EquilibrationScale)
+pub alice_physics::linear_solver::BlockScale::Up(alice_physics::coupled_iteration::EquilibrationScale)
+impl core::clone::Clone for alice_physics::linear_solver::BlockScale
+pub fn alice_physics::linear_solver::BlockScale::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::linear_solver::BlockScale
+impl core::cmp::PartialEq for alice_physics::linear_solver::BlockScale
+pub fn alice_physics::linear_solver::BlockScale::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::linear_solver::BlockScale
+pub fn alice_physics::linear_solver::BlockScale::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::linear_solver::BlockScale
+impl core::marker::StructuralPartialEq for alice_physics::linear_solver::BlockScale
+impl core::marker::Freeze for alice_physics::linear_solver::BlockScale
+impl core::marker::Send for alice_physics::linear_solver::BlockScale
+impl core::marker::Sync for alice_physics::linear_solver::BlockScale
+impl core::marker::Unpin for alice_physics::linear_solver::BlockScale
+impl core::marker::UnsafeUnpin for alice_physics::linear_solver::BlockScale
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::linear_solver::BlockScale
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::linear_solver::BlockScale
+#[non_exhaustive] pub enum alice_physics::linear_solver::BreakdownKind
+pub alice_physics::linear_solver::BreakdownKind::DirectionOrthogonal
+pub alice_physics::linear_solver::BreakdownKind::ShadowResidualOrthogonal
+pub alice_physics::linear_solver::BreakdownKind::SingularHessenberg
+pub alice_physics::linear_solver::BreakdownKind::StabilizerVanished
+impl core::clone::Clone for alice_physics::linear_solver::BreakdownKind
+pub fn alice_physics::linear_solver::BreakdownKind::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::linear_solver::BreakdownKind
+impl core::cmp::PartialEq for alice_physics::linear_solver::BreakdownKind
+pub fn alice_physics::linear_solver::BreakdownKind::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::linear_solver::BreakdownKind
+pub fn alice_physics::linear_solver::BreakdownKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::linear_solver::BreakdownKind
+impl core::marker::StructuralPartialEq for alice_physics::linear_solver::BreakdownKind
+impl core::marker::Freeze for alice_physics::linear_solver::BreakdownKind
+impl core::marker::Send for alice_physics::linear_solver::BreakdownKind
+impl core::marker::Sync for alice_physics::linear_solver::BreakdownKind
+impl core::marker::Unpin for alice_physics::linear_solver::BreakdownKind
+impl core::marker::UnsafeUnpin for alice_physics::linear_solver::BreakdownKind
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::linear_solver::BreakdownKind
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::linear_solver::BreakdownKind
+#[non_exhaustive] pub enum alice_physics::linear_solver::KrylovConfigFault
+pub alice_physics::linear_solver::KrylovConfigFault::NegativeAbsoluteTolerance
+pub alice_physics::linear_solver::KrylovConfigFault::NonPositiveTolerance
+pub alice_physics::linear_solver::KrylovConfigFault::ZeroIterationBudget
+pub alice_physics::linear_solver::KrylovConfigFault::ZeroRestart
+pub alice_physics::linear_solver::KrylovConfigFault::ZeroStagnationWindow
+impl core::clone::Clone for alice_physics::linear_solver::KrylovConfigFault
+pub fn alice_physics::linear_solver::KrylovConfigFault::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::linear_solver::KrylovConfigFault
+impl core::cmp::PartialEq for alice_physics::linear_solver::KrylovConfigFault
+pub fn alice_physics::linear_solver::KrylovConfigFault::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::linear_solver::KrylovConfigFault
+pub fn alice_physics::linear_solver::KrylovConfigFault::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::linear_solver::KrylovConfigFault
+impl core::marker::StructuralPartialEq for alice_physics::linear_solver::KrylovConfigFault
+impl core::marker::Freeze for alice_physics::linear_solver::KrylovConfigFault
+impl core::marker::Send for alice_physics::linear_solver::KrylovConfigFault
+impl core::marker::Sync for alice_physics::linear_solver::KrylovConfigFault
+impl core::marker::Unpin for alice_physics::linear_solver::KrylovConfigFault
+impl core::marker::UnsafeUnpin for alice_physics::linear_solver::KrylovConfigFault
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::linear_solver::KrylovConfigFault
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::linear_solver::KrylovConfigFault
+#[non_exhaustive] pub enum alice_physics::linear_solver::KrylovMethod
+pub alice_physics::linear_solver::KrylovMethod::BiCgStab
+pub alice_physics::linear_solver::KrylovMethod::Gmres
+impl core::clone::Clone for alice_physics::linear_solver::KrylovMethod
+pub fn alice_physics::linear_solver::KrylovMethod::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::linear_solver::KrylovMethod
+impl core::cmp::PartialEq for alice_physics::linear_solver::KrylovMethod
+pub fn alice_physics::linear_solver::KrylovMethod::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::linear_solver::KrylovMethod
+pub fn alice_physics::linear_solver::KrylovMethod::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::linear_solver::KrylovMethod
+impl core::marker::StructuralPartialEq for alice_physics::linear_solver::KrylovMethod
+impl core::marker::Freeze for alice_physics::linear_solver::KrylovMethod
+impl core::marker::Send for alice_physics::linear_solver::KrylovMethod
+impl core::marker::Sync for alice_physics::linear_solver::KrylovMethod
+impl core::marker::Unpin for alice_physics::linear_solver::KrylovMethod
+impl core::marker::UnsafeUnpin for alice_physics::linear_solver::KrylovMethod
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::linear_solver::KrylovMethod
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::linear_solver::KrylovMethod
+#[non_exhaustive] pub enum alice_physics::linear_solver::LinearSolverError
+pub alice_physics::linear_solver::LinearSolverError::ArithmeticOverflow
+pub alice_physics::linear_solver::LinearSolverError::BlockBelowProductFloor
+pub alice_physics::linear_solver::LinearSolverError::BlockBelowProductFloor::block: usize
+pub alice_physics::linear_solver::LinearSolverError::BlockBelowProductFloor::relative_magnitude: alice_physics::math::Fix128
+pub alice_physics::linear_solver::LinearSolverError::Breakdown
+pub alice_physics::linear_solver::LinearSolverError::Breakdown::iterations: u32
+pub alice_physics::linear_solver::LinearSolverError::Breakdown::kind: alice_physics::linear_solver::BreakdownKind
+pub alice_physics::linear_solver::LinearSolverError::Breakdown::relative_residual: alice_physics::math::Fix128
+pub alice_physics::linear_solver::LinearSolverError::DimensionMismatch
+pub alice_physics::linear_solver::LinearSolverError::DimensionMismatch::expected: usize
+pub alice_physics::linear_solver::LinearSolverError::DimensionMismatch::found: usize
+pub alice_physics::linear_solver::LinearSolverError::Equilibration(alice_physics::coupled_iteration::ConfigFault)
+pub alice_physics::linear_solver::LinearSolverError::InvalidBlockLayout
+pub alice_physics::linear_solver::LinearSolverError::InvalidConfig(alice_physics::linear_solver::KrylovConfigFault)
+pub alice_physics::linear_solver::LinearSolverError::NotConverged
+pub alice_physics::linear_solver::LinearSolverError::NotConverged::iterations: u32
+pub alice_physics::linear_solver::LinearSolverError::NotConverged::relative_residual: alice_physics::math::Fix128
+pub alice_physics::linear_solver::LinearSolverError::SingularPreconditioner
+pub alice_physics::linear_solver::LinearSolverError::SingularPreconditioner::index: usize
+pub alice_physics::linear_solver::LinearSolverError::Stagnated
+pub alice_physics::linear_solver::LinearSolverError::Stagnated::iterations: u32
+pub alice_physics::linear_solver::LinearSolverError::Stagnated::relative_residual: alice_physics::math::Fix128
+pub alice_physics::linear_solver::LinearSolverError::Stagnated::without_improvement: u32
+impl core::clone::Clone for alice_physics::linear_solver::LinearSolverError
+pub fn alice_physics::linear_solver::LinearSolverError::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::linear_solver::LinearSolverError
+impl core::cmp::PartialEq for alice_physics::linear_solver::LinearSolverError
+pub fn alice_physics::linear_solver::LinearSolverError::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::linear_solver::LinearSolverError
+pub fn alice_physics::linear_solver::LinearSolverError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for alice_physics::linear_solver::LinearSolverError
+pub fn alice_physics::linear_solver::LinearSolverError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::linear_solver::LinearSolverError
+impl core::marker::StructuralPartialEq for alice_physics::linear_solver::LinearSolverError
+impl core::marker::Freeze for alice_physics::linear_solver::LinearSolverError
+impl core::marker::Send for alice_physics::linear_solver::LinearSolverError
+impl core::marker::Sync for alice_physics::linear_solver::LinearSolverError
+impl core::marker::Unpin for alice_physics::linear_solver::LinearSolverError
+impl core::marker::UnsafeUnpin for alice_physics::linear_solver::LinearSolverError
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::linear_solver::LinearSolverError
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::linear_solver::LinearSolverError
+pub struct alice_physics::linear_solver::BlockEquilibration
+impl alice_physics::linear_solver::BlockEquilibration
+pub fn alice_physics::linear_solver::BlockEquilibration::block_count(&self) -> usize
+pub fn alice_physics::linear_solver::BlockEquilibration::dim(&self) -> usize
+pub fn alice_physics::linear_solver::BlockEquilibration::equilibrate_diagonal(&self, &[alice_physics::math::Fix128]) -> core::result::Result<alloc::vec::Vec<alice_physics::math::Fix128>, alice_physics::linear_solver::LinearSolverError>
+pub fn alice_physics::linear_solver::BlockEquilibration::scale(&self, usize) -> core::option::Option<alice_physics::linear_solver::BlockScale>
+pub fn alice_physics::linear_solver::BlockEquilibration::try_new(&[usize], &[alice_physics::math::Fix128]) -> core::result::Result<Self, alice_physics::linear_solver::LinearSolverError>
+pub fn alice_physics::linear_solver::BlockEquilibration::unscaled(&[usize], &[alice_physics::math::Fix128]) -> core::result::Result<Self, alice_physics::linear_solver::LinearSolverError>
+impl core::clone::Clone for alice_physics::linear_solver::BlockEquilibration
+pub fn alice_physics::linear_solver::BlockEquilibration::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::linear_solver::BlockEquilibration
+impl core::cmp::PartialEq for alice_physics::linear_solver::BlockEquilibration
+pub fn alice_physics::linear_solver::BlockEquilibration::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::linear_solver::BlockEquilibration
+pub fn alice_physics::linear_solver::BlockEquilibration::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for alice_physics::linear_solver::BlockEquilibration
+impl core::marker::Freeze for alice_physics::linear_solver::BlockEquilibration
+impl core::marker::Send for alice_physics::linear_solver::BlockEquilibration
+impl core::marker::Sync for alice_physics::linear_solver::BlockEquilibration
+impl core::marker::Unpin for alice_physics::linear_solver::BlockEquilibration
+impl core::marker::UnsafeUnpin for alice_physics::linear_solver::BlockEquilibration
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::linear_solver::BlockEquilibration
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::linear_solver::BlockEquilibration
+pub struct alice_physics::linear_solver::BlockJacobiPreconditioner
+impl alice_physics::linear_solver::BlockJacobiPreconditioner
+pub fn alice_physics::linear_solver::BlockJacobiPreconditioner::from_dense(&alice_physics::linear_solver::DenseMatrix, &[usize]) -> core::result::Result<Self, alice_physics::linear_solver::LinearSolverError>
+impl alice_physics::linear_solver::Preconditioner for alice_physics::linear_solver::BlockJacobiPreconditioner
+pub fn alice_physics::linear_solver::BlockJacobiPreconditioner::apply(&self, &[alice_physics::math::Fix128], &mut [alice_physics::math::Fix128])
+pub fn alice_physics::linear_solver::BlockJacobiPreconditioner::dim(&self) -> usize
+impl core::clone::Clone for alice_physics::linear_solver::BlockJacobiPreconditioner
+pub fn alice_physics::linear_solver::BlockJacobiPreconditioner::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::linear_solver::BlockJacobiPreconditioner
+impl core::cmp::PartialEq for alice_physics::linear_solver::BlockJacobiPreconditioner
+pub fn alice_physics::linear_solver::BlockJacobiPreconditioner::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::linear_solver::BlockJacobiPreconditioner
+pub fn alice_physics::linear_solver::BlockJacobiPreconditioner::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for alice_physics::linear_solver::BlockJacobiPreconditioner
+impl core::marker::Freeze for alice_physics::linear_solver::BlockJacobiPreconditioner
+impl core::marker::Send for alice_physics::linear_solver::BlockJacobiPreconditioner
+impl core::marker::Sync for alice_physics::linear_solver::BlockJacobiPreconditioner
+impl core::marker::Unpin for alice_physics::linear_solver::BlockJacobiPreconditioner
+impl core::marker::UnsafeUnpin for alice_physics::linear_solver::BlockJacobiPreconditioner
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::linear_solver::BlockJacobiPreconditioner
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::linear_solver::BlockJacobiPreconditioner
+pub struct alice_physics::linear_solver::DenseMatrix
+impl alice_physics::linear_solver::DenseMatrix
+pub fn alice_physics::linear_solver::DenseMatrix::dim(&self) -> usize
+pub fn alice_physics::linear_solver::DenseMatrix::get(&self, usize, usize) -> alice_physics::math::Fix128
+pub fn alice_physics::linear_solver::DenseMatrix::try_new(usize, alloc::vec::Vec<alice_physics::math::Fix128>) -> core::result::Result<Self, alice_physics::linear_solver::LinearSolverError>
+impl alice_physics::linear_solver::LinearOperator for alice_physics::linear_solver::DenseMatrix
+pub fn alice_physics::linear_solver::DenseMatrix::apply(&self, &[alice_physics::math::Fix128], &mut [alice_physics::math::Fix128])
+pub fn alice_physics::linear_solver::DenseMatrix::dim(&self) -> usize
+impl core::clone::Clone for alice_physics::linear_solver::DenseMatrix
+pub fn alice_physics::linear_solver::DenseMatrix::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::linear_solver::DenseMatrix
+impl core::cmp::PartialEq for alice_physics::linear_solver::DenseMatrix
+pub fn alice_physics::linear_solver::DenseMatrix::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::linear_solver::DenseMatrix
+pub fn alice_physics::linear_solver::DenseMatrix::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for alice_physics::linear_solver::DenseMatrix
+impl core::marker::Freeze for alice_physics::linear_solver::DenseMatrix
+impl core::marker::Send for alice_physics::linear_solver::DenseMatrix
+impl core::marker::Sync for alice_physics::linear_solver::DenseMatrix
+impl core::marker::Unpin for alice_physics::linear_solver::DenseMatrix
+impl core::marker::UnsafeUnpin for alice_physics::linear_solver::DenseMatrix
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::linear_solver::DenseMatrix
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::linear_solver::DenseMatrix
+pub struct alice_physics::linear_solver::FnOperator<F>
+impl<F: core::ops::function::Fn(&[alice_physics::math::Fix128], &mut [alice_physics::math::Fix128])> alice_physics::linear_solver::FnOperator<F>
+pub fn alice_physics::linear_solver::FnOperator<F>::new(usize, F) -> Self
+impl<F: core::ops::function::Fn(&[alice_physics::math::Fix128], &mut [alice_physics::math::Fix128])> alice_physics::linear_solver::LinearOperator for alice_physics::linear_solver::FnOperator<F>
+pub fn alice_physics::linear_solver::FnOperator<F>::apply(&self, &[alice_physics::math::Fix128], &mut [alice_physics::math::Fix128])
+pub fn alice_physics::linear_solver::FnOperator<F>::dim(&self) -> usize
+impl<F> core::marker::Freeze for alice_physics::linear_solver::FnOperator<F> where F: core::marker::Freeze
+impl<F> core::marker::Send for alice_physics::linear_solver::FnOperator<F> where F: core::marker::Send
+impl<F> core::marker::Sync for alice_physics::linear_solver::FnOperator<F> where F: core::marker::Sync
+impl<F> core::marker::Unpin for alice_physics::linear_solver::FnOperator<F> where F: core::marker::Unpin
+impl<F> core::marker::UnsafeUnpin for alice_physics::linear_solver::FnOperator<F> where F: core::marker::UnsafeUnpin
+impl<F> core::panic::unwind_safe::RefUnwindSafe for alice_physics::linear_solver::FnOperator<F> where F: core::panic::unwind_safe::RefUnwindSafe
+impl<F> core::panic::unwind_safe::UnwindSafe for alice_physics::linear_solver::FnOperator<F> where F: core::panic::unwind_safe::UnwindSafe
+pub struct alice_physics::linear_solver::IdentityPreconditioner
+impl alice_physics::linear_solver::IdentityPreconditioner
+pub const fn alice_physics::linear_solver::IdentityPreconditioner::new(usize) -> Self
+impl alice_physics::linear_solver::Preconditioner for alice_physics::linear_solver::IdentityPreconditioner
+pub fn alice_physics::linear_solver::IdentityPreconditioner::apply(&self, &[alice_physics::math::Fix128], &mut [alice_physics::math::Fix128])
+pub fn alice_physics::linear_solver::IdentityPreconditioner::dim(&self) -> usize
+impl core::clone::Clone for alice_physics::linear_solver::IdentityPreconditioner
+pub fn alice_physics::linear_solver::IdentityPreconditioner::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::linear_solver::IdentityPreconditioner
+impl core::cmp::PartialEq for alice_physics::linear_solver::IdentityPreconditioner
+pub fn alice_physics::linear_solver::IdentityPreconditioner::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::linear_solver::IdentityPreconditioner
+pub fn alice_physics::linear_solver::IdentityPreconditioner::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::linear_solver::IdentityPreconditioner
+impl core::marker::StructuralPartialEq for alice_physics::linear_solver::IdentityPreconditioner
+impl core::marker::Freeze for alice_physics::linear_solver::IdentityPreconditioner
+impl core::marker::Send for alice_physics::linear_solver::IdentityPreconditioner
+impl core::marker::Sync for alice_physics::linear_solver::IdentityPreconditioner
+impl core::marker::Unpin for alice_physics::linear_solver::IdentityPreconditioner
+impl core::marker::UnsafeUnpin for alice_physics::linear_solver::IdentityPreconditioner
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::linear_solver::IdentityPreconditioner
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::linear_solver::IdentityPreconditioner
+pub struct alice_physics::linear_solver::JacobiPreconditioner
+impl alice_physics::linear_solver::JacobiPreconditioner
+pub fn alice_physics::linear_solver::JacobiPreconditioner::from_dense(&alice_physics::linear_solver::DenseMatrix) -> core::result::Result<Self, alice_physics::linear_solver::LinearSolverError>
+pub fn alice_physics::linear_solver::JacobiPreconditioner::from_diagonal(alloc::vec::Vec<alice_physics::math::Fix128>) -> core::result::Result<Self, alice_physics::linear_solver::LinearSolverError>
+impl alice_physics::linear_solver::Preconditioner for alice_physics::linear_solver::JacobiPreconditioner
+pub fn alice_physics::linear_solver::JacobiPreconditioner::apply(&self, &[alice_physics::math::Fix128], &mut [alice_physics::math::Fix128])
+pub fn alice_physics::linear_solver::JacobiPreconditioner::dim(&self) -> usize
+impl core::clone::Clone for alice_physics::linear_solver::JacobiPreconditioner
+pub fn alice_physics::linear_solver::JacobiPreconditioner::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::linear_solver::JacobiPreconditioner
+impl core::cmp::PartialEq for alice_physics::linear_solver::JacobiPreconditioner
+pub fn alice_physics::linear_solver::JacobiPreconditioner::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::linear_solver::JacobiPreconditioner
+pub fn alice_physics::linear_solver::JacobiPreconditioner::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for alice_physics::linear_solver::JacobiPreconditioner
+impl core::marker::Freeze for alice_physics::linear_solver::JacobiPreconditioner
+impl core::marker::Send for alice_physics::linear_solver::JacobiPreconditioner
+impl core::marker::Sync for alice_physics::linear_solver::JacobiPreconditioner
+impl core::marker::Unpin for alice_physics::linear_solver::JacobiPreconditioner
+impl core::marker::UnsafeUnpin for alice_physics::linear_solver::JacobiPreconditioner
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::linear_solver::JacobiPreconditioner
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::linear_solver::JacobiPreconditioner
+pub struct alice_physics::linear_solver::KrylovConfig
+impl alice_physics::linear_solver::KrylovConfig
+pub const alice_physics::linear_solver::KrylovConfig::DEFAULT_RESTART: usize
+pub const alice_physics::linear_solver::KrylovConfig::DEFAULT_STAGNATION_WINDOW: u32
+pub fn alice_physics::linear_solver::KrylovConfig::try_new(u32, alice_physics::math::Fix128) -> core::result::Result<Self, alice_physics::linear_solver::LinearSolverError>
+pub fn alice_physics::linear_solver::KrylovConfig::with_absolute_tolerance(self, alice_physics::math::Fix128) -> core::result::Result<Self, alice_physics::linear_solver::LinearSolverError>
+pub fn alice_physics::linear_solver::KrylovConfig::with_restart(self, usize) -> core::result::Result<Self, alice_physics::linear_solver::LinearSolverError>
+pub fn alice_physics::linear_solver::KrylovConfig::with_stagnation_window(self, u32) -> core::result::Result<Self, alice_physics::linear_solver::LinearSolverError>
+impl core::clone::Clone for alice_physics::linear_solver::KrylovConfig
+pub fn alice_physics::linear_solver::KrylovConfig::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::linear_solver::KrylovConfig
+impl core::cmp::PartialEq for alice_physics::linear_solver::KrylovConfig
+pub fn alice_physics::linear_solver::KrylovConfig::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::linear_solver::KrylovConfig
+pub fn alice_physics::linear_solver::KrylovConfig::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::linear_solver::KrylovConfig
+impl core::marker::StructuralPartialEq for alice_physics::linear_solver::KrylovConfig
+impl core::marker::Freeze for alice_physics::linear_solver::KrylovConfig
+impl core::marker::Send for alice_physics::linear_solver::KrylovConfig
+impl core::marker::Sync for alice_physics::linear_solver::KrylovConfig
+impl core::marker::Unpin for alice_physics::linear_solver::KrylovConfig
+impl core::marker::UnsafeUnpin for alice_physics::linear_solver::KrylovConfig
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::linear_solver::KrylovConfig
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::linear_solver::KrylovConfig
+pub struct alice_physics::linear_solver::KrylovSolution
+pub alice_physics::linear_solver::KrylovSolution::stats: alice_physics::linear_solver::KrylovStats
+pub alice_physics::linear_solver::KrylovSolution::x: alloc::vec::Vec<alice_physics::math::Fix128>
+impl core::clone::Clone for alice_physics::linear_solver::KrylovSolution
+pub fn alice_physics::linear_solver::KrylovSolution::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::linear_solver::KrylovSolution
+impl core::cmp::PartialEq for alice_physics::linear_solver::KrylovSolution
+pub fn alice_physics::linear_solver::KrylovSolution::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::linear_solver::KrylovSolution
+pub fn alice_physics::linear_solver::KrylovSolution::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for alice_physics::linear_solver::KrylovSolution
+impl core::marker::Freeze for alice_physics::linear_solver::KrylovSolution
+impl core::marker::Send for alice_physics::linear_solver::KrylovSolution
+impl core::marker::Sync for alice_physics::linear_solver::KrylovSolution
+impl core::marker::Unpin for alice_physics::linear_solver::KrylovSolution
+impl core::marker::UnsafeUnpin for alice_physics::linear_solver::KrylovSolution
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::linear_solver::KrylovSolution
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::linear_solver::KrylovSolution
+pub struct alice_physics::linear_solver::KrylovStats
+pub alice_physics::linear_solver::KrylovStats::iterations: u32
+pub alice_physics::linear_solver::KrylovStats::residual_history: alloc::vec::Vec<alice_physics::math::Fix128>
+pub alice_physics::linear_solver::KrylovStats::residual_norm: alice_physics::math::Fix128
+pub alice_physics::linear_solver::KrylovStats::restarts: u32
+pub alice_physics::linear_solver::KrylovStats::rhs_norm: alice_physics::math::Fix128
+impl core::clone::Clone for alice_physics::linear_solver::KrylovStats
+pub fn alice_physics::linear_solver::KrylovStats::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::linear_solver::KrylovStats
+impl core::cmp::PartialEq for alice_physics::linear_solver::KrylovStats
+pub fn alice_physics::linear_solver::KrylovStats::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::linear_solver::KrylovStats
+pub fn alice_physics::linear_solver::KrylovStats::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for alice_physics::linear_solver::KrylovStats
+impl core::marker::Freeze for alice_physics::linear_solver::KrylovStats
+impl core::marker::Send for alice_physics::linear_solver::KrylovStats
+impl core::marker::Sync for alice_physics::linear_solver::KrylovStats
+impl core::marker::Unpin for alice_physics::linear_solver::KrylovStats
+impl core::marker::UnsafeUnpin for alice_physics::linear_solver::KrylovStats
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::linear_solver::KrylovStats
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::linear_solver::KrylovStats
+pub const alice_physics::linear_solver::BREAKDOWN_RELATIVE: alice_physics::math::Fix128
+pub trait alice_physics::linear_solver::LinearOperator
+pub fn alice_physics::linear_solver::LinearOperator::apply(&self, &[alice_physics::math::Fix128], &mut [alice_physics::math::Fix128])
+pub fn alice_physics::linear_solver::LinearOperator::dim(&self) -> usize
+impl alice_physics::linear_solver::LinearOperator for alice_physics::linear_solver::DenseMatrix
+pub fn alice_physics::linear_solver::DenseMatrix::apply(&self, &[alice_physics::math::Fix128], &mut [alice_physics::math::Fix128])
+pub fn alice_physics::linear_solver::DenseMatrix::dim(&self) -> usize
+impl<F: core::ops::function::Fn(&[alice_physics::math::Fix128], &mut [alice_physics::math::Fix128])> alice_physics::linear_solver::LinearOperator for alice_physics::linear_solver::FnOperator<F>
+pub fn alice_physics::linear_solver::FnOperator<F>::apply(&self, &[alice_physics::math::Fix128], &mut [alice_physics::math::Fix128])
+pub fn alice_physics::linear_solver::FnOperator<F>::dim(&self) -> usize
+pub trait alice_physics::linear_solver::Preconditioner
+pub fn alice_physics::linear_solver::Preconditioner::apply(&self, &[alice_physics::math::Fix128], &mut [alice_physics::math::Fix128])
+pub fn alice_physics::linear_solver::Preconditioner::dim(&self) -> usize
+impl alice_physics::linear_solver::Preconditioner for alice_physics::linear_solver::BlockJacobiPreconditioner
+pub fn alice_physics::linear_solver::BlockJacobiPreconditioner::apply(&self, &[alice_physics::math::Fix128], &mut [alice_physics::math::Fix128])
+pub fn alice_physics::linear_solver::BlockJacobiPreconditioner::dim(&self) -> usize
+impl alice_physics::linear_solver::Preconditioner for alice_physics::linear_solver::IdentityPreconditioner
+pub fn alice_physics::linear_solver::IdentityPreconditioner::apply(&self, &[alice_physics::math::Fix128], &mut [alice_physics::math::Fix128])
+pub fn alice_physics::linear_solver::IdentityPreconditioner::dim(&self) -> usize
+impl alice_physics::linear_solver::Preconditioner for alice_physics::linear_solver::JacobiPreconditioner
+pub fn alice_physics::linear_solver::JacobiPreconditioner::apply(&self, &[alice_physics::math::Fix128], &mut [alice_physics::math::Fix128])
+pub fn alice_physics::linear_solver::JacobiPreconditioner::dim(&self) -> usize
+pub fn alice_physics::linear_solver::bicgstab<A: alice_physics::linear_solver::LinearOperator + ?core::marker::Sized, M: alice_physics::linear_solver::Preconditioner + ?core::marker::Sized>(&A, &M, &[alice_physics::math::Fix128], &alice_physics::linear_solver::KrylovConfig) -> core::result::Result<alice_physics::linear_solver::KrylovSolution, alice_physics::linear_solver::LinearSolverError>
+pub fn alice_physics::linear_solver::gmres<A: alice_physics::linear_solver::LinearOperator + ?core::marker::Sized, M: alice_physics::linear_solver::Preconditioner + ?core::marker::Sized>(&A, &M, &[alice_physics::math::Fix128], &alice_physics::linear_solver::KrylovConfig) -> core::result::Result<alice_physics::linear_solver::KrylovSolution, alice_physics::linear_solver::LinearSolverError>
+pub fn alice_physics::linear_solver::solve_equilibrated<A: alice_physics::linear_solver::LinearOperator + ?core::marker::Sized, M: alice_physics::linear_solver::Preconditioner + ?core::marker::Sized>(&A, &alice_physics::linear_solver::BlockEquilibration, &M, &[alice_physics::math::Fix128], alice_physics::linear_solver::KrylovMethod, &alice_physics::linear_solver::KrylovConfig) -> core::result::Result<alice_physics::linear_solver::KrylovSolution, alice_physics::linear_solver::LinearSolverError>
 pub mod alice_physics::mass_properties
 pub struct alice_physics::mass_properties::MassProperties
 pub alice_physics::mass_properties::MassProperties::center_of_mass: alice_physics::math::Vec3Fix
