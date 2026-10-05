@@ -40,7 +40,13 @@ def changed_files(base: str) -> list[str]:
     out = subprocess.run(
         ["git", "diff", "--name-only", mb], cwd=ROOT, capture_output=True, text=True, check=True
     ).stdout
-    return [l for l in out.splitlines() if l]
+    # 未 commit の新規 file (untracked) は `git diff` に出ないので別に拾う
+    # (拾わないと commit 前の preflight --fast が新しい test を一度も走らせない)
+    new = subprocess.run(
+        ["git", "ls-files", "--others", "--exclude-standard"],
+        cwd=ROOT, capture_output=True, text=True, check=True,
+    ).stdout
+    return sorted({l for l in (out + new).splitlines() if l})
 
 
 def module_of(path: str) -> str | None:
