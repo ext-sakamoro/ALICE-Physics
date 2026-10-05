@@ -199,6 +199,12 @@ were introduced during that release window.
 - **Behavior change:** `StructuralSolver::new` は PLA の preset の時だけ PLA のクリープを入れる 他の材料では報告されるクリープが厳密に 0 になり `creep_modelled()` は false を返す PLA の結果は変わらない 係数を与えるには新設の `with_creep` を使う
 - **Behavior change:** TGS backend を選んだ場合、pre-solve hook と contact modifier が効くようになる veto された組には impulse が入らず、modifier で変えた摩擦と反発が使われる
 - **Behavior change:** TGS backend を選んだ場合、関節を tick ごとではなく substep ごとに射影し、補正を速度へ持ち越す Ball / Hinge / ConeTwist の振り子が閉形式の周期になり、hinge の bob が平面にとどまる (従来は周期が 60% ずれた) static collider と関節の無い world の挙動は変わらない
+- **Behavior change:** hook / modifier が捨てた接触には、反発も摩擦もかからない (従来は位置の段階だけ止まり、速度の段階で反発と摩擦がかかった)
+- **Behavior change:** `step_parallel` は hook / modifier を substep ごとに 1 回だけ呼ぶ (従来は拘束反復のたびに呼び、相対的な modifier が反復回数だけ重なって掛かった)
+- **Behavior change:** 反発の分離速度は、接触が始まる substep 内の位相に依らず e × 接近速度になる 接近速度が 2|g|h 未満なら跳ねない (従来は射影後の速度から求めており、分離速度が位相で 0 から e × 接近速度まで変わった)
+- **Behavior change:** 動摩擦の上限が μλ/h (Müller ほか 2020 eq.30) になり、滑る物体は μg で減速する (従来は位置補正後の法線速度から求めていた)
+- **Behavior change:** 摩擦円錐の内側にある接触は、位置の段階の静止摩擦で止まる (従来は斜面で 1 秒に数 mm ずれた)
+- **Behavior change:** `StructuralSolver` の疲労損傷は material ごとの S-N 曲線で計算される (SUS304 / A5052 は金属の曲線、他の material は従来のまま) 疲労・座屈を選ぶ API を追加した (`with_sn_curve` / `fatigue_strength_mpa` / `fatigue_spectrum_report` / `plate_buckling_mpa` / `snap_through_load_n`)
 
 ### Deprecated
 

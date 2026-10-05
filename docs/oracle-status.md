@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 4427 |
+| 🟢 Not ignored (run by CI) | 4457 |
 | 🔴 Red by design | 208 |
 | ⏱ Gated (runtime / diagnostic / manual) | 24 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **4659** |
+| **Total** | **4689** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -282,7 +282,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (4427)
+## 🟢 Not ignored (4457)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -455,6 +455,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_contact_cache_wiring.rs` | 12 |
 | `analytic_deformable_wiring.rs` | 12 |
 | `analytic_layer_adhesion_wiring.rs` | 12 |
+| `analytic_structural_fatigue_buckling_wiring.rs` | 12 |
 | `audit_analytics_bridge.rs` | 12 |
 | `audit_cloth_fluid.rs` | 12 |
 | `audit_plastic.rs` | 12 |
@@ -581,6 +582,7 @@ Per-file counts (the test names are in `tests/`):
 | `wm08_checksum_coverage.rs` | 6 |
 | `analytic_cfd_wall_bc.rs` | 5 |
 | `analytic_cloth_crossings_wiring.rs` | 5 |
+| `analytic_contact_static_friction.rs` | 5 |
 | `analytic_hyperelastic_mms_order.rs` | 5 |
 | `analytic_math_ln.rs` | 5 |
 | `analytic_quadratic_mesh_edges_wiring.rs` | 5 |
@@ -593,6 +595,7 @@ Per-file counts (the test names are in `tests/`):
 | `mms_linear_elastic.rs` | 5 |
 | `reduction_order_independence.rs` | 5 |
 | `analytic_adaptive_refinement_high_order.rs` | 4 |
+| `analytic_contact_friction_cap.rs` | 4 |
 | `analytic_critically_damped_tether.rs` | 4 |
 | `analytic_step_default_projection.rs` | 4 |
 | `audit_c_joint_extra.rs` | 4 |
@@ -605,7 +608,10 @@ Per-file counts (the test names are in `tests/`):
 | `refinement_conformity.rs` | 4 |
 | `tgs_stable_cache_keys.rs` | 4 |
 | `analytic_boundary_faces.rs` | 3 |
+| `analytic_contact_filter_parallel_once.rs` | 3 |
+| `analytic_contact_filter_velocity_pass.rs` | 3 |
 | `analytic_large_rotation.rs` | 3 |
+| `analytic_restitution_phase.rs` | 3 |
 | `analytic_shape_with_rotation_wiring.rs` | 3 |
 | `audit_bvh_alloc.rs` | 3 |
 | `audit_c_coupled_field.rs` | 3 |
