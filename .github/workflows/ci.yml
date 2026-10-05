@@ -61,6 +61,8 @@ jobs:
       # C ABI coverage, which needs no index (the module part runs in the scip job)
       - name: Integration levels (tests)
         run: python scripts/test_integration_levels.py
+      - name: Landing script (tests)
+        run: python scripts/test_land.py
       - name: C ABI declared by every consumer or listed with a reason
         run: python scripts/integration_levels.py --no-index --check
 

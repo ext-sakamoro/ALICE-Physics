@@ -53,6 +53,7 @@ python3 scripts/test_run_feature_gated_tests.py
 
 step "integration levels oracle + C ABI coverage (docs/integration-levels.md)"
 python3 scripts/test_integration_levels.py
+python3 scripts/test_land.py
 python3 scripts/integration_levels.py --no-index --check
 
 step "oracle ledger links (PIN / root external)"
