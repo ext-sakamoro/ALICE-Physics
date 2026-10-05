@@ -7,15 +7,15 @@ crate has today.
 | table | items | implemented+oracle | implemented-no-oracle | partial | missing | out-of-scope |
 |---|---:|---:|---:|---:|---:|---:|
 | `docs/coverage/cfd.toml` | 117 | 39 | 2 | 6 | 70 | 0 |
-| `docs/coverage/env.toml` | 116 | 20 | 3 | 2 | 91 | 0 |
 | `docs/coverage/fem.toml` | 133 | 36 | 0 | 6 | 88 | 3 |
+| `docs/coverage/mat.toml` | 121 | 23 | 13 | 5 | 80 | 0 |
 | `docs/coverage/multiphase.toml` | 86 | 11 | 2 | 3 | 70 | 0 |
 | `docs/coverage/num.toml` | 92 | 22 | 0 | 5 | 64 | 1 |
 | `docs/coverage/part.toml` | 119 | 26 | 2 | 3 | 88 | 0 |
 | `docs/coverage/soft.toml` | 90 | 21 | 4 | 6 | 59 | 0 |
 | `docs/coverage/struct.toml` | 134 | 33 | 0 | 10 | 91 | 0 |
 | `docs/coverage/therm.toml` | 102 | 17 | 0 | 3 | 82 | 0 |
-| **total** | 989 | 225 | 13 | 44 | 703 | 4 |
+| **total** | 994 | 228 | 23 | 47 | 692 | 4 |
 
 ## `docs/coverage/cfd.toml`
 
@@ -32,24 +32,6 @@ crate has today.
 | pressure-velocity coupling | 6 | 1 | 0 | 0 | 5 | 0 |
 | time integration | 8 | 2 | 0 | 1 | 5 | 0 |
 | turbulence | 16 | 5 | 0 | 2 | 9 | 0 |
-
-## `docs/coverage/env.toml`
-
-| axis | items | implemented+oracle | implemented-no-oracle | partial | missing | out-of-scope |
-|---|---:|---:|---:|---:|---:|---:|
-| aerodynamics | 12 | 5 | 0 | 0 | 7 | 0 |
-| atmosphere | 13 | 4 | 1 | 0 | 8 | 0 |
-| atmospheric-dynamics | 5 | 0 | 0 | 0 | 5 | 0 |
-| benchmark | 9 | 3 | 1 | 0 | 5 | 0 |
-| boundary-layer | 6 | 0 | 0 | 0 | 6 | 0 |
-| environmental-load | 5 | 0 | 0 | 1 | 4 | 0 |
-| moist-air | 7 | 0 | 0 | 0 | 7 | 0 |
-| ocean-coastal | 5 | 0 | 0 | 0 | 5 | 0 |
-| ocean-waves | 17 | 3 | 0 | 0 | 14 | 0 |
-| terrain | 9 | 3 | 0 | 0 | 6 | 0 |
-| turbulence-gust | 10 | 0 | 0 | 1 | 9 | 0 |
-| weather | 9 | 0 | 0 | 0 | 9 | 0 |
-| wind-field | 9 | 2 | 1 | 0 | 6 | 0 |
 
 ## `docs/coverage/fem.toml`
 
@@ -71,6 +53,23 @@ crate has today.
 | nonlinear | 8 | 4 | 0 | 1 | 3 | 0 |
 | output | 6 | 3 | 0 | 0 | 3 | 0 |
 | tangent | 6 | 2 | 0 | 1 | 3 | 0 |
+
+## `docs/coverage/mat.toml`
+
+| axis | items | implemented+oracle | implemented-no-oracle | partial | missing | out-of-scope |
+|---|---:|---:|---:|---:|---:|---:|
+| benchmark | 7 | 1 | 0 | 0 | 6 | 0 |
+| contact material | 12 | 3 | 2 | 0 | 7 | 0 |
+| damage-fracture data | 3 | 0 | 0 | 0 | 3 | 0 |
+| data | 16 | 0 | 6 | 0 | 10 | 0 |
+| database | 10 | 2 | 0 | 0 | 8 | 0 |
+| elasticity | 12 | 3 | 1 | 1 | 7 | 0 |
+| electromagnetic data | 4 | 0 | 1 | 0 | 3 | 0 |
+| hyperelasticity | 14 | 6 | 1 | 0 | 7 | 0 |
+| plasticity | 16 | 5 | 0 | 2 | 9 | 0 |
+| rheology | 12 | 3 | 0 | 2 | 7 | 0 |
+| thermal data | 6 | 0 | 2 | 0 | 4 | 0 |
+| viscoelasticity | 9 | 0 | 0 | 0 | 9 | 0 |
 
 ## `docs/coverage/multiphase.toml`
 
