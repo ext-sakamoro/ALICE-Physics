@@ -810,17 +810,40 @@ impl ParkState {
     }
 }
 
-/// Angular velocity derived from a rotation change, exactly as the velocity
-/// update computes it: `2·(q·p⁻¹).xyz / dt` with the sign of `w` folded in.
+/// Below this `|v|²` (`|v| < 2⁻⁸`) the rotation angle `2·asin|v|` is taken
+/// from its series, whose first omitted term is below `2⁻⁶⁴` relative.
+const LOG_SERIES_LIMIT_SQ: Fix128 = Fix128::from_raw(0, 1 << 48);
+
+/// Angular velocity derived from a rotation change by the exact logarithm of
+/// the rotation: with `dq = q·p⁻¹ = (v, w)`, its sign folded so that `w ≥ 0`
+/// (the shorter of the two equivalent rotations), the rotation is
+/// `θ = 2·atan2(|v|, w)` about `v / |v|`, so `ω = v̂ θ / dt`.
+///
+/// The angle is evaluated as the factor `θ / |v| = 2·asin(|v|)/|v|`
+/// multiplying `v`: from the series `2 (1 + s²/6 + 3s⁴/40 + 5s⁶/112)`
+/// (`s² = |v|²`) below `|v| = 2⁻⁸`, which needs no square root and keeps
+/// small rotations exact to rounding, and from `2·atan2(|v|, w)/|v|` above.
+/// A rotation predicted as `from_axis_angle(ω̂, |ω| dt)` therefore gives back
+/// `ω` (the earlier chord `2 v / dt` gave `(2/dt) sin(|ω| dt / 2)`, which
+/// lost `|ω|³ dt² / 24` per call).
 #[inline]
 fn angular_from_rotations(rotation: QuatFix, prev_rotation: QuatFix, inv_dt: Fix128) -> Vec3Fix {
     let dq = rotation.mul(prev_rotation.conjugate());
-    let two_inv_dt = inv_dt + inv_dt;
-    if dq.w < Fix128::ZERO {
-        Vec3Fix::new(-dq.x * two_inv_dt, -dq.y * two_inv_dt, -dq.z * two_inv_dt)
+    let (v, w) = if dq.w < Fix128::ZERO {
+        (Vec3Fix::new(-dq.x, -dq.y, -dq.z), -dq.w)
     } else {
-        Vec3Fix::new(dq.x * two_inv_dt, dq.y * two_inv_dt, dq.z * two_inv_dt)
-    }
+        (Vec3Fix::new(dq.x, dq.y, dq.z), dq.w)
+    };
+    let s2 = v.dot(v);
+    let factor = if s2 < LOG_SERIES_LIMIT_SQ {
+        let series = Fix128::from_ratio(1, 6)
+            + s2 * (Fix128::from_ratio(3, 40) + s2 * Fix128::from_ratio(5, 112));
+        (Fix128::ONE + s2 * series).double()
+    } else {
+        let s = s2.sqrt();
+        Fix128::atan2(s, w).double() / s
+    };
+    v * (factor * inv_dt)
 }
 
 /// Kind tags for [`tgs_cache_key`]: contacts and distance constraints share
@@ -6807,11 +6830,13 @@ mod tests {
 
         world.update_velocities(dt);
 
-        // dq = q * conj(I) = q、angular = 2 * dq.xyz / dt = dq.xyz * 8
-        let eight = Fix128::from_int(8);
-        let expected = Vec3Fix::new(q.x * eight, q.y * eight, q.z * eight);
-        assert_eq!(world.bodies[idx].angular_velocity, expected);
-        assert!(expected.x > Fix128::ZERO && expected.z > Fix128::ZERO);
+        // dq = q: θ = 1/2 rad about (1, 2, 3)/√14 ⇒ ω = axis · θ / dt = axis · 2
+        let got = world.bodies[idx].angular_velocity;
+        let n = crate::det_math::sqrt64(14.0);
+        let want = [2.0 / n, 4.0 / n, 6.0 / n];
+        for (g, e) in [got.x, got.y, got.z].iter().zip(want) {
+            assert!((g.to_f64() - e).abs() < 1e-12, "{} vs {e}", g.to_f64());
+        }
     }
 
     #[test]
@@ -6828,13 +6853,16 @@ mod tests {
 
         world.update_velocities(dt);
 
-        let eight = Fix128::from_int(8);
-        let expected = Vec3Fix::new(-q.x * eight, -q.y * eight, -q.z * eight);
-        assert_eq!(world.bodies[idx].angular_velocity, expected);
-        // 3 成分とも非零で符号が独立に検証されること
-        assert!(
-            expected.x != Fix128::ZERO && expected.y != Fix128::ZERO && expected.z != Fix128::ZERO
-        );
+        // 3π/2 about a = (1, −2, 3)/√14 equals π/2 about −a (w folded to
+        // ≥ 0) ⇒ ω = −a · (π/2) / dt = −a · 2π; every component non-zero so
+        // each sign is checked
+        let got = world.bodies[idx].angular_velocity;
+        let n = crate::det_math::sqrt64(14.0);
+        let k = 2.0 * core::f64::consts::PI / n;
+        let want = [-k, 2.0 * k, -3.0 * k];
+        for (g, e) in [got.x, got.y, got.z].iter().zip(want) {
+            assert!((g.to_f64() - e).abs() < 1e-12, "{} vs {e}", g.to_f64());
+        }
     }
 
     #[test]
@@ -6849,7 +6877,15 @@ mod tests {
 
         world.update_velocities(dt);
 
-        assert_eq!(world.bodies[idx].angular_velocity, v3(0, 0, 8));
+        // π about z (w = 0 takes the positive branch) ⇒ ω = (0, 0, π / dt) = (0, 0, 4π)
+        let got = world.bodies[idx].angular_velocity;
+        assert_eq!((got.x, got.y), (Fix128::ZERO, Fix128::ZERO));
+        let want = 4.0 * core::f64::consts::PI;
+        assert!(
+            (got.z.to_f64() - want).abs() < 1e-12,
+            "{} vs {want}",
+            got.z.to_f64()
+        );
     }
 
     /// 接触 1 本を直接差し込む helper (normal は B → A 方向 = +x)

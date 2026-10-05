@@ -31,9 +31,13 @@
 //! `θ += ω h`, `ω ← (2/h) sin(ω h/2)`), which reproduces the measurement to
 //! rounding: the defect is this map and nothing else.
 //!
-//! These are `src gap` oracles: `#[ignore]`d until the angular velocity is no
-//! longer re-derived through the chord `2 sin(θ/2)` (and the torque is applied
-//! inside the substep loop). Run with `--ignored` to see them fail.
+//! The angular velocity is now re-derived by the exact logarithm of the
+//! rotation (`θ = 2·atan2(|v|, w)`), so the two free-rotation oracles hold to
+//! rounding; the measurements above are from the chord re-derivation they
+//! replaced. The constant-torque oracle stays a `src gap` (`#[ignore]`d):
+//! `add_torque` is applied once at the frame head, which leaves the angle
+//! splitting term `½ (τ/I) dt t (s − 1)/s` (+0.078 rad at 10 s for every `s`;
+//! its `ω` is already exact). Run with `--ignored` to see it fail.
 //!
 //! Author: Moroya Sakamoto
 
@@ -169,7 +173,7 @@ fn report(failures: &[String]) {
 /// - difference closed form: `dω/dt = τ/I − ω³ h / 24` (chord re-derivation)
 ///   plus the angle splitting term `½ (τ/I) dt t (s − 1)/s`
 #[test]
-#[ignore = "src gap: the angular velocity is re-derived as (2/h) sin(ω h/2) every substep, so a constant torque falls short of τ t / I by ∫ω³h/24"]
+#[ignore = "src gap: add_torque is applied once at the frame head, so θ carries the splitting term ½ (τ/I) dt t (s − 1)/s (+0.078 rad at 10 s for every s); the frame-head external-force item is a separate pending decision"]
 fn constant_torque_spins_up_as_tau_t_over_i() {
     let mut failures = Vec::new();
     let dtf = 1.0 / DT_DEN as f64;
@@ -231,7 +235,6 @@ fn constant_torque_spins_up_as_tau_t_over_i() {
 ///   off-axis); the chord model reproduces `|ω|` to ≤ 3e-9 and `θ` to ≤ 2e-8
 /// - difference closed form: `dω/dt = −ω³ h / 24`
 #[test]
-#[ignore = "src gap: free rotation loses angular velocity (dω/dt = -ω³h/24) because ω is re-derived from the rotation chord every substep"]
 fn free_rotation_about_a_principal_axis_conserves_omega_angle_and_energy() {
     let mut failures = Vec::new();
     let dtf = 1.0 / DT_DEN as f64;
@@ -327,7 +330,6 @@ fn free_rotation_about_a_principal_axis_conserves_omega_angle_and_energy() {
 /// - difference closed form: `|ω(1)| ≈ ω0 (1 − ω0² h / 24)` per run, i.e. a
 ///   spread of `ω0³ (h_max − h_min)/24`
 #[test]
-#[ignore = "src gap: the angular velocity after free rotation depends on the substep count through the chord re-derivation (ω0³ h / 24 per second)"]
 fn free_rotation_result_does_not_depend_on_substeps() {
     let dtf = 1.0 / DT_DEN as f64;
     let mut mags = Vec::new();

@@ -6,16 +6,16 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 4586 |
-| 🔴 Red by design | 208 |
+| 🟢 Not ignored (run by CI) | 4601 |
+| 🔴 Red by design | 206 |
 | ⏱ Gated (runtime / diagnostic / manual) | 25 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **4819** |
+| **Total** | **4832** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
 
-## 🔴 Red by design (208)
+## 🔴 Red by design (206)
 
 Oracles kept red on purpose: the implementation is not there yet, and a companion test pins
 today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected value is never loosened.
@@ -56,7 +56,7 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `conservative_advancement_does_not_give_up_on_a_shallow_approach` (audit_ccd.rs) — known defect: AUD-A-S2W2-013: conservative_advancement returns None after max_iterations without converging (i…
 - `constant_force_follows_the_closed_form_trajectory` (analytic_external_force_substep.rs) — src gap: a frame-head force impulse adds ½ (F/m) dt t (s-1)/s to the position, which more substeps do not redu…
 - `constant_force_position_does_not_depend_on_the_frame_length` (analytic_external_force_substep.rs) — src gap: with a frame-head force impulse the position error is set by the frame length dt, not the substep len…
-- `constant_torque_spins_up_as_tau_t_over_i` (analytic_rotation_integration.rs) — src gap: the angular velocity is re-derived as (2/h) sin(ω h/2) every substep, so a constant torque falls shor…
+- `constant_torque_spins_up_as_tau_t_over_i` (analytic_rotation_integration.rs) — src gap: add_torque is applied once at the frame head, so θ carries the splitting term ½ (τ/I) dt t (s − 1)/s …
 - `contact_concentric_sphere_pair_reports_the_radius_sum` (audit_collider.rs) — known defect: AUD-A-S3W3-016: EPA depth for near-concentric spheres is 5.5 percent shallow (concentric r 1.0 +…
 - `contact_upload_keeps_slot_alignment_with_a_sensor_in_slot_zero` (audit_gpu_bridge.rs) — known defect: AUD-A-S2W3-003: send_contact_constraints doc says indices line up with contact_constraints slots…
 - `contain_is_force_free_inside_as_documented` (audit_sdf_force.rs) — known defect: AUD-A-S4W1-009: SdfForceType::Contain doc says zero force inside; code returns -damping*velocity…
@@ -91,8 +91,6 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `feet_position_is_the_capsule_bottom` (audit_character.rs) — known defect: AUD-A-S3W3-003: feet_position doc says capsule bottom but returns the lower hemisphere centre (c…
 - `fit_two_modes_never_returns_negative_damping_coefficients` (audit_damping_rayleigh.rs) — known defect: AUD-A-S2W2-001: fit_two_modes returns beta=-2.083e-5 for (100 rad/s, z=0.05) and (500 rad/s, z=0…
 - `fos_is_never_below_one_when_applied_is_below_allowable` (audit_layer_adhesion.rs) — known defect: AUD-A-S1W5-030 (downstream: component_fos): for applied = 2^-64 or 2^-63 the quotient allowable …
-- `free_rotation_about_a_principal_axis_conserves_omega_angle_and_energy` (analytic_rotation_integration.rs) — src gap: free rotation loses angular velocity (dω/dt = -ω³h/24) because ω is re-derived from the rotation chor…
-- `free_rotation_result_does_not_depend_on_substeps` (analytic_rotation_integration.rs) — src gap: the angular velocity after free rotation depends on the substep count through the chord re-derivation…
 - `from_f64_non_finite_and_out_of_range_are_not_silently_plausible` (audit_math.rs) — known defect: AUD-A-S1W5-018: Fix128::from_f64(NaN) returns ZERO silently, from_f64(+/-inf) and from_f64(-1e30…
 - `froude_krylov_doc_excess_over_mean_is_zero_at_mean_level` (audit_wave_ship.rs) — known defect: AUD-A-S2W3-005: doc says result is buoyancy in excess of the mean, but eta = 0 returns the full …
 - `froude_krylov_is_not_negative_when_the_keel_is_out_of_the_water` (audit_wave_ship.rs) — known defect: AUD-A-S2W3-004: froude_krylov_vertical_n returns negative force (rho g A (d+eta) = -2.4e5 N at d…
@@ -283,7 +281,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (4586)
+## 🟢 Not ignored (4601)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -436,6 +434,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_cubic_elastic_fem_wiring.rs` | 13 |
 | `analytic_erosion_wiring.rs` | 13 |
 | `analytic_filter_wiring.rs` | 13 |
+| `analytic_gyroscopic.rs` | 13 |
 | `analytic_interface_capture_wiring.rs` | 13 |
 | `analytic_kinematic_loop_wiring.rs` | 13 |
 | `analytic_math_wiring.rs` | 13 |
@@ -633,6 +632,7 @@ Per-file counts (the test names are in `tests/`):
 | `wm01_flag_survives_rollback.rs` | 3 |
 | `wm08_prev_state_coverage.rs` | 3 |
 | `wm08_state_coverage.rs` | 3 |
+| `analytic_rotation_integration.rs` | 2 |
 | `analytic_tgs_backend_coverage.rs` | 2 |
 | `audit_c_fatigue.rs` | 2 |
 | `audit_c_joint.rs` | 2 |
