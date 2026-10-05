@@ -8,8 +8,7 @@
 //!
 //! Every value this example prints is checked against a closed-form
 //! expectation computed independently of the function under test (never
-//! by calling that function for the expected side), per
-//! `~/claude-config/rules/analytic-oracle-tests.md`.
+//! by calling that function for the expected side).
 //!
 //! ```bash
 //! cargo run --example character_controller --features std

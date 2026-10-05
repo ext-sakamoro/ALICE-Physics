@@ -47,9 +47,7 @@ use alice_physics::math::{Fix128, Vec3Fix};
 
 /// Relative-error check against an independently hand-derived f64 closed
 /// form (never computed by calling `friction_force` itself), falling back
-/// to an absolute check when the expected value is exactly zero -- per this
-/// repo's analytic-oracle-tests discipline
-/// (`~/claude-config/rules/analytic-oracle-tests.md`).
+/// to an absolute check when the expected value is exactly zero.
 fn assert_rel(got: Fix128, want: f64, tol: f64, what: &str) {
     let g = got.to_f64();
     let err = if want == 0.0 {

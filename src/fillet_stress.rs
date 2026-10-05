@@ -8,7 +8,7 @@
 //!
 //! For 3D printed brackets, snap-fits and shoulder fillets, computing `K_t`
 //! and requiring a minimum fillet radius (typically `r ≥ 0.5 mm`) is standard
-//! practice. See ALICE-Bamboo CLAUDE.md rule "応力分散フィレット R0.5 以上".
+//! practice.
 //!
 //! # Formulas provided
 //!

@@ -575,7 +575,7 @@ mod tests {
         );
     }
 
-    // ---- default-config oracles (2026-09-15, CLAUDE.md § 解析解突合テスト規律) ----
+    // ---- default-config oracles (2026-09-15) ----
     // `PgsConfig` / `TgsConfig` / `AdaptiveSubStepConfig` live in pub(crate)
     // modules, so their defaults are exercised here rather than in tests/.
 

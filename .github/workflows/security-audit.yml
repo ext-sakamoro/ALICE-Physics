@@ -116,11 +116,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      # CLAUDE.md「仮実装完了偽装の禁止ルール」準拠
+      # production code must not ship stubs
       - name: Detect todo! / unimplemented! / panic!(STUB) in src/**
         run: |
           set -eo pipefail
-          # STUB (uppercase) のみに絞る (canonical 罠 catalog 更新済)
+          # STUB (uppercase) のみに絞る
           # trait default method の `panic!("... not implemented by this backend")`
           # 等は legitimate な pattern で stub ではない
           hits=$(grep -rnE 'todo!\(|unimplemented!\(|panic!\([^)]*STUB' \
@@ -132,7 +132,6 @@ jobs:
             echo "$hits"
             echo ""
             echo "Fix: use ? operator, Result<T, E>, or remove the stub."
-            echo "  See CLAUDE.md § 仮実装完了偽装の禁止ルール"
             exit 1
           fi
           echo "✓ No todo! / unimplemented! / panic!(STUB) in src/ (excluding src/bin/)"

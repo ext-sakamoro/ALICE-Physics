@@ -45,8 +45,7 @@
 //! `omega = 2*pi*f` (`core::f64::consts::PI`, never `Fix128::PI`), and
 //! the `fit_two_modes` / `damping_ratio` closed forms re-derived from
 //! `zeta_n = alpha/(2*omega_n) + beta*omega_n/2` -- never by calling the
-//! function under test, per this repo's analytic-oracle-tests discipline
-//! (`~/claude-config/rules/analytic-oracle-tests.md`).
+//! function under test.
 //!
 //! `hz_to_omega` / `omega_to_hz` are ordinary exact `Fix128`
 //! multiply/divide by the precomputed `Fix128::PI` constant (no CORDIC

@@ -20,9 +20,7 @@
 //!
 //! All expected numbers below are derived independently in plain f64 by
 //! re-deriving the closed form, never by calling `hz_to_omega`,
-//! `omega_to_hz`, `fit_two_modes`, or `damping_ratio` themselves -- per
-//! this repo's analytic-oracle-tests discipline
-//! (`~/claude-config/rules/analytic-oracle-tests.md`):
+//! `omega_to_hz`, `fit_two_modes`, or `damping_ratio` themselves:
 //!
 //! * `omega = 2*pi*f` for the Hz <-> rad/s conversion.
 //! * `zeta_n = alpha/(2*omega_n) + beta*omega_n/2` at each mode, multiply

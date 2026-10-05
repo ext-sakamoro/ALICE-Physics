@@ -18,9 +18,7 @@
 //!
 //! Every expected value below is derived by hand from the textbook
 //! closed form quoted in each section's comment -- never by calling the
-//! `alice_physics::fillet_stress` function under test -- per this repo's
-//! analytic-oracle-tests discipline
-//! (`~/claude-config/rules/analytic-oracle-tests.md`).
+//! `alice_physics::fillet_stress` function under test.
 //!
 //! ```bash
 //! cargo run --example fillet_stress_concentration --features std

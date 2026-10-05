@@ -992,8 +992,7 @@ mod tests {
     /// a handful of units in the last place — measured at `4` on `ρV/4` with
     /// `ρ = 24`. `det J` being a multiple of three is what makes the volume
     /// dyadic, and the scene has to supply that; no amount of care inside the
-    /// solver recovers it. (See
-    /// `~/claude-config/memory/feedback_dyadic_constants_beat_rational_ones_in_fixed_point.md`.)
+    /// solver recovers it.
     fn dyadic_volume_tet() -> SdfTetMesh {
         let mut mesh = SdfTetMesh::default();
         mesh.vertices.push([0.0, 0.0, 0.0]);

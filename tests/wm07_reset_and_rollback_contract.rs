@@ -1,7 +1,6 @@
 //! `reset_world()` (WM-07) と rollback の population fingerprint (gap #3) の oracle
 //!
-//! 背景は `project_alice_physics_world_auditor_engine_gaps` gap #1 / #3
-//! (`~/claude-config/memory/`) — ys-1f の裏取りで判明した穴:
+//! 判明した穴:
 //! `deserialize_state` は body **数**しか見ていないので、`remove_body`
 //! (swap_remove) + `add_body` で count が元に戻っても population (= どの
 //! body がどんな質量・慣性・collider を持つか) が変わっていれば、別の body

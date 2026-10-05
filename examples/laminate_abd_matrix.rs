@@ -31,8 +31,7 @@ use alice_physics::math::Fix128;
 /// Relative-error check against an independently hand-derived f64 closed
 /// form. The expected value (`want`) is computed by a formula written out
 /// again in plain f64 arithmetic in `main` below -- never by calling the
-/// function under test -- per this repo's analytic-oracle-tests
-/// discipline (`~/claude-config/rules/analytic-oracle-tests.md`).
+/// function under test.
 fn assert_rel(got: Fix128, want: f64, tol: f64, what: &str) {
     let g = got.to_f64();
     let err = if want == 0.0 {

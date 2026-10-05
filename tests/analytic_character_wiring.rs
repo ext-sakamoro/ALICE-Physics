@@ -5,8 +5,7 @@
 //! Every expected value below is derived independently of the function
 //! under test (plain `f64` / raw integer arithmetic, or the documented
 //! `Fix128` wrapping-add contract applied by hand) — never by calling the
-//! function under test for the expected side, per
-//! `~/claude-config/rules/analytic-oracle-tests.md`.
+//! function under test for the expected side.
 
 #![cfg(feature = "std")]
 #![allow(clippy::disallowed_methods)]

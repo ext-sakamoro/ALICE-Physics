@@ -112,6 +112,37 @@ class Vocabulary(unittest.TestCase):
         hits = sorted(x.split("(`")[1].rstrip("`)") for x in e if "private or internal name" in x)
         self.assertEqual(hits, ["Acme Rocket Works", "Zorblax", "quux-lab"], e)
 
+    def test_private_names_are_found_in_every_file_and_path_of_the_tree(self):
+        # comments, generated ledgers, workflows and scripts are published too
+        import hashlib
+        saved = dl.PRIVATE_NAME_HASHES
+        try:
+            dl.PRIVATE_NAME_HASHES = {hashlib.sha256(b"zorblax").hexdigest()}
+            e = errors({"src/a.rs": "// see the Zorblax notes\nfn a() {}\n",
+                        ".github/workflows/ci.yml": "      # Zorblax rule\n",
+                        "docs/oracle-status.md": "For details: [ZORBLAX.md](../ZORBLAX.md)\n",
+                        "src/zorblax_glue.rs": "fn b() {}\n"})
+        finally:
+            dl.PRIVATE_NAME_HASHES = saved
+        where = sorted({x.split(":")[0] for x in e if "private or internal name" in x})
+        self.assertEqual(where, [".github/workflows/ci.yml", "docs/oracle-status.md", "src/a.rs",
+                                 "src/zorblax_glue.rs"], e)
+        self.assertTrue(any("in a file path" in x for x in e), e)
+
+    def test_binary_files_are_not_read_as_text(self):
+        import hashlib
+        d = tree()
+        with open(os.path.join(d, "blob.bin"), "wb") as f:
+            f.write(b"zorblax\0\x01\x02")
+        saved = dl.PRIVATE_NAME_HASHES
+        try:
+            dl.PRIVATE_NAME_HASHES = {hashlib.sha256(b"zorblax").hexdigest()}
+            e, counts = dl.check(d)
+        finally:
+            dl.PRIVATE_NAME_HASHES = saved
+        self.assertEqual(e, [])
+        self.assertGreater(counts["tree files"], 0)
+
     def test_the_hash_list_is_not_empty_and_holds_no_plain_names(self):
         self.assertGreaterEqual(len(dl.PRIVATE_NAME_HASHES), 10)
         self.assertTrue(all(re.fullmatch(r"[0-9a-f]{64}", h) for h in dl.PRIVATE_NAME_HASHES))

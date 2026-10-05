@@ -43,7 +43,6 @@ DOCS = ("README.md", "README_JP.md", "docs/MODULES.md", "CHANGELOG.md")
 FORBIDDEN = [
     ("agent process", re.compile(r"\bworkers?\b|ワーカー|\bsubagents?\b|調停役|並走\s*session|他\s*session|session\s*名")),
     ("session name", re.compile(r"\bys-[0-9a-f]{2}\b|\bsakamoro-[0-9a-f]{2}\b")),
-    ("assistant name", re.compile(r"\bclaude\b(?!-code)", re.I)),
     ("internal tracker", re.compile(r"\bBacklog\b|memory\s*(?:側|化|に|へ|file)")),
     ("instruction source", re.compile(r"user\s*(?:指示|裁定|指摘)")),
     ("device", re.compile(r"\bJetson\b|\bMac\s?mini\b|\bMacBook\b|Raspberry\s*Pi|EAC-4000|reCamera")),
@@ -73,6 +72,10 @@ PRIVATE_NAME_HASHES = {
     "e78a14d392a171bb45a5bcb8d6d4e3a685893ea6e1a04b811066c34873e0c311",
     "33bdb6df44ce6cd93063bc0ca38b52808f72825c837bac136a3b45720022ef56",
     "9c118c2d1b0d10df8c67942b4cb330fbcaeee47dabb27d9729a706825036ab74",
+    # assistant / tooling names: no form of them belongs anywhere in the tree
+    "c857d09db23e6822e3600bc06ad8d58f92ed62bc8efd81c753f77048662cb97d",
+    "b5cf43ae07a7364e0c0ca9e838f01f278fc6a71c207a6f8c3de8d908608b2db1",
+    "28e174396028f226b3bead259d19749205378d9204ce12fd9b1918ab6032a15d",
 }
 TOKEN_RE = re.compile(r"[A-Za-z0-9_\-\u3040-\u30ff\u4e00-\u9fff]+")
 
@@ -173,10 +176,61 @@ def check(root: str) -> tuple[list[str], dict[str, int]]:
         else:
             counts["categories"] = 1  # no unreleased work: nothing to compare, not an error
 
+    # private / internal names (hashed above) anywhere in the tree: file paths and
+    # the text of every tracked file, not only the four documents. Generated
+    # ledgers, comments, workflows and scripts are published too.
+    counts["tree files"] = 0
+    for rel in tree_files(root):
+        counts["tree files"] += 1
+        for name in private_names(" ".join(re.split(r"[/_.\-]+", rel))):
+            errors.append(f"{rel}: private or internal name in a file path (`{name}`)")
+        if rel in DOCS:
+            continue  # their text is checked above (with code blocks set aside)
+        text = read_text_file(os.path.join(root, rel))
+        if text is None:
+            continue
+        for i, line in enumerate(text.splitlines(), 1):
+            for name in private_names(line):
+                errors.append(f"{rel}:{i}: private or internal name (`{name}`)")
+
     for name, c in counts.items():
         if c == 0:
             errors.append(f"check `{name}` compared nothing")
     return errors, counts
+
+
+SKIP_TREE = {".git", "target", "node_modules"}
+
+
+def tree_files(root: str) -> list[str]:
+    """Tracked files when `root` is a git work tree, otherwise every file under it
+    (the tests run on plain directories)."""
+    import subprocess
+    r = subprocess.run(["git", "-C", root, "ls-files", "-z"], capture_output=True)
+    if r.returncode == 0 and r.stdout:
+        return sorted(p for p in r.stdout.decode("utf-8", "replace").split("\0") if p)
+    out = []
+    for d, dirs, files in os.walk(root):
+        dirs[:] = [x for x in dirs if x not in SKIP_TREE]
+        out += [os.path.relpath(os.path.join(d, f), root).replace(os.sep, "/") for f in files]
+    return sorted(out)
+
+
+def read_text_file(path: str) -> str | None:
+    """The file as UTF-8 text, or None for a binary / large / missing file."""
+    try:
+        if os.path.getsize(path) > 4 * 1024 * 1024:
+            return None
+        with open(path, "rb") as f:
+            data = f.read()
+    except OSError:
+        return None
+    if b"\0" in data:
+        return None
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
 
 
 def main() -> int:

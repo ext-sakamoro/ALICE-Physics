@@ -52,8 +52,7 @@
 //! * **`get_events` on an empty / just-cleared queue**: empty before the
 //!   first `begin_frame`, empty immediately after `begin_frame` clears it.
 //! * **Extreme `Fix128` magnitude**: `Fix128` addition/multiplication wrap
-//!   modulo 2^128 (CLAUDE.md § 解析解突合テスト規律, "panic テストにも歯が
-//!   要る"), so `relative_velocity = (i64::MAX, 0, 0)` does not panic and
+//!   modulo 2^128, so `relative_velocity = (i64::MAX, 0, 0)` does not panic and
 //!   does not merely need to "not panic" (a vacuous oracle for wrapping
 //!   arithmetic) -- it has an exact, hand-derivable, surprising closed
 //!   form: `(i64::MAX)^2 mod 2^64 == 1` (shown below), so
@@ -597,8 +596,7 @@ fn process_contact_respects_max_events_per_frame_cap() {
 
 #[test]
 fn process_contact_extreme_magnitude_wraps_deterministically_not_physically() {
-    // Fix128 add/mul wrap modulo 2^128 (documented in CLAUDE.md's analytic
-    // oracle rule). relative_velocity=(i64::MAX, 0, 0) exercises this
+    // Fix128 add/mul wrap modulo 2^128. relative_velocity=(i64::MAX, 0, 0) exercises this
     // directly: length_squared() = x*x (y=z=0 contribute nothing), and
     // (i64::MAX)^2 mod 2^64 == 1 --
     //
@@ -614,7 +612,7 @@ fn process_contact_extreme_magnitude_wraps_deterministically_not_physically() {
     // square) both come out to 1.0, not a value anywhere near the
     // ~9.2e18-scale input. This is not "doesn't panic" (which wrapping
     // arithmetic satisfies unconditionally and is therefore a vacuous
-    // oracle on its own, per CLAUDE.md's analytic-oracle-tests.md) -- a
+    // oracle on its own) -- a
     // mutation that replaced wrapping with saturating or checked
     // arithmetic would change this exact value (to either Fix128::MAX-ish
     // saturation or a panic), giving this assertion teeth.

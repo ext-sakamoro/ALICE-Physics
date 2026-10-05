@@ -1,7 +1,6 @@
 # ALICE-Physics ROADMAP
 
 Canonical roadmap for the alice-physics crate. Primary source of truth.
-Memory index pointer: `[[reference-alice-physics-v1-roadmap]]` in claude-config.
 
 ## ⚠️ 実機検証の所在 (2026-10-03 訂正)
 
@@ -74,7 +73,7 @@ oracle は `tests/analytic_vehicle_dynamics.rs` (4 輪ロックの停止距離 `
 残る既知の制限: Magic Formula は完全滑りで力の向きを補正しない (brush のみ) サスペンションはフレーム先頭の撃力で結合するので `(ω_n dt)² + 2 c dt / m_share < 4` の範囲でのみ安定 `HeightField` の `origin.y` 未反映と境界法線の既知欠陥は、路面の probe 側 (`sample_height` に従う、境界では片側差分) で影響を受けないようにしている
 
 
-### 第 63 increment (2026-10-03、全配線 program 第 21 件 — 並列 worker 5 本で wiring-status / oracle-status を処理)
+### 第 63 increment (2026-10-03、配線作業 第 21 件 — 並列 5 件で wiring-status / oracle-status を処理)
 
 user 指示「`docs/wiring-status.md` / `docs/oracle-status.md` を worker で並列処理」を、担当 file を固定した 5 本 (構造材料 / キャラ・SDF / 流体・熱・電磁 / その他 / oracle 棚卸し) で実施した 各 worker は専用 worktree で commit まで、push・docs・公開 API snapshot は調停役が統合した baseline **78 行退役** (実配線 78、巻き込み 0) 公開 API は**追加のみ 6 関数** (`PhysicsWorld::sdf_ccd_hits` / `SdfCharacter::locomotion_context` / `interface_capture::{plic_normal, plic_plane_offset, truncated_cube_volume}` が pub 化 / `rope_attach::solve_rope_attachments_two_way`) 追加 oracle は約 560 本、変異試験は約 900 件で、生存は全て理由つきの等価変異
 ⚠️ **worker が見つけて直した既存欠陥 (全て実測の後、oracle を先に書いて red → green)**:
@@ -86,14 +85,14 @@ user 指示「`docs/wiring-status.md` / `docs/oracle-status.md` を worker で�
 `rigid_rotation_produces_zero_stress` は理由文の「共回転定式化が入った commit で外す」が `solve_corotational` で成立していたので `#[ignore]` を外して共回転 solver に向けた (期待値 1e-9 MPa は不変、相棒 test は `solve` の特徴づけとして残す) `#[ignore]` 理由文 7 件を実測で更新 oracle-status の「Pending 27」は未実装でなく、意図した red 3・実行が長い/診断用 24・理由なし 0 だった(第 20 件の生成器修正で分類)
 ⚠️ **user 判断待ち (直していない・Backlog 起票済み)**: `VivParameters` への流体減衰 (field 追加は breaking) / `rope_attach` の旧関数の署名変更・非推奨化 (非破壊の `_two_way` を追加済み) / `sdf_sph` の密度拘束の λ 分母 (ρ0² で割らない、拘束が実質不活性、割ると崩壊/発散) / 180° 剛体回転が増分 ≥ 2 で `Inverted` / ragdoll・`AdaptiveConfig` の公開 field / `support_volume::estimate_region_volume` の配分規則 / Z=0 断面・E=0 の silent な安全判定 / `eulerian_grid` の公開 API / `BroadphaseHybrid`
 
-### 第 62 increment (2026-10-03、全配線 program 第 9f 件 — rollback netcode の予測と照合)
+### 第 62 increment (2026-10-03、配線作業 第 9f 件 — rollback netcode の予測と照合)
 
 クライアント予測の照合 `netcode_prediction::reconcile` は「バッファにある権威 tick より後の入力を全部再生する」が、**再生が正しいのはそれが連続した tick `t+1, t+2, …` の時だけ**で、サーバの snapshot がバッファの ring が既に捨てた入力より古い時 (遅いサーバ・小さい容量) や、バッファの途中の tick が欠けた時は、**誤った入力を再生して誤った状態を、何の兆候もなく返す** ⇒ `reconcile_checked` と `ReconcileError::MissingInputs { needed, oldest }` (追加のみ、`#[non_exhaustive]`) を足した 履歴が完全なら `reconcile` と同じ結果で、不完全なら**バッファを変更せず**どの入力が無いかを返す (呼び側は完全な状態を要求するか容量を増やせる)
 `netcode` / `netcode_prediction` の 8 item (`advance_frame` / `dt` / `get_snapshot` / `snapshot_count` / `drop_acknowledged` / `head_snapshot` / `inputs` / `reconcile`) を `examples/rollback_netcode.rs` (サーバが完全なシミュレーションを走らせ、クライアントが軽いモデルで予測し 10 tick 遅れの snapshot を照合する・遅すぎる snapshot は拒否される・snapshot → 進む → rollback → 同じ入力の再生で全 frame の checksum が一致) で配線した
 oracle 8 本 (状態は整数の和なので期待値は定義から書ける: 照合後の head は `権威 state + 後の tick の action の和`、`drop_acknowledged` は `<=` の境界、ring は古い順に捨てる、欠けた入力の報告) 変異 12 件中 12 red
 baseline 退役 8 行 (`netcode::{advance_frame, dt, get_snapshot, snapshot_count}` / `netcode_prediction::{drop_acknowledged, head_snapshot, inputs, reconcile}`)
 
-### 第 59 increment (2026-10-03、全配線 program 第 9c / 9d / 9e 件 — 選べる broad-phase、接触力、marching tetrahedra の collision mesh)
+### 第 59 increment (2026-10-03、配線作業 第 9c / 9d / 9e 件 — 選べる broad-phase、接触力、marching tetrahedra の collision mesh)
 
 **9c broad-phase**: 永続の `DynamicAabbTree` を broad-phase の選択肢にした `Broadphase::{Bvh (既定), DynamicTree}` と `PhysicsWorld::{set_broadphase, broadphase, broadphase_stats, broadphase_proxy_aabb}` (追加のみ) どちらも整列済みの候補 pair を同じ厳密 narrow-phase に渡すので**結果は bit 一致**する proxy は body index が key (user data) で、毎 step その index の body の箱で更新される ので、`remove_body` / 状態復元に全再構築は要らず、無くなった index の proxy だけを外す 動かない body は fat box (半径 + margin 0.5) の中に留まる限り再挿入されない `bvh.rs` の `BroadphaseHybrid` は doc 自身が skeleton と書く未完成品 (動的側は点問い合わせ) で配線せず baseline に残した
 **9d 接触力**: `contact_viz` を solver の接触に繋いだ `PhysicsWorld::{contact_forces, contact_arrows, contact_friction_arrows, contact_friction_cones}` (追加のみ) 力は XPBD の適用分離量 `λ` (`cached_lambda`) から `F = λ / ((wₐ + w_b)·h²)` (h = dt / substeps) 静止した body は **`m·g` を厳密に支える** (`m = 2` で 19.620 N、2 段の積み重ねで下の接触 `(m₁ + m₂)·g`、上の接触 `m₂·g`) 摩擦は接触ごとの係数 ⚠️ 約 1 分静止した body は sleep して solver に載らず、接触が無い
@@ -146,7 +145,7 @@ canonical 化、`u_plus` もこちらへ切替、挙動変化なし) oracle:
 正しい挙動を pin するものに置き換え、変異試験 (fix を revert して red を確認) で歯を確認
 公開 API signature 変更なし
 
-### 第 55 increment (2026-10-03、全配線 program 第 9b 件 — SDF collider を形状つき body の実形状で解く)
+### 第 55 increment (2026-10-03、配線作業 第 9b 件 — SDF collider を形状つき body の実形状で解く)
 
 SDF との衝突は body ごとに同じ半径の球 (`sdf_collision_radius`) で解かれ、形状つき body (`add_shaped_body` / `add_compound_body`) の実形状が無視されていた `resolve_sdf_collisions` が **形状・compound を持つ body はその collider で SDF と衝突させる**ようにし (持たない body は従来どおり球)、`PhysicsWorld::sdf_contacts()` (追加のみ) が `step` の押し出し対象を動かさずに列挙する 球 / 球状の楕円体 / カプセルの子は各々の球・カプセル判定、箱は 27 点 (角 8・辺の中点 12・面の中心 6・中心)、hull は頂点、他の凸形状 (円柱・円錐・楔・環・非球の楕円体) は SDF の法線の逆向きの support 点を 6 回まで追う (`convex_sdf_contact`)
 ⚠️ **既存の欠陥 1 つを検出・修正**: **`collide_aabb_sdf` が箱の角 8 点と中心の 9 点しか見ず、面の中心が最深になる場合 (箱の面が球状の障害物に当たる) を取りこぼしていた** ⇒ 27 点
@@ -163,7 +162,7 @@ baseline 退役 5 行 (`collide_point_sdf` / `collide_capsule_sdf` / `collide_aa
 kinematic bodyが動的bodyを押すsceneで衝突検出との配線順序も確認 変異試験で両方のoracleに歯があることを確認
 公開API signature変更なし、残りgap (joint / SDFコライダー) は未着手
 
-### 第 57 increment (2026-10-03、全配線 program 第 20 件 — `character`/`wind_zone`/`heatmap`/`audio_physics`/`acoustic_wave` 未配線 29 item)
+### 第 57 increment (2026-10-03、配線作業 第 20 件 — `character`/`wind_zone`/`heatmap`/`audio_physics`/`acoustic_wave` 未配線 29 item)
 
 並行して 5 件、全て src 無変更 変異: character 10/10、wind_zone 7/8 (equivalent mutant 1)、heatmap 7/8 (equivalent mutant 1)、audio_physics 初回 8/10 → test 覆い漏れ 2 件を追加で最終 10/10、acoustic_wave 13/13 baseline 34 行退役 (実配線 29、名前衝突の巻き込み 5 = `sdf_character.rs::apply_gravity` / `vehicle.rs::new_default` / `buoyancy_zone.rs::{force_on,signed_depth_below_surface,submerged_fraction}`、いずれも実 caller は無し)
 ⚠️ 実測 (未修正、非バグ): `heatmap::generate_stress_heatmap` は raw contact triple を取る signature で `FemSolution` の per-element stress tensor を受け付けない (設計制約として記録) / `acoustic_wave::leapfrog_step` は一様 `f32::MAX` field で `2.0*current[i]` の中間 overflow により `NaN` を返す (`+inf` ではなく、`f32` overflow 下では「一様場→Laplacian=0」恒等式が成立しない、この module は `Fix128` と違い決定論/overflow 保証を持たない設計)
@@ -178,13 +177,13 @@ kinematic bodyが動的bodyを押すsceneで衝突検出との配線順序も確
 
 既存 oracle 16 本のうち上記 2 件 (旧挙動を pin していたもの) を新挙動に更新、新規 regression test 2 本追加 (無限ループの具体的再現 AABB / 両 footgun) 変異無し、18/18 green 公開 API signature 変更なし (`for_nozzle` は `#[panics]` doc 追加のみ)
 
-### 第 54 increment (2026-10-03、全配線 program 第 19 件 — `smoke_fire`/`rope`/`contact_cache`/`math`/`wave_ship` 未配線 32 item)
+### 第 54 increment (2026-10-03、配線作業 第 19 件 — `smoke_fire`/`rope`/`contact_cache`/`math`/`wave_ship` 未配線 32 item)
 
 worker 5 本、全て src 無変更 変異: smoke_fire 7/8 (equivalent mutant 1)、rope 4/5 (equivalent mutant 1)、contact_cache 9/9、math (arm64 host 上では atan/dot_simd/length_squared_simd のみ実行可能、3/3 red、x86_64+simd gate の 4 item はこの host では compile されずクロスコンパイル確認のみ)、wave_ship 11/12 (equivalent mutant 1) baseline 35 行退役 (実配線 32、名前衝突の巻き込み 3 = `src/cloth.rs`/`src/deformable.rs`/`src/fluid.rs` の `step_with_sdf`、Backlog 記録済)
 ⚠️ **contact_cache は既存 2026-09-30 user 裁定「CPU `step()` には復活させない」の確認が必須だった** — `ContactCache` の warm-start 7 item は `PhysicsWorld::step()` から一度も読まれず、実 warm-start は別機構 (`ContactConstraint::cached_lambda`) 裁定の範囲外 (`step()` を一切呼ばない standalone example) として配線
 ⚠️ worker 実測 (未修正、Backlog 記録済): `smoke_fire::reaction_rate_kg_per_m3_s` は温度/気体定数のみ guard し密度の符号は無検証 (負の gas_constant で exp_fix 飽和まで到達) / `raycast::sweep_sphere` と `ccd::sphere_sphere_toi` が意味論重複 / **`wave_ship::Jonswap::spectrum_density` の正規化定数が JONSWAP peak-enhancement 補正 `(1-0.287·ln(gamma))` を欠き、既定 `north_sea()` (gamma=3.3) で moment から回復する Hs が公称値の約 1.235 倍になる** (DNV-RP-C205 予測値と 0.12% 差で一致、欠落補正が原因と確認済、修正は既定出力を変える semver 相当の判断につき user 裁定待ち) / 同 far-tail が Fix128 解像度限界で floor noise (符号バグではない)
 
-### 第 50 increment (2026-10-03、全配線 program 第 9 件 (F3c/F3d) — SDF の凸分解と compound の broad-phase、幾何クエリ)
+### 第 50 increment (2026-10-03、配線作業 第 9 件 (F3c/F3d) — SDF の凸分解と compound の broad-phase、幾何クエリ)
 
 `decompose_sdf` が `concavity_threshold` を無視して**常に `max_hulls` 個へ切っていた** (凸な球・箱も 16 個に割れる) ので、cluster の hull の中にあって SDF の外にあるセルの体積 / hull の体積を concavity とし、閾値を超える間だけ・予算の範囲で切る実装にした `CompoundShape::{from_decomposition, from_sdf}` (追加のみ) が凸片を compound にし、`add_compound_body` で**凹んだ形のまま衝突する** body になる (L 字の切り欠きに置いた probe は触れない)
 ⚠️ **既存の欠陥 4 つを検出・修正**: ① `concavity_threshold` が未使用 ② **`volumes` が bounding box の体積** (球で hull の 1.8 倍、`min_volume` の判定も bbox) ⇒ hull の実体積 ③ `max_vertices_per_hull` が `len < 2·cap` で効かない (floor の stride が 1) かつ stride が走査順で面上の点を落として**箱の角を失う** (hull が 10% 縮む) ⇒ 極値点 (接する面の法線が 3 次元を張る頂点) だけを残し、上限超過は最遠点サンプリングで選ぶ ④ `centers` が頂点の平均で偏る ⇒ hull の重心 ⚠️ `build_hull_mesh` の頂点は面上・辺上の共面点を含む (9³ の殻で 164 個、真の角は 8) ので極値点の絞り込みが要る
@@ -193,14 +192,14 @@ F3d: `body_collider` の narrow-phase が `world_aabb` で body 全体の box �
 baseline 退役 10 行 (`decompose_sdf` / `DecompositionResult` / `corner` / `corners` / `apex` / `base_center` / `from_metric_ball` + 巻き込み 3 (`metric::{L1, LINF, axis_extent}`、example が通す)) ⚠️ `world_aabb` / `overlapping_children` / `axis_aligned` の 3 行は同時並行の第 18 件 (`e90ec33`、example 経由) が先に退役した ので本件はそれらを narrow-phase の絞り込みに**実配線**した差分だけを持つ、example は `examples/convex_decomposition.rs` / `examples/geometry_queries.rs`
 残り (F3e): `compound::compute_aabb` (キャッシュは誰も読まない) / `build_convex_hull` (共面点を頂点に含み coplanar で panic)
 
-### 第 49 increment (2026-10-03、全配線 program 第 18 件 — `cubic_elastic_fem`/`compound`/`raycast`/`ccd`/`solver_tgs` 未配線)
+### 第 49 increment (2026-10-03、配線作業 第 18 件 — `cubic_elastic_fem`/`compound`/`raycast`/`ccd`/`solver_tgs` 未配線)
 
 worker 5 本 (`cubic_elastic_fem` 9 item / `compound` 8 item + `box_collider::axis_aligned` / `raycast` 9 item / `ccd` 7 item / `solver_tgs` 残 9 item 中 8 item) 変異: cubic_elastic_fem 9/9、compound 13/14 (1 件は軸整列回転のみの test では不可視だった真の oracle gap、対角 120 度回転 test 追加で解消)、raycast 22/22 (初回 3 件生存、カプセル接線・t=0 境界・両キャップ命中の scene 追加で解消)、ccd 15/19 (4 件 equivalent mutant)
-⚠️ **`compound.rs` は他 session (F3b-1, `dafc824`〜`b9472f6`) と同時並行で配線** — rebase で両者を統合 (`add_sphere`/`add_capsule`/`add_convex_hull`/`add_box`/`child_world_aabb` は他 session が `PhysicsWorld::add_compound_body` 経由で先行配線済、本 batch は残る `compute_aabb`/`overlapping_children`/`world_aabb` を含む全 8 item + 自身の example で独立に全配線、両方が共存しても矛盾なし)
+⚠️ **`compound.rs` は別の作業 (F3b-1, `dafc824`〜`b9472f6`) と同時並行で配線** — rebase で両者を統合 (`add_sphere`/`add_capsule`/`add_convex_hull`/`add_box`/`child_world_aabb` は別の作業 が `PhysicsWorld::add_compound_body` 経由で先行配線済、本 batch は残る `compute_aabb`/`overlapping_children`/`world_aabb` を含む全 8 item + 自身の example で独立に配線、両方が共存しても矛盾なし)
 ⚠️⚠️ **`solver_tgs` 残 9 item は user 裁定「本実装」により skeleton を撤去**: `ccd::adaptive_toi_substeps` が `solver_tgs::adaptive_substeps_for_ccd` を実際に呼ぶように実装 (旧実装は `speculative_contact` の有無だけで定数を返す skeleton だった)、`solve_oriented_islands_serial`/`_parallel` を `dispatch_islands`/`par_dispatch_islands` 経由に書き換え (無挙動変更)、`step_tgs` に `ImpulseCache::sweep()` を配線、新規 `PhysicsWorld::{tgs_cache_stats, reset_tgs_cache_stats}` + `TgsCacheStats` (`#[non_exhaustive]`) で warm-start 診断を公開 API 化 (snapshot +78/−0) ⚠️ **`par_dispatch_islands` 自体は未達** — 唯一の呼出元候補 `step_tgs` が常に serial 固定で、parallel 経路に繋ぐには `ImpulseCache` の island 単位 split/merge という別の設計変更が要るため保留 (Backlog 記録)
 baseline 44 行退役 (実配線 38、名前衝突の巻き込み 6 = `quadratic_elastic_fem.rs::corner_count`/`element_count`/`element_nodes` + `bvh.rs::BvhStats`/`bvh.rs::stats`/`sdf_adaptive.rs::stats`、Backlog 記録済)
 
-### 第 48 increment (2026-10-03、全配線 program 第 9 件 (F3b-1) — compound body と凸包の質量特性)
+### 第 48 increment (2026-10-03、配線作業 第 9 件 (F3b-1) — compound body と凸包の質量特性)
 
 複数の形状でできた body (亜鈴・L 字など) を作れなかった `PhysicsWorld::add_compound_body(&CompoundShape, density, position)` を足し、子の質量・重心・慣性を合成して**主軸系**に置く (重心を原点、`body.rotation` = 主軸の回転、子は重心基準に付け替え) 衝突は子ごと: 2 つの子の間の隙間は body の一部でなく、凸包の中でも触れない 子の組のうち最も深い接触が採られる (追加のみ、`CompoundShape::mass_properties` / `build_hull_mesh` / `HullMesh` / `principal_axes` / `CompoundChild::support_world`)
 ⚠️ **既存の欠陥 3 つを検出・修正**: ① **`convex_hull_mass_properties` が誤っていた** (立方体で質量 12 / 正解 24、重心がずれ、Ixx 3.5 / 正解 16) ⇒ 凸包メッシュの四面体分解による厳密積分 (∫xxᵀ dV = V/20 (Σpₖpₖᵀ + (Σpₖ)(Σpₖ)ᵀ)) に置換 ② **compound の球の子の AABB が子の回転を無視** ③ **`support_world` が -1e6 の番兵を使い、全子が遠方にあると誤った点を返した**
@@ -208,12 +207,12 @@ oracle: 箱 / 立方体 / 非対称な楔の凸包を閉形式と求積で、com
 baseline 退役 11 行 (`compound::{add_box,add_capsule,add_sphere,add_convex_hull,child_world_aabb}` / `compute_centroid` / `box`・`capsule`・`sphere`・`convex_hull_mass_properties` / `translate_inertia`、実配線 11、巻き込み 0) 呼出元は `add_compound_body`、example は `examples/compound_bodies.rs`
 残り (F3c): `compound::{compute_aabb, overlapping_children, world_aabb}` / `build_convex_hull` / `convex_decompose` / `box_collider::{axis_aligned, corner, corners}` / `cone::{apex, base_center}` / `from_metric_ball`
 
-### 第 47 increment (2026-10-03、全配線 program 第 17 件 — `prestressed`/`piezoelectric`/`rolling_contact`/`sdf_force` 未配線 28 item)
+### 第 47 increment (2026-10-03、配線作業 第 17 件 — `prestressed`/`piezoelectric`/`rolling_contact`/`sdf_force` 未配線 28 item)
 
 worker 4 本、全て src 無変更 変異: prestressed 7/7 (実装) + 2/5 (guard、3 件は Fix128::Div のゼロ除算契約と算術等価)、piezoelectric 11/12 red (permittivity 単独配線変異は voltage_from_force/force_from_voltage が残る限り推移的到達性で観測不能)、rolling_contact 14/14、sdf_force 15/17 (生存 2 件は算術的に等価、`contain` の境界 off-by-one は dist=0 で push が恒等的に 0 になる式の性質、`apply_sdf_force_fields` の is_static skip は inv_mass=0 と同一条件の性能最適化) baseline 28 行退役 (実配線 27、名前衝突の巻き込み 1 = `force.rs::with_affected_bodies`、Backlog 記録済) production entry point: `examples/prestressed_joints_and_cables.rs` / `examples/piezoelectric_materials.rs` / `examples/rolling_contact_fatigue.rs` / `examples/sdf_force_fields.rs`
 ⚠️ worker 実測 (未修正、Backlog): rolling_contact.rs は f32 ベースで engineering module family の他 (fatigue/laminate_failure) の Fix128 決定論と不整合 / sdf_force の `attract` は `min(strength*|dist|, max_force)` clamp が Fix128 の表現域境界付近 (`|dist| ~ 4.6e18`) で `strength*dist_fix` 自体が mod-2^128 wrap するため `min()` が意図した値と比較できず破られる (通常の大距離 1e9 等では問題なし)
 
-### 第 40 increment (2026-10-03、全配線 program 第 9 件 (F3a) — 凸形状どうしの GJK/EPA narrow-phase)
+### 第 40 increment (2026-10-03、配線作業 第 9 件 (F3a) — 凸形状どうしの GJK/EPA narrow-phase)
 
 形状つき body (F1) は衝突が外接球どうしのままだったので、箱どうしが球として検出されていた `collider::contact(a, b)` (GJK の後に EPA、追加のみ) と、`PhysicsWorld::{set_body_shape, colliders_overlap}`、`PosedShape` (姿勢つきの `Shape` を `Support` にする) を足した `add_shaped_body` は形状を body に付け、**両方の body が形状を持つ組は GJK/EPA の接触で決める** (片方でも持たなければ従来の球どうし) 接触の法線は B→A、depth は分離に要る最短の並進
 ⚠️ **既存の欠陥 2 つを検出・修正**: ① `gjk` が simplex を返さず `epa` (四面体を要求) と**公開 API だけでは繋がらなかった** ⇒ `gjk_core` に分けて simplex を返し、衝突時に四面体へ補完する (辺・頂点でだけ接する box は 1 点の simplex で止まる) ② **`epa` が反復上限で `None` を返し、曲面形状 (球・円柱・円錐・楕円体・環) の接触を必ず落としていた** ⇒ 上限に達したら最近面から接触を返す (球どうしで数 1e-3 の誤差)
@@ -221,31 +220,31 @@ oracle: 重なる箱の depth と法線を **分離軸判定 (15 軸、箱の回
 baseline 退役 3 行 (`gjk` / `epa` / `GjkResult`、実配線 3、巻き込み 0) 呼出元は `contact` (solver の `detect_collisions`) と `colliders_overlap`、example は `examples/convex_contacts.rs`
 ⚠️ 衝突は依然として 1 点の接触 (manifold なし): 接触点は EPA の支持点で、接触拘束は位置と質量だけで解く (回転は拘束に入らない) 残り (F3b/c): `compound` (8) / `convex_mesh_builder` (2) / `convex_decompose` (2) / `box_collider::{axis_aligned, corner, corners}` / `cone::{apex, base_center}` / `from_metric_ball`
 
-### 第 46 increment (2026-10-03、全配線 program 第 16 件 — `material`/`replay`/`multi_world`/`sdf_fem_mesh` 未配線 34 item)
+### 第 46 increment (2026-10-03、配線作業 第 16 件 — `material`/`replay`/`multi_world`/`sdf_fem_mesh` 未配線 34 item)
 
 worker 4 本、全て src 無変更 変異: material 8/8、replay 7/10+3等価、multi_world 18/18、sdf_fem_mesh 10/10 baseline 34 行退役 ⚠️ **CI red 1 件発見・修正** (`b01848c`): full feature set clippy のみで型推論曖昧性、`collect::<BTreeSet<i64>>()` で解消 + preflight に同 feature set の clippy step を追加 (drift 恒久対処) ⚠️ sdf_fem_mesh worker 実測: `generate()`/`generate_marching_tets()` の境界判定不一致 (Backlog)
 
-### 第 45 increment (2026-10-03、全配線 program 第 15 件 — `thin_wall` 未配線 7 item)
+### 第 45 increment (2026-10-03、配線作業 第 15 件 — `thin_wall` 未配線 7 item)
 
 worker 1 本、src 無変更 変異 11/11 (実装) + 7/7 (配線) red baseline 7 行退役 ⚠️ worker 実測 (未修正、Backlog): `sample_surface_points` の無限ループ (極端 AABB + f32 ULP)、`measure_thickness_at`/`for_nozzle(0.0)` の silent footgun 2 件
 
-### 第 44 increment (2026-10-03、全配線 program 第 14 件 — `non_newtonian`/`laminate_failure`/`filter` 未配線 29 item)
+### 第 44 increment (2026-10-03、配線作業 第 14 件 — `non_newtonian`/`laminate_failure`/`filter` 未配線 29 item)
 
 worker 3 本、全て src 無変更 変異: non_newtonian 10/10 実装 + 1/1 配線、laminate_failure 8/8、filter 23/23 (harness の mtime 偽陽性を worker 自身が検出・再検証) baseline 31 行退役 (実配線 28 + 名前衝突 1 `anisotropic::FailureCriterion` + 重複 2)
 
-### 第 43 increment (2026-10-03、全配線 program 第 13 件 — `animation_blend` 未配線 11 item)
+### 第 43 increment (2026-10-03、配線作業 第 13 件 — `animation_blend` 未配線 11 item)
 
 worker 1 本、src 無変更 example 1 本が state-machine (go_animated/go_powered/go_ragdoll/update/lerp 等) 全 11 item を駆動 変異 22/22 red (lerp 単独変異は update 内部の sibling 呼出で推移的配線を確認済) baseline 11 行退役 + 名前衝突 4 行 (physics2d::lerp / dynamic_bvh・sim_modifier・vehicle::update、Backlog 記録)
 
-### 第 42 increment (2026-10-03、全配線 program 第 13 件 — `analytics_bridge` 未配線 11 item、features = std,analytics)
+### 第 42 increment (2026-10-03、配線作業 第 13 件 — `analytics_bridge` 未配線 11 item、features = std,analytics)
 
 worker 1 本、src 無変更 example 1 本が percentile reader + recorder 全 11 item を駆動、oracle は自前 nearest-rank + DDSketch256 契約窓 + HyperLogLog12 線形カウント式の再実装 変異 11/11 red baseline 11 行退役
 
-### 第 41 increment (2026-10-03、全配線 program 第 12 件 — `hyperelastic`/`compressible`/`interpolation`/`articulation` 未配線 47 item)
+### 第 41 increment (2026-10-03、配線作業 第 12 件 — `hyperelastic`/`compressible`/`interpolation`/`articulation` 未配線 47 item)
 
 worker 4 本、全て src 無変更 変異 red: hyperelastic 11/12 (silicone_soft の c2 1 ULP が観測不能)、compressible 実装 11/12 + 配線 10/12 (2 件は module 内 sibling 経由の別経路)、interpolation 11/12 (slerp の冗長 guard)、articulation 12/13 (apply_motors の force.is_zero() が算術等価) baseline 47 行退役 + motor::set_position_target (articulation example から真の呼出)
 
-### 第 39 increment (2026-10-03、全配線 program 第 9 件 (F2) — 静的 collider: `StaticCollider` と `PhysicsWorld::add_static_collider`)
+### 第 39 increment (2026-10-03、配線作業 第 9 件 (F2) — 静的 collider: `StaticCollider` と `PhysicsWorld::add_static_collider`)
 
 `PhysicsWorld` の衝突は「球 (body ごとの衝突半径) と SDF collider」だけで、`plane_collider` / `heightfield` / `trimesh` の球衝突は呼出元が 0 件だった `StaticCollider::{Plane, HeightField, TriMesh}` と `add_static_collider` / `remove_static_collider` / `static_collider_count` を足した 球 body を substep ごとに SDF collider と同じ位置 (逐次 / batched / bridge の 3 経路すべて) で面の法線方向へ深さだけ押し出す (追加のみの公開 API) 衝突球は body の衝突半径、無ければ `set_sdf_collision_radius` の既定値 (SDF と同じ)
 ⚠️ **oracle が既存の欠陥を 2 つ検出**: ① `HeightField::collide_sphere` が斜面で**垂直距離**を使っており球を `r·(1/cosθ − 1)` 埋めていた (傾き 1/2 で 0.0142 の誤差) ⇒ 法線方向の距離 (`Δy·n_y`) に ② 幅 0 の高さ場の `get_height` が `width − 1` の u32 underflow で panic (空の高さ場 / 間隔 0 は面なしとして None)
@@ -253,24 +252,24 @@ oracle は解析解: 床 / 傾いた平面 / 斜面の高さ場 / 谷の三角�
 baseline 退役 19 行 (実配線 19、巻き込み 0): plane 7 / heightfield 7 / trimesh 5 呼出元は `examples/static_colliders.rs`
 ⚠️ 既知の近似: `TriMesh::collide_aabb` は「中心への最近点が box の範囲内」を要件にするため、急な斜面で厳密な SAT より浅い貫入を見逃す (Backlog) 平面は両面 (背面に中心がある球はその側に保持される) 位置補正のみで摩擦は無い (斜面では滑る) `compound` と凸形状どうしの GJK/EPA は F3
 
-### 第 38 increment (2026-10-03、全配線 program 第 11 件 — `filament_db`/`linear_elastic_fem`/`neural`/`query` 未配線 51 item)
+### 第 38 increment (2026-10-03、配線作業 第 11 件 — `filament_db`/`linear_elastic_fem`/`neural`/`query` 未配線 51 item)
 
 worker 4 本、全て src 無変更 (既存 pub/pub(crate) item に example 経由の入口を追加するだけで配線) 変異 red: filament_db 15/15、linear_elastic_fem 20/20、neural 11/12 (hard_tanh 境界が等価)、query 14/15 (capsule_cast tie-break が近似等価) baseline 51 行退役 + 名前衝突 2 行 (motor/fluid_netcode の `compute`、Backlog)
 
 
-### 第 37 increment (2026-10-03、全配線 program TGS 裁定 (A) — `SolverBackend` で TGS family を `PhysicsWorld` の選択可能 solver に配線)
+### 第 37 increment (2026-10-03、配線作業 TGS 裁定 (A) — `SolverBackend` で TGS family を `PhysicsWorld` の選択可能 solver に配線)
 
 user 裁定 (A): `solver_tgs.rs` + hook 5 file (5268 行、pub(crate)、v1.0 で privatize) を `pub(crate)` のまま `#[non_exhaustive] SolverBackend { Xpbd, Tgs }` で配線 既定 `Xpbd` は構造的に無変更 既存の `Pgs6DofOrientedHooks`/`solve_oriented_islands_serial` (実装済み未呼出) を `step_tgs()` から呼ぶ oracle 13 本、変異 10/10 red baseline 6 行退役 ⚠️ **残 gap**: TGS は joint / kinematic target / SDF collider を解かない (rustdoc に明記、新 ソルバー実装が要るため今回は配線のみ)
 
-### 第 36 increment (2026-10-03、全配線 program 第 9 件 — `debug_render`/`sdf_destruction`/`gpu_sdf` 未配線 41 item、`eulerian_grid` 分散 primitive 14 件を負債 marker)
+### 第 36 increment (2026-10-03、配線作業 第 9 件 — `debug_render`/`sdf_destruction`/`gpu_sdf` 未配線 41 item、`eulerian_grid` 分散 primitive 14 件を負債 marker)
 
 worker 4 本 (debug_render 13/13 red、sdf_destruction 14/14 red (worker 自身が cap/drain 境界の穴を発見・閉じた)、gpu_sdf 18/18 red、eulerian_grid は trigger 2a で停止・報告のみ) ⚠️ eulerian_grid の分散 primitive 14 件は user 裁定「新規 pub は追加しない」で `ALLOW-UNWIRED` 10 件 + baseline 退役 4 件 + `set_v_solid`/`set_w_solid` 配線 baseline 退役 61 行、新規公開面 0 ⚠️ **TGS family (`solver_tgs*`、5268 行) は user 裁定 (A) 配線する で着手中** (別 worker、進行中)
 
-### 第 35 increment (2026-10-03、全配線 program 第 7-8 件 — `anomaly`/`pipeline`/`privacy`/`profiling`/`maxwell_fdtd`/`sketch`/`transient_thermal`/`joint` 8 module、未配線 171 item)
+### 第 35 increment (2026-10-03、配線作業 第 7-8 件 — `anomaly`/`pipeline`/`privacy`/`profiling`/`maxwell_fdtd`/`sketch`/`transient_thermal`/`joint` 8 module、未配線 171 item)
 
 worker 8 本、各 module に example 経由の production 入口 + oracle + 退化入力 test 変異 red: anomaly 48/48、pipeline 32/32、privacy 実装 46/47 + 配線 21/26 (生存は等価/guard 限界)、profiling 32/32、maxwell_fdtd 20/20、sketch 実装 31/31 + 配線 16/17 (生存 1 は構造的観測不能)、transient_thermal 15/15、joint 25/25 baseline 退役 135 行 + 名前衝突 5 行 (Backlog) ⚠️ `DDSketch::quantile` の doc 誤り (`α` → 正しくは `2α/(1+α)`) を修正、oracle 差替で ignore 解消 ⚠️ 残 2 件: joint の wrap-to-zero 二乗 / `solve_joints_breakable` が `PhysicsWorld::step` から未配線 (設計判断、user 裁定待ち)
 
-### 第 34 increment (2026-10-03、全配線 program 第 9 件 (F1) — 形状つき body: `Shape` と `PhysicsWorld::add_shaped_body`)
+### 第 34 increment (2026-10-03、配線作業 第 9 件 (F1) — 形状つき body: `Shape` と `PhysicsWorld::add_shaped_body`)
 
 `RigidBody::new` は質量が何でも慣性を単位球 (`m·2/5`) にしており、箱も輪も同じ torque で同じ角速度で回っていた 形状の閉形式 (`volume` / `inertia_diagonal` / `bounding_sphere_radius`) は box / cylinder / cone / ellipsoid / wedge / torus に実装されていたが呼出元が 0 件だった `Shape` (6 形状) と `PhysicsWorld::add_shaped_body(shape, density, 重心位置)` を足した body は密度 × 体積の質量、**重心まわりの主慣性**、重心まわりの外接球を衝突半径に持つ (追加のみの公開 API、`ShapeError` で退化・密度非正・桁あふれを拒否)
 ⚠️ **oracle が既存の数式欠陥を 3 つ検出**: ① `355/113` (π の近似、相対誤差 8.5e-8、torus は π² で 1.7e-7) を cylinder / ellipsoid / cone / torus が使っていた (`Fix128::PI` に) ② **円錐の慣性の係数が入れ替わっていた** (`3/80 r² + 3/20 h²`、正しくは重心まわりで `3/20 r² + 3/80 h²`、実測で相対誤差 40%) 重心位置 (頂点側 `−half_height/2`) も返すようにした ③ **楔の慣性が重心まわりでなかった** (`Iyy = w²/18`、正しくは `w²/24`、`Izz` も) 重心位置 (`−height/6`) を追加
@@ -278,7 +277,7 @@ oracle は 2 系統: 教科書の閉形式と、**立体の数値積分** (bound
 baseline 退役 13 行 (実配線 13、巻き込み 0): box / cone / cylinder / ellipsoid / torus / wedge の `volume` + `inertia_diagonal` と `ellipsoid::bounding_sphere_radius` 呼出元は `examples/shaped_bodies.rs` (6 形状に同じ torque、ω = τ·dt/I を印字)
 ⚠️ 衝突検出は依然として球 (外接球) 同士: 箱同士は球同士として検出される 形状自体の narrow-phase は F3 (GJK/EPA) で 残る未配線: `box_collider::{axis_aligned, corner, corners}` / `cone::{apex, base_center}`
 
-### 第 33 increment (2026-10-03、全配線 program 第 6 件 — `PhysicsWorld` API 44 本 / `multiphase` VOF・level-set / 構造 4 module の `allow(dead_code)` 撤去)
+### 第 33 increment (2026-10-03、配線作業 第 6 件 — `PhysicsWorld` API 44 本 / `multiphase` VOF・level-set / 構造 4 module の `allow(dead_code)` 撤去)
 
 `solver.rs` の 44 本を `examples/world_api_tour.rs` + oracle 32 本で配線 (`wake_body` の範囲外 index を無視に) `multiphase::advect_vof_rigid` + `VofScheme`、`cfd_solver::LevelSetReinit` + `StepOptions::with_level_set_reinit` + `StepError::ZeroReinitCount` (既定は `step` と bit 一致) oracle 21 本 `buckling` / `creep_longterm` / `fatigue` / `plastic` の module 全体 allow を撤去し `CREEP_FROZEN_AT` を凍結 guard に、残余 9 本は負債 marker 変異 red: multiphase 27/28 (生存 1 は `sweeps` の 1 周収束)、構造 19/19、guard 2/2、数式修正 12/12 (退化入力を `Err` にして guard 撤去を red に) baseline 退役 71 行 (実配線 55、名前衝突 10、guard 判定 1、dead_code 5) ⚠️ 数式 2 件を同時に修正: `snap_through_load_n` の 2 乗則 → 3 乗則 (golden 1302 N が誤った法則を pin していた)、`stress_at_cycles` の wrap する Newton → 閉形式 + 範囲 `Err` ⚠️ 残: TGS family (`solver_tgs*`、5 268 行、`pub(crate)`、PhysicsWorld から未接続) の扱いは user 裁定待ち
 
@@ -290,12 +289,12 @@ oracle: 16³ / 2・3 process と 32³ / 4 process で単一 process と bit 一�
 ⚠️ **512³ (1.34e8 cell) は実測していない**: 1 cell あたり約 277 B で計 37 GiB となりこの機 (32 GiB) に載らない 6.7e7 の実測から線形外挿すると 6 cycles で約 16 s だが**外挿**であり、より大きい機か 1 cell あたりのメモリ削減 (コンダクタンスが `[i64; 6]` で 48 B) が要る 単一 process の見積り「1 step 約 23 分」との比較は、同じ cycle 数・同じ機での実測ではないので**参考値**
 未着手: 1 cell あたりのメモリ削減 / 複数ホスト / FMG / 集約した粗 level の並列化
 
-### 第 31 increment (2026-10-02、全配線 program 第 5 件 — `coupled_field` / `coupled_iteration` の配線)
+### 第 31 increment (2026-10-02、配線作業 第 5 件 — `coupled_field` / `coupled_iteration` の配線)
 
 `reconcile_weighted` (整数重みの厳密和 + 除算 1 回、順序非依存) を新設して `add_assign` / `scale_div` / `same_grid_as` を配線、`step_thermoplastic` を `run_sub_iteration` に乗せ替えて緩和を `blend_from` に、CG の残差 norm を `residual_norm_l2_checked` に (wrap は `FemError::ResidualNormUnfaithful` で拒否) oracle 7 + 3 本 変異 red 6 / 等価 3 / 歯なし 1 (床の導出 sweep、Backlog) baseline 退役 19 行 (実配線 13、負債 marker 6) ⚠️ 残: `EquilibrationScale` の消費者 = CG の停止 norm の equilibrate (床側、別 task、golden 再生成を伴う)、`best_residual` の report 化は 2.0.0 列
 
 
-### 第 30 increment (2026-10-02、全配線 program 第 4 件 — RANS k-ε / k-ω と可変粘性拡散の配線)
+### 第 30 increment (2026-10-02、配線作業 第 4 件 — RANS k-ε / k-ω と可変粘性拡散の配線)
 
 `TurbulenceModel::{Smagorinsky, DynamicSmagorinsky, KEpsilon, KOmega, Prescribed}` を caller 所有の `RansState` に持たせて `CfdSolver::step_rans` で回し (`ys-1f` 裁定: `CfdSolver` に field を足すのは major なので状態は外に置く、反力の先例と同列)、`(k, ε)` の輸送 (production → 点 source → 調和平均の陽的拡散 → semi-Lagrangian 移流) と、新設 `diffuse_velocity_variable` (`∇·(ν∇u)` の MAC 形、edge は調和平均) で ν_t 場を運動量に届けた (`ys-1f` 相談: proxy では配線変異が恒等) 拡散数 `> 1/6` は `DiffusionUnstable` で拒否、clamp 発火は `TurbulenceSummary.clamped` で可視 oracle 13 本 (減衰閉形式 1 次収束 / 一様せん断 P/ε → 2.0909 / 2 層 Couette 1e-12 / 対数層恒等式 / 拒否) 変異 15/15 red (配線 6 + 実装 9) baseline 退役 11 行 (全部実配線) ⚠️ 残: 壁 model と RANS の壁 BC (`wall_k_epsilon` の Dirichlet) は未結合 (zero-gradient)、channel の対数則再現は CI 外の validation
 
@@ -305,21 +304,21 @@ oracle: 16³ / 2・3 process と 32³ / 4 process で単一 process と bit 一�
 oracle: rank を thread にして loopback socket で結んだ rank が、**単一 process と bit 一致** (5 形状 × rank 2〜8 × 開放 / 壁つき、owned 層の圧力と書いた全 face 速度) halo の遅延で不一致 / 別の分割の faces は拒否 / `multigrid_slab_bounds` は Gauss-Seidel の `slab_bounds` と別物 (2 の倍数に整列)
 ⚠️ 未着手: process 分離の harness (re-exec) と 256³〜512³ の実測 (段階 4b、別の y/n) 実測はこの段階では行っていない
 
-### 第 28 increment (2026-10-02、全配線 program 第 3 件 (c)(d) — P2G stencil の選択と密閉箱 + 適応 dt の配線)
+### 第 28 increment (2026-10-02、配線作業 第 3 件 (c)(d) — P2G stencil の選択と密閉箱 + 適応 dt の配線)
 
 `ParticleScatter::{Trilinear, Nearest}` を `p2g_normalized_with` / `CfdSolver::step_flip_with` から選べるようにして `p2g_nearest` を production に繋ぎ (閉形式: 面は共有 2 cell の粒子速度の平均、位置非依存、far face は最後の cell、wrap する粒子は堆積しない)、`FaceBc::no_slip_velocity` を ghost の読み手に配線、密閉箱 example 1 本で `set_closed_box_walls` / `set_u_bc` / `set_u_solid` / `enforce_solid_faces` / `compute_max_dt` / `step_adaptive` を配線 ⚠️ **`compute_max_dt` は静止に近い場で商が wrap して負の dt を返し、`step_adaptive` がそれを積分していた** (1 ulp の peak、`dx = 3/2` で再現) ⇒ `checked_mul` で cap 判定、非正の dt は無 step oracle 18 本 (`tests/analytic_flip_scatter.rs` 9 + `tests/analytic_adaptive_dt.rs` 9) 変異 17/17 red (実装 11 + 配線 6) baseline 退役 8 行 (全部実配線) + marker 2 件解消 ⚠️ 残: `step_flip` の free surface / 周期境界 (別 feature)、program 第 4 件 RANS
 
-### 第 27 increment (2026-10-02、全配線 program 第 3 件 (a)(b) — z-slab 分割をプロセス内で solver から選べる)
+### 第 27 increment (2026-10-02、配線作業 第 3 件 (a)(b) — z-slab 分割をプロセス内で solver から選べる)
 
 `PressureSolver::DecomposedGs` (全域 buffer + halo) / `BandedGs` (帯局所記憶域、新設 `project_pressure_banded` が面条件 → 分割 → 帯 → 書き戻し) で壁 4 の分散圧力解法を `CfdSolver` から到達可能にした oracle: ranks 8 通り × 格子 3 種 × 開放 / 密閉箱で `RedBlackGs` と bit 一致、拒否 4 経路 変異 5/5 red + 等価変異 1 (帯局所 ↔ 素の GS は bit 一致が仕様) baseline 退役 9 行 (うち `slab` 1 行は名前衝突の巻き込み、socket 側は未配線のまま) ⚠️ 残: socket / cross-process 経路の公開は transport の semver 判断
 
-### 第 26 increment (2026-10-02、全配線 program 第 2 件 — 壁関数の配線と C_μ の定数修正)
+### 第 26 increment (2026-10-02、配線作業 第 2 件 — 壁関数の配線と C_μ の定数修正)
 
 `turbulence::friction_velocity` (対数則の逆解、二分法 64 回固定) を新設して `CfdSolver::step_with_options` の `WallModel` から壁関数 (`y_plus` / `u_plus` / `wall_k_epsilon`) を初めて production に繋いだ 遷移点を 2 分岐の交点 11.4453 に置いて `u⁺` を連続化 oracle 8 本 (手計算 2 点で対数則を pin / 体積力 channel の力の釣合 `u_τ = √(G H/2)` 実測 0.707106781 / 底層で ghost と一致 / 1 step 閉形式 / 拒否) ⚠️ **`KE_C_MU` が 0.08995625 だった**のを oracle が検出し 0.09 に修正 (unit test の 1e-2 許容を 2⁻⁶⁰ に) baseline 退役 10 行 (全部実配線) ⚠️ 残: RANS (k-ε / k-ω の時間発展、program 第 4 件)、`dynamic_smagorinsky_cs`
 
-### 第 25 increment (2026-10-02、全配線 program 第 1 件 — 圧力解法の選択で Jacobi / BiCGStab を配線)
+### 第 25 increment (2026-10-02、配線作業 第 1 件 — 圧力解法の選択で Jacobi / BiCGStab を配線)
 
-user 制定の最重要項目「未配線 983 件 + module 丸ごと allow 13 file の全配線、全機能の oracle + panic test」(台帳 memory `project_alice_physics_full_wiring_program`) の 1 件目 `CfdSolver::step_with_pressure_solver(dt, PressureSolver)` で red-black GS / multigrid / Jacobi / BiCGStab を名指しし、退化入力 6 種は `PressureSolverError` で拒否して solver を触らない (`step` の黙った fallback は不変) oracle 7 本 (一致の許容差は最大値原理から導出、不動点と既定選択は bit)、`BicgstabStats` を pub に、example 1 本、baseline 退役 4 行 (全部実配線)
+「未配線 983 件 + module 丸ごと allow 13 file の配線、全機能の oracle + panic test」の 1 件目 `CfdSolver::step_with_pressure_solver(dt, PressureSolver)` で red-black GS / multigrid / Jacobi / BiCGStab を名指しし、退化入力 6 種は `PressureSolverError` で拒否して solver を触らない (`step` の黙った fallback は不変) oracle 7 本 (一致の許容差は最大値原理から導出、不動点と既定選択は bit)、`BicgstabStats` を pub に、example 1 本、baseline 退役 4 行 (全部実配線)
 ⚠️ 残: 分散 solver (`project_pressure_decomposed*` / `slab_local*`) は transport が `pub(crate)` のまま (公開は semver 判断で user に上げる)
 
 ### 第 24 increment (2026-10-02、World Auditor engine gap 3 点 — `reset_world()` / 型付き観測 API / rollback population fingerprint)
@@ -715,7 +714,7 @@ snapshot **+42 / −21** 削除はすべて `ElastoplasticIncrementRequest` が 
 - 修正 (bit 互換): `Fix128::sqrt` digit recurrence 50× / MSRV 1.70.0 → **1.85** 実証 + `resolver = "3"` / `crate-type` cdylib+staticlib / `panic = "unwind"` / SIMD dead code 除去 / README perf 表実測化 / lib.rs claim
 - **規律**: 解析解 oracle test を default config で必須 (substeps / iterations を変えて結果不変を assert)、golden hash は「変化検出」であって「正しさ」ではない
 - 1.2.0 内で完了 (旧 Backlog): engineering oracle 3 batch (thermal/fatigue 5 + solid 34 + fluid 39、src bug 8 + 9 件修正) / `iterations` 既定 1 (Small Steps) / contact solver の ALICE-TRT 3.2.0 parity 同期 / det_math atan2・acos・asin・tan・tanh / `Fix128::checked_div` / FFI panic 隔離 31 fn / loom model test / replay + alice-db 実動作化
-- 残 (Backlog、claude-config `project_todos_active`): oracle 未着手 module (`rolling_contact` / `fracture` / `sdf_destruction` / `soft_body_cut` / `layer_adhesion` / `warp_risk` / `kinematic_loop` / `sdf_force` / `anisotropic_friction` / `physics2d` / `fluid_netcode` 他 utility) / mutation score ≥ 80 % (core 6 + a* 5 module) / default damping 0.99 再考 / module 階層分け (core vs 教科書 wrapper)
+- 残: oracle 未着手 module (`rolling_contact` / `fracture` / `sdf_destruction` / `soft_body_cut` / `layer_adhesion` / `warp_risk` / `kinematic_loop` / `sdf_force` / `anisotropic_friction` / `physics2d` / `fluid_netcode` 他 utility) / mutation score ≥ 80 % (core 6 + a* 5 module) / default damping 0.99 再考 / module 階層分け (core vs 教科書 wrapper)
 
 ### 2.0 に送る semver-breaking 設計 (1.x では doc のみ、実装は 2.0 branch)
 
@@ -1183,6 +1182,3 @@ Neo-Hookean は `P = μF + [K(J−1) − μ]·cof(F)` (Mooney-Rivlin も `cof` �
 
 - ALICE-SDF v1.7.7 CHANGELOG — S1 morphology integration partner
 - [ALICE-TRT v3.1.0](https://github.com/ext-sakamoro/ALICE-TRT/releases/tag/v3.1.0) — GpuSolverBridge joint-solve GPU offload companion release
-- CLAUDE.md § ROADMAP 自律作成 / 更新規律 — 本 ROADMAP.md 作成の根拠
-- CLAUDE.md § auto memory loop 遅延禁止 — Phase 完了時の memory 更新規律
-- Memory pointer: `reference_alice_physics_v1_roadmap.md` in `~/.claude/projects/-Users-ys/memory/` (横断 view、詳細は本 file 参照)

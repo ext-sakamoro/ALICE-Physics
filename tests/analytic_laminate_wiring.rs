@@ -426,9 +426,8 @@ fn compute_abd_single_ply_matches_homogeneous_plate_formula() {
     assert_rel(abd.d.m33, q66 * t3_over_12, FIX_TOL, "D66 = Q66*t^3/12");
 }
 
-/// Invariant oracle (not a closed form against an external reference,
-/// per `~/claude-config/rules/analytic-oracle-tests.md`'s recognition of
-/// invariant-guard oracles as a distinct, legitimate category): splicing
+/// Invariant oracle (not a closed form against an external reference;
+/// an invariant guard is a distinct, legitimate kind of oracle): splicing
 /// a `thickness_mm = Fix128::ZERO` ply anywhere into a stack must leave
 /// `compute_abd`'s result bit-for-bit unchanged, because `z_upper ==
 /// z_lower` for that ply makes `delta_z = delta_z2 = delta_z3 =
