@@ -49,6 +49,7 @@ were introduced during that release window.
 - `eulerian_grid::project_pressure_multigrid` / `CfdSolver::step_multigrid`: 2 冪格子の幾何 multigrid 圧力射影
 - `PressureSolver::{DecomposedGs, BandedGs}` / `PressureSolverError::ZeroRanks`: z slab 分割の圧力解法 (単一プロセス解と bit 一致)、`BandedGs` は帯 + halo だけを持つ (464³ で 1 プロセスあたり 9.50 GiB → 1.30 GiB)
 - `eulerian_grid::project_pressure_distributed` / `PressureSolverError::NotDecomposed`: `DecomposedGs` / `BandedGs` / `DecomposedMultigrid` を 1 rank 1 スレッドで実行し、rank 間は halo 層をバイト列のメッセージとしてだけ受け渡す (各 rank は分散実行時の 1 プロセスと同じ状態だけを持つ) 結果は rank 数によらず `project_pressure` / `project_pressure_multigrid` と bit 一致
+- `eulerian_grid::project_pressure_distributed_with_report` / `DistributedProjectionReport`: `project_pressure_distributed` と同じ解に加え、slab 型 solver (`BandedGs` / `DecomposedMultigrid`) の各 rank が確保した作業領域 (面速度と面条件、halo 付き圧力帯、stencil) のバイト数を rank 順に返す (最大 rank と合計も) `DecomposedGs` は各 rank が grid 全体を複製するので空
 - `turbulence::friction_velocity` / `cfd_solver::{StepOptions, WallModel}` / `CfdSolver::step_with_options` / `StepReport` / `WallShearSummary`: 対数則の壁関数
 - `CfdSolver::step_rans` / `TurbulenceModel` / `RansState` / `RansReport`: Smagorinsky / dynamic Smagorinsky / k-ε / k-ω と可変粘性の運動量拡散 (`turbulence::smagorinsky_eddy_viscosity_with` も追加)
 - `CfdSolver::step_flip` / `step_flip_with`: FLIP / PIC の粒子経路 (粒子が領域全体を満たす場合のみ、自由表面は未対応)
@@ -224,6 +225,7 @@ were introduced during that release window.
 
 ### Fixed
 
+- `eulerian_grid` の slab 単位の面条件適用が軸ごとに 2 パス (非 Outflow を先、Outflow を後) になり、軸の低位端の Outflow 面が Inflow / 壁の隣にある場合も `MacGrid::enforce_face_boundaries` と bit 一致する (以前は 1 パスで、8³ では rank 数 1 でも各軸 64 面中 58〜62 面が不一致) `project_pressure_distributed` と in-process の `BandedGs` は面条件を分割前の grid 全体でなく分割後に各 rank が自分の面へ適用する (結果は不変)
 - `math::powf_pos` の整数指数部の上限 64 を撤廃した (64 以下の結果は不変) (AUD-A-S1W5-021)
 - `compressible::{riemann_invariants, stagnation_pressure_ratio}` が γ = 1 の等温極限を扱う (AUD-A-S1W5-007)
 - `coupled_iteration` / `creep_longterm` / `non_newtonian` / `wind_zone` / `anisotropic_friction` で二乗・冪の途中に `Fix128` が wrap していた (AUD-A-S3W3-011 / S2W1-003 / S2W2-002 / S3W3-001 / S2W3-002)
