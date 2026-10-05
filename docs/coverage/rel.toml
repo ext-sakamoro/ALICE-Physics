@@ -1,0 +1,1227 @@
+# Relativity (REL) coverage of ALICE-Physics, against an external reference frame.
+#
+# 実装が無い分野の範囲宣言
+#
+# What this table is: a declaration of the field's extent for a field the crate
+# does not implement. The source contains no relativistic kinematics, dynamics,
+# metric or geodesic code; every row is missing. It lists every capability that
+# the standard texts (Taylor-Wheeler, Spacetime Physics; Rindler, Relativity:
+# Special, General, and Cosmological; Misner-Thorne-Wheeler, Gravitation; Will,
+# Theory and Experiment in Gravitational Physics; Jackson, Classical
+# Electrodynamics ch.11-12 and 14; Rezzolla-Zanotti, Relativistic
+# Hydrodynamics; Alcubierre, Introduction to 3+1 Numerical Relativity),
+# reference implementations (Einstein Toolkit thorns, GRChombo, REBOUNDx gr /
+# gr_full / gr_potential, the Valencia relativistic hydrodynamics codes) and
+# standard benchmarks (Mercury perihelion advance, deflection of light at the
+# solar limb, Shapiro delay, GPS clock correction, muon lifetime extension,
+# Pound-Rebka redshift, invariant mass of a two-body collision, Hulse-Taylor
+# period decay, Marti-Muller relativistic shock tube, the apples-with-apples
+# numerical relativity tests) expect of a relativity code, one [[item]] per
+# capability. The table fixes the scope before any relativity module is
+# written. The rows are written by hand: the axes and the items come from the
+# reference frame, not from the modules that exist.
+#
+# Relativity here means: special-relativistic kinematics and dynamics, the
+# covariant form of electromagnetism, general relativity in closed form and as
+# geodesic motion in a given metric, the post-Newtonian expansion beyond the
+# orbit perturbation term, relativistic fluids, the entry of 3+1 numerical
+# relativity (declared, not planned), relativistic wave equations of a single
+# particle, and the units and time scales these need.
+#
+# Boundary with the other tables (one capability goes in one table only):
+#   - orbits under Newtonian gravity and their perturbations: the orbit table.
+#     The 1PN / Einstein-Infeld-Hoffmann N-body law (COV-ORBIT-033), the
+#     Schwarzschild 1PN acceleration as an orbit perturbation (COV-ORBIT-055)
+#     and the integrated Mercury perihelion benchmark (COV-ORBIT-104) are rows
+#     there. Here the closed-form relativistic results, geodesic motion in an
+#     exact metric, and post-Newtonian items beyond the perturbation term
+#     (PPN parameters, radiation reaction, gravitational waves).
+#   - Maxwell's equations solved on a grid and the particle pushers, including
+#     the relativistic pushers (COV-EM-079): the electromagnetics table. Here
+#     the covariant formalism (field tensor, field transformation, four-current)
+#     and the closed-form relativistic motion and radiation of a charge.
+#   - non-relativistic charged-particle motion, drifts and plasma models, and
+#     relativistic magnetohydrodynamics in flat space: the plasma table. Here
+#     relativistic hydrodynamics without magnetic fields and the general
+#     relativistic MHD entry on a curved background.
+#   - Compton scattering kinematics, nuclear mass defect and binding energy,
+#     pair production thresholds: the nuclear table. Here the general two-body
+#     collision and decay kinematics they are instances of.
+#   - non-relativistic quantum mechanics, including the perturbative fine
+#     structure of hydrogen: the quantum table. Relativistic wave equations of a
+#     single particle (Klein-Gordon, Dirac) are rows here because that table
+#     leaves them to this one. Quantum field theory is not a capability of a
+#     physics engine and has no row.
+#   - the fixed-point number and its range (Q64.64, overflow, elementary
+#     functions): the numerical-foundation table (COV-NUM-072, 076, 083); here
+#     only what relativity needs from it (units, the size of c and GM).
+#
+# Search notes: "Lorentz" matches the Lorentz force (src/electromagnetic.rs),
+# the Lorentz-Berthelot mixing rule (src/pair_potential.rs) and Lorentz
+# dispersive media (src/maxwell_fdtd.rs); "metric" matches the distance metric
+# of src/metric.rs (weighted norms, not a spacetime metric); "Minkowski"
+# matches the Minkowski difference of collision geometry; "secular" matches the
+# J2 drift of src/kepler.rs ("precession" itself has no match); "periapsis" matches Newtonian
+# Kepler orbits; "dilation" matches volumetric dilation in
+# src/hyperelastic.rs; "Shapiro" matches a compressible-flow textbook in
+# src/compressible.rs; "tensor" matches stress tensors; "gamma" matches the
+# ratio of specific heats, a wave spectrum shape and an RNG constant; "clock"
+# matches wall-clock time; "speed of light" matches only the normalised unit of
+# src/maxwell_fdtd.rs; "hyperbolic" matches the rejected hyperbolic Kepler
+# orbits; "horizon" matches the convex-hull horizon edges and "horizontal";
+# "deflection" matches beam deflection; "Riemann" matches the Riemann
+# invariants of src/compressible.rs; "lapse" matches the lapse rate of
+# src/atmosphere.rs; "Dirac" matches the smoothed Dirac delta of the surface
+# tension; "Thomas" matches the Thomas tridiagonal algorithm; "connection"
+# matches joint and rope connections; "Peters" matches Peterson in the stress
+# concentration code; "ISCO", "ADM", "TAI" and "TDB" match only inside other
+# words (viscosity, admissible, contain, filament db). "relativis", "geodesic", "Schwarzschild", "Einstein",
+# "redshift", "Doppler", "rapidity", "boost", "four-vector", "proper time",
+# "post-Newtonian", "Lense-Thirring", "Kerr" and "Christoffel" have no match
+# in src/. Rows below that say "src 0 件" were checked word by word.
+#
+# status (exactly one of):
+#   implemented+oracle     implemented, and at least one non-ignored test checks
+#                          it against an independent reference
+#   implemented-no-oracle  implemented, no such test
+#   partial                implemented with a restriction that the source states;
+#                          `limitation` quotes it, and the source carries a
+#                          `LIMITATION(<id>)` comment at that place
+#   missing                not implemented
+#   out-of-scope           not a capability of this field (reason in `evidence`)
+#
+# This axis is separate from the test ignore reasons (`known defect: ...`,
+# `src gap: ...`, `diagnostic`, `runtime`).
+#
+# keys: id (COV-REL-NNN) / axis / item / source (book, chapter, paper or
+# reference-implementation feature; no quoted text) / status / evidence
+# (`src/...rs:line`, `tests/...rs::test_fn`) / oracle_candidate / limitation
+# (verbatim quote of the source, required for `partial`).
+#
+# Reference values marked "参照値要確認" are to be checked against the original
+# publication before any test uses them. Lines marked "(推測)" were judged from
+# a search that found nothing and are to be confirmed. Ids of other tables cited
+# in `evidence` (COV-ORBIT-*, COV-EM-*, COV-NUM-*) are those of the tables as
+# written at the time of this table.
+#
+# Checked by scripts/coverage_check.py (tests: scripts/test_coverage_check.py).
+
+[[item]]
+id = "COV-REL-001"
+axis = "units"
+item = "physical constants c and G in SI and their exact / recommended values"
+source = "CODATA 2018; IAU 2015 Resolution B3"
+status = "missing"
+evidence = "無い (推測: speed of light / 299792458 / gravitational constant で src 0 件) src/maxwell_fdtd.rs は `c = 1` の正規化単位だけ (src/maxwell_fdtd.rs:10)、src/nbody.rs は G を引数で受ける"
+oracle_candidate = "c = 299 792 458 m/s が定義値として bit 一致で表せること"
+limitation = ""
+
+[[item]]
+id = "COV-REL-002"
+axis = "units"
+item = "geometric units (G = c = 1) and conversion of mass, length and time to and from SI"
+source = "MTW Box 1.8; Wald Appendix F"
+status = "missing"
+evidence = "無い (src 0 件: geometric / geometrized)"
+oracle_candidate = "太陽質量 → 長さ GM/c² と時間 GM/c³ の換算 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-REL-003"
+axis = "units"
+item = "fixed-point range for relativistic quantities (c, c², GM of the Sun in SI, gamma - 1 at low speed)"
+source = "IEEE 754 vs fixed point; Q64.64 format"
+status = "missing"
+evidence = "表現そのものは数値の基盤の表 (COV-NUM-072, 076) Q64.64 の整数部は i64 (src/math.rs:51) なので c² ≈ 9·10¹⁶ は入るが GM_sun ≈ 1.3·10²⁰ m³/s² は入らない (推測、軌道の表の SI overflow の記述 src/kepler.rs:37 と同型) γ − 1 ≈ v²/2c² は v = 1 m/s で 5.6·10⁻¹⁸ で 2⁻⁶⁴ ≈ 5.4·10⁻²⁰ より上"
+oracle_candidate = "γ − 1 を v ≪ c で閉形式 v²/2c² と相対誤差で突合、GM_sun を受ける単位系の選択が拒否か換算になること"
+limitation = ""
+
+[[item]]
+id = "COV-REL-004"
+axis = "sr-kinematics"
+item = "Lorentz transformation of events along one axis (standard configuration)"
+source = "Taylor-Wheeler ch.3; Rindler ch.2"
+status = "missing"
+evidence = "無い (src 0 件: lorentz transform / boost) Lorentz で当たるのは Lorentz 力・Lorentz-Berthelot・Lorentz 媒質の別語義だけ"
+oracle_candidate = "逆変換との合成が恒等、間隔 c²t² − x² の不変"
+limitation = ""
+
+[[item]]
+id = "COV-REL-005"
+axis = "sr-kinematics"
+item = "general boost in an arbitrary direction and composition with rotations (Lorentz group)"
+source = "Jackson §11.7; Rindler ch.2"
+status = "missing"
+evidence = "無い (src 0 件: boost)"
+oracle_candidate = "boost の合成が boost + Wigner 回転になること、Λᵀ η Λ = η"
+limitation = ""
+
+[[item]]
+id = "COV-REL-006"
+axis = "sr-kinematics"
+item = "relativistic velocity addition (collinear and general, non-commutative)"
+source = "Taylor-Wheeler ch.3; Rindler §2.10"
+status = "missing"
+evidence = "無い (src 0 件: velocity addition)"
+oracle_candidate = "u ⊕ v の大きさが c を超えないこと、u ⊕ v ≠ v ⊕ u (直交成分)"
+limitation = ""
+
+[[item]]
+id = "COV-REL-007"
+axis = "sr-kinematics"
+item = "time dilation of a moving clock"
+source = "Taylor-Wheeler ch.4"
+status = "missing"
+evidence = "無い (src 0 件: time dilation) dilation で当たるのは src/hyperelastic.rs の体積膨張だけ"
+oracle_candidate = "Δτ = Δt/γ を任意速度で"
+limitation = ""
+
+[[item]]
+id = "COV-REL-008"
+axis = "sr-kinematics"
+item = "length contraction"
+source = "Taylor-Wheeler ch.5"
+status = "missing"
+evidence = "無い (src 0 件: contraction (相対論の意味))"
+oracle_candidate = "L = L₀/γ と両端の同時刻の定義"
+limitation = ""
+
+[[item]]
+id = "COV-REL-009"
+axis = "sr-kinematics"
+item = "relativity of simultaneity and the invariant interval (timelike / spacelike / null classification, light cone)"
+source = "Taylor-Wheeler ch.3, ch.6; Rindler ch.2"
+status = "missing"
+evidence = "無い (src 0 件: simultaneity / interval / light cone)"
+oracle_candidate = "間隔の符号による因果の分類が全慣性系で一致"
+limitation = ""
+
+[[item]]
+id = "COV-REL-010"
+axis = "sr-kinematics"
+item = "four-vector type with the Minkowski inner product (signature convention)"
+source = "MTW ch.2; Rindler ch.5"
+status = "missing"
+evidence = "無い (src 0 件: four-vector) src の 3 成分型 (src/math.rs:1076) だけで 4 成分の型が無い Minkowski で当たるのは衝突形状の Minkowski 差だけ"
+oracle_candidate = "η の符号規約と、boost 後の内積の bit 一致"
+limitation = ""
+
+[[item]]
+id = "COV-REL-011"
+axis = "sr-kinematics"
+item = "four-velocity and four-acceleration (normalisation u·u = -c², u·a = 0)"
+source = "MTW ch.2, ch.6; Rindler ch.5"
+status = "missing"
+evidence = "無い (src 0 件: four-velocity)"
+oracle_candidate = "u·u = −c² と u·a = 0 の保持"
+limitation = ""
+
+[[item]]
+id = "COV-REL-012"
+axis = "sr-kinematics"
+item = "rapidity and its additivity for collinear boosts"
+source = "Taylor-Wheeler ch.3; Rindler §2.9"
+status = "missing"
+evidence = "無い (src 0 件: rapidity)"
+oracle_candidate = "tanh の加法定理と速度合成の一致"
+limitation = ""
+
+[[item]]
+id = "COV-REL-013"
+axis = "sr-kinematics"
+item = "proper time along a worldline (integration of dτ = dt / gamma)"
+source = "Taylor-Wheeler ch.4; MTW ch.2"
+status = "missing"
+evidence = "無い (src 0 件: proper time)"
+oracle_candidate = "等速円運動の時計の遅れ Δτ = Δt √(1 − v²/c²)"
+limitation = ""
+
+[[item]]
+id = "COV-REL-014"
+axis = "sr-kinematics"
+item = "hyperbolic motion (constant proper acceleration) and the Rindler horizon"
+source = "Rindler §3.8; MTW §6.2"
+status = "missing"
+evidence = "無い (推測: hyperbolic で当たるのは src/kepler.rs が拒否する双曲線軌道だけ、rindler は src 0 件)"
+oracle_candidate = "x(τ) = (c²/a)(cosh(aτ/c) − 1)、t(τ) = (c/a) sinh(aτ/c)"
+limitation = ""
+
+[[item]]
+id = "COV-REL-015"
+axis = "sr-kinematics"
+item = "relativistic Doppler shift (longitudinal and transverse)"
+source = "Rindler §2.15; Jackson §11.3"
+status = "missing"
+evidence = "無い (src 0 件: doppler) 音響の Doppler も無い"
+oracle_candidate = "f'/f = √((1+β)/(1−β)) と横方向の γ 因子"
+limitation = ""
+
+[[item]]
+id = "COV-REL-016"
+axis = "sr-kinematics"
+item = "aberration of light and the headlight (searchlight) effect"
+source = "Rindler §2.16; Jackson §11.3"
+status = "missing"
+evidence = "無い (src 0 件: aberration)"
+oracle_candidate = "cosθ' = (cosθ + β)/(1 + β cosθ)"
+limitation = ""
+
+[[item]]
+id = "COV-REL-017"
+axis = "sr-kinematics"
+item = "Thomas precession (Wigner rotation of successive non-collinear boosts)"
+source = "Jackson §11.8; MTW §6.5"
+status = "missing"
+evidence = "無い (推測: thomas で当たるのは三重対角の Thomas 法だけ、wigner は src 0 件) precession は src 0 件 (J2 の節の永年変化は src/kepler.rs にあるが歳差の語は使わない)"
+oracle_candidate = "円運動の Thomas 歳差角速度 (γ − 1)ω の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-REL-018"
+axis = "sr-kinematics"
+item = "observer-side appearance: light-travel time, Terrell rotation, relativistic beaming of a moving object"
+source = "Terrell 1959; Penrose 1959; Weiskopf, relativistic visualisation"
+status = "missing"
+evidence = "無い (src 0 件: terrell / light travel)"
+oracle_candidate = "球の像が球のまま回転して見えること (Penrose)"
+limitation = ""
+
+[[item]]
+id = "COV-REL-019"
+axis = "sr-dynamics"
+item = "relativistic momentum and energy (p = gamma m v, E = gamma m c^2) and kinetic energy (gamma - 1) m c^2"
+source = "Taylor-Wheeler ch.7; Rindler ch.6"
+status = "missing"
+evidence = "body の運動は Newton 力学 (速度に上限が無く運動量は m v) で、相対論の補正を入れる口が無い (src/solver.rs) (推測: gamma で当たるのは比熱比・波浪スペクトル・乱数の定数の別語義だけ)"
+oracle_candidate = "v ≪ c で ½ m v² + 3/8 m v⁴/c² の展開と一致"
+limitation = ""
+
+[[item]]
+id = "COV-REL-020"
+axis = "sr-dynamics"
+item = "mass-shell relation E^2 = (pc)^2 + (mc^2)^2 and massless particles (photons)"
+source = "Taylor-Wheeler ch.7; Rindler §6.3"
+status = "missing"
+evidence = "無い (src 0 件: mass shell / photon momentum)"
+oracle_candidate = "光子 E = pc、質量殻の保存"
+limitation = ""
+
+[[item]]
+id = "COV-REL-021"
+axis = "sr-dynamics"
+item = "relativistic equation of motion dp/dt = F (longitudinal and transverse response, gamma^3 m and gamma m)"
+source = "Rindler §6.4; Jackson §12.1"
+status = "missing"
+evidence = "body の運動は Newton 力学 (速度に上限が無く運動量は m v) で、相対論の補正を入れる口が無い (src/solver.rs)"
+oracle_candidate = "一定力での速度 v(t) = Ft/√(m² + F²t²/c²) が c に漸近"
+limitation = ""
+
+[[item]]
+id = "COV-REL-022"
+axis = "sr-dynamics"
+item = "integration of a relativistic particle under a general force (momentum as the state variable)"
+source = "Rezzolla-Zanotti ch.1; REBOUNDx gr"
+status = "missing"
+evidence = "無い (src 0 件: relativistic integrator)"
+oracle_candidate = "一定力の閉形式との軌跡突合と |v| < c の保持"
+limitation = ""
+
+[[item]]
+id = "COV-REL-023"
+axis = "sr-dynamics"
+item = "relativistic rocket equation"
+source = "Rindler §6.5; Ackeret 1946"
+status = "missing"
+evidence = "無い (src 0 件: rocket)"
+oracle_candidate = "Δ(rapidity) = (w/c) ln(m₀/m₁)"
+limitation = ""
+
+[[item]]
+id = "COV-REL-024"
+axis = "sr-dynamics"
+item = "conservation of four-momentum in collisions (elastic and inelastic, rest mass changes)"
+source = "Taylor-Wheeler ch.8; Rindler ch.6"
+status = "missing"
+evidence = "無い (推測) 剛体の衝突は Newton の運動量と反発係数 (src/solver.rs)"
+oracle_candidate = "完全非弾性衝突で生成物の静止質量 > 和"
+limitation = ""
+
+[[item]]
+id = "COV-REL-025"
+axis = "sr-dynamics"
+item = "invariant mass of a system and the centre-of-momentum frame"
+source = "Hagedorn, Relativistic Kinematics ch.2-3; PDG Kinematics review"
+status = "missing"
+evidence = "無い (src 0 件: invariant mass / centre of momentum)"
+oracle_candidate = "M² c⁴ = (ΣE)² − (Σp c)² が全慣性系で一致"
+limitation = ""
+
+[[item]]
+id = "COV-REL-026"
+axis = "sr-dynamics"
+item = "reaction threshold energy for a fixed target"
+source = "Hagedorn ch.4; PDG Kinematics review"
+status = "missing"
+evidence = "無い (推測) 対生成の閾値は NUCLEAR の表 (相対論の一般式だけここ)"
+oracle_candidate = "E_th = ((Σm_f)² − m_a² − m_b²)c²/(2 m_b) (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-REL-027"
+axis = "sr-dynamics"
+item = "two-body decay kinematics (momentum in the rest frame, lab angular distribution)"
+source = "Hagedorn ch.5; PDG Kinematics review"
+status = "missing"
+evidence = "無い (推測) 放射性崩壊の Q 値は NUCLEAR の表"
+oracle_candidate = "p* = c √[(M² − (m₁+m₂)²)(M² − (m₁−m₂)²)]/(2M)"
+limitation = ""
+
+[[item]]
+id = "COV-REL-028"
+axis = "sr-dynamics"
+item = "three-body decay kinematics (Dalitz plot limits)"
+source = "Hagedorn ch.7; PDG Kinematics review"
+status = "missing"
+evidence = "無い (src 0 件: dalitz)"
+oracle_candidate = "Dalitz 境界の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-REL-029"
+axis = "sr-dynamics"
+item = "relativistic elastic scattering (angle-energy relation, Mandelstam variables)"
+source = "Hagedorn ch.6; PDG Kinematics review"
+status = "missing"
+evidence = "無い (src 0 件: mandelstam)"
+oracle_candidate = "s + t + u = Σ m² c⁴、Compton 型の角度–エネルギー関係の一般形 (Compton 自体は NUCLEAR の表)"
+limitation = ""
+
+[[item]]
+id = "COV-REL-030"
+axis = "sr-dynamics"
+item = "Newtonian limit check: relativistic motion reduces to the Newtonian result to O(v^2/c^2)"
+source = "Rindler ch.6; Will ch.4"
+status = "missing"
+evidence = "比較相手の Newton 側は src/solver.rs と src/nbody.rs にあるが、相対論側が無い"
+oracle_candidate = "v/c → 0 で差が (v/c)² に比例して消えること"
+limitation = ""
+
+[[item]]
+id = "COV-REL-031"
+axis = "sr-dynamics"
+item = "relativistic option for bodies of the world (gamma-corrected momentum, speed limit c)"
+source = "Bullet / PhysX have none; game-physics relativity mods (A Slower Speed of Light)"
+status = "missing"
+evidence = "body の運動は Newton 力学 (速度に上限が無く運動量は m v) で、相対論の補正を入れる口が無い (src/solver.rs)"
+oracle_candidate = "速度上限 c と運動量の一致"
+limitation = ""
+
+[[item]]
+id = "COV-REL-032"
+axis = "charged-particle"
+item = "relativistic equation of motion of a charge, d(gamma m v)/dt = q(E + v x B)"
+source = "Jackson §12.1; Landau-Lifshitz vol.2 §17"
+status = "missing"
+evidence = "力の評価は Newton の運動量で使う閉形式だけ (src/electromagnetic.rs:106) 場の中の pusher は電磁気の表 (COV-EM-078 Boris、COV-EM-079 相対論的 pusher、どちらも missing)"
+oracle_candidate = "一様 B 中で |p| の厳密保存"
+limitation = ""
+
+[[item]]
+id = "COV-REL-033"
+axis = "charged-particle"
+item = "relativistic cyclotron frequency omega = qB / (gamma m) and gyroradius gamma m v / (qB)"
+source = "Jackson §12.2"
+status = "missing"
+evidence = "無い (推測) 非相対論の gyro 半径は tests/analytic_electromagnetic_wiring.rs::cyclotron_orbit_has_the_gyro_radius_m_v_over_q_b が test 内の積分で確かめるだけ"
+oracle_candidate = "γ = 2 で周期が 2 倍になること"
+limitation = ""
+
+[[item]]
+id = "COV-REL-034"
+axis = "charged-particle"
+item = "motion in a uniform electric field (hyperbolic trajectory, catenary in space)"
+source = "Landau-Lifshitz vol.2 §20; Jackson §12.3"
+status = "missing"
+evidence = "無い (src 0 件: uniform electric field の相対論的運動)"
+oracle_candidate = "x(t) = (c/qE)√(m²c² + (qEt)²) − mc²/qE"
+limitation = ""
+
+[[item]]
+id = "COV-REL-035"
+axis = "charged-particle"
+item = "crossed E and B fields: E x B drift for |E| < c|B| and runaway for |E| > c|B| (field-frame boost)"
+source = "Jackson §12.4"
+status = "missing"
+evidence = "無い (推測) 非相対論の E×B ドリフトは PLASMA の表"
+oracle_candidate = "|E| = c|B| を境に軌道の型が変わること"
+limitation = ""
+
+[[item]]
+id = "COV-REL-036"
+axis = "charged-particle"
+item = "Lienard-Wiechert fields of a moving charge and the field of a uniformly moving charge"
+source = "Jackson §14.1, §11.10"
+status = "missing"
+evidence = "無い (src 0 件: lienard / wiechert / retarded)"
+oracle_candidate = "等速電荷の場が Coulomb 場の boost に一致"
+limitation = ""
+
+[[item]]
+id = "COV-REL-037"
+axis = "charged-particle"
+item = "radiated power of an accelerated charge (Larmor formula and Lienard's relativistic generalisation)"
+source = "Jackson §14.2"
+status = "missing"
+evidence = "無い (src 0 件: larmor (放射の意味) / radiated power)"
+oracle_candidate = "P = (2/3) q² γ⁶ (a² − |v × a|²/c²)/(4π ε₀ c³)"
+limitation = ""
+
+[[item]]
+id = "COV-REL-038"
+axis = "charged-particle"
+item = "synchrotron radiation (critical frequency, angular spread 1/gamma)"
+source = "Jackson §14.6; Rybicki-Lightman ch.6"
+status = "missing"
+evidence = "無い (src 0 件: synchrotron)"
+oracle_candidate = "ω_c = (3/2) γ³ c / ρ"
+limitation = ""
+
+[[item]]
+id = "COV-REL-039"
+axis = "charged-particle"
+item = "radiation reaction (Abraham-Lorentz-Dirac, Landau-Lifshitz form)"
+source = "Jackson §16.2; Landau-Lifshitz vol.2 §76"
+status = "missing"
+evidence = "無い (src 0 件: radiation reaction)"
+oracle_candidate = "一様 B 中の螺旋減衰の時定数"
+limitation = ""
+
+[[item]]
+id = "COV-REL-040"
+axis = "covariant-em"
+item = "electromagnetic field tensor F^{mu nu} and its invariants (E^2 - c^2 B^2, E . B)"
+source = "Jackson §11.9; MTW §3.1"
+status = "missing"
+evidence = "無い (src 0 件: field tensor) tensor で当たるのは応力テンソルの別語義だけ"
+oracle_candidate = "boost 後に 2 つの不変量が一致"
+limitation = ""
+
+[[item]]
+id = "COV-REL-041"
+axis = "covariant-em"
+item = "transformation of E and B under a boost"
+source = "Jackson §11.10; Rindler ch.7"
+status = "missing"
+evidence = "無い (src 0 件: field transformation)"
+oracle_candidate = "純電場の boost で B = −v × E/c² が現れる"
+limitation = ""
+
+[[item]]
+id = "COV-REL-042"
+axis = "covariant-em"
+item = "four-current, four-potential and the Lorenz gauge"
+source = "Jackson §11.9; Rindler ch.7"
+status = "missing"
+evidence = "無い (推測) 格子の電流と電荷の連続の式は電磁気の表"
+oracle_candidate = "∂_μ J^μ = 0 の保持"
+limitation = ""
+
+[[item]]
+id = "COV-REL-043"
+axis = "covariant-em"
+item = "covariant Maxwell equations (d_mu F^{mu nu} = mu0 J^nu) as an API"
+source = "Jackson §11.9; MTW ch.3-4"
+status = "missing"
+evidence = "無い (推測) 格子の Maxwell 解法は電磁気の表 (src/maxwell_fdtd.rs、正規化単位 c = 1)"
+oracle_candidate = "平面波の boost 後も分散関係 ω = c k"
+limitation = ""
+
+[[item]]
+id = "COV-REL-044"
+axis = "covariant-em"
+item = "electromagnetic stress-energy tensor (energy density, Poynting vector, Maxwell stress as one tensor)"
+source = "Jackson §12.10; MTW §5.6"
+status = "missing"
+evidence = "無い (src 0 件: stress-energy)"
+oracle_candidate = "トレース 0、∂_μ T^{μν} = −F^{νλ} J_λ"
+limitation = ""
+
+[[item]]
+id = "COV-REL-045"
+axis = "gr-closed-form"
+item = "Schwarzschild radius, photon sphere (3GM/c^2) and innermost stable circular orbit (6GM/c^2)"
+source = "MTW ch.25; Hartle ch.9"
+status = "missing"
+evidence = "無い (src 0 件: schwarzschild / photon sphere、isco は viscosity 等の部分一致だけ)"
+oracle_candidate = "r_s = 2GM/c²、r_ph = 1.5 r_s、r_ISCO = 3 r_s"
+limitation = ""
+
+[[item]]
+id = "COV-REL-046"
+axis = "gr-closed-form"
+item = "gravitational time dilation of a static clock"
+source = "Hartle ch.6; Will ch.2"
+status = "missing"
+evidence = "無い (src 0 件: gravitational time dilation)"
+oracle_candidate = "dτ/dt = √(1 − r_s/r)"
+limitation = ""
+
+[[item]]
+id = "COV-REL-047"
+axis = "gr-closed-form"
+item = "gravitational redshift (Pound-Rebka, solar)"
+source = "Will ch.2; Pound-Rebka 1960"
+status = "missing"
+evidence = "無い (src 0 件: redshift)"
+oracle_candidate = "Δν/ν = gh/c² の弱場極限 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-REL-048"
+axis = "gr-closed-form"
+item = "perihelion advance per orbit, delta phi = 6 pi G M / (c^2 a (1 - e^2))"
+source = "MTW §40.5; Will ch.7"
+status = "missing"
+evidence = "無い (推測: perihel で src 0 件、periapsis は src/kepler.rs の Newton 軌道) 軌道の積分ベンチは軌道の表 (COV-ORBIT-104)"
+oracle_candidate = "水星の値 43″/世紀 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-REL-049"
+axis = "gr-closed-form"
+item = "deflection of light by a mass, 4GM / (c^2 b), with the PPN factor (1 + gamma)/2"
+source = "MTW §40.3; Will ch.7"
+status = "missing"
+evidence = "無い (推測: deflection で当たるのは梁・板のたわみの別語義だけ)"
+oracle_candidate = "太陽縁で 1.75″ (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-REL-050"
+axis = "gr-closed-form"
+item = "Shapiro time delay of a signal passing a mass"
+source = "Will ch.7; Shapiro 1964"
+status = "missing"
+evidence = "無い (src 0 件: shapiro (時間遅れ)) Shapiro で当たるのは src/compressible.rs の圧縮性流体の教科書名だけ"
+oracle_candidate = "往復遅延 Δt = (4GM/c³) ln(4 r₁ r₂ / b²) (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-REL-051"
+axis = "gr-closed-form"
+item = "geodetic (de Sitter) precession of a gyroscope in orbit"
+source = "MTW §40.7; Will ch.9"
+status = "missing"
+evidence = "無い (src 0 件: geodetic / de sitter)"
+oracle_candidate = "Ω = (3/2)(GM)^{3/2}/(c² r^{5/2}) (Gravity Probe B、参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-REL-052"
+axis = "gr-closed-form"
+item = "Lense-Thirring nodal precession and gyroscope frame dragging"
+source = "MTW §40.7; Ciufolini-Wheeler ch.6"
+status = "missing"
+evidence = "無い (src 0 件: lense / thirring / frame dragging)"
+oracle_candidate = "Ω_LT = 2GJ/(c² a³ (1 − e²)^{3/2})"
+limitation = ""
+
+[[item]]
+id = "COV-REL-053"
+axis = "gr-closed-form"
+item = "clock correction of a satellite in orbit (special and general relativistic terms, eccentricity term)"
+source = "Ashby 2003 Living Reviews; IS-GPS-200"
+status = "missing"
+evidence = "無い (src 0 件: gps / clock correction) clock で当たるのは wall-clock の別語義だけ"
+oracle_candidate = "GPS の 1 日あたり約 38 μs (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-REL-054"
+axis = "gr-closed-form"
+item = "tidal tensor and geodesic deviation in the Schwarzschild field (closed form)"
+source = "MTW ch.11, §31.2; Hartle ch.21"
+status = "missing"
+evidence = "無い (src 0 件: geodesic deviation / tidal tensor)"
+oracle_candidate = "半径方向の伸び 2GM/r³ と横方向の縮み GM/r³"
+limitation = ""
+
+[[item]]
+id = "COV-REL-055"
+axis = "gr-closed-form"
+item = "event horizon, escape condition and the Kerr horizon / ergosphere radii"
+source = "MTW ch.33; Hartle ch.15"
+status = "missing"
+evidence = "無い (src 0 件: ergosphere / kerr、horizon は凸包の horizon 辺と horizontal の別語義だけ)"
+oracle_candidate = "r_± = M ± √(M² − a²) (幾何単位)"
+limitation = ""
+
+[[item]]
+id = "COV-REL-056"
+axis = "metric-geodesic"
+item = "spacetime metric tensor type (4x4 symmetric, signature, inverse, determinant)"
+source = "MTW ch.8; Carroll ch.2"
+status = "missing"
+evidence = "無い (src 0 件: metric tensor / spacetime) metric で当たるのは src/metric.rs の距離の重み付きノルムの別語義だけ (src/metric.rs:1)"
+oracle_candidate = "η と Schwarzschild の逆行列の突合"
+limitation = ""
+
+[[item]]
+id = "COV-REL-057"
+axis = "metric-geodesic"
+item = "Christoffel symbols from a metric (analytic or by automatic / finite differences)"
+source = "MTW ch.8; Carroll ch.3"
+status = "missing"
+evidence = "無い (src 0 件: christoffel、connection は関節・rope の接続の別語義だけ)"
+oracle_candidate = "Schwarzschild の閉形式 Γ との突合"
+limitation = ""
+
+[[item]]
+id = "COV-REL-058"
+axis = "metric-geodesic"
+item = "timelike geodesic integration in a given metric"
+source = "MTW ch.25; Einstein Toolkit; Chandrasekhar, Mathematical Theory of Black Holes ch.3"
+status = "missing"
+evidence = "無い (src 0 件: geodesic)"
+oracle_candidate = "Schwarzschild 円軌道の周期と、E・L の保存"
+limitation = ""
+
+[[item]]
+id = "COV-REL-059"
+axis = "metric-geodesic"
+item = "null geodesic integration (relativistic ray tracing, black-hole shadow)"
+source = "MTW §25.6; GYOTO; Gralla-Lupsasca"
+status = "missing"
+evidence = "無い (src 0 件: null geodesic / ray tracing (重力の意味)) 光線と形状の交差は剛体の表、光学は光学の表"
+oracle_candidate = "影の半径の閉形式 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-REL-060"
+axis = "metric-geodesic"
+item = "constraint preservation along a geodesic (u . u = -c^2 drift) and conserved Killing quantities"
+source = "MTW §25.2; Carroll §3.8"
+status = "missing"
+evidence = "無い (src 0 件: killing)"
+oracle_candidate = "長時間積分の規格化誤差の上界"
+limitation = ""
+
+[[item]]
+id = "COV-REL-061"
+axis = "metric-geodesic"
+item = "coordinate charts: Schwarzschild, Eddington-Finkelstein, Kruskal, isotropic"
+source = "MTW ch.31; Hartle ch.12"
+status = "missing"
+evidence = "無い (src 0 件: eddington / kruskal / isotropic coordinates)"
+oracle_candidate = "地平線を跨ぐ落下が EF 座標で有限 τ"
+limitation = ""
+
+[[item]]
+id = "COV-REL-062"
+axis = "metric-geodesic"
+item = "Kerr metric (Boyer-Lindquist and Kerr-Schild) and equatorial / spherical orbits"
+source = "MTW ch.33; Chandrasekhar ch.6"
+status = "missing"
+evidence = "無い (src 0 件: kerr / boyer)"
+oracle_candidate = "順行・逆行 ISCO の閉形式 (Bardeen-Press-Teukolsky)"
+limitation = ""
+
+[[item]]
+id = "COV-REL-063"
+axis = "metric-geodesic"
+item = "weak-field (linearised) metric from a Newtonian potential, g_00 = -(1 + 2 Phi / c^2)"
+source = "MTW ch.18; Hartle ch.21"
+status = "missing"
+evidence = "無い (推測) Newton の重力場は src/nbody.rs (src/nbody.rs:3) と力の場にあるが計量にする code は無い"
+oracle_candidate = "弱場極限の測地線が Newton 加速度を返すこと"
+limitation = ""
+
+[[item]]
+id = "COV-REL-064"
+axis = "metric-geodesic"
+item = "parallel transport and Fermi-Walker transport of a spin vector along a worldline"
+source = "MTW §6.5, ch.40; Carroll §3.3"
+status = "missing"
+evidence = "無い (src 0 件: parallel transport / fermi-walker)"
+oracle_candidate = "円軌道で de Sitter 歳差に一致"
+limitation = ""
+
+[[item]]
+id = "COV-REL-065"
+axis = "metric-geodesic"
+item = "Riemann, Ricci and Einstein tensors from a metric, Kretschmann scalar"
+source = "MTW ch.14; Carroll ch.3"
+status = "missing"
+evidence = "無い (src 0 件: ricci / kretschmann、Riemann は src/compressible.rs の Riemann 不変量の別語義だけ)"
+oracle_candidate = "Schwarzschild で Ricci = 0、Kretschmann 48M²/r⁶"
+limitation = ""
+
+[[item]]
+id = "COV-REL-066"
+axis = "metric-geodesic"
+item = "numerical geodesic deviation (Jacobi field) along a geodesic"
+source = "MTW ch.11; Carroll §3.10"
+status = "missing"
+evidence = "無い (src 0 件: geodesic deviation)"
+oracle_candidate = "閉形式の潮汐テンソルとの突合"
+limitation = ""
+
+[[item]]
+id = "COV-REL-067"
+axis = "post-newtonian"
+item = "PPN formalism (gamma, beta and the other parameters) for metric theories"
+source = "Will ch.4; Will, Living Reviews 2014"
+status = "missing"
+evidence = "無い (src 0 件: ppn / parametrized)"
+oracle_candidate = "γ = β = 1 で GR の閉形式に一致"
+limitation = ""
+
+[[item]]
+id = "COV-REL-068"
+axis = "post-newtonian"
+item = "1PN periastron advance of a binary of comparable masses (closed form)"
+source = "Damour-Deruelle 1985; Poisson-Will, Gravity ch.9"
+status = "missing"
+evidence = "無い (推測) EIH の N 体は軌道の表 (COV-ORBIT-033)"
+oracle_candidate = "k = 3 (GM/c² a(1−e²)) の質量依存の突合"
+limitation = ""
+
+[[item]]
+id = "COV-REL-069"
+axis = "post-newtonian"
+item = "1.5PN spin-orbit and 2PN spin-spin precession of a binary"
+source = "Barker-O'Connell 1975; Poisson-Will ch.9"
+status = "missing"
+evidence = "無い (src 0 件: spin-orbit (重力の意味))"
+oracle_candidate = "軌道平均の歳差率の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-REL-070"
+axis = "post-newtonian"
+item = "2PN and higher conservative equations of motion"
+source = "Blanchet, Living Reviews 2014"
+status = "missing"
+evidence = "無い (src 0 件: 2pn)"
+oracle_candidate = "円軌道のエネルギー E(x) の PN 展開係数 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-REL-071"
+axis = "post-newtonian"
+item = "2.5PN radiation reaction (Burke-Thorne or Iyer-Will form)"
+source = "Poisson-Will ch.12; Iyer-Will 1993"
+status = "missing"
+evidence = "無い (src 0 件: radiation reaction (重力の意味))"
+oracle_candidate = "円軌道の半径減衰率が四重極公式に一致"
+limitation = ""
+
+[[item]]
+id = "COV-REL-072"
+axis = "post-newtonian"
+item = "gravitational-wave luminosity and strain from the quadrupole formula"
+source = "MTW ch.36; Maggiore vol.1 ch.3"
+status = "missing"
+evidence = "無い (src 0 件: gravitational wave / quadrupole)"
+oracle_candidate = "円軌道 2 体の光度の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-REL-073"
+axis = "post-newtonian"
+item = "orbital decay of a binary (Peters-Mathews: da/dt, de/dt, merger time)"
+source = "Peters 1964; Peters-Mathews 1963"
+status = "missing"
+evidence = "無い (推測: peters で当たるのは応力集中の Peterson だけ)"
+oracle_candidate = "円軌道の合体時間 T = (5/256) c⁵ a⁴ /(G³ m₁ m₂ M)"
+limitation = ""
+
+[[item]]
+id = "COV-REL-074"
+axis = "post-newtonian"
+item = "chirp mass, inspiral frequency evolution and waveform (Newtonian chirp, TaylorT4)"
+source = "Maggiore vol.1 ch.4; LALSuite"
+status = "missing"
+evidence = "無い (src 0 件: chirp)"
+oracle_candidate = "df/dt の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-REL-075"
+axis = "post-newtonian"
+item = "gravitomagnetic force on a test body in the weak field of a rotating mass"
+source = "Mashhoon 2003; Ciufolini-Wheeler ch.6"
+status = "missing"
+evidence = "無い (src 0 件: gravitomagnetic)"
+oracle_candidate = "Lense-Thirring の閉形式と軌道の節の移動の一致"
+limitation = ""
+
+[[item]]
+id = "COV-REL-076"
+axis = "rel-fluid"
+item = "perfect-fluid stress-energy tensor and the special-relativistic Euler equations in conservation form"
+source = "Rezzolla-Zanotti ch.3-4; Font, Living Reviews 2008"
+status = "missing"
+evidence = "無い (src 0 件: relativistic euler / stress-energy) 非相対論の圧縮性 Euler は src/compressible.rs の閉形式"
+oracle_candidate = "静止状態で Newton の Euler に一致"
+limitation = ""
+
+[[item]]
+id = "COV-REL-077"
+axis = "rel-fluid"
+item = "conserved-to-primitive recovery (D, S, tau to rho, v, p)"
+source = "Noble et al. 2006; Rezzolla-Zanotti §7.5"
+status = "missing"
+evidence = "無い (src 0 件: primitive recovery)"
+oracle_candidate = "往復変換の誤差と γ ≫ 1 での頑健さ"
+limitation = ""
+
+[[item]]
+id = "COV-REL-078"
+axis = "rel-fluid"
+item = "relativistic equations of state (ideal Gamma-law, Synge gas, Taub-Mathews)"
+source = "Rezzolla-Zanotti ch.2; Mignone et al. 2005"
+status = "missing"
+evidence = "無い (推測) 理想気体は src/compressible.rs の非相対論のみ"
+oracle_candidate = "Taub の不等式を満たすこと"
+limitation = ""
+
+[[item]]
+id = "COV-REL-079"
+axis = "rel-fluid"
+item = "relativistic sound speed and characteristic speeds"
+source = "Rezzolla-Zanotti §4.7"
+status = "missing"
+evidence = "無い (src 0 件: relativistic sound speed) 非相対論の音速は src/compressible.rs"
+oracle_candidate = "c_s < c/√3 (超相対論的極限)"
+limitation = ""
+
+[[item]]
+id = "COV-REL-080"
+axis = "rel-fluid"
+item = "relativistic Riemann solvers (HLL, HLLC, exact Marti-Muller)"
+source = "Marti-Muller, Living Reviews 2015; Mignone-Bodo 2005"
+status = "missing"
+evidence = "無い (推測) 非相対論側も Riemann 不変量の閉形式 (src/compressible.rs) だけで Riemann 解法は無い"
+oracle_candidate = "Martí-Müller の厳密解との突合"
+limitation = ""
+
+[[item]]
+id = "COV-REL-081"
+axis = "rel-fluid"
+item = "general-relativistic hydrodynamics on a fixed background (Valencia formulation)"
+source = "Banyuls et al. 1997; Font, Living Reviews 2008"
+status = "missing"
+evidence = "無い (src 0 件: valencia)"
+oracle_candidate = "Schwarzschild 中の Bondi 降着の定常解"
+limitation = ""
+
+[[item]]
+id = "COV-REL-082"
+axis = "rel-fluid"
+item = "Tolman-Oppenheimer-Volkoff equilibrium of a static star"
+source = "MTW ch.23; Hartle ch.24"
+status = "missing"
+evidence = "無い (src 0 件: tov / tolman)"
+oracle_candidate = "一様密度の Schwarzschild 内部解"
+limitation = ""
+
+[[item]]
+id = "COV-REL-083"
+axis = "rel-fluid"
+item = "general-relativistic MHD on a curved background (entry)"
+source = "Gammie et al. 2003 HARM; Porth et al. 2019 EHT code comparison"
+status = "missing"
+evidence = "無い (推測) 平坦時空の相対論的 MHD は PLASMA の表、ここは曲がった背景の上だけ"
+oracle_candidate = "Fishbone-Moncrief トーラスの平衡 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-REL-084"
+axis = "rel-fluid"
+item = "special-relativistic SPH"
+source = "Rosswog, Living Reviews 2015"
+status = "missing"
+evidence = "無い (推測) SPH は流体の表に非相対論のものだけ"
+oracle_candidate = "相対論的衝撃管で格子解と突合"
+limitation = ""
+
+[[item]]
+id = "COV-REL-085"
+axis = "numerical-relativity"
+item = "3+1 decomposition (lapse, shift, spatial metric, extrinsic curvature)"
+source = "Alcubierre ch.2; Baumgarte-Shapiro ch.2"
+status = "missing"
+evidence = "無い (推測: adm は admissible 等の部分一致、lapse は src/atmosphere.rs の気温減率の別語義だけ)"
+oracle_candidate = "Minkowski の自明解の保持"
+limitation = ""
+
+[[item]]
+id = "COV-REL-086"
+axis = "numerical-relativity"
+item = "Hamiltonian and momentum constraint evaluation"
+source = "Alcubierre §2.4; Baumgarte-Shapiro ch.2"
+status = "missing"
+evidence = "無い (src 0 件: hamiltonian constraint)"
+oracle_candidate = "Schwarzschild 初期データで拘束が離散化次数で収束"
+limitation = ""
+
+[[item]]
+id = "COV-REL-087"
+axis = "numerical-relativity"
+item = "BSSN (or CCZ4) evolution system"
+source = "Alcubierre ch.2.8; Baumgarte-Shapiro ch.11; Einstein Toolkit McLachlan"
+status = "missing"
+evidence = "無い (src 0 件: bssn / ccz4)"
+oracle_candidate = "gauge wave で 4 次収束 (apples-with-apples)"
+limitation = ""
+
+[[item]]
+id = "COV-REL-088"
+axis = "numerical-relativity"
+item = "gauge conditions (1+log slicing, Gamma-driver shift)"
+source = "Alcubierre ch.4"
+status = "missing"
+evidence = "無い (src 0 件: 1+log / gamma-driver)"
+oracle_candidate = "puncture の定常化"
+limitation = ""
+
+[[item]]
+id = "COV-REL-089"
+axis = "numerical-relativity"
+item = "initial data (Brill-Lindquist, Bowen-York, puncture method)"
+source = "Alcubierre ch.3; Baumgarte-Shapiro ch.3"
+status = "missing"
+evidence = "無い (src 0 件: bowen / brill / puncture)"
+oracle_candidate = "Brill-Lindquist の ADM 質量"
+limitation = ""
+
+[[item]]
+id = "COV-REL-090"
+axis = "numerical-relativity"
+item = "apparent horizon finder"
+source = "Thornburg, Living Reviews 2007; Einstein Toolkit AHFinderDirect"
+status = "missing"
+evidence = "無い (src 0 件: apparent horizon)"
+oracle_candidate = "Schwarzschild で r = 2M を再現"
+limitation = ""
+
+[[item]]
+id = "COV-REL-091"
+axis = "numerical-relativity"
+item = "gravitational-wave extraction (Psi_4, Regge-Wheeler-Zerilli)"
+source = "Alcubierre ch.8; Einstein Toolkit WeylScal4"
+status = "missing"
+evidence = "無い (src 0 件: psi4 / zerilli)"
+oracle_candidate = "摂動した Schwarzschild の準固有振動 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-REL-092"
+axis = "numerical-relativity"
+item = "adaptive mesh refinement for numerical relativity (Berger-Oliger, moving boxes)"
+source = "Einstein Toolkit Carpet; GRChombo"
+status = "missing"
+evidence = "無い (推測) 汎用の格子適応も数値の基盤の表で missing"
+oracle_candidate = "robust stability test"
+limitation = ""
+
+[[item]]
+id = "COV-REL-093"
+axis = "rel-quantum"
+item = "Klein-Gordon equation (free solutions, dispersion relation)"
+source = "Sakurai, Advanced QM ch.3; Greiner, Relativistic QM ch.1"
+status = "missing"
+evidence = "無い (推測) 波動関数の型・複素数の型そのものが無い (量子の表の前提と同じ)"
+oracle_candidate = "ω² = c²k² + m²c⁴/ħ²"
+limitation = ""
+
+[[item]]
+id = "COV-REL-094"
+axis = "rel-quantum"
+item = "Dirac equation (free spinor solutions, Zitterbewegung)"
+source = "Sakurai, Advanced QM ch.3; Greiner ch.2-3"
+status = "missing"
+evidence = "無い (推測: Dirac で当たるのは表面張力の平滑化 Dirac delta だけ)"
+oracle_candidate = "Zitterbewegung の周波数 2mc²/ħ"
+limitation = ""
+
+[[item]]
+id = "COV-REL-095"
+axis = "rel-quantum"
+item = "Dirac hydrogen energy levels (exact Sommerfeld fine-structure formula)"
+source = "Sakurai, Advanced QM ch.3.8; Bethe-Salpeter"
+status = "missing"
+evidence = "無い (推測) 摂動の微細構造は量子の表"
+oracle_candidate = "Sommerfeld 式を α の展開で摂動結果と突合"
+limitation = ""
+
+[[item]]
+id = "COV-REL-096"
+axis = "time-scales"
+item = "relativistic time scales and their conversion (TAI, TT, TCG, TCB, TDB)"
+source = "IAU 2000 Resolutions B1.3-B1.9; IERS Conventions 2010 ch.10; SOFA"
+status = "missing"
+evidence = "無い (src 0 件: tcb、tai / tdb は contain・filament db 等の部分一致だけ)"
+oracle_candidate = "TCG − TT の線形率 L_G (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-REL-097"
+axis = "time-scales"
+item = "light-time correction and relativistic signal propagation in the solar system (one-way and two-way ranging)"
+source = "IERS Conventions 2010 ch.11; Moyer, Formulation for Observed and Computed Values"
+status = "missing"
+evidence = "無い (src 0 件: light time)"
+oracle_candidate = "Shapiro 項を含む往復時間の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-REL-098"
+axis = "benchmark"
+item = "Mercury perihelion advance from the closed form with solar parameters"
+source = "Will ch.7; Einstein 1915"
+status = "missing"
+evidence = "閉形式が無い (行 COV-REL-048) 軌道を積分して測るベンチは軌道の表 (COV-ORBIT-104)"
+oracle_candidate = "43″/世紀 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-REL-099"
+axis = "benchmark"
+item = "deflection of light at the solar limb (closed form and by null-geodesic integration)"
+source = "Dyson-Eddington-Davidson 1920; Will ch.7"
+status = "missing"
+evidence = "閉形式も null 測地線も無い (行 COV-REL-049 / COV-REL-059)"
+oracle_candidate = "1.75″ (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-REL-100"
+axis = "benchmark"
+item = "GPS clock offset per day (gravitational and velocity terms, opposite signs)"
+source = "Ashby 2003"
+status = "missing"
+evidence = "無い (行 COV-REL-053)"
+oracle_candidate = "重力項と速度項が逆符号で、合計約 38 μs/日 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-REL-101"
+axis = "benchmark"
+item = "muon lifetime extension in the atmosphere and in a storage ring"
+source = "Rossi-Hall 1941; Bailey et al. 1977"
+status = "missing"
+evidence = "無い (行 COV-REL-007)"
+oracle_candidate = "蓄積リングの寿命 = γ τ₀ (γ と τ₀ は参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-REL-102"
+axis = "benchmark"
+item = "Pound-Rebka tower redshift"
+source = "Pound-Rebka 1960"
+status = "missing"
+evidence = "無い (行 COV-REL-047)"
+oracle_candidate = "塔の高さ h で gh/c² (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-REL-103"
+axis = "benchmark"
+item = "Shapiro delay of the Cassini conjunction (bound on PPN gamma)"
+source = "Bertotti-Iess-Tortora 2003"
+status = "missing"
+evidence = "無い (行 COV-REL-050 / COV-REL-067)"
+oracle_candidate = "γ − 1 の上限 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-REL-104"
+axis = "benchmark"
+item = "invariant mass of a two-body collision and production threshold (e.g. antiproton production)"
+source = "PDG Kinematics review; Chamberlain et al. 1955"
+status = "missing"
+evidence = "無い (行 COV-REL-025 / COV-REL-026)"
+oracle_candidate = "固定標的の反陽子生成閾値 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-REL-105"
+axis = "benchmark"
+item = "Hulse-Taylor binary pulsar period decay"
+source = "Weisberg-Taylor 2005; Peters-Mathews 1963"
+status = "missing"
+evidence = "無い (行 COV-REL-073)"
+oracle_candidate = "dP/dt の観測値と GR の予言 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-REL-106"
+axis = "benchmark"
+item = "Gravity Probe B geodetic and frame-dragging drifts"
+source = "Everitt et al. 2011"
+status = "missing"
+evidence = "無い (行 COV-REL-051 / COV-REL-052)"
+oracle_candidate = "geodetic と frame dragging の歳差率 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-REL-107"
+axis = "benchmark"
+item = "Schwarzschild ISCO and photon orbit found by geodesic integration"
+source = "Chandrasekhar ch.3; Hartle ch.9"
+status = "missing"
+evidence = "無い (行 COV-REL-058 / COV-REL-045)"
+oracle_candidate = "6GM/c² の内側で円軌道が不安定になること"
+limitation = ""
+
+[[item]]
+id = "COV-REL-108"
+axis = "benchmark"
+item = "twin paradox with acceleration phases (proper-time difference along two worldlines)"
+source = "Taylor-Wheeler ch.4; Rindler §3.9"
+status = "missing"
+evidence = "無い (行 COV-REL-013 / COV-REL-014)"
+oracle_candidate = "双曲運動の区間を挟んだ固有時の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-REL-109"
+axis = "benchmark"
+item = "relativistic shock tube (Marti-Muller problems 1 and 2)"
+source = "Marti-Muller, Living Reviews 2015"
+status = "missing"
+evidence = "無い (行 COV-REL-080)"
+oracle_candidate = "厳密 Riemann 解の L1 誤差と収束次数"
+limitation = ""
+
+[[item]]
+id = "COV-REL-110"
+axis = "benchmark"
+item = "relativistic blast wave (Blandford-McKee self-similar solution)"
+source = "Blandford-McKee 1976"
+status = "missing"
+evidence = "無い (行 COV-REL-076)"
+oracle_candidate = "Γ² ∝ t⁻³ の自己相似則"
+limitation = ""
+
+[[item]]
+id = "COV-REL-111"
+axis = "benchmark"
+item = "uniform-density TOV star against the Schwarzschild interior solution"
+source = "Schwarzschild 1916; MTW §23.7"
+status = "missing"
+evidence = "無い (行 COV-REL-082)"
+oracle_candidate = "中心圧の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-REL-112"
+axis = "benchmark"
+item = "numerical relativity apples-with-apples tests (robust stability, gauge wave, linear wave)"
+source = "Alcubierre et al. 2004"
+status = "missing"
+evidence = "無い (行 COV-REL-087)"
+oracle_candidate = "各 test の収束次数"
+limitation = ""
