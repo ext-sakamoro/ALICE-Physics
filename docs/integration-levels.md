@@ -15,8 +15,8 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | step | runs when `PhysicsWorld` steps | 19 |
 | world API | used through another `PhysicsWorld` method | 7 |
 | binding | reached only from the C ABI, Python or WebAssembly bindings | 2 |
-| standalone | a Rust API that only examples call | 120 |
-| unused | no caller outside tests | 3 |
+| standalone | a Rust API that only examples call | 121 |
+| unused | no caller outside tests | 2 |
 
 | Module | Level | Items: step / world API / binding / standalone / unused | Reached from bindings |
 |--------|-------|----------------------------------------------------------|-----------------------|
@@ -116,6 +116,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `non_newtonian` | standalone | 0 / 0 / 0 / 14 / 0 | — |
 | `particle` | standalone | 0 / 0 / 0 / 13 / 0 | — |
 | `phase_change` | standalone | 0 / 0 / 0 / 7 / 0 | — |
+| `physics2d` | standalone | 0 / 0 / 0 / 39 / 0 | — |
 | `piezoelectric` | standalone | 0 / 0 / 0 / 8 / 0 | — |
 | `pipeline` | standalone | 0 / 0 / 0 / 43 / 0 | — |
 | `plastic` | standalone | 0 / 0 / 0 / 11 / 2 | — |
@@ -170,7 +171,6 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `wind_zone` | standalone | 0 / 0 / 0 / 6 / 0 | — |
 | `fatigue` | unused (standalone 6 of 13 items) | 0 / 0 / 0 / 6 / 7 | — |
 | `motor` | unused (standalone 6 of 15 items) | 0 / 0 / 0 / 6 / 9 | — |
-| `physics2d` | unused (standalone 15 of 39 items) | 0 / 0 / 0 / 15 / 24 | — |
 
 ### C ABI (`--features ffi`)
 
