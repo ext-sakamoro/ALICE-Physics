@@ -1,0 +1,917 @@
+# Multiphase and free-surface flow coverage of ALICE-Physics, against an
+# external reference frame.
+#
+# What this table is: every capability that the standard texts (Tryggvason-
+# Scardovelli-Zaleski, Direct Numerical Simulations of Gas-Liquid Multiphase
+# Flows; Osher-Fedkiw, Level Set Methods; Bridson, Fluid Simulation for Computer
+# Graphics; Brackbill-Kothe-Zemach 1992 CSF), reference implementations (OpenFOAM
+# interFoam / interPhaseChangeFoam / multiphaseEulerFoam) and standard benchmarks
+# (Zalesak disk, static drop and spurious currents, Rayleigh-Taylor growth rate,
+# Martin-Moyce dam break, Hysing rising bubble, capillary-wave dispersion) expect
+# of a multiphase / free-surface flow code, one [[item]] per capability, with what
+# the crate has today. The rows are written by hand: the axes and the items come
+# from the reference frame, not from the modules that exist, so a missing
+# capability is visible instead of absent. Closed-form modules (non_newtonian,
+# smoke_fire, buoyancy_zone, wave_ship) are not counted as flow capabilities;
+# they are cited in `evidence` where they are the nearest thing.
+#
+# Boundary with the other tables (one capability goes in one table only):
+#   - single-phase incompressible flow, the SPH / PBF / FLIP single-phase
+#     machinery (kernels, density, equation of state, particle-grid transfer)
+#     and the generalised-Newtonian / viscoelastic viscosity of a single-phase
+#     momentum equation: the CFD table (this table has the free surface, the
+#     interface and the phase-wise properties)
+#   - latent heat, the Stefan problem and the enthalpy method: the thermal
+#     table (this table has only the flow conditions at the interface)
+#   - combustion chemistry (Arrhenius rates, species): the chemistry table
+#     (this table has only the flow driven by combustion)
+#   - non-Newtonian constitutive laws themselves: the material table (this
+#     table has only their use in a multiphase flow)
+#   - floating bodies, buoyancy on rigid bodies and fluid-structure coupling:
+#     the coupling / rigid tables; ocean wave spectra: the environment table
+#
+# status (exactly one of):
+#   implemented+oracle     implemented, and at least one non-ignored test checks
+#                          it against an independent reference
+#   implemented-no-oracle  implemented, no such test
+#   partial                implemented with a restriction that the source states;
+#                          `limitation` quotes it, and the source carries a
+#                          `LIMITATION(<id>)` comment at that place
+#   missing                not implemented
+#   out-of-scope           not a capability of this field (reason in `evidence`)
+#
+# This axis is separate from the test ignore reasons (`known defect: ...`,
+# `src gap: ...`, `diagnostic`, `runtime`). A capability that exists with a
+# recorded defect keeps its status and cites the known-defect test in
+# `evidence`; it is not `missing`.
+#
+# keys: id (COV-MULTIPHASE-NNN) / axis / item / source (book, chapter, paper or
+# reference-implementation feature; no quoted text) / status / evidence
+# (`src/...rs:line`, `tests/...rs::test_fn`) / oracle_candidate / limitation
+# (verbatim quote of the source, required for `partial`).
+#
+# Reference values marked "参照値要確認" are to be checked against the original
+# publication before any test uses them. Lines marked "(推測)" were judged from
+# a search that found nothing and are to be confirmed.
+#
+# Checked by scripts/coverage_check.py (tests: scripts/test_coverage_check.py).
+
+[[item]]
+id = "COV-MULTIPHASE-001"
+axis = "interface capturing: VOF"
+item = "VOF volume-fraction transport by a prescribed velocity (algebraic, donor-cell upwind / semi-Lagrangian)"
+source = "Tryggvason-Scardovelli-Zaleski, Direct Numerical Simulations of Gas-Liquid Multiphase Flows ch.5; Hirt-Nichols 1981"
+status = "partial"
+evidence = "src/multiphase.rs:389 (VofScheme::Upwind / SemiLagrangian、[0,1] に clamp) tests/analytic_multiphase_wiring.rs::upwind_courant_one_translates_the_slab_by_one_cell_per_step_on_every_axis / tests/analytic_multiphase_wiring.rs::semi_lagrangian_integer_displacement_translates_exactly_on_every_axis / tests/audit_multiphase.rs::quarter_courant_blend_and_volume_conservation_for_both_schemes known defect: tests/audit_multiphase.rs::upwind_slab_translates_k_cells_for_k_greater_than_one"
+oracle_candidate = "非一様な速度場 (剛体回転) での体積保存と形状誤差"
+limitation = "src/multiphase.rs:135 'Simplification: assumes uniform velocity across the grid (rigid-body convection).'"
+
+[[item]]
+id = "COV-MULTIPHASE-002"
+axis = "interface capturing: VOF"
+item = "VOF transport in a spatially varying (solver) velocity field"
+source = "Tryggvason-Scardovelli-Zaleski, Direct Numerical Simulations of Gas-Liquid Multiphase Flows ch.5; OpenFOAM interFoam alpha equation"
+status = "missing"
+evidence = "advect_vof_rigid は全 cell 同一速度のみ (src/multiphase.rs:375) CfdSolver は VOF 場を持たず level set だけを運ぶ (src/cfd_solver.rs:868)"
+oracle_candidate = "Zalesak の円盤回転 / 単一渦変形で体積保存"
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-003"
+axis = "interface capturing: VOF"
+item = "geometric (PLIC-based) VOF advection, split or unsplit"
+source = "Tryggvason-Scardovelli-Zaleski, Direct Numerical Simulations of Gas-Liquid Multiphase Flows ch.5; Rider-Kothe 1998; Weymouth-Yue 2010"
+status = "missing"
+evidence = "PLIC の再構成関数はあるが移流に使う経路が無い (src/interface_capture.rs:35) 移流は代数的 (upwind / semi-Lagrangian) のみ"
+oracle_candidate = "Zalesak の円盤回転で体積誤差が丸め程度"
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-004"
+axis = "interface capturing: VOF"
+item = "high-resolution algebraic VOF / interface compression (MULES, CICSAM, HRIC, THINC)"
+source = "OpenFOAM interFoam MULES + cAlpha; Ubbink-Issa 1999 (CICSAM)"
+status = "missing"
+evidence = "module doc が高次化を未着手と明記 (src/multiphase.rs:25)"
+oracle_candidate = "界面幅が時間で広がらないこと (1D 段差の移流で遷移 cell 数)"
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-005"
+axis = "interface capturing: VOF"
+item = "PLIC interface normal (Youngs gradient of the fraction)"
+source = "Tryggvason-Scardovelli-Zaleski, Direct Numerical Simulations of Gas-Liquid Multiphase Flows ch.5; Youngs 1982"
+status = "implemented+oracle"
+evidence = "src/interface_capture.rs:203 tests/analytic_interface_capture_wiring.rs::normal_of_a_linear_ramp_is_minus_the_gradient_direction / tests/analytic_interface_capture_wiring.rs::sphere_vof_normal_points_from_fluid_to_gas_along_the_radius"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-006"
+axis = "interface capturing: VOF"
+item = "PLIC plane offset from the volume fraction (analytic cut volume and its inversion)"
+source = "Tryggvason-Scardovelli-Zaleski, Direct Numerical Simulations of Gas-Liquid Multiphase Flows ch.5; Scardovelli-Zaleski 2000"
+status = "implemented+oracle"
+evidence = "src/interface_capture.rs:233 src/interface_capture.rs:340 tests/analytic_interface_capture_wiring.rs::oblique_cut_matches_independent_quadrature / tests/analytic_interface_capture_wiring.rs::corner_tetrahedron_regime_matches_the_closed_form / tests/analytic_interface_capture_wiring.rs::plane_offset_round_trips_to_the_requested_volume"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-007"
+axis = "interface capturing: VOF"
+item = "improved PLIC normals (ELVIRA / LVIRA / mixed Youngs-centred / height-function normal)"
+source = "Tryggvason-Scardovelli-Zaleski, Direct Numerical Simulations of Gas-Liquid Multiphase Flows ch.5; Pilliod-Puckett 2004"
+status = "missing"
+evidence = "plic_normal は中心差分の Youngs 法のみ (src/interface_capture.rs:203) (推測: 同義語 elvira / lvira / height function で 0 件)"
+oracle_candidate = "平面界面で normal が厳密 (2 次精度の再構成)"
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-008"
+axis = "interface capturing: VOF"
+item = "volume of a phase from the fraction field"
+source = "Tryggvason-Scardovelli-Zaleski, Direct Numerical Simulations of Gas-Liquid Multiphase Flows ch.5"
+status = "implemented+oracle"
+evidence = "src/multiphase.rs:343 (advect_vof_rigid の戻り値) tests/analytic_multiphase_wiring.rs::the_returned_volume_is_the_fraction_sum_times_dx_cubed"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-009"
+axis = "interface capturing: level set"
+item = "signed-distance initialisation of a level set (sphere)"
+source = "Osher-Fedkiw, Level Set Methods and Dynamic Implicit Surfaces ch.2"
+status = "implemented+oracle"
+evidence = "src/multiphase.rs:409 tests/audit_multiphase.rs::sphere_level_set_is_the_signed_distance_at_every_node / tests/analytic_multiphase_wiring.rs::the_sphere_seed_is_the_exact_signed_distance_at_perfect_square_offsets_and_signed_elsewhere"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-010"
+axis = "interface capturing: level set"
+item = "signed-distance initialisation from an arbitrary SDF / surface"
+source = "Osher-Fedkiw, Level Set Methods and Dynamic Implicit Surfaces ch.7"
+status = "missing"
+evidence = "level set の初期化は球だけ (src/multiphase.rs:409) (推測: SDF から Grid3d を作る公開関数は見当たらない)"
+oracle_candidate = "箱 SDF からの初期化で各 cell が厳密な距離"
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-011"
+axis = "interface capturing: level set"
+item = "level-set advection in the solver velocity field (semi-Lagrangian)"
+source = "Osher-Fedkiw, Level Set Methods and Dynamic Implicit Surfaces ch.3; Bridson, Fluid Simulation for Computer Graphics ch.3"
+status = "implemented-no-oracle"
+evidence = "src/cfd_solver.rs:2750 (cell 中心速度で back-trace) 検証は変化の有無だけ (src/cfd_solver.rs::level_set_advection_moves_interface) module doc は uniform velocity approx と書くが実装は cell ごとの速度 (src/cfd_solver.rs:20)"
+oracle_candidate = "剛体回転 1 周後の φ=0 等値面の位置誤差 (Zalesak)"
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-012"
+axis = "interface capturing: level set"
+item = "high-order level-set advection (HJ-ENO / HJ-WENO with TVD Runge-Kutta)"
+source = "Osher-Fedkiw, Level Set Methods and Dynamic Implicit Surfaces ch.3; Jiang-Peng 2000"
+status = "missing"
+evidence = "level set の移流は semi-Lagrangian 1 本 (src/cfd_solver.rs:2750)"
+oracle_candidate = "1D 移流で格子収束次数 5"
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-013"
+axis = "interface capturing: level set"
+item = "reinitialisation by pseudo-time iteration (Sussman-Smereka-Osher)"
+source = "Osher-Fedkiw, Level Set Methods and Dynamic Implicit Surfaces ch.7; Sussman-Smereka-Osher 1994"
+status = "partial"
+evidence = "src/multiphase.rs:449 (LevelSetReinit::PseudoTime で solver から選択) tests/analytic_multiphase_wiring.rs::a_signed_distance_plane_is_a_fixed_point_of_pseudo_time_to_the_bit / tests/analytic_multiphase_wiring.rs::pseudo_time_one_iteration_on_a_slope_two_plane_moves_the_interior_by_half_dx_toward_the_zero_level 中心差分で upwind 無し、反復を増やすと体積を失う (16^3 球で実測)"
+oracle_candidate = "球の体積が反復回数に依存しないこと"
+limitation = "src/multiphase.rs:444 'Adequate for coarse grids (< 64³) and moderate deformation'"
+
+[[item]]
+id = "COV-MULTIPHASE-014"
+axis = "interface capturing: level set"
+item = "reinitialisation by the fast sweeping method (Zhao)"
+source = "Osher-Fedkiw, Level Set Methods and Dynamic Implicit Surfaces ch.7; Zhao 2005"
+status = "implemented+oracle"
+evidence = "src/interface_capture.rs:51 (CfdSolver の既定) tests/engineering_oracles_fluid.rs::interface_capture_fast_sweeping_recovers_the_distance_function"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-015"
+axis = "interface capturing: level set"
+item = "fast marching method"
+source = "Osher-Fedkiw, Level Set Methods and Dynamic Implicit Surfaces ch.7; Sethian 1996"
+status = "missing"
+evidence = "距離関数の再構成は fast sweeping と擬時間のみ (推測: fast marching / heap の同義語で 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-016"
+axis = "interface capturing: level set"
+item = "interface-preserving reinitialisation (sub-cell fix, Russo-Smereka)"
+source = "Russo-Smereka 2000; Hartmann et al. 2008"
+status = "missing"
+evidence = "擬時間は零等値面を sgn=0 で凍結するだけ (src/multiphase.rs:434) (推測)"
+oracle_candidate = "再初期化 N 回で零等値面が動かない (球の半径)"
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-017"
+axis = "interface capturing: level set"
+item = "level-set mass correction / particle level set (Enright et al.)"
+source = "Osher-Fedkiw, Level Set Methods and Dynamic Implicit Surfaces ch.9; Enright-Fedkiw-Ferziger-Mitchell 2002"
+status = "missing"
+evidence = "level set に体積補正は無い (推測: particle level set / mass correction で 0 件)"
+oracle_candidate = "Enright の変形試験で体積損失"
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-018"
+axis = "interface capturing: level set"
+item = "narrow-band / sparse level-set storage"
+source = "Osher-Fedkiw, Level Set Methods and Dynamic Implicit Surfaces ch.7; Museth 2013 (VDB)"
+status = "missing"
+evidence = "Grid3d は全 cell 密 (src/multiphase.rs:67) (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-019"
+axis = "interface capturing: level set"
+item = "coupled level set and VOF (CLSVOF)"
+source = "Sussman-Puckett 2000"
+status = "missing"
+evidence = "level set と VOF は別々の場で連成する経路が無い (推測: clsvof で 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-020"
+axis = "interface capturing: level set"
+item = "volume enclosed by a level set (smoothed Heaviside integral)"
+source = "Osher-Fedkiw, Level Set Methods and Dynamic Implicit Surfaces ch.1"
+status = "missing"
+evidence = "Grid3d に対して体積を返すのは VOF 用の total_volume_vof だけ (推測)"
+oracle_candidate = "球の体積 4/3 pi R^3 への格子収束"
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-021"
+axis = "interface capturing: other representations"
+item = "phase field (Cahn-Hilliard)"
+source = "Jacqmin 1999; Ding-Spelt-Shu 2007"
+status = "missing"
+evidence = "(推測: cahn / phase field で src 0 件)"
+oracle_candidate = "平衡界面の tanh 形状と厚さ"
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-022"
+axis = "interface capturing: other representations"
+item = "conservative phase field / conservative level set (Allen-Cahn, Olsson-Kreiss)"
+source = "Olsson-Kreiss 2005; Chiu-Lin 2011"
+status = "missing"
+evidence = "(推測: allen / conservative level set で src 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-023"
+axis = "interface capturing: other representations"
+item = "front tracking (Lagrangian interface markers)"
+source = "Tryggvason-Scardovelli-Zaleski, Direct Numerical Simulations of Gas-Liquid Multiphase Flows ch.6; Unverdi-Tryggvason 1992"
+status = "missing"
+evidence = "(推測: front tracking / marker で流体側の該当 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-024"
+axis = "interface capturing: other representations"
+item = "interface surface extraction (triangulated zero level of the fraction / level set)"
+source = "Bridson, Fluid Simulation for Computer Graphics ch.7; Lorensen-Cline 1987"
+status = "missing"
+evidence = "src/collision_mesh_gen.rs は SDF closure 用の marching tetrahedra で level set / VOF 場には繋がっていない (別系統として数えない)"
+oracle_candidate = "球の level set から抽出した面積の格子収束"
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-025"
+axis = "surface tension"
+item = "continuum surface force (CSF) body force"
+source = "Tryggvason-Scardovelli-Zaleski, Direct Numerical Simulations of Gas-Liquid Multiphase Flows ch.7; Brackbill-Kothe-Zemach 1992"
+status = "implemented+oracle"
+evidence = "src/surface_tension_csf.rs:121 tests/analytic_csf_wiring.rs::young_laplace_pressure_jump_from_a_poisson_solve_of_the_csf_force / tests/engineering_oracles_fluid.rs::surface_tension_csf_band_integral_matches_young_laplace / tests/analytic_csf_wiring.rs::csf_force_points_toward_the_centre_of_curvature"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-026"
+axis = "surface tension"
+item = "smoothed Dirac delta of the interface"
+source = "Osher-Fedkiw, Level Set Methods and Dynamic Implicit Surfaces ch.1; Tryggvason-Scardovelli-Zaleski, Direct Numerical Simulations of Gas-Liquid Multiphase Flows ch.7"
+status = "implemented+oracle"
+evidence = "src/surface_tension_csf.rs:97 tests/engineering_oracles_fluid.rs::surface_tension_csf_smeared_delta_has_unit_area / tests/analytic_csf_wiring.rs::smeared_delta_hat_values_and_degenerate_epsilon"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-027"
+axis = "surface tension"
+item = "interface normal from the level-set gradient"
+source = "Osher-Fedkiw, Level Set Methods and Dynamic Implicit Surfaces ch.1"
+status = "implemented+oracle"
+evidence = "src/surface_tension_csf.rs:73 tests/analytic_csf_wiring.rs::normal_of_a_tilted_plane_matches_the_analytic_unit_vector"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-028"
+axis = "surface tension"
+item = "interface curvature from the level set (divergence of the normal)"
+source = "Osher-Fedkiw, Level Set Methods and Dynamic Implicit Surfaces ch.1; Tryggvason-Scardovelli-Zaleski, Direct Numerical Simulations of Gas-Liquid Multiphase Flows ch.7"
+status = "partial"
+evidence = "src/multiphase.rs:491 tests/audit_multiphase.rs::curvature_of_a_sphere_is_two_over_radius_at_two_resolutions / tests/engineering_oracles_fluid.rs::multiphase_sphere_level_set_curvature_and_eikonal_seed known defect: tests/audit_multiphase.rs::curvature_is_invariant_under_scaling_of_phi"
+oracle_candidate = "|grad phi| != 1 の場 (2 phi) で同じ曲率を返すこと"
+limitation = "src/multiphase.rs:488 'scaled by `1/|∇φ|` (assumed close to 1 for a well-reinitialised field)'"
+
+[[item]]
+id = "COV-MULTIPHASE-029"
+axis = "surface tension"
+item = "curvature from height functions"
+source = "Tryggvason-Scardovelli-Zaleski, Direct Numerical Simulations of Gas-Liquid Multiphase Flows ch.7; Cummins-Francois-Kothe 2005"
+status = "missing"
+evidence = "曲率は level set の中心差分のみ (推測: height function で流体側 0 件)"
+oracle_candidate = "静止液滴の曲率誤差が 2 次で減る"
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-030"
+axis = "surface tension"
+item = "curvature from the VOF field (convolved fraction / reconstructed distance function)"
+source = "Tryggvason-Scardovelli-Zaleski, Direct Numerical Simulations of Gas-Liquid Multiphase Flows ch.7; Cummins-Francois-Kothe 2005 (RDF)"
+status = "missing"
+evidence = "curvature_at は level set 専用、VOF からの曲率は無い (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-031"
+axis = "surface tension"
+item = "surface tension in the solver momentum (CSF on the MAC faces)"
+source = "Tryggvason-Scardovelli-Zaleski, Direct Numerical Simulations of Gas-Liquid Multiphase Flows ch.7; OpenFOAM interFoam surface tension"
+status = "implemented+oracle"
+evidence = "src/cfd_solver.rs:1667 tests/audit_cfd_solver.rs::csf_x_line_impulse_matches_young_laplace_to_2_percent / tests/audit_cfd_solver.rs::csf_y_and_z_line_impulses_equal_the_x_one_by_sphere_symmetry"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-032"
+axis = "surface tension"
+item = "balanced-force surface tension (force and pressure gradient on the same faces)"
+source = "Francois et al. 2006; Popinet 2018"
+status = "missing"
+evidence = "CSF は cell 中心で求めて隣接 2 face に 1/2 ずつ配る (src/cfd_solver.rs:1672) 圧力勾配と同じ face 上の離散化ではない"
+oracle_candidate = "静止液滴の寄生流れが丸め程度に落ちること"
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-033"
+axis = "surface tension"
+item = "sharp-interface pressure jump (ghost fluid method)"
+source = "Osher-Fedkiw, Level Set Methods and Dynamic Implicit Surfaces ch.10; Kang-Fedkiw-Liu 2000"
+status = "missing"
+evidence = "(推測: ghost fluid で 0 件) 表面張力は CSF の体積力のみ"
+oracle_candidate = "静止液滴の Laplace 圧が 1 cell で立つこと"
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-034"
+axis = "surface tension"
+item = "capillary time-step restriction (Brackbill)"
+source = "Brackbill-Kothe-Zemach 1992; Denner-van Wachem 2015"
+status = "missing"
+evidence = "compute_max_dt は移流 CFL のみ (src/cfd_solver.rs:945) (推測)"
+oracle_candidate = "制限を超えた dt で毛管波が発散すること"
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-035"
+axis = "surface tension"
+item = "static contact angle boundary condition"
+source = "OpenFOAM interFoam constantAlphaContactAngle; de Gennes-Brochard-Wyart-Quere ch.1"
+status = "missing"
+evidence = "(推測: contact angle / wetting で流体側 0 件) 壁は速度条件のみ"
+oracle_candidate = "壁上の静止液滴の形が球冠 (接触角 theta)"
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-036"
+axis = "surface tension"
+item = "dynamic contact angle / moving contact line slip"
+source = "Cox 1986; Afkhami-Zaleski-Bussmann 2009"
+status = "missing"
+evidence = "(推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-037"
+axis = "surface tension"
+item = "Marangoni stress (temperature- or surfactant-dependent sigma)"
+source = "Tryggvason-Scardovelli-Zaleski, Direct Numerical Simulations of Gas-Liquid Multiphase Flows ch.7"
+status = "missing"
+evidence = "表面張力係数は場全体で定数 (src/cfd_solver.rs:880) (推測: marangoni で 0 件)"
+oracle_candidate = "Young-Goldstein-Block の熱毛管泳動速度"
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-038"
+axis = "surface tension"
+item = "particle surface tension by pairwise cohesion (Becker-Teschner)"
+source = "Becker-Teschner 2007; Akinci et al. 2013"
+status = "implemented-no-oracle"
+evidence = "src/fluid.rs:407 (PBF の凝集加速度) 既存 test は surface_tension = 0 で回している (tests/default_configs.rs::fluid_config_default_block_falls_as_a_whole_without_explosion)"
+oracle_candidate = "対称 2 粒子で重心不変かつ引力の大きさが閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-039"
+axis = "surface tension"
+item = "SPH surface tension (CSF on particles / inter-particle force, Morris / Adami)"
+source = "Morris 2000; Adami-Hu-Adams 2010"
+status = "missing"
+evidence = "src/sdf_sph.rs は表面張力を未着手と明記 (src/sdf_sph.rs:23)"
+oracle_candidate = "正方形の液塊が円に緩和し Laplace 圧"
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-040"
+axis = "two-phase momentum"
+item = "variable density across the interface (one-fluid, smoothed Heaviside rho(phi))"
+source = "Tryggvason-Scardovelli-Zaleski, Direct Numerical Simulations of Gas-Liquid Multiphase Flows ch.3; OpenFOAM interFoam rho = alpha rho1 + (1-alpha) rho2"
+status = "missing"
+evidence = "CfdSolver の密度は場全体で 1 値 (src/cfd_solver.rs:874) level set は CSF と移流にだけ使われ密度を変えない"
+oracle_candidate = "Rayleigh-Taylor の線形成長率 (密度比で決まる)"
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-041"
+axis = "two-phase momentum"
+item = "variable viscosity across the interface (mu(phi))"
+source = "Tryggvason-Scardovelli-Zaleski, Direct Numerical Simulations of Gas-Liquid Multiphase Flows ch.3"
+status = "missing"
+evidence = "粘性は場全体で 1 値 (src/cfd_solver.rs の dynamic_viscosity_pas) (推測)"
+oracle_candidate = "粘性比のある 2 層 Couette / Poiseuille の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-042"
+axis = "two-phase momentum"
+item = "variable-coefficient pressure Poisson equation div(grad p / rho) = div u* / dt"
+source = "Tryggvason-Scardovelli-Zaleski, Direct Numerical Simulations of Gas-Liquid Multiphase Flows ch.3; Bridson, Fluid Simulation for Computer Graphics ch.6"
+status = "missing"
+evidence = "projection は定数密度 (src/eulerian_grid.rs:1069)"
+oracle_candidate = "静水圧で 2 層の圧力勾配が各層の rho g"
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-043"
+axis = "two-phase momentum"
+item = "consistent mass-momentum transport for large density ratio"
+source = "Rudman 1998; Raessi-Pitsch 2012"
+status = "missing"
+evidence = "密度一定のため対象外ではなく未実装 (推測)"
+oracle_candidate = "密度比 1000 の液滴の移流で運動量が保たれる"
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-044"
+axis = "two-phase momentum"
+item = "single-phase free-surface flow (air cells as p = 0, fluid / air cell classification)"
+source = "Bridson, Fluid Simulation for Computer Graphics ch.5; Foster-Fedkiw 2001"
+status = "missing"
+evidence = "CfdSolver の projection に流体 / 空気の分類が無い (src/cfd_solver.rs:1462)"
+oracle_candidate = "静水 (容器の半分の水) が静止を保つ / dam break"
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-045"
+axis = "two-phase momentum"
+item = "velocity extrapolation from the liquid into the air"
+source = "Bridson, Fluid Simulation for Computer Graphics ch.6; Osher-Fedkiw, Level Set Methods and Dynamic Implicit Surfaces ch.8"
+status = "missing"
+evidence = "(推測: extrapolat で流体側の該当 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-046"
+axis = "particle methods: free surface"
+item = "FLIP / PIC liquid with a free surface (marker particles define the liquid cells)"
+source = "Bridson, Fluid Simulation for Computer Graphics ch.7; Zhu-Bridson 2005"
+status = "missing"
+evidence = "step_flip は粒子が領域を満たす前提 (src/cfd_solver.rs:1460) 単相の転送そのものは cfd.toml 側"
+oracle_candidate = "dam break の先端位置 (Martin-Moyce)"
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-047"
+axis = "particle methods: free surface"
+item = "particle reseeding / particle count control in FLIP"
+source = "Bridson, Fluid Simulation for Computer Graphics ch.7"
+status = "missing"
+evidence = "step_flip の doc が別機能と明記 (src/cfd_solver.rs:1467)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-048"
+axis = "particle methods: free surface"
+item = "liquid surface reconstruction from particles (Zhu-Bridson / anisotropic kernels)"
+source = "Zhu-Bridson 2005; Yu-Turk 2013"
+status = "missing"
+evidence = "(推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-049"
+axis = "particle methods: free surface"
+item = "SPH free-surface pressure: negative pressure clamped to zero"
+source = "Monaghan 1994; Muller-Charypar-Gross 2003"
+status = "implemented+oracle"
+evidence = "src/sdf_sph.rs:226 tests/analytic_sdf_sph_wiring.rs::isolated_particle_density_and_pressure"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-050"
+axis = "particle methods: free surface"
+item = "SPH free-surface particle detection (kernel-sum / position-divergence criterion)"
+source = "Marrone et al. 2010; Lee et al. 2008"
+status = "missing"
+evidence = "(推測: free surface detection で 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-051"
+axis = "particle methods: free surface"
+item = "SPH tensile-instability correction (Monaghan artificial pressure)"
+source = "Monaghan 2000"
+status = "missing"
+evidence = "負圧は clamp で捨てるだけ (src/sdf_sph.rs:226) (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-052"
+axis = "particle methods: free surface"
+item = "multiphase SPH (density ratio, Hu-Adams / Colagrossi-Landrini)"
+source = "Colagrossi-Landrini 2003; Hu-Adams 2006"
+status = "missing"
+evidence = "src/sdf_sph.rs は単相と明記 (src/sdf_sph.rs:11)"
+oracle_candidate = "SPH の Rayleigh-Taylor"
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-053"
+axis = "phase change at the interface (flow side)"
+item = "interface mass-transfer jump conditions (Stefan flow, velocity jump from mdot)"
+source = "Tryggvason-Scardovelli-Zaleski, Direct Numerical Simulations of Gas-Liquid Multiphase Flows ch.11; Juric-Tryggvason 1998"
+status = "missing"
+evidence = "src/phase_change.rs は SDF modifier の enthalpy 法で流れの界面条件を持たない (src/phase_change.rs:12) 潜熱・Stefan の熱は THERM 側"
+oracle_candidate = "1D 蒸発で界面速度と吹き出し速度の比が密度比"
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-054"
+axis = "phase change at the interface (flow side)"
+item = "evaporation / condensation mass-transfer model (Lee / Schrage / Hardt-Wondra)"
+source = "Lee 1980; Hardt-Wondra 2008"
+status = "missing"
+evidence = "(推測: evapor / condens は phase_change.rs の SDF 変形のみ)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-055"
+axis = "phase change at the interface (flow side)"
+item = "cavitation mass transfer (Schnerr-Sauer / Kunz / Merkle)"
+source = "OpenFOAM interPhaseChangeFoam; Schnerr-Sauer 2001"
+status = "missing"
+evidence = "(推測: cavitat で 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-056"
+axis = "phase change at the interface (flow side)"
+item = "boiling (nucleation and bubble growth at a heated wall)"
+source = "Tryggvason-Scardovelli-Zaleski, Direct Numerical Simulations of Gas-Liquid Multiphase Flows ch.11; Welch-Wilson 2000"
+status = "missing"
+evidence = "(推測: boil は phase_change.rs の相状態名のみ)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-057"
+axis = "non-Newtonian phases"
+item = "non-Newtonian viscosity of one phase in a two-phase flow"
+source = "Chhabra-Richardson ch.1; OpenFOAM interFoam viscosityModel per phase"
+status = "missing"
+evidence = "src/non_newtonian.rs は構成則の閉形式のみで solver から参照されない (src/non_newtonian.rs:7) 単相の運動量への組み込みは cfd.toml の generalised-Newtonian 行"
+oracle_candidate = "shear-thinning 液の dam break 先端速度"
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-058"
+axis = "non-Newtonian phases"
+item = "viscoplastic (Bingham / Herschel-Bulkley) free-surface flow with regularisation (Papanastasiou)"
+source = "Papanastasiou 1987; Balmforth et al. 2014"
+status = "missing"
+evidence = "降伏応力の閉形式は src/non_newtonian.rs にあるが流動への組み込みが無い (推測)"
+oracle_candidate = "slump test の停止形状"
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-059"
+axis = "bubble and droplet dynamics"
+item = "Rayleigh-Plesset bubble dynamics"
+source = "Brennen, Cavitation and Bubble Dynamics ch.2; Plesset-Prosperetti 1977"
+status = "missing"
+evidence = "(推測: plesset で 0 件)"
+oracle_candidate = "Rayleigh の崩壊時間 0.915 R sqrt(rho/dp) (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-060"
+axis = "bubble and droplet dynamics"
+item = "compressible bubble dynamics (Keller-Miksis / Gilmore)"
+source = "Keller-Miksis 1980"
+status = "missing"
+evidence = "(推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-061"
+axis = "bubble and droplet dynamics"
+item = "terminal velocity of a bubble or drop (Hadamard-Rybczynski / Clift-Grace correlations)"
+source = "Clift-Grace-Weber, Bubbles, Drops and Particles"
+status = "missing"
+evidence = "(推測: hadamard / terminal velocity で 0 件)"
+oracle_candidate = "低 Re の液滴終端速度の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-062"
+axis = "bubble and droplet dynamics"
+item = "drop breakup criterion (Weber number, TAB model)"
+source = "O'Rourke-Amsden 1987 (TAB); Pilch-Erdman 1987"
+status = "missing"
+evidence = "(推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-063"
+axis = "bubble and droplet dynamics"
+item = "coalescence and film drainage"
+source = "Tryggvason-Scardovelli-Zaleski, Direct Numerical Simulations of Gas-Liquid Multiphase Flows ch.9"
+status = "missing"
+evidence = "(推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-064"
+axis = "multiphase models (averaged / dispersed)"
+item = "Euler-Euler two-fluid model"
+source = "OpenFOAM multiphaseEulerFoam; Ishii-Hibiki, Thermo-Fluid Dynamics of Two-Phase Flow"
+status = "missing"
+evidence = "(推測: two-fluid / euler-euler で 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-065"
+axis = "multiphase models (averaged / dispersed)"
+item = "interphase momentum transfer (drag, lift, virtual mass, turbulent dispersion)"
+source = "OpenFOAM multiphaseEulerFoam dragModels / liftModels / virtualMassModels"
+status = "missing"
+evidence = "(推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-066"
+axis = "multiphase models (averaged / dispersed)"
+item = "mixture / drift-flux model"
+source = "Ishii-Hibiki ch.13; Manninen et al. 1996"
+status = "missing"
+evidence = "(推測: drift flux で 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-067"
+axis = "multiphase models (averaged / dispersed)"
+item = "Euler-Lagrange dispersed particles one-way coupled to the flow (drag-driven tracking)"
+source = "Crowe-Sommerfeld-Tsuji, Multiphase Flows with Droplets and Particles; OpenFOAM DPMFoam"
+status = "missing"
+evidence = "粒子系 (src/particle.rs) は CfdSolver の速度場を読まない (推測: cell_velocity / sample_u_trilinear の solver 外の呼び手 0 件)"
+oracle_candidate = "Stokes 抵抗の粒子が流体速度に緩和する時定数"
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-068"
+axis = "multiphase models (averaged / dispersed)"
+item = "two-way / four-way coupled dispersed phase (momentum source, particle collisions)"
+source = "Crowe-Sommerfeld-Tsuji; Elghobashi 1994"
+status = "missing"
+evidence = "(推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-069"
+axis = "multiphase models (averaged / dispersed)"
+item = "population balance for the bubble / drop size distribution"
+source = "OpenFOAM multiphaseEulerFoam populationBalance"
+status = "missing"
+evidence = "(推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-070"
+axis = "combustion flow"
+item = "heat release of a reaction as an energy source in the flow solver"
+source = "Poinsot-Veynante, Theoretical and Numerical Combustion ch.1; OpenFOAM reactingFoam"
+status = "missing"
+evidence = "src/smoke_fire.rs は反応速度・発熱・浮力の閉形式で CfdSolver から呼ばれない (src/smoke_fire.rs:79) 化学 (Arrhenius) は CHEM 側"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-071"
+axis = "combustion flow"
+item = "premixed flame front as a level set (G-equation)"
+source = "Peters, Turbulent Combustion ch.2; Williams 1985"
+status = "missing"
+evidence = "(推測: g-equation / flame で 0 件)"
+oracle_candidate = "平面火炎が層流燃焼速度で進む"
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-072"
+axis = "combustion flow"
+item = "buoyant fire plume driven by the heat release"
+source = "McCaffrey 1979; Zukoski 1981"
+status = "missing"
+evidence = "Boussinesq 浮力自体は cfd.toml 側 (src/smoke_fire.rs:119 は閉形式)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-073"
+axis = "benchmark"
+item = "Zalesak slotted disk in rigid rotation"
+source = "Zalesak 1979; Osher-Fedkiw, Level Set Methods and Dynamic Implicit Surfaces ch.3"
+status = "missing"
+evidence = "剛体回転の速度場で level set / VOF を運ぶ test は無い"
+oracle_candidate = "既存機能で回せる: CfdSolver の level set 移流に剛体回転を与え、1 周後の面積誤差 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-074"
+axis = "benchmark"
+item = "single vortex / Enright deformation test"
+source = "Rider-Kothe 1998; Enright et al. 2002"
+status = "missing"
+evidence = "(推測)"
+oracle_candidate = "既存機能で回せる: 時間反転する速度場で往復後に初期形状に戻る"
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-075"
+axis = "benchmark"
+item = "static drop: Laplace pressure and spurious currents in the full solver"
+source = "Francois et al. 2006; Popinet 2009"
+status = "missing"
+evidence = "CSF の Laplace 圧は閉形式・1 step の力積でのみ突合 (tests/analytic_csf_wiring.rs::young_laplace_pressure_jump_from_a_poisson_solve_of_the_csf_force) CfdSolver を多 step 回した圧力差と寄生速度の測定は無い"
+oracle_candidate = "既存機能で回せる: CfdSolver に球の level set を置き重力 0 で N step、内外の圧力差 2 sigma/R と max|u|"
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-076"
+axis = "benchmark"
+item = "oscillating drop (Lamb frequency)"
+source = "Lamb, Hydrodynamics s.275; Torres-Brackbill 2000"
+status = "missing"
+evidence = "(推測)"
+oracle_candidate = "楕円変形した液滴の振動周期 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-077"
+axis = "benchmark"
+item = "capillary wave dispersion and viscous damping (Prosperetti)"
+source = "Prosperetti 1981; Popinet 2009"
+status = "missing"
+evidence = "(推測) 線形重力波の分散は src/wave_ship.rs のスペクトル側 (ENV) で流れの解ではない"
+oracle_candidate = "omega^2 = sigma k^3 / (rho1 + rho2) (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-078"
+axis = "benchmark"
+item = "Rayleigh-Taylor instability linear growth rate"
+source = "Tryggvason-Scardovelli-Zaleski, Direct Numerical Simulations of Gas-Liquid Multiphase Flows ch.1; Chandrasekhar 1961"
+status = "missing"
+evidence = "密度比を表せない (COV-MULTIPHASE の variable density 行が前提)"
+oracle_candidate = "sigma^2 = A g k (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-079"
+axis = "benchmark"
+item = "dam break (Martin-Moyce 1952)"
+source = "Martin-Moyce 1952; OpenFOAM interFoam damBreak tutorial"
+status = "missing"
+evidence = "自由表面の解法が無い"
+oracle_candidate = "先端位置の時間履歴 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-080"
+axis = "benchmark"
+item = "rising bubble (Hysing et al. 2009)"
+source = "Hysing et al. 2009"
+status = "missing"
+evidence = "密度比を表せない"
+oracle_candidate = "円形度・重心・上昇速度 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-081"
+axis = "benchmark"
+item = "Rayleigh-Plateau instability of a liquid jet"
+source = "Rayleigh 1878; Eggers 1997"
+status = "missing"
+evidence = "(推測)"
+oracle_candidate = "最大成長波数 k a = 0.697 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-082"
+axis = "benchmark"
+item = "sloshing in a moving tank"
+source = "Faltinsen-Timokha, Sloshing"
+status = "missing"
+evidence = "(推測)"
+oracle_candidate = "線形スロッシングの固有振動数 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-083"
+axis = "benchmark"
+item = "two-layer stratified channel flow with a viscosity ratio"
+source = "Tryggvason-Scardovelli-Zaleski, Direct Numerical Simulations of Gas-Liquid Multiphase Flows ch.2"
+status = "missing"
+evidence = "粘性を層ごとに変えられない"
+oracle_candidate = "2 層 Poiseuille の閉形式速度分布"
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-084"
+axis = "benchmark"
+item = "translation of a fraction slab by a uniform velocity"
+source = "Tryggvason-Scardovelli-Zaleski, Direct Numerical Simulations of Gas-Liquid Multiphase Flows ch.5"
+status = "implemented+oracle"
+evidence = "tests/analytic_multiphase_wiring.rs::upwind_courant_one_translates_the_slab_by_one_cell_per_step_on_every_axis / tests/audit_multiphase.rs::slab_translates_k_cells_under_semi_lagrangian_on_every_axis_and_sign"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-085"
+axis = "output"
+item = "bubble / droplet statistics (centroid, rise velocity, circularity, count of connected regions)"
+source = "Hysing et al. 2009 (benchmark quantities)"
+status = "missing"
+evidence = "(推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MULTIPHASE-086"
+axis = "output"
+item = "interface area from the level set or fraction field"
+source = "Osher-Fedkiw, Level Set Methods and Dynamic Implicit Surfaces ch.1"
+status = "missing"
+evidence = "(推測)"
+oracle_candidate = "球の表面積 4 pi R^2"
+limitation = ""

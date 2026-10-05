@@ -18,6 +18,7 @@ were introduced during that release window.
 ### Added
 
 - `docs/coverage/cfd.toml`: 非圧縮流体・乱流 (CFD) の網羅表 (Ferziger–Perić / Pope / Versteeg–Malalasekera、OpenFOAM / Fluent のソルバ・モデル、Ghia / Armaly / Taylor–Green 等の標準ベンチマークの範囲に対する 117 項目、軸は離散化 / 圧力-速度連成 / 移流 / 時間積分 / 境界条件 / 乱流 / 物理 / 圧力ソルバ / 粒子法 / 出力 / ベンチマーク) partial 6 項目の制限は `src/cfd_solver.rs` と `src/fluid.rs` に `LIMITATION(COV-CFD-NNN)` コメントで対応付け (挙動の変更なし)
+- `docs/coverage/multiphase.toml`: 多相流・自由表面の網羅表 (界面捕獲 VOF / level set / PLIC、表面張力、二相の運動量、粒子法の自由表面、界面の相変化条件、非ニュートン相、気泡・液滴、平均化モデル、燃焼の流れ、標準ベンチマークに対する 86 項目) partial 3 項目の制限を `src/multiphase.rs` の `LIMITATION(<id>)` コメントで示す (挙動変更なし)
 - `docs/coverage/fem.toml` / `scripts/coverage_check.py`: 固体 FEM の網羅表 (教科書・参照実装・標準ベンチマークの範囲に対する 133 項目、状態は implemented+oracle / implemented-no-oracle / partial / missing / out-of-scope) と、その検査器 (引用した test と src 行の実在、oracle が ignore されていないこと、partial と src の `LIMITATION(<id>)` コメントの双方向対応、比較 0 件で fail) preflight と CI の test job (全 OS) で実行
 - `PhysicsWorld::{snapshot_world, from_world_snapshot, restore_world}` / `WorldSnapshotError` / `PhysicsWorld::{WORLD_SNAPSHOT_MAGIC, WORLD_SNAPSHOT_VERSION}`: `step` が読む全状態 (物体、拘束、ジョイント、静的・SDF collider の姿勢、形状、力場、マテリアル、フィルタ、イベント、スリープ状態、broad-phase の木、XPBD / TGS の warm-start、overflow flag) を版付きの 1 blob + checksum に保存し、新しい world または既存の world に復元する 復元後の step は元と bit 一致 SDF の場・hook・modifier・GPU bridge はコードなので保存せず、復元先の個数と一致しなければ `Err` 既存の `serialize_state` / `deserialize_state` は変更なし
 - `PhysicsWorld::step_n(n, dt)`: `step(dt)` を `n` 回 (Python の `step_n` / WASM の `stepN` はこれを呼ぶ形に変更、挙動は同じ)

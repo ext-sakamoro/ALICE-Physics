@@ -131,6 +131,7 @@ impl Grid3d {
 /// constant velocity `(ux, uy, uz)` (m/s). Values are clamped to `[0, 1]`
 /// after update (VOF hygiene).
 ///
+// LIMITATION(COV-MULTIPHASE-001): Simplification: assumes uniform velocity across the grid (rigid-body convection).
 /// Simplification: assumes uniform velocity across the grid (rigid-body
 /// convection). For a spatially varying field pair this routine with an
 /// `EulerianGrid` velocity field from `eulerian_grid.rs` (Phase F4).
@@ -439,6 +440,7 @@ pub fn initialize_level_set_sphere(
 /// any axis has no interior and is returned untouched. A zero spacing is
 /// also a no-op (`Δτ = 0`). A field that is already a signed distance with
 /// `|∇φ| = 1` to the bit in the central differences is a fixed point to the
+// LIMITATION(COV-MULTIPHASE-013): Adequate for coarse grids (< 64³) and moderate deformation
 /// bit. Adequate for coarse grids (< 64³) and moderate deformation; higher
 /// accuracy needs the full fast sweeping of
 /// `interface_capture::fast_sweeping_reinit`, which is the solver's default.
@@ -482,6 +484,7 @@ pub(crate) fn reinitialize_level_set(field: &mut Grid3d, iterations: u32) {
 }
 
 /// Estimate interface curvature at cell (i, j, k) via central differences.
+// LIMITATION(COV-MULTIPHASE-028): scaled by `1/|∇φ|` (assumed close to 1 for a well-reinitialised field)
 /// Returns `κ = (∂²φ/∂x² + ∂²φ/∂y² + ∂²φ/∂z²)` scaled by `1/|∇φ|` (assumed
 /// close to 1 for a well-reinitialised field).
 #[must_use]
