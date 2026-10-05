@@ -17,6 +17,7 @@ were introduced during that release window.
 
 ### Added
 
+- `Broadphase::Hybrid` / `StageWork::broadphase_box_tests`: 静的 body は静的集合が変わった時だけ組み直す BVH、小さい動的 body は cell 幅を中央値の箱から決める疎な hash grid、大きい動的 body は毎 step の BVH に分ける broad-phase を `PhysicsWorld::set_broadphase` で選べる 候補は箱が厳密に重なる pair だけ (静的同士を除く) で、`Bvh` / `DynamicTree` と bit 一致の結果になる snapshot は tag 2 で選択を保存する 休止 body の parking は従来どおり `Bvh` のみ
 - `docs/coverage/fem.toml` / `scripts/coverage_check.py`: 固体 FEM の網羅表 (教科書・参照実装・標準ベンチマークの範囲に対する 133 項目、状態は implemented+oracle / implemented-no-oracle / partial / missing / out-of-scope) と、その検査器 (引用した test と src 行の実在、oracle が ignore されていないこと、partial と src の `LIMITATION(<id>)` コメントの双方向対応、比較 0 件で fail) preflight と CI の test job (全 OS) で実行
 - `PhysicsWorld::{snapshot_world, from_world_snapshot, restore_world}` / `WorldSnapshotError` / `PhysicsWorld::{WORLD_SNAPSHOT_MAGIC, WORLD_SNAPSHOT_VERSION}`: `step` が読む全状態 (物体、拘束、ジョイント、静的・SDF collider の姿勢、形状、力場、マテリアル、フィルタ、イベント、スリープ状態、broad-phase の木、XPBD / TGS の warm-start、overflow flag) を版付きの 1 blob + checksum に保存し、新しい world または既存の world に復元する 復元後の step は元と bit 一致 SDF の場・hook・modifier・GPU bridge はコードなので保存せず、復元先の個数と一致しなければ `Err` 既存の `serialize_state` / `deserialize_state` は変更なし
 - `PhysicsWorld::step_n(n, dt)`: `step(dt)` を `n` 回 (Python の `step_n` / WASM の `stepN` はこれを呼ぶ形に変更、挙動は同じ)

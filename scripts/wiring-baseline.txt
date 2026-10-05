@@ -5,10 +5,6 @@ dead_code src/solver_tgs_hooks_6dof.rs 1
 dead_code src/solver_tgs_hooks_6dof_oriented.rs 1
 dead_code src/solver_tgs_hooks_6dof_oriented_scoped.rs 1
 dead_code src/solver_tgs_hooks_6dof_scoped.rs 1
-unwired src/bvh.rs::build_dynamic
-unwired src/bvh.rs::clear_dynamic
-unwired src/bvh.rs::insert_dynamic
-unwired src/bvh.rs::query_pairs
 unwired src/creep_longterm.rs::petg_25c_moderate
 unwired src/eulerian_grid.rs::bytes
 unwired src/eulerian_grid.rs::bytes

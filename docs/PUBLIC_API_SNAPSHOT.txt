@@ -13505,6 +13505,7 @@ impl core::marker::UnsafeUnpin for alice_physics::joint::SpringJoint
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::joint::SpringJoint
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::joint::SpringJoint
 #[non_exhaustive] pub struct alice_physics::prelude::StageWork
+pub alice_physics::prelude::StageWork::broadphase_box_tests: u64
 pub alice_physics::prelude::StageWork::broadphase_pairs: u64
 pub alice_physics::prelude::StageWork::broadphase_primitives: u64
 pub alice_physics::prelude::StageWork::damping_bodies: u64
@@ -17021,6 +17022,7 @@ impl core::panic::unwind_safe::UnwindSafe for alice_physics::solver::BodyType
 #[non_exhaustive] pub enum alice_physics::solver::Broadphase
 pub alice_physics::solver::Broadphase::Bvh
 pub alice_physics::solver::Broadphase::DynamicTree
+pub alice_physics::solver::Broadphase::Hybrid
 impl core::clone::Clone for alice_physics::solver::Broadphase
 pub fn alice_physics::solver::Broadphase::clone(&self) -> Self
 impl core::cmp::Eq for alice_physics::solver::Broadphase
@@ -17422,6 +17424,7 @@ impl core::marker::UnsafeUnpin for alice_physics::solver::SolverConfig
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::solver::SolverConfig
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::solver::SolverConfig
 #[non_exhaustive] pub struct alice_physics::solver::StageWork
+pub alice_physics::solver::StageWork::broadphase_box_tests: u64
 pub alice_physics::solver::StageWork::broadphase_pairs: u64
 pub alice_physics::solver::StageWork::broadphase_primitives: u64
 pub alice_physics::solver::StageWork::damping_bodies: u64
@@ -23860,6 +23863,7 @@ impl core::marker::UnsafeUnpin for alice_physics::joint::SpringJoint
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::joint::SpringJoint
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::joint::SpringJoint
 #[non_exhaustive] pub struct alice_physics::StageWork
+pub alice_physics::StageWork::broadphase_box_tests: u64
 pub alice_physics::StageWork::broadphase_pairs: u64
 pub alice_physics::StageWork::broadphase_primitives: u64
 pub alice_physics::StageWork::damping_bodies: u64

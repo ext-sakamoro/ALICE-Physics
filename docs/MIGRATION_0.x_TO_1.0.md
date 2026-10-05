@@ -63,7 +63,7 @@ The following items were part of the `0.14.0-preview.X` public surface but are `
 | `bvh::point_to_morton` | removed | Same as above. |
 | `bvh::ESCAPE_NONE` | removed | Internal traversal sentinel. |
 | `BvhNode::MAX_PRIMS_PER_LEAF` | removed | Internal cap (255). |
-| `bvh::BroadphaseHybrid` | removed | Skeleton stability-stub with zero adoption. Use `LinearBvh` + a separate hash grid, or wait for a future stable broadphase API. |
+| `bvh::BroadphaseHybrid` | removed | Was a skeleton stability-stub with zero adoption; now crate-private and completed. Select it with `PhysicsWorld::set_broadphase(Broadphase::Hybrid)`. |
 
 ### `eulerian_grid` (Iteration 4)
 

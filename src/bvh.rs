@@ -359,12 +359,14 @@ impl LinearBvh {
     /// `deterministic-physics-lockstep-discipline` skill §1 経路 5.
     ///
     /// # Status
-    /// Skeleton API committed as part of Turn D next-step
-    /// (Fix128 broad-phase 維持 + BVH refit + hash grid ハイブリッド).
-    /// The bottom-up propagation body is scheduled for the follow-up
-    /// commit that also wires the refit path into the adaptive
-    /// sub-stepping loop; the current signature is stable so
-    /// downstream integration can begin.
+    /// Both steps (leaf refit and the bottom-up union) are implemented.
+    /// `PhysicsWorld` does not call it: its broad-phases rebuild the BVH
+    /// every substep ([`crate::solver::Broadphase::Bvh`]), keep a
+    /// persistent tree ([`crate::solver::Broadphase::DynamicTree`]) or
+    /// rebuild only the static layer when it changes
+    /// ([`crate::solver::Broadphase::Hybrid`]). The public `bounds` field
+    /// keeps its pre-refit value (`tests/audit_bvh.rs`, ignored test
+    /// `AUD-A-S3W2-009`).
     pub fn refit_leaves(&mut self, new_aabbs_by_prim_index: &[AABB]) {
         // Step 1 — Leaf refit: aggregate each leaf's primitive AABBs
         // from `new_aabbs_by_prim_index`, requantise, and write back.
@@ -806,10 +808,8 @@ const HYBRID_MAX_CELLS_PER_AXIS: u32 = 3;
 /// a fixed order, and the output is sorted; the result is a pure function of
 /// the staged bodies and does not depend on their insertion order.
 ///
-/// Not yet wired into `PhysicsWorld` (the world broadphase enum gains a
-/// variant for it in a later change); only the unit tests below drive it.
-// ALLOW-DEAD: world wiring of the hybrid broadphase lands in a later change
-#[allow(dead_code)]
+/// `PhysicsWorld` drives it as `Broadphase::Hybrid`, staging every body with a
+/// collision box each substep.
 pub(crate) struct BroadphaseHybrid {
     /// Static bodies staged this frame, in insertion order.
     staged_static: Vec<(u32, AABB)>,
@@ -833,8 +833,6 @@ pub(crate) struct BroadphaseHybrid {
     large_bvh: LinearBvh,
 }
 
-// ALLOW-DEAD: world wiring of the hybrid broadphase lands in a later change
-#[allow(dead_code)]
 impl BroadphaseHybrid {
     /// An empty broad-phase; the cell size is chosen per frame from the bodies.
     #[must_use]
