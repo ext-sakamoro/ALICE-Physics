@@ -337,9 +337,21 @@ fn aabb_encloses_every_boundary_point() {
                 );
             }
         }
-        // symmetric about the centre
+        // closed form: the hull of the apex c + a (a = hh * axis) and the base disc
+        // about c - a, which reaches s_i = r * sqrt(1 - axis_i^2) along world axis i
+        let k = unit(axis);
+        let a_hat = rot(k, ang, [0.0, 1.0, 0.0]);
         for i in 0..3 {
-            assert!(((lo[i] + hi[i]) * 0.5 - center[i]).abs() < 1e-9);
+            let ai = hh * a_hat[i];
+            let si = r * (1.0 - a_hat[i] * a_hat[i]).max(0.0).sqrt();
+            let want_lo = center[i] + ai.min(-ai - si);
+            let want_hi = center[i] + ai.max(-ai + si);
+            assert!(
+                (lo[i] - want_lo).abs() < 1e-9 && (hi[i] - want_hi).abs() < 1e-9,
+                "case {case}: axis {i} [{}, {}] vs closed form [{want_lo}, {want_hi}]",
+                lo[i],
+                hi[i]
+            );
         }
     }
 }
@@ -389,7 +401,6 @@ fn with_rotation_stores_every_field() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S4W3-013: Cone::aabb is conservative, not tight: along the cone axis it adds the base radius to the half-height (upright r=2, hh=3 gives y in [-5, 5], the cone spans [-3, 3]); it encloses every point, but the inline test pins the loose value"]
 fn aabb_of_an_upright_cone_is_tight_along_the_axis() {
     let cone = Cone::new(Vec3Fix::ZERO, fx(2.0), fx(3.0));
     let bb = cone.aabb();
