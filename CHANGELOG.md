@@ -160,6 +160,7 @@ were introduced during that release window.
 ### Changed
 
 - `scripts/coverage_check.py`: 網羅表の参照を行番号 (`src/x.rs:123`) からシンボル (`src/x.rs::名前`) に切り替えた 行番号は上に行が挿入されるとずれ、表が増えると src の編集のたびに無関係な表が壊れるため、行番号の参照は失敗にする `limitation` は `src/x.rs::名前 '<引用>'` で、引用はその item の doc comment・attribute・本体の中にあること (モジュールの doc は `src/x.rs '<引用>'`) tests/ の補助関数も evidence に書ける (oracle には数えない) 既存の行番号を変換する `scripts/coverage_refs_to_symbols.py` を追加
+- `scripts/test_wiring_guard.py`: 大きな入力で検査が遅くならないことを見る 2 件の時間制限を、経過時間でなくこのプロセスの CPU 時間で測るようにした (並行する build の負荷で経過時間だけが伸びて失敗していた)
 - `PhysicsWorld::raycast` と `query::batch_raycast` の doc に、body を外接球で近似し static collider と SDF collider を見ないことを明記 (挙動は不変、実形状は `PhysicsWorld::cast_ray`)
 - **Behavior change:** joint (ball / hinge / fixed / slider / cone-twist) の位置拘束が lever arm と回転補正を含むようになり、D6 の角度誤差は `local_frame_b` 基準になった 全 joint の位置拘束の結果が変わる (AUD-A-S1W6-006 / 010)
 - **Behavior change:** hinge の `angle_min` / `angle_max` と slider の `limit_min` / `limit_max` を片側だけ設定した場合も、その側の limit が効く (従来は黙って無視) (AUD-A-S1W6-007)
