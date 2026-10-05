@@ -132,6 +132,7 @@ step "wasm32-wasip1 golden tests build (dev-deps are built for the target too)"
 rustup target list --installed | grep -q wasm32-wasip1 || rustup target add wasm32-wasip1
 cargo test --test determinism_golden --target wasm32-wasip1 --no-run
 cargo test --test determinism_golden_f32 --target wasm32-wasip1 --no-run
+cargo test --test determinism_golden_contacts --target wasm32-wasip1 --no-run
 
 step "wasm32-unknown-unknown build with every browser feature (CI job js-binding)"
 rustup target list --installed | grep -q wasm32-unknown-unknown || rustup target add wasm32-unknown-unknown

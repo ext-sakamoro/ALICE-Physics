@@ -288,6 +288,17 @@ jobs:
           echo "Executing: $WASM_BIN"
           wasmtime "$WASM_BIN"
 
+      # contact scenes (restitution, friction, static friction, pre-solve veto);
+      # the scenes above contain no body-body contact
+      - name: Build determinism_golden_contacts test (wasm32-wasip1)
+        run: cargo test --test determinism_golden_contacts --target wasm32-wasip1 --no-run
+
+      - name: Run determinism_golden_contacts test via wasmtime
+        run: |
+          WASM_BIN=$(find target/wasm32-wasip1/debug/deps -name 'determinism_golden_contacts-*.wasm' -not -name '*.d' | head -1)
+          echo "Executing: $WASM_BIN"
+          wasmtime "$WASM_BIN"
+
   clippy:
     name: Clippy
     runs-on: ubuntu-latest

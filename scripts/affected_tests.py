@@ -9,7 +9,7 @@ CI は全 test を 5 OS で走らせるので、ローカルの push 前検査�
   * 変更した `src/<module>.rs` (または `src/<module>/…`) の module 名を、`alice_physics` を含む tests/*.rs が
     単語として参照していれば、その integration test target を選ぶ
   * 変更した tests/*.rs 自身も選ぶ
-  * `determinism_golden` / `determinism_golden_f32` は常に選ぶ
+  * `determinism_golden` / `determinism_golden_f32` / `determinism_golden_contacts` は常に選ぶ
   * lib の unit test は `<module>::` の filter で選ぶ
   * `src/lib.rs` を変えた場合: 追加した行が `mod` / `use` / cfg / comment だけなら、追加された module を変更した module として扱う
     (新 module の追加で全 test に退避しない) それ以外 (行の削除・式の変更) は絞れないので全 test に退避する
@@ -29,7 +29,7 @@ import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-ALWAYS = ("determinism_golden", "determinism_golden_f32")
+ALWAYS = ("determinism_golden", "determinism_golden_f32", "determinism_golden_contacts")
 
 
 def changed_files(base: str) -> list[str]:
