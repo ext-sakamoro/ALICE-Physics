@@ -12,10 +12,6 @@ unwired src/bvh.rs::build_dynamic
 unwired src/bvh.rs::clear_dynamic
 unwired src/bvh.rs::insert_dynamic
 unwired src/bvh.rs::query_pairs
-unwired src/cloth_fluid.rs::apply_cloth_boundary_to_fluid
-unwired src/cloth_fluid.rs::apply_cloth_boundary_to_fluid_with_residual
-unwired src/cloth_fluid.rs::apply_fluid_forces_to_cloth
-unwired src/cloth_fluid.rs::apply_fluid_forces_to_cloth_with_residual
 unwired src/convex_mesh_builder.rs::build_convex_hull
 unwired src/creep_longterm.rs::petg_25c_moderate
 unwired src/eulerian_grid.rs::bytes
