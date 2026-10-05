@@ -120,6 +120,7 @@ were introduced during that release window.
 - `molecular_dynamics::{VelocityVerlet, PeriodicBox, PairForces, MdError, pair_forces_cell_list, pair_forces_all_pairs}`: 点粒子の速度 Verlet (NVE)、直方体の周期境界と最小像規約、セル幅 `r_c` 以上のセルリスト (密度一定で O(N)) 固定小数点の加算は厳密なので力の和は対の順序に依らず、セルリストと全対和は bit 一致 運動エネルギー・ポテンシャルエネルギー・運動量・瞬時温度 `2K/(k_B(3N−3))` (`k_B` は引数) 箱の辺が `2 r_c` 未満は `Err`、失敗した step は状態を変えない
 - `crowd_force::{SocialForce, InteractionParams, Pedestrian, WallSegment, NeighborSearch, CrowdForceError}`: 歩行者の social force model (Helbing–Molnár 1995 / Helbing–Farkas–Vicsek 2000) 駆動項 `m (v0 ê − v)/τ`、歩行者間の反発 `A e^{(r_ij − d_ij)/B} n_ij` に視野角の重み `λ + (1 − λ)(1 + cos φ)/2`、接触時の体圧 `k g(r_ij − d_ij)` と滑り摩擦 `κ g(r_ij − d_ij) Δv^t`、線分の壁 (同形の式) 平面 (2D) で書き、対は cutoff 内のみ 近傍探索は直接和と cell list の 2 通りで力は bit 一致 半陰的 Euler の `step` と速さの上限 `c v0` を持つ `Fix128` のみで `no_std` でも使える
 - `linear_solver::{gmres, bicgstab, solve_equilibrated, LinearOperator, Preconditioner, DenseMatrix, FnOperator, IdentityPreconditioner, JacobiPreconditioner, BlockJacobiPreconditioner, BlockEquilibration, BlockScale, KrylovMethod, KrylovConfig, KrylovConfigFault, KrylovSolution, KrylovStats, LinearSolverError, BreakdownKind, BREAKDOWN_RELATIVE}`: 非対称な演算子にも使える `Fix128` の Krylov 法 再起動付き GMRES(m) (修正 Gram–Schmidt + Givens 回転) と BiCGStab (破綻の検出付き)、右前処理の Jacobi / ブロック Jacobi (ブロックごとの部分ピボット LU)、収束の統計 (反復数・再起動数・残差履歴) 停止は真の残差で判定し、`NotConverged` / `Stagnated` / `Breakdown` を区別して返す 内積とノルムはベクトルごとに 2 冪で正規化してから積を取るので、小さい残差でも打ち切られない 単位の違う場を連結した系は `BlockEquilibration` (`EquilibrationScale` による 2 冪の対称スケーリング) を通す入口だけを用意し、積が `L2_TERM_FLOOR` を下回るブロックは `BlockBelowProductFloor` で拒否する (PLA の熱弾性ブロック比 2.69e10 で、等化しない GMRES は収束と報告しつつ温度の誤差が等化時の約 1 万倍になることを `tests/analytic_linear_solver.rs` で固定) 既存の共役勾配法と `project_pressure_bicgstab` は変更しない
+- `maxwell_fdtd` に cell ごとの等方材料を追加 (`Material { eps_r, mu_r, sigma }` / `MaterialMap` / `MaterialError` / `YeeGrid::with_materials` / `effective_material` / `div_d`) E 辺は ε・σ の算術平均、H 面は μ の調和平均で、更新式は Taflove 3 章の係数を使う 材料なし・全て真空の map・PML と真空の map は変更前と bit 一致
 
 ### Changed
 
@@ -218,6 +219,7 @@ were introduced during that release window.
 - `scripts/docs_lint.py` が非公開名の照合を README / MODULES / CHANGELOG から、全 tracked file のパスと本文 (生成物・コメント・workflow・script を含む) に広げた
 - integration-status / oracle-status / wiring-status の workflow は台帳を commit せず、push された tree で作り直して差分があれば失敗するだけにした (台帳の再生成は `scripts/land.py` が取り込み時に行う)
 - **Behavior change:** `CfdSolver::step_rans` で k-ε / k-ω を `WallModel` と併用した場合 (WallModel 指定時のみ) に、壁に接するセルの `k` / `ε` を Launder–Spalding の壁関数値 `k = u_τ²/√C_μ`、`ε = u_τ³/(κ y_p)` (`y_p = dx/2`) に固定し、壁から 1 dx の界面の運動量拡散係数を対数則の値 `κ u_τ dx` に、壁から 2 番目のセルの壁法線方向の速度勾配を対数則の `u_τ/(κ · 3dx/2)` にした (従来は `k` / `ε` に壁境界条件が無く、平行平板 Couette 流で ν_t が発散して `DiffusionUnstable` で停止していた) WallModel 無しの k-ε / k-ω、`Prescribed`、LES の経路は不変 WallModel 無しでは `k` / `ε` に壁境界条件が掛からない (低 Re の壁処理も壁関数も無い) ことを doc に制限として明記
+- **Behavior change:** `YeeGrid::with_materials` は安定条件 3S² ≤ ε_min μ_min を検査し、真空の map でも S > 1/√3 は Err になる (`new()` 単独は従来どおり) `gauss_residual` は `div_d − ρ` に変わった (材料なしでは bit 同一) σ > 0 では ρ が伝導電流を追わないため非保存
 
 ### Deprecated
 
