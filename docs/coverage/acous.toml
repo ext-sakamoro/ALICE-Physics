@@ -1,0 +1,1069 @@
+# Acoustics and waves (ACOUS) coverage of ALICE-Physics, against an external
+# reference frame.
+#
+# What this table is: every capability that the standard textbooks
+# (Kinsler-Frey-Coppens-Sanders, Fundamentals of Acoustics; Pierce, Acoustics;
+# Kuttruff, Room Acoustics; Fahy, Sound and Structural Vibration;
+# Hamilton-Blackstock, Nonlinear Acoustics), reference implementations (k-Wave,
+# OpenPSTD, COMSOL Acoustics, Steam Audio, Wwise / FMOD spatial audio) and
+# standard benchmarks (rectangular-room eigenfrequencies, open / closed pipe
+# resonances, 1/r spreading of a spherical wave, baffled-piston directivity,
+# Sabine reverberation time, mass-law transmission loss, Helmholtz resonator)
+# expect of an acoustics code, one [[item]] per capability, with what the crate
+# has today. The rows are written by hand: the axes and the items come from the
+# reference frame, not from the modules that exist, so a missing capability is
+# visible instead of absent. Axes: governing equations / medium /
+# discretisation (wave-based) / geometric acoustics / boundary / propagation /
+# room / structural / source / game-audio / output / benchmark.
+#
+# Boundary with the other tables (one capability goes in one table only):
+#   - natural frequencies and damping of structures in closed form (beams,
+#     plates, the thin-wall resonance check of vibration_wall): the structural
+#     table; here only the sound they radiate or transmit
+#   - elastic waves inside solids discretised by finite elements: the FEM table
+#   - electromagnetic waves: the EM table, even where an FDTD grid could share
+#     parts with an acoustic one
+#   - nonlinear fluid dynamics and shocks (Rankine-Hugoniot, Riemann problems,
+#     sonic booms as gas dynamics): the shock table; nonlinear acoustics
+#     (Westervelt, Burgers, KZK) stays here
+#   - generic numerical parts for waves (linear solvers, time integrators,
+#     FFT-free algebra): the numerics table
+#   - water-surface gravity waves (wave_ship): not acoustics
+#   - spatialisation for playback (HRTF, panning, mixing) belongs to the audio
+#     engine and is not counted
+#
+# status (exactly one of):
+#   implemented+oracle     implemented, and at least one non-ignored test checks
+#                          it against an independent reference
+#   implemented-no-oracle  implemented, no such test
+#   partial                implemented with a restriction that the source states;
+#                          `limitation` quotes it, and the source carries a
+#                          `LIMITATION(<id>)` comment at that place
+#   missing                not implemented
+#   out-of-scope           not a capability of this field (reason in `evidence`)
+#
+# This axis is separate from the test ignore reasons (`known defect: ...`,
+# `src gap: ...`, `diagnostic`, `runtime`). A capability that exists with a
+# recorded defect keeps its status and cites the known-defect test in
+# `evidence`; it is not `missing`.
+#
+# keys: id (COV-ACOUS-NNN) / axis / item / source (book, chapter, paper,
+# standard or reference-implementation feature; no quoted text) / status /
+# evidence (`src/...rs:line`, `tests/...rs::test_fn`) / oracle_candidate /
+# limitation (verbatim quote of the source, required for `partial`).
+#
+# Reference values marked "参照値要確認" are to be checked against the original
+# publication before any test uses them. Lines marked "(推測)" were judged from
+# a search that found nothing and are to be confirmed.
+#
+# Checked by scripts/coverage_check.py (tests: scripts/test_coverage_check.py).
+
+[[item]]
+id = "COV-ACOUS-001"
+axis = "governing"
+item = "linear lossless wave equation for a scalar field (pressure / velocity potential)"
+source = "Kinsler-Frey-Coppens-Sanders, Fundamentals of Acoustics (linear wave equation); Pierce, Acoustics: An Introduction to Its Physical Principles and Applications (wave equation); k-Wave / COMSOL Acoustics (pressure acoustics, transient)"
+status = "partial"
+evidence = "src/acoustic_wave.rs:41 / tests/engineering_oracles_fluid.rs::acoustic_wave_leapfrog_at_courant_one_reproduces_dalembert / tests/audit_acoustic_wave.rs::interior_update_reproduces_exact_discrete_plane_wave 1-D の等間隔格子・両端反射のみ"
+oracle_candidate = ""
+limitation = "src/acoustic_wave.rs:24 '1-D uniform grid, reflective ends.'"
+
+[[item]]
+id = "COV-ACOUS-002"
+axis = "governing"
+item = "linear wave equation in 2-D / 3-D"
+source = "Kinsler-Frey-Coppens-Sanders, Fundamentals of Acoustics (three-dimensional wave equation); k-Wave kspaceFirstOrder2D / 3D; COMSOL Acoustics"
+status = "missing"
+evidence = "module doc が「2-D / 3-D solvers, absorbing boundaries, spectral / DG discretisations, and coupled fluid– structure interaction are future work.」と書く (src/acoustic_wave.rs:24 の次行)、2-D / 3-D の格子は無い"
+oracle_candidate = "矩形領域の固有モード (閉形式) と球面波の 1/r"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-003"
+axis = "governing"
+item = "first-order linearised acoustic equations (pressure and particle velocity, linearised Euler)"
+source = "Pierce, Acoustics: An Introduction to Its Physical Principles and Applications (linear acoustic equations); k-Wave (first-order system); OpenPSTD"
+status = "missing"
+evidence = "src/acoustic_wave.rs:41 は 2 階の単一スカラー場のみ、粒子速度を持たない"
+oracle_candidate = "進行平面波で p = ρc u"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-004"
+axis = "governing"
+item = "Helmholtz equation (time-harmonic, frequency domain)"
+source = "Kinsler-Frey-Coppens-Sanders, Fundamentals of Acoustics; Pierce, Acoustics: An Introduction to Its Physical Principles and Applications; COMSOL Acoustics (pressure acoustics, frequency domain)"
+status = "missing"
+evidence = "周波数領域の solver は無い (src に helmholtz は grep 0 件)"
+oracle_candidate = "管・矩形室の固有値、点源の自由空間 Green 関数"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-005"
+axis = "governing"
+item = "wave equation in a heterogeneous medium (c(x), rho(x))"
+source = "Pierce, Acoustics: An Introduction to Its Physical Principles and Applications (inhomogeneous media); k-Wave (heterogeneous medium)"
+status = "missing"
+evidence = "src/acoustic_wave.rs:41 は格子全体で Courant 数 1 個 (一様媒質のみ)"
+oracle_candidate = "2 媒質界面の反射・透過係数 R = (Z2-Z1)/(Z2+Z1)"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-006"
+axis = "governing"
+item = "convected wave equation (uniform mean flow) and moving-medium acoustics"
+source = "Pierce, Acoustics: An Introduction to Its Physical Principles and Applications (acoustics of moving media); COMSOL Acoustics (linearized potential flow)"
+status = "missing"
+evidence = "平均流を持つ項は無い (src/acoustic_wave.rs:41)"
+oracle_candidate = "一様流中の上流・下流の位相速度 c ± U"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-007"
+axis = "governing"
+item = "thermoviscous lossy wave equation (classical absorption in the field equation)"
+source = "Kinsler-Frey-Coppens-Sanders, Fundamentals of Acoustics (absorption and attenuation of sound); Pierce, Acoustics: An Introduction to Its Physical Principles and Applications (dissipative processes); COMSOL Acoustics (thermoviscous acoustics)"
+status = "missing"
+evidence = "src/acoustic_wave.rs:41 は損失項を持たない"
+oracle_candidate = "平面波振幅の指数減衰 e^(-alpha x)"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-008"
+axis = "governing"
+item = "Westervelt equation (nonlinear full-wave)"
+source = "Hamilton-Blackstock, Nonlinear Acoustics (model equations); k-Wave (nonlinear option)"
+status = "missing"
+evidence = "module doc が「Small-amplitude (linear) acoustics; nonlinear compression is out of scope.」と書く (src/acoustic_wave.rs:27)"
+oracle_candidate = "正弦波入力の第 2 高調波の成長 (Fubini 解、参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-009"
+axis = "governing"
+item = "Burgers equation for plane progressive waves (nonlinear steepening, shock formation distance)"
+source = "Hamilton-Blackstock, Nonlinear Acoustics (Burgers equation); Blackstock (Fubini / Fay solutions)"
+status = "missing"
+evidence = "非線形音響の伝播は無い (流体の衝撃波は他の表の範囲)"
+oracle_candidate = "衝撃形成距離 x = 1/(beta eps k)"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-010"
+axis = "governing"
+item = "KZK parabolic equation (nonlinear sound beams)"
+source = "Hamilton-Blackstock, Nonlinear Acoustics (KZK equation); ultrasound beam codes"
+status = "missing"
+evidence = "放物型近似の solver は無い"
+oracle_candidate = "線形極限で円形ピストンの軸上音圧に一致"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-011"
+axis = "medium"
+item = "speed of sound of an ideal gas a = sqrt(gamma R T) = sqrt(gamma p / rho)"
+source = "Kinsler-Frey-Coppens-Sanders, Fundamentals of Acoustics (speed of sound in fluids); Anderson, Modern Compressible Flow"
+status = "implemented+oracle"
+evidence = "src/compressible.rs:89 / tests/engineering_oracles_fluid.rs::compressible_ideal_gas_speed_of_sound_and_isa_density / tests/audit_compressible.rs::speed_of_sound_closed_forms"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-012"
+axis = "medium"
+item = "sound-speed presets for air, water, steel and concrete"
+source = "Kinsler-Frey-Coppens-Sanders, Fundamentals of Acoustics (tables of acoustic properties); CRC Handbook; ACI 228 (P-wave velocity)"
+status = "implemented+oracle"
+evidence = "src/acoustic_wave.rs:75 / tests/engineering_oracles_fluid.rs::acoustic_wave_presets_match_bulk_modulus_formula / tests/analytic_acoustic_wave_wiring.rs::concrete_longitudinal_matches_aci_nondestructive_testing_nominal_value"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-013"
+axis = "medium"
+item = "sound-speed profile with altitude (standard atmosphere)"
+source = "U.S. Standard Atmosphere 1976; ISO 9613-1 (atmospheric conditions)"
+status = "partial"
+evidence = "src/atmosphere.rs:173 / tests/analytic_atmosphere_isa1976.rs::speed_of_sound_matches_table 0 <= H <= 20 km の 2 層のみ"
+oracle_candidate = ""
+limitation = "src/atmosphere.rs:34 'layers above 20 km (with a positive lapse rate) and the table below sea level are not modelled.'"
+
+[[item]]
+id = "COV-ACOUS-014"
+axis = "medium"
+item = "speed of sound in sea water as a function of temperature, salinity and depth"
+source = "Mackenzie 1981; UNESCO (Chen-Millero) equation; Medwin-Clay, Fundamentals of Acoustical Oceanography"
+status = "missing"
+evidence = "水は 25 °C の定数 1 個のみ (src/acoustic_wave.rs:79)"
+oracle_candidate = "Mackenzie 式の公表値 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-015"
+axis = "medium"
+item = "humidity and temperature dependence of the speed of sound in air"
+source = "ISO 9613-1; Cramer 1993"
+status = "missing"
+evidence = "空気の音速は理想気体の sqrt(gamma R T) (乾燥空気) と 20 °C の定数 (src/acoustic_wave.rs:77) のみ"
+oracle_candidate = "Cramer の表 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-016"
+axis = "medium"
+item = "speed of sound of a fluid from its bulk modulus, c = sqrt(K / rho)"
+source = "Kinsler-Frey-Coppens-Sanders, Fundamentals of Acoustics (speed of sound in fluids)"
+status = "missing"
+evidence = "関数は無く、定数 (src/acoustic_wave.rs:75) の検証 test の中で式を計算しているだけ (tests/engineering_oracles_fluid.rs::acoustic_wave_presets_match_bulk_modulus_formula)"
+oracle_candidate = "水 K = 2.24 GPa, rho = 997 の値"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-017"
+axis = "medium"
+item = "characteristic acoustic impedance rho c and a material impedance table"
+source = "Kinsler-Frey-Coppens-Sanders, Fundamentals of Acoustics (specific acoustic impedance); Pierce, Acoustics: An Introduction to Its Physical Principles and Applications"
+status = "missing"
+evidence = "音響インピーダンスは無い (src の impedance は電磁波 FDTD の 1 file のみ) tests/analytic_acoustic_wave_wiring.rs::material_presets_strictly_increasing_by_characteristic_impedance_class は音速の順序だけを見る"
+oracle_candidate = "空気 rho c ≈ 415 rayl (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-018"
+axis = "medium"
+item = "porous absorber models (Delany-Bazley, Johnson-Champoux-Allard)"
+source = "Allard-Atalla, Propagation of Sound in Porous Media; COMSOL Acoustics (poroacoustics)"
+status = "missing"
+evidence = "多孔質材の音響モデルは無い"
+oracle_candidate = "Delany-Bazley の経験式の表 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-019"
+axis = "discretisation"
+item = "explicit second-order leapfrog (central difference) update of the wave equation"
+source = "LeVeque, Finite Difference Methods for ODEs and PDEs (wave equation); Taflove-Hagness (FDTD, acoustic analogue)"
+status = "implemented+oracle"
+evidence = "src/acoustic_wave.rs:41 / tests/audit_acoustic_wave.rs::interior_update_reproduces_exact_discrete_plane_wave / src/acoustic_wave.rs::leapfrog_step_interior_matches_hand_computation / tests/analytic_acoustic_wave_wiring.rs::leapfrog_step_four_cells_courant_quarter_hand_computation"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-020"
+axis = "discretisation"
+item = "CFL time-step bound for the explicit scheme"
+source = "Courant-Friedrichs-Lewy 1928; LeVeque (von Neumann stability)"
+status = "implemented+oracle"
+evidence = "src/acoustic_wave.rs:68 / tests/audit_acoustic_wave.rs::stability_boundary_at_courant_one / tests/audit_acoustic_wave.rs::stable_dt_gives_unit_courant_number / known defect: tests/audit_acoustic_wave.rs::nan_courant_is_rejected (C > 1 や NaN を拒否しない)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-021"
+axis = "discretisation"
+item = "numerical dispersion of the scheme (discrete dispersion relation, exact translation at C = 1)"
+source = "Trefethen, Group velocity in finite difference schemes; LeVeque (magic time step)"
+status = "implemented+oracle"
+evidence = "tests/audit_acoustic_wave.rs::interior_update_reproduces_exact_discrete_plane_wave / tests/engineering_oracles_fluid.rs::acoustic_wave_leapfrog_at_courant_one_reproduces_dalembert"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-022"
+axis = "discretisation"
+item = "staggered pressure-velocity FDTD (Yee-type acoustic grid)"
+source = "Botteldooren 1995 (acoustic FDTD); Taflove-Hagness; OpenPSTD / FDTD room acoustics codes"
+status = "missing"
+evidence = "音響の staggered 格子は無い (src/acoustic_wave.rs:41 は 1 場) 電磁波の Yee 格子は他の表の範囲で数えない"
+oracle_candidate = "1-D で p-u 形式と 2 階形式の一致"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-023"
+axis = "discretisation"
+item = "higher-order and dispersion-optimised spatial stencils (4th order, DRP)"
+source = "Tam-Webb 1993 (DRP); Kowalczyk-van Walstijn (room acoustics FDTD)"
+status = "missing"
+evidence = "空間 stencil は 3 点の 2 次のみ (src/acoustic_wave.rs:54)"
+oracle_candidate = "位相誤差の波数依存 (離散分散関係)"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-024"
+axis = "discretisation"
+item = "non-uniform or curvilinear acoustic grid"
+source = "Ferziger-Peric (grid generation); COMSOL Acoustics (unstructured mesh)"
+status = "missing"
+evidence = "等間隔 1-D 格子のみ (src/acoustic_wave.rs:24)"
+oracle_candidate = "不等間隔格子での 2 次収束"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-025"
+axis = "discretisation"
+item = "pseudospectral / k-space corrected time domain (PSTD)"
+source = "Treeby-Cox 2010 (k-Wave); Hornikx et al. (OpenPSTD); Liu 1997 (PSTD)"
+status = "missing"
+evidence = "module doc が spectral 離散化を future work とする (src/acoustic_wave.rs:24 の次行) crate に FFT は無い"
+oracle_candidate = "一様媒質で 1 step の位相誤差 0 (k-space 補正)"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-026"
+axis = "discretisation"
+item = "finite-element acoustics in the frequency domain (Helmholtz FE)"
+source = "Ihlenburg, Finite Element Analysis of Acoustic Scattering; COMSOL Acoustics; Code_Aster (acoustic elements)"
+status = "missing"
+evidence = "音響要素は無い (固体 FEM の要素は他の表の範囲)"
+oracle_candidate = "1-D 管の固有値の FE 収束 (pollution 誤差)"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-027"
+axis = "discretisation"
+item = "finite-element acoustics in the time domain"
+source = "COMSOL Acoustics (pressure acoustics, transient); Ihlenburg"
+status = "missing"
+evidence = "時間領域の音響 FE は無い"
+oracle_candidate = "1-D 管の d'Alembert 解"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-028"
+axis = "discretisation"
+item = "boundary element method for exterior radiation and scattering"
+source = "Wu (ed.), Boundary Element Acoustics; Marburg-Nolte, Computational Acoustics of Noise Propagation in Fluids; COMSOL Acoustics (BEM)"
+status = "missing"
+evidence = "BEM は無い"
+oracle_candidate = "脈動球の放射インピーダンス (閉形式)"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-029"
+axis = "discretisation"
+item = "discontinuous Galerkin / spectral element acoustics"
+source = "Hesthaven-Warburton, Nodal Discontinuous Galerkin Methods; Wang et al. (time-domain DG room acoustics)"
+status = "missing"
+evidence = "module doc が DG を future work とする (src/acoustic_wave.rs:24 の次行)"
+oracle_candidate = "周期領域の平面波で p+1 次収束"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-030"
+axis = "discretisation"
+item = "digital waveguide mesh / transmission-line matrix"
+source = "Van Duyne-Smith 1993; Savioja, Real-time room acoustics with waveguide meshes; Kristiansen (TLM)"
+status = "missing"
+evidence = "waveguide mesh / TLM は無い"
+oracle_candidate = "矩形 mesh の分散誤差 (方向依存)"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-031"
+axis = "discretisation"
+item = "implicit or unconditionally stable time stepping for acoustics (ADI, Crank-Nicolson)"
+source = "LeVeque; Kowalczyk-van Walstijn (implicit FDTD schemes)"
+status = "missing"
+evidence = "陽解法 1 本のみ (src/acoustic_wave.rs:41)"
+oracle_candidate = "C > 1 で有界、低波数で 2 次精度"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-032"
+axis = "geometric"
+item = "acoustic ray tracing with specular and diffuse reflection"
+source = "Kuttruff, Room Acoustics (ray tracing); Vorländer, Auralization; Steam Audio (reflections)"
+status = "missing"
+evidence = "幾何の ray cast (src/shape_raycast.rs:1052) はあるが音線追跡には使われていない"
+oracle_candidate = "矩形室の残響時間を Sabine / Eyring と比較"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-033"
+axis = "geometric"
+item = "image-source method (rectangular room and convex polyhedra)"
+source = "Allen-Berkley 1979; Borish 1984; Vorländer, Auralization"
+status = "missing"
+evidence = "像源法は無い"
+oracle_candidate = "矩形室の像源の位置と遅延 (閉形式)"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-034"
+axis = "geometric"
+item = "beam / cone tracing"
+source = "Funkhouser et al. 1998 (beam tracing); Vorländer, Auralization"
+status = "missing"
+evidence = "beam tracing は無い"
+oracle_candidate = "像源法と同じ反射経路"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-035"
+axis = "geometric"
+item = "acoustic radiosity / radiance transfer (diffuse energy exchange)"
+source = "Kuttruff, Room Acoustics (radiosity); Siltanen et al. 2007 (acoustic radiance transfer)"
+status = "missing"
+evidence = "エネルギー交換 (radiosity) は無い (熱放射の形態係数も他の表で missing)"
+oracle_candidate = "拡散室の定常エネルギー密度"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-036"
+axis = "geometric"
+item = "edge diffraction in geometric acoustics (UTD, Biot-Tolstoy-Medwin)"
+source = "Svensson et al. 1999 (BTM); Tsingos et al. 2001 (UTD); Steam Audio"
+status = "missing"
+evidence = "回折経路は無い"
+oracle_candidate = "半無限剛体スクリーンの回折 (Macdonald 解、参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-037"
+axis = "geometric"
+item = "ray tracing in a stratified medium (curved rays, shadow zones)"
+source = "Pierce, Acoustics: An Introduction to Its Physical Principles and Applications (ray acoustics); Salomons, Computational Atmospheric Acoustics; Jensen et al., Computational Ocean Acoustics"
+status = "missing"
+evidence = "屈折する音線は無い"
+oracle_candidate = "線形音速勾配で円弧の音線 (閉形式)"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-038"
+axis = "boundary"
+item = "rigid wall (zero normal velocity, Neumann)"
+source = "Kinsler-Frey-Coppens-Sanders, Fundamentals of Acoustics (boundary conditions); COMSOL Acoustics (sound hard boundary)"
+status = "implemented+oracle"
+evidence = "src/acoustic_wave.rs:57 / tests/audit_acoustic_wave.rs::neumann_wall_reflects_pulse_with_same_sign_and_amplitude / tests/audit_acoustic_wave.rs::end_cells_equal_their_neighbours_after_step (1-D の両端のみ、端を選べない)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-039"
+axis = "boundary"
+item = "pressure-release boundary (p = 0, Dirichlet)"
+source = "Kinsler-Frey-Coppens-Sanders, Fundamentals of Acoustics; COMSOL Acoustics (sound soft boundary)"
+status = "missing"
+evidence = "端は常に反射 (Neumann) で固定 (src/acoustic_wave.rs:57)"
+oracle_candidate = "反射で符号が反転する (反射係数 -1)"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-040"
+axis = "boundary"
+item = "locally reacting impedance boundary (frequency-independent Z)"
+source = "Kuttruff, Room Acoustics (wall impedance); Botteldooren 1995"
+status = "missing"
+evidence = "インピーダンス境界は無い"
+oracle_candidate = "垂直入射の反射係数 (Z - rho c)/(Z + rho c)"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-041"
+axis = "boundary"
+item = "frequency-dependent impedance boundary in the time domain (IIR / recursive convolution)"
+source = "Kowalczyk-van Walstijn; Bilbao, Numerical Sound Synthesis"
+status = "missing"
+evidence = "周波数依存境界は無い"
+oracle_candidate = "1 自由度の質量-ばね-抵抗の壁の反射係数"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-042"
+axis = "boundary"
+item = "first-order absorbing boundary (Mur / Engquist-Majda)"
+source = "Engquist-Majda 1977; Mur 1981; Taflove-Hagness"
+status = "missing"
+evidence = "module doc が absorbing boundaries を future work とする (src/acoustic_wave.rs:24 の次行)"
+oracle_candidate = "1-D で C = 1 の時 反射 0"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-043"
+axis = "boundary"
+item = "perfectly matched layer (PML)"
+source = "Berenger 1994; Treeby-Cox (k-Wave PML); Taflove-Hagness"
+status = "missing"
+evidence = "同上 (src/acoustic_wave.rs:24 の次行) 電磁波 FDTD の吸収境界は他の表の範囲で数えない"
+oracle_candidate = "斜入射の反射率の角度依存 (理論曲線)"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-044"
+axis = "boundary"
+item = "radiation condition for unbounded domains in the frequency domain (DtN, infinite elements)"
+source = "Givoli, Numerical Methods for Problems in Infinite Domains; Ihlenburg; COMSOL Acoustics (radiation boundary)"
+status = "missing"
+evidence = "周波数領域の solver 自体が無い"
+oracle_candidate = "脈動球の外部問題"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-045"
+axis = "boundary"
+item = "open pipe end (radiation impedance and end correction)"
+source = "Kinsler-Frey-Coppens-Sanders, Fundamentals of Acoustics (radiation from an open-ended pipe); Levine-Schwinger 1948"
+status = "missing"
+evidence = "開放端の境界は無い (反射端のみ)"
+oracle_candidate = "開口端補正 0.61 a (無フランジ、参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-046"
+axis = "boundary"
+item = "prescribed normal velocity on a vibrating boundary (moving wall as source)"
+source = "Fahy, Sound and Structural Vibration; COMSOL Acoustics (normal velocity / acoustic-structure boundary)"
+status = "missing"
+evidence = "境界に速度を与える API は無い"
+oracle_candidate = "正弦振動する端からの平面波の振幅 rho c v"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-047"
+axis = "boundary"
+item = "interface between two media (continuity of pressure and normal velocity)"
+source = "Kinsler-Frey-Coppens-Sanders, Fundamentals of Acoustics (transmission through an interface)"
+status = "missing"
+evidence = "媒質界面は無い (一様媒質のみ)"
+oracle_candidate = "強度透過係数 4 Z1 Z2 / (Z1 + Z2)^2"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-048"
+axis = "boundary"
+item = "periodic boundary"
+source = "LeVeque; COMSOL Acoustics (periodic condition)"
+status = "missing"
+evidence = "端は反射で固定 (src/acoustic_wave.rs:57)"
+oracle_candidate = "周期領域を 1 周した波形の一致"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-049"
+axis = "propagation"
+item = "spherical spreading of a point source (1/r pressure, 1/r^2 intensity)"
+source = "Kinsler-Frey-Coppens-Sanders, Fundamentals of Acoustics (spherical waves); ISO 9613-2 (geometrical divergence)"
+status = "missing"
+evidence = "距離減衰の関数は無い (1-D solver では表せない)"
+oracle_candidate = "倍距離で -6 dB"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-050"
+axis = "propagation"
+item = "propagation delay and phase r / c"
+source = "Kinsler-Frey-Coppens-Sanders, Fundamentals of Acoustics; Steam Audio / Wwise (distance delay)"
+status = "missing"
+evidence = "音速 (src/acoustic_wave.rs:75) はあるが伝播遅延を返す関数は無い"
+oracle_candidate = "t = r / c"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-051"
+axis = "propagation"
+item = "reflection and transmission at normal incidence between two fluids"
+source = "Kinsler-Frey-Coppens-Sanders, Fundamentals of Acoustics (reflection and transmission at normal incidence)"
+status = "missing"
+evidence = "R = (Z2 - Z1)/(Z2 + Z1) を計算する関数は無い"
+oracle_candidate = "空気-水界面の透過率 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-052"
+axis = "propagation"
+item = "oblique incidence and refraction (Snell's law, critical angle)"
+source = "Kinsler-Frey-Coppens-Sanders, Fundamentals of Acoustics (reflection at oblique incidence)"
+status = "missing"
+evidence = "斜入射・屈折は無い"
+oracle_candidate = "臨界角 asin(c1/c2)"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-053"
+axis = "propagation"
+item = "classical absorption (viscosity and heat conduction)"
+source = "Kinsler-Frey-Coppens-Sanders, Fundamentals of Acoustics (classical absorption coefficient); Pierce, Acoustics: An Introduction to Its Physical Principles and Applications"
+status = "missing"
+evidence = "module doc は線形音響のみ (src/acoustic_wave.rs:27)、leapfrog_step に損失項は無い"
+oracle_candidate = "Stokes-Kirchhoff の alpha ∝ f^2"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-054"
+axis = "propagation"
+item = "molecular relaxation absorption in air (ISO 9613-1)"
+source = "ISO 9613-1; Bass et al. 1995"
+status = "missing"
+evidence = "空気吸収は無い"
+oracle_candidate = "ISO 9613-1 の表の減衰率 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-055"
+axis = "propagation"
+item = "outdoor propagation: ground effect and combined attenuation (ISO 9613-2)"
+source = "ISO 9613-2; Salomons, Computational Atmospheric Acoustics"
+status = "missing"
+evidence = "地表面効果は無い"
+oracle_candidate = "ISO 9613-2 の例題 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-056"
+axis = "propagation"
+item = "barrier attenuation by diffraction (Maekawa)"
+source = "Maekawa 1968; ISO 9613-2 (screening)"
+status = "missing"
+evidence = "遮音壁の回折減衰は無い"
+oracle_candidate = "Maekawa の Fresnel 数対減衰の曲線 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-057"
+axis = "propagation"
+item = "Doppler shift for a moving source and a moving observer"
+source = "Kinsler-Frey-Coppens-Sanders, Fundamentals of Acoustics (Doppler effect); Pierce, Acoustics: An Introduction to Its Physical Principles and Applications"
+status = "missing"
+evidence = "剛体の速度はあるが Doppler の関数は無い (音響イベントは位置だけを持つ src/audio_physics.rs:145)"
+oracle_candidate = "f' = f (c + v_o)/(c - v_s)"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-058"
+axis = "propagation"
+item = "atmospheric refraction by wind and temperature gradients"
+source = "Salomons, Computational Atmospheric Acoustics; Embleton 1996"
+status = "missing"
+evidence = "高度ごとの音速 (src/atmosphere.rs:173) はあるが伝播には使われない"
+oracle_candidate = "線形勾配で影領域の距離 (閉形式)"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-059"
+axis = "propagation"
+item = "dispersion and cut-off of guided modes in ducts and waveguides"
+source = "Kinsler-Frey-Coppens-Sanders, Fundamentals of Acoustics (waveguides); Munjal, Acoustics of Ducts and Mufflers"
+status = "missing"
+evidence = "ダクトのモードは無い"
+oracle_candidate = "矩形ダクトの遮断周波数 c / (2 a)"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-060"
+axis = "propagation"
+item = "scattering by a rigid sphere or cylinder (Rayleigh limit and modal series)"
+source = "Pierce, Acoustics: An Introduction to Its Physical Principles and Applications (scattering); Morse-Ingard, Theoretical Acoustics"
+status = "missing"
+evidence = "散乱解は無い"
+oracle_candidate = "Rayleigh 散乱 ∝ (ka)^4"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-061"
+axis = "room"
+item = "Sabine reverberation time"
+source = "Kuttruff, Room Acoustics (Sabine formula); ISO 3382"
+status = "missing"
+evidence = "残響時間の閉形式は無い (src に reverb / Sabine は grep 0 件)"
+oracle_candidate = "T60 = 0.161 V / A"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-062"
+axis = "room"
+item = "Eyring and Millington-Sette reverberation time"
+source = "Kuttruff, Room Acoustics (Eyring formula)"
+status = "missing"
+evidence = "同上"
+oracle_candidate = "平均吸音率 → 0 で Sabine に一致"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-063"
+axis = "room"
+item = "eigenfrequencies of a rectangular room"
+source = "Kuttruff, Room Acoustics (normal modes of a rectangular room); Kinsler-Frey-Coppens-Sanders, Fundamentals of Acoustics"
+status = "missing"
+evidence = "室の固有周波数の関数は無い (1-D の閉管は 1 軸のみ、行 COV-ACOUS-081 参照)"
+oracle_candidate = "f = (c/2) sqrt((nx/Lx)^2 + (ny/Ly)^2 + (nz/Lz)^2)"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-064"
+axis = "room"
+item = "modal density and the Schroeder frequency"
+source = "Kuttruff, Room Acoustics (modal density); Schroeder 1962"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "f_s = 2000 sqrt(T60 / V)"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-065"
+axis = "room"
+item = "room impulse response synthesis"
+source = "Vorländer, Auralization; Allen-Berkley 1979"
+status = "missing"
+evidence = "インパルス応答の生成は無い"
+oracle_candidate = "像源法の到達時刻列"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-066"
+axis = "room"
+item = "energy decay curve and room-acoustic parameters (EDT, T20, T30, C80, D50)"
+source = "ISO 3382-1; Schroeder 1965 (backward integration)"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "指数減衰の IR で T30 = 設定値"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-067"
+axis = "room"
+item = "diffuse-field steady-state level and critical distance"
+source = "Kuttruff, Room Acoustics (steady-state sound field); Kinsler-Frey-Coppens-Sanders, Fundamentals of Acoustics"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "r_c = sqrt(Q A / (16 pi))"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-068"
+axis = "room"
+item = "frequency-band absorption and scattering coefficients of materials"
+source = "ISO 354; ISO 17497-1; Vorländer, Auralization (material data)"
+status = "missing"
+evidence = "音響の材料 (AudioMaterial, src/audio_physics.rs:29) は衝突音の音色用で吸音率を持たない"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-069"
+axis = "room"
+item = "late reverberation model (statistical / feedback delay network)"
+source = "Jot-Chaigne 1991 (FDN); Vorländer, Auralization"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "FDN の減衰時間が設計 T60 に一致"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-070"
+axis = "structural"
+item = "sound radiation from a vibrating plate (radiation efficiency)"
+source = "Fahy, Sound and Structural Vibration (radiation efficiency); Cremer-Heckl-Petersson, Structure-Borne Sound"
+status = "missing"
+evidence = "板の固有振動数 (src/modal.rs:145) は構造側の閉形式で、放射は扱わない"
+oracle_candidate = "無限板の sigma = 1/sqrt(1 - (f_c/f))"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-071"
+axis = "structural"
+item = "coincidence (critical) frequency of a plate"
+source = "Fahy, Sound and Structural Vibration (coincidence); Cremer-Heckl-Petersson"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "f_c = c^2/(2 pi) sqrt(m''/B)"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-072"
+axis = "structural"
+item = "mass-law transmission loss of a single partition"
+source = "Fahy, Sound and Structural Vibration (sound transmission through partitions); Kinsler-Frey-Coppens-Sanders, Fundamentals of Acoustics"
+status = "missing"
+evidence = "透過損失は無い"
+oracle_candidate = "質量則: 面密度 2 倍で +6 dB"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-073"
+axis = "structural"
+item = "double-wall transmission loss (mass-air-mass resonance)"
+source = "Fahy, Sound and Structural Vibration; Sharp 1978"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "f_0 = (1/2pi) sqrt(rho c^2 (m1+m2)/(d m1 m2))"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-074"
+axis = "structural"
+item = "vibro-acoustic coupling (structure and acoustic cavity, two-way)"
+source = "Fahy, Sound and Structural Vibration (fluid loading); COMSOL Acoustics (acoustic-structure interaction); Code_Aster (vibro-acoustics)"
+status = "missing"
+evidence = "module doc が流体-構造連成を future work とする (src/acoustic_wave.rs:24 の次行)"
+oracle_candidate = "ピストン付き閉管の連成固有値"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-075"
+axis = "structural"
+item = "statistical energy analysis (SEA)"
+source = "Lyon-DeJong, Theory and Application of Statistical Energy Analysis"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "2 subsystem のパワー平衡"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-076"
+axis = "structural"
+item = "impact sound by modal synthesis (structural modes excited by a contact force)"
+source = "van den Doel-Pai 1998; O'Brien et al. 2002 (modal synthesis); Bilbao, Numerical Sound Synthesis"
+status = "missing"
+evidence = "衝突音は経験則のパラメータのみで波形を作らない (src/audio_physics.rs:10) 構造の固有振動数 (src/modal.rs:44) と繋がっていない"
+oracle_candidate = "単一モードの減衰正弦波で周波数と減衰時間が設定値"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-077"
+axis = "source"
+item = "monopole point source (pressure from volume velocity, free field)"
+source = "Kinsler-Frey-Coppens-Sanders, Fundamentals of Acoustics (simple source); Pierce, Acoustics: An Introduction to Its Physical Principles and Applications"
+status = "missing"
+evidence = "音源モデルの関数は無い"
+oracle_candidate = "p = j omega rho Q e^(-jkr) / (4 pi r)"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-078"
+axis = "source"
+item = "dipole and quadrupole sources"
+source = "Kinsler-Frey-Coppens-Sanders, Fundamentals of Acoustics; Pierce, Acoustics: An Introduction to Its Physical Principles and Applications (multipoles)"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "cos theta の指向性"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-079"
+axis = "source"
+item = "baffled circular piston: on-axis pressure and far-field directivity"
+source = "Kinsler-Frey-Coppens-Sanders, Fundamentals of Acoustics (baffled piston); Pierce, Acoustics: An Introduction to Its Physical Principles and Applications"
+status = "missing"
+evidence = "無い (Bessel 関数も無い、src に bessel は grep 0 件)"
+oracle_candidate = "2 J1(ka sin theta)/(ka sin theta)"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-080"
+axis = "source"
+item = "Helmholtz resonator resonance frequency"
+source = "Kinsler-Frey-Coppens-Sanders, Fundamentals of Acoustics (Helmholtz resonator)"
+status = "missing"
+evidence = "無い (src に helmholtz は grep 0 件)"
+oracle_candidate = "f = (c / 2 pi) sqrt(A / (V L_eff))"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-081"
+axis = "source"
+item = "standing waves in a pipe closed at both ends (1-D)"
+source = "Kinsler-Frey-Coppens-Sanders, Fundamentals of Acoustics (resonances of pipes)"
+status = "implemented-no-oracle"
+evidence = "既存の 1-D solver (src/acoustic_wave.rs:41) は両端反射なので閉管になる 固有周波数を測る test は無い"
+oracle_candidate = "f_n = n c / (2 L) (既存機能だけで組める)"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-082"
+axis = "source"
+item = "pipes with open ends (quarter- and half-wave resonances with end correction)"
+source = "Kinsler-Frey-Coppens-Sanders, Fundamentals of Acoustics (open and closed pipes)"
+status = "missing"
+evidence = "開放端の境界が無い (行 COV-ACOUS-045)"
+oracle_candidate = "閉-開管 f_n = (2n-1) c / (4 L')"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-083"
+axis = "source"
+item = "source injection in the time-domain solver (additive or soft source)"
+source = "Taflove-Hagness (soft source); k-Wave (source terms)"
+status = "missing"
+evidence = "src/acoustic_wave.rs:41 は源項を持たない (初期値で与えるのみ)"
+oracle_candidate = "点源から出た平面波の振幅 (1-D)"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-084"
+axis = "source"
+item = "aeroacoustic sources (Lighthill analogy, Ffowcs Williams-Hawkings)"
+source = "Lighthill 1952; Ffowcs Williams-Hawkings 1969; Goldstein, Aeroacoustics"
+status = "missing"
+evidence = "空力音は無い (流体 solver の場から音源を作る経路が無い)"
+oracle_candidate = "円柱の渦放出音の周波数 = Strouhal 周波数"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-085"
+axis = "game-audio"
+item = "contact sound events from collisions (impact / slide / roll classification and volume, pitch, decay parameters)"
+source = "Steam Audio / FMOD / Wwise (physics-driven sound triggers); van den Doel et al. 2001 (contact sounds)"
+status = "partial"
+evidence = "src/audio_physics.rs:250 / tests/audit_audio_physics.rs::decay_matches_the_resonance_damping_closed_form_for_every_preset_pair / tests/audit_audio_physics.rs::pitch_matches_the_density_closed_form_with_clamp_for_every_preset_pair_and_speed / src/audio_physics.rs::test_slide_detection 写像は経験則で接触力学からの導出ではない known defect: tests/audit_audio_physics.rs::zero_max_velocity_saturates_volume_instead_of_silencing"
+oracle_candidate = ""
+limitation = "src/audio_physics.rs:10 'This module does NOT generate audio samples. It computes parameters that an audio engine can use to trigger and modulate sounds.'"
+
+[[item]]
+id = "COV-ACOUS-086"
+axis = "game-audio"
+item = "per-frame event budget"
+source = "FMOD / Wwise (voice limiting)"
+status = "implemented+oracle"
+evidence = "src/audio_physics.rs:199 / src/audio_physics.rs::get_events_returns_this_frames_events_in_order_and_respects_cap"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-087"
+axis = "game-audio"
+item = "procedural synthesis of continuous contact sounds (rolling, sliding, scraping)"
+source = "van den Doel et al. 2001; Bilbao, Numerical Sound Synthesis"
+status = "missing"
+evidence = "Slide / Roll の分類はあるが波形は作らない (src/audio_physics.rs:10)"
+oracle_candidate = "転がり速度に比例する励起帯域"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-088"
+axis = "game-audio"
+item = "distance attenuation curves (inverse, linear, logarithmic rolloff with min / max distance)"
+source = "OpenAL / FMOD / Wwise (distance models); Steam Audio"
+status = "missing"
+evidence = "距離減衰の関数は無い (行 COV-ACOUS-049 の物理側も missing)"
+oracle_candidate = "inverse モデルで min distance の倍で -6 dB"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-089"
+axis = "game-audio"
+item = "occlusion of the direct path by geometry"
+source = "Steam Audio (occlusion); Wwise Spatial Audio (obstruction / occlusion)"
+status = "missing"
+evidence = "既存の ray cast (src/shape_raycast.rs:1076) で組めるが音の遮蔽には使われていない"
+oracle_candidate = "球の陰で遮蔽 1、外で 0 (幾何の閉形式、既存機能だけで組める)"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-090"
+axis = "game-audio"
+item = "obstruction and propagation around obstacles (diffraction paths, portals and room graph)"
+source = "Wwise Spatial Audio (rooms and portals, diffraction); Steam Audio (pathing)"
+status = "missing"
+evidence = "経路探索による音の回り込みは無い"
+oracle_candidate = "L 字通路で最短回折経路長"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-091"
+axis = "game-audio"
+item = "baked reflections and reverb probes"
+source = "Steam Audio (baked reflections, reverb); Project Acoustics"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "矩形室の焼き込み T60 と Sabine"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-092"
+axis = "output"
+item = "sound pressure level in dB re 20 uPa, intensity and power levels"
+source = "Kinsler-Frey-Coppens-Sanders, Fundamentals of Acoustics (decibel scales); IEC 61672-1"
+status = "missing"
+evidence = "dB 換算は無い (src に decibel は grep 0 件)"
+oracle_candidate = "1 Pa = 93.98 dB SPL"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-093"
+axis = "output"
+item = "frequency weighting (A, C) and octave / third-octave bands"
+source = "IEC 61672-1; IEC 61260-1"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "1 kHz で A 特性 0 dB"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-094"
+axis = "output"
+item = "spectrum of a recorded signal (FFT)"
+source = "Oppenheim-Schafer, Discrete-Time Signal Processing; k-Wave (post-processing)"
+status = "missing"
+evidence = "crate に FFT は無い (src の fft は変形勾配の変数名のみ、spectrum は波浪 / 疲労の別系統)"
+oracle_candidate = "純音の FFT で単一ピーク"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-095"
+axis = "output"
+item = "receiver probes recording a time history inside the solver"
+source = "k-Wave (sensor mask); COMSOL Acoustics (probes)"
+status = "missing"
+evidence = "呼び手が自分で loop を書く設計 (src/acoustic_wave.rs:18)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-096"
+axis = "output"
+item = "acoustic energy and intensity (energy density, flux, discrete energy balance)"
+source = "Kinsler-Frey-Coppens-Sanders, Fundamentals of Acoustics (acoustic energy and intensity); Pierce, Acoustics: An Introduction to Its Physical Principles and Applications"
+status = "missing"
+evidence = "エネルギー・インテンシティを返す関数は無い"
+oracle_candidate = "閉管で離散エネルギーが保存 (行 COV-ACOUS-099)"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-097"
+axis = "benchmark"
+item = "d'Alembert travelling pulse in 1-D"
+source = "Strauss, Partial Differential Equations (d'Alembert formula); LeVeque"
+status = "implemented+oracle"
+evidence = "tests/engineering_oracles_fluid.rs::acoustic_wave_leapfrog_at_courant_one_reproduces_dalembert"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-098"
+axis = "benchmark"
+item = "grid convergence order of the 1-D solver (second order for C < 1)"
+source = "LeVeque (order of accuracy); Roache, Verification and Validation"
+status = "implemented-no-oracle"
+evidence = "tests/audit_acoustic_wave.rs::interior_update_reproduces_exact_discrete_plane_wave は 1 step の離散解の一致で、格子を細かくした時の収束次数は測っていない"
+oracle_candidate = "C = 0.5 の正弦定在波で誤差比 4 (既存機能だけで組める)"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-099"
+axis = "benchmark"
+item = "long-time discrete energy conservation of the 1-D leapfrog scheme"
+source = "LeVeque (energy method); Bilbao, Numerical Sound Synthesis (energy conservation)"
+status = "implemented-no-oracle"
+evidence = "tests/audit_acoustic_wave.rs::stability_boundary_at_courant_one は有界性のみを見る"
+oracle_candidate = "離散エネルギーが丸め誤差内で一定 (既存機能だけで組める)"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-100"
+axis = "benchmark"
+item = "radiation from a pulsating sphere (radiation impedance)"
+source = "Kinsler-Frey-Coppens-Sanders, Fundamentals of Acoustics (pulsating sphere); Marburg-Nolte (BEM benchmarks)"
+status = "missing"
+evidence = "3-D の solver も BEM も無い"
+oracle_candidate = "Z_r = rho c (jka)/(1 + jka)"
+limitation = ""
+
+[[item]]
+id = "COV-ACOUS-101"
+axis = "benchmark"
+item = "comparison against measured or round-robin room acoustics data"
+source = "Vorländer 1995 (round robin); BRAS database"
+status = "missing"
+evidence = "室内音響の solver が無い"
+oracle_candidate = "(参照値要確認)"
+limitation = ""
