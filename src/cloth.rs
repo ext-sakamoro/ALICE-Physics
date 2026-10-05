@@ -2498,7 +2498,6 @@ mod tests {
     // で生き残りました 自分自身の対では最近接点が頂点自身になり、`delta` への寄与が
     // 同じ index で厳密に相殺するので、**位置の差として出るのは `hits` の水増しによる
     // 平均化の弱まりだけ**です 以下 2 本はその弱まりを直接測ります
-    // (詳細 [[feedback_degenerate_case_as_silent_wrong_answer]] 同 session の Backlog 行)
     // -----------------------------------------------------------------------
 
     /// 候補対に「その三角形自身の頂点」が現れない (契約)
@@ -2726,8 +2725,7 @@ mod tests {
     /// 退化入力と平行入力は `None` (「もっともらしい値」を返さない契約)
     ///
     /// ⚠️ 退化は統合 scene では作られないので、**専用の契約 test でしか固定できません**
-    /// (同 session の `M7` 実測: 入口の退化判定を落としても crumple の統合 oracle は green
-    /// [[feedback_degenerate_case_as_silent_wrong_answer]])
+    /// (実測: 入口の退化判定を落としても crumple の統合 oracle は green)
     #[test]
     fn closest_points_on_segments_rejects_degenerate_and_parallel_pairs() {
         let o = Vec3Fix::ZERO;
@@ -2807,7 +2805,6 @@ mod tests {
     /// ⚠️ **素通りした先は panic でなく silent な誤答**です `Fix128::div` は 0 除算で
     /// `ZERO` を返すので (`src/math.rs` の `impl Div`)、`t = (b·s + f)/e` が無言で 0 になり
     /// `Some((s, 0))` という**もっともらしい値**が返ります
-    /// ([[feedback_degenerate_case_as_silent_wrong_answer]] と同じ型)
     ///
     /// # 過剰 pin の線引き
     ///

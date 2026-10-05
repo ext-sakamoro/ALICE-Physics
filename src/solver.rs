@@ -1226,8 +1226,7 @@ pub trait ContactModifier: Send + Sync {
 /// Typed, read-only observation of a single body's law-relevant state.
 ///
 /// Public入口 for [`PhysicsWorld::observe_body`] / [`PhysicsWorld::observe_bodies`]
-/// — doctrine WM-10 (Physics 版、`project_alice_physics_world_auditor_engine_gaps`
-/// gap #6) が要求する「Law が読む形の観測型」 observation 以前は blob の
+/// — 「Law が読む形の観測型」 observation 以前は blob の
 /// parse か field 直読みしかなく、公開 interface が無かった
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct BodyObservation {
@@ -5562,8 +5561,7 @@ impl PhysicsWorld {
     ///
     /// ⚠️ **位置 / 速度 / 回転 / sleep を含めない** — それらは blob 自身が
     /// 復元する量なので、ここに混ぜると「自分で組んだ量で自分を検査する」
-    /// 循環になり population 不一致を検出できなくなる (ys-1f 裏取り、
-    /// `project_alice_physics_world_auditor_engine_gaps` gap #3 追記参照)
+    /// 循環になり population 不一致を検出できなくなる
     #[must_use]
     pub fn population_fingerprint(&self) -> u64 {
         let mut hash: u64 = 0xcbf2_9ce4_8422_2325;

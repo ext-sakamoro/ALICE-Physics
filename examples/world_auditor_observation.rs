@@ -1,10 +1,8 @@
 //! World Auditor Observation Example
 //!
 //! Demonstrates the typed observation API (`PhysicsWorld::observe_body` /
-//! `observe_bodies`) and the `reset_world()` contract that together close
-//! gap #1 / #6 of the World Auditor engine gap survey
-//! (`project_alice_physics_world_auditor_engine_gaps`, 2026-10-02):
-//! a Law / goal predicate reads `BodyObservation` instead of parsing the
+//! `observe_bodies`) and the `reset_world()` contract: a Law / goal predicate
+//! reads `BodyObservation` instead of parsing the
 //! `serialize_state` blob or reading fields directly.
 //!
 //! ```bash

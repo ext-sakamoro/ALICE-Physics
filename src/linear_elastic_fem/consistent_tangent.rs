@@ -719,7 +719,7 @@ mod tests {
         r
     }
 
-    /// `A(F) : dF` in closed form (oracle: `sakamoro-ff`'s derivation):
+    /// `A(F) : dF` in closed form:
     /// `dP = μ dF + (μ − p) F⁻ᵀ dFᵀ F⁻ᵀ + c (F⁻ᵀ : dF) F⁻ᵀ`.
     fn dpiola(f: &M3, df: &M3) -> M3 {
         let (p, c) = p_and_c(det(f));
