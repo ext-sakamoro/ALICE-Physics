@@ -111,6 +111,96 @@ impl SdfField for ClosureSdf {
     }
 }
 
+/// A signed distance field queried by reference, with no thread-safety or
+/// lifetime requirement.
+///
+/// [`SdfField`] requires `Send + Sync` (a collider owns its field as
+/// `Box<dyn SdfField>` and the world may be shared across threads). Entry
+/// points that only borrow a field for the length of one call, such as
+/// [`sphere_trace_sdf_field`](crate::sdf_ccd::sphere_trace_sdf_field), take
+/// this trait instead, so a field that borrows local data or holds an `Rc`
+/// can be queried too. Every [`SdfField`] implements it (the methods forward
+/// to [`SdfField::distance`] and [`SdfField::normal`]); a pair of borrowed
+/// closures can be wrapped in [`ClosureSdfQuery`].
+///
+/// The methods are named apart from [`SdfField`]'s so that a type with both
+/// traits in scope still resolves `field.distance(..)` unambiguously.
+pub trait SdfQuery {
+    /// Signed distance from the point to the nearest surface (positive
+    /// outside), as [`SdfField::distance`].
+    fn query_distance(&self, x: f32, y: f32, z: f32) -> f32;
+
+    /// Outward surface normal at the point, as [`SdfField::normal`].
+    fn query_normal(&self, x: f32, y: f32, z: f32) -> (f32, f32, f32);
+}
+
+impl<T: SdfField + ?Sized> SdfQuery for T {
+    #[inline]
+    fn query_distance(&self, x: f32, y: f32, z: f32) -> f32 {
+        self.distance(x, y, z)
+    }
+
+    #[inline]
+    fn query_normal(&self, x: f32, y: f32, z: f32) -> (f32, f32, f32) {
+        self.normal(x, y, z)
+    }
+}
+
+/// A distance closure and a normal closure as an [`SdfQuery`], unboxed.
+///
+/// Unlike [`ClosureSdf`] the closures need not be `'static`, `Send` or
+/// `Sync`: they may borrow local data for the length of a query.
+///
+/// ```
+/// use alice_physics::sdf_collider::{ClosureSdfQuery, SdfQuery};
+///
+/// let radius = 2.0_f32; // a local, borrowed by the closure
+/// let sdf = ClosureSdfQuery::new(
+///     |x: f32, y: f32, z: f32| (x * x + y * y + z * z).sqrt() - radius,
+///     |x: f32, y: f32, z: f32| {
+///         let l = (x * x + y * y + z * z).sqrt();
+///         (x / l, y / l, z / l)
+///     },
+/// );
+/// assert_eq!(sdf.query_distance(3.0, 0.0, 0.0), 1.0);
+/// ```
+#[derive(Clone, Copy, Debug)]
+pub struct ClosureSdfQuery<D, N> {
+    distance_fn: D,
+    normal_fn: N,
+}
+
+impl<D, N> ClosureSdfQuery<D, N>
+where
+    D: Fn(f32, f32, f32) -> f32,
+    N: Fn(f32, f32, f32) -> (f32, f32, f32),
+{
+    /// Wrap a distance closure and a normal closure.
+    #[must_use]
+    pub fn new(distance_fn: D, normal_fn: N) -> Self {
+        Self {
+            distance_fn,
+            normal_fn,
+        }
+    }
+}
+
+impl<D, N> SdfQuery for ClosureSdfQuery<D, N>
+where
+    D: Fn(f32, f32, f32) -> f32,
+    N: Fn(f32, f32, f32) -> (f32, f32, f32),
+{
+    #[inline]
+    fn query_distance(&self, x: f32, y: f32, z: f32) -> f32 {
+        (self.distance_fn)(x, y, z)
+    }
+
+    #[inline]
+    fn query_normal(&self, x: f32, y: f32, z: f32) -> (f32, f32, f32) {
+        (self.normal_fn)(x, y, z)
+    }
+}
+
 /// Union of two fields: `min(a, b)`, with the normal of whichever is nearer.
 ///
 /// On a tie the first operand wins. The union of two exact distance fields
@@ -198,6 +288,78 @@ pub struct SdfCollider {
     pub(crate) inv_scale_f32: f32,
 }
 
+/// The placement of a distance field in the world: position, orientation
+/// and uniform scale, with the inverse rotation and the scale as `f32`
+/// precomputed.
+///
+/// A field is evaluated in its local space: a world point `p` is queried at
+/// `R⁻¹ (p - position) / scale`, the returned distance is multiplied by
+/// `scale`, and a local normal is rotated by `R` back to world space. This is
+/// the transform an [`SdfCollider`] applies; [`SdfCollider::frame`] returns
+/// the collider's own frame (from its cached values, so a collider and its
+/// frame agree bit for bit even when the cache was not refreshed with
+/// [`SdfCollider::update_cache`]).
+///
+/// A scale whose magnitude is below `1e-10` is inverted as `1`, as in
+/// [`SdfCollider::with_scale`].
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SdfFrame {
+    position: Vec3Fix,
+    rotation: QuatFix,
+    inv_rotation: QuatFix,
+    scale_f32: f32,
+    inv_scale_f32: f32,
+}
+
+impl SdfFrame {
+    /// The world frame: no translation, no rotation, scale 1.
+    pub const IDENTITY: Self = Self {
+        position: Vec3Fix::ZERO,
+        rotation: QuatFix::IDENTITY,
+        inv_rotation: QuatFix::IDENTITY,
+        scale_f32: 1.0,
+        inv_scale_f32: 1.0,
+    };
+
+    /// A field placed at `position`, rotated by `rotation`, scaled by `scale`.
+    #[must_use]
+    pub fn new(position: Vec3Fix, rotation: QuatFix, scale: Fix128) -> Self {
+        let s = scale.to_f32();
+        Self {
+            position,
+            rotation,
+            inv_rotation: rotation.conjugate(),
+            scale_f32: s,
+            inv_scale_f32: if s.abs() < 1e-10 { 1.0 } else { 1.0 / s },
+        }
+    }
+
+    /// The uniform scale as `f32` (local distances are multiplied by it).
+    #[must_use]
+    pub fn scale_f32(&self) -> f32 {
+        self.scale_f32
+    }
+
+    /// Transform a world-space point to the field's local space (f32).
+    #[cfg(feature = "std")]
+    #[inline]
+    pub(crate) fn world_to_local(&self, world_point: Vec3Fix) -> (f32, f32, f32) {
+        let relative = world_point - self.position;
+        let local = self.inv_rotation.rotate_vec(relative);
+        let (lx, ly, lz) = local.to_f32();
+        let inv_s = self.inv_scale_f32;
+        (lx * inv_s, ly * inv_s, lz * inv_s)
+    }
+
+    /// Transform a local-space normal to world space (Fix128).
+    #[cfg(feature = "std")]
+    #[inline]
+    pub(crate) fn local_normal_to_world(&self, nx: f32, ny: f32, nz: f32) -> Vec3Fix {
+        let local_n = Vec3Fix::from_f32(nx, ny, nz);
+        self.rotation.rotate_vec(local_n).normalize()
+    }
+}
+
 /// Sentinel value for static (world-fixed) SDF colliders
 pub const SDF_STATIC: usize = usize::MAX;
 
@@ -256,19 +418,28 @@ impl SdfCollider {
     #[cfg(feature = "std")]
     #[inline]
     pub(crate) fn world_to_local(&self, world_point: Vec3Fix) -> (f32, f32, f32) {
-        let relative = world_point - self.position;
-        let local = self.inv_rotation.rotate_vec(relative);
-        let (lx, ly, lz) = local.to_f32();
-        let inv_s = self.inv_scale_f32;
-        (lx * inv_s, ly * inv_s, lz * inv_s)
+        self.frame().world_to_local(world_point)
     }
 
     /// Transform local-space normal to world space (Fix128).
     #[cfg(feature = "std")]
     #[inline]
     pub(crate) fn local_normal_to_world(&self, nx: f32, ny: f32, nz: f32) -> Vec3Fix {
-        let local_n = Vec3Fix::from_f32(nx, ny, nz);
-        self.rotation.rotate_vec(local_n).normalize()
+        self.frame().local_normal_to_world(nx, ny, nz)
+    }
+
+    /// The collider's placement as an [`SdfFrame`], taken from its cached
+    /// inverse rotation and scale (the values every query uses), so a
+    /// collider and its frame transform points identically.
+    #[must_use]
+    pub fn frame(&self) -> SdfFrame {
+        SdfFrame {
+            position: self.position,
+            rotation: self.rotation,
+            inv_rotation: self.inv_rotation,
+            scale_f32: self.scale_f32,
+            inv_scale_f32: self.inv_scale_f32,
+        }
     }
 }
 
@@ -288,22 +459,37 @@ impl SdfCollider {
 #[cfg(feature = "std")]
 #[must_use]
 pub fn collide_point_sdf(point: Vec3Fix, sdf: &SdfCollider) -> Option<Contact> {
-    let (lx, ly, lz) = sdf.world_to_local(point);
+    collide_point_sdf_field(point, &*sdf.field, &sdf.frame())
+}
+
+/// [`collide_point_sdf`] against a borrowed field placed by `frame`.
+///
+/// `field` need not be `'static`, `Send` or `Sync` (see [`SdfQuery`]); the
+/// result is bit for bit that of [`collide_point_sdf`] for a collider with
+/// the same field and [`SdfCollider::frame`]. A point on the surface or
+/// outside (world distance `>= 0`) gives `None`.
+#[cfg(feature = "std")]
+#[must_use]
+pub fn collide_point_sdf_field<F: SdfQuery + ?Sized>(
+    point: Vec3Fix,
+    field: &F,
+    frame: &SdfFrame,
+) -> Option<Contact> {
+    let (lx, ly, lz) = frame.world_to_local(point);
 
     // Early-out: distance only (1 eval instead of 5)
-    let dist = sdf.field.distance(lx, ly, lz);
-    let scale_f32 = sdf.scale_f32;
-    let world_dist = dist * scale_f32;
+    let dist = field.query_distance(lx, ly, lz);
+    let world_dist = dist * frame.scale_f32();
 
     if world_dist >= 0.0 {
         return None; // Outside or on surface
     }
 
     // Only compute normal for penetrating points (4 additional evals)
-    let (nx, ny, nz) = sdf.field.normal(lx, ly, lz);
+    let (nx, ny, nz) = field.query_normal(lx, ly, lz);
 
     let depth = Fix128::from_f32(-world_dist);
-    let normal = sdf.local_normal_to_world(nx, ny, nz);
+    let normal = frame.local_normal_to_world(nx, ny, nz);
     let surface_point = point + normal * depth;
 
     Some(Contact {
@@ -323,12 +509,29 @@ pub fn collide_point_sdf(point: Vec3Fix, sdf: &SdfCollider) -> Option<Contact> {
 #[cfg(feature = "std")]
 #[must_use]
 pub fn collide_sphere_sdf(center: Vec3Fix, radius: Fix128, sdf: &SdfCollider) -> Option<Contact> {
-    let (lx, ly, lz) = sdf.world_to_local(center);
+    collide_sphere_sdf_field(center, radius, &*sdf.field, &sdf.frame())
+}
+
+/// [`collide_sphere_sdf`] against a borrowed field placed by `frame`.
+///
+/// `field` need not be `'static`, `Send` or `Sync` (see [`SdfQuery`]); the
+/// result is bit for bit that of [`collide_sphere_sdf`] for a collider with
+/// the same field and [`SdfCollider::frame`]. A sphere that does not reach
+/// the surface (`radius - world distance <= 0`) gives `None`; with zero
+/// `radius` this is the point test with the touching case excluded.
+#[cfg(feature = "std")]
+#[must_use]
+pub fn collide_sphere_sdf_field<F: SdfQuery + ?Sized>(
+    center: Vec3Fix,
+    radius: Fix128,
+    field: &F,
+    frame: &SdfFrame,
+) -> Option<Contact> {
+    let (lx, ly, lz) = frame.world_to_local(center);
 
     // Early-out: distance only (1 eval)
-    let dist = sdf.field.distance(lx, ly, lz);
-    let scale_f32 = sdf.scale_f32;
-    let world_dist = dist * scale_f32;
+    let dist = field.query_distance(lx, ly, lz);
+    let world_dist = dist * frame.scale_f32();
     let radius_f32 = radius.to_f32();
 
     // Penetration = radius - distance_to_surface
@@ -339,10 +542,10 @@ pub fn collide_sphere_sdf(center: Vec3Fix, radius: Fix128, sdf: &SdfCollider) ->
     }
 
     // Only compute normal for penetrating spheres (4 additional evals)
-    let (nx, ny, nz) = sdf.field.normal(lx, ly, lz);
+    let (nx, ny, nz) = field.query_normal(lx, ly, lz);
 
     let depth = Fix128::from_f32(penetration);
-    let normal = sdf.local_normal_to_world(nx, ny, nz);
+    let normal = frame.local_normal_to_world(nx, ny, nz);
 
     // Contact point on sphere surface (toward SDF)
     let point_a = center - normal * radius;

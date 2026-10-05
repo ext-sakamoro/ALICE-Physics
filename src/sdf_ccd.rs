@@ -22,7 +22,7 @@ use crate::math::Fix128;
 #[cfg(feature = "std")]
 use crate::math::Vec3Fix;
 #[cfg(feature = "std")]
-use crate::sdf_collider::SdfCollider;
+use crate::sdf_collider::{SdfCollider, SdfFrame, SdfQuery};
 
 // ============================================================================
 // SDF CCD Configuration
@@ -64,6 +64,8 @@ impl Default for SdfCcdConfig {
 /// - 1 = end of timestep
 ///
 /// The sphere moves from `start` to `start + displacement` over [0, 1].
+/// This is [`sphere_trace_sdf_field`] with the collider's field and
+/// [`SdfCollider::frame`]; the two return the same result bit for bit.
 #[cfg(feature = "std")]
 #[must_use]
 pub fn sphere_trace_sdf(
@@ -73,8 +75,50 @@ pub fn sphere_trace_sdf(
     sdf: &SdfCollider,
     config: &SdfCcdConfig,
 ) -> Option<TOI> {
+    sphere_trace_sdf_field(
+        start,
+        displacement,
+        radius,
+        &*sdf.field,
+        &sdf.frame(),
+        config,
+    )
+}
+
+/// Sphere trace a moving sphere against a borrowed distance field.
+///
+/// The same computation as [`sphere_trace_sdf`], for a field that is not
+/// owned by an [`SdfCollider`]: `field` is any [`SdfQuery`] (every
+/// [`SdfField`](crate::sdf_collider::SdfField), or borrowed closures through
+/// [`ClosureSdfQuery`](crate::sdf_collider::ClosureSdfQuery)) and need not be
+/// `'static`, `Send` or `Sync`. `frame` places the field in the world
+/// ([`SdfFrame::IDENTITY`] when the field is already in world coordinates).
+///
+/// The sphere of `radius` moves from `start` to `start + displacement` over
+/// `t` in [0, 1]. Each iteration evaluates the gap `distance * scale - radius`
+/// at the current position: when `gap <= config.tolerance` the hit is
+/// returned (with the world normal of the field there and the point `pos -
+/// normal * distance`), otherwise `t` advances by `gap * step_safety /
+/// |displacement|`. A hit's `t` is therefore at most the true time of impact
+/// and short of it by about `tolerance / |displacement|`.
+///
+/// Degenerate input:
+/// - zero `displacement`: `None` (also when the sphere starts inside)
+/// - zero `radius`: the trace of the centre point
+/// - `config.max_iterations == 0`: `None` (no evaluation is made)
+/// - `t` passing 1, or the iteration budget running out: `None`
+#[cfg(feature = "std")]
+#[must_use]
+pub fn sphere_trace_sdf_field<F: SdfQuery + ?Sized>(
+    start: Vec3Fix,
+    displacement: Vec3Fix,
+    radius: Fix128,
+    field: &F,
+    frame: &SdfFrame,
+    config: &SdfCcdConfig,
+) -> Option<TOI> {
     let radius_f32 = radius.to_f32();
-    let scale = sdf.scale_f32;
+    let scale = frame.scale_f32();
     let disp_len = displacement.length();
 
     if disp_len.is_zero() {
@@ -89,16 +133,16 @@ pub fn sphere_trace_sdf(
         let pos = start + displacement * t;
 
         // SDF distance query in local space
-        let (lx, ly, lz) = sdf.world_to_local(pos);
-        let dist = sdf.field.distance(lx, ly, lz) * scale;
+        let (lx, ly, lz) = frame.world_to_local(pos);
+        let dist = field.query_distance(lx, ly, lz) * scale;
 
         // Gap = distance to surface minus sphere radius
         let gap = dist - radius_f32;
 
         if gap <= config.tolerance {
             // Contact found
-            let (nx, ny, nz) = sdf.field.normal(lx, ly, lz);
-            let normal = sdf.local_normal_to_world(nx, ny, nz);
+            let (nx, ny, nz) = field.query_normal(lx, ly, lz);
+            let normal = frame.local_normal_to_world(nx, ny, nz);
             let point = pos - normal * Fix128::from_f32(dist);
 
             return Some(TOI { t, point, normal });

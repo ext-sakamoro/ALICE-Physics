@@ -7,6 +7,12 @@
 //! x = -0.05 - 0.5 = -0.55, i.e. t = (3 - 0.55) / 5 = 0.49, and `ray_march_sdf`
 //! finds the wall surface at x = -0.05 along the same line.
 //!
+//! The same wall as a borrowed field: `sphere_trace_sdf_field` with a
+//! `ClosureSdfQuery` whose closures borrow a local half-thickness (no `Box`,
+//! no `'static`), placed by an `SdfFrame` 2 m along x, gives t = (5 - 0.55) / 5
+//! = 0.89; `collide_point_sdf_field` / `collide_sphere_sdf_field` test a point
+//! inside it and a sphere overlapping it.
+//!
 //! ```bash
 //! cargo run --release --example sdf_ccd_sweep --features std
 //! ```
@@ -14,8 +20,13 @@
 #![allow(clippy::disallowed_methods)]
 
 use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::sdf_ccd::{ray_march_sdf, SdfCcdConfig};
-use alice_physics::sdf_collider::{ClosureSdf, SdfCollider};
+use alice_physics::sdf_ccd::{
+    ray_march_sdf, sphere_trace_sdf, sphere_trace_sdf_field, SdfCcdConfig,
+};
+use alice_physics::sdf_collider::{
+    collide_point_sdf_field, collide_sphere_sdf_field, ClosureSdf, ClosureSdfQuery, SdfCollider,
+    SdfFrame,
+};
 use alice_physics::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
 
 fn main() {
@@ -75,4 +86,46 @@ fn main() {
     );
     assert!((ray.t.to_f32() - 2.95).abs() < 2e-3);
     assert!((px + 0.05).abs() < 2e-3);
+
+    // The wall as a borrowed field: the closures capture a local.
+    let half = 0.05_f32;
+    let borrowed = ClosureSdfQuery::new(
+        |x: f32, _y: f32, _z: f32| x.abs() - half,
+        |x: f32, _y: f32, _z: f32| (if x < 0.0 { -1.0 } else { 1.0 }, 0.0, 0.0),
+    );
+    let start = Vec3Fix::from_f32(-3.0, 0.0, 0.0);
+    let disp = Vec3Fix::from_f32(5.0, 0.0, 0.0);
+    let r = Fix128::from_f32(0.5);
+    let at_origin = sphere_trace_sdf_field(start, disp, r, &borrowed, &SdfFrame::IDENTITY, &cfg)
+        .expect("borrowed wall hit");
+    // same answer, bit for bit, as the boxed collider at the origin
+    assert_eq!(
+        Some(at_origin),
+        sphere_trace_sdf(start, disp, r, &wall2, &cfg)
+    );
+    let moved = SdfFrame::new(
+        Vec3Fix::from_f32(2.0, 0.0, 0.0),
+        QuatFix::IDENTITY,
+        Fix128::ONE,
+    );
+    let toi =
+        sphere_trace_sdf_field(start, disp, r, &borrowed, &moved, &cfg).expect("moved wall hit");
+    let t = toi.t.to_f32();
+    println!("[sdf_ccd] borrowed wall at x = 2: t = {t:.5} (closed form 0.89)");
+    assert!(t <= 0.89 + 1e-6 && 0.89 - t < 1e-3);
+
+    let inside = collide_point_sdf_field(Vec3Fix::from_f32(2.02, 0.0, 0.0), &borrowed, &moved)
+        .expect("point inside the wall");
+    println!(
+        "[sdf_ccd] point depth {:.4} (closed form 0.03)",
+        inside.depth.to_f32()
+    );
+    assert!((inside.depth.to_f32() - 0.03).abs() < 1e-4);
+    let overlap = collide_sphere_sdf_field(Vec3Fix::from_f32(1.6, 0.0, 0.0), r, &borrowed, &moved)
+        .expect("sphere overlaps the wall");
+    println!(
+        "[sdf_ccd] sphere depth {:.4} (closed form 0.15)",
+        overlap.depth.to_f32()
+    );
+    assert!((overlap.depth.to_f32() - 0.15).abs() < 1e-4);
 }
