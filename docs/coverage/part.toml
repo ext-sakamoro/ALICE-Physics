@@ -1,0 +1,1251 @@
+# Particle-method coverage of ALICE-Physics (molecular dynamics, SPH beyond
+# single-phase flow, MPM, DEM, effect particles and crowds), against an external
+# reference frame.
+#
+# What this table is: every capability that the standard textbooks
+# (Allen-Tildesley, Computer Simulation of Liquids; Frenkel-Smit, Understanding
+# Molecular Simulation; Monaghan 2005 SPH review; Jiang et al. MPM course notes;
+# Cundall-Strack 1979 DEM; Helbing-Molnar 1995 social force), reference
+# implementations (LAMMPS pair / bond / fix / compute styles, LIGGGHTS granular
+# models) and standard benchmarks (LJ equation of state, LJ coexistence, angle of
+# repose, silo discharge, pedestrian bottleneck) expect of a particle code, one
+# [[item]] per capability, with what the crate has today. The rows are written by
+# hand: the axes and the items come from the reference frame, not from the modules
+# that exist, so a missing capability is visible instead of absent.
+#
+# Boundary with the other tables (one capability goes in one table only):
+#   - SPH / PBF / FLIP used as a single-phase fluid (kernels Poly6 / Spiky,
+#     density summation, equation of state, viscosity, wall repulsion, SPH
+#     neighbour hash, incompressible SPH, particle shifting, adaptive time step,
+#     FLIP / PIC / APIC transfer): the CFD table (COV-CFD-078 to 092, 117). Here
+#     are only the SPH capabilities that are not single-phase flow (kernel
+#     families, gradient correction, variable h, SPH solids, SPH heat). A
+#     hydrostatic SPH column has no row in either table yet.
+#   - free surface, surface tension of particles, multiphase SPH, dam break: the
+#     multiphase table (COV-MULTIPHASE-038 to 052, 079)
+#   - wiring particles to rigid bodies or to a grid flow (two-way coupling,
+#     Euler-Lagrange tracking): the coupling table / COV-MULTIPHASE-067, 068
+#   - generic time integrators and the gravitational N-body law (nbody / kepler):
+#     the numerical-foundation table (COV-NUM-045 to 047) and the orbit field;
+#     nbody is cited here only as evidence for long-range methods
+#   - rigid-body contact (impulse / XPBD, sphere pairs in the world step) is the
+#     rigid table; a granular DEM contact law is a different system and is
+#     counted here. Hertz contact stress in closed form is the structure table.
+#   - route choice and navigation of pedestrians: not decided here (left to the
+#     engine side); this table has only the force laws and their integration
+#
+# status (exactly one of):
+#   implemented+oracle     implemented, and at least one non-ignored test checks
+#                          it against an independent reference
+#   implemented-no-oracle  implemented, no such test
+#   partial                implemented with a restriction that the source states;
+#                          `limitation` quotes it, and the source carries a
+#                          `LIMITATION(<id>)` comment at that place
+#   missing                not implemented
+#   out-of-scope           not a capability of this field (reason in `evidence`)
+#
+# This axis is separate from the test ignore reasons (`known defect: ...`,
+# `src gap: ...`, `diagnostic`, `runtime`). A capability that exists with a
+# recorded defect keeps its status and cites the known-defect test in
+# `evidence`; it is not `missing`.
+#
+# keys: id (COV-PART-NNN) / axis / item / source (book, paper, standard or
+# reference-implementation feature; no quoted text) / status / evidence
+# (`src/...rs:line`, `tests/...rs::test_fn`) / oracle_candidate / limitation
+# (verbatim quote of the source, required for `partial`).
+#
+# Reference values marked "参照値要確認" are to be checked against the original
+# publication before any test uses them. "(推測)" marks a status that rests on
+# a search returning nothing, where a synonym may have been missed.
+#
+# Checked by scripts/coverage_check.py (tests: scripts/test_coverage_check.py).
+
+[[item]]
+id = "COV-PART-001"
+axis = "pair potential"
+item = "Lennard-Jones 12-6"
+source = "Allen-Tildesley, Computer Simulation of Liquids; Frenkel-Smit, Understanding Molecular Simulation; LAMMPS pair_style lj/cut"
+status = "implemented+oracle"
+evidence = "src/pair_potential.rs:186 tests/analytic_pair_potential.rs::lj_energy_and_force_match_closed_form tests/analytic_pair_potential.rs::lj_minimum_at_two_to_one_sixth_sigma tests/analytic_pair_potential.rs::lj_curvature_at_minimum_is_57_eps_over_sigma_squared"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-PART-002"
+axis = "pair potential"
+item = "Morse"
+source = "LAMMPS pair_style morse"
+status = "implemented+oracle"
+evidence = "src/pair_potential.rs:261 tests/analytic_pair_potential.rs::morse_energy_and_force_match_closed_form tests/analytic_pair_potential.rs::morse_harmonic_force_constant_is_2da2"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-PART-003"
+axis = "pair potential"
+item = "Coulomb (bare, cut)"
+source = "Allen-Tildesley, Computer Simulation of Liquids; LAMMPS pair_style coul/cut"
+status = "implemented+oracle"
+evidence = "src/pair_potential.rs:329 tests/analytic_pair_potential.rs::coulomb_inverse_square_law tests/analytic_pair_potential.rs::coulomb_force_matches_electromagnetic_point_charge_field"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-PART-004"
+axis = "pair potential"
+item = "screened Coulomb (Yukawa / Debye-Hueckel)"
+source = "LAMMPS pair_style yukawa"
+status = "implemented+oracle"
+evidence = "src/pair_potential.rs:381 tests/analytic_pair_potential.rs::yukawa_matches_screened_coulomb_closed_form"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-PART-005"
+axis = "pair potential"
+item = "Lorentz-Berthelot mixing rule"
+source = "Allen-Tildesley, Computer Simulation of Liquids; LAMMPS pair_modify mix arithmetic"
+status = "implemented+oracle"
+evidence = "src/pair_potential.rs:248 tests/analytic_pair_potential.rs::lorentz_berthelot_closed_form"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-PART-006"
+axis = "pair potential"
+item = "geometric and other mixing rules"
+source = "LAMMPS pair_modify mix geometric / sixthpower"
+status = "missing"
+evidence = "混合則は Lorentz-Berthelot の関数 1 本のみ (src/pair_potential.rs:248)"
+oracle_candidate = "σ_ij = √(σ_i σ_j) の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-PART-007"
+axis = "pair potential"
+item = "Weeks-Chandler-Andersen purely repulsive Lennard-Jones"
+source = "Frenkel-Smit, Understanding Molecular Simulation; LAMMPS pair_style lj/cut with r_c = 2^(1/6) sigma"
+status = "implemented-no-oracle"
+evidence = "Truncated + ShiftMode::EnergyShift に r_c = 2^(1/6) σ を渡すと同じ形になる (src/pair_potential.rs:470、src/pair_potential.rs:457) WCA として突合する test は無い (推測)"
+oracle_candidate = "r < 2^(1/6) σ で U = U_LJ + ε、外側で U = F = 0、r_c で F が 0 に連続"
+limitation = ""
+
+[[item]]
+id = "COV-PART-008"
+axis = "pair potential"
+item = "Buckingham / Born-Mayer exp-6"
+source = "LAMMPS pair_style buck / born"
+status = "missing"
+evidence = "grep 0 件 (Buckingham / Born-Mayer / exp-6)"
+oracle_candidate = "U = A e^(-r/ρ) - C/r^6 の閉形式と力の数値微分"
+limitation = ""
+
+[[item]]
+id = "COV-PART-009"
+axis = "pair potential"
+item = "tabulated pair potential (interpolated U and F)"
+source = "LAMMPS pair_style table"
+status = "missing"
+evidence = "PairPotential trait (src/pair_potential.rs:186 の上の trait) を実装する表引き型は無い (推測)"
+oracle_candidate = "LJ を表にして補間誤差 O(Δr^2) の収束次数"
+limitation = ""
+
+[[item]]
+id = "COV-PART-010"
+axis = "pair potential"
+item = "anisotropic pair potential (Gay-Berne)"
+source = "LAMMPS pair_style gayberne"
+status = "missing"
+evidence = "粒子は点で向きを持たない (src/molecular_dynamics.rs:22)"
+oracle_candidate = "end-to-end / side-by-side の井戸深さ (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PART-011"
+axis = "pair potential"
+item = "per-type pair coefficients for mixtures in a dynamics run"
+source = "Allen-Tildesley, Computer Simulation of Liquids; LAMMPS pair_coeff"
+status = "missing"
+evidence = "VelocityVerlet はすべての対に 1 つの Truncated<P> を使う (src/molecular_dynamics.rs:421) 混合則 (src/pair_potential.rs:248) は関数として単独で存在 (推測: 粒子種の概念 0 件)"
+oracle_candidate = "2 成分 LJ 混合物の対ごとの力を all-pairs の手計算と突合"
+limitation = ""
+
+[[item]]
+id = "COV-PART-012"
+axis = "pair potential"
+item = "force-field parameter sets (OPLS / AMBER / CHARMM / TraPPE)"
+source = "OPLS-AA / AMBER / CHARMM / TraPPE parameter tables"
+status = "missing"
+evidence = "parameter は呼び手が渡す設計と明記 (src/pair_potential.rs:67)"
+oracle_candidate = "TraPPE の参照値 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PART-013"
+axis = "many-body and bonded"
+item = "embedded-atom method (EAM / Finnis-Sinclair)"
+source = "Daw-Baskes 1984; LAMMPS pair_style eam"
+status = "missing"
+evidence = "grep 0 件 (embedded atom / EAM / Finnis)"
+oracle_candidate = "fcc 金属の凝集エネルギーと格子定数 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PART-014"
+axis = "many-body and bonded"
+item = "bond-order potential (Tersoff / REBO)"
+source = "Tersoff 1988; LAMMPS pair_style tersoff"
+status = "missing"
+evidence = "grep 0 件 (Tersoff / REBO / bond order)"
+oracle_candidate = "ダイヤモンド Si の格子定数と凝集エネルギー (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PART-015"
+axis = "many-body and bonded"
+item = "three-body potential (Stillinger-Weber)"
+source = "Stillinger-Weber 1985; LAMMPS pair_style sw"
+status = "missing"
+evidence = "grep 0 件 (Stillinger / three-body)"
+oracle_candidate = "3 体項の角度依存の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-PART-016"
+axis = "many-body and bonded"
+item = "harmonic bond"
+source = "LAMMPS bond_style harmonic; AMBER / CHARMM bonded terms"
+status = "missing"
+evidence = "粒子間の結合項は無い 距離拘束は rope / cloth の XPBD (src/rope.rs:8) で別系統"
+oracle_candidate = "二原子の振動周期 2π√(μ/k)"
+limitation = ""
+
+[[item]]
+id = "COV-PART-017"
+axis = "many-body and bonded"
+item = "FENE bond (Kremer-Grest polymer)"
+source = "Kremer-Grest 1990; LAMMPS bond_style fene"
+status = "missing"
+evidence = "grep 0 件 (FENE)"
+oracle_candidate = "最大伸び R0 での発散と平衡結合長 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PART-018"
+axis = "many-body and bonded"
+item = "angle potential (harmonic / cosine)"
+source = "LAMMPS angle_style harmonic"
+status = "missing"
+evidence = "grep 0 件 (angle potential)"
+oracle_candidate = "3 粒子の角度振動の小振幅周期"
+limitation = ""
+
+[[item]]
+id = "COV-PART-019"
+axis = "many-body and bonded"
+item = "dihedral and improper torsion"
+source = "LAMMPS dihedral_style opls / improper_style harmonic"
+status = "missing"
+evidence = "grep 0 件 (dihedral / improper)"
+oracle_candidate = "ブタンのトランス-ゴーシュ障壁 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PART-020"
+axis = "many-body and bonded"
+item = "non-bonded exclusions and 1-4 scaling"
+source = "AMBER / CHARMM special_bonds; LAMMPS special_bonds"
+status = "missing"
+evidence = "結合の概念が無いので除外も無い"
+oracle_candidate = "結合した対の非結合力が 0 / 1-4 で係数倍"
+limitation = ""
+
+[[item]]
+id = "COV-PART-021"
+axis = "cutoff"
+item = "plain truncation at r_c"
+source = "Allen-Tildesley, Computer Simulation of Liquids; LAMMPS pair_modify shift no"
+status = "implemented+oracle"
+evidence = "src/pair_potential.rs:470 tests/analytic_pair_potential.rs::plain_truncation_keeps_the_jump"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-PART-022"
+axis = "cutoff"
+item = "energy-shifted potential"
+source = "Allen-Tildesley, Computer Simulation of Liquids; LAMMPS pair_modify shift yes"
+status = "implemented+oracle"
+evidence = "src/pair_potential.rs:457 tests/analytic_pair_potential.rs::energy_shift_vanishes_at_cutoff_and_keeps_force"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-PART-023"
+axis = "cutoff"
+item = "shifted-force potential"
+source = "Allen-Tildesley, Computer Simulation of Liquids"
+status = "implemented+oracle"
+evidence = "src/pair_potential.rs:457 tests/analytic_pair_potential.rs::force_shift_vanishes_at_cutoff_in_energy_and_force"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-PART-024"
+axis = "cutoff"
+item = "smooth switching function between r_s and r_c"
+source = "CHARMM switching; LAMMPS pair_style lj/charmm/coul/charmm"
+status = "missing"
+evidence = "ShiftMode は None / EnergyShift / ForceShift の 3 つ (src/pair_potential.rs:457)"
+oracle_candidate = "r_s と r_c で U, F が連続、内側は元の U と一致"
+limitation = ""
+
+[[item]]
+id = "COV-PART-025"
+axis = "cutoff"
+item = "long-range tail corrections to energy and pressure"
+source = "Allen-Tildesley, Computer Simulation of Liquids; LAMMPS pair_modify tail yes"
+status = "missing"
+evidence = "grep 0 件 (tail correction)"
+oracle_candidate = "一様密度での裾補正の閉形式 8πρε σ^3 [...] (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PART-026"
+axis = "long-range"
+item = "Ewald summation"
+source = "Allen-Tildesley, Computer Simulation of Liquids; Frenkel-Smit, Understanding Molecular Simulation"
+status = "missing"
+evidence = "src が未提供と明記 (src/pair_potential.rs:33)"
+oracle_candidate = "NaCl 結晶の Madelung 定数 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PART-027"
+axis = "long-range"
+item = "mesh Ewald (PPPM / PME / P3M)"
+source = "Hockney-Eastwood; Darden 1993; LAMMPS kspace_style pppm"
+status = "missing"
+evidence = "src が未提供と明記 (src/pair_potential.rs:33)"
+oracle_candidate = "Ewald 直接和との突合、格子間隔に対する誤差の次数"
+limitation = ""
+
+[[item]]
+id = "COV-PART-028"
+axis = "long-range"
+item = "cutoff electrostatics (reaction field / Wolf / damped shifted force)"
+source = "LAMMPS pair_style coul/wolf / coul/dsf; GROMACS reaction-field"
+status = "missing"
+evidence = "Coulomb は裸のまま打ち切るだけ (src/pair_potential.rs:329)"
+oracle_candidate = "Wolf 和の Madelung 定数への収束 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PART-029"
+axis = "long-range"
+item = "tree code / fast multipole for long-range sums"
+source = "Barnes-Hut 1986; Greengard-Rokhlin 1987"
+status = "missing"
+evidence = "重力の多体は直接和のみと明記 (src/nbody.rs:12、重力の module でここでは数えない)"
+oracle_candidate = "直接和との相対誤差を開口角 θ の関数で"
+limitation = ""
+
+[[item]]
+id = "COV-PART-030"
+axis = "integration"
+item = "velocity Verlet for interacting particles (NVE)"
+source = "Allen-Tildesley, Computer Simulation of Liquids; Frenkel-Smit, Understanding Molecular Simulation; LAMMPS fix nve"
+status = "implemented+oracle"
+evidence = "src/molecular_dynamics.rs:473 tests/analytic_molecular_dynamics.rs::lj_dimer_small_oscillation_period_is_two_pi_sqrt_mu_over_k tests/analytic_molecular_dynamics.rs::nve_energy_error_is_bounded_and_second_order 汎用部品としての Verlet は COV-NUM-047"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-PART-031"
+axis = "integration"
+item = "semi-implicit Euler for the effect particle system"
+source = "game-engine particle systems (Reeves 1983)"
+status = "implemented+oracle"
+evidence = "src/particle.rs:232 tests/analytic_particle_wiring.rs::single_particle_follows_the_semi_implicit_recursion"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-PART-032"
+axis = "integration"
+item = "semi-implicit Euler with speed cap for pedestrians"
+source = "Helbing-Molnar 1995, Social force model for pedestrian dynamics"
+status = "implemented+oracle"
+evidence = "src/crowd_force.rs:501 tests/analytic_crowd_force.rs::speed_relaxes_exponentially_to_desired_speed tests/analytic_crowd_force.rs::speed_cap_limits_to_ratio_times_desired_speed"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-PART-033"
+axis = "integration"
+item = "multiple time step (r-RESPA)"
+source = "Tuckerman-Berne-Martyna 1992; LAMMPS run_style respa"
+status = "missing"
+evidence = "grep 0 件 (RESPA / multiple time step)"
+oracle_candidate = "速い調和結合 + 遅い LJ の系で 1 段 Verlet と同じ精度を大きい外側 h で"
+limitation = ""
+
+[[item]]
+id = "COV-PART-034"
+axis = "integration"
+item = "rigid molecules / orientational dynamics"
+source = "Allen-Tildesley, Computer Simulation of Liquids; LAMMPS fix rigid"
+status = "missing"
+evidence = "粒子は点で回転しないと明記 (src/molecular_dynamics.rs:22)"
+oracle_candidate = "自由回転する剛体分子の角運動量保存"
+limitation = ""
+
+[[item]]
+id = "COV-PART-035"
+axis = "integration"
+item = "Brownian (overdamped Langevin) dynamics"
+source = "Allen-Tildesley, Computer Simulation of Liquids; LAMMPS fix brownian"
+status = "missing"
+evidence = "grep 0 件 (Brownian / overdamped)"
+oracle_candidate = "自由拡散の MSD = 6 D t"
+limitation = ""
+
+[[item]]
+id = "COV-PART-036"
+axis = "ensemble and thermostat"
+item = "NVE observables: kinetic, potential and total energy, momentum"
+source = "Allen-Tildesley, Computer Simulation of Liquids"
+status = "implemented+oracle"
+evidence = "src/molecular_dynamics.rs:549 tests/analytic_molecular_dynamics.rs::nve_energy_error_is_bounded_and_second_order tests/analytic_molecular_dynamics.rs::temperature_and_kinetic_energy_closed_form"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-PART-037"
+axis = "ensemble and thermostat"
+item = "instantaneous temperature in physical (SI) units"
+source = "Allen-Tildesley, Computer Simulation of Liquids"
+status = "partial"
+evidence = "src/molecular_dynamics.rs:579 tests/analytic_molecular_dynamics.rs::temperature_and_kinetic_energy_closed_form"
+oracle_candidate = ""
+limitation = "src/molecular_dynamics.rs:66 '`k_B` is a parameter: the SI value `1.380649e-23 J/K` is below the `Fix128` resolution (`2⁻⁶⁴ ≈ 5.4e-20`), so MD in `Fix128` is run in reduced units (`k_B = 1`, energies in `ε`).'"
+
+[[item]]
+id = "COV-PART-038"
+axis = "ensemble and thermostat"
+item = "Berendsen thermostat"
+source = "Frenkel-Smit, Understanding Molecular Simulation; LAMMPS fix temp/berendsen"
+status = "missing"
+evidence = "MD は NVE のみ (src/molecular_dynamics.rs:412)"
+oracle_candidate = "T の指数緩和 e^(-t/τ)"
+limitation = ""
+
+[[item]]
+id = "COV-PART-039"
+axis = "ensemble and thermostat"
+item = "Nose-Hoover thermostat (and chains)"
+source = "Frenkel-Smit, Understanding Molecular Simulation; LAMMPS fix nvt"
+status = "missing"
+evidence = "MD は NVE のみ (src/molecular_dynamics.rs:412)"
+oracle_candidate = "調和振動子鎖の正準分布の運動エネルギー分散 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PART-040"
+axis = "ensemble and thermostat"
+item = "Langevin thermostat"
+source = "Allen-Tildesley, Computer Simulation of Liquids; LAMMPS fix langevin"
+status = "missing"
+evidence = "MD は NVE のみ (src/molecular_dynamics.rs:412) 正規乱数 (src/rng.rs:152) はあるが熱浴には使われていない"
+oracle_candidate = "平衡温度が設定値、自由粒子の速度自己相関が e^(-γt)"
+limitation = ""
+
+[[item]]
+id = "COV-PART-041"
+axis = "ensemble and thermostat"
+item = "Andersen / stochastic velocity rescaling (Bussi) thermostat"
+source = "Frenkel-Smit, Understanding Molecular Simulation; Bussi-Donadio-Parrinello 2007; LAMMPS fix temp/csvr"
+status = "missing"
+evidence = "MD は NVE のみ (src/molecular_dynamics.rs:412)"
+oracle_candidate = "運動エネルギーの分布が Γ 分布"
+limitation = ""
+
+[[item]]
+id = "COV-PART-042"
+axis = "ensemble and thermostat"
+item = "dissipative particle dynamics (DPD) pairwise thermostat"
+source = "Groot-Warren 1997; LAMMPS pair_style dpd"
+status = "missing"
+evidence = "grep 0 件 (DPD / dissipative particle)"
+oracle_candidate = "揺動散逸の釣り合いで設定温度、運動量保存"
+limitation = ""
+
+[[item]]
+id = "COV-PART-043"
+axis = "ensemble and thermostat"
+item = "pressure and stress tensor from the virial"
+source = "Allen-Tildesley, Computer Simulation of Liquids; LAMMPS compute pressure"
+status = "missing"
+evidence = "観測量は K / U / 運動量 / 温度のみ (src/molecular_dynamics.rs:549、src/molecular_dynamics.rs:579)"
+oracle_candidate = "理想気体極限 p = ρ k_B T、LJ の状態方程式 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PART-044"
+axis = "ensemble and thermostat"
+item = "Berendsen barostat"
+source = "LAMMPS fix press/berendsen"
+status = "missing"
+evidence = "箱は固定長 (src/molecular_dynamics.rs:144)"
+oracle_candidate = "圧力の指数緩和"
+limitation = ""
+
+[[item]]
+id = "COV-PART-045"
+axis = "ensemble and thermostat"
+item = "Parrinello-Rahman / MTK barostat (NPT)"
+source = "Frenkel-Smit, Understanding Molecular Simulation; LAMMPS fix npt"
+status = "missing"
+evidence = "箱は固定長 (src/molecular_dynamics.rs:144)"
+oracle_candidate = "NPT での体積揺らぎと圧縮率の関係 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PART-046"
+axis = "ensemble and thermostat"
+item = "initial lattice and Maxwell-Boltzmann velocities"
+source = "Allen-Tildesley, Computer Simulation of Liquids; LAMMPS create_atoms / velocity create"
+status = "missing"
+evidence = "初期配置・速度の生成 API は無い (test 側で格子を組む) 正規乱数は src/rng.rs:152 にある"
+oracle_candidate = "生成した速度の温度と全運動量 0"
+limitation = ""
+
+[[item]]
+id = "COV-PART-047"
+axis = "constraints"
+item = "SHAKE bond constraints"
+source = "Allen-Tildesley, Computer Simulation of Liquids; Ryckaert-Ciccotti-Berendsen 1977; LAMMPS fix shake"
+status = "missing"
+evidence = "粒子間拘束は rope / cloth の XPBD 距離拘束 (src/rope.rs:8) で、MD の Verlet に組み込まれた拘束は無い (別系統)"
+oracle_candidate = "剛直な二原子の結合長が許容誤差内、エネルギー保存"
+limitation = ""
+
+[[item]]
+id = "COV-PART-048"
+axis = "constraints"
+item = "RATTLE (velocity constraints)"
+source = "Allen-Tildesley, Computer Simulation of Liquids; Andersen 1983; LAMMPS fix rattle"
+status = "missing"
+evidence = "SHAKE と同じく無い"
+oracle_candidate = "拘束方向の相対速度が 0"
+limitation = ""
+
+[[item]]
+id = "COV-PART-049"
+axis = "constraints"
+item = "analytic / linear constraint solvers (SETTLE / LINCS)"
+source = "Miyamoto-Kollman 1992; Hess 1997 (GROMACS)"
+status = "missing"
+evidence = "grep 0 件 (SETTLE / LINCS)"
+oracle_candidate = "剛体水分子の形状保持"
+limitation = ""
+
+[[item]]
+id = "COV-PART-050"
+axis = "neighbour search and boundary"
+item = "periodic cell list (linked cells)"
+source = "Allen-Tildesley, Computer Simulation of Liquids; LAMMPS neighbor bin"
+status = "implemented+oracle"
+evidence = "src/molecular_dynamics.rs:335 tests/analytic_molecular_dynamics.rs::cell_list_matches_all_pairs_bit_for_bit tests/analytic_molecular_dynamics.rs::cell_list_handles_empty_and_single_particle"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-PART-051"
+axis = "neighbour search and boundary"
+item = "planar sparse cell list (sorted by cell)"
+source = "Helbing-Molnar 1995, Social force model for pedestrian dynamics"
+status = "implemented+oracle"
+evidence = "src/crowd_force.rs:190 tests/analytic_crowd_force.rs::cell_list_matches_direct_sum_bit_for_bit tests/analytic_crowd_force.rs::cell_list_finds_pairs_at_exactly_the_cutoff_across_cells"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-PART-052"
+axis = "neighbour search and boundary"
+item = "general-purpose uniform hash grid for particle neighbours"
+source = "LAMMPS neighbor bin; Teschner 2003 spatial hashing"
+status = "partial"
+evidence = "src/spatial.rs:36 tests/audit_spatial.rs::query_returns_every_particle_within_one_cell_size tests/audit_spatial.rs::query_is_exactly_the_3x3x3_cell_neighbourhood"
+oracle_candidate = ""
+limitation = "src/spatial.rs:145 '`_radius_sq` is reserved for future distance filtering.'"
+
+[[item]]
+id = "COV-PART-053"
+axis = "neighbour search and boundary"
+item = "periodic wrap in the general-purpose grid"
+source = "Allen-Tildesley, Computer Simulation of Liquids"
+status = "missing"
+evidence = "汎用 grid は端で clamp し wrap しない (src/spatial.rs:89、tests/audit_spatial.rs::border_queries_truncate_instead_of_wrapping) MD はこのため自前の cell list を持つと明記 (src/molecular_dynamics.rs:45)"
+oracle_candidate = "周期箱で cell list と all-pairs の対集合が一致"
+limitation = ""
+
+[[item]]
+id = "COV-PART-054"
+axis = "neighbour search and boundary"
+item = "Verlet neighbour list with skin and rebuild criterion"
+source = "Allen-Tildesley, Computer Simulation of Liquids; LAMMPS neighbor skin / neigh_modify"
+status = "missing"
+evidence = "近傍は毎回 cell から作り直す (src/molecular_dynamics.rs:335) (推測: skin / rebuild 0 件)"
+oracle_candidate = "skin/2 未満の変位なら list 再利用で力が bit 一致"
+limitation = ""
+
+[[item]]
+id = "COV-PART-055"
+axis = "neighbour search and boundary"
+item = "periodic boundary conditions with minimum image"
+source = "Allen-Tildesley, Computer Simulation of Liquids; LAMMPS boundary p p p"
+status = "partial"
+evidence = "src/molecular_dynamics.rs:144 src/molecular_dynamics.rs:206 tests/analytic_molecular_dynamics.rs::minimum_image_and_wrap_closed_form tests/analytic_molecular_dynamics.rs::crossing_the_boundary_is_the_translated_motion_bit_for_bit"
+oracle_candidate = ""
+limitation = "src/molecular_dynamics.rs:27 '[`PeriodicBox`] is an orthorhombic box `[0, L_x) × [0, L_y) × [0, L_z)`.'"
+
+[[item]]
+id = "COV-PART-056"
+axis = "neighbour search and boundary"
+item = "triclinic (non-orthogonal) periodic cell"
+source = "LAMMPS triclinic boxes; GROMACS triclinic"
+status = "missing"
+evidence = "箱は直方体のみ (src/molecular_dynamics.rs:144、行 COV-PART-055)"
+oracle_candidate = "傾いた箱での最小像距離を直方体の超格子で数えた値と突合"
+limitation = ""
+
+[[item]]
+id = "COV-PART-057"
+axis = "neighbour search and boundary"
+item = "Lees-Edwards sliding periodic boundary (shear)"
+source = "Allen-Tildesley, Computer Simulation of Liquids; LAMMPS fix deform remap v"
+status = "missing"
+evidence = "grep 0 件 (Lees-Edwards)"
+oracle_candidate = "単純せん断の線形速度分布"
+limitation = ""
+
+[[item]]
+id = "COV-PART-058"
+axis = "neighbour search and boundary"
+item = "flat wall potential (LJ 9-3 / reflecting)"
+source = "LAMMPS fix wall/lj93 / wall/reflect"
+status = "missing"
+evidence = "MD の境界は周期のみ (src/molecular_dynamics.rs:144)"
+oracle_candidate = "9-3 壁の閉形式の力と最小位置"
+limitation = ""
+
+[[item]]
+id = "COV-PART-059"
+axis = "neighbour search and boundary"
+item = "spatial domain decomposition of particles with ghost atoms"
+source = "LAMMPS (Plimpton 1995)"
+status = "missing"
+evidence = "粒子の分散並列は無い (推測: ghost / domain decomposition 0 件) 格子の分散は数値基盤の表"
+oracle_candidate = "1 プロセスと N 分割で力が bit 一致"
+limitation = ""
+
+[[item]]
+id = "COV-PART-060"
+axis = "SPH (beyond single-phase flow)"
+item = "Wendland / cubic-spline smoothing kernels"
+source = "Monaghan 2005, Smoothed particle hydrodynamics (Rep. Prog. Phys.)"
+status = "missing"
+evidence = "核は Poly6 / Spiky / viscosity Laplacian のみ (src/sdf_sph.rs:308、単相流の行は COV-CFD-078)"
+oracle_candidate = "核の正規化 ∫W dV = 1 と 2 次モーメント"
+limitation = ""
+
+[[item]]
+id = "COV-PART-061"
+axis = "SPH (beyond single-phase flow)"
+item = "kernel gradient correction (renormalisation)"
+source = "Bonet-Lok 1999; Monaghan 2005"
+status = "missing"
+evidence = "grep 0 件 (renormali / gradient correction)"
+oracle_candidate = "線形場の勾配を不規則配置で厳密に再現"
+limitation = ""
+
+[[item]]
+id = "COV-PART-062"
+axis = "SPH (beyond single-phase flow)"
+item = "variable smoothing length"
+source = "Monaghan 2005, Smoothed particle hydrodynamics (Rep. Prog. Phys.)"
+status = "missing"
+evidence = "核半径は固定と明記 (src/sdf_sph.rs:11)"
+oracle_candidate = "密度と h の関係 h = η (m/ρ)^(1/3) の自己無撞着"
+limitation = ""
+
+[[item]]
+id = "COV-PART-063"
+axis = "SPH (beyond single-phase flow)"
+item = "SPH for elastic solids (total Lagrangian SPH)"
+source = "Gray-Monaghan-Swift 2001; LAMMPS SMD (tlsph)"
+status = "missing"
+evidence = "sdf_sph は流体のみ (src/sdf_sph.rs:11)"
+oracle_candidate = "弾性棒の振動周期 (梁理論)"
+limitation = ""
+
+[[item]]
+id = "COV-PART-064"
+axis = "SPH (beyond single-phase flow)"
+item = "SPH heat conduction"
+source = "Cleary-Monaghan 1999"
+status = "missing"
+evidence = "grep 0 件 (SPH の温度)"
+oracle_candidate = "1D 熱伝導の誤差関数解"
+limitation = ""
+
+[[item]]
+id = "COV-PART-065"
+axis = "material point method"
+item = "material point state (mass, volume, deformation gradient, affine velocity)"
+source = "Jiang et al., The material point method for simulating continuum materials (SIGGRAPH course notes)"
+status = "missing"
+evidence = "grep 0 件 (material point / MPM)"
+oracle_candidate = "剛体並進で F = I が保たれる"
+limitation = ""
+
+[[item]]
+id = "COV-PART-066"
+axis = "material point method"
+item = "P2G / G2P with B-spline weights for MPM"
+source = "Jiang et al., The material point method for simulating continuum materials (SIGGRAPH course notes)"
+status = "missing"
+evidence = "格子転送は MAC 格子の FLIP 用 trilinear のみ (src/eulerian_grid.rs:22、COV-CFD-091 / 092) で MPM の転送ではない (別系統)"
+oracle_candidate = "線形速度場の P2G → G2P が厳密 (APIC)"
+limitation = ""
+
+[[item]]
+id = "COV-PART-067"
+axis = "material point method"
+item = "grid momentum update with stress divergence (USL / MLS-MPM)"
+source = "Sulsky-Chen-Schreyer 1994; Hu et al. 2018 MLS-MPM"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "一様応力で格子力が 0"
+limitation = ""
+
+[[item]]
+id = "COV-PART-068"
+axis = "material point method"
+item = "constitutive hook on the deformation gradient (fixed corotated / Neo-Hookean)"
+source = "Jiang et al., The material point method for simulating continuum materials (SIGGRAPH course notes)"
+status = "missing"
+evidence = "超弾性の構成則は FEM 用 (src/hyperelastic.rs、固体 FEM の表) で粒子に掛ける受け口は無い"
+oracle_candidate = "一軸伸びの応力を構成則の閉形式と突合"
+limitation = ""
+
+[[item]]
+id = "COV-PART-069"
+axis = "material point method"
+item = "plasticity return mapping on particles (snow / Drucker-Prager sand)"
+source = "Stomakhin 2013; Klar 2016"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "砂柱崩壊の安息角 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PART-070"
+axis = "material point method"
+item = "grid boundary conditions (sticky / slip / separating)"
+source = "Jiang et al., The material point method for simulating continuum materials (SIGGRAPH course notes)"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "斜面の滑り摩擦で加速度 g(sinθ − μ cosθ)"
+limitation = ""
+
+[[item]]
+id = "COV-PART-071"
+axis = "material point method"
+item = "cell-crossing error mitigation (GIMP / CPDI)"
+source = "Bardenhagen-Kober 2004; Sadeghirad 2011"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "1D 弾性棒の振動で cell 横断時の応力振動が無い"
+limitation = ""
+
+[[item]]
+id = "COV-PART-072"
+axis = "discrete element method"
+item = "linear spring-dashpot normal contact between spheres"
+source = "Cundall-Strack 1979, A discrete numerical model for granular assemblies; LIGGGHTS pair gran"
+status = "missing"
+evidence = "粒状体の接触力は無い 剛体 world の球接触は撃力ベースで別系統 (剛体の表) 群衆の body force は 2D 歩行者 (src/crowd_force.rs:376)"
+oracle_candidate = "2 球の正面衝突の接触時間 π/√(k/m*) と反発係数"
+limitation = ""
+
+[[item]]
+id = "COV-PART-073"
+axis = "discrete element method"
+item = "Hertz normal contact force"
+source = "Johnson, Contact Mechanics; LIGGGHTS model hertz"
+status = "missing"
+evidence = "Hertz は応力の閉形式のみ (src/rolling_contact.rs:44、構造の表) で力の法則として粒子に掛ける経路は無い"
+oracle_candidate = "接触時間 2.87 (m*^2/(R* E*^2 v))^(1/5) (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PART-074"
+axis = "discrete element method"
+item = "tangential spring with contact history and Coulomb limit (Mindlin)"
+source = "Cundall-Strack 1979, A discrete numerical model for granular assemblies; Mindlin-Deresiewicz; LIGGGHTS tangential history"
+status = "missing"
+evidence = "grep 0 件 (Mindlin / tangential history)"
+oracle_candidate = "斜め衝突の接線反発係数 (Maw-Barber-Fawcett、参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PART-075"
+axis = "discrete element method"
+item = "restitution coefficient to damping coefficient mapping"
+source = "Tsuji 1992; LIGGGHTS coefficientRestitution"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "落下球の跳ね返り高さ e^2 h"
+limitation = ""
+
+[[item]]
+id = "COV-PART-076"
+axis = "discrete element method"
+item = "rolling resistance"
+source = "Ai-Chen-Rotter-Ooi 2011; LIGGGHTS rolling_friction"
+status = "missing"
+evidence = "grep 0 件 (rolling resistance、剛体の表でも missing)"
+oracle_candidate = "水平面で転がる球の停止距離"
+limitation = ""
+
+[[item]]
+id = "COV-PART-077"
+axis = "discrete element method"
+item = "twisting resistance"
+source = "LIGGGHTS / LAMMPS granular twisting"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "回転する球の角速度減衰"
+limitation = ""
+
+[[item]]
+id = "COV-PART-078"
+axis = "discrete element method"
+item = "adhesive contact (JKR / DMT)"
+source = "Johnson-Kendall-Roberts 1971; Derjaguin-Muller-Toporov 1975; LAMMPS granular jkr"
+status = "missing"
+evidence = "grep 0 件 (JKR / DMT)"
+oracle_candidate = "引き離し力 3/2 π γ R (JKR)"
+limitation = ""
+
+[[item]]
+id = "COV-PART-079"
+axis = "discrete element method"
+item = "liquid-bridge capillary cohesion"
+source = "Willett 2000; LIGGGHTS cohesion"
+status = "missing"
+evidence = "grep 0 件 (capillary / liquid bridge)"
+oracle_candidate = "小さい間隙での毛管力 2π R γ cosθ"
+limitation = ""
+
+[[item]]
+id = "COV-PART-080"
+axis = "discrete element method"
+item = "particle rotation driven by contact torques"
+source = "Cundall-Strack 1979, A discrete numerical model for granular assemblies"
+status = "missing"
+evidence = "DEM 粒子自体が無い"
+oracle_candidate = "斜面を転がる球の加速度 5/7 g sinθ"
+limitation = ""
+
+[[item]]
+id = "COV-PART-081"
+axis = "discrete element method"
+item = "critical time step (Rayleigh / collision time)"
+source = "Li et al. 2005; LIGGGHTS Rayleigh time step check"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "Rayleigh 時間の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-PART-082"
+axis = "discrete element method"
+item = "non-spherical particles (multi-sphere clumps / superquadrics)"
+source = "Favier 1999; LIGGGHTS multisphere"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "clump の慣性テンソルを体積積分と突合"
+limitation = ""
+
+[[item]]
+id = "COV-PART-083"
+axis = "discrete element method"
+item = "bonded particle model (cemented granular)"
+source = "Potyondy-Cundall 2004"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "結合梁の曲げ剛性を梁理論と突合"
+limitation = ""
+
+[[item]]
+id = "COV-PART-084"
+axis = "discrete element method"
+item = "particle-wall contact against meshes / SDF"
+source = "LIGGGHTS mesh walls"
+status = "missing"
+evidence = "効果粒子の SDF 着地はあるが接触力でなく再発生 (src/particle.rs:330)"
+oracle_candidate = "平面壁への垂直衝突の反発係数"
+limitation = ""
+
+[[item]]
+id = "COV-PART-085"
+axis = "discrete element method"
+item = "particle insertion with a size distribution"
+source = "LIGGGHTS fix insert / particletemplate"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "挿入した粒径分布の平均と分散"
+limitation = ""
+
+[[item]]
+id = "COV-PART-086"
+axis = "effect particle system"
+item = "emitters (rate, cone spread, speed)"
+source = "Reeves 1983; Unity / Unreal particle emitters"
+status = "implemented+oracle"
+evidence = "src/particle.rs:31 tests/analytic_particle_wiring.rs::cumulative_emission_is_floor_of_rate_times_time tests/analytic_particle_wiring.rs::spread_is_the_full_cone_angle_and_keeps_the_speed"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-PART-087"
+axis = "effect particle system"
+item = "particle lifetime and bounded pool"
+source = "Reeves 1983"
+status = "implemented+oracle"
+evidence = "tests/analytic_particle_wiring.rs::particle_dies_exactly_when_age_reaches_its_lifetime tests/analytic_particle_wiring.rs::live_cap_holds_with_long_lived_particles_and_the_pool_does_not_grow"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-PART-088"
+axis = "effect particle system"
+item = "force fields acting on particles"
+source = "Unity particle force fields"
+status = "implemented+oracle"
+evidence = "src/particle.rs:467 tests/analytic_particle_wiring.rs::directional_field_is_force_over_mass_times_one_sixtieth tests/analytic_particle_wiring.rs::point_field_is_inverse_square_clamped_and_signed_by_repulsion tests/analytic_particle_wiring.rs::drag_opposes_velocity_and_scales_with_inverse_mass tests/audit_force.rs::particle_system_agrees_with_compute_force_for_magnetic_explosion_and_vortex (known defect: magnetic / explosion / vortex は剛体側と別実装で食い違う)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-PART-089"
+axis = "effect particle system"
+item = "particle landing on SDF / colliders along the step path"
+source = "game-engine particle collision"
+status = "implemented+oracle"
+evidence = "src/particle.rs:330 tests/analytic_particle_landing.rs::free_fall_landing_matches_the_closed_form_and_sqrt_2h_over_g tests/analytic_particle_landing.rs::a_band_thinner_than_one_step_of_travel_is_never_skipped"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-PART-090"
+axis = "effect particle system"
+item = "particle-surface collision response (bounce / friction)"
+source = "Unity particle collision module"
+status = "missing"
+evidence = "着地した粒子は再発生するだけで跳ね返らない (src/particle.rs:330)"
+oracle_candidate = "落下粒子の跳ね返り高さ e^2 h"
+limitation = ""
+
+[[item]]
+id = "COV-PART-091"
+axis = "effect particle system"
+item = "particle-particle collision in the effect system"
+source = "Unity particle collision (particle-particle)"
+status = "missing"
+evidence = "粒子どうしの相互作用は無い (推測)"
+oracle_candidate = "2 粒子の正面弾性衝突で速度交換"
+limitation = ""
+
+[[item]]
+id = "COV-PART-092"
+axis = "effect particle system"
+item = "deterministic emission for a seed"
+source = "lockstep determinism"
+status = "implemented+oracle"
+evidence = "tests/analytic_particle_wiring.rs::emission_is_reproducible_for_a_given_seed_and_differs_across_seeds tests/analytic_particle_landing.rs::same_seed_gives_a_bit_identical_landing_sequence"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-PART-093"
+axis = "crowd"
+item = "driving (relaxation to desired velocity) term"
+source = "Helbing-Molnar 1995, Social force model for pedestrian dynamics"
+status = "implemented+oracle"
+evidence = "src/crowd_force.rs:350 tests/analytic_crowd_force.rs::driving_force_matches_closed_form"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-PART-094"
+axis = "crowd"
+item = "exponential social repulsion between pedestrians"
+source = "Helbing-Farkas-Vicsek 2000"
+status = "implemented+oracle"
+evidence = "src/crowd_force.rs:376 tests/analytic_crowd_force.rs::pair_repulsion_magnitude_and_direction tests/analytic_crowd_force.rs::pair_repulsion_in_oblique_direction"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-PART-095"
+axis = "crowd"
+item = "view-angle anisotropy"
+source = "Johansson-Helbing-Shukla 2007"
+status = "implemented+oracle"
+evidence = "src/crowd_force.rs:359 tests/analytic_crowd_force.rs::view_angle_anisotropy"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-PART-096"
+axis = "crowd"
+item = "body compression and sliding friction on contact"
+source = "Helbing-Farkas-Vicsek 2000"
+status = "implemented+oracle"
+evidence = "tests/analytic_crowd_force.rs::body_force_and_sliding_friction_in_contact tests/analytic_crowd_force.rs::friction_uses_only_the_tangential_relative_velocity"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-PART-097"
+axis = "crowd"
+item = "pedestrian-wall interaction"
+source = "Helbing-Farkas-Vicsek 2000"
+status = "implemented+oracle"
+evidence = "src/crowd_force.rs:418 tests/analytic_crowd_force.rs::wall_repulsion_closed_form tests/analytic_crowd_force.rs::steady_distance_in_front_of_wall"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-PART-098"
+axis = "crowd"
+item = "velocity-obstacle avoidance (RVO / ORCA)"
+source = "van den Berg et al. 2011"
+status = "missing"
+evidence = "力の法則でなく navigation 層の方針と明記 (src/crowd_force.rs:98) 置き場所は別途判断"
+oracle_candidate = "2 体の正面すれ違いで衝突しない、ORCA の半平面の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-PART-099"
+axis = "crowd"
+item = "flocking rules (Reynolds boids / Vicsek)"
+source = "Reynolds 1987; Vicsek 1995"
+status = "missing"
+evidence = "grep 0 件 (boids / flock / Vicsek)"
+oracle_candidate = "Vicsek 模型の秩序変数の雑音依存 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PART-100"
+axis = "crowd"
+item = "cellular-automaton floor field model"
+source = "Burstedde et al. 2001"
+status = "missing"
+evidence = "grep 0 件 (floor field)"
+oracle_candidate = "部屋からの避難時間の分布 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PART-101"
+axis = "crowd"
+item = "pedestrians on non-planar / multi-level ground"
+source = "pedestrian simulators (stairs, ramps)"
+status = "missing"
+evidence = "モデルは 2D 平面と明記 (src/crowd_force.rs:53)"
+oracle_candidate = "斜面上の歩行速度"
+limitation = ""
+
+[[item]]
+id = "COV-PART-102"
+axis = "analysis"
+item = "radial distribution function g(r)"
+source = "Allen-Tildesley, Computer Simulation of Liquids; LAMMPS compute rdf"
+status = "missing"
+evidence = "grep 0 件 (radial distribution)"
+oracle_candidate = "理想気体で g(r) = 1、LJ 液体の第 1 ピーク (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PART-103"
+axis = "analysis"
+item = "mean squared displacement and self-diffusion"
+source = "Allen-Tildesley, Computer Simulation of Liquids; LAMMPS compute msd"
+status = "missing"
+evidence = "周期の巻き戻し前の変位を保持しない (src/molecular_dynamics.rs:144) (推測)"
+oracle_candidate = "自由粒子の MSD = (v t)^2"
+limitation = ""
+
+[[item]]
+id = "COV-PART-104"
+axis = "analysis"
+item = "velocity autocorrelation and Green-Kubo transport coefficients"
+source = "Allen-Tildesley, Computer Simulation of Liquids; Frenkel-Smit, Understanding Molecular Simulation"
+status = "missing"
+evidence = "grep 0 件 (autocorrelation / Green-Kubo)"
+oracle_candidate = "Langevin 粒子の VACF e^(-γt) (thermostat が前提)"
+limitation = ""
+
+[[item]]
+id = "COV-PART-105"
+axis = "analysis"
+item = "static structure factor S(k)"
+source = "Allen-Tildesley, Computer Simulation of Liquids"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "完全結晶の Bragg ピーク位置"
+limitation = ""
+
+[[item]]
+id = "COV-PART-106"
+axis = "benchmark"
+item = "LJ dimer small-oscillation period"
+source = "closed form 2π√(μ/k)"
+status = "implemented+oracle"
+evidence = "tests/analytic_molecular_dynamics.rs::lj_dimer_small_oscillation_period_is_two_pi_sqrt_mu_over_k"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-PART-107"
+axis = "benchmark"
+item = "NVE energy error O(h^2) for an LJ gas"
+source = "Allen-Tildesley, Computer Simulation of Liquids"
+status = "implemented+oracle"
+evidence = "tests/analytic_molecular_dynamics.rs::nve_energy_error_is_bounded_and_second_order"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-PART-108"
+axis = "benchmark"
+item = "LJ fluid equation of state (Johnson-Zollweg-Gubbins 1993)"
+source = "Johnson-Zollweg-Gubbins 1993"
+status = "missing"
+evidence = "温度制御 (行 COV-PART-038) と virial 圧力 (行 COV-PART-043) が無いので回せない"
+oracle_candidate = "状態点ごとの p と U (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PART-109"
+axis = "benchmark"
+item = "LJ vapour-liquid coexistence and triple point"
+source = "Frenkel-Smit, Understanding Molecular Simulation"
+status = "missing"
+evidence = "NVT / NPT が無い (行 COV-PART-039 / COV-PART-045)"
+oracle_candidate = "臨界点・三重点の温度密度 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PART-110"
+axis = "benchmark"
+item = "liquid argon structure (Rahman 1964 / Verlet 1967)"
+source = "Rahman 1964; Verlet 1967"
+status = "missing"
+evidence = "g(r) が無い (行 COV-PART-102)"
+oracle_candidate = "g(r) の第 1 ピーク位置と高さ (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PART-111"
+axis = "benchmark"
+item = "Madelung constant of an ionic crystal"
+source = "Allen-Tildesley, Computer Simulation of Liquids"
+status = "missing"
+evidence = "Ewald が無い (行 COV-PART-026)"
+oracle_candidate = "NaCl の Madelung 定数 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PART-112"
+axis = "benchmark"
+item = "granular angle of repose"
+source = "LIGGGHTS benchmarks; Zhou et al. 2002"
+status = "missing"
+evidence = "DEM が無い (行 COV-PART-072)"
+oracle_candidate = "安息角の転がり抵抗依存 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PART-113"
+axis = "benchmark"
+item = "silo discharge rate (Beverloo law)"
+source = "Beverloo 1961"
+status = "missing"
+evidence = "DEM が無い (行 COV-PART-072)"
+oracle_candidate = "流量 ∝ (D − kd)^(5/2) の指数 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PART-114"
+axis = "benchmark"
+item = "sphere drop on a flat wall: restitution and contact time"
+source = "Hertz theory; Tsuji 1992"
+status = "missing"
+evidence = "DEM が無い (行 COV-PART-073)"
+oracle_candidate = "Hertz の接触時間と反発係数"
+limitation = ""
+
+[[item]]
+id = "COV-PART-115"
+axis = "benchmark"
+item = "pedestrian bottleneck specific flow"
+source = "Seyfried et al. 2009"
+status = "implemented-no-oracle"
+evidence = "tests/analytic_crowd_force.rs::bottleneck_specific_flow_matches_experiments_in_order_of_magnitude (runtime の ignore で CI では走らない、桁の一致のみ)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-PART-116"
+axis = "benchmark"
+item = "pedestrian fundamental diagram in a corridor"
+source = "Weidmann 1993; Seyfried 2005"
+status = "missing"
+evidence = "周期通路の場面が無い (推測)"
+oracle_candidate = "密度と速度の関係 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PART-117"
+axis = "benchmark"
+item = "lane formation in counterflow"
+source = "Helbing-Molnar 1995"
+status = "missing"
+evidence = "場面が無い (推測)"
+oracle_candidate = "レーン数の秩序変数 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-PART-118"
+axis = "benchmark"
+item = "MPM colliding elastic disks"
+source = "Sulsky-Chen-Schreyer 1994"
+status = "missing"
+evidence = "MPM が無い (行 COV-PART-065)"
+oracle_candidate = "全エネルギーの保存と運動量交換"
+limitation = ""
+
+[[item]]
+id = "COV-PART-119"
+axis = "benchmark"
+item = "granular column collapse (runout)"
+source = "Lube et al. 2005; Lajeunesse 2004"
+status = "missing"
+evidence = "MPM / DEM が無い (行 COV-PART-069)"
+oracle_candidate = "縦横比に対する流走距離のスケーリング (参照値要確認)"
+limitation = ""
