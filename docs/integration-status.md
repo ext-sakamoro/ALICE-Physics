@@ -8,9 +8,9 @@ References are resolved to one definition each, so items that share a name are t
 | Level | Meaning | Count |
 |-------|---------|------:|
 | L0 | not reached by any non-test code, examples included | 100 |
-| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2299 |
+| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2331 |
 | live | reached without examples (crate-internal roots or a binding) | 423 |
-| | **total** | **2822** |
+| | **total** | **2854** |
 
 L1 is a label, not a defect: a module users call directly is example-only inside this crate.
 It does mean the item is not reached from `PhysicsWorld`, another module, or a binding.
@@ -247,7 +247,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - Methods are listed as `file::Type::method`, so same-named methods of different types in one file are told apart.
 - Items in `src/ffi.rs`, `src/python.rs` and `src/wasm.rs` are roots and are not listed.
 
-## L1 — example-only (2299)
+## L1 — example-only (2331)
 
 - `src/acoustic_wave.rs`: `AIR_20C`, `CONCRETE_LONGITUDINAL`, `STEEL_LONGITUDINAL`, `WATER_25C`, `leapfrog_step`, `stable_dt`
 - `src/aeroelasticity.rs`: `VivParameters`, `VivParameters::facchinetti_reference`, `VivState`, `VivState::seeded`, `viv_step`
@@ -295,6 +295,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/dynamic_fem.rs`: `DynamicsConfig`, `DynamicsConfig::try_new`, `MassLumping`, `TransientSolver`, `TransientSolver::accelerations`, `TransientSolver::displacements`, `TransientSolver::new`, `TransientSolver::step`, `TransientSolver::velocities`
 - `src/electromagnetic.rs`: `ChargedBody`, `ChargedBody::new`, `EmSource`, `EmSource::sample`, `lorentz_force`, `lorentz_force_sum`
 - `src/erosion.rs`: `EXPOSURE_DECAY_PER_S`, `ErosionConfig`, `ErosionModifier`, `ErosionModifier::compute_exposure_from_normals`, `ErosionModifier::erosion_at`, `ErosionModifier::new`, `ErosionModifier::set_exposure_at`, `ErosionType`, `WATER_PREFACTOR`
+- `src/euler_fv.rs`: `Boundary`, `Conserved`, `Conserved::from_primitive`, `Conserved::to_primitive`, `EulerConfig`, `EulerConfig::godunov`, `EulerConfig::muscl`, `EulerError`, `EulerFv1d`, `EulerFv1d::advance_to`, `EulerFv1d::cells`, `EulerFv1d::cfl_time_step`, `EulerFv1d::config`, `EulerFv1d::dx`, `EulerFv1d::max_wave_speed`, `EulerFv1d::new`, `EulerFv1d::primitives`, `EulerFv1d::step`, `EulerFv1d::step_with_dt`, `EulerFv1d::time`, `EulerFv1d::totals`, `Limiter`, `MAX_NEWTON_ITERATIONS`, `Primitive`, `Reconstruction`, `RiemannSolver`, `StarState`, `StarState::sample`, `TimeIntegrator`, `exact_riemann`, `numerical_flux`, `physical_flux`
 - `src/eulerian_grid.rs`: `BicgstabStats`, `DELIVERY_DESTINATION_LACKS_LAYER`, `DELIVERY_SOURCE_LACKS_LAYER`, `FaceBc`, `FaceBc::blocks_pressure`, `FaceBc::is_inflow`, `FaceBc::is_wall`, `FaceBc::no_slip_velocity`, `FaceFlags`, `FaceSink`, `HALO_MISSING_ABOVE`, `HALO_MISSING_BELOW`, `HaloSchedule`, `LocalSlabTransport`, `LocalSlabTransport::from_field`, `LocalSlabTransport::slab`, `LocalTransport`, `LocalTransport::new`, `MacGrid`, `MacGrid::cell_velocity`, `MacGrid::divergence`, `MacGrid::enforce_face_boundaries`, `MacGrid::enforce_solid_faces`, `MacGrid::idx_u`, `MacGrid::idx_v`, `MacGrid::idx_w`, `MacGrid::is_u_solid`, `MacGrid::is_v_solid`, `MacGrid::is_w_solid`, `MacGrid::new`, `MacGrid::pressure`, `MacGrid::set_closed_box_walls`, `MacGrid::set_u_bc`, `MacGrid::set_u_solid`, `MacGrid::set_v_bc`, `MacGrid::set_v_solid`, `MacGrid::set_w_bc`, `MacGrid::set_w_solid`, `MacGrid::u`, `MacGrid::u_bc`, `MacGrid::u_blocks_pressure`, `MacGrid::u_wall_across_y`, `MacGrid::u_wall_across_z`, `MacGrid::v`, `MacGrid::v_bc`, `MacGrid::v_blocks_pressure`, `MacGrid::v_wall_across_x`, `MacGrid::v_wall_across_z`, `MacGrid::w`, `MacGrid::w_bc`, `MacGrid::w_blocks_pressure`, `MacGrid::w_wall_across_x`, `MacGrid::w_wall_across_y`, `ParticleScatter`, `RankTransport`, `SlabFaces`, `SlabFaces::from_grid`, `SlabFaces::new`, `SlabFaces::owned`, `SlabFaces::u_layer_mut`, `SlabFaces::v_layer_mut`, `SlabFaces::w_layer_mut`, `SlabStencil`, `SlabStencil::build`, `SlabStorage`, `SlabStorage::for_slab`, `SlabStorage::layer`, `SlabStorage::layer_mut`, `SlabStorage::resident`, `SlabStorage::sweep_window`, `SlabTransport`, `SweepWindow`, `g2p_velocity`, `p2g_nearest`, `p2g_normalized`, `p2g_normalized_with`, `p2g_trilinear`, `project_pressure`, `project_pressure_banded`, `project_pressure_bicgstab`, `project_pressure_decomposed`, `project_pressure_jacobi`, `project_pressure_multigrid`, `project_pressure_red_black_gs`, `project_pressure_slab_local_over`, `sample_u_range`, `sample_u_trilinear`, `sample_v_range`, `sample_v_trilinear`, `sample_w_range`, `sample_w_trilinear`
 - `src/eulerian_grid/multigrid_decomposed.rs`: `Residency`, `project_pressure_multigrid_decomposed`, `project_pressure_multigrid_decomposed_over`
 - `src/event.rs`: `EventCollector::contact_events`, `EventCollector::drain_contact_events`, `EventCollector::drain_trigger_events`, `EventCollector::has_events`, `EventCollector::trigger_events`
