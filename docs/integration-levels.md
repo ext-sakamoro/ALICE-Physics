@@ -15,7 +15,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | step | runs when `PhysicsWorld` steps | 19 |
 | world API | used through another `PhysicsWorld` method | 7 |
 | binding | reached only from the C ABI, Python or WebAssembly bindings | 2 |
-| standalone | a Rust API that only examples call | 127 |
+| standalone | a Rust API that only examples call | 129 |
 | unused | no caller outside tests | 1 |
 
 | Module | Level | Items: step / world API / binding / standalone / unused | Reached from bindings |
@@ -113,12 +113,14 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `maxwell_fdtd` | standalone | 0 / 0 / 0 / 29 / 0 | — |
 | `metric` | standalone (step 5 of 13 items) | 5 / 0 / 0 / 8 / 0 | C ABI, Python, WebAssembly |
 | `modal` | standalone | 0 / 0 / 0 / 6 / 0 | — |
+| `molecular_dynamics` | standalone | 0 / 0 / 0 / 24 / 0 | — |
 | `multi_world` | standalone | 0 / 0 / 0 / 12 / 0 | — |
 | `multiphase` | standalone | 0 / 0 / 0 / 16 / 0 | — |
 | `nbody` | standalone | 0 / 0 / 0 / 14 / 0 | — |
 | `netcode_prediction` | standalone | 0 / 0 / 0 / 13 / 0 | — |
 | `neural` | standalone | 0 / 0 / 0 / 26 / 0 | — |
 | `non_newtonian` | standalone | 0 / 0 / 0 / 14 / 0 | — |
+| `pair_potential` | standalone | 0 / 0 / 0 / 23 / 0 | — |
 | `particle` | standalone | 0 / 0 / 0 / 13 / 0 | — |
 | `phase_change` | standalone | 0 / 0 / 0 / 7 / 0 | — |
 | `physics2d` | standalone | 0 / 0 / 0 / 39 / 0 | — |
