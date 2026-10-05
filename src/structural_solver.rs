@@ -14,12 +14,22 @@
 //!
 //! Output: `StructuralReport` per step and a final `StructuralHistory`
 //! with lifetime totals.
+//!
+//! Creep is modelled only where calibrated parameters exist. `new` installs
+//! the PLA presets (`FindleyParameters::pla_25c_moderate`,
+//! `NortonCreep::pla_room_temp`) only for the crate's PLA preset material
+//! (`MaterialProperties::pla()`, identified by its `Fdm` category and its
+//! `"PLA"` name). Any other material starts with creep not modelled: both
+//! creep models carry zero coefficients, `creep_modelled()` is `false` and
+//! every report has `creep_strain == 0`. `with_creep` supplies parameters
+//! for any material. Before this change every material received the PLA
+//! creep presets.
 
 use crate::beam_stress::{BeamAnalysis, ColumnEndCondition, CrossSection, LoadCase};
 use crate::buckling::{analyze_column, BucklingRegime, ColumnBucklingReport};
 use crate::creep_longterm::{predict_strain, FindleyParameters};
 use crate::fatigue::{miner_damage, SnCurve, SpectrumEntry};
-use crate::filament_db::MaterialProperties;
+use crate::filament_db::{MaterialCategory, MaterialProperties};
 use crate::math::Fix128;
 use crate::plastic::{radial_return_1d, NortonCreep, PlasticModel, PlasticState};
 
@@ -34,7 +44,9 @@ pub struct StructuralReport {
     pub buckling_fos: Fix128,
     /// Current plastic strain (dimensionless).
     pub plastic_strain: Fix128,
-    /// Cumulative creep strain (dimensionless).
+    /// Cumulative creep strain (dimensionless): `max(Norton, Findley)`.
+    /// Exactly zero when creep is not modelled for the material
+    /// (see [`StructuralSolver::creep_modelled`]).
     pub creep_strain: Fix128,
     /// Cumulative fatigue damage (0 to > 1, where 1 = failure).
     pub fatigue_damage: Fix128,
@@ -98,11 +110,51 @@ pub struct StructuralSolver {
     pub step_count: u64,
 }
 
+/// Name carried by the crate's PLA preset (`MaterialProperties::pla().name`).
+/// The creep presets are calibrated for that material only.
+const PLA_PRESET_NAME: &str = "PLA";
+
+/// Findley parameters of a material whose creep is not modelled: all
+/// coefficients zero, so `epsilon_0 + m * t^n == 0` for every `t`.
+const FINDLEY_NOT_MODELLED: FindleyParameters = FindleyParameters {
+    epsilon_0: Fix128::ZERO,
+    m: Fix128::ZERO,
+    n_int: 1,
+};
+
+/// Norton parameters of a material whose creep is not modelled (`A = 0`).
+const NORTON_NOT_MODELLED: NortonCreep = NortonCreep {
+    a: Fix128::ZERO,
+    n: 1,
+};
+
+/// Whether the crate has calibrated creep presets for `material`: the PLA
+/// preset (FDM category, name `"PLA"`). Materials derived from
+/// `MaterialProperties::pla()` with other fields edited keep the name and
+/// therefore the PLA creep, as before.
+fn has_pla_creep_calibration(material: &MaterialProperties) -> bool {
+    material.category == MaterialCategory::Fdm && material.name == PLA_PRESET_NAME
+}
+
 impl StructuralSolver {
     /// Construct with `from_fdm_material` defaults for the given material and
     /// bending load case. Axial load defaults to zero (pure bending).
+    ///
+    /// Creep: the PLA presets are installed only when `material` is the PLA
+    /// preset (FDM category, name `"PLA"`). For every other material creep is
+    /// not modelled (zero coefficients, [`Self::creep_modelled`] is `false`,
+    /// reported creep strain is exactly zero) until [`Self::with_creep`]
+    /// supplies parameters.
     #[must_use]
     pub fn new(section: CrossSection, load: LoadCase, material: MaterialProperties) -> Self {
+        let (creep_params, norton_creep) = if has_pla_creep_calibration(&material) {
+            (
+                FindleyParameters::pla_25c_moderate(),
+                NortonCreep::pla_room_temp(),
+            )
+        } else {
+            (FINDLEY_NOT_MODELLED, NORTON_NOT_MODELLED)
+        };
         Self {
             section,
             load,
@@ -112,8 +164,8 @@ impl StructuralSolver {
             material,
             plastic_model: PlasticModel::from_fdm_material(&material),
             sn_curve: SnCurve::from_fdm_material(&material),
-            creep_params: FindleyParameters::pla_25c_moderate(),
-            norton_creep: NortonCreep::pla_room_temp(),
+            creep_params,
+            norton_creep,
             operating_temp_c: Fix128::from_int(25),
             dt_s: Fix128::from_ratio(3600, 1), // default 1 hour steps
             state: PlasticState::default(),
@@ -122,6 +174,28 @@ impl StructuralSolver {
             failure_step: None,
             step_count: 0,
         }
+    }
+
+    /// Replace both creep models, for any material. After this call creep is
+    /// modelled with exactly these parameters (unless all of `findley.epsilon_0`,
+    /// `findley.m` and `norton.a` are zero, which is the not-modelled state).
+    #[must_use]
+    pub fn with_creep(mut self, findley: FindleyParameters, norton: NortonCreep) -> Self {
+        self.creep_params = findley;
+        self.norton_creep = norton;
+        self
+    }
+
+    /// Whether creep is modelled for this solver. `false` means both creep
+    /// models carry zero coefficients (`creep_params.epsilon_0`,
+    /// `creep_params.m` and `norton_creep.a` all zero) and every
+    /// [`StructuralReport::creep_strain`] is exactly zero: `new` leaves a
+    /// non-PLA material in this state.
+    #[must_use]
+    pub fn creep_modelled(&self) -> bool {
+        !(self.creep_params.epsilon_0.is_zero()
+            && self.creep_params.m.is_zero()
+            && self.norton_creep.a.is_zero())
     }
 
     /// Advance one step and return the current diagnostics.
@@ -138,25 +212,13 @@ impl StructuralSolver {
         let step = radial_return_1d(sigma, &self.plastic_model, &mut self.state);
         let yielded_this_step = step.yielded;
 
-        // 3. Creep — accumulate short-term Norton over one dt window.
-        self.norton_creep
-            .integrate(sigma, self.dt_s, &mut self.state);
-        // Also compute the long-term Findley projection at the operating
-        // temperature for reporting (does not feed back into radial return).
-        // `state.creep_strain` stays the pure Norton accumulation; the report
-        // carries max(Norton, Findley). Before 1.2.0 the max was written back
-        // into the state, so the next Norton increment landed on top of the
-        // Findley value and the reported creep was neither model.
-        let long_term_creep_strain = predict_strain(
-            &self.creep_params,
-            &self.material,
-            self.elapsed_hours,
-            self.operating_temp_c,
-        );
-        let reported_creep = if long_term_creep_strain > self.state.creep_strain {
-            long_term_creep_strain
+        // 3. Creep — accumulate short-term Norton over one dt window. Skipped
+        //    when creep is not modelled, so the report carries an exact zero
+        //    (`strain_at` could otherwise saturate for a huge `t^n`).
+        let reported_creep = if self.creep_modelled() {
+            self.creep_increment(sigma)
         } else {
-            self.state.creep_strain
+            Fix128::ZERO
         };
 
         // 4. Fatigue: apply the current stress as one cycle.
@@ -199,6 +261,30 @@ impl StructuralSolver {
             fatigue_damage: self.fatigue_damage,
             failed_this_step: failed_now,
             is_safe: self.failure_step.is_none(),
+        }
+    }
+
+    /// Norton accumulation over one `dt` plus the Findley projection; returns
+    /// the reported creep strain `max(Norton, Findley)`.
+    fn creep_increment(&mut self, sigma: Fix128) -> Fix128 {
+        self.norton_creep
+            .integrate(sigma, self.dt_s, &mut self.state);
+        // Also compute the long-term Findley projection at the operating
+        // temperature for reporting (does not feed back into radial return).
+        // `state.creep_strain` stays the pure Norton accumulation; the report
+        // carries max(Norton, Findley). Before 1.2.0 the max was written back
+        // into the state, so the next Norton increment landed on top of the
+        // Findley value and the reported creep was neither model.
+        let long_term_creep_strain = predict_strain(
+            &self.creep_params,
+            &self.material,
+            self.elapsed_hours,
+            self.operating_temp_c,
+        );
+        if long_term_creep_strain > self.state.creep_strain {
+            long_term_creep_strain
+        } else {
+            self.state.creep_strain
         }
     }
 

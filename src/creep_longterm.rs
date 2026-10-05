@@ -47,7 +47,8 @@
 //! reached through `predict_strain`; `CREEP_FROZEN_AT` is the saturation
 //! sentinel `effective_time_at_temp` turns into "no effective time" (see its
 //! doc for the threshold). `petg_25c_moderate` has no consumer (the solver
-//! hard-codes the PLA preset) and carries an `ALLOW-UNWIRED` debt marker;
+//! installs the PLA preset for PLA only and leaves creep unmodelled for
+//! other materials; this PETG fit is uncalibrated) and carries an `ALLOW-UNWIRED` debt marker;
 //! its oracle is a unit test in this module.
 
 use crate::filament_db::MaterialProperties;
@@ -109,7 +110,7 @@ impl FindleyParameters {
     /// `t = (0.001 / 1.7e-14)^(1/3) ≈ 3887 h`. Treat it as a placeholder
     /// fit until a PETG datasheet calibration replaces `m`.
     // ALLOW-DEAD: pub(crate) with no crate caller, same debt as the ALLOW-UNWIRED marker below
-    // ALLOW-UNWIRED: wiring debt Backlog structural-pub-crate-residue (structural_solver::new hard-codes the PLA preset), oracle src/creep_longterm.rs tests::petg_preset_findley_matches_closed_form_at_six_months
+    // ALLOW-UNWIRED: wiring debt structural-pub-crate-residue (structural_solver::new installs the PLA preset for PLA only; this PETG fit is uncalibrated), oracle src/creep_longterm.rs tests::petg_preset_findley_matches_closed_form_at_six_months
     #[allow(dead_code)]
     #[must_use]
     pub(crate) fn petg_25c_moderate() -> Self {
