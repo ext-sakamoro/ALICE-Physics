@@ -6,6 +6,12 @@
 //! wheels is `max_torque * ratio_n / radius` and the frame's velocity change
 //! `F dt / m`.
 //!
+//! `Vehicle::new_default` is documented as the default 4-wheel vehicle, i.e.
+//! `Vehicle::new(VehicleConfig::default())`: it must carry that configuration,
+//! start at rest in 1st gear with the engine at idle, and, since its anti-roll
+//! bar only acts on a left / right compression difference, settle on a flat
+//! ground at the same closed-form ride height as the bar-less car above.
+//!
 //! ```bash
 //! cargo run --release --example vehicle_drive --features std
 //! ```
@@ -14,7 +20,7 @@
 
 use alice_physics::math::{Fix128, Vec3Fix};
 use alice_physics::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
-use alice_physics::vehicle::{Vehicle, VehicleConfig};
+use alice_physics::vehicle::{Vehicle, VehicleConfig, WheelState};
 
 fn main() {
     let mass = 1000.0_f64;
@@ -70,4 +76,45 @@ fn main() {
     }
     assert_eq!(vehicle.current_gear, 0);
     println!("[vehicle] shifting clamps at 1st and 5th gear");
+
+    // The stock car: Vehicle::new(VehicleConfig::default()).
+    let mut stock = Vehicle::new_default();
+    let want = VehicleConfig::default();
+    assert_eq!(stock.config.wheels, want.wheels);
+    assert_eq!(stock.config.wheels.len(), 4);
+    assert_eq!(
+        stock.config.wheels.iter().filter(|w| w.driven).count(),
+        2,
+        "rear-wheel drive"
+    );
+    assert_eq!(stock.config.engine, want.engine);
+    assert_eq!(stock.config.gear_ratios, want.gear_ratios);
+    assert_eq!(stock.config.brake_force, want.brake_force);
+    assert_eq!(stock.config.aero_drag, want.aero_drag);
+    assert_eq!(stock.config.downforce, want.downforce);
+    assert_eq!(stock.config.ground_height, want.ground_height);
+    assert_eq!(stock.config.anti_roll_stiffness, want.anti_roll_stiffness);
+    assert!(!stock.config.anti_roll_stiffness.is_zero(), "bar fitted");
+    assert_eq!(stock.wheel_states, vec![WheelState::default(); 4]);
+    assert_eq!(stock.current_gear, 0);
+    assert_eq!(stock.engine_rpm, want.engine.idle_rpm);
+    for input in [stock.throttle, stock.brake, stock.steering, stock.speed_kmh] {
+        assert!(input.is_zero(), "starts at rest with no input");
+    }
+    let mut world = PhysicsWorld::new(PhysicsConfig::default());
+    let car = world.add_body(RigidBody::new_dynamic(
+        Vec3Fix::from_f32(0.0, 0.79, 0.0),
+        Fix128::from_int(mass as i64),
+    ));
+    for _ in 0..300 {
+        stock.update(&mut world.bodies[car], dt);
+        world.step(dt);
+    }
+    let y = world.bodies[car].position.y.to_f64();
+    println!(
+        "[vehicle] new_default: {} wheels grounded, ride height {y:.4} m (closed form {y_ref:.4})",
+        stock.grounded_wheels()
+    );
+    assert_eq!(stock.grounded_wheels(), 4);
+    assert!((y - y_ref).abs() < 0.01);
 }
