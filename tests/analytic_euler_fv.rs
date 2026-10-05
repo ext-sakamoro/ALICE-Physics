@@ -308,7 +308,7 @@ fn close(label: &str, actual: f64, expected: f64, tol: f64) {
 // ===========================================================================
 
 /// The Table 4.2 values below have not been checked against the printed
-/// book (they were transcribed from memory). The main evidence for the
+/// book (they were written down without the book at hand). The main evidence for the
 /// solver's correctness is the comparison with the independent `f64`
 /// implementation in this file; this test only cross-checks that reference.
 #[test]
