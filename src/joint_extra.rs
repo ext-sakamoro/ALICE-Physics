@@ -386,6 +386,17 @@ pub enum ExtraJoint {
 ///
 /// Modifies body positions and rotations in-place to satisfy constraints.
 /// Broken weld joints are skipped but not removed from the slice.
+///
+/// # Joint compliance contract
+///
+/// - One call is one XPBD solve of every joint starting from `λ = 0`
+///   (Macklin, Müller, Chentanez, MIG 2016, eq. 18): a compliant row moves by
+///   `Δλ = −C / (w + α̃)` with `α̃ = compliance / dt²`.
+/// - It is meant to be called once per substep, with `dt` the substep length.
+/// - Calling it several times at the same `dt` is not equivalent to a longer
+///   solve: no `λ` is carried between calls, so each call removes the fraction
+///   `w / (w + α̃)` of the gap again and leaves `d · (α̃ / (w + α̃))^k` after `k`
+///   calls. The effective stiffness therefore grows with the number of calls.
 pub fn solve_extra_joints(bodies: &mut [RigidBody], joints: &[ExtraJoint], dt: Fix128) {
     for joint in joints {
         match joint {

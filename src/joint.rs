@@ -653,6 +653,17 @@ impl Joint {
 /// Solve all joints for one XPBD iteration
 ///
 /// Modifies body positions/rotations in-place to satisfy constraints.
+///
+/// # Joint compliance contract
+///
+/// - One call is one XPBD solve of every joint starting from `λ = 0`
+///   (Macklin, Müller, Chentanez, MIG 2016, eq. 18): a compliant row moves by
+///   `Δλ = −C / (w + α̃)` with `α̃ = compliance / dt²`.
+/// - It is meant to be called once per substep, with `dt` the substep length.
+/// - Calling it several times at the same `dt` is not equivalent to a longer
+///   solve: no `λ` is carried between calls, so each call removes the fraction
+///   `w / (w + α̃)` of the gap again and leaves `d · (α̃ / (w + α̃))^k` after `k`
+///   calls. The effective stiffness therefore grows with the number of calls.
 pub fn solve_joints(joints: &[Joint], bodies: &mut [crate::solver::RigidBody], dt: Fix128) {
     for joint in joints {
         match joint {
@@ -673,6 +684,17 @@ pub fn solve_joints(joints: &[Joint], bodies: &mut [crate::solver::RigidBody], d
 /// If the force exceeds the threshold, the joint is marked as broken
 /// and skipped during solving. Returns indices of broken joints in
 /// descending order (safe for sequential removal).
+///
+/// # Joint compliance contract
+///
+/// - One call is one XPBD solve of every joint starting from `λ = 0`
+///   (Macklin, Müller, Chentanez, MIG 2016, eq. 18): a compliant row moves by
+///   `Δλ = −C / (w + α̃)` with `α̃ = compliance / dt²`.
+/// - It is meant to be called once per substep, with `dt` the substep length.
+/// - Calling it several times at the same `dt` is not equivalent to a longer
+///   solve: no `λ` is carried between calls, so each call removes the fraction
+///   `w / (w + α̃)` of the gap again and leaves `d · (α̃ / (w + α̃))^k` after `k`
+///   calls. The effective stiffness therefore grows with the number of calls.
 pub fn solve_joints_breakable(
     joints: &[Joint],
     bodies: &mut [crate::solver::RigidBody],
