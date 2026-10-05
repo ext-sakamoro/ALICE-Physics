@@ -175,6 +175,7 @@ Every public module, grouped by area and with a one-line summary, is listed in [
 | Gameplay | character controller, vehicles (a simple model and a per-wheel dynamics model with tyres, brakes, ABS, road surfaces and weather), ragdolls, IK bridge, client-side prediction, deterministic RNG with Gaussian draws, contact events, simulated lidar / contact / IMU sensors |
 | Solid mechanics | linear-elastic FEM on P1 / P2 / P3 tetrahedra, corotational large rotation, J2 plasticity, hyperelasticity, thermo-mechanical coupling, adaptive refinement, beams, buckling, fatigue, composites |
 | Fluids and fields | MAC-grid CFD with several pressure solvers, RANS / LES turbulence closures, VOF and level set, SPH, compressible flow, heat transfer, Maxwell FDTD |
+| Aerodynamics | standard atmosphere (ISA 1976, up to 20 km), wing lift and drag with stall, rotor thrust and torque |
 | 3D printing | material database, thin-wall and overhang checks, warp risk, layer adhesion, print orientation, a combined safety pipeline |
 | 2D | a separate 2D XPBD engine with its own shapes and joints |
 

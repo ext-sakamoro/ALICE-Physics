@@ -244,6 +244,7 @@ pub mod anisotropic_friction;
 #[cfg(feature = "std")]
 pub mod anomaly;
 pub mod articulation;
+pub mod atmosphere;
 pub mod audio_physics;
 pub mod beam_stress;
 pub mod bimaterial;
@@ -376,6 +377,7 @@ pub mod kinematic_loop;
 pub mod laminate;
 pub mod laminate_failure;
 pub mod layer_adhesion;
+pub mod lift_drag;
 /// Small-strain linear elastic FEM on tetrahedra (P1), producing a Cauchy
 /// stress tensor per element from an [`sdf_fem_mesh::SdfTetMesh`].
 ///
@@ -432,6 +434,7 @@ pub mod rng;
 pub mod rolling_contact;
 pub mod rope;
 pub mod rope_attach;
+pub mod rotor;
 #[cfg(feature = "std")]
 pub mod scene_io;
 #[cfg(feature = "std")]
