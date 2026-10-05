@@ -12,17 +12,17 @@ only an example calls is *standalone*, usable from Rust but not wired into
 
 | Level | Meaning | Modules |
 |-------|---------|--------:|
-| step | runs when `PhysicsWorld` steps | 19 |
+| step | runs when `PhysicsWorld` steps | 18 |
 | world API | used through another `PhysicsWorld` method | 7 |
 | binding | reached only from the C ABI, Python or WebAssembly bindings | 2 |
-| standalone | a Rust API that only examples call | 131 |
+| standalone | a Rust API that only examples call | 132 |
 | unused | no caller outside tests | 1 |
 
 | Module | Level | Items: step / world API / binding / standalone / unused | Reached from bindings |
 |--------|-------|----------------------------------------------------------|-----------------------|
 | `box_collider` | step | 3 / 2 / 0 / 3 / 1 | C ABI, Python, WebAssembly |
 | `bvh` | step | 16 / 1 / 0 / 4 / 6 | C ABI, Python, WebAssembly |
-| `collider` | step | 19 / 1 / 0 / 2 / 2 | C ABI, Python, WebAssembly |
+| `collider` | step | 19 / 1 / 0 / 4 / 0 | C ABI, Python, WebAssembly |
 | `compound` | step | 8 / 2 / 0 / 8 / 3 | C ABI, Python, WebAssembly |
 | `cone` | step | 3 / 2 / 0 / 2 / 3 | C ABI, Python, WebAssembly |
 | `contact_cache` | step | 11 / 2 / 0 / 11 / 0 | C ABI, Python, WebAssembly |
@@ -35,7 +35,6 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `material` | step | 14 / 0 / 0 / 11 / 0 | C ABI, Python, WebAssembly |
 | `math` | step | 53 / 10 / 2 / 23 / 0 | C ABI, Python, WebAssembly |
 | `plane_collider` | step | 4 / 0 / 1 / 4 / 0 | C ABI, Python, WebAssembly |
-| `sdf_collider` | step | 18 / 0 / 0 / 17 / 2 | C ABI, Python, WebAssembly |
 | `sleeping` | step | 17 / 2 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
 | `static_collider` | step | 2 / 0 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `wedge` | step | 4 / 2 / 0 / 0 / 2 | C ABI, Python, WebAssembly |
@@ -64,7 +63,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `buckling` | standalone | 0 / 0 / 0 / 10 / 0 | — |
 | `buoyancy_zone` | standalone | 0 / 0 / 0 / 8 / 0 | — |
 | `ccd` | standalone | 0 / 0 / 0 / 12 / 0 | — |
-| `cfd_solver` | standalone | 0 / 0 / 0 / 39 / 2 | — |
+| `cfd_solver` | standalone | 0 / 0 / 0 / 41 / 0 | — |
 | `character` | standalone | 0 / 0 / 0 / 11 / 0 | — |
 | `character_state` | standalone | 0 / 0 / 0 / 6 / 0 | — |
 | `cloth` | standalone | 0 / 0 / 0 / 10 / 0 | — |
@@ -101,7 +100,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `ik_physics_bridge` | standalone | 0 / 0 / 0 / 7 / 0 | — |
 | `interface_capture` | standalone | 0 / 0 / 0 / 4 / 0 | — |
 | `interpolation` | standalone (step 1 of 19 items) | 1 / 0 / 0 / 18 / 0 | C ABI, Python, WebAssembly |
-| `joint` | standalone (step 12, binding 5 of 40 items) | 12 / 0 / 5 / 21 / 2 | C ABI, Python, WebAssembly |
+| `joint` | standalone (step 12, binding 5 of 40 items) | 12 / 0 / 5 / 23 / 0 | C ABI, Python, WebAssembly |
 | `joint_extra` | standalone | 0 / 0 / 0 / 24 / 0 | — |
 | `kepler` | standalone | 0 / 0 / 0 / 26 / 0 | — |
 | `kinematic_loop` | standalone | 0 / 0 / 0 / 7 / 0 | — |
@@ -139,7 +138,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `query` | standalone | 0 / 0 / 0 / 12 / 0 | — |
 | `ragdoll` | standalone | 0 / 0 / 0 / 10 / 0 | — |
 | `raycast` | standalone (binding 5 of 16 items) | 0 / 0 / 5 / 11 / 0 | WebAssembly |
-| `replay` | standalone | 0 / 0 / 0 / 12 / 2 | — |
+| `replay` | standalone | 0 / 0 / 0 / 14 / 0 | — |
 | `rng` | standalone | 0 / 0 / 0 / 12 / 0 | — |
 | `rolling_contact` | standalone | 0 / 0 / 0 / 7 / 0 | — |
 | `rope` | standalone | 0 / 0 / 0 / 13 / 0 | — |
@@ -149,6 +148,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `sdf_adaptive` | standalone | 0 / 0 / 0 / 10 / 0 | — |
 | `sdf_ccd` | standalone | 0 / 0 / 0 / 6 / 0 | — |
 | `sdf_character` | standalone | 0 / 0 / 0 / 13 / 0 | — |
+| `sdf_collider` | standalone (step 18 of 40 items) | 18 / 0 / 0 / 22 / 0 | C ABI, Python, WebAssembly |
 | `sdf_destruction` | standalone | 0 / 0 / 0 / 17 / 0 | — |
 | `sdf_fem_mesh` | standalone | 0 / 0 / 0 / 15 / 0 | — |
 | `sdf_force` | standalone | 0 / 0 / 0 / 10 / 0 | — |
@@ -158,7 +158,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `sensors` | standalone | 0 / 0 / 0 / 26 / 0 | — |
 | `shape_raycast` | standalone | 0 / 0 / 0 / 20 / 0 | — |
 | `sim_field` | standalone | 0 / 0 / 0 / 24 / 0 | — |
-| `sim_modifier` | standalone | 0 / 0 / 0 / 9 / 3 | — |
+| `sim_modifier` | standalone | 0 / 0 / 0 / 12 / 0 | — |
 | `sketch` | standalone (step 1 of 12 items) | 1 / 0 / 0 / 10 / 1 | C ABI, Python, WebAssembly |
 | `smoke_fire` | standalone | 0 / 0 / 0 / 7 / 0 | — |
 | `soft_body_cut` | standalone | 0 / 0 / 0 / 4 / 0 | — |
