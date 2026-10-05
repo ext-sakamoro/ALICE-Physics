@@ -231,6 +231,22 @@ class Markers(Fixture):
     def test_stale_exemption(self):
         self.assertRed("exempt from the LIMITATION comment but has one", exempt={"COV-TST-002": "stale"})
 
+    def test_the_repository_exemptions_do_not_reach_another_tree(self):
+        # MARKER_EXEMPT names items of this repository; a tree given by --root
+        # has none of them, so carrying the list over would fail every fixture
+        saved = dict(cc.MARKER_EXEMPT)
+        try:
+            cc.MARKER_EXEMPT.clear()
+            cc.MARKER_EXEMPT["COV-XYZ-999"] = "an item only this repository has"
+            out, err = io.StringIO(), io.StringIO()
+            with redirect_stdout(out), redirect_stderr(err):
+                code = cc.main(["--root", str(tree(self.root)), "--write-status"])
+        finally:
+            cc.MARKER_EXEMPT.clear()
+            cc.MARKER_EXEMPT.update(saved)
+        self.assertEqual(code, 0, err.getvalue())
+        self.assertIn("exempt: 0", out.getvalue())
+
     def test_exemption_for_an_item_that_is_not_partial(self):
         self.assertRed("COV-TST-003: exemption names no partial item", exempt={"COV-TST-003": "wrong"})
 
