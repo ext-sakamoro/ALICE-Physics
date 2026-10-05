@@ -112,12 +112,15 @@ fn assert_golden(scenario: &str, actual: [u8; 32], expected_hex: &str) {
 // Golden fixtures
 // ============================================================================
 
-/// **Scenario 1**: five dynamic spheres falling onto a static floor for
-/// 200 steps at dt = 1/60 s under gravity of (0, -10, 0).
+/// **Scenario 1**: five dynamic bodies and a static body under gravity of
+/// (0, -10, 0) for 200 steps at dt = 1/60 s.
 ///
-/// Exercises: gravity integration, damping, contact resolution against a
-/// static body. No SIMD-only paths involved (SIMD is opt-in via `simd`
-/// feature; this test runs with default features).
+/// Exercises: gravity integration and frame / linear damping. Every body is
+/// added with `add_body` (no collision radius), so no contact is generated:
+/// the bodies fall past the static body and the restitution set on them is
+/// never used. Contacts are pinned by `tests/determinism_golden_contacts.rs`.
+/// No SIMD-only paths involved (SIMD is opt-in via `simd` feature; this test
+/// runs with default features).
 const GOLDEN_CASCADE: &str = "f442b544c0eab74a004567061ab7b573d6892158b2c31480b6d133e2e5970be2";
 
 #[test]

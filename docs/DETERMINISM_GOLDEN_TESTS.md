@@ -32,7 +32,7 @@ a hard-coded golden hash recorded on Mac aarch64.
 |----------|------:|----|-------:|-----------|
 | `freefall` | 60 | 1/60 s | 2 dynamic | gravity + Fix128 integration |
 | `kinematic_drift` | 120 | 1/60 s | 1 dynamic | pure velocity integration, no gravity |
-| `cascade` | 200 | 1/60 s | 5 dynamic + 1 static floor | contact resolution, damping, restitution |
+| `cascade` | 200 | 1/60 s | 5 dynamic + 1 static | gravity, damping (bodies have no collision radius: no contact is generated) |
 
 ### Phase 2 fixtures (extended subsystems)
 
@@ -45,6 +45,27 @@ a hard-coded golden hash recorded on Mac aarch64.
 | `trimesh_probe` | (5x5x5 samples) | — | trimesh collision | `TriMesh::collide_sphere` at 125 lattice points |
 
 Total: **8 scenarios** + 1 meta test.
+
+### Contact fixtures (`tests/determinism_golden_contacts.rs`)
+
+None of the scenes above produces a body-body contact. Each contact scene
+checks a closed-form invariant before its hash is compared, hashes position,
+velocity, rotation and angular velocity of every body, and runs through
+`step` and (with `parallel`) `step_parallel`, which must give the same hash.
+Default configuration with frame damping 1 and sleeping disabled; balls of
+radius 1/2 on a static sphere of radius `1e6` whose top is `y = 0`.
+
+| Scenario | Frames | Exercises | Invariant |
+|----------|-------:|-----------|-----------|
+| `contact_bounce` | 180 | restitution on the pre-solve normal velocity, restitution threshold | first apex `e² h0`, then at rest |
+| `contact_slide` | 120 | Coulomb friction capped by the normal multiplier | `v = v0 − μ g t`, stop at `v0² / (2 μ g)` |
+| `contact_slope` | 120 | position-level static friction | no slip below the friction angle |
+| `contact_stack` | 120 | resting contacts between bodies, no bounce below the threshold | three balls at rest |
+| `contact_veto` | 120 | pre-solve hook veto in the position and velocity passes | vetoed ball in free fall, the other at rest |
+
+No contact scene rotates a body (the contact solve is translational), so
+these hashes do not depend on how the angular velocity is derived from the
+rotation change.
 
 **Fixture hashes** (Mac aarch64, alice-physics `0.14.0-preview.8`):
 
@@ -77,7 +98,8 @@ Extended `.github/workflows/ci.yml` to **6 platform coverage**:
 
 - `wasm32-wasip1` target compiled on `ubuntu-latest`, executed via `wasmtime`
   (installed via official `install.sh`).
-- Uses the exact same `tests/determinism_golden.rs` test file — WASI `std`
+- Runs `tests/determinism_golden.rs`, `determinism_golden_f32.rs` and
+  `determinism_golden_contacts.rs` unchanged — WASI `std`
   shim provides stdio + libtest support without code changes.
 
 Every PR runs all 6 platforms; a hash mismatch on any platform fails CI.
