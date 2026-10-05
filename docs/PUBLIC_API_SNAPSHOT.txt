@@ -2822,6 +2822,149 @@ impl core::marker::UnsafeUnpin for alice_physics::creep_longterm::FindleyParamet
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::creep_longterm::FindleyParameters
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::creep_longterm::FindleyParameters
 pub fn alice_physics::creep_longterm::predict_strain(&alice_physics::creep_longterm::FindleyParameters, &alice_physics::filament_db::MaterialProperties, alice_physics::math::Fix128, alice_physics::math::Fix128) -> alice_physics::math::Fix128
+pub mod alice_physics::crowd_force
+pub enum alice_physics::crowd_force::CrowdForceError
+pub alice_physics::crowd_force::CrowdForceError::AnisotropyOutOfRange
+pub alice_physics::crowd_force::CrowdForceError::NegativeCoefficient
+pub alice_physics::crowd_force::CrowdForceError::NegativeDesiredSpeed
+pub alice_physics::crowd_force::CrowdForceError::NegativeDesiredSpeed::index: usize
+pub alice_physics::crowd_force::CrowdForceError::NegativeRadius
+pub alice_physics::crowd_force::CrowdForceError::NegativeRadius::index: usize
+pub alice_physics::crowd_force::CrowdForceError::NonPositiveCutoff
+pub alice_physics::crowd_force::CrowdForceError::NonPositiveMass
+pub alice_physics::crowd_force::CrowdForceError::NonPositiveMass::index: usize
+pub alice_physics::crowd_force::CrowdForceError::NonPositiveRange
+pub alice_physics::crowd_force::CrowdForceError::NonPositiveRelaxationTime
+pub alice_physics::crowd_force::CrowdForceError::NonPositiveRelaxationTime::index: usize
+pub alice_physics::crowd_force::CrowdForceError::NonPositiveSpeedCap
+pub alice_physics::crowd_force::CrowdForceError::NonPositiveTimeStep
+impl core::clone::Clone for alice_physics::crowd_force::CrowdForceError
+pub fn alice_physics::crowd_force::CrowdForceError::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::crowd_force::CrowdForceError
+impl core::cmp::PartialEq for alice_physics::crowd_force::CrowdForceError
+pub fn alice_physics::crowd_force::CrowdForceError::eq(&self, &Self) -> bool
+impl core::error::Error for alice_physics::crowd_force::CrowdForceError
+impl core::fmt::Debug for alice_physics::crowd_force::CrowdForceError
+pub fn alice_physics::crowd_force::CrowdForceError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for alice_physics::crowd_force::CrowdForceError
+pub fn alice_physics::crowd_force::CrowdForceError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::crowd_force::CrowdForceError
+impl core::marker::StructuralPartialEq for alice_physics::crowd_force::CrowdForceError
+impl core::marker::Freeze for alice_physics::crowd_force::CrowdForceError
+impl core::marker::Send for alice_physics::crowd_force::CrowdForceError
+impl core::marker::Sync for alice_physics::crowd_force::CrowdForceError
+impl core::marker::Unpin for alice_physics::crowd_force::CrowdForceError
+impl core::marker::UnsafeUnpin for alice_physics::crowd_force::CrowdForceError
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::crowd_force::CrowdForceError
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::crowd_force::CrowdForceError
+pub enum alice_physics::crowd_force::NeighborSearch
+pub alice_physics::crowd_force::NeighborSearch::CellList
+pub alice_physics::crowd_force::NeighborSearch::Direct
+impl core::clone::Clone for alice_physics::crowd_force::NeighborSearch
+pub fn alice_physics::crowd_force::NeighborSearch::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::crowd_force::NeighborSearch
+impl core::cmp::PartialEq for alice_physics::crowd_force::NeighborSearch
+pub fn alice_physics::crowd_force::NeighborSearch::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::crowd_force::NeighborSearch
+pub fn alice_physics::crowd_force::NeighborSearch::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::crowd_force::NeighborSearch
+impl core::marker::StructuralPartialEq for alice_physics::crowd_force::NeighborSearch
+impl core::marker::Freeze for alice_physics::crowd_force::NeighborSearch
+impl core::marker::Send for alice_physics::crowd_force::NeighborSearch
+impl core::marker::Sync for alice_physics::crowd_force::NeighborSearch
+impl core::marker::Unpin for alice_physics::crowd_force::NeighborSearch
+impl core::marker::UnsafeUnpin for alice_physics::crowd_force::NeighborSearch
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::crowd_force::NeighborSearch
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::crowd_force::NeighborSearch
+pub struct alice_physics::crowd_force::InteractionParams
+pub alice_physics::crowd_force::InteractionParams::body_stiffness: alice_physics::math::Fix128
+pub alice_physics::crowd_force::InteractionParams::range_m: alice_physics::math::Fix128
+pub alice_physics::crowd_force::InteractionParams::sliding_friction: alice_physics::math::Fix128
+pub alice_physics::crowd_force::InteractionParams::strength_n: alice_physics::math::Fix128
+impl core::clone::Clone for alice_physics::crowd_force::InteractionParams
+pub fn alice_physics::crowd_force::InteractionParams::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::crowd_force::InteractionParams
+impl core::cmp::PartialEq for alice_physics::crowd_force::InteractionParams
+pub fn alice_physics::crowd_force::InteractionParams::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::crowd_force::InteractionParams
+pub fn alice_physics::crowd_force::InteractionParams::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::crowd_force::InteractionParams
+impl core::marker::StructuralPartialEq for alice_physics::crowd_force::InteractionParams
+impl core::marker::Freeze for alice_physics::crowd_force::InteractionParams
+impl core::marker::Send for alice_physics::crowd_force::InteractionParams
+impl core::marker::Sync for alice_physics::crowd_force::InteractionParams
+impl core::marker::Unpin for alice_physics::crowd_force::InteractionParams
+impl core::marker::UnsafeUnpin for alice_physics::crowd_force::InteractionParams
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::crowd_force::InteractionParams
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::crowd_force::InteractionParams
+pub struct alice_physics::crowd_force::Pedestrian
+pub alice_physics::crowd_force::Pedestrian::desired_direction: alice_physics::physics2d::Vec2Fix
+pub alice_physics::crowd_force::Pedestrian::desired_speed_m_s: alice_physics::math::Fix128
+pub alice_physics::crowd_force::Pedestrian::mass_kg: alice_physics::math::Fix128
+pub alice_physics::crowd_force::Pedestrian::position: alice_physics::physics2d::Vec2Fix
+pub alice_physics::crowd_force::Pedestrian::radius_m: alice_physics::math::Fix128
+pub alice_physics::crowd_force::Pedestrian::relaxation_time_s: alice_physics::math::Fix128
+pub alice_physics::crowd_force::Pedestrian::velocity: alice_physics::physics2d::Vec2Fix
+impl core::clone::Clone for alice_physics::crowd_force::Pedestrian
+pub fn alice_physics::crowd_force::Pedestrian::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::crowd_force::Pedestrian
+impl core::cmp::PartialEq for alice_physics::crowd_force::Pedestrian
+pub fn alice_physics::crowd_force::Pedestrian::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::crowd_force::Pedestrian
+pub fn alice_physics::crowd_force::Pedestrian::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::crowd_force::Pedestrian
+impl core::marker::StructuralPartialEq for alice_physics::crowd_force::Pedestrian
+impl core::marker::Freeze for alice_physics::crowd_force::Pedestrian
+impl core::marker::Send for alice_physics::crowd_force::Pedestrian
+impl core::marker::Sync for alice_physics::crowd_force::Pedestrian
+impl core::marker::Unpin for alice_physics::crowd_force::Pedestrian
+impl core::marker::UnsafeUnpin for alice_physics::crowd_force::Pedestrian
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::crowd_force::Pedestrian
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::crowd_force::Pedestrian
+pub struct alice_physics::crowd_force::SocialForce
+impl alice_physics::crowd_force::SocialForce
+pub fn alice_physics::crowd_force::SocialForce::anisotropy_weight(&self, &alice_physics::crowd_force::Pedestrian, alice_physics::physics2d::Vec2Fix) -> alice_physics::math::Fix128
+pub fn alice_physics::crowd_force::SocialForce::driving_force(&self, &alice_physics::crowd_force::Pedestrian) -> core::result::Result<alice_physics::physics2d::Vec2Fix, alice_physics::crowd_force::CrowdForceError>
+pub fn alice_physics::crowd_force::SocialForce::new(alice_physics::crowd_force::InteractionParams, alice_physics::crowd_force::InteractionParams, alice_physics::math::Fix128, alice_physics::math::Fix128) -> core::result::Result<Self, alice_physics::crowd_force::CrowdForceError>
+pub fn alice_physics::crowd_force::SocialForce::pair_forces(&self, &alice_physics::crowd_force::Pedestrian, &alice_physics::crowd_force::Pedestrian) -> (alice_physics::physics2d::Vec2Fix, alice_physics::physics2d::Vec2Fix)
+pub fn alice_physics::crowd_force::SocialForce::step(&self, &mut [alice_physics::crowd_force::Pedestrian], &[alice_physics::crowd_force::WallSegment], alice_physics::math::Fix128, alice_physics::crowd_force::NeighborSearch, core::option::Option<alice_physics::math::Fix128>) -> core::result::Result<(), alice_physics::crowd_force::CrowdForceError>
+pub fn alice_physics::crowd_force::SocialForce::total_forces(&self, &[alice_physics::crowd_force::Pedestrian], &[alice_physics::crowd_force::WallSegment], alice_physics::crowd_force::NeighborSearch, &mut alloc::vec::Vec<alice_physics::physics2d::Vec2Fix>) -> core::result::Result<(), alice_physics::crowd_force::CrowdForceError>
+pub fn alice_physics::crowd_force::SocialForce::wall_force(&self, &alice_physics::crowd_force::Pedestrian, &alice_physics::crowd_force::WallSegment) -> alice_physics::physics2d::Vec2Fix
+impl core::clone::Clone for alice_physics::crowd_force::SocialForce
+pub fn alice_physics::crowd_force::SocialForce::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::crowd_force::SocialForce
+impl core::cmp::PartialEq for alice_physics::crowd_force::SocialForce
+pub fn alice_physics::crowd_force::SocialForce::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::crowd_force::SocialForce
+pub fn alice_physics::crowd_force::SocialForce::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::crowd_force::SocialForce
+impl core::marker::StructuralPartialEq for alice_physics::crowd_force::SocialForce
+impl core::marker::Freeze for alice_physics::crowd_force::SocialForce
+impl core::marker::Send for alice_physics::crowd_force::SocialForce
+impl core::marker::Sync for alice_physics::crowd_force::SocialForce
+impl core::marker::Unpin for alice_physics::crowd_force::SocialForce
+impl core::marker::UnsafeUnpin for alice_physics::crowd_force::SocialForce
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::crowd_force::SocialForce
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::crowd_force::SocialForce
+pub struct alice_physics::crowd_force::WallSegment
+pub alice_physics::crowd_force::WallSegment::end: alice_physics::physics2d::Vec2Fix
+pub alice_physics::crowd_force::WallSegment::start: alice_physics::physics2d::Vec2Fix
+impl core::clone::Clone for alice_physics::crowd_force::WallSegment
+pub fn alice_physics::crowd_force::WallSegment::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::crowd_force::WallSegment
+impl core::cmp::PartialEq for alice_physics::crowd_force::WallSegment
+pub fn alice_physics::crowd_force::WallSegment::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::crowd_force::WallSegment
+pub fn alice_physics::crowd_force::WallSegment::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::crowd_force::WallSegment
+impl core::marker::StructuralPartialEq for alice_physics::crowd_force::WallSegment
+impl core::marker::Freeze for alice_physics::crowd_force::WallSegment
+impl core::marker::Send for alice_physics::crowd_force::WallSegment
+impl core::marker::Sync for alice_physics::crowd_force::WallSegment
+impl core::marker::Unpin for alice_physics::crowd_force::WallSegment
+impl core::marker::UnsafeUnpin for alice_physics::crowd_force::WallSegment
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::crowd_force::WallSegment
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::crowd_force::WallSegment
 pub mod alice_physics::cubic_elastic_fem
 #[non_exhaustive] pub struct alice_physics::cubic_elastic_fem::AdaptiveCubicSolution
 pub alice_physics::cubic_elastic_fem::AdaptiveCubicSolution::field: alice_physics::linear_elastic_fem::FemSolution

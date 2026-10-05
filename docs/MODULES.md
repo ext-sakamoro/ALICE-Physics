@@ -140,6 +140,7 @@ this file or listed twice, or when a linked example or test does not exist.
 | `buoyancy_zone` | bounded fluid volume applying buoyancy and drag |  | [`buoyancy_zone_pool`](../examples/buoyancy_zone_pool.rs) | standalone |
 | `wind_zone` | bounded wind volume applying drag and lift |  | [`wind_zone_forces`](../examples/wind_zone_forces.rs) | standalone |
 | `sensors` | simulated lidar, contact sensor and IMU with seeded Gaussian noise |  | [`shape_raycast_sensors`](../examples/shape_raycast_sensors.rs) | standalone |
+| `crowd_force` | social force model of pedestrians: driving term, exponential repulsion with a view-angle weight, body force and sliding friction in contact, walls, cell-list neighbour search |  | [`crowd_corridor`](../examples/crowd_corridor.rs) | standalone |
 
 ## SDF integration
 
