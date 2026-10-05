@@ -215,6 +215,9 @@ this file or listed twice, or when a linked example or test does not exist.
 | `smoke_fire` | Arrhenius combustion, soot and buoyancy |  | [`smoke_fire_combustion`](../examples/smoke_fire_combustion.rs) | standalone |
 | `wave_ship` | JONSWAP ocean waves and Froude-Krylov ship forces |  | [`wave_ship_spectrum`](../examples/wave_ship_spectrum.rs) | standalone |
 | `aeroelasticity` | vortex-induced vibration of slender structures |  | [`aeroelasticity_viv_lock_in`](../examples/aeroelasticity_viv_lock_in.rs) | standalone |
+| `atmosphere` | U.S. Standard Atmosphere 1976 up to 20 km: temperature, pressure, density, speed of sound |  | [`aero_glider`](../examples/aero_glider.rs) | standalone |
+| `lift_drag` | lift and drag of a wing surface: finite-wing slope, induced drag, stall to flat plate, force at the centre of pressure |  | [`aero_glider`](../examples/aero_glider.rs) | standalone |
+| `rotor` | rotor thrust and torque, reaction torque on the body, momentum-theory hover power |  | [`rotor_hover`](../examples/rotor_hover.rs) | standalone |
 | `acoustic_wave` | acoustic wave equation solver |  | [`acoustic_wave_propagation`](../examples/acoustic_wave_propagation.rs) | standalone |
 
 ## Electromagnetics
