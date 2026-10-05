@@ -181,6 +181,8 @@ were introduced during that release window.
 - **Behavior change:** `SdfForceType::SdfVortex` と `SdfForceType::SurfaceFlow` は、軸または流れの向きが SDF の法線に `sin θ ≤ 1e-4` まで平行な場合に力ゼロを返す (従来は丸め誤差の向きに全強度の力を出していた) (AUD-A-S4W1-010 / AUD-A-S4W1-011)
 - **Behavior change:** `PhysicsTelemetry::record_collision_pair` と `MetricEvent::unique` を処理する `MetricSlot::process` は、`HyperLogLog::insert_hash` の前に splitmix64 で鍵を混ぜる 異なる 4950 対の推定が約 100 から約 4950 になる (AUD-A-S5W1-006 / AUD-A-S5W3-017)
 - **Behavior change:** `ModifiedSdf::normal` / `SingleModifiedSdf::normal` / `DestructibleSdf::normal` は、座標の大きさが 10 を超える所で差分の幅を座標の大きさに比例させる (AUD-A-S5W3-008 / AUD-A-S5W3-013)
+- **Behavior change:** `debug_draw_world` は `draw_aabbs` (既定 true) に従って body の AABB を描画するようになった (従来は flag を読んでいなかった) (AUD-A-S4W3-033 の一部)
+- **Behavior change:** `PressureSolver::DecomposedMultigrid { ranks, cycles }` を追加 `project_pressure_multigrid_decomposed` へ振り分ける (additive)
 
 ### Deprecated
 
