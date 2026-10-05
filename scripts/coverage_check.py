@@ -11,8 +11,9 @@ status. The tables are written by hand; this script keeps them honest:
   * `implemented+oracle`: the evidence names at least one test that runs (not
     `#[ignore]`d); a cited ignored test is allowed only when its reason starts
     with `known defect` (a recorded defect of an implemented capability)
-  * `limitation` is `<file>:<line> '<verbatim quote>'` and the quote is in that
-    file; `partial` requires it
+  * `limitation` is `<file>::<symbol> '<verbatim quote>'` and the quote is in
+    that item (its doc comments, attributes and body), or `<file> '<quote>'` for
+    the module documentation; `partial` requires it
   * `partial` <-> `LIMITATION(<id>)` comments in src/, both ways: a partial item
     has at least one comment (unless listed in MARKER_EXEMPT with a reason), and
     every comment names an existing partial item
@@ -23,8 +24,10 @@ status. The tables are written by hand; this script keeps them honest:
     #[test] fn. A test ignored with `src gap: COV-X-NNN` is the oracle written
     ahead of the implementation, and fails once the item is `implemented+oracle`
     (remove the ignore)
-  * `src/x.rs::name` in `evidence` may name any item defined in that file (fn,
-    struct, enum, trait, const, ...), which survives edits that move lines
+  * references are `file::symbol` (or a bare file), never `file:line`: lines
+    inserted above a line reference move it, and with many tables every source
+    edit would break some of them. `src/x.rs::name` may name any item defined in
+    that file (fn, struct, enum, trait, const, ...)
   * docs/coverage/status.md, the per-table and per-axis counts, matches the
     tables (`--write-status` regenerates it)
 
@@ -56,9 +59,14 @@ ID_RE = re.compile(r"COV-[A-Z]+-\d{3}")
 STATUSES = ("implemented+oracle", "implemented-no-oracle", "partial", "missing", "out-of-scope")
 REQUIRED_KEYS = ("id", "axis", "item", "source", "status", "evidence", "oracle_candidate", "limitation")
 
-# `src/a/b.rs:123` or `tests/x.rs::test_fn` (also `src/x.rs::unit_test_fn`).
+# `src/a/b.rs::symbol`, `tests/x.rs::test_fn` or a bare file. A line number
+# (`src/a/b.rs:123`) is matched only to be refused: lines inserted above it move
+# the reference, and with many tables every source edit would break some of them
+# (scripts/coverage_refs_to_symbols.py converts line references).
 REF_RE = re.compile(r"(?<![\w/.-])((?:src|tests)/[\w/.-]+?\.rs)(?:::([A-Za-z_]\w*)|:(\d+))?")
-LIMITATION_RE = re.compile(r"^((?:src|tests)/[\w/.-]+?\.rs):(\d+) '(.+)'$", re.S)
+LIMITATION_RE = re.compile(r"^((?:src|tests)/[\w/.-]+?\.rs)(?:::([A-Za-z_]\w*))? '(.+)'$", re.S)
+LINE_LIMITATION_RE = re.compile(r"^((?:src|tests)/[\w/.-]+?\.rs):(\d+) '")
+LINE_REF_HINT = "use `file::symbol` (scripts/coverage_refs_to_symbols.py converts line references)"
 MARKER_RE = re.compile(r"LIMITATION\(([^)]*)\)")
 COVERS_RE = re.compile(r"^\s*//[/!]?\s*covers:\s*(COV-.*)$")
 FN_RE = re.compile(r"^\s*(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?fn\s+([A-Za-z_]\w*)")
@@ -68,10 +76,35 @@ STATUS_DOC = "docs/coverage/status.md"
 NOT_YET = ("missing", "implemented-no-oracle")
 
 
+DEF_RE = re.compile(r"^\s*(?:pub(?:\([^)]*\))?\s+)?(?:(?:unsafe|async|const|extern\s+\"[^\"]*\")\s+)*"
+                    r"(?:fn|struct|enum|trait|const|static|type|mod|union|macro_rules!)\s+([A-Za-z_]\w*)")
+
+
 def defines(lines: list[str], name: str) -> bool:
-    pat = re.compile(r"^\s*(?:pub(?:\([^)]*\))?\s+)?(?:unsafe\s+|async\s+|const\s+)*"
-                     r"(?:fn|struct|enum|trait|const|static|type|mod|union|macro_rules!)\s+" + re.escape(name) + r"\b")
-    return any(pat.match(ln) for ln in lines)
+    return any((m := DEF_RE.match(ln)) and m.group(1) == name for ln in lines)
+
+
+def item_spans(lines: list[str], name: str) -> list[tuple[int, int]]:
+    """0-based inclusive line spans of every item `name` defines: its doc comments
+    and attributes above, through the end of its body (brace-matched) or its `;`."""
+    spans = []
+    for d, ln in enumerate(lines):
+        m = DEF_RE.match(ln)
+        if not m or m.group(1) != name:
+            continue
+        start = d
+        while start > 0 and lines[start - 1].strip().startswith(("///", "//", "#[", "#!")):
+            start -= 1
+        depth, end, opened = 0, d, False
+        for k in range(d, min(len(lines), d + 5000)):
+            code = lines[k].split("//")[0]
+            depth += code.count("{") - code.count("}")
+            opened = opened or "{" in code
+            end = k
+            if (opened and depth <= 0) or (not opened and code.rstrip().endswith(";")):
+                break
+        spans.append((start, end))
+    return spans
 
 # Partial items whose LIMITATION comment cannot be placed in the source yet,
 # with the reason. Each entry must name a partial item that has no comment;
@@ -165,12 +198,13 @@ class Checker:
             if lines is None:
                 self.err(f"{where}: evidence names {path}, which does not exist")
                 continue
-            if line is not None and not 1 <= int(line) <= len(lines):
-                self.err(f"{where}: evidence {path}:{line} is past the end ({len(lines)} lines)")
+            if line is not None:
+                self.err(f"{where}: evidence {path}:{line} is a line reference; {LINE_REF_HINT}")
+                continue
             if fn is not None:
                 t = self._tests_in(path).get(fn)
-                if t is None and path.startswith("src/") and defines(lines, fn):
-                    continue  # a symbol of the source, not a test
+                if t is None and defines(lines, fn):
+                    continue  # an item of that file (a source symbol or a test helper), not a test
                 if t is None:
                     self.err(f"{where}: evidence names test {path}::{fn}, which is not a #[test] fn there")
                 cited_tests.append((path, fn, t))
@@ -187,14 +221,26 @@ class Checker:
         lim = it.get("limitation", "")
         if isinstance(lim, str) and lim:
             m = LIMITATION_RE.match(lim)
-            if not m:
-                self.err(f"{where}: limitation is not `<file>:<line> '<quote>'`")
+            if LINE_LIMITATION_RE.match(lim):
+                self.err(f"{where}: limitation uses a line reference; {LINE_REF_HINT}")
+            elif not m:
+                self.err(f"{where}: limitation is not `<file>::<symbol> '<quote>'` (or `<file> '<quote>'` "
+                         "for the module documentation)")
             else:
-                lines = self._file_lines(m.group(1))
+                path, sym, quote = m.group(1), m.group(2), " ".join(m.group(3).split())
+                lines = self._file_lines(path)
                 if lines is None:
-                    self.err(f"{where}: limitation names {m.group(1)}, which does not exist")
-                elif " ".join(m.group(3).split()) not in _flatten("\n".join(lines)):
-                    self.err(f"{where}: limitation quote is not in {m.group(1)}")
+                    self.err(f"{where}: limitation names {path}, which does not exist")
+                elif sym is None:
+                    if quote not in _flatten("\n".join(lines)):
+                        self.err(f"{where}: limitation quote is not in {path}")
+                else:
+                    spans = item_spans(lines, sym)
+                    if not spans:
+                        self.err(f"{where}: limitation names {path}::{sym}, which that file does not define")
+                    elif not any(quote in _flatten("\n".join(lines[a:b + 1])) for a, b in spans):
+                        self.err(f"{where}: limitation quote is not in {path}::{sym} "
+                                 "(its doc comments, attributes and body)")
         elif status == "partial":
             self.err(f"{where}: partial needs a verbatim limitation from the source")
 

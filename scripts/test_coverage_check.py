@@ -47,9 +47,9 @@ def item(iid: str, status: str, evidence: str = "", limitation: str = "", drop: 
     return "\n".join(lines) + "\n"
 
 
-LIM = "src/m.rs:3 'Only the straight case is handled; the curved case is not supported.'"
-GOOD = (item("COV-TST-001", "implemented+oracle", "src/m.rs:6 / tests/t.rs::runs")
-        + item("COV-TST-002", "partial", "src/m.rs:3", LIM)
+LIM = "src/m.rs::straight 'Only the straight case is handled; the curved case is not supported.'"
+GOOD = (item("COV-TST-001", "implemented+oracle", "src/m.rs::straight / tests/t.rs::runs")
+        + item("COV-TST-002", "partial", "src/m.rs", LIM)
         + item("COV-TST-003", "missing", "nothing"))
 
 
@@ -152,10 +152,11 @@ class Items(Fixture):
         self.assertRed("missing key `source`", table=GOOD + item("COV-TST-004", "missing", drop=("source",)))
 
     def test_evidence_file_that_does_not_exist(self):
-        self.assertRed("src/gone.rs, which does not exist", table=GOOD + item("COV-TST-004", "missing", "src/gone.rs:1"))
+        self.assertRed("src/gone.rs, which does not exist", table=GOOD + item("COV-TST-004", "missing", "src/gone.rs::x"))
 
-    def test_evidence_line_past_the_end(self):
-        self.assertRed("past the end", table=GOOD + item("COV-TST-004", "missing", "src/m.rs:99"))
+    def test_a_line_reference_in_evidence_is_refused(self):
+        self.assertRed("evidence src/m.rs:6 is a line reference; use `file::symbol`",
+                       table=GOOD + item("COV-TST-004", "missing", "src/m.rs:6"))
 
     def test_evidence_test_that_does_not_exist(self):
         self.assertRed("tests/t.rs::nope, which is not a #[test] fn",
@@ -176,7 +177,7 @@ class Oracle(Fixture):
                        table=GOOD + item("COV-TST-004", "implemented+oracle", "tests/t.rs::defect"))
 
     def test_no_test_at_all(self):
-        self.assertRed("names no test that runs", table=GOOD + item("COV-TST-004", "implemented+oracle", "src/m.rs:1"))
+        self.assertRed("names no test that runs", table=GOOD + item("COV-TST-004", "implemented+oracle", "src/m.rs::straight"))
 
 
 class Limitation(Fixture):
@@ -189,8 +190,28 @@ class Limitation(Fixture):
                        table=GOOD.replace("curved case is not", "curved case is"))
 
     def test_limitation_without_location(self):
-        self.assertRed("limitation is not `<file>:<line> '<quote>'`",
+        self.assertRed("limitation is not `<file>::<symbol> '<quote>'`",
                        table=GOOD.replace(LIM, "'Only the straight case is handled'"))
+
+    def test_a_line_reference_in_a_limitation_is_refused(self):
+        self.assertRed("limitation uses a line reference",
+                       table=GOOD.replace(LIM, LIM.replace("src/m.rs::straight", "src/m.rs:3")))
+
+    def test_the_quote_must_be_inside_the_named_item(self):
+        src = SRC + "\n/// Another item.\npub fn other() {}\n"
+        self.assertRed("limitation quote is not in src/m.rs::other",
+                       table=GOOD.replace(LIM, LIM.replace("::straight", "::other")), src=src)
+
+    def test_a_symbol_the_file_does_not_define_in_a_limitation_is_red(self):
+        self.assertRed("src/m.rs::bent, which that file does not define",
+                       table=GOOD.replace(LIM, LIM.replace("::straight", "::bent")))
+
+    def test_a_bare_file_matches_the_module_documentation(self):
+        self.assertGreen(table=GOOD.replace(LIM, LIM.replace("src/m.rs::straight", "src/m.rs")))
+
+    def test_inserting_lines_above_keeps_a_symbol_reference_valid(self):
+        # the point of symbol references: the same table stays green after the source grows
+        self.assertGreen(src="\n" * 40 + SRC.replace("//! A module.\n", "//! A module.\n" + "//!\n" * 30))
 
 
 class Markers(Fixture):
@@ -270,7 +291,7 @@ class Covers(Fixture):
 
     def test_implemented_no_oracle_is_not_enough_either(self):
         table = GOOD.replace(item("COV-TST-003", "missing", "nothing"),
-                             item("COV-TST-003", "implemented-no-oracle", "src/m.rs:6"))
+                             item("COV-TST-003", "implemented-no-oracle", "src/m.rs::straight"))
         self.assertRed("whose status is still implemented-no-oracle", tests=COVERED, table=table)
 
     def test_an_ignored_covering_test_does_not_force_the_update(self):
@@ -321,12 +342,18 @@ class SrcGap(Fixture):
 
 
 class SymbolEvidence(Fixture):
+    def test_a_test_helper_in_tests_is_evidence_but_not_an_oracle(self):
+        tests = TESTS + "\nfn helper() {}\n"
+        self.assertGreen(tests=tests, table=GOOD + item("COV-TST-004", "missing", "tests/t.rs::helper"))
+        self.assertRed("names no test that runs", tests=tests,
+                       table=GOOD + item("COV-TST-004", "implemented+oracle", "tests/t.rs::helper"))
+
     def test_a_source_symbol_is_evidence(self):
-        table = GOOD.replace('"src/m.rs:6 / tests/t.rs::runs"', '"src/m.rs::straight / tests/t.rs::runs"')
+        table = GOOD
         self.assertGreen(table=table)
 
     def test_a_symbol_the_file_does_not_define_is_red(self):
-        table = GOOD.replace('"src/m.rs:6 / tests/t.rs::runs"', '"src/m.rs::curved / tests/t.rs::runs"')
+        table = GOOD.replace('"src/m.rs::straight / tests/t.rs::runs"', '"src/m.rs::curved / tests/t.rs::runs"')
         self.assertRed("src/m.rs::curved, which is not a #[test] fn there", table=table)
 
     def test_tests_still_need_a_test_fn(self):

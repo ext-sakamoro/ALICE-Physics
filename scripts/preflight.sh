@@ -65,6 +65,7 @@ python3 scripts/wiring_guard.py
 
 step "coverage tables (docs/coverage/*.toml = src/ LIMITATION comments + tests)"
 python3 scripts/test_coverage_check.py
+python3 scripts/test_coverage_refs_to_symbols.py
 python3 scripts/coverage_check.py
 
 step "status generators oracle (docs/wiring-status.md / docs/oracle-status.md の生成器)"
