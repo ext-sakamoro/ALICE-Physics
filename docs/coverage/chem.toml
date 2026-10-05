@@ -1,0 +1,1190 @@
+# Chemistry and combustion coverage of ALICE-Physics, against an external
+# reference frame.
+#
+# What this table is: a declaration of the field's extent for a field the crate
+# implements only a little of (実装が少ない分野の範囲宣言). Apart
+# from one closed-form module (src/smoke_fire.rs: a single-step Arrhenius rate,
+# its heat release and soot source, and a Boussinesq buoyancy source) and the
+# single-gas ideal-gas law, the crate has no chemistry. The table fixes the
+# scope before chemical laws are moved into this crate from elsewhere, so that
+# each one has a row to land on. It lists every capability that the standard
+# texts (Turns, An Introduction to Combustion; Law, Combustion Physics;
+# Kee-Coltrin-Glarborg, Chemically Reacting Flow; Poinsot-Veynante, Theoretical
+# and Numerical Combustion; Bard-Faulkner, Electrochemical Methods), reference
+# implementations (Cantera, CHEMKIN, OpenFOAM reactingFoam, FDS) and standard
+# benchmarks (adiabatic flame temperature of methane-air, laminar burning
+# velocity, the Arrhenius plot of ignition delay, the Chapman-Jouguet detonation
+# velocity, first-order exponential decay, GRI-Mech 3.0 targets) expect of a
+# chemistry and combustion code, one [[item]] per capability. The rows are
+# written by hand: the axes and the items come from the reference frame, not
+# from the modules that exist.
+#
+# Boundary with the other tables (one capability goes in one table only):
+#   - the flow driven by combustion (heat release as an energy source in the
+#     flow solver, a premixed flame front as a level set, the buoyant fire
+#     plume): the multiphase table, rows COV-MULTIPHASE-070 to 072. Here the
+#     chemistry that produces the source, not the flow that carries it.
+#   - Boussinesq buoyancy inside the flow solver and transport of a passive
+#     scalar or species by the flow: the CFD table (COV-CFD-060, COV-CFD-066).
+#     Here the closed-form source terms and the multicomponent diffusion laws.
+#   - heat conduction and thermal radiation, including a reaction heat source
+#     in the conduction solver (COV-THERM-043) and gas radiation bands: the
+#     thermal table.
+#   - compressible flow with shocks (Rankine-Hugoniot, Riemann problems) and
+#     the numerical solution of detonation and blast waves: the shock table,
+#     which does not exist yet. Here the thermochemistry of a detonation (the
+#     Chapman-Jouguet state from an equilibrium calculation) and the closed-form
+#     energy of an explosive charge.
+#   - general stiff ODE integrators (implicit Euler / BDF, Rosenbrock) and the
+#     Robertson kinetics benchmark: the numerics table (COV-NUM-045, 051, 054,
+#     087). Here the chemistry that would use them (a reactor model, the
+#     splitting of chemistry from transport, positivity of mass fractions).
+#   - material property data of solids and fluids: the materials table. Here
+#     the thermochemical data of gas-phase species.
+#   - electrochemical corrosion as a wear mechanism: the fracture table
+#     (COV-FRACT-094). The chemical erosion type of the effect layer
+#     (src/erosion.rs) is a wear rate, not chemistry, and is counted there.
+#   - flames as light sources (emission of hot gas): the optics table
+#     (COV-OPTICS-069).
+#   - the game explosion force field (src/force.rs, a radial impulse with a
+#     distance falloff) and the explosion crater of the destruction layer
+#     (COV-FRACT-074) are not chemistry and are not counted.
+#
+# status (exactly one of):
+#   implemented+oracle     implemented, and at least one non-ignored test checks
+#                          it against an independent reference
+#   implemented-no-oracle  implemented, no such test
+#   partial                implemented with a restriction that the source states;
+#                          `limitation` quotes it, and the source carries a
+#                          `LIMITATION(<id>)` comment at that place
+#   missing                not implemented
+#   out-of-scope           not a capability of this field (reason in `evidence`)
+#
+# This axis is separate from the test ignore reasons (`known defect: ...`,
+# `src gap: ...`, `diagnostic`, `runtime`). A capability that exists with a
+# recorded defect keeps its status and cites the known-defect test in
+# `evidence`; it is not `missing`.
+#
+# keys: id (COV-CHEM-NNN) / axis / item / source (book, chapter, paper or
+# reference-implementation feature; no quoted text) / status / evidence
+# (`src/...rs:line`, `tests/...rs::test_fn`) / oracle_candidate / limitation
+# (verbatim quote of the source, required for `partial`).
+#
+# Reference values marked "参照値要確認" are to be checked against the original
+# publication before any test uses them. Lines marked "(推測)" were judged from
+# a search that found nothing and are to be confirmed. Ids of other tables cited
+# in `evidence` (COV-MULTIPHASE-*, COV-THERM-*, COV-NUM-*, COV-FRACT-*,
+# COV-OPTICS-*, COV-STRUCT-*) are those of the tables as written at the time of
+# this table.
+#
+# Checked by scripts/coverage_check.py (tests: scripts/test_coverage_check.py).
+
+[[item]]
+id = "COV-CHEM-001"
+axis = "thermo"
+item = "ideal-gas equation of state p = rho R T for a single gas with a constant specific gas constant"
+source = "Turns ch.2; Kee-Coltrin-Glarborg ch.2; Cantera IdealGas"
+status = "implemented+oracle"
+evidence = "src/compressible.rs:34 (IdealGas、R と gamma は定数) tests/analytic_compressible_wiring.rs::density_and_temperature_are_exact_inverses_of_the_ideal_gas_law 音速は COV-ACOUS 側、衝撃関係は衝撃の表 (未作成)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-002"
+axis = "thermo"
+item = "ideal-gas mixture: mean molar mass from the composition, conversion between mass and mole fractions and concentrations"
+source = "Turns ch.2; Kee-Coltrin-Glarborg ch.2; Cantera ThermoPhase"
+status = "missing"
+evidence = "src/compressible.rs:34 は 1 種の気体定数だけで組成を持たない src/atmosphere.rs のモル質量は空気 1 種の定数 grep: mole fraction 0 件 / mass fraction は src/ragdoll.rs の別語義のみ"
+oracle_candidate = "空気 (N2 0.78 / O2 0.21 / Ar 0.01) の平均モル質量と質量分率の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-003"
+axis = "thermo"
+item = "species database: molar masses from element composition, element and species definitions"
+source = "Kee-Coltrin-Glarborg ch.2; CHEMKIN-II thermodynamic data format; Cantera Species"
+status = "missing"
+evidence = "crate に化学種・反応機構の表現が無い (化学は src/smoke_fire.rs の総括 1 段反応の閉形式だけ) grep: molar は src/atmosphere.rs と src/compressible.rs の空気の値のみ"
+oracle_candidate = "CH4・O2・CO2・H2O のモル質量を元素の原子量の和と突合"
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-004"
+axis = "thermo"
+item = "calorically perfect gas: constant c_p and c_v with c_p - c_v = R and gamma = c_p / c_v"
+source = "Turns ch.2; Anderson, Modern Compressible Flow ch.1"
+status = "missing"
+evidence = "src/compressible.rs:34 は gamma と R だけを持ち c_p・c_v を返す関数が無い (推測: c_p = gamma R / (gamma - 1) の API は 0 件)"
+oracle_candidate = "空気 gamma = 1.4, R = 287 で c_p = 1004.5 J/(kg K)"
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-005"
+axis = "thermo"
+item = "temperature-dependent c_p, h and s of a species from NASA 7-coefficient polynomials (two temperature ranges)"
+source = "McBride-Gordon-Reno NASA TM-4513; CHEMKIN thermo.dat; Cantera NasaPoly2; GRI-Mech 3.0 thermo data"
+status = "missing"
+evidence = "化学種の熱力学データ (比熱・エンタルピー・エントロピー) を持つ module が無い 発熱は Δh_c を入力として受け取るだけ src/smoke_fire.rs:38 grep: nasa は src/vehicle_dynamics/surface.rs の別語義のみ 固体の温度依存物性 (熱伝導用) は COV-THERM-018"
+oracle_candidate = "N2 の c_p(T) を 300 K と 2000 K で表の値と突合 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-006"
+axis = "thermo"
+item = "NASA 9-coefficient polynomials and Shomate equations for wider temperature ranges"
+source = "McBride-Zehe-Gordon NASA TP-2002-211556; NIST Chemistry WebBook Shomate; Cantera Nasa9PolyMultiTempRegion"
+status = "missing"
+evidence = "化学種の熱力学データ (比熱・エンタルピー・エントロピー) を持つ module が無い 発熱は Δh_c を入力として受け取るだけ src/smoke_fire.rs:38"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-007"
+axis = "thermo"
+item = "standard enthalpy of formation and sensible enthalpy h(T) = h_f + integral c_p dT"
+source = "Turns ch.2; Law ch.1"
+status = "missing"
+evidence = "化学種の熱力学データ (比熱・エンタルピー・エントロピー) を持つ module が無い 発熱は Δh_c を入力として受け取るだけ src/smoke_fire.rs:38"
+oracle_candidate = "CH4 の h_f(298 K) と JANAF の値 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-008"
+axis = "thermo"
+item = "standard-state entropy s(T), pressure correction, and Gibbs free energy g = h - T s of a species"
+source = "Turns ch.2; Kee-Coltrin-Glarborg ch.2"
+status = "missing"
+evidence = "化学種の熱力学データ (比熱・エンタルピー・エントロピー) を持つ module が無い 発熱は Δh_c を入力として受け取るだけ src/smoke_fire.rs:38 grep: gibbs 0 件 / entropy は src/privacy.rs の別語義のみ"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-009"
+axis = "thermo"
+item = "mixture-averaged thermodynamic properties (c_p, h, s of a mixture) from species data and composition"
+source = "Kee-Coltrin-Glarborg ch.2; Cantera ThermoPhase"
+status = "missing"
+evidence = "化学種の熱力学データ (比熱・エンタルピー・エントロピー) を持つ module が無い 発熱は Δh_c を入力として受け取るだけ src/smoke_fire.rs:38"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-010"
+axis = "thermo"
+item = "heat of combustion from formation enthalpies (Hess's law), lower and higher heating value"
+source = "Turns ch.2"
+status = "missing"
+evidence = "Δh_c は ArrheniusReaction の入力 field で、生成熱から求める関数は無い src/smoke_fire.rs:38"
+oracle_candidate = "CH4 の低位発熱量 50.0 MJ/kg を生成熱から (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-011"
+axis = "thermo"
+item = "real-gas equations of state for high-pressure combustion (Peng-Robinson, Soave-Redlich-Kwong)"
+source = "Poling-Prausnitz-O'Connell, The Properties of Gases and Liquids ch.4; Cantera PengRobinson"
+status = "missing"
+evidence = "src/compressible.rs:34 の理想気体だけ (推測: peng / redlich で 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-012"
+axis = "thermo"
+item = "reading thermochemical data in standard formats (CHEMKIN thermo.dat, Cantera YAML)"
+source = "CHEMKIN-II; Cantera YAML input"
+status = "missing"
+evidence = "crate に化学種・反応機構の表現が無い (化学は src/smoke_fire.rs の総括 1 段反応の閉形式だけ)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-013"
+axis = "stoichiometry"
+item = "balanced global reaction with stoichiometric coefficients (fuel + a (O2 + 3.76 N2) -> products)"
+source = "Turns ch.2"
+status = "missing"
+evidence = "総括反応の速度は燃料と酸化剤の密度の積だけで量論係数を持たない src/smoke_fire.rs:79"
+oracle_candidate = "CH4 の量論空燃比 17.1 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-014"
+axis = "stoichiometry"
+item = "equivalence ratio, fuel-air ratio and excess air"
+source = "Turns ch.2"
+status = "missing"
+evidence = "量論係数が無いので当量比も無い (推測: equivalence 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-015"
+axis = "stoichiometry"
+item = "mixture fraction (Bilger) and its stoichiometric value"
+source = "Poinsot-Veynante ch.3; Peters, Turbulent Combustion ch.3"
+status = "missing"
+evidence = "grep: mixture は src/bimaterial.rs の別語義のみ"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-016"
+axis = "stoichiometry"
+item = "major-product composition of complete combustion (lean and rich)"
+source = "Turns ch.2"
+status = "missing"
+evidence = "crate に化学種・反応機構の表現が無い (化学は src/smoke_fire.rs の総括 1 段反応の閉形式だけ)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-017"
+axis = "stoichiometry"
+item = "element conservation of a mechanism and of a reacting state"
+source = "Kee-Coltrin-Glarborg ch.9; Cantera element balance"
+status = "missing"
+evidence = "crate に化学種・反応機構の表現が無い (化学は src/smoke_fire.rs の総括 1 段反応の閉形式だけ)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-018"
+axis = "kinetics"
+item = "Arrhenius rate constant k(T) = A exp(-E_a / (R T))"
+source = "Turns ch.4; Law ch.2; CHEMKIN reaction rate"
+status = "implemented+oracle"
+evidence = "src/smoke_fire.rs:79 tests/audit_smoke_fire.rs::arrhenius_rate_is_accurate_over_the_working_temperature_range / tests/audit_smoke_fire.rs::arrhenius_rate_is_strictly_increasing_in_temperature / tests/analytic_smoke_fire_wiring.rs::reaction_rate_matches_arrhenius_closed_form_for_pla_air / tests/engineering_oracles_fluid.rs::smoke_fire_arrhenius_and_boussinesq_closed_forms known defect: tests/audit_smoke_fire.rs::arrhenius_rate_has_no_hard_zero_cliff_at_the_exp_saturation_threshold (E_a/(R T) >= 40 で exp が 0 に切れる、src/math_util.rs:24)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-019"
+axis = "kinetics"
+item = "modified Arrhenius k(T) = A T^b exp(-E_a / (R T))"
+source = "Turns ch.4; CHEMKIN; GRI-Mech 3.0 rate format"
+status = "missing"
+evidence = "温度の指数 b を持たない src/smoke_fire.rs:79"
+oracle_candidate = "b = 0 で既存の k(T) と一致、b = 1 で k/T が Arrhenius 形"
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-020"
+axis = "kinetics"
+item = "single-step global reaction, first order in fuel and in oxidiser (r = k rho_F rho_O)"
+source = "Turns ch.5; Westbrook-Dryer 1981"
+status = "implemented+oracle"
+evidence = "src/smoke_fire.rs:79 tests/audit_smoke_fire.rs::reaction_rate_is_symmetric_in_fuel_and_oxidizer_density / tests/audit_smoke_fire.rs::reaction_rate_density_dependence_is_the_exact_product_of_the_unit_rate / tests/analytic_smoke_fire_wiring.rs::reaction_rate_is_bilinear_in_reactant_densities_for_pla_air_at_900k module doc の式は ρ_fuel_ref² で割るが実装は割らない (src/smoke_fire.rs:73) 前指数因子の単位は (1/s) と書かれ、密度 2 つとの積の次元と合わない (src/smoke_fire.rs:32)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-021"
+axis = "kinetics"
+item = "global rate with fractional reaction orders in molar concentration (Westbrook-Dryer: [F]^a [O]^b) and its pressure dependence"
+source = "Westbrook-Dryer, Combust. Sci. Technol. 27 (1981); Turns ch.5"
+status = "missing"
+evidence = "次数は両方 1 に固定で、濃度は質量密度 src/smoke_fire.rs:79"
+oracle_candidate = "CH4 の a = -0.3, b = 1.3 (参照値要確認) で圧力を倍にした時の速度比 2^(a+b)"
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-022"
+axis = "kinetics"
+item = "parameter sets of global reactions for named fuels"
+source = "Turns ch.5 (single-step parameters); Westbrook-Dryer 1981"
+status = "implemented-no-oracle"
+evidence = "src/smoke_fire.rs:48 (methane_air / pla_air) tests/analytic_smoke_fire_wiring.rs::methane_and_pla_presets_match_documented_constants_exactly は doc の定数との一致で、原典の表との照合ではない (参照値要確認)"
+oracle_candidate = "原典の表 (Westbrook-Dryer) の A・E_a と突合 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-023"
+axis = "kinetics"
+item = "validation of rate parameters and state (sign of R, E_a, densities, temperature)"
+source = "Cantera input validation; CHEMKIN interpreter checks"
+status = "missing"
+evidence = "T <= 0 と R = 0 だけを 0 で返し、負の R・負の密度は検査しない src/smoke_fire.rs:79 現状の挙動は tests/analytic_smoke_fire_wiring.rs::negative_gas_constant_drives_the_arrhenius_exponent_past_exp_fix_saturation / tests/analytic_smoke_fire_wiring.rs::reaction_rate_negative_density_is_unguarded_and_flips_sign_exactly が固定"
+oracle_candidate = "負の R・E_a・密度を Err で拒否"
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-024"
+axis = "kinetics"
+item = "law of mass action over an elementary reaction set (net production rate of every species)"
+source = "Turns ch.4; Kee-Coltrin-Glarborg ch.9; CHEMKIN ckwyp"
+status = "missing"
+evidence = "総括 1 段の閉形式だけ (src/smoke_fire.rs:4) 化学種ごとの生成速度は無い"
+oracle_candidate = "A -> B -> C 逐次 1 次反応の閉形式 (Bateman)"
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-025"
+axis = "kinetics"
+item = "reversible reactions with the reverse rate from the equilibrium constant (detailed balance)"
+source = "Turns ch.4; Kee-Coltrin-Glarborg ch.9"
+status = "missing"
+evidence = "crate に化学種・反応機構の表現が無い (化学は src/smoke_fire.rs の総括 1 段反応の閉形式だけ) 平衡定数も無い (行 COV-CHEM-042)"
+oracle_candidate = "A <-> B の緩和時間 1/(k_f + k_r) と平衡比 k_f/k_r"
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-026"
+axis = "kinetics"
+item = "third-body reactions with collision efficiencies"
+source = "Turns ch.4; CHEMKIN third-body; GRI-Mech 3.0"
+status = "missing"
+evidence = "crate に化学種・反応機構の表現が無い (化学は src/smoke_fire.rs の総括 1 段反応の閉形式だけ) grep: third body 0 件"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-027"
+axis = "kinetics"
+item = "pressure-dependent fall-off reactions (Lindemann, Troe, SRI) and chemically activated reactions"
+source = "Gilbert-Luther-Troe 1983; CHEMKIN fall-off; Cantera FalloffRate"
+status = "missing"
+evidence = "grep: lindemann / troe / falloff (反応の意味) 0 件"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-028"
+axis = "kinetics"
+item = "pressure-dependent rates by logarithmic interpolation (PLOG) and Chebyshev fits"
+source = "CHEMKIN PLOG; Cantera PlogRate / ChebyshevRate"
+status = "missing"
+evidence = "crate に化学種・反応機構の表現が無い (化学は src/smoke_fire.rs の総括 1 段反応の閉形式だけ)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-029"
+axis = "kinetics"
+item = "heterogeneous surface reactions (sticking coefficients, site fractions)"
+source = "Kee-Coltrin-Glarborg ch.11; Cantera Interface; CHEMKIN SURFACE"
+status = "missing"
+evidence = "crate に化学種・反応機構の表現が無い (化学は src/smoke_fire.rs の総括 1 段反応の閉形式だけ)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-030"
+axis = "kinetics"
+item = "reading reaction mechanisms in standard formats (CHEMKIN, Cantera YAML)"
+source = "CHEMKIN-II interpreter; Cantera ck2yaml"
+status = "missing"
+evidence = "crate に化学種・反応機構の表現が無い (化学は src/smoke_fire.rs の総括 1 段反応の閉形式だけ)"
+oracle_candidate = "GRI-Mech 3.0 (53 種 325 反応) の読み込みと種・反応数の確認"
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-031"
+axis = "kinetics"
+item = "rates in molar concentration units (mol / (m^3 s)) with unit-consistent rate constants"
+source = "Turns ch.4; Kee-Coltrin-Glarborg ch.9"
+status = "missing"
+evidence = "速度は kg/(m^3 s) で密度の積から作る src/smoke_fire.rs:79"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-032"
+axis = "kinetics"
+item = "mechanism reduction (QSSA, partial equilibrium, DRG / DRGEP)"
+source = "Lu-Law, Prog. Energy Combust. Sci. 35 (2009); Law ch.3"
+status = "missing"
+evidence = "crate に化学種・反応機構の表現が無い (化学は src/smoke_fire.rs の総括 1 段反応の閉形式だけ)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-033"
+axis = "kinetics"
+item = "rate sensitivity analysis and rate-of-production / reaction path analysis"
+source = "Kee-Coltrin-Glarborg ch.15; Cantera sensitivity; CHEMKIN SENKIN"
+status = "missing"
+evidence = "反応系の時間発展を解く module が無い (src/smoke_fire.rs は 1 点の速度・発熱を返す閉形式で状態を持たない)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-034"
+axis = "reactor"
+item = "homogeneous constant-volume reactor (adiabatic, temperature and composition as ODE state)"
+source = "Turns ch.6; Cantera IdealGasReactor; CHEMKIN closed homogeneous"
+status = "missing"
+evidence = "反応系の時間発展を解く module が無い (src/smoke_fire.rs は 1 点の速度・発熱を返す閉形式で状態を持たない) grep: reactor は src/smoke_fire.rs の doc の語のみ"
+oracle_candidate = "1 次反応 A -> B の濃度 exp(-k t) と断熱温度上昇"
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-035"
+axis = "reactor"
+item = "homogeneous constant-pressure reactor"
+source = "Turns ch.6; Cantera IdealGasConstPressureReactor"
+status = "missing"
+evidence = "反応系の時間発展を解く module が無い (src/smoke_fire.rs は 1 点の速度・発熱を返す閉形式で状態を持たない)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-036"
+axis = "reactor"
+item = "perfectly stirred reactor at steady state (residence time, blow-out)"
+source = "Turns ch.6; CHEMKIN AURORA; Cantera reactor networks"
+status = "missing"
+evidence = "反応系の時間発展を解く module が無い (src/smoke_fire.rs は 1 点の速度・発熱を返す閉形式で状態を持たない)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-037"
+axis = "reactor"
+item = "plug flow reactor"
+source = "Turns ch.6; Kee-Coltrin-Glarborg ch.16"
+status = "missing"
+evidence = "反応系の時間発展を解く module が無い (src/smoke_fire.rs は 1 点の速度・発熱を返す閉形式で状態を持たない)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-038"
+axis = "reactor"
+item = "stiff time integration of a reacting system"
+source = "Hairer-Wanner, Solving ODE II; Cantera CVODES; Kee-Coltrin-Glarborg ch.15"
+status = "missing"
+evidence = "汎用の陰的積分・Rosenbrock が無い (数値の表 COV-NUM-045 / 051 / 054) 化学側の受け手 (反応器) も無い (行 COV-CHEM-034)"
+oracle_candidate = "Robertson 問題は COV-NUM-087"
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-039"
+axis = "reactor"
+item = "operator splitting of chemistry and transport (Strang) with the order of the splitting error"
+source = "Poinsot-Veynante ch.6; OpenFOAM reactingFoam chemistry solver"
+status = "missing"
+evidence = "反応系の時間発展を解く module が無い (src/smoke_fire.rs は 1 点の速度・発熱を返す閉形式で状態を持たない) 流れ側の 1 次分割は COV-CFD-026"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-040"
+axis = "reactor"
+item = "positivity and mass conservation of species mass fractions during integration (sum Y_k = 1)"
+source = "Kee-Coltrin-Glarborg ch.15"
+status = "missing"
+evidence = "crate に化学種・反応機構の表現が無い (化学は src/smoke_fire.rs の総括 1 段反応の閉形式だけ)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-041"
+axis = "reactor"
+item = "chemistry tabulation and acceleration (ISAT, dynamic load balancing of chemistry)"
+source = "Pope, Combust. Theory Model. 1 (1997); OpenFOAM TDAC / ISAT"
+status = "missing"
+evidence = "反応系の時間発展を解く module が無い (src/smoke_fire.rs は 1 点の速度・発熱を返す閉形式で状態を持たない)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-042"
+axis = "equilibrium"
+item = "equilibrium constant K_p from the standard Gibbs energy change and its temperature dependence"
+source = "Turns ch.2; Law ch.1"
+status = "missing"
+evidence = "化学種の熱力学データ (比熱・エンタルピー・エントロピー) を持つ module が無い 発熱は Δh_c を入力として受け取るだけ src/smoke_fire.rs:38 grep: gibbs 0 件"
+oracle_candidate = "CO2 <-> CO + 1/2 O2 の K_p(T) (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-043"
+axis = "equilibrium"
+item = "multi-species chemical equilibrium by Gibbs energy minimisation (element potentials)"
+source = "Gordon-McBride NASA RP-1311 (CEA); Reynolds STANJAN; Cantera equilibrate"
+status = "missing"
+evidence = "crate に化学種・反応機構の表現が無い (化学は src/smoke_fire.rs の総括 1 段反応の閉形式だけ)"
+oracle_candidate = "H2-O2 系の高温解離組成を CEA と突合 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-044"
+axis = "equilibrium"
+item = "equilibrium at fixed (T, p), (h, p), (u, v) and (s, p)"
+source = "Cantera equilibrate TP / HP / UV / SP"
+status = "missing"
+evidence = "crate に化学種・反応機構の表現が無い (化学は src/smoke_fire.rs の総括 1 段反応の閉形式だけ)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-045"
+axis = "equilibrium"
+item = "adiabatic flame temperature for complete combustion (no dissociation, constant or variable c_p)"
+source = "Turns ch.2"
+status = "missing"
+evidence = "化学種の熱力学データ (比熱・エンタルピー・エントロピー) を持つ module が無い 発熱は Δh_c を入力として受け取るだけ src/smoke_fire.rs:38"
+oracle_candidate = "CH4-air 量論、c_p 一定の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-046"
+axis = "equilibrium"
+item = "adiabatic flame temperature with dissociation (equilibrium products)"
+source = "Turns ch.2; Gordon-McBride CEA; Cantera equilibrate HP"
+status = "missing"
+evidence = "crate に化学種・反応機構の表現が無い (化学は src/smoke_fire.rs の総括 1 段反応の閉形式だけ)"
+oracle_candidate = "CH4-air 量論 1 atm 298 K で約 2226 K (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-047"
+axis = "equilibrium"
+item = "constant-volume explosion pressure and temperature (closed vessel)"
+source = "Turns ch.2; Kuo ch.1"
+status = "missing"
+evidence = "crate に化学種・反応機構の表現が無い (化学は src/smoke_fire.rs の総括 1 段反応の閉形式だけ)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-048"
+axis = "combustion"
+item = "volumetric heat release rate q = r Delta h_c"
+source = "Turns ch.5"
+status = "implemented+oracle"
+evidence = "src/smoke_fire.rs:99 tests/analytic_smoke_fire_wiring.rs::heat_release_and_soot_generation_are_exact_products_for_a_fractional_rate / tests/audit_smoke_fire.rs::heat_and_soot_are_linear_in_the_rate_with_the_preset_coefficients / tests/engineering_oracles_fluid.rs::smoke_fire_arrhenius_and_boussinesq_closed_forms 流れ・熱伝導へ渡す口は無い (COV-MULTIPHASE-070 / COV-THERM-043)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-049"
+axis = "combustion"
+item = "soot source as a constant yield of the fuel consumption rate"
+source = "Tewarson, SFPE Handbook (soot yield); FDS soot yield"
+status = "implemented+oracle"
+evidence = "src/smoke_fire.rs:105 tests/analytic_smoke_fire_wiring.rs::heat_release_and_soot_generation_are_exact_products_for_a_fractional_rate / tests/audit_smoke_fire.rs::heat_and_soot_are_linear_in_the_rate_with_the_preset_coefficients"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-050"
+axis = "combustion"
+item = "soot formation models (nucleation, surface growth, coagulation, oxidation; two-equation Moss-Brookes / Leung-Lindstedt)"
+source = "Kennedy, Prog. Energy Combust. Sci. 23 (1997); Leung-Lindstedt-Jones 1991; Fluent soot models"
+status = "missing"
+evidence = "煤は燃焼速度に定数 yield を掛けるだけ src/smoke_fire.rs:105"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-051"
+axis = "combustion"
+item = "laminar premixed flame speed from a 1-D freely propagating flame"
+source = "Turns ch.8; Law ch.7; Cantera FreeFlame; CHEMKIN PREMIX"
+status = "missing"
+evidence = "1-D 火炎の solver が無い (推測: flame speed / burning velocity 0 件)"
+oracle_candidate = "CH4-air 量論 1 atm 298 K で約 0.37 m/s (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-052"
+axis = "combustion"
+item = "closed-form premixed flame theory (Mallard-Le Chatelier, Zeldovich-Frank-Kamenetskii flame speed and thickness)"
+source = "Turns ch.8; Law ch.7"
+status = "missing"
+evidence = "grep: zeldovich 0 件"
+oracle_candidate = "S_L が sqrt(反応速度) に比例することの確認"
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-053"
+axis = "combustion"
+item = "flame thickness, preheat and reaction zones, and flame structure output"
+source = "Law ch.7; Poinsot-Veynante ch.2"
+status = "missing"
+evidence = "1-D 火炎が無い (行 COV-CHEM-051)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-054"
+axis = "combustion"
+item = "flame stretch, Markstein length and curvature effects on flame speed"
+source = "Law ch.10; Poinsot-Veynante ch.2"
+status = "missing"
+evidence = "1-D 火炎が無い (行 COV-CHEM-051)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-055"
+axis = "combustion"
+item = "laminar diffusion flame in the flame-sheet limit (Burke-Schumann) and flame height"
+source = "Turns ch.9; Law ch.6"
+status = "missing"
+evidence = "混合分率が無い (行 COV-CHEM-015)"
+oracle_candidate = "Burke-Schumann の同軸噴流の火炎高さ (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-056"
+axis = "combustion"
+item = "counterflow diffusion and premixed flames, extinction strain rate"
+source = "Law ch.9; Cantera CounterflowDiffusionFlame; CHEMKIN OPPDIF"
+status = "missing"
+evidence = "1-D 火炎が無い (行 COV-CHEM-051)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-057"
+axis = "combustion"
+item = "ignition delay time of a homogeneous mixture (0-D reactor)"
+source = "Law ch.8; Cantera ignition examples; shock-tube data"
+status = "missing"
+evidence = "反応系の時間発展を解く module が無い (src/smoke_fire.rs は 1 点の速度・発熱を返す閉形式で状態を持たない) grep: ignition 0 件"
+oracle_candidate = "ln(tau) と 1/T の直線性 (行 COV-CHEM-105)"
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-058"
+axis = "combustion"
+item = "thermal explosion theory (Semenov, Frank-Kamenetskii critical parameter)"
+source = "Law ch.8; Kuo ch.2"
+status = "missing"
+evidence = "grep: semenov / kamenetskii 0 件"
+oracle_candidate = "Semenov の臨界 Damköhler 数 1/e"
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-059"
+axis = "combustion"
+item = "minimum ignition energy and spark ignition kernel"
+source = "Turns ch.8; Law ch.8"
+status = "missing"
+evidence = "反応系の時間発展を解く module が無い (src/smoke_fire.rs は 1 点の速度・発熱を返す閉形式で状態を持たない)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-060"
+axis = "combustion"
+item = "quenching distance and flammability limits"
+source = "Turns ch.8; Law ch.8; Coward-Jones flammability data"
+status = "missing"
+evidence = "grep: quench / flammab 0 件"
+oracle_candidate = "CH4-air の可燃範囲 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-061"
+axis = "combustion"
+item = "droplet evaporation and combustion (d^2 law, burning rate constant)"
+source = "Turns ch.3 and ch.10; Law ch.5"
+status = "missing"
+evidence = "液滴の燃焼が無い (推測: d2 law 0 件) 界面の蒸発の流れ側は COV-MULTIPHASE-054"
+oracle_candidate = "d^2 が時間に線形に減る閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-062"
+axis = "combustion"
+item = "pyrolysis and burning of solid fuels and polymers (mass loss rate, char, heat of gasification)"
+source = "Quintiere, Fundamentals of Fire Phenomena ch.6; Fernandez-Pello; FDS solid-phase pyrolysis"
+status = "missing"
+evidence = "pla_air は固体の PLA を気相の総括 1 段反応の定数で表す (src/smoke_fire.rs:60) 固体の熱分解の module は無い (推測: pyrolys 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-063"
+axis = "combustion"
+item = "Chapman-Jouguet detonation velocity and state"
+source = "Law ch.14; Kuo ch.4; Shepherd SD Toolbox; Cantera CJ examples"
+status = "missing"
+evidence = "grep: detonat / jouguet 0 件 src/compressible.rs の Rankine-Hugoniot は非反応の垂直衝撃 (衝撃の表)"
+oracle_candidate = "H2-O2 量論の CJ 速度 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-064"
+axis = "combustion"
+item = "ZND detonation structure (induction zone length)"
+source = "Law ch.14; Shepherd SD Toolbox"
+status = "missing"
+evidence = "CJ 状態が無い (行 COV-CHEM-063)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-065"
+axis = "combustion"
+item = "deflagration-to-detonation transition"
+source = "Law ch.14; Kuo ch.4"
+status = "missing"
+evidence = "反応流の solver が無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-066"
+axis = "combustion"
+item = "explosive energy release and TNT equivalence, blast overpressure versus scaled distance (Kingery-Bulmash)"
+source = "Kinney-Graham, Explosive Shocks in Air; UFC 3-340-02"
+status = "missing"
+evidence = "grep: tnt / kingery 0 件 src/force.rs の Explosion はゲームの径方向 impulse で化学のエネルギーを持たない 爆風の伝播は衝撃の表"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-067"
+axis = "turbulent-combustion"
+item = "eddy break-up / eddy dissipation model (Spalding, Magnussen-Hjertager)"
+source = "Poinsot-Veynante ch.5; Fluent EDM; OpenFOAM EDM"
+status = "missing"
+evidence = "grep: magnussen / eddy dissipation 0 件"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-068"
+axis = "turbulent-combustion"
+item = "eddy dissipation concept (EDC) with finite-rate chemistry"
+source = "Magnussen 1981; OpenFOAM EDC"
+status = "missing"
+evidence = "反応機構が無い (行 COV-CHEM-024)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-069"
+axis = "turbulent-combustion"
+item = "steady laminar flamelet and flamelet / progress-variable tables"
+source = "Peters, Turbulent Combustion ch.3; Pierce-Moin 2004; FlameMaster"
+status = "missing"
+evidence = "grep: flamelet 0 件"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-070"
+axis = "turbulent-combustion"
+item = "transported PDF methods and presumed-PDF (beta-PDF) closure"
+source = "Pope, Prog. Energy Combust. Sci. 11 (1985); Poinsot-Veynante ch.5"
+status = "missing"
+evidence = "crate に化学種・反応機構の表現が無い (化学は src/smoke_fire.rs の総括 1 段反応の閉形式だけ)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-071"
+axis = "turbulent-combustion"
+item = "thickened flame model for LES"
+source = "Colin et al. 2000; Poinsot-Veynante ch.5"
+status = "missing"
+evidence = "crate に化学種・反応機構の表現が無い (化学は src/smoke_fire.rs の総括 1 段反応の閉形式だけ)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-072"
+axis = "turbulent-combustion"
+item = "premixed turbulent combustion by a progress variable (BML, turbulent flame speed correlations)"
+source = "Bray-Moss-Libby; Peters ch.2; Zimont TFC"
+status = "missing"
+evidence = "G 方程式の界面追跡は COV-MULTIPHASE-071"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-073"
+axis = "turbulent-combustion"
+item = "combustion regime numbers (Damköhler, Karlovitz) and the Borghi diagram"
+source = "Peters ch.2; Poinsot-Veynante ch.5"
+status = "missing"
+evidence = "crate に化学種・反応機構の表現が無い (化学は src/smoke_fire.rs の総括 1 段反応の閉形式だけ)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-074"
+axis = "transport"
+item = "binary Fick diffusion of a species (flux = -rho D grad Y)"
+source = "Turns ch.3; Bird-Stewart-Lightfoot ch.17"
+status = "missing"
+evidence = "化学種の拡散は無い (推測: fick 0 件) 流れの中の受動スカラー輸送は COV-CFD-066 src/sim_field.rs の diffuse は効果層の温度場の拡散"
+oracle_candidate = "1-D 拡散の erfc 解"
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-075"
+axis = "transport"
+item = "binary diffusion coefficients from kinetic theory (Chapman-Enskog with Lennard-Jones parameters)"
+source = "Hirschfelder-Curtiss-Bird; Kee-Coltrin-Glarborg ch.12; CHEMKIN TRANSPORT"
+status = "missing"
+evidence = "grep: chapman / enskog 0 件 Lennard-Jones の対ポテンシャルは src/pair_potential.rs にあるが輸送係数は作らない"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-076"
+axis = "transport"
+item = "mixture-averaged diffusion coefficients (Hirschfelder-Curtiss) with a correction velocity"
+source = "Kee-Coltrin-Glarborg ch.12; Cantera mixture-averaged transport"
+status = "missing"
+evidence = "crate に化学種・反応機構の表現が無い (化学は src/smoke_fire.rs の総括 1 段反応の閉形式だけ)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-077"
+axis = "transport"
+item = "multicomponent diffusion (Stefan-Maxwell)"
+source = "Kee-Coltrin-Glarborg ch.12; Cantera multicomponent transport"
+status = "missing"
+evidence = "grep: stefan maxwell 0 件"
+oracle_candidate = "3 成分の Stefan 管 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-078"
+axis = "transport"
+item = "thermal diffusion (Soret effect) of light species"
+source = "Kee-Coltrin-Glarborg ch.12"
+status = "missing"
+evidence = "grep: soret 0 件"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-079"
+axis = "transport"
+item = "Lewis, Schmidt and Prandtl numbers and the unity-Lewis-number assumption"
+source = "Turns ch.3; Poinsot-Veynante ch.1"
+status = "missing"
+evidence = "化学種の拡散係数が無い (行 COV-CHEM-074)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-080"
+axis = "transport"
+item = "mixture viscosity and thermal conductivity of gases (Wilke rule, kinetic theory)"
+source = "Kee-Coltrin-Glarborg ch.12; Poling-Prausnitz-O'Connell ch.9"
+status = "missing"
+evidence = "crate に化学種・反応機構の表現が無い (化学は src/smoke_fire.rs の総括 1 段反応の閉形式だけ)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-081"
+axis = "transport"
+item = "reaction-diffusion equation for a scalar u_t = D laplacian u + f(u) on a grid"
+source = "Murray, Mathematical Biology ch.11-13; Fisher 1937; Kolmogorov-Petrovsky-Piskunov 1937"
+status = "missing"
+evidence = "反応項を持つ拡散方程式の solver は無い (推測: fisher / kpp 0 件) 熱伝導 (COV-THERM) と効果層の拡散 (src/sim_field.rs) は反応項を持たない"
+oracle_candidate = "Fisher-KPP の進行波速度 2 sqrt(D r)"
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-082"
+axis = "transport"
+item = "two-species reaction-diffusion systems and pattern formation (Gray-Scott, Turing instability)"
+source = "Murray ch.2-3; Pearson 1993"
+status = "missing"
+evidence = "grep: gray scott 0 件 / turing は manufacturing 等の部分一致のみ"
+oracle_candidate = "Turing 不安定の臨界波数"
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-083"
+axis = "electrochemistry"
+item = "Nernst equation for the equilibrium electrode potential"
+source = "Bard-Faulkner, Electrochemical Methods ch.2"
+status = "missing"
+evidence = "grep: nernst 0 件"
+oracle_candidate = "25 °C で 1 電子あたり 59.16 mV/decade"
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-084"
+axis = "electrochemistry"
+item = "Butler-Volmer electrode kinetics and the Tafel limit"
+source = "Bard-Faulkner ch.3; Newman-Thomas-Alyea, Electrochemical Systems ch.8"
+status = "missing"
+evidence = "grep: butler / tafel 0 件"
+oracle_candidate = "小過電圧での線形化 (電荷移動抵抗) と大過電圧の Tafel 勾配"
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-085"
+axis = "electrochemistry"
+item = "Faraday's law (mass converted per charge passed)"
+source = "Bard-Faulkner ch.1"
+status = "missing"
+evidence = "grep: faraday は src/electromagnetic.rs の誘導起電力 (電磁) の語のみ"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-086"
+axis = "electrochemistry"
+item = "ion transport by the Nernst-Planck equation (diffusion and migration), electroneutrality"
+source = "Newman-Thomas-Alyea ch.11; Bard-Faulkner ch.4"
+status = "missing"
+evidence = "crate に化学種・反応機構の表現が無い (化学は src/smoke_fire.rs の総括 1 段反応の閉形式だけ)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-087"
+axis = "electrochemistry"
+item = "cell models of a battery (equivalent circuit, single-particle model, Doyle-Fuller-Newman)"
+source = "Newman-Thomas-Alyea ch.22; PyBaMM; COMSOL Battery Design"
+status = "missing"
+evidence = "crate に化学種・反応機構の表現が無い (化学は src/smoke_fire.rs の総括 1 段反応の閉形式だけ)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-088"
+axis = "electrochemistry"
+item = "fuel cell polarisation curve (activation, ohmic and concentration losses)"
+source = "Larminie-Dicks, Fuel Cell Systems Explained ch.3"
+status = "missing"
+evidence = "crate に化学種・反応機構の表現が無い (化学は src/smoke_fire.rs の総括 1 段反応の閉形式だけ)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-089"
+axis = "fire"
+item = "design fire heat release rate curves (t-squared growth, steady, decay)"
+source = "SFPE Handbook ch. design fires; NFPA 72 t-squared fires; FDS RAMP"
+status = "missing"
+evidence = "発熱は 1 点の反応速度から作る src/smoke_fire.rs:99 時間の関数としての火災の発熱は無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-090"
+axis = "fire"
+item = "fire plume and flame height correlations (Heskestad, McCaffrey, Zukoski)"
+source = "Heskestad, SFPE Handbook; McCaffrey 1979; Drysdale, An Introduction to Fire Dynamics ch.4"
+status = "missing"
+evidence = "grep: heskestad 0 件 発熱で駆動する浮力プルームの流れは COV-MULTIPHASE-072"
+oracle_candidate = "Heskestad の火炎高さ L = 0.235 Q^(2/5) - 1.02 D (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-091"
+axis = "fire"
+item = "compartment fire: two-zone model, ventilation-limited burning and flashover criteria"
+source = "Drysdale ch.9-10; Karlsson-Quintiere, Enclosure Fire Dynamics; CFAST"
+status = "missing"
+evidence = "grep: flashover 0 件"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-092"
+axis = "fire"
+item = "smoke visibility and optical density from the soot mass concentration (mass extinction coefficient)"
+source = "Mulholland, SFPE Handbook; FDS visibility output"
+status = "missing"
+evidence = "煤の発生速度は返すが濃度場も減光も無い src/smoke_fire.rs:105"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-093"
+axis = "fire"
+item = "species yields of fire products (CO, CO2, HCN) and fractional effective dose"
+source = "Purser, SFPE Handbook; FDS simple chemistry yields"
+status = "missing"
+evidence = "yield は煤だけ src/smoke_fire.rs:105"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-094"
+axis = "fire"
+item = "flame spread over solid surfaces (opposed and concurrent flow spread rate)"
+source = "Quintiere ch.8; Drysdale ch.7"
+status = "missing"
+evidence = "crate に化学種・反応機構の表現が無い (化学は src/smoke_fire.rs の総括 1 段反応の閉形式だけ)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-095"
+axis = "fire"
+item = "wildland fire spread rate and front propagation (Rothermel, level-set or cellular front)"
+source = "Rothermel 1972; FARSITE; WRF-SFIRE"
+status = "missing"
+evidence = "grep: rothermel / wildfire 0 件"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-096"
+axis = "visual"
+item = "Boussinesq buoyancy source of hot combustion gas (closed form)"
+source = "Incropera ch.9; Fedkiw-Stam-Jensen 2001"
+status = "implemented+oracle"
+evidence = "src/smoke_fire.rs:119 tests/analytic_smoke_fire_wiring.rs::boussinesq_matches_closed_form_for_a_second_scenario / tests/audit_smoke_fire.rs::boussinesq_is_odd_in_delta_t_and_linear_in_each_factor / tests/engineering_oracles_fluid.rs::smoke_fire_arrhenius_and_boussinesq_closed_forms 流れの solver の浮力は COV-CFD-060 (CfdSolver は smoke_fire を呼ばない、src/cfd_solver.rs:10 の doc は smoke_fire を挙げる)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-097"
+axis = "visual"
+item = "smoke density field fed by the soot source and advected by the flow (with dissipation)"
+source = "Fedkiw-Stam-Jensen 2001; Houdini Pyro; EmberGen"
+status = "missing"
+evidence = "煤の発生速度を場に積む口が無い src/smoke_fire.rs:105 CfdSolver が運ぶのは温度だけ (src/cfd_solver.rs:2721) 受動スカラー輸送は COV-CFD-066"
+oracle_candidate = "一様流で移流した煙の総量 = 煤の発生量の時間積分"
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-098"
+axis = "visual"
+item = "fire on a grid from a fuel / reaction-coordinate field (blue core, burn rate, expansion at the reaction front)"
+source = "Nguyen-Fedkiw-Jensen 2002; Houdini Pyro solver"
+status = "missing"
+evidence = "格子上の燃料場と反応が無い 発熱を流れへ渡す行は COV-MULTIPHASE-070"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-099"
+axis = "visual"
+item = "fire and smoke as effect particles (temperature-driven rise, cooling, lifetime colour)"
+source = "Reeves 1983; Unreal Niagara / Unity VFX Graph fire templates"
+status = "missing"
+evidence = "効果粒子 (src/particle.rs) は温度を持たない (粒子法の表の効果粒子の軸) 浮力は ForceField::Buoyancy の水中の力だけ"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-100"
+axis = "visual"
+item = "flame temperature to emitted colour for effects (blackbody ramp, soot emission)"
+source = "Nguyen-Fedkiw-Jensen 2002; Pegoraro-Parker 2006"
+status = "missing"
+evidence = "温度場から色を作る関数は無い 発光する参加媒体は COV-OPTICS-069、汎用のカラーマップは engine の表"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-101"
+axis = "benchmark"
+item = "Arrhenius plot: ln k linear in 1/T with slope -E_a / R"
+source = "Turns ch.4"
+status = "implemented+oracle"
+evidence = "tests/analytic_smoke_fire_wiring.rs::reaction_rate_ratio_between_temperatures_matches_closed_form_for_pla_air / tests/engineering_oracles_fluid.rs::smoke_fire_arrhenius_and_boussinesq_closed_forms (2 温度の比 exp(E_a/R (1/T1 - 1/T2)))"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-102"
+axis = "benchmark"
+item = "first-order exponential decay of a reactant (closed form exp(-k t))"
+source = "Turns ch.4"
+status = "missing"
+evidence = "反応系の時間発展を解く module が無い (src/smoke_fire.rs は 1 点の速度・発熱を返す閉形式で状態を持たない)"
+oracle_candidate = "定温 1 次反応で ln C が時間に線形、半減期 ln2 / k"
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-103"
+axis = "benchmark"
+item = "adiabatic flame temperature of methane-air versus equivalence ratio"
+source = "Turns ch.2; Gordon-McBride CEA"
+status = "missing"
+evidence = "平衡計算が無い (行 COV-CHEM-046)"
+oracle_candidate = "φ = 1 で最大付近、約 2226 K (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-104"
+axis = "benchmark"
+item = "laminar burning velocity of methane-air versus equivalence ratio"
+source = "GRI-Mech 3.0 targets; Law ch.7; Cantera FreeFlame"
+status = "missing"
+evidence = "1-D 火炎が無い (行 COV-CHEM-051)"
+oracle_candidate = "φ = 1 で約 0.37 m/s (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-105"
+axis = "benchmark"
+item = "ignition delay Arrhenius plot (shock-tube conditions)"
+source = "GRI-Mech 3.0 targets; Law ch.8"
+status = "missing"
+evidence = "0-D 反応器が無い (行 COV-CHEM-034)"
+oracle_candidate = "ln(tau) の 1/T に対する傾き (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-106"
+axis = "benchmark"
+item = "Chapman-Jouguet detonation velocity of H2-O2 and CH4-O2"
+source = "Shepherd SD Toolbox; Law ch.14"
+status = "missing"
+evidence = "CJ が無い (行 COV-CHEM-063)"
+oracle_candidate = "H2-O2 量論で約 2840 m/s (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-107"
+axis = "benchmark"
+item = "equilibrium composition of dissociating H2-O2 or CO2 at high temperature"
+source = "Gordon-McBride CEA; Cantera equilibrate"
+status = "missing"
+evidence = "平衡計算が無い (行 COV-CHEM-043)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-108"
+axis = "benchmark"
+item = "droplet burning: d^2 law burning rate constant"
+source = "Turns ch.10"
+status = "missing"
+evidence = "液滴燃焼が無い (行 COV-CHEM-061)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-109"
+axis = "benchmark"
+item = "Burke-Schumann flame height of a coaxial jet"
+source = "Turns ch.9"
+status = "missing"
+evidence = "拡散火炎が無い (行 COV-CHEM-055)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-110"
+axis = "benchmark"
+item = "Fisher-KPP travelling wave speed 2 sqrt(D r)"
+source = "Murray ch.13"
+status = "missing"
+evidence = "反応拡散の solver が無い (行 COV-CHEM-081)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-111"
+axis = "benchmark"
+item = "perfectly stirred reactor blow-out residence time"
+source = "Turns ch.6; Glarborg et al. 1986"
+status = "missing"
+evidence = "PSR が無い (行 COV-CHEM-036)"
+oracle_candidate = ""
+limitation = ""
