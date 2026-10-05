@@ -57,7 +57,7 @@ this file or listed twice, or when a linked example or test does not exist.
 | Module | Summary | Feature | Example | Integration |
 |--------|---------|---------|---------|-------------|
 | `solver` | `PhysicsWorld`, `RigidBody`, XPBD solver (default) or temporal Gauss-Seidel backend, constraint batching, rollback state |  | [`basic_physics`](../examples/basic_physics.rs) | world API (step 28 of 141 items) |
-| `shape` | solid shapes with mass properties, and bodies built from them |  | [`shaped_bodies`](../examples/shaped_bodies.rs) | world API (step 4 of 9 items) |
+| `shape` | solid shapes with mass properties, and bodies built from them |  | [`shaped_bodies`](../examples/shaped_bodies.rs) | world API (step 4 of 10 items) |
 | `static_collider` | immovable planes, height fields and triangle meshes for a `PhysicsWorld` |  | [`static_colliders`](../examples/static_colliders.rs) | step |
 | `mass_properties` | mass, centre of mass and inertia tensors for primitive shapes and convex hulls |  |  | world API |
 | `material` | per-pair friction and restitution with combine rules |  | [`material_registry_presets`](../examples/material_registry_presets.rs) | step |
@@ -80,12 +80,12 @@ this file or listed twice, or when a linked example or test does not exist.
 | Module | Summary | Feature | Example | Integration |
 |--------|---------|---------|---------|-------------|
 | `collider` | sphere, capsule, convex hull and AABB shapes; GJK / EPA detection |  | [`convex_contacts`](../examples/convex_contacts.rs) | step |
-| `box_collider` | oriented box (OBB) |  | [`compound_shapes`](../examples/compound_shapes.rs) | step |
-| `compound` | several shapes with local transforms |  | [`compound_shapes`](../examples/compound_shapes.rs) | step |
+| `box_collider` | oriented box (OBB) |  | [`compound_shapes`](../examples/compound_shapes.rs) | standalone (step 3, world API 2 of 9 items) |
+| `compound` | several shapes with local transforms |  | [`compound_shapes`](../examples/compound_shapes.rs) | standalone (step 8, world API 2 of 21 items) |
 | `cone` | cone (apex `+Y`) |  | [`geometry_queries`](../examples/geometry_queries.rs) | step |
-| `cylinder` | cylinder |  |  | world API (step 2 of 7 items) |
-| `ellipsoid` | ellipsoid with three semi-axes |  |  | step |
-| `torus` | torus |  |  | world API (step 2 of 7 items) |
+| `cylinder` | cylinder |  |  | step |
+| `ellipsoid` | ellipsoid with three semi-axes |  |  | world API (step 3 of 7 items) |
+| `torus` | torus |  |  | step |
 | `wedge` | triangular prism |  |  | step |
 | `plane_collider` | infinite plane |  | [`static_colliders`](../examples/static_colliders.rs) | step |
 | `convex_mesh_builder` | incremental convex hull from a point set |  |  | world API |

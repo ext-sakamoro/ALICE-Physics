@@ -58,13 +58,17 @@ impl Support for Piece<'_> {
 
 impl BodyCollider {
     /// A box that contains the whole collider, for a body at `position` turned by
-    /// `rotation`.
+    /// `rotation`: the shape's own closed-form world box, or the union of a
+    /// compound's children's world boxes. Tighter than the cube of the bounding
+    /// sphere for any collider that is not round.
     pub(crate) fn world_aabb(&self, position: Vec3Fix, rotation: QuatFix) -> AABB {
         match self {
-            Self::Shape(shape) => {
-                let r = shape.bounding_radius();
-                AABB::from_center_half(position, Vec3Fix::new(r, r, r))
+            Self::Shape(shape) => PosedShape {
+                shape: *shape,
+                position,
+                rotation,
             }
+            .world_aabb(),
             Self::Compound(compound) => compound.world_aabb(position, rotation),
         }
     }

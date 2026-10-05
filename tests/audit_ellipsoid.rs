@@ -194,7 +194,6 @@ fn aabb_is_exact_for_axis_aligned_ellipsoids() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S5W2-006: aabb sums |R_ij r_j| instead of the exact half-extent sqrt(sum (R_ij r_j)^2); a sphere of radius 2 rotated by 1 rad about (1,1,1) must keep half-extent 2 on every axis, observed 3.3304 (up to a factor sqrt(3))"]
 fn aabb_of_a_rotated_sphere_is_tight() {
     // a sphere of radius 2 is rotation invariant: its AABB half-extent is 2 on every axis
     let e = Ellipsoid::with_rotation(
@@ -215,7 +214,6 @@ fn aabb_of_a_rotated_sphere_is_tight() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S5W2-006: aabb is conservative by up to sqrt(3) (see aabb_of_a_rotated_sphere_is_tight): radii (1,2,3) tilted 0.7 rad about (1,1,0): x half-extent 2.4842 vs exact 1.6436"]
 fn aabb_of_a_tilted_ellipsoid_equals_the_exact_extent() {
     let c = Case {
         center: [0.0; 3],

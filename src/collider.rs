@@ -100,6 +100,27 @@ pub struct AABB {
     pub max: Vec3Fix,
 }
 
+/// `√(a² + b² + c²)` without forming the squares at their own scale: the
+/// components are divided by the largest magnitude first, so a component below
+/// `2^-32` is not lost to `Fix128` underflow and one above `~3e9` does not
+/// overflow. Exact for a single non-zero component.
+#[must_use]
+pub(crate) fn hypot3(a: Fix128, b: Fix128, c: Fix128) -> Fix128 {
+    let (aa, ab, ac) = (a.abs(), b.abs(), c.abs());
+    let mut m = aa;
+    if ab > m {
+        m = ab;
+    }
+    if ac > m {
+        m = ac;
+    }
+    if m.is_zero() {
+        return Fix128::ZERO;
+    }
+    let (x, y, z) = (aa / m, ab / m, ac / m);
+    m * (x * x + y * y + z * z).sqrt()
+}
+
 impl AABB {
     /// Create a new AABB from min and max corners
     #[must_use]
