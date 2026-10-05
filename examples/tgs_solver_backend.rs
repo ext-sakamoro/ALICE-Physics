@@ -15,7 +15,7 @@
 use alice_physics::ccd::adaptive_toi_substeps;
 use alice_physics::math::{Fix128, Vec3Fix};
 use alice_physics::solver::{DistanceConstraint, PhysicsConfig, PhysicsWorld, RigidBody};
-use alice_physics::SolverBackend;
+use alice_physics::{SolverBackend, TgsCacheStats};
 
 fn r(n: i64, d: i64) -> Fix128 {
     Fix128::from_ratio(n, d)
@@ -235,6 +235,27 @@ fn scene_cache_stats() {
         "[tgs_solver_backend cache_stats] after reset_tgs_cache_stats: hits={} misses={}",
         after_reset.hits, after_reset.misses
     );
+
+    // Closed form from `ImpulseCache`'s contract (one `take` per contact per
+    // sub-step, a miss when the id is absent, `sweep` once per tick drops
+    // every id not taken that tick) with one contact and one sub-step:
+    // frame 1 miss, frame 2 hit, frame 3 no contact (evicted), frame 4 miss.
+    assert_eq!(
+        after_contact,
+        TgsCacheStats::new(1, 1),
+        "first touch + recurrence"
+    );
+    assert_eq!(
+        after_reunion,
+        TgsCacheStats::new(1, 2),
+        "the evicted entry misses"
+    );
+    assert_eq!(
+        after_reset,
+        TgsCacheStats::new(0, 0),
+        "reset clears both counters"
+    );
+    assert_eq!(after_reunion.hit_rate(), 1.0 / 3.0);
 }
 
 /// Scene 5: `ccd::adaptive_toi_substeps` — a fast-closing pair of small
