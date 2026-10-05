@@ -21,6 +21,13 @@
 //!   exact solution of the Euler equations; cell averages of `1 + ε sin 2πx`
 //!   are integrated in closed form.
 //!
+//! # Runtime
+//!
+//! The whole file takes about 73 s in a debug build (mostly the Sod
+//! convergence runs at N = 200 and the mirror test over 8 configurations);
+//! `cargo test --release --test analytic_euler_fv` is recommended for local
+//! runs.
+//!
 //! # Tolerances
 //!
 //! - Star state `p*`, `u*`: `1e-10` (relative to `max(1, |value|)`). The
@@ -300,6 +307,10 @@ fn close(label: &str, actual: f64, expected: f64, tol: f64) {
 // Exact Riemann solver
 // ===========================================================================
 
+/// The Table 4.2 values below have not been checked against the printed
+/// book (they were transcribed from memory). The main evidence for the
+/// solver's correctness is the comparison with the independent `f64`
+/// implementation in this file; this test only cross-checks that reference.
 #[test]
 fn reference_matches_toro_table_4_2() {
     // Guards the f64 reference itself against an external source.
