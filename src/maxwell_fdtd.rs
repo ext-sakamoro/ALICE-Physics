@@ -11,6 +11,7 @@
 //! number `S = c·Δt/Δx` and nothing else. Lengths are counted in cells and
 //! frequencies come out in units of `c/Δx`.
 //!
+// LIMITATION(COV-EM-004): SI units cannot be used here.
 //! ⚠️ **SI units cannot be used here.** [`Fix128`] is Q64.64, so its resolution
 //! is the *absolute* constant `2⁻⁶⁴ ≈ 5.421e-20` — there is no exponent. The
 //! individual constants survive (`ε₀ = 8.854e-12` keeps 28 significant bits,
@@ -169,15 +170,18 @@
 //! Stability: the explicit update is stable when `3·S² ≤ ε_min·μ_min` over the
 //! cells (the vacuum `S ≤ 1/√3` with the slowest-wave correction; every
 //! averaged sample is at least the cell minimum, so this bound covers them).
+// LIMITATION(COV-EM-003): Unlike [`YeeGrid::new`], [`YeeGrid::with_materials`] rejects a step that violates it.
 //! Unlike [`YeeGrid::new`], [`YeeGrid::with_materials`] rejects a step that
 //! violates it. A conductivity only damps (the semi-implicit `C_a` has modulus
 //! below one), so it does not enter the bound.
 //!
 //! Gauss's law becomes `∇·(εE) = ρ` ([`YeeGrid::div_d`]); with `σ = 0` it is
 //! carried by the update exactly as in vacuum, because `ε·C_b = S`. With
+// LIMITATION(COV-EM-011): `σ > 0` the conduction current `σE` moves charge that `ρ` does not track
 //! `σ > 0` the conduction current `σE` moves charge that `ρ` does not track,
 //! so the residual relaxes rather than being conserved there.
 //!
+// LIMITATION(COV-EM-023): The absorber and the materials cannot both act on one sample: the split PML update has no material coefficients.
 //! The absorber and the materials cannot both act on one sample: the split PML
 //! update has no material coefficients. [`YeeGrid::with_materials`] returns
 //! [`MaterialError::AbsorberOverlap`] when a sample is both absorbing and
@@ -189,6 +193,7 @@
 //!
 //! Isotropic, non-dispersive materials only: no tensors, no frequency-dependent
 //! (Debye / Drude / Lorentz) media, no magnetic conductivity, and no
+// LIMITATION(COV-EM-040): Interfaces are staircased to the cell grid (no conformal correction).
 //! bidirectional coupling to the thermal or piezoelectric solvers. Interfaces
 //! are staircased to the cell grid (no conformal correction).
 

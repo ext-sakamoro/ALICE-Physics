@@ -1,0 +1,1168 @@
+# Electromagnetics (EM) coverage of ALICE-Physics, against an external
+# reference frame.
+#
+# What this table is: every capability that the standard texts (Taflove-Hagness,
+# Computational Electrodynamics; Jackson, Classical Electrodynamics; Jin, The
+# Finite Element Method in Electromagnetics), reference implementations (Meep,
+# openEMS, COMSOL RF / AC-DC, CST, FEKO, NEC-2) and standard benchmarks (PEC
+# cavity resonances, dielectric half-space and slab reflection, waveguide
+# cutoff, PML reflection, Mie scattering, dipole antenna, TEAM eddy-current
+# problems) expect of an electromagnetic field code, one [[item]] per
+# capability, with what the crate has today. The rows are written by hand: the
+# axes and the items come from the reference frame, not from the modules that
+# exist, so a missing capability is visible instead of absent. Closed-form field
+# formulas (src/electromagnetic.rs) are kept on their own rows, separate from
+# the field solvers (src/maxwell_fdtd.rs).
+#
+# Boundary with the other tables (one capability goes in one table only):
+#   - forces that fields exert on bodies (the Lorentz force on charged rigid
+#     bodies, forces on bodies from a solved field, motional EMF and induction
+#     between moving conductors and fields, the Maxwell stress tensor, magnetic
+#     levitation), piezoelectricity, Joule heating and other electro-thermal or
+#     electro-mechanical couplings: the coupling table. MHD: the coupling and
+#     plasma tables.
+#   - plasma, particle-in-cell loops and kinetic plasma models: the plasma
+#     table. Here only the single-particle pusher, field interpolation and the
+#     charge-conserving deposition that a PIC code would call.
+#   - geometric and wave optics other than solving Maxwell's equations on a
+#     grid or mesh: the optics table.
+#   - acoustic FDTD and absorbing layers for sound: the acoustics table, even
+#     where the lattice code is similar.
+#   - generic linear solvers, eigensolvers and time integrators: the numerics
+#     table.
+#   - pair potentials between charges in particle simulations (Coulomb, Yukawa,
+#     Ewald): the particle table. The gameplay force field `Magnetic` in
+#     src/force.rs is a force approximation, not a field model, and is not
+#     counted.
+#
+# status (exactly one of):
+#   implemented+oracle     implemented, and at least one non-ignored test checks
+#                          it against an independent reference
+#   implemented-no-oracle  implemented, no such test
+#   partial                implemented with a restriction that the source states;
+#                          `limitation` quotes it, and the source carries a
+#                          `LIMITATION(<id>)` comment at that place
+#   missing                not implemented
+#   out-of-scope           not a capability of this field (reason in `evidence`)
+#
+# This axis is separate from the test ignore reasons (`known defect: ...`,
+# `src gap: ...`, `diagnostic`, `runtime`). A capability that exists with a
+# recorded defect keeps its status and cites the known-defect test in
+# `evidence`; it is not `missing`.
+#
+# keys: id (COV-EM-NNN) / axis / item / source (book, chapter, paper or
+# reference-implementation feature; no quoted text) / status / evidence
+# (`src/x.rs:line`, `tests/x.rs::test_fn`) / oracle_candidate / limitation
+# (`<file>:<line> '<verbatim quote>'`, required for partial). Benchmark
+# reference values marked "参照値要確認" are to be checked against the original
+# source before they become an oracle.
+
+[[item]]
+id = "COV-EM-001"
+axis = "time-domain"
+item = "3-D Yee staggered lattice with leap-frog E / H update"
+source = "Taflove-Hagness, Computational Electrodynamics ch.3; Meep / openEMS (FDTD core)"
+status = "implemented+oracle"
+evidence = "src/maxwell_fdtd.rs:693 src/maxwell_fdtd.rs:1447 tests/analytic_maxwell_fdtd.rs::projected_amplitude_follows_the_exact_discrete_dispersion_relation tests/analytic_maxwell_fdtd.rs::four_by_four_cavity_repeats_every_six_steps tests/audit_maxwell_fdtd.rs::one_step_matches_the_hand_derived_update"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-EM-002"
+axis = "time-domain"
+item = "numerical dispersion relation of the Yee scheme"
+source = "Taflove-Hagness, Computational Electrodynamics ch.4"
+status = "implemented+oracle"
+evidence = "PEC 空洞の離散固有モードで射影振幅が離散分散関係の 3 項漸化式に厳密に従う tests/analytic_maxwell_fdtd.rs::projected_amplitude_follows_the_exact_discrete_dispersion_relation tests/analytic_maxwell_fdtd.rs::half_a_period_inverts_the_mode"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-EM-003"
+axis = "time-domain"
+item = "Courant stability limit and its enforcement"
+source = "Taflove-Hagness, Computational Electrodynamics ch.4"
+status = "partial"
+evidence = "src/maxwell_fdtd.rs:214 src/maxwell_fdtd.rs:1786 src/maxwell_fdtd.rs:855 上限は閉形式 1/√3 で、材料付きの格子だけが超過を Err で拒否する tests/analytic_maxwell_fdtd.rs::cfl_limit_separates_bounded_from_divergent tests/analytic_fdtd_materials.rs::the_courant_bound_is_checked_with_the_slowest_constants tests/audit_maxwell_fdtd.rs::courant_below_and_above_the_limit"
+oracle_candidate = "S を CFL 超で YeeGrid::new に渡して Err / panic になること"
+limitation = "src/maxwell_fdtd.rs:174 'Unlike [`YeeGrid::new`], [`YeeGrid::with_materials`] rejects a step that violates it.'"
+
+[[item]]
+id = "COV-EM-004"
+axis = "time-domain"
+item = "physical (SI) units at the solver interface"
+source = "Meep units convention; openEMS (SI with unit scaling)"
+status = "partial"
+evidence = "正規化単位 (c = ε₀ = μ₀ = Δx = 1) のみ、SI 変換は呼び手が境界で行う (src/maxwell_fdtd.rs:10)"
+oracle_candidate = "SI の入出力変換 helper を足し、真空の光速と波動 impedance が往復で戻ること"
+limitation = "src/maxwell_fdtd.rs:15 'SI units cannot be used here.'"
+
+[[item]]
+id = "COV-EM-005"
+axis = "time-domain"
+item = "1-D FDTD (plane wave on a line)"
+source = "Taflove-Hagness, Computational Electrodynamics ch.2"
+status = "missing"
+evidence = "専用の 1-D solver は無い src/maxwell_fdtd.rs:50 側壁が PEC なので細い格子では TEM 平面波が立たない (Fresnel は tests/analytic_fdtd_materials.rs で 2-D TM 導波路の最低次 mode により測っている)"
+oracle_candidate = "1-D 格子の平面波が真空中で形を保って進むこと"
+limitation = ""
+
+[[item]]
+id = "COV-EM-006"
+axis = "time-domain"
+item = "2-D TM_z runs"
+source = "Taflove-Hagness, Computational Electrodynamics ch.3"
+status = "implemented+oracle"
+evidence = "nz = 1 の格子 + z 面 PEC で Ez / Hx / Hy の TM_z になる tests/analytic_fdtd_materials.rs::a_dielectric_half_space_reflects_minus_one_third tests/analytic_maxwell_fdtd.rs::tm_degeneracy_is_exact"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-EM-007"
+axis = "time-domain"
+item = "2-D TE_z runs"
+source = "Taflove-Hagness, Computational Electrodynamics ch.3"
+status = "missing"
+evidence = "src/maxwell_fdtd.rs:50 nz = 1 の格子では z 面の接線 Ex / Ey が 0 に保たれるので TE_z は組めない (推測: PMC か周期境界が要る)"
+oracle_candidate = "TE_z 矩形空洞の固有周波数"
+limitation = ""
+
+[[item]]
+id = "COV-EM-008"
+axis = "time-domain"
+item = "Gauss's law ∇·E = ρ carried by the update with an impressed current"
+source = "Taflove-Hagness, Computational Electrodynamics ch.3; Jackson, Classical Electrodynamics ch.1"
+status = "implemented+oracle"
+evidence = "src/maxwell_fdtd.rs:1345 src/maxwell_fdtd.rs:1403 tests/analytic_maxwell_fdtd.rs::gauss_law_is_bit_exact_for_an_exactly_representable_current tests/analytic_fdtd_materials.rs::gauss_law_holds_for_displacement_with_loss_free_materials tests/analytic_maxwell_fdtd.rs::gauss_residual_is_bounded_when_the_current_is_not_exactly_representable"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-EM-009"
+axis = "time-domain"
+item = "∇·B kept at zero (bounded residual in fixed point)"
+source = "Taflove-Hagness, Computational Electrodynamics ch.3"
+status = "implemented+oracle"
+evidence = "src/maxwell_fdtd.rs:1733 契約は有界な残差 (Fix128 の積の切り捨て) tests/analytic_maxwell_fdtd.rs::div_b_stays_bounded tests/analytic_maxwell_fdtd.rs::sources_do_not_disturb_div_b tests/analytic_maxwell_wiring.rs::div_b_is_bit_exactly_zero_while_the_arithmetic_is_exact"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-EM-010"
+axis = "time-domain"
+item = "charge continuity ρ^{n+1} = ρ^n − S ∇·J"
+source = "Taflove-Hagness, Computational Electrodynamics ch.3"
+status = "implemented+oracle"
+evidence = "src/maxwell_fdtd.rs:1431 tests/analytic_maxwell_fdtd.rs::a_current_that_ends_deposits_exactly_the_charge_that_left tests/analytic_maxwell_fdtd.rs::a_closed_current_loop_creates_no_charge tests/audit_maxwell_fdtd.rs::source_step_deposits_minus_s_j_and_minus_s_div_j"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-EM-011"
+axis = "time-domain"
+item = "charge relaxation in conducting media (σE current carried by ρ)"
+source = "Jackson, Classical Electrodynamics ch.5; Taflove-Hagness, Computational Electrodynamics ch.3"
+status = "partial"
+evidence = "σ > 0 の cell では伝導電流 σE が運ぶ電荷を ρ が追わない tests/analytic_fdtd_materials.rs::conduction_current_is_not_tracked_by_rho"
+oracle_candidate = "導体中の電荷が ε/σ の時定数で緩和すること"
+limitation = "src/maxwell_fdtd.rs:181 '`σ > 0` the conduction current `σE` moves charge that `ρ` does not track'"
+
+[[item]]
+id = "COV-EM-012"
+axis = "time-domain"
+item = "higher-order spatial stencils (FDTD(2,4))"
+source = "Taflove-Hagness, Computational Electrodynamics ch.4"
+status = "missing"
+evidence = "差分は 2 次の Yee のみ src/maxwell_fdtd.rs:1447"
+oracle_candidate = "FDTD(2,4) の位相誤差が 4 次で落ちること"
+limitation = ""
+
+[[item]]
+id = "COV-EM-013"
+axis = "time-domain"
+item = "unconditionally stable implicit schemes (ADI-FDTD, LOD-FDTD)"
+source = "Taflove-Hagness, Computational Electrodynamics ch.5"
+status = "missing"
+evidence = "陽解法の leap-frog のみ src/maxwell_fdtd.rs:1447"
+oracle_candidate = "CFL 超の Δt で発散しないことと分散誤差"
+limitation = ""
+
+[[item]]
+id = "COV-EM-014"
+axis = "time-domain"
+item = "non-uniform / graded mesh"
+source = "Taflove-Hagness, Computational Electrodynamics ch.4; openEMS (rectilinear mesh)"
+status = "missing"
+evidence = "src/maxwell_fdtd.rs:10 格子間隔は全軸 1 で固定"
+oracle_candidate = "graded mesh 上の平面波の反射が mesh 比で 2 次に落ちること"
+limitation = ""
+
+[[item]]
+id = "COV-EM-015"
+axis = "time-domain"
+item = "subgridding / local mesh refinement"
+source = "Taflove-Hagness, Computational Electrodynamics ch.11"
+status = "missing"
+evidence = "無い (推測: subgrid / refine で 0 件)"
+oracle_candidate = "細格子領域の境界での偽反射の大きさ"
+limitation = ""
+
+[[item]]
+id = "COV-EM-016"
+axis = "time-domain"
+item = "cylindrical and body-of-revolution FDTD"
+source = "Taflove-Hagness, Computational Electrodynamics ch.12; Meep (cylindrical coordinates)"
+status = "missing"
+evidence = "直交 Cartesian のみ src/maxwell_fdtd.rs:693"
+oracle_candidate = "円柱空洞 TM010 の共振周波数"
+limitation = ""
+
+[[item]]
+id = "COV-EM-017"
+axis = "boundary"
+item = "PEC outer walls"
+source = "Taflove-Hagness, Computational Electrodynamics ch.3"
+status = "implemented+oracle"
+evidence = "src/maxwell_fdtd.rs:50 tests/analytic_maxwell_fdtd.rs::pec_walls_hold_tangential_e_at_zero tests/analytic_maxwell_fdtd.rs::four_by_four_cavity_repeats_every_six_steps"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-EM-018"
+axis = "boundary"
+item = "PMC walls"
+source = "Taflove-Hagness, Computational Electrodynamics ch.3; openEMS (PMC boundary)"
+status = "missing"
+evidence = "src/maxwell_fdtd.rs:50 外壁は PEC か PEC 裏打ちの PML のみ"
+oracle_candidate = "PMC 壁の空洞の固有周波数 (PEC と半波長ずれる)"
+limitation = ""
+
+[[item]]
+id = "COV-EM-019"
+axis = "boundary"
+item = "periodic boundary"
+source = "Taflove-Hagness, Computational Electrodynamics ch.13; Meep (periodic)"
+status = "missing"
+evidence = "無い (推測: periodic / bloch で maxwell_fdtd に 0 件)"
+oracle_candidate = "周期格子で平面波が無限媒質と同じ速さで進むこと"
+limitation = ""
+
+[[item]]
+id = "COV-EM-020"
+axis = "boundary"
+item = "Bloch-periodic (phase-shifted) boundary for oblique incidence and band structure"
+source = "Taflove-Hagness, Computational Electrodynamics ch.13; Meep (k_point)"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "1-D 誘電体多層のバンド端周波数"
+limitation = ""
+
+[[item]]
+id = "COV-EM-021"
+axis = "boundary"
+item = "symmetry planes (PEC / PMC mirror to reduce the domain)"
+source = "Meep (mirror symmetry); openEMS"
+status = "missing"
+evidence = "無い (PMC が無いので偶対称面が組めない)"
+oracle_candidate = "対称面ありとなしで同じ固有周波数"
+limitation = ""
+
+[[item]]
+id = "COV-EM-022"
+axis = "boundary"
+item = "Mur / Liao absorbing boundary conditions"
+source = "Taflove-Hagness, Computational Electrodynamics ch.6"
+status = "missing"
+evidence = "無い (mur / liao で 0 件)"
+oracle_candidate = "垂直入射の反射係数が 1 次 Mur の閉形式と一致"
+limitation = ""
+
+[[item]]
+id = "COV-EM-023"
+axis = "boundary"
+item = "graded split-field (Bérenger) PML"
+source = "Taflove-Hagness, Computational Electrodynamics ch.7"
+status = "partial"
+evidence = "src/maxwell_fdtd.rs:239 src/maxwell_fdtd.rs:348 立方の σ grading、層の材料は真空に限る tests/analytic_maxwell_fdtd.rs::the_measured_reflection_matches_the_discrete_transfer_matrix tests/analytic_maxwell_fdtd.rs::a_pml_leaves_far_less_field_than_a_pec_box tests/analytic_maxwell_fdtd.rs::relabelling_the_axes_relabels_the_solution_exactly tests/analytic_fdtd_materials.rs::a_material_sample_inside_the_absorber_is_rejected"
+oracle_candidate = "誘電体で満たした導波路を PML で終端して反射係数を測る"
+limitation = "src/maxwell_fdtd.rs:185 'The absorber and the materials cannot both act on one sample: the split PML update has no material coefficients.'"
+
+[[item]]
+id = "COV-EM-024"
+axis = "boundary"
+item = "convolutional PML (CPML / CFS-PML)"
+source = "Taflove-Hagness, Computational Electrodynamics ch.7"
+status = "missing"
+evidence = "split-field の Bérenger 型のみ src/maxwell_fdtd.rs:239"
+oracle_candidate = "低周波・すれすれ入射での反射が split PML より小さいこと"
+limitation = ""
+
+[[item]]
+id = "COV-EM-025"
+axis = "boundary"
+item = "uniaxial PML (anisotropic absorbing medium form)"
+source = "Taflove-Hagness, Computational Electrodynamics ch.7"
+status = "missing"
+evidence = "無い (異方性媒質が無い)"
+oracle_candidate = "UPML の反射係数"
+limitation = ""
+
+[[item]]
+id = "COV-EM-026"
+axis = "boundary"
+item = "interior PEC objects (plates, wires, arbitrary masks)"
+source = "Taflove-Hagness, Computational Electrodynamics ch.3; openEMS (metal primitives)"
+status = "missing"
+evidence = "src/maxwell_fdtd.rs:367 は σ を持つが内部に PEC を置く mask は無い (外壁の 6 面のみ src/maxwell_fdtd.rs:50)"
+oracle_candidate = "PEC 板の端からの回折、空洞の中の PEC 柱による共振周波数のずれ"
+limitation = ""
+
+[[item]]
+id = "COV-EM-027"
+axis = "boundary"
+item = "thin-wire subcell model (Holland)"
+source = "Taflove-Hagness, Computational Electrodynamics ch.10"
+status = "missing"
+evidence = "無い (推測: wire で maxwell_fdtd に 0 件)"
+oracle_candidate = "細線ダイポールの共振長"
+limitation = ""
+
+[[item]]
+id = "COV-EM-028"
+axis = "boundary"
+item = "conformal PEC and dielectric boundaries (Dey-Mittra, effective permittivity)"
+source = "Taflove-Hagness, Computational Electrodynamics ch.10; Meep (subpixel smoothing)"
+status = "missing"
+evidence = "src/maxwell_fdtd.rs:197 の段で階段近似と明記"
+oracle_candidate = "球空洞の共振周波数の格子収束が 2 次になること"
+limitation = ""
+
+[[item]]
+id = "COV-EM-029"
+axis = "source"
+item = "impressed electric current density J on edges"
+source = "Taflove-Hagness, Computational Electrodynamics ch.5"
+status = "implemented+oracle"
+evidence = "src/maxwell_fdtd.rs:1274 tests/audit_maxwell_fdtd.rs::source_step_deposits_minus_s_j_and_minus_s_div_j tests/analytic_maxwell_fdtd.rs::gauss_law_is_bit_exact_for_an_exactly_representable_current tests/audit_maxwell_fdtd.rs::currents_are_refused_on_all_six_walls_for_every_edge_component"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-EM-030"
+axis = "source"
+item = "initial field condition (seeding E / H samples)"
+source = "Taflove-Hagness, Computational Electrodynamics ch.5"
+status = "implemented+oracle"
+evidence = "src/maxwell_fdtd.rs:1177 src/maxwell_fdtd.rs:1158 tests/audit_maxwell_fdtd.rs::set_get_round_trip_is_per_component_and_per_index tests/analytic_maxwell_fdtd.rs::four_by_four_cavity_repeats_every_six_steps"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-EM-031"
+axis = "source"
+item = "hard source (field forced every step)"
+source = "Taflove-Hagness, Computational Electrodynamics ch.5"
+status = "implemented-no-oracle"
+evidence = "src/maxwell_fdtd.rs:1177 を step ごとに呼べば組めるが、時間変化する強制場を突合する test は無い"
+oracle_candidate = "hard source の反射 (source 点での散乱) が閉形式と一致"
+limitation = ""
+
+[[item]]
+id = "COV-EM-032"
+axis = "source"
+item = "source waveform library (Gaussian, modulated Gaussian, Ricker, ramped CW)"
+source = "Meep (GaussianSource / ContinuousSource); openEMS (excitation types)"
+status = "missing"
+evidence = "波形は無い (tests/analytic_fdtd_materials.rs の test 内で局所に Gauss 変調正弦を書いている)"
+oracle_candidate = "Gauss パルスのスペクトル幅"
+limitation = ""
+
+[[item]]
+id = "COV-EM-033"
+axis = "source"
+item = "total-field / scattered-field plane-wave injection"
+source = "Taflove-Hagness, Computational Electrodynamics ch.5"
+status = "missing"
+evidence = "無い (tfsf / total field で 0 件)"
+oracle_candidate = "空の TF/SF 箱の外の漏れ場が丸め誤差程度"
+limitation = ""
+
+[[item]]
+id = "COV-EM-034"
+axis = "source"
+item = "oblique-incidence plane wave"
+source = "Taflove-Hagness, Computational Electrodynamics ch.5, ch.13"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "斜め入射の Fresnel 係数 (TE / TM)"
+limitation = ""
+
+[[item]]
+id = "COV-EM-035"
+axis = "source"
+item = "waveguide mode / port source (eigenmode injection)"
+source = "Meep (EigenModeSource); openEMS (waveguide ports)"
+status = "missing"
+evidence = "無い (tests/analytic_fdtd_materials.rs は解析的な sin プロファイルを test 内で J に掛けている)"
+oracle_candidate = "単一 mode 注入で他 mode への漏れが小さいこと"
+limitation = ""
+
+[[item]]
+id = "COV-EM-036"
+axis = "source"
+item = "point (Hertzian) dipole source"
+source = "Taflove-Hagness, Computational Electrodynamics ch.5; Jackson, Classical Electrodynamics ch.9"
+status = "implemented-no-oracle"
+evidence = "1 本の辺の J が微小電流素子になる (src/maxwell_fdtd.rs:1274) が放射場を突合する test は無い"
+oracle_candidate = "微小ダイポールの放射電力 P = (I l)² ω² / (12π) (正規化単位、参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-EM-037"
+axis = "source"
+item = "magnetic current source M"
+source = "Taflove-Hagness, Computational Electrodynamics ch.3"
+status = "missing"
+evidence = "src/maxwell_fdtd.rs:1269 磁気成分への電流は panic で拒否"
+oracle_candidate = "M 源と等価な J ループの場が一致"
+limitation = ""
+
+[[item]]
+id = "COV-EM-038"
+axis = "material"
+item = "isotropic per-cell relative permittivity, permeability and electric conductivity"
+source = "Taflove-Hagness, Computational Electrodynamics ch.3"
+status = "implemented+oracle"
+evidence = "src/maxwell_fdtd.rs:367 src/maxwell_fdtd.rs:855 tests/analytic_fdtd_materials.rs::a_uniform_material_cavity_follows_the_taflove_recurrence tests/analytic_fdtd_materials.rs::a_vacuum_map_is_bit_identical_to_the_code_before_materials"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-EM-039"
+axis = "material"
+item = "material averaging at interfaces (arithmetic ε, σ on edges, harmonic μ on faces)"
+source = "Taflove-Hagness, Computational Electrodynamics ch.10"
+status = "implemented+oracle"
+evidence = "src/maxwell_fdtd.rs:1003 tests/analytic_fdtd_materials.rs::edges_take_the_arithmetic_mean_and_faces_the_harmonic_mean"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-EM-040"
+axis = "material"
+item = "material geometry placed on the lattice"
+source = "Taflove-Hagness, Computational Electrodynamics ch.3; Meep (geometry objects)"
+status = "partial"
+evidence = "src/maxwell_fdtd.rs:473 cell ごとの値か直方体の fill のみ、界面は cell 境界に階段近似"
+oracle_candidate = "斜めの誘電体界面の反射の格子収束"
+limitation = "src/maxwell_fdtd.rs:197 'Interfaces are staircased to the cell grid (no conformal correction).'"
+
+[[item]]
+id = "COV-EM-041"
+axis = "material"
+item = "geometry import into the material map (CAD, mesh or SDF voxelisation)"
+source = "Meep (geometry); openEMS (CSXCAD)"
+status = "missing"
+evidence = "MaterialMap は index 指定の set / fill のみ src/maxwell_fdtd.rs:473"
+oracle_candidate = "球の voxel 化体積が格子収束すること"
+limitation = ""
+
+[[item]]
+id = "COV-EM-042"
+axis = "material"
+item = "lossy (conductive) medium"
+source = "Taflove-Hagness, Computational Electrodynamics ch.3"
+status = "implemented+oracle"
+evidence = "src/maxwell_fdtd.rs:309 tests/analytic_fdtd_materials.rs::a_lossy_half_space_attenuates_by_the_discrete_closed_form tests/analytic_maxwell_fdtd.rs::lossy_update_follows_the_exact_three_term_recurrence tests/analytic_maxwell_fdtd.rs::uniform_loss_damps_and_no_loss_does_not"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-EM-043"
+axis = "material"
+item = "magnetic conductivity (magnetic loss σ*)"
+source = "Taflove-Hagness, Computational Electrodynamics ch.3"
+status = "missing"
+evidence = "src/maxwell_fdtd.rs:195 の段で無いと明記"
+oracle_candidate = "σ*/μ = σ/ε の整合媒質で反射が消えること"
+limitation = ""
+
+[[item]]
+id = "COV-EM-044"
+axis = "material"
+item = "Debye dispersive media"
+source = "Taflove-Hagness, Computational Electrodynamics ch.9"
+status = "missing"
+evidence = "src/maxwell_fdtd.rs:194 の段で frequency-dependent media は無いと明記"
+oracle_candidate = "Debye 媒質の反射係数の周波数依存"
+limitation = ""
+
+[[item]]
+id = "COV-EM-045"
+axis = "material"
+item = "Drude dispersive media (metals, cold plasma)"
+source = "Taflove-Hagness, Computational Electrodynamics ch.9; Meep (Drude susceptibility)"
+status = "missing"
+evidence = "src/maxwell_fdtd.rs:194 同上"
+oracle_candidate = "Drude 金属の表面プラズモン分散"
+limitation = ""
+
+[[item]]
+id = "COV-EM-046"
+axis = "material"
+item = "Lorentz (resonant) dispersive media, multi-pole"
+source = "Taflove-Hagness, Computational Electrodynamics ch.9"
+status = "missing"
+evidence = "src/maxwell_fdtd.rs:194 同上"
+oracle_candidate = "Lorentz 媒質の吸収線"
+limitation = ""
+
+[[item]]
+id = "COV-EM-047"
+axis = "material"
+item = "general dispersion framework (auxiliary differential equation, recursive convolution)"
+source = "Taflove-Hagness, Computational Electrodynamics ch.9"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "ADE と RC の一致"
+limitation = ""
+
+[[item]]
+id = "COV-EM-048"
+axis = "material"
+item = "anisotropic permittivity / permeability tensors (diagonal and full)"
+source = "Taflove-Hagness, Computational Electrodynamics ch.9; Meep (anisotropic ε)"
+status = "missing"
+evidence = "src/maxwell_fdtd.rs:194 の段で tensor は無いと明記"
+oracle_candidate = "一軸結晶の複屈折による偏光回転"
+limitation = ""
+
+[[item]]
+id = "COV-EM-049"
+axis = "material"
+item = "gyrotropic media (magnetised ferrite, magnetised plasma)"
+source = "Taflove-Hagness, Computational Electrodynamics ch.9"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "Faraday 回転角"
+limitation = ""
+
+[[item]]
+id = "COV-EM-050"
+axis = "material"
+item = "nonlinear media (Kerr χ(3), χ(2))"
+source = "Taflove-Hagness, Computational Electrodynamics ch.9; Meep (nonlinearity)"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "Kerr 媒質の自己位相変調"
+limitation = ""
+
+[[item]]
+id = "COV-EM-051"
+axis = "material"
+item = "nonlinear magnetic materials (B-H curve, saturation, hysteresis)"
+source = "Jackson, Classical Electrodynamics ch.5; COMSOL AC/DC (B-H curve)"
+status = "missing"
+evidence = "src/electromagnetic.rs:13 の段で magnetic-hysteresis は scope 外と明記"
+oracle_candidate = "飽和する鉄心の磁束"
+limitation = ""
+
+[[item]]
+id = "COV-EM-052"
+axis = "frequency-domain"
+item = "finite-difference frequency-domain (FDFD)"
+source = "Rumpf FDFD notes; Meep (frequency-domain solver)"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "FDTD の DFT 場との一致"
+limitation = ""
+
+[[item]]
+id = "COV-EM-053"
+axis = "frequency-domain"
+item = "FEM with Nédélec (curl-conforming edge) elements, first order"
+source = "Jin, The Finite Element Method in Electromagnetics ch.8-9"
+status = "missing"
+evidence = "無い (nedelec / whitney / edge element で 0 件)"
+oracle_candidate = "矩形空洞の固有値に偽解が出ないこと"
+limitation = ""
+
+[[item]]
+id = "COV-EM-054"
+axis = "frequency-domain"
+item = "higher-order and hierarchical vector elements"
+source = "Jin, The Finite Element Method in Electromagnetics ch.8"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "固有値の収束次数"
+limitation = ""
+
+[[item]]
+id = "COV-EM-055"
+axis = "frequency-domain"
+item = "cavity eigenmode solver (generalised eigenproblem)"
+source = "Jin, The Finite Element Method in Electromagnetics ch.8; COMSOL RF (eigenfrequency)"
+status = "missing"
+evidence = "空洞の固有モードは test 側の閉形式のみ (tests/analytic_maxwell_fdtd.rs)"
+oracle_candidate = "矩形空洞の固有周波数を解析式と突合"
+limitation = ""
+
+[[item]]
+id = "COV-EM-056"
+axis = "frequency-domain"
+item = "2-D waveguide port mode solver (propagation constants)"
+source = "Jin, The Finite Element Method in Electromagnetics ch.8; CST / COMSOL (port mode analysis)"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "矩形導波管の TE10 伝搬定数"
+limitation = ""
+
+[[item]]
+id = "COV-EM-057"
+axis = "frequency-domain"
+item = "time-harmonic driven solve with ports"
+source = "Jin, The Finite Element Method in Electromagnetics ch.9; COMSOL RF (frequency domain)"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "整合終端導波管の反射 0"
+limitation = ""
+
+[[item]]
+id = "COV-EM-058"
+axis = "frequency-domain"
+item = "periodic unit cell and photonic band structure"
+source = "Joannopoulos et al., Photonic Crystals; MPB"
+status = "missing"
+evidence = "無い (周期境界が無い)"
+oracle_candidate = "1-D 多層膜のバンド端"
+limitation = ""
+
+[[item]]
+id = "COV-EM-059"
+axis = "integral-equation"
+item = "method of moments for wires (Pocklington / Hallén)"
+source = "Harrington, Field Computation by Moment Methods; NEC-2"
+status = "missing"
+evidence = "無い (moment / green で 0 件)"
+oracle_candidate = "半波長ダイポールの入力 impedance (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-EM-060"
+axis = "integral-equation"
+item = "surface method of moments with RWG functions (EFIE / MFIE / CFIE)"
+source = "Jin, The Finite Element Method in Electromagnetics ch.10-11; FEKO"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "PEC 球の RCS を Mie 級数と突合"
+limitation = ""
+
+[[item]]
+id = "COV-EM-061"
+axis = "integral-equation"
+item = "fast solvers for integral equations (MLFMA, ACA)"
+source = "Chew et al., Fast and Efficient Algorithms in CEM"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "MLFMA と直接法の一致"
+limitation = ""
+
+[[item]]
+id = "COV-EM-062"
+axis = "integral-equation"
+item = "boundary-element electrostatics (capacitance extraction)"
+source = "FastCap; Jackson ch.1"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "単位球の自己容量 4πε₀a"
+limitation = ""
+
+[[item]]
+id = "COV-EM-063"
+axis = "integral-equation"
+item = "physical optics for high-frequency scattering"
+source = "Balanis, Advanced Engineering Electromagnetics ch.7"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "PEC 平板の鏡面 RCS 4πA²/λ²"
+limitation = ""
+
+[[item]]
+id = "COV-EM-064"
+axis = "static"
+item = "closed-form field of a point charge (Coulomb)"
+source = "Jackson, Classical Electrodynamics ch.1"
+status = "implemented+oracle"
+evidence = "src/electromagnetic.rs:49 定数 k は 8.99e9 の丸め値 tests/analytic_electromagnetic_wiring.rs::coulomb_force_between_two_charges_follows_k_q1_q2_over_r_squared"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-EM-065"
+axis = "static"
+item = "closed-form field of a magnetic dipole"
+source = "Jackson, Classical Electrodynamics ch.5"
+status = "implemented+oracle"
+evidence = "src/electromagnetic.rs:58 tests/analytic_electromagnetic_wiring.rs::dipole_field_matches_the_closed_form_on_axis_equator_and_obliquely"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-EM-066"
+axis = "static"
+item = "superposition of static sources (uniform, point charge, dipole)"
+source = "Jackson, Classical Electrodynamics ch.1"
+status = "implemented+oracle"
+evidence = "src/electromagnetic.rs:114 tests/analytic_electromagnetic_wiring.rs::sum_over_sources_is_the_sum_of_single_source_forces_in_any_order"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-EM-067"
+axis = "static"
+item = "closed forms for distributed charge (line, ring, sphere, shell, electric dipole)"
+source = "Jackson, Classical Electrodynamics ch.1-4"
+status = "missing"
+evidence = "点電荷・一様場・磁気双極子のみ src/electromagnetic.rs:49"
+oracle_candidate = "一様帯電球の内外の場"
+limitation = ""
+
+[[item]]
+id = "COV-EM-068"
+axis = "static"
+item = "Biot-Savart for current segments and loops, solenoid field"
+source = "Jackson, Classical Electrodynamics ch.5"
+status = "missing"
+evidence = "無い (biot で 0 件)"
+oracle_candidate = "円電流の軸上の場 μ₀ I a² / (2 (a²+z²)^{3/2})"
+limitation = ""
+
+[[item]]
+id = "COV-EM-069"
+axis = "static"
+item = "method of images (grounded plane, sphere)"
+source = "Jackson, Classical Electrodynamics ch.2"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "接地平面上の点電荷の誘導電荷総量 −q"
+limitation = ""
+
+[[item]]
+id = "COV-EM-070"
+axis = "static"
+item = "closed-form capacitance and inductance (parallel plate, coaxial, two-wire)"
+source = "Jackson, Classical Electrodynamics ch.1, ch.5"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "同軸線の C' = 2πε / ln(b/a)"
+limitation = ""
+
+[[item]]
+id = "COV-EM-071"
+axis = "static"
+item = "electrostatic Poisson / Laplace solver with conductors and dielectrics"
+source = "Jackson, Classical Electrodynamics ch.1-2; COMSOL AC/DC (electrostatics)"
+status = "missing"
+evidence = "無い (推測: src/eulerian_grid.rs の Poisson は格子の圧力専用で電位の問題に使う API は無い)"
+oracle_candidate = "同心球コンデンサの電位分布"
+limitation = ""
+
+[[item]]
+id = "COV-EM-072"
+axis = "static"
+item = "finite-element electrostatics"
+source = "Jin, The Finite Element Method in Electromagnetics ch.3-5"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "誘電体界面の屈折 (接線 E と法線 D の連続)"
+limitation = ""
+
+[[item]]
+id = "COV-EM-073"
+axis = "static"
+item = "magnetostatics with a vector potential (2-D Az, 3-D A)"
+source = "Jin, The Finite Element Method in Electromagnetics ch.6; COMSOL AC/DC (magnetic fields)"
+status = "missing"
+evidence = "無い (vector potential で 0 件)"
+oracle_candidate = "無限長導線の B = μ₀ I / (2π r)"
+limitation = ""
+
+[[item]]
+id = "COV-EM-074"
+axis = "static"
+item = "permanent magnets (remanence, demagnetisation)"
+source = "COMSOL AC/DC; Furlani, Permanent Magnet and Electromechanical Devices"
+status = "missing"
+evidence = "src/force.rs の Magnetic は力の近似場で磁化モデルではない"
+oracle_candidate = "一様磁化球の内部場 2/3 μ₀ M"
+limitation = ""
+
+[[item]]
+id = "COV-EM-075"
+axis = "quasi-static"
+item = "eddy currents (magneto-quasistatic A-V formulation, time-harmonic)"
+source = "Jin, The Finite Element Method in Electromagnetics ch.6; COMSOL AC/DC; TEAM problems"
+status = "missing"
+evidence = "src/electromagnetic.rs:13 の段で Faraday 誘導 EMF は scope 外と明記"
+oracle_candidate = "TEAM problem 7 の磁束密度 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-EM-076"
+axis = "quasi-static"
+item = "steady current conduction (∇·σ∇φ = 0) and resistance extraction"
+source = "COMSOL AC/DC (electric currents)"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "一様導体棒の抵抗 L/(σA)"
+limitation = ""
+
+[[item]]
+id = "COV-EM-077"
+axis = "quasi-static"
+item = "electro-quasistatic (capacitive-resistive) transient"
+source = "Haus-Melcher, Electromagnetic Fields and Energy"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "漏れ誘電体の緩和時間 ε/σ"
+limitation = ""
+
+[[item]]
+id = "COV-EM-078"
+axis = "particle"
+item = "charged-particle pusher in prescribed fields (Boris)"
+source = "Birdsall-Langdon, Plasma Physics via Computer Simulation ch.4"
+status = "missing"
+evidence = "src に pusher は無い (力の評価 src/electromagnetic.rs:106 だけで、tests/analytic_electromagnetic_wiring.rs::cyclotron_orbit_has_the_gyro_radius_m_v_over_q_b は test 内で半陰的 Euler を書いて積分している)"
+oracle_candidate = "サイクロトロン運動の位相誤差と |v| の厳密保存"
+limitation = ""
+
+[[item]]
+id = "COV-EM-079"
+axis = "particle"
+item = "relativistic particle pushers (Vay, Higuera-Cary)"
+source = "Vay 2008; Higuera-Cary 2017"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "E×B ドリフトの相対論的速度"
+limitation = ""
+
+[[item]]
+id = "COV-EM-080"
+axis = "particle"
+item = "guiding-centre and drift approximation"
+source = "Northrop, The Adiabatic Motion of Charged Particles"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "∇B ドリフト速度"
+limitation = ""
+
+[[item]]
+id = "COV-EM-081"
+axis = "particle"
+item = "field interpolation from the Yee lattice to particle positions"
+source = "Birdsall-Langdon ch.8"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "一様場の補間が厳密"
+limitation = ""
+
+[[item]]
+id = "COV-EM-082"
+axis = "particle"
+item = "charge-conserving current deposition from particles (Villasenor-Buneman, Esirkepov)"
+source = "Esirkepov 2001"
+status = "missing"
+evidence = "src/maxwell_fdtd.rs:123 の段は条件の言及のみ、粒子から J を作る関数は無い"
+oracle_candidate = "deposit 後に Gauss 残差が増えないこと (既存の gauss_residual で測れる)"
+limitation = ""
+
+[[item]]
+id = "COV-EM-083"
+axis = "circuit"
+item = "lumped resistor in a cell"
+source = "Taflove-Hagness, Computational Electrodynamics ch.15"
+status = "missing"
+evidence = "無い (lumped / resistor で 0 件)"
+oracle_candidate = "抵抗終端の伝送線の反射 (Z_L − Z₀)/(Z_L + Z₀)"
+limitation = ""
+
+[[item]]
+id = "COV-EM-084"
+axis = "circuit"
+item = "lumped capacitor and inductor in a cell"
+source = "Taflove-Hagness, Computational Electrodynamics ch.15"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "LC 共振の周波数"
+limitation = ""
+
+[[item]]
+id = "COV-EM-085"
+axis = "circuit"
+item = "lumped voltage source with internal resistance (lumped port)"
+source = "Taflove-Hagness, Computational Electrodynamics ch.15; openEMS (lumped port)"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "整合 port の入射電力"
+limitation = ""
+
+[[item]]
+id = "COV-EM-086"
+axis = "circuit"
+item = "nonlinear devices and SPICE co-simulation"
+source = "Taflove-Hagness, Computational Electrodynamics ch.15"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "ダイオード整流の DC 成分"
+limitation = ""
+
+[[item]]
+id = "COV-EM-087"
+axis = "circuit"
+item = "transmission-line model (telegrapher equations)"
+source = "Paul, Analysis of Multiconductor Transmission Lines"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "開放端線路の入力 impedance"
+limitation = ""
+
+[[item]]
+id = "COV-EM-088"
+axis = "circuit"
+item = "multiconductor lines and field-to-line coupling (Agrawal)"
+source = "Paul, Analysis of Multiconductor Transmission Lines"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "平面波照射で誘起される終端電圧"
+limitation = ""
+
+[[item]]
+id = "COV-EM-089"
+axis = "output"
+item = "field probes (time series at a sample)"
+source = "Meep / openEMS (probes)"
+status = "implemented+oracle"
+evidence = "src/maxwell_fdtd.rs:1158 tests/audit_maxwell_fdtd.rs::set_get_round_trip_is_per_component_and_per_index tests/analytic_maxwell_wiring.rs::max_abs_field_is_the_largest_seeded_magnitude"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-EM-090"
+axis = "output"
+item = "divergence and charge diagnostics (∇·E, ∇·B, Gauss residual, total charge)"
+source = "Taflove-Hagness, Computational Electrodynamics ch.3"
+status = "implemented+oracle"
+evidence = "src/maxwell_fdtd.rs:1345 src/maxwell_fdtd.rs:1733 src/maxwell_fdtd.rs:1431 tests/analytic_maxwell_wiring.rs::div_e_and_gauss_residual_are_the_six_edge_stencil_by_hand tests/analytic_maxwell_wiring.rs::div_b_is_the_six_face_stencil_by_hand tests/analytic_maxwell_wiring.rs::total_charge_is_the_exact_sum_of_placed_charges"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-EM-091"
+axis = "output"
+item = "field energy and the discrete Poynting theorem balance"
+source = "Jackson, Classical Electrodynamics ch.6; Taflove-Hagness, Computational Electrodynamics ch.3"
+status = "missing"
+evidence = "無い (poynting / energy で maxwell_fdtd に 0 件)"
+oracle_candidate = "損失なし空洞で離散エネルギーが保存 (振動して有界)"
+limitation = ""
+
+[[item]]
+id = "COV-EM-092"
+axis = "output"
+item = "Poynting flux through a surface"
+source = "Meep (flux regions)"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "誘電体界面の R + T = 1"
+limitation = ""
+
+[[item]]
+id = "COV-EM-093"
+axis = "output"
+item = "on-the-fly DFT (frequency-domain fields)"
+source = "Meep (dft fields); openEMS (nf2ff dumps)"
+status = "missing"
+evidence = "無い (tests/analytic_fdtd_materials.rs の test 内に局所 DFT)"
+oracle_candidate = "既知周波数の正弦源の DFT 振幅"
+limitation = ""
+
+[[item]]
+id = "COV-EM-094"
+axis = "output"
+item = "S-parameters and input impedance"
+source = "openEMS (ports); CST"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "整合線路の S11 ≈ 0"
+limitation = ""
+
+[[item]]
+id = "COV-EM-095"
+axis = "output"
+item = "near-to-far-field transformation"
+source = "Taflove-Hagness, Computational Electrodynamics ch.8"
+status = "missing"
+evidence = "無い (far field で 0 件)"
+oracle_candidate = "微小ダイポールの放射パターン sin²θ"
+limitation = ""
+
+[[item]]
+id = "COV-EM-096"
+axis = "output"
+item = "radar cross section"
+source = "Taflove-Hagness, Computational Electrodynamics ch.8; FEKO"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "PEC 球の RCS (Mie)"
+limitation = ""
+
+[[item]]
+id = "COV-EM-097"
+axis = "output"
+item = "radiation pattern, directivity and gain"
+source = "Balanis, Antenna Theory ch.2"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "半波長ダイポールの指向性 1.64"
+limitation = ""
+
+[[item]]
+id = "COV-EM-098"
+axis = "output"
+item = "resonance and Q-factor extraction (harmonic inversion)"
+source = "Meep (Harminv)"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "損失空洞の Q = ω ε / σ"
+limitation = ""
+
+[[item]]
+id = "COV-EM-099"
+axis = "output"
+item = "specific absorption rate (SAR) and absorbed power density"
+source = "IEEE Std 1528; Sim4Life"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "一様損失媒質の σ|E|²/2"
+limitation = ""
+
+[[item]]
+id = "COV-EM-100"
+axis = "output"
+item = "field snapshot export (VTK / HDF5)"
+source = "Meep / openEMS (field dumps)"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "書き出した場を読み戻して bit 一致"
+limitation = ""
+
+[[item]]
+id = "COV-EM-101"
+axis = "benchmark"
+item = "PEC rectangular cavity resonant frequencies"
+source = "Taflove-Hagness, Computational Electrodynamics ch.3; Jackson, Classical Electrodynamics ch.8"
+status = "implemented+oracle"
+evidence = "tests/analytic_maxwell_fdtd.rs::projected_amplitude_follows_the_exact_discrete_dispersion_relation tests/analytic_maxwell_fdtd.rs::four_by_four_cavity_repeats_every_six_steps tests/analytic_fdtd_materials.rs::a_uniform_material_cavity_follows_the_taflove_recurrence"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-EM-102"
+axis = "benchmark"
+item = "normal-incidence reflection from a dielectric / magnetic half-space"
+source = "Jackson, Classical Electrodynamics ch.7"
+status = "implemented+oracle"
+evidence = "tests/analytic_fdtd_materials.rs::a_dielectric_half_space_reflects_minus_one_third tests/analytic_fdtd_materials.rs::a_magnetic_half_space_reflects_plus_one_third tests/analytic_fdtd_materials.rs::an_impedance_matched_half_space_reflects_only_at_second_order"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-EM-103"
+axis = "benchmark"
+item = "dielectric slab reflection and transmission (Fabry-Pérot)"
+source = "Jackson, Classical Electrodynamics ch.7"
+status = "missing"
+evidence = "既存の材料 + 導波路の組み方 (tests/analytic_fdtd_materials.rs) で組めるが scene は無い"
+oracle_candidate = "厚さ d の slab の R(ω) の閉形式 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-EM-104"
+axis = "benchmark"
+item = "rectangular waveguide cutoff frequency"
+source = "Jackson, Classical Electrodynamics ch.8"
+status = "missing"
+evidence = "既存の PEC 格子で組める (tests/analytic_fdtd_materials.rs の 2-D TM 導波路は最低次 mode の λ_y を使うが遮断周波数は測っていない)"
+oracle_candidate = "TE10 / TM11 の遮断周波数と離散補正"
+limitation = ""
+
+[[item]]
+id = "COV-EM-105"
+axis = "benchmark"
+item = "PML reflection coefficient against theory"
+source = "Taflove-Hagness, Computational Electrodynamics ch.7"
+status = "implemented+oracle"
+evidence = "src/maxwell_fdtd.rs:348 tests/analytic_maxwell_fdtd.rs::the_measured_reflection_matches_the_discrete_transfer_matrix tests/analytic_maxwell_fdtd.rs::reflection_falls_with_sigma_max_here_and_rises_beyond_it tests/analytic_maxwell_fdtd.rs::theoretical_reflection_is_the_closed_form"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-EM-106"
+axis = "benchmark"
+item = "Mie scattering by a dielectric or PEC sphere"
+source = "Jackson, Classical Electrodynamics ch.10; Meep tutorial"
+status = "missing"
+evidence = "TF/SF、遠方界変換、曲面の材料配置が無い"
+oracle_candidate = "Mie 級数の散乱断面積 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-EM-107"
+axis = "benchmark"
+item = "half-wave dipole input impedance and pattern"
+source = "Balanis, Antenna Theory ch.4"
+status = "missing"
+evidence = "細線 model、port、遠方界変換が無い"
+oracle_candidate = "入力 impedance と sin 型パターン (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-EM-108"
+axis = "benchmark"
+item = "microstrip patch antenna (resonance, S11)"
+source = "openEMS tutorials"
+status = "missing"
+evidence = "lumped port と S パラメータが無い"
+oracle_candidate = "共振周波数 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-EM-109"
+axis = "benchmark"
+item = "coaxial line characteristic impedance"
+source = "Jackson, Classical Electrodynamics ch.8"
+status = "missing"
+evidence = "曲面導体と port が無い"
+oracle_candidate = "Z₀ = (η/2π) ln(b/a)"
+limitation = ""
+
+[[item]]
+id = "COV-EM-110"
+axis = "benchmark"
+item = "photonic crystal band diagram"
+source = "Joannopoulos et al., Photonic Crystals; MPB"
+status = "missing"
+evidence = "Bloch 周期境界が無い"
+oracle_candidate = "2-D 正方格子の誘電体柱のバンドギャップ (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-EM-111"
+axis = "benchmark"
+item = "TEAM eddy-current benchmark problems"
+source = "COMPUMAG TEAM problem 7"
+status = "missing"
+evidence = "渦電流の solver が無い"
+oracle_candidate = "TEAM 7 の測定値 (参照値要確認)"
+limitation = ""
