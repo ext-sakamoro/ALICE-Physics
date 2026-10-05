@@ -1,0 +1,1445 @@
+# Quantum mechanics coverage of ALICE-Physics, against an external reference
+# frame.
+#
+# What this table is: a declaration of the field's extent for a field the crate
+# does not implement (実装が無い分野の範囲宣言). It lists every capability that
+# the standard texts (Griffiths, Introduction to Quantum Mechanics; Sakurai,
+# Modern Quantum Mechanics; Tannor, Introduction to Quantum Mechanics: A
+# Time-Dependent Perspective; Nielsen-Chuang, Quantum Computation and Quantum
+# Information), the feature lists of reference implementations (QuTiP, Qiskit
+# Aer, ITensor, PySCF) and standard benchmarks (harmonic oscillator levels
+# (n + 1/2) hbar omega, the hydrogen Rydberg series, rectangular barrier
+# transmission, Gaussian wave packet spreading, Rabi oscillation, two-level
+# Lindblad relaxation T1 / T2) expect of a quantum mechanics code, one [[item]]
+# per capability. Every row is missing: the crate has no complex number type,
+# no wavefunction, no Hamiltonian operator and no general eigenvalue solver.
+# The table fixes the scope before any quantum module is written, so that a
+# later addition can decide where each capability goes. The rows are written by
+# hand: the axes and the items come from the reference frame, not from the
+# modules that exist. Classical counterparts that do exist (the Morse and
+# Yukawa pair potentials, the harmonic mode of the molecular dynamics
+# integrator, the magnetic dipole field, the seeded generator) are cited in
+# `evidence` as the nearest thing; they are not counted as quantum
+# capabilities.
+#
+# Scope: non-relativistic quantum mechanics of one particle (time-dependent and
+# stationary solvers, closed-form systems, scattering), angular momentum and
+# spin, approximation methods, open quantum systems, the entry to many-body
+# methods, the physical side of quantum information (state-vector simulation,
+# gates as time evolution, noise models), quantum statistics and semiclassical
+# methods. Quantum chemistry beyond the Hartree-Fock / Kohn-Sham entry and
+# quantum algorithms as computer science are not rows.
+#
+# Boundary with the other tables (one capability goes in one table only):
+#   - general eigenvalue solvers, time integrators, Krylov methods and sparse
+#     storage: the numerics table. A row here that needs one cites its id
+#     (COV-NUM-*) in `evidence`. The numerics table has no FFT row; the
+#     Fourier transform between position and momentum is a row here.
+#   - thermal radiation as heat transfer (blackbody emission, emissivity,
+#     radiation exchange): the thermal table (COV-THERM-059 onward); the
+#     blackbody spectrum as a light source: the optics table (COV-OPTICS-081).
+#     Here only the quantum origin of the spectrum (photon gas, mode counting,
+#     Planck occupation).
+#   - classical intermolecular potentials and classical molecular dynamics
+#     (Lennard-Jones, Morse, Yukawa, thermostats): the particle table. Quantum
+#     levels of the same potentials are rows here.
+#   - relativistic quantum mechanics (Dirac equation, Klein-Gordon) and
+#     relativistic corrections: the relativity side, which has no table yet;
+#     not rows here.
+#   - Maxwell's equations on a grid, photonic band structure and dispersive
+#     media: the electromagnetics table. Electronic band structure is a row
+#     here.
+#   - the seeded random generator used for measurement sampling and quantum
+#     trajectories: the engine table (COV-ENGINE-001 / 002).
+#
+# Search notes: the words "spin" (vehicle wheels, rotors, "spine" in the
+# articulated bodies), "tunnel" (continuous collision detection, cloth
+# tunnelling, a water tunnel), "harmonic" (harmonic means, the classical
+# harmonic mode of the molecular dynamics integrator, the Morse harmonic force
+# constant), "eigenvalue" (the thermo-plastic coupling Jacobian), "Arnoldi"
+# (inside GMRES), "Crank-Nicolson" (the real-valued heat equation and a crank
+# mechanism), "shooting" (overshooting), "ising" (English word endings such as
+# localising), "complex" (a lint name and a journal title), "fft" / "dft"
+# (matrix variable names), "Boltzmann" (the classical k_B argument), "Debye"
+# (dispersive media and Debye-Hückel screening), "entropy" (privacy) and "mps"
+# (substrings of other words) match other meanings only; rows below that say
+# "src 0 件" were checked word by word.
+#
+# status (exactly one of):
+#   implemented+oracle     implemented, and at least one non-ignored test checks
+#                          it against an independent reference
+#   implemented-no-oracle  implemented, no such test
+#   partial                implemented with a restriction that the source states;
+#                          `limitation` quotes it, and the source carries a
+#                          `LIMITATION(<id>)` comment at that place
+#   missing                not implemented
+#   out-of-scope           not a capability of this field (reason in `evidence`)
+#
+# This axis is separate from the test ignore reasons (`known defect: ...`,
+# `src gap: ...`, `diagnostic`, `runtime`).
+#
+# keys: id (COV-QUANTUM-NNN) / axis / item / source (book, chapter, paper or
+# reference-implementation feature; no quoted text) / status / evidence
+# (`src/...rs:line`, `tests/...rs::test_fn`) / oracle_candidate / limitation
+# (verbatim quote of the source, required for `partial`).
+#
+# Reference values marked "参照値要確認" are to be checked against the original
+# publication before any test uses them. Lines marked "(推測)" were judged from
+# a search that found nothing and are to be confirmed. Textbook chapter numbers
+# are given for orientation and have not been checked against each edition. Ids
+# of other tables cited in `evidence` (COV-NUM-*, COV-PART-*, COV-THERM-*,
+# COV-OPTICS-*, COV-EM-*, COV-ENGINE-*) are those of the tables as written at
+# the time of this table.
+#
+# Checked by scripts/coverage_check.py (tests: scripts/test_coverage_check.py).
+
+
+[[item]]
+id = "COV-QUANTUM-001"
+axis = "foundation"
+item = "complex scalar and complex vector / matrix arithmetic (amplitudes, phases, Hermitian conjugate)"
+source = "Sakurai ch.1; Nielsen-Chuang ch.2; QuTiP Qobj"
+status = "missing"
+evidence = "src/math.rs:51 は実数の Q64.64 だけで複素数の型が無い (推測: Complex で src 0 件、当たるのは lint 名 type_complexity と文献名だけ)"
+oracle_candidate = "|e^{iθ}| = 1 と (AB)† = B†A† を固定小数で bit 一致"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-002"
+axis = "foundation"
+item = "state vector on a finite basis or a grid (ket, bra, inner product, normalisation)"
+source = "Sakurai ch.1; Griffiths ch.1, ch.3"
+status = "missing"
+evidence = "ket / wavefunction / amplitude で src 0 件 (語ごとに確認) 実数ベクトルの内積は Krylov の内部にだけある (COV-NUM-077)"
+oracle_candidate = "正規化後のノルム 1 と Cauchy-Schwarz"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-003"
+axis = "foundation"
+item = "operators as matrices: Hermitian observables, unitary evolution, commutators [A, B]"
+source = "Sakurai ch.1; Griffiths ch.3"
+status = "missing"
+evidence = "hermitian / unitary / commutator で src 0 件 (語ごとに確認) (operator は Krylov の LinearOperator だけ = 実数の線形写像)"
+oracle_candidate = "[x, p] = iħ の離散版、Pauli の交換関係"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-004"
+axis = "foundation"
+item = "expectation values, variances and the uncertainty relation"
+source = "Griffiths ch.3; Sakurai ch.1.4"
+status = "missing"
+evidence = "expectation / uncertainty で src 0 件 (語ごとに確認)"
+oracle_candidate = "Gauss 波束で Δx Δp = ħ/2 (最小不確定)"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-005"
+axis = "foundation"
+item = "position and momentum representations and the transform between them"
+source = "Sakurai ch.1.6-1.7; Tannor ch.11"
+status = "missing"
+evidence = "FFT / Fourier の汎用部品は無い (fft で当たるのは src/linear_elastic_fem/consistent_tangent.rs の変数名 F Fᵀ だけ、数値の基盤の表にも行が無い) src/math.rs:51 は実数の Q64.64 だけで複素数の型が無い (推測: Complex で src 0 件、当たるのは lint 名 type_complexity と文献名だけ)"
+oracle_candidate = "Gauss の Fourier 変換が Gauss、Parseval"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-006"
+axis = "foundation"
+item = "tensor products of subsystems and the partial trace"
+source = "Nielsen-Chuang ch.2.1.7, 2.4.3; QuTiP tensor / ptrace"
+status = "missing"
+evidence = "tensor product / kronecker / partial trace で src 0 件 (語ごとに確認)"
+oracle_candidate = "積状態の部分トレースが元の状態、Bell 状態の縮約が I/2"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-007"
+axis = "foundation"
+item = "physical constants and unit systems (ħ, h, k_B, e, m_e, a_0; atomic units)"
+source = "CODATA; Griffiths ch.4 (Bohr radius)"
+status = "missing"
+evidence = "Planck / hbar / Bohr で src 0 件 (語ごとに確認) k_B は古典 MD の引数として受けるだけ (src/molecular_dynamics.rs:577、粒子法の表 COV-PART-037)"
+oracle_candidate = "原子単位 ↔ SI の換算が CODATA と一致 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-008"
+axis = "foundation"
+item = "unitarity / norm and energy conservation diagnostics of a quantum evolution"
+source = "Tannor ch.11; QuTiP solver options"
+status = "missing"
+evidence = "src 0 件 (推測: norm drift を測る部品は無い)"
+oracle_candidate = "時間発展の前後でノルムと ⟨H⟩ が保存"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-009"
+axis = "time-dependent"
+item = "split-operator Fourier method (Strang splitting of kinetic and potential propagators)"
+source = "Feit-Fleck-Steiger 1982; Tannor ch.11.7"
+status = "missing"
+evidence = "split-operator で src 0 件 (語ごとに確認) 一般の Strang 分割も COV-NUM-056 (missing)、FFT は無い"
+oracle_candidate = "自由 Gauss 波束の広がり σ(t) を閉形式と突合、時間誤差 O(dt²)"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-010"
+axis = "time-dependent"
+item = "Crank-Nicolson (Cayley) propagator for the Schrödinger equation (unitary, tridiagonal in 1-D)"
+source = "Goldberg-Schey-Schwartz 1967; Press et al., Numerical Recipes 20.2"
+status = "missing"
+evidence = "Crank-Nicolson は熱伝導の実数の 1-D 版だけ (src/transient_thermal.rs:361、f32) Schrödinger への適用は無い src/math.rs:51 は実数の Q64.64 だけで複素数の型が無い (推測: Complex で src 0 件、当たるのは lint 名 type_complexity と文献名だけ)"
+oracle_candidate = "ノルムが丸めの範囲で保存、Goldberg の障壁散乱の図と突合 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-011"
+axis = "time-dependent"
+item = "Chebyshev polynomial expansion of the propagator"
+source = "Tal-Ezer-Kosloff 1984; Tannor ch.11"
+status = "missing"
+evidence = "Chebyshev で src 0 件 (語ごとに確認)"
+oracle_candidate = "時間独立な H で厳密解 (固有分解) と機械精度で一致"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-012"
+axis = "time-dependent"
+item = "short-iterative Lanczos / Krylov exponential propagator"
+source = "Park-Light 1986; Expokit"
+status = "missing"
+evidence = "Lanczos で src 0 件 (語ごとに確認) Krylov は src/linear_solver/gmres.rs:39 (実数の Fix128 だけ、COV-NUM-010) で exp(-iHt) v は組めない"
+oracle_candidate = "Chebyshev 版と同じ問題で一致"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-013"
+axis = "time-dependent"
+item = "explicit Runge-Kutta / leapfrog (second-order differencing) on the wavefunction"
+source = "Askar-Cakmak 1978; Tannor ch.11"
+status = "missing"
+evidence = "汎用の RK4 は COV-NUM-049 (missing) 波動の leapfrog は 2 階の実数スカラー波動だけ (src/acoustic_wave.rs:1)"
+oracle_candidate = "安定条件 dt < ħ/E_max の確認、ノルム drift の次数"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-014"
+axis = "time-dependent"
+item = "time-dependent Hamiltonians (driving fields, pulses) with a time-ordered propagator"
+source = "Sakurai ch.5.5; Tannor ch.11; QuTiP time-dependent H"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "共鳴駆動 2 準位の Rabi 振動を閉形式と突合"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-015"
+axis = "time-dependent"
+item = "absorbing boundaries for wave packets (complex absorbing potential, exterior scaling, mask)"
+source = "Muga et al. 2004 (Phys. Rep. 395); Tannor ch.11"
+status = "missing"
+evidence = "absorbing / CAP で src 0 件 (語ごとに確認) 電磁の PML は別系統 (電磁気の表)"
+oracle_candidate = "出ていく波束の反射率が設定値以下"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-016"
+axis = "time-dependent"
+item = "imaginary-time propagation to the ground state"
+source = "Kosloff-Tal-Ezer 1986; Tannor ch.11"
+status = "missing"
+evidence = "imaginary time で src 0 件 (語ごとに確認)"
+oracle_candidate = "調和振動子で E_0 = ħω/2 に収束"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-017"
+axis = "time-dependent"
+item = "wave packet dynamics in 2-D and 3-D grids"
+source = "Tannor ch.11; Kosloff 1988 review"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "等方 3-D 調和振動子の coherent state の周期運動"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-018"
+axis = "time-dependent"
+item = "time-dependent observables: autocorrelation function and its spectrum"
+source = "Heller 1981; Tannor ch.7"
+status = "missing"
+evidence = "autocorrelation で src 0 件 (語ごとに確認)"
+oracle_candidate = "自己相関の Fourier 変換のピークが固有値"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-019"
+axis = "stationary"
+item = "finite-difference Hamiltonian and its lowest eigenpairs (1-D, 3-point Laplacian)"
+source = "Griffiths ch.2; Press et al. 11; QuTiP / SciPy eigsh"
+status = "missing"
+evidence = "固有値問題の部品が無い: 汎用の固有値ソルバは数値の基盤の表 COV-NUM-040 / 041 / 042 / 044 (いずれも missing)、3x3 実対称だけ COV-NUM-038 (eigenvalue で当たるのは熱塑性連成の Jacobian の説明文だけ)"
+oracle_candidate = "箱と調和振動子の準位を O(h²) で再現"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-020"
+axis = "stationary"
+item = "Numerov integration and shooting on the energy"
+source = "Numerov 1924; Thijssen, Computational Physics ch.2"
+status = "missing"
+evidence = "Numerov で src 0 件 (語ごとに確認) shooting で当たるのは overshooting の別語義だけ、汎用の根探索も COV-NUM-037 (missing)"
+oracle_candidate = "水素の動径方程式の 1s・2s 準位"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-021"
+axis = "stationary"
+item = "spectral / discrete variable representation methods (sinc-DVR, Fourier grid Hamiltonian)"
+source = "Colbert-Miller 1992; Marston-Balint-Kurti 1989"
+status = "missing"
+evidence = "DVR / Fourier grid で src 0 件 (語ごとに確認)"
+oracle_candidate = "指数収束 (格子点数に対する誤差)"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-022"
+axis = "stationary"
+item = "variational method and Rayleigh-Ritz in a finite basis"
+source = "Griffiths ch.8 (7 in 3rd ed.); Szabo-Ostlund ch.1"
+status = "missing"
+evidence = "src 0 件 (推測) 一般化固有値問題 COV-NUM-042 (missing) が前提"
+oracle_candidate = "Gauss 試行関数で水素の基底エネルギー −(8/3π) Ry の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-023"
+axis = "stationary"
+item = "basis-set expansion (harmonic oscillator, plane waves, Gaussian basis)"
+source = "Szabo-Ostlund ch.3; Tannor ch.10"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "基底数に対する単調な変分収束"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-024"
+axis = "stationary"
+item = "radial Schrödinger equation for central potentials (effective potential with l)"
+source = "Griffiths ch.4; Sakurai ch.3.7"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "水素の n, l 準位の縮退"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-025"
+axis = "stationary"
+item = "periodic potentials: Bloch theorem, band structure and band gaps (Kronig-Penney)"
+source = "Kittel ch.7; Ashcroft-Mermin ch.8"
+status = "missing"
+evidence = "Bloch / band で src 0 件 (語ごとに確認) 電磁の Bloch 周期境界とフォトニックバンドは電磁気の表 (COV-EM-020 / 058、missing) で別物"
+oracle_candidate = "Kronig-Penney の分散式とバンド端"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-026"
+axis = "stationary"
+item = "multi-dimensional stationary problems (2-D / 3-D grids, separable and non-separable)"
+source = "Thijssen ch.3; Kosloff 1988"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "分離可能な 2-D 箱の準位 E = E_x + E_y"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-027"
+axis = "stationary"
+item = "double-well tunnelling splitting from the two lowest eigenvalues"
+source = "Merzbacher ch.8; Landau-Lifshitz QM §50"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "WKB の分裂幅と突合"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-028"
+axis = "closed-form"
+item = "infinite square well (particle in a box): levels n²π²ħ²/2mL² and eigenfunctions"
+source = "Griffiths ch.2.2"
+status = "missing"
+evidence = "particle in a box で src 0 件 (語ごとに確認)"
+oracle_candidate = "準位比 1:4:9 と直交性"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-029"
+axis = "closed-form"
+item = "finite square well bound states (transcendental equations, even and odd)"
+source = "Griffiths ch.2.6"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "深い井戸の極限で無限井戸に一致"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-030"
+axis = "closed-form"
+item = "harmonic oscillator levels (n + 1/2) ħω and Hermite-function eigenstates"
+source = "Griffiths ch.2.3; Sakurai ch.2.3"
+status = "missing"
+evidence = "harmonic oscillator / Hermite で src 0 件 (語ごとに確認) 古典の調和モードは MD の Verlet が厳密に回すだけ (src/molecular_dynamics.rs:17) 単自由度の固有振動数の閉形式は src/modal.rs:10 (構造の閉形式)"
+oracle_candidate = "ladder 演算子の作用と Hermite 関数の正規直交性"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-031"
+axis = "closed-form"
+item = "ladder operators and coherent states (Poisson number distribution, classical motion of ⟨x⟩)"
+source = "Sakurai ch.2.3; Glauber 1963"
+status = "missing"
+evidence = "coherent state で src 0 件 (語ごとに確認)"
+oracle_candidate = "⟨x⟩(t) が古典解、光子数分布が Poisson"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-032"
+axis = "closed-form"
+item = "hydrogen atom: Rydberg levels, radial functions, degeneracy n²"
+source = "Griffiths ch.4.2; Bethe-Salpeter"
+status = "missing"
+evidence = "hydrogen / Rydberg で src 0 件 (語ごとに確認) 逆 2 乗の古典 Kepler は軌道の表 (src/kepler.rs)"
+oracle_candidate = "E_n = −Ry/n² と ⟨r⟩ = (3n² − l(l+1)) a_0/2"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-033"
+axis = "closed-form"
+item = "rigid rotor and diatomic rotational levels B J(J+1)"
+source = "Griffiths ch.4.3; Herzberg"
+status = "missing"
+evidence = "rigid rotor の量子準位で src 0 件 (語ごとに確認) 古典の剛体回転は剛体の表"
+oracle_candidate = "準位間隔 2B(J+1)"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-034"
+axis = "closed-form"
+item = "potential step: reflection and transmission coefficients"
+source = "Griffiths ch.2.5-2.6"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "R + T = 1"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-035"
+axis = "closed-form"
+item = "rectangular barrier transmission (tunnelling) including E < V0 and E > V0"
+source = "Griffiths ch.2.6 problem; Merzbacher ch.6"
+status = "missing"
+evidence = "tunnel で当たるのは CCD のすり抜け (src/ccd.rs:3) と布の貫通・水槽 (water tunnel) の別語義だけ"
+oracle_candidate = "T(E) の閉形式、厚い障壁で exp(−2κa)"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-036"
+axis = "closed-form"
+item = "delta-function potential: bound state and scattering"
+source = "Griffiths ch.2.5"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "束縛エネルギー −mα²/2ħ²"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-037"
+axis = "closed-form"
+item = "WKB approximation: quantisation (Bohr-Sommerfeld) and tunnelling (Gamow factor)"
+source = "Griffiths ch.9 (8 in 3rd ed.); Merzbacher ch.7"
+status = "missing"
+evidence = "WKB / Gamow で src 0 件 (語ごとに確認)"
+oracle_candidate = "調和振動子で Bohr-Sommerfeld が厳密、α 崩壊の Geiger-Nuttall の傾き"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-038"
+axis = "closed-form"
+item = "Morse oscillator levels and anharmonicity"
+source = "Morse 1929; Herzberg"
+status = "missing"
+evidence = "古典の Morse ポテンシャルはある (src/pair_potential.rs:261、粒子法の表 COV-PART-002) が量子準位は無い 調和近似の力の定数は src/pair_potential.rs:299"
+oracle_candidate = "E_n = ħω(n+½) − [ħω(n+½)]²/4D と有限差分の固有値"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-039"
+axis = "closed-form"
+item = "free Gaussian wave packet spreading σ(t) and phase / group velocity"
+source = "Griffiths ch.2.4; Tannor ch.2"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "σ(t)² = σ0² + (ħt/2mσ0)²"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-040"
+axis = "closed-form"
+item = "3-D isotropic oscillator and box: degeneracies"
+source = "Griffiths ch.4; Sakurai ch.3"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "縮退度 (n+1)(n+2)/2"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-041"
+axis = "closed-form"
+item = "Pöschl-Teller and other exactly solvable potentials (supersymmetric partners)"
+source = "Flügge, Practical Quantum Mechanics; Cooper-Khare-Sukhatme 1995"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "反射のない Pöschl-Teller で T = 1"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-042"
+axis = "closed-form"
+item = "particle on a ring and Aharonov-Bohm flux"
+source = "Griffiths ch.2 problem, ch.10; Aharonov-Bohm 1959"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "磁束で準位が周期 Φ0 でずれる"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-043"
+axis = "closed-form"
+item = "charged particle in a uniform magnetic field: Landau levels"
+source = "Landau-Lifshitz QM §112; Sakurai ch.2.7"
+status = "missing"
+evidence = "Landau level で src 0 件 (語ごとに確認) 古典のサイクロトロン運動は電磁気の表 (粒子 pusher は missing)"
+oracle_candidate = "E = ħω_c(n + ½)、縮退 eB/h per area"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-044"
+axis = "scattering"
+item = "1-D transfer-matrix method for piecewise-constant potentials (multi-barrier, resonant tunnelling)"
+source = "Merzbacher ch.6; Tsu-Esaki 1973"
+status = "missing"
+evidence = "transfer matrix で src 0 件 (語ごとに確認)"
+oracle_candidate = "単一障壁で閉形式に一致、二重障壁の共鳴で T = 1"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-045"
+axis = "scattering"
+item = "partial-wave expansion and phase shifts δ_l"
+source = "Sakurai ch.7.5; Griffiths ch.11"
+status = "missing"
+evidence = "phase shift で当たるのは熱伝導の台形則の説明文 (src/transient_thermal.rs) だけ"
+oracle_candidate = "剛体球の δ_0 = −ka"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-046"
+axis = "scattering"
+item = "differential and total cross sections; optical theorem"
+source = "Sakurai ch.7; Griffiths ch.11"
+status = "missing"
+evidence = "cross section の量子散乱で src 0 件 (語ごとに確認)"
+oracle_candidate = "σ_tot = (4π/k) Im f(0)"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-047"
+axis = "scattering"
+item = "Born approximation (first order) and Yukawa / Coulomb limits"
+source = "Sakurai ch.7.2; Griffiths ch.11.4"
+status = "missing"
+evidence = "Born 近似で src 0 件 古典の Yukawa 対ポテンシャルはある (src/pair_potential.rs:378) が散乱振幅は無い"
+oracle_candidate = "Yukawa の Born 振幅、Rutherford の極限"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-048"
+axis = "scattering"
+item = "Rutherford / Coulomb scattering (quantum and classical agree)"
+source = "Sakurai ch.7.13"
+status = "missing"
+evidence = "Rutherford で src 0 件 (語ごとに確認) Coulomb 力の閉形式は電磁気の表 (src/electromagnetic.rs) で散乱断面積は無い"
+oracle_candidate = "dσ/dΩ ∝ 1/sin⁴(θ/2)"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-049"
+axis = "scattering"
+item = "resonances: Breit-Wigner line shape and lifetimes"
+source = "Sakurai ch.7.8; Taylor, Scattering Theory"
+status = "missing"
+evidence = "Breit-Wigner で src 0 件 (語ごとに確認)"
+oracle_candidate = "半値幅 Γ と寿命 ħ/Γ"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-050"
+axis = "scattering"
+item = "time-dependent scattering of a wave packet off a barrier (reflection and transmission probabilities)"
+source = "Goldberg-Schey-Schwartz 1967; Tannor ch.11"
+status = "missing"
+evidence = "src 0 件 (推測) 時間依存の解法 (time-dependent 軸) が前提"
+oracle_candidate = "運動量分布で平均した T(E) と一致"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-051"
+axis = "scattering"
+item = "S-matrix, Levinson theorem and bound-state poles"
+source = "Taylor, Scattering Theory; Sakurai ch.7"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "δ_0(0) − δ_0(∞) = N_b π"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-052"
+axis = "spin"
+item = "Pauli matrices and spin-1/2 states (Bloch sphere representation)"
+source = "Sakurai ch.3.2; Nielsen-Chuang ch.1.2"
+status = "missing"
+evidence = "Pauli で src 0 件 (語ごとに確認) spin で当たるのは車輪・ロータの回転 (src/vehicle_dynamics/mod.rs, src/rotor.rs) と spine の別語義だけ"
+oracle_candidate = "σ_i σ_j = δ_ij + i ε_ijk σ_k"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-053"
+axis = "spin"
+item = "SU(2) rotations of spinors (4π periodicity) and spin-j matrices"
+source = "Sakurai ch.3.2-3.5"
+status = "missing"
+evidence = "src 0 件 (推測) 実数の四元数は剛体の姿勢に使うだけ"
+oracle_candidate = "2π 回転で符号反転"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-054"
+axis = "spin"
+item = "Clebsch-Gordan coefficients and Wigner 3j / 6j symbols"
+source = "Sakurai ch.3.8; Edmonds"
+status = "missing"
+evidence = "Clebsch-Gordan / Wigner で src 0 件 (語ごとに確認)"
+oracle_candidate = "直交関係と既知の表 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-055"
+axis = "spin"
+item = "spherical harmonics Y_lm and Wigner D-matrices"
+source = "Sakurai ch.3.6, 3.9"
+status = "missing"
+evidence = "spherical harmonic / Legendre で src 0 件 (語ごとに確認)"
+oracle_candidate = "加法定理と正規直交性"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-056"
+axis = "spin"
+item = "Larmor precession of a magnetic moment in a static field"
+source = "Sakurai ch.2.1; Griffiths ch.4.4"
+status = "missing"
+evidence = "Larmor で src 0 件 (語ごとに確認) 磁気双極子の場の閉形式はあるが (src/electromagnetic.rs:55) 磁気モーメントへのトルクと歳差は無い"
+oracle_candidate = "歳差角速度 γB と ⟨S⟩ の周期"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-057"
+axis = "spin"
+item = "Bloch equations for magnetisation with T1 and T2 relaxation (NMR / ESR)"
+source = "Bloch 1946; Abragam; Levitt, Spin Dynamics"
+status = "missing"
+evidence = "Bloch で src 0 件 (語ごとに確認)"
+oracle_candidate = "自由誘導減衰と反転回復の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-058"
+axis = "spin"
+item = "Stern-Gerlach splitting and sequential spin measurements"
+source = "Sakurai ch.1.1; Griffiths ch.4.4"
+status = "missing"
+evidence = "Stern-Gerlach で src 0 件 (語ごとに確認)"
+oracle_candidate = "連続測定の確率 cos²(θ/2)"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-059"
+axis = "spin"
+item = "Zeeman effect (weak and strong field), Landé g-factor"
+source = "Griffiths ch.6.4; Sakurai ch.5.3"
+status = "missing"
+evidence = "Zeeman で src 0 件 (語ごとに確認)"
+oracle_candidate = "弱磁場の分裂 g_J μ_B B m_J"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-060"
+axis = "spin"
+item = "spin-orbit coupling and fine structure of hydrogen"
+source = "Griffiths ch.6.3; Bethe-Salpeter"
+status = "missing"
+evidence = "fine structure で src 0 件 (語ごとに確認)"
+oracle_candidate = "α² Ry のスケールの分裂 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-061"
+axis = "spin"
+item = "hyperfine structure (21 cm line)"
+source = "Griffiths ch.6.5"
+status = "missing"
+evidence = "hyperfine で src 0 件 (語ごとに確認)"
+oracle_candidate = "1420 MHz (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-062"
+axis = "spin"
+item = "identical particles: symmetrisation, exchange and the spin-statistics connection"
+source = "Griffiths ch.5.1; Sakurai ch.7 (6 in 1st ed.)"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "2 フェルミオンの交換で符号反転、Pauli 排他"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-063"
+axis = "approximation"
+item = "time-independent perturbation theory (non-degenerate, second order)"
+source = "Griffiths ch.6.1; Sakurai ch.5.1"
+status = "missing"
+evidence = "perturbation の量子版で src 0 件 (語ごとに確認)"
+oracle_candidate = "調和振動子に x⁴ 項の 1 次補正 3λ(ħ/2mω)²"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-064"
+axis = "approximation"
+item = "degenerate perturbation theory (Stark effect of n = 2 hydrogen)"
+source = "Griffiths ch.6.2; Sakurai ch.5.2"
+status = "missing"
+evidence = "Stark で src 0 件 (語ごとに確認)"
+oracle_candidate = "線形 Stark 分裂 ±3 e E a_0"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-065"
+axis = "approximation"
+item = "time-dependent perturbation theory and Fermi's golden rule"
+source = "Sakurai ch.5.6; Griffiths ch.9 (11 in 3rd ed.)"
+status = "missing"
+evidence = "golden rule で src 0 件 (語ごとに確認)"
+oracle_candidate = "遷移率と数値の 2 準位 + 連続帯の突合"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-066"
+axis = "approximation"
+item = "two-level system: Rabi oscillation, detuning, rotating-wave approximation"
+source = "Sakurai ch.5.5; Allen-Eberly"
+status = "missing"
+evidence = "Rabi で src 0 件 (語ごとに確認)"
+oracle_candidate = "P(t) = (Ω²/Ω_R²) sin²(Ω_R t/2)"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-067"
+axis = "approximation"
+item = "adiabatic theorem, Landau-Zener transitions"
+source = "Griffiths ch.10 (11 in 3rd ed.); Zener 1932"
+status = "missing"
+evidence = "Landau-Zener で src 0 件 (語ごとに確認)"
+oracle_candidate = "遷移確率 exp(−2π a²/ħ|α|)"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-068"
+axis = "approximation"
+item = "Berry (geometric) phase"
+source = "Berry 1984; Sakurai ch.5.6"
+status = "missing"
+evidence = "Berry phase で src 0 件 (語ごとに確認)"
+oracle_candidate = "磁場の向きを一周させたスピンの位相 = −立体角/2"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-069"
+axis = "approximation"
+item = "sudden approximation (instantaneous change of the Hamiltonian)"
+source = "Sakurai ch.5.6; Griffiths ch.10"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "箱の幅の急変後の重なり積分"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-070"
+axis = "approximation"
+item = "Born-Oppenheimer separation and potential energy surfaces"
+source = "Szabo-Ostlund ch.2.1; Tannor ch.4"
+status = "missing"
+evidence = "src 0 件 (推測) 古典 MD の対ポテンシャルは経験式 (粒子法の表)"
+oracle_candidate = "H2+ の結合長 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-071"
+axis = "open-system"
+item = "density matrix: pure and mixed states, purity, von Neumann entropy"
+source = "Nielsen-Chuang ch.2.4, 11.3; QuTiP Qobj (oper)"
+status = "missing"
+evidence = "density matrix / von Neumann で src 0 件 (語ごとに確認) (entropy で当たるのは privacy の別語義)"
+oracle_candidate = "純粋状態で Tr ρ² = 1、最大混合で S = ln d"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-072"
+axis = "open-system"
+item = "von Neumann (Liouville) equation for closed-system density matrices"
+source = "Breuer-Petruccione ch.2; Sakurai ch.3.4"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "時間発展後も Tr ρ = 1 と固有値不変"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-073"
+axis = "open-system"
+item = "Lindblad master equation solver"
+source = "Lindblad 1976; Breuer-Petruccione ch.3; QuTiP mesolve"
+status = "missing"
+evidence = "Lindblad で src 0 件 (語ごとに確認)"
+oracle_candidate = "2 準位の振幅減衰で ρ_ee(t) = e^{−t/T1}"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-074"
+axis = "open-system"
+item = "amplitude damping (T1) and pure dephasing (T2) of a two-level system"
+source = "Nielsen-Chuang ch.8.3; Breuer-Petruccione ch.3"
+status = "missing"
+evidence = "T1 / T2 で src 0 件 (語ごとに確認) (古典の Rayleigh 減衰や構造減衰は別物)"
+oracle_candidate = "コヒーレンス e^{−t/T2}、1/T2 = 1/2T1 + 1/T_φ"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-075"
+axis = "open-system"
+item = "quantum trajectories (Monte Carlo wave function / quantum jumps)"
+source = "Dalibard-Castin-Mølmer 1992; QuTiP mcsolve"
+status = "missing"
+evidence = "src 0 件 (推測) 決定的な乱数源はある (src/rng.rs:22、エンジン基盤の表 COV-ENGINE-001 / 002) が使い手が無い"
+oracle_candidate = "軌跡平均が Lindblad 解に収束 (1/√N)"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-076"
+axis = "open-system"
+item = "Kraus operators and completely positive trace-preserving maps"
+source = "Nielsen-Chuang ch.8.2"
+status = "missing"
+evidence = "Kraus で src 0 件 (語ごとに確認)"
+oracle_candidate = "Σ K†K = I と出力の正定値"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-077"
+axis = "open-system"
+item = "thermal (Gibbs) states and steady states of a master equation"
+source = "Breuer-Petruccione ch.3.4; QuTiP steadystate"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "詳細釣り合いで Boltzmann 分布の占有比"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-078"
+axis = "open-system"
+item = "Redfield / Born-Markov master equation from a system-bath model"
+source = "Breuer-Petruccione ch.3.3; Redfield 1957"
+status = "missing"
+evidence = "Redfield で src 0 件 (語ごとに確認)"
+oracle_candidate = "スピン-ボソン模型の緩和率 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-079"
+axis = "open-system"
+item = "decoherence of superpositions and the pointer basis (environment-induced)"
+source = "Zurek 2003 (Rev. Mod. Phys.); Schlosshauer"
+status = "missing"
+evidence = "decoherence で src 0 件 (語ごとに確認)"
+oracle_candidate = "非対角成分の指数減衰率"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-080"
+axis = "open-system"
+item = "quantum stochastic / Langevin equations and input-output theory"
+source = "Gardiner-Zoller, Quantum Noise"
+status = "missing"
+evidence = "src 0 件 (推測) 古典の Langevin 熱浴も粒子法の表 COV-PART-040 (missing)"
+oracle_candidate = "減衰する調和振動子のスペクトル幅"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-081"
+axis = "many-body"
+item = "second quantisation: Fock space, bosonic and fermionic creation / annihilation operators"
+source = "Fetter-Walecka ch.1; Altland-Simons ch.2"
+status = "missing"
+evidence = "Fock で src 0 件 (語ごとに確認)"
+oracle_candidate = "反交換関係 {c, c†} = 1、Jordan-Wigner の符号"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-082"
+axis = "many-body"
+item = "Slater determinants and antisymmetrised many-electron wavefunctions"
+source = "Szabo-Ostlund ch.2"
+status = "missing"
+evidence = "Slater で src 0 件 (語ごとに確認)"
+oracle_candidate = "同一軌道の 2 電子で行列式 0"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-083"
+axis = "many-body"
+item = "Hartree-Fock self-consistent field (restricted / unrestricted)"
+source = "Szabo-Ostlund ch.3; PySCF scf"
+status = "missing"
+evidence = "Hartree / Fock で src 0 件 (語ごとに確認) 自己無撞着の反復は連成の固定点 driver (COV-NUM-059) の形だけ"
+oracle_candidate = "He 原子・H2 の HF エネルギー (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-084"
+axis = "many-body"
+item = "Gaussian basis sets and one- / two-electron integrals"
+source = "Szabo-Ostlund ch.3.5, App. A; PySCF gto"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "s 型 Gauss の重なり・運動・核引力積分の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-085"
+axis = "many-body"
+item = "density functional theory entry: Kohn-Sham equations with LDA exchange-correlation"
+source = "Parr-Yang; Martin, Electronic Structure; PySCF dft"
+status = "missing"
+evidence = "Kohn-Sham / DFT で src 0 件 (語ごとに確認) (dft で当たるのは src/linear_elastic_fem/consistent_tangent.rs の変数名 dFᵀ)"
+oracle_candidate = "一様電子ガスの交換エネルギー、He 原子の LDA エネルギー (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-086"
+axis = "many-body"
+item = "post-Hartree-Fock correlation (MP2, configuration interaction, coupled cluster)"
+source = "Szabo-Ostlund ch.4, 6; PySCF mp / ci / cc"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "H2 の最小基底 full CI が 2x2 対角化と一致"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-087"
+axis = "many-body"
+item = "exact diagonalisation of lattice models (sparse Hamiltonian, symmetry sectors)"
+source = "Sandvik 2010 (lecture notes); QuSpin"
+status = "missing"
+evidence = "src 0 件 (推測) 疎行列と Lanczos が前提 (COV-NUM-006 / 041、missing)"
+oracle_candidate = "2 サイト Hubbard の閉形式基底エネルギー"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-088"
+axis = "many-body"
+item = "Hubbard model (fermions on a lattice)"
+source = "Essler et al., The One-Dimensional Hubbard Model; ITensor examples"
+status = "missing"
+evidence = "Hubbard で src 0 件 (語ごとに確認)"
+oracle_candidate = "1-D 半充填の Lieb-Wu エネルギー (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-089"
+axis = "many-body"
+item = "transverse-field Ising and Heisenberg spin chains"
+source = "Sachdev, Quantum Phase Transitions; ITensor / QuSpin examples"
+status = "missing"
+evidence = "Ising / Heisenberg の量子模型で src 0 件 (語ごとに確認) (ising で当たるのは localising / normalising 等の英語の語尾だけ)"
+oracle_candidate = "横磁場 Ising の Jordan-Wigner 閉形式、臨界点 h = J"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-090"
+axis = "many-body"
+item = "Bose-Hubbard model and the Gross-Pitaevskii equation (mean-field condensate)"
+source = "Pitaevskii-Stringari; Pethick-Smith"
+status = "missing"
+evidence = "Gross-Pitaevskii / Bose-Hubbard で src 0 件 (語ごとに確認)"
+oracle_candidate = "調和トラップの Thomas-Fermi 半径"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-091"
+axis = "many-body"
+item = "tight-binding band structure"
+source = "Ashcroft-Mermin ch.10; Kittel ch.9"
+status = "missing"
+evidence = "tight-binding で src 0 件 (語ごとに確認)"
+oracle_candidate = "1-D 鎖の E(k) = ε − 2t cos ka"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-092"
+axis = "many-body"
+item = "matrix product states and DMRG"
+source = "Schollwöck 2011 (Ann. Phys.); ITensor"
+status = "missing"
+evidence = "MPS / DMRG で当たるのは無関係な識別子だけ (mps は他の語の部分一致)"
+oracle_candidate = "AKLT 状態の厳密 MPS、Heisenberg 鎖の基底エネルギー (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-093"
+axis = "many-body"
+item = "time evolution of tensor networks (TEBD / TDVP)"
+source = "Vidal 2004; Haegeman et al. 2016; ITensor"
+status = "missing"
+evidence = "TEBD / TDVP で src 0 件 (語ごとに確認)"
+oracle_candidate = "小さい系で厳密対角化の時間発展と一致"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-094"
+axis = "many-body"
+item = "quantum Monte Carlo (variational, diffusion, path-integral)"
+source = "Foulkes et al. 2001 (Rev. Mod. Phys.); Ceperley 1995"
+status = "missing"
+evidence = "quantum Monte Carlo で src 0 件 (語ごとに確認)"
+oracle_candidate = "調和振動子と水素の基底エネルギー"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-095"
+axis = "quantum-information"
+item = "state-vector simulation of n qubits (gate application by index arithmetic)"
+source = "Nielsen-Chuang ch.4; Qiskit Aer statevector"
+status = "missing"
+evidence = "qubit で src 0 件 (語ごとに確認)"
+oracle_candidate = "Bell 状態・GHZ 状態の振幅"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-096"
+axis = "quantum-information"
+item = "standard gate set (Pauli, Hadamard, phase, T, CNOT, controlled-U, rotations)"
+source = "Nielsen-Chuang ch.4.2-4.3; OpenQASM 2 qelib1"
+status = "missing"
+evidence = "gate の量子版で src 0 件 (語ごとに確認)"
+oracle_candidate = "HZH = X、CNOT の真理表、ユニタリ性"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-097"
+axis = "quantum-information"
+item = "gates as time evolution under a control Hamiltonian (pulse-level simulation)"
+source = "Krantz et al. 2019 (Appl. Phys. Rev.); Qiskit Dynamics"
+status = "missing"
+evidence = "src 0 件 (推測) 時間依存 H の解法 (time-dependent 軸) が前提"
+oracle_candidate = "π パルスで |0⟩ → |1⟩、パルス面積の依存"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-098"
+axis = "quantum-information"
+item = "projective measurement and sampling by the Born rule with a seeded generator"
+source = "Nielsen-Chuang ch.2.2.3; Qiskit Aer shots"
+status = "missing"
+evidence = "src 0 件 (推測) 標本化の乱数は src/rng.rs:22 (COV-ENGINE-001) で組める"
+oracle_candidate = "shots の頻度が |amplitude|² に χ² で一致、seed ごとに bit 一致"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-099"
+axis = "quantum-information"
+item = "density-matrix simulation of circuits"
+source = "Nielsen-Chuang ch.8; Qiskit Aer density_matrix"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "純粋状態で state-vector 版と一致"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-100"
+axis = "quantum-information"
+item = "noise channels: depolarising, amplitude / phase damping, readout error"
+source = "Nielsen-Chuang ch.8.3; Qiskit Aer noise"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "depolarising の Bloch ベクトル縮小 1 − 4p/3"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-101"
+axis = "quantum-information"
+item = "stabiliser (Clifford) simulation"
+source = "Gottesman 1998; Aaronson-Gottesman 2004; Stim"
+status = "missing"
+evidence = "stabiliser で src 0 件 (語ごとに確認)"
+oracle_candidate = "Clifford 回路で state-vector 版と一致"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-102"
+axis = "quantum-information"
+item = "entanglement measures (entanglement entropy, concurrence, negativity)"
+source = "Nielsen-Chuang ch.12.5; Wootters 1998; Horodecki 2009"
+status = "missing"
+evidence = "concurrence / negativity で src 0 件 (語ごとに確認)"
+oracle_candidate = "Bell 状態で concurrence = 1"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-103"
+axis = "quantum-information"
+item = "fidelity, trace distance and process fidelity"
+source = "Nielsen-Chuang ch.9"
+status = "missing"
+evidence = "fidelity の量子版で src 0 件 (語ごとに確認)"
+oracle_candidate = "直交状態で 0、同一状態で 1"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-104"
+axis = "quantum-information"
+item = "Bell / CHSH inequality violation"
+source = "Nielsen-Chuang ch.2.6; Clauser et al. 1969"
+status = "missing"
+evidence = "CHSH で src 0 件 (語ごとに確認)"
+oracle_candidate = "最大値 2√2 (Tsirelson)"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-105"
+axis = "quantum-information"
+item = "Trotterised simulation of a Hamiltonian on qubits"
+source = "Lloyd 1996; Nielsen-Chuang ch.4.7"
+status = "missing"
+evidence = "Trotter で src 0 件 (語ごとに確認)"
+oracle_candidate = "Trotter 誤差 O(dt²) (2 次公式)"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-106"
+axis = "quantum-information"
+item = "circuit description import / export (OpenQASM)"
+source = "OpenQASM 2 / 3 specification"
+status = "missing"
+evidence = "QASM で src 0 件 (語ごとに確認)"
+oracle_candidate = "往復で同じ回路"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-107"
+axis = "statistics"
+item = "Bose-Einstein and Fermi-Dirac occupation numbers and their classical limit"
+source = "Kittel-Kroemer ch.6-7; Pathria ch.6-8"
+status = "missing"
+evidence = "Bose / Fermi で src 0 件 (語ごとに確認) 古典の温度は MD の運動エネルギーから (粒子法の表 COV-PART-037)"
+oracle_candidate = "e^{(ε−μ)/kT} ≫ 1 で Maxwell-Boltzmann に一致"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-108"
+axis = "statistics"
+item = "quantum origin of the blackbody spectrum (photon gas, mode counting, Planck occupation)"
+source = "Kittel-Kroemer ch.4; Pathria ch.7.3"
+status = "missing"
+evidence = "Planck で src 0 件 (語ごとに確認) 熱放射の放出・交換は熱の表 COV-THERM-059 (missing)、光源スペクトルは光学の表 COV-OPTICS-081 (missing) ここは状態密度 × 占有数の導出だけ"
+oracle_candidate = "Stefan-Boltzmann 定数を ħ, c, k_B から再構成"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-109"
+axis = "statistics"
+item = "partition functions of the quantum harmonic oscillator and rotor; zero-point energy"
+source = "Pathria ch.3; McQuarrie, Statistical Mechanics"
+status = "missing"
+evidence = "partition function で src 0 件 (語ごとに確認)"
+oracle_candidate = "⟨E⟩ = ħω/2 coth(ħω/2kT)、高温で kT"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-110"
+axis = "statistics"
+item = "Einstein and Debye heat capacity of solids"
+source = "Kittel ch.5; Ashcroft-Mermin ch.23"
+status = "missing"
+evidence = "Debye で当たるのは誘電分散 (src/maxwell_fdtd.rs) と Debye-Hückel 遮蔽 (src/pair_potential.rs) の別語義だけ、Einstein は src 0 件 熱物性は温度の多項式だけ (熱の表 COV-THERM-018)"
+oracle_candidate = "低温で T³、高温で Dulong-Petit 3Nk"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-111"
+axis = "statistics"
+item = "degenerate Fermi gas: Fermi energy, degeneracy pressure, Sommerfeld expansion"
+source = "Kittel-Kroemer ch.7; Ashcroft-Mermin ch.2"
+status = "missing"
+evidence = "Fermi energy で src 0 件 (語ごとに確認)"
+oracle_candidate = "E_F = ħ²(3π²n)^{2/3}/2m"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-112"
+axis = "statistics"
+item = "Bose-Einstein condensation (critical temperature, condensate fraction)"
+source = "Pathria ch.7.1; Pitaevskii-Stringari"
+status = "missing"
+evidence = "condensation の量子版で src 0 件 (語ごとに確認)"
+oracle_candidate = "1 − (T/T_c)^{3/2}"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-113"
+axis = "statistics"
+item = "quantum corrections to classical molecular dynamics (zero-point, Wigner-Kirkwood)"
+source = "Landau-Lifshitz Stat. Phys. §33; Feynman-Hibbs"
+status = "missing"
+evidence = "src 0 件 (推測) 古典 MD は粒子法の表"
+oracle_candidate = "低温の調和結晶で古典と量子の比熱の差"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-114"
+axis = "statistics"
+item = "phonons: lattice dynamics, dispersion relation and density of states"
+source = "Ashcroft-Mermin ch.22; Kittel ch.4"
+status = "missing"
+evidence = "phonon で src 0 件 (語ごとに確認)"
+oracle_candidate = "1-D 単原子鎖の ω(k) = 2√(K/m)|sin(ka/2)|"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-115"
+axis = "semiclassical"
+item = "Ehrenfest theorem: expectation values follow classical equations for quadratic potentials"
+source = "Sakurai ch.2.2; Griffiths ch.3"
+status = "missing"
+evidence = "Ehrenfest で src 0 件 (語ごとに確認) 古典の軌道は MD の Verlet (src/molecular_dynamics.rs:17) や剛体の世界にあるが量子側が無い"
+oracle_candidate = "調和ポテンシャルで ⟨x⟩(t) が古典解と一致"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-116"
+axis = "semiclassical"
+item = "Wigner quasi-probability distribution (and Husimi Q function)"
+source = "Wigner 1932; Hillery et al. 1984 (Phys. Rep.)"
+status = "missing"
+evidence = "Wigner で src 0 件 (語ごとに確認)"
+oracle_candidate = "調和振動子の Fock 状態の Laguerre 形、周辺分布が |ψ(x)|²"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-117"
+axis = "semiclassical"
+item = "classical limit and correspondence (large quantum number, coherent-state wave packets)"
+source = "Sakurai ch.2.4; Griffiths ch.2"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "大きい n で確率密度が古典の滞在時間分布に近づく"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-118"
+axis = "semiclassical"
+item = "path integrals and ring-polymer / path-integral molecular dynamics"
+source = "Feynman-Hibbs; Tuckerman, Statistical Mechanics ch.12"
+status = "missing"
+evidence = "path integral で src 0 件 (語ごとに確認)"
+oracle_candidate = "調和振動子の熱平均 ⟨x²⟩ をビーズ数で収束"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-119"
+axis = "semiclassical"
+item = "semiclassical propagators (Van Vleck, Herman-Kluk, Gaussian wave packet dynamics)"
+source = "Heller 1975; Herman-Kluk 1984; Tannor ch.10"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "調和ポテンシャルで厳密に一致"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-120"
+axis = "semiclassical"
+item = "mixed quantum-classical dynamics (Ehrenfest mean field, surface hopping)"
+source = "Tully 1990; Tannor ch.14"
+status = "missing"
+evidence = "surface hopping で src 0 件 (語ごとに確認)"
+oracle_candidate = "Tully の 3 模型 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-121"
+axis = "semiclassical"
+item = "Bohmian trajectories (de Broglie-Bohm guidance equation)"
+source = "Holland, The Quantum Theory of Motion; Wyatt"
+status = "missing"
+evidence = "Bohm で src 0 件 (語ごとに確認)"
+oracle_candidate = "二重スリットの軌跡が |ψ|² 分布を保つ"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-122"
+axis = "benchmark"
+item = "harmonic oscillator levels (n + 1/2) ħω from a grid Hamiltonian"
+source = "Griffiths ch.2.3; Thijssen ch.2"
+status = "missing"
+evidence = "src 0 件 固有値問題の部品が前提 (汎用の固有値ソルバは数値の基盤の表 COV-NUM-040 / 041 / 042 / 044 (いずれも missing)、3x3 実対称だけ COV-NUM-038)"
+oracle_candidate = "最初の 10 準位の相対誤差と O(h²) 収束"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-123"
+axis = "benchmark"
+item = "hydrogen Rydberg series from the radial equation"
+source = "Griffiths ch.4.2"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "E_n = −Ry/n² (n = 1..5)"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-124"
+axis = "benchmark"
+item = "rectangular barrier transmission coefficient versus energy"
+source = "Griffiths ch.2.6; Merzbacher ch.6"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "T(E) を閉形式と全エネルギー域で突合"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-125"
+axis = "benchmark"
+item = "free Gaussian wave packet spreading"
+source = "Griffiths ch.2.4; Tannor ch.2"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "σ(t) と ⟨p⟩ 保存"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-126"
+axis = "benchmark"
+item = "Rabi oscillation of a driven two-level system"
+source = "Sakurai ch.5.5; Allen-Eberly"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "Rabi 周波数 Ω_R = √(Ω² + Δ²) と振幅"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-127"
+axis = "benchmark"
+item = "two-level Lindblad relaxation: T1 and T2 decay"
+source = "Breuer-Petruccione ch.3; QuTiP examples"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "ρ_ee の e^{−t/T1}、|ρ_eg| の e^{−t/T2}"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-128"
+axis = "benchmark"
+item = "Morse oscillator spectrum (anharmonic levels, finite number of bound states)"
+source = "Morse 1929; Herzberg"
+status = "missing"
+evidence = "古典の Morse はある (粒子法の表 COV-PART-002) が量子の突合は無い"
+oracle_candidate = "束縛状態の数 ⌊√(2mD)/aħ − ½⌋ + 1"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-129"
+axis = "benchmark"
+item = "symmetric double-well tunnelling splitting"
+source = "Merzbacher ch.8; Landau-Lifshitz QM §50"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "数値の分裂と WKB"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-130"
+axis = "benchmark"
+item = "Kronig-Penney band edges"
+source = "Kittel ch.7"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "分散式 cos ka = … のバンド端"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-131"
+axis = "benchmark"
+item = "helium ground state: variational (Z_eff = 27/16) and Hartree-Fock energies"
+source = "Griffiths ch.7 (8 in 2nd ed.); Szabo-Ostlund ch.3"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "変分 −(27/16)² Ha、HF 値 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-132"
+axis = "benchmark"
+item = "transverse-field Ising chain ground-state energy and critical point"
+source = "Pfeuty 1970; Sachdev"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "Jordan-Wigner の閉形式と厳密対角化"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-133"
+axis = "benchmark"
+item = "1-D Hubbard ground-state energy at half filling (Lieb-Wu)"
+source = "Lieb-Wu 1968; Essler et al."
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "Bethe ansatz の値 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-134"
+axis = "benchmark"
+item = "quantum circuits with known outcomes (Bell / GHZ sampling, QFT, Grover success probability)"
+source = "Nielsen-Chuang ch.5-6; Qiskit Aer test suite"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "Grover の成功確率 sin²((2k+1)θ)"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-135"
+axis = "benchmark"
+item = "Heisenberg spin-1/2 chain ground-state energy per site (Bethe ansatz)"
+source = "Bethe 1931; Hulthén 1938"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "1/4 − ln 2 (J = 1、参照値要確認)"
+limitation = ""
