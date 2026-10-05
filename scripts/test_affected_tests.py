@@ -151,6 +151,30 @@ class Counting(unittest.TestCase):
         self.assertEqual(at.passed_count("error: could not compile\n"), 0)
 
 
+class ChangedFiles(unittest.TestCase):
+    """changed_files は git を呼ぶので、使い捨ての repo で見る."""
+
+    def test_an_untracked_new_file_is_reported_as_changed(self):
+        import subprocess
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            run = lambda *a: subprocess.run(a, cwd=root, check=True, capture_output=True)
+            run("git", "init", "-q", "-b", "main")
+            (root / "tests").mkdir()
+            (root / "tests" / "old.rs").write_text("// old\n")
+            run("git", "add", ".")
+            run("git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "x")
+            (root / "tests" / "brand_new.rs").write_text("// new\n")  # git add していない
+            saved = at.ROOT
+            at.ROOT = root
+            try:
+                self.assertIn("tests/brand_new.rs", at.changed_files("main"))
+            finally:
+                at.ROOT = saved
+
+
 class CargoToml(unittest.TestCase):
     def test_required_features_are_read_per_test_target(self):
         toml = (
